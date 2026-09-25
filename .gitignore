@@ -1,0 +1,10 @@
+build*/
+out/
+.vs/
+.vscode/
+.idea/
+.cache/
+.DS_Store
+CMakeUserPresets.json
+imgui.ini
+*.user
