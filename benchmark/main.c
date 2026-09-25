@@ -4,6 +4,7 @@
 // Usage: nebenan_benchmark [workerCount]
 
 #include "fracture.h"
+#include "hull_builder.h"
 
 #include "nebenan/nebenan.h"
 
@@ -46,7 +47,7 @@ static void DestroyScene( Scene* scene )
 static void BenchmarkKernel( void )
 {
 	printf( "\nVoronoi kernel (4 x 2 x 0.3 m slab, impact focused sites)\n" );
-	printf( "  sites | fracture ms | hulls ms | cells/s (kernel) | cells/s (with hulls)\n" );
+	printf( "  cells | voronoi ms | direct hulls ms | quickhull ms | cells/s (voronoi + direct hulls)\n" );
 
 	nbArena arena;
 	nbArena_Create( &arena, 1 << 20 );
@@ -59,6 +60,7 @@ static void BenchmarkKernel( void )
 		int target = counts[c];
 		float fractureTime = 0.0f;
 		float hullTime = 0.0f;
+		float quickhullTime = 0.0f;
 		int cellCount = 0;
 		int repeats = 50;
 
@@ -83,6 +85,7 @@ static void BenchmarkKernel( void )
 			nbComputeVoronoiCells( &arena, parent, sites, siteCount, 1, 1.0e-6f, 0.0f, &output );
 			fractureTime += b3GetMilliseconds( ticks );
 
+			// The hull path the library uses: straight from the known topology
 			ticks = b3GetTicks();
 			for ( int i = 0; i < output.cellCount; ++i )
 			{
@@ -91,14 +94,25 @@ static void BenchmarkKernel( void )
 				{
 					continue;
 				}
-				b3HullData* hull = b3CreateHull( shape->vertices, shape->vertexCount, B3_MAX_HULL_VERTICES );
-				if ( hull != NULL )
+				void* memory = nbArena_Alloc( &arena, (size_t)nbGetHullByteCount( shape ) );
+				if ( nbBuildHull( shape, memory ) != NULL )
 				{
 					cellCount += 1;
-					b3DestroyHull( hull );
 				}
 			}
 			hullTime += b3GetMilliseconds( ticks );
+
+			// For comparison: Box3D's general quickhull on the same points
+			ticks = b3GetTicks();
+			for ( int i = 0; i < output.cellCount; ++i )
+			{
+				nbShape* shape = output.cells[i].shape;
+				if ( shape != NULL )
+				{
+					b3DestroyHull( b3CreateHull( shape->vertices, shape->vertexCount, B3_MAX_HULL_VERTICES ) );
+				}
+			}
+			quickhullTime += b3GetMilliseconds( ticks );
 
 			for ( int i = 0; i < output.cellCount; ++i )
 			{
@@ -109,8 +123,9 @@ static void BenchmarkKernel( void )
 		float cellsPerRun = (float)cellCount / (float)repeats;
 		fractureTime /= (float)repeats;
 		hullTime /= (float)repeats;
-		printf( "  %5.0f | %11.3f | %8.3f | %16.0f | %20.0f\n", cellsPerRun, fractureTime, hullTime,
-				1000.0f * cellsPerRun / fractureTime, 1000.0f * cellsPerRun / ( fractureTime + hullTime ) );
+		quickhullTime /= (float)repeats;
+		printf( "  %5.0f | %10.3f | %15.3f | %12.3f | %31.0f\n", cellsPerRun, fractureTime, hullTime, quickhullTime,
+				1000.0f * cellsPerRun / ( fractureTime + hullTime ) );
 	}
 
 	free( parent );
