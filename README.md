@@ -12,7 +12,8 @@ zusammen, bis man ihnen die Stützen wegschießt.
 - Nur die getroffenen Bruchstücke werden verfeinert, der Rest der Wand bleibt ein großes Stück
 - Stützgraph mit Verankerung und maximaler Auskragung: Decken ohne Säulen stürzen ein
 - Kollisionsschaden: Kanonenkugeln und herabfallende Trümmer beschädigen, was sie treffen
-- Deterministisch: gleiche Eingaben ergeben das gleiche Bruchmuster
+- Deterministisch: gleiche Eingaben ergeben bitgleich das gleiche Bruchmuster, unter Windows, Linux und macOS,
+  auf x64 und ARM
 - PC-Demo für Windows (Direct3D 11), macOS (Metal) und Linux (OpenGL)
 
 ## Demo herunterladen
@@ -160,9 +161,12 @@ kleinen Stücke. Optional haben kleine Trümmer eine Lebensdauer. Was unter `kil
 Bewegungs-Events von Box3D gefunden, ohne alle Körper abzusuchen. Splitter unter `minFragmentVolume` werden
 zu Staub und gar nicht erst erzeugt.
 
-**Determinismus.** Zufallszahlen aus PCG32 mit festem Seed, eigene Kubikwurzel, keine FMA-Kontraktion und
-sortierte Abfrageergebnisse. Die gleichen Einschläge ergeben die gleichen Bruchstücke, das prüft ein Test.
-Das ist die Grundlage für Replays und Lockstep-Netzwerkspiel.
+**Determinismus.** Zufallszahlen aus PCG32 mit festem Seed, jede Zufallszahl in einer eigenen Anweisung
+(C legt die Reihenfolge innerhalb einer Argumentliste nicht fest, und Compiler machen es verschieden), eigene
+Kubikwurzel, keine FMA-Kontraktion und sortierte Abfrageergebnisse. Zusammen mit dem deterministischen Box3D
+ergeben die gleichen Einschläge bitgleich die gleichen Bruchstücke, egal ob mit MSVC, GCC oder Clang gebaut,
+auf x64 oder ARM, mit einem oder mehreren Threads. Die CI prüft das auf allen Plattformen gegen denselben
+Hash. Das ist die Grundlage für Replays und Lockstep-Netzwerkspiel.
 
 **Speicher.** Pools mit Freilisten und IDs mit Generationszähler wie in Box3D, sodass veraltete IDs erkannt
 werden. Temporäre Daten eines Einschlags kommen aus einer Arena, die danach in einem Schritt zurückgesetzt
@@ -295,7 +299,7 @@ Ganze Einschläge (Bruch, Stützgraph, neue Box3D-Körper) und der Box3D-Schritt
   Schneiden der Polyeder), ein gutes Viertel auf Box3D-Hüllen und Körper und 7 % auf die Punktverteilung.
 
 Die Physikzeit ist Box3D mit über 3000 Trümmerkörpern. Ein Gewehrtreffer kostet weniger als ein Drittel
-Millisekunde.
+Millisekunde. Windows, Linux und macOS kommen im Benchmark auf exakt dieselben Bruchstück- und Körperzahlen.
 
 ## Tests und Benchmark
 
