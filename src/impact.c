@@ -95,6 +95,7 @@ static int nbRefineChunk( nbWorld* world, int chunkIndex, b3Vec3 localPoint, flo
 	int destructibleIndex = chunk->destructibleIndex;
 	int actorIndex = chunk->actorIndex;
 	int depth = chunk->depth + 1;
+	uint8_t interiorMaterial = chunk->interiorMaterial;
 	nbDestructible* destructible = world->destructibles.data + destructibleIndex;
 	nbMaterial material = destructible->material;
 	const nbShape* parentShape = chunk->shape;
@@ -143,7 +144,7 @@ static int nbRefineChunk( nbWorld* world, int chunkIndex, b3Vec3 localPoint, flo
 	uint64_t ticks = b3GetTicks();
 	float tolerance = 1.0e-6f + 2.0e-6f * parentRadius;
 	nbFractureOutput output;
-	nbComputeVoronoiCells( &world->arena, parent, sites, siteCount, destructible->interiorMaterial, tolerance,
+	nbComputeVoronoiCells( &world->arena, parent, sites, siteCount, interiorMaterial, tolerance,
 						   material.minFragmentVolume, &output );
 	result->fractureTime += b3GetMilliseconds( ticks );
 
@@ -216,7 +217,7 @@ static int nbRefineChunk( nbWorld* world, int chunkIndex, b3Vec3 localPoint, flo
 		}
 
 		nbShape_Translate( shape, origin );
-		childIndices[i] = nbCreateChunk( world, destructibleIndex, actorIndex, shape, depth );
+		childIndices[i] = nbCreateChunk( world, destructibleIndex, actorIndex, shape, depth, interiorMaterial );
 		childCount += childIndices[i] != NB_NULL_INDEX ? 1 : 0;
 	}
 	result->createdChunkCount += childCount;
@@ -287,6 +288,8 @@ static void nbApplyVelocities( nbWorld* world, const nbImpactDef* def, nbRandom*
 {
 	b3Vec3 direction = b3Normalize( def->direction );
 	bool isDirected = b3LengthSquared( direction ) > 0.5f;
+	b3Vec3 normal = b3Normalize( def->normal );
+	bool haveNormal = b3LengthSquared( normal ) > 0.5f;
 	float reach = 1.5f * def->radius;
 
 	for ( int i = 0; i < world->touchedActors.count; ++i )
@@ -320,8 +323,15 @@ static void nbApplyVelocities( nbWorld* world, const nbImpactDef* def, nbRandom*
 
 				b3Vec3 jitter = nbRandomUnitVector( rng );
 				b3Vec3 eject;
-				if ( isDirected )
+				if ( isDirected && haveNormal && -b3Dot( delta, normal ) < 0.4f * def->radius )
 				{
+					// Crater: fragments near the surface spall back toward the shooter in a cone
+					b3Vec3 tangent = b3MulSub( radial, b3Dot( radial, normal ), normal );
+					eject = b3Add( b3Add( normal, b3MulSV( 0.8f, tangent ) ), b3MulSV( 0.35f, jitter ) );
+				}
+				else if ( isDirected )
+				{
+					// Exit side: the projectile drives the fragments on through the material
 					eject = b3Add( b3Add( b3MulSV( 0.8f, direction ), b3MulSV( 0.6f, radial ) ), b3MulSV( 0.35f, jitter ) );
 				}
 				else
@@ -465,9 +475,13 @@ nbImpactResult nbApplyImpact( nbWorld* world, const nbImpactDef* def, int actorF
 
 	world->stats.impactCount += 1;
 
-	// 2. Refine chunks that are much larger than the fragments this impact creates
+	// 2. Refine chunks that are much larger than the fragments this impact creates.
+	// The fragment count grows with the fracture area, (volume / fragment volume)^(2/3), not with the
+	// volume, and the total per impact is capped. This keeps large blasts affordable.
 	int refineCount = 0;
 	float totalOverlap = 0.0f;
+	float totalDesired = 0.0f;
+	float* desired = nbArena_AllocArray( &world->arena, float, candidateCount );
 	for ( int i = 0; i < candidateCount; ++i )
 	{
 		nbChunk* chunk = world->chunks.data + candidates[i];
@@ -477,6 +491,7 @@ nbImpactResult nbApplyImpact( nbWorld* world, const nbImpactDef* def, int actorF
 		float fragmentVolume = fragmentSize * fragmentSize * fragmentSize;
 
 		overlaps[i] = 0.0f;
+		desired[i] = 0.0f;
 		bool canRefine = chunk->depth < material->maxDepth && chunk->shape->volume > 3.0f * fragmentVolume &&
 						 chunk->shape->radius > 1.2f * fragmentSize;
 		if ( canRefine == false )
@@ -491,7 +506,14 @@ nbImpactResult nbApplyImpact( nbWorld* world, const nbImpactDef* def, int actorF
 		overlaps[i] = nbEstimateSphereOverlap( poly, frame->localPoint, radius, &sampler, 64 );
 		totalOverlap += overlaps[i];
 		refineCount += overlaps[i] > 0.0f ? 1 : 0;
+
+		float ratio = overlaps[i] / fragmentVolume;
+		desired[i] = ratio > 0.0f ? 1.5f * nbCbrt( ratio * ratio ) : 0.0f;
+		totalDesired += desired[i];
 	}
+
+	float fragmentBudget = def->fragmentCount > 0 ? (float)def->fragmentCount : totalDesired;
+	fragmentBudget = b3MinFloat( fragmentBudget, (float)world->def.maxFragmentsPerImpact );
 
 	int firstChild = world->touchedChunks.count;
 	for ( int i = 0; i < candidateCount && refineCount > 0; ++i )
@@ -507,16 +529,11 @@ nbImpactResult nbApplyImpact( nbWorld* world, const nbImpactDef* def, int actorF
 		float fragmentSize = material->fragmentSize;
 		float fragmentVolume = fragmentSize * fragmentSize * fragmentSize;
 
-		int innerCount;
-		if ( def->fragmentCount > 0 )
-		{
-			innerCount = (int)( (float)def->fragmentCount * overlaps[i] / totalOverlap + 0.5f );
-		}
-		else
-		{
-			innerCount = (int)( 0.5f * overlaps[i] / fragmentVolume + 0.5f );
-		}
+		// Share the budget by damaged volume
+		float share = def->fragmentCount > 0 ? overlaps[i] / totalOverlap : desired[i] / b3MaxFloat( totalDesired, 1.0e-6f );
+		int innerCount = (int)( fragmentBudget * share + 0.5f );
 		innerCount = innerCount < 3 ? 3 : ( innerCount > 192 ? 192 : innerCount );
+		NB_UNUSED( fragmentVolume );
 
 		const nbImpactFrame* frame = nbFindFrame( frames, frameCount, chunk->actorIndex );
 		int created = nbRefineChunk( world, chunkIndex, frame->localPoint, radius, innerCount, &result );
@@ -648,6 +665,7 @@ bool nbWorld_CastImpact( nbWorldId worldId, b3Pos origin, b3Vec3 translation, co
 	nbImpactDef impact = *def;
 	impact.point = ray.point;
 	impact.direction = b3Normalize( translation );
+	impact.normal = ray.normal;
 
 	nbImpactResult impactResult = nbWorld_ApplyImpact( worldId, &impact );
 	if ( result != NULL )

@@ -15,6 +15,7 @@ nbMaterial nbDefaultMaterial( void )
 	material.fragmentSize = 0.12f;
 	material.minFragmentVolume = 2.0e-6f;
 	material.maxDepth = 6;
+	material.maxSpan = 4.0f;
 	material.userMaterialId = 0;
 	return material;
 }
@@ -28,7 +29,6 @@ nbDestructibleDef nbDefaultDestructibleDef( void )
 	def.isStatic = true;
 	def.anchorCount = 0;
 	def.cellSize = 0.0f;
-	def.interiorMaterial = 1;
 	def.seed = 1;
 	def.filter = b3DefaultFilter();
 	def.enableCollisionDamage = true;
@@ -42,6 +42,7 @@ nbPieceDef nbDefaultPieceDef( void )
 	def.halfExtents = (b3Vec3){ 0.5f, 0.5f, 0.5f };
 	def.transform = b3Transform_identity;
 	def.surfaceMaterial = 0;
+	def.interiorMaterial = 1;
 	return def;
 }
 
@@ -112,7 +113,7 @@ static int nbGenerateCellSites( const nbPoly* poly, float cellSize, nbRandom* rn
 
 // Split a piece into cells and create chunks with internal bonds. Returns the number of chunks.
 static int nbCreatePieceChunks( nbWorld* world, int destructibleIndex, int actorIndex, nbPoly* poly, float cellSize,
-								nbRandom* rng )
+								uint8_t interiorMaterial, nbRandom* rng )
 {
 	nbDestructible* destructible = world->destructibles.data + destructibleIndex;
 	const nbMaterial* material = &destructible->material;
@@ -124,7 +125,7 @@ static int nbCreatePieceChunks( nbWorld* world, int destructibleIndex, int actor
 		{
 			return 0;
 		}
-		return nbCreateChunk( world, destructibleIndex, actorIndex, shape, 0 ) != NB_NULL_INDEX ? 1 : 0;
+		return nbCreateChunk( world, destructibleIndex, actorIndex, shape, 0, interiorMaterial ) != NB_NULL_INDEX ? 1 : 0;
 	}
 
 	// Work in coordinates centered on the piece for precision
@@ -144,14 +145,14 @@ static int nbCreatePieceChunks( nbWorld* world, int destructibleIndex, int actor
 		{
 			return 0;
 		}
-		return nbCreateChunk( world, destructibleIndex, actorIndex, shape, 0 ) != NB_NULL_INDEX ? 1 : 0;
+		return nbCreateChunk( world, destructibleIndex, actorIndex, shape, 0, interiorMaterial ) != NB_NULL_INDEX ? 1 : 0;
 	}
 
 	float radius = sqrtf( nbPoly_MaxDistanceSquared( poly, b3Vec3_zero ) );
 	float tolerance = 1.0e-6f + 2.0e-6f * radius;
 
 	nbFractureOutput output;
-	nbComputeVoronoiCells( &world->arena, poly, sites, siteCount, destructible->interiorMaterial, tolerance,
+	nbComputeVoronoiCells( &world->arena, poly, sites, siteCount, interiorMaterial, tolerance,
 						   material->minFragmentVolume, &output );
 
 	int* chunkIndices = nbArena_AllocArray( &world->arena, int, siteCount );
@@ -166,7 +167,7 @@ static int nbCreatePieceChunks( nbWorld* world, int destructibleIndex, int actor
 		}
 
 		nbShape_Translate( shape, origin );
-		chunkIndices[i] = nbCreateChunk( world, destructibleIndex, actorIndex, shape, 0 );
+		chunkIndices[i] = nbCreateChunk( world, destructibleIndex, actorIndex, shape, 0, interiorMaterial );
 		chunkCount += chunkIndices[i] != NB_NULL_INDEX ? 1 : 0;
 	}
 
@@ -235,7 +236,6 @@ nbDestructibleId nbCreateDestructible( nbWorldId worldId, const nbDestructibleDe
 	destructible->headActor = NB_NULL_INDEX;
 	destructible->transform = (b3WorldTransform){ def->position, def->rotation };
 	destructible->seed = def->seed;
-	destructible->interiorMaterial = def->interiorMaterial;
 	destructible->isStatic = def->isStatic;
 	destructible->enableCollisionDamage = def->enableCollisionDamage;
 	destructible->userData = def->userData;
@@ -302,7 +302,7 @@ nbDestructibleId nbCreateDestructible( nbWorldId worldId, const nbDestructibleDe
 		if ( valid )
 		{
 			int start = world->touchedChunks.count;
-			nbCreatePieceChunks( world, index, actorIndex, poly, def->cellSize, &rng );
+			nbCreatePieceChunks( world, index, actorIndex, poly, def->cellSize, piece->interiorMaterial, &rng );
 
 			// Remember which piece each chunk came from, so bonds between pieces can be found
 			for ( int k = start; k < world->touchedChunks.count; ++k )

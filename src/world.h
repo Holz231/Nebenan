@@ -59,6 +59,9 @@ typedef struct nbChunk
 	uint16_t generation;
 	uint8_t depth;
 	uint8_t flags;
+
+	// Render material of fracture faces inside this chunk
+	uint8_t interiorMaterial;
 } nbChunk;
 
 // Glue between two touching chunks of the same actor
@@ -135,7 +138,9 @@ typedef struct nbDestructible
 
 	uint32_t seed;
 	uint32_t fractureCounter;
-	uint8_t interiorMaterial;
+
+	// The static structure changed, check the spans on the next update
+	bool spanDirty;
 	bool isStatic;
 	bool enableCollisionDamage;
 	bool isFree;
@@ -147,8 +152,15 @@ typedef struct nbDestructible
 typedef struct nbCollisionImpact
 {
 	b3Pos point;
+
+	// Surface normal pointing out of the damaged chunk toward the other body
 	b3Vec3 normal;
 	float energy;
+	float approachSpeed;
+
+	// The body that hit the chunk
+	b3BodyId otherBodyId;
+
 	int actorIndex;
 	uint16_t actorGeneration;
 } nbCollisionImpact;
@@ -234,7 +246,7 @@ void nbBeginOperation( nbWorld* world );
 
 // Create a chunk from a shape and add it to an actor. Builds the Box3D hull right away.
 // Takes ownership of the shape. Returns NB_NULL_INDEX and destroys the shape if the hull is degenerate.
-int nbCreateChunk( nbWorld* world, int destructibleIndex, int actorIndex, nbShape* shape, int depth );
+int nbCreateChunk( nbWorld* world, int destructibleIndex, int actorIndex, nbShape* shape, int depth, uint8_t interiorMaterial );
 
 int nbAllocActor( nbWorld* world, int destructibleIndex, bool isStatic );
 void nbFreeActor( nbWorld* world, int actorIndex );
@@ -261,6 +273,9 @@ bool nbIsAnchored( const nbDestructible* destructible, const nbShape* shape );
 
 // Split actors whose bonds broke into rigid islands. Unsupported islands become dynamic bodies.
 void nbSplitActors( nbWorld* world, nbImpactResult* result );
+
+// Break off glued parts that hang out further than the material span from their support
+void nbCheckSpans( nbWorld* world, int destructibleIndex );
 
 // Create or move Box3D shapes for all touched chunks, update masses and remove empty actors.
 void nbCommitPhysics( nbWorld* world );

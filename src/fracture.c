@@ -316,6 +316,27 @@ static bool nbGridIsTooClose( const nbSiteGrid* grid, const b3Vec3* sites, b3Vec
 	return false;
 }
 
+static b3Vec3 nbRandomPointInBox( nbRandom* rng, b3AABB box )
+{
+	b3Vec3 extent = b3Sub( box.upperBound, box.lowerBound );
+	return (b3Vec3){
+		box.lowerBound.x + extent.x * nbRandomFloat( rng ),
+		box.lowerBound.y + extent.y * nbRandomFloat( rng ),
+		box.lowerBound.z + extent.z * nbRandomFloat( rng ),
+	};
+}
+
+static b3AABB nbIntersectBoxes( b3AABB a, b3AABB b )
+{
+	b3AABB box = { b3Max( a.lowerBound, b.lowerBound ), b3Min( a.upperBound, b.upperBound ) };
+	return box;
+}
+
+static bool nbIsEmptyBox( b3AABB box )
+{
+	return box.lowerBound.x > box.upperBound.x || box.lowerBound.y > box.upperBound.y || box.lowerBound.z > box.upperBound.z;
+}
+
 int nbGenerateSites( const nbPoly* parent, const nbSiteParams* params, nbRandom* rng, b3Vec3* sites, int capacity )
 {
 	capacity = capacity < NB_SITE_CAPACITY ? capacity : NB_SITE_CAPACITY;
@@ -326,55 +347,85 @@ int nbGenerateSites( const nbPoly* parent, const nbSiteParams* params, nbRandom*
 	float margin = 0.25f * spacing;
 	float radius = params->radius;
 
-	// Give up on a phase after this many failed candidates in a row. This keeps the cost bounded
-	// when the damage sphere only grazes the parent.
-	const int maxMisses = 48;
+	// Candidates are drawn from the part of the parent's bounds near the impact. This keeps the
+	// acceptance rate high for thin walls and for impact points in front of a surface. The fragment
+	// density falls off with the distance to the focus, the nearest point of the bounds.
+	b3AABB bounds = nbPoly_ComputeBounds( parent );
+	b3Vec3 focus = b3Clamp( params->center, bounds.lowerBound, bounds.upperBound );
+	float minRadius = b3MaxFloat( 0.12f * radius, spacing );
 
 	nbSiteGrid grid;
 	memset( grid.keys, 0, sizeof( grid.keys ) );
 	grid.inverseCellSize = 1.0f / spacing;
 
-	// Inner sites. The distance from the center is radius * u^1.5, which packs sites toward the
-	// center and makes the fragments small in the middle and larger toward the rim.
 	int innerTarget = params->innerCount < capacity ? params->innerCount : capacity;
-	for ( int misses = 0; count < innerTarget && misses < maxMisses; )
+	b3AABB innerBox = nbIntersectBoxes( bounds, (b3AABB){ b3Sub( focus, (b3Vec3){ radius, radius, radius } ),
+														   b3Add( focus, (b3Vec3){ radius, radius, radius } ) } );
+	if ( nbIsEmptyBox( innerBox ) == false )
 	{
-		float u = nbRandomFloat( rng );
-		float r = radius * u * sqrtf( u );
-		b3Vec3 p = b3MulAdd( params->center, r, nbRandomUnitVector( rng ) );
-		if ( nbPoly_ContainsPoint( parent, p, margin ) == false || nbGridIsTooClose( &grid, sites, p, spacingSquared ) )
+		int maxAttempts = 24 * innerTarget + 64;
+		for ( int attempt = 0; attempt < maxAttempts && count < innerTarget; ++attempt )
 		{
-			misses += 1;
-			continue;
-		}
+			// Give up early when the sphere barely touches the parent
+			if ( attempt == 256 && count == 0 )
+			{
+				break;
+			}
 
-		sites[count] = p;
-		nbGridInsert( &grid, sites, count );
-		count += 1;
-		misses = 0;
+			b3Vec3 p = nbRandomPointInBox( rng, innerBox );
+			float distance = b3Distance( p, focus );
+			if ( distance > radius )
+			{
+				continue;
+			}
+
+			// Density proportional to 1 / distance: small fragments at the focus, larger toward the rim
+			if ( distance > minRadius && nbRandomFloat( rng ) * distance > minRadius )
+			{
+				continue;
+			}
+
+			if ( nbPoly_ContainsPoint( parent, p, margin ) == false || nbGridIsTooClose( &grid, sites, p, spacingSquared ) )
+			{
+				continue;
+			}
+
+			sites[count] = p;
+			nbGridInsert( &grid, sites, count );
+			count += 1;
+		}
 	}
 
-	// Ring sites just outside the damage radius. They only compete with the rim of the inner sites
-	// and with each other.
+	// Ring sites just outside the damage radius shape the rim of the hole
 	int ringFirst = count;
 	int ringTarget = count + params->ringCount;
 	ringTarget = ringTarget < capacity ? ringTarget : capacity;
 	float ringSpacingSquared = 4.0f * spacingSquared;
-	for ( int misses = 0; count < ringTarget && misses < maxMisses; )
+	float ringRadius = 1.6f * radius;
+	b3AABB ringBox = nbIntersectBoxes( bounds, (b3AABB){ b3Sub( focus, (b3Vec3){ ringRadius, ringRadius, ringRadius } ),
+														  b3Add( focus, (b3Vec3){ ringRadius, ringRadius, ringRadius } ) } );
+	if ( nbIsEmptyBox( ringBox ) == false )
 	{
-		float r = radius * ( 1.0f + 0.6f * nbRandomFloat( rng ) );
-		b3Vec3 p = b3MulAdd( params->center, r, nbRandomUnitVector( rng ) );
-		if ( nbPoly_ContainsPoint( parent, p, margin ) == false || nbGridIsTooClose( &grid, sites, p, spacingSquared ) ||
-			 nbIsTooClose( p, sites, ringFirst, count, ringSpacingSquared ) )
+		int maxAttempts = 24 * params->ringCount + 64;
+		for ( int attempt = 0; attempt < maxAttempts && count < ringTarget; ++attempt )
 		{
-			misses += 1;
-			continue;
-		}
+			b3Vec3 p = nbRandomPointInBox( rng, ringBox );
+			float distance = b3Distance( p, focus );
+			if ( distance < radius || distance > ringRadius )
+			{
+				continue;
+			}
 
-		sites[count] = p;
-		nbGridInsert( &grid, sites, count );
-		count += 1;
-		misses = 0;
+			if ( nbPoly_ContainsPoint( parent, p, margin ) == false || nbGridIsTooClose( &grid, sites, p, spacingSquared ) ||
+				 nbIsTooClose( p, sites, ringFirst, count, ringSpacingSquared ) )
+			{
+				continue;
+			}
+
+			sites[count] = p;
+			nbGridInsert( &grid, sites, count );
+			count += 1;
+		}
 	}
 
 	// Outer sites anywhere in the parent away from the impact. They are far from the inner sites
@@ -383,10 +434,8 @@ int nbGenerateSites( const nbPoly* parent, const nbSiteParams* params, nbRandom*
 	outerTarget = outerTarget < capacity ? outerTarget : capacity;
 	if ( params->outerCount > 0 )
 	{
-		b3AABB bounds = nbPoly_ComputeBounds( parent );
 		b3Vec3 extent = b3Sub( bounds.upperBound, bounds.lowerBound );
-		float exclusion = 1.6f * radius;
-		float exclusionSquared = exclusion * exclusion;
+		float exclusionSquared = ringRadius * ringRadius;
 
 		// Spread the outer sites apart so the far pieces have similar sizes
 		float volume = extent.x * extent.y * extent.z;
@@ -395,24 +444,17 @@ int nbGenerateSites( const nbPoly* parent, const nbSiteParams* params, nbRandom*
 		outerSpacing = b3MinFloat( outerSpacing, 0.25f * largest );
 		float outerSpacingSquared = b3MaxFloat( outerSpacing * outerSpacing, ringSpacingSquared );
 
-		for ( int misses = 0; count < outerTarget && misses < maxMisses; )
+		int maxAttempts = 24 * params->outerCount + 64;
+		for ( int attempt = 0; attempt < maxAttempts && count < outerTarget; ++attempt )
 		{
-			b3Vec3 p = {
-				bounds.lowerBound.x + extent.x * nbRandomFloat( rng ),
-				bounds.lowerBound.y + extent.y * nbRandomFloat( rng ),
-				bounds.lowerBound.z + extent.z * nbRandomFloat( rng ),
-			};
-
-			if ( b3DistanceSquared( p, params->center ) < exclusionSquared ||
-				 nbPoly_ContainsPoint( parent, p, margin ) == false ||
+			b3Vec3 p = nbRandomPointInBox( rng, bounds );
+			if ( b3DistanceSquared( p, focus ) < exclusionSquared || nbPoly_ContainsPoint( parent, p, margin ) == false ||
 				 nbIsTooClose( p, sites, ringFirst, count, outerSpacingSquared ) )
 			{
-				misses += 1;
 				continue;
 			}
 
 			sites[count++] = p;
-			misses = 0;
 		}
 	}
 

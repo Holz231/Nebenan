@@ -549,6 +549,95 @@ static int GraphTest( void )
 	return 0;
 }
 
+// A beam on two pillars loses one pillar. The part further than the span from the other pillar breaks off.
+static int SpanTest( void )
+{
+	TestScene scene = CreateScene();
+
+	nbPieceDef pieces[3];
+	for ( int i = 0; i < 3; ++i )
+	{
+		pieces[i] = nbDefaultPieceDef();
+	}
+	pieces[0].halfExtents = (b3Vec3){ 0.25f, 1.5f, 0.25f };
+	pieces[0].transform.p = (b3Vec3){ -3.0f, 1.5f, 0.0f };
+	pieces[1].halfExtents = (b3Vec3){ 0.25f, 1.5f, 0.25f };
+	pieces[1].transform.p = (b3Vec3){ 3.0f, 1.5f, 0.0f };
+	pieces[2].halfExtents = (b3Vec3){ 4.0f, 0.2f, 0.3f };
+	pieces[2].transform.p = (b3Vec3){ 0.0f, 3.2f, 0.0f };
+
+	nbDestructibleDef def = nbDefaultDestructibleDef();
+	def.material.maxSpan = 3.0f;
+	nbDestructibleId bridge = nbCreateDestructible( scene.world, &def, pieces, 3 );
+
+	// With both pillars every part of the beam is within the span
+	Step( &scene, 2 );
+	ENSURE( nbWorld_GetStats( scene.world ).dynamicBodyCount == 0 );
+
+	// Knock out the top of the right pillar
+	nbImpactDef impact = { 0 };
+	impact.point = (b3Vec3){ 3.0f, 2.8f, 0.0f };
+	impact.radius = 0.45f;
+	impact.damage = 1.0e8f;
+	impact.ejectSpeed = 2.0f;
+	nbWorld_ApplyImpact( scene.world, &impact );
+	Step( &scene, 1 );
+
+	// The right half of the beam is now more than 3 m from the left pillar and falls
+	float fallingMass = 0.0f;
+	float staticBeamVolume = 0.0f;
+	int count = nbDestructible_GetChunkCount( bridge );
+	nbChunkId* chunks = malloc( sizeof( nbChunkId ) * (size_t)count );
+	nbDestructible_GetChunks( bridge, chunks, count );
+	for ( int i = 0; i < count; ++i )
+	{
+		if ( nbChunk_IsDynamic( chunks[i] ) )
+		{
+			fallingMass = b3MaxFloat( fallingMass, b3Body_GetMass( nbChunk_GetBody( chunks[i] ) ) );
+		}
+		else if ( nbChunk_GetCentroid( chunks[i] ).y > 3.0f )
+		{
+			staticBeamVolume += nbChunk_GetVolume( chunks[i] );
+		}
+	}
+	free( chunks );
+
+	// Beam volume is 8 * 0.4 * 0.6 = 1.92 m^3, a sizable part falls and a sizable part stays
+	ENSURE( fallingMass > 0.3f * 2400.0f );
+	ENSURE( staticBeamVolume > 0.3f );
+
+	DestroyScene( &scene );
+	return 0;
+}
+
+// A heavy ball breaks through a wall instead of bouncing off it
+static int CannonballTest( void )
+{
+	TestScene scene = CreateScene();
+	nbDestructibleId wall = CreateWall( &scene, (b3Vec3){ 3.0f, 1.5f, 0.15f }, 17 );
+
+	b3BodyDef bodyDef = b3DefaultBodyDef();
+	bodyDef.type = b3_dynamicBody;
+	bodyDef.position = (b3Vec3){ 0.0f, 1.4f, 6.0f };
+	bodyDef.linearVelocity = (b3Vec3){ 0.0f, 0.0f, -45.0f };
+	bodyDef.isBullet = true;
+	b3BodyId ball = b3CreateBody( scene.physicsWorld, &bodyDef );
+
+	b3ShapeDef shapeDef = b3DefaultShapeDef();
+	shapeDef.density = 7800.0f;
+	shapeDef.enableHitEvents = true;
+	b3Sphere sphere = { { 0.0f, 0.0f, 0.0f }, 0.25f };
+	b3CreateSphereShape( ball, &shapeDef, &sphere );
+
+	Step( &scene, 30 );
+
+	ENSURE( nbDestructible_GetChunkCount( wall ) > 20 );
+	ENSURE( b3Body_GetPosition( ball ).z < -0.5f );
+
+	DestroyScene( &scene );
+	return 0;
+}
+
 int WorldTest( void );
 
 int WorldTest( void )
@@ -563,5 +652,7 @@ int WorldTest( void )
 	RUN_TEST( MultiPieceTest );
 	RUN_TEST( PreFractureTest );
 	RUN_TEST( GraphTest );
+	RUN_TEST( SpanTest );
+	RUN_TEST( CannonballTest );
 	return 0;
 }

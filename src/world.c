@@ -275,7 +275,7 @@ static b3HullData* nbCreateScratchHull( nbWorld* world, const nbShape* shape )
 	return hull;
 }
 
-int nbCreateChunk( nbWorld* world, int destructibleIndex, int actorIndex, nbShape* shape, int depth )
+int nbCreateChunk( nbWorld* world, int destructibleIndex, int actorIndex, nbShape* shape, int depth, uint8_t interiorMaterial )
 {
 	b3HullData* hull = nbCreateScratchHull( world, shape );
 	if ( hull == NULL )
@@ -293,6 +293,7 @@ int nbCreateChunk( nbWorld* world, int destructibleIndex, int actorIndex, nbShap
 	chunk->pendingHull = hull;
 	chunk->destructibleIndex = destructibleIndex;
 	chunk->depth = (uint8_t)( depth < 255 ? depth : 255 );
+	chunk->interiorMaterial = interiorMaterial;
 	chunk->flags = nb_chunkNew;
 	if ( nbIsAnchored( destructible, shape ) )
 	{
@@ -385,6 +386,10 @@ void nbDestroyBond( nbWorld* world, int bondIndex )
 		if ( chunk->actorIndex != NB_NULL_INDEX )
 		{
 			nbTouchActor( world, chunk->actorIndex );
+			if ( world->actors.data[chunk->actorIndex].isStatic )
+			{
+				world->destructibles.data[chunk->destructibleIndex].spanDirty = true;
+			}
 		}
 	}
 
@@ -1062,6 +1067,165 @@ static void nbSplitDynamicActor( nbWorld* world, int actorIndex, nbImpactResult*
 	}
 }
 
+// Dijkstra from the anchors over the bond graph of the static actor. Moving along gravity is free,
+// moving sideways costs the horizontal distance between the chunk centroids. The resulting distance is
+// how far the load of a chunk has to travel sideways to reach the ground. Bonds from supported chunks
+// to chunks beyond the span are cut, and the regular split then drops the overhanging parts.
+void nbCheckSpans( nbWorld* world, int destructibleIndex )
+{
+	nbDestructible* destructible = world->destructibles.data + destructibleIndex;
+	destructible->spanDirty = false;
+	float maxSpan = destructible->material.maxSpan;
+	if ( destructible->isStatic == false || maxSpan <= 0.0f )
+	{
+		return;
+	}
+
+	int actorIndex = NB_NULL_INDEX;
+	for ( int a = destructible->headActor; a != NB_NULL_INDEX; a = world->actors.data[a].nextActor )
+	{
+		if ( world->actors.data[a].isStatic )
+		{
+			actorIndex = a;
+			break;
+		}
+	}
+
+	if ( actorIndex == NB_NULL_INDEX )
+	{
+		return;
+	}
+
+	b3Vec3 gravity = b3World_GetGravity( world->physicsWorld );
+	b3Vec3 down = b3InvRotateVector( destructible->transform.q, b3Normalize( gravity ) );
+	if ( b3LengthSquared( down ) < 0.5f )
+	{
+		return;
+	}
+
+	nbBeginOperation( world );
+
+	nbActor* actor = world->actors.data + actorIndex;
+	int count = actor->chunkCount;
+	int* chunkList = nbArena_AllocArray( &world->arena, int, count );
+	float* distance = nbArena_AllocArray( &world->arena, float, count );
+	uint64_t* heap = nbArena_AllocArray( &world->arena, uint64_t, 4 * count + 8 );
+	int heapCapacity = 4 * count + 8;
+	int heapCount = 0;
+
+	int n = 0;
+	for ( int c = actor->headChunk; c != NB_NULL_INDEX; c = world->chunks.data[c].nextChunk )
+	{
+		nbChunk* chunk = world->chunks.data + c;
+		chunk->scratch = n;
+		chunkList[n] = c;
+		if ( chunk->flags & nb_chunkAnchored )
+		{
+			distance[n] = 0.0f;
+			heap[heapCount] = (uint64_t)(uint32_t)n;
+			nbSiftUp( heap, heapCount );
+			heapCount += 1;
+		}
+		else
+		{
+			distance[n] = FLT_MAX;
+		}
+		n += 1;
+	}
+
+	while ( heapCount > 0 )
+	{
+		uint64_t top = heap[0];
+		heap[0] = heap[--heapCount];
+		nbSiftDown( heap, heapCount, 0 );
+
+		int i = (int)( top & 0xFFFFFFFFu );
+		float d;
+		uint32_t bits = (uint32_t)( top >> 32 );
+		memcpy( &d, &bits, sizeof( d ) );
+		if ( d > distance[i] )
+		{
+			// Stale entry
+			continue;
+		}
+
+		const nbChunk* chunk = world->chunks.data + chunkList[i];
+		b3Vec3 centroid = chunk->shape->centroid;
+		for ( int key = chunk->headBondKey; key != NB_NULL_INDEX; )
+		{
+			const nbBond* bond = world->bonds.data + ( key >> 1 );
+			int side = key & 1;
+			key = bond->nextKey[side];
+
+			const nbChunk* other = world->chunks.data + bond->chunk[side ^ 1];
+			int j = other->scratch;
+			b3Vec3 delta = b3Sub( other->shape->centroid, centroid );
+			b3Vec3 sideways = b3MulSub( delta, b3Dot( delta, down ), down );
+			float candidate = d + b3Length( sideways );
+			if ( candidate < distance[j] && heapCount < heapCapacity )
+			{
+				distance[j] = candidate;
+				heap[heapCount] = ( (uint64_t)nbFloatKey( candidate ) << 32 ) | (uint32_t)j;
+				nbSiftUp( heap, heapCount );
+				heapCount += 1;
+			}
+		}
+	}
+
+	// Cut at the span boundary. Unreachable chunks were already dropped by the connectivity split.
+	nbIntArray* cut = &world->scratchList;
+	cut->count = 0;
+	for ( int i = 0; i < n; ++i )
+	{
+		if ( distance[i] > maxSpan )
+		{
+			continue;
+		}
+
+		const nbChunk* chunk = world->chunks.data + chunkList[i];
+		for ( int key = chunk->headBondKey; key != NB_NULL_INDEX; )
+		{
+			const nbBond* bond = world->bonds.data + ( key >> 1 );
+			int side = key & 1;
+			int bondIndex = key >> 1;
+			key = bond->nextKey[side];
+
+			int j = world->chunks.data[bond->chunk[side ^ 1]].scratch;
+			if ( distance[j] > maxSpan )
+			{
+				nbArray_Push( *cut, bondIndex );
+			}
+		}
+	}
+
+	if ( cut->count == 0 )
+	{
+		return;
+	}
+
+	for ( int i = 0; i < cut->count; ++i )
+	{
+		if ( world->bonds.data[cut->data[i]].chunk[0] != NB_NULL_INDEX )
+		{
+			nbDestroyBond( world, cut->data[i] );
+		}
+	}
+
+	nbImpactResult result = { 0 };
+	nbSplitActors( world, &result );
+	nbCommitPhysics( world );
+
+	for ( int i = 0; i < world->touchedActors.count; ++i )
+	{
+		world->actors.data[world->touchedActors.data[i]].isNew = false;
+	}
+	world->touchedActors.count = 0;
+
+	// Collapsed parts may overhang again
+	destructible = world->destructibles.data + destructibleIndex;
+	destructible->spanDirty = false;
+}
+
 void nbSplitActors( nbWorld* world, nbImpactResult* result )
 {
 	int touchedCount = world->touchedActors.count;
@@ -1097,6 +1261,8 @@ nbWorldDef nbDefaultWorldDef( void )
 	def.collisionDamageScale = 12.0f;
 	def.collisionRadiusScale = 0.035f;
 	def.maxCollisionImpactsPerUpdate = 4;
+	def.maxFragmentsPerImpact = 160;
+	def.collisionPassThrough = 0.6f;
 	def.internalValue = NB_SECRET_COOKIE;
 	return def;
 }
@@ -1342,11 +1508,14 @@ static void nbCollectCollisionImpacts( nbWorld* world )
 				continue;
 			}
 
+			// The hit normal points from shape A to shape B
 			const nbActor* actor = world->actors.data + chunk->actorIndex;
 			nbCollisionImpact impact = {
 				.point = event->point,
 				.normal = side == 0 ? event->normal : b3Neg( event->normal ),
 				.energy = energy,
+				.approachSpeed = event->approachSpeed,
+				.otherBodyId = side == 0 ? bodyB : bodyA,
 				.actorIndex = chunk->actorIndex,
 				.actorGeneration = actor->generation,
 			};
@@ -1416,6 +1585,16 @@ void nbWorld_Update( nbWorldId worldId, float timeStep )
 		}
 	}
 
+	// Structures that lost material may now overhang
+	for ( int i = 0; i < world->destructibles.count; ++i )
+	{
+		nbDestructible* destructible = world->destructibles.data + i;
+		if ( destructible->isFree == false && destructible->spanDirty )
+		{
+			nbCheckSpans( world, i );
+		}
+	}
+
 	// Collision damage, strongest first, limited per update
 	int impactCount = world->collisionImpacts.count;
 	if ( impactCount > world->def.maxCollisionImpactsPerUpdate )
@@ -1434,11 +1613,23 @@ void nbWorld_Update( nbWorldId worldId, float timeStep )
 
 		nbImpactDef def = { 0 };
 		def.point = impact.point;
-		def.direction = impact.normal;
+		def.direction = b3Neg( impact.normal );
 		def.radius = world->def.collisionRadiusScale * nbCbrt( impact.energy );
 		def.damage = world->def.collisionDamageScale * impact.energy;
-		def.ejectSpeed = 0.0f;
-		nbApplyImpact( world, &def, impact.actorIndex );
+		def.ejectSpeed = 0.4f * impact.approachSpeed;
+		nbImpactResult result = nbApplyImpact( world, &def, impact.actorIndex );
+
+		// Box3D resolved the contact as if the chunk were rigid, so the body that hit it bounced.
+		// When material broke away, give the body back most of its speed so it punches through.
+		if ( result.detachedChunkCount > 0 && b3Body_IsValid( impact.otherBodyId ) &&
+			 b3Body_GetType( impact.otherBodyId ) == b3_dynamicBody )
+		{
+			b3Vec3 velocity = b3Body_GetLinearVelocity( impact.otherBodyId );
+			float normalSpeed = b3Dot( velocity, impact.normal );
+			float restored = world->def.collisionPassThrough * impact.approachSpeed;
+			velocity = b3MulAdd( velocity, -normalSpeed - restored, impact.normal );
+			b3Body_SetLinearVelocity( impact.otherBodyId, velocity );
+		}
 	}
 
 	// Debris aging and lifetime

@@ -83,6 +83,11 @@ typedef struct nbMaterial
 	/// fracture hierarchy can go around repeated impacts.
 	int maxDepth;
 
+	/// Longest horizontal distance, in meters, a glued chunk may be from its support. Load has to
+	/// travel sideways through the structure to reach an anchor, and parts that hang out further
+	/// than this break off, like a slab that lost its columns. Zero disables the check.
+	float maxSpan;
+
 	/// User material id stored on the Box3D shapes. It is reported by ray casts and contact events.
 	uint64_t userMaterialId;
 } nbMaterial;
@@ -125,6 +130,9 @@ typedef struct nbPieceDef
 
 	/// Render material id of the outer surface of this piece.
 	uint8_t surfaceMaterial;
+
+	/// Render material id of the fracture surfaces created inside this piece.
+	uint8_t interiorMaterial;
 } nbPieceDef;
 
 /// Destructible definition. Must be initialized with nbDefaultDestructibleDef.
@@ -155,9 +163,6 @@ typedef struct nbDestructibleDef
 	/// either way.
 	float cellSize;
 
-	/// Render material id of the fracture surfaces created at runtime.
-	uint8_t interiorMaterial;
-
 	/// Seed for the deterministic fracture patterns.
 	uint32_t seed;
 
@@ -187,9 +192,13 @@ typedef struct nbImpactDef
 	/// Impact point in world space.
 	b3Pos point;
 
-	/// Direction of the incoming projectile in world space. Fragments are ejected along it.
-	/// Use zero for an explosion that ejects radially.
+	/// Direction of the incoming projectile in world space. Fragments behind the surface are ejected
+	/// along it. Use zero for an explosion that ejects radially.
 	b3Vec3 direction;
+
+	/// Optional surface normal at the impact point in world space. Fragments near the surface spall
+	/// back out along it, like the crater of a bullet hole. nbWorld_CastImpact fills it in.
+	b3Vec3 normal;
 
 	/// Damage radius in meters. Chunks overlapping this sphere are refined and damaged.
 	float radius;
@@ -202,7 +211,7 @@ typedef struct nbImpactDef
 	float ejectSpeed;
 
 	/// Number of fragments created by runtime fracture around the impact center.
-	/// Zero derives the count from the material fragment size.
+	/// Zero derives the count from the material fragment size and the damaged volume.
 	int fragmentCount;
 
 	/// Limit the impact to one destructible. Null affects all destructibles.
@@ -270,6 +279,13 @@ typedef struct nbWorldDef
 
 	/// Maximum number of collision impacts processed per update. Limits worst case frame time.
 	int maxCollisionImpactsPerUpdate;
+
+	/// Upper bound for the fragments one impact creates. Bounds the cost of large explosions.
+	int maxFragmentsPerImpact;
+
+	/// Fraction of the approach speed a body keeps when it breaks through a chunk. Box3D resolves the
+	/// contact before the fracture happens, so without this a cannonball would bounce off the debris.
+	float collisionPassThrough;
 
 	/// Used internally to detect a valid definition. DO NOT SET.
 	int internalValue;

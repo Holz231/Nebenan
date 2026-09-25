@@ -15,11 +15,7 @@ option(NEBENAN_TESTS "Build the unit tests" ${PROJECT_IS_TOP_LEVEL})
 option(NEBENAN_BENCHMARK "Build the benchmark" ${PROJECT_IS_TOP_LEVEL})
 option(NEBENAN_WARNINGS_AS_ERRORS "Treat compiler warnings as errors" OFF)
 
-if(EMSCRIPTEN)
-	option(NEBENAN_WEB_DEMO "Build the browser demo" ${PROJECT_IS_TOP_LEVEL})
-else()
-	set(NEBENAN_WEB_DEMO OFF)
-endif()
+option(NEBENAN_DEMO "Build the desktop demo" ${PROJECT_IS_TOP_LEVEL})
 
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
@@ -50,6 +46,11 @@ if(NEBENAN_BENCHMARK)
 	add_subdirectory(benchmark)
 endif()
 
-if(NEBENAN_WEB_DEMO)
-	add_subdirectory(web)
+if(NEBENAN_DEMO)
+	add_subdirectory(demo)
+
+	# Start the demo by default in Visual Studio
+	if(MSVC AND TARGET nebenan_demo)
+		set_property(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR} PROPERTY VS_STARTUP_PROJECT nebenan_demo)
+	endif()
 endif()
