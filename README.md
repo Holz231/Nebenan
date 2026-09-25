@@ -151,7 +151,7 @@ ist, obwohl die Decke noch an der Wand hängt.
 **Box3D-Anbindung.** Jedes statische Bruchstück hat einen eigenen statischen Körper, denn das Entfernen
 einer Form in Box3D kostet so viel wie der Körper Kontakte hat. Jede lose Insel ist ein dynamischer
 Verbundkörper mit einer Hülle pro Bruchstück. Die Hüllen baut Nebenan direkt aus der bekannten Topologie
-des Polyeders, 5–6-mal schneller als Quickhull (`b3CreateHull` bleibt der Fallback). Treffer-Events von
+des Polyeders, 4- bis 6-mal schneller als Quickhull (`b3CreateHull` bleibt der Fallback). Treffer-Events von
 Box3D werden zu Kollisionsschaden: Energie aus reduzierter Masse und Aufprallgeschwindigkeit, Radius aus
 der Kubikwurzel der Energie. Weil Box3D den Kontakt schon aufgelöst hat, bevor die Wand bricht, bekommt ein
 durchschlagendes Geschoss einen Teil seiner Geschwindigkeit zurück (`collisionPassThrough`).
@@ -279,10 +279,10 @@ Voronoi-Kern, Platte 4 × 2 × 0,3 m mit Punkten um den Einschlag:
 
 | Zellen | Voronoi | Hüllen direkt | Hüllen mit Quickhull |
 | ---: | ---: | ---: | ---: |
-| 16 | 0,09 ms | 0,03 ms | 0,13 ms |
-| 64 | 0,64 ms | 0,12 ms | 0,68 ms |
-| 128 | 1,45 ms | 0,23 ms | 1,28 ms |
-| 256 | 3,54 ms | 0,49 ms | 2,83 ms |
+| 16 | 0,06 ms | 0,02 ms | 0,08 ms |
+| 64 | 0,49 ms | 0,09 ms | 0,48 ms |
+| 128 | 1,3 ms | 0,19 ms | 1,1 ms |
+| 256 | 3,3 ms | 0,45 ms | 2,7 ms |
 
 Ganze Einschläge (Bruch, Stützgraph, neue Box3D-Körper) und der Box3D-Schritt danach bei 60 Hz mit
 4 Substeps:
