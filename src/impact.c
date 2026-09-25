@@ -341,7 +341,9 @@ static void nbApplyVelocities( nbWorld* world, const nbImpactDef* def, nbRandom*
 
 				float speed = def->ejectSpeed * falloff * nbRandomRange( rng, 0.6f, 1.0f );
 				linearVelocity = b3MulAdd( linearVelocity, speed, b3Normalize( eject ) );
-				angularVelocity = b3MulAdd( angularVelocity, falloff * nbRandomRange( rng, 3.0f, 18.0f ), nbRandomUnitVector( rng ) );
+				float spin = falloff * nbRandomRange( rng, 3.0f, 18.0f );
+				b3Vec3 spinAxis = nbRandomUnitVector( rng );
+				angularVelocity = b3MulAdd( angularVelocity, spin, spinAxis );
 			}
 		}
 
@@ -525,15 +527,11 @@ nbImpactResult nbApplyImpact( nbWorld* world, const nbImpactDef* def, int actorF
 
 		int chunkIndex = candidates[i];
 		nbChunk* chunk = world->chunks.data + chunkIndex;
-		const nbMaterial* material = &world->destructibles.data[chunk->destructibleIndex].material;
-		float fragmentSize = material->fragmentSize;
-		float fragmentVolume = fragmentSize * fragmentSize * fragmentSize;
 
 		// Share the budget by damaged volume
 		float share = def->fragmentCount > 0 ? overlaps[i] / totalOverlap : desired[i] / b3MaxFloat( totalDesired, 1.0e-6f );
 		int innerCount = (int)( fragmentBudget * share + 0.5f );
 		innerCount = innerCount < 3 ? 3 : ( innerCount > 192 ? 192 : innerCount );
-		NB_UNUSED( fragmentVolume );
 
 		const nbImpactFrame* frame = nbFindFrame( frames, frameCount, chunk->actorIndex );
 		int created = nbRefineChunk( world, chunkIndex, frame->localPoint, radius, innerCount, &result );

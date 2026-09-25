@@ -202,15 +202,21 @@ void nbComputeVoronoiCells( nbArena* arena, const nbPoly* parent, const b3Vec3* 
 	}
 }
 
+// Uniform point in the cube [-1, 1]^3. One draw per statement: C leaves the evaluation order inside an
+// initializer or an argument list open, and compilers differ, but fracture patterns must not.
+static b3Vec3 nbRandomInCube( nbRandom* rng )
+{
+	float x = 2.0f * nbRandomFloat( rng ) - 1.0f;
+	float y = 2.0f * nbRandomFloat( rng ) - 1.0f;
+	float z = 2.0f * nbRandomFloat( rng ) - 1.0f;
+	return (b3Vec3){ x, y, z };
+}
+
 b3Vec3 nbRandomUnitVector( nbRandom* rng )
 {
 	for ( int i = 0; i < 32; ++i )
 	{
-		b3Vec3 v = {
-			2.0f * nbRandomFloat( rng ) - 1.0f,
-			2.0f * nbRandomFloat( rng ) - 1.0f,
-			2.0f * nbRandomFloat( rng ) - 1.0f,
-		};
+		b3Vec3 v = nbRandomInCube( rng );
 		float lengthSquared = b3LengthSquared( v );
 		if ( 1.0e-4f < lengthSquared && lengthSquared <= 1.0f )
 		{
@@ -319,10 +325,13 @@ static bool nbGridIsTooClose( const nbSiteGrid* grid, const b3Vec3* sites, b3Vec
 static b3Vec3 nbRandomPointInBox( nbRandom* rng, b3AABB box )
 {
 	b3Vec3 extent = b3Sub( box.upperBound, box.lowerBound );
+	float x = nbRandomFloat( rng );
+	float y = nbRandomFloat( rng );
+	float z = nbRandomFloat( rng );
 	return (b3Vec3){
-		box.lowerBound.x + extent.x * nbRandomFloat( rng ),
-		box.lowerBound.y + extent.y * nbRandomFloat( rng ),
-		box.lowerBound.z + extent.z * nbRandomFloat( rng ),
+		box.lowerBound.x + extent.x * x,
+		box.lowerBound.y + extent.y * y,
+		box.lowerBound.z + extent.z * z,
 	};
 }
 
@@ -467,11 +476,7 @@ float nbEstimateSphereOverlap( const nbPoly* parent, b3Vec3 center, float radius
 	int total = 0;
 	for ( int i = 0; i < sampleCount; ++i )
 	{
-		b3Vec3 p = {
-			2.0f * nbRandomFloat( rng ) - 1.0f,
-			2.0f * nbRandomFloat( rng ) - 1.0f,
-			2.0f * nbRandomFloat( rng ) - 1.0f,
-		};
+		b3Vec3 p = nbRandomInCube( rng );
 		if ( b3LengthSquared( p ) > 1.0f )
 		{
 			continue;

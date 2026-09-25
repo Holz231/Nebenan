@@ -308,6 +308,9 @@ static int DeterminismTest( void )
 	uint32_t hash1 = RunDeterminismScenario();
 	uint32_t hash2 = RunDeterminismScenario();
 	ENSURE( hash1 == hash2 );
+
+	// Printed so runs on different platforms and compilers can be compared
+	printf( "determinism hash: 0x%08x\n", hash1 );
 	return 0;
 }
 
@@ -501,7 +504,9 @@ static int GraphTest( void )
 	float minBondArea = 0.01f * 0.12f * 0.12f;
 	for ( int k = 0; k < 6; ++k )
 	{
-		impact.point = (b3Vec3){ nbRandomRange( &rng, -2.5f, 2.5f ), nbRandomRange( &rng, 0.4f, 2.6f ), 0.0f };
+		float x = nbRandomRange( &rng, -2.5f, 2.5f );
+		float y = nbRandomRange( &rng, 0.4f, 2.6f );
+		impact.point = (b3Vec3){ x, y, 0.0f };
 		nbImpactResult result = nbWorld_ApplyImpact( scene.world, &impact );
 		ENSURE( result.detachedChunkCount == 0 );
 		ENSURE( result.brokenBondCount == 0 );

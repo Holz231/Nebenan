@@ -106,7 +106,7 @@ struct App
 	int workerCount = 1;
 	int maxWorkers = 1;
 
-	bool keys[512] = {};
+	bool keys[SAPP_MAX_KEYCODES] = {};
 	bool mouseLook = false;
 	bool mouseDown = false;
 	float mouseX = 0.0f;
@@ -1200,7 +1200,7 @@ static void OnEvent( const sapp_event* event )
 	switch ( event->type )
 	{
 		case SAPP_EVENTTYPE_KEY_DOWN:
-			if ( event->key_code < 512 )
+			if ( (int)event->key_code < SAPP_MAX_KEYCODES )
 			{
 				app.keys[event->key_code] = true;
 			}
@@ -1244,7 +1244,7 @@ static void OnEvent( const sapp_event* event )
 			break;
 
 		case SAPP_EVENTTYPE_KEY_UP:
-			if ( event->key_code < 512 )
+			if ( (int)event->key_code < SAPP_MAX_KEYCODES )
 			{
 				app.keys[event->key_code] = false;
 			}

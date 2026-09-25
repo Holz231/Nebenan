@@ -196,7 +196,9 @@ static void BenchmarkRifle( int workerCount )
 	{
 		if ( frame % 3 == 0 )
 		{
-			impact.point = (b3Vec3){ nbRandomRange( &rng, -3.5f, 3.5f ), nbRandomRange( &rng, 0.5f, 3.8f ), 0.15f };
+			float x = nbRandomRange( &rng, -3.5f, 3.5f );
+			float y = nbRandomRange( &rng, 0.5f, 3.8f );
+			impact.point = (b3Vec3){ x, y, 0.15f };
 			Impact( &scene, &t, &impact );
 		}
 		Step( &scene, &t );
@@ -230,7 +232,9 @@ static void BenchmarkExplosions( int workerCount )
 		if ( frame % 30 == 0 )
 		{
 			int wall = ( frame / 30 ) % 4;
-			impact.point = (b3Vec3){ nbRandomRange( &rng, -3.5f, 3.5f ), nbRandomRange( &rng, 0.5f, 3.5f ), -3.0f * (float)wall };
+			float x = nbRandomRange( &rng, -3.5f, 3.5f );
+			float y = nbRandomRange( &rng, 0.5f, 3.5f );
+			impact.point = (b3Vec3){ x, y, -3.0f * (float)wall };
 			Impact( &scene, &t, &impact );
 		}
 		Step( &scene, &t );

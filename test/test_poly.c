@@ -114,8 +114,10 @@ static int RandomClipTest( void )
 		for ( int i = 0; i < 40; ++i )
 		{
 			b3Vec3 n = nbRandomUnitVector( &rng );
-			b3Vec3 p = { nbRandomRange( &rng, -0.5f, 0.5f ), nbRandomRange( &rng, -0.2f, 0.2f ),
-						 nbRandomRange( &rng, -0.1f, 0.1f ) };
+			float px = nbRandomRange( &rng, -0.5f, 0.5f );
+			float py = nbRandomRange( &rng, -0.2f, 0.2f );
+			float pz = nbRandomRange( &rng, -0.1f, 0.1f );
+			b3Vec3 p = { px, py, pz };
 
 			// Keep the side containing the origin so the polyhedron does not vanish
 			float offset = b3Dot( n, p );
@@ -156,7 +158,8 @@ static int HullTest( void )
 	b3Vec3 points[64];
 	for ( int i = 0; i < 64; ++i )
 	{
-		points[i] = b3MulSV( nbRandomRange( &rng, 0.5f, 1.0f ), nbRandomUnitVector( &rng ) );
+		float length = nbRandomRange( &rng, 0.5f, 1.0f );
+		points[i] = b3MulSV( length, nbRandomUnitVector( &rng ) );
 	}
 
 	b3HullData* hull = b3CreateHull( points, 64, B3_MAX_HULL_VERTICES );

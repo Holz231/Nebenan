@@ -94,11 +94,15 @@ static int nbGenerateCellSites( const nbPoly* poly, float cellSize, nbRandom* rn
 					return count;
 				}
 
-				// Jitter inside the grid cell but keep away from the cell borders to avoid slivers
+				// Jitter inside the grid cell but keep away from the cell borders to avoid slivers.
+				// One draw per statement: C leaves the evaluation order inside an initializer open.
+				float jitterX = nbRandomRange( rng, 0.15f, 0.85f );
+				float jitterY = nbRandomRange( rng, 0.15f, 0.85f );
+				float jitterZ = nbRandomRange( rng, 0.15f, 0.85f );
 				b3Vec3 p = {
-					bounds.lowerBound.x + step.x * ( (float)i + nbRandomRange( rng, 0.15f, 0.85f ) ),
-					bounds.lowerBound.y + step.y * ( (float)j + nbRandomRange( rng, 0.15f, 0.85f ) ),
-					bounds.lowerBound.z + step.z * ( (float)k + nbRandomRange( rng, 0.15f, 0.85f ) ),
+					bounds.lowerBound.x + step.x * ( (float)i + jitterX ),
+					bounds.lowerBound.y + step.y * ( (float)j + jitterY ),
+					bounds.lowerBound.z + step.z * ( (float)k + jitterZ ),
 				};
 
 				if ( nbPoly_ContainsPoint( poly, p, 0.0f ) )

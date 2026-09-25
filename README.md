@@ -285,12 +285,12 @@ Ganze Einschläge (Bruch, Stützgraph, neue Box3D-Körper) und der Box3D-Schritt
 
 | Szenario | Einschlag Ø | Einschlag max | Box3D-Schritt Ø, 1 / 4 Threads | Am Ende |
 | --- | ---: | ---: | ---: | --- |
-| Gewehr, 200 Treffer | 0,31 ms | 0,9 ms | 3,9 / 2,1 ms | 3573 Bruchstücke, 907 Körper |
-| 20 Explosionen | 3,1 ms | 4,2 ms | 10,1 / 4,5 ms | 6698 Bruchstücke, 3202 Körper |
-| Gebäudeeinsturz, 16 Treffer | 2,3 ms | 3,3 ms | 14,7 / 6,8 ms | 6144 Bruchstücke, 3097 Körper |
+| Gewehr, 200 Treffer | 0,29 ms | 0,8 ms | 3,5 / 1,9 ms | 3586 Bruchstücke, 899 Körper |
+| 20 Explosionen | 2,9 ms | 3,9 ms | 10,2 / 4,7 ms | 7000 Bruchstücke, 3371 Körper |
+| Gebäudeeinsturz, 16 Treffer | 2,1 ms | 2,8 ms | 17,3 / 8,6 ms | 7091 Bruchstücke, 3560 Körper |
 
-- Ein Gebäude aus 15 Teilen wird beim Laden in 4,0 ms in 549 Bruchstücke zerlegt.
-- `nbWorld_Update` (Kollisionsschaden, Trümmerverwaltung) kostet 0,16 bis 0,39 ms pro Frame.
+- Ein Gebäude aus 15 Teilen wird beim Laden in 3,5 ms in 549 Bruchstücke zerlegt.
+- `nbWorld_Update` (Kollisionsschaden, Trümmerverwaltung) kostet 0,15 bis 0,35 ms pro Frame.
 - Bei Explosionen entfällt etwa die Hälfte der Zeit auf die Voronoi-Zellen (davon der Großteil auf das
   Schneiden der Polyeder), ein gutes Viertel auf Box3D-Hüllen und Körper und 7 % auf die Punktverteilung.
 
