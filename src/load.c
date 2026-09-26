@@ -79,6 +79,10 @@
 // settled
 #define NB_LOAD_CONTACT_TOLERANCE 0.1f
 
+// The contact of a joint loaded less than this may still move while the check counts as settled. Such joints are
+// far from breaking, and a contact that swings between two places would keep the check going for nothing.
+#define NB_LOAD_SETTLE_UTILIZATION 0.8f
+
 // Stiffness left to a joint that is pulled apart, so the system stays solvable where it holds a part that
 // nothing else supports
 #define NB_LOAD_SEPARATED_STIFFNESS 1.0e-6
@@ -135,6 +139,9 @@ typedef struct nbLoadBond
 	uint8_t state;
 	b3Vec3 eccentricity;
 	b3Vec3 slip;
+
+	// How often the contact moved in this check
+	uint8_t moves;
 
 	// Centroid of the contact relative to the interface centroid, the whole interface unless the joint is open
 	b3Vec3 offset;
@@ -1001,11 +1008,23 @@ static float nbEvaluateBond( nbLoadBond* loadBond, const double* solution, bool*
 	float crushing = normalForce / ( area * compressive );
 	float sliding = ( shearForce + torsionForce ) / ( loadBond->friction * normalForce + cohesion * area );
 
-	*changed = *changed || previous == nb_jointGlued ||
-			   ( normalForce > significant && nbContactMoved( loadBond, loadBond->eccentricity, eccentricity ) );
+	// A contact that keeps moving goes half the way from its third move on, so one that swings between two places
+	// settles in between
+	float utilization = b3MaxFloat( rotation, b3MaxFloat( crushing, sliding ) );
+	if ( previous != nb_jointGlued && nbContactMoved( loadBond, loadBond->eccentricity, eccentricity ) )
+	{
+		if ( loadBond->moves >= 2 )
+		{
+			eccentricity = b3Lerp( loadBond->eccentricity, eccentricity, 0.5f );
+		}
+		loadBond->moves += loadBond->moves < 255 ? 1 : 0;
+		*changed = *changed || ( normalForce > significant && utilization >= NB_LOAD_SETTLE_UTILIZATION );
+	}
+
+	*changed = *changed || previous == nb_jointGlued;
 	loadBond->state = nb_jointOpen;
 	loadBond->eccentricity = eccentricity;
-	return b3MaxFloat( rotation, b3MaxFloat( crushing, sliding ) );
+	return utilization;
 }
 
 // A bond of the static actor with the indices of its chunks in the chunk list
@@ -1293,6 +1312,7 @@ static void nbAnalyzeLoads( nbWorld* world, nbArena* arena, b3Vec3 gravityVector
 		loadBond->state = bond->jointState;
 		loadBond->eccentricity = bond->eccentricity;
 		loadBond->slip = bond->slip;
+		loadBond->moves = 0;
 		if ( bond->jointState == nb_jointDry )
 		{
 			float upright = b3AbsFloat( b3Dot( bond->normal, down ) ) < NB_LOAD_UPRIGHT ? 1.0f : 0.0f;
@@ -1361,7 +1381,6 @@ static void nbAnalyzeLoads( nbWorld* world, nbArena* arena, b3Vec3 gravityVector
 	double* solution = nbArena_AllocArray( arena, double, 6 * m );
 	float* utilization = nbArena_AllocArray( arena, float, loadBondCount + 1 );
 	bool* provisional = nbArena_AllocArray( arena, bool, loadBondCount + 1 );
-	float* previousUtilization = nbArena_AllocArray( arena, float, loadBondCount + 1 );
 
 	// Solve until the contacts of the open joints settle. Every pass solves the same structure with the stiffness
 	// of the new contacts, so the order of the factor is found once.
@@ -1463,7 +1482,6 @@ static void nbAnalyzeLoads( nbWorld* world, nbArena* arena, b3Vec3 gravityVector
 		settled = true;
 		for ( int k = 0; k < loadBondCount; ++k )
 		{
-			previousUtilization[k] = iteration > 0 ? utilization[k] : FLT_MAX;
 			utilization[k] = nbEvaluateBond( loadBonds + k, solution, provisional + k );
 			settled = settled && provisional[k] == false;
 		}
@@ -1525,12 +1543,12 @@ static void nbAnalyzeLoads( nbWorld* world, nbArena* arena, b3Vec3 gravityVector
 		threshold = NB_LOAD_BREAK_ALWAYS;
 	}
 
-	// A joint that still changes breaks only when it was overloaded in the pass before as well
+	// Before the final pass, a joint that still changes does not break
 	int* broken = nbArena_AllocArray( arena, int, loadBondCount + 1 );
 	int brokenCount = 0;
 	for ( int k = 0; k < loadBondCount; ++k )
 	{
-		float load = provisional[k] ? b3MinFloat( utilization[k], previousUtilization[k] ) : utilization[k];
+		float load = utilization[k];
 		if ( load > 1.0f && load >= threshold && ( final || provisional[k] == false ) )
 		{
 			broken[brokenCount++] = loadBonds[k].bondIndex;
