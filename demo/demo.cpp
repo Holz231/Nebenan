@@ -29,6 +29,8 @@
 
 extern "C" bool DemoSaveScreenshot( const char* path, int width, int height );
 extern "C" bool DemoSetVsync( bool enabled );
+extern "C" int DemoRefreshRate( void );
+extern "C" bool DemoUnthrottled( void );
 
 enum Tool
 {
@@ -206,6 +208,10 @@ struct App
 	// Vertical sync is off, so the frame rate shows what the machine can do. Metal always syncs.
 	bool vsync = false;
 	bool vsyncAvailable = true;
+
+	// Refresh rate of the monitor in Hz, zero if unknown, and whether frames may come faster than that
+	int refreshRate = 0;
+	bool unthrottled = true;
 
 	// Time between two frames, with the wait for the display or the graphics card
 	uint64_t frameTicks = 0;
@@ -1083,10 +1089,11 @@ static std::string BuildReport( const App& app )
 			 version.minor, version.revision );
 	Appendf( text, "CPU: %s, %u logische Kerne, %d Performance-Kerne, %d Threads\n", app.cpuName.empty() ? "unbekannt" : app.cpuName.c_str(),
 			 std::thread::hardware_concurrency(), app.performanceCores, app.workerCount );
-	Appendf( text, "GPU: %s, Bild %d x %d, MSAA %dx\n", app.gpuName.empty() ? "unbekannt" : app.gpuName.c_str(), sapp_width(),
-			 sapp_height(), sapp_sample_count() );
-	Appendf( text, "Bild: %.0f FPS, 1%% Low %.0f FPS, Mittel %.2f ms, Spitze %.1f ms (letzte %d Bilder), VSync %s\n", app.fpsMeter.fps,
-			 app.fpsMeter.lowFps, app.fpsMeter.frameTime, frameMax, app.historyCount, app.vsync ? "an" : "aus" );
+	Appendf( text, "GPU: %s, Bild %d x %d, MSAA %dx, Monitor %d Hz\n", app.gpuName.empty() ? "unbekannt" : app.gpuName.c_str(),
+			 sapp_width(), sapp_height(), sapp_sample_count(), app.refreshRate );
+	Appendf( text, "Bild: %.0f FPS, 1%% Low %.0f FPS, Mittel %.2f ms, Spitze %.1f ms (letzte %d Bilder), VSync %s, ungebremst %s\n",
+			 app.fpsMeter.fps, app.fpsMeter.lowFps, app.fpsMeter.frameTime, frameMax, app.historyCount, app.vsync ? "an" : "aus",
+			 app.unthrottled ? "ja" : "nein" );
 	Appendf( text, "CPU pro Bild, Mittel / Spitze: Einschläge %.1f / %.1f, Simulation %.1f / %.1f, Grafik %.1f / %.1f ms\n", impactAvg,
 			 impactMax, simulationAvg, simulationMax, graphicsAvg, graphicsMax );
 	Appendf( text, "Pro Schritt: Box3D %.2f ms, Zerstörung %.2f ms\n", app.physicsTime, app.destructionTime );
@@ -1213,7 +1220,19 @@ static void DrawUi( App& app )
 	// Whatever a frame takes beyond the CPU time is the wait for the display or the graphics card
 	ImVec4 hint = ImVec4( 1.0f, 0.75f, 0.3f, 1.0f );
 	bool waiting = frameAvg > 1.2f * cpuFrame + 0.5f;
-	if ( waiting && app.vsync )
+
+	// Frames that come exactly at the refresh rate with vertical sync off mean something else syncs them
+	bool displayLocked = app.vsync == false && app.refreshRate > 0 && cpuFrame < 0.7f * meter.frameTime &&
+						 fabsf( meter.frameTime * (float)app.refreshRate / 1000.0f - 1.0f ) < 0.03f;
+	if ( displayLocked && app.unthrottled == false )
+	{
+		ImGui::TextColored( hint, "  Die FPS kleben an den %d Hz des Monitors:\n  Windows erlaubt hier kein Tearing", app.refreshRate );
+	}
+	else if ( displayLocked )
+	{
+		ImGui::TextColored( hint, "  Die FPS kleben an den %d Hz des Monitors:\n  VSync ist wohl im Grafiktreiber erzwungen", app.refreshRate );
+	}
+	else if ( waiting && app.vsync )
 	{
 		ImGui::TextColored( hint, "  VSync begrenzt, die CPU schafft etwa %.0f FPS", 1000.0f / b3MaxFloat( cpuFrame, 0.01f ) );
 	}
@@ -1374,6 +1393,8 @@ static void OnInit()
 	BuildGround( app );
 	app.vsyncAvailable = DemoSetVsync( app.vsync );
 	app.vsync = app.vsync || app.vsyncAvailable == false;
+	app.refreshRate = DemoRefreshRate();
+	app.unthrottled = DemoUnthrottled();
 
 	// Box3D runs best on the performance cores alone. Hyper-threads and efficiency cores add little or slow it down.
 	unsigned hardware = std::thread::hardware_concurrency();
@@ -1519,7 +1540,7 @@ static void OnFrame()
 	}
 
 	app.frame += 1;
-	if ( app.automation.frameLimit > 0 && app.frame >= app.automation.frameLimit )
+	if ( app.automation.frameLimit > 0 && app.frame == app.automation.frameLimit )
 	{
 		PrintAutomationReport( app );
 		if ( app.automation.screenshotPath != nullptr )

@@ -130,7 +130,8 @@ int SystemPerformanceCores()
 	for ( DWORD offset = 0; offset < length; )
 	{
 		auto* info = (SYSTEM_LOGICAL_PROCESSOR_INFORMATION_EX*)( buffer.data() + offset );
-		int efficiencyClass = info->Processor.EfficiencyClass;
+		// The byte after the flags, older MinGW headers still call it reserved
+		int efficiencyClass = ( (const BYTE*)&info->Processor.Flags )[1];
 		if ( efficiencyClass > highestClass )
 		{
 			highestClass = efficiencyClass;
