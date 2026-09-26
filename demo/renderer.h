@@ -29,16 +29,6 @@ struct GpuVertex
 	float slot;
 };
 
-// A dust puff or a chip. 32 bytes, uploaded as one instance each.
-struct ParticleInstance
-{
-	float center[3];
-	// Half size in meters, negative for a solid chip
-	float size;
-	float color[3];
-	float alpha;
-};
-
 struct Camera
 {
 	b3Vec3 position;
@@ -51,29 +41,11 @@ struct Camera
 	b3Vec3 Up() const;
 };
 
-struct RenderSettings
-{
-	bool shadows = true;
-
-	// Edge length of the shadow map in texels
-	int shadowResolution = 2048;
-
-	// Plain colors instead of the procedural brick, plaster and concrete, for slow graphics cards
-	bool simpleMaterials = false;
-
-	bool showChunks = false;
-	bool showLoad = false;
-	b3Vec3 sunDirection = { 0.52f, 0.68f, 0.52f };
-	b3Vec3 sceneCenter = { 0.0f, 2.0f, 0.0f };
-	float sceneRadius = 22.0f;
-};
-
 struct RenderStats
 {
 	int drawCalls = 0;
 	int vertexCount = 0;
 	int triangleCount = 0;
-	int particleCount = 0;
 	int pageCount = 0;
 	int slotCount = 0;
 
@@ -103,9 +75,6 @@ public:
 	void FreeSlot( int slot );
 	void SetSlot( int slot, b3Vec3 position, b3Quat rotation );
 
-	// Load utilization of the chunk in the slot for the load view, negative for none
-	void SetSlotLoad( int slot, float load );
-
 	// Returns a mesh handle. The indices count from the first vertex and all vertices must carry the slot.
 	int AddMesh( const GpuVertex* vertices, int vertexCount, const uint16_t* indices, int indexCount, int slot );
 
@@ -115,22 +84,12 @@ public:
 	// Pack a vertex
 	static GpuVertex MakeVertex( b3Vec3 position, b3Vec3 normal, int material, int slot );
 
-	// Particles to draw this frame, sorted back to front. Drawn after the opaque geometry.
-	void SetParticles( const ParticleInstance* particles, int count );
-
-	static const int MaxParticles = 8192;
-
-	void Render( const Camera& camera, const RenderSettings& settings, int width, int height );
+	// Starts the frame pass and draws the scene. The pass stays open for the user interface.
+	void Render( const Camera& camera, int width, int height );
 
 	RenderStats GetStats() const
 	{
 		return m_stats;
-	}
-
-	// Worst case clip space conventions differ between backends
-	bool IsZeroToOne() const
-	{
-		return m_zeroToOne;
 	}
 
 private:
@@ -167,9 +126,6 @@ private:
 		bool alive = false;
 	};
 
-	void CreateShadowMap( int resolution );
-	void DestroyShadowMap();
-
 	int OpenPage( int vertexCount, int indexCount );
 	void Append( int meshIndex, const GpuVertex* vertices, const uint16_t* indices, int indexBase );
 	void ReleaseSlotReference( int slot );
@@ -195,24 +151,9 @@ private:
 
 	uint32_t m_transformBuffer = 0;
 	uint32_t m_transformView = 0;
-	uint32_t m_litPipeline = 0;
-	uint32_t m_shadowPipeline = 0;
-	uint32_t m_skyPipeline = 0;
-	uint32_t m_litShader = 0;
-	uint32_t m_shadowShader = 0;
-	uint32_t m_skyShader = 0;
-	uint32_t m_particlePipeline = 0;
-	uint32_t m_particleShader = 0;
-	uint32_t m_cornerBuffer = 0;
-	uint32_t m_instanceBuffer = 0;
-	std::vector<ParticleInstance> m_particles;
-	uint32_t m_shadowImage = 0;
-	uint32_t m_shadowAttachment = 0;
-	uint32_t m_shadowTexture = 0;
-	uint32_t m_shadowSampler = 0;
-	int m_shadowResolution = 0;
+	uint32_t m_pipeline = 0;
+	uint32_t m_shader = 0;
 
 	bool m_zeroToOne = true;
-	float m_uvYSign = -1.0f;
 	RenderStats m_stats;
 };

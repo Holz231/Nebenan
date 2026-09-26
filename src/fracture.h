@@ -23,7 +23,7 @@ typedef struct nbCell
 	nbShape* shape;
 
 	// Box3D hull of the shape in arena memory, if the job builds hulls. Null for a sliver without a
-	// valid hull, which turns into dust.
+	// valid hull, which is dropped.
 	b3HullData* hull;
 
 	// Faces shared with other cells, in the frame of the sites and in arena memory. They become the

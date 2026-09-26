@@ -244,8 +244,8 @@ static void BenchmarkExplosions( int workerCount )
 	DestroyScene( &scene );
 }
 
-// A building of walls and slabs that collapses once three walls of the ground floor are blasted
-static void BenchmarkCollapse( int workerCount )
+// A building of walls and slabs whose ground floor is blasted on three sides
+static void BenchmarkBuilding( int workerCount )
 {
 	Scene scene = CreateScene( workerCount );
 
@@ -288,8 +288,7 @@ static void BenchmarkCollapse( int workerCount )
 	{
 		if ( frame < 72 && frame % 4 == 0 )
 		{
-			// Blast three walls of the ground floor. The floors above hang on the last wall until the load check
-			// breaks them off.
+			// Blast three walls of the ground floor, the floors above hang on the last wall
 			int k = frame / 4;
 			float s = -3.5f + 1.4f * (float)( k % 6 );
 			b3Vec3 points[3] = { { s, 1.0f, 3.85f }, { 3.85f, 1.0f, s }, { s, 1.0f, -3.85f } };
@@ -299,7 +298,7 @@ static void BenchmarkCollapse( int workerCount )
 		Step( &scene, &t );
 	}
 
-	Report( "building collapse", &t, nbWorld_GetStats( scene.world ) );
+	Report( "building", &t, nbWorld_GetStats( scene.world ) );
 	DestroyScene( &scene );
 }
 
@@ -402,8 +401,6 @@ static nbDestructibleId CreateHouse( nbWorldId world, b3Vec3 position, uint32_t 
 	def.material.strength = 6.0e5f;
 	def.material.fragmentSize = 0.1f;
 	def.material.friction = 0.8f;
-	def.material.tensileStrength = 0.3e6f;
-	def.material.compressiveStrength = 6.0e6f;
 	return nbCreateDestructible( world, &def, pieces, count );
 }
 
@@ -519,8 +516,8 @@ static void BenchmarkTown( int workerCount, float fragmentScale )
 	printf( "  Box3D per step: collide %.2f ms, solve %.2f ms, %.0f awake contacts\n", physicsProfile[1] / frameCount,
 			physicsProfile[2] / frameCount, physicsProfile[6] / frameCount );
 	nbStats stats = nbWorld_GetStats( scene.world );
-	printf( "  %d grenades, chunks %d, rubble %d, bodies at most %d (awake %d), contacts at most %d, overloaded %d\n", frameCount / 5,
-			stats.chunkCount, stats.rubbleCount, maxBodies, maxAwake, maxContacts, stats.overloadedBondCount );
+	printf( "  %d grenades, chunks %d, rubble %d, bodies at most %d (awake %d), contacts at most %d\n", frameCount / 5,
+			stats.chunkCount, stats.rubbleCount, maxBodies, maxAwake, maxContacts );
 	DestroyScene( &scene );
 }
 
@@ -539,7 +536,7 @@ int main( int argc, char** argv )
 	printf( "\nImpact pipeline (fracture + support graph + Box3D bodies), physics at 60 Hz with 4 substeps\n" );
 	BenchmarkRifle( workerCount );
 	BenchmarkExplosions( workerCount );
-	BenchmarkCollapse( workerCount );
+	BenchmarkBuilding( workerCount );
 
 	// Larger fragments are the main lever of the cost of mass destruction
 	printf( "\nTown under fire (every step: grenades, Box3D step, destruction update)\n" );

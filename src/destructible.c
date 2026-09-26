@@ -15,9 +15,6 @@ nbMaterial nbDefaultMaterial( void )
 	material.fragmentSize = 0.12f;
 	material.minFragmentVolume = 2.0e-6f;
 	material.maxDepth = 6;
-	material.maxSpan = 0.0f;
-	material.tensileStrength = 2.0e6f;
-	material.compressiveStrength = 3.0e7f;
 	material.userMaterialId = 0;
 	return material;
 }
@@ -45,7 +42,6 @@ nbPieceDef nbDefaultPieceDef( void )
 	def.transform = b3Transform_identity;
 	def.surfaceMaterial = 0;
 	def.interiorMaterial = 1;
-	def.jointTensileStrength = -1.0f;
 	return def;
 }
 
@@ -187,7 +183,6 @@ static void nbFinishPiece( nbWorld* world, int destructibleIndex, int actorIndex
 
 	float fragmentSize = nbGetFragmentSize( world, material );
 	float minBondArea = 0.01f * fragmentSize * fragmentSize;
-	float tensileStrength = nbGetTensileStrength( material, material );
 	for ( int i = 0; i < job->siteCount; ++i )
 	{
 		if ( chunkIndices[i] == NB_NULL_INDEX )
@@ -207,7 +202,7 @@ static void nbFinishPiece( nbWorld* world, int destructibleIndex, int actorIndex
 
 			nbBondGeometry geometry = neighbor->geometry;
 			geometry.centroid = b3Add( geometry.centroid, job->origin );
-			nbCreateBond( world, chunkIndices[i], chunkIndices[j], &geometry, material->strength * geometry.area, tensileStrength );
+			nbCreateBond( world, chunkIndices[i], chunkIndices[j], &geometry, material->strength * geometry.area );
 		}
 	}
 }
@@ -216,7 +211,6 @@ static bool nbMaterialEquals( const nbMaterial* a, const nbMaterial* b )
 {
 	return a->density == b->density && a->friction == b->friction && a->restitution == b->restitution && a->strength == b->strength &&
 		   a->fragmentSize == b->fragmentSize && a->minFragmentVolume == b->minFragmentVolume && a->maxDepth == b->maxDepth &&
-		   a->maxSpan == b->maxSpan && a->tensileStrength == b->tensileStrength && a->compressiveStrength == b->compressiveStrength &&
 		   a->userMaterialId == b->userMaterialId;
 }
 
@@ -328,7 +322,6 @@ nbDestructibleId nbCreateDestructible( nbWorldId worldId, const nbDestructibleDe
 	for ( int i = 0; i < pieceCount; ++i )
 	{
 		pieceMaterials[i] = pieces[i].material != NULL ? nbAddMaterial( world->destructibles.data + index, pieces[i].material ) : 0;
-		world->destructibles.data[index].hasJoints = world->destructibles.data[index].hasJoints || pieces[i].jointTensileStrength >= 0.0f;
 	}
 
 	// Draw the sites of all pieces in order, compute the cells on the workers, then create the chunks in
@@ -401,8 +394,7 @@ nbDestructibleId nbCreateDestructible( nbWorldId worldId, const nbDestructibleDe
 		}
 	}
 
-	// Glue touching faces of different pieces. A bond between two materials is as strong as the weaker one, a
-	// joint between pieces at most as strong as the joint strength of either piece.
+	// Glue touching faces of different pieces. A bond between two materials is as strong as the weaker one.
 	int chunkEnd = world->touchedChunks.count;
 	for ( int a = firstNewChunk; a < chunkEnd; ++a )
 	{
@@ -426,14 +418,7 @@ nbDestructibleId nbCreateDestructible( nbWorldId worldId, const nbDestructibleDe
 			float area = nbShape_ContactArea( world->chunks.data[chunkA].shape, world->chunks.data[chunkB].shape, 1.0e-3f, &geometry );
 			if ( area > minBondArea )
 			{
-				float tensileStrength = nbGetTensileStrength( materialA, materialB );
-				for ( int k = 0; k < 2; ++k )
-				{
-					float joint = pieces[k == 0 ? pieceA : pieceB].jointTensileStrength;
-					tensileStrength = joint >= 0.0f ? b3MinFloat( tensileStrength, joint ) : tensileStrength;
-				}
-				nbCreateBond( world, chunkA, chunkB, &geometry, b3MinFloat( materialA->strength, materialB->strength ) * area,
-							  tensileStrength );
+				nbCreateBond( world, chunkA, chunkB, &geometry, b3MinFloat( materialA->strength, materialB->strength ) * area );
 			}
 		}
 	}
@@ -445,9 +430,6 @@ nbDestructibleId nbCreateDestructible( nbWorldId worldId, const nbDestructibleDe
 
 	nbCommitPhysics( world );
 	world->touchedActors.count = 0;
-
-	// The first update checks whether the structure carries its own weight
-	world->destructibles.data[index].structureDirty = def->isStatic;
 
 	return (nbDestructibleId){ index + 1, world->worldIndex, world->destructibles.data[index].generation };
 }

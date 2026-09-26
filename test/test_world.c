@@ -311,7 +311,7 @@ static uint32_t RunDeterminismScenarioWith( TestScene scene )
 {
 	nbDestructibleId wall = CreateWall( &scene, (b3Vec3){ 2.5f, 1.5f, 0.12f }, 5 );
 
-	// A gate that collapses under its own weight once a pillar is gone, for the load check
+	// A gate whose pillar is blasted, the beam falls with the pieces that lose their support
 	nbDestructibleId gate = CreateGate( &scene, 10.0f, 6 );
 
 	nbImpactDef impact = { 0 };
@@ -339,11 +339,10 @@ static uint32_t RunDeterminismScenarioWith( TestScene scene )
 		Step( &scene, 1 );
 	}
 
-	// The collapse of the gate is part of the result
 	nbStats stats = nbWorld_GetStats( scene.world );
 	uint32_t hash = HashDestructible( 2166136261u, wall );
 	hash = HashDestructible( hash, gate );
-	hash = ( hash ^ (uint32_t)stats.overloadedBondCount ) * 16777619u;
+	hash = ( hash ^ (uint32_t)stats.bondCount ) * 16777619u;
 	DestroyScene( &scene );
 	return hash;
 }
@@ -355,7 +354,7 @@ static uint32_t RunDeterminismScenario( void )
 
 // Fracture and physics are bit for bit identical with MSVC, GCC and Clang on x64 and ARM. This is the result
 // with the pinned Box3D commit. Update it when the results change on purpose, never to make one platform pass.
-#define NB_EXPECTED_DETERMINISM_HASH 0xb2ddfdf0u
+#define NB_EXPECTED_DETERMINISM_HASH 0x2c30cd2bu
 
 static int DeterminismTest( void )
 {
@@ -420,63 +419,6 @@ static int WorkerTest( void )
 		DestroyScene( &scene );
 	}
 	ENSURE( prefractureHashes[0] == prefractureHashes[1] );
-	return 0;
-}
-
-// Impacts, broken bonds and debris landing on the ground report dust for particle effects
-static int DustTest( void )
-{
-	TestScene scene = CreateScene();
-	CreateWall( &scene, (b3Vec3){ 2.0f, 1.5f, 0.15f }, 4 );
-	nbWorld_GetEvents( scene.world );
-
-	nbImpactDef impact = { 0 };
-	impact.point = (b3Vec3){ 0.0f, 1.2f, 0.15f };
-	impact.direction = (b3Vec3){ 0.0f, 0.0f, -1.0f };
-	impact.normal = (b3Vec3){ 0.0f, 0.0f, 1.0f };
-	impact.radius = 0.5f;
-	impact.damage = 1.0e5f;
-	impact.ejectSpeed = 8.0f;
-	nbImpactResult result = nbWorld_ApplyImpact( scene.world, &impact );
-	ENSURE( result.brokenBondCount > 0 );
-
-	nbEvents events = nbWorld_GetEvents( scene.world );
-	int impactCount = 0;
-	int crackCount = 0;
-	for ( int i = 0; i < events.dustCount; ++i )
-	{
-		const nbDustEvent* dust = events.dust + i;
-		ENSURE( dust->volume > 0.0f );
-		float distance = b3Distance( dust->point, impact.point );
-		if ( dust->type == nb_dustImpact )
-		{
-			impactCount += 1;
-			ENSURE( distance < 1.0e-4f );
-			ENSURE( dust->velocity.z > 0.0f );
-		}
-		else if ( dust->type == nb_dustCrack )
-		{
-			crackCount += 1;
-			ENSURE( distance < impact.radius + 0.01f );
-		}
-	}
-	ENSURE( impactCount == 1 );
-	ENSURE( crackCount == result.brokenBondCount );
-
-	// The fragments fall on the ground
-	int collisionCount = 0;
-	for ( int frame = 0; frame < 120; ++frame )
-	{
-		Step( &scene, 1 );
-		events = nbWorld_GetEvents( scene.world );
-		for ( int i = 0; i < events.dustCount; ++i )
-		{
-			collisionCount += events.dust[i].type == nb_dustCollision ? 1 : 0;
-		}
-	}
-	ENSURE( collisionCount > 0 );
-
-	DestroyScene( &scene );
 	return 0;
 }
 
@@ -717,384 +659,6 @@ static int GraphTest( void )
 	}
 
 	DestroyScene( &scene );
-	return 0;
-}
-
-// A beam on two pillars loses one pillar. The part further than the span from the other pillar breaks off.
-static int SpanTest( void )
-{
-	TestScene scene = CreateScene();
-
-	nbPieceDef pieces[3];
-	for ( int i = 0; i < 3; ++i )
-	{
-		pieces[i] = nbDefaultPieceDef();
-	}
-	pieces[0].halfExtents = (b3Vec3){ 0.25f, 1.5f, 0.25f };
-	pieces[0].transform.p = (b3Vec3){ -3.0f, 1.5f, 0.0f };
-	pieces[1].halfExtents = (b3Vec3){ 0.25f, 1.5f, 0.25f };
-	pieces[1].transform.p = (b3Vec3){ 3.0f, 1.5f, 0.0f };
-	pieces[2].halfExtents = (b3Vec3){ 4.0f, 0.2f, 0.3f };
-	pieces[2].transform.p = (b3Vec3){ 0.0f, 3.2f, 0.0f };
-
-	nbDestructibleDef def = nbDefaultDestructibleDef();
-	def.material.maxSpan = 3.0f;
-	nbDestructibleId bridge = nbCreateDestructible( scene.world, &def, pieces, 3 );
-
-	// With both pillars every part of the beam is within the span
-	Step( &scene, 2 );
-	ENSURE( nbWorld_GetStats( scene.world ).dynamicBodyCount == 0 );
-
-	// Knock out the top of the right pillar
-	nbImpactDef impact = { 0 };
-	impact.point = (b3Vec3){ 3.0f, 2.8f, 0.0f };
-	impact.radius = 0.45f;
-	impact.damage = 1.0e8f;
-	impact.ejectSpeed = 2.0f;
-	nbWorld_ApplyImpact( scene.world, &impact );
-	Step( &scene, 1 );
-
-	// The right half of the beam is now more than 3 m from the left pillar and falls
-	float fallingMass = 0.0f;
-	float staticBeamVolume = 0.0f;
-	int count = nbDestructible_GetChunkCount( bridge );
-	nbChunkId* chunks = malloc( sizeof( nbChunkId ) * (size_t)count );
-	nbDestructible_GetChunks( bridge, chunks, count );
-	for ( int i = 0; i < count; ++i )
-	{
-		if ( nbChunk_IsDynamic( chunks[i] ) )
-		{
-			fallingMass = b3MaxFloat( fallingMass, b3Body_GetMass( nbChunk_GetBody( chunks[i] ) ) );
-		}
-		else if ( nbChunk_GetCentroid( chunks[i] ).y > 3.0f )
-		{
-			staticBeamVolume += nbChunk_GetVolume( chunks[i] );
-		}
-	}
-	free( chunks );
-
-	// Beam volume is 8 * 0.4 * 0.6 = 1.92 m^3, a sizable part falls and a sizable part stays
-	ENSURE( fallingMass > 0.3f * 2400.0f );
-	ENSURE( staticBeamVolume > 0.3f );
-
-	DestroyScene( &scene );
-	return 0;
-}
-
-// A beam glued to the side of a pillar holds when it is short and breaks off at the pillar when it is long.
-// The joint of 0.3 x 0.3 m carries 2 MPa, which is a bending moment of 9 kNm: a beam of about 2.9 m.
-static int CantileverTest( void )
-{
-	for ( int k = 0; k < 2; ++k )
-	{
-		float length = k == 0 ? 1.5f : 4.0f;
-		TestScene scene = CreateScene();
-
-		nbPieceDef pieces[2] = { nbDefaultPieceDef(), nbDefaultPieceDef() };
-		pieces[0].halfExtents = (b3Vec3){ 0.15f, 1.5f, 0.15f };
-		pieces[0].transform.p = (b3Vec3){ 0.0f, 1.5f, 0.0f };
-		pieces[1].halfExtents = (b3Vec3){ 0.5f * length, 0.15f, 0.15f };
-		pieces[1].transform.p = (b3Vec3){ 0.15f + 0.5f * length, 2.7f, 0.0f };
-
-		nbDestructibleDef def = nbDefaultDestructibleDef();
-		nbDestructibleId post = nbCreateDestructible( scene.world, &def, pieces, 2 );
-		ENSURE( nbDestructible_GetChunkCount( post ) == 2 );
-
-		Step( &scene, 2 );
-		nbStats stats = nbWorld_GetStats( scene.world );
-		ENSURE( stats.overloadedBondCount == k );
-		ENSURE( stats.dynamicBodyCount == k );
-
-		// The short beam loads the joint with 540 kPa in bending (Box3D gravity is 10), 27 % of the strength.
-		// A fallen beam is debris and reports nothing.
-		nbChunkId chunks[2];
-		ENSURE( nbDestructible_GetChunks( post, chunks, 2 ) == 2 );
-		for ( int i = 0; i < 2; ++i )
-		{
-			float utilization = nbChunk_GetUtilization( chunks[i] );
-			bool isBeam = nbChunk_GetCentroid( chunks[i] ).x > 0.15f;
-			if ( k == 0 )
-			{
-				ENSURE_SMALL( utilization - 0.27f, 0.005f );
-			}
-			else if ( isBeam )
-			{
-				ENSURE( utilization == 0.0f );
-			}
-		}
-
-		DestroyScene( &scene );
-	}
-	return 0;
-}
-
-// A heavy block on a slender column. The joint carries 2.4 MPa, which is fine for concrete and too much for
-// a weak material.
-static int CrushTest( void )
-{
-	for ( int k = 0; k < 2; ++k )
-	{
-		TestScene scene = CreateScene();
-
-		nbPieceDef pieces[2] = { nbDefaultPieceDef(), nbDefaultPieceDef() };
-		pieces[0].halfExtents = (b3Vec3){ 0.1f, 1.0f, 0.1f };
-		pieces[0].transform.p = (b3Vec3){ 0.0f, 1.0f, 0.0f };
-		pieces[1].halfExtents = (b3Vec3){ 1.0f, 0.5f, 1.0f };
-		pieces[1].transform.p = (b3Vec3){ 0.0f, 2.5f, 0.0f };
-
-		nbDestructibleDef def = nbDefaultDestructibleDef();
-		def.material.compressiveStrength = k == 0 ? 3.0e7f : 1.0e6f;
-		nbCreateDestructible( scene.world, &def, pieces, 2 );
-
-		Step( &scene, 2 );
-		nbStats stats = nbWorld_GetStats( scene.world );
-		ENSURE( stats.overloadedBondCount == k );
-		ENSURE( stats.dynamicBodyCount == k );
-
-		DestroyScene( &scene );
-	}
-	return 0;
-}
-
-// A pre-fractured beam on two pillars carries itself. Without the right pillar it cantilevers 6.4 m from the
-// edge of the left one, 4.8 MPa where concrete holds 2 MPa. It breaks near the pillar and the rest falls.
-static int BeamTest( void )
-{
-	TestScene scene = CreateScene();
-	nbDestructibleId gate = CreateGate( &scene, 0.0f, 3 );
-	ENSURE( nbDestructible_GetChunkCount( gate ) > 12 );
-
-	Step( &scene, 5 );
-	nbStats stats = nbWorld_GetStats( scene.world );
-	ENSURE( stats.overloadedBondCount == 0 );
-	ENSURE( stats.dynamicBodyCount == 0 );
-
-	nbImpactDef impact = { 0 };
-	impact.point = (b3Vec3){ 3.0f, 2.3f, 0.0f };
-	impact.radius = 1.0f;
-	impact.damage = 1.0e8f;
-	impact.ejectSpeed = 2.0f;
-	nbWorld_ApplyImpact( scene.world, &impact );
-	Step( &scene, 10 );
-
-	stats = nbWorld_GetStats( scene.world );
-	ENSURE( stats.overloadedBondCount > 0 );
-
-	float fallingMass = 0.0f;
-	float staticBeamVolume = 0.0f;
-	int count = nbDestructible_GetChunkCount( gate );
-	nbChunkId* chunks = malloc( sizeof( nbChunkId ) * (size_t)count );
-	nbDestructible_GetChunks( gate, chunks, count );
-	for ( int i = 0; i < count; ++i )
-	{
-		if ( nbChunk_IsDynamic( chunks[i] ) )
-		{
-			fallingMass = b3MaxFloat( fallingMass, b3Body_GetMass( nbChunk_GetBody( chunks[i] ) ) );
-		}
-		else if ( nbChunk_GetCentroid( chunks[i] ).y > 3.0f )
-		{
-			staticBeamVolume += nbChunk_GetVolume( chunks[i] );
-		}
-	}
-	free( chunks );
-
-	// The beam holds 2.9 m^3, a long part of it falls in one piece and the part over the left pillar stays
-	ENSURE( fallingMass > 1.0f * 2400.0f );
-	ENSURE( staticBeamVolume > 0.2f );
-	ENSURE( staticBeamVolume < 1.5f );
-
-	DestroyScene( &scene );
-	return 0;
-}
-
-// A concrete beam glued to the side of a brick pillar. Every chunk keeps the material of its piece, also
-// after fracture, and the joint is only as strong as the brick: the 1.5 m beam loads it with 0.55 MPa, which
-// concrete carries (see CantileverTest) and brick does not.
-static int MaterialTest( void )
-{
-	TestScene scene = CreateScene();
-
-	nbMaterial brick = nbDefaultMaterial();
-	brick.density = 1900.0f;
-	brick.strength = 6.0e5f;
-	brick.tensileStrength = 0.3e6f;
-	brick.compressiveStrength = 6.0e6f;
-	brick.userMaterialId = 1;
-
-	nbMaterial concrete = nbDefaultMaterial();
-	concrete.userMaterialId = 2;
-
-	nbPieceDef pieces[2] = { nbDefaultPieceDef(), nbDefaultPieceDef() };
-	pieces[0].halfExtents = (b3Vec3){ 0.15f, 1.5f, 0.15f };
-	pieces[0].transform.p = (b3Vec3){ 0.0f, 1.5f, 0.0f };
-	pieces[1].halfExtents = (b3Vec3){ 0.75f, 0.15f, 0.15f };
-	pieces[1].transform.p = (b3Vec3){ 0.9f, 2.7f, 0.0f };
-	pieces[1].material = &concrete;
-
-	nbDestructibleDef def = nbDefaultDestructibleDef();
-	def.material = brick;
-	nbDestructibleId post = nbCreateDestructible( scene.world, &def, pieces, 2 );
-	ENSURE( nbDestructible_GetChunkCount( post ) == 2 );
-
-	// Fracture the beam without damage
-	nbImpactDef impact = { 0 };
-	impact.point = (b3Vec3){ 1.3f, 2.7f, 0.15f };
-	impact.radius = 0.35f;
-	impact.damage = 0.0f;
-	nbImpactResult result = nbWorld_ApplyImpact( scene.world, &impact );
-	ENSURE( result.createdChunkCount > 2 );
-	ENSURE( result.brokenBondCount == 0 );
-
-	int count = nbDestructible_GetChunkCount( post );
-	nbChunkId* chunks = malloc( sizeof( nbChunkId ) * (size_t)count );
-	nbDestructible_GetChunks( post, chunks, count );
-	for ( int i = 0; i < count; ++i )
-	{
-		bool isBeam = nbChunk_GetCentroid( chunks[i] ).x > 0.15f;
-		nbMaterial material = nbChunk_GetMaterial( chunks[i] );
-		ENSURE( material.userMaterialId == ( isBeam ? 2u : 1u ) );
-
-		b3ShapeId shapeId = nbChunk_GetShape( chunks[i] );
-		ENSURE( b3Shape_GetDensity( shapeId ) == ( isBeam ? 2400.0f : 1900.0f ) );
-		ENSURE( b3Shape_GetSurfaceMaterial( shapeId ).userMaterialId == ( isBeam ? 2u : 1u ) );
-	}
-	free( chunks );
-
-	// The fragments at the pillar inherited the joint, as strong as brick
-	nbWorld* world = nbGetWorldFromId( scene.world );
-	int joints = 0;
-	for ( int b = 0; b < world->bonds.count; ++b )
-	{
-		const nbBond* bond = world->bonds.data + b;
-		if ( bond->chunk[0] == NB_NULL_INDEX ||
-			 world->chunks.data[bond->chunk[0]].materialIndex == world->chunks.data[bond->chunk[1]].materialIndex )
-		{
-			continue;
-		}
-		ENSURE_SMALL( bond->health / ( brick.strength * bond->area ) - 1.0f, 1.0e-4f );
-		joints += 1;
-	}
-	ENSURE( joints > 0 );
-
-	// The load check breaks the joint, not the beam
-	Step( &scene, 2 );
-	nbStats stats = nbWorld_GetStats( scene.world );
-	ENSURE( stats.overloadedBondCount >= 1 );
-	ENSURE( stats.dynamicBodyCount == 1 );
-
-	DestroyScene( &scene );
-	return 0;
-}
-
-// A semicircular arch of loose stones on two foundations, every joint dry. The inner radius is 2.5 m. Free rigid
-// stones in Box3D stand with an outer radius of 2.82 m and fall with 2.78 m and less, about the thickness Heyman
-// gives for the thinnest semicircular arch.
-static nbDestructibleId CreateArch( TestScene* scene, float outer )
-{
-	enum
-	{
-		stoneCount = 11
-	};
-
-	float inner = 2.5f, base = 0.3f;
-	b3Vec3 points[stoneCount][8];
-	nbPieceDef pieces[stoneCount + 2];
-	for ( int i = 0; i < stoneCount; ++i )
-	{
-		float a0 = B3_PI * (float)i / (float)stoneCount;
-		float a1 = B3_PI * (float)( i + 1 ) / (float)stoneCount;
-		float c0 = i == 0 ? 1.0f : cosf( a0 ), s0 = i == 0 ? 0.0f : sinf( a0 );
-		float c1 = i + 1 == stoneCount ? -1.0f : cosf( a1 ), s1 = i + 1 == stoneCount ? 0.0f : sinf( a1 );
-		b3Vec3 corners[4] = { { inner * c0, base + inner * s0, 0.0f }, { outer * c0, base + outer * s0, 0.0f },
-							  { outer * c1, base + outer * s1, 0.0f }, { inner * c1, base + inner * s1, 0.0f } };
-		for ( int k = 0; k < 4; ++k )
-		{
-			points[i][k] = (b3Vec3){ corners[k].x, corners[k].y, -0.5f };
-			points[i][k + 4] = (b3Vec3){ corners[k].x, corners[k].y, 0.5f };
-		}
-
-		pieces[i] = nbDefaultPieceDef();
-		pieces[i].points = points[i];
-		pieces[i].pointCount = 8;
-		pieces[i].jointTensileStrength = 0.0f;
-	}
-
-	for ( int k = 0; k < 2; ++k )
-	{
-		nbPieceDef* piece = pieces + stoneCount + k;
-		*piece = nbDefaultPieceDef();
-		piece->halfExtents = (b3Vec3){ 0.5f * ( outer - inner ) + 0.3f, 0.5f * base, 0.5f };
-		piece->transform.p = (b3Vec3){ ( k == 0 ? 0.5f : -0.5f ) * ( inner + outer ), 0.5f * base, 0.0f };
-		piece->jointTensileStrength = 0.0f;
-	}
-
-	nbDestructibleDef def = nbDefaultDestructibleDef();
-	def.material.density = 2500.0f;
-	def.material.tensileStrength = 1.0e6f;
-	def.material.compressiveStrength = 3.0e7f;
-	def.material.friction = 0.7f;
-	return nbCreateDestructible( scene->world, &def, pieces, stoneCount + 2 );
-}
-
-// Dry joints carry the arch on compression alone. It stands when it is thick enough and falls when it is too
-// thin or loses its keystone.
-static int ArchTest( void )
-{
-	for ( int k = 0; k < 3; ++k )
-	{
-		TestScene scene = CreateScene();
-		nbDestructibleId arch = CreateArch( &scene, k == 1 ? 2.65f : 3.0f );
-		ENSURE( nbDestructible_GetChunkCount( arch ) == 13 );
-
-		Step( &scene, 30 );
-		nbStats stats = nbWorld_GetStats( scene.world );
-		if ( k == 1 )
-		{
-			ENSURE( stats.overloadedBondCount > 0 );
-			ENSURE( stats.dynamicBodyCount > 0 );
-			DestroyScene( &scene );
-			continue;
-		}
-
-		ENSURE( stats.overloadedBondCount == 0 );
-		ENSURE( stats.dynamicBodyCount == 0 );
-
-		// Every joint is open, the crown carries the thrust and the joints near the haunches only touch at one edge
-		nbChunkId chunks[13];
-		ENSURE( nbDestructible_GetChunks( arch, chunks, 13 ) == 13 );
-		float highest = 0.0f;
-		for ( int i = 0; i < 13; ++i )
-		{
-			highest = b3MaxFloat( highest, nbChunk_GetUtilization( chunks[i] ) );
-		}
-		ENSURE( highest > 0.3f && highest < 1.0f );
-
-		if ( k == 2 )
-		{
-			nbImpactDef impact = { 0 };
-			impact.point = (b3Vec3){ 0.0f, 3.05f, 0.0f };
-			impact.radius = 0.6f;
-			impact.damage = 1.0e8f;
-			impact.ejectSpeed = 3.0f;
-			nbWorld_ApplyImpact( scene.world, &impact );
-			Step( &scene, 30 );
-
-			// Without the keystone both halves fall, only the stones next to the foundations may stay
-			int staticStones = 0;
-			int count = nbDestructible_GetChunkCount( arch );
-			nbChunkId* all = malloc( sizeof( nbChunkId ) * (size_t)count );
-			nbDestructible_GetChunks( arch, all, count );
-			for ( int i = 0; i < count; ++i )
-			{
-				staticStones += nbChunk_IsDynamic( all[i] ) == false && nbChunk_GetVolume( all[i] ) > 0.2f ? 1 : 0;
-			}
-			free( all );
-			ENSURE( staticStones <= 6 );
-			ENSURE( nbWorld_GetStats( scene.world ).overloadedBondCount > 0 );
-		}
-
-		DestroyScene( &scene );
-	}
 	return 0;
 }
 
@@ -1345,17 +909,10 @@ int WorldTest( void )
 	RUN_TEST( DeterminismTest );
 	RUN_TEST( WorkerTest );
 	RUN_TEST( EventTest );
-	RUN_TEST( DustTest );
 	RUN_TEST( DynamicDestructibleTest );
 	RUN_TEST( MultiPieceTest );
 	RUN_TEST( PreFractureTest );
 	RUN_TEST( GraphTest );
-	RUN_TEST( SpanTest );
-	RUN_TEST( CantileverTest );
-	RUN_TEST( CrushTest );
-	RUN_TEST( BeamTest );
-	RUN_TEST( MaterialTest );
-	RUN_TEST( ArchTest );
 	RUN_TEST( RubbleTest );
 	RUN_TEST( CannonballTest );
 	RUN_TEST( VisibleFaceTest );

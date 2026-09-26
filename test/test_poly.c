@@ -250,12 +250,6 @@ static int VoronoiTest( void )
 					ENSURE_SMALL( a->geometry.area - b->geometry.area, 1.0e-4f );
 					ENSURE_SMALL( b3Distance( a->geometry.centroid, b->geometry.centroid ), 1.0e-3f );
 					ENSURE_SMALL( b3Dot( a->geometry.normal, b->geometry.normal ) + 1.0f, 1.0e-4f );
-
-					// Both sides describe the same face, so the second moments agree
-					for ( int c = 0; c < 6; ++c )
-					{
-						ENSURE_SMALL( a->geometry.inertia[c] - b->geometry.inertia[c], 1.0e-5f );
-					}
 				}
 			}
 			ENSURE( found );
@@ -304,11 +298,6 @@ static int ContactAreaTest( void )
 	ENSURE_SMALL( geometry.centroid.y - 0.625f, 1.0e-5f );
 	ENSURE_SMALL( geometry.normal.x - 1.0f, 1.0e-5f );
 
-	// Rectangle 0.75 tall and 1 wide: b h^3 / 12 about each axis, nothing across the plane
-	ENSURE_SMALL( nbSecondMomentAlong( geometry.inertia, (b3Vec3){ 0.0f, 1.0f, 0.0f } ) - 0.75f * 0.75f * 0.75f / 12.0f, 1.0e-5f );
-	ENSURE_SMALL( nbSecondMomentAlong( geometry.inertia, (b3Vec3){ 0.0f, 0.0f, 1.0f } ) - 0.75f / 12.0f, 1.0e-5f );
-	ENSURE_SMALL( nbSecondMomentAlong( geometry.inertia, (b3Vec3){ 1.0f, 0.0f, 0.0f } ), 1.0e-5f );
-
 	// Separated boxes do not touch
 	nbPoly_MakeBox( &b, (b3Vec3){ 0.5f, 0.5f, 0.5f }, (b3Transform){ { 1.6f, 0.0f, 0.0f }, b3Quat_identity }, 0 );
 	nbShape* shapeC = nbShape_Create( &b );
@@ -317,31 +306,6 @@ static int ContactAreaTest( void )
 	nbShape_Destroy( shapeA );
 	nbShape_Destroy( shapeB );
 	nbShape_Destroy( shapeC );
-	return 0;
-}
-
-static int MeshTest( void )
-{
-	nbPoly box;
-	nbPoly_MakeBox( &box, (b3Vec3){ 1.0f, 1.0f, 1.0f }, b3Transform_identity, 2 );
-	nbShape* shape = nbShape_Create( &box );
-
-	int count = nbShape_GetMeshVertexCount( shape );
-	ENSURE( count == 36 );
-
-	nbMeshVertex vertices[36];
-	ENSURE( nbShape_BuildMesh( shape, vertices, 36, 1.0f ) == 36 );
-
-	// Triangles wind counter clockwise around the face normal
-	for ( int i = 0; i < 36; i += 3 )
-	{
-		b3Vec3 n = b3Cross( b3Sub( vertices[i + 1].position, vertices[i].position ),
-							b3Sub( vertices[i + 2].position, vertices[i].position ) );
-		ENSURE( b3Dot( n, vertices[i].normal ) > 0.0f );
-		ENSURE( vertices[i].material == 2 );
-	}
-
-	nbShape_Destroy( shape );
 	return 0;
 }
 
@@ -498,7 +462,6 @@ int PolyTest( void )
 	RUN_TEST( HullTest );
 	RUN_TEST( VoronoiTest );
 	RUN_TEST( ContactAreaTest );
-	RUN_TEST( MeshTest );
 	RUN_TEST( CbrtTest );
 	RUN_TEST( HullBuilderTest );
 	return 0;

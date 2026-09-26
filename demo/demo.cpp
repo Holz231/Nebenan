@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
-// Nebenan demo: polygonal destruction on Box3D.
+// Nebenan demo: walls that break into polygon fragments on Box3D, built for speed. Flat shading, no shadows, no
+// particles: every millisecond goes to the destruction.
 
 #include "renderer.h"
 #include "system_info.h"
@@ -38,15 +39,12 @@ enum Tool
 enum SceneKind
 {
 	SceneWall,
-	SceneHouse,
-	SceneColonnade,
-	SceneTower,
 	SceneStress,
 	SceneTown,
 	SceneCount
 };
 
-static const char* s_sceneNames[SceneCount] = { "Mauern", "Haus", "Säulenhalle", "Turm", "Stresstest", "Stadt" };
+static const char* s_sceneNames[SceneCount] = { "Mauern", "Stresstest", "Stadt" };
 static const char* s_toolNames[ToolCount] = { "Gewehr", "Granate", "Kanone" };
 
 struct ToolSettings
@@ -79,23 +77,6 @@ struct Ball
 	float age;
 };
 
-// Dust puff or chip. Pure decoration, simulated on the CPU.
-struct Particle
-{
-	b3Vec3 position;
-	b3Vec3 velocity;
-	float size;
-	float growth;
-	float age;
-	float life;
-	float alpha;
-	float color[3];
-
-	// Fixed random number that decides which puffs go first when the dust has to be thinned out
-	float seed;
-	bool chip;
-};
-
 struct Automation
 {
 	int frameLimit = 0;
@@ -103,21 +84,18 @@ struct Automation
 	bool script = false;
 	int scene = -1;
 
-	// Samples per pixel and whether to render at the full resolution of high density displays
-	int msaa = 4;
-	bool lowDpi = false;
+	// Samples per pixel and whether to render at the full resolution of high density displays. Both cost fill rate.
+	int msaa = 1;
+	bool highDpi = false;
 
-	// CPU time per frame in milliseconds: simulation (Box3D and Nebenan), everything else on the CPU
+	// Per frame: CPU time of the simulation, of the whole frame and of the graphics, bytes sent to the GPU,
+	// triangles drawn
 	std::vector<float> simulationTimes;
 	std::vector<float> frameTimes;
-
-	// Per frame: bytes sent to the GPU, triangles drawn, soft particles and the screens they cover
-	std::vector<float> uploadedBytes;
-	std::vector<float> uploadTimes;
 	std::vector<float> graphicsTimes;
+	std::vector<float> uploadTimes;
+	std::vector<float> uploadedBytes;
 	std::vector<float> triangles;
-	std::vector<float> particles;
-	std::vector<float> particleCoverage;
 };
 
 struct App
@@ -126,7 +104,6 @@ struct App
 	nbWorldId destruction = nb_nullWorldId;
 	Renderer renderer;
 	Camera camera = {};
-	RenderSettings renderSettings;
 
 	std::vector<ChunkVisual> chunks;
 	std::unordered_map<uint64_t, std::vector<int>> bodySlots;
@@ -143,14 +120,14 @@ struct App
 	ToolSettings tools[ToolCount];
 
 	bool paused = false;
-	float timeScale = 1.0f;
-
-	// Debris bodies Box3D moves at the same time, a lever of the physics cost
-	int maxDebrisBodies = nbDefaultWorldDef().maxDebrisBodies;
 
 	// Size of the fragments relative to the materials. The main lever of the cost of destruction: larger
-	// fragments mean fewer pieces, bodies, contacts, meshes and load check clusters.
+	// fragments mean fewer pieces, bodies, contacts and meshes.
 	float fragmentScale = 2.0f;
+
+	// Debris bodies Box3D moves at the same time, the lever of the physics cost
+	int maxDebrisBodies = nbDefaultWorldDef().maxDebrisBodies;
+
 	float accumulator = 0.0f;
 	int workerCount = 1;
 	int maxWorkers = 1;
@@ -163,23 +140,10 @@ struct App
 	float fireCooldown = 0.0f;
 	bool showUi = true;
 
-	// CPU time per frame, smoothed: all simulation steps, and everything for the picture
-	float simulationFrame = 0.0f;
-	float graphicsFrame = 0.0f;
 	float physicsTime = 0.0f;
 	float destructionTime = 0.0f;
 	nbImpactResult lastImpact = {};
 	float averageFrame = 16.0f;
-
-	std::vector<Particle> particles;
-	std::vector<ParticleInstance> particleInstances;
-	std::vector<std::pair<float, int>> particleOrder;
-	uint32_t particleRandom = 0x9e3779b9u;
-	bool showDust = true;
-	float frameSimTime = 0.0f;
-
-	// How many times the soft dust of this frame covers the screen
-	float particleCoverage = 0.0f;
 
 	Automation automation;
 	int frame = 0;
@@ -323,24 +287,6 @@ static void RebuildChunkVisual( App& app, ChunkVisual& visual )
 	BuildChunkMesh( app, visual );
 }
 
-// Color every glued chunk by how close the bonds around it are to breaking. Loose debris shows grey.
-static void UpdateLoadView( App& app )
-{
-	if ( app.renderSettings.showLoad == false )
-	{
-		return;
-	}
-
-	for ( const ChunkVisual& visual : app.chunks )
-	{
-		if ( visual.alive )
-		{
-			float load = nbChunk_IsDynamic( visual.id ) ? -1.0f : nbChunk_GetUtilization( visual.id );
-			app.renderer.SetSlotLoad( visual.slot, load );
-		}
-	}
-}
-
 static void RemoveChunkVisual( App& app, int index )
 {
 	ChunkVisual& visual = app.chunks[index];
@@ -350,260 +296,9 @@ static void RemoveChunkVisual( App& app, int index )
 	visual = ChunkVisual();
 }
 
-//----------------------------------------------------------------------------------------------------------------------
-// Dust and chips
-
-static const int MaxParticles = 6000;
-
-// Small xorshift generator, the particles do not need the deterministic one of the library
-static float RandomFloat( App& app )
-{
-	uint32_t x = app.particleRandom;
-	x ^= x << 13;
-	x ^= x >> 17;
-	x ^= x << 5;
-	app.particleRandom = x;
-	return (float)( x >> 8 ) * ( 1.0f / 16777216.0f );
-}
-
-static float RandomRange( App& app, float lower, float upper )
-{
-	return lower + ( upper - lower ) * RandomFloat( app );
-}
-
-static b3Vec3 RandomInSphere( App& app )
-{
-	for ( ;; )
-	{
-		b3Vec3 v = { RandomRange( app, -1.0f, 1.0f ), RandomRange( app, -1.0f, 1.0f ), RandomRange( app, -1.0f, 1.0f ) };
-		if ( b3LengthSquared( v ) <= 1.0f )
-		{
-			return v;
-		}
-	}
-}
-
-static b3Vec3 DustColor( int material )
-{
-	switch ( material )
-	{
-		case MaterialBrick:
-		case MaterialBrickInterior:
-			return { 0.58f, 0.36f, 0.26f };
-		case MaterialPlaster:
-			return { 0.78f, 0.76f, 0.72f };
-		default:
-			return { 0.6f, 0.59f, 0.56f };
-	}
-}
-
-// Whole particles for the integer part, the fraction becomes a probability
-static int StochasticCount( App& app, float count )
-{
-	int whole = (int)count;
-	return whole + ( RandomFloat( app ) < count - (float)whole ? 1 : 0 );
-}
-
-static void SpawnDust( App& app, const nbDustEvent& dust )
-{
-	b3Vec3 base = DustColor( dust.material );
-	b3Vec3 point = { (float)dust.point.x, (float)dust.point.y, (float)dust.point.z };
-	float radius = b3ClampFloat( dust.radius, 0.05f, 2.0f );
-
-	// About 1500 puffs per cubic meter of dust, chips mostly at impacts
-	float chipRate = dust.type == nb_dustImpact ? 900.0f : ( dust.type == nb_dustCollision ? 300.0f : 0.0f );
-	int puffCount = StochasticCount( app, b3MinFloat( 1500.0f * dust.volume, 48.0f ) );
-	int chipCount = StochasticCount( app, b3MinFloat( chipRate * dust.volume, 36.0f ) );
-
-	for ( int i = 0; i < puffCount && (int)app.particles.size() < MaxParticles; ++i )
-	{
-		Particle particle;
-		particle.position = b3MulAdd( point, 0.5f * radius, RandomInSphere( app ) );
-		particle.velocity = b3MulAdd( b3MulSV( 0.6f, dust.velocity ), 0.8f + radius, RandomInSphere( app ) );
-		particle.size = b3ClampFloat( RandomRange( app, 0.25f, 0.5f ) * radius, 0.05f, 0.6f );
-		particle.growth = RandomRange( app, 0.2f, 0.5f );
-		particle.age = 0.0f;
-		particle.life = RandomRange( app, 1.8f, 4.0f );
-		particle.alpha = RandomRange( app, 0.3f, 0.5f );
-		float shade = RandomRange( app, 0.9f, 1.1f );
-		particle.color[0] = base.x * shade;
-		particle.color[1] = base.y * shade;
-		particle.color[2] = base.z * shade;
-		particle.seed = RandomFloat( app );
-		particle.chip = false;
-		app.particles.push_back( particle );
-	}
-
-	for ( int i = 0; i < chipCount && (int)app.particles.size() < MaxParticles; ++i )
-	{
-		Particle particle;
-		particle.position = b3MulAdd( point, 0.3f * radius, RandomInSphere( app ) );
-		particle.velocity = b3MulAdd( b3MulSV( 1.2f, dust.velocity ), RandomRange( app, 2.0f, 6.0f ), RandomInSphere( app ) );
-		particle.velocity.y += RandomRange( app, 0.5f, 2.5f );
-		particle.size = RandomRange( app, 0.008f, 0.025f );
-		particle.growth = 0.0f;
-		particle.age = 0.0f;
-		particle.life = RandomRange( app, 1.5f, 3.5f );
-		particle.alpha = 1.0f;
-		float shade = RandomRange( app, 0.55f, 0.8f );
-		particle.color[0] = base.x * shade;
-		particle.color[1] = base.y * shade;
-		particle.color[2] = base.z * shade;
-		particle.seed = RandomFloat( app );
-		particle.chip = true;
-		app.particles.push_back( particle );
-	}
-}
-
-static void UpdateParticles( App& app, float dt )
-{
-	if ( dt <= 0.0f )
-	{
-		return;
-	}
-
-	float drag = expf( -2.0f * dt );
-	float growthDecay = expf( -0.7f * dt );
-	for ( size_t i = 0; i < app.particles.size(); )
-	{
-		Particle& particle = app.particles[i];
-		particle.age += dt;
-		if ( particle.age >= particle.life )
-		{
-			app.particles[i] = app.particles.back();
-			app.particles.pop_back();
-			continue;
-		}
-
-		if ( particle.chip )
-		{
-			particle.velocity.y -= 9.81f * dt;
-			particle.position = b3MulAdd( particle.position, dt, particle.velocity );
-			if ( particle.position.y < particle.size && particle.velocity.y < 0.0f )
-			{
-				// Bounce off the ground and lose most of the sliding speed
-				particle.position.y = particle.size;
-				particle.velocity.y *= -0.3f;
-				particle.velocity.x *= 0.5f;
-				particle.velocity.z *= 0.5f;
-			}
-		}
-		else
-		{
-			// Dust slows down quickly in the air, rises a little and spreads out
-			particle.velocity = b3MulSV( drag, particle.velocity );
-			particle.velocity.y += 0.15f * dt;
-			particle.position = b3MulAdd( particle.position, dt, particle.velocity );
-			particle.size += particle.growth * dt;
-			particle.growth *= growthDecay;
-			float floor = 0.3f * particle.size;
-			if ( particle.position.y < floor )
-			{
-				particle.position.y = floor;
-				particle.velocity.y = b3MaxFloat( particle.velocity.y, 0.0f );
-			}
-		}
-		++i;
-	}
-}
-
-// Soft dust blends every covered pixel of every puff, so dust close to the camera costs fill rate like nothing else.
-// Puffs fade out before they cover much of the screen, and when all puffs together cover the screen more than
-// DustScreenBudget times, the dust is thinned out evenly.
-static const float DustScreenBudget = 8.0f;
-
-// A puff whose radius reaches this fraction of half the screen height is gone, it starts to fade at half of it
-static const float NearDustRadius = 0.5f;
-
-static void BuildParticleInstances( App& app )
-{
-	app.particleInstances.clear();
-	app.particleOrder.clear();
-
-	float tanY = tanf( 0.5f * app.camera.fovY );
-	float aspect = sapp_widthf() / b3MaxFloat( sapp_heightf(), 1.0f );
-	b3Vec3 forward = app.camera.Forward();
-
-	// Back to front, so the soft dust blends correctly. The key is the negative distance along the view.
-	float coverage = 0.0f;
-	for ( int i = 0; i < (int)app.particles.size(); ++i )
-	{
-		const Particle& particle = app.particles[i];
-		float depth = b3Dot( b3Sub( particle.position, app.camera.position ), forward );
-		if ( depth < 0.05f - particle.size )
-		{
-			continue;
-		}
-
-		if ( particle.chip == false )
-		{
-			// Radius on screen relative to half the screen height
-			float radius = particle.size / ( b3MaxFloat( depth, 0.05f ) * tanY );
-			if ( radius >= NearDustRadius )
-			{
-				continue;
-			}
-			coverage += B3_PI * radius * radius / ( 4.0f * aspect );
-		}
-		app.particleOrder.push_back( { -depth, i } );
-	}
-	std::sort( app.particleOrder.begin(), app.particleOrder.end(),
-			   []( const std::pair<float, int>& a, const std::pair<float, int>& b ) { return a.first < b.first; } );
-
-	// Fraction of the dust that stays, with a soft edge in the seeds so puffs fade instead of popping
-	float keep = coverage > DustScreenBudget ? DustScreenBudget / coverage : 1.0f;
-	app.particleCoverage = b3MinFloat( coverage, DustScreenBudget );
-
-	for ( const std::pair<float, int>& entry : app.particleOrder )
-	{
-		const Particle& particle = app.particles[entry.second];
-		float t = particle.age / particle.life;
-		float alpha;
-		if ( particle.chip )
-		{
-			alpha = t > 0.8f ? ( 1.0f - t ) * 5.0f : 1.0f;
-		}
-		else
-		{
-			float fadeIn = b3MinFloat( particle.age / 0.08f, 1.0f );
-			alpha = particle.alpha * fadeIn * powf( 1.0f - t, 1.5f );
-
-			float radius = particle.size / ( b3MaxFloat( -entry.first, 0.05f ) * tanY );
-			float nearFade = b3ClampFloat( ( NearDustRadius - radius ) / ( 0.5f * NearDustRadius ), 0.0f, 1.0f );
-			float thinning = b3ClampFloat( ( 1.1f * keep - particle.seed ) / 0.1f, 0.0f, 1.0f );
-			alpha *= nearFade * thinning;
-			if ( alpha < 0.004f )
-			{
-				continue;
-			}
-		}
-
-		ParticleInstance instance;
-		instance.center[0] = particle.position.x;
-		instance.center[1] = particle.position.y;
-		instance.center[2] = particle.position.z;
-		instance.size = particle.chip ? -particle.size : particle.size;
-		instance.color[0] = particle.color[0];
-		instance.color[1] = particle.color[1];
-		instance.color[2] = particle.color[2];
-		instance.alpha = alpha;
-		app.particleInstances.push_back( instance );
-	}
-
-	app.renderer.SetParticles( app.particleInstances.data(), (int)app.particleInstances.size() );
-}
-
 static void SyncChunks( App& app )
 {
 	nbEvents events = nbWorld_GetEvents( app.destruction );
-
-	if ( app.showDust )
-	{
-		for ( int i = 0; i < events.dustCount; ++i )
-		{
-			SpawnDust( app, events.dust[i] );
-		}
-	}
 
 	for ( int i = 0; i < events.destroyedCount; ++i )
 	{
@@ -761,8 +456,6 @@ static MaterialPreset BrickPreset()
 	preset.material.strength = 6.0e5f;
 	preset.material.fragmentSize = 0.1f;
 	preset.material.friction = 0.8f;
-	preset.material.tensileStrength = 0.3e6f;
-	preset.material.compressiveStrength = 6.0e6f;
 	preset.surface = MaterialBrick;
 	preset.interior = MaterialBrickInterior;
 	return preset;
@@ -775,8 +468,6 @@ static MaterialPreset ConcretePreset()
 	preset.material.density = 2400.0f;
 	preset.material.strength = 1.1e6f;
 	preset.material.fragmentSize = 0.13f;
-	preset.material.tensileStrength = 2.0e6f;
-	preset.material.compressiveStrength = 3.0e7f;
 	preset.surface = MaterialConcrete;
 	preset.interior = MaterialConcreteInterior;
 	return preset;
@@ -872,8 +563,6 @@ static void BuildWallScene( App& app )
 	app.camera.position = { 0.0f, 1.8f, 9.0f };
 	app.camera.yaw = 0.0f;
 	app.camera.pitch = -0.05f;
-	app.renderSettings.sceneCenter = { 0.0f, 2.0f, -2.0f };
-	app.renderSettings.sceneRadius = 16.0f;
 }
 
 // Brick walls with doors and windows and concrete floors
@@ -887,7 +576,7 @@ static void AddHouse( App& app, b3Vec3 position, float yaw, int floors, uint32_t
 
 	for ( int floor = 0; floor < floors; ++floor )
 	{
-		float y = floor * ( story + slab );
+		float y = (float)floor * ( story + slab );
 		std::vector<b3Vec2> front;
 		if ( floor == 0 )
 		{
@@ -918,82 +607,6 @@ static void AddHouse( App& app, b3Vec3 position, float yaw, int floors, uint32_t
 	AddStructure( app, position, yaw, brick, pieces, seed );
 }
 
-static void BuildHouseScene( App& app )
-{
-	AddHouse( app, { 0.0f, 0.0f, 0.0f }, 0.0f, 2, 7 );
-
-	app.camera.position = { 6.0f, 3.0f, 14.0f };
-	app.camera.yaw = -0.4f;
-	app.camera.pitch = -0.12f;
-	app.renderSettings.sceneCenter = { 0.0f, 3.0f, 0.0f };
-	app.renderSettings.sceneRadius = 14.0f;
-}
-
-static void BuildColonnadeScene( App& app )
-{
-	MaterialPreset concrete = ConcretePreset();
-	std::vector<nbPieceDef> pieces;
-
-	float spacing = 2.8f, height = 4.0f;
-	for ( int row = 0; row < 2; ++row )
-	{
-		float z = row == 0 ? -2.0f : 2.0f;
-		for ( int i = 0; i < 6; ++i )
-		{
-			float x = ( (float)i - 2.5f ) * spacing;
-			pieces.push_back( MakePiece( { x, 0.5f * height, z }, { 0.3f, 0.5f * height, 0.3f }, concrete, MaterialConcrete ) );
-		}
-		pieces.push_back( MakePiece( { 0.0f, height + 0.3f, z }, { 3.0f * spacing, 0.3f, 0.4f }, concrete, MaterialConcrete ) );
-	}
-	pieces.push_back( MakePiece( { 0.0f, height + 0.75f, 0.0f }, { 3.0f * spacing + 0.4f, 0.15f, 3.0f }, concrete, MaterialConcrete ) );
-
-	// Pre-fractured into cells, so beams and roof can break along their span once the columns are gone
-	AddStructure( app, { 0.0f, 0.0f, 0.0f }, 0.0f, concrete, pieces, 11, 1.2f );
-
-	app.camera.position = { 3.0f, 2.4f, 13.0f };
-	app.camera.yaw = -0.2f;
-	app.camera.pitch = -0.05f;
-	app.renderSettings.sceneCenter = { 0.0f, 2.5f, 0.0f };
-	app.renderSettings.sceneRadius = 14.0f;
-}
-
-static void BuildTowerScene( App& app )
-{
-	MaterialPreset brick = BrickPreset();
-	std::vector<nbPieceDef> pieces;
-
-	// Hollow tower in rings, every ring rotated so the corners interlock like masonry
-	float half = 1.8f, t = 0.35f, ring = 1.5f;
-	for ( int level = 0; level < 8; ++level )
-	{
-		float y = level * ring + 0.5f * ring;
-		bool odd = ( level & 1 ) != 0;
-		float longHalf = half, shortHalf = half - t;
-		if ( odd )
-		{
-			pieces.push_back( MakePiece( { 0.0f, y, half - 0.5f * t }, { longHalf, 0.5f * ring, 0.5f * t }, brick, brick.surface ) );
-			pieces.push_back( MakePiece( { 0.0f, y, -half + 0.5f * t }, { longHalf, 0.5f * ring, 0.5f * t }, brick, brick.surface ) );
-			pieces.push_back( MakePiece( { half - 0.5f * t, y, 0.0f }, { 0.5f * t, 0.5f * ring, shortHalf }, brick, brick.surface ) );
-			pieces.push_back( MakePiece( { -half + 0.5f * t, y, 0.0f }, { 0.5f * t, 0.5f * ring, shortHalf }, brick, brick.surface ) );
-		}
-		else
-		{
-			pieces.push_back( MakePiece( { half - 0.5f * t, y, 0.0f }, { 0.5f * t, 0.5f * ring, longHalf }, brick, brick.surface ) );
-			pieces.push_back( MakePiece( { -half + 0.5f * t, y, 0.0f }, { 0.5f * t, 0.5f * ring, longHalf }, brick, brick.surface ) );
-			pieces.push_back( MakePiece( { 0.0f, y, half - 0.5f * t }, { shortHalf, 0.5f * ring, 0.5f * t }, brick, brick.surface ) );
-			pieces.push_back( MakePiece( { 0.0f, y, -half + 0.5f * t }, { shortHalf, 0.5f * ring, 0.5f * t }, brick, brick.surface ) );
-		}
-	}
-
-	AddStructure( app, { 0.0f, 0.0f, 0.0f }, 0.3f, brick, pieces, 13 );
-
-	app.camera.position = { 2.0f, 4.0f, 16.0f };
-	app.camera.yaw = -0.1f;
-	app.camera.pitch = 0.1f;
-	app.renderSettings.sceneCenter = { 0.0f, 6.0f, 0.0f };
-	app.renderSettings.sceneRadius = 16.0f;
-}
-
 static void BuildStressScene( App& app )
 {
 	MaterialPreset brick = BrickPreset();
@@ -1011,8 +624,6 @@ static void BuildStressScene( App& app )
 	app.camera.position = { 0.0f, 4.0f, 12.0f };
 	app.camera.yaw = 0.0f;
 	app.camera.pitch = -0.18f;
-	app.renderSettings.sceneCenter = { 0.0f, 2.0f, -6.0f };
-	app.renderSettings.sceneRadius = 20.0f;
 }
 
 // A town of houses along two streets, to wreck as fast as you can
@@ -1041,8 +652,6 @@ static void BuildTownScene( App& app )
 	app.camera.position = { 0.0f, 16.0f, 34.0f };
 	app.camera.yaw = 0.0f;
 	app.camera.pitch = -0.38f;
-	app.renderSettings.sceneCenter = { 0.0f, 3.0f, -18.0f };
-	app.renderSettings.sceneRadius = 46.0f;
 }
 
 static void DestroyScene( App& app )
@@ -1074,7 +683,6 @@ static void DestroyScene( App& app )
 	app.balls.clear();
 	app.bodySlots.clear();
 	app.lastImpact = {};
-	app.particles.clear();
 }
 
 static void LoadScene( App& app, SceneKind scene )
@@ -1107,20 +715,11 @@ static void LoadScene( App& app, SceneKind scene )
 		case SceneWall:
 			BuildWallScene( app );
 			break;
-		case SceneHouse:
-			BuildHouseScene( app );
-			break;
-		case SceneColonnade:
-			BuildColonnadeScene( app );
-			break;
-		case SceneTower:
-			BuildTowerScene( app );
-			break;
-		case SceneTown:
-			BuildTownScene( app );
+		case SceneStress:
+			BuildStressScene( app );
 			break;
 		default:
-			BuildStressScene( app );
+			BuildTownScene( app );
 			break;
 	}
 
@@ -1291,46 +890,33 @@ static void StepSimulation( App& app, float frameDt )
 		return;
 	}
 
+	// When the simulation cannot keep up, it slows down instead of taking more and more steps per frame, which
+	// would slow down every frame further. A second step in the same frame only catches up when steps are cheap.
 	const float step = 1.0f / 60.0f;
+	int maxSteps = app.physicsTime + app.destructionTime < 4.0f ? 2 : 1;
 	int steps = 0;
 	float physicsTime = 0.0f;
 	float destructionTime = 0.0f;
-
-	auto runStep = [&]( float dt ) {
-		app.frameSimTime += dt;
+	app.accumulator += b3MinFloat( frameDt, 0.1f );
+	while ( app.accumulator >= step && steps < maxSteps )
+	{
 		uint64_t ticks = b3GetTicks();
-		b3World_Step( app.physics, dt, 4 );
+		b3World_Step( app.physics, step, 4 );
 		physicsTime += b3GetMilliseconds( ticks );
 		SyncTransforms( app );
 
 		ticks = b3GetTicks();
-		nbWorld_Update( app.destruction, dt );
+		nbWorld_Update( app.destruction, step );
 		destructionTime += b3GetMilliseconds( ticks );
-		UpdateBalls( app, dt );
-	};
+		UpdateBalls( app, step );
 
-	if ( app.timeScale < 0.999f )
-	{
-		// Slow motion runs one short step per frame so the motion stays smooth
-		runStep( b3MinFloat( frameDt, 1.0f / 30.0f ) * app.timeScale );
-		steps = 1;
+		app.accumulator -= step;
+		steps += 1;
 	}
-	else
+
+	if ( steps == maxSteps )
 	{
-		// When the simulation cannot keep up, it slows down instead of taking more and more steps per frame, which
-		// would slow down every frame further. A second step in the same frame only catches up when steps are cheap.
-		int maxSteps = app.physicsTime + app.destructionTime < 4.0f ? 2 : 1;
-		app.accumulator += b3MinFloat( frameDt, 0.1f );
-		while ( app.accumulator >= step && steps < maxSteps )
-		{
-			runStep( step );
-			app.accumulator -= step;
-			steps += 1;
-		}
-		if ( steps == maxSteps )
-		{
-			app.accumulator = b3MinFloat( app.accumulator, step );
-		}
+		app.accumulator = b3MinFloat( app.accumulator, step );
 	}
 
 	if ( steps > 0 )
@@ -1426,17 +1012,13 @@ static std::string BuildReport( const App& app )
 	HistoryStats( app, app.historySimulation, &simulationAvg, &simulationMax );
 	HistoryStats( app, app.historyGraphics, &graphicsAvg, &graphicsMax );
 
-	const char* shadows = app.renderSettings.shadows == false ? "aus" : app.renderSettings.shadowResolution <= 1024 ? "niedrig"
-						  : app.renderSettings.shadowResolution <= 2048																? "mittel"
-																																	: "hoch";
-
 	std::string text;
 	Appendf( text, "Nebenan-Messung: Szene %s, %s-Build, Box3D %d.%d.%d\n", s_sceneNames[app.scene], s_buildType, version.major,
 			 version.minor, version.revision );
 	Appendf( text, "CPU: %s, %u logische Kerne, %d Performance-Kerne, %d Threads\n", app.cpuName.empty() ? "unbekannt" : app.cpuName.c_str(),
 			 std::thread::hardware_concurrency(), app.performanceCores, app.workerCount );
-	Appendf( text, "GPU: %s, Bild %d x %d, MSAA %dx, DPI-Faktor %.2f\n", app.gpuName.empty() ? "unbekannt" : app.gpuName.c_str(),
-			 sapp_width(), sapp_height(), sapp_sample_count(), sapp_dpi_scale() );
+	Appendf( text, "GPU: %s, Bild %d x %d, MSAA %dx\n", app.gpuName.empty() ? "unbekannt" : app.gpuName.c_str(), sapp_width(),
+			 sapp_height(), sapp_sample_count() );
 	Appendf( text, "Bild: Mittel %.1f ms, Spitze %.1f ms (letzte %d Bilder)\n", frameAvg, frameMax, app.historyCount );
 	Appendf( text, "CPU pro Bild, Mittel / Spitze: Einschläge %.1f / %.1f, Simulation %.1f / %.1f, Grafik %.1f / %.1f ms\n", impactAvg,
 			 impactMax, simulationAvg, simulationMax, graphicsAvg, graphicsMax );
@@ -1444,9 +1026,7 @@ static std::string BuildReport( const App& app )
 	Appendf( text, "Welt: %d Bruchstücke, %d Verbindungen, %d Trümmerkörper (%d wach), %d Schutt, %d Kontakte, Budget %d, Bruchstückgröße x%.2f\n",
 			 stats.chunkCount, stats.bondCount, stats.dynamicBodyCount, b3World_GetAwakeBodyCount( app.physics ), stats.rubbleCount,
 			 counters.contactCount, app.maxDebrisBodies, app.fragmentScale );
-	Appendf( text, "Grafik: %dk Dreiecke, %d Draw Calls, %d Partikel, %d kB Upload, Schatten %s, einfache Materialien %s, Staub %s\n",
-			 rs.triangleCount / 1000, rs.drawCalls, rs.particleCount, rs.uploadedBytes / 1024, shadows,
-			 app.renderSettings.simpleMaterials ? "an" : "aus", app.showDust ? "an" : "aus" );
+	Appendf( text, "Grafik: %dk Dreiecke, %d Draw Calls, %d kB Upload\n", rs.triangleCount / 1000, rs.drawCalls, rs.uploadedBytes / 1024 );
 	return text;
 }
 
@@ -1458,7 +1038,7 @@ static void DrawUi( App& app )
 	ImGui::Begin( "Nebenan - Zerstörung", nullptr, ImGuiWindowFlags_AlwaysAutoResize );
 
 	b3Version version = b3GetVersion();
-	ImGui::TextDisabled( "Box3D %d.%d.%d  |  %s  |  Polygone statt Voxel", version.major, version.minor, version.revision, s_buildType );
+	ImGui::TextDisabled( "Box3D %d.%d.%d  |  %s", version.major, version.minor, version.revision, s_buildType );
 #ifndef NDEBUG
 	ImGui::TextColored( ImVec4( 1.0f, 0.4f, 0.3f, 1.0f ), "Debug-Build: 5- bis 20-mal langsamer.\nFür echte Leistung Release bauen (build.bat)." );
 #endif
@@ -1506,23 +1086,7 @@ static void DrawUi( App& app )
 		ImGui::SliderFloat( "Schuss pro Sekunde", &settings.rate, 0.5f, 20.0f, "%.1f" );
 	}
 
-	ImGui::SeparatorText( "Simulation" );
-	ImGui::Checkbox( "Pause (P)", &app.paused );
-	ImGui::SameLine();
-	bool slowMotion = app.timeScale < 0.999f;
-	if ( ImGui::Checkbox( "Zeitlupe (T)", &slowMotion ) )
-	{
-		app.timeScale = slowMotion ? 0.2f : 1.0f;
-	}
-	if ( slowMotion )
-	{
-		ImGui::SliderFloat( "Zeitfaktor", &app.timeScale, 0.02f, 0.99f, "%.2f" );
-	}
-	if ( ImGui::SliderInt( "Threads", &app.workerCount, 1, app.maxWorkers ) )
-	{
-		b3World_SetWorkerCount( app.physics, app.workerCount );
-		nbWorld_SetWorkerCount( app.destruction, app.workerCount );
-	}
+	ImGui::SeparatorText( "Leistung" );
 	if ( ImGui::SliderFloat( "Bruchstückgröße", &app.fragmentScale, 0.5f, 4.0f, "x %.2f" ) )
 	{
 		nbWorld_SetFragmentScale( app.destruction, app.fragmentScale );
@@ -1539,35 +1103,19 @@ static void DrawUi( App& app )
 	{
 		ImGui::SetTooltip( "So viele Trümmer bewegt Box3D höchstens gleichzeitig.\nWeniger macht die Physik schneller." );
 	}
+	if ( ImGui::SliderInt( "Threads", &app.workerCount, 1, app.maxWorkers ) )
+	{
+		b3World_SetWorkerCount( app.physics, app.workerCount );
+		nbWorld_SetWorkerCount( app.destruction, app.workerCount );
+	}
+	ImGui::Checkbox( "Pause (P)", &app.paused );
+	ImGui::SameLine();
 	if ( ImGui::Button( "Trümmer entfernen (C)" ) )
 	{
 		nbWorld_ClearDebris( app.destruction );
 	}
 
-	ImGui::SeparatorText( "Anzeige" );
-	static const char* shadowNames[] = { "Aus", "Niedrig (1024)", "Mittel (2048)", "Hoch (4096)" };
-	int shadowLevel = app.renderSettings.shadows == false			   ? 0
-					  : app.renderSettings.shadowResolution <= 1024 ? 1
-					  : app.renderSettings.shadowResolution <= 2048 ? 2
-																	  : 3;
-	if ( ImGui::Combo( "Schatten", &shadowLevel, shadowNames, 4 ) )
-	{
-		app.renderSettings.shadows = shadowLevel > 0;
-		app.renderSettings.shadowResolution = shadowLevel <= 1 ? 1024 : ( shadowLevel == 2 ? 2048 : 4096 );
-	}
-	ImGui::Checkbox( "Einfache Materialien", &app.renderSettings.simpleMaterials );
-	if ( ImGui::IsItemHovered() )
-	{
-		ImGui::SetTooltip( "Einfarbige Flächen statt Ziegel-, Putz- und Betonmuster.\nEntlastet schwache Grafikkarten." );
-	}
-	ImGui::Checkbox( "Bruchstücke einfärben (F)", &app.renderSettings.showChunks );
-	ImGui::Checkbox( "Statik: Auslastung der Fugen (L)", &app.renderSettings.showLoad );
-	if ( ImGui::Checkbox( "Staub und Splitter", &app.showDust ) && app.showDust == false )
-	{
-		app.particles.clear();
-	}
-
-	ImGui::SeparatorText( "Leistung" );
+	ImGui::SeparatorText( "Messung" );
 	nbStats stats = nbWorld_GetStats( app.destruction );
 	b3Counters counters = b3World_GetCounters( app.physics );
 	RenderStats renderStats = app.renderer.GetStats();
@@ -1590,20 +1138,16 @@ static void DrawUi( App& app )
 	ImGui::Text( "Physik      %6.2f ms  (Box3D Schritt)", app.physicsTime );
 	ImGui::Text( "Zerstörung  %6.2f ms  (Update)", app.destructionTime );
 	ImGui::Text( "Einschlag   %6.2f ms  davon Voronoi %.2f ms", app.lastImpact.totalTime, app.lastImpact.fractureTime );
-	ImGui::Text( "  %d neue Stücke, %d Verbindungen gerissen, %d gelöst", app.lastImpact.createdChunkCount,
-				 app.lastImpact.brokenBondCount, app.lastImpact.detachedChunkCount );
 	ImGui::Text( "Bruchstücke %d  Verbindungen %d", stats.chunkCount, stats.bondCount );
-	ImGui::Text( "Lastnachweis: %d gebrochen, %d gerissen", stats.overloadedBondCount, stats.crackedBondCount );
 	ImGui::Text( "Trümmerkörper %d  wach %d  Kontakte %d", stats.dynamicBodyCount, b3World_GetAwakeBodyCount( app.physics ),
 				 counters.contactCount );
-	ImGui::Text( "Dreiecke %dk  Draw Calls %d  Partikel %d", renderStats.triangleCount / 1000, renderStats.drawCalls,
-				 renderStats.particleCount );
-	ImGui::Text( "Hochgeladen %d kB  Speicher %d Seiten", renderStats.uploadedBytes / 1024, renderStats.pageCount );
+	ImGui::Text( "Dreiecke %dk  Draw Calls %d  Upload %d kB", renderStats.triangleCount / 1000, renderStats.drawCalls,
+				 renderStats.uploadedBytes / 1024 );
 	ImGui::TextDisabled( "%s", app.gpuName.empty() ? "Grafikkarte unbekannt" : app.gpuName.c_str() );
 	if ( ImGui::Button( "Messwerte kopieren" ) )
 	{
-		std::string report = BuildReport( app );
-		sapp_set_clipboard_string( report.c_str() );
+		std::string text = BuildReport( app );
+		sapp_set_clipboard_string( text.c_str() );
 		app.copiedFrame = app.frame;
 	}
 	ImGui::SameLine();
@@ -1613,7 +1157,7 @@ static void DrawUi( App& app )
 	ImGui::TextWrapped( "Linke Maustaste: schießen (halten = Dauerfeuer)\n"
 						"Rechte Maustaste halten: umsehen\n"
 						"WASD bewegen, Q/E runter/hoch, Shift schneller\n"
-						"1-3 Werkzeug, R neu laden, P Pause, T Zeitlupe, L Statik, F1 Menü" );
+						"1-3 Werkzeug, R neu laden, P Pause, C Trümmer weg, F1 Menü" );
 
 	ImGui::End();
 
@@ -1629,7 +1173,7 @@ static void DrawUi( App& app )
 }
 
 //----------------------------------------------------------------------------------------------------------------------
-// Scripted run for automated screenshots
+// Scripted runs for measurements and screenshots
 
 static void RunScript( App& app )
 {
@@ -1652,35 +1196,15 @@ static void RunScript( App& app )
 			}
 			break;
 
-		case SceneHouse:
-			if ( f >= 30 && f <= 130 && f % 10 == 0 )
+		case SceneStress:
+			if ( f >= 20 && f < 120 && f % 5 == 0 )
 			{
-				// Blast the ground floor front, right and back walls. The floors above hang on the left wall.
-				int k = ( f - 30 ) / 10;
-				b3Vec3 targets[11] = { { -3.4f, 1.2f, 3.25f },	{ -1.1f, 1.2f, 3.25f }, { 1.1f, 1.2f, 3.25f },  { 3.4f, 1.2f, 3.25f },
-									   { 4.5f, 1.2f, 2.0f },	{ 4.5f, 1.2f, 0.0f },	{ 4.5f, 1.2f, -2.0f },	{ 3.4f, 1.2f, -3.25f },
-									   { 1.1f, 1.2f, -3.25f }, { -1.1f, 1.2f, -3.25f }, { -3.4f, 1.2f, -3.25f } };
-				FireAt( app, ToolGrenade, targets[k] );
+				int k = ( f - 20 ) / 5;
+				FireAt( app, k % 3 == 0 ? ToolGrenade : ToolRifle, { -8.0f + 0.8f * (float)k, 1.5f, 0.15f } );
 			}
 			break;
 
-		case SceneColonnade:
-			if ( f >= 20 && f <= 95 && f % 15 == 5 )
-			{
-				// Blow out the front row of columns one after another
-				int k = ( f - 20 ) / 15;
-				FireAt( app, ToolGrenade, { ( (float)k - 2.5f ) * 2.8f, 1.5f, 2.3f } );
-			}
-			break;
-
-		case SceneTower:
-			if ( f >= 20 && f <= 70 && f % 10 == 0 )
-			{
-				FireAt( app, ToolGrenade, { -1.0f + 0.5f * (float)( ( f - 20 ) / 10 ), 0.8f, 1.9f } );
-			}
-			break;
-
-		case SceneTown:
+		default:
 			if ( f >= 20 && f % 5 == 0 )
 			{
 				// Twelve grenades a second on the walls of the houses, like holding the fire button
@@ -1692,14 +1216,6 @@ static void RunScript( App& app )
 				b3Vec3 local = ( k % 4 ) < 2 ? b3Vec3{ 4.2f * along, height, ( k % 4 ) == 0 ? 3.4f : -3.4f }
 											  : b3Vec3{ ( k % 4 ) == 2 ? 4.7f : -4.7f, height, 3.0f * along };
 				FireAt( app, ToolGrenade, b3Add( center, local ) );
-			}
-			break;
-
-		default:
-			if ( f >= 20 && f < 120 && f % 5 == 0 )
-			{
-				int k = ( f - 20 ) / 5;
-				FireAt( app, k % 3 == 0 ? ToolGrenade : ToolRifle, { -8.0f + 0.8f * (float)k, 1.5f, 0.15f } );
 			}
 			break;
 	}
@@ -1750,7 +1266,50 @@ static void OnInit()
 	app.tools[ToolGrenade] = { 1.3f, 3.0e5f, 12.0f, 0, 2.0f };
 	app.tools[ToolCannon] = { 0.25f, 0.0f, 45.0f, 0, 3.0f };
 
-	LoadScene( app, app.automation.scene >= 0 ? (SceneKind)app.automation.scene : SceneWall );
+	int scene = app.automation.scene >= 0 && app.automation.scene < SceneCount ? app.automation.scene : SceneWall;
+	LoadScene( app, (SceneKind)scene );
+}
+
+static void PrintAutomationReport( App& app )
+{
+	nbStats stats = nbWorld_GetStats( app.destruction );
+	printf( "scene %d frame %d: chunks %d bonds %d debris %d rubble %d\n", (int)app.scene, app.frame, stats.chunkCount, stats.bondCount,
+			stats.dynamicBodyCount, stats.rubbleCount );
+
+	RenderStats rs = app.renderer.GetStats();
+	printf( "  render: draw calls %d, vertices %d (%d of removed meshes), pages %d, slots %d\n", rs.drawCalls, rs.vertexCount,
+			rs.deadVertexCount, rs.pageCount, rs.slotCount );
+
+	// Per frame averages, 95th percentile and maximum
+	struct Series
+	{
+		const char* name;
+		const std::vector<float>* values;
+		float scale;
+	};
+	Series series[] = {
+		{ "simulation ms", &app.automation.simulationTimes, 1.0f },
+		{ "cpu frame ms", &app.automation.frameTimes, 1.0f },
+		{ "graphics ms", &app.automation.graphicsTimes, 1.0f },
+		{ "upload ms", &app.automation.uploadTimes, 1.0f },
+		{ "uploaded kB", &app.automation.uploadedBytes, 1.0f / 1024.0f },
+		{ "triangles k", &app.automation.triangles, 1.0f / 1000.0f },
+	};
+	for ( const Series& entry : series )
+	{
+		std::vector<float> values = *entry.values;
+		std::sort( values.begin(), values.end() );
+		float total = 0.0f;
+		for ( float v : values )
+		{
+			total += v;
+		}
+		size_t n = values.size();
+		printf( "  %-14s avg %9.2f  p95 %9.2f  max %9.2f\n", entry.name, entry.scale * total / (float)b3MaxInt( (int)n, 1 ),
+				n > 0 ? entry.scale * values[n * 95 / 100] : 0.0f, n > 0 ? entry.scale * values[n - 1] : 0.0f );
+	}
+
+	printf( "%s", BuildReport( app ).c_str() );
 }
 
 static void OnFrame()
@@ -1786,16 +1345,12 @@ static void OnFrame()
 	}
 	float impactTime = b3GetMilliseconds( cpuTicks );
 
-	app.frameSimTime = 0.0f;
 	uint64_t simulationTicks = b3GetTicks();
 	StepSimulation( app, dt );
 	float simulationTime = b3GetMilliseconds( simulationTicks );
 
 	uint64_t graphicsTicks = b3GetTicks();
 	SyncChunks( app );
-	UpdateLoadView( app );
-	UpdateParticles( app, app.frameSimTime );
-	BuildParticleInstances( app );
 
 	int width = sapp_width();
 	int height = sapp_height();
@@ -1811,14 +1366,11 @@ static void OnFrame()
 		DrawUi( app );
 	}
 
-	app.renderer.Render( app.camera, app.renderSettings, width, height );
+	app.renderer.Render( app.camera, width, height );
 	simgui_render();
 	sg_end_pass();
 	sg_commit();
-
 	float graphicsTime = b3GetMilliseconds( graphicsTicks );
-	app.simulationFrame = 0.95f * app.simulationFrame + 0.05f * simulationTime;
-	app.graphicsFrame = 0.95f * app.graphicsFrame + 0.05f * graphicsTime;
 
 	int slot = app.historyNext;
 	app.historyFrame[slot] = 1000.0f * (float)sapp_frame_duration();
@@ -1833,58 +1385,16 @@ static void OnFrame()
 		RenderStats rs = app.renderer.GetStats();
 		app.automation.simulationTimes.push_back( simulationTime );
 		app.automation.frameTimes.push_back( b3GetMilliseconds( cpuTicks ) );
-		app.automation.uploadedBytes.push_back( (float)rs.uploadedBytes );
-		app.automation.uploadTimes.push_back( rs.uploadTime );
 		app.automation.graphicsTimes.push_back( graphicsTime );
+		app.automation.uploadTimes.push_back( rs.uploadTime );
+		app.automation.uploadedBytes.push_back( (float)rs.uploadedBytes );
 		app.automation.triangles.push_back( (float)rs.triangleCount );
-		app.automation.particles.push_back( (float)rs.particleCount );
-		app.automation.particleCoverage.push_back( app.particleCoverage );
 	}
 
 	app.frame += 1;
 	if ( app.automation.frameLimit > 0 && app.frame >= app.automation.frameLimit )
 	{
-		nbStats stats = nbWorld_GetStats( app.destruction );
-		printf( "scene %d frame %d: chunks %d bonds %d debris %d rubble %d overloaded %d\n", (int)app.scene, app.frame, stats.chunkCount,
-				stats.bondCount, stats.dynamicBodyCount, stats.rubbleCount, stats.overloadedBondCount );
-
-		RenderStats rs = app.renderer.GetStats();
-		printf( "  render: draw calls %d, vertices %d (%d of removed meshes), pages %d, slots %d\n", rs.drawCalls, rs.vertexCount,
-				rs.deadVertexCount, rs.pageCount, rs.slotCount );
-
-		// Per frame averages, 95th percentile and maximum
-		struct Series
-		{
-			const char* name;
-			const std::vector<float>* values;
-			float scale;
-		};
-		Series series[] = {
-			{ "simulation ms", &app.automation.simulationTimes, 1.0f },
-			{ "cpu frame ms", &app.automation.frameTimes, 1.0f },
-			{ "graphics ms", &app.automation.graphicsTimes, 1.0f },
-			{ "upload ms", &app.automation.uploadTimes, 1.0f },
-			{ "uploaded kB", &app.automation.uploadedBytes, 1.0f / 1024.0f },
-			{ "triangles k", &app.automation.triangles, 1.0f / 1000.0f },
-			{ "particles", &app.automation.particles, 1.0f },
-			{ "dust screens", &app.automation.particleCoverage, 1.0f },
-		};
-		for ( const Series& entry : series )
-		{
-			std::vector<float> values = *entry.values;
-			std::sort( values.begin(), values.end() );
-			float total = 0.0f;
-			for ( float v : values )
-			{
-				total += v;
-			}
-			size_t n = values.size();
-			printf( "  %-14s avg %9.2f  p95 %9.2f  max %9.2f\n", entry.name, entry.scale * total / (float)b3MaxInt( (int)n, 1 ),
-					n > 0 ? entry.scale * values[n * 95 / 100] : 0.0f, n > 0 ? entry.scale * values[n - 1] : 0.0f );
-		}
-
-		printf( "%s", BuildReport( app ).c_str() );
-
+		PrintAutomationReport( app );
 		if ( app.automation.screenshotPath != nullptr )
 		{
 			DemoSaveScreenshot( app.automation.screenshotPath, width, height );
@@ -1922,21 +1432,9 @@ static void OnEvent( const sapp_event* event )
 			{
 				app.paused = !app.paused;
 			}
-			else if ( event->key_code == SAPP_KEYCODE_T )
-			{
-				app.timeScale = app.timeScale < 0.999f ? 1.0f : 0.2f;
-			}
 			else if ( event->key_code == SAPP_KEYCODE_C )
 			{
 				nbWorld_ClearDebris( app.destruction );
-			}
-			else if ( event->key_code == SAPP_KEYCODE_F )
-			{
-				app.renderSettings.showChunks = !app.renderSettings.showChunks;
-			}
-			else if ( event->key_code == SAPP_KEYCODE_L )
-			{
-				app.renderSettings.showLoad = !app.renderSettings.showLoad;
 			}
 			else if ( event->key_code == SAPP_KEYCODE_F1 )
 			{
@@ -2037,10 +1535,6 @@ int main( int argc, char** argv )
 		{
 			app.automation.script = true;
 		}
-		else if ( strcmp( argv[i], "--load-view" ) == 0 )
-		{
-			app.renderSettings.showLoad = true;
-		}
 		else if ( strcmp( argv[i], "--scene" ) == 0 && i + 1 < argc )
 		{
 			app.automation.scene = atoi( argv[++i] );
@@ -2049,9 +1543,9 @@ int main( int argc, char** argv )
 		{
 			app.automation.msaa = b3ClampInt( atoi( argv[++i] ), 1, 8 );
 		}
-		else if ( strcmp( argv[i], "--lowdpi" ) == 0 )
+		else if ( strcmp( argv[i], "--highdpi" ) == 0 )
 		{
-			app.automation.lowDpi = true;
+			app.automation.highDpi = true;
 		}
 		else if ( strcmp( argv[i], "--fragment-scale" ) == 0 && i + 1 < argc )
 		{
@@ -2067,7 +1561,7 @@ int main( int argc, char** argv )
 	desc.width = 1600;
 	desc.height = 900;
 	desc.sample_count = app.automation.msaa;
-	desc.high_dpi = app.automation.lowDpi == false;
+	desc.high_dpi = app.automation.highDpi;
 	desc.enable_clipboard = true;
 	desc.clipboard_size = 8192;
 	desc.window_title = "Nebenan - polygonale Zerstörung mit Box3D";

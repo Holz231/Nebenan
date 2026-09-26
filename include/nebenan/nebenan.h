@@ -142,11 +142,6 @@ NB_API int nbChunk_GetDepth( nbChunkId chunkId );
 /// Material of the chunk, the one of its original piece. Zero for an invalid chunk.
 NB_API nbMaterial nbChunk_GetMaterial( nbChunkId chunkId );
 
-/// How close the chunk is to breaking off under the weight of its structure: the highest utilization, stress
-/// divided by strength, of the bonds around it in the last load check. Bonds break at one. Zero for debris
-/// and for structures without a load check.
-NB_API float nbChunk_GetUtilization( nbChunkId chunkId );
-
 /// Number of intact bonds of this chunk.
 NB_API int nbChunk_GetBondCount( nbChunkId chunkId );
 
@@ -164,13 +159,5 @@ NB_API nbGeometry nbChunk_GetGeometry( nbChunkId chunkId );
 /// @param visible one flag per face of nbChunk_GetGeometry
 /// @return the number of flags written
 NB_API int nbChunk_GetVisibleFaces( nbChunkId chunkId, bool* visible, int capacity );
-
-/// Number of vertices written by nbChunk_BuildMesh.
-NB_API int nbChunk_GetMeshVertexCount( nbChunkId chunkId );
-
-/// Build a flat shaded triangle list of the chunk: three vertices per triangle.
-/// @param uvScale texture coordinates per meter
-/// @return the number of vertices written
-NB_API int nbChunk_BuildMesh( nbChunkId chunkId, nbMeshVertex* vertices, int capacity, float uvScale );
 
 /** @} */

@@ -37,7 +37,7 @@ typedef struct nbPoly
 	uint8_t indices[NB_POLY_MAX_INDICES];
 } nbPoly;
 
-// The face two chunks share. The second moment of the area gives the bending strength of a bond.
+// The face two chunks share
 typedef struct nbBondGeometry
 {
 	b3Vec3 centroid;
@@ -46,14 +46,8 @@ typedef struct nbBondGeometry
 	b3Vec3 normal;
 
 	float area;
-
-	// Second moment of the area about the centroid: xx, yy, zz, xy, xz, yz in m^4
-	float inertia[6];
 } nbBondGeometry;
 
-// Second moment of an area about the axis through its centroid that is perpendicular to direction:
-// the integral of the squared distance along direction, a unit vector in the plane of the area.
-float nbSecondMomentAlong( const float inertia[6], b3Vec3 direction );
 
 typedef enum nbClipResult
 {
@@ -89,7 +83,7 @@ void nbPoly_Translate( nbPoly* poly, b3Vec3 translation );
 nbClipResult nbPoly_Clip( const nbPoly* in, b3Plane plane, uint8_t material, int32_t tag, float tolerance, nbPoly* out );
 
 void nbPoly_ComputeMass( const nbPoly* poly, float* volume, b3Vec3* centroid );
-// Area, centroid, normal and second moment of a face
+// Area, centroid and normal of a face
 float nbPoly_FaceGeometry( const nbPoly* poly, int faceIndex, nbBondGeometry* geometry );
 b3AABB nbPoly_ComputeBounds( const nbPoly* poly );
 bool nbPoly_ContainsPoint( const nbPoly* poly, b3Vec3 point, float margin );
@@ -119,6 +113,3 @@ float nbShape_FaceOverlap( const nbShape* a, int faceA, const nbShape* b, int fa
 // Returns the contact area and writes the combined geometry with the normal from a to b.
 float nbShape_ContactArea( const nbShape* a, const nbShape* b, float tolerance, nbBondGeometry* geometry );
 
-// Number of triangle list vertices for a flat shaded mesh.
-int nbShape_GetMeshVertexCount( const nbShape* shape );
-int nbShape_BuildMesh( const nbShape* shape, nbMeshVertex* vertices, int capacity, float uvScale );

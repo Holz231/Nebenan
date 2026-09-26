@@ -12,10 +12,6 @@
 // Rubble bodies one thaw brings back to life at most, so a single impact cannot wake a mountain of rubble
 #define NB_MAX_THAW 512
 
-// Updates between two load checks of the same structure. A collapse moves on at this pace, changes in between are
-// checked together.
-#define NB_LOAD_COOLDOWN 2
-
 enum nbChunkFlags
 {
 	// Glued to the world through an anchor plane
@@ -66,9 +62,6 @@ typedef struct nbChunk
 	int scratch;
 	uint32_t searchStamp;
 
-	// Highest utilization of the bonds of the chunk's cluster in the last load check
-	float utilization;
-
 	uint16_t generation;
 	uint8_t depth;
 	uint8_t flags;
@@ -79,23 +72,6 @@ typedef struct nbChunk
 	// Index into the materials of the destructible
 	uint8_t materialIndex;
 } nbChunk;
-
-// How a bond carries load
-typedef enum nbJointState
-{
-	// Glued: tension, compression and shear up to the strength of the bond
-	nb_jointGlued = 0,
-
-	// A dry joint the load check has not seen yet. Joints that stand upright start with a small gap, like the
-	// head joints between the stones of a wall, and close once they are pressed together.
-	nb_jointDry,
-
-	// Cracked or dry: compression and friction only, over the part of the interface that stays in contact
-	nb_jointOpen,
-
-	// An open joint that is pulled apart and carries nothing
-	nb_jointSeparated,
-} nbJointState;
 
 // Glue between two touching chunks of the same actor
 typedef struct nbBond
@@ -109,28 +85,11 @@ typedef struct nbBond
 	b3Vec3 centroid;
 	float area;
 
-	// Interface normal from chunk[0] to chunk[1] and second moment of the interface about its centroid,
-	// used by the load check
+	// Interface normal from chunk[0] to chunk[1]
 	b3Vec3 normal;
-	float inertia[6];
 
 	// Remaining damage before the bond breaks
 	float health;
-
-	// Tension in Pascal the bond carries before it cracks open, zero for a dry joint. FLT_MAX leaves the bond
-	// out of the load check.
-	float tensileStrength;
-
-	// Where the normal force of an open joint acted in the last load check, relative to the centroid. The
-	// part of the interface around it is in contact.
-	b3Vec3 eccentricity;
-
-	// How far an open joint slid in the last load check: the part of the relative displacement at its contact that
-	// friction could not hold
-	b3Vec3 slip;
-
-	// nbJointState
-	uint8_t jointState;
 
 	uint32_t stamp;
 } nbBond;
@@ -201,20 +160,6 @@ typedef struct nbDestructible
 	uint32_t seed;
 	uint32_t fractureCounter;
 
-	// The static structure changed, check spans and loads on the next update
-	bool structureDirty;
-
-	// Load checks in a row whose open joints have not settled yet
-	int loadPasses;
-
-	// Updates until the structure may be checked again
-	int loadCooldown;
-
-	// Grid cell size the last load check clustered the chunks with
-	float loadCellSize;
-
-	// Some pieces are joined with a joint strength of their own
-	bool hasJoints;
 	bool isStatic;
 	bool enableCollisionDamage;
 	bool isFree;
@@ -245,7 +190,6 @@ NB_ARRAY_DECLARE( nbActor, nbActorArray );
 NB_ARRAY_DECLARE( nbDestructible, nbDestructibleArray );
 NB_ARRAY_DECLARE( nbChunkId, nbChunkIdArray );
 NB_ARRAY_DECLARE( nbCollisionImpact, nbCollisionImpactArray );
-NB_ARRAY_DECLARE( nbDustEvent, nbDustEventArray );
 
 typedef struct nbWorld
 {
@@ -284,16 +228,11 @@ typedef struct nbWorld
 	// Actors to freeze into rubble or to bring back to life
 	nbIntArray actorList;
 
-	// Structures to check against their weight in this update, and the bonds the check breaks
-	nbIntArray loadChecks;
-	nbIntArray brokenBonds;
-
 	// Event buffers. The write buffers collect events, nbWorld_GetEvents swaps them with the read buffers.
 	nbChunkIdArray createdEvents[2];
 	nbChunkIdArray destroyedEvents[2];
 	nbChunkIdArray movedEvents[2];
 	nbChunkIdArray exposedEvents[2];
-	nbDustEventArray dustEvents[2];
 	int eventBuffer;
 
 	nbCollisionImpactArray collisionImpacts;
@@ -318,9 +257,6 @@ typedef struct nbWorld
 
 	uint32_t bondStamp;
 	uint32_t searchStamp;
-
-	// Destructible the next load check starts from
-	int loadCursor;
 
 	nbStats stats;
 
@@ -352,15 +288,15 @@ int nbCreateChunk( nbWorld* world, int destructibleIndex, int actorIndex, nbShap
 				   int materialIndex );
 
 // Same with a hull built beforehand, for example by a fracture worker. The hull memory must stay valid
-// until the end of the operation. A null hull turns the shape into dust.
+// until the end of the operation. A null hull drops the shape.
 int nbCreateChunkWithHull( nbWorld* world, int destructibleIndex, int actorIndex, nbShape* shape, b3HullData* hull, int depth,
 						   uint8_t interiorMaterial, int materialIndex );
 
 int nbAllocActor( nbWorld* world, int destructibleIndex, bool isStatic );
 void nbFreeActor( nbWorld* world, int actorIndex );
 
-// The geometry normal points from chunk A to chunk B. A tensile strength of zero makes a dry joint.
-int nbCreateBond( nbWorld* world, int chunkA, int chunkB, const nbBondGeometry* geometry, float health, float tensileStrength );
+// The geometry normal points from chunk A to chunk B
+int nbCreateBond( nbWorld* world, int chunkA, int chunkB, const nbBondGeometry* geometry, float health );
 void nbDestroyBond( nbWorld* world, int bondIndex );
 
 // Fragment size of a material in this world
@@ -374,10 +310,6 @@ const nbMaterial* nbGetChunkMaterial( const nbWorld* world, const nbChunk* chunk
 
 // Damage per square meter of bond area that breaks a bond: the strength of the weaker of its two materials
 float nbGetBondStrength( const nbWorld* world, const nbBond* bond );
-
-// Tension a bond between two chunks of these materials carries before it cracks, for the load check. Zero for
-// a material that only carries compression, FLT_MAX for one the load check leaves out.
-float nbGetTensileStrength( const nbMaterial* a, const nbMaterial* b );
 
 void nbActor_AddChunk( nbWorld* world, int actorIndex, int chunkIndex );
 void nbActor_RemoveChunk( nbWorld* world, int actorIndex, int chunkIndex );
@@ -399,23 +331,10 @@ bool nbIsAnchored( const nbDestructible* destructible, const nbShape* shape );
 // Split actors whose bonds broke into rigid islands. Unsupported islands become dynamic bodies.
 void nbSplitActors( nbWorld* world, nbImpactResult* result );
 
-// Break off glued parts that hang out further than the material span from their support
-void nbCheckSpans( nbWorld* world, int destructibleIndex );
-
-// Check static structures against their own weight and break the overloaded bonds. The structures are checked on
-// the workers.
-void nbCheckLoads( nbWorld* world, const int* destructibles, int count );
-
 // Create or move Box3D shapes for all touched chunks, update masses and remove empty actors.
 void nbCommitPhysics( nbWorld* world );
 
 void nbPushEvent( nbChunkIdArray* events, nbChunkId id );
-
-// Report crumbled material for particle effects
-void nbPushDust( nbWorld* world, nbDustType type, b3Pos point, b3Vec3 velocity, float radius, float volume, uint8_t material );
-
-// Report the crack of a bond that is about to break under damage or load
-void nbPushCrackDust( nbWorld* world, int bondIndex );
 void nbTouchChunk( nbWorld* world, int chunkIndex );
 void nbTouchActor( nbWorld* world, int actorIndex );
 void nbUpdateDebris( nbWorld* world, int actorIndex );

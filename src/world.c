@@ -70,35 +70,6 @@ void nbPushEvent( nbChunkIdArray* events, nbChunkId id )
 	nbArray_Push( *events, id );
 }
 
-void nbPushDust( nbWorld* world, nbDustType type, b3Pos point, b3Vec3 velocity, float radius, float volume, uint8_t material )
-{
-	if ( volume <= 0.0f )
-	{
-		return;
-	}
-
-	nbDustEvent event = {
-		.point = point,
-		.velocity = velocity,
-		.radius = radius,
-		.volume = volume,
-		.material = material,
-		.type = (uint8_t)type,
-	};
-	nbArray_Push( world->dustEvents[world->eventBuffer], event );
-}
-
-void nbPushCrackDust( nbWorld* world, int bondIndex )
-{
-	// Both chunks of a bond share an actor
-	const nbBond* bond = world->bonds.data + bondIndex;
-	const nbChunk* chunk = world->chunks.data + bond->chunk[0];
-	const nbActor* actor = world->actors.data + chunk->actorIndex;
-	b3Pos point = b3TransformWorldPoint( nbActor_GetTransform( world, actor ), bond->centroid );
-	b3Vec3 velocity = actor->isStatic ? b3Vec3_zero : b3Body_GetWorldPointVelocity( actor->bodyId, point );
-	nbPushDust( world, nb_dustCrack, point, velocity, 0.5f * sqrtf( bond->area ), 0.005f * bond->area, chunk->interiorMaterial );
-}
-
 void nbBeginOperation( nbWorld* world )
 {
 	nbArena_Reset( &world->arena );
@@ -296,7 +267,7 @@ int nbCreateChunkWithHull( nbWorld* world, int destructibleIndex, int actorIndex
 {
 	if ( hull == NULL )
 	{
-		// Degenerate sliver. It cannot be simulated, so it turns into dust.
+		// Degenerate sliver. It cannot be simulated, so it is dropped.
 		nbShape_Destroy( shape );
 		return NB_NULL_INDEX;
 	}
@@ -340,22 +311,7 @@ float nbGetBondStrength( const nbWorld* world, const nbBond* bond )
 	return b3MinFloat( a->strength, b->strength );
 }
 
-// A material with strengths is checked, a tensile strength of zero means it carries no tension
-static float nbMaterialTension( const nbMaterial* material )
-{
-	if ( material->tensileStrength > 0.0f )
-	{
-		return material->tensileStrength;
-	}
-	return material->compressiveStrength > 0.0f ? 0.0f : FLT_MAX;
-}
-
-float nbGetTensileStrength( const nbMaterial* a, const nbMaterial* b )
-{
-	return b3MinFloat( nbMaterialTension( a ), nbMaterialTension( b ) );
-}
-
-int nbCreateBond( nbWorld* world, int chunkA, int chunkB, const nbBondGeometry* geometry, float health, float tensileStrength )
+int nbCreateBond( nbWorld* world, int chunkA, int chunkB, const nbBondGeometry* geometry, float health )
 {
 	NB_ASSERT( chunkA != chunkB );
 
@@ -377,12 +333,7 @@ int nbCreateBond( nbWorld* world, int chunkA, int chunkB, const nbBondGeometry* 
 	bond->centroid = geometry->centroid;
 	bond->area = geometry->area;
 	bond->normal = geometry->normal;
-	memcpy( bond->inertia, geometry->inertia, sizeof( bond->inertia ) );
 	bond->health = health;
-	bond->tensileStrength = tensileStrength;
-	bond->eccentricity = b3Vec3_zero;
-	bond->slip = b3Vec3_zero;
-	bond->jointState = tensileStrength > 0.0f ? nb_jointGlued : nb_jointDry;
 	bond->stamp = 0;
 
 	for ( int side = 0; side < 2; ++side )
@@ -444,10 +395,6 @@ void nbDestroyBond( nbWorld* world, int bondIndex )
 		if ( chunk->actorIndex != NB_NULL_INDEX )
 		{
 			nbTouchActor( world, chunk->actorIndex );
-			if ( world->actors.data[chunk->actorIndex].isStatic )
-			{
-				world->destructibles.data[chunk->destructibleIndex].structureDirty = true;
-			}
 		}
 	}
 
@@ -1273,171 +1220,6 @@ static void nbSplitDynamicActor( nbWorld* world, int actorIndex, nbImpactResult*
 	}
 }
 
-// Dijkstra from the anchors over the bond graph of the static actor. Moving along gravity is free,
-// moving sideways costs the horizontal distance between the chunk centroids. The resulting distance is
-// how far the load of a chunk has to travel sideways to reach the ground. Bonds from supported chunks
-// to chunks beyond the span are cut, and the regular split then drops the overhanging parts.
-void nbCheckSpans( nbWorld* world, int destructibleIndex )
-{
-	nbDestructible* destructible = world->destructibles.data + destructibleIndex;
-
-	// Every material has its own span, zero means unlimited
-	float spans[NB_MAX_MATERIALS];
-	bool anySpan = false;
-	for ( int k = 0; k < destructible->materialCount; ++k )
-	{
-		float maxSpan = destructible->materials[k].maxSpan;
-		spans[k] = maxSpan > 0.0f ? maxSpan : FLT_MAX;
-		anySpan = anySpan || maxSpan > 0.0f;
-	}
-
-	if ( destructible->isStatic == false || anySpan == false )
-	{
-		return;
-	}
-
-	int actorIndex = NB_NULL_INDEX;
-	for ( int a = destructible->headActor; a != NB_NULL_INDEX; a = world->actors.data[a].nextActor )
-	{
-		if ( world->actors.data[a].isStatic )
-		{
-			actorIndex = a;
-			break;
-		}
-	}
-
-	if ( actorIndex == NB_NULL_INDEX )
-	{
-		return;
-	}
-
-	b3Vec3 gravity = b3World_GetGravity( world->physicsWorld );
-	b3Vec3 down = b3InvRotateVector( destructible->transform.q, b3Normalize( gravity ) );
-	if ( b3LengthSquared( down ) < 0.5f )
-	{
-		return;
-	}
-
-	nbBeginOperation( world );
-
-	nbActor* actor = world->actors.data + actorIndex;
-	int count = actor->chunkCount;
-	int* chunkList = nbArena_AllocArray( &world->arena, int, count );
-	float* distance = nbArena_AllocArray( &world->arena, float, count );
-	uint64_t* heap = nbArena_AllocArray( &world->arena, uint64_t, 4 * count + 8 );
-	int heapCapacity = 4 * count + 8;
-	int heapCount = 0;
-
-	int n = 0;
-	for ( int c = actor->headChunk; c != NB_NULL_INDEX; c = world->chunks.data[c].nextChunk )
-	{
-		nbChunk* chunk = world->chunks.data + c;
-		chunk->scratch = n;
-		chunkList[n] = c;
-		if ( chunk->flags & nb_chunkAnchored )
-		{
-			distance[n] = 0.0f;
-			heap[heapCount] = (uint64_t)(uint32_t)n;
-			nbSiftUp( heap, heapCount );
-			heapCount += 1;
-		}
-		else
-		{
-			distance[n] = FLT_MAX;
-		}
-		n += 1;
-	}
-
-	while ( heapCount > 0 )
-	{
-		uint64_t top = heap[0];
-		heap[0] = heap[--heapCount];
-		nbSiftDown( heap, heapCount, 0 );
-
-		int i = (int)( top & 0xFFFFFFFFu );
-		float d;
-		uint32_t bits = (uint32_t)( top >> 32 );
-		memcpy( &d, &bits, sizeof( d ) );
-		if ( d > distance[i] )
-		{
-			// Stale entry
-			continue;
-		}
-
-		const nbChunk* chunk = world->chunks.data + chunkList[i];
-		b3Vec3 centroid = chunk->shape->centroid;
-		for ( int key = chunk->headBondKey; key != NB_NULL_INDEX; )
-		{
-			const nbBond* bond = world->bonds.data + ( key >> 1 );
-			int side = key & 1;
-			key = bond->nextKey[side];
-
-			const nbChunk* other = world->chunks.data + bond->chunk[side ^ 1];
-			int j = other->scratch;
-			b3Vec3 delta = b3Sub( other->shape->centroid, centroid );
-			b3Vec3 sideways = b3MulSub( delta, b3Dot( delta, down ), down );
-			float candidate = d + b3Length( sideways );
-			if ( candidate < distance[j] && heapCount < heapCapacity )
-			{
-				distance[j] = candidate;
-				heap[heapCount] = ( (uint64_t)nbFloatKey( candidate ) << 32 ) | (uint32_t)j;
-				nbSiftUp( heap, heapCount );
-				heapCount += 1;
-			}
-		}
-	}
-
-	// Cut at the span boundary. Unreachable chunks were already dropped by the connectivity split.
-	nbIntArray* cut = &world->scratchList;
-	cut->count = 0;
-	for ( int i = 0; i < n; ++i )
-	{
-		const nbChunk* chunk = world->chunks.data + chunkList[i];
-		if ( distance[i] > spans[chunk->materialIndex] )
-		{
-			continue;
-		}
-
-		for ( int key = chunk->headBondKey; key != NB_NULL_INDEX; )
-		{
-			const nbBond* bond = world->bonds.data + ( key >> 1 );
-			int side = key & 1;
-			int bondIndex = key >> 1;
-			key = bond->nextKey[side];
-
-			const nbChunk* other = world->chunks.data + bond->chunk[side ^ 1];
-			if ( distance[other->scratch] > spans[other->materialIndex] )
-			{
-				nbArray_Push( *cut, bondIndex );
-			}
-		}
-	}
-
-	if ( cut->count == 0 )
-	{
-		return;
-	}
-
-	for ( int i = 0; i < cut->count; ++i )
-	{
-		if ( world->bonds.data[cut->data[i]].chunk[0] != NB_NULL_INDEX )
-		{
-			nbPushCrackDust( world, cut->data[i] );
-			nbDestroyBond( world, cut->data[i] );
-		}
-	}
-
-	nbImpactResult result = { 0 };
-	nbSplitActors( world, &result );
-	nbCommitPhysics( world );
-
-	for ( int i = 0; i < world->touchedActors.count; ++i )
-	{
-		world->actors.data[world->touchedActors.data[i]].isNew = false;
-	}
-	world->touchedActors.count = 0;
-}
-
 void nbSplitActors( nbWorld* world, nbImpactResult* result )
 {
 	int touchedCount = world->touchedActors.count;
@@ -1476,7 +1258,6 @@ nbWorldDef nbDefaultWorldDef( void )
 	def.collisionDamageScale = 12.0f;
 	def.collisionRadiusScale = 0.035f;
 	def.maxCollisionImpactsPerUpdate = 4;
-	def.loadCheckBudget = 2000;
 	def.maxFragmentsPerImpact = 160;
 	def.fragmentScale = 1.0f;
 	def.collisionPassThrough = 0.6f;
@@ -1756,15 +1537,12 @@ void nbDestroyWorld( nbWorldId worldId )
 	nbArray_Free( world->splitSeeds );
 	nbArray_Free( world->scratchList );
 	nbArray_Free( world->actorList );
-	nbArray_Free( world->loadChecks );
-	nbArray_Free( world->brokenBonds );
 	for ( int i = 0; i < 2; ++i )
 	{
 		nbArray_Free( world->createdEvents[i] );
 		nbArray_Free( world->destroyedEvents[i] );
 		nbArray_Free( world->movedEvents[i] );
 		nbArray_Free( world->exposedEvents[i] );
-		nbArray_Free( world->dustEvents[i] );
 	}
 	nbArray_Free( world->collisionImpacts );
 	nbArena_Destroy( &world->arena );
@@ -1797,7 +1575,6 @@ nbEvents nbWorld_GetEvents( nbWorldId worldId )
 	world->destroyedEvents[writeBuffer].count = 0;
 	world->movedEvents[writeBuffer].count = 0;
 	world->exposedEvents[writeBuffer].count = 0;
-	world->dustEvents[writeBuffer].count = 0;
 	world->eventBuffer = writeBuffer;
 
 	// The exposed chunks handed out now are reported again when they lose another bond
@@ -1818,8 +1595,6 @@ nbEvents nbWorld_GetEvents( nbWorldId worldId )
 	events.movedCount = world->movedEvents[readBuffer].count;
 	events.exposedChunks = world->exposedEvents[readBuffer].data;
 	events.exposedCount = world->exposedEvents[readBuffer].count;
-	events.dust = world->dustEvents[readBuffer].data;
-	events.dustCount = world->dustEvents[readBuffer].count;
 	return events;
 }
 
@@ -1920,14 +1695,7 @@ static void nbCollectCollisionImpacts( nbWorld* world )
 				continue;
 			}
 
-			// Hard hits raise dust even when they do no damage
 			const nbChunk* chunk = world->chunks.data + chunkIndex;
-			const nbActor* hitActor = world->actors.data + chunk->actorIndex;
-			float chunkVolume = chunk->shape->volume;
-			b3Vec3 dustVelocity = hitActor->isStatic ? b3Vec3_zero : b3Body_GetWorldPointVelocity( hitActor->bodyId, event->point );
-			nbPushDust( world, nb_dustCollision, event->point, dustVelocity, 0.5f * nbCbrt( chunkVolume ),
-						b3MinFloat( 1.0e-6f * energy, 0.1f * chunkVolume ), chunk->interiorMaterial );
-
 			const nbDestructible* destructible = world->destructibles.data + chunk->destructibleIndex;
 			if ( destructible->enableCollisionDamage == false )
 			{
@@ -2094,43 +1862,6 @@ void nbWorld_Update( nbWorldId worldId, float timeStep )
 	}
 	world->actorList.count = 0;
 
-	// Structures that changed are checked for overhangs and against their own weight. Whatever breaks marks
-	// the structure again, so a collapse spreads over the next updates until the rest is stable. The checks
-	// take turns within a budget of chunks per update, starting where the last update stopped.
-	int destructibleCount = world->destructibles.count;
-	int budget = world->def.loadCheckBudget * world->workerCount;
-	for ( int i = 0; i < destructibleCount; ++i )
-	{
-		nbDestructible* destructible = world->destructibles.data + i;
-		destructible->loadCooldown -= destructible->loadCooldown > 0 ? 1 : 0;
-	}
-
-	for ( int k = 0; k < destructibleCount && budget > 0; ++k )
-	{
-		int i = ( world->loadCursor + k ) % destructibleCount;
-		nbDestructible* destructible = world->destructibles.data + i;
-		if ( destructible->isFree || destructible->structureDirty == false || destructible->loadCooldown > 0 )
-		{
-			continue;
-		}
-
-		// A structure is checked at most every few updates, a collapse moves on at that pace and changes in
-		// between are checked together
-		destructible->structureDirty = false;
-		destructible->loadCooldown = NB_LOAD_COOLDOWN;
-		budget -= destructible->chunkCount;
-		world->loadCursor = ( i + 1 ) % destructibleCount;
-		nbArray_Push( world->loadChecks, i );
-	}
-
-	// The simple span rule first, it breaks bonds right away. Then the load check of all structures at once.
-	for ( int i = 0; i < world->loadChecks.count; ++i )
-	{
-		nbCheckSpans( world, world->loadChecks.data[i] );
-	}
-	nbCheckLoads( world, world->loadChecks.data, world->loadChecks.count );
-	world->loadChecks.count = 0;
-
 	// Collision damage, strongest first, limited per update
 	int impactCount = world->collisionImpacts.count;
 	if ( impactCount > world->def.maxCollisionImpactsPerUpdate )
@@ -2247,17 +1978,6 @@ nbMaterial nbChunk_GetMaterial( nbChunkId chunkId )
 	return chunk != NULL ? *nbGetChunkMaterial( world, chunk ) : (nbMaterial){ 0 };
 }
 
-float nbChunk_GetUtilization( nbChunkId chunkId )
-{
-	nbWorld* world;
-	nbChunk* chunk = nbGetChunkFromId( chunkId, &world );
-	if ( chunk == NULL || world->actors.data[chunk->actorIndex].isStatic == false )
-	{
-		return 0.0f;
-	}
-	return chunk->utilization;
-}
-
 int nbChunk_GetBondCount( nbChunkId chunkId )
 {
 	nbChunk* chunk = nbGetChunkFromId( chunkId, NULL );
@@ -2354,20 +2074,4 @@ int nbChunk_GetVisibleFaces( nbChunkId chunkId, bool* visible, int capacity )
 		visible[f] = covered[f] < NB_FACE_COVERAGE * 0.5f * twiceArea;
 	}
 	return faceCount;
-}
-
-int nbChunk_GetMeshVertexCount( nbChunkId chunkId )
-{
-	nbChunk* chunk = nbGetChunkFromId( chunkId, NULL );
-	return chunk != NULL ? nbShape_GetMeshVertexCount( chunk->shape ) : 0;
-}
-
-int nbChunk_BuildMesh( nbChunkId chunkId, nbMeshVertex* vertices, int capacity, float uvScale )
-{
-	nbChunk* chunk = nbGetChunkFromId( chunkId, NULL );
-	if ( chunk == NULL )
-	{
-		return 0;
-	}
-	return nbShape_BuildMesh( chunk->shape, vertices, capacity, uvScale );
 }

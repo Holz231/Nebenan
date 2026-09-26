@@ -7,7 +7,6 @@ set(NEBENAN_SOURCE_FILES
 	hull_builder.h
 	impact.c
 	destructible.c
-	load.c
 	poly.c
 	poly.h
 	scheduler.c
