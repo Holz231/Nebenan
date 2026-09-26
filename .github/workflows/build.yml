@@ -56,9 +56,9 @@ jobs:
           mkdir -p package/lizenzen
           cp "${{ matrix.demo }}" package/
           cp README.md package/LIESMICH.md
-          cp build/_deps/box3d-src/LICENSE package/lizenzen/box3d.txt
-          cp build/_deps/box3d-src/extern/sokol/LICENSE package/lizenzen/sokol.txt
-          cp build/_deps/imgui-src/LICENSE.txt package/lizenzen/imgui.txt
+          cp extern/box3d/LICENSE package/lizenzen/box3d.txt
+          cp extern/box3d/extern/sokol/LICENSE package/lizenzen/sokol.txt
+          cp extern/imgui/LICENSE.txt package/lizenzen/imgui.txt
 
       - uses: actions/upload-artifact@v4
         with:

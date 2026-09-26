@@ -6,11 +6,6 @@ project(nebenan
 	LANGUAGES C CXX
 )
 
-# Box3D is pinned to an exact commit so every build uses the same physics code.
-# Override with -DFETCHCONTENT_SOURCE_DIR_BOX3D=/path/to/box3d to use a local checkout.
-set(NEBENAN_BOX3D_REPOSITORY "https://github.com/erincatto/box3d.git" CACHE STRING "Box3D git repository")
-set(NEBENAN_BOX3D_TAG "adec25b3010b7b7a715e57ce79595b0d2184474a" CACHE STRING "Box3D commit, tag or branch")
-
 option(NEBENAN_TESTS "Build the unit tests" ${PROJECT_IS_TOP_LEVEL})
 option(NEBENAN_BENCHMARK "Build the benchmark" ${PROJECT_IS_TOP_LEVEL})
 option(NEBENAN_WARNINGS_AS_ERRORS "Treat compiler warnings as errors" OFF)
@@ -29,14 +24,14 @@ if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
 	set(CMAKE_BUILD_TYPE Release CACHE STRING "Build type" FORCE)
 endif()
 
+# Box3D ships in extern/box3d at a fixed commit, so every build uses the same physics code and needs no
+# download. A project that embeds Nebenan and has its own box3d::box3d target keeps that one.
 if(NOT TARGET box3d::box3d)
-	include(FetchContent)
-	FetchContent_Declare(box3d
-		GIT_REPOSITORY ${NEBENAN_BOX3D_REPOSITORY}
-		GIT_TAG ${NEBENAN_BOX3D_TAG}
-		SYSTEM
-	)
-	FetchContent_MakeAvailable(box3d)
+	if(CMAKE_VERSION VERSION_GREATER_EQUAL 3.25)
+		add_subdirectory(extern/box3d SYSTEM)
+	else()
+		add_subdirectory(extern/box3d)
+	endif()
 endif()
 
 add_subdirectory(src)

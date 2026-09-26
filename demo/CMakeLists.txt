@@ -1,5 +1,5 @@
-# Nebenan desktop demo: sokol (D3D11 on Windows, Metal on macOS, OpenGL on Linux) and Dear ImGui.
-# The sokol headers come with Box3D, so the demo uses exactly the version Box3D's samples use.
+# Nebenan desktop demo: sokol (D3D11 on Windows, Metal on macOS, OpenGL on Linux) and Dear ImGui, both in
+# extern/. The sokol headers come with Box3D, so the demo uses exactly the version Box3D's samples use.
 
 if(APPLE)
 	enable_language(OBJC)
@@ -16,28 +16,17 @@ if(UNIX AND NOT APPLE)
 	endif()
 endif()
 
-include(FetchContent)
-FetchContent_Declare(imgui
-	GIT_REPOSITORY https://github.com/ocornut/imgui.git
-	GIT_TAG v1.92.7
-	GIT_SHALLOW TRUE
-	SYSTEM
-)
-FetchContent_MakeAvailable(imgui)
-
+set(NEBENAN_IMGUI_DIR "${PROJECT_SOURCE_DIR}/extern/imgui")
 add_library(nebenan_imgui STATIC
-	${imgui_SOURCE_DIR}/imgui.cpp
-	${imgui_SOURCE_DIR}/imgui_draw.cpp
-	${imgui_SOURCE_DIR}/imgui_tables.cpp
-	${imgui_SOURCE_DIR}/imgui_widgets.cpp
+	${NEBENAN_IMGUI_DIR}/imgui.cpp
+	${NEBENAN_IMGUI_DIR}/imgui_draw.cpp
+	${NEBENAN_IMGUI_DIR}/imgui_tables.cpp
+	${NEBENAN_IMGUI_DIR}/imgui_widgets.cpp
 )
-target_include_directories(nebenan_imgui SYSTEM PUBLIC ${imgui_SOURCE_DIR})
+target_include_directories(nebenan_imgui SYSTEM PUBLIC ${NEBENAN_IMGUI_DIR})
 set_target_properties(nebenan_imgui PROPERTIES CXX_STANDARD 17 CXX_STANDARD_REQUIRED ON)
 
-set(NEBENAN_SOKOL_DIR "${box3d_SOURCE_DIR}/extern/sokol")
-if(NOT EXISTS "${NEBENAN_SOKOL_DIR}/sokol_gfx.h")
-	message(FATAL_ERROR "sokol headers not found in ${NEBENAN_SOKOL_DIR}")
-endif()
+set(NEBENAN_SOKOL_DIR "${PROJECT_SOURCE_DIR}/extern/box3d/extern/sokol")
 
 set(NEBENAN_DEMO_FILES
 	demo.cpp

@@ -42,8 +42,8 @@ Auf dem Mac zusätzlich `xattr -d com.apple.quarantine nebenan_demo` oder im Fin
 
 ## Selbst bauen
 
-Voraussetzungen: CMake 3.22 oder neuer, Git, ein C17/C++17-Compiler und eine Internetverbindung beim
-ersten Konfigurieren. CMake lädt Box3D (auf einen festen Commit gepinnt) und Dear ImGui selbst herunter.
+Voraussetzungen: CMake 3.22 oder neuer und ein C17/C++17-Compiler. Box3D und Dear ImGui liegen als Quellcode im
+Ordner [`extern`](extern) bei und werden mitgebaut, der Build braucht also kein Internet.
 
 **Windows** mit Visual Studio 2022 oder neuer (Workload „Desktopentwicklung mit C++"):
 
@@ -54,7 +54,8 @@ build.bat
 build\bin\Release\nebenan_demo.exe
 ```
 
-`build.bat` in der „Developer Command Prompt" von Visual Studio ausführen, dort ist CMake schon im Pfad.
+`build.bat` in der „Developer Command Prompt" von Visual Studio ausführen, dort ist CMake schon im Pfad. Statt zu
+klonen geht auch der ZIP-Download von GitHub: entpacken und im Ordner `build.bat` ausführen.
 Danach liegt die Projektmappe `nebenan` im Ordner `build`. In Visual Studio öffnen, oben **Release** statt
 Debug wählen, F5 startet die Demo.
 
@@ -77,8 +78,7 @@ build/bin/nebenan_demo
 ```
 
 CMake-Optionen: `NEBENAN_DEMO`, `NEBENAN_TESTS`, `NEBENAN_BENCHMARK` (bei eigenständigem Bau alle an) und
-`NEBENAN_WARNINGS_AS_ERRORS`. Mit `-DFETCHCONTENT_SOURCE_DIR_BOX3D=/pfad/zu/box3d` wird eine lokale
-Box3D-Kopie verwendet.
+`NEBENAN_WARNINGS_AS_ERRORS`.
 
 ## Steuerung
 
@@ -433,6 +433,7 @@ test/               Tests
 benchmark/          Leistungsmessung
 demo/               PC-Demo mit sokol und Dear ImGui
   shaders/          GLSL-Quelle und die mit sokol-shdc erzeugten Shader (HLSL, Metal, GLSL)
+extern/             Box3D (mit sokol) und Dear ImGui, unverändert, siehe extern/README.md
 .github/workflows/  CI für Windows, Linux und macOS
 ```
 
@@ -447,7 +448,7 @@ Nach Änderungen an `demo/shaders/scene.glsl` die Shader neu erzeugen, im Ordner
   Box3D-Formen bleiben auf dem aufrufenden Thread, bei großen Explosionen ist das der größere Teil.
 - Nur konvexe Teile. Konkave Formen müssen als mehrere konvexe Teile angegeben werden.
 - Render- und Physikgeometrie sind dieselben flachen Polygone.
-- Box3D ist noch jung (0.x) und kann seine API ändern. Deshalb ist ein fester Commit eingestellt.
+- Box3D ist noch jung (0.x) und kann seine API ändern. Deshalb liegt ein fester Stand bei.
 
 ## Lizenzen
 
@@ -457,4 +458,5 @@ Nebenan steht unter der MIT-Lizenz (SPDX-Kennung in jeder Quelldatei). Verwendet
 - [sokol](https://github.com/floooh/sokol) von Andre Weissflog, zlib-Lizenz (kommt mit Box3D)
 - [Dear ImGui](https://github.com/ocornut/imgui) von Omar Cornut, MIT-Lizenz
 
-Die Lizenztexte liegen dem Demo-Download im Ordner `lizenzen` bei.
+Die Lizenztexte liegen in `extern` neben dem Quellcode der Bibliotheken und dem Demo-Download im Ordner
+`lizenzen` bei.
