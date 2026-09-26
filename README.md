@@ -297,8 +297,9 @@ slab.material = &beton;   // Betondecke im Ziegelhaus, def.material ist der Zieg
 
 Bis zu `NB_MAX_MATERIALS` (8) verschiedene Materialien passen in ein Objekt. `nbChunk_GetMaterial` sagt, aus
 welchem Material ein Bruchstück ist, und die Box3D-Formen tragen Dichte, Reibung und `userMaterialId` ihres
-Materials. Konkave
-Formen wie eine Wand mit Fenster werden als mehrere Quader angegeben (siehe `AddWallWithOpenings` in
+Materials.
+
+Konkave Formen wie eine Wand mit Fenster werden als mehrere Quader angegeben (siehe `AddWallWithOpenings` in
 [demo/demo.cpp](demo/demo.cpp)). Die komplette API steht in [include/nebenan/nebenan.h](include/nebenan/nebenan.h).
 
 Einbinden in ein eigenes CMake-Projekt:
