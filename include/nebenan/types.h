@@ -396,7 +396,8 @@ typedef struct nbDustEvent
 } nbDustEvent;
 
 /// Destruction events collected since the last call to nbWorld_GetEvents. Use them to keep a
-/// renderer in sync: build meshes for created chunks, drop destroyed chunks and re-parent moved chunks.
+/// renderer in sync: build meshes for created chunks, drop destroyed chunks, re-parent moved chunks and
+/// rebuild the meshes of exposed chunks.
 typedef struct nbEvents
 {
 	/// Chunks created since the last call. They may already be destroyed again, check nbChunk_IsValid.
@@ -408,12 +409,17 @@ typedef struct nbEvents
 	/// Chunks that moved to a different body since the last call. Created chunks are not repeated here.
 	const nbChunkId* movedChunks;
 
+	/// Chunks that lost a bond since the last call. Faces that the bond covered may be visible now, see
+	/// nbChunk_GetVisibleFaces. They may already be destroyed again, check nbChunk_IsValid.
+	const nbChunkId* exposedChunks;
+
 	/// Dust from impacts, cracks and hard collisions since the last call.
 	const nbDustEvent* dust;
 
 	int createdCount;
 	int destroyedCount;
 	int movedCount;
+	int exposedCount;
 	int dustCount;
 } nbEvents;
 

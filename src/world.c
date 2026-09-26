@@ -432,6 +432,13 @@ void nbDestroyBond( nbWorld* world, int bondIndex )
 
 		chunk->bondCount -= 1;
 
+		// A face the bond covered may be visible now
+		if ( ( chunk->flags & nb_chunkExposed ) == 0 )
+		{
+			chunk->flags |= nb_chunkExposed;
+			nbPushEvent( world->exposedEvents + world->eventBuffer, nbMakeChunkId( world, chunkIndex ) );
+		}
+
 		// Both ends may have lost their path to an anchor
 		nbArray_Push( world->splitSeeds, chunkIndex );
 		if ( chunk->actorIndex != NB_NULL_INDEX )
@@ -649,6 +656,8 @@ static void nbReleaseChunk( nbWorld* world, int chunkIndex )
 {
 	nbChunk* chunk = world->chunks.data + chunkIndex;
 
+	// A destroyed chunk is not reported as exposed
+	chunk->flags |= nb_chunkExposed;
 	while ( chunk->headBondKey != NB_NULL_INDEX )
 	{
 		nbDestroyBond( world, chunk->headBondKey >> 1 );
@@ -1690,6 +1699,7 @@ void nbDestroyWorld( nbWorldId worldId )
 		nbArray_Free( world->createdEvents[i] );
 		nbArray_Free( world->destroyedEvents[i] );
 		nbArray_Free( world->movedEvents[i] );
+		nbArray_Free( world->exposedEvents[i] );
 		nbArray_Free( world->dustEvents[i] );
 	}
 	nbArray_Free( world->collisionImpacts );
@@ -1722,8 +1732,19 @@ nbEvents nbWorld_GetEvents( nbWorldId worldId )
 	world->createdEvents[writeBuffer].count = 0;
 	world->destroyedEvents[writeBuffer].count = 0;
 	world->movedEvents[writeBuffer].count = 0;
+	world->exposedEvents[writeBuffer].count = 0;
 	world->dustEvents[writeBuffer].count = 0;
 	world->eventBuffer = writeBuffer;
+
+	// The exposed chunks handed out now are reported again when they lose another bond
+	for ( int i = 0; i < world->exposedEvents[readBuffer].count; ++i )
+	{
+		nbChunk* chunk = nbGetChunkFromId( world->exposedEvents[readBuffer].data[i], NULL );
+		if ( chunk != NULL )
+		{
+			chunk->flags &= ~nb_chunkExposed;
+		}
+	}
 
 	events.createdChunks = world->createdEvents[readBuffer].data;
 	events.createdCount = world->createdEvents[readBuffer].count;
@@ -1731,6 +1752,8 @@ nbEvents nbWorld_GetEvents( nbWorldId worldId )
 	events.destroyedCount = world->destroyedEvents[readBuffer].count;
 	events.movedChunks = world->movedEvents[readBuffer].data;
 	events.movedCount = world->movedEvents[readBuffer].count;
+	events.exposedChunks = world->exposedEvents[readBuffer].data;
+	events.exposedCount = world->exposedEvents[readBuffer].count;
 	events.dust = world->dustEvents[readBuffer].data;
 	events.dustCount = world->dustEvents[readBuffer].count;
 	return events;
@@ -2202,6 +2225,71 @@ nbGeometry nbChunk_GetGeometry( nbChunkId chunkId )
 		return (nbGeometry){ 0 };
 	}
 	return nbShape_GetGeometry( chunk->shape );
+}
+
+// A bond lies on a face when the normals agree within about one degree and the interface centroid is on the face
+// plane within the tolerance of bonding. Interfaces that cover all but a thousandth of a face hide it.
+#define NB_FACE_NORMAL_TOLERANCE 0.9998f
+#define NB_FACE_PLANE_TOLERANCE 2.0e-3f
+#define NB_FACE_COVERAGE 0.999f
+
+// Two convex chunks touch in one plane, so every bond lies on one face of each chunk. The bond normal points out of
+// its first chunk.
+int nbChunk_GetVisibleFaces( nbChunkId chunkId, bool* visible, int capacity )
+{
+	nbWorld* world = NULL;
+	nbChunk* chunk = nbGetChunkFromId( chunkId, &world );
+	if ( chunk == NULL || visible == NULL )
+	{
+		return 0;
+	}
+
+	const nbShape* shape = chunk->shape;
+	int faceCount = b3MinInt( shape->faceCount, capacity );
+	float covered[NB_POLY_MAX_FACES] = { 0 };
+
+	for ( int key = chunk->headBondKey; key != NB_NULL_INDEX; )
+	{
+		const nbBond* bond = world->bonds.data + ( key >> 1 );
+		int side = key & 1;
+		b3Vec3 normal = side == 0 ? bond->normal : b3Neg( bond->normal );
+		float height = b3Dot( normal, bond->centroid );
+
+		int bestFace = -1;
+		float bestDistance = NB_FACE_PLANE_TOLERANCE;
+		for ( int f = 0; f < shape->faceCount; ++f )
+		{
+			b3Plane plane = shape->faces[f].plane;
+			float distance = b3AbsFloat( plane.offset - height );
+			if ( b3Dot( plane.normal, normal ) > NB_FACE_NORMAL_TOLERANCE && distance <= bestDistance )
+			{
+				bestFace = f;
+				bestDistance = distance;
+			}
+		}
+
+		if ( bestFace >= 0 )
+		{
+			covered[bestFace] += bond->area;
+		}
+		key = bond->nextKey[side];
+	}
+
+	for ( int f = 0; f < faceCount; ++f )
+	{
+		const nbFace* face = shape->faces + f;
+		const uint8_t* loop = shape->indices + face->firstIndex;
+		b3Vec3 origin = shape->vertices[loop[0]];
+		float twiceArea = 0.0f;
+		for ( int k = 1; k + 1 < face->indexCount; ++k )
+		{
+			b3Vec3 e1 = b3Sub( shape->vertices[loop[k]], origin );
+			b3Vec3 e2 = b3Sub( shape->vertices[loop[k + 1]], origin );
+			twiceArea += b3Dot( face->plane.normal, b3Cross( e1, e2 ) );
+		}
+		visible[f] = covered[f] < NB_FACE_COVERAGE * 0.5f * twiceArea;
+	}
+	return faceCount;
 }
 
 int nbChunk_GetMeshVertexCount( nbChunkId chunkId )

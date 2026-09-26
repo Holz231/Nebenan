@@ -2,6 +2,8 @@
 
 #include "renderer.h"
 
+#include "box3d/base.h"
+
 #include "sokol_app.h"
 #include "sokol_gfx.h"
 #include "sokol_glue.h"
@@ -10,11 +12,20 @@
 
 #include <string.h>
 
-static const int PageCapacity = 1 << 16;
+// A page holds up to 32768 vertices, so 16 bit indices reach all of them. Convex chunks need about 1.8 indices per
+// vertex, boxes 1.5.
+static const int PageVertexCapacity = 1 << 15;
+static const int PageIndexCapacity = 1 << 16;
+
+// A page is compacted when a third of its vertices belong to removed meshes. Up to two pages worth of vertices
+// move per frame, pages without a live mesh are dropped for free.
+static const int CompactionBudget = 2 * PageVertexCapacity;
+
 static const int ShadowResolution = 4096;
 
-// Floats per transform slot: position and scale, rotation, load and three spare
-static const int SlotFloats = 12;
+// Floats per transform slot: position and state, rotation. The state is zero for a hidden slot, else two plus the
+// load utilization of the chunk, which is negative for none.
+static const int SlotFloats = 8;
 
 b3Vec3 Camera::Forward() const
 {
@@ -100,6 +111,7 @@ void Renderer::Init()
 	litDesc.layout.attrs[ATTR_scene_lit_in_normal].offset = 12;
 	litDesc.layout.attrs[ATTR_scene_lit_in_slot].format = SG_VERTEXFORMAT_FLOAT;
 	litDesc.layout.attrs[ATTR_scene_lit_in_slot].offset = 16;
+	litDesc.index_type = SG_INDEXTYPE_UINT16;
 	litDesc.depth.compare = SG_COMPAREFUNC_LESS_EQUAL;
 	litDesc.depth.write_enabled = true;
 	litDesc.depth.pixel_format = environment.defaults.depth_format;
@@ -117,6 +129,7 @@ void Renderer::Init()
 	shadowPipelineDesc.layout.attrs[ATTR_scene_shadow_in_position].offset = 0;
 	shadowPipelineDesc.layout.attrs[ATTR_scene_shadow_in_slot].format = SG_VERTEXFORMAT_FLOAT;
 	shadowPipelineDesc.layout.attrs[ATTR_scene_shadow_in_slot].offset = 16;
+	shadowPipelineDesc.index_type = SG_INDEXTYPE_UINT16;
 	shadowPipelineDesc.depth.compare = SG_COMPAREFUNC_LESS_EQUAL;
 	shadowPipelineDesc.depth.write_enabled = true;
 	shadowPipelineDesc.depth.pixel_format = SG_PIXELFORMAT_DEPTH;
@@ -182,12 +195,14 @@ void Renderer::Init()
 
 void Renderer::Shutdown()
 {
-	for ( Page* page : m_pages )
+	for ( Page& page : m_pages )
 	{
-		sg_destroy_buffer( sg_buffer{ page->buffer } );
-		delete page;
+		sg_destroy_buffer( sg_buffer{ page.vertexBuffer } );
+		sg_destroy_buffer( sg_buffer{ page.indexBuffer } );
 	}
 	m_pages.clear();
+	m_emptyPages.clear();
+	m_openPage = -1;
 	m_meshes.clear();
 	m_freeMeshes.clear();
 
@@ -248,36 +263,59 @@ int Renderer::AllocSlot()
 		m_transformView = sg_make_view( &viewDesc ).id;
 	}
 
-	SetSlot( slot, b3Vec3_zero, b3Quat_identity, 1.0f );
-	SetSlotLoad( slot, -1.0f );
+	if ( (int)m_slotReferences.size() < m_slotCapacity )
+	{
+		m_slotReferences.resize( (size_t)m_slotCapacity, 0 );
+		m_slotFreed.resize( (size_t)m_slotCapacity, 0 );
+	}
+
+	m_slotFreed[slot] = 0;
+	float* data = m_slotData.data() + (size_t)slot * SlotFloats;
+	data[3] = 1.0f;
+	SetSlot( slot, b3Vec3_zero, b3Quat_identity );
 	return slot;
 }
 
 void Renderer::FreeSlot( int slot )
 {
 	// Hide anything that still references the slot
-	SetSlot( slot, b3Vec3_zero, b3Quat_identity, 0.0f );
-	SetSlotLoad( slot, -1.0f );
-	m_freeSlots.push_back( slot );
+	float* data = m_slotData.data() + (size_t)slot * SlotFloats;
+	data[3] = 0.0f;
+	m_slotsDirty = true;
+
+	m_slotFreed[slot] = 1;
+	if ( m_slotReferences[slot] == 0 )
+	{
+		m_freeSlots.push_back( slot );
+	}
+}
+
+void Renderer::ReleaseSlotReference( int slot )
+{
+	m_slotReferences[slot] -= 1;
+	if ( m_slotReferences[slot] == 0 && m_slotFreed[slot] != 0 )
+	{
+		m_freeSlots.push_back( slot );
+	}
 }
 
 void Renderer::SetSlotLoad( int slot, float load )
 {
 	float* data = m_slotData.data() + (size_t)slot * SlotFloats;
-	if ( data[8] != load )
+	float state = 2.0f + b3MaxFloat( load, -1.0f );
+	if ( data[3] != 0.0f && data[3] != state )
 	{
-		data[8] = load;
+		data[3] = state;
 		m_slotsDirty = true;
 	}
 }
 
-void Renderer::SetSlot( int slot, b3Vec3 position, b3Quat rotation, float scale )
+void Renderer::SetSlot( int slot, b3Vec3 position, b3Quat rotation )
 {
 	float* data = m_slotData.data() + (size_t)slot * SlotFloats;
 	data[0] = position.x;
 	data[1] = position.y;
 	data[2] = position.z;
-	data[3] = scale;
 	data[4] = rotation.v.x;
 	data[5] = rotation.v.y;
 	data[6] = rotation.v.z;
@@ -299,8 +337,70 @@ GpuVertex Renderer::MakeVertex( b3Vec3 position, b3Vec3 normal, int material, in
 	return vertex;
 }
 
-int Renderer::AddMesh( const GpuVertex* vertices, int count )
+// The open page if the mesh fits, else a new open page. The full page keeps its content until compaction.
+int Renderer::OpenPage( int vertexCount, int indexCount )
 {
+	if ( m_openPage >= 0 )
+	{
+		Page& page = m_pages[m_openPage];
+		if ( (int)page.vertices.size() + vertexCount <= PageVertexCapacity && (int)page.indices.size() + indexCount <= PageIndexCapacity )
+		{
+			return m_openPage;
+		}
+
+		// Moves into an immutable buffer
+		page.open = false;
+		page.dirty = true;
+	}
+
+	int pageIndex;
+	if ( m_emptyPages.empty() == false )
+	{
+		pageIndex = m_emptyPages.back();
+		m_emptyPages.pop_back();
+	}
+	else
+	{
+		pageIndex = (int)m_pages.size();
+		m_pages.emplace_back();
+	}
+
+	Page& page = m_pages[pageIndex];
+	page.vertices.reserve( PageVertexCapacity );
+	page.indices.reserve( PageIndexCapacity );
+	page.open = true;
+	page.dirty = true;
+	m_openPage = pageIndex;
+	return pageIndex;
+}
+
+// Append the mesh to the open page. The indices count from indexBase.
+void Renderer::Append( int meshIndex, const GpuVertex* vertices, const uint16_t* indices, int indexBase )
+{
+	Mesh& mesh = m_meshes[meshIndex];
+	int pageIndex = OpenPage( mesh.vertexCount, mesh.indexCount );
+	Page& page = m_pages[pageIndex];
+
+	mesh.page = pageIndex;
+	mesh.firstVertex = (int)page.vertices.size();
+	mesh.firstIndex = (int)page.indices.size();
+	mesh.pageEntry = (int)page.meshes.size();
+	page.vertices.insert( page.vertices.end(), vertices, vertices + mesh.vertexCount );
+	for ( int i = 0; i < mesh.indexCount; ++i )
+	{
+		page.indices.push_back( (uint16_t)( (int)indices[i] - indexBase + mesh.firstVertex ) );
+	}
+	page.meshes.push_back( meshIndex );
+	page.dirty = true;
+}
+
+int Renderer::AddMesh( const GpuVertex* vertices, int vertexCount, const uint16_t* indices, int indexCount, int slot )
+{
+	if ( vertexCount <= 0 || indexCount <= 0 || vertexCount > PageVertexCapacity || indexCount > PageIndexCapacity )
+	{
+		return -1;
+	}
+
 	int meshIndex;
 	if ( m_freeMeshes.empty() == false )
 	{
@@ -314,107 +414,184 @@ int Renderer::AddMesh( const GpuVertex* vertices, int count )
 	}
 
 	Mesh& mesh = m_meshes[meshIndex];
-	mesh.vertices.assign( vertices, vertices + count );
+	mesh = Mesh();
+	mesh.vertexCount = vertexCount;
+	mesh.indexCount = indexCount;
+	mesh.slot = slot;
 	mesh.alive = true;
+	m_slotReferences[slot] += 1;
 
-	// Append to the newest page with room
-	int pageIndex = -1;
-	for ( int i = (int)m_pages.size() - 1; i >= 0 && i >= (int)m_pages.size() - 2; --i )
-	{
-		if ( (int)m_pages[i]->vertices.size() + count <= PageCapacity )
-		{
-			pageIndex = i;
-			break;
-		}
-	}
-
-	if ( pageIndex < 0 )
-	{
-		Page* page = new Page();
-		sg_buffer_desc desc = {};
-		desc.usage.vertex_buffer = true;
-		desc.usage.dynamic_update = true;
-		desc.size = (size_t)PageCapacity * sizeof( GpuVertex );
-		desc.label = "vertex_page";
-		page->buffer = sg_make_buffer( &desc ).id;
-		page->vertices.reserve( PageCapacity );
-		m_pages.push_back( page );
-		pageIndex = (int)m_pages.size() - 1;
-	}
-
-	Page* page = m_pages[pageIndex];
-	mesh.page = pageIndex;
-	mesh.first = (int)page->vertices.size();
-	page->vertices.insert( page->vertices.end(), vertices, vertices + count );
-	page->meshes.push_back( meshIndex );
-	page->dirty = true;
+	Append( meshIndex, vertices, indices, 0 );
 	return meshIndex;
 }
 
 void Renderer::RemoveMesh( int meshIndex )
 {
-	Mesh& mesh = m_meshes[meshIndex];
-	if ( mesh.alive == false )
+	if ( meshIndex < 0 || meshIndex >= (int)m_meshes.size() || m_meshes[meshIndex].alive == false )
 	{
 		return;
 	}
 
-	Page* page = m_pages[mesh.page];
-	for ( size_t i = 0; i < page->meshes.size(); ++i )
-	{
-		if ( page->meshes[i] == meshIndex )
-		{
-			page->meshes[i] = page->meshes.back();
-			page->meshes.pop_back();
-			break;
-		}
-	}
-	page->dirty = true;
-	page->needsRebuild = true;
+	// The vertices stay where they are, hidden by the freed slot, until the page is compacted
+	Mesh& mesh = m_meshes[meshIndex];
+	Page& page = m_pages[mesh.page];
+	int last = page.meshes.back();
+	page.meshes[mesh.pageEntry] = last;
+	m_meshes[last].pageEntry = mesh.pageEntry;
+	page.meshes.pop_back();
+	page.deadSlots.push_back( mesh.slot );
+	page.deadVertices += mesh.vertexCount;
 
 	mesh.alive = false;
-	mesh.vertices.clear();
-	mesh.vertices.shrink_to_fit();
 	m_freeMeshes.push_back( meshIndex );
 }
 
-void Renderer::RebuildPage( int pageIndex )
+void Renderer::DropPage( int pageIndex )
 {
-	Page* page = m_pages[pageIndex];
-	page->vertices.clear();
-	for ( int meshIndex : page->meshes )
+	Page& page = m_pages[pageIndex];
+	for ( int slot : page.deadSlots )
 	{
-		Mesh& mesh = m_meshes[meshIndex];
-		mesh.first = (int)page->vertices.size();
-		page->vertices.insert( page->vertices.end(), mesh.vertices.begin(), mesh.vertices.end() );
+		ReleaseSlotReference( slot );
 	}
-	page->needsRebuild = false;
+
+	sg_destroy_buffer( sg_buffer{ page.vertexBuffer } );
+	sg_destroy_buffer( sg_buffer{ page.indexBuffer } );
+	page.vertexBuffer = 0;
+	page.indexBuffer = 0;
+	page.vertices.clear();
+	page.indices.clear();
+	page.meshes.clear();
+	page.deadSlots.clear();
+	page.deadVertices = 0;
+	page.open = false;
+	page.dirty = false;
+	page.dynamic = false;
+	page.drawCount = 0;
+
+	if ( m_openPage == pageIndex )
+	{
+		m_openPage = -1;
+	}
+	m_emptyPages.push_back( pageIndex );
 }
 
-void Renderer::Upload()
+// Pages that consist mostly of removed meshes hand their live meshes to the open page and are dropped
+void Renderer::Compact()
 {
-	m_stats.uploadedBytes = 0;
-	for ( int i = 0; i < (int)m_pages.size(); ++i )
+	int budget = CompactionBudget;
+	for ( int pageIndex = 0; pageIndex < (int)m_pages.size(); ++pageIndex )
 	{
-		Page* page = m_pages[i];
-		if ( page->dirty == false )
+		Page* page = &m_pages[pageIndex];
+		int vertexCount = (int)page->vertices.size();
+		if ( page->deadVertices == 0 || 3 * page->deadVertices < vertexCount )
 		{
 			continue;
 		}
 
-		if ( page->needsRebuild )
+		int liveVertices = vertexCount - page->deadVertices;
+		if ( liveVertices > budget )
 		{
-			RebuildPage( i );
+			continue;
+		}
+		budget -= liveVertices;
+
+		// The live meshes of the open page move into a fresh open page as well
+		if ( m_openPage == pageIndex )
+		{
+			page->open = false;
+			m_openPage = -1;
 		}
 
-		if ( page->vertices.empty() == false )
+		// Moving a mesh may add a page, so the page is looked up again every time
+		std::vector<int> meshes;
+		meshes.swap( page->meshes );
+		for ( int meshIndex : meshes )
 		{
-			size_t bytes = page->vertices.size() * sizeof( GpuVertex );
-			sg_update_buffer( sg_buffer{ page->buffer }, MakeRange( page->vertices.data(), bytes ) );
-			m_stats.uploadedBytes += (int)bytes;
+			const Mesh& mesh = m_meshes[meshIndex];
+			const Page& source = m_pages[pageIndex];
+			const GpuVertex* vertices = source.vertices.data() + mesh.firstVertex;
+			const uint16_t* indices = source.indices.data() + mesh.firstIndex;
+			Append( meshIndex, vertices, indices, mesh.firstVertex );
 		}
-		page->uploadedCount = (int)page->vertices.size();
-		page->dirty = false;
+
+		DropPage( pageIndex );
+	}
+}
+
+void Renderer::Upload()
+{
+	Compact();
+
+	m_stats.uploadedBytes = 0;
+	for ( Page& page : m_pages )
+	{
+		if ( page.dirty == false )
+		{
+			continue;
+		}
+		page.dirty = false;
+		page.drawCount = (int)page.indices.size();
+
+		size_t vertexBytes = page.vertices.size() * sizeof( GpuVertex );
+		size_t indexBytes = page.indices.size() * sizeof( uint16_t );
+		if ( page.open && page.dynamic == false )
+		{
+			// The open page changes from frame to frame
+			sg_destroy_buffer( sg_buffer{ page.vertexBuffer } );
+			sg_destroy_buffer( sg_buffer{ page.indexBuffer } );
+
+			sg_buffer_desc desc = {};
+			desc.usage.vertex_buffer = true;
+			desc.usage.dynamic_update = true;
+			desc.size = (size_t)PageVertexCapacity * sizeof( GpuVertex );
+			desc.label = "open_vertex_page";
+			page.vertexBuffer = sg_make_buffer( &desc ).id;
+
+			desc = {};
+			desc.usage.index_buffer = true;
+			desc.usage.dynamic_update = true;
+			desc.size = (size_t)PageIndexCapacity * sizeof( uint16_t );
+			desc.label = "open_index_page";
+			page.indexBuffer = sg_make_buffer( &desc ).id;
+			page.dynamic = true;
+		}
+
+		if ( page.open )
+		{
+			if ( indexBytes > 0 )
+			{
+				sg_update_buffer( sg_buffer{ page.vertexBuffer }, MakeRange( page.vertices.data(), vertexBytes ) );
+				sg_update_buffer( sg_buffer{ page.indexBuffer }, MakeRange( page.indices.data(), indexBytes ) );
+			}
+		}
+		else
+		{
+			// A full page goes into immutable buffers, which the driver can keep in video memory
+			sg_destroy_buffer( sg_buffer{ page.vertexBuffer } );
+			sg_destroy_buffer( sg_buffer{ page.indexBuffer } );
+			page.vertexBuffer = 0;
+			page.indexBuffer = 0;
+			page.dynamic = false;
+			if ( indexBytes > 0 )
+			{
+				sg_buffer_desc desc = {};
+				desc.usage.vertex_buffer = true;
+				desc.data = MakeRange( page.vertices.data(), vertexBytes );
+				desc.label = "vertex_page";
+				page.vertexBuffer = sg_make_buffer( &desc ).id;
+
+				desc = {};
+				desc.usage.index_buffer = true;
+				desc.data = MakeRange( page.indices.data(), indexBytes );
+				desc.label = "index_page";
+				page.indexBuffer = sg_make_buffer( &desc ).id;
+			}
+		}
+
+		if ( indexBytes > 0 )
+		{
+			m_stats.uploadedBytes += (int)( vertexBytes + indexBytes );
+		}
 	}
 
 	if ( m_slotsDirty && m_slotCount > 0 )
@@ -433,12 +610,20 @@ static Vec4 MakeVec4( b3Vec3 v, float w )
 
 void Renderer::Render( const Camera& camera, const RenderSettings& settings, int width, int height )
 {
+	uint64_t ticks = b3GetTicks();
 	Upload();
+	m_stats.uploadTime = b3GetMilliseconds( ticks );
 
 	m_stats.drawCalls = 0;
 	m_stats.vertexCount = 0;
-	m_stats.pageCount = (int)m_pages.size();
+	m_stats.triangleCount = 0;
+	m_stats.pageCount = (int)m_pages.size() - (int)m_emptyPages.size();
 	m_stats.slotCount = m_slotCount - (int)m_freeSlots.size();
+	m_stats.deadVertexCount = 0;
+	for ( const Page& page : m_pages )
+	{
+		m_stats.deadVertexCount += page.deadVertices;
+	}
 
 	b3Vec3 sun = b3Normalize( settings.sunDirection );
 
@@ -473,18 +658,19 @@ void Renderer::Render( const Camera& camera, const RenderSettings& settings, int
 			params.shadow_view_proj = lightViewProj;
 			sg_apply_uniforms( UB_scene_shadow_params_vs, MakeRange( &params, sizeof( params ) ) );
 
-			for ( Page* page : m_pages )
+			for ( const Page& page : m_pages )
 			{
-				if ( page->uploadedCount == 0 )
+				if ( page.drawCount == 0 )
 				{
 					continue;
 				}
 
 				sg_bindings bindings = {};
-				bindings.vertex_buffers[0] = sg_buffer{ page->buffer };
+				bindings.vertex_buffers[0] = sg_buffer{ page.vertexBuffer };
+				bindings.index_buffer = sg_buffer{ page.indexBuffer };
 				bindings.views[VIEW_scene_transforms] = sg_view{ m_transformView };
 				sg_apply_bindings( &bindings );
-				sg_draw( 0, page->uploadedCount, 1 );
+				sg_draw( 0, page.drawCount, 1 );
 				m_stats.drawCalls += 1;
 			}
 		}
@@ -543,22 +729,24 @@ void Renderer::Render( const Camera& camera, const RenderSettings& settings, int
 	sg_apply_uniforms( UB_scene_vs_params, MakeRange( &vsParams, sizeof( vsParams ) ) );
 	sg_apply_uniforms( UB_scene_fs_params, MakeRange( &fsParams, sizeof( fsParams ) ) );
 
-	for ( Page* page : m_pages )
+	for ( const Page& page : m_pages )
 	{
-		if ( page->uploadedCount == 0 )
+		if ( page.drawCount == 0 )
 		{
 			continue;
 		}
 
 		sg_bindings bindings = {};
-		bindings.vertex_buffers[0] = sg_buffer{ page->buffer };
+		bindings.vertex_buffers[0] = sg_buffer{ page.vertexBuffer };
+		bindings.index_buffer = sg_buffer{ page.indexBuffer };
 		bindings.views[VIEW_scene_transforms] = sg_view{ m_transformView };
 		bindings.views[VIEW_scene_shadow_map] = sg_view{ m_shadowTexture };
 		bindings.samplers[SMP_scene_shadow_sampler] = sg_sampler{ m_shadowSampler };
 		sg_apply_bindings( &bindings );
-		sg_draw( 0, page->uploadedCount, 1 );
+		sg_draw( 0, page.drawCount, 1 );
 		m_stats.drawCalls += 1;
-		m_stats.vertexCount += page->uploadedCount;
+		m_stats.vertexCount += (int)page.vertices.size();
+		m_stats.triangleCount += page.drawCount / 3;
 	}
 
 	// Dust and chips on top, without depth writes

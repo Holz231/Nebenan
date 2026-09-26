@@ -103,8 +103,10 @@ Box3D-Kopie verwendet.
 | L | Statik: jedes Bruchstück nach der Auslastung seiner Fugen einfärben, grün bis rot |
 | F1 | Menü ein- und ausblenden |
 
-Das Menü zeigt die Zeiten von Physik, Zerstörung und letztem Einschlag und wie viele Verbindungen der
-Lastnachweis gebrochen hat. Die Statik-Ansicht (L) zeigt, wie die Last durch das Bauwerk läuft: grün entspannt,
+Das Menü zeigt die Bildzeit und die CPU-Zeit pro Bild, aufgeteilt in Simulation und Grafik. Dauert ein Bild
+deutlich länger als die CPU dafür braucht, wartet es auf die Grafikkarte, und das Menü sagt es. Dazu die Zeiten
+von Physik, Zerstörung und letztem Einschlag, wie viele Verbindungen der Lastnachweis gebrochen hat, und was
+die Grafik zeichnet und hochlädt. Die Statik-Ansicht (L) zeigt, wie die Last durch das Bauwerk läuft: grün entspannt,
 gelb halb ausgelastet, rot kurz vor dem Bruch, lose Trümmer grau. Es erlaubt Waffenwerte, Zeitlupe und die Zahl der Threads für Physik und
 Zerstörung zu ändern und schaltet Staub und Splitter ein und aus.
 
@@ -130,9 +132,10 @@ Zerstörung zu ändern und schaltet Staub und Splitter ein und aus.
   Sekunde auf die Wände.
 
 Aufrufoptionen: `--scene 0..5` startet eine Szene, `--script` feuert eine vorgegebene Schussfolge ab,
-`--frames N` beendet nach N Bildern, meldet die CPU-Zeit pro Frame und speichert mit `--screenshot datei.ppm`
-ein Bild, `--load-view` schaltet die Statik-Ansicht ein. Hinkt die Physik hinterher, rechnet die Demo höchstens
-zwei Schritte pro Bild und lässt die Zeit langsamer laufen, statt immer mehr Schritte nachzuholen.
+`--frames N` beendet nach N Bildern, meldet CPU-Zeiten, Uploads, Dreiecke und Staub pro Bild und speichert mit
+`--screenshot datei.ppm` ein Bild, `--load-view` schaltet die Statik-Ansicht ein. Hinkt die Physik hinterher,
+lässt die Demo die Zeit langsamer laufen, statt Schritte nachzuholen: Ein zweiter Schritt im selben Bild kommt
+nur, wenn ein Schritt weniger als 4 ms kostet. Sonst würde jedes langsame Bild das nächste noch langsamer machen.
 
 ## So funktioniert es
 
@@ -255,10 +258,21 @@ Billboards in einem einzigen Draw Call.
 werden. Temporäre Daten eines Einschlags kommen aus einer Arena, die danach in einem Schritt zurückgesetzt
 wird. Eigene Allokatoren lassen sich mit `nbSetAllocator` einhängen, `nbGetByteCount` zählt den Verbrauch.
 
-**Demo-Renderer.** Alle Meshes liegen in wenigen großen Vertex-Seiten, jeder Vertex verweist auf einen
-Transformations-Slot, und alle Transformationen gehen einmal pro Bild in einen Storage-Buffer. Tausende
-Trümmer kosten so nur eine Handvoll Draw Calls. Dazu Schattenwurf und prozedurale Materialien für Ziegel,
-Putz und Beton.
+**Verdeckte Flächen.** In einem Bauwerk liegen die meisten Flächen der Bruchstücke innen, zwischen verklebten
+Nachbarn. `nbChunk_GetVisibleFaces` sagt, welche Flächen man sehen kann: Eine Fläche, die die Verbindungen zu
+den Nachbarn ganz bedecken, liegt innen. Verliert ein Bruchstück eine Verbindung, meldet es
+`nbEvents::exposedChunks`, und der Renderer baut sein Mesh neu. In der zerschossenen Stadt halbiert das die
+Dreiecke.
+
+**Demo-Renderer.** Alle Meshes liegen indiziert in Vertex-Seiten mit je 32 768 Vertices, jeder Vertex verweist auf
+einen Transformations-Slot, und alle Transformationen gehen einmal pro Bild in einen Storage-Buffer. Tausende
+Trümmer kosten so nur eine Handvoll Draw Calls. Eine volle Seite liegt in einem unveränderlichen Puffer, den der
+Treiber im Grafikspeicher halten kann. Entfernte Bruchstücke bleiben darin liegen, versteckt über ihren
+freigegebenen Slot, bis ein Drittel der Seite tot ist. Dann ziehen die übrigen Meshes in die offene Seite um. So
+kostet Zerstörung kaum Uploads, im Mittel unter 1 MB pro Bild in der Stadt unter Dauerbeschuss. Staub vor der
+Kamera blendet aus, bevor er viel vom Bild bedeckt, und bedeckt aller Staub zusammen das Bild mehr als achtmal,
+wird er gleichmäßig ausgedünnt, damit Explosionen die Füllrate der Grafikkarte nicht sprengen. Dazu Schattenwurf
+und prozedurale Materialien für Ziegel, Putz und Beton.
 
 ## Benutzung
 
@@ -298,12 +312,15 @@ nbWorld_Update( world, 1.0f / 60.0f );
 nbEvents events = nbWorld_GetEvents( world );
 for ( int i = 0; i < events.createdCount; ++i )
 {
-	// Neues Bruchstück: flach schattiertes Dreiecksnetz im lokalen Raum von nbChunk_GetBody()
-	int count = nbChunk_GetMeshVertexCount( events.createdChunks[i] );
-	nbChunk_BuildMesh( events.createdChunks[i], vertices, count, 1.0f );
+	// Neues Bruchstück: konvexes Polyeder im lokalen Raum von nbChunk_GetBody(), dazu welche Flächen
+	// man sieht. nbChunk_BuildMesh liefert alternativ ein fertiges Dreiecksnetz aller Flächen.
+	nbGeometry geometry = nbChunk_GetGeometry( events.createdChunks[i] );
+	bool visible[128];
+	nbChunk_GetVisibleFaces( events.createdChunks[i], visible, 128 );
 }
 // events.destroyedChunks: Meshes entfernen
 // events.movedChunks: Bruchstück hängt jetzt an einem anderen Körper
+// events.exposedChunks: Mesh neu bauen, verdeckte Flächen können frei geworden sein
 for ( int i = 0; i < events.dustCount; ++i )
 {
 	// Staubwolke an events.dust[i].point, Menge events.dust[i].volume in m³

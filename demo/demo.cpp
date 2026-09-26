@@ -62,6 +62,9 @@ struct ChunkVisual
 	int slot = -1;
 	int mesh = -1;
 	b3BodyId body = b3_nullBodyId;
+
+	// Frame the mesh was built in. It already shows the faces exposed in that frame.
+	int builtFrame = -1;
 	bool alive = false;
 };
 
@@ -84,6 +87,9 @@ struct Particle
 	float life;
 	float alpha;
 	float color[3];
+
+	// Fixed random number that decides which puffs go first when the dust has to be thinned out
+	float seed;
 	bool chip;
 };
 
@@ -97,6 +103,14 @@ struct Automation
 	// CPU time per frame in milliseconds: simulation (Box3D and Nebenan), everything else on the CPU
 	std::vector<float> simulationTimes;
 	std::vector<float> frameTimes;
+
+	// Per frame: bytes sent to the GPU, triangles drawn, soft particles and the screens they cover
+	std::vector<float> uploadedBytes;
+	std::vector<float> uploadTimes;
+	std::vector<float> graphicsTimes;
+	std::vector<float> triangles;
+	std::vector<float> particles;
+	std::vector<float> particleCoverage;
 };
 
 struct App
@@ -110,9 +124,10 @@ struct App
 	std::vector<ChunkVisual> chunks;
 	std::unordered_map<uint64_t, std::vector<int>> bodySlots;
 	std::vector<Ball> balls;
-	std::vector<GpuVertex> ballMesh;
-	std::vector<nbMeshVertex> meshScratch;
-	std::vector<GpuVertex> gpuScratch;
+	std::vector<GpuVertex> ballVertices;
+	std::vector<uint16_t> ballIndices;
+	std::vector<GpuVertex> vertexScratch;
+	std::vector<uint16_t> indexScratch;
 	int groundSlot = -1;
 	int groundMesh = -1;
 
@@ -134,7 +149,9 @@ struct App
 	float fireCooldown = 0.0f;
 	bool showUi = true;
 
-	float frameTime = 0.0f;
+	// CPU time per frame, smoothed: all simulation steps, and everything for the picture
+	float simulationFrame = 0.0f;
+	float graphicsFrame = 0.0f;
 	float physicsTime = 0.0f;
 	float destructionTime = 0.0f;
 	nbImpactResult lastImpact = {};
@@ -146,6 +163,9 @@ struct App
 	uint32_t particleRandom = 0x9e3779b9u;
 	bool showDust = true;
 	float frameSimTime = 0.0f;
+
+	// How many times the soft dust of this frame covers the screen
+	float particleCoverage = 0.0f;
 
 	Automation automation;
 	int frame = 0;
@@ -162,7 +182,7 @@ static void AttachSlot( App& app, b3BodyId body, int slot )
 {
 	app.bodySlots[BodyKey( body )].push_back( slot );
 	b3WorldTransform transform = b3Body_GetTransform( body );
-	app.renderer.SetSlot( slot, b3ToVec3( transform.p ), transform.q, 1.0f );
+	app.renderer.SetSlot( slot, b3ToVec3( transform.p ), transform.q );
 }
 
 static void DetachSlot( App& app, b3BodyId body, int slot )
@@ -193,16 +213,49 @@ static void DetachSlot( App& app, b3BodyId body, int slot )
 //----------------------------------------------------------------------------------------------------------------------
 // Chunk visuals follow the destruction events
 
+// Only the faces that can be seen: a face covered by the bonds to its neighbors lies inside the structure. Every
+// face is a convex polygon with its own vertices for the flat normal, drawn as an indexed fan.
+static void BuildChunkMesh( App& app, ChunkVisual& visual )
+{
+	nbGeometry geometry = nbChunk_GetGeometry( visual.id );
+	bool visible[256];
+	int faceCount = nbChunk_GetVisibleFaces( visual.id, visible, 256 );
+
+	app.vertexScratch.clear();
+	app.indexScratch.clear();
+	for ( int f = 0; f < faceCount; ++f )
+	{
+		if ( visible[f] == false )
+		{
+			continue;
+		}
+
+		const nbFace& face = geometry.faces[f];
+		uint16_t first = (uint16_t)app.vertexScratch.size();
+		for ( int k = 0; k < face.indexCount; ++k )
+		{
+			b3Vec3 position = geometry.vertices[geometry.indices[face.firstIndex + k]];
+			app.vertexScratch.push_back( Renderer::MakeVertex( position, face.plane.normal, (int)face.material, visual.slot ) );
+		}
+		for ( int k = 1; k + 1 < face.indexCount; ++k )
+		{
+			uint16_t triangle[3] = { first, (uint16_t)( first + k ), (uint16_t)( first + k + 1 ) };
+			app.indexScratch.insert( app.indexScratch.end(), triangle, triangle + 3 );
+		}
+	}
+
+	// A chunk inside the structure has no mesh until a neighbor goes
+	visual.mesh = app.renderer.AddMesh( app.vertexScratch.data(), (int)app.vertexScratch.size(), app.indexScratch.data(),
+										(int)app.indexScratch.size(), visual.slot );
+	visual.builtFrame = app.frame;
+}
+
 static void AddChunkVisual( App& app, nbChunkId id )
 {
-	int count = nbChunk_GetMeshVertexCount( id );
-	if ( count == 0 )
+	if ( nbChunk_GetGeometry( id ).faceCount == 0 )
 	{
 		return;
 	}
-
-	app.meshScratch.resize( (size_t)count );
-	count = nbChunk_BuildMesh( id, app.meshScratch.data(), count, 1.0f );
 
 	if ( (int)app.chunks.size() <= id.index1 )
 	{
@@ -215,15 +268,25 @@ static void AddChunkVisual( App& app, nbChunkId id )
 	visual.slot = app.renderer.AllocSlot();
 	visual.body = nbChunk_GetBody( id );
 	visual.alive = true;
-
-	app.gpuScratch.resize( (size_t)count );
-	for ( int i = 0; i < count; ++i )
-	{
-		const nbMeshVertex& v = app.meshScratch[i];
-		app.gpuScratch[i] = Renderer::MakeVertex( v.position, v.normal, (int)v.material, visual.slot );
-	}
-	visual.mesh = app.renderer.AddMesh( app.gpuScratch.data(), count );
 	AttachSlot( app, visual.body, visual.slot );
+	BuildChunkMesh( app, visual );
+}
+
+// A chunk that lost a bond may show more faces. The old mesh stays on the GPU until its page is compacted, so it
+// keeps the old slot, which is freed to hide it, and the new mesh gets a slot of its own.
+static void RebuildChunkVisual( App& app, ChunkVisual& visual )
+{
+	if ( visual.builtFrame == app.frame )
+	{
+		return;
+	}
+
+	app.renderer.RemoveMesh( visual.mesh );
+	DetachSlot( app, visual.body, visual.slot );
+	app.renderer.FreeSlot( visual.slot );
+	visual.slot = app.renderer.AllocSlot();
+	AttachSlot( app, visual.body, visual.slot );
+	BuildChunkMesh( app, visual );
 }
 
 // Color every glued chunk by how close the bonds around it are to breaking. Loose debris shows grey.
@@ -332,6 +395,7 @@ static void SpawnDust( App& app, const nbDustEvent& dust )
 		particle.color[0] = base.x * shade;
 		particle.color[1] = base.y * shade;
 		particle.color[2] = base.z * shade;
+		particle.seed = RandomFloat( app );
 		particle.chip = false;
 		app.particles.push_back( particle );
 	}
@@ -351,6 +415,7 @@ static void SpawnDust( App& app, const nbDustEvent& dust )
 		particle.color[0] = base.x * shade;
 		particle.color[1] = base.y * shade;
 		particle.color[2] = base.z * shade;
+		particle.seed = RandomFloat( app );
 		particle.chip = true;
 		app.particles.push_back( particle );
 	}
@@ -408,19 +473,52 @@ static void UpdateParticles( App& app, float dt )
 	}
 }
 
+// Soft dust blends every covered pixel of every puff, so dust close to the camera costs fill rate like nothing else.
+// Puffs fade out before they cover much of the screen, and when all puffs together cover the screen more than
+// DustScreenBudget times, the dust is thinned out evenly.
+static const float DustScreenBudget = 8.0f;
+
+// A puff whose radius reaches this fraction of half the screen height is gone, it starts to fade at half of it
+static const float NearDustRadius = 0.5f;
+
 static void BuildParticleInstances( App& app )
 {
 	app.particleInstances.clear();
 	app.particleOrder.clear();
 
-	// Back to front, so the soft dust blends correctly
+	float tanY = tanf( 0.5f * app.camera.fovY );
+	float aspect = sapp_widthf() / b3MaxFloat( sapp_heightf(), 1.0f );
+	b3Vec3 forward = app.camera.Forward();
+
+	// Back to front, so the soft dust blends correctly. The key is the negative distance along the view.
+	float coverage = 0.0f;
 	for ( int i = 0; i < (int)app.particles.size(); ++i )
 	{
-		float distance = b3DistanceSquared( app.particles[i].position, app.camera.position );
-		app.particleOrder.push_back( { distance, i } );
+		const Particle& particle = app.particles[i];
+		float depth = b3Dot( b3Sub( particle.position, app.camera.position ), forward );
+		if ( depth < 0.05f - particle.size )
+		{
+			continue;
+		}
+
+		if ( particle.chip == false )
+		{
+			// Radius on screen relative to half the screen height
+			float radius = particle.size / ( b3MaxFloat( depth, 0.05f ) * tanY );
+			if ( radius >= NearDustRadius )
+			{
+				continue;
+			}
+			coverage += B3_PI * radius * radius / ( 4.0f * aspect );
+		}
+		app.particleOrder.push_back( { -depth, i } );
 	}
 	std::sort( app.particleOrder.begin(), app.particleOrder.end(),
-			   []( const std::pair<float, int>& a, const std::pair<float, int>& b ) { return a.first > b.first; } );
+			   []( const std::pair<float, int>& a, const std::pair<float, int>& b ) { return a.first < b.first; } );
+
+	// Fraction of the dust that stays, with a soft edge in the seeds so puffs fade instead of popping
+	float keep = coverage > DustScreenBudget ? DustScreenBudget / coverage : 1.0f;
+	app.particleCoverage = b3MinFloat( coverage, DustScreenBudget );
 
 	for ( const std::pair<float, int>& entry : app.particleOrder )
 	{
@@ -435,6 +533,15 @@ static void BuildParticleInstances( App& app )
 		{
 			float fadeIn = b3MinFloat( particle.age / 0.08f, 1.0f );
 			alpha = particle.alpha * fadeIn * powf( 1.0f - t, 1.5f );
+
+			float radius = particle.size / ( b3MaxFloat( -entry.first, 0.05f ) * tanY );
+			float nearFade = b3ClampFloat( ( NearDustRadius - radius ) / ( 0.5f * NearDustRadius ), 0.0f, 1.0f );
+			float thinning = b3ClampFloat( ( 1.1f * keep - particle.seed ) / 0.1f, 0.0f, 1.0f );
+			alpha *= nearFade * thinning;
+			if ( alpha < 0.004f )
+			{
+				continue;
+			}
 		}
 
 		ParticleInstance instance;
@@ -500,6 +607,19 @@ static void SyncChunks( App& app )
 		visual.body = nbChunk_GetBody( id );
 		AttachSlot( app, visual.body, visual.slot );
 	}
+
+	for ( int i = 0; i < events.exposedCount; ++i )
+	{
+		nbChunkId id = events.exposedChunks[i];
+		if ( nbChunk_IsValid( id ) && id.index1 < (int)app.chunks.size() )
+		{
+			ChunkVisual& visual = app.chunks[id.index1];
+			if ( visual.alive && visual.generation == id.generation )
+			{
+				RebuildChunkVisual( app, visual );
+			}
+		}
+	}
 }
 
 // Box3D reports every body that moved during a step, only those slots need new transforms
@@ -518,7 +638,7 @@ static void SyncTransforms( App& app )
 		b3Vec3 position = b3ToVec3( event.transform.p );
 		for ( int slot : it->second )
 		{
-			app.renderer.SetSlot( slot, position, event.transform.q, 1.0f );
+			app.renderer.SetSlot( slot, position, event.transform.q );
 		}
 	}
 }
@@ -526,25 +646,21 @@ static void SyncTransforms( App& app )
 //----------------------------------------------------------------------------------------------------------------------
 // Static meshes
 
-static void AddQuad( std::vector<GpuVertex>& out, b3Vec3 a, b3Vec3 b, b3Vec3 c, b3Vec3 d, b3Vec3 n, int material, int slot )
-{
-	b3Vec3 corners[6] = { a, b, c, a, c, d };
-	for ( b3Vec3 p : corners )
-	{
-		out.push_back( Renderer::MakeVertex( p, n, material, slot ) );
-	}
-}
-
 static void BuildGround( App& app )
 {
 	app.groundSlot = app.renderer.AllocSlot();
-	app.renderer.SetSlot( app.groundSlot, b3Vec3_zero, b3Quat_identity, 1.0f );
+	app.renderer.SetSlot( app.groundSlot, b3Vec3_zero, b3Quat_identity );
 
-	std::vector<GpuVertex> vertices;
 	float h = 150.0f;
-	AddQuad( vertices, { -h, 0.0f, h }, { h, 0.0f, h }, { h, 0.0f, -h }, { -h, 0.0f, -h }, { 0.0f, 1.0f, 0.0f }, MaterialGround,
-			 app.groundSlot );
-	app.groundMesh = app.renderer.AddMesh( vertices.data(), (int)vertices.size() );
+	b3Vec3 up = { 0.0f, 1.0f, 0.0f };
+	GpuVertex vertices[4] = {
+		Renderer::MakeVertex( { -h, 0.0f, h }, up, MaterialGround, app.groundSlot ),
+		Renderer::MakeVertex( { h, 0.0f, h }, up, MaterialGround, app.groundSlot ),
+		Renderer::MakeVertex( { h, 0.0f, -h }, up, MaterialGround, app.groundSlot ),
+		Renderer::MakeVertex( { -h, 0.0f, -h }, up, MaterialGround, app.groundSlot ),
+	};
+	uint16_t indices[6] = { 0, 1, 2, 0, 2, 3 };
+	app.groundMesh = app.renderer.AddMesh( vertices, 4, indices, 6, app.groundSlot );
 }
 
 // Icosphere with smooth normals, built for slot zero and re-slotted per ball
@@ -580,11 +696,16 @@ static void BuildBallMesh( App& app, float radius )
 		triangles = refined;
 	}
 
-	app.ballMesh.clear();
+	// Shared midpoints are not merged, the ball is small enough either way
+	app.ballVertices.clear();
+	for ( b3Vec3 n : vertices )
+	{
+		app.ballVertices.push_back( Renderer::MakeVertex( b3MulSV( radius, n ), n, MaterialSteel, 0 ) );
+	}
+	app.ballIndices.clear();
 	for ( int index : triangles )
 	{
-		b3Vec3 n = vertices[index];
-		app.ballMesh.push_back( Renderer::MakeVertex( b3MulSV( radius, n ), n, MaterialSteel, 0 ) );
+		app.ballIndices.push_back( (uint16_t)index );
 	}
 }
 
@@ -1073,11 +1194,12 @@ static void FireRay( App& app, b3Vec3 origin, b3Vec3 direction )
 		Ball ball;
 		ball.body = body;
 		ball.slot = app.renderer.AllocSlot();
-		for ( GpuVertex& v : app.ballMesh )
+		for ( GpuVertex& v : app.ballVertices )
 		{
 			v.slot = (float)ball.slot;
 		}
-		ball.mesh = app.renderer.AddMesh( app.ballMesh.data(), (int)app.ballMesh.size() );
+		ball.mesh = app.renderer.AddMesh( app.ballVertices.data(), (int)app.ballVertices.size(), app.ballIndices.data(),
+										  (int)app.ballIndices.size(), ball.slot );
 		ball.age = 0.0f;
 		AttachSlot( app, body, ball.slot );
 		app.balls.push_back( ball );
@@ -1159,16 +1281,17 @@ static void StepSimulation( App& app, float frameDt )
 	}
 	else
 	{
-		// At most two steps per frame. When the simulation cannot keep up, it slows down instead of taking more
-		// and more steps per frame, which would slow down every frame further.
+		// When the simulation cannot keep up, it slows down instead of taking more and more steps per frame, which
+		// would slow down every frame further. A second step in the same frame only catches up when steps are cheap.
+		int maxSteps = app.physicsTime + app.destructionTime < 4.0f ? 2 : 1;
 		app.accumulator += b3MinFloat( frameDt, 0.1f );
-		while ( app.accumulator >= step && steps < 2 )
+		while ( app.accumulator >= step && steps < maxSteps )
 		{
 			runStep( step );
 			app.accumulator -= step;
 			steps += 1;
 		}
-		if ( steps == 2 )
+		if ( steps == maxSteps )
 		{
 			app.accumulator = b3MinFloat( app.accumulator, step );
 		}
@@ -1318,7 +1441,14 @@ static void DrawUi( App& app )
 	nbStats stats = nbWorld_GetStats( app.destruction );
 	b3Counters counters = b3World_GetCounters( app.physics );
 	RenderStats renderStats = app.renderer.GetStats();
+	float cpuFrame = app.simulationFrame + app.graphicsFrame;
 	ImGui::Text( "Bild        %6.2f ms  (%.0f FPS)", app.averageFrame, 1000.0f / b3MaxFloat( app.averageFrame, 0.01f ) );
+	ImGui::Text( "CPU         %6.2f ms  Simulation %.2f, Grafik %.2f", cpuFrame, app.simulationFrame, app.graphicsFrame );
+	// With vertical sync a frame that just misses the display takes two intervals, only a longer wait is the GPU
+	if ( app.averageFrame > cpuFrame + 17.0f )
+	{
+		ImGui::TextColored( ImVec4( 1.0f, 0.75f, 0.3f, 1.0f ), "  Das Bild wartet auf die Grafikkarte" );
+	}
 	ImGui::Text( "Physik      %6.2f ms  (Box3D Schritt)", app.physicsTime );
 	ImGui::Text( "Zerstörung  %6.2f ms  (Update)", app.destructionTime );
 	ImGui::Text( "Einschlag   %6.2f ms  davon Voronoi %.2f ms", app.lastImpact.totalTime, app.lastImpact.fractureTime );
@@ -1328,7 +1458,9 @@ static void DrawUi( App& app )
 	ImGui::Text( "Lastnachweis: %d gebrochen, %d gerissen", stats.overloadedBondCount, stats.crackedBondCount );
 	ImGui::Text( "Trümmerkörper %d  wach %d  Kontakte %d", stats.dynamicBodyCount, b3World_GetAwakeBodyCount( app.physics ),
 				 counters.contactCount );
-	ImGui::Text( "Draw Calls %d  Vertices %d  Partikel %d", renderStats.drawCalls, renderStats.vertexCount, renderStats.particleCount );
+	ImGui::Text( "Dreiecke %dk  Draw Calls %d  Partikel %d", renderStats.triangleCount / 1000, renderStats.drawCalls,
+				 renderStats.particleCount );
+	ImGui::Text( "Hochgeladen %d kB  Speicher %d Seiten", renderStats.uploadedBytes / 1024, renderStats.pageCount );
 
 	ImGui::SeparatorText( "Steuerung" );
 	ImGui::TextWrapped( "Linke Maustaste: schießen (halten = Dauerfeuer)\n"
@@ -1505,6 +1637,8 @@ static void OnFrame()
 	uint64_t simulationTicks = b3GetTicks();
 	StepSimulation( app, dt );
 	float simulationTime = b3GetMilliseconds( simulationTicks );
+
+	uint64_t graphicsTicks = b3GetTicks();
 	SyncChunks( app );
 	UpdateLoadView( app );
 	UpdateParticles( app, app.frameSimTime );
@@ -1529,10 +1663,21 @@ static void OnFrame()
 	sg_end_pass();
 	sg_commit();
 
+	float graphicsTime = b3GetMilliseconds( graphicsTicks );
+	app.simulationFrame = 0.95f * app.simulationFrame + 0.05f * simulationTime;
+	app.graphicsFrame = 0.95f * app.graphicsFrame + 0.05f * graphicsTime;
+
 	if ( app.automation.frameLimit > 0 )
 	{
+		RenderStats rs = app.renderer.GetStats();
 		app.automation.simulationTimes.push_back( simulationTime );
 		app.automation.frameTimes.push_back( b3GetMilliseconds( cpuTicks ) );
+		app.automation.uploadedBytes.push_back( (float)rs.uploadedBytes );
+		app.automation.uploadTimes.push_back( rs.uploadTime );
+		app.automation.graphicsTimes.push_back( graphicsTime );
+		app.automation.triangles.push_back( (float)rs.triangleCount );
+		app.automation.particles.push_back( (float)rs.particleCount );
+		app.automation.particleCoverage.push_back( app.particleCoverage );
 	}
 
 	app.frame += 1;
@@ -1543,20 +1688,38 @@ static void OnFrame()
 				stats.bondCount, stats.dynamicBodyCount, stats.rubbleCount, stats.overloadedBondCount );
 
 		RenderStats rs = app.renderer.GetStats();
-		printf( "  render: draw calls %d vertices %d pages %d slots %d uploaded %d bytes last frame\n", rs.drawCalls, rs.vertexCount, rs.pageCount, rs.slotCount, rs.uploadedBytes );
-		// CPU time per frame, without waiting for the GPU
-		for ( int k = 0; k < 2; ++k )
+		printf( "  render: draw calls %d, vertices %d (%d of removed meshes), pages %d, slots %d\n", rs.drawCalls, rs.vertexCount,
+				rs.deadVertexCount, rs.pageCount, rs.slotCount );
+
+		// Per frame averages, 95th percentile and maximum
+		struct Series
 		{
-			std::vector<float> times = k == 0 ? app.automation.simulationTimes : app.automation.frameTimes;
-			std::sort( times.begin(), times.end() );
+			const char* name;
+			const std::vector<float>* values;
+			float scale;
+		};
+		Series series[] = {
+			{ "simulation ms", &app.automation.simulationTimes, 1.0f },
+			{ "cpu frame ms", &app.automation.frameTimes, 1.0f },
+			{ "graphics ms", &app.automation.graphicsTimes, 1.0f },
+			{ "upload ms", &app.automation.uploadTimes, 1.0f },
+			{ "uploaded kB", &app.automation.uploadedBytes, 1.0f / 1024.0f },
+			{ "triangles k", &app.automation.triangles, 1.0f / 1000.0f },
+			{ "particles", &app.automation.particles, 1.0f },
+			{ "dust screens", &app.automation.particleCoverage, 1.0f },
+		};
+		for ( const Series& entry : series )
+		{
+			std::vector<float> values = *entry.values;
+			std::sort( values.begin(), values.end() );
 			float total = 0.0f;
-			for ( float t : times )
+			for ( float v : values )
 			{
-				total += t;
+				total += v;
 			}
-			size_t n = times.size();
-			printf( "  %s avg %.2f ms p95 %.2f ms max %.2f ms\n", k == 0 ? "simulation" : "cpu frame ", total / (float)b3MaxInt( (int)n, 1 ),
-					n > 0 ? times[n * 95 / 100] : 0.0f, n > 0 ? times[n - 1] : 0.0f );
+			size_t n = values.size();
+			printf( "  %-14s avg %9.2f  p95 %9.2f  max %9.2f\n", entry.name, entry.scale * total / (float)b3MaxInt( (int)n, 1 ),
+					n > 0 ? entry.scale * values[n * 95 / 100] : 0.0f, n > 0 ? entry.scale * values[n - 1] : 0.0f );
 		}
 
 		if ( app.automation.screenshotPath != nullptr )

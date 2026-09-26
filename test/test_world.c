@@ -1171,6 +1171,118 @@ static int CannonballTest( void )
 	return 0;
 }
 
+// Visibility of the faces of a chunk, one bit per face
+static uint64_t VisibleFaceMask( nbChunkId id )
+{
+	bool visible[128];
+	int count = nbChunk_GetVisibleFaces( id, visible, 128 );
+	uint64_t mask = 0;
+	for ( int f = 0; f < count && f < 64; ++f )
+	{
+		mask |= visible[f] ? (uint64_t)1 << f : 0;
+	}
+	return mask;
+}
+
+// Faces between glued chunks are hidden, and a chunk whose faces show up again is reported as exposed
+static int VisibleFaceTest( void )
+{
+	TestScene scene = CreateScene();
+	nbDestructibleDef def = nbDefaultDestructibleDef();
+	b3Vec3 halfExtents = { 2.0f, 1.5f, 0.2f };
+	def.position = (b3Vec3){ 0.0f, halfExtents.y, 0.0f };
+	def.cellSize = 0.35f;
+	def.seed = 5;
+	nbDestructibleId wall = nbCreateBox( scene.world, &def, halfExtents );
+	nbWorld_GetEvents( scene.world );
+
+	int capacity = 4096;
+	nbChunkId* chunks = malloc( sizeof( nbChunkId ) * (size_t)capacity );
+	uint64_t* masks = calloc( (size_t)capacity, sizeof( uint64_t ) );
+	uint16_t* generations = calloc( (size_t)capacity, sizeof( uint16_t ) );
+	int count = nbDestructible_GetChunks( wall, chunks, capacity );
+	ENSURE( count > 50 && count < capacity );
+
+	// A hidden face lies inside the wall, never on its outside
+	int hiddenCount = 0;
+	for ( int i = 0; i < count; ++i )
+	{
+		nbGeometry geometry = nbChunk_GetGeometry( chunks[i] );
+		bool visible[128];
+		ENSURE( nbChunk_GetVisibleFaces( chunks[i], visible, 128 ) == geometry.faceCount );
+		for ( int f = 0; f < geometry.faceCount; ++f )
+		{
+			if ( visible[f] )
+			{
+				continue;
+			}
+
+			hiddenCount += 1;
+			const nbFace* face = geometry.faces + f;
+			b3Vec3 center = b3Vec3_zero;
+			for ( int k = 0; k < face->indexCount; ++k )
+			{
+				center = b3Add( center, geometry.vertices[geometry.indices[face->firstIndex + k]] );
+			}
+			center = b3MulSV( 1.0f / (float)face->indexCount, center );
+			ENSURE( b3AbsFloat( center.x ) < halfExtents.x - 1.0e-3f );
+			ENSURE( b3AbsFloat( center.y ) < halfExtents.y - 1.0e-3f );
+			ENSURE( b3AbsFloat( center.z ) < halfExtents.z - 1.0e-3f );
+		}
+
+		ENSURE( chunks[i].index1 < capacity );
+		masks[chunks[i].index1] = VisibleFaceMask( chunks[i] );
+		generations[chunks[i].index1] = chunks[i].generation;
+	}
+	ENSURE( hiddenCount > 2 * count );
+
+	nbImpactDef impact = { 0 };
+	impact.point = (b3Vec3){ 0.3f, 1.4f, 0.2f };
+	impact.direction = (b3Vec3){ 0.0f, 0.0f, -1.0f };
+	impact.radius = 0.5f;
+	impact.damage = 1.0e6f;
+	impact.ejectSpeed = 4.0f;
+	nbWorld_ApplyImpact( scene.world, &impact );
+	Step( &scene, 5 );
+
+	// Every surviving chunk whose visible faces changed was reported
+	nbEvents events = nbWorld_GetEvents( scene.world );
+	ENSURE( events.exposedCount > 0 );
+	// A chunk is reported once. Its slot may be reused by a new chunk, which is reported on its own.
+	bool* reported = calloc( (size_t)capacity, sizeof( bool ) );
+	for ( int i = 0; i < events.exposedCount; ++i )
+	{
+		nbChunkId id = events.exposedChunks[i];
+		ENSURE( id.index1 < capacity );
+		for ( int j = 0; j < i; ++j )
+		{
+			ENSURE( NB_ID_EQUALS( id, events.exposedChunks[j] ) == false );
+		}
+		reported[id.index1] = reported[id.index1] || id.generation == generations[id.index1];
+	}
+
+	int changedCount = 0;
+	for ( int i = 0; i < count; ++i )
+	{
+		if ( nbChunk_IsValid( chunks[i] ) == false )
+		{
+			continue;
+		}
+
+		bool changed = VisibleFaceMask( chunks[i] ) != masks[chunks[i].index1];
+		changedCount += changed ? 1 : 0;
+		ENSURE( changed == false || reported[chunks[i].index1] );
+	}
+	ENSURE( changedCount > 0 );
+
+	free( reported );
+	free( generations );
+	free( masks );
+	free( chunks );
+	DestroyScene( &scene );
+	return 0;
+}
+
 int WorldTest( void );
 
 int WorldTest( void )
@@ -1195,5 +1307,6 @@ int WorldTest( void )
 	RUN_TEST( ArchTest );
 	RUN_TEST( RubbleTest );
 	RUN_TEST( CannonballTest );
+	RUN_TEST( VisibleFaceTest );
 	return 0;
 }

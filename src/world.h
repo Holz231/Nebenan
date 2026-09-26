@@ -32,6 +32,9 @@ enum nbChunkFlags
 
 	// The chunk owns a static body of its own
 	nb_chunkOwnsBody = 0x10,
+
+	// Reported as exposed in the current event window, or about to be destroyed
+	nb_chunkExposed = 0x20,
 };
 
 // A convex piece. The geometry is in the local frame of the destructible, which is also the
@@ -289,6 +292,7 @@ typedef struct nbWorld
 	nbChunkIdArray createdEvents[2];
 	nbChunkIdArray destroyedEvents[2];
 	nbChunkIdArray movedEvents[2];
+	nbChunkIdArray exposedEvents[2];
 	nbDustEventArray dustEvents[2];
 	int eventBuffer;
 

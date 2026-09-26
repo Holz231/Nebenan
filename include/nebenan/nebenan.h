@@ -152,6 +152,12 @@ NB_API bool nbChunk_IsDynamic( nbChunkId chunkId );
 /// The convex polyhedron of the chunk.
 NB_API nbGeometry nbChunk_GetGeometry( nbChunkId chunkId );
 
+/// Which faces of the chunk can be seen. A face that the interfaces of the chunk's bonds cover completely lies
+/// inside the structure and is false. When the chunk loses a bond it shows up in nbEvents::exposedChunks.
+/// @param visible one flag per face of nbChunk_GetGeometry
+/// @return the number of flags written
+NB_API int nbChunk_GetVisibleFaces( nbChunkId chunkId, bool* visible, int capacity );
+
 /// Number of vertices written by nbChunk_BuildMesh.
 NB_API int nbChunk_GetMeshVertexCount( nbChunkId chunkId );
 

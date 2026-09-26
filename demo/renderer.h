@@ -65,14 +65,25 @@ struct RenderStats
 {
 	int drawCalls = 0;
 	int vertexCount = 0;
+	int triangleCount = 0;
 	int particleCount = 0;
 	int pageCount = 0;
 	int slotCount = 0;
+
+	// Bytes sent to the GPU this frame, and vertices that belong to removed meshes and wait for compaction
 	int uploadedBytes = 0;
+	int deadVertexCount = 0;
+
+	// CPU time for compaction and uploads
+	float uploadTime = 0.0f;
 };
 
-// Batched renderer. Meshes are packed into large vertex pages, every vertex references a transform
+// Batched renderer. Meshes are packed into large indexed vertex pages, every vertex references a transform
 // slot, and the transforms of all slots are uploaded once per frame into a storage buffer.
+//
+// A full page lives in an immutable GPU buffer and is never touched again until a third of its vertices belong to
+// removed meshes. Then its remaining meshes move to the open page and the page is dropped. Removed meshes stay
+// in their page until then, hidden through their freed slot, so removing debris costs no upload at all.
 class Renderer
 {
 public:
@@ -80,14 +91,18 @@ public:
 	void Shutdown();
 
 	int AllocSlot();
+
+	// Hides the slot. It is handed out again once no vertex page holds a mesh with this slot anymore.
 	void FreeSlot( int slot );
-	void SetSlot( int slot, b3Vec3 position, b3Quat rotation, float scale );
+	void SetSlot( int slot, b3Vec3 position, b3Quat rotation );
 
 	// Load utilization of the chunk in the slot for the load view, negative for none
 	void SetSlotLoad( int slot, float load );
 
-	// Returns a mesh handle. The vertices must already carry their slot.
-	int AddMesh( const GpuVertex* vertices, int count );
+	// Returns a mesh handle. The indices count from the first vertex and all vertices must carry the slot.
+	int AddMesh( const GpuVertex* vertices, int vertexCount, const uint16_t* indices, int indexCount, int slot );
+
+	// The slot of a removed mesh has to be freed as well, that hides the vertices until the page is compacted
 	void RemoveMesh( int mesh );
 
 	// Pack a vertex
@@ -114,31 +129,56 @@ public:
 private:
 	struct Page
 	{
-		uint32_t buffer = 0;
+		uint32_t vertexBuffer = 0;
+		uint32_t indexBuffer = 0;
 		std::vector<GpuVertex> vertices;
+		std::vector<uint16_t> indices;
+
+		// Live meshes, and the slots of removed meshes whose vertices are still in the page
 		std::vector<int> meshes;
+		std::vector<int> deadSlots;
+		int deadVertices = 0;
+
+		// The open page takes new meshes and lives in a dynamic buffer, a full page in an immutable one
+		bool open = false;
 		bool dirty = false;
-		bool needsRebuild = false;
-		int uploadedCount = 0;
+		bool dynamic = false;
+		int drawCount = 0;
 	};
 
 	struct Mesh
 	{
-		std::vector<GpuVertex> vertices;
 		int page = -1;
-		int first = 0;
+		int firstVertex = 0;
+		int vertexCount = 0;
+		int firstIndex = 0;
+		int indexCount = 0;
+		int slot = -1;
+
+		// Position in the mesh list of the page
+		int pageEntry = -1;
 		bool alive = false;
 	};
 
-	void RebuildPage( int pageIndex );
+	int OpenPage( int vertexCount, int indexCount );
+	void Append( int meshIndex, const GpuVertex* vertices, const uint16_t* indices, int indexBase );
+	void ReleaseSlotReference( int slot );
+	void DropPage( int pageIndex );
+	void Compact();
 	void Upload();
 
-	std::vector<Page*> m_pages;
+	std::vector<Page> m_pages;
+	std::vector<int> m_emptyPages;
+	int m_openPage = -1;
 	std::vector<Mesh> m_meshes;
 	std::vector<int> m_freeMeshes;
 
 	std::vector<float> m_slotData;
 	std::vector<int> m_freeSlots;
+
+	// Meshes in the pages that still carry the slot, alive or removed, and whether the slot was freed
+	std::vector<int> m_slotReferences;
+	std::vector<uint8_t> m_slotFreed;
 	int m_slotCount = 0;
 	int m_slotCapacity = 0;
 	bool m_slotsDirty = true;

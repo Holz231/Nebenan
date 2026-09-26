@@ -14,12 +14,10 @@
 #pragma sokol @block slot_transform
 struct slot_transform
 {
-	// .xyz = position, .w = uniform scale (zero hides the slot)
-	vec4 position_scale;
+	// .xyz = position, .w = zero for a hidden slot, else two plus the load utilization (negative for none)
+	vec4 position_state;
 	// quaternion x, y, z, w
 	vec4 rotation;
-	// .x = load utilization of the chunk, negative for none
-	vec4 extra;
 };
 
 layout( binding = 0 ) readonly buffer transforms
@@ -63,9 +61,12 @@ void main()
 {
 	int slot = int( in_slot + 0.5 );
 	slot_transform xf = slots[slot];
-	vec3 world_pos = rotate_vector( xf.rotation, in_position * xf.position_scale.w ) + xf.position_scale.xyz;
 
-	v_load = xf.extra.x;
+	// A hidden slot collapses its triangles into a point
+	float scale = xf.position_state.w > 0.5 ? 1.0 : 0.0;
+	vec3 world_pos = rotate_vector( xf.rotation, in_position * scale ) + xf.position_state.xyz;
+
+	v_load = xf.position_state.w - 2.0;
 	v_world_pos = world_pos;
 	v_world_normal = rotate_vector( xf.rotation, in_normal.xyz );
 	v_local_pos = in_position;
@@ -386,7 +387,8 @@ void main()
 {
 	int slot = int( in_slot + 0.5 );
 	slot_transform xf = slots[slot];
-	vec3 world_pos = rotate_vector( xf.rotation, in_position * xf.position_scale.w ) + xf.position_scale.xyz;
+	float scale = xf.position_state.w > 0.5 ? 1.0 : 0.0;
+	vec3 world_pos = rotate_vector( xf.rotation, in_position * scale ) + xf.position_state.xyz;
 	gl_Position = shadow_view_proj * vec4( world_pos, 1.0 );
 }
 #pragma sokol @end
