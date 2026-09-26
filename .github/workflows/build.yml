@@ -1,0 +1,105 @@
+name: Build
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: windows
+            os: windows-latest
+            demo: build/bin/Release/nebenan_demo.exe
+            tests: build/bin/Release/nebenan_test.exe
+            benchmark: build/bin/Release/nebenan_benchmark.exe
+          - name: linux
+            os: ubuntu-latest
+            demo: build/bin/nebenan_demo
+            tests: build/bin/nebenan_test
+            benchmark: build/bin/nebenan_benchmark
+          - name: macos
+            os: macos-latest
+            demo: build/bin/nebenan_demo
+            tests: build/bin/nebenan_test
+            benchmark: build/bin/nebenan_benchmark
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Linux packages
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libgl-dev libx11-dev libxi-dev libxcursor-dev
+
+      - name: Configure
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build
+        run: cmake --build build --config Release --parallel
+
+      - name: Unit tests
+        run: ${{ matrix.tests }}
+
+      - name: Benchmark
+        run: ${{ matrix.benchmark }} 2
+
+      - name: Package demo
+        run: |
+          mkdir -p package/lizenzen
+          cp "${{ matrix.demo }}" package/
+          cp README.md package/LIESMICH.md
+          cp extern/box3d/LICENSE package/lizenzen/box3d.txt
+          cp extern/box3d/extern/sokol/LICENSE package/lizenzen/sokol.txt
+          cp extern/imgui/LICENSE.txt package/lizenzen/imgui.txt
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: nebenan-demo-${{ matrix.name }}
+          path: package/
+
+  sanitizers:
+    name: linux-sanitizers
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure
+        run: >
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug -DNEBENAN_DEMO=OFF
+          "-DCMAKE_C_FLAGS=-fsanitize=address,undefined -fno-sanitize=alignment -fno-sanitize-recover=all -fno-omit-frame-pointer"
+          "-DCMAKE_EXE_LINKER_FLAGS=-fsanitize=address,undefined"
+
+      - name: Build
+        run: cmake --build build --parallel
+
+      - name: Unit tests
+        run: build/bin/nebenan_test
+
+  thread-sanitizer:
+    name: linux-thread-sanitizer
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure
+        run: >
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug -DNEBENAN_DEMO=OFF -DNEBENAN_BENCHMARK=OFF
+          "-DCMAKE_C_FLAGS=-fsanitize=thread -g -O1"
+          "-DCMAKE_EXE_LINKER_FLAGS=-fsanitize=thread"
+
+      - name: Build
+        run: cmake --build build --parallel
+
+      # Without address space randomization, newer kernels map memory where TSan does not expect it
+      - name: Unit tests
+        env:
+          TSAN_OPTIONS: halt_on_error=1
+        run: setarch "$(uname -m)" -R build/bin/nebenan_test
