@@ -59,9 +59,9 @@ NB_API nbStats nbWorld_GetStats( nbWorldId worldId );
 /// Change the number of fracture workers, see nbWorldDef::workerCount. Restarts the internal threads.
 NB_API void nbWorld_SetWorkerCount( nbWorldId worldId, int count );
 
-/// Change the debris budgets, see nbWorldDef::maxDebrisBodies and nbWorldDef::maxRubbleBodies. The moving debris
-/// budget bounds the work of the Box3D step. The next update removes what is over budget.
-NB_API void nbWorld_SetDebrisBudget( nbWorldId worldId, int maxDebrisBodies, int maxRubbleBodies );
+/// Change the moving debris budget, see nbWorldDef::maxDebrisBodies. It bounds the work of the Box3D step. The next
+/// update freezes what is over budget into rubble.
+NB_API void nbWorld_SetDebrisBudget( nbWorldId worldId, int maxDebrisBodies );
 
 /// Change how much load the bonds carry, see nbWorldDef::supportScale. The next update checks every structure again.
 NB_API void nbWorld_SetSupportScale( nbWorldId worldId, float scale );

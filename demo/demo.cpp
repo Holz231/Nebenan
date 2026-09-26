@@ -190,6 +190,9 @@ struct App
 	// Debris bodies Box3D moves at the same time, the lever of the physics cost
 	int maxDebrisBodies = nbDefaultWorldDef().maxDebrisBodies;
 
+	// How much load the bonds carry, lower values let buildings give way sooner
+	float supportScale = nbDefaultWorldDef().supportScale;
+
 	float accumulator = 0.0f;
 	int workerCount = 1;
 	int maxWorkers = 1;
@@ -780,6 +783,7 @@ static void LoadScene( App& app, SceneKind scene )
 	def.workerCount = app.workerCount;
 	def.maxDebrisBodies = app.maxDebrisBodies;
 	def.fragmentScale = app.fragmentScale;
+	def.supportScale = app.supportScale;
 	app.destruction = nbCreateWorld( &def );
 
 	switch ( scene )
@@ -1100,6 +1104,7 @@ static std::string BuildReport( const App& app )
 	Appendf( text, "Welt: %d Bruchstücke, %d Verbindungen, %d Trümmerkörper (%d wach), %d Schutt, %d Kontakte, Budget %d, Bruchstückgröße x%.2f\n",
 			 stats.chunkCount, stats.bondCount, stats.dynamicBodyCount, b3World_GetAwakeBodyCount( app.physics ), stats.rubbleCount,
 			 counters.contactCount, app.maxDebrisBodies, app.fragmentScale );
+	Appendf( text, "Statik: %d überlastete Verbindungen gebrochen, Tragfähigkeit x%.2f\n", stats.overloadedBondCount, app.supportScale );
 	Appendf( text, "Grafik: %dk Dreiecke, %d Draw Calls, %d kB Upload\n", rs.triangleCount / 1000, rs.drawCalls, rs.uploadedBytes / 1024 );
 	return text;
 }
@@ -1169,13 +1174,21 @@ static void DrawUi( App& app )
 	{
 		ImGui::SetTooltip( "Größere Bruchstücke: weniger Teile pro Einschlag, weniger Körper,\nKontakte und Dreiecke. x2 halbiert ungefähr die Zeit\nbei Massenzerstörung. Gilt für die nächsten Einschläge." );
 	}
-	if ( ImGui::SliderInt( "Bewegte Trümmer", &app.maxDebrisBodies, 100, 5000 ) )
+	if ( ImGui::SliderFloat( "Tragfähigkeit", &app.supportScale, 0.0f, 4.0f, "x %.2f" ) )
 	{
-		nbWorld_SetDebrisBudget( app.destruction, app.maxDebrisBodies, nbDefaultWorldDef().maxRubbleBodies );
+		nbWorld_SetSupportScale( app.destruction, app.supportScale );
 	}
 	if ( ImGui::IsItemHovered() )
 	{
-		ImGui::SetTooltip( "So viele Trümmer bewegt Box3D höchstens gleichzeitig.\nWeniger macht die Physik schneller." );
+		ImGui::SetTooltip( "Wie viel Last die Verbindungen tragen, Druck und Biegung.\nKleiner: Häuser geben früher nach, unter x0,7\nstürzen dreistöckige Häuser von selbst ein. 0 schaltet die Statik ab." );
+	}
+	if ( ImGui::SliderInt( "Bewegte Trümmer", &app.maxDebrisBodies, 100, 5000 ) )
+	{
+		nbWorld_SetDebrisBudget( app.destruction, app.maxDebrisBodies );
+	}
+	if ( ImGui::IsItemHovered() )
+	{
+		ImGui::SetTooltip( "So viele Trümmer bewegt Box3D höchstens gleichzeitig.\nDie langsamsten darüber erstarren zu Schutt, gelöscht wird nichts.\nWeniger macht die Physik schneller." );
 	}
 	if ( ImGui::SliderInt( "Threads", &app.workerCount, 1, app.maxWorkers ) )
 	{

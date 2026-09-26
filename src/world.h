@@ -117,8 +117,11 @@ typedef struct nbActor
 
 	float volume;
 
-	// Seconds since the actor became free
+	// Seconds since the actor became free. Coming back to life from rubble keeps the age.
 	float age;
+
+	// Bound on the distance of the chunk vertices from the center of mass, cached with the mass
+	float radius;
 
 	// Center of mass in the body frame, cached when the mass changes
 	b3Vec3 localCenter;
@@ -146,6 +149,31 @@ typedef struct nbActor
 
 	// A static actor that changed since its last load check, see nbWorldDef::supportScale
 	bool supportDirty;
+
+	// Rest detection after the rubble rest of the reference engine (src/rubble_rest.h on the Referenz branch). The pose
+	// when the quiet time began, and how long the actor stayed within reach of it.
+	b3WorldTransform restPose;
+	float restTime;
+
+	// A body the solver keeps rocking in place is at rest too, once its mean position holds still. The origin of the
+	// current half second window, the sum of the offsets from it, the mean of the last window and how many windows in a
+	// row matched their predecessor.
+	b3WorldTransform jitterPose;
+	b3Vec3 jitterSum;
+	b3Vec3 jitterMean;
+	float jitterTime;
+	int jitterMatches;
+	bool jitterSampled;
+
+	// The rubble resting on this actor comes back to life once it moves away from this pose. The bounds are the ones it
+	// had there.
+	bool holdsRubble;
+	b3WorldTransform holdPose;
+	b3AABB holdBounds;
+
+	// Slot among the quiet actors of the current settle pass, valid while the stamp matches
+	int settleSlot;
+	uint32_t settleStamp;
 } nbActor;
 
 typedef struct nbDestructible
@@ -268,6 +296,7 @@ typedef struct nbWorld
 
 	uint32_t bondStamp;
 	uint32_t searchStamp;
+	uint32_t settleStamp;
 
 	nbStats stats;
 
@@ -350,8 +379,11 @@ void nbTouchChunk( nbWorld* world, int chunkIndex );
 void nbTouchActor( nbWorld* world, int actorIndex );
 void nbUpdateDebris( nbWorld* world, int actorIndex );
 
-// Bring rubble in a box back to life, and the rubble resting on it
+// Bring rubble in a box back to life. The rubble resting on it follows once it moves.
 void nbThawRubble( nbWorld* world, b3AABB box );
+
+// Bring one rubble actor back to life. The rubble resting on it follows once it moves.
+void nbThawActor( nbWorld* world, int actorIndex );
 
 // Apply an impact, optionally limited to one actor
 nbImpactResult nbApplyImpact( nbWorld* world, const nbImpactDef* def, int actorFilter );

@@ -261,28 +261,22 @@ typedef struct nbWorldDef
 	/// The Box3D world that simulates the chunks. Required.
 	b3WorldId physicsWorld;
 
-	/// Maximum number of debris bodies that move. When exceeded, the oldest small debris are removed. Rubble
-	/// has a budget of its own.
+	/// Maximum number of debris bodies that move. Beyond it the slowest debris freezes into rubble right away. Debris is
+	/// never removed, this only bounds the work of the Box3D step.
 	int maxDebrisBodies;
 
-	/// Debris that has come to rest turns into static rubble. It stays where it is and costs the physics step
-	/// nothing. Impacts, collapses underneath and anything that frees the rubble below bring it back to life.
+	/// Debris that has come to rest turns into static rubble. It stays where it is and costs the physics step nothing.
+	/// Anything that hits it hard or moves away from under it brings it back to life.
 	bool enableRubble;
 
-	/// Maximum number of rubble bodies. When exceeded, the oldest small rubble is removed.
-	int maxRubbleBodies;
-
-	/// Speed in meters per second below which debris counts as at rest. Box3D puts debris to sleep that stays
-	/// slower than this for half a second, and sleeping debris turns into rubble.
+	/// Speed in meters per second below which debris counts as slow. Rest detection follows the reference engine: a piece
+	/// comes to rest once it stayed within 2 cm of one pose for 0.6 s at four times this speed at most, or once its mean
+	/// position held still for 2 s while the solver kept rocking it. It freezes into rubble when it lies on the ground, a
+	/// structure or rubble, or on a resting piece that does, so piles freeze from the bottom up. Box3D also puts whole
+	/// islands to sleep that stay slower than this.
 	float debrisSleepThreshold;
 
-	/// Small debris are removed after this many seconds. Zero keeps them forever.
-	float debrisLifetime;
-
-	/// Debris with a volume below this value count as small debris, in cubic meters.
-	float smallDebrisVolume;
-
-	/// Debris that fall below this height along the gravity direction are removed, in meters.
+	/// Debris that falls below this height along the gravity direction has left the world and is removed, in meters.
 	float killDepth;
 
 	/// Structures collapse where they cannot carry their weight, in the style of Red Faction. The load of every chunk

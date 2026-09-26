@@ -429,14 +429,22 @@ nbImpactResult nbApplyImpact( nbWorld* world, const nbImpactDef* def, int actorF
 		destructibleFilter = def->destructibleId.index1 - 1;
 	}
 
-	// 1. Query, after the rubble in reach came back to life
+	// 1. Query, after the rubble in reach came back to life. A collision damages only the actor that was hit, and wakes
+	// only that one.
 	float radius = def->radius;
 	b3Pos point = def->point;
 	b3AABB box = {
 		{ (float)point.x - radius, (float)point.y - radius, (float)point.z - radius },
 		{ (float)point.x + radius, (float)point.y + radius, (float)point.z + radius },
 	};
-	nbThawRubble( world, box );
+	if ( actorFilter == NB_NULL_INDEX )
+	{
+		nbThawRubble( world, box );
+	}
+	else if ( world->actors.data[actorFilter].isRubble )
+	{
+		nbThawActor( world, actorFilter );
+	}
 
 	nbQueryContext queryContext = { world, destructibleFilter, actorFilter };
 	b3World_OverlapAABB( world->physicsWorld, box, b3DefaultQueryFilter(), nbQueryCallback, &queryContext );

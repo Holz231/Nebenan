@@ -2,8 +2,8 @@
 
 **Polygonale Echtzeit-Zerstörung für [Box3D](https://github.com/erincatto/box3d), gebaut für Tempo.**
 Wände brechen in echte konvexe Polygon-Bruchstücke, nicht in Voxel. Jedes Bruchstück ist eine Box3D-Hülle,
-jedes lose Trümmerteil ein Box3D-Starrkörper. Nebenan macht nur das: Wände zerbrechen, Trümmer fallen lassen und
-eine ganze Stadt dabei flüssig halten. Keine Statik, kein Staub, keine Schatten. Jede Millisekunde geht in die
+jedes lose Trümmerteil ein Box3D-Starrkörper. Häuser stürzen ein, wo sie ihr Gewicht nicht mehr tragen, wie in
+Red Faction, und kein Trümmerteil wird gelöscht. Kein Staub, keine Schatten: Jede Millisekunde geht in die
 Zerstörung.
 
 - Geschrieben in C17 nach dem Vorbild von Box3D: datenorientiert, Pools mit Generations-IDs, Arena für
@@ -12,10 +12,13 @@ Zerstörung.
   weiter weg. Nur die getroffenen Bruchstücke werden verfeinert, der Rest der Wand bleibt ein großes Stück
 - Voronoi-Zellen und Hüllen laufen auf mehreren Threads, über das Task-System der Anwendung oder eingebaute
   Threads. Das Ergebnis hängt nicht von der Zahl der Threads ab
-- Stützgraph: Teile ohne Verbindung zum Boden fallen herunter
+- Statik nach dem Lastlöser der Referenz-Engine: Last und Schwerpunkt fließen über die Verbindungen zu den
+  Ankern, Verbindungen brechen unter Druck und Biegung. Überhänge brechen ab, dünne Säulen werden zerdrückt,
+  und was den Halt verliert, fällt als ein Stück
 - Kollisionsschaden: Kanonenkugeln und herabfallende Trümmer beschädigen, was sie treffen
-- Für ganze Städte gebaut: Trümmer, die zur Ruhe kommen, werden zu statischem Schutt und kosten Box3D nichts
-  mehr. Box3D bewegt nur eine begrenzte Zahl Trümmer gleichzeitig, verdeckte Flächen werden nicht gezeichnet
+- Für ganze Städte gebaut, ohne etwas zu löschen: Trümmer, die zur Ruhe kommen und auf festem Grund liegen,
+  werden zu statischem Schutt und kosten Box3D nichts mehr. Box3D bewegt nur eine begrenzte Zahl Trümmer
+  gleichzeitig, verdeckte Flächen werden nicht gezeichnet
 - Ein Regler für die Bruchstückgröße, der wichtigste Hebel für die Leistung, auch zur Laufzeit
 - Deterministisch: gleiche Eingaben ergeben bitgleich das gleiche Bruchmuster, unter Windows, Linux und macOS,
   auf x64 und ARM
@@ -154,10 +157,13 @@ flowchart LR
     A[Einschlag<br/>Strahl, Explosion<br/>oder Kollision] --> B[Getroffene Bruchstücke<br/>per Voronoi verfeinern]
     B --> C[Verbindungen<br/>beschädigen]
     C --> D[Stützgraph:<br/>Weg zum Anker?]
+    D -->|ja| S[Statik:<br/>Druck und Biegung]
+    S -->|überlastet| C
     D -->|nein| E[Neue dynamische<br/>Box3D-Körper]
     E --> G[Box3D simuliert<br/>Trümmer]
     G -->|Treffer-Events| A
-    G -->|zur Ruhe gekommen| H[Statischer Schutt]
+    G -->|ruhig und getragen| H[Statischer Schutt]
+    H -->|Auflage rutscht weg,<br/>Einschlag| G
 ```
 
 **Konvexe Polyeder statt Voxel.** Jedes Bruchstück ist ein konvexes Polyeder aus Ecken und Flächen mit
@@ -191,14 +197,53 @@ Einschlags fällt zum Rand hin ab. Reißen Verbindungen, sucht Nebenan ab der be
 kürzesten Weg zu einem verankerten Stück (Best-First-Suche, dadurch nur lokale Arbeit). Teile ohne Weg zum
 Anker werden zu dynamischen Körpern.
 
-**Trümmer und Schutt.** Lose Teile sind dynamische Box3D-Körper. Liegt ein Trümmer eine halbe Sekunde lang
-ruhig, schläft er in Box3D ein, und Nebenan macht ihn zu statischem Schutt: Er bleibt liegen, wo er ist, gehört
-zu keiner Insel mehr und kostet den Physikschritt nichts. Ein Einschlag in der Nähe, ein Teil, das darunter aus
-dem Bauwerk fällt, oder Schutt, der darunter wieder in Bewegung kommt, weckt ihn. Dafür reicht eine
-Box3D-Abfrage pro Vorgang über alle betroffenen Bereiche. Bewegte Trümmer und Schutt haben je eine Obergrenze,
-darüber verschwinden zuerst die ältesten kleinen Stücke. Optional haben kleine Trümmer eine Lebensdauer. Was
-unter `killDepth` fällt, wird über die Bewegungs-Events von Box3D gefunden, ohne alle Körper abzusuchen.
-Splitter unter `minFragmentVolume` werden gar nicht erst erzeugt.
+**Statik.** Der Lastlöser folgt dem der Referenz-Engine (`src/structure/structural_loads.cpp` auf dem Branch
+`Referenz`). Wenn sich ein Bauwerk ändert, prüft das nächste Update es ganz:
+
+1. Eine Kürzeste-Wege-Suche von den verankerten Bruchstücken aus legt fest, wer wen trägt. Auf etwas Tieferem
+   aufliegen ist billig, seitlich tragen kostet die Entfernung, beschädigte Verbindungen kosten mehr. Anders als in
+   der Referenz, deren Zellen alle gleich groß sind, reichen die Bruchstücke hier von ganzen Wänden bis zu den
+   Splittern eines Einschusslochs. Kleine Kontaktflächen kosten deshalb extra, und die Last einer Wand wölbt sich
+   um ein Loch herum, statt dessen Splitter einzeln zu zerdrücken.
+2. Die Last fließt von den entferntesten Bruchstücken nach innen, zusammen mit ihrem Schwerpunkt. Jedes Stück gibt
+   sein Gewicht und das, was auf ihm ruht, an seine Nachbarn näher am Anker weiter, verteilt nach Fläche, viermal so
+   viel über Flächen, auf denen es aufliegt. Die Anteile neigen sich zum Schwerpunkt hin wie der Druck unter einem
+   Fundament. Was die Auflage nicht umgreift, etwa ein Überhang, biegt die Verbindungen. Flächen, auf denen ein
+   Stück aufliegt, wirken als Gelenk: Nur sein eigenes Gewicht biegt sie, sodass ein Dach nicht die ganze Wand
+   verdreht.
+3. Eine Verbindung versagt, wenn Kraft durch Tragfähigkeit plus Biegung durch Biegetragfähigkeit über 1 steigt.
+   Die Kraft trägt sie mit `strength` pro m², auf Druck ganz, seitlich zur Hälfte. Die Biegung trägt sie über das
+   Widerstandsmoment ihrer Kontaktfläche, berechnet aus deren Flächenmomenten, bei einem Rechteck Fläche × Tiefe / 6.
+   Beschädigte Verbindungen tragen im Verhältnis ihrer Restfestigkeit.
+4. Alle überlasteten Verbindungen reißen zugleich. Was dadurch den Weg zum Anker verliert, fällt als ein Stück, mit
+   allen inneren Verbindungen. Versagt eine unbeschädigte Verbindung unter dem Gewicht darauf, wird das kleinere
+   ihrer beiden Stücke in sechs Splitter zerdrückt, sonst stünde ein Haus weiter auf den Stümpfen dünner Säulen.
+   Das nächste Update prüft das Bauwerk erneut, so gibt es Schritt für Schritt nach.
+
+Eine Prüfung kostet für die Stadt aus 16 Häusern etwa 0,3 ms und läuft nur für Bauwerke, die sich geändert haben.
+Die Häuser der Demo stehen mit Reserve: Zweistöckige halten bis `supportScale` ×0,45, dreistöckige bis ×0,7,
+vierstöckige bis ×0,9.
+Ein Dach auf nur einer Wand bricht ab, ein Dach zwischen zwei Wänden hält.
+
+**Trümmer und Schutt.** Ruhe und Einschlafen folgen ebenfalls der Referenz-Engine (`rubble_rest.h` und
+`BuildingScene::settle`). Nichts wird gelöscht.
+
+- Ein Trümmer ist ruhig, wenn er 0,2 s lang höchstens 2 cm von einer Lage abweicht, die Drehung als Weg seiner
+  entferntesten Ecke gerechnet, und dabei höchstens viermal `debrisSleepThreshold` schnell ist. Oder wenn ihn der
+  Löser auf der Stelle schaukelt, sein mittlerer Ort über Halbsekunden-Fenster aber dreimal in Folge auf 3 mm stehen
+  bleibt.
+- Zu statischem Schutt wird er nur, wenn er auf dem Boden, einem Bauwerk oder Schutt liegt, oder auf einem ruhigen
+  Trümmer, der selbst so liegt. Haufen erstarren von unten nach oben, und nichts erstarrt auf etwas, das sich noch
+  bewegt. Box3D schläfert nur ganze Inseln ein, diese Kette arbeitet pro Stück.
+- Einschläge wecken den Schutt in ihrer Reichweite. Trifft ein Körper, der kein Trümmer ist, Schutt, etwa eine
+  Kugel, wird das getroffene Stück wach, und beide teilen sich den Impuls wie bei einem unelastischen Stoß, denn
+  Box3D hat den Körper schon am statischen Schutt abprallen lassen. Trümmer, die auf Schutt fallen, lassen ihn in
+  Ruhe: Stücke mitten im Haufen zu wecken gibt jedem Dutzende Kontakte und kostete in der Stadt mehr als alles
+  andere.
+- Bewegt sich ein Stück 5 cm von dort, wo es lag, wird der Schutt darauf wach, höchstens 32 pro Update. Teile, die aus
+  einem Bauwerk fallen, nehmen ihren Schutt genauso mit. So bleibt kein Schutt in der Luft hängen.
+- Über `maxDebrisBodies` erstarren die langsamsten Trümmer, die älter als 0,25 s sind. Was unter `killDepth` fällt,
+  hat die Welt verlassen und wird entfernt. Splitter unter `minFragmentVolume` werden gar nicht erst erzeugt.
 
 **Box3D-Anbindung.** Jedes statische Bruchstück hat einen eigenen statischen Körper, denn das Entfernen
 einer Form in Box3D kostet so viel, wie der Körper Kontakte hat. Jede lose Insel ist ein dynamischer
@@ -324,7 +369,7 @@ beim Einbinden nicht gebaut.
 | Material (`nbMaterial`) | Standard | Wirkung |
 | --- | --- | --- |
 | `density` | 2400 kg/m³ | Dichte. Beton 2400, Ziegel 1900, Holz 600 |
-| `strength` | 1·10⁶ | Schaden pro m² Verbindungsfläche bis zum Bruch. Höher ist zäher |
+| `strength` | 1·10⁶ | Schaden pro m² Verbindungsfläche bis zum Bruch, und die Last in N pro m², die eine Verbindung auf Druck trägt (seitlich die Hälfte). Höher ist zäher |
 | `fragmentSize` | 0,12 m | Kantenlänge der Splitter am Einschlag |
 | `minFragmentVolume` | 2·10⁻⁶ m³ | Kleinere Splitter werden verworfen |
 | `maxDepth` | 6 | Wie oft ein Bruchstück weiter zerteilt werden kann |
@@ -333,13 +378,11 @@ beim Einbinden nicht gebaut.
 | Welt (`nbWorldDef`) | Standard | Wirkung |
 | --- | --- | --- |
 | `fragmentScale` | 1 | Multipliziert die Bruchstückgröße aller Materialien. Der wichtigste Regler für die Leistung: doppelte Größe halbiert die Zeit bei Massenzerstörung. Zur Laufzeit mit `nbWorld_SetFragmentScale` |
-| `maxDebrisBodies` | 1500 | Obergrenze für bewegte Trümmerkörper, darüber verschwinden die ältesten kleinen. Zur Laufzeit mit `nbWorld_SetDebrisBudget` |
-| `enableRubble` | an | Trümmer, die zur Ruhe kommen, werden zu statischem Schutt |
-| `maxRubbleBodies` | 20 000 | Obergrenze für Schutt |
-| `debrisSleepThreshold` | 0,12 m/s | Langsamer gilt ein Trümmer als in Ruhe |
-| `debrisLifetime` | 0 s | Lebensdauer kleiner Trümmer, 0 für unbegrenzt |
-| `smallDebrisVolume` | 0,002 m³ | Ab dieser Größe gilt ein Trümmer als klein |
-| `killDepth` | −100 m | Trümmer darunter werden entfernt |
+| `supportScale` | 1 | Tragfähigkeit der Verbindungen in der Statik. Kleiner: Häuser geben früher nach, 0 schaltet die Statik ab. Zur Laufzeit mit `nbWorld_SetSupportScale` |
+| `maxDebrisBodies` | 1500 | Obergrenze für bewegte Trümmerkörper, darüber erstarren die langsamsten zu Schutt. Gelöscht wird nichts. Zur Laufzeit mit `nbWorld_SetDebrisBudget` |
+| `enableRubble` | an | Trümmer, die zur Ruhe kommen und auf festem Grund liegen, werden zu statischem Schutt |
+| `debrisSleepThreshold` | 0,12 m/s | Viermal so schnell gilt ein Trümmer höchstens als ruhig. Box3D schläfert Inseln ein, die langsamer sind |
+| `killDepth` | −100 m | Trümmer darunter haben die Welt verlassen und werden entfernt |
 | `collisionSpeedThreshold` | 4 m/s | Ab dieser Aufprallgeschwindigkeit entsteht Schaden |
 | `collisionDamageScale` | 12 | Umrechnung von Aufprallenergie (J) in Schaden |
 | `collisionRadiusScale` | 0,035 | Schadensradius pro Kubikwurzel der Energie |
@@ -362,30 +405,32 @@ zusammen (Einschläge, Box3D-Schritt, `nbWorld_Update`):
 
 | Stadt | Ø | 95 % der Frames | Box3D-Schritt Ø |
 | --- | ---: | ---: | ---: |
-| 1 Thread | 17,1 ms | 26,2 ms | 15,5 ms |
-| 4 Threads | 8,0 ms | 13,1 ms | 6,8 ms |
-| 1 Thread, `fragmentScale` 2 | 7,7 ms | 12,2 ms | 7,3 ms |
-| 4 Threads, `fragmentScale` 2 | 4,3 ms | 6,8 ms | 4,0 ms |
+| 1 Thread | 26,3 ms | 50,0 ms | 22,4 ms |
+| 4 Threads | 14,5 ms | 32,5 ms | 10,8 ms |
+| 1 Thread, `fragmentScale` 2 | 10,3 ms | 17,1 ms | 9,1 ms |
+| 4 Threads, `fragmentScale` 2 | 6,8 ms | 11,8 ms | 5,6 ms |
 
-Vorher, mit Lastnachweis und Staub, waren es mit 4 Threads 11,4 ms und mit `fragmentScale` 2 5,3 ms.
-`nbWorld_Update` kostet jetzt im Mittel 0,8 ms statt 3,2 ms, mit doppelter Bruchstückgröße 0,24 ms.
+Ohne Statik (`supportScale` 0) bleiben die Häuser auch ohne Erdgeschoss stehen, dann sind es mit 4 Threads 10,2 ms
+und mit `fragmentScale` 2 3,2 ms, mit 1 Thread 21,1 und 5,4 ms. Die Prüfung selbst kostet wenig, teuer sind die
+Einstürze: Was fällt, bewegt sich, trifft andere Teile und zerbricht beim Aufprall. `nbWorld_Update` kostet im Mittel
+3,1 ms, mit doppelter Bruchstückgröße 1,1 ms, und enthält den Schaden durch Aufprall und das Zerdrücken.
 
-Die Zeit ist fast ganz der Box3D-Schritt, und den bestimmen zwei Zahlen:
+Die Zeit ist zum größten Teil der Box3D-Schritt, und den bestimmen zwei Zahlen:
 
-- **Bruchstückgröße.** Mit doppelt so großen Bruchstücken liegen am Ende 18 700 statt 41 300 Bruchstücke herum,
-  und Box3D rechnet 10 700 statt 18 500 Kontakte. Die Zahl der Splitter eines Einschlags fällt mit dem Quadrat
+- **Bruchstückgröße.** Mit doppelt so großen Bruchstücken liegen am Ende 26 000 statt 85 900 Bruchstücke herum,
+  und Box3D rechnet 10 600 statt 17 200 Kontakte. Die Zahl der Splitter eines Einschlags fällt mit dem Quadrat
   der Größe.
 - **Bewegte Trümmer.** Box3D bewegt höchstens `maxDebrisBodies` (1500) Trümmer gleichzeitig. Was zur Ruhe kommt,
-  liegt als Schutt und kostet nichts mehr.
+  liegt als Schutt und kostet nichts mehr, am Ende der Stadt 42 000 Körper.
 
 Ganze Einschläge (Bruch, Stützgraph, neue Box3D-Körper) und der Box3D-Schritt danach bei 60 Hz mit
 4 Substeps, jeweils mit 1 und 4 Threads:
 
 | Szenario | Einschlag Ø, 1 / 4 Threads | Box3D-Schritt Ø, 1 / 4 Threads | Am Ende |
 | --- | ---: | ---: | --- |
-| Gewehr, 200 Treffer | 0,36 / 0,37 ms | 4,3 / 2,8 ms | 3611 Bruchstücke, 926 Körper |
-| 20 Explosionen | 2,4 / 2,0 ms | 7,9 / 4,7 ms | 5397 Bruchstücke, 1769 Körper |
-| Gebäude, 18 Treffer | 2,2 / 1,4 ms | 5,4 / 2,9 ms | 3511 Bruchstücke, 1463 Körper |
+| Gewehr, 200 Treffer | 0,63 / 0,66 ms | 6,8 / 5,6 ms | 3612 Bruchstücke, 1366 Körper |
+| 20 Explosionen | 2,8 / 2,2 ms | 6,1 / 3,5 ms | 6994 Bruchstücke, 3425 Körper |
+| Gebäude, 18 Treffer | 2,3 / 1,5 ms | 4,8 / 2,4 ms | 5993 Bruchstücke, 3205 Körper |
 
 Voronoi-Kern, Platte 4 × 2 × 0,3 m mit Punkten um den Einschlag, 1 Thread:
 
@@ -403,14 +448,14 @@ höchstens 156 000 Dreiecke, im Mittel 0,3 MB und höchstens 1,1 MB Upload pro B
 
 1. Release-Build? Debug ist 5- bis 20-mal langsamer.
 2. „Messwerte kopieren“ im Menü: Ist Simulation groß, Bruchstückgröße erhöhen (×3 macht die Zerstörung grob, aber
-   die Stadt läuft dann in etwa 1 ms pro Bild) oder bewegte Trümmer senken. Ist Grafik groß oder wartet das Bild auf
-   die Grafikkarte, ohne `--msaa` und `--highdpi` starten.
+   die Stadt läuft dann in etwa 2 ms pro Bild), bewegte Trümmer senken oder die Tragfähigkeit erhöhen, dann stürzt
+   weniger ein. Ist Grafik groß oder wartet das Bild auf die Grafikkarte, ohne `--msaa` und `--highdpi` starten.
 3. Threads auf die Zahl der Performance-Kerne stellen.
 
 ## Tests und Benchmark
 
 ```sh
-build/bin/nebenan_test            # 25 Tests: Geometrie, Voronoi, Hüllen, Stützgraph, Einsturz, Schutt, Threads, Determinismus …
+build/bin/nebenan_test            # 27 Tests: Geometrie, Voronoi, Hüllen, Stützgraph, Statik, Einsturz, Schutt, Ruhe, Threads, Determinismus …
 build/bin/nebenan_benchmark 4     # Zahl = Threads für Bruch und Physik
 ```
 
@@ -425,7 +470,7 @@ src/
   poly.c            konvexe Polyeder: Schneiden, Masse, Kontaktflächen
   fracture.c        Voronoi-Bruch und Punktverteilung
   hull_builder.c    Box3D-Hüllen direkt aus der Polyeder-Topologie
-  world.c           Welt, Bruchstücke, Verbindungen, Stützgraph, Trümmer und Schutt, Events
+  world.c           Welt, Bruchstücke, Verbindungen, Stützgraph, Statik, Trümmer, Ruhe und Schutt, Events
   destructible.c    zerstörbare Objekte und Vorzerlegung
   impact.c          Einschläge und Auswurf der Splitter
   scheduler.c       eingebaute Threads, wenn die Anwendung kein Task-System mitbringt
@@ -442,8 +487,13 @@ Nach Änderungen an `demo/shaders/scene.glsl` die Shader neu erzeugen, im Ordner
 
 ## Grenzen
 
-- Kein Lastnachweis: Ein Bauwerk hält, solange ein Weg aus Verbindungen zum Boden führt, auch wenn nur noch ein
-  dünner Steg übrig ist. Das ist Absicht, ein Nachweis kostete in der Stadt drei Viertel der Update-Zeit.
+- Die Statik ist ein Spielmodell nach der Referenz-Engine, kein Tragwerksnachweis. Gewicht, das als Trümmer auf
+  einem Bauwerk liegt, zählt nicht mit, und Zug trägt eine Verbindung wie Druck.
+- Schutt ist für Box3D statisch. Trümmer, die auf Schutt fallen, wecken ihn nicht, nur Einschläge, fremde Körper
+  und eine wegrutschende Auflage. Kinematische Körper stoßen Schutt nicht an, Box3D lässt kinematische und
+  statische Körper nicht kollidieren.
+- Einstürze kosten: Was abbricht, bewegt sich und liegt danach herum. Unter Dauerbeschuss braucht die Stadt deshalb
+  anderthalb- bis zweimal so lange wie ohne Statik, siehe Leistung.
 - Nur die Voronoi-Zellen und Hüllen laufen parallel. Punktverteilung, Einbau der Stücke und das Anlegen der
   Box3D-Formen bleiben auf dem aufrufenden Thread, bei großen Explosionen ist das der größere Teil.
 - Nur konvexe Teile. Konkave Formen müssen als mehrere konvexe Teile angegeben werden.

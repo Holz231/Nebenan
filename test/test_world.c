@@ -354,7 +354,7 @@ static uint32_t RunDeterminismScenario( void )
 
 // Fracture and physics are bit for bit identical with MSVC, GCC and Clang on x64 and ARM. This is the result
 // with the pinned Box3D commit. Update it when the results change on purpose, never to make one platform pass.
-#define NB_EXPECTED_DETERMINISM_HASH 0x26b219b4u
+#define NB_EXPECTED_DETERMINISM_HASH 0xd12e8aa1u
 
 static int DeterminismTest( void )
 {
@@ -707,6 +707,124 @@ static int RubbleTest( void )
 	return 0;
 }
 
+// A dynamic box of the default material resting at a height
+static nbDestructibleId CreateLooseBox( TestScene* scene, b3Vec3 position, b3Vec3 halfExtents, uint32_t seed )
+{
+	nbDestructibleDef def = nbDefaultDestructibleDef();
+	def.isStatic = false;
+	def.position = position;
+	def.seed = seed;
+	return nbCreateBox( scene->world, &def, halfExtents );
+}
+
+// Mean of the chunk centroids of a destructible in world space, whatever it broke into
+static b3Vec3 CenterOfChunks( nbDestructibleId destructible )
+{
+	int count = nbDestructible_GetChunkCount( destructible );
+	nbChunkId* chunks = malloc( sizeof( nbChunkId ) * (size_t)( count + 1 ) );
+	int written = nbDestructible_GetChunks( destructible, chunks, count );
+	b3Vec3 sum = b3Vec3_zero;
+	for ( int i = 0; i < written; ++i )
+	{
+		b3WorldTransform transform = b3Body_GetTransform( nbChunk_GetBody( chunks[i] ) );
+		b3Pos centroid = b3TransformWorldPoint( transform, nbChunk_GetCentroid( chunks[i] ) );
+		sum = b3Add( sum, b3ToVec3( centroid ) );
+	}
+	free( chunks );
+	return b3MulSV( 1.0f / (float)b3MaxInt( written, 1 ), sum );
+}
+
+// Debris freezes into rubble where something fixed carries it, piles from the bottom up, and rubble follows when what it
+// rests on moves away
+static int RestTest( void )
+{
+	// A stack on the ground freezes as a whole
+	{
+		TestScene scene = CreateScene();
+		for ( int i = 0; i < 3; ++i )
+		{
+			b3Vec3 position = { 0.0f, 0.25f + 0.5f * (float)i, 0.0f };
+			b3Vec3 halfExtents = { 0.5f - 0.1f * (float)i, 0.25f, 0.5f };
+			CreateLooseBox( &scene, position, halfExtents, 40 + i );
+		}
+		Step( &scene, 60 );
+		ENSURE( nbWorld_GetStats( scene.world ).rubbleCount == 3 );
+		DestroyScene( &scene );
+	}
+
+	// A box on a platform that can move does not freeze, and rides along when the platform moves
+	{
+		TestScene scene = CreateScene();
+		b3BodyDef bodyDef = b3DefaultBodyDef();
+		bodyDef.type = b3_kinematicBody;
+		bodyDef.position = (b3Vec3){ 0.0f, 1.0f, 0.0f };
+		b3BodyId platform = b3CreateBody( scene.physicsWorld, &bodyDef );
+		b3BoxHull hull = b3MakeBoxHull( 2.0f, 0.1f, 2.0f );
+		b3ShapeDef shapeDef = b3DefaultShapeDef();
+		b3CreateHullShape( platform, &shapeDef, &hull.base );
+		nbDestructibleId box = CreateLooseBox( &scene, (b3Vec3){ 0.0f, 1.35f, 0.0f }, (b3Vec3){ 0.25f, 0.25f, 0.25f }, 44 );
+		Step( &scene, 120 );
+		ENSURE( nbWorld_GetStats( scene.world ).rubbleCount == 0 );
+
+		b3Body_SetLinearVelocity( platform, (b3Vec3){ 0.5f, 0.0f, 0.0f } );
+		Step( &scene, 60 );
+		nbChunkId chunk;
+		nbDestructible_GetChunks( box, &chunk, 1 );
+		ENSURE( b3Body_GetPosition( nbChunk_GetBody( chunk ) ).x > 0.3f );
+		DestroyScene( &scene );
+	}
+
+	// A heavy ball knocks the bottom of a frozen stack away, and the box on top comes along instead of hanging in the air
+	{
+		TestScene scene = CreateScene();
+		CreateLooseBox( &scene, (b3Vec3){ 0.0f, 0.1f, 0.0f }, (b3Vec3){ 0.5f, 0.1f, 0.5f }, 45 );
+		nbDestructibleId top = CreateLooseBox( &scene, (b3Vec3){ 0.0f, 0.5f, 0.0f }, (b3Vec3){ 0.3f, 0.3f, 0.3f }, 46 );
+		Step( &scene, 60 );
+		ENSURE( nbWorld_GetStats( scene.world ).rubbleCount == 2 );
+		b3Vec3 start = CenterOfChunks( top );
+
+		b3BodyDef bodyDef = b3DefaultBodyDef();
+		bodyDef.type = b3_dynamicBody;
+		bodyDef.position = (b3Vec3){ -3.0f, 0.1f, 0.0f };
+		bodyDef.linearVelocity = (b3Vec3){ 12.0f, 0.0f, 0.0f };
+		b3BodyId ball = b3CreateBody( scene.physicsWorld, &bodyDef );
+		b3ShapeDef shapeDef = b3DefaultShapeDef();
+		shapeDef.density = 7800.0f;
+		shapeDef.enableHitEvents = true;
+		b3Sphere sphere = { { 0.0f, 0.0f, 0.0f }, 0.25f };
+		b3CreateSphereShape( ball, &shapeDef, &sphere );
+
+		Step( &scene, 90 );
+		ENSURE( b3Distance( CenterOfChunks( top ), start ) > 0.3f );
+		DestroyScene( &scene );
+	}
+
+	// Only the bottom of a frozen stack comes back to life and slides away. The box on top follows once its support moved,
+	// and falls to the ground.
+	{
+		TestScene scene = CreateScene();
+		nbDestructibleId bottom = CreateLooseBox( &scene, (b3Vec3){ 0.0f, 0.1f, 0.0f }, (b3Vec3){ 0.5f, 0.1f, 0.5f }, 47 );
+		nbDestructibleId top = CreateLooseBox( &scene, (b3Vec3){ 0.0f, 0.5f, 0.0f }, (b3Vec3){ 0.3f, 0.3f, 0.3f }, 48 );
+		Step( &scene, 60 );
+		ENSURE( nbWorld_GetStats( scene.world ).rubbleCount == 2 );
+		b3Vec3 start = CenterOfChunks( top );
+
+		nbWorld* world = nbGetWorldFromId( scene.world );
+		nbChunkId chunk;
+		nbDestructible_GetChunks( bottom, &chunk, 1 );
+		int actorIndex = world->chunks.data[chunk.index1 - 1].actorIndex;
+		nbThawActor( world, actorIndex );
+		b3Body_SetLinearVelocity( world->actors.data[actorIndex].bodyId, (b3Vec3){ 8.0f, 0.0f, 0.0f } );
+		ENSURE( world->actors.data[world->chunks.data[chunk.index1 - 1].actorIndex].isRubble == false );
+
+		Step( &scene, 90 );
+		ENSURE( CenterOfChunks( top ).y < start.y - 0.1f );
+		DestroyScene( &scene );
+	}
+
+	return 0;
+}
+
 // A heavy ball breaks through a wall instead of bouncing off it
 static int CannonballTest( void )
 {
@@ -735,7 +853,7 @@ static int CannonballTest( void )
 	return 0;
 }
 
-// Lowering the debris budget at run time removes the moving debris over it in the next update
+// Lowering the debris budget at run time freezes the moving debris over it in the next update, and nothing is removed
 static int DebrisBudgetTest( void )
 {
 	TestScene scene = CreateScene();
@@ -753,10 +871,15 @@ static int DebrisBudgetTest( void )
 	nbStats stats = nbWorld_GetStats( scene.world );
 	ENSURE( stats.debrisCount - stats.rubbleCount > 10 );
 
-	nbWorld_SetDebrisBudget( scene.world, 5, 1000 );
+	// Debris gets a quarter second to fly before the budget may freeze it
+	nbWorld_SetDebrisBudget( scene.world, 5 );
 	Step( &scene, 1 );
-	stats = nbWorld_GetStats( scene.world );
-	ENSURE( stats.debrisCount - stats.rubbleCount <= 5 );
+	nbStats young = nbWorld_GetStats( scene.world );
+	ENSURE( young.debrisCount == stats.debrisCount );
+	Step( &scene, 30 );
+	nbStats old = nbWorld_GetStats( scene.world );
+	ENSURE( old.debrisCount - old.rubbleCount <= 5 );
+	ENSURE( old.debrisCount == stats.debrisCount );
 
 	DestroyScene( &scene );
 	return 0;
@@ -960,6 +1083,108 @@ static nbDestructibleId CreateHouse( TestScene* scene, int stories, int walls, f
 	return nbCreateDestructible( scene->world, &def, pieces, count );
 }
 
+// A wall of box pieces cut on the grid of the edges of its openings, the way the demo builds its houses
+static void AddWallWithOpenings( nbPieceDef* pieces, int* pieceCount, b3Vec3 origin, bool alongX, float width, float height,
+								 float thickness, const float* openings, int openingCount )
+{
+	float xs[16], ys[16];
+	int nx = 0, ny = 0;
+	xs[nx++] = 0.0f;
+	xs[nx++] = width;
+	ys[ny++] = 0.0f;
+	ys[ny++] = height;
+	for ( int i = 0; i < openingCount; ++i )
+	{
+		xs[nx++] = openings[4 * i + 0];
+		xs[nx++] = openings[4 * i + 2];
+		ys[ny++] = openings[4 * i + 1];
+		ys[ny++] = openings[4 * i + 3];
+	}
+
+	for ( int pass = 0; pass < 2; ++pass )
+	{
+		float* values = pass == 0 ? xs : ys;
+		int count = pass == 0 ? nx : ny;
+		for ( int i = 1; i < count; ++i )
+		{
+			float key = values[i];
+			int j = i - 1;
+			while ( j >= 0 && values[j] > key )
+			{
+				values[j + 1] = values[j];
+				j -= 1;
+			}
+			values[j + 1] = key;
+		}
+	}
+
+	for ( int j = 0; j + 1 < ny; ++j )
+	{
+		for ( int i = 0; i + 1 < nx; ++i )
+		{
+			float x0 = xs[i], x1 = xs[i + 1], y0 = ys[j], y1 = ys[j + 1];
+			if ( x1 - x0 < 1.0e-3f || y1 - y0 < 1.0e-3f )
+			{
+				continue;
+			}
+
+			float cx = 0.5f * ( x0 + x1 ), cy = 0.5f * ( y0 + y1 );
+			bool inOpening = false;
+			for ( int k = 0; k < openingCount; ++k )
+			{
+				const float* o = openings + 4 * k;
+				inOpening = inOpening || ( o[0] < cx && cx < o[2] && o[1] < cy && cy < o[3] );
+			}
+			if ( inOpening )
+			{
+				continue;
+			}
+
+			nbPieceDef* piece = pieces + ( *pieceCount )++;
+			*piece = nbDefaultPieceDef();
+			piece->halfExtents = alongX ? (b3Vec3){ 0.5f * ( x1 - x0 ), 0.5f * ( y1 - y0 ), 0.5f * thickness }
+										: (b3Vec3){ 0.5f * thickness, 0.5f * ( y1 - y0 ), 0.5f * ( x1 - x0 ) };
+			piece->transform.p = alongX ? (b3Vec3){ origin.x + cx, origin.y + cy, origin.z }
+										: (b3Vec3){ origin.x, origin.y + cy, origin.z + cx };
+		}
+	}
+}
+
+// A town house of the demo: brick walls with doors and windows on concrete floors
+static nbDestructibleId CreateTownHouse( TestScene* scene, int floors )
+{
+	nbMaterial concrete = nbDefaultMaterial();
+	concrete.strength = 1.1e6f;
+	nbPieceDef pieces[256];
+	int count = 0;
+	float width = 9.0f, depth = 6.5f, story = 3.0f, t = 0.3f, slab = 0.25f;
+	for ( int floor = 0; floor < floors; ++floor )
+	{
+		float y = (float)floor * ( story + slab );
+		float front0[] = { 3.9f, 0.0f, 5.1f, 2.2f, 1.0f, 1.0f, 2.6f, 2.2f, 6.4f, 1.0f, 8.0f, 2.2f };
+		float front1[] = { 1.0f, 0.9f, 2.6f, 2.2f, 3.7f, 0.9f, 5.3f, 2.2f, 6.4f, 0.9f, 8.0f, 2.2f };
+		float back[] = { 1.5f, 0.9f, 3.0f, 2.2f, 6.0f, 0.9f, 7.5f, 2.2f };
+		float side[] = { 2.4f, 0.9f, 3.6f, 2.2f };
+		float x0 = -0.5f * width, z0 = -0.5f * depth, inner = depth - 2.0f * t;
+		const float* front = floor == 0 ? front0 : front1;
+		AddWallWithOpenings( pieces, &count, (b3Vec3){ x0, y, -z0 - 0.5f * t }, true, width, story, t, front, 3 );
+		AddWallWithOpenings( pieces, &count, (b3Vec3){ x0, y, z0 + 0.5f * t }, true, width, story, t, back, 2 );
+		AddWallWithOpenings( pieces, &count, (b3Vec3){ x0 + 0.5f * t, y, z0 + t }, false, inner, story, t, side, 1 );
+		AddWallWithOpenings( pieces, &count, (b3Vec3){ -x0 - 0.5f * t, y, z0 + t }, false, inner, story, t, side, 1 );
+
+		nbPieceDef* floorSlab = pieces + count++;
+		*floorSlab = nbDefaultPieceDef();
+		floorSlab->halfExtents = (b3Vec3){ 0.5f * width, 0.5f * slab, 0.5f * depth };
+		floorSlab->transform.p = (b3Vec3){ 0.0f, y + story + 0.5f * slab, 0.0f };
+		floorSlab->material = &concrete;
+	}
+
+	nbDestructibleDef def = nbDefaultDestructibleDef();
+	def.material.density = 1900.0f;
+	def.material.strength = 6.0e5f;
+	return nbCreateDestructible( scene->world, &def, pieces, count );
+}
+
 // Highest chunk centroid in world space
 static float HighestChunk( nbDestructibleId destructible )
 {
@@ -969,7 +1194,8 @@ static float HighestChunk( nbDestructibleId destructible )
 	float highest = -FLT_MAX;
 	for ( int i = 0; i < written; ++i )
 	{
-		b3Pos centroid = b3TransformWorldPoint( b3Body_GetTransform( nbChunk_GetBody( chunks[i] ) ), nbChunk_GetCentroid( chunks[i] ) );
+		b3WorldTransform transform = b3Body_GetTransform( nbChunk_GetBody( chunks[i] ) );
+		b3Pos centroid = b3TransformWorldPoint( transform, nbChunk_GetCentroid( chunks[i] ) );
 		highest = b3MaxFloat( highest, (float)centroid.y );
 	}
 	free( chunks );
@@ -983,6 +1209,19 @@ static int SupportTest( void )
 	{
 		TestScene scene = CreateScene();
 		CreateHouse( &scene, 4, 15, 0.0f );
+		Step( &scene, 30 );
+		nbStats stats = nbWorld_GetStats( scene.world );
+		ENSURE( stats.overloadedBondCount == 0 );
+		ENSURE( stats.dynamicBodyCount == 0 );
+		DestroyScene( &scene );
+	}
+
+	// A town house of three stories with doors and windows stands with room to spare. The piers beside a window carry
+	// the floors above, not the sill below it.
+	{
+		TestScene scene = CreateScene();
+		nbWorld_SetSupportScale( scene.world, 0.75f );
+		CreateTownHouse( &scene, 3 );
 		Step( &scene, 30 );
 		nbStats stats = nbWorld_GetStats( scene.world );
 		ENSURE( stats.overloadedBondCount == 0 );
@@ -1011,14 +1250,15 @@ static int SupportTest( void )
 		DestroyScene( &scene );
 	}
 
-	// Thin columns are crushed under the house they carry, and it comes down
+	// Thin columns are crushed under the house they carry, and it comes down. The mean height of its chunks tells, a few
+	// fragments may still fly high.
 	{
 		TestScene scene = CreateScene();
 		nbDestructibleId house = CreateHouse( &scene, 2, 15, 0.15f );
-		float start = HighestChunk( house );
+		float start = CenterOfChunks( house ).y;
 		Step( &scene, 120 );
 		ENSURE( nbWorld_GetStats( scene.world ).overloadedBondCount > 0 );
-		ENSURE( HighestChunk( house ) < start - 1.0f );
+		ENSURE( CenterOfChunks( house ).y < start - 1.0f );
 		DestroyScene( &scene );
 	}
 
@@ -1027,15 +1267,15 @@ static int SupportTest( void )
 		TestScene scene = CreateScene();
 		nbWorld_SetSupportScale( scene.world, 0.0f );
 		nbDestructibleId house = CreateHouse( &scene, 2, 15, 0.15f );
-		float start = HighestChunk( house );
+		float start = CenterOfChunks( house ).y;
 		Step( &scene, 60 );
 		ENSURE( nbWorld_GetStats( scene.world ).overloadedBondCount == 0 );
-		ENSURE( HighestChunk( house ) > start - 0.01f );
+		ENSURE( CenterOfChunks( house ).y > start - 0.01f );
 
 		nbWorld_SetSupportScale( scene.world, 1.0f );
 		Step( &scene, 120 );
 		ENSURE( nbWorld_GetStats( scene.world ).overloadedBondCount > 0 );
-		ENSURE( HighestChunk( house ) < start - 1.0f );
+		ENSURE( CenterOfChunks( house ).y < start - 1.0f );
 		DestroyScene( &scene );
 	}
 
@@ -1074,5 +1314,6 @@ int WorldTest( void )
 	RUN_TEST( DebrisBudgetTest );
 	RUN_TEST( FragmentScaleTest );
 	RUN_TEST( SupportTest );
+	RUN_TEST( RestTest );
 	return 0;
 }
