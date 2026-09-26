@@ -354,7 +354,7 @@ static uint32_t RunDeterminismScenario( void )
 
 // Fracture and physics are bit for bit identical with MSVC, GCC and Clang on x64 and ARM. This is the result
 // with the pinned Box3D commit. Update it when the results change on purpose, never to make one platform pass.
-#define NB_EXPECTED_DETERMINISM_HASH 0x2c30cd2bu
+#define NB_EXPECTED_DETERMINISM_HASH 0x26b219b4u
 
 static int DeterminismTest( void )
 {
@@ -898,6 +898,161 @@ static int VisibleFaceTest( void )
 	return 0;
 }
 
+// Brick walls and concrete floors of 9 x 6.5 m with stories of 3 m. The wall mask selects the walls: 1 the left end,
+// 2 the right end, 4 the front, 8 the back. A column half width above zero puts the ground floor on four columns.
+static nbDestructibleId CreateHouse( TestScene* scene, int stories, int walls, float columnHalfWidth )
+{
+	nbMaterial brick = nbDefaultMaterial();
+	brick.density = 1900.0f;
+	brick.strength = 6.0e5f;
+	nbMaterial concrete = nbDefaultMaterial();
+	concrete.density = 2400.0f;
+	concrete.strength = 1.1e6f;
+
+	const float width = 9.0f, depth = 6.5f, height = 3.0f, wall = 0.3f, floor = 0.25f;
+	nbPieceDef pieces[40];
+	int count = 0;
+	for ( int story = 0; story < stories; ++story )
+	{
+		float y = (float)story * ( height + floor );
+		if ( story == 0 && columnHalfWidth > 0.0f )
+		{
+			for ( int c = 0; c < 4; ++c )
+			{
+				nbPieceDef* piece = pieces + count++;
+				*piece = nbDefaultPieceDef();
+				piece->halfExtents = (b3Vec3){ columnHalfWidth, 0.5f * height, columnHalfWidth };
+				piece->transform.p = (b3Vec3){ ( c & 1 ? 1.0f : -1.0f ) * ( 0.5f * width - columnHalfWidth ), y + 0.5f * height,
+											   ( c & 2 ? 1.0f : -1.0f ) * ( 0.5f * depth - columnHalfWidth ) };
+			}
+		}
+		else
+		{
+			for ( int side = 0; side < 2; ++side )
+			{
+				float sign = side == 0 ? -1.0f : 1.0f;
+				if ( walls & ( 1 << side ) )
+				{
+					nbPieceDef* end = pieces + count++;
+					*end = nbDefaultPieceDef();
+					end->halfExtents = (b3Vec3){ 0.5f * wall, 0.5f * height, 0.5f * depth };
+					end->transform.p = (b3Vec3){ sign * 0.5f * ( width - wall ), y + 0.5f * height, 0.0f };
+				}
+				if ( walls & ( 4 << side ) )
+				{
+					nbPieceDef* front = pieces + count++;
+					*front = nbDefaultPieceDef();
+					front->halfExtents = (b3Vec3){ 0.5f * width - wall, 0.5f * height, 0.5f * wall };
+					front->transform.p = (b3Vec3){ 0.0f, y + 0.5f * height, -sign * 0.5f * ( depth - wall ) };
+				}
+			}
+		}
+
+		nbPieceDef* slab = pieces + count++;
+		*slab = nbDefaultPieceDef();
+		slab->halfExtents = (b3Vec3){ 0.5f * width, 0.5f * floor, 0.5f * depth };
+		slab->transform.p = (b3Vec3){ 0.0f, y + height + 0.5f * floor, 0.0f };
+		slab->material = &concrete;
+	}
+
+	nbDestructibleDef def = nbDefaultDestructibleDef();
+	def.material = brick;
+	return nbCreateDestructible( scene->world, &def, pieces, count );
+}
+
+// Highest chunk centroid in world space
+static float HighestChunk( nbDestructibleId destructible )
+{
+	int count = nbDestructible_GetChunkCount( destructible );
+	nbChunkId* chunks = malloc( sizeof( nbChunkId ) * (size_t)( count + 1 ) );
+	int written = nbDestructible_GetChunks( destructible, chunks, count );
+	float highest = -FLT_MAX;
+	for ( int i = 0; i < written; ++i )
+	{
+		b3Pos centroid = b3TransformWorldPoint( b3Body_GetTransform( nbChunk_GetBody( chunks[i] ) ), nbChunk_GetCentroid( chunks[i] ) );
+		highest = b3MaxFloat( highest, (float)centroid.y );
+	}
+	free( chunks );
+	return highest;
+}
+
+// A structure gives way where it cannot carry its weight: under too much pressure, and where an overhang bends its bonds
+static int SupportTest( void )
+{
+	// A four story house stands on its walls
+	{
+		TestScene scene = CreateScene();
+		CreateHouse( &scene, 4, 15, 0.0f );
+		Step( &scene, 30 );
+		nbStats stats = nbWorld_GetStats( scene.world );
+		ENSURE( stats.overloadedBondCount == 0 );
+		ENSURE( stats.dynamicBodyCount == 0 );
+		DestroyScene( &scene );
+	}
+
+	// A floor across two walls stands, a floor on one wall bends its bond and comes down in one piece
+	{
+		TestScene scene = CreateScene();
+		nbDestructibleId house = CreateHouse( &scene, 1, 3, 0.0f );
+		Step( &scene, 30 );
+		ENSURE( nbWorld_GetStats( scene.world ).overloadedBondCount == 0 );
+		ENSURE( HighestChunk( house ) > 3.0f );
+		DestroyScene( &scene );
+	}
+	{
+		TestScene scene = CreateScene();
+		nbDestructibleId house = CreateHouse( &scene, 1, 1, 0.0f );
+		Step( &scene, 2 );
+		nbStats stats = nbWorld_GetStats( scene.world );
+		ENSURE( stats.overloadedBondCount == 1 );
+		ENSURE( stats.dynamicBodyCount == 1 );
+		Step( &scene, 118 );
+		ENSURE( HighestChunk( house ) < 3.0f );
+		DestroyScene( &scene );
+	}
+
+	// Thin columns are crushed under the house they carry, and it comes down
+	{
+		TestScene scene = CreateScene();
+		nbDestructibleId house = CreateHouse( &scene, 2, 15, 0.15f );
+		float start = HighestChunk( house );
+		Step( &scene, 120 );
+		ENSURE( nbWorld_GetStats( scene.world ).overloadedBondCount > 0 );
+		ENSURE( HighestChunk( house ) < start - 1.0f );
+		DestroyScene( &scene );
+	}
+
+	// Without the check it stands, until the check comes back
+	{
+		TestScene scene = CreateScene();
+		nbWorld_SetSupportScale( scene.world, 0.0f );
+		nbDestructibleId house = CreateHouse( &scene, 2, 15, 0.15f );
+		float start = HighestChunk( house );
+		Step( &scene, 60 );
+		ENSURE( nbWorld_GetStats( scene.world ).overloadedBondCount == 0 );
+		ENSURE( HighestChunk( house ) > start - 0.01f );
+
+		nbWorld_SetSupportScale( scene.world, 1.0f );
+		Step( &scene, 120 );
+		ENSURE( nbWorld_GetStats( scene.world ).overloadedBondCount > 0 );
+		ENSURE( HighestChunk( house ) < start - 1.0f );
+		DestroyScene( &scene );
+	}
+
+	// A gate of stout pillars pre-fractured into cells carries its beam
+	{
+		TestScene scene = CreateScene();
+		CreateGate( &scene, 0.0f, 7 );
+		Step( &scene, 30 );
+		nbStats stats = nbWorld_GetStats( scene.world );
+		ENSURE( stats.overloadedBondCount == 0 );
+		ENSURE( stats.dynamicBodyCount == 0 );
+		DestroyScene( &scene );
+	}
+
+	return 0;
+}
+
 int WorldTest( void );
 
 int WorldTest( void )
@@ -918,5 +1073,6 @@ int WorldTest( void )
 	RUN_TEST( VisibleFaceTest );
 	RUN_TEST( DebrisBudgetTest );
 	RUN_TEST( FragmentScaleTest );
+	RUN_TEST( SupportTest );
 	return 0;
 }

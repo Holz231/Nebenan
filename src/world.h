@@ -88,6 +88,10 @@ typedef struct nbBond
 	// Interface normal from chunk[0] to chunk[1]
 	b3Vec3 normal;
 
+	// Second moments of the interface about its centroid per square meter, see nbBondGeometry
+	b3Vec3 moments;
+	b3Vec3 crossMoments;
+
 	// Remaining damage before the bond breaks
 	float health;
 
@@ -139,6 +143,9 @@ typedef struct nbActor
 
 	// Debris at rest, carried by a static body until something disturbs it
 	bool isRubble;
+
+	// A static actor that changed since its last load check, see nbWorldDef::supportScale
+	bool supportDirty;
 } nbActor;
 
 typedef struct nbDestructible
@@ -227,6 +234,10 @@ typedef struct nbWorld
 
 	// Actors to freeze into rubble or to bring back to life
 	nbIntArray actorList;
+
+	// Static actors waiting for a load check, and the ones the current update checks
+	nbIntArray supportChecks;
+	nbIntArray supportQueue;
 
 	// Event buffers. The write buffers collect events, nbWorld_GetEvents swaps them with the read buffers.
 	nbChunkIdArray createdEvents[2];

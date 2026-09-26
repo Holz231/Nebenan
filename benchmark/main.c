@@ -148,10 +148,11 @@ typedef struct Timings
 static void Report( const char* name, const Timings* t, nbStats stats )
 {
 	printf( "  %-26s impacts %4d | impact avg %6.3f ms max %6.3f ms (fracture avg %6.3f) | step avg %6.3f ms max %6.3f ms | "
-			"update avg %6.3f ms | chunks %5d bodies %5d\n",
+			"update avg %6.3f ms | chunks %5d bodies %5d overloaded %4d\n",
 			name, t->impactCount, t->impactTotal / (float)b3MaxInt( t->impactCount, 1 ), t->impactMax,
 			t->fractureTotal / (float)b3MaxInt( t->impactCount, 1 ), t->stepTotal / (float)b3MaxInt( t->stepCount, 1 ), t->stepMax,
-			t->updateTotal / (float)b3MaxInt( t->stepCount, 1 ), stats.chunkCount, stats.dynamicBodyCount + stats.staticBodyCount );
+			t->updateTotal / (float)b3MaxInt( t->stepCount, 1 ), stats.chunkCount, stats.dynamicBodyCount + stats.staticBodyCount,
+			stats.overloadedBondCount );
 }
 
 static void Step( Scene* scene, Timings* t )

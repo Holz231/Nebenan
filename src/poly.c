@@ -431,6 +431,34 @@ void nbPoly_ComputeMass( const nbPoly* poly, float* volume, b3Vec3* centroid )
 	}
 }
 
+// Second moments per square meter about the centroid of a convex planar polygon, see nbBondGeometry. A triangle adds
+// its area / 12 * (sum of v v^T over its corners + s s^T), s the sum of its corners. The corners are the vertices in
+// the order of the loop, or in their own order without one.
+static void nbPolygonMoments( const b3Vec3* vertices, const uint8_t* loop, int count, nbBondGeometry* geometry )
+{
+	b3Vec3 moments = b3Vec3_zero;
+	b3Vec3 crossMoments = b3Vec3_zero;
+	if ( geometry->area > 0.0f )
+	{
+		b3Vec3 a = b3Sub( vertices[loop != NULL ? loop[0] : 0], geometry->centroid );
+		for ( int k = 1; k + 1 < count; ++k )
+		{
+			b3Vec3 b = b3Sub( vertices[loop != NULL ? loop[k] : k], geometry->centroid );
+			b3Vec3 c = b3Sub( vertices[loop != NULL ? loop[k + 1] : k + 1], geometry->centroid );
+			float weight = b3Dot( geometry->normal, b3Cross( b3Sub( b, a ), b3Sub( c, a ) ) ) / ( 24.0f * geometry->area );
+			b3Vec3 s = b3Add( b3Add( a, b ), c );
+			moments.x += weight * ( a.x * a.x + b.x * b.x + c.x * c.x + s.x * s.x );
+			moments.y += weight * ( a.y * a.y + b.y * b.y + c.y * c.y + s.y * s.y );
+			moments.z += weight * ( a.z * a.z + b.z * b.z + c.z * c.z + s.z * s.z );
+			crossMoments.x += weight * ( a.x * a.y + b.x * b.y + c.x * c.y + s.x * s.y );
+			crossMoments.y += weight * ( a.x * a.z + b.x * b.z + c.x * c.z + s.x * s.z );
+			crossMoments.z += weight * ( a.y * a.z + b.y * b.z + c.y * c.z + s.y * s.z );
+		}
+	}
+	geometry->moments = moments;
+	geometry->crossMoments = crossMoments;
+}
+
 float nbPoly_FaceGeometry( const nbPoly* poly, int faceIndex, nbBondGeometry* geometry )
 {
 	const nbPolyFace* face = poly->faces + faceIndex;
@@ -452,6 +480,7 @@ float nbPoly_FaceGeometry( const nbPoly* poly, int faceIndex, nbBondGeometry* ge
 	geometry->normal = n;
 	geometry->area = 0.5f * twiceArea;
 	geometry->centroid = twiceArea > 0.0f ? b3MulAdd( a, 1.0f / ( 3.0f * twiceArea ), weighted ) : a;
+	nbPolygonMoments( poly->vertices, loop, face->count, geometry );
 	return geometry->area;
 }
 
@@ -813,6 +842,13 @@ float nbShape_FaceOverlap( const nbShape* a, int faceIndexA, const nbShape* b, i
 	geometry->centroid = b3MulAdd( b3MulAdd( origin, c2.x, u ), c2.y, v );
 	geometry->normal = n;
 	geometry->area = area;
+
+	b3Vec3 points[NB_MAX_CLIP_POINTS];
+	for ( int k = 0; k < count; ++k )
+	{
+		points[k] = b3MulAdd( b3MulAdd( origin, input[k].x, u ), input[k].y, v );
+	}
+	nbPolygonMoments( points, NULL, count, geometry );
 	return area;
 }
 
@@ -827,6 +863,12 @@ float nbShape_ContactArea( const nbShape* a, const nbShape* b, float tolerance, 
 	float totalArea = 0.0f;
 	b3Vec3 weightedCentroid = b3Vec3_zero;
 	b3Vec3 weightedNormal = b3Vec3_zero;
+
+	// Second moments about the centroid of the first patch, shifted to the common centroid at the end. Offsets from a
+	// nearby point keep the float error small far from the origin.
+	b3Vec3 base = b3Vec3_zero;
+	b3Vec3 moments = b3Vec3_zero;
+	b3Vec3 crossMoments = b3Vec3_zero;
 
 
 	for ( int fa = 0; fa < a->faceCount; ++fa )
@@ -857,17 +899,28 @@ float nbShape_ContactArea( const nbShape* a, const nbShape* b, float tolerance, 
 				continue;
 			}
 
+			if ( totalArea == 0.0f )
+			{
+				base = patch.centroid;
+			}
 			totalArea += area;
-			weightedCentroid = b3MulAdd( weightedCentroid, area, patch.centroid );
+			weightedCentroid = b3MulAdd( weightedCentroid, area, b3Sub( patch.centroid, base ) );
 			weightedNormal = b3MulAdd( weightedNormal, area, n );
+
+			b3Vec3 c = b3Sub( patch.centroid, base );
+			moments = b3MulAdd( moments, area, b3Add( patch.moments, (b3Vec3){ c.x * c.x, c.y * c.y, c.z * c.z } ) );
+			crossMoments = b3MulAdd( crossMoments, area, b3Add( patch.crossMoments, (b3Vec3){ c.x * c.y, c.x * c.z, c.y * c.z } ) );
 		}
 	}
 
 	if ( totalArea > 0.0f )
 	{
-		geometry->centroid = b3MulSV( 1.0f / totalArea, weightedCentroid );
+		b3Vec3 c = b3MulSV( 1.0f / totalArea, weightedCentroid );
+		geometry->centroid = b3Add( base, c );
 		geometry->normal = b3Normalize( weightedNormal );
 		geometry->area = totalArea;
+		geometry->moments = b3Sub( b3MulSV( 1.0f / totalArea, moments ), (b3Vec3){ c.x * c.x, c.y * c.y, c.z * c.z } );
+		geometry->crossMoments = b3Sub( b3MulSV( 1.0f / totalArea, crossMoments ), (b3Vec3){ c.x * c.y, c.x * c.z, c.y * c.z } );
 	}
 
 	return totalArea;

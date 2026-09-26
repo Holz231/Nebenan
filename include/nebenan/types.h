@@ -285,6 +285,14 @@ typedef struct nbWorldDef
 	/// Debris that fall below this height along the gravity direction are removed, in meters.
 	float killDepth;
 
+	/// Structures collapse where they cannot carry their weight, in the style of Red Faction. The load of every chunk
+	/// flows along its bonds to the anchors, and a bond fails when the force through it exceeds its area times the
+	/// strength of the weaker material, or the bending of an overhang exceeds what the shape of the bond carries.
+	/// Bonds carry their full strength in compression, half of it sideways. The part that loses its way to the anchors
+	/// falls as one piece, and a chunk crushed under too much weight bursts into fragments. Lower values let buildings
+	/// give way sooner, zero turns the check off. Change it at run time with nbWorld_SetSupportScale.
+	float supportScale;
+
 	/// Minimum approach speed for collision damage in meters per second.
 	float collisionSpeedThreshold;
 
@@ -366,10 +374,11 @@ typedef struct nbStats
 	/// Debris that came to rest and became static rubble. Also counted as debris and dynamic bodies.
 	int rubbleCount;
 
-	/// Totals since the world was created.
+	/// Totals since the world was created. Overloaded bonds broke because they could not carry their load.
 	int impactCount;
 	int fractureCount;
 	int createdChunkCount;
+	int overloadedBondCount;
 
 	/// Chunks whose physics hull needed the quickhull fallback instead of the direct build.
 	int hullFallbackCount;

@@ -46,6 +46,11 @@ typedef struct nbBondGeometry
 	b3Vec3 normal;
 
 	float area;
+
+	// Second moments of the face about its centroid per square meter of area: xx, yy, zz and xy, xz, yz. They tell
+	// how far the face reaches in each direction, which sets how much bending it carries.
+	b3Vec3 moments;
+	b3Vec3 crossMoments;
 } nbBondGeometry;
 
 
