@@ -1171,6 +1171,33 @@ static int CannonballTest( void )
 	return 0;
 }
 
+// Lowering the debris budget at run time removes the moving debris over it in the next update
+static int DebrisBudgetTest( void )
+{
+	TestScene scene = CreateScene();
+	CreateWall( &scene, (b3Vec3){ 2.0f, 1.0f, 0.12f }, 23 );
+
+	nbImpactDef impact = { 0 };
+	impact.point = (b3Vec3){ 0.0f, 1.0f, 0.12f };
+	impact.direction = (b3Vec3){ 0.0f, 0.0f, -1.0f };
+	impact.radius = 0.6f;
+	impact.damage = 1.0e8f;
+	impact.ejectSpeed = 2.0f;
+	nbWorld_ApplyImpact( scene.world, &impact );
+	Step( &scene, 2 );
+
+	nbStats stats = nbWorld_GetStats( scene.world );
+	ENSURE( stats.debrisCount - stats.rubbleCount > 10 );
+
+	nbWorld_SetDebrisBudget( scene.world, 5, 1000 );
+	Step( &scene, 1 );
+	stats = nbWorld_GetStats( scene.world );
+	ENSURE( stats.debrisCount - stats.rubbleCount <= 5 );
+
+	DestroyScene( &scene );
+	return 0;
+}
+
 // Visibility of the faces of a chunk, one bit per face
 static uint64_t VisibleFaceMask( nbChunkId id )
 {
@@ -1308,5 +1335,6 @@ int WorldTest( void )
 	RUN_TEST( RubbleTest );
 	RUN_TEST( CannonballTest );
 	RUN_TEST( VisibleFaceTest );
+	RUN_TEST( DebrisBudgetTest );
 	return 0;
 }

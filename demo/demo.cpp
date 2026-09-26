@@ -137,6 +137,9 @@ struct App
 
 	bool paused = false;
 	float timeScale = 1.0f;
+
+	// Debris bodies Box3D moves at the same time, the main lever of the physics cost
+	int maxDebrisBodies = nbDefaultWorldDef().maxDebrisBodies;
 	float accumulator = 0.0f;
 	int workerCount = 1;
 	int maxWorkers = 1;
@@ -1064,6 +1067,7 @@ static void LoadScene( App& app, SceneKind scene )
 	def.physicsWorld = app.physics;
 	def.collisionRadiusScale = 0.02f;
 	def.workerCount = app.workerCount;
+	def.maxDebrisBodies = app.maxDebrisBodies;
 	app.destruction = nbCreateWorld( &def );
 
 	switch ( scene )
@@ -1421,6 +1425,14 @@ static void DrawUi( App& app )
 	{
 		b3World_SetWorkerCount( app.physics, app.workerCount );
 		nbWorld_SetWorkerCount( app.destruction, app.workerCount );
+	}
+	if ( ImGui::SliderInt( "Bewegte Trümmer", &app.maxDebrisBodies, 100, 5000 ) )
+	{
+		nbWorld_SetDebrisBudget( app.destruction, app.maxDebrisBodies, nbDefaultWorldDef().maxRubbleBodies );
+	}
+	if ( ImGui::IsItemHovered() )
+	{
+		ImGui::SetTooltip( "So viele Trümmer bewegt Box3D höchstens gleichzeitig.\nWeniger macht die Physik schneller." );
 	}
 	if ( ImGui::Button( "Trümmer entfernen (C)" ) )
 	{

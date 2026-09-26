@@ -59,6 +59,10 @@ NB_API nbStats nbWorld_GetStats( nbWorldId worldId );
 /// Change the number of fracture workers, see nbWorldDef::workerCount. Restarts the internal threads.
 NB_API void nbWorld_SetWorkerCount( nbWorldId worldId, int count );
 
+/// Change the debris budgets, see nbWorldDef::maxDebrisBodies and nbWorldDef::maxRubbleBodies. The moving debris
+/// budget bounds the work of the Box3D step. The next update removes what is over budget.
+NB_API void nbWorld_SetDebrisBudget( nbWorldId worldId, int maxDebrisBodies, int maxRubbleBodies );
+
 /// Find the chunk that owns a Box3D shape. Returns null if the shape is not a chunk.
 NB_API nbChunkId nbWorld_GetChunkFromShape( nbWorldId worldId, b3ShapeId shapeId );
 

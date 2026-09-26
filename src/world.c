@@ -1605,6 +1605,18 @@ void nbWorld_SetWorkerCount( nbWorldId worldId, int count )
 	nbStartWorkers( world, count );
 }
 
+void nbWorld_SetDebrisBudget( nbWorldId worldId, int maxDebrisBodies, int maxRubbleBodies )
+{
+	nbWorld* world = nbGetWorldFromId( worldId );
+	if ( world == NULL )
+	{
+		return;
+	}
+
+	world->def.maxDebrisBodies = b3MaxInt( maxDebrisBodies, 0 );
+	world->def.maxRubbleBodies = b3MaxInt( maxRubbleBodies, 0 );
+}
+
 nbWorldId nbCreateWorld( const nbWorldDef* def )
 {
 	NB_ASSERT( def->internalValue == NB_SECRET_COOKIE );

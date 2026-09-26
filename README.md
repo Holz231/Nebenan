@@ -389,7 +389,7 @@ beim Einbinden nicht gebaut.
 
 | Welt (`nbWorldDef`) | Standard | Wirkung |
 | --- | --- | --- |
-| `maxDebrisBodies` | 1500 | Obergrenze für bewegte Trümmerkörper, darüber verschwinden die ältesten kleinen |
+| `maxDebrisBodies` | 1500 | Obergrenze für bewegte Trümmerkörper, darüber verschwinden die ältesten kleinen. Zur Laufzeit mit `nbWorld_SetDebrisBudget` |
 | `enableRubble` | an | Trümmer, die zur Ruhe kommen, werden zu statischem Schutt |
 | `maxRubbleBodies` | 20 000 | Obergrenze für Schutt |
 | `debrisSleepThreshold` | 0,12 m/s | Langsamer gilt ein Trümmer als in Ruhe |
@@ -440,8 +440,8 @@ zusammen (Einschläge, Box3D-Schritt, `nbWorld_Update`):
 
 | Stadt | Ø | 95 % der Frames | Box3D-Schritt Ø |
 | --- | ---: | ---: | ---: |
-| 1 Thread | 21,3 ms | 31,7 ms | 17,2 ms |
-| 4 Threads | 12,3 ms | 19,5 ms | 8,3 ms |
+| 1 Thread | 23,7 ms | 34,9 ms | 19,5 ms |
+| 4 Threads | 11,4 ms | 18,8 ms | 7,9 ms |
 
 Am Ende liegen 42 000 Bruchstücke herum, aber Box3D bewegt höchstens 1500 Trümmer gleichzeitig mit etwa
 19 000 Kontakten. Was zur Ruhe kommt, liegt als Schutt, und die Häuser werden reihum nachgewiesen.
@@ -453,14 +453,29 @@ Am Ende liegen 42 000 Bruchstücke herum, aber Box3D bewegt höchstens 1500 Trü
   Beim Einsturz sprengen 18 Treffer drei Wände des Erdgeschosses, die Obergeschosse hängen dann an der letzten
   Wand, bis der Lastnachweis sie abbricht.
 - `nbWorld_Update` (Kollisionsschaden, Trümmer und Schutt, Lastnachweis) kostet im Mittel 0,2 bis 0,8 ms pro
-  Frame, in der Stadt unter Dauerbeschuss 3,6 ms. Ein Nachweis für ein zerschossenes Haus kostet 2 bis 3 ms,
+  Frame, in der Stadt unter Dauerbeschuss 3,2 ms mit 4 Threads. Ein Nachweis für ein zerschossenes Haus kostet 2 bis 3 ms,
   deshalb wird jedes Bauwerk höchstens jedes zweite Update nachgewiesen, und die Nachweise eines Updates
   verteilen sich auf die Threads.
 
 Die Physikzeit ist fast ganz Box3D. Die Obergrenze für bewegte Trümmer (`maxDebrisBodies`) ist der wichtigste
-Regler: Sie bestimmt, wie viele Körper und Kontakte Box3D pro Schritt rechnet. Ein Gewehrtreffer kostet etwa
+Regler: Sie bestimmt, wie viele Körper und Kontakte Box3D pro Schritt rechnet. In der Stadt sind es 1500 wache
+Körper mit 19 000 Kontakten: 2,7 ms Kollision und 4,6 ms Solver mit 4 Threads. Die Demo hat dafür einen Regler. Ein Gewehrtreffer kostet etwa
 ein Drittel Millisekunde. Windows, Linux und macOS kommen im Benchmark auf exakt dieselben Bruchstück- und
 Körperzahlen, mit jeder Threadzahl.
+
+Grafik der Demo, die ersten acht Sekunden der Stadt im Skript (480 Bilder, am Ende 16 000 Bruchstücke):
+
+| Stadt | vorher | jetzt |
+| --- | ---: | ---: |
+| Vertices auf der GPU | 1,16 Mio. | 0,40 Mio. |
+| Dreiecke pro Durchgang, höchstens | 386 000 | 240 000 |
+| Upload pro Bild, Mittel / höchstens | 3,2 / 11,6 MB | 0,8 / 2,4 MB |
+| Draw Calls | 62 | 28 |
+
+Vorher wurde jede Seite mit einem entfernten Bruchstück neu aufgebaut und ganz hochgeladen, und alle Seiten
+lagen in dynamischen Puffern. Jetzt sind die Meshes indiziert, verdeckte Flächen fallen weg, volle Seiten
+liegen unveränderlich im Grafikspeicher, und entfernte Meshes kosten keinen Upload. Die CPU braucht für die
+Grafik neben den Treiberaufrufen etwa 1 ms pro Bild: Bruchstücke nachführen, Staub sortieren, hochladen.
 
 ## Tests und Benchmark
 
