@@ -135,6 +135,11 @@ NB_API int nbChunk_GetDepth( nbChunkId chunkId );
 /// Material of the chunk, the one of its original piece. Zero for an invalid chunk.
 NB_API nbMaterial nbChunk_GetMaterial( nbChunkId chunkId );
 
+/// How close the chunk is to breaking off under the weight of its structure: the highest utilization, stress
+/// divided by strength, of the bonds around it in the last load check. Bonds break at one. Zero for debris
+/// and for structures without a load check.
+NB_API float nbChunk_GetUtilization( nbChunkId chunkId );
+
 /// Number of intact bonds of this chunk.
 NB_API int nbChunk_GetBondCount( nbChunkId chunkId );
 

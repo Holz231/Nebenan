@@ -18,6 +18,8 @@ struct slot_transform
 	vec4 position_scale;
 	// quaternion x, y, z, w
 	vec4 rotation;
+	// .x = load utilization of the chunk, negative for none
+	vec4 extra;
 };
 
 layout( binding = 0 ) readonly buffer transforms
@@ -55,6 +57,7 @@ out vec3 v_local_normal;
 out vec4 v_light_pos;
 flat out float v_material;
 flat out float v_variation;
+flat out float v_load;
 
 void main()
 {
@@ -62,6 +65,7 @@ void main()
 	slot_transform xf = slots[slot];
 	vec3 world_pos = rotate_vector( xf.rotation, in_position * xf.position_scale.w ) + xf.position_scale.xyz;
 
+	v_load = xf.extra.x;
 	v_world_pos = world_pos;
 	v_world_normal = rotate_vector( xf.rotation, in_normal.xyz );
 	v_local_pos = in_position;
@@ -84,7 +88,7 @@ layout( binding = 1 ) uniform fs_params
 	vec4 camera_pos;	// .xyz = eye
 	vec4 fog_color;		// .rgb
 	vec4 shadow_params; // .x = uv y sign, .y = texel size, .z = depth scale, .w = depth offset
-	vec4 options;		// .x = show chunks, .y = shadows enabled
+	vec4 options;		// .x = show chunks, .y = shadows enabled, .z = load view
 };
 
 #pragma sokol @image_sample_type shadow_map depth
@@ -99,6 +103,7 @@ in vec3 v_local_normal;
 in vec4 v_light_pos;
 flat in float v_material;
 flat in float v_variation;
+flat in float v_load;
 
 out vec4 frag_color;
 
@@ -318,6 +323,25 @@ void main()
 	{
 		// Debug view: every chunk in its own color
 		albedo = 0.35 + 0.55 * vec3( fract( v_variation * 7.13 ), fract( v_variation * 3.71 ), fract( v_variation * 5.29 ) );
+	}
+
+	if ( options.z > 0.5 && material < 8 )
+	{
+		// Load view: green where the structure is relaxed, yellow, red where bonds are about to break, grey debris
+		if ( v_load < 0.0 )
+		{
+			albedo = vec3( 0.4 );
+		}
+		else
+		{
+			float t = clamp( v_load, 0.0, 1.0 );
+			vec3 relaxed = vec3( 0.16, 0.6, 0.27 );
+			vec3 loaded = vec3( 0.95, 0.78, 0.14 );
+			vec3 critical = vec3( 0.9, 0.1, 0.07 );
+			albedo = t < 0.5 ? mix( relaxed, loaded, 2.0 * t ) : mix( loaded, critical, 2.0 * t - 1.0 );
+		}
+		roughness = 0.85;
+		specular = 0.05;
 	}
 
 	vec3 l = normalize( sun_dir.xyz );

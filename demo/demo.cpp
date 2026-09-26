@@ -56,6 +56,7 @@ struct ToolSettings
 
 struct ChunkVisual
 {
+	nbChunkId id = {};
 	uint16_t generation = 0;
 	int slot = -1;
 	int mesh = -1;
@@ -204,6 +205,7 @@ static void AddChunkVisual( App& app, nbChunkId id )
 	}
 
 	ChunkVisual& visual = app.chunks[id.index1];
+	visual.id = id;
 	visual.generation = id.generation;
 	visual.slot = app.renderer.AllocSlot();
 	visual.body = nbChunk_GetBody( id );
@@ -217,6 +219,24 @@ static void AddChunkVisual( App& app, nbChunkId id )
 	}
 	visual.mesh = app.renderer.AddMesh( app.gpuScratch.data(), count );
 	AttachSlot( app, visual.body, visual.slot );
+}
+
+// Color every glued chunk by how close the bonds around it are to breaking. Loose debris shows grey.
+static void UpdateLoadView( App& app )
+{
+	if ( app.renderSettings.showLoad == false )
+	{
+		return;
+	}
+
+	for ( const ChunkVisual& visual : app.chunks )
+	{
+		if ( visual.alive )
+		{
+			float load = nbChunk_IsDynamic( visual.id ) ? -1.0f : nbChunk_GetUtilization( visual.id );
+			app.renderer.SetSlotLoad( visual.slot, load );
+		}
+	}
 }
 
 static void RemoveChunkVisual( App& app, int index )
@@ -1244,6 +1264,7 @@ static void DrawUi( App& app )
 	ImGui::Checkbox( "Schatten", &app.renderSettings.shadows );
 	ImGui::SameLine();
 	ImGui::Checkbox( "Bruchstücke einfärben (F)", &app.renderSettings.showChunks );
+	ImGui::Checkbox( "Statik: Auslastung der Fugen (L)", &app.renderSettings.showLoad );
 	if ( ImGui::Checkbox( "Staub und Splitter", &app.showDust ) && app.showDust == false )
 	{
 		app.particles.clear();
@@ -1269,7 +1290,7 @@ static void DrawUi( App& app )
 	ImGui::TextWrapped( "Linke Maustaste: schießen (halten = Dauerfeuer)\n"
 						"Rechte Maustaste halten: umsehen\n"
 						"WASD bewegen, Q/E runter/hoch, Shift schneller\n"
-						"1-3 Werkzeug, R neu laden, P Pause, T Zeitlupe, F1 Menü" );
+						"1-3 Werkzeug, R neu laden, P Pause, T Zeitlupe, L Statik, F1 Menü" );
 
 	ImGui::End();
 
@@ -1423,6 +1444,7 @@ static void OnFrame()
 	app.frameSimTime = 0.0f;
 	StepSimulation( app, dt );
 	SyncChunks( app );
+	UpdateLoadView( app );
 	UpdateParticles( app, app.frameSimTime );
 	BuildParticleInstances( app );
 
@@ -1500,6 +1522,10 @@ static void OnEvent( const sapp_event* event )
 			else if ( event->key_code == SAPP_KEYCODE_F )
 			{
 				app.renderSettings.showChunks = !app.renderSettings.showChunks;
+			}
+			else if ( event->key_code == SAPP_KEYCODE_L )
+			{
+				app.renderSettings.showLoad = !app.renderSettings.showLoad;
 			}
 			else if ( event->key_code == SAPP_KEYCODE_F1 )
 			{
@@ -1599,6 +1625,10 @@ int main( int argc, char** argv )
 		else if ( strcmp( argv[i], "--script" ) == 0 )
 		{
 			app.automation.script = true;
+		}
+		else if ( strcmp( argv[i], "--load-view" ) == 0 )
+		{
+			app.renderSettings.showLoad = true;
 		}
 		else if ( strcmp( argv[i], "--scene" ) == 0 && i + 1 < argc )
 		{

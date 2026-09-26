@@ -804,6 +804,24 @@ static int CantileverTest( void )
 		ENSURE( stats.overloadedBondCount == k );
 		ENSURE( stats.dynamicBodyCount == k );
 
+		// The short beam loads the joint with 540 kPa in bending (Box3D gravity is 10), 27 % of the strength.
+		// A fallen beam is debris and reports nothing.
+		nbChunkId chunks[2];
+		ENSURE( nbDestructible_GetChunks( post, chunks, 2 ) == 2 );
+		for ( int i = 0; i < 2; ++i )
+		{
+			float utilization = nbChunk_GetUtilization( chunks[i] );
+			bool isBeam = nbChunk_GetCentroid( chunks[i] ).x > 0.15f;
+			if ( k == 0 )
+			{
+				ENSURE_SMALL( utilization - 0.27f, 0.005f );
+			}
+			else if ( isBeam )
+			{
+				ENSURE( utilization == 0.0f );
+			}
+		}
+
 		DestroyScene( &scene );
 	}
 	return 0;

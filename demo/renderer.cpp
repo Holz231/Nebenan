@@ -13,6 +13,9 @@
 static const int PageCapacity = 1 << 16;
 static const int ShadowResolution = 4096;
 
+// Floats per transform slot: position and scale, rotation, load and three spare
+static const int SlotFloats = 12;
+
 b3Vec3 Camera::Forward() const
 {
 	return { cosf( pitch ) * sinf( yaw ), sinf( pitch ), -cosf( pitch ) * cosf( yaw ) };
@@ -44,12 +47,12 @@ void Renderer::Init()
 
 	// Transform slots, grown on demand
 	m_slotCapacity = 16384;
-	m_slotData.resize( (size_t)m_slotCapacity * 8, 0.0f );
+	m_slotData.resize( (size_t)m_slotCapacity * SlotFloats, 0.0f );
 
 	sg_buffer_desc transformDesc = {};
 	transformDesc.usage.storage_buffer = true;
 	transformDesc.usage.stream_update = true;
-	transformDesc.size = (size_t)m_slotCapacity * 8 * sizeof( float );
+	transformDesc.size = (size_t)m_slotCapacity * SlotFloats * sizeof( float );
 	transformDesc.label = "slot_transforms";
 	m_transformBuffer = sg_make_buffer( &transformDesc ).id;
 
@@ -229,14 +232,14 @@ int Renderer::AllocSlot()
 	{
 		// Grow the storage buffer. The old one is dropped, the next upload writes everything.
 		m_slotCapacity *= 2;
-		m_slotData.resize( (size_t)m_slotCapacity * 8, 0.0f );
+		m_slotData.resize( (size_t)m_slotCapacity * SlotFloats, 0.0f );
 		sg_destroy_view( sg_view{ m_transformView } );
 		sg_destroy_buffer( sg_buffer{ m_transformBuffer } );
 
 		sg_buffer_desc transformDesc = {};
 		transformDesc.usage.storage_buffer = true;
 		transformDesc.usage.stream_update = true;
-		transformDesc.size = (size_t)m_slotCapacity * 8 * sizeof( float );
+		transformDesc.size = (size_t)m_slotCapacity * SlotFloats * sizeof( float );
 		transformDesc.label = "slot_transforms";
 		m_transformBuffer = sg_make_buffer( &transformDesc ).id;
 
@@ -246,6 +249,7 @@ int Renderer::AllocSlot()
 	}
 
 	SetSlot( slot, b3Vec3_zero, b3Quat_identity, 1.0f );
+	SetSlotLoad( slot, -1.0f );
 	return slot;
 }
 
@@ -253,12 +257,23 @@ void Renderer::FreeSlot( int slot )
 {
 	// Hide anything that still references the slot
 	SetSlot( slot, b3Vec3_zero, b3Quat_identity, 0.0f );
+	SetSlotLoad( slot, -1.0f );
 	m_freeSlots.push_back( slot );
+}
+
+void Renderer::SetSlotLoad( int slot, float load )
+{
+	float* data = m_slotData.data() + (size_t)slot * SlotFloats;
+	if ( data[8] != load )
+	{
+		data[8] = load;
+		m_slotsDirty = true;
+	}
 }
 
 void Renderer::SetSlot( int slot, b3Vec3 position, b3Quat rotation, float scale )
 {
-	float* data = m_slotData.data() + (size_t)slot * 8;
+	float* data = m_slotData.data() + (size_t)slot * SlotFloats;
 	data[0] = position.x;
 	data[1] = position.y;
 	data[2] = position.z;
@@ -404,7 +419,7 @@ void Renderer::Upload()
 
 	if ( m_slotsDirty && m_slotCount > 0 )
 	{
-		size_t bytes = (size_t)m_slotCount * 8 * sizeof( float );
+		size_t bytes = (size_t)m_slotCount * SlotFloats * sizeof( float );
 		sg_update_buffer( sg_buffer{ m_transformBuffer }, MakeRange( m_slotData.data(), bytes ) );
 		m_stats.uploadedBytes += (int)bytes;
 		m_slotsDirty = false;
@@ -522,7 +537,7 @@ void Renderer::Render( const Camera& camera, const RenderSettings& settings, int
 	fsParams.fog_color = MakeVec4( horizon, 0.0f );
 	fsParams.shadow_params =
 		Vec4{ m_uvYSign, 1.0f / (float)ShadowResolution, m_zeroToOne ? 1.0f : 0.5f, m_zeroToOne ? 0.0f : 0.5f };
-	fsParams.options = Vec4{ settings.showChunks ? 1.0f : 0.0f, settings.shadows ? 1.0f : 0.0f, 0.0f, 0.0f };
+	fsParams.options = Vec4{ settings.showChunks ? 1.0f : 0.0f, settings.shadows ? 1.0f : 0.0f, settings.showLoad ? 1.0f : 0.0f, 0.0f };
 
 	sg_apply_pipeline( sg_pipeline{ m_litPipeline } );
 	sg_apply_uniforms( UB_scene_vs_params, MakeRange( &vsParams, sizeof( vsParams ) ) );

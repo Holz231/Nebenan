@@ -902,6 +902,7 @@ void nbCheckLoads( nbWorld* world, int destructibleIndex )
 	{
 		nbChunk* chunk = world->chunks.data + c;
 		chunk->scratch = count;
+		chunk->utilization = 0.0f;
 		centroids[count] = chunk->shape->centroid;
 		masses[count] = (double)destructible->materials[chunk->materialIndex].density * (double)chunk->shape->volume;
 		anchoredChunks[count] = ( chunk->flags & nb_chunkAnchored ) != 0;
@@ -1073,6 +1074,25 @@ void nbCheckLoads( nbWorld* world, int destructibleIndex )
 		const nbLoadBond* loadBond = loadBonds + k;
 		utilization[k] = nbBondUtilization( world->bonds.data + loadBond->bondIndex, loadBond, solution );
 		worst = b3MaxFloat( worst, utilization[k] );
+	}
+
+	// Every chunk reports the most loaded bond around its cluster, the bonds inside are taken as rigid
+	float* clusterUtilization = nbArena_AllocArray( arena, float, clusters.count );
+	memset( clusterUtilization, 0, sizeof( float ) * (size_t)clusters.count );
+	for ( int k = 0; k < loadBondCount; ++k )
+	{
+		const nbBond* bond = world->bonds.data + loadBonds[k].bondIndex;
+		for ( int side = 0; side < 2; ++side )
+		{
+			int clusterIndex = cluster[world->chunks.data[bond->chunk[side]].scratch];
+			clusterUtilization[clusterIndex] = b3MaxFloat( clusterUtilization[clusterIndex], utilization[k] );
+		}
+	}
+
+	for ( int c = actor->headChunk; c != NB_NULL_INDEX; c = world->chunks.data[c].nextChunk )
+	{
+		nbChunk* chunk = world->chunks.data + c;
+		chunk->utilization = clusterUtilization[cluster[chunk->scratch]];
 	}
 
 	nbIntArray* broken = &world->scratchList;

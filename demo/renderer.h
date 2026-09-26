@@ -55,6 +55,7 @@ struct RenderSettings
 {
 	bool shadows = true;
 	bool showChunks = false;
+	bool showLoad = false;
 	b3Vec3 sunDirection = { 0.52f, 0.68f, 0.52f };
 	b3Vec3 sceneCenter = { 0.0f, 2.0f, 0.0f };
 	float sceneRadius = 22.0f;
@@ -81,6 +82,9 @@ public:
 	int AllocSlot();
 	void FreeSlot( int slot );
 	void SetSlot( int slot, b3Vec3 position, b3Quat rotation, float scale );
+
+	// Load utilization of the chunk in the slot for the load view, negative for none
+	void SetSlotLoad( int slot, float load );
 
 	// Returns a mesh handle. The vertices must already carry their slot.
 	int AddMesh( const GpuVertex* vertices, int count );

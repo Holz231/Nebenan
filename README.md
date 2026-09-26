@@ -94,10 +94,12 @@ Box3D-Kopie verwendet.
 | T | Zeitlupe |
 | C | lose Trümmer entfernen |
 | F | Bruchstücke einzeln einfärben |
+| L | Statik: jedes Bruchstück nach der Auslastung seiner Fugen einfärben, grün bis rot |
 | F1 | Menü ein- und ausblenden |
 
 Das Menü zeigt die Zeiten von Physik, Zerstörung und letztem Einschlag und wie viele Verbindungen der
-Lastnachweis gebrochen hat. Es erlaubt Waffenwerte, Zeitlupe und die Zahl der Threads für Physik und
+Lastnachweis gebrochen hat. Die Statik-Ansicht (L) zeigt, wie die Last durch das Bauwerk läuft: grün entspannt,
+gelb halb ausgelastet, rot kurz vor dem Bruch, lose Trümmer grau. Es erlaubt Waffenwerte, Zeitlupe und die Zahl der Threads für Physik und
 Zerstörung zu ändern und schaltet Staub und Splitter ein und aus.
 
 **Werkzeuge**
@@ -120,7 +122,8 @@ Zerstörung zu ändern und schaltet Staub und Splitter ein und aus.
 - **Stresstest**: 16 Wände für viele Trümmer gleichzeitig
 
 Aufrufoptionen: `--scene 0..4` startet eine Szene, `--script` feuert eine vorgegebene Schussfolge ab,
-`--frames N` beendet nach N Bildern und `--screenshot datei.ppm` speichert dann ein Bild.
+`--frames N` beendet nach N Bildern und `--screenshot datei.ppm` speichert dann ein Bild, `--load-view`
+schaltet die Statik-Ansicht ein.
 
 ## So funktioniert es
 
@@ -184,8 +187,10 @@ Fugen zuerst: Es brechen die mit mindestens 80 % der höchsten Auslastung, und i
 Vierfache ihrer Festigkeit tragen, denn nur knapp überlastete Fugen kann eine Umlagerung noch retten.
 Danach verteilt sich die Last neu, und der Nachweis läuft im nächsten Update wieder, bis der Rest hält. So
 reißt ein Kragarm an einem Querschnitt ab statt an jedem, und ein Einsturz schreitet Update für Update
-fort. Weil die Bruchstücke starr sind, biegt sich ein einzelnes langes Stück nicht. Lange Balken und Decken
-sollten deshalb mit `cellSize` vorab in Zellen zerlegt werden, dann brechen sie über die Spannweite.
+fort. `nbChunk_GetUtilization` liefert pro Bruchstück die höchste Auslastung des letzten Nachweises, die
+Demo färbt damit die Statik ein. Weil die Bruchstücke starr sind, biegt sich ein einzelnes langes Stück
+nicht. Lange Balken und Decken sollten deshalb mit `cellSize` vorab in Zellen zerlegt werden, dann brechen
+sie über die Spannweite.
 
 Zerschossene Bereiche bestehen aus Hunderten Splittern, die unter ihrem eigenen Gewicht nie versagen (die
 Spannung ist etwa Dichte × g × Größe, wenige kPa). Deshalb fasst der Nachweis verbundene Stücke, die in derselben

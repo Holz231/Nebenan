@@ -56,6 +56,9 @@ typedef struct nbChunk
 	int scratch;
 	uint32_t searchStamp;
 
+	// Highest utilization of the bonds of the chunk's cluster in the last load check
+	float utilization;
+
 	uint16_t generation;
 	uint8_t depth;
 	uint8_t flags;

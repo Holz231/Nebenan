@@ -1946,6 +1946,17 @@ nbMaterial nbChunk_GetMaterial( nbChunkId chunkId )
 	return chunk != NULL ? *nbGetChunkMaterial( world, chunk ) : (nbMaterial){ 0 };
 }
 
+float nbChunk_GetUtilization( nbChunkId chunkId )
+{
+	nbWorld* world;
+	nbChunk* chunk = nbGetChunkFromId( chunkId, &world );
+	if ( chunk == NULL || world->actors.data[chunk->actorIndex].isStatic == false )
+	{
+		return 0.0f;
+	}
+	return chunk->utilization;
+}
+
 int nbChunk_GetBondCount( nbChunkId chunkId )
 {
 	nbChunk* chunk = nbGetChunkFromId( chunkId, NULL );
