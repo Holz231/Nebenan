@@ -331,3 +331,29 @@ b3HullData* nbBuildHull( const nbShape* shape, void* memory )
 	hull->hash = nbHashHullBytes( base, layout.byteCount );
 	return hull;
 }
+
+b3HullData* nbCreateHullInArena( const nbShape* shape, nbArena* arena, int* fallbackCount )
+{
+	int byteCount = nbGetHullByteCount( shape );
+	if ( byteCount > 0 )
+	{
+		void* memory = nbArena_Alloc( arena, (size_t)byteCount );
+		b3HullData* hull = nbBuildHull( shape, memory );
+		if ( hull != NULL )
+		{
+			return hull;
+		}
+	}
+
+	b3HullData* heapHull = b3CreateHull( shape->vertices, shape->vertexCount, B3_MAX_HULL_VERTICES );
+	if ( heapHull == NULL )
+	{
+		return NULL;
+	}
+
+	b3HullData* hull = nbArena_Alloc( arena, (size_t)heapHull->byteCount );
+	memcpy( hull, heapHull, (size_t)heapHull->byteCount );
+	b3DestroyHull( heapHull );
+	*fallbackCount += 1;
+	return hull;
+}

@@ -2,6 +2,8 @@
 
 #include "fracture.h"
 
+#include "hull_builder.h"
+
 #include <float.h>
 
 // Min-heap of (squared distance, site) keys. The key packs the float bits of the squared distance
@@ -60,146 +62,174 @@ static float nbBitsToFloat( uint32_t bits )
 	return value;
 }
 
+void nbCellScratch_Create( nbCellScratch* scratch, nbArena* arena, int siteCapacity )
+{
+	scratch->polyA = nbArena_AllocArray( arena, nbPoly, 1 );
+	scratch->polyB = nbArena_AllocArray( arena, nbPoly, 1 );
+	scratch->heap = nbArena_AllocArray( arena, uint64_t, siteCapacity > 0 ? siteCapacity : 1 );
+	scratch->siteCapacity = siteCapacity;
+}
+
+void nbComputeCell( const nbFractureJob* job, int cellIndex, nbArena* arena, nbCellScratch* scratch, nbFractureCounters* counters )
+{
+	NB_ASSERT( job->siteCount <= scratch->siteCapacity );
+
+	nbCell* cell = job->cells + cellIndex;
+	cell->shape = NULL;
+	cell->hull = NULL;
+	cell->neighbors = NULL;
+	cell->neighborCount = 0;
+
+	const b3Vec3* sites = job->sites;
+	int siteCount = job->siteCount;
+	b3Vec3 site = sites[cellIndex];
+	uint64_t* heap = scratch->heap;
+
+	int heapCount = 0;
+	for ( int j = 0; j < siteCount; ++j )
+	{
+		if ( j == cellIndex )
+		{
+			continue;
+		}
+		float distanceSquared = b3DistanceSquared( site, sites[j] );
+		heap[heapCount++] = ( (uint64_t)nbFloatBits( distanceSquared ) << 32 ) | (uint64_t)j;
+	}
+
+	for ( int k = heapCount / 2 - 1; k >= 0; --k )
+	{
+		nbHeap_SiftDown( heap, heapCount, k );
+	}
+
+	nbPoly* current = scratch->polyA;
+	nbPoly* next = scratch->polyB;
+	*current = *job->parent;
+
+	float maxRadiusSquared = nbPoly_MaxDistanceSquared( current, site );
+
+	while ( heapCount > 0 )
+	{
+		uint64_t key = nbHeap_Pop( heap, &heapCount );
+		float distanceSquared = nbBitsToFloat( (uint32_t)( key >> 32 ) );
+		int j = (int)( key & 0xFFFFFFFFu );
+
+		// The bisector is half the distance away. Once it is beyond the farthest vertex of the
+		// cell no remaining site can cut the cell.
+		if ( distanceSquared > 4.0f * maxRadiusSquared )
+		{
+			break;
+		}
+
+		b3Vec3 other = sites[j];
+		b3Vec3 normal = b3Normalize( b3Sub( other, site ) );
+		b3Vec3 midPoint = b3MulSV( 0.5f, b3Add( site, other ) );
+		b3Plane plane = { normal, b3Dot( normal, midPoint ) };
+
+		counters->clipCount += 1;
+		nbClipResult result = nbPoly_Clip( current, plane, job->interiorMaterial, j, job->tolerance, next );
+		if ( result == nb_clipCut )
+		{
+			nbPoly* swap = current;
+			current = next;
+			next = swap;
+			maxRadiusSquared = nbPoly_MaxDistanceSquared( current, site );
+		}
+		else if ( result == nb_clipEmpty )
+		{
+			// Happens for sites outside the parent or coincident sites
+			return;
+		}
+		else if ( result == nb_clipOverflow )
+		{
+			counters->failureCount += 1;
+		}
+	}
+
+	float volume;
+	b3Vec3 centroid;
+	nbPoly_ComputeMass( current, &volume, &centroid );
+	if ( volume < job->minVolume )
+	{
+		return;
+	}
+
+	nbShape* shape = nbShape_CreateWithMass( current, volume, centroid );
+	if ( shape == NULL )
+	{
+		return;
+	}
+
+	// Record the faces shared with other cells. These become the internal bonds.
+	int taggedCount = 0;
+	for ( int f = 0; f < current->faceCount; ++f )
+	{
+		taggedCount += current->faces[f].tag >= 0 ? 1 : 0;
+	}
+
+	if ( taggedCount > 0 )
+	{
+		cell->neighbors = nbArena_AllocArray( arena, nbCellNeighbor, taggedCount );
+	}
+
+	for ( int f = 0; f < current->faceCount; ++f )
+	{
+		int tag = current->faces[f].tag;
+		if ( tag < 0 )
+		{
+			continue;
+		}
+
+		b3Vec3 faceCentroid;
+		float area = nbPoly_FaceArea( current, f, &faceCentroid );
+		if ( area <= 0.0f )
+		{
+			continue;
+		}
+
+		nbCellNeighbor* neighbor = cell->neighbors + cell->neighborCount;
+		neighbor->site = tag;
+		neighbor->area = area;
+		neighbor->centroid = faceCentroid;
+		cell->neighborCount += 1;
+	}
+
+	nbShape_Translate( shape, job->origin );
+	cell->shape = shape;
+
+	if ( job->buildHulls )
+	{
+		cell->hull = nbCreateHullInArena( shape, arena, &counters->hullFallbackCount );
+	}
+}
+
 void nbComputeVoronoiCells( nbArena* arena, const nbPoly* parent, const b3Vec3* sites, int siteCount, uint8_t interiorMaterial,
 							float tolerance, float minVolume, nbFractureOutput* output )
 {
-	output->cells = nbArena_AllocArray( arena, nbCell, siteCount );
-	output->cellCount = siteCount;
-	output->failureCount = 0;
-	output->clipCount = 0;
+	nbFractureJob job = {
+		.parent = parent,
+		.sites = sites,
+		.siteCount = siteCount,
+		.origin = b3Vec3_zero,
+		.interiorMaterial = interiorMaterial,
+		.tolerance = tolerance,
+		.minVolume = minVolume,
+		.buildHulls = false,
+		.cells = nbArena_AllocArray( arena, nbCell, siteCount ),
+	};
 
-	// Each cell has on average less than 16 Voronoi neighbors. The array grows if needed.
-	int neighborCapacity = 16 * siteCount + 16;
-	output->neighbors = nbArena_AllocArray( arena, nbCellNeighbor, neighborCapacity );
-	output->neighborCount = 0;
+	nbCellScratch scratch;
+	nbCellScratch_Create( &scratch, arena, siteCount );
 
-	nbPoly* polyA = nbArena_AllocArray( arena, nbPoly, 1 );
-	nbPoly* polyB = nbArena_AllocArray( arena, nbPoly, 1 );
-	uint64_t* heap = nbArena_AllocArray( arena, uint64_t, siteCount );
-
+	nbFractureCounters counters = { 0 };
 	for ( int i = 0; i < siteCount; ++i )
 	{
-		nbCell* cell = output->cells + i;
-		cell->shape = NULL;
-		cell->firstNeighbor = output->neighborCount;
-		cell->neighborCount = 0;
-
-		b3Vec3 site = sites[i];
-
-		int heapCount = 0;
-		for ( int j = 0; j < siteCount; ++j )
-		{
-			if ( j == i )
-			{
-				continue;
-			}
-			float distanceSquared = b3DistanceSquared( site, sites[j] );
-			heap[heapCount++] = ( (uint64_t)nbFloatBits( distanceSquared ) << 32 ) | (uint64_t)j;
-		}
-
-		for ( int k = heapCount / 2 - 1; k >= 0; --k )
-		{
-			nbHeap_SiftDown( heap, heapCount, k );
-		}
-
-		nbPoly* current = polyA;
-		nbPoly* next = polyB;
-		*current = *parent;
-
-		float maxRadiusSquared = nbPoly_MaxDistanceSquared( current, site );
-		bool isEmpty = false;
-
-		while ( heapCount > 0 )
-		{
-			uint64_t key = nbHeap_Pop( heap, &heapCount );
-			float distanceSquared = nbBitsToFloat( (uint32_t)( key >> 32 ) );
-			int j = (int)( key & 0xFFFFFFFFu );
-
-			// The bisector is half the distance away. Once it is beyond the farthest vertex of the
-			// cell no remaining site can cut the cell.
-			if ( distanceSquared > 4.0f * maxRadiusSquared )
-			{
-				break;
-			}
-
-			b3Vec3 other = sites[j];
-			b3Vec3 normal = b3Normalize( b3Sub( other, site ) );
-			b3Vec3 midPoint = b3MulSV( 0.5f, b3Add( site, other ) );
-			b3Plane plane = { normal, b3Dot( normal, midPoint ) };
-
-			output->clipCount += 1;
-			nbClipResult result = nbPoly_Clip( current, plane, interiorMaterial, j, tolerance, next );
-			if ( result == nb_clipCut )
-			{
-				nbPoly* swap = current;
-				current = next;
-				next = swap;
-				maxRadiusSquared = nbPoly_MaxDistanceSquared( current, site );
-			}
-			else if ( result == nb_clipEmpty )
-			{
-				// Happens for sites outside the parent or coincident sites
-				isEmpty = true;
-				break;
-			}
-			else if ( result == nb_clipOverflow )
-			{
-				output->failureCount += 1;
-			}
-		}
-
-		if ( isEmpty )
-		{
-			continue;
-		}
-
-		float volume;
-		b3Vec3 centroid;
-		nbPoly_ComputeMass( current, &volume, &centroid );
-		if ( volume < minVolume )
-		{
-			continue;
-		}
-
-		cell->shape = nbShape_Create( current );
-		if ( cell->shape == NULL )
-		{
-			continue;
-		}
-
-		// Record the faces shared with other cells. These become the internal bonds.
-		for ( int f = 0; f < current->faceCount; ++f )
-		{
-			int tag = current->faces[f].tag;
-			if ( tag < 0 )
-			{
-				continue;
-			}
-
-			b3Vec3 faceCentroid;
-			float area = nbPoly_FaceArea( current, f, &faceCentroid );
-			if ( area <= 0.0f )
-			{
-				continue;
-			}
-
-			if ( output->neighborCount == neighborCapacity )
-			{
-				int newCapacity = 2 * neighborCapacity;
-				nbCellNeighbor* grown = nbArena_AllocArray( arena, nbCellNeighbor, newCapacity );
-				memcpy( grown, output->neighbors, sizeof( nbCellNeighbor ) * (size_t)neighborCapacity );
-				output->neighbors = grown;
-				neighborCapacity = newCapacity;
-			}
-
-			nbCellNeighbor* neighbor = output->neighbors + output->neighborCount;
-			neighbor->site = tag;
-			neighbor->area = area;
-			neighbor->centroid = faceCentroid;
-			output->neighborCount += 1;
-			cell->neighborCount += 1;
-		}
+		nbComputeCell( &job, i, arena, &scratch, &counters );
 	}
+
+	output->cells = job.cells;
+	output->cellCount = siteCount;
+	output->failureCount = counters.failureCount;
+	output->clipCount = counters.clipCount;
 }
 
 // Uniform point in the cube [-1, 1]^3. One draw per statement: C leaves the evaluation order inside an

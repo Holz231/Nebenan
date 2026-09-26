@@ -82,3 +82,24 @@ jobs:
 
       - name: Unit tests
         run: build/bin/nebenan_test
+
+  thread-sanitizer:
+    name: linux-thread-sanitizer
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure
+        run: >
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug -DNEBENAN_DEMO=OFF -DNEBENAN_BENCHMARK=OFF
+          "-DCMAKE_C_FLAGS=-fsanitize=thread -g -O1"
+          "-DCMAKE_EXE_LINKER_FLAGS=-fsanitize=thread"
+
+      - name: Build
+        run: cmake --build build --parallel
+
+      # Without address space randomization, newer kernels map memory where TSan does not expect it
+      - name: Unit tests
+        env:
+          TSAN_OPTIONS: halt_on_error=1
+        run: setarch "$(uname -m)" -R build/bin/nebenan_test

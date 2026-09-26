@@ -56,6 +56,9 @@ NB_API nbEvents nbWorld_GetEvents( nbWorldId worldId );
 /// Get counters and timings.
 NB_API nbStats nbWorld_GetStats( nbWorldId worldId );
 
+/// Change the number of fracture workers, see nbWorldDef::workerCount. Restarts the internal threads.
+NB_API void nbWorld_SetWorkerCount( nbWorldId worldId, int count );
+
 /// Find the chunk that owns a Box3D shape. Returns null if the shape is not a chunk.
 NB_API nbChunkId nbWorld_GetChunkFromShape( nbWorldId worldId, b3ShapeId shapeId );
 

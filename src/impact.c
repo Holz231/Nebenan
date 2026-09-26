@@ -87,19 +87,14 @@ static const nbImpactFrame* nbFindFrame( const nbImpactFrame* frames, int count,
 	return NULL;
 }
 
-// Refine one chunk into Voronoi cells concentrated at the impact. The children replace the chunk in
-// its actor, inherit its outer bonds and are glued to each other.
-static int nbRefineChunk( nbWorld* world, int chunkIndex, b3Vec3 localPoint, float radius, int innerCount, nbImpactResult* result )
+// Set up the fracture of one chunk into Voronoi cells concentrated at the impact. The sites are drawn here,
+// in a fixed order, so the fracture pattern does not depend on the workers that compute the cells.
+static bool nbPrepareRefine( nbWorld* world, int chunkIndex, b3Vec3 localPoint, float radius, int innerCount, nbFractureJob* job )
 {
 	nbChunk* chunk = world->chunks.data + chunkIndex;
-	int destructibleIndex = chunk->destructibleIndex;
-	int actorIndex = chunk->actorIndex;
-	int depth = chunk->depth + 1;
-	uint8_t interiorMaterial = chunk->interiorMaterial;
-	nbDestructible* destructible = world->destructibles.data + destructibleIndex;
-	nbMaterial material = destructible->material;
+	nbDestructible* destructible = world->destructibles.data + chunk->destructibleIndex;
+	const nbMaterial* material = &destructible->material;
 	const nbShape* parentShape = chunk->shape;
-	float parentRadius = parentShape->radius;
 
 	// Center the working polyhedron for precision
 	b3Vec3 origin = parentShape->centroid;
@@ -111,7 +106,7 @@ static int nbRefineChunk( nbWorld* world, int chunkIndex, b3Vec3 localPoint, flo
 	destructible->fractureCounter += 1;
 	nbRandom rng = nbMakeRandom( destructible->seed, stream );
 
-	float fragmentSize = material.fragmentSize;
+	float fragmentSize = material->fragmentSize;
 	int ringCount = innerCount / 3;
 	ringCount = ringCount < 4 ? 4 : ( ringCount > 24 ? 24 : ringCount );
 
@@ -138,30 +133,51 @@ static int nbRefineChunk( nbWorld* world, int chunkIndex, b3Vec3 localPoint, flo
 	int siteCount = nbGenerateSites( parent, &params, &rng, sites, capacity );
 	if ( siteCount < 2 )
 	{
-		return 0;
+		return false;
 	}
 
-	uint64_t ticks = b3GetTicks();
-	float tolerance = 1.0e-6f + 2.0e-6f * parentRadius;
-	nbFractureOutput output;
-	nbComputeVoronoiCells( &world->arena, parent, sites, siteCount, interiorMaterial, tolerance,
-						   material.minFragmentVolume, &output );
-	result->fractureTime += b3GetMilliseconds( ticks );
+	*job = (nbFractureJob){
+		.parent = parent,
+		.sites = sites,
+		.siteCount = siteCount,
+		.origin = origin,
+		.interiorMaterial = chunk->interiorMaterial,
+		.tolerance = 1.0e-6f + 2.0e-6f * parentShape->radius,
+		.minVolume = material->minFragmentVolume,
+		.buildHulls = true,
+	};
+	return true;
+}
 
+// Replace a chunk by the cells of its fracture job. The children take the place of the chunk in its
+// actor, inherit its outer bonds and are glued to each other.
+static int nbFinishRefine( nbWorld* world, int chunkIndex, const nbFractureJob* job, nbImpactResult* result )
+{
 	int validCount = 0;
-	for ( int i = 0; i < output.cellCount; ++i )
+	for ( int i = 0; i < job->siteCount; ++i )
 	{
-		validCount += output.cells[i].shape != NULL ? 1 : 0;
+		validCount += job->cells[i].shape != NULL ? 1 : 0;
 	}
 
 	if ( validCount < 2 )
 	{
-		for ( int i = 0; i < output.cellCount; ++i )
+		for ( int i = 0; i < job->siteCount; ++i )
 		{
-			nbShape_Destroy( output.cells[i].shape );
+			nbShape_Destroy( job->cells[i].shape );
 		}
 		return 0;
 	}
+
+	nbChunk* chunk = world->chunks.data + chunkIndex;
+	int destructibleIndex = chunk->destructibleIndex;
+	int actorIndex = chunk->actorIndex;
+	int depth = chunk->depth + 1;
+	uint8_t interiorMaterial = chunk->interiorMaterial;
+	nbMaterial material = world->destructibles.data[destructibleIndex].material;
+	const nbShape* parentShape = chunk->shape;
+	float parentRadius = parentShape->radius;
+	float fragmentSize = material.fragmentSize;
+	b3Vec3 origin = job->origin;
 
 	// Snapshot the interfaces of the parent with its bonded neighbors: the coplanar face pairs.
 	// Children can only touch a neighbor through a face they inherited from the parent face of an
@@ -205,36 +221,35 @@ static int nbRefineChunk( nbWorld* world, int chunkIndex, b3Vec3 localPoint, flo
 	nbDestroyChunk( world, chunkIndex );
 	result->fracturedChunkCount += 1;
 
-	int* childIndices = nbArena_AllocArray( &world->arena, int, output.cellCount );
+	int* childIndices = nbArena_AllocArray( &world->arena, int, job->siteCount );
 	int childCount = 0;
-	for ( int i = 0; i < output.cellCount; ++i )
+	for ( int i = 0; i < job->siteCount; ++i )
 	{
 		childIndices[i] = NB_NULL_INDEX;
-		nbShape* shape = output.cells[i].shape;
-		if ( shape == NULL )
+		const nbCell* cell = job->cells + i;
+		if ( cell->shape == NULL )
 		{
 			continue;
 		}
 
-		nbShape_Translate( shape, origin );
-		childIndices[i] = nbCreateChunk( world, destructibleIndex, actorIndex, shape, depth, interiorMaterial );
+		childIndices[i] = nbCreateChunkWithHull( world, destructibleIndex, actorIndex, cell->shape, cell->hull, depth, interiorMaterial );
 		childCount += childIndices[i] != NB_NULL_INDEX ? 1 : 0;
 	}
 	result->createdChunkCount += childCount;
 
 	// Glue the children along their shared Voronoi faces
 	float minBondArea = 0.01f * fragmentSize * fragmentSize;
-	for ( int i = 0; i < output.cellCount; ++i )
+	for ( int i = 0; i < job->siteCount; ++i )
 	{
 		if ( childIndices[i] == NB_NULL_INDEX )
 		{
 			continue;
 		}
 
-		const nbCell* cell = output.cells + i;
+		const nbCell* cell = job->cells + i;
 		for ( int k = 0; k < cell->neighborCount; ++k )
 		{
-			const nbCellNeighbor* neighbor = output.neighbors + cell->firstNeighbor + k;
+			const nbCellNeighbor* neighbor = cell->neighbors + k;
 			int j = neighbor->site;
 			if ( j <= i || childIndices[j] == NB_NULL_INDEX || neighbor->area < minBondArea )
 			{
@@ -247,7 +262,7 @@ static int nbRefineChunk( nbWorld* world, int chunkIndex, b3Vec3 localPoint, flo
 	}
 
 	// Glue the children to the former neighbors of the parent where their inherited faces touch
-	for ( int i = 0; i < output.cellCount; ++i )
+	for ( int i = 0; i < job->siteCount; ++i )
 	{
 		int childIndex = childIndices[i];
 		if ( childIndex == NB_NULL_INDEX )
@@ -517,7 +532,12 @@ nbImpactResult nbApplyImpact( nbWorld* world, const nbImpactDef* def, int actorF
 	float fragmentBudget = def->fragmentCount > 0 ? (float)def->fragmentCount : totalDesired;
 	fragmentBudget = b3MinFloat( fragmentBudget, (float)world->def.maxFragmentsPerImpact );
 
+	// Draw the sites of every chunk first, then compute all cells on the workers, then build the chunks.
+	// Each phase runs in candidate order, so the result is the same for any number of workers.
 	int firstChild = world->touchedChunks.count;
+	nbFractureJob* jobs = nbArena_AllocArray( &world->arena, nbFractureJob, candidateCount );
+	int* jobCandidates = nbArena_AllocArray( &world->arena, int, candidateCount );
+	int jobCount = 0;
 	for ( int i = 0; i < candidateCount && refineCount > 0; ++i )
 	{
 		if ( overlaps[i] <= 0.0f )
@@ -534,10 +554,26 @@ nbImpactResult nbApplyImpact( nbWorld* world, const nbImpactDef* def, int actorF
 		innerCount = innerCount < 3 ? 3 : ( innerCount > 192 ? 192 : innerCount );
 
 		const nbImpactFrame* frame = nbFindFrame( frames, frameCount, chunk->actorIndex );
-		int created = nbRefineChunk( world, chunkIndex, frame->localPoint, radius, innerCount, &result );
-		if ( created > 0 )
+		if ( nbPrepareRefine( world, chunkIndex, frame->localPoint, radius, innerCount, jobs + jobCount ) )
 		{
-			candidates[i] = NB_NULL_INDEX;
+			jobCandidates[jobCount] = i;
+			jobCount += 1;
+		}
+	}
+
+	if ( jobCount > 0 )
+	{
+		uint64_t fractureTicks = b3GetTicks();
+		nbRunFractureJobs( world, jobs, jobCount );
+		result.fractureTime = b3GetMilliseconds( fractureTicks );
+
+		for ( int k = 0; k < jobCount; ++k )
+		{
+			int i = jobCandidates[k];
+			if ( nbFinishRefine( world, candidates[i], jobs + k, &result ) > 0 )
+			{
+				candidates[i] = NB_NULL_INDEX;
+			}
 		}
 	}
 

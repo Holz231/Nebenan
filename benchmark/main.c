@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 
 // Headless benchmark for the fracture kernel and the full impact pipeline.
-// Usage: nebenan_benchmark [workerCount]
+// Usage: nebenan_benchmark [workerCount], the worker count applies to the fracture and to Box3D
 
 #include "fracture.h"
 #include "hull_builder.h"
@@ -34,6 +34,7 @@ static Scene CreateScene( int workerCount )
 	nbWorldDef def = nbDefaultWorldDef();
 	def.physicsWorld = scene.physicsWorld;
 	def.maxDebrisBodies = 6000;
+	def.workerCount = workerCount;
 	scene.world = nbCreateWorld( &def );
 	return scene;
 }
@@ -308,8 +309,8 @@ int main( int argc, char** argv )
 
 	nbVersion version = nbGetVersion();
 	b3Version b3version = b3GetVersion();
-	printf( "Nebenan %d.%d.%d on Box3D %d.%d.%d, Box3D workers: %d\n", version.major, version.minor, version.revision,
-			b3version.major, b3version.minor, b3version.revision, workerCount );
+	printf( "Nebenan %d.%d.%d on Box3D %d.%d.%d, workers for fracture and physics: %d\n", version.major, version.minor,
+			version.revision, b3version.major, b3version.minor, b3version.revision, workerCount );
 
 	BenchmarkKernel();
 

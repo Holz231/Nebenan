@@ -35,6 +35,15 @@ static int64_t nbAtomicLoad64( int64_t* value )
 #endif
 }
 
+int nbAtomicFetchAddInt( int* value, int delta )
+{
+#if defined( _MSC_VER )
+	return _InterlockedExchangeAdd( (volatile long*)value, delta );
+#else
+	return __atomic_fetch_add( value, delta, __ATOMIC_SEQ_CST );
+#endif
+}
+
 static int nbDefaultAssertFcn( const char* condition, const char* fileName, int lineNumber )
 {
 	printf( "NEBENAN ASSERTION: %s, %s, line %d\n", condition, fileName, lineNumber );

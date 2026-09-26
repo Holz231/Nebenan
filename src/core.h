@@ -33,7 +33,7 @@ int nbInternalAssert( const char* condition, const char* fileName, int lineNumbe
 #define NB_ASSERT( ... ) ( (void)0 )
 #endif
 
-#define NB_UNUSED( ... ) (void)sizeof( ( __VA_ARGS__, 0 ) )
+#define NB_UNUSED( x ) (void)( x )
 #define NB_NULL_INDEX ( -1 )
 #define NB_ARRAY_COUNT( A ) (int)( sizeof( A ) / sizeof( A[0] ) )
 #define NB_SECRET_COOKIE 0x4E42414E
@@ -41,6 +41,9 @@ int nbInternalAssert( const char* condition, const char* fileName, int lineNumbe
 void* nbAlloc( size_t size );
 void nbFree( void* mem, size_t size );
 void* nbGrowAlloc( void* oldMem, size_t oldSize, size_t newSize );
+
+// Atomic add that returns the previous value. Used to hand out work items to worker threads.
+int nbAtomicFetchAddInt( int* value, int delta );
 
 // A growable array of plain old data. The element type is part of the macro argument so
 // the arrays stay type safe. Growth doubles the capacity.

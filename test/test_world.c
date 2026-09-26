@@ -15,7 +15,8 @@ typedef struct TestScene
 	b3BodyId groundId;
 } TestScene;
 
-static TestScene CreateScene( void )
+static TestScene CreateSceneWithWorkers( int workerCount, b3EnqueueTaskCallback* enqueueTask, b3FinishTaskCallback* finishTask,
+										  void* taskContext )
 {
 	TestScene scene;
 	b3WorldDef worldDef = b3DefaultWorldDef();
@@ -30,8 +31,17 @@ static TestScene CreateScene( void )
 
 	nbWorldDef def = nbDefaultWorldDef();
 	def.physicsWorld = scene.physicsWorld;
+	def.workerCount = workerCount;
+	def.enqueueTask = enqueueTask;
+	def.finishTask = finishTask;
+	def.userTaskContext = taskContext;
 	scene.world = nbCreateWorld( &def );
 	return scene;
+}
+
+static TestScene CreateScene( void )
+{
+	return CreateSceneWithWorkers( 1, NULL, NULL, NULL );
 }
 
 static void DestroyScene( TestScene* scene )
@@ -277,9 +287,8 @@ static uint32_t HashScene( TestScene* scene, nbDestructibleId wall )
 	return hash ^ (uint32_t)count;
 }
 
-static uint32_t RunDeterminismScenario( void )
+static uint32_t RunDeterminismScenarioWith( TestScene scene )
 {
-	TestScene scene = CreateScene();
 	nbDestructibleId wall = CreateWall( &scene, (b3Vec3){ 2.5f, 1.5f, 0.12f }, 5 );
 
 	nbImpactDef impact = { 0 };
@@ -303,6 +312,11 @@ static uint32_t RunDeterminismScenario( void )
 	return hash;
 }
 
+static uint32_t RunDeterminismScenario( void )
+{
+	return RunDeterminismScenarioWith( CreateScene() );
+}
+
 // Fracture and physics are bit for bit identical with MSVC, GCC and Clang on x64 and ARM. This is the result
 // with the pinned Box3D commit. Update it when the results change on purpose, never to make one platform pass.
 #define NB_EXPECTED_DETERMINISM_HASH 0xf526458bu
@@ -314,6 +328,62 @@ static int DeterminismTest( void )
 	printf( "determinism hash: 0x%08x\n", hash1 );
 	ENSURE( hash1 == hash2 );
 	ENSURE( hash1 == NB_EXPECTED_DETERMINISM_HASH );
+	return 0;
+}
+
+// A task system that runs a task as soon as it is enqueued, before the calling thread starts its own share
+typedef struct TestTaskSystem
+{
+	int enqueueCount;
+	int finishCount;
+} TestTaskSystem;
+
+static void* InlineEnqueue( b3TaskCallback* task, void* taskContext, void* userContext, const char* taskName )
+{
+	(void)taskName;
+	TestTaskSystem* system = userContext;
+	system->enqueueCount += 1;
+	task( taskContext );
+	return NULL;
+}
+
+static void InlineFinish( void* userTask, void* userContext )
+{
+	(void)userTask;
+	TestTaskSystem* system = userContext;
+	system->finishCount += 1;
+}
+
+// The fracture must not depend on the number of workers or on how the task system schedules them
+static int WorkerTest( void )
+{
+	for ( int workerCount = 2; workerCount <= 8; workerCount *= 2 )
+	{
+		uint32_t hash = RunDeterminismScenarioWith( CreateSceneWithWorkers( workerCount, NULL, NULL, NULL ) );
+		ENSURE( hash == NB_EXPECTED_DETERMINISM_HASH );
+	}
+
+	TestTaskSystem system = { 0 };
+	uint32_t hash = RunDeterminismScenarioWith( CreateSceneWithWorkers( 4, InlineEnqueue, InlineFinish, &system ) );
+	ENSURE( hash == NB_EXPECTED_DETERMINISM_HASH );
+	ENSURE( system.enqueueCount > 0 );
+	ENSURE( system.finishCount == 0 );
+
+	// Pre-fracture on the workers gives the same chunks
+	uint32_t prefractureHashes[2];
+	for ( int pass = 0; pass < 2; ++pass )
+	{
+		TestScene scene = CreateSceneWithWorkers( pass == 0 ? 1 : 4, NULL, NULL, NULL );
+		nbDestructibleDef def = nbDefaultDestructibleDef();
+		def.position = (b3Vec3){ 0.0f, 1.5f, 0.0f };
+		def.cellSize = 0.35f;
+		def.seed = 3;
+		nbDestructibleId wall = nbCreateBox( scene.world, &def, (b3Vec3){ 2.0f, 1.5f, 0.2f } );
+		ENSURE( nbDestructible_GetChunkCount( wall ) > 50 );
+		prefractureHashes[pass] = HashScene( &scene, wall );
+		DestroyScene( &scene );
+	}
+	ENSURE( prefractureHashes[0] == prefractureHashes[1] );
 	return 0;
 }
 
@@ -655,6 +725,7 @@ int WorldTest( void )
 	RUN_TEST( CastImpactTest );
 	RUN_TEST( CollapseTest );
 	RUN_TEST( DeterminismTest );
+	RUN_TEST( WorkerTest );
 	RUN_TEST( EventTest );
 	RUN_TEST( DynamicDestructibleTest );
 	RUN_TEST( MultiPieceTest );

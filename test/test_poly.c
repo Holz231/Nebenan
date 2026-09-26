@@ -238,12 +238,12 @@ static int VoronoiTest( void )
 		const nbCell* cell = output.cells + i;
 		for ( int k = 0; k < cell->neighborCount; ++k )
 		{
-			const nbCellNeighbor* a = output.neighbors + cell->firstNeighbor + k;
+			const nbCellNeighbor* a = cell->neighbors + k;
 			const nbCell* other = output.cells + a->site;
 			bool found = false;
 			for ( int m = 0; m < other->neighborCount; ++m )
 			{
-				const nbCellNeighbor* b = output.neighbors + other->firstNeighbor + m;
+				const nbCellNeighbor* b = other->neighbors + m;
 				if ( b->site == i )
 				{
 					found = true;
@@ -261,7 +261,7 @@ static int VoronoiTest( void )
 	const nbCell* cell = output.cells + 0;
 	for ( int k = 0; k < cell->neighborCount; ++k )
 	{
-		const nbCellNeighbor* neighbor = output.neighbors + cell->firstNeighbor + k;
+		const nbCellNeighbor* neighbor = cell->neighbors + k;
 		b3Vec3 centroid, normal;
 		float area = nbShape_ContactArea( cell->shape, output.cells[neighbor->site].shape, 1.0e-4f, &centroid, &normal );
 		ENSURE_SMALL( area - neighbor->area, 1.0e-3f );

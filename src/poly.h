@@ -81,6 +81,9 @@ bool nbPoly_IsValid( const nbPoly* poly, float tolerance );
 
 // Convert to the compact shape. Returns null if the polyhedron is degenerate.
 nbShape* nbShape_Create( const nbPoly* poly );
+
+// Same, with the volume and centroid from nbPoly_ComputeMass already at hand
+nbShape* nbShape_CreateWithMass( const nbPoly* poly, float volume, b3Vec3 centroid );
 void nbShape_Destroy( nbShape* shape );
 void nbShape_ToPoly( const nbShape* shape, nbPoly* poly );
 void nbShape_Translate( nbShape* shape, b3Vec3 translation );

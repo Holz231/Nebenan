@@ -581,15 +581,15 @@ bool nbPoly_IsValid( const nbPoly* poly, float tolerance )
 
 nbShape* nbShape_Create( const nbPoly* poly )
 {
-	if ( poly->vertexCount < 4 || poly->faceCount < 4 )
-	{
-		return NULL;
-	}
-
 	float volume;
 	b3Vec3 centroid;
 	nbPoly_ComputeMass( poly, &volume, &centroid );
-	if ( volume <= 0.0f )
+	return nbShape_CreateWithMass( poly, volume, centroid );
+}
+
+nbShape* nbShape_CreateWithMass( const nbPoly* poly, float volume, b3Vec3 centroid )
+{
+	if ( poly->vertexCount < 4 || poly->faceCount < 4 || volume <= 0.0f )
 	{
 		return NULL;
 	}

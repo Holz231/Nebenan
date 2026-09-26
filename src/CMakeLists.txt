@@ -9,6 +9,8 @@ set(NEBENAN_SOURCE_FILES
 	destructible.c
 	poly.c
 	poly.h
+	scheduler.c
+	scheduler.h
 	world.c
 	world.h
 )
@@ -29,7 +31,8 @@ target_include_directories(nebenan
 		${CMAKE_CURRENT_SOURCE_DIR}
 )
 
-target_link_libraries(nebenan PUBLIC box3d::box3d)
+find_package(Threads REQUIRED)
+target_link_libraries(nebenan PUBLIC box3d::box3d PRIVATE Threads::Threads)
 
 set_target_properties(nebenan PROPERTIES
 	C_STANDARD 17

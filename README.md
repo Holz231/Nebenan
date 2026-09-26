@@ -10,6 +10,8 @@ zusammen, bis man ihnen die Stützen wegschießt.
 - Voronoi-Bruch, der sich auf den Einschlag konzentriert: kleine Splitter am Einschlagpunkt, große Platten
   weiter weg
 - Nur die getroffenen Bruchstücke werden verfeinert, der Rest der Wand bleibt ein großes Stück
+- Voronoi-Zellen und Hüllen werden auf mehrere Threads verteilt, über das eigene Task-System oder eingebaute
+  Threads. Das Ergebnis hängt nicht von der Zahl der Threads ab
 - Stützgraph mit Verankerung und maximaler Auskragung: Decken ohne Säulen stürzen ein
 - Kollisionsschaden: Kanonenkugeln und herabfallende Trümmer beschädigen, was sie treffen
 - Deterministisch: gleiche Eingaben ergeben bitgleich das gleiche Bruchmuster, unter Windows, Linux und macOS,
@@ -90,7 +92,7 @@ Box3D-Kopie verwendet.
 | F1 | Menü ein- und ausblenden |
 
 Das Menü zeigt die Zeiten von Physik, Zerstörung und letztem Einschlag, erlaubt Waffenwerte, Zeitlupe
-und die Zahl der Box3D-Threads zu ändern.
+und die Zahl der Threads für Physik und Zerstörung zu ändern.
 
 **Werkzeuge**
 
@@ -140,6 +142,14 @@ Einschlag begrenzt.
 nur bis zur Tiefe `maxDepth`. Eine Wand mit einem Einschussloch besteht danach aus ein paar Dutzend Stücken
 statt aus Tausenden.
 
+**Mehrere Threads.** Ein Einschlag läuft in drei Phasen. Zuerst werden die Bruchpunkte aller getroffenen
+Stücke in fester Reihenfolge gezogen. Dann berechnen die Worker die Voronoi-Zellen samt Box3D-Hüllen. Jede
+Zelle hängt nur von ihren Eingaben ab, die Worker holen sich die nächste Zelle über einen atomaren Zähler und
+schreiben in eine eigene Arena. Zuletzt werden Stücke und Verbindungen wieder in fester Reihenfolge
+eingebaut. Deshalb ist das Ergebnis mit einem, vier oder acht Threads bitgleich. Wie Box3D nimmt Nebenan das
+Task-System der Anwendung (`enqueueTask` und `finishTask` mit denselben Signaturen wie in Box3D) oder
+startet eigene Threads. Die Vorzerlegung beim Laden läuft genauso.
+
 **Stützgraph.** Zwei Bruchstücke sind verbunden, wenn sich ihre Flächen berühren. Jede Verbindung hält
 `strength × Kontaktfläche` aus, der Schaden eines Einschlags fällt zum Rand hin ab. Reißen Verbindungen,
 sucht Nebenan ab der beschädigten Stelle nach dem kürzesten Weg zu einem verankerten Stück (Best-First-Suche,
@@ -186,9 +196,10 @@ Putz und Beton.
 b3WorldDef physicsDef = b3DefaultWorldDef();
 b3WorldId physics = b3CreateWorld( &physicsDef );
 
-// Zerstörungswelt daneben
+// Zerstörungswelt daneben, Voronoi-Zellen auf 4 Threads
 nbWorldDef worldDef = nbDefaultWorldDef();
 worldDef.physicsWorld = physics;
+worldDef.workerCount = 4;
 nbWorldId world = nbCreateWorld( &worldDef );
 
 // Ziegelwand: 6 m breit, 3 m hoch, 30 cm dick, unten am Boden verankert
@@ -266,6 +277,8 @@ beim Einbinden nicht gebaut.
 | `maxCollisionImpactsPerUpdate` | 4 | Begrenzt die Kollisionseinschläge pro Frame |
 | `maxFragmentsPerImpact` | 160 | Begrenzt die Kosten großer Explosionen |
 | `collisionPassThrough` | 0,6 | Anteil der Geschwindigkeit, den ein durchschlagendes Geschoss behält |
+| `workerCount` | 1 | Threads für Voronoi-Zellen und Hüllen, der aufrufende Thread zählt mit |
+| `enqueueTask`, `finishTask`, `userTaskContext` | leer | Task-System der Anwendung, sonst startet Nebenan eigene Threads |
 
 Die Demo nimmt für Ziegel Dichte 1900, Festigkeit 6·10⁵, Splitter 0,1 m und Auskragung 3 m, für Beton
 Dichte 2400, Festigkeit 1,1·10⁶, Splitter 0,13 m und Auskragung 4,5 m.
@@ -285,31 +298,33 @@ Voronoi-Kern, Platte 4 × 2 × 0,3 m mit Punkten um den Einschlag:
 | 256 | 3,3 ms | 0,45 ms | 2,7 ms |
 
 Ganze Einschläge (Bruch, Stützgraph, neue Box3D-Körper) und der Box3D-Schritt danach bei 60 Hz mit
-4 Substeps:
+4 Substeps, jeweils mit 1 und 4 Threads:
 
-| Szenario | Einschlag Ø | Einschlag max | Box3D-Schritt Ø, 1 / 4 Threads | Am Ende |
-| --- | ---: | ---: | ---: | --- |
-| Gewehr, 200 Treffer | 0,29 ms | 0,8 ms | 3,5 / 1,9 ms | 3586 Bruchstücke, 899 Körper |
-| 20 Explosionen | 2,9 ms | 3,9 ms | 10,2 / 4,7 ms | 7000 Bruchstücke, 3371 Körper |
-| Gebäudeeinsturz, 16 Treffer | 2,1 ms | 2,8 ms | 17,3 / 8,6 ms | 7091 Bruchstücke, 3560 Körper |
+| Szenario | Einschlag Ø, 1 / 4 Threads | Box3D-Schritt Ø, 1 / 4 Threads | Am Ende |
+| --- | ---: | ---: | --- |
+| Gewehr, 200 Treffer | 0,31 / 0,30 ms | 3,9 / 2,5 ms | 3586 Bruchstücke, 899 Körper |
+| 20 Explosionen | 2,8 / 2,0 ms | 11,1 / 5,7 ms | 7000 Bruchstücke, 3371 Körper |
+| Gebäudeeinsturz, 16 Treffer | 2,3 / 1,4 ms | 18,6 / 9,7 ms | 7091 Bruchstücke, 3560 Körper |
 
-- Ein Gebäude aus 15 Teilen wird beim Laden in 3,5 ms in 549 Bruchstücke zerlegt.
-- `nbWorld_Update` (Kollisionsschaden, Trümmerverwaltung) kostet 0,15 bis 0,35 ms pro Frame.
-- Bei Explosionen entfällt etwa die Hälfte der Zeit auf die Voronoi-Zellen (davon der Großteil auf das
-  Schneiden der Polyeder), ein gutes Viertel auf Box3D-Hüllen und Körper und 7 % auf die Punktverteilung.
+- Die Voronoi-Zellen einer Explosion brauchen mit 4 Threads 0,5 ms statt 1,4 ms. Der Rest des Einschlags
+  (Punktverteilung, Einbau der Stücke, Box3D-Körper und -Formen) läuft auf dem aufrufenden Thread. Bei
+  Gewehrtreffern mit ihren wenigen Zellen bringen Threads kaum etwas.
+- Ein Gebäude aus 15 Teilen wird beim Laden in 549 Bruchstücke zerlegt: 3,6 ms mit 1 Thread, 2,1 ms mit 4.
+- `nbWorld_Update` (Kollisionsschaden, Trümmerverwaltung) kostet 0,15 bis 0,4 ms pro Frame.
 
 Die Physikzeit ist Box3D mit über 3000 Trümmerkörpern. Ein Gewehrtreffer kostet weniger als ein Drittel
-Millisekunde. Windows, Linux und macOS kommen im Benchmark auf exakt dieselben Bruchstück- und Körperzahlen.
+Millisekunde. Windows, Linux und macOS kommen im Benchmark auf exakt dieselben Bruchstück- und Körperzahlen,
+mit jeder Threadzahl.
 
 ## Tests und Benchmark
 
 ```sh
-build/bin/nebenan_test            # 22 Tests: Geometrie, Voronoi, Stützgraph, Einsturz, Determinismus …
-build/bin/nebenan_benchmark 4     # Zahl = Box3D-Threads
+build/bin/nebenan_test            # 23 Tests: Geometrie, Voronoi, Stützgraph, Einsturz, Threads, Determinismus …
+build/bin/nebenan_benchmark 4     # Zahl = Threads für Bruch und Physik
 ```
 
 Unter Windows liegen die Programme in `build\bin\Release\`. Die CI baut und testet unter Windows, Linux und
-macOS und läuft zusätzlich mit AddressSanitizer und UndefinedBehaviorSanitizer.
+macOS und läuft zusätzlich mit AddressSanitizer, UndefinedBehaviorSanitizer und ThreadSanitizer.
 
 ## Projektstruktur
 
@@ -322,6 +337,7 @@ src/
   world.c           Welt, Bruchstücke, Verbindungen, Stützgraph, Box3D-Körper, Events
   destructible.c    zerstörbare Objekte und Vorzerlegung
   impact.c          Einschläge und Auswurf der Splitter
+  scheduler.c       eingebaute Threads, wenn die Anwendung kein Task-System mitbringt
 test/               Tests
 benchmark/          Leistungsmessung
 demo/               PC-Demo mit sokol und Dear ImGui
@@ -334,8 +350,8 @@ Nach Änderungen an `demo/shaders/scene.glsl` die Shader neu erzeugen, im Ordner
 
 ## Grenzen und nächste Schritte
 
-- Der Bruch läuft auf einem Thread, nur der Box3D-Schritt ist parallel. Die Voronoi-Zellen verschiedener
-  Bruchstücke ließen sich parallel berechnen.
+- Nur die Voronoi-Zellen und Hüllen laufen parallel. Punktverteilung, Einbau der Stücke und das Anlegen der
+  Box3D-Formen bleiben auf dem aufrufenden Thread, bei großen Explosionen ist das jetzt der größere Teil.
 - Die Statik ist eine Näherung (Weg zum Anker und maximale Auskragung), kein Lastsolver. Eine schwere Decke
   auf einer dünnen Säule hält, solange die Verbindungen halten.
 - Nur konvexe Teile. Konkave Formen müssen als mehrere konvexe Teile angegeben werden.

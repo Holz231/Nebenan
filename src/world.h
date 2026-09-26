@@ -216,6 +216,15 @@ typedef struct nbWorld
 
 	nbArena arena;
 
+	// Fracture workers: the application's task system or the internal scheduler. Each worker has
+	// its own arena, reset with the main arena at the start of every operation.
+	int workerCount;
+	b3EnqueueTaskCallback* enqueueTask;
+	b3FinishTaskCallback* finishTask;
+	void* userTaskContext;
+	struct nbScheduler* scheduler;
+	nbArena workerArenas[NB_MAX_WORKERS];
+
 	int chunkCount;
 	int bondCount;
 	int dynamicActorCount;
@@ -244,9 +253,19 @@ int nbFindChunkFromShape( const nbWorld* world, b3ShapeId shapeId );
 // Start an operation that creates, fractures or splits chunks
 void nbBeginOperation( nbWorld* world );
 
+// Compute the cells of the fracture jobs, spread over the workers. Allocates the cell arrays. The cell
+// memory stays valid until the next operation begins.
+struct nbFractureJob;
+void nbRunFractureJobs( nbWorld* world, struct nbFractureJob* jobs, int jobCount );
+
 // Create a chunk from a shape and add it to an actor. Builds the Box3D hull right away.
 // Takes ownership of the shape. Returns NB_NULL_INDEX and destroys the shape if the hull is degenerate.
 int nbCreateChunk( nbWorld* world, int destructibleIndex, int actorIndex, nbShape* shape, int depth, uint8_t interiorMaterial );
+
+// Same with a hull built beforehand, for example by a fracture worker. The hull memory must stay valid
+// until the end of the operation. A null hull turns the shape into dust.
+int nbCreateChunkWithHull( nbWorld* world, int destructibleIndex, int actorIndex, nbShape* shape, b3HullData* hull, int depth,
+						   uint8_t interiorMaterial );
 
 int nbAllocActor( nbWorld* world, int destructibleIndex, bool isStatic );
 void nbFreeActor( nbWorld* world, int actorIndex );

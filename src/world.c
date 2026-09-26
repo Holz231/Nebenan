@@ -4,6 +4,7 @@
 
 #include "fracture.h"
 #include "hull_builder.h"
+#include "scheduler.h"
 
 #include <float.h>
 
@@ -71,6 +72,10 @@ void nbPushEvent( nbChunkIdArray* events, nbChunkId id )
 void nbBeginOperation( nbWorld* world )
 {
 	nbArena_Reset( &world->arena );
+	for ( int i = 0; i < world->workerCount; ++i )
+	{
+		nbArena_Reset( world->workerArenas + i );
+	}
 	world->touchedChunks.count = 0;
 	world->touchedActors.count = 0;
 	world->splitSeeds.count = 0;
@@ -247,37 +252,16 @@ static void nbFreeChunk( nbWorld* world, int chunkIndex )
 	world->chunkCount -= 1;
 }
 
-// The hull lives in the scratch arena until the chunk gets its shape, Box3D clones it into its hull database.
-static b3HullData* nbCreateScratchHull( nbWorld* world, const nbShape* shape )
-{
-	int byteCount = nbGetHullByteCount( shape );
-	if ( byteCount > 0 )
-	{
-		void* memory = nbArena_Alloc( &world->arena, (size_t)byteCount );
-		b3HullData* hull = nbBuildHull( shape, memory );
-		if ( hull != NULL )
-		{
-			return hull;
-		}
-	}
-
-	// Fall back to quickhull for shapes beyond the direct path, it also merges degenerate features
-	b3HullData* heapHull = b3CreateHull( shape->vertices, shape->vertexCount, B3_MAX_HULL_VERTICES );
-	if ( heapHull == NULL )
-	{
-		return NULL;
-	}
-
-	b3HullData* hull = nbArena_Alloc( &world->arena, (size_t)heapHull->byteCount );
-	memcpy( hull, heapHull, (size_t)heapHull->byteCount );
-	b3DestroyHull( heapHull );
-	world->stats.hullFallbackCount += 1;
-	return hull;
-}
-
 int nbCreateChunk( nbWorld* world, int destructibleIndex, int actorIndex, nbShape* shape, int depth, uint8_t interiorMaterial )
 {
-	b3HullData* hull = nbCreateScratchHull( world, shape );
+	// The hull lives in the scratch arena until the chunk gets its shape, Box3D clones it into its hull database
+	b3HullData* hull = nbCreateHullInArena( shape, &world->arena, &world->stats.hullFallbackCount );
+	return nbCreateChunkWithHull( world, destructibleIndex, actorIndex, shape, hull, depth, interiorMaterial );
+}
+
+int nbCreateChunkWithHull( nbWorld* world, int destructibleIndex, int actorIndex, nbShape* shape, b3HullData* hull, int depth,
+						   uint8_t interiorMaterial )
+{
 	if ( hull == NULL )
 	{
 		// Degenerate sliver. It cannot be simulated, so it turns into dust.
@@ -1263,8 +1247,169 @@ nbWorldDef nbDefaultWorldDef( void )
 	def.maxCollisionImpactsPerUpdate = 4;
 	def.maxFragmentsPerImpact = 160;
 	def.collisionPassThrough = 0.6f;
+	def.workerCount = 1;
 	def.internalValue = NB_SECRET_COOKIE;
 	return def;
+}
+
+// Use the application's task system if it has one, otherwise start threads when more than one worker is wanted
+static void nbStartWorkers( nbWorld* world, int workerCount )
+{
+	workerCount = workerCount < 1 ? 1 : ( workerCount > NB_MAX_WORKERS ? NB_MAX_WORKERS : workerCount );
+	world->workerCount = workerCount;
+	world->def.workerCount = workerCount;
+
+	if ( world->def.enqueueTask != NULL && world->def.finishTask != NULL )
+	{
+		world->enqueueTask = world->def.enqueueTask;
+		world->finishTask = world->def.finishTask;
+		world->userTaskContext = world->def.userTaskContext;
+	}
+	else if ( workerCount > 1 )
+	{
+		world->scheduler = nbCreateScheduler( workerCount - 1 );
+		world->enqueueTask = nbSchedulerEnqueueTask;
+		world->finishTask = nbSchedulerFinishTask;
+		world->userTaskContext = world->scheduler;
+	}
+
+	for ( int i = 0; i < workerCount; ++i )
+	{
+		nbArena_Create( world->workerArenas + i, 64 * 1024 );
+	}
+}
+
+static void nbStopWorkers( nbWorld* world )
+{
+	nbDestroyScheduler( world->scheduler );
+	world->scheduler = NULL;
+	world->enqueueTask = NULL;
+	world->finishTask = NULL;
+	world->userTaskContext = NULL;
+
+	for ( int i = 0; i < world->workerCount; ++i )
+	{
+		nbArena_Destroy( world->workerArenas + i );
+	}
+	world->workerCount = 0;
+}
+
+typedef struct nbFractureTask
+{
+	nbFractureJob* jobs;
+	const int* itemJobs;
+	const int* itemCells;
+	int itemCount;
+	int siteCapacity;
+
+	// Shared counter that hands out the work items
+	int* nextItem;
+
+	nbArena* arena;
+	nbFractureCounters counters;
+} nbFractureTask;
+
+static void nbFractureTaskMain( void* context )
+{
+	nbFractureTask* task = context;
+	nbCellScratch scratch;
+	nbCellScratch_Create( &scratch, task->arena, task->siteCapacity );
+
+	for ( ;; )
+	{
+		int item = nbAtomicFetchAddInt( task->nextItem, 1 );
+		if ( item >= task->itemCount )
+		{
+			break;
+		}
+
+		nbComputeCell( task->jobs + task->itemJobs[item], task->itemCells[item], task->arena, &scratch, &task->counters );
+	}
+}
+
+void nbRunFractureJobs( nbWorld* world, nbFractureJob* jobs, int jobCount )
+{
+	int itemCount = 0;
+	int siteCapacity = 0;
+	for ( int i = 0; i < jobCount; ++i )
+	{
+		jobs[i].cells = nbArena_AllocArray( &world->arena, nbCell, jobs[i].siteCount );
+		itemCount += jobs[i].siteCount;
+		siteCapacity = jobs[i].siteCount > siteCapacity ? jobs[i].siteCount : siteCapacity;
+	}
+
+	if ( itemCount == 0 )
+	{
+		return;
+	}
+
+	// Every cell is a work item. Workers grab the next item when they finish one, which balances
+	// cheap cells at the impact against the larger cells further out.
+	int* itemJobs = nbArena_AllocArray( &world->arena, int, itemCount );
+	int* itemCells = nbArena_AllocArray( &world->arena, int, itemCount );
+	int item = 0;
+	for ( int i = 0; i < jobCount; ++i )
+	{
+		for ( int k = 0; k < jobs[i].siteCount; ++k )
+		{
+			itemJobs[item] = i;
+			itemCells[item] = k;
+			item += 1;
+		}
+	}
+
+	// Waking threads costs more than a handful of cells
+	int taskCount = world->enqueueTask != NULL && itemCount >= 16 ? world->workerCount : 1;
+	taskCount = taskCount < itemCount ? taskCount : itemCount;
+
+	int nextItem = 0;
+	nbFractureTask tasks[NB_MAX_WORKERS];
+	void* userTasks[NB_MAX_WORKERS];
+	for ( int i = 0; i < taskCount; ++i )
+	{
+		tasks[i] = (nbFractureTask){
+			.jobs = jobs,
+			.itemJobs = itemJobs,
+			.itemCells = itemCells,
+			.itemCount = itemCount,
+			.siteCapacity = siteCapacity,
+			.nextItem = &nextItem,
+			.arena = world->workerArenas + i,
+		};
+	}
+
+	for ( int i = 1; i < taskCount; ++i )
+	{
+		userTasks[i] = world->enqueueTask( nbFractureTaskMain, tasks + i, world->userTaskContext, "nebenan fracture" );
+	}
+
+	// The calling thread works as well
+	nbFractureTaskMain( tasks + 0 );
+
+	for ( int i = 1; i < taskCount; ++i )
+	{
+		if ( userTasks[i] != NULL )
+		{
+			world->finishTask( userTasks[i], world->userTaskContext );
+		}
+	}
+
+	for ( int i = 0; i < taskCount; ++i )
+	{
+		world->stats.hullFallbackCount += tasks[i].counters.hullFallbackCount;
+	}
+}
+
+void nbWorld_SetWorkerCount( nbWorldId worldId, int count )
+{
+	nbWorld* world = nbGetWorldFromId( worldId );
+	if ( world == NULL )
+	{
+		return;
+	}
+
+	nbStopWorkers( world );
+	nbStartWorkers( world, count );
 }
 
 nbWorldId nbCreateWorld( const nbWorldDef* def )
@@ -1299,6 +1444,7 @@ nbWorldId nbCreateWorld( const nbWorldDef* def )
 	world->def = *def;
 	world->physicsWorld = def->physicsWorld;
 	nbArena_Create( &world->arena, 256 * 1024 );
+	nbStartWorkers( world, def->workerCount );
 
 	return (nbWorldId){ (uint16_t)( index + 1 ), world->generation };
 }
@@ -1360,6 +1506,7 @@ void nbDestroyWorld( nbWorldId worldId )
 	}
 	nbArray_Free( world->collisionImpacts );
 	nbArena_Destroy( &world->arena );
+	nbStopWorkers( world );
 
 	uint16_t generation = world->generation;
 	memset( world, 0, sizeof( nbWorld ) );

@@ -648,6 +648,7 @@ static void LoadScene( App& app, SceneKind scene )
 	def.physicsWorld = app.physics;
 	def.maxDebrisBodies = 4000;
 	def.collisionRadiusScale = 0.02f;
+	def.workerCount = app.workerCount;
 	app.destruction = nbCreateWorld( &def );
 
 	switch ( scene )
@@ -981,9 +982,10 @@ static void DrawUi( App& app )
 	{
 		ImGui::SliderFloat( "Zeitfaktor", &app.timeScale, 0.02f, 0.99f, "%.2f" );
 	}
-	if ( ImGui::SliderInt( "Box3D Threads", &app.workerCount, 1, app.maxWorkers ) )
+	if ( ImGui::SliderInt( "Threads", &app.workerCount, 1, app.maxWorkers ) )
 	{
 		b3World_SetWorkerCount( app.physics, app.workerCount );
+		nbWorld_SetWorkerCount( app.destruction, app.workerCount );
 	}
 	if ( ImGui::Button( "Trümmer entfernen (C)" ) )
 	{
