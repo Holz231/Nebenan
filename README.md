@@ -94,7 +94,14 @@ Box3D-Kopie verwendet.
 | R | Szene neu laden |
 | P | Pause |
 | C | lose Trümmer entfernen |
+| V | VSync ein und aus |
 | F1 | Menü ein- und ausblenden |
+
+**FPS.** Oben rechts steht immer die echte Bildrate, gemessen über die letzten zwei Sekunden: Bilder pro
+Sekunde, die mittlere Bildzeit und das 1 % Low, also die Rate der langsamsten 1 % der Bilder. Daran sieht man
+Ruckler. VSync ist aus, die Demo zeichnet so viele Bilder, wie der PC schafft, ohne Tearing im Fenster. Mit **V**
+oder `--vsync` bindet sie sich an die Bildwiederholrate des Monitors. Unter macOS bleibt VSync immer an, dort sagt
+das Menü, wie viele FPS die CPU schaffen würde. Die Physik rechnet unabhängig davon 60 Schritte pro Sekunde.
 
 **Leistungsregler im Menü**
 
@@ -108,8 +115,8 @@ Box3D-Kopie verwendet.
 
 **Messung.** Das Menü zeigt die Bildzeit und die CPU-Zeit pro Bild, aufgeteilt in Einschläge, Simulation und
 Grafik, als Mittel und Spitze der letzten 300 Bilder, dazu Box3D-Schritt, Bruchstücke, Körper, Kontakte,
-Dreiecke, Draw Calls und Upload. Dauert ein Bild deutlich länger, als die CPU dafür braucht, wartet es auf die
-Grafikkarte, und das Menü sagt es. „Messwerte kopieren“ legt alles mit CPU, Grafikkarte und Auflösung in die
+Dreiecke, Draw Calls und Upload. Es sagt auch, wer die FPS begrenzt: die CPU, die Grafikkarte (ein Bild dauert
+deutlich länger, als die CPU dafür braucht) oder VSync. „Messwerte kopieren“ legt alles mit CPU, Grafikkarte und Auflösung in die
 Zwischenablage, zum Einfügen in einen Chat.
 
 **Werkzeuge**
@@ -127,11 +134,11 @@ Zwischenablage, zum Einfügen in einen Chat.
 - **Stadt**: 20 Häuser aus verputzten Ziegelwänden mit Fenstern und Türen und Betondecken, jedes dritte mit drei
   Stockwerken
 
-**Aufrufoptionen**: `--scene 0..2` startet eine Szene, `--fragment-scale 3` setzt die Bruchstückgröße,
-`--msaa 4` schaltet Kantenglättung ein (Standard aus), `--highdpi` rendert auf hochauflösenden Bildschirmen in
-voller Auflösung (Standard aus, kostet Füllrate). `--script` feuert eine vorgegebene Schussfolge ab, `--frames N`
-beendet nach N Bildern und meldet CPU-Zeiten, Uploads und Dreiecke pro Bild, `--screenshot datei.ppm` speichert
-das letzte Bild (nur OpenGL).
+**Aufrufoptionen**: `--scene 0..2` startet eine Szene, `--fragment-scale 3` setzt die Bruchstückgröße, `--vsync`
+schaltet VSync ein, `--msaa 4` schaltet Kantenglättung ein (Standard aus), `--highdpi` rendert auf
+hochauflösenden Bildschirmen in voller Auflösung (Standard aus, kostet Füllrate). `--script` feuert eine
+vorgegebene Schussfolge ab, `--frames N` beendet nach N Bildern und meldet CPU-Zeiten, Uploads und Dreiecke pro
+Bild, `--screenshot datei.ppm` speichert das letzte Bild (nur OpenGL).
 
 Hinkt die Physik hinterher, lässt die Demo die Zeit langsamer laufen, statt Schritte nachzuholen: Ein zweiter
 Schritt im selben Bild kommt nur, wenn ein Schritt weniger als 4 ms kostet. Sonst würde jedes langsame Bild das

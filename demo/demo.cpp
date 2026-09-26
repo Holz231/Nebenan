@@ -16,6 +16,7 @@
 #include "nebenan/nebenan.h"
 
 #include <algorithm>
+#include <float.h>
 #include <math.h>
 #include <stdarg.h>
 #include <stdio.h>
@@ -27,6 +28,7 @@
 #include <vector>
 
 extern "C" bool DemoSaveScreenshot( const char* path, int width, int height );
+extern "C" bool DemoSetVsync( bool enabled );
 
 enum Tool
 {
@@ -98,6 +100,64 @@ struct Automation
 	std::vector<float> triangles;
 };
 
+// The real frame rate over the last two seconds: frames per second, the average frame time and the 1 % low, the
+// rate at which the slowest 1 % of the frames come. The numbers change four times a second so they stay readable.
+struct FpsMeter
+{
+	static const int Capacity = 1 << 14;
+	float times[Capacity] = {};
+	int first = 0;
+	int count = 0;
+	float windowTime = 0.0f;
+	float sinceUpdate = 0.0f;
+	std::vector<float> scratch;
+
+	float fps = 0.0f;
+	float frameTime = 0.0f;
+	float lowFps = 0.0f;
+
+	void Add( float milliseconds )
+	{
+		if ( count == Capacity )
+		{
+			windowTime -= times[first];
+			first = ( first + 1 ) % Capacity;
+			count -= 1;
+		}
+		times[( first + count ) % Capacity] = milliseconds;
+		count += 1;
+		windowTime += milliseconds;
+		while ( count > 1 && windowTime - times[first] >= 2000.0f )
+		{
+			windowTime -= times[first];
+			first = ( first + 1 ) % Capacity;
+			count -= 1;
+		}
+
+		sinceUpdate += milliseconds;
+		if ( sinceUpdate < 250.0f )
+		{
+			return;
+		}
+		sinceUpdate = 0.0f;
+
+		scratch.resize( (size_t)count );
+		float total = 0.0f;
+		for ( int i = 0; i < count; ++i )
+		{
+			scratch[(size_t)i] = times[( first + i ) % Capacity];
+			total += scratch[(size_t)i];
+		}
+		windowTime = total;
+		frameTime = total / (float)count;
+		fps = 1000.0f / b3MaxFloat( frameTime, 0.001f );
+
+		size_t k = (size_t)count * 99 / 100;
+		std::nth_element( scratch.begin(), scratch.begin() + (ptrdiff_t)k, scratch.end() );
+		lowFps = 1000.0f / b3MaxFloat( scratch[k], 0.001f );
+	}
+};
+
 struct App
 {
 	b3WorldId physics = b3_nullWorldId;
@@ -143,7 +203,13 @@ struct App
 	float physicsTime = 0.0f;
 	float destructionTime = 0.0f;
 	nbImpactResult lastImpact = {};
-	float averageFrame = 16.0f;
+	// Vertical sync is off, so the frame rate shows what the machine can do. Metal always syncs.
+	bool vsync = false;
+	bool vsyncAvailable = true;
+
+	// Time between two frames, with the wait for the display or the graphics card
+	uint64_t frameTicks = 0;
+	FpsMeter fpsMeter;
 
 	Automation automation;
 	int frame = 0;
@@ -1019,7 +1085,8 @@ static std::string BuildReport( const App& app )
 			 std::thread::hardware_concurrency(), app.performanceCores, app.workerCount );
 	Appendf( text, "GPU: %s, Bild %d x %d, MSAA %dx\n", app.gpuName.empty() ? "unbekannt" : app.gpuName.c_str(), sapp_width(),
 			 sapp_height(), sapp_sample_count() );
-	Appendf( text, "Bild: Mittel %.1f ms, Spitze %.1f ms (letzte %d Bilder)\n", frameAvg, frameMax, app.historyCount );
+	Appendf( text, "Bild: %.0f FPS, 1%% Low %.0f FPS, Mittel %.2f ms, Spitze %.1f ms (letzte %d Bilder), VSync %s\n", app.fpsMeter.fps,
+			 app.fpsMeter.lowFps, app.fpsMeter.frameTime, frameMax, app.historyCount, app.vsync ? "an" : "aus" );
 	Appendf( text, "CPU pro Bild, Mittel / Spitze: Einschläge %.1f / %.1f, Simulation %.1f / %.1f, Grafik %.1f / %.1f ms\n", impactAvg,
 			 impactMax, simulationAvg, simulationMax, graphicsAvg, graphicsMax );
 	Appendf( text, "Pro Schritt: Box3D %.2f ms, Zerstörung %.2f ms\n", app.physicsTime, app.destructionTime );
@@ -1108,6 +1175,18 @@ static void DrawUi( App& app )
 		b3World_SetWorkerCount( app.physics, app.workerCount );
 		nbWorld_SetWorkerCount( app.destruction, app.workerCount );
 	}
+	if ( app.vsyncAvailable )
+	{
+		if ( ImGui::Checkbox( "VSync (V)", &app.vsync ) )
+		{
+			DemoSetVsync( app.vsync );
+		}
+		if ( ImGui::IsItemHovered() )
+		{
+			ImGui::SetTooltip( "Aus: so viele Bilder wie möglich, die FPS zeigen, was der PC schafft.\nAn: an die Bildwiederholrate des Monitors gebunden, etwa 60 oder 144 Hz." );
+		}
+		ImGui::SameLine();
+	}
 	ImGui::Checkbox( "Pause (P)", &app.paused );
 	ImGui::SameLine();
 	if ( ImGui::Button( "Trümmer entfernen (C)" ) )
@@ -1125,15 +1204,26 @@ static void DrawUi( App& app )
 	HistoryStats( app, app.historySimulation, &simulationAvg, &simulationMax );
 	HistoryStats( app, app.historyGraphics, &graphicsAvg, &graphicsMax );
 	float cpuFrame = impactAvg + simulationAvg + graphicsAvg;
-	ImGui::Text( "Bild        %6.2f ms  (%.0f FPS), Spitze %.1f ms", app.averageFrame, 1000.0f / b3MaxFloat( app.averageFrame, 0.01f ),
-				 frameMax );
+	const FpsMeter& meter = app.fpsMeter;
+	ImGui::Text( "Bild        %6.2f ms  %.0f FPS, 1%% Low %.0f FPS", meter.frameTime, meter.fps, meter.lowFps );
+	ImGui::Text( "            Spitze %.1f ms (letzte %d Bilder)", frameMax, app.historyCount );
 	ImGui::Text( "CPU         %6.2f ms  Einschläge %.2f, Simulation %.2f,", cpuFrame, impactAvg, simulationAvg );
 	ImGui::Text( "                      Grafik %.2f", graphicsAvg );
 
-	// With vertical sync a frame that just misses the display takes two intervals, only a longer wait is the GPU
-	if ( frameAvg > cpuFrame + 17.0f )
+	// Whatever a frame takes beyond the CPU time is the wait for the display or the graphics card
+	ImVec4 hint = ImVec4( 1.0f, 0.75f, 0.3f, 1.0f );
+	bool waiting = frameAvg > 1.2f * cpuFrame + 0.5f;
+	if ( waiting && app.vsync )
 	{
-		ImGui::TextColored( ImVec4( 1.0f, 0.75f, 0.3f, 1.0f ), "  Das Bild wartet auf die Grafikkarte" );
+		ImGui::TextColored( hint, "  VSync begrenzt, die CPU schafft etwa %.0f FPS", 1000.0f / b3MaxFloat( cpuFrame, 0.01f ) );
+	}
+	else if ( waiting )
+	{
+		ImGui::TextColored( hint, "  Die Grafikkarte begrenzt die FPS" );
+	}
+	else
+	{
+		ImGui::TextDisabled( "  Die CPU begrenzt die FPS" );
 	}
 	ImGui::Text( "Physik      %6.2f ms  (Box3D Schritt)", app.physicsTime );
 	ImGui::Text( "Zerstörung  %6.2f ms  (Update)", app.destructionTime );
@@ -1157,12 +1247,43 @@ static void DrawUi( App& app )
 	ImGui::TextWrapped( "Linke Maustaste: schießen (halten = Dauerfeuer)\n"
 						"Rechte Maustaste halten: umsehen\n"
 						"WASD bewegen, Q/E runter/hoch, Shift schneller\n"
-						"1-3 Werkzeug, R neu laden, P Pause, C Trümmer weg, F1 Menü" );
+						"1-3 Werkzeug, R neu laden, P Pause, C Trümmer weg,\n"
+						"V VSync, F1 Menü" );
 
 	ImGui::End();
+}
+
+// Frame rate in the top right corner and the crosshair, with and without the menu
+static void DrawOverlay( App& app )
+{
+	float dpi = sapp_dpi_scale();
+	ImDrawList* draw = ImGui::GetForegroundDrawList();
+	const FpsMeter& meter = app.fpsMeter;
+
+	char fps[32];
+	snprintf( fps, sizeof( fps ), "%.0f FPS", meter.fps );
+	char detail[96];
+	snprintf( detail, sizeof( detail ), "%.2f ms   1%% Low %.0f   VSync %s", meter.frameTime, meter.lowFps, app.vsync ? "an" : "aus" );
+
+	ImFont* font = ImGui::GetFont();
+	float smallSize = ImGui::GetFontSize();
+	float largeSize = 2.0f * smallSize;
+	ImVec2 fpsExtent = font->CalcTextSizeA( largeSize, FLT_MAX, 0.0f, fps );
+	ImVec2 detailExtent = font->CalcTextSizeA( smallSize, FLT_MAX, 0.0f, detail );
+	float pad = 8.0f * dpi;
+	float right = ImGui::GetIO().DisplaySize.x - 12.0f * dpi;
+	float top = 12.0f * dpi;
+	float width = b3MaxFloat( fpsExtent.x, detailExtent.x ) + 2.0f * pad;
+	float height = fpsExtent.y + detailExtent.y + 2.0f * pad;
+	draw->AddRectFilled( ImVec2( right - width, top ), ImVec2( right, top + height ), IM_COL32( 16, 20, 26, 180 ), 6.0f * dpi );
+
+	// Green from 60 frames per second, yellow from 30, red below
+	ImU32 fpsColor = meter.fps >= 60.0f ? IM_COL32( 120, 230, 120, 255 )
+										: ( meter.fps >= 30.0f ? IM_COL32( 250, 210, 90, 255 ) : IM_COL32( 250, 100, 90, 255 ) );
+	draw->AddText( font, largeSize, ImVec2( right - pad - fpsExtent.x, top + pad ), fpsColor, fps );
+	draw->AddText( font, smallSize, ImVec2( right - pad - detailExtent.x, top + pad + fpsExtent.y ), IM_COL32( 225, 230, 235, 255 ), detail );
 
 	// Crosshair at the aim point
-	ImDrawList* draw = ImGui::GetForegroundDrawList();
 	ImVec2 center = app.mouseLook ? ImVec2( 0.5f * sapp_widthf() / dpi, 0.5f * sapp_heightf() / dpi )
 								  : ImVec2( app.mouseX / dpi, app.mouseY / dpi );
 	ImU32 color = IM_COL32( 255, 255, 255, 200 );
@@ -1251,6 +1372,8 @@ static void OnInit()
 
 	app.renderer.Init();
 	BuildGround( app );
+	app.vsyncAvailable = DemoSetVsync( app.vsync );
+	app.vsync = app.vsync || app.vsyncAvailable == false;
 
 	// Box3D runs best on the performance cores alone. Hyper-threads and efficiency cores add little or slow it down.
 	unsigned hardware = std::thread::hardware_concurrency();
@@ -1268,6 +1391,7 @@ static void OnInit()
 
 	int scene = app.automation.scene >= 0 && app.automation.scene < SceneCount ? app.automation.scene : SceneWall;
 	LoadScene( app, (SceneKind)scene );
+	app.frameTicks = b3GetTicks();
 }
 
 static void PrintAutomationReport( App& app )
@@ -1315,9 +1439,11 @@ static void PrintAutomationReport( App& app )
 static void OnFrame()
 {
 	App& app = *s_app;
+	float frameTime = b3GetMillisecondsAndReset( &app.frameTicks );
+	app.fpsMeter.Add( frameTime );
+
 	float dt = (float)sapp_frame_duration();
 	dt = b3ClampFloat( dt, 0.0f, 0.1f );
-	app.averageFrame = 0.95f * app.averageFrame + 0.05f * 1000.0f * dt;
 
 	// Automated runs advance one physics step per frame, so they repeat exactly on any machine
 	if ( app.automation.frameLimit > 0 )
@@ -1365,6 +1491,7 @@ static void OnFrame()
 	{
 		DrawUi( app );
 	}
+	DrawOverlay( app );
 
 	app.renderer.Render( app.camera, width, height );
 	simgui_render();
@@ -1373,7 +1500,7 @@ static void OnFrame()
 	float graphicsTime = b3GetMilliseconds( graphicsTicks );
 
 	int slot = app.historyNext;
-	app.historyFrame[slot] = 1000.0f * (float)sapp_frame_duration();
+	app.historyFrame[slot] = frameTime;
 	app.historyImpacts[slot] = impactTime;
 	app.historySimulation[slot] = simulationTime;
 	app.historyGraphics[slot] = graphicsTime;
@@ -1440,6 +1567,11 @@ static void OnEvent( const sapp_event* event )
 			{
 				app.showUi = !app.showUi;
 			}
+			else if ( event->key_code == SAPP_KEYCODE_V && app.vsyncAvailable )
+			{
+				app.vsync = !app.vsync;
+				DemoSetVsync( app.vsync );
+			}
 			else if ( event->key_code == SAPP_KEYCODE_ESCAPE && app.mouseLook )
 			{
 				app.mouseLook = false;
@@ -1502,6 +1634,21 @@ static void OnEvent( const sapp_event* event )
 			}
 			break;
 
+		// A minimized window would otherwise draw as fast as it can
+		case SAPP_EVENTTYPE_ICONIFIED:
+			if ( app.vsyncAvailable )
+			{
+				DemoSetVsync( true );
+			}
+			break;
+
+		case SAPP_EVENTTYPE_RESTORED:
+			if ( app.vsyncAvailable )
+			{
+				DemoSetVsync( app.vsync );
+			}
+			break;
+
 		default:
 			break;
 	}
@@ -1546,6 +1693,10 @@ int main( int argc, char** argv )
 		else if ( strcmp( argv[i], "--highdpi" ) == 0 )
 		{
 			app.automation.highDpi = true;
+		}
+		else if ( strcmp( argv[i], "--vsync" ) == 0 )
+		{
+			app.vsync = true;
 		}
 		else if ( strcmp( argv[i], "--fragment-scale" ) == 0 && i + 1 < argc )
 		{
