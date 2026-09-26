@@ -132,6 +132,9 @@ NB_API b3Vec3 nbChunk_GetCentroid( nbChunkId chunkId );
 /// Number of fracture generations between this chunk and its original piece.
 NB_API int nbChunk_GetDepth( nbChunkId chunkId );
 
+/// Material of the chunk, the one of its original piece. Zero for an invalid chunk.
+NB_API nbMaterial nbChunk_GetMaterial( nbChunkId chunkId );
+
 /// Number of intact bonds of this chunk.
 NB_API int nbChunk_GetBondCount( nbChunkId chunkId );
 

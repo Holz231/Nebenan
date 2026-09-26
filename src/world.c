@@ -281,15 +281,16 @@ static void nbFreeChunk( nbWorld* world, int chunkIndex )
 	world->chunkCount -= 1;
 }
 
-int nbCreateChunk( nbWorld* world, int destructibleIndex, int actorIndex, nbShape* shape, int depth, uint8_t interiorMaterial )
+int nbCreateChunk( nbWorld* world, int destructibleIndex, int actorIndex, nbShape* shape, int depth, uint8_t interiorMaterial,
+				   int materialIndex )
 {
 	// The hull lives in the scratch arena until the chunk gets its shape, Box3D clones it into its hull database
 	b3HullData* hull = nbCreateHullInArena( shape, &world->arena, &world->stats.hullFallbackCount );
-	return nbCreateChunkWithHull( world, destructibleIndex, actorIndex, shape, hull, depth, interiorMaterial );
+	return nbCreateChunkWithHull( world, destructibleIndex, actorIndex, shape, hull, depth, interiorMaterial, materialIndex );
 }
 
 int nbCreateChunkWithHull( nbWorld* world, int destructibleIndex, int actorIndex, nbShape* shape, b3HullData* hull, int depth,
-						   uint8_t interiorMaterial )
+						   uint8_t interiorMaterial, int materialIndex )
 {
 	if ( hull == NULL )
 	{
@@ -307,6 +308,8 @@ int nbCreateChunkWithHull( nbWorld* world, int destructibleIndex, int actorIndex
 	chunk->destructibleIndex = destructibleIndex;
 	chunk->depth = (uint8_t)( depth < 255 ? depth : 255 );
 	chunk->interiorMaterial = interiorMaterial;
+	NB_ASSERT( 0 <= materialIndex && materialIndex < destructible->materialCount );
+	chunk->materialIndex = (uint8_t)materialIndex;
 	chunk->flags = nb_chunkNew;
 	if ( nbIsAnchored( destructible, shape ) )
 	{
@@ -321,6 +324,18 @@ int nbCreateChunkWithHull( nbWorld* world, int destructibleIndex, int actorIndex
 	nbPushEvent( world->createdEvents + world->eventBuffer, nbMakeChunkId( world, chunkIndex ) );
 	world->stats.createdChunkCount += 1;
 	return chunkIndex;
+}
+
+const nbMaterial* nbGetChunkMaterial( const nbWorld* world, const nbChunk* chunk )
+{
+	return world->destructibles.data[chunk->destructibleIndex].materials + chunk->materialIndex;
+}
+
+float nbGetBondStrength( const nbWorld* world, const nbBond* bond )
+{
+	const nbMaterial* a = nbGetChunkMaterial( world, world->chunks.data + bond->chunk[0] );
+	const nbMaterial* b = nbGetChunkMaterial( world, world->chunks.data + bond->chunk[1] );
+	return b3MinFloat( a->strength, b->strength );
 }
 
 int nbCreateBond( nbWorld* world, int chunkA, int chunkB, const nbBondGeometry* geometry, float health )
@@ -689,13 +704,13 @@ void nbUpdateDebris( nbWorld* world, int actorIndex )
 	}
 }
 
-static b3ShapeDef nbMakeShapeDef( const nbDestructible* destructible, bool isStatic )
+static b3ShapeDef nbMakeShapeDef( const nbDestructible* destructible, const nbMaterial* material, bool isStatic )
 {
 	b3ShapeDef shapeDef = b3DefaultShapeDef();
-	shapeDef.density = destructible->material.density;
-	shapeDef.baseMaterial.friction = destructible->material.friction;
-	shapeDef.baseMaterial.restitution = destructible->material.restitution;
-	shapeDef.baseMaterial.userMaterialId = destructible->material.userMaterialId;
+	shapeDef.density = material->density;
+	shapeDef.baseMaterial.friction = material->friction;
+	shapeDef.baseMaterial.restitution = material->restitution;
+	shapeDef.baseMaterial.userMaterialId = material->userMaterialId;
 	shapeDef.filter = destructible->filter;
 	shapeDef.enableHitEvents = destructible->enableCollisionDamage && isStatic == false;
 	shapeDef.updateBodyMass = false;
@@ -719,7 +734,7 @@ void nbCommitPhysics( nbWorld* world )
 
 		nbActor* actor = world->actors.data + chunk->actorIndex;
 		nbDestructible* destructible = world->destructibles.data + chunk->destructibleIndex;
-		b3ShapeDef shapeDef = nbMakeShapeDef( destructible, actor->isStatic );
+		b3ShapeDef shapeDef = nbMakeShapeDef( destructible, destructible->materials + chunk->materialIndex, actor->isStatic );
 
 		// The hull to use: the fresh one, or the one the chunk already has in the Box3D hull database
 		const b3HullData* hull = chunk->pendingHull;
@@ -1089,8 +1104,18 @@ static void nbSplitDynamicActor( nbWorld* world, int actorIndex, nbImpactResult*
 void nbCheckSpans( nbWorld* world, int destructibleIndex )
 {
 	nbDestructible* destructible = world->destructibles.data + destructibleIndex;
-	float maxSpan = destructible->material.maxSpan;
-	if ( destructible->isStatic == false || maxSpan <= 0.0f )
+
+	// Every material has its own span, zero means unlimited
+	float spans[NB_MAX_MATERIALS];
+	bool anySpan = false;
+	for ( int k = 0; k < destructible->materialCount; ++k )
+	{
+		float maxSpan = destructible->materials[k].maxSpan;
+		spans[k] = maxSpan > 0.0f ? maxSpan : FLT_MAX;
+		anySpan = anySpan || maxSpan > 0.0f;
+	}
+
+	if ( destructible->isStatic == false || anySpan == false )
 	{
 		return;
 	}
@@ -1191,12 +1216,12 @@ void nbCheckSpans( nbWorld* world, int destructibleIndex )
 	cut->count = 0;
 	for ( int i = 0; i < n; ++i )
 	{
-		if ( distance[i] > maxSpan )
+		const nbChunk* chunk = world->chunks.data + chunkList[i];
+		if ( distance[i] > spans[chunk->materialIndex] )
 		{
 			continue;
 		}
 
-		const nbChunk* chunk = world->chunks.data + chunkList[i];
 		for ( int key = chunk->headBondKey; key != NB_NULL_INDEX; )
 		{
 			const nbBond* bond = world->bonds.data + ( key >> 1 );
@@ -1204,8 +1229,8 @@ void nbCheckSpans( nbWorld* world, int destructibleIndex )
 			int bondIndex = key >> 1;
 			key = bond->nextKey[side];
 
-			int j = world->chunks.data[bond->chunk[side ^ 1]].scratch;
-			if ( distance[j] > maxSpan )
+			const nbChunk* other = world->chunks.data + bond->chunk[side ^ 1];
+			if ( distance[other->scratch] > spans[other->materialIndex] )
 			{
 				nbArray_Push( *cut, bondIndex );
 			}
@@ -1688,7 +1713,7 @@ static void nbCollectCollisionImpacts( nbWorld* world )
 
 			// Light knocks do nothing. The damage radius has to reach at least one fragment.
 			float radius = world->def.collisionRadiusScale * nbCbrt( energy );
-			if ( radius < destructible->material.fragmentSize )
+			if ( radius < nbGetChunkMaterial( world, chunk )->fragmentSize )
 			{
 				continue;
 			}
@@ -1912,6 +1937,13 @@ int nbChunk_GetDepth( nbChunkId chunkId )
 {
 	nbChunk* chunk = nbGetChunkFromId( chunkId, NULL );
 	return chunk != NULL ? chunk->depth : 0;
+}
+
+nbMaterial nbChunk_GetMaterial( nbChunkId chunkId )
+{
+	nbWorld* world;
+	nbChunk* chunk = nbGetChunkFromId( chunkId, &world );
+	return chunk != NULL ? *nbGetChunkMaterial( world, chunk ) : (nbMaterial){ 0 };
 }
 
 int nbChunk_GetBondCount( nbChunkId chunkId )

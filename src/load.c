@@ -13,8 +13,9 @@
 // small ones, a beam rests on both of its supports and a wall carries its load around an opening. The
 // force and moment in every bond give its stress: the normal stress plus the bending stress at the edge
 // of the contact, and the shear plus the torsion. Bonds stressed beyond the tensile, compressive or
-// shear strength of the material break. Detached parts fall and the check runs again on the next
-// update, because the load moves on to the remaining bonds, until the rest of the structure holds.
+// shear strength of the weaker of their two materials break, the most overloaded ones first. Detached
+// parts fall and the check runs again on the next update, because the load moves on to the remaining
+// bonds, until the rest of the structure holds.
 //
 // Chunks are rigid and never bend themselves. Large pieces need a pre-fracture (cellSize) so that
 // beams and slabs can break along their span.
@@ -48,6 +49,14 @@
 // bounds the cost of the factorization to a few milliseconds.
 #define NB_LOAD_MAX_NODES 320
 
+// Overloaded bonds break in the order of their load. Bonds loaded at least this fraction of the worst one
+// break together, the others wait for the next check with the load that is left once these are gone.
+#define NB_LOAD_BREAK_FRACTION 0.8f
+
+// Bonds loaded this many times their strength break in any case. Only bonds close to their strength can
+// be saved by the load moving elsewhere, and a few crushed fragments should not hold up a collapse.
+#define NB_LOAD_BREAK_ALWAYS 4.0f
+
 typedef struct nbLoadBond
 {
 	int bondIndex;
@@ -60,6 +69,10 @@ typedef struct nbLoadBond
 
 	// Remaining fraction of the bond strength
 	float health;
+
+	// Strength of the weaker of the two materials in tension and compression
+	float tensile;
+	float compressive;
 
 	// Stiffness of the layer against the relative displacement and rotation at the interface centroid,
 	// row major 3x3
@@ -643,8 +656,9 @@ static void nbComputeBondStiffness( const nbBond* bond, nbLoadBond* loadBond )
 	}
 }
 
-// Check the stress in a bond from the relative displacement and rotation of its clusters
-static bool nbIsOverloaded( const nbBond* bond, const nbLoadBond* loadBond, const double* solution, float tensile, float compressive )
+// Utilization of a bond from the relative displacement and rotation of its clusters: the largest ratio of
+// stress to strength. The bond fails above one.
+static float nbBondUtilization( const nbBond* bond, const nbLoadBond* loadBond, const double* solution )
 {
 	double delta[3] = { 0.0, 0.0, 0.0 };
 	double phi[3] = { 0.0, 0.0, 0.0 };
@@ -705,10 +719,16 @@ static bool nbIsOverloaded( const nbBond* bond, const nbLoadBond* loadBond, cons
 
 	// Bending adds tension on one edge of the contact and compression on the other
 	float health = loadBond->health;
-	bool pulled = bendingStress - normalStress > health * tensile;
-	bool crushed = normalStress + bendingStress > health * compressive;
-	bool sheared = shearStress + torsionStress > health * ( tensile + NB_LOAD_FRICTION * b3MaxFloat( normalStress, 0.0f ) );
-	return pulled || crushed || sheared;
+	if ( health <= 0.0f )
+	{
+		return FLT_MAX;
+	}
+
+	float tensile = loadBond->tensile;
+	float tension = ( bendingStress - normalStress ) / ( health * tensile );
+	float compression = ( normalStress + bendingStress ) / ( health * loadBond->compressive );
+	float shear = ( shearStress + torsionStress ) / ( health * ( tensile + NB_LOAD_FRICTION * b3MaxFloat( normalStress, 0.0f ) ) );
+	return b3MaxFloat( tension, b3MaxFloat( compression, shear ) );
 }
 
 // A bond of the static actor with the indices of its chunks in the chunk list
@@ -825,15 +845,25 @@ static void nbBuildClusters( nbArena* arena, const b3Vec3* centroids, const doub
 void nbCheckLoads( nbWorld* world, int destructibleIndex )
 {
 	nbDestructible* destructible = world->destructibles.data + destructibleIndex;
-	const nbMaterial* material = &destructible->material;
-	float tensile = material->tensileStrength;
-	float compressive = material->compressiveStrength;
-	if ( destructible->isStatic == false || ( tensile <= 0.0f && compressive <= 0.0f ) )
+
+	// Strengths of zero leave a material out of the check. Clusters follow the finest fragments.
+	float tensiles[NB_MAX_MATERIALS];
+	float compressives[NB_MAX_MATERIALS];
+	float fragmentSize = FLT_MAX;
+	bool anyStrength = false;
+	for ( int k = 0; k < destructible->materialCount; ++k )
+	{
+		const nbMaterial* material = destructible->materials + k;
+		tensiles[k] = material->tensileStrength > 0.0f ? material->tensileStrength : FLT_MAX;
+		compressives[k] = material->compressiveStrength > 0.0f ? material->compressiveStrength : FLT_MAX;
+		anyStrength = anyStrength || material->tensileStrength > 0.0f || material->compressiveStrength > 0.0f;
+		fragmentSize = b3MinFloat( fragmentSize, material->fragmentSize );
+	}
+
+	if ( destructible->isStatic == false || anyStrength == false )
 	{
 		return;
 	}
-	tensile = tensile > 0.0f ? tensile : FLT_MAX;
-	compressive = compressive > 0.0f ? compressive : FLT_MAX;
 
 	int actorIndex = NB_NULL_INDEX;
 	for ( int a = destructible->headActor; a != NB_NULL_INDEX; a = world->actors.data[a].nextActor )
@@ -873,7 +903,7 @@ void nbCheckLoads( nbWorld* world, int destructibleIndex )
 		nbChunk* chunk = world->chunks.data + c;
 		chunk->scratch = count;
 		centroids[count] = chunk->shape->centroid;
-		masses[count] = (double)material->density * (double)chunk->shape->volume;
+		masses[count] = (double)destructible->materials[chunk->materialIndex].density * (double)chunk->shape->volume;
 		anchoredChunks[count] = ( chunk->flags & nb_chunkAnchored ) != 0;
 		bondCapacity += chunk->bondCount;
 		count += 1;
@@ -900,7 +930,7 @@ void nbCheckLoads( nbWorld* world, int destructibleIndex )
 	// rigid body in the system. This keeps the system small where the structure is shattered, and fragments
 	// that small never fail under their own weight. Bonds inside a cluster are taken as rigid. A structure
 	// with too many clusters is checked on a coarser grid.
-	float cellSize = b3MaxFloat( NB_LOAD_CLUSTER_SIZE * material->fragmentSize, 1.0e-3f );
+	float cellSize = b3MaxFloat( NB_LOAD_CLUSTER_SIZE * fragmentSize, 1.0e-3f );
 	nbLoadClusters clusters;
 	for ( ;; )
 	{
@@ -923,7 +953,6 @@ void nbCheckLoads( nbWorld* world, int destructibleIndex )
 	const b3Vec3* clusterCenter = clusters.center;
 
 	// Stiffness of every bond between two clusters of which at least one can move
-	float fullHealthPerArea = material->strength;
 	nbLoadBond* loadBonds = nbArena_AllocArray( arena, nbLoadBond, linkCount + 1 );
 	int loadBondCount = 0;
 	for ( int l = 0; l < linkCount; ++l )
@@ -936,7 +965,9 @@ void nbCheckLoads( nbWorld* world, int destructibleIndex )
 		}
 
 		const nbBond* bond = world->bonds.data + links[l].bondIndex;
-		float fullHealth = fullHealthPerArea * bond->area;
+		int materialA = world->chunks.data[bond->chunk[0]].materialIndex;
+		int materialB = world->chunks.data[bond->chunk[1]].materialIndex;
+		float fullHealth = nbGetBondStrength( world, bond ) * bond->area;
 		nbLoadBond* loadBond = loadBonds + loadBondCount++;
 		loadBond->bondIndex = links[l].bondIndex;
 		loadBond->node[0] = clusterNode[clusterA];
@@ -944,6 +975,8 @@ void nbCheckLoads( nbWorld* world, int destructibleIndex )
 		loadBond->arm[0] = b3Sub( bond->centroid, clusterCenter[clusterA] );
 		loadBond->arm[1] = b3Sub( bond->centroid, clusterCenter[clusterB] );
 		loadBond->health = fullHealth > 0.0f ? b3ClampFloat( bond->health / fullHealth, 0.0f, 1.0f ) : 1.0f;
+		loadBond->tensile = b3MinFloat( tensiles[materialA], tensiles[materialB] );
+		loadBond->compressive = b3MinFloat( compressives[materialA], compressives[materialB] );
 		nbComputeBondStiffness( bond, loadBond );
 	}
 
@@ -1031,15 +1064,25 @@ void nbCheckLoads( nbWorld* world, int destructibleIndex )
 	}
 	nbLoadSolve( &factor, solution );
 
-	// Break the bonds that are stressed beyond the strength of the material
-	nbIntArray* broken = &world->scratchList;
-	broken->count = 0;
+	// The most overloaded bonds break first. Breaking them moves their load, so bonds that are much less
+	// overloaded may hold once these are gone, like a beam that cracks at one section and not at every one.
+	float* utilization = nbArena_AllocArray( arena, float, loadBondCount + 1 );
+	float worst = 0.0f;
 	for ( int k = 0; k < loadBondCount; ++k )
 	{
 		const nbLoadBond* loadBond = loadBonds + k;
-		if ( nbIsOverloaded( world->bonds.data + loadBond->bondIndex, loadBond, solution, tensile, compressive ) )
+		utilization[k] = nbBondUtilization( world->bonds.data + loadBond->bondIndex, loadBond, solution );
+		worst = b3MaxFloat( worst, utilization[k] );
+	}
+
+	nbIntArray* broken = &world->scratchList;
+	broken->count = 0;
+	float threshold = b3MaxFloat( 1.0f, b3MinFloat( NB_LOAD_BREAK_FRACTION * worst, NB_LOAD_BREAK_ALWAYS ) );
+	for ( int k = 0; k < loadBondCount; ++k )
+	{
+		if ( utilization[k] > 1.0f && utilization[k] >= threshold )
 		{
-			nbArray_Push( *broken, loadBond->bondIndex );
+			nbArray_Push( *broken, loadBonds[k].bondIndex );
 		}
 	}
 

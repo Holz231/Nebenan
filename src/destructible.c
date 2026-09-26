@@ -155,19 +155,20 @@ static bool nbPreparePiece( nbWorld* world, const nbMaterial* material, nbPoly* 
 	return true;
 }
 
-static void nbCreateSingleChunk( nbWorld* world, int destructibleIndex, int actorIndex, const nbPoly* poly, uint8_t interiorMaterial )
+static void nbCreateSingleChunk( nbWorld* world, int destructibleIndex, int actorIndex, const nbPoly* poly, uint8_t interiorMaterial,
+								 int materialIndex )
 {
 	nbShape* shape = nbShape_Create( poly );
 	if ( shape != NULL )
 	{
-		nbCreateChunk( world, destructibleIndex, actorIndex, shape, 0, interiorMaterial );
+		nbCreateChunk( world, destructibleIndex, actorIndex, shape, 0, interiorMaterial, materialIndex );
 	}
 }
 
 // Create the chunks of a pre-fractured piece and glue them exactly like a single piece
-static void nbFinishPiece( nbWorld* world, int destructibleIndex, int actorIndex, const nbFractureJob* job )
+static void nbFinishPiece( nbWorld* world, int destructibleIndex, int actorIndex, const nbFractureJob* job, int materialIndex )
 {
-	const nbMaterial* material = &world->destructibles.data[destructibleIndex].material;
+	const nbMaterial* material = world->destructibles.data[destructibleIndex].materials + materialIndex;
 
 	int* chunkIndices = nbArena_AllocArray( &world->arena, int, job->siteCount );
 	for ( int i = 0; i < job->siteCount; ++i )
@@ -179,7 +180,8 @@ static void nbFinishPiece( nbWorld* world, int destructibleIndex, int actorIndex
 			continue;
 		}
 
-		chunkIndices[i] = nbCreateChunkWithHull( world, destructibleIndex, actorIndex, cell->shape, cell->hull, 0, job->interiorMaterial );
+		chunkIndices[i] =
+			nbCreateChunkWithHull( world, destructibleIndex, actorIndex, cell->shape, cell->hull, 0, job->interiorMaterial, materialIndex );
 	}
 
 	float minBondArea = 0.01f * material->fragmentSize * material->fragmentSize;
@@ -205,6 +207,36 @@ static void nbFinishPiece( nbWorld* world, int destructibleIndex, int actorIndex
 			nbCreateBond( world, chunkIndices[i], chunkIndices[j], &geometry, material->strength * geometry.area );
 		}
 	}
+}
+
+static bool nbMaterialEquals( const nbMaterial* a, const nbMaterial* b )
+{
+	return a->density == b->density && a->friction == b->friction && a->restitution == b->restitution && a->strength == b->strength &&
+		   a->fragmentSize == b->fragmentSize && a->minFragmentVolume == b->minFragmentVolume && a->maxDepth == b->maxDepth &&
+		   a->maxSpan == b->maxSpan && a->tensileStrength == b->tensileStrength && a->compressiveStrength == b->compressiveStrength &&
+		   a->userMaterialId == b->userMaterialId;
+}
+
+// Index of a material in the destructible, added if it is new. When all slots are taken the piece gets the
+// material of the destructible.
+static int nbAddMaterial( nbDestructible* destructible, const nbMaterial* material )
+{
+	for ( int k = 0; k < destructible->materialCount; ++k )
+	{
+		if ( nbMaterialEquals( destructible->materials + k, material ) )
+		{
+			return k;
+		}
+	}
+
+	NB_ASSERT( destructible->materialCount < NB_MAX_MATERIALS );
+	if ( destructible->materialCount == NB_MAX_MATERIALS )
+	{
+		return 0;
+	}
+
+	destructible->materials[destructible->materialCount] = *material;
+	return destructible->materialCount++;
 }
 
 nbDestructibleId nbCreateDestructible( nbWorldId worldId, const nbDestructibleDef* def, const nbPieceDef* pieces, int pieceCount )
@@ -234,7 +266,8 @@ nbDestructibleId nbCreateDestructible( nbWorldId worldId, const nbDestructibleDe
 	uint16_t generation = destructible->generation;
 	*destructible = (nbDestructible){ 0 };
 	destructible->generation = generation;
-	destructible->material = def->material;
+	destructible->materials[0] = def->material;
+	destructible->materialCount = 1;
 	destructible->filter = def->filter;
 	destructible->anchorCount = def->anchorCount < NB_MAX_ANCHORS ? def->anchorCount : NB_MAX_ANCHORS;
 	for ( int i = 0; i < destructible->anchorCount; ++i )
@@ -287,11 +320,17 @@ nbDestructibleId nbCreateDestructible( nbWorldId worldId, const nbDestructibleDe
 		destructible->anchorCount = 1;
 	}
 
+	// The material of every piece. Pieces with the same material share an entry.
+	int* pieceMaterials = nbArena_AllocArray( &world->arena, int, pieceCount );
+	for ( int i = 0; i < pieceCount; ++i )
+	{
+		pieceMaterials[i] = pieces[i].material != NULL ? nbAddMaterial( world->destructibles.data + index, pieces[i].material ) : 0;
+	}
+
 	// Draw the sites of all pieces in order, compute the cells on the workers, then create the chunks in
 	// order. The result does not depend on the number of workers.
 	nbRandom rng = nbMakeRandom( def->seed, 0x5eed );
 	int firstNewChunk = world->touchedChunks.count;
-	const nbMaterial* pieceMaterial = &world->destructibles.data[index].material;
 
 	enum
 	{
@@ -324,6 +363,7 @@ nbDestructibleId nbCreateDestructible( nbWorldId worldId, const nbDestructibleDe
 		}
 
 		pieceJobs[i] = valid ? nb_pieceSingle : nb_pieceInvalid;
+		const nbMaterial* pieceMaterial = world->destructibles.data[index].materials + pieceMaterials[i];
 		if ( valid && nbPreparePiece( world, pieceMaterial, piecePoly, def->cellSize, piece->interiorMaterial, &rng, jobs + jobCount ) )
 		{
 			pieceJobs[i] = jobCount;
@@ -343,11 +383,11 @@ nbDestructibleId nbCreateDestructible( nbWorldId worldId, const nbDestructibleDe
 		int start = world->touchedChunks.count;
 		if ( pieceJobs[i] == nb_pieceSingle )
 		{
-			nbCreateSingleChunk( world, index, actorIndex, piecePolys + i, pieces[i].interiorMaterial );
+			nbCreateSingleChunk( world, index, actorIndex, piecePolys + i, pieces[i].interiorMaterial, pieceMaterials[i] );
 		}
 		else
 		{
-			nbFinishPiece( world, index, actorIndex, jobs + pieceJobs[i] );
+			nbFinishPiece( world, index, actorIndex, jobs + pieceJobs[i], pieceMaterials[i] );
 		}
 
 		// Remember which piece each chunk came from, so bonds between pieces can be found
@@ -357,10 +397,8 @@ nbDestructibleId nbCreateDestructible( nbWorldId worldId, const nbDestructibleDe
 		}
 	}
 
-	// Glue touching faces of different pieces
+	// Glue touching faces of different pieces. A bond between two materials is as strong as the weaker one.
 	int chunkEnd = world->touchedChunks.count;
-	const nbMaterial* material = &world->destructibles.data[index].material;
-	float minBondArea = 0.01f * material->fragmentSize * material->fragmentSize;
 	for ( int a = firstNewChunk; a < chunkEnd; ++a )
 	{
 		int chunkA = world->touchedChunks.data[a];
@@ -372,11 +410,16 @@ nbDestructibleId nbCreateDestructible( nbWorldId worldId, const nbDestructibleDe
 				continue;
 			}
 
+			const nbMaterial* materialA = nbGetChunkMaterial( world, world->chunks.data + chunkA );
+			const nbMaterial* materialB = nbGetChunkMaterial( world, world->chunks.data + chunkB );
+			float fragmentSize = b3MinFloat( materialA->fragmentSize, materialB->fragmentSize );
+			float minBondArea = 0.01f * fragmentSize * fragmentSize;
+
 			nbBondGeometry geometry;
 			float area = nbShape_ContactArea( world->chunks.data[chunkA].shape, world->chunks.data[chunkB].shape, 1.0e-3f, &geometry );
 			if ( area > minBondArea )
 			{
-				nbCreateBond( world, chunkA, chunkB, &geometry, material->strength * area );
+				nbCreateBond( world, chunkA, chunkB, &geometry, b3MinFloat( materialA->strength, materialB->strength ) * area );
 			}
 		}
 	}

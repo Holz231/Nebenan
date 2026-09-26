@@ -354,7 +354,7 @@ static uint32_t RunDeterminismScenario( void )
 
 // Fracture and physics are bit for bit identical with MSVC, GCC and Clang on x64 and ARM. This is the result
 // with the pinned Box3D commit. Update it when the results change on purpose, never to make one platform pass.
-#define NB_EXPECTED_DETERMINISM_HASH 0xdade851cu
+#define NB_EXPECTED_DETERMINISM_HASH 0xf6149736u
 
 static int DeterminismTest( void )
 {
@@ -888,6 +888,85 @@ static int BeamTest( void )
 	return 0;
 }
 
+// A concrete beam glued to the side of a brick pillar. Every chunk keeps the material of its piece, also
+// after fracture, and the joint is only as strong as the brick: the 1.5 m beam loads it with 0.55 MPa, which
+// concrete carries (see CantileverTest) and brick does not.
+static int MaterialTest( void )
+{
+	TestScene scene = CreateScene();
+
+	nbMaterial brick = nbDefaultMaterial();
+	brick.density = 1900.0f;
+	brick.strength = 6.0e5f;
+	brick.tensileStrength = 0.3e6f;
+	brick.compressiveStrength = 6.0e6f;
+	brick.userMaterialId = 1;
+
+	nbMaterial concrete = nbDefaultMaterial();
+	concrete.userMaterialId = 2;
+
+	nbPieceDef pieces[2] = { nbDefaultPieceDef(), nbDefaultPieceDef() };
+	pieces[0].halfExtents = (b3Vec3){ 0.15f, 1.5f, 0.15f };
+	pieces[0].transform.p = (b3Vec3){ 0.0f, 1.5f, 0.0f };
+	pieces[1].halfExtents = (b3Vec3){ 0.75f, 0.15f, 0.15f };
+	pieces[1].transform.p = (b3Vec3){ 0.9f, 2.7f, 0.0f };
+	pieces[1].material = &concrete;
+
+	nbDestructibleDef def = nbDefaultDestructibleDef();
+	def.material = brick;
+	nbDestructibleId post = nbCreateDestructible( scene.world, &def, pieces, 2 );
+	ENSURE( nbDestructible_GetChunkCount( post ) == 2 );
+
+	// Fracture the beam without damage
+	nbImpactDef impact = { 0 };
+	impact.point = (b3Vec3){ 1.3f, 2.7f, 0.15f };
+	impact.radius = 0.35f;
+	impact.damage = 0.0f;
+	nbImpactResult result = nbWorld_ApplyImpact( scene.world, &impact );
+	ENSURE( result.createdChunkCount > 2 );
+	ENSURE( result.brokenBondCount == 0 );
+
+	int count = nbDestructible_GetChunkCount( post );
+	nbChunkId* chunks = malloc( sizeof( nbChunkId ) * (size_t)count );
+	nbDestructible_GetChunks( post, chunks, count );
+	for ( int i = 0; i < count; ++i )
+	{
+		bool isBeam = nbChunk_GetCentroid( chunks[i] ).x > 0.15f;
+		nbMaterial material = nbChunk_GetMaterial( chunks[i] );
+		ENSURE( material.userMaterialId == ( isBeam ? 2u : 1u ) );
+
+		b3ShapeId shapeId = nbChunk_GetShape( chunks[i] );
+		ENSURE( b3Shape_GetDensity( shapeId ) == ( isBeam ? 2400.0f : 1900.0f ) );
+		ENSURE( b3Shape_GetSurfaceMaterial( shapeId ).userMaterialId == ( isBeam ? 2u : 1u ) );
+	}
+	free( chunks );
+
+	// The fragments at the pillar inherited the joint, as strong as brick
+	nbWorld* world = nbGetWorldFromId( scene.world );
+	int joints = 0;
+	for ( int b = 0; b < world->bonds.count; ++b )
+	{
+		const nbBond* bond = world->bonds.data + b;
+		if ( bond->chunk[0] == NB_NULL_INDEX ||
+			 world->chunks.data[bond->chunk[0]].materialIndex == world->chunks.data[bond->chunk[1]].materialIndex )
+		{
+			continue;
+		}
+		ENSURE_SMALL( bond->health / ( brick.strength * bond->area ) - 1.0f, 1.0e-4f );
+		joints += 1;
+	}
+	ENSURE( joints > 0 );
+
+	// The load check breaks the joint, not the beam
+	Step( &scene, 2 );
+	nbStats stats = nbWorld_GetStats( scene.world );
+	ENSURE( stats.overloadedBondCount >= 1 );
+	ENSURE( stats.dynamicBodyCount == 1 );
+
+	DestroyScene( &scene );
+	return 0;
+}
+
 // A heavy ball breaks through a wall instead of bouncing off it
 static int CannonballTest( void )
 {
@@ -936,6 +1015,7 @@ int WorldTest( void )
 	RUN_TEST( CantileverTest );
 	RUN_TEST( CrushTest );
 	RUN_TEST( BeamTest );
+	RUN_TEST( MaterialTest );
 	RUN_TEST( CannonballTest );
 	return 0;
 }

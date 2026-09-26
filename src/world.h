@@ -62,6 +62,9 @@ typedef struct nbChunk
 
 	// Render material of fracture faces inside this chunk
 	uint8_t interiorMaterial;
+
+	// Index into the materials of the destructible
+	uint8_t materialIndex;
 } nbChunk;
 
 // Glue between two touching chunks of the same actor
@@ -129,7 +132,9 @@ typedef struct nbActor
 
 typedef struct nbDestructible
 {
-	nbMaterial material;
+	// Material 0 is the one of the definition, the others come from pieces with a material of their own
+	nbMaterial materials[NB_MAX_MATERIALS];
+	int materialCount;
 	b3Filter filter;
 	nbAnchorPlane anchors[NB_MAX_ANCHORS];
 	int anchorCount;
@@ -267,12 +272,13 @@ void nbRunFractureJobs( nbWorld* world, struct nbFractureJob* jobs, int jobCount
 
 // Create a chunk from a shape and add it to an actor. Builds the Box3D hull right away.
 // Takes ownership of the shape. Returns NB_NULL_INDEX and destroys the shape if the hull is degenerate.
-int nbCreateChunk( nbWorld* world, int destructibleIndex, int actorIndex, nbShape* shape, int depth, uint8_t interiorMaterial );
+int nbCreateChunk( nbWorld* world, int destructibleIndex, int actorIndex, nbShape* shape, int depth, uint8_t interiorMaterial,
+				   int materialIndex );
 
 // Same with a hull built beforehand, for example by a fracture worker. The hull memory must stay valid
 // until the end of the operation. A null hull turns the shape into dust.
 int nbCreateChunkWithHull( nbWorld* world, int destructibleIndex, int actorIndex, nbShape* shape, b3HullData* hull, int depth,
-						   uint8_t interiorMaterial );
+						   uint8_t interiorMaterial, int materialIndex );
 
 int nbAllocActor( nbWorld* world, int destructibleIndex, bool isStatic );
 void nbFreeActor( nbWorld* world, int actorIndex );
@@ -280,6 +286,12 @@ void nbFreeActor( nbWorld* world, int actorIndex );
 // The geometry normal points from chunk A to chunk B
 int nbCreateBond( nbWorld* world, int chunkA, int chunkB, const nbBondGeometry* geometry, float health );
 void nbDestroyBond( nbWorld* world, int bondIndex );
+
+// Material of a chunk
+const nbMaterial* nbGetChunkMaterial( const nbWorld* world, const nbChunk* chunk );
+
+// Damage per square meter of bond area that breaks a bond: the strength of the weaker of its two materials
+float nbGetBondStrength( const nbWorld* world, const nbBond* bond );
 
 void nbActor_AddChunk( nbWorld* world, int actorIndex, int chunkIndex );
 void nbActor_RemoveChunk( nbWorld* world, int actorIndex, int chunkIndex );

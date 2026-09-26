@@ -726,12 +726,15 @@ static void BuildHouseScene( App& app )
 		AddWallWithOpenings( pieces, { 0.5f * width - 0.5f * t, y, -0.5f * depth + t }, false, depth - 2.0f * t, story, t, side, brick,
 							 MaterialPlaster );
 
-		// Floor slab on top of the story
+		// Concrete floor slab on top of the story
 		nbPieceDef slabPiece = MakePiece( { 0.0f, y + story + 0.5f * slab, 0.0f }, { 0.5f * width, 0.5f * slab, 0.5f * depth },
 										  concrete, MaterialConcrete );
+		slabPiece.material = &concrete.material;
 		pieces.push_back( slabPiece );
 	}
 
+	// Brick walls and concrete slabs in one structure. The slabs stay single chunks: glued to the masonry they
+	// would lift off the walls when they bend, which the joints do not survive.
 	AddStructure( app, { 0.0f, 0.0f, 0.0f }, 0.0f, brick, pieces, 7 );
 
 	app.camera.position = { 6.0f, 3.0f, 14.0f };
@@ -934,6 +937,23 @@ static nbImpactDef MakeImpact( const ToolSettings& settings )
 	return impact;
 }
 
+// Grenade explosion at a point: damage to the structures around it and a push for all bodies nearby
+static void Detonate( App& app, b3Pos point )
+{
+	const ToolSettings& settings = app.tools[ToolGrenade];
+	nbImpactDef impact = MakeImpact( settings );
+	impact.point = point;
+	impact.direction = b3Vec3_zero;
+	app.lastImpact = nbWorld_ApplyImpact( app.destruction, &impact );
+
+	b3ExplosionDef explosion = b3DefaultExplosionDef();
+	explosion.position = point;
+	explosion.radius = settings.radius;
+	explosion.falloff = settings.radius;
+	explosion.impulsePerArea = 40.0f * settings.ejectSpeed;
+	b3World_Explode( app.physics, &explosion );
+}
+
 static void FireRay( App& app, b3Vec3 origin, b3Vec3 direction )
 {
 	const ToolSettings& settings = app.tools[app.tool];
@@ -968,18 +988,7 @@ static void FireRay( App& app, b3Vec3 origin, b3Vec3 direction )
 		if ( ray.hit )
 		{
 			// Detonate slightly in front of the surface
-			b3Pos point = b3OffsetPos( ray.point, b3MulSV( 0.15f, ray.normal ) );
-			nbImpactDef impact = MakeImpact( settings );
-			impact.point = point;
-			impact.direction = b3Vec3_zero;
-			app.lastImpact = nbWorld_ApplyImpact( app.destruction, &impact );
-
-			b3ExplosionDef explosion = b3DefaultExplosionDef();
-			explosion.position = point;
-			explosion.radius = settings.radius;
-			explosion.falloff = settings.radius;
-			explosion.impulsePerArea = 40.0f * settings.ejectSpeed;
-			b3World_Explode( app.physics, &explosion );
+			Detonate( app, b3OffsetPos( ray.point, b3MulSV( 0.15f, ray.normal ) ) );
 		}
 	}
 	else
@@ -1023,6 +1032,12 @@ static void Fire( App& app, float screenX, float screenY )
 static void FireAt( App& app, Tool tool, b3Vec3 target )
 {
 	app.tool = tool;
+	if ( tool == ToolGrenade )
+	{
+		// A scripted grenade goes off at its target, whatever debris flies through the line of sight
+		Detonate( app, b3ToPos( target ) );
+		return;
+	}
 	FireRay( app, app.camera.position, b3Normalize( b3Sub( target, app.camera.position ) ) );
 }
 
@@ -1294,15 +1309,14 @@ static void RunScript( App& app )
 			break;
 
 		case SceneHouse:
-			if ( f >= 30 && f <= 90 && f % 15 == 0 )
+			if ( f >= 30 && f <= 130 && f % 10 == 0 )
 			{
-				// Blast the piers of the ground floor front one after another until the slab loses its support
-				int k = ( f - 30 ) / 15;
-				FireAt( app, ToolGrenade, { -3.6f + 1.8f * (float)k, 1.2f, 3.25f } );
-			}
-			else if ( f == 110 )
-			{
-				FireAt( app, ToolCannon, { 3.0f, 4.5f, 3.25f } );
+				// Blast the ground floor front, right and back walls. The floors above hang on the left wall.
+				int k = ( f - 30 ) / 10;
+				b3Vec3 targets[11] = { { -3.4f, 1.2f, 3.25f },	{ -1.1f, 1.2f, 3.25f }, { 1.1f, 1.2f, 3.25f },  { 3.4f, 1.2f, 3.25f },
+									   { 4.5f, 1.2f, 2.0f },	{ 4.5f, 1.2f, 0.0f },	{ 4.5f, 1.2f, -2.0f },	{ 3.4f, 1.2f, -3.25f },
+									   { 1.1f, 1.2f, -3.25f }, { -1.1f, 1.2f, -3.25f }, { -3.4f, 1.2f, -3.25f } };
+				FireAt( app, ToolGrenade, targets[k] );
 			}
 			break;
 

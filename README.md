@@ -15,6 +15,8 @@ zusammen, bis man ihnen die Stützen wegschießt.
 - Lastnachweis: Jedes Bauwerk muss sein Eigengewicht tragen. Ein elastisches Modell aller Verbindungen, exakt
   gelöst, findet die überlasteten Fugen. Kragarme brechen an der Einspannung, Balken ohne Stütze über die
   Spannweite, Dächer ohne Säulen stürzen ein
+- Mehrere Materialien in einem Bauwerk, zum Beispiel Ziegelwände mit Betondecken. Jedes Bruchstück behält
+  das Material seines Teils, eine Fuge zwischen zwei Materialien hält so viel wie das schwächere
 - Kollisionsschaden: Kanonenkugeln und herabfallende Trümmer beschädigen, was sie treffen
 - Staub-Ereignisse für Partikeleffekte: am Einschlag, an jedem Riss und wenn Trümmer hart aufschlagen
 - Deterministisch: gleiche Eingaben ergeben bitgleich das gleiche Bruchmuster, unter Windows, Linux und macOS,
@@ -109,7 +111,9 @@ Zerstörung zu ändern und schaltet Staub und Splitter ein und aus.
 **Szenen**
 
 - **Mauern**: Ziegelwände vor einer dicken Betonwand
-- **Haus**: zweistöckiges Haus mit Fenstern, Tür und Betondecken
+- **Haus**: zweistöckiges Haus aus Ziegelwänden mit Fenstern, Tür und Betondecken. Im Skript sprengen elf
+  Granaten Vorder-, Rück- und rechte Wand des Erdgeschosses. Das Obergeschoss hängt dann an den Resten der
+  linken Wand, reißt ab und sackt als Ganzes auf die Mauerstümpfe.
 - **Säulenhalle**: Betonsäulen tragen Balken und Dach, alles vorab in Zellen von 1,2 m zerlegt. Die vorderen
   Säulen wegschießen: Balken und Dach brechen über die Spannweite und stürzen ein.
 - **Turm**: hohler Ziegelturm aus verzahnten Ringen, 12 m hoch
@@ -158,9 +162,10 @@ Task-System der Anwendung (`enqueueTask` und `finishTask` mit denselben Signatur
 startet eigene Threads. Die Vorzerlegung beim Laden läuft genauso.
 
 **Stützgraph.** Zwei Bruchstücke sind verbunden, wenn sich ihre Flächen berühren. Jede Verbindung hält
-`strength × Kontaktfläche` aus, der Schaden eines Einschlags fällt zum Rand hin ab. Reißen Verbindungen,
-sucht Nebenan ab der beschädigten Stelle nach dem kürzesten Weg zu einem verankerten Stück (Best-First-Suche,
-dadurch nur lokale Arbeit). Teile ohne Weg zum Anker werden zu dynamischen Körpern.
+`strength × Kontaktfläche` aus, zwischen zwei Materialien mit dem kleineren `strength`. Der Schaden eines
+Einschlags fällt zum Rand hin ab. Reißen Verbindungen, sucht Nebenan ab der beschädigten Stelle nach dem
+kürzesten Weg zu einem verankerten Stück (Best-First-Suche, dadurch nur lokale Arbeit). Teile ohne Weg zum
+Anker werden zu dynamischen Körpern.
 
 **Lastnachweis.** Hängt ein Teil noch am Anker, muss es auch sein Gewicht tragen können. Nach jeder
 Änderung rechnet Nebenan das statische Bauwerk durch: Jedes Bruchstück ist ein starrer Körper, jede
@@ -171,12 +176,16 @@ lineares Gleichungssystem mit sechs Unbekannten pro Stück, und Nebenan löst es
 6×6-Blöcken, in Minimum-Degree-Reihenfolge, damit wenig Auffüllung entsteht, alles in doppelter Genauigkeit
 und in fester Reihenfolge, also deterministisch. Die Last verteilt sich wie im echten Bauwerk nach
 Steifigkeit: Breite Fugen tragen mehr als schmale, ein Balken liegt auf beiden Stützen auf, eine Wand trägt
-um ein Loch herum. Aus Kraft und Moment jeder Fuge folgen Normalspannung plus Biegerandspannung und Schub plus
-Torsion. Was über `tensileStrength` (Zug, Biegezug, Schub, bei Druck mit Reibung) oder
-`compressiveStrength` (Druck) liegt, bricht. Danach verteilt sich die Last neu, und der Nachweis läuft im
-nächsten Update wieder, bis der Rest hält. So entsteht ein fortschreitender Einsturz. Weil die Bruchstücke
-starr sind, biegt sich ein einzelnes langes Stück nicht. Lange Balken und Decken sollten deshalb mit
-`cellSize` vorab in Zellen zerlegt werden, dann brechen sie über die Spannweite.
+um ein Loch herum. Aus Kraft und Moment jeder Fuge folgen Normalspannung plus Biegerandspannung sowie Schub
+plus Torsion. Das Verhältnis zur Festigkeit ist die Auslastung: Was über `tensileStrength` (Zug, Biegezug,
+Schub, bei Druck mit Reibung) oder `compressiveStrength` (Druck) liegt, bricht, eine Fuge zwischen zwei
+Materialien mit den Werten des schwächeren. Wie im echten Bauwerk versagen die am stärksten überlasteten
+Fugen zuerst: Es brechen die mit mindestens 80 % der höchsten Auslastung, und in jedem Fall alle, die das
+Vierfache ihrer Festigkeit tragen, denn nur knapp überlastete Fugen kann eine Umlagerung noch retten.
+Danach verteilt sich die Last neu, und der Nachweis läuft im nächsten Update wieder, bis der Rest hält. So
+reißt ein Kragarm an einem Querschnitt ab statt an jedem, und ein Einsturz schreitet Update für Update
+fort. Weil die Bruchstücke starr sind, biegt sich ein einzelnes langes Stück nicht. Lange Balken und Decken
+sollten deshalb mit `cellSize` vorab in Zellen zerlegt werden, dann brechen sie über die Spannweite.
 
 Zerschossene Bereiche bestehen aus Hunderten Splittern, die unter ihrem eigenen Gewicht nie versagen (die
 Spannung ist etwa Dichte × g × Größe, wenige kPa). Deshalb fasst der Nachweis verbundene Stücke, die in derselben
@@ -271,7 +280,19 @@ for ( int i = 0; i < events.dustCount; ++i )
 ```
 
 Gebäude entstehen aus mehreren konvexen Teilen mit `nbCreateDestructible`. Sich berührende Flächen
-verschiedener Teile werden automatisch verbunden, `cellSize` zerlegt die Teile schon beim Laden. Konkave
+verschiedener Teile werden automatisch verbunden, `cellSize` zerlegt die Teile schon beim Laden. Ein Teil
+kann mit `material` ein eigenes Material bekommen, sonst gilt das des Objekts:
+
+```c
+nbPieceDef slab = nbDefaultPieceDef();
+slab.halfExtents = (b3Vec3){ 4.5f, 0.125f, 3.25f };
+slab.transform.p = (b3Vec3){ 0.0f, 3.125f, 0.0f };
+slab.material = &beton;   // Betondecke im Ziegelhaus, def.material ist der Ziegel
+```
+
+Bis zu `NB_MAX_MATERIALS` (8) verschiedene Materialien passen in ein Objekt. `nbChunk_GetMaterial` sagt, aus
+welchem Material ein Bruchstück ist, und die Box3D-Formen tragen Dichte, Reibung und `userMaterialId` ihres
+Materials. Konkave
 Formen wie eine Wand mit Fenster werden als mehrere Quader angegeben (siehe `AddWallWithOpenings` in
 [demo/demo.cpp](demo/demo.cpp)). Die komplette API steht in [include/nebenan/nebenan.h](include/nebenan/nebenan.h).
 
@@ -344,14 +365,14 @@ Ganze Einschläge (Bruch, Stützgraph, neue Box3D-Körper) und der Box3D-Schritt
 
 | Szenario | Einschlag Ø, 1 / 4 Threads | Box3D-Schritt Ø, 1 / 4 Threads | Am Ende |
 | --- | ---: | ---: | --- |
-| Gewehr, 200 Treffer | 0,33 / 0,30 ms | 4,1 / 2,4 ms | 3678 Bruchstücke, 918 Körper |
-| 20 Explosionen | 2,8 / 2,1 ms | 10,9 / 5,8 ms | 6914 Bruchstücke, 3289 Körper |
-| Gebäudeeinsturz, 18 Treffer | 2,0 / 1,6 ms | 17,4 / 8,1 ms | 4647 Bruchstücke, 2662 Körper |
+| Gewehr, 200 Treffer | 0,33 / 0,31 ms | 3,8 / 2,6 ms | 3599 Bruchstücke, 906 Körper |
+| 20 Explosionen | 2,7 / 1,9 ms | 11,3 / 5,7 ms | 6727 Bruchstücke, 3225 Körper |
+| Gebäudeeinsturz, 18 Treffer | 2,1 / 1,4 ms | 18,3 / 8,5 ms | 4796 Bruchstücke, 2708 Körper |
 
 - Die Voronoi-Zellen einer Explosion brauchen mit 4 Threads 0,5 ms statt 1,4 ms. Der Rest des Einschlags
   (Punktverteilung, Einbau der Stücke, Box3D-Körper und -Formen) läuft auf dem aufrufenden Thread. Bei
   Gewehrtreffern mit ihren wenigen Zellen bringen Threads kaum etwas.
-- Ein Gebäude aus 15 Teilen wird beim Laden in 549 Bruchstücke zerlegt: 3,3 ms mit 1 Thread, 2,5 ms mit 4.
+- Ein Gebäude aus 15 Teilen wird beim Laden in 549 Bruchstücke zerlegt: 3,4 ms mit 1 Thread, 2,7 ms mit 4.
   Beim Einsturz sprengen 18 Treffer drei Wände des Erdgeschosses, die Obergeschosse hängen dann an der letzten
   Wand, bis der Lastnachweis sie abbricht.
 - `nbWorld_Update` (Kollisionsschaden, Trümmerverwaltung, Lastnachweis) kostet im Mittel 0,2 ms pro Frame.
@@ -365,7 +386,7 @@ mit jeder Threadzahl.
 ## Tests und Benchmark
 
 ```sh
-build/bin/nebenan_test            # 27 Tests: Geometrie, Voronoi, Stützgraph, Einsturz, Lastnachweis, Threads, Staub, Determinismus …
+build/bin/nebenan_test            # 28 Tests: Geometrie, Voronoi, Stützgraph, Einsturz, Lastnachweis, Materialien, Threads, Staub, Determinismus …
 build/bin/nebenan_benchmark 4     # Zahl = Threads für Bruch und Physik
 ```
 
@@ -400,9 +421,10 @@ Nach Änderungen an `demo/shaders/scene.glsl` die Shader neu erzeugen, im Ordner
 - Nur die Voronoi-Zellen und Hüllen laufen parallel. Punktverteilung, Einbau der Stücke und das Anlegen der
   Box3D-Formen bleiben auf dem aufrufenden Thread, bei großen Explosionen ist das jetzt der größere Teil.
 - Der Lastnachweis rechnet Bruchstücke starr und die Fugen linear elastisch: Eine Fuge überträgt auch Zug,
-  statt aufzuklaffen, und ein einzelnes langes Stück biegt sich nicht (dafür `cellSize`). Alle Fugen, die in
-  einem Nachweis überlastet sind, brechen gleichzeitig, auch wenn der Bruch der ersten die anderen entlastet
-  hätte. Fugen innerhalb eines Clusters werden nicht geprüft.
+  statt aufzuklaffen, und ein einzelnes langes Stück biegt sich nicht (dafür `cellSize`). Eine vorzerlegte
+  Betondecke, die auf Mauerwerk geklebt ist, hebt beim Durchbiegen an den Auflagern ab, und die Ziegelfugen
+  reißen schon unter Eigengewicht. Im Demo-Haus bleiben die Decken deshalb ganze Stücke. Fugen innerhalb eines
+  Clusters werden nicht geprüft.
 - Nur konvexe Teile. Konkave Formen müssen als mehrere konvexe Teile angegeben werden.
 - Render- und Physikgeometrie sind dieselben flachen Polygone. Detail-Meshes und Decals fehlen noch, Staub
   gibt es als einfache Partikel in der Demo.

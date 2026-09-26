@@ -93,7 +93,7 @@ static bool nbPrepareRefine( nbWorld* world, int chunkIndex, b3Vec3 localPoint, 
 {
 	nbChunk* chunk = world->chunks.data + chunkIndex;
 	nbDestructible* destructible = world->destructibles.data + chunk->destructibleIndex;
-	const nbMaterial* material = &destructible->material;
+	const nbMaterial* material = destructible->materials + chunk->materialIndex;
 	const nbShape* parentShape = chunk->shape;
 
 	// Center the working polyhedron for precision
@@ -174,7 +174,8 @@ static int nbFinishRefine( nbWorld* world, int chunkIndex, const nbFractureJob* 
 	int actorIndex = chunk->actorIndex;
 	int depth = chunk->depth + 1;
 	uint8_t interiorMaterial = chunk->interiorMaterial;
-	nbMaterial material = world->destructibles.data[destructibleIndex].material;
+	int materialIndex = chunk->materialIndex;
+	nbMaterial material = world->destructibles.data[destructibleIndex].materials[materialIndex];
 	const nbShape* parentShape = chunk->shape;
 	float parentRadius = parentShape->radius;
 	float parentVolume = parentShape->volume;
@@ -195,7 +196,7 @@ static int nbFinishRefine( nbWorld* world, int chunkIndex, const nbFractureJob* 
 		int neighborIndex = bond->chunk[side ^ 1];
 		key = bond->nextKey[side];
 
-		float fullHealth = material.strength * bond->area;
+		float fullHealth = nbGetBondStrength( world, bond ) * bond->area;
 		float healthFraction = fullHealth > 0.0f ? b3ClampFloat( bond->health / fullHealth, 0.0f, 1.0f ) : 0.0f;
 		const nbShape* neighborShape = world->chunks.data[neighborIndex].shape;
 
@@ -240,7 +241,8 @@ static int nbFinishRefine( nbWorld* world, int chunkIndex, const nbFractureJob* 
 			continue;
 		}
 
-		childIndices[i] = nbCreateChunkWithHull( world, destructibleIndex, actorIndex, cell->shape, cell->hull, depth, interiorMaterial );
+		childIndices[i] =
+			nbCreateChunkWithHull( world, destructibleIndex, actorIndex, cell->shape, cell->hull, depth, interiorMaterial, materialIndex );
 		if ( childIndices[i] != NB_NULL_INDEX )
 		{
 			childCount += 1;
@@ -297,10 +299,12 @@ static int nbFinishRefine( nbWorld* world, int chunkIndex, const nbFractureJob* 
 					continue;
 				}
 
+				// The bond keeps the damage of the parent bond, and is as strong as the weaker material
+				const nbChunk* neighbor = world->chunks.data + face->neighborIndex;
 				nbBondGeometry geometry;
-				float area =
-					nbShape_FaceOverlap( childShape, cf, world->chunks.data[face->neighborIndex].shape, face->neighborFace, &geometry );
-				float health = material.strength * area * face->healthFraction;
+				float area = nbShape_FaceOverlap( childShape, cf, neighbor->shape, face->neighborFace, &geometry );
+				float strength = b3MinFloat( material.strength, nbGetChunkMaterial( world, neighbor )->strength );
+				float health = strength * area * face->healthFraction;
 				if ( area > minBondArea && health > 0.0f )
 				{
 					nbCreateBond( world, childIndex, face->neighborIndex, &geometry, health );
@@ -394,9 +398,8 @@ static void nbApplyVelocities( nbWorld* world, const nbImpactDef* def, nbRandom*
 			continue;
 		}
 
-		const nbDestructible* destructible = world->destructibles.data + actor->destructibleIndex;
-		float fragmentVolume = destructible->material.fragmentSize * destructible->material.fragmentSize *
-							   destructible->material.fragmentSize;
+		float fragmentSize = nbGetChunkMaterial( world, world->chunks.data + actor->headChunk )->fragmentSize;
+		float fragmentVolume = fragmentSize * fragmentSize * fragmentSize;
 
 		b3Pos center = b3Body_GetWorldCenter( actor->bodyId );
 		b3Vec3 delta = b3SubPos( center, def->point );
@@ -517,7 +520,7 @@ nbImpactResult nbApplyImpact( nbWorld* world, const nbImpactDef* def, int actorF
 	{
 		nbChunk* chunk = world->chunks.data + candidates[i];
 		const nbDestructible* destructible = world->destructibles.data + chunk->destructibleIndex;
-		const nbMaterial* material = &destructible->material;
+		const nbMaterial* material = destructible->materials + chunk->materialIndex;
 		float fragmentSize = material->fragmentSize;
 		float fragmentVolume = fragmentSize * fragmentSize * fragmentSize;
 

@@ -103,6 +103,9 @@ typedef struct nbMaterial
 	uint64_t userMaterialId;
 } nbMaterial;
 
+/// Maximum number of different materials in one destructible.
+#define NB_MAX_MATERIALS 8
+
 /** @} */
 
 /**
@@ -144,6 +147,10 @@ typedef struct nbPieceDef
 
 	/// Render material id of the fracture surfaces created inside this piece.
 	uint8_t interiorMaterial;
+
+	/// Material of this piece, null for the material of the destructible. A destructible holds up to
+	/// NB_MAX_MATERIALS different materials. A bond between two materials is as strong as the weaker one.
+	const nbMaterial* material;
 } nbPieceDef;
 
 /// Destructible definition. Must be initialized with nbDefaultDestructibleDef.
@@ -155,7 +162,7 @@ typedef struct nbDestructibleDef
 	/// World rotation of the destructible frame.
 	b3Quat rotation;
 
-	/// Material of all pieces.
+	/// Material of the pieces that do not have their own.
 	nbMaterial material;
 
 	/// Static destructibles are glued to the world through their anchors. Dynamic destructibles
