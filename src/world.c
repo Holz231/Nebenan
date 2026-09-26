@@ -748,6 +748,10 @@ typedef struct nbThawContext
 {
 	nbWorld* world;
 	nbIntArray* actors;
+
+	// With boxes, only rubble that overlaps one of them
+	const b3AABB* boxes;
+	int boxCount;
 } nbThawContext;
 
 static bool nbThawCallback( b3ShapeId shapeId, void* context )
@@ -762,6 +766,20 @@ static bool nbThawCallback( b3ShapeId shapeId, void* context )
 
 	int actorIndex = world->chunks.data[chunkIndex].actorIndex;
 	nbActor* actor = world->actors.data + actorIndex;
+	if ( actor->isRubble && thawContext->boxCount > 0 )
+	{
+		b3AABB shapeBox = b3Shape_GetAABB( shapeId );
+		bool inside = false;
+		for ( int i = 0; i < thawContext->boxCount && inside == false; ++i )
+		{
+			inside = b3AABB_Overlaps( shapeBox, thawContext->boxes[i] );
+		}
+		if ( inside == false )
+		{
+			return true;
+		}
+	}
+
 	if ( actor->isRubble )
 	{
 		// Thaw right away, so the rubble is not collected twice
@@ -782,19 +800,29 @@ static void nbFreezeActor( nbWorld* world, int actorIndex )
 	world->rubbleCount += 1;
 }
 
-void nbThawRubble( nbWorld* world, b3AABB box )
+// Rubble in the boxes, then whatever rested on the thawed rubble, in the order Box3D finds it. Box3D's trees are
+// deterministic, so is the order. Many boxes are searched with one query over all of them, the neighborhoods
+// of the debris of one impact overlap a lot.
+static void nbThawRubbleInBoxes( nbWorld* world, const b3AABB* boxes, int boxCount )
 {
-	if ( world->rubbleCount == 0 )
+	if ( world->rubbleCount == 0 || boxCount == 0 )
 	{
 		return;
 	}
 
-	// Rubble in the box, then whatever rested on the thawed rubble, in the order Box3D finds it. Box3D's trees are
-	// deterministic, so is the order.
+	b3AABB total = boxes[0];
+	for ( int i = 1; i < boxCount; ++i )
+	{
+		total = b3AABB_Union( total, boxes[i] );
+	}
+
 	nbIntArray* thawed = &world->actorList;
 	thawed->count = 0;
-	nbThawContext context = { world, thawed };
-	b3World_OverlapAABB( world->physicsWorld, box, b3DefaultQueryFilter(), nbThawCallback, &context );
+	nbThawContext context = { world, thawed, boxCount > 1 ? boxes : NULL, boxCount > 1 ? boxCount : 0 };
+	b3World_OverlapAABB( world->physicsWorld, total, b3DefaultQueryFilter(), nbThawCallback, &context );
+
+	context.boxes = NULL;
+	context.boxCount = 0;
 	for ( int i = 0; i < thawed->count && i < NB_MAX_THAW; ++i )
 	{
 		int actorIndex = thawed->data[i];
@@ -816,6 +844,11 @@ void nbThawRubble( nbWorld* world, b3AABB box )
 		world->rubbleCount += 1;
 	}
 	thawed->count = 0;
+}
+
+void nbThawRubble( nbWorld* world, b3AABB box )
+{
+	nbThawRubbleInBoxes( world, &box, 1 );
 }
 
 void nbUpdateDebris( nbWorld* world, int actorIndex )
@@ -849,6 +882,10 @@ static b3ShapeDef nbMakeShapeDef( const nbDestructible* destructible, const nbMa
 
 void nbCommitPhysics( nbWorld* world )
 {
+	// Neighborhoods of the parts that fell off a structure, for the rubble resting on them
+	b3AABB* thawBoxes = nbArena_AllocArray( &world->arena, b3AABB, world->touchedActors.count + 1 );
+	int thawBoxCount = 0;
+
 	for ( int i = 0; i < world->touchedChunks.count; ++i )
 	{
 		int chunkIndex = world->touchedChunks.data[i];
@@ -949,9 +986,11 @@ void nbCommitPhysics( nbWorld* world )
 		if ( actor->fromStructure )
 		{
 			actor->fromStructure = false;
-			nbThawRubble( world, nbGetActorBounds( world, actor ) );
+			thawBoxes[thawBoxCount++] = nbGetActorBounds( world, actor );
 		}
 	}
+
+	nbThawRubbleInBoxes( world, thawBoxes, thawBoxCount );
 }
 
 // Move a set of chunks from an actor to a new dynamic actor that inherits the source motion.
