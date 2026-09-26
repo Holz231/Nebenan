@@ -1177,7 +1177,7 @@ static void nbAnalyzeLoads( nbWorld* world, nbArena* arena, b3Vec3 gravityVector
 		compressives[k] = material->compressiveStrength > 0.0f ? material->compressiveStrength : FLT_MAX;
 		frictions[k] = b3MaxFloat( material->friction, 0.0f );
 		anyStrength = anyStrength || material->tensileStrength > 0.0f || material->compressiveStrength > 0.0f;
-		fragmentSize = b3MinFloat( fragmentSize, material->fragmentSize );
+		fragmentSize = b3MinFloat( fragmentSize, nbGetFragmentSize( world, material ) );
 	}
 
 	if ( destructible->isStatic == false || anyStrength == false )

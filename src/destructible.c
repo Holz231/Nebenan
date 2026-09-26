@@ -185,7 +185,8 @@ static void nbFinishPiece( nbWorld* world, int destructibleIndex, int actorIndex
 			nbCreateChunkWithHull( world, destructibleIndex, actorIndex, cell->shape, cell->hull, 0, job->interiorMaterial, materialIndex );
 	}
 
-	float minBondArea = 0.01f * material->fragmentSize * material->fragmentSize;
+	float fragmentSize = nbGetFragmentSize( world, material );
+	float minBondArea = 0.01f * fragmentSize * fragmentSize;
 	float tensileStrength = nbGetTensileStrength( material, material );
 	for ( int i = 0; i < job->siteCount; ++i )
 	{
@@ -418,7 +419,7 @@ nbDestructibleId nbCreateDestructible( nbWorldId worldId, const nbDestructibleDe
 
 			const nbMaterial* materialA = nbGetChunkMaterial( world, world->chunks.data + chunkA );
 			const nbMaterial* materialB = nbGetChunkMaterial( world, world->chunks.data + chunkB );
-			float fragmentSize = b3MinFloat( materialA->fragmentSize, materialB->fragmentSize );
+			float fragmentSize = b3MinFloat( nbGetFragmentSize( world, materialA ), nbGetFragmentSize( world, materialB ) );
 			float minBondArea = 0.01f * fragmentSize * fragmentSize;
 
 			nbBondGeometry geometry;

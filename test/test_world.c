@@ -1198,6 +1198,30 @@ static int DebrisBudgetTest( void )
 	return 0;
 }
 
+// Larger fragments mean fewer pieces for the same impact
+static int FragmentScaleTest( void )
+{
+	int created[2];
+	for ( int pass = 0; pass < 2; ++pass )
+	{
+		TestScene scene = CreateScene();
+		nbWorld_SetFragmentScale( scene.world, pass == 0 ? 1.0f : 2.0f );
+		CreateWall( &scene, (b3Vec3){ 2.0f, 1.5f, 0.2f }, 31 );
+
+		nbImpactDef impact = { 0 };
+		impact.point = (b3Vec3){ 0.0f, 1.5f, 0.2f };
+		impact.direction = (b3Vec3){ 0.0f, 0.0f, -1.0f };
+		impact.radius = 0.8f;
+		impact.damage = 1.0e6f;
+		created[pass] = nbWorld_ApplyImpact( scene.world, &impact ).createdChunkCount;
+		DestroyScene( &scene );
+	}
+
+	ENSURE( created[0] > 20 );
+	ENSURE( 2 * created[1] < created[0] );
+	return 0;
+}
+
 // Visibility of the faces of a chunk, one bit per face
 static uint64_t VisibleFaceMask( nbChunkId id )
 {
@@ -1336,5 +1360,6 @@ int WorldTest( void )
 	RUN_TEST( CannonballTest );
 	RUN_TEST( VisibleFaceTest );
 	RUN_TEST( DebrisBudgetTest );
+	RUN_TEST( FragmentScaleTest );
 	return 0;
 }

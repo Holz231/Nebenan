@@ -89,7 +89,7 @@ layout( binding = 1 ) uniform fs_params
 	vec4 camera_pos;	// .xyz = eye
 	vec4 fog_color;		// .rgb
 	vec4 shadow_params; // .x = uv y sign, .y = texel size, .z = depth scale, .w = depth offset
-	vec4 options;		// .x = show chunks, .y = shadows enabled, .z = load view
+	vec4 options;		// .x = show chunks, .y = shadows enabled, .z = load view, .w = simple materials
 };
 
 #pragma sokol @image_sample_type shadow_map depth
@@ -242,6 +242,46 @@ vec3 ground_surface( vec3 p, out float roughness )
 	return color * ( 1.0 - 0.45 * tiles );
 }
 
+// Plain colors without procedural detail and a single shadow tap, for slow graphics cards
+vec3 simple_albedo( int material, out float roughness, out float specular )
+{
+	roughness = 0.85;
+	specular = 0.0;
+	if ( material == 0 )
+	{
+		return vec3( 0.42, 0.14, 0.07 );
+	}
+	if ( material == 1 )
+	{
+		return vec3( 0.52, 0.22, 0.11 ) * ( 0.85 + 0.25 * v_variation );
+	}
+	if ( material == 2 )
+	{
+		return vec3( 0.44, 0.44, 0.42 );
+	}
+	if ( material == 3 )
+	{
+		return vec3( 0.46, 0.44, 0.41 ) * ( 0.88 + 0.2 * v_variation );
+	}
+	if ( material == 4 )
+	{
+		return vec3( 0.6, 0.56, 0.49 );
+	}
+	if ( material == 8 )
+	{
+		float tiles = max( line_mask( v_world_pos.x / 2.0, 0.006 ), line_mask( v_world_pos.z / 2.0, 0.006 ) );
+		roughness = 0.95;
+		return vec3( 0.2, 0.205, 0.2 ) * ( 1.0 - 0.45 * tiles );
+	}
+	if ( material == 9 )
+	{
+		roughness = 0.3;
+		specular = 0.6;
+		return vec3( 0.12, 0.12, 0.13 );
+	}
+	return vec3( 0.7 );
+}
+
 float sample_shadow( vec3 normal )
 {
 	if ( options.y < 0.5 )
@@ -260,6 +300,11 @@ float sample_shadow( vec3 normal )
 	// Slope scaled bias against acne on faces at grazing sun angles
 	float n_dot_l = clamp( dot( normal, sun_dir.xyz ), 0.0, 1.0 );
 	float bias = 0.0006 + 0.0025 * sqrt( 1.0 - n_dot_l * n_dot_l ) / max( n_dot_l, 0.2 );
+	if ( options.w > 0.5 )
+	{
+		return texture( sampler2DShadow( shadow_map, shadow_sampler ), vec3( uv, depth - bias ) );
+	}
+
 	float texel = shadow_params.y;
 	float sum = 0.0;
 	for ( int y = -1; y <= 1; ++y )
@@ -282,7 +327,11 @@ void main()
 	float roughness = 0.9;
 	float specular = 0.0;
 	vec3 albedo;
-	if ( material == 0 )
+	if ( options.w > 0.5 )
+	{
+		albedo = simple_albedo( material, roughness, specular );
+	}
+	else if ( material == 0 )
 	{
 		albedo = brick_surface( v_local_pos, local_n, roughness );
 	}

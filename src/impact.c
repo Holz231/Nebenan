@@ -108,7 +108,7 @@ static bool nbPrepareRefine( nbWorld* world, int chunkIndex, b3Vec3 localPoint, 
 	destructible->fractureCounter += 1;
 	nbRandom rng = nbMakeRandom( destructible->seed, stream );
 
-	float fragmentSize = material->fragmentSize;
+	float fragmentSize = nbGetFragmentSize( world, material );
 	int ringCount = innerCount / 3;
 	ringCount = ringCount < 4 ? 4 : ( ringCount > 24 ? 24 : ringCount );
 
@@ -181,7 +181,7 @@ static int nbFinishRefine( nbWorld* world, int chunkIndex, const nbFractureJob* 
 	const nbShape* parentShape = chunk->shape;
 	float parentRadius = parentShape->radius;
 	float parentVolume = parentShape->volume;
-	float fragmentSize = material.fragmentSize;
+	float fragmentSize = nbGetFragmentSize( world, &material );
 	b3Vec3 origin = job->origin;
 
 	// Snapshot the interfaces of the parent with its bonded neighbors: the coplanar face pairs.
@@ -404,7 +404,7 @@ static void nbApplyVelocities( nbWorld* world, const nbImpactDef* def, nbRandom*
 			continue;
 		}
 
-		float fragmentSize = nbGetChunkMaterial( world, world->chunks.data + actor->headChunk )->fragmentSize;
+		float fragmentSize = nbGetFragmentSize( world, nbGetChunkMaterial( world, world->chunks.data + actor->headChunk ) );
 		float fragmentVolume = fragmentSize * fragmentSize * fragmentSize;
 
 		b3Pos center = b3Body_GetWorldCenter( actor->bodyId );
@@ -528,7 +528,7 @@ nbImpactResult nbApplyImpact( nbWorld* world, const nbImpactDef* def, int actorF
 		nbChunk* chunk = world->chunks.data + candidates[i];
 		const nbDestructible* destructible = world->destructibles.data + chunk->destructibleIndex;
 		const nbMaterial* material = destructible->materials + chunk->materialIndex;
-		float fragmentSize = material->fragmentSize;
+		float fragmentSize = nbGetFragmentSize( world, material );
 		float fragmentVolume = fragmentSize * fragmentSize * fragmentSize;
 
 		overlaps[i] = 0.0f;

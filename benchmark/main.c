@@ -414,9 +414,10 @@ static int CompareFloats( const void* a, const void* b )
 }
 
 // A town of 16 houses wrecked by a grenade every five frames, twelve per second, like holding the fire button
-static void BenchmarkTown( int workerCount )
+static void BenchmarkTown( int workerCount, float fragmentScale )
 {
 	Scene scene = CreateScene( workerCount );
+	nbWorld_SetFragmentScale( scene.world, fragmentScale );
 	nbMaterial concrete = nbDefaultMaterial();
 	concrete.strength = 1.1e6f;
 	concrete.fragmentSize = 0.13f;
@@ -435,7 +436,8 @@ static void BenchmarkTown( int workerCount )
 	}
 	float createTime = b3GetMilliseconds( ticks );
 	nbStats created = nbWorld_GetStats( scene.world );
-	printf( "  town of %d houses with %d chunks built in %.2f ms\n", houseCount, created.chunkCount, createTime );
+	printf( "  town of %d houses with %d chunks built in %.2f ms, fragment scale %.1f\n", houseCount, created.chunkCount, createTime,
+			fragmentScale );
 
 	enum
 	{
@@ -539,7 +541,9 @@ int main( int argc, char** argv )
 	BenchmarkExplosions( workerCount );
 	BenchmarkCollapse( workerCount );
 
+	// Larger fragments are the main lever of the cost of mass destruction
 	printf( "\nTown under fire (every step: grenades, Box3D step, destruction update)\n" );
-	BenchmarkTown( workerCount );
+	BenchmarkTown( workerCount, 1.0f );
+	BenchmarkTown( workerCount, 2.0f );
 	return 0;
 }

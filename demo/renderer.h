@@ -54,6 +54,13 @@ struct Camera
 struct RenderSettings
 {
 	bool shadows = true;
+
+	// Edge length of the shadow map in texels
+	int shadowResolution = 2048;
+
+	// Plain colors instead of the procedural brick, plaster and concrete, for slow graphics cards
+	bool simpleMaterials = false;
+
 	bool showChunks = false;
 	bool showLoad = false;
 	b3Vec3 sunDirection = { 0.52f, 0.68f, 0.52f };
@@ -160,6 +167,9 @@ private:
 		bool alive = false;
 	};
 
+	void CreateShadowMap( int resolution );
+	void DestroyShadowMap();
+
 	int OpenPage( int vertexCount, int indexCount );
 	void Append( int meshIndex, const GpuVertex* vertices, const uint16_t* indices, int indexBase );
 	void ReleaseSlotReference( int slot );
@@ -200,6 +210,7 @@ private:
 	uint32_t m_shadowAttachment = 0;
 	uint32_t m_shadowTexture = 0;
 	uint32_t m_shadowSampler = 0;
+	int m_shadowResolution = 0;
 
 	bool m_zeroToOne = true;
 	float m_uvYSign = -1.0f;

@@ -333,6 +333,11 @@ typedef struct nbWorldDef
 	/// Upper bound for the fragments one impact creates. Bounds the cost of large explosions.
 	int maxFragmentsPerImpact;
 
+	/// Multiplies the fragment size of every material. The number of pieces an impact creates falls with the
+	/// square of the fragment size, and with it the bodies, contacts, meshes and load checks: twice the size
+	/// halves the cost of mass destruction. Change it at run time with nbWorld_SetFragmentScale.
+	float fragmentScale;
+
 	/// Fraction of the approach speed a body keeps when it breaks through a chunk. Box3D resolves the
 	/// contact before the fracture happens, so without this a cannonball would bounce off the debris.
 	float collisionPassThrough;

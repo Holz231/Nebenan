@@ -103,10 +103,21 @@ Box3D-Kopie verwendet.
 | L | Statik: jedes Bruchstück nach der Auslastung seiner Fugen einfärben, grün bis rot |
 | F1 | Menü ein- und ausblenden |
 
-Das Menü zeigt die Bildzeit und die CPU-Zeit pro Bild, aufgeteilt in Simulation und Grafik. Dauert ein Bild
-deutlich länger als die CPU dafür braucht, wartet es auf die Grafikkarte, und das Menü sagt es. Dazu die Zeiten
-von Physik, Zerstörung und letztem Einschlag, wie viele Verbindungen der Lastnachweis gebrochen hat, und was
-die Grafik zeichnet und hochlädt. Die Statik-Ansicht (L) zeigt, wie die Last durch das Bauwerk läuft: grün entspannt,
+Das Menü zeigt die Bildzeit und die CPU-Zeit pro Bild, aufgeteilt in Einschläge, Simulation und Grafik, als
+Mittel und Spitze der letzten 300 Bilder. Dauert ein Bild deutlich länger als die CPU dafür braucht, wartet es
+auf die Grafikkarte, und das Menü sagt es. „Messwerte kopieren“ legt alles mit CPU, Grafikkarte, Auflösung und
+Einstellungen in die Zwischenablage. Ein Debug-Build wird rot angezeigt, er ist 5- bis 20-mal langsamer.
+
+Die Regler für die Leistung:
+
+- **Bruchstückgröße** (Standard ×2): der wichtigste. Größere Bruchstücke heißen weniger Teile pro Einschlag und
+  damit weniger Körper, Kontakte, Dreiecke und Statik-Arbeit.
+- **Bewegte Trümmer**: wie viele Trümmer Box3D höchstens gleichzeitig bewegt.
+- **Schatten** (aus, 1024, 2048, 4096 Texel) und **Einfache Materialien** (einfarbig statt prozeduraler Ziegel,
+  Putz und Beton) für schwache Grafikkarten. `--msaa 1` schaltet die Kantenglättung ab, `--lowdpi` rendert auf
+  hochauflösenden Bildschirmen mit der skalierten statt der vollen Auflösung.
+- **Threads**: Die Demo startet mit so vielen Threads, wie die CPU Performance-Kerne hat. Box3D läuft am
+  schnellsten ohne Hyper-Threads und Effizienzkerne. Die Statik-Ansicht (L) zeigt, wie die Last durch das Bauwerk läuft: grün entspannt,
 gelb halb ausgelastet, rot kurz vor dem Bruch, lose Trümmer grau. Es erlaubt Waffenwerte, Zeitlupe und die Zahl der Threads für Physik und
 Zerstörung zu ändern und schaltet Staub und Splitter ein und aus.
 
@@ -389,6 +400,7 @@ beim Einbinden nicht gebaut.
 
 | Welt (`nbWorldDef`) | Standard | Wirkung |
 | --- | --- | --- |
+| `fragmentScale` | 1 | Multipliziert die Bruchstückgröße aller Materialien. Der wichtigste Regler für die Leistung: doppelte Größe halbiert die Zeit bei Massenzerstörung. Zur Laufzeit mit `nbWorld_SetFragmentScale` |
 | `maxDebrisBodies` | 1500 | Obergrenze für bewegte Trümmerkörper, darüber verschwinden die ältesten kleinen. Zur Laufzeit mit `nbWorld_SetDebrisBudget` |
 | `enableRubble` | an | Trümmer, die zur Ruhe kommen, werden zu statischem Schutt |
 | `maxRubbleBodies` | 20 000 | Obergrenze für Schutt |
@@ -442,6 +454,11 @@ zusammen (Einschläge, Box3D-Schritt, `nbWorld_Update`):
 | --- | ---: | ---: | ---: |
 | 1 Thread | 23,7 ms | 34,9 ms | 19,5 ms |
 | 4 Threads | 11,4 ms | 18,8 ms | 7,9 ms |
+| 4 Threads, `fragmentScale` 2 | 5,3 ms | 8,8 ms | 4,5 ms |
+
+Die Bruchstückgröße entscheidet über fast alles. Mit doppelt so großen Bruchstücken liegen am Ende 18 500 statt
+42 000 Bruchstücke herum, Box3D rechnet 11 000 statt 19 000 Kontakte, und der Lastnachweis kostet ein Fünftel.
+Mit dreifacher Größe sinkt die Bildzeit auf 1,2 ms, die Zerstörung wird dann aber grob.
 
 Am Ende liegen 42 000 Bruchstücke herum, aber Box3D bewegt höchstens 1500 Trümmer gleichzeitig mit etwa
 19 000 Kontakten. Was zur Ruhe kommt, liegt als Schutt, und die Häuser werden reihum nachgewiesen.

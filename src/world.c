@@ -1478,6 +1478,7 @@ nbWorldDef nbDefaultWorldDef( void )
 	def.maxCollisionImpactsPerUpdate = 4;
 	def.loadCheckBudget = 2000;
 	def.maxFragmentsPerImpact = 160;
+	def.fragmentScale = 1.0f;
 	def.collisionPassThrough = 0.6f;
 	def.workerCount = 1;
 	def.internalValue = NB_SECRET_COOKIE;
@@ -1644,6 +1645,17 @@ void nbWorld_SetWorkerCount( nbWorldId worldId, int count )
 	nbStartWorkers( world, count );
 }
 
+void nbWorld_SetFragmentScale( nbWorldId worldId, float scale )
+{
+	nbWorld* world = nbGetWorldFromId( worldId );
+	if ( world == NULL )
+	{
+		return;
+	}
+
+	world->def.fragmentScale = scale > 0.0f ? scale : 1.0f;
+}
+
 void nbWorld_SetDebrisBudget( nbWorldId worldId, int maxDebrisBodies, int maxRubbleBodies )
 {
 	nbWorld* world = nbGetWorldFromId( worldId );
@@ -1686,6 +1698,7 @@ nbWorldId nbCreateWorld( const nbWorldDef* def )
 	world->worldIndex = (uint16_t)index;
 	world->inUse = true;
 	world->def = *def;
+	world->def.fragmentScale = def->fragmentScale > 0.0f ? def->fragmentScale : 1.0f;
 	world->physicsWorld = def->physicsWorld;
 	nbArena_Create( &world->arena, 256 * 1024 );
 	nbStartWorkers( world, def->workerCount );
@@ -1923,7 +1936,7 @@ static void nbCollectCollisionImpacts( nbWorld* world )
 
 			// Light knocks do nothing. The damage radius has to reach at least one fragment.
 			float radius = world->def.collisionRadiusScale * nbCbrt( energy );
-			if ( radius < nbGetChunkMaterial( world, chunk )->fragmentSize )
+			if ( radius < nbGetFragmentSize( world, nbGetChunkMaterial( world, chunk ) ) )
 			{
 				continue;
 			}

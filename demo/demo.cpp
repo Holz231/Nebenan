@@ -2,6 +2,7 @@
 // Nebenan demo: polygonal destruction on Box3D.
 
 #include "renderer.h"
+#include "system_info.h"
 
 #include "imgui.h"
 #include "sokol_app.h"
@@ -15,9 +16,11 @@
 
 #include <algorithm>
 #include <math.h>
+#include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <string>
 #include <thread>
 #include <unordered_map>
 #include <vector>
@@ -100,6 +103,10 @@ struct Automation
 	bool script = false;
 	int scene = -1;
 
+	// Samples per pixel and whether to render at the full resolution of high density displays
+	int msaa = 4;
+	bool lowDpi = false;
+
 	// CPU time per frame in milliseconds: simulation (Box3D and Nebenan), everything else on the CPU
 	std::vector<float> simulationTimes;
 	std::vector<float> frameTimes;
@@ -138,8 +145,12 @@ struct App
 	bool paused = false;
 	float timeScale = 1.0f;
 
-	// Debris bodies Box3D moves at the same time, the main lever of the physics cost
+	// Debris bodies Box3D moves at the same time, a lever of the physics cost
 	int maxDebrisBodies = nbDefaultWorldDef().maxDebrisBodies;
+
+	// Size of the fragments relative to the materials. The main lever of the cost of destruction: larger
+	// fragments mean fewer pieces, bodies, contacts, meshes and load check clusters.
+	float fragmentScale = 2.0f;
 	float accumulator = 0.0f;
 	int workerCount = 1;
 	int maxWorkers = 1;
@@ -172,7 +183,27 @@ struct App
 
 	Automation automation;
 	int frame = 0;
+
+	// The last frames for the performance panel: frame time, and CPU time for impacts, simulation and graphics
+	static const int HistorySize = 300;
+	float historyFrame[HistorySize] = {};
+	float historyImpacts[HistorySize] = {};
+	float historySimulation[HistorySize] = {};
+	float historyGraphics[HistorySize] = {};
+	int historyCount = 0;
+	int historyNext = 0;
+
+	std::string cpuName;
+	std::string gpuName;
+	int performanceCores = 0;
+	int copiedFrame = -1000;
 };
+
+#ifdef NDEBUG
+static const char* s_buildType = "Release";
+#else
+static const char* s_buildType = "Debug";
+#endif
 
 static App* s_app = nullptr;
 
@@ -1068,6 +1099,7 @@ static void LoadScene( App& app, SceneKind scene )
 	def.collisionRadiusScale = 0.02f;
 	def.workerCount = app.workerCount;
 	def.maxDebrisBodies = app.maxDebrisBodies;
+	def.fragmentScale = app.fragmentScale;
 	app.destruction = nbCreateWorld( &def );
 
 	switch ( scene )
@@ -1356,6 +1388,68 @@ static void UpdateCamera( App& app, float dt )
 //----------------------------------------------------------------------------------------------------------------------
 // User interface
 
+// Average and maximum over the frame history
+static void HistoryStats( const App& app, const float* values, float* average, float* maximum )
+{
+	float total = 0.0f;
+	float peak = 0.0f;
+	for ( int i = 0; i < app.historyCount; ++i )
+	{
+		total += values[i];
+		peak = b3MaxFloat( peak, values[i] );
+	}
+	*average = app.historyCount > 0 ? total / (float)app.historyCount : 0.0f;
+	*maximum = peak;
+}
+
+static void Appendf( std::string& text, const char* format, ... )
+{
+	char buffer[512];
+	va_list args;
+	va_start( args, format );
+	vsnprintf( buffer, sizeof( buffer ), format, args );
+	va_end( args );
+	text += buffer;
+}
+
+// Everything it takes to tell where the time of a frame goes, to paste into a message
+static std::string BuildReport( const App& app )
+{
+	nbStats stats = nbWorld_GetStats( app.destruction );
+	b3Counters counters = b3World_GetCounters( app.physics );
+	RenderStats rs = app.renderer.GetStats();
+	b3Version version = b3GetVersion();
+
+	float frameAvg, frameMax, impactAvg, impactMax, simulationAvg, simulationMax, graphicsAvg, graphicsMax;
+	HistoryStats( app, app.historyFrame, &frameAvg, &frameMax );
+	HistoryStats( app, app.historyImpacts, &impactAvg, &impactMax );
+	HistoryStats( app, app.historySimulation, &simulationAvg, &simulationMax );
+	HistoryStats( app, app.historyGraphics, &graphicsAvg, &graphicsMax );
+
+	const char* shadows = app.renderSettings.shadows == false ? "aus" : app.renderSettings.shadowResolution <= 1024 ? "niedrig"
+						  : app.renderSettings.shadowResolution <= 2048																? "mittel"
+																																	: "hoch";
+
+	std::string text;
+	Appendf( text, "Nebenan-Messung: Szene %s, %s-Build, Box3D %d.%d.%d\n", s_sceneNames[app.scene], s_buildType, version.major,
+			 version.minor, version.revision );
+	Appendf( text, "CPU: %s, %u logische Kerne, %d Performance-Kerne, %d Threads\n", app.cpuName.empty() ? "unbekannt" : app.cpuName.c_str(),
+			 std::thread::hardware_concurrency(), app.performanceCores, app.workerCount );
+	Appendf( text, "GPU: %s, Bild %d x %d, MSAA %dx, DPI-Faktor %.2f\n", app.gpuName.empty() ? "unbekannt" : app.gpuName.c_str(),
+			 sapp_width(), sapp_height(), sapp_sample_count(), sapp_dpi_scale() );
+	Appendf( text, "Bild: Mittel %.1f ms, Spitze %.1f ms (letzte %d Bilder)\n", frameAvg, frameMax, app.historyCount );
+	Appendf( text, "CPU pro Bild, Mittel / Spitze: Einschläge %.1f / %.1f, Simulation %.1f / %.1f, Grafik %.1f / %.1f ms\n", impactAvg,
+			 impactMax, simulationAvg, simulationMax, graphicsAvg, graphicsMax );
+	Appendf( text, "Pro Schritt: Box3D %.2f ms, Zerstörung %.2f ms\n", app.physicsTime, app.destructionTime );
+	Appendf( text, "Welt: %d Bruchstücke, %d Verbindungen, %d Trümmerkörper (%d wach), %d Schutt, %d Kontakte, Budget %d, Bruchstückgröße x%.2f\n",
+			 stats.chunkCount, stats.bondCount, stats.dynamicBodyCount, b3World_GetAwakeBodyCount( app.physics ), stats.rubbleCount,
+			 counters.contactCount, app.maxDebrisBodies, app.fragmentScale );
+	Appendf( text, "Grafik: %dk Dreiecke, %d Draw Calls, %d Partikel, %d kB Upload, Schatten %s, einfache Materialien %s, Staub %s\n",
+			 rs.triangleCount / 1000, rs.drawCalls, rs.particleCount, rs.uploadedBytes / 1024, shadows,
+			 app.renderSettings.simpleMaterials ? "an" : "aus", app.showDust ? "an" : "aus" );
+	return text;
+}
+
 static void DrawUi( App& app )
 {
 	float dpi = sapp_dpi_scale();
@@ -1364,7 +1458,10 @@ static void DrawUi( App& app )
 	ImGui::Begin( "Nebenan - Zerstörung", nullptr, ImGuiWindowFlags_AlwaysAutoResize );
 
 	b3Version version = b3GetVersion();
-	ImGui::TextDisabled( "Box3D %d.%d.%d  |  Polygone statt Voxel", version.major, version.minor, version.revision );
+	ImGui::TextDisabled( "Box3D %d.%d.%d  |  %s  |  Polygone statt Voxel", version.major, version.minor, version.revision, s_buildType );
+#ifndef NDEBUG
+	ImGui::TextColored( ImVec4( 1.0f, 0.4f, 0.3f, 1.0f ), "Debug-Build: 5- bis 20-mal langsamer.\nFür echte Leistung Release bauen (build.bat)." );
+#endif
 
 	ImGui::SeparatorText( "Szene" );
 	int scene = (int)app.scene;
@@ -1426,6 +1523,14 @@ static void DrawUi( App& app )
 		b3World_SetWorkerCount( app.physics, app.workerCount );
 		nbWorld_SetWorkerCount( app.destruction, app.workerCount );
 	}
+	if ( ImGui::SliderFloat( "Bruchstückgröße", &app.fragmentScale, 0.5f, 4.0f, "x %.2f" ) )
+	{
+		nbWorld_SetFragmentScale( app.destruction, app.fragmentScale );
+	}
+	if ( ImGui::IsItemHovered() )
+	{
+		ImGui::SetTooltip( "Größere Bruchstücke: weniger Teile pro Einschlag, weniger Körper,\nKontakte und Dreiecke. x2 halbiert ungefähr die Zeit\nbei Massenzerstörung. Gilt für die nächsten Einschläge." );
+	}
 	if ( ImGui::SliderInt( "Bewegte Trümmer", &app.maxDebrisBodies, 100, 5000 ) )
 	{
 		nbWorld_SetDebrisBudget( app.destruction, app.maxDebrisBodies, nbDefaultWorldDef().maxRubbleBodies );
@@ -1440,8 +1545,21 @@ static void DrawUi( App& app )
 	}
 
 	ImGui::SeparatorText( "Anzeige" );
-	ImGui::Checkbox( "Schatten", &app.renderSettings.shadows );
-	ImGui::SameLine();
+	static const char* shadowNames[] = { "Aus", "Niedrig (1024)", "Mittel (2048)", "Hoch (4096)" };
+	int shadowLevel = app.renderSettings.shadows == false			   ? 0
+					  : app.renderSettings.shadowResolution <= 1024 ? 1
+					  : app.renderSettings.shadowResolution <= 2048 ? 2
+																	  : 3;
+	if ( ImGui::Combo( "Schatten", &shadowLevel, shadowNames, 4 ) )
+	{
+		app.renderSettings.shadows = shadowLevel > 0;
+		app.renderSettings.shadowResolution = shadowLevel <= 1 ? 1024 : ( shadowLevel == 2 ? 2048 : 4096 );
+	}
+	ImGui::Checkbox( "Einfache Materialien", &app.renderSettings.simpleMaterials );
+	if ( ImGui::IsItemHovered() )
+	{
+		ImGui::SetTooltip( "Einfarbige Flächen statt Ziegel-, Putz- und Betonmuster.\nEntlastet schwache Grafikkarten." );
+	}
 	ImGui::Checkbox( "Bruchstücke einfärben (F)", &app.renderSettings.showChunks );
 	ImGui::Checkbox( "Statik: Auslastung der Fugen (L)", &app.renderSettings.showLoad );
 	if ( ImGui::Checkbox( "Staub und Splitter", &app.showDust ) && app.showDust == false )
@@ -1453,11 +1571,19 @@ static void DrawUi( App& app )
 	nbStats stats = nbWorld_GetStats( app.destruction );
 	b3Counters counters = b3World_GetCounters( app.physics );
 	RenderStats renderStats = app.renderer.GetStats();
-	float cpuFrame = app.simulationFrame + app.graphicsFrame;
-	ImGui::Text( "Bild        %6.2f ms  (%.0f FPS)", app.averageFrame, 1000.0f / b3MaxFloat( app.averageFrame, 0.01f ) );
-	ImGui::Text( "CPU         %6.2f ms  Simulation %.2f, Grafik %.2f", cpuFrame, app.simulationFrame, app.graphicsFrame );
+	float frameAvg, frameMax, impactAvg, impactMax, simulationAvg, simulationMax, graphicsAvg, graphicsMax;
+	HistoryStats( app, app.historyFrame, &frameAvg, &frameMax );
+	HistoryStats( app, app.historyImpacts, &impactAvg, &impactMax );
+	HistoryStats( app, app.historySimulation, &simulationAvg, &simulationMax );
+	HistoryStats( app, app.historyGraphics, &graphicsAvg, &graphicsMax );
+	float cpuFrame = impactAvg + simulationAvg + graphicsAvg;
+	ImGui::Text( "Bild        %6.2f ms  (%.0f FPS), Spitze %.1f ms", app.averageFrame, 1000.0f / b3MaxFloat( app.averageFrame, 0.01f ),
+				 frameMax );
+	ImGui::Text( "CPU         %6.2f ms  Einschläge %.2f, Simulation %.2f,", cpuFrame, impactAvg, simulationAvg );
+	ImGui::Text( "                      Grafik %.2f", graphicsAvg );
+
 	// With vertical sync a frame that just misses the display takes two intervals, only a longer wait is the GPU
-	if ( app.averageFrame > cpuFrame + 17.0f )
+	if ( frameAvg > cpuFrame + 17.0f )
 	{
 		ImGui::TextColored( ImVec4( 1.0f, 0.75f, 0.3f, 1.0f ), "  Das Bild wartet auf die Grafikkarte" );
 	}
@@ -1473,6 +1599,15 @@ static void DrawUi( App& app )
 	ImGui::Text( "Dreiecke %dk  Draw Calls %d  Partikel %d", renderStats.triangleCount / 1000, renderStats.drawCalls,
 				 renderStats.particleCount );
 	ImGui::Text( "Hochgeladen %d kB  Speicher %d Seiten", renderStats.uploadedBytes / 1024, renderStats.pageCount );
+	ImGui::TextDisabled( "%s", app.gpuName.empty() ? "Grafikkarte unbekannt" : app.gpuName.c_str() );
+	if ( ImGui::Button( "Messwerte kopieren" ) )
+	{
+		std::string report = BuildReport( app );
+		sapp_set_clipboard_string( report.c_str() );
+		app.copiedFrame = app.frame;
+	}
+	ImGui::SameLine();
+	ImGui::TextDisabled( app.frame - app.copiedFrame < 180 ? "kopiert, einfach einfügen" : "für den Chat" );
 
 	ImGui::SeparatorText( "Steuerung" );
 	ImGui::TextWrapped( "Linke Maustaste: schießen (halten = Dauerfeuer)\n"
@@ -1601,9 +1736,14 @@ static void OnInit()
 	app.renderer.Init();
 	BuildGround( app );
 
+	// Box3D runs best on the performance cores alone. Hyper-threads and efficiency cores add little or slow it down.
 	unsigned hardware = std::thread::hardware_concurrency();
-	app.maxWorkers = hardware > 0 ? (int)b3MinFloat( (float)hardware, 16.0f ) : 4;
-	app.workerCount = app.maxWorkers > 1 ? b3MinInt( app.maxWorkers, 8 ) : 1;
+	app.maxWorkers = hardware > 0 ? b3MinInt( (int)hardware, 16 ) : 4;
+	app.performanceCores = SystemPerformanceCores();
+	int preferredWorkers = app.performanceCores > 0 ? app.performanceCores : app.maxWorkers / 2;
+	app.workerCount = b3ClampInt( preferredWorkers, 1, b3MinInt( app.maxWorkers, 8 ) );
+	app.cpuName = SystemCpuName();
+	app.gpuName = SystemGpuName();
 
 	app.camera.fovY = 60.0f * B3_PI / 180.0f;
 	app.tools[ToolRifle] = { 0.35f, 1.2e5f, 9.0f, 0, 8.0f };
@@ -1629,6 +1769,7 @@ static void OnFrame()
 	UpdateCamera( app, dt );
 
 	// Automatic fire while the button is held
+	uint64_t cpuTicks = b3GetTicks();
 	app.fireCooldown -= dt;
 	bool uiWantsMouse = ImGui::GetIO().WantCaptureMouse && app.mouseLook == false;
 	if ( app.mouseDown && uiWantsMouse == false && app.fireCooldown <= 0.0f )
@@ -1639,11 +1780,11 @@ static void OnFrame()
 		app.fireCooldown = 1.0f / app.tools[app.tool].rate;
 	}
 
-	uint64_t cpuTicks = b3GetTicks();
 	if ( app.automation.script )
 	{
 		RunScript( app );
 	}
+	float impactTime = b3GetMilliseconds( cpuTicks );
 
 	app.frameSimTime = 0.0f;
 	uint64_t simulationTicks = b3GetTicks();
@@ -1678,6 +1819,14 @@ static void OnFrame()
 	float graphicsTime = b3GetMilliseconds( graphicsTicks );
 	app.simulationFrame = 0.95f * app.simulationFrame + 0.05f * simulationTime;
 	app.graphicsFrame = 0.95f * app.graphicsFrame + 0.05f * graphicsTime;
+
+	int slot = app.historyNext;
+	app.historyFrame[slot] = 1000.0f * (float)sapp_frame_duration();
+	app.historyImpacts[slot] = impactTime;
+	app.historySimulation[slot] = simulationTime;
+	app.historyGraphics[slot] = graphicsTime;
+	app.historyNext = ( slot + 1 ) % App::HistorySize;
+	app.historyCount = b3MinInt( app.historyCount + 1, App::HistorySize );
 
 	if ( app.automation.frameLimit > 0 )
 	{
@@ -1733,6 +1882,8 @@ static void OnFrame()
 			printf( "  %-14s avg %9.2f  p95 %9.2f  max %9.2f\n", entry.name, entry.scale * total / (float)b3MaxInt( (int)n, 1 ),
 					n > 0 ? entry.scale * values[n * 95 / 100] : 0.0f, n > 0 ? entry.scale * values[n - 1] : 0.0f );
 		}
+
+		printf( "%s", BuildReport( app ).c_str() );
 
 		if ( app.automation.screenshotPath != nullptr )
 		{
@@ -1894,6 +2045,18 @@ int main( int argc, char** argv )
 		{
 			app.automation.scene = atoi( argv[++i] );
 		}
+		else if ( strcmp( argv[i], "--msaa" ) == 0 && i + 1 < argc )
+		{
+			app.automation.msaa = b3ClampInt( atoi( argv[++i] ), 1, 8 );
+		}
+		else if ( strcmp( argv[i], "--lowdpi" ) == 0 )
+		{
+			app.automation.lowDpi = true;
+		}
+		else if ( strcmp( argv[i], "--fragment-scale" ) == 0 && i + 1 < argc )
+		{
+			app.fragmentScale = b3ClampFloat( (float)atof( argv[++i] ), 0.25f, 8.0f );
+		}
 	}
 
 	sapp_desc desc = {};
@@ -1903,8 +2066,10 @@ int main( int argc, char** argv )
 	desc.cleanup_cb = OnCleanup;
 	desc.width = 1600;
 	desc.height = 900;
-	desc.sample_count = 4;
-	desc.high_dpi = true;
+	desc.sample_count = app.automation.msaa;
+	desc.high_dpi = app.automation.lowDpi == false;
+	desc.enable_clipboard = true;
+	desc.clipboard_size = 8192;
 	desc.window_title = "Nebenan - polygonale Zerstörung mit Box3D";
 	desc.gl.major_version = 4;
 	desc.gl.minor_version = 3;

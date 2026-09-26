@@ -63,6 +63,9 @@ NB_API void nbWorld_SetWorkerCount( nbWorldId worldId, int count );
 /// budget bounds the work of the Box3D step. The next update removes what is over budget.
 NB_API void nbWorld_SetDebrisBudget( nbWorldId worldId, int maxDebrisBodies, int maxRubbleBodies );
 
+/// Change the size of the fragments of all materials, see nbWorldDef::fragmentScale. Applies to the next impacts.
+NB_API void nbWorld_SetFragmentScale( nbWorldId worldId, float scale );
+
 /// Find the chunk that owns a Box3D shape. Returns null if the shape is not a chunk.
 NB_API nbChunkId nbWorld_GetChunkFromShape( nbWorldId worldId, b3ShapeId shapeId );
 

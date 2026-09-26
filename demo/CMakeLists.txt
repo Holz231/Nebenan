@@ -47,6 +47,8 @@ set(NEBENAN_DEMO_FILES
 	renderer.h
 	screenshot.c
 	sokol_impl.c
+	system_info.cpp
+	system_info.h
 	shaders/scene.glsl
 	shaders/generated/scene.glsl.h
 )

@@ -21,7 +21,6 @@ static const int PageIndexCapacity = 1 << 16;
 // move per frame, pages without a live mesh are dropped for free.
 static const int CompactionBudget = 2 * PageVertexCapacity;
 
-static const int ShadowResolution = 4096;
 
 // Floats per transform slot: position and state, rotation. The state is zero for a hidden slot, else two plus the
 // load utilization of the chunk, which is negative for none.
@@ -72,23 +71,7 @@ void Renderer::Init()
 	transformViewDesc.label = "slot_transforms_view";
 	m_transformView = sg_make_view( &transformViewDesc ).id;
 
-	// Shadow map
-	sg_image_desc shadowDesc = {};
-	shadowDesc.usage.depth_stencil_attachment = true;
-	shadowDesc.width = ShadowResolution;
-	shadowDesc.height = ShadowResolution;
-	shadowDesc.pixel_format = SG_PIXELFORMAT_DEPTH;
-	shadowDesc.sample_count = 1;
-	shadowDesc.label = "shadow_map";
-	m_shadowImage = sg_make_image( &shadowDesc ).id;
-
-	sg_view_desc attachmentDesc = {};
-	attachmentDesc.depth_stencil_attachment.image = sg_image{ m_shadowImage };
-	m_shadowAttachment = sg_make_view( &attachmentDesc ).id;
-
-	sg_view_desc textureDesc = {};
-	textureDesc.texture.image = sg_image{ m_shadowImage };
-	m_shadowTexture = sg_make_view( &textureDesc ).id;
+	CreateShadowMap( RenderSettings().shadowResolution );
 
 	sg_sampler_desc samplerDesc = {};
 	samplerDesc.min_filter = SG_FILTER_LINEAR;
@@ -193,6 +176,35 @@ void Renderer::Init()
 	m_particlePipeline = sg_make_pipeline( &particleDesc ).id;
 }
 
+void Renderer::CreateShadowMap( int resolution )
+{
+	sg_image_desc shadowDesc = {};
+	shadowDesc.usage.depth_stencil_attachment = true;
+	shadowDesc.width = resolution;
+	shadowDesc.height = resolution;
+	shadowDesc.pixel_format = SG_PIXELFORMAT_DEPTH;
+	shadowDesc.sample_count = 1;
+	shadowDesc.label = "shadow_map";
+	m_shadowImage = sg_make_image( &shadowDesc ).id;
+
+	sg_view_desc attachmentDesc = {};
+	attachmentDesc.depth_stencil_attachment.image = sg_image{ m_shadowImage };
+	m_shadowAttachment = sg_make_view( &attachmentDesc ).id;
+
+	sg_view_desc textureDesc = {};
+	textureDesc.texture.image = sg_image{ m_shadowImage };
+	m_shadowTexture = sg_make_view( &textureDesc ).id;
+	m_shadowResolution = resolution;
+}
+
+void Renderer::DestroyShadowMap()
+{
+	sg_destroy_view( sg_view{ m_shadowAttachment } );
+	sg_destroy_view( sg_view{ m_shadowTexture } );
+	sg_destroy_image( sg_image{ m_shadowImage } );
+	m_shadowResolution = 0;
+}
+
 void Renderer::Shutdown()
 {
 	for ( Page& page : m_pages )
@@ -218,9 +230,7 @@ void Renderer::Shutdown()
 	sg_destroy_shader( sg_shader{ m_skyShader } );
 	sg_destroy_view( sg_view{ m_transformView } );
 	sg_destroy_buffer( sg_buffer{ m_transformBuffer } );
-	sg_destroy_view( sg_view{ m_shadowAttachment } );
-	sg_destroy_view( sg_view{ m_shadowTexture } );
-	sg_destroy_image( sg_image{ m_shadowImage } );
+	DestroyShadowMap();
 	sg_destroy_sampler( sg_sampler{ m_shadowSampler } );
 }
 
@@ -614,6 +624,13 @@ void Renderer::Render( const Camera& camera, const RenderSettings& settings, int
 	Upload();
 	m_stats.uploadTime = b3GetMilliseconds( ticks );
 
+	int shadowResolution = b3ClampInt( settings.shadowResolution, 256, 8192 );
+	if ( shadowResolution != m_shadowResolution )
+	{
+		DestroyShadowMap();
+		CreateShadowMap( shadowResolution );
+	}
+
 	m_stats.drawCalls = 0;
 	m_stats.vertexCount = 0;
 	m_stats.triangleCount = 0;
@@ -722,8 +739,9 @@ void Renderer::Render( const Camera& camera, const RenderSettings& settings, int
 	fsParams.camera_pos = MakeVec4( camera.position, 0.0f );
 	fsParams.fog_color = MakeVec4( horizon, 0.0f );
 	fsParams.shadow_params =
-		Vec4{ m_uvYSign, 1.0f / (float)ShadowResolution, m_zeroToOne ? 1.0f : 0.5f, m_zeroToOne ? 0.0f : 0.5f };
-	fsParams.options = Vec4{ settings.showChunks ? 1.0f : 0.0f, settings.shadows ? 1.0f : 0.0f, settings.showLoad ? 1.0f : 0.0f, 0.0f };
+		Vec4{ m_uvYSign, 1.0f / (float)m_shadowResolution, m_zeroToOne ? 1.0f : 0.5f, m_zeroToOne ? 0.0f : 0.5f };
+	fsParams.options = Vec4{ settings.showChunks ? 1.0f : 0.0f, settings.shadows ? 1.0f : 0.0f, settings.showLoad ? 1.0f : 0.0f,
+							 settings.simpleMaterials ? 1.0f : 0.0f };
 
 	sg_apply_pipeline( sg_pipeline{ m_litPipeline } );
 	sg_apply_uniforms( UB_scene_vs_params, MakeRange( &vsParams, sizeof( vsParams ) ) );

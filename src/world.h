@@ -363,6 +363,12 @@ void nbFreeActor( nbWorld* world, int actorIndex );
 int nbCreateBond( nbWorld* world, int chunkA, int chunkB, const nbBondGeometry* geometry, float health, float tensileStrength );
 void nbDestroyBond( nbWorld* world, int bondIndex );
 
+// Fragment size of a material in this world
+static inline float nbGetFragmentSize( const nbWorld* world, const nbMaterial* material )
+{
+	return world->def.fragmentScale * material->fragmentSize;
+}
+
 // Material of a chunk
 const nbMaterial* nbGetChunkMaterial( const nbWorld* world, const nbChunk* chunk );
 
