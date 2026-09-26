@@ -1281,7 +1281,7 @@ static void DrawUi( App& app )
 	ImGui::Text( "  %d neue Stücke, %d Verbindungen gerissen, %d gelöst", app.lastImpact.createdChunkCount,
 				 app.lastImpact.brokenBondCount, app.lastImpact.detachedChunkCount );
 	ImGui::Text( "Bruchstücke %d  Verbindungen %d", stats.chunkCount, stats.bondCount );
-	ImGui::Text( "Überlastet %d  (Lastnachweis)", stats.overloadedBondCount );
+	ImGui::Text( "Lastnachweis: %d gebrochen, %d gerissen", stats.overloadedBondCount, stats.crackedBondCount );
 	ImGui::Text( "Trümmerkörper %d  wach %d  Kontakte %d", stats.dynamicBodyCount, b3World_GetAwakeBodyCount( app.physics ),
 				 counters.contactCount );
 	ImGui::Text( "Draw Calls %d  Vertices %d  Partikel %d", renderStats.drawCalls, renderStats.vertexCount, renderStats.particleCount );

@@ -15,6 +15,9 @@ zusammen, bis man ihnen die Stützen wegschießt.
 - Lastnachweis: Jedes Bauwerk muss sein Eigengewicht tragen. Ein elastisches Modell aller Verbindungen, exakt
   gelöst, findet die überlasteten Fugen. Kragarme brechen an der Einspannung, Balken ohne Stütze über die
   Spannweite, Dächer ohne Säulen stürzen ein
+- Fugen reißen unter Zug auf, statt gleich zu brechen, und tragen weiter Druck und Reibung. Trockene Fugen ohne
+  Mörtel sind möglich: Ein Steinbogen steht allein auf Druck und stürzt ein, wenn er zu dünn ist oder seinen
+  Schlussstein verliert
 - Mehrere Materialien in einem Bauwerk, zum Beispiel Ziegelwände mit Betondecken. Jedes Bruchstück behält
   das Material seines Teils, eine Fuge zwischen zwei Materialien hält so viel wie das schwächere
 - Kollisionsschaden: Kanonenkugeln und herabfallende Trümmer beschädigen, was sie treffen
@@ -180,9 +183,20 @@ lineares Gleichungssystem mit sechs Unbekannten pro Stück, und Nebenan löst es
 und in fester Reihenfolge, also deterministisch. Die Last verteilt sich wie im echten Bauwerk nach
 Steifigkeit: Breite Fugen tragen mehr als schmale, ein Balken liegt auf beiden Stützen auf, eine Wand trägt
 um ein Loch herum. Aus Kraft und Moment jeder Fuge folgen Normalspannung plus Biegerandspannung sowie Schub
-plus Torsion. Das Verhältnis zur Festigkeit ist die Auslastung: Was über `tensileStrength` (Zug, Biegezug,
-Schub, bei Druck mit Reibung) oder `compressiveStrength` (Druck) liegt, bricht, eine Fuge zwischen zwei
-Materialien mit den Werten des schwächeren. Wie im echten Bauwerk versagen die am stärksten überlasteten
+plus Torsion. Das Verhältnis zur Festigkeit ist die Auslastung: Was über `compressiveStrength` (Druck) liegt,
+bricht, eine Fuge zwischen zwei Materialien mit den Werten des schwächeren. Zug, Biegezug und Schub bis
+`tensileStrength` trägt eine geklebte Fuge. Darüber reißt sie auf, bricht aber nur, wenn sie auseinandergezogen
+wird. Eine gedrückte Fuge bleibt als offene Fuge stehen: Sie trägt Druck und Reibung (`friction` des Materials)
+nur noch über den Teil der Fläche, der Kontakt hat, den Streifen am Rand, auf den die Normalkraft drückt,
+dreimal so tief wie ihr Abstand zum Rand. Die Steifigkeit wandert mit an diesen Rand, und der Nachweis rechnet
+das Bauwerk mit den neuen Kontakten erneut, bis sie zur Ruhe kommen. Wird eine offene Fuge stärker geschert,
+als die Reibung hält, gleitet sie. Das Gleiten verändert nur die Lasten, nicht die Steifigkeit, dafür reicht
+dieselbe Zerlegung. So reißt eine Wand über einer Öffnung und trägt die Last trotzdem außen herum, eine Decke
+hebt an den Auflagern ab und liegt weiter auf, und ein Bogen aus losen Steinen steht allein auf Druck. Eine
+offene Fuge versagt, wenn die Normalkraft jenseits ihrer Kante angreifen müsste. Dann wird sie zum Gelenk, und
+ein Bauwerk mit zu vielen Gelenken fällt. Mit Box3D-Starrkörpern verglichen stimmt die Grenze: Ein
+halbkreisförmiger Bogen aus elf trockenen Steinen mit 2,5 m Innenradius steht ab einer Dicke von etwa 12 % des
+Radius, dünner stürzt er ein, wie es Heyman für den dünnsten Halbkreisbogen angibt. Wie im echten Bauwerk versagen die am stärksten überlasteten
 Fugen zuerst: Es brechen die mit mindestens 80 % der höchsten Auslastung, und in jedem Fall alle, die das
 Vierfache ihrer Festigkeit tragen, denn nur knapp überlastete Fugen kann eine Umlagerung noch retten.
 Danach verteilt sich die Last neu, und der Nachweis läuft im nächsten Update wieder, bis der Rest hält. So
@@ -299,6 +313,19 @@ Bis zu `NB_MAX_MATERIALS` (8) verschiedene Materialien passen in ein Objekt. `nb
 welchem Material ein Bruchstück ist, und die Box3D-Formen tragen Dichte, Reibung und `userMaterialId` ihres
 Materials.
 
+Die Fugen zwischen Teilen halten wie das Innere ihrer Materialien, außer ein Teil gibt mit
+`jointTensileStrength` eine eigene Zugfestigkeit an, zum Beispiel für Kalkmörtel. 0 macht trockene Fugen, die nur
+Druck und Reibung tragen, wie aufeinandergesetzte Steine oder eine aufgelegte Decke. Stehende trockene Fugen
+beginnen mit einem kleinen Spalt, wie die Stoßfugen zwischen den Steinen einer Mauer, und schließen sich, sobald
+sie gedrückt werden:
+
+```c
+nbPieceDef stone = nbDefaultPieceDef();
+stone.points = keilstein;   // acht Ecken eines Bogensteins
+stone.pointCount = 8;
+stone.jointTensileStrength = 0.0f;   // trocken, ohne Mörtel
+```
+
 Konkave Formen wie eine Wand mit Fenster werden als mehrere Quader angegeben (siehe `AddWallWithOpenings` in
 [demo/demo.cpp](demo/demo.cpp)). Die komplette API steht in [include/nebenan/nebenan.h](include/nebenan/nebenan.h).
 
@@ -326,8 +353,8 @@ beim Einbinden nicht gebaut.
 | `fragmentSize` | 0,12 m | Kantenlänge der Splitter am Einschlag |
 | `minFragmentVolume` | 2·10⁻⁶ m³ | Kleinere Splitter werden zu Staub |
 | `maxDepth` | 6 | Wie oft ein Bruchstück weiter zerteilt werden kann |
-| `tensileStrength` | 2·10⁶ Pa | Zug-, Biegezug- und Schubfestigkeit der Fugen im Lastnachweis. Mauerwerk etwa 0,3 MPa, Beton 2 MPa |
-| `compressiveStrength` | 3·10⁷ Pa | Druckfestigkeit der Fugen. Mauerwerk etwa 6 MPa, Beton 30 MPa. Beide 0 schaltet den Nachweis ab |
+| `tensileStrength` | 2·10⁶ Pa | Zug-, Biegezug- und Schubfestigkeit der Fugen im Lastnachweis, darüber reißen sie auf. Mauerwerk etwa 0,3 MPa, Beton 2 MPa, 0 für loses Gestein |
+| `compressiveStrength` | 3·10⁷ Pa | Druckfestigkeit der Fugen. Mauerwerk etwa 6 MPa, Beton 30 MPa, 0 für unbegrenzt. Beide 0 schaltet den Nachweis ab |
 | `maxSpan` | 0 m | Zusätzliche einfache Regel: maximale Auskragung ohne Stütze, 0 schaltet sie ab |
 | `friction`, `restitution` | 0,7 / 0,05 | Reibung und Elastizität der Box3D-Formen |
 
@@ -392,7 +419,7 @@ mit jeder Threadzahl.
 ## Tests und Benchmark
 
 ```sh
-build/bin/nebenan_test            # 28 Tests: Geometrie, Voronoi, Stützgraph, Einsturz, Lastnachweis, Materialien, Threads, Staub, Determinismus …
+build/bin/nebenan_test            # 29 Tests: Geometrie, Voronoi, Stützgraph, Einsturz, Lastnachweis, Materialien, Threads, Staub, Determinismus …
 build/bin/nebenan_benchmark 4     # Zahl = Threads für Bruch und Physik
 ```
 
@@ -426,11 +453,13 @@ Nach Änderungen an `demo/shaders/scene.glsl` die Shader neu erzeugen, im Ordner
 
 - Nur die Voronoi-Zellen und Hüllen laufen parallel. Punktverteilung, Einbau der Stücke und das Anlegen der
   Box3D-Formen bleiben auf dem aufrufenden Thread, bei großen Explosionen ist das jetzt der größere Teil.
-- Der Lastnachweis rechnet Bruchstücke starr und die Fugen linear elastisch: Eine Fuge überträgt auch Zug,
-  statt aufzuklaffen, und ein einzelnes langes Stück biegt sich nicht (dafür `cellSize`). Eine vorzerlegte
-  Betondecke, die auf Mauerwerk geklebt ist, hebt beim Durchbiegen an den Auflagern ab, und die Ziegelfugen
-  reißen schon unter Eigengewicht. Im Demo-Haus bleiben die Decken deshalb ganze Stücke. Fugen innerhalb eines
-  Clusters werden nicht geprüft.
+- Der Lastnachweis rechnet Bruchstücke starr, ein einzelnes langes Stück biegt sich nicht (dafür `cellSize`).
+  Fugen innerhalb eines Clusters werden nicht geprüft. Offene Fugen werden als Rechteck gleicher Fläche und
+  gleichen Trägheitsmoments gerechnet. Trockene Bauwerke mit sehr vielen Fugen, die sich gegenseitig abstützen,
+  etwa Zwickel aus schlanken Steinen auf einem Bogen, brauchen viele Durchgänge, bis die Kontakte zur Ruhe
+  kommen. Spätestens nach acht Updates gelten die Lasten, wie sie sind, dann kann auch eine Fuge brechen, die
+  bei ruhigen Kontakten gehalten hätte. Mit etwas Mörtel (`jointTensileStrength` 0,1 MPa) beruhigen sie sich
+  sofort.
 - Nur konvexe Teile. Konkave Formen müssen als mehrere konvexe Teile angegeben werden.
 - Render- und Physikgeometrie sind dieselben flachen Polygone. Detail-Meshes und Decals fehlen noch, Staub
   gibt es als einfache Partikel in der Demo.

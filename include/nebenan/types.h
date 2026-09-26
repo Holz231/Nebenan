@@ -89,14 +89,18 @@ typedef struct nbMaterial
 	float maxSpan;
 
 	/// Stress in Pascal a bond carries in tension, bending and shear before the weight of the structure
-	/// breaks it. Masonry joints hold about 0.3 MPa, plain concrete about 2 MPa. After every change the
-	/// static structure is solved as rigid chunks joined by elastic bonds, and bonds stressed beyond the
-	/// strength break: overhangs break off at their support, beams without a pillar across their span.
-	/// Chunks themselves are rigid, pre-fracture long pieces with cellSize so that they can break.
+	/// cracks it. Masonry joints hold about 0.3 MPa, plain concrete about 2 MPa. After every change the
+	/// static structure is solved as rigid chunks joined by elastic bonds. A bond stressed beyond this
+	/// strength cracks open: it keeps carrying compression and friction over the part that stays in
+	/// contact, like a real joint, and breaks once it is pulled apart, crushed, slides or can no longer
+	/// hold the load off center. Overhangs break off at their support, beams without a pillar across
+	/// their span, and an arch stands on compression alone. Zero makes a material that carries no tension
+	/// at all, like loose stones. Chunks themselves are rigid, pre-fracture long pieces with cellSize so
+	/// that they can break.
 	float tensileStrength;
 
-	/// Stress in Pascal a bond carries in compression. Masonry about 6 MPa, concrete about 30 MPa.
-	/// With both strengths zero the load check is off.
+	/// Stress in Pascal a bond carries in compression. Masonry about 6 MPa, concrete about 30 MPa, zero
+	/// for no limit. With both strengths zero the material is left out of the load check.
 	float compressiveStrength;
 
 	/// User material id stored on the Box3D shapes. It is reported by ray casts and contact events.
@@ -151,6 +155,13 @@ typedef struct nbPieceDef
 	/// Material of this piece, null for the material of the destructible. A destructible holds up to
 	/// NB_MAX_MATERIALS different materials. A bond between two materials is as strong as the weaker one.
 	const nbMaterial* material;
+
+	/// Tension in Pascal the joints between this piece and other pieces carry before they crack open, for
+	/// example the mortar between the stones of an arch. A joint gets the lower value of its two pieces
+	/// and is never stronger than their materials. Zero makes dry joints that only carry compression and
+	/// friction, like blocks stacked without mortar or a slab resting on walls. Negative, the default,
+	/// joins the pieces like the inside of their materials.
+	float jointTensileStrength;
 } nbPieceDef;
 
 /// Destructible definition. Must be initialized with nbDefaultDestructibleDef.
@@ -409,6 +420,9 @@ typedef struct nbStats
 
 	/// Bonds the load check broke because the weight of the structure was too much for them.
 	int overloadedBondCount;
+
+	/// Glued bonds the load check cracked open. They keep carrying compression.
+	int crackedBondCount;
 
 	/// Timings of the last update and the last impact in milliseconds.
 	float updateTime;

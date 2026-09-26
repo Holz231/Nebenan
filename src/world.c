@@ -338,7 +338,22 @@ float nbGetBondStrength( const nbWorld* world, const nbBond* bond )
 	return b3MinFloat( a->strength, b->strength );
 }
 
-int nbCreateBond( nbWorld* world, int chunkA, int chunkB, const nbBondGeometry* geometry, float health )
+// A material with strengths is checked, a tensile strength of zero means it carries no tension
+static float nbMaterialTension( const nbMaterial* material )
+{
+	if ( material->tensileStrength > 0.0f )
+	{
+		return material->tensileStrength;
+	}
+	return material->compressiveStrength > 0.0f ? 0.0f : FLT_MAX;
+}
+
+float nbGetTensileStrength( const nbMaterial* a, const nbMaterial* b )
+{
+	return b3MinFloat( nbMaterialTension( a ), nbMaterialTension( b ) );
+}
+
+int nbCreateBond( nbWorld* world, int chunkA, int chunkB, const nbBondGeometry* geometry, float health, float tensileStrength )
 {
 	NB_ASSERT( chunkA != chunkB );
 
@@ -362,6 +377,10 @@ int nbCreateBond( nbWorld* world, int chunkA, int chunkB, const nbBondGeometry* 
 	bond->normal = geometry->normal;
 	memcpy( bond->inertia, geometry->inertia, sizeof( bond->inertia ) );
 	bond->health = health;
+	bond->tensileStrength = tensileStrength;
+	bond->eccentricity = b3Vec3_zero;
+	bond->slip = b3Vec3_zero;
+	bond->jointState = tensileStrength > 0.0f ? nb_jointGlued : nb_jointDry;
 	bond->stamp = 0;
 
 	for ( int side = 0; side < 2; ++side )

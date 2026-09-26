@@ -45,6 +45,7 @@ nbPieceDef nbDefaultPieceDef( void )
 	def.transform = b3Transform_identity;
 	def.surfaceMaterial = 0;
 	def.interiorMaterial = 1;
+	def.jointTensileStrength = -1.0f;
 	return def;
 }
 
@@ -185,6 +186,7 @@ static void nbFinishPiece( nbWorld* world, int destructibleIndex, int actorIndex
 	}
 
 	float minBondArea = 0.01f * material->fragmentSize * material->fragmentSize;
+	float tensileStrength = nbGetTensileStrength( material, material );
 	for ( int i = 0; i < job->siteCount; ++i )
 	{
 		if ( chunkIndices[i] == NB_NULL_INDEX )
@@ -204,7 +206,7 @@ static void nbFinishPiece( nbWorld* world, int destructibleIndex, int actorIndex
 
 			nbBondGeometry geometry = neighbor->geometry;
 			geometry.centroid = b3Add( geometry.centroid, job->origin );
-			nbCreateBond( world, chunkIndices[i], chunkIndices[j], &geometry, material->strength * geometry.area );
+			nbCreateBond( world, chunkIndices[i], chunkIndices[j], &geometry, material->strength * geometry.area, tensileStrength );
 		}
 	}
 }
@@ -325,6 +327,7 @@ nbDestructibleId nbCreateDestructible( nbWorldId worldId, const nbDestructibleDe
 	for ( int i = 0; i < pieceCount; ++i )
 	{
 		pieceMaterials[i] = pieces[i].material != NULL ? nbAddMaterial( world->destructibles.data + index, pieces[i].material ) : 0;
+		world->destructibles.data[index].hasJoints = world->destructibles.data[index].hasJoints || pieces[i].jointTensileStrength >= 0.0f;
 	}
 
 	// Draw the sites of all pieces in order, compute the cells on the workers, then create the chunks in
@@ -397,15 +400,18 @@ nbDestructibleId nbCreateDestructible( nbWorldId worldId, const nbDestructibleDe
 		}
 	}
 
-	// Glue touching faces of different pieces. A bond between two materials is as strong as the weaker one.
+	// Glue touching faces of different pieces. A bond between two materials is as strong as the weaker one, a
+	// joint between pieces at most as strong as the joint strength of either piece.
 	int chunkEnd = world->touchedChunks.count;
 	for ( int a = firstNewChunk; a < chunkEnd; ++a )
 	{
 		int chunkA = world->touchedChunks.data[a];
+		int pieceA = world->chunks.data[chunkA].scratch;
 		for ( int b = a + 1; b < chunkEnd; ++b )
 		{
 			int chunkB = world->touchedChunks.data[b];
-			if ( world->chunks.data[chunkA].scratch == world->chunks.data[chunkB].scratch )
+			int pieceB = world->chunks.data[chunkB].scratch;
+			if ( pieceA == pieceB )
 			{
 				continue;
 			}
@@ -419,7 +425,14 @@ nbDestructibleId nbCreateDestructible( nbWorldId worldId, const nbDestructibleDe
 			float area = nbShape_ContactArea( world->chunks.data[chunkA].shape, world->chunks.data[chunkB].shape, 1.0e-3f, &geometry );
 			if ( area > minBondArea )
 			{
-				nbCreateBond( world, chunkA, chunkB, &geometry, b3MinFloat( materialA->strength, materialB->strength ) * area );
+				float tensileStrength = nbGetTensileStrength( materialA, materialB );
+				for ( int k = 0; k < 2; ++k )
+				{
+					float joint = pieces[k == 0 ? pieceA : pieceB].jointTensileStrength;
+					tensileStrength = joint >= 0.0f ? b3MinFloat( tensileStrength, joint ) : tensileStrength;
+				}
+				nbCreateBond( world, chunkA, chunkB, &geometry, b3MinFloat( materialA->strength, materialB->strength ) * area,
+							  tensileStrength );
 			}
 		}
 	}

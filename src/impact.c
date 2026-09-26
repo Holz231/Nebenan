@@ -26,6 +26,8 @@ typedef struct nbInterface
 	int neighborFace;
 	b3Plane parentPlane;
 	float healthFraction;
+	float tensileStrength;
+	uint8_t jointState;
 } nbInterface;
 
 typedef struct nbQueryContext
@@ -198,6 +200,8 @@ static int nbFinishRefine( nbWorld* world, int chunkIndex, const nbFractureJob* 
 
 		float fullHealth = nbGetBondStrength( world, bond ) * bond->area;
 		float healthFraction = fullHealth > 0.0f ? b3ClampFloat( bond->health / fullHealth, 0.0f, 1.0f ) : 0.0f;
+		float tensileStrength = bond->tensileStrength;
+		uint8_t jointState = bond->jointState;
 		const nbShape* neighborShape = world->chunks.data[neighborIndex].shape;
 
 		for ( int pf = 0; pf < parentShape->faceCount && interfaceCount < interfaceCapacity; ++pf )
@@ -214,7 +218,8 @@ static int nbFinishRefine( nbWorld* world, int chunkIndex, const nbFractureJob* 
 
 				if ( interfaceCount < interfaceCapacity )
 				{
-					interfaces[interfaceCount++] = (nbInterface){ neighborIndex, nf, parentPlane, healthFraction };
+					interfaces[interfaceCount++] =
+						(nbInterface){ neighborIndex, nf, parentPlane, healthFraction, tensileStrength, jointState };
 				}
 			}
 		}
@@ -254,6 +259,7 @@ static int nbFinishRefine( nbWorld* world, int chunkIndex, const nbFractureJob* 
 
 	// Glue the children along their shared Voronoi faces
 	float minBondArea = 0.01f * fragmentSize * fragmentSize;
+	float tensileStrength = nbGetTensileStrength( &material, &material );
 	for ( int i = 0; i < job->siteCount; ++i )
 	{
 		if ( childIndices[i] == NB_NULL_INDEX )
@@ -273,7 +279,7 @@ static int nbFinishRefine( nbWorld* world, int chunkIndex, const nbFractureJob* 
 
 			nbBondGeometry geometry = neighbor->geometry;
 			geometry.centroid = b3Add( geometry.centroid, origin );
-			nbCreateBond( world, childIndices[i], childIndices[j], &geometry, material.strength * geometry.area );
+			nbCreateBond( world, childIndices[i], childIndices[j], &geometry, material.strength * geometry.area, tensileStrength );
 		}
 	}
 
@@ -299,7 +305,8 @@ static int nbFinishRefine( nbWorld* world, int chunkIndex, const nbFractureJob* 
 					continue;
 				}
 
-				// The bond keeps the damage of the parent bond, and is as strong as the weaker material
+				// The bond keeps the damage, the tensile strength and the crack of the parent bond, and is as strong
+				// as the weaker material
 				const nbChunk* neighbor = world->chunks.data + face->neighborIndex;
 				nbBondGeometry geometry;
 				float area = nbShape_FaceOverlap( childShape, cf, neighbor->shape, face->neighborFace, &geometry );
@@ -307,7 +314,11 @@ static int nbFinishRefine( nbWorld* world, int chunkIndex, const nbFractureJob* 
 				float health = strength * area * face->healthFraction;
 				if ( area > minBondArea && health > 0.0f )
 				{
-					nbCreateBond( world, childIndex, face->neighborIndex, &geometry, health );
+					int bondIndex = nbCreateBond( world, childIndex, face->neighborIndex, &geometry, health, face->tensileStrength );
+					if ( face->jointState != nb_jointGlued && face->jointState != nb_jointDry )
+					{
+						world->bonds.data[bondIndex].jointState = nb_jointOpen;
+					}
 				}
 				break;
 			}

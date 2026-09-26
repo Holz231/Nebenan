@@ -6,6 +6,7 @@
 
 #include "nebenan/nebenan.h"
 
+#include <math.h>
 #include <stdlib.h>
 
 typedef struct TestScene
@@ -354,7 +355,7 @@ static uint32_t RunDeterminismScenario( void )
 
 // Fracture and physics are bit for bit identical with MSVC, GCC and Clang on x64 and ARM. This is the result
 // with the pinned Box3D commit. Update it when the results change on purpose, never to make one platform pass.
-#define NB_EXPECTED_DETERMINISM_HASH 0xf6149736u
+#define NB_EXPECTED_DETERMINISM_HASH 0x3e2c8cb6u
 
 static int DeterminismTest( void )
 {
@@ -985,6 +986,118 @@ static int MaterialTest( void )
 	return 0;
 }
 
+// A semicircular arch of loose stones on two foundations, every joint dry. The inner radius is 2.5 m. Free rigid
+// stones in Box3D stand with an outer radius of 2.82 m and fall with 2.78 m and less, about the thickness Heyman
+// gives for the thinnest semicircular arch.
+static nbDestructibleId CreateArch( TestScene* scene, float outer )
+{
+	enum
+	{
+		stoneCount = 11
+	};
+
+	float inner = 2.5f, base = 0.3f;
+	b3Vec3 points[stoneCount][8];
+	nbPieceDef pieces[stoneCount + 2];
+	for ( int i = 0; i < stoneCount; ++i )
+	{
+		float a0 = B3_PI * (float)i / (float)stoneCount;
+		float a1 = B3_PI * (float)( i + 1 ) / (float)stoneCount;
+		float c0 = i == 0 ? 1.0f : cosf( a0 ), s0 = i == 0 ? 0.0f : sinf( a0 );
+		float c1 = i + 1 == stoneCount ? -1.0f : cosf( a1 ), s1 = i + 1 == stoneCount ? 0.0f : sinf( a1 );
+		b3Vec3 corners[4] = { { inner * c0, base + inner * s0, 0.0f }, { outer * c0, base + outer * s0, 0.0f },
+							  { outer * c1, base + outer * s1, 0.0f }, { inner * c1, base + inner * s1, 0.0f } };
+		for ( int k = 0; k < 4; ++k )
+		{
+			points[i][k] = (b3Vec3){ corners[k].x, corners[k].y, -0.5f };
+			points[i][k + 4] = (b3Vec3){ corners[k].x, corners[k].y, 0.5f };
+		}
+
+		pieces[i] = nbDefaultPieceDef();
+		pieces[i].points = points[i];
+		pieces[i].pointCount = 8;
+		pieces[i].jointTensileStrength = 0.0f;
+	}
+
+	for ( int k = 0; k < 2; ++k )
+	{
+		nbPieceDef* piece = pieces + stoneCount + k;
+		*piece = nbDefaultPieceDef();
+		piece->halfExtents = (b3Vec3){ 0.5f * ( outer - inner ) + 0.3f, 0.5f * base, 0.5f };
+		piece->transform.p = (b3Vec3){ ( k == 0 ? 0.5f : -0.5f ) * ( inner + outer ), 0.5f * base, 0.0f };
+		piece->jointTensileStrength = 0.0f;
+	}
+
+	nbDestructibleDef def = nbDefaultDestructibleDef();
+	def.material.density = 2500.0f;
+	def.material.tensileStrength = 1.0e6f;
+	def.material.compressiveStrength = 3.0e7f;
+	def.material.friction = 0.7f;
+	return nbCreateDestructible( scene->world, &def, pieces, stoneCount + 2 );
+}
+
+// Dry joints carry the arch on compression alone. It stands when it is thick enough and falls when it is too
+// thin or loses its keystone.
+static int ArchTest( void )
+{
+	for ( int k = 0; k < 3; ++k )
+	{
+		TestScene scene = CreateScene();
+		nbDestructibleId arch = CreateArch( &scene, k == 1 ? 2.65f : 3.0f );
+		ENSURE( nbDestructible_GetChunkCount( arch ) == 13 );
+
+		Step( &scene, 30 );
+		nbStats stats = nbWorld_GetStats( scene.world );
+		if ( k == 1 )
+		{
+			ENSURE( stats.overloadedBondCount > 0 );
+			ENSURE( stats.dynamicBodyCount > 0 );
+			DestroyScene( &scene );
+			continue;
+		}
+
+		ENSURE( stats.overloadedBondCount == 0 );
+		ENSURE( stats.dynamicBodyCount == 0 );
+
+		// Every joint is open, the crown carries the thrust and the joints near the haunches only touch at one edge
+		nbChunkId chunks[13];
+		ENSURE( nbDestructible_GetChunks( arch, chunks, 13 ) == 13 );
+		float highest = 0.0f;
+		for ( int i = 0; i < 13; ++i )
+		{
+			highest = b3MaxFloat( highest, nbChunk_GetUtilization( chunks[i] ) );
+		}
+		ENSURE( highest > 0.3f && highest < 1.0f );
+
+		if ( k == 2 )
+		{
+			nbImpactDef impact = { 0 };
+			impact.point = (b3Vec3){ 0.0f, 3.05f, 0.0f };
+			impact.radius = 0.6f;
+			impact.damage = 1.0e8f;
+			impact.ejectSpeed = 3.0f;
+			nbWorld_ApplyImpact( scene.world, &impact );
+			Step( &scene, 30 );
+
+			// Without the keystone both halves fall, only the stones next to the foundations may stay
+			int staticStones = 0;
+			int count = nbDestructible_GetChunkCount( arch );
+			nbChunkId* all = malloc( sizeof( nbChunkId ) * (size_t)count );
+			nbDestructible_GetChunks( arch, all, count );
+			for ( int i = 0; i < count; ++i )
+			{
+				staticStones += nbChunk_IsDynamic( all[i] ) == false && nbChunk_GetVolume( all[i] ) > 0.2f ? 1 : 0;
+			}
+			free( all );
+			ENSURE( staticStones <= 6 );
+			ENSURE( nbWorld_GetStats( scene.world ).overloadedBondCount > 0 );
+		}
+
+		DestroyScene( &scene );
+	}
+	return 0;
+}
+
 // A heavy ball breaks through a wall instead of bouncing off it
 static int CannonballTest( void )
 {
@@ -1034,6 +1147,7 @@ int WorldTest( void )
 	RUN_TEST( CrushTest );
 	RUN_TEST( BeamTest );
 	RUN_TEST( MaterialTest );
+	RUN_TEST( ArchTest );
 	RUN_TEST( CannonballTest );
 	return 0;
 }
