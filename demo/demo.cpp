@@ -581,7 +581,8 @@ static MaterialPreset BrickPreset()
 	preset.material.strength = 6.0e5f;
 	preset.material.fragmentSize = 0.1f;
 	preset.material.friction = 0.8f;
-	preset.material.maxSpan = 3.0f;
+	preset.material.tensileStrength = 0.3e6f;
+	preset.material.compressiveStrength = 6.0e6f;
 	preset.surface = MaterialBrick;
 	preset.interior = MaterialBrickInterior;
 	return preset;
@@ -594,7 +595,8 @@ static MaterialPreset ConcretePreset()
 	preset.material.density = 2400.0f;
 	preset.material.strength = 1.1e6f;
 	preset.material.fragmentSize = 0.13f;
-	preset.material.maxSpan = 4.5f;
+	preset.material.tensileStrength = 2.0e6f;
+	preset.material.compressiveStrength = 3.0e7f;
 	preset.surface = MaterialConcrete;
 	preset.interior = MaterialConcreteInterior;
 	return preset;
@@ -611,9 +613,10 @@ static nbPieceDef MakePiece( b3Vec3 center, b3Vec3 halfExtents, const MaterialPr
 }
 
 static nbDestructibleId AddStructure( App& app, b3Vec3 position, float yaw, const MaterialPreset& preset,
-									  const std::vector<nbPieceDef>& pieces, uint32_t seed )
+									  const std::vector<nbPieceDef>& pieces, uint32_t seed, float cellSize = 0.0f )
 {
 	nbDestructibleDef def = nbDefaultDestructibleDef();
+	def.cellSize = cellSize;
 	def.position = b3ToPos( position );
 	def.rotation = b3MakeQuatFromAxisAngle( b3Vec3_axisY, yaw );
 	def.material = preset.material;
@@ -697,7 +700,6 @@ static void BuildHouseScene( App& app )
 {
 	MaterialPreset brick = BrickPreset();
 	MaterialPreset concrete = ConcretePreset();
-	brick.material.maxSpan = 3.5f;
 
 	std::vector<nbPieceDef> pieces;
 	float width = 9.0f, depth = 6.5f, story = 3.0f, t = 0.3f, slab = 0.25f;
@@ -757,7 +759,8 @@ static void BuildColonnadeScene( App& app )
 	}
 	pieces.push_back( MakePiece( { 0.0f, height + 0.75f, 0.0f }, { 3.0f * spacing + 0.4f, 0.15f, 3.0f }, concrete, MaterialConcrete ) );
 
-	AddStructure( app, { 0.0f, 0.0f, 0.0f }, 0.0f, concrete, pieces, 11 );
+	// Pre-fractured into cells, so beams and roof can break along their span once the columns are gone
+	AddStructure( app, { 0.0f, 0.0f, 0.0f }, 0.0f, concrete, pieces, 11, 1.2f );
 
 	app.camera.position = { 3.0f, 2.4f, 13.0f };
 	app.camera.yaw = -0.2f;
@@ -1242,6 +1245,7 @@ static void DrawUi( App& app )
 	ImGui::Text( "  %d neue Stücke, %d Verbindungen gerissen, %d gelöst", app.lastImpact.createdChunkCount,
 				 app.lastImpact.brokenBondCount, app.lastImpact.detachedChunkCount );
 	ImGui::Text( "Bruchstücke %d  Verbindungen %d", stats.chunkCount, stats.bondCount );
+	ImGui::Text( "Überlastet %d  (Lastnachweis)", stats.overloadedBondCount );
 	ImGui::Text( "Trümmerkörper %d  wach %d  Kontakte %d", stats.dynamicBodyCount, b3World_GetAwakeBodyCount( app.physics ),
 				 counters.contactCount );
 	ImGui::Text( "Draw Calls %d  Vertices %d  Partikel %d", renderStats.drawCalls, renderStats.vertexCount, renderStats.particleCount );
@@ -1290,9 +1294,11 @@ static void RunScript( App& app )
 			break;
 
 		case SceneHouse:
-			if ( f == 30 || f == 60 || f == 90 )
+			if ( f >= 30 && f <= 90 && f % 15 == 0 )
 			{
-				FireAt( app, ToolGrenade, { -4.5f + 1.5f * (float)( f / 30 ), 1.2f, 3.25f } );
+				// Blast the piers of the ground floor front one after another until the slab loses its support
+				int k = ( f - 30 ) / 15;
+				FireAt( app, ToolGrenade, { -3.6f + 1.8f * (float)k, 1.2f, 3.25f } );
 			}
 			else if ( f == 110 )
 			{
@@ -1301,11 +1307,11 @@ static void RunScript( App& app )
 			break;
 
 		case SceneColonnade:
-			if ( f >= 20 && f <= 80 && f % 15 == 5 )
+			if ( f >= 20 && f <= 95 && f % 15 == 5 )
 			{
 				// Blow out the front row of columns one after another
 				int k = ( f - 20 ) / 15;
-				FireAt( app, ToolGrenade, { -3.5f * 2.8f / 2.5f + 2.8f * (float)k, 1.5f, 2.3f } );
+				FireAt( app, ToolGrenade, { ( (float)k - 2.5f ) * 2.8f, 1.5f, 2.3f } );
 			}
 			break;
 
@@ -1376,6 +1382,12 @@ static void OnFrame()
 	dt = b3ClampFloat( dt, 0.0f, 0.1f );
 	app.averageFrame = 0.95f * app.averageFrame + 0.05f * 1000.0f * dt;
 
+	// Automated runs advance one physics step per frame, so they repeat exactly on any machine
+	if ( app.automation.frameLimit > 0 )
+	{
+		dt = 1.0f / 60.0f;
+	}
+
 	UpdateCamera( app, dt );
 
 	// Automatic fire while the button is held
@@ -1422,6 +1434,10 @@ static void OnFrame()
 	app.frame += 1;
 	if ( app.automation.frameLimit > 0 && app.frame >= app.automation.frameLimit )
 	{
+		nbStats stats = nbWorld_GetStats( app.destruction );
+		printf( "scene %d frame %d: chunks %d bonds %d debris %d overloaded %d\n", (int)app.scene, app.frame, stats.chunkCount,
+				stats.bondCount, stats.dynamicBodyCount, stats.overloadedBondCount );
+
 		if ( app.automation.screenshotPath != nullptr )
 		{
 			DemoSaveScreenshot( app.automation.screenshotPath, width, height );

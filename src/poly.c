@@ -431,7 +431,38 @@ void nbPoly_ComputeMass( const nbPoly* poly, float* volume, b3Vec3* centroid )
 	}
 }
 
-float nbPoly_FaceArea( const nbPoly* poly, int faceIndex, b3Vec3* centroid )
+float nbSecondMomentAlong( const float inertia[6], b3Vec3 d )
+{
+	return inertia[0] * d.x * d.x + inertia[1] * d.y * d.y + inertia[2] * d.z * d.z +
+		   2.0f * ( inertia[3] * d.x * d.y + inertia[4] * d.x * d.z + inertia[5] * d.y * d.z );
+}
+
+// Second moment of a triangle relative to the origin of its vertex coordinates: area / 12 times the sum of
+// the vertex outer products plus the outer product of the vertex sum
+static void nbAddTriangleInertia( float inertia[6], float area, b3Vec3 p0, b3Vec3 p1, b3Vec3 p2 )
+{
+	b3Vec3 s = b3Add( b3Add( p0, p1 ), p2 );
+	float k = area / 12.0f;
+	inertia[0] += k * ( p0.x * p0.x + p1.x * p1.x + p2.x * p2.x + s.x * s.x );
+	inertia[1] += k * ( p0.y * p0.y + p1.y * p1.y + p2.y * p2.y + s.y * s.y );
+	inertia[2] += k * ( p0.z * p0.z + p1.z * p1.z + p2.z * p2.z + s.z * s.z );
+	inertia[3] += k * ( p0.x * p0.y + p1.x * p1.y + p2.x * p2.y + s.x * s.y );
+	inertia[4] += k * ( p0.x * p0.z + p1.x * p1.z + p2.x * p2.z + s.x * s.z );
+	inertia[5] += k * ( p0.y * p0.z + p1.y * p1.z + p2.y * p2.z + s.y * s.z );
+}
+
+// Parallel axis theorem: add scale * d d^T
+static void nbAddOuterProduct( float inertia[6], float scale, b3Vec3 d )
+{
+	inertia[0] += scale * d.x * d.x;
+	inertia[1] += scale * d.y * d.y;
+	inertia[2] += scale * d.z * d.z;
+	inertia[3] += scale * d.x * d.y;
+	inertia[4] += scale * d.x * d.z;
+	inertia[5] += scale * d.y * d.z;
+}
+
+float nbPoly_FaceGeometry( const nbPoly* poly, int faceIndex, nbBondGeometry* geometry )
 {
 	const nbPolyFace* face = poly->faces + faceIndex;
 	const uint8_t* loop = poly->indices + face->first;
@@ -439,26 +470,33 @@ float nbPoly_FaceArea( const nbPoly* poly, int faceIndex, b3Vec3* centroid )
 	b3Vec3 n = face->plane.normal;
 	float twiceArea = 0.0f;
 	b3Vec3 weighted = b3Vec3_zero;
+	float inertia[6] = { 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f };
 
 	for ( int k = 1; k + 1 < face->count; ++k )
 	{
-		b3Vec3 b = poly->vertices[loop[k]];
-		b3Vec3 c = poly->vertices[loop[k + 1]];
-		float area = b3Dot( n, b3Cross( b3Sub( b, a ), b3Sub( c, a ) ) );
+		b3Vec3 b = b3Sub( poly->vertices[loop[k]], a );
+		b3Vec3 c = b3Sub( poly->vertices[loop[k + 1]], a );
+		float area = b3Dot( n, b3Cross( b, c ) );
 		twiceArea += area;
-		weighted = b3MulAdd( weighted, area, b3Add( b3Sub( b, a ), b3Sub( c, a ) ) );
+		weighted = b3MulAdd( weighted, area, b3Add( b, c ) );
+		nbAddTriangleInertia( inertia, 0.5f * area, b3Vec3_zero, b, c );
 	}
 
+	geometry->normal = n;
+	geometry->area = 0.5f * twiceArea;
 	if ( twiceArea > 0.0f )
 	{
-		*centroid = b3MulAdd( a, 1.0f / ( 3.0f * twiceArea ), weighted );
+		b3Vec3 offset = b3MulSV( 1.0f / ( 3.0f * twiceArea ), weighted );
+		geometry->centroid = b3Add( a, offset );
+		nbAddOuterProduct( inertia, -geometry->area, offset );
 	}
 	else
 	{
-		*centroid = a;
+		geometry->centroid = a;
 	}
+	memcpy( geometry->inertia, inertia, sizeof( inertia ) );
 
-	return 0.5f * twiceArea;
+	return geometry->area;
 }
 
 b3AABB nbPoly_ComputeBounds( const nbPoly* poly )
@@ -764,7 +802,7 @@ static int nbClipPolygon2D( const b3Vec2* in, int count, b3Vec2 a, b3Vec2 b, b3V
 	return outCount;
 }
 
-float nbShape_FaceOverlap( const nbShape* a, int faceIndexA, const nbShape* b, int faceIndexB, b3Vec3* centroid )
+float nbShape_FaceOverlap( const nbShape* a, int faceIndexA, const nbShape* b, int faceIndexB, nbBondGeometry* geometry )
 {
 	const nbFace* faceA = a->faces + faceIndexA;
 	const nbFace* faceB = b->faces + faceIndexB;
@@ -816,11 +854,38 @@ float nbShape_FaceOverlap( const nbShape* a, int faceIndexA, const nbShape* b, i
 		return 0.0f;
 	}
 
-	*centroid = b3MulAdd( b3MulAdd( origin, c2.x, u ), c2.y, v );
+	// Second moment in the plane about the centroid, then lifted into 3D
+	float ixx = 0.0f, iyy = 0.0f, ixy = 0.0f;
+	for ( int k = 1; k + 1 < count; ++k )
+	{
+		b3Vec2 p0 = { input[0].x - c2.x, input[0].y - c2.y };
+		b3Vec2 p1 = { input[k].x - c2.x, input[k].y - c2.y };
+		b3Vec2 p2 = { input[k + 1].x - c2.x, input[k + 1].y - c2.y };
+		float triangleArea = 0.5f * ( ( p1.x - p0.x ) * ( p2.y - p0.y ) - ( p1.y - p0.y ) * ( p2.x - p0.x ) );
+		float sx = p0.x + p1.x + p2.x;
+		float sy = p0.y + p1.y + p2.y;
+		float scale = triangleArea / 12.0f;
+		ixx += scale * ( p0.x * p0.x + p1.x * p1.x + p2.x * p2.x + sx * sx );
+		iyy += scale * ( p0.y * p0.y + p1.y * p1.y + p2.y * p2.y + sy * sy );
+		ixy += scale * ( p0.x * p0.y + p1.x * p1.y + p2.x * p2.y + sx * sy );
+	}
+
+	geometry->centroid = b3MulAdd( b3MulAdd( origin, c2.x, u ), c2.y, v );
+	geometry->normal = n;
+	geometry->area = area;
+	for ( int k = 0; k < 6; ++k )
+	{
+		geometry->inertia[k] = 0.0f;
+	}
+	nbAddOuterProduct( geometry->inertia, ixx, u );
+	nbAddOuterProduct( geometry->inertia, iyy, v );
+	nbAddOuterProduct( geometry->inertia, ixy, b3Add( u, v ) );
+	nbAddOuterProduct( geometry->inertia, -ixy, u );
+	nbAddOuterProduct( geometry->inertia, -ixy, v );
 	return area;
 }
 
-float nbShape_ContactArea( const nbShape* a, const nbShape* b, float tolerance, b3Vec3* centroid, b3Vec3* normal )
+float nbShape_ContactArea( const nbShape* a, const nbShape* b, float tolerance, nbBondGeometry* geometry )
 {
 	b3AABB boxA = b3AABB_Inflate( a->bounds, tolerance );
 	if ( b3AABB_Overlaps( boxA, b->bounds ) == false )
@@ -831,6 +896,10 @@ float nbShape_ContactArea( const nbShape* a, const nbShape* b, float tolerance, 
 	float totalArea = 0.0f;
 	b3Vec3 weightedCentroid = b3Vec3_zero;
 	b3Vec3 weightedNormal = b3Vec3_zero;
+
+	// Patches of up to 16 face pairs, combined with the parallel axis theorem at the end
+	nbBondGeometry patches[16];
+	int patchCount = 0;
 
 	for ( int fa = 0; fa < a->faceCount; ++fa )
 	{
@@ -853,23 +922,40 @@ float nbShape_ContactArea( const nbShape* a, const nbShape* b, float tolerance, 
 				continue;
 			}
 
-			b3Vec3 c3;
-			float area = nbShape_FaceOverlap( a, fa, b, fb, &c3 );
+			nbBondGeometry patch;
+			float area = nbShape_FaceOverlap( a, fa, b, fb, &patch );
 			if ( area <= 0.0f )
 			{
 				continue;
 			}
 
 			totalArea += area;
-			weightedCentroid = b3MulAdd( weightedCentroid, area, c3 );
+			weightedCentroid = b3MulAdd( weightedCentroid, area, patch.centroid );
 			weightedNormal = b3MulAdd( weightedNormal, area, n );
+			if ( patchCount < 16 )
+			{
+				patches[patchCount++] = patch;
+			}
 		}
 	}
 
 	if ( totalArea > 0.0f )
 	{
-		*centroid = b3MulSV( 1.0f / totalArea, weightedCentroid );
-		*normal = b3Normalize( weightedNormal );
+		geometry->centroid = b3MulSV( 1.0f / totalArea, weightedCentroid );
+		geometry->normal = b3Normalize( weightedNormal );
+		geometry->area = totalArea;
+		for ( int k = 0; k < 6; ++k )
+		{
+			geometry->inertia[k] = 0.0f;
+		}
+		for ( int i = 0; i < patchCount; ++i )
+		{
+			for ( int k = 0; k < 6; ++k )
+			{
+				geometry->inertia[k] += patches[i].inertia[k];
+			}
+			nbAddOuterProduct( geometry->inertia, patches[i].area, b3Sub( patches[i].centroid, geometry->centroid ) );
+		}
 	}
 
 	return totalArea;

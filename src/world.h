@@ -76,6 +76,11 @@ typedef struct nbBond
 	b3Vec3 centroid;
 	float area;
 
+	// Interface normal from chunk[0] to chunk[1] and second moment of the interface about its centroid,
+	// used by the load check
+	b3Vec3 normal;
+	float inertia[6];
+
 	// Remaining damage before the bond breaks
 	float health;
 	uint32_t stamp;
@@ -139,8 +144,8 @@ typedef struct nbDestructible
 	uint32_t seed;
 	uint32_t fractureCounter;
 
-	// The static structure changed, check the spans on the next update
-	bool spanDirty;
+	// The static structure changed, check spans and loads on the next update
+	bool structureDirty;
 	bool isStatic;
 	bool enableCollisionDamage;
 	bool isFree;
@@ -272,7 +277,8 @@ int nbCreateChunkWithHull( nbWorld* world, int destructibleIndex, int actorIndex
 int nbAllocActor( nbWorld* world, int destructibleIndex, bool isStatic );
 void nbFreeActor( nbWorld* world, int actorIndex );
 
-int nbCreateBond( nbWorld* world, int chunkA, int chunkB, float area, b3Vec3 centroid, float health );
+// The geometry normal points from chunk A to chunk B
+int nbCreateBond( nbWorld* world, int chunkA, int chunkB, const nbBondGeometry* geometry, float health );
 void nbDestroyBond( nbWorld* world, int bondIndex );
 
 void nbActor_AddChunk( nbWorld* world, int actorIndex, int chunkIndex );
@@ -297,6 +303,9 @@ void nbSplitActors( nbWorld* world, nbImpactResult* result );
 
 // Break off glued parts that hang out further than the material span from their support
 void nbCheckSpans( nbWorld* world, int destructibleIndex );
+
+// Check a static structure against its own weight and break the overloaded bonds
+void nbCheckLoads( nbWorld* world, int destructibleIndex );
 
 // Create or move Box3D shapes for all touched chunks, update masses and remove empty actors.
 void nbCommitPhysics( nbWorld* world );

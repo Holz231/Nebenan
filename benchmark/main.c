@@ -245,7 +245,7 @@ static void BenchmarkExplosions( int workerCount )
 	DestroyScene( &scene );
 }
 
-// A building of walls and slabs that collapses once the ground floor is blasted
+// A building of walls and slabs that collapses once three walls of the ground floor are blasted
 static void BenchmarkCollapse( int workerCount )
 {
 	Scene scene = CreateScene( workerCount );
@@ -287,12 +287,14 @@ static void BenchmarkCollapse( int workerCount )
 
 	for ( int frame = 0; frame < 480; ++frame )
 	{
-		if ( frame < 64 && frame % 4 == 0 )
+		if ( frame < 72 && frame % 4 == 0 )
 		{
-			// Blast along the ground floor walls
+			// Blast three walls of the ground floor. The floors above hang on the last wall until the load check
+			// breaks them off.
 			int k = frame / 4;
-			float s = -3.5f + 7.0f * (float)( k % 8 ) / 7.0f;
-			impact.point = k < 8 ? (b3Vec3){ s, 1.0f, 3.85f } : (b3Vec3){ s, 1.0f, -3.85f };
+			float s = -3.5f + 1.4f * (float)( k % 6 );
+			b3Vec3 points[3] = { { s, 1.0f, 3.85f }, { 3.85f, 1.0f, s }, { s, 1.0f, -3.85f } };
+			impact.point = points[k / 6];
 			Impact( &scene, &t, &impact );
 		}
 		Step( &scene, &t );

@@ -247,8 +247,15 @@ static int VoronoiTest( void )
 				if ( b->site == i )
 				{
 					found = true;
-					ENSURE_SMALL( a->area - b->area, 1.0e-4f );
-					ENSURE_SMALL( b3Distance( a->centroid, b->centroid ), 1.0e-3f );
+					ENSURE_SMALL( a->geometry.area - b->geometry.area, 1.0e-4f );
+					ENSURE_SMALL( b3Distance( a->geometry.centroid, b->geometry.centroid ), 1.0e-3f );
+					ENSURE_SMALL( b3Dot( a->geometry.normal, b->geometry.normal ) + 1.0f, 1.0e-4f );
+
+					// Both sides describe the same face, so the second moments agree
+					for ( int c = 0; c < 6; ++c )
+					{
+						ENSURE_SMALL( a->geometry.inertia[c] - b->geometry.inertia[c], 1.0e-5f );
+					}
 				}
 			}
 			ENSURE( found );
@@ -262,9 +269,9 @@ static int VoronoiTest( void )
 	for ( int k = 0; k < cell->neighborCount; ++k )
 	{
 		const nbCellNeighbor* neighbor = cell->neighbors + k;
-		b3Vec3 centroid, normal;
-		float area = nbShape_ContactArea( cell->shape, output.cells[neighbor->site].shape, 1.0e-4f, &centroid, &normal );
-		ENSURE_SMALL( area - neighbor->area, 1.0e-3f );
+		nbBondGeometry geometry;
+		float area = nbShape_ContactArea( cell->shape, output.cells[neighbor->site].shape, 1.0e-4f, &geometry );
+		ENSURE_SMALL( area - neighbor->geometry.area, 1.0e-3f );
 	}
 
 	for ( int i = 0; i < output.cellCount; ++i )
@@ -288,19 +295,24 @@ static int ContactAreaTest( void )
 	nbShape* shapeA = nbShape_Create( &a );
 	nbShape* shapeB = nbShape_Create( &b );
 
-	b3Vec3 centroid, normal;
-	float area = nbShape_ContactArea( shapeA, shapeB, 1.0e-4f, &centroid, &normal );
+	nbBondGeometry geometry;
+	float area = nbShape_ContactArea( shapeA, shapeB, 1.0e-4f, &geometry );
 
 	// b touches the +x face of a over y in [0.25, 1], z in [-0.5, 0.5]
 	ENSURE_SMALL( area - 0.75f, 1.0e-5f );
-	ENSURE_SMALL( centroid.x - 1.0f, 1.0e-5f );
-	ENSURE_SMALL( centroid.y - 0.625f, 1.0e-5f );
-	ENSURE_SMALL( normal.x - 1.0f, 1.0e-5f );
+	ENSURE_SMALL( geometry.centroid.x - 1.0f, 1.0e-5f );
+	ENSURE_SMALL( geometry.centroid.y - 0.625f, 1.0e-5f );
+	ENSURE_SMALL( geometry.normal.x - 1.0f, 1.0e-5f );
+
+	// Rectangle 0.75 tall and 1 wide: b h^3 / 12 about each axis, nothing across the plane
+	ENSURE_SMALL( nbSecondMomentAlong( geometry.inertia, (b3Vec3){ 0.0f, 1.0f, 0.0f } ) - 0.75f * 0.75f * 0.75f / 12.0f, 1.0e-5f );
+	ENSURE_SMALL( nbSecondMomentAlong( geometry.inertia, (b3Vec3){ 0.0f, 0.0f, 1.0f } ) - 0.75f / 12.0f, 1.0e-5f );
+	ENSURE_SMALL( nbSecondMomentAlong( geometry.inertia, (b3Vec3){ 1.0f, 0.0f, 0.0f } ), 1.0e-5f );
 
 	// Separated boxes do not touch
 	nbPoly_MakeBox( &b, (b3Vec3){ 0.5f, 0.5f, 0.5f }, (b3Transform){ { 1.6f, 0.0f, 0.0f }, b3Quat_identity }, 0 );
 	nbShape* shapeC = nbShape_Create( &b );
-	ENSURE( nbShape_ContactArea( shapeA, shapeC, 1.0e-4f, &centroid, &normal ) == 0.0f );
+	ENSURE( nbShape_ContactArea( shapeA, shapeC, 1.0e-4f, &geometry ) == 0.0f );
 
 	nbShape_Destroy( shapeA );
 	nbShape_Destroy( shapeB );

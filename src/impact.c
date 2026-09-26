@@ -219,6 +219,11 @@ static int nbFinishRefine( nbWorld* world, int chunkIndex, const nbFractureJob* 
 		}
 	}
 
+	if ( world->actors.data[actorIndex].isStatic )
+	{
+		world->destructibles.data[destructibleIndex].structureDirty = true;
+	}
+
 	// Remove the parent first so the children can take over its place in the actor
 	nbDestroyChunk( world, chunkIndex );
 	result->fracturedChunkCount += 1;
@@ -259,13 +264,14 @@ static int nbFinishRefine( nbWorld* world, int chunkIndex, const nbFractureJob* 
 		{
 			const nbCellNeighbor* neighbor = cell->neighbors + k;
 			int j = neighbor->site;
-			if ( j <= i || childIndices[j] == NB_NULL_INDEX || neighbor->area < minBondArea )
+			if ( j <= i || childIndices[j] == NB_NULL_INDEX || neighbor->geometry.area < minBondArea )
 			{
 				continue;
 			}
 
-			b3Vec3 centroid = b3Add( neighbor->centroid, origin );
-			nbCreateBond( world, childIndices[i], childIndices[j], neighbor->area, centroid, material.strength * neighbor->area );
+			nbBondGeometry geometry = neighbor->geometry;
+			geometry.centroid = b3Add( geometry.centroid, origin );
+			nbCreateBond( world, childIndices[i], childIndices[j], &geometry, material.strength * geometry.area );
 		}
 	}
 
@@ -291,13 +297,13 @@ static int nbFinishRefine( nbWorld* world, int chunkIndex, const nbFractureJob* 
 					continue;
 				}
 
-				b3Vec3 centroid;
+				nbBondGeometry geometry;
 				float area =
-					nbShape_FaceOverlap( childShape, cf, world->chunks.data[face->neighborIndex].shape, face->neighborFace, &centroid );
+					nbShape_FaceOverlap( childShape, cf, world->chunks.data[face->neighborIndex].shape, face->neighborFace, &geometry );
 				float health = material.strength * area * face->healthFraction;
 				if ( area > minBondArea && health > 0.0f )
 				{
-					nbCreateBond( world, childIndex, face->neighborIndex, area, centroid, health );
+					nbCreateBond( world, childIndex, face->neighborIndex, &geometry, health );
 				}
 				break;
 			}
@@ -654,6 +660,13 @@ nbImpactResult nbApplyImpact( nbWorld* world, const nbImpactDef* def, int actorF
 			}
 
 			bond->health -= def->damage * ( 1.0f - distance / radius );
+
+			// Weaker bonds carry less, the structure has to be checked against its weight again
+			if ( world->actors.data[chunk->actorIndex].isStatic )
+			{
+				world->destructibles.data[chunk->destructibleIndex].structureDirty = true;
+			}
+
 			if ( bond->health <= 0.0f )
 			{
 				nbPushCrackDust( world, bondIndex );

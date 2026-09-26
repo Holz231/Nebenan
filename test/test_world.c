@@ -72,6 +72,27 @@ static float TotalChunkVolume( nbDestructibleId wall )
 	return volume;
 }
 
+// Two stout pillars and a beam across, pre-fractured into cells
+static nbDestructibleId CreateGate( TestScene* scene, float x, uint32_t seed )
+{
+	nbPieceDef pieces[3];
+	for ( int i = 0; i < 3; ++i )
+	{
+		pieces[i] = nbDefaultPieceDef();
+	}
+	pieces[0].halfExtents = (b3Vec3){ 0.6f, 1.5f, 0.6f };
+	pieces[0].transform.p = (b3Vec3){ x - 3.0f, 1.5f, 0.0f };
+	pieces[1].halfExtents = (b3Vec3){ 0.6f, 1.5f, 0.6f };
+	pieces[1].transform.p = (b3Vec3){ x + 3.0f, 1.5f, 0.0f };
+	pieces[2].halfExtents = (b3Vec3){ 4.0f, 0.3f, 0.3f };
+	pieces[2].transform.p = (b3Vec3){ x, 3.3f, 0.0f };
+
+	nbDestructibleDef def = nbDefaultDestructibleDef();
+	def.cellSize = 1.0f;
+	def.seed = seed;
+	return nbCreateDestructible( scene->world, &def, pieces, 3 );
+}
+
 static void Step( TestScene* scene, int count )
 {
 	for ( int i = 0; i < count; ++i )
@@ -264,9 +285,8 @@ static int CollapseTest( void )
 	return 0;
 }
 
-static uint32_t HashScene( TestScene* scene, nbDestructibleId wall )
+static uint32_t HashDestructible( uint32_t hash, nbDestructibleId wall )
 {
-	uint32_t hash = 2166136261u;
 	int count = nbDestructible_GetChunkCount( wall );
 	nbChunkId* chunks = malloc( sizeof( nbChunkId ) * (size_t)count );
 	nbDestructible_GetChunks( wall, chunks, count );
@@ -283,13 +303,15 @@ static uint32_t HashScene( TestScene* scene, nbDestructibleId wall )
 		}
 	}
 	free( chunks );
-	(void)scene;
-	return hash ^ (uint32_t)count;
+	return ( hash ^ (uint32_t)count ) * 16777619u;
 }
 
 static uint32_t RunDeterminismScenarioWith( TestScene scene )
 {
 	nbDestructibleId wall = CreateWall( &scene, (b3Vec3){ 2.5f, 1.5f, 0.12f }, 5 );
+
+	// A gate that collapses under its own weight once a pillar is gone, for the load check
+	nbDestructibleId gate = CreateGate( &scene, 10.0f, 6 );
 
 	nbImpactDef impact = { 0 };
 	impact.direction = (b3Vec3){ 0.2f, 0.0f, -1.0f };
@@ -304,10 +326,23 @@ static uint32_t RunDeterminismScenarioWith( TestScene scene )
 			impact.point = (b3Vec3){ -1.5f + 0.5f * (float)( frame / 20 ), 0.6f + 0.2f * (float)( frame / 20 ), 0.12f };
 			nbWorld_ApplyImpact( scene.world, &impact );
 		}
+		if ( frame == 10 )
+		{
+			nbImpactDef blast = { 0 };
+			blast.point = (b3Vec3){ 13.0f, 2.3f, 0.0f };
+			blast.radius = 1.0f;
+			blast.damage = 1.0e8f;
+			blast.ejectSpeed = 2.0f;
+			nbWorld_ApplyImpact( scene.world, &blast );
+		}
 		Step( &scene, 1 );
 	}
 
-	uint32_t hash = HashScene( &scene, wall );
+	// The collapse of the gate is part of the result
+	nbStats stats = nbWorld_GetStats( scene.world );
+	uint32_t hash = HashDestructible( 2166136261u, wall );
+	hash = HashDestructible( hash, gate );
+	hash = ( hash ^ (uint32_t)stats.overloadedBondCount ) * 16777619u;
 	DestroyScene( &scene );
 	return hash;
 }
@@ -319,7 +354,7 @@ static uint32_t RunDeterminismScenario( void )
 
 // Fracture and physics are bit for bit identical with MSVC, GCC and Clang on x64 and ARM. This is the result
 // with the pinned Box3D commit. Update it when the results change on purpose, never to make one platform pass.
-#define NB_EXPECTED_DETERMINISM_HASH 0xf526458bu
+#define NB_EXPECTED_DETERMINISM_HASH 0xdade851cu
 
 static int DeterminismTest( void )
 {
@@ -380,7 +415,7 @@ static int WorkerTest( void )
 		def.seed = 3;
 		nbDestructibleId wall = nbCreateBox( scene.world, &def, (b3Vec3){ 2.0f, 1.5f, 0.2f } );
 		ENSURE( nbDestructible_GetChunkCount( wall ) > 50 );
-		prefractureHashes[pass] = HashScene( &scene, wall );
+		prefractureHashes[pass] = HashDestructible( 2166136261u, wall );
 		DestroyScene( &scene );
 	}
 	ENSURE( prefractureHashes[0] == prefractureHashes[1] );
@@ -658,8 +693,8 @@ static int GraphTest( void )
 					continue;
 				}
 
-				b3Vec3 centroid, normal;
-				float area = nbShape_ContactArea( chunkA->shape, chunkB->shape, 1.0e-4f, &centroid, &normal );
+				nbBondGeometry geometry;
+				float area = nbShape_ContactArea( chunkA->shape, chunkB->shape, 1.0e-4f, &geometry );
 				if ( area <= minBondArea )
 				{
 					continue;
@@ -745,6 +780,114 @@ static int SpanTest( void )
 	return 0;
 }
 
+// A beam glued to the side of a pillar holds when it is short and breaks off at the pillar when it is long.
+// The joint of 0.3 x 0.3 m carries 2 MPa, which is a bending moment of 9 kNm: a beam of about 2.9 m.
+static int CantileverTest( void )
+{
+	for ( int k = 0; k < 2; ++k )
+	{
+		float length = k == 0 ? 1.5f : 4.0f;
+		TestScene scene = CreateScene();
+
+		nbPieceDef pieces[2] = { nbDefaultPieceDef(), nbDefaultPieceDef() };
+		pieces[0].halfExtents = (b3Vec3){ 0.15f, 1.5f, 0.15f };
+		pieces[0].transform.p = (b3Vec3){ 0.0f, 1.5f, 0.0f };
+		pieces[1].halfExtents = (b3Vec3){ 0.5f * length, 0.15f, 0.15f };
+		pieces[1].transform.p = (b3Vec3){ 0.15f + 0.5f * length, 2.7f, 0.0f };
+
+		nbDestructibleDef def = nbDefaultDestructibleDef();
+		nbDestructibleId post = nbCreateDestructible( scene.world, &def, pieces, 2 );
+		ENSURE( nbDestructible_GetChunkCount( post ) == 2 );
+
+		Step( &scene, 2 );
+		nbStats stats = nbWorld_GetStats( scene.world );
+		ENSURE( stats.overloadedBondCount == k );
+		ENSURE( stats.dynamicBodyCount == k );
+
+		DestroyScene( &scene );
+	}
+	return 0;
+}
+
+// A heavy block on a slender column. The joint carries 2.4 MPa, which is fine for concrete and too much for
+// a weak material.
+static int CrushTest( void )
+{
+	for ( int k = 0; k < 2; ++k )
+	{
+		TestScene scene = CreateScene();
+
+		nbPieceDef pieces[2] = { nbDefaultPieceDef(), nbDefaultPieceDef() };
+		pieces[0].halfExtents = (b3Vec3){ 0.1f, 1.0f, 0.1f };
+		pieces[0].transform.p = (b3Vec3){ 0.0f, 1.0f, 0.0f };
+		pieces[1].halfExtents = (b3Vec3){ 1.0f, 0.5f, 1.0f };
+		pieces[1].transform.p = (b3Vec3){ 0.0f, 2.5f, 0.0f };
+
+		nbDestructibleDef def = nbDefaultDestructibleDef();
+		def.material.compressiveStrength = k == 0 ? 3.0e7f : 1.0e6f;
+		nbCreateDestructible( scene.world, &def, pieces, 2 );
+
+		Step( &scene, 2 );
+		nbStats stats = nbWorld_GetStats( scene.world );
+		ENSURE( stats.overloadedBondCount == k );
+		ENSURE( stats.dynamicBodyCount == k );
+
+		DestroyScene( &scene );
+	}
+	return 0;
+}
+
+// A pre-fractured beam on two pillars carries itself. Without the right pillar it cantilevers 6.4 m from the
+// edge of the left one, 4.8 MPa where concrete holds 2 MPa. It breaks near the pillar and the rest falls.
+static int BeamTest( void )
+{
+	TestScene scene = CreateScene();
+	nbDestructibleId gate = CreateGate( &scene, 0.0f, 3 );
+	ENSURE( nbDestructible_GetChunkCount( gate ) > 12 );
+
+	Step( &scene, 5 );
+	nbStats stats = nbWorld_GetStats( scene.world );
+	ENSURE( stats.overloadedBondCount == 0 );
+	ENSURE( stats.dynamicBodyCount == 0 );
+
+	nbImpactDef impact = { 0 };
+	impact.point = (b3Vec3){ 3.0f, 2.3f, 0.0f };
+	impact.radius = 1.0f;
+	impact.damage = 1.0e8f;
+	impact.ejectSpeed = 2.0f;
+	nbWorld_ApplyImpact( scene.world, &impact );
+	Step( &scene, 10 );
+
+	stats = nbWorld_GetStats( scene.world );
+	ENSURE( stats.overloadedBondCount > 0 );
+
+	float fallingMass = 0.0f;
+	float staticBeamVolume = 0.0f;
+	int count = nbDestructible_GetChunkCount( gate );
+	nbChunkId* chunks = malloc( sizeof( nbChunkId ) * (size_t)count );
+	nbDestructible_GetChunks( gate, chunks, count );
+	for ( int i = 0; i < count; ++i )
+	{
+		if ( nbChunk_IsDynamic( chunks[i] ) )
+		{
+			fallingMass = b3MaxFloat( fallingMass, b3Body_GetMass( nbChunk_GetBody( chunks[i] ) ) );
+		}
+		else if ( nbChunk_GetCentroid( chunks[i] ).y > 3.0f )
+		{
+			staticBeamVolume += nbChunk_GetVolume( chunks[i] );
+		}
+	}
+	free( chunks );
+
+	// The beam holds 2.9 m^3, a long part of it falls in one piece and the part over the left pillar stays
+	ENSURE( fallingMass > 1.0f * 2400.0f );
+	ENSURE( staticBeamVolume > 0.2f );
+	ENSURE( staticBeamVolume < 1.5f );
+
+	DestroyScene( &scene );
+	return 0;
+}
+
 // A heavy ball breaks through a wall instead of bouncing off it
 static int CannonballTest( void )
 {
@@ -790,6 +933,9 @@ int WorldTest( void )
 	RUN_TEST( PreFractureTest );
 	RUN_TEST( GraphTest );
 	RUN_TEST( SpanTest );
+	RUN_TEST( CantileverTest );
+	RUN_TEST( CrushTest );
+	RUN_TEST( BeamTest );
 	RUN_TEST( CannonballTest );
 	return 0;
 }

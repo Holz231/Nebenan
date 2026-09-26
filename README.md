@@ -12,7 +12,9 @@ zusammen, bis man ihnen die Stützen wegschießt.
 - Nur die getroffenen Bruchstücke werden verfeinert, der Rest der Wand bleibt ein großes Stück
 - Voronoi-Zellen und Hüllen werden auf mehrere Threads verteilt, über das eigene Task-System oder eingebaute
   Threads. Das Ergebnis hängt nicht von der Zahl der Threads ab
-- Stützgraph mit Verankerung und maximaler Auskragung: Decken ohne Säulen stürzen ein
+- Lastnachweis: Jedes Bauwerk muss sein Eigengewicht tragen. Ein elastisches Modell aller Verbindungen, exakt
+  gelöst, findet die überlasteten Fugen. Kragarme brechen an der Einspannung, Balken ohne Stütze über die
+  Spannweite, Dächer ohne Säulen stürzen ein
 - Kollisionsschaden: Kanonenkugeln und herabfallende Trümmer beschädigen, was sie treffen
 - Staub-Ereignisse für Partikeleffekte: am Einschlag, an jedem Riss und wenn Trümmer hart aufschlagen
 - Deterministisch: gleiche Eingaben ergeben bitgleich das gleiche Bruchmuster, unter Windows, Linux und macOS,
@@ -92,8 +94,9 @@ Box3D-Kopie verwendet.
 | F | Bruchstücke einzeln einfärben |
 | F1 | Menü ein- und ausblenden |
 
-Das Menü zeigt die Zeiten von Physik, Zerstörung und letztem Einschlag, erlaubt Waffenwerte, Zeitlupe
-und die Zahl der Threads für Physik und Zerstörung zu ändern und schaltet Staub und Splitter ein und aus.
+Das Menü zeigt die Zeiten von Physik, Zerstörung und letztem Einschlag und wie viele Verbindungen der
+Lastnachweis gebrochen hat. Es erlaubt Waffenwerte, Zeitlupe und die Zahl der Threads für Physik und
+Zerstörung zu ändern und schaltet Staub und Splitter ein und aus.
 
 **Werkzeuge**
 
@@ -107,11 +110,13 @@ und die Zahl der Threads für Physik und Zerstörung zu ändern und schaltet Sta
 
 - **Mauern**: Ziegelwände vor einer dicken Betonwand
 - **Haus**: zweistöckiges Haus mit Fenstern, Tür und Betondecken
-- **Säulenhalle**: Betonsäulen tragen Balken und Dach. Säulen wegschießen, das Dach stürzt ein.
+- **Säulenhalle**: Betonsäulen tragen Balken und Dach, alles vorab in Zellen von 1,2 m zerlegt. Die vorderen
+  Säulen wegschießen: Balken und Dach brechen über die Spannweite und stürzen ein.
 - **Turm**: hohler Ziegelturm aus verzahnten Ringen, 12 m hoch
 - **Stresstest**: 16 Wände für viele Trümmer gleichzeitig
 
-Aufrufoptionen: `--scene 0..4` startet eine Szene, `--script` feuert eine vorgegebene Schussfolge ab.
+Aufrufoptionen: `--scene 0..4` startet eine Szene, `--script` feuert eine vorgegebene Schussfolge ab,
+`--frames N` beendet nach N Bildern und `--screenshot datei.ppm` speichert dann ein Bild.
 
 ## So funktioniert es
 
@@ -121,7 +126,8 @@ flowchart LR
     B --> C[Verbindungen<br/>beschädigen]
     C --> D[Stützgraph:<br/>Weg zum Anker?]
     D -->|nein| E[Neue dynamische<br/>Box3D-Körper]
-    D -->|ja| F[Bleibt statisch]
+    D -->|ja| F[Lastnachweis:<br/>trägt es sich?]
+    F -->|überlastete Fugen<br/>brechen| D
     E --> G[Box3D simuliert<br/>Trümmer]
     G -->|Treffer-Events| A
 ```
@@ -154,10 +160,30 @@ startet eigene Threads. Die Vorzerlegung beim Laden läuft genauso.
 **Stützgraph.** Zwei Bruchstücke sind verbunden, wenn sich ihre Flächen berühren. Jede Verbindung hält
 `strength × Kontaktfläche` aus, der Schaden eines Einschlags fällt zum Rand hin ab. Reißen Verbindungen,
 sucht Nebenan ab der beschädigten Stelle nach dem kürzesten Weg zu einem verankerten Stück (Best-First-Suche,
-dadurch nur lokale Arbeit). Teile ohne Weg zum Anker werden zu dynamischen Körpern. Zusätzlich prüft
-Nebenan die Auskragung: Ein Stück, das horizontal weiter als `maxSpan` von seiner Stütze entfernt ist,
-bricht ab. Verliert eine Decke ihre Säulen, bricht so alles ab, was zu weit von der nächsten Wand entfernt
-ist, obwohl die Decke noch an der Wand hängt.
+dadurch nur lokale Arbeit). Teile ohne Weg zum Anker werden zu dynamischen Körpern.
+
+**Lastnachweis.** Hängt ein Teil noch am Anker, muss es auch sein Gewicht tragen können. Nach jeder
+Änderung rechnet Nebenan das statische Bauwerk durch: Jedes Bruchstück ist ein starrer Körper, jede
+Verbindung eine elastische Fuge, die sich gegen Öffnen, Schließen und Gleiten proportional zu ihrer Fläche
+wehrt und gegen Biegen und Verdrehen proportional zum Flächenträgheitsmoment ihrer Kontaktfläche. Unter dem
+Eigengewicht verschiebt und verdreht sich jedes nicht verankerte Stück ein wenig. Das ist ein dünnbesetztes
+lineares Gleichungssystem mit sechs Unbekannten pro Stück, und Nebenan löst es exakt: Cholesky-Zerlegung in
+6×6-Blöcken, in Minimum-Degree-Reihenfolge, damit wenig Auffüllung entsteht, alles in doppelter Genauigkeit
+und in fester Reihenfolge, also deterministisch. Die Last verteilt sich wie im echten Bauwerk nach
+Steifigkeit: Breite Fugen tragen mehr als schmale, ein Balken liegt auf beiden Stützen auf, eine Wand trägt
+um ein Loch herum. Aus Kraft und Moment jeder Fuge folgen Normalspannung plus Biegerandspannung und Schub plus
+Torsion. Was über `tensileStrength` (Zug, Biegezug, Schub, bei Druck mit Reibung) oder
+`compressiveStrength` (Druck) liegt, bricht. Danach verteilt sich die Last neu, und der Nachweis läuft im
+nächsten Update wieder, bis der Rest hält. So entsteht ein fortschreitender Einsturz. Weil die Bruchstücke
+starr sind, biegt sich ein einzelnes langes Stück nicht. Lange Balken und Decken sollten deshalb mit
+`cellSize` vorab in Zellen zerlegt werden, dann brechen sie über die Spannweite.
+
+Zerschossene Bereiche bestehen aus Hunderten Splittern, die unter ihrem eigenen Gewicht nie versagen (die
+Spannung ist etwa Dichte × g × Größe, wenige kPa). Deshalb fasst der Nachweis verbundene Stücke, die in derselben
+Zelle eines Rasters von vier Splittergrößen liegen, zu einem starren Cluster zusammen. Hat ein Bauwerk mehr als
+320 Cluster, wird das Raster vergröbert. So kostet ein Nachweis auch für eine völlig zerschossene Wand mit
+2500 Bruchstücken höchstens ein paar Millisekunden, meist deutlich unter einer. Die einfache Regel `maxSpan`
+(maximale Auskragung) gibt es weiterhin, sie ist aber standardmäßig aus.
 
 **Box3D-Anbindung.** Jedes statische Bruchstück hat einen eigenen statischen Körper, denn das Entfernen
 einer Form in Box3D kostet so viel wie der Körper Kontakte hat. Jede lose Insel ist ein dynamischer
@@ -273,7 +299,9 @@ beim Einbinden nicht gebaut.
 | `fragmentSize` | 0,12 m | Kantenlänge der Splitter am Einschlag |
 | `minFragmentVolume` | 2·10⁻⁶ m³ | Kleinere Splitter werden zu Staub |
 | `maxDepth` | 6 | Wie oft ein Bruchstück weiter zerteilt werden kann |
-| `maxSpan` | 4 m | Maximale Auskragung ohne Stütze, 0 schaltet die Prüfung ab |
+| `tensileStrength` | 2·10⁶ Pa | Zug-, Biegezug- und Schubfestigkeit der Fugen im Lastnachweis. Mauerwerk etwa 0,3 MPa, Beton 2 MPa |
+| `compressiveStrength` | 3·10⁷ Pa | Druckfestigkeit der Fugen. Mauerwerk etwa 6 MPa, Beton 30 MPa. Beide 0 schaltet den Nachweis ab |
+| `maxSpan` | 0 m | Zusätzliche einfache Regel: maximale Auskragung ohne Stütze, 0 schaltet sie ab |
 | `friction`, `restitution` | 0,7 / 0,05 | Reibung und Elastizität der Box3D-Formen |
 
 | Welt (`nbWorldDef`) | Standard | Wirkung |
@@ -291,8 +319,11 @@ beim Einbinden nicht gebaut.
 | `workerCount` | 1 | Threads für Voronoi-Zellen und Hüllen, der aufrufende Thread zählt mit |
 | `enqueueTask`, `finishTask`, `userTaskContext` | leer | Task-System der Anwendung, sonst startet Nebenan eigene Threads |
 
-Die Demo nimmt für Ziegel Dichte 1900, Festigkeit 6·10⁵, Splitter 0,1 m und Auskragung 3 m, für Beton
-Dichte 2400, Festigkeit 1,1·10⁶, Splitter 0,13 m und Auskragung 4,5 m.
+Die Demo nimmt für Ziegel Dichte 1900, Festigkeit 6·10⁵, Splitter 0,1 m, Zugfestigkeit 0,3 MPa und
+Druckfestigkeit 6 MPa, für Beton Dichte 2400, Festigkeit 1,1·10⁶, Splitter 0,13 m, 2 MPa und 30 MPa.
+
+`cellSize` im `nbDestructibleDef` zerlegt alle Teile schon beim Laden in Voronoi-Zellen dieser Größe. Für den
+Lastnachweis ist das bei allem nötig, was sich über eine Spannweite biegen soll: Balken, Decken, Dächer.
 
 ## Leistung
 
@@ -313,15 +344,19 @@ Ganze Einschläge (Bruch, Stützgraph, neue Box3D-Körper) und der Box3D-Schritt
 
 | Szenario | Einschlag Ø, 1 / 4 Threads | Box3D-Schritt Ø, 1 / 4 Threads | Am Ende |
 | --- | ---: | ---: | --- |
-| Gewehr, 200 Treffer | 0,31 / 0,30 ms | 3,9 / 2,5 ms | 3586 Bruchstücke, 899 Körper |
-| 20 Explosionen | 2,8 / 2,0 ms | 11,1 / 5,7 ms | 7000 Bruchstücke, 3371 Körper |
-| Gebäudeeinsturz, 16 Treffer | 2,3 / 1,4 ms | 18,6 / 9,7 ms | 7091 Bruchstücke, 3560 Körper |
+| Gewehr, 200 Treffer | 0,33 / 0,30 ms | 4,1 / 2,4 ms | 3678 Bruchstücke, 918 Körper |
+| 20 Explosionen | 2,8 / 2,1 ms | 10,9 / 5,8 ms | 6914 Bruchstücke, 3289 Körper |
+| Gebäudeeinsturz, 18 Treffer | 2,0 / 1,6 ms | 17,4 / 8,1 ms | 4647 Bruchstücke, 2662 Körper |
 
 - Die Voronoi-Zellen einer Explosion brauchen mit 4 Threads 0,5 ms statt 1,4 ms. Der Rest des Einschlags
   (Punktverteilung, Einbau der Stücke, Box3D-Körper und -Formen) läuft auf dem aufrufenden Thread. Bei
   Gewehrtreffern mit ihren wenigen Zellen bringen Threads kaum etwas.
-- Ein Gebäude aus 15 Teilen wird beim Laden in 549 Bruchstücke zerlegt: 3,6 ms mit 1 Thread, 2,1 ms mit 4.
-- `nbWorld_Update` (Kollisionsschaden, Trümmerverwaltung) kostet 0,15 bis 0,4 ms pro Frame.
+- Ein Gebäude aus 15 Teilen wird beim Laden in 549 Bruchstücke zerlegt: 3,3 ms mit 1 Thread, 2,5 ms mit 4.
+  Beim Einsturz sprengen 18 Treffer drei Wände des Erdgeschosses, die Obergeschosse hängen dann an der letzten
+  Wand, bis der Lastnachweis sie abbricht.
+- `nbWorld_Update` (Kollisionsschaden, Trümmerverwaltung, Lastnachweis) kostet im Mittel 0,2 ms pro Frame.
+  Bei der zerschossenen Gewehrwand sind es 1,2 ms, weil nach jedem Treffer eine Wand aus bis zu 2700
+  Bruchstücken nachgewiesen wird (etwa 3 ms pro Nachweis). Ein Nachweis für das Gebäude kostet 1,5 bis 2 ms.
 
 Die Physikzeit ist Box3D mit über 3000 Trümmerkörpern. Ein Gewehrtreffer kostet weniger als ein Drittel
 Millisekunde. Windows, Linux und macOS kommen im Benchmark auf exakt dieselben Bruchstück- und Körperzahlen,
@@ -330,7 +365,7 @@ mit jeder Threadzahl.
 ## Tests und Benchmark
 
 ```sh
-build/bin/nebenan_test            # 24 Tests: Geometrie, Voronoi, Stützgraph, Einsturz, Threads, Staub, Determinismus …
+build/bin/nebenan_test            # 27 Tests: Geometrie, Voronoi, Stützgraph, Einsturz, Lastnachweis, Threads, Staub, Determinismus …
 build/bin/nebenan_benchmark 4     # Zahl = Threads für Bruch und Physik
 ```
 
@@ -348,6 +383,7 @@ src/
   world.c           Welt, Bruchstücke, Verbindungen, Stützgraph, Box3D-Körper, Events
   destructible.c    zerstörbare Objekte und Vorzerlegung
   impact.c          Einschläge und Auswurf der Splitter
+  load.c            Lastnachweis: elastisches Fugenmodell und dünnbesetzte Cholesky-Zerlegung
   scheduler.c       eingebaute Threads, wenn die Anwendung kein Task-System mitbringt
 test/               Tests
 benchmark/          Leistungsmessung
@@ -363,8 +399,10 @@ Nach Änderungen an `demo/shaders/scene.glsl` die Shader neu erzeugen, im Ordner
 
 - Nur die Voronoi-Zellen und Hüllen laufen parallel. Punktverteilung, Einbau der Stücke und das Anlegen der
   Box3D-Formen bleiben auf dem aufrufenden Thread, bei großen Explosionen ist das jetzt der größere Teil.
-- Die Statik ist eine Näherung (Weg zum Anker und maximale Auskragung), kein Lastsolver. Eine schwere Decke
-  auf einer dünnen Säule hält, solange die Verbindungen halten.
+- Der Lastnachweis rechnet Bruchstücke starr und die Fugen linear elastisch: Eine Fuge überträgt auch Zug,
+  statt aufzuklaffen, und ein einzelnes langes Stück biegt sich nicht (dafür `cellSize`). Alle Fugen, die in
+  einem Nachweis überlastet sind, brechen gleichzeitig, auch wenn der Bruch der ersten die anderen entlastet
+  hätte. Fugen innerhalb eines Clusters werden nicht geprüft.
 - Nur konvexe Teile. Konkave Formen müssen als mehrere konvexe Teile angegeben werden.
 - Render- und Physikgeometrie sind dieselben flachen Polygone. Detail-Meshes und Decals fehlen noch, Staub
   gibt es als einfache Partikel in der Demo.

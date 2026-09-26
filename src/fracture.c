@@ -179,17 +179,13 @@ void nbComputeCell( const nbFractureJob* job, int cellIndex, nbArena* arena, nbC
 			continue;
 		}
 
-		b3Vec3 faceCentroid;
-		float area = nbPoly_FaceArea( current, f, &faceCentroid );
-		if ( area <= 0.0f )
+		nbCellNeighbor* neighbor = cell->neighbors + cell->neighborCount;
+		if ( nbPoly_FaceGeometry( current, f, &neighbor->geometry ) <= 0.0f )
 		{
 			continue;
 		}
 
-		nbCellNeighbor* neighbor = cell->neighbors + cell->neighborCount;
 		neighbor->site = tag;
-		neighbor->area = area;
-		neighbor->centroid = faceCentroid;
 		cell->neighborCount += 1;
 	}
 

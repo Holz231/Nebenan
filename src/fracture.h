@@ -11,8 +11,9 @@ typedef struct nbCellNeighbor
 {
 	// Index of the neighboring site
 	int site;
-	float area;
-	b3Vec3 centroid;
+
+	// The shared face, normal pointing to the neighbor
+	nbBondGeometry geometry;
 } nbCellNeighbor;
 
 typedef struct nbCell

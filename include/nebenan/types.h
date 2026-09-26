@@ -83,10 +83,21 @@ typedef struct nbMaterial
 	/// fracture hierarchy can go around repeated impacts.
 	int maxDepth;
 
-	/// Longest horizontal distance, in meters, a glued chunk may be from its support. Load has to
-	/// travel sideways through the structure to reach an anchor, and parts that hang out further
-	/// than this break off, like a slab that lost its columns. Zero disables the check.
+	/// Longest horizontal distance, in meters, a glued chunk may be from its support. A simple rule on top
+	/// of the load check: load has to travel sideways through the structure to reach an anchor, and parts
+	/// that hang out further than this break off. Zero, the default, disables it.
 	float maxSpan;
+
+	/// Stress in Pascal a bond carries in tension, bending and shear before the weight of the structure
+	/// breaks it. Masonry joints hold about 0.3 MPa, plain concrete about 2 MPa. After every change the
+	/// static structure is solved as rigid chunks joined by elastic bonds, and bonds stressed beyond the
+	/// strength break: overhangs break off at their support, beams without a pillar across their span.
+	/// Chunks themselves are rigid, pre-fracture long pieces with cellSize so that they can break.
+	float tensileStrength;
+
+	/// Stress in Pascal a bond carries in compression. Masonry about 6 MPa, concrete about 30 MPa.
+	/// With both strengths zero the load check is off.
+	float compressiveStrength;
 
 	/// User material id stored on the Box3D shapes. It is reported by ray casts and contact events.
 	uint64_t userMaterialId;
@@ -160,7 +171,8 @@ typedef struct nbDestructibleDef
 
 	/// Optional pre-fracture of every piece into Voronoi cells of roughly this size, in meters.
 	/// Zero starts every piece as a single chunk. Runtime fracture refines chunks around impacts
-	/// either way.
+	/// either way. The load check treats chunks as rigid, so beams and slabs that should break along
+	/// their span need cells, about a meter works well.
 	float cellSize;
 
 	/// Seed for the deterministic fracture patterns.
@@ -387,6 +399,9 @@ typedef struct nbStats
 
 	/// Chunks whose physics hull needed the quickhull fallback instead of the direct build.
 	int hullFallbackCount;
+
+	/// Bonds the load check broke because the weight of the structure was too much for them.
+	int overloadedBondCount;
 
 	/// Timings of the last update and the last impact in milliseconds.
 	float updateTime;

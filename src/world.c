@@ -323,7 +323,7 @@ int nbCreateChunkWithHull( nbWorld* world, int destructibleIndex, int actorIndex
 	return chunkIndex;
 }
 
-int nbCreateBond( nbWorld* world, int chunkA, int chunkB, float area, b3Vec3 centroid, float health )
+int nbCreateBond( nbWorld* world, int chunkA, int chunkB, const nbBondGeometry* geometry, float health )
 {
 	NB_ASSERT( chunkA != chunkB );
 
@@ -342,8 +342,10 @@ int nbCreateBond( nbWorld* world, int chunkA, int chunkB, float area, b3Vec3 cen
 	nbBond* bond = world->bonds.data + index;
 	bond->chunk[0] = chunkA;
 	bond->chunk[1] = chunkB;
-	bond->centroid = centroid;
-	bond->area = area;
+	bond->centroid = geometry->centroid;
+	bond->area = geometry->area;
+	bond->normal = geometry->normal;
+	memcpy( bond->inertia, geometry->inertia, sizeof( bond->inertia ) );
 	bond->health = health;
 	bond->stamp = 0;
 
@@ -401,7 +403,7 @@ void nbDestroyBond( nbWorld* world, int bondIndex )
 			nbTouchActor( world, chunk->actorIndex );
 			if ( world->actors.data[chunk->actorIndex].isStatic )
 			{
-				world->destructibles.data[chunk->destructibleIndex].spanDirty = true;
+				world->destructibles.data[chunk->destructibleIndex].structureDirty = true;
 			}
 		}
 	}
@@ -1087,7 +1089,6 @@ static void nbSplitDynamicActor( nbWorld* world, int actorIndex, nbImpactResult*
 void nbCheckSpans( nbWorld* world, int destructibleIndex )
 {
 	nbDestructible* destructible = world->destructibles.data + destructibleIndex;
-	destructible->spanDirty = false;
 	float maxSpan = destructible->material.maxSpan;
 	if ( destructible->isStatic == false || maxSpan <= 0.0f )
 	{
@@ -1234,10 +1235,6 @@ void nbCheckSpans( nbWorld* world, int destructibleIndex )
 		world->actors.data[world->touchedActors.data[i]].isNew = false;
 	}
 	world->touchedActors.count = 0;
-
-	// Collapsed parts may overhang again
-	destructible = world->destructibles.data + destructibleIndex;
-	destructible->spanDirty = false;
 }
 
 void nbSplitActors( nbWorld* world, nbImpactResult* result )
@@ -1773,13 +1770,16 @@ void nbWorld_Update( nbWorldId worldId, float timeStep )
 		}
 	}
 
-	// Structures that lost material may now overhang
+	// Structures that changed are checked for overhangs and against their own weight. Whatever breaks marks
+	// the structure again, so a collapse spreads over the next updates until the rest is stable.
 	for ( int i = 0; i < world->destructibles.count; ++i )
 	{
 		nbDestructible* destructible = world->destructibles.data + i;
-		if ( destructible->isFree == false && destructible->spanDirty )
+		if ( destructible->isFree == false && destructible->structureDirty )
 		{
+			destructible->structureDirty = false;
 			nbCheckSpans( world, i );
+			nbCheckLoads( world, i );
 		}
 	}
 

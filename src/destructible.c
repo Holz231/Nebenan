@@ -15,7 +15,9 @@ nbMaterial nbDefaultMaterial( void )
 	material.fragmentSize = 0.12f;
 	material.minFragmentVolume = 2.0e-6f;
 	material.maxDepth = 6;
-	material.maxSpan = 4.0f;
+	material.maxSpan = 0.0f;
+	material.tensileStrength = 2.0e6f;
+	material.compressiveStrength = 3.0e7f;
 	material.userMaterialId = 0;
 	return material;
 }
@@ -193,13 +195,14 @@ static void nbFinishPiece( nbWorld* world, int destructibleIndex, int actorIndex
 		{
 			const nbCellNeighbor* neighbor = cell->neighbors + k;
 			int j = neighbor->site;
-			if ( j <= i || chunkIndices[j] == NB_NULL_INDEX || neighbor->area < minBondArea )
+			if ( j <= i || chunkIndices[j] == NB_NULL_INDEX || neighbor->geometry.area < minBondArea )
 			{
 				continue;
 			}
 
-			b3Vec3 centroid = b3Add( neighbor->centroid, job->origin );
-			nbCreateBond( world, chunkIndices[i], chunkIndices[j], neighbor->area, centroid, material->strength * neighbor->area );
+			nbBondGeometry geometry = neighbor->geometry;
+			geometry.centroid = b3Add( geometry.centroid, job->origin );
+			nbCreateBond( world, chunkIndices[i], chunkIndices[j], &geometry, material->strength * geometry.area );
 		}
 	}
 }
@@ -369,12 +372,11 @@ nbDestructibleId nbCreateDestructible( nbWorldId worldId, const nbDestructibleDe
 				continue;
 			}
 
-			b3Vec3 centroid, normal;
-			float area =
-				nbShape_ContactArea( world->chunks.data[chunkA].shape, world->chunks.data[chunkB].shape, 1.0e-3f, &centroid, &normal );
+			nbBondGeometry geometry;
+			float area = nbShape_ContactArea( world->chunks.data[chunkA].shape, world->chunks.data[chunkB].shape, 1.0e-3f, &geometry );
 			if ( area > minBondArea )
 			{
-				nbCreateBond( world, chunkA, chunkB, area, centroid, material->strength * area );
+				nbCreateBond( world, chunkA, chunkB, &geometry, material->strength * area );
 			}
 		}
 	}
@@ -386,6 +388,9 @@ nbDestructibleId nbCreateDestructible( nbWorldId worldId, const nbDestructibleDe
 
 	nbCommitPhysics( world );
 	world->touchedActors.count = 0;
+
+	// The first update checks whether the structure carries its own weight
+	world->destructibles.data[index].structureDirty = def->isStatic;
 
 	return (nbDestructibleId){ index + 1, world->worldIndex, world->destructibles.data[index].generation };
 }
