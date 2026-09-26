@@ -387,6 +387,63 @@ static int WorkerTest( void )
 	return 0;
 }
 
+// Impacts, broken bonds and debris landing on the ground report dust for particle effects
+static int DustTest( void )
+{
+	TestScene scene = CreateScene();
+	CreateWall( &scene, (b3Vec3){ 2.0f, 1.5f, 0.15f }, 4 );
+	nbWorld_GetEvents( scene.world );
+
+	nbImpactDef impact = { 0 };
+	impact.point = (b3Vec3){ 0.0f, 1.2f, 0.15f };
+	impact.direction = (b3Vec3){ 0.0f, 0.0f, -1.0f };
+	impact.normal = (b3Vec3){ 0.0f, 0.0f, 1.0f };
+	impact.radius = 0.5f;
+	impact.damage = 1.0e5f;
+	impact.ejectSpeed = 8.0f;
+	nbImpactResult result = nbWorld_ApplyImpact( scene.world, &impact );
+	ENSURE( result.brokenBondCount > 0 );
+
+	nbEvents events = nbWorld_GetEvents( scene.world );
+	int impactCount = 0;
+	int crackCount = 0;
+	for ( int i = 0; i < events.dustCount; ++i )
+	{
+		const nbDustEvent* dust = events.dust + i;
+		ENSURE( dust->volume > 0.0f );
+		float distance = b3Distance( dust->point, impact.point );
+		if ( dust->type == nb_dustImpact )
+		{
+			impactCount += 1;
+			ENSURE( distance < 1.0e-4f );
+			ENSURE( dust->velocity.z > 0.0f );
+		}
+		else if ( dust->type == nb_dustCrack )
+		{
+			crackCount += 1;
+			ENSURE( distance < impact.radius + 0.01f );
+		}
+	}
+	ENSURE( impactCount == 1 );
+	ENSURE( crackCount == result.brokenBondCount );
+
+	// The fragments fall on the ground
+	int collisionCount = 0;
+	for ( int frame = 0; frame < 120; ++frame )
+	{
+		Step( &scene, 1 );
+		events = nbWorld_GetEvents( scene.world );
+		for ( int i = 0; i < events.dustCount; ++i )
+		{
+			collisionCount += events.dust[i].type == nb_dustCollision ? 1 : 0;
+		}
+	}
+	ENSURE( collisionCount > 0 );
+
+	DestroyScene( &scene );
+	return 0;
+}
+
 // Replaying the events must reproduce the set of live chunks, which is what a renderer relies on.
 static int EventTest( void )
 {
@@ -727,6 +784,7 @@ int WorldTest( void )
 	RUN_TEST( DeterminismTest );
 	RUN_TEST( WorkerTest );
 	RUN_TEST( EventTest );
+	RUN_TEST( DustTest );
 	RUN_TEST( DynamicDestructibleTest );
 	RUN_TEST( MultiPieceTest );
 	RUN_TEST( PreFractureTest );

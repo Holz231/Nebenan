@@ -425,3 +425,88 @@ void main()
 #pragma sokol @end
 
 #pragma sokol @program sky sky_vs sky_fs
+
+//----------------------------------------------------------------------------------------------------------------------
+// Dust and chips: camera facing quads, one instance per particle, premultiplied alpha
+
+#pragma sokol @vs particle_vs
+
+layout( binding = 0 ) uniform particle_vs_params
+{
+	mat4 particle_view_proj;
+	vec4 particle_right; // .xyz = camera right
+	vec4 particle_up;	 // .xyz = camera up
+};
+
+in vec2 in_corner;		// per vertex: quad corner in [-1, 1]
+in vec4 in_center_size; // per instance: .xyz = center, .w = half size, negative for a solid chip
+in vec4 in_color_alpha; // per instance: .rgb = albedo, .a = opacity
+
+out vec2 v_corner;
+out vec4 v_particle_color;
+out vec3 v_particle_pos;
+flat out float v_chip;
+
+void main()
+{
+	float size = abs( in_center_size.w );
+	vec3 position = in_center_size.xyz + ( particle_right.xyz * in_corner.x + particle_up.xyz * in_corner.y ) * size;
+	v_corner = in_corner;
+	v_particle_color = in_color_alpha;
+	v_particle_pos = position;
+	v_chip = in_center_size.w < 0.0 ? 1.0 : 0.0;
+	gl_Position = particle_view_proj * vec4( position, 1.0 );
+}
+#pragma sokol @end
+
+#pragma sokol @fs particle_fs
+
+layout( binding = 1 ) uniform particle_fs_params
+{
+	vec4 particle_light;  // .rgb = sun and sky light on a dust cloud
+	vec4 particle_camera; // .xyz = eye, .w = fog density
+	vec4 particle_fog;	  // .rgb = fog color
+};
+
+in vec2 v_corner;
+in vec4 v_particle_color;
+in vec3 v_particle_pos;
+flat in float v_chip;
+
+out vec4 particle_color_out;
+
+void main()
+{
+	// Chips are small solid diamonds, dust puffs are soft discs
+	float alpha;
+	if ( v_chip > 0.5 )
+	{
+		if ( abs( v_corner.x ) + abs( v_corner.y ) > 1.0 )
+		{
+			discard;
+		}
+		alpha = v_particle_color.a;
+	}
+	else
+	{
+		float r2 = dot( v_corner, v_corner );
+		if ( r2 > 1.0 )
+		{
+			discard;
+		}
+		alpha = v_particle_color.a * ( 1.0 - r2 ) * ( 1.0 - r2 );
+	}
+
+	vec3 color = v_particle_color.rgb * particle_light.rgb;
+	float distance = length( particle_camera.xyz - v_particle_pos );
+	float fog = 1.0 - exp( -distance * particle_camera.w );
+	color = mix( color, particle_fog.rgb, fog );
+
+	// Same filmic curve and gamma as the lit geometry
+	color = color * ( 2.51 * color + 0.03 ) / ( color * ( 2.43 * color + 0.59 ) + 0.14 );
+	color = pow( clamp( color, 0.0, 1.0 ), vec3( 1.0 / 2.2 ) );
+	particle_color_out = vec4( color * alpha, alpha );
+}
+#pragma sokol @end
+
+#pragma sokol @program particle particle_vs particle_fs

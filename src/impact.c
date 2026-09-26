@@ -150,8 +150,9 @@ static bool nbPrepareRefine( nbWorld* world, int chunkIndex, b3Vec3 localPoint, 
 }
 
 // Replace a chunk by the cells of its fracture job. The children take the place of the chunk in its
-// actor, inherit its outer bonds and are glued to each other.
-static int nbFinishRefine( nbWorld* world, int chunkIndex, const nbFractureJob* job, nbImpactResult* result )
+// actor, inherit its outer bonds and are glued to each other. Adds the volume of the cells that were too
+// small to keep, which crumbles to dust.
+static int nbFinishRefine( nbWorld* world, int chunkIndex, const nbFractureJob* job, nbImpactResult* result, float* lostVolume )
 {
 	int validCount = 0;
 	for ( int i = 0; i < job->siteCount; ++i )
@@ -176,6 +177,7 @@ static int nbFinishRefine( nbWorld* world, int chunkIndex, const nbFractureJob* 
 	nbMaterial material = world->destructibles.data[destructibleIndex].material;
 	const nbShape* parentShape = chunk->shape;
 	float parentRadius = parentShape->radius;
+	float parentVolume = parentShape->volume;
 	float fragmentSize = material.fragmentSize;
 	b3Vec3 origin = job->origin;
 
@@ -223,6 +225,7 @@ static int nbFinishRefine( nbWorld* world, int chunkIndex, const nbFractureJob* 
 
 	int* childIndices = nbArena_AllocArray( &world->arena, int, job->siteCount );
 	int childCount = 0;
+	float childVolume = 0.0f;
 	for ( int i = 0; i < job->siteCount; ++i )
 	{
 		childIndices[i] = NB_NULL_INDEX;
@@ -233,9 +236,14 @@ static int nbFinishRefine( nbWorld* world, int chunkIndex, const nbFractureJob* 
 		}
 
 		childIndices[i] = nbCreateChunkWithHull( world, destructibleIndex, actorIndex, cell->shape, cell->hull, depth, interiorMaterial );
-		childCount += childIndices[i] != NB_NULL_INDEX ? 1 : 0;
+		if ( childIndices[i] != NB_NULL_INDEX )
+		{
+			childCount += 1;
+			childVolume += world->chunks.data[childIndices[i]].shape->volume;
+		}
 	}
 	result->createdChunkCount += childCount;
+	*lostVolume += b3MaxFloat( parentVolume - childVolume, 0.0f );
 
 	// Glue the children along their shared Voronoi faces
 	float minBondArea = 0.01f * fragmentSize * fragmentSize;
@@ -535,6 +543,8 @@ nbImpactResult nbApplyImpact( nbWorld* world, const nbImpactDef* def, int actorF
 	// Draw the sites of every chunk first, then compute all cells on the workers, then build the chunks.
 	// Each phase runs in candidate order, so the result is the same for any number of workers.
 	int firstChild = world->touchedChunks.count;
+	uint8_t dustMaterial = world->chunks.data[candidates[0]].interiorMaterial;
+	float lostVolume = 0.0f;
 	nbFractureJob* jobs = nbArena_AllocArray( &world->arena, nbFractureJob, candidateCount );
 	int* jobCandidates = nbArena_AllocArray( &world->arena, int, candidateCount );
 	int jobCount = 0;
@@ -570,12 +580,21 @@ nbImpactResult nbApplyImpact( nbWorld* world, const nbImpactDef* def, int actorF
 		for ( int k = 0; k < jobCount; ++k )
 		{
 			int i = jobCandidates[k];
-			if ( nbFinishRefine( world, candidates[i], jobs + k, &result ) > 0 )
+			if ( nbFinishRefine( world, candidates[i], jobs + k, &result, &lostVolume ) > 0 )
 			{
 				candidates[i] = NB_NULL_INDEX;
 			}
 		}
 	}
+
+	// Crushed material at the impact. Directed hits blow the dust out of the crater.
+	float damagedVolume = 0.0f;
+	for ( int i = 0; i < candidateCount; ++i )
+	{
+		damagedVolume += overlaps[i];
+	}
+	b3Vec3 dustVelocity = b3MulSV( 0.3f * def->ejectSpeed, b3Normalize( def->normal ) );
+	nbPushDust( world, nb_dustImpact, point, dustVelocity, radius, 0.1f * damagedVolume + lostVolume, dustMaterial );
 
 	// 3. Damage bonds around the impact. Every bond is visited once.
 	world->bondStamp += 1;
@@ -637,6 +656,7 @@ nbImpactResult nbApplyImpact( nbWorld* world, const nbImpactDef* def, int actorF
 			bond->health -= def->damage * ( 1.0f - distance / radius );
 			if ( bond->health <= 0.0f )
 			{
+				nbPushCrackDust( world, bondIndex );
 				nbDestroyBond( world, bondIndex );
 				result.brokenBondCount += 1;
 			}

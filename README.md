@@ -14,6 +14,7 @@ zusammen, bis man ihnen die Stützen wegschießt.
   Threads. Das Ergebnis hängt nicht von der Zahl der Threads ab
 - Stützgraph mit Verankerung und maximaler Auskragung: Decken ohne Säulen stürzen ein
 - Kollisionsschaden: Kanonenkugeln und herabfallende Trümmer beschädigen, was sie treffen
+- Staub-Ereignisse für Partikeleffekte: am Einschlag, an jedem Riss und wenn Trümmer hart aufschlagen
 - Deterministisch: gleiche Eingaben ergeben bitgleich das gleiche Bruchmuster, unter Windows, Linux und macOS,
   auf x64 und ARM
 - PC-Demo für Windows (Direct3D 11), macOS (Metal) und Linux (OpenGL)
@@ -92,7 +93,7 @@ Box3D-Kopie verwendet.
 | F1 | Menü ein- und ausblenden |
 
 Das Menü zeigt die Zeiten von Physik, Zerstörung und letztem Einschlag, erlaubt Waffenwerte, Zeitlupe
-und die Zahl der Threads für Physik und Zerstörung zu ändern.
+und die Zahl der Threads für Physik und Zerstörung zu ändern und schaltet Staub und Splitter ein und aus.
 
 **Werkzeuge**
 
@@ -178,6 +179,12 @@ ergeben die gleichen Einschläge bitgleich die gleichen Bruchstücke, egal ob mi
 auf x64 oder ARM, mit einem oder mehreren Threads. Die CI prüft das auf allen Plattformen gegen denselben
 Hash. Das ist die Grundlage für Replays und Lockstep-Netzwerkspiel.
 
+**Staub.** Wo Material zerbröselt, meldet Nebenan ein Staub-Ereignis mit Ort, Geschwindigkeit, Ausbreitung,
+Menge und Material: am Einschlag (ein Zehntel des beschädigten Volumens plus die Splitter unter
+`minFragmentVolume`), an jeder gerissenen Verbindung und wenn Trümmer hart aufschlagen. Die Simulation hängt
+davon nicht ab, der Renderer macht daraus Partikel. Die Demo zeichnet Staubwolken und kleine Splitter als
+Billboards in einem einzigen Draw Call.
+
 **Speicher.** Pools mit Freilisten und IDs mit Generationszähler wie in Box3D, sodass veraltete IDs erkannt
 werden. Temporäre Daten eines Einschlags kommen aus einer Arena, die danach in einem Schritt zurückgesetzt
 wird. Eigene Allokatoren lassen sich mit `nbSetAllocator` einhängen, `nbGetByteCount` zählt den Verbrauch.
@@ -231,6 +238,10 @@ for ( int i = 0; i < events.createdCount; ++i )
 }
 // events.destroyedChunks: Meshes entfernen
 // events.movedChunks: Bruchstück hängt jetzt an einem anderen Körper
+for ( int i = 0; i < events.dustCount; ++i )
+{
+	// Staubwolke an events.dust[i].point, Menge events.dust[i].volume in m³
+}
 ```
 
 Gebäude entstehen aus mehreren konvexen Teilen mit `nbCreateDestructible`. Sich berührende Flächen
@@ -319,7 +330,7 @@ mit jeder Threadzahl.
 ## Tests und Benchmark
 
 ```sh
-build/bin/nebenan_test            # 23 Tests: Geometrie, Voronoi, Stützgraph, Einsturz, Threads, Determinismus …
+build/bin/nebenan_test            # 24 Tests: Geometrie, Voronoi, Stützgraph, Einsturz, Threads, Staub, Determinismus …
 build/bin/nebenan_benchmark 4     # Zahl = Threads für Bruch und Physik
 ```
 
@@ -355,8 +366,8 @@ Nach Änderungen an `demo/shaders/scene.glsl` die Shader neu erzeugen, im Ordner
 - Die Statik ist eine Näherung (Weg zum Anker und maximale Auskragung), kein Lastsolver. Eine schwere Decke
   auf einer dünnen Säule hält, solange die Verbindungen halten.
 - Nur konvexe Teile. Konkave Formen müssen als mehrere konvexe Teile angegeben werden.
-- Render- und Physikgeometrie sind dieselben flachen Polygone. Detail-Meshes, Decals und Staubpartikel
-  fehlen noch.
+- Render- und Physikgeometrie sind dieselben flachen Polygone. Detail-Meshes und Decals fehlen noch, Staub
+  gibt es als einfache Partikel in der Demo.
 - Box3D ist noch jung (0.x) und kann seine API ändern. Deshalb ist ein fester Commit eingestellt.
 
 ## Lizenzen

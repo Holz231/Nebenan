@@ -171,6 +171,7 @@ NB_ARRAY_DECLARE( nbActor, nbActorArray );
 NB_ARRAY_DECLARE( nbDestructible, nbDestructibleArray );
 NB_ARRAY_DECLARE( nbChunkId, nbChunkIdArray );
 NB_ARRAY_DECLARE( nbCollisionImpact, nbCollisionImpactArray );
+NB_ARRAY_DECLARE( nbDustEvent, nbDustEventArray );
 
 typedef struct nbWorld
 {
@@ -210,6 +211,7 @@ typedef struct nbWorld
 	nbChunkIdArray createdEvents[2];
 	nbChunkIdArray destroyedEvents[2];
 	nbChunkIdArray movedEvents[2];
+	nbDustEventArray dustEvents[2];
 	int eventBuffer;
 
 	nbCollisionImpactArray collisionImpacts;
@@ -300,6 +302,12 @@ void nbCheckSpans( nbWorld* world, int destructibleIndex );
 void nbCommitPhysics( nbWorld* world );
 
 void nbPushEvent( nbChunkIdArray* events, nbChunkId id );
+
+// Report crumbled material for particle effects
+void nbPushDust( nbWorld* world, nbDustType type, b3Pos point, b3Vec3 velocity, float radius, float volume, uint8_t material );
+
+// Report the crack of a bond that is about to break under damage or load
+void nbPushCrackDust( nbWorld* world, int bondIndex );
 void nbTouchChunk( nbWorld* world, int chunkIndex );
 void nbTouchActor( nbWorld* world, int actorIndex );
 void nbUpdateDebris( nbWorld* world, int actorIndex );

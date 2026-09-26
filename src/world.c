@@ -69,6 +69,35 @@ void nbPushEvent( nbChunkIdArray* events, nbChunkId id )
 	nbArray_Push( *events, id );
 }
 
+void nbPushDust( nbWorld* world, nbDustType type, b3Pos point, b3Vec3 velocity, float radius, float volume, uint8_t material )
+{
+	if ( volume <= 0.0f )
+	{
+		return;
+	}
+
+	nbDustEvent event = {
+		.point = point,
+		.velocity = velocity,
+		.radius = radius,
+		.volume = volume,
+		.material = material,
+		.type = (uint8_t)type,
+	};
+	nbArray_Push( world->dustEvents[world->eventBuffer], event );
+}
+
+void nbPushCrackDust( nbWorld* world, int bondIndex )
+{
+	// Both chunks of a bond share an actor
+	const nbBond* bond = world->bonds.data + bondIndex;
+	const nbChunk* chunk = world->chunks.data + bond->chunk[0];
+	const nbActor* actor = world->actors.data + chunk->actorIndex;
+	b3Pos point = b3TransformWorldPoint( nbActor_GetTransform( world, actor ), bond->centroid );
+	b3Vec3 velocity = actor->isStatic ? b3Vec3_zero : b3Body_GetWorldPointVelocity( actor->bodyId, point );
+	nbPushDust( world, nb_dustCrack, point, velocity, 0.5f * sqrtf( bond->area ), 0.005f * bond->area, chunk->interiorMaterial );
+}
+
 void nbBeginOperation( nbWorld* world )
 {
 	nbArena_Reset( &world->arena );
@@ -1191,6 +1220,7 @@ void nbCheckSpans( nbWorld* world, int destructibleIndex )
 	{
 		if ( world->bonds.data[cut->data[i]].chunk[0] != NB_NULL_INDEX )
 		{
+			nbPushCrackDust( world, cut->data[i] );
 			nbDestroyBond( world, cut->data[i] );
 		}
 	}
@@ -1503,6 +1533,7 @@ void nbDestroyWorld( nbWorldId worldId )
 		nbArray_Free( world->createdEvents[i] );
 		nbArray_Free( world->destroyedEvents[i] );
 		nbArray_Free( world->movedEvents[i] );
+		nbArray_Free( world->dustEvents[i] );
 	}
 	nbArray_Free( world->collisionImpacts );
 	nbArena_Destroy( &world->arena );
@@ -1534,6 +1565,7 @@ nbEvents nbWorld_GetEvents( nbWorldId worldId )
 	world->createdEvents[writeBuffer].count = 0;
 	world->destroyedEvents[writeBuffer].count = 0;
 	world->movedEvents[writeBuffer].count = 0;
+	world->dustEvents[writeBuffer].count = 0;
 	world->eventBuffer = writeBuffer;
 
 	events.createdChunks = world->createdEvents[readBuffer].data;
@@ -1542,6 +1574,8 @@ nbEvents nbWorld_GetEvents( nbWorldId worldId )
 	events.destroyedCount = world->destroyedEvents[readBuffer].count;
 	events.movedChunks = world->movedEvents[readBuffer].data;
 	events.movedCount = world->movedEvents[readBuffer].count;
+	events.dust = world->dustEvents[readBuffer].data;
+	events.dustCount = world->dustEvents[readBuffer].count;
 	return events;
 }
 
@@ -1641,7 +1675,14 @@ static void nbCollectCollisionImpacts( nbWorld* world )
 				continue;
 			}
 
+			// Hard hits raise dust even when they do no damage
 			const nbChunk* chunk = world->chunks.data + chunkIndex;
+			const nbActor* hitActor = world->actors.data + chunk->actorIndex;
+			float chunkVolume = chunk->shape->volume;
+			b3Vec3 dustVelocity = hitActor->isStatic ? b3Vec3_zero : b3Body_GetWorldPointVelocity( hitActor->bodyId, event->point );
+			nbPushDust( world, nb_dustCollision, event->point, dustVelocity, 0.5f * nbCbrt( chunkVolume ),
+						b3MinFloat( 1.0e-6f * energy, 0.1f * chunkVolume ), chunk->interiorMaterial );
+
 			const nbDestructible* destructible = world->destructibles.data + chunk->destructibleIndex;
 			if ( destructible->enableCollisionDamage == false )
 			{

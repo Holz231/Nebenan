@@ -71,6 +71,20 @@ struct Ball
 	float age;
 };
 
+// Dust puff or chip. Pure decoration, simulated on the CPU.
+struct Particle
+{
+	b3Vec3 position;
+	b3Vec3 velocity;
+	float size;
+	float growth;
+	float age;
+	float life;
+	float alpha;
+	float color[3];
+	bool chip;
+};
+
 struct Automation
 {
 	int frameLimit = 0;
@@ -119,6 +133,13 @@ struct App
 	float destructionTime = 0.0f;
 	nbImpactResult lastImpact = {};
 	float averageFrame = 16.0f;
+
+	std::vector<Particle> particles;
+	std::vector<ParticleInstance> particleInstances;
+	std::vector<std::pair<float, int>> particleOrder;
+	uint32_t particleRandom = 0x9e3779b9u;
+	bool showDust = true;
+	float frameSimTime = 0.0f;
 
 	Automation automation;
 	int frame = 0;
@@ -207,9 +228,216 @@ static void RemoveChunkVisual( App& app, int index )
 	visual = ChunkVisual();
 }
 
+//----------------------------------------------------------------------------------------------------------------------
+// Dust and chips
+
+static const int MaxParticles = 6000;
+
+// Small xorshift generator, the particles do not need the deterministic one of the library
+static float RandomFloat( App& app )
+{
+	uint32_t x = app.particleRandom;
+	x ^= x << 13;
+	x ^= x >> 17;
+	x ^= x << 5;
+	app.particleRandom = x;
+	return (float)( x >> 8 ) * ( 1.0f / 16777216.0f );
+}
+
+static float RandomRange( App& app, float lower, float upper )
+{
+	return lower + ( upper - lower ) * RandomFloat( app );
+}
+
+static b3Vec3 RandomInSphere( App& app )
+{
+	for ( ;; )
+	{
+		b3Vec3 v = { RandomRange( app, -1.0f, 1.0f ), RandomRange( app, -1.0f, 1.0f ), RandomRange( app, -1.0f, 1.0f ) };
+		if ( b3LengthSquared( v ) <= 1.0f )
+		{
+			return v;
+		}
+	}
+}
+
+static b3Vec3 DustColor( int material )
+{
+	switch ( material )
+	{
+		case MaterialBrick:
+		case MaterialBrickInterior:
+			return { 0.58f, 0.36f, 0.26f };
+		case MaterialPlaster:
+			return { 0.78f, 0.76f, 0.72f };
+		default:
+			return { 0.6f, 0.59f, 0.56f };
+	}
+}
+
+// Whole particles for the integer part, the fraction becomes a probability
+static int StochasticCount( App& app, float count )
+{
+	int whole = (int)count;
+	return whole + ( RandomFloat( app ) < count - (float)whole ? 1 : 0 );
+}
+
+static void SpawnDust( App& app, const nbDustEvent& dust )
+{
+	b3Vec3 base = DustColor( dust.material );
+	b3Vec3 point = { (float)dust.point.x, (float)dust.point.y, (float)dust.point.z };
+	float radius = b3ClampFloat( dust.radius, 0.05f, 2.0f );
+
+	// About 1500 puffs per cubic meter of dust, chips mostly at impacts
+	float chipRate = dust.type == nb_dustImpact ? 900.0f : ( dust.type == nb_dustCollision ? 300.0f : 0.0f );
+	int puffCount = StochasticCount( app, b3MinFloat( 1500.0f * dust.volume, 48.0f ) );
+	int chipCount = StochasticCount( app, b3MinFloat( chipRate * dust.volume, 36.0f ) );
+
+	for ( int i = 0; i < puffCount && (int)app.particles.size() < MaxParticles; ++i )
+	{
+		Particle particle;
+		particle.position = b3MulAdd( point, 0.5f * radius, RandomInSphere( app ) );
+		particle.velocity = b3MulAdd( b3MulSV( 0.6f, dust.velocity ), 0.8f + radius, RandomInSphere( app ) );
+		particle.size = b3ClampFloat( RandomRange( app, 0.25f, 0.5f ) * radius, 0.05f, 0.6f );
+		particle.growth = RandomRange( app, 0.2f, 0.5f );
+		particle.age = 0.0f;
+		particle.life = RandomRange( app, 1.8f, 4.0f );
+		particle.alpha = RandomRange( app, 0.3f, 0.5f );
+		float shade = RandomRange( app, 0.9f, 1.1f );
+		particle.color[0] = base.x * shade;
+		particle.color[1] = base.y * shade;
+		particle.color[2] = base.z * shade;
+		particle.chip = false;
+		app.particles.push_back( particle );
+	}
+
+	for ( int i = 0; i < chipCount && (int)app.particles.size() < MaxParticles; ++i )
+	{
+		Particle particle;
+		particle.position = b3MulAdd( point, 0.3f * radius, RandomInSphere( app ) );
+		particle.velocity = b3MulAdd( b3MulSV( 1.2f, dust.velocity ), RandomRange( app, 2.0f, 6.0f ), RandomInSphere( app ) );
+		particle.velocity.y += RandomRange( app, 0.5f, 2.5f );
+		particle.size = RandomRange( app, 0.008f, 0.025f );
+		particle.growth = 0.0f;
+		particle.age = 0.0f;
+		particle.life = RandomRange( app, 1.5f, 3.5f );
+		particle.alpha = 1.0f;
+		float shade = RandomRange( app, 0.55f, 0.8f );
+		particle.color[0] = base.x * shade;
+		particle.color[1] = base.y * shade;
+		particle.color[2] = base.z * shade;
+		particle.chip = true;
+		app.particles.push_back( particle );
+	}
+}
+
+static void UpdateParticles( App& app, float dt )
+{
+	if ( dt <= 0.0f )
+	{
+		return;
+	}
+
+	float drag = expf( -2.0f * dt );
+	float growthDecay = expf( -0.7f * dt );
+	for ( size_t i = 0; i < app.particles.size(); )
+	{
+		Particle& particle = app.particles[i];
+		particle.age += dt;
+		if ( particle.age >= particle.life )
+		{
+			app.particles[i] = app.particles.back();
+			app.particles.pop_back();
+			continue;
+		}
+
+		if ( particle.chip )
+		{
+			particle.velocity.y -= 9.81f * dt;
+			particle.position = b3MulAdd( particle.position, dt, particle.velocity );
+			if ( particle.position.y < particle.size && particle.velocity.y < 0.0f )
+			{
+				// Bounce off the ground and lose most of the sliding speed
+				particle.position.y = particle.size;
+				particle.velocity.y *= -0.3f;
+				particle.velocity.x *= 0.5f;
+				particle.velocity.z *= 0.5f;
+			}
+		}
+		else
+		{
+			// Dust slows down quickly in the air, rises a little and spreads out
+			particle.velocity = b3MulSV( drag, particle.velocity );
+			particle.velocity.y += 0.15f * dt;
+			particle.position = b3MulAdd( particle.position, dt, particle.velocity );
+			particle.size += particle.growth * dt;
+			particle.growth *= growthDecay;
+			float floor = 0.3f * particle.size;
+			if ( particle.position.y < floor )
+			{
+				particle.position.y = floor;
+				particle.velocity.y = b3MaxFloat( particle.velocity.y, 0.0f );
+			}
+		}
+		++i;
+	}
+}
+
+static void BuildParticleInstances( App& app )
+{
+	app.particleInstances.clear();
+	app.particleOrder.clear();
+
+	// Back to front, so the soft dust blends correctly
+	for ( int i = 0; i < (int)app.particles.size(); ++i )
+	{
+		float distance = b3DistanceSquared( app.particles[i].position, app.camera.position );
+		app.particleOrder.push_back( { distance, i } );
+	}
+	std::sort( app.particleOrder.begin(), app.particleOrder.end(),
+			   []( const std::pair<float, int>& a, const std::pair<float, int>& b ) { return a.first > b.first; } );
+
+	for ( const std::pair<float, int>& entry : app.particleOrder )
+	{
+		const Particle& particle = app.particles[entry.second];
+		float t = particle.age / particle.life;
+		float alpha;
+		if ( particle.chip )
+		{
+			alpha = t > 0.8f ? ( 1.0f - t ) * 5.0f : 1.0f;
+		}
+		else
+		{
+			float fadeIn = b3MinFloat( particle.age / 0.08f, 1.0f );
+			alpha = particle.alpha * fadeIn * powf( 1.0f - t, 1.5f );
+		}
+
+		ParticleInstance instance;
+		instance.center[0] = particle.position.x;
+		instance.center[1] = particle.position.y;
+		instance.center[2] = particle.position.z;
+		instance.size = particle.chip ? -particle.size : particle.size;
+		instance.color[0] = particle.color[0];
+		instance.color[1] = particle.color[1];
+		instance.color[2] = particle.color[2];
+		instance.alpha = alpha;
+		app.particleInstances.push_back( instance );
+	}
+
+	app.renderer.SetParticles( app.particleInstances.data(), (int)app.particleInstances.size() );
+}
+
 static void SyncChunks( App& app )
 {
 	nbEvents events = nbWorld_GetEvents( app.destruction );
+
+	if ( app.showDust )
+	{
+		for ( int i = 0; i < events.dustCount; ++i )
+		{
+			SpawnDust( app, events.dust[i] );
+		}
+	}
 
 	for ( int i = 0; i < events.destroyedCount; ++i )
 	{
@@ -625,6 +853,7 @@ static void DestroyScene( App& app )
 	app.balls.clear();
 	app.bodySlots.clear();
 	app.lastImpact = {};
+	app.particles.clear();
 }
 
 static void LoadScene( App& app, SceneKind scene )
@@ -830,6 +1059,7 @@ static void StepSimulation( App& app, float frameDt )
 	float destructionTime = 0.0f;
 
 	auto runStep = [&]( float dt ) {
+		app.frameSimTime += dt;
 		uint64_t ticks = b3GetTicks();
 		b3World_Step( app.physics, dt, 4 );
 		physicsTime += b3GetMilliseconds( ticks );
@@ -996,6 +1226,10 @@ static void DrawUi( App& app )
 	ImGui::Checkbox( "Schatten", &app.renderSettings.shadows );
 	ImGui::SameLine();
 	ImGui::Checkbox( "Bruchstücke einfärben (F)", &app.renderSettings.showChunks );
+	if ( ImGui::Checkbox( "Staub und Splitter", &app.showDust ) && app.showDust == false )
+	{
+		app.particles.clear();
+	}
 
 	ImGui::SeparatorText( "Leistung" );
 	nbStats stats = nbWorld_GetStats( app.destruction );
@@ -1010,7 +1244,7 @@ static void DrawUi( App& app )
 	ImGui::Text( "Bruchstücke %d  Verbindungen %d", stats.chunkCount, stats.bondCount );
 	ImGui::Text( "Trümmerkörper %d  wach %d  Kontakte %d", stats.dynamicBodyCount, b3World_GetAwakeBodyCount( app.physics ),
 				 counters.contactCount );
-	ImGui::Text( "Draw Calls %d  Vertices %d", renderStats.drawCalls, renderStats.vertexCount );
+	ImGui::Text( "Draw Calls %d  Vertices %d  Partikel %d", renderStats.drawCalls, renderStats.vertexCount, renderStats.particleCount );
 
 	ImGui::SeparatorText( "Steuerung" );
 	ImGui::TextWrapped( "Linke Maustaste: schießen (halten = Dauerfeuer)\n"
@@ -1160,8 +1394,11 @@ static void OnFrame()
 		RunScript( app );
 	}
 
+	app.frameSimTime = 0.0f;
 	StepSimulation( app, dt );
 	SyncChunks( app );
+	UpdateParticles( app, app.frameSimTime );
+	BuildParticleInstances( app );
 
 	int width = sapp_width();
 	int height = sapp_height();

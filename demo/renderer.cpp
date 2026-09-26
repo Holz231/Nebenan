@@ -134,6 +134,47 @@ void Renderer::Init()
 	skyDesc.sample_count = environment.defaults.sample_count;
 	skyDesc.label = "sky_pipeline";
 	m_skyPipeline = sg_make_pipeline( &skyDesc ).id;
+
+	// Particles: a static quad and a stream of instances
+	static const float corners[12] = { -1.0f, -1.0f, 1.0f, -1.0f, 1.0f, 1.0f, -1.0f, -1.0f, 1.0f, 1.0f, -1.0f, 1.0f };
+	sg_buffer_desc cornerDesc = {};
+	cornerDesc.data = MakeRange( corners, sizeof( corners ) );
+	cornerDesc.label = "particle_corners";
+	m_cornerBuffer = sg_make_buffer( &cornerDesc ).id;
+
+	sg_buffer_desc instanceDesc = {};
+	instanceDesc.usage.vertex_buffer = true;
+	instanceDesc.usage.stream_update = true;
+	instanceDesc.size = MaxParticles * sizeof( ParticleInstance );
+	instanceDesc.label = "particle_instances";
+	m_instanceBuffer = sg_make_buffer( &instanceDesc ).id;
+
+	m_particleShader = sg_make_shader( scene_particle_shader_desc( backend ) ).id;
+	sg_pipeline_desc particleDesc = {};
+	particleDesc.shader = sg_shader{ m_particleShader };
+	particleDesc.layout.buffers[0].stride = 2 * sizeof( float );
+	particleDesc.layout.buffers[1].stride = sizeof( ParticleInstance );
+	particleDesc.layout.buffers[1].step_func = SG_VERTEXSTEP_PER_INSTANCE;
+	particleDesc.layout.attrs[ATTR_scene_particle_in_corner].format = SG_VERTEXFORMAT_FLOAT2;
+	particleDesc.layout.attrs[ATTR_scene_particle_in_corner].buffer_index = 0;
+	particleDesc.layout.attrs[ATTR_scene_particle_in_center_size].format = SG_VERTEXFORMAT_FLOAT4;
+	particleDesc.layout.attrs[ATTR_scene_particle_in_center_size].buffer_index = 1;
+	particleDesc.layout.attrs[ATTR_scene_particle_in_center_size].offset = 0;
+	particleDesc.layout.attrs[ATTR_scene_particle_in_color_alpha].format = SG_VERTEXFORMAT_FLOAT4;
+	particleDesc.layout.attrs[ATTR_scene_particle_in_color_alpha].buffer_index = 1;
+	particleDesc.layout.attrs[ATTR_scene_particle_in_color_alpha].offset = 16;
+	particleDesc.colors[0].blend.enabled = true;
+	particleDesc.colors[0].blend.src_factor_rgb = SG_BLENDFACTOR_ONE;
+	particleDesc.colors[0].blend.dst_factor_rgb = SG_BLENDFACTOR_ONE_MINUS_SRC_ALPHA;
+	particleDesc.colors[0].blend.src_factor_alpha = SG_BLENDFACTOR_ONE;
+	particleDesc.colors[0].blend.dst_factor_alpha = SG_BLENDFACTOR_ONE_MINUS_SRC_ALPHA;
+	particleDesc.depth.compare = SG_COMPAREFUNC_LESS_EQUAL;
+	particleDesc.depth.write_enabled = false;
+	particleDesc.depth.pixel_format = environment.defaults.depth_format;
+	particleDesc.cull_mode = SG_CULLMODE_NONE;
+	particleDesc.sample_count = environment.defaults.sample_count;
+	particleDesc.label = "particle_pipeline";
+	m_particlePipeline = sg_make_pipeline( &particleDesc ).id;
 }
 
 void Renderer::Shutdown()
@@ -150,6 +191,10 @@ void Renderer::Shutdown()
 	sg_destroy_pipeline( sg_pipeline{ m_litPipeline } );
 	sg_destroy_pipeline( sg_pipeline{ m_shadowPipeline } );
 	sg_destroy_pipeline( sg_pipeline{ m_skyPipeline } );
+	sg_destroy_pipeline( sg_pipeline{ m_particlePipeline } );
+	sg_destroy_shader( sg_shader{ m_particleShader } );
+	sg_destroy_buffer( sg_buffer{ m_cornerBuffer } );
+	sg_destroy_buffer( sg_buffer{ m_instanceBuffer } );
 	sg_destroy_shader( sg_shader{ m_litShader } );
 	sg_destroy_shader( sg_shader{ m_shadowShader } );
 	sg_destroy_shader( sg_shader{ m_skyShader } );
@@ -159,6 +204,12 @@ void Renderer::Shutdown()
 	sg_destroy_view( sg_view{ m_shadowTexture } );
 	sg_destroy_image( sg_image{ m_shadowImage } );
 	sg_destroy_sampler( sg_sampler{ m_shadowSampler } );
+}
+
+void Renderer::SetParticles( const ParticleInstance* particles, int count )
+{
+	count = count < MaxParticles ? count : MaxParticles;
+	m_particles.assign( particles, particles + count );
 }
 
 int Renderer::AllocSlot()
@@ -493,6 +544,35 @@ void Renderer::Render( const Camera& camera, const RenderSettings& settings, int
 		sg_draw( 0, page->uploadedCount, 1 );
 		m_stats.drawCalls += 1;
 		m_stats.vertexCount += page->uploadedCount;
+	}
+
+	// Dust and chips on top, without depth writes
+	m_stats.particleCount = (int)m_particles.size();
+	if ( m_particles.empty() == false )
+	{
+		sg_update_buffer( sg_buffer{ m_instanceBuffer }, MakeRange( m_particles.data(), m_particles.size() * sizeof( ParticleInstance ) ) );
+
+		scene_particle_vs_params_t particleVs = {};
+		particleVs.particle_view_proj = viewProj;
+		particleVs.particle_right = MakeVec4( camera.Right(), 0.0f );
+		particleVs.particle_up = MakeVec4( camera.Up(), 0.0f );
+
+		// Dust is lit from all sides: the sky plus a good part of the sun
+		scene_particle_fs_params_t particleFs = {};
+		particleFs.particle_light = Vec4{ 0.5f * 0.42f + 0.6f * 1.75f, 0.62f * 0.42f + 0.6f * 1.62f, 0.82f * 0.42f + 0.6f * 1.42f, 0.0f };
+		particleFs.particle_camera = MakeVec4( camera.position, fsParams.sky_color.w );
+		particleFs.particle_fog = fsParams.fog_color;
+
+		sg_apply_pipeline( sg_pipeline{ m_particlePipeline } );
+		sg_apply_uniforms( UB_scene_particle_vs_params, MakeRange( &particleVs, sizeof( particleVs ) ) );
+		sg_apply_uniforms( UB_scene_particle_fs_params, MakeRange( &particleFs, sizeof( particleFs ) ) );
+
+		sg_bindings bindings = {};
+		bindings.vertex_buffers[0] = sg_buffer{ m_cornerBuffer };
+		bindings.vertex_buffers[1] = sg_buffer{ m_instanceBuffer };
+		sg_apply_bindings( &bindings );
+		sg_draw( 0, 6, (int)m_particles.size() );
+		m_stats.drawCalls += 1;
 	}
 
 	// The pass stays open for the user interface, see EndFrame in the demo

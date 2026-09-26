@@ -310,6 +310,44 @@ typedef struct nbWorldDef
 	int internalValue;
 } nbWorldDef;
 
+/// What produced dust
+typedef enum nbDustType
+{
+	/// Material crushed at an impact
+	nb_dustImpact = 0,
+
+	/// A bond broke and the crack between two chunks crumbles
+	nb_dustCrack = 1,
+
+	/// Debris hit something hard
+	nb_dustCollision = 2,
+} nbDustType;
+
+/// Crumbled material, reported so a renderer can spawn dust and small chips. The volume is a rough
+/// estimate meant to scale particle counts, not a mass balance.
+typedef struct nbDustEvent
+{
+	/// Where the dust appears, in world space
+	b3Pos point;
+
+	/// Velocity of the material in world space, in meters per second
+	b3Vec3 velocity;
+
+	/// Spread of the dust in meters
+	float radius;
+
+	/// Crumbled volume in cubic meters. Impacts: a tenth of the damaged volume plus the fragments below
+	/// minFragmentVolume. Cracks: 5 mm times the bond area. Collisions: a millionth of the impact energy
+	/// in Joule, at most a tenth of the chunk volume.
+	float volume;
+
+	/// Render material of the crumbled faces, the interior material of the chunk
+	uint8_t material;
+
+	/// nbDustType
+	uint8_t type;
+} nbDustEvent;
+
 /// Destruction events collected since the last call to nbWorld_GetEvents. Use them to keep a
 /// renderer in sync: build meshes for created chunks, drop destroyed chunks and re-parent moved chunks.
 typedef struct nbEvents
@@ -323,9 +361,13 @@ typedef struct nbEvents
 	/// Chunks that moved to a different body since the last call. Created chunks are not repeated here.
 	const nbChunkId* movedChunks;
 
+	/// Dust from impacts, cracks and hard collisions since the last call.
+	const nbDustEvent* dust;
+
 	int createdCount;
 	int destroyedCount;
 	int movedCount;
+	int dustCount;
 } nbEvents;
 
 /// Counters and timings of a destruction world.

@@ -29,6 +29,16 @@ struct GpuVertex
 	float slot;
 };
 
+// A dust puff or a chip. 32 bytes, uploaded as one instance each.
+struct ParticleInstance
+{
+	float center[3];
+	// Half size in meters, negative for a solid chip
+	float size;
+	float color[3];
+	float alpha;
+};
+
 struct Camera
 {
 	b3Vec3 position;
@@ -54,6 +64,7 @@ struct RenderStats
 {
 	int drawCalls = 0;
 	int vertexCount = 0;
+	int particleCount = 0;
 	int pageCount = 0;
 	int slotCount = 0;
 	int uploadedBytes = 0;
@@ -77,6 +88,11 @@ public:
 
 	// Pack a vertex
 	static GpuVertex MakeVertex( b3Vec3 position, b3Vec3 normal, int material, int slot );
+
+	// Particles to draw this frame, sorted back to front. Drawn after the opaque geometry.
+	void SetParticles( const ParticleInstance* particles, int count );
+
+	static const int MaxParticles = 8192;
 
 	void Render( const Camera& camera, const RenderSettings& settings, int width, int height );
 
@@ -131,6 +147,11 @@ private:
 	uint32_t m_litShader = 0;
 	uint32_t m_shadowShader = 0;
 	uint32_t m_skyShader = 0;
+	uint32_t m_particlePipeline = 0;
+	uint32_t m_particleShader = 0;
+	uint32_t m_cornerBuffer = 0;
+	uint32_t m_instanceBuffer = 0;
+	std::vector<ParticleInstance> m_particles;
 	uint32_t m_shadowImage = 0;
 	uint32_t m_shadowAttachment = 0;
 	uint32_t m_shadowTexture = 0;
