@@ -7,6 +7,7 @@
 #include "scheduler.h"
 
 #include <float.h>
+#include <stdlib.h>
 
 static nbWorld nb_worlds[NB_MAX_WORLDS];
 
@@ -234,6 +235,7 @@ void nbCreateActorBody( nbWorld* world, int actorIndex, b3WorldTransform transfo
 	bodyDef.type = b3_dynamicBody;
 	bodyDef.position = transform.p;
 	bodyDef.rotation = transform.q;
+	bodyDef.sleepThreshold = world->def.debrisSleepThreshold;
 	b3BodyId bodyId = b3CreateBody( world->physicsWorld, &bodyDef );
 	world->actors.data[actorIndex].bodyId = bodyId;
 	nbMapBody( world, bodyId, actorIndex );
@@ -518,6 +520,12 @@ void nbFreeActor( nbWorld* world, int actorIndex )
 	NB_ASSERT( actor->isFree == false );
 	NB_ASSERT( actor->chunkCount == 0 );
 
+	if ( actor->isRubble )
+	{
+		actor->isRubble = false;
+		world->rubbleCount -= 1;
+	}
+
 	if ( B3_IS_NON_NULL( actor->bodyId ) )
 	{
 		int index = actor->bodyId.index1 - 1;
@@ -708,6 +716,99 @@ bool nbIsAnchored( const nbDestructible* destructible, const nbShape* shape )
 	return false;
 }
 
+// World bounds of the shapes of an actor, a little larger so they reach what rests on them
+static b3AABB nbGetActorBounds( const nbWorld* world, const nbActor* actor )
+{
+	b3AABB box = { { FLT_MAX, FLT_MAX, FLT_MAX }, { -FLT_MAX, -FLT_MAX, -FLT_MAX } };
+	for ( int c = actor->headChunk; c != NB_NULL_INDEX; c = world->chunks.data[c].nextChunk )
+	{
+		b3ShapeId shapeId = world->chunks.data[c].shapeId;
+		if ( b3Shape_IsValid( shapeId ) )
+		{
+			box = b3AABB_Union( box, b3Shape_GetAABB( shapeId ) );
+		}
+	}
+
+	b3Vec3 margin = { 0.05f, 0.05f, 0.05f };
+	box.lowerBound = b3Sub( box.lowerBound, margin );
+	box.upperBound = b3Add( box.upperBound, margin );
+	return box;
+}
+
+typedef struct nbThawContext
+{
+	nbWorld* world;
+	nbIntArray* actors;
+} nbThawContext;
+
+static bool nbThawCallback( b3ShapeId shapeId, void* context )
+{
+	nbThawContext* thawContext = context;
+	nbWorld* world = thawContext->world;
+	int chunkIndex = nbFindChunkFromShape( world, shapeId );
+	if ( chunkIndex == NB_NULL_INDEX )
+	{
+		return true;
+	}
+
+	int actorIndex = world->chunks.data[chunkIndex].actorIndex;
+	nbActor* actor = world->actors.data + actorIndex;
+	if ( actor->isRubble )
+	{
+		// Thaw right away, so the rubble is not collected twice
+		actor->isRubble = false;
+		world->rubbleCount -= 1;
+		nbArray_Push( *thawContext->actors, actorIndex );
+	}
+	return true;
+}
+
+// Debris at rest becomes static and leaves the island it was part of. Box3D wakes that island once when the
+// first of its bodies changes type, the others freeze in the same update.
+static void nbFreezeActor( nbWorld* world, int actorIndex )
+{
+	nbActor* actor = world->actors.data + actorIndex;
+	b3Body_SetType( actor->bodyId, b3_staticBody );
+	actor->isRubble = true;
+	world->rubbleCount += 1;
+}
+
+void nbThawRubble( nbWorld* world, b3AABB box )
+{
+	if ( world->rubbleCount == 0 )
+	{
+		return;
+	}
+
+	// Rubble in the box, then whatever rested on the thawed rubble, in the order Box3D finds it. Box3D's trees are
+	// deterministic, so is the order.
+	nbIntArray* thawed = &world->actorList;
+	thawed->count = 0;
+	nbThawContext context = { world, thawed };
+	b3World_OverlapAABB( world->physicsWorld, box, b3DefaultQueryFilter(), nbThawCallback, &context );
+	for ( int i = 0; i < thawed->count && i < NB_MAX_THAW; ++i )
+	{
+		int actorIndex = thawed->data[i];
+		nbActor* actor = world->actors.data + actorIndex;
+		b3Body_SetType( actor->bodyId, b3_dynamicBody );
+		b3Body_ApplyMassFromShapes( actor->bodyId );
+		b3Body_SetAwake( actor->bodyId, true );
+		actor->age = 0.0f;
+		if ( world->rubbleCount > 0 )
+		{
+			b3World_OverlapAABB( world->physicsWorld, nbGetActorBounds( world, actor ), b3DefaultQueryFilter(), nbThawCallback, &context );
+		}
+	}
+
+	// Past the limit the rest stays rubble
+	for ( int i = NB_MAX_THAW; i < thawed->count; ++i )
+	{
+		world->actors.data[thawed->data[i]].isRubble = true;
+		world->rubbleCount += 1;
+	}
+	thawed->count = 0;
+}
+
 void nbUpdateDebris( nbWorld* world, int actorIndex )
 {
 	nbActor* actor = world->actors.data + actorIndex;
@@ -834,6 +935,13 @@ void nbCommitPhysics( nbWorld* world )
 		actor->massDirty = false;
 
 		nbUpdateDebris( world, actorIndex );
+
+		// Rubble that rested on a part falling off the structure falls with it
+		if ( actor->fromStructure )
+		{
+			actor->fromStructure = false;
+			nbThawRubble( world, nbGetActorBounds( world, actor ) );
+		}
 	}
 }
 
@@ -851,6 +959,7 @@ static int nbDetachChunks( nbWorld* world, int sourceIndex, const int* chunks, i
 	actor->sourceLinearVelocity = linearVelocity;
 	actor->sourceAngularVelocity = angularVelocity;
 	actor->sourceCenter = center;
+	actor->fromStructure = world->actors.data[sourceIndex].isStatic;
 	nbTouchActor( world, actorIndex );
 
 	for ( int i = 0; i < count; ++i )
@@ -1308,7 +1417,10 @@ nbWorldDef nbDefaultWorldDef( void )
 {
 	nbWorldDef def = { 0 };
 	def.physicsWorld = b3_nullWorldId;
-	def.maxDebrisBodies = 3000;
+	def.maxDebrisBodies = 1500;
+	def.enableRubble = true;
+	def.maxRubbleBodies = 20000;
+	def.debrisSleepThreshold = 0.12f;
 	def.debrisLifetime = 0.0f;
 	def.smallDebrisVolume = 0.002f;
 	def.killDepth = -100.0f;
@@ -1316,6 +1428,7 @@ nbWorldDef nbDefaultWorldDef( void )
 	def.collisionDamageScale = 12.0f;
 	def.collisionRadiusScale = 0.035f;
 	def.maxCollisionImpactsPerUpdate = 4;
+	def.loadCheckBudget = 2000;
 	def.maxFragmentsPerImpact = 160;
 	def.collisionPassThrough = 0.6f;
 	def.workerCount = 1;
@@ -1569,6 +1682,9 @@ void nbDestroyWorld( nbWorldId worldId )
 	nbArray_Free( world->touchedActors );
 	nbArray_Free( world->splitSeeds );
 	nbArray_Free( world->scratchList );
+	nbArray_Free( world->actorList );
+	nbArray_Free( world->loadChecks );
+	nbArray_Free( world->brokenBonds );
 	for ( int i = 0; i < 2; ++i )
 	{
 		nbArray_Free( world->createdEvents[i] );
@@ -1635,6 +1751,7 @@ nbStats nbWorld_GetStats( nbWorldId worldId )
 	stats.staticBodyCount = world->staticActorCount;
 	stats.dynamicBodyCount = world->dynamicActorCount;
 	stats.debrisCount = world->debris.count;
+	stats.rubbleCount = world->rubbleCount;
 	stats.byteCount = nbGetByteCount();
 	return stats;
 }
@@ -1766,6 +1883,68 @@ static void nbCollectCollisionImpacts( nbWorld* world )
 	}
 }
 
+typedef struct nbDebrisRank
+{
+	int isLarge;
+	float age;
+	int actorIndex;
+} nbDebrisRank;
+
+// Small before large, old before young, then by index so the order is total and the same everywhere
+static int nbCompareDebris( const void* a, const void* b )
+{
+	const nbDebrisRank* x = a;
+	const nbDebrisRank* y = b;
+	if ( x->isLarge != y->isLarge )
+	{
+		return x->isLarge - y->isLarge;
+	}
+	if ( x->age != y->age )
+	{
+		return x->age > y->age ? -1 : 1;
+	}
+	return x->actorIndex - y->actorIndex;
+}
+
+// Remove debris over budget: the oldest small pieces first, then the oldest of any size. Moving debris and rubble have
+// budgets of their own. Once over budget a tenth more goes, so the ranking only runs every so often.
+static void nbEnforceDebrisBudget( nbWorld* world, bool rubble, int budget )
+{
+	int count = 0;
+	for ( int i = 0; i < world->debris.count; ++i )
+	{
+		count += world->actors.data[world->debris.data[i]].isRubble == rubble ? 1 : 0;
+	}
+
+	if ( count <= budget )
+	{
+		return;
+	}
+
+	nbBeginOperation( world );
+	nbDebrisRank* ranks = nbArena_AllocArray( &world->arena, nbDebrisRank, count );
+	int rankCount = 0;
+	for ( int i = 0; i < world->debris.count; ++i )
+	{
+		int actorIndex = world->debris.data[i];
+		const nbActor* actor = world->actors.data + actorIndex;
+		if ( actor->isRubble == rubble )
+		{
+			ranks[rankCount++] = (nbDebrisRank){ actor->volume < world->def.smallDebrisVolume ? 0 : 1, actor->age, actorIndex };
+		}
+	}
+
+	qsort( ranks, (size_t)rankCount, sizeof( nbDebrisRank ), nbCompareDebris );
+	int excess = count - budget + budget / 10;
+	for ( int i = 0; i < excess && i < rankCount; ++i )
+	{
+		if ( world->actors.data[ranks[i].actorIndex].isFree == false )
+		{
+			nbDestroyActor( world, ranks[i].actorIndex );
+		}
+	}
+}
+
 void nbWorld_Update( nbWorldId worldId, float timeStep )
 {
 	nbWorld* world = nbGetWorldFromId( worldId );
@@ -1779,29 +1958,33 @@ void nbWorld_Update( nbWorldId worldId, float timeStep )
 	// Read the Box3D events of the last step before anything changes the world
 	nbCollectCollisionImpacts( world );
 
-	// Debris below the kill depth. Only bodies that moved can have crossed it.
+	// Debris below the kill depth, and debris that fell asleep and turns into rubble. Only bodies that moved can have
+	// crossed the depth or fallen asleep.
 	b3Vec3 gravity = b3World_GetGravity( world->physicsWorld );
 	b3Vec3 up = b3Neg( b3Normalize( gravity ) );
+	bool hasGravity = b3LengthSquared( up ) > 0.5f;
 	world->scratchList.count = 0;
-	if ( b3LengthSquared( up ) > 0.5f )
+	world->actorList.count = 0;
+	b3BodyEvents bodyEvents = b3World_GetBodyEvents( world->physicsWorld );
+	for ( int i = 0; i < bodyEvents.moveCount; ++i )
 	{
-		b3BodyEvents bodyEvents = b3World_GetBodyEvents( world->physicsWorld );
-		for ( int i = 0; i < bodyEvents.moveCount; ++i )
+		const b3BodyMoveEvent* event = bodyEvents.moveEvents + i;
+		int actorIndex = nbFindActorFromBody( world, event->bodyId );
+		if ( actorIndex == NB_NULL_INDEX )
 		{
-			const b3BodyMoveEvent* event = bodyEvents.moveEvents + i;
-			int actorIndex = nbFindActorFromBody( world, event->bodyId );
-			if ( actorIndex == NB_NULL_INDEX )
-			{
-				continue;
-			}
+			continue;
+		}
 
-			const nbActor* actor = world->actors.data + actorIndex;
-			b3Pos center = b3TransformWorldPoint( event->transform, actor->localCenter );
-			float height = (float)( up.x * center.x + up.y * center.y + up.z * center.z );
-			if ( height < world->def.killDepth )
-			{
-				nbArray_Push( world->scratchList, actorIndex );
-			}
+		const nbActor* actor = world->actors.data + actorIndex;
+		b3Pos center = b3TransformWorldPoint( event->transform, actor->localCenter );
+		float height = (float)( up.x * center.x + up.y * center.y + up.z * center.z );
+		if ( hasGravity && height < world->def.killDepth )
+		{
+			nbArray_Push( world->scratchList, actorIndex );
+		}
+		else if ( event->fellAsleep && world->def.enableRubble && actor->isStatic == false && actor->isRubble == false )
+		{
+			nbArray_Push( world->actorList, actorIndex );
 		}
 	}
 
@@ -1814,18 +1997,52 @@ void nbWorld_Update( nbWorldId worldId, float timeStep )
 		}
 	}
 
-	// Structures that changed are checked for overhangs and against their own weight. Whatever breaks marks
-	// the structure again, so a collapse spreads over the next updates until the rest is stable.
-	for ( int i = 0; i < world->destructibles.count; ++i )
+	for ( int i = 0; i < world->actorList.count; ++i )
 	{
-		nbDestructible* destructible = world->destructibles.data + i;
-		if ( destructible->isFree == false && destructible->structureDirty )
+		int actorIndex = world->actorList.data[i];
+		if ( world->actors.data[actorIndex].isFree == false )
 		{
-			destructible->structureDirty = false;
-			nbCheckSpans( world, i );
-			nbCheckLoads( world, i );
+			nbFreezeActor( world, actorIndex );
 		}
 	}
+	world->actorList.count = 0;
+
+	// Structures that changed are checked for overhangs and against their own weight. Whatever breaks marks
+	// the structure again, so a collapse spreads over the next updates until the rest is stable. The checks
+	// take turns within a budget of chunks per update, starting where the last update stopped.
+	int destructibleCount = world->destructibles.count;
+	int budget = world->def.loadCheckBudget * world->workerCount;
+	for ( int i = 0; i < destructibleCount; ++i )
+	{
+		nbDestructible* destructible = world->destructibles.data + i;
+		destructible->loadCooldown -= destructible->loadCooldown > 0 ? 1 : 0;
+	}
+
+	for ( int k = 0; k < destructibleCount && budget > 0; ++k )
+	{
+		int i = ( world->loadCursor + k ) % destructibleCount;
+		nbDestructible* destructible = world->destructibles.data + i;
+		if ( destructible->isFree || destructible->structureDirty == false || destructible->loadCooldown > 0 )
+		{
+			continue;
+		}
+
+		// A structure is checked at most every few updates, a collapse moves on at that pace and changes in
+		// between are checked together
+		destructible->structureDirty = false;
+		destructible->loadCooldown = NB_LOAD_COOLDOWN;
+		budget -= destructible->chunkCount;
+		world->loadCursor = ( i + 1 ) % destructibleCount;
+		nbArray_Push( world->loadChecks, i );
+	}
+
+	// The simple span rule first, it breaks bonds right away. Then the load check of all structures at once.
+	for ( int i = 0; i < world->loadChecks.count; ++i )
+	{
+		nbCheckSpans( world, world->loadChecks.data[i] );
+	}
+	nbCheckLoads( world, world->loadChecks.data, world->loadChecks.count );
+	world->loadChecks.count = 0;
 
 	// Collision damage, strongest first, limited per update
 	int impactCount = world->collisionImpacts.count;
@@ -1882,30 +2099,8 @@ void nbWorld_Update( nbWorldId worldId, float timeStep )
 		}
 	}
 
-	// Over budget: remove the oldest small debris first, then the oldest of any size
-	while ( world->debris.count > world->def.maxDebrisBodies )
-	{
-		int oldest = NB_NULL_INDEX;
-		float oldestAge = -1.0f;
-		bool oldestIsSmall = false;
-		for ( int i = 0; i < world->debris.count; ++i )
-		{
-			const nbActor* actor = world->actors.data + world->debris.data[i];
-			bool isSmall = actor->volume < world->def.smallDebrisVolume;
-			if ( ( isSmall && oldestIsSmall == false ) || ( isSmall == oldestIsSmall && actor->age > oldestAge ) )
-			{
-				oldest = world->debris.data[i];
-				oldestAge = actor->age;
-				oldestIsSmall = isSmall;
-			}
-		}
-
-		if ( oldest == NB_NULL_INDEX )
-		{
-			break;
-		}
-		nbDestroyActor( world, oldest );
-	}
+	nbEnforceDebrisBudget( world, false, world->def.maxDebrisBodies );
+	nbEnforceDebrisBudget( world, true, world->def.maxRubbleBodies );
 
 	world->stats.updateTime = b3GetMilliseconds( ticks );
 }

@@ -355,7 +355,7 @@ static uint32_t RunDeterminismScenario( void )
 
 // Fracture and physics are bit for bit identical with MSVC, GCC and Clang on x64 and ARM. This is the result
 // with the pinned Box3D commit. Update it when the results change on purpose, never to make one platform pass.
-#define NB_EXPECTED_DETERMINISM_HASH 0x3e2c8cb6u
+#define NB_EXPECTED_DETERMINISM_HASH 0xb2ddfdf0u
 
 static int DeterminismTest( void )
 {
@@ -1098,6 +1098,51 @@ static int ArchTest( void )
 	return 0;
 }
 
+// Debris that comes to rest turns into static rubble. An impact nearby brings it back to life.
+static int RubbleTest( void )
+{
+	TestScene scene = CreateScene();
+	CreateWall( &scene, (b3Vec3){ 2.0f, 1.0f, 0.12f }, 21 );
+
+	nbImpactDef impact = { 0 };
+	impact.point = (b3Vec3){ 0.0f, 1.0f, 0.12f };
+	impact.direction = (b3Vec3){ 0.0f, 0.0f, -1.0f };
+	impact.radius = 0.6f;
+	impact.damage = 1.0e8f;
+	impact.ejectSpeed = 2.0f;
+	nbWorld_ApplyImpact( scene.world, &impact );
+	ENSURE( nbWorld_GetStats( scene.world ).debrisCount > 0 );
+
+	Step( &scene, 300 );
+	nbStats stats = nbWorld_GetStats( scene.world );
+	ENSURE( stats.rubbleCount > 0 );
+	ENSURE( stats.rubbleCount <= stats.debrisCount );
+
+	// Rubble sits on static Box3D bodies
+	nbWorld* world = nbGetWorldFromId( scene.world );
+	int staticRubble = 0;
+	for ( int i = 0; i < world->actors.count; ++i )
+	{
+		const nbActor* actor = world->actors.data + i;
+		if ( actor->isFree == false && actor->isRubble )
+		{
+			ENSURE( b3Body_GetType( actor->bodyId ) == b3_staticBody );
+			staticRubble += 1;
+		}
+	}
+	ENSURE( staticRubble == stats.rubbleCount );
+
+	// A blast on the ground in front of the wall wakes the rubble around it
+	impact.point = (b3Vec3){ 0.0f, 0.1f, 0.5f };
+	impact.radius = 1.5f;
+	impact.damage = 0.0f;
+	nbWorld_ApplyImpact( scene.world, &impact );
+	ENSURE( nbWorld_GetStats( scene.world ).rubbleCount < stats.rubbleCount );
+
+	DestroyScene( &scene );
+	return 0;
+}
+
 // A heavy ball breaks through a wall instead of bouncing off it
 static int CannonballTest( void )
 {
@@ -1148,6 +1193,7 @@ int WorldTest( void )
 	RUN_TEST( BeamTest );
 	RUN_TEST( MaterialTest );
 	RUN_TEST( ArchTest );
+	RUN_TEST( RubbleTest );
 	RUN_TEST( CannonballTest );
 	return 0;
 }

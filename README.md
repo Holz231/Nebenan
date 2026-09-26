@@ -21,6 +21,9 @@ zusammen, bis man ihnen die Stützen wegschießt.
 - Mehrere Materialien in einem Bauwerk, zum Beispiel Ziegelwände mit Betondecken. Jedes Bruchstück behält
   das Material seines Teils, eine Fuge zwischen zwei Materialien hält so viel wie das schwächere
 - Kollisionsschaden: Kanonenkugeln und herabfallende Trümmer beschädigen, was sie treffen
+- Für ganze Städte gebaut: Trümmer, die zur Ruhe kommen, werden zu statischem Schutt und kosten Box3D nichts
+  mehr. Einschläge und Einstürze wecken ihn wieder. Box3D rechnet nur eine begrenzte Zahl bewegter Trümmer,
+  und die Lastnachweise mehrerer Gebäude laufen parallel auf den Threads
 - Staub-Ereignisse für Partikeleffekte: am Einschlag, an jedem Riss und wenn Trümmer hart aufschlagen
 - Deterministisch: gleiche Eingaben ergeben bitgleich das gleiche Bruchmuster, unter Windows, Linux und macOS,
   auf x64 und ARM
@@ -117,16 +120,19 @@ Zerstörung zu ändern und schaltet Staub und Splitter ein und aus.
 
 - **Mauern**: Ziegelwände vor einer dicken Betonwand
 - **Haus**: zweistöckiges Haus aus Ziegelwänden mit Fenstern, Tür und Betondecken. Im Skript sprengen elf
-  Granaten Vorder-, Rück- und rechte Wand des Erdgeschosses. Das Obergeschoss hängt dann an den Resten der
-  linken Wand, reißt ab und sackt als Ganzes auf die Mauerstümpfe.
+  Granaten Vorder-, Rück- und rechte Wand des Erdgeschosses. Das Obergeschoss bleibt auf den Mauerresten
+  stehen: Deren Fugen reißen auf, tragen aber weiter Druck.
 - **Säulenhalle**: Betonsäulen tragen Balken und Dach, alles vorab in Zellen von 1,2 m zerlegt. Die vorderen
   Säulen wegschießen: Balken und Dach brechen über die Spannweite und stürzen ein.
 - **Turm**: hohler Ziegelturm aus verzahnten Ringen, 12 m hoch
 - **Stresstest**: 16 Wände für viele Trümmer gleichzeitig
+- **Stadt**: 20 Häuser an zwei Straßen, jedes dritte mit drei Stockwerken. Im Skript fallen zwölf Granaten pro
+  Sekunde auf die Wände.
 
-Aufrufoptionen: `--scene 0..4` startet eine Szene, `--script` feuert eine vorgegebene Schussfolge ab,
-`--frames N` beendet nach N Bildern und `--screenshot datei.ppm` speichert dann ein Bild, `--load-view`
-schaltet die Statik-Ansicht ein.
+Aufrufoptionen: `--scene 0..5` startet eine Szene, `--script` feuert eine vorgegebene Schussfolge ab,
+`--frames N` beendet nach N Bildern, meldet die CPU-Zeit pro Frame und speichert mit `--screenshot datei.ppm`
+ein Bild, `--load-view` schaltet die Statik-Ansicht ein. Hinkt die Physik hinterher, rechnet die Demo höchstens
+zwei Schritte pro Bild und lässt die Zeit langsamer laufen, statt immer mehr Schritte nachzuholen.
 
 ## So funktioniert es
 
@@ -172,6 +178,12 @@ startet eigene Threads. Die Vorzerlegung beim Laden läuft genauso.
 Einschlags fällt zum Rand hin ab. Reißen Verbindungen, sucht Nebenan ab der beschädigten Stelle nach dem
 kürzesten Weg zu einem verankerten Stück (Best-First-Suche, dadurch nur lokale Arbeit). Teile ohne Weg zum
 Anker werden zu dynamischen Körpern.
+
+**Trümmer und Schutt.** Lose Teile sind dynamische Box3D-Körper. Liegt ein Trümmer eine halbe Sekunde lang
+ruhig, schläft er in Box3D ein, und Nebenan macht ihn zu statischem Schutt: Er bleibt liegen, wo er ist, gehört
+zu keiner Insel mehr und kostet den Physikschritt nichts. Ein Einschlag in der Nähe, ein Teil, das darunter aus
+dem Bauwerk fällt, oder Schutt, der darunter wieder in Bewegung kommt, weckt ihn. Bewegte Trümmer und Schutt
+haben je eine Obergrenze, darüber verschwinden zuerst die ältesten kleinen Stücke.
 
 **Lastnachweis.** Hängt ein Teil noch am Anker, muss es auch sein Gewicht tragen können. Nach jeder
 Änderung rechnet Nebenan das statische Bauwerk durch: Jedes Bruchstück ist ein starrer Körper, jede
@@ -360,7 +372,11 @@ beim Einbinden nicht gebaut.
 
 | Welt (`nbWorldDef`) | Standard | Wirkung |
 | --- | --- | --- |
-| `maxDebrisBodies` | 3000 | Obergrenze für lose Trümmerkörper |
+| `maxDebrisBodies` | 1500 | Obergrenze für bewegte Trümmerkörper, darüber verschwinden die ältesten kleinen |
+| `enableRubble` | an | Trümmer, die zur Ruhe kommen, werden zu statischem Schutt |
+| `maxRubbleBodies` | 20 000 | Obergrenze für Schutt |
+| `debrisSleepThreshold` | 0,12 m/s | Langsamer gilt ein Trümmer als in Ruhe |
+| `loadCheckBudget` | 2000 | Bruchstücke, die der Lastnachweis pro Update und Thread durchgeht |
 | `debrisLifetime` | 0 s | Lebensdauer kleiner Trümmer, 0 für unbegrenzt |
 | `smallDebrisVolume` | 0,002 m³ | Ab dieser Größe gilt ein Trümmer als klein |
 | `killDepth` | −100 m | Trümmer darunter werden entfernt |
@@ -381,7 +397,7 @@ Lastnachweis ist das bei allem nötig, was sich über eine Spannweite biegen sol
 
 ## Leistung
 
-Gemessen mit `nebenan_benchmark` auf einer Cloud-VM mit 4 Kernen (Intel Xeon, 2,1 GHz), GCC 13, Release.
+Gemessen mit `nebenan_benchmark` auf einer Cloud-VM mit 4 Kernen (Intel Xeon, 2,8 GHz), GCC 13, Release.
 Ein normaler Spiele-PC ist schneller.
 
 Voronoi-Kern, Platte 4 × 2 × 0,3 m mit Punkten um den Einschlag:
@@ -398,9 +414,20 @@ Ganze Einschläge (Bruch, Stützgraph, neue Box3D-Körper) und der Box3D-Schritt
 
 | Szenario | Einschlag Ø, 1 / 4 Threads | Box3D-Schritt Ø, 1 / 4 Threads | Am Ende |
 | --- | ---: | ---: | --- |
-| Gewehr, 200 Treffer | 0,33 / 0,31 ms | 3,8 / 2,6 ms | 3599 Bruchstücke, 906 Körper |
-| 20 Explosionen | 2,7 / 1,9 ms | 11,3 / 5,7 ms | 6727 Bruchstücke, 3225 Körper |
-| Gebäudeeinsturz, 18 Treffer | 2,1 / 1,4 ms | 18,3 / 8,5 ms | 4796 Bruchstücke, 2708 Körper |
+| Gewehr, 200 Treffer | 0,38 / 0,35 ms | 4,9 / 2,4 ms | 3564 Bruchstücke, 916 Körper |
+| 20 Explosionen | 3,5 / 2,5 ms | 10,5 / 5,6 ms | 5896 Bruchstücke, 1798 Körper |
+| Gebäudeeinsturz, 18 Treffer | 2,7 / 1,7 ms | 6,8 / 2,9 ms | 3280 Bruchstücke, 1354 Körper |
+
+Eine Stadt aus 16 Häusern unter Dauerbeschuss, zwölf Granaten pro Sekunde, 20 Sekunden lang, pro Frame alles
+zusammen (Einschläge, Box3D-Schritt, `nbWorld_Update`):
+
+| Stadt | Ø | 95 % der Frames | Box3D-Schritt Ø |
+| --- | ---: | ---: | ---: |
+| 1 Thread | 21,3 ms | 31,7 ms | 17,2 ms |
+| 4 Threads | 12,3 ms | 19,5 ms | 8,3 ms |
+
+Am Ende liegen 42 000 Bruchstücke herum, aber Box3D bewegt höchstens 1500 Trümmer gleichzeitig mit etwa
+19 000 Kontakten. Was zur Ruhe kommt, liegt als Schutt, und die Häuser werden reihum nachgewiesen.
 
 - Die Voronoi-Zellen einer Explosion brauchen mit 4 Threads 0,5 ms statt 1,4 ms. Der Rest des Einschlags
   (Punktverteilung, Einbau der Stücke, Box3D-Körper und -Formen) läuft auf dem aufrufenden Thread. Bei
@@ -408,18 +435,20 @@ Ganze Einschläge (Bruch, Stützgraph, neue Box3D-Körper) und der Box3D-Schritt
 - Ein Gebäude aus 15 Teilen wird beim Laden in 549 Bruchstücke zerlegt: 3,4 ms mit 1 Thread, 2,7 ms mit 4.
   Beim Einsturz sprengen 18 Treffer drei Wände des Erdgeschosses, die Obergeschosse hängen dann an der letzten
   Wand, bis der Lastnachweis sie abbricht.
-- `nbWorld_Update` (Kollisionsschaden, Trümmerverwaltung, Lastnachweis) kostet im Mittel 0,2 ms pro Frame.
-  Bei der zerschossenen Gewehrwand sind es 1,2 ms, weil nach jedem Treffer eine Wand aus bis zu 2700
-  Bruchstücken nachgewiesen wird (etwa 3 ms pro Nachweis). Ein Nachweis für das Gebäude kostet 1,5 bis 2 ms.
+- `nbWorld_Update` (Kollisionsschaden, Trümmer und Schutt, Lastnachweis) kostet im Mittel 0,2 bis 0,8 ms pro
+  Frame, in der Stadt unter Dauerbeschuss 3,6 ms. Ein Nachweis für ein zerschossenes Haus kostet 2 bis 3 ms,
+  deshalb wird jedes Bauwerk höchstens jedes zweite Update nachgewiesen, und die Nachweise eines Updates
+  verteilen sich auf die Threads.
 
-Die Physikzeit ist Box3D mit über 3000 Trümmerkörpern. Ein Gewehrtreffer kostet weniger als ein Drittel
-Millisekunde. Windows, Linux und macOS kommen im Benchmark auf exakt dieselben Bruchstück- und Körperzahlen,
-mit jeder Threadzahl.
+Die Physikzeit ist fast ganz Box3D. Die Obergrenze für bewegte Trümmer (`maxDebrisBodies`) ist der wichtigste
+Regler: Sie bestimmt, wie viele Körper und Kontakte Box3D pro Schritt rechnet. Ein Gewehrtreffer kostet etwa
+ein Drittel Millisekunde. Windows, Linux und macOS kommen im Benchmark auf exakt dieselben Bruchstück- und
+Körperzahlen, mit jeder Threadzahl.
 
 ## Tests und Benchmark
 
 ```sh
-build/bin/nebenan_test            # 29 Tests: Geometrie, Voronoi, Stützgraph, Einsturz, Lastnachweis, Materialien, Threads, Staub, Determinismus …
+build/bin/nebenan_test            # 30 Tests: Geometrie, Voronoi, Stützgraph, Einsturz, Lastnachweis, Materialien, Threads, Staub, Determinismus …
 build/bin/nebenan_benchmark 4     # Zahl = Threads für Bruch und Physik
 ```
 

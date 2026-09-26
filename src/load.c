@@ -51,8 +51,8 @@
 // Limit on the 6x6 blocks of the factor. Structures that would need more are not checked.
 #define NB_LOAD_MAX_BLOCKS 262144
 
-// Size of the grid cells that group fragments into clusters, in fragment sizes
-#define NB_LOAD_CLUSTER_SIZE 4.0f
+// Size of the grid cells that group the fragments of runtime fracture into clusters, in fragment sizes
+#define NB_LOAD_CLUSTER_SIZE 12.0f
 
 // Clusters with unknowns a check solves at most. Larger structures are checked on a coarser grid, which
 // bounds the cost of the factorization to a few milliseconds.
@@ -1123,9 +1123,28 @@ static void nbBuildClusters( nbArena* arena, const b3Vec3* centroids, const floa
 }
 
 
-void nbCheckLoads( nbWorld* world, int destructibleIndex )
+// Outcome of the check of one structure
+typedef struct nbLoadResult
 {
+	int destructibleIndex;
+
+	// Bonds to break, in the arena of the thread that checked the structure
+	int* broken;
+	int brokenCount;
+
+	// Glued bonds that cracked open
+	int crackedCount;
+} nbLoadResult;
+
+// Solve a structure against its weight and find the bonds that break. Only reads and writes the chunks and bonds of
+// this structure and the arena, so several structures can be checked on different threads at once.
+static void nbAnalyzeLoads( nbWorld* world, nbArena* arena, b3Vec3 gravityVector, nbLoadResult* result )
+{
+	int destructibleIndex = result->destructibleIndex;
 	nbDestructible* destructible = world->destructibles.data + destructibleIndex;
+	result->broken = NULL;
+	result->brokenCount = 0;
+	result->crackedCount = 0;
 
 	// Strengths of zero leave a material out of the check, unless pieces are joined by joints of their own.
 	// Clusters follow the finest fragments.
@@ -1162,17 +1181,9 @@ void nbCheckLoads( nbWorld* world, int destructibleIndex )
 		return;
 	}
 
-	b3Vec3 gravityVector = b3World_GetGravity( world->physicsWorld );
-	if ( b3LengthSquared( gravityVector ) <= 0.0f )
-	{
-		return;
-	}
 	b3Vec3 gravity = b3InvRotateVector( destructible->transform.q, gravityVector );
 	b3Vec3 down = b3Normalize( gravity );
 	float weight = b3Length( gravity );
-
-	nbBeginOperation( world );
-	nbArena* arena = &world->arena;
 
 	// The chunks and bonds of the structure in compact arrays
 	const nbActor* actor = world->actors.data + actorIndex;
@@ -1188,8 +1199,9 @@ void nbCheckLoads( nbWorld* world, int destructibleIndex )
 		nbChunk* chunk = world->chunks.data + c;
 		chunk->scratch = count;
 		chunk->utilization = 0.0f;
+		// Fragments cluster, pieces and the cells of a pre-fracture only on a much coarser grid
 		centroids[count] = chunk->shape->centroid;
-		radii[count] = chunk->shape->radius;
+		radii[count] = ( chunk->depth > 0 ? 1.0f : 3.0f ) * chunk->shape->radius;
 		masses[count] = (double)destructible->materials[chunk->materialIndex].density * (double)chunk->shape->volume;
 		anchoredChunks[count] = ( chunk->flags & nb_chunkAnchored ) != 0;
 		bondCapacity += chunk->bondCount;
@@ -1464,7 +1476,7 @@ void nbCheckLoads( nbWorld* world, int destructibleIndex )
 		nbBond* bond = world->bonds.data + loadBond->bondIndex;
 		if ( bond->jointState == nb_jointGlued && loadBond->state != nb_jointGlued )
 		{
-			world->stats.crackedBondCount += 1;
+			result->crackedCount += 1;
 		}
 		bond->jointState = loadBond->state;
 		bond->eccentricity = loadBond->eccentricity;
@@ -1514,14 +1526,114 @@ void nbCheckLoads( nbWorld* world, int destructibleIndex )
 	}
 
 	// A joint that still changes breaks only when it was overloaded in the pass before as well
-	nbIntArray* broken = &world->scratchList;
-	broken->count = 0;
+	int* broken = nbArena_AllocArray( arena, int, loadBondCount + 1 );
+	int brokenCount = 0;
 	for ( int k = 0; k < loadBondCount; ++k )
 	{
 		float load = provisional[k] ? b3MinFloat( utilization[k], previousUtilization[k] ) : utilization[k];
 		if ( load > 1.0f && load >= threshold && ( final || provisional[k] == false ) )
 		{
-			nbArray_Push( *broken, loadBonds[k].bondIndex );
+			broken[brokenCount++] = loadBonds[k].bondIndex;
+		}
+	}
+
+	result->broken = broken;
+	result->brokenCount = brokenCount;
+}
+
+typedef struct nbLoadTask
+{
+	nbWorld* world;
+	nbLoadResult* results;
+	int resultCount;
+	b3Vec3 gravity;
+
+	// Shared counter that hands out the structures
+	int* nextResult;
+
+	nbArena* arena;
+} nbLoadTask;
+
+static void nbLoadTaskMain( void* context )
+{
+	nbLoadTask* task = context;
+	for ( ;; )
+	{
+		int item = nbAtomicFetchAddInt( task->nextResult, 1 );
+		if ( item >= task->resultCount )
+		{
+			break;
+		}
+
+		nbAnalyzeLoads( task->world, task->arena, task->gravity, task->results + item );
+	}
+}
+
+void nbCheckLoads( nbWorld* world, const int* destructibles, int count )
+{
+	b3Vec3 gravity = b3World_GetGravity( world->physicsWorld );
+	if ( count == 0 || b3LengthSquared( gravity ) <= 0.0f )
+	{
+		return;
+	}
+
+	// The structures are checked on the workers, each by the next free one
+	nbBeginOperation( world );
+	nbLoadResult* results = nbArena_AllocArray( &world->arena, nbLoadResult, count );
+	for ( int i = 0; i < count; ++i )
+	{
+		results[i] = (nbLoadResult){ .destructibleIndex = destructibles[i] };
+	}
+
+	int taskCount = world->enqueueTask != NULL ? world->workerCount : 1;
+	taskCount = taskCount < count ? taskCount : count;
+	int nextResult = 0;
+	nbLoadTask tasks[NB_MAX_WORKERS];
+	void* userTasks[NB_MAX_WORKERS];
+	for ( int i = 0; i < taskCount; ++i )
+	{
+		tasks[i] = (nbLoadTask){
+			.world = world,
+			.results = results,
+			.resultCount = count,
+			.gravity = gravity,
+			.nextResult = &nextResult,
+			.arena = i == 0 ? &world->arena : world->workerArenas + i,
+		};
+	}
+
+	for ( int i = 1; i < taskCount; ++i )
+	{
+		userTasks[i] = world->enqueueTask( nbLoadTaskMain, tasks + i, world->userTaskContext, "nebenan loads" );
+	}
+
+	nbLoadTaskMain( tasks + 0 );
+
+	for ( int i = 1; i < taskCount; ++i )
+	{
+		if ( userTasks[i] != NULL )
+		{
+			world->finishTask( userTasks[i], world->userTaskContext );
+		}
+	}
+
+	// Break in the order of the structures, which does not depend on the workers. The bonds to break move to a
+	// list of their own first, splitting reuses the arenas.
+	nbIntArray* broken = &world->brokenBonds;
+	broken->count = 0;
+	for ( int i = 0; i < count; ++i )
+	{
+		const nbLoadResult* result = results + i;
+		world->stats.crackedBondCount += result->crackedCount;
+		for ( int k = 0; k < result->brokenCount; ++k )
+		{
+			nbArray_Push( *broken, result->broken[k] );
+		}
+
+		// The load moves on to the remaining bonds, check again soon
+		if ( result->brokenCount > 0 )
+		{
+			world->destructibles.data[result->destructibleIndex].structureDirty = true;
 		}
 	}
 
@@ -1530,17 +1642,14 @@ void nbCheckLoads( nbWorld* world, int destructibleIndex )
 		return;
 	}
 
-	// Copy the broken bonds, splitting reuses the scratch list
-	int brokenCount = broken->count;
-	int* brokenBonds = nbArena_AllocArray( arena, int, brokenCount );
-	memcpy( brokenBonds, broken->data, sizeof( int ) * (size_t)brokenCount );
-
-	for ( int k = 0; k < brokenCount; ++k )
+	nbBeginOperation( world );
+	for ( int k = 0; k < broken->count; ++k )
 	{
-		nbPushCrackDust( world, brokenBonds[k] );
-		nbDestroyBond( world, brokenBonds[k] );
+		nbPushCrackDust( world, broken->data[k] );
+		nbDestroyBond( world, broken->data[k] );
 		world->stats.overloadedBondCount += 1;
 	}
+	broken->count = 0;
 
 	nbImpactResult result = { 0 };
 	nbSplitActors( world, &result );
@@ -1551,7 +1660,4 @@ void nbCheckLoads( nbWorld* world, int destructibleIndex )
 		world->actors.data[world->touchedActors.data[k]].isNew = false;
 	}
 	world->touchedActors.count = 0;
-
-	// The load moves on to the remaining bonds, check again on the next update
-	world->destructibles.data[destructibleIndex].structureDirty = true;
 }

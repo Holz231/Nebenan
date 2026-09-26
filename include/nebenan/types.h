@@ -289,8 +289,20 @@ typedef struct nbWorldDef
 	/// The Box3D world that simulates the chunks. Required.
 	b3WorldId physicsWorld;
 
-	/// Maximum number of free debris bodies. When exceeded, the oldest small debris are removed.
+	/// Maximum number of debris bodies that move. When exceeded, the oldest small debris are removed. Rubble
+	/// has a budget of its own.
 	int maxDebrisBodies;
+
+	/// Debris that has come to rest turns into static rubble. It stays where it is and costs the physics step
+	/// nothing. Impacts, collapses underneath and anything that frees the rubble below bring it back to life.
+	bool enableRubble;
+
+	/// Maximum number of rubble bodies. When exceeded, the oldest small rubble is removed.
+	int maxRubbleBodies;
+
+	/// Speed in meters per second below which debris counts as at rest. Box3D puts debris to sleep that stays
+	/// slower than this for half a second, and sleeping debris turns into rubble.
+	float debrisSleepThreshold;
 
 	/// Small debris are removed after this many seconds. Zero keeps them forever.
 	float debrisLifetime;
@@ -312,6 +324,11 @@ typedef struct nbWorldDef
 
 	/// Maximum number of collision impacts processed per update. Limits worst case frame time.
 	int maxCollisionImpactsPerUpdate;
+
+	/// Chunks the load check goes through per update and worker. Structures that changed are checked on the
+	/// workers, each in one piece, until this many chunks are done, and the rest wait for the next update. Bounds
+	/// the cost when many buildings are hit at once.
+	int loadCheckBudget;
 
 	/// Upper bound for the fragments one impact creates. Bounds the cost of large explosions.
 	int maxFragmentsPerImpact;
@@ -409,6 +426,9 @@ typedef struct nbStats
 	int staticBodyCount;
 	int dynamicBodyCount;
 	int debrisCount;
+
+	/// Debris that came to rest and became static rubble. Also counted as debris and dynamic bodies.
+	int rubbleCount;
 
 	/// Totals since the world was created.
 	int impactCount;

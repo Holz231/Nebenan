@@ -39,10 +39,11 @@ enum SceneKind
 	SceneColonnade,
 	SceneTower,
 	SceneStress,
+	SceneTown,
 	SceneCount
 };
 
-static const char* s_sceneNames[SceneCount] = { "Mauern", "Haus", "Säulenhalle", "Turm", "Stresstest" };
+static const char* s_sceneNames[SceneCount] = { "Mauern", "Haus", "Säulenhalle", "Turm", "Stresstest", "Stadt" };
 static const char* s_toolNames[ToolCount] = { "Gewehr", "Granate", "Kanone" };
 
 struct ToolSettings
@@ -92,6 +93,10 @@ struct Automation
 	const char* screenshotPath = nullptr;
 	bool script = false;
 	int scene = -1;
+
+	// CPU time per frame in milliseconds: simulation (Box3D and Nebenan), everything else on the CPU
+	std::vector<float> simulationTimes;
+	std::vector<float> frameTimes;
 };
 
 struct App
@@ -716,7 +721,8 @@ static void BuildWallScene( App& app )
 	app.renderSettings.sceneRadius = 16.0f;
 }
 
-static void BuildHouseScene( App& app )
+// Brick walls with doors and windows and concrete floors
+static void AddHouse( App& app, b3Vec3 position, float yaw, int floors, uint32_t seed )
 {
 	MaterialPreset brick = BrickPreset();
 	MaterialPreset concrete = ConcretePreset();
@@ -724,7 +730,7 @@ static void BuildHouseScene( App& app )
 	std::vector<nbPieceDef> pieces;
 	float width = 9.0f, depth = 6.5f, story = 3.0f, t = 0.3f, slab = 0.25f;
 
-	for ( int floor = 0; floor < 2; ++floor )
+	for ( int floor = 0; floor < floors; ++floor )
 	{
 		float y = floor * ( story + slab );
 		std::vector<b3Vec2> front;
@@ -753,9 +759,13 @@ static void BuildHouseScene( App& app )
 		pieces.push_back( slabPiece );
 	}
 
-	// Brick walls and concrete slabs in one structure. The slabs stay single chunks: glued to the masonry they
-	// would lift off the walls when they bend, which the joints do not survive.
-	AddStructure( app, { 0.0f, 0.0f, 0.0f }, 0.0f, brick, pieces, 7 );
+	// Brick walls and concrete slabs in one structure
+	AddStructure( app, position, yaw, brick, pieces, seed );
+}
+
+static void BuildHouseScene( App& app )
+{
+	AddHouse( app, { 0.0f, 0.0f, 0.0f }, 0.0f, 2, 7 );
 
 	app.camera.position = { 6.0f, 3.0f, 14.0f };
 	app.camera.yaw = -0.4f;
@@ -850,6 +860,36 @@ static void BuildStressScene( App& app )
 	app.renderSettings.sceneRadius = 20.0f;
 }
 
+// A town of houses along two streets, to wreck as fast as you can
+static const int TownRows = 4;
+static const int TownColumns = 5;
+
+static b3Vec3 TownHousePosition( int row, int column )
+{
+	return { 14.0f * ( (float)column - 0.5f * (float)( TownColumns - 1 ) ), 0.0f, -12.0f * (float)row };
+}
+
+static void BuildTownScene( App& app )
+{
+	uint32_t seed = 200;
+	for ( int row = 0; row < TownRows; ++row )
+	{
+		for ( int column = 0; column < TownColumns; ++column )
+		{
+			// Every third house has a third floor, every other one faces the other street
+			int floors = ( row * TownColumns + column ) % 3 == 1 ? 3 : 2;
+			float yaw = ( row & 1 ) != 0 ? B3_PI : 0.0f;
+			AddHouse( app, TownHousePosition( row, column ), yaw, floors, seed++ );
+		}
+	}
+
+	app.camera.position = { 0.0f, 16.0f, 34.0f };
+	app.camera.yaw = 0.0f;
+	app.camera.pitch = -0.38f;
+	app.renderSettings.sceneCenter = { 0.0f, 3.0f, -18.0f };
+	app.renderSettings.sceneRadius = 46.0f;
+}
+
 static void DestroyScene( App& app )
 {
 	if ( nbWorld_IsValid( app.destruction ) )
@@ -901,7 +941,6 @@ static void LoadScene( App& app, SceneKind scene )
 
 	nbWorldDef def = nbDefaultWorldDef();
 	def.physicsWorld = app.physics;
-	def.maxDebrisBodies = 4000;
 	def.collisionRadiusScale = 0.02f;
 	def.workerCount = app.workerCount;
 	app.destruction = nbCreateWorld( &def );
@@ -919,6 +958,9 @@ static void LoadScene( App& app, SceneKind scene )
 			break;
 		case SceneTower:
 			BuildTowerScene( app );
+			break;
+		case SceneTown:
+			BuildTownScene( app );
 			break;
 		default:
 			BuildStressScene( app );
@@ -1117,16 +1159,18 @@ static void StepSimulation( App& app, float frameDt )
 	}
 	else
 	{
+		// At most two steps per frame. When the simulation cannot keep up, it slows down instead of taking more
+		// and more steps per frame, which would slow down every frame further.
 		app.accumulator += b3MinFloat( frameDt, 0.1f );
-		while ( app.accumulator >= step && steps < 3 )
+		while ( app.accumulator >= step && steps < 2 )
 		{
 			runStep( step );
 			app.accumulator -= step;
 			steps += 1;
 		}
-		if ( steps == 3 )
+		if ( steps == 2 )
 		{
-			app.accumulator = 0.0f;
+			app.accumulator = b3MinFloat( app.accumulator, step );
 		}
 	}
 
@@ -1357,6 +1401,21 @@ static void RunScript( App& app )
 			}
 			break;
 
+		case SceneTown:
+			if ( f >= 20 && f % 5 == 0 )
+			{
+				// Twelve grenades a second on the walls of the houses, like holding the fire button
+				int k = ( f - 20 ) / 5;
+				int house = ( k * 7 ) % ( TownRows * TownColumns );
+				b3Vec3 center = TownHousePosition( house / TownColumns, house % TownColumns );
+				float along = (float)( ( k * 5 ) % 9 ) / 4.0f - 1.0f;
+				float height = ( k % 3 ) == 0 ? 4.4f : 1.2f;
+				b3Vec3 local = ( k % 4 ) < 2 ? b3Vec3{ 4.2f * along, height, ( k % 4 ) == 0 ? 3.4f : -3.4f }
+											  : b3Vec3{ ( k % 4 ) == 2 ? 4.7f : -4.7f, height, 3.0f * along };
+				FireAt( app, ToolGrenade, b3Add( center, local ) );
+			}
+			break;
+
 		default:
 			if ( f >= 20 && f < 120 && f % 5 == 0 )
 			{
@@ -1436,13 +1495,16 @@ static void OnFrame()
 		app.fireCooldown = 1.0f / app.tools[app.tool].rate;
 	}
 
+	uint64_t cpuTicks = b3GetTicks();
 	if ( app.automation.script )
 	{
 		RunScript( app );
 	}
 
 	app.frameSimTime = 0.0f;
+	uint64_t simulationTicks = b3GetTicks();
 	StepSimulation( app, dt );
+	float simulationTime = b3GetMilliseconds( simulationTicks );
 	SyncChunks( app );
 	UpdateLoadView( app );
 	UpdateParticles( app, app.frameSimTime );
@@ -1467,12 +1529,35 @@ static void OnFrame()
 	sg_end_pass();
 	sg_commit();
 
+	if ( app.automation.frameLimit > 0 )
+	{
+		app.automation.simulationTimes.push_back( simulationTime );
+		app.automation.frameTimes.push_back( b3GetMilliseconds( cpuTicks ) );
+	}
+
 	app.frame += 1;
 	if ( app.automation.frameLimit > 0 && app.frame >= app.automation.frameLimit )
 	{
 		nbStats stats = nbWorld_GetStats( app.destruction );
-		printf( "scene %d frame %d: chunks %d bonds %d debris %d overloaded %d\n", (int)app.scene, app.frame, stats.chunkCount,
-				stats.bondCount, stats.dynamicBodyCount, stats.overloadedBondCount );
+		printf( "scene %d frame %d: chunks %d bonds %d debris %d rubble %d overloaded %d\n", (int)app.scene, app.frame, stats.chunkCount,
+				stats.bondCount, stats.dynamicBodyCount, stats.rubbleCount, stats.overloadedBondCount );
+
+		RenderStats rs = app.renderer.GetStats();
+		printf( "  render: draw calls %d vertices %d pages %d slots %d uploaded %d bytes last frame\n", rs.drawCalls, rs.vertexCount, rs.pageCount, rs.slotCount, rs.uploadedBytes );
+		// CPU time per frame, without waiting for the GPU
+		for ( int k = 0; k < 2; ++k )
+		{
+			std::vector<float> times = k == 0 ? app.automation.simulationTimes : app.automation.frameTimes;
+			std::sort( times.begin(), times.end() );
+			float total = 0.0f;
+			for ( float t : times )
+			{
+				total += t;
+			}
+			size_t n = times.size();
+			printf( "  %s avg %.2f ms p95 %.2f ms max %.2f ms\n", k == 0 ? "simulation" : "cpu frame ", total / (float)b3MaxInt( (int)n, 1 ),
+					n > 0 ? times[n * 95 / 100] : 0.0f, n > 0 ? times[n - 1] : 0.0f );
+		}
 
 		if ( app.automation.screenshotPath != nullptr )
 		{

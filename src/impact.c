@@ -225,11 +225,6 @@ static int nbFinishRefine( nbWorld* world, int chunkIndex, const nbFractureJob* 
 		}
 	}
 
-	if ( world->actors.data[actorIndex].isStatic )
-	{
-		world->destructibles.data[destructibleIndex].structureDirty = true;
-	}
-
 	// Remove the parent first so the children can take over its place in the actor
 	nbDestroyChunk( world, chunkIndex );
 	result->fracturedChunkCount += 1;
@@ -453,13 +448,14 @@ nbImpactResult nbApplyImpact( nbWorld* world, const nbImpactDef* def, int actorF
 		destructibleFilter = def->destructibleId.index1 - 1;
 	}
 
-	// 1. Query
+	// 1. Query, after the rubble in reach came back to life
 	float radius = def->radius;
 	b3Pos point = def->point;
 	b3AABB box = {
 		{ (float)point.x - radius, (float)point.y - radius, (float)point.z - radius },
 		{ (float)point.x + radius, (float)point.y + radius, (float)point.z + radius },
 	};
+	nbThawRubble( world, box );
 
 	nbQueryContext queryContext = { world, destructibleFilter, actorFilter };
 	b3World_OverlapAABB( world->physicsWorld, box, b3DefaultQueryFilter(), nbQueryCallback, &queryContext );
@@ -673,10 +669,12 @@ nbImpactResult nbApplyImpact( nbWorld* world, const nbImpactDef* def, int actorF
 				continue;
 			}
 
+			// Weaker bonds carry less. Once a bond lost half of its strength the structure has to be checked against its
+			// weight again, breaking bonds mark it anyway.
+			float fullHealth = nbGetBondStrength( world, bond ) * bond->area;
+			bool wasStrong = bond->health >= 0.5f * fullHealth;
 			bond->health -= def->damage * ( 1.0f - distance / radius );
-
-			// Weaker bonds carry less, the structure has to be checked against its weight again
-			if ( world->actors.data[chunk->actorIndex].isStatic )
+			if ( wasStrong && bond->health < 0.5f * fullHealth && world->actors.data[chunk->actorIndex].isStatic )
 			{
 				world->destructibles.data[chunk->destructibleIndex].structureDirty = true;
 			}

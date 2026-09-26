@@ -9,6 +9,13 @@
 
 #define NB_MAX_WORLDS 16
 
+// Rubble bodies one thaw brings back to life at most, so a single impact cannot wake a mountain of rubble
+#define NB_MAX_THAW 512
+
+// Updates between two load checks of the same structure. A collapse moves on at this pace, changes in between are
+// checked together.
+#define NB_LOAD_COOLDOWN 2
+
 enum nbChunkFlags
 {
 	// Glued to the world through an anchor plane
@@ -164,6 +171,12 @@ typedef struct nbActor
 
 	// Actor was created during the current operation
 	bool isNew;
+
+	// Split off the static structure during the current operation
+	bool fromStructure;
+
+	// Debris at rest, carried by a static body until something disturbs it
+	bool isRubble;
 } nbActor;
 
 typedef struct nbDestructible
@@ -190,6 +203,9 @@ typedef struct nbDestructible
 
 	// Load checks in a row whose open joints have not settled yet
 	int loadPasses;
+
+	// Updates until the structure may be checked again
+	int loadCooldown;
 
 	// Grid cell size the last load check clustered the chunks with
 	float loadCellSize;
@@ -262,6 +278,13 @@ typedef struct nbWorld
 	// Scratch list for queries
 	nbIntArray scratchList;
 
+	// Actors to freeze into rubble or to bring back to life
+	nbIntArray actorList;
+
+	// Structures to check against their weight in this update, and the bonds the check breaks
+	nbIntArray loadChecks;
+	nbIntArray brokenBonds;
+
 	// Event buffers. The write buffers collect events, nbWorld_GetEvents swaps them with the read buffers.
 	nbChunkIdArray createdEvents[2];
 	nbChunkIdArray destroyedEvents[2];
@@ -287,9 +310,13 @@ typedef struct nbWorld
 	int dynamicActorCount;
 	int staticActorCount;
 	int destructibleCount;
+	int rubbleCount;
 
 	uint32_t bondStamp;
 	uint32_t searchStamp;
+
+	// Destructible the next load check starts from
+	int loadCursor;
 
 	nbStats stats;
 
@@ -365,8 +392,9 @@ void nbSplitActors( nbWorld* world, nbImpactResult* result );
 // Break off glued parts that hang out further than the material span from their support
 void nbCheckSpans( nbWorld* world, int destructibleIndex );
 
-// Check a static structure against its own weight and break the overloaded bonds
-void nbCheckLoads( nbWorld* world, int destructibleIndex );
+// Check static structures against their own weight and break the overloaded bonds. The structures are checked on
+// the workers.
+void nbCheckLoads( nbWorld* world, const int* destructibles, int count );
 
 // Create or move Box3D shapes for all touched chunks, update masses and remove empty actors.
 void nbCommitPhysics( nbWorld* world );
@@ -381,6 +409,9 @@ void nbPushCrackDust( nbWorld* world, int bondIndex );
 void nbTouchChunk( nbWorld* world, int chunkIndex );
 void nbTouchActor( nbWorld* world, int actorIndex );
 void nbUpdateDebris( nbWorld* world, int actorIndex );
+
+// Bring rubble in a box back to life, and the rubble resting on it
+void nbThawRubble( nbWorld* world, b3AABB box );
 
 // Apply an impact, optionally limited to one actor
 nbImpactResult nbApplyImpact( nbWorld* world, const nbImpactDef* def, int actorFilter );
