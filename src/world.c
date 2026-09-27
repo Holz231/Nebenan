@@ -430,6 +430,7 @@ int nbAllocActor( nbWorld* world, int destructibleIndex, bool isStatic )
 	actor->debrisIndex = NB_NULL_INDEX;
 	actor->isStatic = isStatic;
 	actor->isNew = true;
+	actor->holdSource = NB_NULL_INDEX;
 
 	nbDestructible* destructible = world->destructibles.data + destructibleIndex;
 	actor->prevActor = NB_NULL_INDEX;
@@ -901,6 +902,10 @@ typedef struct nbThawContext
 	// For an impact, only rubble it moves, see nbImpactMoves
 	bool impact;
 	float ejectSpeed;
+
+	// Rubble to leave alone
+	int skipActor;
+	uint16_t skipGeneration;
 } nbThawContext;
 
 static bool nbThawCallback( b3ShapeId shapeId, void* context )
@@ -915,7 +920,8 @@ static bool nbThawCallback( b3ShapeId shapeId, void* context )
 
 	int actorIndex = world->chunks.data[chunkIndex].actorIndex;
 	nbActor* actor = world->actors.data + actorIndex;
-	if ( actor->isRubble == false || actor->settleStamp == world->settleStamp )
+	if ( actor->isRubble == false || actor->settleStamp == world->settleStamp ||
+		 ( actorIndex == thawContext->skipActor && actor->generation == thawContext->skipGeneration ) )
 	{
 		return true;
 	}
@@ -987,6 +993,8 @@ static void nbThawRubbleInBoxes( nbWorld* world, const b3AABB* boxes, int boxCou
 		.height = height,
 		.impact = filter != NULL && filter->impact,
 		.ejectSpeed = filter != NULL ? filter->ejectSpeed : 0.0f,
+		.skipActor = filter != NULL ? filter->skipActor : NB_NULL_INDEX,
+		.skipGeneration = filter != NULL ? filter->skipGeneration : 0,
 	};
 	b3World_OverlapAABB( world->physicsWorld, total, b3DefaultQueryFilter(), nbThawCallback, &context );
 
@@ -1014,7 +1022,7 @@ bool nbImpactMoves( const nbWorld* world, const nbActor* actor, float ejectSpeed
 
 void nbThawRubble( nbWorld* world, b3AABB box, float ejectSpeed )
 {
-	nbThawContext filter = { .impact = true, .ejectSpeed = ejectSpeed };
+	nbThawContext filter = { .impact = true, .ejectSpeed = ejectSpeed, .skipActor = NB_NULL_INDEX };
 	nbThawRubbleInBoxes( world, &box, 1, b3Vec3_zero, 0.0f, &filter );
 }
 
@@ -1159,7 +1167,7 @@ void nbCommitPhysics( nbWorld* world )
 			nbMarkSupport( world, actorIndex );
 		}
 
-		// Rubble that rested on a part falling off the structure falls with it
+		// Rubble that rested on a part falling off the structure or off rubble falls with it
 		if ( actor->fromStructure )
 		{
 			actor->fromStructure = false;
@@ -1178,16 +1186,30 @@ static int nbDetachChunks( nbWorld* world, int sourceIndex, const int* chunks, i
 	int actorIndex = nbAllocActor( world, destructibleIndex, false );
 	nbCreateActorBody( world, actorIndex, transform );
 
+	// The allocation may have moved the actors
+	source = world->actors.data + sourceIndex;
 	nbActor* actor = world->actors.data + actorIndex;
 	actor->sourceLinearVelocity = linearVelocity;
 	actor->sourceAngularVelocity = angularVelocity;
 	actor->sourceCenter = center;
-	actor->fromStructure = world->actors.data[sourceIndex].isStatic;
+	actor->fromStructure = source->isStatic || source->isRubble;
+	actor->holdSource = source->isRubble ? sourceIndex : NB_NULL_INDEX;
+	actor->holdSourceGeneration = source->generation;
 	nbTouchActor( world, actorIndex );
+
+	// Rubble can only lose what carries it below its center of mass
+	b3WorldTransform sourceTransform = nbActor_GetTransform( world, source );
+	b3Vec3 up = b3Neg( b3Normalize( b3World_GetGravity( world->physicsWorld ) ) );
+	float centerHeight = b3Dot( up, b3ToVec3( b3TransformWorldPoint( sourceTransform, source->localCenter ) ) );
 
 	for ( int i = 0; i < count; ++i )
 	{
 		int chunkIndex = chunks[i];
+		if ( source->isRubble )
+		{
+			b3Pos centroid = b3TransformWorldPoint( sourceTransform, world->chunks.data[chunkIndex].shape->centroid );
+			source->lostPieces = source->lostPieces || b3Dot( up, b3ToVec3( centroid ) ) < centerHeight;
+		}
 		nbActor_RemoveChunk( world, sourceIndex, chunkIndex );
 		nbActor_AddChunk( world, actorIndex, chunkIndex );
 		world->chunks.data[chunkIndex].flags |= nb_chunkMoved;
@@ -2794,7 +2816,8 @@ static void nbReleaseHeldRubble( nbWorld* world, b3Vec3 up )
 		{
 			// The rubble that rested on it lies higher than its center of mass did
 			b3Pos center = b3TransformWorldPoint( actor->holdPose, actor->localCenter );
-			nbThawRubbleInBoxes( world, &actor->holdBounds, 1, up, b3Dot( up, b3ToVec3( center ) ), NULL );
+			nbThawContext filter = { .skipActor = actor->holdSource, .skipGeneration = actor->holdSourceGeneration };
+			nbThawRubbleInBoxes( world, &actor->holdBounds, 1, up, b3Dot( up, b3ToVec3( center ) ), &filter );
 		}
 	}
 }

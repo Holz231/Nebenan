@@ -662,6 +662,19 @@ nbImpactResult nbApplyImpact( nbWorld* world, const nbImpactDef* def, int actorF
 	nbRandom rng = nbMakeRandom( world->destructibles.data[seedDestructible].seed, nbHashSeed( world->stats.impactCount, 0xe7ec7 ) );
 	nbApplyVelocities( world, def, &rng, hitActors, frameCount );
 
+	// Rubble the impact broke pieces off may have lost what carried it. It comes back to life and freezes again right
+	// away if it is still carried, see nbIsQuiet. Otherwise a house would hang in the air once the grenades took away
+	// the walls it stood on.
+	for ( int i = 0; i < world->touchedActors.count; ++i )
+	{
+		int actorIndex = world->touchedActors.data[i];
+		nbActor* actor = world->actors.data + actorIndex;
+		if ( actor->isFree == false && actor->isRubble && actor->lostPieces )
+		{
+			nbThawActor( world, actorIndex );
+		}
+		world->actors.data[actorIndex].lostPieces = false;
+	}
 	world->touchedActors.count = 0;
 
 	result.totalTime = b3GetMilliseconds( ticks );

@@ -734,6 +734,30 @@ static b3Vec3 CenterOfChunks( nbDestructibleId destructible )
 	return b3MulSV( 1.0f / (float)b3MaxInt( written, 1 ), sum );
 }
 
+// The body that carries the most chunks of a destructible
+static b3BodyId HeaviestBody( nbDestructibleId destructible )
+{
+	nbChunkId chunks[1024];
+	int count = nbDestructible_GetChunks( destructible, chunks, 1024 );
+	b3BodyId best = b3_nullBodyId;
+	int bestCount = 0;
+	for ( int i = 0; i < count; ++i )
+	{
+		b3BodyId body = nbChunk_GetBody( chunks[i] );
+		int n = 0;
+		for ( int j = 0; j < count; ++j )
+		{
+			n += B3_ID_EQUALS( nbChunk_GetBody( chunks[j] ), body ) ? 1 : 0;
+		}
+		if ( n > bestCount )
+		{
+			best = body;
+			bestCount = n;
+		}
+	}
+	return best;
+}
+
 // Debris freezes into rubble where something fixed carries it, piles from the bottom up, and rubble follows when what it
 // rests on moves away
 static int RestTest( void )
@@ -799,7 +823,8 @@ static int RestTest( void )
 		DestroyScene( &scene );
 	}
 
-	// An impact on heavy rubble breaks chunks off and leaves the rest frozen, light rubble in reach comes back to life
+	// An impact on heavy rubble leaves it frozen and only breaks pieces off, unless they came from below its center of
+	// mass, see the next case. Light rubble in reach comes back to life and flies.
 	{
 		TestScene scene = CreateScene();
 		nbDestructibleId heavy = CreateLooseBox( &scene, (b3Vec3){ 0.0f, 0.5f, 0.0f }, (b3Vec3){ 1.0f, 0.5f, 1.0f }, 49 );
@@ -807,11 +832,17 @@ static int RestTest( void )
 		Step( &scene, 60 );
 		ENSURE( nbWorld_GetStats( scene.world ).rubbleCount == 2 );
 
+		// The box around the impact reaches a corner of the heavy box, its sphere does not
 		nbImpactDef impact = { 0 };
-		impact.point = (b3Pos){ 0.0f, 1.0f, 0.0f };
+		impact.point = (b3Pos){ 1.4f, 1.4f, 1.4f };
 		impact.radius = 0.5f;
 		impact.damage = 3.0e5f;
 		impact.ejectSpeed = 12.0f;
+		nbWorld_ApplyImpact( scene.world, &impact );
+		ENSURE( nbWorld_GetStats( scene.world ).rubbleCount == 2 );
+		ENSURE( nbDestructible_GetChunkCount( heavy ) == 1 );
+
+		impact.point = (b3Pos){ 0.0f, 1.0f, 0.0f };
 		nbWorld_ApplyImpact( scene.world, &impact );
 		ENSURE( nbWorld_GetStats( scene.world ).rubbleCount == 1 );
 		ENSURE( nbDestructible_GetChunkCount( heavy ) > 1 );
@@ -824,6 +855,28 @@ static int RestTest( void )
 			frozen += b3Body_GetType( nbChunk_GetBody( chunks[i] ) ) == b3_staticBody ? 1 : 0;
 		}
 		ENSURE( frozen > count / 2 );
+		DestroyScene( &scene );
+	}
+
+	// Heavy rubble that an impact breaks pieces off below its center of mass may have lost what carries it. It comes back
+	// to life and comes down instead of hanging in the air.
+	{
+		TestScene scene = CreateScene();
+		CreateLooseBox( &scene, (b3Vec3){ 0.0f, 0.5f, 0.0f }, (b3Vec3){ 1.0f, 0.5f, 1.0f }, 53 );
+		nbDestructibleId upper = CreateLooseBox( &scene, (b3Vec3){ 0.0f, 1.5f, 0.0f }, (b3Vec3){ 0.5f, 0.5f, 0.5f }, 54 );
+		Step( &scene, 60 );
+		ENSURE( nbWorld_GetStats( scene.world ).rubbleCount == 2 );
+		b3BodyId body = HeaviestBody( upper );
+		float start = (float)b3Body_GetPosition( body ).y;
+
+		nbImpactDef impact = { 0 };
+		impact.point = (b3Pos){ 0.0f, 1.0f, 0.0f };
+		impact.radius = 0.8f;
+		impact.damage = 1.0e7f;
+		impact.ejectSpeed = 12.0f;
+		nbWorld_ApplyImpact( scene.world, &impact );
+		Step( &scene, 90 );
+		ENSURE( (float)b3Body_GetPosition( HeaviestBody( upper ) ).y < start - 0.1f );
 		DestroyScene( &scene );
 	}
 

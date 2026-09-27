@@ -141,8 +141,12 @@ typedef struct nbActor
 	// Actor was created during the current operation
 	bool isNew;
 
-	// Split off the static structure during the current operation
+	// Split off the static structure or off rubble during the current operation. What rested on it follows once it
+	// moves.
 	bool fromStructure;
+
+	// Rubble that pieces broke off below its center of mass during the current operation, see nbApplyImpact
+	bool lostPieces;
 
 	// Debris at rest, carried by a static body until something disturbs it
 	bool isRubble;
@@ -175,6 +179,11 @@ typedef struct nbActor
 	bool holdsRubble;
 	b3WorldTransform holdPose;
 	b3AABB holdBounds;
+
+	// The rubble this piece broke off. Its release leaves that rubble alone, it came back to life itself if it lost
+	// what carried it, see nbApplyImpact.
+	int holdSource;
+	uint16_t holdSourceGeneration;
 
 	// Slot among the quiet actors of the current settle pass, valid while the stamp matches
 	int settleSlot;

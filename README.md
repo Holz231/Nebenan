@@ -247,13 +247,16 @@ herabstürzendes Stockwerk beim Aufschlag, statt als ein Block liegen zu bleiben
 - Einschläge wecken den Schutt in ihrer Reichweite, den sie bewegen: Stücke, die der Stoß mit mindestens 1 m/s
   anschieben würde. Schwerer Schutt bleibt statisch und verliert nur die Stücke, die der Einschlag herausbricht.
   Sonst käme ein Haus, das ohne Anker auf seinen Stümpfen steht, bei jeder Granate mit Hunderten Kontakten wieder
-  zu Leben.
+  zu Leben. Brechen Stücke unterhalb seines Schwerpunkts heraus, kann ihm aber die Auflage fehlen: Dann wacht er
+  doch auf und stellt fest, ob er noch getragen wird. Die Referenz weckt jeden getroffenen Körper, dort kostet das
+  nichts, in Box3D der Wechsel eines statischen Körpers mit Hunderten Formen bis zu 1 ms.
 - Trifft ein Körper, der kein Trümmer ist, Schutt, etwa eine Kugel, wird das getroffene Stück wach, und beide
   teilen sich den Impuls wie bei einem unelastischen Stoß, denn Box3D hat den Körper schon am statischen Schutt
   abprallen lassen. Trümmer, die auf Schutt fallen, lassen ihn in Ruhe: Stücke mitten im Haufen zu wecken gibt jedem
   Dutzende Kontakte und kostete in der Stadt mehr als alles andere.
 - Bewegt sich ein Stück 5 cm von dort, wo es lag, wird der Schutt darauf wach, höchstens 32 pro Update. Teile, die aus
-  einem Bauwerk fallen, nehmen ihren Schutt genauso mit. So bleibt kein Schutt in der Luft hängen.
+  einem Bauwerk oder aus Schutt brechen, nehmen ihren Schutt genauso mit, nur den Schutt nicht, aus dem sie kommen.
+  So bleibt kein Schutt in der Luft hängen.
 - Wacht Schutt auf und bleibt 0,05 s lang langsamer als 5 cm/s, liegt er noch auf und erstarrt gleich wieder, statt
   die ganze Ruhezeit abzuwarten. Was seine Auflage verloren hat, ist nach einem Schritt freiem Fall schon schneller.
 - Über `maxDebrisBodies` erstarren die langsamsten Trümmer, die älter als 0,25 s sind. Was unter `killDepth` fällt,
@@ -419,32 +422,32 @@ zusammen (Einschläge, Box3D-Schritt, `nbWorld_Update`):
 
 | Stadt | Ø | 95 % der Frames | Box3D-Schritt Ø |
 | --- | ---: | ---: | ---: |
-| 1 Thread | 25,7 ms | 44,3 ms | 22,0 ms |
-| 4 Threads | 12,9 ms | 25,5 ms | 9,5 ms |
-| 1 Thread, `fragmentScale` 2 | 8,9 ms | 14,3 ms | 7,7 ms |
-| 4 Threads, `fragmentScale` 2 | 5,4 ms | 8,7 ms | 4,2 ms |
+| 1 Thread | 26,4 ms | 48,2 ms | 22,5 ms |
+| 4 Threads | 13,0 ms | 27,7 ms | 9,6 ms |
+| 1 Thread, `fragmentScale` 2 | 8,8 ms | 15,7 ms | 7,7 ms |
+| 4 Threads, `fragmentScale` 2 | 5,5 ms | 9,4 ms | 4,4 ms |
 
-Ohne Statik (`supportScale` 0) bleiben die Häuser auch ohne Erdgeschoss stehen, dann sind es mit 4 Threads 10,3 ms
-und mit `fragmentScale` 2 3,3 ms, mit 1 Thread 23,1 und 5,6 ms. Die Prüfung selbst kostet wenig, teuer sind die
+Ohne Statik (`supportScale` 0) bleiben die Häuser auch ohne Erdgeschoss stehen, dann sind es mit 4 Threads 9,9 ms
+und mit `fragmentScale` 2 3,4 ms, mit 1 Thread 22,3 und 5,8 ms. Die Prüfung selbst kostet wenig, teuer sind die
 Einstürze: Was fällt, bewegt sich, trifft andere Teile und zerbricht beim Aufprall. `nbWorld_Update` kostet im Mittel
 2,9 ms, mit doppelter Bruchstückgröße 1,0 ms, und enthält den Schaden durch Aufprall und das Zerdrücken.
 
 Die Zeit ist zum größten Teil der Box3D-Schritt, und den bestimmen zwei Zahlen:
 
-- **Bruchstückgröße.** Mit doppelt so großen Bruchstücken liegen am Ende 25 000 statt 83 600 Bruchstücke herum,
-  und Box3D rechnet 8200 statt 15 500 Kontakte. Die Zahl der Splitter eines Einschlags fällt mit dem Quadrat
+- **Bruchstückgröße.** Mit doppelt so großen Bruchstücken liegen am Ende 25 000 statt 85 100 Bruchstücke herum,
+  und Box3D rechnet 8500 statt 15 900 Kontakte. Die Zahl der Splitter eines Einschlags fällt mit dem Quadrat
   der Größe.
 - **Bewegte Trümmer.** Box3D bewegt höchstens `maxDebrisBodies` (1500) Trümmer gleichzeitig. Was zur Ruhe kommt,
-  liegt als Schutt und kostet nichts mehr, am Ende der Stadt 40 800 Körper.
+  liegt als Schutt und kostet nichts mehr, am Ende der Stadt 41 300 Körper.
 
 Ganze Einschläge (Bruch, Stützgraph, neue Box3D-Körper) und der Box3D-Schritt danach bei 60 Hz mit
 4 Substeps, jeweils mit 1 und 4 Threads:
 
 | Szenario | Einschlag Ø, 1 / 4 Threads | Box3D-Schritt Ø, 1 / 4 Threads | Am Ende |
 | --- | ---: | ---: | --- |
-| Gewehr, 200 Treffer | 0,37 / 0,41 ms | 3,7 / 3,2 ms | 3660 Bruchstücke, 1311 Körper |
-| 20 Explosionen | 3,1 / 2,4 ms | 7,0 / 3,9 ms | 7519 Bruchstücke, 3827 Körper |
-| Gebäude, 18 Treffer | 2,2 / 1,5 ms | 4,3 / 2,2 ms | 5944 Bruchstücke, 3317 Körper |
+| Gewehr, 200 Treffer | 0,51 / 0,52 ms | 4,2 / 3,4 ms | 3689 Bruchstücke, 1297 Körper |
+| 20 Explosionen | 3,3 / 2,3 ms | 7,3 / 3,9 ms | 7556 Bruchstücke, 3842 Körper |
+| Gebäude, 18 Treffer | 2,4 / 1,5 ms | 4,6 / 2,2 ms | 5991 Bruchstücke, 3245 Körper |
 
 Voronoi-Kern, Platte 4 × 2 × 0,3 m mit Punkten um den Einschlag, 1 Thread:
 
@@ -510,7 +513,7 @@ Nach Änderungen an `demo/shaders/scene.glsl` die Shader neu erzeugen, im Ordner
   fremde Körper und eine wegrutschende Auflage. Kinematische Körper stoßen Schutt nicht an, Box3D lässt
   kinematische und statische Körper nicht kollidieren.
 - Einstürze kosten: Was abbricht, bewegt sich und liegt danach herum. Unter Dauerbeschuss braucht die Stadt deshalb
-  bis zu 60 % länger als ohne Statik, siehe Leistung.
+  bis zu 65 % länger als ohne Statik, siehe Leistung.
 - Nur die Voronoi-Zellen und Hüllen laufen parallel. Punktverteilung, Einbau der Stücke und das Anlegen der
   Box3D-Formen bleiben auf dem aufrufenden Thread, bei großen Explosionen ist das der größere Teil.
 - Nur konvexe Teile. Konkave Formen müssen als mehrere konvexe Teile angegeben werden.
