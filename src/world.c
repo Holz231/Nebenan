@@ -1691,9 +1691,11 @@ void nbSplitActors( nbWorld* world, nbImpactResult* result )
 #define NB_MAX_CRUSHES 4
 
 // A crushed chunk bursts into this many fragments that fly apart at this speed in meters per second. A few are enough
-// to take the load off, more only cost.
+// to take the load off, more only cost. On top of that they are pushed out of the wall at NB_CRUSH_PUSH, otherwise they
+// would stay wedged between the stones around them and carry the load again.
 #define NB_CRUSH_FRAGMENTS 6
 #define NB_CRUSH_SPEED 2.0f
+#define NB_CRUSH_PUSH 4.0f
 
 // Only a sound bond crushes a chunk when it fails. A bond that damage already weakened below this fraction of its
 // strength just lets go.
@@ -2095,12 +2097,91 @@ static void nbStartAtRest( nbWorld* world, int exceptActor )
 	world->touchedActors.count = 0;
 }
 
+// Where a chunk is free to leave its wall, in the frame of its destructible: the horizontal axis along which most of its
+// surface is bonded to nothing, the faces of the wall it sits in. The surface of its faces minus what its bonds cover
+// tells, and the vector sum of that free surface tells whether one face is free or both. With one, the axis points
+// through it. With both, each fragment leaves through the nearer one, and the axis points away from the origin of the
+// destructible, out of a house. A chunk without a free side gets a zero axis.
+typedef struct nbFreeSide
+{
+	b3Vec3 axis;
+	bool bothSides;
+} nbFreeSide;
+
+static nbFreeSide nbFindFreeSide( const nbWorld* world, const nbChunk* chunk, b3Vec3 localUp )
+{
+	b3Vec3 side1 = b3Perp( localUp );
+	b3Vec3 side2 = b3Cross( localUp, side1 );
+	const nbShape* shape = chunk->shape;
+
+	// Horizontal second moments of the free surface, [a b; b c], and its vector area
+	float a = 0.0f, b = 0.0f, c = 0.0f;
+	for ( int f = 0; f < shape->faceCount; ++f )
+	{
+		const nbFace* face = shape->faces + f;
+		b3Vec3 origin = shape->vertices[shape->indices[face->firstIndex]];
+		b3Vec3 sum = b3Vec3_zero;
+		for ( int k = 1; k + 1 < face->indexCount; ++k )
+		{
+			b3Vec3 p = b3Sub( shape->vertices[shape->indices[face->firstIndex + k]], origin );
+			b3Vec3 q = b3Sub( shape->vertices[shape->indices[face->firstIndex + k + 1]], origin );
+			sum = b3Add( sum, b3Cross( p, q ) );
+		}
+
+		float area = 0.5f * b3Length( sum );
+		float x = b3Dot( face->plane.normal, side1 );
+		float z = b3Dot( face->plane.normal, side2 );
+		a += area * x * x;
+		b += area * x * z;
+		c += area * z * z;
+	}
+	float total = a + c;
+
+	float freeX = 0.0f, freeZ = 0.0f;
+	for ( int key = chunk->headBondKey; key != NB_NULL_INDEX; )
+	{
+		const nbBond* bond = world->bonds.data + ( key >> 1 );
+		int side = key & 1;
+		key = bond->nextKey[side];
+		b3Vec3 normal = side == 0 ? bond->normal : b3Neg( bond->normal );
+		float x = b3Dot( normal, side1 );
+		float z = b3Dot( normal, side2 );
+		a -= bond->area * x * x;
+		b -= bond->area * x * z;
+		c -= bond->area * z * z;
+		freeX -= bond->area * x;
+		freeZ -= bond->area * z;
+	}
+
+	// The eigenvector of the larger eigenvalue, from whichever row of the shifted matrix is longer
+	nbFreeSide result = { b3Vec3_zero, false };
+	float mean = 0.5f * ( a + c );
+	float spread = sqrtf( 0.25f * ( a - c ) * ( a - c ) + b * b );
+	float lambda = mean + spread;
+	if ( lambda <= 0.1f * total )
+	{
+		return result;
+	}
+
+	float u1 = b, v1 = lambda - a, u2 = lambda - c, v2 = b;
+	b3Vec3 axis = u1 * u1 + v1 * v1 >= u2 * u2 + v2 * v2 ? b3MulAdd( b3MulSV( u1, side1 ), v1, side2 )
+														 : b3MulAdd( b3MulSV( u2, side1 ), v2, side2 );
+	axis = b3Normalize( axis );
+	float net = freeX * b3Dot( axis, side1 ) + freeZ * b3Dot( axis, side2 );
+	result.bothSides = b3AbsFloat( net ) <= 0.5f * lambda;
+	float sign = result.bothSides ? b3Dot( axis, chunk->shape->centroid ) : net;
+	result.axis = sign < 0.0f ? b3Neg( axis ) : axis;
+	return result;
+}
+
 // Break a chunk out of whatever holds it and burst it into fragments that scatter, the way an overloaded column
-// crumbles. Anchored chunks come off their anchors too.
-static void nbCrushChunk( nbWorld* world, int chunkIndex )
+// crumbles, and that are pushed out of the wall. Anchored chunks come off their anchors too.
+static void nbCrushChunk( nbWorld* world, int chunkIndex, b3Vec3 up )
 {
 	nbBeginOperation( world );
 	nbChunk* chunk = world->chunks.data + chunkIndex;
+	b3Quat rotation = nbActor_GetTransform( world, world->actors.data + chunk->actorIndex ).q;
+	nbFreeSide freeSide = nbFindFreeSide( world, chunk, b3InvRotateVector( rotation, up ) );
 	while ( chunk->headBondKey != NB_NULL_INDEX )
 	{
 		nbDestroyBond( world, chunk->headBondKey >> 1 );
@@ -2127,7 +2208,34 @@ static void nbCrushChunk( nbWorld* world, int chunkIndex )
 	def.damage = 1.0e30f;
 	def.ejectSpeed = NB_CRUSH_SPEED;
 	def.fragmentCount = NB_CRUSH_FRAGMENTS;
+	world->pushAxis = b3RotateVector( rotation, freeSide.axis );
+	world->pushSpeed = b3LengthSquared( freeSide.axis ) > 0.0f ? NB_CRUSH_PUSH : 0.0f;
+	world->pushBothSides = freeSide.bothSides;
+
+	// All fragments fly, also the one that keeps the body. The chunk may lie in a part that just fell off and already
+	// started at rest.
+	nbActor* actor = world->actors.data + chunk->actorIndex;
+	if ( actor->isNew == false )
+	{
+		actor->isNew = true;
+		actor->sourceLinearVelocity = b3Body_GetLinearVelocity( actor->bodyId );
+		actor->sourceAngularVelocity = b3Body_GetAngularVelocity( actor->bodyId );
+		actor->sourceCenter = b3Body_GetWorldCenter( actor->bodyId );
+	}
+
+	uint16_t generation = chunk->generation;
 	nbApplyImpact( world, &def, chunk->actorIndex );
+
+	// A chunk too small to burst leaves the wall whole
+	chunk = world->chunks.data + chunkIndex;
+	if ( chunk->shape != NULL && chunk->generation == generation )
+	{
+		actor = world->actors.data + chunk->actorIndex;
+		actor->isNew = false;
+		b3Body_SetLinearVelocity( actor->bodyId,
+								  b3MulAdd( b3Body_GetLinearVelocity( actor->bodyId ), world->pushSpeed, world->pushAxis ) );
+	}
+	world->pushSpeed = 0.0f;
 }
 
 // Check the structures that changed. Overloaded bonds break all at once, parts that lost their way to the anchors fall
@@ -2233,7 +2341,7 @@ static void nbCheckSupports( nbWorld* world )
 			const nbChunk* chunk = world->chunks.data + crushes[c];
 			if ( chunk->shape != NULL && chunk->generation == crushGenerations[c] )
 			{
-				nbCrushChunk( world, crushes[c] );
+				nbCrushChunk( world, crushes[c], up );
 			}
 		}
 	}

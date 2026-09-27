@@ -367,6 +367,13 @@ static void nbApplyVelocities( nbWorld* world, const nbImpactDef* def, nbRandom*
 			}
 		}
 
+		// The fragments of a crushed chunk are pushed out of the wall it sat in, through the free face or the nearer one
+		if ( world->pushSpeed > 0.0f )
+		{
+			float side = world->pushBothSides ? b3Dot( b3SubPos( center, def->point ), world->pushAxis ) : 1.0f;
+			linearVelocity = b3MulAdd( linearVelocity, side >= 0.0f ? world->pushSpeed : -world->pushSpeed, world->pushAxis );
+		}
+
 		b3Body_SetLinearVelocity( actor->bodyId, linearVelocity );
 		b3Body_SetAngularVelocity( actor->bodyId, angularVelocity );
 	}

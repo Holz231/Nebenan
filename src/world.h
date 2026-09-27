@@ -344,6 +344,12 @@ typedef struct nbWorld
 	uint32_t supportStamp;
 	uint32_t answerStamp;
 
+	// While a chunk crushed under its load bursts, its fragments get this speed along the axis out of its wall, see
+	// nbCrushChunk. With both faces of the wall free each fragment leaves through the nearer one. Zero otherwise.
+	b3Vec3 pushAxis;
+	float pushSpeed;
+	bool pushBothSides;
+
 	nbStats stats;
 
 	uint16_t worldIndex;

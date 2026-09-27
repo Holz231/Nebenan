@@ -219,7 +219,10 @@ Anker werden zu dynamischen Körpern.
 4. Alle überlasteten Verbindungen reißen zugleich. Was dadurch den Weg zum Anker verliert, fällt als ein Stück, mit
    allen inneren Verbindungen. Versagt eine unbeschädigte Verbindung unter dem Gewicht darauf, wird das kleinere
    ihrer beiden Stücke in sechs Splitter zerdrückt, sonst stünde ein Haus weiter auf den Stümpfen dünner Säulen.
-   Das nächste Update prüft das Bauwerk erneut, so gibt es Schritt für Schritt nach.
+   Die Splitter werden mit 4 m/s quer aus der Wand gedrückt, durch die Seite, an der das Stück frei liegt, bei zwei
+   freien Seiten jeder durch die nähere. Blieben sie zwischen den Steinen daneben stecken, trügen sie die Last gleich
+   wieder, und das Haus fände darüber keinen Weg nach unten. Das nächste Update prüft das Bauwerk erneut, so gibt es
+   Schritt für Schritt nach.
 
 Eine Prüfung kostet für die Stadt aus 16 Häusern etwa 0,3 ms und läuft nur für Bauwerke, die sich geändert haben.
 Die Häuser der Demo stehen mit Reserve: Zweistöckige halten bis `supportScale` ×0,45, dreistöckige bis ×0,7,
@@ -435,34 +438,35 @@ zusammen (Einschläge, Box3D-Schritt, `nbWorld_Update`):
 
 | Stadt | Ø | 95 % der Frames | Box3D-Schritt Ø |
 | --- | ---: | ---: | ---: |
-| 1 Thread | 28,0 ms | 51,6 ms | 23,8 ms |
-| 4 Threads | 14,2 ms | 28,5 ms | 10,5 ms |
-| 1 Thread, `fragmentScale` 2 | 8,8 ms | 14,1 ms | 7,7 ms |
-| 4 Threads, `fragmentScale` 2 | 5,4 ms | 9,0 ms | 4,3 ms |
+| 1 Thread | 29,7 ms | 56,8 ms | 25,0 ms |
+| 4 Threads | 14,9 ms | 32,4 ms | 10,7 ms |
+| 1 Thread, `fragmentScale` 2 | 9,6 ms | 17,2 ms | 8,3 ms |
+| 4 Threads, `fragmentScale` 2 | 5,2 ms | 9,2 ms | 4,0 ms |
 
 Ohne Statik (`supportScale` 0) bleiben die Häuser auch ohne Erdgeschoss stehen, dann sind es mit 4 Threads 10,1 ms
 und mit `fragmentScale` 2 3,5 ms, mit 1 Thread 22,4 und 5,8 ms. Die Prüfung selbst kostet wenig, teuer sind die
 Einstürze: Was fällt, bewegt sich, trifft andere Teile und zerbricht beim Aufprall. Dass Stockwerke nicht mehr auf
-ihrem eigenen Schutt schweben bleiben, kostet mit 4 Threads rund 10 %, mit doppelter Bruchstückgröße nichts.
-`nbWorld_Update` kostet im Mittel 3,2 ms, mit doppelter Bruchstückgröße 1,0 ms, und enthält den Schaden durch Aufprall
-und das Zerdrücken.
+ihrem eigenen Schutt schweben bleiben, kostet mit 4 Threads rund 10 %, mit doppelter Bruchstückgröße nichts. Dass
+die Splitter zerdrückter Stücke aus der Wand gedrückt werden, kostet weitere 5 bis 11 %, denn Wände mit Rissen geben
+jetzt wirklich nach. `nbWorld_Update` kostet im Mittel 3,5 ms, mit doppelter Bruchstückgröße 1,0 ms, und enthält den
+Schaden durch Aufprall und das Zerdrücken.
 
 Die Zeit ist zum größten Teil der Box3D-Schritt, und den bestimmen zwei Zahlen:
 
-- **Bruchstückgröße.** Mit doppelt so großen Bruchstücken liegen am Ende 25 300 statt 82 700 Bruchstücke herum,
-  und Box3D rechnet 8600 statt 16 700 Kontakte. Die Zahl der Splitter eines Einschlags fällt mit dem Quadrat
+- **Bruchstückgröße.** Mit doppelt so großen Bruchstücken liegen am Ende 25 700 statt 86 000 Bruchstücke herum,
+  und Box3D rechnet 8800 statt 16 900 Kontakte. Die Zahl der Splitter eines Einschlags fällt mit dem Quadrat
   der Größe.
 - **Bewegte Trümmer.** Box3D bewegt höchstens `maxDebrisBodies` (1500) Trümmer gleichzeitig. Was zur Ruhe kommt,
-  liegt als Schutt und kostet nichts mehr, am Ende der Stadt 40 400 Körper.
+  liegt als Schutt und kostet nichts mehr, am Ende der Stadt 41 200 Körper.
 
 Ganze Einschläge (Bruch, Stützgraph, neue Box3D-Körper) und der Box3D-Schritt danach bei 60 Hz mit
 4 Substeps, jeweils mit 1 und 4 Threads:
 
 | Szenario | Einschlag Ø, 1 / 4 Threads | Box3D-Schritt Ø, 1 / 4 Threads | Am Ende |
 | --- | ---: | ---: | --- |
-| Gewehr, 200 Treffer | 0,53 / 0,52 ms | 4,3 / 3,3 ms | 3737 Bruchstücke, 1312 Körper |
-| 20 Explosionen | 3,1 / 2,2 ms | 7,1 / 3,5 ms | 7381 Bruchstücke, 3727 Körper |
-| Gebäude, 18 Treffer | 2,4 / 1,4 ms | 4,8 / 2,5 ms | 6026 Bruchstücke, 3382 Körper |
+| Gewehr, 200 Treffer | 0,48 / 0,49 ms | 3,9 / 3,1 ms | 3654 Bruchstücke, 1348 Körper |
+| 20 Explosionen | 3,5 / 2,6 ms | 7,7 / 3,7 ms | 8105 Bruchstücke, 3961 Körper |
+| Gebäude, 18 Treffer | 2,5 / 2,0 ms | 5,5 / 2,6 ms | 7292 Bruchstücke, 3613 Körper |
 
 Voronoi-Kern, Platte 4 × 2 × 0,3 m mit Punkten um den Einschlag, 1 Thread:
 

@@ -355,7 +355,7 @@ static uint32_t RunDeterminismScenario( void )
 
 // Fracture and physics are bit for bit identical with MSVC, GCC and Clang on x64 and ARM. This is the result
 // with the pinned Box3D commit. Update it when the results change on purpose, never to make one platform pass.
-#define NB_EXPECTED_DETERMINISM_HASH 0x430e85d5u
+#define NB_EXPECTED_DETERMINISM_HASH 0xf1282fe1u
 
 static int DeterminismTest( void )
 {
@@ -1427,6 +1427,30 @@ static float FloatingVolume( TestScene* scene )
 	return volume;
 }
 
+// A brick wall 3 m wide and 0.3 m thick, pre-fractured into one layer of cells, under a concrete block. Without collision
+// damage every fragment comes from a chunk crushed under the load.
+static void CreateLoadedWall( TestScene* scene )
+{
+	nbMaterial concrete = nbDefaultMaterial();
+	concrete.density = 2400.0f;
+	concrete.strength = 1.1e6f;
+	nbPieceDef pieces[2];
+	pieces[0] = nbDefaultPieceDef();
+	pieces[0].halfExtents = (b3Vec3){ 1.5f, 0.75f, 0.15f };
+	pieces[0].transform.p = (b3Vec3){ 0.0f, 0.75f, 0.0f };
+	pieces[1] = nbDefaultPieceDef();
+	pieces[1].halfExtents = (b3Vec3){ 1.5f, 0.5f, 0.5f };
+	pieces[1].transform.p = (b3Vec3){ 0.0f, 2.0f, 0.0f };
+	pieces[1].material = &concrete;
+
+	nbDestructibleDef def = nbDefaultDestructibleDef();
+	def.material.density = 1900.0f;
+	def.material.strength = 6.0e5f;
+	def.cellSize = 0.35f;
+	def.enableCollisionDamage = false;
+	nbCreateDestructible( scene->world, &def, pieces, 2 );
+}
+
 static int SupportTest( void )
 {
 	// A four story house stands on its walls
@@ -1560,6 +1584,38 @@ static int SupportTest( void )
 		}
 		Step( &scene, 180 );
 		ENSURE( FloatingVolume( &scene ) == 0.0f );
+		DestroyScene( &scene );
+	}
+
+	// A wall too weak for the block on it cracks. The fragments of its crushed stones leave it sideways at once, they do
+	// not stay wedged between the stones around them and carry the block again.
+	for ( int k = 0; k < 3; ++k )
+	{
+		TestScene scene = CreateScene();
+		nbWorld_SetSupportScale( scene.world, 0.05f + 0.1f * (float)k );
+		CreateLoadedWall( &scene );
+		int fragmentCount = 0;
+		for ( int step = 0; step < 60; ++step )
+		{
+			Step( &scene, 1 );
+			nbWorld* world = nbGetWorldFromId( scene.world );
+			for ( int d = 0; d < world->debris.count; ++d )
+			{
+				const nbActor* actor = world->actors.data + world->debris.data[d];
+				const nbChunk* chunk = world->chunks.data + actor->headChunk;
+				b3Pos center = b3Body_GetWorldCenter( actor->bodyId );
+				if ( actor->isRubble || actor->age > 0.02f || chunk->depth == 0 || chunk->materialIndex != 0 ||
+					 fabsf( (float)center.z ) > 0.15f )
+				{
+					continue;
+				}
+
+				b3Vec3 velocity = b3Body_GetLinearVelocity( actor->bodyId );
+				ENSURE( velocity.x * velocity.x + velocity.z * velocity.z > 2.0f * 2.0f );
+				fragmentCount += 1;
+			}
+		}
+		ENSURE( fragmentCount > 0 );
 		DestroyScene( &scene );
 	}
 
