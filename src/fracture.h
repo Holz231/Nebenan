@@ -16,10 +16,17 @@ typedef struct nbCellNeighbor
 	nbBondGeometry geometry;
 } nbCellNeighbor;
 
+// A convex part of a cell that cutouts cut apart
+typedef struct nbCellPart
+{
+	nbShape* shape;
+	b3HullData* hull;
+} nbCellPart;
+
 typedef struct nbCell
 {
 	// Heap allocated shape in the frame of the job origin, owned by the caller. Null if the cell was
-	// empty or too small.
+	// empty or too small, or if cutouts cut it into parts.
 	nbShape* shape;
 
 	// Box3D hull of the shape in arena memory, if the job builds hulls. Null for a sliver without a
@@ -27,10 +34,22 @@ typedef struct nbCell
 	b3HullData* hull;
 
 	// Faces shared with other cells, in the frame of the sites and in arena memory. They become the
-	// internal bonds.
+	// internal bonds. A job with cutouts leaves them out.
 	nbCellNeighbor* neighbors;
 	int neighborCount;
+
+	// What cutouts left of the cell, in arena memory with the shapes on the heap like the shape
+	nbCellPart* parts;
+	int partCount;
 } nbCell;
+
+// A box cut out of the parent of a job, a window or a door: the points behind all six planes, in the
+// frame of the sites
+typedef struct nbCutout
+{
+	b3Plane planes[6];
+	b3AABB bounds;
+} nbCutout;
 
 // Split a convex parent into the Voronoi cells of the given sites. Cells are clipped to the parent,
 // so they tile it exactly. Every cell is a pure function of the job, so the cells can be computed in
@@ -51,6 +70,14 @@ typedef struct nbFractureJob
 
 	// Build the Box3D hull of every cell as well
 	bool buildHulls;
+
+	// Boxes cut out of every cell, and the material of their faces. A cell they cut falls apart into
+	// convex parts. Parts thinner than the minimum width are slivers where a cell reaches just around a
+	// corner of a cutout, they are dropped.
+	const nbCutout* cutouts;
+	int cutoutCount;
+	uint8_t cutoutMaterial;
+	float cutoutMinWidth;
 
 	// Output, one cell per site
 	nbCell* cells;
@@ -75,6 +102,9 @@ typedef struct nbCellScratch
 	nbPoly* polyB;
 	uint64_t* heap;
 	int siteCapacity;
+
+	// Room for the parts of a cell with cutouts, taken from the arena at the first one
+	nbPoly* partPolys;
 } nbCellScratch;
 
 void nbCellScratch_Create( nbCellScratch* scratch, nbArena* arena, int siteCapacity );

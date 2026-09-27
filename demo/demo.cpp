@@ -576,54 +576,20 @@ static void AddWall( App& app, b3Vec3 base, float yaw, b3Vec3 size, const Materi
 	AddStructure( app, base, yaw, preset, pieces, seed );
 }
 
-// A wall in the local xy plane with rectangular openings, cut into box pieces on the grid of opening edges
-static void AddWallWithOpenings( std::vector<nbPieceDef>& pieces, b3Vec3 origin, bool alongX, float width, float height,
-								 float thickness, const std::vector<b3Vec2>& openings, const MaterialPreset& preset,
-								 uint8_t surface )
+// Cut the doors and windows of one floor out of a wall that runs through all floors. The corners are along the wall
+// and up from the floor. A door reaches below the wall, so it opens it to the ground.
+static void AddOpenings( std::vector<nbOpening>& openings, const std::vector<b3Vec2>& corners, float length, float height,
+						 float floorY, float thickness )
 {
-	std::vector<float> xs = { 0.0f, width };
-	std::vector<float> ys = { 0.0f, height };
-	for ( size_t i = 0; i < openings.size(); i += 2 )
+	for ( size_t i = 0; i + 1 < corners.size(); i += 2 )
 	{
-		xs.push_back( openings[i].x );
-		xs.push_back( openings[i + 1].x );
-		ys.push_back( openings[i].y );
-		ys.push_back( openings[i + 1].y );
-	}
-	std::sort( xs.begin(), xs.end() );
-	std::sort( ys.begin(), ys.end() );
-
-	for ( size_t j = 0; j + 1 < ys.size(); ++j )
-	{
-		for ( size_t i = 0; i + 1 < xs.size(); ++i )
-		{
-			float x0 = xs[i], x1 = xs[i + 1], y0 = ys[j], y1 = ys[j + 1];
-			if ( x1 - x0 < 1.0e-3f || y1 - y0 < 1.0e-3f )
-			{
-				continue;
-			}
-
-			float cx = 0.5f * ( x0 + x1 );
-			float cy = 0.5f * ( y0 + y1 );
-			bool inOpening = false;
-			for ( size_t k = 0; k < openings.size(); k += 2 )
-			{
-				if ( openings[k].x < cx && cx < openings[k + 1].x && openings[k].y < cy && cy < openings[k + 1].y )
-				{
-					inOpening = true;
-				}
-			}
-
-			if ( inOpening )
-			{
-				continue;
-			}
-
-			b3Vec3 half = alongX ? b3Vec3{ 0.5f * ( x1 - x0 ), 0.5f * ( y1 - y0 ), 0.5f * thickness }
-								 : b3Vec3{ 0.5f * thickness, 0.5f * ( y1 - y0 ), 0.5f * ( x1 - x0 ) };
-			b3Vec3 center = alongX ? b3Vec3{ origin.x + cx, origin.y + cy, origin.z } : b3Vec3{ origin.x, origin.y + cy, origin.z + cx };
-			pieces.push_back( MakePiece( center, half, preset, surface ) );
-		}
+		b3Vec2 lower = corners[i], upper = corners[i + 1];
+		float y0 = lower.y > 0.0f ? floorY + lower.y : floorY - 0.1f;
+		float y1 = floorY + upper.y;
+		nbOpening opening;
+		opening.center = { 0.5f * ( lower.x + upper.x - length ), 0.5f * ( y0 + y1 - height ), 0.0f };
+		opening.halfExtents = { 0.5f * ( upper.x - lower.x ), 0.5f * ( y1 - y0 ), thickness };
+		openings.push_back( opening );
 	}
 }
 
@@ -640,46 +606,66 @@ static void BuildWallScene( App& app )
 	app.camera.pitch = -0.05f;
 }
 
-// Brick walls with doors and windows and concrete floors
+// Brick walls through all floors with their doors and windows cut out, and concrete floors inside them. The walls are
+// pre-fractured into cells, so a wall that gives way cracks along the cells and not along the floors.
 static void AddHouse( App& app, b3Vec3 position, float yaw, int floors, uint32_t seed )
 {
 	MaterialPreset brick = BrickPreset();
 	MaterialPreset concrete = ConcretePreset();
 
-	std::vector<nbPieceDef> pieces;
 	float width = 9.0f, depth = 6.5f, story = 3.0f, t = 0.3f, slab = 0.25f;
+	float level = story + slab;
+	float height = (float)floors * level;
+	float inner = depth - 2.0f * t;
 
+	std::vector<b3Vec2> front0 = { { 3.9f, 0.0f }, { 5.1f, 2.2f }, { 1.0f, 1.0f },
+								   { 2.6f, 2.2f }, { 6.4f, 1.0f }, { 8.0f, 2.2f } };
+	std::vector<b3Vec2> front1 = { { 1.0f, 0.9f }, { 2.6f, 2.2f }, { 3.7f, 0.9f },
+								   { 5.3f, 2.2f }, { 6.4f, 0.9f }, { 8.0f, 2.2f } };
+	std::vector<b3Vec2> back = { { 1.5f, 0.9f }, { 3.0f, 2.2f }, { 6.0f, 0.9f }, { 7.5f, 2.2f } };
+	std::vector<b3Vec2> side = { { 2.4f, 0.9f }, { 3.6f, 2.2f } };
+
+	std::vector<nbOpening> openings[4];
 	for ( int floor = 0; floor < floors; ++floor )
 	{
-		float y = (float)floor * ( story + slab );
-		std::vector<b3Vec2> front;
-		if ( floor == 0 )
-		{
-			front = { { 3.9f, 0.0f }, { 5.1f, 2.2f }, { 1.0f, 1.0f }, { 2.6f, 2.2f }, { 6.4f, 1.0f }, { 8.0f, 2.2f } };
-		}
-		else
-		{
-			front = { { 1.0f, 0.9f }, { 2.6f, 2.2f }, { 3.7f, 0.9f }, { 5.3f, 2.2f }, { 6.4f, 0.9f }, { 8.0f, 2.2f } };
-		}
-		std::vector<b3Vec2> back = { { 1.5f, 0.9f }, { 3.0f, 2.2f }, { 6.0f, 0.9f }, { 7.5f, 2.2f } };
-		std::vector<b3Vec2> side = { { 2.4f, 0.9f }, { 3.6f, 2.2f } };
-
-		AddWallWithOpenings( pieces, { -0.5f * width, y, 0.5f * depth - 0.5f * t }, true, width, story, t, front, brick, MaterialPlaster );
-		AddWallWithOpenings( pieces, { -0.5f * width, y, -0.5f * depth + 0.5f * t }, true, width, story, t, back, brick, MaterialPlaster );
-		AddWallWithOpenings( pieces, { -0.5f * width + 0.5f * t, y, -0.5f * depth + t }, false, depth - 2.0f * t, story, t, side, brick,
-							 MaterialPlaster );
-		AddWallWithOpenings( pieces, { 0.5f * width - 0.5f * t, y, -0.5f * depth + t }, false, depth - 2.0f * t, story, t, side, brick,
-							 MaterialPlaster );
-
-		// Concrete floor slab on top of the story
-		nbPieceDef slabPiece = MakePiece( { 0.0f, y + story + 0.5f * slab, 0.0f }, { 0.5f * width, 0.5f * slab, 0.5f * depth },
-										  concrete, MaterialConcrete );
-		slabPiece.material = &concrete.material;
-		pieces.push_back( slabPiece );
+		float y = (float)floor * level;
+		AddOpenings( openings[0], floor == 0 ? front0 : front1, width, height, y, t );
+		AddOpenings( openings[1], back, width, height, y, t );
+		AddOpenings( openings[2], side, inner, height, y, t );
+		AddOpenings( openings[3], side, inner, height, y, t );
 	}
 
-	// Brick walls and concrete slabs in one structure
-	AddStructure( app, position, yaw, brick, pieces, seed );
+	// The front and back walls run along x, the end walls between them along z
+	b3Quat alongZ = b3MakeQuatFromAxisAngle( b3Vec3_axisY, -0.5f * B3_PI );
+	b3Vec3 centers[4] = {
+		{ 0.0f, 0.5f * height, 0.5f * ( depth - t ) },
+		{ 0.0f, 0.5f * height, -0.5f * ( depth - t ) },
+		{ -0.5f * ( width - t ), 0.5f * height, 0.0f },
+		{ 0.5f * ( width - t ), 0.5f * height, 0.0f },
+	};
+
+	std::vector<nbPieceDef> pieces;
+	for ( int w = 0; w < 4; ++w )
+	{
+		float length = w < 2 ? width : inner;
+		nbPieceDef wall = MakePiece( centers[w], { 0.5f * length, 0.5f * height, 0.5f * t }, brick, MaterialPlaster );
+		wall.transform.q = w < 2 ? b3Quat_identity : alongZ;
+		wall.openings = openings[w].data();
+		wall.openingCount = (int)openings[w].size();
+		pieces.push_back( wall );
+	}
+
+	// The floors stay whole until something hits them, cells would only cost
+	for ( int floor = 0; floor < floors; ++floor )
+	{
+		nbPieceDef floorSlab = MakePiece( { 0.0f, (float)floor * level + story + 0.5f * slab, 0.0f },
+										  { 0.5f * width - t, 0.5f * slab, 0.5f * depth - t }, concrete, MaterialConcrete );
+		floorSlab.material = &concrete.material;
+		floorSlab.cellSize = -1.0f;
+		pieces.push_back( floorSlab );
+	}
+
+	AddStructure( app, position, yaw, brick, pieces, seed, 1.2f );
 }
 
 static void BuildStressScene( App& app )

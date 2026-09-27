@@ -303,101 +303,83 @@ static void BenchmarkBuilding( int workerCount )
 	DestroyScene( &scene );
 }
 
-// A wall in the local xy plane with rectangular openings, cut into box pieces on the grid of the opening edges.
-// Openings are given as corner pairs in wall coordinates.
-static void AddWall( nbPieceDef* pieces, int* pieceCount, b3Vec3 origin, bool alongX, float width, float height, float thickness,
-					 const float* openings, int openingCount )
+// Cut the doors and windows of one floor out of a wall that runs through all floors. The corners are pairs along the
+// wall and up from the floor. A door reaches below the wall, so it opens it to the ground.
+static void AddOpenings( nbOpening* openings, int* openingCount, const float* corners, int cornerCount, float length,
+						 float height, float floorY, float thickness )
 {
-	float xs[16], ys[16];
-	int nx = 0, ny = 0;
-	xs[nx++] = 0.0f;
-	xs[nx++] = width;
-	ys[ny++] = 0.0f;
-	ys[ny++] = height;
-	for ( int i = 0; i < openingCount; ++i )
+	for ( int i = 0; i + 3 < cornerCount; i += 4 )
 	{
-		xs[nx++] = openings[4 * i + 0];
-		xs[nx++] = openings[4 * i + 2];
-		ys[ny++] = openings[4 * i + 1];
-		ys[ny++] = openings[4 * i + 3];
-	}
-
-	for ( int pass = 0; pass < 2; ++pass )
-	{
-		float* values = pass == 0 ? xs : ys;
-		int count = pass == 0 ? nx : ny;
-		for ( int i = 1; i < count; ++i )
-		{
-			float key = values[i];
-			int j = i - 1;
-			while ( j >= 0 && values[j] > key )
-			{
-				values[j + 1] = values[j];
-				j -= 1;
-			}
-			values[j + 1] = key;
-		}
-	}
-
-	for ( int j = 0; j + 1 < ny; ++j )
-	{
-		for ( int i = 0; i + 1 < nx; ++i )
-		{
-			float x0 = xs[i], x1 = xs[i + 1], y0 = ys[j], y1 = ys[j + 1];
-			if ( x1 - x0 < 1.0e-3f || y1 - y0 < 1.0e-3f )
-			{
-				continue;
-			}
-
-			float cx = 0.5f * ( x0 + x1 ), cy = 0.5f * ( y0 + y1 );
-			bool inOpening = false;
-			for ( int k = 0; k < openingCount; ++k )
-			{
-				const float* o = openings + 4 * k;
-				inOpening = inOpening || ( o[0] < cx && cx < o[2] && o[1] < cy && cy < o[3] );
-			}
-			if ( inOpening )
-			{
-				continue;
-			}
-
-			nbPieceDef* piece = pieces + ( *pieceCount )++;
-			*piece = nbDefaultPieceDef();
-			piece->halfExtents = alongX ? (b3Vec3){ 0.5f * ( x1 - x0 ), 0.5f * ( y1 - y0 ), 0.5f * thickness }
-										: (b3Vec3){ 0.5f * thickness, 0.5f * ( y1 - y0 ), 0.5f * ( x1 - x0 ) };
-			piece->transform.p = alongX ? (b3Vec3){ origin.x + cx, origin.y + cy, origin.z } : (b3Vec3){ origin.x, origin.y + cy, origin.z + cx };
-		}
+		float x0 = corners[i], x1 = corners[i + 2];
+		float y0 = corners[i + 1] > 0.0f ? floorY + corners[i + 1] : floorY - 0.1f;
+		float y1 = floorY + corners[i + 3];
+		nbOpening* opening = openings + ( *openingCount )++;
+		opening->center = (b3Vec3){ 0.5f * ( x0 + x1 - length ), 0.5f * ( y0 + y1 - height ), 0.0f };
+		opening->halfExtents = (b3Vec3){ 0.5f * ( x1 - x0 ), 0.5f * ( y1 - y0 ), thickness };
 	}
 }
 
-// Two stories of brick walls with doors and windows and concrete floors, like the house of the demo
+// Two stories of brick walls through both floors with doors and windows, pre-fractured into cells, and concrete
+// floors inside them, like the house of the demo
 static nbDestructibleId CreateHouse( nbWorldId world, b3Vec3 position, uint32_t seed, const nbMaterial* concrete )
 {
-	nbPieceDef pieces[96];
-	int count = 0;
 	float width = 9.0f, depth = 6.5f, story = 3.0f, t = 0.3f, slab = 0.25f;
-	for ( int floor = 0; floor < 2; ++floor )
+	float level = story + slab;
+	int floors = 2;
+	float height = (float)floors * level;
+	float inner = depth - 2.0f * t;
+
+	nbOpening openings[4][16];
+	int openingCounts[4] = { 0 };
+	for ( int floor = 0; floor < floors; ++floor )
 	{
-		float y = (float)floor * ( story + slab );
+		float y = (float)floor * level;
 		float front0[] = { 3.9f, 0.0f, 5.1f, 2.2f, 1.0f, 1.0f, 2.6f, 2.2f, 6.4f, 1.0f, 8.0f, 2.2f };
 		float front1[] = { 1.0f, 0.9f, 2.6f, 2.2f, 3.7f, 0.9f, 5.3f, 2.2f, 6.4f, 0.9f, 8.0f, 2.2f };
 		float back[] = { 1.5f, 0.9f, 3.0f, 2.2f, 6.0f, 0.9f, 7.5f, 2.2f };
 		float side[] = { 2.4f, 0.9f, 3.6f, 2.2f };
-		AddWall( pieces, &count, (b3Vec3){ -0.5f * width, y, 0.5f * depth - 0.5f * t }, true, width, story, t, floor == 0 ? front0 : front1, 3 );
-		AddWall( pieces, &count, (b3Vec3){ -0.5f * width, y, -0.5f * depth + 0.5f * t }, true, width, story, t, back, 2 );
-		AddWall( pieces, &count, (b3Vec3){ -0.5f * width + 0.5f * t, y, -0.5f * depth + t }, false, depth - 2.0f * t, story, t, side, 1 );
-		AddWall( pieces, &count, (b3Vec3){ 0.5f * width - 0.5f * t, y, -0.5f * depth + t }, false, depth - 2.0f * t, story, t, side, 1 );
+		AddOpenings( openings[0], openingCounts + 0, floor == 0 ? front0 : front1, 12, width, height, y, t );
+		AddOpenings( openings[1], openingCounts + 1, back, 8, width, height, y, t );
+		AddOpenings( openings[2], openingCounts + 2, side, 4, inner, height, y, t );
+		AddOpenings( openings[3], openingCounts + 3, side, 4, inner, height, y, t );
+	}
 
+	// The front and back walls run along x, the end walls between them along z
+	nbPieceDef pieces[8];
+	int count = 0;
+	b3Quat alongZ = b3MakeQuatFromAxisAngle( (b3Vec3){ 0.0f, 1.0f, 0.0f }, -0.5f * B3_PI );
+	b3Vec3 centers[4] = {
+		{ 0.0f, 0.5f * height, 0.5f * ( depth - t ) },
+		{ 0.0f, 0.5f * height, -0.5f * ( depth - t ) },
+		{ -0.5f * ( width - t ), 0.5f * height, 0.0f },
+		{ 0.5f * ( width - t ), 0.5f * height, 0.0f },
+	};
+	for ( int w = 0; w < 4; ++w )
+	{
+		nbPieceDef* wall = pieces + count++;
+		*wall = nbDefaultPieceDef();
+		wall->halfExtents = (b3Vec3){ 0.5f * ( w < 2 ? width : inner ), 0.5f * height, 0.5f * t };
+		wall->transform.p = centers[w];
+		wall->transform.q = w < 2 ? b3Quat_identity : alongZ;
+		wall->openings = openings[w];
+		wall->openingCount = openingCounts[w];
+	}
+
+	// The floors stay whole until something hits them
+	for ( int floor = 0; floor < floors; ++floor )
+	{
 		nbPieceDef* floorSlab = pieces + count++;
 		*floorSlab = nbDefaultPieceDef();
-		floorSlab->halfExtents = (b3Vec3){ 0.5f * width, 0.5f * slab, 0.5f * depth };
-		floorSlab->transform.p = (b3Vec3){ 0.0f, y + story + 0.5f * slab, 0.0f };
+		floorSlab->halfExtents = (b3Vec3){ 0.5f * width - t, 0.5f * slab, 0.5f * depth - t };
+		floorSlab->transform.p = (b3Vec3){ 0.0f, (float)floor * level + story + 0.5f * slab, 0.0f };
 		floorSlab->material = concrete;
+		floorSlab->cellSize = -1.0f;
 	}
 
 	nbDestructibleDef def = nbDefaultDestructibleDef();
 	def.position = position;
 	def.seed = seed;
+	def.cellSize = 1.2f;
 	def.material.density = 1900.0f;
 	def.material.strength = 6.0e5f;
 	def.material.fragmentSize = 0.1f;

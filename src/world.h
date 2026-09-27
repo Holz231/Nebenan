@@ -107,6 +107,13 @@ typedef struct nbBond
 	float health;
 
 	uint32_t stamp;
+
+	// The bond glues two cells of the pre-fracture of one piece, not two pieces or fragments. As long as no damage
+	// reaches them, such bonds hold the cells together as one block in the load check, see nbCheckSupport.
+	bool cohesive;
+
+	// A cohesive bond between two groups of cells. A block that collapses falls apart along these.
+	bool fault;
 } nbBond;
 
 // A rigid set of chunks. The static actor of a destructible is the set of glued chunks, it has no
@@ -158,6 +165,10 @@ typedef struct nbActor
 
 	// Rubble that pieces broke off below its center of mass during the current operation, see nbApplyImpact
 	bool lostPieces;
+
+	// Came down in the collapse of a block, see nbCheckSupport, or broke off something that did. It breaks along the
+	// faces of its cells where it lands hard, collisions do not fracture it further.
+	bool fromCollapse;
 
 	// Debris at rest, carried by a static body until something disturbs it
 	bool isRubble;
@@ -211,6 +222,9 @@ typedef struct nbActor
 
 	// The last answer of that search for this rubble, valid while the stamp matches
 	uint32_t answerStamp;
+
+	// A collapse is breaking a structure apart, the parts it drops come from it
+	bool collapsing;
 	bool supported;
 
 	// Rests on the piece whose support is being inspected, valid while the stamp matches, see nbFindSupport
@@ -343,6 +357,9 @@ typedef struct nbWorld
 	uint32_t settleStamp;
 	uint32_t supportStamp;
 	uint32_t answerStamp;
+
+	// A collapse is breaking a structure apart, the parts it drops come from it
+	bool collapsing;
 
 	// While a chunk crushed under its load bursts, its fragments get this speed along the axis out of its wall, see
 	// nbCrushChunk. With both faces of the wall free each fragment leaves through the nearer one. Zero otherwise.

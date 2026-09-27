@@ -68,6 +68,369 @@ void nbCellScratch_Create( nbCellScratch* scratch, nbArena* arena, int siteCapac
 	scratch->polyB = nbArena_AllocArray( arena, nbPoly, 1 );
 	scratch->heap = nbArena_AllocArray( arena, uint64_t, siteCapacity > 0 ? siteCapacity : 1 );
 	scratch->siteCapacity = siteCapacity;
+	scratch->partPolys = NULL;
+}
+
+// Shape and hull of a finished cell or part, moved back to the frame of the parent chunk. Null if it is too small.
+static nbShape* nbFinishShape( const nbFractureJob* job, const nbPoly* poly, nbArena* arena, nbFractureCounters* counters,
+							   b3HullData** hull )
+{
+	*hull = NULL;
+
+	float volume;
+	b3Vec3 centroid;
+	nbPoly_ComputeMass( poly, &volume, &centroid );
+	if ( volume < job->minVolume )
+	{
+		return NULL;
+	}
+
+	nbShape* shape = nbShape_CreateWithMass( poly, volume, centroid );
+	if ( shape == NULL )
+	{
+		return NULL;
+	}
+
+	nbShape_Translate( shape, job->origin );
+	if ( job->buildHulls )
+	{
+		*hull = nbCreateHullInArena( shape, arena, &counters->hullFallbackCount );
+	}
+	return shape;
+}
+
+// Polyhedra for the parts of a cell with cutouts and the work of cutting them
+#define NB_CUT_POLYS 32
+
+// A cutout cuts a part with up to this many of its planes in every order, to find the one without slivers. With more
+// planes it takes them in its own order.
+#define NB_CUT_SEARCH 4
+
+typedef struct nbPolyPool
+{
+	nbPoly* polys;
+	int unused[NB_CUT_POLYS];
+	int unusedCount;
+} nbPolyPool;
+
+static int nbPool_Take( nbPolyPool* pool )
+{
+	return pool->unusedCount > 0 ? pool->unused[--pool->unusedCount] : -1;
+}
+
+static void nbPool_Give( nbPolyPool* pool, int slot )
+{
+	pool->unused[pool->unusedCount++] = slot;
+}
+
+// Smallest extent of a polyhedron along the normals of its faces, how thin it is
+static float nbPoly_MinWidth( const nbPoly* poly )
+{
+	float width = FLT_MAX;
+	for ( int f = 0; f < poly->faceCount; ++f )
+	{
+		b3Vec3 normal = poly->faces[f].plane.normal;
+		float lower = FLT_MAX, upper = -FLT_MAX;
+		for ( int v = 0; v < poly->vertexCount; ++v )
+		{
+			float d = b3Dot( normal, poly->vertices[v] );
+			lower = d < lower ? d : lower;
+			upper = d > upper ? d : upper;
+		}
+		width = upper - lower < width ? upper - lower : width;
+	}
+	return width;
+}
+
+// The planes of a cutout a polyhedron reaches beyond. Zero if it lies inside the cutout, -1 if it lies beyond one of the
+// planes and misses the cutout.
+static int nbCuttingPlanes( const nbPoly* poly, const nbCutout* cutout, float tolerance, int* planes )
+{
+	int count = 0;
+	for ( int k = 0; k < 6; ++k )
+	{
+		b3Plane plane = cutout->planes[k];
+		float lower = FLT_MAX, upper = -FLT_MAX;
+		for ( int v = 0; v < poly->vertexCount; ++v )
+		{
+			float s = b3Dot( plane.normal, poly->vertices[v] ) - plane.offset;
+			lower = s < lower ? s : lower;
+			upper = s > upper ? s : upper;
+		}
+
+		if ( lower >= -tolerance )
+		{
+			return -1;
+		}
+
+		if ( upper > tolerance )
+		{
+			planes[count++] = k;
+		}
+	}
+	return count;
+}
+
+static bool nbNextPermutation( int* values, int count )
+{
+	int i = count - 2;
+	while ( i >= 0 && values[i] >= values[i + 1] )
+	{
+		i -= 1;
+	}
+
+	if ( i < 0 )
+	{
+		return false;
+	}
+
+	int j = count - 1;
+	while ( values[j] <= values[i] )
+	{
+		j -= 1;
+	}
+
+	int swap = values[i];
+	values[i] = values[j];
+	values[j] = swap;
+	for ( int a = i + 1, b = count - 1; a < b; ++a, --b )
+	{
+		swap = values[a];
+		values[a] = values[b];
+		values[b] = swap;
+	}
+	return true;
+}
+
+// Cut a cutout out of a convex polyhedron with the given planes of the cutout in turn: what lies beyond each plane
+// becomes a part, what is left behind all of them is inside the cutout and dropped. The parts go to polyhedra of the
+// pool. Returns their number, or -1 if the pool runs out.
+static int nbCutBox( const nbFractureJob* job, const nbPoly* in, const nbCutout* cutout, const int* planes, int planeCount, nbPolyPool* pool,
+					 int* parts, nbFractureCounters* counters )
+{
+	int partCount = 0;
+	const nbPoly* rest = in;
+	int restSlot = -1;
+	for ( int k = 0; k < planeCount; ++k )
+	{
+		int part = nbPool_Take( pool );
+		int next = nbPool_Take( pool );
+		if ( next < 0 )
+		{
+			if ( part >= 0 )
+			{
+				nbPool_Give( pool, part );
+			}
+			if ( restSlot >= 0 )
+			{
+				nbPool_Give( pool, restSlot );
+			}
+			for ( int p = 0; p < partCount; ++p )
+			{
+				nbPool_Give( pool, parts[p] );
+			}
+			return -1;
+		}
+
+		b3Plane plane = cutout->planes[planes[k]];
+		b3Plane beyond = { b3Neg( plane.normal ), -plane.offset };
+		nbClipResult result = nbPoly_Clip( rest, beyond, job->cutoutMaterial, -1, job->tolerance, pool->polys + part );
+		if ( result == nb_clipCut )
+		{
+			parts[partCount++] = part;
+			result = nbPoly_Clip( rest, plane, job->cutoutMaterial, -1, job->tolerance, pool->polys + next );
+			if ( result == nb_clipCut )
+			{
+				if ( restSlot >= 0 )
+				{
+					nbPool_Give( pool, restSlot );
+				}
+				rest = pool->polys + next;
+				restSlot = next;
+				continue;
+			}
+
+			nbPool_Give( pool, next );
+			if ( result == nb_clipUnchanged )
+			{
+				continue;
+			}
+
+			// Nothing left behind the plane
+			counters->failureCount += result == nb_clipOverflow ? 1 : 0;
+			if ( restSlot >= 0 )
+			{
+				nbPool_Give( pool, restSlot );
+			}
+			return partCount;
+		}
+
+		nbPool_Give( pool, next );
+		if ( result == nb_clipEmpty )
+		{
+			// All behind the plane
+			nbPool_Give( pool, part );
+			continue;
+		}
+
+		// All beyond the plane, outside the cutout, or too complex to cut: the rest stays a part as it is
+		counters->failureCount += result == nb_clipOverflow ? 1 : 0;
+		if ( restSlot < 0 )
+		{
+			pool->polys[part] = *rest;
+			parts[partCount++] = part;
+		}
+		else
+		{
+			nbPool_Give( pool, part );
+			parts[partCount++] = restSlot;
+		}
+		return partCount;
+	}
+
+	if ( restSlot >= 0 )
+	{
+		nbPool_Give( pool, restSlot );
+	}
+	return partCount;
+}
+
+// Cut the cutouts out of a cell. The parts are convex, their faces on the planes of the cutouts get the material of the
+// cutouts. Where a cell reaches around the corner of a cutout, the order of the planes decides where the parts meet, and
+// one order leaves a sliver where another does not.
+static void nbCutCell( const nbFractureJob* job, nbCell* cell, const nbPoly* poly, nbArena* arena, nbCellScratch* scratch,
+					   nbFractureCounters* counters )
+{
+	b3AABB cellBounds = nbPoly_ComputeBounds( poly );
+	bool touched = false;
+	for ( int c = 0; c < job->cutoutCount; ++c )
+	{
+		touched = touched || b3AABB_Overlaps( cellBounds, job->cutouts[c].bounds );
+	}
+
+	if ( touched == false )
+	{
+		cell->shape = nbFinishShape( job, poly, arena, counters, &cell->hull );
+		return;
+	}
+
+	if ( scratch->partPolys == NULL )
+	{
+		scratch->partPolys = nbArena_AllocArray( arena, nbPoly, NB_CUT_POLYS );
+	}
+
+	nbPolyPool pool;
+	pool.polys = scratch->partPolys;
+	pool.unusedCount = 0;
+	for ( int k = NB_CUT_POLYS - 1; k >= 0; --k )
+	{
+		nbPool_Give( &pool, k );
+	}
+
+	int parts[NB_CUT_POLYS];
+	int partCount = 1;
+	parts[0] = nbPool_Take( &pool );
+	pool.polys[parts[0]] = *poly;
+
+	for ( int c = 0; c < job->cutoutCount; ++c )
+	{
+		const nbCutout* cutout = job->cutouts + c;
+		if ( b3AABB_Overlaps( cellBounds, cutout->bounds ) == false )
+		{
+			continue;
+		}
+
+		int pending[NB_CUT_POLYS];
+		int pendingCount = partCount;
+		memcpy( pending, parts, (size_t)partCount * sizeof( int ) );
+		partCount = 0;
+		for ( int p = 0; p < pendingCount; ++p )
+		{
+			const nbPoly* part = pool.polys + pending[p];
+			int planes[6];
+			int planeCount = nbCuttingPlanes( part, cutout, job->tolerance, planes );
+			if ( planeCount < 0 )
+			{
+				parts[partCount++] = pending[p];
+				continue;
+			}
+
+			// The order of the planes that drops the least in slivers, then the one whose thinnest part is the thickest
+			int order[6];
+			memcpy( order, planes, sizeof( planes ) );
+			if ( 1 < planeCount && planeCount <= NB_CUT_SEARCH )
+			{
+				int trial[6];
+				memcpy( trial, planes, sizeof( planes ) );
+				float bestDropped = FLT_MAX;
+				float bestWidth = -1.0f;
+				do
+				{
+					int trialParts[NB_CUT_POLYS];
+					nbFractureCounters trialCounters = { 0 };
+					int count = nbCutBox( job, part, cutout, trial, planeCount, &pool, trialParts, &trialCounters );
+					if ( count < 0 )
+					{
+						continue;
+					}
+
+					float dropped = 0.0f;
+					float width = FLT_MAX;
+					for ( int t = 0; t < count; ++t )
+					{
+						const nbPoly* trialPart = pool.polys + trialParts[t];
+						float partWidth = nbPoly_MinWidth( trialPart );
+						if ( partWidth < job->cutoutMinWidth )
+						{
+							float volume;
+							b3Vec3 centroid;
+							nbPoly_ComputeMass( trialPart, &volume, &centroid );
+							dropped += volume;
+						}
+						else
+						{
+							width = b3MinFloat( width, partWidth );
+						}
+						nbPool_Give( &pool, trialParts[t] );
+					}
+
+					if ( dropped < bestDropped || ( dropped == bestDropped && width > bestWidth ) )
+					{
+						bestDropped = dropped;
+						bestWidth = width;
+						memcpy( order, trial, sizeof( trial ) );
+					}
+				}
+				while ( nbNextPermutation( trial, planeCount ) );
+			}
+
+			int count = planeCount > 0 ? nbCutBox( job, part, cutout, order, planeCount, &pool, parts + partCount, counters ) : 0;
+			if ( count < 0 )
+			{
+				// Out of room the part stays whole
+				counters->failureCount += 1;
+				parts[partCount++] = pending[p];
+				continue;
+			}
+
+			partCount += count;
+			nbPool_Give( &pool, pending[p] );
+		}
+	}
+
+	cell->parts = nbArena_AllocArray( arena, nbCellPart, partCount );
+	for ( int p = 0; p < partCount; ++p )
+	{
+		const nbPoly* partPoly = pool.polys + parts[p];
+		if ( job->cutoutMinWidth > 0.0f && nbPoly_MinWidth( partPoly ) < job->cutoutMinWidth )
+		{
+			continue;
+		}
+
+		nbCellPart* part = cell->parts + cell->partCount;
+		part->shape = nbFinishShape( job, partPoly, arena, counters, &part->hull );
+		cell->partCount += part->shape != NULL ? 1 : 0;
+	}
 }
 
 void nbComputeCell( const nbFractureJob* job, int cellIndex, nbArena* arena, nbCellScratch* scratch, nbFractureCounters* counters )
@@ -75,10 +438,7 @@ void nbComputeCell( const nbFractureJob* job, int cellIndex, nbArena* arena, nbC
 	NB_ASSERT( job->siteCount <= scratch->siteCapacity );
 
 	nbCell* cell = job->cells + cellIndex;
-	cell->shape = NULL;
-	cell->hull = NULL;
-	cell->neighbors = NULL;
-	cell->neighborCount = 0;
+	*cell = (nbCell){ 0 };
 
 	const b3Vec3* sites = job->sites;
 	int siteCount = job->siteCount;
@@ -145,15 +505,14 @@ void nbComputeCell( const nbFractureJob* job, int cellIndex, nbArena* arena, nbC
 		}
 	}
 
-	float volume;
-	b3Vec3 centroid;
-	nbPoly_ComputeMass( current, &volume, &centroid );
-	if ( volume < job->minVolume )
+	// The bonds of cells with cutouts come from a contact test, the cells here do not know how the parts touch
+	if ( job->cutoutCount > 0 )
 	{
+		nbCutCell( job, cell, current, arena, scratch, counters );
 		return;
 	}
 
-	nbShape* shape = nbShape_CreateWithMass( current, volume, centroid );
+	nbShape* shape = nbFinishShape( job, current, arena, counters, &cell->hull );
 	if ( shape == NULL )
 	{
 		return;
@@ -189,13 +548,7 @@ void nbComputeCell( const nbFractureJob* job, int cellIndex, nbArena* arena, nbC
 		cell->neighborCount += 1;
 	}
 
-	nbShape_Translate( shape, job->origin );
 	cell->shape = shape;
-
-	if ( job->buildHulls )
-	{
-		cell->hull = nbCreateHullInArena( shape, arena, &counters->hullFallbackCount );
-	}
 }
 
 void nbComputeVoronoiCells( nbArena* arena, const nbPoly* parent, const b3Vec3* sites, int siteCount, uint8_t interiorMaterial,

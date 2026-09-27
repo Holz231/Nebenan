@@ -355,7 +355,7 @@ static uint32_t RunDeterminismScenario( void )
 
 // Fracture and physics are bit for bit identical with MSVC, GCC and Clang on x64 and ARM. This is the result
 // with the pinned Box3D commit. Update it when the results change on purpose, never to make one platform pass.
-#define NB_EXPECTED_DETERMINISM_HASH 0xf1282fe1u
+#define NB_EXPECTED_DETERMINISM_HASH 0xb072fd54u
 
 static int DeterminismTest( void )
 {
@@ -595,6 +595,112 @@ static int PreFractureTest( void )
 	ENSURE( stats.dynamicBodyCount == 0 );
 
 	DestroyScene( &scene );
+	return 0;
+}
+
+// Openings are cut out of a piece, out of its cells with a cell size. What is left is the wall around them, glued into
+// one and standing.
+static int OpeningTest( void )
+{
+	// A window, and a door that reaches below the wall
+	nbOpening openings[2] = {
+		{ { -0.8f, 0.2f, 0.0f }, { 0.6f, 0.5f, 0.3f } },
+		{ { 1.1f, -0.6f, 0.0f }, { 0.45f, 1.0f, 0.3f } },
+	};
+	float expectedVolume = 4.0f * 3.0f * 0.3f - 1.2f * 1.0f * 0.3f - 0.9f * 1.9f * 0.3f;
+
+	for ( int k = 0; k < 2; ++k )
+	{
+		TestScene scene = CreateScene();
+
+		// Turned about the vertical, the openings turn with the piece
+		nbPieceDef piece = nbDefaultPieceDef();
+		piece.halfExtents = (b3Vec3){ 2.0f, 1.5f, 0.15f };
+		piece.transform.p = (b3Vec3){ 1.0f, 1.5f, -2.0f };
+		piece.transform.q = b3MakeQuatFromAxisAngle( (b3Vec3){ 0.0f, 1.0f, 0.0f }, 0.5f );
+		piece.surfaceMaterial = 3;
+		piece.interiorMaterial = 4;
+		piece.openings = openings;
+		piece.openingCount = 2;
+
+		nbDestructibleDef def = nbDefaultDestructibleDef();
+		def.cellSize = k == 0 ? 0.0f : 0.5f;
+		nbDestructibleId wall = nbCreateDestructible( scene.world, &def, &piece, 1 );
+
+		int count = nbDestructible_GetChunkCount( wall );
+		ENSURE( count >= ( k == 0 ? 4 : 30 ) );
+		ENSURE_SMALL( TotalChunkVolume( wall ) - expectedVolume, 1.0e-3f );
+
+		// No chunk reaches into an opening, and the faces of the openings are surface
+		nbWorld* world = nbGetWorldFromId( scene.world );
+		int openingFaces = 0;
+		for ( int c = 0; c < world->chunks.count; ++c )
+		{
+			const nbShape* shape = world->chunks.data[c].shape;
+			if ( shape == NULL )
+			{
+				continue;
+			}
+
+			for ( int v = 0; v < shape->vertexCount; ++v )
+			{
+				b3Vec3 p = b3InvTransformPoint( piece.transform, shape->vertices[v] );
+				for ( int o = 0; o < 2; ++o )
+				{
+					b3Vec3 d = b3Abs( b3Sub( p, openings[o].center ) );
+					b3Vec3 h = openings[o].halfExtents;
+					ENSURE( d.x >= h.x - 1.0e-4f || d.y >= h.y - 1.0e-4f || d.z >= h.z - 1.0e-4f );
+				}
+			}
+
+			for ( int f = 0; f < shape->faceCount; ++f )
+			{
+				b3Vec3 normal = b3InvRotateVector( piece.transform.q, shape->faces[f].plane.normal );
+				uint8_t material = shape->faces[f].material;
+				ENSURE( material == 3 || material == 4 );
+				openingFaces += b3AbsFloat( normal.z ) < 1.0e-3f && material == 3 && b3AbsFloat( normal.y ) < 0.999f ? 1 : 0;
+			}
+		}
+		ENSURE( openingFaces > 0 );
+
+		// One piece of wall, every chunk reached through the bonds
+		int* stack = malloc( sizeof( int ) * (size_t)world->chunks.count );
+		world->searchStamp += 1;
+		int reached = 0;
+		int stackCount = 0;
+		for ( int c = 0; c < world->chunks.count && stackCount == 0; ++c )
+		{
+			if ( world->chunks.data[c].shape != NULL )
+			{
+				world->chunks.data[c].searchStamp = world->searchStamp;
+				stack[stackCount++] = c;
+			}
+		}
+		while ( stackCount > 0 )
+		{
+			const nbChunk* chunk = world->chunks.data + stack[--stackCount];
+			reached += 1;
+			for ( int key = chunk->headBondKey; key != NB_NULL_INDEX; )
+			{
+				const nbBond* bond = world->bonds.data + ( key >> 1 );
+				int side = key & 1;
+				key = bond->nextKey[side];
+				nbChunk* other = world->chunks.data + bond->chunk[side ^ 1];
+				if ( other->searchStamp != world->searchStamp )
+				{
+					other->searchStamp = world->searchStamp;
+					stack[stackCount++] = bond->chunk[side ^ 1];
+				}
+			}
+		}
+		free( stack );
+		ENSURE( reached == count );
+
+		Step( &scene, 60 );
+		ENSURE( nbWorld_GetStats( scene.world ).dynamicBodyCount == 0 );
+
+		DestroyScene( &scene );
+	}
 	return 0;
 }
 
@@ -1353,6 +1459,87 @@ static nbDestructibleId CreateTownHouse( TestScene* scene, int floors )
 	return nbCreateDestructible( scene->world, &def, pieces, count );
 }
 
+// Cut the doors and windows of one floor out of a wall that runs through all floors. The corners are pairs along the
+// wall and up from the floor. A door reaches below the wall, so it opens it to the ground.
+static void AddOpenings( nbOpening* openings, int* openingCount, const float* corners, int cornerCount, float length,
+						 float height, float floorY, float thickness )
+{
+	for ( int i = 0; i + 3 < cornerCount; i += 4 )
+	{
+		float x0 = corners[i], x1 = corners[i + 2];
+		float y0 = corners[i + 1] > 0.0f ? floorY + corners[i + 1] : floorY - 0.1f;
+		float y1 = floorY + corners[i + 3];
+		nbOpening* opening = openings + ( *openingCount )++;
+		opening->center = (b3Vec3){ 0.5f * ( x0 + x1 - length ), 0.5f * ( y0 + y1 - height ), 0.0f };
+		opening->halfExtents = (b3Vec3){ 0.5f * ( x1 - x0 ), 0.5f * ( y1 - y0 ), thickness };
+	}
+}
+
+// The town house as the demo builds it: brick walls through all floors with the same doors and windows, pre-fractured
+// into cells, and whole concrete floors between them
+static nbDestructibleId CreateCelledHouse( TestScene* scene, int floors, uint32_t seed )
+{
+	nbMaterial concrete = nbDefaultMaterial();
+	concrete.strength = 1.1e6f;
+	float width = 9.0f, depth = 6.5f, story = 3.0f, t = 0.3f, slab = 0.25f;
+	float level = story + slab;
+	float height = (float)floors * level;
+	float inner = depth - 2.0f * t;
+
+	nbOpening openings[4][16];
+	int openingCounts[4] = { 0 };
+	for ( int floor = 0; floor < floors; ++floor )
+	{
+		float y = (float)floor * level;
+		float front0[] = { 3.9f, 0.0f, 5.1f, 2.2f, 1.0f, 1.0f, 2.6f, 2.2f, 6.4f, 1.0f, 8.0f, 2.2f };
+		float front1[] = { 1.0f, 0.9f, 2.6f, 2.2f, 3.7f, 0.9f, 5.3f, 2.2f, 6.4f, 0.9f, 8.0f, 2.2f };
+		float back[] = { 1.5f, 0.9f, 3.0f, 2.2f, 6.0f, 0.9f, 7.5f, 2.2f };
+		float side[] = { 2.4f, 0.9f, 3.6f, 2.2f };
+		AddOpenings( openings[0], openingCounts + 0, floor == 0 ? front0 : front1, 12, width, height, y, t );
+		AddOpenings( openings[1], openingCounts + 1, back, 8, width, height, y, t );
+		AddOpenings( openings[2], openingCounts + 2, side, 4, inner, height, y, t );
+		AddOpenings( openings[3], openingCounts + 3, side, 4, inner, height, y, t );
+	}
+
+	// The front and back walls run along x, the end walls between them along z
+	nbPieceDef pieces[8];
+	int count = 0;
+	b3Quat alongZ = b3MakeQuatFromAxisAngle( (b3Vec3){ 0.0f, 1.0f, 0.0f }, -0.5f * B3_PI );
+	b3Vec3 centers[4] = {
+		{ 0.0f, 0.5f * height, 0.5f * ( depth - t ) },
+		{ 0.0f, 0.5f * height, -0.5f * ( depth - t ) },
+		{ -0.5f * ( width - t ), 0.5f * height, 0.0f },
+		{ 0.5f * ( width - t ), 0.5f * height, 0.0f },
+	};
+	for ( int w = 0; w < 4; ++w )
+	{
+		nbPieceDef* wall = pieces + count++;
+		*wall = nbDefaultPieceDef();
+		wall->halfExtents = (b3Vec3){ 0.5f * ( w < 2 ? width : inner ), 0.5f * height, 0.5f * t };
+		wall->transform.p = centers[w];
+		wall->transform.q = w < 2 ? b3Quat_identity : alongZ;
+		wall->openings = openings[w];
+		wall->openingCount = openingCounts[w];
+	}
+
+	for ( int floor = 0; floor < floors; ++floor )
+	{
+		nbPieceDef* floorSlab = pieces + count++;
+		*floorSlab = nbDefaultPieceDef();
+		floorSlab->halfExtents = (b3Vec3){ 0.5f * width - t, 0.5f * slab, 0.5f * depth - t };
+		floorSlab->transform.p = (b3Vec3){ 0.0f, (float)floor * level + story + 0.5f * slab, 0.0f };
+		floorSlab->material = &concrete;
+		floorSlab->cellSize = -1.0f;
+	}
+
+	nbDestructibleDef def = nbDefaultDestructibleDef();
+	def.seed = seed;
+	def.cellSize = 1.2f;
+	def.material.density = 1900.0f;
+	def.material.strength = 6.0e5f;
+	return nbCreateDestructible( scene->world, &def, pieces, count );
+}
+
 // Highest chunk centroid in world space
 static float HighestChunk( nbDestructibleId destructible )
 {
@@ -1367,6 +1554,24 @@ static float HighestChunk( nbDestructibleId destructible )
 		highest = b3MaxFloat( highest, (float)centroid.y );
 	}
 	free( chunks );
+	return highest;
+}
+
+// Highest chunk centroid of what does not move: the structures and the rubble
+static float HighestResting( TestScene* scene )
+{
+	nbWorld* world = nbGetWorldFromId( scene->world );
+	float highest = 0.0f;
+	for ( int c = 0; c < world->chunks.count; ++c )
+	{
+		const nbChunk* chunk = world->chunks.data + c;
+		const nbActor* actor = world->actors.data + chunk->actorIndex;
+		if ( chunk->shape != NULL && ( actor->isStatic || actor->isRubble ) )
+		{
+			b3WorldTransform transform = nbActor_GetTransform( world, actor );
+			highest = b3MaxFloat( highest, (float)b3TransformWorldPoint( transform, chunk->shape->centroid ).y );
+		}
+	}
 	return highest;
 }
 
@@ -1587,15 +1792,81 @@ static int SupportTest( void )
 		DestroyScene( &scene );
 	}
 
-	// A wall too weak for the block on it cracks. The fragments of its crushed stones leave it sideways at once, they do
-	// not stay wedged between the stones around them and carry the block again.
+	// The town house as the demo builds it, with walls through its floors pre-fractured into cells, stands with room to
+	// spare. The cells do not give way at the corners of the windows.
+	for ( uint32_t seed = 0; seed < 4; ++seed )
+	{
+		TestScene scene = CreateScene();
+		nbWorld_SetSupportScale( scene.world, 0.85f );
+		CreateCelledHouse( &scene, 3, seed );
+		Step( &scene, 30 );
+		nbStats stats = nbWorld_GetStats( scene.world );
+		ENSURE( stats.overloadedBondCount == 0 );
+		ENSURE( stats.dynamicBodyCount == 0 );
+		DestroyScene( &scene );
+	}
+
+	// Grenades all around its ground floor bring it down. A wall that loses its footing collapses: the stones it rests on
+	// fly out of the house, and so do stumps that reach up between them. The rest breaks along the cells and comes down,
+	// nothing stays up frozen on what is left of the ground floor.
+	{
+		TestScene scene = CreateScene();
+		nbWorld_SetFragmentScale( scene.world, 2.0f );
+		nbDestructibleId house = CreateCelledHouse( &scene, 3, 3 );
+		nbWorld* world = nbGetWorldFromId( scene.world );
+		nbImpactDef impact = { 0 };
+		impact.radius = 1.3f;
+		impact.damage = 3.0e5f;
+		impact.ejectSpeed = 12.0f;
+		int thrownCount = 0;
+		int grenadeCount = 32;
+		for ( int k = 0; k < grenadeCount; ++k )
+		{
+			float d = 31.0f * (float)k / (float)grenadeCount;
+			impact.point = d < 9.0f	   ? (b3Vec3){ -4.5f + d, 1.2f, 3.4f }
+						   : d < 15.5f ? (b3Vec3){ 4.7f, 1.2f, 3.25f - ( d - 9.0f ) }
+						   : d < 24.5f ? (b3Vec3){ 4.5f - ( d - 15.5f ), 1.2f, -3.4f }
+									   : (b3Vec3){ -4.7f, 1.2f, -3.25f + ( d - 24.5f ) };
+			nbWorld_ApplyImpact( scene.world, &impact );
+
+			b3ExplosionDef explosion = b3DefaultExplosionDef();
+			explosion.position = impact.point;
+			explosion.radius = impact.radius;
+			explosion.falloff = impact.radius;
+			explosion.impulsePerArea = 40.0f * impact.ejectSpeed;
+			b3World_Explode( scene.physicsWorld, &explosion );
+
+			// Stones a collapse throws out fly fast from the start, the fragments of the grenade came the step before
+			for ( int step = 0; step < 10; ++step )
+			{
+				Step( &scene, 1 );
+				for ( int i = 0; i < world->debris.count && step > 0; ++i )
+				{
+					const nbActor* actor = world->actors.data + world->debris.data[i];
+					b3Vec3 velocity = b3Body_GetLinearVelocity( actor->bodyId );
+					thrownCount += actor->fromCollapse && actor->age <= 0.02f &&
+										   velocity.x * velocity.x + velocity.z * velocity.z > 5.0f * 5.0f
+									   ? 1
+									   : 0;
+				}
+			}
+		}
+		Step( &scene, 180 );
+		ENSURE( thrownCount >= 10 );
+		ENSURE( CenterOfChunks( house ).y < 1.0f );
+		ENSURE( HighestResting( &scene ) < 5.0f );
+		DestroyScene( &scene );
+	}
+
+	// A wall too weak for the block on it collapses. The stones it rests on leave it sideways at once, they do not stay
+	// wedged under it, and the block comes down.
 	for ( int k = 0; k < 3; ++k )
 	{
 		TestScene scene = CreateScene();
-		nbWorld_SetSupportScale( scene.world, 0.05f + 0.1f * (float)k );
+		nbWorld_SetSupportScale( scene.world, 0.03f + 0.05f * (float)k );
 		CreateLoadedWall( &scene );
-		int fragmentCount = 0;
-		for ( int step = 0; step < 60; ++step )
+		int thrownCount = 0;
+		for ( int step = 0; step < 90; ++step )
 		{
 			Step( &scene, 1 );
 			nbWorld* world = nbGetWorldFromId( scene.world );
@@ -1603,19 +1874,29 @@ static int SupportTest( void )
 			{
 				const nbActor* actor = world->actors.data + world->debris.data[d];
 				const nbChunk* chunk = world->chunks.data + actor->headChunk;
-				b3Pos center = b3Body_GetWorldCenter( actor->bodyId );
-				if ( actor->isRubble || actor->age > 0.02f || chunk->depth == 0 || chunk->materialIndex != 0 ||
-					 fabsf( (float)center.z ) > 0.15f )
-				{
-					continue;
-				}
-
 				b3Vec3 velocity = b3Body_GetLinearVelocity( actor->bodyId );
-				ENSURE( velocity.x * velocity.x + velocity.z * velocity.z > 2.0f * 2.0f );
-				fragmentCount += 1;
+				if ( actor->isRubble == false && actor->age <= 0.02f && chunk->materialIndex == 0 &&
+					 velocity.x * velocity.x + velocity.z * velocity.z > 4.0f * 4.0f )
+				{
+					thrownCount += 1;
+				}
 			}
 		}
-		ENSURE( fragmentCount > 0 );
+		ENSURE( thrownCount > 0 );
+
+		// The concrete block started 2 m up
+		nbWorld* world = nbGetWorldFromId( scene.world );
+		float blockHeight = 0.0f;
+		for ( int c = 0; c < world->chunks.count; ++c )
+		{
+			const nbChunk* chunk = world->chunks.data + c;
+			if ( chunk->shape != NULL && chunk->materialIndex == 1 )
+			{
+				b3WorldTransform transform = nbActor_GetTransform( world, world->actors.data + chunk->actorIndex );
+				blockHeight = b3MaxFloat( blockHeight, (float)b3TransformWorldPoint( transform, chunk->shape->centroid ).y );
+			}
+		}
+		ENSURE( blockHeight < 1.5f );
 		DestroyScene( &scene );
 	}
 
@@ -1647,6 +1928,7 @@ int WorldTest( void )
 	RUN_TEST( DynamicDestructibleTest );
 	RUN_TEST( MultiPieceTest );
 	RUN_TEST( PreFractureTest );
+	RUN_TEST( OpeningTest );
 	RUN_TEST( GraphTest );
 	RUN_TEST( RubbleTest );
 	RUN_TEST( CannonballTest );

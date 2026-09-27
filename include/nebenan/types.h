@@ -109,6 +109,16 @@ typedef struct nbAnchorPlane
 /// Maximum number of anchor planes per destructible.
 #define NB_MAX_ANCHORS 8
 
+/// A box cut out of a piece, a window or a door. In the frame of the piece, along its axes.
+typedef struct nbOpening
+{
+	/// Center in the frame of the piece.
+	b3Vec3 center;
+
+	/// Half extents along the axes of the piece.
+	b3Vec3 halfExtents;
+} nbOpening;
+
 /// A convex piece of a destructible. Pieces are given in the local frame of the destructible.
 /// Touching faces of different pieces are bonded together automatically.
 typedef struct nbPieceDef
@@ -135,6 +145,19 @@ typedef struct nbPieceDef
 	/// Material of this piece, null for the material of the destructible. A destructible holds up to
 	/// NB_MAX_MATERIALS different materials. A bond between two materials is as strong as the weaker one.
 	const nbMaterial* material;
+
+	/// Pre-fracture of this piece into Voronoi cells of roughly this size, in meters. Zero takes the cell
+	/// size of the destructible, a negative value keeps the piece a single chunk.
+	float cellSize;
+
+	/// Boxes cut out of the piece, windows and doors. With a cell size the piece is cut into cells first
+	/// and the openings out of the cells, so the cells run around the openings and cracks do not follow
+	/// their edges. Without, the piece is cut into convex parts around them. The faces of the openings
+	/// get the surface material.
+	const nbOpening* openings;
+
+	/// Number of openings.
+	int openingCount;
 } nbPieceDef;
 
 /// Destructible definition. Must be initialized with nbDefaultDestructibleDef.

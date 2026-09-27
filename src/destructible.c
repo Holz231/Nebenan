@@ -71,8 +71,64 @@ nbDestructible* nbGetDestructibleFromId( nbDestructibleId id, nbWorld** worldOut
 	return destructible;
 }
 
-// Jittered grid sites for an even pre-fracture
-static int nbGenerateCellSites( const nbPoly* poly, float cellSize, nbRandom* rng, b3Vec3* sites, int capacity )
+// Where a cell reaches just around the corner of an opening, the part of it beyond is dropped if it is thinner than this
+// part of the cell size. It would be a sliver, too thin to carry anything and a pain to simulate.
+#define NB_SLIVER_WIDTH 0.05f
+
+// The cells of a pre-fracture carry together as one block in the load check, see nbCheckSupport, and a block that
+// collapses falls apart into groups about this many cells across. The groups are the Voronoi cells of a coarser set of
+// sites, so they end along the faces of the cells.
+#define NB_GROUP_SIZE 2.5f
+
+// The openings of a piece as cutouts, in the frame of its polyhedron moved by -origin
+static nbCutout* nbMakeCutouts( nbWorld* world, const nbPieceDef* piece, b3Vec3 origin )
+{
+	nbCutout* cutouts = nbArena_AllocArray( &world->arena, nbCutout, piece->openingCount );
+	b3Vec3 axes[3] = {
+		b3RotateVector( piece->transform.q, (b3Vec3){ 1.0f, 0.0f, 0.0f } ),
+		b3RotateVector( piece->transform.q, (b3Vec3){ 0.0f, 1.0f, 0.0f } ),
+		b3RotateVector( piece->transform.q, (b3Vec3){ 0.0f, 0.0f, 1.0f } ),
+	};
+
+	for ( int i = 0; i < piece->openingCount; ++i )
+	{
+		const nbOpening* opening = piece->openings + i;
+		b3Vec3 center = b3Sub( b3TransformPoint( piece->transform, opening->center ), origin );
+		float halfExtents[3] = { opening->halfExtents.x, opening->halfExtents.y, opening->halfExtents.z };
+		b3Vec3 extent = b3Vec3_zero;
+		for ( int k = 0; k < 3; ++k )
+		{
+			float offset = b3Dot( axes[k], center );
+			cutouts[i].planes[2 * k] = (b3Plane){ b3Neg( axes[k] ), halfExtents[k] - offset };
+			cutouts[i].planes[2 * k + 1] = (b3Plane){ axes[k], halfExtents[k] + offset };
+			extent = b3MulAdd( extent, halfExtents[k], b3Abs( axes[k] ) );
+		}
+		cutouts[i].bounds = (b3AABB){ b3Sub( center, extent ), b3Add( center, extent ) };
+	}
+	return cutouts;
+}
+
+static bool nbInsideCutout( const nbCutout* cutouts, int cutoutCount, b3Vec3 point )
+{
+	for ( int i = 0; i < cutoutCount; ++i )
+	{
+		bool inside = true;
+		for ( int k = 0; k < 6 && inside; ++k )
+		{
+			inside = b3Dot( cutouts[i].planes[k].normal, point ) <= cutouts[i].planes[k].offset;
+		}
+
+		if ( inside )
+		{
+			return true;
+		}
+	}
+	return false;
+}
+
+// Jittered grid sites for an even pre-fracture, none in the openings
+static int nbGenerateCellSites( const nbPoly* poly, float cellSize, const nbCutout* cutouts, int cutoutCount, nbRandom* rng,
+								b3Vec3* sites, int capacity )
 {
 	b3AABB bounds = nbPoly_ComputeBounds( poly );
 	b3Vec3 extent = b3Sub( bounds.upperBound, bounds.lowerBound );
@@ -104,7 +160,7 @@ static int nbGenerateCellSites( const nbPoly* poly, float cellSize, nbRandom* rn
 					bounds.lowerBound.z + step.z * ( (float)k + jitterZ ),
 				};
 
-				if ( nbPoly_ContainsPoint( poly, p, 0.0f ) )
+				if ( nbPoly_ContainsPoint( poly, p, 0.0f ) && nbInsideCutout( cutouts, cutoutCount, p ) == false )
 				{
 					sites[count++] = p;
 				}
@@ -114,11 +170,12 @@ static int nbGenerateCellSites( const nbPoly* poly, float cellSize, nbRandom* rn
 	return count;
 }
 
-// Draw the pre-fracture sites of a piece. Returns false if the piece stays a single chunk.
-static bool nbPreparePiece( nbWorld* world, const nbMaterial* material, nbPoly* poly, float cellSize, uint8_t interiorMaterial,
-							nbRandom* rng, nbFractureJob* job )
+// Draw the pre-fracture sites of a piece, and the block of every site. Returns false if the piece stays a single chunk.
+static bool nbPreparePiece( nbWorld* world, const nbMaterial* material, const nbPieceDef* piece, nbPoly* poly, float cellSize,
+							nbRandom* rng, nbFractureJob* job, int** blocksOut )
 {
-	if ( cellSize <= 0.0f )
+	int cutoutCount = piece->openings != NULL && piece->openingCount > 0 ? piece->openingCount : 0;
+	if ( cellSize <= 0.0f && cutoutCount == 0 )
 	{
 		return false;
 	}
@@ -129,14 +186,43 @@ static bool nbPreparePiece( nbWorld* world, const nbMaterial* material, nbPoly* 
 	nbPoly_ComputeMass( poly, &volume, &origin );
 	nbPoly_Translate( poly, b3Neg( origin ) );
 
+	const nbCutout* cutouts = cutoutCount > 0 ? nbMakeCutouts( world, piece, origin ) : NULL;
 	int capacity = 2048;
 	b3Vec3* sites = nbArena_AllocArray( &world->arena, b3Vec3, capacity );
-	int siteCount = nbGenerateCellSites( poly, cellSize, rng, sites, capacity );
+	int siteCount = cellSize > 0.0f ? nbGenerateCellSites( poly, cellSize, cutouts, cutoutCount, rng, sites, capacity ) : 0;
 	if ( siteCount < 2 )
 	{
-		nbPoly_Translate( poly, origin );
-		return false;
+		if ( cutoutCount == 0 )
+		{
+			nbPoly_Translate( poly, origin );
+			return false;
+		}
+
+		// A single cell, the whole piece, that the openings cut into convex parts
+		sites[0] = b3Vec3_zero;
+		siteCount = 1;
 	}
+
+	// Every cell joins the group of the nearest coarse site
+	int* blocks = nbArena_AllocArray( &world->arena, int, siteCount );
+	b3Vec3* blockSites = nbArena_AllocArray( &world->arena, b3Vec3, capacity );
+	int blockCount =
+		siteCount > 1 ? nbGenerateCellSites( poly, NB_GROUP_SIZE * cellSize, NULL, 0, rng, blockSites, capacity ) : 0;
+	for ( int i = 0; i < siteCount; ++i )
+	{
+		blocks[i] = 0;
+		float best = FLT_MAX;
+		for ( int k = 0; k < blockCount; ++k )
+		{
+			float distance = b3DistanceSquared( sites[i], blockSites[k] );
+			if ( distance < best )
+			{
+				best = distance;
+				blocks[i] = k;
+			}
+		}
+	}
+	*blocksOut = blocks;
 
 	float radius = sqrtf( nbPoly_MaxDistanceSquared( poly, b3Vec3_zero ) );
 	*job = (nbFractureJob){
@@ -144,10 +230,14 @@ static bool nbPreparePiece( nbWorld* world, const nbMaterial* material, nbPoly* 
 		.sites = sites,
 		.siteCount = siteCount,
 		.origin = origin,
-		.interiorMaterial = interiorMaterial,
+		.interiorMaterial = piece->interiorMaterial,
 		.tolerance = 1.0e-6f + 2.0e-6f * radius,
 		.minVolume = material->minFragmentVolume,
 		.buildHulls = true,
+		.cutouts = cutouts,
+		.cutoutCount = cutoutCount,
+		.cutoutMaterial = piece->surfaceMaterial,
+		.cutoutMinWidth = NB_SLIVER_WIDTH * b3MaxFloat( cellSize, 0.0f ),
 	};
 	return true;
 }
@@ -162,8 +252,10 @@ static void nbCreateSingleChunk( nbWorld* world, int destructibleIndex, int acto
 	}
 }
 
-// Create the chunks of a pre-fractured piece and glue them exactly like a single piece
-static void nbFinishPiece( nbWorld* world, int destructibleIndex, int actorIndex, const nbFractureJob* job, int materialIndex )
+// Create the chunks of a pre-fractured piece and glue them exactly like a single piece, with the block of every new chunk
+// in the order they are created. The parts of cells that openings cut are glued by nbCreateDestructible.
+static void nbFinishPiece( nbWorld* world, int destructibleIndex, int actorIndex, const nbFractureJob* job, const int* blocks,
+						   int materialIndex, nbIntArray* chunkBlocks )
 {
 	const nbMaterial* material = world->destructibles.data[destructibleIndex].materials + materialIndex;
 
@@ -172,6 +264,16 @@ static void nbFinishPiece( nbWorld* world, int destructibleIndex, int actorIndex
 	{
 		chunkIndices[i] = NB_NULL_INDEX;
 		const nbCell* cell = job->cells + i;
+		for ( int k = 0; k < cell->partCount; ++k )
+		{
+			int chunkIndex = nbCreateChunkWithHull( world, destructibleIndex, actorIndex, cell->parts[k].shape,
+													cell->parts[k].hull, 0, job->interiorMaterial, materialIndex );
+			if ( chunkIndex != NB_NULL_INDEX )
+			{
+				nbArray_Push( *chunkBlocks, blocks[i] );
+			}
+		}
+
 		if ( cell->shape == NULL )
 		{
 			continue;
@@ -179,6 +281,15 @@ static void nbFinishPiece( nbWorld* world, int destructibleIndex, int actorIndex
 
 		chunkIndices[i] =
 			nbCreateChunkWithHull( world, destructibleIndex, actorIndex, cell->shape, cell->hull, 0, job->interiorMaterial, materialIndex );
+		if ( chunkIndices[i] != NB_NULL_INDEX )
+		{
+			nbArray_Push( *chunkBlocks, blocks[i] );
+		}
+	}
+
+	if ( job->cutoutCount > 0 )
+	{
+		return;
 	}
 
 	float fragmentSize = nbGetFragmentSize( world, material );
@@ -202,7 +313,10 @@ static void nbFinishPiece( nbWorld* world, int destructibleIndex, int actorIndex
 
 			nbBondGeometry geometry = neighbor->geometry;
 			geometry.centroid = b3Add( geometry.centroid, job->origin );
-			nbCreateBond( world, chunkIndices[i], chunkIndices[j], &geometry, material->strength * geometry.area );
+			int bondIndex =
+				nbCreateBond( world, chunkIndices[i], chunkIndices[j], &geometry, material->strength * geometry.area );
+			world->bonds.data[bondIndex].cohesive = true;
+			world->bonds.data[bondIndex].fault = blocks[i] != blocks[j];
 		}
 	}
 }
@@ -338,6 +452,7 @@ nbDestructibleId nbCreateDestructible( nbWorldId worldId, const nbDestructibleDe
 	nbPoly* piecePolys = nbArena_AllocArray( &world->arena, nbPoly, pieceCount );
 	int* pieceJobs = nbArena_AllocArray( &world->arena, int, pieceCount );
 	nbFractureJob* jobs = nbArena_AllocArray( &world->arena, nbFractureJob, pieceCount );
+	int** jobBlocks = nbArena_AllocArray( &world->arena, int*, pieceCount );
 	int jobCount = 0;
 
 	for ( int i = 0; i < pieceCount; ++i )
@@ -361,7 +476,9 @@ nbDestructibleId nbCreateDestructible( nbWorldId worldId, const nbDestructibleDe
 
 		pieceJobs[i] = valid ? nb_pieceSingle : nb_pieceInvalid;
 		const nbMaterial* pieceMaterial = world->destructibles.data[index].materials + pieceMaterials[i];
-		if ( valid && nbPreparePiece( world, pieceMaterial, piecePoly, def->cellSize, piece->interiorMaterial, &rng, jobs + jobCount ) )
+		float cellSize = piece->cellSize != 0.0f ? piece->cellSize : def->cellSize;
+		if ( valid &&
+			 nbPreparePiece( world, pieceMaterial, piece, piecePoly, cellSize, &rng, jobs + jobCount, jobBlocks + jobCount ) )
 		{
 			pieceJobs[i] = jobCount;
 			jobCount += 1;
@@ -370,6 +487,9 @@ nbDestructibleId nbCreateDestructible( nbWorldId worldId, const nbDestructibleDe
 
 	nbRunFractureJobs( world, jobs, jobCount );
 
+	// The piece and block of every new chunk, in the order of the touched chunks
+	nbIntArray chunkPieces = { 0 };
+	nbIntArray chunkBlocks = { 0 };
 	for ( int i = 0; i < pieceCount; ++i )
 	{
 		if ( pieceJobs[i] == nb_pieceInvalid )
@@ -381,16 +501,24 @@ nbDestructibleId nbCreateDestructible( nbWorldId worldId, const nbDestructibleDe
 		if ( pieceJobs[i] == nb_pieceSingle )
 		{
 			nbCreateSingleChunk( world, index, actorIndex, piecePolys + i, pieces[i].interiorMaterial, pieceMaterials[i] );
+			for ( int k = start; k < world->touchedChunks.count; ++k )
+			{
+				nbArray_Push( chunkBlocks, 0 );
+			}
 		}
 		else
 		{
-			nbFinishPiece( world, index, actorIndex, jobs + pieceJobs[i], pieceMaterials[i] );
+			nbFinishPiece( world, index, actorIndex, jobs + pieceJobs[i], jobBlocks[pieceJobs[i]], pieceMaterials[i],
+						   &chunkBlocks );
 		}
 
-		// Remember which piece each chunk came from, so bonds between pieces can be found
+		// Remember which piece each chunk came from, so bonds between pieces can be found. The chunks of a piece with
+		// openings count as pieces of their own, the cells do not know how their parts touch.
+		bool cut = pieceJobs[i] >= 0 && jobs[pieceJobs[i]].cutoutCount > 0;
 		for ( int k = start; k < world->touchedChunks.count; ++k )
 		{
-			world->chunks.data[world->touchedChunks.data[k]].scratch = i;
+			world->chunks.data[world->touchedChunks.data[k]].scratch = cut ? pieceCount + k : i;
+			nbArray_Push( chunkPieces, i );
 		}
 	}
 
@@ -418,10 +546,19 @@ nbDestructibleId nbCreateDestructible( nbWorldId worldId, const nbDestructibleDe
 			float area = nbShape_ContactArea( world->chunks.data[chunkA].shape, world->chunks.data[chunkB].shape, 1.0e-3f, &geometry );
 			if ( area > minBondArea )
 			{
-				nbCreateBond( world, chunkA, chunkB, &geometry, b3MinFloat( materialA->strength, materialB->strength ) * area );
+				int bondIndex = nbCreateBond( world, chunkA, chunkB, &geometry,
+											  b3MinFloat( materialA->strength, materialB->strength ) * area );
+
+				// Two cells of a piece with openings, in the same group or not
+				int cellA = a - firstNewChunk, cellB = b - firstNewChunk;
+				bool samePiece = chunkPieces.data[cellA] == chunkPieces.data[cellB];
+				world->bonds.data[bondIndex].cohesive = samePiece;
+				world->bonds.data[bondIndex].fault = samePiece && chunkBlocks.data[cellA] != chunkBlocks.data[cellB];
 			}
 		}
 	}
+	nbArray_Free( chunkPieces );
+	nbArray_Free( chunkBlocks );
 
 	for ( int k = firstNewChunk; k < chunkEnd; ++k )
 	{
