@@ -268,6 +268,9 @@ typedef struct nbWorld
 	// Actors to freeze into rubble or to bring back to life
 	nbIntArray actorList;
 
+	// Parts that landed hard in the last step, as pairs of actor index and generation, see nbCollectLandings
+	nbIntArray landings;
+
 	// Static actors waiting for a load check, and the ones the current update checks
 	nbIntArray supportChecks;
 	nbIntArray supportQueue;

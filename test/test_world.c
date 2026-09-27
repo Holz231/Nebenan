@@ -871,6 +871,74 @@ static int RestTest( void )
 	return 0;
 }
 
+// A strong slab of eight pieces in a row, dropped from a height
+static nbDestructibleId CreateFallingSlab( TestScene* scene, float height, float halfDepth )
+{
+	nbPieceDef pieces[8];
+	for ( int i = 0; i < 8; ++i )
+	{
+		pieces[i] = nbDefaultPieceDef();
+		pieces[i].halfExtents = (b3Vec3){ 0.25f, 0.15f, halfDepth };
+		pieces[i].transform.p = (b3Vec3){ -1.75f + 0.5f * (float)i, 0.0f, 0.0f };
+	}
+
+	nbDestructibleDef def = nbDefaultDestructibleDef();
+	def.isStatic = false;
+	def.position = (b3Vec3){ 0.0f, height, 0.0f };
+	def.material.strength = 1.0e9f;
+	return nbCreateDestructible( scene->world, &def, pieces, 8 );
+}
+
+// Distinct bodies among the chunks of a destructible
+static int CountBodies( nbDestructibleId destructible )
+{
+	nbChunkId chunks[1024];
+	int count = nbDestructible_GetChunks( destructible, chunks, 1024 );
+	int bodies = 0;
+	for ( int i = 0; i < count; ++i )
+	{
+		b3BodyId body = nbChunk_GetBody( chunks[i] );
+		bool seen = false;
+		for ( int j = 0; j < i && seen == false; ++j )
+		{
+			seen = B3_ID_EQUALS( nbChunk_GetBody( chunks[j] ), body );
+		}
+		bodies += seen ? 0 : 1;
+	}
+	return bodies;
+}
+
+// A large part that lands hard breaks in two across the middle, like a prepared body of the reference engine. A soft
+// landing leaves it whole, and so does a hard one of a small cluster.
+static int LandingTest( void )
+{
+	{
+		TestScene scene = CreateScene();
+		nbDestructibleId slab = CreateFallingSlab( &scene, 4.0f, 1.0f );
+		Step( &scene, 90 );
+		ENSURE( CountBodies( slab ) == 2 );
+		DestroyScene( &scene );
+	}
+
+	{
+		TestScene scene = CreateScene();
+		nbDestructibleId slab = CreateFallingSlab( &scene, 1.0f, 1.0f );
+		Step( &scene, 90 );
+		ENSURE( CountBodies( slab ) == 1 );
+		DestroyScene( &scene );
+	}
+
+	{
+		TestScene scene = CreateScene();
+		nbDestructibleId slab = CreateFallingSlab( &scene, 4.0f, 0.1f );
+		Step( &scene, 90 );
+		ENSURE( CountBodies( slab ) == 1 );
+		DestroyScene( &scene );
+	}
+
+	return 0;
+}
+
 // A heavy ball breaks through a wall instead of bouncing off it
 static int CannonballTest( void )
 {
@@ -1387,5 +1455,6 @@ int WorldTest( void )
 	RUN_TEST( FragmentScaleTest );
 	RUN_TEST( SupportTest );
 	RUN_TEST( RestTest );
+	RUN_TEST( LandingTest );
 	return 0;
 }

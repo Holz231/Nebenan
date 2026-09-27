@@ -162,6 +162,7 @@ flowchart LR
     D -->|nein| E[Neue dynamische<br/>Box3D-Körper]
     E --> G[Box3D simuliert<br/>Trümmer]
     G -->|Treffer-Events| A
+    G -->|Aufprall ab 7 m/s| E
     G -->|ruhig und getragen| H[Statischer Schutt]
     H -->|Auflage rutscht weg,<br/>Einschlag| G
 ```
@@ -224,6 +225,14 @@ Eine Prüfung kostet für die Stadt aus 16 Häusern etwa 0,3 ms und läuft nur f
 Die Häuser der Demo stehen mit Reserve: Zweistöckige halten bis `supportScale` ×0,45, dreistöckige bis ×0,7,
 vierstöckige bis ×0,9.
 Ein Dach auf nur einer Wand bricht ab, ein Dach zwischen zwei Wänden hält.
+
+**Aufprall.** Ein Teil ab 0,5 m³, das mit mindestens 7 m/s aufschlägt, bricht quer über die Mitte seiner längsten
+Seite in zwei Hälften, wie die vorbereiteten Körper der Referenz-Engine (`src/prepared_fracture.cpp`), eine Ebene pro
+Update. Die Ebene liegt mitten zwischen den äußersten Bruchstücken, nicht beim mittleren, damit eine Reihe gleicher
+Stücke nicht an zwei Stellen reißt. Gegen einen bewegten Körper braucht es mehr, je schwerer das Teil im Vergleich ist,
+damit ein Splitter keine Wandplatte zerbricht. Die Hälften behalten die Bewegung nach dem Aufprall. So zerfällt ein
+herabstürzendes Stockwerk beim Aufschlag, statt als ein Block liegen zu bleiben. Ohne Kollisionsschaden
+(`nbDestructibleDef::enableCollisionDamage`) bricht nichts.
 
 **Trümmer und Schutt.** Ruhe und Einschlafen folgen ebenfalls der Referenz-Engine (`rubble_rest.h` und
 `BuildingScene::settle`). Nichts wird gelöscht.
@@ -410,10 +419,10 @@ zusammen (Einschläge, Box3D-Schritt, `nbWorld_Update`):
 
 | Stadt | Ø | 95 % der Frames | Box3D-Schritt Ø |
 | --- | ---: | ---: | ---: |
-| 1 Thread | 26,7 ms | 46,5 ms | 23,0 ms |
-| 4 Threads | 13,1 ms | 25,7 ms | 9,8 ms |
-| 1 Thread, `fragmentScale` 2 | 8,4 ms | 13,9 ms | 7,3 ms |
-| 4 Threads, `fragmentScale` 2 | 5,3 ms | 8,7 ms | 4,2 ms |
+| 1 Thread | 25,7 ms | 44,3 ms | 22,0 ms |
+| 4 Threads | 12,9 ms | 25,5 ms | 9,5 ms |
+| 1 Thread, `fragmentScale` 2 | 8,9 ms | 14,3 ms | 7,7 ms |
+| 4 Threads, `fragmentScale` 2 | 5,4 ms | 8,7 ms | 4,2 ms |
 
 Ohne Statik (`supportScale` 0) bleiben die Häuser auch ohne Erdgeschoss stehen, dann sind es mit 4 Threads 10,3 ms
 und mit `fragmentScale` 2 3,3 ms, mit 1 Thread 23,1 und 5,6 ms. Die Prüfung selbst kostet wenig, teuer sind die
@@ -422,11 +431,11 @@ Einstürze: Was fällt, bewegt sich, trifft andere Teile und zerbricht beim Aufp
 
 Die Zeit ist zum größten Teil der Box3D-Schritt, und den bestimmen zwei Zahlen:
 
-- **Bruchstückgröße.** Mit doppelt so großen Bruchstücken liegen am Ende 25 300 statt 84 400 Bruchstücke herum,
-  und Box3D rechnet 8200 statt 15 800 Kontakte. Die Zahl der Splitter eines Einschlags fällt mit dem Quadrat
+- **Bruchstückgröße.** Mit doppelt so großen Bruchstücken liegen am Ende 25 000 statt 83 600 Bruchstücke herum,
+  und Box3D rechnet 8200 statt 15 500 Kontakte. Die Zahl der Splitter eines Einschlags fällt mit dem Quadrat
   der Größe.
 - **Bewegte Trümmer.** Box3D bewegt höchstens `maxDebrisBodies` (1500) Trümmer gleichzeitig. Was zur Ruhe kommt,
-  liegt als Schutt und kostet nichts mehr, am Ende der Stadt 40 200 Körper.
+  liegt als Schutt und kostet nichts mehr, am Ende der Stadt 40 800 Körper.
 
 Ganze Einschläge (Bruch, Stützgraph, neue Box3D-Körper) und der Box3D-Schritt danach bei 60 Hz mit
 4 Substeps, jeweils mit 1 und 4 Threads:
@@ -460,7 +469,7 @@ höchstens 156 000 Dreiecke, im Mittel 0,3 MB und höchstens 1,1 MB Upload pro B
 ## Tests und Benchmark
 
 ```sh
-build/bin/nebenan_test            # 27 Tests: Geometrie, Voronoi, Hüllen, Stützgraph, Statik, Einsturz, Schutt, Ruhe, Threads, Determinismus …
+build/bin/nebenan_test            # 28 Tests: Geometrie, Voronoi, Hüllen, Stützgraph, Statik, Einsturz, Aufprall, Schutt, Ruhe, Threads, Determinismus …
 build/bin/nebenan_benchmark 4     # Zahl = Threads für Bruch und Physik
 ```
 
@@ -495,7 +504,8 @@ Nach Änderungen an `demo/shaders/scene.glsl` die Shader neu erzeugen, im Ordner
 - Die Statik ist ein Spielmodell nach der Referenz-Engine, kein Tragwerksnachweis. Gewicht, das als Trümmer auf
   einem Bauwerk liegt, zählt nicht mit, und Zug trägt eine Verbindung wie Druck.
 - Versagen Pfeiler, die Einschläge schon beschädigt haben, werden sie nicht zerdrückt. Das Haus darüber verliert
-  dann seine Anker, bleibt aber als ein großer Schuttkörper auf den Stümpfen stehen, statt einzustürzen.
+  dann seine Anker, bleibt aber als ein starrer Schuttkörper auf seinen Resten stehen, statt einzustürzen. Zerlegt
+  wird ein Teil erst, wenn es fällt und hart aufschlägt.
 - Schutt ist für Box3D statisch. Trümmer, die auf Schutt fallen, wecken ihn nicht, nur Einschläge, die ihn bewegen,
   fremde Körper und eine wegrutschende Auflage. Kinematische Körper stoßen Schutt nicht an, Box3D lässt
   kinematische und statische Körper nicht kollidieren.

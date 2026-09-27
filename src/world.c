@@ -2352,6 +2352,7 @@ void nbDestroyWorld( nbWorldId worldId )
 	nbArray_Free( world->splitSeeds );
 	nbArray_Free( world->scratchList );
 	nbArray_Free( world->actorList );
+	nbArray_Free( world->landings );
 	nbArray_Free( world->supportChecks );
 	nbArray_Free( world->supportQueue );
 	for ( int i = 0; i < 2; ++i )
@@ -2619,6 +2620,156 @@ static void nbWakeHitRubble( nbWorld* world )
 	}
 }
 
+// A part that lands at least this fast breaks in two across the middle of its longest side, like a prepared body of the
+// reference engine. Against a moving body it needs more the more it outweighs that body, so a fragment does not break a
+// wall slab. Only parts of at least NB_SPLIT_VOLUME cubic meters break, clusters of fragments stay together.
+#define NB_SPLIT_SPEED 7.0f
+#define NB_SPLIT_VOLUME 0.5f
+
+// Parts that landed hard during the last step. Read before anything changes the world, the parts break after the
+// collision damage.
+static void nbCollectLandings( nbWorld* world )
+{
+	world->landings.count = 0;
+	b3ContactEvents contactEvents = b3World_GetContactEvents( world->physicsWorld );
+	for ( int i = 0; i < contactEvents.hitCount; ++i )
+	{
+		const b3ContactHitEvent* event = contactEvents.hitEvents + i;
+		if ( event->approachSpeed < NB_SPLIT_SPEED )
+		{
+			continue;
+		}
+
+		for ( int side = 0; side < 2; ++side )
+		{
+			b3ShapeId shapeId = side == 0 ? event->shapeIdA : event->shapeIdB;
+			b3ShapeId otherShapeId = side == 0 ? event->shapeIdB : event->shapeIdA;
+			if ( b3Shape_IsValid( shapeId ) == false || b3Shape_IsValid( otherShapeId ) == false )
+			{
+				continue;
+			}
+
+			int chunkIndex = nbFindChunkFromShape( world, shapeId );
+			if ( chunkIndex == NB_NULL_INDEX )
+			{
+				continue;
+			}
+
+			int actorIndex = world->chunks.data[chunkIndex].actorIndex;
+			const nbActor* actor = world->actors.data + actorIndex;
+			const nbDestructible* destructible = world->destructibles.data + actor->destructibleIndex;
+			if ( actor->isStatic || actor->isRubble || actor->chunkCount < 2 || actor->volume < NB_SPLIT_VOLUME ||
+				 destructible->enableCollisionDamage == false )
+			{
+				continue;
+			}
+
+			// Against a moving body the speed squared has to reach NB_SPLIT_SPEED squared times one plus the mass ratio
+			b3BodyId otherBodyId = b3Shape_GetBody( otherShapeId );
+			float ratio = 0.0f;
+			if ( b3Body_GetType( otherBodyId ) == b3_dynamicBody )
+			{
+				ratio = b3Body_GetMass( actor->bodyId ) / b3MaxFloat( b3Body_GetMass( otherBodyId ), FLT_MIN );
+			}
+			if ( event->approachSpeed * event->approachSpeed < NB_SPLIT_SPEED * NB_SPLIT_SPEED * ( 1.0f + ratio ) )
+			{
+				continue;
+			}
+
+			bool known = false;
+			for ( int k = 0; k < world->landings.count && known == false; k += 2 )
+			{
+				known = world->landings.data[k] == actorIndex;
+			}
+			if ( known == false )
+			{
+				nbArray_Push( world->landings, actorIndex );
+				nbArray_Push( world->landings, actor->generation );
+			}
+		}
+	}
+}
+
+// Break a part in two across the middle of its longest side. The plane lies halfway across the chunk centroids, not
+// through the median chunk, so a row of equal chunks is not cut in two places. The halves keep the motion the part had
+// after the hit, Box3D already resolved it.
+static void nbSplitInHalves( nbWorld* world, int actorIndex )
+{
+	const nbActor* actor = world->actors.data + actorIndex;
+	b3Vec3 low = { FLT_MAX, FLT_MAX, FLT_MAX };
+	b3Vec3 high = { -FLT_MAX, -FLT_MAX, -FLT_MAX };
+	for ( int c = actor->headChunk; c != NB_NULL_INDEX; c = world->chunks.data[c].nextChunk )
+	{
+		b3Vec3 centroid = world->chunks.data[c].shape->centroid;
+		low = b3Min( low, centroid );
+		high = b3Max( high, centroid );
+	}
+
+	b3Vec3 span = b3Sub( high, low );
+	b3Vec3 axis = span.x >= span.y && span.x >= span.z ? b3Vec3_axisX : ( span.y >= span.z ? b3Vec3_axisY : b3Vec3_axisZ );
+	if ( b3Dot( axis, span ) <= 0.0f )
+	{
+		return;
+	}
+
+	nbBeginOperation( world );
+	float plane = 0.5f * b3Dot( axis, b3Add( low, high ) );
+	for ( int c = actor->headChunk; c != NB_NULL_INDEX; c = world->chunks.data[c].nextChunk )
+	{
+		const nbChunk* chunk = world->chunks.data + c;
+		if ( b3Dot( axis, chunk->shape->centroid ) > plane )
+		{
+			continue;
+		}
+
+		for ( int key = chunk->headBondKey; key != NB_NULL_INDEX; )
+		{
+			int bondIndex = key >> 1;
+			const nbBond* bond = world->bonds.data + bondIndex;
+			int side = key & 1;
+			key = bond->nextKey[side];
+			if ( b3Dot( axis, world->chunks.data[bond->chunk[side ^ 1]].shape->centroid ) > plane )
+			{
+				nbDestroyBond( world, bondIndex );
+			}
+		}
+	}
+
+	nbImpactResult result = { 0 };
+	nbSplitActors( world, &result );
+	nbCommitPhysics( world );
+	for ( int i = 0; i < world->touchedActors.count; ++i )
+	{
+		nbActor* half = world->actors.data + world->touchedActors.data[i];
+		if ( half->isFree || half->isNew == false )
+		{
+			continue;
+		}
+
+		half->isNew = false;
+		b3Vec3 offset = b3SubPos( b3Body_GetWorldCenter( half->bodyId ), half->sourceCenter );
+		b3Body_SetLinearVelocity( half->bodyId, b3Add( half->sourceLinearVelocity, b3Cross( half->sourceAngularVelocity, offset ) ) );
+		b3Body_SetAngularVelocity( half->bodyId, half->sourceAngularVelocity );
+	}
+	world->touchedActors.count = 0;
+}
+
+// Parts that landed hard break in two, one level per update like the prepared bodies of the reference engine
+static void nbSplitLandings( nbWorld* world )
+{
+	for ( int k = 0; k < world->landings.count; k += 2 )
+	{
+		int actorIndex = world->landings.data[k];
+		const nbActor* actor = world->actors.data + actorIndex;
+		if ( actor->isFree == false && actor->generation == (uint16_t)world->landings.data[k + 1] && actor->isRubble == false &&
+			 actor->chunkCount > 1 )
+		{
+			nbSplitInHalves( world, actorIndex );
+		}
+	}
+	world->landings.count = 0;
+}
+
 // Pieces that moved away from where they lay release the rubble resting on them
 static void nbReleaseHeldRubble( nbWorld* world, b3Vec3 up )
 {
@@ -2854,6 +3005,7 @@ void nbWorld_Update( nbWorldId worldId, float timeStep )
 
 	// Read the Box3D events of the last step before anything changes the world
 	nbCollectCollisionImpacts( world );
+	nbCollectLandings( world );
 
 	// Debris below the kill depth has left the world. Only bodies that moved can have crossed the depth.
 	b3Vec3 gravity = b3World_GetGravity( world->physicsWorld );
@@ -2929,7 +3081,8 @@ void nbWorld_Update( nbWorldId worldId, float timeStep )
 		}
 	}
 
-	// Structures that cannot carry themselves give way
+	// Parts that landed hard break in two, then structures that cannot carry themselves give way
+	nbSplitLandings( world );
 	nbCheckSupports( world );
 
 	// Rubble follows what moved away from under it, then quiet debris freezes. Debris is never removed: past the budget
