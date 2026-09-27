@@ -380,13 +380,10 @@ static void nbApplyVelocities( nbWorld* world, const nbImpactDef* def, nbRandom*
 	for ( int i = 0; i < hitActorCount; ++i )
 	{
 		nbActor* actor = world->actors.data + hitActors[i];
-		if ( actor->isFree || actor->isStatic || actor->chunkCount == 0 )
+		if ( actor->isFree || actor->isStatic || actor->isRubble || actor->chunkCount == 0 )
 		{
 			continue;
 		}
-
-		float fragmentSize = nbGetFragmentSize( world, nbGetChunkMaterial( world, world->chunks.data + actor->headChunk ) );
-		float fragmentVolume = fragmentSize * fragmentSize * fragmentSize;
 
 		b3Pos center = b3Body_GetWorldCenter( actor->bodyId );
 		b3Vec3 delta = b3SubPos( center, def->point );
@@ -398,10 +395,9 @@ static void nbApplyVelocities( nbWorld* world, const nbImpactDef* def, nbRandom*
 		}
 
 		float falloff = 1.0f - distance / reach;
-		float scale = b3MinFloat( 1.0f, 4.0f * fragmentVolume / b3MaxFloat( actor->volume, 1.0e-9f ) );
 		b3Vec3 push = isDirected ? b3Normalize( b3Add( direction, b3MulSV( 0.5f, radial ) ) ) : radial;
 		b3Vec3 velocity = b3Body_GetLinearVelocity( actor->bodyId );
-		velocity = b3MulAdd( velocity, 0.5f * def->ejectSpeed * falloff * scale, push );
+		velocity = b3MulAdd( velocity, falloff * nbGetImpactPush( world, actor, def->ejectSpeed ), push );
 		b3Body_SetLinearVelocity( actor->bodyId, velocity );
 		b3Body_SetAwake( actor->bodyId, true );
 	}
@@ -429,19 +425,20 @@ nbImpactResult nbApplyImpact( nbWorld* world, const nbImpactDef* def, int actorF
 		destructibleFilter = def->destructibleId.index1 - 1;
 	}
 
-	// 1. Query, after the rubble in reach came back to life. A collision damages only the actor that was hit, and wakes
-	// only that one.
+	// 1. Query, after the rubble in reach that the impact moves came back to life. Heavier rubble stays static and only
+	// loses the chunks the impact breaks off. A collision damages only the actor that was hit.
 	float radius = def->radius;
 	b3Pos point = def->point;
 	b3AABB box = {
 		{ (float)point.x - radius, (float)point.y - radius, (float)point.z - radius },
 		{ (float)point.x + radius, (float)point.y + radius, (float)point.z + radius },
 	};
-	if ( actorFilter == NB_NULL_INDEX )
+	const nbActor* target = actorFilter != NB_NULL_INDEX ? world->actors.data + actorFilter : NULL;
+	if ( target == NULL )
 	{
-		nbThawRubble( world, box );
+		nbThawRubble( world, box, def->ejectSpeed );
 	}
-	else if ( world->actors.data[actorFilter].isRubble )
+	else if ( target->isRubble && nbImpactMoves( world, target, def->ejectSpeed ) )
 	{
 		nbThawActor( world, actorFilter );
 	}

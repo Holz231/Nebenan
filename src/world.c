@@ -716,7 +716,8 @@ static b3AABB nbGetActorBounds( const nbWorld* world, const nbActor* actor )
 // Rubble bodies that pieces moving away release per update at most. The others follow in the next updates.
 #define NB_MAX_RELEASES 32
 
-// A body that is not debris brings the rubble it hits this fast back to life
+// A body that is not debris brings the rubble it hits this fast back to life. An impact brings back the rubble it would
+// push at least this fast, see nbImpactMoves.
 #define NB_WAKE_SPEED 1.0f
 
 // Rubble bodies that hits bring back to life per update at most
@@ -724,6 +725,11 @@ static b3AABB nbGetActorBounds( const nbWorld* world, const nbActor* actor )
 
 // Debris younger than this in seconds does not freeze to keep within the budget
 #define NB_FREEZE_GRACE 0.25f
+
+// Rubble that comes back to life and stays slower than this for NB_PROBE_TIME is still carried and freezes again. A body
+// that lost its support is past this after one step of free fall.
+#define NB_PROBE_SPEED 0.05f
+#define NB_PROBE_TIME 0.05f
 
 // How far a body moved from a pose: the translation plus the way its farthest corner moved with the rotation
 static float nbPoseDistance( b3WorldTransform from, b3WorldTransform to, float radius )
@@ -789,6 +795,18 @@ static bool nbIsQuiet( const nbWorld* world, nbActor* actor, float timeStep )
 	float slow = 4.0f * world->def.debrisSleepThreshold;
 	float speed = b3Length( b3Body_GetLinearVelocity( actor->bodyId ) );
 	float spin = b3Length( b3Body_GetAngularVelocity( actor->bodyId ) ) * actor->radius;
+
+	// Rubble that came back to life, when a piece under it moved away or an impact went off nearby, and did not start to
+	// move is still carried. It need not wait the whole rest time, a house on its stubs would cost hundreds of contacts
+	// meanwhile.
+	bool probed = false;
+	if ( actor->probing )
+	{
+		actor->probing = speed <= NB_PROBE_SPEED && spin <= NB_PROBE_SPEED;
+		actor->probeTime += timeStep;
+		probed = actor->probing && actor->probeTime >= NB_PROBE_TIME;
+	}
+
 	if ( speed > 2.0f * slow || spin > 2.0f * slow )
 	{
 		nbResetRest( actor );
@@ -809,7 +827,21 @@ static bool nbIsQuiet( const nbWorld* world, nbActor* actor, float timeStep )
 		actor->restTime = 0.0f;
 	}
 	actor->restTime = b3MinFloat( actor->restTime + timeStep, 1.0f );
-	return actor->restTime >= NB_REST_TIME || rocking;
+	return actor->restTime >= NB_REST_TIME || rocking || probed;
+}
+
+// Mass, center of mass and reach of a dynamic actor from its shapes
+static void nbUpdateActorMass( nbWorld* world, nbActor* actor )
+{
+	b3Body_ApplyMassFromShapes( actor->bodyId );
+	actor->localCenter = b3Body_GetLocalCenter( actor->bodyId );
+	actor->radius = 0.0f;
+	for ( int c = actor->headChunk; c != NB_NULL_INDEX; c = world->chunks.data[c].nextChunk )
+	{
+		const nbShape* shape = world->chunks.data[c].shape;
+		actor->radius = b3MaxFloat( actor->radius, b3Distance( shape->centroid, actor->localCenter ) + shape->radius );
+	}
+	actor->massDirty = false;
 }
 
 // The rubble resting on this actor comes back to life once it moves away from where it is now
@@ -828,11 +860,13 @@ static void nbFreezeActor( nbWorld* world, int actorIndex )
 	b3Body_SetType( actor->bodyId, b3_staticBody );
 	actor->isRubble = true;
 	actor->holdsRubble = false;
+	actor->probing = false;
 	nbResetRest( actor );
 	world->rubbleCount += 1;
 }
 
-// Bring rubble back to life. The rubble resting on it stays until it moves, then follows.
+// Bring rubble back to life. The rubble resting on it stays until it moves, then follows. Box3D gives the body its mass
+// back, the center of mass moved if impacts broke pieces off the rubble.
 void nbThawActor( nbWorld* world, int actorIndex )
 {
 	nbActor* actor = world->actors.data + actorIndex;
@@ -840,9 +874,14 @@ void nbThawActor( nbWorld* world, int actorIndex )
 	actor->isRubble = false;
 	world->rubbleCount -= 1;
 	b3Body_SetType( actor->bodyId, b3_dynamicBody );
-	b3Body_ApplyMassFromShapes( actor->bodyId );
+	if ( actor->massDirty )
+	{
+		nbUpdateActorMass( world, actor );
+	}
 	b3Body_SetAwake( actor->bodyId, true );
 	nbResetRest( actor );
+	actor->probing = true;
+	actor->probeTime = 0.0f;
 	nbHoldRubble( world, actor );
 }
 
@@ -858,6 +897,10 @@ typedef struct nbThawContext
 	// With a direction, only rubble whose lowest point lies higher along it than the height
 	b3Vec3 up;
 	float height;
+
+	// For an impact, only rubble it moves, see nbImpactMoves
+	bool impact;
+	float ejectSpeed;
 } nbThawContext;
 
 static bool nbThawCallback( b3ShapeId shapeId, void* context )
@@ -873,6 +916,11 @@ static bool nbThawCallback( b3ShapeId shapeId, void* context )
 	int actorIndex = world->chunks.data[chunkIndex].actorIndex;
 	nbActor* actor = world->actors.data + actorIndex;
 	if ( actor->isRubble == false || actor->settleStamp == world->settleStamp )
+	{
+		return true;
+	}
+
+	if ( thawContext->impact && nbImpactMoves( world, actor, thawContext->ejectSpeed ) == false )
 	{
 		return true;
 	}
@@ -912,9 +960,9 @@ static bool nbThawCallback( b3ShapeId shapeId, void* context )
 }
 
 // Rubble in the boxes, in the order Box3D finds it. Box3D's trees are deterministic, so is the order. Many boxes are
-// searched with one query over all of them, the neighborhoods of the debris of one impact overlap a lot. With a
-// direction, only the rubble above the height.
-static void nbThawRubbleInBoxes( nbWorld* world, const b3AABB* boxes, int boxCount, b3Vec3 up, float height )
+// searched with one query over all of them. With a direction, only the rubble above the height.
+static void nbThawRubbleInBoxes( nbWorld* world, const b3AABB* boxes, int boxCount, b3Vec3 up, float height,
+								 const nbThawContext* filter )
 {
 	if ( world->rubbleCount == 0 || boxCount == 0 )
 	{
@@ -930,7 +978,16 @@ static void nbThawRubbleInBoxes( nbWorld* world, const b3AABB* boxes, int boxCou
 	world->settleStamp += 1;
 	nbIntArray* thawed = &world->actorList;
 	thawed->count = 0;
-	nbThawContext context = { world, thawed, boxCount > 1 ? boxes : NULL, boxCount > 1 ? boxCount : 0, up, height };
+	nbThawContext context = {
+		.world = world,
+		.actors = thawed,
+		.boxes = boxCount > 1 ? boxes : NULL,
+		.boxCount = boxCount > 1 ? boxCount : 0,
+		.up = up,
+		.height = height,
+		.impact = filter != NULL && filter->impact,
+		.ejectSpeed = filter != NULL ? filter->ejectSpeed : 0.0f,
+	};
 	b3World_OverlapAABB( world->physicsWorld, total, b3DefaultQueryFilter(), nbThawCallback, &context );
 
 	// Past the limit the rest stays rubble
@@ -941,9 +998,24 @@ static void nbThawRubbleInBoxes( nbWorld* world, const b3AABB* boxes, int boxCou
 	thawed->count = 0;
 }
 
-void nbThawRubble( nbWorld* world, b3AABB box )
+float nbGetImpactPush( const nbWorld* world, const nbActor* actor, float ejectSpeed )
 {
-	nbThawRubbleInBoxes( world, &box, 1, b3Vec3_zero, 0.0f );
+	float fragmentSize = nbGetFragmentSize( world, nbGetChunkMaterial( world, world->chunks.data + actor->headChunk ) );
+	float fragmentVolume = fragmentSize * fragmentSize * fragmentSize;
+	return 0.5f * ejectSpeed * b3MinFloat( 1.0f, 4.0f * fragmentVolume / b3MaxFloat( actor->volume, 1.0e-9f ) );
+}
+
+// Rubble an impact cannot move stays rubble, only the chunks it breaks off fly. Otherwise a house that came off its
+// anchors and stands on its stubs would come back to life with its hundreds of contacts for every grenade that hits it.
+bool nbImpactMoves( const nbWorld* world, const nbActor* actor, float ejectSpeed )
+{
+	return nbGetImpactPush( world, actor, ejectSpeed ) >= NB_WAKE_SPEED;
+}
+
+void nbThawRubble( nbWorld* world, b3AABB box, float ejectSpeed )
+{
+	nbThawContext filter = { .impact = true, .ejectSpeed = ejectSpeed };
+	nbThawRubbleInBoxes( world, &box, 1, b3Vec3_zero, 0.0f, &filter );
 }
 
 void nbUpdateDebris( nbWorld* world, int actorIndex )
@@ -1075,18 +1147,11 @@ void nbCommitPhysics( nbWorld* world )
 			continue;
 		}
 
-		if ( actor->isStatic == false && actor->massDirty )
+		// Rubble is a static body without mass, it gets its mass back when it comes back to life
+		if ( actor->isStatic == false && actor->isRubble == false && actor->massDirty )
 		{
-			b3Body_ApplyMassFromShapes( actor->bodyId );
-			actor->localCenter = b3Body_GetLocalCenter( actor->bodyId );
-			actor->radius = 0.0f;
-			for ( int c = actor->headChunk; c != NB_NULL_INDEX; c = world->chunks.data[c].nextChunk )
-			{
-				const nbShape* shape = world->chunks.data[c].shape;
-				actor->radius = b3MaxFloat( actor->radius, b3Distance( shape->centroid, actor->localCenter ) + shape->radius );
-			}
+			nbUpdateActorMass( world, actor );
 		}
-		actor->massDirty = false;
 
 		nbUpdateDebris( world, actorIndex );
 		if ( actor->isStatic )
@@ -1816,6 +1881,21 @@ static int nbCheckSupport( nbWorld* world, int actorIndex, float gravity, b3Vec3
 	return overloadCount;
 }
 
+// Parts that fell off a structure outside an impact start at rest, like the structure. Only an impact hands new actors
+// their velocity, see nbApplyVelocities, and would otherwise stop them when it hits them later.
+static void nbStartAtRest( nbWorld* world, int exceptActor )
+{
+	for ( int i = 0; i < world->touchedActors.count; ++i )
+	{
+		int actorIndex = world->touchedActors.data[i];
+		if ( actorIndex != exceptActor )
+		{
+			world->actors.data[actorIndex].isNew = false;
+		}
+	}
+	world->touchedActors.count = 0;
+}
+
 // Break a chunk out of whatever holds it and burst it into fragments that scatter, the way an overloaded column
 // crumbles. Anchored chunks come off their anchors too.
 static void nbCrushChunk( nbWorld* world, int chunkIndex )
@@ -1838,7 +1918,7 @@ static void nbCrushChunk( nbWorld* world, int chunkIndex )
 	nbImpactResult result = { 0 };
 	nbSplitActors( world, &result );
 	nbCommitPhysics( world );
-	world->touchedActors.count = 0;
+	nbStartAtRest( world, world->chunks.data[chunkIndex].actorIndex );
 
 	chunk = world->chunks.data + chunkIndex;
 	b3WorldTransform transform = nbActor_GetTransform( world, world->actors.data + chunk->actorIndex );
@@ -1947,7 +2027,7 @@ static void nbCheckSupports( nbWorld* world )
 		nbImpactResult result = { 0 };
 		nbSplitActors( world, &result );
 		nbCommitPhysics( world );
-		world->touchedActors.count = 0;
+		nbStartAtRest( world, NB_NULL_INDEX );
 
 		for ( int c = 0; c < crushCount; ++c )
 		{
@@ -2563,7 +2643,7 @@ static void nbReleaseHeldRubble( nbWorld* world, b3Vec3 up )
 		{
 			// The rubble that rested on it lies higher than its center of mass did
 			b3Pos center = b3TransformWorldPoint( actor->holdPose, actor->localCenter );
-			nbThawRubbleInBoxes( world, &actor->holdBounds, 1, up, b3Dot( up, b3ToVec3( center ) ) );
+			nbThawRubbleInBoxes( world, &actor->holdBounds, 1, up, b3Dot( up, b3ToVec3( center ) ), NULL );
 		}
 	}
 }

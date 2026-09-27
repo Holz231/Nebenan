@@ -165,6 +165,11 @@ typedef struct nbActor
 	int jitterMatches;
 	bool jitterSampled;
 
+	// Came back to life from rubble and has not moved since. It freezes again after a short probe instead of the whole
+	// rest time, see nbIsQuiet.
+	bool probing;
+	float probeTime;
+
 	// The rubble resting on this actor comes back to life once it moves away from this pose. The bounds are the ones it
 	// had there.
 	bool holdsRubble;
@@ -379,8 +384,16 @@ void nbTouchChunk( nbWorld* world, int chunkIndex );
 void nbTouchActor( nbWorld* world, int actorIndex );
 void nbUpdateDebris( nbWorld* world, int actorIndex );
 
-// Bring rubble in a box back to life. The rubble resting on it follows once it moves.
-void nbThawRubble( nbWorld* world, b3AABB box );
+// The speed an impact that ejects its fragments at the given speed pushes loose debris with at most. Heavy parts barely
+// move, the push falls with the volume beyond four fragments.
+float nbGetImpactPush( const nbWorld* world, const nbActor* actor, float ejectSpeed );
+
+// Whether an impact pushes rubble hard enough to bring it back to life
+bool nbImpactMoves( const nbWorld* world, const nbActor* actor, float ejectSpeed );
+
+// Bring the rubble in a box back to life that an impact ejecting at the given speed moves. The rubble resting on it
+// follows once it moves.
+void nbThawRubble( nbWorld* world, b3AABB box, float ejectSpeed );
 
 // Bring one rubble actor back to life. The rubble resting on it follows once it moves.
 void nbThawActor( nbWorld* world, int actorIndex );

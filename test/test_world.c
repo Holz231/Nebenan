@@ -354,7 +354,7 @@ static uint32_t RunDeterminismScenario( void )
 
 // Fracture and physics are bit for bit identical with MSVC, GCC and Clang on x64 and ARM. This is the result
 // with the pinned Box3D commit. Update it when the results change on purpose, never to make one platform pass.
-#define NB_EXPECTED_DETERMINISM_HASH 0xd12e8aa1u
+#define NB_EXPECTED_DETERMINISM_HASH 0x42672349u
 
 static int DeterminismTest( void )
 {
@@ -796,6 +796,52 @@ static int RestTest( void )
 
 		Step( &scene, 90 );
 		ENSURE( b3Distance( CenterOfChunks( top ), start ) > 0.3f );
+		DestroyScene( &scene );
+	}
+
+	// An impact on heavy rubble breaks chunks off and leaves the rest frozen, light rubble in reach comes back to life
+	{
+		TestScene scene = CreateScene();
+		nbDestructibleId heavy = CreateLooseBox( &scene, (b3Vec3){ 0.0f, 0.5f, 0.0f }, (b3Vec3){ 1.0f, 0.5f, 1.0f }, 49 );
+		CreateLooseBox( &scene, (b3Vec3){ 0.3f, 1.1f, 0.0f }, (b3Vec3){ 0.1f, 0.1f, 0.1f }, 50 );
+		Step( &scene, 60 );
+		ENSURE( nbWorld_GetStats( scene.world ).rubbleCount == 2 );
+
+		nbImpactDef impact = { 0 };
+		impact.point = (b3Pos){ 0.0f, 1.0f, 0.0f };
+		impact.radius = 0.5f;
+		impact.damage = 3.0e5f;
+		impact.ejectSpeed = 12.0f;
+		nbWorld_ApplyImpact( scene.world, &impact );
+		ENSURE( nbWorld_GetStats( scene.world ).rubbleCount == 1 );
+		ENSURE( nbDestructible_GetChunkCount( heavy ) > 1 );
+
+		nbChunkId chunks[256];
+		int count = nbDestructible_GetChunks( heavy, chunks, 256 );
+		int frozen = 0;
+		for ( int i = 0; i < count; ++i )
+		{
+			frozen += b3Body_GetType( nbChunk_GetBody( chunks[i] ) ) == b3_staticBody ? 1 : 0;
+		}
+		ENSURE( frozen > count / 2 );
+		DestroyScene( &scene );
+	}
+
+	// Rubble that comes back to life but is still carried freezes again after a few steps, not the whole rest time
+	{
+		TestScene scene = CreateScene();
+		CreateLooseBox( &scene, (b3Vec3){ 0.0f, 0.1f, 0.0f }, (b3Vec3){ 0.5f, 0.1f, 0.5f }, 51 );
+		nbDestructibleId top = CreateLooseBox( &scene, (b3Vec3){ 0.0f, 0.5f, 0.0f }, (b3Vec3){ 0.3f, 0.3f, 0.3f }, 52 );
+		Step( &scene, 60 );
+		ENSURE( nbWorld_GetStats( scene.world ).rubbleCount == 2 );
+
+		nbWorld* world = nbGetWorldFromId( scene.world );
+		nbChunkId chunk;
+		nbDestructible_GetChunks( top, &chunk, 1 );
+		nbThawActor( world, world->chunks.data[chunk.index1 - 1].actorIndex );
+		ENSURE( nbWorld_GetStats( scene.world ).rubbleCount == 1 );
+		Step( &scene, 5 );
+		ENSURE( nbWorld_GetStats( scene.world ).rubbleCount == 2 );
 		DestroyScene( &scene );
 	}
 
@@ -1247,6 +1293,32 @@ static int SupportTest( void )
 		ENSURE( stats.dynamicBodyCount == 1 );
 		Step( &scene, 118 );
 		ENSURE( HighestChunk( house ) < 3.0f );
+		DestroyScene( &scene );
+	}
+
+	// The floor that came down keeps falling when an impact hits it on the way
+	{
+		TestScene scene = CreateScene();
+		nbDestructibleId house = CreateHouse( &scene, 1, 1, 0.0f );
+		Step( &scene, 20 );
+		nbChunkId chunks[64];
+		int count = nbDestructible_GetChunks( house, chunks, 64 );
+		b3BodyId floor = b3_nullBodyId;
+		for ( int i = 0; i < count; ++i )
+		{
+			b3BodyId body = nbChunk_GetBody( chunks[i] );
+			floor = b3Body_GetType( body ) == b3_dynamicBody ? body : floor;
+		}
+		ENSURE( B3_IS_NON_NULL( floor ) );
+		float speed = b3Length( b3Body_GetLinearVelocity( floor ) );
+		ENSURE( speed > 1.0f );
+
+		nbImpactDef impact = { 0 };
+		impact.point = b3Body_GetWorldCenter( floor );
+		impact.radius = 0.5f;
+		impact.damage = 1.0f;
+		nbWorld_ApplyImpact( scene.world, &impact );
+		ENSURE( b3Length( b3Body_GetLinearVelocity( floor ) ) > 0.9f * speed );
 		DestroyScene( &scene );
 	}
 
