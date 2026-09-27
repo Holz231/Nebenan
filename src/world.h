@@ -12,6 +12,17 @@
 // Rubble bodies one thaw brings back to life at most, so a single impact cannot wake a mountain of rubble
 #define NB_MAX_THAW 512
 
+// Chunks rubble remembers it lay on when it froze
+#define NB_MAX_CARRIERS 4
+
+// A chunk a piece lay on when it froze, and the point in world space where it touched
+typedef struct nbCarrier
+{
+	b3Vec3 point;
+	int chunkIndex;
+	uint16_t generation;
+} nbCarrier;
+
 enum nbChunkFlags
 {
 	// Glued to the world through an anchor plane
@@ -185,9 +196,25 @@ typedef struct nbActor
 	int holdSource;
 	uint16_t holdSourceGeneration;
 
+	// The chunks this rubble lay on when it froze, or was wedged between if it lay on none. NB_NULL_INDEX stands for a body
+	// that is no chunk such as the ground. None for a piece frozen in flight to keep within the budget. See
+	// nbIsSupportedWithout.
+	nbCarrier carriers[NB_MAX_CARRIERS];
+	int carrierCount;
+
 	// Slot among the quiet actors of the current settle pass, valid while the stamp matches
 	int settleSlot;
 	uint32_t settleStamp;
+
+	// Visit stamp of the search for what carries rubble, see nbIsSupportedWithout
+	uint32_t supportStamp;
+
+	// The last answer of that search for this rubble, valid while the stamp matches
+	uint32_t answerStamp;
+	bool supported;
+
+	// Rests on the piece whose support is being inspected, valid while the stamp matches, see nbFindSupport
+	uint32_t restStamp;
 } nbActor;
 
 typedef struct nbDestructible
@@ -314,6 +341,8 @@ typedef struct nbWorld
 	uint32_t bondStamp;
 	uint32_t searchStamp;
 	uint32_t settleStamp;
+	uint32_t supportStamp;
+	uint32_t answerStamp;
 
 	nbStats stats;
 

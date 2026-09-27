@@ -6,6 +6,7 @@
 
 #include "nebenan/nebenan.h"
 
+#include <float.h>
 #include <math.h>
 #include <stdlib.h>
 
@@ -354,7 +355,7 @@ static uint32_t RunDeterminismScenario( void )
 
 // Fracture and physics are bit for bit identical with MSVC, GCC and Clang on x64 and ARM. This is the result
 // with the pinned Box3D commit. Update it when the results change on purpose, never to make one platform pass.
-#define NB_EXPECTED_DETERMINISM_HASH 0x42672349u
+#define NB_EXPECTED_DETERMINISM_HASH 0x430e85d5u
 
 static int DeterminismTest( void )
 {
@@ -1370,6 +1371,62 @@ static float HighestChunk( nbDestructibleId destructible )
 }
 
 // A structure gives way where it cannot carry its weight: under too much pressure, and where an overhang bends its bonds
+typedef struct FloatQuery
+{
+	nbWorld* world;
+	int actorIndex;
+	bool found;
+} FloatQuery;
+
+static bool FloatQueryCallback( b3ShapeId shapeId, void* context )
+{
+	FloatQuery* query = context;
+	int chunkIndex = nbFindChunkFromShape( query->world, shapeId );
+	query->found = chunkIndex == NB_NULL_INDEX || query->world->chunks.data[chunkIndex].actorIndex != query->actorIndex;
+	return query->found == false;
+}
+
+// Volume of the pieces of at least a cubic meter that hang in the air: nothing lies right below their lowest chunks
+static float FloatingVolume( TestScene* scene )
+{
+	nbWorld* world = nbGetWorldFromId( scene->world );
+	float volume = 0.0f;
+	for ( int i = 0; i < world->debris.count; ++i )
+	{
+		int actorIndex = world->debris.data[i];
+		const nbActor* actor = world->actors.data + actorIndex;
+		if ( actor->volume < 1.0f )
+		{
+			continue;
+		}
+
+		float bottom = FLT_MAX;
+		for ( int c = actor->headChunk; c != NB_NULL_INDEX; c = world->chunks.data[c].nextChunk )
+		{
+			bottom = b3MinFloat( bottom, b3Shape_GetAABB( world->chunks.data[c].shapeId ).lowerBound.y );
+		}
+
+		bool carried = bottom < 0.05f;
+		for ( int c = actor->headChunk; c != NB_NULL_INDEX && carried == false; c = world->chunks.data[c].nextChunk )
+		{
+			b3AABB box = b3Shape_GetAABB( world->chunks.data[c].shapeId );
+			if ( box.lowerBound.y > bottom + 0.15f )
+			{
+				continue;
+			}
+
+			b3AABB below = { { box.lowerBound.x, box.lowerBound.y - 0.12f, box.lowerBound.z },
+							 { box.upperBound.x, box.lowerBound.y + 0.03f, box.upperBound.z } };
+			FloatQuery query = { world, actorIndex, false };
+			b3World_OverlapAABB( scene->physicsWorld, below, b3DefaultQueryFilter(), FloatQueryCallback, &query );
+			carried = query.found;
+		}
+
+		volume += carried ? 0.0f : actor->volume;
+	}
+	return volume;
+}
+
 static int SupportTest( void )
 {
 	// A four story house stands on its walls
@@ -1469,6 +1526,40 @@ static int SupportTest( void )
 		Step( &scene, 120 );
 		ENSURE( nbWorld_GetStats( scene.world ).overloadedBondCount > 0 );
 		ENSURE( CenterOfChunks( house ).y < start - 1.0f );
+		DestroyScene( &scene );
+	}
+
+	// Grenades all around the ground floor of a town house bring the story above down. It must not stay up on the rubble
+	// that froze on it while it was part of the house, or on rubble that froze on that rubble.
+	{
+		TestScene scene = CreateScene();
+		nbWorld_SetFragmentScale( scene.world, 2.0f );
+		CreateTownHouse( &scene, 2 );
+		nbImpactDef impact = { 0 };
+		impact.radius = 1.3f;
+		impact.damage = 3.0e5f;
+		impact.ejectSpeed = 12.0f;
+		int grenadeCount = 32;
+		for ( int k = 0; k < grenadeCount; ++k )
+		{
+			// Along the front, the right side, the back and the left side
+			float d = 31.0f * (float)k / (float)grenadeCount;
+			impact.point = d < 9.0f	   ? (b3Vec3){ -4.5f + d, 1.2f, 3.4f }
+						   : d < 15.5f ? (b3Vec3){ 4.7f, 1.2f, 3.25f - ( d - 9.0f ) }
+						   : d < 24.5f ? (b3Vec3){ 4.5f - ( d - 15.5f ), 1.2f, -3.4f }
+									   : (b3Vec3){ -4.7f, 1.2f, -3.25f + ( d - 24.5f ) };
+			nbWorld_ApplyImpact( scene.world, &impact );
+
+			b3ExplosionDef explosion = b3DefaultExplosionDef();
+			explosion.position = impact.point;
+			explosion.radius = impact.radius;
+			explosion.falloff = impact.radius;
+			explosion.impulsePerArea = 40.0f * impact.ejectSpeed;
+			b3World_Explode( scene.physicsWorld, &explosion );
+			Step( &scene, 10 );
+		}
+		Step( &scene, 180 );
+		ENSURE( FloatingVolume( &scene ) == 0.0f );
 		DestroyScene( &scene );
 	}
 
