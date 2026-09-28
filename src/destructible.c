@@ -330,6 +330,76 @@ static int nbAddMaterial( nbDestructible* destructible, const nbMaterial* materi
 	return destructible->materialCount++;
 }
 
+// Floors are the flat pieces of a building, at most a quarter as high along local Y as they are wide along X and Z, and
+// floors that overlap in height form one level. A storey is the room under a level, from the level below or the foot of
+// the building, and remembers the volume of the chunks in it, see nbCheckStoreys. Storeys without chunks are dropped.
+static void nbFindStoreys( nbWorld* world, int destructibleIndex, int actorIndex, const b3AABB* pieceBounds, const bool* valid,
+						   int pieceCount )
+{
+	float* lows = nbArena_AllocArray( &world->arena, float, pieceCount );
+	float* highs = nbArena_AllocArray( &world->arena, float, pieceCount );
+	int floorCount = 0;
+	float foot = FLT_MAX;
+	for ( int i = 0; i < pieceCount; ++i )
+	{
+		if ( valid[i] == false )
+		{
+			continue;
+		}
+
+		b3AABB box = pieceBounds[i];
+		b3Vec3 size = b3Sub( box.upperBound, box.lowerBound );
+		foot = b3MinFloat( foot, box.lowerBound.y );
+		if ( 4.0f * size.y > b3MinFloat( size.x, size.z ) )
+		{
+			continue;
+		}
+
+		// In order of height
+		int k = floorCount++;
+		for ( ; k > 0 && lows[k - 1] > box.lowerBound.y; --k )
+		{
+			lows[k] = lows[k - 1];
+			highs[k] = highs[k - 1];
+		}
+		lows[k] = box.lowerBound.y;
+		highs[k] = box.upperBound.y;
+	}
+
+	nbDestructible* destructible = world->destructibles.data + destructibleIndex;
+	destructible->storeyCount = 0;
+	float low = foot;
+	for ( int k = 0; k < floorCount; ++k )
+	{
+		if ( lows[k] > low && destructible->storeyCount < NB_MAX_STOREYS )
+		{
+			destructible->storeys[destructible->storeyCount++] = (nbStorey){ low, lows[k], 0.0f };
+		}
+		low = b3MaxFloat( low, highs[k] );
+	}
+
+	const nbActor* actor = world->actors.data + actorIndex;
+	for ( int c = actor->headChunk; c != NB_NULL_INDEX; c = world->chunks.data[c].nextChunk )
+	{
+		const nbShape* shape = world->chunks.data[c].shape;
+		for ( int s = 0; s < destructible->storeyCount; ++s )
+		{
+			nbStorey* storey = destructible->storeys + s;
+			storey->volume += shape->centroid.y >= storey->low && shape->centroid.y < storey->high ? shape->volume : 0.0f;
+		}
+	}
+
+	int count = 0;
+	for ( int s = 0; s < destructible->storeyCount; ++s )
+	{
+		if ( destructible->storeys[s].volume > 0.0f )
+		{
+			destructible->storeys[count++] = destructible->storeys[s];
+		}
+	}
+	destructible->storeyCount = count;
+}
+
 nbDestructibleId nbCreateDestructible( nbWorldId worldId, const nbDestructibleDef* def, const nbPieceDef* pieces, int pieceCount )
 {
 	NB_ASSERT( def->internalValue == NB_SECRET_COOKIE );
@@ -430,6 +500,7 @@ nbDestructibleId nbCreateDestructible( nbWorldId worldId, const nbDestructibleDe
 	};
 
 	nbPoly* piecePolys = nbArena_AllocArray( &world->arena, nbPoly, pieceCount );
+	b3AABB* pieceBounds = nbArena_AllocArray( &world->arena, b3AABB, pieceCount );
 	int* pieceJobs = nbArena_AllocArray( &world->arena, int, pieceCount );
 	float* pieceCellSizes = nbArena_AllocArray( &world->arena, float, pieceCount );
 	nbFractureJob* jobs = nbArena_AllocArray( &world->arena, nbFractureJob, pieceCount );
@@ -456,7 +527,9 @@ nbDestructibleId nbCreateDestructible( nbWorldId worldId, const nbDestructibleDe
 			nbPoly_MakeBox( piecePoly, piece->halfExtents, piece->transform, piece->surfaceMaterial );
 		}
 
+		// The bounds in the frame of the destructible, before the fracture moves the piece to its center of mass
 		pieceJobs[i] = valid ? nb_pieceSingle : nb_pieceInvalid;
+		pieceBounds[i] = valid ? nbPoly_ComputeBounds( piecePoly ) : (b3AABB){ b3Vec3_zero, b3Vec3_zero };
 		pieceCellSizes[i] = piece->cellSize != 0.0f ? piece->cellSize : def->cellSize;
 		const nbMaterial* pieceMaterial = world->destructibles.data[index].materials + pieceMaterials[i];
 		b3Vec3* sites = nbArena_AllocArray( &world->arena, b3Vec3, NB_PIECE_SITES );
@@ -610,6 +683,16 @@ nbDestructibleId nbCreateDestructible( nbWorldId worldId, const nbDestructibleDe
 	for ( int k = firstNewChunk; k < chunkEnd; ++k )
 	{
 		world->chunks.data[world->touchedChunks.data[k]].scratch = NB_NULL_INDEX;
+	}
+
+	if ( def->isStatic )
+	{
+		bool* valid = nbArena_AllocArray( &world->arena, bool, pieceCount );
+		for ( int i = 0; i < pieceCount; ++i )
+		{
+			valid[i] = pieceJobs[i] != nb_pieceInvalid;
+		}
+		nbFindStoreys( world, index, actorIndex, pieceBounds, valid, pieceCount );
 	}
 
 	nbCommitPhysics( world );

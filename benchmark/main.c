@@ -499,8 +499,8 @@ static void BenchmarkTown( int workerCount, float fragmentScale )
 	printf( "  Box3D per step: collide %.2f ms, solve %.2f ms, %.0f awake contacts\n", physicsProfile[1] / frameCount,
 			physicsProfile[2] / frameCount, physicsProfile[6] / frameCount );
 	nbStats stats = nbWorld_GetStats( scene.world );
-	printf( "  %d grenades, chunks %d, rubble %d, bodies at most %d (awake %d), contacts at most %d\n", frameCount / 5,
-			stats.chunkCount, stats.rubbleCount, maxBodies, maxAwake, maxContacts );
+	printf( "  %d grenades, %d storeys collapsed, chunks %d, rubble %d, bodies at most %d (awake %d), contacts at most %d\n",
+			frameCount / 5, stats.collapsedStoreyCount, stats.chunkCount, stats.rubbleCount, maxBodies, maxAwake, maxContacts );
 	DestroyScene( &scene );
 }
 

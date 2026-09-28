@@ -190,7 +190,10 @@ struct App
 	// Debris bodies Box3D moves at the same time, the lever of the physics cost
 	int maxDebrisBodies = nbDefaultWorldDef().maxDebrisBodies;
 
-	// How much load the bonds carry, lower values let buildings give way sooner
+	// A storey gives way when less than this fraction of its walls is left
+	float storeySupport = nbDefaultWorldDef().storeySupport;
+
+	// Load check for structures without floors, like the walls, off by default
 	float supportScale = nbDefaultWorldDef().supportScale;
 
 	float accumulator = 0.0f;
@@ -770,6 +773,7 @@ static void LoadScene( App& app, SceneKind scene )
 	def.maxDebrisBodies = app.maxDebrisBodies;
 	def.fragmentScale = app.fragmentScale;
 	def.supportScale = app.supportScale;
+	def.storeySupport = app.storeySupport;
 	app.destruction = nbCreateWorld( &def );
 
 	switch ( scene )
@@ -1090,7 +1094,8 @@ static std::string BuildReport( const App& app )
 	Appendf( text, "Welt: %d Bruchstücke, %d Verbindungen, %d Trümmerkörper (%d wach), %d Schutt, %d Kontakte, Budget %d, Bruchstückgröße x%.2f\n",
 			 stats.chunkCount, stats.bondCount, stats.dynamicBodyCount, b3World_GetAwakeBodyCount( app.physics ), stats.rubbleCount,
 			 counters.contactCount, app.maxDebrisBodies, app.fragmentScale );
-	Appendf( text, "Statik: %d überlastete Verbindungen gebrochen, Tragfähigkeit x%.2f\n", stats.overloadedBondCount, app.supportScale );
+	Appendf( text, "Einsturz: %d Etagen eingestürzt, eine Etage braucht %.0f %% ihrer Wände; Statik ohne Decken x%.2f, %d Verbindungen gebrochen\n",
+			 stats.collapsedStoreyCount, 100.0f * app.storeySupport, app.supportScale, stats.overloadedBondCount );
 	Appendf( text, "Grafik: %dk Dreiecke, %d Draw Calls, %d kB Upload\n", rs.triangleCount / 1000, rs.drawCalls, rs.uploadedBytes / 1024 );
 	return text;
 }
@@ -1160,13 +1165,23 @@ static void DrawUi( App& app )
 	{
 		ImGui::SetTooltip( "Größere Bruchstücke: weniger Teile pro Einschlag, weniger Körper,\nKontakte und Dreiecke. x2 halbiert ungefähr die Zeit\nbei Massenzerstörung. Gilt für die nächsten Einschläge." );
 	}
-	if ( ImGui::SliderFloat( "Tragfähigkeit", &app.supportScale, 0.0f, 4.0f, "x %.2f" ) )
+	float storeyPercent = 100.0f * app.storeySupport;
+	if ( ImGui::SliderFloat( "Etage braucht", &storeyPercent, 0.0f, 100.0f, "%.0f %% der Wände" ) )
+	{
+		app.storeySupport = 0.01f * storeyPercent;
+		nbWorld_SetStoreySupport( app.destruction, app.storeySupport );
+	}
+	if ( ImGui::IsItemHovered() )
+	{
+		ImGui::SetTooltip( "Hat eine Etage weniger als diesen Teil ihrer Wände, gibt sie nach:\nihre letzten Wände fliegen heraus, und alles darüber kommt\nin einem Stück herunter. Sonst stürzt an einem Haus nichts ein.\n0 schaltet es ab." );
+	}
+	if ( ImGui::SliderFloat( "Statik ohne Decken", &app.supportScale, 0.0f, 4.0f, "x %.2f" ) )
 	{
 		nbWorld_SetSupportScale( app.destruction, app.supportScale );
 	}
 	if ( ImGui::IsItemHovered() )
 	{
-		ImGui::SetTooltip( "Wie viel Last die Verbindungen tragen, Druck und Biegung.\nKleiner: Häuser geben früher nach, unter x0,7\nstürzen dreistöckige Häuser von selbst ein. 0 schaltet die Statik ab." );
+		ImGui::SetTooltip( "Lastprüfung für Bauwerke ohne Decken, wie die Mauern: Druck und\nBiegung, was nicht trägt, bricht ein. Häuser prüft sie nie.\n0 schaltet sie ab, so ist es voreingestellt." );
 	}
 	if ( ImGui::SliderInt( "Bewegte Trümmer", &app.maxDebrisBodies, 100, 5000 ) )
 	{

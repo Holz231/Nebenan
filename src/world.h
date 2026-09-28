@@ -114,7 +114,7 @@ typedef struct nbBond
 	bool cohesive;
 
 	// A cohesive bond between two parts of one cell, split by the seam between two pieces or by an opening. Siblings are
-	// thrown and split as one, so the straight faces between them do not show.
+	// thrown as one, so the straight faces between them do not show.
 	bool sibling;
 } nbBond;
 
@@ -168,8 +168,8 @@ typedef struct nbActor
 	// Rubble that pieces broke off below its center of mass during the current operation, see nbApplyImpact
 	bool lostPieces;
 
-	// Came down in the collapse of a block, see nbCheckSupport, or broke off something that did. It breaks along the
-	// faces of its cells where it lands hard, collisions do not fracture it further.
+	// Came down in the collapse of a block or a storey, see nbCheckSupport and nbCheckStoreys, or broke off something
+	// that did. Collisions do not fracture it.
 	bool fromCollapse;
 
 	// Debris at rest, carried by a static body until something disturbs it
@@ -233,6 +233,19 @@ typedef struct nbActor
 	uint32_t restStamp;
 } nbActor;
 
+// The room under a floor of a building, along the local Y axis of its destructible, see nbCheckStoreys. It runs from
+// the top of the floor below, or the foot of the building, to the bottom of the floor above.
+typedef struct nbStorey
+{
+	float low;
+	float high;
+
+	// Volume of the chunks with their centroid in the storey at creation
+	float volume;
+} nbStorey;
+
+#define NB_MAX_STOREYS 32
+
 typedef struct nbDestructible
 {
 	// Material 0 is the one of the definition, the others come from pieces with a material of their own
@@ -244,6 +257,10 @@ typedef struct nbDestructible
 
 	// Frame of the static chunks
 	b3WorldTransform transform;
+
+	// Storeys of a static building from the bottom up
+	nbStorey storeys[NB_MAX_STOREYS];
+	int storeyCount;
 
 	int headActor;
 	int actorCount;
@@ -319,9 +336,6 @@ typedef struct nbWorld
 
 	// Actors to freeze into rubble or to bring back to life
 	nbIntArray actorList;
-
-	// Parts that landed hard in the last step, as pairs of actor index and generation, see nbCollectLandings
-	nbIntArray landings;
 
 	// Static actors waiting for a load check, and the ones the current update checks
 	nbIntArray supportChecks;

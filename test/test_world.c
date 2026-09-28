@@ -355,7 +355,7 @@ static uint32_t RunDeterminismScenario( void )
 
 // Fracture and physics are bit for bit identical with MSVC, GCC and Clang on x64 and ARM. This is the result
 // with the pinned Box3D commit. Update it when the results change on purpose, never to make one platform pass.
-#define NB_EXPECTED_DETERMINISM_HASH 0xfbbc272au
+#define NB_EXPECTED_DETERMINISM_HASH 0xffd1fc42u
 
 static int DeterminismTest( void )
 {
@@ -1135,34 +1135,14 @@ static int CountBodies( nbDestructibleId destructible )
 	return bodies;
 }
 
-// A large part that lands hard breaks in two across the middle, like a prepared body of the reference engine. A soft
-// landing leaves it whole, and so does a hard one of a small cluster.
+// A large part that lands hard stays whole. What falls keeps its shape, it does not break in halves.
 static int LandingTest( void )
 {
-	{
-		TestScene scene = CreateScene();
-		nbDestructibleId slab = CreateFallingSlab( &scene, 4.0f, 1.0f );
-		Step( &scene, 90 );
-		ENSURE( CountBodies( slab ) == 2 );
-		DestroyScene( &scene );
-	}
-
-	{
-		TestScene scene = CreateScene();
-		nbDestructibleId slab = CreateFallingSlab( &scene, 1.0f, 1.0f );
-		Step( &scene, 90 );
-		ENSURE( CountBodies( slab ) == 1 );
-		DestroyScene( &scene );
-	}
-
-	{
-		TestScene scene = CreateScene();
-		nbDestructibleId slab = CreateFallingSlab( &scene, 4.0f, 0.1f );
-		Step( &scene, 90 );
-		ENSURE( CountBodies( slab ) == 1 );
-		DestroyScene( &scene );
-	}
-
+	TestScene scene = CreateScene();
+	nbDestructibleId slab = CreateFallingSlab( &scene, 4.0f, 1.0f );
+	Step( &scene, 90 );
+	ENSURE( CountBodies( slab ) == 1 );
+	DestroyScene( &scene );
 	return 0;
 }
 
@@ -1749,11 +1729,73 @@ static void CreateLoadedWall( TestScene* scene )
 	nbCreateDestructible( scene->world, &def, pieces, 2 );
 }
 
-static int SupportTest( void )
+// A grenade: an impact and the push of its blast
+static void Grenade( TestScene* scene, b3Vec3 point )
 {
-	// A four story house stands on its walls
+	nbImpactDef impact = { 0 };
+	impact.point = point;
+	impact.radius = 1.3f;
+	impact.damage = 3.0e5f;
+	impact.ejectSpeed = 12.0f;
+	nbWorld_ApplyImpact( scene->world, &impact );
+
+	b3ExplosionDef explosion = b3DefaultExplosionDef();
+	explosion.position = point;
+	explosion.radius = impact.radius;
+	explosion.falloff = impact.radius;
+	explosion.impulsePerArea = 40.0f * impact.ejectSpeed;
+	b3World_Explode( scene->physicsWorld, &explosion );
+}
+
+// A point on the walls of a house 9 m wide and 6.5 m deep, d meters along the front, the right side, the back and the
+// left side, 31 m around
+static b3Vec3 AroundHouse( float d, float y )
+{
+	return d < 9.0f	   ? (b3Vec3){ -4.5f + d, y, 3.4f }
+		   : d < 15.5f ? (b3Vec3){ 4.7f, y, 3.25f - ( d - 9.0f ) }
+		   : d < 24.5f ? (b3Vec3){ 4.5f - ( d - 15.5f ), y, -3.4f }
+					   : (b3Vec3){ -4.7f, y, -3.25f + ( d - 24.5f ) };
+}
+
+// Grenades in rows around a storey of the celled house, 3.25 m high, until it gives way. Where x lies beyond the limit,
+// and at the corners when they are kept, the walls stay whole. Returns the number of grenades.
+static int BlastStorey( TestScene* scene, int storey, int rows, float limit, bool keepCorners )
+{
+	int collapsed = nbWorld_GetStats( scene->world ).collapsedStoreyCount;
+	int count = 0;
+	for ( int row = 0; row < rows; ++row )
+	{
+		float y = 3.25f * (float)storey + ( rows == 1 ? 1.2f : 0.6f + 1.5f * (float)row / (float)( rows - 1 ) );
+		for ( int k = 0; k < 32; ++k )
+		{
+			b3Vec3 point = AroundHouse( 31.0f * (float)k / 32.0f, y );
+			if ( point.x > limit || ( keepCorners && fabsf( point.x ) > 3.2f && fabsf( point.z ) > 1.95f ) )
+			{
+				continue;
+			}
+
+			Grenade( scene, point );
+			Step( scene, 10 );
+			count += 1;
+			if ( nbWorld_GetStats( scene->world ).collapsedStoreyCount > collapsed )
+			{
+				return count;
+			}
+		}
+	}
+	return count;
+}
+
+// A building gives way storey by storey: when a storey lost more than half of its walls, on any floor, its last walls
+// fly out and everything above comes down in one piece. Nothing else of a building collapses, not the wall above a hole,
+// not a floor, not a column under load. Only what is cut off from the ground falls.
+static int StoreyTest( void )
+{
+	// A four story house stands on its walls, and so does a town house of three stories with doors and windows.
+	// Buildings never take the load check, not even with bonds that could not carry a thing.
 	{
 		TestScene scene = CreateScene();
+		nbWorld_SetSupportScale( scene.world, 0.01f );
 		CreateHouse( &scene, 4, 15, 0.0f );
 		Step( &scene, 30 );
 		nbStats stats = nbWorld_GetStats( scene.world );
@@ -1761,12 +1803,9 @@ static int SupportTest( void )
 		ENSURE( stats.dynamicBodyCount == 0 );
 		DestroyScene( &scene );
 	}
-
-	// A town house of three stories with doors and windows stands with room to spare. The piers beside a window carry
-	// the floors above, not the sill below it.
 	{
 		TestScene scene = CreateScene();
-		nbWorld_SetSupportScale( scene.world, 0.75f );
+		nbWorld_SetSupportScale( scene.world, 0.01f );
 		CreateTownHouse( &scene, 3 );
 		Step( &scene, 30 );
 		nbStats stats = nbWorld_GetStats( scene.world );
@@ -1775,159 +1814,55 @@ static int SupportTest( void )
 		DestroyScene( &scene );
 	}
 
-	// A floor across two walls stands, a floor on one wall bends its bond and comes down in one piece
+	// A floor on one wall stays up, and a house stands on thin columns
 	{
 		TestScene scene = CreateScene();
-		nbDestructibleId house = CreateHouse( &scene, 1, 3, 0.0f );
-		Step( &scene, 30 );
-		ENSURE( nbWorld_GetStats( scene.world ).overloadedBondCount == 0 );
+		nbWorld_SetSupportScale( scene.world, 1.0f );
+		nbDestructibleId house = CreateHouse( &scene, 1, 1, 0.0f );
+		Step( &scene, 120 );
+		ENSURE( nbWorld_GetStats( scene.world ).dynamicBodyCount == 0 );
 		ENSURE( HighestChunk( house ) > 3.0f );
 		DestroyScene( &scene );
 	}
 	{
 		TestScene scene = CreateScene();
-		nbDestructibleId house = CreateHouse( &scene, 1, 1, 0.0f );
-		Step( &scene, 2 );
-		nbStats stats = nbWorld_GetStats( scene.world );
-		ENSURE( stats.overloadedBondCount == 1 );
-		ENSURE( stats.dynamicBodyCount == 1 );
-		Step( &scene, 118 );
-		ENSURE( HighestChunk( house ) < 3.0f );
-		DestroyScene( &scene );
-	}
-
-	// The floor that came down keeps falling when an impact hits it on the way
-	{
-		TestScene scene = CreateScene();
-		nbDestructibleId house = CreateHouse( &scene, 1, 1, 0.0f );
-		Step( &scene, 20 );
-		nbChunkId chunks[64];
-		int count = nbDestructible_GetChunks( house, chunks, 64 );
-		b3BodyId floor = b3_nullBodyId;
-		for ( int i = 0; i < count; ++i )
-		{
-			b3BodyId body = nbChunk_GetBody( chunks[i] );
-			floor = b3Body_GetType( body ) == b3_dynamicBody ? body : floor;
-		}
-		ENSURE( B3_IS_NON_NULL( floor ) );
-		float speed = b3Length( b3Body_GetLinearVelocity( floor ) );
-		ENSURE( speed > 1.0f );
-
-		nbImpactDef impact = { 0 };
-		impact.point = b3Body_GetWorldCenter( floor );
-		impact.radius = 0.5f;
-		impact.damage = 1.0f;
-		nbWorld_ApplyImpact( scene.world, &impact );
-		ENSURE( b3Length( b3Body_GetLinearVelocity( floor ) ) > 0.9f * speed );
-		DestroyScene( &scene );
-	}
-
-	// Thin columns are crushed under the house they carry, and it comes down. The mean height of its chunks tells, a few
-	// fragments may still fly high.
-	{
-		TestScene scene = CreateScene();
+		nbWorld_SetSupportScale( scene.world, 1.0f );
 		nbDestructibleId house = CreateHouse( &scene, 2, 15, 0.15f );
 		float start = CenterOfChunks( house ).y;
 		Step( &scene, 120 );
-		ENSURE( nbWorld_GetStats( scene.world ).overloadedBondCount > 0 );
-		ENSURE( CenterOfChunks( house ).y < start - 1.0f );
-		DestroyScene( &scene );
-	}
-
-	// Without the check it stands, until the check comes back
-	{
-		TestScene scene = CreateScene();
-		nbWorld_SetSupportScale( scene.world, 0.0f );
-		nbDestructibleId house = CreateHouse( &scene, 2, 15, 0.15f );
-		float start = CenterOfChunks( house ).y;
-		Step( &scene, 60 );
 		ENSURE( nbWorld_GetStats( scene.world ).overloadedBondCount == 0 );
 		ENSURE( CenterOfChunks( house ).y > start - 0.01f );
-
-		nbWorld_SetSupportScale( scene.world, 1.0f );
-		Step( &scene, 120 );
-		ENSURE( nbWorld_GetStats( scene.world ).overloadedBondCount > 0 );
-		ENSURE( CenterOfChunks( house ).y < start - 1.0f );
 		DestroyScene( &scene );
 	}
 
-	// Grenades all around the ground floor of a town house bring the story above down. It must not stay up on the rubble
-	// that froze on it while it was part of the house, or on rubble that froze on that rubble.
-	{
-		TestScene scene = CreateScene();
-		nbWorld_SetFragmentScale( scene.world, 2.0f );
-		CreateTownHouse( &scene, 2 );
-		nbImpactDef impact = { 0 };
-		impact.radius = 1.3f;
-		impact.damage = 3.0e5f;
-		impact.ejectSpeed = 12.0f;
-		int grenadeCount = 32;
-		for ( int k = 0; k < grenadeCount; ++k )
-		{
-			// Along the front, the right side, the back and the left side
-			float d = 31.0f * (float)k / (float)grenadeCount;
-			impact.point = d < 9.0f	   ? (b3Vec3){ -4.5f + d, 1.2f, 3.4f }
-						   : d < 15.5f ? (b3Vec3){ 4.7f, 1.2f, 3.25f - ( d - 9.0f ) }
-						   : d < 24.5f ? (b3Vec3){ 4.5f - ( d - 15.5f ), 1.2f, -3.4f }
-									   : (b3Vec3){ -4.7f, 1.2f, -3.25f + ( d - 24.5f ) };
-			nbWorld_ApplyImpact( scene.world, &impact );
-
-			b3ExplosionDef explosion = b3DefaultExplosionDef();
-			explosion.position = impact.point;
-			explosion.radius = impact.radius;
-			explosion.falloff = impact.radius;
-			explosion.impulsePerArea = 40.0f * impact.ejectSpeed;
-			b3World_Explode( scene.physicsWorld, &explosion );
-			Step( &scene, 10 );
-		}
-		Step( &scene, 180 );
-		ENSURE( FloatingVolume( &scene ) == 0.0f );
-		DestroyScene( &scene );
-	}
-
-	// The town house as the demo builds it, with walls through its floors pre-fractured into cells, stands with room to
-	// spare. Its walls carry as one block, the cells do not give way at the corners of the windows.
+	// A few grenades at a corner of the ground floor of the celled house, as the demo builds it, do not bring it down
 	for ( uint32_t seed = 0; seed < 4; ++seed )
 	{
 		TestScene scene = CreateScene();
-		nbWorld_SetSupportScale( scene.world, 0.7f );
+		nbWorld_SetFragmentScale( scene.world, 2.0f );
 		CreateCelledHouse( &scene, 3, seed );
+		for ( int k = 0; k < 4; ++k )
+		{
+			Grenade( &scene, AroundHouse( k < 2 ? 0.5f + (float)k : 30.5f - (float)( k - 2 ), 1.2f ) );
+			Step( &scene, 10 );
+		}
 		Step( &scene, 30 );
-		nbStats stats = nbWorld_GetStats( scene.world );
-		ENSURE( stats.overloadedBondCount == 0 );
-		ENSURE( stats.dynamicBodyCount == 0 );
+		ENSURE( nbWorld_GetStats( scene.world ).collapsedStoreyCount == 0 );
+		ENSURE( HighestStanding( &scene ) > 9.0f );
 		DestroyScene( &scene );
 	}
 
-	// Grenades all around its ground floor bring it down. The walls break along a jagged crack under the first floor: in
-	// one update the cells below fly out of the house, and the stories above come down in one piece with their floors,
-	// onto the ground. No wall of the house stays standing.
+	// Grenades all around its ground floor bring it down. What is left of the ground floor flies out of the house in one
+	// update, and the stories above come down in one piece with their floors, onto the ground. No wall stays standing.
 	{
 		TestScene scene = CreateScene();
 		nbWorld_SetFragmentScale( scene.world, 2.0f );
 		CreateCelledHouse( &scene, 3, 3 );
 		nbWorld* world = nbGetWorldFromId( scene.world );
-		nbImpactDef impact = { 0 };
-		impact.radius = 1.3f;
-		impact.damage = 3.0e5f;
-		impact.ejectSpeed = 12.0f;
 		int thrownCount = 0;
-		int grenadeCount = 32;
-		for ( int k = 0; k < grenadeCount; ++k )
+		for ( int k = 0; k < 32; ++k )
 		{
-			float d = 31.0f * (float)k / (float)grenadeCount;
-			impact.point = d < 9.0f	   ? (b3Vec3){ -4.5f + d, 1.2f, 3.4f }
-						   : d < 15.5f ? (b3Vec3){ 4.7f, 1.2f, 3.25f - ( d - 9.0f ) }
-						   : d < 24.5f ? (b3Vec3){ 4.5f - ( d - 15.5f ), 1.2f, -3.4f }
-									   : (b3Vec3){ -4.7f, 1.2f, -3.25f + ( d - 24.5f ) };
-			nbWorld_ApplyImpact( scene.world, &impact );
-
-			b3ExplosionDef explosion = b3DefaultExplosionDef();
-			explosion.position = impact.point;
-			explosion.radius = impact.radius;
-			explosion.falloff = impact.radius;
-			explosion.impulsePerArea = 40.0f * impact.ejectSpeed;
-			b3World_Explode( scene.physicsWorld, &explosion );
+			Grenade( &scene, AroundHouse( 31.0f * (float)k / 32.0f, 1.2f ) );
 
 			// What a collapse throws out flies fast from the start. Grenade fragments of the house do not come from one.
 			for ( int step = 0; step < 10; ++step )
@@ -1948,13 +1883,130 @@ static int SupportTest( void )
 		}
 		Step( &scene, 180 );
 		ENSURE( thrownCount >= 20 );
+		ENSURE( nbWorld_GetStats( scene.world ).collapsedStoreyCount == 1 );
 
 		// The two upper stories and three floors are 87 cubic meters, the house was 9.75 m tall
 		float low = 0.0f, high = 0.0f;
 		ENSURE( LargestPiece( &scene, &low, &high ) > 60.0f );
 		ENSURE( low < 1.0f );
-		ENSURE( high < 8.5f );
+		ENSURE( high < 9.5f );
 		ENSURE( HighestStanding( &scene ) < 2.0f );
+		DestroyScene( &scene );
+	}
+
+	// The same with the town house of wall boxes for every story. The story above must not stay up on the rubble that
+	// froze on it while it was part of the house, or on rubble that froze on that rubble.
+	{
+		TestScene scene = CreateScene();
+		nbWorld_SetFragmentScale( scene.world, 2.0f );
+		CreateTownHouse( &scene, 2 );
+		for ( int k = 0; k < 32; ++k )
+		{
+			Grenade( &scene, AroundHouse( 31.0f * (float)k / 32.0f, 1.2f ) );
+			Step( &scene, 10 );
+		}
+		Step( &scene, 180 );
+		ENSURE( FloatingVolume( &scene ) == 0.0f );
+		DestroyScene( &scene );
+	}
+
+	// Grenades around the second story bring the story above down onto the ground floor, which stands. With the corners of
+	// the second story left whole as well, a rigid shell the old load check never broke. Grenades around the ground
+	// floor then bring that down too, with what lies on it.
+	for ( int corners = 0; corners < 2; ++corners )
+	{
+		TestScene scene = CreateScene();
+		nbWorld_SetFragmentScale( scene.world, 2.0f );
+		CreateCelledHouse( &scene, 3, 3 );
+		BlastStorey( &scene, 1, 1 + corners, FLT_MAX, corners == 1 );
+		Step( &scene, 120 );
+		ENSURE( nbWorld_GetStats( scene.world ).collapsedStoreyCount == 1 );
+		float standing = HighestStanding( &scene );
+		ENSURE( 2.9f < standing && standing < 3.6f );
+
+		// The upper story and two floors are 51 cubic meters
+		float low = 0.0f, high = 0.0f;
+		ENSURE( LargestPiece( &scene, &low, &high ) > 40.0f );
+		ENSURE( low > 2.5f );
+
+		BlastStorey( &scene, 0, 1, FLT_MAX, false );
+		Step( &scene, 120 );
+		ENSURE( nbWorld_GetStats( scene.world ).collapsedStoreyCount == 2 );
+		ENSURE( HighestStanding( &scene ) < 1.0f );
+		DestroyScene( &scene );
+	}
+
+	// With the walls of the second story left only at +x, what comes down over it turns toward -x
+	{
+		TestScene scene = CreateScene();
+		nbWorld_SetFragmentScale( scene.world, 2.0f );
+		CreateCelledHouse( &scene, 3, 3 );
+		BlastStorey( &scene, 1, 3, 0.5f, false );
+		ENSURE( nbWorld_GetStats( scene.world ).collapsedStoreyCount == 1 );
+
+		nbWorld* world = nbGetWorldFromId( scene.world );
+		const nbActor* largest = NULL;
+		for ( int i = 0; i < world->debris.count; ++i )
+		{
+			const nbActor* actor = world->actors.data + world->debris.data[i];
+			largest = largest == NULL || actor->volume > largest->volume ? actor : largest;
+		}
+		ENSURE( largest != NULL && largest->volume > 40.0f );
+		b3Vec3 spin = b3Body_GetAngularVelocity( largest->bodyId );
+		ENSURE( spin.z > 0.2f && fabsf( spin.x ) < spin.z );
+		DestroyScene( &scene );
+	}
+
+	// What came down keeps falling when an impact hits it on the way
+	{
+		TestScene scene = CreateScene();
+		nbWorld_SetFragmentScale( scene.world, 2.0f );
+		CreateCelledHouse( &scene, 2, 3 );
+		BlastStorey( &scene, 0, 1, FLT_MAX, false );
+		ENSURE( nbWorld_GetStats( scene.world ).collapsedStoreyCount == 1 );
+
+		nbWorld* world = nbGetWorldFromId( scene.world );
+		const nbActor* largest = NULL;
+		for ( int i = 0; i < world->debris.count; ++i )
+		{
+			const nbActor* actor = world->actors.data + world->debris.data[i];
+			largest = largest == NULL || actor->volume > largest->volume ? actor : largest;
+		}
+		ENSURE( largest != NULL && largest->volume > 40.0f );
+
+		b3BodyId body = largest->bodyId;
+		for ( int step = 0; step < 30 && b3Length( b3Body_GetLinearVelocity( body ) ) < 2.0f; ++step )
+		{
+			Step( &scene, 1 );
+		}
+		float speed = b3Length( b3Body_GetLinearVelocity( body ) );
+		ENSURE( speed > 2.0f );
+
+		nbImpactDef impact = { 0 };
+		impact.point = b3Body_GetWorldCenter( body );
+		impact.radius = 0.5f;
+		impact.damage = 1.0f;
+		nbWorld_ApplyImpact( scene.world, &impact );
+		ENSURE( b3Length( b3Body_GetLinearVelocity( body ) ) > 0.9f * speed );
+		DestroyScene( &scene );
+	}
+
+	return 0;
+}
+
+// Structures without floors take the load check when it is on, see nbWorldDef::supportScale
+static int SupportTest( void )
+{
+	// A wall under a concrete block stands while the check is off, as it is by default, and gives way when it comes on
+	{
+		TestScene scene = CreateScene();
+		CreateLoadedWall( &scene );
+		Step( &scene, 60 );
+		ENSURE( nbWorld_GetStats( scene.world ).dynamicBodyCount == 0 );
+		nbWorld_SetSupportScale( scene.world, 0.03f );
+		Step( &scene, 60 );
+		ENSURE( nbWorld_GetStats( scene.world ).overloadedBondCount > 0 );
+		ENSURE( nbWorld_GetStats( scene.world ).dynamicBodyCount > 0 );
 		DestroyScene( &scene );
 	}
 
@@ -2003,6 +2055,7 @@ static int SupportTest( void )
 	// A gate of stout pillars pre-fractured into cells carries its beam
 	{
 		TestScene scene = CreateScene();
+		nbWorld_SetSupportScale( scene.world, 1.0f );
 		CreateGate( &scene, 0.0f, 7 );
 		Step( &scene, 30 );
 		nbStats stats = nbWorld_GetStats( scene.world );
@@ -2036,6 +2089,7 @@ int WorldTest( void )
 	RUN_TEST( VisibleFaceTest );
 	RUN_TEST( DebrisBudgetTest );
 	RUN_TEST( FragmentScaleTest );
+	RUN_TEST( StoreyTest );
 	RUN_TEST( SupportTest );
 	RUN_TEST( RestTest );
 	RUN_TEST( LandingTest );
