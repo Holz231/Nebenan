@@ -12,10 +12,10 @@ gelöscht. Kein Staub, keine Schatten: Jede Millisekunde geht in die Zerstörung
   weiter weg. Nur die getroffenen Bruchstücke werden verfeinert, der Rest der Wand bleibt ein großes Stück
 - Voronoi-Zellen und Hüllen laufen auf mehreren Threads, über das Task-System der Anwendung oder eingebaute
   Threads. Das Ergebnis hängt nicht von der Zahl der Threads ab
-- Einsturz Etage für Etage, auf jeder Höhe: Hat eine Etage weniger als die Hälfte ihrer Wände, fliegen ihre letzten
-  Wände mit Wucht heraus, und alles darüber kommt als ein Stück herunter, gekippt zur Seite, wo die Wände fehlen.
-  Die Räume oben bleiben ganz und geben wieder Deckung. Sonst stürzt an einem Haus nichts ein, keine Wand über einem
-  Loch und keine Decke, nur was ganz abgetrennt ist, fällt
+- Einsturz Etage für Etage, auf jeder Höhe und in jeder Reihenfolge: Hat eine Etage weniger als die Hälfte ihrer Wände,
+  fliegen ihre letzten Wände mit Wucht heraus, und alles darüber kommt als ein Stück herunter, gekippt zur Seite, wo
+  die Wände fehlen. Die Räume oben bleiben ganz und geben wieder Deckung. Sonst stürzt an einem Haus nichts ein,
+  keine Wand über einem Loch und keine Decke, nur was ganz abgetrennt ist, fällt
 - Die Wände sind beim Laden in Zellen zerlegt, die auch um die Hausecken laufen, Fenster und Türen sind
   ausgeschnitten. Der Riss unter dem Teil, das herunterkommt, folgt den Zellen und ist überall polygonal
 - Für Bauwerke ohne Decken gibt es wahlweise eine Lastprüfung nach dem Lastlöser der Referenz-Engine: Last und
@@ -218,13 +218,19 @@ der Bruchstücke, deren Mitte in ihr liegt. Ändert sich ein Haus, prüft das n�
 Etage weniger als `storeySupport` davon übrig, Standard die Hälfte, gibt sie nach, auf jeder Höhe:
 
 - Ihre letzten Wände fliegen mit 6 m/s aus dem Haus, jedes Stück durch die Seite, an der es frei liegt, bei zwei
-  freien Seiten weg von der Mitte des Hauses. Die Teile einer Zelle fliegen zusammen.
+  freien Seiten weg von der Mitte des Hauses. Die Teile einer Zelle fliegen zusammen. Aller Schutt bis 1 m um sie
+  herum wacht auf, auch der aus früheren Einstürzen, sonst verkeilten sich die Reste darin, und die Trümmer dort
+  zählen für das Budget wie neue.
 - Alles darüber kommt als ein Stück herunter und bleibt ganz, die Räume oben geben danach wieder Deckung. Eine Zelle
   gehört dorthin, wo ihre Mitte liegt, so folgt der Riss den Zellgrenzen und ist polygonal, auch an den Ecken.
-- Es kippt zur Seite, wo die Wände fehlen: Es dreht sich um die Mitte der Wände, die übrig waren, umso schneller, je
-  weiter sein Schwerpunkt daneben liegt, bis 1 rad/s. Stehen die Reste ringsum gleich, fällt es gerade herunter.
+- Es beginnt, zur Seite zu kippen, wo die Wände fehlen, umso schneller, je weiter sein Schwerpunkt neben der Mitte der
+  letzten Wände liegt, bis 0,5 rad/s. Stehen die Reste ringsum gleich, fällt es gerade herunter. Es wird nur gedreht,
+  nicht angeschoben, ein Stoß würde es davonwerfen.
 - Die Etagen darunter bleiben stehen und tragen, was herunterkam. Gibt später eine von ihnen nach, kommt sie mit
-  allem darauf herunter.
+  allem darauf herunter, auch wenn es dort schon als Schutt liegt.
+- Was herunterkam, bleibt ein Haus, solange es nicht mehr als 45° kippt: Verliert eine seiner Etagen die Hälfte ihrer
+  Wände, stürzt sie genauso ein, auch von unten nach oben. Eine Etage, die schon eingestürzt ist, gibt für Reste von
+  weniger als einem Zehntel ihrer Wände nicht noch einmal nach, und `nbStats` zählt jede Etage nur einmal.
 - Schneiden Einschläge das Haus über einer Etage ganz ab, bevor sie unter die Hälfte fällt, kommt der Teil darüber
   genauso herunter, und die Reste der Etage fliegen unter ihm heraus.
 
@@ -291,10 +297,18 @@ die Zellen darunter fliegen mit 6 m/s heraus.
   nehmen ihren Schutt genauso mit, nur den Schutt nicht, aus dem sie kommen. So bleibt kein Schutt in der Luft hängen.
 - Wacht Schutt auf und bleibt 0,05 s lang langsamer als 5 cm/s, liegt er noch auf und erstarrt gleich wieder, statt
   die ganze Ruhezeit abzuwarten. Was seine Auflage verloren hat, ist nach einem Schritt freiem Fall schon schneller.
-- Über `maxDebrisBodies` erstarren die langsamsten Trümmer, die älter als 0,25 s sind, auch im Flug, und merken sich
-  ebenso, woran sie liegen. Große Teile erstarren so nur, wenn sie wie oben im Gleichgewicht liegen. Was unter
-  `killDepth` fällt, hat die Welt verlassen und wird entfernt. Splitter unter `minFragmentVolume` werden gar nicht erst
-  erzeugt.
+- Über `maxDebrisBodies` erstarren die langsamsten Trümmer und merken sich ebenso, woran sie liegen: zuerst, was auf
+  dem Boden, einem Bauwerk oder Schutt liegt, erst wenn das nicht reicht, auch Trümmer auf bewegten Stücken und im
+  Flug. Große Teile erstarren so nur, wenn sie wie oben im Gleichgewicht liegen. Ausgenommen sind Trümmer, die jünger
+  als 0,25 s sind, und ebenso lange die Trümmer um eine Etage, die nachgibt, und der Schutt, den ein Hausteil oder ein
+  solches frisches Stück beim Wegrücken freigibt. Sonst erstarrten sie gleich wieder dort, wo die Etage sie hielt.
+  Ausgenommen sind auch langsame Trümmer unter 1 m/s, die nichts berühren: Sie haben eben ihre Auflage verloren oder
+  sind aufgewacht, und Box3D kennt ihre Kontakte erst nach dem nächsten Schritt. Erstarrt, hingen sie in der Luft.
+- Ein Stück, in das ein größeres bewegtes Stück mehr als 2 cm tief eindringt, erstarrt nur zusammen mit diesem, das
+  Budget lässt es ganz aus. Allein als statischer Körper drückte es das große Stück auf einmal hinaus und würfe es
+  davon, etwa ein Stockwerk, das auf kleinen Trümmern liegt.
+- Was unter `killDepth` fällt, hat die Welt verlassen und wird entfernt. Splitter unter `minFragmentVolume` werden gar
+  nicht erst erzeugt.
 
 **Box3D-Anbindung.** Jedes statische Bruchstück hat einen eigenen statischen Körper, denn das Entfernen
 einer Form in Box3D kostet so viel, wie der Körper Kontakte hat. Jede lose Insel ist ein dynamischer
@@ -488,24 +502,23 @@ zusammen (Einschläge, Box3D-Schritt, `nbWorld_Update`), jeweils der mittlere vo
 | 4 Threads, `fragmentScale` 2 | 3,4 ms | 5,7 ms | 2,8 ms |
 
 Die 240 Granaten verteilen sich auf die Wände beider Etagen aller Häuser, dabei verliert keine Etage die Hälfte ihrer
-Wände, und nichts stürzt ein. Ohne Einstürze (`storeySupport` 0) sind es fast dieselben Zeiten: mit 4 Threads 9,5 ms
-und mit `fragmentScale` 2 3,2 ms, mit 1 Thread 21,7 und 5,7 ms. `nbWorld_Update` kostet mit 4 Threads im Mittel
-1,7 ms, mit doppelter Bruchstückgröße 0,4 ms, und enthält den Schaden durch Aufprall.
+Wände, und nichts stürzt ein. Ohne Einstürze (`storeySupport` 0) sind es fast dieselben Zeiten. `nbWorld_Update`
+kostet mit 4 Threads im Mittel 1,7 ms, mit doppelter Bruchstückgröße 0,4 ms, und enthält den Schaden durch Aufprall.
 
-Braucht eine Etage 90 % ihrer Wände, stürzen unter demselben Beschuss 17 bis 20 Etagen ein, und die Stadt braucht mit
-4 Threads 14,1 ms und mit `fragmentScale` 2 5,7 ms, mit 1 Thread 26,9 und 10,8 ms. Teuer ist, was dann fliegt und
-fällt, bis es als Schutt liegt. Die Prüfung der Etagen selbst kostet kaum etwas, und was herunterkommt, bricht nicht
-und bricht nichts. Mit der Lastprüfung davor, die jedes Haus unter Last einstürzen ließ, brauchte die Stadt unter
-dem Beschuss oben, zur selben Zeit gemessen, 15,3 ms mit 4 Threads und 5,4 ms mit `fragmentScale` 2, mit 1 Thread
-29,9 und 10,3 ms.
+Braucht eine Etage 90 % ihrer Wände, stürzen unter demselben Beschuss 20 bis 21 Etagen ein, auch in Teilen, die schon
+heruntergekommen sind. Die Stadt braucht dann mit 4 Threads 1,4-mal so lange wie ohne Einstürze und mit
+`fragmentScale` 2 1,7-mal, mit 1 Thread 1,2- und 1,8-mal, jeweils zur selben Zeit gemessen. Teuer ist, was dann fliegt
+und fällt, bis es als Schutt liegt. Die Prüfung der Etagen selbst kostet kaum etwas, und was herunterkommt, bricht
+nicht und bricht nichts. Mit der Lastprüfung davor, die jedes Haus unter Last einstürzen ließ, brauchte die Stadt
+unter dem Beschuss oben 1,4- bis 1,8-mal so lange wie heute ohne Einstürze.
 
 Die Zeit ist zum größten Teil der Box3D-Schritt, und den bestimmen zwei Zahlen:
 
-- **Bruchstückgröße.** Mit doppelt so großen Bruchstücken liegen am Ende 23 500 statt 81 000 Bruchstücke herum,
-  und Box3D rechnet 6600 statt 15 800 Kontakte. Die Zahl der Splitter eines Einschlags fällt mit dem Quadrat
+- **Bruchstückgröße.** Mit doppelt so großen Bruchstücken liegen am Ende 23 100 statt 76 800 Bruchstücke herum,
+  und Box3D rechnet 6000 statt 16 000 Kontakte. Die Zahl der Splitter eines Einschlags fällt mit dem Quadrat
   der Größe.
 - **Bewegte Trümmer.** Box3D bewegt höchstens `maxDebrisBodies` (1500) Trümmer gleichzeitig. Was zur Ruhe kommt,
-  liegt als Schutt und kostet nichts mehr, am Ende der Stadt 36 400 Körper.
+  liegt als Schutt und kostet nichts mehr, am Ende der Stadt 33 500 Körper.
 
 Ganze Einschläge (Bruch, Stützgraph, neue Box3D-Körper) und der Box3D-Schritt danach bei 60 Hz mit
 4 Substeps, jeweils mit 1 und 4 Threads, der mittlere von drei Läufen:
@@ -585,10 +598,11 @@ Nach Änderungen an `demo/shaders/scene.glsl` die Shader neu erzeugen, im Ordner
 - Schutt ist für Box3D statisch. Trümmer, die auf Schutt fallen, wecken ihn nicht, nur Einschläge, die ihn bewegen,
   fremde Körper, eine wegrutschende Auflage und große Teile, die ohne ihn nicht im Gleichgewicht lägen. Kinematische
   Körper stoßen Schutt nicht an, Box3D lässt kinematische und statische Körper nicht kollidieren.
-- Kleine Trümmer unter 0,1 m³ erstarren auf jedem Schutt, auch auf solchem, den das Budget im Flug erstarren ließ. Sie
-  können also noch in der Luft hängen bleiben, ein großes Teil tragen sie dann aber nicht.
+- Wird das Budget knapp, erstarren auch Trümmer auf bewegten Stücken und schnelle im Flug, und kleine Trümmer unter
+  0,1 m³ erstarren auf jedem Schutt, auch auf solchem. Sie können also noch in der Luft hängen bleiben, ein großes Teil
+  tragen sie dann aber nicht.
 - Einstürze kosten: Was fällt und fliegt, bewegt sich, bis es als Schutt liegt. Braucht jede Etage 90 % ihrer Wände,
-  braucht die Stadt unter Dauerbeschuss 1,2- bis 1,9-mal so lange wie ohne Einstürze, siehe Leistung.
+  braucht die Stadt unter Dauerbeschuss 1,2- bis 1,8-mal so lange wie ohne Einstürze, siehe Leistung.
 - Nur die Voronoi-Zellen und Hüllen laufen parallel. Punktverteilung, Einbau der Stücke und das Anlegen der
   Box3D-Formen bleiben auf dem aufrufenden Thread, bei großen Explosionen ist das der größere Teil.
 - Nur konvexe Teile, aus denen sich Quader ausschneiden lassen. Andere konkave Formen müssen als mehrere konvexe

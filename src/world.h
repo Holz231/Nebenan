@@ -140,6 +140,9 @@ typedef struct nbActor
 	// Seconds since the actor became free. Coming back to life from rubble keeps the age.
 	float age;
 
+	// Seconds since the actor became free or a storey gave way next to it, see NB_FREEZE_GRACE
+	float budgetAge;
+
 	// Bound on the distance of the chunk vertices from the center of mass, cached with the mass
 	float radius;
 
@@ -171,6 +174,10 @@ typedef struct nbActor
 	// Came down in the collapse of a block or a storey, see nbCheckSupport and nbCheckStoreys, or broke off something
 	// that did. Collisions do not fracture it.
 	bool fromCollapse;
+
+	// A part of a building that came down in the collapse of a storey. Its own storeys still give way, see
+	// nbCheckStoreys.
+	bool isBuildingPart;
 
 	// Debris at rest, carried by a static body until something disturbs it
 	bool isRubble;
@@ -258,9 +265,10 @@ typedef struct nbDestructible
 	// Frame of the static chunks
 	b3WorldTransform transform;
 
-	// Storeys of a static building from the bottom up
+	// Storeys of a static building from the bottom up, and a bit for each of them that gave way
 	nbStorey storeys[NB_MAX_STOREYS];
 	int storeyCount;
+	uint32_t collapsedStoreys;
 
 	int headActor;
 	int actorCount;

@@ -740,7 +740,17 @@ static b3AABB nbGetActorBounds( const nbWorld* world, const nbActor* actor )
 // Rubble bodies that hits bring back to life per update at most
 #define NB_MAX_RUBBLE_HITS 16
 
-// Debris younger than this in seconds does not freeze to keep within the budget
+// Debris that touches nothing freezes to keep within the budget only when it flies at least this fast, see
+// nbEnforceDebrisBudget
+#define NB_FLIGHT_SPEED 1.0f
+
+// A larger moving body that presses this deep into a piece keeps it from freezing, unless the body freezes with it.
+// Frozen alone, the piece would push that body out of it at once and throw it: a part of a building that came down onto
+// the small pieces it squeezes.
+#define NB_SQUEEZE_DEPTH 0.02f
+
+// Debris younger than this in seconds does not freeze to keep within the budget, and neither does the debris around a
+// storey that gives way for as long, see nbThawContext::collapse
 #define NB_FREEZE_GRACE 0.25f
 
 // Rubble that comes back to life and stays slower than this for NB_PROBE_TIME is still carried and freezes again. A body
@@ -926,6 +936,14 @@ typedef struct nbThawContext
 
 	// Rubble that froze on this actor follows it wherever it lies, see nbRestsOn
 	int holder;
+
+	// The rubble that comes back to life gets the grace of new debris, see NB_FREEZE_GRACE. What lay on a piece that
+	// moved away would freeze again where it lay.
+	bool grace;
+
+	// A storey gives way: all the rubble comes back to life, also past NB_MAX_THAW, and all the debris there gets the
+	// grace, what lay on the storey too
+	bool collapse;
 } nbThawContext;
 
 // Whether rubble froze on one of the chunks of an actor
@@ -1025,6 +1043,11 @@ static bool nbThawCallback( b3ShapeId shapeId, void* context )
 
 	int actorIndex = world->chunks.data[chunkIndex].actorIndex;
 	nbActor* actor = world->actors.data + actorIndex;
+	if ( thawContext->collapse && actor->isStatic == false )
+	{
+		actor->budgetAge = 0.0f;
+	}
+
 	if ( actor->isRubble == false || actor->settleStamp == world->settleStamp ||
 		 ( actorIndex == thawContext->skipActor && actor->generation == thawContext->skipGeneration ) )
 	{
@@ -1102,13 +1125,19 @@ static void nbThawRubbleInBoxes( nbWorld* world, const b3AABB* boxes, int boxCou
 		.skipActor = filter != NULL ? filter->skipActor : NB_NULL_INDEX,
 		.skipGeneration = filter != NULL ? filter->skipGeneration : 0,
 		.holder = filter != NULL ? filter->holder : NB_NULL_INDEX,
+		.collapse = filter != NULL && filter->collapse,
 	};
 	b3World_OverlapAABB( world->physicsWorld, total, b3DefaultQueryFilter(), nbThawCallback, &context );
 
 	// Past the limit the rest stays rubble
-	for ( int i = 0; i < thawed->count && i < NB_MAX_THAW; ++i )
+	int limit = filter != NULL && filter->collapse ? thawed->count : NB_MAX_THAW;
+	for ( int i = 0; i < thawed->count && i < limit; ++i )
 	{
 		nbThawActor( world, thawed->data[i] );
+		if ( filter != NULL && filter->grace )
+		{
+			world->actors.data[thawed->data[i]].budgetAge = 0.0f;
+		}
 	}
 	thawed->count = 0;
 }
@@ -1148,7 +1177,7 @@ void nbUpdateDebris( nbWorld* world, int actorIndex )
 	}
 }
 
-// Queue a static actor for a load check in the next update
+// Queue a static actor, or a part of a building that came down, for a check in the next update
 static void nbMarkSupport( nbWorld* world, int actorIndex )
 {
 	nbActor* actor = world->actors.data + actorIndex;
@@ -1341,7 +1370,7 @@ void nbCommitPhysics( nbWorld* world )
 		}
 
 		nbUpdateDebris( world, actorIndex );
-		if ( actor->isStatic )
+		if ( actor->isStatic || actor->isBuildingPart )
 		{
 			nbMarkSupport( world, actorIndex );
 		}
@@ -1755,16 +1784,24 @@ typedef struct nbOverload
 	bool eject;
 } nbOverload;
 
-// What comes down over a storey that gave way tilts at up to this many radians per second toward the side where the
-// walls are missing, see nbCheckStoreys
-#define NB_TILT_SPEED 1.0f
+// What comes down over a storey that gave way starts to turn at up to this many radians per second toward the side where
+// the walls are missing, see nbCheckStoreys. It only turns, a push on top would throw it.
+#define NB_TILT_SPEED 0.5f
 
-// How a chunk comes down over a storey that gave way: it turns about the middle of the walls that were left
+// A part of a building that came down keeps its storeys while its local Y axis stays within 45 degrees of up
+#define NB_UPRIGHT 0.7071f
+
+// Rubble this close around the remains of a storey that gives way comes back to life, so they can fly out
+#define NB_CLEARANCE 1.0f
+
+// A storey that gave way does not give way again for remains of less than this part of its walls
+#define NB_STOREY_REMAINS 0.1f
+
+// How a chunk comes down over a storey that gave way
 typedef struct nbTilt
 {
 	int chunkIndex;
 	b3Vec3 angularVelocity;
-	b3Pos pivot;
 } nbTilt;
 
 // Remaining health of a bond over the health of an undamaged bond of the same area and materials
@@ -2630,7 +2667,8 @@ static int nbFindStorey( const nbDestructible* destructible, float height )
 // are left. A cell goes where its center lies, so the cracks follow the faces of the cells. The storeys count the walls
 // of all static parts of the destructible, and a part lets go of what it holds itself. Returns the chunks to throw and
 // the bonds to break in arena memory, and the spin of the chunks that come down.
-static int nbCheckStoreys( nbWorld* world, int actorIndex, nbOverload** overloadsOut, nbTilt** tiltsOut, int* tiltCountOut )
+static int nbCheckStoreys( nbWorld* world, int actorIndex, b3Vec3 up, nbOverload** overloadsOut, nbTilt** tiltsOut,
+						   int* tiltCountOut )
 {
 	*tiltCountOut = 0;
 	const nbActor* actor = world->actors.data + actorIndex;
@@ -2640,26 +2678,31 @@ static int nbCheckStoreys( nbWorld* world, int actorIndex, nbOverload** overload
 		return 0;
 	}
 
-	// What is left of every storey, and the middle of it
+	// A part that came down only while it still stands more or less upright, a building lying on its side has no storeys
+	b3WorldTransform transform = nbActor_GetTransform( world, actor );
+	if ( actor->isStatic == false && b3Dot( b3RotateVector( transform.q, b3Vec3_axisY ), up ) < NB_UPRIGHT )
+	{
+		return 0;
+	}
+
+	// What is left of every storey, in the parts of the building that stand and those that came down
 	float volumes[NB_MAX_STOREYS];
-	b3Vec3 middles[NB_MAX_STOREYS];
 	for ( int s = 0; s < destructible->storeyCount; ++s )
 	{
 		volumes[s] = 0.0f;
-		middles[s] = b3Vec3_zero;
 	}
 
 	for ( int a = destructible->headActor; a != NB_NULL_INDEX; a = world->actors.data[a].nextActor )
 	{
 		const nbActor* part = world->actors.data + a;
-		for ( int c = part->isStatic ? part->headChunk : NB_NULL_INDEX; c != NB_NULL_INDEX; c = world->chunks.data[c].nextChunk )
+		bool building = part->isStatic || part->isBuildingPart;
+		for ( int c = building ? part->headChunk : NB_NULL_INDEX; c != NB_NULL_INDEX; c = world->chunks.data[c].nextChunk )
 		{
 			const nbShape* shape = world->chunks.data[c].shape;
 			int s = nbFindStorey( destructible, shape->centroid.y );
 			if ( s >= 0 )
 			{
 				volumes[s] += shape->volume;
-				middles[s] = b3MulAdd( middles[s], shape->volume, shape->centroid );
 			}
 		}
 	}
@@ -2769,24 +2812,34 @@ static int nbCheckStoreys( nbWorld* world, int actorIndex, nbOverload** overload
 	for ( int f = 0; f < failingCount; ++f )
 	{
 		const nbStorey* storey = destructible->storeys + failing[f];
-		bool walls = false, holds = false;
+		bool holds = false;
+		float walls = 0.0f;
 		for ( int k = 0; k < n; ++k )
 		{
-			walls = walls || ( heights[k] > storey->low && heights[k] < storey->high );
+			bool inside = heights[k] > storey->low && heights[k] < storey->high;
+			walls += inside ? world->chunks.data[chunks[k]].shape->volume : 0.0f;
 			holds = holds || heights[k] >= storey->high;
 		}
 
-		for ( int i = 0; i < freshCount && walls; ++i )
+		// Of a storey that gave way before, a few fragments left under a part that came down do not count
+		bool before = ( destructible->collapsedStoreys & ( 1u << failing[f] ) ) != 0;
+		if ( walls == 0.0f || ( before && walls < NB_STOREY_REMAINS * storey->volume ) )
+		{
+			continue;
+		}
+
+		for ( int i = 0; i < freshCount; ++i )
 		{
 			nbActor* part = world->actors.data + fresh[i];
 			if ( freshLows[i] > storey->low && freshHighs[i] > storey->high && part->volume >= 0.1f * storey->volume )
 			{
 				part->fromCollapse = true;
+				part->isBuildingPart = true;
 				holds = true;
 			}
 		}
 
-		if ( walls && holds )
+		if ( holds )
 		{
 			storeys[storeyCount++] = failing[f];
 		}
@@ -2797,10 +2850,10 @@ static int nbCheckStoreys( nbWorld* world, int actorIndex, nbOverload** overload
 		return 0;
 	}
 
-	// The other static parts of the building check their storeys in the next update
+	// The other parts of the building check their storeys in the next update
 	for ( int a = destructible->headActor; a != NB_NULL_INDEX; a = world->actors.data[a].nextActor )
 	{
-		if ( a != actorIndex && world->actors.data[a].isStatic )
+		if ( a != actorIndex && ( world->actors.data[a].isStatic || world->actors.data[a].isBuildingPart ) )
 		{
 			nbMarkSupport( world, a );
 		}
@@ -2847,14 +2900,18 @@ static int nbCheckStoreys( nbWorld* world, int actorIndex, nbOverload** overload
 		}
 	}
 
-	// What comes down over a storey tilts toward the side it lost
-	nbTilt* tilts = nbArena_AllocArray( &world->arena, nbTilt, n );
-	int tiltCount = 0;
+	// What comes down over a storey turns toward the side it lost, away from the middle of what was left of the storey
+	b3Vec3 spins[NB_MAX_STOREYS + 1];
+	for ( int t = 0; t <= storeyCount; ++t )
+	{
+		spins[t] = b3Vec3_zero;
+	}
+
 	for ( int t = 0; t < storeyCount; ++t )
 	{
-		int s = storeys[t];
-		float mass = 0.0f;
-		b3Vec3 moment = b3Vec3_zero;
+		const nbStorey* storey = destructible->storeys + storeys[t];
+		float mass = 0.0f, left = 0.0f;
+		b3Vec3 moment = b3Vec3_zero, middle = b3Vec3_zero;
 		b3AABB box = { { FLT_MAX, FLT_MAX, FLT_MAX }, { -FLT_MAX, -FLT_MAX, -FLT_MAX } };
 		for ( int k = 0; k < n; ++k )
 		{
@@ -2866,14 +2923,19 @@ static int nbCheckStoreys( nbWorld* world, int actorIndex, nbOverload** overload
 				moment = b3MulAdd( moment, chunkMass, chunk->shape->centroid );
 				box = b3AABB_Union( box, chunk->shape->bounds );
 			}
+			else if ( stretches[k] < 0 && heights[k] > storey->low && heights[k] < storey->high )
+			{
+				left += chunk->shape->volume;
+				middle = b3MulAdd( middle, chunk->shape->volume, chunk->shape->centroid );
+			}
 		}
 
-		if ( mass <= 0.0f || volumes[s] <= 0.0f )
+		if ( mass <= 0.0f || left <= 0.0f )
 		{
 			continue;
 		}
 
-		b3Vec3 middle = b3MulSV( 1.0f / volumes[s], middles[s] );
+		middle = b3MulSV( 1.0f / left, middle );
 		b3Vec3 offset = b3Sub( b3MulSV( 1.0f / mass, moment ), middle );
 		offset.y = 0.0f;
 		float distance = b3Length( offset );
@@ -2886,19 +2948,28 @@ static int nbCheckStoreys( nbWorld* world, int actorIndex, nbOverload** overload
 		b3Vec3 size = b3Sub( box.upperBound, box.lowerBound );
 		float reach = 0.5f * ( b3AbsFloat( direction.x ) * size.x + b3AbsFloat( direction.z ) * size.z );
 		float speed = NB_TILT_SPEED * b3MinFloat( distance / b3MaxFloat( reach, 1.0e-3f ), 1.0f );
-		b3Vec3 spin = b3RotateVector( destructible->transform.q, b3MulSV( speed, b3Cross( b3Vec3_axisY, direction ) ) );
-		middle.y = destructible->storeys[s].high;
-		b3Pos pivot = b3TransformWorldPoint( destructible->transform, middle );
-		for ( int k = 0; k < n; ++k )
+		spins[t + 1] = b3RotateVector( transform.q, b3MulSV( speed, b3Cross( b3Vec3_axisY, direction ) ) );
+	}
+
+	// Every stretch that comes down stays a building, and so does what is left of a part that came down before
+	nbTilt* tilts = nbArena_AllocArray( &world->arena, nbTilt, n );
+	int tiltCount = 0;
+	for ( int k = 0; k < n; ++k )
+	{
+		if ( stretches[k] > 0 || ( stretches[k] == 0 && actor->isStatic == false ) )
 		{
-			if ( stretches[k] == t + 1 )
-			{
-				tilts[tiltCount++] = (nbTilt){ chunks[k], spin, pivot };
-			}
+			tilts[tiltCount++] = (nbTilt){ chunks[k], spins[stretches[k]] };
 		}
 	}
 
-	world->stats.collapsedStoreyCount += storeyCount;
+	// Each storey counts once, also when its remains fly out from under a part that came down before
+	nbDestructible* building = world->destructibles.data + actor->destructibleIndex;
+	for ( int t = 0; t < storeyCount; ++t )
+	{
+		uint32_t bit = 1u << storeys[t];
+		world->stats.collapsedStoreyCount += ( building->collapsedStoreys & bit ) == 0 ? 1 : 0;
+		building->collapsedStoreys |= bit;
+	}
 	*overloadsOut = overloads;
 	*tiltsOut = tilts;
 	*tiltCountOut = tiltCount;
@@ -3095,7 +3166,8 @@ static void nbCheckSupports( nbWorld* world )
 	{
 		int actorIndex = queue.data[q];
 		nbActor* actor = world->actors.data + actorIndex;
-		if ( actor->isFree || actor->isStatic == false || actor->supportDirty == false || actor->chunkCount == 0 )
+		if ( actor->isFree || ( actor->isStatic == false && actor->isBuildingPart == false ) || actor->supportDirty == false ||
+			 actor->chunkCount == 0 )
 		{
 			actor->supportDirty = false;
 			continue;
@@ -3115,12 +3187,14 @@ static void nbCheckSupports( nbWorld* world )
 		nbTilt* tilts = NULL;
 		int tiltCount = 0;
 		bool collapsed = false;
-		int overloadCount = nbCheckStoreys( world, actorIndex, &overloads, &tilts, &tiltCount );
-		if ( overloadCount > 0 )
+		int overloadCount = nbCheckStoreys( world, actorIndex, up, &overloads, &tilts, &tiltCount );
+		bool storey = overloadCount > 0;
+		if ( storey )
 		{
 			collapsed = true;
 		}
-		else if ( world->def.supportScale > 0.0f && world->destructibles.data[actor->destructibleIndex].storeyCount == 0 )
+		else if ( world->def.supportScale > 0.0f && actor->isStatic &&
+				  world->destructibles.data[actor->destructibleIndex].storeyCount == 0 )
 		{
 			overloadCount = nbCheckSupport( world, actorIndex, gravity, up, &overloads, &collapsed );
 			for ( int k = 0; k < overloadCount; ++k )
@@ -3134,10 +3208,16 @@ static void nbCheckSupports( nbWorld* world )
 			continue;
 		}
 
+		// A part that came down and froze comes back to life to give way
+		if ( actor->isRubble )
+		{
+			nbThawActor( world, actorIndex );
+		}
+
 		// A collapse throws chunks out whole through the side of the wall they are free on. The side needs the bonds, so
 		// it is found before any bond breaks. Where no side is free the chunk leaves away from the middle of the
 		// structure.
-		b3WorldTransform transform = world->destructibles.data[actor->destructibleIndex].transform;
+		b3WorldTransform transform = nbActor_GetTransform( world, actor );
 		b3Vec3 localUp = b3InvRotateVector( transform.q, up );
 		int* ejects = nbArena_AllocArray( &world->arena, int, overloadCount );
 		b3Vec3* ejectAxes = nbArena_AllocArray( &world->arena, b3Vec3, overloadCount );
@@ -3199,6 +3279,23 @@ static void nbCheckSupports( nbWorld* world )
 			{
 				nbDestroyBond( world, overloads[k].bondIndex );
 			}
+		}
+
+		// The remains of a storey fly out through the rubble lying around it, all of it comes back to life. Otherwise they
+		// would get stuck against the frozen pieces of an earlier collapse, and what stands on them would stay up. The
+		// budget leaves the debris there alone for a moment, or it would freeze where the storey held it.
+		if ( storey && ejectCount > 0 )
+		{
+			b3AABB zone = b3Shape_GetAABB( world->chunks.data[ejects[0]].shapeId );
+			for ( int e = 1; e < ejectCount; ++e )
+			{
+				zone = b3AABB_Union( zone, b3Shape_GetAABB( world->chunks.data[ejects[e]].shapeId ) );
+			}
+			b3Vec3 clearance = b3MulAdd( (b3Vec3){ NB_CLEARANCE, NB_CLEARANCE, NB_CLEARANCE }, -NB_CLEARANCE, b3Abs( up ) );
+			zone.lowerBound = b3Sub( zone.lowerBound, clearance );
+			zone.upperBound = b3Add( zone.upperBound, clearance );
+			nbThawContext filter = { .skipActor = NB_NULL_INDEX, .holder = NB_NULL_INDEX, .collapse = true };
+			nbThawRubbleInBoxes( world, &zone, 1, b3Vec3_zero, 0.0f, &filter );
 		}
 
 		// What a collapse drops comes from it
@@ -3288,15 +3385,17 @@ static void nbCheckSupports( nbWorld* world )
 			b3Body_SetLinearVelocity( ejected->bodyId, setVelocities[s] );
 		}
 
-		// What comes down over a storey turns about the walls that were left, toward the side it lost
+		// What comes down over a storey stays a building and starts to turn toward the side it lost
 		for ( int t = 0; t < tiltCount; ++t )
 		{
-			const nbActor* part = world->actors.data + world->chunks.data[tilts[t].chunkIndex].actorIndex;
+			nbActor* part = world->actors.data + world->chunks.data[tilts[t].chunkIndex].actorIndex;
 			if ( part->isStatic == false )
 			{
-				b3Vec3 arm = b3SubPos( b3Body_GetWorldCenter( part->bodyId ), tilts[t].pivot );
-				b3Body_SetLinearVelocity( part->bodyId, b3Cross( tilts[t].angularVelocity, arm ) );
-				b3Body_SetAngularVelocity( part->bodyId, tilts[t].angularVelocity );
+				part->isBuildingPart = true;
+				if ( b3LengthSquared( tilts[t].angularVelocity ) > 0.0f )
+				{
+					b3Body_SetAngularVelocity( part->bodyId, tilts[t].angularVelocity );
+				}
 			}
 		}
 
@@ -3344,7 +3443,7 @@ void nbWorld_SetStoreySupport( nbWorldId worldId, float fraction )
 	for ( int i = 0; i < world->actors.count; ++i )
 	{
 		const nbActor* actor = world->actors.data + i;
-		if ( actor->isFree == false && actor->isStatic && actor->chunkCount > 0 )
+		if ( actor->isFree == false && ( actor->isStatic || actor->isBuildingPart ) && actor->chunkCount > 0 )
 		{
 			nbMarkSupport( world, i );
 		}
@@ -3943,6 +4042,7 @@ static void nbReleaseHeldRubble( nbWorld* world, b3Vec3 up )
 				.skipActor = actor->holdSource,
 				.skipGeneration = actor->holdSourceGeneration,
 				.holder = actorIndex,
+				.grace = actor->isBuildingPart || actor->budgetAge < NB_FREEZE_GRACE,
 			};
 			nbThawRubbleInBoxes( world, &actor->holdBounds, 1, up, b3Dot( up, b3ToVec3( center ) ), &filter );
 		}
@@ -4027,6 +4127,37 @@ static bool nbTouchPoint( const b3ContactData* contact, bool isA, b3Vec3 center,
 		}
 	}
 	return found;
+}
+
+// A larger moving body that presses into a piece deeper than NB_SQUEEZE_DEPTH, a null id if there is none
+static b3BodyId nbFindSqueezer( const nbWorld* world, const nbActor* actor, const b3ContactData* contacts, int contactCount )
+{
+	for ( int c = 0; c < contactCount; ++c )
+	{
+		bool isA = B3_ID_EQUALS( b3Shape_GetBody( contacts[c].shapeIdA ), actor->bodyId );
+		b3BodyId otherBodyId = b3Shape_GetBody( isA ? contacts[c].shapeIdB : contacts[c].shapeIdA );
+		float depth = 0.0f;
+		for ( int m = 0; m < contacts[c].manifoldCount; ++m )
+		{
+			const b3Manifold* manifold = contacts[c].manifolds + m;
+			for ( int p = 0; p < manifold->pointCount; ++p )
+			{
+				depth = b3MaxFloat( depth, -manifold->points[p].separation );
+			}
+		}
+
+		if ( depth <= NB_SQUEEZE_DEPTH || b3Body_GetType( otherBodyId ) != b3_dynamicBody )
+		{
+			continue;
+		}
+
+		int other = nbFindActorFromBody( world, otherBodyId );
+		if ( other == NB_NULL_INDEX || world->actors.data[other].volume > actor->volume )
+		{
+			return otherBodyId;
+		}
+	}
+	return b3_nullBodyId;
 }
 
 // Freeze a piece with the chunks it lies on
@@ -4368,8 +4499,10 @@ static void nbSettleDebris( nbWorld* world, b3Vec3 up, float timeStep )
 
 	// Carrying contacts between quiet pieces, and the pieces something fixed carries
 	int* queue = nbArena_AllocArray( &world->arena, int, quietCount );
+	bool* held = nbArena_AllocArray( &world->arena, bool, quietCount );
 	bool* stable = nbArena_AllocArray( &world->arena, bool, quietCount );
 	bool* blocked = nbArena_AllocArray( &world->arena, bool, quietCount );
+	b3BodyId* squeezers = nbArena_AllocArray( &world->arena, b3BodyId, quietCount );
 	int* edgeCounts = nbArena_AllocArray( &world->arena, int, quietCount + 1 );
 	for ( int slot = 0; slot < quietCount; ++slot )
 	{
@@ -4379,7 +4512,6 @@ static void nbSettleDebris( nbWorld* world, b3Vec3 up, float timeStep )
 	edgeCounts[0] = 0;
 	nbIntArray* edges = &world->scratchList;
 	edges->count = 0;
-	int queueCount = 0;
 
 	// The chunks each quiet piece lies on, one per carrying body, remembered by the pieces that freeze
 	nbCarrier* carriers = nbArena_AllocArray( &world->arena, nbCarrier, quietCount * NB_MAX_CARRIERS );
@@ -4395,7 +4527,9 @@ static void nbSettleDebris( nbWorld* world, b3Vec3 up, float timeStep )
 		int actorIndex = quiet[slot];
 		const nbActor* actor = world->actors.data + actorIndex;
 		carrierCounts[slot] = 0;
+		held[slot] = false;
 		blocked[slot] = false;
+		squeezers[slot] = b3_nullBodyId;
 		int capacity = b3Body_GetContactCapacity( actor->bodyId );
 		if ( capacity == 0 )
 		{
@@ -4425,6 +4559,8 @@ static void nbSettleDebris( nbWorld* world, b3Vec3 up, float timeStep )
 			unsupportedCount = firstUnsupported;
 		}
 
+		squeezers[slot] = nbFindSqueezer( world, actor, contacts, contactCount );
+
 		// An edge from each quiet piece that carries this one
 		for ( int c = 0; c < contactCount; ++c )
 		{
@@ -4446,12 +4582,7 @@ static void nbSettleDebris( nbWorld* world, b3Vec3 up, float timeStep )
 		}
 
 		// A large piece must be held by what holds without it, balanced over it or wedged in
-		bool held = actor->volume >= NB_CHECKED_VOLUME ? support.braced : support.grounded;
-		if ( held && blocked[slot] == false )
-		{
-			stable[slot] = true;
-			queue[queueCount++] = slot;
-		}
+		held[slot] = actor->volume >= NB_CHECKED_VOLUME ? support.braced : support.grounded;
 	}
 
 	// The pieces each quiet piece carries, grouped by carrier
@@ -4472,18 +4603,52 @@ static void nbSettleDebris( nbWorld* world, b3Vec3 up, float timeStep )
 	}
 	edges->count = 0;
 
-	for ( int head = 0; head < queueCount; ++head )
+	// A piece that a larger moving body squeezes freezes only together with that body, see NB_SQUEEZE_DEPTH. Otherwise the
+	// search runs again without it.
+	int queueCount = 0;
+	for ( bool again = true; again; )
 	{
-		int slot = queue[head];
-		for ( int e = edgeCounts[slot]; e < edgeCounts[slot + 1]; ++e )
+		queueCount = 0;
+		for ( int slot = 0; slot < quietCount; ++slot )
 		{
-			int above = carried[e];
-			if ( stable[above] == false && blocked[above] == false &&
-				 ( world->actors.data[quiet[above]].volume < NB_CHECKED_VOLUME ||
-				   nbCarriesWithout( world, carriers + slot * NB_MAX_CARRIERS, carrierCounts[slot], quiet[above] ) ) )
+			stable[slot] = held[slot] && blocked[slot] == false;
+			if ( stable[slot] )
 			{
-				stable[above] = true;
-				queue[queueCount++] = above;
+				queue[queueCount++] = slot;
+			}
+		}
+
+		for ( int head = 0; head < queueCount; ++head )
+		{
+			int slot = queue[head];
+			for ( int e = edgeCounts[slot]; e < edgeCounts[slot + 1]; ++e )
+			{
+				int above = carried[e];
+				if ( stable[above] == false && blocked[above] == false &&
+					 ( world->actors.data[quiet[above]].volume < NB_CHECKED_VOLUME ||
+					   nbCarriesWithout( world, carriers + slot * NB_MAX_CARRIERS, carrierCounts[slot], quiet[above] ) ) )
+				{
+					stable[above] = true;
+					queue[queueCount++] = above;
+				}
+			}
+		}
+
+		again = false;
+		for ( int k = 0; k < queueCount; ++k )
+		{
+			int slot = queue[k];
+			if ( B3_IS_NULL( squeezers[slot] ) )
+			{
+				continue;
+			}
+
+			int other = nbFindActorFromBody( world, squeezers[slot] );
+			const nbActor* squeezer = other != NB_NULL_INDEX ? world->actors.data + other : NULL;
+			if ( squeezer == NULL || squeezer->settleStamp != stamp || stable[squeezer->settleSlot] == false )
+			{
+				blocked[slot] = true;
+				again = true;
 			}
 		}
 	}
@@ -4522,8 +4687,10 @@ static int nbCompareDebris( const void* a, const void* b )
 }
 
 // Freeze the slowest debris over budget into rubble. Nothing is removed. Once over budget a tenth more freezes, so the
-// ranking only runs every so often. Each piece remembers the chunks it lies on, none for a piece in flight, and a large
-// piece only freezes where it would in nbSettleDebris.
+// ranking only runs every so often. What lies on something fixed freezes first: the ground, a structure or rubble.
+// Debris on moving pieces would hang in the air once they move on, it only freezes when the rest is not enough, and so
+// does debris in flight. Each piece remembers the chunks it lies on, none for a piece in flight, and a large piece only
+// freezes where it would in nbSettleDebris. A squeezed piece never freezes here, see NB_SQUEEZE_DEPTH.
 static void nbEnforceDebrisBudget( nbWorld* world, b3Vec3 up )
 {
 	int budget = world->def.maxDebrisBodies;
@@ -4540,7 +4707,7 @@ static void nbEnforceDebrisBudget( nbWorld* world, b3Vec3 up )
 	{
 		int actorIndex = world->debris.data[i];
 		const nbActor* actor = world->actors.data + actorIndex;
-		if ( actor->isRubble == false && actor->age >= NB_FREEZE_GRACE )
+		if ( actor->isRubble == false && actor->budgetAge >= NB_FREEZE_GRACE )
 		{
 			ranks[rankCount++] = (nbDebrisRank){ b3Length( b3Body_GetLinearVelocity( actor->bodyId ) ), actorIndex };
 		}
@@ -4553,37 +4720,53 @@ static void nbEnforceDebrisBudget( nbWorld* world, b3Vec3 up )
 	int unsupportedCount = 0;
 	int excess = count - budget + budget / 10;
 	int frozen = 0;
-	for ( int i = 0; i < rankCount && frozen < excess; ++i )
+	for ( int pass = 0; pass < 2 && frozen < excess; ++pass )
 	{
-		int actorIndex = ranks[i].actorIndex;
-		const nbActor* actor = world->actors.data + actorIndex;
-		nbSupport support = { .grounded = true, .balanced = true, .braced = true };
-		int capacity = hasGravity ? b3Body_GetContactCapacity( actor->bodyId ) : 0;
-		if ( capacity > 0 )
+		for ( int i = 0; i < rankCount && frozen < excess; ++i )
 		{
-			b3ContactData* contacts = nbArena_AllocArray( &world->arena, b3ContactData, capacity );
-			int contactCount = b3Body_GetContactData( actor->bodyId, contacts, capacity );
-			int firstUnsupported = unsupportedCount;
-			nbFindSupport( world, actorIndex, contacts, contactCount, up, &fan, &support, unsupported, &unsupportedCount,
-						   NB_MAX_RELEASES );
-			if ( actor->volume < NB_CHECKED_VOLUME || support.balanced )
+			int actorIndex = ranks[i].actorIndex;
+			const nbActor* actor = world->actors.data + actorIndex;
+			if ( actor->isRubble )
 			{
-				unsupportedCount = firstUnsupported;
+				continue;
 			}
-		}
-		else if ( hasGravity )
-		{
-			// Nothing touches it, a large piece in flight would hang in the air
-			support.balanced = actor->volume < NB_CHECKED_VOLUME;
-		}
 
-		if ( actor->volume >= NB_CHECKED_VOLUME && support.balanced == false )
-		{
-			continue;
-		}
+			nbSupport support = { .grounded = true, .balanced = true, .braced = true };
+			int capacity = hasGravity ? b3Body_GetContactCapacity( actor->bodyId ) : 0;
+			if ( capacity > 0 )
+			{
+				b3ContactData* contacts = nbArena_AllocArray( &world->arena, b3ContactData, capacity );
+				int contactCount = b3Body_GetContactData( actor->bodyId, contacts, capacity );
+				if ( B3_IS_NULL( nbFindSqueezer( world, actor, contacts, contactCount ) ) == false )
+				{
+					continue;
+				}
 
-		nbFreezeOnCarriers( world, actorIndex, support.carriers, support.carrierCount );
-		frozen += 1;
+				int firstUnsupported = unsupportedCount;
+				nbFindSupport( world, actorIndex, contacts, contactCount, up, &fan, &support, unsupported, &unsupportedCount,
+							   NB_MAX_RELEASES );
+				if ( pass > 0 || actor->volume < NB_CHECKED_VOLUME || support.balanced )
+				{
+					unsupportedCount = firstUnsupported;
+				}
+			}
+			else if ( hasGravity )
+			{
+				// Nothing touches it, a large piece in flight would hang in the air. So would a slow one, which just lost
+				// what it lay on or came back to life: what breaks off gets a new body, rubble has no contacts with what
+				// is fixed, and Box3D finds the new ones in the next step.
+				support.grounded = false;
+				support.balanced = actor->volume < NB_CHECKED_VOLUME && ranks[i].speed >= NB_FLIGHT_SPEED;
+			}
+
+			if ( support.balanced == false || ( pass == 0 && support.grounded == false ) )
+			{
+				continue;
+			}
+
+			nbFreezeOnCarriers( world, actorIndex, support.carriers, support.carrierCount );
+			frozen += 1;
+		}
 	}
 
 	for ( int i = 0; i < unsupportedCount; ++i )
@@ -4689,7 +4872,9 @@ void nbWorld_Update( nbWorldId worldId, float timeStep )
 	// the slowest freezes.
 	for ( int i = 0; i < world->debris.count; ++i )
 	{
-		world->actors.data[world->debris.data[i]].age += timeStep;
+		nbActor* actor = world->actors.data + world->debris.data[i];
+		actor->age += timeStep;
+		actor->budgetAge += timeStep;
 	}
 	if ( hasGravity )
 	{

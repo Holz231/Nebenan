@@ -1786,6 +1786,42 @@ static int BlastStorey( TestScene* scene, int storey, int rows, float limit, boo
 	return count;
 }
 
+// The largest loose piece, NULL without debris
+static const nbActor* LargestActor( TestScene* scene )
+{
+	nbWorld* world = nbGetWorldFromId( scene->world );
+	const nbActor* largest = NULL;
+	for ( int i = 0; i < world->debris.count; ++i )
+	{
+		const nbActor* actor = world->actors.data + world->debris.data[i];
+		largest = largest == NULL || actor->volume > largest->volume ? actor : largest;
+	}
+	return largest;
+}
+
+// Grenades around a storey of the largest loose piece, in its own frame, until a storey gives way. The second round falls
+// between the grenades of the first.
+static int BlastPieceStorey( TestScene* scene, int storey )
+{
+	nbWorld* world = nbGetWorldFromId( scene->world );
+	int collapsed = nbWorld_GetStats( scene->world ).collapsedStoreyCount;
+	int count = 0;
+	for ( int k = 0; k < 64; ++k )
+	{
+		b3WorldTransform transform = nbActor_GetTransform( world, LargestActor( scene ) );
+		float d = 31.0f * (float)( k % 32 ) / 32.0f + ( k < 32 ? 0.0f : 0.5f );
+		b3Pos point = b3TransformWorldPoint( transform, AroundHouse( d, 3.25f * (float)storey + 1.2f ) );
+		Grenade( scene, (b3Vec3){ (float)point.x, (float)point.y, (float)point.z } );
+		Step( scene, 5 );
+		count += 1;
+		if ( nbWorld_GetStats( scene->world ).collapsedStoreyCount > collapsed )
+		{
+			break;
+		}
+	}
+	return count;
+}
+
 // A building gives way storey by storey: when a storey lost more than half of its walls, on any floor, its last walls
 // fly out and everything above comes down in one piece. Nothing else of a building collapses, not the wall above a hole,
 // not a floor, not a column under load. Only what is cut off from the ground falls.
@@ -1891,6 +1927,16 @@ static int StoreyTest( void )
 		ENSURE( low < 1.0f );
 		ENSURE( high < 9.5f );
 		ENSURE( HighestStanding( &scene ) < 2.0f );
+
+		// What came down is still a building. Grenades around its second story bring the story above down onto the rest,
+		// the upper story and two floors of 51 cubic meters.
+		float top = high;
+		BlastPieceStorey( &scene, 1 );
+		Step( &scene, 120 );
+		ENSURE( nbWorld_GetStats( scene.world ).collapsedStoreyCount == 2 );
+		ENSURE( LargestPiece( &scene, &low, &high ) > 40.0f );
+		ENSURE( high < top - 0.3f );
+		ENSURE( FloatingVolume( &scene ) == 0.0f );
 		DestroyScene( &scene );
 	}
 
@@ -1911,28 +1957,33 @@ static int StoreyTest( void )
 	}
 
 	// Grenades around the second story bring the story above down onto the ground floor, which stands. With the corners of
-	// the second story left whole as well, a rigid shell the old load check never broke. Grenades around the ground
-	// floor then bring that down too, with what lies on it.
+	// the second story left whole as well, a rigid shell the old load check never broke. What came down freezes there.
+	// Grenades around the ground floor then bring that down too, with what lies on it, and nothing stays up in the air.
 	for ( int corners = 0; corners < 2; ++corners )
 	{
 		TestScene scene = CreateScene();
 		nbWorld_SetFragmentScale( scene.world, 2.0f );
 		CreateCelledHouse( &scene, 3, 3 );
 		BlastStorey( &scene, 1, 1 + corners, FLT_MAX, corners == 1 );
-		Step( &scene, 120 );
+		Step( &scene, 150 );
 		ENSURE( nbWorld_GetStats( scene.world ).collapsedStoreyCount == 1 );
 		float standing = HighestStanding( &scene );
 		ENSURE( 2.9f < standing && standing < 3.6f );
 
 		// The upper story and two floors are 51 cubic meters
+		const nbActor* upper = LargestActor( &scene );
+		ENSURE( upper != NULL && upper->isRubble && upper->volume > 40.0f );
 		float low = 0.0f, high = 0.0f;
-		ENSURE( LargestPiece( &scene, &low, &high ) > 40.0f );
+		LargestPiece( &scene, &low, &high );
 		ENSURE( low > 2.5f );
 
 		BlastStorey( &scene, 0, 1, FLT_MAX, false );
 		Step( &scene, 120 );
 		ENSURE( nbWorld_GetStats( scene.world ).collapsedStoreyCount == 2 );
 		ENSURE( HighestStanding( &scene ) < 1.0f );
+		ENSURE( LargestPiece( &scene, &low, &high ) > 40.0f );
+		ENSURE( low < 2.5f );
+		ENSURE( FloatingVolume( &scene ) == 0.0f );
 		DestroyScene( &scene );
 	}
 
