@@ -339,7 +339,7 @@ int nbCreateBond( nbWorld* world, int chunkA, int chunkB, const nbBondGeometry* 
 	bond->health = health;
 	bond->stamp = 0;
 	bond->cohesive = false;
-	bond->fault = false;
+	bond->sibling = false;
 
 	for ( int side = 0; side < 2; ++side )
 	{
@@ -1927,7 +1927,8 @@ static int nbFindBlock( int* blocks, int i )
 // the bonds. Bonds a chunk rests on work as hinges: the load goes straight down through them and only the chunk's own
 // weight bends them, so a roof does not twist a whole wall. A bond fails when the force through it over what its area
 // carries, plus the bending over what its shape carries, exceeds one. Returns the overloaded bonds in arena memory.
-static int nbCheckSupport( nbWorld* world, int actorIndex, float gravity, b3Vec3 up, nbOverload** overloadsOut )
+static int nbCheckSupport( nbWorld* world, int actorIndex, float gravity, b3Vec3 up, nbOverload** overloadsOut,
+						   bool* collapsedOut )
 {
 	const nbActor* actor = world->actors.data + actorIndex;
 	const nbDestructible* destructible = world->destructibles.data + actor->destructibleIndex;
@@ -2386,20 +2387,66 @@ static int nbCheckSupport( nbWorld* world, int actorIndex, float gravity, b3Vec3
 		}
 	}
 
-	// A collapsing block comes apart. The groups of cells it rests with and everything below it that it could come down
-	// on are thrown out, stumps it touches through steep faces and those under its windows too, and every chunk of its
-	// own that one of its cells rests on, however high that reaches. Otherwise it would only sink a little and get wedged
-	// between them, or stay on a fragment that still hangs on a wall at the corner. The other groups break from each
-	// other and from what they touch and fall, far enough to break further where they land. Blocks below stay, like the
-	// walls it meets at the corners.
-	int* groups = nbArena_AllocArray( &world->arena, int, n );
-	for ( int c = 0; c < collapseCount; ++c )
+	// A collapsing block comes down in one piece with everything that hangs on it, like the floors and upper stories of a
+	// house: all that is farther from the anchors and held through it. That piece lets go of everything closer to the
+	// anchors. A block that stood on something breaks along a crack under the lowest floor that hangs on it, a sound
+	// part of another piece too large to throw, or above its foot without one. The cells below the crack fly out of it,
+	// with the other parts of their cells, and so does what it could come down on: the stumps under it and the small
+	// chunks of their own it rests or leans on, however high they reach. Otherwise it would only sink a little and get
+	// wedged between them. Blocks nearer the anchors go first and take the blocks that hang on them along.
+	int* cells = nbArena_AllocArray( &world->arena, int, n );
+	float* cellVolumes = nbArena_AllocArray( &world->arena, float, n );
+	float* cellHeights = nbArena_AllocArray( &world->arena, float, n );
+	int* falls = nbArena_AllocArray( &world->arena, int, nodeCount );
+	int* queue = nbArena_AllocArray( &world->arena, int, nodeCount );
+	for ( int k = 0; k < nodeCount; ++k )
+	{
+		falls[k] = -1;
+	}
+
+	for ( int c = collapseCount - 1; c >= 0; --c )
 	{
 		int i = collapses[c].block;
+		if ( falls[i] >= 0 )
+		{
+			continue;
+		}
+
+		// What falls with it
+		int queueCount = 0;
+		falls[i] = c;
+		queue[queueCount++] = i;
+		for ( int q = 0; q < queueCount; ++q )
+		{
+			for ( int m = firstMember[queue[q]]; m != NB_NULL_INDEX; m = nextMember[m] )
+			{
+				const nbChunk* member = world->chunks.data + chunks[m];
+				for ( int key = member->headBondKey; key != NB_NULL_INDEX; )
+				{
+					const nbBond* bond = world->bonds.data + ( key >> 1 );
+					int side = key & 1;
+					key = bond->nextKey[side];
+
+					const nbChunk* other = world->chunks.data + bond->chunk[side ^ 1];
+					int j = other->searchStamp == stamp ? nodes[other->scratch] : i;
+					if ( falls[j] < 0 && rank[j] > rank[i] )
+					{
+						falls[j] = c;
+						queue[queueCount++] = j;
+					}
+				}
+			}
+		}
+
+		// The parts of a cell go together, see nbBond::sibling, and the lowest floor sets the crack
+		bool vertical = collapses[c].vertical;
 		float utilization = collapses[c].utilization;
+		float crack = -FLT_MAX;
 		for ( int m = firstMember[i]; m != NB_NULL_INDEX; m = nextMember[m] )
 		{
-			groups[m] = m;
+			cells[m] = m;
+			cellVolumes[m] = 0.0f;
+			cellHeights[m] = 0.0f;
 		}
 
 		for ( int m = firstMember[i]; m != NB_NULL_INDEX; m = nextMember[m] )
@@ -2412,24 +2459,63 @@ static int nbCheckSupport( nbWorld* world, int actorIndex, float gravity, b3Vec3
 				key = bond->nextKey[side];
 
 				const nbChunk* other = world->chunks.data + bond->chunk[side ^ 1];
-				if ( other->searchStamp == stamp && nodes[other->scratch] == i && bond->fault == false )
+				if ( other->searchStamp != stamp )
 				{
-					int a = nbFindBlock( groups, m );
-					int b = nbFindBlock( groups, other->scratch );
-					groups[a > b ? a : b] = a < b ? a : b;
+					continue;
+				}
+
+				int j = nodes[other->scratch];
+				if ( bond->sibling && j == i )
+				{
+					int a = nbFindBlock( cells, m );
+					int b = nbFindBlock( cells, other->scratch );
+					cells[a > b ? a : b] = a < b ? a : b;
+				}
+				else if ( vertical && j != i && falls[j] == c && bond->cohesive == false && other->depth == 0 &&
+						  volume[j] > 2.0f * member->shape->volume )
+				{
+					crack = crack == -FLT_MAX ? bottom[j] : b3MinFloat( crack, bottom[j] );
 				}
 			}
 		}
 
+		int memberCount = 0;
 		for ( int m = firstMember[i]; m != NB_NULL_INDEX; m = nextMember[m] )
 		{
-			rests[nbFindBlock( groups, m )] = rests[nbFindBlock( groups, m )] || rests[m];
+			const nbShape* shape = world->chunks.data[chunks[m]].shape;
+			int root = nbFindBlock( cells, m );
+			rests[root] = rests[root] || rests[m];
+			cellVolumes[root] += shape->volume;
+			cellHeights[root] += shape->volume * b3Dot( shape->centroid, localUp );
+			memberCount += 1;
 		}
 
-		for ( int m = firstMember[i]; m != NB_NULL_INDEX; m = nextMember[m] )
+		// Chunks of their own that hang on the block below the crack, damaged cells of the story below, stay out of the
+		// piece that comes down. It would land on them. They fly out like the cells there.
+		float cellVolume = volume[i] / (float)memberCount;
+		for ( int q = 1; q < queueCount; ++q )
+		{
+			int j = queue[q];
+			int k = firstMember[j];
+			const nbShape* shape = world->chunks.data[chunks[k]].shape;
+			if ( nextMember[k] != NB_NULL_INDEX || b3Dot( shape->centroid, localUp ) >= crack )
+			{
+				continue;
+			}
+
+			falls[j] = -2;
+			if ( thrown[k] == false && shape->volume <= 2.0f * cellVolume )
+			{
+				thrown[k] = true;
+				overloads[overloadCount++] = (nbOverload){ NB_NULL_INDEX, chunks[k], utilization, true };
+			}
+		}
+
+		for ( int m = firstMember[i]; m != NB_NULL_INDEX && vertical; m = nextMember[m] )
 		{
 			const nbChunk* member = world->chunks.data + chunks[m];
-			if ( collapses[c].vertical && rests[nbFindBlock( groups, m )] && thrown[m] == false )
+			int root = nbFindBlock( cells, m );
+			if ( ( rests[root] || cellHeights[root] < crack * cellVolumes[root] ) && thrown[m] == false )
 			{
 				thrown[m] = true;
 				overloads[overloadCount++] = (nbOverload){ NB_NULL_INDEX, chunks[m], utilization, true };
@@ -2437,22 +2523,15 @@ static int nbCheckSupport( nbWorld* world, int actorIndex, float gravity, b3Vec3
 
 			for ( int key = member->headBondKey; key != NB_NULL_INDEX; )
 			{
-				int bondIndex = key >> 1;
-				const nbBond* bond = world->bonds.data + bondIndex;
+				const nbBond* bond = world->bonds.data + ( key >> 1 );
 				int side = key & 1;
 				key = bond->nextKey[side];
 
 				const nbChunk* other = world->chunks.data + bond->chunk[side ^ 1];
-				if ( other->searchStamp != stamp || ( nodes[other->scratch] == i && bond->fault == false ) )
-				{
-					continue;
-				}
-				overloads[overloadCount++] = (nbOverload){ bondIndex, NB_NULL_INDEX, utilization, false };
-
 				int k = other->scratch;
-				b3Vec3 normal = side == 0 ? bond->normal : b3Neg( bond->normal );
-				if ( thrown[k] == false && nextMember[firstMember[nodes[k]]] == NB_NULL_INDEX &&
-					 b3Dot( normal, localUp ) < -0.1f && other->shape->volume <= 2.0f * member->shape->volume )
+				int j = other->searchStamp == stamp ? nodes[k] : i;
+				if ( j != i && rank[j] < rank[i] && thrown[k] == false && nextMember[firstMember[j]] == NB_NULL_INDEX &&
+					 other->shape->volume <= 2.0f * member->shape->volume )
 				{
 					thrown[k] = true;
 					overloads[overloadCount++] = (nbOverload){ NB_NULL_INDEX, chunks[k], utilization, true };
@@ -2460,7 +2539,29 @@ static int nbCheckSupport( nbWorld* world, int actorIndex, float gravity, b3Vec3
 			}
 		}
 
-		if ( collapses[c].vertical == false )
+		// What falls lets go of everything else
+		for ( int q = 0; q < queueCount; ++q )
+		{
+			for ( int m = falls[queue[q]] == c ? firstMember[queue[q]] : NB_NULL_INDEX; m != NB_NULL_INDEX; m = nextMember[m] )
+			{
+				const nbChunk* member = world->chunks.data + chunks[m];
+				for ( int key = member->headBondKey; key != NB_NULL_INDEX; )
+				{
+					int bondIndex = key >> 1;
+					const nbBond* bond = world->bonds.data + bondIndex;
+					int side = key & 1;
+					key = bond->nextKey[side];
+
+					const nbChunk* other = world->chunks.data + bond->chunk[side ^ 1];
+					if ( other->searchStamp == stamp && falls[nodes[other->scratch]] != c )
+					{
+						overloads[overloadCount++] = (nbOverload){ bondIndex, NB_NULL_INDEX, utilization, false };
+					}
+				}
+			}
+		}
+
+		if ( vertical == false )
 		{
 			continue;
 		}
@@ -2489,6 +2590,7 @@ static int nbCheckSupport( nbWorld* world, int actorIndex, float gravity, b3Vec3
 	}
 
 	*overloadsOut = overloads;
+	*collapsedOut = collapseCount > 0;
 	return overloadCount;
 }
 
@@ -2698,7 +2800,8 @@ static void nbCheckSupports( nbWorld* world )
 
 		nbBeginOperation( world );
 		nbOverload* overloads = NULL;
-		int overloadCount = nbCheckSupport( world, actorIndex, gravity, up, &overloads );
+		bool collapsed = false;
+		int overloadCount = nbCheckSupport( world, actorIndex, gravity, up, &overloads, &collapsed );
 		if ( overloadCount == 0 )
 		{
 			continue;
@@ -2776,23 +2879,78 @@ static void nbCheckSupports( nbWorld* world )
 		}
 
 		// What a collapse drops comes from it
-		bool collapse = false;
-		for ( int k = 0; k < overloadCount && collapse == false; ++k )
-		{
-			collapse = overloads[k].eject || ( overloads[k].bondIndex != NB_NULL_INDEX && overloads[k].crushChunk == NB_NULL_INDEX &&
-												 world->bonds.data[overloads[k].bondIndex].fault );
-		}
-		world->collapsing = collapse || ejectCount > 0;
+		world->collapsing = collapsed || ejectCount > 0;
 
+		// The parts of a cell leave as one body, see nbBond::sibling, along the mean of the free sides of the parts
+		world->searchStamp += 1;
+		uint32_t ejectStamp = world->searchStamp;
+		int* ejectSets = nbArena_AllocArray( &world->arena, int, ejectCount );
 		for ( int e = 0; e < ejectCount; ++e )
 		{
 			nbChunk* chunk = world->chunks.data + ejects[e];
-			while ( chunk->headBondKey != NB_NULL_INDEX )
+			chunk->searchStamp = ejectStamp;
+			chunk->scratch = e;
+			ejectSets[e] = NB_NULL_INDEX;
+		}
+
+		int* setChunks = nbArena_AllocArray( &world->arena, int, ejectCount );
+		int* setHeads = nbArena_AllocArray( &world->arena, int, ejectCount );
+		b3Vec3* setVelocities = nbArena_AllocArray( &world->arena, b3Vec3, ejectCount );
+		int setCount = 0;
+		for ( int e = 0; e < ejectCount; ++e )
+		{
+			if ( ejectSets[e] != NB_NULL_INDEX )
 			{
-				nbDestroyBond( world, chunk->headBondKey >> 1 );
+				continue;
 			}
-			chunk->flags &= ~nb_chunkAnchored;
-			nbDetachChunks( world, actorIndex, ejects + e, 1, transform, b3Vec3_zero, b3Vec3_zero, transform.p );
+
+			int count = 0;
+			ejectSets[e] = setCount;
+			setChunks[count++] = ejects[e];
+			b3Vec3 axis = b3Vec3_zero;
+			for ( int q = 0; q < count; ++q )
+			{
+				const nbChunk* chunk = world->chunks.data + setChunks[q];
+				axis = b3Add( axis, ejectAxes[chunk->scratch] );
+				for ( int key = chunk->headBondKey; key != NB_NULL_INDEX; )
+				{
+					const nbBond* bond = world->bonds.data + ( key >> 1 );
+					int side = key & 1;
+					key = bond->nextKey[side];
+
+					const nbChunk* other = world->chunks.data + bond->chunk[side ^ 1];
+					if ( bond->sibling && other->searchStamp == ejectStamp && ejectSets[other->scratch] == NB_NULL_INDEX )
+					{
+						ejectSets[other->scratch] = setCount;
+						setChunks[count++] = bond->chunk[side ^ 1];
+					}
+				}
+			}
+
+			for ( int q = 0; q < count; ++q )
+			{
+				nbChunk* chunk = world->chunks.data + setChunks[q];
+				for ( int key = chunk->headBondKey; key != NB_NULL_INDEX; )
+				{
+					int bondIndex = key >> 1;
+					const nbBond* bond = world->bonds.data + bondIndex;
+					int side = key & 1;
+					key = bond->nextKey[side];
+
+					const nbChunk* other = world->chunks.data + bond->chunk[side ^ 1];
+					if ( bond->sibling == false || other->searchStamp != ejectStamp || ejectSets[other->scratch] != setCount )
+					{
+						nbDestroyBond( world, bondIndex );
+					}
+				}
+				chunk->flags &= ~nb_chunkAnchored;
+			}
+
+			nbDetachChunks( world, actorIndex, setChunks, count, transform, b3Vec3_zero, b3Vec3_zero, transform.p );
+			axis = b3LengthSquared( axis ) > 1.0e-4f ? b3Normalize( axis ) : ejectAxes[e];
+			setHeads[setCount] = setChunks[0];
+			setVelocities[setCount] = b3MulSV( NB_COLLAPSE_PUSH, axis );
+			setCount += 1;
 		}
 
 		nbImpactResult result = { 0 };
@@ -2801,10 +2959,10 @@ static void nbCheckSupports( nbWorld* world )
 		nbStartAtRest( world, NB_NULL_INDEX );
 		world->collapsing = false;
 
-		for ( int e = 0; e < ejectCount; ++e )
+		for ( int s = 0; s < setCount; ++s )
 		{
-			const nbActor* ejected = world->actors.data + world->chunks.data[ejects[e]].actorIndex;
-			b3Body_SetLinearVelocity( ejected->bodyId, b3MulSV( NB_COLLAPSE_PUSH, ejectAxes[e] ) );
+			const nbActor* ejected = world->actors.data + world->chunks.data[setHeads[s]].actorIndex;
+			b3Body_SetLinearVelocity( ejected->bodyId, setVelocities[s] );
 		}
 
 		for ( int c = 0; c < crushCount; ++c )
@@ -3473,14 +3631,30 @@ static void nbCollectLandings( nbWorld* world )
 // after the hit, Box3D already resolved it.
 static void nbSplitInHalves( nbWorld* world, int actorIndex )
 {
+	nbBeginOperation( world );
 	const nbActor* actor = world->actors.data + actorIndex;
+
+	// The parts of a cell stay on the side of their common center, see nbBond::sibling
+	int count = actor->chunkCount;
+	int* cells = nbArena_AllocArray( &world->arena, int, count );
+	float* volumes = nbArena_AllocArray( &world->arena, float, count );
+	b3Vec3* centers = nbArena_AllocArray( &world->arena, b3Vec3, count );
+	world->searchStamp += 1;
+	uint32_t stamp = world->searchStamp;
+	int n = 0;
 	b3Vec3 low = { FLT_MAX, FLT_MAX, FLT_MAX };
 	b3Vec3 high = { -FLT_MAX, -FLT_MAX, -FLT_MAX };
 	for ( int c = actor->headChunk; c != NB_NULL_INDEX; c = world->chunks.data[c].nextChunk )
 	{
-		b3Vec3 centroid = world->chunks.data[c].shape->centroid;
-		low = b3Min( low, centroid );
-		high = b3Max( high, centroid );
+		nbChunk* chunk = world->chunks.data + c;
+		chunk->searchStamp = stamp;
+		chunk->scratch = n;
+		cells[n] = n;
+		volumes[n] = 0.0f;
+		centers[n] = b3Vec3_zero;
+		low = b3Min( low, chunk->shape->centroid );
+		high = b3Max( high, chunk->shape->centroid );
+		n += 1;
 	}
 
 	b3Vec3 span = b3Sub( high, low );
@@ -3490,12 +3664,39 @@ static void nbSplitInHalves( nbWorld* world, int actorIndex )
 		return;
 	}
 
-	nbBeginOperation( world );
+	for ( int c = actor->headChunk; c != NB_NULL_INDEX; c = world->chunks.data[c].nextChunk )
+	{
+		const nbChunk* chunk = world->chunks.data + c;
+		for ( int key = chunk->headBondKey; key != NB_NULL_INDEX; )
+		{
+			const nbBond* bond = world->bonds.data + ( key >> 1 );
+			int side = key & 1;
+			key = bond->nextKey[side];
+
+			const nbChunk* other = world->chunks.data + bond->chunk[side ^ 1];
+			if ( bond->sibling && other->searchStamp == stamp )
+			{
+				int a = nbFindBlock( cells, chunk->scratch );
+				int b = nbFindBlock( cells, other->scratch );
+				cells[a > b ? a : b] = a < b ? a : b;
+			}
+		}
+	}
+
+	for ( int c = actor->headChunk; c != NB_NULL_INDEX; c = world->chunks.data[c].nextChunk )
+	{
+		const nbShape* shape = world->chunks.data[c].shape;
+		int root = nbFindBlock( cells, world->chunks.data[c].scratch );
+		volumes[root] += shape->volume;
+		centers[root] = b3MulAdd( centers[root], shape->volume, shape->centroid );
+	}
+
 	float plane = 0.5f * b3Dot( axis, b3Add( low, high ) );
 	for ( int c = actor->headChunk; c != NB_NULL_INDEX; c = world->chunks.data[c].nextChunk )
 	{
 		const nbChunk* chunk = world->chunks.data + c;
-		if ( b3Dot( axis, chunk->shape->centroid ) > plane )
+		int root = nbFindBlock( cells, chunk->scratch );
+		if ( b3Dot( axis, centers[root] ) > plane * volumes[root] )
 		{
 			continue;
 		}
@@ -3506,7 +3707,9 @@ static void nbSplitInHalves( nbWorld* world, int actorIndex )
 			const nbBond* bond = world->bonds.data + bondIndex;
 			int side = key & 1;
 			key = bond->nextKey[side];
-			if ( b3Dot( axis, world->chunks.data[bond->chunk[side ^ 1]].shape->centroid ) > plane )
+
+			int otherRoot = nbFindBlock( cells, world->chunks.data[bond->chunk[side ^ 1]].scratch );
+			if ( b3Dot( axis, centers[otherRoot] ) > plane * volumes[otherRoot] )
 			{
 				nbDestroyBond( world, bondIndex );
 			}

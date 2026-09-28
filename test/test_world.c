@@ -355,7 +355,7 @@ static uint32_t RunDeterminismScenario( void )
 
 // Fracture and physics are bit for bit identical with MSVC, GCC and Clang on x64 and ARM. This is the result
 // with the pinned Box3D commit. Update it when the results change on purpose, never to make one platform pass.
-#define NB_EXPECTED_DETERMINISM_HASH 0xb072fd54u
+#define NB_EXPECTED_DETERMINISM_HASH 0xfbbc272au
 
 static int DeterminismTest( void )
 {
@@ -699,6 +699,73 @@ static int OpeningTest( void )
 		Step( &scene, 60 );
 		ENSURE( nbWorld_GetStats( scene.world ).dynamicBodyCount == 0 );
 
+		DestroyScene( &scene );
+	}
+	return 0;
+}
+
+// Cells run across the seam between two pieces of the same material and cell size, like around the corner of a house:
+// the parts of a cell on both sides are siblings, and the pieces hold together as one block. A piece of another material
+// keeps its seam.
+static int SeamTest( void )
+{
+	nbMaterial concrete = nbDefaultMaterial();
+	concrete.strength = 1.1e6f;
+
+	for ( int k = 0; k < 2; ++k )
+	{
+		TestScene scene = CreateScene();
+
+		// An L of two walls, the second stands at the end of the first. The seam is the plane z = 0.15.
+		nbPieceDef pieces[2];
+		pieces[0] = nbDefaultPieceDef();
+		pieces[0].halfExtents = (b3Vec3){ 2.0f, 1.5f, 0.15f };
+		pieces[0].transform.p = (b3Vec3){ 0.0f, 1.5f, 0.0f };
+		pieces[1] = nbDefaultPieceDef();
+		pieces[1].halfExtents = (b3Vec3){ 0.15f, 1.5f, 1.5f };
+		pieces[1].transform.p = (b3Vec3){ 1.85f, 1.5f, 1.65f };
+		pieces[1].material = k == 0 ? NULL : &concrete;
+
+		nbDestructibleDef def = nbDefaultDestructibleDef();
+		def.cellSize = 0.5f;
+		nbDestructibleId walls = nbCreateDestructible( scene.world, &def, pieces, 2 );
+		ENSURE_SMALL( TotalChunkVolume( walls ) - ( 4.0f * 3.0f * 0.3f + 0.3f * 3.0f * 3.0f ), 1.0e-3f );
+
+		nbWorld* world = nbGetWorldFromId( scene.world );
+		int siblingCount = 0;
+		int acrossCount = 0;
+		int cohesiveAcrossCount = 0;
+		for ( int b = 0; b < world->bonds.count; ++b )
+		{
+			const nbBond* bond = world->bonds.data + b;
+			if ( bond->chunk[0] == NB_NULL_INDEX )
+			{
+				continue;
+			}
+
+			float z0 = world->chunks.data[bond->chunk[0]].shape->centroid.z - 0.15f;
+			float z1 = world->chunks.data[bond->chunk[1]].shape->centroid.z - 0.15f;
+			bool across = z0 * z1 < 0.0f;
+			ENSURE( bond->sibling == false || across );
+			siblingCount += bond->sibling ? 1 : 0;
+			acrossCount += across ? 1 : 0;
+			cohesiveAcrossCount += across && bond->cohesive ? 1 : 0;
+		}
+
+		ENSURE( acrossCount > 0 );
+		if ( k == 0 )
+		{
+			ENSURE( siblingCount > 0 );
+			ENSURE( cohesiveAcrossCount == acrossCount );
+		}
+		else
+		{
+			ENSURE( siblingCount == 0 );
+			ENSURE( cohesiveAcrossCount == 0 );
+		}
+
+		Step( &scene, 30 );
+		ENSURE( nbWorld_GetStats( scene.world ).dynamicBodyCount == 0 );
 		DestroyScene( &scene );
 	}
 	return 0;
@@ -1557,8 +1624,8 @@ static float HighestChunk( nbDestructibleId destructible )
 	return highest;
 }
 
-// Highest chunk centroid of what does not move: the structures and the rubble
-static float HighestResting( TestScene* scene )
+// Highest chunk centroid of the structures that still stand
+static float HighestStanding( TestScene* scene )
 {
 	nbWorld* world = nbGetWorldFromId( scene->world );
 	float highest = 0.0f;
@@ -1566,13 +1633,39 @@ static float HighestResting( TestScene* scene )
 	{
 		const nbChunk* chunk = world->chunks.data + c;
 		const nbActor* actor = world->actors.data + chunk->actorIndex;
-		if ( chunk->shape != NULL && ( actor->isStatic || actor->isRubble ) )
+		if ( chunk->shape != NULL && actor->isStatic )
 		{
 			b3WorldTransform transform = nbActor_GetTransform( world, actor );
 			highest = b3MaxFloat( highest, (float)b3TransformWorldPoint( transform, chunk->shape->centroid ).y );
 		}
 	}
 	return highest;
+}
+
+// The volume of the largest loose piece, and how low and how high it reaches
+static float LargestPiece( TestScene* scene, float* low, float* high )
+{
+	nbWorld* world = nbGetWorldFromId( scene->world );
+	float largest = 0.0f;
+	for ( int i = 0; i < world->debris.count; ++i )
+	{
+		const nbActor* actor = world->actors.data + world->debris.data[i];
+		if ( actor->volume <= largest )
+		{
+			continue;
+		}
+
+		largest = actor->volume;
+		*low = FLT_MAX;
+		*high = -FLT_MAX;
+		for ( int c = actor->headChunk; c != NB_NULL_INDEX; c = world->chunks.data[c].nextChunk )
+		{
+			b3AABB box = b3Shape_GetAABB( world->chunks.data[c].shapeId );
+			*low = b3MinFloat( *low, box.lowerBound.y );
+			*high = b3MaxFloat( *high, box.upperBound.y );
+		}
+	}
+	return largest;
 }
 
 // A structure gives way where it cannot carry its weight: under too much pressure, and where an overhang bends its bonds
@@ -1793,11 +1886,11 @@ static int SupportTest( void )
 	}
 
 	// The town house as the demo builds it, with walls through its floors pre-fractured into cells, stands with room to
-	// spare. The cells do not give way at the corners of the windows.
+	// spare. Its walls carry as one block, the cells do not give way at the corners of the windows.
 	for ( uint32_t seed = 0; seed < 4; ++seed )
 	{
 		TestScene scene = CreateScene();
-		nbWorld_SetSupportScale( scene.world, 0.85f );
+		nbWorld_SetSupportScale( scene.world, 0.7f );
 		CreateCelledHouse( &scene, 3, seed );
 		Step( &scene, 30 );
 		nbStats stats = nbWorld_GetStats( scene.world );
@@ -1806,13 +1899,13 @@ static int SupportTest( void )
 		DestroyScene( &scene );
 	}
 
-	// Grenades all around its ground floor bring it down. A wall that loses its footing collapses: the stones it rests on
-	// fly out of the house, and so do stumps that reach up between them. The rest breaks along the cells and comes down,
-	// nothing stays up frozen on what is left of the ground floor.
+	// Grenades all around its ground floor bring it down. The walls break along a jagged crack under the first floor: in
+	// one update the cells below fly out of the house, and the stories above come down in one piece with their floors,
+	// onto the ground. No wall of the house stays standing.
 	{
 		TestScene scene = CreateScene();
 		nbWorld_SetFragmentScale( scene.world, 2.0f );
-		nbDestructibleId house = CreateCelledHouse( &scene, 3, 3 );
+		CreateCelledHouse( &scene, 3, 3 );
 		nbWorld* world = nbGetWorldFromId( scene.world );
 		nbImpactDef impact = { 0 };
 		impact.radius = 1.3f;
@@ -1836,25 +1929,32 @@ static int SupportTest( void )
 			explosion.impulsePerArea = 40.0f * impact.ejectSpeed;
 			b3World_Explode( scene.physicsWorld, &explosion );
 
-			// Stones a collapse throws out fly fast from the start, the fragments of the grenade came the step before
+			// What a collapse throws out flies fast from the start. Grenade fragments of the house do not come from one.
 			for ( int step = 0; step < 10; ++step )
 			{
 				Step( &scene, 1 );
-				for ( int i = 0; i < world->debris.count && step > 0; ++i )
+				int count = 0;
+				for ( int i = 0; i < world->debris.count; ++i )
 				{
 					const nbActor* actor = world->actors.data + world->debris.data[i];
 					b3Vec3 velocity = b3Body_GetLinearVelocity( actor->bodyId );
-					thrownCount += actor->fromCollapse && actor->age <= 0.02f &&
-										   velocity.x * velocity.x + velocity.z * velocity.z > 5.0f * 5.0f
-									   ? 1
-									   : 0;
+					count += actor->fromCollapse && actor->age <= 0.02f &&
+									 velocity.x * velocity.x + velocity.z * velocity.z > 5.0f * 5.0f
+								 ? 1
+								 : 0;
 				}
+				thrownCount = count > thrownCount ? count : thrownCount;
 			}
 		}
 		Step( &scene, 180 );
-		ENSURE( thrownCount >= 10 );
-		ENSURE( CenterOfChunks( house ).y < 1.0f );
-		ENSURE( HighestResting( &scene ) < 5.0f );
+		ENSURE( thrownCount >= 20 );
+
+		// The two upper stories and three floors are 87 cubic meters, the house was 9.75 m tall
+		float low = 0.0f, high = 0.0f;
+		ENSURE( LargestPiece( &scene, &low, &high ) > 60.0f );
+		ENSURE( low < 1.0f );
+		ENSURE( high < 8.5f );
+		ENSURE( HighestStanding( &scene ) < 2.0f );
 		DestroyScene( &scene );
 	}
 
@@ -1929,6 +2029,7 @@ int WorldTest( void )
 	RUN_TEST( MultiPieceTest );
 	RUN_TEST( PreFractureTest );
 	RUN_TEST( OpeningTest );
+	RUN_TEST( SeamTest );
 	RUN_TEST( GraphTest );
 	RUN_TEST( RubbleTest );
 	RUN_TEST( CannonballTest );

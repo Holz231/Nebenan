@@ -108,12 +108,14 @@ typedef struct nbBond
 
 	uint32_t stamp;
 
-	// The bond glues two cells of the pre-fracture of one piece, not two pieces or fragments. As long as no damage
-	// reaches them, such bonds hold the cells together as one block in the load check, see nbCheckSupport.
+	// The bond glues two cells of the pre-fracture of one piece, or of pieces that crack together, not two other pieces
+	// or fragments. As long as no damage reaches them, such bonds hold the cells together as one block in the load check,
+	// see nbCheckSupport.
 	bool cohesive;
 
-	// A cohesive bond between two groups of cells. A block that collapses falls apart along these.
-	bool fault;
+	// A cohesive bond between two parts of one cell, split by the seam between two pieces or by an opening. Siblings are
+	// thrown and split as one, so the straight faces between them do not show.
+	bool sibling;
 } nbBond;
 
 // A rigid set of chunks. The static actor of a destructible is the set of glued chunks, it has no

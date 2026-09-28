@@ -15,9 +15,10 @@ Zerstörung.
 - Statik nach dem Lastlöser der Referenz-Engine: Last und Schwerpunkt fließen über die Verbindungen zu den
   Ankern, Verbindungen brechen unter Druck und Biegung. Überhänge brechen ab, dünne Säulen werden zerdrückt,
   und was den Halt verliert, fällt als ein Stück
-- Einsturz mit Wucht: Wände laufen durch alle Stockwerke, sind beim Laden in Zellen zerlegt, Fenster und Türen
-  sind ausgeschnitten. Gibt eine Wand nach, fliegen die Steine, auf denen sie steht, aus dem Haus, und der Rest
-  bricht entlang polygonaler Risse quer über die Stockwerke
+- Einsturz mit Wucht: Die Wände sind beim Laden in Zellen zerlegt, die auch um die Hausecken laufen, Fenster und
+  Türen sind ausgeschnitten. Fehlt genug vom Erdgeschoss, fliegt der Rest mit Wucht aus dem Haus, und die Stockwerke
+  darüber kommen in einem Stück herunter, abgerissen entlang eines waagrechten polygonalen Risses unter der ersten
+  Decke
 - Kollisionsschaden: Kanonenkugeln und herabfallende Trümmer beschädigen, was sie treffen
 - Für ganze Städte gebaut, ohne etwas zu löschen: Trümmer, die zur Ruhe kommen und auf festem Grund liegen,
   werden zu statischem Schutt und kosten Box3D nichts mehr. Box3D bewegt nur eine begrenzte Zahl Trümmer
@@ -141,8 +142,8 @@ Zwischenablage, zum Einfügen in einen Chat.
 - **Mauern**: Ziegelwände vor einer dicken Betonwand
 - **Stresstest**: 16 Wände für viele Trümmer gleichzeitig
 - **Stadt**: 20 Häuser aus verputzten Ziegelwänden mit Fenstern und Türen und Betondecken, jedes dritte mit drei
-  Stockwerken. Die Wände laufen durch alle Stockwerke und sind in Zellen von etwa 1,2 m zerlegt, die Decken bleiben
-  ganz
+  Stockwerken. Die Wände laufen durch alle Stockwerke und sind in Zellen von etwa 1,2 m zerlegt, die auch um die
+  Hausecken laufen, die Decken bleiben ganz
 
 **Aufrufoptionen**: `--scene 0..2` startet eine Szene, `--fragment-scale 3` setzt die Bruchstückgröße, `--vsync`
 schaltet VSync ein, `--msaa 4` schaltet Kantenglättung ein (Standard aus), `--highdpi` rendert auf
@@ -229,34 +230,41 @@ Anker werden zu dynamischen Körpern.
    Schritt für Schritt nach.
 
 **Blöcke.** Die Zellen eines vorzerlegten Teils, die noch kein Schaden erreicht hat, tragen zusammen als ein Block,
-wie das Teil vor der Zerlegung. Einzeln wären die unregelmäßigen Zellen Schwachstellen, die das Teil nicht hat:
-kleine Flächen, die eine ganze Wand tragen, oder Zellen, die über ein Fenster reichen. Splitter und die verankerten
-Zellen am Boden bleiben einzeln, so prüft die Statik den Fuß der Wand und die Ränder von Schäden genau. Ein Block
-gibt seine Last nur über Flächen ab, auf denen er aufliegt, damit eine Wand, deren Fuß nachgibt, nicht an den Ecken
-hängen bleibt. Er trägt plastisch: Erst wenn alle Auflageflächen zusammen die Last nicht mehr tragen, gibt er nach.
-Die Biegung rechnet vom eigenen Schwerpunkt bis zur Auflagefläche, von oben gesehen.
+wie das Teil vor der Zerlegung, und mit ihnen die Zellen der Teile, mit denen es gemeinsam zerlegt ist. Die Wände
+eines Hauses sind so ein Block, wie aus einem Guss. Einzeln wären die unregelmäßigen Zellen Schwachstellen, die das
+Teil nicht hat: kleine Flächen, die eine ganze Wand tragen, oder Zellen, die über ein Fenster reichen. Splitter und
+die verankerten Zellen am Boden bleiben einzeln, so prüft die Statik den Fuß der Wand und die Ränder von Schäden
+genau. Ein Block gibt seine Last nur über Flächen ab, auf denen er aufliegt, damit eine Wand, deren Fuß nachgibt,
+nicht an den Ecken hängen bleibt. Er trägt plastisch: Erst wenn alle Auflageflächen zusammen die Last nicht mehr
+tragen, gibt er nach. Die Biegung rechnet vom eigenen Schwerpunkt bis zur Auflagefläche, von oben gesehen.
 
-**Einsturz.** Gibt ein Block nach, stürzt er ein. Beim Laden sind seine Zellen in Gruppen von etwa 2,5 Zellen
-Breite eingeteilt. Die Gruppen, die auf etwas aufliegen, fliegen mit 6 m/s ganz aus der Wand, jede Zelle durch die
-Seite, an der sie frei liegt. Mit ihnen fliegen die Stümpfe darunter und jedes einzelne Stück, auf dem eine Zelle
-des Blocks aufliegt, auch wenn es weit zwischen die Zellen hinaufreicht. Sonst sänke die Wand nur ein paar Zentimeter
-und verkeilte sich darauf. Die übrigen Gruppen brechen an ihren Grenzen auseinander und fallen, die Risse laufen
-polygonal über die Stockwerke. Was ein Einsturz abwirft, macht keinen Kollisionsschaden, das wäre das Teuerste an
-einem Einsturz, bricht beim harten Aufschlag aber weiter in Hälften.
+**Einsturz.** Gibt ein Block nach, stürzt er ein, und mit ihm alles, was an ihm hängt, also weiter von den Ankern
+entfernt ist und über ihn gehalten wird, wie die Decken und oberen Stockwerke eines Hauses. Das alles kommt in einem
+Stück herunter und lässt los, was näher an den Ankern ist. Der Block reißt waagrecht ab, unter der untersten Decke,
+die an ihm hängt, allgemein unter dem untersten heilen Teil eines anderen Materials, das zu groß zum Wegwerfen ist.
+Ohne so eines reißt er über seinem Fuß ab. Der Riss folgt den Zellgrenzen und ist deshalb polygonal, auch an den
+Hausecken, nie eine gerade Kante. Alle Zellen unter dem Riss fliegen mit 6 m/s aus der Wand, jede durch die Seite,
+an der sie frei liegt, und die Teile einer Zelle zusammen. Mit ihnen fliegen die Stümpfe darunter und jedes einzelne
+Stück, auf dem der Block aufliegt oder an dem er lehnt, auch wenn es weit zwischen die Zellen hinaufreicht. Sonst
+sänke das Haus nur ein paar Zentimeter und verkeilte sich darauf. Blöcke näher an den Ankern gehen zuerst und nehmen
+die Blöcke mit, die an ihnen hängen. Was ein Einsturz abwirft, macht keinen Kollisionsschaden, das wäre das Teuerste
+an einem Einsturz, bricht beim harten Aufschlag aber in Hälften.
 
 Eine Prüfung kostet für die Stadt aus 16 Häusern etwa 0,3 ms und läuft nur für Bauwerke, die sich geändert haben.
-Die Häuser der Demo stehen mit Reserve: Zweistöckige halten bis `supportScale` ×0,4 bis ×0,45, dreistöckige bis
-×0,55 bis ×0,75, je nach Zerlegung. Ein bis vier Granaten an einer Ecke des Erdgeschosses bringen die Wände dort zum
-Einsturz, und die übrigen folgen oft.
+Die Häuser der Demo stehen mit Reserve: Zweistöckige halten bis `supportScale` ×0,35 bis ×0,4, dreistöckige bis
+×0,5 bis ×0,55, je nach Zerlegung. Weil das ganze Haus ein Block ist, reichen ein paar Granaten an einer Ecke nicht:
+Erst wenn ein großer Teil des Erdgeschosses weg ist, stürzt es ein. Dann fliegen rund 200 Stücke mit 6 m/s aus dem
+Haus, und die Stockwerke darüber kommen als ein Stück herunter, bei dreistöckigen Häusern die beiden oberen
+zusammen.
 Ein Dach auf nur einer Wand bricht ab, ein Dach zwischen zwei Wänden hält.
 
 **Aufprall.** Ein Teil ab 0,5 m³, das mit mindestens 7 m/s aufschlägt, bricht quer über die Mitte seiner längsten
 Seite in zwei Hälften, wie die vorbereiteten Körper der Referenz-Engine (`src/prepared_fracture.cpp`), eine Ebene pro
 Update. Die Ebene liegt mitten zwischen den äußersten Bruchstücken, nicht beim mittleren, damit eine Reihe gleicher
-Stücke nicht an zwei Stellen reißt. Gegen einen bewegten Körper braucht es mehr, je schwerer das Teil im Vergleich ist,
-damit ein Splitter keine Wandplatte zerbricht. Die Hälften behalten die Bewegung nach dem Aufprall. So zerfällt ein
-herabstürzendes Stockwerk beim Aufschlag, statt als ein Block liegen zu bleiben. Ohne Kollisionsschaden
-(`nbDestructibleDef::enableCollisionDamage`) bricht nichts.
+Stücke nicht an zwei Stellen reißt, und die Teile einer Zelle bleiben auf einer Seite. Gegen einen bewegten Körper
+braucht es mehr, je schwerer das Teil im Vergleich ist, damit ein Splitter keine Wandplatte zerbricht. Die Hälften
+behalten die Bewegung nach dem Aufprall. So zerfällt ein herabstürzendes Stockwerk beim Aufschlag, statt als ein
+Block liegen zu bleiben. Ohne Kollisionsschaden (`nbDestructibleDef::enableCollisionDamage`) bricht nichts.
 
 **Trümmer und Schutt.** Ruhe und Einschlafen folgen ebenfalls der Referenz-Engine (`rubble_rest.h` und
 `BuildingScene::settle`). Nichts wird gelöscht.
@@ -401,6 +409,12 @@ Bis zu `NB_MAX_MATERIALS` (8) verschiedene Materialien passen in ein Objekt. `nb
 welchem Material ein Bruchstück ist, und die Box3D-Formen tragen Dichte, Reibung und `userMaterialId` ihres
 Materials.
 
+Teile aus demselben Material mit derselben Zellgröße zerlegt Nebenan gemeinsam: Jedes Teil nimmt die Punkte der
+anderen bis zwei Zellgrößen jenseits seines Randes mit, so laufen die Zellen über die Stöße zwischen den Teilen
+hinweg, etwa um die Ecken eines Hauses, und Risse folgen nicht den Stößen. Die Teile einer Zelle auf beiden Seiten
+eines Stoßes fliegen und brechen zusammen, damit die gerade Fläche dazwischen nicht zu sehen ist. Ein Teil aus einem
+anderen Material, etwa ein Betonklotz auf einer Ziegelwand, behält seine eigenen Zellen.
+
 Fenster und Türen schneidet `openings` aus einem Teil aus, als Quader im Rahmen des Teils. Mit Zellgröße zerlegt
 Nebenan das Teil zuerst in Zellen und schneidet die Öffnungen dann aus den Zellen, so laufen die Zellen um die
 Öffnungen herum, und Risse folgen nicht deren Kanten. Ohne Zellgröße wird das Teil selbst in konvexe Stücke um die
@@ -468,44 +482,48 @@ Festigkeit 1,1·10⁶ und Splitter 0,13 m, beides mit Bruchstückgröße ×2.
 
 ## Leistung
 
-Gemessen mit `nebenan_benchmark` auf einer Cloud-VM mit 4 Kernen (Intel Xeon, 2,8 GHz), GCC 13, Release.
+Gemessen mit `nebenan_benchmark` auf einer Cloud-VM mit 4 Kernen (Intel Xeon), GCC 13, Release.
 Ein normaler Spiele-PC ist schneller.
 
 **Eine Stadt aus 16 Häusern unter Dauerbeschuss**, zwölf Granaten pro Sekunde, 20 Sekunden lang, pro Frame alles
-zusammen (Einschläge, Box3D-Schritt, `nbWorld_Update`):
+zusammen (Einschläge, Box3D-Schritt, `nbWorld_Update`), jeweils der mittlere von drei Läufen:
 
 | Stadt | Ø | 95 % der Frames | Box3D-Schritt Ø |
 | --- | ---: | ---: | ---: |
-| 1 Thread | 42,9 ms | 72,0 ms | 35,6 ms |
-| 4 Threads | 22,9 ms | 43,4 ms | 16,0 ms |
-| 1 Thread, `fragmentScale` 2 | 20,4 ms | 33,6 ms | 18,2 ms |
-| 4 Threads, `fragmentScale` 2 | 8,8 ms | 15,3 ms | 6,9 ms |
+| 1 Thread | 31,9 ms | 67,0 ms | 26,2 ms |
+| 4 Threads | 15,7 ms | 34,5 ms | 10,8 ms |
+| 1 Thread, `fragmentScale` 2 | 11,2 ms | 23,1 ms | 9,8 ms |
+| 4 Threads, `fragmentScale` 2 | 5,9 ms | 12,7 ms | 4,6 ms |
 
-Ohne Statik (`supportScale` 0) bleiben die Häuser auch ohne Erdgeschoss stehen, dann sind es mit 4 Threads 12,1 ms
-und mit `fragmentScale` 2 3,8 ms, mit 1 Thread 29,8 und 7,5 ms. Die Prüfung selbst kostet wenig, teuer sind die
-Einstürze: Was fällt, bewegt sich, trifft andere Teile und zerbricht beim Aufprall. Die Häuser mit durchgehenden
-Zellwänden, die beim Einsturz ihre tragenden Steine mit 6 m/s hinauswerfen, kosten gegenüber den Häusern aus
-Wandquadern davor, zur selben Zeit gemessen, mit 4 Threads 10 % mehr und mit doppelter Bruchstückgröße 18 %, mit
-1 Thread 8 % und 66 %. Mit doppelter Bruchstückgröße sind die Zellen der eingestürzten Wände die meisten bewegten
-Teile, und ihre Kontakte rechnet Box3D mit einem Thread allein. `nbWorld_Update` kostet mit 4 Threads im Mittel
-6,5 ms, mit doppelter Bruchstückgröße 1,8 ms, und enthält den Schaden durch Aufprall und das Zerdrücken.
+Ohne Statik (`supportScale` 0) bleiben die Häuser auch ohne Erdgeschoss stehen, dann sind es mit 4 Threads 10,1 ms
+und mit `fragmentScale` 2 3,4 ms, mit 1 Thread 23,4 und 6,3 ms. Die Prüfung selbst kostet wenig, teuer sind die
+Einstürze: Was fällt, bewegt sich, trifft andere Teile und zerbricht beim Aufprall. Dass die Stockwerke über dem
+Riss als ein Stück herunterkommen, statt in Gruppen von Zellen zu zerbrechen, spart gegenüber dem Stand davor, zur
+selben Zeit gemessen, mit doppelter Bruchstückgröße 21 %, mit 1 wie mit 4 Threads, denn Box3D rechnet ein Drittel
+weniger Kontakte. Mit einfacher Bruchstückgröße spart es im Mittel 7 bis 9 %, der Wert für 95 % der Frames steigt
+aber um 8 bis 11 %, weil ein Haus auf einmal einstürzt. `nbWorld_Update` kostet mit 4 Threads im Mittel 4,5 ms, mit
+doppelter Bruchstückgröße 1,2 ms, und enthält den Schaden durch Aufprall und das Zerdrücken.
 
 Die Zeit ist zum größten Teil der Box3D-Schritt, und den bestimmen zwei Zahlen:
 
-- **Bruchstückgröße.** Mit doppelt so großen Bruchstücken liegen am Ende 25 400 statt 73 100 Bruchstücke herum,
-  und Box3D rechnet 14 800 statt 19 000 Kontakte. Die Zahl der Splitter eines Einschlags fällt mit dem Quadrat
+- **Bruchstückgröße.** Mit doppelt so großen Bruchstücken liegen am Ende 26 000 statt 79 500 Bruchstücke herum,
+  und Box3D rechnet 9500 statt 19 100 Kontakte. Die Zahl der Splitter eines Einschlags fällt mit dem Quadrat
   der Größe.
 - **Bewegte Trümmer.** Box3D bewegt höchstens `maxDebrisBodies` (1500) Trümmer gleichzeitig. Was zur Ruhe kommt,
-  liegt als Schutt und kostet nichts mehr, am Ende der Stadt 40 400 Körper.
+  liegt als Schutt und kostet nichts mehr, am Ende der Stadt 54 500 Körper.
 
 Ganze Einschläge (Bruch, Stützgraph, neue Box3D-Körper) und der Box3D-Schritt danach bei 60 Hz mit
 4 Substeps, jeweils mit 1 und 4 Threads:
 
 | Szenario | Einschlag Ø, 1 / 4 Threads | Box3D-Schritt Ø, 1 / 4 Threads | Am Ende |
 | --- | ---: | ---: | --- |
-| Gewehr, 200 Treffer | 0,82 / 0,85 ms | 6,6 / 5,0 ms | 3581 Bruchstücke, 1355 Körper |
-| 20 Explosionen | 3,8 / 2,8 ms | 8,5 / 4,0 ms | 7322 Bruchstücke, 3498 Körper |
-| Gebäude, 18 Treffer | 2,6 / 1,6 ms | 4,9 / 2,4 ms | 3536 Bruchstücke, 2524 Körper |
+| Gewehr, 200 Treffer | 0,83 / 0,79 ms | 6,0 / 4,1 ms | 3581 Bruchstücke, 1355 Körper |
+| 20 Explosionen | 3,9 / 2,6 ms | 7,5 / 3,2 ms | 7322 Bruchstücke, 3498 Körper |
+| Gebäude, 18 Treffer | 3,9 / 2,7 ms | 5,4 / 2,2 ms | 4542 Bruchstücke, 2604 Körper |
+
+Das Gebäude hat Wände und Decken aus einem Material, und seine Zellen laufen über die Stöße. Jede Zelle über einem
+Stoß besteht aus einem Teil auf jeder Seite, so sind es beim Laden 908 statt 549 Bruchstücke, und ein Einschlag
+kostet um die Hälfte mehr als mit Zellen je Teil.
 
 Voronoi-Kern, Platte 4 × 2 × 0,3 m mit Punkten um den Einschlag, 1 Thread:
 
@@ -530,7 +548,7 @@ höchstens 213 000 Dreiecke, im Mittel 0,5 MB und höchstens 1,7 MB Upload pro B
 ## Tests und Benchmark
 
 ```sh
-build/bin/nebenan_test            # 29 Tests: Geometrie, Voronoi, Hüllen, Öffnungen, Stützgraph, Statik, Einsturz, Aufprall, Schutt, Ruhe, Threads, Determinismus …
+build/bin/nebenan_test            # 30 Tests: Geometrie, Voronoi, Hüllen, Öffnungen, Stöße, Stützgraph, Statik, Einsturz, Aufprall, Schutt, Ruhe, Threads, Determinismus …
 build/bin/nebenan_benchmark 4     # Zahl = Threads für Bruch und Physik
 ```
 
@@ -568,16 +586,16 @@ Nach Änderungen an `demo/shaders/scene.glsl` die Shader neu erzeugen, im Ordner
   zerdrückt, wenn sie versagen. Das Haus darüber verliert dann seine Anker, bleibt aber als ein starrer Schuttkörper
   auf seinen Resten stehen, statt einzustürzen. Zerlegt wird ein Teil erst, wenn es fällt und hart aufschlägt. Wände
   aus Zellen stürzen dagegen ein, siehe Einsturz.
-- Stürzt nur ein Teil eines Hauses ein, bleiben an den Ecken zu den stehenden Wänden manchmal schmale Streifen der
-  eingestürzten Wand stehen. Sie lehnen an der stehenden Wand und liegen auf Splittern, die dort erstarrt sind.
-  Treffer an ihrem Fuß holen sie herunter.
+- Stürzt nur ein Teil eines Hauses ein, weil Einschläge es schon geteilt haben, bleiben an der Grenze zu den
+  stehenden Wänden manchmal schmale Streifen der eingestürzten Wand stehen. Sie lehnen an der stehenden Wand und
+  liegen auf Splittern, die dort erstarrt sind. Treffer an ihrem Fuß holen sie herunter.
 - Schutt ist für Box3D statisch. Trümmer, die auf Schutt fallen, wecken ihn nicht, nur Einschläge, die ihn bewegen,
   fremde Körper, eine wegrutschende Auflage und große Teile, die ohne ihn nicht im Gleichgewicht lägen. Kinematische
   Körper stoßen Schutt nicht an, Box3D lässt kinematische und statische Körper nicht kollidieren.
 - Kleine Trümmer unter 0,1 m³ erstarren auf jedem Schutt, auch auf solchem, den das Budget im Flug erstarren ließ. Sie
   können also noch in der Luft hängen bleiben, ein großes Teil tragen sie dann aber nicht.
 - Einstürze kosten: Was abbricht, bewegt sich und liegt danach herum. Unter Dauerbeschuss braucht die Stadt deshalb
-  mit Statik 1,4- bis 2,7-mal so lange wie ohne, siehe Leistung.
+  mit Statik 1,4- bis 1,8-mal so lange wie ohne, siehe Leistung.
 - Nur die Voronoi-Zellen und Hüllen laufen parallel. Punktverteilung, Einbau der Stücke und das Anlegen der
   Box3D-Formen bleiben auf dem aufrufenden Thread, bei großen Explosionen ist das der größere Teil.
 - Nur konvexe Teile, aus denen sich Quader ausschneiden lassen. Andere konkave Formen müssen als mehrere konvexe
