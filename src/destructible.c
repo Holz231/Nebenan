@@ -697,6 +697,7 @@ nbDestructibleId nbCreateDestructible( nbWorldId worldId, const nbDestructibleDe
 
 	nbCommitPhysics( world );
 	world->touchedActors.count = 0;
+	nbKeepRoom( world );
 
 	return (nbDestructibleId){ index + 1, world->worldIndex, world->destructibles.data[index].generation };
 }

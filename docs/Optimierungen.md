@@ -15,24 +15,57 @@ nichts bleibt in der Luft hängen, und das Ergebnis bleibt deterministisch.
 
 ## Reihenfolge der vorgemerkten Arbeit
 
-1. ✅ **Schutt aus den Schleifen pro Frame nehmen** (Nr. 1). Erledigt: `nbWorld_Update` braucht in der Stadt 26 % weniger
-   Zeit, mit doppelter Bruchstückgröße 22 %, mit vierfacher kaum etwas, siehe unten.
-2. **Nur bewegte Transformationen hochladen** (Nr. 74), mittel.
-3. **Räumliche Render-Seiten und Frustum-Culling** (Nr. 49 bis 51), mittel. Hoch, sobald die Grafik der Engpass ist,
-   und für eine große Stadt.
-4. **Grobe Kollisionsformen für ruhenden Schutt** (Nr. 2, 5, 6, 24), mittel. Vorher messen, ob es sich lohnt.
-5. **Neue Bruchstücke gesammelt in den Box3D-Baum einfügen** (eigene Idee, unten), niedrig. Geht nur mit einem
-   Eingriff in Box3D.
+Ziel seit dem 3. Oktober 2026: Bruchstückgröße ×4 und Szenen so groß wie möglich, erst die Physik, dann die Grafik.
+
+1. ✅ **Schutt aus den Schleifen pro Frame nehmen** (Nr. 1). `nbWorld_Update` braucht in der Stadt 26 % weniger Zeit,
+   mit doppelter Bruchstückgröße 22 %, mit vierfacher kaum etwas.
+2. ✅ **Platz vorab reservieren** (eigene Idee, unten). Keine Ruckler mehr, wenn in großen Szenen ein Array voll wird.
+3. **Laden und Speicher großer Szenen** (eigene Idee, unten), hoch. Jedes stehende Bruchstück ist ein eigener
+   Box3D-Körper mit eigener Hülle: gut die Hälfte der Ladezeit und zwei Drittel des Speichers.
+4. **Neue Bruchstücke gesammelt in den Box3D-Baum einfügen** (eigene Idee, unten), mittel. 13 % der Ladezeit großer
+   Szenen.
+5. Grafik, sobald die Physik fertig ist: **Räumliche Render-Seiten und Frustum-Culling** (Nr. 49 bis 51) und **nur
+   bewegte Transformationen hochladen** (Nr. 74). Beides wächst mit der Szene, denn die Demo zeichnet jedes Bild alles
+   und lädt bei jeder Bewegung alle Transformationen hoch.
 6. Für eine große Stadt: Regionen, HLOD, Verdeckung, Streaming, Physik nur in aktiven Regionen (Nr. 52 bis 60, 65,
    69, 75, 88 bis 92).
 
+Was nur kleinen Bruchstücken hilft, bringt bei ×4 kaum etwas und ist zurückgestellt: grobe Kollisionsformen für
+Schutt (Nr. 2), Trümmer früher zur Ruhe bringen, ein billigeres Trümmerbudget.
+
 Zuerst immer messen, wo die Zeit hingeht. Das Menü der Demo trennt Simulation, Box3D-Schritt und Grafik und sagt, wer
-die FPS begrenzt. „Messwerte kopieren“ legt alles in die Zwischenablage. Ist die Simulation groß, zählen die Punkte 4
-und 5, ist die Grafik groß, die Punkte 2 und 3.
+die FPS begrenzt. „Messwerte kopieren“ legt alles in die Zwischenablage.
 
 Mit vierfacher Bruchstückgröße rechnet die Simulation wenig: In der Benchmark-Stadt kostet ein Frame auf der VM im
 Mittel 0,65 ms, davon 0,07 ms `nbWorld_Update`. Läuft die Demo dort mit rund 290 FPS, also 3,4 ms pro Bild, geht der
 größere Teil wahrscheinlich an die Grafik.
+
+## Große Szenen bei ×4
+
+Skalierungstest vom 3. Oktober 2026 auf der VM: Städte aus 16 bis 1 024 Häusern wie im Benchmark, Bruchstückgröße ×4,
+4 Threads. Nach dem Aufbau 120 Frames Ruhe, dann 20 s lang alle fünf Frames eine Granate auf ein zufälliges Haus.
+
+| Häuser | Bruchstücke | Aufbau | Speicher | Frame unter Beschuss |
+| ---: | ---: | ---: | ---: | ---: |
+| 16 | 3 848 | 0,05 s | 20 MB | 0,6 ms |
+| 64 | 15 425 | 0,2 s | 48 MB | 0,6 ms |
+| 256 | 61 538 | 0,8 s | 152 MB | 0,6 ms |
+| 1 024 | 246 141 | 4 bis 8 s | 570 MB | 0,55 ms |
+
+- **Die Physik pro Frame hängt nicht an der Größe der Szene.** Box3D rechnet nur, was sich bewegt, und Nebenan geht
+  im Update nie über die ganze Welt, nur beim Verstellen von Reglern und beim Löschen der Welt. In Ruhe kostet die
+  Welt bei jeder Größe so gut wie nichts.
+- **Ruckler, wenn ein großes Array voll wurde** (behoben, siehe „Platz vorab reservieren“). Bei 65 536 Bruchstücken
+  verdoppelten sich das Formen-Array von Box3D und das Bruchstück-Array von Nebenan. Das Update, das darauf stieß,
+  dauerte je nach Tagesform der VM 16 bis 137 ms, bei 16 384 Bruchstücken 6 bis 9 ms. Der erste Einschlag in der Stadt
+  aus 1 024 Häusern kostete 8 bis 15 ms: Der erste Trümmerkörper bekommt eine Box3D-Nummer hinter allen 246 000
+  statischen Körpern, und Nebenan musste seine Zuordnung von Körpern zu Akteuren bis dorthin füllen. Die meiste Zeit
+  gibt das System frischen Speicher heraus, auf einem PC geht das schneller als auf der VM.
+- **Laden** braucht in kleinen Städten 3 ms pro Haus, bei 1 024 Häusern 4 bis 8 ms. Davon gehen 53 % an Box3D-Körper
+  und -Formen (18 % Hüllen kopieren, 15 % in den Suchbaum einsortieren, davon 13 % `b3InsertLeaf`, 7 % Arrays
+  umkopieren), 14 % an Verbindungen und 11 % an das Umkopieren von Nebenans Arrays. Gemessen mit `perf` auf dem
+  Hauptthread, vor dem Reservieren.
+- **Speicher**: rund 0,55 MB pro Haus aus 240 Bruchstücken, zwei Drittel davon in Box3D.
 
 ## Was die Liste übersieht
 
@@ -169,7 +202,9 @@ Seit der Liste ist dazugekommen oder gemessen worden:
 
 | Idee | Status | Bewertung |
 | --- | --- | --- |
-| Neue Bruchstücke gesammelt in den Box3D-Baum einfügen | 🔜 niedrig | Beim Anlegen der Formen stecken etwa 70 % der Zeit in `b3InsertLeaf`: Box3D sortiert jedes Stück einzeln in seinen Baum ein. Die Stücke eines Einschlags liegen beieinander und ließen sich als kleiner Teilbaum einhängen. Etwa 0,6 ms weniger je großer Explosion, pro Frame kaum etwas. Geht nur mit einem Patch an Box3D und einem Rückweg, falls ein Projekt sein eigenes Box3D mitbringt. |
+| Platz vorab reservieren | ✅ | Umgesetzt. `nbKeepRoom` verdoppelt nach jedem Aufbau die Kapazität der großen Arrays, sobald weniger als ein Viertel frei ist, auch in Box3D über das ergänzte `b3World_Reserve` (siehe `extern/README.md`). Die Zuordnungen von Box3D-Nummern decken alle Körper und Formen schon beim Aufbau ab. Das langsamste Update der Stadt aus 256 Häusern dauert danach höchstens 2 ms statt 16 bis 137 ms, der langsamste Einschlag meist unter 3 ms statt 13 bis 16 ms. Einzelne Ausreißer bis 7 ms gibt es nur in einem von zwei gleichen Läufen, sie kommen von der VM. Bei 1 024 Häusern kostet der erste Einschlag unter 1 ms statt 8 bis 15 ms. Die Ergebnisse bleiben bitgleich. Laden dauert gleich lang, im Rauschen der VM, und braucht 6,5 % mehr Speicher. |
+| Laden und Speicher großer Szenen | 🔜 hoch | Jedes stehende Bruchstück ist ein eigener statischer Box3D-Körper mit eigener Kopie seiner Hülle in Box3Ds Hüllen-Datenbank: gut die Hälfte der Ladezeit und zwei Drittel des Speichers. Ansätze: Häuser erst beim ersten Treffer zerlegen, bis dahin wenige große Stücke, oder weniger Box3D-Körper je Haus. |
+| Neue Bruchstücke gesammelt in den Box3D-Baum einfügen | 🔜 mittel | Box3D sortiert jede Form einzeln in seinen Suchbaum ein. Beim Laden von 1 024 Häusern sind das 13 % der Ladezeit (`b3InsertLeaf`), im Spiel bei ×4 kaum etwas, weil ein Einschlag nur wenige Stücke erzeugt. Die Stücke eines Hauses oder Einschlags liegen beieinander und ließen sich als Teilbaum einhängen. Geht nur mit einer weiteren Ergänzung in Box3D und einem Rückweg, falls ein Projekt sein eigenes Box3D mitbringt. |
 | Nebenan ohne Box3D | ⛔ | Box3D macht die eigentliche Arbeit (Kontakte, Löser, Broadphase, CCD, Threads, Determinismus) bereits sehr schnell. Eine eigene Engine wäre nur schneller, wenn sie weniger rechnet, und die meisten Vereinfachungen gehen auch mit Box3D. |
 | Trümmer-CCD-Schwelle | ✅ | Umgesetzt (`debrisSweepDistance`). |
 | Einschlag weiter parallelisieren | ✅ | Umgesetzt, siehe oben. |

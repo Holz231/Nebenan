@@ -383,6 +383,10 @@ typedef struct nbWorld
 	int destructibleCount;
 	int rubbleCount;
 
+	// The bodies and shapes Box3D has room for since nbKeepRoom last reserved, zero before
+	int reservedBodies;
+	int reservedShapes;
+
 	uint32_t bondStamp;
 	uint32_t searchStamp;
 	uint32_t settleStamp;
@@ -493,6 +497,9 @@ void nbPushEvent( nbChunkIdArray* events, nbChunkId id );
 void nbTouchChunk( nbWorld* world, int chunkIndex );
 void nbTouchActor( nbWorld* world, int actorIndex );
 void nbUpdateDebris( nbWorld* world, int actorIndex );
+
+// Keep room in the large arrays of Nebenan and Box3D, see nbKeepRoom in world.c
+void nbKeepRoom( nbWorld* world );
 
 // The speed an impact that ejects its fragments at the given speed pushes loose debris with at most. Heavy parts barely
 // move, the push falls with the volume beyond four fragments.

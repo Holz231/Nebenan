@@ -21,6 +21,10 @@ B3_API b3DynamicTree b3DynamicTree_Create( int proxyCapacity );
 /// Destroy the tree, freeing the node pool.
 B3_API void b3DynamicTree_Destroy( b3DynamicTree* tree );
 
+/// Make room for at least this many proxies, so creating them grows neither the node pool nor the proxy pool. Proxies
+/// are handed out in the same order as without the room. Added for Nebenan.
+B3_API void b3DynamicTree_Reserve( b3DynamicTree* tree, int proxyCapacity );
+
 /// Create a proxy. Provide an AABB and a userData value.
 B3_API int b3DynamicTree_CreateProxy( b3DynamicTree* tree, b3AABB aabb, uint64_t categoryBits, uint64_t userData );
 

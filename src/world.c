@@ -1238,6 +1238,60 @@ void nbUpdateDebris( nbWorld* world, int actorIndex )
 	}
 }
 
+// Double the capacity of an array once less than a quarter of its count is left as room. Doubling copies no more than
+// growing when full would, it only comes earlier.
+#define nbKeepArrayRoom( a )                                                                                                     \
+	do                                                                                                                           \
+	{                                                                                                                            \
+		if ( 4 * ( a ).capacity < 5 * ( a ).count )                                                                              \
+		{                                                                                                                        \
+			nbArray_Reserve( a, 2 * ( a ).capacity );                                                                            \
+		}                                                                                                                        \
+	}                                                                                                                            \
+	while ( 0 )
+
+// Let a map from Box3D indices cover the first count of them, with room for as many again
+static void nbCoverIndices( nbIntArray* map, int count )
+{
+	if ( map->count < count )
+	{
+		nbArray_Reserve( *map, 2 * count );
+		for ( int i = map->count; i < count; ++i )
+		{
+			map->data[i] = NB_NULL_INDEX;
+		}
+		map->count = count;
+	}
+}
+
+// A full array is copied into one twice as large. With a few hundred thousand chunks that stalls the impact that runs
+// into it for a hundred milliseconds and more, in Nebenan and in Box3D, mostly while the system hands out the new
+// memory. Building keeps at least a quarter of the count as room, so the impacts that follow seldom run into a full
+// array. Box3D can only make room this way with b3World_Reserve, which the Box3D shipped with Nebenan has. Otherwise
+// b3WorldDef::capacity helps.
+void nbKeepRoom( nbWorld* world )
+{
+	// Every static chunk has a Box3D body, so the first debris body gets an index past all of them. The map from body
+	// indices covers them already, instead of filling hundreds of thousands of entries in the first impact.
+	b3Counters counters = b3World_GetCounters( world->physicsWorld );
+	nbCoverIndices( &world->bodyToActor, counters.bodyCount );
+	nbCoverIndices( &world->shapeToChunk, counters.shapeCount );
+
+	nbKeepArrayRoom( world->chunks );
+	nbKeepArrayRoom( world->bonds );
+	nbKeepArrayRoom( world->actors );
+
+#if defined( B3_HAS_WORLD_RESERVE )
+	if ( 4 * world->reservedBodies < 5 * counters.bodyCount || 4 * world->reservedShapes < 5 * counters.shapeCount )
+	{
+		world->reservedBodies = b3MaxInt( 2 * world->reservedBodies, 2 * counters.bodyCount );
+		world->reservedShapes = b3MaxInt( 2 * world->reservedShapes, 2 * counters.shapeCount );
+		b3Capacity capacity = { .staticShapeCount = world->reservedShapes, .staticBodyCount = world->reservedBodies };
+		b3World_Reserve( world->physicsWorld, &capacity );
+	}
+#endif
+}
+
 // Queue a static actor, or a part of a building that came down, for a check in the next update
 static void nbMarkSupport( nbWorld* world, int actorIndex )
 {

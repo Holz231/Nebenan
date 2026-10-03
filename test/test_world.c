@@ -308,6 +308,10 @@ static uint32_t HashDestructible( uint32_t hash, nbDestructibleId wall )
 	return ( hash ^ (uint32_t)count ) * 16777619u;
 }
 
+// The frame of the determinism scenario that reserves room in Box3D, see ReserveTest. Negative for none.
+static int s_reserveFrame = -1;
+static int64_t s_reservedBytes = 0;
+
 static uint32_t RunDeterminismScenarioWith( TestScene scene )
 {
 	nbDestructibleId wall = CreateWall( &scene, (b3Vec3){ 2.5f, 1.5f, 0.12f }, 5 );
@@ -337,6 +341,16 @@ static uint32_t RunDeterminismScenarioWith( TestScene scene )
 			blast.ejectSpeed = 2.0f;
 			nbWorld_ApplyImpact( scene.world, &blast );
 		}
+#if defined( B3_HAS_WORLD_RESERVE )
+		if ( frame == s_reserveFrame )
+		{
+			int64_t bytes = b3GetByteCount();
+			b3Capacity capacity = { .staticShapeCount = 20000, .dynamicShapeCount = 2000, .staticBodyCount = 20000,
+									.dynamicBodyCount = 2000, .contactCount = 5000 };
+			b3World_Reserve( scene.physicsWorld, &capacity );
+			s_reservedBytes = b3GetByteCount() - bytes;
+		}
+#endif
 		Step( &scene, 1 );
 	}
 
@@ -364,6 +378,20 @@ static int DeterminismTest( void )
 	printf( "determinism hash: 0x%08x\n", hash1 );
 	ENSURE( hash1 == hash2 );
 	ENSURE( hash1 == NB_EXPECTED_DETERMINISM_HASH );
+	return 0;
+}
+
+// Room reserved in Box3D in the middle of a run, after impacts freed and reused shapes, bodies and proxies, changes
+// nothing: the arrays only get larger, and ids are handed out in the same order
+static int ReserveTest( void )
+{
+#if defined( B3_HAS_WORLD_RESERVE )
+	s_reserveFrame = 50;
+	uint32_t hash = RunDeterminismScenario();
+	s_reserveFrame = -1;
+	ENSURE( s_reservedBytes > 0 );
+	ENSURE( hash == NB_EXPECTED_DETERMINISM_HASH );
+#endif
 	return 0;
 }
 
@@ -2181,6 +2209,7 @@ int WorldTest( void )
 	RUN_TEST( CollapseTest );
 	RUN_TEST( DeterminismTest );
 	RUN_TEST( WorkerTest );
+	RUN_TEST( ReserveTest );
 	RUN_TEST( EventTest );
 	RUN_TEST( DynamicDestructibleTest );
 	RUN_TEST( MultiPieceTest );

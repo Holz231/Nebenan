@@ -231,6 +231,15 @@ B3_API b3Counters b3World_GetCounters( b3WorldId worldId );
 /// Get max capacity. This can be used with b3WorldDef to avoid run-time allocations and copies
 B3_API b3Capacity b3World_GetMaxCapacity( b3WorldId worldId );
 
+/// Make room for at least as many bodies, shapes and contacts as given, as b3WorldDef::capacity does when the world is
+/// created. A full array is copied into a larger one, which stalls the call that runs into it once the world holds
+/// hundreds of thousands of shapes. Reserving ahead keeps the copies out of a running simulation and does not change
+/// its results. Added for Nebenan.
+B3_API void b3World_Reserve( b3WorldId worldId, const b3Capacity* capacity );
+
+/// This Box3D has b3World_Reserve
+#define B3_HAS_WORLD_RESERVE 1
+
 /// Set the user data pointer.
 B3_API void b3World_SetUserData( b3WorldId worldId, void* userData );
 

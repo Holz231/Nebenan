@@ -538,6 +538,13 @@ Die Zeit ist zum größten Teil der Box3D-Schritt, und den bestimmen drei Dinge:
   großen Bruchstücken 3 bis 5 und 9 %. Würfel von 6 bis 50 cm, mit 6 bis 50 m/s auf eine 12 oder 20 cm dicke Wand
   geschossen, prallen dabei alle ab.
 
+**Große Szenen.** Mit vierfacher Bruchstückgröße kostet ein Frame unter Dauerbeschuss gleich viel, ob die Stadt aus 16
+oder aus 1 024 Häusern besteht, 0,55 bis 0,65 ms auf der VM. Box3D rechnet nur, was sich bewegt, und Nebenan geht im
+Update nie über die ganze Welt. Mit der Größe wachsen Ladezeit und Speicher: 1 024 Häuser mit 246 000 Bruchstücken
+brauchen 4 bis 8 s und 570 MB. Wird ein großes Array voll, wird es umkopiert, und das hielt ein einzelnes Update über
+100 ms auf. Deshalb hält der Aufbau in Nebenan und in Box3D mindestens ein Viertel Platz frei (`b3World_Reserve`,
+siehe [`extern/README.md`](extern/README.md)). Mehr dazu in [`docs/Optimierungen.md`](docs/Optimierungen.md).
+
 Ganze Einschläge (Bruch, Stützgraph, neue Box3D-Körper) und der Box3D-Schritt danach bei 60 Hz mit
 4 Substeps, jeweils mit 1 und 4 Threads, der mittlere von drei Läufen:
 
@@ -575,7 +582,7 @@ Messungen in [docs/Optimierungen.md](docs/Optimierungen.md).
 ## Tests und Benchmark
 
 ```sh
-build/bin/nebenan_test            # 32 Tests: Geometrie, Voronoi, Hüllen, Öffnungen, Stöße, Stützgraph, Etagen, Lastprüfung, Schutt, Ruhe, Durchschlagen, Threads, Determinismus …
+build/bin/nebenan_test            # 33 Tests: Geometrie, Voronoi, Hüllen, Öffnungen, Stöße, Stützgraph, Etagen, Lastprüfung, Schutt, Ruhe, Durchschlagen, Threads, Reservieren, Determinismus …
 build/bin/nebenan_benchmark 4     # Zahl = Threads für Bruch und Physik
 ```
 
@@ -599,7 +606,7 @@ benchmark/          Leistungsmessung
 demo/               PC-Demo mit sokol und Dear ImGui
   shaders/          GLSL-Quelle und die mit sokol-shdc erzeugten Shader (HLSL, Metal, GLSL)
 docs/               vorgemerkte und verworfene Optimierungen
-extern/             Box3D (mit sokol) und Dear ImGui, unverändert, siehe extern/README.md
+extern/             Box3D (mit sokol, um b3World_Reserve ergänzt) und Dear ImGui, siehe extern/README.md
 .github/workflows/  CI für Windows, Linux und macOS
 ```
 
@@ -616,6 +623,9 @@ Nach Änderungen an `demo/shaders/scene.glsl` die Shader neu erzeugen, im Ordner
 - Die Reste einer Etage fliegen alle auf einmal heraus. Braucht eine Etage fast alle ihre Wände, `storeySupport` nahe
   1, fliegt beinahe eine ganze Etage heraus, und ihre Zellen können sich unter dem Teil darüber verkeilen, der dann
   auf ihnen liegen bleibt.
+- Große Szenen brauchen Speicher: rund 0,55 MB pro Haus aus 240 Bruchstücken, zwei Drittel davon in Box3D, denn
+  jedes stehende Bruchstück ist dort ein eigener Körper mit eigener Hülle. Wächst eine Szene beim Spielen über ihren
+  freien Platz hinaus, stockt das Update einmal, das ein großes Array verdoppeln muss.
 - Schutt ist für Box3D statisch. Trümmer, die auf Schutt fallen, wecken ihn nicht, nur Einschläge, die ihn bewegen,
   fremde Körper, eine wegrutschende Auflage und große Teile, die ohne ihn nicht im Gleichgewicht lägen. Kinematische
   Körper stoßen Schutt nicht an, Box3D lässt kinematische und statische Körper nicht kollidieren.
