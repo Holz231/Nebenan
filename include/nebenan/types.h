@@ -261,7 +261,9 @@ typedef struct nbImpactResult
 	/// New rigid bodies created for debris and collapsing parts.
 	int createdBodyCount;
 
-	/// Time spent computing Voronoi cells and their hulls in milliseconds. This part runs on the workers.
+	/// Time in milliseconds from the start of the fracture until all cells are done. The workers draw the fracture
+	/// sites and compute the Voronoi cells and their hulls, the calling thread brings the rubble in reach back to
+	/// life meanwhile.
 	float fractureTime;
 
 	/// Total time of the impact in milliseconds.
@@ -343,14 +345,16 @@ typedef struct nbWorldDef
 	/// contact before the fracture happens, so without this a cannonball would bounce off the debris.
 	float collisionPassThrough;
 
-	/// Number of threads that compute Voronoi cells and hulls, including the calling thread. Clamped to
+	/// Number of threads that work on an impact, including the calling thread. They estimate how much of each
+	/// chunk the impact damages, draw the fracture sites and compute the Voronoi cells and hulls. Clamped to
 	/// [1, NB_MAX_WORKERS]. Above 1, Nebenan uses the task callbacks below, or starts its own threads
 	/// when none are given. The fracture result does not depend on the number of workers.
 	int workerCount;
 
 	/// Optional task system. The signatures are the ones of Box3D, so one task system can serve both.
-	/// Nebenan enqueues at most workerCount - 1 tasks per impact and finishes all of them before it
-	/// returns. The allocator set with nbSetAllocator must be thread safe when workers are used.
+	/// Nebenan enqueues at most workerCount - 1 tasks at a time and finishes all of them before it
+	/// enqueues more or returns. The allocator set with nbSetAllocator must be thread safe when workers
+	/// are used.
 	b3EnqueueTaskCallback* enqueueTask;
 
 	/// Finishes a task returned by enqueueTask.

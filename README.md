@@ -10,8 +10,9 @@ gelöscht. Kein Staub, keine Schatten: Jede Millisekunde geht in die Zerstörung
   temporäre Daten, keine Abhängigkeiten außer Box3D
 - Voronoi-Bruch, der sich auf den Einschlag konzentriert: kleine Splitter am Einschlagpunkt, große Platten
   weiter weg. Nur die getroffenen Bruchstücke werden verfeinert, der Rest der Wand bleibt ein großes Stück
-- Voronoi-Zellen und Hüllen laufen auf mehreren Threads, über das Task-System der Anwendung oder eingebaute
-  Threads. Das Ergebnis hängt nicht von der Zahl der Threads ab
+- Ein Einschlag rechnet auf mehreren Threads, über das Task-System der Anwendung oder eingebaute Threads: Schaden
+  an den getroffenen Stücken, Bruchpunkte, Voronoi-Zellen und Hüllen. Derweil weckt der aufrufende Thread den Schutt
+  am Einschlag auf. Das Ergebnis hängt nicht von der Zahl der Threads ab
 - Einsturz Etage für Etage, auf jeder Höhe und in jeder Reihenfolge: Hat eine Etage weniger als die Hälfte ihrer Wände,
   fliegen ihre letzten Wände mit Wucht heraus, und alles darüber kommt als ein Stück herunter, gekippt zur Seite, wo
   die Wände fehlen. Die Räume oben bleiben ganz und geben wieder Deckung. Sonst stürzt an einem Haus nichts ein,
@@ -194,13 +195,17 @@ Einschlag begrenzt.
 nur bis zur Tiefe `maxDepth`. Eine Wand mit einem Einschussloch besteht danach aus ein paar Dutzend Stücken
 statt aus Tausenden.
 
-**Mehrere Threads.** Ein Einschlag läuft in drei Phasen. Zuerst werden die Bruchpunkte aller getroffenen
-Stücke in fester Reihenfolge gezogen. Dann berechnen die Worker die Voronoi-Zellen samt Box3D-Hüllen. Jede
-Zelle hängt nur von ihren Eingaben ab, die Worker holen sich die nächste Zelle über einen atomaren Zähler und
-schreiben in eine eigene Arena. Zuletzt werden Stücke und Verbindungen wieder in fester Reihenfolge
+**Mehrere Threads.** Ein Einschlag gibt alles, was nur rechnet, an die Worker. Trifft er 32 oder mehr Stücke, die
+er zerteilen kann, schätzen sie zuerst, wie viel von jedem in der Schadenskugel liegt, jedes Stück mit einem
+eigenen Zufallsstrom. Daraus verteilt der aufrufende Thread die Splitter auf die Stücke und gibt jedem Stück in
+fester Reihenfolge den Zufallsstrom für seine Bruchpunkte. Dann ziehen die Worker die Bruchpunkte und berechnen die
+Voronoi-Zellen samt Box3D-Hüllen, eine Zelle wartet nur auf die Punkte ihres Stücks. Jede Arbeit hängt nur von
+ihren Eingaben ab, die Worker holen sich die nächste über einen atomaren Zähler und schreiben in eine eigene Arena.
+Währenddessen weckt der aufrufende Thread den Schutt auf, den der Einschlag bewegt, denn Änderungen an der
+Box3D-Welt dürfen nur von einem Thread kommen. Zuletzt werden Stücke und Verbindungen wieder in fester Reihenfolge
 eingebaut. Deshalb ist das Ergebnis mit einem, vier oder acht Threads bitgleich. Wie Box3D nimmt Nebenan das
-Task-System der Anwendung (`enqueueTask` und `finishTask` mit denselben Signaturen wie in Box3D) oder
-startet eigene Threads. Die Vorzerlegung beim Laden läuft genauso.
+Task-System der Anwendung (`enqueueTask` und `finishTask` mit denselben Signaturen wie in Box3D) oder startet
+eigene Threads. Die Vorzerlegung beim Laden läuft genauso.
 
 **Stützgraph.** Zwei Bruchstücke sind verbunden, wenn sich ihre Flächen berühren. Jede Verbindung hält
 `strength × Kontaktfläche` aus, zwischen zwei Materialien mit dem kleineren `strength`. Der Schaden eines
@@ -480,7 +485,7 @@ beim Einbinden nicht gebaut.
 | `maxCollisionImpactsPerUpdate` | 4 | Begrenzt die Kollisionseinschläge pro Frame |
 | `maxFragmentsPerImpact` | 160 | Begrenzt die Kosten großer Explosionen |
 | `collisionPassThrough` | 0,6 | Anteil der Geschwindigkeit, den ein durchschlagendes Geschoss behält |
-| `workerCount` | 1 | Threads für Voronoi-Zellen und Hüllen, der aufrufende Thread zählt mit |
+| `workerCount` | 1 | Threads für Einschläge: Schaden, Bruchpunkte, Voronoi-Zellen und Hüllen, der aufrufende Thread zählt mit |
 | `enqueueTask`, `finishTask`, `userTaskContext` | leer | Task-System der Anwendung, sonst startet Nebenan eigene Threads |
 
 Die Demo nimmt für Ziegel Dichte 1900, Festigkeit 6·10⁵ und Splitter 0,1 m, für Beton Dichte 2400,
@@ -514,20 +519,20 @@ unter dem Beschuss oben 1,4- bis 1,8-mal so lange wie heute ohne Einstürze.
 
 Die Zeit ist zum größten Teil der Box3D-Schritt, und den bestimmen zwei Zahlen:
 
-- **Bruchstückgröße.** Mit doppelt so großen Bruchstücken liegen am Ende 23 100 statt 76 800 Bruchstücke herum,
+- **Bruchstückgröße.** Mit doppelt so großen Bruchstücken liegen am Ende 23 100 statt 78 200 Bruchstücke herum,
   und Box3D rechnet 6000 statt 16 000 Kontakte. Die Zahl der Splitter eines Einschlags fällt mit dem Quadrat
   der Größe.
 - **Bewegte Trümmer.** Box3D bewegt höchstens `maxDebrisBodies` (1500) Trümmer gleichzeitig. Was zur Ruhe kommt,
-  liegt als Schutt und kostet nichts mehr, am Ende der Stadt 33 500 Körper.
+  liegt als Schutt und kostet nichts mehr, am Ende der Stadt 34 300 Körper.
 
 Ganze Einschläge (Bruch, Stützgraph, neue Box3D-Körper) und der Box3D-Schritt danach bei 60 Hz mit
 4 Substeps, jeweils mit 1 und 4 Threads, der mittlere von drei Läufen:
 
 | Szenario | Einschlag Ø, 1 / 4 Threads | Box3D-Schritt Ø, 1 / 4 Threads | Am Ende |
 | --- | ---: | ---: | --- |
-| Gewehr, 200 Treffer | 0,33 / 0,34 ms | 1,1 / 0,9 ms | 3599 Bruchstücke, 919 Körper |
-| 20 Explosionen | 3,3 / 2,2 ms | 5,8 / 2,7 ms | 6958 Bruchstücke, 3188 Körper |
-| Gebäude, 18 Treffer | 2,5 / 1,7 ms | 3,9 / 1,7 ms | 4830 Bruchstücke, 2393 Körper |
+| Gewehr, 200 Treffer | 0,33 / 0,34 ms | 1,1 / 0,9 ms | 3593 Bruchstücke, 885 Körper |
+| 20 Explosionen | 3,3 / 2,2 ms | 5,8 / 2,7 ms | 7159 Bruchstücke, 3502 Körper |
+| Gebäude, 18 Treffer | 2,5 / 1,7 ms | 3,9 / 1,7 ms | 4798 Bruchstücke, 2397 Körper |
 
 Das Gebäude hat Wände und Decken aus einem Material, und seine Zellen laufen über die Stöße. Jede Zelle über einem
 Stoß besteht aus einem Teil auf jeder Seite, so sind es beim Laden 908 statt 549 Bruchstücke.
@@ -603,8 +608,10 @@ Nach Änderungen an `demo/shaders/scene.glsl` die Shader neu erzeugen, im Ordner
   tragen sie dann aber nicht.
 - Einstürze kosten: Was fällt und fliegt, bewegt sich, bis es als Schutt liegt. Braucht jede Etage 90 % ihrer Wände,
   braucht die Stadt unter Dauerbeschuss 1,2- bis 1,8-mal so lange wie ohne Einstürze, siehe Leistung.
-- Nur die Voronoi-Zellen und Hüllen laufen parallel. Punktverteilung, Einbau der Stücke und das Anlegen der
-  Box3D-Formen bleiben auf dem aufrufenden Thread, bei großen Explosionen ist das der größere Teil.
+- Was die Box3D-Welt ändert, bleibt auf dem aufrufenden Thread, Box3D erlaubt das nur von einem Thread aus: Schutt
+  aufwecken, Körper und Formen anlegen. Dort bleiben auch der Einbau der Stücke und die Suche nach losen Teilen. Das
+  Aufwecken läuft gleichzeitig mit den Voronoi-Zellen, der Rest danach, bei großen Explosionen ist das der größere
+  Teil.
 - Nur konvexe Teile, aus denen sich Quader ausschneiden lassen. Andere konkave Formen müssen als mehrere konvexe
   Teile angegeben werden.
 - Render- und Physikgeometrie sind dieselben flachen Polygone.

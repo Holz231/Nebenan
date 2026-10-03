@@ -604,7 +604,7 @@ nbDestructibleId nbCreateDestructible( nbWorldId worldId, const nbDestructibleDe
 		}
 	}
 
-	nbRunFractureJobs( world, jobs, jobCount );
+	nbRunFractureJobs( world, jobs, jobCount, NULL, NULL, NULL, NULL );
 
 	// The piece and cell of every new chunk, in the order of the touched chunks. A chunk that is a whole piece has no cell.
 	nbIntArray chunkPieces = { 0 };

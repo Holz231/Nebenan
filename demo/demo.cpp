@@ -1260,7 +1260,7 @@ static void DrawUi( App& app )
 	}
 	ImGui::Text( "Physik      %6.2f ms  (Box3D Schritt)", app.physicsTime );
 	ImGui::Text( "Zerstörung  %6.2f ms  (Update)", app.destructionTime );
-	ImGui::Text( "Einschlag   %6.2f ms  davon Voronoi %.2f ms", app.lastImpact.totalTime, app.lastImpact.fractureTime );
+	ImGui::Text( "Einschlag   %6.2f ms  davon parallel %.2f ms", app.lastImpact.totalTime, app.lastImpact.fractureTime );
 	ImGui::Text( "Bruchstücke %d  Verbindungen %d", stats.chunkCount, stats.bondCount );
 	ImGui::Text( "Trümmerkörper %d  wach %d  Kontakte %d", stats.dynamicBodyCount, b3World_GetAwakeBodyCount( app.physics ),
 				 counters.contactCount );

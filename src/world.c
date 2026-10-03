@@ -3517,10 +3517,16 @@ static void nbStopWorkers( nbWorld* world )
 typedef struct nbFractureTask
 {
 	nbFractureJob* jobs;
+	int jobCount;
 	const int* itemJobs;
 	const int* itemCells;
 	int itemCount;
 	int siteCapacity;
+
+	// Draws the sites of a job, run as the first items, and one flag per job that is set once its sites are drawn
+	nbPrepareJobFn* prepare;
+	void* prepareContext;
+	int* prepared;
 
 	// Shared counter that hands out the work items
 	int* nextItem;
@@ -3543,13 +3549,39 @@ static void nbFractureTaskMain( void* context )
 			break;
 		}
 
-		nbComputeCell( task->jobs + task->itemJobs[item], task->itemCells[item], task->arena, &scratch, &task->counters );
+		// The sites of every job come first. A cell of a job whose sites another worker still draws waits for them, all
+		// of them were handed out before any cell.
+		if ( task->prepare != NULL && item < task->jobCount )
+		{
+			task->prepare( task->prepareContext, item );
+			nbAtomicFetchAddInt( task->prepared + item, 1 );
+			continue;
+		}
+
+		int jobIndex = task->itemJobs[item];
+		if ( task->prepare != NULL )
+		{
+			while ( nbAtomicFetchAddInt( task->prepared + jobIndex, 0 ) == 0 )
+			{
+				b3Yield();
+			}
+		}
+
+		// A job has as many cells as sites, the items cover the most it can draw
+		const nbFractureJob* job = task->jobs + jobIndex;
+		int cellIndex = task->itemCells[item];
+		if ( cellIndex < job->siteCount && ( task->prepare == NULL || job->siteCount >= 2 ) )
+		{
+			nbComputeCell( job, cellIndex, task->arena, &scratch, &task->counters );
+		}
 	}
 }
 
-void nbRunFractureJobs( nbWorld* world, nbFractureJob* jobs, int jobCount )
+void nbRunFractureJobs( nbWorld* world, nbFractureJob* jobs, int jobCount, nbPrepareJobFn* prepare, void* prepareContext,
+						nbCallerWorkFn* callerWork, void* callerContext )
 {
-	int itemCount = 0;
+	int prepareCount = prepare != NULL ? jobCount : 0;
+	int itemCount = prepareCount;
 	int siteCapacity = 0;
 	for ( int i = 0; i < jobCount; ++i )
 	{
@@ -3560,6 +3592,10 @@ void nbRunFractureJobs( nbWorld* world, nbFractureJob* jobs, int jobCount )
 
 	if ( itemCount == 0 )
 	{
+		if ( callerWork != NULL )
+		{
+			callerWork( callerContext );
+		}
 		return;
 	}
 
@@ -3567,9 +3603,11 @@ void nbRunFractureJobs( nbWorld* world, nbFractureJob* jobs, int jobCount )
 	// cheap cells at the impact against the larger cells further out.
 	int* itemJobs = nbArena_AllocArray( &world->arena, int, itemCount );
 	int* itemCells = nbArena_AllocArray( &world->arena, int, itemCount );
-	int item = 0;
+	int* prepared = nbArena_AllocArray( &world->arena, int, jobCount + 1 );
+	int item = prepareCount;
 	for ( int i = 0; i < jobCount; ++i )
 	{
+		prepared[i] = 0;
 		for ( int k = 0; k < jobs[i].siteCount; ++k )
 		{
 			itemJobs[item] = i;
@@ -3589,10 +3627,14 @@ void nbRunFractureJobs( nbWorld* world, nbFractureJob* jobs, int jobCount )
 	{
 		tasks[i] = (nbFractureTask){
 			.jobs = jobs,
+			.jobCount = jobCount,
 			.itemJobs = itemJobs,
 			.itemCells = itemCells,
 			.itemCount = itemCount,
 			.siteCapacity = siteCapacity,
+			.prepare = prepare,
+			.prepareContext = prepareContext,
+			.prepared = prepared,
 			.nextItem = &nextItem,
 			.arena = world->workerArenas + i,
 		};
@@ -3603,7 +3645,11 @@ void nbRunFractureJobs( nbWorld* world, nbFractureJob* jobs, int jobCount )
 		userTasks[i] = world->enqueueTask( nbFractureTaskMain, tasks + i, world->userTaskContext, "nebenan fracture" );
 	}
 
-	// The calling thread works as well
+	// The calling thread does its own work meanwhile, then it works on the cells as well
+	if ( callerWork != NULL )
+	{
+		callerWork( callerContext );
+	}
 	nbFractureTaskMain( tasks + 0 );
 
 	for ( int i = 1; i < taskCount; ++i )
@@ -3617,6 +3663,53 @@ void nbRunFractureJobs( nbWorld* world, nbFractureJob* jobs, int jobCount )
 	for ( int i = 0; i < taskCount; ++i )
 	{
 		world->stats.hullFallbackCount += tasks[i].counters.hullFallbackCount;
+	}
+}
+
+typedef struct nbParallelTask
+{
+	nbParallelFn* fn;
+	void* context;
+	int itemCount;
+	int* nextItem;
+} nbParallelTask;
+
+static void nbParallelTaskMain( void* context )
+{
+	nbParallelTask* task = context;
+	for ( ;; )
+	{
+		int item = nbAtomicFetchAddInt( task->nextItem, 1 );
+		if ( item >= task->itemCount )
+		{
+			break;
+		}
+
+		task->fn( task->context, item );
+	}
+}
+
+void nbParallelFor( nbWorld* world, int itemCount, int minItems, nbParallelFn* fn, void* context )
+{
+	int taskCount = world->enqueueTask != NULL && itemCount >= minItems ? world->workerCount : 1;
+	taskCount = taskCount < itemCount ? taskCount : itemCount;
+
+	int nextItem = 0;
+	nbParallelTask task = { fn, context, itemCount, &nextItem };
+	void* userTasks[NB_MAX_WORKERS];
+	for ( int i = 1; i < taskCount; ++i )
+	{
+		userTasks[i] = world->enqueueTask( nbParallelTaskMain, &task, world->userTaskContext, "nebenan parallel" );
+	}
+
+	nbParallelTaskMain( &task );
+
+	for ( int i = 1; i < taskCount; ++i )
+	{
+		if ( userTasks[i] != NULL )
+		{
+			world->finishTask( userTasks[i], world->userTaskContext );
+		}
 	}
 }
 

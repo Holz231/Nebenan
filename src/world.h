@@ -410,10 +410,25 @@ int nbFindChunkFromShape( const nbWorld* world, b3ShapeId shapeId );
 // Start an operation that creates, fractures or splits chunks
 void nbBeginOperation( nbWorld* world );
 
+// Draws the sites of a job on a worker, see nbRunFractureJobs
+typedef void nbPrepareJobFn( void* context, int jobIndex );
+
+// Work of the calling thread while the workers compute the cells, see nbRunFractureJobs
+typedef void nbCallerWorkFn( void* context );
+
 // Compute the cells of the fracture jobs, spread over the workers. Allocates the cell arrays. The cell
-// memory stays valid until the next operation begins.
+// memory stays valid until the next operation begins. With a prepare function the workers draw the sites
+// of every job first: the site count of a job is how many it may draw, and the prepare function sets the
+// sites and how many there are. A job with fewer than two gets no cells. With caller work the calling thread
+// does that first, while the workers start on the jobs, then it joins them. The caller work must not touch the jobs.
 struct nbFractureJob;
-void nbRunFractureJobs( nbWorld* world, struct nbFractureJob* jobs, int jobCount );
+void nbRunFractureJobs( nbWorld* world, struct nbFractureJob* jobs, int jobCount, nbPrepareJobFn* prepare,
+						void* prepareContext, nbCallerWorkFn* callerWork, void* callerContext );
+
+// Run a function for every item, spread over the workers if there are at least minItems. The items must not depend on
+// each other or change the world.
+typedef void nbParallelFn( void* context, int item );
+void nbParallelFor( nbWorld* world, int itemCount, int minItems, nbParallelFn* fn, void* context );
 
 // Create a chunk from a shape and add it to an actor. Builds the Box3D hull right away.
 // Takes ownership of the shape. Returns NB_NULL_INDEX and destroys the shape if the hull is degenerate.

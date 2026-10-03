@@ -2,7 +2,8 @@
 
 // The impact pipeline:
 //  1. query the chunks overlapping the damage sphere
-//  2. refine large chunks with a Voronoi fracture concentrated at the impact
+//  2. refine large chunks with a Voronoi fracture concentrated at the impact, on the workers, while the calling thread
+//     brings the rubble in reach back to life
 //  3. damage the bonds near the impact, broken bonds disconnect chunks
 //  4. split actors into rigid islands, islands without an anchor become dynamic bodies
 //  5. commit shape changes to Box3D and set the velocities of the new bodies
@@ -11,6 +12,10 @@
 #include "world.h"
 
 #include <float.h>
+
+// The overlaps of the candidates that could be refined are estimated on the workers from this many on. One takes about
+// 3 us, waking the workers costs more for fewer.
+#define NB_PARALLEL_OVERLAPS 32
 
 typedef struct nbImpactFrame
 {
@@ -87,24 +92,38 @@ static const nbImpactFrame* nbFindFrame( const nbImpactFrame* frames, int count,
 	return NULL;
 }
 
-// Set up the fracture of one chunk into Voronoi cells concentrated at the impact. The sites are drawn here,
-// in a fixed order, so the fracture pattern does not depend on the workers that compute the cells.
-static bool nbPrepareRefine( nbWorld* world, int chunkIndex, b3Vec3 localPoint, float radius, int innerCount, nbFractureJob* job )
+// What a worker needs to draw the sites of a refine job
+typedef struct nbRefinePrep
+{
+	// The parent in the frame of its chunk, moved to the frame of the job before the sites are drawn
+	nbPoly* parent;
+	nbSiteParams params;
+	nbRandom rng;
+	b3Vec3* sites;
+} nbRefinePrep;
+
+typedef struct nbRefineTask
+{
+	nbFractureJob* jobs;
+	nbRefinePrep* preps;
+} nbRefineTask;
+
+// Set up the fracture of one chunk into Voronoi cells concentrated at the impact. The random stream of every job is
+// taken here, in a fixed order, so the fracture pattern does not depend on the workers that draw the sites and compute
+// the cells. The parent is the chunk as a polyhedron in its own frame.
+static void nbPrepareRefine( nbWorld* world, int chunkIndex, nbPoly* parent, b3Vec3 localPoint, float radius, int innerCount,
+							 nbFractureJob* job, nbRefinePrep* prep )
 {
 	nbChunk* chunk = world->chunks.data + chunkIndex;
 	nbDestructible* destructible = world->destructibles.data + chunk->destructibleIndex;
 	const nbMaterial* material = destructible->materials + chunk->materialIndex;
 	const nbShape* parentShape = chunk->shape;
 
-	// Center the working polyhedron for precision
+	// The working polyhedron is centered for precision
 	b3Vec3 origin = parentShape->centroid;
-	nbPoly* parent = nbArena_AllocArray( &world->arena, nbPoly, 1 );
-	nbShape_ToPoly( parentShape, parent );
-	nbPoly_Translate( parent, b3Neg( origin ) );
 
 	uint64_t stream = nbHashSeed( destructible->fractureCounter, ( (uint64_t)chunkIndex << 16 ) | chunk->generation );
 	destructible->fractureCounter += 1;
-	nbRandom rng = nbMakeRandom( destructible->seed, stream );
 
 	float fragmentSize = nbGetFragmentSize( world, material );
 	int ringCount = innerCount / 3;
@@ -119,40 +138,109 @@ static bool nbPrepareRefine( nbWorld* world, int chunkIndex, b3Vec3 localPoint, 
 	int outerCount = nx * ny * nz - 1;
 	outerCount = outerCount > 32 ? 32 : outerCount;
 
-	nbSiteParams params = {
-		.center = b3Sub( localPoint, origin ),
-		.radius = radius,
-		.innerCount = innerCount,
-		.ringCount = ringCount,
-		.outerCount = outerCount,
-		.minSpacing = 0.45f * fragmentSize,
-	};
-
 	int capacity = innerCount + ringCount + outerCount;
-	b3Vec3* sites = nbArena_AllocArray( &world->arena, b3Vec3, capacity );
-	int siteCount = nbGenerateSites( parent, &params, &rng, sites, capacity );
-	if ( siteCount < 2 )
-	{
-		return false;
-	}
+	*prep = (nbRefinePrep){
+		.parent = parent,
+		.params = {
+			.center = b3Sub( localPoint, origin ),
+			.radius = radius,
+			.innerCount = innerCount,
+			.ringCount = ringCount,
+			.outerCount = outerCount,
+			.minSpacing = 0.45f * fragmentSize,
+		},
+		.rng = nbMakeRandom( destructible->seed, stream ),
+		.sites = nbArena_AllocArray( &world->arena, b3Vec3, capacity ),
+	};
 
 	*job = (nbFractureJob){
 		.parent = parent,
-		.sites = sites,
-		.siteCount = siteCount,
+		.sites = prep->sites,
+		.siteCount = capacity,
 		.origin = origin,
 		.interiorMaterial = chunk->interiorMaterial,
 		.tolerance = 1.0e-6f + 2.0e-6f * parentShape->radius,
 		.minVolume = material->minFragmentVolume,
 		.buildHulls = true,
 	};
-	return true;
+}
+
+// Draw the sites of a refine job on a worker
+static void nbDrawRefineSites( void* context, int jobIndex )
+{
+	nbRefineTask* task = context;
+	nbFractureJob* job = task->jobs + jobIndex;
+	nbRefinePrep* prep = task->preps + jobIndex;
+	nbPoly_Translate( prep->parent, b3Neg( job->origin ) );
+	job->siteCount = nbGenerateSites( prep->parent, &prep->params, &prep->rng, prep->sites, job->siteCount );
+}
+
+// The rubble in reach of an impact that the impact moves comes back to life, see nbThawRubble. A collision only wakes the
+// rubble it hit. Nothing the fracture reads depends on it, so it runs on the calling thread while the workers compute
+// the cells.
+typedef struct nbImpactThaw
+{
+	nbWorld* world;
+	b3AABB box;
+	float ejectSpeed;
+	int actorFilter;
+	bool done;
+} nbImpactThaw;
+
+static void nbThawImpactRubble( void* context )
+{
+	nbImpactThaw* thaw = context;
+	if ( thaw->done )
+	{
+		return;
+	}
+	thaw->done = true;
+
+	nbWorld* world = thaw->world;
+	if ( thaw->actorFilter == NB_NULL_INDEX )
+	{
+		nbThawRubble( world, thaw->box, thaw->ejectSpeed );
+	}
+	else if ( world->actors.data[thaw->actorFilter].isRubble &&
+			  nbImpactMoves( world, world->actors.data + thaw->actorFilter, thaw->ejectSpeed ) )
+	{
+		nbThawActor( world, thaw->actorFilter );
+	}
+}
+
+// The overlap of a chunk that could be refined with the damage sphere, estimated on a worker
+typedef struct nbOverlapTask
+{
+	const nbWorld* world;
+	const int* candidates;
+	const int* items;
+	nbPoly** polys;
+	const b3Vec3* points;
+	float radius;
+	float* overlaps;
+} nbOverlapTask;
+
+static void nbEstimateOverlap( void* context, int item )
+{
+	nbOverlapTask* task = context;
+	int i = task->items[item];
+	const nbChunk* chunk = task->world->chunks.data + task->candidates[i];
+	const nbDestructible* destructible = task->world->destructibles.data + chunk->destructibleIndex;
+	nbShape_ToPoly( chunk->shape, task->polys[i] );
+	nbRandom sampler = nbMakeRandom( destructible->seed, nbHashSeed( task->candidates[i], chunk->generation ) );
+	task->overlaps[i] = nbEstimateSphereOverlap( task->polys[i], task->points[i], task->radius, &sampler, 64 );
 }
 
 // Replace a chunk by the cells of its fracture job. The children take the place of the chunk in its
 // actor, inherit its outer bonds and are glued to each other.
 static int nbFinishRefine( nbWorld* world, int chunkIndex, const nbFractureJob* job, nbImpactResult* result )
 {
+	// Too few sites fit into the chunk, it got no cells
+	if ( job->siteCount < 2 )
+	{
+		return 0;
+	}
+
 	int validCount = 0;
 	for ( int i = 0; i < job->siteCount; ++i )
 	{
@@ -432,23 +520,16 @@ nbImpactResult nbApplyImpact( nbWorld* world, const nbImpactDef* def, int actorF
 		destructibleFilter = def->destructibleId.index1 - 1;
 	}
 
-	// 1. Query, after the rubble in reach that the impact moves came back to life. Heavier rubble stays static and only
-	// loses the chunks the impact breaks off. A collision damages only the actor that was hit.
+	// 1. Query. The rubble in reach that the impact moves comes back to life before the chunks are built, see
+	// nbThawImpactRubble. Heavier rubble stays static and only loses the chunks the impact breaks off. A collision
+	// damages only the actor that was hit.
 	float radius = def->radius;
 	b3Pos point = def->point;
 	b3AABB box = {
 		{ (float)point.x - radius, (float)point.y - radius, (float)point.z - radius },
 		{ (float)point.x + radius, (float)point.y + radius, (float)point.z + radius },
 	};
-	const nbActor* target = actorFilter != NB_NULL_INDEX ? world->actors.data + actorFilter : NULL;
-	if ( target == NULL )
-	{
-		nbThawRubble( world, box, def->ejectSpeed );
-	}
-	else if ( target->isRubble && nbImpactMoves( world, target, def->ejectSpeed ) )
-	{
-		nbThawActor( world, actorFilter );
-	}
+	nbImpactThaw thaw = { world, box, def->ejectSpeed, actorFilter, false };
 
 	nbQueryContext queryContext = { world, destructibleFilter, actorFilter };
 	b3World_OverlapAABB( world->physicsWorld, box, b3DefaultQueryFilter(), nbQueryCallback, &queryContext );
@@ -456,6 +537,7 @@ nbImpactResult nbApplyImpact( nbWorld* world, const nbImpactDef* def, int actorF
 	int queryCount = world->scratchList.count;
 	if ( queryCount == 0 )
 	{
+		nbThawImpactRubble( &thaw );
 		return result;
 	}
 
@@ -504,6 +586,7 @@ nbImpactResult nbApplyImpact( nbWorld* world, const nbImpactDef* def, int actorF
 
 	if ( candidateCount == 0 )
 	{
+		nbThawImpactRubble( &thaw );
 		return result;
 	}
 
@@ -512,10 +595,11 @@ nbImpactResult nbApplyImpact( nbWorld* world, const nbImpactDef* def, int actorF
 	// 2. Refine chunks that are much larger than the fragments this impact creates.
 	// The fragment count grows with the fracture area, (volume / fragment volume)^(2/3), not with the
 	// volume, and the total per impact is capped. This keeps large blasts affordable.
-	int refineCount = 0;
-	float totalOverlap = 0.0f;
-	float totalDesired = 0.0f;
-	float* desired = nbArena_AllocArray( &world->arena, float, candidateCount );
+	// The overlaps are estimated on the workers, every chunk with its own random stream, and summed up in candidate order
+	nbPoly** polys = nbArena_AllocArray( &world->arena, nbPoly*, candidateCount );
+	b3Vec3* points = nbArena_AllocArray( &world->arena, b3Vec3, candidateCount );
+	int* overlapItems = nbArena_AllocArray( &world->arena, int, candidateCount );
+	int overlapCount = 0;
 	for ( int i = 0; i < candidateCount; ++i )
 	{
 		nbChunk* chunk = world->chunks.data + candidates[i];
@@ -525,19 +609,36 @@ nbImpactResult nbApplyImpact( nbWorld* world, const nbImpactDef* def, int actorF
 		float fragmentVolume = fragmentSize * fragmentSize * fragmentSize;
 
 		overlaps[i] = 0.0f;
-		desired[i] = 0.0f;
+		polys[i] = NULL;
 		bool canRefine = chunk->depth < material->maxDepth && chunk->shape->volume > 3.0f * fragmentVolume &&
 						 chunk->shape->radius > 1.2f * fragmentSize;
-		if ( canRefine == false )
+		if ( canRefine )
+		{
+			polys[i] = nbArena_AllocArray( &world->arena, nbPoly, 1 );
+			points[i] = nbFindFrame( frames, frameCount, chunk->actorIndex )->localPoint;
+			overlapItems[overlapCount++] = i;
+		}
+	}
+
+	nbOverlapTask overlapTask = { world, candidates, overlapItems, polys, points, radius, overlaps };
+	nbParallelFor( world, overlapCount, NB_PARALLEL_OVERLAPS, nbEstimateOverlap, &overlapTask );
+
+	int refineCount = 0;
+	float totalOverlap = 0.0f;
+	float totalDesired = 0.0f;
+	float* desired = nbArena_AllocArray( &world->arena, float, candidateCount );
+	for ( int i = 0; i < candidateCount; ++i )
+	{
+		desired[i] = 0.0f;
+		if ( polys[i] == NULL )
 		{
 			continue;
 		}
 
-		const nbImpactFrame* frame = nbFindFrame( frames, frameCount, chunk->actorIndex );
-		nbPoly* poly = nbArena_AllocArray( &world->arena, nbPoly, 1 );
-		nbShape_ToPoly( chunk->shape, poly );
-		nbRandom sampler = nbMakeRandom( destructible->seed, nbHashSeed( candidates[i], chunk->generation ) );
-		overlaps[i] = nbEstimateSphereOverlap( poly, frame->localPoint, radius, &sampler, 64 );
+		const nbChunk* chunk = world->chunks.data + candidates[i];
+		const nbDestructible* destructible = world->destructibles.data + chunk->destructibleIndex;
+		float fragmentSize = nbGetFragmentSize( world, destructible->materials + chunk->materialIndex );
+		float fragmentVolume = fragmentSize * fragmentSize * fragmentSize;
 		totalOverlap += overlaps[i];
 		refineCount += overlaps[i] > 0.0f ? 1 : 0;
 
@@ -549,10 +650,11 @@ nbImpactResult nbApplyImpact( nbWorld* world, const nbImpactDef* def, int actorF
 	float fragmentBudget = def->fragmentCount > 0 ? (float)def->fragmentCount : totalDesired;
 	fragmentBudget = b3MinFloat( fragmentBudget, (float)world->def.maxFragmentsPerImpact );
 
-	// Draw the sites of every chunk first, then compute all cells on the workers, then build the chunks.
-	// Each phase runs in candidate order, so the result is the same for any number of workers.
+	// Set up a job for every chunk in candidate order, then draw the sites and compute the cells on the workers, then
+	// build the chunks in candidate order. The result is the same for any number of workers.
 	int firstChild = world->touchedChunks.count;
 	nbFractureJob* jobs = nbArena_AllocArray( &world->arena, nbFractureJob, candidateCount );
+	nbRefinePrep* preps = nbArena_AllocArray( &world->arena, nbRefinePrep, candidateCount );
 	int* jobCandidates = nbArena_AllocArray( &world->arena, int, candidateCount );
 	int jobCount = 0;
 	for ( int i = 0; i < candidateCount && refineCount > 0; ++i )
@@ -562,26 +664,21 @@ nbImpactResult nbApplyImpact( nbWorld* world, const nbImpactDef* def, int actorF
 			continue;
 		}
 
-		int chunkIndex = candidates[i];
-		nbChunk* chunk = world->chunks.data + chunkIndex;
-
 		// Share the budget by damaged volume
 		float share = def->fragmentCount > 0 ? overlaps[i] / totalOverlap : desired[i] / b3MaxFloat( totalDesired, 1.0e-6f );
 		int innerCount = (int)( fragmentBudget * share + 0.5f );
 		innerCount = innerCount < 3 ? 3 : ( innerCount > 192 ? 192 : innerCount );
 
-		const nbImpactFrame* frame = nbFindFrame( frames, frameCount, chunk->actorIndex );
-		if ( nbPrepareRefine( world, chunkIndex, frame->localPoint, radius, innerCount, jobs + jobCount ) )
-		{
-			jobCandidates[jobCount] = i;
-			jobCount += 1;
-		}
+		nbPrepareRefine( world, candidates[i], polys[i], points[i], radius, innerCount, jobs + jobCount, preps + jobCount );
+		jobCandidates[jobCount] = i;
+		jobCount += 1;
 	}
 
 	if ( jobCount > 0 )
 	{
 		uint64_t fractureTicks = b3GetTicks();
-		nbRunFractureJobs( world, jobs, jobCount );
+		nbRefineTask refineTask = { jobs, preps };
+		nbRunFractureJobs( world, jobs, jobCount, nbDrawRefineSites, &refineTask, nbThawImpactRubble, &thaw );
 		result.fractureTime = b3GetMilliseconds( fractureTicks );
 
 		for ( int k = 0; k < jobCount; ++k )
@@ -593,6 +690,8 @@ nbImpactResult nbApplyImpact( nbWorld* world, const nbImpactDef* def, int actorF
 			}
 		}
 	}
+
+	nbThawImpactRubble( &thaw );
 
 	// 3. Damage bonds around the impact. Every bond is visited once.
 	world->bondStamp += 1;
