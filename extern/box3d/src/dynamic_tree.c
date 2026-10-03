@@ -134,55 +134,6 @@ void b3DynamicTree_Destroy( b3DynamicTree* tree )
 	memset( tree, 0, sizeof( b3DynamicTree ) );
 }
 
-// Added for Nebenan, see b3World_Reserve
-void b3DynamicTree_Reserve( b3DynamicTree* tree, int proxyCapacity )
-{
-	// A tree of n proxies has 2n - 1 nodes plus the empty node beside the root
-	int nodeCapacity = 2 * proxyCapacity;
-	if ( nodeCapacity > tree->nodeCapacity )
-	{
-		int oldCapacity = tree->nodeCapacity;
-		tree->nodes = B3_GROW_ZERO( tree->nodes, oldCapacity, nodeCapacity );
-		tree->parents = B3_GROW_ZERO( tree->parents, oldCapacity, nodeCapacity );
-		tree->nodeCapacity = nodeCapacity;
-
-		// The spare has to match, the rebuild allocates it again.
-		b3Free( tree->swapNodes, oldCapacity * sizeof( b3TreeNode ) );
-		tree->swapNodes = NULL;
-	}
-
-	if ( proxyCapacity > tree->proxyCapacity )
-	{
-		int oldCapacity = tree->proxyCapacity;
-		tree->proxies = B3_GROW_ZERO( tree->proxies, oldCapacity, proxyCapacity );
-		tree->proxyCapacity = proxyCapacity;
-
-		for ( int i = oldCapacity; i < proxyCapacity - 1; ++i )
-		{
-			tree->proxies[i].node = B3_NULL_INDEX;
-			tree->proxies[i].next = i + 1;
-		}
-		tree->proxies[proxyCapacity - 1].node = B3_NULL_INDEX;
-		tree->proxies[proxyCapacity - 1].next = B3_NULL_INDEX;
-
-		// The new proxies go behind the free ones, in order, as growing the pool would add them once the free ones are
-		// used up.
-		if ( tree->proxyFreeList == B3_NULL_INDEX )
-		{
-			tree->proxyFreeList = oldCapacity;
-		}
-		else
-		{
-			int last = tree->proxyFreeList;
-			while ( tree->proxies[last].next != B3_NULL_INDEX )
-			{
-				last = tree->proxies[last].next;
-			}
-			tree->proxies[last].next = oldCapacity;
-		}
-	}
-}
-
 // Allocate a proxy from the pool. Grow the pool if necessary.
 static int b3AllocateProxy( b3DynamicTree* tree )
 {

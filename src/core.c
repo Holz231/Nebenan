@@ -1,5 +1,10 @@
 // SPDX-License-Identifier: MIT
 
+// MAP_ANONYMOUS for the large blocks below, also in strict C modes
+#if defined( __linux__ ) && !defined( _DEFAULT_SOURCE )
+#define _DEFAULT_SOURCE
+#endif
+
 #include "core.h"
 
 #include <stdio.h>
@@ -8,6 +13,23 @@
 #if defined( _MSC_VER )
 #include <intrin.h>
 #include <malloc.h>
+#endif
+
+#if defined( NB_LARGE_BLOCKS )
+#if defined( _WIN64 )
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#else
+#include <sys/mman.h>
+#if !defined( MAP_ANONYMOUS )
+#define MAP_ANONYMOUS MAP_ANON
+#endif
+#endif
 #endif
 
 #define NB_ALIGNMENT 32
@@ -78,6 +100,122 @@ nbVersion nbGetVersion( void )
 	return (nbVersion){ 0, 1, 0 };
 }
 
+#if defined( NB_LARGE_BLOCKS )
+
+// A large block reserves a wide range of address space and commits pages as it grows. Growing never copies it and
+// never holds the old and the new block at once, 64 bit processes have address space to spare and only the pages in
+// use take memory. 16 GB is more than any scene fills.
+#define NB_LARGE_RESERVE ( (size_t)1 << 34 )
+
+// Pages are committed in steps of 64 KB, a multiple of the page size on every platform
+#define NB_LARGE_STEP ( (size_t)1 << 16 )
+
+// The header in front of a large block, 64 bytes keep the block aligned to a cache line
+#define NB_LARGE_HEADER 64
+
+typedef struct nbLargeHeader
+{
+	size_t reserved;
+	size_t size;
+} nbLargeHeader;
+
+static size_t nbLargeCommitSize( size_t size )
+{
+	return ( NB_LARGE_HEADER + size + NB_LARGE_STEP - 1 ) & ~( NB_LARGE_STEP - 1 );
+}
+
+static char* nbReserveAddresses( size_t size )
+{
+#if defined( _WIN64 )
+	return VirtualAlloc( NULL, size, MEM_RESERVE, PAGE_NOACCESS );
+#else
+	void* ptr = mmap( NULL, size, PROT_NONE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0 );
+	return ptr != MAP_FAILED ? ptr : NULL;
+#endif
+}
+
+static bool nbCommitAddresses( char* base, size_t begin, size_t end )
+{
+#if defined( _WIN64 )
+	return VirtualAlloc( base + begin, end - begin, MEM_COMMIT, PAGE_READWRITE ) != NULL;
+#else
+	return mprotect( base + begin, end - begin, PROT_READ | PROT_WRITE ) == 0;
+#endif
+}
+
+static void nbReleaseAddresses( char* base, size_t size )
+{
+#if defined( _WIN64 )
+	NB_UNUSED( size );
+	VirtualFree( base, 0, MEM_RELEASE );
+#else
+	munmap( base, size );
+#endif
+}
+
+static void* nbAllocLarge( size_t size )
+{
+	// Take less address space if the system does not give the full range
+	size_t commitSize = nbLargeCommitSize( size );
+	for ( size_t reserveSize = NB_LARGE_RESERVE;; reserveSize /= 4 )
+	{
+		reserveSize = reserveSize > commitSize ? reserveSize : commitSize;
+		char* base = nbReserveAddresses( reserveSize );
+		if ( base != NULL )
+		{
+			if ( nbCommitAddresses( base, 0, commitSize ) == false )
+			{
+				nbReleaseAddresses( base, reserveSize );
+				return NULL;
+			}
+
+			nbLargeHeader* header = (nbLargeHeader*)base;
+			header->reserved = reserveSize;
+			header->size = size;
+			return base + NB_LARGE_HEADER;
+		}
+
+		if ( reserveSize == commitSize )
+		{
+			return NULL;
+		}
+	}
+}
+
+static void nbFreeLarge( void* mem, size_t size )
+{
+	char* base = (char*)mem - NB_LARGE_HEADER;
+	nbLargeHeader* header = (nbLargeHeader*)base;
+	NB_ASSERT( header->size == size );
+	NB_UNUSED( size );
+	nbReleaseAddresses( base, header->reserved );
+}
+
+// Grows a large block in place if its address space has room
+static bool nbGrowLarge( void* mem, size_t oldSize, size_t newSize )
+{
+	char* base = (char*)mem - NB_LARGE_HEADER;
+	nbLargeHeader* header = (nbLargeHeader*)base;
+	NB_ASSERT( header->size == oldSize );
+
+	size_t oldCommitSize = nbLargeCommitSize( oldSize );
+	size_t newCommitSize = nbLargeCommitSize( newSize );
+	if ( newCommitSize > header->reserved )
+	{
+		return false;
+	}
+
+	if ( newCommitSize > oldCommitSize && nbCommitAddresses( base, oldCommitSize, newCommitSize ) == false )
+	{
+		return false;
+	}
+
+	header->size = newSize;
+	return true;
+}
+
+#endif
+
 void* nbAlloc( size_t size )
 {
 	if ( size == 0 )
@@ -94,6 +232,12 @@ void* nbAlloc( size_t size )
 	{
 		ptr = nb_allocFcn( alignedSize, NB_ALIGNMENT );
 	}
+#if defined( NB_LARGE_BLOCKS )
+	else if ( alignedSize >= NB_LARGE_SIZE )
+	{
+		ptr = nbAllocLarge( alignedSize );
+	}
+#endif
 	else
 	{
 #if defined( _MSC_VER ) || defined( __MINGW32__ )
@@ -123,6 +267,12 @@ void nbFree( void* mem, size_t size )
 	{
 		nb_freeFcn( mem, alignedSize );
 	}
+#if defined( NB_LARGE_BLOCKS )
+	else if ( alignedSize >= NB_LARGE_SIZE )
+	{
+		nbFreeLarge( mem, alignedSize );
+	}
+#endif
 	else
 	{
 #if defined( _MSC_VER ) || defined( __MINGW32__ )
@@ -138,6 +288,21 @@ void nbFree( void* mem, size_t size )
 void* nbGrowAlloc( void* oldMem, size_t oldSize, size_t newSize )
 {
 	NB_ASSERT( newSize > oldSize );
+
+#if defined( NB_LARGE_BLOCKS )
+	// A large block grows in place while its address space has room
+	if ( nb_allocFcn == NULL && oldSize > 0 )
+	{
+		size_t oldAlignedSize = ( ( oldSize - 1 ) | ( NB_ALIGNMENT - 1 ) ) + 1;
+		size_t newAlignedSize = ( ( newSize - 1 ) | ( NB_ALIGNMENT - 1 ) ) + 1;
+		if ( oldAlignedSize >= NB_LARGE_SIZE && nbGrowLarge( oldMem, oldAlignedSize, newAlignedSize ) )
+		{
+			nbAtomicAdd64( &nb_byteCount, (int64_t)( newAlignedSize - oldAlignedSize ) );
+			return oldMem;
+		}
+	}
+#endif
+
 	void* newMem = nbAlloc( newSize );
 	if ( oldSize > 0 )
 	{

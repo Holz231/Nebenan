@@ -308,7 +308,8 @@ static uint32_t HashDestructible( uint32_t hash, nbDestructibleId wall )
 	return ( hash ^ (uint32_t)count ) * 16777619u;
 }
 
-// The frame of the determinism scenario that reserves room in Box3D, see ReserveTest. Negative for none.
+// The frame of the determinism scenario that reserves room in Box3D's hull database, see ReserveTest. Negative for
+// none.
 static int s_reserveFrame = -1;
 static int64_t s_reservedBytes = 0;
 
@@ -341,13 +342,11 @@ static uint32_t RunDeterminismScenarioWith( TestScene scene )
 			blast.ejectSpeed = 2.0f;
 			nbWorld_ApplyImpact( scene.world, &blast );
 		}
-#if defined( B3_HAS_WORLD_RESERVE )
+#if defined( B3_HAS_RESERVE_HULLS )
 		if ( frame == s_reserveFrame )
 		{
 			int64_t bytes = b3GetByteCount();
-			b3Capacity capacity = { .staticShapeCount = 20000, .dynamicShapeCount = 2000, .staticBodyCount = 20000,
-									.dynamicBodyCount = 2000, .contactCount = 5000 };
-			b3World_Reserve( scene.physicsWorld, &capacity );
+			b3World_ReserveHulls( scene.physicsWorld, 20000 );
 			s_reservedBytes = b3GetByteCount() - bytes;
 		}
 #endif
@@ -381,17 +380,56 @@ static int DeterminismTest( void )
 	return 0;
 }
 
-// Room reserved in Box3D in the middle of a run, after impacts freed and reused shapes, bodies and proxies, changes
-// nothing: the arrays only get larger, and ids are handed out in the same order
+// Room reserved in Box3D's hull database in the middle of a run, after impacts freed and added hulls, changes nothing
 static int ReserveTest( void )
 {
-#if defined( B3_HAS_WORLD_RESERVE )
+#if defined( B3_HAS_RESERVE_HULLS )
 	s_reserveFrame = 50;
 	uint32_t hash = RunDeterminismScenario();
 	s_reserveFrame = -1;
 	ENSURE( s_reservedBytes > 0 );
 	ENSURE( hash == NB_EXPECTED_DETERMINISM_HASH );
 #endif
+	return 0;
+}
+
+// Arrays of a megabyte and more grow in place: they keep their address and their values, and the memory count
+// returns to where it was when they are freed
+static int LargeBlockTest( void )
+{
+	int64_t baseBytes = nbGetByteCount();
+
+	// From a small block into a large one, which moves the values once
+	nbIntArray values = { 0 };
+	for ( int i = 0; i < 300000; ++i )
+	{
+		nbArray_Push( values, i );
+	}
+	ENSURE( values.capacity * (int)sizeof( int ) >= (int)( 1 << 20 ) );
+
+	// Then in place, a step at a time and a large step at once
+	int* data = values.data;
+	for ( int i = 300000; i < 2000000; ++i )
+	{
+		nbArray_Push( values, i );
+	}
+	nbArray_Reserve( values, 5000000 );
+#if defined( NB_LARGE_BLOCKS )
+	ENSURE( values.data == data );
+#endif
+	NB_UNUSED( data );
+
+	for ( int i = 0; i < values.count; ++i )
+	{
+		ENSURE( values.data[i] == i );
+	}
+
+	// New room can be written up to the end
+	values.data[values.capacity - 1] = 7;
+	ENSURE( nbGetByteCount() - baseBytes >= (int64_t)values.capacity * (int64_t)sizeof( int ) );
+
+	nbArray_Free( values );
+	ENSURE( nbGetByteCount() == baseBytes );
 	return 0;
 }
 
@@ -2210,6 +2248,7 @@ int WorldTest( void )
 	RUN_TEST( DeterminismTest );
 	RUN_TEST( WorkerTest );
 	RUN_TEST( ReserveTest );
+	RUN_TEST( LargeBlockTest );
 	RUN_TEST( EventTest );
 	RUN_TEST( DynamicDestructibleTest );
 	RUN_TEST( MultiPieceTest );

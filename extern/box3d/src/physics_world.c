@@ -2289,8 +2289,8 @@ b3Capacity b3World_GetMaxCapacity( b3WorldId worldId )
 	return world->maxCapacity;
 }
 
-// Added for Nebenan: room in a running world, so the arrays need not grow while it runs
-void b3World_Reserve( b3WorldId worldId, const b3Capacity* capacity )
+// Added for Nebenan: room in the hull database of a running world, so it need not rehash while the world runs
+void b3World_ReserveHulls( b3WorldId worldId, int hullCount )
 {
 	b3World* world = b3GetUnlockedWorldFromId( worldId );
 	if ( world == NULL )
@@ -2298,21 +2298,7 @@ void b3World_Reserve( b3WorldId worldId, const b3Capacity* capacity )
 		return;
 	}
 
-	b3Array_Reserve( world->bodies, capacity->staticBodyCount + capacity->dynamicBodyCount );
-	b3Array_Reserve( world->solverSets.data[b3_staticSet].bodySims, capacity->staticBodyCount );
-	b3Array_Reserve( world->solverSets.data[b3_awakeSet].bodySims, capacity->dynamicBodyCount );
-	b3Array_Reserve( world->solverSets.data[b3_awakeSet].bodyStates, capacity->dynamicBodyCount );
-	b3Array_Reserve( world->solverSets.data[b3_awakeSet].contactIndices, capacity->contactCount );
-	b3Array_Reserve( world->islands, capacity->dynamicBodyCount );
-
-	int shapeCapacity = capacity->staticShapeCount + capacity->dynamicShapeCount;
-	b3Array_Reserve( world->shapes, shapeCapacity );
-	b3Array_Reserve( world->fatAABBs, shapeCapacity );
-	b3HullMap_reserve( world->hullDatabase, (size_t)shapeCapacity );
-	b3DynamicTree_Reserve( world->broadPhase.trees + b3_staticBody, capacity->staticShapeCount );
-	b3DynamicTree_Reserve( world->broadPhase.trees + b3_dynamicBody, capacity->dynamicShapeCount );
-
-	b3Array_Reserve( world->contacts, capacity->contactCount );
+	b3HullMap_reserve( world->hullDatabase, (size_t)hullCount );
 }
 
 void b3World_SetUserData( b3WorldId worldId, void* userData )

@@ -46,6 +46,24 @@ void* nbAlloc( size_t size );
 void nbFree( void* mem, size_t size );
 void* nbGrowAlloc( void* oldMem, size_t oldSize, size_t newSize );
 
+// Large blocks grow in place where 64 bit address space can be reserved for them, see core.c. Under ASan blocks
+// keep coming from malloc, so ASan keeps checking their bounds.
+#if defined( __SANITIZE_ADDRESS__ )
+#define NB_ADDRESS_SANITIZER
+#elif defined( __has_feature )
+#if __has_feature( address_sanitizer )
+#define NB_ADDRESS_SANITIZER
+#endif
+#endif
+
+#if !defined( NB_ADDRESS_SANITIZER ) &&                                                                                          \
+	( defined( _WIN64 ) || ( defined( __LP64__ ) && ( defined( __linux__ ) || defined( __APPLE__ ) ) ) )
+#define NB_LARGE_BLOCKS
+
+// Blocks of 1 MB or more are large
+#define NB_LARGE_SIZE ( (size_t)1 << 20 )
+#endif
+
 // Atomic add that returns the previous value. Used to hand out work items to worker threads.
 int nbAtomicFetchAddInt( int* value, int delta );
 
