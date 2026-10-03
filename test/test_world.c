@@ -355,7 +355,7 @@ static uint32_t RunDeterminismScenario( void )
 
 // Fracture and physics are bit for bit identical with MSVC, GCC and Clang on x64 and ARM. This is the result
 // with the pinned Box3D commit. Update it when the results change on purpose, never to make one platform pass.
-#define NB_EXPECTED_DETERMINISM_HASH 0xf9000425u
+#define NB_EXPECTED_DETERMINISM_HASH 0x8849cb91u
 
 static int DeterminismTest( void )
 {
@@ -1789,8 +1789,15 @@ static bool FloatQueryCallback( b3ShapeId shapeId, void* context )
 {
 	FloatQuery* query = context;
 	int chunkIndex = nbFindChunkFromShape( query->world, shapeId );
-	query->found = chunkIndex == NB_NULL_INDEX || query->world->chunks.data[chunkIndex].actorIndex != query->actorIndex;
-	return query->found == false;
+	if ( chunkIndex == NB_NULL_INDEX || query->world->chunks.data[chunkIndex].actorIndex != query->actorIndex )
+	{
+		// Box3D goes on with its next tree after the callback returns false, so the answer has to stick. Otherwise a
+		// piece on rubble, which Box3D keeps in its static tree, is not carried once the piece itself turns up in the
+		// dynamic tree.
+		query->found = true;
+		return false;
+	}
+	return true;
 }
 
 // Volume of the pieces of at least a cubic meter that hang in the air: nothing lies right below their lowest chunks

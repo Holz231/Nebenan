@@ -553,9 +553,9 @@ Ganze Einschläge (Bruch, Stützgraph, neue Box3D-Körper) und der Box3D-Schritt
 
 | Szenario | Einschlag Ø, 1 / 4 Threads | Box3D-Schritt Ø, 1 / 4 Threads | Am Ende |
 | --- | ---: | ---: | --- |
-| Gewehr, 200 Treffer | 0,33 / 0,34 ms | 1,1 / 0,9 ms | 3570 Bruchstücke, 904 Körper |
-| 20 Explosionen | 3,3 / 2,2 ms | 5,8 / 2,7 ms | 7217 Bruchstücke, 3381 Körper |
-| Gebäude, 18 Treffer | 2,5 / 1,7 ms | 3,9 / 1,7 ms | 4927 Bruchstücke, 2478 Körper |
+| Gewehr, 200 Treffer | 0,33 / 0,34 ms | 1,1 / 0,9 ms | 3542 Bruchstücke, 926 Körper |
+| 20 Explosionen | 3,3 / 2,2 ms | 5,8 / 2,7 ms | 6871 Bruchstücke, 3088 Körper |
+| Gebäude, 18 Treffer | 2,5 / 1,7 ms | 3,9 / 1,7 ms | 5015 Bruchstücke, 2411 Körper |
 
 Das Gebäude hat Wände und Decken aus einem Material, und seine Zellen laufen über die Stöße. Jede Zelle über einem
 Stoß besteht aus einem Teil auf jeder Seite, so sind es beim Laden 908 statt 549 Bruchstücke.

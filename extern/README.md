@@ -1,7 +1,7 @@
 # Mitgelieferte Bibliotheken
 
-Diese Bibliotheken liegen bei, damit der Build ohne Download auskommt. Bis auf zwei Ergänzungen in Box3D sind sie
-unverändert.
+Diese Bibliotheken liegen bei, damit der Build ohne Download auskommt. Bis auf die Ergänzungen in Box3D unten sind
+sie unverändert.
 
 | Ordner | Bibliothek | Stand | Lizenz |
 | --- | --- | --- | --- |
@@ -32,7 +32,15 @@ Hüllen sind verschieden, solange jedes Objekt einen eigenen `seed` hat. Bekommt
 eine neue Hülle, teilt sie diese wieder über die Tabelle. Aufnahmen speichern das Feld nicht, ihr Format bleibt. Bei
 der Wiedergabe teilen die Formen ihre Hüllen, was dasselbe simuliert.
 
-An den Ergebnissen ändert keine der beiden etwas. Sie stehen in `src/core.c`, `include/box3d/types.h`, `src/shape.h`,
-`src/shape.c`, `src/world_snapshot.c` und `src/recording.c`, jeweils mit „Added for Nebenan“ markiert.
-`B3_HAS_UNIQUE_HULLS` zeigt die zweite an. Fehlen sie, etwa mit einem eigenen Box3D, läuft Nebenan wie zuvor, nur
-wachsen Box3Ds Arrays dann durch Umkopieren, und die Hüllen gehen durch die Tabelle.
+**Durchschlag-Schutz über den ganzen Schritt.** Box3Ds CCD rechnet für einen schnellen Körper die Zeit bis zum
+Treffer mit jeder statischen Form in seiner Nähe aus, in der Reihenfolge des statischen Baums. Bisher nur bis zum
+frühesten Treffer davor, und ein kürzeres Intervall verschiebt in den letzten Bits, wo die Suche landet. So hing das
+Ergebnis davon ab, wie die Formen in den Baum gekommen waren. Jetzt rechnet es jede Zeit über den ganzen Schritt
+(`src/solver.c`). Das kostet nichts Messbares, CCD braucht in der Stadt so oder so rund 1,6 % der Zeit.
+
+Die ersten beiden ändern an den Ergebnissen nichts. Die dritte ändert sie in den letzten Bits, dafür hängen sie nicht
+mehr davon ab, in welcher Reihenfolge Formen in den statischen Baum kommen. Die Ergänzungen stehen in `src/core.c`,
+`include/box3d/types.h`, `src/shape.h`, `src/shape.c`, `src/world_snapshot.c`, `src/recording.c` und `src/solver.c`,
+jeweils mit „Added for Nebenan“ markiert. `B3_HAS_UNIQUE_HULLS` zeigt die zweite an. Fehlen sie, etwa mit einem
+eigenen Box3D, läuft Nebenan wie zuvor, nur wachsen Box3Ds Arrays dann durch Umkopieren, und die Hüllen gehen durch
+die Tabelle.

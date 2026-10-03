@@ -417,7 +417,10 @@ static bool b3ContinuousQueryCallback( int proxyId, uint64_t userData, void* con
 	b3Sweep sweepA = b3MakeRelativeSweep( bodySim, continuousContext->base );
 
 	// Time of impact versus shape. Supports all shape types
-	b3TOIOutput output = b3ShapeTimeOfImpact( shape, fastShape, &sweepA, &continuousContext->sweep, continuousContext->fraction );
+	// Added for Nebenan: over the whole step, not only up to the earliest impact so far. The query hands out the shapes
+	// in the order of its tree, and a shorter interval moves the root the iteration settles on, so the result would
+	// depend on how the shapes went into the tree. Costs nothing measurable.
+	b3TOIOutput output = b3ShapeTimeOfImpact( shape, fastShape, &sweepA, &continuousContext->sweep, 1.0f );
 	if ( isSensor )
 	{
 		// Only accept a sensor hit that is sooner than the current solid hit.

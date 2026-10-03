@@ -1150,8 +1150,15 @@ static bool nbThawCallback( b3ShapeId shapeId, void* context )
 	return true;
 }
 
-// Rubble in the boxes, in the order Box3D finds it. Box3D's trees are deterministic, so is the order. Many boxes are
-// searched with one query over all of them. With a direction, only the rubble above the height.
+static int nbCompareInts( const void* a, const void* b )
+{
+	int x = *(const int*)a;
+	int y = *(const int*)b;
+	return ( x > y ) - ( x < y );
+}
+
+// Rubble in the boxes, in the order of the actors. Many boxes are searched with one query over all of them. With a
+// direction, only the rubble above the height.
 static void nbThawRubbleInBoxes( nbWorld* world, const b3AABB* boxes, int boxCount, b3Vec3 up, float height,
 								 const nbThawContext* filter )
 {
@@ -1184,6 +1191,13 @@ static void nbThawRubbleInBoxes( nbWorld* world, const b3AABB* boxes, int boxCou
 		.collapse = filter != NULL && filter->collapse,
 	};
 	b3World_OverlapAABB( world->physicsWorld, total, b3DefaultQueryFilter(), nbThawCallback, &context );
+
+	// Box3D finds the rubble in the order of its static tree, which depends on how the shapes went in. The order of the
+	// actors does not, so the same rubble comes back to life first.
+	if ( thawed->count > 1 )
+	{
+		qsort( thawed->data, (size_t)thawed->count, sizeof( int ), nbCompareInts );
+	}
 
 	// Past the limit the rest stays rubble
 	int limit = filter != NULL && filter->collapse ? thawed->count : NB_MAX_THAW;
