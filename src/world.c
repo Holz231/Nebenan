@@ -1364,6 +1364,12 @@ void nbCommitPhysics( nbWorld* world )
 		}
 	}
 
+#if defined( B3_HAS_STATIC_BATCH )
+	// Box3D sorts every static shape into its tree with a search from the root. The static shapes of a commit, all
+	// chunks of a building that is built, go in together with one search instead.
+	b3World_BeginStaticBatch( world->physicsWorld );
+#endif
+
 	for ( int i = 0; i < world->touchedChunks.count; ++i )
 	{
 		int chunkIndex = world->touchedChunks.data[i];
@@ -1435,6 +1441,10 @@ void nbCommitPhysics( nbWorld* world )
 		}
 	}
 	world->touchedChunks.count = 0;
+
+#if defined( B3_HAS_STATIC_BATCH )
+	b3World_EndStaticBatch( world->physicsWorld );
+#endif
 
 	// A body left without shapes goes away with its actor below
 	for ( int k = 0; k < bulkCount; ++k )

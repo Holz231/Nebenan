@@ -403,6 +403,69 @@ static int UniqueHullTest( void )
 	return 0;
 }
 
+typedef struct CountQuery
+{
+	int count;
+} CountQuery;
+
+static bool CountCallback( b3ShapeId shapeId, void* context )
+{
+	(void)shapeId;
+	CountQuery* query = context;
+	query->count += 1;
+	return true;
+}
+
+// Static shapes of a batch go into Box3D's tree together. One that goes before the batch ends leaves it, one that moves
+// goes in at its new place, queries find all the others, and a box dropped on them comes to rest there.
+static int StaticBatchTest( void )
+{
+#if defined( B3_HAS_STATIC_BATCH )
+	int64_t baseBytes = b3GetByteCount();
+	b3WorldDef worldDef = b3DefaultWorldDef();
+	b3WorldId worldId = b3CreateWorld( &worldDef );
+	b3BoxHull box = b3MakeBoxHull( 0.4f, 0.4f, 0.4f );
+	b3ShapeDef shapeDef = b3DefaultShapeDef();
+
+	b3ShapeId shapes[64];
+	b3World_BeginStaticBatch( worldId );
+	for ( int i = 0; i < 64; ++i )
+	{
+		b3BodyDef bodyDef = b3DefaultBodyDef();
+		bodyDef.position = (b3Pos){ (float)( i % 8 ), 0.4f, (float)( i / 8 ) };
+		shapes[i] = b3CreateHullShape( b3CreateBody( worldId, &bodyDef ), &shapeDef, &box.base );
+	}
+	b3DestroyShape( shapes[9], false );
+	b3Body_SetTransform( b3Shape_GetBody( shapes[18] ), (b3Pos){ 20.0f, 0.4f, 20.0f }, b3Quat_identity );
+	b3World_EndStaticBatch( worldId );
+
+	CountQuery field = { 0 };
+	b3AABB fieldBox = { { -1.0f, -1.0f, -1.0f }, { 8.0f, 1.0f, 8.0f } };
+	b3World_OverlapAABB( worldId, fieldBox, b3DefaultQueryFilter(), CountCallback, &field );
+	ENSURE( field.count == 62 );
+
+	CountQuery moved = { 0 };
+	b3AABB movedBox = { { 19.0f, 0.0f, 19.0f }, { 21.0f, 1.0f, 21.0f } };
+	b3World_OverlapAABB( worldId, movedBox, b3DefaultQueryFilter(), CountCallback, &moved );
+	ENSURE( moved.count == 1 );
+
+	b3BodyDef bodyDef = b3DefaultBodyDef();
+	bodyDef.type = b3_dynamicBody;
+	bodyDef.position = (b3Pos){ 3.0f, 3.0f, 3.0f };
+	b3BodyId dropped = b3CreateBody( worldId, &bodyDef );
+	b3CreateHullShape( dropped, &shapeDef, &box.base );
+	for ( int i = 0; i < 120; ++i )
+	{
+		b3World_Step( worldId, 1.0f / 60.0f, 4 );
+	}
+	ENSURE( (float)b3Body_GetPosition( dropped ).y > 1.0f );
+
+	b3DestroyWorld( worldId );
+	ENSURE( b3GetByteCount() == baseBytes );
+#endif
+	return 0;
+}
+
 // Arrays of a megabyte and more grow in place: they keep their address and their values, and the memory count
 // returns to where it was when they are freed
 static int LargeBlockTest( void )
@@ -2265,6 +2328,7 @@ int WorldTest( void )
 	RUN_TEST( DeterminismTest );
 	RUN_TEST( WorkerTest );
 	RUN_TEST( UniqueHullTest );
+	RUN_TEST( StaticBatchTest );
 	RUN_TEST( LargeBlockTest );
 	RUN_TEST( EventTest );
 	RUN_TEST( DynamicDestructibleTest );

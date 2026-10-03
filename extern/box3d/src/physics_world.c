@@ -1045,6 +1045,9 @@ void b3World_Step( b3WorldId worldId, float timeStep, int subStepCount )
 
 	B3_REC( world, Step, worldId, timeStep, subStepCount );
 
+	// Added for Nebenan: the static shapes of a batch are not in the tree yet
+	B3_ASSERT( world->broadPhase.batchingStatic == false );
+
 	world->locked = true;
 
 	b3TracyCZoneNC( world_step, "Step", b3_colorBox2DGreen, true );
@@ -2279,6 +2282,32 @@ b3Counters b3World_GetCounters( b3WorldId worldId )
 	return s;
 }
 
+// Added for Nebenan, see box3d.h
+void b3World_BeginStaticBatch( b3WorldId worldId )
+{
+	b3World* world = b3GetUnlockedWorldFromId( worldId );
+	if ( world == NULL )
+	{
+		return;
+	}
+
+	B3_ASSERT( world->broadPhase.batchingStatic == false );
+	world->broadPhase.batchingStatic = true;
+}
+
+// Added for Nebenan, see box3d.h
+void b3World_EndStaticBatch( b3WorldId worldId )
+{
+	b3World* world = b3GetUnlockedWorldFromId( worldId );
+	if ( world == NULL )
+	{
+		return;
+	}
+
+	B3_ASSERT( world->broadPhase.batchingStatic );
+	b3BroadPhase_EndStaticBatch( &world->broadPhase );
+}
+
 b3Capacity b3World_GetMaxCapacity( b3WorldId worldId )
 {
 	b3World* world = b3GetUnlockedWorldFromId( worldId );
@@ -2361,6 +2390,9 @@ void b3World_StartRecording( b3WorldId worldId, b3Recording* recording )
 	{
 		return;
 	}
+
+	// Added for Nebenan: the snapshot would miss the static shapes of a batch
+	B3_ASSERT( world->broadPhase.batchingStatic == false );
 
 	b3StartRecordingIntoBuffer( world, recording );
 }
@@ -3513,6 +3545,9 @@ void b3World_RebuildStaticTree( b3WorldId worldId )
 	}
 
 	B3_REC( world, WorldRebuildStaticTree, worldId );
+
+	// Added for Nebenan: the static shapes of a batch are not in the tree yet
+	B3_ASSERT( world->broadPhase.batchingStatic == false );
 
 	b3DynamicTree* staticTree = world->broadPhase.trees + b3_staticBody;
 	b3DynamicTree_Rebuild( staticTree, true );

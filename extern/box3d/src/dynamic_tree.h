@@ -82,6 +82,18 @@ static inline bool b3NeedsRebuild( const b3DynamicTree* tree )
 int b3CreateTreeProxyInternal( b3DynamicTree* tree, b3AABB aabb, uint64_t categoryBits, uint64_t userData, bool markMoved );
 void b3DynamicTree_MoveProxyInternal( b3DynamicTree* tree, int proxyId, b3AABB aabb, bool markMoved );
 
+// Added for Nebenan: proxies that wait outside the tree and go in together, see b3DynamicTree_InsertBatch
+typedef struct b3TreeBatchItem
+{
+	b3AABB aabb;
+	int proxyId;
+	bool moved;
+} b3TreeBatchItem;
+
+int b3DynamicTree_CreateBatchProxy( b3DynamicTree* tree, uint64_t categoryBits, uint64_t userData );
+void b3DynamicTree_DestroyBatchProxy( b3DynamicTree* tree, int proxyId );
+void b3DynamicTree_InsertBatch( b3DynamicTree* tree, const b3TreeBatchItem* items, int count );
+
 void b3DynamicTree_MarkProxyMovedSerial( b3DynamicTree* tree, int proxyId );
 void b3DynamicTree_MarkProxyMoved( b3DynamicTree* tree, int proxyId, b3AABB aabb );
 void b3DynamicTree_ClearMoved( b3DynamicTree* tree );

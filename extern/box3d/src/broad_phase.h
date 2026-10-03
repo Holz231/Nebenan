@@ -3,6 +3,7 @@
 
 #pragma once
 
+#include "container.h"
 #include "dynamic_tree.h"
 #include "table.h"
 
@@ -12,6 +13,8 @@
 typedef struct b3Shape b3Shape;
 typedef struct b3Stack b3Stack;
 typedef struct b3World b3World;
+
+b3DeclareArray( b3TreeBatchItem );
 
 // Store the proxy type in the lower 2 bits of the proxy key. This leaves 30 bits for the id.
 #define B3_PROXY_TYPE( KEY ) ( (b3BodyType)( ( KEY ) & 3 ) )
@@ -32,6 +35,10 @@ typedef struct b3BroadPhase
 	// Tracks shape pairs that have a b3Contact
 	// todo pairSet can grow quite large on the first time step and remain large
 	b3HashSet pairSet;
+
+	// Added for Nebenan: static proxies created in a batch wait here until it ends, see b3World_BeginStaticBatch
+	b3Array( b3TreeBatchItem ) staticBatch;
+	bool batchingStatic;
 } b3BroadPhase;
 
 void b3CreateBroadPhase( b3BroadPhase* bp, const b3Capacity* capacity );
@@ -42,6 +49,9 @@ int b3BroadPhase_CreateProxy( b3BroadPhase* bp, b3BodyType proxyType, b3AABB aab
 void b3BroadPhase_DestroyProxy( b3BroadPhase* bp, int proxyKey );
 
 void b3BroadPhase_MoveProxy( b3BroadPhase* bp, int proxyKey, b3AABB aabb );
+
+// Added for Nebenan, see b3World_BeginStaticBatch
+void b3BroadPhase_EndStaticBatch( b3BroadPhase* bp );
 
 int b3BroadPhase_GetShapeIndex( b3BroadPhase* bp, int proxyKey );
 

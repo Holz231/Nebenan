@@ -1991,6 +1991,220 @@ int b3DynamicTree_Rebuild( b3DynamicTree* tree, bool fullBuild )
 	return leafCount;
 }
 
+// Added for Nebenan: a proxy that waits outside the tree for b3DynamicTree_InsertBatch
+int b3DynamicTree_CreateBatchProxy( b3DynamicTree* tree, uint64_t categoryBits, uint64_t userData )
+{
+	int proxyId = b3AllocateProxy( tree );
+	b3TreeProxy* proxy = tree->proxies + proxyId;
+	proxy->categoryBits = categoryBits;
+	proxy->userData = userData;
+	return proxyId;
+}
+
+// Added for Nebenan: a proxy that goes before its batch went into the tree
+void b3DynamicTree_DestroyBatchProxy( b3DynamicTree* tree, int proxyId )
+{
+	B3_ASSERT( 0 <= proxyId && proxyId < tree->proxyCapacity );
+	B3_ASSERT( tree->proxies[proxyId].node == B3_NULL_INDEX );
+	b3FreeProxy( tree, proxyId );
+}
+
+// The leaves of a batch and what the split needs of them
+typedef struct b3BatchLeaves
+{
+	int* indices;
+	b3TreeNode* leaves;
+#if B3_TREE_HEURISTIC == 0
+	b3Vec3* centers;
+#else
+	b3AABB* boxes;
+	int* bins;
+#endif
+} b3BatchLeaves;
+
+static int b3PartitionBatch( b3BatchLeaves* batch, int startIndex, int count )
+{
+#if B3_TREE_HEURISTIC == 0
+	return b3PartitionMid( batch->indices + startIndex, batch->centers + startIndex, count );
+#else
+	return b3PartitionSAH( batch->indices + startIndex, batch->bins + startIndex, batch->boxes + startIndex, count );
+#endif
+}
+
+// The pair below a node of a batch subtree
+static int b3AllocateBatchPair( b3DynamicTree* tree, int parent )
+{
+	int pair = b3AllocateSiblingPair( tree );
+	tree->parents[pair] = parent;
+	tree->parents[pair + 1] = parent;
+
+	// The sweep refit needs every child above its parent
+	if ( pair < parent )
+	{
+		tree->dfsOrdered = false;
+	}
+	return pair;
+}
+
+static void b3PlaceBatchLeaf( b3DynamicTree* tree, b3TreeNode leaf, int nodeIndex )
+{
+	tree->nodes[nodeIndex] = leaf;
+	tree->proxies[b3GetProxyId( &leaf )].node = nodeIndex;
+}
+
+// Build the subtree of a batch top down at the node, split like b3BuildTree splits. Pairs come from the tree, which can
+// grow meanwhile, so the node array is read anew each time.
+static void b3BuildBatchSubtree( b3DynamicTree* tree, int rootIndex, b3BatchLeaves* batch, int count )
+{
+	if ( count == 1 )
+	{
+		b3PlaceBatchLeaf( tree, batch->leaves[batch->indices[0]], rootIndex );
+		return;
+	}
+
+	b3RebuildItem stack[B3_TREE_STACK_SIZE];
+	int top = 0;
+
+	stack[0].nodeIndex = rootIndex;
+	stack[0].pair = b3AllocateBatchPair( tree, rootIndex );
+	stack[0].childCount = -1;
+	stack[0].startIndex = 0;
+	stack[0].endIndex = count;
+	stack[0].splitIndex = b3PartitionBatch( batch, 0, count );
+
+	while ( true )
+	{
+		b3RebuildItem* item = stack + top;
+		item->childCount += 1;
+
+		if ( item->childCount == 2 )
+		{
+			// Both children written, so the parent node can be finalized.
+			tree->nodes[item->nodeIndex] = b3MakeInternalNode( tree->nodes, item->pair );
+			if ( top == 0 )
+			{
+				break;
+			}
+
+			top -= 1;
+			continue;
+		}
+
+		int slot = item->childCount;
+		int startIndex = slot == 0 ? item->startIndex : item->splitIndex;
+		int endIndex = slot == 0 ? item->splitIndex : item->endIndex;
+		int leafCount = endIndex - startIndex;
+		B3_ASSERT( leafCount > 0 );
+
+		int nodeIndex = item->pair + slot;
+		if ( leafCount == 1 )
+		{
+			b3PlaceBatchLeaf( tree, batch->leaves[batch->indices[startIndex]], nodeIndex );
+			continue;
+		}
+
+		// todo fail gracefully if the stack runs out in release
+		B3_ASSERT( top < B3_TREE_STACK_SIZE - 1 );
+
+		top += 1;
+		b3RebuildItem* newItem = stack + top;
+		newItem->nodeIndex = nodeIndex;
+		newItem->pair = b3AllocateBatchPair( tree, nodeIndex );
+		newItem->childCount = -1;
+		newItem->startIndex = startIndex;
+		newItem->endIndex = endIndex;
+		newItem->splitIndex = startIndex + b3PartitionBatch( batch, startIndex, leafCount );
+	}
+}
+
+// Added for Nebenan: put proxies that waited outside the tree in together. They get a subtree of their own, split as a
+// rebuild splits, and the subtree goes in where a leaf with its box would go. That is one search from the root for the
+// batch instead of one for each proxy, the same number of nodes, and the same moved flags.
+void b3DynamicTree_InsertBatch( b3DynamicTree* tree, const b3TreeBatchItem* items, int count )
+{
+	if ( count == 0 )
+	{
+		return;
+	}
+
+	if ( count == 1 )
+	{
+		b3InsertLeaf( tree, items[0].aabb, items[0].proxyId, items[0].moved, true );
+		return;
+	}
+
+	b3BatchLeaves batch;
+	batch.indices = b3Alloc( count * sizeof( int ) );
+	batch.leaves = b3Alloc( count * sizeof( b3TreeNode ) );
+#if B3_TREE_HEURISTIC == 0
+	batch.centers = b3Alloc( count * sizeof( b3Vec3 ) );
+#else
+	batch.boxes = b3Alloc( count * sizeof( b3AABB ) );
+	batch.bins = b3Alloc( count * sizeof( int ) );
+#endif
+
+	b3AABB box = items[0].aabb;
+	for ( int i = 0; i < count; ++i )
+	{
+		const b3TreeBatchItem* item = items + i;
+		B3_ASSERT( tree->proxies[item->proxyId].node == B3_NULL_INDEX );
+
+		batch.indices[i] = i;
+		batch.leaves[i] = b3MakeLeafNode( item->aabb, item->proxyId, tree->proxies[item->proxyId].userData, item->moved );
+#if B3_TREE_HEURISTIC == 0
+		batch.centers[i] = b3AABB_Center( item->aabb );
+#else
+		batch.boxes[i] = item->aabb;
+#endif
+		box = b3AABB_Union( box, item->aabb );
+	}
+
+	if ( b3IsEmptyNode( tree->nodes + B3_ROOT_NODE ) )
+	{
+		b3BuildBatchSubtree( tree, B3_ROOT_NODE, &batch, count );
+	}
+	else
+	{
+		// The sibling's position becomes the new parent. The sibling moves down into a new pair beside the subtree.
+		int sibling = b3FindBestSibling( tree, box );
+		int pair = b3AllocateSiblingPair( tree );
+		tree->nodes[pair] = tree->nodes[sibling];
+		tree->parents[pair] = sibling;
+		tree->parents[pair + 1] = sibling;
+		b3LinkChildren( tree, pair );
+
+		b3BuildBatchSubtree( tree, pair + 1, &batch, count );
+
+		b3TreeNode* nodes = tree->nodes;
+		nodes[sibling] = b3MakeInternalNode( nodes, pair );
+
+		if ( b3IsNodeOrdered( nodes, sibling ) == false || b3IsNodeOrdered( nodes, pair ) == false )
+		{
+			tree->dfsOrdered = false;
+		}
+
+		// Walk back up the tree refitting ancestors, the root included, as a single leaf does.
+		int index = sibling;
+		while ( index != B3_NULL_INDEX )
+		{
+			b3RotateNodes( tree, index );
+			nodes[index] = b3MakeInternalNode( nodes, b3GetLeftChild( nodes + index ) );
+			index = tree->parents[index];
+		}
+	}
+
+	b3Free( batch.indices, count * sizeof( int ) );
+	b3Free( batch.leaves, count * sizeof( b3TreeNode ) );
+#if B3_TREE_HEURISTIC == 0
+	b3Free( batch.centers, count * sizeof( b3Vec3 ) );
+#else
+	b3Free( batch.boxes, count * sizeof( b3AABB ) );
+	b3Free( batch.bins, count * sizeof( int ) );
+#endif
+
+	b3DynamicTree_Validate( tree );
+}
+
 // Set the moved flag on the ancestors of the proxy. Serial use case.
 void b3DynamicTree_MarkProxyMovedSerial( b3DynamicTree* tree, int proxyId )
 {

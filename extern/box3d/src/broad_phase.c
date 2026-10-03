@@ -36,6 +36,10 @@ void b3CreateBroadPhase( b3BroadPhase* bp, const b3Capacity* capacity )
 	bp->trees[b3_dynamicBody] = b3DynamicTree_Create( dynamicCapacity );
 
 	bp->movedSiblings = NULL;
+
+	// Added for Nebenan
+	b3Array_Create( bp->staticBatch );
+	bp->batchingStatic = false;
 }
 
 void b3DestroyBroadPhase( b3BroadPhase* bp )
@@ -46,6 +50,7 @@ void b3DestroyBroadPhase( b3BroadPhase* bp )
 	}
 
 	b3DestroySet( &bp->pairSet );
+	b3Array_Destroy( bp->staticBatch );
 
 	memset( bp, 0, sizeof( b3BroadPhase ) );
 }
@@ -57,9 +62,39 @@ int b3BroadPhase_CreateProxy( b3BroadPhase* bp, b3BodyType proxyType, b3AABB aab
 
 	bool mark = ( proxyType != b3_staticBody || forcePairCreation );
 
+	// Added for Nebenan: a static proxy of a batch waits for the end of the batch
+	if ( proxyType == b3_staticBody && bp->batchingStatic )
+	{
+		int proxyId = b3DynamicTree_CreateBatchProxy( bp->trees + b3_staticBody, categoryBits, shapeIndex );
+		b3TreeBatchItem item = { aabb, proxyId, mark };
+		b3Array_Push( bp->staticBatch, item );
+		return B3_PROXY_KEY( proxyId, b3_staticBody );
+	}
+
 	int proxyId = b3CreateTreeProxyInternal( bp->trees + proxyType, aabb, categoryBits, shapeIndex, mark );
 	int proxyKey = B3_PROXY_KEY( proxyId, proxyType );
 	return proxyKey;
+}
+
+// Added for Nebenan: the batch entry of a static proxy that still waits for the end of its batch, or NULL
+static b3TreeBatchItem* b3FindBatchItem( b3BroadPhase* bp, b3BodyType proxyType, int proxyId )
+{
+	if ( proxyType != b3_staticBody || bp->staticBatch.count == 0 ||
+		 bp->trees[b3_staticBody].proxies[proxyId].node != B3_NULL_INDEX )
+	{
+		return NULL;
+	}
+
+	for ( int i = 0; i < bp->staticBatch.count; ++i )
+	{
+		if ( bp->staticBatch.data[i].proxyId == proxyId )
+		{
+			return bp->staticBatch.data + i;
+		}
+	}
+
+	B3_ASSERT( false );
+	return NULL;
 }
 
 void b3BroadPhase_DestroyProxy( b3BroadPhase* bp, int proxyKey )
@@ -68,6 +103,18 @@ void b3BroadPhase_DestroyProxy( b3BroadPhase* bp, int proxyKey )
 	int proxyId = B3_PROXY_ID( proxyKey );
 
 	B3_ASSERT( 0 <= proxyType && proxyType < b3_bodyTypeCount );
+
+	// Added for Nebenan: a proxy that still waits leaves its batch, the others keep their order
+	b3TreeBatchItem* item = b3FindBatchItem( bp, proxyType, proxyId );
+	if ( item != NULL )
+	{
+		int index = (int)( item - bp->staticBatch.data );
+		memmove( item, item + 1, ( bp->staticBatch.count - index - 1 ) * sizeof( b3TreeBatchItem ) );
+		bp->staticBatch.count -= 1;
+		b3DynamicTree_DestroyBatchProxy( bp->trees + b3_staticBody, proxyId );
+		return;
+	}
+
 	b3DynamicTree_DestroyProxy( bp->trees + proxyType, proxyId );
 }
 
@@ -77,7 +124,25 @@ void b3BroadPhase_MoveProxy( b3BroadPhase* bp, int proxyKey, b3AABB aabb )
 	int proxyId = B3_PROXY_ID( proxyKey );
 
 	bool mark = true;
+
+	// Added for Nebenan: a proxy that still waits goes in with its new box
+	b3TreeBatchItem* item = b3FindBatchItem( bp, proxyType, proxyId );
+	if ( item != NULL )
+	{
+		item->aabb = aabb;
+		item->moved = mark;
+		return;
+	}
+
 	b3DynamicTree_MoveProxyInternal( bp->trees + proxyType, proxyId, aabb, mark );
+}
+
+// Added for Nebenan: the static proxies of the batch go into the static tree together
+void b3BroadPhase_EndStaticBatch( b3BroadPhase* bp )
+{
+	b3DynamicTree_InsertBatch( bp->trees + b3_staticBody, bp->staticBatch.data, bp->staticBatch.count );
+	b3Array_Clear( bp->staticBatch );
+	bp->batchingStatic = false;
 }
 
 // Gather the sibling pairs with a moved node. This is done serially, it is cache friendly.

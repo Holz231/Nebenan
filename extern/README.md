@@ -38,9 +38,20 @@ frühesten Treffer davor, und ein kürzeres Intervall verschiebt in den letzten 
 Ergebnis davon ab, wie die Formen in den Baum gekommen waren. Jetzt rechnet es jede Zeit über den ganzen Schritt
 (`src/solver.c`). Das kostet nichts Messbares, CCD braucht in der Stadt so oder so rund 1,6 % der Zeit.
 
-Die ersten beiden ändern an den Ergebnissen nichts. Die dritte ändert sie in den letzten Bits, dafür hängen sie nicht
-mehr davon ab, in welcher Reihenfolge Formen in den statischen Baum kommen. Die Ergänzungen stehen in `src/core.c`,
-`include/box3d/types.h`, `src/shape.h`, `src/shape.c`, `src/world_snapshot.c`, `src/recording.c` und `src/solver.c`,
-jeweils mit „Added for Nebenan“ markiert. `B3_HAS_UNIQUE_HULLS` zeigt die zweite an. Fehlen sie, etwa mit einem
-eigenen Box3D, läuft Nebenan wie zuvor, nur wachsen Box3Ds Arrays dann durch Umkopieren, und die Hüllen gehen durch
-die Tabelle.
+**Statische Formen gesammelt einfügen.** Box3D sortiert jede Form in seinen Suchbaum, mit einer Suche von der Wurzel
+aus. `b3World_BeginStaticBatch` und `b3World_EndStaticBatch` klammern das Anlegen statischer Formen: Dazwischen warten
+ihre Proxys außerhalb des statischen Baums. Am Ende bekommen sie einen eigenen Teilbaum, geteilt wie beim Neubau eines
+Baums, und der geht mit einer einzigen Suche dorthin, wo eine Form mit seinen Grenzen hinginge. Nebenan klammert so
+jeden Einbau, beim Laden alle Bruchstücke eines Hauses. Zwischen den beiden Aufrufen darf die Welt nicht rechnen, nicht
+abgefragt werden, ihren statischen Baum nicht neu bauen und keine Aufnahme beginnen. Bis auf die Abfragen prüft Box3D
+das mit Asserts. Aufnahmen merken sich die Klammern nicht, die Wiedergabe fügt einzeln ein. Das simuliert dasselbe, seit
+die Ergebnisse nicht mehr von der Reihenfolge im Baum abhängen.
+
+Die erste, die zweite und die vierte ändern an den Ergebnissen nichts. Die dritte ändert sie in den letzten Bits,
+dafür hängen sie nicht mehr davon ab, in welcher Reihenfolge Formen in den statischen Baum kommen. Die Ergänzungen
+stehen in `include/box3d/box3d.h`, `include/box3d/types.h`, `src/core.c`, `src/shape.h`, `src/shape.c`,
+`src/world_snapshot.c`, `src/recording.c`, `src/solver.c`, `src/broad_phase.h`, `src/broad_phase.c`,
+`src/dynamic_tree.h`, `src/dynamic_tree.c` und `src/physics_world.c`, jeweils mit „Added for Nebenan“ markiert.
+`B3_HAS_UNIQUE_HULLS` und `B3_HAS_STATIC_BATCH` zeigen die zweite und die vierte an. Fehlen sie, etwa mit einem eigenen
+Box3D, läuft Nebenan wie zuvor, nur wachsen Box3Ds Arrays dann durch Umkopieren, die Hüllen gehen durch die Tabelle,
+und jede Form geht einzeln in den Baum.

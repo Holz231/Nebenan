@@ -539,13 +539,16 @@ Die Zeit ist zum größten Teil der Box3D-Schritt, und den bestimmen drei Dinge:
   geschossen, prallen dabei alle ab.
 
 **Große Szenen.** Mit vierfacher Bruchstückgröße kostet ein Frame unter Dauerbeschuss gleich viel, ob die Stadt aus 16
-oder aus 1 024 Häusern besteht, 0,5 bis 0,7 ms auf der VM. Box3D rechnet nur, was sich bewegt, und Nebenan geht im
-Update nie über die ganze Welt. Mit der Größe wachsen Ladezeit und Speicher: 1 024 Häuser mit 246 000 Bruchstücken
-brauchen 535 MB und laden je nach Tagesform der VM in 3 bis 8 s. Große Arrays wachsen an Ort und Stelle, in Nebenan wie
-in Box3D: Jedes reserviert sich Adressraum und bekommt beim Wachsen dort Speicherseiten dazu, statt umzuziehen. Früher
-wurde ein volles Array in ein doppelt so großes kopiert, und das hielt ein einzelnes Update über 100 ms auf. Die Hüllen
-der Bruchstücke gehören ihrer Box3D-Form und gehen nicht durch Box3Ds Hüllen-Tabelle, die beim Wachsen alle Hüllen neu
-einordnen müsste (`b3ShapeDef::uniqueHull`, siehe [`extern/README.md`](extern/README.md)). Mehr dazu in
+oder aus 1 024 Häusern besteht, 0,3 bis 0,7 ms auf der VM je nach ihrer Tagesform. Box3D rechnet nur, was sich bewegt,
+und Nebenan geht im Update nie über die ganze Welt. Mit der Größe wachsen Ladezeit und Speicher: 1 024 Häuser mit
+246 000 Bruchstücken brauchen 535 MB und laden auf der VM in rund 1,5 s, an ihren langsamen Tagen in mehreren Sekunden.
+Große Arrays wachsen an Ort und Stelle, in Nebenan wie in Box3D: Jedes reserviert sich Adressraum und bekommt beim
+Wachsen dort Speicherseiten dazu, statt umzuziehen. Früher wurde ein volles Array in ein doppelt so großes kopiert, und
+das hielt ein einzelnes Update über 100 ms auf. Die Hüllen der Bruchstücke gehören ihrer Box3D-Form und gehen nicht
+durch Box3Ds Hüllen-Tabelle, die beim Wachsen alle Hüllen neu einordnen müsste (`b3ShapeDef::uniqueHull`). Die
+statischen Bruchstücke eines Hauses oder Einschlags gehen gesammelt in Box3Ds Suchbaum, als ein Teilbaum mit einer Suche
+statt einer pro Stück (`b3World_BeginStaticBatch`, siehe [`extern/README.md`](extern/README.md)). Das lädt große Städte
+rund ein Fünftel schneller, und ein Einschlag kostet in jeder Stadtgröße gleich viel. Mehr dazu in
 [`docs/Optimierungen.md`](docs/Optimierungen.md).
 
 Ganze Einschläge (Bruch, Stützgraph, neue Box3D-Körper) und der Box3D-Schritt danach bei 60 Hz mit
@@ -585,7 +588,7 @@ Messungen in [docs/Optimierungen.md](docs/Optimierungen.md).
 ## Tests und Benchmark
 
 ```sh
-build/bin/nebenan_test            # 34 Tests: Geometrie, Voronoi, Hüllen, Öffnungen, Stöße, Stützgraph, Etagen, Lastprüfung, Schutt, Ruhe, Durchschlagen, Threads, große Blöcke, Determinismus …
+build/bin/nebenan_test            # 35 Tests: Geometrie, Voronoi, Hüllen, Öffnungen, Stöße, Stützgraph, Etagen, Lastprüfung, Schutt, Ruhe, Durchschlagen, Threads, große Blöcke, Suchbaum, Determinismus …
 build/bin/nebenan_benchmark 4     # Zahl = Threads für Bruch und Physik
 ```
 
@@ -610,7 +613,7 @@ benchmark/          Leistungsmessung
 demo/               PC-Demo mit sokol und Dear ImGui
   shaders/          GLSL-Quelle und die mit sokol-shdc erzeugten Shader (HLSL, Metal, GLSL)
 docs/               vorgemerkte und verworfene Optimierungen
-extern/             Box3D (mit sokol, zwei Ergänzungen für große Szenen) und Dear ImGui, siehe extern/README.md
+extern/             Box3D (mit sokol, ergänzt für große Szenen) und Dear ImGui, siehe extern/README.md
 .github/workflows/  CI für Windows, Linux und macOS
 ```
 

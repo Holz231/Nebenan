@@ -24,9 +24,10 @@ Ziel seit dem 3. Oktober 2026: Bruchstückgröße ×4 und Szenen so groß wie m�
 3. ✅ **Hüllen ohne Box3Ds Hüllen-Tabelle** (eigene Idee, unten). Keine Tabelle mehr, die mitten im Spiel voll werden
    und alles aufhalten kann. Laden 6 % schneller, 17 MB weniger bei 1 024 Häusern.
 4. **Laden und Speicher großer Szenen** (eigene Idee, unten), hoch. Jedes stehende Bruchstück ist ein eigener
-   Box3D-Körper mit eigener Hülle: rund 40 % der Ladezeit und knapp zwei Drittel des Speichers.
-5. **Neue Bruchstücke gesammelt in den Box3D-Baum einfügen** (eigene Idee, unten), mittel. Knapp ein Fünftel der
-   Ladezeit großer Szenen, inzwischen der größte einzelne Posten.
+   Box3D-Körper mit eigener Hülle: gut ein Viertel der Ladezeit und knapp zwei Drittel des Speichers.
+5. ✅ **Neue Bruchstücke gesammelt in den Box3D-Baum einfügen** (eigene Idee, unten). Laden ab 64 Häusern 15 bis
+   24 % schneller, und ein Einschlag kostet in der Stadt aus 1 024 Häusern so viel wie in der aus 16, vorher rund 60 %
+   mehr.
 6. Grafik, sobald die Physik fertig ist: **Räumliche Render-Seiten und Frustum-Culling** (Nr. 49 bis 51) und **nur
    bewegte Transformationen hochladen** (Nr. 74). Beides wächst mit der Szene, denn die Demo zeichnet jedes Bild alles
    und lädt bei jeder Bewegung alle Transformationen hoch.
@@ -50,29 +51,35 @@ Skalierungstest vom 3. Oktober 2026 auf der VM: Städte aus 16 bis 1 024 Häuser
 
 | Häuser | Bruchstücke | Aufbau | Speicher | Frame unter Beschuss |
 | ---: | ---: | ---: | ---: | ---: |
-| 16 | 3 848 | 0,05 s | 20 MB | 0,7 ms |
-| 64 | 15 425 | 0,2 s | 47 MB | 0,6 ms |
-| 256 | 61 538 | 0,7 s | 145 MB | 0,6 ms |
-| 1 024 | 246 141 | 3 bis 8 s | 533 MB | 0,5 ms |
+| 16 | 3 848 | 0,03 s | 20 MB | 0,4 ms |
+| 64 | 15 425 | 0,1 s | 47 MB | 0,3 ms |
+| 256 | 61 538 | 0,4 s | 145 MB | 0,3 ms |
+| 1 024 | 246 141 | 1,4 bis 1,7 s | 533 MB | 0,3 ms |
 
-Gemessen mit großen Arrays, die an Ort und Stelle wachsen, und Hüllen ohne Box3Ds Hüllen-Tabelle. Wie lange der Aufbau
-großer Städte dauert, hängt stark von der Tagesform der VM ab: Sie gibt frischen Speicher oft sehr langsam heraus.
+Gemessen mit großen Arrays, die an Ort und Stelle wachsen, Hüllen ohne Box3Ds Hüllen-Tabelle und statischen Formen, die
+gesammelt in Box3Ds Suchbaum gehen. Die VM lief dabei schnell. Wie lange der Aufbau großer Städte dauert, hängt stark
+von ihrer Tagesform ab: Sie gibt frischen Speicher oft sehr langsam heraus. Bei der ersten Messung, noch ohne diese drei
+Änderungen und auf einer langsamen VM, brauchten 1 024 Häuser 3 bis 8 s und ein Frame unter Beschuss 0,5 bis 0,7 ms.
 
 - **Die Physik pro Frame hängt nicht an der Größe der Szene.** Box3D rechnet nur, was sich bewegt, und Nebenan geht
   im Update nie über die ganze Welt, nur beim Verstellen von Reglern und beim Löschen der Welt. In Ruhe kostet die
-  Welt bei jeder Größe so gut wie nichts.
+  Welt bei jeder Größe so gut wie nichts. Seit die statischen Formen gesammelt in Box3Ds Suchbaum gehen, gilt das auch
+  für Einschläge: im Mittel 0,032 bis 0,035 ms pro Frame von 16 bis 1 024 Häusern. Vorher wuchs das mit der Größe des
+  Baums von 0,033 auf 0,054 ms.
 - **Ruckler, wenn ein großes Array voll wurde** (behoben, siehe „Große Arrays wachsen an Ort und Stelle“). Bei
   65 536 Bruchstücken verdoppelten sich das Formen-Array von Box3D und das Bruchstück-Array von Nebenan. Das Update,
   das darauf stieß, dauerte je nach Tagesform der VM 16 bis 137 ms, bei 16 384 Bruchstücken 6 bis 9 ms. Der erste
   Einschlag in der Stadt aus 1 024 Häusern kostete 8 bis 15 ms: Der erste Trümmerkörper bekommt eine Box3D-Nummer
   hinter allen 246 000 statischen Körpern, und Nebenan musste seine Zuordnung von Körpern zu Akteuren bis dorthin
   füllen. Die meiste Zeit gibt das System frischen Speicher heraus, auf einem PC geht das schneller als auf der VM.
-- **Laden** braucht in kleinen Städten 3 ms pro Haus, bei 1 024 Häusern 3 bis 8 ms. Auf dem Hauptthread gehen rund
-  40 % an Box3D-Körper und -Formen. Der größte Posten darin ist das Einsortieren in den Suchbaum, knapp ein Fünftel des
-  Aufbaus (`b3InsertLeaf`), dann das Kopieren der Hüllen. Weggefallen sind das Umkopieren von Arrays, vorher 18 %, und
-  Box3Ds Hüllen-Tabelle, vorher rund 7 %. Einen großen Teil kostet der Kernel, der frische Speicherseiten nullt, vor
-  allem für Box3Ds Kopien der Hüllen und Nebenans Formen der Bruchstücke. Wie viel, schwankt auf der VM stark, zwischen
-  einem Zehntel und einem Drittel aller Samples. Gemessen mit `perf` in der Stadt aus 1 024 Häusern.
+- **Laden** braucht auf der schnellen VM 1,4 bis 1,6 ms pro Haus, in großen Städten nicht mehr als in kleinen. Bei der
+  ersten Messung, auf der langsamen VM und vor den Änderungen für große Szenen, waren es 3 ms in kleinen Städten und
+  3 bis 8 ms bei 1 024 Häusern. Auf dem Hauptthread geht gut ein Viertel an Box3D-Körper und -Formen, davon rund die
+  Hälfte an das Kopieren der Hüllen. Das Einsortieren in Box3Ds Suchbaum, vorher knapp ein Fünftel des Aufbaus
+  (`b3InsertLeaf`), kostet gesammelt noch rund 2 %. Weggefallen sind das Umkopieren von Arrays, vorher 18 %, und Box3Ds
+  Hüllen-Tabelle, vorher rund 7 %. Einen großen Teil kostet der Kernel, der frische Speicherseiten nullt, vor allem für
+  Box3Ds Kopien der Hüllen und Nebenans Formen der Bruchstücke. Wie viel, schwankt auf der VM stark, zwischen einem
+  Zehntel und einem Drittel aller Samples. Gemessen mit `perf` in der Stadt aus 1 024 Häusern.
 - **Speicher**: rund 0,52 MB pro Haus aus 240 Bruchstücken, knapp zwei Drittel davon in Box3D.
 
 ## Was die Liste übersieht
@@ -213,8 +220,8 @@ Seit der Liste ist dazugekommen oder gemessen worden:
 | Große Arrays wachsen an Ort und Stelle | ✅ | Umgesetzt in Nebenan und Box3D, jeweils in `src/core.c` (siehe `extern/README.md`). Ein Block ab 1 MB reserviert beim Anlegen Adressraum, 16 GB in Nebenan, 4 GB in Box3D, und bekommt beim Wachsen dort Speicherseiten dazu, statt umzuziehen. Nichts wird kopiert, und alter und neuer Block liegen nie gleichzeitig im Speicher. Gemessen abwechselnd mit dem Stand ohne und dem mit Reserve, je drei Läufe: Der Ruckler bei 65 536 Bruchstücken, ohne Reserve 16 bis 18 ms, bleibt weg. Das langsamste Frame der Stadt aus 256 Häusern dauert 2,5 bis 3,8 ms, in einem von fünf Läufen 8 ms durch einen Ausreißer der VM. Laden geht bei 1 024 Häusern 8 % schneller als ohne Reserve, 3,2 statt 3,5 s, und 12 % schneller als mit, bei 256 Häusern 3 und 10 %. Der Speicher liegt fast wieder beim Stand ohne Reserve: höchstens 546 MB statt 572 MB mit und 539 MB ohne Reserve. Die 7 MB sind der Platz in der Hüllen-Tabelle. Die Ergebnisse bleiben bitgleich. Mit eigenen Speicherfunktionen (`nbSetAllocator`, `b3SetAllocator`), unter ASan und in 32-Bit-Programmen wachsen Arrays wie früher durch Umkopieren. |
 | Platz vorab reservieren | ⛔ | Ersetzt durch „Große Arrays wachsen an Ort und Stelle“. `nbKeepRoom` verdoppelte nach jedem Aufbau die Kapazität der großen Arrays, sobald weniger als ein Viertel frei war, auch in Box3D über ein ergänztes `b3World_Reserve`. Das nahm die Ruckler aus dem Spiel, kostete aber 6,5 % Speicher, und wuchs eine Szene beim Spielen über den freien Platz hinaus, stockte ein Update doch. Geblieben ist, dass die Zuordnungen von Box3D-Nummern beim Aufbau alle Körper und Formen abdecken. So kostet der erste Einschlag in der Stadt aus 1 024 Häusern unter 1 ms statt 8 bis 15 ms. Platz in Box3Ds Hüllen-Tabelle hielt Nebenan noch bis „Hüllen ohne Box3Ds Hüllen-Tabelle“ frei. |
 | Hüllen ohne Box3Ds Hüllen-Tabelle | ✅ | Umgesetzt mit der Ergänzung `b3ShapeDef::uniqueHull` in Box3D (siehe `extern/README.md`): Die Form eines Bruchstücks behält eine eigene Kopie ihrer Hülle. Vorher legte Box3D jede Hülle in einer Hash-Tabelle ab, damit gleiche Hüllen nur einmal gespeichert werden. Wurde die Tabelle voll, ordnete sie alle Hüllen in eine doppelt so große ein, auf der VM 30 ms bei 61 500 Hüllen und 0,4 s bei 246 000, und das konnte nach einem Viertel bis dem Vierfachen an Bruchstücken mehr mitten im Spiel passieren. Jetzt gibt es keine Tabelle mehr, die voll werden kann, und keinen Platz auf Vorrat, `b3World_ReserveHulls` ist wieder weg. Gemessen abwechselnd mit dem Stand davor, je drei Läufe: Laden 6 % schneller, 2,87 statt 3,05 s bei 1 024 Häusern und 0,70 statt 0,74 s bei 256, und höchstens 536 statt 553 MB bei 1 024 Häusern, 145,5 statt 150 MB bei 256. Ein Frame kostet gleich viel, die Ergebnisse bleiben bitgleich. Wer viele gleiche Objekte mit gleichem `seed` baut, bekommt gleiche Hüllen, die Box3D vorher nur einmal speicherte. |
-| Laden und Speicher großer Szenen | 🔜 hoch | Jedes stehende Bruchstück ist ein eigener statischer Box3D-Körper mit eigener Kopie seiner Hülle: rund 40 % der Ladezeit und knapp zwei Drittel des Speichers. Ansätze: Häuser erst beim ersten Treffer zerlegen, bis dahin wenige große Stücke, oder weniger Box3D-Körper je Haus. |
-| Neue Bruchstücke gesammelt in den Box3D-Baum einfügen | 🔜 mittel | Box3D sortiert jede Form einzeln in seinen Suchbaum ein. Beim Laden von 1 024 Häusern ist das knapp ein Fünftel der Ladezeit (`b3InsertLeaf`), im Spiel bei ×4 kaum etwas, weil ein Einschlag nur wenige Stücke erzeugt. Die Stücke eines Hauses oder Einschlags liegen beieinander und ließen sich als Teilbaum einhängen. Geht nur mit einer weiteren Ergänzung in Box3D und einem Rückweg, falls ein Projekt sein eigenes Box3D mitbringt. |
+| Laden und Speicher großer Szenen | 🔜 hoch | Jedes stehende Bruchstück ist ein eigener statischer Box3D-Körper mit eigener Kopie seiner Hülle: gut ein Viertel der Ladezeit und knapp zwei Drittel des Speichers. Ansätze: Häuser erst beim ersten Treffer zerlegen, bis dahin wenige große Stücke, oder weniger Box3D-Körper je Haus. |
+| Neue Bruchstücke gesammelt in den Box3D-Baum einfügen | ✅ | Umgesetzt für statische Formen mit der Ergänzung `b3World_BeginStaticBatch` und `b3World_EndStaticBatch` in Box3D (siehe `extern/README.md`). Vorher suchte Box3D für jede Form von der Wurzel seines Suchbaums aus ihren Platz und drehte auf dem Rückweg Knoten, beim Laden von 1 024 Häusern knapp ein Fünftel der Ladezeit (`b3InsertLeaf`). Jetzt sammelt `nbCommitPhysics` die statischen Formen eines Aufbaus oder Einschlags, Box3D baut aus ihnen einen Teilbaum, geteilt wie bei einem Neuaufbau, und hängt ihn mit einer Suche ein. Das kostet noch rund 2 % des Aufbaus. Gemessen abwechselnd mit dem Stand davor, Median aus sechs Läufen bei 256 und 1 024 Häusern, sonst aus drei: Laden bei 1 024 Häusern 1,46 statt 1,92 s (−24 %), bei 256 Häusern 0,39 statt 0,45 s (−15 %), bei 64 Häusern 0,094 statt 0,119 s (−21 %). Ein Einschlag kostet im Mittel 0,032 bis 0,035 ms pro Frame, ob die Stadt aus 16 oder 1 024 Häusern besteht. Vorher wuchs das mit der Größe des Baums, bei 1 024 Häusern auf 0,054 ms, p95 0,33 statt jetzt 0,21 ms. Der Box3D-Schritt und der Speicher bleiben gleich. Bewegte Trümmer gehen weiter einzeln in Box3Ds Baum der bewegten Körper, ein Einschlag bei ×4 erzeugt nur wenige. Voraussetzung war, dass die Ergebnisse nicht an der Form des Baums hängen, und das taten sie an zwei Stellen: Schutt taute in der Reihenfolge auf, in der Box3D ihn fand, und Box3Ds CCD rechnete die Zeit bis zum Aufprall auf jede statische Form nur bis zum frühesten Aufprall davor, was die letzten Bits des Ergebnisses von der Reihenfolge abhängig machte. Jetzt taut Schutt in der Reihenfolge der Akteure auf, und die CCD rechnet über den ganzen Schritt, ohne messbare Kosten. Das änderte die Ergebnisse einmal: neuer Determinismus-Hash und andere Endstände im Benchmark, die Städte und großen Explosionen enden innerhalb von 2,3 % der Bruchstücke, des Schutts und der Trümmer von vorher. Das gesammelte Einfügen selbst ist bitgleich zum einzelnen. Ohne die Ergänzung (`B3_HAS_STATIC_BATCH` fehlt) fügt Nebenan einzeln ein. |
 | Nebenan ohne Box3D | ⛔ | Box3D macht die eigentliche Arbeit (Kontakte, Löser, Broadphase, CCD, Threads, Determinismus) bereits sehr schnell. Eine eigene Engine wäre nur schneller, wenn sie weniger rechnet, und die meisten Vereinfachungen gehen auch mit Box3D. |
 | Trümmer-CCD-Schwelle | ✅ | Umgesetzt (`debrisSweepDistance`). |
 | Einschlag weiter parallelisieren | ✅ | Umgesetzt, siehe oben. |
