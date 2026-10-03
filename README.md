@@ -541,11 +541,12 @@ Die Zeit ist zum größten Teil der Box3D-Schritt, und den bestimmen drei Dinge:
 **Große Szenen.** Mit vierfacher Bruchstückgröße kostet ein Frame unter Dauerbeschuss gleich viel, ob die Stadt aus 16
 oder aus 1 024 Häusern besteht, 0,5 bis 0,7 ms auf der VM. Box3D rechnet nur, was sich bewegt, und Nebenan geht im
 Update nie über die ganze Welt. Mit der Größe wachsen Ladezeit und Speicher: 1 024 Häuser mit 246 000 Bruchstücken
-brauchen 550 MB und laden je nach Tagesform der VM in 3 bis 8 s. Große Arrays wachsen an Ort und Stelle, in Nebenan wie
+brauchen 535 MB und laden je nach Tagesform der VM in 3 bis 8 s. Große Arrays wachsen an Ort und Stelle, in Nebenan wie
 in Box3D: Jedes reserviert sich Adressraum und bekommt beim Wachsen dort Speicherseiten dazu, statt umzuziehen. Früher
-wurde ein volles Array in ein doppelt so großes kopiert, und das hielt ein einzelnes Update über 100 ms auf. Nur Box3Ds
-Hüllen-Tabelle bekommt beim Aufbau Platz für doppelt so viele Formen (`b3World_ReserveHulls`, siehe
-[`extern/README.md`](extern/README.md)). Mehr dazu in [`docs/Optimierungen.md`](docs/Optimierungen.md).
+wurde ein volles Array in ein doppelt so großes kopiert, und das hielt ein einzelnes Update über 100 ms auf. Die Hüllen
+der Bruchstücke gehören ihrer Box3D-Form und gehen nicht durch Box3Ds Hüllen-Tabelle, die beim Wachsen alle Hüllen neu
+einordnen müsste (`b3ShapeDef::uniqueHull`, siehe [`extern/README.md`](extern/README.md)). Mehr dazu in
+[`docs/Optimierungen.md`](docs/Optimierungen.md).
 
 Ganze Einschläge (Bruch, Stützgraph, neue Box3D-Körper) und der Box3D-Schritt danach bei 60 Hz mit
 4 Substeps, jeweils mit 1 und 4 Threads, der mittlere von drei Läufen:
@@ -626,12 +627,12 @@ Nach Änderungen an `demo/shaders/scene.glsl` die Shader neu erzeugen, im Ordner
 - Die Reste einer Etage fliegen alle auf einmal heraus. Braucht eine Etage fast alle ihre Wände, `storeySupport` nahe
   1, fliegt beinahe eine ganze Etage heraus, und ihre Zellen können sich unter dem Teil darüber verkeilen, der dann
   auf ihnen liegen bleibt.
-- Große Szenen brauchen Speicher: rund 0,53 MB pro Haus aus 240 Bruchstücken, zwei Drittel davon in Box3D, denn
-  jedes stehende Bruchstück ist dort ein eigener Körper mit eigener Hülle. Kommen beim Spielen zu viele Bruchstücke
-  dazu, je nach Größe der Szene ein Viertel bis das Vierfache, wird Box3Ds Hüllen-Tabelle voll und ordnet alle Hüllen
-  neu ein. Das hält ein Update auf, auf der VM ab 30 ms bei 256 Häusern und ab 0,4 s bei 1 024 Häusern. Mit eigenen
-  Speicherfunktionen (`nbSetAllocator`, `b3SetAllocator`), mit einem eigenen Box3D und in 32-Bit-Programmen wachsen
-  große Arrays wie früher durch Umkopieren.
+- Große Szenen brauchen Speicher: rund 0,52 MB pro Haus aus 240 Bruchstücken, knapp zwei Drittel davon in Box3D,
+  denn jedes stehende Bruchstück ist dort ein eigener Körper mit eigener Hülle. Objekte mit gleichen Teilen und gleichem
+  `seed` haben gleiche Hüllen, auch die speichert jede Form einzeln. Mit eigenen Speicherfunktionen (`nbSetAllocator`,
+  `b3SetAllocator`) und in 32-Bit-Programmen wachsen große Arrays wie früher durch Umkopieren. Mit einem eigenen
+  Box3D ebenso, und die Hüllen gehen dort durch Box3Ds Hüllen-Tabelle, die beim Wachsen ein Update aufhalten kann, auf
+  der VM ab 30 ms bei 256 Häusern und ab 0,4 s bei 1 024 Häusern.
 - Schutt ist für Box3D statisch. Trümmer, die auf Schutt fallen, wecken ihn nicht, nur Einschläge, die ihn bewegen,
   fremde Körper, eine wegrutschende Auflage und große Teile, die ohne ihn nicht im Gleichgewicht lägen. Kinematische
   Körper stoßen Schutt nicht an, Box3D lässt kinematische und statische Körper nicht kollidieren.

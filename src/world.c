@@ -1239,7 +1239,7 @@ void nbUpdateDebris( nbWorld* world, int actorIndex )
 }
 
 // Let a map from Box3D indices cover the first count of them
-static void nbCoverIndices( nbIntArray* map, int count )
+static void nbCoverIndexMap( nbIntArray* map, int count )
 {
 	if ( map->count < count )
 	{
@@ -1252,25 +1252,13 @@ static void nbCoverIndices( nbIntArray* map, int count )
 	}
 }
 
-// Arrays need no room ahead: large blocks grow in place in Nebenan and in the Box3D shipped with Nebenan, see core.c.
-// Box3D's hull database is a hash table though, which rehashes all hulls into a table twice as large when it fills up.
-// With a few hundred thousand chunks that stalls the impact that runs into it for many milliseconds. Building keeps
-// room for twice the shapes once less than a quarter of their count is left, so the game seldom runs into a full table.
-void nbKeepRoom( nbWorld* world )
+// Every static chunk has a Box3D body, so the first debris body gets an index past all of them. The maps from body and
+// shape indices cover them already, instead of filling hundreds of thousands of entries in the first impact.
+void nbCoverIndices( nbWorld* world )
 {
-	// Every static chunk has a Box3D body, so the first debris body gets an index past all of them. The map from body
-	// indices covers them already, instead of filling hundreds of thousands of entries in the first impact.
 	b3Counters counters = b3World_GetCounters( world->physicsWorld );
-	nbCoverIndices( &world->bodyToActor, counters.bodyCount );
-	nbCoverIndices( &world->shapeToChunk, counters.shapeCount );
-
-#if defined( B3_HAS_RESERVE_HULLS )
-	if ( 4 * world->reservedHulls < 5 * counters.shapeCount )
-	{
-		world->reservedHulls = b3MaxInt( 2 * world->reservedHulls, 2 * counters.shapeCount );
-		b3World_ReserveHulls( world->physicsWorld, world->reservedHulls );
-	}
-#endif
+	nbCoverIndexMap( &world->bodyToActor, counters.bodyCount );
+	nbCoverIndexMap( &world->shapeToChunk, counters.shapeCount );
 }
 
 // Queue a static actor, or a part of a building that came down, for a check in the next update
@@ -1295,6 +1283,11 @@ static b3ShapeDef nbMakeShapeDef( const nbDestructible* destructible, const nbMa
 	shapeDef.enableHitEvents = destructible->enableCollisionDamage && isStatic == false;
 	shapeDef.updateBodyMass = false;
 	shapeDef.invokeContactCreation = true;
+#if defined( B3_HAS_UNIQUE_HULLS )
+	// Every chunk has a hull of its own, so Box3D's hull database would store each hull once anyway. It would also hash
+	// them all into a table that rehashes all its hulls when it fills up, which stalls a large scene for many milliseconds.
+	shapeDef.uniqueHull = true;
+#endif
 	return shapeDef;
 }
 
@@ -1373,7 +1366,7 @@ void nbCommitPhysics( nbWorld* world )
 		nbDestructible* destructible = world->destructibles.data + chunk->destructibleIndex;
 		b3ShapeDef shapeDef = nbMakeShapeDef( destructible, destructible->materials + chunk->materialIndex, actor->isStatic );
 
-		// The hull to use: the fresh one, or the one the chunk already has in the Box3D hull database
+		// The hull to use: the fresh one, or the one of the shape the chunk already has
 		const b3HullData* hull = chunk->pendingHull;
 		b3ShapeId oldShapeId = chunk->shapeId;
 		b3BodyId oldBodyId = chunk->bodyId;
@@ -1402,7 +1395,7 @@ void nbCommitPhysics( nbWorld* world )
 			chunk->flags &= ~nb_chunkOwnsBody;
 		}
 
-		// Create the new shape before destroying the old one so the shared hull stays alive
+		// Create the new shape before destroying the old one, which owns or shares the hull
 		chunk->shapeId = b3CreateHullShape( bodyId, &shapeDef, hull );
 		chunk->bodyId = bodyId;
 		chunk->pendingHull = NULL;

@@ -231,14 +231,6 @@ B3_API b3Counters b3World_GetCounters( b3WorldId worldId );
 /// Get max capacity. This can be used with b3WorldDef to avoid run-time allocations and copies
 B3_API b3Capacity b3World_GetMaxCapacity( b3WorldId worldId );
 
-/// Make room in the hull database for at least this many hulls. The database is a hash table that rehashes all its
-/// hulls into a larger table when it fills up, which stalls the call that runs into it once the world holds hundreds
-/// of thousands of shapes. Arrays need no room ahead, large blocks grow in place, see core.c. Added for Nebenan.
-B3_API void b3World_ReserveHulls( b3WorldId worldId, int hullCount );
-
-/// This Box3D has b3World_ReserveHulls
-#define B3_HAS_RESERVE_HULLS 1
-
 /// Set the user data pointer.
 B3_API void b3World_SetUserData( b3WorldId worldId, void* userData );
 

@@ -732,7 +732,16 @@ static void b3DesShapes( b3SnapReader* r, b3World* world, b3RecReader* rdr )
 				}
 				// Hull is cloned into the world DB; pass raw bytes directly
 				b3RegistrySlot* slot = rdr->slots + gid;
-				dst->hull = b3AddHullToDatabase( world, (const b3HullData*)slot->bytes );
+
+				// Added for Nebenan: a unique hull belongs to its shape, the flag came along in the struct image
+				if ( dst->flags & b3_uniqueHull )
+				{
+					dst->hull = b3CloneHull( (const b3HullData*)slot->bytes );
+				}
+				else
+				{
+					dst->hull = b3AddHullToDatabase( world, (const b3HullData*)slot->bytes );
+				}
 				break;
 			}
 			case b3_meshShape:
@@ -969,7 +978,15 @@ static void b3FreeLiveSimElements( b3World* world )
 		// Hull is ref-counted in the world DB; release before overwrite so re-adding is ref-neutral.
 		if ( s->type == b3_hullShape && s->hull != NULL )
 		{
-			b3RemoveHullFromDatabase( world, s->hull );
+			// Added for Nebenan: a unique hull belongs to its shape
+			if ( s->flags & b3_uniqueHull )
+			{
+				b3DestroyHull( (b3HullData*)s->hull );
+			}
+			else
+			{
+				b3RemoveHullFromDatabase( world, s->hull );
+			}
 			s->hull = NULL;
 		}
 		// name / userData / userShape are host-owned; do not free

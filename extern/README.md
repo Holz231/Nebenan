@@ -24,10 +24,15 @@ Das gilt für 64-Bit-Windows, -Linux und -macOS, solange kein eigener Allocator 
 ASan kommen die Blöcke weiter von `malloc`, damit ASan ihre Grenzen prüft. Nebenan macht dasselbe für seine eigenen
 Arrays, siehe `src/core.c`.
 
-**`b3World_ReserveHulls`** macht in der Hüllen-Datenbank einer laufenden Welt Platz für mehr Hüllen. Die Datenbank ist
-eine Hash-Tabelle und kann nicht an Ort und Stelle wachsen: Wird sie voll, ordnet sie alle Hüllen in eine doppelt so
-große Tabelle ein. Nebenan hält deshalb beim Aufbau Platz für doppelt so viele Formen frei, siehe `nbKeepRoom`.
+**Hüllen ohne Hüllen-Datenbank.** Box3D legt jede Hülle in einer Hash-Tabelle ab, damit gleiche Hüllen nur einmal
+gespeichert werden. Wird die Tabelle voll, ordnet sie alle Hüllen in eine doppelt so große ein, und das kann sie nicht
+an Ort und Stelle: Mit 246 000 Hüllen hielt das ein Update auf der VM 0,4 s auf. Mit `b3ShapeDef::uniqueHull` behält
+eine Form stattdessen eine eigene Kopie ihrer Hülle, ohne Tabelle. Nebenan setzt das für alle Bruchstücke. Ihre
+Hüllen sind verschieden, solange jedes Objekt einen eigenen `seed` hat. Bekommt eine solche Form mit `b3Shape_SetHull`
+eine neue Hülle, teilt sie diese wieder über die Tabelle. Aufnahmen speichern das Feld nicht, ihr Format bleibt. Bei
+der Wiedergabe teilen die Formen ihre Hüllen, was dasselbe simuliert.
 
-An den Ergebnissen ändert keine der beiden etwas. Sie stehen in `src/core.c`, `include/box3d/box3d.h` und
-`src/physics_world.c`, jeweils mit „Added for Nebenan“ markiert. `B3_HAS_RESERVE_HULLS` zeigt die zweite an. Fehlen
-sie, etwa mit einem eigenen Box3D, läuft Nebenan wie zuvor, nur wachsen Box3Ds Arrays dann durch Umkopieren.
+An den Ergebnissen ändert keine der beiden etwas. Sie stehen in `src/core.c`, `include/box3d/types.h`, `src/shape.h`,
+`src/shape.c`, `src/world_snapshot.c` und `src/recording.c`, jeweils mit „Added for Nebenan“ markiert.
+`B3_HAS_UNIQUE_HULLS` zeigt die zweite an. Fehlen sie, etwa mit einem eigenen Box3D, läuft Nebenan wie zuvor, nur
+wachsen Box3Ds Arrays dann durch Umkopieren, und die Hüllen gehen durch die Tabelle.

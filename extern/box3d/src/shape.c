@@ -139,7 +139,14 @@ static b3Shape* b3CreateShapeInternal( b3World* world, b3Body* body, b3WorldTran
 					return NULL;
 				}
 
-				shape->hull = b3AddOwnedHullToDatabase( world, baked );
+				// Added for Nebenan: a unique hull stays with its shape
+				shape->hull = def->uniqueHull ? baked : b3AddOwnedHullToDatabase( world, baked );
+			}
+			else if ( def->uniqueHull )
+			{
+				// Added for Nebenan
+				shape->hull = b3CloneHull( (const b3HullData*)geometry );
+				B3_ASSERT( shape->hull != NULL );
 			}
 			else
 			{
@@ -178,6 +185,7 @@ static b3Shape* b3CreateShapeInternal( b3World* world, b3Body* body, b3WorldTran
 	shape->flags |= def->enableHitEvents ? b3_enableHitEvents : 0;
 	shape->flags |= def->enablePreSolveEvents ? b3_enablePreSolveEvents : 0;
 	shape->flags |= def->enableSpeculativeContact ? b3_enableSpeculative : 0;
+	shape->flags |= ( shapeType == b3_hullShape && def->uniqueHull ) ? b3_uniqueHull : 0; // Added for Nebenan
 	shape->proxyKey = B3_NULL_INDEX;
 	shape->localCentroid = b3GetShapeCentroid( shape );
 	shape->aabbMargin = b3ComputeShapeMargin( shape );
@@ -1028,7 +1036,16 @@ static void b3DestroyShapeAllocationForShapeChange( b3World* world, b3Shape* sha
 	switch ( type )
 	{
 		case b3_hullShape:
-			b3RemoveHullFromDatabase( world, shape->hull );
+			// Added for Nebenan: a unique hull belongs to its shape
+			if ( shape->flags & b3_uniqueHull )
+			{
+				b3DestroyHull( (b3HullData*)shape->hull );
+				shape->flags &= ~b3_uniqueHull;
+			}
+			else
+			{
+				b3RemoveHullFromDatabase( world, shape->hull );
+			}
 			shape->hull = NULL;
 			break;
 

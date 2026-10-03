@@ -383,9 +383,6 @@ typedef struct nbWorld
 	int destructibleCount;
 	int rubbleCount;
 
-	// The hulls Box3D's hull database has room for since nbKeepRoom last reserved, zero before
-	int reservedHulls;
-
 	uint32_t bondStamp;
 	uint32_t searchStamp;
 	uint32_t settleStamp;
@@ -497,8 +494,8 @@ void nbTouchChunk( nbWorld* world, int chunkIndex );
 void nbTouchActor( nbWorld* world, int actorIndex );
 void nbUpdateDebris( nbWorld* world, int actorIndex );
 
-// Keep room in Box3D's hull database, see nbKeepRoom in world.c
-void nbKeepRoom( nbWorld* world );
+// Let the maps from Box3D indices cover all bodies and shapes, see world.c
+void nbCoverIndices( nbWorld* world );
 
 // The speed an impact that ejects its fragments at the given speed pushes loose debris with at most. Heavy parts barely
 // move, the push falls with the volume beyond four fragments.

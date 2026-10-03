@@ -535,10 +535,19 @@ typedef struct b3ShapeDef
 	/// Experimental: this can only disable speculative contact between hulls and triangles (meshes and height fields).
 	bool enableSpeculativeContact;
 
+	/// The shape keeps a copy of its hull of its own instead of sharing it through the hull database of the world. The
+	/// database stores equal hulls once, but hashes every hull into a table that rehashes all its hulls when it fills
+	/// up. For hulls that are all different, such as the pieces of a fracture, it saves nothing. Ignored for shapes
+	/// other than hulls. Added for Nebenan.
+	bool uniqueHull;
+
 	/// Used internally to detect a valid definition. DO NOT SET.
 	int internalValue;
 
 } b3ShapeDef;
+
+/// This Box3D has b3ShapeDef::uniqueHull
+#define B3_HAS_UNIQUE_HULLS 1
 
 /// Use this to initialize your shape definition
 /// @ingroup shape

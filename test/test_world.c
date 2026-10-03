@@ -308,11 +308,6 @@ static uint32_t HashDestructible( uint32_t hash, nbDestructibleId wall )
 	return ( hash ^ (uint32_t)count ) * 16777619u;
 }
 
-// The frame of the determinism scenario that reserves room in Box3D's hull database, see ReserveTest. Negative for
-// none.
-static int s_reserveFrame = -1;
-static int64_t s_reservedBytes = 0;
-
 static uint32_t RunDeterminismScenarioWith( TestScene scene )
 {
 	nbDestructibleId wall = CreateWall( &scene, (b3Vec3){ 2.5f, 1.5f, 0.12f }, 5 );
@@ -342,14 +337,6 @@ static uint32_t RunDeterminismScenarioWith( TestScene scene )
 			blast.ejectSpeed = 2.0f;
 			nbWorld_ApplyImpact( scene.world, &blast );
 		}
-#if defined( B3_HAS_RESERVE_HULLS )
-		if ( frame == s_reserveFrame )
-		{
-			int64_t bytes = b3GetByteCount();
-			b3World_ReserveHulls( scene.physicsWorld, 20000 );
-			s_reservedBytes = b3GetByteCount() - bytes;
-		}
-#endif
 		Step( &scene, 1 );
 	}
 
@@ -380,15 +367,38 @@ static int DeterminismTest( void )
 	return 0;
 }
 
-// Room reserved in Box3D's hull database in the middle of a run, after impacts freed and added hulls, changes nothing
-static int ReserveTest( void )
+// A shape with a unique hull keeps a copy of its own, other shapes share equal hulls through Box3D's hull database. A
+// new hull for a unique shape is shared again, and destroying the shapes frees all copies.
+static int UniqueHullTest( void )
 {
-#if defined( B3_HAS_RESERVE_HULLS )
-	s_reserveFrame = 50;
-	uint32_t hash = RunDeterminismScenario();
-	s_reserveFrame = -1;
-	ENSURE( s_reservedBytes > 0 );
-	ENSURE( hash == NB_EXPECTED_DETERMINISM_HASH );
+#if defined( B3_HAS_UNIQUE_HULLS )
+	int64_t baseBytes = b3GetByteCount();
+	b3WorldDef worldDef = b3DefaultWorldDef();
+	b3WorldId worldId = b3CreateWorld( &worldDef );
+	b3BodyDef bodyDef = b3DefaultBodyDef();
+	b3BodyId bodyId = b3CreateBody( worldId, &bodyDef );
+	b3BoxHull box = b3MakeBoxHull( 1.0f, 1.0f, 1.0f );
+
+	b3ShapeDef sharedDef = b3DefaultShapeDef();
+	b3ShapeId sharedA = b3CreateHullShape( bodyId, &sharedDef, &box.base );
+	b3ShapeId sharedB = b3CreateHullShape( bodyId, &sharedDef, &box.base );
+	ENSURE( b3Shape_GetHull( sharedA ) == b3Shape_GetHull( sharedB ) );
+
+	b3ShapeDef uniqueDef = b3DefaultShapeDef();
+	uniqueDef.uniqueHull = true;
+	b3ShapeId uniqueA = b3CreateHullShape( bodyId, &uniqueDef, &box.base );
+	b3ShapeId uniqueB = b3CreateHullShape( bodyId, &uniqueDef, b3Shape_GetHull( uniqueA ) );
+	ENSURE( b3Shape_GetHull( uniqueA ) != b3Shape_GetHull( sharedA ) );
+	ENSURE( b3Shape_GetHull( uniqueB ) != b3Shape_GetHull( uniqueA ) );
+	ENSURE( memcmp( b3Shape_GetHull( uniqueB ), &box.base, (size_t)box.base.byteCount ) == 0 );
+
+	b3Shape_SetHull( uniqueB, &box.base );
+	ENSURE( b3Shape_GetHull( uniqueB ) == b3Shape_GetHull( sharedA ) );
+
+	b3DestroyShape( uniqueA, false );
+	b3DestroyShape( sharedB, false );
+	b3DestroyWorld( worldId );
+	ENSURE( b3GetByteCount() == baseBytes );
 #endif
 	return 0;
 }
@@ -2247,7 +2257,7 @@ int WorldTest( void )
 	RUN_TEST( CollapseTest );
 	RUN_TEST( DeterminismTest );
 	RUN_TEST( WorkerTest );
-	RUN_TEST( ReserveTest );
+	RUN_TEST( UniqueHullTest );
 	RUN_TEST( LargeBlockTest );
 	RUN_TEST( EventTest );
 	RUN_TEST( DynamicDestructibleTest );

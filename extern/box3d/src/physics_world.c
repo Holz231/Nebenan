@@ -2289,18 +2289,6 @@ b3Capacity b3World_GetMaxCapacity( b3WorldId worldId )
 	return world->maxCapacity;
 }
 
-// Added for Nebenan: room in the hull database of a running world, so it need not rehash while the world runs
-void b3World_ReserveHulls( b3WorldId worldId, int hullCount )
-{
-	b3World* world = b3GetUnlockedWorldFromId( worldId );
-	if ( world == NULL )
-	{
-		return;
-	}
-
-	b3HullMap_reserve( world->hullDatabase, (size_t)hullCount );
-}
-
 void b3World_SetUserData( b3WorldId worldId, void* userData )
 {
 	b3World* world = b3GetWorldFromId( worldId );
