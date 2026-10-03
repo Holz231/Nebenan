@@ -431,6 +431,8 @@ int nbAllocActor( nbWorld* world, int destructibleIndex, bool isStatic )
 	actor->destructibleIndex = destructibleIndex;
 	actor->headChunk = NB_NULL_INDEX;
 	actor->debrisIndex = NB_NULL_INDEX;
+	actor->freeTime = world->time;
+	actor->budgetTime = world->time;
 	actor->isStatic = isStatic;
 	actor->isNew = true;
 	actor->holdSource = NB_NULL_INDEX;
@@ -457,6 +459,41 @@ int nbAllocActor( nbWorld* world, int destructibleIndex, bool isStatic )
 	return index;
 }
 
+// Keep the bit of the debris entry of an actor in step with whether it is rubble, see nbWorld::movingDebris
+static void nbMarkMoving( nbWorld* world, const nbActor* actor )
+{
+	int index = actor->debrisIndex;
+	if ( index != NB_NULL_INDEX )
+	{
+		uint64_t bit = (uint64_t)1 << ( index & 63 );
+		uint64_t* word = world->movingDebris.data + ( index >> 6 );
+		*word = actor->isRubble ? *word & ~bit : *word | bit;
+	}
+}
+
+// The first entry of debris from the index on that moves, or the debris count. Rubble that comes back to life ahead of
+// a loop over the moving debris is visited, as by a loop over all debris.
+static int nbNextMoving( const nbWorld* world, int index )
+{
+	int wordIndex = index >> 6;
+	if ( wordIndex >= world->movingDebris.count )
+	{
+		return world->debris.count;
+	}
+
+	uint64_t word = world->movingDebris.data[wordIndex] & ( ~(uint64_t)0 << ( index & 63 ) );
+	while ( word == 0 )
+	{
+		wordIndex += 1;
+		if ( wordIndex == world->movingDebris.count )
+		{
+			return world->debris.count;
+		}
+		word = world->movingDebris.data[wordIndex];
+	}
+	return 64 * wordIndex + nbCTZ64( word );
+}
+
 static void nbRemoveDebris( nbWorld* world, int actorIndex )
 {
 	nbActor* actor = world->actors.data + actorIndex;
@@ -470,8 +507,11 @@ static void nbRemoveDebris( nbWorld* world, int actorIndex )
 	int movedActor = world->debris.data[last];
 	world->debris.data[debrisIndex] = movedActor;
 	world->actors.data[movedActor].debrisIndex = debrisIndex;
+	world->movingDebris.data[last >> 6] &= ~( (uint64_t)1 << ( last & 63 ) );
 	world->debris.count -= 1;
+	world->movingDebris.count = ( world->debris.count + 63 ) >> 6;
 	actor->debrisIndex = NB_NULL_INDEX;
+	nbMarkMoving( world, world->actors.data + movedActor );
 }
 
 void nbFreeActor( nbWorld* world, int actorIndex )
@@ -900,6 +940,7 @@ static void nbFreezeActor( nbWorld* world, int actorIndex )
 	nbActor* actor = world->actors.data + actorIndex;
 	b3Body_SetType( actor->bodyId, b3_staticBody );
 	actor->isRubble = true;
+	nbMarkMoving( world, actor );
 	actor->holdsRubble = false;
 	actor->probing = false;
 	actor->carrierCount = 0;
@@ -914,6 +955,7 @@ void nbThawActor( nbWorld* world, int actorIndex )
 	nbActor* actor = world->actors.data + actorIndex;
 	NB_ASSERT( actor->isRubble );
 	actor->isRubble = false;
+	nbMarkMoving( world, actor );
 	world->rubbleCount -= 1;
 	b3Body_SetType( actor->bodyId, b3_dynamicBody );
 	if ( actor->massDirty )
@@ -1059,7 +1101,7 @@ static bool nbThawCallback( b3ShapeId shapeId, void* context )
 	nbActor* actor = world->actors.data + actorIndex;
 	if ( thawContext->collapse && actor->isStatic == false )
 	{
-		actor->budgetAge = 0.0f;
+		actor->budgetTime = world->time;
 	}
 
 	if ( actor->isRubble == false || actor->settleStamp == world->settleStamp ||
@@ -1150,7 +1192,7 @@ static void nbThawRubbleInBoxes( nbWorld* world, const b3AABB* boxes, int boxCou
 		nbThawActor( world, thawed->data[i] );
 		if ( filter != NULL && filter->grace )
 		{
-			world->actors.data[thawed->data[i]].budgetAge = 0.0f;
+			world->actors.data[thawed->data[i]].budgetTime = world->time;
 		}
 	}
 	thawed->count = 0;
@@ -1184,6 +1226,11 @@ void nbUpdateDebris( nbWorld* world, int actorIndex )
 	{
 		actor->debrisIndex = world->debris.count;
 		nbArray_Push( world->debris, actorIndex );
+		if ( ( actor->debrisIndex >> 6 ) == world->movingDebris.count )
+		{
+			nbArray_Push( world->movingDebris, 0 );
+		}
+		nbMarkMoving( world, actor );
 	}
 	else if ( isDebris == false && actor->debrisIndex != NB_NULL_INDEX )
 	{
@@ -2801,7 +2848,7 @@ static int nbCheckStoreys( nbWorld* world, int actorIndex, b3Vec3 up, nbOverload
 	for ( int a = destructible->headActor; a != NB_NULL_INDEX; a = world->actors.data[a].nextActor )
 	{
 		const nbActor* part = world->actors.data + a;
-		if ( part->isStatic || part->isRubble || part->age > 0.0f )
+		if ( part->isStatic || part->isRubble || part->freeTime < world->time )
 		{
 			continue;
 		}
@@ -3845,6 +3892,7 @@ void nbDestroyWorld( nbWorldId worldId )
 	nbArray_Free( world->shapeToChunk );
 	nbArray_Free( world->bodyToActor );
 	nbArray_Free( world->debris );
+	nbArray_Free( world->movingDebris );
 	nbArray_Free( world->touchedChunks );
 	nbArray_Free( world->touchedActors );
 	nbArray_Free( world->splitSeeds );
@@ -4126,11 +4174,12 @@ static void nbWakeHitRubble( nbWorld* world )
 static void nbReleaseHeldRubble( nbWorld* world, b3Vec3 up )
 {
 	int rubbleCount = world->rubbleCount;
-	for ( int i = 0; i < world->debris.count && rubbleCount - world->rubbleCount < NB_MAX_RELEASES; ++i )
+	for ( int i = nbNextMoving( world, 0 ); i < world->debris.count && rubbleCount - world->rubbleCount < NB_MAX_RELEASES;
+		  i = nbNextMoving( world, i + 1 ) )
 	{
 		int actorIndex = world->debris.data[i];
 		nbActor* actor = world->actors.data + actorIndex;
-		if ( actor->holdsRubble == false || actor->isRubble )
+		if ( actor->holdsRubble == false )
 		{
 			continue;
 		}
@@ -4150,7 +4199,7 @@ static void nbReleaseHeldRubble( nbWorld* world, b3Vec3 up )
 				.skipActor = actor->holdSource,
 				.skipGeneration = actor->holdSourceGeneration,
 				.holder = actorIndex,
-				.grace = actor->isBuildingPart || actor->budgetAge < NB_FREEZE_GRACE,
+				.grace = actor->isBuildingPart || world->time - actor->budgetTime < NB_FREEZE_GRACE,
 			};
 			nbThawRubbleInBoxes( world, &actor->holdBounds, 1, up, b3Dot( up, b3ToVec3( center ) ), &filter );
 		}
@@ -4586,11 +4635,11 @@ static void nbSettleDebris( nbWorld* world, b3Vec3 up, float timeStep )
 	uint32_t stamp = world->settleStamp;
 	int* quiet = nbArena_AllocArray( &world->arena, int, world->debris.count );
 	int quietCount = 0;
-	for ( int i = 0; i < world->debris.count; ++i )
+	for ( int i = nbNextMoving( world, 0 ); i < world->debris.count; i = nbNextMoving( world, i + 1 ) )
 	{
 		int actorIndex = world->debris.data[i];
 		nbActor* actor = world->actors.data + actorIndex;
-		if ( actor->isRubble || nbIsQuiet( world, actor, timeStep ) == false )
+		if ( nbIsQuiet( world, actor, timeStep ) == false )
 		{
 			continue;
 		}
@@ -4811,11 +4860,11 @@ static void nbEnforceDebrisBudget( nbWorld* world, b3Vec3 up )
 	nbBeginOperation( world );
 	nbDebrisRank* ranks = nbArena_AllocArray( &world->arena, nbDebrisRank, count );
 	int rankCount = 0;
-	for ( int i = 0; i < world->debris.count; ++i )
+	for ( int i = nbNextMoving( world, 0 ); i < world->debris.count; i = nbNextMoving( world, i + 1 ) )
 	{
 		int actorIndex = world->debris.data[i];
 		const nbActor* actor = world->actors.data + actorIndex;
-		if ( actor->isRubble == false && actor->budgetAge >= NB_FREEZE_GRACE )
+		if ( world->time - actor->budgetTime >= NB_FREEZE_GRACE )
 		{
 			ranks[rankCount++] = (nbDebrisRank){ b3Length( b3Body_GetLinearVelocity( actor->bodyId ) ), actorIndex };
 		}
@@ -4976,14 +5025,11 @@ void nbWorld_Update( nbWorldId worldId, float timeStep )
 	// Structures that cannot carry themselves give way
 	nbCheckSupports( world );
 
+	// Debris ages with the world time, rubble without being visited
+	world->time += timeStep;
+
 	// Rubble follows what moved away from under it, then quiet debris freezes. Debris is never removed: past the budget
 	// the slowest freezes.
-	for ( int i = 0; i < world->debris.count; ++i )
-	{
-		nbActor* actor = world->actors.data + world->debris.data[i];
-		actor->age += timeStep;
-		actor->budgetAge += timeStep;
-	}
 	if ( hasGravity )
 	{
 		nbReleaseHeldRubble( world, up );

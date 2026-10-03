@@ -1962,7 +1962,7 @@ static int StoreyTest( void )
 				{
 					const nbActor* actor = world->actors.data + world->debris.data[i];
 					b3Vec3 velocity = b3Body_GetLinearVelocity( actor->bodyId );
-					count += actor->fromCollapse && actor->age <= 0.02f &&
+					count += actor->fromCollapse && world->time - actor->freeTime <= 0.02f &&
 									 velocity.x * velocity.x + velocity.z * velocity.z > 5.0f * 5.0f
 								 ? 1
 								 : 0;
@@ -2131,7 +2131,7 @@ static int SupportTest( void )
 				const nbActor* actor = world->actors.data + world->debris.data[d];
 				const nbChunk* chunk = world->chunks.data + actor->headChunk;
 				b3Vec3 velocity = b3Body_GetLinearVelocity( actor->bodyId );
-				if ( actor->isRubble == false && actor->age <= 0.02f && chunk->materialIndex == 0 &&
+				if ( actor->isRubble == false && world->time - actor->freeTime <= 0.02f && chunk->materialIndex == 0 &&
 					 velocity.x * velocity.x + velocity.z * velocity.z > 4.0f * 4.0f )
 				{
 					thrownCount += 1;

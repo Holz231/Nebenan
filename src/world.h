@@ -137,11 +137,11 @@ typedef struct nbActor
 
 	float volume;
 
-	// Seconds since the actor became free. Coming back to life from rubble keeps the age.
-	float age;
+	// World time when the actor became free. It ages on while it is rubble, without anything to update.
+	double freeTime;
 
-	// Seconds since the actor became free or a storey gave way next to it, see NB_FREEZE_GRACE
-	float budgetAge;
+	// World time when the actor became free or a storey gave way next to it, see NB_FREEZE_GRACE
+	double budgetTime;
 
 	// Bound on the distance of the chunk vertices from the center of mass, cached with the mass
 	float radius;
@@ -331,6 +331,13 @@ typedef struct nbWorld
 
 	// Free dynamic actors that are subject to lifetime and budget rules
 	nbIntArray debris;
+
+	// One bit per entry of debris, set while it moves, so not for rubble. The loops of every update visit only these, in
+	// the order of debris, and skip the rubble a word at a time. The bits past the end of debris are clear.
+	nbBitArray movingDebris;
+
+	// Seconds simulated so far. Debris ages against it, see nbActor::freeTime.
+	double time;
 
 	// Chunks and actors touched by the current operation
 	nbIntArray touchedChunks;

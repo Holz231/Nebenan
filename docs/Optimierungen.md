@@ -15,7 +15,8 @@ nichts bleibt in der Luft hängen, und das Ergebnis bleibt deterministisch.
 
 ## Reihenfolge der vorgemerkten Arbeit
 
-1. **Schutt aus den Schleifen pro Frame nehmen** (Nr. 1), hoch. Billig und gemessen.
+1. ✅ **Schutt aus den Schleifen pro Frame nehmen** (Nr. 1). Erledigt: `nbWorld_Update` braucht in der Stadt 26 % weniger
+   Zeit, mit doppelter Bruchstückgröße 22 %, mit vierfacher kaum etwas, siehe unten.
 2. **Nur bewegte Transformationen hochladen** (Nr. 74), mittel.
 3. **Räumliche Render-Seiten und Frustum-Culling** (Nr. 49 bis 51), mittel. Hoch, sobald die Grafik der Engpass ist,
    und für eine große Stadt.
@@ -26,8 +27,12 @@ nichts bleibt in der Luft hängen, und das Ergebnis bleibt deterministisch.
    69, 75, 88 bis 92).
 
 Zuerst immer messen, wo die Zeit hingeht. Das Menü der Demo trennt Simulation, Box3D-Schritt und Grafik und sagt, wer
-die FPS begrenzt. „Messwerte kopieren“ legt alles in die Zwischenablage. Ist die Simulation groß, zählen die Punkte 1,
-4 und 5, ist die Grafik groß, die Punkte 2 und 3.
+die FPS begrenzt. „Messwerte kopieren“ legt alles in die Zwischenablage. Ist die Simulation groß, zählen die Punkte 4
+und 5, ist die Grafik groß, die Punkte 2 und 3.
+
+Mit vierfacher Bruchstückgröße rechnet die Simulation wenig: In der Benchmark-Stadt kostet ein Frame auf der VM im
+Mittel 0,65 ms, davon 0,07 ms `nbWorld_Update`. Läuft die Demo dort mit rund 290 FPS, also 3,4 ms pro Bild, geht der
+größere Teil wahrscheinlich an die Grafik.
 
 ## Was die Liste übersieht
 
@@ -54,7 +59,7 @@ Seit der Liste ist dazugekommen oder gemessen worden:
 
 | Nr. | Idee | Status | Bewertung |
 | ---: | --- | --- | --- |
-| 1 | Bewegte Trümmer und Schutt getrennt führen | 🔜 hoch | Bestätigt und gemessen: Vier Schleifen pro Frame laufen über `world->debris`, Schutt eingeschlossen, eine schreibt sogar `age` und `budgetAge` in jeden Schutt. In der Stadt (×1, 4 Threads) kosten sie im Mittel über die 20 s 0,36 + 0,43 + 0,59 + 0,94 ms von 3,86 ms Update, ein großer Teil davon reines Überspringen, gegen Ende mit 34 000 Schutt-Körpern mehr. Mit der Demo-Bruchstückgröße 0,07 + 0,09 + 0,37 ms. Eine Liste der bewegten Trümmer (höchstens das Budget) und ein Zeitstempel statt Hochzählen machen das billig. |
+| 1 | Bewegte Trümmer und Schutt getrennt führen | ✅ | Umgesetzt. Vorher liefen vier Schleifen pro Frame über `world->debris`, Schutt eingeschlossen, eine schrieb sogar `age` und `budgetAge` in jeden Schutt. Jetzt trägt `movingDebris` ein Bit pro Eintrag, gesetzt für alles, was kein Schutt ist, und die Schleifen springen per Bit-Scan über den Schutt, 64 Einträge auf einmal, in derselben Reihenfolge wie vorher. Eine eigene Liste der bewegten Trümmer hätte die Reihenfolge und damit die Simulation geändert. Alter und Budget-Alter sind Zeitstempel gegen eine Weltuhr, Schutt altert ohne Schleife. Bei 60 Hz überschreitet die Uhr die Schonfrist von 0,25 s im selben Schritt wie das alte Hochzählen in `float`, bei anderen Schrittweiten wie 240 Hz kann es einen Schritt abweichen. Die Simulation bleibt bitgleich: derselbe Determinismus-Hash und dieselben Endzustände in der Stadt (×1, ×2, ×4), bei 64 großen Explosionen auf 16 Häusern und im Einschlag-Benchmark, mit 1 und 4 Threads. `nbWorld_Update` in der Stadt mit 4 Threads, Median aus sechs Läufen im Wechsel: ×1 2,65 statt 3,59 ms (−26 %), ×2 0,69 statt 0,88 ms (−22 %), ×4 0,070 statt 0,075 ms, dort liegen am Ende nur 1200 Schutt-Körper statt 34 000. Die vier Schleifen kosten bei ×1 jetzt 0 + 0,21 + 0,38 + 0,85 ms statt 0,39 + 0,45 + 0,61 + 0,90 ms. Übrig bleibt vor allem das Budget: Es rankt und friert ein, das Überspringen war dort nie der große Teil. |
 | 2 | Ruhenden Schutt zu groben Kollisionsformen zusammenbacken | 🔜 mittel, erst messen | Möglich, aber groß: Auflagen, Halter, Aufwecken und Einschläge arbeiten mit den einzelnen Schutt-Stücken. Lohnt nur, wenn viele der wachen Kontakte zwischen bewegten Trümmern und Schutt liegen, denn es zählt die Zahl der Kontakte, nicht die Form (siehe oben). Zuerst diesen Anteil messen. |
 | 3 | Genaue Stücke nach dem Backen behalten | ✅ | Schutt wird nie gelöscht, `nbShape` und Hülle bleiben. |
 | 4 | Nur Schutt nahe der Explosion aufwecken | ✅ | `nbThawRubbleInBoxes` mit AABB-Abfrage, und nur, was der Einschlag bewegen kann. |
@@ -94,7 +99,7 @@ Seit der Liste ist dazugekommen oder gemessen worden:
 | 33 | SIMD | ⛔ | Box3D hat es. Nebenans Geometrie läuft parallel und ist mit 4 Threads ein kleiner Teil der Frame-Zeit. |
 | 34 | Voronoi-Zellen parallel | ✅ | |
 | 35 | Hüllen parallel | ✅ | |
-| 36 | Statik parallel | ⛔ | Die Prüfungen sind lokal und billig. Im Update kosten die Schleifen aus Nr. 1 mehr. |
+| 36 | Statik parallel | ⛔ | Die Prüfungen sind lokal und billig. Im Update kosteten die Schleifen aus Nr. 1 mehr. |
 | 37 | Einbau und Box3D-Formen parallel | ⛔ | Box3D erlaubt Änderungen an der Welt nur von einem Thread. Was ging, läuft jetzt parallel (siehe oben). Die Restidee steht unten als „gesammelt einfügen“. |
 | 38 | Wenige große Aufgaben statt vieler kleiner | ✅ | Eine Aufgabe je Worker, Arbeit über einen atomaren Zähler. |
 | 39 | Statik nur bei Änderungen | ✅ | `supportDirty`, `supportChecks`, `splitSeeds`. |
@@ -103,7 +108,7 @@ Seit der Liste ist dazugekommen oder gemessen worden:
 | 42 | Arbeit über Frames verteilen | ✅ | Grenzen beim Aufwecken, Freigeben, Zerquetschen, Seiten verdichten. |
 | 43 | Gemeinsame Welt-Regionen | 🔜 Stadt | Siehe Nr. 88. |
 | 44 | Hierarchische Broadphase | ✅ | Box3D. Keine zweite bauen. |
-| 45 | Räumliche Sortierung im Speicher (Morton) | ⛔ | Kein Profil zeigt Cache-Probleme in diesen Daten, Ausnahme die Schleifen aus Nr. 1, und die löst Nr. 1. |
+| 45 | Räumliche Sortierung im Speicher (Morton) | ⛔ | Kein Profil zeigt Cache-Probleme in diesen Daten. Die Ausnahme waren die Schleifen aus Nr. 1, und die sind gelöst. |
 
 ## Darstellung und Sichtbarkeit (Demo)
 

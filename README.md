@@ -512,7 +512,9 @@ zusammen (Einschläge, Box3D-Schritt, `nbWorld_Update`), jeweils der mittlere vo
 
 Die 240 Granaten verteilen sich auf die Wände beider Etagen aller Häuser, dabei verliert keine Etage die Hälfte ihrer
 Wände, und nichts stürzt ein. Ohne Einstürze (`storeySupport` 0) sind es fast dieselben Zeiten. `nbWorld_Update`
-kostet mit 4 Threads im Mittel 1,7 ms, mit doppelter Bruchstückgröße 0,4 ms, und enthält den Schaden durch Aufprall.
+kostete dabei mit 4 Threads im Mittel 1,7 ms, mit doppelter Bruchstückgröße 0,4 ms, und enthält den Schaden durch
+Aufprall. Seit es den Schutt nicht mehr in jedem Update einzeln durchgeht, braucht es 26 und 22 % weniger Zeit, am
+selben Tag auf der inzwischen langsameren VM gemessen 2,65 statt 3,59 ms und 0,69 statt 0,88 ms.
 
 Braucht eine Etage 90 % ihrer Wände, stürzen unter demselben Beschuss 20 bis 21 Etagen ein, auch in Teilen, die schon
 heruntergekommen sind. Die Stadt braucht dann mit 4 Threads 1,4-mal so lange wie ohne Einstürze und mit

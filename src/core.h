@@ -8,6 +8,10 @@
 #include <stdint.h>
 #include <string.h>
 
+#if defined( _MSC_VER ) && !defined( __clang__ )
+#include <intrin.h>
+#endif
+
 #if defined( _MSC_VER )
 #define NB_BREAKPOINT __debugbreak()
 #elif defined( __GNUC__ ) || defined( __clang__ )
@@ -89,6 +93,33 @@ int nbAtomicFetchAddInt( int* value, int delta );
 	while ( 0 )
 
 NB_ARRAY_DECLARE( int, nbIntArray );
+
+// Bits packed 64 to a word
+NB_ARRAY_DECLARE( uint64_t, nbBitArray );
+
+// Index of the lowest set bit of a word that is not zero
+static inline int nbCTZ64( uint64_t word )
+{
+#if defined( _MSC_VER ) && !defined( __clang__ )
+	unsigned long index;
+#if defined( _WIN64 )
+	_BitScanForward64( &index, word );
+#else
+	if ( (uint32_t)word != 0 )
+	{
+		_BitScanForward( &index, (uint32_t)word );
+	}
+	else
+	{
+		_BitScanForward( &index, (uint32_t)( word >> 32 ) );
+		index += 32;
+	}
+#endif
+	return (int)index;
+#else
+	return __builtin_ctzll( word );
+#endif
+}
 
 // Linear scratch allocator. Memory is released all at once with nbArena_Reset.
 // Allocations never move, the arena grows by chaining blocks and coalesces them on reset.
