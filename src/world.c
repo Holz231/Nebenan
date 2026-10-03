@@ -857,10 +857,24 @@ static bool nbIsQuiet( const nbWorld* world, nbActor* actor, float timeStep )
 	return actor->restTime >= NB_REST_TIME || rocking || probed;
 }
 
-// Mass, center of mass and reach of a dynamic actor from its shapes
+// Box3D sweeps a body against static shapes once it moves more than its safety factor times the radius of the largest
+// sphere in its thinnest shape within one step. Most debris is small, and Box3D's default of half that radius would sweep
+// nearly every piece that flies. See nbWorldDef::debrisSweepDistance.
+static void nbUpdateSweep( const nbWorld* world, const nbActor* actor )
+{
+	float distance = world->def.debrisSweepDistance;
+	if ( distance > 0.0f )
+	{
+		float radius = b3Body_GetMinExtent( actor->bodyId );
+		b3Body_SetSafetyFactor( actor->bodyId, b3ClampFloat( distance / b3MaxFloat( radius, 1.0e-3f ), 0.5f, 2.0f ) );
+	}
+}
+
+// Mass, center of mass, reach and sweep of a dynamic actor from its shapes
 static void nbUpdateActorMass( nbWorld* world, nbActor* actor )
 {
 	b3Body_ApplyMassFromShapes( actor->bodyId );
+	nbUpdateSweep( world, actor );
 	actor->localCenter = b3Body_GetLocalCenter( actor->bodyId );
 	actor->radius = 0.0f;
 	for ( int c = actor->headChunk; c != NB_NULL_INDEX; c = world->chunks.data[c].nextChunk )
@@ -3457,6 +3471,7 @@ nbWorldDef nbDefaultWorldDef( void )
 	def.maxDebrisBodies = 1500;
 	def.enableRubble = true;
 	def.debrisSleepThreshold = 0.12f;
+	def.debrisSweepDistance = 0.2f;
 	def.killDepth = -100.0f;
 	def.supportScale = 0.0f;
 	def.storeySupport = 0.5f;

@@ -355,7 +355,7 @@ static uint32_t RunDeterminismScenario( void )
 
 // Fracture and physics are bit for bit identical with MSVC, GCC and Clang on x64 and ARM. This is the result
 // with the pinned Box3D commit. Update it when the results change on purpose, never to make one platform pass.
-#define NB_EXPECTED_DETERMINISM_HASH 0xffd1fc42u
+#define NB_EXPECTED_DETERMINISM_HASH 0xf9000425u
 
 static int DeterminismTest( void )
 {
@@ -1171,6 +1171,59 @@ static int CannonballTest( void )
 	ENSURE( b3Body_GetPosition( ball ).z < -0.5f );
 
 	DestroyScene( &scene );
+	return 0;
+}
+
+// Box3D sweeps debris against static shapes only once it could pass through a wall within one step: small pieces later
+// than Box3D would by default, which spares most sweeps, large pieces as Box3D does. Shot at a wall 20 cm thick at up to
+// 40 m/s, from starting points spread over a step, no piece passes through. Swept at twice their inner radius whatever
+// their size, large pieces could pass through walls thinner than their step.
+static int SweepTest( void )
+{
+	float halfWidths[] = { 0.03f, 0.1f, 0.15f, 0.25f };
+	float factors[] = { 2.0f, 2.0f, 0.2f / 0.15f, 0.8f };
+	float speeds[] = { 9.0f, 15.0f, 18.0f, 22.0f, 27.0f, 40.0f };
+	enum
+	{
+		speedCount = 6,
+		phaseCount = 20,
+		pieceCount = speedCount * phaseCount,
+	};
+	for ( int h = 0; h < 4; ++h )
+	{
+		TestScene scene = CreateScene();
+		nbDestructibleDef wallDef = nbDefaultDestructibleDef();
+		wallDef.position = (b3Vec3){ 0.0f, 1.5f, 0.0f };
+		nbCreateBox( scene.world, &wallDef, (b3Vec3){ 50.0f, 1.5f, 0.1f } );
+
+		float half = halfWidths[h];
+		b3BodyId bodies[pieceCount];
+		for ( int i = 0; i < pieceCount; ++i )
+		{
+			nbDestructibleDef def = nbDefaultDestructibleDef();
+			def.isStatic = false;
+			def.enableCollisionDamage = false;
+			def.position = (b3Vec3){ -48.0f + 0.8f * (float)i, 1.5f, 1.0f + 0.015f * (float)( i % phaseCount ) };
+			nbDestructibleId piece = nbCreateBox( scene.world, &def, (b3Vec3){ half, half, half } );
+			nbChunkId chunk;
+			ENSURE( nbDestructible_GetChunks( piece, &chunk, 1 ) == 1 );
+			bodies[i] = nbChunk_GetBody( chunk );
+		}
+
+		Step( &scene, 1 );
+		for ( int i = 0; i < pieceCount; ++i )
+		{
+			ENSURE( fabsf( b3Body_GetSafetyFactor( bodies[i] ) - factors[h] ) < 1.0e-3f );
+			b3Body_SetLinearVelocity( bodies[i], (b3Vec3){ 0.0f, 0.0f, -speeds[i / phaseCount] } );
+		}
+
+		Step( &scene, 30 );
+		for ( int i = 0; i < pieceCount; ++i )
+		{
+			ENSURE( b3Body_GetPosition( bodies[i] ).z > 0.0f );
+		}
+		DestroyScene( &scene );
+	}
 	return 0;
 }
 
@@ -2137,6 +2190,7 @@ int WorldTest( void )
 	RUN_TEST( GraphTest );
 	RUN_TEST( RubbleTest );
 	RUN_TEST( CannonballTest );
+	RUN_TEST( SweepTest );
 	RUN_TEST( VisibleFaceTest );
 	RUN_TEST( DebrisBudgetTest );
 	RUN_TEST( FragmentScaleTest );

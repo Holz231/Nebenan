@@ -301,6 +301,13 @@ typedef struct nbWorldDef
 	/// islands to sleep that stay slower than this.
 	float debrisSleepThreshold;
 
+	/// Box3D sweeps a moving body against static shapes so it cannot pass through a wall within one step, see
+	/// b3BodyDef::safetyFactor. Debris is swept once it moves this far in one step, in meters, or twice the radius of the
+	/// largest sphere in its thinnest chunk if that is less, and large debris no later than Box3D sweeps it by default,
+	/// once it moves half that radius. Debris that moves less sinks into a wall by less than its own size and is pushed
+	/// back out the way it came. Keep it below the thickness of the thinnest wall. Zero keeps Box3D's default.
+	float debrisSweepDistance;
+
 	/// Debris that falls below this height along the gravity direction has left the world and is removed, in meters.
 	float killDepth;
 
