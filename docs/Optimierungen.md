@@ -1,0 +1,170 @@
+# Optimierungen: vorgemerkt, umgesetzt, ausgesiebt
+
+Review einer externen Liste von 93 Optimierungsideen, geprüft gegen den Code und gegen Messungen vom 3. Oktober
+2026. Die Nummern entsprechen der Liste. Nichts ist gelöscht: Ausgesiebtes bleibt mit Grund stehen, falls man doch
+noch einmal nachsehen will.
+
+| Zeichen | Bedeutung |
+| --- | --- |
+| 🔜 | Vorgemerkt, mit Priorität: **hoch**, **mittel**, **niedrig** oder **Stadt** (erst für eine große Stadt) |
+| ✅ | Schon umgesetzt, in Nebenan, der Demo oder Box3D |
+| ⛔ | Ausgesiebt, mit Grund |
+
+Feste Regeln, an denen jede Idee gemessen wurde: Kein Trümmerteil wird gelöscht, keine Kollision wird abgeschaltet,
+nichts bleibt in der Luft hängen, und das Ergebnis bleibt deterministisch.
+
+## Reihenfolge der vorgemerkten Arbeit
+
+1. **Schutt aus den Schleifen pro Frame nehmen** (Nr. 1), hoch. Billig und gemessen.
+2. **Nur bewegte Transformationen hochladen** (Nr. 74), mittel.
+3. **Räumliche Render-Seiten und Frustum-Culling** (Nr. 49 bis 51), mittel. Hoch, sobald die Grafik der Engpass ist,
+   und für eine große Stadt.
+4. **Grobe Kollisionsformen für ruhenden Schutt** (Nr. 2, 5, 6, 24), mittel. Vorher messen, ob es sich lohnt.
+5. **Neue Bruchstücke gesammelt in den Box3D-Baum einfügen** (eigene Idee, unten), niedrig. Geht nur mit einem
+   Eingriff in Box3D.
+6. Für eine große Stadt: Regionen, HLOD, Verdeckung, Streaming, Physik nur in aktiven Regionen (Nr. 52 bis 60, 65,
+   69, 75, 88 bis 92).
+
+Zuerst immer messen, wo die Zeit hingeht. Das Menü der Demo trennt Simulation, Box3D-Schritt und Grafik und sagt, wer
+die FPS begrenzt. „Messwerte kopieren“ legt alles in die Zwischenablage. Ist die Simulation groß, zählen die Punkte 1,
+4 und 5, ist die Grafik groß, die Punkte 2 und 3.
+
+## Was die Liste übersieht
+
+Seit der Liste ist dazugekommen oder gemessen worden:
+
+- **Mehr vom Einschlag läuft parallel** (zu Nr. 36, 37). Bruchpunkte, Schätzung des getroffenen Volumens ab 32 Stücken,
+  Voronoi-Zellen und Hüllen laufen auf den Workern, und das Aufwecken des Schutts läuft gleichzeitig mit den Zellen.
+  Seriell bleiben die Änderungen an der Box3D-Welt, der Einbau der Stücke und die Inselsuche. Eine große Explosion
+  braucht mit 4 Threads 4,8 ms, davon rund 3 ms Box3D-Aufrufe.
+- **CCD nur für Trümmer, die durch eine Wand könnten** (zu Nr. 27). Umgesetzt mit `debrisSweepDistance`: Der
+  Box3D-Schritt der Stadt braucht 6 bis 9 % weniger Zeit. Würfel von 6 bis 50 cm, mit 6 bis 50 m/s auf 12 oder 20 cm
+  dicke Wände geschossen, prallen alle ab.
+- **Einfachere Kollisionsformen für Trümmer sind gemessen und verworfen** (zu Nr. 23). Quader statt Zellen: 53 %
+  langsamer, weil sie sich dort überlappen, wo die Zellen lückenlos in der Wand liegen. Hüllen mit höchstens 8 oder 12
+  Ecken: 4 bis 8 %, im Rauschen. Selbst alle Hüllen vereinfacht, auch Gebäude und Schutt, kostete die Kollision nur
+  4 % weniger. Box3D zahlt pro Kontakt, nicht pro Ecke.
+- **Der Box3D-Schritt** ist 74 bis 87 % eines Frames der Stadt. Nach Instruktionen sind davon 54 % Kollision (40 %
+  Hülle gegen Hülle), 42 % Löser samt CCD, 4 % Broadphase. Ihn bestimmt die Zahl der wachen Kontakte und damit
+  Bruchstückgröße und Trümmerbudget.
+- **Die Thread-Zahl** stellt die Demo selbst ein, einen pro Performance-Kern, höchstens 8. Mehr Threads als Kerne
+  bremsen.
+
+## Physik, Zerstörung und Schutt
+
+| Nr. | Idee | Status | Bewertung |
+| ---: | --- | --- | --- |
+| 1 | Bewegte Trümmer und Schutt getrennt führen | 🔜 hoch | Bestätigt und gemessen: Vier Schleifen pro Frame laufen über `world->debris`, Schutt eingeschlossen, eine schreibt sogar `age` und `budgetAge` in jeden Schutt. In der Stadt (×1, 4 Threads) kosten sie im Mittel über die 20 s 0,36 + 0,43 + 0,59 + 0,94 ms von 3,86 ms Update, ein großer Teil davon reines Überspringen, gegen Ende mit 34 000 Schutt-Körpern mehr. Mit der Demo-Bruchstückgröße 0,07 + 0,09 + 0,37 ms. Eine Liste der bewegten Trümmer (höchstens das Budget) und ein Zeitstempel statt Hochzählen machen das billig. |
+| 2 | Ruhenden Schutt zu groben Kollisionsformen zusammenbacken | 🔜 mittel, erst messen | Möglich, aber groß: Auflagen, Halter, Aufwecken und Einschläge arbeiten mit den einzelnen Schutt-Stücken. Lohnt nur, wenn viele der wachen Kontakte zwischen bewegten Trümmern und Schutt liegen, denn es zählt die Zahl der Kontakte, nicht die Form (siehe oben). Zuerst diesen Anteil messen. |
+| 3 | Genaue Stücke nach dem Backen behalten | ✅ | Schutt wird nie gelöscht, `nbShape` und Hülle bleiben. |
+| 4 | Nur Schutt nahe der Explosion aufwecken | ✅ | `nbThawRubbleInBoxes` mit AABB-Abfrage, und nur, was der Einschlag bewegen kann. |
+| 5 | Nur den getroffenen Teil einer gebackenen Form neu bauen | 🔜 mit Nr. 2 | Gehört zu Nr. 2, regional bauen. |
+| 6 | Gebackene Formen ohne Treffer-Events | 🔜 mit Nr. 2 | Gehört zu Nr. 2. |
+| 7 | Gleichzeitig bewegte Trümmer begrenzen | ✅ | `maxDebrisBodies` (1500), Regler „Bewegte Trümmer“ in der Demo. 1000 statt 1500 sparten in einem Einzellauf 24 % des Box3D-Schritts (×1). Das ist eine Einstellung, keine Arbeit. |
+| 8 | Physik schlafen legen | ✅ | Box3D schläfert ein, Nebenan macht ruhigen, getragenen Schutt sogar statisch. |
+| 9 | Ruhe statt fester Zeit erkennen | ✅ | Ruhe, Auflage, Wackeln am Ort, wegrutschende Auflage. |
+| 10 | Aufwecken von Schutt beschränken | ✅ | Fallende Trümmer wecken Schutt nicht, schwerer Schutt bleibt bei Explosionen liegen. |
+| 11 | Nur begrenzt viel Schutt auf einmal aufwecken | ✅ | `NB_MAX_THAW` 512, außer beim Einsturz einer Etage. |
+| 12 | Kontakte filtern, kleine Trümmer untereinander ignorieren | ⛔ | Widerspricht der Regel „keine Kollision abschalten“. Trümmer sollen untereinander kollidieren. `b3Filter` bleibt für das Spiel verfügbar. |
+| 13 | Winzige Trümmer nur als Bild | ⛔ | Widerspricht „nichts löschen, keine Kollision abschalten“, und die Demo verzichtet bewusst auf Partikel. `minFragmentVolume` verhindert winzige Splitter schon beim Bruch. |
+| 14 | Bewegte Trümmer zusammenfassen | ✅ | Verbundene Stücke sind ein Körper aus mehreren Hüllen. Fremde Stücke zusammenzukleben lohnt nicht. |
+| 15 | Physik-LOD nach Kameraentfernung | ⛔ | Fern einfrieren ließe Teile in der Luft hängen. Ersetzt durch Nr. 91 für eine große Stadt. |
+| 16 | Fernes seltener simulieren | ⛔ | Die Zerstörung läuft schon nur bei Änderungen, und Box3D rechnet alle wachen Körper in einem Schritt. Seltenere Schritte für einen Teil der Welt gingen nur mit einem Eingriff in Box3D. |
+| 17 | Fokussierter, hierarchischer Bruch | ✅ | Nur getroffene Stücke werden verfeinert. |
+| 18 | Höchste Bruchtiefe | ✅ | `maxDepth` je Material. |
+| 19 | Splitterbudget je Einschlag | ✅ | `maxFragmentsPerImpact`, Verteilung nach beschädigtem Volumen. |
+| 20 | Bruch vorberechnen | ✅ | Vorzerlegung beim Laden, über Stöße und um Öffnungen, plus fokussierter Bruch zur Laufzeit. |
+| 21 | Statik vorberechnen | ✅ | Verbindungen, Etagen und lokale Suche statt globaler Spannungsrechnung. |
+| 22 | Hüllen zwischenspeichern | ⛔ | Hüllen entstehen direkt aus der Topologie, und Bruchhüllen sind fast immer einmalig. Box3D legt gleiche Hüllen ohnehin in seiner Datenbank zusammen. |
+| 23 | Einfachere Kollisionshüllen für bewegte Trümmer | ⛔ | Gemessen und verworfen, siehe oben. |
+| 24 | Nur die Oberfläche eines Schutthaufens kollidiert | 🔜 mit Nr. 2 | Teil von Nr. 2, nicht als eigenes System. |
+| 25 | Grobe Kollision für ferne Viertel | 🔜 Stadt | Erst mit Regionen (Nr. 88). |
+| 26 | Kontaktbudget | ⛔ | Bräuchte einen Eingriff in Box3Ds Löser. Das Trümmerbudget begrenzt die Kontakte schon indirekt. |
+| 27 | CCD nur wo nötig | ✅ | Neu: `debrisSweepDistance`, siehe oben. |
+| 28 | Löser-Iterationen je Körper | ⛔ | Tief in Box3D, viel Aufwand, unklarer Gewinn. Die Substeps stellt die Anwendung ein. |
+| 29 | Substeps je Körper | ⛔ | Wie Nr. 28. |
+
+## CPU, Daten und Threads
+
+| Nr. | Idee | Status | Bewertung |
+| ---: | --- | --- | --- |
+| 30 | Pools mit Freilisten | ✅ | Bruchstücke, Verbindungen, Akteure, Destructibles mit Generations-IDs. |
+| 31 | Arena für temporäre Daten | ✅ | Haupt-Arena und eine je Worker, pro Operation zurückgesetzt. |
+| 32 | Datenorientierte Ablage | ✅ | Zusammenhängende Arrays. Auf SoA umbauen nur, wenn eine Schleife es im Profil zeigt. |
+| 33 | SIMD | ⛔ | Box3D hat es. Nebenans Geometrie läuft parallel und ist mit 4 Threads ein kleiner Teil der Frame-Zeit. |
+| 34 | Voronoi-Zellen parallel | ✅ | |
+| 35 | Hüllen parallel | ✅ | |
+| 36 | Statik parallel | ⛔ | Die Prüfungen sind lokal und billig. Im Update kosten die Schleifen aus Nr. 1 mehr. |
+| 37 | Einbau und Box3D-Formen parallel | ⛔ | Box3D erlaubt Änderungen an der Welt nur von einem Thread. Was ging, läuft jetzt parallel (siehe oben). Die Restidee steht unten als „gesammelt einfügen“. |
+| 38 | Wenige große Aufgaben statt vieler kleiner | ✅ | Eine Aufgabe je Worker, Arbeit über einen atomaren Zähler. |
+| 39 | Statik nur bei Änderungen | ✅ | `supportDirty`, `supportChecks`, `splitSeeds`. |
+| 40 | Nur betroffene Bereiche bearbeiten | ✅ | |
+| 41 | Dirty-Flags | ✅ | `massDirty`, berührte Stücke und Akteure, Events. |
+| 42 | Arbeit über Frames verteilen | ✅ | Grenzen beim Aufwecken, Freigeben, Zerquetschen, Seiten verdichten. |
+| 43 | Gemeinsame Welt-Regionen | 🔜 Stadt | Siehe Nr. 88. |
+| 44 | Hierarchische Broadphase | ✅ | Box3D. Keine zweite bauen. |
+| 45 | Räumliche Sortierung im Speicher (Morton) | ⛔ | Kein Profil zeigt Cache-Probleme in diesen Daten, Ausnahme die Schleifen aus Nr. 1, und die löst Nr. 1. |
+
+## Darstellung und Sichtbarkeit (Demo)
+
+| Nr. | Idee | Status | Bewertung |
+| ---: | --- | --- | --- |
+| 46 | Backface-Culling | ✅ | `SG_CULLMODE_BACK`. |
+| 47 | Verdeckte Flächen zwischen verbundenen Stücken weglassen | ✅ | `nbChunk_GetVisibleFaces`. |
+| 48 | Flächen zwischen aufeinanderliegendem Schutt weglassen | 🔜 niedrig | Schwer robust zu erkennen und beim Aufwecken rückgängig zu machen. Erst nach Nr. 50. |
+| 49 | Frustum-Culling | 🔜 mittel | Bestätigt: Jede Seite wird gezeichnet, auch hinter der Kamera. Braucht räumliche Seiten (Nr. 50). |
+| 50 | Räumliche Render-Seiten | 🔜 mittel | Seiten füllen sich heute in der Reihenfolge der Entstehung. Seiten je Raumzelle mit Grenzen machen Nr. 49, 51, 52 und HLOD möglich. Hoch, sobald die Grafik der Engpass ist (Menü). |
+| 51 | Schutt je Region statt je Stück verwerfen | 🔜 mit Nr. 50 | |
+| 52 | Winzige Stücke in der Ferne nicht zeichnen | 🔜 Stadt | Nur Darstellung, in der Simulation bleibt alles. Bei großer Sichtweite, nach projizierter Größe statt Entfernung. |
+| 53 | Mesh-LOD | 🔜 Stadt | |
+| 54 | Cluster- oder Meshlet-LOD | ⛔ | Erst Regionen und Frustum. Bei 200 000 Dreiecken kein Bedarf. |
+| 55 | HLOD | 🔜 Stadt | Ein fernes zerstörtes Haus als ein grobes Modell. |
+| 56 | Impostoren | ⛔ | Erst HLOD. |
+| 57 | Verdeckungs-Culling | 🔜 Stadt | In dichten Straßen viel wert. |
+| 58 | Hierarchische Verdeckung | 🔜 Stadt | Mit Nr. 57. |
+| 59 | Hi-Z | 🔜 Stadt | Mit Nr. 57. |
+| 60 | Sichtbarkeit vom letzten Bild weiterverwenden | 🔜 Stadt | Mit Nr. 59. |
+| 61 | Portale und Sektoren | ⛔ | Zerstörbare Wände machen Portale unzuverlässig. Erst Hi-Z. |
+| 62 | Vorberechnete Sichtbarkeit (PVS) | ⛔ | Aus demselben Grund. |
+| 63 | Meshlets | ⛔ | Erst Regionen, Frustum, Verdeckung. |
+| 64 | Meshlets nach Normalenkegel verwerfen | ⛔ | Wie Nr. 63. |
+| 65 | Ruhenden Schutt zu Regions-Meshes backen | 🔜 Stadt | Nicht wegen Draw Calls (es sind 12), sondern für Grenzen, ohne Transformation, als Grundlage für HLOD. |
+| 66 | Instancing | ✅ | Gelöst durch gepackte Seiten mit Transformations-Slot je Ecke. |
+| 67 | Batching | ✅ | Eine Seite, ein Draw Call. |
+| 68 | Nach Material zusammenfassen | ✅ | Material steckt in der Ecke. |
+| 69 | GPU-getriebenes Zeichnen (indirekt) | 🔜 Stadt | Erst sinnvoll als Ausführung für GPU-Culling. |
+| 70 | Feste GPU-Puffer | ✅ | Volle Seiten sind unveränderlich, nur die offene ist dynamisch. |
+| 71 | Seiten nach und nach verdichten | ✅ | Ab einem Drittel totem Inhalt, mit Budget je Frame. |
+| 72 | Ecken weiter komprimieren | 🔜 niedrig | Normale und Material sind schon gepackt (20 Byte je Ecke). 16-Bit-Positionen je Region erst mit Nr. 50. |
+| 73 | Index-Reihenfolge für den Vertex-Cache | ⛔ | Flache Flächen haben eigene Ecken je Fläche, kaum Wiederverwendung. |
+| 74 | Transformationen nur hochladen, was sich bewegt | 🔜 mittel | Bestätigt: Bewegt sich irgendein Körper, lädt `Renderer::Upload` alle benutzten Slots hoch, 32 Byte je Slot, und die Demo gibt jedem Bruchstück einen eigenen Slot. Am Ende der Stadt mit 78 000 Bruchstücken sind das 2,5 MB pro Bild, mit der Demo-Bruchstückgröße 0,8 MB. Achtung: `sg_update_buffer` schreibt immer ab dem Anfang. Nötig ist also ein eigener kleiner Puffer für bewegte Körper oder eine Ordnung der Slots. |
+| 75 | Ruhender Schutt ganz ohne Transformation | 🔜 Stadt | Mit Nr. 65. |
+| 76 | Von vorn nach hinten zeichnen | ⛔ | Der Pixel-Shader ist trivial. Erst mit teurem Shading. |
+| 77 | Textur-Atlanten | ⛔ | Die Demo hat keine Texturen. |
+| 78 | Bindless | ⛔ | Kein Binden pro Material. |
+| 79 | Materialien in der Ferne vereinfachen | ⛔ | Licht wird schon in den Ecken gerechnet. |
+| 80 bis 83 | Schatten-Optimierungen | ⛔ | Die Demo hat bewusst keine Schatten. |
+| 84 | Variable Rate Shading | ⛔ | Kaum Pixelarbeit. |
+| 85 | Clustered/Forward+ | ⛔ | Eine Sonne, keine Punktlichter. |
+| 86 | Async Compute | ⛔ | Nichts läuft auf der GPU außer dem Zeichnen. |
+| 87 | GPU-Partikel | ⛔ | Bewusst kein Staub. Wäre ein neues Bild-Feature, keine Optimierung. |
+
+## Große Welt (für eine große Stadt)
+
+| Nr. | Idee | Status | Bewertung |
+| ---: | --- | --- | --- |
+| 88 | Gemeinsames Regionssystem | 🔜 Stadt | Eine Raumzelle trägt Render-Seiten, Grenzen, LOD, gebackenen Schutt, Streaming-Zustand. Grundlage für Nr. 25, 50, 55, 57, 65, 89, 91. |
+| 89 | Regionen streamen | 🔜 Stadt | |
+| 90 | Nur Aktives bearbeiten | ✅ | In der Zerstörung schon der Kern. Fehlt nur auf Weltebene (Nr. 91). |
+| 91 | Physik nur in aktiven Regionen | 🔜 Stadt | Nach Aktivität (Spieler, Geschosse, Explosionen), nicht nach Kamera. Ruhige Regionen frieren nur ein, was schon ruht, damit nichts in der Luft hängt. |
+| 92 | HLOD für ruhende zerstörte Regionen | 🔜 Stadt | Mit Nr. 55. |
+| 93 | Dynamische Portale | ⛔ | Siehe Nr. 61. |
+
+## Eigene Ideen aus den Messungen
+
+| Idee | Status | Bewertung |
+| --- | --- | --- |
+| Neue Bruchstücke gesammelt in den Box3D-Baum einfügen | 🔜 niedrig | Beim Anlegen der Formen stecken etwa 70 % der Zeit in `b3InsertLeaf`: Box3D sortiert jedes Stück einzeln in seinen Baum ein. Die Stücke eines Einschlags liegen beieinander und ließen sich als kleiner Teilbaum einhängen. Etwa 0,6 ms weniger je großer Explosion, pro Frame kaum etwas. Geht nur mit einem Patch an Box3D und einem Rückweg, falls ein Projekt sein eigenes Box3D mitbringt. |
+| Nebenan ohne Box3D | ⛔ | Box3D macht die eigentliche Arbeit (Kontakte, Löser, Broadphase, CCD, Threads, Determinismus) bereits sehr schnell. Eine eigene Engine wäre nur schneller, wenn sie weniger rechnet, und die meisten Vereinfachungen gehen auch mit Box3D. |
+| Trümmer-CCD-Schwelle | ✅ | Umgesetzt (`debrisSweepDistance`). |
+| Einschlag weiter parallelisieren | ✅ | Umgesetzt, siehe oben. |

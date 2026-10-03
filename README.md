@@ -567,6 +567,9 @@ höchstens 213 000 Dreiecke, im Mittel 0,5 MB und höchstens 1,7 MB Upload pro B
    noch schneller), bewegte Trümmer senken oder „Etage braucht“ senken, dann stürzt weniger ein. Ist Grafik groß
    oder wartet das Bild auf die Grafikkarte, ohne `--msaa` und `--highdpi` starten.
 
+Welche Optimierungen noch vorgemerkt sind, welche schon umgesetzt und welche mit Grund verworfen, steht mit den
+Messungen in [docs/Optimierungen.md](docs/Optimierungen.md).
+
 ## Tests und Benchmark
 
 ```sh
@@ -593,6 +596,7 @@ test/               Tests
 benchmark/          Leistungsmessung
 demo/               PC-Demo mit sokol und Dear ImGui
   shaders/          GLSL-Quelle und die mit sokol-shdc erzeugten Shader (HLSL, Metal, GLSL)
+docs/               vorgemerkte und verworfene Optimierungen
 extern/             Box3D (mit sokol) und Dear ImGui, unverändert, siehe extern/README.md
 .github/workflows/  CI für Windows, Linux und macOS
 ```
