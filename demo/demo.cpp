@@ -198,7 +198,6 @@ struct App
 
 	float accumulator = 0.0f;
 	int workerCount = 1;
-	int maxWorkers = 1;
 
 	bool keys[SAPP_MAX_KEYCODES] = {};
 	bool mouseLook = false;
@@ -1191,11 +1190,6 @@ static void DrawUi( App& app )
 	{
 		ImGui::SetTooltip( "So viele Trümmer bewegt Box3D höchstens gleichzeitig.\nDie langsamsten darüber erstarren zu Schutt, gelöscht wird nichts.\nWeniger macht die Physik schneller." );
 	}
-	if ( ImGui::SliderInt( "Threads", &app.workerCount, 1, app.maxWorkers ) )
-	{
-		b3World_SetWorkerCount( app.physics, app.workerCount );
-		nbWorld_SetWorkerCount( app.destruction, app.workerCount );
-	}
 	if ( app.vsyncAvailable )
 	{
 		if ( ImGui::Checkbox( "VSync (V)", &app.vsync ) )
@@ -1410,12 +1404,13 @@ static void OnInit()
 	app.refreshRate = DemoRefreshRate();
 	app.unthrottled = DemoUnthrottled();
 
-	// Box3D runs best on the performance cores alone. Hyper-threads and efficiency cores add little or slow it down.
-	unsigned hardware = std::thread::hardware_concurrency();
-	app.maxWorkers = hardware > 0 ? b3MinInt( (int)hardware, 16 ) : 4;
+	// One thread per performance core, at most 8. Box3D runs best on the performance cores alone, hyper-threads and
+	// efficiency cores add little or slow it down, and so do more threads than cores.
+	int hardware = (int)std::thread::hardware_concurrency();
 	app.performanceCores = SystemPerformanceCores();
-	int preferredWorkers = app.performanceCores > 0 ? app.performanceCores : app.maxWorkers / 2;
-	app.workerCount = b3ClampInt( preferredWorkers, 1, b3MinInt( app.maxWorkers, 8 ) );
+	int preferredWorkers = app.performanceCores > 0 ? app.performanceCores : ( hardware > 0 ? hardware / 2 : 2 );
+	preferredWorkers = hardware > 0 ? b3MinInt( preferredWorkers, hardware ) : preferredWorkers;
+	app.workerCount = b3ClampInt( preferredWorkers, 1, 8 );
 	app.cpuName = SystemCpuName();
 	app.gpuName = SystemGpuName();
 

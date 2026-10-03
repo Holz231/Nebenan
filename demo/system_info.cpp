@@ -151,6 +151,38 @@ int SystemPerformanceCores()
 	size = sizeof( count );
 	return sysctlbyname( "hw.physicalcpu", &count, &size, nullptr, 0 ) == 0 ? count : 0;
 #else
+	// Hybrid Intel CPUs list their performance cores as cpu_core, the efficiency cores as cpu_atom. The list is a range
+	// of logical processors like 0-11,16-19.
+	std::vector<bool> performance;
+	FILE* list = fopen( "/sys/devices/cpu_core/cpus", "r" );
+	if ( list != nullptr )
+	{
+		int first = 0;
+		while ( fscanf( list, "%d", &first ) == 1 && first >= 0 && first < 4096 )
+		{
+			int last = first;
+			int next = fgetc( list );
+			if ( next == '-' && fscanf( list, "%d", &last ) == 1 )
+			{
+				next = fgetc( list );
+			}
+			last = last < 4095 ? last : 4095;
+			if ( last >= (int)performance.size() )
+			{
+				performance.resize( (size_t)last + 1, false );
+			}
+			for ( int cpu = first; cpu <= last; ++cpu )
+			{
+				performance[(size_t)cpu] = true;
+			}
+			if ( next != ',' )
+			{
+				break;
+			}
+		}
+		fclose( list );
+	}
+
 	// Distinct cores in the topology of the logical processors
 	std::set<std::pair<int, int>> cores;
 	for ( int cpu = 0; cpu < 4096; ++cpu )
@@ -175,6 +207,10 @@ int SystemPerformanceCores()
 		if ( values[1] < 0 )
 		{
 			break;
+		}
+		if ( performance.empty() == false && ( cpu >= (int)performance.size() || performance[(size_t)cpu] == false ) )
+		{
+			continue;
 		}
 		cores.insert( { values[0], values[1] } );
 	}

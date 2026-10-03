@@ -123,11 +123,14 @@ viele FPS die CPU schaffen würde. Die Physik rechnet unabhängig davon 60 Schri
   nächsten Einschläge.
 - **Bewegte Trümmer** (Standard 1500): wie viele Trümmer Box3D höchstens gleichzeitig bewegt. Weniger macht den
   Physikschritt schneller.
-- **Threads**: Die Demo startet mit so vielen Threads, wie die CPU Performance-Kerne hat, höchstens 8. Box3D
-  läuft am schnellsten ohne Hyper-Threads und Effizienzkerne.
 
 Daneben stellt **Etage braucht** ein, wie viel ihrer Wände eine Etage zum Stehen braucht (Standard 50 %), und
 **Statik ohne Decken** schaltet die Lastprüfung für die Mauern ein (Standard aus).
+
+Die Threads stellt die Demo selbst ein: einen pro Performance-Kern, höchstens 8. Box3D läuft am schnellsten ohne
+Hyper-Threads und Effizienzkerne, und mehr Threads als Kerne bremsen. Im Benchmark auf der Cloud-VM mit 4 Kernen
+ist ein Frame der Stadt mit Bruchstückgröße ×2 mit 4 Threads 1,8-mal so schnell wie mit 1 Thread, mit 8 Threads
+10 % langsamer als mit 4.
 
 **Messung.** Das Menü zeigt die Bildzeit und die CPU-Zeit pro Bild, aufgeteilt in Einschläge, Simulation und
 Grafik, als Mittel und Spitze der letzten 300 Bilder, dazu Box3D-Schritt, Bruchstücke, Körper, Kontakte,
@@ -563,7 +566,6 @@ höchstens 213 000 Dreiecke, im Mittel 0,5 MB und höchstens 1,7 MB Upload pro B
 2. „Messwerte kopieren“ im Menü: Ist Simulation groß, Bruchstückgröße erhöhen (×3 macht die Zerstörung grob, aber
    noch schneller), bewegte Trümmer senken oder „Etage braucht“ senken, dann stürzt weniger ein. Ist Grafik groß
    oder wartet das Bild auf die Grafikkarte, ohne `--msaa` und `--highdpi` starten.
-3. Threads auf die Zahl der Performance-Kerne stellen.
 
 ## Tests und Benchmark
 
