@@ -4,6 +4,7 @@
 #include "world.h"
 
 #include <float.h>
+#include <stdlib.h>
 
 nbMaterial nbDefaultMaterial( void )
 {
@@ -400,6 +401,86 @@ static void nbFindStoreys( nbWorld* world, int destructibleIndex, int actorIndex
 	destructible->storeyCount = count;
 }
 
+// Two new chunks, by their place in the list of new chunks, first < second
+typedef struct nbChunkPair
+{
+	int first;
+	int second;
+} nbChunkPair;
+
+NB_ARRAY_DECLARE( nbChunkPair, nbChunkPairArray );
+
+typedef struct nbSweepEntry
+{
+	float lowerX;
+	int place;
+} nbSweepEntry;
+
+static int nbCompareSweepEntries( const void* a, const void* b )
+{
+	const nbSweepEntry* x = a;
+	const nbSweepEntry* y = b;
+	if ( x->lowerX != y->lowerX )
+	{
+		return x->lowerX < y->lowerX ? -1 : 1;
+	}
+	return ( x->place > y->place ) - ( x->place < y->place );
+}
+
+static int nbCompareChunkPairs( const void* a, const void* b )
+{
+	const nbChunkPair* x = a;
+	const nbChunkPair* y = b;
+	if ( x->first != y->first )
+	{
+		return x->first < y->first ? -1 : 1;
+	}
+	return ( x->second > y->second ) - ( x->second < y->second );
+}
+
+// The pairs of new chunks whose bounds pass the test nbShape_ContactArea starts with, in the order of a loop over all
+// pairs. A sweep along x finds them without testing every pair, a house has hundreds of chunks.
+static void nbFindTouchingPairs( nbWorld* world, int firstNewChunk, int count, float tolerance, nbChunkPairArray* pairs )
+{
+	if ( count < 2 )
+	{
+		return;
+	}
+
+	const int* touched = world->touchedChunks.data + firstNewChunk;
+	nbSweepEntry* entries = nbArena_AllocArray( &world->arena, nbSweepEntry, count );
+	for ( int i = 0; i < count; ++i )
+	{
+		entries[i] = (nbSweepEntry){ world->chunks.data[touched[i]].shape->bounds.lowerBound.x, i };
+	}
+	qsort( entries, (size_t)count, sizeof( nbSweepEntry ), nbCompareSweepEntries );
+
+	for ( int i = 0; i < count; ++i )
+	{
+		int place = entries[i].place;
+		const nbShape* shape = world->chunks.data[touched[place]].shape;
+
+		// Twice the tolerance keeps every pair the exact test accepts, whatever the rounding
+		float reach = shape->bounds.upperBound.x + 2.0f * tolerance;
+		for ( int j = i + 1; j < count && entries[j].lowerX <= reach; ++j )
+		{
+			int other = entries[j].place;
+			nbChunkPair pair = { place < other ? place : other, place < other ? other : place };
+			const nbShape* first = world->chunks.data[touched[pair.first]].shape;
+			const nbShape* second = world->chunks.data[touched[pair.second]].shape;
+			if ( b3AABB_Overlaps( b3AABB_Inflate( first->bounds, tolerance ), second->bounds ) )
+			{
+				nbArray_Push( *pairs, pair );
+			}
+		}
+	}
+
+	if ( pairs->count > 1 )
+	{
+		qsort( pairs->data, (size_t)pairs->count, sizeof( nbChunkPair ), nbCompareChunkPairs );
+	}
+}
+
 nbDestructibleId nbCreateDestructible( nbWorldId worldId, const nbDestructibleDef* def, const nbPieceDef* pieces, int pieceCount )
 {
 	NB_ASSERT( def->internalValue == NB_SECRET_COOKIE );
@@ -644,39 +725,41 @@ nbDestructibleId nbCreateDestructible( nbWorldId worldId, const nbDestructibleDe
 	// Glue touching faces of different pieces. A bond between two materials is as strong as the weaker one. Cells of one
 	// piece, or of pieces that crack together, hold as one block, and the parts of one cell hold as siblings.
 	int chunkEnd = world->touchedChunks.count;
-	for ( int a = firstNewChunk; a < chunkEnd; ++a )
+	float tolerance = 1.0e-3f;
+	nbChunkPairArray pairs = { 0 };
+	nbFindTouchingPairs( world, firstNewChunk, chunkEnd - firstNewChunk, tolerance, &pairs );
+	for ( int i = 0; i < pairs.count; ++i )
 	{
+		int a = firstNewChunk + pairs.data[i].first;
+		int b = firstNewChunk + pairs.data[i].second;
 		int chunkA = world->touchedChunks.data[a];
-		int groupA = world->chunks.data[chunkA].scratch;
-		for ( int b = a + 1; b < chunkEnd; ++b )
+		int chunkB = world->touchedChunks.data[b];
+		if ( world->chunks.data[chunkA].scratch == world->chunks.data[chunkB].scratch )
 		{
-			int chunkB = world->touchedChunks.data[b];
-			int groupB = world->chunks.data[chunkB].scratch;
-			if ( groupA == groupB )
-			{
-				continue;
-			}
+			continue;
+		}
 
-			const nbMaterial* materialA = nbGetChunkMaterial( world, world->chunks.data + chunkA );
-			const nbMaterial* materialB = nbGetChunkMaterial( world, world->chunks.data + chunkB );
-			float fragmentSize = b3MinFloat( nbGetFragmentSize( world, materialA ), nbGetFragmentSize( world, materialB ) );
-			float minBondArea = 0.01f * fragmentSize * fragmentSize;
+		const nbMaterial* materialA = nbGetChunkMaterial( world, world->chunks.data + chunkA );
+		const nbMaterial* materialB = nbGetChunkMaterial( world, world->chunks.data + chunkB );
+		float fragmentSize = b3MinFloat( nbGetFragmentSize( world, materialA ), nbGetFragmentSize( world, materialB ) );
+		float minBondArea = 0.01f * fragmentSize * fragmentSize;
 
-			nbBondGeometry geometry;
-			float area = nbShape_ContactArea( world->chunks.data[chunkA].shape, world->chunks.data[chunkB].shape, 1.0e-3f, &geometry );
-			if ( area > minBondArea )
-			{
-				int bondIndex = nbCreateBond( world, chunkA, chunkB, &geometry,
-											  b3MinFloat( materialA->strength, materialB->strength ) * area );
+		nbBondGeometry geometry;
+		float area =
+			nbShape_ContactArea( world->chunks.data[chunkA].shape, world->chunks.data[chunkB].shape, tolerance, &geometry );
+		if ( area > minBondArea )
+		{
+			int bondIndex =
+				nbCreateBond( world, chunkA, chunkB, &geometry, b3MinFloat( materialA->strength, materialB->strength ) * area );
 
-				int pieceA = chunkPieces.data[a - firstNewChunk], pieceB = chunkPieces.data[b - firstNewChunk];
-				int cellA = chunkCells.data[a - firstNewChunk], cellB = chunkCells.data[b - firstNewChunk];
-				bool joint = pieceA == pieceB || ( pieceJoints[pieceA] >= 0 && pieceJoints[pieceA] == pieceJoints[pieceB] );
-				world->bonds.data[bondIndex].cohesive = joint && cellA >= 0 && cellB >= 0;
-				world->bonds.data[bondIndex].sibling = joint && cellA >= 0 && cellA == cellB;
-			}
+			int pieceA = chunkPieces.data[a - firstNewChunk], pieceB = chunkPieces.data[b - firstNewChunk];
+			int cellA = chunkCells.data[a - firstNewChunk], cellB = chunkCells.data[b - firstNewChunk];
+			bool joint = pieceA == pieceB || ( pieceJoints[pieceA] >= 0 && pieceJoints[pieceA] == pieceJoints[pieceB] );
+			world->bonds.data[bondIndex].cohesive = joint && cellA >= 0 && cellB >= 0;
+			world->bonds.data[bondIndex].sibling = joint && cellA >= 0 && cellA == cellB;
 		}
 	}
+	nbArray_Free( pairs );
 	nbArray_Free( chunkPieces );
 	nbArray_Free( chunkCells );
 
