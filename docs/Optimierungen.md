@@ -39,11 +39,14 @@ Ziel seit dem 3. Oktober 2026: Bruchstückgröße ×4 und Szenen so groß wie m�
    Kontaktflächen zwischen den Bruchstücken, und eine Granate bei ×4 läuft auf dem aufrufenden Thread: Laden 12 bis
    15 % schneller, eine Granate auf ein Haus bis zu 14 % billiger, und kein Einschlag wird langsamer. Die Ergebnisse
    bleiben bitgleich.
-8. Grafik, sobald die Physik fertig ist: **Räumliche Render-Seiten und Frustum-Culling** (Nr. 49 bis 51) und **nur
+8. ✅ **Biegemomente nur bei Bedarf** (eigene Idee, unten). Die zweiten Momente der Verbindungen, die nur die
+   Lastprüfung liest, rechnet und speichert Nebenan nur noch für Bauwerke, die sie prüft: 4 % weniger
+   Prozess-Speicher, 5 % weniger Instruktionen pro Einschlag und 3 % beim Laden. Die Ergebnisse bleiben bitgleich.
+9. Grafik, sobald die Physik fertig ist: **Räumliche Render-Seiten und Frustum-Culling** (Nr. 49 bis 51) und **nur
    bewegte Transformationen hochladen** (Nr. 74). Beides wächst mit der Szene, denn die Demo zeichnet jedes Bild alles
    und lädt bei jeder Bewegung alle Transformationen hoch.
-9. Für eine große Stadt: Regionen, HLOD, Verdeckung, Streaming, Physik nur in aktiven Regionen (Nr. 52 bis 60, 65,
-   69, 75, 88 bis 92).
+10. Für eine große Stadt: Regionen, HLOD, Verdeckung, Streaming, Physik nur in aktiven Regionen (Nr. 52 bis 60, 65,
+    69, 75, 88 bis 92).
 
 Was nur kleinen Bruchstücken hilft, bringt bei ×4 kaum etwas und ist zurückgestellt: Trümmer früher zur Ruhe bringen,
 ein billigeres Trümmerbudget. Grobe Kollisionsformen für Schutt (Nr. 2) sind inzwischen gemessen und verworfen, siehe
@@ -64,16 +67,17 @@ zufälliges Haus.
 
 | Häuser | Bruchstücke | Aufbau | Speicher | Frame unter Beschuss |
 | ---: | ---: | ---: | ---: | ---: |
-| 16 | 3 848 | 0,02 s | 16,4 MB | 0,4 ms |
-| 64 | 15 425 | 0,07 s | 36 MB | 0,3 bis 0,4 ms |
-| 256 | 61 538 | 0,26 s | 108 MB | 0,3 bis 0,4 ms |
-| 1 024 | 246 141 | 1,14 s | 389 MB | 0,3 ms |
+| 16 | 3 848 | 0,02 s | 16,1 MB | 0,4 ms |
+| 64 | 15 425 | 0,07 s | 35 MB | 0,3 bis 0,4 ms |
+| 256 | 61 538 | 0,26 s | 104 MB | 0,3 bis 0,4 ms |
+| 1 024 | 246 141 | 1,14 s | 375 MB | 0,3 ms |
 
 Gemessen mit allen Änderungen für große Szenen: große Arrays, die an Ort und Stelle wachsen, Hüllen ohne Box3Ds
 Hüllen-Tabelle, statische Formen, die gesammelt in Box3Ds Suchbaum gehen, ein statischer Box3D-Körper pro Haus,
-Geometrie, die jedes Bruchstück nur einmal speichert, und Kontaktflächen, die beim Laden die Worker messen. Der Aufbau
-bei 256 und 1 024 Häusern ist der Median aus zwölf Läufen. Wie lange der Aufbau großer Städte dauert, hängt stark von
-der Tagesform der VM ab: Sie gibt frischen Speicher oft sehr langsam heraus, und die zwölf Läufe mit 1 024 Häusern
+Geometrie, die jedes Bruchstück nur einmal speichert, Kontaktflächen, die beim Laden die Worker messen, und
+Verbindungen ohne Biegemomente. Der Speicher stammt aus einer späteren Messung als der Aufbau. Der Aufbau bei 256 und
+1 024 Häusern ist der Median aus zwölf Läufen. Wie lange der Aufbau großer Städte dauert, hängt stark von der
+Tagesform der VM ab: Sie gibt frischen Speicher oft sehr langsam heraus, und die zwölf Läufe mit 1 024 Häusern
 brauchten zwischen 0,96 und 1,69 s. Bei der ersten Messung, noch ohne diese Änderungen und auf einer langsamen VM,
 brauchten 1 024 Häuser 3 bis 8 s und 533 MB, und ein Frame unter Beschuss kostete 0,5 bis 0,7 ms.
 
@@ -100,8 +104,9 @@ brauchten 1 024 Häuser 3 bis 8 s und 533 MB, und ein Frame unter Beschuss koste
   sind rund die Hälfte der Zeit beschäftigt. Einen großen Teil kostet der Kernel, der frische Speicherseiten nullt,
   vor allem für die Formen der Bruchstücke. Wie viel, schwankt auf der VM stark, auf dem Hauptthread zwischen einem
   Zwanzigstel und einem Drittel der Samples. Gemessen mit `perf` in der Stadt aus 1 024 Häusern.
-- **Speicher**: rund 0,38 MB pro Haus aus 240 Bruchstücken, ein Fünftel davon in Box3D. Vorher waren es 0,44 MB, gut
-  die Hälfte davon in Box3D, und davor 0,52 MB, knapp zwei Drittel davon in Box3D.
+- **Speicher**: rund 0,37 MB pro Haus aus 240 Bruchstücken, ein Fünftel davon in Box3D. Vorher waren es 0,38 MB mit
+  den Biegemomenten in jeder Verbindung, davor 0,44 MB, gut die Hälfte davon in Box3D, und davor 0,52 MB, knapp zwei
+  Drittel davon in Box3D.
 
 ## Zerstörte Stadt unter Dauerfeuer
 
@@ -286,5 +291,5 @@ Seit der Liste ist dazugekommen oder gemessen worden:
 | Verbindungen zwischen Splittern und alten Nachbarn auf den Workern | ⛔ | Die Flächen zwischen den neuen Splittern und den Nachbarn des getroffenen Stücks misst ein Einschlag nach den Zellen auf dem aufrufenden Thread, rund 9 % seiner Instruktionen. Auf den Workern wären sie nur bitgleich, solange keine zwei Nachbarn im selben Einschlag zerteilt werden, und bei Granaten ist das häufig. Für geschätzt 3 bis 6 % pro Einschlag nicht den Umbau wert. |
 | Hüllen schneller bauen | ⛔ | Rund 3 600 Instruktionen pro Hülle, verteilt auf Masse und Trägheit, Prüfsumme, Kantenpaare und die SIMD-Kopien der Ecken und Normalen, ohne Stelle, an der sich viel holen ließe. |
 | Box3D-Formen verkleinern | ⛔ | 216 Byte pro Form, mit Material, Filter und einer Union aller Formtypen. Das wäre ein Eingriff in Box3Ds Kern für wenige Prozent Speicher. |
-| Biegemomente nur bei Bedarf | 🔜 niedrig | Die zweiten Momente jeder Verbindung, 24 Byte, braucht nur die Lastprüfung. Die ist standardmäßig aus und prüft Gebäude mit Decken nie. Ohne sie wäre eine Verbindung 64 statt 88 Byte groß: geschätzt 4 % weniger Speicher, 2 % schneller geladen und 4 % weniger Instruktionen pro Einschlag. Braucht eine Lösung für das Einschalten der Lastprüfung zur Laufzeit, etwa die Momente erst dann nachzurechnen. |
+| Biegemomente nur bei Bedarf | ✅ | Die zweiten Momente jeder Verbindung, 24 Byte, braucht nur die Lastprüfung. Die ist standardmäßig aus und prüft Gebäude mit Decken nie. Jetzt stehen die Momente nicht mehr in der Verbindung, sondern in einem eigenen Array, und nur Zerstörbare, die die Lastprüfung prüfen kann, führen sie: Sie ist an, und das Objekt hat keine Etagen. Für alle anderen rechnet Nebenan sie weder in den Voronoi-Zellen noch in den Kontaktflächen aus. Kommt die Lastprüfung erst zur Laufzeit dazu, misst Nebenan die Momente der Objekte ohne Etagen einmal an den Formen ihrer Bruchstücke nach. Bei Verbindungen zwischen Voronoi-Zellen weichen sie dann in den letzten Bits von denen der Schnittfläche ab, im Test um höchstens 4·10⁻⁵ relativ. Eine Verbindung hat 64 statt 88 Byte, genau eine Cache-Zeile. Gemessen: 3,7 % weniger Prozess-Speicher, am Ende 375 statt 389 MB bei 1 024 Häusern. Callgrind zählt für eine Granate in der Stadt bei ×4 5,1 % weniger Instruktionen, im Einschlag-Benchmark 5,2 % und beim Laden 3,1 %, im Box3D-Schritt gleich viele. Auf der VM geht das im Rauschen unter: In zwei Serien von je zwölf Läufen im Wechsel kostete eine Granate einmal 14 % weniger und einmal 3 % mehr. Die Ergebnisse bleiben bitgleich, auch mit eingeschalteter Lastprüfung: Drei Bauwerke ohne Decken unter Beschuss enden mit 1 und 4 Threads gleich, ob die Prüfung von Anfang an läuft oder erst später dazukommt. Geschätzt waren vorher 4 % weniger Speicher, 2 % schneller geladen und 4 % weniger Instruktionen pro Einschlag. |
 | Häuser gesammelt laden | 🔜 Stadt | Während der aufrufende Thread ein Haus in Box3D einbaut, könnten die Worker schon das nächste zerlegen. Geschätzt lädt eine große Stadt so ein Drittel schneller. Braucht eine Funktion, die viele Zerstörbare auf einmal anlegt, am besten zusammen mit dem Streaming von Regionen (Nr. 89). |

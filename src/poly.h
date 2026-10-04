@@ -48,7 +48,8 @@ typedef struct nbBondGeometry
 	float area;
 
 	// Second moments of the face about its centroid per square meter of area: xx, yy, zz and xy, xz, yz. They tell
-	// how far the face reaches in each direction, which sets how much bending it carries.
+	// how far the face reaches in each direction, which sets how much bending it carries. Zero unless asked for, only
+	// the load check reads them.
 	b3Vec3 moments;
 	b3Vec3 crossMoments;
 } nbBondGeometry;
@@ -117,8 +118,8 @@ void nbPoly_Translate( nbPoly* poly, b3Vec3 translation );
 nbClipResult nbPoly_Clip( const nbPoly* in, b3Plane plane, uint8_t material, int32_t tag, float tolerance, nbPoly* out );
 
 void nbPoly_ComputeMass( const nbPoly* poly, float* volume, b3Vec3* centroid );
-// Area, centroid and normal of a face
-float nbPoly_FaceGeometry( const nbPoly* poly, int faceIndex, nbBondGeometry* geometry );
+// Area, centroid and normal of a face, and its second moments if asked for
+float nbPoly_FaceGeometry( const nbPoly* poly, int faceIndex, bool withMoments, nbBondGeometry* geometry );
 b3AABB nbPoly_ComputeBounds( const nbPoly* poly );
 bool nbPoly_ContainsPoint( const nbPoly* poly, b3Vec3 point, float margin );
 float nbPoly_MaxDistanceSquared( const nbPoly* poly, b3Vec3 point );
@@ -143,10 +144,12 @@ nbGeometry nbShape_GetGeometry( const nbShape* shape );
 // a lower bound near edges and corners, which is what the impact queries need.
 float nbShape_Distance( const nbShape* shape, b3Vec3 point );
 
-// The overlap of two coplanar faces with opposing normals. Returns the area, the normal is the one of face A.
-float nbShape_FaceOverlap( const nbShape* a, int faceA, const nbShape* b, int faceB, nbBondGeometry* geometry );
+// The overlap of two coplanar faces with opposing normals. Returns the area, the normal is the one of face A. The
+// second moments only if asked for.
+float nbShape_FaceOverlap( const nbShape* a, int faceA, const nbShape* b, int faceB, bool withMoments,
+						   nbBondGeometry* geometry );
 
-// Find the overlap of two shapes that touch with opposing coplanar faces.
-// Returns the contact area and writes the combined geometry with the normal from a to b.
-float nbShape_ContactArea( const nbShape* a, const nbShape* b, float tolerance, nbBondGeometry* geometry );
+// Find the overlap of two shapes that touch with opposing coplanar faces. Returns the contact area and writes the
+// combined geometry with the normal from a to b, the second moments only if asked for.
+float nbShape_ContactArea( const nbShape* a, const nbShape* b, float tolerance, bool withMoments, nbBondGeometry* geometry );
 

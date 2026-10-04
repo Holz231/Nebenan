@@ -494,6 +494,7 @@ typedef struct nbContactTask
 	int pairCount;
 	int firstNewChunk;
 	float tolerance;
+	bool moments;
 
 	// Per pair, negative for a pair that gets no bond anyway
 	float* areas;
@@ -523,7 +524,8 @@ static void nbMeasureContacts( void* context, int item )
 			continue;
 		}
 
-		task->areas[i] = nbShape_ContactArea( chunkA->shape, chunkB->shape, task->tolerance, task->geometries + i );
+		task->areas[i] =
+			nbShape_ContactArea( chunkA->shape, chunkB->shape, task->tolerance, task->moments, task->geometries + i );
 	}
 }
 
@@ -570,6 +572,9 @@ nbDestructibleId nbCreateDestructible( nbWorldId worldId, const nbDestructibleDe
 	destructible->isStatic = def->isStatic;
 	destructible->enableCollisionDamage = def->enableCollisionDamage;
 	destructible->userData = def->userData;
+
+	// Which destructibles have storeys is known once their chunks are, the bonds come before
+	destructible->bondMoments = world->def.supportScale > 0.0f;
 	world->destructibleCount += 1;
 
 	// Static chunks get a body each when they are committed. A dynamic destructible is one body.
@@ -663,6 +668,7 @@ nbDestructibleId nbCreateDestructible( nbWorldId worldId, const nbDestructibleDe
 		b3Vec3* sites = nbArena_AllocArray( &world->arena, b3Vec3, NB_PIECE_SITES );
 		if ( valid && nbPreparePiece( world, pieceMaterial, piece, piecePoly, pieceCellSizes[i], &rng, sites, jobs + jobCount ) )
 		{
+			jobs[jobCount].bondMoments = world->destructibles.data[index].bondMoments;
 			pieceJobs[i] = jobCount;
 			jobSites[jobCount] = sites;
 			jobPieces[jobCount] = i;
@@ -781,6 +787,7 @@ nbDestructibleId nbCreateDestructible( nbWorldId worldId, const nbDestructibleDe
 		.pairCount = pairs.count,
 		.firstNewChunk = firstNewChunk,
 		.tolerance = tolerance,
+		.moments = world->destructibles.data[index].bondMoments,
 		.areas = nbArena_AllocArray( &world->arena, float, pairs.count + 1 ),
 		.geometries = nbArena_AllocArray( &world->arena, nbBondGeometry, pairs.count + 1 ),
 	};
@@ -833,6 +840,10 @@ nbDestructibleId nbCreateDestructible( nbWorldId worldId, const nbDestructibleDe
 		}
 		nbFindStoreys( world, index, actorIndex, pieceBounds, valid, pieceCount );
 	}
+
+	// The load check never takes a building with storeys, its bonds need no moments from now on
+	nbDestructible* built = world->destructibles.data + index;
+	built->bondMoments = built->bondMoments && built->storeyCount == 0;
 
 	nbCommitPhysics( world );
 	world->touchedActors.count = 0;

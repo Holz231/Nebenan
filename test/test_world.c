@@ -9,6 +9,7 @@
 #include <float.h>
 #include <math.h>
 #include <stdlib.h>
+#include <string.h>
 
 typedef struct TestScene
 {
@@ -321,11 +322,10 @@ static uint32_t HashBonds( uint32_t hash, const nbWorld* world )
 		}
 
 		count += 1;
-		float values[15] = {
-			bond->centroid.x, bond->centroid.y,		bond->centroid.z,	  bond->area,
-			bond->normal.x,	  bond->normal.y,		bond->normal.z,		  bond->moments.x,
-			bond->moments.y,  bond->moments.z,		bond->crossMoments.x, bond->crossMoments.y,
-			bond->crossMoments.z, bond->health,		(float)( bond->cohesive + 2 * bond->sibling ),
+		float values[9] = {
+			bond->centroid.x, bond->centroid.y, bond->centroid.z, bond->area,
+			bond->normal.x,	  bond->normal.y,	bond->normal.z,	  bond->health,
+			(float)( bond->cohesive + 2 * bond->sibling ),
 		};
 		int chunks[2] = { bond->chunk[0], bond->chunk[1] };
 		const uint8_t* bytes = (const uint8_t*)values;
@@ -1216,7 +1216,7 @@ static int GraphTest( void )
 				}
 
 				nbBondGeometry geometry;
-				float area = nbShape_ContactArea( chunkA->shape, chunkB->shape, 1.0e-4f, &geometry );
+				float area = nbShape_ContactArea( chunkA->shape, chunkB->shape, 1.0e-4f, false, &geometry );
 				if ( area <= minBondArea )
 				{
 					continue;
@@ -2583,6 +2583,88 @@ static int SupportTest( void )
 	return 0;
 }
 
+// Only the load check reads the second moments of the bonds, see nbBondMoments. Without it nothing computes or keeps
+// them. With it on from the start the bonds keep the moments of the faces they were made from, and when it comes on
+// later, they get them from the shapes of their chunks, close to the same. Buildings with storeys never need them.
+static int BondMomentsTest( void )
+{
+	{
+		TestScene scene = CreateScene();
+		CreateLoadedWall( &scene );
+		Grenade( &scene, (b3Vec3){ 0.0f, 0.75f, 0.15f } );
+		const nbWorld* world = nbGetWorldFromId( scene.world );
+		ENSURE( world->bondCount > 100 );
+		ENSURE( world->bondMoments.count == 0 && world->bondMoments.capacity == 0 );
+		DestroyScene( &scene );
+	}
+
+	nbBondMoments* kept = NULL;
+	int keptCount = 0;
+	float worst = 0.0f;
+	for ( int pass = 0; pass < 2; ++pass )
+	{
+		TestScene scene = CreateScene();
+		if ( pass == 0 )
+		{
+			nbWorld_SetSupportScale( scene.world, 0.03f );
+		}
+		CreateLoadedWall( &scene );
+		if ( pass == 1 )
+		{
+			nbWorld_SetSupportScale( scene.world, 0.03f );
+		}
+
+		const nbWorld* world = nbGetWorldFromId( scene.world );
+		ENSURE( world->destructibles.data[0].bondMoments );
+		ENSURE( world->bondMoments.count == world->bonds.count );
+		if ( pass == 0 )
+		{
+			keptCount = world->bondMoments.count;
+			kept = malloc( sizeof( nbBondMoments ) * (size_t)keptCount );
+			memcpy( kept, world->bondMoments.data, sizeof( nbBondMoments ) * (size_t)keptCount );
+		}
+		else
+		{
+			ENSURE( world->bondMoments.count == keptCount );
+			for ( int i = 0; i < keptCount; ++i )
+			{
+				const float* a = &kept[i].moments.x;
+				const float* b = &world->bondMoments.data[i].moments.x;
+				for ( int k = 0; k < 6; ++k )
+				{
+					float error = fabsf( a[k] - b[k] ) / ( 1.0e-4f + fabsf( kept[i].moments.x + kept[i].moments.y + kept[i].moments.z ) );
+					worst = error > worst ? error : worst;
+				}
+			}
+
+			// New bonds keep them from now on
+			Grenade( &scene, (b3Vec3){ 0.0f, 0.75f, 0.15f } );
+			world = nbGetWorldFromId( scene.world );
+			ENSURE( world->bondMoments.count == world->bonds.count );
+		}
+		DestroyScene( &scene );
+	}
+	free( kept );
+	printf( "  worst relative difference of recomputed bond moments %g\n", (double)worst );
+	ENSURE( worst < 1.0e-3f );
+
+	{
+		TestScene scene = CreateScene();
+		nbWorld_SetSupportScale( scene.world, 0.03f );
+		nbDestructibleId house = CreateCelledHouse( &scene, 2, 3 );
+		const nbWorld* world = nbGetWorldFromId( scene.world );
+		ENSURE( world->destructibles.data[house.index1 - 1].storeyCount > 0 );
+		ENSURE( world->destructibles.data[house.index1 - 1].bondMoments == false );
+		int keptAfterLoading = world->bondMoments.count;
+		Grenade( &scene, (b3Vec3){ 0.0f, 1.2f, 3.4f } );
+		world = nbGetWorldFromId( scene.world );
+		ENSURE( world->bondMoments.count == keptAfterLoading );
+		DestroyScene( &scene );
+	}
+
+	return 0;
+}
+
 int WorldTest( void );
 
 int WorldTest( void )
@@ -2614,6 +2696,7 @@ int WorldTest( void )
 	RUN_TEST( FragmentScaleTest );
 	RUN_TEST( StoreyTest );
 	RUN_TEST( SupportTest );
+	RUN_TEST( BondMomentsTest );
 	RUN_TEST( RestTest );
 	RUN_TEST( LandingTest );
 	return 0;

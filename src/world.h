@@ -103,10 +103,6 @@ typedef struct nbBond
 	// Interface normal from chunk[0] to chunk[1]
 	b3Vec3 normal;
 
-	// Second moments of the interface about its centroid per square meter, see nbBondGeometry
-	b3Vec3 moments;
-	b3Vec3 crossMoments;
-
 	// Remaining damage before the bond breaks
 	float health;
 
@@ -121,6 +117,14 @@ typedef struct nbBond
 	// thrown as one, so the straight faces between them do not show.
 	bool sibling;
 } nbBond;
+
+// Second moments of the interface of a bond about its centroid per square meter, see nbBondGeometry. Only the load check
+// reads them, so only the bonds of destructibles it can check keep them, see nbDestructible::bondMoments.
+typedef struct nbBondMoments
+{
+	b3Vec3 moments;
+	b3Vec3 crossMoments;
+} nbBondMoments;
 
 // A rigid set of chunks. The static actor of a destructible is the set of glued chunks, it has no
 // body of its own. A dynamic actor is carried by one Box3D body.
@@ -277,6 +281,10 @@ typedef struct nbDestructible
 	int storeyCount;
 	uint32_t collapsedStoreys;
 
+	// The bonds keep their second moments in nbWorld::bondMoments, as the load check is on and the destructible has no
+	// storeys. Without, nothing computes them.
+	bool bondMoments;
+
 	int headActor;
 	int actorCount;
 	int chunkCount;
@@ -310,6 +318,7 @@ typedef struct nbCollisionImpact
 
 NB_ARRAY_DECLARE( nbChunk, nbChunkArray );
 NB_ARRAY_DECLARE( nbBond, nbBondArray );
+NB_ARRAY_DECLARE( nbBondMoments, nbBondMomentsArray );
 NB_ARRAY_DECLARE( nbActor, nbActorArray );
 NB_ARRAY_DECLARE( nbDestructible, nbDestructibleArray );
 NB_ARRAY_DECLARE( nbChunkId, nbChunkIdArray );
@@ -324,6 +333,10 @@ typedef struct nbWorld
 	nbBondArray bonds;
 	nbActorArray actors;
 	nbDestructibleArray destructibles;
+
+	// Second moments by bond index, as far as the bonds of destructibles that keep them reach, see nbBondMoments. Empty
+	// as long as the load check never came on.
+	nbBondMomentsArray bondMoments;
 
 	nbIntArray freeChunks;
 	nbIntArray freeBonds;

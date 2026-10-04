@@ -276,6 +276,11 @@ Zerlegung. Gibt ein Block nach, kommt er mit allem, was an ihm hängt, in einem 
 untersten heilen Teil eines anderen Materials ab, das an ihm hängt, etwa einem Betonklotz, sonst über seinem Fuß, und
 die Zellen darunter fliegen mit 6 m/s heraus.
 
+Die Biegung braucht die zweiten Momente jeder Kontaktfläche. Nebenan rechnet und speichert sie nur für Bauwerke, die
+die Lastprüfung prüft: Sie ist an, und das Bauwerk hat keine Decken. Sonst ist eine Verbindung 64 statt 88 Byte groß.
+Wird die Prüfung erst zur Laufzeit eingeschaltet, misst Nebenan die Flächen dieser Bauwerke einmal an den Formen ihrer
+Bruchstücke nach.
+
 **Trümmer und Schutt.** Ruhe und Einschlafen folgen ebenfalls der Referenz-Engine (`rubble_rest.h` und
 `BuildingScene::settle`). Nichts wird gelöscht.
 
@@ -546,7 +551,7 @@ Die Zeit ist zum größten Teil der Box3D-Schritt, und den bestimmen drei Dinge:
 **Große Szenen.** Mit vierfacher Bruchstückgröße kostet ein Frame unter Dauerbeschuss gleich viel, ob die Stadt aus 16
 oder aus 1 024 Häusern besteht, 0,3 bis 0,7 ms auf der VM je nach ihrer Tagesform. Box3D rechnet nur, was sich bewegt,
 und Nebenan geht im Update nie über die ganze Welt. Mit der Größe wachsen Ladezeit und Speicher: 1 024 Häuser mit
-246 000 Bruchstücken brauchen 389 MB und laden auf der VM in rund 1,1 s, an ihren langsamen Tagen in mehreren
+246 000 Bruchstücken brauchen 375 MB und laden auf der VM in rund 1,1 s, an ihren langsamen Tagen in mehreren
 Sekunden. Große Arrays wachsen an Ort und Stelle, in Nebenan wie in Box3D: Jedes reserviert sich Adressraum und
 bekommt beim Wachsen dort Speicherseiten dazu, statt umzuziehen. Früher wurde ein volles Array in ein doppelt so
 großes kopiert, und das hielt ein einzelnes Update über 100 ms auf. Die Hüllen der Bruchstücke gehen nicht durch
@@ -572,14 +577,15 @@ Ganze Einschläge (Bruch, Stützgraph, neue Box3D-Körper) und der Box3D-Schritt
 Das Gebäude hat Wände und Decken aus einem Material, und seine Zellen laufen über die Stöße. Jede Zelle über einem
 Stoß besteht aus einem Teil auf jeder Seite, so sind es beim Laden 908 statt 549 Bruchstücke.
 
-Voronoi-Kern, Platte 4 × 2 × 0,3 m mit Punkten um den Einschlag, 1 Thread:
+Voronoi-Kern, Platte 4 × 2 × 0,3 m mit Punkten um den Einschlag, 1 Thread, der Median aus drei Läufen. Die Zellen
+rechnen ohne Biegemomente, wie ohne Lastprüfung:
 
 | Zellen | Voronoi | Hüllen direkt | Hüllen mit Quickhull |
 | ---: | ---: | ---: | ---: |
-| 16 | 0,07 ms | 0,02 ms | 0,09 ms |
-| 64 | 0,53 ms | 0,11 ms | 0,53 ms |
-| 128 | 1,5 ms | 0,25 ms | 1,2 ms |
-| 256 | 3,6 ms | 0,54 ms | 2,9 ms |
+| 16 | 0,06 ms | 0,02 ms | 0,08 ms |
+| 64 | 0,44 ms | 0,09 ms | 0,40 ms |
+| 128 | 1,2 ms | 0,20 ms | 0,99 ms |
+| 256 | 3,1 ms | 0,43 ms | 2,2 ms |
 
 Grafik der Demo, die ersten acht Sekunden der Stadt im Skript (480 Bilder, Bruchstückgröße ×2): 12 Draw Calls,
 höchstens 213 000 Dreiecke, im Mittel 0,5 MB und höchstens 1,7 MB Upload pro Bild, 0,1 ms CPU für Uploads.
@@ -597,7 +603,7 @@ Messungen in [docs/Optimierungen.md](docs/Optimierungen.md).
 ## Tests und Benchmark
 
 ```sh
-build/bin/nebenan_test            # 38 Tests: Geometrie, Voronoi, Hüllen, Öffnungen, Stöße, Stützgraph, Etagen, Lastprüfung, Schutt, Ruhe, Durchschlagen, Threads, große Blöcke, Suchbaum, Kontaktlisten, Determinismus …
+build/bin/nebenan_test            # 39 Tests: Geometrie, Voronoi, Hüllen, Öffnungen, Stöße, Stützgraph, Etagen, Lastprüfung, Schutt, Ruhe, Durchschlagen, Threads, große Blöcke, Suchbaum, Kontaktlisten, Determinismus …
 build/bin/nebenan_benchmark 4     # Zahl = Threads für Bruch und Physik
 ```
 
@@ -639,7 +645,7 @@ Nach Änderungen an `demo/shaders/scene.glsl` die Shader neu erzeugen, im Ordner
 - Die Reste einer Etage fliegen alle auf einmal heraus. Braucht eine Etage fast alle ihre Wände, `storeySupport` nahe
   1, fliegt beinahe eine ganze Etage heraus, und ihre Zellen können sich unter dem Teil darüber verkeilen, der dann
   auf ihnen liegen bleibt.
-- Große Szenen brauchen Speicher: rund 0,38 MB pro Haus aus 240 Bruchstücken, vier Fünftel davon in Nebenan, vor allem
+- Große Szenen brauchen Speicher: rund 0,37 MB pro Haus aus 240 Bruchstücken, vier Fünftel davon in Nebenan, vor allem
   die Formen der Bruchstücke samt ihren Hüllen. Objekte mit gleichen Teilen und gleichem `seed` haben gleiche Hüllen,
   auch die speichert jede Form einzeln. Mit eigenen Speicherfunktionen (`nbSetAllocator`, `b3SetAllocator`) und in
   32-Bit-Programmen wachsen große Arrays wie früher durch Umkopieren. Mit einem eigenen Box3D ebenso, und die Hüllen

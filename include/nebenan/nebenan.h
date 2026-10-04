@@ -64,6 +64,8 @@ NB_API void nbWorld_SetWorkerCount( nbWorldId worldId, int count );
 NB_API void nbWorld_SetDebrisBudget( nbWorldId worldId, int maxDebrisBodies );
 
 /// Change how much load the bonds carry, see nbWorldDef::supportScale. The next update checks every structure again.
+/// Turning the check on measures the faces of the bonds of every structure without floors once, only the check needs
+/// their shape.
 NB_API void nbWorld_SetSupportScale( nbWorldId worldId, float scale );
 
 /// Change the fraction of its walls a storey needs to stand, see nbWorldDef::storeySupport. The next update checks every

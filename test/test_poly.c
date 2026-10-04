@@ -9,6 +9,7 @@
 
 #include <float.h>
 #include <stdlib.h>
+#include <string.h>
 
 static int BoxTest( void )
 {
@@ -264,7 +265,7 @@ static int VoronoiTest( void )
 	{
 		const nbCellNeighbor* neighbor = cell->neighbors + k;
 		nbBondGeometry geometry;
-		float area = nbShape_ContactArea( cell->shape, output.cells[neighbor->site].shape, 1.0e-4f, &geometry );
+		float area = nbShape_ContactArea( cell->shape, output.cells[neighbor->site].shape, 1.0e-4f, false, &geometry );
 		ENSURE_SMALL( area - neighbor->geometry.area, 1.0e-3f );
 	}
 
@@ -290,7 +291,7 @@ static int ContactAreaTest( void )
 	nbShape* shapeB = nbShape_Create( &b );
 
 	nbBondGeometry geometry;
-	float area = nbShape_ContactArea( shapeA, shapeB, 1.0e-4f, &geometry );
+	float area = nbShape_ContactArea( shapeA, shapeB, 1.0e-4f, true, &geometry );
 
 	// b touches the +x face of a over y in [0.25, 1], z in [-0.5, 0.5]
 	ENSURE_SMALL( area - 0.75f, 1.0e-5f );
@@ -298,10 +299,24 @@ static int ContactAreaTest( void )
 	ENSURE_SMALL( geometry.centroid.y - 0.625f, 1.0e-5f );
 	ENSURE_SMALL( geometry.normal.x - 1.0f, 1.0e-5f );
 
+	// Second moments per square meter of the 0.75 by 1 rectangle about its centroid
+	ENSURE_SMALL( geometry.moments.x, 1.0e-6f );
+	ENSURE_SMALL( geometry.moments.y - 0.75f * 0.75f / 12.0f, 1.0e-5f );
+	ENSURE_SMALL( geometry.moments.z - 1.0f / 12.0f, 1.0e-5f );
+	ENSURE_SMALL( b3Length( geometry.crossMoments ), 1.0e-6f );
+
+	// Without the moments everything else comes out the same to the bit
+	nbBondGeometry plain;
+	ENSURE( nbShape_ContactArea( shapeA, shapeB, 1.0e-4f, false, &plain ) == area );
+	ENSURE( memcmp( &plain.centroid, &geometry.centroid, sizeof( b3Vec3 ) ) == 0 );
+	ENSURE( memcmp( &plain.normal, &geometry.normal, sizeof( b3Vec3 ) ) == 0 );
+	ENSURE( plain.moments.x == 0.0f && plain.moments.y == 0.0f && plain.moments.z == 0.0f );
+	ENSURE( plain.crossMoments.x == 0.0f && plain.crossMoments.y == 0.0f && plain.crossMoments.z == 0.0f );
+
 	// Separated boxes do not touch
 	nbPoly_MakeBox( &b, (b3Vec3){ 0.5f, 0.5f, 0.5f }, (b3Transform){ { 1.6f, 0.0f, 0.0f }, b3Quat_identity }, 0 );
 	nbShape* shapeC = nbShape_Create( &b );
-	ENSURE( nbShape_ContactArea( shapeA, shapeC, 1.0e-4f, &geometry ) == 0.0f );
+	ENSURE( nbShape_ContactArea( shapeA, shapeC, 1.0e-4f, false, &geometry ) == 0.0f );
 
 	nbShape_Destroy( shapeA );
 	nbShape_Destroy( shapeB );

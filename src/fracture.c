@@ -536,7 +536,7 @@ void nbComputeCell( const nbFractureJob* job, int cellIndex, nbArena* arena, nbC
 		}
 
 		nbCellNeighbor* neighbor = cell->neighbors + cell->neighborCount;
-		if ( nbPoly_FaceGeometry( current, f, &neighbor->geometry ) <= 0.0f )
+		if ( nbPoly_FaceGeometry( current, f, job->bondMoments, &neighbor->geometry ) <= 0.0f )
 		{
 			continue;
 		}
@@ -560,6 +560,7 @@ void nbComputeVoronoiCells( nbArena* arena, const nbPoly* parent, const b3Vec3* 
 		.tolerance = tolerance,
 		.minVolume = minVolume,
 		.buildHulls = false,
+		.bondMoments = false,
 		.cells = nbArena_AllocArray( arena, nbCell, siteCount ),
 	};
 

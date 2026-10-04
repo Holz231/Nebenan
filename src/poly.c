@@ -461,7 +461,7 @@ static void nbPolygonMoments( const b3Vec3* vertices, const uint8_t* loop, int c
 	geometry->crossMoments = crossMoments;
 }
 
-float nbPoly_FaceGeometry( const nbPoly* poly, int faceIndex, nbBondGeometry* geometry )
+float nbPoly_FaceGeometry( const nbPoly* poly, int faceIndex, bool withMoments, nbBondGeometry* geometry )
 {
 	const nbPolyFace* face = poly->faces + faceIndex;
 	const uint8_t* loop = poly->indices + face->first;
@@ -482,7 +482,12 @@ float nbPoly_FaceGeometry( const nbPoly* poly, int faceIndex, nbBondGeometry* ge
 	geometry->normal = n;
 	geometry->area = 0.5f * twiceArea;
 	geometry->centroid = twiceArea > 0.0f ? b3MulAdd( a, 1.0f / ( 3.0f * twiceArea ), weighted ) : a;
-	nbPolygonMoments( poly->vertices, loop, face->count, geometry );
+	geometry->moments = b3Vec3_zero;
+	geometry->crossMoments = b3Vec3_zero;
+	if ( withMoments )
+	{
+		nbPolygonMoments( poly->vertices, loop, face->count, geometry );
+	}
 	return geometry->area;
 }
 
@@ -828,7 +833,8 @@ static int nbClipPolygon2D( const b3Vec2* in, int count, b3Vec2 a, b3Vec2 b, b3V
 	return outCount;
 }
 
-float nbShape_FaceOverlap( const nbShape* a, int faceIndexA, const nbShape* b, int faceIndexB, nbBondGeometry* geometry )
+float nbShape_FaceOverlap( const nbShape* a, int faceIndexA, const nbShape* b, int faceIndexB, bool withMoments,
+						   nbBondGeometry* geometry )
 {
 	const nbFace* faceA = a->faces + faceIndexA;
 	const nbFace* faceB = b->faces + faceIndexB;
@@ -883,17 +889,21 @@ float nbShape_FaceOverlap( const nbShape* a, int faceIndexA, const nbShape* b, i
 	geometry->centroid = b3MulAdd( b3MulAdd( origin, c2.x, u ), c2.y, v );
 	geometry->normal = n;
 	geometry->area = area;
-
-	b3Vec3 points[NB_MAX_CLIP_POINTS];
-	for ( int k = 0; k < count; ++k )
+	geometry->moments = b3Vec3_zero;
+	geometry->crossMoments = b3Vec3_zero;
+	if ( withMoments )
 	{
-		points[k] = b3MulAdd( b3MulAdd( origin, input[k].x, u ), input[k].y, v );
+		b3Vec3 points[NB_MAX_CLIP_POINTS];
+		for ( int k = 0; k < count; ++k )
+		{
+			points[k] = b3MulAdd( b3MulAdd( origin, input[k].x, u ), input[k].y, v );
+		}
+		nbPolygonMoments( points, NULL, count, geometry );
 	}
-	nbPolygonMoments( points, NULL, count, geometry );
 	return area;
 }
 
-float nbShape_ContactArea( const nbShape* a, const nbShape* b, float tolerance, nbBondGeometry* geometry )
+float nbShape_ContactArea( const nbShape* a, const nbShape* b, float tolerance, bool withMoments, nbBondGeometry* geometry )
 {
 	b3AABB boxA = b3AABB_Inflate( a->bounds, tolerance );
 	if ( b3AABB_Overlaps( boxA, b->bounds ) == false )
@@ -934,7 +944,7 @@ float nbShape_ContactArea( const nbShape* a, const nbShape* b, float tolerance, 
 			}
 
 			nbBondGeometry patch;
-			float area = nbShape_FaceOverlap( a, fa, b, fb, &patch );
+			float area = nbShape_FaceOverlap( a, fa, b, fb, withMoments, &patch );
 			if ( area <= 0.0f )
 			{
 				continue;
@@ -947,10 +957,13 @@ float nbShape_ContactArea( const nbShape* a, const nbShape* b, float tolerance, 
 			totalArea += area;
 			weightedCentroid = b3MulAdd( weightedCentroid, area, b3Sub( patch.centroid, base ) );
 			weightedNormal = b3MulAdd( weightedNormal, area, n );
-
-			b3Vec3 c = b3Sub( patch.centroid, base );
-			moments = b3MulAdd( moments, area, b3Add( patch.moments, (b3Vec3){ c.x * c.x, c.y * c.y, c.z * c.z } ) );
-			crossMoments = b3MulAdd( crossMoments, area, b3Add( patch.crossMoments, (b3Vec3){ c.x * c.y, c.x * c.z, c.y * c.z } ) );
+			if ( withMoments )
+			{
+				b3Vec3 c = b3Sub( patch.centroid, base );
+				moments = b3MulAdd( moments, area, b3Add( patch.moments, (b3Vec3){ c.x * c.x, c.y * c.y, c.z * c.z } ) );
+				crossMoments =
+					b3MulAdd( crossMoments, area, b3Add( patch.crossMoments, (b3Vec3){ c.x * c.y, c.x * c.z, c.y * c.z } ) );
+			}
 		}
 	}
 
@@ -960,8 +973,14 @@ float nbShape_ContactArea( const nbShape* a, const nbShape* b, float tolerance, 
 		geometry->centroid = b3Add( base, c );
 		geometry->normal = b3Normalize( weightedNormal );
 		geometry->area = totalArea;
-		geometry->moments = b3Sub( b3MulSV( 1.0f / totalArea, moments ), (b3Vec3){ c.x * c.x, c.y * c.y, c.z * c.z } );
-		geometry->crossMoments = b3Sub( b3MulSV( 1.0f / totalArea, crossMoments ), (b3Vec3){ c.x * c.y, c.x * c.z, c.y * c.z } );
+		geometry->moments = b3Vec3_zero;
+		geometry->crossMoments = b3Vec3_zero;
+		if ( withMoments )
+		{
+			geometry->moments = b3Sub( b3MulSV( 1.0f / totalArea, moments ), (b3Vec3){ c.x * c.x, c.y * c.y, c.z * c.z } );
+			geometry->crossMoments =
+				b3Sub( b3MulSV( 1.0f / totalArea, crossMoments ), (b3Vec3){ c.x * c.y, c.x * c.z, c.y * c.z } );
+		}
 	}
 
 	return totalArea;

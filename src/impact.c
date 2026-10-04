@@ -162,6 +162,7 @@ static void nbPrepareRefine( nbWorld* world, int chunkIndex, nbPoly* parent, b3V
 		.tolerance = 1.0e-6f + 2.0e-6f * parentShape->radius,
 		.minVolume = material->minFragmentVolume,
 		.buildHulls = true,
+		.bondMoments = destructible->bondMoments,
 	};
 }
 
@@ -263,6 +264,7 @@ static int nbFinishRefine( nbWorld* world, int chunkIndex, const nbFractureJob* 
 	uint8_t interiorMaterial = chunk->interiorMaterial;
 	int materialIndex = chunk->materialIndex;
 	nbMaterial material = world->destructibles.data[destructibleIndex].materials[materialIndex];
+	bool moments = world->destructibles.data[destructibleIndex].bondMoments;
 	const nbShape* parentShape = chunk->shape;
 	float parentRadius = parentShape->radius;
 	float fragmentSize = nbGetFragmentSize( world, &material );
@@ -377,7 +379,7 @@ static int nbFinishRefine( nbWorld* world, int chunkIndex, const nbFractureJob* 
 				// The bond keeps the damage of the parent bond and is as strong as the weaker material
 				const nbChunk* neighbor = world->chunks.data + face->neighborIndex;
 				nbBondGeometry geometry;
-				float area = nbShape_FaceOverlap( childShape, cf, neighbor->shape, face->neighborFace, &geometry );
+				float area = nbShape_FaceOverlap( childShape, cf, neighbor->shape, face->neighborFace, moments, &geometry );
 				float strength = b3MinFloat( material.strength, nbGetChunkMaterial( world, neighbor )->strength );
 				float health = strength * area * face->healthFraction;
 				if ( area > minBondArea && health > 0.0f )

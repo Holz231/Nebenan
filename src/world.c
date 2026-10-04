@@ -310,6 +310,19 @@ float nbGetBondStrength( const nbWorld* world, const nbBond* bond )
 	return b3MinFloat( a->strength, b->strength );
 }
 
+// Keep the second moments of a bond, see nbBondMoments
+static void nbKeepBondMoments( nbWorld* world, int bondIndex, b3Vec3 moments, b3Vec3 crossMoments )
+{
+	if ( world->bondMoments.count <= bondIndex )
+	{
+		nbArray_Reserve( world->bondMoments, bondIndex + 1 );
+		memset( world->bondMoments.data + world->bondMoments.count, 0,
+				sizeof( nbBondMoments ) * (size_t)( bondIndex + 1 - world->bondMoments.count ) );
+		world->bondMoments.count = bondIndex + 1;
+	}
+	world->bondMoments.data[bondIndex] = (nbBondMoments){ moments, crossMoments };
+}
+
 int nbCreateBond( nbWorld* world, int chunkA, int chunkB, const nbBondGeometry* geometry, float health )
 {
 	NB_ASSERT( chunkA != chunkB );
@@ -332,12 +345,14 @@ int nbCreateBond( nbWorld* world, int chunkA, int chunkB, const nbBondGeometry* 
 	bond->centroid = geometry->centroid;
 	bond->area = geometry->area;
 	bond->normal = geometry->normal;
-	bond->moments = geometry->moments;
-	bond->crossMoments = geometry->crossMoments;
 	bond->health = health;
 	bond->stamp = 0;
 	bond->cohesive = false;
 	bond->sibling = false;
+	if ( world->destructibles.data[world->chunks.data[chunkA].destructibleIndex].bondMoments )
+	{
+		nbKeepBondMoments( world, index, geometry->moments, geometry->crossMoments );
+	}
 
 	for ( int side = 0; side < 2; ++side )
 	{
@@ -1956,10 +1971,10 @@ static float nbBondIntegrity( const nbWorld* world, const nbBond* bond )
 }
 
 // a^T M b with the second moments M of a bond
-static float nbMomentForm( const nbBond* bond, b3Vec3 a, b3Vec3 b )
+static float nbMomentForm( const nbBondMoments* moments, b3Vec3 a, b3Vec3 b )
 {
-	b3Vec3 m = bond->moments;
-	b3Vec3 c = bond->crossMoments;
+	b3Vec3 m = moments->moments;
+	b3Vec3 c = moments->crossMoments;
 	b3Vec3 mb = {
 		m.x * b.x + c.x * b.y + c.y * b.z,
 		c.x * b.x + m.y * b.y + c.z * b.z,
@@ -1971,10 +1986,10 @@ static float nbMomentForm( const nbBond* bond, b3Vec3 a, b3Vec3 b )
 // Section modulus of a bond for bending about an axis through its centroid, I / c. I is the second moment of the face
 // about the axis, c the distance of the farthest fiber, estimated as sqrt(3 I / A). For a rectangle that is exactly
 // area * depth / 6.
-static float nbSectionModulus( const nbBond* bond, b3Vec3 axis )
+static float nbSectionModulus( const nbBond* bond, const nbBondMoments* moments, b3Vec3 axis )
 {
-	float trace = bond->moments.x + bond->moments.y + bond->moments.z;
-	float spread = b3MaxFloat( trace - nbMomentForm( bond, axis, axis ), 0.0f );
+	float trace = moments->moments.x + moments->moments.y + moments->moments.z;
+	float spread = b3MaxFloat( trace - nbMomentForm( moments, axis, axis ), 0.0f );
 	return bond->area * sqrtf( spread / 3.0f );
 }
 
@@ -2125,6 +2140,7 @@ static int nbCheckSupport( nbWorld* world, int actorIndex, float gravity, b3Vec3
 {
 	const nbActor* actor = world->actors.data + actorIndex;
 	const nbDestructible* destructible = world->destructibles.data + actor->destructibleIndex;
+	NB_ASSERT( destructible->bondMoments );
 	float scale = world->def.supportScale;
 	b3Vec3 localUp = b3InvRotateVector( destructible->transform.q, up );
 	b3Vec3 side1 = b3Perp( localUp );
@@ -2411,14 +2427,14 @@ static int nbCheckSupport( nbWorld* world, int actorIndex, float gravity, b3Vec3
 		float xx = 0.0f, xz = 0.0f, zz = 0.0f;
 		for ( int p = 0; p < pathCount; ++p )
 		{
-			const nbBond* bond = world->bonds.data + paths[p].bondIndex;
+			const nbBondMoments* moments = world->bondMoments.data + paths[p].bondIndex;
 			float f = paths[p].weight / total;
 			b3Vec3 d = b3Sub( paths[p].point, center );
 			float dx = b3Dot( d, side1 );
 			float dz = b3Dot( d, side2 );
-			xx += f * ( dx * dx + nbMomentForm( bond, side1, side1 ) );
-			xz += f * ( dx * dz + nbMomentForm( bond, side1, side2 ) );
-			zz += f * ( dz * dz + nbMomentForm( bond, side2, side2 ) );
+			xx += f * ( dx * dx + nbMomentForm( moments, side1, side1 ) );
+			xz += f * ( dx * dz + nbMomentForm( moments, side1, side2 ) );
+			zz += f * ( dz * dz + nbMomentForm( moments, side2, side2 ) );
 		}
 
 		b3Vec3 massCenter = b3MulSV( 1.0f / load[i], moment[i] );
@@ -2446,15 +2462,15 @@ static int nbCheckSupport( nbWorld* world, int actorIndex, float gravity, b3Vec3
 		for ( int p = 0; p < pathCount; ++p )
 		{
 			nbLoadPath* path = paths + p;
-			const nbBond* bond = world->bonds.data + path->bondIndex;
+			const nbBondMoments* moments = world->bondMoments.data + path->bondIndex;
 			b3Vec3 d = b3Sub( path->point, center );
 			float factor = 1.0f + lx * b3Dot( d, side1 ) + lz * b3Dot( d, side2 );
 			path->weight *= b3MaxFloat( factor, 0.0f );
 			if ( factor > 0.0f )
 			{
-				float m11 = nbMomentForm( bond, side1, side1 );
-				float m12 = nbMomentForm( bond, side1, side2 );
-				float m22 = nbMomentForm( bond, side2, side2 );
+				float m11 = nbMomentForm( moments, side1, side1 );
+				float m12 = nbMomentForm( moments, side1, side2 );
+				float m22 = nbMomentForm( moments, side2, side2 );
 				float range = b3AbsFloat( lx ) * sqrtf( 12.0f * m11 ) + b3AbsFloat( lz ) * sqrtf( 12.0f * m22 );
 				float s = b3MinFloat( 1.0f, factor / b3MaxFloat( range, 1.0e-12f ) );
 				b3Vec3 shift = b3MulAdd( b3MulSV( m11 * lx + m12 * lz, side1 ), m12 * lx + m22 * lz, side2 );
@@ -2482,9 +2498,10 @@ static int nbCheckSupport( nbWorld* world, int actorIndex, float gravity, b3Vec3
 			for ( int p = 0; p < pathCount; ++p )
 			{
 				const nbBond* bond = world->bonds.data + paths[p].bondIndex;
+				const nbBondMoments* moments = world->bondMoments.data + paths[p].bondIndex;
 				b3Vec2 c = { b3Dot( bond->centroid, side1 ), b3Dot( bond->centroid, side2 ) };
-				float e1 = sqrtf( 3.0f * nbMomentForm( bond, side1, side1 ) );
-				float e2 = sqrtf( 3.0f * nbMomentForm( bond, side2, side2 ) );
+				float e1 = sqrtf( 3.0f * nbMomentForm( moments, side1, side1 ) );
+				float e2 = sqrtf( 3.0f * nbMomentForm( moments, side2, side2 ) );
 				footprint[pointCount++] = (b3Vec2){ c.x - e1, c.y };
 				footprint[pointCount++] = (b3Vec2){ c.x + e1, c.y };
 				footprint[pointCount++] = (b3Vec2){ c.x, c.y - e2 };
@@ -2511,7 +2528,8 @@ static int nbCheckSupport( nbWorld* world, int actorIndex, float gravity, b3Vec3
 			{
 				const nbBond* bond = world->bonds.data + path->bondIndex;
 				float strength = scale * nbGetBondStrength( world, bond );
-				path->bending = NB_BENDING_STRENGTH * strength * nbSectionModulus( bond, axis ) * path->integrity;
+				const nbBondMoments* moments = world->bondMoments.data + path->bondIndex;
+				path->bending = NB_BENDING_STRENGTH * strength * nbSectionModulus( bond, moments, axis ) * path->integrity;
 				capacity += path->bending;
 			}
 		}
@@ -3556,6 +3574,56 @@ static void nbCheckSupports( nbWorld* world )
 	world->supportQueue = queue;
 }
 
+// The load check reads the second moments of the bonds. The destructibles it can check that did not keep them get them
+// now, measured again on the shapes of their chunks. Bonds between Voronoi cells kept the moments of the face the cells
+// were cut along, so theirs can differ in the last bits from what they would have kept.
+static void nbComputeBondMoments( nbWorld* world )
+{
+	int destructibleCount = world->destructibles.count;
+	if ( destructibleCount == 0 )
+	{
+		return;
+	}
+
+	bool* pending = nbAlloc( sizeof( bool ) * (size_t)destructibleCount );
+	bool any = false;
+	for ( int i = 0; i < destructibleCount; ++i )
+	{
+		const nbDestructible* destructible = world->destructibles.data + i;
+		pending[i] = destructible->isFree == false && destructible->bondMoments == false && destructible->storeyCount == 0;
+		any = any || pending[i];
+	}
+
+	for ( int i = 0; i < world->bonds.count && any; ++i )
+	{
+		const nbBond* bond = world->bonds.data + i;
+		if ( bond->chunk[0] == NB_NULL_INDEX || pending[world->chunks.data[bond->chunk[0]].destructibleIndex] == false )
+		{
+			continue;
+		}
+
+		// The tolerance the bonds of a new destructible are found with. Should the faces no longer be found, a square
+		// of the same area in the plane of the bond stands in.
+		const nbShape* a = world->chunks.data[bond->chunk[0]].shape;
+		const nbShape* b = world->chunks.data[bond->chunk[1]].shape;
+		nbBondGeometry geometry;
+		if ( nbShape_ContactArea( a, b, 1.0e-3f, true, &geometry ) <= 0.0f )
+		{
+			b3Vec3 n = bond->normal;
+			float s = bond->area / 12.0f;
+			geometry.moments = (b3Vec3){ s * ( 1.0f - n.x * n.x ), s * ( 1.0f - n.y * n.y ), s * ( 1.0f - n.z * n.z ) };
+			geometry.crossMoments = (b3Vec3){ -s * n.x * n.y, -s * n.x * n.z, -s * n.y * n.z };
+		}
+		nbKeepBondMoments( world, i, geometry.moments, geometry.crossMoments );
+	}
+
+	for ( int i = 0; i < destructibleCount; ++i )
+	{
+		world->destructibles.data[i].bondMoments = world->destructibles.data[i].bondMoments || pending[i];
+	}
+	nbFree( pending, sizeof( bool ) * (size_t)destructibleCount );
+}
+
 void nbWorld_SetSupportScale( nbWorldId worldId, float scale )
 {
 	nbWorld* world = nbGetWorldFromId( worldId );
@@ -3565,6 +3633,11 @@ void nbWorld_SetSupportScale( nbWorldId worldId, float scale )
 	}
 
 	world->def.supportScale = scale > 0.0f ? scale : 0.0f;
+	if ( world->def.supportScale > 0.0f )
+	{
+		nbComputeBondMoments( world );
+	}
+
 	for ( int i = 0; i < world->actors.count; ++i )
 	{
 		const nbActor* actor = world->actors.data + i;
@@ -3982,6 +4055,7 @@ void nbDestroyWorld( nbWorldId worldId )
 
 	nbArray_Free( world->chunks );
 	nbArray_Free( world->bonds );
+	nbArray_Free( world->bondMoments );
 	nbArray_Free( world->actors );
 	nbArray_Free( world->destructibles );
 	nbArray_Free( world->freeChunks );

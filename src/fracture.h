@@ -67,6 +67,9 @@ typedef struct nbFractureJob
 	// Build the Box3D hull of every cell as well
 	bool buildHulls;
 
+	// Compute the second moments of the faces between cells, see nbBondGeometry
+	bool bondMoments;
+
 	// Boxes cut out of every cell, and the material of their faces. A cell they cut falls apart into
 	// convex parts. Parts thinner than the minimum width are slivers where a cell reaches just around a
 	// corner of a cutout, they are dropped.
