@@ -200,17 +200,20 @@ Einschlag begrenzt.
 nur bis zur Tiefe `maxDepth`. Eine Wand mit einem Einschussloch besteht danach aus ein paar Dutzend Stücken
 statt aus Tausenden.
 
-**Mehrere Threads.** Ein Einschlag gibt alles, was nur rechnet, an die Worker. Trifft er 32 oder mehr Stücke, die
-er zerteilen kann, schätzen sie zuerst, wie viel von jedem in der Schadenskugel liegt, jedes Stück mit einem
-eigenen Zufallsstrom. Daraus verteilt der aufrufende Thread die Splitter auf die Stücke und gibt jedem Stück in
-fester Reihenfolge den Zufallsstrom für seine Bruchpunkte. Dann ziehen die Worker die Bruchpunkte und berechnen die
-Voronoi-Zellen samt Box3D-Hüllen, eine Zelle wartet nur auf die Punkte ihres Stücks. Jede Arbeit hängt nur von
-ihren Eingaben ab, die Worker holen sich die nächste über einen atomaren Zähler und schreiben in eine eigene Arena.
-Währenddessen weckt der aufrufende Thread den Schutt auf, den der Einschlag bewegt, denn Änderungen an der
-Box3D-Welt dürfen nur von einem Thread kommen. Zuletzt werden Stücke und Verbindungen wieder in fester Reihenfolge
-eingebaut. Deshalb ist das Ergebnis mit einem, vier oder acht Threads bitgleich. Wie Box3D nimmt Nebenan das
-Task-System der Anwendung (`enqueueTask` und `finishTask` mit denselben Signaturen wie in Box3D) oder startet
-eigene Threads. Die Vorzerlegung beim Laden läuft genauso.
+**Mehrere Threads.** Ein Einschlag gibt alles, was nur rechnet, an die Worker. Trifft er 32 oder mehr Stücke, die er
+zerteilen kann, schätzen sie zuerst, wie viel von jedem in der Schadenskugel liegt, jedes Stück mit einem eigenen
+Zufallsstrom. Daraus verteilt der aufrufende Thread die Splitter auf die Stücke und gibt jedem Stück in fester
+Reihenfolge den Zufallsstrom für seine Bruchpunkte. Dann ziehen die Worker die Bruchpunkte und berechnen die
+Voronoi-Zellen samt Box3D-Hüllen, eine Zelle wartet nur auf die Punkte ihres Stücks. Einen Einschlag mit weniger als
+32 Zellen und Stücken rechnet der aufrufende Thread allein: Bei vierfacher Bruchstückgröße hat eine Granate auf ein
+Haus 15 bis 30, und die Worker zu wecken kostete mehr, als sie abnahmen. Jede Arbeit hängt nur von ihren Eingaben ab,
+die Worker holen sich die nächste über einen atomaren Zähler und schreiben in eine eigene Arena. Währenddessen weckt
+der aufrufende Thread den Schutt auf, den der Einschlag bewegt, denn Änderungen an der Box3D-Welt dürfen nur von einem
+Thread kommen. Zuletzt werden Stücke und Verbindungen wieder in fester Reihenfolge eingebaut. Deshalb ist das Ergebnis
+mit einem, vier oder acht Threads bitgleich. Wie Box3D nimmt Nebenan das Task-System der Anwendung (`enqueueTask` und
+`finishTask` mit denselben Signaturen wie in Box3D) oder startet eigene Threads. Die Vorzerlegung beim Laden läuft
+genauso, und dort messen die Worker auch die Flächen, mit denen sich die Bruchstücke berühren. Die Verbindungen daraus
+baut der aufrufende Thread in fester Reihenfolge.
 
 **Stützgraph.** Zwei Bruchstücke sind verbunden, wenn sich ihre Flächen berühren. Jede Verbindung hält
 `strength × Kontaktfläche` aus, zwischen zwei Materialien mit dem kleineren `strength`. Der Schaden eines
@@ -543,7 +546,7 @@ Die Zeit ist zum größten Teil der Box3D-Schritt, und den bestimmen drei Dinge:
 **Große Szenen.** Mit vierfacher Bruchstückgröße kostet ein Frame unter Dauerbeschuss gleich viel, ob die Stadt aus 16
 oder aus 1 024 Häusern besteht, 0,3 bis 0,7 ms auf der VM je nach ihrer Tagesform. Box3D rechnet nur, was sich bewegt,
 und Nebenan geht im Update nie über die ganze Welt. Mit der Größe wachsen Ladezeit und Speicher: 1 024 Häuser mit
-246 000 Bruchstücken brauchen 389 MB und laden auf der VM in 1,1 bis 1,2 s, an ihren langsamen Tagen in mehreren
+246 000 Bruchstücken brauchen 389 MB und laden auf der VM in rund 1,1 s, an ihren langsamen Tagen in mehreren
 Sekunden. Große Arrays wachsen an Ort und Stelle, in Nebenan wie in Box3D: Jedes reserviert sich Adressraum und
 bekommt beim Wachsen dort Speicherseiten dazu, statt umzuziehen. Früher wurde ein volles Array in ein doppelt so
 großes kopiert, und das hielt ein einzelnes Update über 100 ms auf. Die Hüllen der Bruchstücke gehen nicht durch
@@ -558,13 +561,13 @@ schnell und spart 16 % Speicher, und mit beidem kostet ein Einschlag in jeder St
 [`docs/Optimierungen.md`](docs/Optimierungen.md).
 
 Ganze Einschläge (Bruch, Stützgraph, neue Box3D-Körper) und der Box3D-Schritt danach bei 60 Hz mit
-4 Substeps, jeweils mit 1 und 4 Threads, der mittlere von drei Läufen:
+4 Substeps, jeweils mit 1 und 4 Threads, der Median aus sechs Läufen:
 
 | Szenario | Einschlag Ø, 1 / 4 Threads | Box3D-Schritt Ø, 1 / 4 Threads | Am Ende |
 | --- | ---: | ---: | --- |
-| Gewehr, 200 Treffer | 0,33 / 0,34 ms | 1,1 / 0,9 ms | 3542 Bruchstücke, 926 Körper |
-| 20 Explosionen | 3,3 / 2,2 ms | 5,8 / 2,7 ms | 6871 Bruchstücke, 3088 Körper |
-| Gebäude, 18 Treffer | 2,5 / 1,7 ms | 3,9 / 1,7 ms | 5015 Bruchstücke, 2411 Körper |
+| Gewehr, 200 Treffer | 0,29 / 0,26 ms | 1,0 / 1,0 ms | 3542 Bruchstücke, 926 Körper |
+| 20 Explosionen | 2,9 / 1,8 ms | 5,0 / 2,8 ms | 6871 Bruchstücke, 3088 Körper |
+| Gebäude, 18 Treffer | 2,0 / 1,3 ms | 3,8 / 2,0 ms | 5015 Bruchstücke, 2411 Körper |
 
 Das Gebäude hat Wände und Decken aus einem Material, und seine Zellen laufen über die Stöße. Jede Zelle über einem
 Stoß besteht aus einem Teil auf jeder Seite, so sind es beim Laden 908 statt 549 Bruchstücke.
@@ -594,7 +597,7 @@ Messungen in [docs/Optimierungen.md](docs/Optimierungen.md).
 ## Tests und Benchmark
 
 ```sh
-build/bin/nebenan_test            # 37 Tests: Geometrie, Voronoi, Hüllen, Öffnungen, Stöße, Stützgraph, Etagen, Lastprüfung, Schutt, Ruhe, Durchschlagen, Threads, große Blöcke, Suchbaum, Kontaktlisten, Determinismus …
+build/bin/nebenan_test            # 38 Tests: Geometrie, Voronoi, Hüllen, Öffnungen, Stöße, Stützgraph, Etagen, Lastprüfung, Schutt, Ruhe, Durchschlagen, Threads, große Blöcke, Suchbaum, Kontaktlisten, Determinismus …
 build/bin/nebenan_benchmark 4     # Zahl = Threads für Bruch und Physik
 ```
 
@@ -636,12 +639,12 @@ Nach Änderungen an `demo/shaders/scene.glsl` die Shader neu erzeugen, im Ordner
 - Die Reste einer Etage fliegen alle auf einmal heraus. Braucht eine Etage fast alle ihre Wände, `storeySupport` nahe
   1, fliegt beinahe eine ganze Etage heraus, und ihre Zellen können sich unter dem Teil darüber verkeilen, der dann
   auf ihnen liegen bleibt.
-- Große Szenen brauchen Speicher: rund 0,52 MB pro Haus aus 240 Bruchstücken, knapp zwei Drittel davon in Box3D,
-  denn jedes stehende Bruchstück ist dort ein eigener Körper mit eigener Hülle. Objekte mit gleichen Teilen und gleichem
-  `seed` haben gleiche Hüllen, auch die speichert jede Form einzeln. Mit eigenen Speicherfunktionen (`nbSetAllocator`,
-  `b3SetAllocator`) und in 32-Bit-Programmen wachsen große Arrays wie früher durch Umkopieren. Mit einem eigenen
-  Box3D ebenso, und die Hüllen gehen dort durch Box3Ds Hüllen-Tabelle, die beim Wachsen ein Update aufhalten kann, auf
-  der VM ab 30 ms bei 256 Häusern und ab 0,4 s bei 1 024 Häusern.
+- Große Szenen brauchen Speicher: rund 0,38 MB pro Haus aus 240 Bruchstücken, vier Fünftel davon in Nebenan, vor allem
+  die Formen der Bruchstücke samt ihren Hüllen. Objekte mit gleichen Teilen und gleichem `seed` haben gleiche Hüllen,
+  auch die speichert jede Form einzeln. Mit eigenen Speicherfunktionen (`nbSetAllocator`, `b3SetAllocator`) und in
+  32-Bit-Programmen wachsen große Arrays wie früher durch Umkopieren. Mit einem eigenen Box3D ebenso, und die Hüllen
+  gehen dort durch Box3Ds Hüllen-Tabelle, die beim Wachsen ein Update aufhalten kann, auf der VM ab 30 ms bei 256
+  Häusern und ab 0,4 s bei 1 024 Häusern.
 - Schutt ist für Box3D statisch. Trümmer, die auf Schutt fallen, wecken ihn nicht, nur Einschläge, die ihn bewegen,
   fremde Körper, eine wegrutschende Auflage und große Teile, die ohne ihn nicht im Gleichgewicht lägen. Kinematische
   Körper stoßen Schutt nicht an, Box3D lässt kinematische und statische Körper nicht kollidieren.
@@ -652,8 +655,8 @@ Nach Änderungen an `demo/shaders/scene.glsl` die Shader neu erzeugen, im Ordner
   braucht die Stadt unter Dauerbeschuss 1,2- bis 1,8-mal so lange wie ohne Einstürze, siehe Leistung.
 - Was die Box3D-Welt ändert, bleibt auf dem aufrufenden Thread, Box3D erlaubt das nur von einem Thread aus: Schutt
   aufwecken, Körper und Formen anlegen. Dort bleiben auch der Einbau der Stücke und die Suche nach losen Teilen. Das
-  Aufwecken läuft gleichzeitig mit den Voronoi-Zellen, der Rest danach, bei großen Explosionen ist das der größere
-  Teil.
+  Aufwecken läuft gleichzeitig mit den Voronoi-Zellen, sobald die Worker helfen, ab 32 Zellen und Stücken. Der Rest
+  kommt danach, bei großen Explosionen ist das der größere Teil.
 - Ein Trümmerteil, das in einem Schritt weniger zurücklegt als den doppelten Radius seiner Innenkugel oder
   `debrisSweepDistance`, verfolgt Box3D nicht gegen Wände. Es dringt ein Stück ein und wird zurückgeschoben. Durch
   eine Wand, die dünner ist als dieser Weg, kann ein großes Teil aber durchschlagen. Dann den Wert senken, 0 nimmt

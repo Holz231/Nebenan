@@ -410,10 +410,12 @@ typedef struct nbChunkPair
 
 NB_ARRAY_DECLARE( nbChunkPair, nbChunkPairArray );
 
+// The bounds ride along, so the sweep reads one array instead of chasing every chunk and its shape
 typedef struct nbSweepEntry
 {
 	float lowerX;
 	int place;
+	b3AABB bounds;
 } nbSweepEntry;
 
 static int nbCompareSweepEntries( const void* a, const void* b )
@@ -451,25 +453,27 @@ static void nbFindTouchingPairs( nbWorld* world, int firstNewChunk, int count, f
 	nbSweepEntry* entries = nbArena_AllocArray( &world->arena, nbSweepEntry, count );
 	for ( int i = 0; i < count; ++i )
 	{
-		entries[i] = (nbSweepEntry){ world->chunks.data[touched[i]].shape->bounds.lowerBound.x, i };
+		b3AABB bounds = world->chunks.data[touched[i]].shape->bounds;
+		entries[i] = (nbSweepEntry){ bounds.lowerBound.x, i, bounds };
 	}
 	qsort( entries, (size_t)count, sizeof( nbSweepEntry ), nbCompareSweepEntries );
 
 	for ( int i = 0; i < count; ++i )
 	{
 		int place = entries[i].place;
-		const nbShape* shape = world->chunks.data[touched[place]].shape;
+		b3AABB bounds = entries[i].bounds;
 
 		// Twice the tolerance keeps every pair the exact test accepts, whatever the rounding
-		float reach = shape->bounds.upperBound.x + 2.0f * tolerance;
+		float reach = bounds.upperBound.x + 2.0f * tolerance;
 		for ( int j = i + 1; j < count && entries[j].lowerX <= reach; ++j )
 		{
 			int other = entries[j].place;
-			nbChunkPair pair = { place < other ? place : other, place < other ? other : place };
-			const nbShape* first = world->chunks.data[touched[pair.first]].shape;
-			const nbShape* second = world->chunks.data[touched[pair.second]].shape;
-			if ( b3AABB_Overlaps( b3AABB_Inflate( first->bounds, tolerance ), second->bounds ) )
+			bool before = place < other;
+			const b3AABB* first = before ? &bounds : &entries[j].bounds;
+			const b3AABB* second = before ? &entries[j].bounds : &bounds;
+			if ( b3AABB_Overlaps( b3AABB_Inflate( *first, tolerance ), *second ) )
 			{
+				nbChunkPair pair = { before ? place : other, before ? other : place };
 				nbArray_Push( *pairs, pair );
 			}
 		}
@@ -478,6 +482,48 @@ static void nbFindTouchingPairs( nbWorld* world, int firstNewChunk, int count, f
 	if ( pairs->count > 1 )
 	{
 		qsort( pairs->data, (size_t)pairs->count, sizeof( nbChunkPair ), nbCompareChunkPairs );
+	}
+}
+
+// The contact areas of the touching pairs, measured on the workers. Glueing the pairs stays on the calling thread, in pair
+// order, so the bonds come out the same with any number of threads.
+typedef struct nbContactTask
+{
+	const nbWorld* world;
+	const nbChunkPair* pairs;
+	int pairCount;
+	int firstNewChunk;
+	float tolerance;
+
+	// Per pair, negative for a pair that gets no bond anyway
+	float* areas;
+	nbBondGeometry* geometries;
+} nbContactTask;
+
+// Pairs per work item. A contact area costs a microsecond or two, a single pair is not worth an atomic.
+#define NB_CONTACT_BLOCK 16
+
+// Blocks from which the workers help. Waking them costs more than a few blocks.
+#define NB_PARALLEL_CONTACT_BLOCKS 8
+
+static void nbMeasureContacts( void* context, int item )
+{
+	nbContactTask* task = context;
+	const nbWorld* world = task->world;
+	const int* touched = world->touchedChunks.data + task->firstNewChunk;
+	int begin = item * NB_CONTACT_BLOCK;
+	int end = begin + NB_CONTACT_BLOCK < task->pairCount ? begin + NB_CONTACT_BLOCK : task->pairCount;
+	for ( int i = begin; i < end; ++i )
+	{
+		const nbChunk* chunkA = world->chunks.data + touched[task->pairs[i].first];
+		const nbChunk* chunkB = world->chunks.data + touched[task->pairs[i].second];
+		if ( chunkA->scratch == chunkB->scratch )
+		{
+			task->areas[i] = -1.0f;
+			continue;
+		}
+
+		task->areas[i] = nbShape_ContactArea( chunkA->shape, chunkB->shape, task->tolerance, task->geometries + i );
 	}
 }
 
@@ -729,29 +775,38 @@ nbDestructibleId nbCreateDestructible( nbWorldId worldId, const nbDestructibleDe
 	float tolerance = 1.0e-3f;
 	nbChunkPairArray pairs = { 0 };
 	nbFindTouchingPairs( world, firstNewChunk, chunkEnd - firstNewChunk, tolerance, &pairs );
+	nbContactTask contactTask = {
+		.world = world,
+		.pairs = pairs.data,
+		.pairCount = pairs.count,
+		.firstNewChunk = firstNewChunk,
+		.tolerance = tolerance,
+		.areas = nbArena_AllocArray( &world->arena, float, pairs.count + 1 ),
+		.geometries = nbArena_AllocArray( &world->arena, nbBondGeometry, pairs.count + 1 ),
+	};
+	int blockCount = ( pairs.count + NB_CONTACT_BLOCK - 1 ) / NB_CONTACT_BLOCK;
+	nbParallelFor( world, blockCount, NB_PARALLEL_CONTACT_BLOCKS, nbMeasureContacts, &contactTask );
+
 	for ( int i = 0; i < pairs.count; ++i )
 	{
-		int a = firstNewChunk + pairs.data[i].first;
-		int b = firstNewChunk + pairs.data[i].second;
-		int chunkA = world->touchedChunks.data[a];
-		int chunkB = world->touchedChunks.data[b];
-		if ( world->chunks.data[chunkA].scratch == world->chunks.data[chunkB].scratch )
+		float area = contactTask.areas[i];
+		if ( area < 0.0f )
 		{
 			continue;
 		}
 
+		int a = firstNewChunk + pairs.data[i].first;
+		int b = firstNewChunk + pairs.data[i].second;
+		int chunkA = world->touchedChunks.data[a];
+		int chunkB = world->touchedChunks.data[b];
 		const nbMaterial* materialA = nbGetChunkMaterial( world, world->chunks.data + chunkA );
 		const nbMaterial* materialB = nbGetChunkMaterial( world, world->chunks.data + chunkB );
 		float fragmentSize = b3MinFloat( nbGetFragmentSize( world, materialA ), nbGetFragmentSize( world, materialB ) );
 		float minBondArea = 0.01f * fragmentSize * fragmentSize;
-
-		nbBondGeometry geometry;
-		float area =
-			nbShape_ContactArea( world->chunks.data[chunkA].shape, world->chunks.data[chunkB].shape, tolerance, &geometry );
 		if ( area > minBondArea )
 		{
-			int bondIndex =
-				nbCreateBond( world, chunkA, chunkB, &geometry, b3MinFloat( materialA->strength, materialB->strength ) * area );
+			int bondIndex = nbCreateBond( world, chunkA, chunkB, contactTask.geometries + i,
+										  b3MinFloat( materialA->strength, materialB->strength ) * area );
 
 			int pieceA = chunkPieces.data[a - firstNewChunk], pieceB = chunkPieces.data[b - firstNewChunk];
 			int cellA = chunkCells.data[a - firstNewChunk], cellB = chunkCells.data[b - firstNewChunk];

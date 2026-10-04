@@ -308,6 +308,40 @@ static uint32_t HashDestructible( uint32_t hash, nbDestructibleId wall )
 	return ( hash ^ (uint32_t)count ) * 16777619u;
 }
 
+// Every bond of the world, its chunks, geometry and state
+static uint32_t HashBonds( uint32_t hash, const nbWorld* world )
+{
+	int count = 0;
+	for ( int i = 0; i < world->bonds.count; ++i )
+	{
+		const nbBond* bond = world->bonds.data + i;
+		if ( bond->chunk[0] == NB_NULL_INDEX )
+		{
+			continue;
+		}
+
+		count += 1;
+		float values[15] = {
+			bond->centroid.x, bond->centroid.y,		bond->centroid.z,	  bond->area,
+			bond->normal.x,	  bond->normal.y,		bond->normal.z,		  bond->moments.x,
+			bond->moments.y,  bond->moments.z,		bond->crossMoments.x, bond->crossMoments.y,
+			bond->crossMoments.z, bond->health,		(float)( bond->cohesive + 2 * bond->sibling ),
+		};
+		int chunks[2] = { bond->chunk[0], bond->chunk[1] };
+		const uint8_t* bytes = (const uint8_t*)values;
+		for ( size_t k = 0; k < sizeof( values ); ++k )
+		{
+			hash = ( hash ^ bytes[k] ) * 16777619u;
+		}
+		bytes = (const uint8_t*)chunks;
+		for ( size_t k = 0; k < sizeof( chunks ); ++k )
+		{
+			hash = ( hash ^ bytes[k] ) * 16777619u;
+		}
+	}
+	return ( hash ^ (uint32_t)count ) * 16777619u;
+}
+
 static uint32_t RunDeterminismScenarioWith( TestScene scene )
 {
 	nbDestructibleId wall = CreateWall( &scene, (b3Vec3){ 2.5f, 1.5f, 0.12f }, 5 );
@@ -764,6 +798,33 @@ static int WorkerTest( void )
 		DestroyScene( &scene );
 	}
 	ENSURE( prefractureHashes[0] == prefractureHashes[1] );
+
+	// The cells of a wall with openings are glued where their faces touch. The workers measure the contact areas, the
+	// bonds come out the same as on one thread.
+	nbOpening openings[2] = {
+		{ { -1.2f, 0.3f, 0.0f }, { 0.6f, 0.5f, 0.3f } },
+		{ { 1.4f, -0.6f, 0.0f }, { 0.45f, 1.0f, 0.3f } },
+	};
+	uint32_t bondHashes[2];
+	for ( int pass = 0; pass < 2; ++pass )
+	{
+		TestScene scene = CreateSceneWithWorkers( pass == 0 ? 1 : 4, NULL, NULL, NULL );
+		nbPieceDef piece = nbDefaultPieceDef();
+		piece.halfExtents = (b3Vec3){ 3.0f, 1.5f, 0.15f };
+		piece.transform.p = (b3Vec3){ 0.0f, 1.5f, 0.0f };
+		piece.openings = openings;
+		piece.openingCount = 2;
+		nbDestructibleDef def = nbDefaultDestructibleDef();
+		def.cellSize = 0.4f;
+		def.seed = 9;
+		nbDestructibleId wall = nbCreateDestructible( scene.world, &def, &piece, 1 );
+		const nbWorld* world = nbGetWorldFromId( scene.world );
+		ENSURE( nbDestructible_GetChunkCount( wall ) > 80 );
+		ENSURE( world->bondCount > 200 );
+		bondHashes[pass] = HashBonds( HashDestructible( 2166136261u, wall ), world );
+		DestroyScene( &scene );
+	}
+	ENSURE( bondHashes[0] == bondHashes[1] );
 	return 0;
 }
 

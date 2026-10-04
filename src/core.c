@@ -416,16 +416,6 @@ nbRandom nbMakeRandom( uint64_t seed, uint64_t stream )
 	return rng;
 }
 
-uint32_t nbRandomU32( nbRandom* rng )
-{
-	// PCG-XSH-RR with a fixed odd increment
-	uint64_t old = rng->state;
-	rng->state = old * 6364136223846793005ull + 1442695040888963407ull;
-	uint32_t xorShifted = (uint32_t)( ( ( old >> 18u ) ^ old ) >> 27u );
-	uint32_t rot = (uint32_t)( old >> 59u );
-	return ( xorShifted >> rot ) | ( xorShifted << ( ( 0u - rot ) & 31u ) );
-}
-
 uint64_t nbHashSeed( uint64_t a, uint64_t b )
 {
 	// splitmix64 finalizer over both inputs

@@ -460,7 +460,7 @@ void nbComputeCell( const nbFractureJob* job, int cellIndex, nbArena* arena, nbC
 
 	nbPoly* current = scratch->polyA;
 	nbPoly* next = scratch->polyB;
-	*current = *job->parent;
+	nbPoly_Copy( current, job->parent );
 
 	float maxRadiusSquared = nbPoly_MaxDistanceSquared( current, site );
 

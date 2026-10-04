@@ -35,14 +35,19 @@ Ziel seit dem 3. Oktober 2026: Bruchstückgröße ×4 und Szenen so groß wie m�
    Bruchstücks baut, statt eine eigene Kopie zu halten: 12 % weniger Speicher pro Bruchstück, 14 % weniger
    Prozess-Speicher, 389 statt 450 MB bei 1 024 Häusern, und schneller geladen. Einschläge kosten gleich viel oder
    weniger, die Ergebnisse bleiben bitgleich.
-7. Grafik, sobald die Physik fertig ist: **Räumliche Render-Seiten und Frustum-Culling** (Nr. 49 bis 51) und **nur
+7. ✅ **Schneller laden, kleine Einschläge ohne Worker** (eigene Idee, unten). Die Worker messen beim Laden die
+   Kontaktflächen zwischen den Bruchstücken, und eine Granate bei ×4 läuft auf dem aufrufenden Thread: Laden 12 bis
+   15 % schneller, eine Granate auf ein Haus bis zu 14 % billiger, und kein Einschlag wird langsamer. Die Ergebnisse
+   bleiben bitgleich.
+8. Grafik, sobald die Physik fertig ist: **Räumliche Render-Seiten und Frustum-Culling** (Nr. 49 bis 51) und **nur
    bewegte Transformationen hochladen** (Nr. 74). Beides wächst mit der Szene, denn die Demo zeichnet jedes Bild alles
    und lädt bei jeder Bewegung alle Transformationen hoch.
-8. Für eine große Stadt: Regionen, HLOD, Verdeckung, Streaming, Physik nur in aktiven Regionen (Nr. 52 bis 60, 65,
+9. Für eine große Stadt: Regionen, HLOD, Verdeckung, Streaming, Physik nur in aktiven Regionen (Nr. 52 bis 60, 65,
    69, 75, 88 bis 92).
 
-Was nur kleinen Bruchstücken hilft, bringt bei ×4 kaum etwas und ist zurückgestellt: grobe Kollisionsformen für
-Schutt (Nr. 2), Trümmer früher zur Ruhe bringen, ein billigeres Trümmerbudget.
+Was nur kleinen Bruchstücken hilft, bringt bei ×4 kaum etwas und ist zurückgestellt: Trümmer früher zur Ruhe bringen,
+ein billigeres Trümmerbudget. Grobe Kollisionsformen für Schutt (Nr. 2) sind inzwischen gemessen und verworfen, siehe
+„Zerstörte Stadt unter Dauerfeuer“.
 
 Zuerst immer messen, wo die Zeit hingeht. Das Menü der Demo trennt Simulation, Box3D-Schritt und Grafik und sagt, wer
 die FPS begrenzt. „Messwerte kopieren“ legt alles in die Zwischenablage.
@@ -59,17 +64,18 @@ zufälliges Haus.
 
 | Häuser | Bruchstücke | Aufbau | Speicher | Frame unter Beschuss |
 | ---: | ---: | ---: | ---: | ---: |
-| 16 | 3 848 | 0,02 s | 16,5 MB | 0,4 ms |
-| 64 | 15 425 | 0,07 bis 0,09 s | 36 MB | 0,3 bis 0,4 ms |
-| 256 | 61 538 | 0,3 s | 108 MB | 0,3 bis 0,4 ms |
-| 1 024 | 246 141 | 1,1 bis 1,2 s | 389 MB | 0,3 ms |
+| 16 | 3 848 | 0,02 s | 16,4 MB | 0,4 ms |
+| 64 | 15 425 | 0,07 s | 36 MB | 0,3 bis 0,4 ms |
+| 256 | 61 538 | 0,26 s | 108 MB | 0,3 bis 0,4 ms |
+| 1 024 | 246 141 | 1,14 s | 389 MB | 0,3 ms |
 
 Gemessen mit allen Änderungen für große Szenen: große Arrays, die an Ort und Stelle wachsen, Hüllen ohne Box3Ds
-Hüllen-Tabelle, statische Formen, die gesammelt in Box3Ds Suchbaum gehen, ein statischer Box3D-Körper pro Haus und
-Geometrie, die jedes Bruchstück nur einmal speichert. Wie
-lange der Aufbau großer Städte dauert, hängt stark von der Tagesform der VM ab: Sie gibt frischen Speicher oft sehr
-langsam heraus. Bei der ersten Messung, noch ohne diese Änderungen und auf einer langsamen VM, brauchten 1 024 Häuser 3
-bis 8 s und 533 MB, und ein Frame unter Beschuss kostete 0,5 bis 0,7 ms.
+Hüllen-Tabelle, statische Formen, die gesammelt in Box3Ds Suchbaum gehen, ein statischer Box3D-Körper pro Haus,
+Geometrie, die jedes Bruchstück nur einmal speichert, und Kontaktflächen, die beim Laden die Worker messen. Der Aufbau
+bei 256 und 1 024 Häusern ist der Median aus zwölf Läufen. Wie lange der Aufbau großer Städte dauert, hängt stark von
+der Tagesform der VM ab: Sie gibt frischen Speicher oft sehr langsam heraus, und die zwölf Läufe mit 1 024 Häusern
+brauchten zwischen 0,96 und 1,69 s. Bei der ersten Messung, noch ohne diese Änderungen und auf einer langsamen VM,
+brauchten 1 024 Häuser 3 bis 8 s und 533 MB, und ein Frame unter Beschuss kostete 0,5 bis 0,7 ms.
 
 - **Die Physik pro Frame hängt nicht an der Größe der Szene.** Box3D rechnet nur, was sich bewegt, und Nebenan geht im
   Update nie über die ganze Welt, nur beim Verstellen von Reglern und beim Löschen der Welt. In Ruhe kostet die Welt bei
@@ -83,27 +89,56 @@ bis 8 s und 533 MB, und ein Frame unter Beschuss kostete 0,5 bis 0,7 ms.
   hinter allen 246 000 statischen Körpern, und Nebenan musste seine Zuordnung von Körpern zu Akteuren bis dorthin
   füllen. Die meiste Zeit gibt das System frischen Speicher heraus, auf einem PC geht das schneller als auf der VM.
   Seit jedes Haus nur einen statischen Körper hat, beginnen die Nummern der Trümmerkörper bei rund 1 000.
-- **Laden** braucht auf der VM rund 1,2 ms pro Haus, in großen Städten nicht mehr als in kleinen. Bei der ersten
-  Messung, auf der langsamen VM und vor den Änderungen für große Szenen, waren es 3 ms in kleinen Städten und 3 bis 8 ms
-  bei 1 024 Häusern. Auf dem Hauptthread geht knapp ein Viertel an Box3D-Formen, gut die Hälfte davon an das Kopieren
-  der Hüllen. Box3D-Körper legt Nebenan nur noch einen pro Haus an, vorher einen pro Bruchstück. Das Einsortieren in
-  Box3Ds Suchbaum, vorher knapp ein Fünftel des Aufbaus (`b3InsertLeaf`), kostet gesammelt noch wenige Prozent. Die
-  Suche nach Bindungen zwischen den Bruchstücken kostet knapp ein Fünftel. Weggefallen sind das Umkopieren von Arrays,
-  vorher 18 %, und Box3Ds Hüllen-Tabelle, vorher rund 7 %. Einen großen Teil kostet der Kernel, der frische
-  Speicherseiten nullt, vor allem für Box3Ds Kopien der Hüllen und Nebenans Formen der Bruchstücke. Wie viel, schwankt
-  auf der VM stark, zwischen einem Zehntel und einem Drittel aller Samples. Gemessen mit `perf` in der Stadt aus 1 024
-  Häusern.
-- **Speicher**: rund 0,44 MB pro Haus aus 240 Bruchstücken, gut die Hälfte davon in Box3D. Vorher waren es 0,52 MB,
-  knapp zwei Drittel davon in Box3D.
+- **Laden** braucht auf der VM rund 1,1 ms pro Haus, in großen Städten nicht mehr als in kleinen. Bei der ersten
+  Messung, auf der langsamen VM und vor den Änderungen für große Szenen, waren es 3 ms in kleinen Städten und 3 bis
+  8 ms bei 1 024 Häusern. Der Hauptthread rechnet die Hälfte der Zeit mit den Workern an den Voronoi-Zellen der
+  Vorzerlegung und rund ein Sechstel an den Kontaktflächen zwischen den Bruchstücken, die er früher allein maß.
+  Box3D-Formen samt Suchbaum kosten ihn ein Zehntel bis ein Sechstel, die Worker zu wecken 4 bis 6 %. Box3D-Körper
+  legt Nebenan nur noch einen pro Haus an, vorher einen pro Bruchstück. Das Einsortieren in Box3Ds Suchbaum, vorher
+  knapp ein Fünftel des Aufbaus (`b3InsertLeaf`), kostet gesammelt noch wenige Prozent. Weggefallen sind das
+  Umkopieren von Arrays, vorher 18 %, Box3Ds Hüllen-Tabelle, vorher rund 7 %, und Box3Ds Kopien der Hüllen. Die Worker
+  sind rund die Hälfte der Zeit beschäftigt. Einen großen Teil kostet der Kernel, der frische Speicherseiten nullt,
+  vor allem für die Formen der Bruchstücke. Wie viel, schwankt auf der VM stark, auf dem Hauptthread zwischen einem
+  Zwanzigstel und einem Drittel der Samples. Gemessen mit `perf` in der Stadt aus 1 024 Häusern.
+- **Speicher**: rund 0,38 MB pro Haus aus 240 Bruchstücken, ein Fünftel davon in Box3D. Vorher waren es 0,44 MB, gut
+  die Hälfte davon in Box3D, und davor 0,52 MB, knapp zwei Drittel davon in Box3D.
+
+## Zerstörte Stadt unter Dauerfeuer
+
+Gemessen am 4. Oktober 2026 auf der VM: die Stadt der Demo, 20 Häuser mit zwei oder drei Etagen, Bruchstückgröße ×4,
+4 Threads. Zwölf Granaten pro Sekunde, erst nach dem Skript der Demo, dann auf zufällige Reste, auch in die
+Schutthaufen, zehn Minuten lang. Danach liegen 24 000 Bruchstücke herum, mehr werden es nicht, alles ist klein. Gezählt
+sind in jedem Frame die berührenden Kontakte der wachen Trümmer, nach dem, was sie berühren, gemittelt über je 30 s:
+
+| Stand | Box3D-Schritt | Wache Körper | Berührende Kontakte | Trümmer | Schutt | Häuser | Boden |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| Häuser stehen noch | 0,3 bis 1,2 ms | 50 bis 270 | 140 bis 540 | 26 bis 36 % | 14 bis 27 % | 24 bis 52 % | 8 bis 13 % |
+| Alles flach, Feuer in den Schutt | 3,9 bis 4,3 ms | 760 bis 860 | 2 400 bis 2 750 | 44 bis 47 % | 44 bis 46 % | 0 | 9 bis 10 % |
+| Nach dem Feuer | 0,09 ms | 15 | 47 | | | | |
+
+- **Die Kosten sind die Zerstörung selbst.** Jede Granate in den Schutt taut im Mittel 63 Stücke auf und zerteilt kaum
+  noch etwas. 81 % davon fliegen mit 1 m/s und mehr los, die meisten mit über 2 m/s. Nur die 15 %, die weiter als 2 m
+  vom Einschlag liegen, bekommen von der Explosion weniger als 1 m/s. Ein aufgetautes Stück ist im Mittel eine Sekunde
+  wach, dann friert es wieder ein. Bei zwölf Granaten pro Sekunde sind so ständig rund 760 Körper wach.
+- **Backen lohnt nicht** (Nr. 2). Der Schutt, den bewegte Trümmer berühren, ist in 56 % der Fälle keine Sekunde
+  eingefroren, in 64 % keine drei Sekunden, nur in 24 % länger als zehn. Die Kontakte entstehen am Rand des Geschehens,
+  nicht an ruhigen Haufen.
+- **Box3D führt dabei 12 600 bis 14 600 wache Kontakte**, von denen knapp ein Fünftel berührt. Der Rest sind sich
+  überlappende Hüllquader im dichten Schutt, die in der Kollision mitkosten. Das ließe sich nur in Box3D ändern, über
+  den Rand der Hüllquader, und der schützt vor Durchschlägen.
+- **Hört das Feuer auf**, ist nach rund 30 s wieder alles eingefroren und kostet nichts mehr.
+- Einzelne Box3D-Schritte von 5 bis 46 ms in einzelnen Läufen kamen von der VM. In sechs Läufen derselben Simulation
+  lag der langsamste Schritt zwischen 1,1 und 4,8 ms und nie im selben Frame.
 
 ## Was die Liste übersieht
 
 Seit der Liste ist dazugekommen oder gemessen worden:
 
-- **Mehr vom Einschlag läuft parallel** (zu Nr. 36, 37). Bruchpunkte, Schätzung des getroffenen Volumens ab 32 Stücken,
-  Voronoi-Zellen und Hüllen laufen auf den Workern, und das Aufwecken des Schutts läuft gleichzeitig mit den Zellen.
-  Seriell bleiben die Änderungen an der Box3D-Welt, der Einbau der Stücke und die Inselsuche. Eine große Explosion
-  braucht mit 4 Threads 4,8 ms, davon rund 3 ms Box3D-Aufrufe.
+- **Mehr vom Einschlag läuft parallel** (zu Nr. 36, 37). Bruchpunkte, Schätzung des getroffenen Volumens ab 32
+  Stücken, Voronoi-Zellen und Hüllen laufen auf den Workern, und das Aufwecken des Schutts läuft gleichzeitig mit den
+  Zellen. Einen Einschlag mit weniger als 32 Zellen und Stücken rechnet der aufrufende Thread allein, siehe „Kleine
+  Einschläge ohne Worker“. Seriell bleiben die Änderungen an der Box3D-Welt, der Einbau der Stücke und die Inselsuche.
+  Eine große Explosion braucht mit 4 Threads 4,8 ms, davon rund 3 ms Box3D-Aufrufe.
 - **CCD nur für Trümmer, die durch eine Wand könnten** (zu Nr. 27). Umgesetzt mit `debrisSweepDistance`: Der
   Box3D-Schritt der Stadt braucht 6 bis 9 % weniger Zeit. Würfel von 6 bis 50 cm, mit 6 bis 50 m/s auf 12 oder 20 cm
   dicke Wände geschossen, prallen alle ab.
@@ -122,11 +157,11 @@ Seit der Liste ist dazugekommen oder gemessen worden:
 | Nr. | Idee | Status | Bewertung |
 | ---: | --- | --- | --- |
 | 1 | Bewegte Trümmer und Schutt getrennt führen | ✅ | Umgesetzt. Vorher liefen vier Schleifen pro Frame über `world->debris`, Schutt eingeschlossen, eine schrieb sogar `age` und `budgetAge` in jeden Schutt. Jetzt trägt `movingDebris` ein Bit pro Eintrag, gesetzt für alles, was kein Schutt ist, und die Schleifen springen per Bit-Scan über den Schutt, 64 Einträge auf einmal, in derselben Reihenfolge wie vorher. Eine eigene Liste der bewegten Trümmer hätte die Reihenfolge und damit die Simulation geändert. Alter und Budget-Alter sind Zeitstempel gegen eine Weltuhr, Schutt altert ohne Schleife. Bei 60 Hz überschreitet die Uhr die Schonfrist von 0,25 s im selben Schritt wie das alte Hochzählen in `float`, bei anderen Schrittweiten wie 240 Hz kann es einen Schritt abweichen. Die Simulation bleibt bitgleich: derselbe Determinismus-Hash und dieselben Endzustände in der Stadt (×1, ×2, ×4), bei 64 großen Explosionen auf 16 Häusern und im Einschlag-Benchmark, mit 1 und 4 Threads. `nbWorld_Update` in der Stadt mit 4 Threads, Median aus sechs Läufen im Wechsel: ×1 2,65 statt 3,59 ms (−26 %), ×2 0,69 statt 0,88 ms (−22 %), ×4 0,070 statt 0,075 ms, dort liegen am Ende nur 1200 Schutt-Körper statt 34 000. Die vier Schleifen kosten bei ×1 jetzt 0 + 0,21 + 0,38 + 0,85 ms statt 0,39 + 0,45 + 0,61 + 0,90 ms. Übrig bleibt vor allem das Budget: Es rankt und friert ein, das Überspringen war dort nie der große Teil. |
-| 2 | Ruhenden Schutt zu groben Kollisionsformen zusammenbacken | 🔜 mittel, erst messen | Möglich, aber groß: Auflagen, Halter, Aufwecken und Einschläge arbeiten mit den einzelnen Schutt-Stücken. Lohnt nur, wenn viele der wachen Kontakte zwischen bewegten Trümmern und Schutt liegen, denn es zählt die Zahl der Kontakte, nicht die Form (siehe oben). Zuerst diesen Anteil messen. |
+| 2 | Ruhenden Schutt zu groben Kollisionsformen zusammenbacken | ⛔ | Möglich, aber groß: Auflagen, Halter, Aufwecken und Einschläge arbeiten mit den einzelnen Schutt-Stücken. Lohnt nur, wenn viele der wachen Kontakte zwischen bewegten Trümmern und Schutt liegen, denn es zählt die Zahl der Kontakte, nicht die Form (siehe oben). Gemessen und verworfen, siehe „Zerstörte Stadt unter Dauerfeuer“: Der Anteil ist groß, unter Feuer in einer flachen Stadt rund 45 % der berührenden Kontakte. Aber der Schutt, den die Trümmer berühren, ist in 56 % der Fälle keine Sekunde eingefroren, in 64 % keine drei, nur in 24 % länger als zehn. Backen ließen sich nur ruhige Haufen, erreichbar wäre etwa ein Zehntel der Kontakte und damit ein paar Prozent des Box3D-Schritts. Dafür müsste jeder Treffer einen gebackenen Haufen erst wieder zerlegen, und Speicher spart es nicht, die genauen Stücke bleiben. |
 | 3 | Genaue Stücke nach dem Backen behalten | ✅ | Schutt wird nie gelöscht, `nbShape` und Hülle bleiben. |
 | 4 | Nur Schutt nahe der Explosion aufwecken | ✅ | `nbThawRubbleInBoxes` mit AABB-Abfrage, und nur, was der Einschlag bewegen kann. |
-| 5 | Nur den getroffenen Teil einer gebackenen Form neu bauen | 🔜 mit Nr. 2 | Gehört zu Nr. 2, regional bauen. |
-| 6 | Gebackene Formen ohne Treffer-Events | 🔜 mit Nr. 2 | Gehört zu Nr. 2. |
+| 5 | Nur den getroffenen Teil einer gebackenen Form neu bauen | ⛔ | Gehört zu Nr. 2, regional bauen. Mit Nr. 2 verworfen. |
+| 6 | Gebackene Formen ohne Treffer-Events | ⛔ | Gehört zu Nr. 2. Mit Nr. 2 verworfen. |
 | 7 | Gleichzeitig bewegte Trümmer begrenzen | ✅ | `maxDebrisBodies` (1500), Regler „Bewegte Trümmer“ in der Demo. 1000 statt 1500 sparten in einem Einzellauf 24 % des Box3D-Schritts (×1). Das ist eine Einstellung, keine Arbeit. |
 | 8 | Physik schlafen legen | ✅ | Box3D schläfert ein, Nebenan macht ruhigen, getragenen Schutt sogar statisch. |
 | 9 | Ruhe statt fester Zeit erkennen | ✅ | Ruhe, Auflage, Wackeln am Ort, wegrutschende Auflage. |
@@ -144,7 +179,7 @@ Seit der Liste ist dazugekommen oder gemessen worden:
 | 21 | Statik vorberechnen | ✅ | Verbindungen, Etagen und lokale Suche statt globaler Spannungsrechnung. |
 | 22 | Hüllen zwischenspeichern | ⛔ | Hüllen entstehen direkt aus der Topologie, und Bruchhüllen sind fast immer einmalig. Deshalb gehen sie auch nicht durch Box3Ds Hüllen-Datenbank, siehe „Hüllen ohne Box3Ds Hüllen-Tabelle“. |
 | 23 | Einfachere Kollisionshüllen für bewegte Trümmer | ⛔ | Gemessen und verworfen, siehe oben. |
-| 24 | Nur die Oberfläche eines Schutthaufens kollidiert | 🔜 mit Nr. 2 | Teil von Nr. 2, nicht als eigenes System. |
+| 24 | Nur die Oberfläche eines Schutthaufens kollidiert | ⛔ | Teil von Nr. 2, nicht als eigenes System. Mit Nr. 2 verworfen. Dazu hätten die inneren Stücke keine Kollision mehr, das widerspricht „keine Kollision abschalten“, und würde die Oberfläche weggeschossen, hinge kurz etwas in der Luft. |
 | 25 | Grobe Kollision für ferne Viertel | 🔜 Stadt | Erst mit Regionen (Nr. 88). |
 | 26 | Kontaktbudget | ⛔ | Bräuchte einen Eingriff in Box3Ds Löser. Das Trümmerbudget begrenzt die Kontakte schon indirekt. |
 | 27 | CCD nur wo nötig | ✅ | Neu: `debrisSweepDistance`, siehe oben. |
@@ -244,3 +279,12 @@ Seit der Liste ist dazugekommen oder gemessen worden:
 | Nebenan ohne Box3D | ⛔ | Box3D macht die eigentliche Arbeit (Kontakte, Löser, Broadphase, CCD, Threads, Determinismus) bereits sehr schnell. Eine eigene Engine wäre nur schneller, wenn sie weniger rechnet, und die meisten Vereinfachungen gehen auch mit Box3D. |
 | Trümmer-CCD-Schwelle | ✅ | Umgesetzt (`debrisSweepDistance`). |
 | Einschlag weiter parallelisieren | ✅ | Umgesetzt, siehe oben. |
+| Kontaktflächen beim Laden auf den Workern | ✅ | Beim Anlegen eines Zerstörbaren mit Öffnungen oder mehreren Teilen misst Nebenan für jedes Paar sich berührender Bruchstücke die gemeinsame Fläche. Das lief auf dem aufrufenden Thread, beim Laden einer Stadt ein Viertel seiner Zeit, die Paarsuche davor knapp ein Zehntel, und die Worker warteten solange. Jetzt messen die Worker die Flächen in Blöcken zu 16 Paaren, ab 8 Blöcken. Die Verbindungen entstehen danach auf dem aufrufenden Thread in derselben Reihenfolge wie vorher. Dazu liest die Paarsuche die Grenzen aus ihrer eigenen sortierten Liste, statt für jeden Kandidaten Bruchstück und Form nachzuschlagen, und jede Voronoi-Zelle kopiert nur den benutzten Teil ihres Eltern-Polyeders statt immer 7 KB. Gemessen im Wechsel mit dem Stand davor, je zwölf Läufe mit Bruchstückgröße ×4 und 4 Threads: Die Stadt aus 256 Häusern lädt im Median in 0,26 statt 0,31 s, die aus 1 024 Häusern in 1,14 statt 1,30 s, 15 und 12 % schneller. Die Ergebnisse bleiben bitgleich. Der Worker-Test vergleicht dafür die Verbindungen einer Wand mit Öffnungen mit einem und mit vier Threads. |
+| Kleine Einschläge ohne Worker | ✅ | Ein Einschlag weckte die Worker ab 16 Zellen und Stücken. Bei vierfacher Bruchstückgröße hat eine Granate auf ein Haus 15 bis 30, und mit einem Thread war sie schneller als mit vier: in der Stadt aus 256 Häusern 0,145 bis 0,157 statt 0,176 bis 0,185 ms. Die Worker zu wecken und ihre Zellen danach aus den Caches anderer Kerne zu holen kostete mehr, als sie abnahmen. Jetzt helfen sie ab 32. Dazu ist der Zufallsgenerator inline, das Ziehen der Bruchpunkte und die Schätzung der getroffenen Volumen brauchen Tausende Zahlen pro Einschlag. Gemessen im Wechsel mit dem Stand davor, 4 Threads, ×4: In der Stadt aus 256 Häusern kostet eine Granate im Median 0,159 statt 0,185 ms, je zwölf Läufe. Bei 1 024 Häusern gibt die VM in jedem zweiten Lauf frischen Speicher langsam heraus, Läufe im selben Zustand verglichen sind es 1 bis 4 % weniger. In der Stadt der Demo, 20 Häuser bis zum Schuttfeld beschossen, je vier Läufe, kostet der erste Treffer auf ein Haus im Mittel 0,14 statt 0,16 ms und eine Granate in den Schutt 2 % weniger. Einschläge mit 16 bis 31 Zellen und Stücken, die jetzt ohne Worker laufen, kosten dort 6 % weniger, und keine Größe wird langsamer. Im Benchmark mit Bruchstückgröße ×1, je sechs Läufe, liegen Gewehr, Explosionen und Gebäude zwischen 3 % schneller und 4 % langsamer, so weit schwankt auch der unveränderte Box3D-Schritt. Die Ergebnisse bleiben bitgleich. Auf einem Rechner, der Threads schneller weckt als die VM, kann die beste Schwelle niedriger liegen. |
+| Rückprall 0 statt 0,05 | ⛔ | Box3D rechnet die Restitution nur für Kontakte mit Rückprall, und Nebenans Standardmaterial hat 0,05. Im Box3D-Schritt der Stadt sind das 6 % der Instruktionen. Gemessen mit 0 bei 256 Häusern, ×4, je acht Läufe im Wechsel: Der Löser rechnet pro Kontakt 5 % billiger, aber ohne Rückprall kommen die Trümmer anders zur Ruhe, und es sind 8 % mehr Kontakte wach. Ein Frame kostet gleich viel. |
+| Nur auftauen, was die Explosion schiebt | ⛔ | Eine Granate taut allen leichten Schutt in einem Würfel um den Einschlag auf. Die rund 15 %, die weiter als 2 m vom Einschlag liegen, bekommen von der Explosion weniger als 1 m/s, siehe „Zerstörte Stadt unter Dauerfeuer“. Sie liegen zu lassen spart höchstens 15 % der wachen Körper im Schuttfeld, aber man sähe es: Brocken am Rand blieben starr liegen, während ihre Nachbarn wegfliegen, und ein Trümmerteil prallte von ihnen ab wie von einer Wand. |
+| Verbindungen zwischen Splittern und alten Nachbarn auf den Workern | ⛔ | Die Flächen zwischen den neuen Splittern und den Nachbarn des getroffenen Stücks misst ein Einschlag nach den Zellen auf dem aufrufenden Thread, rund 9 % seiner Instruktionen. Auf den Workern wären sie nur bitgleich, solange keine zwei Nachbarn im selben Einschlag zerteilt werden, und bei Granaten ist das häufig. Für geschätzt 3 bis 6 % pro Einschlag nicht den Umbau wert. |
+| Hüllen schneller bauen | ⛔ | Rund 3 600 Instruktionen pro Hülle, verteilt auf Masse und Trägheit, Prüfsumme, Kantenpaare und die SIMD-Kopien der Ecken und Normalen, ohne Stelle, an der sich viel holen ließe. |
+| Box3D-Formen verkleinern | ⛔ | 216 Byte pro Form, mit Material, Filter und einer Union aller Formtypen. Das wäre ein Eingriff in Box3Ds Kern für wenige Prozent Speicher. |
+| Biegemomente nur bei Bedarf | 🔜 niedrig | Die zweiten Momente jeder Verbindung, 24 Byte, braucht nur die Lastprüfung. Die ist standardmäßig aus und prüft Gebäude mit Decken nie. Ohne sie wäre eine Verbindung 64 statt 88 Byte groß: geschätzt 4 % weniger Speicher, 2 % schneller geladen und 4 % weniger Instruktionen pro Einschlag. Braucht eine Lösung für das Einschalten der Lastprüfung zur Laufzeit, etwa die Momente erst dann nachzurechnen. |
+| Häuser gesammelt laden | 🔜 Stadt | Während der aufrufende Thread ein Haus in Box3D einbaut, könnten die Worker schon das nächste zerlegen. Geschätzt lädt eine große Stadt so ein Drittel schneller. Braucht eine Funktion, die viele Zerstörbare auf einmal anlegt, am besten zusammen mit dem Streaming von Regionen (Nr. 89). |

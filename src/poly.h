@@ -98,6 +98,17 @@ typedef struct nbShapeLayout
 } nbShapeLayout;
 
 void nbPoly_MakeBox( nbPoly* poly, b3Vec3 halfExtents, b3Transform transform, uint8_t material );
+
+// Copy the used part of a polyhedron, a small part of its fixed capacity of about 7 KB
+static inline void nbPoly_Copy( nbPoly* dst, const nbPoly* src )
+{
+	dst->vertexCount = src->vertexCount;
+	dst->faceCount = src->faceCount;
+	dst->indexCount = src->indexCount;
+	memcpy( dst->vertices, src->vertices, sizeof( b3Vec3 ) * (size_t)src->vertexCount );
+	memcpy( dst->faces, src->faces, sizeof( nbPolyFace ) * (size_t)src->faceCount );
+	memcpy( dst->indices, src->indices, (size_t)src->indexCount );
+}
 bool nbPoly_MakeFromHull( nbPoly* poly, const b3HullData* hull, b3Transform transform, uint8_t material );
 void nbPoly_Translate( nbPoly* poly, b3Vec3 translation );
 

@@ -262,8 +262,8 @@ int nbCreateChunk( nbWorld* world, int destructibleIndex, int actorIndex, nbShap
 	return nbCreateChunkWithHull( world, destructibleIndex, actorIndex, shape, depth, interiorMaterial, materialIndex );
 }
 
-int nbCreateChunkWithHull( nbWorld* world, int destructibleIndex, int actorIndex, nbShape* shape, int depth, uint8_t interiorMaterial,
-						   int materialIndex )
+int nbCreateChunkWithHull( nbWorld* world, int destructibleIndex, int actorIndex, nbShape* shape, int depth,
+						   uint8_t interiorMaterial, int materialIndex )
 {
 	if ( shape->hull == NULL )
 	{
@@ -3722,6 +3722,9 @@ static void nbFractureTaskMain( void* context )
 	}
 }
 
+// Items from which the workers help with a fracture, see nbRunFractureJobs
+#define NB_PARALLEL_FRACTURE_ITEMS 32
+
 void nbRunFractureJobs( nbWorld* world, nbFractureJob* jobs, int jobCount, nbPrepareJobFn* prepare, void* prepareContext,
 						nbCallerWorkFn* callerWork, void* callerContext )
 {
@@ -3761,8 +3764,10 @@ void nbRunFractureJobs( nbWorld* world, nbFractureJob* jobs, int jobCount, nbPre
 		}
 	}
 
-	// Waking threads costs more than a handful of cells
-	int taskCount = world->enqueueTask != NULL && itemCount >= 16 ? world->workerCount : 1;
+	// Waking threads costs more than a few dozen cells. A grenade on a house at fragment scale 4 has 15 to 30 items, and
+	// the calling thread alone is done with them sooner than with the workers it would have to wake, and their cells in
+	// the caches of other cores.
+	int taskCount = world->enqueueTask != NULL && itemCount >= NB_PARALLEL_FRACTURE_ITEMS ? world->workerCount : 1;
 	taskCount = taskCount < itemCount ? taskCount : itemCount;
 
 	int nextItem = 0;
