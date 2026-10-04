@@ -753,6 +753,11 @@ nbImpactResult nbApplyImpact( nbWorld* world, const nbImpactDef* def, int actorF
 			}
 
 			bond->health -= def->damage * ( 1.0f - distance / radius );
+			if ( def->damage > 0.0f )
+			{
+				world->destructibles.data[chunk->destructibleIndex].damaged = true;
+			}
+
 			if ( bond->health <= 0.0f )
 			{
 				nbDestroyBond( world, bondIndex );

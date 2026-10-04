@@ -285,6 +285,10 @@ typedef struct nbDestructible
 	// storeys. Without, nothing computes them.
 	bool bondMoments;
 
+	// Something changed it since it was created: a bond took damage or broke, or a chunk went. See
+	// nbDestructible_IsIntact.
+	bool damaged;
+
 	int headActor;
 	int actorCount;
 	int chunkCount;
@@ -518,6 +522,9 @@ void nbDestroyChunk( nbWorld* world, int chunkIndex );
 
 // Destroy an actor with all of its chunks and bodies.
 void nbDestroyActor( nbWorld* world, int actorIndex );
+
+// Destroy all actors, chunks, bonds, bodies and shapes of a destructible and report its chunks as destroyed
+void nbDestroyDestructibleParts( nbWorld* world, int destructibleIndex );
 
 bool nbIsAnchored( const nbDestructible* destructible, const nbShape* shape );
 

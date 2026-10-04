@@ -377,6 +377,7 @@ void nbDestroyBond( nbWorld* world, int bondIndex )
 {
 	nbBond* bond = world->bonds.data + bondIndex;
 	NB_ASSERT( bond->chunk[0] != NB_NULL_INDEX );
+	world->destructibles.data[world->chunks.data[bond->chunk[0]].destructibleIndex].damaged = true;
 
 	for ( int side = 0; side < 2; ++side )
 	{
@@ -724,6 +725,7 @@ static void nbReleaseChunk( nbWorld* world, int chunkIndex )
 
 	nbDestructible* destructible = world->destructibles.data + chunk->destructibleIndex;
 	destructible->chunkCount -= 1;
+	destructible->damaged = true;
 
 	// Chunks created and destroyed in the same event window are reported as both
 	nbPushEvent( world->destroyedEvents + world->eventBuffer, nbMakeChunkId( world, chunkIndex ) );
@@ -752,6 +754,41 @@ void nbDestroyActor( nbWorld* world, int actorIndex )
 	}
 
 	nbFreeActor( world, actorIndex );
+}
+
+void nbDestroyDestructibleParts( nbWorld* world, int destructibleIndex )
+{
+	// The bonds go with the chunks, all in one pass: without unlinking them from chunks that go anyway, reporting the faces
+	// they covered or leaving seeds for a split. Every chunk frees the bonds it has left, in the order of its list, so
+	// they come free in the same order as when the chunks go one by one.
+	nbDestructible* destructible = world->destructibles.data + destructibleIndex;
+	for ( int a = destructible->headActor; a != NB_NULL_INDEX; a = world->actors.data[a].nextActor )
+	{
+		for ( int c = world->actors.data[a].headChunk; c != NB_NULL_INDEX; c = world->chunks.data[c].nextChunk )
+		{
+			nbChunk* chunk = world->chunks.data + c;
+			for ( int key = chunk->headBondKey; key != NB_NULL_INDEX; )
+			{
+				int bondIndex = key >> 1;
+				nbBond* bond = world->bonds.data + bondIndex;
+				key = bond->nextKey[key & 1];
+				if ( bond->chunk[0] != NB_NULL_INDEX )
+				{
+					bond->chunk[0] = NB_NULL_INDEX;
+					bond->chunk[1] = NB_NULL_INDEX;
+					nbArray_Push( world->freeBonds, bondIndex );
+					world->bondCount -= 1;
+				}
+			}
+			chunk->headBondKey = NB_NULL_INDEX;
+			chunk->bondCount = 0;
+		}
+	}
+
+	while ( world->destructibles.data[destructibleIndex].headActor != NB_NULL_INDEX )
+	{
+		nbDestroyActor( world, world->destructibles.data[destructibleIndex].headActor );
+	}
 }
 
 bool nbIsAnchored( const nbDestructible* destructible, const nbShape* shape )

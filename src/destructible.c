@@ -1080,10 +1080,7 @@ void nbDestroyDestructible( nbDestructibleId destructibleId )
 	}
 
 	int index = destructibleId.index1 - 1;
-	while ( world->destructibles.data[index].headActor != NB_NULL_INDEX )
-	{
-		nbDestroyActor( world, world->destructibles.data[index].headActor );
-	}
+	nbDestroyDestructibleParts( world, index );
 
 	// The shared static body, without shapes by now
 	destructible = world->destructibles.data + index;
@@ -1138,4 +1135,87 @@ void* nbDestructible_GetUserData( nbDestructibleId destructibleId )
 {
 	nbDestructible* destructible = nbGetDestructibleFromId( destructibleId, NULL );
 	return destructible != NULL ? destructible->userData : NULL;
+}
+
+bool nbDestructible_IsIntact( nbDestructibleId destructibleId )
+{
+	nbDestructible* destructible = nbGetDestructibleFromId( destructibleId, NULL );
+	return destructible != NULL && destructible->damaged == false;
+}
+
+typedef struct nbUnloadQuery
+{
+	nbWorld* world;
+	int destructibleIndex;
+	bool blocked;
+} nbUnloadQuery;
+
+// Whatever lies near a destructible keeps it from unloading, unless it stands for itself: its own chunks, the standing
+// parts of other destructibles and the static bodies of the application. Debris, rubble and anything that moves or can be
+// moved could lie on it or hit it.
+static bool nbUnloadQueryCallback( b3ShapeId shapeId, void* context )
+{
+	nbUnloadQuery* query = context;
+	if ( b3Shape_IsSensor( shapeId ) )
+	{
+		return true;
+	}
+
+	nbWorld* world = query->world;
+	int chunkIndex = nbFindChunkFromShape( world, shapeId );
+	if ( chunkIndex != NB_NULL_INDEX )
+	{
+		const nbChunk* chunk = world->chunks.data + chunkIndex;
+		if ( chunk->destructibleIndex == query->destructibleIndex || world->actors.data[chunk->actorIndex].isStatic )
+		{
+			return true;
+		}
+	}
+	else if ( b3Body_GetType( b3Shape_GetBody( shapeId ) ) == b3_staticBody )
+	{
+		return true;
+	}
+
+	query->blocked = true;
+	return false;
+}
+
+bool nbDestructible_CanUnload( nbDestructibleId destructibleId, float margin )
+{
+	nbWorld* world;
+	nbDestructible* destructible = nbGetDestructibleFromId( destructibleId, &world );
+	if ( destructible == NULL || destructible->isStatic == false || destructible->damaged || destructible->actorCount != 1 ||
+		 destructible->chunkCount == 0 )
+	{
+		return false;
+	}
+
+	const nbActor* actor = world->actors.data + destructible->headActor;
+	if ( actor->isStatic == false )
+	{
+		return false;
+	}
+
+	b3AABB bounds = { { FLT_MAX, FLT_MAX, FLT_MAX }, { -FLT_MAX, -FLT_MAX, -FLT_MAX } };
+#if defined( NB_SHARED_STATIC_BODY )
+	bounds = b3Body_ComputeAABB( destructible->staticBody );
+#else
+	for ( int c = actor->headChunk; c != NB_NULL_INDEX; c = world->chunks.data[c].nextChunk )
+	{
+		bounds = b3AABB_Union( bounds, b3Shape_GetAABB( world->chunks.data[c].shapeId ) );
+	}
+#endif
+
+	margin = b3MaxFloat( margin, 0.0f );
+	b3Vec3 extent = { margin, margin, margin };
+	bounds.lowerBound = b3Sub( bounds.lowerBound, extent );
+	bounds.upperBound = b3Add( bounds.upperBound, extent );
+
+	// Only what collides with the chunks counts
+	b3QueryFilter filter = b3DefaultQueryFilter();
+	filter.categoryBits = destructible->filter.categoryBits;
+	filter.maskBits = destructible->filter.maskBits;
+	nbUnloadQuery query = { world, destructibleId.index1 - 1, false };
+	b3World_OverlapAABB( world->physicsWorld, bounds, filter, nbUnloadQueryCallback, &query );
+	return query.blocked == false;
 }

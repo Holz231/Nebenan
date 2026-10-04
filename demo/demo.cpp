@@ -46,10 +46,11 @@ enum SceneKind
 	SceneWall,
 	SceneStress,
 	SceneTown,
+	SceneCity,
 	SceneCount
 };
 
-static const char* s_sceneNames[SceneCount] = { "Mauern", "Stresstest", "Stadt" };
+static const char* s_sceneNames[SceneCount] = { "Mauern", "Stresstest", "Stadt", "Große Stadt" };
 static const char* s_toolNames[ToolCount] = { "Gewehr", "Granate", "Kanone" };
 
 struct ToolSettings
@@ -161,6 +162,33 @@ struct FpsMeter
 	}
 };
 
+// A house of the large city: its id while it is loaded, the last physics step a moving body came near it, and when to
+// ask again whether it can go
+struct CityHouse
+{
+	nbDestructibleId id = {};
+	int activeStep = -1000000;
+	int nextCheck = 0;
+	bool urgent = false;
+};
+
+// A city far too large to hold at once, see BuildCityScene. Only the houses near the camera and near anything that moves
+// are loaded, the others only exist as a seed and a position.
+struct City
+{
+	std::vector<CityHouse> houses;
+	std::vector<int> loaded;
+	std::vector<int> urgent;
+
+	// Physics steps so far, the clock of the streaming
+	int step = 0;
+	int loads = 0;
+	int unloads = 0;
+
+	// CPU time of the streaming in the last frame in milliseconds
+	float time = 0.0f;
+};
+
 struct App
 {
 	b3WorldId physics = b3_nullWorldId;
@@ -196,6 +224,10 @@ struct App
 
 	// Load check for structures without floors, like the walls, off by default
 	float supportScale = nbDefaultWorldDef().supportScale;
+
+	// The large city and the radius around the camera within which its houses are loaded
+	City city;
+	float cityRadius = 100.0f;
 
 	float accumulator = 0.0f;
 	int workerCount = 1;
@@ -454,12 +486,17 @@ static void SyncTransforms( App& app )
 //----------------------------------------------------------------------------------------------------------------------
 // Static meshes
 
-static void BuildGround( App& app )
+static void BuildGround( App& app, float h )
 {
+	if ( app.groundMesh >= 0 )
+	{
+		app.renderer.RemoveMesh( app.groundMesh );
+		app.renderer.FreeSlot( app.groundSlot );
+	}
+
 	app.groundSlot = app.renderer.AllocSlot();
 	app.renderer.SetSlot( app.groundSlot, b3Vec3_zero, b3Quat_identity );
 
-	float h = 150.0f;
 	b3Vec3 up = { 0.0f, 1.0f, 0.0f };
 	GpuVertex vertices[4] = {
 		Renderer::MakeVertex( { -h, 0.0f, h }, up, MaterialGround, app.groundSlot ),
@@ -592,7 +629,7 @@ struct PendingStructure
 
 // Create the structures at once: while the calling thread builds one into the world, the workers already fracture the
 // next, see nbCreateDestructibles
-static void CreateStructures( App& app, const std::vector<std::unique_ptr<PendingStructure>>& pending )
+static std::vector<nbDestructibleId> CreateStructures( App& app, const std::vector<std::unique_ptr<PendingStructure>>& pending )
 {
 	std::vector<nbDestructibleDef> defs;
 	std::vector<const nbPieceDef*> pieceLists;
@@ -606,6 +643,7 @@ static void CreateStructures( App& app, const std::vector<std::unique_ptr<Pendin
 
 	std::vector<nbDestructibleId> ids( pending.size() );
 	nbCreateDestructibles( app.destruction, defs.data(), pieceLists.data(), pieceCounts.data(), (int)pending.size(), ids.data() );
+	return ids;
 }
 
 static void AddWall( App& app, b3Vec3 base, float yaw, b3Vec3 size, const MaterialPreset& preset, uint32_t seed )
@@ -758,6 +796,192 @@ static void BuildTownScene( App& app )
 	app.camera.pitch = -0.38f;
 }
 
+// The large city: 256 x 256 houses like the ones of the town on 3.6 x 3.1 km, 65 536 of them. Held at once they would
+// take some 24 GB, so only the houses within the city radius of the camera are loaded, nearest first, and the ones
+// within 10 m of anything that moves, before it can reach them. A house goes again once it is farther than the radius
+// plus 20 m, no body moved within 20 m of it for five seconds and nbDestructible_CanUnload lets it: nothing hit it and
+// nothing lies near it. Damaged houses stay with their rubble, and a house comes back to the bit as it was.
+static const int CitySide = 256;
+static const int CityLoadBudget = 2;
+static const int CityUnloadBudget = 4;
+static const float CityUnloadMargin = 20.0f;
+static const float CityActiveLoadRadius = 10.0f;
+static const float CityActiveHoldRadius = 20.0f;
+static const int CityHoldSteps = 300;
+
+static b3Vec3 CityHousePosition( int index )
+{
+	float half = 0.5f * (float)( CitySide - 1 );
+	return { 14.0f * ( (float)( index % CitySide ) - half ), 0.0f, 12.0f * ( (float)( index / CitySide ) - half ) };
+}
+
+static float CityDistance( int index, b3Vec3 point )
+{
+	b3Vec3 p = CityHousePosition( index );
+	return sqrtf( ( p.x - point.x ) * ( p.x - point.x ) + ( p.z - point.z ) * ( p.z - point.z ) );
+}
+
+// The grid cells whose houses may lie within the radius of a point
+static void CityRange( b3Vec3 point, float radius, int* i0, int* i1, int* j0, int* j1 )
+{
+	float half = 0.5f * (float)( CitySide - 1 );
+	*i0 = b3MaxInt( 0, (int)floorf( ( point.x - radius ) / 14.0f + half ) );
+	*i1 = b3MinInt( CitySide - 1, (int)ceilf( ( point.x + radius ) / 14.0f + half ) );
+	*j0 = b3MaxInt( 0, (int)floorf( ( point.z - radius ) / 12.0f + half ) );
+	*j1 = b3MinInt( CitySide - 1, (int)ceilf( ( point.z + radius ) / 12.0f + half ) );
+}
+
+// Every third house has a third floor, every other row faces the other street
+static std::unique_ptr<PendingStructure> PrepareCityHouse( int index )
+{
+	int floors = index % 3 == 1 ? 3 : 2;
+	float yaw = ( ( index / CitySide ) & 1 ) != 0 ? B3_PI : 0.0f;
+	return PrepareHouse( CityHousePosition( index ), yaw, floors, (uint32_t)( 1000 + index ) );
+}
+
+// Every body that moved in the last step loads the houses within 10 m that are not loaded yet, before it can reach them,
+// and keeps the ones within 20 m from going. A house reaches 5.5 m from its center and less than 10 m up.
+static void MarkCityActivity( App& app )
+{
+	City& city = app.city;
+	city.step += 1;
+	b3BodyEvents events = b3World_GetBodyEvents( app.physics );
+	for ( int e = 0; e < events.moveCount; ++e )
+	{
+		// The chunks of a body lie in the frame of their destructible, its origin can be meters away
+		b3Vec3 point = b3ToVec3( b3Body_GetWorldCenter( events.moveEvents[e].bodyId ) );
+		if ( point.y > 10.0f + CityActiveHoldRadius )
+		{
+			continue;
+		}
+
+		int i0, i1, j0, j1;
+		CityRange( point, CityActiveHoldRadius + 5.5f, &i0, &i1, &j0, &j1 );
+		for ( int j = j0; j <= j1; ++j )
+		{
+			for ( int i = i0; i <= i1; ++i )
+			{
+				int index = j * CitySide + i;
+				CityHouse& house = city.houses[(size_t)index];
+				float distance = CityDistance( index, point );
+				if ( distance > CityActiveHoldRadius + 5.5f )
+				{
+					continue;
+				}
+
+				house.activeStep = city.step;
+				if ( distance <= CityActiveLoadRadius + 5.5f && NB_IS_NULL( house.id ) && house.urgent == false )
+				{
+					house.urgent = true;
+					city.urgent.push_back( index );
+				}
+			}
+		}
+	}
+}
+
+// Create the houses that moving bodies came near, then the ones within the radius of the camera, nearest first, at most
+// so many at once
+static void LoadCity( App& app, int budget )
+{
+	City& city = app.city;
+	std::vector<std::pair<float, int>> candidates;
+	for ( int index : city.urgent )
+	{
+		candidates.push_back( { -1.0f, index } );
+		city.houses[(size_t)index].urgent = false;
+	}
+	city.urgent.clear();
+
+	b3Vec3 camera = app.camera.position;
+	int i0, i1, j0, j1;
+	CityRange( camera, app.cityRadius, &i0, &i1, &j0, &j1 );
+	for ( int j = j0; j <= j1; ++j )
+	{
+		for ( int i = i0; i <= i1; ++i )
+		{
+			int index = j * CitySide + i;
+			float distance = CityDistance( index, camera );
+			const CityHouse& house = city.houses[(size_t)index];
+			if ( distance <= app.cityRadius && NB_IS_NULL( house.id ) && house.urgent == false )
+			{
+				candidates.push_back( { distance, index } );
+			}
+		}
+	}
+
+	// Urgent ones that do not fit come back with the next step that moves something near them
+	std::sort( candidates.begin(), candidates.end() );
+	candidates.resize( b3MinInt( (int)candidates.size(), budget ) );
+	std::vector<std::unique_ptr<PendingStructure>> pending;
+	for ( const std::pair<float, int>& candidate : candidates )
+	{
+		pending.push_back( PrepareCityHouse( candidate.second ) );
+	}
+
+	std::vector<nbDestructibleId> ids = CreateStructures( app, pending );
+	for ( size_t k = 0; k < candidates.size(); ++k )
+	{
+		city.houses[(size_t)candidates[k].second].id = ids[k];
+		city.loaded.push_back( candidates[k].second );
+	}
+	city.loads += (int)candidates.size();
+}
+
+// Destroy the houses beyond the radius that can go, at most so many. A house that cannot is asked again half a second
+// later.
+static void UnloadCity( App& app, int budget )
+{
+	City& city = app.city;
+	float radius = app.cityRadius + CityUnloadMargin;
+	int count = 0;
+	for ( size_t k = 0; k < city.loaded.size() && count < budget; )
+	{
+		int index = city.loaded[k];
+		CityHouse& house = city.houses[(size_t)index];
+		if ( city.step < house.nextCheck || city.step < house.activeStep + CityHoldSteps ||
+			 CityDistance( index, app.camera.position ) <= radius )
+		{
+			k += 1;
+			continue;
+		}
+
+		if ( nbDestructible_CanUnload( house.id, 2.0f ) == false )
+		{
+			house.nextCheck = city.step + 30;
+			k += 1;
+			continue;
+		}
+
+		nbDestroyDestructible( house.id );
+		house.id = nb_nullDestructibleId;
+		city.loaded[k] = city.loaded.back();
+		city.loaded.pop_back();
+		count += 1;
+	}
+	city.unloads += count;
+}
+
+static void StreamCity( App& app )
+{
+	uint64_t ticks = b3GetTicks();
+	UnloadCity( app, CityUnloadBudget );
+	LoadCity( app, CityLoadBudget );
+	app.city.time = b3GetMilliseconds( ticks );
+}
+
+static void BuildCityScene( App& app )
+{
+	app.city = City();
+	app.city.houses.resize( (size_t)CitySide * CitySide );
+
+	// On a street between two rows, looking along it
+	app.camera.position = { 0.0f, 2.5f, 0.0f };
+	app.camera.yaw = 0.5f * B3_PI;
+	app.camera.pitch = -0.05f;
+	LoadCity( app, CitySide * CitySide );
+}
+
 static void DestroyScene( App& app )
 {
 	if ( nbWorld_IsValid( app.destruction ) )
@@ -787,6 +1011,7 @@ static void DestroyScene( App& app )
 	app.balls.clear();
 	app.bodySlots.clear();
 	app.lastImpact = {};
+	app.city = City();
 }
 
 static void LoadScene( App& app, SceneKind scene )
@@ -798,10 +1023,13 @@ static void LoadScene( App& app, SceneKind scene )
 	worldDef.workerCount = (uint32_t)app.workerCount;
 	app.physics = b3CreateWorld( &worldDef );
 
+	// The ground of the large city reaches 100 m beyond its houses
+	float groundSize = scene == SceneCity ? 7.0f * (float)CitySide + 100.0f : 150.0f;
+	BuildGround( app, groundSize );
 	b3BodyDef groundDef = b3DefaultBodyDef();
 	groundDef.position = b3ToPos( { 0.0f, -1.0f, 0.0f } );
 	b3BodyId ground = b3CreateBody( app.physics, &groundDef );
-	b3BoxHull box = b3MakeBoxHull( 150.0f, 1.0f, 150.0f );
+	b3BoxHull box = b3MakeBoxHull( groundSize, 1.0f, groundSize );
 	b3ShapeDef groundShape = b3DefaultShapeDef();
 	groundShape.baseMaterial.friction = 0.8f;
 	b3CreateHullShape( ground, &groundShape, &box.base );
@@ -823,6 +1051,9 @@ static void LoadScene( App& app, SceneKind scene )
 			break;
 		case SceneStress:
 			BuildStressScene( app );
+			break;
+		case SceneCity:
+			BuildCityScene( app );
 			break;
 		default:
 			BuildTownScene( app );
@@ -1010,6 +1241,10 @@ static void StepSimulation( App& app, float frameDt )
 		b3World_Step( app.physics, step, 4 );
 		physicsTime += b3GetMilliseconds( ticks );
 		SyncTransforms( app );
+		if ( app.scene == SceneCity )
+		{
+			MarkCityActivity( app );
+		}
 
 		ticks = b3GetTicks();
 		nbWorld_Update( app.destruction, step );
@@ -1137,6 +1372,14 @@ static std::string BuildReport( const App& app )
 	Appendf( text, "Einsturz: %d Etagen eingestürzt, eine Etage braucht %.0f %% ihrer Wände; Statik ohne Decken x%.2f, %d Verbindungen gebrochen\n",
 			 stats.collapsedStoreyCount, 100.0f * app.storeySupport, app.supportScale, stats.overloadedBondCount );
 	Appendf( text, "Grafik: %dk Dreiecke, %d Draw Calls, %d kB Upload\n", rs.triangleCount / 1000, rs.drawCalls, rs.uploadedBytes / 1024 );
+	if ( app.scene == SceneCity )
+	{
+		Appendf(
+			text,
+			"Große Stadt: %d von %d Häusern geladen, Laderadius %.0f m, Streaming %.2f ms, %d geladen, %d entladen, %.0f MB\n",
+			(int)app.city.loaded.size(), CitySide * CitySide, app.cityRadius, app.city.time, app.city.loads, app.city.unloads,
+			(double)( nbGetByteCount() + b3GetByteCount() ) / 1048576.0 );
+	}
 	return text;
 }
 
@@ -1163,6 +1406,24 @@ static void DrawUi( App& app )
 	if ( ImGui::Button( "Neu laden (R)" ) )
 	{
 		LoadScene( app, app.scene );
+	}
+	if ( app.scene == SceneCity )
+	{
+		ImGui::SliderFloat( "Laderadius", &app.cityRadius, 40.0f, 250.0f, "%.0f m" );
+		if ( ImGui::IsItemHovered() )
+		{
+			ImGui::SetTooltip(
+				"Häuser in diesem Umkreis der Kamera sind geladen, dazu alle in der Nähe von\nallem, was sich bewegt. Unberührte "
+				"Häuser weiter weg gehen wieder,\nbeschädigte bleiben. Größer kostet Speicher und Grafik." );
+		}
+		int damaged = 0;
+		for ( int index : app.city.loaded )
+		{
+			damaged += nbDestructible_IsIntact( app.city.houses[(size_t)index].id ) ? 0 : 1;
+		}
+		ImGui::Text( "Häuser geladen %d von %d, beschädigt %d", (int)app.city.loaded.size(), CitySide * CitySide, damaged );
+		ImGui::Text( "Streaming %.2f ms, geladen %d, entladen %d", app.city.time, app.city.loads, app.city.unloads );
+		ImGui::Text( "Speicher %.0f MB (Nebenan und Box3D)", (double)( nbGetByteCount() + b3GetByteCount() ) / 1048576.0 );
 	}
 
 	ImGui::SeparatorText( "Werkzeug" );
@@ -1393,6 +1654,24 @@ static void RunScript( App& app )
 			}
 			break;
 
+		case SceneCity:
+		{
+			// Down the street at 16 m/s with a grenade on a house on either side every fifth frame
+			app.camera.position.x += 16.0f / 60.0f;
+			if ( f >= 20 && f % 5 == 0 )
+			{
+				int k = ( f - 20 ) / 5;
+				float half = 0.5f * (float)( CitySide - 1 );
+				int i = (int)floorf( ( app.camera.position.x + 10.0f + 14.0f * (float)( k % 3 ) ) / 14.0f + half + 0.5f );
+				int j = ( k & 1 ) != 0 ? CitySide / 2 : CitySide / 2 - 1;
+				b3Vec3 center = CityHousePosition( j * CitySide + i );
+				float along = (float)( ( k * 5 ) % 9 ) / 4.0f - 1.0f;
+				float height = ( k % 3 ) == 0 ? 4.4f : 1.2f;
+				FireAt( app, ToolGrenade, b3Add( center, b3Vec3{ 4.2f * along, height, ( k & 1 ) != 0 ? -3.4f : 3.4f } ) );
+			}
+			break;
+		}
+
 		default:
 			if ( f >= 20 && f % 5 == 0 )
 			{
@@ -1439,7 +1718,6 @@ static void OnInit()
 	ImGui::GetIO().IniFilename = nullptr;
 
 	app.renderer.Init();
-	BuildGround( app );
 	app.vsyncAvailable = DemoSetVsync( app.vsync );
 	app.vsync = app.vsync || app.vsyncAvailable == false;
 	app.refreshRate = DemoRefreshRate();
@@ -1543,6 +1821,10 @@ static void OnFrame()
 	float impactTime = b3GetMilliseconds( cpuTicks );
 
 	uint64_t simulationTicks = b3GetTicks();
+	if ( app.scene == SceneCity )
+	{
+		StreamCity( app );
+	}
 	StepSimulation( app, dt );
 	float simulationTime = b3GetMilliseconds( simulationTicks );
 

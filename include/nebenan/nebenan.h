@@ -127,6 +127,18 @@ NB_API int nbDestructible_GetChunks( nbDestructibleId destructibleId, nbChunkId*
 /// Get the user data of a destructible.
 NB_API void* nbDestructible_GetUserData( nbDestructibleId destructibleId );
 
+/// Is the destructible as it was created? Nothing damaged or broke a bond of it, and no chunk broke off or went away.
+NB_API bool nbDestructible_IsIntact( nbDestructibleId destructibleId );
+
+/// Can the destructible go now and come back later without anything noticing? That holds for a static destructible that
+/// is intact, see nbDestructible_IsIntact, with nothing within margin meters of its bounds that could lie on it or hit it:
+/// no debris, no rubble and no body that moves or can be moved. Static bodies, sensors, the standing parts of other
+/// destructibles and shapes that do not collide with its chunks do not count. Created again from the same definition, it
+/// has the same chunks and bonds to the bit, only with new ids.
+/// This streams a large city: destroy the intact houses far from everything that happens with nbDestroyDestructible,
+/// and create them again with nbCreateDestructibles before anything can come near them.
+NB_API bool nbDestructible_CanUnload( nbDestructibleId destructibleId, float margin );
+
 /** @} */
 
 /**

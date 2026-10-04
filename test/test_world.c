@@ -2854,6 +2854,135 @@ static int BatchCreateTest( void )
 	return 0;
 }
 
+static uint32_t HashBytes( uint32_t hash, const void* data, size_t size )
+{
+	const uint8_t* bytes = (const uint8_t*)data;
+	for ( size_t k = 0; k < size; ++k )
+	{
+		hash = ( hash ^ bytes[k] ) * 16777619u;
+	}
+	return hash;
+}
+
+// Everything of a destructible that does not depend on the slots it took: its chunks in order with their geometry and
+// material, and their bonds with the place of the other chunk in that order
+static uint32_t SignDestructible( nbWorldId worldId, nbDestructibleId id )
+{
+	nbWorld* world = nbGetWorldFromId( worldId );
+	const nbDestructible* destructible = world->destructibles.data + ( id.index1 - 1 );
+	uint32_t hash = 2166136261u;
+	int place = 0;
+	for ( int a = destructible->headActor; a != NB_NULL_INDEX; a = world->actors.data[a].nextActor )
+	{
+		for ( int c = world->actors.data[a].headChunk; c != NB_NULL_INDEX; c = world->chunks.data[c].nextChunk )
+		{
+			world->chunks.data[c].scratch = place++;
+		}
+	}
+
+	for ( int a = destructible->headActor; a != NB_NULL_INDEX; a = world->actors.data[a].nextActor )
+	{
+		for ( int c = world->actors.data[a].headChunk; c != NB_NULL_INDEX; c = world->chunks.data[c].nextChunk )
+		{
+			const nbChunk* chunk = world->chunks.data + c;
+			nbGeometry geometry = nbChunk_GetGeometry( nbMakeChunkId( world, c ) );
+			hash = HashBytes( hash, geometry.vertices, sizeof( b3Vec3 ) * (size_t)geometry.vertexCount );
+			hash = HashBytes( hash, geometry.planes, sizeof( b3Plane ) * (size_t)geometry.faceCount );
+			hash = HashBytes( hash, geometry.faces, sizeof( nbFace ) * (size_t)geometry.faceCount );
+			hash = HashBytes( hash, geometry.indices, (size_t)geometry.indexCount );
+			int values[5] = { chunk->bondCount, chunk->depth, chunk->flags & ( nb_chunkAnchored | nb_chunkStaticBody ),
+							  chunk->materialIndex, chunk->interiorMaterial };
+			hash = HashBytes( hash, values, sizeof( values ) );
+			for ( int key = chunk->headBondKey; key != NB_NULL_INDEX; key = world->bonds.data[key >> 1].nextKey[key & 1] )
+			{
+				const nbBond* bond = world->bonds.data + ( key >> 1 );
+				float floats[8] = { bond->centroid.x, bond->centroid.y, bond->centroid.z, bond->area,
+									bond->normal.x,	  bond->normal.y,	bond->normal.z,	  bond->health };
+				int ints[4] = { world->chunks.data[bond->chunk[1 - ( key & 1 )]].scratch, key & 1, bond->cohesive,
+								bond->sibling };
+				hash = HashBytes( hash, floats, sizeof( floats ) );
+				hash = HashBytes( hash, ints, sizeof( ints ) );
+			}
+		}
+	}
+
+	b3WorldTransform transform = b3Body_GetTransform( destructible->staticBody );
+	return HashBytes( hash, &transform, sizeof( transform ) );
+}
+
+// An intact house with nothing near it can go and come back as it was. Damage keeps it, and so does whatever could lie on
+// it or hit it: falling debris and the rubble it turns into.
+static int StreamTest( void )
+{
+	CelledHouse* houses = malloc( sizeof( CelledHouse ) * 2 );
+	BuildCelledHouse( houses + 0, 2, 61, b3Vec3_zero );
+	BuildCelledHouse( houses + 1, 3, 62, (b3Vec3){ 40.0f, 0.0f, 0.0f } );
+	nbDestructibleDef defs[2] = { houses[0].def, houses[1].def };
+	const nbPieceDef* lists[2] = { houses[0].pieces, houses[1].pieces };
+	int counts[2] = { houses[0].pieceCount, houses[1].pieceCount };
+
+	TestScene scene = CreateSceneWithWorkers( 4, NULL, NULL, NULL );
+	nbDestructibleId ids[2];
+	nbCreateDestructibles( scene.world, defs, lists, counts, 2, ids );
+	ENSURE( nbDestructible_IsIntact( ids[0] ) && nbDestructible_IsIntact( ids[1] ) );
+	ENSURE( nbDestructible_CanUnload( ids[0], 1.0f ) && nbDestructible_CanUnload( ids[1], 1.0f ) );
+	uint32_t signature = SignDestructible( scene.world, ids[0] );
+	int chunkCount = nbDestructible_GetChunkCount( ids[0] );
+
+	// The other house takes a grenade on its far side, and a dynamic box is never unloaded
+	Grenade( &scene, (b3Vec3){ 44.7f, 1.2f, 0.0f } );
+	ENSURE( nbDestructible_IsIntact( ids[1] ) == false && nbDestructible_CanUnload( ids[1], 1.0f ) == false );
+	nbDestructibleId box = CreateLooseBox( &scene, (b3Vec3){ -20.0f, 0.3f, 0.0f }, (b3Vec3){ 0.3f, 0.3f, 0.3f }, 7 );
+	ENSURE( nbDestructible_IsIntact( box ) && nbDestructible_CanUnload( box, 1.0f ) == false );
+	Step( &scene, 30 );
+
+	// Unloading reports every chunk as destroyed and none as exposed
+	nbWorld_GetEvents( scene.world );
+	nbWorld_GetEvents( scene.world );
+	ENSURE( nbDestructible_CanUnload( ids[0], 1.0f ) );
+	nbDestroyDestructible( ids[0] );
+	ENSURE( nbDestructible_IsValid( ids[0] ) == false && nbDestructible_IsIntact( ids[0] ) == false );
+	nbEvents events = nbWorld_GetEvents( scene.world );
+	ENSURE( events.destroyedCount == chunkCount && events.exposedCount == 0 );
+
+	// It comes back the same, in other slots
+	Step( &scene, 30 );
+	ids[0] = nbCreateDestructible( scene.world, defs + 0, lists[0], counts[0] );
+	ENSURE( SignDestructible( scene.world, ids[0] ) == signature );
+	ENSURE( nbDestructible_IsIntact( ids[0] ) && nbDestructible_CanUnload( ids[0], 1.0f ) );
+
+	// The box far away counts only with a margin that reaches it
+	ENSURE( nbDestructible_CanUnload( ids[0], 30.0f ) == false );
+
+	// A box dropped onto the roof keeps the house while it falls and once it froze there
+	nbDestructibleId roofBox = CreateLooseBox( &scene, (b3Vec3){ 0.5f, 7.2f, 0.0f }, (b3Vec3){ 0.3f, 0.3f, 0.3f }, 8 );
+	ENSURE( nbDestructible_CanUnload( ids[0], 1.0f ) == false );
+	int rubble = nbWorld_GetStats( scene.world ).rubbleCount;
+	Step( &scene, 300 );
+	ENSURE( nbWorld_GetStats( scene.world ).rubbleCount > rubble );
+	ENSURE( b3Body_GetType( HeaviestBody( roofBox ) ) == b3_staticBody );
+	ENSURE( nbDestructible_IsIntact( ids[0] ) && nbDestructible_CanUnload( ids[0], 1.0f ) == false );
+
+	// Damage that breaks nothing still counts. Fragments larger than the cells keep the impact from refining them.
+	nbDestroyDestructible( roofBox );
+	ENSURE( nbDestructible_CanUnload( ids[0], 1.0f ) );
+	nbWorld_SetFragmentScale( scene.world, 100.0f );
+	nbStats before = nbWorld_GetStats( scene.world );
+	nbImpactDef impact = { 0 };
+	impact.point = (b3Vec3){ -1.25f, 1.2f, 3.4f };
+	impact.radius = 0.5f;
+	impact.damage = 1.0f;
+	nbImpactResult result = nbWorld_ApplyImpact( scene.world, &impact );
+	nbStats after = nbWorld_GetStats( scene.world );
+	ENSURE( result.fracturedChunkCount == 0 && after.impactCount == before.impactCount + 1 );
+	ENSURE( after.bondCount == before.bondCount && after.chunkCount == before.chunkCount );
+	ENSURE( nbDestructible_IsIntact( ids[0] ) == false && nbDestructible_CanUnload( ids[0], 1.0f ) == false );
+
+	DestroyScene( &scene );
+	free( houses );
+	return 0;
+}
+
 int WorldTest( void );
 
 int WorldTest( void )
@@ -2887,6 +3016,7 @@ int WorldTest( void )
 	RUN_TEST( SupportTest );
 	RUN_TEST( BondMomentsTest );
 	RUN_TEST( BatchCreateTest );
+	RUN_TEST( StreamTest );
 	RUN_TEST( RestTest );
 	RUN_TEST( LandingTest );
 	return 0;

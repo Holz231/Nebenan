@@ -8,6 +8,7 @@
 
 #include "nebenan/nebenan.h"
 
+#include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 
@@ -526,6 +527,374 @@ static void BenchmarkTown( int workerCount, float fragmentScale )
 	DestroyScene( &scene );
 }
 
+// A house of the streamed city: its id while it is loaded, the last frame a moving body came near it, and when to ask
+// again whether it can go
+typedef struct CityHouse
+{
+	nbDestructibleId id;
+	int activeFrame;
+	int nextCheck;
+	bool urgent;
+} CityHouse;
+
+typedef struct CityCandidate
+{
+	float distance;
+	int index;
+} CityCandidate;
+
+static int CompareCandidates( const void* a, const void* b )
+{
+	const CityCandidate* x = (const CityCandidate*)a;
+	const CityCandidate* y = (const CityCandidate*)b;
+	if ( x->distance != y->distance )
+	{
+		return x->distance < y->distance ? -1 : 1;
+	}
+	return ( x->index > y->index ) - ( x->index < y->index );
+}
+
+// A city of houses on a grid of 14 x 12 m, streamed around a camera: the houses near the camera and near anything that
+// moves are loaded, the others only exist as a seed and a position
+typedef struct City
+{
+	Scene scene;
+	nbMaterial concrete;
+	int side;
+	CityHouse* houses;
+	int* loaded;
+	int loadedCount;
+	int* urgent;
+	int urgentCount;
+	CityCandidate* candidates;
+	House* batch;
+	nbDestructibleDef* defs;
+	const nbPieceDef** lists;
+	int* counts;
+	nbDestructibleId* ids;
+	int loads;
+	int urgentLoads;
+	int unloads;
+	int maxLoaded;
+} City;
+
+static b3Vec3 CityHousePosition( const City* city, int index )
+{
+	int i = index % city->side, j = index / city->side;
+	float half = 0.5f * (float)( city->side - 1 );
+	return (b3Vec3){ 14.0f * ( (float)i - half ), 0.0f, 12.0f * ( (float)j - half ) };
+}
+
+static float CityDistance( const City* city, int index, b3Vec3 point )
+{
+	b3Vec3 p = CityHousePosition( city, index );
+	return sqrtf( ( p.x - point.x ) * ( p.x - point.x ) + ( p.z - point.z ) * ( p.z - point.z ) );
+}
+
+// The grid cells whose houses may lie within the radius of a point
+static void CityRange( const City* city, b3Vec3 point, float radius, int* i0, int* i1, int* j0, int* j1 )
+{
+	float half = 0.5f * (float)( city->side - 1 );
+	*i0 = b3MaxInt( 0, (int)floorf( ( point.x - radius ) / 14.0f + half ) );
+	*i1 = b3MinInt( city->side - 1, (int)ceilf( ( point.x + radius ) / 14.0f + half ) );
+	*j0 = b3MaxInt( 0, (int)floorf( ( point.z - radius ) / 12.0f + half ) );
+	*j1 = b3MinInt( city->side - 1, (int)ceilf( ( point.z + radius ) / 12.0f + half ) );
+}
+
+// Every body that moved in the last step loads the houses within the load radius that are not loaded yet, before it can
+// reach them, and keeps the ones within the hold radius from going. A house reaches 5.5 m from its center and 6.5 m up.
+static void MarkCityActivity( City* city, float loadRadius, float holdRadius, int frame )
+{
+	b3BodyEvents events = b3World_GetBodyEvents( city->scene.physicsWorld );
+	for ( int e = 0; e < events.moveCount; ++e )
+	{
+		// The chunks of a body lie in the frame of their destructible, its origin can be meters away
+		b3Vec3 point = b3ToVec3( b3Body_GetWorldCenter( events.moveEvents[e].bodyId ) );
+		if ( point.y > 6.5f + holdRadius )
+		{
+			continue;
+		}
+
+		int i0, i1, j0, j1;
+		CityRange( city, point, holdRadius + 5.5f, &i0, &i1, &j0, &j1 );
+		for ( int j = j0; j <= j1; ++j )
+		{
+			for ( int i = i0; i <= i1; ++i )
+			{
+				int index = j * city->side + i;
+				CityHouse* house = city->houses + index;
+				float distance = CityDistance( city, index, point );
+				if ( distance > holdRadius + 5.5f )
+				{
+					continue;
+				}
+
+				house->activeFrame = frame;
+				if ( distance <= loadRadius + 5.5f && NB_IS_NULL( house->id ) && house->urgent == false )
+				{
+					house->urgent = true;
+					city->urgent[city->urgentCount++] = index;
+				}
+			}
+		}
+	}
+}
+
+// Create the houses that moving bodies came near, then the ones within the radius of the camera, nearest first, at most
+// so many together
+static void LoadCity( City* city, b3Vec3 camera, float radius, int budget )
+{
+	int count = 0;
+	for ( int k = 0; k < city->urgentCount; ++k )
+	{
+		int index = city->urgent[k];
+		city->candidates[count++] = (CityCandidate){ -1.0f, index };
+		city->houses[index].urgent = false;
+	}
+	city->urgentCount = 0;
+
+	int i0, i1, j0, j1;
+	CityRange( city, camera, radius, &i0, &i1, &j0, &j1 );
+	for ( int j = j0; j <= j1; ++j )
+	{
+		for ( int i = i0; i <= i1; ++i )
+		{
+			int index = j * city->side + i;
+			float distance = CityDistance( city, index, camera );
+			if ( distance <= radius && NB_IS_NULL( city->houses[index].id ) && city->houses[index].urgent == false )
+			{
+				city->candidates[count++] = (CityCandidate){ distance, index };
+			}
+		}
+	}
+
+	// The urgent ones that do not fit come back with the next step that moves something near them
+	qsort( city->candidates, (size_t)count, sizeof( CityCandidate ), CompareCandidates );
+	count = b3MinInt( count, budget );
+	for ( int k = 0; k < count; ++k )
+	{
+		int index = city->candidates[k].index;
+		BuildHouse( city->batch + k, CityHousePosition( city, index ), (uint32_t)( 100 + index ), &city->concrete );
+		city->defs[k] = city->batch[k].def;
+		city->lists[k] = city->batch[k].pieces;
+		city->counts[k] = city->batch[k].pieceCount;
+		city->urgentLoads += city->candidates[k].distance < 0.0f ? 1 : 0;
+	}
+
+	nbCreateDestructibles( city->scene.world, city->defs, city->lists, city->counts, count, city->ids );
+	for ( int k = 0; k < count; ++k )
+	{
+		int index = city->candidates[k].index;
+		city->houses[index].id = city->ids[k];
+		city->loaded[city->loadedCount++] = index;
+	}
+	city->loads += count;
+	city->maxLoaded = b3MaxInt( city->maxLoaded, city->loadedCount );
+}
+
+// Destroy the houses beyond the radius of the camera that no moving body came near for five seconds and that can go,
+// at most so many. A house that cannot is asked again half a second later.
+static void UnloadCity( City* city, b3Vec3 camera, float radius, int budget, int frame )
+{
+	int count = 0;
+	for ( int k = 0; k < city->loadedCount && count < budget; )
+	{
+		int index = city->loaded[k];
+		CityHouse* house = city->houses + index;
+		if ( frame < house->nextCheck || frame < house->activeFrame + 300 || CityDistance( city, index, camera ) <= radius )
+		{
+			k += 1;
+			continue;
+		}
+
+		if ( nbDestructible_CanUnload( house->id, 2.0f ) == false )
+		{
+			house->nextCheck = frame + 30;
+			k += 1;
+			continue;
+		}
+
+		nbDestroyDestructible( house->id );
+		house->id = nb_nullDestructibleId;
+		city->loaded[k] = city->loaded[--city->loadedCount];
+		count += 1;
+	}
+	city->unloads += count;
+}
+
+// A city of 256 x 256 houses, far too large to hold at once, streamed around a camera that flies 900 m through it at
+// 30 m/s. The houses within 120 m of the camera are loaded, nearest first and at most two per frame, and so are the
+// houses within 10 m of any body that moves. The ones beyond 140 m go as soon as no body moved within 20 m of them for
+// five seconds and nbDestructible_CanUnload lets them. A grenade falls every fifth frame on a house within 60 m of the
+// camera, and the damaged houses stay behind with their rubble.
+static void BenchmarkCity( int workerCount )
+{
+	enum
+	{
+		side = 256,
+		frameCount = 1800,
+		loadBudget = 2,
+		unloadBudget = 4,
+	};
+	const float loadRadius = 120.0f, unloadRadius = 140.0f, fireRadius = 60.0f, speed = 30.0f;
+	const float activeLoadRadius = 10.0f, activeHoldRadius = 20.0f;
+
+	City city = { 0 };
+	city.side = side;
+	b3WorldDef worldDef = b3DefaultWorldDef();
+	worldDef.workerCount = (uint32_t)workerCount;
+	city.scene.physicsWorld = b3CreateWorld( &worldDef );
+	b3BodyDef bodyDef = b3DefaultBodyDef();
+	bodyDef.position = (b3Vec3){ 0.0f, -1.0f, 0.0f };
+	b3BodyId groundId = b3CreateBody( city.scene.physicsWorld, &bodyDef );
+	b3BoxHull box = b3MakeBoxHull( 7.0f * (float)side + 50.0f, 1.0f, 6.0f * (float)side + 50.0f );
+	b3ShapeDef shapeDef = b3DefaultShapeDef();
+	b3CreateHullShape( groundId, &shapeDef, &box.base );
+	nbWorldDef def = nbDefaultWorldDef();
+	def.physicsWorld = city.scene.physicsWorld;
+	def.workerCount = workerCount;
+	def.fragmentScale = 4.0f;
+	city.scene.world = nbCreateWorld( &def );
+
+	city.concrete = nbDefaultMaterial();
+	city.concrete.strength = 1.1e6f;
+	city.concrete.fragmentSize = 0.13f;
+	int houseCount = side * side;
+	city.houses = calloc( (size_t)houseCount, sizeof( CityHouse ) );
+	city.loaded = malloc( sizeof( int ) * (size_t)houseCount );
+	city.urgent = malloc( sizeof( int ) * (size_t)houseCount );
+	city.candidates = malloc( sizeof( CityCandidate ) * (size_t)houseCount );
+	for ( int h = 0; h < houseCount; ++h )
+	{
+		city.houses[h].activeFrame = -1000;
+	}
+
+	// Room for everything around the start at once
+	int startRoom = ( (int)( 2.0f * loadRadius / 12.0f ) + 3 ) * ( (int)( 2.0f * loadRadius / 12.0f ) + 3 );
+	city.batch = malloc( sizeof( House ) * (size_t)startRoom );
+	city.defs = malloc( sizeof( nbDestructibleDef ) * (size_t)startRoom );
+	city.lists = malloc( sizeof( nbPieceDef* ) * (size_t)startRoom );
+	city.counts = malloc( sizeof( int ) * (size_t)startRoom );
+	city.ids = malloc( sizeof( nbDestructibleId ) * (size_t)startRoom );
+
+	b3Vec3 camera = { -450.0f, 0.0f, 6.0f };
+	int64_t baseBytes = nbGetByteCount() + b3GetByteCount();
+	uint64_t ticks = b3GetTicks();
+	LoadCity( &city, camera, loadRadius, startRoom );
+	float startTime = b3GetMilliseconds( ticks );
+	int startCount = city.loadedCount;
+	int64_t houseBytes = ( nbGetByteCount() + b3GetByteCount() - baseBytes ) / b3MaxInt( startCount, 1 );
+	int64_t maxBytes = 0;
+
+	static float streamTimes[frameCount], impactTimes[frameCount], stepTimes[frameCount], updateTimes[frameCount],
+		frameTimes[frameCount];
+	nbRandom rng = nbMakeRandom( 11, 0 );
+	int missed = 0;
+	nbImpactDef impact = { 0 };
+	impact.radius = 1.3f;
+	impact.damage = 3.0e5f;
+	impact.ejectSpeed = 12.0f;
+	for ( int frame = 0; frame < frameCount; ++frame )
+	{
+		camera.x += speed / 60.0f;
+		ticks = b3GetTicks();
+		UnloadCity( &city, camera, unloadRadius, unloadBudget, frame );
+		LoadCity( &city, camera, loadRadius, loadBudget );
+		float streamTime = b3GetMilliseconds( ticks );
+
+		float impactTime = 0.0f;
+		if ( frame % 5 == 0 )
+		{
+			// A wall of a random house near the camera, on either story
+			float angle = nbRandomRange( &rng, 0.0f, 2.0f * B3_PI );
+			float reach = fireRadius * sqrtf( nbRandomRange( &rng, 0.0f, 1.0f ) );
+			float half = 0.5f * (float)( side - 1 );
+			int i = (int)floorf( ( camera.x + reach * cosf( angle ) ) / 14.0f + half + 0.5f );
+			int j = (int)floorf( ( camera.z + reach * sinf( angle ) ) / 12.0f + half + 0.5f );
+			int wall = (int)nbRandomRange( &rng, 0.0f, 3.999f );
+			float along = nbRandomRange( &rng, -1.0f, 1.0f );
+			float height = nbRandomRange( &rng, 0.0f, 1.0f ) < 0.5f ? 1.2f : 4.4f;
+			if ( 0 <= i && i < side && 0 <= j && j < side )
+			{
+				missed += NB_IS_NULL( city.houses[j * side + i].id ) ? 1 : 0;
+				b3Vec3 local = wall == 0 ? (b3Vec3){ 4.2f * along, height, 3.4f }
+							 : wall == 1 ? (b3Vec3){ 4.2f * along, height, -3.4f }
+							 : wall == 2 ? (b3Vec3){ 4.7f, height, 3.0f * along }
+										 : (b3Vec3){ -4.7f, height, 3.0f * along };
+				impact.point = b3Add( CityHousePosition( &city, j * side + i ), local );
+				impactTime = nbWorld_ApplyImpact( city.scene.world, &impact ).totalTime;
+
+				b3ExplosionDef explosion = b3DefaultExplosionDef();
+				explosion.position = impact.point;
+				explosion.radius = impact.radius;
+				explosion.falloff = impact.radius;
+				explosion.impulsePerArea = 40.0f * impact.ejectSpeed;
+				b3World_Explode( city.scene.physicsWorld, &explosion );
+			}
+		}
+
+		ticks = b3GetTicks();
+		b3World_Step( city.scene.physicsWorld, 1.0f / 60.0f, 4 );
+		float stepTime = b3GetMilliseconds( ticks );
+		ticks = b3GetTicks();
+		MarkCityActivity( &city, activeLoadRadius, activeHoldRadius, frame );
+		streamTime += b3GetMilliseconds( ticks );
+		ticks = b3GetTicks();
+		nbWorld_Update( city.scene.world, 1.0f / 60.0f );
+		float updateTime = b3GetMilliseconds( ticks );
+
+		streamTimes[frame] = streamTime;
+		impactTimes[frame] = impactTime;
+		stepTimes[frame] = stepTime;
+		updateTimes[frame] = updateTime;
+		frameTimes[frame] = streamTime + impactTime + stepTime + updateTime;
+		int64_t bytes = nbGetByteCount() + b3GetByteCount();
+		maxBytes = bytes > maxBytes ? bytes : maxBytes;
+	}
+
+	int damaged = 0;
+	for ( int k = 0; k < city.loadedCount; ++k )
+	{
+		damaged += nbDestructible_IsIntact( city.houses[city.loaded[k]].id ) ? 0 : 1;
+	}
+
+	printf( "  %d houses on %.1f x %.1f km, %d of them loaded at first in %.0f ms, %.2f MB each, all would take %.1f GB\n",
+			houseCount, 14.0f * (float)side / 1000.0f, 12.0f * (float)side / 1000.0f, startCount, startTime,
+			(double)houseBytes / 1048576.0, (double)houseBytes * (double)houseCount / 1073741824.0 );
+	printf( "  then %d houses loaded, %d of them for moving bodies, and %d unloaded in %d frames, at most %d at once, %d "
+			"damaged ones stay, %d grenades on houses not loaded\n",
+			city.loads - startCount, city.urgentLoads, city.unloads, frameCount, city.maxLoaded, damaged, missed );
+
+	float* series[5] = { frameTimes, streamTimes, stepTimes, updateTimes, impactTimes };
+	const char* names[5] = { "frame", "streaming", "physics step", "update", "impacts" };
+	for ( int k = 0; k < 5; ++k )
+	{
+		float total = 0.0f;
+		for ( int i = 0; i < frameCount; ++i )
+		{
+			total += series[k][i];
+		}
+		qsort( series[k], frameCount, sizeof( float ), CompareFloats );
+		printf( "  %-13s avg %6.2f ms  p95 %6.2f ms  max %6.2f ms\n", names[k], total / (float)frameCount,
+				series[k][frameCount * 95 / 100], series[k][frameCount - 1] );
+	}
+
+	nbStats stats = nbWorld_GetStats( city.scene.world );
+	printf( "  memory at most %.0f MB, at the end %d chunks, %d rubble\n", (double)maxBytes / 1048576.0, stats.chunkCount,
+			stats.rubbleCount );
+
+	free( city.houses );
+	free( city.loaded );
+	free( city.urgent );
+	free( city.candidates );
+	free( city.batch );
+	free( city.defs );
+	free( city.lists );
+	free( city.counts );
+	free( city.ids );
+	DestroyScene( &city.scene );
+}
+
 int main( int argc, char** argv )
 {
 	int workerCount = argc > 1 ? atoi( argv[1] ) : 1;
@@ -547,5 +916,8 @@ int main( int argc, char** argv )
 	printf( "\nTown under fire (every step: grenades, Box3D step, destruction update)\n" );
 	BenchmarkTown( workerCount, 1.0f );
 	BenchmarkTown( workerCount, 2.0f );
+
+	printf( "\nCity streamed around a camera flying through it, fragment scale 4.0 (streaming, grenades, Box3D step, update)\n" );
+	BenchmarkCity( workerCount );
 	return 0;
 }
