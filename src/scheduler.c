@@ -38,6 +38,9 @@ typedef struct nbSchedulerTask
 	b3TaskCallback* callback;
 	void* context;
 	int state;
+
+	// Runs in the background, see nbSchedulerEnqueueBackgroundTask
+	bool background;
 } nbSchedulerTask;
 
 // One mutex guards the task slots. Nebenan enqueues a task per worker and operation, so the lock
@@ -49,6 +52,9 @@ struct nbScheduler
 	nbCondition workDone;
 	nbSchedulerTask tasks[NB_SCHEDULER_MAX_TASKS];
 	int pendingCount;
+
+	// Slots taken by tasks in the background, at most half of them
+	int backgroundCount;
 	bool shutdown;
 	int threadCount;
 	nbThread threads[NB_SCHEDULER_MAX_THREADS];
@@ -150,16 +156,26 @@ static void nbConditionBroadcast( nbCondition* condition )
 
 #endif
 
-static nbSchedulerTask* nbFindPendingTask( nbScheduler* scheduler )
+// The first pending task, one in the background only if there is no other and they are allowed
+static nbSchedulerTask* nbFindPendingTask( nbScheduler* scheduler, bool allowBackground )
 {
+	nbSchedulerTask* background = NULL;
 	for ( int i = 0; i < NB_SCHEDULER_MAX_TASKS; ++i )
 	{
-		if ( scheduler->tasks[i].state == nb_taskPending )
+		nbSchedulerTask* task = scheduler->tasks + i;
+		if ( task->state != nb_taskPending )
 		{
-			return scheduler->tasks + i;
+			continue;
 		}
+
+		if ( task->background == false )
+		{
+			return task;
+		}
+
+		background = background == NULL ? task : background;
 	}
-	return NULL;
+	return allowBackground ? background : NULL;
 }
 
 // Called and returns with the mutex held
@@ -191,7 +207,7 @@ static void nbWorkerLoop( nbScheduler* scheduler )
 			break;
 		}
 
-		nbSchedulerTask* task = nbFindPendingTask( scheduler );
+		nbSchedulerTask* task = nbFindPendingTask( scheduler, true );
 		NB_ASSERT( task != NULL );
 		nbRunTask( scheduler, task );
 	}
@@ -281,13 +297,13 @@ void nbDestroyScheduler( nbScheduler* scheduler )
 	nbFree( scheduler, sizeof( nbScheduler ) );
 }
 
-void* nbSchedulerEnqueueTask( b3TaskCallback* task, void* taskContext, void* userContext, const char* taskName )
+static void* nbEnqueue( nbScheduler* scheduler, b3TaskCallback* task, void* taskContext, bool background )
 {
-	NB_UNUSED( taskName );
-	nbScheduler* scheduler = userContext;
-
 	nbMutexLock( &scheduler->mutex );
-	for ( int i = 0; i < NB_SCHEDULER_MAX_TASKS; ++i )
+
+	// Tasks in the background leave half of the slots to the others, Nebenan enqueues fewer of them at a time
+	bool full = background && scheduler->backgroundCount >= NB_SCHEDULER_MAX_TASKS / 2;
+	for ( int i = 0; full == false && i < NB_SCHEDULER_MAX_TASKS; ++i )
 	{
 		nbSchedulerTask* slot = scheduler->tasks + i;
 		if ( slot->state == nb_taskFree )
@@ -295,7 +311,9 @@ void* nbSchedulerEnqueueTask( b3TaskCallback* task, void* taskContext, void* use
 			slot->callback = task;
 			slot->context = taskContext;
 			slot->state = nb_taskPending;
+			slot->background = background;
 			scheduler->pendingCount += 1;
+			scheduler->backgroundCount += background ? 1 : 0;
 			nbConditionSignal( &scheduler->workAvailable );
 			nbMutexUnlock( &scheduler->mutex );
 			return slot;
@@ -308,6 +326,17 @@ void* nbSchedulerEnqueueTask( b3TaskCallback* task, void* taskContext, void* use
 	return NULL;
 }
 
+void* nbSchedulerEnqueueTask( b3TaskCallback* task, void* taskContext, void* userContext, const char* taskName )
+{
+	NB_UNUSED( taskName );
+	return nbEnqueue( userContext, task, taskContext, false );
+}
+
+void* nbSchedulerEnqueueBackgroundTask( b3TaskCallback* task, void* taskContext, nbScheduler* scheduler )
+{
+	return nbEnqueue( scheduler, task, taskContext, true );
+}
+
 void nbSchedulerFinishTask( void* userTask, void* userContext )
 {
 	nbScheduler* scheduler = userContext;
@@ -316,8 +345,9 @@ void nbSchedulerFinishTask( void* userTask, void* userContext )
 	nbMutexLock( &scheduler->mutex );
 	while ( target->state != nb_taskDone )
 	{
-		// Help instead of sleeping. This also runs the target itself if no thread picked it up yet.
-		nbSchedulerTask* pending = nbFindPendingTask( scheduler );
+		// The target itself if no thread picked it up yet, then help with what is pending instead of sleeping, except with
+		// tasks in the background, they may take long
+		nbSchedulerTask* pending = target->state == nb_taskPending ? target : nbFindPendingTask( scheduler, false );
 		if ( pending != NULL )
 		{
 			nbRunTask( scheduler, pending );
@@ -327,6 +357,7 @@ void nbSchedulerFinishTask( void* userTask, void* userContext )
 			nbConditionWait( &scheduler->workDone, &scheduler->mutex );
 		}
 	}
+	scheduler->backgroundCount -= target->background ? 1 : 0;
 	target->state = nb_taskFree;
 	nbMutexUnlock( &scheduler->mutex );
 }

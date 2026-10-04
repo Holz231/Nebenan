@@ -3614,7 +3614,7 @@ static void nbCheckSupports( nbWorld* world )
 // The load check reads the second moments of the bonds. The destructibles it can check that did not keep them get them
 // now, measured again on the shapes of their chunks. Bonds between Voronoi cells kept the moments of the face the cells
 // were cut along, so theirs can differ in the last bits from what they would have kept.
-static void nbComputeBondMoments( nbWorld* world )
+void nbComputeBondMoments( nbWorld* world )
 {
 	int destructibleCount = world->destructibles.count;
 	if ( destructibleCount == 0 )
@@ -3993,6 +3993,7 @@ void nbWorld_SetWorkerCount( nbWorldId worldId, int count )
 		return;
 	}
 
+	nbWaitForCreations( world );
 	nbStopWorkers( world );
 	nbStartWorkers( world, count );
 }
@@ -4064,6 +4065,9 @@ void nbDestroyWorld( nbWorldId worldId )
 	{
 		return;
 	}
+
+	nbWaitForCreations( world );
+	nbDestroyCreations( world );
 
 	if ( b3World_IsValid( world->physicsWorld ) )
 	{

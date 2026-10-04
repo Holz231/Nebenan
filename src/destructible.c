@@ -2,6 +2,7 @@
 
 #include "fracture.h"
 #include "hull_builder.h"
+#include "scheduler.h"
 #include "world.h"
 
 #include <float.h>
@@ -465,8 +466,8 @@ enum
 #define NB_CONTACT_TOLERANCE 1.0e-3f
 
 // Materials, anchors and pieces of a destructible, and the sites of its pre-fracture. Draws the sites of all pieces in
-// order, so the result does not depend on the number of workers.
-static void nbPrepareLoad( nbWorld* world, nbLoad* load )
+// order, so the result does not depend on the number of workers. Whether the bonds get their moments is set before.
+static void nbPrepareLoad( nbLoad* load )
 {
 	const nbDestructibleDef* def = load->def;
 	const nbPieceDef* pieces = load->pieces;
@@ -481,9 +482,6 @@ static void nbPrepareLoad( nbWorld* world, nbLoad* load )
 		load->anchors[i] = def->anchors[i];
 		load->anchors[i].normal = b3Normalize( def->anchors[i].normal );
 	}
-
-	// Which destructibles have storeys is known once their chunks are, the bonds come before
-	load->bondMoments = world->def.supportScale > 0.0f;
 
 	// Default anchor: the lowest point of all pieces along local -Y
 	nbPoly* poly = nbArena_AllocArray( arena, nbPoly, 1 );
@@ -804,13 +802,19 @@ static void nbMeasureContacts( void* context, int item )
 	}
 }
 
-// Find the pairs of new chunks that touch and measure their contact areas on the workers
-static void nbMeasureLoadContacts( nbWorld* world, nbLoad* load )
+// Find the pairs of new chunks that touch and make room for their contact areas. Returns the number of blocks to measure.
+static int nbFindLoadContacts( nbLoad* load )
 {
 	nbFindTouchingPairs( load, NB_CONTACT_TOLERANCE );
 	load->areas = nbArena_AllocArray( load->arena, float, load->pairs.count + 1 );
 	load->geometries = nbArena_AllocArray( load->arena, nbBondGeometry, load->pairs.count + 1 );
-	int blockCount = ( load->pairs.count + NB_CONTACT_BLOCK - 1 ) / NB_CONTACT_BLOCK;
+	return ( load->pairs.count + NB_CONTACT_BLOCK - 1 ) / NB_CONTACT_BLOCK;
+}
+
+// Find the pairs of new chunks that touch and measure their contact areas on the workers
+static void nbMeasureLoadContacts( nbWorld* world, nbLoad* load )
+{
+	int blockCount = nbFindLoadContacts( load );
 	nbParallelFor( world, blockCount, NB_PARALLEL_CONTACT_BLOCKS, nbMeasureContacts, load );
 }
 
@@ -965,8 +969,9 @@ nbDestructibleId nbCreateDestructible( nbWorldId worldId, const nbDestructibleDe
 		.pieceCount = pieceCount,
 		.arena = &world->arena,
 		.workerArenas = world->workerArenas,
+		.bondMoments = world->def.supportScale > 0.0f,
 	};
-	nbPrepareLoad( world, &load );
+	nbPrepareLoad( &load );
 	nbStartFractureJobs( world, &load.fracture, load.jobs, load.jobCount, NULL, NULL, load.arena, load.workerArenas );
 	nbFinishFractureJobs( world, &load.fracture );
 	nbCollectLoadChunks( &load );
@@ -999,6 +1004,7 @@ void nbCreateDestructibles( nbWorldId worldId, const nbDestructibleDef* defs, co
 
 	nbLoad loads[2];
 	nbBeginOperation( world );
+	bool bondMoments = world->def.supportScale > 0.0f;
 	int current = 0;
 	while ( current < count && ( pieceLists[current] == NULL || pieceCounts[current] <= 0 ) )
 	{
@@ -1010,8 +1016,8 @@ void nbCreateDestructibles( nbWorldId worldId, const nbDestructibleDef* defs, co
 	{
 		NB_ASSERT( defs[current].internalValue == NB_SECRET_COOKIE );
 		loads[0] = (nbLoad){ .def = defs + current, .pieces = pieceLists[current], .pieceCount = pieceCounts[current],
-							 .arena = &world->arena, .workerArenas = world->workerArenas };
-		nbPrepareLoad( world, loads + 0 );
+							 .arena = &world->arena, .workerArenas = world->workerArenas, .bondMoments = bondMoments };
+		nbPrepareLoad( loads + 0 );
 		nbStartFractureJobs( world, &loads[0].fracture, loads[0].jobs, loads[0].jobCount, NULL, NULL, loads[0].arena,
 							 loads[0].workerArenas );
 	}
@@ -1041,8 +1047,8 @@ void nbCreateDestructibles( nbWorldId worldId, const nbDestructibleDef* defs, co
 			}
 
 			*other = (nbLoad){ .def = defs + next, .pieces = pieceLists[next], .pieceCount = pieceCounts[next],
-							   .arena = otherArena, .workerArenas = otherWorkerArenas };
-			nbPrepareLoad( world, other );
+							   .arena = otherArena, .workerArenas = otherWorkerArenas, .bondMoments = bondMoments };
+			nbPrepareLoad( other );
 			nbStartFractureJobs( world, &other->fracture, other->jobs, other->jobCount, NULL, NULL, other->arena,
 								 other->workerArenas );
 		}
@@ -1061,6 +1067,248 @@ void nbCreateDestructibles( nbWorldId worldId, const nbDestructibleDef* defs, co
 	{
 		nbArena_Destroy( workerArenas + i );
 	}
+}
+
+// A destructible the workers prepare in the background, see nbStartCreating. Everything but the commit runs in one task,
+// in scratch memory of its own.
+typedef struct nbBackgroundLoad
+{
+	nbLoad load;
+	nbArena arena;
+	void* userTask;
+
+	// The entry has pieces
+	bool active;
+} nbBackgroundLoad;
+
+// The cells of all jobs of a load on the calling thread, the same cells the workers compute in nbStartFractureJobs
+static void nbComputeLoadCells( nbLoad* load )
+{
+	int siteCapacity = 0;
+	for ( int j = 0; j < load->jobCount; ++j )
+	{
+		nbFractureJob* job = load->jobs + j;
+		job->cells = nbArena_AllocArray( load->arena, nbCell, job->siteCount );
+		siteCapacity = job->siteCount > siteCapacity ? job->siteCount : siteCapacity;
+	}
+
+	if ( siteCapacity == 0 )
+	{
+		return;
+	}
+
+	nbCellScratch scratch;
+	nbCellScratch_Create( &scratch, load->arena, siteCapacity );
+	nbFractureCounters counters = { 0 };
+	for ( int j = 0; j < load->jobCount; ++j )
+	{
+		for ( int s = 0; s < load->jobs[j].siteCount; ++s )
+		{
+			nbComputeCell( load->jobs + j, s, load->arena, &scratch, &counters );
+		}
+	}
+	load->hullFallbackCount += counters.hullFallbackCount;
+}
+
+// Everything of a load that depends only on its definition, on one thread
+static void nbPrepareInBackground( void* context )
+{
+	nbLoad* load = &( (nbBackgroundLoad*)context )->load;
+	nbPrepareLoad( load );
+	nbComputeLoadCells( load );
+	nbCollectLoadChunks( load );
+	int blockCount = nbFindLoadContacts( load );
+	for ( int i = 0; i < blockCount; ++i )
+	{
+		nbMeasureContacts( load, i );
+	}
+}
+
+static nbCreation* nbGetCreationFromId( nbCreationId id, nbWorld** worldOut )
+{
+	if ( id.index1 < 1 || id.world0 >= NB_MAX_WORLDS )
+	{
+		return NULL;
+	}
+
+	nbWorld* world = nbGetWorld( id.world0 );
+	if ( world->inUse == false || id.index1 > world->creations.count )
+	{
+		return NULL;
+	}
+
+	nbCreation* creation = world->creations.data + ( id.index1 - 1 );
+	if ( creation->inUse == false || creation->generation != id.generation )
+	{
+		return NULL;
+	}
+
+	*worldOut = world;
+	return creation;
+}
+
+nbCreationId nbStartCreating( nbWorldId worldId, const nbDestructibleDef* defs, const nbPieceDef* const* pieceLists,
+							  const int* pieceCounts, int count )
+{
+	nbWorld* world = nbGetWorldFromId( worldId );
+	if ( world == NULL || count <= 0 )
+	{
+		return nb_nullCreationId;
+	}
+
+	int index;
+	if ( world->freeCreations.count > 0 )
+	{
+		index = world->freeCreations.data[--world->freeCreations.count];
+	}
+	else
+	{
+		nbCreation empty = { 0 };
+		nbArray_Push( world->creations, empty );
+		index = world->creations.count - 1;
+	}
+
+	nbCreation* creation = world->creations.data + index;
+	creation->loads = nbAlloc( sizeof( nbBackgroundLoad ) * (size_t)count );
+	creation->count = count;
+	creation->inUse = true;
+
+	// The tasks run on the threads of the world in the background, or in the task system of the application, or here
+	bool bondMoments = world->def.supportScale > 0.0f;
+	for ( int i = 0; i < count; ++i )
+	{
+		nbBackgroundLoad* item = creation->loads + i;
+		*item = (nbBackgroundLoad){ 0 };
+		if ( pieceLists[i] == NULL || pieceCounts[i] <= 0 )
+		{
+			continue;
+		}
+
+		NB_ASSERT( defs[i].internalValue == NB_SECRET_COOKIE );
+		nbArena_Create( &item->arena, 256 * 1024 );
+		item->load = (nbLoad){ .def = defs + i, .pieces = pieceLists[i], .pieceCount = pieceCounts[i], .arena = &item->arena,
+							   .bondMoments = bondMoments };
+		item->active = true;
+		if ( world->scheduler != NULL )
+		{
+			item->userTask = nbSchedulerEnqueueBackgroundTask( nbPrepareInBackground, item, world->scheduler );
+		}
+		else if ( world->enqueueTask != NULL )
+		{
+			item->userTask = world->enqueueTask( nbPrepareInBackground, item, world->userTaskContext, "nebenan creation" );
+		}
+		else
+		{
+			nbPrepareInBackground( item );
+		}
+	}
+
+	return (nbCreationId){ index + 1, world->worldIndex, creation->generation };
+}
+
+static void nbWaitForLoad( nbWorld* world, nbBackgroundLoad* item )
+{
+	if ( item->userTask != NULL )
+	{
+		world->finishTask( item->userTask, world->userTaskContext );
+		item->userTask = NULL;
+	}
+}
+
+static void nbFreeCreation( nbWorld* world, int index )
+{
+	nbCreation* creation = world->creations.data + index;
+	nbFree( creation->loads, sizeof( nbBackgroundLoad ) * (size_t)creation->count );
+	creation->loads = NULL;
+	creation->count = 0;
+	creation->inUse = false;
+	creation->generation += 1;
+	nbArray_Push( world->freeCreations, index );
+}
+
+void nbFinishCreating( nbCreationId creationId, nbDestructibleId* ids )
+{
+	nbWorld* world;
+	nbCreation* creation = nbGetCreationFromId( creationId, &world );
+	if ( creation == NULL )
+	{
+		return;
+	}
+
+	// Built in like nbCreateDestructibles would at this point. Should the load check have come on or gone off since the
+	// start, the bonds get their moments as if it had been on or off all along: measured afterwards like those of the
+	// destructibles that existed before, or not kept.
+	nbBeginOperation( world );
+	bool bondMoments = world->def.supportScale > 0.0f;
+	bool measure = false;
+	for ( int i = 0; i < creation->count; ++i )
+	{
+		nbBackgroundLoad* item = creation->loads + i;
+		ids[i] = nb_nullDestructibleId;
+		if ( item->active == false )
+		{
+			continue;
+		}
+
+		nbWaitForLoad( world, item );
+		if ( item->load.bondMoments != bondMoments )
+		{
+			measure = measure || bondMoments;
+			item->load.bondMoments = false;
+		}
+		ids[i] = nbCommitLoad( world, &item->load );
+		nbArena_Destroy( &item->arena );
+	}
+
+	if ( measure )
+	{
+		nbComputeBondMoments( world );
+	}
+
+	nbFreeCreation( world, creationId.index1 - 1 );
+}
+
+void nbWaitForCreations( nbWorld* world )
+{
+	for ( int c = 0; c < world->creations.count; ++c )
+	{
+		nbCreation* creation = world->creations.data + c;
+		for ( int i = 0; creation->inUse && i < creation->count; ++i )
+		{
+			nbWaitForLoad( world, creation->loads + i );
+		}
+	}
+}
+
+void nbDestroyCreations( nbWorld* world )
+{
+	for ( int c = 0; c < world->creations.count; ++c )
+	{
+		nbCreation* creation = world->creations.data + c;
+		for ( int i = 0; creation->inUse && i < creation->count; ++i )
+		{
+			nbBackgroundLoad* item = creation->loads + i;
+			if ( item->active == false )
+			{
+				continue;
+			}
+
+			for ( int k = 0; k < item->load.chunkCount; ++k )
+			{
+				nbShape_Destroy( item->load.chunks[k].shape );
+			}
+			nbArray_Free( item->load.pairs );
+			nbArena_Destroy( &item->arena );
+		}
+
+		if ( creation->inUse )
+		{
+			nbFreeCreation( world, c );
+		}
+	}
+
+	nbArray_Free( world->creations );
+	nbArray_Free( world->freeCreations );
 }
 
 nbDestructibleId nbCreateBox( nbWorldId worldId, const nbDestructibleDef* def, b3Vec3 halfExtents )

@@ -320,6 +320,16 @@ typedef struct nbCollisionImpact
 	uint16_t actorGeneration;
 } nbCollisionImpact;
 
+// Destructibles the workers prepare in the background, one load each, see nbStartCreating
+struct nbBackgroundLoad;
+typedef struct nbCreation
+{
+	struct nbBackgroundLoad* loads;
+	int count;
+	uint16_t generation;
+	bool inUse;
+} nbCreation;
+
 NB_ARRAY_DECLARE( nbChunk, nbChunkArray );
 NB_ARRAY_DECLARE( nbBond, nbBondArray );
 NB_ARRAY_DECLARE( nbBondMoments, nbBondMomentsArray );
@@ -327,6 +337,7 @@ NB_ARRAY_DECLARE( nbActor, nbActorArray );
 NB_ARRAY_DECLARE( nbDestructible, nbDestructibleArray );
 NB_ARRAY_DECLARE( nbChunkId, nbChunkIdArray );
 NB_ARRAY_DECLARE( nbCollisionImpact, nbCollisionImpactArray );
+NB_ARRAY_DECLARE( nbCreation, nbCreationArray );
 
 typedef struct nbWorld
 {
@@ -346,6 +357,10 @@ typedef struct nbWorld
 	nbIntArray freeBonds;
 	nbIntArray freeActors;
 	nbIntArray freeDestructibles;
+
+	// Destructibles the workers prepare in the background until they are built in, see nbStartCreating
+	nbCreationArray creations;
+	nbIntArray freeCreations;
 
 	// Box3D shape index to chunk index
 	nbIntArray shapeToChunk;
@@ -525,6 +540,16 @@ void nbDestroyActor( nbWorld* world, int actorIndex );
 
 // Destroy all actors, chunks, bonds, bodies and shapes of a destructible and report its chunks as destroyed
 void nbDestroyDestructibleParts( nbWorld* world, int destructibleIndex );
+
+// Wait until the workers are done with every destructible they prepare in the background, before they stop
+void nbWaitForCreations( nbWorld* world );
+
+// Drop what the workers prepared and was never built in, when the world goes
+void nbDestroyCreations( nbWorld* world );
+
+// Measure the second moments of the bonds of all destructibles without storeys that do not have them yet, see
+// nbBondMoments
+void nbComputeBondMoments( nbWorld* world );
 
 bool nbIsAnchored( const nbDestructible* destructible, const nbShape* shape );
 

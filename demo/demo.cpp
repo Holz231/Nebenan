@@ -162,6 +162,8 @@ struct FpsMeter
 	}
 };
 
+struct PendingStructure;
+
 // A house of the large city: its id while it is loaded, the last physics step a moving body came near it, and when to
 // ask again whether it can go
 struct CityHouse
@@ -170,6 +172,9 @@ struct CityHouse
 	int activeStep = -1000000;
 	int nextCheck = 0;
 	bool urgent = false;
+
+	// The workers prepare it in the background
+	bool loading = false;
 };
 
 // A city far too large to hold at once, see BuildCityScene. Only the houses near the camera and near anything that moves
@@ -179,6 +184,13 @@ struct City
 	std::vector<CityHouse> houses;
 	std::vector<int> loaded;
 	std::vector<int> urgent;
+
+	// The houses the workers prepare in the background, built in with the next frame, with their definitions and what
+	// these point to
+	nbCreationId creation = {};
+	std::vector<int> pending;
+	std::vector<std::unique_ptr<PendingStructure>> pendingHouses;
+	std::vector<nbDestructibleDef> pendingDefs;
 
 	// Physics steps so far, the clock of the streaming
 	int step = 0;
@@ -870,7 +882,8 @@ static void MarkCityActivity( App& app )
 				}
 
 				house.activeStep = city.step;
-				if ( distance <= CityActiveLoadRadius + 5.5f && NB_IS_NULL( house.id ) && house.urgent == false )
+				if ( distance <= CityActiveLoadRadius + 5.5f && NB_IS_NULL( house.id ) && house.urgent == false &&
+					 house.loading == false )
 				{
 					house.urgent = true;
 					city.urgent.push_back( index );
@@ -880,18 +893,17 @@ static void MarkCityActivity( App& app )
 	}
 }
 
-// Create the houses that moving bodies came near, then the ones within the radius of the camera, nearest first, at most
-// so many at once
-static void LoadCity( App& app, int budget )
+// The houses that moving bodies came near, then the ones within the radius of the camera, nearest first, at most so many
+static std::vector<int> PickCityHouses( App& app, int budget )
 {
 	City& city = app.city;
+
+	// The urgent ones keep their mark until the camera's are collected, so none comes twice
 	std::vector<std::pair<float, int>> candidates;
 	for ( int index : city.urgent )
 	{
 		candidates.push_back( { -1.0f, index } );
-		city.houses[(size_t)index].urgent = false;
 	}
-	city.urgent.clear();
 
 	b3Vec3 camera = app.camera.position;
 	int i0, i1, j0, j1;
@@ -903,29 +915,78 @@ static void LoadCity( App& app, int budget )
 			int index = j * CitySide + i;
 			float distance = CityDistance( index, camera );
 			const CityHouse& house = city.houses[(size_t)index];
-			if ( distance <= app.cityRadius && NB_IS_NULL( house.id ) && house.urgent == false )
+			if ( distance <= app.cityRadius && NB_IS_NULL( house.id ) && house.urgent == false && house.loading == false )
 			{
 				candidates.push_back( { distance, index } );
 			}
 		}
 	}
 
+	for ( int index : city.urgent )
+	{
+		city.houses[(size_t)index].urgent = false;
+	}
+	city.urgent.clear();
+
 	// Urgent ones that do not fit come back with the next step that moves something near them
 	std::sort( candidates.begin(), candidates.end() );
 	candidates.resize( b3MinInt( (int)candidates.size(), budget ) );
-	std::vector<std::unique_ptr<PendingStructure>> pending;
+	std::vector<int> picked;
 	for ( const std::pair<float, int>& candidate : candidates )
 	{
-		pending.push_back( PrepareCityHouse( candidate.second ) );
+		picked.push_back( candidate.second );
+	}
+	return picked;
+}
+
+static void AddCityHouses( App& app, const std::vector<int>& indices, const std::vector<nbDestructibleId>& ids )
+{
+	City& city = app.city;
+	for ( size_t k = 0; k < indices.size(); ++k )
+	{
+		CityHouse& house = city.houses[(size_t)indices[k]];
+		house.id = ids[k];
+		house.loading = false;
+		city.loaded.push_back( indices[k] );
+	}
+	city.loads += (int)indices.size();
+}
+
+// Build in the houses the workers prepared since the last frame, then start the next ones. The workers prepare them in
+// the background while the frame goes on, see nbStartCreating.
+static void LoadCity( App& app, int budget )
+{
+	City& city = app.city;
+	if ( city.pending.empty() == false )
+	{
+		std::vector<nbDestructibleId> ids( city.pending.size() );
+		nbFinishCreating( city.creation, ids.data() );
+		AddCityHouses( app, city.pending, ids );
+		city.pending.clear();
+		city.pendingHouses.clear();
 	}
 
-	std::vector<nbDestructibleId> ids = CreateStructures( app, pending );
-	for ( size_t k = 0; k < candidates.size(); ++k )
+	city.pending = PickCityHouses( app, budget );
+	if ( city.pending.empty() )
 	{
-		city.houses[(size_t)candidates[k].second].id = ids[k];
-		city.loaded.push_back( candidates[k].second );
+		return;
 	}
-	city.loads += (int)candidates.size();
+
+	std::vector<const nbPieceDef*> pieceLists;
+	std::vector<int> pieceCounts;
+	city.pendingDefs.clear();
+	for ( int index : city.pending )
+	{
+		city.pendingHouses.push_back( PrepareCityHouse( index ) );
+		const PendingStructure& house = *city.pendingHouses.back();
+		city.pendingDefs.push_back( house.def );
+		pieceLists.push_back( house.pieces.data() );
+		pieceCounts.push_back( (int)house.pieces.size() );
+		city.houses[(size_t)index].loading = true;
+	}
+
+	city.creation = nbStartCreating( app.destruction, city.pendingDefs.data(), pieceLists.data(), pieceCounts.data(),
+									 (int)city.pendingDefs.size() );
 }
 
 // Destroy the houses beyond the radius that can go, at most so many. A house that cannot is asked again half a second
@@ -975,11 +1036,17 @@ static void BuildCityScene( App& app )
 	app.city = City();
 	app.city.houses.resize( (size_t)CitySide * CitySide );
 
-	// On a street between two rows, looking along it
+	// On a street between two rows, looking along it, with the houses around at once
 	app.camera.position = { 0.0f, 2.5f, 0.0f };
 	app.camera.yaw = 0.5f * B3_PI;
 	app.camera.pitch = -0.05f;
-	LoadCity( app, CitySide * CitySide );
+	std::vector<int> indices = PickCityHouses( app, CitySide * CitySide );
+	std::vector<std::unique_ptr<PendingStructure>> houses;
+	for ( int index : indices )
+	{
+		houses.push_back( PrepareCityHouse( index ) );
+	}
+	AddCityHouses( app, indices, CreateStructures( app, houses ) );
 }
 
 static void DestroyScene( App& app )
@@ -1820,12 +1887,13 @@ static void OnFrame()
 	}
 	float impactTime = b3GetMilliseconds( cpuTicks );
 
+	// The workers prepare the houses of the city while the frame is drawn, not during the physics step
 	uint64_t simulationTicks = b3GetTicks();
+	StepSimulation( app, dt );
 	if ( app.scene == SceneCity )
 	{
 		StreamCity( app );
 	}
-	StepSimulation( app, dt );
 	float simulationTime = b3GetMilliseconds( simulationTicks );
 
 	uint64_t graphicsTicks = b3GetTicks();

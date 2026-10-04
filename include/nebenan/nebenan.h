@@ -108,6 +108,20 @@ NB_API nbDestructibleId nbCreateDestructible( nbWorldId worldId, const nbDestruc
 NB_API void nbCreateDestructibles( nbWorldId worldId, const nbDestructibleDef* defs, const nbPieceDef* const* pieceLists,
 								   const int* pieceCounts, int count, nbDestructibleId* ids );
 
+/// Start creating many destructibles like nbCreateDestructibles, but in the background: the workers draw the sites and
+/// compute the cells, the shapes of the whole pieces and the contact areas, while the calling thread goes on, for
+/// example with the physics step. Nothing goes into the world before nbFinishCreating builds them in. The definitions,
+/// the pieces and all they point to must stay alive until then. Without workers, all of it happens right here, and so
+/// it does for every destructible beyond the 32 that the built-in threads can have in the background at a time. A world
+/// that is destroyed with creations in flight waits for its workers and drops what they prepared.
+NB_API nbCreationId nbStartCreating( nbWorldId worldId, const nbDestructibleDef* defs, const nbPieceDef* const* pieceLists,
+									 const int* pieceCounts, int count );
+
+/// Build the destructibles of nbStartCreating into the world and write their ids, in order. They get the ids, chunks and
+/// bonds to the bit that nbCreateDestructibles would give them at this point, waiting for the workers if they are not
+/// done. The time of this call decides the result, never the speed of the workers. One without pieces gets a null id.
+NB_API void nbFinishCreating( nbCreationId creationId, nbDestructibleId* ids );
+
 /// Create a destructible box, for example a wall.
 NB_API nbDestructibleId nbCreateBox( nbWorldId worldId, const nbDestructibleDef* def, b3Vec3 halfExtents );
 

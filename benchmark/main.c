@@ -535,6 +535,9 @@ typedef struct CityHouse
 	int activeFrame;
 	int nextCheck;
 	bool urgent;
+
+	// The workers prepare it in the background
+	bool loading;
 } CityHouse;
 
 typedef struct CityCandidate
@@ -554,6 +557,46 @@ static int CompareCandidates( const void* a, const void* b )
 	return ( x->index > y->index ) - ( x->index < y->index );
 }
 
+// Houses created together, with the definitions that must live until they are built in
+typedef struct CityBatch
+{
+	House* houses;
+	nbDestructibleDef* defs;
+	const nbPieceDef** lists;
+	int* counts;
+	int* indices;
+	nbDestructibleId* ids;
+	int capacity;
+	int count;
+	nbCreationId creation;
+} CityBatch;
+
+static void CreateCityBatch( CityBatch* batch, int capacity )
+{
+	*batch = (CityBatch){ 0 };
+	batch->houses = malloc( sizeof( House ) * (size_t)capacity );
+	batch->defs = malloc( sizeof( nbDestructibleDef ) * (size_t)capacity );
+	batch->lists = malloc( sizeof( nbPieceDef* ) * (size_t)capacity );
+	batch->counts = malloc( sizeof( int ) * (size_t)capacity );
+	batch->indices = malloc( sizeof( int ) * (size_t)capacity );
+	batch->ids = malloc( sizeof( nbDestructibleId ) * (size_t)capacity );
+	batch->capacity = capacity;
+}
+
+static void DestroyCityBatch( CityBatch* batch )
+{
+	free( batch->houses );
+	free( batch->defs );
+	free( batch->lists );
+	free( batch->counts );
+	free( batch->indices );
+	free( batch->ids );
+}
+
+// Frames from the start of a creation in the background to the frame that builds it in. The workers have that long to
+// prepare it, in a game a frame of 16 ms is plenty, the benchmark runs its frames back to back.
+#define CityLoadDelay 4
+
 // A city of houses on a grid of 14 x 12 m, streamed around a camera: the houses near the camera and near anything that
 // moves are loaded, the others only exist as a seed and a position
 typedef struct City
@@ -567,11 +610,9 @@ typedef struct City
 	int* urgent;
 	int urgentCount;
 	CityCandidate* candidates;
-	House* batch;
-	nbDestructibleDef* defs;
-	const nbPieceDef** lists;
-	int* counts;
-	nbDestructibleId* ids;
+	CityBatch first;
+	CityBatch batches[CityLoadDelay];
+	int frame;
 	int loads;
 	int urgentLoads;
 	int unloads;
@@ -630,7 +671,8 @@ static void MarkCityActivity( City* city, float loadRadius, float holdRadius, in
 				}
 
 				house->activeFrame = frame;
-				if ( distance <= loadRadius + 5.5f && NB_IS_NULL( house->id ) && house->urgent == false )
+				if ( distance <= loadRadius + 5.5f && NB_IS_NULL( house->id ) && house->urgent == false &&
+					 house->loading == false )
 				{
 					house->urgent = true;
 					city->urgent[city->urgentCount++] = index;
@@ -640,18 +682,16 @@ static void MarkCityActivity( City* city, float loadRadius, float holdRadius, in
 	}
 }
 
-// Create the houses that moving bodies came near, then the ones within the radius of the camera, nearest first, at most
-// so many together
-static void LoadCity( City* city, b3Vec3 camera, float radius, int budget )
+// Pick the houses that moving bodies came near, then the ones within the radius of the camera, nearest first, at most as
+// many as fit into the batch, and put their definitions into it
+static void PickCityHouses( City* city, CityBatch* batch, b3Vec3 camera, float radius )
 {
+	// The urgent ones keep their mark until the camera's are collected, so none comes twice
 	int count = 0;
 	for ( int k = 0; k < city->urgentCount; ++k )
 	{
-		int index = city->urgent[k];
-		city->candidates[count++] = (CityCandidate){ -1.0f, index };
-		city->houses[index].urgent = false;
+		city->candidates[count++] = (CityCandidate){ -1.0f, city->urgent[k] };
 	}
-	city->urgentCount = 0;
 
 	int i0, i1, j0, j1;
 	CityRange( city, camera, radius, &i0, &i1, &j0, &j1 );
@@ -660,36 +700,71 @@ static void LoadCity( City* city, b3Vec3 camera, float radius, int budget )
 		for ( int i = i0; i <= i1; ++i )
 		{
 			int index = j * city->side + i;
+			const CityHouse* house = city->houses + index;
 			float distance = CityDistance( city, index, camera );
-			if ( distance <= radius && NB_IS_NULL( city->houses[index].id ) && city->houses[index].urgent == false )
+			if ( distance <= radius && NB_IS_NULL( house->id ) && house->urgent == false && house->loading == false )
 			{
 				city->candidates[count++] = (CityCandidate){ distance, index };
 			}
 		}
 	}
 
+	for ( int k = 0; k < city->urgentCount; ++k )
+	{
+		city->houses[city->urgent[k]].urgent = false;
+	}
+	city->urgentCount = 0;
+
 	// The urgent ones that do not fit come back with the next step that moves something near them
 	qsort( city->candidates, (size_t)count, sizeof( CityCandidate ), CompareCandidates );
-	count = b3MinInt( count, budget );
-	for ( int k = 0; k < count; ++k )
+	batch->count = b3MinInt( count, batch->capacity );
+	for ( int k = 0; k < batch->count; ++k )
 	{
 		int index = city->candidates[k].index;
-		BuildHouse( city->batch + k, CityHousePosition( city, index ), (uint32_t)( 100 + index ), &city->concrete );
-		city->defs[k] = city->batch[k].def;
-		city->lists[k] = city->batch[k].pieces;
-		city->counts[k] = city->batch[k].pieceCount;
+		BuildHouse( batch->houses + k, CityHousePosition( city, index ), (uint32_t)( 100 + index ), &city->concrete );
+		batch->defs[k] = batch->houses[k].def;
+		batch->lists[k] = batch->houses[k].pieces;
+		batch->counts[k] = batch->houses[k].pieceCount;
+		batch->indices[k] = index;
+		city->houses[index].loading = true;
 		city->urgentLoads += city->candidates[k].distance < 0.0f ? 1 : 0;
 	}
+}
 
-	nbCreateDestructibles( city->scene.world, city->defs, city->lists, city->counts, count, city->ids );
-	for ( int k = 0; k < count; ++k )
+// The houses of a batch got their ids
+static void AddCityHouses( City* city, CityBatch* batch )
+{
+	for ( int k = 0; k < batch->count; ++k )
 	{
-		int index = city->candidates[k].index;
-		city->houses[index].id = city->ids[k];
-		city->loaded[city->loadedCount++] = index;
+		CityHouse* house = city->houses + batch->indices[k];
+		house->id = batch->ids[k];
+		house->loading = false;
+		city->loaded[city->loadedCount++] = batch->indices[k];
 	}
-	city->loads += count;
+	city->loads += batch->count;
 	city->maxLoaded = b3MaxInt( city->maxLoaded, city->loadedCount );
+	batch->count = 0;
+}
+
+// Build in the houses the workers started to prepare CityLoadDelay frames ago
+static void FinishLoadingCity( City* city )
+{
+	CityBatch* batch = city->batches + city->frame % CityLoadDelay;
+	if ( batch->count > 0 )
+	{
+		nbFinishCreating( batch->creation, batch->ids );
+		AddCityHouses( city, batch );
+	}
+}
+
+// Start preparing the next houses in the background, after the physics step, so the workers do not take the cores from
+// the threads of Box3D while it steps
+static void StartLoadingCity( City* city, b3Vec3 camera, float radius )
+{
+	CityBatch* batch = city->batches + city->frame % CityLoadDelay;
+	city->frame += 1;
+	PickCityHouses( city, batch, camera, radius );
+	batch->creation = nbStartCreating( city->scene.world, batch->defs, batch->lists, batch->counts, batch->count );
 }
 
 // Destroy the houses beyond the radius of the camera that no moving body came near for five seconds and that can go,
@@ -724,9 +799,10 @@ static void UnloadCity( City* city, b3Vec3 camera, float radius, int budget, int
 
 // A city of 256 x 256 houses, far too large to hold at once, streamed around a camera that flies 900 m through it at
 // 30 m/s. The houses within 120 m of the camera are loaded, nearest first and at most two per frame, and so are the
-// houses within 10 m of any body that moves. The ones beyond 140 m go as soon as no body moved within 20 m of them for
-// five seconds and nbDestructible_CanUnload lets them. A grenade falls every fifth frame on a house within 60 m of the
-// camera, and the damaged houses stay behind with their rubble.
+// houses within 10 m of any body that moves. The workers prepare them in the background, and CityLoadDelay frames later
+// they are built in. The ones beyond 140 m go as soon as no body moved within 20 m of them for five seconds and
+// nbDestructible_CanUnload lets them. A grenade falls every fifth frame on a house within 60 m of the camera, and the
+// damaged houses stay behind with their rubble.
 static void BenchmarkCity( int workerCount )
 {
 	enum
@@ -769,18 +845,22 @@ static void BenchmarkCity( int workerCount )
 		city.houses[h].activeFrame = -1000;
 	}
 
-	// Room for everything around the start at once
+	// Room for everything around the start at once, then for the houses of one frame
 	int startRoom = ( (int)( 2.0f * loadRadius / 12.0f ) + 3 ) * ( (int)( 2.0f * loadRadius / 12.0f ) + 3 );
-	city.batch = malloc( sizeof( House ) * (size_t)startRoom );
-	city.defs = malloc( sizeof( nbDestructibleDef ) * (size_t)startRoom );
-	city.lists = malloc( sizeof( nbPieceDef* ) * (size_t)startRoom );
-	city.counts = malloc( sizeof( int ) * (size_t)startRoom );
-	city.ids = malloc( sizeof( nbDestructibleId ) * (size_t)startRoom );
+	CreateCityBatch( &city.first, startRoom );
+	for ( int k = 0; k < CityLoadDelay; ++k )
+	{
+		CreateCityBatch( city.batches + k, loadBudget );
+	}
 
+	// Everything around the start at once, then in the background as the camera flies
 	b3Vec3 camera = { -450.0f, 0.0f, 6.0f };
 	int64_t baseBytes = nbGetByteCount() + b3GetByteCount();
 	uint64_t ticks = b3GetTicks();
-	LoadCity( &city, camera, loadRadius, startRoom );
+	PickCityHouses( &city, &city.first, camera, loadRadius );
+	nbCreateDestructibles( city.scene.world, city.first.defs, city.first.lists, city.first.counts, city.first.count,
+						   city.first.ids );
+	AddCityHouses( &city, &city.first );
 	float startTime = b3GetMilliseconds( ticks );
 	int startCount = city.loadedCount;
 	int64_t houseBytes = ( nbGetByteCount() + b3GetByteCount() - baseBytes ) / b3MaxInt( startCount, 1 );
@@ -799,7 +879,7 @@ static void BenchmarkCity( int workerCount )
 		camera.x += speed / 60.0f;
 		ticks = b3GetTicks();
 		UnloadCity( &city, camera, unloadRadius, unloadBudget, frame );
-		LoadCity( &city, camera, loadRadius, loadBudget );
+		FinishLoadingCity( &city );
 		float streamTime = b3GetMilliseconds( ticks );
 
 		float impactTime = 0.0f;
@@ -842,6 +922,9 @@ static void BenchmarkCity( int workerCount )
 		ticks = b3GetTicks();
 		nbWorld_Update( city.scene.world, 1.0f / 60.0f );
 		float updateTime = b3GetMilliseconds( ticks );
+		ticks = b3GetTicks();
+		StartLoadingCity( &city, camera, loadRadius );
+		streamTime += b3GetMilliseconds( ticks );
 
 		streamTimes[frame] = streamTime;
 		impactTimes[frame] = impactTime;
@@ -883,16 +966,17 @@ static void BenchmarkCity( int workerCount )
 	printf( "  memory at most %.0f MB, at the end %d chunks, %d rubble\n", (double)maxBytes / 1048576.0, stats.chunkCount,
 			stats.rubbleCount );
 
+	// The houses still in the background go with the world
+	DestroyScene( &city.scene );
+	DestroyCityBatch( &city.first );
+	for ( int k = 0; k < CityLoadDelay; ++k )
+	{
+		DestroyCityBatch( city.batches + k );
+	}
 	free( city.houses );
 	free( city.loaded );
 	free( city.urgent );
 	free( city.candidates );
-	free( city.batch );
-	free( city.defs );
-	free( city.lists );
-	free( city.counts );
-	free( city.ids );
-	DestroyScene( &city.scene );
 }
 
 int main( int argc, char** argv )

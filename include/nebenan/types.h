@@ -37,9 +37,18 @@ typedef struct nbChunkId
 	uint16_t generation;
 } nbChunkId;
 
+/// Destructibles the workers prepare in the background, see nbStartCreating.
+typedef struct nbCreationId
+{
+	int32_t index1;
+	uint16_t world0;
+	uint16_t generation;
+} nbCreationId;
+
 static const nbWorldId nb_nullWorldId = NB_ZERO_INIT;
 static const nbDestructibleId nb_nullDestructibleId = NB_ZERO_INIT;
 static const nbChunkId nb_nullChunkId = NB_ZERO_INIT;
+static const nbCreationId nb_nullCreationId = NB_ZERO_INIT;
 
 /// Use these to test for null. Example: `if ( NB_IS_NULL( chunkId ) ) { ... }`
 #define NB_IS_NULL( id ) ( ( id ).index1 == 0 )
@@ -360,8 +369,8 @@ typedef struct nbWorldDef
 
 	/// Optional task system. The signatures are the ones of Box3D, so one task system can serve both.
 	/// Nebenan enqueues at most workerCount - 1 tasks at a time and finishes all of them before it
-	/// enqueues more or returns. The allocator set with nbSetAllocator must be thread safe when workers
-	/// are used.
+	/// enqueues more or returns. Only nbStartCreating leaves tasks running, one per destructible, until
+	/// nbFinishCreating. The allocator set with nbSetAllocator must be thread safe when workers are used.
 	b3EnqueueTaskCallback* enqueueTask;
 
 	/// Finishes a task returned by enqueueTask.

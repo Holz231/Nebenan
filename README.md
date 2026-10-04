@@ -223,7 +223,9 @@ genauso, und dort messen die Worker auch die Flächen, mit denen sich die Bruchs
 baut der aufrufende Thread in fester Reihenfolge. Legt die Anwendung viele Zerstörbare auf einmal an, mit
 `nbCreateDestructibles`, berechnen die Worker schon die Zellen des nächsten, während der aufrufende Thread eines in
 die Welt einbaut. So lädt eine Stadt ein Drittel schneller, mit denselben Bruchstücken, Verbindungen und Ids wie
-einzeln angelegt.
+einzeln angelegt. Mit `nbStartCreating` bereiten die Worker Zerstörbare im Hintergrund vor, während der aufrufende
+Thread weitermacht, etwa mit dem Box3D-Schritt, und `nbFinishCreating` baut sie später nur noch ein. Die eingebauten
+Threads nehmen dabei alles andere zuerst, und wer auf einen Einschlag wartet, hilft nie bei einem Haus im Hintergrund.
 
 **Stützgraph.** Zwei Bruchstücke sind verbunden, wenn sich ihre Flächen berühren. Jede Verbindung hält
 `strength × Kontaktfläche` aus, zwischen zwei Materialien mit dem kleineren `strength`. Der Schaden eines
@@ -495,6 +497,23 @@ if ( nbDestructible_CanUnload( house->id, 2.0f ) )
 nbCreateDestructibles( world, defs, pieceLists, pieceCounts, count, ids );
 ```
 
+Damit das Laden den aufrufenden Thread kaum kostet, bereiten die Worker die Häuser im Hintergrund vor: Zellen, Formen
+und Kontaktflächen hängen nur von der Definition ab. `nbFinishCreating` baut sie ein, mit denselben Ids, Bruchstücken
+und Verbindungen, die `nbCreateDestructibles` an dieser Stelle ergäbe. Es wartet, falls die Worker noch nicht fertig
+sind, und das Ergebnis hängt nur davon ab, wann es aufgerufen wird, nie vom Tempo der Threads. Definitionen und Teile
+müssen bis dahin leben:
+
+```c
+b3World_Step( physics, 1.0f / 60.0f, 4 );
+nbWorld_Update( world, 1.0f / 60.0f );
+nbCreationId creation = nbStartCreating( world, defs, pieceLists, pieceCounts, count );
+// … das Bild entsteht, die Worker rechnen derweil, und im nächsten Frame
+nbFinishCreating( creation, ids );
+```
+
+Am besten startet das Laden nach dem Physikschritt, dann teilen sich die Worker die Kerne nicht mit den Threads von
+Box3D.
+
 Die komplette API steht in [include/nebenan/nebenan.h](include/nebenan/nebenan.h).
 
 Einbinden in ein eigenes CMake-Projekt:
@@ -607,22 +626,26 @@ Mehr dazu in [`docs/Optimierungen.md`](docs/Optimierungen.md).
 
 **Eine Stadt größer als der Speicher.** Im Benchmark fliegt eine Kamera mit 30 m/s 900 m weit durch eine Stadt aus
 65 536 Häusern auf 3,6 × 3,1 km, Bruchstückgröße ×4. Am Stück bräuchte sie 24 GB. Geladen sind die Häuser bis 120 m
-um die Kamera, höchstens zwei neue pro Frame, und die bis 10 m um alles, was sich bewegt. Ein unberührtes Haus ab
-140 m geht, wenn sich fünf Sekunden lang nichts in 20 m bewegt hat und `nbDestructible_CanUnload` es erlaubt. Alle fünf
-Frames fällt eine Granate auf ein Haus bis 60 m um die Kamera. Der Median aus drei Läufen auf der VM:
+um die Kamera, höchstens zwei neue pro Frame, und die bis 10 m um alles, was sich bewegt. Die Worker bereiten sie nach
+dem Physikschritt im Hintergrund vor, und vier Frames später kommen sie in die Welt: Der Benchmark rechnet seine Frames
+ohne Pause hintereinander, ein Spiel mit 16 ms pro Frame braucht nur einen. Ein unberührtes Haus ab 140 m geht, wenn
+sich fünf Sekunden lang nichts in 20 m bewegt hat und `nbDestructible_CanUnload` es erlaubt. Alle fünf Frames fällt
+eine Granate auf ein Haus bis 60 m um die Kamera. Der Median aus drei Läufen auf der VM:
 
 | Stadt im Vorbeiflug | 4 Threads | 1 Thread |
 | --- | ---: | ---: |
-| Frame Ø | 1,2 ms | 1,9 ms |
-| davon Streaming Ø | 0,7 ms | 1,6 ms |
-| Streaming, 95 % der Frames | 2,0 ms | 4,3 ms |
-| Häuser gleichzeitig geladen | höchstens 614 | höchstens 614 |
-| Speicher von Nebenan und Box3D | höchstens 274 MB | höchstens 272 MB |
+| Frame Ø | 0,9 ms | 1,9 ms |
+| davon Streaming Ø | 0,5 ms | 1,6 ms |
+| Streaming, 95 % der Frames | 1,7 ms | 4,4 ms |
+| Häuser gleichzeitig geladen | höchstens 594 | höchstens 594 |
+| Speicher von Nebenan und Box3D | höchstens 272 MB | höchstens 272 MB |
 
-Unterwegs kommen 1 375 Häuser dazu und 1 028 gehen wieder. Die 291 beschädigten bleiben mit ihrem Schutt geladen,
+Unterwegs kommen 1 359 Häuser dazu und 1 039 gehen wieder. Die 283 beschädigten bleiben mit ihrem Schutt geladen,
 und jede Granate trifft ein geladenes Haus. Physik, Update und Einschläge kosten so viel wie in den Städten oben, die
-ganz im Speicher liegen. Das Streaming ist vor allem das Laden der Häuser, das Entladen kostet ein knappes Viertel
-davon.
+ganz im Speicher liegen. Mit 4 Threads kostet das Laden im Hintergrund den aufrufenden Thread 40 % weniger als mit
+`nbCreateDestructibles`, im Wechsel gemessen 0,47 statt 0,78 ms Streaming und 0,93 statt 1,25 ms pro Frame. Mit
+einem Thread gibt es keinen Hintergrund, das Laden läuft beim Start. Das Entladen kostet ein knappes Viertel des
+Ladens.
 
 Ganze Einschläge (Bruch, Stützgraph, neue Box3D-Körper) und der Box3D-Schritt danach bei 60 Hz mit
 4 Substeps, jeweils mit 1 und 4 Threads, der Median aus sechs Läufen:
@@ -662,7 +685,7 @@ Messungen in [docs/Optimierungen.md](docs/Optimierungen.md).
 ## Tests und Benchmark
 
 ```sh
-build/bin/nebenan_test            # 41 Tests: Geometrie, Voronoi, Hüllen, Öffnungen, Stöße, Stützgraph, Etagen, Lastprüfung, Schutt, Ruhe, Durchschlagen, Threads, große Blöcke, Suchbaum, Kontaktlisten, Streaming, Determinismus …
+build/bin/nebenan_test            # 42 Tests: Geometrie, Voronoi, Hüllen, Öffnungen, Stöße, Stützgraph, Etagen, Lastprüfung, Schutt, Ruhe, Durchschlagen, Threads, große Blöcke, Suchbaum, Kontaktlisten, Streaming, Laden im Hintergrund, Determinismus …
 build/bin/nebenan_benchmark 4     # Zahl = Threads für Bruch und Physik
 ```
 

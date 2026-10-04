@@ -2983,6 +2983,265 @@ static int StreamTest( void )
 	return 0;
 }
 
+// A task system that runs a task only when it is finished, so nothing runs before the caller waits for it
+typedef struct DeferredTaskSystem
+{
+	b3TaskCallback* tasks[64];
+	void* contexts[64];
+	int count;
+	int runCount;
+} DeferredTaskSystem;
+
+static void* DeferredEnqueue( b3TaskCallback* task, void* taskContext, void* userContext, const char* taskName )
+{
+	(void)taskName;
+	DeferredTaskSystem* system = userContext;
+	int slot = system->count % 64;
+	system->count += 1;
+	system->tasks[slot] = task;
+	system->contexts[slot] = taskContext;
+	return system->contexts + slot;
+}
+
+static void DeferredFinish( void* userTask, void* userContext )
+{
+	DeferredTaskSystem* system = userContext;
+	int slot = (int)( (void**)userTask - system->contexts );
+	system->runCount += 1;
+	system->tasks[slot]( system->contexts[slot] );
+}
+
+// The chunk slots, bonds and destructibles of a world
+static uint32_t HashCreated( const TestScene* scene, const nbDestructibleId* ids, int count )
+{
+	const nbWorld* world = nbGetWorldFromId( scene->world );
+	uint32_t hash = HashChunkSlots( HashBonds( 2166136261u, world ), world );
+	for ( int i = 0; i < count; ++i )
+	{
+		hash = NB_IS_NON_NULL( ids[i] ) ? HashDestructible( hash, ids[i] ) : hash;
+	}
+	return hash;
+}
+
+// The second moments every bond keeps
+static uint32_t HashMoments( const TestScene* scene )
+{
+	const nbWorld* world = nbGetWorldFromId( scene->world );
+	return HashBytes( 2166136261u, world->bondMoments.data, sizeof( nbBondMoments ) * (size_t)world->bondMoments.count );
+}
+
+// Destructibles created in the background come out as if created at once when the creation finishes: the same ids,
+// chunks, bonds and Box3D bodies, with the built-in threads, with one thread, with a task system that runs every task
+// at once and with one that runs them only when they are finished. Steps in between change nothing, and neither does a
+// new number of workers. Should the load check come on in between, the bonds get the moments the check measures for
+// the destructibles that were there before, and should it go off, they keep none. A world destroyed with a creation
+// in flight drops it.
+static int BackgroundCreateTest( void )
+{
+	enum
+	{
+		houseCount = 4,
+		entryCount = 7,
+	};
+	CelledHouse* houses = malloc( sizeof( CelledHouse ) * houseCount );
+	for ( int h = 0; h < houseCount; ++h )
+	{
+		BuildCelledHouse( houses + h, 2 + ( h & 1 ), (uint32_t)( 70 + h ), (b3Vec3){ 14.0f * (float)h, 0.0f, 0.0f } );
+	}
+
+	static const nbOpening openings[2] = {
+		{ { -1.2f, 0.3f, 0.0f }, { 0.6f, 0.5f, 0.3f } },
+		{ { 1.4f, -0.6f, 0.0f }, { 0.45f, 1.0f, 0.3f } },
+	};
+	nbPieceDef wall = nbDefaultPieceDef();
+	wall.halfExtents = (b3Vec3){ 3.0f, 1.5f, 0.15f };
+	wall.transform.p = (b3Vec3){ 0.0f, 1.5f, 0.0f };
+	wall.openings = openings;
+	wall.openingCount = 2;
+	nbDestructibleDef wallDef = nbDefaultDestructibleDef();
+	wallDef.position = b3ToPos( (b3Vec3){ 0.0f, 0.0f, 12.0f } );
+	wallDef.cellSize = 0.4f;
+	wallDef.seed = 9;
+
+	nbPieceDef box = nbDefaultPieceDef();
+	box.halfExtents = (b3Vec3){ 1.0f, 0.5f, 0.5f };
+	nbDestructibleDef boxDef = nbDefaultDestructibleDef();
+	boxDef.position = b3ToPos( (b3Vec3){ -10.0f, 0.5f, 12.0f } );
+	boxDef.isStatic = false;
+
+	nbDestructibleDef defs[entryCount] = {
+		houses[0].def, wallDef, nbDefaultDestructibleDef(), houses[1].def, houses[2].def, boxDef, houses[3].def,
+	};
+	const nbPieceDef* lists[entryCount] = {
+		houses[0].pieces, &wall, NULL, houses[1].pieces, houses[2].pieces, &box, houses[3].pieces,
+	};
+	int counts[entryCount] = {
+		houses[0].pieceCount, 1, 0, houses[1].pieceCount, houses[2].pieceCount, 1, houses[3].pieceCount,
+	};
+
+	// At once, then in the background with four threads, one, two task systems and a new number of threads in between
+	nbDestructibleId firstIds[entryCount];
+	uint32_t hashes[6][2];
+	TestTaskSystem inlineSystem = { 0 };
+	DeferredTaskSystem deferredSystem = { 0 };
+	for ( int pass = 0; pass < 6; ++pass )
+	{
+		TestScene scene = pass == 3	  ? CreateSceneWithWorkers( 4, InlineEnqueue, InlineFinish, &inlineSystem )
+						  : pass == 4 ? CreateSceneWithWorkers( 4, DeferredEnqueue, DeferredFinish, &deferredSystem )
+									  : CreateSceneWithWorkers( pass == 2 ? 1 : 4, NULL, NULL, NULL );
+
+		nbDestructibleId ids[entryCount];
+		if ( pass == 0 )
+		{
+			Step( &scene, 10 );
+			nbCreateDestructibles( scene.world, defs, lists, counts, entryCount, ids );
+		}
+		else
+		{
+			nbCreationId creation = nbStartCreating( scene.world, defs, lists, counts, entryCount );
+			ENSURE( NB_IS_NON_NULL( creation ) );
+			Step( &scene, 10 );
+			if ( pass == 5 )
+			{
+				nbWorld_SetWorkerCount( scene.world, 2 );
+			}
+			nbFinishCreating( creation, ids );
+
+			// A finished creation is gone
+			nbDestructibleId again[entryCount];
+			again[0] = nb_nullDestructibleId;
+			nbFinishCreating( creation, again );
+			ENSURE( NB_IS_NULL( again[0] ) );
+		}
+
+		for ( int i = 0; i < entryCount; ++i )
+		{
+			ENSURE( ( counts[i] > 0 ) == NB_IS_NON_NULL( ids[i] ) );
+			if ( pass == 0 )
+			{
+				firstIds[i] = ids[i];
+			}
+			ENSURE( ids[i].index1 == firstIds[i].index1 && ids[i].generation == firstIds[i].generation );
+		}
+
+		hashes[pass][0] = HashCreated( &scene, ids, entryCount );
+		Grenade( &scene, (b3Vec3){ 0.0f, 1.2f, 3.4f } );
+		Grenade( &scene, (b3Vec3){ 0.0f, 1.0f, 12.15f } );
+		Step( &scene, 30 );
+		Grenade( &scene, (b3Vec3){ 28.0f, 4.4f, -3.4f } );
+		Step( &scene, 30 );
+		hashes[pass][1] = HashCreated( &scene, ids, entryCount );
+		DestroyScene( &scene );
+	}
+
+	for ( int pass = 1; pass < 6; ++pass )
+	{
+		ENSURE( hashes[pass][0] == hashes[0][0] && hashes[pass][1] == hashes[0][1] );
+	}
+	ENSURE( inlineSystem.enqueueCount > 0 && deferredSystem.runCount > 0 );
+
+	// The load check comes on while the workers prepare: the moments are measured as for those created before it came on
+	uint32_t momentHashes[2];
+	for ( int pass = 0; pass < 2; ++pass )
+	{
+		TestScene scene = CreateSceneWithWorkers( 4, NULL, NULL, NULL );
+		nbDestructibleId ids[entryCount];
+		if ( pass == 0 )
+		{
+			nbCreateDestructibles( scene.world, defs, lists, counts, entryCount, ids );
+			nbWorld_SetSupportScale( scene.world, 0.03f );
+		}
+		else
+		{
+			nbCreationId creation = nbStartCreating( scene.world, defs, lists, counts, entryCount );
+			nbWorld_SetSupportScale( scene.world, 0.03f );
+			nbFinishCreating( creation, ids );
+		}
+
+		const nbWorld* world = nbGetWorldFromId( scene.world );
+		ENSURE( world->destructibles.data[ids[1].index1 - 1].bondMoments );
+		ENSURE( world->destructibles.data[ids[0].index1 - 1].bondMoments == false );
+		ENSURE( HashCreated( &scene, ids, entryCount ) == hashes[0][0] );
+		momentHashes[pass] = HashMoments( &scene );
+		DestroyScene( &scene );
+	}
+	ENSURE( momentHashes[1] == momentHashes[0] );
+
+	// It goes off in between: no moments are kept, as if it had been off all along
+	{
+		TestScene scene = CreateSceneWithWorkers( 4, NULL, NULL, NULL );
+		nbWorld_SetSupportScale( scene.world, 0.03f );
+		nbCreationId creation = nbStartCreating( scene.world, defs, lists, counts, entryCount );
+		nbWorld_SetSupportScale( scene.world, 0.0f );
+		nbDestructibleId ids[entryCount];
+		nbFinishCreating( creation, ids );
+		const nbWorld* world = nbGetWorldFromId( scene.world );
+		ENSURE( world->destructibles.data[ids[1].index1 - 1].bondMoments == false );
+		ENSURE( HashCreated( &scene, ids, entryCount ) == hashes[0][0] );
+		DestroyScene( &scene );
+	}
+
+	// More than the threads take in the background: the rest is prepared right away, and an impact in between still gets
+	// its tasks run
+	{
+		enum
+		{
+			manyCount = 6 * entryCount,
+		};
+		nbDestructibleDef manyDefs[manyCount];
+		const nbPieceDef* manyLists[manyCount];
+		int manyCounts[manyCount];
+		for ( int i = 0; i < manyCount; ++i )
+		{
+			manyDefs[i] = defs[i % entryCount];
+			manyLists[i] = lists[i % entryCount];
+			manyCounts[i] = counts[i % entryCount];
+		}
+
+		nbDestructibleDef targetDef = wallDef;
+		targetDef.position = b3ToPos( (b3Vec3){ 0.0f, 0.0f, 40.0f } );
+		uint32_t manyHashes[2];
+		for ( int pass = 0; pass < 2; ++pass )
+		{
+			TestScene scene = CreateSceneWithWorkers( 4, NULL, NULL, NULL );
+			nbDestructibleId target = nbCreateDestructible( scene.world, &targetDef, &wall, 1 );
+			nbDestructibleId ids[manyCount];
+			if ( pass == 0 )
+			{
+				Grenade( &scene, (b3Vec3){ 0.0f, 1.0f, 40.15f } );
+				nbCreateDestructibles( scene.world, manyDefs, manyLists, manyCounts, manyCount, ids );
+			}
+			else
+			{
+				nbCreationId creation = nbStartCreating( scene.world, manyDefs, manyLists, manyCounts, manyCount );
+				Grenade( &scene, (b3Vec3){ 0.0f, 1.0f, 40.15f } );
+				nbFinishCreating( creation, ids );
+			}
+			ENSURE( nbDestructible_IsIntact( target ) == false );
+			manyHashes[pass] = HashCreated( &scene, ids, manyCount );
+			DestroyScene( &scene );
+		}
+		ENSURE( manyHashes[1] == manyHashes[0] );
+	}
+
+	// A world that goes with creations in flight, one never started by its tasks
+	{
+		DeferredTaskSystem system = { 0 };
+		TestScene scene = CreateSceneWithWorkers( 4, NULL, NULL, NULL );
+		nbStartCreating( scene.world, defs, lists, counts, entryCount );
+		nbStartCreating( scene.world, defs + 3, lists + 3, counts + 3, 2 );
+		DestroyScene( &scene );
+
+		scene = CreateSceneWithWorkers( 4, DeferredEnqueue, DeferredFinish, &system );
+		nbStartCreating( scene.world, defs, lists, counts, entryCount );
+		DestroyScene( &scene );
+		ENSURE( system.runCount == entryCount - 1 );
+	}
+
+	free( houses );
+	return 0;
+}
+
 int WorldTest( void );
 
 int WorldTest( void )
@@ -3017,6 +3276,7 @@ int WorldTest( void )
 	RUN_TEST( BondMomentsTest );
 	RUN_TEST( BatchCreateTest );
 	RUN_TEST( StreamTest );
+	RUN_TEST( BackgroundCreateTest );
 	RUN_TEST( RestTest );
 	RUN_TEST( LandingTest );
 	return 0;
