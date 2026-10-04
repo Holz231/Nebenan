@@ -646,8 +646,9 @@ ganz im Speicher liegen. Mit 4 Threads kostet das Laden im Hintergrund den aufru
 `nbCreateDestructibles`, im Wechsel gemessen 0,47 statt 0,78 ms Streaming und 0,93 statt 1,25 ms pro Frame. Mit
 einem Thread gibt es keinen Hintergrund, das Laden läuft beim Start. Die Formen eines Hauses, das die Worker
 vorbereiten, liegen in einem Block, so gibt das Entladen einen Block frei statt rund 240 Formen, die die Worker angelegt
-haben: im Wechsel gemessen 0,43 statt 0,47 ms Streaming mit 4 Threads. Auf dem aufrufenden Thread bleiben das Einbauen
-und das Entladen, mit einem Thread je rund 0,12 ms pro Frame.
+haben: im Wechsel gemessen 0,43 statt 0,47 ms Streaming mit 4 Threads. Box3D nimmt eine Form aus seinem statischen
+Suchbaum nur noch bis zum ersten Knoten heraus, der sich nicht mehr ändert, mit demselben Baum wie zuvor. Auf dem
+aufrufenden Thread bleiben das Einbauen und das Entladen, mit einem Thread rund 0,11 und 0,09 ms pro Frame.
 
 Ganze Einschläge (Bruch, Stützgraph, neue Box3D-Körper) und der Box3D-Schritt danach bei 60 Hz mit
 4 Substeps, jeweils mit 1 und 4 Threads, der Median aus sechs Läufen:

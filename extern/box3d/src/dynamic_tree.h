@@ -92,6 +92,9 @@ typedef struct b3TreeBatchItem
 
 int b3DynamicTree_CreateBatchProxy( b3DynamicTree* tree, uint64_t categoryBits, uint64_t userData );
 void b3DynamicTree_DestroyBatchProxy( b3DynamicTree* tree, int proxyId );
+
+// Added for Nebenan: destroy a proxy of the static tree, see b3RemoveLeaf
+void b3DynamicTree_DestroyStaticProxy( b3DynamicTree* tree, int proxyId );
 void b3DynamicTree_InsertBatch( b3DynamicTree* tree, const b3TreeBatchItem* items, int count );
 
 void b3DynamicTree_MarkProxyMovedSerial( b3DynamicTree* tree, int proxyId );

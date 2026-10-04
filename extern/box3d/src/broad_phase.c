@@ -115,6 +115,13 @@ void b3BroadPhase_DestroyProxy( b3BroadPhase* bp, int proxyKey )
 		return;
 	}
 
+	// Added for Nebenan: nothing enlarges the boxes of the static tree, so removing a leaf can stop early
+	if ( proxyType == b3_staticBody )
+	{
+		b3DynamicTree_DestroyStaticProxy( bp->trees + proxyType, proxyId );
+		return;
+	}
+
 	b3DynamicTree_DestroyProxy( bp->trees + proxyType, proxyId );
 }
 

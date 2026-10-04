@@ -537,7 +537,10 @@ static void b3InsertLeaf( b3DynamicTree* tree, b3AABB aabb, int proxyId, bool mo
 	}
 }
 
-static void b3RemoveLeaf( b3DynamicTree* tree, int proxyId )
+// Added for Nebenan: exact stops at the first ancestor that comes out as it was, those above depend only on it. That
+// leaves the tree as the full walk does where every inner node is the union of its children, as in the static tree,
+// where no box is ever enlarged.
+static void b3RemoveLeaf( b3DynamicTree* tree, int proxyId, bool exact )
 {
 	b3TreeNode* nodes = tree->nodes;
 	int32_t* parents = tree->parents;
@@ -563,9 +566,24 @@ static void b3RemoveLeaf( b3DynamicTree* tree, int proxyId )
 	int index = parents[parent];
 	while ( index != B3_NULL_INDEX )
 	{
-		nodes[index] = b3MakeInternalNode( nodes, b3GetLeftChild( nodes + index ) );
+		b3TreeNode node = b3MakeInternalNode( nodes, b3GetLeftChild( nodes + index ) );
+		if ( exact && memcmp( &node, nodes + index, sizeof( b3TreeNode ) ) == 0 )
+		{
+			break;
+		}
+
+		nodes[index] = node;
 		index = parents[index];
 	}
+
+#if B3_ENABLE_VALIDATION
+	// The full walk would leave every ancestor above as it is
+	for ( ; index != B3_NULL_INDEX; index = parents[index] )
+	{
+		b3TreeNode node = b3MakeInternalNode( nodes, b3GetLeftChild( nodes + index ) );
+		B3_ASSERT( memcmp( &node, nodes + index, sizeof( b3TreeNode ) ) == 0 );
+	}
+#endif
 }
 
 // Create a proxy in the tree as a leaf node. We return the index of the node instead of a pointer so that we can grow
@@ -595,7 +613,16 @@ void b3DynamicTree_DestroyProxy( b3DynamicTree* tree, int proxyId )
 {
 	B3_ASSERT( 0 <= proxyId && proxyId < tree->proxyCapacity );
 
-	b3RemoveLeaf( tree, proxyId );
+	b3RemoveLeaf( tree, proxyId, false );
+	b3FreeProxy( tree, proxyId );
+}
+
+// Added for Nebenan: a proxy of the static tree, whose inner nodes are always the union of their children
+void b3DynamicTree_DestroyStaticProxy( b3DynamicTree* tree, int proxyId )
+{
+	B3_ASSERT( 0 <= proxyId && proxyId < tree->proxyCapacity );
+
+	b3RemoveLeaf( tree, proxyId, true );
 	b3FreeProxy( tree, proxyId );
 }
 
@@ -612,7 +639,7 @@ void b3DynamicTree_MoveProxyInternal( b3DynamicTree* tree, int proxyId, b3AABB a
 	B3_VALIDATE( aabb.upperBound.z - aabb.lowerBound.z < B3_HUGE );
 	B3_ASSERT( 0 <= proxyId && proxyId < tree->proxyCapacity );
 
-	b3RemoveLeaf( tree, proxyId );
+	b3RemoveLeaf( tree, proxyId, false );
 
 	bool shouldRotate = false;
 	b3InsertLeaf( tree, aabb, proxyId, markMoved, shouldRotate );
