@@ -42,6 +42,9 @@ int nbInternalAssert( const char* condition, const char* fileName, int lineNumbe
 #define NB_ARRAY_COUNT( A ) (int)( sizeof( A ) / sizeof( A[0] ) )
 #define NB_SECRET_COOKIE 0x4E42414E
 
+// Every allocation starts on this many bytes and is padded to a multiple of them
+#define NB_ALIGNMENT 32
+
 void* nbAlloc( size_t size );
 void nbFree( void* mem, size_t size );
 void* nbGrowAlloc( void* oldMem, size_t oldSize, size_t newSize );

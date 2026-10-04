@@ -704,6 +704,35 @@ void nbShape_Destroy( nbShape* shape )
 	}
 }
 
+bool nbShape_HasHullInside( const nbShape* shape )
+{
+	nbShapeLayout layout = nbGetShapeLayout( shape->vertexCount, shape->faceCount, shape->indexCount );
+	return layout.hullOffset > 0 && (const uint8_t*)shape->hull == (const uint8_t*)shape + layout.hullOffset;
+}
+
+size_t nbShape_GetBlockSize( const nbShape* shape )
+{
+	nbShapeLayout layout = nbGetShapeLayout( shape->vertexCount, shape->faceCount, shape->indexCount );
+	return ( ( layout.byteCount - 1 ) | ( NB_ALIGNMENT - 1 ) ) + 1;
+}
+
+nbShape* nbShape_MoveToBlock( nbShape* shape, uint8_t* place )
+{
+	NB_ASSERT( nbShape_HasHullInside( shape ) );
+	nbShapeLayout layout = nbGetShapeLayout( shape->vertexCount, shape->faceCount, shape->indexCount );
+
+	// The hull keeps offsets from its start, the shape pointers into its allocation
+	memcpy( place, shape, layout.byteCount );
+	nbShape* moved = (nbShape*)place;
+	moved->hull = (const b3HullData*)( place + layout.hullOffset );
+	moved->vertices = (b3Vec3*)( place + layout.vertexOffset );
+	moved->planes = (b3Plane*)( place + layout.planeOffset );
+	moved->faces = (nbFace*)( place + layout.faceOffset );
+	moved->indices = place + layout.indexOffset;
+	nbFree( shape, layout.byteCount );
+	return moved;
+}
+
 void nbShape_ToPoly( const nbShape* shape, nbPoly* poly )
 {
 	poly->vertexCount = shape->vertexCount;

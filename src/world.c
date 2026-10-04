@@ -268,7 +268,7 @@ int nbCreateChunkWithHull( nbWorld* world, int destructibleIndex, int actorIndex
 	if ( shape->hull == NULL )
 	{
 		// Degenerate sliver. It cannot be simulated, so it is dropped.
-		nbShape_Destroy( shape );
+		nbReleaseShape( world->destructibles.data + destructibleIndex, shape );
 		return NB_NULL_INDEX;
 	}
 
@@ -730,9 +730,26 @@ static void nbReleaseChunk( nbWorld* world, int chunkIndex )
 	// Chunks created and destroyed in the same event window are reported as both
 	nbPushEvent( world->destroyedEvents + world->eventBuffer, nbMakeChunkId( world, chunkIndex ) );
 
-	nbShape_Destroy( chunk->shape );
+	nbReleaseShape( destructible, chunk->shape );
 	chunk->shape = NULL;
 	nbFreeChunk( world, chunkIndex );
+}
+
+void nbReleaseShape( nbDestructible* destructible, nbShape* shape )
+{
+	if ( nbIsInShapeBlock( destructible->shapeBlock, destructible->shapeBlockSize, shape ) == false )
+	{
+		nbShape_Destroy( shape );
+		return;
+	}
+
+	destructible->shapeBlockCount -= 1;
+	if ( destructible->shapeBlockCount == 0 )
+	{
+		nbFree( destructible->shapeBlock, destructible->shapeBlockSize );
+		destructible->shapeBlock = NULL;
+		destructible->shapeBlockSize = 0;
+	}
 }
 
 void nbDestroyChunk( nbWorld* world, int chunkIndex )
@@ -4103,7 +4120,11 @@ void nbDestroyWorld( nbWorldId worldId )
 
 	for ( int i = 0; i < world->chunks.count; ++i )
 	{
-		nbShape_Destroy( world->chunks.data[i].shape );
+		nbChunk* chunk = world->chunks.data + i;
+		if ( chunk->shape != NULL )
+		{
+			nbReleaseShape( world->destructibles.data + chunk->destructibleIndex, chunk->shape );
+		}
 	}
 
 	nbArray_Free( world->chunks );

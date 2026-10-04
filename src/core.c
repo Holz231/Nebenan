@@ -32,8 +32,6 @@
 #endif
 #endif
 
-#define NB_ALIGNMENT 32
-
 static nbAllocFcn* nb_allocFcn = NULL;
 static nbFreeFcn* nb_freeFcn = NULL;
 static int64_t nb_byteCount = 0;

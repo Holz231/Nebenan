@@ -3125,12 +3125,30 @@ static int BackgroundCreateTest( void )
 		}
 
 		hashes[pass][0] = HashCreated( &scene, ids, entryCount );
+
+		// The workers pack the shapes of a destructible into one block, created at once they keep their own
+		const nbWorld* world = nbGetWorldFromId( scene.world );
+		for ( int i = 0; i < entryCount; ++i )
+		{
+			const nbDestructible* destructible = NB_IS_NON_NULL( ids[i] ) ? world->destructibles.data + ids[i].index1 - 1 : NULL;
+			ENSURE( destructible == NULL || ( destructible->shapeBlock != NULL ) == ( pass > 0 ) );
+			ENSURE( destructible == NULL || pass == 0 ||
+					( 0 < destructible->shapeBlockCount && destructible->shapeBlockCount <= destructible->chunkCount ) );
+		}
+		int blockCount = world->destructibles.data[ids[0].index1 - 1].shapeBlockCount;
+
 		Grenade( &scene, (b3Vec3){ 0.0f, 1.2f, 3.4f } );
 		Grenade( &scene, (b3Vec3){ 0.0f, 1.0f, 12.15f } );
 		Step( &scene, 30 );
 		Grenade( &scene, (b3Vec3){ 28.0f, 4.4f, -3.4f } );
 		Step( &scene, 30 );
 		hashes[pass][1] = HashCreated( &scene, ids, entryCount );
+
+		// Fractured chunks count off the block, the last chunk of the house takes it along
+		const nbDestructible* house = world->destructibles.data + ids[0].index1 - 1;
+		ENSURE( pass == 0 || ( house->shapeBlock != NULL && house->shapeBlockCount < blockCount ) );
+		nbDestroyDestructible( ids[0] );
+		ENSURE( house->shapeBlock == NULL );
 		DestroyScene( &scene );
 	}
 

@@ -634,18 +634,20 @@ eine Granate auf ein Haus bis 60 m um die Kamera. Der Median aus drei Läufen au
 
 | Stadt im Vorbeiflug | 4 Threads | 1 Thread |
 | --- | ---: | ---: |
-| Frame Ø | 0,9 ms | 1,9 ms |
-| davon Streaming Ø | 0,5 ms | 1,6 ms |
-| Streaming, 95 % der Frames | 1,7 ms | 4,4 ms |
+| Frame Ø | 0,9 ms | 1,8 ms |
+| davon Streaming Ø | 0,4 ms | 1,5 ms |
+| Streaming, 95 % der Frames | 1,6 ms | 4,5 ms |
 | Häuser gleichzeitig geladen | höchstens 594 | höchstens 594 |
-| Speicher von Nebenan und Box3D | höchstens 272 MB | höchstens 272 MB |
+| Speicher von Nebenan und Box3D | höchstens 273 MB | höchstens 273 MB |
 
 Unterwegs kommen 1 359 Häuser dazu und 1 039 gehen wieder. Die 283 beschädigten bleiben mit ihrem Schutt geladen,
 und jede Granate trifft ein geladenes Haus. Physik, Update und Einschläge kosten so viel wie in den Städten oben, die
 ganz im Speicher liegen. Mit 4 Threads kostet das Laden im Hintergrund den aufrufenden Thread 40 % weniger als mit
 `nbCreateDestructibles`, im Wechsel gemessen 0,47 statt 0,78 ms Streaming und 0,93 statt 1,25 ms pro Frame. Mit
-einem Thread gibt es keinen Hintergrund, das Laden läuft beim Start. Das Entladen kostet ein knappes Viertel des
-Ladens.
+einem Thread gibt es keinen Hintergrund, das Laden läuft beim Start. Die Formen eines Hauses, das die Worker
+vorbereiten, liegen in einem Block, so gibt das Entladen einen Block frei statt rund 240 Formen, die die Worker angelegt
+haben: im Wechsel gemessen 0,43 statt 0,47 ms Streaming mit 4 Threads. Auf dem aufrufenden Thread bleiben das Einbauen
+und das Entladen, mit einem Thread je rund 0,12 ms pro Frame.
 
 Ganze Einschläge (Bruch, Stützgraph, neue Box3D-Körper) und der Box3D-Schritt danach bei 60 Hz mit
 4 Substeps, jeweils mit 1 und 4 Threads, der Median aus sechs Läufen:

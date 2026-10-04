@@ -289,6 +289,12 @@ typedef struct nbDestructible
 	// nbDestructible_IsIntact.
 	bool damaged;
 
+	// The shapes of its first chunks in one allocation, when the workers prepared it in the background, and how many of
+	// them are still in use, see nbReleaseShape
+	uint8_t* shapeBlock;
+	size_t shapeBlockSize;
+	int shapeBlockCount;
+
 	int headActor;
 	int actorCount;
 	int chunkCount;
@@ -540,6 +546,15 @@ void nbDestroyActor( nbWorld* world, int actorIndex );
 
 // Destroy all actors, chunks, bonds, bodies and shapes of a destructible and report its chunks as destroyed
 void nbDestroyDestructibleParts( nbWorld* world, int destructibleIndex );
+
+// Free the shape of a chunk of a destructible. One in its block of shapes only counts off, the last one frees the block.
+void nbReleaseShape( nbDestructible* destructible, nbShape* shape );
+
+// Whether a shape lies in a block of shapes
+static inline bool nbIsInShapeBlock( const uint8_t* block, size_t blockSize, const nbShape* shape )
+{
+	return block != NULL && (uintptr_t)shape - (uintptr_t)block < blockSize;
+}
 
 // Wait until the workers are done with every destructible they prepare in the background, before they stop
 void nbWaitForCreations( nbWorld* world );

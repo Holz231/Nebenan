@@ -134,6 +134,16 @@ nbShape* nbShape_Create( const nbPoly* poly );
 nbShape* nbShape_CreateWithMass( const nbPoly* poly, float volume, b3Vec3 centroid );
 nbShapeLayout nbGetShapeLayout( int vertexCount, int faceCount, int indexCount );
 void nbShape_Destroy( nbShape* shape );
+
+// Whether the hull lies in the allocation of the shape, where the direct builder puts it
+bool nbShape_HasHullInside( const nbShape* shape );
+
+// Bytes a shape with its hull inside takes in a block of shapes, padded like an allocation of its own
+size_t nbShape_GetBlockSize( const nbShape* shape );
+
+// Move a shape with its hull inside into a block of shapes and free its allocation. The place starts on NB_ALIGNMENT
+// bytes and holds nbShape_GetBlockSize bytes. Returns the shape at its new place.
+nbShape* nbShape_MoveToBlock( nbShape* shape, uint8_t* place );
 void nbShape_ToPoly( const nbShape* shape, nbPoly* poly );
 
 // Move the shape. Only before its hull is built.

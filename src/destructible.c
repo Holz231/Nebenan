@@ -450,6 +450,11 @@ typedef struct nbLoad
 	int** jobChunks;
 	int hullFallbackCount;
 
+	// The shapes of the chunks in one allocation, see nbPackLoadShapes
+	uint8_t* shapeBlock;
+	size_t shapeBlockSize;
+	int shapeBlockCount;
+
 	// Pairs of new chunks whose bounds touch, and their contact areas, negative for two chunks of one group
 	nbChunkPairArray pairs;
 	float* areas;
@@ -728,6 +733,47 @@ static void nbCollectLoadChunks( nbLoad* load )
 	}
 }
 
+// The shapes of the chunks in one allocation, in their order, for a load the workers prepare in the background. Whoever
+// unloads the destructible then frees one block instead of hundreds of shapes the workers allocated, which the
+// allocator may have to give back to them while they allocate the next ones. With glibc and four threads that took half
+// the time of unloading a house. Shapes with a hull from quickhull keep their allocation.
+static void nbPackLoadShapes( nbLoad* load )
+{
+	size_t byteCount = 0;
+	int count = 0;
+	for ( int i = 0; i < load->chunkCount; ++i )
+	{
+		const nbShape* shape = load->chunks[i].shape;
+		if ( nbShape_HasHullInside( shape ) )
+		{
+			byteCount += nbShape_GetBlockSize( shape );
+			count += 1;
+		}
+	}
+
+	if ( count == 0 )
+	{
+		return;
+	}
+
+	uint8_t* block = nbAlloc( byteCount );
+	size_t offset = 0;
+	for ( int i = 0; i < load->chunkCount; ++i )
+	{
+		nbShape* shape = load->chunks[i].shape;
+		if ( nbShape_HasHullInside( shape ) )
+		{
+			size_t size = nbShape_GetBlockSize( shape );
+			load->chunks[i].shape = nbShape_MoveToBlock( shape, block + offset );
+			offset += size;
+		}
+	}
+
+	load->shapeBlock = block;
+	load->shapeBlockSize = byteCount;
+	load->shapeBlockCount = count;
+}
+
 // The pairs of new chunks whose bounds pass the test nbShape_ContactArea starts with, in the order of a loop over all
 // pairs. A sweep along x finds them without testing every pair, a house has hundreds of chunks.
 static void nbFindTouchingPairs( nbLoad* load, float tolerance )
@@ -859,6 +905,10 @@ static nbDestructibleId nbCommitLoad( nbWorld* world, nbLoad* load )
 	destructible->enableCollisionDamage = def->enableCollisionDamage;
 	destructible->userData = def->userData;
 	destructible->bondMoments = load->bondMoments;
+	destructible->shapeBlock = load->shapeBlock;
+	destructible->shapeBlockSize = load->shapeBlockSize;
+	destructible->shapeBlockCount = load->shapeBlockCount;
+	load->shapeBlock = NULL;
 	world->destructibleCount += 1;
 	world->stats.hullFallbackCount += load->hullFallbackCount;
 
@@ -1117,6 +1167,7 @@ static void nbPrepareInBackground( void* context )
 	nbPrepareLoad( load );
 	nbComputeLoadCells( load );
 	nbCollectLoadChunks( load );
+	nbPackLoadShapes( load );
 	int blockCount = nbFindLoadContacts( load );
 	for ( int i = 0; i < blockCount; ++i )
 	{
@@ -1293,11 +1344,16 @@ void nbDestroyCreations( nbWorld* world )
 				continue;
 			}
 
-			for ( int k = 0; k < item->load.chunkCount; ++k )
+			nbLoad* load = &item->load;
+			for ( int k = 0; k < load->chunkCount; ++k )
 			{
-				nbShape_Destroy( item->load.chunks[k].shape );
+				if ( nbIsInShapeBlock( load->shapeBlock, load->shapeBlockSize, load->chunks[k].shape ) == false )
+				{
+					nbShape_Destroy( load->chunks[k].shape );
+				}
 			}
-			nbArray_Free( item->load.pairs );
+			nbFree( load->shapeBlock, load->shapeBlockSize );
+			nbArray_Free( load->pairs );
 			nbArena_Destroy( &item->arena );
 		}
 
@@ -1330,8 +1386,9 @@ void nbDestroyDestructible( nbDestructibleId destructibleId )
 	int index = destructibleId.index1 - 1;
 	nbDestroyDestructibleParts( world, index );
 
-	// The shared static body, without shapes by now
+	// The shared static body, without shapes by now. The block of shapes went with the last of them.
 	destructible = world->destructibles.data + index;
+	NB_ASSERT( destructible->shapeBlock == NULL );
 	if ( B3_IS_NON_NULL( destructible->staticBody ) && b3Body_IsValid( destructible->staticBody ) )
 	{
 		b3DestroyBody( destructible->staticBody );
