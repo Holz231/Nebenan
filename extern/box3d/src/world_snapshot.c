@@ -733,10 +733,12 @@ static void b3DesShapes( b3SnapReader* r, b3World* world, b3RecReader* rdr )
 				// Hull is cloned into the world DB; pass raw bytes directly
 				b3RegistrySlot* slot = rdr->slots + gid;
 
-				// Added for Nebenan: a unique hull belongs to its shape, the flag came along in the struct image
-				if ( dst->flags & b3_uniqueHull )
+				// Added for Nebenan: a unique hull belongs to its shape, the flag came along in the struct image. The owner
+				// of an external hull is not part of the snapshot, so the shape gets a copy of its own.
+				if ( dst->flags & ( b3_uniqueHull | b3_externalHull ) )
 				{
 					dst->hull = b3CloneHull( (const b3HullData*)slot->bytes );
+					dst->flags = (uint8_t)( ( dst->flags & ~b3_externalHull ) | b3_uniqueHull );
 				}
 				else
 				{
@@ -978,12 +980,12 @@ static void b3FreeLiveSimElements( b3World* world )
 		// Hull is ref-counted in the world DB; release before overwrite so re-adding is ref-neutral.
 		if ( s->type == b3_hullShape && s->hull != NULL )
 		{
-			// Added for Nebenan: a unique hull belongs to its shape
+			// Added for Nebenan: a unique hull belongs to its shape, an external one to its owner, who frees it
 			if ( s->flags & b3_uniqueHull )
 			{
 				b3DestroyHull( (b3HullData*)s->hull );
 			}
-			else
+			else if ( ( s->flags & b3_externalHull ) == 0 )
 			{
 				b3RemoveHullFromDatabase( world, s->hull );
 			}

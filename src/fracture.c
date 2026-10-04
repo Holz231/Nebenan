@@ -71,12 +71,9 @@ void nbCellScratch_Create( nbCellScratch* scratch, nbArena* arena, int siteCapac
 	scratch->partPolys = NULL;
 }
 
-// Shape and hull of a finished cell or part, moved back to the frame of the parent chunk. Null if it is too small.
-static nbShape* nbFinishShape( const nbFractureJob* job, const nbPoly* poly, nbArena* arena, nbFractureCounters* counters,
-							   b3HullData** hull )
+// Shape of a finished cell or part with its hull, moved back to the frame of the parent chunk. Null if it is too small.
+static nbShape* nbFinishShape( const nbFractureJob* job, const nbPoly* poly, nbFractureCounters* counters )
 {
-	*hull = NULL;
-
 	float volume;
 	b3Vec3 centroid;
 	nbPoly_ComputeMass( poly, &volume, &centroid );
@@ -94,7 +91,7 @@ static nbShape* nbFinishShape( const nbFractureJob* job, const nbPoly* poly, nbA
 	nbShape_Translate( shape, job->origin );
 	if ( job->buildHulls )
 	{
-		*hull = nbCreateHullInArena( shape, arena, &counters->hullFallbackCount );
+		nbShape_BuildHull( shape, &counters->hullFallbackCount );
 	}
 	return shape;
 }
@@ -310,7 +307,7 @@ static void nbCutCell( const nbFractureJob* job, nbCell* cell, const nbPoly* pol
 
 	if ( touched == false )
 	{
-		cell->shape = nbFinishShape( job, poly, arena, counters, &cell->hull );
+		cell->shape = nbFinishShape( job, poly, counters );
 		return;
 	}
 
@@ -428,7 +425,7 @@ static void nbCutCell( const nbFractureJob* job, nbCell* cell, const nbPoly* pol
 		}
 
 		nbCellPart* part = cell->parts + cell->partCount;
-		part->shape = nbFinishShape( job, partPoly, arena, counters, &part->hull );
+		part->shape = nbFinishShape( job, partPoly, counters );
 		cell->partCount += part->shape != NULL ? 1 : 0;
 	}
 }
@@ -512,7 +509,7 @@ void nbComputeCell( const nbFractureJob* job, int cellIndex, nbArena* arena, nbC
 		return;
 	}
 
-	nbShape* shape = nbFinishShape( job, current, arena, counters, &cell->hull );
+	nbShape* shape = nbFinishShape( job, current, counters );
 	if ( shape == NULL )
 	{
 		return;

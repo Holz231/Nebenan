@@ -403,6 +403,117 @@ static int UniqueHullTest( void )
 	return 0;
 }
 
+#if defined( B3_HAS_EXTERNAL_HULLS )
+// Every chunk gives its Box3D shape the hull built into its own shape, whose points and planes are the vertices and planes
+// of the chunk. Counts the chunks on the static body of their destructible and on the bodies of their actors.
+static bool CheckChunkHulls( const nbWorld* world, int* staticCount, int* actorCount )
+{
+	*staticCount = 0;
+	*actorCount = 0;
+	for ( int i = 0; i < world->chunks.count; ++i )
+	{
+		const nbChunk* chunk = world->chunks.data + i;
+		if ( chunk->shape == NULL || B3_IS_NULL( chunk->shapeId ) )
+		{
+			continue;
+		}
+
+		const nbShape* shape = chunk->shape;
+		const b3HullData* hull = b3Shape_GetHull( chunk->shapeId );
+		if ( hull != shape->hull )
+		{
+			return false;
+		}
+
+		// Hulls of the direct builder lie in the shape, quickhull gives the rare others an allocation of their own
+		const uint8_t* bytes = (const uint8_t*)hull;
+		nbShapeLayout layout = nbGetShapeLayout( shape->vertexCount, shape->faceCount, shape->indexCount );
+		if ( bytes == (const uint8_t*)shape + layout.hullOffset )
+		{
+			if ( (const b3Vec3*)( bytes + hull->pointOffset ) != shape->vertices ||
+				 (const b3Plane*)( bytes + hull->planeOffset ) != shape->planes )
+			{
+				return false;
+			}
+		}
+
+		if ( chunk->flags & nb_chunkStaticBody )
+		{
+			*staticCount += 1;
+		}
+		else
+		{
+			*actorCount += 1;
+		}
+	}
+	return true;
+}
+#endif
+
+// A shape with an external hull uses it in place and never frees it. A transformed shape gets a copy of its own, a new
+// hull through b3Shape_SetHull is shared again. The chunks of a destructible give their Box3D shapes the hulls built into
+// their own shapes, on the shared static body, on flying debris and on rubble at rest.
+static int ExternalHullTest( void )
+{
+#if defined( B3_HAS_EXTERNAL_HULLS )
+	int64_t baseBytes = b3GetByteCount();
+	b3WorldDef worldDef = b3DefaultWorldDef();
+	b3WorldId worldId = b3CreateWorld( &worldDef );
+	b3BodyDef bodyDef = b3DefaultBodyDef();
+	bodyDef.type = b3_dynamicBody;
+	b3BodyId bodyId = b3CreateBody( worldId, &bodyDef );
+	b3BoxHull box = b3MakeBoxHull( 1.0f, 1.0f, 1.0f );
+
+	b3ShapeDef externalDef = b3DefaultShapeDef();
+	externalDef.externalHull = true;
+	b3ShapeId shapeA = b3CreateHullShape( bodyId, &externalDef, &box.base );
+	b3ShapeId shapeB = b3CreateHullShape( bodyId, &externalDef, &box.base );
+	ENSURE( b3Shape_GetHull( shapeA ) == &box.base );
+	ENSURE( b3Shape_GetHull( shapeB ) == &box.base );
+
+	b3ShapeId stretched =
+		b3CreateTransformedHullShape( bodyId, &externalDef, &box.base, b3Transform_identity, (b3Vec3){ 2.0f, 1.0f, 1.0f } );
+	ENSURE( b3Shape_GetHull( stretched ) != &box.base );
+
+	b3DestroyShape( shapeA, false );
+	ENSURE( b3Shape_GetHull( shapeB ) == &box.base );
+	b3Shape_SetHull( shapeB, &box.base );
+	ENSURE( b3Shape_GetHull( shapeB ) != &box.base );
+	ENSURE( memcmp( b3Shape_GetHull( shapeB ), &box.base, (size_t)box.base.byteCount ) == 0 );
+	b3DestroyWorld( worldId );
+	ENSURE( b3GetByteCount() == baseBytes );
+
+	int64_t baseNebenanBytes = nbGetByteCount();
+	TestScene scene = CreateScene();
+	CreateGate( &scene, 0.0f, 21 );
+	const nbWorld* world = nbGetWorldFromId( scene.world );
+	int staticCount, actorCount;
+	ENSURE( CheckChunkHulls( world, &staticCount, &actorCount ) );
+	ENSURE( staticCount > 8 && actorCount == 0 );
+
+	nbImpactDef impact = { 0 };
+	impact.point = (b3Vec3){ -3.0f, 1.5f, 0.6f };
+	impact.direction = (b3Vec3){ 0.0f, 0.0f, -1.0f };
+	impact.radius = 0.5f;
+	impact.damage = 6.0e4f;
+	impact.ejectSpeed = 8.0f;
+	nbImpactResult result = nbWorld_ApplyImpact( scene.world, &impact );
+	ENSURE( result.createdBodyCount > 0 );
+	ENSURE( CheckChunkHulls( world, &staticCount, &actorCount ) );
+	ENSURE( staticCount > 8 && actorCount > 0 );
+
+	Step( &scene, 120 );
+	ENSURE( nbWorld_GetStats( scene.world ).rubbleCount > 0 );
+	ENSURE( CheckChunkHulls( world, &staticCount, &actorCount ) );
+	ENSURE( staticCount > 8 && actorCount > 0 );
+
+	DestroyScene( &scene );
+	ENSURE( nbGetByteCount() == baseNebenanBytes );
+	ENSURE( b3GetByteCount() == baseBytes );
+#endif
+	return 0;
+}
+
 typedef struct CountQuery
 {
 	int count;
@@ -888,7 +999,7 @@ static int OpeningTest( void )
 
 			for ( int f = 0; f < shape->faceCount; ++f )
 			{
-				b3Vec3 normal = b3InvRotateVector( piece.transform.q, shape->faces[f].plane.normal );
+				b3Vec3 normal = b3InvRotateVector( piece.transform.q, shape->planes[f].normal );
 				uint8_t material = shape->faces[f].material;
 				ENSURE( material == 3 || material == 4 );
 				openingFaces += b3AbsFloat( normal.z ) < 1.0e-3f && material == 3 && b3AbsFloat( normal.y ) < 0.999f ? 1 : 0;
@@ -2422,6 +2533,7 @@ int WorldTest( void )
 	RUN_TEST( DeterminismTest );
 	RUN_TEST( WorkerTest );
 	RUN_TEST( UniqueHullTest );
+	RUN_TEST( ExternalHullTest );
 	RUN_TEST( StaticBatchTest );
 	RUN_TEST( ShapeContactListTest );
 	RUN_TEST( SharedStaticBodyTest );

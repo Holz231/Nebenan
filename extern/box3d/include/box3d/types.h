@@ -541,6 +541,12 @@ typedef struct b3ShapeDef
 	/// other than hulls. Added for Nebenan.
 	bool uniqueHull;
 
+	/// The shape uses the hull in place instead of copying it, and never frees it. The hull has to stay where it is,
+	/// unchanged, as long as the shape exists. For programs that keep their hulls anyway, so the hulls are not stored
+	/// twice. Ignored for shapes other than hulls. A hull with a shape transform gets a copy of its own, as with
+	/// uniqueHull. Added for Nebenan.
+	bool externalHull;
+
 	/// Used internally to detect a valid definition. DO NOT SET.
 	int internalValue;
 
@@ -548,6 +554,9 @@ typedef struct b3ShapeDef
 
 /// This Box3D has b3ShapeDef::uniqueHull
 #define B3_HAS_UNIQUE_HULLS 1
+
+/// This Box3D has b3ShapeDef::externalHull
+#define B3_HAS_EXTERNAL_HULLS 1
 
 /// Use this to initialize your shape definition
 /// @ingroup shape

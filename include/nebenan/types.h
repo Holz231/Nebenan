@@ -439,12 +439,9 @@ typedef struct nbStats
  * @{
  */
 
-/// A polygon face of a chunk.
+/// A polygon face of a chunk. Its plane is in nbGeometry::planes.
 typedef struct nbFace
 {
-	/// Outward plane in the local frame of the chunk body.
-	b3Plane plane;
-
 	/// First index into the index array.
 	uint16_t firstIndex;
 
@@ -459,6 +456,10 @@ typedef struct nbFace
 typedef struct nbGeometry
 {
 	const b3Vec3* vertices;
+
+	/// Outward plane of every face in the local frame of the chunk body, one per face
+	const b3Plane* planes;
+
 	const nbFace* faces;
 	const uint8_t* indices;
 	int vertexCount;

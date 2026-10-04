@@ -258,15 +258,14 @@ static void nbFreeChunk( nbWorld* world, int chunkIndex )
 int nbCreateChunk( nbWorld* world, int destructibleIndex, int actorIndex, nbShape* shape, int depth, uint8_t interiorMaterial,
 				   int materialIndex )
 {
-	// The hull lives in the scratch arena until the chunk gets its shape, Box3D clones it into its hull database
-	b3HullData* hull = nbCreateHullInArena( shape, &world->arena, &world->stats.hullFallbackCount );
-	return nbCreateChunkWithHull( world, destructibleIndex, actorIndex, shape, hull, depth, interiorMaterial, materialIndex );
+	nbShape_BuildHull( shape, &world->stats.hullFallbackCount );
+	return nbCreateChunkWithHull( world, destructibleIndex, actorIndex, shape, depth, interiorMaterial, materialIndex );
 }
 
-int nbCreateChunkWithHull( nbWorld* world, int destructibleIndex, int actorIndex, nbShape* shape, b3HullData* hull, int depth,
-						   uint8_t interiorMaterial, int materialIndex )
+int nbCreateChunkWithHull( nbWorld* world, int destructibleIndex, int actorIndex, nbShape* shape, int depth, uint8_t interiorMaterial,
+						   int materialIndex )
 {
-	if ( hull == NULL )
+	if ( shape->hull == NULL )
 	{
 		// Degenerate sliver. It cannot be simulated, so it is dropped.
 		nbShape_Destroy( shape );
@@ -278,7 +277,6 @@ int nbCreateChunkWithHull( nbWorld* world, int destructibleIndex, int actorIndex
 	nbDestructible* destructible = world->destructibles.data + destructibleIndex;
 
 	chunk->shape = shape;
-	chunk->pendingHull = hull;
 	chunk->destructibleIndex = destructibleIndex;
 	chunk->depth = (uint8_t)( depth < 255 ? depth : 255 );
 	chunk->interiorMaterial = interiorMaterial;
@@ -514,18 +512,10 @@ static void nbRemoveDebris( nbWorld* world, int actorIndex )
 	nbMarkMoving( world, world->actors.data + movedActor );
 }
 
-void nbFreeActor( nbWorld* world, int actorIndex )
+// Destroy the Box3D body of an actor, with all shapes still on it
+static void nbDestroyActorBody( nbWorld* world, int actorIndex )
 {
 	nbActor* actor = world->actors.data + actorIndex;
-	NB_ASSERT( actor->isFree == false );
-	NB_ASSERT( actor->chunkCount == 0 );
-
-	if ( actor->isRubble )
-	{
-		actor->isRubble = false;
-		world->rubbleCount -= 1;
-	}
-
 	if ( B3_IS_NON_NULL( actor->bodyId ) )
 	{
 		int index = actor->bodyId.index1 - 1;
@@ -540,6 +530,21 @@ void nbFreeActor( nbWorld* world, int actorIndex )
 		}
 		actor->bodyId = b3_nullBodyId;
 	}
+}
+
+void nbFreeActor( nbWorld* world, int actorIndex )
+{
+	nbActor* actor = world->actors.data + actorIndex;
+	NB_ASSERT( actor->isFree == false );
+	NB_ASSERT( actor->chunkCount == 0 );
+
+	if ( actor->isRubble )
+	{
+		actor->isRubble = false;
+		world->rubbleCount -= 1;
+	}
+
+	nbDestroyActorBody( world, actorIndex );
 
 	nbRemoveDebris( world, actorIndex );
 
@@ -708,9 +713,6 @@ static void nbReleaseChunk( nbWorld* world, int chunkIndex )
 	// Chunks created and destroyed in the same event window are reported as both
 	nbPushEvent( world->destroyedEvents + world->eventBuffer, nbMakeChunkId( world, chunkIndex ) );
 
-	// Scratch memory, released with the arena
-	chunk->pendingHull = NULL;
-
 	nbShape_Destroy( chunk->shape );
 	chunk->shape = NULL;
 	nbFreeChunk( world, chunkIndex );
@@ -724,7 +726,9 @@ void nbDestroyChunk( nbWorld* world, int chunkIndex )
 
 void nbDestroyActor( nbWorld* world, int actorIndex )
 {
-	// Destroying a dynamic body removes all of its shapes at once, which is much cheaper than one by one
+	// Destroying a dynamic body removes all of its shapes at once, which is much cheaper than one by one. The body goes
+	// before the chunks, its shapes use the hulls in the shapes of the chunks.
+	nbDestroyActorBody( world, actorIndex );
 	while ( world->actors.data[actorIndex].headChunk != NB_NULL_INDEX )
 	{
 		int chunkIndex = world->actors.data[actorIndex].headChunk;
@@ -1337,9 +1341,13 @@ static b3ShapeDef nbMakeShapeDef( const nbDestructible* destructible, const nbMa
 	shapeDef.enableHitEvents = destructible->enableCollisionDamage && isStatic == false;
 	shapeDef.updateBodyMass = false;
 	shapeDef.invokeContactCreation = true;
-#if defined( B3_HAS_UNIQUE_HULLS )
 	// Every chunk has a hull of its own, so Box3D's hull database would store each hull once anyway. It would also hash
 	// them all into a table that rehashes all its hulls when it fills up, which stalls a large scene for many milliseconds.
+	// So Box3D uses the hull built into the shape of the chunk in place, and the geometry is stored once, see nbShape.
+	// Without that addition Box3D keeps a copy of its own.
+#if defined( B3_HAS_EXTERNAL_HULLS )
+	shapeDef.externalHull = true;
+#elif defined( B3_HAS_UNIQUE_HULLS )
 	shapeDef.uniqueHull = true;
 #endif
 	return shapeDef;
@@ -1426,16 +1434,12 @@ void nbCommitPhysics( nbWorld* world )
 		nbDestructible* destructible = world->destructibles.data + chunk->destructibleIndex;
 		b3ShapeDef shapeDef = nbMakeShapeDef( destructible, destructible->materials + chunk->materialIndex, actor->isStatic );
 
-		// The hull to use: the fresh one, or the one of the shape the chunk already has
-		const b3HullData* hull = chunk->pendingHull;
+		// The hull built into the shape of the chunk, Box3D uses it in place
+		const b3HullData* hull = chunk->shape->hull;
+		NB_ASSERT( hull != NULL );
 		b3ShapeId oldShapeId = chunk->shapeId;
 		b3BodyId oldBodyId = chunk->bodyId;
 		bool oldStaticBody = ( chunk->flags & nb_chunkStaticBody ) != 0;
-		if ( hull == NULL )
-		{
-			NB_ASSERT( B3_IS_NON_NULL( oldShapeId ) );
-			hull = b3Shape_GetHull( oldShapeId );
-		}
 
 		b3BodyId bodyId;
 		if ( actor->isStatic )
@@ -1450,10 +1454,9 @@ void nbCommitPhysics( nbWorld* world )
 			chunk->flags &= ~nb_chunkStaticBody;
 		}
 
-		// Create the new shape before destroying the old one, which owns or shares the hull
+		// Create the new shape before destroying the old one, so the new shape never takes over the id of the old one
 		chunk->shapeId = b3CreateHullShape( bodyId, &shapeDef, hull );
 		chunk->bodyId = bodyId;
-		chunk->pendingHull = NULL;
 		nbMapShape( world, chunk->shapeId, chunkIndex );
 		actor->massDirty = true;
 
@@ -3164,8 +3167,8 @@ static nbFreeSide nbFindFreeSide( const nbWorld* world, const nbChunk* chunk, b3
 		}
 
 		float area = 0.5f * b3Length( sum );
-		float x = b3Dot( face->plane.normal, side1 );
-		float z = b3Dot( face->plane.normal, side2 );
+		float x = b3Dot( shape->planes[f].normal, side1 );
+		float z = b3Dot( shape->planes[f].normal, side2 );
 		a += area * x * x;
 		b += area * x * z;
 		c += area * z * z;
@@ -5251,7 +5254,7 @@ int nbChunk_GetVisibleFaces( nbChunkId chunkId, bool* visible, int capacity )
 		float bestDistance = NB_FACE_PLANE_TOLERANCE;
 		for ( int f = 0; f < shape->faceCount; ++f )
 		{
-			b3Plane plane = shape->faces[f].plane;
+			b3Plane plane = shape->planes[f];
 			float distance = b3AbsFloat( plane.offset - height );
 			if ( b3Dot( plane.normal, normal ) > NB_FACE_NORMAL_TOLERANCE && distance <= bestDistance )
 			{
@@ -5277,7 +5280,7 @@ int nbChunk_GetVisibleFaces( nbChunkId chunkId, bool* visible, int capacity )
 		{
 			b3Vec3 e1 = b3Sub( shape->vertices[loop[k]], origin );
 			b3Vec3 e2 = b3Sub( shape->vertices[loop[k + 1]], origin );
-			twiceArea += b3Dot( face->plane.normal, b3Cross( e1, e2 ) );
+			twiceArea += b3Dot( shape->planes[f].normal, b3Cross( e1, e2 ) );
 		}
 		visible[f] = covered[f] < NB_FACE_COVERAGE * 0.5f * twiceArea;
 	}

@@ -55,12 +55,22 @@ in derselben Reihenfolge wie die des Körpers. Nebenan hängt damit alle stehend
 gemeinsamen statischen Körper, statt jedem einen eigenen zu geben, und das Löschen eines Bruchstücks wird nicht teurer.
 Mit Validierung prüft `b3ValidateContacts` die Listen.
 
-Die erste, die zweite, die vierte und die fünfte ändern an den Ergebnissen nichts. Die dritte ändert sie in den letzten
-Bits, dafür hängen sie nicht mehr davon ab, in welcher Reihenfolge Formen in den statischen Baum kommen. Die Ergänzungen
-stehen in `include/box3d/box3d.h`, `include/box3d/types.h`, `src/core.c`, `src/shape.h`, `src/shape.c`, `src/contact.h`,
-`src/contact.c`, `src/world_snapshot.c`, `src/recording.c`, `src/solver.c`, `src/broad_phase.h`, `src/broad_phase.c`,
-`src/dynamic_tree.h`, `src/dynamic_tree.c` und `src/physics_world.c`, jeweils mit „Added for Nebenan“ markiert.
-`B3_HAS_UNIQUE_HULLS`, `B3_HAS_STATIC_BATCH` und `B3_HAS_SHAPE_CONTACT_LISTS` zeigen die zweite, die vierte und die
-fünfte an. Fehlen sie, etwa mit einem eigenen Box3D, läuft Nebenan wie zuvor, nur wachsen Box3Ds Arrays dann durch
-Umkopieren, die Hüllen gehen durch die Tabelle, jede Form geht einzeln in den Baum, und jedes stehende Bruchstück
-bekommt einen eigenen Körper.
+**Hüllen, die beim Besitzer bleiben.** Mit `b3ShapeDef::uniqueHull` kopierte Box3D die Hülle jedes Bruchstücks, obwohl
+Nebenan dieselben Ecken und Ebenen in seiner eigenen Form hielt. Mit `b3ShapeDef::externalHull` benutzt eine Form die
+Hülle, die sie bekommt, an Ort und Stelle und gibt sie nie frei (`b3_externalHull` in `b3Shape::flags`). Die Hülle muss
+unverändert dort bleiben, solange die Form besteht. Nebenan baut die Hülle direkt in die Form jedes Bruchstücks, ihre
+Punkte und Ebenen sind dessen Ecken und Flächen, und löscht die Box3D-Formen vor den Bruchstücken. So liegt die
+Geometrie nur einmal im Speicher, und beim Laden und beim Umhängen eines Bruchstücks auf einen anderen Körper wird
+nichts kopiert. Eine Hülle mit Transformation der Form bekommt wie bei `uniqueHull` eine eigene Kopie, ebenso eine Form,
+die aus einem Snapshot kommt, denn der Besitzer ihrer Hülle gehört nicht dazu. Aufnahmen speichern das Feld nicht.
+
+Die erste, die zweite, die vierte, die fünfte und die sechste ändern an den Ergebnissen nichts. Die dritte ändert sie in
+den letzten Bits, dafür hängen sie nicht mehr davon ab, in welcher Reihenfolge Formen in den statischen Baum kommen. Die
+Ergänzungen stehen in `include/box3d/box3d.h`, `include/box3d/types.h`, `src/core.c`, `src/shape.h`, `src/shape.c`,
+`src/contact.h`, `src/contact.c`, `src/world_snapshot.c`, `src/recording.c`, `src/solver.c`, `src/broad_phase.h`,
+`src/broad_phase.c`, `src/dynamic_tree.h`, `src/dynamic_tree.c` und `src/physics_world.c`, jeweils mit „Added for
+Nebenan“ markiert. `B3_HAS_UNIQUE_HULLS`, `B3_HAS_STATIC_BATCH`, `B3_HAS_SHAPE_CONTACT_LISTS` und
+`B3_HAS_EXTERNAL_HULLS` zeigen die zweite, die vierte, die fünfte und die sechste an. Fehlen sie, etwa mit einem eigenen
+Box3D, läuft Nebenan wie zuvor, nur wachsen Box3Ds Arrays dann durch Umkopieren, die Hüllen gehen durch die Tabelle,
+jede Form geht einzeln in den Baum, jedes stehende Bruchstück bekommt einen eigenen Körper, und Box3D hält eine Kopie
+jeder Hülle.

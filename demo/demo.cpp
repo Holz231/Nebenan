@@ -310,7 +310,8 @@ static void BuildChunkMesh( App& app, ChunkVisual& visual )
 		for ( int k = 0; k < face.indexCount; ++k )
 		{
 			b3Vec3 position = geometry.vertices[geometry.indices[face.firstIndex + k]];
-			app.vertexScratch.push_back( Renderer::MakeVertex( position, face.plane.normal, (int)face.material, visual.slot ) );
+			app.vertexScratch.push_back(
+				Renderer::MakeVertex( position, geometry.planes[f].normal, (int)face.material, visual.slot ) );
 		}
 		for ( int k = 1; k + 1 < face.indexCount; ++k )
 		{

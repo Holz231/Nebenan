@@ -2,6 +2,8 @@
 
 #include "poly.h"
 
+#include "hull_builder.h"
+
 #include <float.h>
 
 // Box faces as vertex loops, counter clockwise seen from outside. Vertex i has the coordinates
@@ -617,21 +619,23 @@ nbShape* nbShape_CreateWithMass( const nbPoly* poly, float volume, b3Vec3 centro
 		return NULL;
 	}
 
-	size_t headerSize = ( sizeof( nbShape ) + 15 ) & ~(size_t)15;
-	size_t vertexSize = ( sizeof( b3Vec3 ) * (size_t)poly->vertexCount + 15 ) & ~(size_t)15;
-	size_t faceSize = ( sizeof( nbFace ) * (size_t)poly->faceCount + 15 ) & ~(size_t)15;
-	size_t indexSize = (size_t)poly->indexCount;
-	size_t byteCount = headerSize + vertexSize + faceSize + indexSize;
-
-	uint8_t* memory = nbAlloc( byteCount );
+	nbShapeLayout layout = nbGetShapeLayout( poly->vertexCount, poly->faceCount, poly->indexCount );
+	uint8_t* memory = nbAlloc( layout.byteCount );
 	nbShape* shape = (nbShape*)memory;
-	shape->vertices = (b3Vec3*)( memory + headerSize );
-	shape->faces = (nbFace*)( memory + headerSize + vertexSize );
-	shape->indices = memory + headerSize + vertexSize + faceSize;
+	shape->hull = NULL;
+	shape->vertices = (b3Vec3*)( memory + layout.vertexOffset );
+	shape->planes = (b3Plane*)( memory + layout.planeOffset );
+	shape->faces = (nbFace*)( memory + layout.faceOffset );
+	shape->indices = memory + layout.indexOffset;
 	shape->vertexCount = poly->vertexCount;
 	shape->faceCount = poly->faceCount;
 	shape->indexCount = poly->indexCount;
-	shape->byteCount = (int)byteCount;
+
+	// The direct builder fills in the rest of the hull, see nbShape_BuildHull
+	if ( layout.hullOffset > 0 )
+	{
+		memset( memory + layout.hullOffset, 0, layout.byteCount - layout.hullOffset );
+	}
 
 	memcpy( shape->vertices, poly->vertices, sizeof( b3Vec3 ) * (size_t)poly->vertexCount );
 	memcpy( shape->indices, poly->indices, (size_t)poly->indexCount );
@@ -639,7 +643,7 @@ nbShape* nbShape_CreateWithMass( const nbPoly* poly, float volume, b3Vec3 centro
 	{
 		const nbPolyFace* src = poly->faces + f;
 		nbFace* dst = shape->faces + f;
-		dst->plane = src->plane;
+		shape->planes[f] = src->plane;
 		dst->firstIndex = src->first;
 		dst->indexCount = src->count;
 		dst->material = src->material;
@@ -652,11 +656,46 @@ nbShape* nbShape_CreateWithMass( const nbPoly* poly, float volume, b3Vec3 centro
 	return shape;
 }
 
+nbShapeLayout nbGetShapeLayout( int vertexCount, int faceCount, int indexCount )
+{
+	// The header, the faces and the loops, then the hull the direct builder writes, with the vertices and planes in their
+	// places in it. Beyond the direct builder the vertices and planes come right after the loops. The hull starts on 16
+	// bytes, as in an allocation of Box3D, so it spans as many cache lines as a hull Box3D allocates.
+	nbShapeLayout layout;
+	layout.faceOffset = sizeof( nbShape );
+	layout.indexOffset = layout.faceOffset + sizeof( nbFace ) * (size_t)faceCount;
+	size_t prefixSize = ( layout.indexOffset + (size_t)indexCount + 15 ) & ~(size_t)15;
+
+	nbHullLayout hull;
+	if ( nbGetHullLayout( vertexCount, faceCount, indexCount, &hull ) )
+	{
+		layout.hullOffset = prefixSize;
+		layout.vertexOffset = prefixSize + hull.pointOffset;
+		layout.planeOffset = prefixSize + hull.planeOffset;
+		layout.byteCount = prefixSize + hull.byteCount;
+	}
+	else
+	{
+		layout.hullOffset = 0;
+		layout.vertexOffset = prefixSize;
+		layout.planeOffset = prefixSize + sizeof( b3Vec3 ) * (size_t)vertexCount;
+		layout.byteCount = layout.planeOffset + sizeof( b3Plane ) * (size_t)faceCount;
+	}
+	return layout;
+}
+
 void nbShape_Destroy( nbShape* shape )
 {
 	if ( shape != NULL )
 	{
-		nbFree( shape, (size_t)shape->byteCount );
+		nbShapeLayout layout = nbGetShapeLayout( shape->vertexCount, shape->faceCount, shape->indexCount );
+
+		// A hull from quickhull has an allocation of its own
+		if ( shape->hull != NULL && (const uint8_t*)shape->hull != (const uint8_t*)shape + layout.hullOffset )
+		{
+			b3DestroyHull( (b3HullData*)shape->hull );
+		}
+		nbFree( shape, layout.byteCount );
 	}
 }
 
@@ -671,7 +710,7 @@ void nbShape_ToPoly( const nbShape* shape, nbPoly* poly )
 	{
 		const nbFace* src = shape->faces + f;
 		nbPolyFace* dst = poly->faces + f;
-		dst->plane = src->plane;
+		dst->plane = shape->planes[f];
 		dst->first = src->firstIndex;
 		dst->count = src->indexCount;
 		dst->material = src->material;
@@ -681,6 +720,7 @@ void nbShape_ToPoly( const nbShape* shape, nbPoly* poly )
 
 void nbShape_Translate( nbShape* shape, b3Vec3 translation )
 {
+	NB_ASSERT( shape->hull == NULL );
 	for ( int i = 0; i < shape->vertexCount; ++i )
 	{
 		shape->vertices[i] = b3Add( shape->vertices[i], translation );
@@ -688,7 +728,7 @@ void nbShape_Translate( nbShape* shape, b3Vec3 translation )
 
 	for ( int i = 0; i < shape->faceCount; ++i )
 	{
-		b3Plane* plane = &shape->faces[i].plane;
+		b3Plane* plane = shape->planes + i;
 		plane->offset += b3Dot( plane->normal, translation );
 	}
 
@@ -701,6 +741,7 @@ nbGeometry nbShape_GetGeometry( const nbShape* shape )
 {
 	nbGeometry geometry = {
 		.vertices = shape->vertices,
+		.planes = shape->planes,
 		.faces = shape->faces,
 		.indices = shape->indices,
 		.vertexCount = shape->vertexCount,
@@ -715,7 +756,7 @@ float nbShape_Distance( const nbShape* shape, b3Vec3 point )
 	float distance = -FLT_MAX;
 	for ( int f = 0; f < shape->faceCount; ++f )
 	{
-		const b3Plane* plane = &shape->faces[f].plane;
+		const b3Plane* plane = shape->planes + f;
 		float d = b3Dot( plane->normal, point ) - plane->offset;
 		distance = d > distance ? d : distance;
 	}
@@ -791,7 +832,7 @@ float nbShape_FaceOverlap( const nbShape* a, int faceIndexA, const nbShape* b, i
 {
 	const nbFace* faceA = a->faces + faceIndexA;
 	const nbFace* faceB = b->faces + faceIndexB;
-	b3Vec3 n = faceA->plane.normal;
+	b3Vec3 n = a->planes[faceIndexA].normal;
 
 	// Project both faces onto the plane of face A. Face B winds the other way, so reverse it.
 	b3Vec2 buffer1[NB_MAX_CLIP_POINTS];
@@ -873,21 +914,21 @@ float nbShape_ContactArea( const nbShape* a, const nbShape* b, float tolerance, 
 
 	for ( int fa = 0; fa < a->faceCount; ++fa )
 	{
-		const nbFace* faceA = a->faces + fa;
-		b3Vec3 n = faceA->plane.normal;
+		const b3Plane* planeA = a->planes + fa;
+		b3Vec3 n = planeA->normal;
 
 		for ( int fb = 0; fb < b->faceCount; ++fb )
 		{
-			const nbFace* faceB = b->faces + fb;
+			const b3Plane* planeB = b->planes + fb;
 
 			// Opposing normals within about one degree
-			if ( b3Dot( n, faceB->plane.normal ) > -0.99985f )
+			if ( b3Dot( n, planeB->normal ) > -0.99985f )
 			{
 				continue;
 			}
 
 			// Coplanar: the offsets of opposing planes cancel
-			if ( b3AbsFloat( faceA->plane.offset + faceB->plane.offset ) > tolerance )
+			if ( b3AbsFloat( planeA->offset + planeB->offset ) > tolerance )
 			{
 				continue;
 			}

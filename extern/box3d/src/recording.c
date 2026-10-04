@@ -404,7 +404,7 @@ void b3RecW_SHAPEDEF( b3RecBuffer* buf, b3ShapeDef v )
 	b3RecW_BOOL( buf, v.invokeContactCreation );
 	b3RecW_BOOL( buf, v.updateBodyMass );
 	b3RecW_BOOL( buf, v.enableSpeculativeContact );
-	// uniqueHull: not recorded, so the format stays. Replay shares the hulls, which simulates the same.
+	// uniqueHull and externalHull: not recorded, so the format stays. Replay shares the hulls, which simulates the same.
 	// internalValue omitted
 }
 

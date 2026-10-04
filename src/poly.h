@@ -62,22 +62,40 @@ typedef enum nbClipResult
 	nb_clipOverflow,
 } nbClipResult;
 
-// Compact immutable polyhedron owned by a chunk. One allocation holds all arrays.
+// Compact immutable polyhedron owned by a chunk. One allocation holds the faces, the loops and, built right into it, the
+// Box3D hull of the chunk: the vertices and face planes are the points and planes of that hull, and Box3D shapes use it
+// in place (b3ShapeDef::externalHull), so the geometry is stored once. A polyhedron beyond the direct hull builder keeps
+// its vertices and planes in the allocation and gets a hull of its own from quickhull, see nbShape_BuildHull.
 typedef struct nbShape
 {
+	// Null until nbShape_BuildHull, and for a sliver without a valid hull. Lies in the allocation, unless quickhull made
+	// it.
+	const b3HullData* hull;
 	b3Vec3* vertices;
+	b3Plane* planes;
 	nbFace* faces;
 	uint8_t* indices;
 	int vertexCount;
 	int faceCount;
 	int indexCount;
-	int byteCount;
 	b3AABB bounds;
 	b3Vec3 centroid;
 	float volume;
 	// Largest distance from the centroid to a vertex
 	float radius;
 } nbShape;
+
+// Where the parts of a shape lie in its allocation. The counts give it, so the shape does not keep it.
+typedef struct nbShapeLayout
+{
+	size_t faceOffset;
+	size_t indexOffset;
+	// Start of the hull built into the allocation, zero for a polyhedron beyond the direct hull builder
+	size_t hullOffset;
+	size_t vertexOffset;
+	size_t planeOffset;
+	size_t byteCount;
+} nbShapeLayout;
 
 void nbPoly_MakeBox( nbPoly* poly, b3Vec3 halfExtents, b3Transform transform, uint8_t material );
 bool nbPoly_MakeFromHull( nbPoly* poly, const b3HullData* hull, b3Transform transform, uint8_t material );
@@ -102,8 +120,11 @@ nbShape* nbShape_Create( const nbPoly* poly );
 
 // Same, with the volume and centroid from nbPoly_ComputeMass already at hand
 nbShape* nbShape_CreateWithMass( const nbPoly* poly, float volume, b3Vec3 centroid );
+nbShapeLayout nbGetShapeLayout( int vertexCount, int faceCount, int indexCount );
 void nbShape_Destroy( nbShape* shape );
 void nbShape_ToPoly( const nbShape* shape, nbPoly* poly );
+
+// Move the shape. Only before its hull is built.
 void nbShape_Translate( nbShape* shape, b3Vec3 translation );
 nbGeometry nbShape_GetGeometry( const nbShape* shape );
 

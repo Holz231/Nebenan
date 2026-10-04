@@ -20,18 +20,14 @@ typedef struct nbCellNeighbor
 typedef struct nbCellPart
 {
 	nbShape* shape;
-	b3HullData* hull;
 } nbCellPart;
 
 typedef struct nbCell
 {
 	// Heap allocated shape in the frame of the job origin, owned by the caller. Null if the cell was
-	// empty or too small, or if cutouts cut it into parts.
+	// empty or too small, or if cutouts cut it into parts. If the job builds hulls, the shape carries
+	// its Box3D hull, or none for a sliver without a valid hull, which is dropped.
 	nbShape* shape;
-
-	// Box3D hull of the shape in arena memory, if the job builds hulls. Null for a sliver without a
-	// valid hull, which is dropped.
-	b3HullData* hull;
 
 	// Faces shared with other cells, in the frame of the sites and in arena memory. They become the
 	// internal bonds. A job with cutouts leaves them out.

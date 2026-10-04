@@ -19,7 +19,9 @@ typedef enum b3ShapeFlags
 	b3_enableCustomFiltering = 0x04,
 	b3_enableHitEvents = 0x08,
 	b3_enablePreSolveEvents = 0x10,
-	// 0x20 is free, it was the enlarged AABB flag before the broad-phase marked the tree
+	// Added for Nebenan: the shape uses its hull in place, its owner frees it, see b3ShapeDef::externalHull. This was the
+	// enlarged AABB flag before the broad-phase marked the tree.
+	b3_externalHull = 0x20,
 	b3_enableSpeculative = 0x40,
 	// Added for Nebenan: the shape owns its hull, which is not in the hull database, see b3ShapeDef::uniqueHull
 	b3_uniqueHull = 0x80,

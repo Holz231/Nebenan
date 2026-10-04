@@ -14,53 +14,44 @@ static size_t nbAlignUp8( size_t x )
 	return ( x + 7u ) & ~(size_t)7u;
 }
 
-typedef struct nbHullLayout
+bool nbGetHullLayout( int vertexCount, int faceCount, int indexCount, nbHullLayout* layout )
 {
-	size_t vertexOffset;
-	size_t pointOffset;
-	size_t edgeOffset;
-	size_t planeOffset;
-	size_t faceOffset;
-	size_t soaVertexOffset;
-	size_t soaNormalOffset;
-	size_t byteCount;
-} nbHullLayout;
+	int edgeCount = indexCount;
+	if ( vertexCount > B3_MAX_HULL_VERTICES || faceCount > B3_MAX_HULL_FACES || edgeCount > 2 * B3_MAX_HULL_EDGES ||
+		 edgeCount > 256 )
+	{
+		return false;
+	}
 
-static nbHullLayout nbComputeHullLayout( int vertexCount, int edgeCount, int faceCount )
-{
 	int soaVertexCount = ( vertexCount + 3 ) & ~3;
 	int soaNormalCount = ( faceCount + 3 ) & ~3;
 
-	nbHullLayout layout;
 	size_t byteCount = nbAlignUp8( sizeof( b3HullData ) );
-	layout.vertexOffset = byteCount;
+	layout->vertexOffset = byteCount;
 	byteCount += nbAlignUp8( (size_t)vertexCount * sizeof( b3HullVertex ) );
-	layout.pointOffset = byteCount;
+	layout->pointOffset = byteCount;
 	byteCount += nbAlignUp8( (size_t)vertexCount * sizeof( b3Vec3 ) );
-	layout.edgeOffset = byteCount;
+	layout->edgeOffset = byteCount;
 	byteCount += nbAlignUp8( (size_t)edgeCount * sizeof( b3HullHalfEdge ) );
-	layout.planeOffset = byteCount;
+	layout->planeOffset = byteCount;
 	byteCount += nbAlignUp8( (size_t)faceCount * sizeof( b3Plane ) );
-	layout.faceOffset = byteCount;
+	layout->faceOffset = byteCount;
 	byteCount += nbAlignUp8( (size_t)faceCount * sizeof( b3HullFace ) );
-	layout.soaVertexOffset = byteCount;
+	layout->soaVertexOffset = byteCount;
 	byteCount += nbAlignUp8( 3 * (size_t)soaVertexCount * sizeof( float ) );
-	layout.soaNormalOffset = byteCount;
+	layout->soaNormalOffset = byteCount;
 	byteCount += nbAlignUp8( 3 * (size_t)soaNormalCount * sizeof( float ) );
-	layout.byteCount = byteCount;
-	return layout;
+	layout->byteCount = byteCount;
+	return true;
 }
 
 int nbGetHullByteCount( const nbShape* shape )
 {
-	int halfEdgeCount = shape->indexCount;
-	if ( shape->vertexCount > B3_MAX_HULL_VERTICES || shape->faceCount > B3_MAX_HULL_FACES ||
-		 halfEdgeCount > 2 * B3_MAX_HULL_EDGES || halfEdgeCount > 256 )
+	nbHullLayout layout;
+	if ( nbGetHullLayout( shape->vertexCount, shape->faceCount, shape->indexCount, &layout ) == false )
 	{
 		return 0;
 	}
-
-	nbHullLayout layout = nbComputeHullLayout( shape->vertexCount, halfEdgeCount, shape->faceCount );
 	return (int)layout.byteCount;
 }
 
@@ -87,10 +78,20 @@ b3HullData* nbBuildHull( const nbShape* shape, void* memory )
 	int vertexCount = shape->vertexCount;
 	int faceCount = shape->faceCount;
 	int halfEdgeCount = shape->indexCount;
-	NB_ASSERT( nbGetHullByteCount( shape ) > 0 );
 
-	nbHullLayout layout = nbComputeHullLayout( vertexCount, halfEdgeCount, faceCount );
-	memset( memory, 0, layout.byteCount );
+	nbHullLayout layout;
+	if ( nbGetHullLayout( vertexCount, faceCount, halfEdgeCount, &layout ) == false )
+	{
+		NB_ASSERT( false );
+		return NULL;
+	}
+
+	// The hull built into the shape holds its vertices and planes, the rest is zero, see nbShape_CreateWithMass
+	bool inPlace = (const uint8_t*)shape->vertices == (const uint8_t*)memory + layout.pointOffset;
+	if ( inPlace == false )
+	{
+		memset( memory, 0, layout.byteCount );
+	}
 
 	b3HullData* hull = memory;
 	uint8_t* base = memory;
@@ -209,7 +210,7 @@ b3HullData* nbBuildHull( const nbShape* shape, void* memory )
 	for ( int f = 0; f < faceCount; ++f )
 	{
 		faces[f].edge = (uint8_t)edgeIndex[shape->faces[f].firstIndex];
-		planes[f] = shape->faces[f].plane;
+		planes[f] = shape->planes[f];
 	}
 
 	int soaVertexCount = ( vertexCount + 3 ) & ~3;
@@ -332,28 +333,29 @@ b3HullData* nbBuildHull( const nbShape* shape, void* memory )
 	return hull;
 }
 
-b3HullData* nbCreateHullInArena( const nbShape* shape, nbArena* arena, int* fallbackCount )
+bool nbShape_BuildHull( nbShape* shape, int* fallbackCount )
 {
-	int byteCount = nbGetHullByteCount( shape );
-	if ( byteCount > 0 )
+	NB_ASSERT( shape->hull == NULL );
+	nbShapeLayout layout = nbGetShapeLayout( shape->vertexCount, shape->faceCount, shape->indexCount );
+	if ( layout.hullOffset > 0 )
 	{
-		void* memory = nbArena_Alloc( arena, (size_t)byteCount );
-		b3HullData* hull = nbBuildHull( shape, memory );
+		b3HullData* hull = nbBuildHull( shape, (uint8_t*)shape + layout.hullOffset );
 		if ( hull != NULL )
 		{
-			return hull;
+			shape->hull = hull;
+			return true;
 		}
 	}
 
-	b3HullData* heapHull = b3CreateHull( shape->vertices, shape->vertexCount, B3_MAX_HULL_VERTICES );
-	if ( heapHull == NULL )
+	// Quickhull merges degenerate features, so its hull has points and planes of its own and an allocation of its own,
+	// which nbShape_Destroy frees. The shape keeps its own points and planes.
+	b3HullData* hull = b3CreateHull( shape->vertices, shape->vertexCount, B3_MAX_HULL_VERTICES );
+	if ( hull == NULL )
 	{
-		return NULL;
+		return false;
 	}
 
-	b3HullData* hull = nbArena_Alloc( arena, (size_t)heapHull->byteCount );
-	memcpy( hull, heapHull, (size_t)heapHull->byteCount );
-	b3DestroyHull( heapHull );
+	shape->hull = hull;
 	*fallbackCount += 1;
-	return hull;
+	return true;
 }

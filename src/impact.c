@@ -288,10 +288,10 @@ static int nbFinishRefine( nbWorld* world, int chunkIndex, const nbFractureJob* 
 
 		for ( int pf = 0; pf < parentShape->faceCount && interfaceCount < interfaceCapacity; ++pf )
 		{
-			b3Plane parentPlane = parentShape->faces[pf].plane;
+			b3Plane parentPlane = parentShape->planes[pf];
 			for ( int nf = 0; nf < neighborShape->faceCount; ++nf )
 			{
-				b3Plane neighborPlane = neighborShape->faces[nf].plane;
+				b3Plane neighborPlane = neighborShape->planes[nf];
 				if ( b3Dot( parentPlane.normal, neighborPlane.normal ) > -0.99985f ||
 					 b3AbsFloat( parentPlane.offset + neighborPlane.offset ) > contactTolerance )
 				{
@@ -322,7 +322,7 @@ static int nbFinishRefine( nbWorld* world, int chunkIndex, const nbFractureJob* 
 		}
 
 		childIndices[i] =
-			nbCreateChunkWithHull( world, destructibleIndex, actorIndex, cell->shape, cell->hull, depth, interiorMaterial, materialIndex );
+			nbCreateChunkWithHull( world, destructibleIndex, actorIndex, cell->shape, depth, interiorMaterial, materialIndex );
 		childCount += childIndices[i] != NB_NULL_INDEX ? 1 : 0;
 	}
 	result->createdChunkCount += childCount;
@@ -367,7 +367,7 @@ static int nbFinishRefine( nbWorld* world, int chunkIndex, const nbFractureJob* 
 			const nbShape* childShape = world->chunks.data[childIndex].shape;
 			for ( int cf = 0; cf < childShape->faceCount; ++cf )
 			{
-				b3Plane childPlane = childShape->faces[cf].plane;
+				b3Plane childPlane = childShape->planes[cf];
 				if ( b3Dot( childPlane.normal, face->parentPlane.normal ) < 0.99999f ||
 					 b3AbsFloat( childPlane.offset - face->parentPlane.offset ) > contactTolerance )
 				{

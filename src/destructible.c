@@ -248,8 +248,8 @@ static void nbFinishPiece( nbWorld* world, int destructibleIndex, int actorIndex
 		const nbCell* cell = job->cells + i;
 		for ( int k = 0; k < cell->partCount; ++k )
 		{
-			int chunkIndex = nbCreateChunkWithHull( world, destructibleIndex, actorIndex, cell->parts[k].shape,
-													cell->parts[k].hull, 0, job->interiorMaterial, materialIndex );
+			int chunkIndex = nbCreateChunkWithHull( world, destructibleIndex, actorIndex, cell->parts[k].shape, 0,
+													job->interiorMaterial, materialIndex );
 			if ( chunkIndex != NB_NULL_INDEX )
 			{
 				nbArray_Push( *chunkCells, cells[i] );
@@ -262,7 +262,7 @@ static void nbFinishPiece( nbWorld* world, int destructibleIndex, int actorIndex
 		}
 
 		chunkIndices[i] =
-			nbCreateChunkWithHull( world, destructibleIndex, actorIndex, cell->shape, cell->hull, 0, job->interiorMaterial, materialIndex );
+			nbCreateChunkWithHull( world, destructibleIndex, actorIndex, cell->shape, 0, job->interiorMaterial, materialIndex );
 		if ( chunkIndices[i] != NB_NULL_INDEX )
 		{
 			nbArray_Push( *chunkCells, cells[i] );

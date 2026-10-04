@@ -62,9 +62,6 @@ typedef struct nbChunk
 	b3BodyId bodyId;
 	b3ShapeId shapeId;
 
-	// Hull built at creation in scratch memory, handed to Box3D when the chunk gets its shape
-	b3HullData* pendingHull;
-
 	int destructibleIndex;
 	int actorIndex;
 
@@ -452,10 +449,10 @@ void nbParallelFor( nbWorld* world, int itemCount, int minItems, nbParallelFn* f
 int nbCreateChunk( nbWorld* world, int destructibleIndex, int actorIndex, nbShape* shape, int depth, uint8_t interiorMaterial,
 				   int materialIndex );
 
-// Same with a hull built beforehand, for example by a fracture worker. The hull memory must stay valid
-// until the end of the operation. A null hull drops the shape.
-int nbCreateChunkWithHull( nbWorld* world, int destructibleIndex, int actorIndex, nbShape* shape, b3HullData* hull, int depth,
-						   uint8_t interiorMaterial, int materialIndex );
+// Same for a shape whose hull is built already, for example by a fracture worker. A shape without a hull, a sliver that
+// has no valid one, is dropped.
+int nbCreateChunkWithHull( nbWorld* world, int destructibleIndex, int actorIndex, nbShape* shape, int depth, uint8_t interiorMaterial,
+						   int materialIndex );
 
 int nbAllocActor( nbWorld* world, int destructibleIndex, bool isStatic );
 void nbFreeActor( nbWorld* world, int actorIndex );

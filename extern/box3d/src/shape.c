@@ -139,8 +139,13 @@ static b3Shape* b3CreateShapeInternal( b3World* world, b3Body* body, b3WorldTran
 					return NULL;
 				}
 
-				// Added for Nebenan: a unique hull stays with its shape
-				shape->hull = def->uniqueHull ? baked : b3AddOwnedHullToDatabase( world, baked );
+				// Added for Nebenan: a unique hull stays with its shape, so does the copy of an external one
+				shape->hull = ( def->uniqueHull || def->externalHull ) ? baked : b3AddOwnedHullToDatabase( world, baked );
+			}
+			else if ( def->externalHull )
+			{
+				// Added for Nebenan: the hull stays where its owner keeps it
+				shape->hull = (const b3HullData*)geometry;
 			}
 			else if ( def->uniqueHull )
 			{
@@ -185,7 +190,15 @@ static b3Shape* b3CreateShapeInternal( b3World* world, b3Body* body, b3WorldTran
 	shape->flags |= def->enableHitEvents ? b3_enableHitEvents : 0;
 	shape->flags |= def->enablePreSolveEvents ? b3_enablePreSolveEvents : 0;
 	shape->flags |= def->enableSpeculativeContact ? b3_enableSpeculative : 0;
-	shape->flags |= ( shapeType == b3_hullShape && def->uniqueHull ) ? b3_uniqueHull : 0; // Added for Nebenan
+	// Added for Nebenan: who owns the hull
+	if ( shapeType == b3_hullShape && def->externalHull && haveShapeTransform == false )
+	{
+		shape->flags |= b3_externalHull;
+	}
+	else if ( shapeType == b3_hullShape && ( def->uniqueHull || def->externalHull ) )
+	{
+		shape->flags |= b3_uniqueHull;
+	}
 	shape->proxyKey = B3_NULL_INDEX;
 	shape->headContactKey = B3_NULL_INDEX; // Added for Nebenan
 	shape->localCentroid = b3GetShapeCentroid( shape );
@@ -1033,8 +1046,12 @@ static void b3DestroyShapeAllocationForShapeChange( b3World* world, b3Shape* sha
 	switch ( type )
 	{
 		case b3_hullShape:
-			// Added for Nebenan: a unique hull belongs to its shape
-			if ( shape->flags & b3_uniqueHull )
+			// Added for Nebenan: a unique hull belongs to its shape, an external one to its owner
+			if ( shape->flags & b3_externalHull )
+			{
+				shape->flags &= ~b3_externalHull;
+			}
+			else if ( shape->flags & b3_uniqueHull )
 			{
 				b3DestroyHull( (b3HullData*)shape->hull );
 				shape->flags &= ~b3_uniqueHull;
