@@ -289,6 +289,24 @@ void b3CreateContact( b3World* world, b3Shape* shapeA, b3Shape* shapeB, int chil
 		bodyB->contactCount += 1;
 	}
 
+	// Added for Nebenan: connect to the shapes, see b3Shape::headContactKey
+	{
+		b3Shape* contactShapes[2] = { shapeA, shapeB };
+		for ( int i = 0; i < 2; ++i )
+		{
+			b3Shape* shape = contactShapes[i];
+			int key = ( contactId << 1 ) | i;
+			contact->shapePrevKey[i] = B3_NULL_INDEX;
+			contact->shapeNextKey[i] = shape->headContactKey;
+			if ( shape->headContactKey != B3_NULL_INDEX )
+			{
+				b3Contact* headContact = b3Array_Get( world->contacts, shape->headContactKey >> 1 );
+				headContact->shapePrevKey[shape->headContactKey & 1] = key;
+			}
+			shape->headContactKey = key;
+		}
+	}
+
 	// Add to pair set for fast lookup
 	uint64_t pairKey = b3ShapePairKey( shapeIdA, shapeIdB, childIndex );
 	b3AddKey( &world->broadPhase.pairSet, pairKey );
@@ -430,6 +448,30 @@ void b3DestroyContact( b3World* world, b3Contact* contact, bool wakeBodies )
 	}
 
 	bodyB->contactCount -= 1;
+
+	// Added for Nebenan: remove from the shapes, see b3Shape::headContactKey
+	for ( int i = 0; i < 2; ++i )
+	{
+		b3Shape* shape = b3Array_Get( world->shapes, i == 0 ? contact->shapeIdA : contact->shapeIdB );
+		int prevKey = contact->shapePrevKey[i];
+		int nextKey = contact->shapeNextKey[i];
+		if ( prevKey != B3_NULL_INDEX )
+		{
+			b3Contact* prevContact = b3Array_Get( world->contacts, prevKey >> 1 );
+			prevContact->shapeNextKey[prevKey & 1] = nextKey;
+		}
+
+		if ( nextKey != B3_NULL_INDEX )
+		{
+			b3Contact* nextContact = b3Array_Get( world->contacts, nextKey >> 1 );
+			nextContact->shapePrevKey[nextKey & 1] = prevKey;
+		}
+
+		if ( shape->headContactKey == ( ( contactId << 1 ) | i ) )
+		{
+			shape->headContactKey = nextKey;
+		}
+	}
 
 	if ( contact->flags & b3_simMeshContact )
 	{

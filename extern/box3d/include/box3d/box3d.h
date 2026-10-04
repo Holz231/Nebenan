@@ -244,6 +244,10 @@ B3_API void b3World_EndStaticBatch( b3WorldId worldId );
 /// This Box3D has b3World_BeginStaticBatch and b3World_EndStaticBatch
 #define B3_HAS_STATIC_BATCH 1
 
+/// This Box3D keeps a list of contacts for every shape. Destroying a shape walks only its own contacts, not all contacts
+/// of its body, so one body can carry many shapes that come and go. Added for Nebenan.
+#define B3_HAS_SHAPE_CONTACT_LISTS 1
+
 /// Set the user data pointer.
 B3_API void b3World_SetUserData( b3WorldId worldId, void* userData );
 

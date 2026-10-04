@@ -116,6 +116,10 @@ typedef struct b3Contact
 	int shapeIdB;
 	int childIndex;
 
+	// Added for Nebenan: links in the contact lists of shape A and shape B, see b3Shape::headContactKey
+	int shapePrevKey[2];
+	int shapeNextKey[2];
+
 	// A contact only belongs to an island if touching, otherwise B3_NULL_INDEX.
 	int islandId;
 

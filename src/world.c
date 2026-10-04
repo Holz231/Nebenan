@@ -620,28 +620,68 @@ void nbActor_RemoveChunk( nbWorld* world, int actorIndex, int chunkIndex )
 	actor->massDirty = true;
 }
 
-// Remove the physics of a chunk. With destroyBodies false the caller destroys the shared body.
+// The static body for a static chunk of the destructible: the one all its static chunks share, or a new one of its own,
+// see NB_SHARED_STATIC_BODY
+static b3BodyId nbGetStaticBody( nbWorld* world, nbDestructible* destructible )
+{
+#if defined( NB_SHARED_STATIC_BODY )
+	if ( B3_IS_NON_NULL( destructible->staticBody ) )
+	{
+		return destructible->staticBody;
+	}
+#endif
+
+	b3BodyDef bodyDef = b3DefaultBodyDef();
+	bodyDef.type = b3_staticBody;
+	bodyDef.position = destructible->transform.p;
+	bodyDef.rotation = destructible->transform.q;
+	b3BodyId bodyId = b3CreateBody( world->physicsWorld, &bodyDef );
+
+#if defined( NB_SHARED_STATIC_BODY )
+	destructible->staticBody = bodyId;
+#endif
+	return bodyId;
+}
+
+// Destroy the shape of a chunk. A static body of its own goes with it, the shared one stays with the destructible.
+static void nbDestroyChunkShape( b3ShapeId shapeId, b3BodyId bodyId, bool staticBody )
+{
+#if defined( NB_SHARED_STATIC_BODY )
+	NB_UNUSED( bodyId );
+	NB_UNUSED( staticBody );
+#else
+	if ( staticBody )
+	{
+		if ( b3Body_IsValid( bodyId ) )
+		{
+			b3DestroyBody( bodyId );
+		}
+		return;
+	}
+#endif
+
+	if ( b3Shape_IsValid( shapeId ) )
+	{
+		b3DestroyShape( shapeId, false );
+	}
+}
+
+// Remove the physics of a chunk. With destroyBodies false the caller destroys the body of the actor.
 static void nbRemoveChunkPhysics( nbWorld* world, nbChunk* chunk, bool destroyBodies )
 {
 	if ( B3_IS_NON_NULL( chunk->shapeId ) )
 	{
 		nbUnmapShape( world, chunk->shapeId );
-		if ( chunk->flags & nb_chunkOwnsBody )
+		bool staticBody = ( chunk->flags & nb_chunkStaticBody ) != 0;
+		if ( staticBody || destroyBodies )
 		{
-			if ( b3Body_IsValid( chunk->bodyId ) )
-			{
-				b3DestroyBody( chunk->bodyId );
-			}
-		}
-		else if ( destroyBodies && b3Shape_IsValid( chunk->shapeId ) )
-		{
-			b3DestroyShape( chunk->shapeId, false );
+			nbDestroyChunkShape( chunk->shapeId, chunk->bodyId, staticBody );
 		}
 	}
 
 	chunk->shapeId = b3_nullShapeId;
 	chunk->bodyId = b3_nullBodyId;
-	chunk->flags &= ~nb_chunkOwnsBody;
+	chunk->flags &= ~nb_chunkStaticBody;
 }
 
 // Release everything of a chunk except its physics
@@ -1329,7 +1369,7 @@ void nbCommitPhysics( nbWorld* world )
 	for ( int i = 0; i < world->touchedChunks.count; ++i )
 	{
 		const nbChunk* chunk = world->chunks.data + world->touchedChunks.data[i];
-		if ( chunk->shape == NULL || ( chunk->flags & nb_chunkMoved ) == 0 || ( chunk->flags & nb_chunkOwnsBody ) != 0 ||
+		if ( chunk->shape == NULL || ( chunk->flags & nb_chunkMoved ) == 0 || ( chunk->flags & nb_chunkStaticBody ) != 0 ||
 			 B3_IS_NULL( chunk->shapeId ) )
 		{
 			continue;
@@ -1390,7 +1430,7 @@ void nbCommitPhysics( nbWorld* world )
 		const b3HullData* hull = chunk->pendingHull;
 		b3ShapeId oldShapeId = chunk->shapeId;
 		b3BodyId oldBodyId = chunk->bodyId;
-		bool ownedOldBody = ( chunk->flags & nb_chunkOwnsBody ) != 0;
+		bool oldStaticBody = ( chunk->flags & nb_chunkStaticBody ) != 0;
 		if ( hull == NULL )
 		{
 			NB_ASSERT( B3_IS_NON_NULL( oldShapeId ) );
@@ -1400,19 +1440,14 @@ void nbCommitPhysics( nbWorld* world )
 		b3BodyId bodyId;
 		if ( actor->isStatic )
 		{
-			// Static chunks get a body each. Static-static pairs never collide, so this costs nothing
-			// in the solver, and destroying a chunk only touches its own contacts.
-			b3BodyDef bodyDef = b3DefaultBodyDef();
-			bodyDef.type = b3_staticBody;
-			bodyDef.position = destructible->transform.p;
-			bodyDef.rotation = destructible->transform.q;
-			bodyId = b3CreateBody( world->physicsWorld, &bodyDef );
-			chunk->flags |= nb_chunkOwnsBody;
+			// Static-static pairs never collide, so static chunks cost nothing in the solver
+			bodyId = nbGetStaticBody( world, destructible );
+			chunk->flags |= nb_chunkStaticBody;
 		}
 		else
 		{
 			bodyId = actor->bodyId;
-			chunk->flags &= ~nb_chunkOwnsBody;
+			chunk->flags &= ~nb_chunkStaticBody;
 		}
 
 		// Create the new shape before destroying the old one, which owns or shares the hull
@@ -1425,14 +1460,7 @@ void nbCommitPhysics( nbWorld* world )
 		if ( B3_IS_NON_NULL( oldShapeId ) )
 		{
 			nbUnmapShape( world, oldShapeId );
-			if ( ownedOldBody )
-			{
-				b3DestroyBody( oldBodyId );
-			}
-			else
-			{
-				b3DestroyShape( oldShapeId, false );
-			}
+			nbDestroyChunkShape( oldShapeId, oldBodyId, oldStaticBody );
 		}
 
 		if ( ( flags & nb_chunkNew ) == 0 )
@@ -3912,9 +3940,20 @@ void nbDestroyWorld( nbWorldId worldId )
 		for ( int i = 0; i < world->chunks.count; ++i )
 		{
 			nbChunk* chunk = world->chunks.data + i;
-			if ( chunk->shape != NULL && ( chunk->flags & nb_chunkOwnsBody ) && b3Body_IsValid( chunk->bodyId ) )
+			if ( chunk->shape != NULL && ( chunk->flags & nb_chunkStaticBody ) && b3Body_IsValid( chunk->bodyId ) )
 			{
 				b3DestroyBody( chunk->bodyId );
+			}
+		}
+
+		// A shared static body stays with its destructible, even after all its chunks broke away
+		for ( int i = 0; i < world->destructibles.count; ++i )
+		{
+			nbDestructible* destructible = world->destructibles.data + i;
+			if ( destructible->isFree == false && B3_IS_NON_NULL( destructible->staticBody ) &&
+				 b3Body_IsValid( destructible->staticBody ) )
+			{
+				b3DestroyBody( destructible->staticBody );
 			}
 		}
 

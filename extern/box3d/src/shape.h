@@ -33,6 +33,11 @@ typedef struct b3Shape
 	int nextShapeId;
 	int sensorIndex;
 	int proxyKey;
+
+	// Added for Nebenan: the contacts of this shape, keys as in b3Contact::edges, see b3Contact::shapePrevKey. Destroying
+	// a shape walks only its own contacts, not all contacts of its body, which can carry thousands of shapes.
+	int headContactKey;
+
 	b3ShapeType type;
 	float density;
 	float explosionScale;

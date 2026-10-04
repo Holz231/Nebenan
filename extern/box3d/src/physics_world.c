@@ -4155,6 +4155,32 @@ void b3ValidateContacts( b3World* world )
 
 	int contactIdCount = b3GetIdCount( &world->contactIdPool );
 	B3_ASSERT( allocatedContactCount == contactIdCount );
+
+	// Added for Nebenan: every contact sits in the lists of its two shapes, see b3Shape::headContactKey
+	int shapeLinkCount = 0;
+	for ( int shapeIndex = 0; shapeIndex < world->shapes.count; ++shapeIndex )
+	{
+		b3Shape* shape = world->shapes.data + shapeIndex;
+		if ( shape->id != shapeIndex )
+		{
+			continue;
+		}
+
+		int prevKey = B3_NULL_INDEX;
+		int contactKey = shape->headContactKey;
+		while ( contactKey != B3_NULL_INDEX )
+		{
+			b3Contact* contact = b3Array_Get( world->contacts, contactKey >> 1 );
+			int edgeIndex = contactKey & 1;
+			B3_ASSERT( contact->contactId == ( contactKey >> 1 ) );
+			B3_ASSERT( ( edgeIndex == 0 ? contact->shapeIdA : contact->shapeIdB ) == shapeIndex );
+			B3_ASSERT( contact->shapePrevKey[edgeIndex] == prevKey );
+			prevKey = contactKey;
+			contactKey = contact->shapeNextKey[edgeIndex];
+			shapeLinkCount += 1;
+		}
+	}
+	B3_ASSERT( shapeLinkCount == 2 * allocatedContactCount );
 }
 
 #else

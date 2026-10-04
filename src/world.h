@@ -12,6 +12,13 @@
 // Rubble bodies one thaw brings back to life at most, so a single impact cannot wake a mountain of rubble
 #define NB_MAX_THAW 512
 
+// The static chunks of a destructible share one static body when Box3D keeps the contacts of every shape in a list of
+// their own, so destroying a chunk walks only its own contacts. Otherwise every static chunk owns a body, which keeps
+// that cheap too.
+#if defined( B3_HAS_SHAPE_CONTACT_LISTS )
+#define NB_SHARED_STATIC_BODY
+#endif
+
 // Chunks rubble remembers it lay on when it froze
 #define NB_MAX_CARRIERS 4
 
@@ -37,8 +44,8 @@ enum nbChunkFlags
 	// In the touched chunk list
 	nb_chunkTouched = 0x08,
 
-	// The chunk owns a static body of its own
-	nb_chunkOwnsBody = 0x10,
+	// The chunk sits on a static body of its destructible, the shared one or one of its own, see NB_SHARED_STATIC_BODY
+	nb_chunkStaticBody = 0x10,
 
 	// Reported as exposed in the current event window, or about to be destroyed
 	nb_chunkExposed = 0x20,
@@ -50,8 +57,8 @@ typedef struct nbChunk
 {
 	nbShape* shape;
 
-	// Box3D body and shape. Static chunks own a static body each, so destroying one chunk never
-	// has to walk the contacts of the whole structure. Dynamic chunks share the body of their actor.
+	// Box3D body and shape. Static chunks sit on a static body of their destructible, see NB_SHARED_STATIC_BODY. Dynamic
+	// chunks share the body of their actor.
 	b3BodyId bodyId;
 	b3ShapeId shapeId;
 
@@ -264,6 +271,9 @@ typedef struct nbDestructible
 
 	// Frame of the static chunks
 	b3WorldTransform transform;
+
+	// The static body all static chunks share, created with the first of them, see NB_SHARED_STATIC_BODY
+	b3BodyId staticBody;
 
 	// Storeys of a static building from the bottom up, and a bit for each of them that gave way
 	nbStorey storeys[NB_MAX_STOREYS];

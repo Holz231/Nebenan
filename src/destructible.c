@@ -519,6 +519,7 @@ nbDestructibleId nbCreateDestructible( nbWorldId worldId, const nbDestructibleDe
 	}
 	destructible->headActor = NB_NULL_INDEX;
 	destructible->transform = (b3WorldTransform){ def->position, def->rotation };
+	destructible->staticBody = b3_nullBodyId;
 	destructible->seed = def->seed;
 	destructible->isStatic = def->isStatic;
 	destructible->enableCollisionDamage = def->enableCollisionDamage;
@@ -807,7 +808,14 @@ void nbDestroyDestructible( nbDestructibleId destructibleId )
 		nbDestroyActor( world, world->destructibles.data[index].headActor );
 	}
 
+	// The shared static body, without shapes by now
 	destructible = world->destructibles.data + index;
+	if ( B3_IS_NON_NULL( destructible->staticBody ) && b3Body_IsValid( destructible->staticBody ) )
+	{
+		b3DestroyBody( destructible->staticBody );
+	}
+	destructible->staticBody = b3_nullBodyId;
+
 	destructible->isFree = true;
 	destructible->generation += 1;
 	nbArray_Push( world->freeDestructibles, index );

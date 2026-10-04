@@ -47,11 +47,20 @@ abgefragt werden, ihren statischen Baum nicht neu bauen und keine Aufnahme begin
 das mit Asserts. Aufnahmen merken sich die Klammern nicht, die Wiedergabe fügt einzeln ein. Das simuliert dasselbe, seit
 die Ergebnisse nicht mehr von der Reihenfolge im Baum abhängen.
 
-Die erste, die zweite und die vierte ändern an den Ergebnissen nichts. Die dritte ändert sie in den letzten Bits,
-dafür hängen sie nicht mehr davon ab, in welcher Reihenfolge Formen in den statischen Baum kommen. Die Ergänzungen
-stehen in `include/box3d/box3d.h`, `include/box3d/types.h`, `src/core.c`, `src/shape.h`, `src/shape.c`,
-`src/world_snapshot.c`, `src/recording.c`, `src/solver.c`, `src/broad_phase.h`, `src/broad_phase.c`,
+**Kontakte pro Form.** Box3D führt die Kontakte jedes Körpers in einer Liste. Um eine Form zu löschen, ging es bisher
+alle Kontakte ihres Körpers durch und suchte die der Form heraus. Jetzt führt jede Form zusätzlich ihre eigene Liste
+(`b3Shape::headContactKey`, `b3Contact::shapePrevKey` und `shapeNextKey`). Das Löschen einer Form, das Zurücksetzen
+ihres Proxys und `b3Shape_GetContactData` gehen nur noch über die Kontakte der Form. Die Liste hält dieselben Kontakte
+in derselben Reihenfolge wie die des Körpers. Nebenan hängt damit alle stehenden Bruchstücke eines Zerstörbaren an einen
+gemeinsamen statischen Körper, statt jedem einen eigenen zu geben, und das Löschen eines Bruchstücks wird nicht teurer.
+Mit Validierung prüft `b3ValidateContacts` die Listen.
+
+Die erste, die zweite, die vierte und die fünfte ändern an den Ergebnissen nichts. Die dritte ändert sie in den letzten
+Bits, dafür hängen sie nicht mehr davon ab, in welcher Reihenfolge Formen in den statischen Baum kommen. Die Ergänzungen
+stehen in `include/box3d/box3d.h`, `include/box3d/types.h`, `src/core.c`, `src/shape.h`, `src/shape.c`, `src/contact.h`,
+`src/contact.c`, `src/world_snapshot.c`, `src/recording.c`, `src/solver.c`, `src/broad_phase.h`, `src/broad_phase.c`,
 `src/dynamic_tree.h`, `src/dynamic_tree.c` und `src/physics_world.c`, jeweils mit „Added for Nebenan“ markiert.
-`B3_HAS_UNIQUE_HULLS` und `B3_HAS_STATIC_BATCH` zeigen die zweite und die vierte an. Fehlen sie, etwa mit einem eigenen
-Box3D, läuft Nebenan wie zuvor, nur wachsen Box3Ds Arrays dann durch Umkopieren, die Hüllen gehen durch die Tabelle,
-und jede Form geht einzeln in den Baum.
+`B3_HAS_UNIQUE_HULLS`, `B3_HAS_STATIC_BATCH` und `B3_HAS_SHAPE_CONTACT_LISTS` zeigen die zweite, die vierte und die
+fünfte an. Fehlen sie, etwa mit einem eigenen Box3D, läuft Nebenan wie zuvor, nur wachsen Box3Ds Arrays dann durch
+Umkopieren, die Hüllen gehen durch die Tabelle, jede Form geht einzeln in den Baum, und jedes stehende Bruchstück
+bekommt einen eigenen Körper.

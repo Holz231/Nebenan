@@ -466,6 +466,100 @@ static int StaticBatchTest( void )
 	return 0;
 }
 
+// Every shape keeps a list of its own contacts. Destroying one shape of a static body with many takes only the contacts of
+// that shape: the box on it falls, the box on another shape of the body stays where it rests.
+static int ShapeContactListTest( void )
+{
+#if defined( B3_HAS_SHAPE_CONTACT_LISTS )
+	int64_t baseBytes = b3GetByteCount();
+	b3WorldDef worldDef = b3DefaultWorldDef();
+	b3WorldId worldId = b3CreateWorld( &worldDef );
+	b3BodyDef bodyDef = b3DefaultBodyDef();
+	b3BodyId floorId = b3CreateBody( worldId, &bodyDef );
+	b3ShapeDef shapeDef = b3DefaultShapeDef();
+
+	b3ShapeId tiles[8];
+	for ( int i = 0; i < 8; ++i )
+	{
+		b3BoxHull tile = b3MakeOffsetBoxHull( 0.5f, 0.5f, 0.5f, (b3Vec3){ (float)i, 0.0f, 0.0f } );
+		tiles[i] = b3CreateHullShape( floorId, &shapeDef, &tile.base );
+	}
+
+	b3BoxHull box = b3MakeBoxHull( 0.25f, 0.25f, 0.25f );
+	b3BodyId boxes[2];
+	float x[2] = { 1.0f, 6.0f };
+	for ( int i = 0; i < 2; ++i )
+	{
+		bodyDef = b3DefaultBodyDef();
+		bodyDef.type = b3_dynamicBody;
+		bodyDef.position = (b3Pos){ x[i], 0.8f, 0.0f };
+		boxes[i] = b3CreateBody( worldId, &bodyDef );
+		b3CreateHullShape( boxes[i], &shapeDef, &box.base );
+	}
+
+	for ( int i = 0; i < 90; ++i )
+	{
+		b3World_Step( worldId, 1.0f / 60.0f, 4 );
+	}
+	ENSURE( b3Body_GetContactCapacity( floorId ) == 2 );
+	float restY = (float)b3Body_GetPosition( boxes[1] ).y;
+	ENSURE( restY > 0.7f );
+
+	b3DestroyShape( tiles[1], false );
+	ENSURE( b3Body_GetContactCapacity( floorId ) == 1 );
+
+	b3ContactData contacts[4];
+	ENSURE( b3Shape_GetContactData( tiles[6], contacts, 4 ) == 1 );
+	ENSURE( b3Shape_GetContactData( tiles[5], contacts, 4 ) == 0 );
+
+	for ( int i = 0; i < 60; ++i )
+	{
+		b3World_Step( worldId, 1.0f / 60.0f, 4 );
+	}
+	ENSURE( (float)b3Body_GetPosition( boxes[0] ).y < 0.0f );
+	ENSURE( fabsf( (float)b3Body_GetPosition( boxes[1] ).y - restY ) < 0.01f );
+
+	b3DestroyWorld( worldId );
+	ENSURE( b3GetByteCount() == baseBytes );
+#endif
+	return 0;
+}
+
+// The static chunks of a destructible sit on one Box3D body, which goes with the destructible or the world
+static int SharedStaticBodyTest( void )
+{
+#if defined( NB_SHARED_STATIC_BODY )
+	TestScene scene = CreateScene();
+	int baseBodies = b3World_GetCounters( scene.physicsWorld ).bodyCount;
+	nbDestructibleId gate = CreateGate( &scene, 0.0f, 11 );
+	ENSURE( nbDestructible_GetChunkCount( gate ) > 8 );
+	ENSURE( b3World_GetCounters( scene.physicsWorld ).bodyCount == baseBodies + 1 );
+
+	nbWorld* world = nbGetWorldFromId( scene.world );
+	const nbDestructible* destructible = world->destructibles.data + gate.index1 - 1;
+	for ( int i = 0; i < world->chunks.count; ++i )
+	{
+		const nbChunk* chunk = world->chunks.data + i;
+		if ( chunk->shape != NULL )
+		{
+			ENSURE( B3_ID_EQUALS( chunk->bodyId, destructible->staticBody ) );
+			ENSURE( B3_ID_EQUALS( b3Shape_GetBody( chunk->shapeId ), destructible->staticBody ) );
+		}
+	}
+
+	nbDestroyDestructible( gate );
+	ENSURE( b3World_GetCounters( scene.physicsWorld ).bodyCount == baseBodies );
+
+	// Taking down the Nebenan world leaves the Box3D world as it found it
+	CreateGate( &scene, 0.0f, 12 );
+	ENSURE( b3World_GetCounters( scene.physicsWorld ).bodyCount == baseBodies + 1 );
+	nbDestroyWorld( scene.world );
+	ENSURE( b3World_GetCounters( scene.physicsWorld ).bodyCount == baseBodies );
+	b3DestroyWorld( scene.physicsWorld );
+#endif
+	return 0;
+}
+
 // Arrays of a megabyte and more grow in place: they keep their address and their values, and the memory count
 // returns to where it was when they are freed
 static int LargeBlockTest( void )
@@ -2329,6 +2423,8 @@ int WorldTest( void )
 	RUN_TEST( WorkerTest );
 	RUN_TEST( UniqueHullTest );
 	RUN_TEST( StaticBatchTest );
+	RUN_TEST( ShapeContactListTest );
+	RUN_TEST( SharedStaticBodyTest );
 	RUN_TEST( LargeBlockTest );
 	RUN_TEST( EventTest );
 	RUN_TEST( DynamicDestructibleTest );

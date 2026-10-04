@@ -541,15 +541,17 @@ Die Zeit ist zum größten Teil der Box3D-Schritt, und den bestimmen drei Dinge:
 **Große Szenen.** Mit vierfacher Bruchstückgröße kostet ein Frame unter Dauerbeschuss gleich viel, ob die Stadt aus 16
 oder aus 1 024 Häusern besteht, 0,3 bis 0,7 ms auf der VM je nach ihrer Tagesform. Box3D rechnet nur, was sich bewegt,
 und Nebenan geht im Update nie über die ganze Welt. Mit der Größe wachsen Ladezeit und Speicher: 1 024 Häuser mit
-246 000 Bruchstücken brauchen 535 MB und laden auf der VM in rund 1,5 s, an ihren langsamen Tagen in mehreren Sekunden.
+246 000 Bruchstücken brauchen 450 MB und laden auf der VM in rund 1,2 s, an ihren langsamen Tagen in mehreren Sekunden.
 Große Arrays wachsen an Ort und Stelle, in Nebenan wie in Box3D: Jedes reserviert sich Adressraum und bekommt beim
 Wachsen dort Speicherseiten dazu, statt umzuziehen. Früher wurde ein volles Array in ein doppelt so großes kopiert, und
 das hielt ein einzelnes Update über 100 ms auf. Die Hüllen der Bruchstücke gehören ihrer Box3D-Form und gehen nicht
 durch Box3Ds Hüllen-Tabelle, die beim Wachsen alle Hüllen neu einordnen müsste (`b3ShapeDef::uniqueHull`). Die
 statischen Bruchstücke eines Hauses oder Einschlags gehen gesammelt in Box3Ds Suchbaum, als ein Teilbaum mit einer Suche
-statt einer pro Stück (`b3World_BeginStaticBatch`, siehe [`extern/README.md`](extern/README.md)). Das lädt große Städte
-rund ein Fünftel schneller, und ein Einschlag kostet in jeder Stadtgröße gleich viel. Mehr dazu in
-[`docs/Optimierungen.md`](docs/Optimierungen.md).
+statt einer pro Stück (`b3World_BeginStaticBatch`, siehe [`extern/README.md`](extern/README.md)). Alle stehenden
+Bruchstücke eines Hauses hängen an einem gemeinsamen statischen Box3D-Körper statt jedes an einem eigenen, dafür führt
+Box3D die Kontakte jeder Form in einer eigenen Liste (`B3_HAS_SHAPE_CONTACT_LISTS`). Der gemeinsame Körper lädt große
+Städte fast doppelt so schnell und spart 16 % Speicher, und mit beidem kostet ein Einschlag in jeder Stadtgröße gleich
+viel. Mehr dazu in [`docs/Optimierungen.md`](docs/Optimierungen.md).
 
 Ganze Einschläge (Bruch, Stützgraph, neue Box3D-Körper) und der Box3D-Schritt danach bei 60 Hz mit
 4 Substeps, jeweils mit 1 und 4 Threads, der mittlere von drei Läufen:
@@ -588,7 +590,7 @@ Messungen in [docs/Optimierungen.md](docs/Optimierungen.md).
 ## Tests und Benchmark
 
 ```sh
-build/bin/nebenan_test            # 35 Tests: Geometrie, Voronoi, Hüllen, Öffnungen, Stöße, Stützgraph, Etagen, Lastprüfung, Schutt, Ruhe, Durchschlagen, Threads, große Blöcke, Suchbaum, Determinismus …
+build/bin/nebenan_test            # 37 Tests: Geometrie, Voronoi, Hüllen, Öffnungen, Stöße, Stützgraph, Etagen, Lastprüfung, Schutt, Ruhe, Durchschlagen, Threads, große Blöcke, Suchbaum, Kontaktlisten, Determinismus …
 build/bin/nebenan_benchmark 4     # Zahl = Threads für Bruch und Physik
 ```
 

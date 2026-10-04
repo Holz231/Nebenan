@@ -187,6 +187,7 @@ static b3Shape* b3CreateShapeInternal( b3World* world, b3Body* body, b3WorldTran
 	shape->flags |= def->enableSpeculativeContact ? b3_enableSpeculative : 0;
 	shape->flags |= ( shapeType == b3_hullShape && def->uniqueHull ) ? b3_uniqueHull : 0; // Added for Nebenan
 	shape->proxyKey = B3_NULL_INDEX;
+	shape->headContactKey = B3_NULL_INDEX; // Added for Nebenan
 	shape->localCentroid = b3GetShapeCentroid( shape );
 	shape->aabbMargin = b3ComputeShapeMargin( shape );
 	shape->aabb = (b3AABB){ b3Vec3_zero, b3Vec3_zero };
@@ -517,20 +518,16 @@ static void b3DestroyShapeInternal( b3World* world, b3Shape* shape, b3Body* body
 	b3DestroyShapeProxy( shape, &world->broadPhase );
 
 	// Destroy any contacts associated with the shape.
-	int contactKey = body->headContactKey;
+	// Added for Nebenan: from the list of the shape instead of the list of the body. It holds the same contacts in the same
+	// order, without the contacts of the other shapes of the body.
+	int contactKey = shape->headContactKey;
 	while ( contactKey != B3_NULL_INDEX )
 	{
-		int contactId = contactKey >> 1;
-		int edgeIndex = contactKey & 1;
-
-		b3Contact* contact = b3Array_Get( world->contacts, contactId );
-		contactKey = contact->edges[edgeIndex].nextKey;
-
-		if ( contact->shapeIdA == shapeId || contact->shapeIdB == shapeId )
-		{
-			b3DestroyContact( world, contact, wakeBodies );
-		}
+		b3Contact* contact = b3Array_Get( world->contacts, contactKey >> 1 );
+		contactKey = contact->shapeNextKey[contactKey & 1];
+		b3DestroyContact( world, contact, wakeBodies );
 	}
+	B3_ASSERT( shape->headContactKey == B3_NULL_INDEX );
 
 	if ( shape->sensorIndex != B3_NULL_INDEX )
 	{
@@ -1355,20 +1352,15 @@ static void b3ResetProxy( b3World* world, b3Shape* shape, bool wakeBodies, bool 
 	int shapeId = shape->id;
 
 	// destroy all contacts associated with this shape
-	int contactKey = body->headContactKey;
+	// Added for Nebenan: from the list of the shape, see b3DestroyShapeInternal
+	int contactKey = shape->headContactKey;
 	while ( contactKey != B3_NULL_INDEX )
 	{
-		int contactId = contactKey >> 1;
-		int edgeIndex = contactKey & 1;
-
-		b3Contact* contact = b3Array_Get( world->contacts, contactId );
-		contactKey = contact->edges[edgeIndex].nextKey;
-
-		if ( contact->shapeIdA == shapeId || contact->shapeIdB == shapeId )
-		{
-			b3DestroyContact( world, contact, wakeBodies );
-		}
+		b3Contact* contact = b3Array_Get( world->contacts, contactKey >> 1 );
+		contactKey = contact->shapeNextKey[contactKey & 1];
+		b3DestroyContact( world, contact, wakeBodies );
 	}
+	B3_ASSERT( shape->headContactKey == B3_NULL_INDEX );
 
 	b3WorldTransform transform = b3GetBodyTransformQuick( world, body );
 	if ( shape->proxyKey != B3_NULL_INDEX )
@@ -1742,8 +1734,8 @@ int b3Shape_GetContactData( b3ShapeId shapeId, b3ContactData* contactData, int c
 		return 0;
 	}
 
-	b3Body* body = b3Array_Get( world->bodies, shape->bodyId );
-	int contactKey = body->headContactKey;
+	// Added for Nebenan: the contacts of the shape from its own list, see b3Shape::headContactKey
+	int contactKey = shape->headContactKey;
 	int index = 0;
 	while ( contactKey != B3_NULL_INDEX && index < capacity )
 	{
@@ -1752,9 +1744,8 @@ int b3Shape_GetContactData( b3ShapeId shapeId, b3ContactData* contactData, int c
 
 		b3Contact* contact = b3Array_Get( world->contacts, contactId );
 
-		// Does contact involve this shape and is it touching?
-		if ( ( contact->shapeIdA == shapeId.index1 - 1 || contact->shapeIdB == shapeId.index1 - 1 ) &&
-			 ( contact->flags & b3_contactTouchingFlag ) != 0 )
+		// Is contact touching?
+		if ( ( contact->flags & b3_contactTouchingFlag ) != 0 )
 		{
 			b3Shape* shapeA = world->shapes.data + contact->shapeIdA;
 			b3Shape* shapeB = world->shapes.data + contact->shapeIdB;
@@ -1767,7 +1758,7 @@ int b3Shape_GetContactData( b3ShapeId shapeId, b3ContactData* contactData, int c
 			index += 1;
 		}
 
-		contactKey = contact->edges[edgeIndex].nextKey;
+		contactKey = contact->shapeNextKey[edgeIndex];
 	}
 
 	B3_ASSERT( index <= capacity );
