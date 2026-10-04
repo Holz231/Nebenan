@@ -42,10 +42,14 @@ Ziel seit dem 3. Oktober 2026: Bruchstückgröße ×4 und Szenen so groß wie m�
 8. ✅ **Biegemomente nur bei Bedarf** (eigene Idee, unten). Die zweiten Momente der Verbindungen, die nur die
    Lastprüfung liest, rechnet und speichert Nebenan nur noch für Bauwerke, die sie prüft: 4 % weniger
    Prozess-Speicher, 5 % weniger Instruktionen pro Einschlag und 3 % beim Laden. Die Ergebnisse bleiben bitgleich.
-9. Grafik, sobald die Physik fertig ist: **Räumliche Render-Seiten und Frustum-Culling** (Nr. 49 bis 51) und **nur
-   bewegte Transformationen hochladen** (Nr. 74). Beides wächst mit der Szene, denn die Demo zeichnet jedes Bild alles
-   und lädt bei jeder Bewegung alle Transformationen hoch.
-10. Für eine große Stadt: Regionen, HLOD, Verdeckung, Streaming, Physik nur in aktiven Regionen (Nr. 52 bis 60, 65,
+9. ✅ **Häuser gesammelt laden** (eigene Idee, unten). `nbCreateDestructibles` legt viele Zerstörbare auf einmal an:
+   Während der aufrufende Thread ein Haus in die Welt einbaut, berechnen die Worker schon die Zellen des nächsten.
+   Eine Stadt lädt so ein Drittel schneller, 1 024 Häuser in 0,65 statt 0,99 s, mit denselben Bruchstücken,
+   Verbindungen und Ids wie einzeln angelegt.
+10. Grafik, sobald die Physik fertig ist: **Räumliche Render-Seiten und Frustum-Culling** (Nr. 49 bis 51) und **nur
+    bewegte Transformationen hochladen** (Nr. 74). Beides wächst mit der Szene, denn die Demo zeichnet jedes Bild alles
+    und lädt bei jeder Bewegung alle Transformationen hoch.
+11. Für eine große Stadt: Regionen, HLOD, Verdeckung, Streaming, Physik nur in aktiven Regionen (Nr. 52 bis 60, 65,
     69, 75, 88 bis 92).
 
 Was nur kleinen Bruchstücken hilft, bringt bei ×4 kaum etwas und ist zurückgestellt: Trümmer früher zur Ruhe bringen,
@@ -67,19 +71,20 @@ zufälliges Haus.
 
 | Häuser | Bruchstücke | Aufbau | Speicher | Frame unter Beschuss |
 | ---: | ---: | ---: | ---: | ---: |
-| 16 | 3 848 | 0,02 s | 16,1 MB | 0,4 ms |
-| 64 | 15 425 | 0,07 s | 35 MB | 0,3 bis 0,4 ms |
-| 256 | 61 538 | 0,26 s | 104 MB | 0,3 bis 0,4 ms |
-| 1 024 | 246 141 | 1,14 s | 375 MB | 0,3 ms |
+| 16 | 3 848 | 0,01 s | 16 MB | 0,4 ms |
+| 64 | 15 425 | 0,04 s | 35 MB | 0,3 ms |
+| 256 | 61 538 | 0,16 s | 104 MB | 0,4 ms |
+| 1 024 | 246 141 | 0,65 s | 375 MB | 0,3 ms |
 
 Gemessen mit allen Änderungen für große Szenen: große Arrays, die an Ort und Stelle wachsen, Hüllen ohne Box3Ds
 Hüllen-Tabelle, statische Formen, die gesammelt in Box3Ds Suchbaum gehen, ein statischer Box3D-Körper pro Haus,
-Geometrie, die jedes Bruchstück nur einmal speichert, Kontaktflächen, die beim Laden die Worker messen, und
-Verbindungen ohne Biegemomente. Der Speicher stammt aus einer späteren Messung als der Aufbau. Der Aufbau bei 256 und
-1 024 Häusern ist der Median aus zwölf Läufen. Wie lange der Aufbau großer Städte dauert, hängt stark von der
-Tagesform der VM ab: Sie gibt frischen Speicher oft sehr langsam heraus, und die zwölf Läufe mit 1 024 Häusern
-brauchten zwischen 0,96 und 1,69 s. Bei der ersten Messung, noch ohne diese Änderungen und auf einer langsamen VM,
-brauchten 1 024 Häuser 3 bis 8 s und 533 MB, und ein Frame unter Beschuss kostete 0,5 bis 0,7 ms.
+Geometrie, die jedes Bruchstück nur einmal speichert, Kontaktflächen, die beim Laden die Worker messen, Verbindungen
+ohne Biegemomente und Häuser, die gesammelt laden. Der Aufbau ist der Median aus sechs Läufen bei 16 und 64 Häusern
+und aus zwölf bei 256 und 1 024, alle Häuser auf einmal mit `nbCreateDestructibles`. Einzeln angelegt brauchten sie
+0,017, 0,063, 0,26 und 0,99 s. Wie lange der Aufbau großer Städte dauert, hängt stark von der Tagesform der VM ab: Sie
+gibt frischen Speicher oft sehr langsam heraus, und die zwölf Läufe mit 1 024 Häusern brauchten zwischen 0,96 und
+1,69 s. Bei der ersten Messung, noch ohne diese Änderungen und auf einer langsamen VM, brauchten 1 024 Häuser 3 bis
+8 s und 533 MB, und ein Frame unter Beschuss kostete 0,5 bis 0,7 ms.
 
 - **Die Physik pro Frame hängt nicht an der Größe der Szene.** Box3D rechnet nur, was sich bewegt, und Nebenan geht im
   Update nie über die ganze Welt, nur beim Verstellen von Reglern und beim Löschen der Welt. In Ruhe kostet die Welt bei
@@ -93,17 +98,18 @@ brauchten 1 024 Häuser 3 bis 8 s und 533 MB, und ein Frame unter Beschuss koste
   hinter allen 246 000 statischen Körpern, und Nebenan musste seine Zuordnung von Körpern zu Akteuren bis dorthin
   füllen. Die meiste Zeit gibt das System frischen Speicher heraus, auf einem PC geht das schneller als auf der VM.
   Seit jedes Haus nur einen statischen Körper hat, beginnen die Nummern der Trümmerkörper bei rund 1 000.
-- **Laden** braucht auf der VM rund 1,1 ms pro Haus, in großen Städten nicht mehr als in kleinen. Bei der ersten
-  Messung, auf der langsamen VM und vor den Änderungen für große Szenen, waren es 3 ms in kleinen Städten und 3 bis
-  8 ms bei 1 024 Häusern. Der Hauptthread rechnet die Hälfte der Zeit mit den Workern an den Voronoi-Zellen der
-  Vorzerlegung und rund ein Sechstel an den Kontaktflächen zwischen den Bruchstücken, die er früher allein maß.
-  Box3D-Formen samt Suchbaum kosten ihn ein Zehntel bis ein Sechstel, die Worker zu wecken 4 bis 6 %. Box3D-Körper
-  legt Nebenan nur noch einen pro Haus an, vorher einen pro Bruchstück. Das Einsortieren in Box3Ds Suchbaum, vorher
-  knapp ein Fünftel des Aufbaus (`b3InsertLeaf`), kostet gesammelt noch wenige Prozent. Weggefallen sind das
-  Umkopieren von Arrays, vorher 18 %, Box3Ds Hüllen-Tabelle, vorher rund 7 %, und Box3Ds Kopien der Hüllen. Die Worker
-  sind rund die Hälfte der Zeit beschäftigt. Einen großen Teil kostet der Kernel, der frische Speicherseiten nullt,
-  vor allem für die Formen der Bruchstücke. Wie viel, schwankt auf der VM stark, auf dem Hauptthread zwischen einem
-  Zwanzigstel und einem Drittel der Samples. Gemessen mit `perf` in der Stadt aus 1 024 Häusern.
+- **Laden** braucht auf der VM rund 0,65 ms pro Haus, wenn alle Häuser gesammelt laden, einzeln rund 1 ms, in großen
+  Städten nicht mehr als in kleinen. Bei der ersten Messung, auf der langsamen VM und vor den Änderungen für große
+  Szenen, waren es 3 ms in kleinen Städten und 3 bis 8 ms bei 1 024 Häusern. Der Hauptthread rechnet die Hälfte der
+  Zeit mit den Workern an den Voronoi-Zellen der Vorzerlegung und rund ein Sechstel an den Kontaktflächen zwischen den
+  Bruchstücken, die er früher allein maß. Box3D-Formen samt Suchbaum kosten ihn ein Zehntel bis ein Sechstel, die
+  Worker zu wecken 4 bis 6 %. Box3D-Körper legt Nebenan nur noch einen pro Haus an, vorher einen pro Bruchstück. Das
+  Einsortieren in Box3Ds Suchbaum, vorher knapp ein Fünftel des Aufbaus (`b3InsertLeaf`), kostet gesammelt noch wenige
+  Prozent. Weggefallen sind das Umkopieren von Arrays, vorher 18 %, Box3Ds Hüllen-Tabelle, vorher rund 7 %, und Box3Ds
+  Kopien der Hüllen. Einen großen Teil kostet der Kernel, der frische Speicherseiten nullt, vor allem für die Formen
+  der Bruchstücke. Wie viel, schwankt auf der VM stark, auf dem Hauptthread zwischen einem Zwanzigstel und einem
+  Drittel der Samples. Gemessen mit `perf` in der Stadt aus 1 024 Häusern, Haus für Haus angelegt. Dabei ist der
+  Hauptthread zu 93 % beschäftigt und sind es die Worker zu 55 %. Gesammelt laden sind es 96 und 83 %.
 - **Speicher**: rund 0,37 MB pro Haus aus 240 Bruchstücken, ein Fünftel davon in Box3D. Vorher waren es 0,38 MB mit
   den Biegemomenten in jeder Verbindung, davor 0,44 MB, gut die Hälfte davon in Box3D, und davor 0,52 MB, knapp zwei
   Drittel davon in Box3D.
@@ -292,4 +298,4 @@ Seit der Liste ist dazugekommen oder gemessen worden:
 | Hüllen schneller bauen | ⛔ | Rund 3 600 Instruktionen pro Hülle, verteilt auf Masse und Trägheit, Prüfsumme, Kantenpaare und die SIMD-Kopien der Ecken und Normalen, ohne Stelle, an der sich viel holen ließe. |
 | Box3D-Formen verkleinern | ⛔ | 216 Byte pro Form, mit Material, Filter und einer Union aller Formtypen. Das wäre ein Eingriff in Box3Ds Kern für wenige Prozent Speicher. |
 | Biegemomente nur bei Bedarf | ✅ | Die zweiten Momente jeder Verbindung, 24 Byte, braucht nur die Lastprüfung. Die ist standardmäßig aus und prüft Gebäude mit Decken nie. Jetzt stehen die Momente nicht mehr in der Verbindung, sondern in einem eigenen Array, und nur Zerstörbare, die die Lastprüfung prüfen kann, führen sie: Sie ist an, und das Objekt hat keine Etagen. Für alle anderen rechnet Nebenan sie weder in den Voronoi-Zellen noch in den Kontaktflächen aus. Kommt die Lastprüfung erst zur Laufzeit dazu, misst Nebenan die Momente der Objekte ohne Etagen einmal an den Formen ihrer Bruchstücke nach. Bei Verbindungen zwischen Voronoi-Zellen weichen sie dann in den letzten Bits von denen der Schnittfläche ab, im Test um höchstens 4·10⁻⁵ relativ. Eine Verbindung hat 64 statt 88 Byte, genau eine Cache-Zeile. Gemessen: 3,7 % weniger Prozess-Speicher, am Ende 375 statt 389 MB bei 1 024 Häusern. Callgrind zählt für eine Granate in der Stadt bei ×4 5,1 % weniger Instruktionen, im Einschlag-Benchmark 5,2 % und beim Laden 3,1 %, im Box3D-Schritt gleich viele. Auf der VM geht das im Rauschen unter: In zwei Serien von je zwölf Läufen im Wechsel kostete eine Granate einmal 14 % weniger und einmal 3 % mehr. Die Ergebnisse bleiben bitgleich, auch mit eingeschalteter Lastprüfung: Drei Bauwerke ohne Decken unter Beschuss enden mit 1 und 4 Threads gleich, ob die Prüfung von Anfang an läuft oder erst später dazukommt. Geschätzt waren vorher 4 % weniger Speicher, 2 % schneller geladen und 4 % weniger Instruktionen pro Einschlag. |
-| Häuser gesammelt laden | 🔜 Stadt | Während der aufrufende Thread ein Haus in Box3D einbaut, könnten die Worker schon das nächste zerlegen. Geschätzt lädt eine große Stadt so ein Drittel schneller. Braucht eine Funktion, die viele Zerstörbare auf einmal anlegt, am besten zusammen mit dem Streaming von Regionen (Nr. 89). |
+| Häuser gesammelt laden | ✅ | Umgesetzt als `nbCreateDestructibles`. Das Anlegen eines Zerstörbaren hat jetzt vier Stufen: vorbereiten, also Materialien, Anker, Teile und Bruchpunkte, dann die Voronoi-Zellen, dann die Liste der neuen Bruchstücke mit den Paaren, die sich berühren, und ihren Kontaktflächen, zuletzt der Einbau in die Welt. Bis auf den Einbau hängt alles nur von der Definition ab. Beim gesammelten Laden starten die Zellen des nächsten Hauses auf den Workern, bevor der aufrufende Thread Paare, Kontaktflächen und Einbau des aktuellen erledigt. Danach hilft er bei den restlichen Zellen. Zwei Sätze Arenen wechseln sich ab, einer pro Haus im Flug. Der Einbau läuft in derselben Reihenfolge wie Haus für Haus, deshalb sind Ids, Bruchstücke, Verbindungen und Box3D-Körper bitgleich, auch mit einem Task-System der Anwendung, das jeden Task sofort ausführt. Gemessen bei ×4 mit 4 Threads, Median aus zwölf Läufen im Wechsel: 256 Häuser in 0,16 statt 0,26 s, 1 024 Häuser in 0,65 statt 0,99 s, 35 % schneller, bei gleichem Endzustand und 1 bis 2 MB mehr Prozess-Speicher für die zweite Arena. Ein erster Versuch, der die Zellen des nächsten Hauses erst nach den Kontaktflächen des aktuellen startete, brachte nur 15 %: Die Worker warteten, während der aufrufende Thread die Paare suchte und das nächste Haus vorbereitete. Benchmark und Demo laden ihre Städte jetzt so. Geschätzt war ein Drittel. |

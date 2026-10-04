@@ -1,10 +1,12 @@
 // SPDX-License-Identifier: MIT
 
 #include "fracture.h"
+#include "hull_builder.h"
 #include "world.h"
 
 #include <float.h>
 #include <stdlib.h>
+#include <string.h>
 
 nbMaterial nbDefaultMaterial( void )
 {
@@ -85,9 +87,9 @@ nbDestructible* nbGetDestructibleFromId( nbDestructibleId id, nbWorld** worldOut
 #define NB_PIECE_SITES 2048
 
 // The openings of a piece as cutouts, in the frame of its polyhedron moved by -origin
-static nbCutout* nbMakeCutouts( nbWorld* world, const nbPieceDef* piece, b3Vec3 origin )
+static nbCutout* nbMakeCutouts( nbArena* arena, const nbPieceDef* piece, b3Vec3 origin )
 {
-	nbCutout* cutouts = nbArena_AllocArray( &world->arena, nbCutout, piece->openingCount );
+	nbCutout* cutouts = nbArena_AllocArray( arena, nbCutout, piece->openingCount );
 	b3Vec3 axes[3] = {
 		b3RotateVector( piece->transform.q, (b3Vec3){ 1.0f, 0.0f, 0.0f } ),
 		b3RotateVector( piece->transform.q, (b3Vec3){ 0.0f, 1.0f, 0.0f } ),
@@ -175,7 +177,7 @@ static int nbGenerateCellSites( const nbPoly* poly, float cellSize, const nbCuto
 }
 
 // Draw the pre-fracture sites of a piece into room for NB_PIECE_SITES. Returns false if the piece stays a single chunk.
-static bool nbPreparePiece( nbWorld* world, const nbMaterial* material, const nbPieceDef* piece, nbPoly* poly, float cellSize,
+static bool nbPreparePiece( nbArena* arena, const nbMaterial* material, const nbPieceDef* piece, nbPoly* poly, float cellSize,
 							nbRandom* rng, b3Vec3* sites, nbFractureJob* job )
 {
 	int cutoutCount = piece->openings != NULL && piece->openingCount > 0 ? piece->openingCount : 0;
@@ -190,7 +192,7 @@ static bool nbPreparePiece( nbWorld* world, const nbMaterial* material, const nb
 	nbPoly_ComputeMass( poly, &volume, &origin );
 	nbPoly_Translate( poly, b3Neg( origin ) );
 
-	const nbCutout* cutouts = cutoutCount > 0 ? nbMakeCutouts( world, piece, origin ) : NULL;
+	const nbCutout* cutouts = cutoutCount > 0 ? nbMakeCutouts( arena, piece, origin ) : NULL;
 	int siteCount = cellSize > 0.0f ? nbGenerateCellSites( poly, cellSize, cutouts, cutoutCount, rng, sites, NB_PIECE_SITES ) : 0;
 	if ( siteCount < 2 )
 	{
@@ -223,62 +225,17 @@ static bool nbPreparePiece( nbWorld* world, const nbMaterial* material, const nb
 	return true;
 }
 
-static void nbCreateSingleChunk( nbWorld* world, int destructibleIndex, int actorIndex, const nbPoly* poly, uint8_t interiorMaterial,
-								 int materialIndex )
-{
-	nbShape* shape = nbShape_Create( poly );
-	if ( shape != NULL )
-	{
-		nbCreateChunk( world, destructibleIndex, actorIndex, shape, 0, interiorMaterial, materialIndex );
-	}
-}
-
-// Create the chunks of a pre-fractured piece and glue them exactly like a single piece, with the cell of every new chunk in
-// the order they are created. The parts of cells that openings cut, and the cells across seams, are glued by
-// nbCreateDestructible.
-static void nbFinishPiece( nbWorld* world, int destructibleIndex, int actorIndex, const nbFractureJob* job, const int* cells,
-						   int materialIndex, nbIntArray* chunkCells )
+// Glue the cells of a pre-fractured piece along their shared Voronoi faces, exactly like a single piece, given the chunk
+// of every site or none. The parts of cells that openings cut, and the cells across seams, are glued by their contacts,
+// see nbCommitLoad.
+static void nbGlueCells( nbWorld* world, int destructibleIndex, int materialIndex, const nbFractureJob* job, const int* siteChunks )
 {
 	const nbMaterial* material = world->destructibles.data[destructibleIndex].materials + materialIndex;
-
-	int* chunkIndices = nbArena_AllocArray( &world->arena, int, job->siteCount );
-	for ( int i = 0; i < job->siteCount; ++i )
-	{
-		chunkIndices[i] = NB_NULL_INDEX;
-		const nbCell* cell = job->cells + i;
-		for ( int k = 0; k < cell->partCount; ++k )
-		{
-			int chunkIndex = nbCreateChunkWithHull( world, destructibleIndex, actorIndex, cell->parts[k].shape, 0,
-													job->interiorMaterial, materialIndex );
-			if ( chunkIndex != NB_NULL_INDEX )
-			{
-				nbArray_Push( *chunkCells, cells[i] );
-			}
-		}
-
-		if ( cell->shape == NULL )
-		{
-			continue;
-		}
-
-		chunkIndices[i] =
-			nbCreateChunkWithHull( world, destructibleIndex, actorIndex, cell->shape, 0, job->interiorMaterial, materialIndex );
-		if ( chunkIndices[i] != NB_NULL_INDEX )
-		{
-			nbArray_Push( *chunkCells, cells[i] );
-		}
-	}
-
-	if ( job->cutoutCount > 0 )
-	{
-		return;
-	}
-
 	float fragmentSize = nbGetFragmentSize( world, material );
 	float minBondArea = 0.01f * fragmentSize * fragmentSize;
 	for ( int i = 0; i < job->siteCount; ++i )
 	{
-		if ( chunkIndices[i] == NB_NULL_INDEX )
+		if ( siteChunks[i] == NB_NULL_INDEX )
 		{
 			continue;
 		}
@@ -288,15 +245,14 @@ static void nbFinishPiece( nbWorld* world, int destructibleIndex, int actorIndex
 		{
 			const nbCellNeighbor* neighbor = cell->neighbors + k;
 			int j = neighbor->site;
-			if ( j <= i || chunkIndices[j] == NB_NULL_INDEX || neighbor->geometry.area < minBondArea )
+			if ( j <= i || siteChunks[j] == NB_NULL_INDEX || neighbor->geometry.area < minBondArea )
 			{
 				continue;
 			}
 
 			nbBondGeometry geometry = neighbor->geometry;
 			geometry.centroid = b3Add( geometry.centroid, job->origin );
-			int bondIndex =
-				nbCreateBond( world, chunkIndices[i], chunkIndices[j], &geometry, material->strength * geometry.area );
+			int bondIndex = nbCreateBond( world, siteChunks[i], siteChunks[j], &geometry, material->strength * geometry.area );
 			world->bonds.data[bondIndex].cohesive = true;
 		}
 	}
@@ -309,26 +265,26 @@ static bool nbMaterialEquals( const nbMaterial* a, const nbMaterial* b )
 		   a->userMaterialId == b->userMaterialId;
 }
 
-// Index of a material in the destructible, added if it is new. When all slots are taken the piece gets the
-// material of the destructible.
-static int nbAddMaterial( nbDestructible* destructible, const nbMaterial* material )
+// Index of a material of a destructible, added if it is new. When all slots are taken the piece gets the material of
+// the destructible.
+static int nbAddMaterial( nbMaterial* materials, int* materialCount, const nbMaterial* material )
 {
-	for ( int k = 0; k < destructible->materialCount; ++k )
+	for ( int k = 0; k < *materialCount; ++k )
 	{
-		if ( nbMaterialEquals( destructible->materials + k, material ) )
+		if ( nbMaterialEquals( materials + k, material ) )
 		{
 			return k;
 		}
 	}
 
-	NB_ASSERT( destructible->materialCount < NB_MAX_MATERIALS );
-	if ( destructible->materialCount == NB_MAX_MATERIALS )
+	NB_ASSERT( *materialCount < NB_MAX_MATERIALS );
+	if ( *materialCount == NB_MAX_MATERIALS )
 	{
 		return 0;
 	}
 
-	destructible->materials[destructible->materialCount] = *material;
-	return destructible->materialCount++;
+	materials[*materialCount] = *material;
+	return ( *materialCount )++;
 }
 
 // Floors are the flat pieces of a building, at most a quarter as high along local Y as they are wide along X and Z, and
@@ -440,154 +396,98 @@ static int nbCompareChunkPairs( const void* a, const void* b )
 	return ( x->second > y->second ) - ( x->second < y->second );
 }
 
-// The pairs of new chunks whose bounds pass the test nbShape_ContactArea starts with, in the order of a loop over all
-// pairs. A sweep along x finds them without testing every pair, a house has hundreds of chunks.
-static void nbFindTouchingPairs( nbWorld* world, int firstNewChunk, int count, float tolerance, nbChunkPairArray* pairs )
+// One new chunk of a destructible on its way into the world, in the order the chunks are created
+typedef struct nbLoadChunk
 {
-	if ( count < 2 )
-	{
-		return;
-	}
+	nbShape* shape;
+	int piece;
 
-	const int* touched = world->touchedChunks.data + firstNewChunk;
-	nbSweepEntry* entries = nbArena_AllocArray( &world->arena, nbSweepEntry, count );
-	for ( int i = 0; i < count; ++i )
-	{
-		b3AABB bounds = world->chunks.data[touched[i]].shape->bounds;
-		entries[i] = (nbSweepEntry){ bounds.lowerBound.x, i, bounds };
-	}
-	qsort( entries, (size_t)count, sizeof( nbSweepEntry ), nbCompareSweepEntries );
+	// The cell of a pre-fractured piece, numbered across all pieces, or -1 for a whole piece
+	int cell;
 
-	for ( int i = 0; i < count; ++i )
-	{
-		int place = entries[i].place;
-		b3AABB bounds = entries[i].bounds;
+	// Chunks of one group get no bond from their contacts: the cells of a piece without openings are glued along their
+	// Voronoi faces already. Every part of a piece with openings is a group of its own.
+	int group;
+} nbLoadChunk;
 
-		// Twice the tolerance keeps every pair the exact test accepts, whatever the rounding
-		float reach = bounds.upperBound.x + 2.0f * tolerance;
-		for ( int j = i + 1; j < count && entries[j].lowerX <= reach; ++j )
-		{
-			int other = entries[j].place;
-			bool before = place < other;
-			const b3AABB* first = before ? &bounds : &entries[j].bounds;
-			const b3AABB* second = before ? &entries[j].bounds : &bounds;
-			if ( b3AABB_Overlaps( b3AABB_Inflate( *first, tolerance ), *second ) )
-			{
-				nbChunkPair pair = { before ? place : other, before ? other : place };
-				nbArray_Push( *pairs, pair );
-			}
-		}
-	}
-
-	if ( pairs->count > 1 )
-	{
-		qsort( pairs->data, (size_t)pairs->count, sizeof( nbChunkPair ), nbCompareChunkPairs );
-	}
-}
-
-// The contact areas of the touching pairs, measured on the workers. Glueing the pairs stays on the calling thread, in pair
-// order, so the bonds come out the same with any number of threads.
-typedef struct nbContactTask
+// A destructible on its way into the world. Up to the contact areas between its new chunks everything depends only on
+// its definition and touches nothing of the world, so the workers can prepare the next destructible while the calling
+// thread builds this one into the world, see nbCreateDestructibles. Building it in, nbCommitLoad, does everything in the
+// same order as for a destructible created on its own.
+typedef struct nbLoad
 {
-	const nbWorld* world;
-	const nbChunkPair* pairs;
-	int pairCount;
-	int firstNewChunk;
-	float tolerance;
-	bool moments;
+	const nbDestructibleDef* def;
+	const nbPieceDef* pieces;
+	int pieceCount;
 
-	// Per pair, negative for a pair that gets no bond anyway
+	// Scratch memory of the load and of every task that computes its cells
+	nbArena* arena;
+	nbArena* workerArenas;
+
+	// What the destructible gets
+	nbMaterial materials[NB_MAX_MATERIALS];
+	int materialCount;
+	nbAnchorPlane anchors[NB_MAX_ANCHORS];
+	int anchorCount;
+	bool bondMoments;
+
+	// The pieces and their pre-fracture, one job per pre-fractured piece
+	int* pieceMaterials;
+	nbPoly* piecePolys;
+	b3AABB* pieceBounds;
+	int* pieceJobs;
+	float* pieceCellSizes;
+	int* pieceJoints;
+	nbFractureJob* jobs;
+	int** jobCells;
+	int jobCount;
+	nbFractureRun fracture;
+
+	// The new chunks, and for every site of a job the place of the chunk of its cell in that list, or -1
+	nbLoadChunk* chunks;
+	int chunkCount;
+	int** jobChunks;
+	int hullFallbackCount;
+
+	// Pairs of new chunks whose bounds touch, and their contact areas, negative for two chunks of one group
+	nbChunkPairArray pairs;
 	float* areas;
 	nbBondGeometry* geometries;
-} nbContactTask;
+} nbLoad;
 
-// Pairs per work item. A contact area costs a microsecond or two, a single pair is not worth an atomic.
-#define NB_CONTACT_BLOCK 16
-
-// Blocks from which the workers help. Waking them costs more than a few blocks.
-#define NB_PARALLEL_CONTACT_BLOCKS 8
-
-static void nbMeasureContacts( void* context, int item )
+enum
 {
-	nbContactTask* task = context;
-	const nbWorld* world = task->world;
-	const int* touched = world->touchedChunks.data + task->firstNewChunk;
-	int begin = item * NB_CONTACT_BLOCK;
-	int end = begin + NB_CONTACT_BLOCK < task->pairCount ? begin + NB_CONTACT_BLOCK : task->pairCount;
-	for ( int i = begin; i < end; ++i )
-	{
-		const nbChunk* chunkA = world->chunks.data + touched[task->pairs[i].first];
-		const nbChunk* chunkB = world->chunks.data + touched[task->pairs[i].second];
-		if ( chunkA->scratch == chunkB->scratch )
-		{
-			task->areas[i] = -1.0f;
-			continue;
-		}
+	nb_pieceInvalid = -2,
+	nb_pieceSingle = -1,
+};
 
-		task->areas[i] =
-			nbShape_ContactArea( chunkA->shape, chunkB->shape, task->tolerance, task->moments, task->geometries + i );
-	}
-}
+// Contacts closer than this are touching faces
+#define NB_CONTACT_TOLERANCE 1.0e-3f
 
-nbDestructibleId nbCreateDestructible( nbWorldId worldId, const nbDestructibleDef* def, const nbPieceDef* pieces, int pieceCount )
+// Materials, anchors and pieces of a destructible, and the sites of its pre-fracture. Draws the sites of all pieces in
+// order, so the result does not depend on the number of workers.
+static void nbPrepareLoad( nbWorld* world, nbLoad* load )
 {
-	NB_ASSERT( def->internalValue == NB_SECRET_COOKIE );
-	nbWorld* world = nbGetWorldFromId( worldId );
-	if ( world == NULL || pieces == NULL || pieceCount <= 0 )
-	{
-		return nb_nullDestructibleId;
-	}
+	const nbDestructibleDef* def = load->def;
+	const nbPieceDef* pieces = load->pieces;
+	int pieceCount = load->pieceCount;
+	nbArena* arena = load->arena;
 
-	nbBeginOperation( world );
-
-	int index;
-	if ( world->freeDestructibles.count > 0 )
+	load->materials[0] = def->material;
+	load->materialCount = 1;
+	load->anchorCount = def->anchorCount < NB_MAX_ANCHORS ? def->anchorCount : NB_MAX_ANCHORS;
+	for ( int i = 0; i < load->anchorCount; ++i )
 	{
-		index = world->freeDestructibles.data[--world->freeDestructibles.count];
+		load->anchors[i] = def->anchors[i];
+		load->anchors[i].normal = b3Normalize( def->anchors[i].normal );
 	}
-	else
-	{
-		nbDestructible empty = { 0 };
-		nbArray_Push( world->destructibles, empty );
-		index = world->destructibles.count - 1;
-	}
-
-	nbDestructible* destructible = world->destructibles.data + index;
-	uint16_t generation = destructible->generation;
-	*destructible = (nbDestructible){ 0 };
-	destructible->generation = generation;
-	destructible->materials[0] = def->material;
-	destructible->materialCount = 1;
-	destructible->filter = def->filter;
-	destructible->anchorCount = def->anchorCount < NB_MAX_ANCHORS ? def->anchorCount : NB_MAX_ANCHORS;
-	for ( int i = 0; i < destructible->anchorCount; ++i )
-	{
-		destructible->anchors[i] = def->anchors[i];
-		destructible->anchors[i].normal = b3Normalize( def->anchors[i].normal );
-	}
-	destructible->headActor = NB_NULL_INDEX;
-	destructible->transform = (b3WorldTransform){ def->position, def->rotation };
-	destructible->staticBody = b3_nullBodyId;
-	destructible->seed = def->seed;
-	destructible->isStatic = def->isStatic;
-	destructible->enableCollisionDamage = def->enableCollisionDamage;
-	destructible->userData = def->userData;
 
 	// Which destructibles have storeys is known once their chunks are, the bonds come before
-	destructible->bondMoments = world->def.supportScale > 0.0f;
-	world->destructibleCount += 1;
-
-	// Static chunks get a body each when they are committed. A dynamic destructible is one body.
-	int actorIndex = nbAllocActor( world, index, def->isStatic );
-	if ( def->isStatic == false )
-	{
-		nbCreateActorBody( world, actorIndex, destructible->transform );
-	}
-	world->actors.data[actorIndex].isNew = false;
+	load->bondMoments = world->def.supportScale > 0.0f;
 
 	// Default anchor: the lowest point of all pieces along local -Y
-	nbPoly* poly = nbArena_AllocArray( &world->arena, nbPoly, 1 );
-	if ( def->isStatic && destructible->anchorCount == 0 )
+	nbPoly* poly = nbArena_AllocArray( arena, nbPoly, 1 );
+	if ( def->isStatic && load->anchorCount == 0 )
 	{
 		float minY = FLT_MAX;
 		for ( int i = 0; i < pieceCount; ++i )
@@ -610,41 +510,32 @@ nbDestructibleId nbCreateDestructible( nbWorldId worldId, const nbDestructibleDe
 			}
 		}
 
-		destructible->anchors[0] = (nbAnchorPlane){ { 0.0f, 1.0f, 0.0f }, minY };
-		destructible->anchorCount = 1;
+		load->anchors[0] = (nbAnchorPlane){ { 0.0f, 1.0f, 0.0f }, minY };
+		load->anchorCount = 1;
 	}
 
 	// The material of every piece. Pieces with the same material share an entry.
-	int* pieceMaterials = nbArena_AllocArray( &world->arena, int, pieceCount );
+	load->pieceMaterials = nbArena_AllocArray( arena, int, pieceCount );
 	for ( int i = 0; i < pieceCount; ++i )
 	{
-		pieceMaterials[i] = pieces[i].material != NULL ? nbAddMaterial( world->destructibles.data + index, pieces[i].material ) : 0;
+		load->pieceMaterials[i] =
+			pieces[i].material != NULL ? nbAddMaterial( load->materials, &load->materialCount, pieces[i].material ) : 0;
 	}
 
-	// Draw the sites of all pieces in order, compute the cells on the workers, then create the chunks in
-	// order. The result does not depend on the number of workers.
 	nbRandom rng = nbMakeRandom( def->seed, 0x5eed );
-	int firstNewChunk = world->touchedChunks.count;
-
-	enum
-	{
-		nb_pieceInvalid = -2,
-		nb_pieceSingle = -1,
-	};
-
-	nbPoly* piecePolys = nbArena_AllocArray( &world->arena, nbPoly, pieceCount );
-	b3AABB* pieceBounds = nbArena_AllocArray( &world->arena, b3AABB, pieceCount );
-	int* pieceJobs = nbArena_AllocArray( &world->arena, int, pieceCount );
-	float* pieceCellSizes = nbArena_AllocArray( &world->arena, float, pieceCount );
-	nbFractureJob* jobs = nbArena_AllocArray( &world->arena, nbFractureJob, pieceCount );
-	b3Vec3** jobSites = nbArena_AllocArray( &world->arena, b3Vec3*, pieceCount );
-	int* jobPieces = nbArena_AllocArray( &world->arena, int, pieceCount );
+	load->piecePolys = nbArena_AllocArray( arena, nbPoly, pieceCount );
+	load->pieceBounds = nbArena_AllocArray( arena, b3AABB, pieceCount );
+	load->pieceJobs = nbArena_AllocArray( arena, int, pieceCount );
+	load->pieceCellSizes = nbArena_AllocArray( arena, float, pieceCount );
+	load->jobs = nbArena_AllocArray( arena, nbFractureJob, pieceCount );
+	b3Vec3** jobSites = nbArena_AllocArray( arena, b3Vec3*, pieceCount );
+	int* jobPieces = nbArena_AllocArray( arena, int, pieceCount );
+	nbFractureJob* jobs = load->jobs;
 	int jobCount = 0;
-
 	for ( int i = 0; i < pieceCount; ++i )
 	{
 		const nbPieceDef* piece = pieces + i;
-		nbPoly* piecePoly = piecePolys + i;
+		nbPoly* piecePoly = load->piecePolys + i;
 		bool valid = true;
 		if ( piece->points != NULL )
 		{
@@ -661,23 +552,27 @@ nbDestructibleId nbCreateDestructible( nbWorldId worldId, const nbDestructibleDe
 		}
 
 		// The bounds in the frame of the destructible, before the fracture moves the piece to its center of mass
-		pieceJobs[i] = valid ? nb_pieceSingle : nb_pieceInvalid;
-		pieceBounds[i] = valid ? nbPoly_ComputeBounds( piecePoly ) : (b3AABB){ b3Vec3_zero, b3Vec3_zero };
-		pieceCellSizes[i] = piece->cellSize != 0.0f ? piece->cellSize : def->cellSize;
-		const nbMaterial* pieceMaterial = world->destructibles.data[index].materials + pieceMaterials[i];
-		b3Vec3* sites = nbArena_AllocArray( &world->arena, b3Vec3, NB_PIECE_SITES );
-		if ( valid && nbPreparePiece( world, pieceMaterial, piece, piecePoly, pieceCellSizes[i], &rng, sites, jobs + jobCount ) )
+		load->pieceJobs[i] = valid ? nb_pieceSingle : nb_pieceInvalid;
+		load->pieceBounds[i] = valid ? nbPoly_ComputeBounds( piecePoly ) : (b3AABB){ b3Vec3_zero, b3Vec3_zero };
+		load->pieceCellSizes[i] = piece->cellSize != 0.0f ? piece->cellSize : def->cellSize;
+		const nbMaterial* pieceMaterial = load->materials + load->pieceMaterials[i];
+		b3Vec3* sites = nbArena_AllocArray( arena, b3Vec3, NB_PIECE_SITES );
+		if ( valid && nbPreparePiece( arena, pieceMaterial, piece, piecePoly, load->pieceCellSizes[i], &rng, sites, jobs + jobCount ) )
 		{
-			jobs[jobCount].bondMoments = world->destructibles.data[index].bondMoments;
-			pieceJobs[i] = jobCount;
+			jobs[jobCount].bondMoments = load->bondMoments;
+			load->pieceJobs[i] = jobCount;
 			jobSites[jobCount] = sites;
 			jobPieces[jobCount] = i;
 			jobCount += 1;
 		}
 	}
+	load->jobCount = jobCount;
 
 	// Pieces with cells of the same material and size crack as one mass: the first such piece, or -1
-	int* pieceJoints = nbArena_AllocArray( &world->arena, int, pieceCount );
+	const int* pieceJobs = load->pieceJobs;
+	const float* pieceCellSizes = load->pieceCellSizes;
+	const int* pieceMaterials = load->pieceMaterials;
+	int* pieceJoints = nbArena_AllocArray( arena, int, pieceCount );
 	for ( int i = 0; i < pieceCount; ++i )
 	{
 		pieceJoints[i] = -1;
@@ -687,22 +582,24 @@ nbDestructibleId nbCreateDestructible( nbWorldId worldId, const nbDestructibleDe
 			pieceJoints[i] = same ? k : -1;
 		}
 	}
+	load->pieceJoints = pieceJoints;
 
 	// Every site is a cell, numbered across all pieces. A piece also takes the sites near it of the pieces it cracks with,
 	// so the cells run on across the seam, and their parts on both sides carry the same number.
-	int* ownSiteCounts = nbArena_AllocArray( &world->arena, int, pieceCount );
-	int** jobCells = nbArena_AllocArray( &world->arena, int*, pieceCount );
+	int* ownSiteCounts = nbArena_AllocArray( arena, int, pieceCount );
+	int** jobCells = nbArena_AllocArray( arena, int*, pieceCount );
 	int cellCount = 0;
 	for ( int j = 0; j < jobCount; ++j )
 	{
 		ownSiteCounts[j] = jobs[j].siteCount;
-		jobCells[j] = nbArena_AllocArray( &world->arena, int, NB_PIECE_SITES );
+		jobCells[j] = nbArena_AllocArray( arena, int, NB_PIECE_SITES );
 		for ( int s = 0; s < jobs[j].siteCount; ++s )
 		{
 			jobCells[j][s] = cellCount + s;
 		}
 		cellCount += jobs[j].siteCount;
 	}
+	load->jobCells = jobCells;
 
 	for ( int j = 0; j < jobCount; ++j )
 	{
@@ -737,108 +634,308 @@ nbDestructibleId nbCreateDestructible( nbWorldId worldId, const nbDestructibleDe
 			}
 		}
 	}
+}
 
-	nbRunFractureJobs( world, jobs, jobCount, NULL, NULL, NULL, NULL );
+static void nbAddLoadChunk( nbLoad* load, nbShape* shape, int piece, int cell, bool cut )
+{
+	int place = load->chunkCount++;
+	load->chunks[place] = (nbLoadChunk){ shape, piece, cell, cut ? load->pieceCount + place : piece };
+}
 
-	// The piece and cell of every new chunk, in the order of the touched chunks. A chunk that is a whole piece has no cell.
-	nbIntArray chunkPieces = { 0 };
-	nbIntArray chunkCells = { 0 };
-	for ( int i = 0; i < pieceCount; ++i )
+// The new chunks in the order they are created: the pieces in order, a whole piece as one chunk, a pre-fractured piece
+// as the parts and then the cell of every site. Shapes without a hull, slivers that have no valid one, are dropped.
+static void nbCollectLoadChunks( nbLoad* load )
+{
+	int capacity = 0;
+	for ( int i = 0; i < load->pieceCount; ++i )
 	{
-		if ( pieceJobs[i] == nb_pieceInvalid )
+		int jobIndex = load->pieceJobs[i];
+		if ( jobIndex == nb_pieceSingle )
+		{
+			capacity += 1;
+		}
+		else if ( jobIndex >= 0 )
+		{
+			const nbFractureJob* job = load->jobs + jobIndex;
+			for ( int s = 0; s < job->siteCount; ++s )
+			{
+				capacity += job->cells[s].partCount + 1;
+			}
+		}
+	}
+
+	load->chunks = nbArena_AllocArray( load->arena, nbLoadChunk, capacity + 1 );
+	load->chunkCount = 0;
+	load->jobChunks = nbArena_AllocArray( load->arena, int*, load->jobCount + 1 );
+	for ( int i = 0; i < load->pieceCount; ++i )
+	{
+		int jobIndex = load->pieceJobs[i];
+		if ( jobIndex == nb_pieceInvalid )
 		{
 			continue;
 		}
 
-		int start = world->touchedChunks.count;
-		if ( pieceJobs[i] == nb_pieceSingle )
+		if ( jobIndex == nb_pieceSingle )
 		{
-			nbCreateSingleChunk( world, index, actorIndex, piecePolys + i, pieces[i].interiorMaterial, pieceMaterials[i] );
-			for ( int k = start; k < world->touchedChunks.count; ++k )
+			nbShape* shape = nbShape_Create( load->piecePolys + i );
+			if ( shape == NULL )
 			{
-				nbArray_Push( chunkCells, -1 );
+				continue;
 			}
-		}
-		else
-		{
-			nbFinishPiece( world, index, actorIndex, jobs + pieceJobs[i], jobCells[pieceJobs[i]], pieceMaterials[i],
-						   &chunkCells );
+
+			nbShape_BuildHull( shape, &load->hullFallbackCount );
+			if ( shape->hull == NULL )
+			{
+				nbShape_Destroy( shape );
+				continue;
+			}
+			nbAddLoadChunk( load, shape, i, -1, false );
+			continue;
 		}
 
-		// Remember which piece each chunk came from, so bonds between pieces can be found. The chunks of a piece with
-		// openings count as pieces of their own, the cells do not know how their parts touch.
-		bool cut = pieceJobs[i] >= 0 && jobs[pieceJobs[i]].cutoutCount > 0;
-		for ( int k = start; k < world->touchedChunks.count; ++k )
+		// The chunks of a piece with openings count as pieces of their own, the cells do not know how their parts touch
+		const nbFractureJob* job = load->jobs + jobIndex;
+		const int* cells = load->jobCells[jobIndex];
+		bool cut = job->cutoutCount > 0;
+		int* siteChunks = nbArena_AllocArray( load->arena, int, job->siteCount );
+		load->jobChunks[jobIndex] = siteChunks;
+		for ( int s = 0; s < job->siteCount; ++s )
 		{
-			world->chunks.data[world->touchedChunks.data[k]].scratch = cut ? pieceCount + k : i;
-			nbArray_Push( chunkPieces, i );
+			siteChunks[s] = -1;
+			const nbCell* cell = job->cells + s;
+			for ( int k = 0; k < cell->partCount; ++k )
+			{
+				nbShape* part = cell->parts[k].shape;
+				if ( part->hull == NULL )
+				{
+					nbShape_Destroy( part );
+					continue;
+				}
+				nbAddLoadChunk( load, part, i, cells[s], cut );
+			}
+
+			if ( cell->shape == NULL )
+			{
+				continue;
+			}
+
+			if ( cell->shape->hull == NULL )
+			{
+				nbShape_Destroy( cell->shape );
+				continue;
+			}
+			siteChunks[s] = load->chunkCount;
+			nbAddLoadChunk( load, cell->shape, i, cells[s], cut );
+		}
+	}
+}
+
+// The pairs of new chunks whose bounds pass the test nbShape_ContactArea starts with, in the order of a loop over all
+// pairs. A sweep along x finds them without testing every pair, a house has hundreds of chunks.
+static void nbFindTouchingPairs( nbLoad* load, float tolerance )
+{
+	int count = load->chunkCount;
+	nbChunkPairArray* pairs = &load->pairs;
+	if ( count < 2 )
+	{
+		return;
+	}
+
+	nbSweepEntry* entries = nbArena_AllocArray( load->arena, nbSweepEntry, count );
+	for ( int i = 0; i < count; ++i )
+	{
+		b3AABB bounds = load->chunks[i].shape->bounds;
+		entries[i] = (nbSweepEntry){ bounds.lowerBound.x, i, bounds };
+	}
+	qsort( entries, (size_t)count, sizeof( nbSweepEntry ), nbCompareSweepEntries );
+
+	for ( int i = 0; i < count; ++i )
+	{
+		int place = entries[i].place;
+		b3AABB bounds = entries[i].bounds;
+
+		// Twice the tolerance keeps every pair the exact test accepts, whatever the rounding
+		float reach = bounds.upperBound.x + 2.0f * tolerance;
+		for ( int j = i + 1; j < count && entries[j].lowerX <= reach; ++j )
+		{
+			int other = entries[j].place;
+			bool before = place < other;
+			const b3AABB* first = before ? &bounds : &entries[j].bounds;
+			const b3AABB* second = before ? &entries[j].bounds : &bounds;
+			if ( b3AABB_Overlaps( b3AABB_Inflate( *first, tolerance ), *second ) )
+			{
+				nbChunkPair pair = { before ? place : other, before ? other : place };
+				nbArray_Push( *pairs, pair );
+			}
 		}
 	}
 
-	// Glue touching faces of different pieces. A bond between two materials is as strong as the weaker one. Cells of one
-	// piece, or of pieces that crack together, hold as one block, and the parts of one cell hold as siblings.
-	int chunkEnd = world->touchedChunks.count;
-	float tolerance = 1.0e-3f;
-	nbChunkPairArray pairs = { 0 };
-	nbFindTouchingPairs( world, firstNewChunk, chunkEnd - firstNewChunk, tolerance, &pairs );
-	nbContactTask contactTask = {
-		.world = world,
-		.pairs = pairs.data,
-		.pairCount = pairs.count,
-		.firstNewChunk = firstNewChunk,
-		.tolerance = tolerance,
-		.moments = world->destructibles.data[index].bondMoments,
-		.areas = nbArena_AllocArray( &world->arena, float, pairs.count + 1 ),
-		.geometries = nbArena_AllocArray( &world->arena, nbBondGeometry, pairs.count + 1 ),
-	};
-	int blockCount = ( pairs.count + NB_CONTACT_BLOCK - 1 ) / NB_CONTACT_BLOCK;
-	nbParallelFor( world, blockCount, NB_PARALLEL_CONTACT_BLOCKS, nbMeasureContacts, &contactTask );
-
-	for ( int i = 0; i < pairs.count; ++i )
+	if ( pairs->count > 1 )
 	{
-		float area = contactTask.areas[i];
+		qsort( pairs->data, (size_t)pairs->count, sizeof( nbChunkPair ), nbCompareChunkPairs );
+	}
+}
+
+// Pairs per work item. A contact area costs a microsecond or two, a single pair is not worth an atomic.
+#define NB_CONTACT_BLOCK 16
+
+// Blocks from which the workers help. Waking them costs more than a few blocks.
+#define NB_PARALLEL_CONTACT_BLOCKS 8
+
+// The contact areas of a block of touching pairs, measured on the workers. Glueing the pairs stays on the calling thread,
+// in pair order, so the bonds come out the same with any number of threads.
+static void nbMeasureContacts( void* context, int item )
+{
+	nbLoad* load = context;
+	int begin = item * NB_CONTACT_BLOCK;
+	int end = begin + NB_CONTACT_BLOCK < load->pairs.count ? begin + NB_CONTACT_BLOCK : load->pairs.count;
+	for ( int i = begin; i < end; ++i )
+	{
+		const nbLoadChunk* chunkA = load->chunks + load->pairs.data[i].first;
+		const nbLoadChunk* chunkB = load->chunks + load->pairs.data[i].second;
+		if ( chunkA->group == chunkB->group )
+		{
+			load->areas[i] = -1.0f;
+			continue;
+		}
+
+		load->areas[i] =
+			nbShape_ContactArea( chunkA->shape, chunkB->shape, NB_CONTACT_TOLERANCE, load->bondMoments, load->geometries + i );
+	}
+}
+
+// Find the pairs of new chunks that touch and measure their contact areas on the workers
+static void nbMeasureLoadContacts( nbWorld* world, nbLoad* load )
+{
+	nbFindTouchingPairs( load, NB_CONTACT_TOLERANCE );
+	load->areas = nbArena_AllocArray( load->arena, float, load->pairs.count + 1 );
+	load->geometries = nbArena_AllocArray( load->arena, nbBondGeometry, load->pairs.count + 1 );
+	int blockCount = ( load->pairs.count + NB_CONTACT_BLOCK - 1 ) / NB_CONTACT_BLOCK;
+	nbParallelFor( world, blockCount, NB_PARALLEL_CONTACT_BLOCKS, nbMeasureContacts, load );
+}
+
+// Build a prepared destructible into the world: its slot and actor, the chunks in order, the bonds of the cells of every
+// piece right after its chunks, then the bonds of the touching pairs in pair order, the storeys and the Box3D shapes.
+// A bond between two materials is as strong as the weaker one. Cells of one piece, or of pieces that crack together,
+// hold as one block, and the parts of one cell hold as siblings.
+static nbDestructibleId nbCommitLoad( nbWorld* world, nbLoad* load )
+{
+	const nbDestructibleDef* def = load->def;
+	int pieceCount = load->pieceCount;
+	world->touchedChunks.count = 0;
+	world->touchedActors.count = 0;
+	world->splitSeeds.count = 0;
+
+	int index;
+	if ( world->freeDestructibles.count > 0 )
+	{
+		index = world->freeDestructibles.data[--world->freeDestructibles.count];
+	}
+	else
+	{
+		nbDestructible empty = { 0 };
+		nbArray_Push( world->destructibles, empty );
+		index = world->destructibles.count - 1;
+	}
+
+	nbDestructible* destructible = world->destructibles.data + index;
+	uint16_t generation = destructible->generation;
+	*destructible = (nbDestructible){ 0 };
+	destructible->generation = generation;
+	memcpy( destructible->materials, load->materials, sizeof( nbMaterial ) * (size_t)load->materialCount );
+	destructible->materialCount = load->materialCount;
+	destructible->filter = def->filter;
+	memcpy( destructible->anchors, load->anchors, sizeof( nbAnchorPlane ) * (size_t)load->anchorCount );
+	destructible->anchorCount = load->anchorCount;
+	destructible->headActor = NB_NULL_INDEX;
+	destructible->transform = (b3WorldTransform){ def->position, def->rotation };
+	destructible->staticBody = b3_nullBodyId;
+	destructible->seed = def->seed;
+	destructible->isStatic = def->isStatic;
+	destructible->enableCollisionDamage = def->enableCollisionDamage;
+	destructible->userData = def->userData;
+	destructible->bondMoments = load->bondMoments;
+	world->destructibleCount += 1;
+	world->stats.hullFallbackCount += load->hullFallbackCount;
+
+	// Static chunks get a body each when they are committed. A dynamic destructible is one body.
+	int actorIndex = nbAllocActor( world, index, def->isStatic );
+	if ( def->isStatic == false )
+	{
+		nbCreateActorBody( world, actorIndex, destructible->transform );
+	}
+	world->actors.data[actorIndex].isNew = false;
+
+	int* chunkIndices = nbArena_AllocArray( load->arena, int, load->chunkCount + 1 );
+	int place = 0;
+	for ( int i = 0; i < pieceCount; ++i )
+	{
+		int jobIndex = load->pieceJobs[i];
+		const nbFractureJob* job = jobIndex >= 0 ? load->jobs + jobIndex : NULL;
+		uint8_t interiorMaterial = job != NULL ? job->interiorMaterial : load->pieces[i].interiorMaterial;
+		int first = place;
+		for ( ; place < load->chunkCount && load->chunks[place].piece == i; ++place )
+		{
+			chunkIndices[place] = nbCreateChunkWithHull( world, index, actorIndex, load->chunks[place].shape, 0, interiorMaterial,
+														 load->pieceMaterials[i] );
+			NB_ASSERT( chunkIndices[place] != NB_NULL_INDEX );
+		}
+
+		if ( job == NULL || job->cutoutCount > 0 )
+		{
+			continue;
+		}
+
+		const int* siteChunks = load->jobChunks[jobIndex];
+		int* siteIndices = nbArena_AllocArray( load->arena, int, job->siteCount );
+		for ( int s = 0; s < job->siteCount; ++s )
+		{
+			NB_ASSERT( siteChunks[s] < 0 || ( first <= siteChunks[s] && siteChunks[s] < place ) );
+			siteIndices[s] = siteChunks[s] >= 0 ? chunkIndices[siteChunks[s]] : NB_NULL_INDEX;
+		}
+		NB_UNUSED( first );
+		nbGlueCells( world, index, load->pieceMaterials[i], job, siteIndices );
+	}
+
+	const int* pieceJoints = load->pieceJoints;
+	for ( int i = 0; i < load->pairs.count; ++i )
+	{
+		float area = load->areas[i];
 		if ( area < 0.0f )
 		{
 			continue;
 		}
 
-		int a = firstNewChunk + pairs.data[i].first;
-		int b = firstNewChunk + pairs.data[i].second;
-		int chunkA = world->touchedChunks.data[a];
-		int chunkB = world->touchedChunks.data[b];
+		const nbLoadChunk* loadA = load->chunks + load->pairs.data[i].first;
+		const nbLoadChunk* loadB = load->chunks + load->pairs.data[i].second;
+		int chunkA = chunkIndices[load->pairs.data[i].first];
+		int chunkB = chunkIndices[load->pairs.data[i].second];
 		const nbMaterial* materialA = nbGetChunkMaterial( world, world->chunks.data + chunkA );
 		const nbMaterial* materialB = nbGetChunkMaterial( world, world->chunks.data + chunkB );
 		float fragmentSize = b3MinFloat( nbGetFragmentSize( world, materialA ), nbGetFragmentSize( world, materialB ) );
 		float minBondArea = 0.01f * fragmentSize * fragmentSize;
 		if ( area > minBondArea )
 		{
-			int bondIndex = nbCreateBond( world, chunkA, chunkB, contactTask.geometries + i,
+			int bondIndex = nbCreateBond( world, chunkA, chunkB, load->geometries + i,
 										  b3MinFloat( materialA->strength, materialB->strength ) * area );
 
-			int pieceA = chunkPieces.data[a - firstNewChunk], pieceB = chunkPieces.data[b - firstNewChunk];
-			int cellA = chunkCells.data[a - firstNewChunk], cellB = chunkCells.data[b - firstNewChunk];
+			int pieceA = loadA->piece, pieceB = loadB->piece;
+			int cellA = loadA->cell, cellB = loadB->cell;
 			bool joint = pieceA == pieceB || ( pieceJoints[pieceA] >= 0 && pieceJoints[pieceA] == pieceJoints[pieceB] );
 			world->bonds.data[bondIndex].cohesive = joint && cellA >= 0 && cellB >= 0;
 			world->bonds.data[bondIndex].sibling = joint && cellA >= 0 && cellA == cellB;
 		}
 	}
-	nbArray_Free( pairs );
-	nbArray_Free( chunkPieces );
-	nbArray_Free( chunkCells );
-
-	for ( int k = firstNewChunk; k < chunkEnd; ++k )
-	{
-		world->chunks.data[world->touchedChunks.data[k]].scratch = NB_NULL_INDEX;
-	}
+	nbArray_Free( load->pairs );
 
 	if ( def->isStatic )
 	{
-		bool* valid = nbArena_AllocArray( &world->arena, bool, pieceCount );
+		bool* valid = nbArena_AllocArray( load->arena, bool, pieceCount );
 		for ( int i = 0; i < pieceCount; ++i )
 		{
-			valid[i] = pieceJobs[i] != nb_pieceInvalid;
+			valid[i] = load->pieceJobs[i] != nb_pieceInvalid;
 		}
-		nbFindStoreys( world, index, actorIndex, pieceBounds, valid, pieceCount );
+		nbFindStoreys( world, index, actorIndex, load->pieceBounds, valid, pieceCount );
 	}
 
 	// The load check never takes a building with storeys, its bonds need no moments from now on
@@ -850,6 +947,120 @@ nbDestructibleId nbCreateDestructible( nbWorldId worldId, const nbDestructibleDe
 	nbCoverIndices( world );
 
 	return (nbDestructibleId){ index + 1, world->worldIndex, world->destructibles.data[index].generation };
+}
+
+nbDestructibleId nbCreateDestructible( nbWorldId worldId, const nbDestructibleDef* def, const nbPieceDef* pieces, int pieceCount )
+{
+	NB_ASSERT( def->internalValue == NB_SECRET_COOKIE );
+	nbWorld* world = nbGetWorldFromId( worldId );
+	if ( world == NULL || pieces == NULL || pieceCount <= 0 )
+	{
+		return nb_nullDestructibleId;
+	}
+
+	nbBeginOperation( world );
+	nbLoad load = {
+		.def = def,
+		.pieces = pieces,
+		.pieceCount = pieceCount,
+		.arena = &world->arena,
+		.workerArenas = world->workerArenas,
+	};
+	nbPrepareLoad( world, &load );
+	nbStartFractureJobs( world, &load.fracture, load.jobs, load.jobCount, NULL, NULL, load.arena, load.workerArenas );
+	nbFinishFractureJobs( world, &load.fracture );
+	nbCollectLoadChunks( &load );
+	nbMeasureLoadContacts( world, &load );
+	return nbCommitLoad( world, &load );
+}
+
+void nbCreateDestructibles( nbWorldId worldId, const nbDestructibleDef* defs, const nbPieceDef* const* pieceLists,
+							const int* pieceCounts, int count, nbDestructibleId* ids )
+{
+	nbWorld* world = nbGetWorldFromId( worldId );
+	for ( int i = 0; i < count; ++i )
+	{
+		ids[i] = nb_nullDestructibleId;
+	}
+
+	if ( world == NULL || count <= 0 )
+	{
+		return;
+	}
+
+	// The second load works in scratch memory of its own, the first in that of the world
+	nbArena arena;
+	nbArena workerArenas[NB_MAX_WORKERS];
+	nbArena_Create( &arena, 256 * 1024 );
+	for ( int i = 0; i < world->workerCount; ++i )
+	{
+		nbArena_Create( workerArenas + i, 64 * 1024 );
+	}
+
+	nbLoad loads[2];
+	nbBeginOperation( world );
+	int current = 0;
+	while ( current < count && ( pieceLists[current] == NULL || pieceCounts[current] <= 0 ) )
+	{
+		current += 1;
+	}
+
+	int side = 0;
+	if ( current < count )
+	{
+		NB_ASSERT( defs[current].internalValue == NB_SECRET_COOKIE );
+		loads[0] = (nbLoad){ .def = defs + current, .pieces = pieceLists[current], .pieceCount = pieceCounts[current],
+							 .arena = &world->arena, .workerArenas = world->workerArenas };
+		nbPrepareLoad( world, loads + 0 );
+		nbStartFractureJobs( world, &loads[0].fracture, loads[0].jobs, loads[0].jobCount, NULL, NULL, loads[0].arena,
+							 loads[0].workerArenas );
+	}
+
+	// While the calling thread builds one destructible into the world, the workers compute the cells of the next
+	while ( current < count )
+	{
+		nbLoad* load = loads + side;
+		nbFinishFractureJobs( world, &load->fracture );
+
+		int next = current + 1;
+		while ( next < count && ( pieceLists[next] == NULL || pieceCounts[next] <= 0 ) )
+		{
+			next += 1;
+		}
+
+		if ( next < count )
+		{
+			NB_ASSERT( defs[next].internalValue == NB_SECRET_COOKIE );
+			nbLoad* other = loads + ( 1 - side );
+			nbArena* otherArena = side == 0 ? &arena : &world->arena;
+			nbArena* otherWorkerArenas = side == 0 ? workerArenas : world->workerArenas;
+			nbArena_Reset( otherArena );
+			for ( int i = 0; i < world->workerCount; ++i )
+			{
+				nbArena_Reset( otherWorkerArenas + i );
+			}
+
+			*other = (nbLoad){ .def = defs + next, .pieces = pieceLists[next], .pieceCount = pieceCounts[next],
+							   .arena = otherArena, .workerArenas = otherWorkerArenas };
+			nbPrepareLoad( world, other );
+			nbStartFractureJobs( world, &other->fracture, other->jobs, other->jobCount, NULL, NULL, other->arena,
+								 other->workerArenas );
+		}
+
+		// The workers are busy with the cells of the next destructible, the contacts of this one come mostly from the
+		// calling thread
+		nbCollectLoadChunks( load );
+		nbMeasureLoadContacts( world, load );
+		ids[current] = nbCommitLoad( world, load );
+		current = next;
+		side = 1 - side;
+	}
+
+	nbArena_Destroy( &arena );
+	for ( int i = 0; i < world->workerCount; ++i )
+	{
+		nbArena_Destroy( workerArenas + i );
+	}
 }
 
 nbDestructibleId nbCreateBox( nbWorldId worldId, const nbDestructibleDef* def, b3Vec3 halfExtents )

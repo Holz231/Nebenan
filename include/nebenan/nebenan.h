@@ -101,6 +101,13 @@ NB_API nbPieceDef nbDefaultPieceDef( void );
 NB_API nbDestructibleId nbCreateDestructible( nbWorldId worldId, const nbDestructibleDef* def, const nbPieceDef* pieces,
 											  int pieceCount );
 
+/// Create many destructibles at once, defs[i] from the pieceCounts[i] pieces at pieceLists[i], and write their ids to ids.
+/// The same as calling nbCreateDestructible for each of them in order, with the same ids and the same chunks and bonds to
+/// the bit, but faster with workers: while the calling thread builds one destructible into the world, the workers
+/// already compute the cells of the next. One without pieces gets a null id.
+NB_API void nbCreateDestructibles( nbWorldId worldId, const nbDestructibleDef* defs, const nbPieceDef* const* pieceLists,
+								   const int* pieceCounts, int count, nbDestructibleId* ids );
+
 /// Create a destructible box, for example a wall.
 NB_API nbDestructibleId nbCreateBox( nbWorldId worldId, const nbDestructibleDef* def, b3Vec3 halfExtents );
 

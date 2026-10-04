@@ -3798,33 +3798,30 @@ static void nbFractureTaskMain( void* context )
 // Items from which the workers help with a fracture, see nbRunFractureJobs
 #define NB_PARALLEL_FRACTURE_ITEMS 32
 
-void nbRunFractureJobs( nbWorld* world, nbFractureJob* jobs, int jobCount, nbPrepareJobFn* prepare, void* prepareContext,
-						nbCallerWorkFn* callerWork, void* callerContext )
+void nbStartFractureJobs( nbWorld* world, nbFractureRun* run, nbFractureJob* jobs, int jobCount, nbPrepareJobFn* prepare,
+						  void* prepareContext, nbArena* arena, nbArena* workerArenas )
 {
+	*run = (nbFractureRun){ 0 };
 	int prepareCount = prepare != NULL ? jobCount : 0;
 	int itemCount = prepareCount;
 	int siteCapacity = 0;
 	for ( int i = 0; i < jobCount; ++i )
 	{
-		jobs[i].cells = nbArena_AllocArray( &world->arena, nbCell, jobs[i].siteCount );
+		jobs[i].cells = nbArena_AllocArray( arena, nbCell, jobs[i].siteCount );
 		itemCount += jobs[i].siteCount;
 		siteCapacity = jobs[i].siteCount > siteCapacity ? jobs[i].siteCount : siteCapacity;
 	}
 
 	if ( itemCount == 0 )
 	{
-		if ( callerWork != NULL )
-		{
-			callerWork( callerContext );
-		}
 		return;
 	}
 
 	// Every cell is a work item. Workers grab the next item when they finish one, which balances
 	// cheap cells at the impact against the larger cells further out.
-	int* itemJobs = nbArena_AllocArray( &world->arena, int, itemCount );
-	int* itemCells = nbArena_AllocArray( &world->arena, int, itemCount );
-	int* prepared = nbArena_AllocArray( &world->arena, int, jobCount + 1 );
+	int* itemJobs = nbArena_AllocArray( arena, int, itemCount );
+	int* itemCells = nbArena_AllocArray( arena, int, itemCount );
+	int* prepared = nbArena_AllocArray( arena, int, jobCount + 1 );
 	int item = prepareCount;
 	for ( int i = 0; i < jobCount; ++i )
 	{
@@ -3843,12 +3840,10 @@ void nbRunFractureJobs( nbWorld* world, nbFractureJob* jobs, int jobCount, nbPre
 	int taskCount = world->enqueueTask != NULL && itemCount >= NB_PARALLEL_FRACTURE_ITEMS ? world->workerCount : 1;
 	taskCount = taskCount < itemCount ? taskCount : itemCount;
 
-	int nextItem = 0;
-	nbFractureTask tasks[NB_MAX_WORKERS];
-	void* userTasks[NB_MAX_WORKERS];
+	run->tasks = nbArena_AllocArray( arena, nbFractureTask, taskCount );
 	for ( int i = 0; i < taskCount; ++i )
 	{
-		tasks[i] = (nbFractureTask){
+		run->tasks[i] = (nbFractureTask){
 			.jobs = jobs,
 			.jobCount = jobCount,
 			.itemJobs = itemJobs,
@@ -3858,35 +3853,52 @@ void nbRunFractureJobs( nbWorld* world, nbFractureJob* jobs, int jobCount, nbPre
 			.prepare = prepare,
 			.prepareContext = prepareContext,
 			.prepared = prepared,
-			.nextItem = &nextItem,
-			.arena = world->workerArenas + i,
+			.nextItem = &run->nextItem,
+			.arena = workerArenas + i,
 		};
 	}
 
 	for ( int i = 1; i < taskCount; ++i )
 	{
-		userTasks[i] = world->enqueueTask( nbFractureTaskMain, tasks + i, world->userTaskContext, "nebenan fracture" );
+		run->userTasks[i] = world->enqueueTask( nbFractureTaskMain, run->tasks + i, world->userTaskContext, "nebenan fracture" );
+	}
+	run->taskCount = taskCount;
+}
+
+void nbFinishFractureJobs( nbWorld* world, nbFractureRun* run )
+{
+	if ( run->taskCount == 0 )
+	{
+		return;
 	}
 
-	// The calling thread does its own work meanwhile, then it works on the cells as well
+	nbFractureTaskMain( run->tasks + 0 );
+	for ( int i = 1; i < run->taskCount; ++i )
+	{
+		if ( run->userTasks[i] != NULL )
+		{
+			world->finishTask( run->userTasks[i], world->userTaskContext );
+		}
+	}
+
+	for ( int i = 0; i < run->taskCount; ++i )
+	{
+		world->stats.hullFallbackCount += run->tasks[i].counters.hullFallbackCount;
+	}
+	run->taskCount = 0;
+}
+
+void nbRunFractureJobs( nbWorld* world, nbFractureJob* jobs, int jobCount, nbPrepareJobFn* prepare, void* prepareContext,
+						nbCallerWorkFn* callerWork, void* callerContext )
+{
+	// The calling thread does its own work while the workers start, then it works on the cells as well
+	nbFractureRun run;
+	nbStartFractureJobs( world, &run, jobs, jobCount, prepare, prepareContext, &world->arena, world->workerArenas );
 	if ( callerWork != NULL )
 	{
 		callerWork( callerContext );
 	}
-	nbFractureTaskMain( tasks + 0 );
-
-	for ( int i = 1; i < taskCount; ++i )
-	{
-		if ( userTasks[i] != NULL )
-		{
-			world->finishTask( userTasks[i], world->userTaskContext );
-		}
-	}
-
-	for ( int i = 0; i < taskCount; ++i )
-	{
-		world->stats.hullFallbackCount += tasks[i].counters.hullFallbackCount;
-	}
+	nbFinishFractureJobs( world, &run );
 }
 
 typedef struct nbParallelTask

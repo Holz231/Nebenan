@@ -1982,16 +1982,25 @@ static void AddOpenings( nbOpening* openings, int* openingCount, const float* co
 
 // The town house as the demo builds it: brick walls through all floors with the same doors and windows, pre-fractured
 // into cells, and whole concrete floors between them
-static nbDestructibleId CreateCelledHouse( TestScene* scene, int floors, uint32_t seed )
+// The pieces of a celled house with what they point to, so a batch can hold many of them
+typedef struct CelledHouse
 {
-	nbMaterial concrete = nbDefaultMaterial();
-	concrete.strength = 1.1e6f;
+	nbMaterial concrete;
+	nbOpening openings[4][16];
+	nbPieceDef pieces[8];
+	int pieceCount;
+	nbDestructibleDef def;
+} CelledHouse;
+
+static void BuildCelledHouse( CelledHouse* house, int floors, uint32_t seed, b3Vec3 position )
+{
+	house->concrete = nbDefaultMaterial();
+	house->concrete.strength = 1.1e6f;
 	float width = 9.0f, depth = 6.5f, story = 3.0f, t = 0.3f, slab = 0.25f;
 	float level = story + slab;
 	float height = (float)floors * level;
 	float inner = depth - 2.0f * t;
 
-	nbOpening openings[4][16];
 	int openingCounts[4] = { 0 };
 	for ( int floor = 0; floor < floors; ++floor )
 	{
@@ -2000,14 +2009,14 @@ static nbDestructibleId CreateCelledHouse( TestScene* scene, int floors, uint32_
 		float front1[] = { 1.0f, 0.9f, 2.6f, 2.2f, 3.7f, 0.9f, 5.3f, 2.2f, 6.4f, 0.9f, 8.0f, 2.2f };
 		float back[] = { 1.5f, 0.9f, 3.0f, 2.2f, 6.0f, 0.9f, 7.5f, 2.2f };
 		float side[] = { 2.4f, 0.9f, 3.6f, 2.2f };
-		AddOpenings( openings[0], openingCounts + 0, floor == 0 ? front0 : front1, 12, width, height, y, t );
-		AddOpenings( openings[1], openingCounts + 1, back, 8, width, height, y, t );
-		AddOpenings( openings[2], openingCounts + 2, side, 4, inner, height, y, t );
-		AddOpenings( openings[3], openingCounts + 3, side, 4, inner, height, y, t );
+		AddOpenings( house->openings[0], openingCounts + 0, floor == 0 ? front0 : front1, 12, width, height, y, t );
+		AddOpenings( house->openings[1], openingCounts + 1, back, 8, width, height, y, t );
+		AddOpenings( house->openings[2], openingCounts + 2, side, 4, inner, height, y, t );
+		AddOpenings( house->openings[3], openingCounts + 3, side, 4, inner, height, y, t );
 	}
 
 	// The front and back walls run along x, the end walls between them along z
-	nbPieceDef pieces[8];
+	nbPieceDef* pieces = house->pieces;
 	int count = 0;
 	b3Quat alongZ = b3MakeQuatFromAxisAngle( (b3Vec3){ 0.0f, 1.0f, 0.0f }, -0.5f * B3_PI );
 	b3Vec3 centers[4] = {
@@ -2023,7 +2032,7 @@ static nbDestructibleId CreateCelledHouse( TestScene* scene, int floors, uint32_
 		wall->halfExtents = (b3Vec3){ 0.5f * ( w < 2 ? width : inner ), 0.5f * height, 0.5f * t };
 		wall->transform.p = centers[w];
 		wall->transform.q = w < 2 ? b3Quat_identity : alongZ;
-		wall->openings = openings[w];
+		wall->openings = house->openings[w];
 		wall->openingCount = openingCounts[w];
 	}
 
@@ -2033,16 +2042,26 @@ static nbDestructibleId CreateCelledHouse( TestScene* scene, int floors, uint32_
 		*floorSlab = nbDefaultPieceDef();
 		floorSlab->halfExtents = (b3Vec3){ 0.5f * width - t, 0.5f * slab, 0.5f * depth - t };
 		floorSlab->transform.p = (b3Vec3){ 0.0f, (float)floor * level + story + 0.5f * slab, 0.0f };
-		floorSlab->material = &concrete;
+		floorSlab->material = &house->concrete;
 		floorSlab->cellSize = -1.0f;
 	}
+	house->pieceCount = count;
 
-	nbDestructibleDef def = nbDefaultDestructibleDef();
-	def.seed = seed;
-	def.cellSize = 1.2f;
-	def.material.density = 1900.0f;
-	def.material.strength = 6.0e5f;
-	return nbCreateDestructible( scene->world, &def, pieces, count );
+	house->def = nbDefaultDestructibleDef();
+	house->def.position = b3ToPos( position );
+	house->def.seed = seed;
+	house->def.cellSize = 1.2f;
+	house->def.material.density = 1900.0f;
+	house->def.material.strength = 6.0e5f;
+}
+
+static nbDestructibleId CreateCelledHouse( TestScene* scene, int floors, uint32_t seed )
+{
+	CelledHouse* house = malloc( sizeof( CelledHouse ) );
+	BuildCelledHouse( house, floors, seed, b3Vec3_zero );
+	nbDestructibleId id = nbCreateDestructible( scene->world, &house->def, house->pieces, house->pieceCount );
+	free( house );
+	return id;
 }
 
 // Highest chunk centroid in world space
@@ -2665,6 +2684,176 @@ static int BondMomentsTest( void )
 	return 0;
 }
 
+// Every chunk slot of the world: its Box3D body and shape, actor, bonds and flags
+static uint32_t HashChunkSlots( uint32_t hash, const nbWorld* world )
+{
+	for ( int i = 0; i < world->chunks.count; ++i )
+	{
+		const nbChunk* chunk = world->chunks.data + i;
+		if ( chunk->shape == NULL )
+		{
+			continue;
+		}
+
+		int values[13] = {
+			i,
+			chunk->bodyId.index1,
+			chunk->bodyId.generation,
+			chunk->shapeId.index1,
+			chunk->shapeId.generation,
+			chunk->destructibleIndex,
+			chunk->actorIndex,
+			chunk->headBondKey,
+			chunk->bondCount,
+			chunk->depth,
+			chunk->flags,
+			chunk->materialIndex,
+			chunk->interiorMaterial,
+		};
+		const uint8_t* bytes = (const uint8_t*)values;
+		for ( size_t k = 0; k < sizeof( values ); ++k )
+		{
+			hash = ( hash ^ bytes[k] ) * 16777619u;
+		}
+	}
+	return hash;
+}
+
+// Many destructibles created at once come out the same as one by one, with one worker or four and with a task system
+// that runs every task at once: the same ids, chunks, bonds, bond moments and Box3D bodies and shapes, also after
+// grenades. Entries without pieces get null ids.
+static int BatchCreateTest( void )
+{
+	enum
+	{
+		houseCount = 4,
+		entryCount = 9,
+	};
+	CelledHouse* houses = malloc( sizeof( CelledHouse ) * houseCount );
+	for ( int h = 0; h < houseCount; ++h )
+	{
+		BuildCelledHouse( houses + h, 2 + ( h & 1 ), (uint32_t)( 40 + h ), (b3Vec3){ 14.0f * (float)h, 0.0f, 0.0f } );
+	}
+
+	static const nbOpening openings[2] = {
+		{ { -1.2f, 0.3f, 0.0f }, { 0.6f, 0.5f, 0.3f } },
+		{ { 1.4f, -0.6f, 0.0f }, { 0.45f, 1.0f, 0.3f } },
+	};
+	nbPieceDef wall = nbDefaultPieceDef();
+	wall.halfExtents = (b3Vec3){ 3.0f, 1.5f, 0.15f };
+	wall.transform.p = (b3Vec3){ 0.0f, 1.5f, 0.0f };
+	wall.openings = openings;
+	wall.openingCount = 2;
+	nbDestructibleDef wallDef = nbDefaultDestructibleDef();
+	wallDef.position = b3ToPos( (b3Vec3){ 0.0f, 0.0f, 12.0f } );
+	wallDef.cellSize = 0.4f;
+	wallDef.seed = 9;
+
+	static const b3Vec3 rockPoints[8] = {
+		{ -0.5f, -0.4f, -0.45f }, { 0.55f, -0.45f, -0.4f }, { -0.45f, 0.5f, -0.5f }, { 0.5f, 0.45f, -0.45f },
+		{ -0.5f, -0.5f, 0.5f },	  { 0.45f, -0.4f, 0.55f },	{ -0.4f, 0.45f, 0.45f }, { 0.5f, 0.55f, 0.5f },
+	};
+	nbPieceDef rock = nbDefaultPieceDef();
+	rock.points = rockPoints;
+	rock.pointCount = 8;
+	nbDestructibleDef rockDef = nbDefaultDestructibleDef();
+	rockDef.position = b3ToPos( (b3Vec3){ 20.0f, 3.0f, 12.0f } );
+	rockDef.isStatic = false;
+	rockDef.cellSize = 0.3f;
+	rockDef.seed = 5;
+
+	nbPieceDef box = nbDefaultPieceDef();
+	box.halfExtents = (b3Vec3){ 1.0f, 0.5f, 0.5f };
+	nbDestructibleDef boxDef = nbDefaultDestructibleDef();
+	boxDef.position = b3ToPos( (b3Vec3){ -10.0f, 0.5f, 12.0f } );
+
+	nbDestructibleDef defs[entryCount] = {
+		houses[0].def, wallDef, nbDefaultDestructibleDef(), houses[1].def, rockDef, houses[2].def, boxDef, houses[3].def,
+		nbDefaultDestructibleDef(),
+	};
+	const nbPieceDef* lists[entryCount] = {
+		houses[0].pieces, &wall, NULL, houses[1].pieces, &rock, houses[2].pieces, &box, houses[3].pieces, &box,
+	};
+	int counts[entryCount] = {
+		houses[0].pieceCount, 1, 0, houses[1].pieceCount, 1, houses[2].pieceCount, 1, houses[3].pieceCount, 0,
+	};
+
+	// One by one and at once, with four workers, one and an inline task system, then without and with the load check
+	nbDestructibleId firstIds[entryCount];
+	uint32_t hashes[6];
+	uint32_t momentHashes[6];
+	TestTaskSystem system = { 0 };
+	for ( int pass = 0; pass < 6; ++pass )
+	{
+		TestScene scene = pass == 3 ? CreateSceneWithWorkers( 4, InlineEnqueue, InlineFinish, &system )
+									: CreateSceneWithWorkers( pass == 2 ? 1 : 4, NULL, NULL, NULL );
+		if ( pass >= 4 )
+		{
+			nbWorld_SetSupportScale( scene.world, 0.03f );
+		}
+
+		nbDestructibleId ids[entryCount];
+		if ( pass == 0 || pass == 4 )
+		{
+			for ( int i = 0; i < entryCount; ++i )
+			{
+				ids[i] = nbCreateDestructible( scene.world, defs + i, lists[i], counts[i] );
+			}
+		}
+		else
+		{
+			nbCreateDestructibles( scene.world, defs, lists, counts, entryCount, ids );
+		}
+
+		for ( int i = 0; i < entryCount; ++i )
+		{
+			ENSURE( ( counts[i] > 0 ) == NB_IS_NON_NULL( ids[i] ) );
+			if ( pass == 0 )
+			{
+				firstIds[i] = ids[i];
+			}
+			ENSURE( ids[i].index1 == firstIds[i].index1 && ids[i].generation == firstIds[i].generation );
+		}
+
+		const nbWorld* world = nbGetWorldFromId( scene.world );
+		ENSURE( world->chunkCount > 300 && world->bondCount > 600 );
+		uint32_t hash = HashChunkSlots( HashBonds( 2166136261u, world ), world );
+		for ( int i = 0; i < entryCount; ++i )
+		{
+			hash = NB_IS_NON_NULL( ids[i] ) ? HashDestructible( hash, ids[i] ) : hash;
+		}
+
+		uint32_t momentHash = 2166136261u;
+		const uint8_t* bytes = (const uint8_t*)world->bondMoments.data;
+		for ( size_t k = 0; k < sizeof( nbBondMoments ) * (size_t)world->bondMoments.count; ++k )
+		{
+			momentHash = ( momentHash ^ bytes[k] ) * 16777619u;
+		}
+		momentHashes[pass] = momentHash;
+
+		Grenade( &scene, (b3Vec3){ 0.0f, 1.2f, 3.4f } );
+		Grenade( &scene, (b3Vec3){ 0.0f, 1.0f, 12.15f } );
+		Step( &scene, 30 );
+		Grenade( &scene, (b3Vec3){ 28.0f, 4.4f, -3.4f } );
+		Step( &scene, 30 );
+		world = nbGetWorldFromId( scene.world );
+		hash = HashChunkSlots( HashBonds( hash, world ), world );
+		for ( int i = 0; i < entryCount; ++i )
+		{
+			hash = NB_IS_NON_NULL( ids[i] ) ? HashDestructible( hash, ids[i] ) : hash;
+		}
+		hashes[pass] = hash;
+		DestroyScene( &scene );
+	}
+	free( houses );
+
+	ENSURE( hashes[1] == hashes[0] && hashes[2] == hashes[0] && hashes[3] == hashes[0] );
+	ENSURE( system.enqueueCount > 0 && system.finishCount == 0 );
+	ENSURE( hashes[5] == hashes[4] );
+	ENSURE( momentHashes[5] == momentHashes[4] && momentHashes[4] != momentHashes[0] );
+	return 0;
+}
+
 int WorldTest( void );
 
 int WorldTest( void )
@@ -2697,6 +2886,7 @@ int WorldTest( void )
 	RUN_TEST( StoreyTest );
 	RUN_TEST( SupportTest );
 	RUN_TEST( BondMomentsTest );
+	RUN_TEST( BatchCreateTest );
 	RUN_TEST( RestTest );
 	RUN_TEST( LandingTest );
 	return 0;

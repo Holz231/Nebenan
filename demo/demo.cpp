@@ -23,6 +23,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <string>
+#include <memory>
 #include <thread>
 #include <unordered_map>
 #include <vector>
@@ -561,8 +562,8 @@ static nbPieceDef MakePiece( b3Vec3 center, b3Vec3 halfExtents, const MaterialPr
 	return piece;
 }
 
-static nbDestructibleId AddStructure( App& app, b3Vec3 position, float yaw, const MaterialPreset& preset,
-									  const std::vector<nbPieceDef>& pieces, uint32_t seed, float cellSize = 0.0f )
+static nbDestructibleDef MakeStructureDef( b3Vec3 position, float yaw, const MaterialPreset& preset, uint32_t seed,
+											float cellSize )
 {
 	nbDestructibleDef def = nbDefaultDestructibleDef();
 	def.cellSize = cellSize;
@@ -570,7 +571,41 @@ static nbDestructibleId AddStructure( App& app, b3Vec3 position, float yaw, cons
 	def.rotation = b3MakeQuatFromAxisAngle( b3Vec3_axisY, yaw );
 	def.material = preset.material;
 	def.seed = seed;
+	return def;
+}
+
+static nbDestructibleId AddStructure( App& app, b3Vec3 position, float yaw, const MaterialPreset& preset,
+									  const std::vector<nbPieceDef>& pieces, uint32_t seed, float cellSize = 0.0f )
+{
+	nbDestructibleDef def = MakeStructureDef( position, yaw, preset, seed, cellSize );
 	return nbCreateDestructible( app.destruction, &def, pieces.data(), (int)pieces.size() );
+}
+
+// A structure waiting to be created, with everything its pieces point to
+struct PendingStructure
+{
+	nbDestructibleDef def;
+	std::vector<nbPieceDef> pieces;
+	std::vector<nbOpening> openings[4];
+	nbMaterial floorMaterial;
+};
+
+// Create the structures at once: while the calling thread builds one into the world, the workers already fracture the
+// next, see nbCreateDestructibles
+static void CreateStructures( App& app, const std::vector<std::unique_ptr<PendingStructure>>& pending )
+{
+	std::vector<nbDestructibleDef> defs;
+	std::vector<const nbPieceDef*> pieceLists;
+	std::vector<int> pieceCounts;
+	for ( const std::unique_ptr<PendingStructure>& structure : pending )
+	{
+		defs.push_back( structure->def );
+		pieceLists.push_back( structure->pieces.data() );
+		pieceCounts.push_back( (int)structure->pieces.size() );
+	}
+
+	std::vector<nbDestructibleId> ids( pending.size() );
+	nbCreateDestructibles( app.destruction, defs.data(), pieceLists.data(), pieceCounts.data(), (int)pending.size(), ids.data() );
 }
 
 static void AddWall( App& app, b3Vec3 base, float yaw, b3Vec3 size, const MaterialPreset& preset, uint32_t seed )
@@ -611,8 +646,9 @@ static void BuildWallScene( App& app )
 
 // Brick walls through all floors with their doors and windows cut out, and concrete floors inside them. The walls are
 // pre-fractured into cells, so a wall that gives way cracks along the cells and not along the floors.
-static void AddHouse( App& app, b3Vec3 position, float yaw, int floors, uint32_t seed )
+static std::unique_ptr<PendingStructure> PrepareHouse( b3Vec3 position, float yaw, int floors, uint32_t seed )
 {
+	std::unique_ptr<PendingStructure> house = std::make_unique<PendingStructure>();
 	MaterialPreset brick = BrickPreset();
 	MaterialPreset concrete = ConcretePreset();
 
@@ -628,7 +664,7 @@ static void AddHouse( App& app, b3Vec3 position, float yaw, int floors, uint32_t
 	std::vector<b3Vec2> back = { { 1.5f, 0.9f }, { 3.0f, 2.2f }, { 6.0f, 0.9f }, { 7.5f, 2.2f } };
 	std::vector<b3Vec2> side = { { 2.4f, 0.9f }, { 3.6f, 2.2f } };
 
-	std::vector<nbOpening> openings[4];
+	std::vector<nbOpening>* openings = house->openings;
 	for ( int floor = 0; floor < floors; ++floor )
 	{
 		float y = (float)floor * level;
@@ -647,7 +683,7 @@ static void AddHouse( App& app, b3Vec3 position, float yaw, int floors, uint32_t
 		{ 0.5f * ( width - t ), 0.5f * height, 0.0f },
 	};
 
-	std::vector<nbPieceDef> pieces;
+	std::vector<nbPieceDef>& pieces = house->pieces;
 	for ( int w = 0; w < 4; ++w )
 	{
 		float length = w < 2 ? width : inner;
@@ -659,16 +695,18 @@ static void AddHouse( App& app, b3Vec3 position, float yaw, int floors, uint32_t
 	}
 
 	// The floors stay whole until something hits them, cells would only cost
+	house->floorMaterial = concrete.material;
 	for ( int floor = 0; floor < floors; ++floor )
 	{
 		nbPieceDef floorSlab = MakePiece( { 0.0f, (float)floor * level + story + 0.5f * slab, 0.0f },
 										  { 0.5f * width - t, 0.5f * slab, 0.5f * depth - t }, concrete, MaterialConcrete );
-		floorSlab.material = &concrete.material;
+		floorSlab.material = &house->floorMaterial;
 		floorSlab.cellSize = -1.0f;
 		pieces.push_back( floorSlab );
 	}
 
-	AddStructure( app, position, yaw, brick, pieces, seed, 1.2f );
+	house->def = MakeStructureDef( position, yaw, brick, seed, 1.2f );
+	return house;
 }
 
 static void BuildStressScene( App& app )
@@ -701,6 +739,7 @@ static b3Vec3 TownHousePosition( int row, int column )
 
 static void BuildTownScene( App& app )
 {
+	std::vector<std::unique_ptr<PendingStructure>> houses;
 	uint32_t seed = 200;
 	for ( int row = 0; row < TownRows; ++row )
 	{
@@ -709,9 +748,10 @@ static void BuildTownScene( App& app )
 			// Every third house has a third floor, every other one faces the other street
 			int floors = ( row * TownColumns + column ) % 3 == 1 ? 3 : 2;
 			float yaw = ( row & 1 ) != 0 ? B3_PI : 0.0f;
-			AddHouse( app, TownHousePosition( row, column ), yaw, floors, seed++ );
+			houses.push_back( PrepareHouse( TownHousePosition( row, column ), yaw, floors, seed++ ) );
 		}
 	}
+	CreateStructures( app, houses );
 
 	app.camera.position = { 0.0f, 16.0f, 34.0f };
 	app.camera.yaw = 0.0f;

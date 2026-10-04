@@ -452,6 +452,24 @@ struct nbFractureJob;
 void nbRunFractureJobs( nbWorld* world, struct nbFractureJob* jobs, int jobCount, nbPrepareJobFn* prepare,
 						void* prepareContext, nbCallerWorkFn* callerWork, void* callerContext );
 
+// Fracture jobs the workers compute while the calling thread does something else
+struct nbFractureTask;
+typedef struct nbFractureRun
+{
+	struct nbFractureTask* tasks;
+	void* userTasks[NB_MAX_WORKERS];
+	int taskCount;
+	int nextItem;
+} nbFractureRun;
+
+// The two halves of nbRunFractureJobs. Start hands the jobs to the workers and returns, finish has the calling thread
+// join them and waits until all cells are done. In between the calling thread may do anything that touches neither the
+// jobs nor the arenas. The cell arrays, the work items and the tasks live in the arena, what a task allocates in its
+// worker arena, one per worker. The run must stay in place until it is finished.
+void nbStartFractureJobs( nbWorld* world, nbFractureRun* run, struct nbFractureJob* jobs, int jobCount,
+						  nbPrepareJobFn* prepare, void* prepareContext, nbArena* arena, nbArena* workerArenas );
+void nbFinishFractureJobs( nbWorld* world, nbFractureRun* run );
+
 // Run a function for every item, spread over the workers if there are at least minItems. The items must not depend on
 // each other or change the world.
 typedef void nbParallelFn( void* context, int item );

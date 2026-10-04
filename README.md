@@ -213,7 +213,10 @@ Thread kommen. Zuletzt werden Stücke und Verbindungen wieder in fester Reihenfo
 mit einem, vier oder acht Threads bitgleich. Wie Box3D nimmt Nebenan das Task-System der Anwendung (`enqueueTask` und
 `finishTask` mit denselben Signaturen wie in Box3D) oder startet eigene Threads. Die Vorzerlegung beim Laden läuft
 genauso, und dort messen die Worker auch die Flächen, mit denen sich die Bruchstücke berühren. Die Verbindungen daraus
-baut der aufrufende Thread in fester Reihenfolge.
+baut der aufrufende Thread in fester Reihenfolge. Legt die Anwendung viele Zerstörbare auf einmal an, mit
+`nbCreateDestructibles`, berechnen die Worker schon die Zellen des nächsten, während der aufrufende Thread eines in
+die Welt einbaut. So lädt eine Stadt ein Drittel schneller, mit denselben Bruchstücken, Verbindungen und Ids wie
+einzeln angelegt.
 
 **Stützgraph.** Zwei Bruchstücke sind verbunden, wenn sich ihre Flächen berühren. Jede Verbindung hält
 `strength × Kontaktfläche` aus, zwischen zwei Materialien mit dem kleineren `strength`. Der Schaden eines
@@ -442,7 +445,7 @@ Fenster und Türen schneidet `openings` aus einem Teil aus, als Quader im Rahmen
 Nebenan das Teil zuerst in Zellen und schneidet die Öffnungen dann aus den Zellen, so laufen die Zellen um die
 Öffnungen herum, und Risse folgen nicht deren Kanten. Ohne Zellgröße wird das Teil selbst in konvexe Stücke um die
 Öffnungen zerschnitten. `cellSize` am Teil ersetzt die des Objekts, ein negativer Wert lässt das Teil ganz, wie die
-Decken der Demo (siehe `AddOpenings` und `AddHouse` in [demo/demo.cpp](demo/demo.cpp)):
+Decken der Demo (siehe `AddOpenings` und `PrepareHouse` in [demo/demo.cpp](demo/demo.cpp)):
 
 ```c
 // Wand durch zwei Stockwerke mit einem Fenster, in Zellen von etwa 1,2 m zerlegt
@@ -453,6 +456,15 @@ wall.transform.p = (b3Vec3){ 0.0f, 3.25f, 3.1f };
 wall.openings = &window;
 wall.openingCount = 1;
 wall.cellSize = 1.2f;
+```
+
+Viele Objekte auf einmal, etwa eine Stadt, legt `nbCreateDestructibles` an. Das Ergebnis ist dasselbe wie mit
+`nbCreateDestructible` für jedes Objekt der Reihe nach, aber mit Workern schneller, siehe Mehrere Threads. Die Teile
+und alles, worauf sie zeigen, müssen bis zum Ende des Aufrufs leben:
+
+```c
+// defs[i] mit den pieceCounts[i] Teilen ab pieceLists[i], ids bekommt die Ids in derselben Reihenfolge
+nbCreateDestructibles( world, defs, pieceLists, pieceCounts, houseCount, ids );
 ```
 
 Die komplette API steht in [include/nebenan/nebenan.h](include/nebenan/nebenan.h).
@@ -551,19 +563,19 @@ Die Zeit ist zum größten Teil der Box3D-Schritt, und den bestimmen drei Dinge:
 **Große Szenen.** Mit vierfacher Bruchstückgröße kostet ein Frame unter Dauerbeschuss gleich viel, ob die Stadt aus 16
 oder aus 1 024 Häusern besteht, 0,3 bis 0,7 ms auf der VM je nach ihrer Tagesform. Box3D rechnet nur, was sich bewegt,
 und Nebenan geht im Update nie über die ganze Welt. Mit der Größe wachsen Ladezeit und Speicher: 1 024 Häuser mit
-246 000 Bruchstücken brauchen 375 MB und laden auf der VM in rund 1,1 s, an ihren langsamen Tagen in mehreren
-Sekunden. Große Arrays wachsen an Ort und Stelle, in Nebenan wie in Box3D: Jedes reserviert sich Adressraum und
-bekommt beim Wachsen dort Speicherseiten dazu, statt umzuziehen. Früher wurde ein volles Array in ein doppelt so
-großes kopiert, und das hielt ein einzelnes Update über 100 ms auf. Die Hüllen der Bruchstücke gehen nicht durch
-Box3Ds Hüllen-Tabelle, die beim Wachsen alle Hüllen neu einordnen müsste, und Box3D hält auch keine Kopie: Nebenan
-baut jede Hülle direkt in die Form ihres Bruchstücks, und die Box3D-Form benutzt sie dort
-(`b3ShapeDef::externalHull`). Das spart 12 % Speicher pro Bruchstück. Die statischen Bruchstücke eines Hauses oder
-Einschlags gehen gesammelt in Box3Ds Suchbaum, als ein Teilbaum mit einer Suche statt einer pro Stück
-(`b3World_BeginStaticBatch`, siehe [`extern/README.md`](extern/README.md)). Alle stehenden Bruchstücke eines Hauses
-hängen an einem gemeinsamen statischen Box3D-Körper statt jedes an einem eigenen, dafür führt Box3D die Kontakte jeder
-Form in einer eigenen Liste (`B3_HAS_SHAPE_CONTACT_LISTS`). Der gemeinsame Körper lädt große Städte fast doppelt so
-schnell und spart 16 % Speicher, und mit beidem kostet ein Einschlag in jeder Stadtgröße gleich viel. Mehr dazu in
-[`docs/Optimierungen.md`](docs/Optimierungen.md).
+246 000 Bruchstücken brauchen 375 MB und laden auf der VM in 0,65 s, mit `nbCreateDestructibles` alle auf einmal,
+einzeln in rund 1 s, an ihren langsamen Tagen in mehreren Sekunden. Große Arrays wachsen an Ort und Stelle, in Nebenan
+wie in Box3D: Jedes reserviert sich Adressraum und bekommt beim Wachsen dort Speicherseiten dazu, statt umzuziehen.
+Früher wurde ein volles Array in ein doppelt so großes kopiert, und das hielt ein einzelnes Update über 100 ms auf.
+Die Hüllen der Bruchstücke gehen nicht durch Box3Ds Hüllen-Tabelle, die beim Wachsen alle Hüllen neu einordnen müsste,
+und Box3D hält auch keine Kopie: Nebenan baut jede Hülle direkt in die Form ihres Bruchstücks, und die Box3D-Form
+benutzt sie dort (`b3ShapeDef::externalHull`). Das spart 12 % Speicher pro Bruchstück. Die statischen Bruchstücke
+eines Hauses oder Einschlags gehen gesammelt in Box3Ds Suchbaum, als ein Teilbaum mit einer Suche statt einer pro
+Stück (`b3World_BeginStaticBatch`, siehe [`extern/README.md`](extern/README.md)). Alle stehenden Bruchstücke eines
+Hauses hängen an einem gemeinsamen statischen Box3D-Körper statt jedes an einem eigenen, dafür führt Box3D die
+Kontakte jeder Form in einer eigenen Liste (`B3_HAS_SHAPE_CONTACT_LISTS`). Der gemeinsame Körper lädt große Städte
+fast doppelt so schnell und spart 16 % Speicher, und mit beidem kostet ein Einschlag in jeder Stadtgröße gleich viel.
+Mehr dazu in [`docs/Optimierungen.md`](docs/Optimierungen.md).
 
 Ganze Einschläge (Bruch, Stützgraph, neue Box3D-Körper) und der Box3D-Schritt danach bei 60 Hz mit
 4 Substeps, jeweils mit 1 und 4 Threads, der Median aus sechs Läufen:
@@ -603,7 +615,7 @@ Messungen in [docs/Optimierungen.md](docs/Optimierungen.md).
 ## Tests und Benchmark
 
 ```sh
-build/bin/nebenan_test            # 39 Tests: Geometrie, Voronoi, Hüllen, Öffnungen, Stöße, Stützgraph, Etagen, Lastprüfung, Schutt, Ruhe, Durchschlagen, Threads, große Blöcke, Suchbaum, Kontaktlisten, Determinismus …
+build/bin/nebenan_test            # 40 Tests: Geometrie, Voronoi, Hüllen, Öffnungen, Stöße, Stützgraph, Etagen, Lastprüfung, Schutt, Ruhe, Durchschlagen, Threads, große Blöcke, Suchbaum, Kontaktlisten, Determinismus …
 build/bin/nebenan_benchmark 4     # Zahl = Threads für Bruch und Physik
 ```
 

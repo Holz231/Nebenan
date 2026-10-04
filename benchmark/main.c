@@ -319,9 +319,18 @@ static void AddOpenings( nbOpening* openings, int* openingCount, const float* co
 	}
 }
 
+// The pieces of a house and the openings they point to, so a whole town can be created at once
+typedef struct House
+{
+	nbOpening openings[4][16];
+	nbPieceDef pieces[8];
+	int pieceCount;
+	nbDestructibleDef def;
+} House;
+
 // Two stories of brick walls through both floors with doors and windows, pre-fractured into cells, and concrete
 // floors inside them, like the house of the demo
-static nbDestructibleId CreateHouse( nbWorldId world, b3Vec3 position, uint32_t seed, const nbMaterial* concrete )
+static void BuildHouse( House* house, b3Vec3 position, uint32_t seed, const nbMaterial* concrete )
 {
 	float width = 9.0f, depth = 6.5f, story = 3.0f, t = 0.3f, slab = 0.25f;
 	float level = story + slab;
@@ -329,7 +338,7 @@ static nbDestructibleId CreateHouse( nbWorldId world, b3Vec3 position, uint32_t 
 	float height = (float)floors * level;
 	float inner = depth - 2.0f * t;
 
-	nbOpening openings[4][16];
+	nbOpening( *openings )[16] = house->openings;
 	int openingCounts[4] = { 0 };
 	for ( int floor = 0; floor < floors; ++floor )
 	{
@@ -345,7 +354,7 @@ static nbDestructibleId CreateHouse( nbWorldId world, b3Vec3 position, uint32_t 
 	}
 
 	// The front and back walls run along x, the end walls between them along z
-	nbPieceDef pieces[8];
+	nbPieceDef* pieces = house->pieces;
 	int count = 0;
 	b3Quat alongZ = b3MakeQuatFromAxisAngle( (b3Vec3){ 0.0f, 1.0f, 0.0f }, -0.5f * B3_PI );
 	b3Vec3 centers[4] = {
@@ -384,7 +393,8 @@ static nbDestructibleId CreateHouse( nbWorldId world, b3Vec3 position, uint32_t 
 	def.material.strength = 6.0e5f;
 	def.material.fragmentSize = 0.1f;
 	def.material.friction = 0.8f;
-	return nbCreateDestructible( world, &def, pieces, count );
+	house->pieceCount = count;
+	house->def = def;
 }
 
 static int CompareFloats( const void* a, const void* b )
@@ -402,19 +412,31 @@ static void BenchmarkTown( int workerCount, float fragmentScale )
 	concrete.strength = 1.1e6f;
 	concrete.fragmentSize = 0.13f;
 
-	int houseCount = 0;
-	b3Vec3 houses[16];
-	uint64_t ticks = b3GetTicks();
-	for ( int i = 0; i < 4; ++i )
+	// All houses at once: while the calling thread builds one into the world, the workers fracture the next
+	enum
 	{
-		for ( int j = 0; j < 4; ++j )
-		{
-			houses[houseCount] = (b3Vec3){ 14.0f * ( (float)i - 1.5f ), 0.0f, 12.0f * ( (float)j - 1.5f ) };
-			CreateHouse( scene.world, houses[houseCount], (uint32_t)( 100 + houseCount ), &concrete );
-			houseCount += 1;
-		}
+		houseCount = 16
+	};
+	b3Vec3 houses[houseCount];
+	House* town = malloc( sizeof( House ) * houseCount );
+	nbDestructibleDef defs[houseCount];
+	const nbPieceDef* pieceLists[houseCount];
+	int pieceCounts[houseCount];
+	nbDestructibleId ids[houseCount];
+	for ( int h = 0; h < houseCount; ++h )
+	{
+		int i = h / 4, j = h % 4;
+		houses[h] = (b3Vec3){ 14.0f * ( (float)i - 1.5f ), 0.0f, 12.0f * ( (float)j - 1.5f ) };
+		BuildHouse( town + h, houses[h], (uint32_t)( 100 + h ), &concrete );
+		defs[h] = town[h].def;
+		pieceLists[h] = town[h].pieces;
+		pieceCounts[h] = town[h].pieceCount;
 	}
+
+	uint64_t ticks = b3GetTicks();
+	nbCreateDestructibles( scene.world, defs, pieceLists, pieceCounts, houseCount, ids );
 	float createTime = b3GetMilliseconds( ticks );
+	free( town );
 	nbStats created = nbWorld_GetStats( scene.world );
 	printf( "  town of %d houses with %d chunks built in %.2f ms, fragment scale %.1f\n", houseCount, created.chunkCount, createTime,
 			fragmentScale );
