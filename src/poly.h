@@ -141,6 +141,12 @@ bool nbShape_HasHullInside( const nbShape* shape );
 // Bytes a shape with its hull inside takes in a block of shapes, padded like an allocation of its own
 size_t nbShape_GetBlockSize( const nbShape* shape );
 
+// Bytes of the allocation of a shape, without a hull of its own from quickhull
+size_t nbShape_GetByteCount( const nbShape* shape );
+
+// Point the arrays of a shape whose bytes were copied to a new place into that place, and the hull too if it lies inside
+void nbShape_Rebase( nbShape* shape, bool hullInside );
+
 // Move a shape with its hull inside into a block of shapes and free its allocation. The place starts on NB_ALIGNMENT
 // bytes and holds nbShape_GetBlockSize bytes. Returns the shape at its new place.
 nbShape* nbShape_MoveToBlock( nbShape* shape, uint8_t* place );

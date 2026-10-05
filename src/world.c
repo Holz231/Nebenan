@@ -105,7 +105,7 @@ void nbTouchActor( nbWorld* world, int actorIndex )
 	nbArray_Push( world->touchedActors, actorIndex );
 }
 
-static void nbMapShape( nbWorld* world, b3ShapeId shapeId, int chunkIndex )
+void nbMapShape( nbWorld* world, b3ShapeId shapeId, int chunkIndex )
 {
 	int index = shapeId.index1 - 1;
 	if ( index >= world->shapeToChunk.count )
@@ -154,7 +154,7 @@ int nbFindChunkFromShape( const nbWorld* world, b3ShapeId shapeId )
 	return chunkIndex;
 }
 
-static void nbMapBody( nbWorld* world, b3BodyId bodyId, int actorIndex )
+void nbMapBody( nbWorld* world, b3BodyId bodyId, int actorIndex )
 {
 	int index = bodyId.index1 - 1;
 	if ( index >= world->bodyToActor.count )
@@ -201,19 +201,25 @@ b3WorldTransform nbActor_GetTransform( const nbWorld* world, const nbActor* acto
 	return b3Body_GetTransform( actor->bodyId );
 }
 
-void nbCreateActorBody( nbWorld* world, int actorIndex, b3WorldTransform transform )
+b3BodyDef nbMakeActorBodyDef( const nbWorld* world, b3WorldTransform transform )
 {
 	b3BodyDef bodyDef = b3DefaultBodyDef();
 	bodyDef.type = b3_dynamicBody;
 	bodyDef.position = transform.p;
 	bodyDef.rotation = transform.q;
 	bodyDef.sleepThreshold = world->def.debrisSleepThreshold;
+	return bodyDef;
+}
+
+void nbCreateActorBody( nbWorld* world, int actorIndex, b3WorldTransform transform )
+{
+	b3BodyDef bodyDef = nbMakeActorBodyDef( world, transform );
 	b3BodyId bodyId = b3CreateBody( world->physicsWorld, &bodyDef );
 	world->actors.data[actorIndex].bodyId = bodyId;
 	nbMapBody( world, bodyId, actorIndex );
 }
 
-static int nbAllocChunk( nbWorld* world )
+int nbAllocChunk( nbWorld* world )
 {
 	int index;
 	if ( world->freeChunks.count > 0 )
@@ -311,7 +317,7 @@ float nbGetBondStrength( const nbWorld* world, const nbBond* bond )
 }
 
 // Keep the second moments of a bond, see nbBondMoments
-static void nbKeepBondMoments( nbWorld* world, int bondIndex, b3Vec3 moments, b3Vec3 crossMoments )
+void nbKeepBondMoments( nbWorld* world, int bondIndex, b3Vec3 moments, b3Vec3 crossMoments )
 {
 	if ( world->bondMoments.count <= bondIndex )
 	{
@@ -643,7 +649,7 @@ void nbActor_RemoveChunk( nbWorld* world, int actorIndex, int chunkIndex )
 
 // The static body for a static chunk of the destructible: the one all its static chunks share, or a new one of its own,
 // see NB_SHARED_STATIC_BODY
-static b3BodyId nbGetStaticBody( nbWorld* world, nbDestructible* destructible )
+b3BodyId nbGetStaticBody( nbWorld* world, nbDestructible* destructible )
 {
 #if defined( NB_SHARED_STATIC_BODY )
 	if ( B3_IS_NON_NULL( destructible->staticBody ) )
@@ -1399,7 +1405,7 @@ static void nbMarkSupport( nbWorld* world, int actorIndex )
 	}
 }
 
-static b3ShapeDef nbMakeShapeDef( const nbDestructible* destructible, const nbMaterial* material, bool isStatic )
+b3ShapeDef nbMakeShapeDef( const nbDestructible* destructible, const nbMaterial* material, bool isStatic )
 {
 	b3ShapeDef shapeDef = b3DefaultShapeDef();
 	shapeDef.density = material->density;

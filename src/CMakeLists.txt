@@ -9,6 +9,7 @@ set(NEBENAN_SOURCE_FILES
 	destructible.c
 	poly.c
 	poly.h
+	save.c
 	scheduler.c
 	scheduler.h
 	world.c

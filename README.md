@@ -27,8 +27,9 @@ gelöscht. Kein Staub, keine Schatten: Jede Millisekunde geht in die Zerstörung
   werden zu statischem Schutt und kosten Box3D nichts mehr. Box3D bewegt nur eine begrenzte Zahl Trümmer
   gleichzeitig, verdeckte Flächen werden nicht gezeichnet
 - Städte größer als der Speicher: Ein Haus, dem nichts passiert ist und an dem nichts liegt, kann aus dem Speicher
-  gehen und kommt bitgleich wieder (`nbDestructible_CanUnload`). Die Demo hält von 65 536 Häusern nur die um die
-  Kamera und um alles, was sich bewegt
+  gehen und kommt bitgleich wieder (`nbDestructible_CanUnload`). Ein beschädigtes Haus, an dem alles ruht, geht samt
+  Schutt in einen Puffer und kommt daraus bitgleich wieder (`nbSaveDestructibles`, `nbLoadDestructibles`). Die Demo
+  hält von 65 536 Häusern nur die um die Kamera und um alles, was sich bewegt
 - Ein Regler für die Bruchstückgröße, der wichtigste Hebel für die Leistung, auch zur Laufzeit
 - Deterministisch: gleiche Eingaben ergeben bitgleich das gleiche Bruchmuster, unter Windows, Linux und macOS,
   auf x64 und ARM
@@ -158,8 +159,9 @@ Zwischenablage, zum Einfügen in einen Chat.
   Hausecken laufen, die Decken bleiben ganz
 - **Große Stadt**: 65 536 solche Häuser auf 3,6 × 3,1 km, am Stück wären das rund 24 GB. Geladen sind nur die
   Häuser im **Laderadius** um die Kamera (Standard 100 m) und die in der Nähe von allem, was sich bewegt.
-  Unberührte Häuser weiter weg gehen wieder, beschädigte bleiben mit ihrem Schutt. Das Menü zeigt, wie viele Häuser
-  geladen sind, was das Streaming pro Bild kostet und wie viel Speicher Nebenan und Box3D belegen
+  Unberührte Häuser weiter weg gehen wieder, beschädigte gehen samt Schutt in den Speicher der Demo, sobald alles an
+  ihnen ruht, und kommen von dort zurück. Das Menü zeigt, wie viele Häuser geladen und wie viele gespeichert sind, was
+  das Streaming pro Bild kostet und wie viel Speicher Nebenan und Box3D belegen
 
 **Aufrufoptionen**: `--scene 0..3` startet eine Szene, `--fragment-scale 3` setzt die Bruchstückgröße, `--vsync`
 schaltet VSync ein, `--msaa 4` schaltet Kantenglättung ein (Standard aus), `--highdpi` rendert auf
@@ -514,6 +516,32 @@ nbFinishCreating( creation, ids );
 Am besten startet das Laden nach dem Physikschritt, dann teilen sich die Worker die Kerne nicht mit den Threads von
 Box3D.
 
+Ein beschädigtes Haus kann samt Schutt gehen, sobald alles daran ruht. `nbCanSaveDestructibles` sagt, ob es jetzt
+geht: Jedes Teil steht oder ist Schutt, die Lastprüfung ist gelaufen, im angegebenen Abstand liegt nichts, was sich
+bewegt oder bewegen lässt, und kein Schutt liegt auf einem anderen Haus oder Schutt eines anderen Hauses auf ihm.
+Liegt Schutt zweier Häuser aufeinander, gehen beide zusammen. `nbSaveDestructibles` schreibt die Häuser in einen
+Puffer, und `nbLoadDestructibles` bringt sie zurück, mit denselben Bruchstücken, Verbindungen und Schuttkörpern,
+bitgleich, nur mit neuen Ids. Der Puffer lädt nur in den Build, der ihn geschrieben hat, er ist kein Spielstand.
+Auch ein gespeichertes Haus hat keine Kollision, und sein Schutt kann weiter reichen als das Haus. Die Demo merkt
+sich deshalb, wie weit, und holt das Haus zurück, sobald sich etwas bis dahin nähert (siehe `SaveCityHouse` in
+[demo/demo.cpp](demo/demo.cpp)):
+
+```c
+// Beschädigt, weit weg von der Kamera, und seit fünf Sekunden kam nichts vorbei
+if ( nbCanSaveDestructibles( &house->id, 1, 2.0f ) )
+{
+	house->size = nbSaveDestructibles( &house->id, 1, NULL, 0 );   // ohne Puffer nur die Größe
+	house->saved = malloc( house->size );
+	nbSaveDestructibles( &house->id, 1, house->saved, house->size );
+	nbDestroyDestructible( house->id );
+	house->id = nb_nullDestructibleId;
+}
+
+// Wieder in Reichweite: dasselbe Haus mit seinem Schutt
+nbLoadDestructibles( world, house->saved, house->size, &house->id );
+free( house->saved );
+```
+
 Die komplette API steht in [include/nebenan/nebenan.h](include/nebenan/nebenan.h).
 
 Einbinden in ein eigenes CMake-Projekt:
@@ -625,30 +653,41 @@ fast doppelt so schnell und spart 16 % Speicher, und mit beidem kostet ein Einsc
 Mehr dazu in [`docs/Optimierungen.md`](docs/Optimierungen.md).
 
 **Eine Stadt größer als der Speicher.** Im Benchmark fliegt eine Kamera mit 30 m/s 900 m weit durch eine Stadt aus
-65 536 Häusern auf 3,6 × 3,1 km, Bruchstückgröße ×4. Am Stück bräuchte sie 24 GB. Geladen sind die Häuser bis 120 m
-um die Kamera, höchstens zwei neue pro Frame, und die bis 10 m um alles, was sich bewegt. Die Worker bereiten sie nach
-dem Physikschritt im Hintergrund vor, und vier Frames später kommen sie in die Welt: Der Benchmark rechnet seine Frames
-ohne Pause hintereinander, ein Spiel mit 16 ms pro Frame braucht nur einen. Ein unberührtes Haus ab 140 m geht, wenn
-sich fünf Sekunden lang nichts in 20 m bewegt hat und `nbDestructible_CanUnload` es erlaubt. Alle fünf Frames fällt
-eine Granate auf ein Haus bis 60 m um die Kamera. Der Median aus drei Läufen auf der VM:
+65 536 Häusern auf 3,6 × 3,1 km und 300 m zurück, Bruchstückgröße ×4. Am Stück bräuchte sie 24 GB. Geladen sind die
+Häuser bis 120 m um die Kamera, höchstens zwei neue pro Frame, und die bis 10 m um alles, was sich bewegt. Die Worker
+bereiten sie nach dem Physikschritt im Hintergrund vor, und vier Frames später kommen sie in die Welt: Der Benchmark
+rechnet seine Frames ohne Pause hintereinander, ein Spiel mit 16 ms pro Frame braucht nur einen. Ein Haus ab 140 m
+geht, wenn sich fünf Sekunden lang nichts in 20 m bewegt hat: ein unberührtes, wenn `nbDestructible_CanUnload` es
+erlaubt, ein beschädigtes, wenn `nbCanSaveDestructibles` es erlaubt. Das geht samt Schutt in eine Datei, höchstens
+eines pro Frame, und kommt von dort zurück, sobald die Kamera oder etwas, das sich bewegt, ihm nahekommt. Alle fünf
+Frames fällt eine Granate auf ein Haus bis 60 m um die Kamera. Der Median aus drei Läufen auf der VM:
 
 | Stadt im Vorbeiflug | 4 Threads | 1 Thread |
 | --- | ---: | ---: |
-| Frame Ø | 0,9 ms | 1,8 ms |
-| davon Streaming Ø | 0,4 ms | 1,5 ms |
-| Streaming, 95 % der Frames | 1,6 ms | 4,5 ms |
-| Häuser gleichzeitig geladen | höchstens 594 | höchstens 594 |
-| Speicher von Nebenan und Box3D | höchstens 273 MB | höchstens 273 MB |
+| Frame Ø | 1,0 ms | 2,1 ms |
+| davon Streaming Ø | 0,5 ms | 1,7 ms |
+| Streaming, 95 % der Frames | 1,6 ms | 4,9 ms |
+| Häuser gleichzeitig geladen | höchstens 428 | höchstens 428 |
+| Speicher von Nebenan und Box3D | höchstens 192 MB | höchstens 192 MB |
 
-Unterwegs kommen 1 359 Häuser dazu und 1 039 gehen wieder. Die 283 beschädigten bleiben mit ihrem Schutt geladen,
-und jede Granate trifft ein geladenes Haus. Physik, Update und Einschläge kosten so viel wie in den Städten oben, die
-ganz im Speicher liegen. Mit 4 Threads kostet das Laden im Hintergrund den aufrufenden Thread 40 % weniger als mit
-`nbCreateDestructibles`, im Wechsel gemessen 0,47 statt 0,78 ms Streaming und 0,93 statt 1,25 ms pro Frame. Mit
-einem Thread gibt es keinen Hintergrund, das Laden läuft beim Start. Die Formen eines Hauses, das die Worker
-vorbereiten, liegen in einem Block, so gibt das Entladen einen Block frei statt rund 240 Formen, die die Worker angelegt
-haben: im Wechsel gemessen 0,43 statt 0,47 ms Streaming mit 4 Threads. Box3D nimmt eine Form aus seinem statischen
-Suchbaum nur noch bis zum ersten Knoten heraus, der sich nicht mehr ändert, mit demselben Baum wie zuvor. Auf dem
-aufrufenden Thread bleiben das Einbauen und das Entladen, mit einem Thread rund 0,11 und 0,09 ms pro Frame.
+Unterwegs kommen 1 666 Häuser dazu, und 1 338 unberührte gehen wieder. 224 beschädigte gehen samt Schutt in die
+Datei, 310 KB jedes, und 57 davon kommen auf dem Rückweg wieder. Jede Granate trifft ein geladenes Haus. Physik,
+Update und Einschläge kosten so viel wie in den Städten oben, die ganz im Speicher liegen. Ohne das Auslagern blieben
+die beschädigten Häuser geladen, mit bis zu 603 Häusern und 278 MB zugleich, und ein Frame kostete im Wechsel
+gemessen 0,93 statt 1,01 ms mit 4 Threads und 1,96 statt 2,12 ms mit einem. Ein Haus zu speichern kostet den
+aufrufenden Thread rund 0,4 ms: 0,18 ms der Puffer, 0,12 ms die Datei und 0,13 ms der Abbau. Eines zurückzuholen
+kostet 0,3 bis 0,35 ms, und die Fragen, ob ein beschädigtes Haus gehen kann, kosten 0,02 ms pro Frame. Der Rest ist
+der Box3D-Schritt, 0,03 bis 0,04 ms, weil die Trümmer anders fallen: Körper und Formen landen auf anderen Plätzen,
+Box3D rechnet sie in anderer Reihenfolge, und auf diesem Flug sind dadurch 18 % mehr Kontakte wach. Über 18
+Granatenfolgen sind es im Mittel gleich viele, 203 mit und 201 ohne Auslagern.
+
+Mit 4 Threads kostet das Laden im Hintergrund den aufrufenden Thread 40 % weniger als mit `nbCreateDestructibles`, im
+Wechsel gemessen 0,47 statt 0,78 ms Streaming und 0,93 statt 1,25 ms pro Frame. Mit einem Thread gibt es keinen
+Hintergrund, das Laden läuft beim Start. Die Formen eines Hauses, das die Worker vorbereiten, liegen in einem Block, so
+gibt das Entladen einen Block frei statt rund 240 Formen, die die Worker angelegt haben: im Wechsel gemessen 0,43 statt
+0,47 ms Streaming mit 4 Threads. Box3D nimmt eine Form aus seinem statischen Suchbaum nur noch bis zum ersten Knoten
+heraus, der sich nicht mehr ändert, mit demselben Baum wie zuvor. Auf dem aufrufenden Thread bleiben das Einbauen und
+das Entladen, mit einem Thread rund 0,11 und 0,09 ms pro Frame.
 
 Ganze Einschläge (Bruch, Stützgraph, neue Box3D-Körper) und der Box3D-Schritt danach bei 60 Hz mit
 4 Substeps, jeweils mit 1 und 4 Threads, der Median aus sechs Läufen:
@@ -688,7 +727,7 @@ Messungen in [docs/Optimierungen.md](docs/Optimierungen.md).
 ## Tests und Benchmark
 
 ```sh
-build/bin/nebenan_test            # 42 Tests: Geometrie, Voronoi, Hüllen, Öffnungen, Stöße, Stützgraph, Etagen, Lastprüfung, Schutt, Ruhe, Durchschlagen, Threads, große Blöcke, Suchbaum, Kontaktlisten, Streaming, Laden im Hintergrund, Determinismus …
+build/bin/nebenan_test            # 43 Tests: Geometrie, Voronoi, Hüllen, Öffnungen, Stöße, Stützgraph, Etagen, Lastprüfung, Schutt, Ruhe, Durchschlagen, Threads, große Blöcke, Suchbaum, Kontaktlisten, Streaming, Laden im Hintergrund, Speichern und Zurückholen, Determinismus …
 build/bin/nebenan_benchmark 4     # Zahl = Threads für Bruch und Physik
 ```
 
@@ -736,9 +775,11 @@ Nach Änderungen an `demo/shaders/scene.glsl` die Shader neu erzeugen, im Ordner
   32-Bit-Programmen wachsen große Arrays wie früher durch Umkopieren. Mit einem eigenen Box3D ebenso, und die Hüllen
   gehen dort durch Box3Ds Hüllen-Tabelle, die beim Wachsen ein Update aufhalten kann, auf der VM ab 30 ms bei 256
   Häusern und ab 0,4 s bei 1 024 Häusern.
-- Gehen kann nur ein Haus, dem nichts passiert ist. Beschädigte Häuser bleiben samt Schutt im Speicher, eine Stadt
-  unter Dauerbeschuss wächst also mit der Zerstörung. Ein entladenes Haus hat keine Kollision: Die Anwendung muss es
-  wieder laden, bevor etwas es erreichen kann, siehe Benutzung.
+- Ein beschädigtes Haus geht erst, wenn alles daran ruht und in seiner Nähe nichts liegt, was sich bewegt oder bewegen
+  lässt. Wo ständig etwas fällt, bleibt es samt Schutt im Speicher, und liegt Schutt zweier Häuser aufeinander, gehen
+  sie nur zusammen. Der Puffer aus `nbSaveDestructibles` lädt nur in den Build, der ihn geschrieben hat, für einen
+  Spielstand taugt er nicht. Ein entladenes oder gespeichertes Haus hat keine Kollision: Die Anwendung muss es wieder
+  laden, bevor etwas es erreichen kann, siehe Benutzung.
 - Schutt ist für Box3D statisch. Trümmer, die auf Schutt fallen, wecken ihn nicht, nur Einschläge, die ihn bewegen,
   fremde Körper, eine wegrutschende Auflage und große Teile, die ohne ihn nicht im Gleichgewicht lägen. Kinematische
   Körper stoßen Schutt nicht an, Box3D lässt kinematische und statische Körper nicht kollidieren.

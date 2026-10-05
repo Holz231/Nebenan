@@ -716,20 +716,34 @@ size_t nbShape_GetBlockSize( const nbShape* shape )
 	return ( ( layout.byteCount - 1 ) | ( NB_ALIGNMENT - 1 ) ) + 1;
 }
 
+size_t nbShape_GetByteCount( const nbShape* shape )
+{
+	return nbGetShapeLayout( shape->vertexCount, shape->faceCount, shape->indexCount ).byteCount;
+}
+
+void nbShape_Rebase( nbShape* shape, bool hullInside )
+{
+	// The hull keeps offsets from its start, the shape pointers into its allocation
+	nbShapeLayout layout = nbGetShapeLayout( shape->vertexCount, shape->faceCount, shape->indexCount );
+	uint8_t* place = (uint8_t*)shape;
+	if ( hullInside )
+	{
+		shape->hull = (const b3HullData*)( place + layout.hullOffset );
+	}
+	shape->vertices = (b3Vec3*)( place + layout.vertexOffset );
+	shape->planes = (b3Plane*)( place + layout.planeOffset );
+	shape->faces = (nbFace*)( place + layout.faceOffset );
+	shape->indices = place + layout.indexOffset;
+}
+
 nbShape* nbShape_MoveToBlock( nbShape* shape, uint8_t* place )
 {
 	NB_ASSERT( nbShape_HasHullInside( shape ) );
-	nbShapeLayout layout = nbGetShapeLayout( shape->vertexCount, shape->faceCount, shape->indexCount );
-
-	// The hull keeps offsets from its start, the shape pointers into its allocation
-	memcpy( place, shape, layout.byteCount );
+	size_t byteCount = nbShape_GetByteCount( shape );
+	memcpy( place, shape, byteCount );
 	nbShape* moved = (nbShape*)place;
-	moved->hull = (const b3HullData*)( place + layout.hullOffset );
-	moved->vertices = (b3Vec3*)( place + layout.vertexOffset );
-	moved->planes = (b3Plane*)( place + layout.planeOffset );
-	moved->faces = (nbFace*)( place + layout.faceOffset );
-	moved->indices = place + layout.indexOffset;
-	nbFree( shape, layout.byteCount );
+	nbShape_Rebase( moved, true );
+	nbFree( shape, byteCount );
 	return moved;
 }
 

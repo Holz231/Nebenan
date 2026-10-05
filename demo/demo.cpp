@@ -175,6 +175,11 @@ struct CityHouse
 
 	// The workers prepare it in the background
 	bool loading = false;
+
+	// A damaged house at rest that went out of the world, saved with its rubble, see SaveCityHouse, and how far its parts
+	// reach from its center along the ground
+	std::vector<uint8_t> saved;
+	float reach = 5.5f;
 };
 
 // A city far too large to hold at once, see BuildCityScene. Only the houses near the camera and near anything that moves
@@ -196,6 +201,12 @@ struct City
 	int step = 0;
 	int loads = 0;
 	int unloads = 0;
+
+	// Damaged houses saved and brought back, the bytes they take while saved, and the farthest a saved one reaches
+	int saves = 0;
+	int restores = 0;
+	size_t savedBytes = 0;
+	float maxReach = 5.5f;
 
 	// CPU time of the streaming in the last frame in milliseconds
 	float time = 0.0f;
@@ -816,6 +827,7 @@ static void BuildTownScene( App& app )
 static const int CitySide = 256;
 static const int CityLoadBudget = 2;
 static const int CityUnloadBudget = 4;
+static const int CitySaveBudget = 1;
 static const float CityUnloadMargin = 20.0f;
 static const float CityActiveLoadRadius = 10.0f;
 static const float CityActiveHoldRadius = 20.0f;
@@ -867,8 +879,9 @@ static void MarkCityActivity( App& app )
 			continue;
 		}
 
+		// A saved house reaches as far as its rubble lay
 		int i0, i1, j0, j1;
-		CityRange( point, CityActiveHoldRadius + 5.5f, &i0, &i1, &j0, &j1 );
+		CityRange( point, CityActiveHoldRadius + city.maxReach, &i0, &i1, &j0, &j1 );
 		for ( int j = j0; j <= j1; ++j )
 		{
 			for ( int i = i0; i <= i1; ++i )
@@ -876,13 +889,14 @@ static void MarkCityActivity( App& app )
 				int index = j * CitySide + i;
 				CityHouse& house = city.houses[(size_t)index];
 				float distance = CityDistance( index, point );
-				if ( distance > CityActiveHoldRadius + 5.5f )
+				float reach = house.saved.empty() ? 5.5f : house.reach;
+				if ( distance > CityActiveHoldRadius + reach )
 				{
 					continue;
 				}
 
 				house.activeStep = city.step;
-				if ( distance <= CityActiveLoadRadius + 5.5f && NB_IS_NULL( house.id ) && house.urgent == false &&
+				if ( distance <= CityActiveLoadRadius + reach && NB_IS_NULL( house.id ) && house.urgent == false &&
 					 house.loading == false )
 				{
 					house.urgent = true;
@@ -952,8 +966,54 @@ static void AddCityHouses( App& app, const std::vector<int>& indices, const std:
 	city.loads += (int)indices.size();
 }
 
+// How far the parts of a house reach from its center along the ground, its rubble included
+static float CityReach( int index, nbDestructibleId id )
+{
+	std::vector<nbChunkId> chunks( (size_t)nbDestructible_GetChunkCount( id ) );
+	int count = nbDestructible_GetChunks( id, chunks.data(), (int)chunks.size() );
+	b3Vec3 center = CityHousePosition( index );
+	float reach = 5.5f;
+	for ( int i = 0; i < count; ++i )
+	{
+		b3AABB box = b3Shape_GetAABB( nbChunk_GetShape( chunks[(size_t)i] ) );
+		float dx = b3MaxFloat( fabsf( box.lowerBound.x - center.x ), fabsf( box.upperBound.x - center.x ) );
+		float dz = b3MaxFloat( fabsf( box.lowerBound.z - center.z ), fabsf( box.upperBound.z - center.z ) );
+		reach = b3MaxFloat( reach, sqrtf( dx * dx + dz * dz ) );
+	}
+	return reach;
+}
+
+// Save a damaged house at rest with its rubble and take it out of the world, see nbSaveDestructibles. A game would write
+// it to a file, the demo keeps it in memory.
+static void SaveCityHouse( App& app, int index )
+{
+	City& city = app.city;
+	CityHouse& house = city.houses[(size_t)index];
+	house.saved.resize( nbSaveDestructibles( &house.id, 1, nullptr, 0 ) );
+	nbSaveDestructibles( &house.id, 1, house.saved.data(), house.saved.size() );
+	house.reach = CityReach( index, house.id );
+	city.maxReach = b3MaxFloat( city.maxReach, house.reach );
+	city.savedBytes += house.saved.size();
+	city.saves += 1;
+	nbDestroyDestructible( house.id );
+	house.id = nb_nullDestructibleId;
+}
+
+// Bring a saved house back as it was
+static void RestoreCityHouse( App& app, int index )
+{
+	City& city = app.city;
+	CityHouse& house = city.houses[(size_t)index];
+	// Written by this build from a house that was there, so it loads
+	nbLoadDestructibles( app.destruction, house.saved.data(), house.saved.size(), &house.id );
+	city.savedBytes -= house.saved.size();
+	house.saved = std::vector<uint8_t>();
+	city.loaded.push_back( index );
+	city.restores += 1;
+}
+
 // Build in the houses the workers prepared since the last frame, then start the next ones. The workers prepare them in
-// the background while the frame goes on, see nbStartCreating.
+// the background while the frame goes on, see nbStartCreating. A saved house comes back right away.
 static void LoadCity( App& app, int budget )
 {
 	City& city = app.city;
@@ -966,7 +1026,18 @@ static void LoadCity( App& app, int budget )
 		city.pendingHouses.clear();
 	}
 
-	city.pending = PickCityHouses( app, budget );
+	for ( int index : PickCityHouses( app, budget ) )
+	{
+		if ( city.houses[(size_t)index].saved.empty() )
+		{
+			city.pending.push_back( index );
+		}
+		else
+		{
+			RestoreCityHouse( app, index );
+		}
+	}
+
 	if ( city.pending.empty() )
 	{
 		return;
@@ -989,13 +1060,14 @@ static void LoadCity( App& app, int budget )
 									 (int)city.pendingDefs.size() );
 }
 
-// Destroy the houses beyond the radius that can go, at most so many. A house that cannot is asked again half a second
-// later.
+// Take out the houses beyond the radius that can go, at most so many, of them at most CitySaveBudget damaged ones, which
+// are saved with their rubble. A house that cannot go is asked again half a second later.
 static void UnloadCity( App& app, int budget )
 {
 	City& city = app.city;
 	float radius = app.cityRadius + CityUnloadMargin;
 	int count = 0;
+	int saveCount = 0;
 	for ( size_t k = 0; k < city.loaded.size() && count < budget; )
 	{
 		int index = city.loaded[k];
@@ -1007,20 +1079,36 @@ static void UnloadCity( App& app, int budget )
 			continue;
 		}
 
-		if ( nbDestructible_CanUnload( house.id, 2.0f ) == false )
+		bool intact = nbDestructible_IsIntact( house.id );
+		if ( intact == false && saveCount == CitySaveBudget )
+		{
+			k += 1;
+			continue;
+		}
+
+		if ( intact ? nbDestructible_CanUnload( house.id, 2.0f ) == false
+					: nbCanSaveDestructibles( &house.id, 1, 2.0f ) == false )
 		{
 			house.nextCheck = city.step + 30;
 			k += 1;
 			continue;
 		}
 
-		nbDestroyDestructible( house.id );
-		house.id = nb_nullDestructibleId;
+		if ( intact )
+		{
+			nbDestroyDestructible( house.id );
+			house.id = nb_nullDestructibleId;
+			city.unloads += 1;
+		}
+		else
+		{
+			SaveCityHouse( app, index );
+			saveCount += 1;
+		}
 		city.loaded[k] = city.loaded.back();
 		city.loaded.pop_back();
 		count += 1;
 	}
-	city.unloads += count;
 }
 
 static void StreamCity( App& app )
@@ -1446,6 +1534,8 @@ static std::string BuildReport( const App& app )
 			"Große Stadt: %d von %d Häusern geladen, Laderadius %.0f m, Streaming %.2f ms, %d geladen, %d entladen, %.0f MB\n",
 			(int)app.city.loaded.size(), CitySide * CitySide, app.cityRadius, app.city.time, app.city.loads, app.city.unloads,
 			(double)( nbGetByteCount() + b3GetByteCount() ) / 1048576.0 );
+		Appendf( text, "Beschädigte Häuser: %d gespeichert, %d zurückgeholt, %.0f MB gespeichert\n", app.city.saves,
+				 app.city.restores, (double)app.city.savedBytes / 1048576.0 );
 	}
 	return text;
 }
@@ -1480,8 +1570,9 @@ static void DrawUi( App& app )
 		if ( ImGui::IsItemHovered() )
 		{
 			ImGui::SetTooltip(
-				"Häuser in diesem Umkreis der Kamera sind geladen, dazu alle in der Nähe von\nallem, was sich bewegt. Unberührte "
-				"Häuser weiter weg gehen wieder,\nbeschädigte bleiben. Größer kostet Speicher und Grafik." );
+				"Häuser in diesem Umkreis der Kamera sind geladen, dazu alle in der Nähe von\nallem, was sich bewegt. Häuser "
+				"weiter weg gehen wieder, beschädigte\nwerden mit ihrem Schutt gespeichert, sobald alles ruht. Größer kostet\nSpeicher "
+				"und Grafik." );
 		}
 		int damaged = 0;
 		for ( int index : app.city.loaded )
@@ -1490,6 +1581,8 @@ static void DrawUi( App& app )
 		}
 		ImGui::Text( "Häuser geladen %d von %d, beschädigt %d", (int)app.city.loaded.size(), CitySide * CitySide, damaged );
 		ImGui::Text( "Streaming %.2f ms, geladen %d, entladen %d", app.city.time, app.city.loads, app.city.unloads );
+		ImGui::Text( "Gespeichert %d, zurückgeholt %d, %.0f MB im Speicher der Demo", app.city.saves, app.city.restores,
+					 (double)app.city.savedBytes / 1048576.0 );
 		ImGui::Text( "Speicher %.0f MB (Nebenan und Box3D)", (double)( nbGetByteCount() + b3GetByteCount() ) / 1048576.0 );
 	}
 
@@ -1723,8 +1816,9 @@ static void RunScript( App& app )
 
 		case SceneCity:
 		{
-			// Down the street at 16 m/s with a grenade on a house on either side every fifth frame
-			app.camera.position.x += 16.0f / 60.0f;
+			// Down the street at 16 m/s with a grenade on a house on either side every fifth frame, after 20 seconds back
+			// again, past the damaged houses that were saved meanwhile
+			app.camera.position.x += f < 1200 ? 16.0f / 60.0f : -16.0f / 60.0f;
 			if ( f >= 20 && f % 5 == 0 )
 			{
 				int k = ( f - 20 ) / 5;

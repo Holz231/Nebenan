@@ -513,6 +513,12 @@ int nbCreateChunkWithHull( nbWorld* world, int destructibleIndex, int actorIndex
 int nbAllocActor( nbWorld* world, int destructibleIndex, bool isStatic );
 void nbFreeActor( nbWorld* world, int actorIndex );
 
+// A chunk slot without shape, actor or bonds
+int nbAllocChunk( nbWorld* world );
+
+// Keep the second moments of a bond, see nbBondMoments
+void nbKeepBondMoments( nbWorld* world, int bondIndex, b3Vec3 moments, b3Vec3 crossMoments );
+
 // The geometry normal points from chunk A to chunk B
 int nbCreateBond( nbWorld* world, int chunkA, int chunkB, const nbBondGeometry* geometry, float health );
 void nbDestroyBond( nbWorld* world, int bondIndex );
@@ -537,6 +543,19 @@ b3WorldTransform nbActor_GetTransform( const nbWorld* world, const nbActor* acto
 
 // Create the Box3D body of a dynamic actor and register it for body event lookups
 void nbCreateActorBody( nbWorld* world, int actorIndex, b3WorldTransform transform );
+
+// The definition of the Box3D body of a dynamic actor
+b3BodyDef nbMakeActorBodyDef( const nbWorld* world, b3WorldTransform transform );
+
+// The static body for a static chunk of a destructible, see NB_SHARED_STATIC_BODY
+b3BodyId nbGetStaticBody( nbWorld* world, nbDestructible* destructible );
+
+// The Box3D shape of a chunk of a destructible with this material, on a static actor or a dynamic one
+b3ShapeDef nbMakeShapeDef( const nbDestructible* destructible, const nbMaterial* material, bool isStatic );
+
+// Register a Box3D shape of a chunk and a Box3D body of an actor for the lookups of events and queries
+void nbMapShape( nbWorld* world, b3ShapeId shapeId, int chunkIndex );
+void nbMapBody( nbWorld* world, b3BodyId bodyId, int actorIndex );
 
 // Remove a chunk with its bonds and physics shape and report it as destroyed.
 void nbDestroyChunk( nbWorld* world, int chunkIndex );

@@ -153,6 +153,24 @@ NB_API bool nbDestructible_IsIntact( nbDestructibleId destructibleId );
 /// and create them again with nbCreateDestructibles before anything can come near them.
 NB_API bool nbDestructible_CanUnload( nbDestructibleId destructibleId, float margin );
 
+/// Whether destructibles can be saved with nbSaveDestructibles now, to go out of the world and come back later as they
+/// were: each of them rests, every part of it stands or is rubble, its load check has run, nothing that moves or can be
+/// moved lies within margin meters of its parts, and rubble lies on chunks of the set only, as no other rubble lies on
+/// them. Destructibles whose rubble lies on each other go together.
+NB_API bool nbCanSaveDestructibles( const nbDestructibleId* ids, int count, float margin );
+
+/// Save destructibles at rest into a buffer: their chunks with their shapes, bonds, actors and rubble with what it lies on,
+/// and the Box3D bodies of the rubble. The world does not change, so nbDestroyDestructible takes them out afterwards.
+/// Returns the bytes it takes and writes them if they fit, so a call with a null buffer gives the size. Zero if one of
+/// them does not rest or rubble links it to a destructible outside the set, see nbCanSaveDestructibles. The buffer loads
+/// into the build that wrote it.
+NB_API size_t nbSaveDestructibles( const nbDestructibleId* ids, int count, void* buffer, size_t capacity );
+
+/// Bring destructibles saved with nbSaveDestructibles back into a world, with their chunks, bonds, actors and rubble to the
+/// bit, under new ids that it writes in the order of the save. Their chunks are reported as created. Returns false and
+/// changes nothing for a buffer of another build or one that does not hold what was saved.
+NB_API bool nbLoadDestructibles( nbWorldId worldId, const void* buffer, size_t size, nbDestructibleId* ids );
+
 /** @} */
 
 /**

@@ -3260,6 +3260,179 @@ static int BackgroundCreateTest( void )
 	return 0;
 }
 
+// The rubble actors of a destructible
+static int GetRubble( const nbWorld* world, nbDestructibleId id, int* actors, int capacity )
+{
+	int count = 0;
+	const nbDestructible* destructible = world->destructibles.data + id.index1 - 1;
+	for ( int a = destructible->headActor; a != NB_NULL_INDEX; a = world->actors.data[a].nextActor )
+	{
+		if ( world->actors.data[a].isRubble && count < capacity )
+		{
+			actors[count++] = a;
+		}
+	}
+	return count;
+}
+
+// Step until destructibles can be saved, at most a minute
+static bool StepUntilSaveable( TestScene* scene, const nbDestructibleId* ids, int count )
+{
+	for ( int steps = 0; steps < 3600; steps += 30 )
+	{
+		if ( nbCanSaveDestructibles( ids, count, 2.0f ) )
+		{
+			return true;
+		}
+		Step( scene, 30 );
+	}
+	return false;
+}
+
+// A save of destructibles, written twice: the size first
+static uint8_t* SaveToBuffer( const nbDestructibleId* ids, int count, size_t* size )
+{
+	*size = nbSaveDestructibles( ids, count, NULL, 0 );
+	uint8_t* buffer = malloc( *size + 1 );
+	if ( *size == 0 || nbSaveDestructibles( ids, count, buffer, *size ) != *size )
+	{
+		free( buffer );
+		return NULL;
+	}
+	return buffer;
+}
+
+// Damaged houses at rest go out of the world and come back to the bit, see nbSaveDestructibles
+static int SaveLoadTest( void )
+{
+	CelledHouse* houses = malloc( sizeof( CelledHouse ) * 2 );
+	BuildCelledHouse( houses + 0, 2, 81, b3Vec3_zero );
+	BuildCelledHouse( houses + 1, 2, 82, (b3Vec3){ 30.0f, 0.0f, 0.0f } );
+
+	uint32_t hashes[2];
+	for ( int pass = 0; pass < 2; ++pass )
+	{
+		TestScene scene = CreateSceneWithWorkers( pass == 0 ? 1 : 4, NULL, NULL, NULL );
+		nbDestructibleId ids[2];
+		ids[0] = nbCreateDestructible( scene.world, &houses[0].def, houses[0].pieces, houses[0].pieceCount );
+		ids[1] = nbCreateDestructible( scene.world, &houses[1].def, houses[1].pieces, houses[1].pieceCount );
+		const nbWorld* world = nbGetWorldFromId( scene.world );
+
+		// Debris that moves keeps the house, and it cannot be saved
+		Grenade( &scene, (b3Vec3){ 0.0f, 1.2f, 3.4f } );
+		Grenade( &scene, (b3Vec3){ 3.0f, 4.4f, -3.4f } );
+		ENSURE( nbCanSaveDestructibles( ids, 1, 2.0f ) == false && nbSaveDestructibles( ids, 1, NULL, 0 ) == 0 );
+		ENSURE( StepUntilSaveable( &scene, ids, 1 ) );
+		int rubble[64];
+		ENSURE( GetRubble( world, ids[0], rubble, 64 ) > 0 );
+
+		// A buffer too small stays as it was
+		size_t size;
+		uint8_t* first = SaveToBuffer( ids, 1, &size );
+		ENSURE( first != NULL );
+		uint8_t* other = malloc( size );
+		memset( other, 0xab, size );
+		ENSURE( nbSaveDestructibles( ids, 1, other, size - 1 ) == size && other[0] == 0xab );
+
+		nbWorld_GetEvents( scene.world );
+		nbWorld_GetEvents( scene.world );
+		nbStats before = nbWorld_GetStats( scene.world );
+		int chunkCount = nbDestructible_GetChunkCount( ids[0] );
+		nbDestroyDestructible( ids[0] );
+		nbEvents events = nbWorld_GetEvents( scene.world );
+		ENSURE( events.destroyedCount == chunkCount );
+		ENSURE( nbWorld_GetStats( scene.world ).rubbleCount < before.rubbleCount );
+		Step( &scene, 30 );
+
+		// What is not a save of this build is refused, and nothing changes
+		nbDestructibleId loaded = nb_nullDestructibleId;
+		memcpy( other, first, size );
+		other[0] ^= 1;
+		ENSURE( nbLoadDestructibles( scene.world, other, size, &loaded ) == false );
+		ENSURE( nbLoadDestructibles( scene.world, first, size - 16, &loaded ) == false );
+		ENSURE( NB_IS_NULL( loaded ) && nbWorld_GetStats( scene.world ).chunkCount == before.chunkCount - chunkCount );
+
+		// It comes back with every chunk reported as created, and saves to the same bytes
+		ENSURE( nbLoadDestructibles( scene.world, first, size, &loaded ) );
+		events = nbWorld_GetEvents( scene.world );
+		ENSURE( events.createdCount == chunkCount && nbDestructible_IsIntact( loaded ) == false );
+		nbStats after = nbWorld_GetStats( scene.world );
+		ENSURE( after.chunkCount == before.chunkCount && after.bondCount == before.bondCount );
+		ENSURE( after.rubbleCount == before.rubbleCount && after.debrisCount == before.debrisCount );
+		ENSURE( after.staticBodyCount == before.staticBodyCount && after.dynamicBodyCount == before.dynamicBodyCount );
+		ENSURE( nbCanSaveDestructibles( &loaded, 1, 2.0f ) );
+		uint8_t* second = SaveToBuffer( &loaded, 1, &size );
+		ENSURE( second != NULL && memcmp( first, second, size ) == 0 );
+		free( second );
+
+		// Its rubble comes back to life like any other, the smallest piece where a grenade falls. Large pieces stay.
+		int rubbleCount = GetRubble( world, loaded, rubble, 64 );
+		ENSURE( rubbleCount > 0 );
+		int smallest = rubble[0];
+		for ( int k = 1; k < rubbleCount; ++k )
+		{
+			smallest = world->actors.data[rubble[k]].volume < world->actors.data[smallest].volume ? rubble[k] : smallest;
+		}
+		b3AABB box = b3Shape_GetAABB( world->chunks.data[world->actors.data[smallest].headChunk].shapeId );
+		Grenade( &scene, b3MulSV( 0.5f, b3Add( box.lowerBound, box.upperBound ) ) );
+		ENSURE( nbWorld_GetStats( scene.world ).rubbleCount < after.rubbleCount );
+		Step( &scene, 120 );
+		hashes[pass] = HashCreated( &scene, &loaded, 1 );
+
+		// Rubble of one house on the other links them: they go together, and the link comes back between the new ones
+		ENSURE( StepUntilSaveable( &scene, &loaded, 1 ) );
+		rubbleCount = GetRubble( world, loaded, rubble, 64 );
+		ENSURE( rubbleCount > 0 );
+		nbActor* linked = world->actors.data + rubble[0];
+		const nbDestructible* house = world->destructibles.data + ids[1].index1 - 1;
+		int carrier = world->actors.data[house->headActor].headChunk;
+		linked->carriers[0] = (nbCarrier){ linked->carriers[0].point, carrier, world->chunks.data[carrier].generation };
+		linked->carrierCount = linked->carrierCount > 0 ? linked->carrierCount : 1;
+		nbDestructibleId pair[2] = { loaded, ids[1] };
+		ENSURE( nbCanSaveDestructibles( pair, 1, 2.0f ) == false && nbCanSaveDestructibles( pair + 1, 1, 2.0f ) == false );
+		ENSURE( nbSaveDestructibles( pair, 1, NULL, 0 ) == 0 && nbCanSaveDestructibles( pair, 2, 2.0f ) );
+
+		// A hull from quickhull goes along on its own
+		nbChunk* chunk = world->chunks.data + carrier;
+		b3HullData* hull = b3CreateHull( chunk->shape->vertices, chunk->shape->vertexCount, B3_MAX_HULL_VERTICES );
+		ENSURE( hull != NULL );
+		chunk->shape->hull = hull;
+
+		free( first );
+		first = SaveToBuffer( pair, 2, &size );
+		ENSURE( first != NULL );
+		nbDestroyDestructible( pair[0] );
+		nbDestroyDestructible( pair[1] );
+		nbDestructibleId back[2];
+		ENSURE( nbLoadDestructibles( scene.world, first, size, back ) );
+		const nbActor* restored = NULL;
+		for ( int a = world->destructibles.data[back[0].index1 - 1].headActor; a != NB_NULL_INDEX; a = world->actors.data[a].nextActor )
+		{
+			const nbActor* actor = world->actors.data + a;
+			for ( int k = 0; k < actor->carrierCount; ++k )
+			{
+				int c = actor->carriers[k].chunkIndex;
+				if ( c != NB_NULL_INDEX && world->chunks.data[c].generation == actor->carriers[k].generation &&
+					 world->chunks.data[c].destructibleIndex == back[1].index1 - 1 )
+				{
+					restored = actor;
+				}
+			}
+		}
+		ENSURE( restored != NULL );
+		second = SaveToBuffer( back, 2, &size );
+		ENSURE( second != NULL && memcmp( first, second, size ) == 0 );
+		free( first );
+		free( second );
+		free( other );
+		DestroyScene( &scene );
+	}
+
+	ENSURE( hashes[0] == hashes[1] );
+	free( houses );
+	return 0;
+}
+
 int WorldTest( void );
 
 int WorldTest( void )
@@ -3295,6 +3468,7 @@ int WorldTest( void )
 	RUN_TEST( BatchCreateTest );
 	RUN_TEST( StreamTest );
 	RUN_TEST( BackgroundCreateTest );
+	RUN_TEST( SaveLoadTest );
 	RUN_TEST( RestTest );
 	RUN_TEST( LandingTest );
 	return 0;
