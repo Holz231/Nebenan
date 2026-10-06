@@ -705,7 +705,8 @@ static void b3UpdateTreesTask( void* context )
 // - rebuild the collision tree for dynamic and kinematic bodies to keep their query performance good
 static void b3EnqueueTreeUpdate( b3World* world )
 {
-	if ( world->taskCount < B3_MAX_TASKS )
+	// Added for Nebenan: a step on the calling thread alone rebuilds the trees right here
+	if ( world->taskCount < B3_MAX_TASKS && world->activeWorkerCount > 1 )
 	{
 		world->userTreeTask = world->enqueueTaskFcn( &b3UpdateTreesTask, world, world->userTaskContext, "rebuild tree" );
 		world->taskCount += 1;

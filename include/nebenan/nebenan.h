@@ -25,6 +25,22 @@
  * @{
  */
 
+/// Start a pool of threadCount threads besides the calling one, for Nebenan and Box3D together. Hand it to Box3D with
+/// b3WorldDef::enqueueTask = nbEnqueueTask, b3WorldDef::finishTask = nbFinishTask and b3WorldDef::userTaskContext set
+/// to the pool, and to Nebenan with nbWorldDef::taskSystem. Then both share the cores instead of crowding them with
+/// threads of their own, and the threads take the tasks of a step or an impact before destructibles that are prepared in
+/// the background.
+NB_API nbTaskSystem* nbCreateTaskSystem( int threadCount );
+
+/// Stop the threads of a pool. The worlds that use it must be gone.
+NB_API void nbDestroyTaskSystem( nbTaskSystem* taskSystem );
+
+/// b3EnqueueTaskCallback of a pool from nbCreateTaskSystem, the user context is the pool
+NB_API void* nbEnqueueTask( b3TaskCallback* task, void* taskContext, void* userContext, const char* taskName );
+
+/// b3FinishTaskCallback of a pool from nbCreateTaskSystem, the user context is the pool
+NB_API void nbFinishTask( void* userTask, void* userContext );
+
 /// Default world definition.
 NB_API nbWorldDef nbDefaultWorldDef( void );
 

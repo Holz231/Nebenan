@@ -1484,7 +1484,8 @@ void b3Solve( b3World* world, b3StepContext* stepContext )
 		// prepare for move events
 		b3Array_Resize( world->bodyMoveEvents, awakeBodyCount );
 
-		int workerCount = world->workerCount;
+		// Added for Nebenan: the workers the step wakes, see b3GetStepWorkerCount
+		int workerCount = world->activeWorkerCount;
 
 		// Target 4 blocks per worker to allow work stealing
 		const int maxBlockCount = 4 * workerCount;
@@ -1719,7 +1720,8 @@ void b3Solve( b3World* world, b3StepContext* stepContext )
 		void* splitIslandTask = NULL;
 		if ( world->splitIslandId != B3_NULL_INDEX )
 		{
-			if ( world->taskCount < B3_MAX_TASKS )
+			// Added for Nebenan: a step on the calling thread alone splits the island right here
+			if ( world->taskCount < B3_MAX_TASKS && world->activeWorkerCount > 1 )
 			{
 				splitIslandTask = world->enqueueTaskFcn( &b3SplitIslandTask, world, world->userTaskContext, "split" );
 				world->taskCount += 1;
@@ -1808,19 +1810,28 @@ void b3Solve( b3World* world, b3StepContext* stepContext )
 		b3TracyCZoneNC( solve_constraints, "Solve Constraints", b3_colorIndigo, true );
 		uint64_t constraintTicks = b3GetTicks();
 
+		// Added for Nebenan: the events of every worker are gathered below, also of those the step does not wake
 		int jointIdCapacity = b3GetIdCapacity( &world->jointIdPool );
 		int contactIdCapacity = b3GetIdCapacity( &world->contactIdPool );
-		for ( int i = 0; i < workerCount; ++i )
+		for ( int i = 0; i < world->workerCount; ++i )
 		{
 			b3TaskContext* taskContext = b3Array_Get( world->taskContexts, i );
 			b3SetBitCountAndClear( &taskContext->jointStateBitSet, jointIdCapacity );
 			b3SetBitCountAndClear( &taskContext->hitEventBitSet, contactIdCapacity );
 			taskContext->hasHitEvents = false;
+		}
 
+		for ( int i = 0; i < workerCount; ++i )
+		{
 			workerContext[i].context = stepContext;
 			workerContext[i].workerIndex = i;
 
-			if ( world->taskCount < B3_MAX_TASKS )
+			// Added for Nebenan: alone the calling thread solves below as worker 0
+			if ( workerCount == 1 )
+			{
+				workerContext[i].userTask = NULL;
+			}
+			else if ( world->taskCount < B3_MAX_TASKS )
 			{
 				char buffer[16];
 				snprintf( buffer, sizeof( buffer ), "solve[%d]", i );

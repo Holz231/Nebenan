@@ -3750,14 +3750,24 @@ nbWorldDef nbDefaultWorldDef( void )
 	return def;
 }
 
-// Use the application's task system if it has one, otherwise start threads when more than one worker is wanted
+// Use the pool or the task system of the application if it has one, otherwise start threads when more than one worker is
+// wanted
 static void nbStartWorkers( nbWorld* world, int workerCount )
 {
 	workerCount = workerCount < 1 ? 1 : ( workerCount > NB_MAX_WORKERS ? NB_MAX_WORKERS : workerCount );
 	world->workerCount = workerCount;
 	world->def.workerCount = workerCount;
 
-	if ( world->def.enqueueTask != NULL && world->def.finishTask != NULL )
+	if ( world->def.taskSystem != NULL )
+	{
+		// The pool of the application, shared with Box3D
+		world->scheduler = (nbScheduler*)world->def.taskSystem;
+		world->ownsScheduler = false;
+		world->enqueueTask = nbSchedulerEnqueueTask;
+		world->finishTask = nbSchedulerFinishTask;
+		world->userTaskContext = world->scheduler;
+	}
+	else if ( world->def.enqueueTask != NULL && world->def.finishTask != NULL )
 	{
 		world->enqueueTask = world->def.enqueueTask;
 		world->finishTask = world->def.finishTask;
@@ -3766,6 +3776,7 @@ static void nbStartWorkers( nbWorld* world, int workerCount )
 	else if ( workerCount > 1 )
 	{
 		world->scheduler = nbCreateScheduler( workerCount - 1 );
+		world->ownsScheduler = true;
 		world->enqueueTask = nbSchedulerEnqueueTask;
 		world->finishTask = nbSchedulerFinishTask;
 		world->userTaskContext = world->scheduler;
@@ -3779,8 +3790,12 @@ static void nbStartWorkers( nbWorld* world, int workerCount )
 
 static void nbStopWorkers( nbWorld* world )
 {
-	nbDestroyScheduler( world->scheduler );
+	if ( world->ownsScheduler )
+	{
+		nbDestroyScheduler( world->scheduler );
+	}
 	world->scheduler = NULL;
+	world->ownsScheduler = false;
 	world->enqueueTask = NULL;
 	world->finishTask = NULL;
 	world->userTaskContext = NULL;

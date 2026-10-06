@@ -47,6 +47,32 @@ static TestScene CreateScene( void )
 	return CreateSceneWithWorkers( 1, NULL, NULL, NULL );
 }
 
+// A scene whose Box3D world and destruction world share one pool of threads, see nbCreateTaskSystem
+static TestScene CreateSceneWithPool( nbTaskSystem* pool, int workerCount )
+{
+	TestScene scene;
+	b3WorldDef worldDef = b3DefaultWorldDef();
+	worldDef.workerCount = (uint32_t)workerCount;
+	worldDef.enqueueTask = nbEnqueueTask;
+	worldDef.finishTask = nbFinishTask;
+	worldDef.userTaskContext = pool;
+	scene.physicsWorld = b3CreateWorld( &worldDef );
+
+	b3BodyDef bodyDef = b3DefaultBodyDef();
+	bodyDef.position = (b3Vec3){ 0.0f, -1.0f, 0.0f };
+	scene.groundId = b3CreateBody( scene.physicsWorld, &bodyDef );
+	b3BoxHull box = b3MakeBoxHull( 50.0f, 1.0f, 50.0f );
+	b3ShapeDef shapeDef = b3DefaultShapeDef();
+	b3CreateHullShape( scene.groundId, &shapeDef, &box.base );
+
+	nbWorldDef def = nbDefaultWorldDef();
+	def.physicsWorld = scene.physicsWorld;
+	def.workerCount = workerCount;
+	def.taskSystem = pool;
+	scene.world = nbCreateWorld( &def );
+	return scene;
+}
+
 static void DestroyScene( TestScene* scene )
 {
 	nbDestroyWorld( scene->world );
@@ -3433,6 +3459,65 @@ static int SaveLoadTest( void )
 	return 0;
 }
 
+// Box3D and Nebenan on one pool of threads end as with one thread: houses prepared in the background, grenades whose
+// debris keeps the workers of Box3D busy, and a second world on the pool after the first one went. A step without
+// many awake contacts hands no task to the pool, see b3GetStepWorkerCount.
+static int TaskSystemTest( void )
+{
+	enum
+	{
+		houseCount = 3
+	};
+	CelledHouse* houses = malloc( sizeof( CelledHouse ) * houseCount );
+	nbDestructibleDef defs[houseCount];
+	const nbPieceDef* lists[houseCount];
+	int counts[houseCount];
+	for ( int h = 0; h < houseCount; ++h )
+	{
+		BuildCelledHouse( houses + h, 2, (uint32_t)( 90 + h ), (b3Vec3){ 14.0f * (float)h, 0.0f, 0.0f } );
+		defs[h] = houses[h].def;
+		lists[h] = houses[h].pieces;
+		counts[h] = houses[h].pieceCount;
+	}
+
+	nbTaskSystem* pool = nbCreateTaskSystem( 3 );
+	uint32_t hashes[3];
+	for ( int pass = 0; pass < 3; ++pass )
+	{
+		TestScene scene = pass == 0 ? CreateScene() : CreateSceneWithPool( pool, 4 );
+		nbDestructibleId ids[houseCount];
+		nbCreationId creation = nbStartCreating( scene.world, defs, lists, counts, houseCount );
+		Step( &scene, 2 );
+		nbFinishCreating( creation, ids );
+		Step( &scene, 1 );
+		ENSURE( b3World_GetCounters( scene.physicsWorld ).taskCount == 0 );
+
+		for ( int h = 0; h < houseCount; ++h )
+		{
+			Grenade( &scene, (b3Vec3){ 14.0f * (float)h, 1.2f, 3.4f } );
+			Grenade( &scene, (b3Vec3){ 14.0f * (float)h - 2.0f, 4.4f, -3.4f } );
+		}
+
+		int maxAwake = 0;
+		int maxTasks = 0;
+		for ( int i = 0; i < 180; ++i )
+		{
+			Step( &scene, 1 );
+			b3Counters counters = b3World_GetCounters( scene.physicsWorld );
+			maxAwake = b3MaxInt( maxAwake, counters.awakeContactCount );
+			maxTasks = b3MaxInt( maxTasks, counters.taskCount );
+		}
+		ENSURE( maxAwake >= 1000 && ( pass == 0 || maxTasks > 0 ) );
+		hashes[pass] = HashCreated( &scene, ids, houseCount );
+		DestroyScene( &scene );
+	}
+	nbDestroyTaskSystem( pool );
+
+	ENSURE( hashes[1] == hashes[0] && hashes[2] == hashes[0] );
+	free( houses );
+	return 0;
+}
+
 int WorldTest( void );
 
 int WorldTest( void )
@@ -3469,6 +3554,7 @@ int WorldTest( void )
 	RUN_TEST( StreamTest );
 	RUN_TEST( BackgroundCreateTest );
 	RUN_TEST( SaveLoadTest );
+	RUN_TEST( TaskSystemTest );
 	RUN_TEST( RestTest );
 	RUN_TEST( LandingTest );
 	return 0;

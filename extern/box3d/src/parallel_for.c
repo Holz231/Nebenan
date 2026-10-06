@@ -71,7 +71,8 @@ void b3ParallelFor( b3World* world, b3ParallelForCallback* callback, int itemCou
 
 	B3_ASSERT( minRange > 0 );
 
-	int workerCount = world->workerCount;
+	// Added for Nebenan: the workers the step wakes, see b3GetStepWorkerCount
+	int workerCount = world->activeWorkerCount;
 	B3_ASSERT( 0 < workerCount && workerCount <= B3_MAX_WORKERS );
 
 	// Target multiple blocks per worker to reduce thread stalls.
@@ -108,6 +109,14 @@ void b3ParallelFor( b3World* world, b3ParallelForCallback* callback, int itemCou
 	shared.callback = callback;
 	shared.context = context;
 	b3AtomicStoreInt( &shared.nextBlock, 0 );
+
+	// Added for Nebenan: a single task runs right here instead of waking a worker that has to fetch its data
+	if ( taskCount == 1 )
+	{
+		b3ParallelForTask task = { .shared = &shared, .workerIndex = 0 };
+		b3ParallelForTrampoline( &task );
+		return;
+	}
 
 	b3ParallelForTask tasks[B3_MAX_WORKERS];
 	void* handles[B3_MAX_WORKERS];

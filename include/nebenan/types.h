@@ -289,6 +289,9 @@ typedef struct nbImpactResult
 /// Maximum number of fracture workers.
 #define NB_MAX_WORKERS 32
 
+/// A pool of threads Nebenan and Box3D can share, see nbCreateTaskSystem
+typedef struct nbTaskSystem nbTaskSystem;
+
 /// Destruction world definition. Must be initialized with nbDefaultWorldDef.
 typedef struct nbWorldDef
 {
@@ -366,6 +369,10 @@ typedef struct nbWorldDef
 	/// [1, NB_MAX_WORKERS]. Above 1, Nebenan uses the task callbacks below, or starts its own threads
 	/// when none are given. The fracture result does not depend on the number of workers.
 	int workerCount;
+
+	/// Optional pool of threads from nbCreateTaskSystem, shared with Box3D. Takes precedence over enqueueTask and
+	/// finishTask. Nebenan prepares the destructibles of nbStartCreating there after all other tasks.
+	nbTaskSystem* taskSystem;
 
 	/// Optional task system. The signatures are the ones of Box3D, so one task system can serve both.
 	/// Nebenan enqueues at most workerCount - 1 tasks at a time and finishes all of them before it

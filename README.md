@@ -228,6 +228,12 @@ die Welt einbaut. So lädt eine Stadt ein Drittel schneller, mit denselben Bruch
 einzeln angelegt. Mit `nbStartCreating` bereiten die Worker Zerstörbare im Hintergrund vor, während der aufrufende
 Thread weitermacht, etwa mit dem Box3D-Schritt, und `nbFinishCreating` baut sie später nur noch ein. Die eingebauten
 Threads nehmen dabei alles andere zuerst, und wer auf einen Einschlag wartet, hilft nie bei einem Haus im Hintergrund.
+Sie holen sich ihre Aufgaben ohne Sperre wie der Scheduler von Box3D, nur behält eine Aufgabe ihren Platz, bis sie
+abgeschlossen ist, auch über mehrere Schritte. Wer auf eine Aufgabe wartet, hilft mit oder gibt den Kern kurz ab, statt
+zu schlafen. Mit `nbCreateTaskSystem` teilen sich Box3D und Nebenan diese Threads, siehe Benutzung. Box3D selbst weckt
+seine Worker nur, wenn es genug zu tun gibt: einen für je 250 wache Kontakte, darunter rechnet der aufrufende Thread den
+Schritt allein (eine Ergänzung, siehe [`extern/README.md`](extern/README.md)). Ein paar Dutzend wache Trümmer rechnet
+er so schneller, als er die Worker wecken und auf sie warten könnte, und unter Dauerbeschuss rechnen alle mit.
 
 **Stützgraph.** Zwei Bruchstücke sind verbunden, wenn sich ihre Flächen berühren. Jede Verbindung hält
 `strength × Kontaktfläche` aus, zwischen zwei Materialien mit dem kleineren `strength`. Der Schaden eines
@@ -542,6 +548,28 @@ nbLoadDestructibles( world, house->saved, house->size, &house->id );
 free( house->saved );
 ```
 
+Box3D und Nebenan starten sonst je eigene Threads. Mit `nbCreateTaskSystem` teilen sie sich einen Pool, und dessen
+Threads nehmen die Aufgaben eines Schritts oder Einschlags vor den Häusern im Hintergrund:
+
+```c
+nbTaskSystem* pool = nbCreateTaskSystem( 3 );   // drei Threads neben dem aufrufenden
+b3WorldDef worldDef = b3DefaultWorldDef();
+worldDef.workerCount = 4;
+worldDef.enqueueTask = nbEnqueueTask;
+worldDef.finishTask = nbFinishTask;
+worldDef.userTaskContext = pool;
+b3WorldId physics = b3CreateWorld( &worldDef );
+
+nbWorldDef def = nbDefaultWorldDef();
+def.physicsWorld = physics;
+def.workerCount = 4;
+def.taskSystem = pool;
+nbWorldId world = nbCreateWorld( &def );
+// … am Ende erst beide Welten löschen, dann den Pool mit nbDestroyTaskSystem
+```
+
+Gemessen ist das etwa so schnell wie zwei eigene Pools, mit halb so vielen Threads, siehe Leistung.
+
 Die komplette API steht in [include/nebenan/nebenan.h](include/nebenan/nebenan.h).
 
 Einbinden in ein eigenes CMake-Projekt:
@@ -664,9 +692,9 @@ Frames fällt eine Granate auf ein Haus bis 60 m um die Kamera. Der Median aus d
 
 | Stadt im Vorbeiflug | 4 Threads | 1 Thread |
 | --- | ---: | ---: |
-| Frame Ø | 1,0 ms | 2,1 ms |
+| Frame Ø | 0,9 ms | 2,1 ms |
 | davon Streaming Ø | 0,5 ms | 1,7 ms |
-| Streaming, 95 % der Frames | 1,6 ms | 4,9 ms |
+| Streaming, 95 % der Frames | 1,9 ms | 4,9 ms |
 | Häuser gleichzeitig geladen | höchstens 428 | höchstens 428 |
 | Speicher von Nebenan und Box3D | höchstens 192 MB | höchstens 192 MB |
 
@@ -680,6 +708,17 @@ kostet 0,3 bis 0,35 ms, und die Fragen, ob ein beschädigtes Haus gehen kann, ko
 der Box3D-Schritt, 0,03 bis 0,04 ms, weil die Trümmer anders fallen: Körper und Formen landen auf anderen Plätzen,
 Box3D rechnet sie in anderer Reihenfolge, und auf diesem Flug sind dadurch 18 % mehr Kontakte wach. Über 18
 Granatenfolgen sind es im Mittel gleich viele, 203 mit und 201 ohne Auslagern.
+
+Seit Box3D seine Worker nur bei genug Arbeit weckt, rechnet auf diesem Flug der aufrufende Thread den Schritt allein:
+Im Mittel sind keine 200 Kontakte wach. Der Box3D-Schritt braucht so 0,27 statt 0,45 ms, 95 % der Schritte bis 0,62
+statt 1,73 ms, und ein Frame 0,90 statt 0,97 ms, je drei Läufe im Wechsel. Das Streaming steigt dabei auf 0,54 ms, weil
+der Benchmark seine Frames ohne Pause rechnet: Kürzere Frames lassen den Workern weniger Zeit für die Häuser im
+Hintergrund, und das Einbauen wartet öfter auf sie. Im 60-Hz-Takt bleibt es bei 0,44 ms, der Schritt braucht dort
+0,46 statt 0,51 ms und ein Frame 1,06 statt 1,13 ms. Unter Dauerbeschuss weckt Box3D wie zuvor alle Worker, die Städte
+oben und die Einschläge unten kosten gleich viel. Teilen sich Box3D und Nebenan einen Pool aus `nbCreateTaskSystem`,
+kostet der Flug 0,91 statt 0,87 ms pro Frame, die Städte unter Beschuss 9,16 statt 8,97 ms und 3,08 statt 3,18 ms im
+Box3D-Schritt, nur das Gewehr 1,19 statt 1,02 ms, je drei Läufe. Mit dem früheren Scheduler mit Sperre waren es unter
+Last 14 bis 28 % mehr.
 
 Mit 4 Threads kostet das Laden im Hintergrund den aufrufenden Thread 40 % weniger als mit `nbCreateDestructibles`, im
 Wechsel gemessen 0,47 statt 0,78 ms Streaming und 0,93 statt 1,25 ms pro Frame. Mit einem Thread gibt es keinen
@@ -727,7 +766,7 @@ Messungen in [docs/Optimierungen.md](docs/Optimierungen.md).
 ## Tests und Benchmark
 
 ```sh
-build/bin/nebenan_test            # 43 Tests: Geometrie, Voronoi, Hüllen, Öffnungen, Stöße, Stützgraph, Etagen, Lastprüfung, Schutt, Ruhe, Durchschlagen, Threads, große Blöcke, Suchbaum, Kontaktlisten, Streaming, Laden im Hintergrund, Speichern und Zurückholen, Determinismus …
+build/bin/nebenan_test            # 44 Tests: Geometrie, Voronoi, Hüllen, Öffnungen, Stöße, Stützgraph, Etagen, Lastprüfung, Schutt, Ruhe, Durchschlagen, Threads, große Blöcke, Suchbaum, Kontaktlisten, Streaming, Laden im Hintergrund, Speichern und Zurückholen, gemeinsamer Thread-Pool, Determinismus …
 build/bin/nebenan_benchmark 4     # Zahl = Threads für Bruch und Physik
 ```
 

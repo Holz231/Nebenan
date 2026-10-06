@@ -64,12 +64,27 @@ Geometrie nur einmal im Speicher, und beim Laden und beim Umhängen eines Bruchs
 nichts kopiert. Eine Hülle mit Transformation der Form bekommt wie bei `uniqueHull` eine eigene Kopie, ebenso eine Form,
 die aus einem Snapshot kommt, denn der Besitzer ihrer Hülle gehört nicht dazu. Aufnahmen speichern das Feld nicht.
 
-Die erste, die zweite, die vierte, die fünfte und die sechste ändern an den Ergebnissen nichts. Die dritte ändert sie in
-den letzten Bits, dafür hängen sie nicht mehr davon ab, in welcher Reihenfolge Formen in den statischen Baum kommen. Die
-Ergänzungen stehen in `include/box3d/box3d.h`, `include/box3d/types.h`, `src/core.c`, `src/shape.h`, `src/shape.c`,
-`src/contact.h`, `src/contact.c`, `src/world_snapshot.c`, `src/recording.c`, `src/solver.c`, `src/broad_phase.h`,
-`src/broad_phase.c`, `src/dynamic_tree.h`, `src/dynamic_tree.c` und `src/physics_world.c`, jeweils mit „Added for
-Nebenan“ markiert. `B3_HAS_UNIQUE_HULLS`, `B3_HAS_STATIC_BATCH`, `B3_HAS_SHAPE_CONTACT_LISTS` und
+**Statische Blätter kürzer herausnehmen.** Box3D rechnete beim Herausnehmen einer Form jeden Vorfahren bis zur Wurzel
+neu. Formen des statischen Baums gehen jetzt über `b3DynamicTree_DestroyStaticProxy`, das beim ersten Vorfahren aufhört,
+der so herauskommt, wie er war: Die darüber hängen nur von ihm ab. Im statischen Baum ist jeder innere Knoten die
+Vereinigung seiner Kinder, denn dort wird kein Rahmen vergrößert, und der gesammelte Einbau baut jeden inneren Knoten aus
+seinen Kindern. Deshalb bleibt der Baum genau so, wie ihn der ganze Weg ließe. Mit Validierung prüft jeder vorzeitige
+Halt, dass der ganze Weg die Vorfahren darüber gelassen hätte, wie sie sind. Der dynamische und der kinematische Baum
+gehen weiter den ganzen Weg.
+
+**Worker nach Arbeit.** Jede Stufe eines Schritts weckte alle Worker und wartete auf sie, auch wenn nur ein paar hundert
+Kontakte wach waren, und das kostete mehr als die Arbeit selbst. Jetzt weckt ein Schritt einen Worker für je 250 wache
+Kontakte und Gelenke (`B3_CONTACTS_PER_WORKER`, `b3GetStepWorkerCount`), darunter rechnet der aufrufende Thread allein.
+Eine Parallel-for-Schleife mit nur einer Aufgabe läuft gleich auf dem aufrufenden Thread, und rechnet er allein, baut
+er auch die Bäume selbst neu und teilt Inseln selbst. Die Ereignisse aller Worker leert und sammelt der Löser weiter,
+auch die der Worker, die er nicht geweckt hat.
+
+Die erste, die zweite und die vierte bis achte ändern an den Ergebnissen nichts. Die dritte ändert sie in den letzten
+Bits, dafür hängen sie nicht mehr davon ab, in welcher Reihenfolge Formen in den statischen Baum kommen. Die Ergänzungen
+stehen in `include/box3d/box3d.h`, `include/box3d/types.h`, `src/core.c`, `src/shape.h`, `src/shape.c`, `src/contact.h`,
+`src/contact.c`, `src/world_snapshot.c`, `src/recording.c`, `src/solver.c`, `src/broad_phase.h`, `src/broad_phase.c`,
+`src/dynamic_tree.h`, `src/dynamic_tree.c`, `src/parallel_for.c`, `src/physics_world.h` und `src/physics_world.c`,
+jeweils mit „Added for Nebenan“ markiert. `B3_HAS_UNIQUE_HULLS`, `B3_HAS_STATIC_BATCH`, `B3_HAS_SHAPE_CONTACT_LISTS` und
 `B3_HAS_EXTERNAL_HULLS` zeigen die zweite, die vierte, die fünfte und die sechste an. Fehlen sie, etwa mit einem eigenen
 Box3D, läuft Nebenan wie zuvor, nur wachsen Box3Ds Arrays dann durch Umkopieren, die Hüllen gehen durch die Tabelle,
 jede Form geht einzeln in den Baum, jedes stehende Bruchstück bekommt einen eigenen Körper, und Box3D hält eine Kopie

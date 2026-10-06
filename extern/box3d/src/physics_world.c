@@ -389,6 +389,7 @@ b3WorldId b3CreateWorld( const b3WorldDef* def )
 		world->scheduler = NULL;
 	}
 
+	world->activeWorkerCount = world->workerCount;
 	b3CreateWorkerContexts( world );
 
 	world->debugBodySet = b3CreateBitSet( 256 );
@@ -1035,6 +1036,23 @@ static void b3Collide( b3StepContext* context )
 	b3TracyCZoneEnd( collide );
 }
 
+// Added for Nebenan: awake contacts and joints per worker a step wakes. Every stage of a step wakes the workers and waits
+// for all of them, which costs more than a few hundred contacts take to collide and solve.
+#define B3_CONTACTS_PER_WORKER 250
+
+// Added for Nebenan: one worker for every B3_CONTACTS_PER_WORKER awake contacts and joints, and below that the calling
+// thread does the whole step alone. The result does not depend on the number of workers.
+static int b3GetStepWorkerCount( b3World* world )
+{
+	int count = world->solverSets.data[b3_awakeSet].contactIndices.count;
+	const b3GraphColor* colors = world->constraintGraph.colors;
+	for ( int i = 0; i < B3_GRAPH_COLOR_COUNT; ++i )
+	{
+		count += colors[i].convexContacts.count + colors[i].contacts.count + colors[i].jointSims.count;
+	}
+	return b3ClampInt( count / B3_CONTACTS_PER_WORKER, 1, world->workerCount );
+}
+
 void b3World_Step( b3WorldId worldId, float timeStep, int subStepCount )
 {
 	b3World* world = b3GetUnlockedWorldFromId( worldId );
@@ -1094,6 +1112,9 @@ void b3World_Step( b3WorldId worldId, float timeStep, int subStepCount )
 		int totalContactCount = b3GetIdCount( &world->contactIdPool );
 		c->contactCount = b3MaxInt( c->contactCount, totalContactCount );
 	}
+
+	// Added for Nebenan: a step with few awake contacts wakes fewer workers, down to none
+	world->activeWorkerCount = b3GetStepWorkerCount( world );
 
 	// Update collision pairs and create contacts
 	{
@@ -1166,6 +1187,7 @@ void b3World_Step( b3WorldId worldId, float timeStep, int subStepCount )
 	}
 
 	world->profile.step = b3GetMilliseconds( stepTicks );
+	world->activeWorkerCount = world->workerCount;
 
 	B3_ASSERT( world->stack.allocation == 0 );
 
@@ -2367,6 +2389,7 @@ void b3World_SetWorkerCount( b3WorldId worldId, int count )
 
 	b3DestroyWorkerContexts( world );
 	world->workerCount = b3ClampInt( count, 1, B3_MAX_WORKERS );
+	world->activeWorkerCount = world->workerCount;
 	b3CreateWorkerContexts( world );
 }
 

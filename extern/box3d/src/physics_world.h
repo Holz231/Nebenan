@@ -262,6 +262,10 @@ typedef struct b3World
 	void* customFilterContext;
 
 	int workerCount;
+
+	// Added for Nebenan: the workers the current step wakes, see b3GetStepWorkerCount
+	int activeWorkerCount;
+
 	b3EnqueueTaskCallback* enqueueTaskFcn;
 	b3FinishTaskCallback* finishTaskFcn;
 	void* userTaskContext;

@@ -419,6 +419,7 @@ typedef struct nbWorld
 	b3FinishTaskCallback* finishTask;
 	void* userTaskContext;
 	struct nbScheduler* scheduler;
+	bool ownsScheduler;
 	nbArena workerArenas[NB_MAX_WORKERS];
 
 	int chunkCount;
