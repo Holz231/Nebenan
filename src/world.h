@@ -190,6 +190,10 @@ typedef struct nbActor
 	// Debris at rest, carried by a static body until something disturbs it
 	bool isRubble;
 
+	// Asleep in Box3D at the last look of nbSettleDebris, which found that it cannot freeze yet. While it sleeps the
+	// contacts it lies on stay as they are, so it waits for Box3D to wake it before the next look.
+	bool checkedAsleep;
+
 	// A static actor that changed since its last load check, see nbWorldDef::supportScale
 	bool supportDirty;
 

@@ -2683,6 +2683,18 @@ static int StoreyTest( void )
 		ENSURE( LargestPiece( &scene, &low, &high ) > 40.0f );
 		ENSURE( low < 2.5f );
 		ENSURE( FloatingVolume( &scene ) == 0.0f );
+
+		// Then everything sleeps, some of it on pieces that cannot freeze. An update looks at none of it again.
+		Step( &scene, 360 );
+		nbWorld* world = nbGetWorldFromId( scene.world );
+		int looked = 0;
+		for ( int i = 0; i < world->debris.count; ++i )
+		{
+			const nbActor* actor = world->actors.data + world->debris.data[i];
+			bool asleep = actor->isRubble == false && b3Body_IsAwake( actor->bodyId ) == false;
+			looked += asleep && actor->settleStamp == world->settleStamp ? 1 : 0;
+		}
+		ENSURE( looked == 0 );
 		DestroyScene( &scene );
 	}
 

@@ -969,13 +969,15 @@ static bool nbIsRocking( nbActor* actor, b3WorldTransform transform, float timeS
 	return actor->jitterMatches >= NB_JITTER_MATCHES;
 }
 
-// A piece is quiet when it is slow and stayed in place, or rocks in place. Box3D islands that fell asleep are quiet.
+// A piece is quiet when it is slow and stayed in place, or rocks in place. Box3D islands that fell asleep are quiet, until
+// a look found that they cannot freeze yet, see nbActor::checkedAsleep.
 static bool nbIsQuiet( const nbWorld* world, nbActor* actor, float timeStep )
 {
 	if ( b3Body_IsAwake( actor->bodyId ) == false )
 	{
-		return true;
+		return actor->checkedAsleep == false;
 	}
+	actor->checkedAsleep = false;
 
 	b3WorldTransform transform = b3Body_GetTransform( actor->bodyId );
 	float slow = 4.0f * world->def.debrisSleepThreshold;
@@ -5096,6 +5098,14 @@ static void nbSettleDebris( nbWorld* world, b3Vec3 up, float timeStep )
 	{
 		int slot = queue[k];
 		nbFreezeOnCarriers( world, quiet[slot], carriers + slot * NB_MAX_CARRIERS, carrierCounts[slot] );
+	}
+
+	// What sleeps and could not freeze waits for Box3D to wake it. Its island sleeps as a whole, a piece that touches it
+	// wakes all of it.
+	for ( int slot = 0; slot < quietCount; ++slot )
+	{
+		nbActor* actor = world->actors.data + quiet[slot];
+		actor->checkedAsleep = actor->isRubble == false && b3Body_IsAwake( actor->bodyId ) == false;
 	}
 
 	for ( int i = 0; i < unsupportedCount; ++i )
