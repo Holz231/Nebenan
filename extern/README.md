@@ -91,13 +91,19 @@ sich die Stöße auf einen Körper mit mehreren Formen addierten, und damit die 
 die Formen, und sie bekommen ihren Stoß in der Reihenfolge ihrer Ids. Nebenan selbst löst keine Explosion aus, die Demo
 und der Benchmark schon.
 
-Die erste, die zweite und die vierte bis achte ändern an den Ergebnissen nichts. Die dritte und die neunte ändern sie in
-den letzten Bits, dafür hängen sie nicht mehr davon ab, in welcher Reihenfolge Formen in die Bäume kommen. Die Ergänzungen
-stehen in `include/box3d/box3d.h`, `include/box3d/types.h`, `src/core.c`, `src/shape.h`, `src/shape.c`, `src/contact.h`,
-`src/contact.c`, `src/world_snapshot.c`, `src/recording.c`, `src/solver.c`, `src/broad_phase.h`, `src/broad_phase.c`,
-`src/dynamic_tree.h`, `src/dynamic_tree.c`, `src/parallel_for.c`, `src/physics_world.h` und `src/physics_world.c`,
-jeweils mit „Added for Nebenan“ markiert. `B3_HAS_UNIQUE_HULLS`, `B3_HAS_SHAPE_BATCH`, `B3_HAS_SHAPE_CONTACT_LISTS` und
-`B3_HAS_EXTERNAL_HULLS` zeigen die zweite, die vierte, die fünfte und die sechste an. Fehlen sie, etwa mit einem eigenen
-Box3D, läuft Nebenan wie zuvor, nur wachsen Box3Ds Arrays dann durch Umkopieren, die Hüllen gehen durch die Tabelle,
-jede Form geht einzeln in den Baum, jedes stehende Bruchstück bekommt einen eigenen Körper, und Box3D hält eine Kopie
-jeder Hülle.
+**Blöcke auf Cache-Zeilen.** Box3D richtete jeden Block auf 16 Byte aus. Ein Körperzustand im Löser ist 64 Byte groß,
+so groß wie eine Cache-Zeile, lag damit aber meist über zweien: In der Stadt mit einfacher Bruchstückgröße fing das Array
+der wachen Zustände in 263 von 300 Schritten mitten in einer Zeile an. Dann schreiben zwei Worker, die in einer Farbe des
+Graphen benachbarte Körper rechnen, in dieselbe Zeile. Jetzt beginnt jeder Block auf 64 Byte (`B3_ALIGNMENT` in
+`src/core.h`), auch in der Arena des Lösers.
+
+Die erste, die zweite, die vierte bis achte und die zehnte ändern an den Ergebnissen nichts. Die dritte und die neunte
+ändern sie in den letzten Bits, dafür hängen sie nicht mehr davon ab, in welcher Reihenfolge Formen in die Bäume kommen.
+Die Ergänzungen stehen in `include/box3d/box3d.h`, `include/box3d/types.h`, `src/core.h`, `src/core.c`, `src/shape.h`,
+`src/shape.c`, `src/contact.h`, `src/contact.c`, `src/world_snapshot.c`, `src/recording.c`, `src/solver.c`,
+`src/broad_phase.h`, `src/broad_phase.c`, `src/dynamic_tree.h`, `src/dynamic_tree.c`, `src/parallel_for.c`,
+`src/physics_world.h` und `src/physics_world.c`, jeweils mit „Added for Nebenan“ markiert. `B3_HAS_UNIQUE_HULLS`,
+`B3_HAS_SHAPE_BATCH`, `B3_HAS_SHAPE_CONTACT_LISTS` und `B3_HAS_EXTERNAL_HULLS` zeigen die zweite, die vierte, die fünfte
+und die sechste an. Fehlen sie, etwa mit einem eigenen Box3D, läuft Nebenan wie zuvor, nur wachsen Box3Ds Arrays dann
+durch Umkopieren, die Hüllen gehen durch die Tabelle, jede Form geht einzeln in den Baum, jedes stehende Bruchstück
+bekommt einen eigenen Körper, und Box3D hält eine Kopie jeder Hülle.

@@ -120,7 +120,9 @@ typedef struct b3AtomicI64
 } b3AtomicI64;
 
 // Minimum memory alignment used for all allocations
-#define B3_ALIGNMENT 16
+// Added for Nebenan: a cache line instead of 16 bytes. A body state in the solver is 64 bytes, at 16 it mostly spanned two
+// lines, and workers solving neighbors in one color wrote to the same line.
+#define B3_ALIGNMENT 64
 
 #define B3_RESTRICT restrict
 
