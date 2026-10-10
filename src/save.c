@@ -1126,9 +1126,9 @@ bool nbLoadDestructibles( nbWorldId worldId, const void* buffer, size_t size, nb
 		}
 	}
 
-	// Box3D bodies and shapes. The static ones go into the tree together, see nbCommitPhysics.
-#if defined( B3_HAS_STATIC_BATCH )
-	b3World_BeginStaticBatch( world->physicsWorld );
+	// Box3D bodies and shapes, which go into the tree together, see nbCommitPhysics
+#if defined( B3_HAS_SHAPE_BATCH )
+	b3World_BeginShapeBatch( world->physicsWorld );
 #endif
 
 	for ( int d = 0; d < header.destructibleCount; ++d )
@@ -1189,8 +1189,8 @@ bool nbLoadDestructibles( nbWorldId worldId, const void* buffer, size_t size, nb
 		}
 	}
 
-#if defined( B3_HAS_STATIC_BATCH )
-	b3World_EndStaticBatch( world->physicsWorld );
+#if defined( B3_HAS_SHAPE_BATCH )
+	b3World_EndShapeBatch( world->physicsWorld );
 #endif
 
 	// Rubble is debris that does not move. The chunks are reported as created, in the order of the buffer.

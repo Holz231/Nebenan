@@ -674,12 +674,13 @@ wie in Box3D: Jedes reserviert sich Adressraum und bekommt beim Wachsen dort Spe
 Früher wurde ein volles Array in ein doppelt so großes kopiert, und das hielt ein einzelnes Update über 100 ms auf.
 Die Hüllen der Bruchstücke gehen nicht durch Box3Ds Hüllen-Tabelle, die beim Wachsen alle Hüllen neu einordnen müsste,
 und Box3D hält auch keine Kopie: Nebenan baut jede Hülle direkt in die Form ihres Bruchstücks, und die Box3D-Form
-benutzt sie dort (`b3ShapeDef::externalHull`). Das spart 12 % Speicher pro Bruchstück. Die statischen Bruchstücke
-eines Hauses oder Einschlags gehen gesammelt in Box3Ds Suchbaum, als ein Teilbaum mit einer Suche statt einer pro
-Stück (`b3World_BeginStaticBatch`, siehe [`extern/README.md`](extern/README.md)). Alle stehenden Bruchstücke eines
-Hauses hängen an einem gemeinsamen statischen Box3D-Körper statt jedes an einem eigenen, dafür führt Box3D die
-Kontakte jeder Form in einer eigenen Liste (`B3_HAS_SHAPE_CONTACT_LISTS`). Der gemeinsame Körper lädt große Städte
-fast doppelt so schnell und spart 16 % Speicher, und mit beidem kostet ein Einschlag in jeder Stadtgröße gleich viel.
+benutzt sie dort (`b3ShapeDef::externalHull`). Das spart 12 % Speicher pro Bruchstück. Die Bruchstücke eines Hauses
+oder Einschlags und der Schutt, der erstarrt oder auftaut, gehen gesammelt in Box3Ds Suchbäume, als ein Teilbaum mit
+einer Suche statt einer pro Stück (`b3World_BeginShapeBatch`, siehe [`extern/README.md`](extern/README.md)). Alle
+stehenden Bruchstücke eines Hauses hängen an einem gemeinsamen statischen Box3D-Körper statt jedes an einem eigenen,
+dafür führt Box3D die Kontakte jeder Form in einer eigenen Liste (`B3_HAS_SHAPE_CONTACT_LISTS`). Der gemeinsame Körper
+lädt große Städte fast doppelt so schnell und spart 16 % Speicher, und mit beidem kostet ein Einschlag in jeder
+Stadtgröße gleich viel.
 Mehr dazu in [`docs/Optimierungen.md`](docs/Optimierungen.md).
 
 **Eine Stadt größer als der Speicher.** Im Benchmark fliegt eine Kamera mit 30 m/s 900 m weit durch eine Stadt aus

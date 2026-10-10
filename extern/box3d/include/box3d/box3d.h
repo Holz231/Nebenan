@@ -231,18 +231,19 @@ B3_API b3Counters b3World_GetCounters( b3WorldId worldId );
 /// Get max capacity. This can be used with b3WorldDef to avoid run-time allocations and copies
 B3_API b3Capacity b3World_GetMaxCapacity( b3WorldId worldId );
 
-/// Begin a batch of shapes on static bodies, new ones or bodies that become static. Their proxies wait outside the
-/// static tree and go in together at b3World_EndStaticBatch: shapes that lie close together get a subtree of their own,
-/// which goes into the tree with one search from the root instead of one search for each shape. In between, do not step
-/// or query the world, rebuild the static tree or start a recording: the shapes of the batch are not in the tree yet.
-/// Recordings do not keep batches, replay inserts the shapes one by one, which simulates the same. Added for Nebenan.
-B3_API void b3World_BeginStaticBatch( b3WorldId worldId );
+/// Begin a batch of shapes, new ones or ones whose body changes type or is enabled. Their proxies wait outside the trees
+/// and go in together at b3World_EndShapeBatch: shapes that lie close together get a subtree of their own, which goes
+/// into its tree with one search from the root instead of one search for each shape. Batches nest, the shapes go in when
+/// the outermost batch ends. In between, do not step or query the world, rebuild the static tree or start a recording:
+/// the shapes of the batch are not in the trees yet. Recordings do not keep batches, replay inserts the shapes one by
+/// one, which simulates the same. Added for Nebenan.
+B3_API void b3World_BeginShapeBatch( b3WorldId worldId );
 
-/// Put the static shapes created since b3World_BeginStaticBatch into the static tree. Added for Nebenan.
-B3_API void b3World_EndStaticBatch( b3WorldId worldId );
+/// Put the shapes created since the matching b3World_BeginShapeBatch into the trees. Added for Nebenan.
+B3_API void b3World_EndShapeBatch( b3WorldId worldId );
 
-/// This Box3D has b3World_BeginStaticBatch and b3World_EndStaticBatch
-#define B3_HAS_STATIC_BATCH 1
+/// This Box3D has b3World_BeginShapeBatch and b3World_EndShapeBatch
+#define B3_HAS_SHAPE_BATCH 1
 
 /// This Box3D keeps a list of contacts for every shape. Destroying a shape walks only its own contacts, not all contacts
 /// of its body, so one body can carry many shapes that come and go. Added for Nebenan.

@@ -587,11 +587,64 @@ static bool CountCallback( b3ShapeId shapeId, void* context )
 	return true;
 }
 
-// Static shapes of a batch go into Box3D's tree together. One that goes before the batch ends leaves it, one that moves
-// goes in at its new place, queries find all the others, and a box dropped on them comes to rest there.
-static int StaticBatchTest( void )
+// A pile of boxes over a floor that an explosion goes off in, built with or without a batch. Without, every shape goes
+// into its tree with a search of its own, so the trees take another shape.
+static b3WorldId CreateBatchPile( bool batch, b3BodyId* bodies, int bodyCount )
 {
-#if defined( B3_HAS_STATIC_BATCH )
+	b3WorldDef worldDef = b3DefaultWorldDef();
+	b3WorldId worldId = b3CreateWorld( &worldDef );
+	b3ShapeDef shapeDef = b3DefaultShapeDef();
+#if defined( B3_HAS_SHAPE_BATCH )
+	if ( batch )
+	{
+		b3World_BeginShapeBatch( worldId );
+	}
+#else
+	(void)batch;
+#endif
+
+	b3BodyDef floorDef = b3DefaultBodyDef();
+	floorDef.position = (b3Pos){ 0.0f, -0.5f, 0.0f };
+	b3BoxHull floor = b3MakeBoxHull( 10.0f, 0.5f, 10.0f );
+	b3CreateHullShape( b3CreateBody( worldId, &floorDef ), &shapeDef, &floor.base );
+
+	// Crosses of four boxes, the impulses on a body add up over its shapes
+	b3BoxHull arms[4] = {
+		b3MakeOffsetBoxHull( 0.15f, 0.15f, 0.15f, (b3Vec3){ 0.3f, 0.0f, 0.0f } ),
+		b3MakeOffsetBoxHull( 0.15f, 0.15f, 0.15f, (b3Vec3){ -0.3f, 0.0f, 0.0f } ),
+		b3MakeOffsetBoxHull( 0.15f, 0.15f, 0.15f, (b3Vec3){ 0.0f, 0.0f, 0.3f } ),
+		b3MakeOffsetBoxHull( 0.15f, 0.15f, 0.15f, (b3Vec3){ 0.0f, 0.0f, -0.3f } ),
+	};
+	for ( int i = 0; i < bodyCount; ++i )
+	{
+		b3BodyDef bodyDef = b3DefaultBodyDef();
+		bodyDef.type = b3_dynamicBody;
+		bodyDef.position = (b3Pos){ 1.1f * (float)( i % 4 ) + 0.01f * (float)( i % 3 ), 0.16f + 0.35f * (float)( i / 16 ),
+									1.1f * (float)( ( i / 4 ) % 4 ) };
+		bodyDef.rotation = b3MakeQuatFromAxisAngle( b3Vec3_axisY, 0.05f * (float)( i % 8 ) );
+		bodies[i] = b3CreateBody( worldId, &bodyDef );
+		for ( int k = 0; k < 4; ++k )
+		{
+			b3CreateHullShape( bodies[i], &shapeDef, &arms[k].base );
+		}
+	}
+
+#if defined( B3_HAS_SHAPE_BATCH )
+	if ( batch )
+	{
+		b3World_EndShapeBatch( worldId );
+	}
+#endif
+	return worldId;
+}
+
+// Shapes of a batch go into Box3D's trees together, static and moving ones. One that goes before the batch ends leaves
+// it, one that moves goes in at its new place, and the shapes of nested batches wait for the outermost one. Queries find
+// all the others, and boxes dropped on them come to rest there. A pile simulates the same to the bit whether its shapes
+// went in together or one by one, explosion included: the results do not depend on the shape of the trees.
+static int ShapeBatchTest( void )
+{
+#if defined( B3_HAS_SHAPE_BATCH )
 	int64_t baseBytes = b3GetByteCount();
 	b3WorldDef worldDef = b3DefaultWorldDef();
 	b3WorldId worldId = b3CreateWorld( &worldDef );
@@ -599,7 +652,7 @@ static int StaticBatchTest( void )
 	b3ShapeDef shapeDef = b3DefaultShapeDef();
 
 	b3ShapeId shapes[64];
-	b3World_BeginStaticBatch( worldId );
+	b3World_BeginShapeBatch( worldId );
 	for ( int i = 0; i < 64; ++i )
 	{
 		b3BodyDef bodyDef = b3DefaultBodyDef();
@@ -608,7 +661,7 @@ static int StaticBatchTest( void )
 	}
 	b3DestroyShape( shapes[9], false );
 	b3Body_SetTransform( b3Shape_GetBody( shapes[18] ), (b3Pos){ 20.0f, 0.4f, 20.0f }, b3Quat_identity );
-	b3World_EndStaticBatch( worldId );
+	b3World_EndShapeBatch( worldId );
 
 	CountQuery field = { 0 };
 	b3AABB fieldBox = { { -1.0f, -1.0f, -1.0f }, { 8.0f, 1.0f, 8.0f } };
@@ -620,18 +673,80 @@ static int StaticBatchTest( void )
 	b3World_OverlapAABB( worldId, movedBox, b3DefaultQueryFilter(), CountCallback, &moved );
 	ENSURE( moved.count == 1 );
 
-	b3BodyDef bodyDef = b3DefaultBodyDef();
-	bodyDef.type = b3_dynamicBody;
-	bodyDef.position = (b3Pos){ 3.0f, 3.0f, 3.0f };
-	b3BodyId dropped = b3CreateBody( worldId, &bodyDef );
-	b3CreateHullShape( dropped, &shapeDef, &box.base );
+	// Boxes in the air in two nested batches, one of the field turns into a box that falls
+	b3BodyId dropped[9];
+	b3World_BeginShapeBatch( worldId );
+	b3World_BeginShapeBatch( worldId );
+	for ( int i = 0; i < 9; ++i )
+	{
+		b3BodyDef bodyDef = b3DefaultBodyDef();
+		bodyDef.type = b3_dynamicBody;
+		bodyDef.position = (b3Pos){ 3.0f * (float)( i % 3 ), 3.0f, 3.0f * (float)( i / 3 ) };
+		dropped[i] = b3CreateBody( worldId, &bodyDef );
+		b3CreateHullShape( dropped[i], &shapeDef, &box.base );
+	}
+	b3World_EndShapeBatch( worldId );
+	b3DestroyBody( dropped[4] );
+	b3Body_SetTransform( dropped[8], (b3Pos){ 5.0f, 5.0f, 5.0f }, b3Quat_identity );
+	b3BodyId turned = b3Shape_GetBody( shapes[63] );
+	b3Body_SetTransform( turned, (b3Pos){ 4.0f, 2.0f, 4.0f }, b3Quat_identity );
+	b3Body_SetType( turned, b3_dynamicBody );
+	b3World_EndShapeBatch( worldId );
+
+	CountQuery above = { 0 };
+	b3AABB aboveBox = { { -1.0f, 1.5f, -1.0f }, { 8.0f, 6.0f, 8.0f } };
+	b3World_OverlapAABB( worldId, aboveBox, b3DefaultQueryFilter(), CountCallback, &above );
+	ENSURE( above.count == 9 );
+
 	for ( int i = 0; i < 120; ++i )
 	{
 		b3World_Step( worldId, 1.0f / 60.0f, 4 );
 	}
-	ENSURE( (float)b3Body_GetPosition( dropped ).y > 1.0f );
-
+	for ( int i = 0; i < 9; ++i )
+	{
+		if ( i != 4 )
+		{
+			ENSURE( (float)b3Body_GetPosition( dropped[i] ).y > 1.0f );
+		}
+	}
+	ENSURE( fabsf( (float)b3Body_GetPosition( turned ).y - 1.2f ) < 0.05f );
 	b3DestroyWorld( worldId );
+
+	b3BodyId together[48], alone[48];
+	b3WorldId batchedId = CreateBatchPile( true, together, 48 );
+	b3WorldId singleId = CreateBatchPile( false, alone, 48 );
+	b3Pos starts[48];
+	for ( int i = 0; i < 48; ++i )
+	{
+		starts[i] = b3Body_GetPosition( together[i] );
+	}
+	for ( int i = 0; i < 120; ++i )
+	{
+		if ( i == 0 )
+		{
+			b3ExplosionDef explosion = b3DefaultExplosionDef();
+			explosion.position = (b3Pos){ 1.65f, 0.1f, 1.65f };
+			explosion.radius = 1.5f;
+			explosion.falloff = 1.5f;
+			explosion.impulsePerArea = 2000.0f;
+			b3World_Explode( batchedId, &explosion );
+			b3World_Explode( singleId, &explosion );
+		}
+		b3World_Step( batchedId, 1.0f / 60.0f, 4 );
+		b3World_Step( singleId, 1.0f / 60.0f, 4 );
+	}
+	float thrown = 0.0f;
+	for ( int i = 0; i < 48; ++i )
+	{
+		b3WorldTransform a = b3Body_GetTransform( together[i] );
+		b3WorldTransform b = b3Body_GetTransform( alone[i] );
+		ENSURE( memcmp( &a, &b, sizeof( b3WorldTransform ) ) == 0 );
+		thrown = b3MaxFloat( thrown, b3Length( b3SubPos( a.p, starts[i] ) ) );
+	}
+	ENSURE( thrown > 1.0f );
+	b3DestroyWorld( batchedId );
+	b3DestroyWorld( singleId );
+
 	ENSURE( b3GetByteCount() == baseBytes );
 #endif
 	return 0;
@@ -2174,10 +2289,83 @@ static bool FloatQueryCallback( b3ShapeId shapeId, void* context )
 	return true;
 }
 
-// Volume of the pieces of at least a cubic meter that hang in the air: nothing lies right below their lowest chunks
+// Whether a contact pushes the body up from below its center of mass
+static bool CarriesFromBelow( const b3ContactData* contact, b3BodyId bodyId, float centerHeight )
+{
+	bool isA = B3_ID_EQUALS( b3Shape_GetBody( contact->shapeIdA ), bodyId );
+	b3Pos centerA = b3Body_GetWorldCenter( b3Shape_GetBody( contact->shapeIdA ) );
+	for ( int m = 0; m < contact->manifoldCount; ++m )
+	{
+		const b3Manifold* manifold = contact->manifolds + m;
+		float up = isA ? -manifold->normal.y : manifold->normal.y;
+		for ( int k = 0; k < manifold->pointCount; ++k )
+		{
+			const b3ManifoldPoint* point = manifold->points + k;
+			if ( up > 0.3f && point->totalNormalImpulse > 0.0f && (float)centerA.y + point->anchorA.y < centerHeight )
+			{
+				return true;
+			}
+		}
+	}
+	return false;
+}
+
+// The actor of a body, NB_NULL_INDEX for a body that is none
+static int FindBodyActor( const nbWorld* world, b3BodyId bodyId )
+{
+	int index = bodyId.index1 - 1;
+	int actorIndex = index >= 0 && index < world->bodyToActor.count ? world->bodyToActor.data[index] : NB_NULL_INDEX;
+	if ( actorIndex == NB_NULL_INDEX || world->actors.data[actorIndex].isFree ||
+		 B3_ID_EQUALS( world->actors.data[actorIndex].bodyId, bodyId ) == false )
+	{
+		return NB_NULL_INDEX;
+	}
+	return actorIndex;
+}
+
+// The moving pieces that contacts carry from below, through other moving pieces, down to something that does not move
+static bool* FindCarriedPieces( TestScene* scene )
+{
+	nbWorld* world = nbGetWorldFromId( scene->world );
+	bool* carried = calloc( (size_t)world->actors.count + 1, sizeof( bool ) );
+	for ( bool changed = true; changed; )
+	{
+		changed = false;
+		for ( int i = 0; i < world->debris.count; ++i )
+		{
+			int actorIndex = world->debris.data[i];
+			b3BodyId bodyId = world->actors.data[actorIndex].bodyId;
+			int capacity = b3Body_GetContactCapacity( bodyId );
+			if ( carried[actorIndex] || b3Body_GetType( bodyId ) != b3_dynamicBody || capacity == 0 )
+			{
+				continue;
+			}
+
+			float centerHeight = (float)b3Body_GetWorldCenter( bodyId ).y;
+			b3ContactData* contacts = malloc( sizeof( b3ContactData ) * (size_t)capacity );
+			int contactCount = b3Body_GetContactData( bodyId, contacts, capacity );
+			for ( int c = 0; c < contactCount && carried[actorIndex] == false; ++c )
+			{
+				bool isA = B3_ID_EQUALS( b3Shape_GetBody( contacts[c].shapeIdA ), bodyId );
+				b3BodyId otherId = b3Shape_GetBody( isA ? contacts[c].shapeIdB : contacts[c].shapeIdA );
+				int other = FindBodyActor( world, otherId );
+				bool fixed = b3Body_GetType( otherId ) != b3_dynamicBody || ( other != NB_NULL_INDEX && carried[other] );
+				carried[actorIndex] = fixed && CarriesFromBelow( contacts + c, bodyId, centerHeight );
+			}
+			free( contacts );
+			changed = changed || carried[actorIndex];
+		}
+	}
+	return carried;
+}
+
+// Volume of the pieces of at least a cubic meter that hang in the air: nothing lies right below their lowest chunks, and
+// for a moving piece no contacts carry it from below. A part that came down tilted onto a heap rests on what lies below
+// its middle, its lowest corner can hang free.
 static float FloatingVolume( TestScene* scene )
 {
 	nbWorld* world = nbGetWorldFromId( scene->world );
+	bool* carriedPieces = FindCarriedPieces( scene );
 	float volume = 0.0f;
 	for ( int i = 0; i < world->debris.count; ++i )
 	{
@@ -2194,7 +2382,7 @@ static float FloatingVolume( TestScene* scene )
 			bottom = b3MinFloat( bottom, b3Shape_GetAABB( world->chunks.data[c].shapeId ).lowerBound.y );
 		}
 
-		bool carried = bottom < 0.05f;
+		bool carried = bottom < 0.05f || carriedPieces[actorIndex];
 		for ( int c = actor->headChunk; c != NB_NULL_INDEX && carried == false; c = world->chunks.data[c].nextChunk )
 		{
 			b3AABB box = b3Shape_GetAABB( world->chunks.data[c].shapeId );
@@ -2212,6 +2400,7 @@ static float FloatingVolume( TestScene* scene )
 
 		volume += carried ? 0.0f : actor->volume;
 	}
+	free( carriedPieces );
 	return volume;
 }
 
@@ -3530,7 +3719,7 @@ int WorldTest( void )
 	RUN_TEST( WorkerTest );
 	RUN_TEST( UniqueHullTest );
 	RUN_TEST( ExternalHullTest );
-	RUN_TEST( StaticBatchTest );
+	RUN_TEST( ShapeBatchTest );
 	RUN_TEST( ShapeContactListTest );
 	RUN_TEST( SharedStaticBodyTest );
 	RUN_TEST( LargeBlockTest );

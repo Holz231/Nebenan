@@ -16,6 +16,7 @@
 #include "joint.h"
 #include "parallel_for.h"
 #include "platform.h"
+#include "qsort.h"
 #include "recording.h"
 #include "scheduler.h"
 #include "sensor.h"
@@ -1063,8 +1064,8 @@ void b3World_Step( b3WorldId worldId, float timeStep, int subStepCount )
 
 	B3_REC( world, Step, worldId, timeStep, subStepCount );
 
-	// Added for Nebenan: the static shapes of a batch are not in the tree yet
-	B3_ASSERT( world->broadPhase.batchingStatic == false );
+	// Added for Nebenan: the shapes of a batch are not in the trees yet
+	B3_ASSERT( world->broadPhase.batchDepth == 0 );
 
 	world->locked = true;
 
@@ -2305,7 +2306,7 @@ b3Counters b3World_GetCounters( b3WorldId worldId )
 }
 
 // Added for Nebenan, see box3d.h
-void b3World_BeginStaticBatch( b3WorldId worldId )
+void b3World_BeginShapeBatch( b3WorldId worldId )
 {
 	b3World* world = b3GetUnlockedWorldFromId( worldId );
 	if ( world == NULL )
@@ -2313,12 +2314,11 @@ void b3World_BeginStaticBatch( b3WorldId worldId )
 		return;
 	}
 
-	B3_ASSERT( world->broadPhase.batchingStatic == false );
-	world->broadPhase.batchingStatic = true;
+	world->broadPhase.batchDepth += 1;
 }
 
 // Added for Nebenan, see box3d.h
-void b3World_EndStaticBatch( b3WorldId worldId )
+void b3World_EndShapeBatch( b3WorldId worldId )
 {
 	b3World* world = b3GetUnlockedWorldFromId( worldId );
 	if ( world == NULL )
@@ -2326,8 +2326,7 @@ void b3World_EndStaticBatch( b3WorldId worldId )
 		return;
 	}
 
-	B3_ASSERT( world->broadPhase.batchingStatic );
-	b3BroadPhase_EndStaticBatch( &world->broadPhase );
+	b3BroadPhase_EndShapeBatch( &world->broadPhase );
 }
 
 b3Capacity b3World_GetMaxCapacity( b3WorldId worldId )
@@ -2414,8 +2413,8 @@ void b3World_StartRecording( b3WorldId worldId, b3Recording* recording )
 		return;
 	}
 
-	// Added for Nebenan: the snapshot would miss the static shapes of a batch
-	B3_ASSERT( world->broadPhase.batchingStatic == false );
+	// Added for Nebenan: the snapshot would miss the shapes of a batch
+	B3_ASSERT( world->broadPhase.batchDepth == 0 );
 
 	b3StartRecordingIntoBuffer( world, recording );
 }
@@ -3435,20 +3434,29 @@ typedef struct ExplosionContext
 	float radius;
 	float falloff;
 	float impulsePerArea;
+
+	// Added for Nebenan: the shapes the query found, see b3World_Explode
+	b3Array( int ) shapeIds;
 } ExplosionContext;
 
+// Added for Nebenan: the query gathers the shapes, b3World_Explode pushes them in the order of their ids
 static bool ExplosionCallback( int proxyId, uint64_t userData, void* context )
 {
 	B3_UNUSED( proxyId );
 
-	int shapeId = (int)userData;
 	ExplosionContext* explosionContext = (ExplosionContext*)context;
+	b3Array_Push( explosionContext->shapeIds, (int)userData );
+	return true;
+}
+
+static void b3ApplyExplosion( ExplosionContext* explosionContext, int shapeId )
+{
 	b3World* world = explosionContext->world;
 
 	b3Shape* shape = b3Array_Get( world->shapes, shapeId );
 	if ( shape->explosionScale == 0.0f )
 	{
-		return true;
+		return;
 	}
 
 	b3Body* body = b3Array_Get( world->bodies, shape->bodyId );
@@ -3473,14 +3481,14 @@ static bool ExplosionCallback( int proxyId, uint64_t userData, void* context )
 	float falloff = explosionContext->falloff;
 	if ( output.distance > radius + falloff )
 	{
-		return true;
+		return;
 	}
 
 	b3WakeBody( world, body );
 
 	if ( body->setIndex != b3_awakeSet )
 	{
-		return true;
+		return;
 	}
 
 	// Witness point is already in the body local query frame
@@ -3519,8 +3527,6 @@ static bool ExplosionCallback( int proxyId, uint64_t userData, void* context )
 	// Lever arm from the center of mass to the closest point, rotated to world
 	b3Vec3 r = b3RotateVector( xf.q, b3Sub( closestPoint, bodySim->localCenter ) );
 	state->angularVelocity = b3Add( state->angularVelocity, b3MulMV( bodySim->invInertiaWorld, b3Cross( r, impulse ) ) );
-
-	return true;
 }
 
 void b3World_Explode( b3WorldId worldId, const b3ExplosionDef* explosionDef )
@@ -3547,7 +3553,7 @@ void b3World_Explode( b3WorldId worldId, const b3ExplosionDef* explosionDef )
 	// Locked due to waking
 	world->locked = true;
 
-	struct ExplosionContext explosionContext = { world, position, radius, falloff, impulsePerArea };
+	struct ExplosionContext explosionContext = { world, position, radius, falloff, impulsePerArea, { 0 } };
 
 	// The broad-phase tree is float, so translate a local query box out to world with outward rounding
 	float extent = radius + falloff;
@@ -3555,6 +3561,32 @@ void b3World_Explode( b3WorldId worldId, const b3ExplosionDef* explosionDef )
 	b3AABB aabb = b3OffsetAABB( localBox, position );
 
 	b3DynamicTree_Query( world->broadPhase.trees + b3_dynamicBody, aabb, maskBits, false, ExplosionCallback, &explosionContext );
+
+	// Added for Nebenan: the query finds the shapes in the order of the tree, which depends on how they went in. Which
+	// sleeping island wakes first and how the impulses on a body add up depend on the order, so the shapes get their
+	// push in the order of their ids.
+	int* shapeIds = explosionContext.shapeIds.data;
+	int shapeCount = explosionContext.shapeIds.count;
+#define LESS( i, j ) ( shapeIds[i] < shapeIds[j] )
+#define SWAP( i, j )                                                                                                             \
+	do                                                                                                                           \
+	{                                                                                                                            \
+		int tmp_ = shapeIds[i];                                                                                                  \
+		shapeIds[i] = shapeIds[j];                                                                                               \
+		shapeIds[j] = tmp_;                                                                                                      \
+	}                                                                                                                            \
+	while ( 0 )
+
+	QSORT( shapeCount, LESS, SWAP );
+
+#undef LESS
+#undef SWAP
+
+	for ( int i = 0; i < shapeCount; ++i )
+	{
+		b3ApplyExplosion( &explosionContext, shapeIds[i] );
+	}
+	b3Array_Destroy( explosionContext.shapeIds );
 
 	world->locked = false;
 }
@@ -3569,8 +3601,8 @@ void b3World_RebuildStaticTree( b3WorldId worldId )
 
 	B3_REC( world, WorldRebuildStaticTree, worldId );
 
-	// Added for Nebenan: the static shapes of a batch are not in the tree yet
-	B3_ASSERT( world->broadPhase.batchingStatic == false );
+	// Added for Nebenan: the shapes of a batch are not in the trees yet
+	B3_ASSERT( world->broadPhase.batchDepth == 0 );
 
 	b3DynamicTree* staticTree = world->broadPhase.trees + b3_staticBody;
 	b3DynamicTree_Rebuild( staticTree, true );

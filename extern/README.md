@@ -38,18 +38,20 @@ frühesten Treffer davor, und ein kürzeres Intervall verschiebt in den letzten 
 Ergebnis davon ab, wie die Formen in den Baum gekommen waren. Jetzt rechnet es jede Zeit über den ganzen Schritt
 (`src/solver.c`). Das kostet nichts Messbares, CCD braucht in der Stadt so oder so rund 1,6 % der Zeit.
 
-**Statische Formen gesammelt einfügen.** Box3D sortiert jede Form in seinen Suchbaum, mit einer Suche von der Wurzel
-aus. `b3World_BeginStaticBatch` und `b3World_EndStaticBatch` klammern das Anlegen statischer Formen und das Erstarren
-von Körpern: Dazwischen warten ihre Proxys außerhalb des statischen Baums. Am Ende bekommen sie einen eigenen Teilbaum,
-geteilt wie beim Neubau eines Baums, und der geht mit einer einzigen Suche dorthin, wo eine Form mit seinen Grenzen
-hinginge. Liegen die Formen nicht beisammen, wäre seine Box groß und jede Abfrage müsste hinein. Dann teilt
-`b3DynamicTree_InsertBatch` sie entlang einer Morton-Kurve in Hälften, bis jeder Teil kompakt ist: die Oberfläche seiner
-Box nicht größer als die seiner Formen zusammen. Jeder Teil bekommt seinen eigenen Teilbaum. Nebenan klammert so jeden
-Einbau, beim Laden alle Bruchstücke eines Hauses, die als ein Teil hineingehen, und den Schutt, der in einem Update
-erstarrt. Zwischen den beiden Aufrufen darf die Welt nicht rechnen, nicht abgefragt werden, ihren statischen Baum nicht
-neu bauen und keine Aufnahme beginnen. Bis auf die Abfragen prüft Box3D das mit Asserts. Aufnahmen merken sich die
-Klammern nicht, die Wiedergabe fügt einzeln ein. Das simuliert dasselbe, seit die Ergebnisse nicht mehr von der
-Reihenfolge im Baum abhängen.
+**Formen gesammelt einfügen.** Box3D sortiert jede Form in ihren Suchbaum, mit einer Suche von der Wurzel aus.
+`b3World_BeginShapeBatch` und `b3World_EndShapeBatch` klammern das Anlegen von Formen, das Erstarren und Auftauen von
+Körpern und das Wiedereinschalten: Dazwischen warten ihre Proxys außerhalb der Bäume, jeder in einer Liste für seinen
+Baum, dem statischen oder dem der bewegten Körper. Am Ende bekommen sie einen eigenen Teilbaum, geteilt wie beim Neubau
+eines Baums, und der geht mit einer einzigen Suche dorthin, wo eine Form mit seinen Grenzen hinginge. Liegen die Formen
+nicht beisammen, wäre seine Box groß und jede Abfrage müsste hinein. Dann teilt `b3DynamicTree_InsertBatch` sie entlang
+einer Morton-Kurve in Hälften, bis jeder Teil kompakt ist: die Oberfläche seiner Box nicht größer als die seiner Formen
+zusammen. Jeder Teil bekommt seinen eigenen Teilbaum. Klammern lassen sich schachteln, die Formen gehen hinein, wenn die
+äußerste endet. Nebenan klammert so jeden Einbau, beim Laden alle Bruchstücke eines Hauses, die als ein Teil
+hineingehen, bei einem Einschlag seine Bruchstücke, und den Schutt, der in einem Update erstarrt oder auftaut. Zwischen
+den beiden Aufrufen darf die Welt nicht rechnen, nicht abgefragt werden, ihren statischen Baum nicht neu bauen und keine
+Aufnahme beginnen. Bis auf die Abfragen prüft Box3D das mit Asserts. Aufnahmen merken sich die Klammern nicht, die
+Wiedergabe fügt einzeln ein. Das simuliert dasselbe, seit die Ergebnisse nicht mehr von der Reihenfolge in den Bäumen
+abhängen.
 
 **Kontakte pro Form.** Box3D führt die Kontakte jedes Körpers in einer Liste. Um eine Form zu löschen, ging es bisher
 alle Kontakte ihres Körpers durch und suchte die der Form heraus. Jetzt führt jede Form zusätzlich ihre eigene Liste
@@ -83,12 +85,18 @@ Eine Parallel-for-Schleife mit nur einer Aufgabe läuft gleich auf dem aufrufend
 er auch die Bäume selbst neu und teilt Inseln selbst. Die Ereignisse aller Worker leert und sammelt der Löser weiter,
 auch die der Worker, die er nicht geweckt hat.
 
-Die erste, die zweite und die vierte bis achte ändern an den Ergebnissen nichts. Die dritte ändert sie in den letzten
-Bits, dafür hängen sie nicht mehr davon ab, in welcher Reihenfolge Formen in den statischen Baum kommen. Die Ergänzungen
+**Explosionen in fester Reihenfolge.** `b3World_Explode` stieß die Formen im Umkreis in der Reihenfolge an, in der der
+Baum der bewegten Körper sie fand. Davon hing ab, welche schlafende Insel zuerst aufwachte und in welcher Reihenfolge
+sich die Stöße auf einen Körper mit mehreren Formen addierten, und damit die letzten Bits. Jetzt sammelt die Abfrage
+die Formen, und sie bekommen ihren Stoß in der Reihenfolge ihrer Ids. Nebenan selbst löst keine Explosion aus, die Demo
+und der Benchmark schon.
+
+Die erste, die zweite und die vierte bis achte ändern an den Ergebnissen nichts. Die dritte und die neunte ändern sie in
+den letzten Bits, dafür hängen sie nicht mehr davon ab, in welcher Reihenfolge Formen in die Bäume kommen. Die Ergänzungen
 stehen in `include/box3d/box3d.h`, `include/box3d/types.h`, `src/core.c`, `src/shape.h`, `src/shape.c`, `src/contact.h`,
 `src/contact.c`, `src/world_snapshot.c`, `src/recording.c`, `src/solver.c`, `src/broad_phase.h`, `src/broad_phase.c`,
 `src/dynamic_tree.h`, `src/dynamic_tree.c`, `src/parallel_for.c`, `src/physics_world.h` und `src/physics_world.c`,
-jeweils mit „Added for Nebenan“ markiert. `B3_HAS_UNIQUE_HULLS`, `B3_HAS_STATIC_BATCH`, `B3_HAS_SHAPE_CONTACT_LISTS` und
+jeweils mit „Added for Nebenan“ markiert. `B3_HAS_UNIQUE_HULLS`, `B3_HAS_SHAPE_BATCH`, `B3_HAS_SHAPE_CONTACT_LISTS` und
 `B3_HAS_EXTERNAL_HULLS` zeigen die zweite, die vierte, die fünfte und die sechste an. Fehlen sie, etwa mit einem eigenen
 Box3D, läuft Nebenan wie zuvor, nur wachsen Box3Ds Arrays dann durch Umkopieren, die Hüllen gehen durch die Tabelle,
 jede Form geht einzeln in den Baum, jedes stehende Bruchstück bekommt einen eigenen Körper, und Box3D hält eine Kopie

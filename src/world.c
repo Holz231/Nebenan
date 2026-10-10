@@ -1318,7 +1318,11 @@ static void nbThawRubbleInBoxes( nbWorld* world, const b3AABB* boxes, int boxCou
 		qsort( thawed->data, (size_t)thawed->count, sizeof( int ), nbCompareInts );
 	}
 
-	// Past the limit the rest stays rubble
+	// Past the limit the rest stays rubble. The rubble goes into Box3D's tree of moving bodies together, see
+	// b3World_BeginShapeBatch.
+#if defined( B3_HAS_SHAPE_BATCH )
+	b3World_BeginShapeBatch( world->physicsWorld );
+#endif
 	int limit = filter != NULL && filter->collapse ? thawed->count : NB_MAX_THAW;
 	for ( int i = 0; i < thawed->count && i < limit; ++i )
 	{
@@ -1328,6 +1332,9 @@ static void nbThawRubbleInBoxes( nbWorld* world, const b3AABB* boxes, int boxCou
 			world->actors.data[thawed->data[i]].budgetTime = world->time;
 		}
 	}
+#if defined( B3_HAS_SHAPE_BATCH )
+	b3World_EndShapeBatch( world->physicsWorld );
+#endif
 	thawed->count = 0;
 }
 
@@ -1487,10 +1494,11 @@ void nbCommitPhysics( nbWorld* world )
 		}
 	}
 
-#if defined( B3_HAS_STATIC_BATCH )
-	// Box3D sorts every static shape into its tree with a search from the root. The static shapes of a commit, all
-	// chunks of a building that is built, go in together with one search instead.
-	b3World_BeginStaticBatch( world->physicsWorld );
+#if defined( B3_HAS_SHAPE_BATCH )
+	// Box3D sorts every shape into its tree with a search from the root. The shapes of a commit, all chunks of a building
+	// that is built or the fragments of an impact, go in together instead, those close together with one search. So do
+	// the shapes of a body that left the simulation for the commit.
+	b3World_BeginShapeBatch( world->physicsWorld );
 #endif
 
 	for ( int i = 0; i < world->touchedChunks.count; ++i )
@@ -1548,10 +1556,6 @@ void nbCommitPhysics( nbWorld* world )
 	}
 	world->touchedChunks.count = 0;
 
-#if defined( B3_HAS_STATIC_BATCH )
-	b3World_EndStaticBatch( world->physicsWorld );
-#endif
-
 	// A body left without shapes goes away with its actor below
 	for ( int k = 0; k < bulkCount; ++k )
 	{
@@ -1566,6 +1570,10 @@ void nbCommitPhysics( nbWorld* world )
 			}
 		}
 	}
+
+#if defined( B3_HAS_SHAPE_BATCH )
+	b3World_EndShapeBatch( world->physicsWorld );
+#endif
 
 	for ( int i = 0; i < world->touchedActors.count; ++i )
 	{
@@ -5078,10 +5086,10 @@ static void nbSettleDebris( nbWorld* world, b3Vec3 up, float timeStep )
 		}
 	}
 
-#if defined( B3_HAS_STATIC_BATCH )
-	// Box3D sorts every piece that freezes into its static tree with a search from the root. The pieces of a pile go in
-	// together with one search, see b3World_BeginStaticBatch. Nothing queries the tree before they are in.
-	b3World_BeginStaticBatch( world->physicsWorld );
+#if defined( B3_HAS_SHAPE_BATCH )
+	// Box3D sorts every piece that freezes or comes back to life into its tree with a search from the root. The pieces of a
+	// pile go in together with one search, see b3World_BeginShapeBatch. Nothing queries the trees before they are in.
+	b3World_BeginShapeBatch( world->physicsWorld );
 #endif
 
 	for ( int k = 0; k < queueCount; ++k )
@@ -5098,8 +5106,8 @@ static void nbSettleDebris( nbWorld* world, b3Vec3 up, float timeStep )
 		}
 	}
 
-#if defined( B3_HAS_STATIC_BATCH )
-	b3World_EndStaticBatch( world->physicsWorld );
+#if defined( B3_HAS_SHAPE_BATCH )
+	b3World_EndShapeBatch( world->physicsWorld );
 #endif
 }
 
@@ -5175,9 +5183,9 @@ static void nbEnforceDebrisBudget( nbWorld* world, b3Vec3 up )
 	int excess = b3MinInt( count - budget + budget / 10, NB_MAX_BUDGET_FREEZES );
 	int frozen = 0;
 
-#if defined( B3_HAS_STATIC_BATCH )
-	// The pieces that freeze go into Box3D's static tree together, see nbSettleDebris
-	b3World_BeginStaticBatch( world->physicsWorld );
+#if defined( B3_HAS_SHAPE_BATCH )
+	// The pieces that freeze or come back to life go into Box3D's trees together, see nbSettleDebris
+	b3World_BeginShapeBatch( world->physicsWorld );
 #endif
 
 	for ( int pass = 0; pass < 2 && frozen < excess; ++pass )
@@ -5245,8 +5253,8 @@ static void nbEnforceDebrisBudget( nbWorld* world, b3Vec3 up )
 		}
 	}
 
-#if defined( B3_HAS_STATIC_BATCH )
-	b3World_EndStaticBatch( world->physicsWorld );
+#if defined( B3_HAS_SHAPE_BATCH )
+	b3World_EndShapeBatch( world->physicsWorld );
 #endif
 }
 

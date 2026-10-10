@@ -36,9 +36,10 @@ typedef struct b3BroadPhase
 	// todo pairSet can grow quite large on the first time step and remain large
 	b3HashSet pairSet;
 
-	// Added for Nebenan: static proxies created in a batch wait here until it ends, see b3World_BeginStaticBatch
-	b3Array( b3TreeBatchItem ) staticBatch;
-	bool batchingStatic;
+	// Added for Nebenan: proxies created in a batch wait here until it ends, one array for each tree, see
+	// b3World_BeginShapeBatch. Batches nest, the proxies go in when the outermost one ends.
+	b3Array( b3TreeBatchItem ) batches[b3_bodyTypeCount];
+	int batchDepth;
 } b3BroadPhase;
 
 void b3CreateBroadPhase( b3BroadPhase* bp, const b3Capacity* capacity );
@@ -50,8 +51,8 @@ void b3BroadPhase_DestroyProxy( b3BroadPhase* bp, int proxyKey );
 
 void b3BroadPhase_MoveProxy( b3BroadPhase* bp, int proxyKey, b3AABB aabb );
 
-// Added for Nebenan, see b3World_BeginStaticBatch
-void b3BroadPhase_EndStaticBatch( b3BroadPhase* bp );
+// Added for Nebenan, see b3World_BeginShapeBatch
+void b3BroadPhase_EndShapeBatch( b3BroadPhase* bp );
 
 int b3BroadPhase_GetShapeIndex( b3BroadPhase* bp, int proxyKey );
 

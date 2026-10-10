@@ -2278,9 +2278,9 @@ static void b3InsertBatchGroups( b3DynamicTree* tree, const b3TreeBatchItem* ite
 }
 
 // Added for Nebenan: the proxies go into the tree in compact groups. A group gets a subtree of its own with one search
-// from the root, as the chunks of a house or the pieces of a pile that freeze together. A subtree over proxies far apart
-// would spread its box over much of the tree and slow down every query, so a batch that is not compact is split along a
-// Morton curve, ties by the order of the batch, until its parts are.
+// from the root, as the chunks of a house, the fragments of an impact or the pieces of a pile that freeze together. A
+// subtree over proxies far apart would spread its box over much of the tree and slow down every query, so a batch that
+// is not compact is split along a Morton curve, ties by the order of the batch, until its parts are.
 void b3DynamicTree_InsertBatch( b3DynamicTree* tree, const b3TreeBatchItem* items, int count )
 {
 	if ( count < 2 || b3IsCompact( items, count ) )
