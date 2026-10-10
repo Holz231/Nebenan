@@ -97,13 +97,24 @@ der wachen Zustände in 263 von 300 Schritten mitten in einer Zeile an. Dann sch
 Graphen benachbarte Körper rechnen, in dieselbe Zeile. Jetzt beginnt jeder Block auf 64 Byte (`B3_ALIGNMENT` in
 `src/core.h`), auch in der Arena des Lösers.
 
+**Kleinerer Rand um bewegte Formen.** Box3D bläht die Box jeder bewegten Form im Suchbaum um ein Achtel ihrer Ausdehnung
+auf, höchstens 5 cm, damit ein Körper sie nicht in jedem Schritt verlässt. Im dichten Schutt überlappen sich so die
+Boxen vieler Formen, die einige Zentimeter auseinanderliegen, und jedes solche Paar ist ein Kontakt, den die Kollision
+in jedem Schritt prüft: Bei einfacher Bruchstückgröße führte Box3D 16 400 wache Kontakte, von denen 3 100 berührten.
+Jetzt ist der Rand höchstens 5 mm (`B3_MAX_SHAPE_AABB_MARGIN` in `include/box3d/constants.h`). Ob ein Kontakt
+rechtzeitig da ist, ändert das nicht, denn die Box einer Form enthält immer den spekulativen Abstand von 2 cm, und erst
+darin bekommt ein Kontakt Punkte. Kontakte entstehen aber später und verschwinden früher, so ändern sich ihre
+Reihenfolge und die Ergebnisse, deterministisch bleiben sie. `B3_MAX_AABB_MARGIN` bleibt die Grenze, mit der Mesh- und
+Höhenfeld-Abfragen rechnen.
+
 Die erste, die zweite, die vierte bis achte und die zehnte ändern an den Ergebnissen nichts. Die dritte und die neunte
 ändern sie in den letzten Bits, dafür hängen sie nicht mehr davon ab, in welcher Reihenfolge Formen in die Bäume kommen.
-Die Ergänzungen stehen in `include/box3d/box3d.h`, `include/box3d/types.h`, `src/core.h`, `src/core.c`, `src/shape.h`,
-`src/shape.c`, `src/contact.h`, `src/contact.c`, `src/world_snapshot.c`, `src/recording.c`, `src/solver.c`,
-`src/broad_phase.h`, `src/broad_phase.c`, `src/dynamic_tree.h`, `src/dynamic_tree.c`, `src/parallel_for.c`,
-`src/physics_world.h` und `src/physics_world.c`, jeweils mit „Added for Nebenan“ markiert. `B3_HAS_UNIQUE_HULLS`,
-`B3_HAS_SHAPE_BATCH`, `B3_HAS_SHAPE_CONTACT_LISTS` und `B3_HAS_EXTERNAL_HULLS` zeigen die zweite, die vierte, die fünfte
-und die sechste an. Fehlen sie, etwa mit einem eigenen Box3D, läuft Nebenan wie zuvor, nur wachsen Box3Ds Arrays dann
-durch Umkopieren, die Hüllen gehen durch die Tabelle, jede Form geht einzeln in den Baum, jedes stehende Bruchstück
-bekommt einen eigenen Körper, und Box3D hält eine Kopie jeder Hülle.
+Die elfte ändert sie, weil Kontakte zu anderen Zeitpunkten entstehen. Die Ergänzungen stehen in `include/box3d/box3d.h`,
+`include/box3d/types.h`, `include/box3d/constants.h`, `src/core.h`, `src/core.c`, `src/shape.h`, `src/shape.c`,
+`src/contact.h`, `src/contact.c`, `src/world_snapshot.c`, `src/recording.c`, `src/solver.c`, `src/broad_phase.h`,
+`src/broad_phase.c`, `src/dynamic_tree.h`, `src/dynamic_tree.c`, `src/parallel_for.c`, `src/physics_world.h` und
+`src/physics_world.c`, jeweils mit „Added for Nebenan“ markiert. `B3_HAS_UNIQUE_HULLS`, `B3_HAS_SHAPE_BATCH`,
+`B3_HAS_SHAPE_CONTACT_LISTS` und `B3_HAS_EXTERNAL_HULLS` zeigen die zweite, die vierte, die fünfte und die sechste an.
+Fehlen sie, etwa mit einem eigenen Box3D, läuft Nebenan wie zuvor, nur wachsen Box3Ds Arrays dann durch Umkopieren, die
+Hüllen gehen durch die Tabelle, jede Form geht einzeln in den Baum, jedes stehende Bruchstück bekommt einen eigenen
+Körper, und Box3D hält eine Kopie jeder Hülle.

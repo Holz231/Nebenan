@@ -98,9 +98,14 @@ B3_API float b3GetStallThreshold( void );
 /// @warning modifying this can have a significant impact on performance
 #define B3_MAX_AABB_MARGIN ( 0.05f * b3GetLengthUnitsPerMeter() )
 
-/// Per-shape AABB margin is a fraction of the shape extent (capped by B3_MAX_AABB_MARGIN).
+/// Per-shape AABB margin is a fraction of the shape extent (capped by B3_MAX_SHAPE_AABB_MARGIN).
 /// Small shapes get small margins; large shapes are clamped to the cap.
 #define B3_AABB_MARGIN_FRACTION 0.125f
+
+/// Added for Nebenan: the cap of the per-shape margin. In dense rubble a margin of 5 cm made the boxes of shapes far apart
+/// overlap, and every such pair cost a contact in the collide step. B3_MAX_AABB_MARGIN stays the bound mesh and height
+/// field queries rely on.
+#define B3_MAX_SHAPE_AABB_MARGIN ( 0.005f * b3GetLengthUnitsPerMeter() )
 
 /// The time that a body must be still before it will go to sleep. In seconds.
 #define B3_TIME_TO_SLEEP 0.5f

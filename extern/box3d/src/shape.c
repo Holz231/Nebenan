@@ -72,7 +72,8 @@ static float b3ComputeShapeMargin( b3Shape* shape )
 			return B3_MAX_AABB_MARGIN;
 	}
 
-	return b3MinFloat( B3_MAX_AABB_MARGIN, B3_AABB_MARGIN_FRACTION * margin );
+	// Added for Nebenan: capped by its own constant, see B3_MAX_SHAPE_AABB_MARGIN
+	return b3MinFloat( B3_MAX_SHAPE_AABB_MARGIN, B3_AABB_MARGIN_FRACTION * margin );
 }
 
 static void b3UpdateShapeAABBs( b3Shape* shape, b3AABB* fatAABB, b3WorldTransform transform, b3BodyType proxyType )

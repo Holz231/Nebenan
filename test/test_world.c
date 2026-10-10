@@ -468,7 +468,7 @@ static uint32_t RunDeterminismScenario( void )
 
 // Fracture and physics are bit for bit identical with MSVC, GCC and Clang on x64 and ARM. This is the result
 // with the pinned Box3D commit. Update it when the results change on purpose, never to make one platform pass.
-#define NB_EXPECTED_DETERMINISM_HASH 0x8849cb91u
+#define NB_EXPECTED_DETERMINISM_HASH 0xb26374dfu
 
 static int DeterminismTest( void )
 {
