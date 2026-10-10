@@ -398,6 +398,10 @@ typedef struct nbWorld
 	// Scratch list for queries
 	nbIntArray scratchList;
 
+	// The largest distance an actor's center of mass ever had from the origin of its body, see nbActor::localCenter. A
+	// body whose origin lies farther above the kill depth cannot have its center below it.
+	float maxCenterOffset;
+
 	// Actors to freeze into rubble or to bring back to life
 	nbIntArray actorList;
 

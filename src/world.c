@@ -1037,6 +1037,7 @@ static void nbUpdateActorMass( nbWorld* world, nbActor* actor )
 	b3Body_ApplyMassFromShapes( actor->bodyId );
 	nbUpdateSweep( world, actor );
 	actor->localCenter = b3Body_GetLocalCenter( actor->bodyId );
+	world->maxCenterOffset = b3MaxFloat( world->maxCenterOffset, b3Length( actor->localCenter ) );
 	actor->radius = 0.0f;
 	for ( int c = actor->headChunk; c != NB_NULL_INDEX; c = world->chunks.data[c].nextChunk )
 	{
@@ -5289,7 +5290,15 @@ void nbWorld_Update( nbWorldId worldId, float timeStep )
 	b3BodyEvents bodyEvents = b3World_GetBodyEvents( world->physicsWorld );
 	for ( int i = 0; hasGravity && i < bodyEvents.moveCount; ++i )
 	{
+		// Most bodies are far above the depth, they need not fetch their actor. The meter covers the rounding.
 		const b3BodyMoveEvent* event = bodyEvents.moveEvents + i;
+		b3Pos origin = event->transform.p;
+		float originHeight = (float)( up.x * origin.x + up.y * origin.y + up.z * origin.z );
+		if ( originHeight - world->maxCenterOffset - 1.0f >= world->def.killDepth )
+		{
+			continue;
+		}
+
 		int actorIndex = nbFindActorFromBody( world, event->bodyId );
 		if ( actorIndex == NB_NULL_INDEX )
 		{

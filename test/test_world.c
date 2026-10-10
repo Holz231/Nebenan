@@ -231,6 +231,59 @@ static int ImpactTest( void )
 	return 0;
 }
 
+// Debris whose center sinks below the kill depth leaves the world. The update passes over bodies whose origin lies far
+// enough above the depth. Without ground the debris of a wall falls through it, except what freezes in the crater.
+static int KillDepthTest( void )
+{
+	TestScene scene;
+	b3WorldDef worldDef = b3DefaultWorldDef();
+	scene.physicsWorld = b3CreateWorld( &worldDef );
+	scene.groundId = b3_nullBodyId;
+
+	float killDepth = -2.0f;
+	nbWorldDef def = nbDefaultWorldDef();
+	def.physicsWorld = scene.physicsWorld;
+	def.killDepth = killDepth;
+	scene.world = nbCreateWorld( &def );
+
+	b3Vec3 halfExtents = { 3.0f, 1.5f, 0.12f };
+	nbDestructibleId wall = CreateWall( &scene, halfExtents, 7 );
+
+	nbImpactDef impact = { 0 };
+	impact.point = (b3Vec3){ 0.3f, 1.4f, halfExtents.z };
+	impact.direction = (b3Vec3){ 0.0f, 0.0f, -1.0f };
+	impact.radius = 0.5f;
+	impact.damage = 6.0e4f;
+	impact.ejectSpeed = 8.0f;
+	nbImpactResult result = nbWorld_ApplyImpact( scene.world, &impact );
+	ENSURE( result.createdBodyCount > 5 );
+
+	int capacity = nbDestructible_GetChunkCount( wall ) + 1;
+	nbChunkId* chunks = malloc( sizeof( nbChunkId ) * (size_t)capacity );
+	for ( int frame = 0; frame < 240; ++frame )
+	{
+		Step( &scene, 1 );
+
+		// Every body that moved in the step is in Box3D's move events, none of them may stay below the depth
+		int count = nbDestructible_GetChunks( wall, chunks, capacity );
+		for ( int i = 0; i < count; ++i )
+		{
+			if ( nbChunk_IsDynamic( chunks[i] ) )
+			{
+				ENSURE( b3Body_GetWorldCenter( nbChunk_GetBody( chunks[i] ) ).y >= killDepth );
+			}
+		}
+	}
+	free( chunks );
+
+	// Debris fell through the depth and is gone
+	nbStats stats = nbWorld_GetStats( scene.world );
+	ENSURE( stats.debrisCount < result.createdBodyCount );
+
+	DestroyScene( &scene );
+	return 0;
+}
+
 static int CastImpactTest( void )
 {
 	TestScene scene = CreateScene();
@@ -3725,6 +3778,7 @@ int WorldTest( void )
 {
 	RUN_TEST( CreateTest );
 	RUN_TEST( ImpactTest );
+	RUN_TEST( KillDepthTest );
 	RUN_TEST( CastImpactTest );
 	RUN_TEST( CollapseTest );
 	RUN_TEST( DeterminismTest );

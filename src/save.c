@@ -1005,6 +1005,7 @@ bool nbLoadDestructibles( nbWorldId worldId, const void* buffer, size_t size, nb
 			nbActor* actor = world->actors.data + actorIndices[a];
 			nbActor kept = *actor;
 			*actor = savedActor.actor;
+			world->maxCenterOffset = b3MaxFloat( world->maxCenterOffset, b3Length( actor->localCenter ) );
 			actor->bodyId = b3_nullBodyId;
 			actor->destructibleIndex = index;
 			actor->headChunk = NB_NULL_INDEX;
