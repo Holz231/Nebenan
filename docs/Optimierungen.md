@@ -150,7 +150,10 @@ sind in jedem Frame die berührenden Kontakte der wachen Trümmer, nach dem, was
   nicht an ruhigen Haufen.
 - **Box3D führt dabei 12 600 bis 14 600 wache Kontakte**, von denen knapp ein Fünftel berührt. Der Rest sind sich
   überlappende Hüllquader im dichten Schutt, die in der Kollision mitkosten. Das ließe sich nur in Box3D ändern, über
-  den Rand der Hüllquader, und der schützt vor Durchschlägen.
+  den Rand der Hüllquader. Anders als hier zuerst angenommen, schützt er nicht vor Durchschlägen, denn der spekulative
+  Abstand von 2 cm steckt schon in jeder Box. Inzwischen ist er auf höchstens 5 mm verkleinert, siehe „Kleinerer Rand
+  um bewegte Formen“: Mit einfacher Bruchstückgröße 4 bis 5 % schneller, mit vierfacher gleich, denn dort wird die
+  Kollision billiger und die Paarsuche teurer.
 - **Hört das Feuer auf**, ist nach rund 30 s wieder alles eingefroren und kostet nichts mehr.
 - Einzelne Box3D-Schritte von 5 bis 46 ms in einzelnen Läufen kamen von der VM. In sechs Läufen derselben Simulation
   lag der langsamste Schritt zwischen 1,1 und 4,8 ms und nie im selben Frame.
