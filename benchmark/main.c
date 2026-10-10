@@ -405,7 +405,8 @@ static int CompareFloats( const void* a, const void* b )
 }
 
 // A town of 16 houses wrecked by a grenade every five frames, twelve per second, like holding the fire button
-static void BenchmarkTown( int workerCount, float fragmentScale )
+// A block of side x side houses under fire: every interval steps as many grenades, each on a wall of a random house
+static void BenchmarkTown( int workerCount, float fragmentScale, int side, int grenadesPerVolley, int interval )
 {
 	Scene scene = CreateScene( workerCount );
 	nbWorld_SetFragmentScale( scene.world, fragmentScale );
@@ -414,20 +415,18 @@ static void BenchmarkTown( int workerCount, float fragmentScale )
 	concrete.fragmentSize = 0.13f;
 
 	// All houses at once: while the calling thread builds one into the world, the workers fracture the next
-	enum
-	{
-		houseCount = 16
-	};
-	b3Vec3 houses[houseCount];
-	House* town = malloc( sizeof( House ) * houseCount );
-	nbDestructibleDef defs[houseCount];
-	const nbPieceDef* pieceLists[houseCount];
-	int pieceCounts[houseCount];
-	nbDestructibleId ids[houseCount];
+	int houseCount = side * side;
+	b3Vec3* houses = malloc( sizeof( b3Vec3 ) * (size_t)houseCount );
+	House* town = malloc( sizeof( House ) * (size_t)houseCount );
+	nbDestructibleDef* defs = malloc( sizeof( nbDestructibleDef ) * (size_t)houseCount );
+	const nbPieceDef** pieceLists = malloc( sizeof( nbPieceDef* ) * (size_t)houseCount );
+	int* pieceCounts = malloc( sizeof( int ) * (size_t)houseCount );
+	nbDestructibleId* ids = malloc( sizeof( nbDestructibleId ) * (size_t)houseCount );
+	float half = 0.5f * (float)( side - 1 );
 	for ( int h = 0; h < houseCount; ++h )
 	{
-		int i = h / 4, j = h % 4;
-		houses[h] = (b3Vec3){ 14.0f * ( (float)i - 1.5f ), 0.0f, 12.0f * ( (float)j - 1.5f ) };
+		int i = h / side, j = h % side;
+		houses[h] = (b3Vec3){ 14.0f * ( (float)i - half ), 0.0f, 12.0f * ( (float)j - half ) };
 		BuildHouse( town + h, houses[h], (uint32_t)( 100 + h ), &concrete );
 		defs[h] = town[h].def;
 		pieceLists[h] = town[h].pieces;
@@ -438,6 +437,10 @@ static void BenchmarkTown( int workerCount, float fragmentScale )
 	nbCreateDestructibles( scene.world, defs, pieceLists, pieceCounts, houseCount, ids );
 	float createTime = b3GetMilliseconds( ticks );
 	free( town );
+	free( defs );
+	free( pieceLists );
+	free( pieceCounts );
+	free( ids );
 	nbStats created = nbWorld_GetStats( scene.world );
 	printf( "  town of %d houses with %d chunks built in %.2f ms, fragment scale %.1f\n", houseCount, created.chunkCount, createTime,
 			fragmentScale );
@@ -453,27 +456,28 @@ static void BenchmarkTown( int workerCount, float fragmentScale )
 	impact.radius = 1.3f;
 	impact.damage = 3.0e5f;
 	impact.ejectSpeed = 12.0f;
-	int maxBodies = 0, maxAwake = 0, maxContacts = 0;
+	int maxBodies = 0, maxAwake = 0, maxContacts = 0, grenades = 0;
 	float physicsProfile[8] = { 0 };
 
 	for ( int frame = 0; frame < frameCount; ++frame )
 	{
 		float impactTime = 0.0f;
-		if ( frame % 5 == 0 )
+		for ( int g = 0; g < ( frame % interval == 0 ? grenadesPerVolley : 0 ); ++g )
 		{
 			// A wall of a random house, on either story
 			b3Vec3 house = houses[(int)( nbRandomRange( &rng, 0.0f, (float)houseCount - 0.001f ) )];
-			int side = (int)nbRandomRange( &rng, 0.0f, 3.999f );
+			int wall = (int)nbRandomRange( &rng, 0.0f, 3.999f );
 			float along = nbRandomRange( &rng, -1.0f, 1.0f );
 			float height = nbRandomRange( &rng, 0.0f, 1.0f ) < 0.5f ? 1.2f : 4.4f;
-			b3Vec3 local = side == 0 ? (b3Vec3){ 4.2f * along, height, 3.4f }
-						 : side == 1 ? (b3Vec3){ 4.2f * along, height, -3.4f }
-						 : side == 2 ? (b3Vec3){ 4.7f, height, 3.0f * along }
+			b3Vec3 local = wall == 0 ? (b3Vec3){ 4.2f * along, height, 3.4f }
+						 : wall == 1 ? (b3Vec3){ 4.2f * along, height, -3.4f }
+						 : wall == 2 ? (b3Vec3){ 4.7f, height, 3.0f * along }
 									 : (b3Vec3){ -4.7f, height, 3.0f * along };
 			impact.point = b3Add( house, local );
 
 			nbImpactResult result = nbWorld_ApplyImpact( scene.world, &impact );
-			impactTime = result.totalTime;
+			impactTime += result.totalTime;
+			grenades += 1;
 
 			b3ExplosionDef explosion = b3DefaultExplosionDef();
 			explosion.position = impact.point;
@@ -505,6 +509,12 @@ static void BenchmarkTown( int workerCount, float fragmentScale )
 		maxContacts = b3MaxInt( maxContacts, counters.contactCount );
 	}
 
+	int slowFrames = 0;
+	for ( int i = 0; i < frameCount; ++i )
+	{
+		slowFrames += frameTimes[i] > 1000.0f / 60.0f ? 1 : 0;
+	}
+
 	float* series[4] = { frameTimes, stepTimes, updateTimes, impactTimes };
 	const char* names[4] = { "frame", "physics step", "update", "impacts" };
 	for ( int k = 0; k < 4; ++k )
@@ -519,11 +529,13 @@ static void BenchmarkTown( int workerCount, float fragmentScale )
 				series[k][frameCount * 95 / 100], series[k][frameCount - 1] );
 	}
 
+	printf( "  99 %% of the frames up to %.2f ms, %d frames over 16.7 ms\n", frameTimes[frameCount * 99 / 100], slowFrames );
 	printf( "  Box3D per step: collide %.2f ms, solve %.2f ms, %.0f awake contacts\n", physicsProfile[1] / frameCount,
 			physicsProfile[2] / frameCount, physicsProfile[6] / frameCount );
 	nbStats stats = nbWorld_GetStats( scene.world );
 	printf( "  %d grenades, %d storeys collapsed, chunks %d, rubble %d, bodies at most %d (awake %d), contacts at most %d\n",
-			frameCount / 5, stats.collapsedStoreyCount, stats.chunkCount, stats.rubbleCount, maxBodies, maxAwake, maxContacts );
+			grenades, stats.collapsedStoreyCount, stats.chunkCount, stats.rubbleCount, maxBodies, maxAwake, maxContacts );
+	free( houses );
 	DestroyScene( &scene );
 }
 
@@ -1134,8 +1146,12 @@ int main( int argc, char** argv )
 
 	// Larger fragments are the main lever of the cost of mass destruction
 	printf( "\nTown under fire (every step: grenades, Box3D step, destruction update)\n" );
-	BenchmarkTown( workerCount, 1.0f );
-	BenchmarkTown( workerCount, 2.0f );
+	BenchmarkTown( workerCount, 1.0f, 4, 1, 5 );
+	BenchmarkTown( workerCount, 2.0f, 4, 1, 5 );
+
+	// Fragments four times as large keep the cost of a grenade down, so a block four times the size takes four every step
+	printf( "\nBlock of 64 houses under a barrage, fragment scale 4.0 (four grenades every step, Box3D step, update)\n" );
+	BenchmarkTown( workerCount, 4.0f, 8, 4, 1 );
 
 	printf( "\nCity streamed around a camera flying through it, fragment scale 4.0 (streaming, grenades, Box3D step, update)\n" );
 	BenchmarkCity( workerCount );

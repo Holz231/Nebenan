@@ -683,6 +683,24 @@ lädt große Städte fast doppelt so schnell und spart 16 % Speicher, und mit be
 Stadtgröße gleich viel.
 Mehr dazu in [`docs/Optimierungen.md`](docs/Optimierungen.md).
 
+**Ein Block unter Trommelfeuer.** Der Benchmark beschießt außerdem 64 Häuser mit vierfacher Bruchstückgröße mit vier
+Granaten in jedem Schritt, 4 800 in 20 Sekunden. Dabei stürzen 13 Etagen ein, und am Ende liegen 45 500 Bruchstücke
+herum, 18 100 davon als Schutt. Der Median aus drei Läufen auf der VM:
+
+| Block unter Trommelfeuer | 4 Threads | 1 Thread |
+| --- | ---: | ---: |
+| Frame Ø | 7,6 ms | 14,7 ms |
+| 95 % der Frames | 13,8 ms | 24,5 ms |
+| 99 % der Frames | 17,7 ms | 30,0 ms |
+| Frames über 16,7 ms, von 1 200 | 22 | 383 |
+| Box3D-Schritt Ø | 5,3 ms | 12,3 ms |
+| `nbWorld_Update` Ø | 1,7 ms | 1,8 ms |
+| Einschläge Ø | 0,6 ms | 0,6 ms |
+
+Die teuersten Frames folgen auf einen Einsturz: Der Schutt um die Reste der Etage taut auf, und Box3D legt im nächsten
+Schritt Tausende neuer Kontakte an. Das ist echte Arbeit, das meiste davon fällt danach wirklich, siehe
+[`docs/Optimierungen.md`](docs/Optimierungen.md).
+
 **Eine Stadt größer als der Speicher.** Im Benchmark fliegt eine Kamera mit 30 m/s 900 m weit durch eine Stadt aus
 65 536 Häusern auf 3,6 × 3,1 km und 300 m zurück, Bruchstückgröße ×4. Am Stück bräuchte sie 24 GB. Geladen sind die
 Häuser bis 120 m um die Kamera, höchstens zwei neue pro Frame, und die bis 10 m um alles, was sich bewegt. Die Worker
