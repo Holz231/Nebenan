@@ -342,6 +342,8 @@ Bruchstücke nach.
   solches frisches Stück beim Wegrücken freigibt. Sonst erstarrten sie gleich wieder dort, wo die Etage sie hielt.
   Ausgenommen sind auch langsame Trümmer unter 1 m/s, die nichts berühren: Sie haben eben ihre Auflage verloren oder
   sind aufgewacht, und Box3D kennt ihre Kontakte erst nach dem nächsten Schritt. Erstarrt, hingen sie in der Luft.
+  Höchstens 256 erstarren so in einem Update, nach einer großen Explosion übernehmen die nächsten Updates den Rest,
+  jedes mit einer neuen Rangliste.
 - Ein Stück, in das ein größeres bewegtes Stück mehr als 2 cm tief eindringt, erstarrt nur zusammen mit diesem, das
   Budget lässt es ganz aus. Allein als statischer Körper drückte es das große Stück auf einmal hinaus und würfe es
   davon, etwa ein Stockwerk, das auf kleinen Trümmern liegt.

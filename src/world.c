@@ -5078,6 +5078,12 @@ static void nbSettleDebris( nbWorld* world, b3Vec3 up, float timeStep )
 		}
 	}
 
+#if defined( B3_HAS_STATIC_BATCH )
+	// Box3D sorts every piece that freezes into its static tree with a search from the root. The pieces of a pile go in
+	// together with one search, see b3World_BeginStaticBatch. Nothing queries the tree before they are in.
+	b3World_BeginStaticBatch( world->physicsWorld );
+#endif
+
 	for ( int k = 0; k < queueCount; ++k )
 	{
 		int slot = queue[k];
@@ -5091,6 +5097,25 @@ static void nbSettleDebris( nbWorld* world, b3Vec3 up, float timeStep )
 			nbThawActor( world, unsupported[i] );
 		}
 	}
+
+#if defined( B3_HAS_STATIC_BATCH )
+	b3World_EndStaticBatch( world->physicsWorld );
+#endif
+}
+
+// Whether one of the contacts of a body is with a static body
+static bool nbTouchesStatic( const b3ContactData* contacts, int contactCount, b3BodyId bodyId )
+{
+	for ( int c = 0; c < contactCount; ++c )
+	{
+		bool isA = B3_ID_EQUALS( b3Shape_GetBody( contacts[c].shapeIdA ), bodyId );
+		b3BodyId otherBodyId = b3Shape_GetBody( isA ? contacts[c].shapeIdB : contacts[c].shapeIdA );
+		if ( b3Body_GetType( otherBodyId ) == b3_staticBody )
+		{
+			return true;
+		}
+	}
+	return false;
 }
 
 typedef struct nbDebrisRank
@@ -5110,6 +5135,10 @@ static int nbCompareDebris( const void* a, const void* b )
 	}
 	return x->actorIndex - y->actorIndex;
 }
+
+// Debris the budget freezes per update at most. After a burst the next updates take the rest, each with a ranking of
+// its own, so one update does not pay for all of it.
+#define NB_MAX_BUDGET_FREEZES 256
 
 // Freeze the slowest debris over budget into rubble. Nothing is removed. Once over budget a tenth more freezes, so the
 // ranking only runs every so often. What lies on something fixed freezes first: the ground, a structure or rubble.
@@ -5143,8 +5172,14 @@ static void nbEnforceDebrisBudget( nbWorld* world, b3Vec3 up )
 	nbSupportFan fan = nbMakeSupportFan( up );
 	int unsupported[NB_MAX_RELEASES];
 	int unsupportedCount = 0;
-	int excess = count - budget + budget / 10;
+	int excess = b3MinInt( count - budget + budget / 10, NB_MAX_BUDGET_FREEZES );
 	int frozen = 0;
+
+#if defined( B3_HAS_STATIC_BATCH )
+	// The pieces that freeze go into Box3D's static tree together, see nbSettleDebris
+	b3World_BeginStaticBatch( world->physicsWorld );
+#endif
+
 	for ( int pass = 0; pass < 2 && frozen < excess; ++pass )
 	{
 		for ( int i = 0; i < rankCount && frozen < excess; ++i )
@@ -5163,6 +5198,14 @@ static void nbEnforceDebrisBudget( nbWorld* world, b3Vec3 up )
 				b3ContactData* contacts = nbArena_AllocArray( &world->arena, b3ContactData, capacity );
 				int contactCount = b3Body_GetContactData( actor->bodyId, contacts, capacity );
 				if ( B3_IS_NULL( nbFindSqueezer( world, actor, contacts, contactCount ) ) == false )
+				{
+					continue;
+				}
+
+				// On the first pass only what lies on something fixed freezes, and only a static body is. Without a
+				// contact to one the search would find nothing and keep no rubble to bring back: half the pieces the
+				// budget looks at in a burst lie on moving ones.
+				if ( pass == 0 && nbTouchesStatic( contacts, contactCount, actor->bodyId ) == false )
 				{
 					continue;
 				}
@@ -5201,6 +5244,10 @@ static void nbEnforceDebrisBudget( nbWorld* world, b3Vec3 up )
 			nbThawActor( world, unsupported[i] );
 		}
 	}
+
+#if defined( B3_HAS_STATIC_BATCH )
+	b3World_EndStaticBatch( world->physicsWorld );
+#endif
 }
 
 void nbWorld_Update( nbWorldId worldId, float timeStep )

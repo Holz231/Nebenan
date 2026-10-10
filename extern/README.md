@@ -39,13 +39,17 @@ Ergebnis davon ab, wie die Formen in den Baum gekommen waren. Jetzt rechnet es j
 (`src/solver.c`). Das kostet nichts Messbares, CCD braucht in der Stadt so oder so rund 1,6 % der Zeit.
 
 **Statische Formen gesammelt einfügen.** Box3D sortiert jede Form in seinen Suchbaum, mit einer Suche von der Wurzel
-aus. `b3World_BeginStaticBatch` und `b3World_EndStaticBatch` klammern das Anlegen statischer Formen: Dazwischen warten
-ihre Proxys außerhalb des statischen Baums. Am Ende bekommen sie einen eigenen Teilbaum, geteilt wie beim Neubau eines
-Baums, und der geht mit einer einzigen Suche dorthin, wo eine Form mit seinen Grenzen hinginge. Nebenan klammert so
-jeden Einbau, beim Laden alle Bruchstücke eines Hauses. Zwischen den beiden Aufrufen darf die Welt nicht rechnen, nicht
-abgefragt werden, ihren statischen Baum nicht neu bauen und keine Aufnahme beginnen. Bis auf die Abfragen prüft Box3D
-das mit Asserts. Aufnahmen merken sich die Klammern nicht, die Wiedergabe fügt einzeln ein. Das simuliert dasselbe, seit
-die Ergebnisse nicht mehr von der Reihenfolge im Baum abhängen.
+aus. `b3World_BeginStaticBatch` und `b3World_EndStaticBatch` klammern das Anlegen statischer Formen und das Erstarren
+von Körpern: Dazwischen warten ihre Proxys außerhalb des statischen Baums. Am Ende bekommen sie einen eigenen Teilbaum,
+geteilt wie beim Neubau eines Baums, und der geht mit einer einzigen Suche dorthin, wo eine Form mit seinen Grenzen
+hinginge. Liegen die Formen nicht beisammen, wäre seine Box groß und jede Abfrage müsste hinein. Dann teilt
+`b3DynamicTree_InsertBatch` sie entlang einer Morton-Kurve in Hälften, bis jeder Teil kompakt ist: die Oberfläche seiner
+Box nicht größer als die seiner Formen zusammen. Jeder Teil bekommt seinen eigenen Teilbaum. Nebenan klammert so jeden
+Einbau, beim Laden alle Bruchstücke eines Hauses, die als ein Teil hineingehen, und den Schutt, der in einem Update
+erstarrt. Zwischen den beiden Aufrufen darf die Welt nicht rechnen, nicht abgefragt werden, ihren statischen Baum nicht
+neu bauen und keine Aufnahme beginnen. Bis auf die Abfragen prüft Box3D das mit Asserts. Aufnahmen merken sich die
+Klammern nicht, die Wiedergabe fügt einzeln ein. Das simuliert dasselbe, seit die Ergebnisse nicht mehr von der
+Reihenfolge im Baum abhängen.
 
 **Kontakte pro Form.** Box3D führt die Kontakte jedes Körpers in einer Liste. Um eine Form zu löschen, ging es bisher
 alle Kontakte ihres Körpers durch und suchte die der Form heraus. Jetzt führt jede Form zusätzlich ihre eigene Liste

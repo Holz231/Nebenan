@@ -7,6 +7,7 @@
 #include "algorithm.h"
 #include "core.h"
 #include "platform.h"
+#include "qsort.h"
 #include "simd.h"
 
 #include "box3d/collision.h"
@@ -2147,7 +2148,8 @@ static void b3BuildBatchSubtree( b3DynamicTree* tree, int rootIndex, b3BatchLeav
 // Added for Nebenan: put proxies that waited outside the tree in together. They get a subtree of their own, split as a
 // rebuild splits, and the subtree goes in where a leaf with its box would go. That is one search from the root for the
 // batch instead of one for each proxy, the same number of nodes, and the same moved flags.
-void b3DynamicTree_InsertBatch( b3DynamicTree* tree, const b3TreeBatchItem* items, int count )
+// Added for Nebenan: the proxies of one compact group go into the tree as one subtree
+static void b3InsertBatchGroup( b3DynamicTree* tree, const b3TreeBatchItem* items, int count )
 {
 	if ( count == 0 )
 	{
@@ -2228,6 +2230,114 @@ void b3DynamicTree_InsertBatch( b3DynamicTree* tree, const b3TreeBatchItem* item
 	b3Free( batch.boxes, count * sizeof( b3AABB ) );
 	b3Free( batch.bins, count * sizeof( int ) );
 #endif
+}
+
+// Added for Nebenan: the low 10 bits of x spread to every third bit
+static uint32_t b3SpreadBits( uint32_t x )
+{
+	x &= 0x3ff;
+	x = ( x | ( x << 16 ) ) & 0x030000ff;
+	x = ( x | ( x << 8 ) ) & 0x0300f00f;
+	x = ( x | ( x << 4 ) ) & 0x030c30c3;
+	x = ( x | ( x << 2 ) ) & 0x09249249;
+	return x;
+}
+
+// Added for Nebenan: a proxy of a batch on a Morton curve over the box of the batch
+typedef struct b3BatchKey
+{
+	uint32_t code;
+	int index;
+} b3BatchKey;
+
+// Added for Nebenan: whether proxies are compact, the surface of their box no larger than their surfaces together
+static bool b3IsCompact( const b3TreeBatchItem* items, int count )
+{
+	b3AABB box = items[0].aabb;
+	float area = 0.0f;
+	for ( int i = 0; i < count; ++i )
+	{
+		box = b3AABB_Union( box, items[i].aabb );
+		area += b3Perimeter( items[i].aabb );
+	}
+	return b3Perimeter( box ) <= area;
+}
+
+// Added for Nebenan: proxies in Morton order go in as one subtree while they are compact, otherwise each half on its own
+static void b3InsertBatchGroups( b3DynamicTree* tree, const b3TreeBatchItem* items, int count )
+{
+	if ( count == 1 || b3IsCompact( items, count ) )
+	{
+		b3InsertBatchGroup( tree, items, count );
+		return;
+	}
+
+	int half = count / 2;
+	b3InsertBatchGroups( tree, items, half );
+	b3InsertBatchGroups( tree, items + half, count - half );
+}
+
+// Added for Nebenan: the proxies go into the tree in compact groups. A group gets a subtree of its own with one search
+// from the root, as the chunks of a house or the pieces of a pile that freeze together. A subtree over proxies far apart
+// would spread its box over much of the tree and slow down every query, so a batch that is not compact is split along a
+// Morton curve, ties by the order of the batch, until its parts are.
+void b3DynamicTree_InsertBatch( b3DynamicTree* tree, const b3TreeBatchItem* items, int count )
+{
+	if ( count < 2 || b3IsCompact( items, count ) )
+	{
+		b3InsertBatchGroup( tree, items, count );
+		b3DynamicTree_Validate( tree );
+		return;
+	}
+
+	b3AABB box = items[0].aabb;
+	for ( int i = 1; i < count; ++i )
+	{
+		box = b3AABB_Union( box, items[i].aabb );
+	}
+
+	b3Vec3 extent = b3Sub( box.upperBound, box.lowerBound );
+	b3Vec3 scale = {
+		extent.x > 0.0f ? 1023.0f / extent.x : 0.0f,
+		extent.y > 0.0f ? 1023.0f / extent.y : 0.0f,
+		extent.z > 0.0f ? 1023.0f / extent.z : 0.0f,
+	};
+
+	b3BatchKey* keys = b3Alloc( count * sizeof( b3BatchKey ) );
+	for ( int i = 0; i < count; ++i )
+	{
+		b3Vec3 center = b3AABB_Center( items[i].aabb );
+		uint32_t x = (uint32_t)( ( center.x - box.lowerBound.x ) * scale.x );
+		uint32_t y = (uint32_t)( ( center.y - box.lowerBound.y ) * scale.y );
+		uint32_t z = (uint32_t)( ( center.z - box.lowerBound.z ) * scale.z );
+		keys[i] = (b3BatchKey){ b3SpreadBits( x ) | ( b3SpreadBits( y ) << 1 ) | ( b3SpreadBits( z ) << 2 ), i };
+	}
+
+#define LESS( i, j )                                                                                                             \
+	( keys[i].code < keys[j].code || ( keys[i].code == keys[j].code && keys[i].index < keys[j].index ) )
+#define SWAP( i, j )                                                                                                             \
+	do                                                                                                                           \
+	{                                                                                                                            \
+		b3BatchKey tmp_ = keys[i];                                                                                               \
+		keys[i] = keys[j];                                                                                                       \
+		keys[j] = tmp_;                                                                                                          \
+	}                                                                                                                            \
+	while ( 0 )
+
+	QSORT( count, LESS, SWAP );
+
+#undef LESS
+#undef SWAP
+
+	b3TreeBatchItem* sorted = b3Alloc( count * sizeof( b3TreeBatchItem ) );
+	for ( int i = 0; i < count; ++i )
+	{
+		sorted[i] = items[keys[i].index];
+	}
+	b3Free( keys, count * sizeof( b3BatchKey ) );
+
+	b3InsertBatchGroups( tree, sorted, count );
+	b3Free( sorted, count * sizeof( b3TreeBatchItem ) );
 
 	b3DynamicTree_Validate( tree );
 }
