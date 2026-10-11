@@ -214,8 +214,9 @@ static int ImpactTest( void )
 		}
 		dynamicCount += 1;
 
+		// Rubble sits on a static body, whose center Box3D puts at its origin
 		b3BodyId bodyId = nbChunk_GetBody( chunks[i] );
-		b3Pos center = b3Body_GetWorldCenter( bodyId );
+		b3Pos center = b3TransformWorldPoint( b3Body_GetTransform( bodyId ), nbChunk_GetCentroid( chunks[i] ) );
 		ENSURE( center.y > -0.05f );
 		ENSURE( center.y < 3.0f );
 	}
@@ -468,7 +469,7 @@ static uint32_t RunDeterminismScenario( void )
 
 // Fracture and physics are bit for bit identical with MSVC, GCC and Clang on x64 and ARM. This is the result
 // with the pinned Box3D commit. Update it when the results change on purpose, never to make one platform pass.
-#define NB_EXPECTED_DETERMINISM_HASH 0xb26374dfu
+#define NB_EXPECTED_DETERMINISM_HASH 0xfaabdd74u
 
 static int DeterminismTest( void )
 {
@@ -1823,6 +1824,33 @@ static int SweepTest( void )
 		}
 		DestroyScene( &scene );
 	}
+	return 0;
+}
+
+// Debris freezes once it kept still for the rest time, which can change at run time. A box set down on the ground freezes
+// after six updates with the default of 0.1 s, and stays awake that long with 0.5 s.
+static int RestTimeTest( void )
+{
+	for ( int pass = 0; pass < 2; ++pass )
+	{
+		TestScene scene = CreateScene();
+		if ( pass == 1 )
+		{
+			nbWorld_SetDebrisRestTime( scene.world, 0.5f );
+		}
+		CreateLooseBox( &scene, (b3Vec3){ 0.0f, 0.25f, 0.0f }, (b3Vec3){ 0.25f, 0.25f, 0.25f }, 50 );
+		Step( &scene, 10 );
+		ENSURE( nbWorld_GetStats( scene.world ).rubbleCount == ( pass == 0 ? 1 : 0 ) );
+		Step( &scene, 30 );
+		ENSURE( nbWorld_GetStats( scene.world ).rubbleCount == 1 );
+		DestroyScene( &scene );
+	}
+
+	// At most 1 s
+	TestScene scene = CreateScene();
+	nbWorld_SetDebrisRestTime( scene.world, 5.0f );
+	ENSURE( nbGetWorldFromId( scene.world )->def.debrisRestTime == 1.0f );
+	DestroyScene( &scene );
 	return 0;
 }
 
@@ -3801,6 +3829,7 @@ int WorldTest( void )
 	RUN_TEST( SweepTest );
 	RUN_TEST( VisibleFaceTest );
 	RUN_TEST( DebrisBudgetTest );
+	RUN_TEST( RestTimeTest );
 	RUN_TEST( FragmentScaleTest );
 	RUN_TEST( StoreyTest );
 	RUN_TEST( SupportTest );

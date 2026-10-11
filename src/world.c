@@ -857,10 +857,9 @@ static b3AABB nbGetActorBounds( const nbWorld* world, const nbActor* actor )
 }
 
 // Rest detection and settling follow the reference engine (src/rubble_rest.h and BuildingScene::settle on the Referenz
-// branch). A piece is quiet once it stayed within NB_REST_DISTANCE of one pose for NB_REST_TIME seconds, counting
-// rotation as the way its farthest corner moves.
-#define NB_REST_DISTANCE 0.02f
-#define NB_REST_TIME 0.2f
+// branch). A piece is quiet once it stayed within NB_REST_SPEED times nbWorldDef::debrisRestTime of one pose for that
+// time, counting rotation as the way its farthest corner moves.
+#define NB_REST_SPEED 0.1f
 
 // A body the solver keeps rocking in place is quiet too, once the means of NB_JITTER_WINDOW seconds stayed within
 // NB_JITTER_MATCH of each other NB_JITTER_MATCHES times in a row. It may not wander off its first pose, though.
@@ -1009,13 +1008,14 @@ static bool nbIsQuiet( const nbWorld* world, nbActor* actor, float timeStep )
 		return false;
 	}
 
-	if ( actor->restTime == 0.0f || nbPoseDistance( actor->restPose, transform, actor->radius ) > NB_REST_DISTANCE )
+	float restTime = world->def.debrisRestTime;
+	if ( actor->restTime == 0.0f || nbPoseDistance( actor->restPose, transform, actor->radius ) > NB_REST_SPEED * restTime )
 	{
 		actor->restPose = transform;
 		actor->restTime = 0.0f;
 	}
 	actor->restTime = b3MinFloat( actor->restTime + timeStep, 1.0f );
-	return actor->restTime >= NB_REST_TIME || rocking || probed;
+	return actor->restTime >= restTime || rocking || probed;
 }
 
 // Box3D sweeps a body against static shapes once it moves more than its safety factor times the radius of the largest
@@ -3745,6 +3745,7 @@ nbWorldDef nbDefaultWorldDef( void )
 	def.maxDebrisBodies = 1500;
 	def.enableRubble = true;
 	def.debrisSleepThreshold = 0.12f;
+	def.debrisRestTime = 0.1f;
 	def.debrisSweepDistance = 0.2f;
 	def.killDepth = -100.0f;
 	def.supportScale = 0.0f;
@@ -4069,6 +4070,17 @@ void nbWorld_SetDebrisBudget( nbWorldId worldId, int maxDebrisBodies )
 	world->def.maxDebrisBodies = b3MaxInt( maxDebrisBodies, 0 );
 }
 
+void nbWorld_SetDebrisRestTime( nbWorldId worldId, float seconds )
+{
+	nbWorld* world = nbGetWorldFromId( worldId );
+	if ( world == NULL )
+	{
+		return;
+	}
+
+	world->def.debrisRestTime = b3ClampFloat( seconds, 0.0f, 1.0f );
+}
+
 nbWorldId nbCreateWorld( const nbWorldDef* def )
 {
 	NB_ASSERT( def->internalValue == NB_SECRET_COOKIE );
@@ -4100,6 +4112,7 @@ nbWorldId nbCreateWorld( const nbWorldDef* def )
 	world->inUse = true;
 	world->def = *def;
 	world->def.fragmentScale = def->fragmentScale > 0.0f ? def->fragmentScale : 1.0f;
+	world->def.debrisRestTime = b3ClampFloat( def->debrisRestTime, 0.0f, 1.0f );
 	world->physicsWorld = def->physicsWorld;
 	nbArena_Create( &world->arena, 256 * 1024 );
 	nbStartWorkers( world, def->workerCount );

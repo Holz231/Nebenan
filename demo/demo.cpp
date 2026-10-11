@@ -242,6 +242,9 @@ struct App
 	// Debris bodies Box3D moves at the same time, the lever of the physics cost
 	int maxDebrisBodies = nbDefaultWorldDef().maxDebrisBodies;
 
+	// How long debris keeps still before it freezes into rubble
+	float debrisRestTime = nbDefaultWorldDef().debrisRestTime;
+
 	// A storey gives way when less than this fraction of its walls is left
 	float storeySupport = nbDefaultWorldDef().storeySupport;
 
@@ -1194,6 +1197,7 @@ static void LoadScene( App& app, SceneKind scene )
 	def.collisionRadiusScale = 0.02f;
 	def.workerCount = app.workerCount;
 	def.maxDebrisBodies = app.maxDebrisBodies;
+	def.debrisRestTime = app.debrisRestTime;
 	def.fragmentScale = app.fragmentScale;
 	def.supportScale = app.supportScale;
 	def.storeySupport = app.storeySupport;
@@ -1521,9 +1525,9 @@ static std::string BuildReport( const App& app )
 	Appendf( text, "CPU pro Bild, Mittel / Spitze: Einschläge %.1f / %.1f, Simulation %.1f / %.1f, Grafik %.1f / %.1f ms\n", impactAvg,
 			 impactMax, simulationAvg, simulationMax, graphicsAvg, graphicsMax );
 	Appendf( text, "Pro Schritt: Box3D %.2f ms, Zerstörung %.2f ms\n", app.physicsTime, app.destructionTime );
-	Appendf( text, "Welt: %d Bruchstücke, %d Verbindungen, %d Trümmerkörper (%d wach), %d Schutt, %d Kontakte, Budget %d, Bruchstückgröße x%.2f\n",
+	Appendf( text, "Welt: %d Bruchstücke, %d Verbindungen, %d Trümmerkörper (%d wach), %d Schutt, %d Kontakte, Budget %d, Ruhezeit %.2f s, Bruchstückgröße x%.2f\n",
 			 stats.chunkCount, stats.bondCount, stats.dynamicBodyCount, b3World_GetAwakeBodyCount( app.physics ), stats.rubbleCount,
-			 counters.contactCount, app.maxDebrisBodies, app.fragmentScale );
+			 counters.contactCount, app.maxDebrisBodies, app.debrisRestTime, app.fragmentScale );
 	Appendf( text, "Einsturz: %d Etagen eingestürzt, eine Etage braucht %.0f %% ihrer Wände; Statik ohne Decken x%.2f, %d Verbindungen gebrochen\n",
 			 stats.collapsedStoreyCount, 100.0f * app.storeySupport, app.supportScale, stats.overloadedBondCount );
 	Appendf( text, "Grafik: %dk Dreiecke, %d Draw Calls, %d kB Upload\n", rs.triangleCount / 1000, rs.drawCalls, rs.uploadedBytes / 1024 );
@@ -1651,6 +1655,14 @@ static void DrawUi( App& app )
 	if ( ImGui::IsItemHovered() )
 	{
 		ImGui::SetTooltip( "So viele Trümmer bewegt Box3D höchstens gleichzeitig.\nDie langsamsten darüber erstarren zu Schutt, gelöscht wird nichts.\nWeniger macht die Physik schneller." );
+	}
+	if ( ImGui::SliderFloat( "Ruhezeit", &app.debrisRestTime, 0.02f, 0.5f, "%.2f s" ) )
+	{
+		nbWorld_SetDebrisRestTime( app.destruction, app.debrisRestTime );
+	}
+	if ( ImGui::IsItemHovered() )
+	{
+		ImGui::SetTooltip( "So lange muss ein Trümmer fast still liegen, bevor er zu Schutt erstarrt.\nKürzer macht die Physik unter Dauerfeuer schneller, kann aber ein\nkleines Stück anhalten, das beim Kippen nur kurz innehält. Vorher 0,2 s." );
 	}
 	if ( app.vsyncAvailable )
 	{

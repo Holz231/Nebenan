@@ -307,11 +307,17 @@ typedef struct nbWorldDef
 	bool enableRubble;
 
 	/// Speed in meters per second below which debris counts as slow. Rest detection follows the reference engine: a piece
-	/// comes to rest once it stayed within 2 cm of one pose for 0.6 s at four times this speed at most, or once its mean
-	/// position held still for 2 s while the solver kept rocking it. It freezes into rubble when it lies on the ground, a
-	/// structure or rubble, or on a resting piece that does, so piles freeze from the bottom up. Box3D also puts whole
-	/// islands to sleep that stay slower than this.
+	/// comes to rest once it stayed at four times this speed at most for debrisRestTime, or once its mean position held
+	/// still for 2 s while the solver kept rocking it. It freezes into rubble when it lies on the ground, a structure or
+	/// rubble, or on a resting piece that does, so piles freeze from the bottom up. Box3D also puts whole islands to sleep
+	/// that stay slower than this.
 	float debrisSleepThreshold;
+
+	/// Seconds a slow piece must stay near one pose before it counts as at rest, at most 1 s. Near means within 0.1 m/s
+	/// times this time, counting rotation as the way its farthest corner moves: 1 cm at the default of 0.1 s. Under heavy
+	/// fire almost half of the moving debris only waits out this time, so a shorter one keeps fewer bodies and contacts in
+	/// the Box3D step. It can also stop a small piece that only paused while it tumbled.
+	float debrisRestTime;
 
 	/// Box3D sweeps a moving body against static shapes so it cannot pass through a wall within one step, see
 	/// b3BodyDef::safetyFactor. Debris is swept once it moves this far in one step, in meters, or twice the radius of the

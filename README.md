@@ -304,10 +304,11 @@ Bruchstücke nach.
 **Trümmer und Schutt.** Ruhe und Einschlafen folgen ebenfalls der Referenz-Engine (`rubble_rest.h` und
 `BuildingScene::settle`). Nichts wird gelöscht.
 
-- Ein Trümmer ist ruhig, wenn er 0,2 s lang höchstens 2 cm von einer Lage abweicht, die Drehung als Weg seiner
-  entferntesten Ecke gerechnet, und dabei höchstens viermal `debrisSleepThreshold` schnell ist. Oder wenn ihn der
-  Löser auf der Stelle schaukelt, sein mittlerer Ort über Halbsekunden-Fenster aber dreimal in Folge auf 3 mm stehen
-  bleibt.
+- Ein Trümmer ist ruhig, wenn er `debrisRestTime` lang, voreingestellt 0,1 s, höchstens 1 cm von einer Lage abweicht,
+  die Drehung als Weg seiner entferntesten Ecke gerechnet, und dabei höchstens viermal `debrisSleepThreshold` schnell
+  ist. Die erlaubte Abweichung wächst mit der Ruhezeit, 0,1 m/s mal ihre Länge: Bei 0,2 s, dem früheren Wert, sind es
+  2 cm. Oder wenn ihn der Löser auf der Stelle schaukelt, sein mittlerer Ort über Halbsekunden-Fenster aber dreimal in
+  Folge auf 3 mm stehen bleibt.
 - Zu statischem Schutt wird er nur, wenn er auf dem Boden, einem Bauwerk oder Schutt liegt, oder auf einem ruhigen
   Trümmer, der selbst so liegt. Haufen erstarren von unten nach oben, und nichts erstarrt auf etwas, das sich noch
   bewegt. Box3D schläfert nur ganze Inseln ein, diese Kette arbeitet pro Stück. Jedes Stück merkt sich, auf welchen
@@ -608,6 +609,7 @@ beim Einbinden nicht gebaut.
 | `maxDebrisBodies` | 1500 | Obergrenze für bewegte Trümmerkörper, darüber erstarren die langsamsten zu Schutt. Gelöscht wird nichts. Zur Laufzeit mit `nbWorld_SetDebrisBudget` |
 | `enableRubble` | an | Trümmer, die zur Ruhe kommen und auf festem Grund liegen, werden zu statischem Schutt |
 | `debrisSleepThreshold` | 0,12 m/s | Viermal so schnell gilt ein Trümmer höchstens als ruhig. Box3D schläfert Inseln ein, die langsamer sind |
+| `debrisRestTime` | 0,1 s | So lange muss ein Trümmer fast still liegen, bevor er als ruhig gilt und erstarren kann, höchstens 1 s. Unter Dauerfeuer wartet fast die Hälfte der bewegten Trümmer nur diese Zeit ab: Kürzer spart dort Box3D-Arbeit, kann aber ein kleines Stück anhalten, das beim Kippen nur kurz innehält. Zur Laufzeit mit `nbWorld_SetDebrisRestTime` |
 | `debrisSweepDistance` | 0,2 m | Ab diesem Weg in einem Schritt, oder ab dem doppelten Radius der größten Kugel in seinem dünnsten Bruchstück, wenn der kleiner ist, verfolgt Box3D ein Trümmerteil über den ganzen Schritt gegen statische Formen, damit es nicht durch Wände fliegt. Kleiner halten als die dünnste Wand. 0 nimmt den Box3D-Standard |
 | `killDepth` | −100 m | Trümmer darunter haben die Welt verlassen und werden entfernt |
 | `collisionSpeedThreshold` | 4 m/s | Ab dieser Aufprallgeschwindigkeit entsteht Schaden |
@@ -632,10 +634,13 @@ zusammen (Einschläge, Box3D-Schritt, `nbWorld_Update`), jeweils der mittlere vo
 
 | Stadt | Ø | 95 % der Frames | Box3D-Schritt Ø |
 | --- | ---: | ---: | ---: |
-| 1 Thread | 21,4 ms | 35,0 ms | 19,0 ms |
-| 4 Threads | 9,5 ms | 18,3 ms | 7,4 ms |
-| 1 Thread, `fragmentScale` 2 | 5,9 ms | 9,7 ms | 5,3 ms |
-| 4 Threads, `fragmentScale` 2 | 3,4 ms | 5,7 ms | 2,8 ms |
+| 1 Thread | 18,6 ms | 30,1 ms | 16,6 ms |
+| 4 Threads | 8,8 ms | 16,0 ms | 7,2 ms |
+| 1 Thread, `fragmentScale` 2 | 4,5 ms | 7,1 ms | 4,1 ms |
+| 4 Threads, `fragmentScale` 2 | 3,0 ms | 5,0 ms | 2,6 ms |
+
+Mit der früheren Ruhezeit von 0,2 s statt 0,1 s (`debrisRestTime`) waren es am selben Tag 19,2, 9,2, 5,1 und 3,3 ms im
+Mittel.
 
 Die 240 Granaten verteilen sich auf die Wände beider Etagen aller Häuser, dabei verliert keine Etage die Hälfte ihrer
 Wände, und nichts stürzt ein. Ohne Einstürze (`storeySupport` 0) sind es fast dieselben Zeiten. `nbWorld_Update`
@@ -650,13 +655,16 @@ und fällt, bis es als Schutt liegt. Die Prüfung der Etagen selbst kostet kaum 
 nicht und bricht nichts. Mit der Lastprüfung davor, die jedes Haus unter Last einstürzen ließ, brauchte die Stadt
 unter dem Beschuss oben 1,4- bis 1,8-mal so lange wie heute ohne Einstürze.
 
-Die Zeit ist zum größten Teil der Box3D-Schritt, und den bestimmen drei Dinge:
+Die Zeit ist zum größten Teil der Box3D-Schritt, und den bestimmen vier Dinge:
 
 - **Bruchstückgröße.** Mit doppelt so großen Bruchstücken liegen am Ende 23 700 statt 78 100 Bruchstücke herum,
   und Box3D rechnet 6500 statt 17 000 Kontakte. Die Zahl der Splitter eines Einschlags fällt mit dem Quadrat
   der Größe.
 - **Bewegte Trümmer.** Box3D bewegt höchstens `maxDebrisBodies` (1500) Trümmer gleichzeitig. Was zur Ruhe kommt,
   liegt als Schutt und kostet nichts mehr, am Ende der Stadt 34 100 Körper.
+- **Ruhezeit.** Unter Dauerfeuer liegt fast die Hälfte der bewegten Trümmer schon still und wartet nur
+  `debrisRestTime` ab, bevor sie erstarren darf. 0,1 statt 0,2 s macht die Stadt mit doppelter Bruchstückgröße 9 bis
+  12 % schneller, mit einfacher 3 %.
 - **Durchschlagschutz.** Damit nichts durch eine Wand fliegt, verfolgt Box3D schnelle Körper über den ganzen Schritt
   gegen statische Formen und rechnet ihre Kontakte jedes Mal neu. Von sich aus hält es dafür fast jeden fliegenden
   Splitter für schnell: schon ab dem halben Radius der größten Kugel, die in ihn passt, pro Schritt. Nebenan lässt
@@ -684,18 +692,22 @@ Stadtgröße gleich viel.
 Mehr dazu in [`docs/Optimierungen.md`](docs/Optimierungen.md).
 
 **Ein Block unter Trommelfeuer.** Der Benchmark beschießt außerdem 64 Häuser mit vierfacher Bruchstückgröße mit vier
-Granaten in jedem Schritt, 4 800 in 20 Sekunden. Dabei stürzen 13 Etagen ein, und am Ende liegen 45 500 Bruchstücke
-herum, 18 100 davon als Schutt. Der Median aus drei Läufen auf der VM:
+Granaten in jedem Schritt, 4 800 in 20 Sekunden. Dabei stürzen 12 Etagen ein, und am Ende liegen 45 400 Bruchstücke
+herum, 17 800 davon als Schutt. Der Median aus drei Läufen auf der VM:
 
 | Block unter Trommelfeuer | 4 Threads | 1 Thread |
 | --- | ---: | ---: |
-| Frame Ø | 7,6 ms | 14,7 ms |
-| 95 % der Frames | 13,8 ms | 24,5 ms |
-| 99 % der Frames | 17,7 ms | 30,0 ms |
-| Frames über 16,7 ms, von 1 200 | 22 | 383 |
-| Box3D-Schritt Ø | 5,3 ms | 12,3 ms |
-| `nbWorld_Update` Ø | 1,7 ms | 1,8 ms |
-| Einschläge Ø | 0,6 ms | 0,6 ms |
+| Frame Ø | 5,9 ms | 9,7 ms |
+| 95 % der Frames | 10,8 ms | 17,1 ms |
+| 99 % der Frames | 14,1 ms | 23,4 ms |
+| Frames über 16,7 ms, von 1 200 | 4 | 69 |
+| Box3D-Schritt Ø | 4,2 ms | 7,9 ms |
+| `nbWorld_Update` Ø | 1,3 ms | 1,3 ms |
+| Einschläge Ø | 0,5 ms | 0,5 ms |
+
+Mit der früheren Ruhezeit von 0,2 s waren es am selben Tag 6,0 und 10,0 ms im Mittel und 12,6 und 18,9 ms bei 99 % der
+Frames, mit 9 statt 12 eingestürzten Etagen. Welche Etagen einstürzen, hängt an der Lage jedes Trümmers: Über zwölf
+andere Folgen von Granaten stürzten im Mittel 11,8 statt 11,4 ein, und die teuersten Frames blieben gleich.
 
 Die teuersten Frames folgen auf einen Einsturz: Der Schutt um die Reste der Etage taut auf, und Box3D legt im nächsten
 Schritt Tausende neuer Kontakte an. Das ist echte Arbeit, das meiste davon fällt danach wirklich, siehe

@@ -79,6 +79,10 @@ NB_API void nbWorld_SetWorkerCount( nbWorldId worldId, int count );
 /// update freezes what is over budget into rubble.
 NB_API void nbWorld_SetDebrisBudget( nbWorldId worldId, int maxDebrisBodies );
 
+/// Change how long debris must keep still before it counts as at rest, see nbWorldDef::debrisRestTime. Applies to the
+/// next update.
+NB_API void nbWorld_SetDebrisRestTime( nbWorldId worldId, float seconds );
+
 /// Change how much load the bonds carry, see nbWorldDef::supportScale. The next update checks every structure again.
 /// Turning the check on measures the faces of the bonds of every structure without floors once, only the check needs
 /// their shape.
