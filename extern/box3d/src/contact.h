@@ -159,6 +159,11 @@ typedef struct b3Contact
 	// Mixed friction and restitution
 	float friction;
 
+	// Added for Nebenan: the key last written to b3World::contactSortKeys for this contact, B3_NULL_INDEX before the
+	// first. The collide task compares with it here, in the contact it has in the cache anyway, instead of reading the
+	// array. Fills the padding before the union, so a contact stays the same size.
+	int sortKey;
+
 	// Usage determined by b3_simMeshContact in simFlags
 	union
 	{

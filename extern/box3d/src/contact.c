@@ -207,6 +207,8 @@ void b3CreateContact( b3World* world, b3Shape* shapeA, b3Shape* shapeB, int chil
 	contact->localIndex = set->contactIndices.count;
 	contact->islandId = B3_NULL_INDEX;
 	contact->islandIndex = B3_NULL_INDEX;
+	// Added for Nebenan: the collide task writes the first key, see b3Contact::sortKey
+	contact->sortKey = B3_NULL_INDEX;
 	contact->shapeIdA = shapeIdA;
 	contact->shapeIdB = shapeIdB;
 	contact->childIndex = childIndex;

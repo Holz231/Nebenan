@@ -903,6 +903,8 @@ static void b3DesContacts( b3SnapReader* r, b3World* world )
 		b3Contact* dst = world->contacts.data + i;
 		b3SnapR_Bytes( r, dst, sizeof( b3Contact ) );
 		dst->manifolds = NULL;
+		// Added for Nebenan: b3World::contactSortKeys is not in the snapshot, the next collide writes every key anew
+		dst->sortKey = B3_NULL_INDEX;
 		if ( dst->flags & b3_simMeshContact )
 		{
 			dst->meshContact.triangleCache.data = NULL;

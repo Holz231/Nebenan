@@ -737,11 +737,12 @@ static void b3CollideTask( int startIndex, int endIndex, int workerIndex, void* 
 		int encodedA = contact->encodedBodySimA;
 		int encodedB = contact->encodedBodySimB;
 
-		// Added for Nebenan: the smaller awake index of the bodies, see b3World::contactSortKeys. Written only when it
-		// changed, which is rare: a written cache line other cores must give up, a read one they can share.
+		// Added for Nebenan: the smaller awake index of the bodies, see b3World::contactSortKeys. It rarely changes, so
+		// the task compares with the copy in the contact and writes the array only on a change, see b3Contact::sortKey.
 		int sortKey = encodedA >= 0 ? ( encodedB >= 0 ? b3MinInt( encodedA, encodedB ) : encodedA ) : b3MaxInt( encodedB, 0 );
-		if ( world->contactSortKeys[contactIndex] != sortKey )
+		if ( contact->sortKey != sortKey )
 		{
+			contact->sortKey = sortKey;
 			world->contactSortKeys[contactIndex] = sortKey;
 		}
 		b3BodySim* bodySimA = b3ResolveContactBodySim( world, awakeSims, staticSims, encodedA, contact->edges[0].bodyId );
