@@ -76,8 +76,10 @@ B3_API float b3GetStallThreshold( void );
 #define B3_MAX_ROTATION ( 0.25f * B3_PI )
 
 /// @warning modifying this can have a significant impact on performance and stability
+/// Added for Nebenan: twice the linear slop instead of four times. In dense rubble many pieces lie a few centimeters apart,
+/// and every such pair had speculative points the solver worked on.
 #ifndef B3_SPECULATIVE_DISTANCE
-#define B3_SPECULATIVE_DISTANCE ( 4.0f * B3_LINEAR_SLOP )
+#define B3_SPECULATIVE_DISTANCE ( 2.0f * B3_LINEAR_SLOP )
 #endif
 
 /// The rest offset is used for mesh contact to reduce ghost collisions and assist with CCD.

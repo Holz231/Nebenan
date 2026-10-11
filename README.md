@@ -634,13 +634,14 @@ zusammen (Einschläge, Box3D-Schritt, `nbWorld_Update`), jeweils der mittlere vo
 
 | Stadt | Ø | 95 % der Frames | Box3D-Schritt Ø |
 | --- | ---: | ---: | ---: |
-| 1 Thread | 18,6 ms | 30,1 ms | 16,6 ms |
-| 4 Threads | 8,8 ms | 16,0 ms | 7,2 ms |
-| 1 Thread, `fragmentScale` 2 | 4,5 ms | 7,1 ms | 4,1 ms |
-| 4 Threads, `fragmentScale` 2 | 3,0 ms | 5,0 ms | 2,6 ms |
+| 1 Thread | 15,3 ms | 25,6 ms | 13,5 ms |
+| 4 Threads | 7,8 ms | 14,5 ms | 6,2 ms |
+| 1 Thread, `fragmentScale` 2 | 4,1 ms | 6,8 ms | 3,6 ms |
+| 4 Threads, `fragmentScale` 2 | 2,7 ms | 4,4 ms | 2,3 ms |
 
-Mit der früheren Ruhezeit von 0,2 s statt 0,1 s (`debrisRestTime`) waren es am selben Tag 19,2, 9,2, 5,1 und 3,3 ms im
-Mittel.
+Mit dem früheren spekulativen Abstand von 2 cm in Box3D (siehe [`extern/README.md`](extern/README.md)) waren es am
+selben Tag 18,2, 9,0, 4,6 und 3,0 ms im Mittel, mit der früheren Ruhezeit von 0,2 s statt 0,1 s (`debrisRestTime`) bei
+einer Messung davor 19,2, 9,2, 5,1 und 3,3 ms.
 
 Die 240 Granaten verteilen sich auf die Wände beider Etagen aller Häuser, dabei verliert keine Etage die Hälfte ihrer
 Wände, und nichts stürzt ein. Ohne Einstürze (`storeySupport` 0) sind es fast dieselben Zeiten. `nbWorld_Update`
@@ -692,22 +693,22 @@ Stadtgröße gleich viel.
 Mehr dazu in [`docs/Optimierungen.md`](docs/Optimierungen.md).
 
 **Ein Block unter Trommelfeuer.** Der Benchmark beschießt außerdem 64 Häuser mit vierfacher Bruchstückgröße mit vier
-Granaten in jedem Schritt, 4 800 in 20 Sekunden. Dabei stürzen 12 Etagen ein, und am Ende liegen 45 400 Bruchstücke
-herum, 17 800 davon als Schutt. Der Median aus drei Läufen auf der VM:
+Granaten in jedem Schritt, 4 800 in 20 Sekunden. Dabei stürzen 10 Etagen ein, und am Ende liegen 45 300 Bruchstücke
+herum, 17 500 davon als Schutt. Der Median aus drei Läufen auf der VM:
 
 | Block unter Trommelfeuer | 4 Threads | 1 Thread |
 | --- | ---: | ---: |
-| Frame Ø | 5,9 ms | 9,7 ms |
-| 95 % der Frames | 10,8 ms | 17,1 ms |
-| 99 % der Frames | 14,1 ms | 23,4 ms |
-| Frames über 16,7 ms, von 1 200 | 4 | 69 |
-| Box3D-Schritt Ø | 4,2 ms | 7,9 ms |
-| `nbWorld_Update` Ø | 1,3 ms | 1,3 ms |
+| Frame Ø | 5,3 ms | 8,4 ms |
+| 95 % der Frames | 8,7 ms | 13,3 ms |
+| 99 % der Frames | 11,0 ms | 15,5 ms |
+| Frames über 16,7 ms, von 1 200 | 0 | 6 |
+| Box3D-Schritt Ø | 3,6 ms | 6,8 ms |
+| `nbWorld_Update` Ø | 1,2 ms | 1,1 ms |
 | Einschläge Ø | 0,5 ms | 0,5 ms |
 
-Mit der früheren Ruhezeit von 0,2 s waren es am selben Tag 6,0 und 10,0 ms im Mittel und 12,6 und 18,9 ms bei 99 % der
-Frames, mit 9 statt 12 eingestürzten Etagen. Welche Etagen einstürzen, hängt an der Lage jedes Trümmers: Über zwölf
-andere Folgen von Granaten stürzten im Mittel 11,8 statt 11,4 ein, und die teuersten Frames blieben gleich.
+Mit dem früheren spekulativen Abstand von 2 cm waren es am selben Tag 6,0 und 9,3 ms im Mittel und 13,8 und 18,5 ms bei
+99 % der Frames, mit 12 eingestürzten Etagen, mit der früheren Ruhezeit von 0,2 s bei einer Messung davor 6,0 und
+10,0 ms mit 9. Welche Etagen einstürzen, hängt an der Lage jedes Trümmers, und die Einstürze machen die teuersten Frames.
 
 Die teuersten Frames folgen auf einen Einsturz: Der Schutt um die Reste der Etage taut auf, und Box3D legt im nächsten
 Schritt Tausende neuer Kontakte an. Das ist echte Arbeit, das meiste davon fällt danach wirklich, siehe
