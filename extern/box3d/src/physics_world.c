@@ -490,6 +490,12 @@ void b3DestroyWorld( b3WorldId worldId )
 	b3Array_Destroy( world->shapes );
 	b3Array_Destroy( world->fatAABBs );
 	b3Array_Destroy( world->contacts );
+	if ( world->contactSortKeys != NULL )
+	{
+		b3Free( world->contactSortKeys, world->contactSortKeyCapacity * (int)sizeof( int ) );
+		world->contactSortKeys = NULL;
+		world->contactSortKeyCapacity = 0;
+	}
 	b3Array_Destroy( world->joints );
 
 	for ( int i = 0; i < world->islands.count; ++i )
@@ -730,6 +736,10 @@ static void b3CollideTask( int startIndex, int endIndex, int workerIndex, void* 
 		// Update contact respecting shape/body order (A,B)
 		int encodedA = contact->encodedBodySimA;
 		int encodedB = contact->encodedBodySimB;
+
+		// Added for Nebenan: the smaller awake index of the bodies, see b3World::contactSortKeys
+		world->contactSortKeys[contactIndex] =
+			encodedA >= 0 ? ( encodedB >= 0 ? b3MinInt( encodedA, encodedB ) : encodedA ) : b3MaxInt( encodedB, 0 );
 		b3BodySim* bodySimA = b3ResolveContactBodySim( world, awakeSims, staticSims, encodedA, contact->edges[0].bodyId );
 		b3BodySim* bodySimB = b3ResolveContactBodySim( world, awakeSims, staticSims, encodedB, contact->edges[1].bodyId );
 
@@ -1047,6 +1057,21 @@ static void b3Collide( b3StepContext* context )
 
 	// Contact bit set on ids because contact pointers are unstable as they move between touching and not touching.
 	int contactIdCapacity = b3GetIdCapacity( &world->contactIdPool );
+
+	// Added for Nebenan: room for a sort key per contact id, see b3World::contactSortKeys
+	if ( contactIdCapacity > world->contactSortKeyCapacity )
+	{
+		int capacity = contactIdCapacity + contactIdCapacity / 2;
+		int* keys = (int*)b3Alloc( capacity * (int)sizeof( int ) );
+		memset( keys, 0, (size_t)capacity * sizeof( int ) );
+		if ( world->contactSortKeys != NULL )
+		{
+			memcpy( keys, world->contactSortKeys, (size_t)world->contactSortKeyCapacity * sizeof( int ) );
+			b3Free( world->contactSortKeys, world->contactSortKeyCapacity * (int)sizeof( int ) );
+		}
+		world->contactSortKeys = keys;
+		world->contactSortKeyCapacity = capacity;
+	}
 	for ( int i = 0; i < world->workerCount; ++i )
 	{
 		b3TaskContext* taskContext = world->taskContexts.data + i;

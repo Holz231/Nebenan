@@ -677,6 +677,39 @@ static void b3SolveContinuous( b3World* world, int bodySimIndex, b3TaskContext* 
 	b3TracyCZoneEnd( ccd );
 }
 
+// Added for Nebenan: b3FinalizeBodiesTask reads every awake body's record, its island and its shapes with their boxes, all
+// from scattered memory, and it waited for them most. These prefetch the record, and, with the record in the cache, the
+// island and the fields of the first shape the loop reads. Forced inline, GCC 13 drops the prefetches of a helper that
+// only reads.
+B3_FORCE_INLINE void b3PrefetchFinalizeBody( const b3Body* body )
+{
+	const char* p = (const char*)body;
+	b3Prefetch( p );
+	b3Prefetch( p + 64 );
+	b3Prefetch( p + sizeof( b3Body ) - 1 );
+}
+
+B3_FORCE_INLINE void b3PrefetchFinalizeData( const b3World* world, const b3Body* body )
+{
+	int shapeId = body->headShapeId;
+	if ( shapeId != B3_NULL_INDEX )
+	{
+		const b3Shape* shape = world->shapes.data + shapeId;
+		b3Prefetch( &shape->nextShapeId );
+		b3Prefetch( (const char*)( &shape->aabb + 1 ) - 1 );
+		b3Prefetch( &shape->hullBounds );
+		b3Prefetch( (const char*)( &shape->hullBounds + 1 ) - 1 );
+		const b3AABB* fatAABB = world->fatAABBs.data + shapeId;
+		b3Prefetch( fatAABB );
+		b3Prefetch( (const char*)( fatAABB + 1 ) - 1 );
+	}
+
+	if ( body->islandId != B3_NULL_INDEX )
+	{
+		b3Prefetch( world->islands.data + body->islandId );
+	}
+}
+
 // Implements b3ParallelForCallback
 static void b3FinalizeBodiesTask( int startIndex, int endIndex, int workerIndex, void* context )
 {
@@ -706,6 +739,17 @@ static void b3FinalizeBodiesTask( int startIndex, int endIndex, int workerIndex,
 
 	for ( int simIndex = startIndex; simIndex < endIndex; ++simIndex )
 	{
+		// Added for Nebenan: the record eight bodies ahead, the island and first shape four ahead
+		if ( simIndex + 8 < endIndex )
+		{
+			b3PrefetchFinalizeBody( bodies + sims[simIndex + 8].bodyId );
+		}
+
+		if ( simIndex + 4 < endIndex )
+		{
+			b3PrefetchFinalizeData( world, bodies + sims[simIndex + 4].bodyId );
+		}
+
 		b3BodyState* state = states + simIndex;
 		b3BodySim* sim = sims + simIndex;
 
@@ -1443,6 +1487,68 @@ static void b3BulletBodyTask( int startIndex, int endIndex, int workerIndex, voi
 #define B3_SIMD_SHIFT 0
 #endif
 
+// Added for Nebenan: buckets for the order of the contacts in a color, see b3OrderColorContacts
+#define B3_CONTACT_ORDER_BUCKETS 64
+
+// Added for Nebenan: the convex contacts of every active color, in buckets of the smaller awake index of their bodies. A
+// color holds no two contacts of the same moving body, so the order within it changes no result. In this order the
+// worker that integrates a range of bodies gets most of their contacts in every color, and the states of those bodies stay
+// in its cache instead of moving between cores from color to color. Only with workers. The collide task wrote the keys,
+// see b3World::contactSortKeys, and the counting sort reads them from that dense array instead of the scattered contacts.
+// Returns the contact ids in stack memory in the order of the active colors, or NULL.
+static int* b3OrderColorContacts( b3World* world, const b3GraphColor* colors, const int* activeColorIndices, int activeColorCount,
+								  int awakeBodyCount, int workerCount )
+{
+	if ( workerCount < 2 )
+	{
+		return NULL;
+	}
+
+	int total = 0;
+	for ( int i = 0; i < activeColorCount; ++i )
+	{
+		total += colors[activeColorIndices[i]].convexContacts.count;
+	}
+
+	if ( total == 0 )
+	{
+		return NULL;
+	}
+
+	int* ordered = (int*)b3StackAlloc( &world->stack, total * (int)sizeof( int ), "ordered contacts" );
+	const int* keys = world->contactSortKeys;
+	int offset = 0;
+	for ( int i = 0; i < activeColorCount; ++i )
+	{
+		const b3GraphColor* color = colors + activeColorIndices[i];
+		const int* ids = color->convexContacts.data;
+		int count = color->convexContacts.count;
+
+		// Keys from an earlier step can exceed the bodies awake now, they go in the last bucket
+		int starts[B3_CONTACT_ORDER_BUCKETS + 1] = { 0 };
+		for ( int k = 0; k < count; ++k )
+		{
+			int bucket = (int)( (int64_t)keys[ids[k]] * B3_CONTACT_ORDER_BUCKETS / awakeBodyCount );
+			starts[b3MinInt( bucket, B3_CONTACT_ORDER_BUCKETS - 1 ) + 1] += 1;
+		}
+
+		for ( int b = 0; b < B3_CONTACT_ORDER_BUCKETS; ++b )
+		{
+			starts[b + 1] += starts[b];
+		}
+
+		for ( int k = 0; k < count; ++k )
+		{
+			int bucket = (int)( (int64_t)keys[ids[k]] * B3_CONTACT_ORDER_BUCKETS / awakeBodyCount );
+			ordered[offset + starts[b3MinInt( bucket, B3_CONTACT_ORDER_BUCKETS - 1 )]++] = ids[k];
+		}
+
+		offset += count;
+	}
+
+	return ordered;
+}
+
 // Solve with graph coloring
 void b3Solve( b3World* world, b3StepContext* stepContext )
 {
@@ -1594,6 +1700,11 @@ void b3Solve( b3World* world, b3StepContext* stepContext )
 		b3ContactPrepareSpan contactPrepareSpans[B3_GRAPH_COLOR_COUNT + 1];
 		b3JointPrepareSpan jointPrepareSpans[B3_GRAPH_COLOR_COUNT + 1];
 
+		// Added for Nebenan
+		int* orderedContacts =
+			b3OrderColorContacts( world, colors, activeColorIndices, activeColorCount, awakeBodyCount, workerCount );
+		int orderedOffset = 0;
+
 		// Distribute transient constraints to each graph color and prepare spans
 		// todo it might be simpler for solver blocks to index into the global arrays
 		{
@@ -1609,6 +1720,13 @@ void b3Solve( b3World* world, b3StepContext* stepContext )
 				widePrepareSpans[i].start = wideBase;
 				widePrepareSpans[i].count = colorConvexContactCount;
 				widePrepareSpans[i].contacts = color->convexContacts.data;
+
+				// Added for Nebenan: the prepare and store steps take the contacts in the order of b3OrderColorContacts
+				if ( orderedContacts != NULL )
+				{
+					widePrepareSpans[i].contacts = orderedContacts + orderedOffset;
+					orderedOffset += colorConvexContactCount;
+				}
 
 				if ( colorConvexContactCount == 0 )
 				{
@@ -1912,6 +2030,10 @@ void b3Solve( b3World* world, b3StepContext* stepContext )
 		b3StackFree( &world->stack, convexBlocks );
 		b3StackFree( &world->stack, bodyBlocks );
 		b3StackFree( &world->stack, stages );
+		if ( orderedContacts != NULL )
+		{
+			b3StackFree( &world->stack, orderedContacts );
+		}
 		b3StackFree( &world->stack, overflow->manifoldConstraints );
 		b3StackFree( &world->stack, overflow->contactConstraints );
 		b3StackFree( &world->stack, manifoldConstraints );

@@ -166,6 +166,11 @@ typedef struct b3World
 	// or in the solver sets.
 	b3Array( b3Contact ) contacts;
 
+	// Added for Nebenan: for every contact id the smaller awake index of its bodies, written by the collide task, so the
+	// solver orders the contacts of each color without visiting them, see b3OrderColorContacts. Zero for ids not seen yet.
+	int* contactSortKeys;
+	int contactSortKeyCapacity;
+
 	// Used to create stable ids for islands
 	b3IdPool islandIdPool;
 
