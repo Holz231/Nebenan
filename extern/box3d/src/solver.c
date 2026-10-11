@@ -1949,6 +1949,13 @@ void b3Solve( b3World* world, b3StepContext* stepContext )
 			{
 				workerContext[i].userTask = NULL;
 			}
+			// Added for Nebenan: the built-in scheduler never runs a task inside the enqueue, so the calling thread can keep
+			// worker 0 for itself. It just prepared the stages and has them in its cache. A waiting worker would otherwise
+			// take the task first and orchestrate the stages with a cold cache.
+			else if ( i == 0 && world->scheduler != NULL )
+			{
+				workerContext[i].userTask = NULL;
+			}
 			else if ( world->taskCount < B3_MAX_TASKS )
 			{
 				char buffer[16];

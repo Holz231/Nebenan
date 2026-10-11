@@ -12,6 +12,33 @@
 #include <stdio.h>
 #include <string.h>
 
+// Added for Nebenan: the same pause as in solver.c, for workers that wait for the next task of a step
+#if ( defined( __GNUC__ ) || defined( __clang__ ) ) && ( defined( __i386__ ) || defined( __x86_64__ ) )
+static void b3Pause( void )
+{
+	__asm__ __volatile__( "pause\n" );
+}
+#elif ( defined( __arm__ ) && defined( __ARM_ARCH ) && __ARM_ARCH >= 7 ) || defined( __aarch64__ )
+static void b3Pause( void )
+{
+	__asm__ __volatile__( "yield" ::: "memory" );
+}
+#elif defined( _MSC_VER ) && ( defined( _M_IX86 ) || defined( _M_X64 ) )
+static void b3Pause( void )
+{
+	_mm_pause();
+}
+#elif defined( _MSC_VER ) && ( defined( _M_ARM ) || defined( _M_ARM64 ) )
+static void b3Pause( void )
+{
+	__yield();
+}
+#else
+static void b3Pause( void )
+{
+}
+#endif
+
 enum b3SchedulerTaskStatus
 {
 	b3_schedulerFree = 0,
@@ -49,6 +76,13 @@ typedef struct b3Scheduler
 
 	b3Semaphore* taskSemaphore;
 	b3AtomicInt shutdown;
+
+	// Added for Nebenan: the workers waiting on the semaphore, so a new task wakes one only when one sleeps. A wake goes
+	// through the kernel and costs the thread that enqueues the task.
+	b3AtomicInt sleeperCount;
+
+	// Added for Nebenan: non-zero while a world steps, see b3SchedulerSetStepActive
+	b3AtomicInt stepActive;
 } b3Scheduler;
 
 // Try to claim and execute one pending task.
@@ -86,16 +120,51 @@ static void b3SchedulerWorkerMain( void* context )
 
 	while ( true )
 	{
+		// Added for Nebenan: claim and execute all available work, and while a step runs, wait for its next task instead
+		// of sleeping. A step enqueues a task for every phase it runs in parallel, and a sleeping worker would need a wake
+		// through the kernel each time and start late. The loop checks for new tasks every 64 pauses, in case one took a
+		// slot before the loop read the count.
+		while ( true )
+		{
+			int seenSlot = b3AtomicLoadInt( &scheduler->nextSlot );
+			if ( b3SchedulerExecuteOne( scheduler ) )
+			{
+				continue;
+			}
+
+			if ( b3AtomicLoadInt( &scheduler->shutdown ) != 0 )
+			{
+				return;
+			}
+
+			if ( b3AtomicLoadInt( &scheduler->stepActive ) == 0 )
+			{
+				break;
+			}
+
+			for ( int i = 0;
+				  i < 64 && b3AtomicLoadInt( &scheduler->nextSlot ) == seenSlot && b3AtomicLoadInt( &scheduler->stepActive ) != 0;
+				  ++i )
+			{
+				b3Pause();
+			}
+		}
+
+		// Count as sleeping before the last look for work: a task enqueued after this look sees the count and wakes a
+		// worker
+		b3AtomicFetchAddInt( &scheduler->sleeperCount, 1 );
+		if ( b3SchedulerExecuteOne( scheduler ) )
+		{
+			b3AtomicFetchAddInt( &scheduler->sleeperCount, -1 );
+			continue;
+		}
+
 		b3WaitSemaphore( scheduler->taskSemaphore );
+		b3AtomicFetchAddInt( &scheduler->sleeperCount, -1 );
 
 		if ( b3AtomicLoadInt( &scheduler->shutdown ) != 0 )
 		{
 			break;
-		}
-
-		// Claim and execute all available work
-		while ( b3SchedulerExecuteOne( scheduler ) )
-		{
 		}
 	}
 }
@@ -170,7 +239,11 @@ void* b3SchedulerEnqueueTask( b3TaskCallback* task, void* taskContext, void* use
 	b3AtomicStoreInt( &schedulerTask->status, b3_schedulerPending );
 
 	// One wake per enqueue is enough: at most one worker picks up each task.
-	b3SignalSemaphore( scheduler->taskSemaphore );
+	// Added for Nebenan: and only if a worker sleeps, the others look for tasks themselves
+	if ( b3AtomicLoadInt( &scheduler->sleeperCount ) > 0 )
+	{
+		b3SignalSemaphore( scheduler->taskSemaphore );
+	}
 
 	return schedulerTask;
 }
@@ -192,7 +265,20 @@ void b3SchedulerFinishTask( void* userTask, void* userContext )
 	{
 		if ( b3SchedulerExecuteOne( scheduler ) == false )
 		{
+			// Added for Nebenan: during a step the workers do not sleep either, giving up the core costs a system call
+			if ( b3AtomicLoadInt( &scheduler->stepActive ) != 0 )
+			{
+				b3Pause();
+				continue;
+			}
+
 			b3Yield();
 		}
 	}
+}
+
+// Added for Nebenan
+void b3SchedulerSetStepActive( b3Scheduler* scheduler, bool active )
+{
+	b3AtomicStoreInt( &scheduler->stepActive, active ? 1 : 0 );
 }

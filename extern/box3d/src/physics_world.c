@@ -1289,6 +1289,9 @@ void b3World_Step( b3WorldId worldId, float timeStep, int subStepCount )
 	if ( world->scheduler != NULL )
 	{
 		b3ResetScheduler( world->scheduler );
+
+		// Added for Nebenan: the workers wait for the tasks of this step instead of sleeping between them
+		b3SchedulerSetStepActive( world->scheduler, true );
 	}
 
 	uint64_t stepTicks = b3GetTicks();
@@ -1397,6 +1400,13 @@ void b3World_Step( b3WorldId worldId, float timeStep, int subStepCount )
 	world->endEventArrayIndex = 1 - world->endEventArrayIndex;
 	b3Array_Clear( world->sensorEndEvents[world->endEventArrayIndex] );
 	b3Array_Clear( world->contactEndEvents[world->endEventArrayIndex] );
+
+	// Added for Nebenan: all tasks of the step are finished, the workers may sleep again
+	if ( world->scheduler != NULL )
+	{
+		b3SchedulerSetStepActive( world->scheduler, false );
+	}
+
 	world->locked = false;
 
 	if ( world->recording != NULL )
