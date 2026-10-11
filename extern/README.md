@@ -166,13 +166,27 @@ Teile voraus.
 liegen in einer Cache-Zeile, und die fordert sie jetzt schon an, wenn sie die beiden auf den Stapel legt, statt erst,
 wenn sie sie wieder herunternimmt (`b3CollideProxyAndSubtree` und `b3VisitPair` in `src/broad_phase.c`).
 
-Die erste, die zweite, die vierte bis achte, die zehnte und die dreizehnte bis zwanzigste ändern an den Ergebnissen
-nichts. Die dritte und die neunte ändern sie in den letzten Bits, dafür hängen sie nicht mehr davon ab, in welcher
-Reihenfolge Formen in die Bäume kommen. Die elfte ändert sie, weil Kontakte zu anderen Zeitpunkten entstehen, die
-zwölfte, weil sie weniger Punkte bekommen. Die Ergänzungen stehen in `include/box3d/box3d.h`, `include/box3d/types.h`,
-`include/box3d/constants.h`, `src/core.h`, `src/core.c`, `src/shape.h`, `src/shape.c`, `src/body.c`, `src/contact.h`,
-`src/contact.c`, `src/contact_solver.c`, `src/convex_manifold.c`, `src/world_snapshot.c`, `src/recording.c`,
-`src/solver.c`, `src/broad_phase.h`, `src/broad_phase.c`, `src/dynamic_tree.h`, `src/dynamic_tree.c`,
+**Abschluss der Körper vorausladen.** Nach dem Löser geht `b3FinalizeBodiesTask` alle wachen Körper durch und liest für
+jeden seinen Eintrag, seine Insel und seine Formen samt deren Boxen, alles von verstreuten Stellen. Jetzt holt die
+Schleife den Eintrag acht Körper voraus und vier voraus die Insel, die Felder der ersten Form, die sie liest, und deren
+Box (`b3PrefetchFinalizeBody` und `b3PrefetchFinalizeData` in `src/solver.c`).
+
+**Kontakte jeder Farbe nach Körpern ordnen.** Mit mehreren Threads teilt Box3D die Körper und die Kontakte jeder Farbe
+in Blöcken unter den Workern auf. Ein Körper hat Kontakte in vielen Farben, und so wanderte sein Zustand von Farbe zu
+Farbe in den Cache eines anderen Kerns. Jetzt merkt sich die Kontakt-Schleife für jeden Kontakt den kleineren Index
+seiner wachen Körper in einem Feld nach Kontakt (`b3World::contactSortKeys`). Ob er sich geändert hat, sieht sie an
+einer Kopie im Kontakt (`b3Contact::sortKey`), den sie ohnehin im Cache hat, und nur dann schreibt sie das Feld. Der
+Löser verteilt die Kontakte jeder Farbe damit auf 64 Fächer (`b3OrderColorContacts` in `src/solver.c`), und der Worker,
+der einen Bereich von Körpern integriert, rechnet in jeder Farbe vor allem deren Kontakte. In einer Farbe teilen sich
+zwei Kontakte keinen beweglichen Körper, die Reihenfolge ändert nichts. Mit einem Thread ordnet der Löser nicht.
+
+Die erste, die zweite, die vierte bis achte, die zehnte und die dreizehnte bis zweiundzwanzigste ändern an den
+Ergebnissen nichts. Die dritte und die neunte ändern sie in den letzten Bits, dafür hängen sie nicht mehr davon ab, in
+welcher Reihenfolge Formen in die Bäume kommen. Die elfte ändert sie, weil Kontakte zu anderen Zeitpunkten entstehen,
+die zwölfte, weil sie weniger Punkte bekommen. Die Ergänzungen stehen in `include/box3d/box3d.h`,
+`include/box3d/types.h`, `include/box3d/constants.h`, `src/core.h`, `src/core.c`, `src/shape.h`, `src/shape.c`,
+`src/body.c`, `src/contact.h`, `src/contact.c`, `src/contact_solver.c`, `src/convex_manifold.c`, `src/world_snapshot.c`,
+`src/recording.c`, `src/solver.c`, `src/broad_phase.h`, `src/broad_phase.c`, `src/dynamic_tree.h`, `src/dynamic_tree.c`,
 `src/parallel_for.c`, `src/physics_world.h` und `src/physics_world.c`, jeweils mit „Added for Nebenan“ markiert.
 `B3_HAS_UNIQUE_HULLS`, `B3_HAS_SHAPE_BATCH`, `B3_HAS_SHAPE_CONTACT_LISTS`, `B3_HAS_EXTERNAL_HULLS` und
 `B3_HAS_BODY_PREFETCH` zeigen die zweite, die vierte, die fünfte, die sechste und die neunzehnte an. Fehlen sie, etwa
