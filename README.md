@@ -723,7 +723,10 @@ mit einem 3,2, 0 und 3,7 %. Die Tabellen oben sind von davor, am Tag dieser Mess
 Seit `physik-6` testet Box3D zwei Stücke nicht mehr, die eine Fläche beweisbar noch auseinanderhält, und holt die Formen
 und Hüllen der Kontakte voraus, die es testet. Gepaart gegen `physik-5` kostet die Kollision damit mit 4 Threads 9 bis
 18 % weniger und ein Frame bis zu 5,9 %, mit einem Thread die Kollision 14 bis 25 % und ein Frame 6,6 bis 11,6 %. Auch
-das ändert kein Bit.
+das ändert kein Bit. Seit `physik-7` holen Box3D und Nebenan an drei weiteren Stellen voraus, an denen sie auf den
+Speicher warteten: die Kontakte für den Löser, die Kinder in den Bäumen der Paarsuche und die Trümmerteile samt ihren
+Körpern, wenn Nebenan in jedem Update nachsieht, welche zur Ruhe kommen. Gepaart gegen `physik-6` kostet ein Frame damit
+mit 4 Threads 2,8 bis 4,8 % weniger und mit einem 2,2 bis 4,4 %, wieder ohne ein Bit zu ändern.
 
 **Eine Stadt größer als der Speicher.** Im Benchmark fliegt eine Kamera mit 30 m/s 900 m weit durch eine Stadt aus
 65 536 Häusern auf 3,6 × 3,1 km und 300 m zurück, Bruchstückgröße ×4. Am Stück bräuchte sie 24 GB. Geladen sind die

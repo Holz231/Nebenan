@@ -151,15 +151,31 @@ zweite Schleife testet sie und holt dabei ihre Formen vier und die Köpfe ihrer 
 (`b3PrefetchContactShapes` und `b3PrefetchContactHulls`). Vorher wartete der Test auf beides nacheinander, denn erst die
 Form sagt, wo die Hülle liegt. Jeder Kontakt wird für sich gerechnet, die Reihenfolge ändert nichts.
 
-Die erste, die zweite, die vierte bis achte, die zehnte und die dreizehnte bis siebzehnte ändern an den Ergebnissen
+**Kontakte für den Löser vorausladen.** Bevor die Teilschritte rechnen, liest `b3PrepareContacts_Convex` für jeden
+berührenden Kontakt den Kontakt, seine Punkte und Masse und Trägheit seiner beiden Körper, alles von verstreuten
+Stellen. Jetzt holt die Schleife die Kontakte zwei breite Bedingungen voraus und eine voraus, wenn diese Kontakte schon
+im Cache sind, ihre Punkte und Körperdaten (`b3PrefetchPrepareContact` und `b3PrefetchPrepareData` in
+`src/contact_solver.c`).
+
+**Körper vorausladen.** `b3Body_Prefetch` holt den Eintrag eines Körpers in den Cache, `b3Body_PrefetchMotion` Lage
+und Geschwindigkeiten eines wachen Körpers, wofür es den Eintrag liest (`src/body.c`). Beide ändern nichts. Nebenan geht
+in jedem Update alle bewegten Trümmerteile durch, fragt Box3D nach ihren Körpern und holt damit die Körper der nächsten
+Teile voraus.
+
+**Kinder im Baum vorausladen.** Die Paarsuche geht die Bäume mit einem Stapel durch. Die beiden Kinder eines Knotens
+liegen in einer Cache-Zeile, und die fordert sie jetzt schon an, wenn sie die beiden auf den Stapel legt, statt erst,
+wenn sie sie wieder herunternimmt (`b3CollideProxyAndSubtree` und `b3VisitPair` in `src/broad_phase.c`).
+
+Die erste, die zweite, die vierte bis achte, die zehnte und die dreizehnte bis zwanzigste ändern an den Ergebnissen
 nichts. Die dritte und die neunte ändern sie in den letzten Bits, dafür hängen sie nicht mehr davon ab, in welcher
 Reihenfolge Formen in die Bäume kommen. Die elfte ändert sie, weil Kontakte zu anderen Zeitpunkten entstehen, die
 zwölfte, weil sie weniger Punkte bekommen. Die Ergänzungen stehen in `include/box3d/box3d.h`, `include/box3d/types.h`,
-`include/box3d/constants.h`, `src/core.h`, `src/core.c`, `src/shape.h`, `src/shape.c`, `src/contact.h`, `src/contact.c`,
-`src/convex_manifold.c`, `src/world_snapshot.c`, `src/recording.c`, `src/solver.c`, `src/broad_phase.h`,
-`src/broad_phase.c`, `src/dynamic_tree.h`, `src/dynamic_tree.c`, `src/parallel_for.c`, `src/physics_world.h` und
-`src/physics_world.c`, jeweils mit „Added for Nebenan“ markiert. `B3_HAS_UNIQUE_HULLS`, `B3_HAS_SHAPE_BATCH`,
-`B3_HAS_SHAPE_CONTACT_LISTS` und `B3_HAS_EXTERNAL_HULLS` zeigen die zweite, die vierte, die fünfte und die sechste an.
-Fehlen sie, etwa mit einem eigenen Box3D, läuft Nebenan wie zuvor, nur wachsen Box3Ds Arrays dann durch Umkopieren, die
-Hüllen gehen durch die Tabelle, jede Form geht einzeln in den Baum, jedes stehende Bruchstück bekommt einen eigenen
-Körper, und Box3D hält eine Kopie jeder Hülle.
+`include/box3d/constants.h`, `src/core.h`, `src/core.c`, `src/shape.h`, `src/shape.c`, `src/body.c`, `src/contact.h`,
+`src/contact.c`, `src/contact_solver.c`, `src/convex_manifold.c`, `src/world_snapshot.c`, `src/recording.c`,
+`src/solver.c`, `src/broad_phase.h`, `src/broad_phase.c`, `src/dynamic_tree.h`, `src/dynamic_tree.c`,
+`src/parallel_for.c`, `src/physics_world.h` und `src/physics_world.c`, jeweils mit „Added for Nebenan“ markiert.
+`B3_HAS_UNIQUE_HULLS`, `B3_HAS_SHAPE_BATCH`, `B3_HAS_SHAPE_CONTACT_LISTS`, `B3_HAS_EXTERNAL_HULLS` und
+`B3_HAS_BODY_PREFETCH` zeigen die zweite, die vierte, die fünfte, die sechste und die neunzehnte an. Fehlen sie, etwa
+mit einem eigenen Box3D, läuft Nebenan wie zuvor, nur wachsen Box3Ds Arrays dann durch Umkopieren, die Hüllen gehen
+durch die Tabelle, jede Form geht einzeln in den Baum, jedes stehende Bruchstück bekommt einen eigenen Körper, Box3D
+hält eine Kopie jeder Hülle, und Nebenan holt die Körper der Trümmer nicht voraus.
