@@ -818,6 +818,7 @@ bool b3UpdateContact( b3World* world, int workerIndex, b3Contact* contact, b3Sha
 		else if ( child.type == b3_hullShape )
 		{
 			childShapeA.hull = child.hull;
+			childShapeA.hullBounds = child.hull->aabb; // Added for Nebenan
 			b3WorldTransform xfChild = b3MulWorldTransforms( xfA, child.transform );
 			bool flip = false;
 			touching = b3UpdateConvexContact( world, workerIndex, contact, &childShapeA, xfChild, shapeB, xfB, flip, arena );

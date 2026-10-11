@@ -562,6 +562,42 @@ static inline void b3PrefetchContact( const b3Contact* contact )
 	b3Prefetch( p + 192 );
 }
 
+// Added for Nebenan: issues T0 prefetches for what the collide loop reads for a contact besides the contact itself: the
+// boxes of its two shapes and the start of the sims of its two bodies up to the extents, each of which can straddle two
+// cache lines. Sleeping bodies are left out, the loop finds them through the body array. Forced inline, GCC 13 drops
+// the prefetches of a helper that only reads.
+B3_FORCE_INLINE void b3PrefetchContactData( const b3Contact* contact, const b3AABB* fatAABBs, const b3BodySim* awakeSims,
+											const b3BodySim* staticSims )
+{
+	const char* boxA = (const char*)( fatAABBs + contact->shapeIdA );
+	const char* boxB = (const char*)( fatAABBs + contact->shapeIdB );
+	b3Prefetch( boxA );
+	b3Prefetch( boxA + sizeof( b3AABB ) - 1 );
+	b3Prefetch( boxB );
+	b3Prefetch( boxB + sizeof( b3AABB ) - 1 );
+
+	int encodedIndices[2] = { contact->encodedBodySimA, contact->encodedBodySimB };
+	for ( int k = 0; k < 2; ++k )
+	{
+		int encodedIndex = encodedIndices[k];
+		const b3BodySim* sim = NULL;
+		if ( encodedIndex >= 0 )
+		{
+			sim = awakeSims + encodedIndex;
+		}
+		else if ( b3IsStaticSimIndex( encodedIndex ) )
+		{
+			sim = staticSims - encodedIndex - 2;
+		}
+
+		if ( sim != NULL )
+		{
+			b3Prefetch( sim );
+			b3Prefetch( (const char*)( &sim->maxExtent + 1 ) - 1 );
+		}
+	}
+}
+
 static inline b3BodySim* b3ResolveContactBodySim( b3World* world, b3BodySim* awakeSims, b3BodySim* staticSims, int encodedIndex,
 												  int bodyId )
 {
@@ -604,14 +640,24 @@ static void b3CollideTask( int startIndex, int endIndex, int workerIndex, void* 
 	// Prefetch contact[i + contactPrefetchDistance] each iteration so the random
 	// 216 B contact load lands in L1 by the time we reach it. Distance picked to
 	// cover ~200 cycles of memory latency without overshooting the L1 working set.
-	const int contactPrefetchDistance = 4;
+	// Added for Nebenan: twice as far as before, 4. Halfway there, the contact is in the cache, and the loop prefetches
+	// the boxes and body sims it reads for it, which it waited for most, see b3PrefetchContactData.
+	const int contactPrefetchDistance = 8;
+	const int dataPrefetchDistance = 4;
 	int prefetchEnd = endIndex - contactPrefetchDistance;
+	int dataPrefetchEnd = endIndex - dataPrefetchDistance;
 
 	for ( int i = startIndex; i < endIndex; ++i )
 	{
 		if ( i < prefetchEnd )
 		{
 			b3PrefetchContact( contacts + contactIndices[i + contactPrefetchDistance] );
+		}
+
+		// Added for Nebenan
+		if ( i < dataPrefetchEnd )
+		{
+			b3PrefetchContactData( contacts + contactIndices[i + dataPrefetchDistance], fatAABBs, awakeSims, staticSims );
 		}
 
 		int contactIndex = contactIndices[i];

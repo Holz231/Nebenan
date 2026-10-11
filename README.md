@@ -714,6 +714,13 @@ Die teuersten Frames folgen auf einen Einsturz: Der Schutt um die Reste der Etag
 Schritt Tausende neuer Kontakte an. Das ist echte Arbeit, das meiste davon fällt danach wirklich, siehe
 [`docs/Optimierungen.md`](docs/Optimierungen.md).
 
+Seit `physik-5` wartet Box3D seltener auf den Speicher: Die Box jeder Hülle liegt in ihrer Form, einen Kontakt, den
+Box3D nach einem knappen Fehlschlag seines Zwischenspeichers schon gebaut hat, baut es nicht noch einmal, und die
+Kontakt-Schleife holt die Daten der nächsten Kontakte voraus, siehe [`extern/README.md`](extern/README.md). An den
+Ergebnissen ändert das kein Bit. Unter Trommelfeuer bei vierfacher, doppelter und einfacher Bruchstückgröße, gepaart
+über zwölf Folgen von Granaten und neu gegen alt im Wechsel, kostet ein Frame mit 4 Threads 1,5, 3,4 und 3,3 % weniger,
+mit einem 3,2, 0 und 3,7 %. Die Tabellen oben sind von davor, am Tag dieser Messung war die VM 30 bis 65 % langsamer.
+
 **Eine Stadt größer als der Speicher.** Im Benchmark fliegt eine Kamera mit 30 m/s 900 m weit durch eine Stadt aus
 65 536 Häusern auf 3,6 × 3,1 km und 300 m zurück, Bruchstückgröße ×4. Am Stück bräuchte sie 24 GB. Geladen sind die
 Häuser bis 120 m um die Kamera, höchstens zwei neue pro Frame, und die bis 10 m um alles, was sich bewegt. Die Worker

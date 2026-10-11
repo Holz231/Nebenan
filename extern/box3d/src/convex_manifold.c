@@ -2042,6 +2042,11 @@ void b3CollideHulls( b3LocalManifold* manifold, int capacity, const b3HullData* 
 
 	cache->hit = 0;
 
+	// Added for Nebenan: a face contact built from the cached feature that missed the cached separation. When the search
+	// below finds the same face and support vertex, the contact is the same, see the face contacts at the end.
+	b3SATCache keptCache = { 0 };
+	int keptPointCount = 0;
+
 	// Attempt to use the cache to speed up collision
 	switch ( cache->type )
 	{
@@ -2083,6 +2088,13 @@ void b3CollideHulls( b3LocalManifold* manifold, int capacity, const b3HullData* 
 				cache->hit = 1;
 				return;
 			}
+
+			// Added for Nebenan
+			if ( touching )
+			{
+				keptCache = localCache;
+				keptPointCount = manifold->pointCount;
+			}
 		}
 		break;
 
@@ -2121,6 +2133,13 @@ void b3CollideHulls( b3LocalManifold* manifold, int capacity, const b3HullData* 
 				// Cache hit, contact points generated
 				cache->hit = 1;
 				return;
+			}
+
+			// Added for Nebenan
+			if ( touching )
+			{
+				keptCache = localCache;
+				keptPointCount = manifold->pointCount;
 			}
 		}
 		break;
@@ -2282,8 +2301,17 @@ void b3CollideHulls( b3LocalManifold* manifold, int capacity, const b3HullData* 
 		B3_VALIDATE( 0 <= faceQuery.indexA && faceQuery.indexA < hullA->faceCount );
 		B3_VALIDATE( 0 <= faceQuery.indexB && faceQuery.indexB < hullB->vertexCount );
 
-		// Face contact A
-		b3BuildFaceAContact( manifold, capacity, hullA, hullB, transformBtoA, faceQuery, cache );
+		// Face contact A. Added for Nebenan: the contact from the cached feature if it was the same, b3BuildFaceAContact
+		// depends on nothing but the face, the support vertex and the transform. The points are still in the manifold.
+		if ( keptCache.type == b3_faceAxisA && keptCache.indexA == faceQuery.indexA && keptCache.indexB == faceQuery.indexB )
+		{
+			manifold->pointCount = keptPointCount;
+			*cache = keptCache;
+		}
+		else
+		{
+			b3BuildFaceAContact( manifold, capacity, hullA, hullB, transformBtoA, faceQuery, cache );
+		}
 
 		B3_VALIDATE( cache->indexA < hullA->faceCount );
 		B3_VALIDATE( cache->indexB < hullB->vertexCount );
@@ -2294,8 +2322,16 @@ void b3CollideHulls( b3LocalManifold* manifold, int capacity, const b3HullData* 
 		B3_VALIDATE( 0 <= faceQuery.indexA && faceQuery.indexA < hullA->vertexCount );
 		B3_VALIDATE( 0 <= faceQuery.indexB && faceQuery.indexB < hullB->faceCount );
 
-		// Face contact B
-		b3BuildFaceBContact( manifold, capacity, hullA, hullB, transformBtoA, faceQuery, cache );
+		// Face contact B, the same as for face contact A above
+		if ( keptCache.type == b3_faceAxisB && keptCache.indexA == faceQuery.indexA && keptCache.indexB == faceQuery.indexB )
+		{
+			manifold->pointCount = keptPointCount;
+			*cache = keptCache;
+		}
+		else
+		{
+			b3BuildFaceBContact( manifold, capacity, hullA, hullB, transformBtoA, faceQuery, cache );
+		}
 
 		B3_VALIDATE( cache->indexA < hullA->vertexCount );
 		B3_VALIDATE( cache->indexB < hullB->faceCount );

@@ -158,6 +158,7 @@ static b3Shape* b3CreateShapeInternal( b3World* world, b3Body* body, b3WorldTran
 			{
 				shape->hull = b3AddHullToDatabase( world, (const b3HullData*)geometry );
 			}
+			shape->hullBounds = shape->hull->aabb; // Added for Nebenan
 			break;
 
 		case b3_meshShape:
@@ -634,7 +635,8 @@ b3AABB b3ComputeShapeAABB( const b3Shape* shape, b3Transform transform )
 			return b3ComputeHeightFieldAABB( shape->heightField, transform );
 
 		case b3_hullShape:
-			return b3ComputeHullAABB( shape->hull, transform );
+			// Added for Nebenan: the same as b3ComputeHullAABB, from the bounds kept in the shape
+			return b3AABB_Transform( transform, shape->hullBounds );
 
 		case b3_meshShape:
 			return b3ComputeMeshAABB( shape->mesh.data, transform, shape->mesh.scale );
@@ -1670,6 +1672,7 @@ void b3Shape_SetHull( b3ShapeId shapeId, const b3HullData* hull )
 	b3DestroyShapeAllocationForShapeChange( world, shape );
 
 	shape->hull = data;
+	shape->hullBounds = data->aabb; // Added for Nebenan
 	shape->type = b3_hullShape;
 	shape->aabbMargin = b3ComputeShapeMargin( shape );
 

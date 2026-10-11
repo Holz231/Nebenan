@@ -117,14 +117,33 @@ zufliegen, haben dadurch öfter noch keine Punkte, wenn sie sich treffen, und ge
 Löser sie trennt. Gegen statische Formen verfolgt Box3D schnelle Trümmer weiter über den ganzen Schritt
 (`debrisSweepDistance`).
 
-Die erste, die zweite, die vierte bis achte und die zehnte ändern an den Ergebnissen nichts. Die dritte und die neunte
-ändern sie in den letzten Bits, dafür hängen sie nicht mehr davon ab, in welcher Reihenfolge Formen in die Bäume kommen.
-Die elfte ändert sie, weil Kontakte zu anderen Zeitpunkten entstehen, die zwölfte, weil sie weniger Punkte bekommen. Die
-Ergänzungen stehen in `include/box3d/box3d.h`, `include/box3d/types.h`, `include/box3d/constants.h`, `src/core.h`,
-`src/core.c`, `src/shape.h`, `src/shape.c`, `src/contact.h`, `src/contact.c`, `src/world_snapshot.c`, `src/recording.c`,
-`src/solver.c`, `src/broad_phase.h`, `src/broad_phase.c`, `src/dynamic_tree.h`, `src/dynamic_tree.c`,
-`src/parallel_for.c`, `src/physics_world.h` und `src/physics_world.c`, jeweils mit „Added for Nebenan“ markiert.
-`B3_HAS_UNIQUE_HULLS`, `B3_HAS_SHAPE_BATCH`, `B3_HAS_SHAPE_CONTACT_LISTS` und `B3_HAS_EXTERNAL_HULLS` zeigen die zweite,
-die vierte, die fünfte und die sechste an. Fehlen sie, etwa mit einem eigenen Box3D, läuft Nebenan wie zuvor, nur
-wachsen Box3Ds Arrays dann durch Umkopieren, die Hüllen gehen durch die Tabelle, jede Form geht einzeln in den Baum,
-jedes stehende Bruchstück bekommt einen eigenen Körper, und Box3D hält eine Kopie jeder Hülle.
+**Grenzen der Hülle in der Form.** Nach jedem Schritt rechnet Box3D die Box jeder bewegten Form neu, aus der Box ihrer
+Hülle im eigenen Rahmen. Die lag in den Hüllendaten, an einer anderen Stelle im Speicher als die Form, und kostete für
+jede Form in jedem Schritt einen Cache-Fehlzugriff. Jetzt liegt sie in der Form neben dem Zeiger auf die Hülle, in der
+Union, so bleibt eine Form 216 Byte groß (`b3Shape::hullBounds` in `src/shape.h`). Box3D setzt sie überall, wo es den
+Zeiger setzt.
+
+**Kontakt nach knappem Fehlschlag nicht doppelt bauen.** Für zwei Hüllen merkt sich Box3D das trennende Merkmal und
+den Abstand. Weicht der Abstand um mehr als `B3_LINEAR_SLOP` davon ab, 5 mm, baut Box3D den Kontakt aus dem gemerkten
+Merkmal, verwirft ihn, sucht alle Trennachsen neu und baut den Kontakt für das gefundene Merkmal. Ist es dieselbe
+Fläche mit demselben Eckpunkt, ist auch der Kontakt derselbe, denn er hängt von nichts anderem ab. Dann behält Box3D
+jetzt den ersten (`b3CollideHulls` in `src/convex_manifold.c`).
+
+**Kontakt-Schleife lädt weiter voraus.** Die Schleife der Kollision über alle wachen Kontakte holte jeden Kontakt vier
+Plätze voraus in den Cache, wartete dann aber auf die Boxen seiner beiden Formen und die Daten seiner beiden Körper, die
+verstreut im Speicher liegen. Jetzt holt sie den Kontakt acht Plätze voraus, und vier Plätze voraus, wenn er schon im
+Cache ist, auch seine Boxen und Körperdaten (`b3PrefetchContactData` in `src/physics_world.c`). Weiter voraus brachte
+weniger, die Formen dazu auch.
+
+Die erste, die zweite, die vierte bis achte, die zehnte und die dreizehnte bis fünfzehnte ändern an den Ergebnissen
+nichts. Die dritte und die neunte ändern sie in den letzten Bits, dafür hängen sie nicht mehr davon ab, in welcher
+Reihenfolge Formen in die Bäume kommen. Die elfte ändert sie, weil Kontakte zu anderen Zeitpunkten entstehen, die
+zwölfte, weil sie weniger Punkte bekommen. Die Ergänzungen stehen in `include/box3d/box3d.h`, `include/box3d/types.h`,
+`include/box3d/constants.h`, `src/core.h`, `src/core.c`, `src/shape.h`, `src/shape.c`, `src/contact.h`, `src/contact.c`,
+`src/convex_manifold.c`, `src/world_snapshot.c`, `src/recording.c`, `src/solver.c`, `src/broad_phase.h`,
+`src/broad_phase.c`, `src/dynamic_tree.h`, `src/dynamic_tree.c`, `src/parallel_for.c`, `src/physics_world.h` und
+`src/physics_world.c`, jeweils mit „Added for Nebenan“ markiert. `B3_HAS_UNIQUE_HULLS`, `B3_HAS_SHAPE_BATCH`,
+`B3_HAS_SHAPE_CONTACT_LISTS` und `B3_HAS_EXTERNAL_HULLS` zeigen die zweite, die vierte, die fünfte und die sechste an.
+Fehlen sie, etwa mit einem eigenen Box3D, läuft Nebenan wie zuvor, nur wachsen Box3Ds Arrays dann durch Umkopieren, die
+Hüllen gehen durch die Tabelle, jede Form geht einzeln in den Baum, jedes stehende Bruchstück bekommt einen eigenen
+Körper, und Box3D hält eine Kopie jeder Hülle.

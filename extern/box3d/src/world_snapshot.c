@@ -744,6 +744,7 @@ static void b3DesShapes( b3SnapReader* r, b3World* world, b3RecReader* rdr )
 				{
 					dst->hull = b3AddHullToDatabase( world, (const b3HullData*)slot->bytes );
 				}
+				dst->hullBounds = dst->hull->aabb; // Added for Nebenan
 				break;
 			}
 			case b3_meshShape:

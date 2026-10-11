@@ -66,7 +66,14 @@ typedef struct b3Shape
 	{
 		b3Capsule capsule;
 		b3Sphere sphere;
-		const b3HullData* hull;
+
+		// Added for Nebenan: the bounds of the hull in the frame of the shape next to the pointer, so the bounds of each
+		// shape after every step read no hull data, see b3ComputeShapeAABB. Set wherever the hull is.
+		struct
+		{
+			const b3HullData* hull;
+			b3AABB hullBounds;
+		};
 		b3Mesh mesh;
 		const b3HeightFieldData* heightField;
 		const b3CompoundData* compound;
