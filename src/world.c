@@ -514,6 +514,16 @@ static int nbNextMoving( const nbWorld* world, int index )
 	return 64 * wordIndex + nbCTZ64( word );
 }
 
+// The moving debris a number of places after an index, the debris count when fewer follow
+static int nbMovingAhead( const nbWorld* world, int index, int places )
+{
+	for ( int k = 0; k < places && index < world->debris.count; ++k )
+	{
+		index = nbNextMoving( world, index + 1 );
+	}
+	return index;
+}
+
 static void nbRemoveDebris( nbWorld* world, int actorIndex )
 {
 	nbActor* actor = world->actors.data + actorIndex;
@@ -4466,9 +4476,20 @@ static void nbWakeHitRubble( nbWorld* world )
 static void nbReleaseHeldRubble( nbWorld* world, b3Vec3 up )
 {
 	int rubbleCount = world->rubbleCount;
-	for ( int i = nbNextMoving( world, 0 ); i < world->debris.count && rubbleCount - world->rubbleCount < NB_MAX_RELEASES;
+
+	// Most pieces hold no rubble, and the loop waited most for that flag of each, from scattered memory. It prefetches
+	// the flag eight pieces ahead.
+	int first = nbNextMoving( world, 0 );
+	int ahead = nbMovingAhead( world, first, 8 );
+	for ( int i = first; i < world->debris.count && rubbleCount - world->rubbleCount < NB_MAX_RELEASES;
 		  i = nbNextMoving( world, i + 1 ) )
 	{
+		if ( ahead < world->debris.count )
+		{
+			NB_PREFETCH( &world->actors.data[world->debris.data[ahead]].holdsRubble );
+			ahead = nbNextMoving( world, ahead + 1 );
+		}
+
 		int actorIndex = world->debris.data[i];
 		nbActor* actor = world->actors.data + actorIndex;
 		if ( actor->holdsRubble == false )
@@ -4927,8 +4948,46 @@ static void nbSettleDebris( nbWorld* world, b3Vec3 up, float timeStep )
 	uint32_t stamp = world->settleStamp;
 	int* quiet = nbArena_AllocArray( &world->arena, int, world->debris.count );
 	int quietCount = 0;
-	for ( int i = nbNextMoving( world, 0 ); i < world->debris.count; i = nbNextMoving( world, i + 1 ) )
+
+	// The loop reads each piece, and the record, the transform and the velocities of its body, all from scattered memory,
+	// and it waited for them most. Three cursors run ahead of it. Eight pieces ahead it prefetches the piece, up to the
+	// pose it holds rubble at, and its settle slot. Four ahead it prefetches the record of the body, which needs the
+	// piece, and two ahead the motion of the body, which needs the record, see b3Body_Prefetch.
+	int first = nbNextMoving( world, 0 );
+	int pieceAhead = nbMovingAhead( world, first, 8 );
+#if defined( B3_HAS_BODY_PREFETCH )
+	int bodyAhead = nbMovingAhead( world, first, 4 );
+	int motionAhead = nbMovingAhead( world, first, 2 );
+#endif
+	for ( int i = first; i < world->debris.count; i = nbNextMoving( world, i + 1 ) )
 	{
+		if ( pieceAhead < world->debris.count )
+		{
+			const char* piece = (const char*)( world->actors.data + world->debris.data[pieceAhead] );
+			const char* poseEnd = piece + offsetof( nbActor, holdBounds ) - 1;
+			for ( const char* line = piece; line < poseEnd; line += 64 )
+			{
+				NB_PREFETCH( line );
+			}
+			NB_PREFETCH( poseEnd );
+			NB_PREFETCH( piece + offsetof( nbActor, settleSlot ) );
+			pieceAhead = nbNextMoving( world, pieceAhead + 1 );
+		}
+
+#if defined( B3_HAS_BODY_PREFETCH )
+		if ( bodyAhead < world->debris.count )
+		{
+			b3Body_Prefetch( world->actors.data[world->debris.data[bodyAhead]].bodyId );
+			bodyAhead = nbNextMoving( world, bodyAhead + 1 );
+		}
+
+		if ( motionAhead < world->debris.count )
+		{
+			b3Body_PrefetchMotion( world->actors.data[world->debris.data[motionAhead]].bodyId );
+			motionAhead = nbNextMoving( world, motionAhead + 1 );
+		}
+#endif
+
 		int actorIndex = world->debris.data[i];
 		nbActor* actor = world->actors.data + actorIndex;
 		if ( nbIsQuiet( world, actor, timeStep ) == false )

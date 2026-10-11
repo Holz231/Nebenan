@@ -10,6 +10,9 @@
 
 #if defined( _MSC_VER ) && !defined( __clang__ )
 #include <intrin.h>
+#if defined( _M_X64 ) || defined( _M_IX86 )
+#include <xmmintrin.h>
+#endif
 #endif
 
 #if defined( _MSC_VER )
@@ -141,6 +144,17 @@ static inline int nbCTZ64( uint64_t word )
 	return __builtin_ctzll( word );
 #endif
 }
+
+// Start loading the cache line at an address, for a loop that reads scattered memory. Only a hint, it changes nothing.
+#if defined( __GNUC__ ) || defined( __clang__ )
+#define NB_PREFETCH( address ) __builtin_prefetch( (const void*)( address ), 0, 3 )
+#elif defined( _MSC_VER ) && ( defined( _M_X64 ) || defined( _M_IX86 ) )
+#define NB_PREFETCH( address ) _mm_prefetch( (const char*)( address ), _MM_HINT_T0 )
+#elif defined( _MSC_VER )
+#define NB_PREFETCH( address ) __prefetch( (const void*)( address ) )
+#else
+#define NB_PREFETCH( address ) ( (void)( address ) )
+#endif
 
 // Linear scratch allocator. Memory is released all at once with nbArena_Reset.
 // Allocations never move, the arena grows by chaining blocks and coalesces them on reset.

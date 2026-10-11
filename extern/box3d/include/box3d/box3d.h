@@ -702,6 +702,17 @@ B3_API float b3Body_GetGravityScale( b3BodyId bodyId );
 /// @return true if this body is awake
 B3_API bool b3Body_IsAwake( b3BodyId bodyId );
 
+/// Start loading the record of a body into the cache, for a loop that reads many bodies. This changes nothing. Loading the
+/// transform and the velocities needs the record first, see b3Body_PrefetchMotion. Added for Nebenan.
+B3_API void b3Body_Prefetch( b3BodyId bodyId );
+
+/// Start loading the transform and the velocities of an awake body into the cache. This changes nothing. It reads the
+/// record of the body, so prefetch that a few bodies earlier, see b3Body_Prefetch. Added for Nebenan.
+B3_API void b3Body_PrefetchMotion( b3BodyId bodyId );
+
+/// This Box3D has b3Body_Prefetch and b3Body_PrefetchMotion
+#define B3_HAS_BODY_PREFETCH 1
+
 /// Wake a body from sleep. This wakes the entire island the body is touching.
 /// @warning Putting a body to sleep will put the entire island of bodies touching this body to sleep,
 /// which can be expensive and possibly unintuitive.

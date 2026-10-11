@@ -1423,6 +1423,42 @@ static inline b3Vec3W b3PerpW( b3Vec3W a )
 	return b3MulSVW( s, p );
 }
 
+// Added for Nebenan: b3PrepareContacts_Convex reads each contact from the body indices and the manifold pointer to the
+// friction, the restitution and the tangent velocity at its end. This prefetches every cache line of that range. Forced
+// inline, GCC 13 drops the prefetches of a helper that only reads.
+B3_FORCE_INLINE void b3PrefetchPrepareContact( const b3Contact* contact )
+{
+	const char* start = (const char*)&contact->encodedBodySimA;
+	b3Prefetch( start );
+	b3Prefetch( start + 64 );
+	b3Prefetch( start + 128 );
+	b3Prefetch( (const char*)( contact + 1 ) - 1 );
+}
+
+// Added for Nebenan: next to the contact, b3PrepareContacts_Convex reads its manifold and the mass and the inertia of its
+// awake bodies. This prefetches them, reading the contact, which must be in the cache already.
+B3_FORCE_INLINE void b3PrefetchPrepareData( const b3Contact* contact, const b3BodySim* sims )
+{
+	const char* manifold = (const char*)contact->manifolds;
+	for ( int offset = 0; offset < (int)sizeof( b3Manifold ); offset += 64 )
+	{
+		b3Prefetch( manifold + offset );
+	}
+	b3Prefetch( manifold + sizeof( b3Manifold ) - 1 );
+
+	int indices[2] = { b3DecodeAwakeIndex( contact->encodedBodySimA ), b3DecodeAwakeIndex( contact->encodedBodySimB ) };
+	for ( int k = 0; k < 2; ++k )
+	{
+		if ( indices[k] != B3_NULL_INDEX )
+		{
+			const b3BodySim* sim = sims + indices[k];
+			b3Prefetch( &sim->invMass );
+			b3Prefetch( &sim->invInertiaWorld );
+			b3Prefetch( (const char*)( &sim->invInertiaWorld + 1 ) - 1 );
+		}
+	}
+}
+
 void b3PrepareContacts_Convex( b3SolverBlock block, b3StepContext* context )
 {
 	b3TracyCZoneNC( prepare_contact, "Prepare Contact", b3_colorYellow, true );
@@ -1467,6 +1503,24 @@ void b3PrepareContacts_Convex( b3SolverBlock block, b3StepContext* context )
 		{
 			b3ContactConstraintWide* c = wideBase + wideIndex;
 			int localWideIndex = wideIndex - colorWideStart;
+
+			// Added for Nebenan: the contacts come from scattered memory, and so do their manifolds and bodies, and the
+			// loop waited for them most. Two wide constraints ahead it prefetches the contacts of this color, and one
+			// ahead, with those contacts in the cache, their manifolds and bodies. Each constraint is prepared as before.
+			for ( int lane = 0; lane < B3_SIMD_WIDTH; ++lane )
+			{
+				int farIndex = B3_SIMD_WIDTH * ( localWideIndex + 2 ) + lane;
+				if ( farIndex < colorContactCount )
+				{
+					b3PrefetchPrepareContact( world->contacts.data + contactIds[farIndex] );
+				}
+
+				int nearIndex = B3_SIMD_WIDTH * ( localWideIndex + 1 ) + lane;
+				if ( nearIndex < colorContactCount )
+				{
+					b3PrefetchPrepareData( world->contacts.data + contactIds[nearIndex], sims );
+				}
+			}
 
 			const b3Contact* contactLanes[B3_SIMD_WIDTH];
 			const b3Manifold* manifoldLanes[B3_SIMD_WIDTH];

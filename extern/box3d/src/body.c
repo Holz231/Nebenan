@@ -10,6 +10,7 @@
 #include "island.h"
 #include "joint.h"
 #include "physics_world.h"
+#include "platform.h"
 #include "recording.h"
 #include "sensor.h"
 #include "shape.h"
@@ -2049,6 +2050,31 @@ bool b3Body_IsAwake( b3BodyId bodyId )
 	b3World* world = b3GetWorld( bodyId.world0 );
 	b3Body* body = b3GetBodyFullId( world, bodyId );
 	return body->setIndex == b3_awakeSet;
+}
+
+// Added for Nebenan
+void b3Body_Prefetch( b3BodyId bodyId )
+{
+	b3World* world = b3GetWorld( bodyId.world0 );
+	b3Body* body = b3GetBodyFullId( world, bodyId );
+	b3Prefetch( &body->setIndex );
+}
+
+// Added for Nebenan
+void b3Body_PrefetchMotion( b3BodyId bodyId )
+{
+	b3World* world = b3GetWorld( bodyId.world0 );
+	b3Body* body = b3GetBodyFullId( world, bodyId );
+	if ( body->setIndex == b3_awakeSet )
+	{
+		b3SolverSet* set = b3Array_Get( world->solverSets, b3_awakeSet );
+		const b3BodySim* sim = set->bodySims.data + body->localIndex;
+		const b3BodyState* state = set->bodyStates.data + body->localIndex;
+		b3Prefetch( &sim->transform );
+		b3Prefetch( (const char*)( &sim->transform + 1 ) - 1 );
+		b3Prefetch( &state->linearVelocity );
+		b3Prefetch( (const char*)( &state->angularVelocity + 1 ) - 1 );
+	}
 }
 
 void b3Body_SetAwake( b3BodyId bodyId, bool awake )

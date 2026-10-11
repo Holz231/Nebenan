@@ -485,6 +485,9 @@ static void b3CollideProxyAndSubtree( const b3TreeNode* proxy, const b3TreeNode*
 			{
 				if ( stackCount < B3_TREE_STACK_SIZE )
 				{
+					// Added for Nebenan: the two children share one cache line, start loading it now, the loop comes back
+					// to them later
+					b3Prefetch( nodes + b3GetLeftChild( node ) );
 					stack[stackCount++] = b3GetLeftChild( node );
 				}
 				else
@@ -523,6 +526,9 @@ B3_FORCE_INLINE void b3VisitPair( const b3TreeNode* arrayA, const b3TreeNode* ar
 	{
 		if ( *stackCount < B3_TREE_STACK_SIZE )
 		{
+			// Added for Nebenan: start loading both pairs of children, see b3CollideProxyAndSubtree
+			b3Prefetch( arrayA + b3GetLeftChild( nodeA ) );
+			b3Prefetch( arrayB + b3GetLeftChild( nodeB ) );
 			stack[*stackCount] = B3_LITERAL( b3IndexPair ){ .a = b3GetLeftChild( nodeA ), .b = b3GetLeftChild( nodeB ) };
 			*stackCount += 1;
 		}
