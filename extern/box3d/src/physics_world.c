@@ -564,8 +564,9 @@ static inline void b3PrefetchContact( const b3Contact* contact )
 
 // Added for Nebenan: issues T0 prefetches for what the collide loop reads for a contact besides the contact itself: the
 // boxes of its two shapes and the start of the sims of its two bodies up to the extents, each of which can straddle two
-// cache lines. Sleeping bodies are left out, the loop finds them through the body array. Forced inline, GCC 13 drops
-// the prefetches of a helper that only reads.
+// cache lines, and the manifold of a touching contact, which recycling updates and a new manifold takes the impulses
+// from. Sleeping bodies are left out, the loop finds them through the body array. Forced inline, GCC 13 drops the
+// prefetches of a helper that only reads.
 B3_FORCE_INLINE void b3PrefetchContactData( const b3Contact* contact, const b3AABB* fatAABBs, const b3BodySim* awakeSims,
 											const b3BodySim* staticSims )
 {
@@ -594,6 +595,47 @@ B3_FORCE_INLINE void b3PrefetchContactData( const b3Contact* contact, const b3AA
 		{
 			b3Prefetch( sim );
 			b3Prefetch( (const char*)( &sim->maxExtent + 1 ) - 1 );
+		}
+	}
+
+	const char* manifold = (const char*)contact->manifolds;
+	if ( manifold != NULL )
+	{
+		b3Prefetch( manifold );
+		b3Prefetch( manifold + 64 );
+		b3Prefetch( manifold + 128 );
+		b3Prefetch( manifold + 192 );
+		b3Prefetch( manifold + sizeof( b3Manifold ) - 1 );
+	}
+}
+
+// Added for Nebenan: the cache lines of the two shapes of a contact the narrowphase reads, the type at the start, the
+// materials in the middle and the geometry at the end, see b3CollideTask
+B3_FORCE_INLINE void b3PrefetchContactShapes( const b3Contact* contact, const b3Shape* shapes )
+{
+	const b3Shape* pair[2] = { shapes + contact->shapeIdA, shapes + contact->shapeIdB };
+	for ( int k = 0; k < 2; ++k )
+	{
+		b3Prefetch( &pair[k]->type );
+		b3Prefetch( &pair[k]->materials );
+		b3Prefetch( &pair[k]->hull );
+		b3Prefetch( (const char*)( pair[k] + 1 ) - 1 );
+	}
+}
+
+// Added for Nebenan: the headers of the hulls of a contact, which the narrowphase reads before any of their arrays. The
+// shapes must be in the cache already, see b3CollideTask.
+B3_FORCE_INLINE void b3PrefetchContactHulls( const b3Contact* contact, const b3Shape* shapes )
+{
+	const b3Shape* pair[2] = { shapes + contact->shapeIdA, shapes + contact->shapeIdB };
+	for ( int k = 0; k < 2; ++k )
+	{
+		if ( pair[k]->type == b3_hullShape )
+		{
+			const char* hull = (const char*)pair[k]->hull;
+			b3Prefetch( hull );
+			b3Prefetch( hull + 64 );
+			b3Prefetch( hull + sizeof( b3HullData ) - 1 );
 		}
 	}
 }
@@ -647,6 +689,11 @@ static void b3CollideTask( int startIndex, int endIndex, int workerIndex, void* 
 	int prefetchEnd = endIndex - contactPrefetchDistance;
 	int dataPrefetchEnd = endIndex - dataPrefetchDistance;
 
+	// Added for Nebenan: the contacts that need the narrowphase, see the second loop below
+	b3Arena arena = taskContext->arena;
+	int* pending = (int*)b3Bump( &arena, ( endIndex - startIndex ) * (int)sizeof( int ) );
+	int pendingCount = 0;
+
 	for ( int i = startIndex; i < endIndex; ++i )
 	{
 		if ( i < prefetchEnd )
@@ -679,9 +726,6 @@ static void b3CollideTask( int startIndex, int endIndex, int workerIndex, void* 
 			b3SetBit( &taskContext->contactStateBitSet, contactIndex );
 			continue;
 		}
-
-		b3Shape* shapeA = shapes + shapeIdA;
-		b3Shape* shapeB = shapes + shapeIdB;
 
 		// Update contact respecting shape/body order (A,B)
 		int encodedA = contact->encodedBodySimA;
@@ -784,6 +828,81 @@ static void b3CollideTask( int startIndex, int endIndex, int workerIndex, void* 
 			}
 		}
 
+		// Added for Nebenan: two hulls a face of one kept apart at the last test, see b3_simSeparatedHulls. The other
+		// hull lies within gapRadius of gapCenter in the frame of its body, so against the face each of its points moved
+		// at most as far as that center plus the arc of that radius. While the gap less this stays above the speculative
+		// distance, with a margin far above round-off, the test would find them apart again. Only its bookkeeping
+		// remains, and the results stay the same to the bit.
+		if ( ( contact->flags & ( b3_simSeparatedHulls | b3_relativeTransformValid ) ) ==
+				 ( b3_simSeparatedHulls | b3_relativeTransformValid ) &&
+			 wasTouching == false )
+		{
+			b3ConvexContact* convex = &contact->convexContact;
+			b3SATCache* satCache = &convex->cache.satCache;
+			b3Transform xf = b3InvMulWorldTransforms( transformA, transformB );
+			b3Transform xfc = contact->cachedRelativePose;
+			b3Vec3 center = convex->gapCenter;
+			b3Vec3 move;
+			if ( satCache->type == b3_faceAxisA )
+			{
+				move = b3Sub( b3TransformPoint( xf, center ), b3TransformPoint( xfc, center ) );
+			}
+			else
+			{
+				move = b3Sub( b3InvTransformPoint( xf, center ), b3InvTransformPoint( xfc, center ) );
+			}
+
+			b3Quat qr = b3InvMulQuat( xfc.q, xf.q );
+			float reach = b3Length( move ) + 2.0f * b3Length( qr.v ) * convex->gapRadius;
+			float gap = satCache->gap - reach;
+			if ( gap >= speculativeDistance + 0.2f * B3_LINEAR_SLOP )
+			{
+				contact->cachedRotationA = transformA.q;
+				contact->cachedRotationB = transformB.q;
+				contact->cachedRelativePose = xf;
+				satCache->hit = 1;
+				satCache->gap = gap;
+				taskContext->satCallCount += 1;
+				taskContext->satCacheHitCount += 1;
+				continue;
+			}
+		}
+
+		// Added for Nebenan
+		pending[pendingCount++] = contactIndex;
+	}
+
+	// Added for Nebenan: the narrowphase for the contacts that need it, in a second loop. It reads the two shapes of
+	// each contact and their hulls from scattered memory, and it waited for them most. Here it is known which contacts
+	// need them, so the loop prefetches the shapes four contacts ahead and, two ahead, the hulls they point to. Every
+	// contact is updated on its own, so the order changes nothing.
+	const int shapePrefetchDistance = 4;
+	const int hullPrefetchDistance = 2;
+	for ( int k = 0; k < pendingCount; ++k )
+	{
+		if ( k + shapePrefetchDistance < pendingCount )
+		{
+			b3PrefetchContactShapes( contacts + pending[k + shapePrefetchDistance], shapes );
+		}
+
+		if ( k + hullPrefetchDistance < pendingCount )
+		{
+			b3PrefetchContactHulls( contacts + pending[k + hullPrefetchDistance], shapes );
+		}
+
+		int contactIndex = pending[k];
+		b3Contact* contact = contacts + contactIndex;
+		b3Shape* shapeA = shapes + contact->shapeIdA;
+		b3Shape* shapeB = shapes + contact->shapeIdB;
+		b3BodySim* bodySimA =
+			b3ResolveContactBodySim( world, awakeSims, staticSims, contact->encodedBodySimA, contact->edges[0].bodyId );
+		b3BodySim* bodySimB =
+			b3ResolveContactBodySim( world, awakeSims, staticSims, contact->encodedBodySimB, contact->edges[1].bodyId );
+		bool wasTouching = ( contact->flags & b3_simTouchingFlag );
+		b3WorldTransform transformA = bodySimA->transform;
+		b3WorldTransform transformB = bodySimB->transform;
+		bool isFast = ( ( bodySimA->flags | bodySimB->flags ) & b3_isFast ) != 0;
+
 		// Caching for contact recycling.
 		contact->cachedRotationA = transformA.q;
 		contact->cachedRotationB = transformB.q;
@@ -792,7 +911,7 @@ static void b3CollideTask( int startIndex, int endIndex, int workerIndex, void* 
 
 		// This updates solid contacts
 		bool touching = b3UpdateContact( world, workerIndex, contact, shapeA, bodySimA->localCenter, transformA, shapeB,
-										 bodySimB->localCenter, transformB, isFast, taskContext->arena );
+										 bodySimB->localCenter, transformB, isFast, arena );
 
 		int bucketIndex = b3MinInt( contact->manifoldCount, B3_CONTACT_MANIFOLD_COUNT_BUCKETS - 1 );
 		if ( bucketIndex > 0 )

@@ -2773,6 +2773,9 @@ typedef struct
 
 	/// Was the cache re-used?
 	uint8_t hit;
+
+	/// Added for Nebenan: the separation along the cached face the last time it kept the hulls apart, zero otherwise
+	float gap;
 } b3SATCache;
 
 /// Contact points are always the result of two edges intersecting.

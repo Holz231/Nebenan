@@ -132,10 +132,26 @@ jetzt den ersten (`b3CollideHulls` in `src/convex_manifold.c`).
 **Kontakt-Schleife lädt weiter voraus.** Die Schleife der Kollision über alle wachen Kontakte holte jeden Kontakt vier
 Plätze voraus in den Cache, wartete dann aber auf die Boxen seiner beiden Formen und die Daten seiner beiden Körper, die
 verstreut im Speicher liegen. Jetzt holt sie den Kontakt acht Plätze voraus, und vier Plätze voraus, wenn er schon im
-Cache ist, auch seine Boxen und Körperdaten (`b3PrefetchContactData` in `src/physics_world.c`). Weiter voraus brachte
-weniger, die Formen dazu auch.
+Cache ist, auch seine Boxen, die Daten seiner Körper und, wenn er berührt, seine Punkte (`b3PrefetchContactData` in
+`src/physics_world.c`). Weiter voraus brachte weniger.
 
-Die erste, die zweite, die vierte bis achte, die zehnte und die dreizehnte bis fünfzehnte ändern an den Ergebnissen
+**Getrennte Hüllen ohne neuen Test.** Zwei Hüllen, die beim letzten Test eine Fläche der einen auseinanderhielt, testete
+Box3D neu, sobald sich ihre Körper zueinander mehr als 1 cm bewegt oder gedreht hatten. Jetzt merkt es sich den Abstand
+zur Fläche (`b3SATCache::gap` in `include/box3d/types.h`) und die Grenzen der anderen Hülle als Mitte und halbe
+Diagonale (`b3ConvexContact` in `src/contact.h`). Daraus folgt, wie nah die andere Hülle der Fläche seitdem höchstens
+gekommen ist: um die Verschiebung der Mitte und den Bogen der halben Diagonale. Bleibt der Abstand damit mehr als 1 mm
+über dem spekulativen, fände der Test die Hüllen wieder getrennt, und Box3D erledigt nur seine Buchführung, die gemerkte
+Lage und den Zwischenspeicher, als hätte es getestet (`b3CollideTask` in `src/physics_world.c`). Der Rand von 1 mm liegt
+hundertfach über der Rechenungenauigkeit des Abstands. Über ein Kantenpaar geht das nicht, dessen Achse dreht sich mit
+den Körpern.
+
+**Zweistufige Kontakt-Schleife.** Die Schleife der Kollision entscheidet für jeden Kontakt erst nur, ob er nicht mehr
+überlappt, wiederverwendet wird, beweisbar getrennt ist oder getestet werden muss. Die zu testenden sammelt sie, und eine
+zweite Schleife testet sie und holt dabei ihre Formen vier und die Köpfe ihrer Hüllen zwei Kontakte voraus
+(`b3PrefetchContactShapes` und `b3PrefetchContactHulls`). Vorher wartete der Test auf beides nacheinander, denn erst die
+Form sagt, wo die Hülle liegt. Jeder Kontakt wird für sich gerechnet, die Reihenfolge ändert nichts.
+
+Die erste, die zweite, die vierte bis achte, die zehnte und die dreizehnte bis siebzehnte ändern an den Ergebnissen
 nichts. Die dritte und die neunte ändern sie in den letzten Bits, dafür hängen sie nicht mehr davon ab, in welcher
 Reihenfolge Formen in die Bäume kommen. Die elfte ändert sie, weil Kontakte zu anderen Zeitpunkten entstehen, die
 zwölfte, weil sie weniger Punkte bekommen. Die Ergänzungen stehen in `include/box3d/box3d.h`, `include/box3d/types.h`,

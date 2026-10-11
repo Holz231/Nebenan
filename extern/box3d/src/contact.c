@@ -899,6 +899,18 @@ bool b3UpdateContact( b3World* world, int workerIndex, b3Contact* contact, b3Sha
 		// Convex-vs-convex
 		bool flip = false;
 		touching = b3UpdateConvexContact( world, workerIndex, contact, shapeA, xfA, shapeB, xfB, flip, arena );
+
+		// Added for Nebenan: two hulls a face kept apart, see b3_simSeparatedHulls
+		contact->flags &= ~b3_simSeparatedHulls;
+		const b3SATCache* satCache = &contact->convexContact.cache.satCache;
+		if ( touching == false && shapeA->type == b3_hullShape && shapeB->type == b3_hullShape && satCache->gap > 0.0f &&
+			 ( satCache->type == b3_faceAxisA || satCache->type == b3_faceAxisB ) )
+		{
+			b3AABB bounds = satCache->type == b3_faceAxisA ? shapeB->hullBounds : shapeA->hullBounds;
+			contact->convexContact.gapCenter = b3AABB_Center( bounds );
+			contact->convexContact.gapRadius = b3Length( b3AABB_Extents( bounds ) );
+			contact->flags |= b3_simSeparatedHulls;
+		}
 	}
 
 	if ( touching )

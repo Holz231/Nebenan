@@ -2041,6 +2041,7 @@ void b3CollideHulls( b3LocalManifold* manifold, int capacity, const b3HullData* 
 	const b3Vec3* pointsB = b3GetHullPoints( hullB );
 
 	cache->hit = 0;
+	cache->gap = 0.0f; // Added for Nebenan
 
 	// Added for Nebenan: a face contact built from the cached feature that missed the cached separation. When the search
 	// below finds the same face and support vertex, the contact is the same, see the face contacts at the end.
@@ -2069,6 +2070,7 @@ void b3CollideHulls( b3LocalManifold* manifold, int capacity, const b3HullData* 
 			{
 				// Cache hit, shapes are separated
 				cache->hit = 1;
+				cache->gap = separation; // Added for Nebenan
 				return;
 			}
 
@@ -2115,6 +2117,7 @@ void b3CollideHulls( b3LocalManifold* manifold, int capacity, const b3HullData* 
 			{
 				// Cache hit, shapes are separated
 				cache->hit = 1;
+				cache->gap = separation; // Added for Nebenan
 				return;
 			}
 
@@ -2271,6 +2274,7 @@ void b3CollideHulls( b3LocalManifold* manifold, int capacity, const b3HullData* 
 		{
 			B3_VALIDATE( axisQuery.faceA.separation > speculativeDistance );
 			cache->separation = axisQuery.faceA.separation;
+			cache->gap = cache->separation; // Added for Nebenan
 			cache->indexA = (uint8_t)axisQuery.faceA.indexA;
 			cache->indexB = (uint8_t)axisQuery.faceA.indexB;
 		}
@@ -2278,6 +2282,7 @@ void b3CollideHulls( b3LocalManifold* manifold, int capacity, const b3HullData* 
 		{
 			B3_VALIDATE( axisQuery.faceB.separation > speculativeDistance );
 			cache->separation = axisQuery.faceB.separation;
+			cache->gap = cache->separation; // Added for Nebenan
 			cache->indexA = (uint8_t)axisQuery.faceB.indexA;
 			cache->indexB = (uint8_t)axisQuery.faceB.indexB;
 		}
