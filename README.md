@@ -727,6 +727,10 @@ das ändert kein Bit. Seit `physik-7` holen Box3D und Nebenan an drei weiteren S
 Speicher warteten: die Kontakte für den Löser, die Kinder in den Bäumen der Paarsuche und die Trümmerteile samt ihren
 Körpern, wenn Nebenan in jedem Update nachsieht, welche zur Ruhe kommen. Gepaart gegen `physik-6` kostet ein Frame damit
 mit 4 Threads 2,8 bis 4,8 % weniger und mit einem 2,2 bis 4,4 %, wieder ohne ein Bit zu ändern.
+Seit `physik-8` wartet auch der Abschluss der Körper nach dem Löser weniger auf den Speicher, und mit mehreren Threads
+nimmt der Löser die Kontakte jeder Farbe nach Körpern geordnet: Ein Kern rechnet so in jeder Farbe vor allem die Körper,
+die er auch integriert, und ihr Zustand bleibt in seinem Cache. Gepaart gegen `physik-7` kostet ein Frame damit mit 4
+Threads 0,3 bis 4,5 % weniger und mit einem zwischen 3,2 % weniger und 1,0 % mehr, auch das ohne ein Bit zu ändern.
 
 **Eine Stadt größer als der Speicher.** Im Benchmark fliegt eine Kamera mit 30 m/s 900 m weit durch eine Stadt aus
 65 536 Häusern auf 3,6 × 3,1 km und 300 m zurück, Bruchstückgröße ×4. Am Stück bräuchte sie 24 GB. Geladen sind die
