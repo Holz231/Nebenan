@@ -180,16 +180,24 @@ Löser verteilt die Kontakte jeder Farbe damit auf 64 Fächer (`b3OrderColorCont
 der einen Bereich von Körpern integriert, rechnet in jeder Farbe vor allem deren Kontakte. In einer Farbe teilen sich
 zwei Kontakte keinen beweglichen Körper, die Reihenfolge ändert nichts. Mit einem Thread ordnet der Löser nicht.
 
-Die erste, die zweite, die vierte bis achte, die zehnte und die dreizehnte bis zweiundzwanzigste ändern an den
+**Worker warten im Schritt.** Der eingebaute Scheduler weckte für jede Aufgabe einen Worker über eine Semaphore, und
+weil die Worker zwischen den parallelen Abschnitten eines Schritts schliefen, ging jedes Wecken über den Kernel und
+jeder Abschnitt begann spät. Jetzt warten die Worker, solange `b3World_Step` läuft, mit Pausen auf die nächste Aufgabe
+(`b3SchedulerSetStepActive` in `src/scheduler.c`), und eine neue Aufgabe weckt nur, wenn ein Worker schläft. Zwischen
+den Schritten schlafen sie wie bisher. Die Rolle des Dirigenten im Löser behält beim eingebauten Scheduler der
+aufrufende Thread, der die Stufen gerade vorbereitet hat (`b3Solve` in `src/solver.c`). Welcher Thread was rechnet,
+ändert nichts.
+
+Die erste, die zweite, die vierte bis achte, die zehnte und die dreizehnte bis dreiundzwanzigste ändern an den
 Ergebnissen nichts. Die dritte und die neunte ändern sie in den letzten Bits, dafür hängen sie nicht mehr davon ab, in
 welcher Reihenfolge Formen in die Bäume kommen. Die elfte ändert sie, weil Kontakte zu anderen Zeitpunkten entstehen,
 die zwölfte, weil sie weniger Punkte bekommen. Die Ergänzungen stehen in `include/box3d/box3d.h`,
 `include/box3d/types.h`, `include/box3d/constants.h`, `src/core.h`, `src/core.c`, `src/shape.h`, `src/shape.c`,
 `src/body.c`, `src/contact.h`, `src/contact.c`, `src/contact_solver.c`, `src/convex_manifold.c`, `src/world_snapshot.c`,
 `src/recording.c`, `src/solver.c`, `src/broad_phase.h`, `src/broad_phase.c`, `src/dynamic_tree.h`, `src/dynamic_tree.c`,
-`src/parallel_for.c`, `src/physics_world.h` und `src/physics_world.c`, jeweils mit „Added for Nebenan“ markiert.
-`B3_HAS_UNIQUE_HULLS`, `B3_HAS_SHAPE_BATCH`, `B3_HAS_SHAPE_CONTACT_LISTS`, `B3_HAS_EXTERNAL_HULLS` und
-`B3_HAS_BODY_PREFETCH` zeigen die zweite, die vierte, die fünfte, die sechste und die neunzehnte an. Fehlen sie, etwa
-mit einem eigenen Box3D, läuft Nebenan wie zuvor, nur wachsen Box3Ds Arrays dann durch Umkopieren, die Hüllen gehen
-durch die Tabelle, jede Form geht einzeln in den Baum, jedes stehende Bruchstück bekommt einen eigenen Körper, Box3D
-hält eine Kopie jeder Hülle, und Nebenan holt die Körper der Trümmer nicht voraus.
+`src/parallel_for.c`, `src/scheduler.h`, `src/scheduler.c`, `src/physics_world.h` und `src/physics_world.c`, jeweils mit
+„Added for Nebenan“ markiert. `B3_HAS_UNIQUE_HULLS`, `B3_HAS_SHAPE_BATCH`, `B3_HAS_SHAPE_CONTACT_LISTS`,
+`B3_HAS_EXTERNAL_HULLS` und `B3_HAS_BODY_PREFETCH` zeigen die zweite, die vierte, die fünfte, die sechste und die
+neunzehnte an. Fehlen sie, etwa mit einem eigenen Box3D, läuft Nebenan wie zuvor, nur wachsen Box3Ds Arrays dann durch
+Umkopieren, die Hüllen gehen durch die Tabelle, jede Form geht einzeln in den Baum, jedes stehende Bruchstück bekommt
+einen eigenen Körper, Box3D hält eine Kopie jeder Hülle, und Nebenan holt die Körper der Trümmer nicht voraus.
