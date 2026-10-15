@@ -412,13 +412,6 @@ static inline void b3StoreW( float* data, b3FloatW a )
 	vst1q_f32( data, a );
 }
 
-// Added for Nebenan: stores the first three lanes and leaves the fourth float in memory alone
-static inline void b3StoreW3( float* data, b3FloatW a )
-{
-	vst1_f32( data, vget_low_f32( a ) );
-	vst1q_lane_f32( data + 2, a, 2 );
-}
-
 static inline b3FloatW b3UnpackLoW( b3FloatW a, b3FloatW b )
 {
 	return vzip1q_f32( a, b );
@@ -609,13 +602,6 @@ static inline b3FloatW b3LoadW( const float* data )
 static inline void b3StoreW( float* data, b3FloatW a )
 {
 	_mm_storeu_ps( data, a );
-}
-
-// Added for Nebenan: stores the first three lanes and leaves the fourth float in memory alone
-static inline void b3StoreW3( float* data, b3FloatW a )
-{
-	_mm_storel_pi( (__m64*)data, a );
-	_mm_store_ss( data + 2, _mm_movehl_ps( a, a ) );
 }
 
 static inline b3FloatW b3UnpackLoW( b3FloatW a, b3FloatW b )
@@ -814,14 +800,6 @@ static inline void b3StoreW( float* data, b3FloatW a )
 	data[1] = a.y;
 	data[2] = a.z;
 	data[3] = a.w;
-}
-
-// Added for Nebenan: stores the first three lanes and leaves the fourth float in memory alone
-static inline void b3StoreW3( float* data, b3FloatW a )
-{
-	data[0] = a.x;
-	data[1] = a.y;
-	data[2] = a.z;
 }
 
 static inline b3FloatW b3UnpackLoW( b3FloatW a, b3FloatW b )

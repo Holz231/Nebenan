@@ -135,10 +135,6 @@ typedef struct b3SolverStage
 	int blockCount;
 	uint8_t colorIndex;
 	b3AtomicInt completionCount;
-
-	// Added for Nebenan: per worker the first of its blocks, the blocks of a worker hold the contacts of its bodies, see
-	// b3OrderColorContacts. NULL for stages with blocks of equal size.
-	const int* homeStarts;
 } b3SolverStage;
 
 // Constraint softness
@@ -240,25 +236,6 @@ typedef struct b3StepContext
 	int stageCount;
 	bool enableWarmStarting;
 
-	// Added for Nebenan: the stages of the substeps and of restitution without a barrier, see b3SolveDataflow, NULL if the
-	// step cannot do without. dataflow tells whether it does.
-	struct b3DataflowEntry* dataflowEntries;
-	b3AtomicInt* dataflowClaims;
-	int dataflowEntryCount;
-	int dataflowBlockCount;
-	bool dataflow;
-	const int* activeColorIndices;
-	int awakeBodyCount;
-
-	// Added for Nebenan: the overflow contacts as one block before the colors, see b3SolveDataflow
-	b3SolverStage overflowStages[4];
-	b3SyncBlock overflowBlock;
-
-	// Added for Nebenan: per awake body the number of its constraints in each stage of the step and of its overflow
-	// contacts, see b3ContactConstraintWide::orderA
-	uint16_t* bodyConstraintCounts;
-	uint16_t* bodyOverflowCounts;
-
 	// padding to prevent false sharing
 	char padding1[64];
 
@@ -281,18 +258,6 @@ typedef struct b3StepContext
 
 	// padding to prevent false sharing
 	char padding3[64];
-
-	// Added for Nebenan: the blocks the workers have solved without a barrier, see b3SolveDataflow
-	b3AtomicInt dataflowDone;
-
-	// Added for Nebenan: set if a body of a constraint is neither static nor dynamic or has too many constraints
-	b3AtomicInt dataflowBlocked;
-
-	// Added for Nebenan: set if a wait took far too long, see b3WaitForValue
-	b3AtomicInt dataflowStalled;
-
-	// padding to prevent false sharing
-	char padding4[64];
 } b3StepContext;
 
 void b3Solve( b3World* world, b3StepContext* stepContext );

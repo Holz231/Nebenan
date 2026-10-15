@@ -64,28 +64,10 @@ typedef struct b3ConstraintGraph
 {
 	// including overflow at the end
 	b3GraphColor colors[B3_GRAPH_COLOR_COUNT];
-
-	// Added for Nebenan: per body id the colors with a constraint of the body, the bits of b3GraphColor::bodySet in one
-	// word. The solver without a barrier per stage reads it, see b3SolveDataflow.
-	uint32_t* bodyColors;
-	int bodyColorCapacity;
 } b3ConstraintGraph;
 
 void b3CreateGraph( b3ConstraintGraph* graph, int bodyCapacity );
 void b3DestroyGraph( b3ConstraintGraph* graph );
-
-// Added for Nebenan: set and clear the bit of a body in a color and in b3ConstraintGraph::bodyColors
-void b3SetGraphBody( b3ConstraintGraph* graph, int colorIndex, int bodyId );
-void b3ClearGraphBody( b3ConstraintGraph* graph, int colorIndex, int bodyId );
-
-// Added for Nebenan: b3ConstraintGraph::bodyColors from the bits of the colors, after a snapshot
-void b3RebuildGraphBodyColors( b3ConstraintGraph* graph );
-
-// Added for Nebenan: the colors with a constraint of the body
-static inline uint32_t b3GetGraphBodyColors( const b3ConstraintGraph* graph, int bodyId )
-{
-	return bodyId < graph->bodyColorCapacity ? graph->bodyColors[bodyId] : 0;
-}
 
 void b3AddContactToGraph( b3World* world, b3Contact* contact );
 void b3RemoveContactFromGraph( b3World* world, int bodyIdA, int bodyIdB, int colorIndex, int localIndex, bool meshContact );

@@ -61,21 +61,9 @@ typedef struct b3WorkerContext
 	void* userTask;
 } b3WorkerContext;
 
-// Added for Nebenan: waits until the first integration of the body counted its constraints, see b3IntegrateVelocitiesTask
-static inline void b3WaitForCount( b3BodyState* state )
-{
-	while ( b3AtomicLoadIntAcquire( &state->solverStamp ) < 1 )
-	{
-		b3Pause();
-	}
-}
-
 // Integrate velocities, apply damping, and gyroscopic torque
-static void b3IntegrateVelocitiesTask( b3SolverBlock block, b3StepContext* context, int dataflowSubstep )
+static void b3IntegrateVelocitiesTask( b3SolverBlock block, b3StepContext* context )
 {
-	// Added for Nebenan: see b3WaitForValue
-	bool stalled = false;
-
 	b3TracyCZoneNC( integrate_velocity, "IntVel", b3_colorDeepPink, true );
 
 	B3_VALIDATE( block.startIndex + block.count <= context->world->solverSets.data[b3_awakeSet].bodyStates.count );
@@ -90,22 +78,6 @@ static void b3IntegrateVelocitiesTask( b3SolverBlock block, b3StepContext* conte
 	{
 		b3BodySim* sim = sims + i;
 		b3BodyState* state = states + i;
-
-		// Added for Nebenan: without a barrier the body waits for its constraints of the last substep, see b3SolveDataflow.
-		// The first integration counts the constraints of the body for the later ones.
-		int stamp = 0;
-		if ( dataflowSubstep == 0 )
-		{
-			uint32_t colors = b3GetGraphBodyColors( context->graph, sim->bodyId );
-			context->bodyConstraintCounts[i] = (uint16_t)( context->bodyOverflowCounts[i] + b3PopCount64( colors ) );
-		}
-		else if ( dataflowSubstep > 0 )
-		{
-			b3WaitForCount( state );
-			int count = context->bodyConstraintCounts[i];
-			stamp = dataflowSubstep * ( 3 * count + 2 );
-			stalled |= b3WaitForValue( &state->solverStamp, stamp );
-		}
 
 		b3Vec3 v = state->linearVelocity;
 		b3Vec3 w = state->angularVelocity;
@@ -192,26 +164,13 @@ static void b3IntegrateVelocitiesTask( b3SolverBlock block, b3StepContext* conte
 
 		state->linearVelocity = v;
 		state->angularVelocity = w;
-
-		if ( dataflowSubstep >= 0 )
-		{
-			b3AtomicStoreIntRelease( &state->solverStamp, stamp + 1 );
-		}
-	}
-
-	if ( stalled )
-	{
-		b3AtomicStoreInt( &context->dataflowStalled, 1 );
 	}
 
 	b3TracyCZoneEnd( integrate_velocity );
 }
 
-static void b3IntegratePositionsTask( b3SolverBlock block, b3StepContext* context, int dataflowSubstep )
+static void b3IntegratePositionsTask( b3SolverBlock block, b3StepContext* context )
 {
-	// Added for Nebenan: see b3WaitForValue
-	bool stalled = false;
-
 	b3TracyCZoneNC( integrate_positions, "IntPos", b3_colorDarkSeaGreen, true );
 
 	B3_VALIDATE( block.startIndex + block.count <= context->world->solverSets.data[b3_awakeSet].bodyStates.count );
@@ -226,16 +185,6 @@ static void b3IntegratePositionsTask( b3SolverBlock block, b3StepContext* contex
 	for ( int i = block.startIndex; i < block.startIndex + block.count; ++i )
 	{
 		b3BodyState* state = states + i;
-
-		// Added for Nebenan: without a barrier the body waits for its constraints of the solve, see b3SolveDataflow
-		int stamp = 0;
-		if ( dataflowSubstep >= 0 )
-		{
-			b3WaitForCount( state );
-			int count = context->bodyConstraintCounts[i];
-			stamp = dataflowSubstep * ( 3 * count + 2 ) + 1 + 2 * count;
-			stalled |= b3WaitForValue( &state->solverStamp, stamp );
-		}
 
 		b3Vec3 v = state->linearVelocity;
 		b3Vec3 w = state->angularVelocity;
@@ -268,16 +217,6 @@ static void b3IntegratePositionsTask( b3SolverBlock block, b3StepContext* contex
 		state->angularVelocity = w;
 		state->deltaPosition = b3MulAdd( state->deltaPosition, h, v );
 		state->deltaRotation = b3IntegrateRotation( state->deltaRotation, b3MulSV( h, w ) );
-
-		if ( dataflowSubstep >= 0 )
-		{
-			b3AtomicStoreIntRelease( &state->solverStamp, stamp + 1 );
-		}
-	}
-
-	if ( stalled )
-	{
-		b3AtomicStoreInt( &context->dataflowStalled, 1 );
 	}
 
 	b3TracyCZoneEnd( integrate_positions );
@@ -814,12 +753,6 @@ static void b3FinalizeBodiesTask( int startIndex, int endIndex, int workerIndex,
 		b3BodyState* state = states + simIndex;
 		b3BodySim* sim = sims + simIndex;
 
-		// Added for Nebenan: the next step counts from zero again, see b3SolveDataflow
-		if ( stepContext->dataflow )
-		{
-			b3AtomicStoreIntRelaxed( &state->solverStamp, 0 );
-		}
-
 		b3Vec3 v = state->linearVelocity;
 		b3Vec3 w = state->angularVelocity;
 		b3Vec3 localOmega = b3InvRotateVector( sim->transform.q, w );
@@ -1064,7 +997,6 @@ static inline b3SolverStage* b3InitStage( b3SolverStage* stage, b3SolverStageTyp
 	stage->blockCount = blockCount;
 	stage->colorIndex = colorIndex;
 	b3AtomicStoreInt( &stage->completionCount, 0 );
-	stage->homeStarts = NULL;
 	return stage + 1;
 }
 
@@ -1072,56 +1004,19 @@ static inline b3SolverStage* b3InitStage( b3SolverStage* stage, b3SolverStageTyp
 // All iterations of a given color share the same b3SyncBlock array so the per-block syncIndex
 // grows monotonically across stages within that color.
 static b3SolverStage* b3InitColorStages( b3SolverStage* stage, b3SolverStageType type, int iterations, int activeColorCount,
-										 b3SyncBlock** colorBlocks, int* colorBlockCounts, int* activeColorIndices,
-										 int ( *homeStarts )[B3_MAX_WORKERS + 1] )
+										 b3SyncBlock** colorBlocks, int* colorBlockCounts, int* activeColorIndices )
 {
 	for ( int j = 0; j < iterations; ++j )
 	{
 		for ( int i = 0; i < activeColorCount; ++i )
 		{
-			b3SolverStage* next = b3InitStage( stage, type, colorBlocks[i], colorBlockCounts[i], (uint8_t)activeColorIndices[i] );
-
-			// Added for Nebenan
-			stage->homeStarts = homeStarts != NULL ? homeStarts[i] : NULL;
-			stage = next;
+			stage = b3InitStage( stage, type, colorBlocks[i], colorBlockCounts[i], (uint8_t)activeColorIndices[i] );
 		}
 	}
 	return stage;
 }
 
-// Added for Nebenan: blocks over [begin, end) in count parts of nearly equal size
-static void b3InitPartBlocks( b3SyncBlock* blocks, int begin, int end, int count, uint8_t blockType, uint8_t colorIndex )
-{
-	int size = end - begin;
-	for ( int k = 0; k < count; ++k )
-	{
-		int start = begin + (int)( (int64_t)size * k / count );
-		int stop = begin + (int)( (int64_t)size * ( k + 1 ) / count );
-		B3_ASSERT( stop - start <= UINT16_MAX );
-		blocks[k].block.startIndex = start;
-		blocks[k].block.count = (uint16_t)( stop - start );
-		blocks[k].block.blockType = blockType;
-		blocks[k].block.colorIndex = colorIndex;
-		b3AtomicStoreInt( &blocks[k].syncIndex, 0 );
-	}
-}
-
-// Added for Nebenan: the number of blocks for a part of a worker, up to four for stealing, more only if a block would
-// hold more items than b3SolverBlock::count can say
-static inline int b3GetPartBlockCount( int size, int minSize )
-{
-	if ( size == 0 )
-	{
-		return 0;
-	}
-
-	int count = b3ClampInt( ( size + minSize - 1 ) / minSize, 1, 4 );
-	return b3MaxInt( count, ( size + UINT16_MAX - 1 ) / UINT16_MAX );
-}
-
-// Added for Nebenan: dataflowSubstep is the substep of a stage without a barrier, see b3SolveDataflow, or -1
-static void b3ExecuteBlock( b3SolverStage* stage, b3StepContext* context, b3SolverBlock block, int workerIndex,
-							int dataflowSubstep )
+static void b3ExecuteBlock( b3SolverStage* stage, b3StepContext* context, b3SolverBlock block, int workerIndex )
 {
 	b3SolverStageType stageType = stage->type;
 	b3SolverBlockType blockType = (b3SolverBlockType)block.blockType;
@@ -1141,7 +1036,7 @@ static void b3ExecuteBlock( b3SolverStage* stage, b3StepContext* context, b3Solv
 			break;
 
 		case b3_stageIntegrateVelocities:
-			b3IntegrateVelocitiesTask( block, context, dataflowSubstep );
+			b3IntegrateVelocitiesTask( block, context );
 			break;
 
 		case b3_stageWarmStart:
@@ -1151,11 +1046,11 @@ static void b3ExecuteBlock( b3SolverStage* stage, b3StepContext* context, b3Solv
 			}
 			else if ( blockType == b3_graphWideContactBlock )
 			{
-				b3WarmStartContacts_Convex( block, context, dataflowSubstep );
+				b3WarmStartContacts_Convex( block, context );
 			}
 			else
 			{
-				b3WarmStartContacts_Mesh( block, context, dataflowSubstep );
+				b3WarmStartContacts_Mesh( block, context );
 			}
 			break;
 
@@ -1167,16 +1062,16 @@ static void b3ExecuteBlock( b3SolverStage* stage, b3StepContext* context, b3Solv
 			}
 			else if ( blockType == b3_graphWideContactBlock )
 			{
-				b3PushContacts_Convex( block, context, dataflowSubstep );
+				b3PushContacts_Convex( block, context );
 			}
 			else
 			{
-				b3PushContacts_Mesh( block, context, dataflowSubstep );
+				b3PushContacts_Mesh( block, context );
 			}
 			break;
 
 		case b3_stageIntegratePositions:
-			b3IntegratePositionsTask( block, context, dataflowSubstep );
+			b3IntegratePositionsTask( block, context );
 			break;
 
 		case b3_stageRelax:
@@ -1187,22 +1082,22 @@ static void b3ExecuteBlock( b3SolverStage* stage, b3StepContext* context, b3Solv
 			}
 			else if ( blockType == b3_graphWideContactBlock )
 			{
-				b3SolveContacts_Convex( block, context, dataflowSubstep );
+				b3SolveContacts_Convex( block, context );
 			}
 			else
 			{
-				b3SolveContacts_Mesh( block, context, dataflowSubstep );
+				b3SolveContacts_Mesh( block, context );
 			}
 			break;
 
 		case b3_stageRestitution:
 			if ( blockType == b3_graphWideContactBlock )
 			{
-				b3ApplyRestitution_Convex( block, context, dataflowSubstep );
+				b3ApplyRestitution_Convex( block, context );
 			}
-			else if ( blockType == b3_graphContactBlock || blockType == b3_overflowBlock )
+			else if ( blockType == b3_graphContactBlock )
 			{
-				b3ApplyRestitution_Mesh( block, context, dataflowSubstep );
+				b3ApplyRestitution_Mesh( block, context );
 			}
 			break;
 
@@ -1229,18 +1124,6 @@ static inline int GetWorkerStartIndex( int workerIndex, int blockCount, int work
 	return blocksPerWorker * workerIndex + b3MinInt( remainder, workerIndex );
 }
 
-// Added for Nebenan: the block a worker starts with, the first of its own with b3SolverStage::homeStarts
-static inline int b3GetStageStartIndex( const b3SolverStage* stage, int workerIndex, int workerCount )
-{
-	if ( stage->homeStarts != NULL )
-	{
-		int start = stage->homeStarts[workerIndex];
-		return start < stage->blockCount ? start : 0;
-	}
-
-	return GetWorkerStartIndex( workerIndex, stage->blockCount, workerCount );
-}
-
 // Execute a stage, which is an array of solver blocks, each controlled with an atomic sync index.
 // Each worker starts at its home index and sweeps the ring, CAS-claiming any unclaimed blocks.
 static void b3ExecuteStage( b3SolverStage* stage, b3StepContext* context, int previousSyncIndex, int syncIndex, int workerIndex )
@@ -1249,7 +1132,7 @@ static void b3ExecuteStage( b3SolverStage* stage, b3StepContext* context, int pr
 	b3SyncBlock* blocks = stage->blocks;
 	int blockCount = stage->blockCount;
 
-	int startIndex = b3GetStageStartIndex( stage, workerIndex, context->workerCount );
+	int startIndex = GetWorkerStartIndex( workerIndex, blockCount, context->workerCount );
 	if ( startIndex == B3_NULL_INDEX )
 	{
 		return;
@@ -1266,7 +1149,7 @@ static void b3ExecuteStage( b3SolverStage* stage, b3StepContext* context, int pr
 
 			// Pass the descriptor by value -- the wrapping b3SyncBlock holds the atomic
 			// syncIndex but we only copy .block, so the struct copy never aliases the CAS target.
-			b3ExecuteBlock( stage, context, blocks[blockIndex].block, workerIndex, -1 );
+			b3ExecuteBlock( stage, context, blocks[blockIndex].block, workerIndex );
 			completedCount += 1;
 		}
 
@@ -1293,7 +1176,7 @@ static void b3ExecuteMainStage( b3SolverStage* stage, b3StepContext* context, ui
 
 	if ( blockCount == 1 )
 	{
-		b3ExecuteBlock( stage, context, stage->blocks[0].block, workerIndex, -1 );
+		b3ExecuteBlock( stage, context, stage->blocks[0].block, workerIndex );
 	}
 	else
 	{
@@ -1313,112 +1196,6 @@ static void b3ExecuteMainStage( b3SolverStage* stage, b3StepContext* context, ui
 
 		b3AtomicStoreInt( &stage->completionCount, 0 );
 	}
-}
-
-// Added for Nebenan: the steps with a barrier per stage after a wait that took far too long, see b3WaitForValue
-#define B3_DATAFLOW_COOLDOWN 120
-
-// Added for Nebenan: a stage of a substep or of restitution in the solver without a barrier, see b3SolveDataflow
-typedef struct b3DataflowEntry
-{
-	b3SolverStage* stage;
-	b3AtomicInt* claims;
-	int substep;
-} b3DataflowEntry;
-
-// Added for Nebenan: the substeps and restitution without a barrier per stage. Every worker goes through all stages in
-// order and claims the blocks it finds unclaimed, starting at its home block as b3ExecuteStage does. Instead of waiting
-// for a stage to finish, a constraint waits until its bodies have had their earlier steps, see b3WaitForBodies, and a body
-// in integration until its constraints have. A body takes its steps in the same order as with a barrier per stage, so
-// nothing changes in the results. A worker only moves on once all blocks of a stage are claimed and a block only waits for
-// blocks of earlier stages, so the earliest block not yet done can always go on.
-static void b3SolveDataflow( b3StepContext* context, int workerIndex )
-{
-	int executed = 0;
-	int workerCount = context->workerCount;
-	for ( int e = 0; e < context->dataflowEntryCount; ++e )
-	{
-		b3DataflowEntry* entry = context->dataflowEntries + e;
-		b3SolverStage* stage = entry->stage;
-		int blockCount = stage->blockCount;
-
-		// With fewer blocks than workers and no own blocks every worker tries them, whoever comes first takes them
-		int startIndex = stage->homeStarts != NULL || blockCount >= workerCount
-							 ? b3GetStageStartIndex( stage, workerIndex, workerCount )
-							 : workerIndex % blockCount;
-
-		int blockIndex = startIndex;
-		for ( int i = 0; i < blockCount; ++i )
-		{
-			b3AtomicInt* claim = entry->claims + blockIndex;
-			if ( b3AtomicLoadInt( claim ) == 0 && b3AtomicCompareExchangeInt( claim, 0, 1 ) )
-			{
-				b3ExecuteBlock( stage, context, stage->blocks[blockIndex].block, workerIndex, entry->substep );
-				executed += 1;
-			}
-
-			blockIndex = blockIndex + 1 < blockCount ? blockIndex + 1 : 0;
-		}
-	}
-
-	(void)b3AtomicFetchAddInt( &context->dataflowDone, executed );
-}
-
-// Added for Nebenan: the stages from stageIndex on in the order of b3SolverTask, every substep and restitution iteration
-// with its own claims
-static void b3BuildDataflow( b3StepContext* context, int stageIndex, int restitutionIterations )
-{
-	_Static_assert( ITERATIONS == 1 && RELAX_ITERATIONS == 1, "one stage per color for solve and relax" );
-
-	int colorCount = context->activeColorCount;
-	int subStepCount = context->subStepCount;
-	int substepStageCount = 2 + 3 * colorCount;
-	b3DataflowEntry* entries = context->dataflowEntries;
-	int entryCount = 0;
-	int blockCount = 0;
-
-	bool overflow = context->overflowBlock.block.count > 0;
-	for ( int i = 0; i < subStepCount + restitutionIterations; ++i )
-	{
-		int first = i < subStepCount ? stageIndex : stageIndex + substepStageCount;
-		int count = i < subStepCount ? substepStageCount : colorCount;
-		for ( int k = 0; k < count; ++k )
-		{
-			// Overflow contacts before the colors of warm start, solve, relax and restitution, as in b3SolverTask
-			int overflowStage = -1;
-			if ( i < subStepCount )
-			{
-				overflowStage = k == 1 ? 0 : ( k == 1 + colorCount ? 1 : ( k == 2 + 2 * colorCount ? 2 : -1 ) );
-			}
-			else if ( k == 0 )
-			{
-				overflowStage = 3;
-			}
-
-			if ( overflow && overflowStage >= 0 )
-			{
-				b3SolverStage* stage = context->overflowStages + overflowStage;
-				entries[entryCount] = ( b3DataflowEntry ){ stage, context->dataflowClaims + blockCount, i };
-				entryCount += 1;
-				blockCount += 1;
-			}
-
-			b3SolverStage* stage = context->stages + first + k;
-			if ( stage->blockCount == 0 )
-			{
-				continue;
-			}
-
-			entries[entryCount] = ( b3DataflowEntry ){ stage, context->dataflowClaims + blockCount, i };
-			entryCount += 1;
-			blockCount += stage->blockCount;
-		}
-	}
-
-	memset( context->dataflowClaims, 0, blockCount * sizeof( b3AtomicInt ) );
-	context->dataflowEntryCount = entryCount;
-	context->dataflowBlockCount = blockCount;
-	b3AtomicStoreInt( &context->dataflowDone, 0 );
 }
 
 // Parallel solver task
@@ -1501,30 +1278,8 @@ static void b3SolverTask( void* taskContext )
 
 		profile->prepareConstraints += b3GetMillisecondsAndReset( &ticks );
 
-		// Added for Nebenan: without a barrier per stage if the step allows, see b3SolveDataflow. Then the substeps and
-		// restitution below have nothing left to do.
-		int restitutionIterations = context->world->restitutionIterations;
-		bool anyRestitution = restitutionIterations > 0 && b3AtomicLoadInt( &context->anyRestitution ) != 0;
-		context->dataflow = context->dataflowEntries != NULL && b3PrepareDataflow( context );
-		if ( context->dataflow )
-		{
-			b3BuildDataflow( context, stageIndex, anyRestitution ? restitutionIterations : 0 );
-
-			// The workers join in with the stage index 0xFFFF, see below
-			uint32_t dataflowBits = ( 1u << 16 ) | 0xFFFF;
-			b3AtomicStoreU32( &context->atomicSyncBits, dataflowBits );
-			b3SolveDataflow( context, 0 );
-
-			if ( b3WaitForValue( &context->dataflowDone, context->dataflowBlockCount ) )
-			{
-				b3AtomicStoreInt( &context->dataflowStalled, 1 );
-			}
-
-			profile->solveImpulses += b3GetMillisecondsAndReset( &ticks );
-		}
-
 		int graphSyncIndex = 1;
-		int subStepCount = context->dataflow ? 0 : context->subStepCount;
+		int subStepCount = context->subStepCount;
 		for ( int subStepIndex = 0; subStepIndex < subStepCount; ++subStepIndex )
 		{
 			// stageIndex restarted each iteration
@@ -1608,7 +1363,8 @@ static void b3SolverTask( void* taskContext )
 		// integrate velocities / warm start / solve / integrate positions / relax
 		stageIndex += 1 + activeColorCount + ITERATIONS * activeColorCount + 1 + RELAX_ITERATIONS * activeColorCount;
 
-		if ( anyRestitution && context->dataflow == false )
+		int restitutionIterations = context->world->restitutionIterations;
+		if ( restitutionIterations > 0 && b3AtomicLoadInt( &context->anyRestitution ) != 0 )
 		{
 			for ( int j = 0; j < restitutionIterations; ++j )
 			{
@@ -1693,15 +1449,6 @@ static void b3SolverTask( void* taskContext )
 		}
 
 		int stageIndex = syncBits & 0xFFFF;
-
-		// Added for Nebenan: the stages without a barrier, see above
-		if ( stageIndex == 0xFFFF )
-		{
-			b3SolveDataflow( context, workerIndex );
-			lastSyncBits = syncBits;
-			continue;
-		}
-
 		B3_ASSERT( stageIndex < context->stageCount );
 
 		int syncIndex = ( syncBits >> 16 ) & 0xFFFF;
@@ -1750,10 +1497,8 @@ static void b3BulletBodyTask( int startIndex, int endIndex, int workerIndex, voi
 // see b3World::contactSortKeys, and the counting sort reads them from that dense array instead of the scattered contacts.
 // Returns the contact ids in stack memory in the order of the active colors, or NULL.
 static int* b3OrderColorContacts( b3World* world, const b3GraphColor* colors, const int* activeColorIndices, int activeColorCount,
-								  int awakeBodyCount, int workerCount, int** partStarts )
+								  int awakeBodyCount, int workerCount )
 {
-	*partStarts = NULL;
-
 	if ( workerCount < 2 )
 	{
 		return NULL;
@@ -1770,11 +1515,7 @@ static int* b3OrderColorContacts( b3World* world, const b3GraphColor* colors, co
 		return NULL;
 	}
 
-	// Added for Nebenan: after the contacts, per color and worker where the contacts of the worker's bodies begin
-	int partCount = activeColorCount * ( workerCount + 1 );
-	int* ordered = (int*)b3StackAlloc( &world->stack, ( total + partCount ) * (int)sizeof( int ), "ordered contacts" );
-	int* parts = ordered + total;
-	*partStarts = parts;
+	int* ordered = (int*)b3StackAlloc( &world->stack, total * (int)sizeof( int ), "ordered contacts" );
 	const int* keys = world->contactSortKeys;
 	int offset = 0;
 	for ( int i = 0; i < activeColorCount; ++i )
@@ -1794,11 +1535,6 @@ static int* b3OrderColorContacts( b3World* world, const b3GraphColor* colors, co
 		for ( int b = 0; b < B3_CONTACT_ORDER_BUCKETS; ++b )
 		{
 			starts[b + 1] += starts[b];
-		}
-
-		for ( int w = 0; w <= workerCount; ++w )
-		{
-			parts[i * ( workerCount + 1 ) + w] = starts[w * B3_CONTACT_ORDER_BUCKETS / workerCount];
 		}
 
 		for ( int k = 0; k < count; ++k )
@@ -1965,53 +1701,9 @@ void b3Solve( b3World* world, b3StepContext* stepContext )
 		b3JointPrepareSpan jointPrepareSpans[B3_GRAPH_COLOR_COUNT + 1];
 
 		// Added for Nebenan
-		int* contactPartStarts = NULL;
-		int* orderedContacts = b3OrderColorContacts( world, colors, activeColorIndices, activeColorCount, awakeBodyCount,
-													 workerCount, &contactPartStarts );
+		int* orderedContacts =
+			b3OrderColorContacts( world, colors, activeColorIndices, activeColorCount, awakeBodyCount, workerCount );
 		int orderedOffset = 0;
-
-		// Added for Nebenan: the solver without a barrier per stage needs workers and only convex contacts in colors, see
-		// b3SolveDataflow, and the overflow contacts in one block. Whether the bodies allow it shows b3PrepareDataflow. After
-		// a wait that took far too long, see b3WaitForValue, the barrier per stage is back for a while.
-		bool dataflow = world->dataflowCooldown == 0 && contactPartStarts != NULL && contactCount == 0 && jointCount == 0 &&
-						overflow->jointSims.count == 0 && overflowCount <= UINT16_MAX;
-		world->dataflowCooldown = b3MaxInt( world->dataflowCooldown - 1, 0 );
-
-		// Added for Nebenan: without a barrier the convex contacts of a color go in blocks per worker, each with the contacts
-		// whose smaller body the worker integrates, and the bodies go in blocks per worker as well. See b3SolveDataflow.
-		int colorHomeStarts[B3_GRAPH_COLOR_COUNT][B3_MAX_WORKERS + 1];
-		int bodyHomeStarts[B3_MAX_WORKERS + 1];
-		int colorWideBlockCounts[B3_GRAPH_COLOR_COUNT];
-		int bodyBlockCount = bodyDim.count;
-		if ( dataflow )
-		{
-			graphBlockCount = 0;
-			for ( int i = 0; i < activeColorCount; ++i )
-			{
-				int* parts = contactPartStarts + i * ( workerCount + 1 );
-				int blockCount = 0;
-				for ( int w = 0; w < workerCount; ++w )
-				{
-					colorHomeStarts[i][w] = graphJointDims[i].count + blockCount;
-					int begin = parts[w] >> B3_SIMD_SHIFT;
-					int end = w + 1 < workerCount ? parts[w + 1] >> B3_SIMD_SHIFT : colorWideContactCounts[i];
-					blockCount += b3GetPartBlockCount( end - begin, minContactsPerBlock );
-				}
-				colorHomeStarts[i][workerCount] = graphJointDims[i].count + blockCount;
-				colorWideBlockCounts[i] = blockCount;
-				graphBlockCount += graphJointDims[i].count + blockCount + graphContactDims[i].count;
-			}
-
-			bodyBlockCount = 0;
-			for ( int w = 0; w < workerCount; ++w )
-			{
-				bodyHomeStarts[w] = bodyBlockCount;
-				int begin = (int)( (int64_t)awakeBodyCount * w / workerCount );
-				int end = (int)( (int64_t)awakeBodyCount * ( w + 1 ) / workerCount );
-				bodyBlockCount += b3GetPartBlockCount( end - begin, minBodiesPerBlock );
-			}
-			bodyHomeStarts[workerCount] = bodyBlockCount;
-		}
 
 		// Distribute transient constraints to each graph color and prepare spans
 		// todo it might be simpler for solver blocks to index into the global arrays
@@ -2127,7 +1819,7 @@ void b3Solve( b3World* world, b3StepContext* stepContext )
 
 		b3SolverStage* stages = (b3SolverStage*)b3StackAlloc( &world->stack, stageCount * sizeof( b3SolverStage ), "stages" );
 		b3SyncBlock* bodyBlocks =
-			(b3SyncBlock*)b3StackAlloc( &world->stack, bodyBlockCount * sizeof( b3SyncBlock ), "body blocks" );
+			(b3SyncBlock*)b3StackAlloc( &world->stack, bodyDim.count * sizeof( b3SyncBlock ), "body blocks" );
 		b3SyncBlock* convexBlocks =
 			(b3SyncBlock*)b3StackAlloc( &world->stack, convexPrepareDim.count * sizeof( b3SyncBlock ), "convex blocks" );
 		b3SyncBlock* meshBlocks =
@@ -2136,44 +1828,6 @@ void b3Solve( b3World* world, b3StepContext* stepContext )
 			(b3SyncBlock*)b3StackAlloc( &world->stack, jointPrepareDim.count * sizeof( b3SyncBlock ), "joint blocks" );
 		b3SyncBlock* graphBlocks =
 			(b3SyncBlock*)b3StackAlloc( &world->stack, graphBlockCount * sizeof( b3SyncBlock ), "graph blocks" );
-
-		// Added for Nebenan: see b3SolveDataflow
-		b3DataflowEntry* dataflowEntries = NULL;
-		b3AtomicInt* dataflowClaims = NULL;
-		uint16_t* bodyConstraintCounts = NULL;
-		uint16_t* bodyOverflowCounts = NULL;
-		if ( dataflow )
-		{
-			int restitutionIterations = world->restitutionIterations;
-			int entryCapacity =
-				stepContext->subStepCount * ( 5 + 3 * activeColorCount ) + restitutionIterations * ( 1 + activeColorCount );
-			int claimCapacity = stepContext->subStepCount * ( 3 + 2 * bodyBlockCount + 3 * graphBlockCount ) +
-								restitutionIterations * ( 1 + graphBlockCount );
-			dataflowEntries =
-				(b3DataflowEntry*)b3StackAlloc( &world->stack, entryCapacity * sizeof( b3DataflowEntry ), "dataflow entries" );
-			dataflowClaims =
-				(b3AtomicInt*)b3StackAlloc( &world->stack, claimCapacity * sizeof( b3AtomicInt ), "dataflow claims" );
-			bodyConstraintCounts =
-				(uint16_t*)b3StackAlloc( &world->stack, awakeBodyCount * sizeof( uint16_t ), "body constraint counts" );
-			bodyOverflowCounts =
-				(uint16_t*)b3StackAlloc( &world->stack, awakeBodyCount * sizeof( uint16_t ), "body overflow counts" );
-
-			// The overflow contacts of each body, they come before its colors, see b3GetDataflowOrder
-			memset( bodyOverflowCounts, 0, awakeBodyCount * sizeof( uint16_t ) );
-			for ( int k = 0; k < overflowCount; ++k )
-			{
-				b3Contact* contact = world->contacts.data + overflow->contacts.data[k].contactId;
-				int indices[2] = { b3DecodeAwakeIndex( contact->encodedBodySimA ),
-								   b3DecodeAwakeIndex( contact->encodedBodySimB ) };
-				for ( int side = 0; side < 2; ++side )
-				{
-					if ( indices[side] != B3_NULL_INDEX && bodyOverflowCounts[indices[side]] < UINT16_MAX )
-					{
-						bodyOverflowCounts[indices[side]] += 1;
-					}
-				}
-			}
-		}
 
 		// Split an awake island. This modifies:
 		// - stack allocator
@@ -2198,21 +1852,7 @@ void b3Solve( b3World* world, b3StepContext* stepContext )
 		}
 
 		// Prepare body blocks
-		if ( dataflow )
-		{
-			// Added for Nebenan
-			for ( int w = 0; w < workerCount; ++w )
-			{
-				int begin = (int)( (int64_t)awakeBodyCount * w / workerCount );
-				int end = (int)( (int64_t)awakeBodyCount * ( w + 1 ) / workerCount );
-				b3InitPartBlocks( bodyBlocks + bodyHomeStarts[w], begin, end, bodyHomeStarts[w + 1] - bodyHomeStarts[w],
-								  b3_bodyBlock, UINT8_MAX );
-			}
-		}
-		else
-		{
-			b3InitBlocks( bodyBlocks, bodyDim, awakeBodyCount, b3_bodyBlock, UINT8_MAX );
-		}
+		b3InitBlocks( bodyBlocks, bodyDim, awakeBodyCount, b3_bodyBlock, UINT8_MAX );
 
 		// Prepare blocks as a single flat parallel-for over the whole constraint range.
 		// The task walks spans to decode flat slot indices back to per-color arrays.
@@ -2232,32 +1872,14 @@ void b3Solve( b3World* world, b3StepContext* stepContext )
 			b3InitBlocks( baseGraphBlock, graphJointDims[i], colorJointCounts[i], b3_graphJointBlock, colorIndex );
 			baseGraphBlock += graphJointDims[i].count;
 
-			int wideBlockCount = graphWideContactDims[i].count;
-			if ( dataflow )
-			{
-				// Added for Nebenan
-				int* parts = contactPartStarts + i * ( workerCount + 1 );
-				for ( int w = 0; w < workerCount; ++w )
-				{
-					int begin = parts[w] >> B3_SIMD_SHIFT;
-					int end = w + 1 < workerCount ? parts[w + 1] >> B3_SIMD_SHIFT : colorWideContactCounts[i];
-					int first = colorHomeStarts[i][w] - graphJointDims[i].count;
-					int count = colorHomeStarts[i][w + 1] - colorHomeStarts[i][w];
-					b3InitPartBlocks( baseGraphBlock + first, begin, end, count, b3_graphWideContactBlock, colorIndex );
-				}
-				wideBlockCount = colorWideBlockCounts[i];
-			}
-			else
-			{
-				b3InitBlocks( baseGraphBlock, graphWideContactDims[i], colorWideContactCounts[i], b3_graphWideContactBlock,
-							  colorIndex );
-			}
-			baseGraphBlock += wideBlockCount;
+			b3InitBlocks( baseGraphBlock, graphWideContactDims[i], colorWideContactCounts[i], b3_graphWideContactBlock,
+						  colorIndex );
+			baseGraphBlock += graphWideContactDims[i].count;
 
 			b3InitBlocks( baseGraphBlock, graphContactDims[i], colorContactCounts[i], b3_graphContactBlock, colorIndex );
 			baseGraphBlock += graphContactDims[i].count;
 
-			graphBlockCounts[i] = graphJointDims[i].count + wideBlockCount + graphContactDims[i].count;
+			graphBlockCounts[i] = graphJointDims[i].count + graphWideContactDims[i].count + graphContactDims[i].count;
 		}
 
 		B3_ASSERT( (ptrdiff_t)( baseGraphBlock - graphBlocks ) == graphBlockCount );
@@ -2266,22 +1888,16 @@ void b3Solve( b3World* world, b3StepContext* stepContext )
 		stage = b3InitStage( stage, b3_stagePrepareJoints, jointBlocks, jointPrepareDim.count, UINT8_MAX );
 		stage = b3InitStage( stage, b3_stagePrepareWideContacts, convexBlocks, convexPrepareDim.count, UINT8_MAX );
 		stage = b3InitStage( stage, b3_stagePrepareContacts, meshBlocks, meshPrepareDim.count, UINT8_MAX );
-		// Added for Nebenan: the blocks of each worker, see b3SolveDataflow
-		int* bodyHomes = dataflow ? bodyHomeStarts : NULL;
-		int( *colorHomes )[B3_MAX_WORKERS + 1] = dataflow ? colorHomeStarts : NULL;
-
-		stage = b3InitStage( stage, b3_stageIntegrateVelocities, bodyBlocks, bodyBlockCount, UINT8_MAX );
-		stage[-1].homeStarts = bodyHomes;
+		stage = b3InitStage( stage, b3_stageIntegrateVelocities, bodyBlocks, bodyDim.count, UINT8_MAX );
 		stage = b3InitColorStages( stage, b3_stageWarmStart, 1, activeColorCount, graphColorBlocks, graphBlockCounts,
-								   activeColorIndices, colorHomes );
+								   activeColorIndices );
 		stage = b3InitColorStages( stage, b3_stageSolve, ITERATIONS, activeColorCount, graphColorBlocks, graphBlockCounts,
-								   activeColorIndices, colorHomes );
-		stage = b3InitStage( stage, b3_stageIntegratePositions, bodyBlocks, bodyBlockCount, UINT8_MAX );
-		stage[-1].homeStarts = bodyHomes;
+								   activeColorIndices );
+		stage = b3InitStage( stage, b3_stageIntegratePositions, bodyBlocks, bodyDim.count, UINT8_MAX );
 		stage = b3InitColorStages( stage, b3_stageRelax, RELAX_ITERATIONS, activeColorCount, graphColorBlocks, graphBlockCounts,
-								   activeColorIndices, colorHomes );
+								   activeColorIndices );
 		stage = b3InitColorStages( stage, b3_stageRestitution, 1, activeColorCount, graphColorBlocks, graphBlockCounts,
-								   activeColorIndices, colorHomes );
+								   activeColorIndices );
 		stage = b3InitStage( stage, b3_stageStoreWideImpulses, convexBlocks, convexPrepareDim.count, UINT8_MAX );
 		stage = b3InitStage( stage, b3_stageStoreImpulses, meshBlocks, meshPrepareDim.count, UINT8_MAX );
 
@@ -2303,31 +1919,6 @@ void b3Solve( b3World* world, b3StepContext* stepContext )
 		stepContext->contactPrepareSpans = contactPrepareSpans;
 		stepContext->overflowSpans = overflowSpans;
 		stepContext->jointPrepareSpans = jointPrepareSpans;
-
-		// Added for Nebenan
-		stepContext->dataflowEntries = dataflowEntries;
-		stepContext->dataflowClaims = dataflowClaims;
-		stepContext->dataflowEntryCount = 0;
-		stepContext->dataflowBlockCount = 0;
-		stepContext->dataflow = false;
-		stepContext->bodyConstraintCounts = bodyConstraintCounts;
-		stepContext->bodyOverflowCounts = bodyOverflowCounts;
-		b3AtomicStoreInt( &stepContext->dataflowBlocked, 0 );
-		b3AtomicStoreInt( &stepContext->dataflowStalled, 0 );
-		stepContext->activeColorIndices = activeColorIndices;
-		stepContext->awakeBodyCount = awakeBodyCount;
-		stepContext->overflowBlock.block = ( b3SolverBlock ){
-			.startIndex = 0,
-			.count = (uint16_t)overflowCount,
-			.blockType = b3_overflowBlock,
-			.colorIndex = B3_OVERFLOW_INDEX,
-		};
-		b3SolverStageType overflowTypes[4] = { b3_stageWarmStart, b3_stageSolve, b3_stageRelax, b3_stageRestitution };
-		for ( int i = 0; i < 4; ++i )
-		{
-			b3InitStage( stepContext->overflowStages + i, overflowTypes[i], &stepContext->overflowBlock, 1, B3_OVERFLOW_INDEX );
-		}
-
 		b3AtomicStoreU32( &stepContext->atomicSyncBits, 0 );
 		b3AtomicStoreInt( &stepContext->mainClaimed, 0 );
 
@@ -2409,30 +2000,6 @@ void b3Solve( b3World* world, b3StepContext* stepContext )
 		world->splitIslandId = B3_NULL_INDEX;
 
 		world->profile.constraints = b3GetMillisecondsAndReset( &constraintTicks );
-
-		// Added for Nebenan: a thread that lost its core holds up all others without a barrier per stage, more than with
-		// one. A single long wait happens now and then, after a few steps in a row with one the next steps keep the
-		// barrier. Both give the same results, see b3WaitForValue.
-		if ( stepContext->dataflow )
-		{
-			// A step with such a wait counts three, one without takes one away, so two in a row bring the barrier back but a
-			// rare one does not. Every time the barrier has to come back soon after the last time, it stays twice as long.
-			bool stalled = b3AtomicLoadInt( &stepContext->dataflowStalled ) != 0;
-			world->dataflowStallScore = b3MaxInt( world->dataflowStallScore + ( stalled ? 3 : -1 ), 0 );
-			world->dataflowCalmSteps = stalled ? 0 : world->dataflowCalmSteps + 1;
-			if ( world->dataflowCalmSteps >= B3_DATAFLOW_COOLDOWN )
-			{
-				world->dataflowCooldownLength = B3_DATAFLOW_COOLDOWN / 2;
-			}
-
-			if ( world->dataflowStallScore >= 6 )
-			{
-				world->dataflowStallScore = 0;
-				world->dataflowCooldownLength =
-					b3ClampInt( 2 * world->dataflowCooldownLength, B3_DATAFLOW_COOLDOWN, 64 * B3_DATAFLOW_COOLDOWN );
-				world->dataflowCooldown = world->dataflowCooldownLength;
-			}
-		}
 		b3TracyCZoneEnd( solve_constraints );
 
 		b3TracyCZoneNC( update_transforms, "Update Transforms", b3_colorMediumSeaGreen, true );
@@ -2464,13 +2031,6 @@ void b3Solve( b3World* world, b3StepContext* stepContext )
 		b3ParallelFor( world, &b3FinalizeBodiesTask, awakeBodyCount, 16, stepContext, "ccd" );
 
 		// Free in reverse order
-		if ( dataflowEntries != NULL )
-		{
-			b3StackFree( &world->stack, bodyOverflowCounts );
-			b3StackFree( &world->stack, bodyConstraintCounts );
-			b3StackFree( &world->stack, dataflowClaims );
-			b3StackFree( &world->stack, dataflowEntries );
-		}
 		b3StackFree( &world->stack, graphBlocks );
 		b3StackFree( &world->stack, jointBlocks );
 		b3StackFree( &world->stack, meshBlocks );

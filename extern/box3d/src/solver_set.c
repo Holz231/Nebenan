@@ -350,8 +350,8 @@ void b3TrySleepIsland( b3World* world, int islandId )
 			if ( colorIndex != B3_OVERFLOW_INDEX )
 			{
 				// might clear a bit for a static body, but this has no effect
-				b3ClearGraphBody( &world->constraintGraph, colorIndex, contact->edges[0].bodyId );
-				b3ClearGraphBody( &world->constraintGraph, colorIndex, contact->edges[1].bodyId );
+				b3ClearBit( &color->bodySet, contact->edges[0].bodyId );
+				b3ClearBit( &color->bodySet, contact->edges[1].bodyId );
 			}
 
 			int sleepContactIndex = sleepSet->contactIndices.count;
@@ -413,8 +413,8 @@ void b3TrySleepIsland( b3World* world, int islandId )
 			if ( colorIndex != B3_OVERFLOW_INDEX )
 			{
 				// might clear a bit for a static body, but this has no effect
-				b3ClearGraphBody( &world->constraintGraph, colorIndex, joint->edges[0].bodyId );
-				b3ClearGraphBody( &world->constraintGraph, colorIndex, joint->edges[1].bodyId );
+				b3ClearBit( &color->bodySet, joint->edges[0].bodyId );
+				b3ClearBit( &color->bodySet, joint->edges[1].bodyId );
 			}
 
 			int sleepJointIndex = sleepSet->jointSims.count;
