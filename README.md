@@ -734,6 +734,10 @@ Threads 0,3 bis 4,5 % weniger und mit einem zwischen 3,2 % weniger und 1,0 % meh
 Dazu warten Box3Ds Worker während eines Schritts auf die nächste Aufgabe, statt zwischen den Abschnitten zu schlafen und
 jedes Mal über den Kernel geweckt zu werden: Mit 4 Threads kostet ein Frame im Benchmark damit noch einmal 2,0 bis 5,3 %
 weniger.
+Seit `physik-9` erstarrt Schutt billiger: Box3D geht nach dem Einfügen in den statischen Baum nur so weit nach oben, wie
+sich etwas ändert, und sperrt den Allokator der Manifolds nur, solange die Kontakt-Schleife auf mehreren Threads läuft.
+Dazu sucht die Etagenprüfung die stehenden Teile eines Hauses vom Ende seiner Liste her. Gepaart gegen `physik-8` kostet
+das Update damit 3,2 bis 8,9 % weniger und ein Frame 0,8 bis 3,5 %, ohne ein Bit zu ändern.
 
 **Eine Stadt größer als der Speicher.** Im Benchmark fliegt eine Kamera mit 30 m/s 900 m weit durch eine Stadt aus
 65 536 Häusern auf 3,6 × 3,1 km und 300 m zurück, Bruchstückgröße ×4. Am Stück bräuchte sie 24 GB. Geladen sind die

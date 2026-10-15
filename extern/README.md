@@ -188,7 +188,20 @@ den Schritten schlafen sie wie bisher. Die Rolle des Dirigenten im Löser behäl
 aufrufende Thread, der die Stufen gerade vorbereitet hat (`b3Solve` in `src/solver.c`). Welcher Thread was rechnet,
 ändert nichts.
 
-Die erste, die zweite, die vierte bis achte, die zehnte und die dreizehnte bis dreiundzwanzigste ändern an den
+**Weg nach oben beim Einfügen kürzer.** Nach dem Einfügen eines Blatts rechnete Box3D jeden Vorfahren bis zur Wurzel neu
+und versuchte auf jeder Ebene zu rotieren. Jetzt hört der Weg in `b3InsertLeaf` und beim gesammelten Einbau beim ersten
+Vorfahren auf, der mit Box, Höhe und Merkern so herauskommt, wie er war (`src/dynamic_tree.c`): Die darüber hängen nur
+von ihm ab. Es entfallen nur die Rotationen über ihm, und die fanden so weit über einem neuen Blatt kaum etwas. So kommt
+erstarrender Schutt billiger in den statischen Baum, in dem die ganze Stadt steht. Die Bäume sehen dadurch etwas anders
+aus, die Ergebnisse hängen nicht davon ab.
+
+**Manifolds ohne Sperre außerhalb der Kontakt-Schleife.** Box3D sperrte seinen Allokator für die Manifolds der Kontakte
+bei jedem Holen und Freigeben, weil die Kontakt-Schleife beides auf mehreren Threads tut. Erstarren und Auftauen bauen
+die Kontakte eines Körpers aber auf dem aufrufenden Thread ab, und dort kostete die Sperre Zeit, ohne dass je ein
+anderer Thread wartete. Jetzt setzt `b3Collide` `b3World::manifoldsShared`, solange die Kontakt-Schleife auf mehreren
+Threads läuft, und nur dann sperrt der Allokator (`src/physics_world.h` und `src/physics_world.c`).
+
+Die erste, die zweite, die vierte bis achte, die zehnte und die dreizehnte bis fünfundzwanzigste ändern an den
 Ergebnissen nichts. Die dritte und die neunte ändern sie in den letzten Bits, dafür hängen sie nicht mehr davon ab, in
 welcher Reihenfolge Formen in die Bäume kommen. Die elfte ändert sie, weil Kontakte zu anderen Zeitpunkten entstehen,
 die zwölfte, weil sie weniger Punkte bekommen. Die Ergänzungen stehen in `include/box3d/box3d.h`,
