@@ -106,6 +106,9 @@ typedef enum b3SolverBlockType
 
 	// Block for processing overflow constraints
 	b3_overflowBlock,
+
+	// Added for Nebenan: block for iterating across the bodies of a pack of islands, see b3SolvePacks
+	b3_packBodyBlock,
 } b3SolverBlockType;
 
 // Solver block describes a multithreaded unit of work.
@@ -236,6 +239,16 @@ typedef struct b3StepContext
 	int stageCount;
 	bool enableWarmStarting;
 
+	// Added for Nebenan: the awake islands in packs, each solved whole by one thread without a barrier, see b3SolvePacks.
+	// No packs if the step solves color by color. Per pack its bodies as awake indices, its overflow constraints and, per
+	// active color, its wide constraints, each as a range up to the start of the next pack.
+	int packCount;
+	const int* packBodyStarts;
+	const int* packBodies;
+	const int* packOverflowStarts;
+	const int* packWideStarts;
+	const int* activeColorIndices;
+
 	// padding to prevent false sharing
 	char padding1[64];
 
@@ -258,6 +271,13 @@ typedef struct b3StepContext
 
 	// padding to prevent false sharing
 	char padding3[64];
+
+	// Added for Nebenan: the next pack to take and the packs solved, see b3SolvePacks
+	b3AtomicInt packNext;
+	b3AtomicInt packDone;
+
+	// padding to prevent false sharing
+	char padding4[64];
 } b3StepContext;
 
 void b3Solve( b3World* world, b3StepContext* stepContext );

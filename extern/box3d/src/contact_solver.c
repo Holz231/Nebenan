@@ -1510,13 +1510,13 @@ void b3PrepareContacts_Convex( b3SolverBlock block, b3StepContext* context )
 			for ( int lane = 0; lane < B3_SIMD_WIDTH; ++lane )
 			{
 				int farIndex = B3_SIMD_WIDTH * ( localWideIndex + 2 ) + lane;
-				if ( farIndex < colorContactCount )
+				if ( farIndex < colorContactCount && contactIds[farIndex] != B3_NULL_INDEX )
 				{
 					b3PrefetchPrepareContact( world->contacts.data + contactIds[farIndex] );
 				}
 
 				int nearIndex = B3_SIMD_WIDTH * ( localWideIndex + 1 ) + lane;
-				if ( nearIndex < colorContactCount )
+				if ( nearIndex < colorContactCount && contactIds[nearIndex] != B3_NULL_INDEX )
 				{
 					b3PrefetchPrepareData( world->contacts.data + contactIds[nearIndex], sims );
 				}
@@ -1530,8 +1530,9 @@ void b3PrepareContacts_Convex( b3SolverBlock block, b3StepContext* context )
 
 			for ( int lane = 0; lane < B3_SIMD_WIDTH; ++lane )
 			{
+				// Added for Nebenan: a null id is an empty lane at the end of a pack of islands, see b3OrderPackContacts
 				int contactIndex = B3_SIMD_WIDTH * localWideIndex + lane;
-				if ( contactIndex < colorContactCount )
+				if ( contactIndex < colorContactCount && contactIds[contactIndex] != B3_NULL_INDEX )
 				{
 					b3Contact* contact = b3Array_Get( world->contacts, contactIds[contactIndex] );
 					B3_ASSERT( contact->manifoldCount == 1 );
