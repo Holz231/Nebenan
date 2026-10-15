@@ -525,6 +525,9 @@ static void b3InsertLeaf( b3DynamicTree* tree, b3AABB aabb, int proxyId, bool mo
 	}
 
 	// Walk back up the tree refitting ancestors, the root included.
+	// Added for Nebenan: up to the first ancestor that comes out as it was, with its box, height and moved flag. The ones
+	// above depend only on it, so only their rotations are left out. Those rarely swap anything far above a new leaf, and
+	// in the static tree with the whole town the walk to the root cost three times the search.
 	int index = sibling;
 	while ( index != B3_NULL_INDEX )
 	{
@@ -533,7 +536,13 @@ static void b3InsertLeaf( b3DynamicTree* tree, b3AABB aabb, int proxyId, bool mo
 			b3RotateNodes( tree, index );
 		}
 
+		b3TreeNode before = nodes[index];
 		nodes[index] = b3MakeInternalNode( nodes, b3GetLeftChild( nodes + index ) );
+		if ( index != sibling && memcmp( &before, nodes + index, sizeof( b3TreeNode ) ) == 0 )
+		{
+			break;
+		}
+
 		index = parents[index];
 	}
 }
@@ -2212,12 +2221,18 @@ static void b3InsertBatchGroup( b3DynamicTree* tree, const b3TreeBatchItem* item
 			tree->dfsOrdered = false;
 		}
 
-		// Walk back up the tree refitting ancestors, the root included, as a single leaf does.
+		// Walk back up the tree refitting ancestors, as a single leaf does, up to the first that comes out as it was
 		int index = sibling;
 		while ( index != B3_NULL_INDEX )
 		{
 			b3RotateNodes( tree, index );
+			b3TreeNode before = nodes[index];
 			nodes[index] = b3MakeInternalNode( nodes, b3GetLeftChild( nodes + index ) );
+			if ( index != sibling && memcmp( &before, nodes + index, sizeof( b3TreeNode ) ) == 0 )
+			{
+				break;
+			}
+
 			index = tree->parents[index];
 		}
 	}
