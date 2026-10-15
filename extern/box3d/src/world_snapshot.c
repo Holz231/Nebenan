@@ -1380,6 +1380,9 @@ bool b3DeserializeIntoShell( const uint8_t* data, int size, b3World* world, b3Re
 		{
 			b3DesGraphColor( r, &graph->colors[c], c == B3_OVERFLOW_INDEX );
 		}
+
+		// Added for Nebenan
+		b3RebuildGraphBodyColors( graph );
 	}
 
 	b3DesNames( r, &world->names );

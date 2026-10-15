@@ -6,6 +6,7 @@
 #include "bitset.h"
 #include "body.h"
 #include "contact.h"
+#include "ctz.h"
 #include "joint.h"
 #include "physics_world.h"
 
@@ -54,6 +55,62 @@ void b3CreateGraph( b3ConstraintGraph* graph, int bodyCapacity )
 		color->bodySet = b3CreateBitSet( bodyCapacity );
 		b3SetBitCountAndClear( &color->bodySet, bodyCapacity );
 	}
+
+	// Added for Nebenan
+	_Static_assert( B3_OVERFLOW_INDEX <= 32, "a color bit per color" );
+	graph->bodyColors = (uint32_t*)b3GrowAllocZeroed( NULL, 0, bodyCapacity * (int)sizeof( uint32_t ) );
+	graph->bodyColorCapacity = bodyCapacity;
+}
+
+// Added for Nebenan: room in b3ConstraintGraph::bodyColors for the body id
+static void b3ReserveGraphBody( b3ConstraintGraph* graph, int bodyId )
+{
+	if ( bodyId >= graph->bodyColorCapacity )
+	{
+		int capacity = b3MaxInt( bodyId + 1, 2 * graph->bodyColorCapacity );
+		graph->bodyColors = (uint32_t*)b3GrowAllocZeroed( graph->bodyColors, graph->bodyColorCapacity * (int)sizeof( uint32_t ),
+														  capacity * (int)sizeof( uint32_t ) );
+		graph->bodyColorCapacity = capacity;
+	}
+}
+
+void b3SetGraphBody( b3ConstraintGraph* graph, int colorIndex, int bodyId )
+{
+	B3_ASSERT( 0 <= colorIndex && colorIndex < B3_OVERFLOW_INDEX );
+	b3SetBitGrow( &graph->colors[colorIndex].bodySet, bodyId );
+	b3ReserveGraphBody( graph, bodyId );
+	graph->bodyColors[bodyId] |= 1u << colorIndex;
+}
+
+void b3ClearGraphBody( b3ConstraintGraph* graph, int colorIndex, int bodyId )
+{
+	B3_ASSERT( 0 <= colorIndex && colorIndex < B3_OVERFLOW_INDEX );
+	b3ClearBit( &graph->colors[colorIndex].bodySet, bodyId );
+
+	if ( bodyId < graph->bodyColorCapacity )
+	{
+		graph->bodyColors[bodyId] &= ~( 1u << colorIndex );
+	}
+}
+
+void b3RebuildGraphBodyColors( b3ConstraintGraph* graph )
+{
+	memset( graph->bodyColors, 0, graph->bodyColorCapacity * sizeof( uint32_t ) );
+	for ( int i = 0; i < B3_OVERFLOW_INDEX; ++i )
+	{
+		const b3BitSet* bodySet = &graph->colors[i].bodySet;
+		for ( uint32_t k = 0; k < bodySet->blockCount; ++k )
+		{
+			uint64_t word = bodySet->bits[k];
+			while ( word != 0 )
+			{
+				int bodyId = (int)( 64 * k + b3CTZ64( word ) );
+				b3ReserveGraphBody( graph, bodyId );
+				graph->bodyColors[bodyId] |= 1u << i;
+				word = word & ( word - 1 );
+			}
+		}
+	}
 }
 
 void b3DestroyGraph( b3ConstraintGraph* graph )
@@ -71,6 +128,11 @@ void b3DestroyGraph( b3ConstraintGraph* graph )
 		b3Array_Destroy( color->contacts );
 		b3Array_Destroy( color->jointSims );
 	}
+
+	// Added for Nebenan
+	b3Free( graph->bodyColors, graph->bodyColorCapacity * (int)sizeof( uint32_t ) );
+	graph->bodyColors = NULL;
+	graph->bodyColorCapacity = 0;
 }
 
 // Contacts are always created as non-touching. They get cloned into the constraint
@@ -104,8 +166,8 @@ void b3AddContactToGraph( b3World* world, b3Contact* contact )
 				continue;
 			}
 
-			b3SetBitGrow( &color->bodySet, bodyIdA );
-			b3SetBitGrow( &color->bodySet, bodyIdB );
+			b3SetGraphBody( graph, i, bodyIdA );
+			b3SetGraphBody( graph, i, bodyIdB );
 			colorIndex = i;
 			break;
 		}
@@ -121,7 +183,7 @@ void b3AddContactToGraph( b3World* world, b3Contact* contact )
 				continue;
 			}
 
-			b3SetBitGrow( &color->bodySet, bodyIdA );
+			b3SetGraphBody( graph, i, bodyIdA );
 			colorIndex = i;
 			break;
 		}
@@ -137,7 +199,7 @@ void b3AddContactToGraph( b3World* world, b3Contact* contact )
 				continue;
 			}
 
-			b3SetBitGrow( &color->bodySet, bodyIdB );
+			b3SetGraphBody( graph, i, bodyIdB );
 			colorIndex = i;
 			break;
 		}
@@ -178,8 +240,8 @@ void b3RemoveContactFromGraph( b3World* world, int bodyIdA, int bodyIdB, int col
 	if ( colorIndex != B3_OVERFLOW_INDEX )
 	{
 		// This might clear a bit for a static body, but this has no effect
-		b3ClearBit( &color->bodySet, bodyIdA );
-		b3ClearBit( &color->bodySet, bodyIdB );
+		b3ClearGraphBody( graph, colorIndex, bodyIdA );
+		b3ClearGraphBody( graph, colorIndex, bodyIdB );
 	}
 
 	if ( meshContact || colorIndex == B3_OVERFLOW_INDEX )
@@ -234,8 +296,8 @@ static int b3AssignJointColor( b3ConstraintGraph* graph, int bodyIdA, int bodyId
 				continue;
 			}
 
-			b3SetBitGrow( &color->bodySet, bodyIdA );
-			b3SetBitGrow( &color->bodySet, bodyIdB );
+			b3SetGraphBody( graph, i, bodyIdA );
+			b3SetGraphBody( graph, i, bodyIdB );
 			return i;
 		}
 	}
@@ -250,7 +312,7 @@ static int b3AssignJointColor( b3ConstraintGraph* graph, int bodyIdA, int bodyId
 				continue;
 			}
 
-			b3SetBitGrow( &color->bodySet, bodyIdA );
+			b3SetGraphBody( graph, i, bodyIdA );
 			return i;
 		}
 	}
@@ -265,7 +327,7 @@ static int b3AssignJointColor( b3ConstraintGraph* graph, int bodyIdA, int bodyId
 				continue;
 			}
 
-			b3SetBitGrow( &color->bodySet, bodyIdB );
+			b3SetGraphBody( graph, i, bodyIdB );
 			return i;
 		}
 	}
@@ -309,8 +371,8 @@ void b3RemoveJointFromGraph( b3World* world, int bodyIdA, int bodyIdB, int color
 	if ( colorIndex != B3_OVERFLOW_INDEX )
 	{
 		// May clear static bodies, no effect
-		b3ClearBit( &color->bodySet, bodyIdA );
-		b3ClearBit( &color->bodySet, bodyIdB );
+		b3ClearGraphBody( graph, colorIndex, bodyIdA );
+		b3ClearGraphBody( graph, colorIndex, bodyIdB );
 	}
 
 	int movedIndex = b3Array_RemoveSwap( color->jointSims, localIndex );

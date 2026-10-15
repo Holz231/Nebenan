@@ -176,6 +176,14 @@ typedef struct b3World
 	int* contactSortKeys;
 	int contactSortKeyCapacity;
 
+	// Added for Nebenan: after waits in the solver that took far too long, see b3WaitForValue, the steps left with a
+	// barrier per stage, how long the next such pause lasts, the score of the steps with such a wait and the steps in a row
+	// without one. See b3Solve.
+	int dataflowCooldown;
+	int dataflowCooldownLength;
+	int dataflowStallScore;
+	int dataflowCalmSteps;
+
 	// Used to create stable ids for islands
 	b3IdPool islandIdPool;
 

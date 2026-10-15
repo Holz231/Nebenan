@@ -166,7 +166,9 @@ typedef struct b3BodyState
 	float padding1;
 
 	b3Vec3 angularVelocity; // 12
-	float padding2;
+
+	// Added for Nebenan: how many steps of this body the solver has done, see b3SolveDataflow. Stays zero otherwise.
+	b3AtomicInt solverStamp;
 
 	// Using delta position reduces round-off error far from the origin
 	b3Vec3 deltaPosition; // 12
@@ -182,7 +184,7 @@ typedef struct b3BodyState
 
 // Identity body state, notice the deltaRotation is identity
 static const b3BodyState b3_identityBodyState = {
-	{ 0.0f, 0.0f, 0.0f }, 0.0f, { 0.0f, 0.0f, 0.0f }, 0.0f, { 0.0f, 0.0f, 0.0f }, 0, { { 0.0f, 0.0f, 0.0f }, 1.0f },
+	{ 0.0f, 0.0f, 0.0f }, 0.0f, { 0.0f, 0.0f, 0.0f }, { 0 }, { 0.0f, 0.0f, 0.0f }, 0, { { 0.0f, 0.0f, 0.0f }, 1.0f },
 };
 
 // Body simulation data used for integration of position and velocity

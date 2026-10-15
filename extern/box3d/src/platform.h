@@ -31,6 +31,33 @@
 #define b3Prefetch( addr ) ( (void)( addr ) )
 #endif
 
+// Added for Nebenan: a pause in a spin loop, see b3SolveDataflow
+#if ( defined( __GNUC__ ) || defined( __clang__ ) ) && ( defined( __i386__ ) || defined( __x86_64__ ) )
+static inline void b3SpinPause( void )
+{
+	__asm__ __volatile__( "pause\n" );
+}
+#elif ( defined( __arm__ ) && defined( __ARM_ARCH ) && __ARM_ARCH >= 7 ) || defined( __aarch64__ )
+static inline void b3SpinPause( void )
+{
+	__asm__ __volatile__( "yield" ::: "memory" );
+}
+#elif defined( _MSC_VER ) && ( defined( _M_IX86 ) || defined( _M_X64 ) )
+static inline void b3SpinPause( void )
+{
+	_mm_pause();
+}
+#elif defined( _MSC_VER ) && ( defined( _M_ARM ) || defined( _M_ARM64 ) )
+static inline void b3SpinPause( void )
+{
+	__yield();
+}
+#else
+static inline void b3SpinPause( void )
+{
+}
+#endif
+
 static inline void b3AtomicStoreInt( b3AtomicInt* a, int value )
 {
 #if defined( _MSC_VER )
@@ -57,6 +84,94 @@ static inline int b3AtomicLoadInt( b3AtomicInt* a )
 #else
 #error "Unsupported platform"
 #endif
+}
+
+// Added for Nebenan: a store that publishes the writes before it to a thread that reads it with b3AtomicLoadIntAcquire
+static inline void b3AtomicStoreIntRelease( b3AtomicInt* a, int value )
+{
+#if defined( _MSC_VER ) && !defined( __clang__ )
+#if defined( _M_ARM ) || defined( _M_ARM64 ) || defined( _M_ARM64EC )
+	__dmb( 0xB );
+#else
+	_ReadWriteBarrier();
+#endif
+	__iso_volatile_store32( (volatile __int32*)&a->value, value );
+#elif defined( __GNUC__ ) || defined( __clang__ )
+	__atomic_store_n( &a->value, value, __ATOMIC_RELEASE );
+#else
+#error "Unsupported platform"
+#endif
+}
+
+// Added for Nebenan: a store without ordering
+static inline void b3AtomicStoreIntRelaxed( b3AtomicInt* a, int value )
+{
+#if defined( _MSC_VER ) && !defined( __clang__ )
+	__iso_volatile_store32( (volatile __int32*)&a->value, value );
+#elif defined( __GNUC__ ) || defined( __clang__ )
+	__atomic_store_n( &a->value, value, __ATOMIC_RELAXED );
+#else
+#error "Unsupported platform"
+#endif
+}
+
+// Added for Nebenan: a load that sees the writes before the b3AtomicStoreIntRelease it reads
+static inline int b3AtomicLoadIntAcquire( b3AtomicInt* a )
+{
+#if defined( _MSC_VER ) && !defined( __clang__ )
+	int value = __iso_volatile_load32( (volatile __int32*)&a->value );
+#if defined( _M_ARM ) || defined( _M_ARM64 ) || defined( _M_ARM64EC )
+	__dmb( 0xB );
+#else
+	_ReadWriteBarrier();
+#endif
+	return value;
+#elif defined( __GNUC__ ) || defined( __clang__ )
+	return __atomic_load_n( &a->value, __ATOMIC_ACQUIRE );
+#else
+#error "Unsupported platform"
+#endif
+}
+
+// Added for Nebenan: waits until the atomic holds the value and tells whether that took longer than half a millisecond,
+// far longer than any wait of the solver without a barrier per stage takes unless the thread it waits for lost its core,
+// see b3SolveDataflow. Spins, and only after a while it reads the clock.
+#define B3_STALL_MILLISECONDS 0.5f
+static inline bool b3WaitForValue( b3AtomicInt* atomic, int value )
+{
+	if ( b3AtomicLoadIntAcquire( atomic ) == value )
+	{
+		return false;
+	}
+
+	bool stalled = false;
+	uint64_t ticks = 0;
+	int spins = 0;
+	while ( b3AtomicLoadIntAcquire( atomic ) != value )
+	{
+		// Once the wait took far too long, the thread waited for has most likely lost its core, and the waiting thread gives
+		// its own away to help it get one back
+		if ( stalled )
+		{
+			b3Yield();
+			continue;
+		}
+
+		b3SpinPause();
+		spins += 1;
+		if ( ( spins & 255 ) == 0 )
+		{
+			if ( ticks == 0 )
+			{
+				ticks = b3GetTicks();
+			}
+			else if ( b3GetMilliseconds( ticks ) > B3_STALL_MILLISECONDS )
+			{
+				stalled = true;
+			}
+		}
+	}
+	return stalled;
 }
 
 static inline int b3AtomicFetchAddInt( b3AtomicInt* a, int increment )

@@ -7,6 +7,7 @@
 #include "constraint_graph.h"
 #include "contact.h"
 #include "core.h"
+#include "ctz.h"
 #include "math_internal.h"
 #include "physics_world.h"
 #include "platform.h"
@@ -25,6 +26,34 @@
 // s(t) = s0 + dot(cB0 + dpB + rot(dqB, rB0) - cA0 - dpA - rot(dqA, rA0), normal)
 // s(t) = s0 + dot(cB0 - cA0, normal) + dot(dpB - dpA + rot(dqB, rB0) - rot(dqA, rA0), normal)
 // s_base = s0 + dot(cB0 - cA0, normal)
+
+// Added for Nebenan: the stamp a body must have before the constraint of this order works on it in the given substep. Per
+// substep a body takes 3 m + 2 steps: integrating its velocity, its m constraints three times and integrating its position.
+B3_FORCE_INLINE int b3DataflowStamp( uint32_t order, int substep, int base, int factor )
+{
+	int count = (int)( order >> 16 );
+	return substep * ( 3 * count + 2 ) + base + factor * count + (int)( order & 0xFFFF );
+}
+
+// Added for Nebenan: waits until a body has had its earlier steps, for a scalar constraint
+B3_FORCE_INLINE bool b3WaitForBody( b3BodyState* states, int index, uint32_t order, int substep, int base, int factor )
+{
+	if ( index == B3_NULL_INDEX )
+	{
+		return false;
+	}
+
+	return b3WaitForValue( &states[index].solverStamp, b3DataflowStamp( order, substep, base, factor ) );
+}
+
+// Added for Nebenan: hands a body on to its next step, for a scalar constraint
+B3_FORCE_INLINE void b3ReleaseBody( b3BodyState* states, int index, uint32_t order, int substep, int base, int factor )
+{
+	if ( index != B3_NULL_INDEX )
+	{
+		b3AtomicStoreIntRelease( &states[index].solverStamp, b3DataflowStamp( order, substep, base, factor ) + 1 );
+	}
+}
 
 // Prepare a mesh constraints
 void b3PrepareContacts_Mesh( b3SolverBlock block, b3StepContext* context )
@@ -296,8 +325,11 @@ void b3PrepareContacts_Mesh( b3SolverBlock block, b3StepContext* context )
 	b3TracyCZoneEnd( prepare_contact );
 }
 
-void b3WarmStartContacts_Mesh( b3SolverBlock block, b3StepContext* context )
+void b3WarmStartContacts_Mesh( b3SolverBlock block, b3StepContext* context, int dataflowSubstep )
 {
+	// Added for Nebenan: see b3WaitForValue
+	bool stalled = false;
+
 	b3World* world = context->world;
 	b3GraphColor* color = world->constraintGraph.colors + block.colorIndex;
 	b3SolverSet* awakeSet = b3Array_Get( world->solverSets, b3_awakeSet );
@@ -315,6 +347,13 @@ void b3WarmStartContacts_Mesh( b3SolverBlock block, b3StepContext* context )
 		const b3ContactConstraint* contactConstraint = constraints + constraintIndex;
 		int indexA = contactConstraint->indexA;
 		int indexB = contactConstraint->indexB;
+
+		// Added for Nebenan: without a barrier per color, see b3SolveDataflow
+		if ( dataflowSubstep >= 0 )
+		{
+			stalled |= b3WaitForBody( states, indexA, contactConstraint->orderA, dataflowSubstep, 1, 0 );
+			stalled |= b3WaitForBody( states, indexB, contactConstraint->orderB, dataflowSubstep, 1, 0 );
+		}
 
 		b3BodyState* stateA = indexA == B3_NULL_INDEX ? &dummyState : states + indexA;
 		b3BodyState* stateB = indexB == B3_NULL_INDEX ? &dummyState : states + indexB;
@@ -391,13 +430,27 @@ void b3WarmStartContacts_Mesh( b3SolverBlock block, b3StepContext* context )
 			stateB->linearVelocity = vB;
 			stateB->angularVelocity = wB;
 		}
+
+		if ( dataflowSubstep >= 0 )
+		{
+			b3ReleaseBody( states, indexA, contactConstraint->orderA, dataflowSubstep, 1, 0 );
+			b3ReleaseBody( states, indexB, contactConstraint->orderB, dataflowSubstep, 1, 0 );
+		}
+	}
+
+	if ( stalled )
+	{
+		b3AtomicStoreInt( &context->dataflowStalled, 1 );
 	}
 }
 
 // Merged normal and friction loops. This is much more stable for the Jenga stack.
 // Solve the non-penetration constraints with the soft bias. No friction and no restitution.
-void b3PushContacts_Mesh( b3SolverBlock block, b3StepContext* context )
+void b3PushContacts_Mesh( b3SolverBlock block, b3StepContext* context, int dataflowSubstep )
 {
+	// Added for Nebenan: see b3WaitForValue
+	bool stalled = false;
+
 	b3World* world = context->world;
 	b3GraphColor* color = world->constraintGraph.colors + block.colorIndex;
 	b3ContactConstraint* contactConstraints = color->contactConstraints;
@@ -420,6 +473,13 @@ void b3PushContacts_Mesh( b3SolverBlock block, b3StepContext* context )
 
 		int indexA = contactConstraint->indexA;
 		int indexB = contactConstraint->indexB;
+
+		// Added for Nebenan: without a barrier per color, see b3SolveDataflow
+		if ( dataflowSubstep >= 0 )
+		{
+			stalled |= b3WaitForBody( states, indexA, contactConstraint->orderA, dataflowSubstep, 1, 1 );
+			stalled |= b3WaitForBody( states, indexB, contactConstraint->orderB, dataflowSubstep, 1, 1 );
+		}
 
 		float mA = contactConstraint->invMassA;
 		b3Matrix3 iA = contactConstraint->invIA;
@@ -511,12 +571,26 @@ void b3PushContacts_Mesh( b3SolverBlock block, b3StepContext* context )
 			stateB->linearVelocity = vB;
 			stateB->angularVelocity = wB;
 		}
+
+		if ( dataflowSubstep >= 0 )
+		{
+			b3ReleaseBody( states, indexA, contactConstraint->orderA, dataflowSubstep, 1, 1 );
+			b3ReleaseBody( states, indexB, contactConstraint->orderB, dataflowSubstep, 1, 1 );
+		}
+	}
+
+	if ( stalled )
+	{
+		b3AtomicStoreInt( &context->dataflowStalled, 1 );
 	}
 }
 
 // Solve contacts: normal, friction and rolling resistance.
-void b3SolveContacts_Mesh( b3SolverBlock block, b3StepContext* context )
+void b3SolveContacts_Mesh( b3SolverBlock block, b3StepContext* context, int dataflowSubstep )
 {
+	// Added for Nebenan: see b3WaitForValue
+	bool stalled = false;
+
 	b3World* world = context->world;
 	b3GraphColor* color = world->constraintGraph.colors + block.colorIndex;
 	b3ContactConstraint* contactConstraints = color->contactConstraints;
@@ -538,6 +612,13 @@ void b3SolveContacts_Mesh( b3SolverBlock block, b3StepContext* context )
 
 		int indexA = contactConstraint->indexA;
 		int indexB = contactConstraint->indexB;
+
+		// Added for Nebenan: without a barrier per color, see b3SolveDataflow
+		if ( dataflowSubstep >= 0 )
+		{
+			stalled |= b3WaitForBody( states, indexA, contactConstraint->orderA, dataflowSubstep, 2, 2 );
+			stalled |= b3WaitForBody( states, indexB, contactConstraint->orderB, dataflowSubstep, 2, 2 );
+		}
 
 		float mA = contactConstraint->invMassA;
 		b3Matrix3 iA = contactConstraint->invIA;
@@ -701,11 +782,29 @@ void b3SolveContacts_Mesh( b3SolverBlock block, b3StepContext* context )
 			stateB->linearVelocity = vB;
 			stateB->angularVelocity = wB;
 		}
+
+		if ( dataflowSubstep >= 0 )
+		{
+			b3ReleaseBody( states, indexA, contactConstraint->orderA, dataflowSubstep, 2, 2 );
+			b3ReleaseBody( states, indexB, contactConstraint->orderB, dataflowSubstep, 2, 2 );
+		}
+	}
+
+	if ( stalled )
+	{
+		b3AtomicStoreInt( &context->dataflowStalled, 1 );
 	}
 }
 
-void b3ApplyRestitution_Mesh( b3SolverBlock block, b3StepContext* context )
+void b3ApplyRestitution_Mesh( b3SolverBlock block, b3StepContext* context, int dataflowSubstep )
 {
+	// Added for Nebenan: see b3WaitForValue
+	bool stalled = false;
+
+	// Added for Nebenan: restitution comes after the last substep, iteration after iteration, see b3SolveDataflow
+	int restitutionIteration = dataflowSubstep - context->subStepCount;
+	dataflowSubstep = dataflowSubstep >= 0 ? context->subStepCount : -1;
+
 	b3TracyCZoneNC( restitution_mesh, "Restitution Mesh", b3_colorViolet, true );
 
 	b3World* world = context->world;
@@ -728,6 +827,18 @@ void b3ApplyRestitution_Mesh( b3SolverBlock block, b3StepContext* context )
 		float restitution = contactConstraint->restitution;
 		if ( propagate == false && restitution == 0.0f )
 		{
+			// Added for Nebenan: the bodies still take this step in turn
+			if ( dataflowSubstep >= 0 )
+			{
+				stalled |= b3WaitForBody( states, contactConstraint->indexA, contactConstraint->orderA, dataflowSubstep, 0,
+										  restitutionIteration );
+				stalled |= b3WaitForBody( states, contactConstraint->indexB, contactConstraint->orderB, dataflowSubstep, 0,
+										  restitutionIteration );
+				b3ReleaseBody( states, contactConstraint->indexA, contactConstraint->orderA, dataflowSubstep, 0,
+							   restitutionIteration );
+				b3ReleaseBody( states, contactConstraint->indexB, contactConstraint->orderB, dataflowSubstep, 0,
+							   restitutionIteration );
+			}
 			continue;
 		}
 
@@ -735,6 +846,13 @@ void b3ApplyRestitution_Mesh( b3SolverBlock block, b3StepContext* context )
 
 		int indexA = contactConstraint->indexA;
 		int indexB = contactConstraint->indexB;
+
+		// Added for Nebenan: without a barrier per color, see b3SolveDataflow
+		if ( dataflowSubstep >= 0 )
+		{
+			stalled |= b3WaitForBody( states, indexA, contactConstraint->orderA, dataflowSubstep, 0, restitutionIteration );
+			stalled |= b3WaitForBody( states, indexB, contactConstraint->orderB, dataflowSubstep, 0, restitutionIteration );
+		}
 
 		float mA = contactConstraint->invMassA;
 		b3Matrix3 iA = contactConstraint->invIA;
@@ -826,6 +944,17 @@ void b3ApplyRestitution_Mesh( b3SolverBlock block, b3StepContext* context )
 			stateB->linearVelocity = vB;
 			stateB->angularVelocity = wB;
 		}
+
+		if ( dataflowSubstep >= 0 )
+		{
+			b3ReleaseBody( states, indexA, contactConstraint->orderA, dataflowSubstep, 0, restitutionIteration );
+			b3ReleaseBody( states, indexB, contactConstraint->orderB, dataflowSubstep, 0, restitutionIteration );
+		}
+	}
+
+	if ( stalled )
+	{
+		b3AtomicStoreInt( &context->dataflowStalled, 1 );
 	}
 
 	b3TracyCZoneEnd( restitution_mesh );
@@ -1152,6 +1281,11 @@ typedef struct b3ContactConstraintWide
 
 	int pointCounts[B3_SIMD_WIDTH];
 
+	// Added for Nebenan: per lane for body A and B the number of constraints of the body in each stage of the step and, in
+	// the low half, the number of those in earlier colors, see b3SolveDataflow
+	uint32_t orderA[B3_SIMD_WIDTH];
+	uint32_t orderB[B3_SIMD_WIDTH];
+
 	b3FloatW invMassA, invMassB;
 	b3SymMatrix3W invIA, invIB;
 	b3Vec3W normal;
@@ -1242,7 +1376,9 @@ B3_FORCE_INLINE void b3StoreBodyVelocity( b3BodyState* B3_RESTRICT states, int i
 	}
 
 	b3StoreW( (float*)state, v );
-	b3StoreW( (float*)state + 4, w );
+
+	// Added for Nebenan: three lanes, the fourth float is b3BodyState::solverStamp
+	b3StoreW3( (float*)state + 4, w );
 }
 
 // This writes only the velocities back to the solver bodies
@@ -1433,6 +1569,9 @@ B3_FORCE_INLINE void b3PrefetchPrepareContact( const b3Contact* contact )
 	b3Prefetch( start + 64 );
 	b3Prefetch( start + 128 );
 	b3Prefetch( (const char*)( contact + 1 ) - 1 );
+
+	// Added for Nebenan: the bodies of the contact for the order of their steps, see b3GetDataflowOrder
+	b3Prefetch( &contact->edges[0].bodyId );
 }
 
 // Added for Nebenan: next to the contact, b3PrepareContacts_Convex reads its manifold and the mass and the inertia of its
@@ -1459,6 +1598,281 @@ B3_FORCE_INLINE void b3PrefetchPrepareData( const b3Contact* contact, const b3Bo
 	}
 }
 
+// Added for Nebenan: waits until every body of the wide constraint has had its earlier steps
+B3_FORCE_INLINE bool b3WaitForBodies( b3BodyState* states, const b3ContactConstraintWide* c, int substep, int base, int factor )
+{
+	bool stalled = false;
+	for ( int lane = 0; lane < B3_SIMD_WIDTH; ++lane )
+	{
+		if ( c->indexA[lane] != 0 )
+		{
+			int stamp = b3DataflowStamp( c->orderA[lane], substep, base, factor );
+			stalled |= b3WaitForValue( &states[c->indexA[lane] - 1].solverStamp, stamp );
+		}
+
+		if ( c->indexB[lane] != 0 )
+		{
+			int stamp = b3DataflowStamp( c->orderB[lane], substep, base, factor );
+			stalled |= b3WaitForValue( &states[c->indexB[lane] - 1].solverStamp, stamp );
+		}
+	}
+
+	return stalled;
+}
+
+// Added for Nebenan: whether every body of the wide constraint has had its earlier steps
+B3_FORCE_INLINE bool b3BodiesReady( b3BodyState* states, const b3ContactConstraintWide* c, int substep, int base, int factor )
+{
+	for ( int lane = 0; lane < B3_SIMD_WIDTH; ++lane )
+	{
+		if ( c->indexA[lane] != 0 && b3AtomicLoadIntAcquire( &states[c->indexA[lane] - 1].solverStamp ) !=
+										 b3DataflowStamp( c->orderA[lane], substep, base, factor ) )
+		{
+			return false;
+		}
+
+		if ( c->indexB[lane] != 0 && b3AtomicLoadIntAcquire( &states[c->indexB[lane] - 1].solverStamp ) !=
+										 b3DataflowStamp( c->orderB[lane], substep, base, factor ) )
+		{
+			return false;
+		}
+	}
+
+	return true;
+}
+
+// Added for Nebenan: hands every body of the wide constraint on to its next step
+B3_FORCE_INLINE void b3ReleaseBodies( b3BodyState* states, const b3ContactConstraintWide* c, int substep, int base, int factor )
+{
+	for ( int lane = 0; lane < B3_SIMD_WIDTH; ++lane )
+	{
+		if ( c->indexA[lane] != 0 )
+		{
+			int stamp = b3DataflowStamp( c->orderA[lane], substep, base, factor );
+			b3AtomicStoreIntRelease( &states[c->indexA[lane] - 1].solverStamp, stamp + 1 );
+		}
+
+		if ( c->indexB[lane] != 0 )
+		{
+			int stamp = b3DataflowStamp( c->orderB[lane], substep, base, factor );
+			b3AtomicStoreIntRelease( &states[c->indexB[lane] - 1].solverStamp, stamp + 1 );
+		}
+	}
+}
+
+// Added for Nebenan: how many wide constraints of a block can wait for the end of the block, see b3NextWideIndex
+#define B3_DATAFLOW_DEFER_CAPACITY 64
+
+// Added for Nebenan: the way through the wide constraints of a block, see b3NextWideIndex
+typedef struct b3WideCursor
+{
+	int nextIndex;
+	int endIndex;
+	int deferredCount;
+	int deferredNext;
+	int deferred[B3_DATAFLOW_DEFER_CAPACITY];
+} b3WideCursor;
+
+B3_FORCE_INLINE void b3InitWideCursor( b3WideCursor* cursor, b3SolverBlock block )
+{
+	cursor->nextIndex = block.startIndex;
+	cursor->endIndex = block.startIndex + block.count;
+	cursor->deferredCount = 0;
+	cursor->deferredNext = 0;
+}
+
+// Added for Nebenan: the next wide constraint of the block, or -1 after the last. Without a barrier per stage, see
+// b3SolveDataflow, a constraint whose bodies are not ready yet waits for the end of the block. In a color no two
+// constraints share a moving body, so the order changes nothing.
+B3_FORCE_INLINE int b3NextWideIndex( b3WideCursor* cursor, b3BodyState* states, const b3ContactConstraintWide* constraints,
+									 int substep, int base, int factor )
+{
+	while ( cursor->nextIndex < cursor->endIndex )
+	{
+		int index = cursor->nextIndex++;
+		if ( substep < 0 || cursor->deferredCount == B3_DATAFLOW_DEFER_CAPACITY ||
+			 b3BodiesReady( states, constraints + index, substep, base, factor ) )
+		{
+			return index;
+		}
+
+		cursor->deferred[cursor->deferredCount++] = index;
+	}
+
+	if ( cursor->deferredNext < cursor->deferredCount )
+	{
+		return cursor->deferred[cursor->deferredNext++];
+	}
+
+	return -1;
+}
+
+// Added for Nebenan: the order of a constraint of the given color for a body, see b3ContactConstraintWide::orderA. Its
+// overflow contacts come first, then its constraints in the colors below.
+B3_FORCE_INLINE uint32_t b3GetDataflowOrder( const b3StepContext* context, int index, int bodyId, int colorIndex, bool* blocked )
+{
+	if ( index == B3_NULL_INDEX )
+	{
+		return 0;
+	}
+
+	if ( ( context->states[index].flags & b3_dynamicFlag ) == 0 )
+	{
+		*blocked = true;
+		return 0;
+	}
+
+	uint32_t colors = b3GetGraphBodyColors( context->graph, bodyId );
+	int overflowCount = context->bodyOverflowCounts[index];
+	int count = overflowCount + b3PopCount64( colors );
+	int rank = overflowCount + b3PopCount64( colors & ( ( 1u << colorIndex ) - 1 ) );
+	if ( count >= UINT16_MAX )
+	{
+		*blocked = true;
+		return 0;
+	}
+
+	return (uint32_t)count << 16 | (uint32_t)rank;
+}
+
+#if B3_ENABLE_VALIDATION
+// Added for Nebenan: counts a constraint of a body for b3ValidateDataflowOrders
+static void b3CountDataflowOrder( const b3BodyState* states, int* counts, int index, uint32_t order )
+{
+	B3_ASSERT( ( states[index].flags & b3_dynamicFlag ) != 0 );
+	B3_ASSERT( (int)( order & 0xFFFF ) == counts[index] );
+	counts[index] += 1;
+}
+
+// Added for Nebenan: counts the constraints of each body one by one in the order they work on it, as a check of the
+// orders from b3GetDataflowOrder
+static void b3ValidateDataflowOrders( b3StepContext* context )
+{
+	b3BodyState* states = context->states;
+	int awakeBodyCount = context->awakeBodyCount;
+	int* counts = (int*)b3Alloc( awakeBodyCount * (int)sizeof( int ) );
+	memset( counts, 0, awakeBodyCount * sizeof( int ) );
+
+	// The overflow contacts come first, then the colors in order
+	b3GraphColor* overflow = context->graph->colors + B3_OVERFLOW_INDEX;
+	for ( int k = 0; k < overflow->contacts.count; ++k )
+	{
+		b3ContactConstraint* constraint = overflow->contactConstraints + k;
+		if ( constraint->indexA != B3_NULL_INDEX )
+		{
+			b3CountDataflowOrder( states, counts, constraint->indexA, constraint->orderA );
+		}
+
+		if ( constraint->indexB != B3_NULL_INDEX )
+		{
+			b3CountDataflowOrder( states, counts, constraint->indexB, constraint->orderB );
+		}
+	}
+
+	for ( int i = 0; i < context->activeColorCount; ++i )
+	{
+		b3GraphColor* color = context->graph->colors + context->activeColorIndices[i];
+		for ( int w = 0; w < color->wideConstraintCount; ++w )
+		{
+			b3ContactConstraintWide* c = color->wideConstraints + w;
+			for ( int lane = 0; lane < B3_SIMD_WIDTH; ++lane )
+			{
+				if ( c->indexA[lane] != 0 )
+				{
+					b3CountDataflowOrder( states, counts, c->indexA[lane] - 1, c->orderA[lane] );
+				}
+
+				if ( c->indexB[lane] != 0 )
+				{
+					b3CountDataflowOrder( states, counts, c->indexB[lane] - 1, c->orderB[lane] );
+				}
+			}
+		}
+	}
+
+	// Every constraint knows how many the body has in all
+	for ( int k = 0; k < overflow->contacts.count; ++k )
+	{
+		b3ContactConstraint* constraint = overflow->contactConstraints + k;
+		B3_ASSERT( constraint->indexA == B3_NULL_INDEX || (int)( constraint->orderA >> 16 ) == counts[constraint->indexA] );
+		B3_ASSERT( constraint->indexB == B3_NULL_INDEX || (int)( constraint->orderB >> 16 ) == counts[constraint->indexB] );
+	}
+
+	for ( int i = 0; i < context->activeColorCount; ++i )
+	{
+		b3GraphColor* color = context->graph->colors + context->activeColorIndices[i];
+		for ( int w = 0; w < color->wideConstraintCount; ++w )
+		{
+			b3ContactConstraintWide* c = color->wideConstraints + w;
+			for ( int lane = 0; lane < B3_SIMD_WIDTH; ++lane )
+			{
+				B3_ASSERT( c->indexA[lane] == 0 || (int)( c->orderA[lane] >> 16 ) == counts[c->indexA[lane] - 1] );
+				B3_ASSERT( c->indexB[lane] == 0 || (int)( c->orderB[lane] >> 16 ) == counts[c->indexB[lane] - 1] );
+			}
+		}
+	}
+
+	b3Free( counts, awakeBodyCount * (int)sizeof( int ) );
+}
+#endif
+
+// Added for Nebenan: the orders of the overflow contacts, after b3PrepareContacts_Convex set those of the wide
+// constraints. False if a body of a constraint is neither static nor dynamic or has too many constraints. The step then
+// keeps a barrier per stage.
+bool b3PrepareDataflow( b3StepContext* context )
+{
+	if ( b3AtomicLoadInt( &context->dataflowBlocked ) != 0 )
+	{
+		return false;
+	}
+
+	// The overflow contacts of a body come first in their order, see b3GetDataflowOrder. Until the first integration of
+	// the step counts the constraints of the bodies, the counts hold the ranks.
+	b3GraphColor* overflow = context->graph->colors + B3_OVERFLOW_INDEX;
+	uint16_t* ranks = context->bodyConstraintCounts;
+	for ( int k = 0; k < overflow->contacts.count; ++k )
+	{
+		b3ContactConstraint* constraint = overflow->contactConstraints + k;
+		if ( constraint->indexA != B3_NULL_INDEX )
+		{
+			ranks[constraint->indexA] = 0;
+		}
+
+		if ( constraint->indexB != B3_NULL_INDEX )
+		{
+			ranks[constraint->indexB] = 0;
+		}
+	}
+
+	bool blocked = false;
+	for ( int k = 0; k < overflow->contacts.count; ++k )
+	{
+		b3ContactConstraint* constraint = overflow->contactConstraints + k;
+		if ( constraint->indexA != B3_NULL_INDEX )
+		{
+			uint32_t order = b3GetDataflowOrder( context, constraint->indexA, constraint->contact->edges[0].bodyId, 0, &blocked );
+			constraint->orderA = ( order & 0xFFFF0000 ) | ranks[constraint->indexA]++;
+		}
+
+		if ( constraint->indexB != B3_NULL_INDEX )
+		{
+			uint32_t order = b3GetDataflowOrder( context, constraint->indexB, constraint->contact->edges[1].bodyId, 0, &blocked );
+			constraint->orderB = ( order & 0xFFFF0000 ) | ranks[constraint->indexB]++;
+		}
+	}
+
+	if ( blocked )
+	{
+		return false;
+	}
+
+#if B3_ENABLE_VALIDATION
+	b3ValidateDataflowOrders( context );
+#endif
+
+	return true;
+}
+
 void b3PrepareContacts_Convex( b3SolverBlock block, b3StepContext* context )
 {
 	b3TracyCZoneNC( prepare_contact, "Prepare Contact", b3_colorYellow, true );
@@ -1480,6 +1894,10 @@ void b3PrepareContacts_Convex( b3SolverBlock block, b3StepContext* context )
 	b3FloatW minDet = b3SplatW( 1000.0f * FLT_MIN );
 	bool anyRestitution = false;
 
+	// Added for Nebenan
+	bool dataflow = context->dataflowEntries != NULL;
+	bool blocked = false;
+
 	int wideIndex = block.startIndex;
 	int endWideIndex = block.startIndex + block.count;
 
@@ -1497,6 +1915,9 @@ void b3PrepareContacts_Convex( b3SolverBlock block, b3StepContext* context )
 		int colorWideEndIndex = b3MinInt( spans[colorIndex + 1].start, endWideIndex );
 		int colorContactCount = spans[colorIndex].count;
 		int* contactIds = spans[colorIndex].contacts;
+
+		// Added for Nebenan
+		int colorBit = dataflow ? context->activeColorIndices[colorIndex] : 0;
 
 		// Loop over color
 		for ( ; wideIndex < colorWideEndIndex; ++wideIndex )
@@ -1551,6 +1972,13 @@ void b3PrepareContacts_Convex( b3SolverBlock block, b3StepContext* context )
 					c->indexB[lane] = indexB + 1;
 					c->pointCounts[lane] = manifold->pointCount;
 					c->manifolds[lane] = manifold;
+
+					// Added for Nebenan: the order of the steps of the bodies, see b3SolveDataflow
+					if ( dataflow )
+					{
+						c->orderA[lane] = b3GetDataflowOrder( context, indexA, contact->edges[0].bodyId, colorBit, &blocked );
+						c->orderB[lane] = b3GetDataflowOrder( context, indexB, contact->edges[1].bodyId, colorBit, &blocked );
+					}
 
 					contactLanes[lane] = contact;
 					manifoldLanes[lane] = manifold;
@@ -1775,19 +2203,39 @@ void b3PrepareContacts_Convex( b3SolverBlock block, b3StepContext* context )
 		b3AtomicStoreInt( &context->anyRestitution, 1 );
 	}
 
+	// Added for Nebenan
+	if ( blocked )
+	{
+		b3AtomicStoreInt( &context->dataflowBlocked, 1 );
+	}
+
 	b3TracyCZoneEnd( prepare_contact );
 }
 
-void b3WarmStartContacts_Convex( b3SolverBlock block, b3StepContext* context )
+void b3WarmStartContacts_Convex( b3SolverBlock block, b3StepContext* context, int dataflowSubstep )
 {
+	// Added for Nebenan: see b3WaitForValue
+	bool stalled = false;
+
 	b3TracyCZoneNC( warm_start_contact, "Warm Start", b3_colorGreen, true );
 
 	b3BodyState* states = context->states;
 	b3ContactConstraintWide* constraints = context->graph->colors[block.colorIndex].wideConstraints;
 
-	for ( int i = block.startIndex; i < block.startIndex + block.count; ++i )
+	// Added for Nebenan: in the order of b3NextWideIndex
+	b3WideCursor cursor;
+	b3InitWideCursor( &cursor, block );
+	int i;
+	while ( ( i = b3NextWideIndex( &cursor, states, constraints, dataflowSubstep, 1, 0 ) ) >= 0 )
 	{
 		b3ContactConstraintWide* c = constraints + i;
+
+		// Added for Nebenan: without a barrier per color, see b3SolveDataflow
+		if ( dataflowSubstep >= 0 )
+		{
+			stalled |= b3WaitForBodies( states, c, dataflowSubstep, 1, 0 );
+		}
+
 		b3BodyStateW bA = b3GatherBodies( states, c->indexA );
 		b3BodyStateW bB = b3GatherBodies( states, c->indexB );
 
@@ -1834,14 +2282,27 @@ void b3WarmStartContacts_Convex( b3SolverBlock block, b3StepContext* context )
 
 		b3ScatterBodies( states, c->indexA, &bA );
 		b3ScatterBodies( states, c->indexB, &bB );
+
+		if ( dataflowSubstep >= 0 )
+		{
+			b3ReleaseBodies( states, c, dataflowSubstep, 1, 0 );
+		}
+	}
+
+	if ( stalled )
+	{
+		b3AtomicStoreInt( &context->dataflowStalled, 1 );
 	}
 
 	b3TracyCZoneEnd( warm_start_contact );
 }
 
 // Solve the non-penetration constraints with the soft bias. No friction and no restitution.
-void b3PushContacts_Convex( b3SolverBlock block, b3StepContext* context )
+void b3PushContacts_Convex( b3SolverBlock block, b3StepContext* context, int dataflowSubstep )
 {
+	// Added for Nebenan: see b3WaitForValue
+	bool stalled = false;
+
 	b3TracyCZoneNC( push_contact, "Push Contact", b3_colorAliceBlue, true );
 
 	b3BodyState* states = context->states;
@@ -1859,7 +2320,11 @@ void b3PushContacts_Convex( b3SolverBlock block, b3StepContext* context )
 	b3FloatW staticMassScale = b3SplatW( context->staticSoftness.massScale );
 	b3FloatW staticImpulseScale = b3SplatW( context->staticSoftness.impulseScale );
 
-	for ( int wideIndex = block.startIndex; wideIndex < block.startIndex + block.count; ++wideIndex )
+	// Added for Nebenan: in the order of b3NextWideIndex
+	b3WideCursor cursor;
+	b3InitWideCursor( &cursor, block );
+	int wideIndex;
+	while ( ( wideIndex = b3NextWideIndex( &cursor, states, constraints, dataflowSubstep, 1, 1 ) ) >= 0 )
 	{
 		b3ContactConstraintWide* c = constraints + wideIndex;
 
@@ -1868,6 +2333,12 @@ void b3PushContacts_Convex( b3SolverBlock block, b3StepContext* context )
 		int pointCount2 = b3MaxInt( c->pointCounts[2], c->pointCounts[3] );
 		int pointCount = b3MaxInt( pointCount1, pointCount2 );
 		B3_VALIDATE( 0 < pointCount && pointCount <= B3_MAX_MANIFOLD_POINTS );
+
+		// Added for Nebenan: without a barrier per color, see b3SolveDataflow
+		if ( dataflowSubstep >= 0 )
+		{
+			stalled |= b3WaitForBodies( states, c, dataflowSubstep, 1, 1 );
+		}
 
 		b3BodyStateW bA = b3GatherBodies( states, c->indexA );
 		b3BodyStateW bB = b3GatherBodies( states, c->indexB );
@@ -1932,14 +2403,27 @@ void b3PushContacts_Convex( b3SolverBlock block, b3StepContext* context )
 
 		b3ScatterBodies( states, c->indexA, &bA );
 		b3ScatterBodies( states, c->indexB, &bB );
+
+		if ( dataflowSubstep >= 0 )
+		{
+			b3ReleaseBodies( states, c, dataflowSubstep, 1, 1 );
+		}
+	}
+
+	if ( stalled )
+	{
+		b3AtomicStoreInt( &context->dataflowStalled, 1 );
 	}
 
 	b3TracyCZoneEnd( push_contact );
 }
 
 // Solve the normal constraint, friction, and rolling resistance.
-void b3SolveContacts_Convex( b3SolverBlock block, b3StepContext* context )
+void b3SolveContacts_Convex( b3SolverBlock block, b3StepContext* context, int dataflowSubstep )
 {
+	// Added for Nebenan: see b3WaitForValue
+	bool stalled = false;
+
 	b3TracyCZoneNC( solve_contact, "Solve Contact", b3_colorAliceBlue, true );
 
 	b3BodyState* states = context->states;
@@ -1948,7 +2432,11 @@ void b3SolveContacts_Convex( b3SolverBlock block, b3StepContext* context )
 	b3FloatW oneW = b3SplatW( 1.0f );
 	b3FloatW epsilonW = b3SplatW( FLT_EPSILON );
 
-	for ( int wideIndex = block.startIndex; wideIndex < block.startIndex + block.count; ++wideIndex )
+	// Added for Nebenan: in the order of b3NextWideIndex
+	b3WideCursor cursor;
+	b3InitWideCursor( &cursor, block );
+	int wideIndex;
+	while ( ( wideIndex = b3NextWideIndex( &cursor, states, constraints, dataflowSubstep, 2, 2 ) ) >= 0 )
 	{
 		b3ContactConstraintWide* c = constraints + wideIndex;
 
@@ -1957,6 +2445,12 @@ void b3SolveContacts_Convex( b3SolverBlock block, b3StepContext* context )
 		int pointCount2 = b3MaxInt( c->pointCounts[2], c->pointCounts[3] );
 		int pointCount = b3MaxInt( pointCount1, pointCount2 );
 		B3_VALIDATE( 0 < pointCount && pointCount <= B3_MAX_MANIFOLD_POINTS );
+
+		// Added for Nebenan: without a barrier per color, see b3SolveDataflow
+		if ( dataflowSubstep >= 0 )
+		{
+			stalled |= b3WaitForBodies( states, c, dataflowSubstep, 2, 2 );
+		}
 
 		b3BodyStateW bA = b3GatherBodies( states, c->indexA );
 		b3BodyStateW bB = b3GatherBodies( states, c->indexB );
@@ -2113,14 +2607,31 @@ void b3SolveContacts_Convex( b3SolverBlock block, b3StepContext* context )
 
 		b3ScatterBodies( states, c->indexA, &bA );
 		b3ScatterBodies( states, c->indexB, &bB );
+
+		if ( dataflowSubstep >= 0 )
+		{
+			b3ReleaseBodies( states, c, dataflowSubstep, 2, 2 );
+		}
+	}
+
+	if ( stalled )
+	{
+		b3AtomicStoreInt( &context->dataflowStalled, 1 );
 	}
 
 	b3TracyCZoneEnd( solve_contact );
 }
 
-void b3ApplyRestitution_Convex( b3SolverBlock block, b3StepContext* context )
+void b3ApplyRestitution_Convex( b3SolverBlock block, b3StepContext* context, int dataflowSubstep )
 {
+	// Added for Nebenan: see b3WaitForValue
+	bool stalled = false;
+
 	b3TracyCZoneNC( restitution, "Restitution", b3_colorDodgerBlue, true );
+
+	// Added for Nebenan: restitution comes after the last substep, iteration after iteration, see b3SolveDataflow
+	int restitutionIteration = dataflowSubstep - context->subStepCount;
+	dataflowSubstep = dataflowSubstep >= 0 ? context->subStepCount : -1;
 
 	b3BodyState* states = context->states;
 	b3ContactConstraintWide* constraints = context->graph->colors[block.colorIndex].wideConstraints;
@@ -2129,11 +2640,21 @@ void b3ApplyRestitution_Convex( b3SolverBlock block, b3StepContext* context )
 	b3FloatW zeroW = b3ZeroW();
 	bool propagate = context->world->enableRestitutionPropagation;
 
-	for ( int wideIndex = block.startIndex; wideIndex < block.startIndex + block.count; ++wideIndex )
+	// Added for Nebenan: in the order of b3NextWideIndex
+	b3WideCursor cursor;
+	b3InitWideCursor( &cursor, block );
+	int wideIndex;
+	while ( ( wideIndex = b3NextWideIndex( &cursor, states, constraints, dataflowSubstep, 0, restitutionIteration ) ) >= 0 )
 	{
 		b3ContactConstraintWide* c = constraints + wideIndex;
 		if ( propagate == false && b3AllZeroW( c->restitution ) )
 		{
+			// Added for Nebenan: the bodies still take this step in turn
+			if ( dataflowSubstep >= 0 )
+			{
+				stalled |= b3WaitForBodies( states, c, dataflowSubstep, 0, restitutionIteration );
+				b3ReleaseBodies( states, c, dataflowSubstep, 0, restitutionIteration );
+			}
 			continue;
 		}
 
@@ -2142,6 +2663,12 @@ void b3ApplyRestitution_Convex( b3SolverBlock block, b3StepContext* context )
 		int pointCount2 = b3MaxInt( c->pointCounts[2], c->pointCounts[3] );
 		int pointCount = b3MaxInt( pointCount1, pointCount2 );
 		B3_VALIDATE( 0 < pointCount && pointCount <= B3_MAX_MANIFOLD_POINTS );
+
+		// Added for Nebenan: without a barrier per color, see b3SolveDataflow
+		if ( dataflowSubstep >= 0 )
+		{
+			stalled |= b3WaitForBodies( states, c, dataflowSubstep, 0, restitutionIteration );
+		}
 
 		b3BodyStateW bA = b3GatherBodies( states, c->indexA );
 		b3BodyStateW bB = b3GatherBodies( states, c->indexB );
@@ -2200,6 +2727,16 @@ void b3ApplyRestitution_Convex( b3SolverBlock block, b3StepContext* context )
 
 		b3ScatterBodies( states, c->indexA, &bA );
 		b3ScatterBodies( states, c->indexB, &bB );
+
+		if ( dataflowSubstep >= 0 )
+		{
+			b3ReleaseBodies( states, c, dataflowSubstep, 0, restitutionIteration );
+		}
+	}
+
+	if ( stalled )
+	{
+		b3AtomicStoreInt( &context->dataflowStalled, 1 );
 	}
 
 	b3TracyCZoneEnd( restitution );
@@ -2361,7 +2898,7 @@ void b3WarmStartContacts_Overflow( b3StepContext* context )
 		.colorIndex = B3_OVERFLOW_INDEX,
 	};
 
-	b3WarmStartContacts_Mesh( block, context );
+	b3WarmStartContacts_Mesh( block, context, -1 );
 }
 
 void b3PushContacts_Overflow( b3StepContext* context )
@@ -2382,7 +2919,7 @@ void b3PushContacts_Overflow( b3StepContext* context )
 		.colorIndex = B3_OVERFLOW_INDEX,
 	};
 
-	b3PushContacts_Mesh( block, context );
+	b3PushContacts_Mesh( block, context, -1 );
 }
 
 void b3SolveContacts_Overflow( b3StepContext* context )
@@ -2403,7 +2940,7 @@ void b3SolveContacts_Overflow( b3StepContext* context )
 		.colorIndex = B3_OVERFLOW_INDEX,
 	};
 
-	b3SolveContacts_Mesh( block, context );
+	b3SolveContacts_Mesh( block, context, -1 );
 }
 
 void b3ApplyRestitution_Overflow( b3StepContext* context )
@@ -2424,7 +2961,7 @@ void b3ApplyRestitution_Overflow( b3StepContext* context )
 		.colorIndex = B3_OVERFLOW_INDEX,
 	};
 
-	b3ApplyRestitution_Mesh( block, context );
+	b3ApplyRestitution_Mesh( block, context, -1 );
 }
 
 void b3StoreImpulses_Overflow( b3StepContext* context )

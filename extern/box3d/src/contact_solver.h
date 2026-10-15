@@ -50,6 +50,10 @@ typedef struct b3ContactConstraint
 	float restitution;
 	float rollingResistance;
 	int manifoldCount;
+
+	// Added for Nebenan: as b3ContactConstraintWide::orderA, for an overflow contact
+	uint32_t orderA;
+	uint32_t orderB;
 } b3ContactConstraint;
 
 int b3GetWideContactConstraintByteCount( void );
@@ -63,15 +67,18 @@ void b3ApplyRestitution_Overflow( b3StepContext* context );
 void b3StoreImpulses_Overflow( b3StepContext* context );
 
 void b3PrepareContacts_Mesh( b3SolverBlock block, b3StepContext* context );
-void b3WarmStartContacts_Mesh( b3SolverBlock block, b3StepContext* context );
-void b3PushContacts_Mesh( b3SolverBlock block, b3StepContext* context );
-void b3SolveContacts_Mesh( b3SolverBlock block, b3StepContext* context );
-void b3ApplyRestitution_Mesh( b3SolverBlock block, b3StepContext* context );
+void b3WarmStartContacts_Mesh( b3SolverBlock block, b3StepContext* context, int dataflowSubstep );
+void b3PushContacts_Mesh( b3SolverBlock block, b3StepContext* context, int dataflowSubstep );
+void b3SolveContacts_Mesh( b3SolverBlock block, b3StepContext* context, int dataflowSubstep );
+void b3ApplyRestitution_Mesh( b3SolverBlock block, b3StepContext* context, int dataflowSubstep );
 void b3StoreImpulses_Mesh( b3SolverBlock block, b3StepContext* context, int workerIndex );
 
 void b3PrepareContacts_Convex( b3SolverBlock block, b3StepContext* context );
-void b3WarmStartContacts_Convex( b3SolverBlock block, b3StepContext* context );
-void b3PushContacts_Convex( b3SolverBlock block, b3StepContext* context );
-void b3SolveContacts_Convex( b3SolverBlock block, b3StepContext* context );
-void b3ApplyRestitution_Convex( b3SolverBlock block, b3StepContext* context );
+void b3WarmStartContacts_Convex( b3SolverBlock block, b3StepContext* context, int dataflowSubstep );
+void b3PushContacts_Convex( b3SolverBlock block, b3StepContext* context, int dataflowSubstep );
+void b3SolveContacts_Convex( b3SolverBlock block, b3StepContext* context, int dataflowSubstep );
+void b3ApplyRestitution_Convex( b3SolverBlock block, b3StepContext* context, int dataflowSubstep );
 void b3StoreImpulses_Convex( b3SolverBlock block, b3StepContext* context, int workerIndex );
+
+// Added for Nebenan
+bool b3PrepareDataflow( b3StepContext* context );
