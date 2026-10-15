@@ -134,6 +134,11 @@ typedef struct b3World
 	b3Array( b3BlockAllocator ) manifoldAllocators;
 	b3Mutex* manifoldAllocatorMutex;
 
+	// Added for Nebenan: whether the collide task runs on several threads, the only time contacts allocate and free
+	// manifolds in parallel. Otherwise b3AllocateManifolds and b3FreeManifolds skip the lock, which freezing and thawing
+	// a body took for every contact it destroyed.
+	bool manifoldsShared;
+
 	// The body id pool is used to allocate and recycle body ids. Body ids
 	// provide a stable identifier for users, but incur caches misses when used
 	// to access body data. Aligns with b3Body.
@@ -339,7 +344,12 @@ static inline b3Manifold* b3AllocateManifolds( b3World* world, int count )
 	int index = count - 1;
 
 	// Need lock because this is called from the parallel narrow phase
-	b3LockMutex( world->manifoldAllocatorMutex );
+	// Added for Nebenan: only then, see b3World::manifoldsShared
+	bool shared = world->manifoldsShared;
+	if ( shared )
+	{
+		b3LockMutex( world->manifoldAllocatorMutex );
+	}
 	int currentCount = world->manifoldAllocators.count;
 	for ( int i = currentCount; i < count; ++i )
 	{
@@ -349,7 +359,10 @@ static inline b3Manifold* b3AllocateManifolds( b3World* world, int count )
 
 	b3BlockAllocator* allocator = b3Array_Get( world->manifoldAllocators, index );
 	b3Manifold* manifolds = (b3Manifold*)b3AllocateElement( allocator );
-	b3UnlockMutex( world->manifoldAllocatorMutex );
+	if ( shared )
+	{
+		b3UnlockMutex( world->manifoldAllocatorMutex );
+	}
 	memset( manifolds, 0, count * sizeof( b3Manifold ) );
 	return manifolds;
 }
@@ -362,9 +375,18 @@ static inline void b3FreeManifolds( b3World* world, b3Manifold* manifolds, int c
 	}
 
 	int index = count - 1;
-	b3LockMutex( world->manifoldAllocatorMutex );
+
+	// Added for Nebenan: the lock only while the collide task runs on several threads, see b3World::manifoldsShared
+	bool shared = world->manifoldsShared;
+	if ( shared )
+	{
+		b3LockMutex( world->manifoldAllocatorMutex );
+	}
 	b3BlockAllocator* allocator = b3Array_Get( world->manifoldAllocators, index );
 	b3FreeElement( allocator, manifolds );
-	b3UnlockMutex( world->manifoldAllocatorMutex );
+	if ( shared )
+	{
+		b3UnlockMutex( world->manifoldAllocatorMutex );
+	}
 }
 

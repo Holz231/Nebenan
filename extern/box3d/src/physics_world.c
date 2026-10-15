@@ -1089,7 +1089,11 @@ static void b3Collide( b3StepContext* context )
 
 	// Task should take at least 40us on a 4GHz CPU (10K cycles)
 	int minRange = 20;
+
+	// Added for Nebenan: the contacts allocate and free manifolds on several threads only here
+	world->manifoldsShared = world->activeWorkerCount > 1;
 	b3ParallelFor( world, b3CollideTask, contactCount, minRange, context, "collide" );
+	world->manifoldsShared = false;
 
 	b3StackFree( &world->stack, contactIndices );
 	context->awakeContactIndices = NULL;
