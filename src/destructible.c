@@ -898,6 +898,7 @@ static nbDestructibleId nbCommitLoad( nbWorld* world, nbLoad* load )
 	memcpy( destructible->anchors, load->anchors, sizeof( nbAnchorPlane ) * (size_t)load->anchorCount );
 	destructible->anchorCount = load->anchorCount;
 	destructible->headActor = NB_NULL_INDEX;
+	destructible->tailActor = NB_NULL_INDEX;
 	destructible->transform = (b3WorldTransform){ def->position, def->rotation };
 	destructible->staticBody = b3_nullBodyId;
 	destructible->seed = def->seed;

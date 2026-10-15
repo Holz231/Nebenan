@@ -613,6 +613,8 @@ size_t nbSaveDestructibles( const nbDestructibleId* ids, int count, void* buffer
 		saved->destructible = *source;
 		saved->destructible.staticBody = b3_nullBodyId;
 		saved->destructible.headActor = NB_NULL_INDEX;
+		saved->destructible.tailActor = NB_NULL_INDEX;
+		saved->destructible.buildingPartCount = 0;
 		saved->destructible.shapeBlock = NULL;
 		saved->destructible.shapeBlockSize = 0;
 		saved->destructible.shapeBlockCount = 0;
@@ -965,7 +967,9 @@ bool nbLoadDestructibles( nbWorldId worldId, const void* buffer, size_t size, nb
 		destructible->generation = generation;
 		destructible->isFree = false;
 		destructible->headActor = NB_NULL_INDEX;
+		destructible->tailActor = NB_NULL_INDEX;
 		destructible->actorCount = 0;
+		destructible->buildingPartCount = 0;
 		destructible->staticBody = b3_nullBodyId;
 		world->destructibleCount += 1;
 
@@ -1015,6 +1019,9 @@ bool nbLoadDestructibles( nbWorldId worldId, const void* buffer, size_t size, nb
 			actor->debrisIndex = NB_NULL_INDEX;
 			actor->generation = kept.generation;
 			actor->isFree = false;
+
+			// nbAllocActor counted the static parts, the saved actor says which others stand
+			destructible->buildingPartCount += ( actor->isStatic == false && actor->isBuildingPart ) ? 1 : 0;
 
 			// The chunks go in at the front of the list of their actor, so in reverse. The volume stays the one it summed up
 			// to, in the order the chunks came and went.

@@ -464,8 +464,13 @@ int nbAllocActor( nbWorld* world, int destructibleIndex, bool isStatic )
 	{
 		world->actors.data[destructible->headActor].prevActor = index;
 	}
+	else
+	{
+		destructible->tailActor = index;
+	}
 	destructible->headActor = index;
 	destructible->actorCount += 1;
+	destructible->buildingPartCount += isStatic ? 1 : 0;
 
 	if ( isStatic )
 	{
@@ -594,7 +599,12 @@ void nbFreeActor( nbWorld* world, int actorIndex )
 	{
 		world->actors.data[actor->nextActor].prevActor = actor->prevActor;
 	}
+	else
+	{
+		destructible->tailActor = actor->prevActor;
+	}
 	destructible->actorCount -= 1;
+	destructible->buildingPartCount -= ( actor->isStatic || actor->isBuildingPart ) ? 1 : 0;
 
 	if ( actor->isStatic )
 	{
@@ -2935,12 +2945,58 @@ static int nbCheckStoreys( nbWorld* world, int actorIndex, b3Vec3 up, nbOverload
 		volumes[s] = 0.0f;
 	}
 
+	// The parts that stand, found from the end of the list: The list holds every fragment of the building, newest first,
+	// and the building itself is the oldest. The volumes add up in the order of the list as before.
+	int partCount = destructible->buildingPartCount;
+	int* parts = nbArena_AllocArray( &world->arena, int, partCount > 0 ? partCount : 1 );
+	int found = 0;
+	for ( int a = destructible->tailActor; a != NB_NULL_INDEX && found < partCount; a = world->actors.data[a].prevActor )
+	{
+		const nbActor* part = world->actors.data + a;
+		if ( part->isStatic || part->isBuildingPart )
+		{
+			parts[found++] = a;
+		}
+	}
+
+#if !defined( NDEBUG )
+	// The same parts in the same order as from the front
+	int expected = found;
 	for ( int a = destructible->headActor; a != NB_NULL_INDEX; a = world->actors.data[a].nextActor )
 	{
 		const nbActor* part = world->actors.data + a;
-		bool building = part->isStatic || part->isBuildingPart;
-		for ( int c = building ? part->headChunk : NB_NULL_INDEX; c != NB_NULL_INDEX; c = world->chunks.data[c].nextChunk )
+		if ( part->isStatic || part->isBuildingPart )
 		{
+			expected -= 1;
+			NB_ASSERT( expected >= 0 && parts[expected] == a );
+		}
+	}
+	NB_ASSERT( expected == 0 );
+#endif
+
+	// The loop waited for the shape of every chunk, so a second cursor fetches the shapes eight chunks ahead
+	for ( int i = found - 1; i >= 0; --i )
+	{
+		const nbActor* part = world->actors.data + parts[i];
+		int ahead = part->headChunk;
+		for ( int k = 0; k < 8 && ahead != NB_NULL_INDEX; ++k )
+		{
+			const nbShape* aheadShape = world->chunks.data[ahead].shape;
+			NB_PREFETCH( &aheadShape->centroid );
+			NB_PREFETCH( &aheadShape->volume );
+			ahead = world->chunks.data[ahead].nextChunk;
+		}
+
+		for ( int c = part->headChunk; c != NB_NULL_INDEX; c = world->chunks.data[c].nextChunk )
+		{
+			if ( ahead != NB_NULL_INDEX )
+			{
+				const nbShape* aheadShape = world->chunks.data[ahead].shape;
+				NB_PREFETCH( &aheadShape->centroid );
+				NB_PREFETCH( &aheadShape->volume );
+				ahead = world->chunks.data[ahead].nextChunk;
+			}
+
 			const nbShape* shape = world->chunks.data[c].shape;
 			int s = nbFindStorey( destructible, shape->centroid.y );
 			if ( s >= 0 )
@@ -3077,6 +3133,8 @@ static int nbCheckStoreys( nbWorld* world, int actorIndex, b3Vec3 up, nbOverload
 			if ( freshLows[i] > storey->low && freshHighs[i] > storey->high && part->volume >= 0.1f * storey->volume )
 			{
 				part->fromCollapse = true;
+				world->destructibles.data[part->destructibleIndex].buildingPartCount +=
+					( part->isStatic || part->isBuildingPart ) ? 0 : 1;
 				part->isBuildingPart = true;
 				holds = true;
 			}
@@ -3634,6 +3692,7 @@ static void nbCheckSupports( nbWorld* world )
 			nbActor* part = world->actors.data + world->chunks.data[tilts[t].chunkIndex].actorIndex;
 			if ( part->isStatic == false )
 			{
+				world->destructibles.data[part->destructibleIndex].buildingPartCount += part->isBuildingPart ? 0 : 1;
 				part->isBuildingPart = true;
 				if ( b3LengthSquared( tilts[t].angularVelocity ) > 0.0f )
 				{

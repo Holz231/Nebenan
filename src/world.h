@@ -303,6 +303,11 @@ typedef struct nbDestructible
 	int actorCount;
 	int chunkCount;
 
+	// The oldest actor, at the end of the list, which is the building itself while it stands, and how many of the actors
+	// are parts of the building that stand, static or come down upright, see nbCheckStoreys
+	int tailActor;
+	int buildingPartCount;
+
 	uint32_t seed;
 	uint32_t fractureCounter;
 
