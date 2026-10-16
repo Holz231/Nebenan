@@ -241,17 +241,29 @@ dessen, was die Zeit bis zum Treffer noch als Berührung zählt. Dazu liest die 
 Uhr, für Warnungen bei langen Tests, die upstream seit [#179](https://github.com/erincatto/box3d/pull/179) auch nicht
 mehr hat. Die Ergebnisse sind dieselben.
 
-Die erste, die zweite, die vierte bis achte, die zehnte und die dreizehnte bis achtundzwanzigste ändern an den
+**Löser mit acht Spuren.** Box3D rechnete die Kontakte jeder Farbe in Bündeln zu vier, auch auf x86 nur mit SSE2. Jetzt
+stehen die breiten Kontakt-Bedingungen in `src/contact_solver_wide.inl`, die `src/contact_solver.c` mit vier Spuren
+übersetzt und `src/wide8.c` mit acht und AVX2, wie upstream Box3D seit
+[#174](https://github.com/erincatto/box3d/pull/174). Eine Welt nimmt beim Anlegen die Breite, die der Prozessor kann
+(`b3GetSIMDWidth` und `b3IsAVX2Available` in `src/simd.c`, `b3World::simdWidth`), `b3SetSIMDWidth` erzwingt eine für
+Tests, und `BOX3D_AVX2=OFF` lässt die acht Spuren weg. MSVC übersetzt `src/wide8.c` mit `/arch:AVX2`, GCC und Clang nur
+die Kernel darin (`B3_AVX2_BEGIN` in `src/core.h`). Eine Spur rechnet in beiden Breiten dieselben Bits: Die Kontakte
+einer Farbe teilen sich keinen bewegten Körper, eine leere Spur schreibt nichts zurück, und die Operationen in
+`src/simd_avx2.h` runden jede Spur wie die mit SSE2, ohne FMA. Die Pakete aus „Ganze Inseln pro Thread“ füllen ihre
+Spuren in der Breite der Welt auf (`b3OrderPackContacts` in `src/solver.c`).
+
+Die erste, die zweite, die vierte bis achte, die zehnte und die dreizehnte bis neunundzwanzigste ändern an den
 Ergebnissen nichts. Die dritte und die neunte ändern sie in den letzten Bits, dafür hängen sie nicht mehr davon ab, in
 welcher Reihenfolge Formen in die Bäume kommen. Die elfte ändert sie, weil Kontakte zu anderen Zeitpunkten entstehen,
-die zwölfte, weil sie weniger Punkte bekommen. Die Ergänzungen stehen in `include/box3d/box3d.h`,
-`include/box3d/types.h`, `include/box3d/constants.h`, `src/core.h`, `src/core.c`, `src/shape.h`, `src/shape.c`,
-`src/body.c`, `src/contact.h`, `src/contact.c`, `src/contact_solver.c`, `src/convex_manifold.c`, `src/world_snapshot.c`,
-`src/recording.c`, `src/solver.h`, `src/solver.c`, `src/broad_phase.h`, `src/broad_phase.c`, `src/dynamic_tree.h`,
-`src/dynamic_tree.c`, `src/parallel_for.c`, `src/scheduler.h`, `src/scheduler.c`, `src/physics_world.h` und
-`src/physics_world.c`, jeweils mit „Added for Nebenan“ markiert. `B3_HAS_UNIQUE_HULLS`, `B3_HAS_SHAPE_BATCH`,
-`B3_HAS_SHAPE_CONTACT_LISTS`, `B3_HAS_EXTERNAL_HULLS` und `B3_HAS_BODY_PREFETCH` zeigen die zweite, die vierte, die
-fünfte, die sechste und die neunzehnte an. Fehlen sie, etwa mit einem eigenen Box3D, läuft Nebenan wie zuvor, nur
-wachsen Box3Ds Arrays dann durch Umkopieren, die Hüllen gehen durch die Tabelle, jede Form geht einzeln in den Baum,
-jedes stehende Bruchstück bekommt einen eigenen Körper, Box3D hält eine Kopie jeder Hülle, und Nebenan holt die Körper
-der Trümmer nicht voraus.
+die zwölfte, weil sie weniger Punkte bekommen. Die Ergänzungen stehen in `CMakeLists.txt`, `src/CMakeLists.txt`,
+`include/box3d/base.h`, `include/box3d/box3d.h`, `include/box3d/types.h`, `include/box3d/constants.h`, `src/core.h`,
+`src/core.c`, `src/shape.h`, `src/shape.c`, `src/body.c`, `src/contact.h`, `src/contact.c`, `src/contact_solver.h`,
+`src/contact_solver.c`, `src/contact_solver_wide.inl`, `src/wide8.c`, `src/simd.c`, `src/simd_avx2.h`,
+`src/constraint_graph.h`, `src/convex_manifold.c`, `src/world_snapshot.c`, `src/recording.c`, `src/solver.h`,
+`src/solver.c`, `src/broad_phase.h`, `src/broad_phase.c`, `src/dynamic_tree.h`, `src/dynamic_tree.c`,
+`src/parallel_for.c`, `src/scheduler.h`, `src/scheduler.c`, `src/physics_world.h` und `src/physics_world.c`, jeweils mit
+„Added for Nebenan“ markiert. `B3_HAS_UNIQUE_HULLS`, `B3_HAS_SHAPE_BATCH`, `B3_HAS_SHAPE_CONTACT_LISTS`,
+`B3_HAS_EXTERNAL_HULLS` und `B3_HAS_BODY_PREFETCH` zeigen die zweite, die vierte, die fünfte, die sechste und die
+neunzehnte an. Fehlen sie, etwa mit einem eigenen Box3D, läuft Nebenan wie zuvor, nur wachsen Box3Ds Arrays dann durch
+Umkopieren, die Hüllen gehen durch die Tabelle, jede Form geht einzeln in den Baum, jedes stehende Bruchstück bekommt
+einen eigenen Körper, Box3D hält eine Kopie jeder Hülle, und Nebenan holt die Körper der Trümmer nicht voraus.

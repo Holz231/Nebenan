@@ -755,6 +755,10 @@ Seit `physik-14` überspringt Box3Ds Durchschlag-Schutz statische Hüllen, die e
 erreicht, und die Ergebnisse bleiben bitgleich. Bei einfacher Bruchstückgröße fällt so fast die Hälfte dieser Tests weg:
 Im Benchmark kostet der Löser samt CCD dort mit 4 Threads 3,8 % und mit einem 11,3 % weniger, ein Frame mit einem Thread
 4,4 %.
+Seit `physik-15` rechnet der Löser auf Prozessoren mit AVX2 die Kontakte in acht statt vier Spuren, so wie das aktuelle
+Box3D, und wählt die Breite zur Laufzeit. Die Ergebnisse bleiben bitgleich, auch zwischen Prozessoren mit und ohne AVX2.
+Gepaart gegen `physik-14` kosten die Bedingungen des Lösers mit 4 Threads 13 bis 20 % weniger und mit einem 21 bis 23 %,
+ein Frame mit 4 Threads 3,3 bis 4,2 % und mit einem 1,7 bis 4,8 %.
 
 **Eine Stadt größer als der Speicher.** Im Benchmark fliegt eine Kamera mit 30 m/s 900 m weit durch eine Stadt aus
 65 536 Häusern auf 3,6 × 3,1 km und 300 m zurück, Bruchstückgröße ×4. Am Stück bräuchte sie 24 GB. Geladen sind die
