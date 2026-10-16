@@ -285,6 +285,10 @@ typedef struct nbDestructible
 	int storeyCount;
 	uint32_t collapsedStoreys;
 
+	// What is left of every storey in the parts of the building that stand, static or come down upright, kept as chunks
+	// come and go, see nbCheckStoreys
+	double standing[NB_MAX_STOREYS];
+
 	// The bonds keep their second moments in nbWorld::bondMoments, as the load check is on and the destructible has no
 	// storeys. Without, nothing computes them.
 	bool bondMoments;
@@ -551,6 +555,9 @@ float nbGetBondStrength( const nbWorld* world, const nbBond* bond );
 
 void nbActor_AddChunk( nbWorld* world, int actorIndex, int chunkIndex );
 void nbActor_RemoveChunk( nbWorld* world, int actorIndex, int chunkIndex );
+
+// Sum up anew what is left of every storey of a destructible, see nbDestructible::standing
+void nbSumStanding( nbWorld* world, int destructibleIndex );
 
 // World transform of the frame an actor's chunks are defined in
 b3WorldTransform nbActor_GetTransform( const nbWorld* world, const nbActor* actor );

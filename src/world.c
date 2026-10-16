@@ -620,6 +620,35 @@ void nbFreeActor( nbWorld* world, int actorIndex )
 	nbArray_Push( world->freeActors, actorIndex );
 }
 
+// The storey a height along the local Y axis of a destructible lies in, or -1 on a floor or outside
+static int nbFindStorey( const nbDestructible* destructible, float height )
+{
+	for ( int s = 0; s < destructible->storeyCount && height >= destructible->storeys[s].low; ++s )
+	{
+		if ( height < destructible->storeys[s].high )
+		{
+			return s;
+		}
+	}
+	return -1;
+}
+
+// A chunk comes to or leaves a part of a building that stands, see nbDestructible::standing
+static void nbCountStanding( nbWorld* world, const nbActor* actor, const nbChunk* chunk, double sign )
+{
+	if ( actor->isStatic == false && actor->isBuildingPart == false )
+	{
+		return;
+	}
+
+	nbDestructible* destructible = world->destructibles.data + actor->destructibleIndex;
+	int s = nbFindStorey( destructible, chunk->shape->centroid.y );
+	if ( s >= 0 )
+	{
+		destructible->standing[s] += sign * chunk->shape->volume;
+	}
+}
+
 void nbActor_AddChunk( nbWorld* world, int actorIndex, int chunkIndex )
 {
 	nbActor* actor = world->actors.data + actorIndex;
@@ -637,6 +666,7 @@ void nbActor_AddChunk( nbWorld* world, int actorIndex, int chunkIndex )
 	actor->chunkCount += 1;
 	actor->volume += chunk->shape->volume;
 	actor->massDirty = true;
+	nbCountStanding( world, actor, chunk, 1.0 );
 }
 
 void nbActor_RemoveChunk( nbWorld* world, int actorIndex, int chunkIndex )
@@ -665,6 +695,41 @@ void nbActor_RemoveChunk( nbWorld* world, int actorIndex, int chunkIndex )
 	actor->chunkCount -= 1;
 	actor->volume -= chunk->shape->volume;
 	actor->massDirty = true;
+	nbCountStanding( world, actor, chunk, -1.0 );
+}
+
+void nbSumStanding( nbWorld* world, int destructibleIndex )
+{
+	nbDestructible* destructible = world->destructibles.data + destructibleIndex;
+	for ( int s = 0; s < NB_MAX_STOREYS; ++s )
+	{
+		destructible->standing[s] = 0.0;
+	}
+
+	for ( int a = destructible->headActor; a != NB_NULL_INDEX; a = world->actors.data[a].nextActor )
+	{
+		const nbActor* actor = world->actors.data + a;
+		for ( int c = actor->headChunk; c != NB_NULL_INDEX; c = world->chunks.data[c].nextChunk )
+		{
+			nbCountStanding( world, actor, world->chunks.data + c, 1.0 );
+		}
+	}
+}
+
+// A part that came down stays a building, and its chunks count for the storeys from now on, see nbCheckStoreys
+static void nbMakeBuildingPart( nbWorld* world, nbActor* part )
+{
+	if ( part->isStatic || part->isBuildingPart )
+	{
+		return;
+	}
+
+	world->destructibles.data[part->destructibleIndex].buildingPartCount += 1;
+	part->isBuildingPart = true;
+	for ( int c = part->headChunk; c != NB_NULL_INDEX; c = world->chunks.data[c].nextChunk )
+	{
+		nbCountStanding( world, part, world->chunks.data + c, 1.0 );
+	}
 }
 
 // The static body for a static chunk of the destructible: the one all its static chunks share, or a new one of its own,
@@ -2900,17 +2965,25 @@ static int nbCheckSupport( nbWorld* world, int actorIndex, float gravity, b3Vec3
 	return overloadCount;
 }
 
-// The storey a height along the local Y axis of a destructible lies in, or -1 on a floor or outside
-static int nbFindStorey( const nbDestructible* destructible, float height )
+// Four times the largest relative error of rounding to a float
+#define NB_FLOAT_SLACK ( 4.0 / 16777216.0 )
+
+// Whether every storey of a building keeps clearly more of its walls than it needs, from what is left of them, see
+// nbDestructible::standing. The sum in nbCheckStoreys adds up the same volumes in float, and its rounding errors add up
+// to at most one such error per chunk. This keeps four times that apart, so the sum would not find a storey that gives
+// way either.
+static bool nbStoreysHold( const nbWorld* world, const nbDestructible* destructible )
 {
-	for ( int s = 0; s < destructible->storeyCount && height >= destructible->storeys[s].low; ++s )
+	double keep = 1.0 - ( destructible->chunkCount + 16.0 ) * NB_FLOAT_SLACK;
+	for ( int s = 0; s < destructible->storeyCount; ++s )
 	{
-		if ( height < destructible->storeys[s].high )
+		double need = (double)world->def.storeySupport * destructible->storeys[s].volume * ( 1.0 + NB_FLOAT_SLACK );
+		if ( keep * destructible->standing[s] < need )
 		{
-			return s;
+			return false;
 		}
 	}
-	return -1;
+	return true;
 }
 
 // A storey of a building gives way when less than nbWorldDef::storeySupport of the walls it had is left, on any floor
@@ -2937,6 +3010,15 @@ static int nbCheckStoreys( nbWorld* world, int actorIndex, b3Vec3 up, nbOverload
 	{
 		return 0;
 	}
+
+	// Most checks end here, the sum below only decides close to the limit. Debug builds sum up anyway and check this.
+	bool clear = nbStoreysHold( world, destructible );
+#if defined( NDEBUG ) && !defined( NB_ENABLE_ASSERT )
+	if ( clear )
+	{
+		return 0;
+	}
+#endif
 
 	// What is left of every storey, in the parts of the building that stand and those that came down
 	float volumes[NB_MAX_STOREYS];
@@ -3015,6 +3097,17 @@ static int nbCheckStoreys( nbWorld* world, int actorIndex, b3Vec3 up, nbOverload
 			failing[failingCount++] = s;
 		}
 	}
+
+#if !defined( NDEBUG ) || defined( NB_ENABLE_ASSERT )
+	// What is left is kept as the sum finds it, apart from rounding
+	for ( int s = 0; s < destructible->storeyCount; ++s )
+	{
+		double standing = destructible->standing[s];
+		double slack = ( destructible->chunkCount + 16.0 ) * NB_FLOAT_SLACK * ( standing + destructible->storeys[s].volume );
+		NB_ASSERT( volumes[s] - standing <= slack && standing - volumes[s] <= slack );
+	}
+	NB_ASSERT( clear == false || failingCount == 0 );
+#endif
 
 	if ( failingCount == 0 )
 	{
@@ -3133,9 +3226,7 @@ static int nbCheckStoreys( nbWorld* world, int actorIndex, b3Vec3 up, nbOverload
 			if ( freshLows[i] > storey->low && freshHighs[i] > storey->high && part->volume >= 0.1f * storey->volume )
 			{
 				part->fromCollapse = true;
-				world->destructibles.data[part->destructibleIndex].buildingPartCount +=
-					( part->isStatic || part->isBuildingPart ) ? 0 : 1;
-				part->isBuildingPart = true;
+				nbMakeBuildingPart( world, part );
 				holds = true;
 			}
 		}
@@ -3692,8 +3783,7 @@ static void nbCheckSupports( nbWorld* world )
 			nbActor* part = world->actors.data + world->chunks.data[tilts[t].chunkIndex].actorIndex;
 			if ( part->isStatic == false )
 			{
-				world->destructibles.data[part->destructibleIndex].buildingPartCount += part->isBuildingPart ? 0 : 1;
-				part->isBuildingPart = true;
+				nbMakeBuildingPart( world, part );
 				if ( b3LengthSquared( tilts[t].angularVelocity ) > 0.0f )
 				{
 					b3Body_SetAngularVelocity( part->bodyId, tilts[t].angularVelocity );

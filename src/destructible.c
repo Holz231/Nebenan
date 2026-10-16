@@ -356,6 +356,7 @@ static void nbFindStoreys( nbWorld* world, int destructibleIndex, int actorIndex
 		}
 	}
 	destructible->storeyCount = count;
+	nbSumStanding( world, destructibleIndex );
 }
 
 // Two new chunks, by their place in the list of new chunks, first < second
