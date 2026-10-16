@@ -147,8 +147,9 @@ Upload. Mit paralleler Physik zählt es die Simulation für sich und beim Hauptt
 noch auf sie wartet. Es sagt auch, wer die FPS begrenzt: die CPU, die Simulation (der Hauptthread wartet lange auf sie),
 die Grafikkarte (ein Bild dauert deutlich länger, als die CPU dafür braucht) oder VSync. „Messwerte kopieren“ legt alles
 mit CPU, Grafikkarte und Auflösung in die Zwischenablage, zum Einfügen in einen Chat. „Parallel gegen nacheinander
-messen“ lädt die Stadt und beschießt sie wie das Skript, viermal im Wechsel mit und ohne parallele Physik, je 600 Bilder
-mit einem Schritt pro Bild und jeweils mit den passenden Threads. Das Ergebnis mit Bildzeit, FPS und 1 % Low für beide
+messen“ lädt die Stadt und reißt sie mit Granaten ab, Wand für Wand von oben nach unten, bis alle Häuser eingestürzt
+sind: einmal kurz zum Aufwärmen, dann parallel, nacheinander, nacheinander und parallel, je 900 Bilder mit einem Schritt
+pro Bild und jeweils mit den passenden Threads. Das Ergebnis mit Bildzeit, FPS und 1 % Low für beide und für jeden Lauf
 kommt ebenso in die Zwischenablage, danach lädt die Szene von vorher neu.
 
 **Werkzeuge**
@@ -176,9 +177,9 @@ kommt ebenso in die Zwischenablage, danach lädt die Szene von vorher neu.
 schaltet VSync ein, `--msaa 4` schaltet Kantenglättung ein (Standard aus), `--highdpi` rendert auf hochauflösenden
 Bildschirmen in voller Auflösung (Standard aus, kostet Füllrate). `--serial-physics` schaltet die parallele Physik ab,
 `--threads N` setzt die Zahl der Threads. `--compare` misst parallel gegen nacheinander wie der Knopf im Menü, gibt das
-Ergebnis aus und beendet sich. `--script` feuert eine vorgegebene Schussfolge ab, `--frames N` beendet nach N Bildern
-und meldet Bildzeiten, CPU-Zeiten, Uploads und Dreiecke pro Bild und einen Hash der Lagen aller Bruchstücke,
-`--screenshot datei.ppm` speichert das letzte Bild (nur OpenGL).
+Ergebnis aus und beendet sich. `--demolition` reißt die Stadt ab wie dabei. `--script` feuert eine vorgegebene
+Schussfolge ab, `--frames N` beendet nach N Bildern und meldet Bildzeiten, CPU-Zeiten, Uploads und Dreiecke pro Bild und
+einen Hash der Lagen aller Bruchstücke, `--screenshot datei.ppm` speichert das letzte Bild (nur OpenGL).
 
 Hinkt die Physik hinterher, lässt die Demo die Zeit langsamer laufen, statt Schritte nachzuholen: Ein zweiter
 Schritt im selben Bild kommt nur, wenn ein Schritt weniger als 4 ms kostet. Sonst würde jedes langsame Bild das

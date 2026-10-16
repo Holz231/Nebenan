@@ -141,13 +141,23 @@ struct WorldView
 	size_t savedBytes = 0;
 };
 
-// Parallel against serial physics on this PC with one click: the town under the fire of the script, alternately with and
-// without parallel physics, each with the threads the demo picks for it. Every run takes one step per frame like an
-// automated run, so all do the same work and end in the same world.
+// Parallel against serial physics on this PC with one click: the town taken down by grenades, see RunDemolition,
+// alternately with and without parallel physics, each with the threads the demo picks for it. Every run takes one step
+// per frame like an automated run, so all do the same work and end in the same world.
 struct Comparison
 {
-	static const int RunFrames = 600;
-	static const int RunCount = 4;
+	// A first, shorter run warms up and does not count. Then come two runs with and two without parallel physics, with
+	// first and last, so a slow drift of the machine falls on both alike.
+	static const int RunCount = 5;
+	static int RunFrames( int run )
+	{
+		return run == 0 ? 300 : 900;
+	}
+
+	static bool IsParallel( int run )
+	{
+		return run == 0 || run == 1 || run == RunCount - 1;
+	}
 
 	// The button asks for it, and it starts at the end of the frame, so its first run gets all its steps like the others
 	bool requested = false;
@@ -157,23 +167,41 @@ struct Comparison
 
 	// What to go back to afterwards
 	SceneKind scene = SceneWall;
+	Tool tool = ToolRifle;
 	bool parallelPhysics = true;
 	bool vsync = false;
 	bool paused = false;
 
 	// Per run: its threads, the frame times, the CPU time of the simulation, the graphics and the wait for the physics,
-	// and where the chunks ended up
+	// the longest simulation and wait in a frame, and where the chunks ended up
 	int threads[RunCount] = {};
 	std::vector<float> frameTimes[RunCount];
 	double simulationTime[RunCount] = {};
 	double graphicsTime[RunCount] = {};
 	double waitTime[RunCount] = {};
+	float longestSimulation[RunCount] = {};
+	float longestWait[RunCount] = {};
 	uint64_t hashes[RunCount] = {};
+
+	// What is left of the town at the end
+	nbStats stats = {};
 
 	// The report of the last comparison, and its short form for the menu
 	std::string report;
 	std::string summary;
 };
+
+// Which run is on, for the menu and the corner
+static void DescribeComparisonRun( const Comparison& comparison, char* text, size_t size )
+{
+	if ( comparison.run == 0 )
+	{
+		snprintf( text, size, "Aufwärmen" );
+		return;
+	}
+	snprintf( text, size, "Lauf %d von %d, %s", comparison.run, Comparison::RunCount - 1,
+			  Comparison::IsParallel( comparison.run ) ? "parallel" : "nacheinander" );
+}
 
 struct Automation
 {
@@ -182,8 +210,9 @@ struct Automation
 	bool script = false;
 	int scene = -1;
 
-	// Run the comparison, print it and quit
+	// Run the comparison, print it and quit, or take the town down like the comparison does
 	bool compare = false;
+	bool demolition = false;
 
 	// Threads for Box3D and Nebenan, zero for one per performance core
 	int threads = 0;
@@ -917,6 +946,12 @@ static b3Vec3 TownHousePosition( int row, int column )
 	return { 14.0f * ( (float)column - 0.5f * (float)( TownColumns - 1 ) ), 0.0f, -12.0f * (float)row };
 }
 
+// Every third house has a third floor
+static int TownHouseFloors( int house )
+{
+	return house % 3 == 1 ? 3 : 2;
+}
+
 static void BuildTownScene( App& app )
 {
 	std::vector<std::unique_ptr<PendingStructure>> houses;
@@ -925,8 +960,8 @@ static void BuildTownScene( App& app )
 	{
 		for ( int column = 0; column < TownColumns; ++column )
 		{
-			// Every third house has a third floor, every other one faces the other street
-			int floors = ( row * TownColumns + column ) % 3 == 1 ? 3 : 2;
+			// Every other row faces the other street
+			int floors = TownHouseFloors( row * TownColumns + column );
 			float yaw = ( row & 1 ) != 0 ? B3_PI : 0.0f;
 			houses.push_back( PrepareHouse( TownHousePosition( row, column ), yaw, floors, seed++ ) );
 		}
@@ -2065,8 +2100,9 @@ static void DrawUi( App& app )
 	Comparison& comparison = app.comparison;
 	if ( comparison.active )
 	{
-		ImGui::Text( "Vergleich: Lauf %d von %d, %s, Bild %d von %d", comparison.run + 1, Comparison::RunCount,
-					 comparison.run % 2 == 0 ? "parallel" : "nacheinander", comparison.frame, Comparison::RunFrames );
+		char label[64];
+		DescribeComparisonRun( comparison, label, sizeof( label ) );
+		ImGui::Text( "Vergleich: %s, Bild %d von %d", label, comparison.frame, Comparison::RunFrames( comparison.run ) );
 		if ( ImGui::Button( "Vergleich abbrechen" ) )
 		{
 			StopComparison( app );
@@ -2080,7 +2116,7 @@ static void DrawUi( App& app )
 		}
 		if ( ImGui::IsItemHovered() )
 		{
-			ImGui::SetTooltip( "Lädt die Stadt und beschießt sie wie das Skript, viermal im Wechsel mit und\nohne parallele Physik, je 600 Bilder mit einem Schritt pro Bild und jeweils\nmit den passenden Threads. Das Ergebnis kommt in die Zwischenablage, danach\nlädt die Szene von vorher neu." );
+			ImGui::SetTooltip( "Lädt die Stadt und reißt sie mit Granaten ab, Wand für Wand von oben nach unten,\nbis alle Häuser eingestürzt sind: einmal kurz zum Aufwärmen, dann parallel,\nnacheinander, nacheinander und parallel, je 900 Bilder mit einem Schritt pro Bild\nund jeweils mit den passenden Threads. Das Ergebnis kommt in die Zwischenablage,\ndanach lädt die Szene von vorher neu." );
 		}
 		if ( comparison.summary.empty() == false )
 		{
@@ -2132,9 +2168,10 @@ static void DrawOverlay( App& app )
 	const Comparison& comparison = app.comparison;
 	if ( comparison.active )
 	{
+		char label[64];
+		DescribeComparisonRun( comparison, label, sizeof( label ) );
 		char progress[96];
-		snprintf( progress, sizeof( progress ), "Vergleich %d/%d %s", comparison.run + 1, Comparison::RunCount,
-				  comparison.run % 2 == 0 ? "parallel" : "nacheinander" );
+		snprintf( progress, sizeof( progress ), "Vergleich: %s", label );
 		ImVec2 extent = font->CalcTextSizeA( smallSize, FLT_MAX, 0.0f, progress );
 		draw->AddText( font, smallSize, ImVec2( right - pad - extent.x, top + height + pad ), IM_COL32( 250, 210, 90, 255 ), progress );
 	}
@@ -2243,13 +2280,74 @@ static uint64_t HashChunkTransforms( const App& app )
 	return hash;
 }
 
+// The comparison takes the town down: grenades on every wall of every house, one every 1.2 m along it and two per storey
+// up it, several per frame. They go row by row from the top storey down, so no storey falls whole before its walls are
+// gone. Then the debris settles.
+static const int DemolitionShotsPerRow = 24;
+static const int DemolitionShotsPerFrame = 4;
+static const int DemolitionStart = 20;
+
+static int DemolitionShotCount()
+{
+	int rows = 0;
+	for ( int house = 0; house < TownRows * TownColumns; ++house )
+	{
+		rows += 2 * TownHouseFloors( house );
+	}
+	return rows * DemolitionShotsPerRow;
+}
+
+// Shot k: in each row from the top down the houses that reach that high, along each house the front and back walls with
+// seven shots each, then the end walls with five each
+static b3Vec3 DemolitionTarget( int k )
+{
+	for ( int row = 2 * 3 - 1; row >= 0; --row )
+	{
+		for ( int house = 0; house < TownRows * TownColumns; ++house )
+		{
+			if ( row >= 2 * TownHouseFloors( house ) )
+			{
+				continue;
+			}
+
+			if ( k >= DemolitionShotsPerRow )
+			{
+				k -= DemolitionShotsPerRow;
+				continue;
+			}
+
+			float height = 3.25f * (float)( row / 2 ) + ( row % 2 == 0 ? 0.9f : 2.2f );
+			b3Vec3 local;
+			if ( k < 14 )
+			{
+				local = { -3.6f + 1.2f * (float)( k % 7 ), height, k < 7 ? 3.4f : -3.4f };
+			}
+			else
+			{
+				local = { k < 19 ? 4.7f : -4.7f, height, -2.4f + 1.2f * (float)( ( k - 14 ) % 5 ) };
+			}
+			return b3Add( TownHousePosition( house / TownColumns, house % TownColumns ), local );
+		}
+	}
+	return b3Vec3_zero;
+}
+
+static void RunDemolition( App& app, int frame )
+{
+	int first = ( frame - DemolitionStart ) * DemolitionShotsPerFrame;
+	for ( int k = b3MaxInt( first, 0 ); k < first + DemolitionShotsPerFrame && k < DemolitionShotCount(); ++k )
+	{
+		FireAt( app, ToolGrenade, DemolitionTarget( k ) );
+	}
+}
+
 //----------------------------------------------------------------------------------------------------------------------
 // Parallel against serial physics with one click, see Comparison
 
 static void BeginComparisonRun( App& app )
 {
 	Comparison& comparison = app.comparison;
-	app.parallelPhysics = comparison.run % 2 == 0;
+	app.parallelPhysics = Comparison::IsParallel( comparison.run );
 	app.accumulator = 0.0f;
 	LoadScene( app, SceneTown );
 
@@ -2260,6 +2358,8 @@ static void BeginComparisonRun( App& app )
 	comparison.simulationTime[run] = 0.0;
 	comparison.graphicsTime[run] = 0.0;
 	comparison.waitTime[run] = 0.0;
+	comparison.longestSimulation[run] = 0.0f;
+	comparison.longestWait[run] = 0.0f;
 }
 
 static void StartComparison( App& app )
@@ -2268,6 +2368,7 @@ static void StartComparison( App& app )
 	comparison.active = true;
 	comparison.run = 0;
 	comparison.scene = app.scene;
+	comparison.tool = app.tool;
 	comparison.parallelPhysics = app.parallelPhysics;
 	comparison.vsync = app.vsync;
 	comparison.paused = app.paused;
@@ -2287,6 +2388,7 @@ static void StopComparison( App& app )
 {
 	Comparison& comparison = app.comparison;
 	comparison.active = false;
+	app.tool = comparison.tool;
 	app.parallelPhysics = comparison.parallelPhysics;
 	app.paused = comparison.paused;
 	if ( app.vsyncAvailable )
@@ -2298,14 +2400,39 @@ static void StopComparison( App& app )
 	LoadScene( app, comparison.scene );
 }
 
-// The frames of all runs with or without parallel physics: their average, frames per second and 1 % low, and the CPU
-// time per frame
+// The average of some frame times, their 1 % low and the longest
+struct FrameStats
+{
+	float average = 0.0f;
+	float lowFps = 0.0f;
+	float longest = 0.0f;
+};
+
+static FrameStats GetFrameStats( std::vector<float> times )
+{
+	FrameStats stats;
+	if ( times.empty() )
+	{
+		return stats;
+	}
+
+	double total = 0.0;
+	for ( float time : times )
+	{
+		total += time;
+	}
+	stats.average = (float)( total / (double)times.size() );
+	std::sort( times.begin(), times.end() );
+	stats.lowFps = 1000.0f / b3MaxFloat( times[times.size() * 99 / 100], 0.001f );
+	stats.longest = times.back();
+	return stats;
+}
+
+// The counted runs with or without parallel physics: their frames, and the CPU time per frame
 struct ComparisonResult
 {
 	int threads = 0;
-	float frameTime = 0.0f;
-	float fps = 0.0f;
-	float lowFps = 0.0f;
+	FrameStats frames;
 	float simulationTime = 0.0f;
 	float graphicsTime = 0.0f;
 	float waitTime = 0.0f;
@@ -2315,33 +2442,28 @@ static ComparisonResult SumComparison( const Comparison& comparison, bool parall
 {
 	ComparisonResult result;
 	std::vector<float> times;
-	double total = 0.0, simulation = 0.0, graphics = 0.0, wait = 0.0;
-	for ( int run = parallel ? 0 : 1; run < Comparison::RunCount; run += 2 )
+	double simulation = 0.0, graphics = 0.0, wait = 0.0;
+	int runs = 0;
+	for ( int run = 1; run < Comparison::RunCount; ++run )
 	{
+		if ( Comparison::IsParallel( run ) != parallel )
+		{
+			continue;
+		}
+
 		times.insert( times.end(), comparison.frameTimes[run].begin(), comparison.frameTimes[run].end() );
 		simulation += comparison.simulationTime[run];
 		graphics += comparison.graphicsTime[run];
 		wait += comparison.waitTime[run];
 		result.threads = comparison.threads[run];
+		runs += 1;
 	}
 
-	for ( float time : times )
-	{
-		total += time;
-	}
-
-	double frames = (double)( Comparison::RunFrames * Comparison::RunCount / 2 );
-	result.frameTime = (float)( total / (double)b3MaxInt( (int)times.size(), 1 ) );
-	result.fps = 1000.0f / b3MaxFloat( result.frameTime, 0.001f );
+	double frames = (double)( Comparison::RunFrames( 1 ) * b3MaxInt( runs, 1 ) );
+	result.frames = GetFrameStats( times );
 	result.simulationTime = (float)( simulation / frames );
 	result.graphicsTime = (float)( graphics / frames );
 	result.waitTime = (float)( wait / frames );
-	if ( times.empty() == false )
-	{
-		size_t k = times.size() * 99 / 100;
-		std::nth_element( times.begin(), times.begin() + (ptrdiff_t)k, times.end() );
-		result.lowFps = 1000.0f / b3MaxFloat( times[k], 0.001f );
-	}
 	return result;
 }
 
@@ -2352,11 +2474,17 @@ static void FinishComparison( App& app )
 	ComparisonResult parallel = SumComparison( comparison, true );
 	ComparisonResult serial = SumComparison( comparison, false );
 	bool same = true;
-	for ( int run = 1; run < Comparison::RunCount; ++run )
+	for ( int run = 2; run < Comparison::RunCount; ++run )
 	{
-		same = same && comparison.hashes[run] == comparison.hashes[0];
+		same = same && comparison.hashes[run] == comparison.hashes[1];
 	}
-	float gain = 100.0f * ( serial.frameTime - parallel.frameTime ) / b3MaxFloat( serial.frameTime, 0.001f );
+
+	int storeys = 0;
+	for ( int house = 0; house < TownRows * TownColumns; ++house )
+	{
+		storeys += TownHouseFloors( house );
+	}
+	float gain = 100.0f * ( serial.frames.average - parallel.frames.average ) / b3MaxFloat( serial.frames.average, 0.001f );
 	const char* direction = gain >= 0.0f ? "schneller" : "langsamer";
 
 	b3Version version = b3GetVersion();
@@ -2368,20 +2496,50 @@ static void FinishComparison( App& app )
 			 b3GetSIMDWidth() );
 	Appendf( text, "GPU: %s, Bild %d x %d, MSAA %dx, Monitor %d Hz, VSync %s\n", app.gpuName.empty() ? "unbekannt" : app.gpuName.c_str(),
 			 sapp_width(), sapp_height(), sapp_sample_count(), app.refreshRate, app.vsyncAvailable ? "aus" : "an, lässt sich nicht abschalten" );
-	Appendf( text, "Stadt unter dem Feuer des Skripts, Bruchstückgröße x%.2f, Budget %d, %d Läufe zu %d Bildern im Wechsel, ein Schritt pro Bild\n",
-			 app.fragmentScale, app.maxDebrisBodies, Comparison::RunCount, Comparison::RunFrames );
+	Appendf( text, "Abriss der Stadt mit %d Granaten, %d pro Bild, Bruchstückgröße x%.2f, Budget %d, ein Schritt pro Bild, %d Bilder "
+			 "pro Lauf, erst einer zum Aufwärmen mit %d, der nicht zählt\n",
+			 DemolitionShotCount(), DemolitionShotsPerFrame, app.fragmentScale, app.maxDebrisBodies, Comparison::RunFrames( 1 ),
+			 Comparison::RunFrames( 0 ) );
+	Appendf( text, "Am Ende: %d von %d Etagen eingestürzt, %d Bruchstücke, %d davon als Trümmer, %d Schutt\n",
+			 comparison.stats.collapsedStoreyCount, storeys, comparison.stats.chunkCount, comparison.stats.dynamicBodyCount,
+			 comparison.stats.rubbleCount );
 	Appendf( text, "Parallel mit %d Threads: %.2f ms pro Bild, %.0f FPS, 1%% Low %.0f FPS; Simulation %.2f, Grafik %.2f, Warten %.2f ms\n",
-			 parallel.threads, parallel.frameTime, parallel.fps, parallel.lowFps, parallel.simulationTime, parallel.graphicsTime,
-			 parallel.waitTime );
+			 parallel.threads, parallel.frames.average, 1000.0f / b3MaxFloat( parallel.frames.average, 0.001f ),
+			 parallel.frames.lowFps, parallel.simulationTime, parallel.graphicsTime, parallel.waitTime );
 	Appendf( text, "Nacheinander mit %d Threads: %.2f ms pro Bild, %.0f FPS, 1%% Low %.0f FPS; Simulation %.2f, Grafik %.2f ms\n",
-			 serial.threads, serial.frameTime, serial.fps, serial.lowFps, serial.simulationTime, serial.graphicsTime );
+			 serial.threads, serial.frames.average, 1000.0f / b3MaxFloat( serial.frames.average, 0.001f ), serial.frames.lowFps,
+			 serial.simulationTime, serial.graphicsTime );
 	Appendf( text, "Parallel ist %.1f %% %s, die Welt endet in allen Läufen %s\n", fabsf( gain ), direction,
 			 same ? "gleich" : "verschieden" );
+
+	// Each run on its own, to see where the slow frames come from
+	for ( int run = 0; run < Comparison::RunCount; ++run )
+	{
+		FrameStats stats = GetFrameStats( comparison.frameTimes[run] );
+		bool runParallel = Comparison::IsParallel( run );
+		char name[32];
+		if ( run == 0 )
+		{
+			snprintf( name, sizeof( name ), "Aufwärmen" );
+		}
+		else
+		{
+			snprintf( name, sizeof( name ), "Lauf %d", run );
+		}
+		Appendf( text, "  %s, %s: %.2f ms pro Bild, 1%% Low %.0f FPS, längstes Bild %.1f ms, längste Simulation %.1f ms", name,
+				 runParallel ? "parallel" : "nacheinander", stats.average, stats.lowFps, stats.longest,
+				 comparison.longestSimulation[run] );
+		if ( runParallel )
+		{
+			Appendf( text, ", längstes Warten %.1f ms", comparison.longestWait[run] );
+		}
+		Appendf( text, "\n" );
+	}
 	comparison.report = text;
 
 	char summary[160];
 	snprintf( summary, sizeof( summary ), "Parallel %.2f ms, nacheinander %.2f ms pro Bild,\nparallel %.0f %% %s. In der Zwischenablage.",
-			  parallel.frameTime, serial.frameTime, fabsf( gain ), direction );
+			  parallel.frames.average, serial.frames.average, fabsf( gain ), direction );
 	comparison.summary = summary;
 	sapp_set_clipboard_string( text.c_str() );
 
@@ -2405,9 +2563,11 @@ static void AdvanceComparison( App& app, float frameTime, float graphicsTime )
 	comparison.simulationTime[run] += app.simulationTime;
 	comparison.graphicsTime[run] += graphicsTime;
 	comparison.waitTime[run] += app.waitTime;
+	comparison.longestSimulation[run] = b3MaxFloat( comparison.longestSimulation[run], app.simulationTime );
+	comparison.longestWait[run] = b3MaxFloat( comparison.longestWait[run], app.waitTime );
 
 	comparison.frame += 1;
-	if ( comparison.frame < Comparison::RunFrames )
+	if ( comparison.frame < Comparison::RunFrames( run ) )
 	{
 		return;
 	}
@@ -2417,6 +2577,7 @@ static void AdvanceComparison( App& app, float frameTime, float graphicsTime )
 	ApplyPhysics( app );
 	SyncChunks( app );
 	comparison.hashes[run] = HashChunkTransforms( app );
+	comparison.stats = nbWorld_GetStats( app.destruction );
 	comparison.run += 1;
 	if ( comparison.run < Comparison::RunCount )
 	{
@@ -2576,9 +2737,13 @@ static void OnFrame()
 	{
 		RunScript( app, app.frame );
 	}
+	else if ( app.automation.demolition )
+	{
+		RunDemolition( app, app.frame );
+	}
 	else if ( app.comparison.active )
 	{
-		RunScript( app, app.comparison.frame );
+		RunDemolition( app, app.comparison.frame );
 	}
 	float impactTime = b3GetMilliseconds( impactTicks );
 
@@ -2873,6 +3038,11 @@ int main( int argc, char** argv )
 		else if ( strcmp( argv[i], "--compare" ) == 0 )
 		{
 			app.automation.compare = true;
+		}
+		else if ( strcmp( argv[i], "--demolition" ) == 0 )
+		{
+			app.automation.demolition = true;
+			app.automation.scene = SceneTown;
 		}
 	}
 
