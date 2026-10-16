@@ -141,12 +141,49 @@ struct WorldView
 	size_t savedBytes = 0;
 };
 
+// Parallel against serial physics on this PC with one click: the town under the fire of the script, alternately with and
+// without parallel physics, each with the threads the demo picks for it. Every run takes one step per frame like an
+// automated run, so all do the same work and end in the same world.
+struct Comparison
+{
+	static const int RunFrames = 600;
+	static const int RunCount = 4;
+
+	// The button asks for it, and it starts at the end of the frame, so its first run gets all its steps like the others
+	bool requested = false;
+	bool active = false;
+	int run = 0;
+	int frame = 0;
+
+	// What to go back to afterwards
+	SceneKind scene = SceneWall;
+	bool parallelPhysics = true;
+	bool vsync = false;
+	bool paused = false;
+
+	// Per run: its threads, the frame times, the CPU time of the simulation, the graphics and the wait for the physics,
+	// and where the chunks ended up
+	int threads[RunCount] = {};
+	std::vector<float> frameTimes[RunCount];
+	double simulationTime[RunCount] = {};
+	double graphicsTime[RunCount] = {};
+	double waitTime[RunCount] = {};
+	uint64_t hashes[RunCount] = {};
+
+	// The report of the last comparison, and its short form for the menu
+	std::string report;
+	std::string summary;
+};
+
 struct Automation
 {
 	int frameLimit = 0;
 	const char* screenshotPath = nullptr;
 	bool script = false;
 	int scene = -1;
+
+	// Run the comparison, print it and quit
+	bool compare = false;
 
 	// Threads for Box3D and Nebenan, zero for one per performance core
 	int threads = 0;
@@ -342,6 +379,7 @@ struct App
 	float simulationTime = 0.0f;
 	float waitTime = 0.0f;
 	WorldView view;
+	Comparison comparison;
 
 	// Vertical sync is off, so the frame rate shows what the machine can do. Metal always syncs.
 	bool vsync = false;
@@ -1257,10 +1295,32 @@ static void DestroyScene( App& app )
 	app.city = City();
 }
 
+// One thread per performance core, at most 8. Box3D runs best on the performance cores alone, hyper-threads and
+// efficiency cores add little or slow it down, and so do more threads than cores. With parallel physics the main thread
+// draws while the physics runs, so the physics leaves it a hardware thread. Else the workers of a step, which wait for
+// their next task without sleeping, take turns with it on the cores.
+static int PreferredWorkers( const App& app, bool parallelPhysics )
+{
+	if ( app.automation.threads > 0 )
+	{
+		return app.automation.threads;
+	}
+
+	int hardware = (int)std::thread::hardware_concurrency();
+	int workers = app.performanceCores > 0 ? app.performanceCores : ( hardware > 0 ? hardware / 2 : 2 );
+	workers = hardware > 0 ? b3MinInt( workers, hardware ) : workers;
+	if ( parallelPhysics && hardware > 1 )
+	{
+		workers = b3MinInt( workers, hardware - 1 );
+	}
+	return b3ClampInt( workers, 1, 8 );
+}
+
 static void LoadScene( App& app, SceneKind scene )
 {
 	DestroyScene( app );
 	app.scene = scene;
+	app.workerCount = PreferredWorkers( app, app.parallelPhysics );
 
 	b3WorldDef worldDef = b3DefaultWorldDef();
 	worldDef.workerCount = (uint32_t)app.workerCount;
@@ -1771,6 +1831,8 @@ static std::string BuildReport( const App& app )
 	return text;
 }
 
+static void StopComparison( App& app );
+
 static void DrawUi( App& app )
 {
 	float dpi = sapp_dpi_scale();
@@ -1784,6 +1846,8 @@ static void DrawUi( App& app )
 	ImGui::TextColored( ImVec4( 1.0f, 0.4f, 0.3f, 1.0f ), "Debug-Build: 5- bis 20-mal langsamer.\nFür echte Leistung Release bauen (build.bat)." );
 #endif
 
+	// The comparison keeps everything as it is while it runs
+	ImGui::BeginDisabled( app.comparison.active );
 	ImGui::SeparatorText( "Szene" );
 	int scene = (int)app.scene;
 	if ( ImGui::Combo( "##scene", &scene, s_sceneNames, SceneCount ) )
@@ -1896,7 +1960,7 @@ static void DrawUi( App& app )
 	ImGui::Checkbox( "Physik parallel zum Zeichnen", &app.parallelPhysics );
 	if ( ImGui::IsItemHovered() )
 	{
-		ImGui::SetTooltip( "An: Die Physik eines Bilds rechnet auf einem eigenen Thread, während das Bild\ndavor gezeichnet wird. Ein Bild kostet so viel wie der längere der beiden\nTeile statt beide zusammen und zeigt die Welt einen Schritt später.\nAus: alles nacheinander auf einem Thread. Die Welt rechnet in beiden Fällen gleich." );
+		ImGui::SetTooltip( "An: Die Physik eines Bilds rechnet auf einem eigenen Thread, während das Bild\ndavor gezeichnet wird. Ein Bild kostet so viel wie der längere der beiden\nTeile statt beide zusammen und zeigt die Welt einen Schritt später.\nAus: alles nacheinander auf einem Thread. Die Welt rechnet in beiden Fällen gleich.\nDie Threads passen sich beim nächsten Laden der Szene an (R)." );
 	}
 	if ( app.vsyncAvailable )
 	{
@@ -1917,6 +1981,8 @@ static void DrawUi( App& app )
 		FinishPhysics( app );
 		nbWorld_ClearDebris( app.destruction );
 	}
+
+	ImGui::EndDisabled();
 
 	ImGui::SeparatorText( "Messung" );
 	const nbStats& stats = app.view.stats;
@@ -1996,6 +2062,32 @@ static void DrawUi( App& app )
 	ImGui::SameLine();
 	ImGui::TextDisabled( app.frame - app.copiedFrame < 180 ? "kopiert, einfach einfügen" : "für den Chat" );
 
+	Comparison& comparison = app.comparison;
+	if ( comparison.active )
+	{
+		ImGui::Text( "Vergleich: Lauf %d von %d, %s, Bild %d von %d", comparison.run + 1, Comparison::RunCount,
+					 comparison.run % 2 == 0 ? "parallel" : "nacheinander", comparison.frame, Comparison::RunFrames );
+		if ( ImGui::Button( "Vergleich abbrechen" ) )
+		{
+			StopComparison( app );
+		}
+	}
+	else
+	{
+		if ( ImGui::Button( "Parallel gegen nacheinander messen" ) )
+		{
+			comparison.requested = true;
+		}
+		if ( ImGui::IsItemHovered() )
+		{
+			ImGui::SetTooltip( "Lädt die Stadt und beschießt sie wie das Skript, viermal im Wechsel mit und\nohne parallele Physik, je 600 Bilder mit einem Schritt pro Bild und jeweils\nmit den passenden Threads. Das Ergebnis kommt in die Zwischenablage, danach\nlädt die Szene von vorher neu." );
+		}
+		if ( comparison.summary.empty() == false )
+		{
+			ImGui::TextUnformatted( comparison.summary.c_str() );
+		}
+	}
+
 	ImGui::SeparatorText( "Steuerung" );
 	ImGui::TextWrapped( "Linke Maustaste: schießen (halten = Dauerfeuer)\n"
 						"Rechte Maustaste halten: umsehen\n"
@@ -2036,6 +2128,17 @@ static void DrawOverlay( App& app )
 	draw->AddText( font, largeSize, ImVec2( right - pad - fpsExtent.x, top + pad ), fpsColor, fps );
 	draw->AddText( font, smallSize, ImVec2( right - pad - detailExtent.x, top + pad + fpsExtent.y ), IM_COL32( 225, 230, 235, 255 ), detail );
 
+	// The comparison shows how far it is, also without the menu
+	const Comparison& comparison = app.comparison;
+	if ( comparison.active )
+	{
+		char progress[96];
+		snprintf( progress, sizeof( progress ), "Vergleich %d/%d %s", comparison.run + 1, Comparison::RunCount,
+				  comparison.run % 2 == 0 ? "parallel" : "nacheinander" );
+		ImVec2 extent = font->CalcTextSizeA( smallSize, FLT_MAX, 0.0f, progress );
+		draw->AddText( font, smallSize, ImVec2( right - pad - extent.x, top + height + pad ), IM_COL32( 250, 210, 90, 255 ), progress );
+	}
+
 	// Crosshair at the aim point
 	ImVec2 center = app.mouseLook ? ImVec2( 0.5f * sapp_widthf() / dpi, 0.5f * sapp_heightf() / dpi )
 								  : ImVec2( app.mouseX / dpi, app.mouseY / dpi );
@@ -2049,9 +2152,10 @@ static void DrawOverlay( App& app )
 //----------------------------------------------------------------------------------------------------------------------
 // Scripted runs for measurements and screenshots
 
-static void RunScript( App& app )
+// The shots of the script for the frame that counts from its start
+static void RunScript( App& app, int frame )
 {
-	int f = app.frame;
+	int f = frame;
 	switch ( app.scene )
 	{
 		case SceneWall:
@@ -2114,6 +2218,216 @@ static void RunScript( App& app )
 	}
 }
 
+// Hash of where every chunk is, to compare runs: the same script must end in the same world with and without parallel
+// physics
+static uint64_t HashChunkTransforms( const App& app )
+{
+	uint64_t hash = 14695981039346656037ull;
+	for ( const ChunkVisual& visual : app.chunks )
+	{
+		if ( visual.alive == false )
+		{
+			continue;
+		}
+
+		b3WorldTransform transform = b3Body_GetTransform( nbChunk_GetBody( visual.id ) );
+		b3Vec3 p = b3ToVec3( transform.p );
+		float values[7] = { p.x, p.y, p.z, transform.q.v.x, transform.q.v.y, transform.q.v.z, transform.q.s };
+		uint8_t bytes[sizeof( values )];
+		memcpy( bytes, values, sizeof( values ) );
+		for ( uint8_t byte : bytes )
+		{
+			hash = ( hash ^ byte ) * 1099511628211ull;
+		}
+	}
+	return hash;
+}
+
+//----------------------------------------------------------------------------------------------------------------------
+// Parallel against serial physics with one click, see Comparison
+
+static void BeginComparisonRun( App& app )
+{
+	Comparison& comparison = app.comparison;
+	app.parallelPhysics = comparison.run % 2 == 0;
+	app.accumulator = 0.0f;
+	LoadScene( app, SceneTown );
+
+	int run = comparison.run;
+	comparison.threads[run] = app.workerCount;
+	comparison.frame = 0;
+	comparison.frameTimes[run].clear();
+	comparison.simulationTime[run] = 0.0;
+	comparison.graphicsTime[run] = 0.0;
+	comparison.waitTime[run] = 0.0;
+}
+
+static void StartComparison( App& app )
+{
+	Comparison& comparison = app.comparison;
+	comparison.active = true;
+	comparison.run = 0;
+	comparison.scene = app.scene;
+	comparison.parallelPhysics = app.parallelPhysics;
+	comparison.vsync = app.vsync;
+	comparison.paused = app.paused;
+
+	// Frames as fast as they come, else both would wait for the display
+	app.paused = false;
+	if ( app.vsyncAvailable )
+	{
+		app.vsync = false;
+		DemoSetVsync( false );
+	}
+	BeginComparisonRun( app );
+}
+
+// Back to the scene and the settings from before
+static void StopComparison( App& app )
+{
+	Comparison& comparison = app.comparison;
+	comparison.active = false;
+	app.parallelPhysics = comparison.parallelPhysics;
+	app.paused = comparison.paused;
+	if ( app.vsyncAvailable )
+	{
+		app.vsync = comparison.vsync;
+		DemoSetVsync( app.vsync );
+	}
+	app.accumulator = 0.0f;
+	LoadScene( app, comparison.scene );
+}
+
+// The frames of all runs with or without parallel physics: their average, frames per second and 1 % low, and the CPU
+// time per frame
+struct ComparisonResult
+{
+	int threads = 0;
+	float frameTime = 0.0f;
+	float fps = 0.0f;
+	float lowFps = 0.0f;
+	float simulationTime = 0.0f;
+	float graphicsTime = 0.0f;
+	float waitTime = 0.0f;
+};
+
+static ComparisonResult SumComparison( const Comparison& comparison, bool parallel )
+{
+	ComparisonResult result;
+	std::vector<float> times;
+	double total = 0.0, simulation = 0.0, graphics = 0.0, wait = 0.0;
+	for ( int run = parallel ? 0 : 1; run < Comparison::RunCount; run += 2 )
+	{
+		times.insert( times.end(), comparison.frameTimes[run].begin(), comparison.frameTimes[run].end() );
+		simulation += comparison.simulationTime[run];
+		graphics += comparison.graphicsTime[run];
+		wait += comparison.waitTime[run];
+		result.threads = comparison.threads[run];
+	}
+
+	for ( float time : times )
+	{
+		total += time;
+	}
+
+	double frames = (double)( Comparison::RunFrames * Comparison::RunCount / 2 );
+	result.frameTime = (float)( total / (double)b3MaxInt( (int)times.size(), 1 ) );
+	result.fps = 1000.0f / b3MaxFloat( result.frameTime, 0.001f );
+	result.simulationTime = (float)( simulation / frames );
+	result.graphicsTime = (float)( graphics / frames );
+	result.waitTime = (float)( wait / frames );
+	if ( times.empty() == false )
+	{
+		size_t k = times.size() * 99 / 100;
+		std::nth_element( times.begin(), times.begin() + (ptrdiff_t)k, times.end() );
+		result.lowFps = 1000.0f / b3MaxFloat( times[k], 0.001f );
+	}
+	return result;
+}
+
+// The report goes to the clipboard, to paste into a chat
+static void FinishComparison( App& app )
+{
+	Comparison& comparison = app.comparison;
+	ComparisonResult parallel = SumComparison( comparison, true );
+	ComparisonResult serial = SumComparison( comparison, false );
+	bool same = true;
+	for ( int run = 1; run < Comparison::RunCount; ++run )
+	{
+		same = same && comparison.hashes[run] == comparison.hashes[0];
+	}
+	float gain = 100.0f * ( serial.frameTime - parallel.frameTime ) / b3MaxFloat( serial.frameTime, 0.001f );
+	const char* direction = gain >= 0.0f ? "schneller" : "langsamer";
+
+	b3Version version = b3GetVersion();
+	std::string text;
+	Appendf( text, "Nebenan-Vergleich: Physik parallel zum Zeichnen gegen nacheinander, %s-Build, Box3D %d.%d.%d\n", s_buildType,
+			 version.major, version.minor, version.revision );
+	Appendf( text, "CPU: %s, %u logische Kerne, %d Performance-Kerne, Löser mit %d Spuren\n",
+			 app.cpuName.empty() ? "unbekannt" : app.cpuName.c_str(), std::thread::hardware_concurrency(), app.performanceCores,
+			 b3GetSIMDWidth() );
+	Appendf( text, "GPU: %s, Bild %d x %d, MSAA %dx, Monitor %d Hz, VSync %s\n", app.gpuName.empty() ? "unbekannt" : app.gpuName.c_str(),
+			 sapp_width(), sapp_height(), sapp_sample_count(), app.refreshRate, app.vsyncAvailable ? "aus" : "an, lässt sich nicht abschalten" );
+	Appendf( text, "Stadt unter dem Feuer des Skripts, Bruchstückgröße x%.2f, Budget %d, %d Läufe zu %d Bildern im Wechsel, ein Schritt pro Bild\n",
+			 app.fragmentScale, app.maxDebrisBodies, Comparison::RunCount, Comparison::RunFrames );
+	Appendf( text, "Parallel mit %d Threads: %.2f ms pro Bild, %.0f FPS, 1%% Low %.0f FPS; Simulation %.2f, Grafik %.2f, Warten %.2f ms\n",
+			 parallel.threads, parallel.frameTime, parallel.fps, parallel.lowFps, parallel.simulationTime, parallel.graphicsTime,
+			 parallel.waitTime );
+	Appendf( text, "Nacheinander mit %d Threads: %.2f ms pro Bild, %.0f FPS, 1%% Low %.0f FPS; Simulation %.2f, Grafik %.2f ms\n",
+			 serial.threads, serial.frameTime, serial.fps, serial.lowFps, serial.simulationTime, serial.graphicsTime );
+	Appendf( text, "Parallel ist %.1f %% %s, die Welt endet in allen Läufen %s\n", fabsf( gain ), direction,
+			 same ? "gleich" : "verschieden" );
+	comparison.report = text;
+
+	char summary[160];
+	snprintf( summary, sizeof( summary ), "Parallel %.2f ms, nacheinander %.2f ms pro Bild,\nparallel %.0f %% %s. In der Zwischenablage.",
+			  parallel.frameTime, serial.frameTime, fabsf( gain ), direction );
+	comparison.summary = summary;
+	sapp_set_clipboard_string( text.c_str() );
+
+	if ( app.automation.compare )
+	{
+		printf( "%s", text.c_str() );
+		sapp_request_quit();
+	}
+	StopComparison( app );
+}
+
+// The first frame of a run also waited for the town to load, it does not count
+static void AdvanceComparison( App& app, float frameTime, float graphicsTime )
+{
+	Comparison& comparison = app.comparison;
+	int run = comparison.run;
+	if ( comparison.frame > 0 )
+	{
+		comparison.frameTimes[run].push_back( frameTime );
+	}
+	comparison.simulationTime[run] += app.simulationTime;
+	comparison.graphicsTime[run] += graphicsTime;
+	comparison.waitTime[run] += app.waitTime;
+
+	comparison.frame += 1;
+	if ( comparison.frame < Comparison::RunFrames )
+	{
+		return;
+	}
+
+	// The worlds after the steps of the last frame
+	FinishPhysics( app );
+	ApplyPhysics( app );
+	SyncChunks( app );
+	comparison.hashes[run] = HashChunkTransforms( app );
+	comparison.run += 1;
+	if ( comparison.run < Comparison::RunCount )
+	{
+		BeginComparisonRun( app );
+	}
+	else
+	{
+		FinishComparison( app );
+	}
+}
+
 //----------------------------------------------------------------------------------------------------------------------
 // sokol callbacks
 
@@ -2148,21 +2462,8 @@ static void OnInit()
 	app.refreshRate = DemoRefreshRate();
 	app.unthrottled = DemoUnthrottled();
 
-	// One thread per performance core, at most 8. Box3D runs best on the performance cores alone, hyper-threads and
-	// efficiency cores add little or slow it down, and so do more threads than cores.
-	int hardware = (int)std::thread::hardware_concurrency();
+	// Each scene picks its threads from these, see PreferredWorkers
 	app.performanceCores = SystemPerformanceCores();
-	int preferredWorkers = app.performanceCores > 0 ? app.performanceCores : ( hardware > 0 ? hardware / 2 : 2 );
-	preferredWorkers = hardware > 0 ? b3MinInt( preferredWorkers, hardware ) : preferredWorkers;
-
-	// With parallel physics the main thread draws while the physics runs, so the physics leaves it a hardware thread.
-	// Else the workers of a step, which wait for their next task without sleeping, take turns with it on the cores.
-	if ( app.parallelPhysics && hardware > 1 )
-	{
-		preferredWorkers = b3MinInt( preferredWorkers, hardware - 1 );
-	}
-	preferredWorkers = app.automation.threads > 0 ? app.automation.threads : preferredWorkers;
-	app.workerCount = b3ClampInt( preferredWorkers, 1, 8 );
 	app.cpuName = SystemCpuName();
 	app.gpuName = SystemGpuName();
 
@@ -2175,32 +2476,11 @@ static void OnInit()
 
 	int scene = app.automation.scene >= 0 && app.automation.scene < SceneCount ? app.automation.scene : SceneWall;
 	LoadScene( app, (SceneKind)scene );
-	app.frameTicks = b3GetTicks();
-}
-
-// Hash of where every chunk is, to compare runs: the same script must end in the same world with and without parallel
-// physics
-static uint64_t HashChunkTransforms( const App& app )
-{
-	uint64_t hash = 14695981039346656037ull;
-	for ( const ChunkVisual& visual : app.chunks )
+	if ( app.automation.compare )
 	{
-		if ( visual.alive == false )
-		{
-			continue;
-		}
-
-		b3WorldTransform transform = b3Body_GetTransform( nbChunk_GetBody( visual.id ) );
-		b3Vec3 p = b3ToVec3( transform.p );
-		float values[7] = { p.x, p.y, p.z, transform.q.v.x, transform.q.v.y, transform.q.v.z, transform.q.s };
-		uint8_t bytes[sizeof( values )];
-		memcpy( bytes, values, sizeof( values ) );
-		for ( uint8_t byte : bytes )
-		{
-			hash = ( hash ^ byte ) * 1099511628211ull;
-		}
+		StartComparison( app );
 	}
-	return hash;
+	app.frameTicks = b3GetTicks();
 }
 
 static void PrintAutomationReport( App& app )
@@ -2258,8 +2538,8 @@ static void OnFrame()
 	float dt = (float)sapp_frame_duration();
 	dt = b3ClampFloat( dt, 0.0f, 0.1f );
 
-	// Automated runs advance one physics step per frame, so they repeat exactly on any machine
-	if ( app.automation.frameLimit > 0 )
+	// Automated runs and the comparison advance one physics step per frame, so they repeat exactly on any machine
+	if ( app.automation.frameLimit > 0 || app.comparison.active )
 	{
 		dt = 1.0f / 60.0f;
 	}
@@ -2273,14 +2553,18 @@ static void OnFrame()
 	ApplyPhysics( app );
 	float graphicsTime = b3GetMilliseconds( graphicsTicks );
 
-	UpdateCamera( app, dt );
+	// During the comparison the camera stays, it decides what is drawn
+	if ( app.comparison.active == false )
+	{
+		UpdateCamera( app, dt );
+	}
 
 	// Automatic fire while the button is held. The worlds change in the same order as without parallel physics: the
 	// impacts of a frame come after the steps of the frame before and before its own.
 	uint64_t impactTicks = b3GetTicks();
 	app.fireCooldown -= dt;
 	bool uiWantsMouse = ImGui::GetIO().WantCaptureMouse && app.mouseLook == false;
-	if ( app.mouseDown && uiWantsMouse == false && app.fireCooldown <= 0.0f )
+	if ( app.mouseDown && uiWantsMouse == false && app.fireCooldown <= 0.0f && app.comparison.active == false )
 	{
 		float x = app.mouseLook ? 0.5f * sapp_widthf() : app.mouseX;
 		float y = app.mouseLook ? 0.5f * sapp_heightf() : app.mouseY;
@@ -2290,7 +2574,11 @@ static void OnFrame()
 
 	if ( app.automation.script )
 	{
-		RunScript( app );
+		RunScript( app, app.frame );
+	}
+	else if ( app.comparison.active )
+	{
+		RunScript( app, app.comparison.frame );
 	}
 	float impactTime = b3GetMilliseconds( impactTicks );
 
@@ -2356,6 +2644,16 @@ static void OnFrame()
 		app.automation.triangles.push_back( (float)rs.triangleCount );
 	}
 
+	if ( app.comparison.requested )
+	{
+		app.comparison.requested = false;
+		StartComparison( app );
+	}
+	else if ( app.comparison.active )
+	{
+		AdvanceComparison( app, frameTime, graphicsTime );
+	}
+
 	app.frame += 1;
 	if ( app.automation.frameLimit > 0 && app.frame == app.automation.frameLimit )
 	{
@@ -2387,6 +2685,12 @@ static void OnEvent( const sapp_event* event )
 				app.keys[event->key_code] = true;
 			}
 			if ( io.WantCaptureKeyboard )
+			{
+				break;
+			}
+
+			// During the comparison only the menu goes on and off
+			if ( app.comparison.active && event->key_code != SAPP_KEYCODE_F1 )
 			{
 				break;
 			}
@@ -2461,8 +2765,11 @@ static void OnEvent( const sapp_event* event )
 		case SAPP_EVENTTYPE_MOUSE_MOVE:
 			if ( app.mouseLook )
 			{
-				app.camera.yaw += 0.0025f * event->mouse_dx;
-				app.camera.pitch = b3ClampFloat( app.camera.pitch - 0.0025f * event->mouse_dy, -1.5f, 1.5f );
+				if ( app.comparison.active == false )
+				{
+					app.camera.yaw += 0.0025f * event->mouse_dx;
+					app.camera.pitch = b3ClampFloat( app.camera.pitch - 0.0025f * event->mouse_dy, -1.5f, 1.5f );
+				}
 			}
 			else
 			{
@@ -2472,7 +2779,7 @@ static void OnEvent( const sapp_event* event )
 			break;
 
 		case SAPP_EVENTTYPE_MOUSE_SCROLL:
-			if ( io.WantCaptureMouse == false )
+			if ( io.WantCaptureMouse == false && app.comparison.active == false )
 			{
 				app.camera.position = b3MulAdd( app.camera.position, 0.5f * event->scroll_y, app.camera.Forward() );
 			}
@@ -2562,6 +2869,10 @@ int main( int argc, char** argv )
 		else if ( strcmp( argv[i], "--serial-physics" ) == 0 )
 		{
 			app.parallelPhysics = false;
+		}
+		else if ( strcmp( argv[i], "--compare" ) == 0 )
+		{
+			app.automation.compare = true;
 		}
 	}
 

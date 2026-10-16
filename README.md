@@ -127,9 +127,10 @@ viele FPS die CPU schaffen würde. Die Physik rechnet unabhängig davon 60 Schri
   nächsten Einschläge.
 - **Bewegte Trümmer** (Standard 1500): wie viele Trümmer Box3D höchstens gleichzeitig bewegt. Weniger macht den
   Physikschritt schneller.
-- **Physik parallel zum Zeichnen** (Standard an): Die Physik eines Bilds rechnet auf einem eigenen Thread, während
-  der Hauptthread das Bild davor zeichnet. Ein Bild kostet dann so viel wie der längere der beiden Teile statt beide
-  zusammen und zeigt die Welt einen Schritt später. Die Welt rechnet mit und ohne genau gleich.
+- **Physik parallel zum Zeichnen** (Standard an): Die Physik eines Bilds rechnet auf einem eigenen Thread, während der
+  Hauptthread das Bild davor zeichnet. Ein Bild kostet dann so viel wie der längere der beiden Teile statt beide
+  zusammen und zeigt die Welt einen Schritt später. Die Welt rechnet mit und ohne genau gleich, die Zahl der Threads
+  passt sich beim nächsten Laden der Szene an.
 
 Daneben stellt **Etage braucht** ein, wie viel ihrer Wände eine Etage zum Stehen braucht (Standard 50 %), und
 **Statik ohne Decken** schaltet die Lastprüfung für die Mauern ein (Standard aus).
@@ -145,7 +146,10 @@ Mittel und Spitze der letzten 300 Bilder, dazu Box3D-Schritt, Bruchstücke, Kör
 Upload. Mit paralleler Physik zählt es die Simulation für sich und beim Hauptthread, wie lange er am Ende eines Bilds
 noch auf sie wartet. Es sagt auch, wer die FPS begrenzt: die CPU, die Simulation (der Hauptthread wartet lange auf sie),
 die Grafikkarte (ein Bild dauert deutlich länger, als die CPU dafür braucht) oder VSync. „Messwerte kopieren“ legt alles
-mit CPU, Grafikkarte und Auflösung in die Zwischenablage, zum Einfügen in einen Chat.
+mit CPU, Grafikkarte und Auflösung in die Zwischenablage, zum Einfügen in einen Chat. „Parallel gegen nacheinander
+messen“ lädt die Stadt und beschießt sie wie das Skript, viermal im Wechsel mit und ohne parallele Physik, je 600 Bilder
+mit einem Schritt pro Bild und jeweils mit den passenden Threads. Das Ergebnis mit Bildzeit, FPS und 1 % Low für beide
+kommt ebenso in die Zwischenablage, danach lädt die Szene von vorher neu.
 
 **Werkzeuge**
 
@@ -171,8 +175,9 @@ mit CPU, Grafikkarte und Auflösung in die Zwischenablage, zum Einfügen in eine
 **Aufrufoptionen**: `--scene 0..3` startet eine Szene, `--fragment-scale 3` setzt die Bruchstückgröße, `--vsync`
 schaltet VSync ein, `--msaa 4` schaltet Kantenglättung ein (Standard aus), `--highdpi` rendert auf hochauflösenden
 Bildschirmen in voller Auflösung (Standard aus, kostet Füllrate). `--serial-physics` schaltet die parallele Physik ab,
-`--threads N` setzt die Zahl der Threads. `--script` feuert eine vorgegebene Schussfolge ab, `--frames N` beendet nach N
-Bildern und meldet Bildzeiten, CPU-Zeiten, Uploads und Dreiecke pro Bild und einen Hash der Lagen aller Bruchstücke,
+`--threads N` setzt die Zahl der Threads. `--compare` misst parallel gegen nacheinander wie der Knopf im Menü, gibt das
+Ergebnis aus und beendet sich. `--script` feuert eine vorgegebene Schussfolge ab, `--frames N` beendet nach N Bildern
+und meldet Bildzeiten, CPU-Zeiten, Uploads und Dreiecke pro Bild und einen Hash der Lagen aller Bruchstücke,
 `--screenshot datei.ppm` speichert das letzte Bild (nur OpenGL).
 
 Hinkt die Physik hinterher, lässt die Demo die Zeit langsamer laufen, statt Schritte nachzuholen: Ein zweiter
