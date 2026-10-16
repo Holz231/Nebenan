@@ -1134,8 +1134,9 @@ int main( int argc, char** argv )
 
 	nbVersion version = nbGetVersion();
 	b3Version b3version = b3GetVersion();
-	printf( "Nebenan %d.%d.%d on Box3D %d.%d.%d, workers for fracture and physics: %d\n", version.major, version.minor,
-			version.revision, b3version.major, b3version.minor, b3version.revision, workerCount );
+	printf( "Nebenan %d.%d.%d on Box3D %d.%d.%d, workers for fracture and physics: %d, contact solver lanes: %d\n",
+			version.major, version.minor, version.revision, b3version.major, b3version.minor, b3version.revision, workerCount,
+			b3GetSIMDWidth() );
 
 	BenchmarkKernel();
 

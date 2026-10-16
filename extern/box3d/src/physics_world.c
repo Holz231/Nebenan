@@ -246,6 +246,7 @@ b3WorldId b3CreateWorld( const b3WorldDef* def )
 
 	memset( world, 0, sizeof( b3World ) );
 
+	world->simdWidth = b3GetSIMDWidth(); // Added for Nebenan
 	world->worldId = (uint16_t)worldId;
 	world->generation = revision;
 	world->inUse = true;

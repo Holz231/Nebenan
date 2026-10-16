@@ -50,7 +50,7 @@ typedef struct b3GraphColor
 	b3Array( b3ContactSpec ) contacts;
 
 	// These are used for convex contacts
-	struct b3ContactConstraintWide* wideConstraints;
+	void* wideConstraints; // Added for Nebenan: in the width of the world
 	int wideConstraintCount;
 
 	// These are used for mesh and overflow contacts

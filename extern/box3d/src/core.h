@@ -47,14 +47,17 @@
 #endif
 
 // Define SIMD
+// Added for Nebenan: the width is four, but wide8.c sets it to eight before including this for its AVX2 kernels, and on x86
+// B3_SIMD_HAS_WIDTH_8 says that those exist, see b3GetSIMDWidth
 #if defined( BOX3D_DISABLE_SIMD )
 	#define B3_SIMD_NONE
-	#define B3_SIMD_WIDTH 4
 	//#pragma message("B3_SIMD_NONE")
 #else
 	#if defined( B3_CPU_X86_X64 )
 		#define B3_SIMD_SSE2
-		#define B3_SIMD_WIDTH 4
+		#if !defined( BOX3D_DISABLE_AVX2 )
+			#define B3_SIMD_HAS_WIDTH_8
+		#endif
 		//#pragma message("B3_SIMD_SSE2")
 	#elif defined( B3_CPU_ARM )
 	// ARMv7 Neon doesn't have divide or sqrt so cannot be used.
@@ -63,18 +66,32 @@
 	#else
 		#define B3_SIMD_NONE
 	#endif
-		#define B3_SIMD_WIDTH 4
 		//#pragma message("B3_SIMD_NEON")
 	#elif defined( B3_CPU_WASM )
 		#define B3_CPU_WASM
 		#define B3_SIMD_SSE2
-		#define B3_SIMD_WIDTH 4
 		//#pragma message("B3_SIMD_SSE2")
 	#else
 		#define B3_SIMD_NONE
-		#define B3_SIMD_WIDTH 4
 		//#pragma message("B3_SIMD_NONE")
 	#endif
+#endif
+
+#if !defined( B3_SIMD_WIDTH )
+	#define B3_SIMD_WIDTH 4
+#endif
+
+// Added for Nebenan: the code between these compiles for AVX2 on GCC and Clang, MSVC compiles wide8.c with /arch:AVX2.
+// Neither enables FMA, so nothing contracts.
+#if defined( B3_SIMD_HAS_WIDTH_8 ) && defined( __clang__ )
+	#define B3_AVX2_BEGIN _Pragma( "clang attribute push( __attribute__( ( target( \"avx2\" ) ) ), apply_to = function )" )
+	#define B3_AVX2_END _Pragma( "clang attribute pop" )
+#elif defined( B3_SIMD_HAS_WIDTH_8 ) && defined( __GNUC__ )
+	#define B3_AVX2_BEGIN _Pragma( "GCC push_options" ) _Pragma( "GCC target( \"avx2\" )" )
+	#define B3_AVX2_END _Pragma( "GCC pop_options" )
+#else
+	#define B3_AVX2_BEGIN
+	#define B3_AVX2_END
 #endif
 
 // Define compiler

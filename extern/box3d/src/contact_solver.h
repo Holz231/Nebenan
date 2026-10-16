@@ -52,7 +52,8 @@ typedef struct b3ContactConstraint
 	int manifoldCount;
 } b3ContactConstraint;
 
-int b3GetWideContactConstraintByteCount( void );
+// Added for Nebenan: the size of a wide convex contact constraint in the given width, see b3World::simdWidth
+int b3GetWideContactConstraintByteCount( int simdWidth );
 
 // Overflow contacts don't fit into the constraint graph coloring
 void b3PrepareContacts_Overflow( b3StepContext* context );
@@ -76,3 +77,23 @@ void b3PushContacts_Convex( b3SolverBlock block, b3StepContext* context );
 void b3SolveContacts_Convex( b3SolverBlock block, b3StepContext* context );
 void b3ApplyRestitution_Convex( b3SolverBlock block, b3StepContext* context );
 void b3StoreImpulses_Convex( b3SolverBlock block, b3StepContext* context, int workerIndex );
+
+// Added for Nebenan: the functions above pick these by the width of the world, see contact_solver_wide.inl
+int b3GetWideContactConstraintByteCountW4( void );
+void b3PrepareContacts_ConvexW4( b3SolverBlock block, b3StepContext* context );
+void b3PreparePackContacts_ConvexW4( b3StepContext* context, int pack );
+void b3WarmStartContacts_ConvexW4( b3SolverBlock block, b3StepContext* context );
+void b3PushContacts_ConvexW4( b3SolverBlock block, b3StepContext* context );
+void b3SolveContacts_ConvexW4( b3SolverBlock block, b3StepContext* context );
+void b3ApplyRestitution_ConvexW4( b3SolverBlock block, b3StepContext* context );
+void b3StoreImpulses_ConvexW4( b3SolverBlock block, b3StepContext* context, int workerIndex );
+#if defined( B3_SIMD_HAS_WIDTH_8 )
+int b3GetWideContactConstraintByteCountW8( void );
+void b3PrepareContacts_ConvexW8( b3SolverBlock block, b3StepContext* context );
+void b3PreparePackContacts_ConvexW8( b3StepContext* context, int pack );
+void b3WarmStartContacts_ConvexW8( b3SolverBlock block, b3StepContext* context );
+void b3PushContacts_ConvexW8( b3SolverBlock block, b3StepContext* context );
+void b3SolveContacts_ConvexW8( b3SolverBlock block, b3StepContext* context );
+void b3ApplyRestitution_ConvexW8( b3SolverBlock block, b3StepContext* context );
+void b3StoreImpulses_ConvexW8( b3SolverBlock block, b3StepContext* context, int workerIndex );
+#endif

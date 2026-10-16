@@ -1023,6 +1023,24 @@ static int WorkerTest( void )
 	return 0;
 }
 
+// Box3D solves contacts in eight lanes on x86 with AVX2 and in four otherwise, see b3GetSIMDWidth. Both must give the
+// same bits, on one thread and with workers, which solve whole islands. Without AVX2 this runs four lanes twice.
+static int SIMDWidthTest( void )
+{
+	int widths[2] = { 4, 8 };
+	for ( int i = 0; i < 2; ++i )
+	{
+		b3SetSIMDWidth( widths[i] );
+		ENSURE( b3GetSIMDWidth() == ( b3IsAVX2Available() ? widths[i] : 4 ) );
+		ENSURE( RunDeterminismScenario() == NB_EXPECTED_DETERMINISM_HASH );
+		ENSURE( RunDeterminismScenarioWith( CreateSceneWithWorkers( 4, NULL, NULL, NULL ) ) == NB_EXPECTED_DETERMINISM_HASH );
+	}
+
+	b3SetSIMDWidth( 0 );
+	printf( "contact solver lanes: %d\n", b3GetSIMDWidth() );
+	return 0;
+}
+
 // Replaying the events must reproduce the set of live chunks, which is what a renderer relies on.
 static int EventTest( void )
 {
@@ -3811,6 +3829,7 @@ int WorldTest( void )
 	RUN_TEST( CollapseTest );
 	RUN_TEST( DeterminismTest );
 	RUN_TEST( WorkerTest );
+	RUN_TEST( SIMDWidthTest );
 	RUN_TEST( UniqueHullTest );
 	RUN_TEST( ExternalHullTest );
 	RUN_TEST( ShapeBatchTest );

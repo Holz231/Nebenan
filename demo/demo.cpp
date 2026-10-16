@@ -1515,8 +1515,9 @@ static std::string BuildReport( const App& app )
 	std::string text;
 	Appendf( text, "Nebenan-Messung: Szene %s, %s-Build, Box3D %d.%d.%d\n", s_sceneNames[app.scene], s_buildType, version.major,
 			 version.minor, version.revision );
-	Appendf( text, "CPU: %s, %u logische Kerne, %d Performance-Kerne, %d Threads\n", app.cpuName.empty() ? "unbekannt" : app.cpuName.c_str(),
-			 std::thread::hardware_concurrency(), app.performanceCores, app.workerCount );
+	Appendf( text, "CPU: %s, %u logische Kerne, %d Performance-Kerne, %d Threads, Löser mit %d Spuren\n",
+			 app.cpuName.empty() ? "unbekannt" : app.cpuName.c_str(), std::thread::hardware_concurrency(), app.performanceCores,
+			 app.workerCount, b3GetSIMDWidth() );
 	Appendf( text, "GPU: %s, Bild %d x %d, MSAA %dx, Monitor %d Hz\n", app.gpuName.empty() ? "unbekannt" : app.gpuName.c_str(),
 			 sapp_width(), sapp_height(), sapp_sample_count(), app.refreshRate );
 	Appendf( text, "Bild: %.0f FPS, 1%% Low %.0f FPS, Mittel %.2f ms, Spitze %.1f ms (letzte %d Bilder), VSync %s, ungebremst %s\n",

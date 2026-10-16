@@ -89,6 +89,8 @@ if (CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
 endif()
 
 option(BOX3D_DISABLE_SIMD "Disable SIMD math (slower)" OFF)
+# Added for Nebenan: eight lanes for the contact solver on x86 CPUs with AVX2, chosen at run time, see src/wide8.c
+option(BOX3D_AVX2 "Compile AVX2 kernels, selected at runtime on x86 CPUs that support them" ON)
 option(BOX3D_COMPILE_WARNING_AS_ERROR "Compile warnings as errors" OFF)
 option(BOX3D_DOUBLE_PRECISION "Enable double precision for large worlds" OFF)
 

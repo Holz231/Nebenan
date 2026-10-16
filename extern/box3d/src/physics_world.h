@@ -272,6 +272,8 @@ typedef struct b3World
 	void* customFilterContext;
 
 	int workerCount;
+	// Added for Nebenan: the lanes of the convex contact solver, 4 or 8, see b3GetSIMDWidth
+	int simdWidth;
 
 	// Added for Nebenan: the workers the current step wakes, see b3GetStepWorkerCount
 	int activeWorkerCount;

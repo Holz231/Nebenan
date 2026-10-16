@@ -177,6 +177,17 @@ B3_API bool b3IsDoublePrecision( void );
 /// an ABI test.
 B3_API int b3GetMaxManifoldPoints( void );
 
+/// Added for Nebenan: whether this CPU runs the contact solver in eight lanes with AVX2. Only on x86 with AVX2, and not
+/// with BOX3D_DISABLE_AVX2. Eight lanes compute the same results as four.
+B3_API bool b3IsAVX2Available( void );
+
+/// Added for Nebenan: the number of lanes the contact solver of worlds created from now on uses, 4 or 8, or 0 for the
+/// widest the CPU runs. Eight falls back to four without AVX2. The results are the same, this is for tests and measurements.
+B3_API void b3SetSIMDWidth( int width );
+
+/// Added for Nebenan: the number of lanes the contact solver of new worlds uses.
+B3_API int b3GetSIMDWidth( void );
+
 /**@}*/
 
 //! @cond
