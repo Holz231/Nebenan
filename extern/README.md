@@ -231,7 +231,17 @@ danach wieder, doppelt so lange, bis zu 960 Schritte (`b3UpdatePackHold` in `src
 `src/physics_world.h`). Ein einzelnes langes Warten, wie es ohne Last ab und zu vorkommt, zählt so nicht. Die Ergebnisse
 sind mit und ohne Sperren dieselben.
 
-Die erste, die zweite, die vierte bis achte, die zehnte und die dreizehnte bis siebenundzwanzigste ändern an den
+**CCD-Vortest gegen die Flächen der statischen Hülle.** Box3Ds CCD rechnete für jede statische Form, die die Bahn eines
+schnellen Körpers berührt, die Zeit bis zum Treffer aus. Bei kleinen Bruchstücken unter Beschuss sind das Hunderte pro
+Schritt, und fast keine trifft. Ein Körper bewegt seinen Schwerpunkt beim Sweep geradlinig, und jede seiner Formen
+bleibt in einer Kugel um diesen Schwerpunkt. Liegt diese Kugel am Anfang und am Ende des Schritts jenseits derselben
+Flächenebene einer statischen Hülle, kann die Form die Hülle dazwischen nicht erreichen, und der Test fällt weg
+(`b3IsBeyondHullFace` und `b3GetShapeReach` in `src/solver.c`). Der Abstand von vier linearen Slops ist ein Vielfaches
+dessen, was die Zeit bis zum Treffer noch als Berührung zählt. Dazu liest die CCD nicht mehr für jeden Test zweimal die
+Uhr, für Warnungen bei langen Tests, die upstream seit [#179](https://github.com/erincatto/box3d/pull/179) auch nicht
+mehr hat. Die Ergebnisse sind dieselben.
+
+Die erste, die zweite, die vierte bis achte, die zehnte und die dreizehnte bis achtundzwanzigste ändern an den
 Ergebnissen nichts. Die dritte und die neunte ändern sie in den letzten Bits, dafür hängen sie nicht mehr davon ab, in
 welcher Reihenfolge Formen in die Bäume kommen. Die elfte ändert sie, weil Kontakte zu anderen Zeitpunkten entstehen,
 die zwölfte, weil sie weniger Punkte bekommen. Die Ergänzungen stehen in `include/box3d/box3d.h`,

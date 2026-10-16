@@ -751,6 +751,10 @@ Trommelfeuer kostet das Update damit im Benchmark mit 4 Threads 11,6 % weniger u
 4,0 %. Belegen andere Programme die Kerne, rechnet der Löser jetzt eine Weile wieder mit Sperren, sobald seine Threads
 immer wieder lange auf die letzten Pakete warten: Mit vier Schleifen, die alle Kerne belegen, kostet ein Frame damit
 9,1 % weniger als bei `physik-11`, ohne Last ändert sich nichts.
+Seit `physik-14` überspringt Box3Ds Durchschlag-Schutz statische Hüllen, die ein schnelles Bruchstück beweisbar nicht
+erreicht, und die Ergebnisse bleiben bitgleich. Bei einfacher Bruchstückgröße fällt so fast die Hälfte dieser Tests weg:
+Im Benchmark kostet der Löser samt CCD dort mit 4 Threads 3,8 % und mit einem 11,3 % weniger, ein Frame mit einem Thread
+4,4 %.
 
 **Eine Stadt größer als der Speicher.** Im Benchmark fliegt eine Kamera mit 30 m/s 900 m weit durch eine Stadt aus
 65 536 Häusern auf 3,6 × 3,1 km und 300 m zurück, Bruchstückgröße ×4. Am Stück bräuchte sie 24 GB. Geladen sind die
