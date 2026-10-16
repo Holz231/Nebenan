@@ -1705,16 +1705,18 @@ static int* b3OrderColorContacts( b3World* world, const b3GraphColor* colors, co
 	return ordered;
 }
 
-// Added for Nebenan: packs of islands per worker, enough for the workers to even out the work, see b3BuildPacks
+// Added for Nebenan: packs of islands per worker, enough for the workers to even out the work, see b3BuildPacks. A byte
+// holds the pack of a contact, so the lookups by contact id stay in the closest caches.
 #define B3_PACKS_PER_WORKER 4
 #define B3_MAX_PACKS ( B3_PACKS_PER_WORKER * B3_MAX_WORKERS )
+_Static_assert( B3_MAX_PACKS <= 256, "a pack needs to fit in a byte" );
 
 // Added for Nebenan: the awake islands in packs of about equal work, the largest pack first, for b3SolvePacks. Writes the
 // pack of every contact of the islands to contactPacks by contact id, and the awake indices of the bodies of every pack to
 // packBodies from packBodyStarts on. Returns the pack count, or zero if one island holds more than half of the work, which
 // the colors share better among the workers.
-static int b3BuildPacks( b3World* world, const b3SolverSet* awakeSet, int packLimit, int* contactPacks, int* packBodyStarts,
-						 int* packBodies )
+static int b3BuildPacks( b3World* world, const b3SolverSet* awakeSet, int packLimit, uint8_t* contactPacks,
+						 int* packBodyStarts, int* packBodies )
 {
 	int islandCount = awakeSet->islandSims.count;
 	if ( islandCount < 2 )
@@ -1843,7 +1845,7 @@ static int b3BuildPacks( b3World* world, const b3SolverSet* awakeSet, int packLi
 			const b3ContactLink* links = island->contacts.data;
 			for ( int k = 0; k < island->contacts.count; ++k )
 			{
-				contactPacks[links[k].contactId] = pack;
+				contactPacks[links[k].contactId] = (uint8_t)pack;
 			}
 		}
 	}
@@ -1858,7 +1860,7 @@ static int b3BuildPacks( b3World* world, const b3SolverSet* awakeSet, int packLi
 // ids to whole wide constraints, so no wide constraint holds two packs. Writes for every color where the wide constraints of
 // each pack start, see b3StepContext::packWideStarts, and how many entries the color has. Returns the entries in stack memory.
 static int* b3OrderPackContacts( b3World* world, const b3GraphColor* colors, const int* activeColorIndices, int activeColorCount,
-								 const int* contactPacks, int packCount, int* packWideStarts, int* entryCounts )
+								 const uint8_t* contactPacks, int packCount, int* packWideStarts, int* entryCounts )
 {
 	int capacity = 0;
 	for ( int i = 0; i < activeColorCount; ++i )
@@ -2035,7 +2037,7 @@ void b3Solve( b3World* world, b3StepContext* stepContext )
 		// first pack starts, keep the barrier per stage. With packs the convex contacts of every color go pack by pack,
 		// which can take more wide constraints.
 		int packCount = 0;
-		int* contactPacks = NULL;
+		uint8_t* contactPacks = NULL;
 		int* packBodyStarts = NULL;
 		int* packBodies = NULL;
 		int* packWideStarts = NULL;
@@ -2046,7 +2048,7 @@ void b3Solve( b3World* world, b3StepContext* stepContext )
 		{
 			int packLimit = B3_PACKS_PER_WORKER * workerCount;
 			int contactIdCapacity = b3GetIdCapacity( &world->contactIdPool );
-			contactPacks = (int*)b3StackAlloc( &world->stack, contactIdCapacity * (int)sizeof( int ), "contact packs" );
+			contactPacks = (uint8_t*)b3StackAlloc( &world->stack, contactIdCapacity, "contact packs" );
 			packBodyStarts = (int*)b3StackAlloc( &world->stack, ( packLimit + 1 ) * (int)sizeof( int ), "pack body starts" );
 			packBodies = (int*)b3StackAlloc( &world->stack, awakeBodyCount * (int)sizeof( int ), "pack bodies" );
 			packCount = b3BuildPacks( world, awakeSet, packLimit, contactPacks, packBodyStarts, packBodies );
