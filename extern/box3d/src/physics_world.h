@@ -276,6 +276,15 @@ typedef struct b3World
 	// Added for Nebenan: the workers the current step wakes, see b3GetStepWorkerCount
 	int activeWorkerCount;
 
+	// Added for Nebenan: steps left that solve by colors, because the threads waited long for the last packs, how long the
+	// last stretch of them was and the steps since it ended, see b3UpdatePackHold
+	int packHoldSteps;
+	int packHoldLength;
+	int packHoldGap;
+
+	// Added for Nebenan: three for each step with a long wait for the last packs, minus one for each without
+	int packWaitScore;
+
 	b3EnqueueTaskCallback* enqueueTaskFcn;
 	b3FinishTaskCallback* finishTaskFcn;
 	void* userTaskContext;

@@ -1314,6 +1314,34 @@ static void b3SolvePacks( b3StepContext* context, int workerIndex )
 	}
 }
 
+// Added for Nebenan: a wait for the last packs is long from a millisecond on and from half the time of the packs on,
+// from nine on the solver keeps the barriers for 120 steps, and a stretch that comes back within twice the last one
+// lasts twice as long, up to 960 steps
+#define B3_PACK_WAIT_LONG 1.0f
+#define B3_PACK_HOLD_SCORE 9
+#define B3_PACK_HOLD_STEPS 120
+#define B3_PACK_HOLD_MAX 960
+
+// Added for Nebenan: a thread that loses its core to another program holds up the pack it is on, while with a barrier
+// per stage the others take over what it has not started yet. Once the threads wait long for the last packs again and
+// again, the solver solves by colors for a while. Each such step counts three and each step without one takes one off,
+// so a single long wait, as it comes now and then without load, does not count. The results are the same either way,
+// see b3SolvePacks.
+static void b3UpdatePackHold( b3World* world, float wait, float total )
+{
+	bool longWait = wait >= B3_PACK_WAIT_LONG && 2.0f * wait >= total;
+	world->packWaitScore = longWait ? world->packWaitScore + 3 : b3MaxInt( world->packWaitScore - 1, 0 );
+	if ( world->packWaitScore < B3_PACK_HOLD_SCORE )
+	{
+		return;
+	}
+
+	bool soon = world->packHoldLength > 0 && world->packHoldGap < 2 * world->packHoldLength;
+	world->packHoldLength = soon ? b3MinInt( 2 * world->packHoldLength, B3_PACK_HOLD_MAX ) : B3_PACK_HOLD_STEPS;
+	world->packHoldSteps = world->packHoldLength;
+	world->packWaitScore = 0;
+}
+
 // Parallel solver task
 static void b3SolverTask( void* taskContext )
 {
@@ -1369,6 +1397,8 @@ static void b3SolverTask( void* taskContext )
 			b3AtomicStoreU32( &context->atomicSyncBits, ( 1u << 16 ) | 0xFFFF );
 			b3SolvePacks( context, 0 );
 
+			// How long this thread waits for the others, see b3UpdatePackHold
+			uint64_t waitTicks = b3GetTicks();
 			int spinCount = 0;
 			while ( b3AtomicLoadInt( &context->packDone ) < context->packCount )
 			{
@@ -1385,7 +1415,10 @@ static void b3SolverTask( void* taskContext )
 				}
 			}
 
-			profile->solveImpulses += b3GetMillisecondsAndReset( &ticks );
+			float wait = b3GetMilliseconds( waitTicks );
+			float total = b3GetMillisecondsAndReset( &ticks );
+			profile->solveImpulses += total;
+			b3UpdatePackHold( context->world, wait, total );
 
 			// Signal workers to finish
 			b3AtomicStoreU32( &context->atomicSyncBits, UINT_MAX );
@@ -2034,8 +2067,20 @@ void b3Solve( b3World* world, b3StepContext* stepContext )
 
 		// Added for Nebenan: whole islands per thread if the step allows, see b3SolvePacks. Joints, mesh contacts and the
 		// propagation of restitution, which needs to know whether any constraint of the step has restitution before the
-		// first pack starts, keep the barrier per stage. With packs the convex contacts of every color go pack by pack,
-		// which can take more wide constraints.
+		// first pack starts, keep the barrier per stage, and so does a step while other programs take the cores, see
+		// b3UpdatePackHold. With packs the convex contacts of every color go pack by pack, which can take more wide
+		// constraints.
+		bool held = world->packHoldSteps > 0;
+		if ( held )
+		{
+			world->packHoldSteps -= 1;
+			world->packHoldGap = 0;
+		}
+		else if ( world->packHoldGap < 2 * B3_PACK_HOLD_MAX )
+		{
+			world->packHoldGap += 1;
+		}
+
 		int packCount = 0;
 		uint8_t* contactPacks = NULL;
 		int* packBodyStarts = NULL;
@@ -2043,7 +2088,7 @@ void b3Solve( b3World* world, b3StepContext* stepContext )
 		int* packWideStarts = NULL;
 		int* packContacts = NULL;
 		int packEntryCounts[B3_GRAPH_COLOR_COUNT];
-		if ( workerCount > 1 && contactCount == 0 && jointCount == 0 && overflow->jointSims.count == 0 &&
+		if ( held == false && workerCount > 1 && contactCount == 0 && jointCount == 0 && overflow->jointSims.count == 0 &&
 			 overflowCount <= UINT16_MAX && world->enableRestitutionPropagation == false )
 		{
 			int packLimit = B3_PACKS_PER_WORKER * workerCount;
