@@ -738,6 +738,13 @@ Seit `physik-9` erstarrt Schutt billiger: Box3D geht nach dem Einfügen in den s
 sich etwas ändert, und sperrt den Allokator der Manifolds nur, solange die Kontakt-Schleife auf mehreren Threads läuft.
 Dazu sucht die Etagenprüfung die stehenden Teile eines Hauses vom Ende seiner Liste her. Gepaart gegen `physik-8` kostet
 das Update damit 3,2 bis 8,9 % weniger und ein Frame 0,8 bis 3,5 %, ohne ein Bit zu ändern.
+Seit `physik-11` rechnet der Löser mit mehreren Threads ganze Inseln am Stück: Zwei Inseln teilen sich keinen
+beweglichen Körper, also nimmt sich jeder Thread ganze Pakete von Inseln und rechnet sie vom Vorbereiten bis zum
+Zurückschreiben der Stöße ohne eine einzige Sperre, siehe [`extern/README.md`](extern/README.md). Gepaart gegen
+`physik-9` kostet ein Frame mit 4 Threads damit bei vierfacher, doppelter und einfacher Bruchstückgröße 10,8, 17,7 und
+11,0 % weniger, die Bedingungen des Lösers 38,5, 47,9 und 41,9 %, und im Benchmark werden die teuersten Frames kürzer.
+Die Ergebnisse bleiben bitgleich, und mit einem Thread rechnet der Löser wie bisher. Belegen andere Programme alle
+Kerne, kostet ein Frame dagegen mehr als vorher, siehe [`docs/Optimierungen.md`](docs/Optimierungen.md).
 
 **Eine Stadt größer als der Speicher.** Im Benchmark fliegt eine Kamera mit 30 m/s 900 m weit durch eine Stadt aus
 65 536 Häusern auf 3,6 × 3,1 km und 300 m zurück, Bruchstückgröße ×4. Am Stück bräuchte sie 24 GB. Geladen sind die
