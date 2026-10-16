@@ -1237,11 +1237,31 @@ static void b3ExecutePackConstraints( b3SolverStageType type, b3StepContext* con
 	}
 }
 
-// Added for Nebenan: all substeps and restitution of one pack of islands on one thread
+// Added for Nebenan: one stage of the convex contact constraints of a pack by their index across all colors, as the
+// prepare and store stages number them
+static void b3ExecutePackWideConstraints( b3SolverStageType type, b3StepContext* context, int pack, int workerIndex )
+{
+	for ( int i = 0; i < context->activeColorCount; ++i )
+	{
+		const int* wideStarts = context->packWideStarts + i * ( context->packCount + 1 );
+		int base = context->widePrepareSpans[i].start;
+		b3ExecutePackRange( type, context, base + wideStarts[pack], base + wideStarts[pack + 1], b3_wideContactBlock, UINT8_MAX,
+							workerIndex );
+	}
+}
+
+// Added for Nebenan: one pack of islands on one thread, from preparing its constraints through all substeps and
+// restitution to storing their impulses
 static void b3SolvePack( b3StepContext* context, int pack, int workerIndex )
 {
 	int bodyStart = context->packBodyStarts[pack];
 	int bodyEnd = context->packBodyStarts[pack + 1];
+	int overflowStart = context->packOverflowStarts[pack];
+	int overflowEnd = context->packOverflowStarts[pack + 1];
+
+	b3ExecutePackRange( b3_stagePrepareContacts, context, overflowStart, overflowEnd, b3_overflowBlock, B3_OVERFLOW_INDEX,
+						workerIndex );
+	b3ExecutePackWideConstraints( b3_stagePrepareWideContacts, context, pack, workerIndex );
 
 	for ( int i = 0; i < context->subStepCount; ++i )
 	{
@@ -1252,6 +1272,9 @@ static void b3SolvePack( b3StepContext* context, int pack, int workerIndex )
 		b3ExecutePackConstraints( b3_stageRelax, context, pack, workerIndex );
 	}
 
+	// Preparing a constraint with restitution sets the flag, so a pack with one always sees it. A pack that sees it set by
+	// another pack runs restitution for nothing: without propagation, which packs require, it skips constraints without
+	// restitution, see b3ApplyRestitution_Convex.
 	if ( b3AtomicLoadInt( &context->anyRestitution ) != 0 )
 	{
 		for ( int j = 0; j < context->world->restitutionIterations; ++j )
@@ -1259,12 +1282,17 @@ static void b3SolvePack( b3StepContext* context, int pack, int workerIndex )
 			b3ExecutePackConstraints( b3_stageRestitution, context, pack, workerIndex );
 		}
 	}
+
+	b3ExecutePackWideConstraints( b3_stageStoreWideImpulses, context, pack, workerIndex );
+	b3ExecutePackRange( b3_stageStoreImpulses, context, overflowStart, overflowEnd, b3_overflowBlock, B3_OVERFLOW_INDEX,
+						workerIndex );
 }
 
-// Added for Nebenan: the substeps and restitution without a barrier per stage. Two islands never share a moving body, so
-// a thread can take an island through all substeps alone, and its bodies and constraints stay in its cache. Each body takes
-// its steps in the same order as with a barrier per stage, so nothing changes in the results. The threads take whole
-// packs of islands, the largest first, until none is left. One that loses its core holds up only the pack it is on.
+// Added for Nebenan: the constraint solver without a barrier per stage. Two islands never share a moving body, so a thread
+// can take an island from preparing its constraints through all substeps to storing their impulses alone, and its bodies
+// and constraints stay in its cache. Each body takes its steps in the same order as with a barrier per stage, so nothing
+// changes in the results. The threads take whole packs of islands, the largest first, until none is left. One that loses
+// its core holds up only the pack it is on.
 static void b3SolvePacks( b3StepContext* context, int workerIndex )
 {
 	int solved = 0;
@@ -1333,6 +1361,37 @@ static void b3SolverTask( void* taskContext )
 
 		uint64_t ticks = b3GetTicks();
 
+		// Added for Nebenan: whole packs of islands without a barrier if the step has them, see b3SolvePacks. They prepare
+		// and store their constraints themselves, so no stage is left, and all their time counts as solving.
+		if ( context->packCount > 0 )
+		{
+			// The workers join in with the stage index 0xFFFF, see below
+			b3AtomicStoreU32( &context->atomicSyncBits, ( 1u << 16 ) | 0xFFFF );
+			b3SolvePacks( context, 0 );
+
+			int spinCount = 0;
+			while ( b3AtomicLoadInt( &context->packDone ) < context->packCount )
+			{
+				if ( spinCount > 5 )
+				{
+					b3Yield();
+					spinCount = 0;
+				}
+				else
+				{
+					b3Pause();
+					b3Pause();
+					spinCount += 1;
+				}
+			}
+
+			profile->solveImpulses += b3GetMillisecondsAndReset( &ticks );
+
+			// Signal workers to finish
+			b3AtomicStoreU32( &context->atomicSyncBits, UINT_MAX );
+			return;
+		}
+
 		int bodySyncIndex = 1;
 		int stageIndex = 0;
 
@@ -1366,36 +1425,8 @@ static void b3SolverTask( void* taskContext )
 
 		profile->prepareConstraints += b3GetMillisecondsAndReset( &ticks );
 
-		// Added for Nebenan: whole packs of islands without a barrier if the step has them, see b3SolvePacks. Then the
-		// substeps and restitution below have nothing left to do, and all their time counts as solving.
-		bool packs = context->packCount > 0;
-		if ( packs )
-		{
-			// The workers join in with the stage index 0xFFFF, see below
-			b3AtomicStoreU32( &context->atomicSyncBits, ( 1u << 16 ) | 0xFFFF );
-			b3SolvePacks( context, 0 );
-
-			int spinCount = 0;
-			while ( b3AtomicLoadInt( &context->packDone ) < context->packCount )
-			{
-				if ( spinCount > 5 )
-				{
-					b3Yield();
-					spinCount = 0;
-				}
-				else
-				{
-					b3Pause();
-					b3Pause();
-					spinCount += 1;
-				}
-			}
-
-			profile->solveImpulses += b3GetMillisecondsAndReset( &ticks );
-		}
-
 		int graphSyncIndex = 1;
-		int subStepCount = packs ? 0 : context->subStepCount;
+		int subStepCount = context->subStepCount;
 		for ( int subStepIndex = 0; subStepIndex < subStepCount; ++subStepIndex )
 		{
 			// stageIndex restarted each iteration
@@ -1480,7 +1511,7 @@ static void b3SolverTask( void* taskContext )
 		stageIndex += 1 + activeColorCount + ITERATIONS * activeColorCount + 1 + RELAX_ITERATIONS * activeColorCount;
 
 		int restitutionIterations = context->world->restitutionIterations;
-		if ( restitutionIterations > 0 && b3AtomicLoadInt( &context->anyRestitution ) != 0 && packs == false )
+		if ( restitutionIterations > 0 && b3AtomicLoadInt( &context->anyRestitution ) != 0 )
 		{
 			for ( int j = 0; j < restitutionIterations; ++j )
 			{
@@ -1999,9 +2030,10 @@ void b3Solve( b3World* world, b3StepContext* stepContext )
 		b3GraphColor* overflow = colors + B3_OVERFLOW_INDEX;
 		int overflowCount = overflow->contacts.count;
 
-		// Added for Nebenan: whole islands per thread if the step allows, see b3SolvePacks. Joints and mesh contacts keep
-		// the barrier per stage. With packs the convex contacts of every color go pack by pack, which can take more wide
-		// constraints.
+		// Added for Nebenan: whole islands per thread if the step allows, see b3SolvePacks. Joints, mesh contacts and the
+		// propagation of restitution, which needs to know whether any constraint of the step has restitution before the
+		// first pack starts, keep the barrier per stage. With packs the convex contacts of every color go pack by pack,
+		// which can take more wide constraints.
 		int packCount = 0;
 		int* contactPacks = NULL;
 		int* packBodyStarts = NULL;
@@ -2010,7 +2042,7 @@ void b3Solve( b3World* world, b3StepContext* stepContext )
 		int* packContacts = NULL;
 		int packEntryCounts[B3_GRAPH_COLOR_COUNT];
 		if ( workerCount > 1 && contactCount == 0 && jointCount == 0 && overflow->jointSims.count == 0 &&
-			 overflowCount <= UINT16_MAX )
+			 overflowCount <= UINT16_MAX && world->enableRestitutionPropagation == false )
 		{
 			int packLimit = B3_PACKS_PER_WORKER * workerCount;
 			int contactIdCapacity = b3GetIdCapacity( &world->contactIdPool );
