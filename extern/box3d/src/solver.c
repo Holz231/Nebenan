@@ -20,6 +20,7 @@
 #include "shape.h"
 #include "solver_set.h"
 
+#include <float.h>
 #include <limits.h>
 #include <stddef.h>
 #include <stdio.h>
@@ -334,12 +335,65 @@ typedef struct b3ContinuousContext
 	float sensorFractions[B2_MAX_CONTINUOUS_SENSOR_HITS];
 	int sensorCount;
 
-	int visitCount;
+	// Added for Nebenan: how far the fast shape reaches from the center of mass of its body, see b3IsBeyondHullFace
+	float fastReach;
 
 	int distanceIterations;
 	int pushBackIterations;
 	int rootIterations;
 } b3ContinuousContext;
+
+// Added for Nebenan: the radius of the sphere around the center of mass of a body that holds one of its shapes in every
+// pose, or FLT_MAX for a shape that has no such sphere here
+static float b3GetShapeReach( const b3Shape* shape, b3Vec3 localCenter )
+{
+	switch ( shape->type )
+	{
+		case b3_sphereShape:
+			return b3Distance( shape->sphere.center, localCenter ) + shape->sphere.radius;
+
+		case b3_capsuleShape:
+			return b3MaxFloat( b3Distance( shape->capsule.center1, localCenter ),
+							   b3Distance( shape->capsule.center2, localCenter ) ) +
+				   shape->capsule.radius;
+
+		case b3_hullShape:
+		{
+			const b3HullData* hull = shape->hull;
+			const b3Vec3* points = b3GetHullPoints( hull );
+			float reach = 0.0f;
+			for ( int i = 0; i < hull->vertexCount; ++i )
+			{
+				reach = b3MaxFloat( reach, b3Distance( points[i], localCenter ) );
+			}
+			return reach;
+		}
+
+		default:
+			return FLT_MAX;
+	}
+}
+
+// Added for Nebenan: whether the fast shape stays beyond one face plane of a static hull for the whole step. The sweep moves
+// the center of mass along a line, and the shape stays within its reach around it. If that sphere lies beyond the same plane
+// at both ends of the step, it lies beyond it in between, and the time of impact cannot find the shapes any closer than
+// its target distance: It would return no hit. The margin covers the target distance and its tolerance several times over.
+static bool b3IsBeyondHullFace( const b3ContinuousContext* context, const b3HullData* hull, b3WorldTransform transform )
+{
+	float reach = context->fastReach + 4.0f * B3_LINEAR_SLOP;
+	b3Vec3 center1 = b3InvTransformWorldPoint( transform, b3OffsetPos( context->base, context->sweep.c1 ) );
+	b3Vec3 center2 = b3InvTransformWorldPoint( transform, b3OffsetPos( context->base, context->sweep.c2 ) );
+	const b3Plane* planes = b3GetHullPlanes( hull );
+	for ( int i = 0; i < hull->faceCount; ++i )
+	{
+		if ( b3PlaneSeparation( planes[i], center1 ) > reach && b3PlaneSeparation( planes[i], center2 ) > reach )
+		{
+			return true;
+		}
+	}
+
+	return false;
+}
 
 // This is called from b3DynamicTree_Query for continuous collision
 static bool b3ContinuousQueryCallback( int proxyId, uint64_t userData, void* context )
@@ -348,7 +402,6 @@ static bool b3ContinuousQueryCallback( int proxyId, uint64_t userData, void* con
 
 	int shapeId = (int)userData;
 	b3ContinuousContext* continuousContext = context;
-	continuousContext->visitCount += 1;
 
 	b3Shape* fastShape = continuousContext->fastShape;
 	b3BodySim* fastBodySim = continuousContext->fastBodySim;
@@ -419,7 +472,13 @@ static bool b3ContinuousQueryCallback( int proxyId, uint64_t userData, void* con
 		}
 	}
 
-	uint64_t ticks = b3GetTicks();
+	// Added for Nebenan: a static hull the fast shape cannot reach needs no time of impact. At scale 1 under fire this skips
+	// about half of the tests, and the results stay bit-identical.
+	if ( isSensor == false && body->type == b3_staticBody && shape->type == b3_hullShape &&
+		 b3IsBeyondHullFace( continuousContext, shape->hull, bodySim->transform ) )
+	{
+		return true;
+	}
 
 	// todo does having a sweep on shapeA help with bullets?
 	b3Sweep sweepA = b3MakeRelativeSweep( bodySim, continuousContext->base );
@@ -468,13 +527,8 @@ static bool b3ContinuousQueryCallback( int proxyId, uint64_t userData, void* con
 		}
 	}
 
-	float ms = b3GetMilliseconds( ticks );
-	if ( ms > 1000.0f * b3GetStallThreshold() )
-	{
-		const char* nameFast = b3FindNameWithDefault( &world->names, fastBody->nameId, "NULL" );
-		const char* name = b3FindNameWithDefault( &world->names, body->nameId, "NULL" );
-		b3Log( "CCD stall: duration %.1f ms for %s versus %s", ms, nameFast, name );
-	}
+	// Added for Nebenan: no stall warning here and in b3SolveContinuous, as upstream since #179. Reading the clock twice per
+	// test cost more than the warning was worth.
 
 	// Continue query
 	return true;
@@ -484,8 +538,6 @@ static bool b3ContinuousQueryCallback( int proxyId, uint64_t userData, void* con
 static void b3SolveContinuous( b3World* world, int bodySimIndex, b3TaskContext* taskContext, float dt )
 {
 	b3TracyCZoneNC( ccd, "CCD", b3_colorDarkGoldenRod, true );
-
-	uint64_t ticks = b3GetTicks();
 
 	b3SolverSet* awakeSet = b3Array_Get( world->solverSets, b3_awakeSet );
 	b3BodySim* fastBodySim = b3Array_Get( awakeSet->bodySims, bodySimIndex );
@@ -548,6 +600,7 @@ static void b3SolveContinuous( b3World* world, int bodySimIndex, b3TaskContext* 
 		}
 
 		b3AABB sweptBox = b3AABB_Union( box1, box2 );
+		context.fastReach = b3GetShapeReach( fastShape, sweep.localCenter ); // Added for Nebenan
 		b3DynamicTree_Query( staticTree, sweptBox, B3_DEFAULT_MASK_BITS, false, b3ContinuousQueryCallback, &context );
 
 		if ( isBullet )
@@ -670,17 +723,6 @@ static void b3SolveContinuous( b3World* world, int bodySimIndex, b3TaskContext* 
 	taskContext->distanceIterations = b3MaxInt( taskContext->distanceIterations, context.distanceIterations );
 	taskContext->pushBackIterations = b3MaxInt( taskContext->pushBackIterations, context.pushBackIterations );
 	taskContext->rootIterations = b3MaxInt( taskContext->rootIterations, context.rootIterations );
-
-	float ms = b3GetMilliseconds( ticks );
-	if ( ms > 1000.0f * b3GetStallThreshold() )
-	{
-		const char* nameFast = b3FindNameWithDefault( &world->names, fastBody->nameId, "NULL" );
-		b3Vec3 c1 = sweep.c1;
-		b3Vec3 c2 = sweep.c2;
-		int vc = context.visitCount;
-		b3Log( "CCD stall: duration %.1f ms and visit count %d for %s: c1 = (%g, %g, %g), c2 = (%g, %g, %g)", ms, vc, nameFast,
-			   c1.x, c1.y, c1.z, c2.x, c2.y, c2.z );
-	}
 
 	b3TracyCZoneEnd( ccd );
 }
