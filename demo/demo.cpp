@@ -16,6 +16,7 @@
 #include "nebenan/nebenan.h"
 
 #include <algorithm>
+#include <condition_variable>
 #include <float.h>
 #include <math.h>
 #include <stdarg.h>
@@ -24,6 +25,7 @@
 #include <string.h>
 #include <string>
 #include <memory>
+#include <mutex>
 #include <thread>
 #include <unordered_map>
 #include <vector>
@@ -83,6 +85,62 @@ struct Ball
 	float age;
 };
 
+// The new transform of a slot whose body moved in a step
+struct SlotTransform
+{
+	int slot;
+	b3Vec3 position;
+	b3Quat rotation;
+};
+
+// The physics of a frame: its steps with the destruction update, then the streaming of the large city. With parallel
+// physics it runs on a thread of its own while the main thread draws the frame before, see StartPhysics. While it runs,
+// only it touches the two worlds, the city and the balls, and only the main thread touches the renderer and the slots
+// of the bodies.
+struct PhysicsJob
+{
+	// Steps to take, and where the camera is for the streaming and how far around it the houses load
+	int steps = 0;
+	b3Vec3 camera = {};
+	float cityRadius = 0.0f;
+
+	// The slots of the bodies that moved, the balls that went, and the CPU time of a Box3D step, of a destruction
+	// update and of the whole job in milliseconds. ApplyPhysics hands them to the main thread.
+	std::vector<SlotTransform> transforms;
+	std::vector<Ball> removedBalls;
+	float physicsTime = 0.0f;
+	float destructionTime = 0.0f;
+	float time = 0.0f;
+	bool pending = false;
+};
+
+// The thread of the parallel physics, woken for every job
+struct PhysicsThread
+{
+	std::thread thread;
+	std::mutex mutex;
+	std::condition_variable wake;
+	std::condition_variable finished;
+	bool running = false;
+	bool quit = false;
+};
+
+// What the menu and the report show of the worlds and the city, read on the main thread while no job runs
+struct WorldView
+{
+	nbStats stats = {};
+	b3Counters counters = {};
+	int awakeBodies = 0;
+	int loadedHouses = 0;
+	int damagedHouses = 0;
+	float streamTime = 0.0f;
+	int loads = 0;
+	int unloads = 0;
+	int saves = 0;
+	int restores = 0;
+	size_t savedBytes = 0;
+};
+
 struct Automation
 {
 	int frameLimit = 0;
@@ -90,15 +148,20 @@ struct Automation
 	bool script = false;
 	int scene = -1;
 
+	// Threads for Box3D and Nebenan, zero for one per performance core
+	int threads = 0;
+
 	// Samples per pixel and whether to render at the full resolution of high density displays. Both cost fill rate.
 	int msaa = 1;
 	bool highDpi = false;
 
-	// Per frame: CPU time of the simulation, of the whole frame and of the graphics, bytes sent to the GPU,
-	// triangles drawn
+	// Per frame: time from frame to frame, CPU time of the simulation, of the main thread and of the graphics, the time
+	// the main thread waited for the physics, bytes sent to the GPU, triangles drawn
+	std::vector<float> realFrameTimes;
 	std::vector<float> simulationTimes;
 	std::vector<float> frameTimes;
 	std::vector<float> graphicsTimes;
+	std::vector<float> waitTimes;
 	std::vector<float> uploadTimes;
 	std::vector<float> uploadedBytes;
 	std::vector<float> triangles;
@@ -269,6 +332,17 @@ struct App
 	float physicsTime = 0.0f;
 	float destructionTime = 0.0f;
 	nbImpactResult lastImpact = {};
+
+	// The physics on a thread of its own while the frame is drawn, see PhysicsJob, whether a job runs, and in this frame
+	// the CPU time of the physics and how long the main thread waited for it
+	bool parallelPhysics = true;
+	bool physicsRunning = false;
+	PhysicsJob job;
+	PhysicsThread physicsThread;
+	float simulationTime = 0.0f;
+	float waitTime = 0.0f;
+	WorldView view;
+
 	// Vertical sync is off, so the frame rate shows what the machine can do. Metal always syncs.
 	bool vsync = false;
 	bool vsyncAvailable = true;
@@ -284,12 +358,14 @@ struct App
 	Automation automation;
 	int frame = 0;
 
-	// The last frames for the performance panel: frame time, and CPU time for impacts, simulation and graphics
+	// The last frames for the performance panel: frame time, CPU time for impacts, simulation and graphics, and the wait
+	// of the main thread for the physics
 	static const int HistorySize = 300;
 	float historyFrame[HistorySize] = {};
 	float historyImpacts[HistorySize] = {};
 	float historySimulation[HistorySize] = {};
 	float historyGraphics[HistorySize] = {};
+	float historyWait[HistorySize] = {};
 	int historyCount = 0;
 	int historyNext = 0;
 
@@ -488,8 +564,10 @@ static void SyncChunks( App& app )
 	}
 }
 
-// Box3D reports every body that moved during a step, only those slots need new transforms
-static void SyncTransforms( App& app )
+// Box3D reports every body that moved during a step, only those slots need new transforms. The job collects them, and
+// the main thread hands them to the renderer, see ApplyPhysics. The slots of the bodies only change on the main thread
+// while no job runs.
+static void CollectTransforms( App& app )
 {
 	b3BodyEvents events = b3World_GetBodyEvents( app.physics );
 	for ( int i = 0; i < events.moveCount; ++i )
@@ -504,7 +582,7 @@ static void SyncTransforms( App& app )
 		b3Vec3 position = b3ToVec3( event.transform.p );
 		for ( int slot : it->second )
 		{
-			app.renderer.SetSlot( slot, position, event.transform.q );
+			app.job.transforms.push_back( { slot, position, event.transform.q } );
 		}
 	}
 }
@@ -911,7 +989,7 @@ static void MarkCityActivity( App& app )
 }
 
 // The houses that moving bodies came near, then the ones within the radius of the camera, nearest first, at most so many
-static std::vector<int> PickCityHouses( App& app, int budget )
+static std::vector<int> PickCityHouses( App& app, b3Vec3 camera, float radius, int budget )
 {
 	City& city = app.city;
 
@@ -922,9 +1000,8 @@ static std::vector<int> PickCityHouses( App& app, int budget )
 		candidates.push_back( { -1.0f, index } );
 	}
 
-	b3Vec3 camera = app.camera.position;
 	int i0, i1, j0, j1;
-	CityRange( camera, app.cityRadius, &i0, &i1, &j0, &j1 );
+	CityRange( camera, radius, &i0, &i1, &j0, &j1 );
 	for ( int j = j0; j <= j1; ++j )
 	{
 		for ( int i = i0; i <= i1; ++i )
@@ -932,7 +1009,7 @@ static std::vector<int> PickCityHouses( App& app, int budget )
 			int index = j * CitySide + i;
 			float distance = CityDistance( index, camera );
 			const CityHouse& house = city.houses[(size_t)index];
-			if ( distance <= app.cityRadius && NB_IS_NULL( house.id ) && house.urgent == false && house.loading == false )
+			if ( distance <= radius && NB_IS_NULL( house.id ) && house.urgent == false && house.loading == false )
 			{
 				candidates.push_back( { distance, index } );
 			}
@@ -1017,7 +1094,7 @@ static void RestoreCityHouse( App& app, int index )
 
 // Build in the houses the workers prepared since the last frame, then start the next ones. The workers prepare them in
 // the background while the frame goes on, see nbStartCreating. A saved house comes back right away.
-static void LoadCity( App& app, int budget )
+static void LoadCity( App& app, b3Vec3 camera, float radius, int budget )
 {
 	City& city = app.city;
 	if ( city.pending.empty() == false )
@@ -1029,7 +1106,7 @@ static void LoadCity( App& app, int budget )
 		city.pendingHouses.clear();
 	}
 
-	for ( int index : PickCityHouses( app, budget ) )
+	for ( int index : PickCityHouses( app, camera, radius, budget ) )
 	{
 		if ( city.houses[(size_t)index].saved.empty() )
 		{
@@ -1065,10 +1142,10 @@ static void LoadCity( App& app, int budget )
 
 // Take out the houses beyond the radius that can go, at most so many, of them at most CitySaveBudget damaged ones, which
 // are saved with their rubble. A house that cannot go is asked again half a second later.
-static void UnloadCity( App& app, int budget )
+static void UnloadCity( App& app, b3Vec3 camera, float radius, int budget )
 {
 	City& city = app.city;
-	float radius = app.cityRadius + CityUnloadMargin;
+	radius += CityUnloadMargin;
 	int count = 0;
 	int saveCount = 0;
 	for ( size_t k = 0; k < city.loaded.size() && count < budget; )
@@ -1076,7 +1153,7 @@ static void UnloadCity( App& app, int budget )
 		int index = city.loaded[k];
 		CityHouse& house = city.houses[(size_t)index];
 		if ( city.step < house.nextCheck || city.step < house.activeStep + CityHoldSteps ||
-			 CityDistance( index, app.camera.position ) <= radius )
+			 CityDistance( index, camera ) <= radius )
 		{
 			k += 1;
 			continue;
@@ -1114,11 +1191,12 @@ static void UnloadCity( App& app, int budget )
 	}
 }
 
-static void StreamCity( App& app )
+// Around the camera as it was when the frame started, see PhysicsJob
+static void StreamCity( App& app, b3Vec3 camera, float radius )
 {
 	uint64_t ticks = b3GetTicks();
-	UnloadCity( app, CityUnloadBudget );
-	LoadCity( app, CityLoadBudget );
+	UnloadCity( app, camera, radius, CityUnloadBudget );
+	LoadCity( app, camera, radius, CityLoadBudget );
 	app.city.time = b3GetMilliseconds( ticks );
 }
 
@@ -1131,7 +1209,7 @@ static void BuildCityScene( App& app )
 	app.camera.position = { 0.0f, 2.5f, 0.0f };
 	app.camera.yaw = 0.5f * B3_PI;
 	app.camera.pitch = -0.05f;
-	std::vector<int> indices = PickCityHouses( app, CitySide * CitySide );
+	std::vector<int> indices = PickCityHouses( app, app.camera.position, app.cityRadius, CitySide * CitySide );
 	std::vector<std::unique_ptr<PendingStructure>> houses;
 	for ( int index : indices )
 	{
@@ -1140,8 +1218,15 @@ static void BuildCityScene( App& app )
 	AddCityHouses( app, indices, CreateStructures( app, houses ) );
 }
 
+static void FinishPhysics( App& app );
+static void ApplyPhysics( App& app );
+
 static void DestroyScene( App& app )
 {
+	// The last job may still run, and its balls and transforms still belong to the renderer
+	FinishPhysics( app );
+	ApplyPhysics( app );
+
 	if ( nbWorld_IsValid( app.destruction ) )
 	{
 		nbDestroyWorld( app.destruction );
@@ -1356,6 +1441,8 @@ static void FireAt( App& app, Tool tool, b3Vec3 target )
 	FireRay( app, app.camera.position, b3Normalize( b3Sub( target, app.camera.position ) ) );
 }
 
+// A ball goes after 20 seconds or when there are too many. The job destroys its body, the main thread its mesh and
+// slot, see ApplyPhysics.
 static void UpdateBalls( App& app, float dt )
 {
 	for ( size_t i = 0; i < app.balls.size(); )
@@ -1364,10 +1451,8 @@ static void UpdateBalls( App& app, float dt )
 		ball.age += dt;
 		if ( ball.age > 20.0f || app.balls.size() > 24 )
 		{
-			DetachSlot( app, ball.body, ball.slot );
-			app.renderer.RemoveMesh( ball.mesh );
-			app.renderer.FreeSlot( ball.slot );
 			b3DestroyBody( ball.body );
+			app.job.removedBalls.push_back( ball );
 			app.balls[i] = app.balls.back();
 			app.balls.pop_back();
 			continue;
@@ -1379,27 +1464,21 @@ static void UpdateBalls( App& app, float dt )
 //----------------------------------------------------------------------------------------------------------------------
 // Simulation
 
-static void StepSimulation( App& app, float frameDt )
+// The steps of the frame, then the streaming of the city, so the workers prepare its houses while the next frame is
+// drawn and not during a step. Runs on the physics thread, or on the main thread without parallel physics.
+static void RunPhysicsJob( App& app )
 {
-	if ( app.paused )
-	{
-		return;
-	}
-
-	// When the simulation cannot keep up, it slows down instead of taking more and more steps per frame, which
-	// would slow down every frame further. A second step in the same frame only catches up when steps are cheap.
+	uint64_t jobTicks = b3GetTicks();
+	PhysicsJob& job = app.job;
 	const float step = 1.0f / 60.0f;
-	int maxSteps = app.physicsTime + app.destructionTime < 4.0f ? 2 : 1;
-	int steps = 0;
 	float physicsTime = 0.0f;
 	float destructionTime = 0.0f;
-	app.accumulator += b3MinFloat( frameDt, 0.1f );
-	while ( app.accumulator >= step && steps < maxSteps )
+	for ( int i = 0; i < job.steps; ++i )
 	{
 		uint64_t ticks = b3GetTicks();
 		b3World_Step( app.physics, step, 4 );
 		physicsTime += b3GetMilliseconds( ticks );
-		SyncTransforms( app );
+		CollectTransforms( app );
 		if ( app.scene == SceneCity )
 		{
 			MarkCityActivity( app );
@@ -1409,21 +1488,159 @@ static void StepSimulation( App& app, float frameDt )
 		nbWorld_Update( app.destruction, step );
 		destructionTime += b3GetMilliseconds( ticks );
 		UpdateBalls( app, step );
-
-		app.accumulator -= step;
-		steps += 1;
 	}
 
-	if ( steps == maxSteps )
+	if ( job.steps > 0 )
 	{
-		app.accumulator = b3MinFloat( app.accumulator, step );
+		job.physicsTime = physicsTime / (float)job.steps;
+		job.destructionTime = destructionTime / (float)job.steps;
 	}
 
-	if ( steps > 0 )
+	if ( app.scene == SceneCity )
 	{
-		app.physicsTime = physicsTime / (float)steps;
-		app.destructionTime = destructionTime / (float)steps;
+		StreamCity( app, job.camera, job.cityRadius );
 	}
+	job.time = b3GetMilliseconds( jobTicks );
+}
+
+static void PhysicsThreadMain( App* app )
+{
+	PhysicsThread& thread = app->physicsThread;
+	std::unique_lock<std::mutex> lock( thread.mutex );
+	for ( ;; )
+	{
+		thread.wake.wait( lock, [&thread] { return thread.running || thread.quit; } );
+		if ( thread.quit )
+		{
+			return;
+		}
+
+		lock.unlock();
+		RunPhysicsJob( *app );
+		lock.lock();
+		thread.running = false;
+		thread.finished.notify_one();
+	}
+}
+
+// Start the steps this frame needs. When the simulation cannot keep up, it slows down instead of taking more and more
+// steps per frame, which would slow down every frame further. A second step in the same frame only catches up when
+// steps are cheap. With parallel physics the job runs while the frame is drawn, else right here.
+static void StartPhysics( App& app, float frameDt )
+{
+	PhysicsJob& job = app.job;
+	job.steps = 0;
+	if ( app.paused == false )
+	{
+		const float step = 1.0f / 60.0f;
+		int maxSteps = app.physicsTime + app.destructionTime < 4.0f ? 2 : 1;
+		app.accumulator += b3MinFloat( frameDt, 0.1f );
+		while ( app.accumulator >= step && job.steps < maxSteps )
+		{
+			app.accumulator -= step;
+			job.steps += 1;
+		}
+
+		if ( job.steps == maxSteps )
+		{
+			app.accumulator = b3MinFloat( app.accumulator, step );
+		}
+	}
+
+	// The city streams also while the simulation pauses
+	if ( job.steps == 0 && app.scene != SceneCity )
+	{
+		return;
+	}
+
+	job.camera = app.camera.position;
+	job.cityRadius = app.cityRadius;
+	job.transforms.clear();
+	job.removedBalls.clear();
+	job.pending = true;
+	if ( app.parallelPhysics == false )
+	{
+		RunPhysicsJob( app );
+		return;
+	}
+
+	PhysicsThread& thread = app.physicsThread;
+	{
+		std::lock_guard<std::mutex> lock( thread.mutex );
+		thread.running = true;
+	}
+	thread.wake.notify_one();
+	app.physicsRunning = true;
+}
+
+// Wait for the job of the frame before. Everything that touches the worlds, the city or the balls on the main thread
+// comes after this.
+static void FinishPhysics( App& app )
+{
+	if ( app.physicsRunning == false )
+	{
+		return;
+	}
+
+	uint64_t ticks = b3GetTicks();
+	PhysicsThread& thread = app.physicsThread;
+	std::unique_lock<std::mutex> lock( thread.mutex );
+	thread.finished.wait( lock, [&thread] { return thread.running == false; } );
+	app.physicsRunning = false;
+	app.waitTime += b3GetMilliseconds( ticks );
+}
+
+// Hand the transforms of the finished job to the renderer and let go of the balls it took out of the world
+static void ApplyPhysics( App& app )
+{
+	PhysicsJob& job = app.job;
+	if ( job.pending == false )
+	{
+		return;
+	}
+	job.pending = false;
+
+	for ( const SlotTransform& transform : job.transforms )
+	{
+		app.renderer.SetSlot( transform.slot, transform.position, transform.rotation );
+	}
+
+	for ( const Ball& ball : job.removedBalls )
+	{
+		DetachSlot( app, ball.body, ball.slot );
+		app.renderer.RemoveMesh( ball.mesh );
+		app.renderer.FreeSlot( ball.slot );
+	}
+
+	if ( job.steps > 0 )
+	{
+		app.physicsTime = job.physicsTime;
+		app.destructionTime = job.destructionTime;
+	}
+	app.simulationTime += job.time;
+}
+
+// What the menu shows of the worlds, copied while no job runs
+static void TakeWorldView( App& app )
+{
+	WorldView& view = app.view;
+	view.stats = nbWorld_GetStats( app.destruction );
+	view.counters = b3World_GetCounters( app.physics );
+	view.awakeBodies = b3World_GetAwakeBodyCount( app.physics );
+
+	const City& city = app.city;
+	view.loadedHouses = (int)city.loaded.size();
+	view.damagedHouses = 0;
+	for ( int index : city.loaded )
+	{
+		view.damagedHouses += nbDestructible_IsIntact( city.houses[(size_t)index].id ) ? 0 : 1;
+	}
+	view.streamTime = city.time;
+	view.loads = city.loads;
+	view.unloads = city.unloads;
+	view.saves = city.saves;
+	view.restores = city.restores;
+	view.savedBytes = city.savedBytes;
 }
 
 static void UpdateCamera( App& app, float dt )
@@ -1501,16 +1718,17 @@ static void Appendf( std::string& text, const char* format, ... )
 // Everything it takes to tell where the time of a frame goes, to paste into a message
 static std::string BuildReport( const App& app )
 {
-	nbStats stats = nbWorld_GetStats( app.destruction );
-	b3Counters counters = b3World_GetCounters( app.physics );
+	const WorldView& view = app.view;
+	const nbStats& stats = view.stats;
 	RenderStats rs = app.renderer.GetStats();
 	b3Version version = b3GetVersion();
 
-	float frameAvg, frameMax, impactAvg, impactMax, simulationAvg, simulationMax, graphicsAvg, graphicsMax;
+	float frameAvg, frameMax, impactAvg, impactMax, simulationAvg, simulationMax, graphicsAvg, graphicsMax, waitAvg, waitMax;
 	HistoryStats( app, app.historyFrame, &frameAvg, &frameMax );
 	HistoryStats( app, app.historyImpacts, &impactAvg, &impactMax );
 	HistoryStats( app, app.historySimulation, &simulationAvg, &simulationMax );
 	HistoryStats( app, app.historyGraphics, &graphicsAvg, &graphicsMax );
+	HistoryStats( app, app.historyWait, &waitAvg, &waitMax );
 
 	std::string text;
 	Appendf( text, "Nebenan-Messung: Szene %s, %s-Build, Box3D %d.%d.%d\n", s_sceneNames[app.scene], s_buildType, version.major,
@@ -1525,10 +1743,18 @@ static std::string BuildReport( const App& app )
 			 app.unthrottled ? "ja" : "nein" );
 	Appendf( text, "CPU pro Bild, Mittel / Spitze: Einschläge %.1f / %.1f, Simulation %.1f / %.1f, Grafik %.1f / %.1f ms\n", impactAvg,
 			 impactMax, simulationAvg, simulationMax, graphicsAvg, graphicsMax );
+	if ( app.parallelPhysics )
+	{
+		Appendf( text, "Physik parallel zum Zeichnen: an, der Hauptthread wartet auf sie %.1f / %.1f ms\n", waitAvg, waitMax );
+	}
+	else
+	{
+		Appendf( text, "Physik parallel zum Zeichnen: aus\n" );
+	}
 	Appendf( text, "Pro Schritt: Box3D %.2f ms, Zerstörung %.2f ms\n", app.physicsTime, app.destructionTime );
 	Appendf( text, "Welt: %d Bruchstücke, %d Verbindungen, %d Trümmerkörper (%d wach), %d Schutt, %d Kontakte, Budget %d, Ruhezeit %.2f s, Bruchstückgröße x%.2f\n",
-			 stats.chunkCount, stats.bondCount, stats.dynamicBodyCount, b3World_GetAwakeBodyCount( app.physics ), stats.rubbleCount,
-			 counters.contactCount, app.maxDebrisBodies, app.debrisRestTime, app.fragmentScale );
+			 stats.chunkCount, stats.bondCount, stats.dynamicBodyCount, view.awakeBodies, stats.rubbleCount,
+			 view.counters.contactCount, app.maxDebrisBodies, app.debrisRestTime, app.fragmentScale );
 	Appendf( text, "Einsturz: %d Etagen eingestürzt, eine Etage braucht %.0f %% ihrer Wände; Statik ohne Decken x%.2f, %d Verbindungen gebrochen\n",
 			 stats.collapsedStoreyCount, 100.0f * app.storeySupport, app.supportScale, stats.overloadedBondCount );
 	Appendf( text, "Grafik: %dk Dreiecke, %d Draw Calls, %d kB Upload\n", rs.triangleCount / 1000, rs.drawCalls, rs.uploadedBytes / 1024 );
@@ -1537,10 +1763,10 @@ static std::string BuildReport( const App& app )
 		Appendf(
 			text,
 			"Große Stadt: %d von %d Häusern geladen, Laderadius %.0f m, Streaming %.2f ms, %d geladen, %d entladen, %.0f MB\n",
-			(int)app.city.loaded.size(), CitySide * CitySide, app.cityRadius, app.city.time, app.city.loads, app.city.unloads,
-			(double)( nbGetByteCount() + b3GetByteCount() ) / 1048576.0 );
-		Appendf( text, "Beschädigte Häuser: %d gespeichert, %d zurückgeholt, %.0f MB gespeichert\n", app.city.saves,
-				 app.city.restores, (double)app.city.savedBytes / 1048576.0 );
+			view.loadedHouses, CitySide * CitySide, app.cityRadius, view.streamTime, view.loads, view.unloads,
+			(double)( stats.byteCount + view.counters.byteCount ) / 1048576.0 );
+		Appendf( text, "Beschädigte Häuser: %d gespeichert, %d zurückgeholt, %.0f MB gespeichert\n", view.saves, view.restores,
+				 (double)view.savedBytes / 1048576.0 );
 	}
 	return text;
 }
@@ -1579,16 +1805,12 @@ static void DrawUi( App& app )
 				"weiter weg gehen wieder, beschädigte\nwerden mit ihrem Schutt gespeichert, sobald alles ruht. Größer kostet\nSpeicher "
 				"und Grafik." );
 		}
-		int damaged = 0;
-		for ( int index : app.city.loaded )
-		{
-			damaged += nbDestructible_IsIntact( app.city.houses[(size_t)index].id ) ? 0 : 1;
-		}
-		ImGui::Text( "Häuser geladen %d von %d, beschädigt %d", (int)app.city.loaded.size(), CitySide * CitySide, damaged );
-		ImGui::Text( "Streaming %.2f ms, geladen %d, entladen %d", app.city.time, app.city.loads, app.city.unloads );
-		ImGui::Text( "Gespeichert %d, zurückgeholt %d, %.0f MB im Speicher der Demo", app.city.saves, app.city.restores,
-					 (double)app.city.savedBytes / 1048576.0 );
-		ImGui::Text( "Speicher %.0f MB (Nebenan und Box3D)", (double)( nbGetByteCount() + b3GetByteCount() ) / 1048576.0 );
+		const WorldView& view = app.view;
+		ImGui::Text( "Häuser geladen %d von %d, beschädigt %d", view.loadedHouses, CitySide * CitySide, view.damagedHouses );
+		ImGui::Text( "Streaming %.2f ms, geladen %d, entladen %d", view.streamTime, view.loads, view.unloads );
+		ImGui::Text( "Gespeichert %d, zurückgeholt %d, %.0f MB im Speicher der Demo", view.saves, view.restores,
+					 (double)view.savedBytes / 1048576.0 );
+		ImGui::Text( "Speicher %.0f MB (Nebenan und Box3D)", (double)( view.stats.byteCount + view.counters.byteCount ) / 1048576.0 );
 	}
 
 	ImGui::SeparatorText( "Werkzeug" );
@@ -1623,8 +1845,10 @@ static void DrawUi( App& app )
 	}
 
 	ImGui::SeparatorText( "Leistung" );
+	// A setting that changes the worlds waits for the physics of the frame
 	if ( ImGui::SliderFloat( "Bruchstückgröße", &app.fragmentScale, 0.5f, 4.0f, "x %.2f" ) )
 	{
+		FinishPhysics( app );
 		nbWorld_SetFragmentScale( app.destruction, app.fragmentScale );
 	}
 	if ( ImGui::IsItemHovered() )
@@ -1635,6 +1859,7 @@ static void DrawUi( App& app )
 	if ( ImGui::SliderFloat( "Etage braucht", &storeyPercent, 0.0f, 100.0f, "%.0f %% der Wände" ) )
 	{
 		app.storeySupport = 0.01f * storeyPercent;
+		FinishPhysics( app );
 		nbWorld_SetStoreySupport( app.destruction, app.storeySupport );
 	}
 	if ( ImGui::IsItemHovered() )
@@ -1643,6 +1868,7 @@ static void DrawUi( App& app )
 	}
 	if ( ImGui::SliderFloat( "Statik ohne Decken", &app.supportScale, 0.0f, 4.0f, "x %.2f" ) )
 	{
+		FinishPhysics( app );
 		nbWorld_SetSupportScale( app.destruction, app.supportScale );
 	}
 	if ( ImGui::IsItemHovered() )
@@ -1651,6 +1877,7 @@ static void DrawUi( App& app )
 	}
 	if ( ImGui::SliderInt( "Bewegte Trümmer", &app.maxDebrisBodies, 100, 5000 ) )
 	{
+		FinishPhysics( app );
 		nbWorld_SetDebrisBudget( app.destruction, app.maxDebrisBodies );
 	}
 	if ( ImGui::IsItemHovered() )
@@ -1659,11 +1886,17 @@ static void DrawUi( App& app )
 	}
 	if ( ImGui::SliderFloat( "Ruhezeit", &app.debrisRestTime, 0.02f, 0.5f, "%.2f s" ) )
 	{
+		FinishPhysics( app );
 		nbWorld_SetDebrisRestTime( app.destruction, app.debrisRestTime );
 	}
 	if ( ImGui::IsItemHovered() )
 	{
 		ImGui::SetTooltip( "So lange muss ein Trümmer fast still liegen, bevor er zu Schutt erstarrt.\nKürzer macht die Physik unter Dauerfeuer schneller, kann aber ein\nkleines Stück anhalten, das beim Kippen nur kurz innehält. Vorher 0,2 s." );
+	}
+	ImGui::Checkbox( "Physik parallel zum Zeichnen", &app.parallelPhysics );
+	if ( ImGui::IsItemHovered() )
+	{
+		ImGui::SetTooltip( "An: Die Physik eines Bilds rechnet auf einem eigenen Thread, während das Bild\ndavor gezeichnet wird. Ein Bild kostet so viel wie der längere der beiden\nTeile statt beide zusammen und zeigt die Welt einen Schritt später.\nAus: alles nacheinander auf einem Thread. Die Welt rechnet in beiden Fällen gleich." );
 	}
 	if ( app.vsyncAvailable )
 	{
@@ -1681,26 +1914,40 @@ static void DrawUi( App& app )
 	ImGui::SameLine();
 	if ( ImGui::Button( "Trümmer entfernen (C)" ) )
 	{
+		FinishPhysics( app );
 		nbWorld_ClearDebris( app.destruction );
 	}
 
 	ImGui::SeparatorText( "Messung" );
-	nbStats stats = nbWorld_GetStats( app.destruction );
-	b3Counters counters = b3World_GetCounters( app.physics );
+	const nbStats& stats = app.view.stats;
 	RenderStats renderStats = app.renderer.GetStats();
-	float frameAvg, frameMax, impactAvg, impactMax, simulationAvg, simulationMax, graphicsAvg, graphicsMax;
+	float frameAvg, frameMax, impactAvg, impactMax, simulationAvg, simulationMax, graphicsAvg, graphicsMax, waitAvg, waitMax;
 	HistoryStats( app, app.historyFrame, &frameAvg, &frameMax );
 	HistoryStats( app, app.historyImpacts, &impactAvg, &impactMax );
 	HistoryStats( app, app.historySimulation, &simulationAvg, &simulationMax );
 	HistoryStats( app, app.historyGraphics, &graphicsAvg, &graphicsMax );
-	float cpuFrame = impactAvg + simulationAvg + graphicsAvg;
+	HistoryStats( app, app.historyWait, &waitAvg, &waitMax );
+
+	// With parallel physics the main thread draws while the simulation runs and then waits for what is left of it, so the
+	// CPU could make a frame in the longer of the two
+	float cpuFrame = impactAvg + graphicsAvg + ( app.parallelPhysics ? waitAvg : simulationAvg );
+	float cpuLimit = app.parallelPhysics ? b3MaxFloat( simulationAvg, impactAvg + graphicsAvg ) : cpuFrame;
 	const FpsMeter& meter = app.fpsMeter;
 	ImGui::Text( "Bild        %6.2f ms  %.0f FPS, 1%% Low %.0f FPS", meter.frameTime, meter.fps, meter.lowFps );
 	ImGui::Text( "            Spitze %.1f ms (letzte %d Bilder)", frameMax, app.historyCount );
-	ImGui::Text( "CPU         %6.2f ms  Einschläge %.2f, Simulation %.2f,", cpuFrame, impactAvg, simulationAvg );
-	ImGui::Text( "                      Grafik %.2f", graphicsAvg );
+	if ( app.parallelPhysics )
+	{
+		ImGui::Text( "Hauptthread %6.2f ms  Einschläge %.2f, Grafik %.2f,", cpuFrame, impactAvg, graphicsAvg );
+		ImGui::Text( "                      Warten auf die Simulation %.2f", waitAvg );
+		ImGui::Text( "Simulation  %6.2f ms  parallel zum Zeichnen", simulationAvg );
+	}
+	else
+	{
+		ImGui::Text( "CPU         %6.2f ms  Einschläge %.2f, Simulation %.2f,", cpuFrame, impactAvg, simulationAvg );
+		ImGui::Text( "                      Grafik %.2f", graphicsAvg );
+	}
 
-	// Whatever a frame takes beyond the CPU time is the wait for the display or the graphics card
+	// Whatever a frame takes beyond the CPU time of the main thread is the wait for the display or the graphics card
 	ImVec4 hint = ImVec4( 1.0f, 0.75f, 0.3f, 1.0f );
 	bool waiting = frameAvg > 1.2f * cpuFrame + 0.5f;
 
@@ -1717,11 +1964,15 @@ static void DrawUi( App& app )
 	}
 	else if ( waiting && app.vsync )
 	{
-		ImGui::TextColored( hint, "  VSync begrenzt, die CPU schafft etwa %.0f FPS", 1000.0f / b3MaxFloat( cpuFrame, 0.01f ) );
+		ImGui::TextColored( hint, "  VSync begrenzt, die CPU schafft etwa %.0f FPS", 1000.0f / b3MaxFloat( cpuLimit, 0.01f ) );
 	}
 	else if ( waiting )
 	{
 		ImGui::TextColored( hint, "  Die Grafikkarte begrenzt die FPS" );
+	}
+	else if ( app.parallelPhysics && waitAvg > 0.25f * cpuFrame )
+	{
+		ImGui::TextDisabled( "  Die Simulation begrenzt die FPS" );
 	}
 	else
 	{
@@ -1731,8 +1982,8 @@ static void DrawUi( App& app )
 	ImGui::Text( "Zerstörung  %6.2f ms  (Update)", app.destructionTime );
 	ImGui::Text( "Einschlag   %6.2f ms  davon parallel %.2f ms", app.lastImpact.totalTime, app.lastImpact.fractureTime );
 	ImGui::Text( "Bruchstücke %d  Verbindungen %d", stats.chunkCount, stats.bondCount );
-	ImGui::Text( "Trümmerkörper %d  wach %d  Kontakte %d", stats.dynamicBodyCount, b3World_GetAwakeBodyCount( app.physics ),
-				 counters.contactCount );
+	ImGui::Text( "Trümmerkörper %d  wach %d  Kontakte %d", stats.dynamicBodyCount, app.view.awakeBodies,
+				 app.view.counters.contactCount );
 	ImGui::Text( "Dreiecke %dk  Draw Calls %d  Upload %d kB", renderStats.triangleCount / 1000, renderStats.drawCalls,
 				 renderStats.uploadedBytes / 1024 );
 	ImGui::TextDisabled( "%s", app.gpuName.empty() ? "Grafikkarte unbekannt" : app.gpuName.c_str() );
@@ -1903,6 +2154,14 @@ static void OnInit()
 	app.performanceCores = SystemPerformanceCores();
 	int preferredWorkers = app.performanceCores > 0 ? app.performanceCores : ( hardware > 0 ? hardware / 2 : 2 );
 	preferredWorkers = hardware > 0 ? b3MinInt( preferredWorkers, hardware ) : preferredWorkers;
+
+	// With parallel physics the main thread draws while the physics runs, so the physics leaves it a hardware thread.
+	// Else the workers of a step, which wait for their next task without sleeping, take turns with it on the cores.
+	if ( app.parallelPhysics && hardware > 1 )
+	{
+		preferredWorkers = b3MinInt( preferredWorkers, hardware - 1 );
+	}
+	preferredWorkers = app.automation.threads > 0 ? app.automation.threads : preferredWorkers;
 	app.workerCount = b3ClampInt( preferredWorkers, 1, 8 );
 	app.cpuName = SystemCpuName();
 	app.gpuName = SystemGpuName();
@@ -1912,9 +2171,36 @@ static void OnInit()
 	app.tools[ToolGrenade] = { 1.3f, 3.0e5f, 12.0f, 0, 2.0f };
 	app.tools[ToolCannon] = { 0.25f, 0.0f, 45.0f, 0, 3.0f };
 
+	app.physicsThread.thread = std::thread( PhysicsThreadMain, &app );
+
 	int scene = app.automation.scene >= 0 && app.automation.scene < SceneCount ? app.automation.scene : SceneWall;
 	LoadScene( app, (SceneKind)scene );
 	app.frameTicks = b3GetTicks();
+}
+
+// Hash of where every chunk is, to compare runs: the same script must end in the same world with and without parallel
+// physics
+static uint64_t HashChunkTransforms( const App& app )
+{
+	uint64_t hash = 14695981039346656037ull;
+	for ( const ChunkVisual& visual : app.chunks )
+	{
+		if ( visual.alive == false )
+		{
+			continue;
+		}
+
+		b3WorldTransform transform = b3Body_GetTransform( nbChunk_GetBody( visual.id ) );
+		b3Vec3 p = b3ToVec3( transform.p );
+		float values[7] = { p.x, p.y, p.z, transform.q.v.x, transform.q.v.y, transform.q.v.z, transform.q.s };
+		uint8_t bytes[sizeof( values )];
+		memcpy( bytes, values, sizeof( values ) );
+		for ( uint8_t byte : bytes )
+		{
+			hash = ( hash ^ byte ) * 1099511628211ull;
+		}
+	}
+	return hash;
 }
 
 static void PrintAutomationReport( App& app )
@@ -1922,6 +2208,8 @@ static void PrintAutomationReport( App& app )
 	nbStats stats = nbWorld_GetStats( app.destruction );
 	printf( "scene %d frame %d: chunks %d bonds %d debris %d rubble %d\n", (int)app.scene, app.frame, stats.chunkCount, stats.bondCount,
 			stats.dynamicBodyCount, stats.rubbleCount );
+	printf( "  physics %s, chunk transforms hash %016llx\n", app.parallelPhysics ? "parallel" : "serial",
+			(unsigned long long)HashChunkTransforms( app ) );
 
 	RenderStats rs = app.renderer.GetStats();
 	printf( "  render: draw calls %d, vertices %d (%d of removed meshes), pages %d, slots %d\n", rs.drawCalls, rs.vertexCount,
@@ -1935,9 +2223,11 @@ static void PrintAutomationReport( App& app )
 		float scale;
 	};
 	Series series[] = {
+		{ "frame ms", &app.automation.realFrameTimes, 1.0f },
 		{ "simulation ms", &app.automation.simulationTimes, 1.0f },
 		{ "cpu frame ms", &app.automation.frameTimes, 1.0f },
 		{ "graphics ms", &app.automation.graphicsTimes, 1.0f },
+		{ "wait ms", &app.automation.waitTimes, 1.0f },
 		{ "upload ms", &app.automation.uploadTimes, 1.0f },
 		{ "uploaded kB", &app.automation.uploadedBytes, 1.0f / 1024.0f },
 		{ "triangles k", &app.automation.triangles, 1.0f / 1000.0f },
@@ -1974,10 +2264,20 @@ static void OnFrame()
 		dt = 1.0f / 60.0f;
 	}
 
+	// With parallel physics the steps of the frame before ran while it was drawn, and this frame shows their result
+	uint64_t cpuTicks = b3GetTicks();
+	app.simulationTime = 0.0f;
+	app.waitTime = 0.0f;
+	FinishPhysics( app );
+	uint64_t graphicsTicks = b3GetTicks();
+	ApplyPhysics( app );
+	float graphicsTime = b3GetMilliseconds( graphicsTicks );
+
 	UpdateCamera( app, dt );
 
-	// Automatic fire while the button is held
-	uint64_t cpuTicks = b3GetTicks();
+	// Automatic fire while the button is held. The worlds change in the same order as without parallel physics: the
+	// impacts of a frame come after the steps of the frame before and before its own.
+	uint64_t impactTicks = b3GetTicks();
 	app.fireCooldown -= dt;
 	bool uiWantsMouse = ImGui::GetIO().WantCaptureMouse && app.mouseLook == false;
 	if ( app.mouseDown && uiWantsMouse == false && app.fireCooldown <= 0.0f )
@@ -1992,20 +2292,27 @@ static void OnFrame()
 	{
 		RunScript( app );
 	}
-	float impactTime = b3GetMilliseconds( cpuTicks );
+	float impactTime = b3GetMilliseconds( impactTicks );
 
-	// The workers prepare the houses of the city while the frame is drawn, not during the physics step
-	uint64_t simulationTicks = b3GetTicks();
-	StepSimulation( app, dt );
-	if ( app.scene == SceneCity )
+	if ( app.parallelPhysics )
 	{
-		StreamCity( app );
+		graphicsTicks = b3GetTicks();
+		SyncChunks( app );
+		TakeWorldView( app );
+		graphicsTime += b3GetMilliseconds( graphicsTicks );
+		StartPhysics( app, dt );
 	}
-	float simulationTime = b3GetMilliseconds( simulationTicks );
+	else
+	{
+		StartPhysics( app, dt );
+		graphicsTicks = b3GetTicks();
+		ApplyPhysics( app );
+		SyncChunks( app );
+		TakeWorldView( app );
+		graphicsTime += b3GetMilliseconds( graphicsTicks );
+	}
 
-	uint64_t graphicsTicks = b3GetTicks();
-	SyncChunks( app );
-
+	graphicsTicks = b3GetTicks();
 	int width = sapp_width();
 	int height = sapp_height();
 
@@ -2025,22 +2332,25 @@ static void OnFrame()
 	simgui_render();
 	sg_end_pass();
 	sg_commit();
-	float graphicsTime = b3GetMilliseconds( graphicsTicks );
+	graphicsTime += b3GetMilliseconds( graphicsTicks );
 
 	int slot = app.historyNext;
 	app.historyFrame[slot] = frameTime;
 	app.historyImpacts[slot] = impactTime;
-	app.historySimulation[slot] = simulationTime;
+	app.historySimulation[slot] = app.simulationTime;
 	app.historyGraphics[slot] = graphicsTime;
+	app.historyWait[slot] = app.waitTime;
 	app.historyNext = ( slot + 1 ) % App::HistorySize;
 	app.historyCount = b3MinInt( app.historyCount + 1, App::HistorySize );
 
 	if ( app.automation.frameLimit > 0 )
 	{
 		RenderStats rs = app.renderer.GetStats();
-		app.automation.simulationTimes.push_back( simulationTime );
+		app.automation.realFrameTimes.push_back( frameTime );
+		app.automation.simulationTimes.push_back( app.simulationTime );
 		app.automation.frameTimes.push_back( b3GetMilliseconds( cpuTicks ) );
 		app.automation.graphicsTimes.push_back( graphicsTime );
+		app.automation.waitTimes.push_back( app.waitTime );
 		app.automation.uploadTimes.push_back( rs.uploadTime );
 		app.automation.uploadedBytes.push_back( (float)rs.uploadedBytes );
 		app.automation.triangles.push_back( (float)rs.triangleCount );
@@ -2049,6 +2359,11 @@ static void OnFrame()
 	app.frame += 1;
 	if ( app.automation.frameLimit > 0 && app.frame == app.automation.frameLimit )
 	{
+		// The report counts the worlds after the steps of the last frame
+		FinishPhysics( app );
+		ApplyPhysics( app );
+		SyncChunks( app );
+		TakeWorldView( app );
 		PrintAutomationReport( app );
 		if ( app.automation.screenshotPath != nullptr )
 		{
@@ -2089,6 +2404,7 @@ static void OnEvent( const sapp_event* event )
 			}
 			else if ( event->key_code == SAPP_KEYCODE_C )
 			{
+				FinishPhysics( app );
 				nbWorld_ClearDebris( app.destruction );
 			}
 			else if ( event->key_code == SAPP_KEYCODE_F1 )
@@ -2186,6 +2502,15 @@ static void OnCleanup()
 {
 	App& app = *s_app;
 	DestroyScene( app );
+
+	PhysicsThread& thread = app.physicsThread;
+	{
+		std::lock_guard<std::mutex> lock( thread.mutex );
+		thread.quit = true;
+	}
+	thread.wake.notify_one();
+	thread.thread.join();
+
 	app.renderer.Shutdown();
 	simgui_shutdown();
 	sg_shutdown();
@@ -2229,6 +2554,14 @@ int main( int argc, char** argv )
 		else if ( strcmp( argv[i], "--fragment-scale" ) == 0 && i + 1 < argc )
 		{
 			app.fragmentScale = b3ClampFloat( (float)atof( argv[++i] ), 0.25f, 8.0f );
+		}
+		else if ( strcmp( argv[i], "--threads" ) == 0 && i + 1 < argc )
+		{
+			app.automation.threads = b3ClampInt( atoi( argv[++i] ), 1, 8 );
+		}
+		else if ( strcmp( argv[i], "--serial-physics" ) == 0 )
+		{
+			app.parallelPhysics = false;
 		}
 	}
 

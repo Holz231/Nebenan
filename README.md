@@ -127,20 +127,25 @@ viele FPS die CPU schaffen würde. Die Physik rechnet unabhängig davon 60 Schri
   nächsten Einschläge.
 - **Bewegte Trümmer** (Standard 1500): wie viele Trümmer Box3D höchstens gleichzeitig bewegt. Weniger macht den
   Physikschritt schneller.
+- **Physik parallel zum Zeichnen** (Standard an): Die Physik eines Bilds rechnet auf einem eigenen Thread, während
+  der Hauptthread das Bild davor zeichnet. Ein Bild kostet dann so viel wie der längere der beiden Teile statt beide
+  zusammen und zeigt die Welt einen Schritt später. Die Welt rechnet mit und ohne genau gleich.
 
 Daneben stellt **Etage braucht** ein, wie viel ihrer Wände eine Etage zum Stehen braucht (Standard 50 %), und
 **Statik ohne Decken** schaltet die Lastprüfung für die Mauern ein (Standard aus).
 
 Die Threads stellt die Demo selbst ein: einen pro Performance-Kern, höchstens 8. Box3D läuft am schnellsten ohne
-Hyper-Threads und Effizienzkerne, und mehr Threads als Kerne bremsen. Im Benchmark auf der Cloud-VM mit 4 Kernen
-ist ein Frame der Stadt mit Bruchstückgröße ×2 mit 4 Threads 1,8-mal so schnell wie mit 1 Thread, mit 8 Threads
-10 % langsamer als mit 4.
+Hyper-Threads und Effizienzkerne, und mehr Threads als Kerne bremsen. Mit paralleler Physik lässt sie dem Hauptthread
+einen logischen Kern frei, auf einem PC mit Hyper-Threads oder Effizienzkernen ändert das nichts. Im Benchmark auf der
+Cloud-VM mit 4 Kernen ist ein Frame der Stadt mit Bruchstückgröße ×2 mit 4 Threads 1,8-mal so schnell wie mit 1 Thread,
+mit 8 Threads 10 % langsamer als mit 4.
 
-**Messung.** Das Menü zeigt die Bildzeit und die CPU-Zeit pro Bild, aufgeteilt in Einschläge, Simulation und
-Grafik, als Mittel und Spitze der letzten 300 Bilder, dazu Box3D-Schritt, Bruchstücke, Körper, Kontakte,
-Dreiecke, Draw Calls und Upload. Es sagt auch, wer die FPS begrenzt: die CPU, die Grafikkarte (ein Bild dauert
-deutlich länger, als die CPU dafür braucht) oder VSync. „Messwerte kopieren“ legt alles mit CPU, Grafikkarte und Auflösung in die
-Zwischenablage, zum Einfügen in einen Chat.
+**Messung.** Das Menü zeigt die Bildzeit und die CPU-Zeit pro Bild, aufgeteilt in Einschläge, Simulation und Grafik, als
+Mittel und Spitze der letzten 300 Bilder, dazu Box3D-Schritt, Bruchstücke, Körper, Kontakte, Dreiecke, Draw Calls und
+Upload. Mit paralleler Physik zählt es die Simulation für sich und beim Hauptthread, wie lange er am Ende eines Bilds
+noch auf sie wartet. Es sagt auch, wer die FPS begrenzt: die CPU, die Simulation (der Hauptthread wartet lange auf sie),
+die Grafikkarte (ein Bild dauert deutlich länger, als die CPU dafür braucht) oder VSync. „Messwerte kopieren“ legt alles
+mit CPU, Grafikkarte und Auflösung in die Zwischenablage, zum Einfügen in einen Chat.
 
 **Werkzeuge**
 
@@ -164,10 +169,11 @@ Zwischenablage, zum Einfügen in einen Chat.
   das Streaming pro Bild kostet und wie viel Speicher Nebenan und Box3D belegen
 
 **Aufrufoptionen**: `--scene 0..3` startet eine Szene, `--fragment-scale 3` setzt die Bruchstückgröße, `--vsync`
-schaltet VSync ein, `--msaa 4` schaltet Kantenglättung ein (Standard aus), `--highdpi` rendert auf
-hochauflösenden Bildschirmen in voller Auflösung (Standard aus, kostet Füllrate). `--script` feuert eine
-vorgegebene Schussfolge ab, `--frames N` beendet nach N Bildern und meldet CPU-Zeiten, Uploads und Dreiecke pro
-Bild, `--screenshot datei.ppm` speichert das letzte Bild (nur OpenGL).
+schaltet VSync ein, `--msaa 4` schaltet Kantenglättung ein (Standard aus), `--highdpi` rendert auf hochauflösenden
+Bildschirmen in voller Auflösung (Standard aus, kostet Füllrate). `--serial-physics` schaltet die parallele Physik ab,
+`--threads N` setzt die Zahl der Threads. `--script` feuert eine vorgegebene Schussfolge ab, `--frames N` beendet nach N
+Bildern und meldet Bildzeiten, CPU-Zeiten, Uploads und Dreiecke pro Bild und einen Hash der Lagen aller Bruchstücke,
+`--screenshot datei.ppm` speichert das letzte Bild (nur OpenGL).
 
 Hinkt die Physik hinterher, lässt die Demo die Zeit langsamer laufen, statt Schritte nachzuholen: Ein zweiter
 Schritt im selben Bild kommt nur, wenn ein Schritt weniger als 4 ms kostet. Sonst würde jedes langsame Bild das
@@ -759,6 +765,9 @@ Seit `physik-15` rechnet der Löser auf Prozessoren mit AVX2 die Kontakte in ach
 Box3D, und wählt die Breite zur Laufzeit. Die Ergebnisse bleiben bitgleich, auch zwischen Prozessoren mit und ohne AVX2.
 Gepaart gegen `physik-14` kosten die Bedingungen des Lösers mit 4 Threads 13 bis 20 % weniger und mit einem 21 bis 23 %,
 ein Frame mit 4 Threads 3,3 bis 4,2 % und mit einem 1,7 bis 4,8 %.
+Seit `physik-16` rechnet die Demo die Physik eines Bilds auf einem eigenen Thread, während sie das Bild davor zeichnet,
+und die Welt rechnet genau wie vorher. Ohne die Zeichenaufrufe gemessen, also wie mit einer schnellen Grafikkarte,
+kostet ein Bild auf der VM damit 13 bis 17 % weniger.
 
 **Eine Stadt größer als der Speicher.** Im Benchmark fliegt eine Kamera mit 30 m/s 900 m weit durch eine Stadt aus
 65 536 Häusern auf 3,6 × 3,1 km und 300 m zurück, Bruchstückgröße ×4. Am Stück bräuchte sie 24 GB. Geladen sind die
