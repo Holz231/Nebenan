@@ -222,7 +222,16 @@ hat, ändert das nichts, weil Box3D Kontakte ohne Rückprall überspringt. Mit S
 nur ein Thread rechnet, ein Gelenk oder ein Kontakt mit einem Netz in den Farben liegt, Box3D den Rückprall fortpflanzt
 oder eine Insel mehr als die Hälfte der Arbeit hält.
 
-Die erste, die zweite, die vierte bis achte, die zehnte und die dreizehnte bis sechsundzwanzigste ändern an den
+**Sperren, solange andere Programme die Kerne belegen.** Verliert ein Thread mitten in einem Paket seinen Kern an ein
+anderes Programm, warten am Ende alle auf dieses Paket, während mit Sperren die anderen die Blöcke übernehmen, die er
+noch nicht angefangen hat. Jetzt misst der aufrufende Thread nach seinem letzten Paket, wie lange er auf die anderen
+wartet. Ein Warten ab 1 ms, das mindestens die Hälfte der Zeit der Pakete ausmacht, zählt dreifach, jeder Schritt ohne
+eines zieht eins ab, und ab neun rechnet der Löser 120 Schritte lang mit Sperren, kommt es innerhalb der doppelten Länge
+danach wieder, doppelt so lange, bis zu 960 Schritte (`b3UpdatePackHold` in `src/solver.c`, `b3World::packHoldSteps` in
+`src/physics_world.h`). Ein einzelnes langes Warten, wie es ohne Last ab und zu vorkommt, zählt so nicht. Die Ergebnisse
+sind mit und ohne Sperren dieselben.
+
+Die erste, die zweite, die vierte bis achte, die zehnte und die dreizehnte bis siebenundzwanzigste ändern an den
 Ergebnissen nichts. Die dritte und die neunte ändern sie in den letzten Bits, dafür hängen sie nicht mehr davon ab, in
 welcher Reihenfolge Formen in die Bäume kommen. Die elfte ändert sie, weil Kontakte zu anderen Zeitpunkten entstehen,
 die zwölfte, weil sie weniger Punkte bekommen. Die Ergänzungen stehen in `include/box3d/box3d.h`,

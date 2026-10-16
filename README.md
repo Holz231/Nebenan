@@ -745,6 +745,12 @@ Zurückschreiben der Stöße ohne eine einzige Sperre, siehe [`extern/README.md`
 11,0 % weniger, die Bedingungen des Lösers 38,5, 47,9 und 41,9 %, und im Benchmark werden die teuersten Frames kürzer.
 Die Ergebnisse bleiben bitgleich, und mit einem Thread rechnet der Löser wie bisher. Belegen andere Programme alle
 Kerne, kostet ein Frame dagegen mehr als vorher, siehe [`docs/Optimierungen.md`](docs/Optimierungen.md).
+Seit `physik-12` summiert die Etagenprüfung nur noch, wenn eine Etage in die Nähe ihrer Grenze kommt: Jedes Gebäude
+führt mit, was von jeder Etage in seinen stehenden Teilen übrig ist, und die Entscheidungen bleiben dieselben. Unter
+Trommelfeuer kostet das Update damit im Benchmark mit 4 Threads 11,6 % weniger und mit einem 12,5 %, ein Frame 3,5 und
+4,0 %. Belegen andere Programme die Kerne, rechnet der Löser jetzt eine Weile wieder mit Sperren, sobald seine Threads
+immer wieder lange auf die letzten Pakete warten: Mit vier Schleifen, die alle Kerne belegen, kostet ein Frame damit
+9,1 % weniger als bei `physik-11`, ohne Last ändert sich nichts.
 
 **Eine Stadt größer als der Speicher.** Im Benchmark fliegt eine Kamera mit 30 m/s 900 m weit durch eine Stadt aus
 65 536 Häusern auf 3,6 × 3,1 km und 300 m zurück, Bruchstückgröße ×4. Am Stück bräuchte sie 24 GB. Geladen sind die
