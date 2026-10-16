@@ -1238,7 +1238,7 @@ static void b3ExecutePackConstraints( b3SolverStageType type, b3StepContext* con
 }
 
 // Added for Nebenan: one stage of the convex contact constraints of a pack by their index across all colors, as the
-// prepare and store stages number them
+// stage that stores their impulses numbers them
 static void b3ExecutePackWideConstraints( b3SolverStageType type, b3StepContext* context, int pack, int workerIndex )
 {
 	for ( int i = 0; i < context->activeColorCount; ++i )
@@ -1261,7 +1261,7 @@ static void b3SolvePack( b3StepContext* context, int pack, int workerIndex )
 
 	b3ExecutePackRange( b3_stagePrepareContacts, context, overflowStart, overflowEnd, b3_overflowBlock, B3_OVERFLOW_INDEX,
 						workerIndex );
-	b3ExecutePackWideConstraints( b3_stagePrepareWideContacts, context, pack, workerIndex );
+	b3PreparePackContacts_Convex( context, pack );
 
 	for ( int i = 0; i < context->subStepCount; ++i )
 	{

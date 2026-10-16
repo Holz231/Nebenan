@@ -201,16 +201,38 @@ die Kontakte eines Körpers aber auf dem aufrufenden Thread ab, und dort kostete
 anderer Thread wartete. Jetzt setzt `b3Collide` `b3World::manifoldsShared`, solange die Kontakt-Schleife auf mehreren
 Threads läuft, und nur dann sperrt der Allokator (`src/physics_world.h` und `src/physics_world.c`).
 
-Die erste, die zweite, die vierte bis achte, die zehnte und die dreizehnte bis fünfundzwanzigste ändern an den
+**Ganze Inseln pro Thread.** Mit mehreren Threads rechnete Box3D jeden Schritt in Stufen: die Bedingungen vorbereiten,
+in jedem Teilschritt die Geschwindigkeiten integrieren, Warmstart, Lösen und Entspannen Farbe für Farbe, dazwischen die
+Lagen integrieren, am Ende der Rückprall und das Zurückschreiben der Stöße. Nach jeder Stufe warteten alle Threads, bis
+die letzte fertig war, bei ×2 mit 23 Farben über 300-mal pro Schritt. Zwei Inseln teilen sich aber nie einen beweglichen
+Körper. Jetzt verteilt der Löser die wachen Inseln auf vier Pakete pro Worker mit etwa gleich viel Arbeit, gewichtet mit
+viermal ihren Kontakten und einmal ihren Körpern, die größten Inseln zuerst, jede auf das Paket mit der wenigsten Arbeit
+(`b3BuildPacks` in `src/solver.c`). Die Worker und der aufrufende Thread nehmen sich ganze Pakete, die größten zuerst,
+und rechnen jedes allein, vom Vorbereiten seiner Bedingungen über alle Teilschritte und den Rückprall bis zum
+Zurückschreiben der Stöße, ohne eine einzige Sperre (`b3SolvePacks`). Dafür gehen die konvexen Kontakte jeder Farbe
+Paket für Paket, jedes Paket mit leeren Spuren zu ganzen breiten Bedingungen aufgefüllt, damit keine breite Bedingung
+zwei Pakete mischt (`b3OrderPackContacts`, eine leere Spur hat die Nummer `B3_NULL_INDEX`, siehe `b3PrepareContactWide`
+in `src/contact_solver.c`). Weil ein Paket in den meisten Farben nur wenige breite Bedingungen hat, holt es beim
+Vorbereiten die Kontakte, ihre Manifolds und Körper über die Farben hinweg voraus (`b3PreparePackContacts_Convex`). Die
+Overflow-Kontakte gehen ebenso Paket für Paket, und die Körper jedes Pakets stehen in einer Liste
+(`b3StepContext::packBodies` in `src/solver.h`). All das baut der Löser, bevor die Teilung einer Insel neben ihm
+anläuft. Jeder Körper durchläuft seine Schritte in derselben Reihenfolge wie mit Sperren. Den Rückprall rechnet ein
+Paket, sobald einer seiner Kontakte welchen hat. Rechnet es ihn nur, weil ein anderes Paket das Zeichen dafür gesetzt
+hat, ändert das nichts, weil Box3D Kontakte ohne Rückprall überspringt. Mit Sperren wie bisher rechnet der Löser, wenn
+nur ein Thread rechnet, ein Gelenk oder ein Kontakt mit einem Netz in den Farben liegt, Box3D den Rückprall fortpflanzt
+oder eine Insel mehr als die Hälfte der Arbeit hält.
+
+Die erste, die zweite, die vierte bis achte, die zehnte und die dreizehnte bis sechsundzwanzigste ändern an den
 Ergebnissen nichts. Die dritte und die neunte ändern sie in den letzten Bits, dafür hängen sie nicht mehr davon ab, in
 welcher Reihenfolge Formen in die Bäume kommen. Die elfte ändert sie, weil Kontakte zu anderen Zeitpunkten entstehen,
 die zwölfte, weil sie weniger Punkte bekommen. Die Ergänzungen stehen in `include/box3d/box3d.h`,
 `include/box3d/types.h`, `include/box3d/constants.h`, `src/core.h`, `src/core.c`, `src/shape.h`, `src/shape.c`,
 `src/body.c`, `src/contact.h`, `src/contact.c`, `src/contact_solver.c`, `src/convex_manifold.c`, `src/world_snapshot.c`,
-`src/recording.c`, `src/solver.c`, `src/broad_phase.h`, `src/broad_phase.c`, `src/dynamic_tree.h`, `src/dynamic_tree.c`,
-`src/parallel_for.c`, `src/scheduler.h`, `src/scheduler.c`, `src/physics_world.h` und `src/physics_world.c`, jeweils mit
-„Added for Nebenan“ markiert. `B3_HAS_UNIQUE_HULLS`, `B3_HAS_SHAPE_BATCH`, `B3_HAS_SHAPE_CONTACT_LISTS`,
-`B3_HAS_EXTERNAL_HULLS` und `B3_HAS_BODY_PREFETCH` zeigen die zweite, die vierte, die fünfte, die sechste und die
-neunzehnte an. Fehlen sie, etwa mit einem eigenen Box3D, läuft Nebenan wie zuvor, nur wachsen Box3Ds Arrays dann durch
-Umkopieren, die Hüllen gehen durch die Tabelle, jede Form geht einzeln in den Baum, jedes stehende Bruchstück bekommt
-einen eigenen Körper, Box3D hält eine Kopie jeder Hülle, und Nebenan holt die Körper der Trümmer nicht voraus.
+`src/recording.c`, `src/solver.h`, `src/solver.c`, `src/broad_phase.h`, `src/broad_phase.c`, `src/dynamic_tree.h`,
+`src/dynamic_tree.c`, `src/parallel_for.c`, `src/scheduler.h`, `src/scheduler.c`, `src/physics_world.h` und
+`src/physics_world.c`, jeweils mit „Added for Nebenan“ markiert. `B3_HAS_UNIQUE_HULLS`, `B3_HAS_SHAPE_BATCH`,
+`B3_HAS_SHAPE_CONTACT_LISTS`, `B3_HAS_EXTERNAL_HULLS` und `B3_HAS_BODY_PREFETCH` zeigen die zweite, die vierte, die
+fünfte, die sechste und die neunzehnte an. Fehlen sie, etwa mit einem eigenen Box3D, läuft Nebenan wie zuvor, nur
+wachsen Box3Ds Arrays dann durch Umkopieren, die Hüllen gehen durch die Tabelle, jede Form geht einzeln in den Baum,
+jedes stehende Bruchstück bekommt einen eigenen Körper, Box3D hält eine Kopie jeder Hülle, und Nebenan holt die Körper
+der Trümmer nicht voraus.

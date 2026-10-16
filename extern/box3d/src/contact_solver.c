@@ -1459,25 +1459,276 @@ B3_FORCE_INLINE void b3PrefetchPrepareData( const b3Contact* contact, const b3Bo
 	}
 }
 
+// Added for Nebenan: one wide constraint from the contacts in its lanes, for b3PrepareContacts_Convex and
+// b3PreparePackContacts_Convex. A lane from laneCount on or with a null id stays empty. Returns whether a lane has
+// restitution.
+B3_FORCE_INLINE bool b3PrepareContactWide( b3World* world, b3BodySim* sims, b3BodyState* states, b3ContactConstraintWide* c,
+										   const int* contactIds, int laneCount, b3FloatW warmStartScale )
+{
+#if B3_ENABLE_VALIDATION
+	b3Body* bodies = world->bodies.data;
+#endif
+	b3FloatW zeroW = b3ZeroW();
+	b3FloatW oneW = b3SplatW( 1.0f );
+	b3FloatW twoW = b3SplatW( 2.0f );
+	b3FloatW invTau = b3SplatW( 1.0f / B3_SPECULATIVE_DISTANCE );
+	b3FloatW minFrictionWeight = b3SplatW( B3_MIN_FRICTION_WEIGHT );
+	b3FloatW minDet = b3SplatW( 1000.0f * FLT_MIN );
+
+	const b3Contact* contactLanes[B3_SIMD_WIDTH];
+	const b3Manifold* manifoldLanes[B3_SIMD_WIDTH];
+	const b3BodySim* simLanesA[B3_SIMD_WIDTH];
+	const b3BodySim* simLanesB[B3_SIMD_WIDTH];
+	int hitEventLanes = 0;
+
+	for ( int lane = 0; lane < B3_SIMD_WIDTH; ++lane )
+	{
+		// Added for Nebenan: a null id is an empty lane at the end of a pack of islands, see b3OrderPackContacts
+		if ( lane < laneCount && contactIds[lane] != B3_NULL_INDEX )
+		{
+			b3Contact* contact = b3Array_Get( world->contacts, contactIds[lane] );
+			B3_ASSERT( contact->manifoldCount == 1 );
+			b3Manifold* manifold = contact->manifolds;
+
+			int indexA = b3DecodeAwakeIndex( contact->encodedBodySimA );
+			int indexB = b3DecodeAwakeIndex( contact->encodedBodySimB );
+
+#if B3_ENABLE_VALIDATION
+			b3Body* bodyA = bodies + contact->edges[0].bodyId;
+			b3Body* bodyB = bodies + contact->edges[1].bodyId;
+			B3_ASSERT( contact->encodedBodySimA == b3EncodeBodySimIndex( bodyA ) );
+			B3_ASSERT( contact->encodedBodySimB == b3EncodeBodySimIndex( bodyB ) );
+#endif
+
+			c->indexA[lane] = indexA + 1;
+			c->indexB[lane] = indexB + 1;
+			c->pointCounts[lane] = manifold->pointCount;
+			c->manifolds[lane] = manifold;
+
+			contactLanes[lane] = contact;
+			manifoldLanes[lane] = manifold;
+			simLanesA[lane] = indexA == B3_NULL_INDEX ? &b3_zeroBodySim : sims + indexA;
+			simLanesB[lane] = indexB == B3_NULL_INDEX ? &b3_zeroBodySim : sims + indexB;
+			hitEventLanes |= ( contact->flags & b3_simEnableHitEvent ) != 0 ? 1 << lane : 0;
+		}
+		else
+		{
+			c->indexA[lane] = 0;
+			c->indexB[lane] = 0;
+			c->pointCounts[lane] = 0;
+			c->manifolds[lane] = NULL;
+
+			contactLanes[lane] = &b3_zeroContact;
+			manifoldLanes[lane] = &b3_zeroManifold;
+			simLanesA[lane] = &b3_zeroBodySim;
+			simLanesB[lane] = &b3_zeroBodySim;
+		}
+	}
+
+	b3FloatW mA, mB;
+	B3_GATHER_LANES( mA, simLanesA, invMass );
+	B3_GATHER_LANES( mB, simLanesB, invMass );
+	b3SymMatrix3W iA = b3GatherInvInertiaW( simLanesA );
+	b3SymMatrix3W iB = b3GatherInvInertiaW( simLanesB );
+	c->invMassA = mA;
+	c->invMassB = mB;
+	c->invIA = iA;
+	c->invIB = iB;
+
+	b3Vec3W tangentVelocity;
+	B3_GATHER_LANES( c->friction, contactLanes, friction );
+	B3_GATHER_LANES( c->rollingResistance, contactLanes, rollingResistance );
+	B3_GATHER_LANES( c->restitution, contactLanes, restitution );
+	B3_GATHER_LANES( tangentVelocity.X, contactLanes, tangentVelocity.x );
+	B3_GATHER_LANES( tangentVelocity.Y, contactLanes, tangentVelocity.y );
+	B3_GATHER_LANES( tangentVelocity.Z, contactLanes, tangentVelocity.z );
+
+	b3Vec3W normal, frictionImpulse, rollingImpulse;
+	b3FloatW twistImpulse;
+	{
+		const float* m0 = &manifoldLanes[0]->normal.x;
+		const float* m1 = &manifoldLanes[1]->normal.x;
+		const float* m2 = &manifoldLanes[2]->normal.x;
+		const float* m3 = &manifoldLanes[3]->normal.x;
+		b3TransposeW( b3LoadW( m0 ), b3LoadW( m1 ), b3LoadW( m2 ), b3LoadW( m3 ), &normal.X, &normal.Y, &normal.Z,
+					  &twistImpulse );
+		b3TransposeW( b3LoadW( m0 + 4 ), b3LoadW( m1 + 4 ), b3LoadW( m2 + 4 ), b3LoadW( m3 + 4 ), &frictionImpulse.X,
+					  &frictionImpulse.Y, &frictionImpulse.Z, &rollingImpulse.X );
+		rollingImpulse.Y = b3SetW( m0[8], m1[8], m2[8], m3[8] );
+		rollingImpulse.Z = b3SetW( m0[9], m1[9], m2[9], m3[9] );
+	}
+
+	b3Vec3W tangent1 = b3PerpW( normal );
+	b3Vec3W tangent2 = b3CrossW( tangent1, normal );
+	c->normal = normal;
+	c->tangent1 = tangent1;
+	c->tangent2 = tangent2;
+	c->tangentVelocity1 = b3DotW( tangentVelocity, tangent1 );
+	c->tangentVelocity2 = b3DotW( tangentVelocity, tangent2 );
+
+	b3FloatW rollingMask = b3GreaterThanW( c->rollingResistance, zeroW );
+	c->twistImpulse = b3MulW( warmStartScale, twistImpulse );
+	c->rollingImpulse.X = b3BlendW( zeroW, b3MulW( warmStartScale, rollingImpulse.X ), rollingMask );
+	c->rollingImpulse.Y = b3BlendW( zeroW, b3MulW( warmStartScale, rollingImpulse.Y ), rollingMask );
+	c->rollingImpulse.Z = b3BlendW( zeroW, b3MulW( warmStartScale, rollingImpulse.Z ), rollingMask );
+	c->frictionImpulse.x = b3MulW( warmStartScale, b3DotW( frictionImpulse, tangent1 ) );
+	c->frictionImpulse.y = b3MulW( warmStartScale, b3DotW( frictionImpulse, tangent2 ) );
+
+	b3FloatW pointCountW =
+		b3SetW( (float)c->pointCounts[0], (float)c->pointCounts[1], (float)c->pointCounts[2], (float)c->pointCounts[3] );
+
+	b3Vec3W centerA = { zeroW, zeroW, zeroW };
+	b3Vec3W centerB = { zeroW, zeroW, zeroW };
+	b3FloatW totalFrictionWeight = zeroW;
+
+	for ( int pointIndex = 0; pointIndex < B3_MAX_MANIFOLD_POINTS; ++pointIndex )
+	{
+		b3ContactConstraintPointWide* cp = c->points + pointIndex;
+		b3FloatW pointMask = b3GreaterThanW( pointCountW, b3SplatW( (float)pointIndex ) );
+
+		const float* p0 = (const float*)( manifoldLanes[0]->points + pointIndex );
+		const float* p1 = (const float*)( manifoldLanes[1]->points + pointIndex );
+		const float* p2 = (const float*)( manifoldLanes[2]->points + pointIndex );
+		const float* p3 = (const float*)( manifoldLanes[3]->points + pointIndex );
+
+		b3Vec3W rA, rB;
+		b3FloatW separation, normalImpulse;
+		b3TransposeW( b3LoadW( p0 ), b3LoadW( p1 ), b3LoadW( p2 ), b3LoadW( p3 ), &rA.X, &rA.Y, &rA.Z, &rB.X );
+		b3TransposeW( b3LoadW( p0 + 4 ), b3LoadW( p1 + 4 ), b3LoadW( p2 + 4 ), b3LoadW( p3 + 4 ), &rB.Y, &rB.Z, &separation,
+					  &normalImpulse );
+
+		rA.X = b3BlendW( zeroW, rA.X, pointMask );
+		rA.Y = b3BlendW( zeroW, rA.Y, pointMask );
+		rA.Z = b3BlendW( zeroW, rA.Z, pointMask );
+		rB.X = b3BlendW( zeroW, rB.X, pointMask );
+		rB.Y = b3BlendW( zeroW, rB.Y, pointMask );
+		rB.Z = b3BlendW( zeroW, rB.Z, pointMask );
+		separation = b3BlendW( zeroW, separation, pointMask );
+		normalImpulse = b3BlendW( zeroW, normalImpulse, pointMask );
+
+		// C0 friction center decay. Needed to prevent spinning top drift (GyroscopicPrecession sample).
+		// See details in b3PrepareContacts_Mesh. This code should stay in sync.
+		b3FloatW weight = b3MinW( b3MaxW( b3SubW( twoW, b3MulW( separation, invTau ) ), minFrictionWeight ), oneW );
+		weight = b3BlendW( zeroW, weight, pointMask );
+		centerA = b3MulAddSVW( centerA, weight, rA );
+		centerB = b3MulAddSVW( centerB, weight, rB );
+		totalFrictionWeight = b3AddW( totalFrictionWeight, weight );
+
+		cp->anchorAs = rA;
+		cp->anchorBs = rB;
+		cp->baseSeparations = b3SubW( separation, b3DotW( b3SubVW( rB, rA ), normal ) );
+		cp->normalImpulses = b3MulW( warmStartScale, normalImpulse );
+		cp->totalNormalImpulses = zeroW;
+		cp->relativeVelocities = zeroW;
+		cp->restitutionImpulses = zeroW;
+
+		b3Vec3W rnA = b3CrossW( rA, normal );
+		b3Vec3W rnB = b3CrossW( rB, normal );
+		b3FloatW kNormal = b3AddW( mA, mB );
+		kNormal = b3AddW( kNormal, b3DotW( rnA, b3MulMVW( iA, rnA ) ) );
+		kNormal = b3AddW( kNormal, b3DotW( rnB, b3MulMVW( iB, rnB ) ) );
+		b3FloatW valid = b3AndW( b3GreaterThanW( kNormal, zeroW ), pointMask );
+		cp->normalMasses = b3BlendW( zeroW, b3DivW( oneW, kNormal ), valid );
+	}
+
+	b3FloatW invWeight = b3BlendW( zeroW, b3DivW( oneW, totalFrictionWeight ), b3GreaterThanW( totalFrictionWeight, zeroW ) );
+	centerA = b3MulSVW( invWeight, centerA );
+	centerB = b3MulSVW( invWeight, centerB );
+	c->centerA = centerA;
+	c->centerB = centerB;
+
+	for ( int pointIndex = 0; pointIndex < B3_MAX_MANIFOLD_POINTS; ++pointIndex )
+	{
+		b3ContactConstraintPointWide* cp = c->points + pointIndex;
+		b3FloatW pointMask = b3GreaterThanW( pointCountW, b3SplatW( (float)pointIndex ) );
+		b3Vec3W d = b3SubVW( cp->anchorAs, centerA );
+		cp->leverArms = b3BlendW( zeroW, b3SqrtW( b3DotW( d, d ) ), pointMask );
+	}
+
+	{
+		b3Vec3W rtA1 = b3CrossW( centerA, tangent1 );
+		b3Vec3W rtA2 = b3CrossW( centerA, tangent2 );
+		b3Vec3W rtB1 = b3CrossW( centerB, tangent1 );
+		b3Vec3W rtB2 = b3CrossW( centerB, tangent2 );
+		b3Vec3W iArtA1 = b3MulMVW( iA, rtA1 );
+		b3Vec3W iArtA2 = b3MulMVW( iA, rtA2 );
+		b3Vec3W iBrtB1 = b3MulMVW( iB, rtB1 );
+		b3Vec3W iBrtB2 = b3MulMVW( iB, rtB2 );
+
+		b3FloatW kxx = b3AddW( b3AddW( b3AddW( mA, mB ), b3DotW( rtA1, iArtA1 ) ), b3DotW( rtB1, iBrtB1 ) );
+		b3FloatW kyy = b3AddW( b3AddW( b3AddW( mA, mB ), b3DotW( rtA2, iArtA2 ) ), b3DotW( rtB2, iBrtB2 ) );
+		b3FloatW kxy = b3AddW( b3DotW( rtA1, iArtA2 ), b3DotW( rtB1, iBrtB2 ) );
+
+		b3FloatW det = b3SubW( b3MulW( kxx, kyy ), b3MulW( kxy, kxy ) );
+		b3FloatW valid = b3GreaterThanW( b3AbsW( det ), minDet );
+		b3FloatW invDet = b3BlendW( zeroW, b3DivW( oneW, det ), valid );
+		c->tangentMass.cxx = b3MulW( invDet, kyy );
+		c->tangentMass.cxy = b3NegW( b3MulW( invDet, kxy ) );
+		c->tangentMass.cyy = b3MulW( invDet, kxx );
+	}
+
+	b3SymMatrix3W invIAB = b3AddSymW( iA, iB );
+
+	{
+		b3FloatW kTwist = b3DotW( normal, b3MulMVW( invIAB, normal ) );
+		c->twistMass = b3BlendW( zeroW, b3DivW( oneW, kTwist ), b3GreaterThanW( kTwist, zeroW ) );
+	}
+
+	if ( b3AllZeroW( c->rollingResistance ) == false )
+	{
+		c->rollingMass = b3InvertSymW( invIAB );
+	}
+	else
+	{
+		c->rollingMass = ( b3SymMatrix3W ){ zeroW, zeroW, zeroW, zeroW, zeroW, zeroW };
+	}
+
+	// Only sample contact point normal velocity if needed.
+	bool haveRestitution = b3AnyTrueW( b3GreaterThanW( c->restitution, zeroW ) );
+
+	if ( hitEventLanes != 0 || haveRestitution )
+	{
+		b3BodyStateW bA = b3GatherBodies( states, c->indexA );
+		b3BodyStateW bB = b3GatherBodies( states, c->indexB );
+
+		for ( int pointIndex = 0; pointIndex < B3_MAX_MANIFOLD_POINTS; ++pointIndex )
+		{
+			b3ContactConstraintPointWide* cp = c->points + pointIndex;
+
+			b3Vec3W vrA = b3AddVW( bA.v, b3CrossW( bA.w, cp->anchorAs ) );
+			b3Vec3W vrB = b3AddVW( bB.v, b3CrossW( bB.w, cp->anchorBs ) );
+			b3FloatW vn = b3DotW( normal, b3SubVW( vrB, vrA ) );
+			cp->relativeVelocities = vn;
+
+			if ( hitEventLanes != 0 )
+			{
+				float normalVelocities[B3_SIMD_WIDTH];
+				b3StoreW( normalVelocities, vn );
+
+				for ( int lane = 0; lane < B3_SIMD_WIDTH; ++lane )
+				{
+					if ( ( hitEventLanes & ( 1 << lane ) ) != 0 && pointIndex < c->pointCounts[lane] )
+					{
+						c->manifolds[lane]->points[pointIndex].normalVelocity = normalVelocities[lane];
+					}
+				}
+			}
+		}
+	}
+
+	return haveRestitution;
+}
+
 void b3PrepareContacts_Convex( b3SolverBlock block, b3StepContext* context )
 {
 	b3TracyCZoneNC( prepare_contact, "Prepare Contact", b3_colorYellow, true );
 	b3World* world = context->world;
 	b3BodySim* sims = context->sims;
 	b3BodyState* states = context->states;
-#if B3_ENABLE_VALIDATION
-	b3Body* bodies = world->bodies.data;
-#endif
 	b3WidePrepareSpan* spans = context->widePrepareSpans;
 	b3ContactConstraintWide* wideBase = context->wideConstraints;
 
-	b3FloatW zeroW = b3ZeroW();
-	b3FloatW oneW = b3SplatW( 1.0f );
-	b3FloatW twoW = b3SplatW( 2.0f );
-	b3FloatW warmStartScale = world->enableWarmStarting ? oneW : zeroW;
-	b3FloatW invTau = b3SplatW( 1.0f / B3_SPECULATIVE_DISTANCE );
-	b3FloatW minFrictionWeight = b3SplatW( B3_MIN_FRICTION_WEIGHT );
-	b3FloatW minDet = b3SplatW( 1000.0f * FLT_MIN );
+	b3FloatW warmStartScale = world->enableWarmStarting ? b3SplatW( 1.0f ) : b3ZeroW();
 	bool anyRestitution = false;
 
 	int wideIndex = block.startIndex;
@@ -1522,253 +1773,137 @@ void b3PrepareContacts_Convex( b3SolverBlock block, b3StepContext* context )
 				}
 			}
 
-			const b3Contact* contactLanes[B3_SIMD_WIDTH];
-			const b3Manifold* manifoldLanes[B3_SIMD_WIDTH];
-			const b3BodySim* simLanesA[B3_SIMD_WIDTH];
-			const b3BodySim* simLanesB[B3_SIMD_WIDTH];
-			int hitEventLanes = 0;
-
-			for ( int lane = 0; lane < B3_SIMD_WIDTH; ++lane )
-			{
-				// Added for Nebenan: a null id is an empty lane at the end of a pack of islands, see b3OrderPackContacts
-				int contactIndex = B3_SIMD_WIDTH * localWideIndex + lane;
-				if ( contactIndex < colorContactCount && contactIds[contactIndex] != B3_NULL_INDEX )
-				{
-					b3Contact* contact = b3Array_Get( world->contacts, contactIds[contactIndex] );
-					B3_ASSERT( contact->manifoldCount == 1 );
-					b3Manifold* manifold = contact->manifolds;
-
-					int indexA = b3DecodeAwakeIndex( contact->encodedBodySimA );
-					int indexB = b3DecodeAwakeIndex( contact->encodedBodySimB );
-
-#if B3_ENABLE_VALIDATION
-					b3Body* bodyA = bodies + contact->edges[0].bodyId;
-					b3Body* bodyB = bodies + contact->edges[1].bodyId;
-					B3_ASSERT( contact->encodedBodySimA == b3EncodeBodySimIndex( bodyA ) );
-					B3_ASSERT( contact->encodedBodySimB == b3EncodeBodySimIndex( bodyB ) );
-#endif
-
-					c->indexA[lane] = indexA + 1;
-					c->indexB[lane] = indexB + 1;
-					c->pointCounts[lane] = manifold->pointCount;
-					c->manifolds[lane] = manifold;
-
-					contactLanes[lane] = contact;
-					manifoldLanes[lane] = manifold;
-					simLanesA[lane] = indexA == B3_NULL_INDEX ? &b3_zeroBodySim : sims + indexA;
-					simLanesB[lane] = indexB == B3_NULL_INDEX ? &b3_zeroBodySim : sims + indexB;
-					hitEventLanes |= ( contact->flags & b3_simEnableHitEvent ) != 0 ? 1 << lane : 0;
-				}
-				else
-				{
-					c->indexA[lane] = 0;
-					c->indexB[lane] = 0;
-					c->pointCounts[lane] = 0;
-					c->manifolds[lane] = NULL;
-
-					contactLanes[lane] = &b3_zeroContact;
-					manifoldLanes[lane] = &b3_zeroManifold;
-					simLanesA[lane] = &b3_zeroBodySim;
-					simLanesB[lane] = &b3_zeroBodySim;
-				}
-			}
-
-			b3FloatW mA, mB;
-			B3_GATHER_LANES( mA, simLanesA, invMass );
-			B3_GATHER_LANES( mB, simLanesB, invMass );
-			b3SymMatrix3W iA = b3GatherInvInertiaW( simLanesA );
-			b3SymMatrix3W iB = b3GatherInvInertiaW( simLanesB );
-			c->invMassA = mA;
-			c->invMassB = mB;
-			c->invIA = iA;
-			c->invIB = iB;
-
-			b3Vec3W tangentVelocity;
-			B3_GATHER_LANES( c->friction, contactLanes, friction );
-			B3_GATHER_LANES( c->rollingResistance, contactLanes, rollingResistance );
-			B3_GATHER_LANES( c->restitution, contactLanes, restitution );
-			B3_GATHER_LANES( tangentVelocity.X, contactLanes, tangentVelocity.x );
-			B3_GATHER_LANES( tangentVelocity.Y, contactLanes, tangentVelocity.y );
-			B3_GATHER_LANES( tangentVelocity.Z, contactLanes, tangentVelocity.z );
-
-			b3Vec3W normal, frictionImpulse, rollingImpulse;
-			b3FloatW twistImpulse;
-			{
-				const float* m0 = &manifoldLanes[0]->normal.x;
-				const float* m1 = &manifoldLanes[1]->normal.x;
-				const float* m2 = &manifoldLanes[2]->normal.x;
-				const float* m3 = &manifoldLanes[3]->normal.x;
-				b3TransposeW( b3LoadW( m0 ), b3LoadW( m1 ), b3LoadW( m2 ), b3LoadW( m3 ), &normal.X, &normal.Y, &normal.Z,
-							  &twistImpulse );
-				b3TransposeW( b3LoadW( m0 + 4 ), b3LoadW( m1 + 4 ), b3LoadW( m2 + 4 ), b3LoadW( m3 + 4 ), &frictionImpulse.X,
-							  &frictionImpulse.Y, &frictionImpulse.Z, &rollingImpulse.X );
-				rollingImpulse.Y = b3SetW( m0[8], m1[8], m2[8], m3[8] );
-				rollingImpulse.Z = b3SetW( m0[9], m1[9], m2[9], m3[9] );
-			}
-
-			b3Vec3W tangent1 = b3PerpW( normal );
-			b3Vec3W tangent2 = b3CrossW( tangent1, normal );
-			c->normal = normal;
-			c->tangent1 = tangent1;
-			c->tangent2 = tangent2;
-			c->tangentVelocity1 = b3DotW( tangentVelocity, tangent1 );
-			c->tangentVelocity2 = b3DotW( tangentVelocity, tangent2 );
-
-			b3FloatW rollingMask = b3GreaterThanW( c->rollingResistance, zeroW );
-			c->twistImpulse = b3MulW( warmStartScale, twistImpulse );
-			c->rollingImpulse.X = b3BlendW( zeroW, b3MulW( warmStartScale, rollingImpulse.X ), rollingMask );
-			c->rollingImpulse.Y = b3BlendW( zeroW, b3MulW( warmStartScale, rollingImpulse.Y ), rollingMask );
-			c->rollingImpulse.Z = b3BlendW( zeroW, b3MulW( warmStartScale, rollingImpulse.Z ), rollingMask );
-			c->frictionImpulse.x = b3MulW( warmStartScale, b3DotW( frictionImpulse, tangent1 ) );
-			c->frictionImpulse.y = b3MulW( warmStartScale, b3DotW( frictionImpulse, tangent2 ) );
-
-			b3FloatW pointCountW =
-				b3SetW( (float)c->pointCounts[0], (float)c->pointCounts[1], (float)c->pointCounts[2], (float)c->pointCounts[3] );
-
-			b3Vec3W centerA = { zeroW, zeroW, zeroW };
-			b3Vec3W centerB = { zeroW, zeroW, zeroW };
-			b3FloatW totalFrictionWeight = zeroW;
-
-			for ( int pointIndex = 0; pointIndex < B3_MAX_MANIFOLD_POINTS; ++pointIndex )
-			{
-				b3ContactConstraintPointWide* cp = c->points + pointIndex;
-				b3FloatW pointMask = b3GreaterThanW( pointCountW, b3SplatW( (float)pointIndex ) );
-
-				const float* p0 = (const float*)( manifoldLanes[0]->points + pointIndex );
-				const float* p1 = (const float*)( manifoldLanes[1]->points + pointIndex );
-				const float* p2 = (const float*)( manifoldLanes[2]->points + pointIndex );
-				const float* p3 = (const float*)( manifoldLanes[3]->points + pointIndex );
-
-				b3Vec3W rA, rB;
-				b3FloatW separation, normalImpulse;
-				b3TransposeW( b3LoadW( p0 ), b3LoadW( p1 ), b3LoadW( p2 ), b3LoadW( p3 ), &rA.X, &rA.Y, &rA.Z, &rB.X );
-				b3TransposeW( b3LoadW( p0 + 4 ), b3LoadW( p1 + 4 ), b3LoadW( p2 + 4 ), b3LoadW( p3 + 4 ), &rB.Y, &rB.Z,
-							  &separation, &normalImpulse );
-
-				rA.X = b3BlendW( zeroW, rA.X, pointMask );
-				rA.Y = b3BlendW( zeroW, rA.Y, pointMask );
-				rA.Z = b3BlendW( zeroW, rA.Z, pointMask );
-				rB.X = b3BlendW( zeroW, rB.X, pointMask );
-				rB.Y = b3BlendW( zeroW, rB.Y, pointMask );
-				rB.Z = b3BlendW( zeroW, rB.Z, pointMask );
-				separation = b3BlendW( zeroW, separation, pointMask );
-				normalImpulse = b3BlendW( zeroW, normalImpulse, pointMask );
-
-				// C0 friction center decay. Needed to prevent spinning top drift (GyroscopicPrecession sample).
-				// See details in b3PrepareContacts_Mesh. This code should stay in sync.
-				b3FloatW weight = b3MinW( b3MaxW( b3SubW( twoW, b3MulW( separation, invTau ) ), minFrictionWeight ), oneW );
-				weight = b3BlendW( zeroW, weight, pointMask );
-				centerA = b3MulAddSVW( centerA, weight, rA );
-				centerB = b3MulAddSVW( centerB, weight, rB );
-				totalFrictionWeight = b3AddW( totalFrictionWeight, weight );
-
-				cp->anchorAs = rA;
-				cp->anchorBs = rB;
-				cp->baseSeparations = b3SubW( separation, b3DotW( b3SubVW( rB, rA ), normal ) );
-				cp->normalImpulses = b3MulW( warmStartScale, normalImpulse );
-				cp->totalNormalImpulses = zeroW;
-				cp->relativeVelocities = zeroW;
-				cp->restitutionImpulses = zeroW;
-
-				b3Vec3W rnA = b3CrossW( rA, normal );
-				b3Vec3W rnB = b3CrossW( rB, normal );
-				b3FloatW kNormal = b3AddW( mA, mB );
-				kNormal = b3AddW( kNormal, b3DotW( rnA, b3MulMVW( iA, rnA ) ) );
-				kNormal = b3AddW( kNormal, b3DotW( rnB, b3MulMVW( iB, rnB ) ) );
-				b3FloatW valid = b3AndW( b3GreaterThanW( kNormal, zeroW ), pointMask );
-				cp->normalMasses = b3BlendW( zeroW, b3DivW( oneW, kNormal ), valid );
-			}
-
-			b3FloatW invWeight =
-				b3BlendW( zeroW, b3DivW( oneW, totalFrictionWeight ), b3GreaterThanW( totalFrictionWeight, zeroW ) );
-			centerA = b3MulSVW( invWeight, centerA );
-			centerB = b3MulSVW( invWeight, centerB );
-			c->centerA = centerA;
-			c->centerB = centerB;
-
-			for ( int pointIndex = 0; pointIndex < B3_MAX_MANIFOLD_POINTS; ++pointIndex )
-			{
-				b3ContactConstraintPointWide* cp = c->points + pointIndex;
-				b3FloatW pointMask = b3GreaterThanW( pointCountW, b3SplatW( (float)pointIndex ) );
-				b3Vec3W d = b3SubVW( cp->anchorAs, centerA );
-				cp->leverArms = b3BlendW( zeroW, b3SqrtW( b3DotW( d, d ) ), pointMask );
-			}
-
-			{
-				b3Vec3W rtA1 = b3CrossW( centerA, tangent1 );
-				b3Vec3W rtA2 = b3CrossW( centerA, tangent2 );
-				b3Vec3W rtB1 = b3CrossW( centerB, tangent1 );
-				b3Vec3W rtB2 = b3CrossW( centerB, tangent2 );
-				b3Vec3W iArtA1 = b3MulMVW( iA, rtA1 );
-				b3Vec3W iArtA2 = b3MulMVW( iA, rtA2 );
-				b3Vec3W iBrtB1 = b3MulMVW( iB, rtB1 );
-				b3Vec3W iBrtB2 = b3MulMVW( iB, rtB2 );
-
-				b3FloatW kxx = b3AddW( b3AddW( b3AddW( mA, mB ), b3DotW( rtA1, iArtA1 ) ), b3DotW( rtB1, iBrtB1 ) );
-				b3FloatW kyy = b3AddW( b3AddW( b3AddW( mA, mB ), b3DotW( rtA2, iArtA2 ) ), b3DotW( rtB2, iBrtB2 ) );
-				b3FloatW kxy = b3AddW( b3DotW( rtA1, iArtA2 ), b3DotW( rtB1, iBrtB2 ) );
-
-				b3FloatW det = b3SubW( b3MulW( kxx, kyy ), b3MulW( kxy, kxy ) );
-				b3FloatW valid = b3GreaterThanW( b3AbsW( det ), minDet );
-				b3FloatW invDet = b3BlendW( zeroW, b3DivW( oneW, det ), valid );
-				c->tangentMass.cxx = b3MulW( invDet, kyy );
-				c->tangentMass.cxy = b3NegW( b3MulW( invDet, kxy ) );
-				c->tangentMass.cyy = b3MulW( invDet, kxx );
-			}
-
-			b3SymMatrix3W invIAB = b3AddSymW( iA, iB );
-
-			{
-				b3FloatW kTwist = b3DotW( normal, b3MulMVW( invIAB, normal ) );
-				c->twistMass = b3BlendW( zeroW, b3DivW( oneW, kTwist ), b3GreaterThanW( kTwist, zeroW ) );
-			}
-
-			if ( b3AllZeroW( c->rollingResistance ) == false )
-			{
-				c->rollingMass = b3InvertSymW( invIAB );
-			}
-			else
-			{
-				c->rollingMass = (b3SymMatrix3W){ zeroW, zeroW, zeroW, zeroW, zeroW, zeroW };
-			}
-
-			// Only sample contact point normal velocity if needed.
-			bool haveRestitution = b3AnyTrueW( b3GreaterThanW( c->restitution, zeroW ) );
+			int laneCount = b3MinInt( B3_SIMD_WIDTH, colorContactCount - B3_SIMD_WIDTH * localWideIndex );
+			bool haveRestitution = b3PrepareContactWide( world, sims, states, c, contactIds + B3_SIMD_WIDTH * localWideIndex,
+														 laneCount, warmStartScale );
 			anyRestitution = anyRestitution || haveRestitution;
-
-			if ( hitEventLanes != 0 || haveRestitution )
-			{
-				b3BodyStateW bA = b3GatherBodies( states, c->indexA );
-				b3BodyStateW bB = b3GatherBodies( states, c->indexB );
-
-				for ( int pointIndex = 0; pointIndex < B3_MAX_MANIFOLD_POINTS; ++pointIndex )
-				{
-					b3ContactConstraintPointWide* cp = c->points + pointIndex;
-
-					b3Vec3W vrA = b3AddVW( bA.v, b3CrossW( bA.w, cp->anchorAs ) );
-					b3Vec3W vrB = b3AddVW( bB.v, b3CrossW( bB.w, cp->anchorBs ) );
-					b3FloatW vn = b3DotW( normal, b3SubVW( vrB, vrA ) );
-					cp->relativeVelocities = vn;
-
-					if ( hitEventLanes != 0 )
-					{
-						float normalVelocities[B3_SIMD_WIDTH];
-						b3StoreW( normalVelocities, vn );
-
-						for ( int lane = 0; lane < B3_SIMD_WIDTH; ++lane )
-						{
-							if ( ( hitEventLanes & ( 1 << lane ) ) != 0 && pointIndex < c->pointCounts[lane] )
-							{
-								c->manifolds[lane]->points[pointIndex].normalVelocity = normalVelocities[lane];
-							}
-						}
-					}
-				}
-			}
 		}
 
 		// Advance to next color
 		colorIndex += 1;
+	}
+
+	if ( anyRestitution )
+	{
+		b3AtomicStoreInt( &context->anyRestitution, 1 );
+	}
+
+	b3TracyCZoneEnd( prepare_contact );
+}
+
+// Added for Nebenan: moves a position in the wide constraints of a pack one ahead, see b3PreparePackContacts_Convex
+static void b3AdvancePackPosition( int* segment, int* index, const int* segmentCounts, int segmentCount )
+{
+	if ( *segment < segmentCount )
+	{
+		*index += 1;
+		if ( *index == segmentCounts[*segment] )
+		{
+			*segment += 1;
+			*index = 0;
+		}
+	}
+}
+
+// Added for Nebenan: the convex contact constraints of one pack of islands, color by color, see b3SolvePack. A pack has
+// only a few wide constraints in most colors, so the prefetches of b3PrepareContacts_Convex run ahead across the colors
+// here: two wide constraints ahead for the contacts and one ahead for their manifolds and bodies. Each constraint is
+// prepared as there.
+void b3PreparePackContacts_Convex( b3StepContext* context, int pack )
+{
+	b3TracyCZoneNC( prepare_contact, "Prepare Contact", b3_colorYellow, true );
+	b3World* world = context->world;
+	b3Contact* contacts = world->contacts.data;
+	b3BodySim* sims = context->sims;
+	b3BodyState* states = context->states;
+	const b3WidePrepareSpan* spans = context->widePrepareSpans;
+	b3ContactConstraintWide* wideBase = context->wideConstraints;
+
+	b3FloatW warmStartScale = world->enableWarmStarting ? b3SplatW( 1.0f ) : b3ZeroW();
+	bool anyRestitution = false;
+
+	// The wide constraints of the pack in each color that has some: the ids of their lanes, the index of the first
+	// across all colors and how many
+	const int* segmentIds[B3_GRAPH_COLOR_COUNT];
+	int segmentStarts[B3_GRAPH_COLOR_COUNT];
+	int segmentCounts[B3_GRAPH_COLOR_COUNT];
+	int segmentCount = 0;
+	for ( int i = 0; i < context->activeColorCount; ++i )
+	{
+		const int* starts = context->packWideStarts + i * ( context->packCount + 1 );
+		if ( starts[pack + 1] > starts[pack] )
+		{
+			segmentIds[segmentCount] = spans[i].contacts + B3_SIMD_WIDTH * starts[pack];
+			segmentStarts[segmentCount] = spans[i].start + starts[pack];
+			segmentCounts[segmentCount] = starts[pack + 1] - starts[pack];
+			segmentCount += 1;
+		}
+	}
+
+	if ( segmentCount == 0 )
+	{
+		b3TracyCZoneEnd( prepare_contact );
+		return;
+	}
+
+	// The positions one and two wide constraints ahead. The first two have nothing before them to fetch their contacts.
+	int nearSegment = 0, nearIndex = 0;
+	b3AdvancePackPosition( &nearSegment, &nearIndex, segmentCounts, segmentCount );
+	int farSegment = nearSegment, farIndex = nearIndex;
+	b3AdvancePackPosition( &farSegment, &farIndex, segmentCounts, segmentCount );
+
+	for ( int lane = 0; lane < B3_SIMD_WIDTH; ++lane )
+	{
+		int firstId = segmentIds[0][lane];
+		if ( firstId != B3_NULL_INDEX )
+		{
+			b3PrefetchPrepareContact( contacts + firstId );
+		}
+
+		int secondId = nearSegment < segmentCount ? segmentIds[nearSegment][B3_SIMD_WIDTH * nearIndex + lane] : B3_NULL_INDEX;
+		if ( secondId != B3_NULL_INDEX )
+		{
+			b3PrefetchPrepareContact( contacts + secondId );
+		}
+	}
+
+	for ( int segment = 0; segment < segmentCount; ++segment )
+	{
+		for ( int index = 0; index < segmentCounts[segment]; ++index )
+		{
+			if ( farSegment < segmentCount )
+			{
+				const int* farIds = segmentIds[farSegment] + B3_SIMD_WIDTH * farIndex;
+				for ( int lane = 0; lane < B3_SIMD_WIDTH; ++lane )
+				{
+					if ( farIds[lane] != B3_NULL_INDEX )
+					{
+						b3PrefetchPrepareContact( contacts + farIds[lane] );
+					}
+				}
+
+				b3AdvancePackPosition( &farSegment, &farIndex, segmentCounts, segmentCount );
+			}
+
+			if ( nearSegment < segmentCount )
+			{
+				const int* nearIds = segmentIds[nearSegment] + B3_SIMD_WIDTH * nearIndex;
+				for ( int lane = 0; lane < B3_SIMD_WIDTH; ++lane )
+				{
+					if ( nearIds[lane] != B3_NULL_INDEX )
+					{
+						b3PrefetchPrepareData( contacts + nearIds[lane], sims );
+					}
+				}
+
+				b3AdvancePackPosition( &nearSegment, &nearIndex, segmentCounts, segmentCount );
+			}
+
+			b3ContactConstraintWide* c = wideBase + segmentStarts[segment] + index;
+			bool haveRestitution = b3PrepareContactWide( world, sims, states, c, segmentIds[segment] + B3_SIMD_WIDTH * index,
+														 B3_SIMD_WIDTH, warmStartScale );
+			anyRestitution = anyRestitution || haveRestitution;
+		}
 	}
 
 	if ( anyRestitution )

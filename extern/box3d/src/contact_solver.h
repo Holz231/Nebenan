@@ -70,6 +70,7 @@ void b3ApplyRestitution_Mesh( b3SolverBlock block, b3StepContext* context );
 void b3StoreImpulses_Mesh( b3SolverBlock block, b3StepContext* context, int workerIndex );
 
 void b3PrepareContacts_Convex( b3SolverBlock block, b3StepContext* context );
+void b3PreparePackContacts_Convex( b3StepContext* context, int pack );
 void b3WarmStartContacts_Convex( b3SolverBlock block, b3StepContext* context );
 void b3PushContacts_Convex( b3SolverBlock block, b3StepContext* context );
 void b3SolveContacts_Convex( b3SolverBlock block, b3StepContext* context );
