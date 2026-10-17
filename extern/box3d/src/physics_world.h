@@ -295,6 +295,9 @@ typedef struct b3World
 	int knotContactCount;
 	int knotBatchCount;
 
+	// Added for Nebenan: the work of the pack a team solved in the last step, see b3Counters::teamWork
+	int teamWork;
+
 	b3EnqueueTaskCallback* enqueueTaskFcn;
 	b3FinishTaskCallback* finishTaskFcn;
 	void* userTaskContext;

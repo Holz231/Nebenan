@@ -47,8 +47,8 @@ void nbProfileStep( nbWorld* world )
 	sums->stages[nb_profileTransforms] += step.transforms;
 	sums->stepCount += 1;
 
-	// The packs give the largest island to one thread, see b3Counters::islandWork. With more than half of the work in it,
-	// Box3D solves by colors instead, as b3BuildPacks decides.
+	// The packs give the largest island to one thread, see b3Counters::islandWork, unless a team solves its pack, see
+	// b3Counters::teamWork
 	b3Counters counters = b3World_GetCounters( world->physicsWorld );
 	sums->overflowCount += counters.colorCounts[B3_GRAPH_COLOR_COUNT - 1];
 	sums->knotContactCount += counters.knotContactCount;
@@ -58,6 +58,11 @@ void nbProfileStep( nbWorld* world )
 		double share = (double)counters.largestIslandWork / (double)counters.islandWork;
 		sums->largestIsland += share;
 		sums->islandStepCount += 1;
+		if ( counters.teamWork > 0 )
+		{
+			sums->teamShare += (double)counters.teamWork / (double)counters.islandWork;
+			sums->teamStepCount += 1;
+		}
 		if ( 2 * counters.largestIslandWork > counters.islandWork )
 		{
 			sums->colorStepCount += 1;
@@ -114,6 +119,11 @@ nbProfile nbWorld_GetProfile( nbWorldId worldId )
 	}
 	profile.islandStepCount = sums->islandStepCount;
 	profile.colorStepCount = sums->colorStepCount;
+	if ( sums->teamStepCount > 0 )
+	{
+		profile.teamShare = (float)( sums->teamShare / (double)sums->teamStepCount );
+	}
+	profile.teamStepCount = sums->teamStepCount;
 
 	if ( sums->wakeCount > 0 )
 	{
@@ -320,6 +330,7 @@ int nbFormatScalingReport( const nbProfile* profiles, int count, char* text, int
 	double freezes = 0.0, thaws = 0.0, steps = 0.0;
 	double overflow = 0.0, knotContacts = 0.0, knotBatches = 0.0;
 	double island = 0.0, floors[4] = { 0.0, 0.0, 0.0, 0.0 }, islandSteps = 0.0, colorSteps = 0.0;
+	double teamShare = 0.0, teamSteps = 0.0;
 	double wake = 0.0, wakes = 0.0;
 	float longestWake = 0.0f;
 	for ( int i = 0; i < count; ++i )
@@ -338,6 +349,8 @@ int nbFormatScalingReport( const nbProfile* profiles, int count, char* text, int
 		}
 		islandSteps += (double)p->islandStepCount;
 		colorSteps += (double)p->colorStepCount;
+		teamShare += p->teamShare * (double)p->teamStepCount;
+		teamSteps += (double)p->teamStepCount;
 		wake += p->wakeTime * (double)p->wakeCount;
 		wakes += (double)p->wakeCount;
 		longestWake = b3MaxFloat( longestWake, p->longestWake );
@@ -351,14 +364,22 @@ int nbFormatScalingReport( const nbProfile* profiles, int count, char* text, int
 	}
 	if ( islandSteps > 0.0 )
 	{
-		nbAppend( &out,
-				  "Largest island %.1f %% of the solver work in %.0f steps, more than half in %.1f %% of them, which solve by "
-				  "colors instead of packs\n",
+		nbAppend( &out, "Largest island %.1f %% of the solver work in %.0f steps, more than half in %.1f %% of them\n",
 				  100.0 * island / islandSteps, islandSteps, 100.0 * colorSteps / islandSteps );
+		if ( teamSteps > 0.0 )
+		{
+			nbAppend( &out,
+					  "A team of all workers solved the largest pack in %.1f %% of these steps, it held %.1f %% of their work\n",
+					  100.0 * teamSteps / islandSteps, 100.0 * teamShare / teamSteps );
+		}
+		else
+		{
+			nbAppend( &out, "No step had a team for the largest pack\n" );
+		}
 		double packSteps = islandSteps - colorSteps;
 		if ( packSteps > 0.0 )
 		{
-			nbAppend( &out, "In the steps with packs these take at least" );
+			nbAppend( &out, "In the steps with at most half in one island, the packs without a team take at least" );
 			for ( int f = 0; f < 4; ++f )
 			{
 				nbAppend( &out, "%s %.1f %% of the work with %d workers", f == 0 ? "" : ",", 100.0 * floors[f] / packSteps,

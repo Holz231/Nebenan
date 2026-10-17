@@ -650,6 +650,11 @@ typedef struct b3Counters
 	/// solve several of them at once against copies of the knot.
 	int knotContactCount;
 	int knotBatchCount;
+
+	/// Added for Nebenan: the work of the largest pack of islands, as islandWork weighs it, if a team of all workers solved
+	/// it in the last step, stage by stage with a barrier after each, while they solved the other packs whole in between.
+	/// A team takes a pack that holds clearly more than the even share of a worker. Zero if the step had none.
+	int teamWork;
 } b3Counters;
 
 /// Joint type enumeration. This is useful because all joint types use b3JointId and sometimes you

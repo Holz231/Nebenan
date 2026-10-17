@@ -3826,7 +3826,8 @@ static int SaveLoadTest( void )
 
 // Box3D and Nebenan on one pool of threads end as with one thread: houses prepared in the background, grenades whose
 // debris keeps the workers of Box3D busy, and a second world on the pool after the first one went. A step without
-// many awake contacts hands no task to the pool, see b3GetStepWorkerCount.
+// many awake contacts hands no task to the pool, see b3GetStepWorkerCount. In some steps the debris of one house holds
+// so much of the work that a team of all workers solves its pack, see b3Counters::teamWork.
 static int TaskSystemTest( void )
 {
 	enum
@@ -3865,14 +3866,17 @@ static int TaskSystemTest( void )
 
 		int maxAwake = 0;
 		int maxTasks = 0;
+		int teamSteps = 0;
 		for ( int i = 0; i < 180; ++i )
 		{
 			Step( &scene, 1 );
 			b3Counters counters = b3World_GetCounters( scene.physicsWorld );
 			maxAwake = b3MaxInt( maxAwake, counters.awakeContactCount );
 			maxTasks = b3MaxInt( maxTasks, counters.taskCount );
+			teamSteps += counters.teamWork > 0 ? 1 : 0;
 		}
 		ENSURE( maxAwake >= 1000 && ( pass == 0 || maxTasks > 0 ) );
+		ENSURE( pass == 0 ? teamSteps == 0 : teamSteps > 0 );
 		hashes[pass] = HashCreated( &scene, ids, houseCount );
 		DestroyScene( &scene );
 	}
@@ -4107,10 +4111,10 @@ static int ProfileTest( void )
 
 	nbProfile profile = nbWorld_GetProfile( scene.world );
 	const float* t = profile.stages;
-	printf(
-		"  step %.3f ms, update %.3f ms, impacts %.3f ms, cells %.3f ms, largest island %.2f, %d workers started after %.0f us\n",
-		t[nb_profileStep], t[nb_profileUpdate], t[nb_profileImpacts], t[nb_profileCells], profile.largestIsland,
-		profile.wakeCount, profile.wakeTime );
+	printf( "  step %.3f ms, update %.3f ms, impacts %.3f ms, cells %.3f ms, largest island %.2f, team in %d steps with %.2f, "
+			"%d workers started after %.0f us\n",
+			t[nb_profileStep], t[nb_profileUpdate], t[nb_profileImpacts], t[nb_profileCells], profile.largestIsland,
+			profile.teamStepCount, profile.teamShare, profile.wakeCount, profile.wakeTime );
 	ENSURE( profile.workerCount == 4 );
 	ENSURE( profile.stepCount == stepCount && profile.impactCount == 3 );
 	ENSURE( t[nb_profileStep] > 0.0f && t[nb_profileUpdate] > 0.0f && t[nb_profileImpacts] > 0.0f );
@@ -4139,6 +4143,11 @@ static int ProfileTest( void )
 	{
 		ENSURE( profile.islandFloor[i] >= 1.0f / (float)( 2 << i ) - 1.0e-6f );
 	}
+
+	// A team only takes a pack with more than five fourths of the even share of the workers of a step, at most four here.
+	// With so little debris most steps have one worker, see TaskSystemTest for steps with teams.
+	ENSURE( profile.teamStepCount <= profile.islandStepCount );
+	ENSURE( profile.teamStepCount == 0 || ( 1.25f / 4.0f < profile.teamShare && profile.teamShare <= 1.0f ) );
 
 	// The cells of the impact went to the workers
 	ENSURE( profile.wakeCount > 0 && profile.wakeTime >= 0.0f && profile.longestWake >= profile.wakeTime );

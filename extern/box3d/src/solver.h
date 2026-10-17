@@ -262,8 +262,10 @@ typedef struct b3StepContext
 
 	// Added for Nebenan: the awake islands in packs, each solved whole by one thread without a barrier, see b3SolvePacks.
 	// No packs if the step solves color by color. Per pack its bodies as awake indices, its overflow constraints and, per
-	// active color, its wide constraints, each as a range up to the start of the next pack.
+	// active color, its wide constraints, each as a range up to the start of the next pack. With a team the stages hold
+	// the first pack, and the threads solve the others whole in between, see b3SolveOtherPack.
 	int packCount;
+	bool team;
 	const int* packBodyStarts;
 	const int* packBodies;
 	const int* packOverflowStarts;
@@ -305,7 +307,7 @@ typedef struct b3StepContext
 	// padding to prevent false sharing
 	char padding3[64];
 
-	// Added for Nebenan: the next pack to take and the packs solved, see b3SolvePacks
+	// Added for Nebenan: the next pack to take and the packs solved, see b3SolvePacks and b3SolveOtherPack
 	b3AtomicInt packNext;
 	b3AtomicInt packDone;
 

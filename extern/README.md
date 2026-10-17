@@ -220,7 +220,8 @@ anläuft. Jeder Körper durchläuft seine Schritte in derselben Reihenfolge wie 
 Paket, sobald einer seiner Kontakte welchen hat. Rechnet es ihn nur, weil ein anderes Paket das Zeichen dafür gesetzt
 hat, ändert das nichts, weil Box3D Kontakte ohne Rückprall überspringt. Mit Sperren wie bisher rechnet der Löser, wenn
 nur ein Thread rechnet, ein Gelenk oder ein Kontakt mit einem Netz in den Farben liegt, Box3D den Rückprall fortpflanzt
-oder eine Insel mehr als die Hälfte der Arbeit hält.
+oder eine Insel mehr als die Hälfte der Arbeit hält und die Worker für ein Team zu wenige sind, siehe „Ein Team für das
+größte Paket“.
 
 **Sperren, solange andere Programme die Kerne belegen.** Verliert ein Thread mitten in einem Paket seinen Kern an ein
 anderes Programm, warten am Ende alle auf dieses Paket, während mit Sperren die anderen die Blöcke übernehmen, die er
@@ -293,8 +294,24 @@ die Pakete aus „Ganze Inseln pro Thread“ rechnen ihre Bündel in derselben R
 seine Geschwindigkeit. `b3Profile::overflow` misst, wie lange der aufrufende Thread allein am Überlauf rechnet, und
 `b3Counters` zählt mit `knotContactCount` und `knotBatchCount` die Kontakte in Bündeln und die Bündel.
 
-Die erste, die zweite, die vierte bis achte, die zehnte und die dreizehnte bis einunddreißigste ändern an den
-Ergebnissen nichts. Die dritte und die neunte ändern sie in den letzten Bits, dafür hängen sie nicht mehr davon ab, in
+**Ein Team für das größte Paket.** In den Paketen aus „Ganze Inseln pro Thread“ rechnet ein Thread jede Insel allein, und
+ein Paket mit deutlich mehr Arbeit als dem Anteil eines Threads bestimmt, wie lange der Löser braucht. Beim Abriss in der
+Demo hält es mit 8 Threads ein Drittel der Arbeit, siehe „Größte Insel im Team“ in
+[`docs/Optimierungen.md`](../docs/Optimierungen.md). Hält das erste und größte Paket mehr als fünf Viertel des Anteils
+eines Workers (`B3_TEAM_SHARE_NUM` und `B3_TEAM_SHARE_DEN` in `src/solver.c`), rechnen es jetzt alle Threads gemeinsam
+in den Stufen, Farbe für Farbe mit einer Sperre nach jeder, wie der Löser ohne Pakete. Die Blöcke der Stufen umfassen
+dann nur seine Körper und Bedingungen, eine Spanne pro Farbe und eine für seine Bündel von Knoten
+(`b3InitRangeBlocks`), und den Überlauf rechnet der aufrufende Thread nur für dieses Paket, das in der Reihenfolge der
+Pakete vorne steht (`b3StepContext::team` in `src/solver.h`). Findet ein Worker keine neue Stufe, weil der aufrufende
+Thread den Überlauf allein rechnet oder die anderen eine Stufe beenden, nimmt er sich eines der übrigen Pakete und
+rechnet es ganz, und was am Ende übrig ist, nimmt der aufrufende Thread (`b3SolveOtherPack`). Eine Insel mit mehr als der
+Hälfte der Arbeit bekommt so ebenfalls ein Paket für sich und ein Team, mit Farben über alle Inseln rechnet der Löser sie
+nur noch, wenn die Worker für ein Team zu wenige sind. Die Körper des ersten Pakets durchlaufen ihre Schritte in
+derselben Reihenfolge wie in einem Paket, die Ergebnisse bleiben dieselben. `b3Counters::teamWork` sagt, wie viel Arbeit
+das Paket des Teams im letzten Schritt hatte.
+
+Die erste, die zweite, die vierte bis achte, die zehnte, die dreizehnte bis einunddreißigste und die dreiunddreißigste
+ändern an den Ergebnissen nichts. Die dritte und die neunte ändern sie in den letzten Bits, dafür hängen sie nicht mehr davon ab, in
 welcher Reihenfolge Formen in die Bäume kommen. Die elfte ändert sie, weil Kontakte zu anderen Zeitpunkten entstehen,
 die zwölfte, weil sie weniger Punkte bekommen, die zweiunddreißigste, weil die Kontakte eines Knotens gebündelt
 gegen Kopien rechnen statt nacheinander. Die Ergänzungen stehen in `CMakeLists.txt`, `src/CMakeLists.txt`,

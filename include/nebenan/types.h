@@ -550,14 +550,20 @@ typedef struct nbProfile
 	float thawCount;
 
 	/// The share of the largest awake island in the work of the solver, see b3Counters::islandWork, mean over the steps of
-	/// a Box3D world with workers, and how many steps that were. With more than half of the work in one island, Box3D
-	/// solves by colors with a barrier after every stage instead of in packs, colorStepCount counts those steps. In the
-	/// others a pack gives the island to one thread, so with n threads the packs take at least the larger of its share and
-	/// 1/n of the work. islandFloor holds the mean of that bound over those steps for 2, 4, 8 and 16 threads.
+	/// a Box3D world with workers, and how many steps that were. colorStepCount counts the steps with more than half of
+	/// the work in one island. In the others a pack gives the island to one thread, so without a team the packs with n
+	/// threads take at least the larger of its share and 1/n of the work. islandFloor holds the mean of that bound over
+	/// those steps for 2, 4, 8 and 16 threads.
 	float largestIsland;
 	float islandFloor[4];
 	int islandStepCount;
 	int colorStepCount;
+
+	/// The steps in which a team of all workers solved the largest pack of islands stage by stage, while they solved the
+	/// other packs whole in between, see b3Counters::teamWork, and the share of that pack in the work of the solver, mean
+	/// over those steps. Box3D takes a team once the pack holds clearly more than the even share of a worker.
+	int teamStepCount;
+	float teamShare;
 
 	/// The constraints in the overflow of Box3D's constraint graph per step, the contacts of them that Box3D solves in
 	/// batches of knots, several at once, and those batches, see b3Counters::knotContactCount

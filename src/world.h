@@ -380,6 +380,8 @@ typedef struct nbProfileSums
 	double islandFloor[4];
 	int islandStepCount;
 	int colorStepCount;
+	double teamShare;
+	int teamStepCount;
 	double overflowCount;
 	double knotContactCount;
 	double knotBatchCount;
