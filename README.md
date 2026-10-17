@@ -158,6 +158,7 @@ für beide und für jeden Lauf kommt ebenso in die Zwischenablage, danach lädt 
 messen“ reißt die Stadt genauso ab, nach dem Aufwärmen mit 1, 2, 4 und so weiter bis zur empfohlenen Zahl von Threads,
 alle mit der Physik nacheinander. Die Bibliothek misst dabei jede Stufe von Box3D und Nebenan und rechnet aus, was mit
 mehr Threads auf einem Thread übrig bleibt. Die Tabelle dazu kommt in die Zwischenablage, siehe `nbWorld_GetProfile`.
+Jeder Bericht nennt CPU und Grafikkarte, denn auf einer schwachen Grafik begrenzt das Zeichnen die Bildzeit.
 
 **Werkzeuge**
 
@@ -1015,6 +1016,9 @@ höchstens 213 000 Dreiecke, im Mittel 0,5 MB und höchstens 1,7 MB Upload pro B
 2. „Messwerte kopieren“ im Menü: Ist Simulation groß, Bruchstückgröße erhöhen (×3 macht die Zerstörung grob, aber
    noch schneller), bewegte Trümmer senken oder „Etage braucht“ senken, dann stürzt weniger ein. Ist Grafik groß
    oder wartet das Bild auf die Grafikkarte, ohne `--msaa` und `--highdpi` starten.
+3. Welche Grafik zeichnet? Ihr Name steht im Menü über „Messwerte kopieren“. Unter Windows nimmt die Demo die
+   Grafikkarte mit der höchsten Leistung, auch wenn der Monitor an der Grafik im Prozessor hängt. Windows zeigt die
+   Bilder dann dort an, direkt an der Karte geht es schneller.
 
 Welche Optimierungen noch vorgemerkt sind, welche schon umgesetzt und welche mit Grund verworfen, steht mit den
 Messungen in [docs/Optimierungen.md](docs/Optimierungen.md).

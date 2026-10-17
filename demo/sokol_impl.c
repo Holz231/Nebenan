@@ -10,12 +10,82 @@
 #define SOKOL_NO_ENTRY
 
 #include "sokol_gfx.h"
+
+#if defined( SOKOL_D3D11 )
+#include <dxgi1_6.h>
+
+// sokol_app creates its device and swap chain through this, see DemoCreateDeviceAndSwapChain
+static HRESULT WINAPI DemoCreateDeviceAndSwapChain( IDXGIAdapter* adapter, D3D_DRIVER_TYPE driverType, HMODULE software,
+													UINT flags, const D3D_FEATURE_LEVEL* featureLevels, UINT featureLevelCount,
+													UINT sdkVersion, const DXGI_SWAP_CHAIN_DESC* swapChainDesc,
+													IDXGISwapChain** swapChain, ID3D11Device** device,
+													D3D_FEATURE_LEVEL* featureLevel, ID3D11DeviceContext** context );
+#define D3D11CreateDeviceAndSwapChain DemoCreateDeviceAndSwapChain
+#endif
+
 #include "sokol_app.h"
+
+#if defined( SOKOL_D3D11 )
+#undef D3D11CreateDeviceAndSwapChain
+#endif
+
 #include "sokol_glue.h"
 #include "sokol_log.h"
 
 #if defined( SOKOL_D3D11 )
-#include <dxgi1_5.h>
+static const IID s_iidFactory6 = { 0xc1b6694f, 0xff09, 0x44a9, { 0xb0, 0x3c, 0x77, 0x90, 0x0a, 0x0a, 0x1d, 0x17 } };
+static const IID s_iidAdapter1 = { 0x29038f61, 0x3839, 0x4626, { 0x91, 0xfd, 0x08, 0x68, 0x79, 0x01, 0x1a, 0x05 } };
+
+// The hardware GPU with the highest performance, null if DXGI 1.6 is missing or there is none
+static IDXGIAdapter1* DemoHighPerformanceAdapter( void )
+{
+	IDXGIFactory6* factory = NULL;
+	if ( FAILED( CreateDXGIFactory1( &s_iidFactory6, (void**)&factory ) ) )
+	{
+		return NULL;
+	}
+	IDXGIAdapter1* adapter = NULL;
+	DXGI_ADAPTER_DESC1 desc;
+	if ( FAILED( factory->lpVtbl->EnumAdapterByGpuPreference( factory, 0, DXGI_GPU_PREFERENCE_HIGH_PERFORMANCE, &s_iidAdapter1,
+															  (void**)&adapter ) ) )
+	{
+		adapter = NULL;
+	}
+	else if ( FAILED( adapter->lpVtbl->GetDesc1( adapter, &desc ) ) || ( desc.Flags & DXGI_ADAPTER_FLAG_SOFTWARE ) != 0 )
+	{
+		adapter->lpVtbl->Release( adapter );
+		adapter = NULL;
+	}
+	factory->lpVtbl->Release( factory );
+	return adapter;
+}
+
+// sokol creates its device on the default adapter, and that is the GPU the display hangs on, unless the program has a
+// GPU picked in the Windows settings. With the display on the graphics of the processor, a PC with a graphics card drew
+// on the weaker GPU. So the device goes on the GPU with the highest performance, and Windows shows its frames on the
+// display of the other one. Without DXGI 1.6 or a second GPU, or if that fails, it stays the default adapter.
+static HRESULT WINAPI DemoCreateDeviceAndSwapChain( IDXGIAdapter* adapter, D3D_DRIVER_TYPE driverType, HMODULE software,
+													UINT flags, const D3D_FEATURE_LEVEL* featureLevels, UINT featureLevelCount,
+													UINT sdkVersion, const DXGI_SWAP_CHAIN_DESC* swapChainDesc,
+													IDXGISwapChain** swapChain, ID3D11Device** device,
+													D3D_FEATURE_LEVEL* featureLevel, ID3D11DeviceContext** context )
+{
+	IDXGIAdapter1* preferred = adapter == NULL && driverType == D3D_DRIVER_TYPE_HARDWARE ? DemoHighPerformanceAdapter() : NULL;
+	if ( preferred != NULL )
+	{
+		// With an adapter given, the driver type has to be unknown
+		HRESULT hr = D3D11CreateDeviceAndSwapChain( (IDXGIAdapter*)preferred, D3D_DRIVER_TYPE_UNKNOWN, software, flags,
+													featureLevels, featureLevelCount, sdkVersion, swapChainDesc, swapChain,
+													device, featureLevel, context );
+		preferred->lpVtbl->Release( preferred );
+		if ( SUCCEEDED( hr ) )
+		{
+			return hr;
+		}
+	}
+	return D3D11CreateDeviceAndSwapChain( adapter, driverType, software, flags, featureLevels, featureLevelCount, sdkVersion,
+										  swapChainDesc, swapChain, device, featureLevel, context );
+}
 
 // sokol creates a flip model swap chain, and Windows holds a flip model swap chain to the refresh rate of the
 // display even at sync interval 0, unless it was created with DXGI_SWAP_CHAIN_FLAG_ALLOW_TEARING and each present

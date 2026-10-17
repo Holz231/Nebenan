@@ -88,7 +88,8 @@ in Bündeln von Knoten stehen. Die Regeln, nach denen die Messung entscheiden so
 Die Bildzeiten zeigen noch etwas anderes: Bei ×2 mit 8 Threads dauert ein Bild 6,31 ms bei 2,67 ms Simulation, länger
 als mit 4 Threads, und das 1 % Low fällt auf 29 FPS. Das liegt außerhalb der Physik, beim Zeichnen auf der Grafik im
 Prozessor, auf der die Demo dort lief. Für Bildzeiten der Demo auf dem Ryzen kommt es deshalb darauf an, auf welcher
-Grafik sie zeichnet.
+Grafik sie zeichnet. Seit `physik-23` nimmt die Demo unter Windows selbst die Grafik mit der höchsten Leistung, siehe
+„Stärkste Grafikkarte in der Demo“.
 
 ## Kleinere Punkte
 

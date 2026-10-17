@@ -2211,6 +2211,16 @@ static ComparisonResult SumComparison( const Comparison& comparison, bool parall
 	return result;
 }
 
+// The machine of a report: the CPU with the lanes of the solver, and the GPU with the frame, which can hold up the frames
+static void AppendMachine( std::string& text, const App& app )
+{
+	Appendf( text, "CPU: %s, %d logische Kerne, %d Performance-Kerne, Löser mit %d Spuren\n",
+			 app.cpuName.empty() ? "unbekannt" : app.cpuName.c_str(), nbGetHardwareThreadCount(), app.performanceCores,
+			 b3GetSIMDWidth() );
+	Appendf( text, "GPU: %s, Bild %d x %d, MSAA %dx, Monitor %d Hz, VSync %s\n", app.gpuName.empty() ? "unbekannt" : app.gpuName.c_str(),
+			 sapp_width(), sapp_height(), sapp_sample_count(), app.refreshRate, app.vsyncAvailable ? "aus" : "an, lässt sich nicht abschalten" );
+}
+
 // The report of the scaling goes to the clipboard, to paste into a chat: the frames of every run and the profile of the
 // library fitted over the runs, see nbFormatScalingReport
 static void FinishScaling( App& app )
@@ -2233,9 +2243,7 @@ static void FinishScaling( App& app )
 	}
 	Appendf( text, " Threads, Physik nacheinander, %s-Build, Box3D %d.%d.%d\n", s_buildType, version.major, version.minor,
 			 version.revision );
-	Appendf( text, "CPU: %s, %d logische Kerne, %d Performance-Kerne, Löser mit %d Spuren\n",
-			 app.cpuName.empty() ? "unbekannt" : app.cpuName.c_str(), nbGetHardwareThreadCount(), app.performanceCores,
-			 b3GetSIMDWidth() );
+	AppendMachine( text, app );
 	const Demolition& demolition = comparison.demolition;
 	Appendf( text,
 			 "Abriss mit %d Granaten, bis zu %d pro Bild, solange weniger als %d Trümmer fliegen, Bruchstückgröße x%.2f, "
@@ -2316,11 +2324,7 @@ static void FinishComparison( App& app )
 	std::string text;
 	Appendf( text, "Nebenan-Vergleich: Physik parallel zum Zeichnen gegen nacheinander, %s-Build, Box3D %d.%d.%d\n", s_buildType,
 			 version.major, version.minor, version.revision );
-	Appendf( text, "CPU: %s, %d logische Kerne, %d Performance-Kerne, Löser mit %d Spuren\n",
-			 app.cpuName.empty() ? "unbekannt" : app.cpuName.c_str(), nbGetHardwareThreadCount(), app.performanceCores,
-			 b3GetSIMDWidth() );
-	Appendf( text, "GPU: %s, Bild %d x %d, MSAA %dx, Monitor %d Hz, VSync %s\n", app.gpuName.empty() ? "unbekannt" : app.gpuName.c_str(),
-			 sapp_width(), sapp_height(), sapp_sample_count(), app.refreshRate, app.vsyncAvailable ? "aus" : "an, lässt sich nicht abschalten" );
+	AppendMachine( text, app );
 	const Demolition& demolition = comparison.demolition;
 	Appendf( text, "Abriss der Stadt Haus für Haus mit %d Granaten, bis zu %d pro Bild, solange weniger als %d Trümmer fliegen, "
 			 "Bruchstückgröße x%.2f, Budget %d, höchstens %d Trümmer zugleich unterwegs, ein Schritt pro Bild\n",
