@@ -141,18 +141,35 @@ struct WorldView
 	size_t savedBytes = 0;
 };
 
-// Parallel against serial physics on this PC with one click: the town taken down by grenades, see RunDemolition,
+// The town taken down house by house, see RunDemolition
+struct Demolition
+{
+	// The house under fire, its passes, the next shot of the pass, the frames to wait before the house is checked, and
+	// where it still stands for a pass after the first
+	int house = 0;
+	int pass = 0;
+	int shot = 0;
+	int wait = 0;
+	std::vector<b3Vec3> targets;
+
+	// Grenades so far, the frame the last house came down, -1 before, and the most debris moving at once
+	int shots = 0;
+	int doneFrame = -1;
+	int maxMoving = 0;
+};
+
+// Parallel against serial physics on this PC with one click: the town taken down house by house, see RunDemolition,
 // alternately with and without parallel physics, each with the threads the demo picks for it. Every run takes one step
 // per frame like an automated run, so all do the same work and end in the same world.
 struct Comparison
 {
 	// A first, shorter run warms up and does not count. Then come two runs with and two without parallel physics, with
-	// first and last, so a slow drift of the machine falls on both alike.
+	// first and last, so a slow drift of the machine falls on both alike. A counted run ends when the debris had time to
+	// settle after the last house came down.
 	static const int RunCount = 5;
-	static int RunFrames( int run )
-	{
-		return run == 0 ? 300 : 900;
-	}
+	static const int WarmupFrames = 300;
+	static const int SettleFrames = 300;
+	static const int MaxRunFrames = 4000;
 
 	static bool IsParallel( int run )
 	{
@@ -168,13 +185,15 @@ struct Comparison
 	// What to go back to afterwards
 	SceneKind scene = SceneWall;
 	Tool tool = ToolRifle;
+	int maxDebrisBodies = 0;
 	bool parallelPhysics = true;
 	bool vsync = false;
 	bool paused = false;
 
-	// Per run: its threads, the frame times, the CPU time of the simulation, the graphics and the wait for the physics,
-	// the longest simulation and wait in a frame, and where the chunks ended up
+	// Per run: its threads and frames, the frame times, the CPU time of the simulation, the graphics and the wait for the
+	// physics, the longest simulation and wait in a frame, and where the chunks ended up
 	int threads[RunCount] = {};
+	int frames[RunCount] = {};
 	std::vector<float> frameTimes[RunCount];
 	double simulationTime[RunCount] = {};
 	double graphicsTime[RunCount] = {};
@@ -183,8 +202,9 @@ struct Comparison
 	float longestWait[RunCount] = {};
 	uint64_t hashes[RunCount] = {};
 
-	// What is left of the town at the end
+	// What is left of the town at the end, and how the demolition went
 	nbStats stats = {};
+	Demolition demolition;
 
 	// The report of the last comparison, and its short form for the menu
 	std::string report;
@@ -408,7 +428,11 @@ struct App
 	float simulationTime = 0.0f;
 	float waitTime = 0.0f;
 	WorldView view;
+	Demolition demolition;
 	Comparison comparison;
+
+	// The houses of the town in the order of TownHousePosition, for the demolition
+	std::vector<nbDestructibleId> townHouses;
 
 	// Vertical sync is off, so the frame rate shows what the machine can do. Metal always syncs.
 	bool vsync = false;
@@ -966,7 +990,7 @@ static void BuildTownScene( App& app )
 			houses.push_back( PrepareHouse( TownHousePosition( row, column ), yaw, floors, seed++ ) );
 		}
 	}
-	CreateStructures( app, houses );
+	app.townHouses = CreateStructures( app, houses );
 
 	app.camera.position = { 0.0f, 16.0f, 34.0f };
 	app.camera.yaw = 0.0f;
@@ -1328,6 +1352,7 @@ static void DestroyScene( App& app )
 	app.bodySlots.clear();
 	app.lastImpact = {};
 	app.city = City();
+	app.townHouses.clear();
 }
 
 // One thread per performance core, at most 8. Box3D runs best on the performance cores alone, hyper-threads and
@@ -2102,7 +2127,9 @@ static void DrawUi( App& app )
 	{
 		char label[64];
 		DescribeComparisonRun( comparison, label, sizeof( label ) );
-		ImGui::Text( "Vergleich: %s, Bild %d von %d", label, comparison.frame, Comparison::RunFrames( comparison.run ) );
+		int houseCount = TownRows * TownColumns;
+		ImGui::Text( "Vergleich: %s, Haus %d von %d, Bild %d", label, b3MinInt( app.demolition.house + 1, houseCount ), houseCount,
+					 comparison.frame );
 		if ( ImGui::Button( "Vergleich abbrechen" ) )
 		{
 			StopComparison( app );
@@ -2116,7 +2143,7 @@ static void DrawUi( App& app )
 		}
 		if ( ImGui::IsItemHovered() )
 		{
-			ImGui::SetTooltip( "Lädt die Stadt und reißt sie mit Granaten ab, Wand für Wand von oben nach unten,\nbis alle Häuser eingestürzt sind: einmal kurz zum Aufwärmen, dann parallel,\nnacheinander, nacheinander und parallel, je 900 Bilder mit einem Schritt pro Bild\nund jeweils mit den passenden Threads. Das Ergebnis kommt in die Zwischenablage,\ndanach lädt die Szene von vorher neu." );
+			ImGui::SetTooltip( "Lädt die Stadt und reißt sie Haus für Haus mit Granaten ab, Wand für Wand von\noben nach unten, bis jedes Haus unten ist, mit Budget 5000 und nur so schnell,\ndass nie mehr als 3000 Trümmer zugleich fliegen: einmal kurz zum Aufwärmen, dann\nparallel, nacheinander, nacheinander und parallel, mit einem Schritt pro Bild und\njeweils mit den passenden Threads. Das Ergebnis kommt in die Zwischenablage,\ndanach lädt die Szene von vorher neu." );
 		}
 		if ( comparison.summary.empty() == false )
 		{
@@ -2280,65 +2307,147 @@ static uint64_t HashChunkTransforms( const App& app )
 	return hash;
 }
 
-// The comparison takes the town down: grenades on every wall of every house, one every 1.2 m along it and two per storey
-// up it, several per frame. They go row by row from the top storey down, so no storey falls whole before its walls are
-// gone. Then the debris settles.
+// The comparison takes the town down house by house. The first pass puts grenades on every wall of the house, one every
+// 1.2 m along it and two per storey up it, row by row from the top storey down, so no storey falls whole before its walls
+// are gone. A little later every place where the house still stands bonded higher than 1.5 m gets a grenade of its own,
+// highest first, until nothing stands there anymore, at most five more times. Then comes the next house. With the same
+// settings every run fires the same shots.
 static const int DemolitionShotsPerRow = 24;
 static const int DemolitionShotsPerFrame = 4;
 static const int DemolitionStart = 20;
+static const int DemolitionCheckDelay = 15;
+static const int DemolitionMaxPasses = 6;
+static const float DemolitionStandingHeight = 1.5f;
 
-static int DemolitionShotCount()
+// Over budget the slowest debris freezes, and in a burst also pieces still in flight, which then hang in the air. So the
+// demolition runs with this budget and fires the next grenade only while less than 3 000 pieces move, the most debris a
+// few grenades throw added stays below it.
+static const int DemolitionBudget = 5000;
+static const int DemolitionMovingLimit = 3000;
+
+// Shot k of the first pass at a house: its rows from the top down, in each the front and back walls with seven shots
+// each, then the end walls with five each
+static b3Vec3 DemolitionTarget( int house, int k )
 {
-	int rows = 0;
-	for ( int house = 0; house < TownRows * TownColumns; ++house )
+	int row = 2 * TownHouseFloors( house ) - 1 - k / DemolitionShotsPerRow;
+	k %= DemolitionShotsPerRow;
+	float height = 3.25f * (float)( row / 2 ) + ( row % 2 == 0 ? 0.9f : 2.2f );
+	b3Vec3 local;
+	if ( k < 14 )
 	{
-		rows += 2 * TownHouseFloors( house );
+		local = { -3.6f + 1.2f * (float)( k % 7 ), height, k < 7 ? 3.4f : -3.4f };
 	}
-	return rows * DemolitionShotsPerRow;
+	else
+	{
+		local = { k < 19 ? 4.7f : -4.7f, height, -2.4f + 1.2f * (float)( ( k - 14 ) % 5 ) };
+	}
+	return b3Add( TownHousePosition( house / TownColumns, house % TownColumns ), local );
 }
 
-// Shot k: in each row from the top down the houses that reach that high, along each house the front and back walls with
-// seven shots each, then the end walls with five each
-static b3Vec3 DemolitionTarget( int k )
+// The places where the house still stands: chunks still bonded into it that reach higher than 1.5 m, highest first,
+// one place per 1.2 m
+static void FindStanding( const App& app, int house, std::vector<b3Vec3>& targets )
 {
-	for ( int row = 2 * 3 - 1; row >= 0; --row )
+	targets.clear();
+	nbDestructibleId id = app.townHouses[(size_t)house];
+	std::vector<nbChunkId> chunks( (size_t)nbDestructible_GetChunkCount( id ) );
+	int count = nbDestructible_GetChunks( id, chunks.data(), (int)chunks.size() );
+
+	std::vector<std::pair<float, b3Vec3>> standing;
+	for ( int i = 0; i < count; ++i )
 	{
-		for ( int house = 0; house < TownRows * TownColumns; ++house )
+		nbChunkId chunk = chunks[(size_t)i];
+		if ( nbChunk_IsDynamic( chunk ) || nbChunk_GetBondCount( chunk ) == 0 )
 		{
-			if ( row >= 2 * TownHouseFloors( house ) )
-			{
-				continue;
-			}
+			continue;
+		}
 
-			if ( k >= DemolitionShotsPerRow )
-			{
-				k -= DemolitionShotsPerRow;
-				continue;
-			}
-
-			float height = 3.25f * (float)( row / 2 ) + ( row % 2 == 0 ? 0.9f : 2.2f );
-			b3Vec3 local;
-			if ( k < 14 )
-			{
-				local = { -3.6f + 1.2f * (float)( k % 7 ), height, k < 7 ? 3.4f : -3.4f };
-			}
-			else
-			{
-				local = { k < 19 ? 4.7f : -4.7f, height, -2.4f + 1.2f * (float)( ( k - 14 ) % 5 ) };
-			}
-			return b3Add( TownHousePosition( house / TownColumns, house % TownColumns ), local );
+		b3AABB box = b3Shape_GetAABB( nbChunk_GetShape( chunk ) );
+		if ( box.upperBound.y > DemolitionStandingHeight )
+		{
+			standing.push_back( { box.upperBound.y, b3MulSV( 0.5f, b3Add( box.lowerBound, box.upperBound ) ) } );
 		}
 	}
-	return b3Vec3_zero;
+
+	std::stable_sort( standing.begin(), standing.end(),
+					  []( const std::pair<float, b3Vec3>& a, const std::pair<float, b3Vec3>& b ) { return a.first > b.first; } );
+	for ( const std::pair<float, b3Vec3>& place : standing )
+	{
+		bool covered = false;
+		for ( b3Vec3 target : targets )
+		{
+			covered = covered || b3LengthSquared( b3Sub( target, place.second ) ) < 1.2f * 1.2f;
+		}
+		if ( covered == false )
+		{
+			targets.push_back( place.second );
+		}
+	}
+}
+
+static void FireDemolition( App& app, int frame )
+{
+	Demolition& demolition = app.demolition;
+	int houseCount = (int)app.townHouses.size();
+	if ( frame < DemolitionStart || demolition.house >= houseCount )
+	{
+		return;
+	}
+
+	// After a pass the house gets a moment, then whatever still stands is the next pass
+	if ( demolition.wait > 0 )
+	{
+		demolition.wait -= 1;
+		if ( demolition.wait > 0 )
+		{
+			return;
+		}
+
+		FindStanding( app, demolition.house, demolition.targets );
+		demolition.pass += 1;
+		demolition.shot = 0;
+		if ( demolition.targets.empty() || demolition.pass == DemolitionMaxPasses )
+		{
+			demolition.house += 1;
+			demolition.pass = 0;
+			demolition.targets.clear();
+			if ( demolition.house == houseCount )
+			{
+				demolition.doneFrame = frame;
+			}
+		}
+		return;
+	}
+
+	bool first = demolition.pass == 0;
+	int passShots = first ? 2 * TownHouseFloors( demolition.house ) * DemolitionShotsPerRow : (int)demolition.targets.size();
+	for ( int i = 0; i < DemolitionShotsPerFrame && demolition.shot < passShots; ++i )
+	{
+		nbStats stats = nbWorld_GetStats( app.destruction );
+		if ( stats.debrisCount - stats.rubbleCount >= DemolitionMovingLimit )
+		{
+			break;
+		}
+
+		b3Vec3 target = first ? DemolitionTarget( demolition.house, demolition.shot ) : demolition.targets[(size_t)demolition.shot];
+		FireAt( app, ToolGrenade, target );
+		demolition.shot += 1;
+		demolition.shots += 1;
+	}
+
+	if ( demolition.shot == passShots )
+	{
+		demolition.wait = DemolitionCheckDelay;
+	}
 }
 
 static void RunDemolition( App& app, int frame )
 {
-	int first = ( frame - DemolitionStart ) * DemolitionShotsPerFrame;
-	for ( int k = b3MaxInt( first, 0 ); k < first + DemolitionShotsPerFrame && k < DemolitionShotCount(); ++k )
-	{
-		FireAt( app, ToolGrenade, DemolitionTarget( k ) );
-	}
+	FireDemolition( app, frame );
+
+	// The debris moving right after the shots, before the next update freezes what is over budget
+	nbStats stats = nbWorld_GetStats( app.destruction );
+	app.demolition.maxMoving = b3MaxInt( app.demolition.maxMoving, stats.debrisCount - stats.rubbleCount );
 }
 
 //----------------------------------------------------------------------------------------------------------------------
@@ -2349,6 +2458,8 @@ static void BeginComparisonRun( App& app )
 	Comparison& comparison = app.comparison;
 	app.parallelPhysics = Comparison::IsParallel( comparison.run );
 	app.accumulator = 0.0f;
+	app.maxDebrisBodies = DemolitionBudget;
+	app.demolition = Demolition();
 	LoadScene( app, SceneTown );
 
 	int run = comparison.run;
@@ -2369,6 +2480,7 @@ static void StartComparison( App& app )
 	comparison.run = 0;
 	comparison.scene = app.scene;
 	comparison.tool = app.tool;
+	comparison.maxDebrisBodies = app.maxDebrisBodies;
 	comparison.parallelPhysics = app.parallelPhysics;
 	comparison.vsync = app.vsync;
 	comparison.paused = app.paused;
@@ -2389,6 +2501,7 @@ static void StopComparison( App& app )
 	Comparison& comparison = app.comparison;
 	comparison.active = false;
 	app.tool = comparison.tool;
+	app.maxDebrisBodies = comparison.maxDebrisBodies;
 	app.parallelPhysics = comparison.parallelPhysics;
 	app.paused = comparison.paused;
 	if ( app.vsyncAvailable )
@@ -2443,7 +2556,6 @@ static ComparisonResult SumComparison( const Comparison& comparison, bool parall
 	ComparisonResult result;
 	std::vector<float> times;
 	double simulation = 0.0, graphics = 0.0, wait = 0.0;
-	int runs = 0;
 	for ( int run = 1; run < Comparison::RunCount; ++run )
 	{
 		if ( Comparison::IsParallel( run ) != parallel )
@@ -2456,10 +2568,14 @@ static ComparisonResult SumComparison( const Comparison& comparison, bool parall
 		graphics += comparison.graphicsTime[run];
 		wait += comparison.waitTime[run];
 		result.threads = comparison.threads[run];
-		runs += 1;
 	}
 
-	double frames = (double)( Comparison::RunFrames( 1 ) * b3MaxInt( runs, 1 ) );
+	double frames = 0.0;
+	for ( int run = 1; run < Comparison::RunCount; ++run )
+	{
+		frames += Comparison::IsParallel( run ) == parallel ? (double)comparison.frames[run] : 0.0;
+	}
+	frames = b3MaxFloat( (float)frames, 1.0f );
 	result.frames = GetFrameStats( times );
 	result.simulationTime = (float)( simulation / frames );
 	result.graphicsTime = (float)( graphics / frames );
@@ -2496,10 +2612,20 @@ static void FinishComparison( App& app )
 			 b3GetSIMDWidth() );
 	Appendf( text, "GPU: %s, Bild %d x %d, MSAA %dx, Monitor %d Hz, VSync %s\n", app.gpuName.empty() ? "unbekannt" : app.gpuName.c_str(),
 			 sapp_width(), sapp_height(), sapp_sample_count(), app.refreshRate, app.vsyncAvailable ? "aus" : "an, lässt sich nicht abschalten" );
-	Appendf( text, "Abriss der Stadt mit %d Granaten, %d pro Bild, Bruchstückgröße x%.2f, Budget %d, ein Schritt pro Bild, %d Bilder "
-			 "pro Lauf, erst einer zum Aufwärmen mit %d, der nicht zählt\n",
-			 DemolitionShotCount(), DemolitionShotsPerFrame, app.fragmentScale, app.maxDebrisBodies, Comparison::RunFrames( 1 ),
-			 Comparison::RunFrames( 0 ) );
+	const Demolition& demolition = comparison.demolition;
+	Appendf( text, "Abriss der Stadt Haus für Haus mit %d Granaten, bis zu %d pro Bild, solange weniger als %d Trümmer fliegen, "
+			 "Bruchstückgröße x%.2f, Budget %d, höchstens %d Trümmer zugleich unterwegs, ein Schritt pro Bild\n",
+			 demolition.shots, DemolitionShotsPerFrame, DemolitionMovingLimit, app.fragmentScale, DemolitionBudget, demolition.maxMoving );
+	if ( demolition.doneFrame >= 0 )
+	{
+		Appendf( text, "Alle %d Häuser nach %d Bildern unten, %d Bilder pro Lauf, erst einer mit %d zum Aufwärmen, der nicht zählt\n",
+				 demolition.house, demolition.doneFrame, comparison.frames[1], Comparison::WarmupFrames );
+	}
+	else
+	{
+		Appendf( text, "Nach %d Bildern erst %d Häuser unten, erst ein Lauf mit %d zum Aufwärmen, der nicht zählt\n", comparison.frames[1],
+				 demolition.house, Comparison::WarmupFrames );
+	}
 	Appendf( text, "Am Ende: %d von %d Etagen eingestürzt, %d Bruchstücke, %d davon als Trümmer, %d Schutt\n",
 			 comparison.stats.collapsedStoreyCount, storeys, comparison.stats.chunkCount, comparison.stats.dynamicBodyCount,
 			 comparison.stats.rubbleCount );
@@ -2567,7 +2693,9 @@ static void AdvanceComparison( App& app, float frameTime, float graphicsTime )
 	comparison.longestWait[run] = b3MaxFloat( comparison.longestWait[run], app.waitTime );
 
 	comparison.frame += 1;
-	if ( comparison.frame < Comparison::RunFrames( run ) )
+	const Demolition& demolition = app.demolition;
+	bool settled = demolition.doneFrame >= 0 && comparison.frame >= demolition.doneFrame + Comparison::SettleFrames;
+	if ( run == 0 ? comparison.frame < Comparison::WarmupFrames : settled == false && comparison.frame < Comparison::MaxRunFrames )
 	{
 		return;
 	}
@@ -2577,7 +2705,9 @@ static void AdvanceComparison( App& app, float frameTime, float graphicsTime )
 	ApplyPhysics( app );
 	SyncChunks( app );
 	comparison.hashes[run] = HashChunkTransforms( app );
+	comparison.frames[run] = comparison.frame;
 	comparison.stats = nbWorld_GetStats( app.destruction );
+	comparison.demolition = demolition;
 	comparison.run += 1;
 	if ( comparison.run < Comparison::RunCount )
 	{
@@ -2651,6 +2781,12 @@ static void PrintAutomationReport( App& app )
 			stats.dynamicBodyCount, stats.rubbleCount );
 	printf( "  physics %s, chunk transforms hash %016llx\n", app.parallelPhysics ? "parallel" : "serial",
 			(unsigned long long)HashChunkTransforms( app ) );
+	if ( app.automation.demolition )
+	{
+		printf( "  demolition: %d grenades, %d of %d houses down, the last at frame %d, %d storeys collapsed, at most %d debris moving\n",
+				app.demolition.shots, app.demolition.house, (int)app.townHouses.size(), app.demolition.doneFrame,
+				stats.collapsedStoreyCount, app.demolition.maxMoving );
+	}
 
 	RenderStats rs = app.renderer.GetStats();
 	printf( "  render: draw calls %d, vertices %d (%d of removed meshes), pages %d, slots %d\n", rs.drawCalls, rs.vertexCount,
@@ -3043,6 +3179,7 @@ int main( int argc, char** argv )
 		{
 			app.automation.demolition = true;
 			app.automation.scene = SceneTown;
+			app.maxDebrisBodies = DemolitionBudget;
 		}
 	}
 

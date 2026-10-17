@@ -147,10 +147,11 @@ Upload. Mit paralleler Physik zählt es die Simulation für sich und beim Hauptt
 noch auf sie wartet. Es sagt auch, wer die FPS begrenzt: die CPU, die Simulation (der Hauptthread wartet lange auf sie),
 die Grafikkarte (ein Bild dauert deutlich länger, als die CPU dafür braucht) oder VSync. „Messwerte kopieren“ legt alles
 mit CPU, Grafikkarte und Auflösung in die Zwischenablage, zum Einfügen in einen Chat. „Parallel gegen nacheinander
-messen“ lädt die Stadt und reißt sie mit Granaten ab, Wand für Wand von oben nach unten, bis alle Häuser eingestürzt
-sind: einmal kurz zum Aufwärmen, dann parallel, nacheinander, nacheinander und parallel, je 900 Bilder mit einem Schritt
-pro Bild und jeweils mit den passenden Threads. Das Ergebnis mit Bildzeit, FPS und 1 % Low für beide und für jeden Lauf
-kommt ebenso in die Zwischenablage, danach lädt die Szene von vorher neu.
+messen“ lädt die Stadt und reißt sie Haus für Haus mit Granaten ab, Wand für Wand von oben nach unten, bis jedes Haus
+unten ist. Er schießt mit Budget 5 000 und nur, solange weniger als 3 000 Trümmer fliegen, denn über dem Budget frieren
+im Schub auch Stücke im Flug ein. Das macht er einmal kurz zum Aufwärmen, dann parallel, nacheinander, nacheinander und
+parallel, mit einem Schritt pro Bild und jeweils mit den passenden Threads. Das Ergebnis mit Bildzeit, FPS und 1 % Low
+für beide und für jeden Lauf kommt ebenso in die Zwischenablage, danach lädt die Szene von vorher neu.
 
 **Werkzeuge**
 
