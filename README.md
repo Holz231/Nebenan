@@ -13,6 +13,8 @@ gelöscht. Kein Staub, keine Schatten: Jede Millisekunde geht in die Zerstörung
 - Ein Einschlag rechnet auf mehreren Threads, über das Task-System der Anwendung oder eingebaute Threads: Schaden
   an den getroffenen Stücken, Bruchpunkte, Voronoi-Zellen und Hüllen. Derweil weckt der aufrufende Thread den Schutt
   am Einschlag auf. Das Ergebnis hängt nicht von der Zahl der Threads ab
+- Die Physik rechnet auf einem eigenen Thread, während das Programm zeichnet (`nbWorld_Step`). Wer danach die Welt
+  anfasst, wartet automatisch auf den Schritt, und die Welt rechnet bitgleich wie ohne
 - Einsturz Etage für Etage, auf jeder Höhe und in jeder Reihenfolge: Hat eine Etage weniger als die Hälfte ihrer Wände,
   fliegen ihre letzten Wände mit Wucht heraus, und alles darüber kommt als ein Stück herunter, gekippt zur Seite, wo
   die Wände fehlen. Die Räume oben bleiben ganz und geben wieder Deckung. Sonst stürzt an einem Haus nichts ein,
@@ -127,8 +129,8 @@ viele FPS die CPU schaffen würde. Die Physik rechnet unabhängig davon 60 Schri
   nächsten Einschläge.
 - **Bewegte Trümmer** (Standard 1500): wie viele Trümmer Box3D höchstens gleichzeitig bewegt. Weniger macht den
   Physikschritt schneller.
-- **Physik parallel zum Zeichnen** (Standard an): Die Physik eines Bilds rechnet auf einem eigenen Thread, während der
-  Hauptthread das Bild davor zeichnet. Ein Bild kostet dann so viel wie der längere der beiden Teile statt beide
+- **Physik parallel zum Zeichnen** (Standard an): Nebenan rechnet die Physik eines Bilds auf einem eigenen Thread
+  (`nbWorld_Step`), während der Hauptthread das Bild davor zeichnet. Ein Bild kostet dann so viel wie der längere der beiden Teile statt beide
   zusammen und zeigt die Welt einen Schritt später. Die Welt rechnet mit und ohne genau gleich, die Zahl der Threads
   passt sich beim nächsten Laden der Szene an.
 
@@ -247,6 +249,18 @@ zu schlafen. Mit `nbCreateTaskSystem` teilen sich Box3D und Nebenan diese Thread
 seine Worker nur, wenn es genug zu tun gibt: einen für je 250 wache Kontakte, darunter rechnet der aufrufende Thread den
 Schritt allein (eine Ergänzung, siehe [`extern/README.md`](extern/README.md)). Ein paar Dutzend wache Trümmer rechnet
 er so schneller, als er die Worker wecken und auf sie warten könnte, und unter Dauerbeschuss rechnen alle mit.
+
+**Der Schritt auf einem eigenen Thread.** `nbWorld_Step` rechnet den Box3D-Schritt samt Update auf einem Thread von
+Nebenan und kehrt sofort zurück, so zeichnet das Programm sein Bild, während die Physik rechnet. Ein Bild kostet dann
+so viel wie der längere der beiden Teile statt beide zusammen. Ruft der Thread, der den Schritt gestartet hat, danach
+irgendeine Funktion von Nebenan oder Box3D für die beiden Welten auf, wartet sie zuerst auf den Schritt. Box3D prüft
+dazu bei jedem Zugriff auf eine Welt, ob ein anderer Thread sie gerade rechnet (eine Ergänzung, siehe
+[`extern/README.md`](extern/README.md)). Der Schritt-Thread und die Worker gehen ohne Warten durch. So bleibt die
+Reihenfolge aller Änderungen dieselbe wie ohne eigenen Thread, und die Welt rechnet bitgleich, das Programm muss
+nichts dafür bauen. Mehrere Schritte in einem Bild warten nicht aufeinander, sie folgen auf dem Thread hintereinander.
+`nbWorld_GetBodyEvents` gibt am Anfang des nächsten Bilds die letzte Lage jedes Körpers, der sich seitdem bewegt hat
+und noch da ist. Mit `nbWorld_RunAfterStep` legt ein Programm eigene Arbeit an der Welt hinter den Schritt auf
+denselben Thread, die Demo etwa das Streaming der großen Stadt.
 
 **Stützgraph.** Zwei Bruchstücke sind verbunden, wenn sich ihre Flächen berühren. Jede Verbindung hält
 `strength × Kontaktfläche` aus, zwischen zwei Materialien mit dem kleineren `strength`. Der Schaden eines
@@ -435,9 +449,12 @@ shot.ejectSpeed = 9.0f;
 nbImpactResult result;
 nbWorld_CastImpact( world, b3ToPos( eye ), b3MulSV( 100.0f, aim ), &shot, &result );
 
-// Pro Frame
-b3World_Step( physics, 1.0f / 60.0f, 4 );
-nbWorld_Update( world, 1.0f / 60.0f );
+// Pro Frame: zuerst die Körper, die der Schritt des letzten Frames bewegt hat
+b3BodyEvents moves = nbWorld_GetBodyEvents( world );
+for ( int i = 0; i < moves.moveCount; ++i )
+{
+	// moves.moveEvents[i].transform an die Meshes des Körpers moves.moveEvents[i].bodyId
+}
 
 nbEvents events = nbWorld_GetEvents( world );
 for ( int i = 0; i < events.createdCount; ++i )
@@ -451,7 +468,16 @@ for ( int i = 0; i < events.createdCount; ++i )
 // events.destroyedChunks: Meshes entfernen
 // events.movedChunks: Bruchstück hängt jetzt an einem anderen Körper
 // events.exposedChunks: Mesh neu bauen, verdeckte Flächen können frei geworden sein
+
+// Einschläge und alles andere, was die Welten ändert, dann der Schritt
+nbWorld_Step( world, 1.0f / 60.0f, 4 );
+// Zeichnen, der Schritt rechnet derweil auf dem Thread von Nebenan
 ```
+
+`nbWorld_Step` ersetzt `b3World_Step` und `nbWorld_Update`, siehe Der Schritt auf einem eigenen Thread. Nach dem Schritt
+fasst das Programm die Welten bis zum nächsten Frame nicht mehr an, sonst wartet dieser Aufruf auf den Schritt, und
+das Bild verliert den Vorteil. Andere Threads lassen die Welten in der Zeit ganz in Ruhe. Mit `asyncStep` aus oder dem
+alten Weg, `b3World_Step` und danach `nbWorld_Update`, rechnet alles auf dem aufrufenden Thread, mit derselben Welt.
 
 Gebäude entstehen aus mehreren konvexen Teilen mit `nbCreateDestructible`. Sich berührende Flächen
 verschiedener Teile werden automatisch verbunden, `cellSize` zerlegt die Teile schon beim Laden. Ein Teil
@@ -528,15 +554,15 @@ sind, und das Ergebnis hängt nur davon ab, wann es aufgerufen wird, nie vom Tem
 müssen bis dahin leben:
 
 ```c
-b3World_Step( physics, 1.0f / 60.0f, 4 );
-nbWorld_Update( world, 1.0f / 60.0f );
-nbCreationId creation = nbStartCreating( world, defs, pieceLists, pieceCounts, count );
-// … das Bild entsteht, die Worker rechnen derweil, und im nächsten Frame
-nbFinishCreating( creation, ids );
+// Nach dem Schritt auf dessen Thread: StartLoading ruft nbStartCreating auf und merkt sich city->creation
+nbWorld_Step( world, 1.0f / 60.0f, 4 );
+nbWorld_RunAfterStep( world, StartLoading, &city );
+// … das Bild entsteht, Schritt und Worker rechnen derweil, und im nächsten Frame
+nbFinishCreating( city.creation, ids );
 ```
 
 Am besten startet das Laden nach dem Physikschritt, dann teilen sich die Worker die Kerne nicht mit den Threads von
-Box3D.
+Box3D. Mit `nbWorld_RunAfterStep` geschieht das auf dem Thread des Schritts, und der Hauptthread zeichnet weiter.
 
 Ein beschädigtes Haus kann samt Schutt gehen, sobald alles daran ruht. `nbCanSaveDestructibles` sagt, ob es jetzt
 geht: Jedes Teil steht oder ist Schutt, die Lastprüfung ist gelaufen, im angegebenen Abstand liegt nichts, was sich
@@ -633,6 +659,7 @@ beim Einbinden nicht gebaut.
 | `collisionPassThrough` | 0,6 | Anteil der Geschwindigkeit, den ein durchschlagendes Geschoss behält |
 | `workerCount` | 1 | Threads für Einschläge: Schaden, Bruchpunkte, Voronoi-Zellen und Hüllen, der aufrufende Thread zählt mit |
 | `enqueueTask`, `finishTask`, `userTaskContext` | leer | Task-System der Anwendung, sonst startet Nebenan eigene Threads |
+| `asyncStep` | an | `nbWorld_Step` rechnet auf einem eigenen Thread, während das Programm zeichnet. Die Welt rechnet bitgleich wie ohne. Die Allokatoren müssen threadsicher sein, und die Worker eines Schritts lassen dem zeichnenden Thread am besten einen Hardware-Thread frei. Zur Laufzeit mit `nbWorld_SetAsyncStep` |
 
 Die Demo nimmt für Ziegel Dichte 1900, Festigkeit 6·10⁵ und Splitter 0,1 m, für Beton Dichte 2400,
 Festigkeit 1,1·10⁶ und Splitter 0,13 m, beides mit Bruchstückgröße ×2.
@@ -776,6 +803,9 @@ Seit `physik-16` rechnet die Demo die Physik eines Bilds auf einem eigenen Threa
 und die Welt rechnet genau wie vorher. Ohne die Zeichenaufrufe gemessen, also wie mit einer schnellen Grafikkarte,
 kostet ein Bild auf der VM damit 13 bis 17 % weniger. Auf einem Ryzen 7 7800X3D kostet ein Bild beim Abriss der Stadt
 Haus für Haus bei vierfacher Bruchstückgröße 5,8 % weniger, gemessen mit „Parallel gegen nacheinander messen“.
+Seit `physik-17` steckt das in der Bibliothek: `nbWorld_Step` rechnet Schritt und Update auf einem Thread von Nebenan,
+und jedes Programm bekommt es ohne eigenen Thread, siehe Der Schritt auf einem eigenen Thread. Die Demo nutzt nur
+noch diesen Weg.
 
 **Eine Stadt größer als der Speicher.** Im Benchmark fliegt eine Kamera mit 30 m/s 900 m weit durch eine Stadt aus
 65 536 Häusern auf 3,6 × 3,1 km und 300 m zurück, Bruchstückgröße ×4. Am Stück bräuchte sie 24 GB. Geladen sind die
@@ -863,7 +893,7 @@ Messungen in [docs/Optimierungen.md](docs/Optimierungen.md).
 ## Tests und Benchmark
 
 ```sh
-build/bin/nebenan_test            # 44 Tests: Geometrie, Voronoi, Hüllen, Öffnungen, Stöße, Stützgraph, Etagen, Lastprüfung, Schutt, Ruhe, Durchschlagen, Threads, große Blöcke, Suchbaum, Kontaktlisten, Streaming, Laden im Hintergrund, Speichern und Zurückholen, gemeinsamer Thread-Pool, Determinismus …
+build/bin/nebenan_test            # 48 Tests: Geometrie, Voronoi, Hüllen, Öffnungen, Stöße, Stützgraph, Etagen, Lastprüfung, Schutt, Ruhe, Durchschlagen, Threads, große Blöcke, Suchbaum, Kontaktlisten, Streaming, Laden im Hintergrund, Speichern und Zurückholen, gemeinsamer Thread-Pool, Schritt auf eigenem Thread, Determinismus …
 build/bin/nebenan_benchmark 4     # Zahl = Threads für Bruch und Physik
 ```
 
@@ -882,7 +912,7 @@ src/
   world.c           Welt, Bruchstücke, Verbindungen, Stützgraph, Etagen, Lastprüfung, Trümmer, Ruhe und Schutt, Events
   destructible.c    zerstörbare Objekte und Vorzerlegung
   impact.c          Einschläge und Auswurf der Splitter
-  scheduler.c       eingebaute Threads, wenn die Anwendung kein Task-System mitbringt
+  scheduler.c       eingebaute Threads, wenn die Anwendung kein Task-System mitbringt, und der Thread des Schritts
 test/               Tests
 benchmark/          Leistungsmessung
 demo/               PC-Demo mit sokol und Dear ImGui
