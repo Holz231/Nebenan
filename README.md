@@ -669,9 +669,10 @@ Gemessen ist das etwa so schnell wie zwei eigene Pools, mit halb so vielen Threa
 Wo die Zeit der Schritte hingeht, sagt `nbWorld_GetProfile`, pro Schritt seit dem Anlegen der Welt oder seit
 `nbWorld_ResetProfile`: die Stufen des Box3D-Schritts samt der Teile, die auf dem aufrufenden Thread allein laufen,
 darunter der Überlauf des Constraint-Graphen mit den Kontakten, die Box3D an Knoten bündelt, die Teile des Updates, die
-Einschläge, Erstarren und Auftauen, die Zellen der Brüche, der Anteil der größten Insel an der Arbeit des Lösers und wie
-lange ein schlafender Worker braucht, bis er anläuft. Ist dieselbe Arbeit mit verschieden
-vielen Threads gemessen, rechnet die Bibliothek aus, was davon parallel läuft und was mit mehr Threads bleibt:
+Einschläge, Erstarren und Auftauen, die Zellen der Brüche, der Anteil der größten Insel an der Arbeit des Lösers, wie
+oft ein Team aller Threads das größte Paket von Inseln rechnet und wie lange ein schlafender Worker braucht, bis er
+anläuft. Ist dieselbe Arbeit mit verschieden vielen Threads gemessen, rechnet die Bibliothek aus, was davon parallel
+läuft und was mit mehr Threads bleibt:
 
 ```c
 int counts[8];
@@ -984,6 +985,13 @@ Schritt samt Update 16 und 15 %, mit einem Thread die Bedingungen 33 und 19 % un
 Ryzen 7 7800X3D kosten die Bedingungen mit 8 Threads 53 und 51 % weniger und ein Schritt 26 und 19 %, siehe „Skalierung
 auf dem Ryzen mit `physik-22`“. Die Ergebnisse ändern sich, bleiben aber mit jeder Zahl von Threads gleich, und eine
 schwere Platte auf vielen kleinen Würfeln liegt genauso wie vorher.
+
+Seit `physik-24` rechnet ein Team aller Threads das größte Paket von Inseln, sobald es deutlich mehr Arbeit hat als ein
+Thread im Mittel bekommt: Farbe für Farbe in den Stufen des Lösers, und wer keine neue Stufe findet, rechnet eines der
+übrigen Pakete ganz, siehe „Ein Team für das größte Paket“ in [`extern/README.md`](extern/README.md). Vorher rechnete
+ein Thread dieses Paket allein, beim Abriss auf dem Ryzen mit 8 Threads mindestens ein Drittel der Arbeit. Beim Abriss
+in der Demo auf der VM mit 4 Threads kosten die Bedingungen des Lösers damit bei ×4 15 % weniger und ein Schritt samt
+Update 7 %, bei ×2 die Bedingungen 4 %. Die Ergebnisse bleiben bitgleich, und mit einem Thread ändert sich nichts.
 
 Ganze Einschläge (Bruch, Stützgraph, neue Box3D-Körper) und der Box3D-Schritt danach bei 60 Hz mit
 4 Substeps, jeweils mit 1 und 4 Threads, der Median aus sechs Läufen:
