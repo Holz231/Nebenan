@@ -1,28 +1,28 @@
 # Roadmap
 
 Die nächsten möglichen Schritte für die Physik, nach der Untersuchung vom 17. Oktober 2026 auf `physik-19` und
-`physik-20`, der Messung auf dem Ryzen mit `physik-21` und den Knoten auf `physik-22`. Begründungen und Messwerte stehen in
-[`Optimierungen.md`](Optimierungen.md), hier nur das Fazit und die Reihenfolge. Nach jeder Runde wird der Stand hier
-nachgetragen.
+`physik-20`, der Messung auf dem Ryzen mit `physik-21`, den Knoten auf `physik-22` und der Messung auf dem Ryzen damit.
+Begründungen und Messwerte stehen in [`Optimierungen.md`](Optimierungen.md), hier nur das Fazit und die Reihenfolge.
+Nach jeder Runde wird der Stand hier nachgetragen.
 
 ## Fazit
 
 - **Ein eigenes Box3D lohnt nicht.** Hüllentest, Löser und CCD kosten in jeder Engine dasselbe, und der Fork lässt sich
   an jeder Stelle ändern, siehe „Eigene Engine statt Box3D, dritte Prüfung“.
 - **Mit 8 Threads bestimmt der serielle Teil den Frame.** Auf dem Ryzen beim Abriss der Stadt in der Demo gemessen:
-  Mit 8 statt 4 Threads kostet ein Schritt bei ×4 1,74 statt 2,10 ms und bei ×2 3,46 statt 4,42 ms, und hochgerechnet
-  bleiben mit 8 Threads 72 und 68 % auf einem Thread, siehe „Skalierung auf dem Ryzen“.
-- **Was dort bremst, ist der Löser.** Kontakt-Schleife, Paarsuche und Abschluss der Körper werden mit 8 Threads 3,5-
-  bis 6-mal so schnell, die Bedingungen des Lösers nur 2-mal, und von 4 auf 8 Threads gar nicht mehr. Mit 8 Threads
-  sind sie 43 bis 48 % des Frames. Update, Einschläge, Anlegen und Zustandswechsel der Kontakte sind zusammen 22 bis
-  24 %.
-- **Der Löser hängt am Überlauf des Graphen.** Kontakte, für die keine der 20 Farben frei ist, löst Box3D auf dem
-  aufrufenden Thread allein und einzeln. Beim Abriss sind das die Kontakte an Knoten: große abgebrochene Teile aus
-  Dutzenden bis Hunderten Bruchstücken, an denen Hunderte kleine Trümmer liegen. Mit einem Thread sind das bei ×4 20 %
-  der Kontakte und 42 % der Zeit der Bedingungen, bei ×2 10 und 26 %, siehe „Der Überlauf beim Abriss“. Ein Knoten muss
-  seine Kontakte nacheinander lösen, bitgleich lässt sich das kaum verteilen. Seit `physik-22` löst Box3D sie in Bündeln
-  gegen Kopien des Knotens: Beim Abriss kosten die Bedingungen auf der VM mit 4 Threads 37 bis 41 % weniger, ein
-  Schritt samt Update 15 bis 16 %, siehe „Knoten im Überlauf mit geteilter Masse“.
+  Mit 8 Threads kostet ein Schritt seit `physik-22` bei ×4 1,29 und bei ×2 2,81 ms, vorher 1,74 und 3,46 ms, und
+  hochgerechnet bleiben 63 % auf einem Thread, vorher 72 und 68 %, siehe „Skalierung auf dem Ryzen mit `physik-22`“.
+- **Was dort bremst, ist weiter vor allem der Löser.** Die Bedingungen sind mit 8 Threads 31 und 26 % des Frames,
+  vorher 48 und 43 %. Mit Farben wie mit Paketen brauchen sie ein Drittel der Zeit eines Threads, und bei ×4 werden sie
+  von 4 auf 8 Threads nur noch 8 % schneller: Dort lösen 59 % der Schritte in Paketen, und das Paket der größten Insel
+  rechnet ein Thread allein, mit mindestens 34 % der Arbeit. Update, Einschläge, Anlegen und Zustandswechsel der
+  Kontakte sind zusammen 28 und 25 % des Frames.
+- **Der Löser hing am Überlauf des Graphen.** Kontakte, für die keine der 20 Farben frei ist, löst Box3D auf dem
+  aufrufenden Thread allein. Beim Abriss sind das die Kontakte an Knoten: große abgebrochene Teile aus Dutzenden bis
+  Hunderten Bruchstücken, an denen Hunderte kleine Trümmer liegen, siehe „Der Überlauf beim Abriss“. Seit `physik-22`
+  löst Box3D sie in Bündeln gegen Kopien des Knotens: Auf dem Ryzen kosten die Bedingungen mit 8 Threads 53 und 51 %
+  weniger, ein Schritt 26 und 19 %, und der Überlauf ist nur noch 4 und 6 % des Frames, siehe „Knoten im Überlauf mit
+  geteilter Masse“.
 - **Der Cache ist nicht das Problem.** Der wache Arbeitssatz ist bei ×1 gut 10 MB groß und passt schon in 32 MB. Der
   Ryzen wartet kürzer, weil sein L3 schneller antwortet, nicht weil er größer ist, siehe „Arbeitssatz im Cache“.
 
@@ -38,16 +38,16 @@ bleiben.
 | 2 | **Auf dem Ryzen messen**: in der Demo „Skalierung messen“, die Tabelle aus der Zwischenablage in den Chat | entschied 3 bis 9 | 1 | ✅ am 17. Oktober: Die Bedingungen skalieren nicht über 4 Threads |
 | 2a | **Große Insel beim Abriss in der Demo**: zählen, wie viel der 73 % zusammenhängt | – | – | ✅ gezählt: 57 % hängen zusammen, Inseln teilen lohnt nicht |
 | 2c | **Warum die Farben nicht skalieren**: Überlauf, Größe der Farben, Sperren | – | 2 | ✅ gezählt: der Überlauf an Knoten |
-| 10 | **Knoten im Überlauf mit geteilter Masse**: bis zu acht Kontakte eines Knotens in den acht Spuren einer breiten Bedingung, jede gegen eine Kopie mit einem Achtel seiner Masse, ändert die Ergebnisse | 15 bis 20 %, mit einem Thread 5 bis 11 % | 2c | ✅ auf `physik-22`: auf der VM mit 4 Threads die Bedingungen 37 bis 41 % und ein Schritt 15 bis 16 % billiger |
-| 12 | **Auf dem Ryzen nachmessen**: „Skalierung messen“ mit `physik-22` bei ×4 und ×2 | entscheidet 11, 2b und 4 | 10 | als Nächstes |
-| 11 | **Überlauf in unabhängigen Gruppen** auf mehreren Threads, bitgleich | nach 10 klein, bei ×2 rechnet der größte Knoten fast alles | 2c | offen, nach 12 |
-| 2b | **Schwelle zwischen Paketen und Farben nach Threads**: Box3D nimmt Farben erst über der Hälfte, bitgleich | nach 12 neu zu schätzen | 12 | offen |
-| 4 | **Größte Insel im Team**, bitgleich | ×1 6 %, ×2 3 %, beim Abriss nach 12 neu zu schätzen | 12 | offen |
-| 3 | **Prüfungen des Updates auf den Workern, zweiter Versuch**, bitgleich | 4 bis 6 % | ✅ Wecken in 8 bis 10 µs | offen |
+| 10 | **Knoten im Überlauf mit geteilter Masse**: bis zu acht Kontakte eines Knotens in den acht Spuren einer breiten Bedingung, jede gegen eine Kopie mit einem Achtel seiner Masse, ändert die Ergebnisse | 15 bis 20 %, mit einem Thread 5 bis 11 % | 2c | ✅ auf `physik-22`: auf dem Ryzen mit 8 Threads die Bedingungen 53 und 51 % und ein Schritt 26 und 19 % billiger |
+| 12 | **Auf dem Ryzen nachmessen**: „Skalierung messen“ mit `physik-22` bei ×4 und ×2 | entschied 11, 2b und 4 | 10 | ✅ am 17. Oktober: bei ×4 bremst jetzt die größte Insel |
+| 4 | **Größte Insel im Team**: Alle Threads rechnen sie Farbe für Farbe, die übrigen Inseln füllen als Pakete die Zeit, in der ein Thread sonst an einer Sperre oder auf den Überlauf wartet, bitgleich | ×4 3 bis 8 %, ×2 2 bis 4 % | ✅ 12 | als Nächstes |
+| 3 | **Prüfungen des Updates auf den Workern, zweiter Versuch**, bitgleich | 4 bis 6 % | ✅ Wecken in 7 bis 10 µs | offen, nach 4 |
 | 5 | **Schwellen fürs Wecken** der Bruchrechnung, bitgleich | 1 bis 3 % | ✅ Wecken | offen |
 | 6 | **Typwechsel gesammelt**, bitgleich | rund 1 % | – | offen |
 | 7 | **Rand der Boxen mit 8 Threads** nachmessen, ändert die Ergebnisse | klein | 2 | offen, niedrig |
 | 8 | **Kompakte Paare** statt Kontakte für nicht berührende Paare, ändert die Ergebnisse | 2 bis 4 % | 2 | offen, niedrig |
+| 11 | **Überlauf in unabhängigen Gruppen** auf mehreren Threads, bitgleich | höchstens 1 bis 2 %: der Überlauf ist mit 8 Threads noch 4 und 6 % des Frames | 2c | zurückgestellt nach 12 |
+| 2b | **Schwelle zwischen Paketen und Farben nach Threads**: Box3D nimmt Farben erst über der Hälfte, bitgleich | allein nichts: Farben und Pakete stehen mit 8 Threads beide bei einem Drittel der Zeit eines Threads | 12 | geht in 4 auf: Die Schwelle wird dort die Arbeit eines Threads |
 | 9 | **Buchhaltung von Box3D pro Schritt neu bauen**, großer Umbau über Monate, ändert die Ergebnisse | höchstens 4 bis 6 % | 2 | zurückgestellt: Anlegen und Zustandswechsel sind nur 4 bis 6 % des Frames |
 
 ## Was die Messung auf dem Ryzen gezeigt hat
@@ -68,16 +68,27 @@ Threads, siehe „Skalierung auf dem Ryzen“. Die Regeln, nach denen die Messun
 - **Update** über einem Viertel des Frames: Schritt 3 hat Vorrang vor allem im Box3D-Schritt. Gemessen 10 bis 11 %, kein
   Vorrang.
 
-## Was die nächste Messung auf dem Ryzen entscheidet
+## Was die Messung mit `physik-22` gezeigt hat
 
-Dieselbe Messung wie bei Schritt 2, mit `physik-22`. Neu im Bericht sind die Zeile `overflow` unter den Bedingungen,
-die Zeit, die der aufrufende Thread allein am Überlauf rechnet, und eine Zeile mit den Kontakten im Überlauf und wie
-viele davon in Bündeln von Knoten stehen.
+Dieselbe Messung wie bei Schritt 2, am 17. Oktober 2026 mit `physik-22` in einem selbst gebauten Release-Build, siehe
+„Skalierung auf dem Ryzen mit `physik-22`“. Neu im Bericht waren die Zeile `overflow` unter den Bedingungen, die Zeit,
+die der aufrufende Thread allein am Überlauf rechnet, und eine Zeile mit den Kontakten im Überlauf und wie viele davon
+in Bündeln von Knoten stehen. Die Regeln, nach denen die Messung entscheiden sollte, und was daraus wurde:
 
-- **Bedingungen mit 8 Threads** jetzt deutlich schneller als mit 4: Der Überlauf war der Boden, als Nächstes das Update
+- **Bedingungen mit 8 Threads** deutlich schneller als mit 4: Der Überlauf war der Boden, als Nächstes das Update
   (Schritt 3). Bleiben sie nah bei 4 Threads, bremsen die Sperren und die größte Insel: zuerst Schritt 4, dann 2b.
-- **`overflow`** mit 8 Threads über rund 10 % des Frames: Schritt 11 prüfen, sonst bleibt er liegen.
-- **Update und Einschläge** wie vorher bei rund einem Viertel des Frames: Schritt 3 und 5.
+  Gemessen bei ×2 26 % schneller, bei ×4 nur 8 %. Bei ×4 lösen 59 % der Schritte in Paketen, und dort nimmt die größte
+  Insel mit 8 Threads mindestens 34 % der Arbeit. Deshalb zuerst Schritt 4. 2b brächte allein nichts, denn Farben und
+  Pakete stehen beide bei einem Drittel der Zeit eines Threads. Die Schwelle geht in Schritt 4 auf.
+- **`overflow`** mit 8 Threads über rund 10 % des Frames: Schritt 11 prüfen, sonst bleibt er liegen. Gemessen 4 und
+  6 %, Schritt 11 bleibt liegen.
+- **Update und Einschläge** wie vorher bei rund einem Viertel des Frames: Schritt 3 und 5. Gemessen 23 und 17 %, Schritt
+  3 kommt nach 4. Schritt 5 bleibt klein, die Zellen auf dem Hauptthread kosten 4 und 1 %.
+
+Die Bildzeiten zeigen noch etwas anderes: Bei ×2 mit 8 Threads dauert ein Bild 6,31 ms bei 2,67 ms Simulation, länger
+als mit 4 Threads, und das 1 % Low fällt auf 29 FPS. Das liegt außerhalb der Physik, beim Zeichnen auf der Grafik im
+Prozessor, auf der die Demo dort lief. Für Bildzeiten der Demo auf dem Ryzen kommt es deshalb darauf an, auf welcher
+Grafik sie zeichnet.
 
 ## Kleinere Punkte
 

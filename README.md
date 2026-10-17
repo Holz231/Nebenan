@@ -979,9 +979,10 @@ Seit `physik-22` löst Box3D die Kontakte von Knoten, großen abgebrochenen Teil
 Bündeln gegen Kopien des Knotens, statt sie auf dem aufrufenden Thread einzeln nacheinander zu rechnen, während die
 Worker warten, siehe „Knoten im Überlauf mit geteilter Masse“ in [docs/Optimierungen.md](docs/Optimierungen.md). Beim
 Abriss in der Demo kosten die Bedingungen des Lösers auf der VM mit 4 Threads bei ×4 41 % und bei ×2 37 % weniger, ein
-Schritt samt Update 16 und 15 %, mit einem Thread die Bedingungen 33 und 19 % und ein Schritt 13 und 3 %. Die Ergebnisse
-ändern sich, bleiben aber mit jeder Zahl von Threads gleich, und eine schwere Platte auf vielen kleinen Würfeln liegt
-genauso wie vorher.
+Schritt samt Update 16 und 15 %, mit einem Thread die Bedingungen 33 und 19 % und ein Schritt 13 und 3 %. Auf dem
+Ryzen 7 7800X3D kosten die Bedingungen mit 8 Threads 53 und 51 % weniger und ein Schritt 26 und 19 %, siehe „Skalierung
+auf dem Ryzen mit `physik-22`“. Die Ergebnisse ändern sich, bleiben aber mit jeder Zahl von Threads gleich, und eine
+schwere Platte auf vielen kleinen Würfeln liegt genauso wie vorher.
 
 Ganze Einschläge (Bruch, Stützgraph, neue Box3D-Körper) und der Box3D-Schritt danach bei 60 Hz mit
 4 Substeps, jeweils mit 1 und 4 Threads, der Median aus sechs Läufen:
