@@ -64,6 +64,24 @@ int nbAtomicFetchAddInt( int* value, int delta )
 #endif
 }
 
+// Every thread draws its number on first use
+#if defined( _MSC_VER )
+static __declspec( thread ) int nb_threadToken;
+#else
+static _Thread_local int nb_threadToken;
+#endif
+
+static int nb_threadTokenCount;
+
+int nbGetThreadToken( void )
+{
+	if ( nb_threadToken == 0 )
+	{
+		nb_threadToken = nbAtomicFetchAddInt( &nb_threadTokenCount, 1 ) + 1;
+	}
+	return nb_threadToken;
+}
+
 static int nbDefaultAssertFcn( const char* condition, const char* fileName, int lineNumber )
 {
 	printf( "NEBENAN ASSERTION: %s, %s, line %d\n", condition, fileName, lineNumber );

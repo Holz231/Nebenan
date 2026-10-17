@@ -12,13 +12,29 @@
 
 static nbWorld nb_worlds[NB_MAX_WORLDS];
 
+static void nbWaitForSteps( nbWorld* world );
+
+// The thread that handed steps to the step thread waits for them before it touches the world, see nbWorld_Step. Every
+// other thread goes on, the step thread and the workers among them.
+static inline void nbWaitIfStepping( nbWorld* world )
+{
+	int owner = nbAtomicLoadInt( &world->stepOwner );
+	if ( owner != 0 && owner == nbGetThreadToken() )
+	{
+		nbWaitForSteps( world );
+	}
+}
+
 nbWorld* nbGetWorld( int index )
 {
 	NB_ASSERT( 0 <= index && index < NB_MAX_WORLDS );
-	return nb_worlds + index;
+	nbWorld* world = nb_worlds + index;
+	nbWaitIfStepping( world );
+	return world;
 }
 
-nbWorld* nbGetWorldFromId( nbWorldId id )
+// Without waiting for the steps
+static nbWorld* nbFindWorld( nbWorldId id )
 {
 	if ( id.index1 < 1 || NB_MAX_WORLDS < id.index1 )
 	{
@@ -31,6 +47,16 @@ nbWorld* nbGetWorldFromId( nbWorldId id )
 		return NULL;
 	}
 
+	return world;
+}
+
+nbWorld* nbGetWorldFromId( nbWorldId id )
+{
+	nbWorld* world = nbFindWorld( id );
+	if ( world != NULL )
+	{
+		nbWaitIfStepping( world );
+	}
 	return world;
 }
 
@@ -48,6 +74,7 @@ nbChunk* nbGetChunkFromId( nbChunkId id, nbWorld** worldOut )
 	}
 
 	nbWorld* world = nb_worlds + id.world0;
+	nbWaitIfStepping( world );
 	if ( world->inUse == false || id.index1 > world->chunks.count )
 	{
 		return NULL;
@@ -3917,6 +3944,7 @@ nbWorldDef nbDefaultWorldDef( void )
 	def.fragmentScale = 1.0f;
 	def.collisionPassThrough = 0.6f;
 	def.workerCount = 1;
+	def.asyncStep = true;
 	def.internalValue = NB_SECRET_COOKIE;
 	return def;
 }
@@ -4196,12 +4224,14 @@ void nbParallelFor( nbWorld* world, int itemCount, int minItems, nbParallelFn* f
 
 void nbWorld_SetWorkerCount( nbWorldId worldId, int count )
 {
-	nbWorld* world = nbGetWorldFromId( worldId );
+	// The steps use the workers, so wait for them from every thread
+	nbWorld* world = nbFindWorld( worldId );
 	if ( world == NULL )
 	{
 		return;
 	}
 
+	nbWaitForSteps( world );
 	nbWaitForCreations( world );
 	nbStopWorkers( world );
 	nbStartWorkers( world, count );
@@ -4281,12 +4311,16 @@ nbWorldId nbCreateWorld( const nbWorldDef* def )
 
 void nbDestroyWorld( nbWorldId worldId )
 {
-	nbWorld* world = nbGetWorldFromId( worldId );
+	// From every thread, not only the one that handed over the steps
+	nbWorld* world = nbFindWorld( worldId );
 	if ( world == NULL )
 	{
 		return;
 	}
 
+	nbWaitForSteps( world );
+	nbDestroyStepThread( world->stepThread );
+	world->stepThread = NULL;
 	nbWaitForCreations( world );
 	nbDestroyCreations( world );
 
@@ -4359,6 +4393,9 @@ void nbDestroyWorld( nbWorldId worldId )
 		nbArray_Free( world->exposedEvents[i] );
 	}
 	nbArray_Free( world->collisionImpacts );
+	nbArray_Free( world->moves[0] );
+	nbArray_Free( world->moves[1] );
+	nbArray_Free( world->moveSlots );
 	nbArena_Destroy( &world->arena );
 	nbStopWorkers( world );
 
@@ -4367,9 +4404,10 @@ void nbDestroyWorld( nbWorldId worldId )
 	world->generation = generation + 1;
 }
 
+// Without waiting for the steps, they do not change it
 bool nbWorld_IsValid( nbWorldId worldId )
 {
-	return nbGetWorldFromId( worldId ) != NULL;
+	return nbFindWorld( worldId ) != NULL;
 }
 
 nbEvents nbWorld_GetEvents( nbWorldId worldId )
@@ -5490,14 +5528,9 @@ static void nbEnforceDebrisBudget( nbWorld* world, b3Vec3 up )
 #endif
 }
 
-void nbWorld_Update( nbWorldId worldId, float timeStep )
+// The update of nbWorld_Update and nbWorld_Step
+static void nbUpdate( nbWorld* world, float timeStep )
 {
-	nbWorld* world = nbGetWorldFromId( worldId );
-	if ( world == NULL )
-	{
-		return;
-	}
-
 	uint64_t ticks = b3GetTicks();
 
 	// Read the Box3D events of the last step before anything changes the world
@@ -5601,6 +5634,226 @@ void nbWorld_Update( nbWorldId worldId, float timeStep )
 	nbEnforceDebrisBudget( world, hasGravity ? up : b3Vec3_zero );
 
 	world->stats.updateTime = b3GetMilliseconds( ticks );
+}
+
+void nbWorld_Update( nbWorldId worldId, float timeStep )
+{
+	nbWorld* world = nbGetWorldFromId( worldId );
+	if ( world == NULL )
+	{
+		return;
+	}
+
+	nbUpdate( world, timeStep );
+}
+
+// Keep the latest move of every body that moved in the step, see nbWorld_GetBodyEvents
+static void nbCollectMoves( nbWorld* world )
+{
+	b3BodyEvents events = b3World_GetBodyEvents( world->physicsWorld );
+	nbBodyMoveArray* moves = world->moves + world->moveBuffer;
+	nbArray_Reserve( *moves, moves->count + events.moveCount );
+
+	// A step has one move per body, so the first step after nbWorld_GetBodyEvents has nothing to merge
+	bool merge = moves->count > 0;
+	for ( int i = 0; i < events.moveCount; ++i )
+	{
+		const b3BodyMoveEvent* event = events.moveEvents + i;
+		int bodyIndex = event->bodyId.index1 - 1;
+		if ( bodyIndex >= world->moveSlots.count )
+		{
+			nbArray_Reserve( world->moveSlots, bodyIndex + 1 );
+			for ( int k = world->moveSlots.count; k <= bodyIndex; ++k )
+			{
+				world->moveSlots.data[k] = NB_NULL_INDEX;
+			}
+			world->moveSlots.count = bodyIndex + 1;
+		}
+
+		// A slot from before may point anywhere, the body at it tells. One that held the index before this body went.
+		int slot = world->moveSlots.data[bodyIndex];
+		if ( merge && 0 <= slot && slot < moves->count && moves->data[slot].bodyId.index1 == event->bodyId.index1 )
+		{
+			moves->data[slot] = *event;
+		}
+		else
+		{
+			world->moveSlots.data[bodyIndex] = moves->count;
+			moves->data[moves->count++] = *event;
+		}
+	}
+}
+
+// One step of nbWorld_Step, on the step thread or the calling one
+static void nbTakeStep( nbWorld* world, float timeStep, int subStepCount )
+{
+	uint64_t ticks = b3GetTicks();
+	b3World_Step( world->physicsWorld, timeStep, subStepCount );
+	world->stats.stepTime = b3GetMilliseconds( ticks );
+
+	nbCollectMoves( world );
+	nbUpdate( world, timeStep );
+}
+
+#if defined( B3_HAS_STEP_GUARD )
+static void nbTakeQueuedStep( void* context, const nbQueuedStep* step )
+{
+	if ( step->fcn != NULL )
+	{
+		step->fcn( step->context );
+	}
+	else
+	{
+		nbTakeStep( context, step->timeStep, step->subStepCount );
+	}
+}
+
+// Box3D calls it before the thread that handed over the steps touches the Box3D world
+static void nbStepGuard( void* context )
+{
+	nbWaitForSteps( context );
+}
+#endif
+
+// Without the guard of Box3D, as with a Box3D of its own, the thread that steps could touch the Box3D world during a step,
+// so the steps stay on the calling thread
+static void nbSetStepGuard( nbWorld* world, bool guarded )
+{
+#if defined( B3_HAS_STEP_GUARD )
+	b3World_SetStepGuard( world->physicsWorld, guarded ? nbStepGuard : NULL, guarded ? world : NULL );
+#else
+	NB_UNUSED( world );
+	NB_UNUSED( guarded );
+#endif
+}
+
+// Wait until the step thread took every step handed to it, then let the thread that handed them over use the worlds again
+static void nbWaitForSteps( nbWorld* world )
+{
+	if ( nbAtomicLoadInt( &world->stepOwner ) == 0 )
+	{
+		return;
+	}
+
+	// A function after a step that calls a function that waits for the steps, see nbWorld_RunAfterStep
+	NB_ASSERT( nbStepThread_IsCurrent( world->stepThread ) == false );
+
+	uint64_t ticks = b3GetTicks();
+	nbStepThread_Wait( world->stepThread );
+	world->stats.waitTime = b3GetMilliseconds( ticks );
+	nbSetStepGuard( world, false );
+	nbAtomicStoreInt( &world->stepOwner, 0 );
+}
+
+void nbWorld_Step( nbWorldId worldId, float timeStep, int subStepCount )
+{
+	// Not through nbGetWorldFromId, a step follows the ones before without waiting for them
+	nbWorld* world = nbFindWorld( worldId );
+	if ( world == NULL )
+	{
+		return;
+	}
+
+	// Steps of another thread are done first
+	int token = nbGetThreadToken();
+	int owner = nbAtomicLoadInt( &world->stepOwner );
+	if ( owner != 0 && owner != token )
+	{
+		nbWaitForSteps( world );
+		owner = 0;
+	}
+
+#if defined( B3_HAS_STEP_GUARD )
+	if ( world->def.asyncStep && world->stepThread == NULL )
+	{
+		world->stepThread = nbCreateStepThread( nbTakeQueuedStep, world );
+	}
+#endif
+
+	// Without a thread the step is taken right here
+	if ( world->stepThread == NULL || world->def.asyncStep == false )
+	{
+		nbTakeStep( world, timeStep, subStepCount );
+		return;
+	}
+
+	if ( owner == 0 )
+	{
+		nbSetStepGuard( world, true );
+		nbAtomicStoreInt( &world->stepOwner, token );
+	}
+
+	nbQueuedStep step = { timeStep, subStepCount, NULL, NULL };
+	nbStepThread_Push( world->stepThread, &step );
+}
+
+void nbWorld_RunAfterStep( nbWorldId worldId, nbAfterStepFcn* fcn, void* context )
+{
+	nbWorld* world = nbFindWorld( worldId );
+	if ( world == NULL || fcn == NULL )
+	{
+		return;
+	}
+
+	// Behind the steps of the calling thread, else right here once the steps of another thread are done
+	int owner = nbAtomicLoadInt( &world->stepOwner );
+	if ( owner == 0 || owner != nbGetThreadToken() )
+	{
+		nbWaitForSteps( world );
+		fcn( context );
+		return;
+	}
+
+	nbQueuedStep step = { 0.0f, 0, fcn, context };
+	nbStepThread_Push( world->stepThread, &step );
+}
+
+b3BodyEvents nbWorld_GetBodyEvents( nbWorldId worldId )
+{
+	b3BodyEvents events = { 0 };
+	nbWorld* world = nbFindWorld( worldId );
+	if ( world == NULL )
+	{
+		return events;
+	}
+
+	nbWaitForSteps( world );
+
+	// Hand out the moves so far without the bodies that the updates or the program destroyed after they moved, and
+	// collect the next ones into the other buffer
+	nbBodyMoveArray* moves = world->moves + world->moveBuffer;
+	int count = 0;
+	for ( int i = 0; i < moves->count; ++i )
+	{
+		if ( b3Body_IsValid( moves->data[i].bodyId ) )
+		{
+			moves->data[count++] = moves->data[i];
+		}
+	}
+	moves->count = count;
+	world->moveBuffer ^= 1;
+	world->moves[world->moveBuffer].count = 0;
+
+	events.moveEvents = moves->data;
+	events.moveCount = moves->count;
+	return events;
+}
+
+void nbWorld_SetAsyncStep( nbWorldId worldId, bool enabled )
+{
+	nbWorld* world = nbFindWorld( worldId );
+	if ( world == NULL )
+	{
+		return;
+	}
+
+	nbWaitForSteps( world );
+	world->def.asyncStep = enabled;
+	if ( enabled == false )
+	{
+		nbDestroyStepThread( world->stepThread );
+		world->stepThread = NULL;
+	}
 }
 
 bool nbChunk_IsValid( nbChunkId chunkId )

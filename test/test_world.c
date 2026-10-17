@@ -3818,6 +3818,155 @@ static int TaskSystemTest( void )
 	return 0;
 }
 
+// What a function after the steps sees of the world, and whether it ran on another thread than the one that stepped
+typedef struct AfterStepProbe
+{
+	b3WorldId physicsWorld;
+	int callerToken;
+	uint64_t probe;
+	int calls;
+	int otherThreadCalls;
+} AfterStepProbe;
+
+static void ProbeAfterStep( void* context )
+{
+	AfterStepProbe* probe = context;
+	probe->probe = probe->probe * 31u + (uint64_t)b3World_GetAwakeBodyCount( probe->physicsWorld );
+	probe->calls += 1;
+	probe->otherThreadCalls += nbGetThreadToken() != probe->callerToken ? 1 : 0;
+}
+
+// nbWorld_Step on the step thread, on the calling thread and the old way with b3World_Step and nbWorld_Update end in the
+// same worlds to the bit, with one thread and with a pool. The thread that steps waits for the step in every lookup of
+// Nebenan and Box3D, also with two steps queued, and nbWorld_GetBodyEvents has the latest move of every body that moved
+// and is still there. A function after a step sees the world as it is after that step. The worlds can go with steps
+// queued, the Box3D world first or the destruction world.
+static int AsyncStepTest( void )
+{
+	enum
+	{
+		houseCount = 2,
+		passCount = 5,
+		frameCount = 150
+	};
+	CelledHouse* houses = malloc( sizeof( CelledHouse ) * houseCount );
+	nbDestructibleDef defs[houseCount];
+	const nbPieceDef* lists[houseCount];
+	int counts[houseCount];
+	for ( int h = 0; h < houseCount; ++h )
+	{
+		BuildCelledHouse( houses + h, 2, (uint32_t)( 70 + h ), (b3Vec3){ 14.0f * (float)h, 0.0f, 0.0f } );
+		defs[h] = houses[h].def;
+		lists[h] = houses[h].pieces;
+		counts[h] = houses[h].pieceCount;
+	}
+
+	int64_t baseBytes = nbGetByteCount();
+	nbTaskSystem* pool = nbCreateTaskSystem( 3 );
+	uint32_t hashes[passCount];
+	uint64_t probes[passCount];
+	int moveCounts[passCount];
+	float waitTimes[passCount];
+	AfterStepProbe afterProbes[passCount];
+	for ( int pass = 0; pass < passCount; ++pass )
+	{
+		// The old way, nbWorld_Step on the calling thread, then on the step thread, last with a pool for both worlds
+		TestScene scene = pass == passCount - 1 ? CreateSceneWithPool( pool, 4 ) : CreateScene();
+		nbWorld_SetAsyncStep( scene.world, pass >= 2 );
+		nbDestructibleId ids[houseCount];
+		nbCreateDestructibles( scene.world, defs, lists, counts, houseCount, ids );
+
+		uint64_t probe = 0;
+		int moveCount = 0;
+		float waitTime = 0.0f;
+		AfterStepProbe afterProbe = { scene.physicsWorld, nbGetThreadToken(), 0, 0, 0 };
+		for ( int frame = 0; frame < frameCount; ++frame )
+		{
+			b3BodyEvents moves = nbWorld_GetBodyEvents( scene.world );
+			for ( int i = 0; i < moves.moveCount; ++i )
+			{
+				const b3BodyMoveEvent* move = moves.moveEvents + i;
+				ENSURE( b3Body_IsValid( move->bodyId ) );
+				b3WorldTransform transform = b3Body_GetTransform( move->bodyId );
+				ENSURE( memcmp( &transform, &move->transform, sizeof( transform ) ) == 0 );
+			}
+			moveCount += moves.moveCount;
+
+			if ( frame == 10 )
+			{
+				for ( int h = 0; h < houseCount; ++h )
+				{
+					Grenade( &scene, (b3Vec3){ 14.0f * (float)h, 1.2f, 3.4f } );
+					Grenade( &scene, (b3Vec3){ 14.0f * (float)h - 2.0f, 4.4f, -3.4f } );
+				}
+			}
+
+			// Two steps in every third frame, the second follows the first on the step thread
+			int stepCount = frame % 3 == 0 ? 2 : 1;
+			for ( int s = 0; s < stepCount; ++s )
+			{
+				if ( pass == 0 )
+				{
+					b3World_Step( scene.physicsWorld, 1.0f / 60.0f, 4 );
+					nbWorld_Update( scene.world, 1.0f / 60.0f );
+					ProbeAfterStep( &afterProbe );
+				}
+				else
+				{
+					nbWorld_Step( scene.world, 1.0f / 60.0f, 4 );
+					nbWorld_RunAfterStep( scene.world, ProbeAfterStep, &afterProbe );
+				}
+			}
+
+			// Right after the steps, Box3D and Nebenan wait for them by turns
+			if ( frame % 2 == 0 )
+			{
+				probe = probe * 31u + (uint64_t)b3World_GetCounters( scene.physicsWorld ).awakeContactCount;
+			}
+			else
+			{
+				probe = probe * 31u + (uint64_t)nbWorld_GetStats( scene.world ).debrisCount;
+			}
+			waitTime += nbWorld_GetStats( scene.world ).waitTime;
+		}
+
+		nbWorld_GetBodyEvents( scene.world );
+		afterProbes[pass] = afterProbe;
+		hashes[pass] = HashCreated( &scene, ids, houseCount );
+		probes[pass] = probe;
+		moveCounts[pass] = moveCount;
+		waitTimes[pass] = waitTime;
+
+		// The worlds go with a step queued
+		nbWorld_Step( scene.world, 1.0f / 60.0f, 4 );
+		if ( pass == 3 )
+		{
+			b3DestroyWorld( scene.physicsWorld );
+			nbDestroyWorld( scene.world );
+		}
+		else
+		{
+			DestroyScene( &scene );
+		}
+	}
+	nbDestroyTaskSystem( pool );
+	ENSURE( nbGetByteCount() == baseBytes );
+
+	// Only the step thread has steps to wait for, and only it runs the functions after the steps
+	ENSURE( moveCounts[0] == 0 && moveCounts[1] > 1000 );
+	ENSURE( waitTimes[0] == 0.0f && waitTimes[1] == 0.0f && waitTimes[2] > 0.0f && waitTimes[passCount - 1] > 0.0f );
+	ENSURE( afterProbes[0].calls == frameCount + frameCount / 3 && afterProbes[1].otherThreadCalls == 0 );
+	ENSURE( afterProbes[2].otherThreadCalls == afterProbes[2].calls );
+	for ( int pass = 1; pass < passCount; ++pass )
+	{
+		ENSURE( hashes[pass] == hashes[0] && probes[pass] == probes[0] );
+		ENSURE( moveCounts[pass] == moveCounts[1] );
+		ENSURE( afterProbes[pass].calls == afterProbes[0].calls && afterProbes[pass].probe == afterProbes[0].probe );
+	}
+	free( houses );
+	return 0;
+}
+
 int WorldTest( void );
 
 int WorldTest( void )
@@ -3858,6 +4007,7 @@ int WorldTest( void )
 	RUN_TEST( BackgroundCreateTest );
 	RUN_TEST( SaveLoadTest );
 	RUN_TEST( TaskSystemTest );
+	RUN_TEST( AsyncStepTest );
 	RUN_TEST( RestTest );
 	RUN_TEST( LandingTest );
 	return 0;

@@ -21,3 +21,32 @@ void nbSchedulerFinishTask( void* userTask, void* userContext );
 // operation that waits for its own tasks. Such tasks take at most half of the slots, beyond that the task runs right here
 // and the result is null.
 void* nbSchedulerEnqueueBackgroundTask( b3TaskCallback* task, void* taskContext, nbScheduler* scheduler );
+
+// A step of nbWorld_Step, or a function of the program to run after the steps before it, see nbWorld_RunAfterStep
+typedef struct nbQueuedStep
+{
+	float timeStep;
+	int subStepCount;
+	void ( *fcn )( void* context );
+	void* context;
+} nbQueuedStep;
+
+// A thread of its own for the steps of nbWorld_Step. It takes the steps one after the other in the order they came, while
+// the thread that hands them over goes on.
+typedef struct nbStepThread nbStepThread;
+typedef void nbStepFn( void* context, const nbQueuedStep* step );
+
+// Null if the system has no thread to give
+nbStepThread* nbCreateStepThread( nbStepFn* fn, void* context );
+
+// Takes the steps that are left, then stops the thread
+void nbDestroyStepThread( nbStepThread* stepThread );
+
+// Hand over one more step
+void nbStepThread_Push( nbStepThread* stepThread, const nbQueuedStep* step );
+
+// Wait until every step that was handed over is taken
+void nbStepThread_Wait( nbStepThread* stepThread );
+
+// Whether the calling thread is the step thread, which must never wait for itself
+bool nbStepThread_IsCurrent( nbStepThread* stepThread );

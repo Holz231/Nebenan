@@ -7,10 +7,11 @@
 //
 // Typical frame:
 //
-//   b3World_Step( physicsWorld, 1.0f / 60.0f, 4 );
-//   nbWorld_Update( destructionWorld, 1.0f / 60.0f );
+//   b3BodyEvents moves = nbWorld_GetBodyEvents( destructionWorld );
 //   nbEvents events = nbWorld_GetEvents( destructionWorld );
-//   // update render meshes from the events, draw every chunk with the transform of its body
+//   // move the render meshes of the bodies that moved, update them from the events, apply impacts
+//   nbWorld_Step( destructionWorld, 1.0f / 60.0f, 4 );
+//   // draw every chunk with the transform of its body while the step runs on a thread of its own
 
 #pragma once
 
@@ -53,8 +54,28 @@ NB_API void nbDestroyWorld( nbWorldId worldId );
 /// Is this world id valid?
 NB_API bool nbWorld_IsValid( nbWorldId worldId );
 
-/// Process collision damage and debris management. Call once after every b3World_Step.
+/// Process collision damage and debris management. Call once after every b3World_Step, or let nbWorld_Step do both.
 NB_API void nbWorld_Update( nbWorldId worldId, float timeStep );
+
+/// Step the Box3D world with b3World_Step and update the destruction with nbWorld_Update. With nbWorldDef::asyncStep both
+/// run on a thread of Nebenan and this returns right away, a step called meanwhile follows the one before. The calling
+/// thread waits for them as soon as it calls a function of Nebenan or Box3D for the two worlds, so the program does all
+/// of that before the step and draws while it runs. Other threads must leave the worlds alone until then.
+NB_API void nbWorld_Step( nbWorldId worldId, float timeStep, int subStepCount );
+
+/// The latest move of every body that moved in the steps of nbWorld_Step since the previous call, without the bodies that
+/// went meanwhile. Waits for the steps, from any thread. The array stays valid until the next call.
+NB_API b3BodyEvents nbWorld_GetBodyEvents( nbWorldId worldId );
+
+/// Run fcn( context ) after the steps that the calling thread started with nbWorld_Step, on the thread that takes them and
+/// before the steps that follow, or right here if none runs. Like a step, fcn may use the two worlds while the calling
+/// thread goes on, so that thread must leave alone what fcn touches until it waits for the steps. fcn must not call the
+/// functions that wait for the steps from every thread: nbWorld_Step, nbWorld_RunAfterStep, nbWorld_GetBodyEvents,
+/// nbWorld_SetAsyncStep, nbWorld_SetWorkerCount and nbDestroyWorld.
+NB_API void nbWorld_RunAfterStep( nbWorldId worldId, nbAfterStepFcn* fcn, void* context );
+
+/// Turn the thread of nbWorld_Step on or off, see nbWorldDef::asyncStep. Waits for the steps.
+NB_API void nbWorld_SetAsyncStep( nbWorldId worldId, bool enabled );
 
 /// Apply an impact immediately. This refines chunks near the impact with a Voronoi fracture,
 /// damages bonds, detaches fragments and lets unsupported parts collapse.

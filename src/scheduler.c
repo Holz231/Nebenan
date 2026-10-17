@@ -31,6 +31,9 @@ typedef pthread_t nbThread;
 #define NB_SCHEDULER_MAX_THREADS 31
 #define NB_SCHEDULER_MAX_TASKS 128
 
+// The step thread does what the main thread did before, so it gets the stack a main thread has on Linux and macOS
+#define NB_STEP_STACK_SIZE ( (size_t)8 << 20 )
+
 // A slot goes from free to writing for the thread that enqueues, to pending, to running for the thread that takes it, to
 // done, and back to free once the task is finished. A task in the background, see nbSchedulerEnqueueBackgroundTask, is
 // pending in a state of its own, so a thread tells it apart with the same load that finds it.
@@ -294,6 +297,20 @@ static bool nbStartThread( nbThread* thread, nbScheduler* scheduler )
 	return *thread != NULL;
 }
 
+static void nbStepLoop( nbStepThread* stepThread );
+
+static DWORD WINAPI nbStepThreadMain( LPVOID parameter )
+{
+	nbStepLoop( parameter );
+	return 0;
+}
+
+static bool nbStartStepThread( nbThread* thread, nbStepThread* stepThread )
+{
+	*thread = CreateThread( NULL, NB_STEP_STACK_SIZE, nbStepThreadMain, stepThread, STACK_SIZE_PARAM_IS_A_RESERVATION, NULL );
+	return *thread != NULL;
+}
+
 static void nbJoinThread( nbThread thread )
 {
 	WaitForSingleObject( thread, INFINITE );
@@ -311,6 +328,24 @@ static void* nbWorkerMain( void* parameter )
 static bool nbStartThread( nbThread* thread, nbScheduler* scheduler )
 {
 	return pthread_create( thread, NULL, nbWorkerMain, scheduler ) == 0;
+}
+
+static void nbStepLoop( nbStepThread* stepThread );
+
+static void* nbStepThreadMain( void* parameter )
+{
+	nbStepLoop( parameter );
+	return NULL;
+}
+
+static bool nbStartStepThread( nbThread* thread, nbStepThread* stepThread )
+{
+	pthread_attr_t attributes;
+	pthread_attr_init( &attributes );
+	pthread_attr_setstacksize( &attributes, NB_STEP_STACK_SIZE );
+	bool started = pthread_create( thread, &attributes, nbStepThreadMain, stepThread ) == 0;
+	pthread_attr_destroy( &attributes );
+	return started;
 }
 
 static void nbJoinThread( nbThread thread )
@@ -450,6 +485,128 @@ void nbSchedulerFinishTask( void* userTask, void* userContext )
 	{
 		nbAtomicFetchAddInt( &scheduler->backgroundCount, -1 );
 	}
+}
+
+NB_ARRAY_DECLARE( nbQueuedStep, nbQueuedStepArray );
+
+struct nbStepThread
+{
+	nbMutex mutex;
+	nbCondition wake;
+	nbCondition idle;
+	nbThread thread;
+
+	nbStepFn* fn;
+	void* context;
+
+	// The number of the thread, see nbGetThreadToken
+	int token;
+
+	// The steps handed over, taken from first on, whether one is being taken, and whether the thread should stop
+	nbQueuedStepArray steps;
+	int first;
+	bool busy;
+	bool shutdown;
+};
+
+static void nbStepLoop( nbStepThread* stepThread )
+{
+	nbAtomicStoreInt( &stepThread->token, nbGetThreadToken() );
+	nbMutexLock( &stepThread->mutex );
+	for ( ;; )
+	{
+		while ( stepThread->first == stepThread->steps.count && stepThread->shutdown == false )
+		{
+			nbConditionWait( &stepThread->wake, &stepThread->mutex );
+		}
+
+		// It stops only with no step left
+		if ( stepThread->first == stepThread->steps.count )
+		{
+			break;
+		}
+
+		nbQueuedStep step = stepThread->steps.data[stepThread->first];
+		stepThread->first += 1;
+		stepThread->busy = true;
+		nbMutexUnlock( &stepThread->mutex );
+
+		stepThread->fn( stepThread->context, &step );
+
+		nbMutexLock( &stepThread->mutex );
+		stepThread->busy = false;
+		if ( stepThread->first == stepThread->steps.count )
+		{
+			stepThread->first = 0;
+			stepThread->steps.count = 0;
+			nbConditionBroadcast( &stepThread->idle );
+		}
+	}
+	nbMutexUnlock( &stepThread->mutex );
+}
+
+nbStepThread* nbCreateStepThread( nbStepFn* fn, void* context )
+{
+	nbStepThread* stepThread = nbAlloc( sizeof( nbStepThread ) );
+	memset( stepThread, 0, sizeof( nbStepThread ) );
+	nbMutexInit( &stepThread->mutex );
+	nbConditionInit( &stepThread->wake );
+	nbConditionInit( &stepThread->idle );
+	stepThread->fn = fn;
+	stepThread->context = context;
+
+	if ( nbStartStepThread( &stepThread->thread, stepThread ) == false )
+	{
+		nbConditionDestroy( &stepThread->idle );
+		nbConditionDestroy( &stepThread->wake );
+		nbMutexDestroy( &stepThread->mutex );
+		nbFree( stepThread, sizeof( nbStepThread ) );
+		return NULL;
+	}
+	return stepThread;
+}
+
+void nbDestroyStepThread( nbStepThread* stepThread )
+{
+	if ( stepThread == NULL )
+	{
+		return;
+	}
+
+	nbMutexLock( &stepThread->mutex );
+	stepThread->shutdown = true;
+	nbConditionSignal( &stepThread->wake );
+	nbMutexUnlock( &stepThread->mutex );
+	nbJoinThread( stepThread->thread );
+
+	nbArray_Free( stepThread->steps );
+	nbConditionDestroy( &stepThread->idle );
+	nbConditionDestroy( &stepThread->wake );
+	nbMutexDestroy( &stepThread->mutex );
+	nbFree( stepThread, sizeof( nbStepThread ) );
+}
+
+void nbStepThread_Push( nbStepThread* stepThread, const nbQueuedStep* step )
+{
+	nbMutexLock( &stepThread->mutex );
+	nbArray_Push( stepThread->steps, *step );
+	nbConditionSignal( &stepThread->wake );
+	nbMutexUnlock( &stepThread->mutex );
+}
+
+bool nbStepThread_IsCurrent( nbStepThread* stepThread )
+{
+	return nbAtomicLoadInt( &stepThread->token ) == nbGetThreadToken();
+}
+
+void nbStepThread_Wait( nbStepThread* stepThread )
+{
+	nbMutexLock( &stepThread->mutex );
+	while ( stepThread->first < stepThread->steps.count || stepThread->busy )
+	{
+		nbConditionWait( &stepThread->idle, &stepThread->mutex );
+	}
+	nbMutexUnlock( &stepThread->mutex );
 }
 
 nbTaskSystem* nbCreateTaskSystem( int threadCount )

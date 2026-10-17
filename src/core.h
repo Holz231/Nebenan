@@ -73,6 +73,34 @@ void* nbGrowAlloc( void* oldMem, size_t oldSize, size_t newSize );
 // Atomic add that returns the previous value. Used to hand out work items to worker threads.
 int nbAtomicFetchAddInt( int* value, int delta );
 
+// Atomic load and store, for a value that other threads read without a lock
+static inline int nbAtomicLoadInt( int* value )
+{
+#if defined( _MSC_VER ) && !defined( __clang__ )
+	int result = __iso_volatile_load32( (volatile __int32*)value );
+#if defined( _M_ARM ) || defined( _M_ARM64 ) || defined( _M_ARM64EC )
+	__dmb( 0xB );
+#else
+	_ReadWriteBarrier();
+#endif
+	return result;
+#else
+	return __atomic_load_n( value, __ATOMIC_SEQ_CST );
+#endif
+}
+
+static inline void nbAtomicStoreInt( int* value, int desired )
+{
+#if defined( _MSC_VER ) && !defined( __clang__ )
+	(void)_InterlockedExchange( (volatile long*)value, desired );
+#else
+	__atomic_store_n( value, desired, __ATOMIC_SEQ_CST );
+#endif
+}
+
+// A number of its own for the calling thread, never zero, see nbWorld_Step
+int nbGetThreadToken( void );
+
 // A growable array of plain old data. The element type is part of the macro argument so
 // the arrays stay type safe. Growth doubles the capacity.
 #define NB_ARRAY_DECLARE( T, name )                                                                                              \

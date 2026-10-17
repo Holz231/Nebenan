@@ -392,9 +392,20 @@ typedef struct nbWorldDef
 	/// User context passed to enqueueTask and finishTask.
 	void* userTaskContext;
 
+	/// nbWorld_Step takes the step on a thread of its own and returns right away, so the program draws its frame while
+	/// the physics runs. The thread that called it waits for the step as soon as it calls a function of Nebenan or Box3D
+	/// for the worlds again. Nothing else changes, the worlds end up the same to the bit as with the step on the calling
+	/// thread. The allocators of Nebenan and Box3D must be thread safe. The workers of a step wait for their next task
+	/// without sleeping, so leave the thread that draws a hardware thread of its own. On by default, see
+	/// nbWorld_SetAsyncStep.
+	bool asyncStep;
+
 	/// Used internally to detect a valid definition. DO NOT SET.
 	int internalValue;
 } nbWorldDef;
+
+/// A function of the program that nbWorld_RunAfterStep runs after the steps of nbWorld_Step
+typedef void nbAfterStepFcn( void* context );
 
 /// Destruction events collected since the last call to nbWorld_GetEvents. Use them to keep a
 /// renderer in sync: build meshes for created chunks, drop destroyed chunks, re-parent moved chunks and
@@ -449,6 +460,11 @@ typedef struct nbStats
 	float updateTime;
 	float lastImpactTime;
 	float lastFractureTime;
+
+	/// The Box3D step that nbWorld_Step took last, and how long the thread that called it waited for its steps the last
+	/// time it had to, in milliseconds. See nbWorldDef::asyncStep.
+	float stepTime;
+	float waitTime;
 
 	/// Bytes allocated by Nebenan (all worlds).
 	int64_t byteCount;

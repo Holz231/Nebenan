@@ -357,6 +357,7 @@ NB_ARRAY_DECLARE( nbDestructible, nbDestructibleArray );
 NB_ARRAY_DECLARE( nbChunkId, nbChunkIdArray );
 NB_ARRAY_DECLARE( nbCollisionImpact, nbCollisionImpactArray );
 NB_ARRAY_DECLARE( nbCreation, nbCreationArray );
+NB_ARRAY_DECLARE( b3BodyMoveEvent, nbBodyMoveArray );
 
 typedef struct nbWorld
 {
@@ -462,6 +463,18 @@ typedef struct nbWorld
 	bool pushBothSides;
 
 	nbStats stats;
+
+	// The thread that takes the steps of nbWorld_Step, null until it takes the first. While it has steps, stepOwner is
+	// the number of the thread that handed them over, see nbGetThreadToken, and that thread waits for them in every
+	// lookup of this world and its Box3D world. Zero otherwise.
+	struct nbStepThread* stepThread;
+	int stepOwner;
+
+	// The latest move of every body that moved in the steps of nbWorld_Step since nbWorld_GetBodyEvents. The steps write
+	// one buffer while the other is handed out, and moveSlots holds where the move of a body is, by its Box3D index.
+	nbBodyMoveArray moves[2];
+	int moveBuffer;
+	nbIntArray moveSlots;
 
 	uint16_t worldIndex;
 	uint16_t generation;
