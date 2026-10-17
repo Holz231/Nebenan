@@ -42,6 +42,20 @@ NB_API void* nbEnqueueTask( b3TaskCallback* task, void* taskContext, void* userC
 /// b3FinishTaskCallback of a pool from nbCreateTaskSystem, the user context is the pool
 NB_API void nbFinishTask( void* userTask, void* userContext );
 
+/// The hardware threads of this machine, at least one.
+NB_API int nbGetHardwareThreadCount( void );
+
+/// The cores of the fastest kind on this machine, without their second hardware threads and without efficiency cores.
+/// Zero if the system does not tell.
+NB_API int nbGetPerformanceCoreCount( void );
+
+/// How many threads Box3D and Nebenan run best with on this machine, for b3WorldDef::workerCount and
+/// nbWorldDef::workerCount, and one less for nbCreateTaskSystem: one per performance core, at most 8. Second hardware
+/// threads and efficiency cores add little to the solver or slow it down, and so do more threads than cores. With the
+/// step on a thread of its own, see nbWorldDef::asyncStep, one hardware thread stays free for the thread that draws,
+/// since the workers of a step wait for their next task without sleeping.
+NB_API int nbGetRecommendedWorkerCount( bool asyncStep );
+
 /// Default world definition.
 NB_API nbWorldDef nbDefaultWorldDef( void );
 

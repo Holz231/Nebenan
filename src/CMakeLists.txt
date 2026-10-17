@@ -12,6 +12,7 @@ set(NEBENAN_SOURCE_FILES
 	save.c
 	scheduler.c
 	scheduler.h
+	system.c
 	world.c
 	world.h
 )

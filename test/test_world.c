@@ -3967,6 +3967,25 @@ static int AsyncStepTest( void )
 	return 0;
 }
 
+// The threads a game should take: one per performance core, at most 8, with one hardware thread left over for the thread
+// that draws while the step runs on a thread of its own
+static int WorkerCountTest( void )
+{
+	int hardware = nbGetHardwareThreadCount();
+	int performance = nbGetPerformanceCoreCount();
+	int workers = nbGetRecommendedWorkerCount( false );
+	int asyncWorkers = nbGetRecommendedWorkerCount( true );
+	printf( "  hardware threads %d, performance cores %d, workers %d, with the step on a thread of its own %d\n", hardware,
+			performance, workers, asyncWorkers );
+
+	ENSURE( hardware >= 1 && 0 <= performance && performance <= hardware );
+	ENSURE( 1 <= workers && workers <= 8 && workers <= hardware );
+	ENSURE( 1 <= asyncWorkers && asyncWorkers <= workers );
+	ENSURE( hardware == 1 || asyncWorkers <= hardware - 1 );
+	ENSURE( performance == 0 || workers == b3MinInt( performance, 8 ) );
+	return 0;
+}
+
 int WorldTest( void );
 
 int WorldTest( void )
@@ -4008,6 +4027,7 @@ int WorldTest( void )
 	RUN_TEST( SaveLoadTest );
 	RUN_TEST( TaskSystemTest );
 	RUN_TEST( AsyncStepTest );
+	RUN_TEST( WorkerCountTest );
 	RUN_TEST( RestTest );
 	RUN_TEST( LandingTest );
 	return 0;

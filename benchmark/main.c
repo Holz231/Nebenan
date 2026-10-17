@@ -1129,8 +1129,9 @@ static void BenchmarkCity( int workerCount )
 
 int main( int argc, char** argv )
 {
+	// Zero takes as many as a game would on this machine, see nbGetRecommendedWorkerCount
 	int workerCount = argc > 1 ? atoi( argv[1] ) : 1;
-	workerCount = workerCount < 1 ? 1 : workerCount;
+	workerCount = workerCount == 0 ? nbGetRecommendedWorkerCount( false ) : ( workerCount < 1 ? 1 : workerCount );
 
 	nbVersion version = nbGetVersion();
 	b3Version b3version = b3GetVersion();

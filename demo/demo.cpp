@@ -24,7 +24,6 @@
 #include <string.h>
 #include <string>
 #include <memory>
-#include <thread>
 #include <vector>
 
 extern "C" bool DemoSaveScreenshot( const char* path, int width, int height );
@@ -1319,25 +1318,10 @@ static void DestroyScene( App& app )
 	app.townHouses.clear();
 }
 
-// One thread per performance core, at most 8. Box3D runs best on the performance cores alone, hyper-threads and
-// efficiency cores add little or slow it down, and so do more threads than cores. With parallel physics the main thread
-// draws while the physics runs, so the physics leaves it a hardware thread. Else the workers of a step, which wait for
-// their next task without sleeping, take turns with it on the cores.
+// The threads a game would take on this machine, see nbGetRecommendedWorkerCount, unless the command line sets them
 static int PreferredWorkers( const App& app, bool parallelPhysics )
 {
-	if ( app.automation.threads > 0 )
-	{
-		return app.automation.threads;
-	}
-
-	int hardware = (int)std::thread::hardware_concurrency();
-	int workers = app.performanceCores > 0 ? app.performanceCores : ( hardware > 0 ? hardware / 2 : 2 );
-	workers = hardware > 0 ? b3MinInt( workers, hardware ) : workers;
-	if ( parallelPhysics && hardware > 1 )
-	{
-		workers = b3MinInt( workers, hardware - 1 );
-	}
-	return b3ClampInt( workers, 1, 8 );
+	return app.automation.threads > 0 ? app.automation.threads : nbGetRecommendedWorkerCount( parallelPhysics );
 }
 
 static void LoadScene( App& app, SceneKind scene )
@@ -1769,8 +1753,8 @@ static std::string BuildReport( const App& app )
 	std::string text;
 	Appendf( text, "Nebenan-Messung: Szene %s, %s-Build, Box3D %d.%d.%d\n", s_sceneNames[app.scene], s_buildType, version.major,
 			 version.minor, version.revision );
-	Appendf( text, "CPU: %s, %u logische Kerne, %d Performance-Kerne, %d Threads, Löser mit %d Spuren\n",
-			 app.cpuName.empty() ? "unbekannt" : app.cpuName.c_str(), std::thread::hardware_concurrency(), app.performanceCores,
+	Appendf( text, "CPU: %s, %d logische Kerne, %d Performance-Kerne, %d Threads, Löser mit %d Spuren\n",
+			 app.cpuName.empty() ? "unbekannt" : app.cpuName.c_str(), nbGetHardwareThreadCount(), app.performanceCores,
 			 app.workerCount, b3GetSIMDWidth() );
 	Appendf( text, "GPU: %s, Bild %d x %d, MSAA %dx, Monitor %d Hz\n", app.gpuName.empty() ? "unbekannt" : app.gpuName.c_str(),
 			 sapp_width(), sapp_height(), sapp_sample_count(), app.refreshRate );
@@ -2520,8 +2504,8 @@ static void FinishComparison( App& app )
 	std::string text;
 	Appendf( text, "Nebenan-Vergleich: Physik parallel zum Zeichnen gegen nacheinander, %s-Build, Box3D %d.%d.%d\n", s_buildType,
 			 version.major, version.minor, version.revision );
-	Appendf( text, "CPU: %s, %u logische Kerne, %d Performance-Kerne, Löser mit %d Spuren\n",
-			 app.cpuName.empty() ? "unbekannt" : app.cpuName.c_str(), std::thread::hardware_concurrency(), app.performanceCores,
+	Appendf( text, "CPU: %s, %d logische Kerne, %d Performance-Kerne, Löser mit %d Spuren\n",
+			 app.cpuName.empty() ? "unbekannt" : app.cpuName.c_str(), nbGetHardwareThreadCount(), app.performanceCores,
 			 b3GetSIMDWidth() );
 	Appendf( text, "GPU: %s, Bild %d x %d, MSAA %dx, Monitor %d Hz, VSync %s\n", app.gpuName.empty() ? "unbekannt" : app.gpuName.c_str(),
 			 sapp_width(), sapp_height(), sapp_sample_count(), app.refreshRate, app.vsyncAvailable ? "aus" : "an, lässt sich nicht abschalten" );
@@ -2666,8 +2650,8 @@ static void OnInit()
 	app.refreshRate = DemoRefreshRate();
 	app.unthrottled = DemoUnthrottled();
 
-	// Each scene picks its threads from these, see PreferredWorkers
-	app.performanceCores = SystemPerformanceCores();
+	// For the report, the threads come from nbGetRecommendedWorkerCount, see PreferredWorkers
+	app.performanceCores = nbGetPerformanceCoreCount();
 	app.cpuName = SystemCpuName();
 	app.gpuName = SystemGpuName();
 

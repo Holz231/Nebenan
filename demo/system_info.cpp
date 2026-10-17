@@ -4,11 +4,8 @@
 
 #include "sokol_gfx.h"
 
-#include <set>
 #include <stdio.h>
 #include <string.h>
-#include <utility>
-#include <vector>
 
 #if defined( _WIN32 )
 #ifndef WIN32_LEAN_AND_MEAN
@@ -104,116 +101,5 @@ std::string SystemGpuName()
 	return "Metal";
 #else
 	return std::string();
-#endif
-}
-
-int SystemPerformanceCores()
-{
-#if defined( _WIN32 )
-	DWORD length = 0;
-	GetLogicalProcessorInformationEx( RelationProcessorCore, nullptr, &length );
-	if ( length == 0 )
-	{
-		return 0;
-	}
-
-	std::vector<unsigned char> buffer( length );
-	auto* first = (SYSTEM_LOGICAL_PROCESSOR_INFORMATION_EX*)buffer.data();
-	if ( GetLogicalProcessorInformationEx( RelationProcessorCore, first, &length ) == FALSE )
-	{
-		return 0;
-	}
-
-	// A higher efficiency class is a faster core. Without hybrid cores every core has the same class.
-	int highestClass = -1;
-	int count = 0;
-	for ( DWORD offset = 0; offset < length; )
-	{
-		auto* info = (SYSTEM_LOGICAL_PROCESSOR_INFORMATION_EX*)( buffer.data() + offset );
-		// The byte after the flags, older MinGW headers still call it reserved
-		int efficiencyClass = ( (const BYTE*)&info->Processor.Flags )[1];
-		if ( efficiencyClass > highestClass )
-		{
-			highestClass = efficiencyClass;
-			count = 0;
-		}
-		count += efficiencyClass == highestClass ? 1 : 0;
-		offset += info->Size;
-	}
-	return count;
-#elif defined( __APPLE__ )
-	int count = 0;
-	size_t size = sizeof( count );
-	if ( sysctlbyname( "hw.perflevel0.physicalcpu", &count, &size, nullptr, 0 ) == 0 && count > 0 )
-	{
-		return count;
-	}
-	size = sizeof( count );
-	return sysctlbyname( "hw.physicalcpu", &count, &size, nullptr, 0 ) == 0 ? count : 0;
-#else
-	// Hybrid Intel CPUs list their performance cores as cpu_core, the efficiency cores as cpu_atom. The list is a range
-	// of logical processors like 0-11,16-19.
-	std::vector<bool> performance;
-	FILE* list = fopen( "/sys/devices/cpu_core/cpus", "r" );
-	if ( list != nullptr )
-	{
-		int first = 0;
-		while ( fscanf( list, "%d", &first ) == 1 && first >= 0 && first < 4096 )
-		{
-			int last = first;
-			int next = fgetc( list );
-			if ( next == '-' && fscanf( list, "%d", &last ) == 1 )
-			{
-				next = fgetc( list );
-			}
-			last = last < 4095 ? last : 4095;
-			if ( last >= (int)performance.size() )
-			{
-				performance.resize( (size_t)last + 1, false );
-			}
-			for ( int cpu = first; cpu <= last; ++cpu )
-			{
-				performance[(size_t)cpu] = true;
-			}
-			if ( next != ',' )
-			{
-				break;
-			}
-		}
-		fclose( list );
-	}
-
-	// Distinct cores in the topology of the logical processors
-	std::set<std::pair<int, int>> cores;
-	for ( int cpu = 0; cpu < 4096; ++cpu )
-	{
-		char path[128];
-		int values[2] = { -1, -1 };
-		const char* names[2] = { "physical_package_id", "core_id" };
-		for ( int k = 0; k < 2; ++k )
-		{
-			snprintf( path, sizeof( path ), "/sys/devices/system/cpu/cpu%d/topology/%s", cpu, names[k] );
-			FILE* file = fopen( path, "r" );
-			if ( file != nullptr )
-			{
-				if ( fscanf( file, "%d", values + k ) != 1 )
-				{
-					values[k] = -1;
-				}
-				fclose( file );
-			}
-		}
-
-		if ( values[1] < 0 )
-		{
-			break;
-		}
-		if ( performance.empty() == false && ( cpu >= (int)performance.size() || performance[(size_t)cpu] == false ) )
-		{
-			continue;
-		}
-		cores.insert( { values[0], values[1] } );
-	}
-	return (int)cores.size();
 #endif
 }
