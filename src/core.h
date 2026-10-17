@@ -101,6 +101,15 @@ static inline void nbAtomicStoreInt( int* value, int desired )
 // A number of its own for the calling thread, never zero, see nbWorld_Step
 int nbGetThreadToken( void );
 
+// Keeps a rare path out of the function that calls it, so that one needs no stack frame
+#if defined( _MSC_VER )
+#define NB_NOINLINE __declspec( noinline )
+#elif defined( __GNUC__ ) || defined( __clang__ )
+#define NB_NOINLINE __attribute__( ( noinline ) )
+#else
+#define NB_NOINLINE
+#endif
+
 // A growable array of plain old data. The element type is part of the macro argument so
 // the arrays stay type safe. Growth doubles the capacity.
 #define NB_ARRAY_DECLARE( T, name )                                                                                              \

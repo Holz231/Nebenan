@@ -15,22 +15,26 @@ static nbWorld nb_worlds[NB_MAX_WORLDS];
 static void nbWaitForSteps( nbWorld* world );
 
 // The thread that handed steps to the step thread waits for them before it touches the world, see nbWorld_Step. Every
-// other thread goes on, the step thread and the workers among them.
-static inline void nbWaitIfStepping( nbWorld* world )
+// other thread goes on, the step thread and the workers among them. The wait is out of line, so a lookup of a world
+// without steps stays as cheap as before.
+static NB_NOINLINE nbWorld* nbPassSteps( nbWorld* world )
 {
-	int owner = nbAtomicLoadInt( &world->stepOwner );
-	if ( owner != 0 && owner == nbGetThreadToken() )
+	if ( nbAtomicLoadInt( &world->stepOwner ) == nbGetThreadToken() )
 	{
 		nbWaitForSteps( world );
 	}
+	return world;
+}
+
+static inline nbWorld* nbCheckSteps( nbWorld* world )
+{
+	return nbAtomicLoadInt( &world->stepOwner ) == 0 ? world : nbPassSteps( world );
 }
 
 nbWorld* nbGetWorld( int index )
 {
 	NB_ASSERT( 0 <= index && index < NB_MAX_WORLDS );
-	nbWorld* world = nb_worlds + index;
-	nbWaitIfStepping( world );
-	return world;
+	return nbCheckSteps( nb_worlds + index );
 }
 
 // Without waiting for the steps
@@ -53,11 +57,7 @@ static nbWorld* nbFindWorld( nbWorldId id )
 nbWorld* nbGetWorldFromId( nbWorldId id )
 {
 	nbWorld* world = nbFindWorld( id );
-	if ( world != NULL )
-	{
-		nbWaitIfStepping( world );
-	}
-	return world;
+	return world != NULL ? nbCheckSteps( world ) : NULL;
 }
 
 nbChunkId nbMakeChunkId( const nbWorld* world, int chunkIndex )
@@ -66,15 +66,9 @@ nbChunkId nbMakeChunkId( const nbWorld* world, int chunkIndex )
 	return id;
 }
 
-nbChunk* nbGetChunkFromId( nbChunkId id, nbWorld** worldOut )
+// Without waiting for the steps
+static inline nbChunk* nbFindChunk( nbWorld* world, nbChunkId id, nbWorld** worldOut )
 {
-	if ( id.world0 >= NB_MAX_WORLDS || id.index1 < 1 )
-	{
-		return NULL;
-	}
-
-	nbWorld* world = nb_worlds + id.world0;
-	nbWaitIfStepping( world );
 	if ( world->inUse == false || id.index1 > world->chunks.count )
 	{
 		return NULL;
@@ -91,6 +85,27 @@ nbChunk* nbGetChunkFromId( nbChunkId id, nbWorld** worldOut )
 		*worldOut = world;
 	}
 	return chunk;
+}
+
+static NB_NOINLINE nbChunk* nbFindChunkAfterSteps( nbChunkId id, nbWorld** worldOut )
+{
+	return nbFindChunk( nbPassSteps( nb_worlds + id.world0 ), id, worldOut );
+}
+
+nbChunk* nbGetChunkFromId( nbChunkId id, nbWorld** worldOut )
+{
+	if ( id.world0 >= NB_MAX_WORLDS || id.index1 < 1 )
+	{
+		return NULL;
+	}
+
+	// The wait for the steps out of line, see nbCheckSteps
+	nbWorld* world = nb_worlds + id.world0;
+	if ( nbAtomicLoadInt( &world->stepOwner ) != 0 )
+	{
+		return nbFindChunkAfterSteps( id, worldOut );
+	}
+	return nbFindChunk( world, id, worldOut );
 }
 
 void nbPushEvent( nbChunkIdArray* events, nbChunkId id )

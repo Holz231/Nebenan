@@ -195,3 +195,12 @@ uint64_t b3Hash64NonZero( const uint8_t* bytes, int n );
 
 // Added for Nebenan: a number of its own for the calling thread, never zero, see b3World_SetStepGuard
 int b3GetThreadToken( void );
+
+// Added for Nebenan: keeps a rare path out of the function that calls it, so that one needs no stack frame
+#if defined( _MSC_VER )
+#define B3_NOINLINE __declspec( noinline )
+#elif defined( __GNUC__ ) || defined( __clang__ )
+#define B3_NOINLINE __attribute__( ( noinline ) )
+#else
+#define B3_NOINLINE
+#endif
