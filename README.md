@@ -568,7 +568,7 @@ nbStream_Update( stream, &camera, 1 );
 ```
 
 Die beschädigten Häuser hält der Stream im Speicher. Mit `storeFcn` und `fetchFcn` gehen sie stattdessen etwa in eine
-Datei, wie im Benchmark. Darunter liegen Bausteine, die es auch einzeln gibt. `nbDestructible_IsIntact` sagt, ob einem
+Datei, wie im Benchmark. Über jeden Bauplatz führt der Stream rund 230 Byte Buch, samt Suchbaum. Darunter liegen Bausteine, die es auch einzeln gibt. `nbDestructible_IsIntact` sagt, ob einem
 Objekt seit dem Anlegen etwas passiert ist, und `nbDestructible_CanUnload`, ob es jetzt gehen kann: Es ist unberührt,
 und im angegebenen Abstand liegen kein Trümmerteil und kein Schutt, und nichts dort bewegt sich oder lässt sich
 bewegen. Mit derselben Definition neu angelegt, hat es dieselben Bruchstücke und Verbindungen, bitgleich, nur neue Ids:
@@ -868,18 +868,20 @@ rechnet seine Frames ohne Pause hintereinander, ein Spiel mit 16 ms pro Frame br
 geht, wenn sich fünf Sekunden lang nichts in 20 m bewegt hat: ein unberührtes, wenn `nbDestructible_CanUnload` es
 erlaubt, ein beschädigtes, wenn `nbCanSaveDestructibles` es erlaubt. Das geht samt Schutt in eine Datei, höchstens
 eines pro Frame, und kommt von dort zurück, sobald die Kamera oder etwas, das sich bewegt, ihm nahekommt. Alle fünf
-Frames fällt eine Granate auf ein Haus bis 60 m um die Kamera. Der Median aus drei Läufen auf der VM:
+Frames fällt eine Granate auf ein Haus bis 60 m um die Kamera. Der Median aus sechs Läufen auf der VM mit `physik-18`.
+Die VM rechnete an diesem Tag langsamer als bei den Zahlen weiter unten, `physik-17` brauchte auf ihr 1,25 ms pro Frame
+mit 4 Threads und 2,99 ms mit einem:
 
 | Stadt im Vorbeiflug | 4 Threads | 1 Thread |
 | --- | ---: | ---: |
-| Frame Ø | 0,9 ms | 2,1 ms |
-| davon Streaming Ø | 0,5 ms | 1,7 ms |
-| Streaming, 95 % der Frames | 1,9 ms | 4,9 ms |
-| Häuser gleichzeitig geladen | höchstens 428 | höchstens 428 |
-| Speicher von Nebenan und Box3D | höchstens 192 MB | höchstens 192 MB |
+| Frame Ø | 1,2 ms | 3,2 ms |
+| davon Streaming Ø | 0,8 ms | 2,7 ms |
+| Streaming, 95 % der Frames | 2,7 ms | 8,5 ms |
+| Häuser gleichzeitig geladen | höchstens 427 | höchstens 427 |
+| Speicher von Nebenan und Box3D | höchstens 206 MB | höchstens 206 MB |
 
-Unterwegs kommen 1 666 Häuser dazu, und 1 338 unberührte gehen wieder. 224 beschädigte gehen samt Schutt in die
-Datei, 310 KB jedes, und 57 davon kommen auf dem Rückweg wieder. Jede Granate trifft ein geladenes Haus. Physik,
+Unterwegs kommen 1 676 Häuser dazu, und 1 350 unberührte gehen wieder. 241 beschädigte gehen samt Schutt in die
+Datei, 311 KB jedes, und 54 davon kommen auf dem Rückweg wieder. Jede Granate trifft ein geladenes Haus. Physik,
 Update und Einschläge kosten so viel wie in den Städten oben, die ganz im Speicher liegen. Ohne das Auslagern blieben
 die beschädigten Häuser geladen, mit bis zu 603 Häusern und 278 MB zugleich, und ein Frame kostete im Wechsel
 gemessen 0,93 statt 1,01 ms mit 4 Threads und 1,96 statt 2,12 ms mit einem. Ein Haus zu speichern kostet den
@@ -907,6 +909,18 @@ gibt das Entladen einen Block frei statt rund 240 Formen, die die Worker angeleg
 0,47 ms Streaming mit 4 Threads. Box3D nimmt eine Form aus seinem statischen Suchbaum nur noch bis zum ersten Knoten
 heraus, der sich nicht mehr ändert, mit demselben Baum wie zuvor. Auf dem aufrufenden Thread bleiben das Einbauen und
 das Entladen, mit einem Thread rund 0,11 und 0,09 ms pro Frame.
+
+Seit `physik-18` lädt und entlädt ein Stream der Bibliothek die Stadt, mit denselben Regeln wie zuvor die eigene Kopie
+des Benchmarks. Gepaart gegen `physik-17` über sechs Granatenfolgen mit je zwei Läufen kostet ein Frame mit 4 Threads
+3,9 % weniger und 95 % der Frames 12,4 % weniger, mit einem Thread 1,8 % und 0,2 % mehr. Die Worker haben ein Frame
+mehr Zeit: Der Stream baut ein Haus nach dem vierten Schritt seit dem Start ein, die Kopie baute es vor diesem Schritt
+ein. So kostet das Einbauen samt Warten mit 4 Threads 0,49 statt 0,61 ms pro Frame. Die Auswahl der
+nächsten Häuser kostet 0,016 statt 0,020 ms, das Markieren um bewegte Körper 0,046 statt 0,027 ms: Jeder Körper fragt
+den Suchbaum des Streams statt das Raster der Kopie, rund 1,3 statt 0,9 µs, und auf diesem Flug bewegen sich 35 statt
+30 Körper pro Frame. Die Buchführung über die Bauplätze zählt jetzt zum Speicher der Bibliothek, 234 Byte pro Platz
+samt Suchbaum, 15 MB für die 65 536 Häuser. Die Kopie führte ihre Liste selbst und zählte sie nicht mit. Die Trümmer
+fallen etwas anders, weil der Stream die Welt in anderer Reihenfolge ändert: 26 statt 8 Häuser laden für bewegte
+Körper, über die sechs Granatenfolgen im Mittel 4,7 statt 1,3, bei fünf davon 0 bis 2.
 
 Ganze Einschläge (Bruch, Stützgraph, neue Box3D-Körper) und der Box3D-Schritt danach bei 60 Hz mit
 4 Substeps, jeweils mit 1 und 4 Threads, der Median aus sechs Läufen:
