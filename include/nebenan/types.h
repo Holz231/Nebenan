@@ -504,6 +504,10 @@ typedef enum nbProfileStage
 	nb_profileSolve,
 	nb_profileSolverSetup,
 	nb_profileConstraints,
+
+	/// The part of the constraints that the calling thread solves alone, the overflow of Box3D's constraint graph, in the
+	/// steps that solve by colors, see b3Profile::overflow
+	nb_profileOverflow,
 	nb_profileTransforms,
 
 	/// nbWorld_Update with its collision damage, the debris that comes to rest, the debris budget and the rubble that
@@ -554,6 +558,12 @@ typedef struct nbProfile
 	float islandFloor[4];
 	int islandStepCount;
 	int colorStepCount;
+
+	/// The constraints in the overflow of Box3D's constraint graph per step, the contacts of them that Box3D solves in
+	/// batches of knots, several at once, and those batches, see b3Counters::knotContactCount
+	float overflowCount;
+	float knotContactCount;
+	float knotBatchCount;
 
 	/// How long a sleeping worker of Nebenan took to start a task it was given, in microseconds, mean and longest, over
 	/// the tasks of the impacts and the collision damage that went to the workers

@@ -78,6 +78,13 @@ void b3SolveContacts_Convex( b3SolverBlock block, b3StepContext* context );
 void b3ApplyRestitution_Convex( b3SolverBlock block, b3StepContext* context );
 void b3StoreImpulses_Convex( b3SolverBlock block, b3StepContext* context, int workerIndex );
 
+// Added for Nebenan: the batches of knots in [startBatch, endBatch), see b3KnotBatch. They are prepared and stored with
+// the convex contacts.
+void b3WarmStartKnots( b3StepContext* context, int startBatch, int endBatch );
+void b3PushKnots( b3StepContext* context, int startBatch, int endBatch );
+void b3SolveKnots( b3StepContext* context, int startBatch, int endBatch );
+void b3ApplyKnotRestitution( b3StepContext* context, int startBatch, int endBatch );
+
 // Added for Nebenan: the functions above pick these by the width of the world, see contact_solver_wide.inl
 int b3GetWideContactConstraintByteCountW4( void );
 void b3PrepareContacts_ConvexW4( b3SolverBlock block, b3StepContext* context );
@@ -87,6 +94,10 @@ void b3PushContacts_ConvexW4( b3SolverBlock block, b3StepContext* context );
 void b3SolveContacts_ConvexW4( b3SolverBlock block, b3StepContext* context );
 void b3ApplyRestitution_ConvexW4( b3SolverBlock block, b3StepContext* context );
 void b3StoreImpulses_ConvexW4( b3SolverBlock block, b3StepContext* context, int workerIndex );
+void b3WarmStartKnotsW4( b3StepContext* context, int startBatch, int endBatch );
+void b3PushKnotsW4( b3StepContext* context, int startBatch, int endBatch );
+void b3SolveKnotsW4( b3StepContext* context, int startBatch, int endBatch );
+void b3ApplyKnotRestitutionW4( b3StepContext* context, int startBatch, int endBatch );
 #if defined( B3_SIMD_HAS_WIDTH_8 )
 int b3GetWideContactConstraintByteCountW8( void );
 void b3PrepareContacts_ConvexW8( b3SolverBlock block, b3StepContext* context );
@@ -96,4 +107,16 @@ void b3PushContacts_ConvexW8( b3SolverBlock block, b3StepContext* context );
 void b3SolveContacts_ConvexW8( b3SolverBlock block, b3StepContext* context );
 void b3ApplyRestitution_ConvexW8( b3SolverBlock block, b3StepContext* context );
 void b3StoreImpulses_ConvexW8( b3SolverBlock block, b3StepContext* context, int workerIndex );
+void b3WarmStartKnotsW8( b3StepContext* context, int startBatch, int endBatch );
+void b3PushKnotsW8( b3StepContext* context, int startBatch, int endBatch );
+void b3SolveKnotsW8( b3StepContext* context, int startBatch, int endBatch );
+void b3ApplyKnotRestitutionW8( b3StepContext* context, int startBatch, int endBatch );
 #endif
+
+// Added for Nebenan: the copies of a knot in a batch, its velocity before the batch and the sum of the changes of its
+// copies, see b3KnotBatch
+typedef struct b3KnotCopies
+{
+	b3Vec3 v0, w0;
+	b3Vec3 dv, dw;
+} b3KnotCopies;

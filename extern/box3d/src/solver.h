@@ -157,7 +157,28 @@ typedef struct b3WidePrepareSpan
 	int start;
 	int count;
 	int* contacts;
+
+	// Added for Nebenan: per contact the scale of the inverse mass and inertia of its bodies, for the copies of a knot, or
+	// null, see b3KnotBatch
+	const float* scaleA;
+	const float* scaleB;
 } b3WidePrepareSpan;
+
+// Added for Nebenan: the lanes of a batch of knot contacts, two wide constraints of four or one of eight
+#define B3_KNOT_LANES 8
+
+// Added for Nebenan: a knot is a body with many contacts in the overflow of the graph, see b3BuildKnots. A batch holds up
+// to B3_KNOT_LANES of its contacts with different partners, which its lanes solve at once. Each lane changes its own copy
+// of the knot, which carries its share of the knot's mass, and the knot then takes the mean velocity of its copies: mass
+// splitting after Tonge, Benevolenski and Voroshilov, Mass Splitting for Jitter-Free Parallel Rigid Body Simulation, 2012.
+typedef struct b3KnotBatch
+{
+	// The awake index of the knot plus one, as b3ContactConstraintWide::indexA
+	int knot;
+
+	// The contacts of the batch from the first lane on, the number of copies of the knot
+	int laneCount;
+} b3KnotBatch;
 
 typedef struct b3ContactPrepareSpan
 {
@@ -220,6 +241,7 @@ typedef struct b3StepContext
 	// prepareSpans has activeColorCount + 1 entries, the last being a sentinel
 	// at wideContactCount. wideContactConstraints is the contiguous base
 	// pointer; per-color slices live at colors[i].wideConstraints.
+	// Added for Nebenan: one more span before the sentinel for the knots, see b3KnotBatch.
 	void* wideConstraints; // Added for Nebenan: in the width of the world
 	b3WidePrepareSpan* widePrepareSpans;
 	int wideContactCount;
@@ -247,6 +269,18 @@ typedef struct b3StepContext
 	const int* packOverflowStarts;
 	const int* packWideStarts;
 	const int* activeColorIndices;
+
+	// Added for Nebenan: the batches of the knots in the overflow, solved before the other overflow constraints, see
+	// b3BuildKnots. Their wide constraints follow those of the colors, B3_KNOT_LANES / B3_SIMD_WIDTH per batch, from
+	// knotWideStart on. With packs each pack has the range of batches up to the start of the next.
+	const b3KnotBatch* knotBatches;
+	int knotBatchCount;
+	void* knotConstraints;
+	int knotWideStart;
+	const int* packKnotStarts;
+
+	// Added for Nebenan: the overflow contacts outside the knots, solved one at a time
+	int overflowContactCount;
 
 	// padding to prevent false sharing
 	char padding1[64];

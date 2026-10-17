@@ -469,7 +469,7 @@ static uint32_t RunDeterminismScenario( void )
 
 // Fracture and physics are bit for bit identical with MSVC, GCC and Clang on x64 and ARM. This is the result
 // with the pinned Box3D commit. Update it when the results change on purpose, never to make one platform pass.
-#define NB_EXPECTED_DETERMINISM_HASH 0x8c4d565bu
+#define NB_EXPECTED_DETERMINISM_HASH 0xa9f4971bu
 
 static int DeterminismTest( void )
 {
@@ -1038,6 +1038,77 @@ static int SIMDWidthTest( void )
 
 	b3SetSIMDWidth( 0 );
 	printf( "contact solver lanes: %d\n", b3GetSIMDWidth() );
+	return 0;
+}
+
+// A heavy plate on 36 small cubes has more contacts than the constraint graph has colors. The contacts it has left over
+// make it a knot, which Box3D solves in batches against copies of the plate, see b3KnotBatch. The plate must come to rest
+// on the cubes, as high as they are, without sinking into them or shaking, and the same with every number of workers. The
+// light plate is barely heavier than the cubes under a copy.
+static int KnotTest( void )
+{
+	float densities[2] = { 20000.0f, 1000.0f };
+	for ( int d = 0; d < 2; ++d )
+	{
+		b3Pos ends[3];
+		for ( int pass = 0; pass < 3; ++pass )
+		{
+			TestScene scene = CreateSceneWithWorkers( pass == 0 ? 1 : 2 * pass, NULL, NULL, NULL );
+
+			b3BodyDef bodyDef = b3DefaultBodyDef();
+			bodyDef.type = b3_dynamicBody;
+			b3ShapeDef shapeDef = b3DefaultShapeDef();
+			b3BoxHull cube = b3MakeBoxHull( 0.05f, 0.05f, 0.05f );
+			b3BodyId cubes[36];
+			for ( int i = 0; i < 36; ++i )
+			{
+				bodyDef.position = (b3Vec3){ 0.12f * (float)( i % 6 ) - 0.3f, 0.05f, 0.12f * (float)( i / 6 ) - 0.3f };
+				cubes[i] = b3CreateBody( scene.physicsWorld, &bodyDef );
+				b3CreateHullShape( cubes[i], &shapeDef, &cube.base );
+			}
+
+			bodyDef.position = (b3Vec3){ 0.0f, 0.151f, 0.0f };
+			b3BodyId plate = b3CreateBody( scene.physicsWorld, &bodyDef );
+			b3BoxHull slab = b3MakeBoxHull( 0.4f, 0.05f, 0.4f );
+			shapeDef.density = densities[d];
+			b3CreateHullShape( plate, &shapeDef, &slab.base );
+
+			int knotContacts = 0;
+			for ( int step = 0; step < 240; ++step )
+			{
+				nbWorld_Step( scene.world, 1.0f / 60.0f, 4 );
+				knotContacts = b3MaxInt( knotContacts, b3World_GetCounters( scene.physicsWorld ).knotContactCount );
+			}
+
+			b3Pos p = b3Body_GetPosition( plate );
+			float speed = b3Length( b3Body_GetLinearVelocity( plate ) );
+			float lowest = 1.0f, highest = 0.0f;
+			for ( int i = 0; i < 36; ++i )
+			{
+				float y = (float)b3Body_GetPosition( cubes[i] ).y;
+				lowest = b3MinFloat( lowest, y );
+				highest = b3MaxFloat( highest, y );
+			}
+			if ( pass == 0 )
+			{
+				printf( "  plate of %.0f kg on 36 cubes: %d contacts at the knot, plate at %.4f m moving %.4f m/s, cubes "
+						"%.4f to %.4f m\n",
+						b3Body_GetMass( plate ), knotContacts, (float)p.y, speed, lowest, highest );
+			}
+
+			ENSURE( knotContacts > 0 );
+			ENSURE( 0.135f < (float)p.y && (float)p.y < 0.155f );
+			ENSURE( speed < 0.01f );
+			ENSURE( 0.04f < lowest && highest < 0.06f );
+			ends[pass] = p;
+			DestroyScene( &scene );
+		}
+
+		for ( int pass = 1; pass < 3; ++pass )
+		{
+			ENSURE( memcmp( ends + pass, ends, sizeof( b3Pos ) ) == 0 );
+		}
+	}
 	return 0;
 }
 
@@ -4051,11 +4122,14 @@ static int ProfileTest( void )
 	ENSURE( t[nb_profileCreateContacts] <= t[nb_profilePairs] + slack );
 	ENSURE( t[nb_profileContactStates] <= t[nb_profileCollide] + slack );
 	ENSURE( t[nb_profileSolverSetup] + t[nb_profileConstraints] <= t[nb_profileSolve] + slack );
+	ENSURE( t[nb_profileOverflow] <= t[nb_profileConstraints] + slack );
 	ENSURE( t[nb_profileCollisionDamage] + t[nb_profileSettle] + t[nb_profileBudget] + t[nb_profileRelease] <=
 			t[nb_profileUpdate] + slack );
 	ENSURE( t[nb_profileCells] > 0.0f && t[nb_profileCellsAlone] <= t[nb_profileCells] + slack );
 	ENSURE( t[nb_profileCells] <= t[nb_profileUpdate] + t[nb_profileImpacts] + slack );
 	ENSURE( profile.freezeCount >= 0.0f && profile.thawCount >= 0.0f );
+	ENSURE( 0.0f <= profile.knotContactCount && profile.knotContactCount <= profile.overflowCount );
+	ENSURE( profile.knotBatchCount <= profile.knotContactCount );
 
 	// A world with workers knows its islands. None of the three holds more than half of the work in the steps with packs,
 	// and the bound of the packs is at least the even share.
@@ -4313,6 +4387,7 @@ int WorldTest( void )
 	RUN_TEST( DeterminismTest );
 	RUN_TEST( WorkerTest );
 	RUN_TEST( SIMDWidthTest );
+	RUN_TEST( KnotTest );
 	RUN_TEST( UniqueHullTest );
 	RUN_TEST( ExternalHullTest );
 	RUN_TEST( ShapeBatchTest );

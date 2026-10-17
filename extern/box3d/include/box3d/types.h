@@ -597,6 +597,11 @@ typedef struct b3Profile
 	/// in pair order, and the contacts that begin or end touching or part, with their islands and graph colors
 	float createContacts;
 	float contactStates;
+
+	/// Added for Nebenan: the part of constraints the calling thread spends alone on the overflow of the constraint graph,
+	/// the knots and the other overflow constraints, in a step that solves by colors. With packs every pack solves its
+	/// own overflow.
+	float overflow;
 } b3Profile;
 
 /// Counters that give details of the simulation size.
@@ -639,6 +644,12 @@ typedef struct b3Counters
 	/// weigh it, and that of the largest island, which a pack gives to one thread alone. Zero in a world without workers.
 	int islandWork;
 	int largestIslandWork;
+
+	/// Added for Nebenan: the contacts of the overflow of the graph, colorCounts[23] without joints, that the last step
+	/// solved in batches of knots, and those batches. A knot is a body with many contacts in the overflow, the batches
+	/// solve several of them at once against copies of the knot.
+	int knotContactCount;
+	int knotBatchCount;
 } b3Counters;
 
 /// Joint type enumeration. This is useful because all joint types use b3JointId and sometimes you

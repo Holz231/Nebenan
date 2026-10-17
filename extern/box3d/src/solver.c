@@ -1263,10 +1263,45 @@ static void b3ExecutePackRange( b3SolverStageType type, b3StepContext* context, 
 	}
 }
 
-// Added for Nebenan: one stage of the constraints of a pack, the overflow constraints first and then the colors in order,
-// as b3SolverTask does
+// Added for Nebenan: one stage of the batches of knots in [start, end), see b3KnotBatch
+static void b3ExecuteKnots( b3SolverStageType type, b3StepContext* context, int start, int end )
+{
+	if ( start == end )
+	{
+		return;
+	}
+
+	switch ( type )
+	{
+		case b3_stageWarmStart:
+			b3WarmStartKnots( context, start, end );
+			break;
+
+		case b3_stageSolve:
+			b3PushKnots( context, start, end );
+			break;
+
+		case b3_stageRelax:
+			b3SolveKnots( context, start, end );
+			break;
+
+		case b3_stageRestitution:
+			b3ApplyKnotRestitution( context, start, end );
+			break;
+
+		default:
+			B3_ASSERT( false );
+			break;
+	}
+}
+
+// Added for Nebenan: one stage of the constraints of a pack, the overflow constraints first, the knots before the others,
+// and then the colors in order, as b3SolverTask does
 static void b3ExecutePackConstraints( b3SolverStageType type, b3StepContext* context, int pack, int workerIndex )
 {
+	const int* knotStarts = context->packKnotStarts;
+	b3ExecuteKnots( type, context, knotStarts[pack], knotStarts[pack + 1] );
+
 	const int* overflowStarts = context->packOverflowStarts;
 	b3ExecutePackRange( type, context, overflowStarts[pack], overflowStarts[pack + 1], b3_overflowBlock, B3_OVERFLOW_INDEX,
 						workerIndex );
@@ -1301,7 +1336,14 @@ static void b3SolvePack( b3StepContext* context, int pack, int workerIndex )
 	int overflowStart = context->packOverflowStarts[pack];
 	int overflowEnd = context->packOverflowStarts[pack + 1];
 
+	// The wide constraints of the knots of the pack, see b3KnotBatch
+	int knotWide = B3_KNOT_LANES / context->world->simdWidth;
+	int knotWideStart = context->knotWideStart + knotWide * context->packKnotStarts[pack];
+	int knotWideEnd = context->knotWideStart + knotWide * context->packKnotStarts[pack + 1];
+
 	b3ExecutePackRange( b3_stagePrepareContacts, context, overflowStart, overflowEnd, b3_overflowBlock, B3_OVERFLOW_INDEX,
+						workerIndex );
+	b3ExecutePackRange( b3_stagePrepareWideContacts, context, knotWideStart, knotWideEnd, b3_wideContactBlock, UINT8_MAX,
 						workerIndex );
 	b3PreparePackContacts_Convex( context, pack );
 
@@ -1326,6 +1368,8 @@ static void b3SolvePack( b3StepContext* context, int pack, int workerIndex )
 	}
 
 	b3ExecutePackWideConstraints( b3_stageStoreWideImpulses, context, pack, workerIndex );
+	b3ExecutePackRange( b3_stageStoreWideImpulses, context, knotWideStart, knotWideEnd, b3_wideContactBlock, UINT8_MAX,
+						workerIndex );
 	b3ExecutePackRange( b3_stageStoreImpulses, context, overflowStart, overflowEnd, b3_overflowBlock, B3_OVERFLOW_INDEX,
 						workerIndex );
 }
@@ -1495,8 +1539,10 @@ static void b3SolverTask( void* taskContext )
 		meshSyncIndex += 1;
 
 		// Single-threaded overflow work. These constraints don't fit in the graph coloring.
+		uint64_t overflowTicks = b3GetTicks();
 		b3PrepareJoints_Overflow( context );
 		b3PrepareContacts_Overflow( context );
+		profile->overflow += b3GetMilliseconds( overflowTicks );
 
 		profile->prepareConstraints += b3GetMillisecondsAndReset( &ticks );
 
@@ -1518,8 +1564,11 @@ static void b3SolverTask( void* taskContext )
 			profile->integrateVelocities += b3GetMillisecondsAndReset( &ticks );
 
 			// Warm start constraints
+			overflowTicks = b3GetTicks();
 			b3WarmStartJoints_Overflow( context );
+			b3WarmStartKnots( context, 0, context->knotBatchCount );
 			b3WarmStartContacts_Overflow( context );
+			profile->overflow += b3GetMilliseconds( overflowTicks );
 
 			for ( int colorIndex = 0; colorIndex < activeColorCount; ++colorIndex )
 			{
@@ -1537,8 +1586,11 @@ static void b3SolverTask( void* taskContext )
 			for ( int j = 0; j < ITERATIONS; ++j )
 			{
 				// Overflow constraints have lower priority. Typically these are dynamic-vs-dynamic.
+				overflowTicks = b3GetTicks();
 				b3SolveJoints_Overflow( context, useBias );
+				b3PushKnots( context, 0, context->knotBatchCount );
 				b3PushContacts_Overflow( context );
+				profile->overflow += b3GetMilliseconds( overflowTicks );
 
 				for ( int colorIndex = 0; colorIndex < activeColorCount; ++colorIndex )
 				{
@@ -1565,8 +1617,11 @@ static void b3SolverTask( void* taskContext )
 			useBias = false;
 			for ( int j = 0; j < RELAX_ITERATIONS; ++j )
 			{
+				overflowTicks = b3GetTicks();
 				b3SolveJoints_Overflow( context, useBias );
+				b3SolveKnots( context, 0, context->knotBatchCount );
 				b3SolveContacts_Overflow( context );
+				profile->overflow += b3GetMilliseconds( overflowTicks );
 
 				for ( int colorIndex = 0; colorIndex < activeColorCount; ++colorIndex )
 				{
@@ -1590,7 +1645,10 @@ static void b3SolverTask( void* taskContext )
 		{
 			for ( int j = 0; j < restitutionIterations; ++j )
 			{
+				overflowTicks = b3GetTicks();
+				b3ApplyKnotRestitution( context, 0, context->knotBatchCount );
 				b3ApplyRestitution_Overflow( context );
+				profile->overflow += b3GetMilliseconds( overflowTicks );
 
 				int iterationStageIndex = stageIndex;
 				for ( int colorIndex = 0; colorIndex < activeColorCount; ++colorIndex )
@@ -1609,7 +1667,9 @@ static void b3SolverTask( void* taskContext )
 		stageIndex += activeColorCount;
 
 		// Store impulses
+		overflowTicks = b3GetTicks();
 		b3StoreImpulses_Overflow( context );
+		profile->overflow += b3GetMilliseconds( overflowTicks );
 
 		syncBits = ( convexSyncIndex << 16 ) | stageIndex;
 		B3_ASSERT( stages[stageIndex].type == b3_stageStoreWideImpulses );
@@ -2016,6 +2076,334 @@ static int* b3OrderPackContacts( b3World* world, const b3GraphColor* colors, con
 }
 
 // Solve with graph coloring
+// Added for Nebenan: a moving body with at least this many contacts in the overflow is a knot, see b3BuildKnots
+#define B3_KNOT_MIN_CONTACTS 2
+
+// Added for Nebenan: the overflow of a step in batches of knots and the contacts left over, in stack memory, see
+// b3BuildKnots
+typedef struct b3Knots
+{
+	// The batches, with B3_KNOT_LANES contact ids and scales of the inverse mass of body A and B per batch
+	b3KnotBatch* batches;
+	int* contactIds;
+	float* scaleA;
+	float* scaleB;
+	int batchCount;
+	int contactCount;
+
+	// With packs, the first batch of every pack and the end
+	int* packStarts;
+
+	// The overflow contacts outside the knots, in their order
+	b3ContactSpec* others;
+	int otherCount;
+
+	// All of the above in one block, the stack holds few
+	void* memory;
+} b3Knots;
+
+// Added for Nebenan: the next part of a block in stack memory, on its own cache line
+static void* b3TakeKnotMemory( char** cursor, int byteCount )
+{
+	void* part = *cursor;
+	*cursor += ( ( byteCount + 63 ) / 64 ) * 64;
+	return part;
+}
+
+// Added for Nebenan: the overflow holds the contacts the graph finds no color for, see b3AddContactToGraph, and the calling
+// thread solves them one at a time while the workers wait. Beside a few contacts of tight spots these are the contacts of
+// knots: large parts of a fracture, dozens to hundreds of pieces in one body, with hundreds of small debris resting on and
+// against them. A knot is the awake body with more contacts in the overflow of the two, if it has at least
+// B3_KNOT_MIN_CONTACTS. Its contacts go into batches of B3_KNOT_LANES with different partners: the contact with a partner
+// the knot already met k times in the overflow goes into a batch of round k. Each batch solves its lanes at once against
+// copies of the knot, see b3KnotBatch, which makes the knot's chain of contacts several times shorter, and the batches of
+// the knots take turns. Everything follows from the order of the overflow, so the batches are the same with every number
+// of workers and in either width. With packs the batches go pack by pack, in the same order within each pack.
+static void b3BuildKnots( b3World* world, const b3SolverSet* awakeSet, const b3GraphColor* overflow, const uint8_t* contactPacks,
+						  int packCount, b3Knots* knots )
+{
+	int n = overflow->contacts.count;
+	const b3ContactSpec* specs = overflow->contacts.data;
+	const b3Contact* contacts = world->contacts.data;
+	int awakeBodyCount = awakeSet->bodySims.count;
+	int capacity = b3MaxInt( n, 1 );
+
+	// At most one batch per contact
+	int byteCount = 64 * 6 + capacity * (int)sizeof( b3KnotBatch ) + 3 * B3_KNOT_LANES * capacity * (int)sizeof( int ) +
+					capacity * (int)sizeof( b3ContactSpec ) + ( packCount + 1 ) * (int)sizeof( int );
+	*knots = (b3Knots){ 0 };
+	knots->memory = b3StackAlloc( &world->stack, byteCount, "knots" );
+	char* cursor = (char*)knots->memory;
+	knots->batches = (b3KnotBatch*)b3TakeKnotMemory( &cursor, capacity * (int)sizeof( b3KnotBatch ) );
+	knots->contactIds = (int*)b3TakeKnotMemory( &cursor, B3_KNOT_LANES * capacity * (int)sizeof( int ) );
+	knots->scaleA = (float*)b3TakeKnotMemory( &cursor, B3_KNOT_LANES * capacity * (int)sizeof( float ) );
+	knots->scaleB = (float*)b3TakeKnotMemory( &cursor, B3_KNOT_LANES * capacity * (int)sizeof( float ) );
+	knots->others = (b3ContactSpec*)b3TakeKnotMemory( &cursor, capacity * (int)sizeof( b3ContactSpec ) );
+	if ( packCount > 0 )
+	{
+		knots->packStarts = (int*)b3TakeKnotMemory( &cursor, ( packCount + 1 ) * (int)sizeof( int ) );
+		for ( int p = 0; p <= packCount; ++p )
+		{
+			knots->packStarts[p] = 0;
+		}
+	}
+	B3_ASSERT( cursor <= (char*)knots->memory + byteCount );
+
+	if ( n == 0 )
+	{
+		return;
+	}
+
+	// Per awake body its contacts in the overflow and the rank of its knot, later the round of a partner and the knot it was
+	// counted for. Per contact its awake bodies, null for a mesh contact, and its knot. Per knot its contacts and batches,
+	// per round of the current knot its open batch, and per batch its contacts. There are at most as many knots, rounds and
+	// batches as contacts.
+	int* temporary = (int*)b3StackAlloc(
+		&world->stack, ( 2 * awakeBodyCount + ( 12 + B3_KNOT_LANES ) * n + 2 ) * (int)sizeof( int ), "knot work" );
+	int* bodyCounts = temporary;
+	int* bodyMarks = bodyCounts + awakeBodyCount;
+	int* bodiesA = bodyMarks + awakeBodyCount;
+	int* bodiesB = bodiesA + n;
+	int* contactKnots = bodiesB + n;
+	int* knotBodies = contactKnots + n;
+	int* knotStarts = knotBodies + n;
+	int* knotCursors = knotStarts + n + 1;
+	int* knotOrder = knotCursors + n;
+	int* knotBatchStarts = knotOrder + n;
+	int* roundBatches = knotBatchStarts + n + 1;
+	int* roundKnots = roundBatches + n;
+	int* batchLanes = roundKnots + n;
+	int* batchSlots = batchLanes + n;
+
+	// The bodies of the contacts, which lie scattered in memory, in one pass
+	for ( int k = 0; k < n; ++k )
+	{
+		if ( k + 8 < n )
+		{
+			b3Prefetch( &contacts[specs[k + 8].contactId].encodedBodySimA );
+		}
+
+		const b3Contact* contact = contacts + specs[k].contactId;
+		bool mesh = ( contact->flags & b3_simMeshContact ) != 0;
+		int a = mesh ? B3_NULL_INDEX : b3DecodeAwakeIndex( contact->encodedBodySimA );
+		int b = mesh ? B3_NULL_INDEX : b3DecodeAwakeIndex( contact->encodedBodySimB );
+		bodiesA[k] = a;
+		bodiesB[k] = b;
+		if ( a != B3_NULL_INDEX )
+		{
+			bodyCounts[a] = 0;
+			bodyMarks[a] = B3_NULL_INDEX;
+		}
+		if ( b != B3_NULL_INDEX )
+		{
+			bodyCounts[b] = 0;
+			bodyMarks[b] = B3_NULL_INDEX;
+		}
+	}
+
+	for ( int k = 0; k < n; ++k )
+	{
+		if ( bodiesA[k] != B3_NULL_INDEX )
+		{
+			bodyCounts[bodiesA[k]] += 1;
+		}
+		if ( bodiesB[k] != B3_NULL_INDEX )
+		{
+			bodyCounts[bodiesB[k]] += 1;
+		}
+	}
+
+	// The knot of every contact, and the knots ranked by their first contact
+	int knotCount = 0;
+	for ( int k = 0; k < n; ++k )
+	{
+		int a = bodiesA[k];
+		int b = bodiesB[k];
+		int knot = a;
+		if ( b != B3_NULL_INDEX && ( a == B3_NULL_INDEX || bodyCounts[b] > bodyCounts[a] ) )
+		{
+			knot = b;
+		}
+
+		contactKnots[k] = B3_NULL_INDEX;
+		if ( knot == B3_NULL_INDEX || bodyCounts[knot] < B3_KNOT_MIN_CONTACTS )
+		{
+			continue;
+		}
+
+		contactKnots[k] = knot;
+		if ( bodyMarks[knot] == B3_NULL_INDEX )
+		{
+			bodyMarks[knot] = knotCount;
+			knotBodies[knotCount] = knot;
+			knotCount += 1;
+		}
+	}
+
+	// The contacts of every knot in their order, and the others apart
+	for ( int r = 0; r <= knotCount; ++r )
+	{
+		knotStarts[r] = 0;
+	}
+	for ( int k = 0; k < n; ++k )
+	{
+		if ( contactKnots[k] != B3_NULL_INDEX )
+		{
+			knotStarts[bodyMarks[contactKnots[k]] + 1] += 1;
+		}
+	}
+	for ( int r = 0; r < knotCount; ++r )
+	{
+		knotStarts[r + 1] += knotStarts[r];
+		knotCursors[r] = knotStarts[r];
+	}
+
+	int otherCount = 0;
+	for ( int k = 0; k < n; ++k )
+	{
+		int knot = contactKnots[k];
+		if ( knot == B3_NULL_INDEX )
+		{
+			knots->others[otherCount] = specs[k];
+			otherCount += 1;
+			continue;
+		}
+
+		int rank = bodyMarks[knot];
+		knotOrder[knotCursors[rank]] = k;
+		knotCursors[rank] += 1;
+	}
+
+	// The batches, knot after knot. The ranks of the knots are not needed anymore, a partner is now marked with the rank of
+	// the knot it was counted for, below B3_NULL_INDEX to tell it from what is left. A batch is open for its round until it
+	// is full.
+	for ( int i = 0; i < n; ++i )
+	{
+		roundKnots[i] = B3_NULL_INDEX;
+	}
+
+	int batchCount = 0;
+	int maxBatches = 0;
+	for ( int r = 0; r < knotCount; ++r )
+	{
+		int mark = -2 - r;
+		knotBatchStarts[r] = batchCount;
+		for ( int i = knotStarts[r]; i < knotStarts[r + 1]; ++i )
+		{
+			int k = knotOrder[i];
+			int partner = bodiesA[k] == knotBodies[r] ? bodiesB[k] : bodiesA[k];
+			int round = 0;
+			if ( partner != B3_NULL_INDEX )
+			{
+				if ( bodyMarks[partner] != mark )
+				{
+					bodyMarks[partner] = mark;
+					bodyCounts[partner] = 0;
+				}
+
+				round = bodyCounts[partner];
+				bodyCounts[partner] += 1;
+			}
+
+			if ( roundKnots[round] != r || batchLanes[roundBatches[round]] == B3_KNOT_LANES )
+			{
+				roundKnots[round] = r;
+				roundBatches[round] = batchCount;
+				batchLanes[batchCount] = 0;
+				batchCount += 1;
+			}
+
+			int batch = roundBatches[round];
+			batchSlots[B3_KNOT_LANES * batch + batchLanes[batch]] = k;
+			batchLanes[batch] += 1;
+		}
+		maxBatches = b3MaxInt( maxBatches, batchCount - knotBatchStarts[r] );
+	}
+	knotBatchStarts[knotCount] = batchCount;
+
+	// The knots take turns, batch after batch, so the batches next to each other rarely share a knot. With packs pack by
+	// pack in that order.
+	int* slots = knotOrder;
+	int slotCount = 0;
+	for ( int i = 0; i < maxBatches; ++i )
+	{
+		for ( int r = 0; r < knotCount; ++r )
+		{
+			if ( knotBatchStarts[r] + i < knotBatchStarts[r + 1] )
+			{
+				slots[slotCount] = knotBatchStarts[r] + i;
+				slotCount += 1;
+			}
+		}
+	}
+	B3_ASSERT( slotCount == batchCount );
+
+	if ( packCount > 0 )
+	{
+		int* packStarts = knots->packStarts;
+		for ( int i = 0; i < batchCount; ++i )
+		{
+			int k = batchSlots[B3_KNOT_LANES * slots[i]];
+			packStarts[contactPacks[specs[k].contactId] + 1] += 1;
+		}
+		for ( int p = 0; p < packCount; ++p )
+		{
+			packStarts[p + 1] += packStarts[p];
+		}
+	}
+
+	int packCursors[B3_MAX_PACKS] = { 0 };
+	int contactCount = 0;
+	for ( int i = 0; i < batchCount; ++i )
+	{
+		int batch = slots[i];
+		int laneCount = batchLanes[batch];
+		const int* lanes = batchSlots + B3_KNOT_LANES * batch;
+		int knot = contactKnots[lanes[0]];
+
+		int position = i;
+		if ( packCount > 0 )
+		{
+			int pack = contactPacks[specs[lanes[0]].contactId];
+			position = knots->packStarts[pack] + packCursors[pack];
+			packCursors[pack] += 1;
+		}
+
+		knots->batches[position] = (b3KnotBatch){ knot + 1, laneCount };
+		int* ids = knots->contactIds + B3_KNOT_LANES * position;
+		float* scaleA = knots->scaleA + B3_KNOT_LANES * position;
+		float* scaleB = knots->scaleB + B3_KNOT_LANES * position;
+		for ( int lane = 0; lane < B3_KNOT_LANES; ++lane )
+		{
+			ids[lane] = B3_NULL_INDEX;
+			scaleA[lane] = 1.0f;
+			scaleB[lane] = 1.0f;
+			if ( lane < laneCount )
+			{
+				int k = lanes[lane];
+				bool knotIsA = bodiesA[k] == knot;
+				ids[lane] = specs[k].contactId;
+				scaleA[lane] = knotIsA ? (float)laneCount : 1.0f;
+				scaleB[lane] = knotIsA ? 1.0f : (float)laneCount;
+			}
+		}
+		contactCount += laneCount;
+	}
+
+	knots->batchCount = batchCount;
+	knots->contactCount = contactCount;
+	knots->otherCount = otherCount;
+	B3_ASSERT( contactCount + otherCount == n );
+
+	b3StackFree( &world->stack, temporary );
+}
+
+// Added for Nebenan: gives back the memory of b3BuildKnots
+static void b3FreeKnots( b3World* world, b3Knots* knots )
+{
+	b3StackFree( &world->stack, knots->memory );
+}
+
 void b3Solve( b3World* world, b3StepContext* stepContext )
 {
 	// Added for Nebenan: wide constraints in the width of the world, see b3World::simdWidth
@@ -2026,6 +2414,11 @@ void b3Solve( b3World* world, b3StepContext* stepContext )
 
 	b3SolverSet* awakeSet = b3Array_Get( world->solverSets, b3_awakeSet );
 	int awakeBodyCount = awakeSet->bodySims.count;
+
+	// Added for Nebenan: see b3Counters::knotContactCount
+	world->knotContactCount = 0;
+	world->knotBatchCount = 0;
+
 	if ( awakeBodyCount == 0 )
 	{
 		return;
@@ -2205,6 +2598,15 @@ void b3Solve( b3World* world, b3StepContext* stepContext )
 			b3MeasureIslandWork( world, awakeSet );
 		}
 
+		// Added for Nebenan: the knots of the overflow in batches, whose wide constraints follow those of the colors, see
+		// b3BuildKnots
+		b3Knots knots;
+		b3BuildKnots( world, awakeSet, overflow, contactPacks, packCount, &knots );
+		world->knotContactCount = knots.contactCount;
+		world->knotBatchCount = knots.batchCount;
+		int knotWideStart = wideContactCount;
+		wideContactCount += knots.batchCount * ( B3_KNOT_LANES >> simdShift );
+
 		// Prepare and store run as one flat parallel-for over the entire wide constraint range,
 		// partitioned into uniformly sized blocks. Color info is consulted inside the task via
 		// a small span array, so blocks do not need to honor color boundaries here.
@@ -2219,15 +2621,17 @@ void b3Solve( b3World* world, b3StepContext* stepContext )
 		b3ManifoldConstraint* manifoldConstraints = (b3ManifoldConstraint*)b3StackAlloc(
 			&world->stack, manifoldCount * sizeof( b3ManifoldConstraint ), "manifold constraints" );
 
+		// Added for Nebenan: the constraints of the overflow outside the knots, see b3BuildKnots
+		int otherCount = knots.otherCount;
 		int overflowManifoldCount = 0;
-		for ( int i = 0; i < overflowCount; ++i )
+		for ( int i = 0; i < otherCount; ++i )
 		{
-			overflow->contacts.data[i].manifoldStart = overflowManifoldCount;
-			overflowManifoldCount += overflow->contacts.data[i].manifoldCount;
+			knots.others[i].manifoldStart = overflowManifoldCount;
+			overflowManifoldCount += knots.others[i].manifoldCount;
 		}
 
-		overflow->contactConstraints = (b3ContactConstraint*)b3StackAlloc(
-			&world->stack, overflowCount * sizeof( b3ContactConstraint ), "overflow contacts" );
+		overflow->contactConstraints =
+			(b3ContactConstraint*)b3StackAlloc( &world->stack, otherCount * sizeof( b3ContactConstraint ), "overflow contacts" );
 		overflow->manifoldConstraints = (b3ManifoldConstraint*)b3StackAlloc(
 			&world->stack, overflowManifoldCount * sizeof( b3ManifoldConstraint ), "overflow manifolds" );
 
@@ -2240,12 +2644,12 @@ void b3Solve( b3World* world, b3StepContext* stepContext )
 			packOverflowStarts =
 				(int*)b3StackAlloc( &world->stack, ( packCount + 1 ) * (int)sizeof( int ), "pack overflow starts" );
 			packOverflowContacts = (b3ContactSpec*)b3StackAlloc(
-				&world->stack, b3MaxInt( overflowCount, 1 ) * (int)sizeof( b3ContactSpec ), "pack overflow contacts" );
+				&world->stack, b3MaxInt( otherCount, 1 ) * (int)sizeof( b3ContactSpec ), "pack overflow contacts" );
 
 			int cursors[B3_MAX_PACKS + 1] = { 0 };
-			for ( int k = 0; k < overflowCount; ++k )
+			for ( int k = 0; k < otherCount; ++k )
 			{
-				cursors[contactPacks[overflow->contacts.data[k].contactId] + 1] += 1;
+				cursors[contactPacks[knots.others[k].contactId] + 1] += 1;
 			}
 
 			for ( int p = 0; p < packCount; ++p )
@@ -2258,9 +2662,9 @@ void b3Solve( b3World* world, b3StepContext* stepContext )
 				packOverflowStarts[p] = cursors[p];
 			}
 
-			for ( int k = 0; k < overflowCount; ++k )
+			for ( int k = 0; k < otherCount; ++k )
 			{
-				const b3ContactSpec* spec = overflow->contacts.data + k;
+				const b3ContactSpec* spec = knots.others + k;
 				packOverflowContacts[cursors[contactPacks[spec->contactId]]++] = *spec;
 			}
 		}
@@ -2268,7 +2672,7 @@ void b3Solve( b3World* world, b3StepContext* stepContext )
 		// Build the span table for the flat prepare/store parallel-for while I slice the
 		// wide constraint buffer across colors. One entry per active color plus a sentinel
 		// at wideContactCount.
-		b3WidePrepareSpan widePrepareSpans[B3_GRAPH_COLOR_COUNT + 1];
+		b3WidePrepareSpan widePrepareSpans[B3_GRAPH_COLOR_COUNT + 2];
 		b3ContactPrepareSpan contactPrepareSpans[B3_GRAPH_COLOR_COUNT + 1];
 		b3JointPrepareSpan jointPrepareSpans[B3_GRAPH_COLOR_COUNT + 1];
 
@@ -2294,6 +2698,8 @@ void b3Solve( b3World* world, b3StepContext* stepContext )
 				widePrepareSpans[i].start = wideBase;
 				widePrepareSpans[i].count = colorConvexContactCount;
 				widePrepareSpans[i].contacts = color->convexContacts.data;
+				widePrepareSpans[i].scaleA = NULL;
+				widePrepareSpans[i].scaleB = NULL;
 
 				// Added for Nebenan: the prepare and store steps take the contacts in the order of b3OrderColorContacts, or of
 				// b3OrderPackContacts
@@ -2341,11 +2747,20 @@ void b3Solve( b3World* world, b3StepContext* stepContext )
 				jointBase += color->jointSims.count;
 			}
 
+			// Added for Nebenan: the knots after the colors, see b3BuildKnots
+			B3_ASSERT( wideBase == knotWideStart );
+			widePrepareSpans[activeColorCount].start = knotWideStart;
+			widePrepareSpans[activeColorCount].count = B3_KNOT_LANES * knots.batchCount;
+			widePrepareSpans[activeColorCount].contacts = knots.contactIds;
+			widePrepareSpans[activeColorCount].scaleA = knots.scaleA;
+			widePrepareSpans[activeColorCount].scaleB = knots.scaleB;
+
 			// Sentinels
-			widePrepareSpans[activeColorCount].start = wideContactCount;
-			widePrepareSpans[activeColorCount].count = 0;
-			widePrepareSpans[activeColorCount].contacts = NULL;
-			B3_ASSERT( wideBase == wideContactCount );
+			widePrepareSpans[activeColorCount + 1].start = wideContactCount;
+			widePrepareSpans[activeColorCount + 1].count = 0;
+			widePrepareSpans[activeColorCount + 1].contacts = NULL;
+			widePrepareSpans[activeColorCount + 1].scaleA = NULL;
+			widePrepareSpans[activeColorCount + 1].scaleB = NULL;
 
 			contactPrepareSpans[activeColorCount].start = contactCount;
 			contactPrepareSpans[activeColorCount].count = 0;
@@ -2359,11 +2774,12 @@ void b3Solve( b3World* world, b3StepContext* stepContext )
 		}
 
 		//// Special span for overflow to allow for function re-use
+		// Added for Nebenan: without the contacts of knots
 		b3ContactPrepareSpan overflowSpans[2] = { 0 };
 		overflowSpans[0].start = 0;
-		overflowSpans[0].count = overflow->contacts.count;
-		overflowSpans[0].contacts = packOverflowContacts != NULL ? packOverflowContacts : overflow->contacts.data;
-		overflowSpans[1].start = overflow->contacts.count;
+		overflowSpans[0].count = otherCount;
+		overflowSpans[0].contacts = packOverflowContacts != NULL ? packOverflowContacts : knots.others;
+		overflowSpans[1].start = otherCount;
 		overflowSpans[1].count = 0;
 		overflowSpans[1].contacts = NULL;
 
@@ -2502,6 +2918,12 @@ void b3Solve( b3World* world, b3StepContext* stepContext )
 		stepContext->packOverflowStarts = packOverflowStarts;
 		stepContext->packWideStarts = packWideStarts;
 		stepContext->activeColorIndices = activeColorIndices;
+		stepContext->knotBatches = knots.batches;
+		stepContext->knotBatchCount = knots.batchCount;
+		stepContext->knotConstraints = (uint8_t*)wideConstraints + knotWideStart * wideContactByteCount;
+		stepContext->knotWideStart = knotWideStart;
+		stepContext->packKnotStarts = knots.packStarts;
+		stepContext->overflowContactCount = otherCount;
 		b3AtomicStoreInt( &stepContext->packNext, 0 );
 		b3AtomicStoreInt( &stepContext->packDone, 0 );
 
@@ -2637,6 +3059,7 @@ void b3Solve( b3World* world, b3StepContext* stepContext )
 		b3StackFree( &world->stack, manifoldConstraints );
 		b3StackFree( &world->stack, contactConstraints );
 		b3StackFree( &world->stack, wideConstraints );
+		b3FreeKnots( world, &knots );
 		if ( packCount > 0 )
 		{
 			b3StackFree( &world->stack, packContacts );

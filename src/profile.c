@@ -7,16 +7,16 @@
 
 // The names of the stages, see nbProfileStage
 static const char* nb_profileNames[] = {
-	"total",	   "step",		  "pairs",		"createContacts", "collide",		 "contactStates", "solve",
-	"solverSetup", "constraints", "transforms", "update",		  "collisionDamage", "settle",		  "budget",
-	"release",	   "typeChanges", "impacts",	"cells",		  "cellsAlone",
+	"total",	   "step",		  "pairs",		 "createContacts", "collide", "contactStates",	 "solve",
+	"solverSetup", "constraints", "overflow",	 "transforms",	   "update",  "collisionDamage", "settle",
+	"budget",	   "release",	  "typeChanges", "impacts",		   "cells",	  "cellsAlone",
 };
 _Static_assert( sizeof( nb_profileNames ) / sizeof( nb_profileNames[0] ) == nb_profileStageCount, "a name per stage" );
 
 // How deep a stage sits in the table under the stage that holds it, and whether it runs on the calling thread alone
-static const int nb_profileDepths[] = { 0, 1, 2, 3, 2, 3, 2, 3, 3, 2, 1, 2, 2, 2, 2, 1, 1, 1, 2 };
-static const bool nb_profileAlone[] = { false, false, false, true, false, true, false, true,  false, false,
-										false, false, true,	 true, true,  true, false, false, true };
+static const int nb_profileDepths[] = { 0, 1, 2, 3, 2, 3, 2, 3, 3, 4, 2, 1, 2, 2, 2, 2, 1, 1, 1, 2 };
+static const bool nb_profileAlone[] = { false, false, false, true, false, true, false, true,  false, true,
+										false, false, false, true, true,  true, true,  false, false, true };
 _Static_assert( sizeof( nb_profileDepths ) / sizeof( nb_profileDepths[0] ) == nb_profileStageCount, "a depth per stage" );
 _Static_assert( sizeof( nb_profileAlone ) / sizeof( nb_profileAlone[0] ) == nb_profileStageCount, "a flag per stage" );
 
@@ -43,12 +43,16 @@ void nbProfileStep( nbWorld* world )
 	sums->stages[nb_profileSolve] += step.solve;
 	sums->stages[nb_profileSolverSetup] += step.solverSetup;
 	sums->stages[nb_profileConstraints] += step.constraints;
+	sums->stages[nb_profileOverflow] += step.overflow;
 	sums->stages[nb_profileTransforms] += step.transforms;
 	sums->stepCount += 1;
 
 	// The packs give the largest island to one thread, see b3Counters::islandWork. With more than half of the work in it,
 	// Box3D solves by colors instead, as b3BuildPacks decides.
 	b3Counters counters = b3World_GetCounters( world->physicsWorld );
+	sums->overflowCount += counters.colorCounts[B3_GRAPH_COLOR_COUNT - 1];
+	sums->knotContactCount += counters.knotContactCount;
+	sums->knotBatchCount += counters.knotBatchCount;
 	if ( counters.islandWork > 0 )
 	{
 		double share = (double)counters.largestIslandWork / (double)counters.islandWork;
@@ -92,6 +96,9 @@ nbProfile nbWorld_GetProfile( nbWorldId worldId )
 		profile.stages[nb_profileStep] + profile.stages[nb_profileUpdate] + profile.stages[nb_profileImpacts];
 	profile.freezeCount = (float)( sums->freezeCount / steps );
 	profile.thawCount = (float)( sums->thawCount / steps );
+	profile.overflowCount = (float)( sums->overflowCount / steps );
+	profile.knotContactCount = (float)( sums->knotContactCount / steps );
+	profile.knotBatchCount = (float)( sums->knotBatchCount / steps );
 
 	if ( sums->islandStepCount > 0 )
 	{
@@ -311,6 +318,7 @@ int nbFormatScalingReport( const nbProfile* profiles, int count, char* text, int
 
 	// What does not depend on the workers, from the profiles that have it
 	double freezes = 0.0, thaws = 0.0, steps = 0.0;
+	double overflow = 0.0, knotContacts = 0.0, knotBatches = 0.0;
 	double island = 0.0, floors[4] = { 0.0, 0.0, 0.0, 0.0 }, islandSteps = 0.0, colorSteps = 0.0;
 	double wake = 0.0, wakes = 0.0;
 	float longestWake = 0.0f;
@@ -319,6 +327,9 @@ int nbFormatScalingReport( const nbProfile* profiles, int count, char* text, int
 		const nbProfile* p = profiles + i;
 		freezes += p->freezeCount * (double)p->stepCount;
 		thaws += p->thawCount * (double)p->stepCount;
+		overflow += p->overflowCount * (double)p->stepCount;
+		knotContacts += p->knotContactCount * (double)p->stepCount;
+		knotBatches += p->knotBatchCount * (double)p->stepCount;
 		steps += (double)p->stepCount;
 		island += p->largestIsland * (double)p->islandStepCount;
 		for ( int f = 0; f < 4; ++f )
@@ -335,6 +346,8 @@ int nbFormatScalingReport( const nbProfile* profiles, int count, char* text, int
 	if ( steps > 0.0 )
 	{
 		nbAppend( &out, "Freezes %.1f and thaws %.1f per step\n", freezes / steps, thaws / steps );
+		nbAppend( &out, "Overflow of the constraint graph %.1f per step, %.1f contacts of them at knots in %.1f batches\n",
+				  overflow / steps, knotContacts / steps, knotBatches / steps );
 	}
 	if ( islandSteps > 0.0 )
 	{

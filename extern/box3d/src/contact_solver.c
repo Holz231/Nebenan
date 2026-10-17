@@ -1033,14 +1033,59 @@ void b3StoreImpulses_Convex( b3SolverBlock block, b3StepContext* context, int wo
 	b3StoreImpulses_ConvexW4( block, context, workerIndex );
 }
 
+void b3WarmStartKnots( b3StepContext* context, int startBatch, int endBatch )
+{
+#if defined( B3_SIMD_HAS_WIDTH_8 )
+	if ( context->world->simdWidth == 8 )
+	{
+		b3WarmStartKnotsW8( context, startBatch, endBatch );
+		return;
+	}
+#endif
+	b3WarmStartKnotsW4( context, startBatch, endBatch );
+}
+
+void b3PushKnots( b3StepContext* context, int startBatch, int endBatch )
+{
+#if defined( B3_SIMD_HAS_WIDTH_8 )
+	if ( context->world->simdWidth == 8 )
+	{
+		b3PushKnotsW8( context, startBatch, endBatch );
+		return;
+	}
+#endif
+	b3PushKnotsW4( context, startBatch, endBatch );
+}
+
+void b3SolveKnots( b3StepContext* context, int startBatch, int endBatch )
+{
+#if defined( B3_SIMD_HAS_WIDTH_8 )
+	if ( context->world->simdWidth == 8 )
+	{
+		b3SolveKnotsW8( context, startBatch, endBatch );
+		return;
+	}
+#endif
+	b3SolveKnotsW4( context, startBatch, endBatch );
+}
+
+void b3ApplyKnotRestitution( b3StepContext* context, int startBatch, int endBatch )
+{
+#if defined( B3_SIMD_HAS_WIDTH_8 )
+	if ( context->world->simdWidth == 8 )
+	{
+		b3ApplyKnotRestitutionW8( context, startBatch, endBatch );
+		return;
+	}
+#endif
+	b3ApplyKnotRestitutionW4( context, startBatch, endBatch );
+}
 
 void b3PrepareContacts_Overflow( b3StepContext* context )
 {
-	b3ConstraintGraph* graph = context->graph;
-	b3GraphColor* color = graph->colors + B3_OVERFLOW_INDEX;
-
-	B3_ASSERT( color->contacts.count <= UINT16_MAX );
-	uint16_t count = (uint16_t)color->contacts.count;
+	// Added for Nebenan: without the contacts of knots, see b3KnotBatch
+	B3_ASSERT( context->overflowContactCount <= UINT16_MAX );
+	uint16_t count = (uint16_t)context->overflowContactCount;
 	if ( count == 0 )
 	{
 		return;
@@ -1058,10 +1103,7 @@ void b3PrepareContacts_Overflow( b3StepContext* context )
 
 void b3WarmStartContacts_Overflow( b3StepContext* context )
 {
-	b3ConstraintGraph* graph = context->graph;
-	b3GraphColor* color = graph->colors + B3_OVERFLOW_INDEX;
-
-	uint16_t count = (uint16_t)color->contacts.count;
+	uint16_t count = (uint16_t)context->overflowContactCount;
 	if ( count == 0 )
 	{
 		return;
@@ -1079,10 +1121,7 @@ void b3WarmStartContacts_Overflow( b3StepContext* context )
 
 void b3PushContacts_Overflow( b3StepContext* context )
 {
-	b3ConstraintGraph* graph = context->graph;
-	b3GraphColor* color = graph->colors + B3_OVERFLOW_INDEX;
-
-	uint16_t count = (uint16_t)color->contacts.count;
+	uint16_t count = (uint16_t)context->overflowContactCount;
 	if ( count == 0 )
 	{
 		return;
@@ -1100,10 +1139,7 @@ void b3PushContacts_Overflow( b3StepContext* context )
 
 void b3SolveContacts_Overflow( b3StepContext* context )
 {
-	b3ConstraintGraph* graph = context->graph;
-	b3GraphColor* color = graph->colors + B3_OVERFLOW_INDEX;
-
-	uint16_t count = (uint16_t)color->contacts.count;
+	uint16_t count = (uint16_t)context->overflowContactCount;
 	if ( count == 0 )
 	{
 		return;
@@ -1121,10 +1157,7 @@ void b3SolveContacts_Overflow( b3StepContext* context )
 
 void b3ApplyRestitution_Overflow( b3StepContext* context )
 {
-	b3ConstraintGraph* graph = context->graph;
-	b3GraphColor* color = graph->colors + B3_OVERFLOW_INDEX;
-
-	uint16_t count = (uint16_t)color->contacts.count;
+	uint16_t count = (uint16_t)context->overflowContactCount;
 	if ( count == 0 )
 	{
 		return;
@@ -1142,10 +1175,7 @@ void b3ApplyRestitution_Overflow( b3StepContext* context )
 
 void b3StoreImpulses_Overflow( b3StepContext* context )
 {
-	b3ConstraintGraph* graph = context->graph;
-	b3GraphColor* color = graph->colors + B3_OVERFLOW_INDEX;
-
-	uint16_t count = (uint16_t)color->contacts.count;
+	uint16_t count = (uint16_t)context->overflowContactCount;
 	if ( count == 0 )
 	{
 		return;

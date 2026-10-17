@@ -291,6 +291,10 @@ typedef struct b3World
 	int islandWork;
 	int largestIslandWork;
 
+	// Added for Nebenan: the knots of the overflow in the last step, see b3Counters::knotContactCount
+	int knotContactCount;
+	int knotBatchCount;
+
 	b3EnqueueTaskCallback* enqueueTaskFcn;
 	b3FinishTaskCallback* finishTaskFcn;
 	void* userTaskContext;
