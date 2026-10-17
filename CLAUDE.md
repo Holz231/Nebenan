@@ -33,6 +33,11 @@ Spiel hätte sie nachbauen müssen. Das darf nicht wieder passieren.
 - Die Demo misst der Nutzer auf seinem PC (Ryzen 7 7800X3D) mit dem Knopf „Parallel gegen nacheinander messen“. Auf der
   Cloud-VM zeichnet llvmpipe ohne Grafikkarte, dort sagen Bildzeiten der Demo nichts.
 
+## Roadmap
+
+Die nächsten möglichen Schritte stehen mit Gewinn, Voraussetzung und Stand in `docs/Roadmap.md`. Vor jeder neuen Runde
+dort nachsehen, nach jeder Runde den Stand nachtragen.
+
 ## Sprache
 
 Mit dem Nutzer Deutsch, per du. Code und Kommentare auf Englisch, README und `docs/` auf Deutsch.
