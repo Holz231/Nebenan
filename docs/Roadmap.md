@@ -25,9 +25,10 @@ Gewinn jeweils geschätzt für einen Frame mit 8 Threads. „Bitgleich“ heißt
 | ---: | --- | --- | --- | --- |
 | 1 | **Skalierung messen in der Bibliothek**, mit Knopf in der Demo und Ausgabe im Benchmark | Werkzeug | – | ✅ auf `physik-21` |
 | 2 | **Auf dem Ryzen messen**: in der Demo „Skalierung messen“, die Tabelle aus der Zwischenablage in den Chat | entscheidet 3 bis 9 | 1 | offen |
-| 2a | **Große Insel beim Abriss in der Demo**: zählen, wie viel der 73 % zusammenhängt, dann veraltete Inseln teilen | Demo bis rund 30 %, wenn die Insel zerfällt | – | offen |
+| 2a | **Große Insel beim Abriss in der Demo**: zählen, wie viel der 73 % zusammenhängt | – | – | ✅ gezählt: 57 % hängen zusammen, Inseln teilen lohnt nicht |
+| 2b | **Schwelle zwischen Paketen und Farben nach Threads**: Box3D nimmt Farben erst über der Hälfte, mit 8 Threads womöglich früher, bitgleich | Demo offen | 2 | offen |
 | 3 | **Prüfungen des Updates auf den Workern, zweiter Versuch**, bitgleich | 4 bis 13 % | 2: Wecken deutlich unter 67 µs | offen |
-| 4 | **Größte Insel im Team**, bitgleich | ×1 6 %, ×2 3 % | 2: die größte Insel bremst die Pakete | offen |
+| 4 | **Größte Insel im Team**, bitgleich | ×1 6 %, ×2 3 %, beim Abriss in der Demo mehr | 2: die größte Insel bremst die Pakete | offen |
 | 5 | **Schwellen fürs Wecken** der Bruchrechnung, bitgleich | ×1 und ×4 je 3 % | 2: Weckzeit | offen |
 | 6 | **Typwechsel gesammelt**, bitgleich | 2 bis 3 % | – | offen |
 | 7 | **Rand der Boxen mit 8 Threads** nachmessen, ändert die Ergebnisse | offen | 2 | offen |
@@ -42,7 +43,8 @@ Update in `update`, und was mit 8 Threads seriell bleibt, in der Spalte `8 w` un
 
 - **Weckzeit eines Workers** unter rund 20 µs: Schritt 3 und 5 zuerst. Auf der VM sind es 67 bis 100 µs.
 - **Löser mit 8 Threads** deutlich langsamer als ein Achtel der Zeit mit einem Thread, und die größte Insel über einem
-  Achtel der Arbeit: Schritt 4.
+  Achtel der Arbeit: Schritt 4. Lösen viele Schritte mit Farben, wie beim Abriss in der Demo, und skalieren die
+  Bedingungen dort schlecht, zuerst 2b.
 - **Anlegen und Zustandswechsel der Kontakte** zusammen über rund 15 % des Frames: Schritt 9 prüfen, vorher 7 und 8.
 - **Update** über einem Viertel des Frames: Schritt 3 hat Vorrang vor allem im Box3D-Schritt.
 
