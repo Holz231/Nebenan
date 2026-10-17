@@ -271,10 +271,33 @@ Körper, und wie viel davon die größte, die ein Paket einem Thread allein gibt
 Schritten ohne Pakete zählt `b3MeasureIslandWork` in `src/solver.c` die Inseln, nur in Welten mit Workern, denn in einer
 ohne Worker könnten es viele sein. Nebenan liest beides nach jedem Schritt für `nbWorld_GetProfile`.
 
+**Knoten im Überlauf.** Findet der Constraint-Graph für einen Kontakt keine Farbe, in der beide Körper frei sind, kommt
+er in den Überlauf, und den löste der aufrufende Thread vor jeder Runde über die Farben allein, Kontakt für Kontakt mit
+dem skalaren Kern, während die Worker warteten. Beim Abriss sind das fast nur die Kontakte von Knoten, großen
+abgebrochenen Teilen aus Dutzenden bis Hunderten Bruchstücken mit Hunderten Trümmern daran, siehe „Der Überlauf beim
+Abriss“ in [`docs/Optimierungen.md`](../docs/Optimierungen.md). Jetzt baut der Löser in jedem Schritt aus dem Überlauf
+Bündel (`b3BuildKnots` in `src/solver.c`). Knoten ist von den beiden wachen Körpern eines Kontakts der mit mehr
+Kontakten im Überlauf, sobald er zwei hat. Bis zu acht seiner Kontakte mit verschiedenen Partnern stehen in einem
+Bündel, einer breiten Bedingung zu acht Spuren oder zweien zu vier (`b3KnotBatch` in `src/solver.h`), der erste Kontakt
+mit einem Partner in den ersten Bündeln, der zweite in den nächsten. Jede Spur rechnet gegen eine Kopie des Knotens, die
+ihren Anteil an seiner Masse und Trägheit trägt, und danach bekommt der Knoten den Mittelwert seiner Kopien, nach „Mass
+Splitting for Jitter-Free Parallel Rigid Body Simulation“ von Tonge, Benevolenski und Voroshilov (2012). Eine Spur
+rechnet dasselbe wie in den Farben, die Kerne teilen sich die Rechnung einer breiten Bedingung (`b3WarmStartContactW`,
+`b3PushContactW`, `b3SolveContactW` und `b3ApplyRestitutionW` in `src/contact_solver_wide.inl`), nur schreiben die
+Spuren den Knoten nicht zurück, sondern zählen ihre Änderungen zusammen (`b3WarmStartKnots`, `b3PushKnots`,
+`b3SolveKnots` und `b3ApplyKnotRestitution`). Vorbereitet und zurückgeschrieben werden die Bündel mit den konvexen
+Kontakten der Farben, hinter denen ihre breiten Bedingungen stehen, über eine Spanne mehr in `b3WidePrepareSpan`, die
+die Masse der Kopien skaliert. Die übrigen Kontakte des Überlaufs löst Box3D nach den Knoten weiter einzeln. Die Bündel
+folgen nur aus der Reihenfolge des Überlaufs, mit jeder Zahl von Threads und in beiden Breiten sind es dieselben, und
+die Pakete aus „Ganze Inseln pro Thread“ rechnen ihre Bündel in derselben Reihenfolge. Ein kinematischer Knoten behält
+seine Geschwindigkeit. `b3Profile::overflow` misst, wie lange der aufrufende Thread allein am Überlauf rechnet, und
+`b3Counters` zählt mit `knotContactCount` und `knotBatchCount` die Kontakte in Bündeln und die Bündel.
+
 Die erste, die zweite, die vierte bis achte, die zehnte und die dreizehnte bis einunddreißigste ändern an den
 Ergebnissen nichts. Die dritte und die neunte ändern sie in den letzten Bits, dafür hängen sie nicht mehr davon ab, in
 welcher Reihenfolge Formen in die Bäume kommen. Die elfte ändert sie, weil Kontakte zu anderen Zeitpunkten entstehen,
-die zwölfte, weil sie weniger Punkte bekommen. Die Ergänzungen stehen in `CMakeLists.txt`, `src/CMakeLists.txt`,
+die zwölfte, weil sie weniger Punkte bekommen, die zweiunddreißigste, weil die Kontakte eines Knotens gebündelt
+gegen Kopien rechnen statt nacheinander. Die Ergänzungen stehen in `CMakeLists.txt`, `src/CMakeLists.txt`,
 `include/box3d/base.h`, `include/box3d/box3d.h`, `include/box3d/types.h`, `include/box3d/constants.h`, `src/core.h`,
 `src/core.c`, `src/shape.h`, `src/shape.c`, `src/body.c`, `src/contact.h`, `src/contact.c`, `src/contact_solver.h`,
 `src/contact_solver.c`, `src/contact_solver_wide.inl`, `src/wide8.c`, `src/simd.c`, `src/simd_avx2.h`,

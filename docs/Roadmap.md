@@ -1,7 +1,7 @@
 # Roadmap
 
 Die nächsten möglichen Schritte für die Physik, nach der Untersuchung vom 17. Oktober 2026 auf `physik-19` und
-`physik-20` und der Messung auf dem Ryzen mit `physik-21`. Begründungen und Messwerte stehen in
+`physik-20`, der Messung auf dem Ryzen mit `physik-21` und den Knoten auf `physik-22`. Begründungen und Messwerte stehen in
 [`Optimierungen.md`](Optimierungen.md), hier nur das Fazit und die Reihenfolge. Nach jeder Runde wird der Stand hier
 nachgetragen.
 
@@ -20,7 +20,9 @@ nachgetragen.
   aufrufenden Thread allein und einzeln. Beim Abriss sind das die Kontakte an Knoten: große abgebrochene Teile aus
   Dutzenden bis Hunderten Bruchstücken, an denen Hunderte kleine Trümmer liegen. Mit einem Thread sind das bei ×4 20 %
   der Kontakte und 42 % der Zeit der Bedingungen, bei ×2 10 und 26 %, siehe „Der Überlauf beim Abriss“. Ein Knoten muss
-  seine Kontakte nacheinander lösen, bitgleich lässt sich das kaum verteilen.
+  seine Kontakte nacheinander lösen, bitgleich lässt sich das kaum verteilen. Seit `physik-22` löst Box3D sie in Bündeln
+  gegen Kopien des Knotens: Beim Abriss kosten die Bedingungen auf der VM mit 4 Threads 37 bis 41 % weniger, ein
+  Schritt samt Update 15 bis 16 %, siehe „Knoten im Überlauf mit geteilter Masse“.
 - **Der Cache ist nicht das Problem.** Der wache Arbeitssatz ist bei ×1 gut 10 MB groß und passt schon in 32 MB. Der
   Ryzen wartet kürzer, weil sein L3 schneller antwortet, nicht weil er größer ist, siehe „Arbeitssatz im Cache“.
 
@@ -36,10 +38,11 @@ bleiben.
 | 2 | **Auf dem Ryzen messen**: in der Demo „Skalierung messen“, die Tabelle aus der Zwischenablage in den Chat | entschied 3 bis 9 | 1 | ✅ am 17. Oktober: Die Bedingungen skalieren nicht über 4 Threads |
 | 2a | **Große Insel beim Abriss in der Demo**: zählen, wie viel der 73 % zusammenhängt | – | – | ✅ gezählt: 57 % hängen zusammen, Inseln teilen lohnt nicht |
 | 2c | **Warum die Farben nicht skalieren**: Überlauf, Größe der Farben, Sperren | – | 2 | ✅ gezählt: der Überlauf an Knoten |
-| 10 | **Knoten im Überlauf mit geteilter Masse**: bis zu acht Kontakte eines Knotens in den acht Spuren einer breiten Bedingung, jede gegen eine Kopie mit einem Achtel seiner Masse, ändert die Ergebnisse | 15 bis 20 %, mit einem Thread 5 bis 11 % | 2c | als Nächstes, auf `physik-22` |
-| 11 | **Überlauf in unabhängigen Gruppen** auf mehreren Threads, bitgleich | ×4 rund 10 %, ×2 rund 2 %, nach 10 weniger | 2c | offen, nach 10 neu messen |
-| 2b | **Schwelle zwischen Paketen und Farben nach Threads**: Box3D nimmt Farben erst über der Hälfte, bitgleich | nach 10 neu zu schätzen | 10 | offen |
-| 4 | **Größte Insel im Team**, bitgleich | ×1 6 %, ×2 3 %, beim Abriss nach 10 neu zu schätzen | 10 | offen |
+| 10 | **Knoten im Überlauf mit geteilter Masse**: bis zu acht Kontakte eines Knotens in den acht Spuren einer breiten Bedingung, jede gegen eine Kopie mit einem Achtel seiner Masse, ändert die Ergebnisse | 15 bis 20 %, mit einem Thread 5 bis 11 % | 2c | ✅ auf `physik-22`: auf der VM mit 4 Threads die Bedingungen 37 bis 41 % und ein Schritt 15 bis 16 % billiger |
+| 12 | **Auf dem Ryzen nachmessen**: „Skalierung messen“ mit `physik-22` bei ×4 und ×2 | entscheidet 11, 2b und 4 | 10 | als Nächstes |
+| 11 | **Überlauf in unabhängigen Gruppen** auf mehreren Threads, bitgleich | nach 10 klein, bei ×2 rechnet der größte Knoten fast alles | 2c | offen, nach 12 |
+| 2b | **Schwelle zwischen Paketen und Farben nach Threads**: Box3D nimmt Farben erst über der Hälfte, bitgleich | nach 12 neu zu schätzen | 12 | offen |
+| 4 | **Größte Insel im Team**, bitgleich | ×1 6 %, ×2 3 %, beim Abriss nach 12 neu zu schätzen | 12 | offen |
 | 3 | **Prüfungen des Updates auf den Workern, zweiter Versuch**, bitgleich | 4 bis 6 % | ✅ Wecken in 8 bis 10 µs | offen |
 | 5 | **Schwellen fürs Wecken** der Bruchrechnung, bitgleich | 1 bis 3 % | ✅ Wecken | offen |
 | 6 | **Typwechsel gesammelt**, bitgleich | rund 1 % | – | offen |
@@ -64,6 +67,17 @@ Threads, siehe „Skalierung auf dem Ryzen“. Die Regeln, nach denen die Messun
   6 %, Schritt 9 ist zurückgestellt.
 - **Update** über einem Viertel des Frames: Schritt 3 hat Vorrang vor allem im Box3D-Schritt. Gemessen 10 bis 11 %, kein
   Vorrang.
+
+## Was die nächste Messung auf dem Ryzen entscheidet
+
+Dieselbe Messung wie bei Schritt 2, mit `physik-22`. Neu im Bericht sind die Zeile `overflow` unter den Bedingungen,
+die Zeit, die der aufrufende Thread allein am Überlauf rechnet, und eine Zeile mit den Kontakten im Überlauf und wie
+viele davon in Bündeln von Knoten stehen.
+
+- **Bedingungen mit 8 Threads** jetzt deutlich schneller als mit 4: Der Überlauf war der Boden, als Nächstes das Update
+  (Schritt 3). Bleiben sie nah bei 4 Threads, bremsen die Sperren und die größte Insel: zuerst Schritt 4, dann 2b.
+- **`overflow`** mit 8 Threads über rund 10 % des Frames: Schritt 11 prüfen, sonst bleibt er liegen.
+- **Update und Einschläge** wie vorher bei rund einem Viertel des Frames: Schritt 3 und 5.
 
 ## Kleinere Punkte
 

@@ -666,9 +666,10 @@ nbWorldId world = nbCreateWorld( &def );
 Gemessen ist das etwa so schnell wie zwei eigene Pools, mit halb so vielen Threads, siehe Leistung.
 
 Wo die Zeit der Schritte hingeht, sagt `nbWorld_GetProfile`, pro Schritt seit dem Anlegen der Welt oder seit
-`nbWorld_ResetProfile`: die Stufen des Box3D-Schritts samt der Teile, die auf dem aufrufenden Thread allein laufen, die
-Teile des Updates, die Einschläge, Erstarren und Auftauen, die Zellen der Brüche, der Anteil der größten Insel an der
-Arbeit des Lösers und wie lange ein schlafender Worker braucht, bis er anläuft. Ist dieselbe Arbeit mit verschieden
+`nbWorld_ResetProfile`: die Stufen des Box3D-Schritts samt der Teile, die auf dem aufrufenden Thread allein laufen,
+darunter der Überlauf des Constraint-Graphen mit den Kontakten, die Box3D an Knoten bündelt, die Teile des Updates, die
+Einschläge, Erstarren und Auftauen, die Zellen der Brüche, der Anteil der größten Insel an der Arbeit des Lösers und wie
+lange ein schlafender Worker braucht, bis er anläuft. Ist dieselbe Arbeit mit verschieden
 vielen Threads gemessen, rechnet die Bibliothek aus, was davon parallel läuft und was mit mehr Threads bleibt:
 
 ```c
@@ -974,6 +975,14 @@ drei Runden im Wechsel liegt ein Frame der Städte mit 4 Threads zwischen 5,8 % 
 zwischen 4,7 % darunter und 3,7 % darüber, ohne Richtung, und ein Schritt des Gewehrs mit einem Thread kostet über acht
 Läufe im Wechsel 1,006 statt 1,003 ms. Die Endstände sind dieselben.
 
+Seit `physik-22` löst Box3D die Kontakte von Knoten, großen abgebrochenen Teilen mit Hunderten Trümmern daran, in
+Bündeln gegen Kopien des Knotens, statt sie auf dem aufrufenden Thread einzeln nacheinander zu rechnen, während die
+Worker warten, siehe „Knoten im Überlauf mit geteilter Masse“ in [docs/Optimierungen.md](docs/Optimierungen.md). Beim
+Abriss in der Demo kosten die Bedingungen des Lösers auf der VM mit 4 Threads bei ×4 41 % und bei ×2 37 % weniger, ein
+Schritt samt Update 16 und 15 %, mit einem Thread die Bedingungen 33 und 19 % und ein Schritt 13 und 3 %. Die Ergebnisse
+ändern sich, bleiben aber mit jeder Zahl von Threads gleich, und eine schwere Platte auf vielen kleinen Würfeln liegt
+genauso wie vorher.
+
 Ganze Einschläge (Bruch, Stützgraph, neue Box3D-Körper) und der Box3D-Schritt danach bei 60 Hz mit
 4 Substeps, jeweils mit 1 und 4 Threads, der Median aus sechs Läufen:
 
@@ -1012,7 +1021,7 @@ Messungen in [docs/Optimierungen.md](docs/Optimierungen.md).
 ## Tests und Benchmark
 
 ```sh
-build/bin/nebenan_test            # 53 Tests: Geometrie, Voronoi, Hüllen, Öffnungen, Stöße, Stützgraph, Etagen, Lastprüfung, Schutt, Ruhe, Durchschlagen, Threads, große Blöcke, Suchbaum, Kontaktlisten, Streaming, Stream, Laden im Hintergrund, Speichern und Zurückholen, gemeinsamer Thread-Pool, Schritt auf eigenem Thread, Schritte pro Bild, Wahl der Threads, Profil und Skalierung, Determinismus …
+build/bin/nebenan_test            # 54 Tests: Geometrie, Voronoi, Hüllen, Öffnungen, Stöße, Stützgraph, Etagen, Lastprüfung, Schutt, Ruhe, Durchschlagen, Threads, Knoten, große Blöcke, Suchbaum, Kontaktlisten, Streaming, Stream, Laden im Hintergrund, Speichern und Zurückholen, gemeinsamer Thread-Pool, Schritt auf eigenem Thread, Schritte pro Bild, Wahl der Threads, Profil und Skalierung, Determinismus …
 build/bin/nebenan_benchmark 4     # Zahl = Threads für Bruch und Physik, 0 = so viele, wie ein Spiel nähme
 build/bin/nebenan_benchmark scaling   # die Städte unter Beschuss mit 1, 2, 4 … Threads und die Tabelle der Skalierung
 ```
