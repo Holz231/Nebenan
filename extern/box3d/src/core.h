@@ -192,3 +192,6 @@ void b3JoinThread( b3Thread* t );
 void b3StrCpy( char* dst, int size, const char* src );
 
 uint64_t b3Hash64NonZero( const uint8_t* bytes, int n );
+
+// Added for Nebenan: a number of its own for the calling thread, never zero, see b3World_SetStepGuard
+int b3GetThreadToken( void );

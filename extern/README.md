@@ -252,7 +252,17 @@ einer Farbe teilen sich keinen bewegten Körper, eine leere Spur schreibt nichts
 `src/simd_avx2.h` runden jede Spur wie die mit SSE2, ohne FMA. Die Pakete aus „Ganze Inseln pro Thread“ füllen ihre
 Spuren in der Breite der Welt auf (`b3OrderPackContacts` in `src/solver.c`).
 
-Die erste, die zweite, die vierte bis achte, die zehnte und die dreizehnte bis neunundzwanzigste ändern an den
+**Wächter für den Schritt auf einem anderen Thread.** `b3World_SetStepGuard` hängt an eine Welt eine Funktion, die
+Box3D aufruft, bevor der Thread, der den Wächter gesetzt hat, die Welt anfasst: in den vier Funktionen, die eine Welt
+nachschlagen, und in `b3Body_IsValid`, `b3Shape_IsValid`, `b3Joint_IsValid` und `b3Contact_IsValid`, über die jeder
+Zugriff von außen geht. Nebenan wartet darin auf den Schritt, den sein eigener Thread rechnet, siehe `nbWorld_Step`,
+und nimmt den Wächter danach wieder weg. Jeder andere Thread geht durch, der Schritt-Thread und die Worker
+eingeschlossen. Ein Thread erkennt sich an einer Nummer, die er beim ersten Mal zieht (`b3GetThreadToken` in
+`src/core.c`), und die Welt hält die Nummer des Besitzers in einem atomaren Feld (`b3World::stepGuardOwner`), null ohne
+Wächter. Ohne Wächter kostet ein Zugriff damit ein Laden mehr, mit Wächter dazu den Blick auf die eigene Nummer.
+`b3World_IsValid` liest nur, was kein Schritt ändert, und wartet nicht.
+
+Die erste, die zweite, die vierte bis achte, die zehnte und die dreizehnte bis dreißigste ändern an den
 Ergebnissen nichts. Die dritte und die neunte ändern sie in den letzten Bits, dafür hängen sie nicht mehr davon ab, in
 welcher Reihenfolge Formen in die Bäume kommen. Die elfte ändert sie, weil Kontakte zu anderen Zeitpunkten entstehen,
 die zwölfte, weil sie weniger Punkte bekommen. Die Ergänzungen stehen in `CMakeLists.txt`, `src/CMakeLists.txt`,
@@ -263,7 +273,8 @@ die zwölfte, weil sie weniger Punkte bekommen. Die Ergänzungen stehen in `CMak
 `src/solver.c`, `src/broad_phase.h`, `src/broad_phase.c`, `src/dynamic_tree.h`, `src/dynamic_tree.c`,
 `src/parallel_for.c`, `src/scheduler.h`, `src/scheduler.c`, `src/physics_world.h` und `src/physics_world.c`, jeweils mit
 „Added for Nebenan“ markiert. `B3_HAS_UNIQUE_HULLS`, `B3_HAS_SHAPE_BATCH`, `B3_HAS_SHAPE_CONTACT_LISTS`,
-`B3_HAS_EXTERNAL_HULLS` und `B3_HAS_BODY_PREFETCH` zeigen die zweite, die vierte, die fünfte, die sechste und die
-neunzehnte an. Fehlen sie, etwa mit einem eigenen Box3D, läuft Nebenan wie zuvor, nur wachsen Box3Ds Arrays dann durch
-Umkopieren, die Hüllen gehen durch die Tabelle, jede Form geht einzeln in den Baum, jedes stehende Bruchstück bekommt
-einen eigenen Körper, Box3D hält eine Kopie jeder Hülle, und Nebenan holt die Körper der Trümmer nicht voraus.
+`B3_HAS_EXTERNAL_HULLS`, `B3_HAS_BODY_PREFETCH` und `B3_HAS_STEP_GUARD` zeigen die zweite, die vierte, die fünfte, die
+sechste, die neunzehnte und die dreißigste an. Fehlen sie, etwa mit einem eigenen Box3D, läuft Nebenan wie zuvor, nur
+wachsen Box3Ds Arrays dann durch Umkopieren, die Hüllen gehen durch die Tabelle, jede Form geht einzeln in den Baum,
+jedes stehende Bruchstück bekommt einen eigenen Körper, Box3D hält eine Kopie jeder Hülle, Nebenan holt die Körper der
+Trümmer nicht voraus, und `nbWorld_Step` rechnet auf dem aufrufenden Thread.

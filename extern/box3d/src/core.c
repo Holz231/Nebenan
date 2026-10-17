@@ -16,6 +16,7 @@
 #endif
 
 #include "core.h"
+#include "platform.h"
 #include "rapidhash.h"
 
 #include "box3d/constants.h"
@@ -468,4 +469,22 @@ uint64_t b3Hash64NonZero( const uint8_t* bytes, int n )
 
 	uint64_t h = rapidhash( bytes, n );
 	return h == 0 ? 1 : h;
+}
+
+// Added for Nebenan: every thread draws its number on first use, see b3World_SetStepGuard
+#if defined( _MSC_VER )
+static __declspec( thread ) int b3_threadToken;
+#else
+static _Thread_local int b3_threadToken;
+#endif
+
+static b3AtomicInt b3_threadTokenCount;
+
+int b3GetThreadToken( void )
+{
+	if ( b3_threadToken == 0 )
+	{
+		b3_threadToken = b3AtomicFetchAddInt( &b3_threadTokenCount, 1 ) + 1;
+	}
+	return b3_threadToken;
 }

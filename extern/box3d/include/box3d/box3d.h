@@ -178,6 +178,12 @@ B3_API void b3World_SetCustomFilterCallback( b3WorldId worldId, b3CustomFilterFc
 /// Register the pre-solve callback. This is optional.
 B3_API void b3World_SetPreSolveCallback( b3WorldId worldId, b3PreSolveFcn* fcn, void* context );
 
+/// Added for Nebenan: guard the world while another thread steps it. Every function of Box3D that the calling thread
+/// calls for this world calls fcn first, which waits for the step and clears the guard with a null fcn. Other threads
+/// pass, the one that steps and its workers among them.
+B3_API void b3World_SetStepGuard( b3WorldId worldId, b3StepGuardFcn* fcn, void* context );
+#define B3_HAS_STEP_GUARD 1
+
 /// Set the gravity vector for the entire world. Box3D has no concept of an up direction and this
 /// is left as a decision for the application. Usually in m/s^2.
 /// @see b3WorldDef

@@ -93,12 +93,23 @@ void b3RemoveHullFromDatabase( b3World* world, const b3HullData* data )
 	}
 }
 
+// Added for Nebenan: the thread that guards the world waits for the step another thread runs, see b3World_SetStepGuard
+static inline void b3WaitForStepGuard( b3World* world )
+{
+	int owner = b3AtomicLoadInt( &world->stepGuardOwner );
+	if ( owner != 0 && owner == b3GetThreadToken() )
+	{
+		world->stepGuardFcn( world->stepGuardContext );
+	}
+}
+
 b3World* b3GetUnlockedWorldFromId( b3WorldId id )
 {
 	B3_ASSERT( 1 <= id.index1 && id.index1 <= B3_MAX_WORLDS );
 	b3World* world = b3_worlds + ( id.index1 - 1 );
 	B3_ASSERT( id.index1 == world->worldId + 1 );
 	B3_ASSERT( id.generation == world->generation );
+	b3WaitForStepGuard( world ); // Added for Nebenan
 
 	// A world accessed from an id should not be locked
 	if ( world->locked )
@@ -115,6 +126,7 @@ b3World* b3GetWorldFromId( b3WorldId id )
 	b3World* world = b3_worlds + ( id.index1 - 1 );
 	B3_ASSERT( id.index1 == world->worldId + 1 );
 	B3_ASSERT( id.generation == world->generation );
+	b3WaitForStepGuard( world ); // Added for Nebenan
 	return world;
 }
 
@@ -123,6 +135,7 @@ b3World* b3GetWorld( int index )
 	B3_ASSERT( 0 <= index && index < B3_MAX_WORLDS );
 	b3World* world = b3_worlds + index;
 	B3_ASSERT( world->worldId == index );
+	b3WaitForStepGuard( world ); // Added for Nebenan
 	return world;
 }
 
@@ -131,6 +144,7 @@ b3World* b3GetUnlockedWorld( int index )
 	B3_ASSERT( 0 <= index && index < B3_MAX_WORLDS );
 	b3World* world = b3_worlds + index;
 	B3_ASSERT( world->worldId == index );
+	b3WaitForStepGuard( world ); // Added for Nebenan
 	if ( world->locked )
 	{
 		B3_ASSERT( false );
@@ -2077,6 +2091,26 @@ bool b3World_IsValid( b3WorldId id )
 	return id.generation == world->generation;
 }
 
+// Added for Nebenan
+void b3World_SetStepGuard( b3WorldId worldId, b3StepGuardFcn* fcn, void* context )
+{
+	// Not through b3GetWorldFromId, which calls the guard
+	B3_ASSERT( 1 <= worldId.index1 && worldId.index1 <= B3_MAX_WORLDS );
+	b3World* world = b3_worlds + ( worldId.index1 - 1 );
+	B3_ASSERT( worldId.index1 == world->worldId + 1 );
+	B3_ASSERT( worldId.generation == world->generation );
+
+	if ( fcn == NULL )
+	{
+		b3AtomicStoreInt( &world->stepGuardOwner, 0 );
+		return;
+	}
+
+	world->stepGuardFcn = fcn;
+	world->stepGuardContext = context;
+	b3AtomicStoreInt( &world->stepGuardOwner, b3GetThreadToken() );
+}
+
 bool b3Body_IsValid( b3BodyId id )
 {
 	if ( B3_MAX_WORLDS <= id.world0 )
@@ -2091,6 +2125,8 @@ bool b3Body_IsValid( b3BodyId id )
 		// world is free
 		return false;
 	}
+
+	b3WaitForStepGuard( world ); // Added for Nebenan
 
 	if ( id.index1 < 1 || world->bodies.count < id.index1 )
 	{
@@ -2130,6 +2166,8 @@ bool b3Shape_IsValid( b3ShapeId id )
 		return false;
 	}
 
+	b3WaitForStepGuard( world ); // Added for Nebenan
+
 	int shapeId = id.index1 - 1;
 	if ( shapeId < 0 || world->shapes.count <= shapeId )
 	{
@@ -2162,6 +2200,8 @@ bool b3Joint_IsValid( b3JointId id )
 		return false;
 	}
 
+	b3WaitForStepGuard( world ); // Added for Nebenan
+
 	int jointId = id.index1 - 1;
 	if ( jointId < 0 || world->joints.count <= jointId )
 	{
@@ -2193,6 +2233,8 @@ bool b3Contact_IsValid( b3ContactId id )
 		// world is free
 		return false;
 	}
+
+	b3WaitForStepGuard( world ); // Added for Nebenan
 
 	int contactId = id.index1 - 1;
 	if ( contactId < 0 || world->contacts.count <= contactId )

@@ -73,6 +73,9 @@ typedef float b3RestitutionCallback( float restitutionA, uint64_t userMaterialId
 /// @ingroup world
 typedef bool b3CustomFilterFcn( b3ShapeId shapeIdA, b3ShapeId shapeIdB, void* context );
 
+/// Added for Nebenan: what the thread that guards a world calls before it touches the world, see b3World_SetStepGuard
+typedef void b3StepGuardFcn( void* context );
+
 /// Prototype for a pre-solve callback.
 /// This is called after a contact is updated. This allows you to inspect a
 /// collision before it goes to the solver.

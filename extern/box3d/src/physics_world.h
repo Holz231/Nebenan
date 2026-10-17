@@ -320,6 +320,12 @@ typedef struct b3World
 	bool enableContinuous;
 	bool enableSpeculative;
 	bool inUse;
+
+	// Added for Nebenan: the thread that guards the world while another one steps it, zero for none, and what it calls to
+	// wait for the step, see b3World_SetStepGuard. Only that thread reads the function and its context.
+	b3AtomicInt stepGuardOwner;
+	b3StepGuardFcn* stepGuardFcn;
+	void* stepGuardContext;
 } b3World;
 
 b3World* b3GetUnlockedWorldFromId( b3WorldId id );
