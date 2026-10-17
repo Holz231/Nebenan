@@ -359,6 +359,16 @@ NB_ARRAY_DECLARE( nbCollisionImpact, nbCollisionImpactArray );
 NB_ARRAY_DECLARE( nbCreation, nbCreationArray );
 NB_ARRAY_DECLARE( b3BodyMoveEvent, nbBodyMoveArray );
 
+// A stream of the world, see nbCreateStream. A slot whose stream went keeps its generation for the next one.
+struct nbStream;
+typedef struct nbStreamSlot
+{
+	struct nbStream* stream;
+	uint16_t generation;
+} nbStreamSlot;
+
+NB_ARRAY_DECLARE( nbStreamSlot, nbStreamSlotArray );
+
 typedef struct nbWorld
 {
 	b3WorldId physicsWorld;
@@ -476,6 +486,9 @@ typedef struct nbWorld
 	int moveBuffer;
 	nbIntArray moveSlots;
 
+	// The streams that load and unload destructibles of this world, see nbCreateStream
+	nbStreamSlotArray streams;
+
 	uint16_t worldIndex;
 	uint16_t generation;
 	bool inUse;
@@ -483,6 +496,16 @@ typedef struct nbWorld
 
 nbWorld* nbGetWorld( int index );
 nbWorld* nbGetWorldFromId( nbWorldId id );
+
+// The world at an index without waiting for the steps, see nbWorld_Step
+nbWorld* nbPeekWorld( int index );
+
+// Mark the sites of the streams near the bodies that moved in the last step, see nbStream_Update. It comes before the
+// update changes anything, so every body that moved is still there.
+void nbMarkStreams( nbWorld* world );
+
+// Drop the streams of a world that goes, see nbDestroyStream
+void nbDestroyStreams( nbWorld* world );
 
 nbChunkId nbMakeChunkId( const nbWorld* world, int chunkIndex );
 nbChunk* nbGetChunkFromId( nbChunkId id, nbWorld** world );

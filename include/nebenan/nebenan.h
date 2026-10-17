@@ -276,3 +276,46 @@ NB_API nbGeometry nbChunk_GetGeometry( nbChunkId chunkId );
 NB_API int nbChunk_GetVisibleFaces( nbChunkId chunkId, bool* visible, int capacity );
 
 /** @} */
+
+/**
+ * @defgroup stream Stream
+ * A world too large to hold at once, like a city of tens of thousands of houses, keeps only the destructibles near its
+ * viewers and near anything that moves. The stream decides which ones and when, the program says what stands where.
+ * @{
+ */
+
+/// Default stream definition: sites within 100 m of a viewer load, two per update, and go beyond 120 m once no body moved
+/// within 20 m of them for five seconds, four per update, of those one damaged one with its rubble. A moving body loads the
+/// sites within 10 m of it.
+NB_API nbStreamDef nbDefaultStreamDef( void );
+
+/// Create a stream for a world. Its sites start out of the world, see nbStream_AddSite.
+NB_API nbStreamId nbCreateStream( nbWorldId worldId, const nbStreamDef* def );
+
+/// Destroy a stream. Its sites in the world stay as destructibles of their own, a load in the background is built in
+/// first, and the damaged sites it kept go. The world destroys its streams with it.
+NB_API void nbDestroyStream( nbStreamId streamId );
+
+/// Add a site: a place where the destructible that nbStreamDef::prepareFcn defines for it stands, with bounds that hold
+/// it as it is built. Returns its number, counting from zero. It loads once a viewer or a moving body comes near.
+NB_API int nbStream_AddSite( nbStreamId streamId, b3AABB bounds );
+
+/// Load every site within the load radius of the viewers at once, with nbCreateDestructibles, for the start of a level.
+NB_API void nbStream_LoadAround( nbStreamId streamId, const b3Vec3* viewers, int viewerCount );
+
+/// Stream around the viewers, once per frame: the sites that can go go, the ones the workers prepared come into the
+/// world, and the next ones start, the ones a moving body asked for first, then the nearest. Every step marks the sites
+/// near the bodies that moved. With nbWorldDef::asyncStep after nbWorld_Step this runs on the thread of the steps, after
+/// them, see nbWorld_RunAfterStep, and the viewers are copied.
+NB_API void nbStream_Update( nbStreamId streamId, const b3Vec3* viewers, int viewerCount );
+
+/// Change the load radius, see nbStreamDef::loadRadius. Applies to the next update.
+NB_API void nbStream_SetLoadRadius( nbStreamId streamId, float radius );
+
+/// The destructible of a site, null while it is not in the world.
+NB_API nbDestructibleId nbStream_GetDestructible( nbStreamId streamId, int site );
+
+/// Get counters and timings.
+NB_API nbStreamStats nbStream_GetStats( nbStreamId streamId );
+
+/** @} */

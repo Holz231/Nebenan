@@ -60,6 +60,12 @@ nbWorld* nbGetWorldFromId( nbWorldId id )
 	return world != NULL ? nbCheckSteps( world ) : NULL;
 }
 
+nbWorld* nbPeekWorld( int index )
+{
+	NB_ASSERT( 0 <= index && index < NB_MAX_WORLDS );
+	return nb_worlds + index;
+}
+
 nbChunkId nbMakeChunkId( const nbWorld* world, int chunkIndex )
 {
 	nbChunkId id = { chunkIndex + 1, world->worldIndex, world->chunks.data[chunkIndex].generation };
@@ -4336,7 +4342,10 @@ void nbDestroyWorld( nbWorldId worldId )
 	nbWaitForSteps( world );
 	nbDestroyStepThread( world->stepThread );
 	world->stepThread = NULL;
+
+	// The workers are done with the pieces of the program before a stream gives them back
 	nbWaitForCreations( world );
+	nbDestroyStreams( world );
 	nbDestroyCreations( world );
 
 	if ( b3World_IsValid( world->physicsWorld ) )
@@ -4411,6 +4420,7 @@ void nbDestroyWorld( nbWorldId worldId )
 	nbArray_Free( world->moves[0] );
 	nbArray_Free( world->moves[1] );
 	nbArray_Free( world->moveSlots );
+	nbArray_Free( world->streams );
 	nbArena_Destroy( &world->arena );
 	nbStopWorkers( world );
 
@@ -5547,6 +5557,12 @@ static void nbEnforceDebrisBudget( nbWorld* world, b3Vec3 up )
 static void nbUpdate( nbWorld* world, float timeStep )
 {
 	uint64_t ticks = b3GetTicks();
+
+	// The streams mark the sites near the bodies that moved, before anything changes the world
+	if ( world->streams.count > 0 )
+	{
+		nbMarkStreams( world );
+	}
 
 	// Read the Box3D events of the last step before anything changes the world
 	nbCollectCollisionImpacts( world );

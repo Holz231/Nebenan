@@ -3986,6 +3986,153 @@ static int WorkerCountTest( void )
 	return 0;
 }
 
+// The sites of the stream test: walls along a road, 20 m apart, built from the pieces the stream asks for
+typedef struct StreamTestSites
+{
+	nbPieceDef pieces[32];
+	int prepares;
+	int releases;
+} StreamTestSites;
+
+static void PrepareTestSite( int site, nbSiteDef* siteDef, void* context )
+{
+	StreamTestSites* sites = context;
+	nbPieceDef* piece = sites->pieces + site;
+	*piece = nbDefaultPieceDef();
+	piece->halfExtents = (b3Vec3){ 2.0f, 1.5f, 0.15f };
+	siteDef->def = nbDefaultDestructibleDef();
+	siteDef->def.position = b3ToPos( (b3Vec3){ 20.0f * (float)site, 1.5f, 0.0f } );
+	siteDef->def.seed = (uint32_t)( 50 + site );
+	siteDef->pieces = piece;
+	siteDef->pieceCount = 1;
+	sites->prepares += 1;
+}
+
+static void ReleaseTestSite( int site, void* context )
+{
+	NB_UNUSED( site );
+	StreamTestSites* sites = context;
+	sites->releases += 1;
+}
+
+// A stream loads the walls along a road around a viewer that drives down it and back, a wall far away as soon as a falling
+// ball comes near it, and lets the walls go behind the viewer, a damaged one with its rubble, which comes back with the
+// same chunks. With the step on a thread of its own the stream runs after the steps and ends the same to the bit.
+static int StreamSiteTest( void )
+{
+	enum
+	{
+		siteCount = 21,
+		passCount = 2
+	};
+	int64_t baseBytes = nbGetByteCount();
+	nbStreamStats results[passCount];
+	uint32_t hashes[passCount];
+	int damagedChunks[passCount];
+	for ( int pass = 0; pass < passCount; ++pass )
+	{
+		TestScene scene = CreateScene();
+		nbWorld_SetAsyncStep( scene.world, pass == 1 );
+
+		StreamTestSites sites = { 0 };
+		nbStreamDef def = nbDefaultStreamDef();
+		def.loadRadius = 30.0f;
+		def.unloadMargin = 10.0f;
+		def.activeLoadRadius = 5.0f;
+		def.activeHoldRadius = 8.0f;
+		def.holdTime = 0.5f;
+		def.retryTime = 0.1f;
+		def.margin = 1.0f;
+		def.prepareFcn = PrepareTestSite;
+		def.releaseFcn = ReleaseTestSite;
+		def.userContext = &sites;
+		nbStreamId stream = nbCreateStream( scene.world, &def );
+		ENSURE( NB_IS_NON_NULL( stream ) );
+		for ( int i = 0; i < siteCount; ++i )
+		{
+			float x = 20.0f * (float)i;
+			ENSURE( nbStream_AddSite( stream, (b3AABB){ { x - 2.0f, 0.0f, -0.15f }, { x + 2.0f, 3.0f, 0.15f } } ) == i );
+		}
+
+		// The walls at 0 and 20 m right away
+		b3Vec3 viewer = { 0.0f, 1.5f, 0.0f };
+		nbStream_LoadAround( stream, &viewer, 1 );
+		ENSURE( nbStream_GetStats( stream ).loadedCount == 2 );
+
+		// A grenade on the wall at 20 m, and a ball that falls next to the wall at 100 m, far from the viewer
+		Grenade( &scene, (b3Vec3){ 20.0f, 1.5f, 0.3f } );
+		b3BodyDef ballDef = b3DefaultBodyDef();
+		ballDef.type = b3_dynamicBody;
+		ballDef.position = b3ToPos( (b3Vec3){ 100.0f, 6.0f, 2.0f } );
+		b3BodyId ball = b3CreateBody( scene.physicsWorld, &ballDef );
+		b3Sphere sphere = { b3Vec3_zero, 0.3f };
+		b3ShapeDef ballShape = b3DefaultShapeDef();
+		b3CreateSphereShape( ball, &ballShape, &sphere );
+
+		bool ballLoaded = false;
+		for ( int frame = 0; frame < 180; ++frame )
+		{
+			nbWorld_Step( scene.world, 1.0f / 60.0f, 4 );
+			nbStream_Update( stream, &viewer, 1 );
+			ballLoaded = ballLoaded || NB_IS_NON_NULL( nbStream_GetDestructible( stream, 5 ) );
+		}
+		ENSURE( ballLoaded );
+		nbDestructibleId damaged = nbStream_GetDestructible( stream, 1 );
+		ENSURE( nbDestructible_IsIntact( damaged ) == false );
+		damagedChunks[pass] = nbDestructible_GetChunkCount( damaged );
+
+		// Down the road and back at 1 m per frame. A wall within 25 m of the viewer is always there.
+		for ( int frame = 0; frame < 800; ++frame )
+		{
+			viewer.x += frame < 400 ? 1.0f : -1.0f;
+			nbWorld_Step( scene.world, 1.0f / 60.0f, 4 );
+			nbStream_Update( stream, &viewer, 1 );
+			for ( int i = 0; i < siteCount; ++i )
+			{
+				float distance = b3AbsFloat( 20.0f * (float)i - viewer.x );
+				ENSURE( distance > 25.0f || NB_IS_NON_NULL( nbStream_GetDestructible( stream, i ) ) );
+			}
+			if ( frame == 399 )
+			{
+				ENSURE( nbStream_GetStats( stream ).loadedCount <= 6 );
+			}
+		}
+
+		// The damaged wall went with its rubble and came back with the same chunks
+		nbStreamStats stats = nbStream_GetStats( stream );
+		ENSURE( stats.saves >= 1 && stats.restores >= 1 && stats.urgentLoads >= 1 );
+		ENSURE( stats.loads >= siteCount && stats.unloads >= siteCount - 4 );
+		damaged = nbStream_GetDestructible( stream, 1 );
+		ENSURE( nbDestructible_GetChunkCount( damaged ) == damagedChunks[pass] );
+
+		nbDestructibleId ids[siteCount];
+		for ( int i = 0; i < siteCount; ++i )
+		{
+			ids[i] = nbStream_GetDestructible( stream, i );
+		}
+		hashes[pass] = HashCreated( &scene, ids, siteCount );
+		results[pass] = stats;
+
+		// The world can take the stream with it, or the stream goes first and leaves its walls
+		if ( pass == 1 )
+		{
+			nbDestroyStream( stream );
+			ENSURE( nbWorld_GetStats( scene.world ).destructibleCount == stats.loadedCount );
+		}
+		DestroyScene( &scene );
+		ENSURE( sites.prepares == sites.releases && sites.prepares >= stats.loads );
+	}
+	ENSURE( nbGetByteCount() == baseBytes );
+
+	printf( "  %d loads, %d of them for a moving body, %d unloads, %d saves, %d brought back, damaged wall of %d chunks\n",
+			results[0].loads, results[0].urgentLoads, results[0].unloads, results[0].saves, results[0].restores, damagedChunks[0] );
+	ENSURE( hashes[1] == hashes[0] && damagedChunks[1] == damagedChunks[0] );
+	ENSURE( results[1].loads == results[0].loads && results[1].unloads == results[0].unloads );
+	ENSURE( results[1].saves == results[0].saves && results[1].restores == results[0].restores );
+	ENSURE( results[1].urgentLoads == results[0].urgentLoads );
+	return 0;
+}
+
 int WorldTest( void );
 
 int WorldTest( void )
@@ -4028,6 +4175,7 @@ int WorldTest( void )
 	RUN_TEST( TaskSystemTest );
 	RUN_TEST( AsyncStepTest );
 	RUN_TEST( WorkerCountTest );
+	RUN_TEST( StreamSiteTest );
 	RUN_TEST( RestTest );
 	RUN_TEST( LandingTest );
 	return 0;

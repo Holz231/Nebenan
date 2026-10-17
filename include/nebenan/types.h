@@ -45,10 +45,19 @@ typedef struct nbCreationId
 	uint16_t generation;
 } nbCreationId;
 
+/// Loads and unloads the destructibles of a world too large to hold at once, see nbCreateStream.
+typedef struct nbStreamId
+{
+	int32_t index1;
+	uint16_t world0;
+	uint16_t generation;
+} nbStreamId;
+
 static const nbWorldId nb_nullWorldId = NB_ZERO_INIT;
 static const nbDestructibleId nb_nullDestructibleId = NB_ZERO_INIT;
 static const nbChunkId nb_nullChunkId = NB_ZERO_INIT;
 static const nbCreationId nb_nullCreationId = NB_ZERO_INIT;
+static const nbStreamId nb_nullStreamId = NB_ZERO_INIT;
 
 /// Use these to test for null. Example: `if ( NB_IS_NULL( chunkId ) ) { ... }`
 #define NB_IS_NULL( id ) ( ( id ).index1 == 0 )
@@ -469,6 +478,115 @@ typedef struct nbStats
 	/// Bytes allocated by Nebenan (all worlds).
 	int64_t byteCount;
 } nbStats;
+
+/** @} */
+
+/**
+ * @defgroup stream Stream
+ * @{
+ */
+
+/// What a stream builds the destructible of a site from, see nbStreamDef::prepareFcn. The pointers stay valid until the
+/// stream calls nbStreamDef::releaseFcn for the site.
+typedef struct nbSiteDef
+{
+	nbDestructibleDef def;
+	const nbPieceDef* pieces;
+	int pieceCount;
+} nbSiteDef;
+
+/// Fill in the definition of a site the stream is about to load. Called on the thread that streams, see nbStream_Update.
+typedef void nbSitePrepareFcn( int site, nbSiteDef* siteDef, void* context );
+
+/// The stream no longer needs what nbSitePrepareFcn gave it for a site.
+typedef void nbSiteReleaseFcn( int site, void* context );
+
+/// Keep the bytes of a damaged site that goes with its rubble, a file for example. Return false if they could not be
+/// kept, then the site stays in the world.
+typedef bool nbSiteStoreFcn( int site, const void* data, size_t size, void* context );
+
+/// Write the bytes kept for a site into the buffer, as many as the store got. Return false if they are gone, then the
+/// stream asks again the next time it wants the site.
+typedef bool nbSiteFetchFcn( int site, void* buffer, size_t size, void* context );
+
+/// How a stream loads and unloads the destructibles of its sites, see nbCreateStream. The distances are in meters and
+/// the times in seconds of simulation.
+typedef struct nbStreamDef
+{
+	/// A site whose center lies within this distance of a viewer is loaded, the nearest first, see nbStream_Update.
+	float loadRadius;
+
+	/// A site goes again only beyond the load radius plus this margin, so one at the edge does not come and go.
+	float unloadMargin;
+
+	/// A body that moves loads the sites whose bounds lie within this distance of its center, before it can reach them.
+	float activeLoadRadius;
+
+	/// A body that moves keeps the sites whose bounds lie within this distance of its center from going.
+	float activeHoldRadius;
+
+	/// How long no body may have moved within activeHoldRadius of a site before it goes.
+	float holdTime;
+
+	/// A site that could not go yet is asked again after this time.
+	float retryTime;
+
+	/// Nothing that moves or can be moved may lie within this distance of a site that goes, see nbDestructible_CanUnload
+	/// and nbCanSaveDestructibles.
+	float margin;
+
+	/// Sites that start to load per update, the nearest first, and sites that go per update, of those at most saveBudget
+	/// damaged ones, which go with their rubble.
+	int loadBudget;
+	int unloadBudget;
+	int saveBudget;
+
+	/// Updates from the start of a load in the background to the update that builds it into the world, see
+	/// nbStartCreating. One suits a game, the workers have a frame. More suit updates that come back to back.
+	int loadDelay;
+
+	/// The definitions of the sites, required, and the release of what prepareFcn gave, optional.
+	nbSitePrepareFcn* prepareFcn;
+	nbSiteReleaseFcn* releaseFcn;
+
+	/// Where the damaged sites go with their rubble, both or neither. Without, the stream keeps them in memory.
+	nbSiteStoreFcn* storeFcn;
+	nbSiteFetchFcn* fetchFcn;
+
+	/// Passed to the functions above.
+	void* userContext;
+
+	/// Used internally to detect a valid definition. DO NOT SET.
+	int internalValue;
+} nbStreamDef;
+
+/// Counters and timings of a stream.
+typedef struct nbStreamStats
+{
+	int siteCount;
+
+	/// Sites in the world now, of those the damaged ones, sites the workers prepare, and damaged sites out of the world
+	/// with their rubble
+	int loadedCount;
+	int damagedCount;
+	int loadingCount;
+	int savedCount;
+
+	/// Totals since the stream was created: sites built into the world, of those the ones a moving body asked for, intact
+	/// sites that went, damaged ones that went with their rubble, and saved ones that came back.
+	int loads;
+	int urgentLoads;
+	int unloads;
+	int saves;
+	int restores;
+
+	/// Bytes the stream keeps for its saved sites, zero with a store of the program
+	size_t savedBytes;
+
+	/// The last nbStream_Update and the marks of the moving bodies in the last step, in milliseconds
+	float updateTime;
+	float markTime;
+} nbStreamStats;
 
 /** @} */
 

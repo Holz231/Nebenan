@@ -88,13 +88,6 @@ struct BodySlots
 	std::vector<int> slots;
 };
 
-// Where the large city streams around after the steps of a frame, see StartPhysics. The main thread sets it before the
-// steps and leaves it alone until it waits for them.
-struct CityJob
-{
-	b3Vec3 camera = {};
-	float radius = 0.0f;
-};
 
 // What the menu and the report show of the worlds and the city, read on the main thread while no job runs
 struct WorldView
@@ -284,52 +277,12 @@ struct FpsMeter
 
 struct PendingStructure;
 
-// A house of the large city: its id while it is loaded, the last physics step a moving body came near it, and when to
-// ask again whether it can go
-struct CityHouse
-{
-	nbDestructibleId id = {};
-	int activeStep = -1000000;
-	int nextCheck = 0;
-	bool urgent = false;
-
-	// The workers prepare it in the background
-	bool loading = false;
-
-	// A damaged house at rest that went out of the world, saved with its rubble, see SaveCityHouse, and how far its parts
-	// reach from its center along the ground
-	std::vector<uint8_t> saved;
-	float reach = 5.5f;
-};
-
-// A city far too large to hold at once, see BuildCityScene. Only the houses near the camera and near anything that moves
-// are loaded, the others only exist as a seed and a position.
+// The large city, see BuildCityScene: the stream of the library that loads and unloads its houses, and the houses the
+// stream builds right now, by site
 struct City
 {
-	std::vector<CityHouse> houses;
-	std::vector<int> loaded;
-	std::vector<int> urgent;
-
-	// The houses the workers prepare in the background, built in with the next frame, with their definitions and what
-	// these point to
-	nbCreationId creation = {};
-	std::vector<int> pending;
-	std::vector<std::unique_ptr<PendingStructure>> pendingHouses;
-	std::vector<nbDestructibleDef> pendingDefs;
-
-	// Physics steps so far, the clock of the streaming
-	int step = 0;
-	int loads = 0;
-	int unloads = 0;
-
-	// Damaged houses saved and brought back, the bytes they take while saved, and the farthest a saved one reaches
-	int saves = 0;
-	int restores = 0;
-	size_t savedBytes = 0;
-	float maxReach = 5.5f;
-
-	// CPU time of the streaming in the last frame in milliseconds
-	float time = 0.0f;
+	nbStreamId stream = {};
+	std::vector<std::unique_ptr<PendingStructure>> building;
 };
 
 struct App
@@ -397,7 +350,6 @@ struct App
 	int physicsSteps = 0;
 	bool physicsPending = false;
 	b3BodyEvents moves = {};
-	CityJob cityJob;
 	float simulationTime = 0.0f;
 	float waitTime = 0.0f;
 	WorldView view;
@@ -964,18 +916,10 @@ static void BuildTownScene( App& app )
 }
 
 // The large city: 256 x 256 houses like the ones of the town on 3.6 x 3.1 km, 65 536 of them. Held at once they would
-// take some 24 GB, so only the houses within the city radius of the camera are loaded, nearest first, and the ones
-// within 10 m of anything that moves, before it can reach them. A house goes again once it is farther than the radius
-// plus 20 m, no body moved within 20 m of it for five seconds and nbDestructible_CanUnload lets it: nothing hit it and
-// nothing lies near it. Damaged houses stay with their rubble, and a house comes back to the bit as it was.
+// take some 24 GB, so the stream of the library keeps only the houses within the load radius of the camera and the ones
+// near anything that moves, see nbCreateStream. Damaged houses at rest go with their rubble and come back to the bit as
+// they were.
 static const int CitySide = 256;
-static const int CityLoadBudget = 2;
-static const int CityUnloadBudget = 4;
-static const int CitySaveBudget = 1;
-static const float CityUnloadMargin = 20.0f;
-static const float CityActiveLoadRadius = 10.0f;
-static const float CityActiveHoldRadius = 20.0f;
-static const int CityHoldSteps = 300;
 
 static b3Vec3 CityHousePosition( int index )
 {
@@ -983,302 +927,61 @@ static b3Vec3 CityHousePosition( int index )
 	return { 14.0f * ( (float)( index % CitySide ) - half ), 0.0f, 12.0f * ( (float)( index / CitySide ) - half ) };
 }
 
-static float CityDistance( int index, b3Vec3 point )
+// Every third house has a third floor
+static int CityHouseFloors( int index )
 {
-	b3Vec3 p = CityHousePosition( index );
-	return sqrtf( ( p.x - point.x ) * ( p.x - point.x ) + ( p.z - point.z ) * ( p.z - point.z ) );
+	return index % 3 == 1 ? 3 : 2;
 }
 
-// The grid cells whose houses may lie within the radius of a point
-static void CityRange( b3Vec3 point, float radius, int* i0, int* i1, int* j0, int* j1 )
-{
-	float half = 0.5f * (float)( CitySide - 1 );
-	*i0 = b3MaxInt( 0, (int)floorf( ( point.x - radius ) / 14.0f + half ) );
-	*i1 = b3MinInt( CitySide - 1, (int)ceilf( ( point.x + radius ) / 14.0f + half ) );
-	*j0 = b3MaxInt( 0, (int)floorf( ( point.z - radius ) / 12.0f + half ) );
-	*j1 = b3MinInt( CitySide - 1, (int)ceilf( ( point.z + radius ) / 12.0f + half ) );
-}
-
-// Every third house has a third floor, every other row faces the other street
+// Every other row faces the other street
 static std::unique_ptr<PendingStructure> PrepareCityHouse( int index )
 {
-	int floors = index % 3 == 1 ? 3 : 2;
 	float yaw = ( ( index / CitySide ) & 1 ) != 0 ? B3_PI : 0.0f;
-	return PrepareHouse( CityHousePosition( index ), yaw, floors, (uint32_t)( 1000 + index ) );
+	return PrepareHouse( CityHousePosition( index ), yaw, CityHouseFloors( index ), (uint32_t)( 1000 + index ) );
 }
 
-// Every body that moved in the last step loads the houses within 10 m that are not loaded yet, before it can reach them,
-// and keeps the ones within 20 m from going. A house reaches 5.5 m from its center and less than 10 m up.
-static void MarkCityActivity( App& app )
+// The stream asks for a house as it loads it, on the thread of the steps, and gives it back once it is built in
+static void PrepareCitySite( int site, nbSiteDef* siteDef, void* context )
 {
-	City& city = app.city;
-	city.step += 1;
-	b3BodyEvents events = b3World_GetBodyEvents( app.physics );
-	for ( int e = 0; e < events.moveCount; ++e )
-	{
-		// The chunks of a body lie in the frame of their destructible, its origin can be meters away
-		b3Vec3 point = b3ToVec3( b3Body_GetWorldCenter( events.moveEvents[e].bodyId ) );
-		if ( point.y > 10.0f + CityActiveHoldRadius )
-		{
-			continue;
-		}
-
-		// A saved house reaches as far as its rubble lay
-		int i0, i1, j0, j1;
-		CityRange( point, CityActiveHoldRadius + city.maxReach, &i0, &i1, &j0, &j1 );
-		for ( int j = j0; j <= j1; ++j )
-		{
-			for ( int i = i0; i <= i1; ++i )
-			{
-				int index = j * CitySide + i;
-				CityHouse& house = city.houses[(size_t)index];
-				float distance = CityDistance( index, point );
-				float reach = house.saved.empty() ? 5.5f : house.reach;
-				if ( distance > CityActiveHoldRadius + reach )
-				{
-					continue;
-				}
-
-				house.activeStep = city.step;
-				if ( distance <= CityActiveLoadRadius + reach && NB_IS_NULL( house.id ) && house.urgent == false &&
-					 house.loading == false )
-				{
-					house.urgent = true;
-					city.urgent.push_back( index );
-				}
-			}
-		}
-	}
+	City& city = *(City*)context;
+	std::unique_ptr<PendingStructure>& house = city.building[(size_t)site];
+	house = PrepareCityHouse( site );
+	siteDef->def = house->def;
+	siteDef->pieces = house->pieces.data();
+	siteDef->pieceCount = (int)house->pieces.size();
 }
 
-// The houses that moving bodies came near, then the ones within the radius of the camera, nearest first, at most so many
-static std::vector<int> PickCityHouses( App& app, b3Vec3 camera, float radius, int budget )
+static void ReleaseCitySite( int site, void* context )
 {
-	City& city = app.city;
-
-	// The urgent ones keep their mark until the camera's are collected, so none comes twice
-	std::vector<std::pair<float, int>> candidates;
-	for ( int index : city.urgent )
-	{
-		candidates.push_back( { -1.0f, index } );
-	}
-
-	int i0, i1, j0, j1;
-	CityRange( camera, radius, &i0, &i1, &j0, &j1 );
-	for ( int j = j0; j <= j1; ++j )
-	{
-		for ( int i = i0; i <= i1; ++i )
-		{
-			int index = j * CitySide + i;
-			float distance = CityDistance( index, camera );
-			const CityHouse& house = city.houses[(size_t)index];
-			if ( distance <= radius && NB_IS_NULL( house.id ) && house.urgent == false && house.loading == false )
-			{
-				candidates.push_back( { distance, index } );
-			}
-		}
-	}
-
-	for ( int index : city.urgent )
-	{
-		city.houses[(size_t)index].urgent = false;
-	}
-	city.urgent.clear();
-
-	// Urgent ones that do not fit come back with the next step that moves something near them
-	std::sort( candidates.begin(), candidates.end() );
-	candidates.resize( b3MinInt( (int)candidates.size(), budget ) );
-	std::vector<int> picked;
-	for ( const std::pair<float, int>& candidate : candidates )
-	{
-		picked.push_back( candidate.second );
-	}
-	return picked;
-}
-
-static void AddCityHouses( App& app, const std::vector<int>& indices, const std::vector<nbDestructibleId>& ids )
-{
-	City& city = app.city;
-	for ( size_t k = 0; k < indices.size(); ++k )
-	{
-		CityHouse& house = city.houses[(size_t)indices[k]];
-		house.id = ids[k];
-		house.loading = false;
-		city.loaded.push_back( indices[k] );
-	}
-	city.loads += (int)indices.size();
-}
-
-// How far the parts of a house reach from its center along the ground, its rubble included
-static float CityReach( int index, nbDestructibleId id )
-{
-	std::vector<nbChunkId> chunks( (size_t)nbDestructible_GetChunkCount( id ) );
-	int count = nbDestructible_GetChunks( id, chunks.data(), (int)chunks.size() );
-	b3Vec3 center = CityHousePosition( index );
-	float reach = 5.5f;
-	for ( int i = 0; i < count; ++i )
-	{
-		b3AABB box = b3Shape_GetAABB( nbChunk_GetShape( chunks[(size_t)i] ) );
-		float dx = b3MaxFloat( fabsf( box.lowerBound.x - center.x ), fabsf( box.upperBound.x - center.x ) );
-		float dz = b3MaxFloat( fabsf( box.lowerBound.z - center.z ), fabsf( box.upperBound.z - center.z ) );
-		reach = b3MaxFloat( reach, sqrtf( dx * dx + dz * dz ) );
-	}
-	return reach;
-}
-
-// Save a damaged house at rest with its rubble and take it out of the world, see nbSaveDestructibles. A game would write
-// it to a file, the demo keeps it in memory.
-static void SaveCityHouse( App& app, int index )
-{
-	City& city = app.city;
-	CityHouse& house = city.houses[(size_t)index];
-	house.saved.resize( nbSaveDestructibles( &house.id, 1, nullptr, 0 ) );
-	nbSaveDestructibles( &house.id, 1, house.saved.data(), house.saved.size() );
-	house.reach = CityReach( index, house.id );
-	city.maxReach = b3MaxFloat( city.maxReach, house.reach );
-	city.savedBytes += house.saved.size();
-	city.saves += 1;
-	nbDestroyDestructible( house.id );
-	house.id = nb_nullDestructibleId;
-}
-
-// Bring a saved house back as it was
-static void RestoreCityHouse( App& app, int index )
-{
-	City& city = app.city;
-	CityHouse& house = city.houses[(size_t)index];
-	// Written by this build from a house that was there, so it loads
-	nbLoadDestructibles( app.destruction, house.saved.data(), house.saved.size(), &house.id );
-	city.savedBytes -= house.saved.size();
-	house.saved = std::vector<uint8_t>();
-	city.loaded.push_back( index );
-	city.restores += 1;
-}
-
-// Build in the houses the workers prepared since the last frame, then start the next ones. The workers prepare them in
-// the background while the frame goes on, see nbStartCreating. A saved house comes back right away.
-static void LoadCity( App& app, b3Vec3 camera, float radius, int budget )
-{
-	City& city = app.city;
-	if ( city.pending.empty() == false )
-	{
-		std::vector<nbDestructibleId> ids( city.pending.size() );
-		nbFinishCreating( city.creation, ids.data() );
-		AddCityHouses( app, city.pending, ids );
-		city.pending.clear();
-		city.pendingHouses.clear();
-	}
-
-	for ( int index : PickCityHouses( app, camera, radius, budget ) )
-	{
-		if ( city.houses[(size_t)index].saved.empty() )
-		{
-			city.pending.push_back( index );
-		}
-		else
-		{
-			RestoreCityHouse( app, index );
-		}
-	}
-
-	if ( city.pending.empty() )
-	{
-		return;
-	}
-
-	std::vector<const nbPieceDef*> pieceLists;
-	std::vector<int> pieceCounts;
-	city.pendingDefs.clear();
-	for ( int index : city.pending )
-	{
-		city.pendingHouses.push_back( PrepareCityHouse( index ) );
-		const PendingStructure& house = *city.pendingHouses.back();
-		city.pendingDefs.push_back( house.def );
-		pieceLists.push_back( house.pieces.data() );
-		pieceCounts.push_back( (int)house.pieces.size() );
-		city.houses[(size_t)index].loading = true;
-	}
-
-	city.creation = nbStartCreating( app.destruction, city.pendingDefs.data(), pieceLists.data(), pieceCounts.data(),
-									 (int)city.pendingDefs.size() );
-}
-
-// Take out the houses beyond the radius that can go, at most so many, of them at most CitySaveBudget damaged ones, which
-// are saved with their rubble. A house that cannot go is asked again half a second later.
-static void UnloadCity( App& app, b3Vec3 camera, float radius, int budget )
-{
-	City& city = app.city;
-	radius += CityUnloadMargin;
-	int count = 0;
-	int saveCount = 0;
-	for ( size_t k = 0; k < city.loaded.size() && count < budget; )
-	{
-		int index = city.loaded[k];
-		CityHouse& house = city.houses[(size_t)index];
-		if ( city.step < house.nextCheck || city.step < house.activeStep + CityHoldSteps ||
-			 CityDistance( index, camera ) <= radius )
-		{
-			k += 1;
-			continue;
-		}
-
-		bool intact = nbDestructible_IsIntact( house.id );
-		if ( intact == false && saveCount == CitySaveBudget )
-		{
-			k += 1;
-			continue;
-		}
-
-		if ( intact ? nbDestructible_CanUnload( house.id, 2.0f ) == false
-					: nbCanSaveDestructibles( &house.id, 1, 2.0f ) == false )
-		{
-			house.nextCheck = city.step + 30;
-			k += 1;
-			continue;
-		}
-
-		if ( intact )
-		{
-			nbDestroyDestructible( house.id );
-			house.id = nb_nullDestructibleId;
-			city.unloads += 1;
-		}
-		else
-		{
-			SaveCityHouse( app, index );
-			saveCount += 1;
-		}
-		city.loaded[k] = city.loaded.back();
-		city.loaded.pop_back();
-		count += 1;
-	}
-}
-
-// Around the camera as it was when the frame started, see PhysicsJob
-static void StreamCity( App& app, b3Vec3 camera, float radius )
-{
-	uint64_t ticks = b3GetTicks();
-	UnloadCity( app, camera, radius, CityUnloadBudget );
-	LoadCity( app, camera, radius, CityLoadBudget );
-	app.city.time = b3GetMilliseconds( ticks );
+	City& city = *(City*)context;
+	city.building[(size_t)site].reset();
 }
 
 static void BuildCityScene( App& app )
 {
-	app.city = City();
-	app.city.houses.resize( (size_t)CitySide * CitySide );
+	City& city = app.city;
+	city = City();
+	city.building.resize( (size_t)CitySide * CitySide );
+
+	nbStreamDef def = nbDefaultStreamDef();
+	def.loadRadius = app.cityRadius;
+	def.prepareFcn = PrepareCitySite;
+	def.releaseFcn = ReleaseCitySite;
+	def.userContext = &city;
+	city.stream = nbCreateStream( app.destruction, &def );
+	for ( int index = 0; index < CitySide * CitySide; ++index )
+	{
+		// 9 x 6.5 m, 3.25 m per storey
+		b3Vec3 p = CityHousePosition( index );
+		float height = 3.25f * (float)CityHouseFloors( index );
+		nbStream_AddSite( city.stream, { { p.x - 4.5f, 0.0f, p.z - 3.25f }, { p.x + 4.5f, height, p.z + 3.25f } } );
+	}
 
 	// On a street between two rows, looking along it, with the houses around at once
 	app.camera.position = { 0.0f, 2.5f, 0.0f };
 	app.camera.yaw = 0.5f * B3_PI;
 	app.camera.pitch = -0.05f;
-	std::vector<int> indices = PickCityHouses( app, app.camera.position, app.cityRadius, CitySide * CitySide );
-	std::vector<std::unique_ptr<PendingStructure>> houses;
-	for ( int index : indices )
-	{
-		houses.push_back( PrepareCityHouse( index ) );
-	}
-	AddCityHouses( app, indices, CreateStructures( app, houses ) );
+	nbStream_LoadAround( city.stream, &app.camera.position, 1 );
 }
 
 static void DestroyScene( App& app )
@@ -1534,21 +1237,6 @@ static void UpdateBalls( App& app, float dt )
 //----------------------------------------------------------------------------------------------------------------------
 // Simulation
 
-// After every step of the large city, on the thread of the steps: the bodies that moved keep the houses around them
-// loaded
-static void MarkCityAfterStep( void* context )
-{
-	MarkCityActivity( *(App*)context );
-}
-
-// After the steps of a frame the large city streams on the thread of the steps, so the workers prepare its houses while
-// the next frame is drawn and not during a step
-static void StreamCityAfterSteps( void* context )
-{
-	App& app = *(App*)context;
-	StreamCity( app, app.cityJob.camera, app.cityJob.radius );
-}
-
 // Start the steps this frame needs. When the simulation cannot keep up, it slows down instead of taking more and more
 // steps per frame, which would slow down every frame further. A second step in the same frame only catches up when
 // steps are cheap. With parallel physics the steps run on the thread of Nebenan while the frame is drawn, else right
@@ -1573,24 +1261,18 @@ static void StartPhysics( App& app, float frameDt )
 		}
 	}
 
-	// The city streams also while the simulation pauses
 	app.physicsSteps = steps;
 	app.physicsPending = steps > 0 || app.scene == SceneCity;
 	UpdateBalls( app, (float)steps * step );
 	for ( int i = 0; i < steps; ++i )
 	{
 		nbWorld_Step( app.destruction, step, 4 );
-		if ( app.scene == SceneCity )
-		{
-			nbWorld_RunAfterStep( app.destruction, MarkCityAfterStep, &app );
-		}
 	}
 
+	// The city streams after the steps on their thread, also while the simulation pauses
 	if ( app.scene == SceneCity )
 	{
-		app.cityJob.camera = app.camera.position;
-		app.cityJob.radius = app.cityRadius;
-		nbWorld_RunAfterStep( app.destruction, StreamCityAfterSteps, &app );
+		nbStream_Update( app.city.stream, &app.camera.position, 1 );
 	}
 }
 
@@ -1637,7 +1319,7 @@ static void ApplyPhysics( App& app )
 		app.destructionTime = stats.updateTime;
 	}
 	app.simulationTime += (float)app.physicsSteps * ( stats.stepTime + stats.updateTime );
-	app.simulationTime += app.scene == SceneCity ? app.city.time : 0.0f;
+	app.simulationTime += app.scene == SceneCity ? nbStream_GetStats( app.city.stream ).updateTime : 0.0f;
 }
 
 // What the menu shows of the worlds, copied while no job runs
@@ -1648,19 +1330,18 @@ static void TakeWorldView( App& app )
 	view.counters = b3World_GetCounters( app.physics );
 	view.awakeBodies = b3World_GetAwakeBodyCount( app.physics );
 
-	const City& city = app.city;
-	view.loadedHouses = (int)city.loaded.size();
-	view.damagedHouses = 0;
-	for ( int index : city.loaded )
+	if ( app.scene == SceneCity )
 	{
-		view.damagedHouses += nbDestructible_IsIntact( city.houses[(size_t)index].id ) ? 0 : 1;
+		nbStreamStats stream = nbStream_GetStats( app.city.stream );
+		view.loadedHouses = stream.loadedCount;
+		view.damagedHouses = stream.damagedCount;
+		view.streamTime = stream.updateTime + stream.markTime;
+		view.loads = stream.loads;
+		view.unloads = stream.unloads;
+		view.saves = stream.saves;
+		view.restores = stream.restores;
+		view.savedBytes = stream.savedBytes;
 	}
-	view.streamTime = city.time;
-	view.loads = city.loads;
-	view.unloads = city.unloads;
-	view.saves = city.saves;
-	view.restores = city.restores;
-	view.savedBytes = city.savedBytes;
 }
 
 static void UpdateCamera( App& app, float dt )
@@ -1821,7 +1502,10 @@ static void DrawUi( App& app )
 	}
 	if ( app.scene == SceneCity )
 	{
-		ImGui::SliderFloat( "Laderadius", &app.cityRadius, 40.0f, 250.0f, "%.0f m" );
+		if ( ImGui::SliderFloat( "Laderadius", &app.cityRadius, 40.0f, 250.0f, "%.0f m" ) )
+		{
+			nbStream_SetLoadRadius( app.city.stream, app.cityRadius );
+		}
 		if ( ImGui::IsItemHovered() )
 		{
 			ImGui::SetTooltip(
@@ -1832,7 +1516,7 @@ static void DrawUi( App& app )
 		const WorldView& view = app.view;
 		ImGui::Text( "Häuser geladen %d von %d, beschädigt %d", view.loadedHouses, CitySide * CitySide, view.damagedHouses );
 		ImGui::Text( "Streaming %.2f ms, geladen %d, entladen %d", view.streamTime, view.loads, view.unloads );
-		ImGui::Text( "Gespeichert %d, zurückgeholt %d, %.0f MB im Speicher der Demo", view.saves, view.restores,
+		ImGui::Text( "Gespeichert %d, zurückgeholt %d, %.0f MB im Speicher", view.saves, view.restores,
 					 (double)view.savedBytes / 1048576.0 );
 		ImGui::Text( "Speicher %.0f MB (Nebenan und Box3D)", (double)( view.stats.byteCount + view.counters.byteCount ) / 1048576.0 );
 	}

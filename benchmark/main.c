@@ -539,113 +539,23 @@ static void BenchmarkTown( int workerCount, float fragmentScale, int side, int g
 	DestroyScene( &scene );
 }
 
-// A house of the streamed city: its id while it is loaded, the last frame a moving body came near it, and when to ask
-// again whether it can go
-typedef struct CityHouse
-{
-	nbDestructibleId id;
-	int activeFrame;
-	int nextCheck;
-	bool urgent;
-
-	// The workers prepare it in the background
-	bool loading;
-
-	// Damaged and saved to the store, see SaveCityHouse, with how far its parts reach from its center along the ground
-	bool saved;
-	float reach;
-	long saveOffset;
-	size_t saveSize;
-} CityHouse;
-
-typedef struct CityCandidate
-{
-	float distance;
-	int index;
-} CityCandidate;
-
-static int CompareCandidates( const void* a, const void* b )
-{
-	const CityCandidate* x = (const CityCandidate*)a;
-	const CityCandidate* y = (const CityCandidate*)b;
-	if ( x->distance != y->distance )
-	{
-		return x->distance < y->distance ? -1 : 1;
-	}
-	return ( x->index > y->index ) - ( x->index < y->index );
-}
-
-// Houses created together, with the definitions that must live until they are built in
-typedef struct CityBatch
-{
-	House* houses;
-	nbDestructibleDef* defs;
-	const nbPieceDef** lists;
-	int* counts;
-	int* indices;
-	nbDestructibleId* ids;
-	int capacity;
-	int count;
-	nbCreationId creation;
-} CityBatch;
-
-static void CreateCityBatch( CityBatch* batch, int capacity )
-{
-	*batch = (CityBatch){ 0 };
-	batch->houses = malloc( sizeof( House ) * (size_t)capacity );
-	batch->defs = malloc( sizeof( nbDestructibleDef ) * (size_t)capacity );
-	batch->lists = malloc( sizeof( nbPieceDef* ) * (size_t)capacity );
-	batch->counts = malloc( sizeof( int ) * (size_t)capacity );
-	batch->indices = malloc( sizeof( int ) * (size_t)capacity );
-	batch->ids = malloc( sizeof( nbDestructibleId ) * (size_t)capacity );
-	batch->capacity = capacity;
-}
-
-static void DestroyCityBatch( CityBatch* batch )
-{
-	free( batch->houses );
-	free( batch->defs );
-	free( batch->lists );
-	free( batch->counts );
-	free( batch->indices );
-	free( batch->ids );
-}
-
-// Frames from the start of a creation in the background to the frame that builds it in. The workers have that long to
-// prepare it, in a game a frame of 16 ms is plenty, the benchmark runs its frames back to back.
-#define CityLoadDelay 4
-
-// A city of houses on a grid of 14 x 12 m, streamed around a camera: the houses near the camera and near anything that
-// moves are loaded, the others only exist as a seed and a position
+// The streamed city of BenchmarkCity. The stream of the library decides which houses are loaded, the city says what
+// stands where and keeps the damaged houses that go with their rubble in a file.
 typedef struct City
 {
 	Scene scene;
 	nbMaterial concrete;
 	int side;
-	CityHouse* houses;
-	int* loaded;
-	int loadedCount;
-	int* urgent;
-	int urgentCount;
-	CityCandidate* candidates;
-	CityBatch first;
-	CityBatch batches[CityLoadDelay];
-	int frame;
-	int loads;
-	int urgentLoads;
-	int unloads;
-	int maxLoaded;
+	nbStreamId stream;
 
-	// Damaged houses at rest go to a file and come back from it, see SaveCityHouse. The farthest a saved house reaches.
+	// The houses the stream builds right now, by site
+	House** building;
+
+	// Where the file keeps every saved house
 	FILE* store;
 	long storeBytes;
-	uint8_t* buffer;
-	size_t bufferSize;
-	float maxReach;
-	int saves;
-	int restores;
-	double saveTime;
-	double restoreTime;
+	long* saveOffsets;
+	size_t* saveSizes;
 } City;
 
 static b3Vec3 CityHousePosition( const City* city, int index )
@@ -655,288 +565,54 @@ static b3Vec3 CityHousePosition( const City* city, int index )
 	return (b3Vec3){ 14.0f * ( (float)i - half ), 0.0f, 12.0f * ( (float)j - half ) };
 }
 
-static float CityDistance( const City* city, int index, b3Vec3 point )
+static void PrepareCityHouse( int site, nbSiteDef* siteDef, void* context )
 {
-	b3Vec3 p = CityHousePosition( city, index );
-	return sqrtf( ( p.x - point.x ) * ( p.x - point.x ) + ( p.z - point.z ) * ( p.z - point.z ) );
+	City* city = context;
+	House* house = malloc( sizeof( House ) );
+	BuildHouse( house, CityHousePosition( city, site ), (uint32_t)( 100 + site ), &city->concrete );
+	city->building[site] = house;
+	siteDef->def = house->def;
+	siteDef->pieces = house->pieces;
+	siteDef->pieceCount = house->pieceCount;
 }
 
-// The grid cells whose houses may lie within the radius of a point
-static void CityRange( const City* city, b3Vec3 point, float radius, int* i0, int* i1, int* j0, int* j1 )
+static void ReleaseCityHouse( int site, void* context )
 {
-	float half = 0.5f * (float)( city->side - 1 );
-	*i0 = b3MaxInt( 0, (int)floorf( ( point.x - radius ) / 14.0f + half ) );
-	*i1 = b3MinInt( city->side - 1, (int)ceilf( ( point.x + radius ) / 14.0f + half ) );
-	*j0 = b3MaxInt( 0, (int)floorf( ( point.z - radius ) / 12.0f + half ) );
-	*j1 = b3MinInt( city->side - 1, (int)ceilf( ( point.z + radius ) / 12.0f + half ) );
+	City* city = context;
+	free( city->building[site] );
+	city->building[site] = NULL;
 }
 
-// Every body that moved in the last step loads the houses within the load radius that are not loaded yet, before it can
-// reach them, and keeps the ones within the hold radius from going. A house reaches 5.5 m from its center and 6.5 m up, a
-// saved one as far as its rubble lay.
-static void MarkCityActivity( City* city, float loadRadius, float holdRadius, int frame )
+// A damaged house goes to the end of the file
+static bool StoreCityHouse( int site, const void* data, size_t size, void* context )
 {
-	b3BodyEvents events = b3World_GetBodyEvents( city->scene.physicsWorld );
-	for ( int e = 0; e < events.moveCount; ++e )
-	{
-		// The chunks of a body lie in the frame of their destructible, its origin can be meters away
-		b3Vec3 point = b3ToVec3( b3Body_GetWorldCenter( events.moveEvents[e].bodyId ) );
-		if ( point.y > 6.5f + holdRadius )
-		{
-			continue;
-		}
-
-		int i0, i1, j0, j1;
-		CityRange( city, point, holdRadius + city->maxReach, &i0, &i1, &j0, &j1 );
-		for ( int j = j0; j <= j1; ++j )
-		{
-			for ( int i = i0; i <= i1; ++i )
-			{
-				int index = j * city->side + i;
-				CityHouse* house = city->houses + index;
-				float distance = CityDistance( city, index, point );
-				float reach = house->saved ? house->reach : 5.5f;
-				if ( distance > holdRadius + reach )
-				{
-					continue;
-				}
-
-				house->activeFrame = frame;
-				if ( distance <= loadRadius + reach && NB_IS_NULL( house->id ) && house->urgent == false &&
-					 house->loading == false )
-				{
-					house->urgent = true;
-					city->urgent[city->urgentCount++] = index;
-				}
-			}
-		}
-	}
-}
-
-// The scratch buffer of the store, at least so large
-static uint8_t* CityBuffer( City* city, size_t size )
-{
-	if ( city->bufferSize < size )
-	{
-		city->bufferSize = size + size / 2;
-		city->buffer = realloc( city->buffer, city->bufferSize );
-	}
-	return city->buffer;
-}
-
-// How far the parts of a house reach from its center along the ground, its rubble included
-static float CityReach( const City* city, int index, nbDestructibleId id )
-{
-	int count = nbDestructible_GetChunkCount( id );
-	nbChunkId* chunks = malloc( sizeof( nbChunkId ) * (size_t)( count + 1 ) );
-	count = nbDestructible_GetChunks( id, chunks, count );
-	b3Vec3 center = CityHousePosition( city, index );
-	float reach = 5.5f;
-	for ( int i = 0; i < count; ++i )
-	{
-		b3AABB box = b3Shape_GetAABB( nbChunk_GetShape( chunks[i] ) );
-		float dx = b3MaxFloat( fabsf( box.lowerBound.x - center.x ), fabsf( box.upperBound.x - center.x ) );
-		float dz = b3MaxFloat( fabsf( box.lowerBound.z - center.z ), fabsf( box.upperBound.z - center.z ) );
-		reach = b3MaxFloat( reach, sqrtf( dx * dx + dz * dz ) );
-	}
-	free( chunks );
-	return reach;
-}
-
-// Save a damaged house at rest to the end of the store and take it out of the world
-static void SaveCityHouse( City* city, int index )
-{
-	uint64_t ticks = b3GetTicks();
-	CityHouse* house = city->houses + index;
-
-	// Into the buffer of the store if it is large enough, the call tells how large it has to be
-	size_t size = nbSaveDestructibles( &house->id, 1, city->buffer, city->bufferSize );
-	if ( size > city->bufferSize )
-	{
-		CityBuffer( city, size );
-		size = nbSaveDestructibles( &house->id, 1, city->buffer, city->bufferSize );
-	}
-	house->reach = CityReach( city, index, house->id );
-	house->saveOffset = city->storeBytes;
-	house->saveSize = size;
+	City* city = context;
 	fseek( city->store, city->storeBytes, SEEK_SET );
-	fwrite( city->buffer, 1, size, city->store );
+	if ( fwrite( data, 1, size, city->store ) != size )
+	{
+		return false;
+	}
+	city->saveOffsets[site] = city->storeBytes;
+	city->saveSizes[site] = size;
 	city->storeBytes += (long)size;
-	city->maxReach = b3MaxFloat( city->maxReach, house->reach );
-	nbDestroyDestructible( house->id );
-	house->id = nb_nullDestructibleId;
-	house->saved = true;
-	city->saves += 1;
-	city->saveTime += b3GetMilliseconds( ticks );
+	return true;
 }
 
-// Bring a saved house back from the store
-static void RestoreCityHouse( City* city, int index )
+static bool FetchCityHouse( int site, void* buffer, size_t size, void* context )
 {
-	uint64_t ticks = b3GetTicks();
-	CityHouse* house = city->houses + index;
-	uint8_t* buffer = CityBuffer( city, house->saveSize );
-	fseek( city->store, house->saveOffset, SEEK_SET );
-	size_t read = fread( buffer, 1, house->saveSize, city->store );
-	if ( read != house->saveSize || nbLoadDestructibles( city->scene.world, buffer, house->saveSize, &house->id ) == false )
-	{
-		printf( "  could not bring house %d back\n", index );
-		exit( 1 );
-	}
-	house->saved = false;
-	city->loaded[city->loadedCount++] = index;
-	city->maxLoaded = b3MaxInt( city->maxLoaded, city->loadedCount );
-	city->restores += 1;
-	city->restoreTime += b3GetMilliseconds( ticks );
-}
-
-// Pick the houses that moving bodies came near, then the ones within the radius of the camera, nearest first, at most as
-// many as fit into the batch. A saved house comes back from the store right away, the others go into the batch.
-static void PickCityHouses( City* city, CityBatch* batch, b3Vec3 camera, float radius )
-{
-	// The urgent ones keep their mark until the camera's are collected, so none comes twice
-	int count = 0;
-	for ( int k = 0; k < city->urgentCount; ++k )
-	{
-		city->candidates[count++] = (CityCandidate){ -1.0f, city->urgent[k] };
-	}
-
-	int i0, i1, j0, j1;
-	CityRange( city, camera, radius, &i0, &i1, &j0, &j1 );
-	for ( int j = j0; j <= j1; ++j )
-	{
-		for ( int i = i0; i <= i1; ++i )
-		{
-			int index = j * city->side + i;
-			const CityHouse* house = city->houses + index;
-			float distance = CityDistance( city, index, camera );
-			if ( distance <= radius && NB_IS_NULL( house->id ) && house->urgent == false && house->loading == false )
-			{
-				city->candidates[count++] = (CityCandidate){ distance, index };
-			}
-		}
-	}
-
-	for ( int k = 0; k < city->urgentCount; ++k )
-	{
-		city->houses[city->urgent[k]].urgent = false;
-	}
-	city->urgentCount = 0;
-
-	// The urgent ones that do not fit come back with the next step that moves something near them
-	qsort( city->candidates, (size_t)count, sizeof( CityCandidate ), CompareCandidates );
-	batch->count = 0;
-	for ( int k = 0; k < count && k < batch->capacity; ++k )
-	{
-		int index = city->candidates[k].index;
-		city->urgentLoads += city->candidates[k].distance < 0.0f ? 1 : 0;
-		if ( city->houses[index].saved )
-		{
-			RestoreCityHouse( city, index );
-			continue;
-		}
-
-		int slot = batch->count++;
-		BuildHouse( batch->houses + slot, CityHousePosition( city, index ), (uint32_t)( 100 + index ), &city->concrete );
-		batch->defs[slot] = batch->houses[slot].def;
-		batch->lists[slot] = batch->houses[slot].pieces;
-		batch->counts[slot] = batch->houses[slot].pieceCount;
-		batch->indices[slot] = index;
-		city->houses[index].loading = true;
-	}
-}
-
-// The houses of a batch got their ids
-static void AddCityHouses( City* city, CityBatch* batch )
-{
-	for ( int k = 0; k < batch->count; ++k )
-	{
-		CityHouse* house = city->houses + batch->indices[k];
-		house->id = batch->ids[k];
-		house->loading = false;
-		city->loaded[city->loadedCount++] = batch->indices[k];
-	}
-	city->loads += batch->count;
-	city->maxLoaded = b3MaxInt( city->maxLoaded, city->loadedCount );
-	batch->count = 0;
-}
-
-// Build in the houses the workers started to prepare CityLoadDelay frames ago
-static void FinishLoadingCity( City* city )
-{
-	CityBatch* batch = city->batches + city->frame % CityLoadDelay;
-	if ( batch->count > 0 )
-	{
-		nbFinishCreating( batch->creation, batch->ids );
-		AddCityHouses( city, batch );
-	}
-}
-
-// Start preparing the next houses in the background, after the physics step, so the workers do not take the cores from
-// the threads of Box3D while it steps
-static void StartLoadingCity( City* city, b3Vec3 camera, float radius )
-{
-	CityBatch* batch = city->batches + city->frame % CityLoadDelay;
-	city->frame += 1;
-	PickCityHouses( city, batch, camera, radius );
-	batch->creation = nbStartCreating( city->scene.world, batch->defs, batch->lists, batch->counts, batch->count );
-}
-
-// Take the houses beyond the radius of the camera out that no moving body came near for five seconds and that can go, at
-// most so many, and of those the damaged ones at most saveBudget, which go to the store. A house that cannot go is asked
-// again half a second later.
-static void UnloadCity( City* city, b3Vec3 camera, float radius, int budget, int saveBudget, int frame )
-{
-	int count = 0;
-	int saveCount = 0;
-	for ( int k = 0; k < city->loadedCount && count < budget; )
-	{
-		int index = city->loaded[k];
-		CityHouse* house = city->houses + index;
-		if ( frame < house->nextCheck || frame < house->activeFrame + 300 || CityDistance( city, index, camera ) <= radius )
-		{
-			k += 1;
-			continue;
-		}
-
-		bool intact = nbDestructible_IsIntact( house->id );
-		if ( intact == false && saveCount == saveBudget )
-		{
-			k += 1;
-			continue;
-		}
-
-		if ( intact ? nbDestructible_CanUnload( house->id, 2.0f ) == false
-					: nbCanSaveDestructibles( &house->id, 1, 2.0f ) == false )
-		{
-			house->nextCheck = frame + 30;
-			k += 1;
-			continue;
-		}
-
-		if ( intact )
-		{
-			nbDestroyDestructible( house->id );
-			house->id = nb_nullDestructibleId;
-			city->unloads += 1;
-		}
-		else
-		{
-			SaveCityHouse( city, index );
-			saveCount += 1;
-		}
-		city->loaded[k] = city->loaded[--city->loadedCount];
-		count += 1;
-	}
+	City* city = context;
+	fseek( city->store, city->saveOffsets[site], SEEK_SET );
+	return size == city->saveSizes[site] && fread( buffer, 1, size, city->store ) == size;
 }
 
 // A city of 256 x 256 houses, far too large to hold at once, streamed around a camera that flies 900 m through it at
-// 30 m/s and 300 m back. The houses within 120 m of the camera are loaded, nearest first and at most two per frame, and
-// so are the houses within 10 m of any body that moves. The workers prepare them in the background, and CityLoadDelay
-// frames later they are built in. The ones beyond 140 m go as soon as no body moved within 20 m of them for five seconds:
-// an intact house once nbDestructible_CanUnload lets it, a damaged one once nbCanSaveDestructibles lets it, saved with its
-// rubble to a file, at most one per frame, and brought back from there when it is needed again. A grenade falls every
-// fifth frame on a house within 60 m of the camera.
+// 30 m/s and 300 m back, see nbCreateStream. The houses within 120 m of the camera are loaded, nearest first and at most
+// two per frame, and so are the houses within 10 m of any body that moves. The workers prepare them in the background,
+// and four frames later they are built in: the benchmark runs its frames back to back, a game of 16 ms per frame needs
+// one. The ones beyond 140 m go as soon as no body moved within 20 m of them for five seconds: an intact house once
+// nbDestructible_CanUnload lets it, a damaged one once nbCanSaveDestructibles lets it, saved with its rubble to a file, at
+// most one per frame, and brought back from there when it is needed again. A grenade falls every fifth frame on a house
+// within 60 m of the camera.
 static void BenchmarkCity( int workerCount )
 {
 	enum
@@ -944,12 +620,8 @@ static void BenchmarkCity( int workerCount )
 		side = 256,
 		outFrames = 1800,
 		frameCount = 2400,
-		loadBudget = 2,
-		unloadBudget = 4,
-		saveBudget = 1,
 	};
-	const float loadRadius = 120.0f, unloadRadius = 140.0f, fireRadius = 60.0f, speed = 30.0f;
-	const float activeLoadRadius = 10.0f, activeHoldRadius = 20.0f;
+	const float fireRadius = 60.0f, speed = 30.0f;
 
 	City city = { 0 };
 	city.side = side;
@@ -972,37 +644,38 @@ static void BenchmarkCity( int workerCount )
 	city.concrete.strength = 1.1e6f;
 	city.concrete.fragmentSize = 0.13f;
 	city.store = tmpfile();
-	city.maxReach = 5.5f;
 	int houseCount = side * side;
-	city.houses = calloc( (size_t)houseCount, sizeof( CityHouse ) );
-	city.loaded = malloc( sizeof( int ) * (size_t)houseCount );
-	city.urgent = malloc( sizeof( int ) * (size_t)houseCount );
-	city.candidates = malloc( sizeof( CityCandidate ) * (size_t)houseCount );
+	city.building = calloc( (size_t)houseCount, sizeof( House* ) );
+	city.saveOffsets = calloc( (size_t)houseCount, sizeof( long ) );
+	city.saveSizes = calloc( (size_t)houseCount, sizeof( size_t ) );
+
+	nbStreamDef streamDef = nbDefaultStreamDef();
+	streamDef.loadRadius = 120.0f;
+	streamDef.unloadMargin = 20.0f;
+	streamDef.loadDelay = 4;
+	streamDef.prepareFcn = PrepareCityHouse;
+	streamDef.releaseFcn = ReleaseCityHouse;
+	streamDef.storeFcn = StoreCityHouse;
+	streamDef.fetchFcn = FetchCityHouse;
+	streamDef.userContext = &city;
+	city.stream = nbCreateStream( city.scene.world, &streamDef );
 	for ( int h = 0; h < houseCount; ++h )
 	{
-		city.houses[h].activeFrame = -1000;
-	}
-
-	// Room for everything around the start at once, then for the houses of one frame
-	int startRoom = ( (int)( 2.0f * loadRadius / 12.0f ) + 3 ) * ( (int)( 2.0f * loadRadius / 12.0f ) + 3 );
-	CreateCityBatch( &city.first, startRoom );
-	for ( int k = 0; k < CityLoadDelay; ++k )
-	{
-		CreateCityBatch( city.batches + k, loadBudget );
+		// Two stories of 3.25 m on 9 x 6.5 m
+		b3Vec3 p = CityHousePosition( &city, h );
+		nbStream_AddSite( city.stream, (b3AABB){ { p.x - 4.5f, 0.0f, p.z - 3.25f }, { p.x + 4.5f, 6.5f, p.z + 3.25f } } );
 	}
 
 	// Everything around the start at once, then in the background as the camera flies
 	b3Vec3 camera = { -450.0f, 0.0f, 6.0f };
 	int64_t baseBytes = nbGetByteCount() + b3GetByteCount();
 	uint64_t ticks = b3GetTicks();
-	PickCityHouses( &city, &city.first, camera, loadRadius );
-	nbCreateDestructibles( city.scene.world, city.first.defs, city.first.lists, city.first.counts, city.first.count,
-						   city.first.ids );
-	AddCityHouses( &city, &city.first );
+	nbStream_LoadAround( city.stream, &camera, 1 );
 	float startTime = b3GetMilliseconds( ticks );
-	int startCount = city.loadedCount;
+	int startCount = nbStream_GetStats( city.stream ).loadedCount;
 	int64_t houseBytes = ( nbGetByteCount() + b3GetByteCount() - baseBytes ) / b3MaxInt( startCount, 1 );
 	int64_t maxBytes = 0;
+	int maxLoaded = startCount;
 
 	static float streamTimes[frameCount], impactTimes[frameCount], stepTimes[frameCount], updateTimes[frameCount],
 		frameTimes[frameCount];
@@ -1015,10 +688,6 @@ static void BenchmarkCity( int workerCount )
 	for ( int frame = 0; frame < frameCount; ++frame )
 	{
 		camera.x += frame < outFrames ? speed / 60.0f : -speed / 60.0f;
-		ticks = b3GetTicks();
-		UnloadCity( &city, camera, unloadRadius, unloadBudget, saveBudget, frame );
-		FinishLoadingCity( &city );
-		float streamTime = b3GetMilliseconds( ticks );
 
 		float impactTime = 0.0f;
 		if ( frame % 5 == 0 )
@@ -1034,7 +703,7 @@ static void BenchmarkCity( int workerCount )
 			float height = nbRandomRange( &rng, 0.0f, 1.0f ) < 0.5f ? 1.2f : 4.4f;
 			if ( 0 <= i && i < side && 0 <= j && j < side )
 			{
-				missed += NB_IS_NULL( city.houses[j * side + i].id ) ? 1 : 0;
+				missed += NB_IS_NULL( nbStream_GetDestructible( city.stream, j * side + i ) ) ? 1 : 0;
 				b3Vec3 local = wall == 0 ? (b3Vec3){ 4.2f * along, height, 3.4f }
 							 : wall == 1 ? (b3Vec3){ 4.2f * along, height, -3.4f }
 							 : wall == 2 ? (b3Vec3){ 4.7f, height, 3.0f * along }
@@ -1055,14 +724,17 @@ static void BenchmarkCity( int workerCount )
 		b3World_Step( city.scene.physicsWorld, 1.0f / 60.0f, 4 );
 		float stepTime = b3GetMilliseconds( ticks );
 		ticks = b3GetTicks();
-		MarkCityActivity( &city, activeLoadRadius, activeHoldRadius, frame );
-		streamTime += b3GetMilliseconds( ticks );
-		ticks = b3GetTicks();
 		nbWorld_Update( city.scene.world, 1.0f / 60.0f );
 		float updateTime = b3GetMilliseconds( ticks );
 		ticks = b3GetTicks();
-		StartLoadingCity( &city, camera, loadRadius );
-		streamTime += b3GetMilliseconds( ticks );
+		nbStream_Update( city.stream, &camera, 1 );
+		float streamTime = b3GetMilliseconds( ticks );
+
+		// The update marks the houses near the bodies that moved for the stream, that counts as streaming
+		nbStreamStats stats = nbStream_GetStats( city.stream );
+		streamTime += stats.markTime;
+		updateTime -= stats.markTime;
+		maxLoaded = b3MaxInt( maxLoaded, stats.loadedCount );
 
 		streamTimes[frame] = streamTime;
 		impactTimes[frame] = impactTime;
@@ -1073,26 +745,16 @@ static void BenchmarkCity( int workerCount )
 		maxBytes = bytes > maxBytes ? bytes : maxBytes;
 	}
 
-	int damaged = 0, saved = 0;
-	for ( int k = 0; k < city.loadedCount; ++k )
-	{
-		damaged += nbDestructible_IsIntact( city.houses[city.loaded[k]].id ) ? 0 : 1;
-	}
-	for ( int h = 0; h < houseCount; ++h )
-	{
-		saved += city.houses[h].saved ? 1 : 0;
-	}
-
+	nbStreamStats stream = nbStream_GetStats( city.stream );
 	printf( "  %d houses on %.1f x %.1f km, %d of them loaded at first in %.0f ms, %.2f MB each, all would take %.1f GB\n",
 			houseCount, 14.0f * (float)side / 1000.0f, 12.0f * (float)side / 1000.0f, startCount, startTime,
 			(double)houseBytes / 1048576.0, (double)houseBytes * (double)houseCount / 1073741824.0 );
 	printf( "  then %d houses loaded, %d of them for moving bodies, and %d unloaded in %d frames, at most %d at once, %d "
 			"grenades on houses not loaded\n",
-			city.loads - startCount, city.urgentLoads, city.unloads, frameCount, city.maxLoaded, missed );
-	printf( "  %d damaged houses saved, %d brought back, %d in the store and %d loaded at the end, a save %.2f ms and %.0f KB, "
-			"bringing one back %.2f ms\n",
-			city.saves, city.restores, saved, damaged, city.saveTime / b3MaxInt( city.saves, 1 ),
-			(double)city.storeBytes / 1024.0 / b3MaxInt( city.saves, 1 ), city.restoreTime / b3MaxInt( city.restores, 1 ) );
+			stream.loads - startCount, stream.urgentLoads, stream.unloads, frameCount, maxLoaded, missed );
+	printf( "  %d damaged houses saved, %d brought back, %d in the store and %d loaded at the end, %.0f KB each\n", stream.saves,
+			stream.restores, stream.savedCount, stream.damagedCount,
+			(double)city.storeBytes / 1024.0 / b3MaxInt( stream.saves, 1 ) );
 
 	float* series[5] = { frameTimes, streamTimes, stepTimes, updateTimes, impactTimes };
 	const char* names[5] = { "frame", "streaming", "physics step", "update", "impacts" };
@@ -1112,18 +774,11 @@ static void BenchmarkCity( int workerCount )
 	printf( "  memory at most %.0f MB, at the end %d chunks, %d rubble, %.0f MB written to the store\n",
 			(double)maxBytes / 1048576.0, stats.chunkCount, stats.rubbleCount, (double)city.storeBytes / 1048576.0 );
 
-	// The houses still in the background go with the world
+	// The houses still in the background go with the world, and the stream gives back what it got for them
 	DestroyScene( &city.scene );
-	DestroyCityBatch( &city.first );
-	for ( int k = 0; k < CityLoadDelay; ++k )
-	{
-		DestroyCityBatch( city.batches + k );
-	}
-	free( city.houses );
-	free( city.loaded );
-	free( city.urgent );
-	free( city.candidates );
-	free( city.buffer );
+	free( city.building );
+	free( city.saveOffsets );
+	free( city.saveSizes );
 	fclose( city.store );
 }
 
