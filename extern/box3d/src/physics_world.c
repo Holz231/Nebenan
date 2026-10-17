@@ -1157,7 +1157,9 @@ static void b3Collide( b3StepContext* context )
 	const b3Shape* shapes = world->shapes.data;
 	uint16_t worldId = world->worldId;
 
-	// Process contact state changes. Iterate over set bits
+	// Process contact state changes. Iterate over set bits. Added for Nebenan: on the calling thread alone, see
+	// b3Profile::contactStates
+	uint64_t stateTicks = b3GetTicks();
 	for ( uint32_t k = 0; k < bitSet->blockCount; ++k )
 	{
 		uint64_t bits = bitSet->bits[k];
@@ -1249,6 +1251,7 @@ static void b3Collide( b3StepContext* context )
 			bits = bits & ( bits - 1 );
 		}
 	}
+	world->profile.contactStates = b3GetMilliseconds( stateTicks );
 
 	b3ValidateSolverSets( world );
 	b3ValidateContacts( world );
@@ -2523,6 +2526,9 @@ b3Counters b3World_GetCounters( b3WorldId worldId )
 
 	s.satCallCount = world->satCallCount;
 	s.satCacheHitCount = world->satCacheHitCount;
+	// Added for Nebenan: see b3Counters::islandWork
+	s.islandWork = world->islandWork;
+	s.largestIslandWork = world->largestIslandWork;
 	memcpy( s.manifoldCounts, world->manifoldCounts, B3_CONTACT_MANIFOLD_COUNT_BUCKETS * sizeof( int ) );
 	s.stackUsed = world->stack.maxAllocation;
 	s.byteCount = b3GetByteCount();

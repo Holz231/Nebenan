@@ -2,6 +2,8 @@
 
 // Headless benchmark for the fracture kernel and the full impact pipeline.
 // Usage: nebenan_benchmark [workerCount], the worker count applies to the fracture and to Box3D
+//        nebenan_benchmark scaling [rounds], the towns under fire with 1, 2, 4 and so on workers, see
+//        nbGetScalingWorkerCounts, and the scaling report of the library for each town
 
 #include "fracture.h"
 #include "hull_builder.h"
@@ -11,6 +13,7 @@
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 typedef struct Scene
 {
@@ -405,8 +408,10 @@ static int CompareFloats( const void* a, const void* b )
 }
 
 // A town of 16 houses wrecked by a grenade every five frames, twelve per second, like holding the fire button
-// A block of side x side houses under fire: every interval steps as many grenades, each on a wall of a random house
-static void BenchmarkTown( int workerCount, float fragmentScale, int side, int grenadesPerVolley, int interval )
+// A block of side x side houses under fire: every interval steps as many grenades, each on a wall of a random house.
+// The profile of the library over the frames under fire goes to profile if it is not null.
+static void BenchmarkTown( int workerCount, float fragmentScale, int side, int grenadesPerVolley, int interval,
+						   nbProfile* profile )
 {
 	Scene scene = CreateScene( workerCount );
 	nbWorld_SetFragmentScale( scene.world, fragmentScale );
@@ -459,6 +464,7 @@ static void BenchmarkTown( int workerCount, float fragmentScale, int side, int g
 	impact.explosionImpulse = 40.0f * impact.ejectSpeed;
 	int maxBodies = 0, maxAwake = 0, maxContacts = 0, grenades = 0;
 	float physicsProfile[8] = { 0 };
+	nbWorld_ResetProfile( scene.world );
 
 	for ( int frame = 0; frame < frameCount; ++frame )
 	{
@@ -529,8 +535,62 @@ static void BenchmarkTown( int workerCount, float fragmentScale, int side, int g
 	nbStats stats = nbWorld_GetStats( scene.world );
 	printf( "  %d grenades, %d storeys collapsed, chunks %d, rubble %d, bodies at most %d (awake %d), contacts at most %d\n",
 			grenades, stats.collapsedStoreyCount, stats.chunkCount, stats.rubbleCount, maxBodies, maxAwake, maxContacts );
+	if ( profile != NULL )
+	{
+		*profile = nbWorld_GetProfile( scene.world );
+	}
 	free( houses );
 	DestroyScene( &scene );
+}
+
+// The towns of the benchmark with every worker count of nbGetScalingWorkerCounts, rounds times in turn, and the scaling
+// report of the library for each
+static void BenchmarkScaling( int rounds )
+{
+	int counts[8];
+	int countCount = nbGetScalingWorkerCounts( counts, 8 );
+	printf( "Scaling of the towns under fire over" );
+	for ( int i = 0; i < countCount; ++i )
+	{
+		printf( "%s %d", i == 0 ? "" : ( i == countCount - 1 ? " and" : "," ), counts[i] );
+	}
+	printf( " workers, %d round%s\n", rounds, rounds == 1 ? "" : "s" );
+
+	typedef struct Town
+	{
+		const char* name;
+		float fragmentScale;
+		int side, grenadesPerVolley, interval;
+	} Town;
+	const Town towns[3] = {
+		{ "16 houses, fragment scale 1, a grenade every five steps", 1.0f, 4, 1, 5 },
+		{ "16 houses, fragment scale 2, a grenade every five steps", 2.0f, 4, 1, 5 },
+		{ "64 houses, fragment scale 4, four grenades every step", 4.0f, 8, 4, 1 },
+	};
+
+	int profileCount = rounds * countCount;
+	nbProfile* profiles = malloc( sizeof( nbProfile ) * (size_t)profileCount );
+	for ( int t = 0; t < 3; ++t )
+	{
+		const Town* town = towns + t;
+		printf( "\n%s\n", town->name );
+		for ( int r = 0; r < rounds; ++r )
+		{
+			for ( int i = 0; i < countCount; ++i )
+			{
+				printf( " %d workers\n", counts[i] );
+				BenchmarkTown( counts[i], town->fragmentScale, town->side, town->grenadesPerVolley, town->interval,
+							   profiles + r * countCount + i );
+			}
+		}
+
+		int length = nbFormatScalingReport( profiles, profileCount, NULL, 0 );
+		char* report = malloc( (size_t)length + 1 );
+		nbFormatScalingReport( profiles, profileCount, report, length + 1 );
+		printf( "\n%s", report );
+		free( report );
+	}
+	free( profiles );
 }
 
 // The streamed city of BenchmarkCity. The stream of the library decides which houses are loaded, the city says what
@@ -772,6 +832,13 @@ static void BenchmarkCity( int workerCount )
 
 int main( int argc, char** argv )
 {
+	if ( argc > 1 && strcmp( argv[1], "scaling" ) == 0 )
+	{
+		int rounds = argc > 2 ? atoi( argv[2] ) : 1;
+		BenchmarkScaling( rounds < 1 ? 1 : rounds );
+		return 0;
+	}
+
 	// Zero takes as many as a game would on this machine, see nbGetRecommendedWorkerCount
 	int workerCount = argc > 1 ? atoi( argv[1] ) : 1;
 	workerCount = workerCount == 0 ? nbGetRecommendedWorkerCount( false ) : ( workerCount < 1 ? 1 : workerCount );
@@ -791,12 +858,12 @@ int main( int argc, char** argv )
 
 	// Larger fragments are the main lever of the cost of mass destruction
 	printf( "\nTown under fire (every step: grenades, Box3D step, destruction update)\n" );
-	BenchmarkTown( workerCount, 1.0f, 4, 1, 5 );
-	BenchmarkTown( workerCount, 2.0f, 4, 1, 5 );
+	BenchmarkTown( workerCount, 1.0f, 4, 1, 5, NULL );
+	BenchmarkTown( workerCount, 2.0f, 4, 1, 5, NULL );
 
 	// Fragments four times as large keep the cost of a grenade down, so a block four times the size takes four every step
 	printf( "\nBlock of 64 houses under a barrage, fragment scale 4.0 (four grenades every step, Box3D step, update)\n" );
-	BenchmarkTown( workerCount, 4.0f, 8, 4, 1 );
+	BenchmarkTown( workerCount, 4.0f, 8, 4, 1, NULL );
 
 	printf( "\nCity streamed around a camera flying through it, fragment scale 4.0 (streaming, grenades, Box3D step, update)\n" );
 	BenchmarkCity( workerCount );

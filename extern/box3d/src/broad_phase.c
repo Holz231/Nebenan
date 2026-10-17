@@ -801,6 +801,9 @@ void b3UpdateBroadPhasePairs( b3World* world )
 	// Update stale trees.
 	b3EnqueueTreeUpdate( world );
 
+	// Added for Nebenan: the new contacts take the calling thread alone, see b3Profile::createContacts
+	uint64_t createTicks = b3GetTicks();
+
 	// Pairs arrive in deterministic order but scrambled relative to body and shape order.
 	// Sorting them here improves solver performance and makes contact order independent of
 	// tree structure.
@@ -865,6 +868,7 @@ void b3UpdateBroadPhasePairs( b3World* world )
 		b3CreateContact( world, shapeA, shapeB, childIndex );
 	}
 
+	world->profile.createContacts = b3GetMilliseconds( createTicks );
 	b3StackFree( alloc, pairKeys );
 
 	b3StackFree( alloc, bp->movedSiblings );

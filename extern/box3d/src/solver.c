@@ -1780,6 +1780,23 @@ static int* b3OrderColorContacts( b3World* world, const b3GraphColor* colors, co
 #define B3_MAX_PACKS ( B3_PACKS_PER_WORKER * B3_MAX_WORKERS )
 _Static_assert( B3_MAX_PACKS <= 256, "a pack needs to fit in a byte" );
 
+// Added for Nebenan: the work of the awake islands as b3BuildPacks weighs it, for a step of a world with workers that
+// solves without packs, see b3Counters::islandWork. A world without workers skips it: its islands could be many.
+static void b3MeasureIslandWork( b3World* world, const b3SolverSet* awakeSet )
+{
+	int total = 0;
+	int largest = 0;
+	for ( int i = 0; i < awakeSet->islandSims.count; ++i )
+	{
+		const b3Island* island = b3Array_Get( world->islands, awakeSet->islandSims.data[i].islandId );
+		int weight = 4 * island->contacts.count + island->bodies.count;
+		total += weight;
+		largest = b3MaxInt( largest, weight );
+	}
+	world->islandWork = total;
+	world->largestIslandWork = largest;
+}
+
 // Added for Nebenan: the awake islands in packs of about equal work, the largest pack first, for b3SolvePacks. Writes the
 // pack of every contact of the islands to contactPacks by contact id, and the awake indices of the bodies of every pack to
 // packBodies from packBodyStarts on. Returns the pack count, or zero if one island holds more than half of the work, which
@@ -1790,6 +1807,13 @@ static int b3BuildPacks( b3World* world, const b3SolverSet* awakeSet, int packLi
 	int islandCount = awakeSet->islandSims.count;
 	if ( islandCount < 2 )
 	{
+		// Added for Nebenan: a single island holds all of the work, see b3Counters::islandWork
+		if ( islandCount == 1 )
+		{
+			const b3Island* island = b3Array_Get( world->islands, awakeSet->islandSims.data[0].islandId );
+			world->islandWork = 4 * island->contacts.count + island->bodies.count;
+			world->largestIslandWork = world->islandWork;
+		}
 		return 0;
 	}
 
@@ -1813,6 +1837,10 @@ static int b3BuildPacks( b3World* world, const b3SolverSet* awakeSet, int packLi
 		largest = b3MaxInt( largest, weight );
 		bucketStarts[b3CLZ32( (uint32_t)weight )] += 1;
 	}
+
+	// Added for Nebenan: see b3Counters::islandWork
+	world->islandWork = total;
+	world->largestIslandWork = largest;
 
 	int packCount = 0;
 	if ( 2 * largest <= total )
@@ -2125,6 +2153,10 @@ void b3Solve( b3World* world, b3StepContext* stepContext )
 		}
 
 		int packCount = 0;
+
+		// Added for Nebenan: the work of the islands of this step, from b3BuildPacks or b3MeasureIslandWork
+		world->islandWork = 0;
+		world->largestIslandWork = 0;
 		uint8_t* contactPacks = NULL;
 		int* packBodyStarts = NULL;
 		int* packBodies = NULL;
@@ -2167,6 +2199,10 @@ void b3Solve( b3World* world, b3StepContext* stepContext )
 				packBodyStarts = NULL;
 				contactPacks = NULL;
 			}
+		}
+		else if ( world->workerCount > 1 )
+		{
+			b3MeasureIslandWork( world, awakeSet );
 		}
 
 		// Prepare and store run as one flat parallel-for over the entire wide constraint range,

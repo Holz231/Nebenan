@@ -124,13 +124,23 @@ struct Demolition
 
 // Parallel against serial physics on this PC with one click: the town taken down house by house, see RunDemolition,
 // alternately with and without parallel physics, each with the threads the demo picks for it. Every run takes one step
-// per frame like an automated run, so all do the same work and end in the same world.
+// per frame like an automated run, so all do the same work and end in the same world. The same runs measure how the
+// physics scales with the threads: the town taken down with 1, 2, 4 and so on threads, see nbGetScalingWorkerCounts, all
+// with serial physics, and the profile of the library fitted over them, see nbFormatScalingReport.
 struct Comparison
 {
+	enum Kind
+	{
+		ParallelAgainstSerial,
+		Scaling,
+	};
+
 	// A first, shorter run warms up and does not count. Then come two runs with and two without parallel physics, with
 	// first and last, so a slow drift of the machine falls on both alike. A counted run ends when the debris had time to
-	// settle after the last house came down.
+	// settle after the last house came down. The scaling warms up with the most threads and then counts a run for each
+	// number of threads.
 	static const int RunCount = 5;
+	static const int MaxRuns = 9;
 	static const int WarmupFrames = 300;
 	static const int SettleFrames = 300;
 	static const int MaxRunFrames = 4000;
@@ -139,6 +149,13 @@ struct Comparison
 	{
 		return run == 0 || run == 1 || run == RunCount - 1;
 	}
+
+	Kind kind = ParallelAgainstSerial;
+	int runCount = RunCount;
+
+	// For the scaling: the threads of every run, and the profile of the library over it
+	int runWorkers[MaxRuns] = {};
+	nbProfile profiles[MaxRuns] = {};
 
 	// The button asks for it, and it starts at the end of the frame, so its first run gets all its steps like the others
 	bool requested = false;
@@ -156,15 +173,15 @@ struct Comparison
 
 	// Per run: its threads and frames, the frame times, the CPU time of the simulation, the graphics and the wait for the
 	// physics, the longest simulation and wait in a frame, and where the chunks ended up
-	int threads[RunCount] = {};
-	int frames[RunCount] = {};
-	std::vector<float> frameTimes[RunCount];
-	double simulationTime[RunCount] = {};
-	double graphicsTime[RunCount] = {};
-	double waitTime[RunCount] = {};
-	float longestSimulation[RunCount] = {};
-	float longestWait[RunCount] = {};
-	uint64_t hashes[RunCount] = {};
+	int threads[MaxRuns] = {};
+	int frames[MaxRuns] = {};
+	std::vector<float> frameTimes[MaxRuns];
+	double simulationTime[MaxRuns] = {};
+	double graphicsTime[MaxRuns] = {};
+	double waitTime[MaxRuns] = {};
+	float longestSimulation[MaxRuns] = {};
+	float longestWait[MaxRuns] = {};
+	uint64_t hashes[MaxRuns] = {};
 
 	// What is left of the town at the end, and how the demolition went
 	nbStats stats = {};
@@ -175,15 +192,28 @@ struct Comparison
 	std::string summary;
 };
 
+// Whether a run of the comparison steps the physics on a thread of its own. The scaling runs all without.
+static bool RunIsParallel( const Comparison& comparison, int run )
+{
+	return comparison.kind == Comparison::ParallelAgainstSerial && Comparison::IsParallel( run );
+}
+
 // Which run is on, for the menu and the corner
 static void DescribeComparisonRun( const Comparison& comparison, char* text, size_t size )
 {
+	const char* kind = comparison.kind == Comparison::Scaling ? "Skalierung" : "Vergleich";
 	if ( comparison.run == 0 )
 	{
-		snprintf( text, size, "Aufwärmen" );
+		snprintf( text, size, "%s, Aufwärmen", kind );
 		return;
 	}
-	snprintf( text, size, "Lauf %d von %d, %s", comparison.run, Comparison::RunCount - 1,
+	if ( comparison.kind == Comparison::Scaling )
+	{
+		snprintf( text, size, "%s, Lauf %d von %d, %d Threads", kind, comparison.run, comparison.runCount - 1,
+				  comparison.runWorkers[comparison.run] );
+		return;
+	}
+	snprintf( text, size, "%s, Lauf %d von %d, %s", kind, comparison.run, comparison.runCount - 1,
 			  Comparison::IsParallel( comparison.run ) ? "parallel" : "nacheinander" );
 }
 
@@ -194,8 +224,9 @@ struct Automation
 	bool script = false;
 	int scene = -1;
 
-	// Run the comparison, print it and quit, or take the town down like the comparison does
+	// Run the comparison or the scaling, print it and quit, or take the town down like the comparison does
 	bool compare = false;
+	bool scaling = false;
 	bool demolition = false;
 
 	// Threads for Box3D and Nebenan, zero for one per performance core
@@ -329,6 +360,9 @@ struct App
 	float cityRadius = 100.0f;
 
 	int workerCount = 1;
+
+	// The threads a run of the scaling takes, zero otherwise, see PreferredWorkers
+	int forcedWorkers = 0;
 
 	bool keys[SAPP_MAX_KEYCODES] = {};
 	bool mouseLook = false;
@@ -1020,9 +1054,14 @@ static void DestroyScene( App& app )
 	app.townHouses.clear();
 }
 
-// The threads a game would take on this machine, see nbGetRecommendedWorkerCount, unless the command line sets them
+// The threads a game would take on this machine, see nbGetRecommendedWorkerCount, unless the command line or a run of the
+// scaling sets them
 static int PreferredWorkers( const App& app, bool parallelPhysics )
 {
+	if ( app.forcedWorkers > 0 )
+	{
+		return app.forcedWorkers;
+	}
 	return app.automation.threads > 0 ? app.automation.threads : nbGetRecommendedWorkerCount( parallelPhysics );
 }
 
@@ -1685,9 +1724,9 @@ static void DrawUi( App& app )
 		char label[64];
 		DescribeComparisonRun( comparison, label, sizeof( label ) );
 		int houseCount = TownRows * TownColumns;
-		ImGui::Text( "Vergleich: %s, Haus %d von %d, Bild %d", label, b3MinInt( app.demolition.house + 1, houseCount ), houseCount,
+		ImGui::Text( "%s, Haus %d von %d, Bild %d", label, b3MinInt( app.demolition.house + 1, houseCount ), houseCount,
 					 comparison.frame );
-		if ( ImGui::Button( "Vergleich abbrechen" ) )
+		if ( ImGui::Button( "Messung abbrechen" ) )
 		{
 			StopComparison( app );
 		}
@@ -1697,10 +1736,25 @@ static void DrawUi( App& app )
 		if ( ImGui::Button( "Parallel gegen nacheinander messen" ) )
 		{
 			comparison.requested = true;
+			comparison.kind = Comparison::ParallelAgainstSerial;
 		}
 		if ( ImGui::IsItemHovered() )
 		{
 			ImGui::SetTooltip( "Lädt die Stadt und reißt sie Haus für Haus mit Granaten ab, Wand für Wand von\noben nach unten, bis jedes Haus unten ist, mit Budget 5000 und nur so schnell,\ndass nie mehr als 3000 Trümmer zugleich fliegen: einmal kurz zum Aufwärmen, dann\nparallel, nacheinander, nacheinander und parallel, mit einem Schritt pro Bild und\njeweils mit den passenden Threads. Das Ergebnis kommt in die Zwischenablage,\ndanach lädt die Szene von vorher neu." );
+		}
+		if ( ImGui::Button( "Skalierung messen" ) )
+		{
+			comparison.requested = true;
+			comparison.kind = Comparison::Scaling;
+		}
+		if ( ImGui::IsItemHovered() )
+		{
+			ImGui::SetTooltip(
+				"Reißt die Stadt wie beim Vergleich Haus für Haus ab, einmal kurz zum Aufwärmen,\ndann mit 1, 2, 4 und so weiter "
+				"bis %d Threads, alle mit der Physik nacheinander.\nDie Bibliothek misst dabei jede Stufe von Box3D und Nebenan, "
+				"und rechnet aus,\nwas mit mehr Threads auf einem Thread übrig bleibt. Das dauert ein paar Minuten.\nDas "
+				"Ergebnis kommt in die Zwischenablage, danach lädt die Szene von vorher neu.",
+				nbGetRecommendedWorkerCount( false ) );
 		}
 		if ( comparison.summary.empty() == false )
 		{
@@ -1755,7 +1809,7 @@ static void DrawOverlay( App& app )
 		char label[64];
 		DescribeComparisonRun( comparison, label, sizeof( label ) );
 		char progress[96];
-		snprintf( progress, sizeof( progress ), "Vergleich: %s", label );
+		snprintf( progress, sizeof( progress ), "%s", label );
 		ImVec2 extent = font->CalcTextSizeA( smallSize, FLT_MAX, 0.0f, progress );
 		draw->AddText( font, smallSize, ImVec2( right - pad - extent.x, top + height + pad ), IM_COL32( 250, 210, 90, 255 ), progress );
 	}
@@ -2013,10 +2067,14 @@ static void RunDemolition( App& app, int frame )
 static void BeginComparisonRun( App& app )
 {
 	Comparison& comparison = app.comparison;
-	app.parallelPhysics = Comparison::IsParallel( comparison.run );
+	app.parallelPhysics = RunIsParallel( comparison, comparison.run );
+	app.forcedWorkers = comparison.kind == Comparison::Scaling ? comparison.runWorkers[comparison.run] : 0;
 	app.maxDebrisBodies = DemolitionBudget;
 	app.demolition = Demolition();
 	LoadScene( app, SceneTown );
+
+	// The profile counts the steps of the demolition, not the loading of the town
+	nbWorld_ResetProfile( app.destruction );
 
 	int run = comparison.run;
 	comparison.threads[run] = app.workerCount;
@@ -2034,6 +2092,20 @@ static void StartComparison( App& app )
 	Comparison& comparison = app.comparison;
 	comparison.active = true;
 	comparison.run = 0;
+
+	// The scaling warms up with the most threads, then takes a run for each number of threads, the fewest first
+	comparison.runCount = Comparison::RunCount;
+	if ( comparison.kind == Comparison::Scaling )
+	{
+		int counts[Comparison::MaxRuns - 1];
+		int countCount = nbGetScalingWorkerCounts( counts, Comparison::MaxRuns - 1 );
+		comparison.runCount = countCount + 1;
+		comparison.runWorkers[0] = counts[countCount - 1];
+		for ( int i = 0; i < countCount; ++i )
+		{
+			comparison.runWorkers[i + 1] = counts[i];
+		}
+	}
 	comparison.scene = app.scene;
 	comparison.tool = app.tool;
 	comparison.maxDebrisBodies = app.maxDebrisBodies;
@@ -2056,6 +2128,7 @@ static void StopComparison( App& app )
 {
 	Comparison& comparison = app.comparison;
 	comparison.active = false;
+	app.forcedWorkers = 0;
 	app.tool = comparison.tool;
 	app.maxDebrisBodies = comparison.maxDebrisBodies;
 	app.parallelPhysics = comparison.parallelPhysics;
@@ -2138,10 +2211,91 @@ static ComparisonResult SumComparison( const Comparison& comparison, bool parall
 	return result;
 }
 
+// The report of the scaling goes to the clipboard, to paste into a chat: the frames of every run and the profile of the
+// library fitted over the runs, see nbFormatScalingReport
+static void FinishScaling( App& app )
+{
+	Comparison& comparison = app.comparison;
+	const nbProfile* profiles = comparison.profiles + 1;
+	int profileCount = comparison.runCount - 1;
+	bool same = true;
+	for ( int run = 2; run < comparison.runCount; ++run )
+	{
+		same = same && comparison.hashes[run] == comparison.hashes[1];
+	}
+
+	b3Version version = b3GetVersion();
+	std::string text;
+	Appendf( text, "Nebenan-Skalierung: Abriss der Stadt mit" );
+	for ( int run = 1; run < comparison.runCount; ++run )
+	{
+		Appendf( text, "%s %d", run == 1 ? "" : ( run == comparison.runCount - 1 ? " und" : "," ), comparison.runWorkers[run] );
+	}
+	Appendf( text, " Threads, Physik nacheinander, %s-Build, Box3D %d.%d.%d\n", s_buildType, version.major, version.minor,
+			 version.revision );
+	Appendf( text, "CPU: %s, %d logische Kerne, %d Performance-Kerne, Löser mit %d Spuren\n",
+			 app.cpuName.empty() ? "unbekannt" : app.cpuName.c_str(), nbGetHardwareThreadCount(), app.performanceCores,
+			 b3GetSIMDWidth() );
+	const Demolition& demolition = comparison.demolition;
+	Appendf( text,
+			 "Abriss mit %d Granaten, bis zu %d pro Bild, solange weniger als %d Trümmer fliegen, Bruchstückgröße x%.2f, "
+			 "Budget %d, ein Schritt pro Bild, erst ein Lauf mit %d Bildern zum Aufwärmen, der nicht zählt\n",
+			 demolition.shots, DemolitionShotsPerFrame, DemolitionMovingLimit, app.fragmentScale, DemolitionBudget,
+			 Comparison::WarmupFrames );
+	if ( demolition.doneFrame >= 0 )
+	{
+		Appendf( text, "Alle %d Häuser nach %d Bildern unten, %d Bilder pro Lauf\n", demolition.house, demolition.doneFrame,
+				 comparison.frames[1] );
+	}
+	else
+	{
+		Appendf( text, "Nach %d Bildern erst %d Häuser unten\n", comparison.frames[1], demolition.house );
+	}
+	Appendf( text, "Die Welt endet in allen Läufen %s\n", same ? "gleich" : "verschieden" );
+	for ( int run = 1; run < comparison.runCount; ++run )
+	{
+		FrameStats stats = GetFrameStats( comparison.frameTimes[run] );
+		double frames = b3MaxFloat( (float)comparison.frames[run], 1.0f );
+		Appendf( text,
+				 "  Lauf %d, %d Threads: %d Bilder, %.2f ms pro Bild, Simulation %.2f ms, 1%% Low %.0f FPS, längste Simulation "
+				 "%.1f ms\n",
+				 run, comparison.runWorkers[run], comparison.frames[run], stats.average,
+				 (float)( comparison.simulationTime[run] / frames ), stats.lowFps, comparison.longestSimulation[run] );
+	}
+
+	int length = nbFormatScalingReport( profiles, profileCount, nullptr, 0 );
+	std::string table( (size_t)length, ' ' );
+	nbFormatScalingReport( profiles, profileCount, table.data(), length + 1 );
+	text += table;
+	comparison.report = text;
+
+	nbScaling scaling = nbFitScaling( profiles, profileCount );
+	float total8 = nbScaling_Project( &scaling, nb_profileTotal, 8 );
+	char summary[160];
+	snprintf( summary, sizeof( summary ),
+			  "Mit 8 Threads hochgerechnet %.2f ms Physik pro Bild,\n%.0f %% davon seriell. In der Zwischenablage.", total8,
+			  100.0f * scaling.serial[nb_profileTotal] / b3MaxFloat( total8, 0.001f ) );
+	comparison.summary = summary;
+	sapp_set_clipboard_string( text.c_str() );
+
+	if ( app.automation.compare )
+	{
+		printf( "%s", text.c_str() );
+		sapp_request_quit();
+	}
+	StopComparison( app );
+}
+
 // The report goes to the clipboard, to paste into a chat
 static void FinishComparison( App& app )
 {
 	Comparison& comparison = app.comparison;
+	if ( comparison.kind == Comparison::Scaling )
+	{
+		FinishScaling( app );
+		return;
+	}
+
 	ComparisonResult parallel = SumComparison( comparison, true );
 	ComparisonResult serial = SumComparison( comparison, false );
 	bool same = true;
@@ -2262,9 +2416,10 @@ static void AdvanceComparison( App& app, float frameTime, float graphicsTime )
 	comparison.hashes[run] = HashChunkTransforms( app );
 	comparison.frames[run] = comparison.frame;
 	comparison.stats = nbWorld_GetStats( app.destruction );
+	comparison.profiles[run] = nbWorld_GetProfile( app.destruction );
 	comparison.demolition = demolition;
 	comparison.run += 1;
-	if ( comparison.run < Comparison::RunCount )
+	if ( comparison.run < comparison.runCount )
 	{
 		BeginComparisonRun( app );
 	}
@@ -2322,6 +2477,7 @@ static void OnInit()
 	LoadScene( app, (SceneKind)scene );
 	if ( app.automation.compare )
 	{
+		app.comparison.kind = app.automation.scaling ? Comparison::Scaling : Comparison::ParallelAgainstSerial;
 		StartComparison( app );
 	}
 	app.frameTicks = b3GetTicks();
@@ -2719,6 +2875,11 @@ int main( int argc, char** argv )
 		else if ( strcmp( argv[i], "--compare" ) == 0 )
 		{
 			app.automation.compare = true;
+		}
+		else if ( strcmp( argv[i], "--scaling" ) == 0 )
+		{
+			app.automation.compare = true;
+			app.automation.scaling = true;
 		}
 		else if ( strcmp( argv[i], "--demolition" ) == 0 )
 		{

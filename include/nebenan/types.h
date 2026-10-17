@@ -485,6 +485,92 @@ typedef struct nbStats
 	int64_t byteCount;
 } nbStats;
 
+/// The stages of a step that nbProfile times. A stage can hold others: the step holds the pairs, the collide and the
+/// solve, these hold their parts on the calling thread, and the update holds its parts. Freezing and thawing and the
+/// cells of the fractures happen inside the update and the impacts.
+typedef enum nbProfileStage
+{
+	/// The step, the update and the impacts together
+	nb_profileTotal,
+
+	/// b3World_Step with the stages of b3Profile: the pair update and the new contacts in it, which run on the calling
+	/// thread alone, the contact loop and the contacts in it that begin or end touching, again on the calling thread
+	/// alone, the solver with its setup and its constraints, and the finish of the bodies with the continuous collision
+	nb_profileStep,
+	nb_profilePairs,
+	nb_profileCreateContacts,
+	nb_profileCollide,
+	nb_profileContactStates,
+	nb_profileSolve,
+	nb_profileSolverSetup,
+	nb_profileConstraints,
+	nb_profileTransforms,
+
+	/// nbWorld_Update with its collision damage, the debris that comes to rest, the debris budget and the rubble that
+	/// lost what held it
+	nb_profileUpdate,
+	nb_profileCollisionDamage,
+	nb_profileSettle,
+	nb_profileBudget,
+	nb_profileRelease,
+
+	/// Debris that freezes into rubble and rubble that comes back to life, in the update and the impacts
+	nb_profileTypeChanges,
+
+	/// nbWorld_ApplyImpact and nbWorld_CastImpact between the steps
+	nb_profileImpacts,
+
+	/// The cells of the fractures of impacts and collision damage, and those of them that the calling thread computed
+	/// alone, because a fracture had too few cells for the workers
+	nb_profileCells,
+	nb_profileCellsAlone,
+
+	nb_profileStageCount
+} nbProfileStage;
+
+/// Where the time of the steps went, see nbWorld_GetProfile.
+typedef struct nbProfile
+{
+	/// The workers of the Box3D world during the steps
+	int workerCount;
+
+	/// Steps counted, and the impacts between them
+	int stepCount;
+	int impactCount;
+
+	/// Milliseconds per step, see nbProfileStage
+	float stages[nb_profileStageCount];
+
+	/// Freezes into rubble and thaws back to life per step
+	float freezeCount;
+	float thawCount;
+
+	/// The share of the largest awake island in the work of the solver, see b3Counters::islandWork, mean over the steps of
+	/// a Box3D world with workers, and how many steps that were. With more than half of the work in one island, Box3D
+	/// solves by colors with a barrier after every stage instead of in packs, colorStepCount counts those steps. In the
+	/// others a pack gives the island to one thread, so with n threads the packs take at least the larger of its share and
+	/// 1/n of the work. islandFloor holds the mean of that bound over those steps for 2, 4, 8 and 16 threads.
+	float largestIsland;
+	float islandFloor[4];
+	int islandStepCount;
+	int colorStepCount;
+
+	/// How long a sleeping worker of Nebenan took to start a task it was given, in microseconds, mean and longest, over
+	/// the tasks of the impacts and the collision damage that went to the workers
+	float wakeTime;
+	float longestWake;
+	int wakeCount;
+} nbProfile;
+
+/// The stages of profiles measured with different numbers of workers, fitted to T(n) = serial + parallel / n
+/// milliseconds per step, see nbFitScaling.
+typedef struct nbScaling
+{
+	int profileCount;
+	float serial[nb_profileStageCount];
+	float parallel[nb_profileStageCount];
+} nbScaling;
+
 /** @} */
 
 /**

@@ -592,6 +592,11 @@ typedef struct b3Profile
 	float bullets;			   //
 	float sleepIslands;		   //
 	float sensors;			   //
+
+	/// Added for Nebenan: the parts of pairs and collide that run on the calling thread alone, creating the new contacts
+	/// in pair order, and the contacts that begin or end touching or part, with their islands and graph colors
+	float createContacts;
+	float contactStates;
 } b3Profile;
 
 /// Counters that give details of the simulation size.
@@ -629,6 +634,11 @@ typedef struct b3Counters
 
 	/// Maximum TOI root solver iterations.
 	int rootIterations;
+
+	/// Added for Nebenan: the work of the awake islands in the last step, four per contact and one per body as the packs
+	/// weigh it, and that of the largest island, which a pack gives to one thread alone. Zero in a world without workers.
+	int islandWork;
+	int largestIslandWork;
 } b3Counters;
 
 /// Joint type enumeration. This is useful because all joint types use b3JointId and sometimes you

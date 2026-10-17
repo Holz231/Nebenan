@@ -23,8 +23,9 @@ Gewinn jeweils geschätzt für einen Frame mit 8 Threads. „Bitgleich“ heißt
 
 | Nr. | Schritt | Gewinn | Voraussetzung | Stand |
 | ---: | --- | --- | --- | --- |
-| 1 | **Skalierung messen in der Bibliothek**, mit Knopf in der Demo und Ausgabe im Benchmark | Werkzeug | – | in Arbeit auf `physik-21` |
-| 2 | **Auf dem Ryzen messen**: ×1, ×2 und ×4 mit 1, 2, 4 und 8 Threads, dazu die Weckzeit der Worker | entscheidet 3 bis 9 | 1 | offen |
+| 1 | **Skalierung messen in der Bibliothek**, mit Knopf in der Demo und Ausgabe im Benchmark | Werkzeug | – | ✅ auf `physik-21` |
+| 2 | **Auf dem Ryzen messen**: in der Demo „Skalierung messen“, die Tabelle aus der Zwischenablage in den Chat | entscheidet 3 bis 9 | 1 | offen |
+| 2a | **Große Insel beim Abriss in der Demo**: zählen, wie viel der 73 % zusammenhängt, dann veraltete Inseln teilen | Demo bis rund 30 %, wenn die Insel zerfällt | – | offen |
 | 3 | **Prüfungen des Updates auf den Workern, zweiter Versuch**, bitgleich | 4 bis 13 % | 2: Wecken deutlich unter 67 µs | offen |
 | 4 | **Größte Insel im Team**, bitgleich | ×1 6 %, ×2 3 % | 2: die größte Insel bremst die Pakete | offen |
 | 5 | **Schwellen fürs Wecken** der Bruchrechnung, bitgleich | ×1 und ×4 je 3 % | 2: Weckzeit | offen |
@@ -35,7 +36,11 @@ Gewinn jeweils geschätzt für einen Frame mit 8 Threads. „Bitgleich“ heißt
 
 ## Was die Messung auf dem Ryzen entscheidet
 
-- **Weckzeit eines Workers** unter rund 20 µs: Schritt 3 und 5 zuerst. Auf der VM sind es 67 µs.
+Alle Zahlen dafür stehen in der Tabelle von „Skalierung messen“: die Weckzeit in „Workers started“, die größte Insel in
+„Largest island“, Anlegen und Zustandswechsel der Kontakte in den Zeilen `createContacts` und `contactStates`, das
+Update in `update`, und was mit 8 Threads seriell bleibt, in der Spalte `8 w` und der Zeile darunter.
+
+- **Weckzeit eines Workers** unter rund 20 µs: Schritt 3 und 5 zuerst. Auf der VM sind es 67 bis 100 µs.
 - **Löser mit 8 Threads** deutlich langsamer als ein Achtel der Zeit mit einem Thread, und die größte Insel über einem
   Achtel der Arbeit: Schritt 4.
 - **Anlegen und Zustandswechsel der Kontakte** zusammen über rund 15 % des Frames: Schritt 9 prüfen, vorher 7 und 8.

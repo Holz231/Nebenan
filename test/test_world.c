@@ -3995,6 +3995,146 @@ static int PlanStepsTest( void )
 	return 0;
 }
 
+// The profile counts the steps and impacts since its reset, and every stage holds its parts
+static int ProfileTest( void )
+{
+	nbTaskSystem* pool = nbCreateTaskSystem( 3 );
+	TestScene scene = CreateSceneWithPool( pool, 4 );
+
+	// Three walls far apart, so their debris lies in islands of their own
+	b3Vec3 halfExtents = { 3.0f, 1.5f, 0.12f };
+	nbDestructibleDef def = nbDefaultDestructibleDef();
+	for ( int i = 0; i < 3; ++i )
+	{
+		def.position = (b3Vec3){ 15.0f * (float)( i - 1 ), halfExtents.y, 0.0f };
+		def.seed = 7 + (uint32_t)i;
+		nbCreateBox( scene.world, &def, halfExtents );
+	}
+
+	nbWorld_ResetProfile( scene.world );
+	nbProfile empty = nbWorld_GetProfile( scene.world );
+	ENSURE( empty.stepCount == 0 && empty.impactCount == 0 && empty.stages[nb_profileTotal] == 0.0f );
+
+	// Enough cells for the workers
+	nbImpactDef impact = { 0 };
+	impact.direction = (b3Vec3){ 0.0f, 0.0f, -1.0f };
+	impact.radius = 0.8f;
+	impact.damage = 6.0e4f;
+	impact.ejectSpeed = 8.0f;
+	impact.fragmentCount = 64;
+	for ( int i = 0; i < 3; ++i )
+	{
+		impact.point = (b3Vec3){ 15.0f * (float)( i - 1 ) + 0.3f, 1.4f, halfExtents.z };
+		nbWorld_ApplyImpact( scene.world, &impact );
+	}
+
+	const int stepCount = 90;
+	for ( int i = 0; i < stepCount; ++i )
+	{
+		nbWorld_Step( scene.world, 1.0f / 60.0f, 4 );
+	}
+
+	nbProfile profile = nbWorld_GetProfile( scene.world );
+	const float* t = profile.stages;
+	printf(
+		"  step %.3f ms, update %.3f ms, impacts %.3f ms, cells %.3f ms, largest island %.2f, %d workers started after %.0f us\n",
+		t[nb_profileStep], t[nb_profileUpdate], t[nb_profileImpacts], t[nb_profileCells], profile.largestIsland,
+		profile.wakeCount, profile.wakeTime );
+	ENSURE( profile.workerCount == 4 );
+	ENSURE( profile.stepCount == stepCount && profile.impactCount == 3 );
+	ENSURE( t[nb_profileStep] > 0.0f && t[nb_profileUpdate] > 0.0f && t[nb_profileImpacts] > 0.0f );
+	ENSURE( fabsf( t[nb_profileTotal] - t[nb_profileStep] - t[nb_profileUpdate] - t[nb_profileImpacts] ) < 1.0e-4f );
+
+	// The timers of the parts run inside the timers of the stages that hold them
+	const float slack = 1.0e-3f;
+	ENSURE( t[nb_profilePairs] + t[nb_profileCollide] + t[nb_profileSolve] <= t[nb_profileStep] + slack );
+	ENSURE( t[nb_profileCreateContacts] <= t[nb_profilePairs] + slack );
+	ENSURE( t[nb_profileContactStates] <= t[nb_profileCollide] + slack );
+	ENSURE( t[nb_profileSolverSetup] + t[nb_profileConstraints] <= t[nb_profileSolve] + slack );
+	ENSURE( t[nb_profileCollisionDamage] + t[nb_profileSettle] + t[nb_profileBudget] + t[nb_profileRelease] <=
+			t[nb_profileUpdate] + slack );
+	ENSURE( t[nb_profileCells] > 0.0f && t[nb_profileCellsAlone] <= t[nb_profileCells] + slack );
+	ENSURE( t[nb_profileCells] <= t[nb_profileUpdate] + t[nb_profileImpacts] + slack );
+	ENSURE( profile.freezeCount >= 0.0f && profile.thawCount >= 0.0f );
+
+	// A world with workers knows its islands. None of the three holds more than half of the work in the steps with packs,
+	// and the bound of the packs is at least the even share.
+	ENSURE( profile.islandStepCount > 0 && profile.colorStepCount < profile.islandStepCount );
+	ENSURE( 0.0f < profile.largestIsland && profile.largestIsland <= 1.0f );
+	for ( int i = 0; i < 4; ++i )
+	{
+		ENSURE( profile.islandFloor[i] >= 1.0f / (float)( 2 << i ) - 1.0e-6f );
+	}
+
+	// The cells of the impact went to the workers
+	ENSURE( profile.wakeCount > 0 && profile.wakeTime >= 0.0f && profile.longestWake >= profile.wakeTime );
+
+	nbWorld_ResetProfile( scene.world );
+	ENSURE( nbWorld_GetProfile( scene.world ).stepCount == 0 );
+
+	DestroyScene( &scene );
+	nbDestroyTaskSystem( pool );
+	return 0;
+}
+
+// The fit of profiles with different numbers of workers, its projection and the report
+static int ScalingFitTest( void )
+{
+	// Every stage takes 2 ms on one thread plus 8 ms spread over the workers
+	nbProfile profiles[4] = { 0 };
+	int workers[4] = { 1, 2, 4, 4 };
+	for ( int i = 0; i < 4; ++i )
+	{
+		profiles[i].workerCount = workers[i];
+		profiles[i].stepCount = 100;
+		for ( int k = 0; k < nb_profileStageCount; ++k )
+		{
+			profiles[i].stages[k] = 2.0f + 8.0f / (float)workers[i];
+		}
+	}
+
+	nbScaling scaling = nbFitScaling( profiles, 4 );
+	ENSURE( scaling.profileCount == 4 );
+	for ( int k = 0; k < nb_profileStageCount; ++k )
+	{
+		ENSURE( fabsf( scaling.serial[k] - 2.0f ) < 1.0e-4f && fabsf( scaling.parallel[k] - 8.0f ) < 1.0e-4f );
+	}
+	ENSURE( fabsf( nbScaling_Project( &scaling, nb_profileStep, 8 ) - 3.0f ) < 1.0e-4f );
+
+	// Slower with more workers: nothing counts as parallel. One number of workers only: all is serial.
+	for ( int i = 0; i < 4; ++i )
+	{
+		profiles[i].stages[nb_profileUpdate] = 1.0f + 0.1f * (float)workers[i];
+	}
+	scaling = nbFitScaling( profiles, 4 );
+	ENSURE( scaling.parallel[nb_profileUpdate] == 0.0f );
+	ENSURE( fabsf( scaling.serial[nb_profileUpdate] - ( 1.0f + 0.1f * 11.0f / 4.0f ) ) < 1.0e-4f );
+	scaling = nbFitScaling( profiles + 2, 2 );
+	ENSURE( scaling.parallel[nb_profileStep] == 0.0f && fabsf( scaling.serial[nb_profileStep] - 4.0f ) < 1.0e-4f );
+
+	// The report counts its whole length like snprintf, also into a buffer too small
+	int length = nbFormatScalingReport( profiles, 4, NULL, 0 );
+	ENSURE( length > 200 );
+	char* text = malloc( (size_t)length + 1 );
+	ENSURE( nbFormatScalingReport( profiles, 4, text, length + 1 ) == length );
+	ENSURE( (int)strlen( text ) == length && strstr( text, "createContacts" ) != NULL );
+	char small[16];
+	ENSURE( nbFormatScalingReport( profiles, 4, small, sizeof( small ) ) == length );
+	ENSURE( strlen( small ) == sizeof( small ) - 1 );
+	free( text );
+
+	// The worker counts to measure with: 1, 2, 4 and so on, then the recommended count
+	int counts[8];
+	int countCount = nbGetScalingWorkerCounts( counts, 8 );
+	ENSURE( countCount >= 1 && counts[0] == 1 && counts[countCount - 1] == nbGetRecommendedWorkerCount( false ) );
+	for ( int i = 1; i < countCount; ++i )
+	{
+		ENSURE( counts[i] > counts[i - 1] );
+	}
+	ENSURE( strcmp( nbGetProfileStageName( nb_profileContactStates ), "contactStates" ) == 0 );
+	return 0;
+}
+
 // The threads a game should take: one per performance core, at most 8, with one hardware thread left over for the thread
 // that draws while the step runs on a thread of its own
 static int WorkerCountTest( void )
@@ -4203,6 +4343,8 @@ int WorldTest( void )
 	RUN_TEST( TaskSystemTest );
 	RUN_TEST( AsyncStepTest );
 	RUN_TEST( PlanStepsTest );
+	RUN_TEST( ProfileTest );
+	RUN_TEST( ScalingFitTest );
 	RUN_TEST( WorkerCountTest );
 	RUN_TEST( StreamSiteTest );
 	RUN_TEST( RestTest );

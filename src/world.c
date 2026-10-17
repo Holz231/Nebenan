@@ -1188,10 +1188,22 @@ static void nbHoldRubble( nbWorld* world, nbActor* actor )
 	actor->holdBounds = nbGetActorBounds( world, actor );
 }
 
+#if defined( B3_HAS_SHAPE_BATCH )
+// The shapes of the bodies that froze or came back to life go into Box3D's trees at the end of their batch, which is part
+// of the type changes in the profile
+static void nbEndTypeBatch( nbWorld* world )
+{
+	uint64_t ticks = b3GetTicks();
+	b3World_EndShapeBatch( world->physicsWorld );
+	world->profile.stages[nb_profileTypeChanges] += b3GetMilliseconds( ticks );
+}
+#endif
+
 // Debris at rest becomes static and leaves the island it was part of. Box3D wakes that island once when the first of its
 // bodies changes type, the others freeze in the same update.
 static void nbFreezeActor( nbWorld* world, int actorIndex )
 {
+	uint64_t ticks = b3GetTicks();
 	nbActor* actor = world->actors.data + actorIndex;
 	b3Body_SetType( actor->bodyId, b3_staticBody );
 	actor->isRubble = true;
@@ -1201,12 +1213,15 @@ static void nbFreezeActor( nbWorld* world, int actorIndex )
 	actor->carrierCount = 0;
 	nbResetRest( actor );
 	world->rubbleCount += 1;
+	world->profile.stages[nb_profileTypeChanges] += b3GetMilliseconds( ticks );
+	world->profile.freezeCount += 1.0;
 }
 
 // Bring rubble back to life. The rubble resting on it stays until it moves, then follows. Box3D gives the body its mass
 // back, the center of mass moved if impacts broke pieces off the rubble.
 void nbThawActor( nbWorld* world, int actorIndex )
 {
+	uint64_t ticks = b3GetTicks();
 	nbActor* actor = world->actors.data + actorIndex;
 	NB_ASSERT( actor->isRubble );
 	actor->isRubble = false;
@@ -1222,6 +1237,8 @@ void nbThawActor( nbWorld* world, int actorIndex )
 	actor->probing = true;
 	actor->probeTime = 0.0f;
 	nbHoldRubble( world, actor );
+	world->profile.stages[nb_profileTypeChanges] += b3GetMilliseconds( ticks );
+	world->profile.thawCount += 1.0;
 }
 
 typedef struct nbThawContext
@@ -1469,7 +1486,7 @@ static void nbThawRubbleInBoxes( nbWorld* world, const b3AABB* boxes, int boxCou
 		}
 	}
 #if defined( B3_HAS_SHAPE_BATCH )
-	b3World_EndShapeBatch( world->physicsWorld );
+	nbEndTypeBatch( world );
 #endif
 	thawed->count = 0;
 }
@@ -4029,6 +4046,11 @@ static void nbStopWorkers( nbWorld* world )
 
 typedef struct nbFractureTask
 {
+	// When the task went to a worker, and how many milliseconds later it started there, negative for the task of the
+	// calling thread
+	uint64_t enqueueTicks;
+	float wakeTime;
+
 	nbFractureJob* jobs;
 	int jobCount;
 	const int* itemJobs;
@@ -4051,6 +4073,11 @@ typedef struct nbFractureTask
 static void nbFractureTaskMain( void* context )
 {
 	nbFractureTask* task = context;
+	if ( task->enqueueTicks != 0 )
+	{
+		task->wakeTime = b3GetMilliseconds( task->enqueueTicks );
+	}
+
 	nbCellScratch scratch;
 	nbCellScratch_Create( &scratch, task->arena, task->siteCapacity );
 
@@ -4149,12 +4176,14 @@ void nbStartFractureJobs( nbWorld* world, nbFractureRun* run, nbFractureJob* job
 			.prepareContext = prepareContext,
 			.prepared = prepared,
 			.nextItem = &run->nextItem,
+			.wakeTime = -1.0f,
 			.arena = workerArenas + i,
 		};
 	}
 
 	for ( int i = 1; i < taskCount; ++i )
 	{
+		run->tasks[i].enqueueTicks = b3GetTicks();
 		run->userTasks[i] = world->enqueueTask( nbFractureTaskMain, run->tasks + i, world->userTaskContext, "nebenan fracture" );
 	}
 	run->taskCount = taskCount;
@@ -4187,13 +4216,34 @@ void nbRunFractureJobs( nbWorld* world, nbFractureJob* jobs, int jobCount, nbPre
 						nbCallerWorkFn* callerWork, void* callerContext )
 {
 	// The calling thread does its own work while the workers start, then it works on the cells as well
+	uint64_t ticks = b3GetTicks();
 	nbFractureRun run;
 	nbStartFractureJobs( world, &run, jobs, jobCount, prepare, prepareContext, &world->arena, world->workerArenas );
+	int taskCount = run.taskCount;
 	if ( callerWork != NULL )
 	{
 		callerWork( callerContext );
 	}
 	nbFinishFractureJobs( world, &run );
+
+	// The cells in the profile, those of the calling thread alone, and how long the workers took to start
+	nbProfileSums* profile = &world->profile;
+	float time = b3GetMilliseconds( ticks );
+	profile->stages[nb_profileCells] += time;
+	if ( taskCount <= 1 )
+	{
+		profile->stages[nb_profileCellsAlone] += time;
+	}
+	for ( int i = 1; i < taskCount; ++i )
+	{
+		float wake = run.tasks[i].wakeTime;
+		if ( wake >= 0.0f )
+		{
+			profile->wakeTime += wake;
+			profile->longestWake = b3MaxFloat( profile->longestWake, wake );
+			profile->wakeCount += 1;
+		}
+	}
 }
 
 typedef struct nbParallelTask
@@ -5403,7 +5453,7 @@ static void nbSettleDebris( nbWorld* world, b3Vec3 up, float timeStep )
 	}
 
 #if defined( B3_HAS_SHAPE_BATCH )
-	b3World_EndShapeBatch( world->physicsWorld );
+	nbEndTypeBatch( world );
 #endif
 }
 
@@ -5550,7 +5600,7 @@ static void nbEnforceDebrisBudget( nbWorld* world, b3Vec3 up )
 	}
 
 #if defined( B3_HAS_SHAPE_BATCH )
-	b3World_EndShapeBatch( world->physicsWorld );
+	nbEndTypeBatch( world );
 #endif
 }
 
@@ -5558,6 +5608,9 @@ static void nbEnforceDebrisBudget( nbWorld* world, b3Vec3 up )
 static void nbUpdate( nbWorld* world, float timeStep )
 {
 	uint64_t ticks = b3GetTicks();
+
+	// The stages of the step before, see nbWorld_GetProfile
+	nbProfileStep( world );
 
 	// The streams mark the sites near the bodies that moved, before anything changes the world
 	if ( world->streams.count > 0 )
@@ -5614,6 +5667,7 @@ static void nbUpdate( nbWorld* world, float timeStep )
 	nbWakeHitRubble( world );
 
 	// Collision damage, strongest first, limited per update
+	uint64_t lap = b3GetTicks();
 	int impactCount = world->collisionImpacts.count;
 	if ( impactCount > world->def.maxCollisionImpactsPerUpdate )
 	{
@@ -5649,6 +5703,7 @@ static void nbUpdate( nbWorld* world, float timeStep )
 			b3Body_SetLinearVelocity( impact.otherBodyId, velocity );
 		}
 	}
+	nbProfileLap( world, nb_profileCollisionDamage, &lap );
 
 	// Structures that cannot carry themselves give way
 	nbCheckSupports( world );
@@ -5660,12 +5715,18 @@ static void nbUpdate( nbWorld* world, float timeStep )
 	// the slowest freezes.
 	if ( hasGravity )
 	{
+		lap = b3GetTicks();
 		nbReleaseHeldRubble( world, up );
+		nbProfileLap( world, nb_profileRelease, &lap );
 		nbSettleDebris( world, up, timeStep );
+		nbProfileLap( world, nb_profileSettle, &lap );
 	}
+	lap = b3GetTicks();
 	nbEnforceDebrisBudget( world, hasGravity ? up : b3Vec3_zero );
+	nbProfileLap( world, nb_profileBudget, &lap );
 
 	world->stats.updateTime = b3GetMilliseconds( ticks );
+	world->profile.stages[nb_profileUpdate] += world->stats.updateTime;
 }
 
 void nbWorld_Update( nbWorldId worldId, float timeStep )

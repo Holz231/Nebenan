@@ -154,7 +154,10 @@ messen“ lädt die Stadt und reißt sie Haus für Haus mit Granaten ab, Wand f�
 unten ist. Er schießt mit Budget 5 000 und nur, solange weniger als 3 000 Trümmer fliegen, denn über dem Budget frieren
 im Schub auch Stücke im Flug ein. Das macht er einmal kurz zum Aufwärmen, dann parallel, nacheinander, nacheinander und
 parallel, mit einem Schritt pro Bild und jeweils mit den passenden Threads. Das Ergebnis mit Bildzeit, FPS und 1 % Low
-für beide und für jeden Lauf kommt ebenso in die Zwischenablage, danach lädt die Szene von vorher neu.
+für beide und für jeden Lauf kommt ebenso in die Zwischenablage, danach lädt die Szene von vorher neu. „Skalierung
+messen“ reißt die Stadt genauso ab, nach dem Aufwärmen mit 1, 2, 4 und so weiter bis zur empfohlenen Zahl von Threads,
+alle mit der Physik nacheinander. Die Bibliothek misst dabei jede Stufe von Box3D und Nebenan und rechnet aus, was mit
+mehr Threads auf einem Thread übrig bleibt. Die Tabelle dazu kommt in die Zwischenablage, siehe `nbWorld_GetProfile`.
 
 **Werkzeuge**
 
@@ -662,6 +665,30 @@ nbWorldId world = nbCreateWorld( &def );
 
 Gemessen ist das etwa so schnell wie zwei eigene Pools, mit halb so vielen Threads, siehe Leistung.
 
+Wo die Zeit der Schritte hingeht, sagt `nbWorld_GetProfile`, pro Schritt seit dem Anlegen der Welt oder seit
+`nbWorld_ResetProfile`: die Stufen des Box3D-Schritts samt der Teile, die auf dem aufrufenden Thread allein laufen, die
+Teile des Updates, die Einschläge, Erstarren und Auftauen, die Zellen der Brüche, der Anteil der größten Insel an der
+Arbeit des Lösers und wie lange ein schlafender Worker braucht, bis er anläuft. Ist dieselbe Arbeit mit verschieden
+vielen Threads gemessen, rechnet die Bibliothek aus, was davon parallel läuft und was mit mehr Threads bleibt:
+
+```c
+int counts[8];
+int countCount = nbGetScalingWorkerCounts( counts, 8 );   // 1, 2, 4 … bis zur empfohlenen Zahl
+nbProfile profiles[8];
+for ( int i = 0; i < countCount; ++i )
+{
+	// dieselbe Szene mit counts[i] Threads für Box3D und Nebenan anlegen
+	nbWorld_ResetProfile( world );
+	// … in jedem Lauf dieselben Einschläge und Schritte …
+	profiles[i] = nbWorld_GetProfile( world );
+}
+
+nbScaling scaling = nbFitScaling( profiles, countCount );   // T(n) = seriell + parallel / n für jede Stufe
+float withEight = nbScaling_Project( &scaling, nb_profileTotal, 8 );
+char text[8192];
+nbFormatScalingReport( profiles, countCount, text, sizeof( text ) );   // alles als Tabelle für ein Log
+```
+
 Die komplette API steht in [include/nebenan/nebenan.h](include/nebenan/nebenan.h).
 
 Einbinden in ein eigenes CMake-Projekt:
@@ -938,6 +965,15 @@ den Baum der Bauplätze einmal für alle ihre Körper, mit denselben Ergebnissen
 kostet das Markieren 0,76 statt 1,11 µs pro Körper mit 4 Threads und 0,96 statt 1,30 µs mit einem, weniger als das
 Raster der alten Kopie. Ein Frame der Stadt kostet so mit 4 Threads 1,3 % weniger über sechs Granatenfolgen.
 
+Seit `physik-21` misst die Bibliothek selbst, wo die Zeit der Schritte hingeht und wie sie mit den Threads skaliert,
+siehe `nbWorld_GetProfile`, und die Demo hat dafür den Knopf „Skalierung messen“. Auf der VM mit 1, 2 und 4 Threads
+gemessen und auf 8 hochgerechnet, bleiben bei ×1 71 % von 7,9 ms pro Schritt samt Update und Einschlägen auf einem
+Thread, bei ×2 83 % von 2,9 ms und bei ×4 80 % von 5,5 ms. Was davon auf dem Ryzen bleibt, entscheidet über die nächsten
+Schritte, siehe [docs/Roadmap.md](docs/Roadmap.md). Das Profil kostet nichts Messbares: Gepaart gegen `physik-20` über
+drei Runden im Wechsel liegt ein Frame der Städte mit 4 Threads zwischen 5,8 % darunter und 7,1 % darüber, mit einem
+zwischen 4,7 % darunter und 3,7 % darüber, ohne Richtung, und ein Schritt des Gewehrs mit einem Thread kostet über acht
+Läufe im Wechsel 1,006 statt 1,003 ms. Die Endstände sind dieselben.
+
 Ganze Einschläge (Bruch, Stützgraph, neue Box3D-Körper) und der Box3D-Schritt danach bei 60 Hz mit
 4 Substeps, jeweils mit 1 und 4 Threads, der Median aus sechs Läufen:
 
@@ -976,8 +1012,9 @@ Messungen in [docs/Optimierungen.md](docs/Optimierungen.md).
 ## Tests und Benchmark
 
 ```sh
-build/bin/nebenan_test            # 51 Tests: Geometrie, Voronoi, Hüllen, Öffnungen, Stöße, Stützgraph, Etagen, Lastprüfung, Schutt, Ruhe, Durchschlagen, Threads, große Blöcke, Suchbaum, Kontaktlisten, Streaming, Stream, Laden im Hintergrund, Speichern und Zurückholen, gemeinsamer Thread-Pool, Schritt auf eigenem Thread, Schritte pro Bild, Wahl der Threads, Determinismus …
+build/bin/nebenan_test            # 53 Tests: Geometrie, Voronoi, Hüllen, Öffnungen, Stöße, Stützgraph, Etagen, Lastprüfung, Schutt, Ruhe, Durchschlagen, Threads, große Blöcke, Suchbaum, Kontaktlisten, Streaming, Stream, Laden im Hintergrund, Speichern und Zurückholen, gemeinsamer Thread-Pool, Schritt auf eigenem Thread, Schritte pro Bild, Wahl der Threads, Profil und Skalierung, Determinismus …
 build/bin/nebenan_benchmark 4     # Zahl = Threads für Bruch und Physik, 0 = so viele, wie ein Spiel nähme
+build/bin/nebenan_benchmark scaling   # die Städte unter Beschuss mit 1, 2, 4 … Threads und die Tabelle der Skalierung
 ```
 
 Unter Windows liegen die Programme in `build\bin\Release\`. Die CI baut und testet unter Windows, Linux und

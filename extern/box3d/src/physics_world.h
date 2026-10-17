@@ -287,6 +287,10 @@ typedef struct b3World
 	// Added for Nebenan: three for each step with a long wait for the last packs, minus one for each without
 	int packWaitScore;
 
+	// Added for Nebenan: the work of the awake islands and of the largest in the last step, see b3Counters::islandWork
+	int islandWork;
+	int largestIslandWork;
+
 	b3EnqueueTaskCallback* enqueueTaskFcn;
 	b3FinishTaskCallback* finishTaskFcn;
 	void* userTaskContext;

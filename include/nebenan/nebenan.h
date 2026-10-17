@@ -113,6 +113,34 @@ NB_API nbEvents nbWorld_GetEvents( nbWorldId worldId );
 /// Get counters and timings.
 NB_API nbStats nbWorld_GetStats( nbWorldId worldId );
 
+/// Where the time of the steps went since the world was created or since nbWorld_ResetProfile, per step: Box3D's stages
+/// and the parts of them that run on the calling thread alone, the update and its parts, the impacts, the share of the
+/// largest island and how long the workers take to start. Waits for the steps.
+NB_API nbProfile nbWorld_GetProfile( nbWorldId worldId );
+
+/// Start the profile anew, for example once a scene is loaded. Waits for the steps.
+NB_API void nbWorld_ResetProfile( nbWorldId worldId );
+
+/// The worker counts to measure the scaling with on this machine: 1, 2, 4 and so on below the recommended count of
+/// nbGetRecommendedWorkerCount without nbWorldDef::asyncStep, and that count itself. Returns how many, at most capacity.
+NB_API int nbGetScalingWorkerCounts( int* counts, int capacity );
+
+/// Fit T(n) = serial + parallel / n to every stage of profiles of the same work with different numbers of workers, by
+/// least squares with both parts at least zero. With a single number of workers all time counts as serial.
+NB_API nbScaling nbFitScaling( const nbProfile* profiles, int count );
+
+/// Milliseconds per step of a stage with this many workers, from the fit.
+NB_API float nbScaling_Project( const nbScaling* scaling, nbProfileStage stage, int workerCount );
+
+/// The name of a stage of nbProfile, in English, for logs and tables.
+NB_API const char* nbGetProfileStageName( nbProfileStage stage );
+
+/// Write the profiles of the same work with different numbers of workers as a table into text: every stage per number
+/// of workers, its fit and its projection to 8 and 16 workers, then the parts on the calling thread alone, the largest
+/// island and the start of the workers. Writes at most capacity bytes with the terminating zero and returns the length
+/// of the whole table, like snprintf.
+NB_API int nbFormatScalingReport( const nbProfile* profiles, int count, char* text, int capacity );
+
 /// Change the number of fracture workers, see nbWorldDef::workerCount. Restarts the internal threads.
 NB_API void nbWorld_SetWorkerCount( nbWorldId worldId, int count );
 

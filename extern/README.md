@@ -262,7 +262,16 @@ eingeschlossen. Ein Thread erkennt sich an einer Nummer, die er beim ersten Mal 
 Wächter. Ohne Wächter kostet ein Zugriff damit ein Laden mehr, mit Wächter dazu den Blick auf die eigene Nummer.
 `b3World_IsValid` liest nur, was kein Schritt ändert, und wartet nicht.
 
-Die erste, die zweite, die vierte bis achte, die zehnte und die dreizehnte bis dreißigste ändern an den
+**Zeiten und Inseln für das Profil.** `b3Profile` hat zwei Felder mehr für die Teile des Schritts, die auf dem
+aufrufenden Thread allein laufen: `createContacts`, das Anlegen der neuen Kontakte im Paar-Update in der Reihenfolge der
+Paare, und `contactStates`, die Kontakte, die nach der Kontakt-Schleife zu berühren beginnen, damit aufhören oder sich
+trennen, mit ihren Inseln und Farben. `b3Counters` sagt mit `islandWork` und `largestIslandWork`, wie viel Arbeit die
+wachen Inseln im letzten Schritt hatten, gewogen wie in „Ganze Inseln pro Thread“, viermal die Kontakte und einmal die
+Körper, und wie viel davon die größte, die ein Paket einem Thread allein gibt. `b3BuildPacks` merkt sich beides, und in
+Schritten ohne Pakete zählt `b3MeasureIslandWork` in `src/solver.c` die Inseln, nur in Welten mit Workern, denn in einer
+ohne Worker könnten es viele sein. Nebenan liest beides nach jedem Schritt für `nbWorld_GetProfile`.
+
+Die erste, die zweite, die vierte bis achte, die zehnte und die dreizehnte bis einunddreißigste ändern an den
 Ergebnissen nichts. Die dritte und die neunte ändern sie in den letzten Bits, dafür hängen sie nicht mehr davon ab, in
 welcher Reihenfolge Formen in die Bäume kommen. Die elfte ändert sie, weil Kontakte zu anderen Zeitpunkten entstehen,
 die zwölfte, weil sie weniger Punkte bekommen. Die Ergänzungen stehen in `CMakeLists.txt`, `src/CMakeLists.txt`,

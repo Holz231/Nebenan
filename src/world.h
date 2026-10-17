@@ -370,6 +370,23 @@ typedef struct nbStreamSlot
 
 NB_ARRAY_DECLARE( nbStreamSlot, nbStreamSlotArray );
 
+// The sums behind nbWorld_GetProfile, see nbProfile. The total stage is the sum of step, update and impacts.
+typedef struct nbProfileSums
+{
+	double stages[nb_profileStageCount];
+	double freezeCount;
+	double thawCount;
+	double largestIsland;
+	double islandFloor[4];
+	int islandStepCount;
+	int colorStepCount;
+	double wakeTime;
+	float longestWake;
+	int wakeCount;
+	int stepCount;
+	int impactCount;
+} nbProfileSums;
+
 typedef struct nbWorld
 {
 	b3WorldId physicsWorld;
@@ -495,6 +512,9 @@ typedef struct nbWorld
 	nbStreamSlotArray streams;
 	nbVec3Array movedCenters;
 
+	// The sums behind nbWorld_GetProfile since nbWorld_ResetProfile
+	nbProfileSums profile;
+
 	uint16_t worldIndex;
 	uint16_t generation;
 	bool inUse;
@@ -554,6 +574,15 @@ typedef struct nbFractureRun
 void nbStartFractureJobs( nbWorld* world, nbFractureRun* run, struct nbFractureJob* jobs, int jobCount,
 						  nbPrepareJobFn* prepare, void* prepareContext, nbArena* arena, nbArena* workerArenas );
 void nbFinishFractureJobs( nbWorld* world, nbFractureRun* run );
+
+// Add the stages of the Box3D step before the update to the profile, see nbWorld_GetProfile
+void nbProfileStep( nbWorld* world );
+
+// Add the time since ticks to a stage of the profile and start the next lap
+static inline void nbProfileLap( nbWorld* world, nbProfileStage stage, uint64_t* ticks )
+{
+	world->profile.stages[stage] += b3GetMillisecondsAndReset( ticks );
+}
 
 // Run a function for every item, spread over the workers if there are at least minItems. The items must not depend on
 // each other or change the world.

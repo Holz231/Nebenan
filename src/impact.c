@@ -805,6 +805,7 @@ nbImpactResult nbWorld_ApplyImpact( nbWorldId worldId, const nbImpactDef* def )
 		return (nbImpactResult){ 0 };
 	}
 
+	uint64_t ticks = b3GetTicks();
 	nbImpactResult result = nbApplyImpact( world, def, NB_NULL_INDEX );
 
 	// After the fracture, so it pushes the fresh fragments as well
@@ -817,6 +818,9 @@ nbImpactResult nbWorld_ApplyImpact( nbWorldId worldId, const nbImpactDef* def )
 		explosion.impulsePerArea = def->explosionImpulse;
 		b3World_Explode( world->physicsWorld, &explosion );
 	}
+
+	world->profile.stages[nb_profileImpacts] += b3GetMilliseconds( ticks );
+	world->profile.impactCount += 1;
 	return result;
 }
 
