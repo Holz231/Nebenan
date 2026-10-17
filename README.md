@@ -137,9 +137,9 @@ viele FPS die CPU schaffen würde. Die Physik rechnet unabhängig davon 60 Schri
 Daneben stellt **Etage braucht** ein, wie viel ihrer Wände eine Etage zum Stehen braucht (Standard 50 %), und
 **Statik ohne Decken** schaltet die Lastprüfung für die Mauern ein (Standard aus).
 
-Die Threads stellt die Demo selbst ein: einen pro Performance-Kern, höchstens 8. Box3D läuft am schnellsten ohne
-Hyper-Threads und Effizienzkerne, und mehr Threads als Kerne bremsen. Mit paralleler Physik lässt sie dem Hauptthread
-einen logischen Kern frei, auf einem PC mit Hyper-Threads oder Effizienzkernen ändert das nichts. Im Benchmark auf der
+Die Threads wählt die Bibliothek (`nbGetRecommendedWorkerCount`): einen pro Performance-Kern, höchstens 8. Box3D läuft
+am schnellsten ohne Hyper-Threads und Effizienzkerne, und mehr Threads als Kerne bremsen. Mit paralleler Physik bleibt
+dem Hauptthread ein logischer Kern frei, auf einem PC mit Hyper-Threads oder Effizienzkernen ändert das nichts. Im Benchmark auf der
 Cloud-VM mit 4 Kernen ist ein Frame der Stadt mit Bruchstückgröße ×2 mit 4 Threads 1,8-mal so schnell wie mit 1 Thread,
 mit 8 Threads 10 % langsamer als mit 4.
 
@@ -526,14 +526,42 @@ und alles, worauf sie zeigen, müssen bis zum Ende des Aufrufs leben:
 nbCreateDestructibles( world, defs, pieceLists, pieceCounts, houseCount, ids );
 ```
 
-Eine Stadt, die nicht in den Speicher passt, hält nur die Häuser in der Nähe. `nbDestructible_IsIntact` sagt, ob
-einem Objekt seit dem Anlegen etwas passiert ist, und `nbDestructible_CanUnload`, ob es jetzt gehen kann: Es ist
-unberührt, und im angegebenen Abstand liegen kein Trümmerteil und kein Schutt, und nichts dort bewegt sich oder lässt
-sich bewegen. Mit derselben Definition neu angelegt, hat es dieselben Bruchstücke und Verbindungen, bitgleich, nur
-neue Ids. Ein entladenes Haus hat keine Kollision, es muss also wieder da sein, bevor etwas es erreichen kann. Die
-Demo lädt dazu die Häuser im Laderadius der Kamera und die bis 10 m um jeden Körper, der sich bewegt, und lässt keines
-gehen, an dem in den letzten fünf Sekunden etwas in 20 m vorbeikam (siehe `StreamCity` in
-[demo/demo.cpp](demo/demo.cpp)):
+Eine Stadt, die nicht in den Speicher passt, hält nur die Häuser in der Nähe. Das übernimmt ein Stream
+(`nbCreateStream`): Das Programm meldet die Bauplätze mit ihren Grenzen an und sagt in einem Rückruf, was auf einem
+Platz steht, und einmal pro Bild bekommt der Stream die Kamera. Er lädt die Häuser im Laderadius, die nächsten zuerst,
+und die bis 10 m um jeden Körper, der sich bewegt, bevor der sie erreichen kann, denn ein entladenes Haus hat keine
+Kollision. Er lässt keines gehen, an dem in den letzten fünf Sekunden etwas in 20 m vorbeikam. Ein unberührtes Haus
+geht, sobald nichts mehr daran liegt, und kommt aus seiner Definition bitgleich wieder. Ein beschädigtes geht samt
+Schutt, sobald alles daran ruht, und kommt aus dem Gespeicherten bitgleich wieder. Die Worker bereiten die Häuser im
+Hintergrund vor, und nach `nbWorld_Step` streamt der Stream auf dem Thread des Schritts, der Hauptthread zeichnet
+weiter. Die Abstände zur Kamera zählen entlang des Bodens, quer zur Schwerkraft, so lädt eine Kamera hoch über der Stadt
+dieselben Häuser wie eine auf der Straße (siehe `BuildCityScene` in [demo/demo.cpp](demo/demo.cpp)):
+
+```c
+// Was auf einem Platz steht, gefragt, wenn der Stream ihn lädt. Die Teile leben, bis er sie mit release zurückgibt.
+static void PrepareHouse( int site, nbSiteDef* siteDef, void* context );
+static void ReleaseHouse( int site, void* context );
+
+nbStreamDef streamDef = nbDefaultStreamDef();   // 100 m Laderadius, zwei neue Häuser pro Bild
+streamDef.prepareFcn = PrepareHouse;
+streamDef.releaseFcn = ReleaseHouse;
+streamDef.userContext = &city;
+nbStreamId stream = nbCreateStream( world, &streamDef );
+for ( int i = 0; i < houseCount; ++i )
+{
+	nbStream_AddSite( stream, houseBounds[i] );   // die Grenzen des Hauses, wie es gebaut wird
+}
+nbStream_LoadAround( stream, &camera, 1 );        // alles um den Start auf einmal
+
+// Pro Frame, nach nbWorld_Step
+nbStream_Update( stream, &camera, 1 );
+```
+
+Die beschädigten Häuser hält der Stream im Speicher. Mit `storeFcn` und `fetchFcn` gehen sie stattdessen etwa in eine
+Datei, wie im Benchmark. Darunter liegen Bausteine, die es auch einzeln gibt. `nbDestructible_IsIntact` sagt, ob einem
+Objekt seit dem Anlegen etwas passiert ist, und `nbDestructible_CanUnload`, ob es jetzt gehen kann: Es ist unberührt,
+und im angegebenen Abstand liegen kein Trümmerteil und kein Schutt, und nichts dort bewegt sich oder lässt sich
+bewegen. Mit derselben Definition neu angelegt, hat es dieselben Bruchstücke und Verbindungen, bitgleich, nur neue Ids:
 
 ```c
 // Weit weg von der Kamera, und seit fünf Sekunden kam nichts vorbei
@@ -562,7 +590,8 @@ nbFinishCreating( city.creation, ids );
 ```
 
 Am besten startet das Laden nach dem Physikschritt, dann teilen sich die Worker die Kerne nicht mit den Threads von
-Box3D. Mit `nbWorld_RunAfterStep` geschieht das auf dem Thread des Schritts, und der Hauptthread zeichnet weiter.
+Box3D. Mit `nbWorld_RunAfterStep` geschieht das auf dem Thread des Schritts, und der Hauptthread zeichnet weiter. Der
+Stream macht es genauso.
 
 Ein beschädigtes Haus kann samt Schutt gehen, sobald alles daran ruht. `nbCanSaveDestructibles` sagt, ob es jetzt
 geht: Jedes Teil steht oder ist Schutt, die Lastprüfung ist gelaufen, im angegebenen Abstand liegt nichts, was sich
@@ -570,9 +599,8 @@ bewegt oder bewegen lässt, und kein Schutt liegt auf einem anderen Haus oder Sc
 Liegt Schutt zweier Häuser aufeinander, gehen beide zusammen. `nbSaveDestructibles` schreibt die Häuser in einen
 Puffer, und `nbLoadDestructibles` bringt sie zurück, mit denselben Bruchstücken, Verbindungen und Schuttkörpern,
 bitgleich, nur mit neuen Ids. Der Puffer lädt nur in den Build, der ihn geschrieben hat, er ist kein Spielstand.
-Auch ein gespeichertes Haus hat keine Kollision, und sein Schutt kann weiter reichen als das Haus. Die Demo merkt
-sich deshalb, wie weit, und holt das Haus zurück, sobald sich etwas bis dahin nähert (siehe `SaveCityHouse` in
-[demo/demo.cpp](demo/demo.cpp)):
+Auch ein gespeichertes Haus hat keine Kollision, und sein Schutt kann weiter reichen als das Haus. Der Stream merkt
+sich deshalb die Grenzen samt Schutt und holt das Haus zurück, sobald sich etwas bis dahin nähert:
 
 ```c
 // Beschädigt, weit weg von der Kamera, und seit fünf Sekunden kam nichts vorbei
@@ -594,9 +622,10 @@ Box3D und Nebenan starten sonst je eigene Threads. Mit `nbCreateTaskSystem` teil
 Threads nehmen die Aufgaben eines Schritts oder Einschlags vor den Häusern im Hintergrund:
 
 ```c
-nbTaskSystem* pool = nbCreateTaskSystem( 3 );   // drei Threads neben dem aufrufenden
+int threads = nbGetRecommendedWorkerCount( true );   // einer pro Performance-Kern, einer bleibt fürs Zeichnen
+nbTaskSystem* pool = nbCreateTaskSystem( threads - 1 );   // die Threads neben dem aufrufenden
 b3WorldDef worldDef = b3DefaultWorldDef();
-worldDef.workerCount = 4;
+worldDef.workerCount = threads;
 worldDef.enqueueTask = nbEnqueueTask;
 worldDef.finishTask = nbFinishTask;
 worldDef.userTaskContext = pool;
@@ -604,7 +633,7 @@ b3WorldId physics = b3CreateWorld( &worldDef );
 
 nbWorldDef def = nbDefaultWorldDef();
 def.physicsWorld = physics;
-def.workerCount = 4;
+def.workerCount = threads;
 def.taskSystem = pool;
 nbWorldId world = nbCreateWorld( &def );
 // … am Ende erst beide Welten löschen, dann den Pool mit nbDestroyTaskSystem
@@ -660,6 +689,20 @@ beim Einbinden nicht gebaut.
 | `workerCount` | 1 | Threads für Einschläge: Schaden, Bruchpunkte, Voronoi-Zellen und Hüllen, der aufrufende Thread zählt mit |
 | `enqueueTask`, `finishTask`, `userTaskContext` | leer | Task-System der Anwendung, sonst startet Nebenan eigene Threads |
 | `asyncStep` | an | `nbWorld_Step` rechnet auf einem eigenen Thread, während das Programm zeichnet. Die Welt rechnet bitgleich wie ohne. Die Allokatoren müssen threadsicher sein, und die Worker eines Schritts lassen dem zeichnenden Thread am besten einen Hardware-Thread frei. Zur Laufzeit mit `nbWorld_SetAsyncStep` |
+
+| Stream (`nbStreamDef`) | Standard | Wirkung |
+| --- | --- | --- |
+| `loadRadius` | 100 m | Plätze, deren Mitte entlang des Bodens so nah an einer Kamera liegt, werden geladen, die nächsten zuerst. Zur Laufzeit mit `nbStream_SetLoadRadius` |
+| `unloadMargin` | 20 m | Ein Platz geht erst jenseits von Laderadius plus diesem Rand, damit einer am Rand nicht kommt und geht |
+| `activeLoadRadius` | 10 m | Ein Körper, der sich bewegt, lädt die Plätze, deren Grenzen so nah an ihm liegen, bevor er sie erreichen kann |
+| `activeHoldRadius` | 20 m | und hält die Plätze in diesem Abstand fest |
+| `holdTime` | 5 s | So lange darf sich nichts in `activeHoldRadius` bewegt haben, bevor ein Platz geht |
+| `retryTime` | 0,5 s | Ein Platz, der noch nicht gehen konnte, wird nach dieser Zeit wieder gefragt |
+| `margin` | 2 m | Nichts, was sich bewegt oder bewegen lässt, darf so nah an einem Platz liegen, der geht |
+| `loadBudget`, `unloadBudget`, `saveBudget` | 2, 4, 1 | Neue Plätze pro Update, Plätze, die gehen, davon beschädigte samt Schutt |
+| `loadDelay` | 1 | Updates vom Start im Hintergrund bis zum Einbauen. Eins passt für ein Spiel, mehr für Updates, die direkt aufeinander folgen |
+| `prepareFcn`, `releaseFcn` | – | Was auf einem Platz steht, und die Rückgabe der Teile. `prepareFcn` ist Pflicht |
+| `storeFcn`, `fetchFcn` | leer | Wohin beschädigte Plätze samt Schutt gehen, etwa in eine Datei. Ohne sie bleiben sie im Speicher |
 
 Die Demo nimmt für Ziegel Dichte 1900, Festigkeit 6·10⁵ und Splitter 0,1 m, für Beton Dichte 2400,
 Festigkeit 1,1·10⁶ und Splitter 0,13 m, beides mit Bruchstückgröße ×2.
@@ -893,8 +936,8 @@ Messungen in [docs/Optimierungen.md](docs/Optimierungen.md).
 ## Tests und Benchmark
 
 ```sh
-build/bin/nebenan_test            # 48 Tests: Geometrie, Voronoi, Hüllen, Öffnungen, Stöße, Stützgraph, Etagen, Lastprüfung, Schutt, Ruhe, Durchschlagen, Threads, große Blöcke, Suchbaum, Kontaktlisten, Streaming, Laden im Hintergrund, Speichern und Zurückholen, gemeinsamer Thread-Pool, Schritt auf eigenem Thread, Determinismus …
-build/bin/nebenan_benchmark 4     # Zahl = Threads für Bruch und Physik
+build/bin/nebenan_test            # 50 Tests: Geometrie, Voronoi, Hüllen, Öffnungen, Stöße, Stützgraph, Etagen, Lastprüfung, Schutt, Ruhe, Durchschlagen, Threads, große Blöcke, Suchbaum, Kontaktlisten, Streaming, Stream, Laden im Hintergrund, Speichern und Zurückholen, gemeinsamer Thread-Pool, Schritt auf eigenem Thread, Wahl der Threads, Determinismus …
+build/bin/nebenan_benchmark 4     # Zahl = Threads für Bruch und Physik, 0 = so viele, wie ein Spiel nähme
 ```
 
 Unter Windows liegen die Programme in `build\bin\Release\`. Die CI baut und testet unter Windows, Linux und
@@ -912,6 +955,8 @@ src/
   world.c           Welt, Bruchstücke, Verbindungen, Stützgraph, Etagen, Lastprüfung, Trümmer, Ruhe und Schutt, Events
   destructible.c    zerstörbare Objekte und Vorzerlegung
   impact.c          Einschläge und Auswurf der Splitter
+  stream.c          Städte größer als der Speicher: Laden und Entladen um Kamera und bewegte Körper
+  system.c          Kerne und die passende Zahl von Threads
   scheduler.c       eingebaute Threads, wenn die Anwendung kein Task-System mitbringt, und der Thread des Schritts
 test/               Tests
 benchmark/          Leistungsmessung
