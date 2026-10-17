@@ -50,6 +50,7 @@ typedef struct nbCandidate
 
 NB_ARRAY_DECLARE( nbSite, nbSiteArray );
 NB_ARRAY_DECLARE( nbCandidate, nbCandidateArray );
+NB_ARRAY_DECLARE( b3Vec3, nbVec3Array );
 NB_ARRAY_DECLARE( nbDestructibleDef, nbDestructibleDefArray );
 NB_ARRAY_DECLARE( const nbPieceDef*, nbPieceListArray );
 NB_ARRAY_DECLARE( nbDestructibleId, nbDestructibleIdArray );
@@ -83,6 +84,12 @@ typedef struct nbStream
 	// One batch per update of the load delay, the next one to build in and start again
 	nbStreamBatch* batches;
 	int batchIndex;
+
+	// The sites out of the world near the viewers at the last search, and where the viewers stood, see nbPickSites
+	nbIntArray nearby;
+	nbVec3Array nearViewers;
+	b3Vec3 nearUp;
+	bool nearValid;
 
 	nbCandidateArray candidates;
 	nbChunkIdArray chunks;
@@ -286,6 +293,8 @@ static void nbFreeStream( nbStream* stream, bool worldGoes )
 	nbArray_Free( stream->sites );
 	nbArray_Free( stream->loaded );
 	nbArray_Free( stream->urgent );
+	nbArray_Free( stream->nearby );
+	nbArray_Free( stream->nearViewers );
 	nbArray_Free( stream->candidates );
 	nbArray_Free( stream->chunks );
 	nbFree( stream, sizeof( nbStream ) );
@@ -332,6 +341,7 @@ int nbStream_AddSite( nbStreamId streamId, b3AABB bounds )
 	site.proxyId = b3DynamicTree_CreateProxy( &stream->tree, bounds, B3_DEFAULT_CATEGORY_BITS, (uint64_t)index );
 	nbArray_Push( stream->sites, site );
 	stream->stats.siteCount += 1;
+	stream->nearValid = false;
 	return index;
 }
 
@@ -341,6 +351,7 @@ void nbStream_SetLoadRadius( nbStreamId streamId, float radius )
 	if ( stream != NULL )
 	{
 		stream->def.loadRadius = b3MaxFloat( radius, 0.0f );
+		stream->nearValid = false;
 	}
 }
 
@@ -637,8 +648,11 @@ typedef struct nbPickContext
 	const b3Vec3* viewers;
 	int viewerCount;
 	b3Vec3 up;
+	float radius;
+	int count;
 } nbPickContext;
 
+// Keep a site out of the world within the radius of the viewers, once for several viewers
 static bool nbPickSite( int proxyId, uint64_t userData, void* context )
 {
 	NB_UNUSED( proxyId );
@@ -646,18 +660,57 @@ static bool nbPickSite( int proxyId, uint64_t userData, void* context )
 	nbStream* stream = pick->stream;
 	int index = (int)userData;
 	nbSite* site = stream->sites.data + index;
+	if ( site->pickStamp == stream->pickStamp || ( site->state != nb_siteOut && site->state != nb_siteSaved ) )
+	{
+		return true;
+	}
+
+	site->pickStamp = stream->pickStamp;
+	if ( nbViewerDistance( site, pick->viewers, pick->viewerCount, pick->up ) <= pick->radius * pick->radius )
+	{
+		nbArray_Push( stream->nearby, index );
+	}
+	return true;
+}
+
+#if !defined( NDEBUG )
+// Count a site a viewer can pick, once for several viewers
+static bool nbCountSite( int proxyId, uint64_t userData, void* context )
+{
+	NB_UNUSED( proxyId );
+	nbPickContext* pick = context;
+	nbStream* stream = pick->stream;
+	nbSite* site = stream->sites.data + (int)userData;
 	if ( site->pickStamp == stream->pickStamp || site->urgent || ( site->state != nb_siteOut && site->state != nb_siteSaved ) )
 	{
 		return true;
 	}
 
 	site->pickStamp = stream->pickStamp;
-	float distance = nbViewerDistance( site, pick->viewers, pick->viewerCount, pick->up );
-	if ( distance <= stream->def.loadRadius * stream->def.loadRadius )
-	{
-		nbArray_Push( stream->candidates, ( (nbCandidate){ distance, index } ) );
-	}
+	pick->count += nbViewerDistance( site, pick->viewers, pick->viewerCount, pick->up ) <= pick->radius * pick->radius ? 1 : 0;
 	return true;
+}
+#endif
+
+// Whether the viewers changed since the last search, or one of them moved farther along the ground than the tolerance
+static bool nbNearbyStale( const nbStream* stream, const b3Vec3* viewers, int viewerCount, b3Vec3 up, float tolerance )
+{
+	if ( stream->nearValid == false || stream->nearViewers.count != viewerCount || up.x != stream->nearUp.x ||
+		 up.y != stream->nearUp.y || up.z != stream->nearUp.z )
+	{
+		return true;
+	}
+
+	for ( int i = 0; i < viewerCount; ++i )
+	{
+		b3Vec3 offset = b3Sub( viewers[i], stream->nearViewers.data[i] );
+		offset = b3MulSub( offset, b3Dot( offset, up ), up );
+		if ( b3LengthSquared( offset ) > tolerance * tolerance )
+		{
+			return true;
+		}
+	}
+	return false;
 }
 
 static int nbCompareCandidates( const void* a, const void* b )
@@ -673,6 +726,12 @@ static int nbCompareCandidates( const void* a, const void* b )
 
 // The sites a moving body asked for, then the ones within the load radius of the viewers, the nearest first. The ones a
 // moving body asked for that do not fit come back with the next step that moves something near them.
+//
+// The tree is searched again only once a viewer moved farther than half the unload margin. The search keeps the sites
+// out of the world within the load radius plus that half, and the updates until the next one measure only those. No
+// other site can come within the load radius meanwhile: The ones farther out stay beyond it, and the ones in the world
+// that could reach it cannot go, the viewers stay within the load radius plus the unload margin of them. So the updates
+// pick the same sites as with a search each time.
 static void nbPickSites( nbStream* stream, const b3Vec3* viewers, int viewerCount, b3Vec3 up )
 {
 	stream->candidates.count = 0;
@@ -681,14 +740,61 @@ static void nbPickSites( nbStream* stream, const b3Vec3* viewers, int viewerCoun
 		nbArray_Push( stream->candidates, ( (nbCandidate){ -1.0f, stream->urgent.data[k] } ) );
 	}
 
-	// The urgent ones keep their mark until the viewers' are collected, so none comes twice
+	float tolerance = b3MaxFloat( 0.5f * stream->def.unloadMargin, 0.0f );
+	if ( nbNearbyStale( stream, viewers, viewerCount, up, tolerance ) )
+	{
+		stream->nearby.count = 0;
+		stream->pickStamp += 1;
+		nbPickContext pick = { stream, viewers, viewerCount, up, stream->def.loadRadius + tolerance, 0 };
+		for ( int i = 0; i < viewerCount; ++i )
+		{
+			b3DynamicTree_Query( &stream->tree, nbViewerBox( viewers[i], pick.radius, up ), B3_DEFAULT_MASK_BITS, false,
+								 nbPickSite, &pick );
+		}
+
+		nbArray_Reserve( stream->nearViewers, viewerCount );
+		for ( int i = 0; i < viewerCount; ++i )
+		{
+			stream->nearViewers.data[i] = viewers[i];
+		}
+		stream->nearViewers.count = viewerCount;
+		stream->nearUp = up;
+		stream->nearValid = true;
+	}
+
+	// The ones in the world or on their way leave the list. The urgent ones are candidates already, they keep their mark
+	// until here.
+	float radius = stream->def.loadRadius;
+	int nearCount = 0;
+	for ( int k = 0; k < stream->nearby.count; ++k )
+	{
+		int index = stream->nearby.data[k];
+		const nbSite* site = stream->sites.data + index;
+		if ( site->state != nb_siteOut && site->state != nb_siteSaved )
+		{
+			continue;
+		}
+
+		stream->nearby.data[nearCount++] = index;
+		float distance = nbViewerDistance( site, viewers, viewerCount, up );
+		if ( site->urgent == false && distance <= radius * radius )
+		{
+			nbArray_Push( stream->candidates, ( (nbCandidate){ distance, index } ) );
+		}
+	}
+	stream->nearby.count = nearCount;
+
+#if !defined( NDEBUG )
+	// A search of the tree finds as many, and the list holds only sites it would find, so the same ones
 	stream->pickStamp += 1;
-	nbPickContext pick = { stream, viewers, viewerCount, up };
+	nbPickContext check = { stream, viewers, viewerCount, up, radius, 0 };
 	for ( int i = 0; i < viewerCount; ++i )
 	{
-		b3DynamicTree_Query( &stream->tree, nbViewerBox( viewers[i], stream->def.loadRadius, up ), B3_DEFAULT_MASK_BITS,
-							 false, nbPickSite, &pick );
+		b3DynamicTree_Query( &stream->tree, nbViewerBox( viewers[i], radius, up ), B3_DEFAULT_MASK_BITS, false, nbCountSite,
+							 &check );
 	}
+	NB_ASSERT( check.count == stream->candidates.count - stream->urgent.count );
+#endif
 
 	for ( int k = 0; k < stream->urgent.count; ++k )
 	{
