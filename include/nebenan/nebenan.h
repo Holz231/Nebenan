@@ -77,6 +77,12 @@ NB_API void nbWorld_Update( nbWorldId worldId, float timeStep );
 /// of that before the step and draws while it runs. Other threads must leave the worlds alone until then.
 NB_API void nbWorld_Step( nbWorldId worldId, float timeStep, int subStepCount );
 
+/// How many steps of timeStep seconds a frame of frameTime seconds takes with nbWorld_Step, the time left over waits for
+/// the next frame. When the steps cannot keep up, the simulation slows down instead of taking more and more steps per
+/// frame, which would slow down every frame further: A frame counts at most 0.1 s and takes at most two steps, a second
+/// one only while the last step with its update took less than 4 ms. Waits for the steps.
+NB_API int nbWorld_PlanSteps( nbWorldId worldId, float frameTime, float timeStep );
+
 /// The latest move of every body that moved in the steps of nbWorld_Step since the previous call, without the bodies that
 /// went meanwhile. Waits for the steps, from any thread. The array stays valid until the next call.
 NB_API b3BodyEvents nbWorld_GetBodyEvents( nbWorldId worldId );

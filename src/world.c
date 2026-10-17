@@ -5818,6 +5818,38 @@ void nbWorld_Step( nbWorldId worldId, float timeStep, int subStepCount )
 	nbStepThread_Push( world->stepThread, &step );
 }
 
+// A frame takes at most so many steps, more than one only while the last step with its update took less than so many
+// milliseconds, and counts at most so many seconds, see nbWorld_PlanSteps
+#define NB_PLAN_MAX_STEPS 2
+#define NB_PLAN_CHEAP_TIME 4.0f
+#define NB_PLAN_MAX_FRAME 0.1f
+
+int nbWorld_PlanSteps( nbWorldId worldId, float frameTime, float timeStep )
+{
+	// Through the lookup that waits, the time of the last step decides
+	nbWorld* world = nbGetWorldFromId( worldId );
+	if ( world == NULL || timeStep <= 0.0f )
+	{
+		return 0;
+	}
+
+	int maxSteps = world->stats.stepTime + world->stats.updateTime < NB_PLAN_CHEAP_TIME ? NB_PLAN_MAX_STEPS : 1;
+	world->stepClock += b3ClampFloat( frameTime, 0.0f, NB_PLAN_MAX_FRAME );
+	int steps = 0;
+	while ( world->stepClock >= timeStep && steps < maxSteps )
+	{
+		world->stepClock -= timeStep;
+		steps += 1;
+	}
+
+	// What the steps cannot take is dropped, the simulation slows down
+	if ( steps == maxSteps )
+	{
+		world->stepClock = b3MinFloat( world->stepClock, timeStep );
+	}
+	return steps;
+}
+
 void nbWorld_RunAfterStep( nbWorldId worldId, nbAfterStepFcn* fcn, void* context )
 {
 	nbWorld* world = nbFindWorld( worldId );

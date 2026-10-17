@@ -3961,6 +3961,40 @@ static int AsyncStepTest( void )
 	return 0;
 }
 
+// nbWorld_PlanSteps keeps the time a frame leaves over for the next one, takes at most two steps per frame and counts a
+// frame that hung as 0.1 s. Before the first step the steps count as cheap. With the step on a thread of its own it
+// waits for the steps before it reads how long the last one took.
+static int PlanStepsTest( void )
+{
+	const float step = 1.0f / 64.0f;
+	for ( int pass = 0; pass < 2; ++pass )
+	{
+		TestScene scene = CreateScene();
+		nbWorld_SetAsyncStep( scene.world, pass == 1 );
+
+		ENSURE( nbWorld_PlanSteps( scene.world, 0.5f * step, step ) == 0 );
+		ENSURE( nbWorld_PlanSteps( scene.world, 0.5f * step, step ) == 1 );
+		ENSURE( nbWorld_PlanSteps( scene.world, 2.5f * step, step ) == 2 );
+		ENSURE( nbWorld_PlanSteps( scene.world, 0.5f * step, step ) == 1 );
+
+		// What two steps cannot take is dropped, up to one step that waits for the next frame
+		ENSURE( nbWorld_PlanSteps( scene.world, 1.0f, step ) == 2 );
+		ENSURE( nbWorld_PlanSteps( scene.world, 0.0f, step ) == 1 );
+		ENSURE( nbWorld_PlanSteps( scene.world, 0.0f, step ) == 0 );
+		ENSURE( nbWorld_PlanSteps( scene.world, -1.0f, step ) == 0 );
+		ENSURE( nbWorld_PlanSteps( scene.world, step, 0.0f ) == 0 );
+
+		// A frame of one step takes it, however long the last one took
+		for ( int frame = 0; frame < 30; ++frame )
+		{
+			ENSURE( nbWorld_PlanSteps( scene.world, step, step ) == 1 );
+			nbWorld_Step( scene.world, step, 4 );
+		}
+		DestroyScene( &scene );
+	}
+	return 0;
+}
+
 // The threads a game should take: one per performance core, at most 8, with one hardware thread left over for the thread
 // that draws while the step runs on a thread of its own
 static int WorkerCountTest( void )
@@ -4168,6 +4202,7 @@ int WorldTest( void )
 	RUN_TEST( SaveLoadTest );
 	RUN_TEST( TaskSystemTest );
 	RUN_TEST( AsyncStepTest );
+	RUN_TEST( PlanStepsTest );
 	RUN_TEST( WorkerCountTest );
 	RUN_TEST( StreamSiteTest );
 	RUN_TEST( RestTest );

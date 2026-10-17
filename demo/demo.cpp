@@ -328,7 +328,6 @@ struct App
 	City city;
 	float cityRadius = 100.0f;
 
-	float accumulator = 0.0f;
 	int workerCount = 1;
 
 	bool keys[SAPP_MAX_KEYCODES] = {};
@@ -1231,30 +1230,13 @@ static void UpdateBalls( App& app, float dt )
 //----------------------------------------------------------------------------------------------------------------------
 // Simulation
 
-// Start the steps this frame needs. When the simulation cannot keep up, it slows down instead of taking more and more
-// steps per frame, which would slow down every frame further. A second step in the same frame only catches up when
-// steps are cheap. With parallel physics the steps run on the thread of Nebenan while the frame is drawn, else right
-// here. Either way the main thread does not touch the worlds again before it waits for them, see FinishPhysics.
+// Start the steps this frame needs, see nbWorld_PlanSteps. With parallel physics they run on the thread of Nebenan while
+// the frame is drawn, else right here. Either way the main thread does not touch the worlds again before it waits for
+// them, see FinishPhysics.
 static void StartPhysics( App& app, float frameDt )
 {
 	const float step = 1.0f / 60.0f;
-	int steps = 0;
-	if ( app.paused == false )
-	{
-		int maxSteps = app.physicsTime + app.destructionTime < 4.0f ? 2 : 1;
-		app.accumulator += b3MinFloat( frameDt, 0.1f );
-		while ( app.accumulator >= step && steps < maxSteps )
-		{
-			app.accumulator -= step;
-			steps += 1;
-		}
-
-		if ( steps == maxSteps )
-		{
-			app.accumulator = b3MinFloat( app.accumulator, step );
-		}
-	}
-
+	int steps = app.paused ? 0 : nbWorld_PlanSteps( app.destruction, frameDt, step );
 	app.physicsSteps = steps;
 	app.physicsPending = steps > 0 || app.scene == SceneCity;
 	UpdateBalls( app, (float)steps * step );
@@ -2032,7 +2014,6 @@ static void BeginComparisonRun( App& app )
 {
 	Comparison& comparison = app.comparison;
 	app.parallelPhysics = Comparison::IsParallel( comparison.run );
-	app.accumulator = 0.0f;
 	app.maxDebrisBodies = DemolitionBudget;
 	app.demolition = Demolition();
 	LoadScene( app, SceneTown );
@@ -2084,7 +2065,6 @@ static void StopComparison( App& app )
 		app.vsync = comparison.vsync;
 		DemoSetVsync( app.vsync );
 	}
-	app.accumulator = 0.0f;
 	LoadScene( app, comparison.scene );
 }
 

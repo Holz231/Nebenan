@@ -14,7 +14,8 @@ gelöscht. Kein Staub, keine Schatten: Jede Millisekunde geht in die Zerstörung
   an den getroffenen Stücken, Bruchpunkte, Voronoi-Zellen und Hüllen. Derweil weckt der aufrufende Thread den Schutt
   am Einschlag auf. Das Ergebnis hängt nicht von der Zahl der Threads ab
 - Die Physik rechnet auf einem eigenen Thread, während das Programm zeichnet (`nbWorld_Step`). Wer danach die Welt
-  anfasst, wartet automatisch auf den Schritt, und die Welt rechnet bitgleich wie ohne
+  anfasst, wartet automatisch auf den Schritt, und die Welt rechnet bitgleich wie ohne. Wie viele Schritte ein Bild
+  braucht, sagt `nbWorld_PlanSteps`
 - Einsturz Etage für Etage, auf jeder Höhe und in jeder Reihenfolge: Hat eine Etage weniger als die Hälfte ihrer Wände,
   fliegen ihre letzten Wände mit Wucht heraus, und alles darüber kommt als ein Stück herunter, gekippt zur Seite, wo
   die Wände fehlen. Die Räume oben bleiben ganz und geben wieder Deckung. Sonst stürzt an einem Haus nichts ein,
@@ -479,15 +480,25 @@ for ( int i = 0; i < events.createdCount; ++i )
 // events.movedChunks: Bruchstück hängt jetzt an einem anderen Körper
 // events.exposedChunks: Mesh neu bauen, verdeckte Flächen können frei geworden sein
 
-// Einschläge und alles andere, was die Welten ändert, dann der Schritt
-nbWorld_Step( world, 1.0f / 60.0f, 4 );
-// Zeichnen, der Schritt rechnet derweil auf dem Thread von Nebenan
+// Einschläge und alles andere, was die Welten ändert, dann die Schritte, die dieses Bild braucht
+int steps = nbWorld_PlanSteps( world, frameTime, 1.0f / 60.0f );
+for ( int i = 0; i < steps; ++i )
+{
+	nbWorld_Step( world, 1.0f / 60.0f, 4 );
+}
+// Zeichnen, die Schritte rechnen derweil auf dem Thread von Nebenan
 ```
 
 `nbWorld_Step` ersetzt `b3World_Step` und `nbWorld_Update`, siehe Der Schritt auf einem eigenen Thread. Nach dem Schritt
 fasst das Programm die Welten bis zum nächsten Frame nicht mehr an, sonst wartet dieser Aufruf auf den Schritt, und
 das Bild verliert den Vorteil. Andere Threads lassen die Welten in der Zeit ganz in Ruhe. Mit `asyncStep` aus oder dem
 alten Weg, `b3World_Step` und danach `nbWorld_Update`, rechnet alles auf dem aufrufenden Thread, mit derselben Welt.
+
+`nbWorld_PlanSteps` sagt, wie viele Schritte ein Bild braucht, und hebt den Rest der Zeit für das nächste auf. Kommen
+die Schritte nicht hinterher, wird die Simulation langsamer, statt mit immer mehr Schritten pro Bild jedes Bild weiter
+zu bremsen: höchstens zwei Schritte pro Bild, einen zweiten nur, solange der letzte Schritt samt Update unter 4 ms
+blieb, und ein Bild zählt höchstens 0,1 s. Wer schon eine eigene Schleife mit festem Schritt hat, ruft nur
+`nbWorld_Step`.
 
 Gebäude entstehen aus mehreren konvexen Teilen mit `nbCreateDestructible`. Sich berührende Flächen
 verschiedener Teile werden automatisch verbunden, `cellSize` zerlegt die Teile schon beim Laden. Ein Teil
@@ -960,7 +971,7 @@ Messungen in [docs/Optimierungen.md](docs/Optimierungen.md).
 ## Tests und Benchmark
 
 ```sh
-build/bin/nebenan_test            # 50 Tests: Geometrie, Voronoi, Hüllen, Öffnungen, Stöße, Stützgraph, Etagen, Lastprüfung, Schutt, Ruhe, Durchschlagen, Threads, große Blöcke, Suchbaum, Kontaktlisten, Streaming, Stream, Laden im Hintergrund, Speichern und Zurückholen, gemeinsamer Thread-Pool, Schritt auf eigenem Thread, Wahl der Threads, Determinismus …
+build/bin/nebenan_test            # 51 Tests: Geometrie, Voronoi, Hüllen, Öffnungen, Stöße, Stützgraph, Etagen, Lastprüfung, Schutt, Ruhe, Durchschlagen, Threads, große Blöcke, Suchbaum, Kontaktlisten, Streaming, Stream, Laden im Hintergrund, Speichern und Zurückholen, gemeinsamer Thread-Pool, Schritt auf eigenem Thread, Schritte pro Bild, Wahl der Threads, Determinismus …
 build/bin/nebenan_benchmark 4     # Zahl = Threads für Bruch und Physik, 0 = so viele, wie ein Spiel nähme
 ```
 
