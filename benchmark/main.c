@@ -456,6 +456,7 @@ static void BenchmarkTown( int workerCount, float fragmentScale, int side, int g
 	impact.radius = 1.3f;
 	impact.damage = 3.0e5f;
 	impact.ejectSpeed = 12.0f;
+	impact.explosionImpulse = 40.0f * impact.ejectSpeed;
 	int maxBodies = 0, maxAwake = 0, maxContacts = 0, grenades = 0;
 	float physicsProfile[8] = { 0 };
 
@@ -478,13 +479,6 @@ static void BenchmarkTown( int workerCount, float fragmentScale, int side, int g
 			nbImpactResult result = nbWorld_ApplyImpact( scene.world, &impact );
 			impactTime += result.totalTime;
 			grenades += 1;
-
-			b3ExplosionDef explosion = b3DefaultExplosionDef();
-			explosion.position = impact.point;
-			explosion.radius = impact.radius;
-			explosion.falloff = impact.radius;
-			explosion.impulsePerArea = 40.0f * impact.ejectSpeed;
-			b3World_Explode( scene.physicsWorld, &explosion );
 		}
 
 		ticks = b3GetTicks();
@@ -685,6 +679,7 @@ static void BenchmarkCity( int workerCount )
 	impact.radius = 1.3f;
 	impact.damage = 3.0e5f;
 	impact.ejectSpeed = 12.0f;
+	impact.explosionImpulse = 40.0f * impact.ejectSpeed;
 	for ( int frame = 0; frame < frameCount; ++frame )
 	{
 		camera.x += frame < outFrames ? speed / 60.0f : -speed / 60.0f;
@@ -710,13 +705,6 @@ static void BenchmarkCity( int workerCount )
 										 : (b3Vec3){ -4.7f, height, 3.0f * along };
 				impact.point = b3Add( CityHousePosition( &city, j * side + i ), local );
 				impactTime = nbWorld_ApplyImpact( city.scene.world, &impact ).totalTime;
-
-				b3ExplosionDef explosion = b3DefaultExplosionDef();
-				explosion.position = impact.point;
-				explosion.radius = impact.radius;
-				explosion.falloff = impact.radius;
-				explosion.impulsePerArea = 40.0f * impact.ejectSpeed;
-				b3World_Explode( city.scene.physicsWorld, &explosion );
 			}
 		}
 

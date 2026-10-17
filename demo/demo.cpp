@@ -1115,14 +1115,8 @@ static void Detonate( App& app, b3Pos point )
 	nbImpactDef impact = MakeImpact( settings );
 	impact.point = point;
 	impact.direction = b3Vec3_zero;
+	impact.explosionImpulse = 40.0f * settings.ejectSpeed;
 	app.lastImpact = nbWorld_ApplyImpact( app.destruction, &impact );
-
-	b3ExplosionDef explosion = b3DefaultExplosionDef();
-	explosion.position = point;
-	explosion.radius = settings.radius;
-	explosion.falloff = settings.radius;
-	explosion.impulsePerArea = 40.0f * settings.ejectSpeed;
-	b3World_Explode( app.physics, &explosion );
 }
 
 static void FireRay( App& app, b3Vec3 origin, b3Vec3 direction )

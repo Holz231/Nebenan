@@ -449,6 +449,16 @@ shot.ejectSpeed = 9.0f;
 nbImpactResult result;
 nbWorld_CastImpact( world, b3ToPos( eye ), b3MulSV( 100.0f, aim ), &shot, &result );
 
+// Granate: ohne Richtung fliegen die Splitter nach allen Seiten, und eine Box3D-Explosion stößt danach jeden Körper im
+// Radius an, auch die, die nicht zu Nebenan gehören
+nbImpactDef grenade = { 0 };
+grenade.point = b3ToPos( target );
+grenade.radius = 1.3f;
+grenade.damage = 3.0e5f;
+grenade.ejectSpeed = 12.0f;
+grenade.explosionImpulse = 40.0f * grenade.ejectSpeed;
+nbWorld_ApplyImpact( world, &grenade );
+
 // Pro Frame: zuerst die Körper, die der Schritt des letzten Frames bewegt hat
 b3BodyEvents moves = nbWorld_GetBodyEvents( world );
 for ( int i = 0; i < moves.moveCount; ++i )

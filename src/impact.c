@@ -804,7 +804,20 @@ nbImpactResult nbWorld_ApplyImpact( nbWorldId worldId, const nbImpactDef* def )
 	{
 		return (nbImpactResult){ 0 };
 	}
-	return nbApplyImpact( world, def, NB_NULL_INDEX );
+
+	nbImpactResult result = nbApplyImpact( world, def, NB_NULL_INDEX );
+
+	// After the fracture, so it pushes the fresh fragments as well
+	if ( def->explosionImpulse > 0.0f )
+	{
+		b3ExplosionDef explosion = b3DefaultExplosionDef();
+		explosion.position = def->point;
+		explosion.radius = def->radius;
+		explosion.falloff = def->radius;
+		explosion.impulsePerArea = def->explosionImpulse;
+		b3World_Explode( world->physicsWorld, &explosion );
+	}
+	return result;
 }
 
 bool nbWorld_CastImpact( nbWorldId worldId, b3Pos origin, b3Vec3 translation, const nbImpactDef* def, nbImpactResult* result )

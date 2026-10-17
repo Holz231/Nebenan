@@ -257,6 +257,12 @@ typedef struct nbImpactDef
 	/// Zero derives the count from the material fragment size and the damaged volume.
 	int fragmentCount;
 
+	/// Impulse per square meter of surface with which a Box3D explosion pushes every body around the impact after the
+	/// fracture, see b3World_Explode, with the damage radius as its radius and falloff. Nebenan pushes the loose debris in
+	/// the blast by itself, the explosion also reaches every other body, like the props and characters of a game, and the
+	/// fresh fragments. Zero, the default, starts no explosion. The grenades of the demo take 40 times the eject speed.
+	float explosionImpulse;
+
 	/// Limit the impact to one destructible. Null affects all destructibles.
 	nbDestructibleId destructibleId;
 } nbImpactDef;

@@ -2535,14 +2535,8 @@ static void Grenade( TestScene* scene, b3Vec3 point )
 	impact.radius = 1.3f;
 	impact.damage = 3.0e5f;
 	impact.ejectSpeed = 12.0f;
+	impact.explosionImpulse = 40.0f * impact.ejectSpeed;
 	nbWorld_ApplyImpact( scene->world, &impact );
-
-	b3ExplosionDef explosion = b3DefaultExplosionDef();
-	explosion.position = point;
-	explosion.radius = impact.radius;
-	explosion.falloff = impact.radius;
-	explosion.impulsePerArea = 40.0f * impact.ejectSpeed;
-	b3World_Explode( scene->physicsWorld, &explosion );
 }
 
 // A point on the walls of a house 9 m wide and 6.5 m deep, d meters along the front, the right side, the back and the
