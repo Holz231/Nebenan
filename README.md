@@ -933,6 +933,11 @@ samt Suchbaum, 15 MB für die 65 536 Häuser. Die Kopie führte ihre Liste selbs
 fallen etwas anders, weil der Stream die Welt in anderer Reihenfolge ändert: 26 statt 8 Häuser laden für bewegte
 Körper, über die sechs Granatenfolgen im Mittel 4,7 statt 1,3, bei fünf davon 0 bis 2.
 
+Seit `physik-19` ordnet der Stream die bewegten Körper in Zellen so groß wie der Halteradius, und jede Zelle durchsucht
+den Baum der Bauplätze einmal für alle ihre Körper, mit denselben Ergebnissen wie zuvor. Gepaart gegen `physik-18`
+kostet das Markieren 0,76 statt 1,11 µs pro Körper mit 4 Threads und 0,96 statt 1,30 µs mit einem, weniger als das
+Raster der alten Kopie. Ein Frame der Stadt kostet so mit 4 Threads 1,3 % weniger über sechs Granatenfolgen.
+
 Ganze Einschläge (Bruch, Stützgraph, neue Box3D-Körper) und der Box3D-Schritt danach bei 60 Hz mit
 4 Substeps, jeweils mit 1 und 4 Threads, der Median aus sechs Läufen:
 
