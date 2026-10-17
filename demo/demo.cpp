@@ -16,7 +16,6 @@
 #include "nebenan/nebenan.h"
 
 #include <algorithm>
-#include <condition_variable>
 #include <float.h>
 #include <math.h>
 #include <stdarg.h>
@@ -25,9 +24,7 @@
 #include <string.h>
 #include <string>
 #include <memory>
-#include <mutex>
 #include <thread>
-#include <unordered_map>
 #include <vector>
 
 extern "C" bool DemoSaveScreenshot( const char* path, int width, int height );
@@ -85,44 +82,19 @@ struct Ball
 	float age;
 };
 
-// The new transform of a slot whose body moved in a step
-struct SlotTransform
+// The slots of the chunks of a body, by the index of the body in Box3D, so the moves of a frame find them quickly
+struct BodySlots
 {
-	int slot;
-	b3Vec3 position;
-	b3Quat rotation;
+	uint16_t generation = 0;
+	std::vector<int> slots;
 };
 
-// The physics of a frame: its steps with the destruction update, then the streaming of the large city. With parallel
-// physics it runs on a thread of its own while the main thread draws the frame before, see StartPhysics. While it runs,
-// only it touches the two worlds, the city and the balls, and only the main thread touches the renderer and the slots
-// of the bodies.
-struct PhysicsJob
+// Where the large city streams around after the steps of a frame, see StartPhysics. The main thread sets it before the
+// steps and leaves it alone until it waits for them.
+struct CityJob
 {
-	// Steps to take, and where the camera is for the streaming and how far around it the houses load
-	int steps = 0;
 	b3Vec3 camera = {};
-	float cityRadius = 0.0f;
-
-	// The slots of the bodies that moved, the balls that went, and the CPU time of a Box3D step, of a destruction
-	// update and of the whole job in milliseconds. ApplyPhysics hands them to the main thread.
-	std::vector<SlotTransform> transforms;
-	std::vector<Ball> removedBalls;
-	float physicsTime = 0.0f;
-	float destructionTime = 0.0f;
-	float time = 0.0f;
-	bool pending = false;
-};
-
-// The thread of the parallel physics, woken for every job
-struct PhysicsThread
-{
-	std::thread thread;
-	std::mutex mutex;
-	std::condition_variable wake;
-	std::condition_variable finished;
-	bool running = false;
-	bool quit = false;
+	float radius = 0.0f;
 };
 
 // What the menu and the report show of the worlds and the city, read on the main thread while no job runs
@@ -369,7 +341,7 @@ struct App
 	Camera camera = {};
 
 	std::vector<ChunkVisual> chunks;
-	std::unordered_map<uint64_t, std::vector<int>> bodySlots;
+	std::vector<BodySlots> bodySlots;
 	std::vector<Ball> balls;
 	std::vector<GpuVertex> ballVertices;
 	std::vector<uint16_t> ballIndices;
@@ -419,12 +391,14 @@ struct App
 	float destructionTime = 0.0f;
 	nbImpactResult lastImpact = {};
 
-	// The physics on a thread of its own while the frame is drawn, see PhysicsJob, whether a job runs, and in this frame
-	// the CPU time of the physics and how long the main thread waited for it
+	// The physics on the thread of Nebenan while the frame is drawn, see nbWorldDef::asyncStep. The steps started last,
+	// whether they are not applied yet, the bodies they moved, and in this frame the CPU time of the physics and how long
+	// the main thread waited for it.
 	bool parallelPhysics = true;
-	bool physicsRunning = false;
-	PhysicsJob job;
-	PhysicsThread physicsThread;
+	int physicsSteps = 0;
+	bool physicsPending = false;
+	b3BodyEvents moves = {};
+	CityJob cityJob;
 	float simulationTime = 0.0f;
 	float waitTime = 0.0f;
 	WorldView view;
@@ -474,27 +448,47 @@ static const char* s_buildType = "Debug";
 
 static App* s_app = nullptr;
 
-static uint64_t BodyKey( b3BodyId id )
+// The slots of a body, null if it has none. A body that took the index of one that went has none until it gets its own.
+static BodySlots* FindBodySlots( App& app, b3BodyId body )
 {
-	return ( (uint64_t)(uint32_t)id.index1 << 32 ) | ( (uint64_t)id.world0 << 16 ) | id.generation;
+	size_t index = (size_t)( body.index1 - 1 );
+	if ( index >= app.bodySlots.size() || app.bodySlots[index].generation != body.generation )
+	{
+		return nullptr;
+	}
+	return &app.bodySlots[index];
 }
 
 static void AttachSlot( App& app, b3BodyId body, int slot )
 {
-	app.bodySlots[BodyKey( body )].push_back( slot );
+	size_t index = (size_t)( body.index1 - 1 );
+	if ( index >= app.bodySlots.size() )
+	{
+		app.bodySlots.resize( index + 1 );
+	}
+
+	// The slots of the body that had the index before are detached or go to other bodies with the events
+	BodySlots& entry = app.bodySlots[index];
+	if ( entry.generation != body.generation )
+	{
+		entry.generation = body.generation;
+		entry.slots.clear();
+	}
+	entry.slots.push_back( slot );
+
 	b3WorldTransform transform = b3Body_GetTransform( body );
 	app.renderer.SetSlot( slot, b3ToVec3( transform.p ), transform.q );
 }
 
 static void DetachSlot( App& app, b3BodyId body, int slot )
 {
-	auto it = app.bodySlots.find( BodyKey( body ) );
-	if ( it == app.bodySlots.end() )
+	BodySlots* entry = FindBodySlots( app, body );
+	if ( entry == nullptr )
 	{
 		return;
 	}
 
-	std::vector<int>& slots = it->second;
+	std::vector<int>& slots = entry->slots;
 	for ( size_t i = 0; i < slots.size(); ++i )
 	{
 		if ( slots[i] == slot )
@@ -503,11 +497,6 @@ static void DetachSlot( App& app, b3BodyId body, int slot )
 			slots.pop_back();
 			break;
 		}
-	}
-
-	if ( slots.empty() )
-	{
-		app.bodySlots.erase( it );
 	}
 }
 
@@ -655,28 +644,6 @@ static void SyncChunks( App& app )
 	}
 }
 
-// Box3D reports every body that moved during a step, only those slots need new transforms. The job collects them, and
-// the main thread hands them to the renderer, see ApplyPhysics. The slots of the bodies only change on the main thread
-// while no job runs.
-static void CollectTransforms( App& app )
-{
-	b3BodyEvents events = b3World_GetBodyEvents( app.physics );
-	for ( int i = 0; i < events.moveCount; ++i )
-	{
-		const b3BodyMoveEvent& event = events.moveEvents[i];
-		auto it = app.bodySlots.find( BodyKey( event.bodyId ) );
-		if ( it == app.bodySlots.end() )
-		{
-			continue;
-		}
-
-		b3Vec3 position = b3ToVec3( event.transform.p );
-		for ( int slot : it->second )
-		{
-			app.job.transforms.push_back( { slot, position, event.transform.q } );
-		}
-	}
-}
 
 //----------------------------------------------------------------------------------------------------------------------
 // Static meshes
@@ -1315,14 +1282,11 @@ static void BuildCityScene( App& app )
 	AddCityHouses( app, indices, CreateStructures( app, houses ) );
 }
 
-static void FinishPhysics( App& app );
-static void ApplyPhysics( App& app );
-
 static void DestroyScene( App& app )
 {
-	// The last job may still run, and its balls and transforms still belong to the renderer
-	FinishPhysics( app );
-	ApplyPhysics( app );
+	// The worlds wait for their last steps by themselves, and their moves go with them
+	app.moves = {};
+	app.physicsPending = false;
 
 	if ( nbWorld_IsValid( app.destruction ) )
 	{
@@ -1406,6 +1370,7 @@ static void LoadScene( App& app, SceneKind scene )
 	def.fragmentScale = app.fragmentScale;
 	def.supportScale = app.supportScale;
 	def.storeySupport = app.storeySupport;
+	def.asyncStep = app.parallelPhysics;
 	app.destruction = nbCreateWorld( &def );
 
 	switch ( scene )
@@ -1561,8 +1526,7 @@ static void FireAt( App& app, Tool tool, b3Vec3 target )
 	FireRay( app, app.camera.position, b3Normalize( b3Sub( target, app.camera.position ) ) );
 }
 
-// A ball goes after 20 seconds or when there are too many. The job destroys its body, the main thread its mesh and
-// slot, see ApplyPhysics.
+// A ball goes after 20 seconds or when there are too many
 static void UpdateBalls( App& app, float dt )
 {
 	for ( size_t i = 0; i < app.balls.size(); )
@@ -1572,7 +1536,9 @@ static void UpdateBalls( App& app, float dt )
 		if ( ball.age > 20.0f || app.balls.size() > 24 )
 		{
 			b3DestroyBody( ball.body );
-			app.job.removedBalls.push_back( ball );
+			DetachSlot( app, ball.body, ball.slot );
+			app.renderer.RemoveMesh( ball.mesh );
+			app.renderer.FreeSlot( ball.slot );
 			app.balls[i] = app.balls.back();
 			app.balls.pop_back();
 			continue;
@@ -1584,160 +1550,110 @@ static void UpdateBalls( App& app, float dt )
 //----------------------------------------------------------------------------------------------------------------------
 // Simulation
 
-// The steps of the frame, then the streaming of the city, so the workers prepare its houses while the next frame is
-// drawn and not during a step. Runs on the physics thread, or on the main thread without parallel physics.
-static void RunPhysicsJob( App& app )
+// After every step of the large city, on the thread of the steps: the bodies that moved keep the houses around them
+// loaded
+static void MarkCityAfterStep( void* context )
 {
-	uint64_t jobTicks = b3GetTicks();
-	PhysicsJob& job = app.job;
-	const float step = 1.0f / 60.0f;
-	float physicsTime = 0.0f;
-	float destructionTime = 0.0f;
-	for ( int i = 0; i < job.steps; ++i )
-	{
-		uint64_t ticks = b3GetTicks();
-		b3World_Step( app.physics, step, 4 );
-		physicsTime += b3GetMilliseconds( ticks );
-		CollectTransforms( app );
-		if ( app.scene == SceneCity )
-		{
-			MarkCityActivity( app );
-		}
-
-		ticks = b3GetTicks();
-		nbWorld_Update( app.destruction, step );
-		destructionTime += b3GetMilliseconds( ticks );
-		UpdateBalls( app, step );
-	}
-
-	if ( job.steps > 0 )
-	{
-		job.physicsTime = physicsTime / (float)job.steps;
-		job.destructionTime = destructionTime / (float)job.steps;
-	}
-
-	if ( app.scene == SceneCity )
-	{
-		StreamCity( app, job.camera, job.cityRadius );
-	}
-	job.time = b3GetMilliseconds( jobTicks );
+	MarkCityActivity( *(App*)context );
 }
 
-static void PhysicsThreadMain( App* app )
+// After the steps of a frame the large city streams on the thread of the steps, so the workers prepare its houses while
+// the next frame is drawn and not during a step
+static void StreamCityAfterSteps( void* context )
 {
-	PhysicsThread& thread = app->physicsThread;
-	std::unique_lock<std::mutex> lock( thread.mutex );
-	for ( ;; )
-	{
-		thread.wake.wait( lock, [&thread] { return thread.running || thread.quit; } );
-		if ( thread.quit )
-		{
-			return;
-		}
-
-		lock.unlock();
-		RunPhysicsJob( *app );
-		lock.lock();
-		thread.running = false;
-		thread.finished.notify_one();
-	}
+	App& app = *(App*)context;
+	StreamCity( app, app.cityJob.camera, app.cityJob.radius );
 }
 
 // Start the steps this frame needs. When the simulation cannot keep up, it slows down instead of taking more and more
 // steps per frame, which would slow down every frame further. A second step in the same frame only catches up when
-// steps are cheap. With parallel physics the job runs while the frame is drawn, else right here.
+// steps are cheap. With parallel physics the steps run on the thread of Nebenan while the frame is drawn, else right
+// here. Either way the main thread does not touch the worlds again before it waits for them, see FinishPhysics.
 static void StartPhysics( App& app, float frameDt )
 {
-	PhysicsJob& job = app.job;
-	job.steps = 0;
+	const float step = 1.0f / 60.0f;
+	int steps = 0;
 	if ( app.paused == false )
 	{
-		const float step = 1.0f / 60.0f;
 		int maxSteps = app.physicsTime + app.destructionTime < 4.0f ? 2 : 1;
 		app.accumulator += b3MinFloat( frameDt, 0.1f );
-		while ( app.accumulator >= step && job.steps < maxSteps )
+		while ( app.accumulator >= step && steps < maxSteps )
 		{
 			app.accumulator -= step;
-			job.steps += 1;
+			steps += 1;
 		}
 
-		if ( job.steps == maxSteps )
+		if ( steps == maxSteps )
 		{
 			app.accumulator = b3MinFloat( app.accumulator, step );
 		}
 	}
 
 	// The city streams also while the simulation pauses
-	if ( job.steps == 0 && app.scene != SceneCity )
+	app.physicsSteps = steps;
+	app.physicsPending = steps > 0 || app.scene == SceneCity;
+	UpdateBalls( app, (float)steps * step );
+	for ( int i = 0; i < steps; ++i )
 	{
-		return;
+		nbWorld_Step( app.destruction, step, 4 );
+		if ( app.scene == SceneCity )
+		{
+			nbWorld_RunAfterStep( app.destruction, MarkCityAfterStep, &app );
+		}
 	}
 
-	job.camera = app.camera.position;
-	job.cityRadius = app.cityRadius;
-	job.transforms.clear();
-	job.removedBalls.clear();
-	job.pending = true;
-	if ( app.parallelPhysics == false )
+	if ( app.scene == SceneCity )
 	{
-		RunPhysicsJob( app );
-		return;
+		app.cityJob.camera = app.camera.position;
+		app.cityJob.radius = app.cityRadius;
+		nbWorld_RunAfterStep( app.destruction, StreamCityAfterSteps, &app );
 	}
-
-	PhysicsThread& thread = app.physicsThread;
-	{
-		std::lock_guard<std::mutex> lock( thread.mutex );
-		thread.running = true;
-	}
-	thread.wake.notify_one();
-	app.physicsRunning = true;
 }
 
-// Wait for the job of the frame before. Everything that touches the worlds, the city or the balls on the main thread
-// comes after this.
+// Wait for the steps of the frame before and take the bodies they moved. Everything that touches the worlds or the city
+// on the main thread comes after this, or waits for the steps by itself.
 static void FinishPhysics( App& app )
 {
-	if ( app.physicsRunning == false )
-	{
-		return;
-	}
-
 	uint64_t ticks = b3GetTicks();
-	PhysicsThread& thread = app.physicsThread;
-	std::unique_lock<std::mutex> lock( thread.mutex );
-	thread.finished.wait( lock, [&thread] { return thread.running == false; } );
-	app.physicsRunning = false;
+	app.moves = nbWorld_GetBodyEvents( app.destruction );
 	app.waitTime += b3GetMilliseconds( ticks );
 }
 
-// Hand the transforms of the finished job to the renderer and let go of the balls it took out of the world
+// Hand the transforms of the bodies that moved to the renderer
 static void ApplyPhysics( App& app )
 {
-	PhysicsJob& job = app.job;
-	if ( job.pending == false )
+	for ( int i = 0; i < app.moves.moveCount; ++i )
+	{
+		const b3BodyMoveEvent& move = app.moves.moveEvents[i];
+		BodySlots* entry = FindBodySlots( app, move.bodyId );
+		if ( entry == nullptr )
+		{
+			continue;
+		}
+
+		b3Vec3 position = b3ToVec3( move.transform.p );
+		for ( int slot : entry->slots )
+		{
+			app.renderer.SetSlot( slot, position, move.transform.q );
+		}
+	}
+	app.moves = {};
+
+	// The CPU time of the steps with their updates, and of the streaming after them
+	if ( app.physicsPending == false )
 	{
 		return;
 	}
-	job.pending = false;
+	app.physicsPending = false;
 
-	for ( const SlotTransform& transform : job.transforms )
+	nbStats stats = nbWorld_GetStats( app.destruction );
+	if ( app.physicsSteps > 0 )
 	{
-		app.renderer.SetSlot( transform.slot, transform.position, transform.rotation );
+		app.physicsTime = stats.stepTime;
+		app.destructionTime = stats.updateTime;
 	}
-
-	for ( const Ball& ball : job.removedBalls )
-	{
-		DetachSlot( app, ball.body, ball.slot );
-		app.renderer.RemoveMesh( ball.mesh );
-		app.renderer.FreeSlot( ball.slot );
-	}
-
-	if ( job.steps > 0 )
-	{
-		app.physicsTime = job.physicsTime;
-		app.destructionTime = job.destructionTime;
-	}
-	app.simulationTime += job.time;
+	app.simulationTime += (float)app.physicsSteps * ( stats.stepTime + stats.updateTime );
+	app.simulationTime += app.scene == SceneCity ? app.city.time : 0.0f;
 }
 
 // What the menu shows of the worlds, copied while no job runs
@@ -1969,10 +1885,9 @@ static void DrawUi( App& app )
 	}
 
 	ImGui::SeparatorText( "Leistung" );
-	// A setting that changes the worlds waits for the physics of the frame
+	// A setting that changes the worlds waits for the steps of the frame by itself, see nbWorld_Step
 	if ( ImGui::SliderFloat( "Bruchstückgröße", &app.fragmentScale, 0.5f, 4.0f, "x %.2f" ) )
 	{
-		FinishPhysics( app );
 		nbWorld_SetFragmentScale( app.destruction, app.fragmentScale );
 	}
 	if ( ImGui::IsItemHovered() )
@@ -1983,7 +1898,6 @@ static void DrawUi( App& app )
 	if ( ImGui::SliderFloat( "Etage braucht", &storeyPercent, 0.0f, 100.0f, "%.0f %% der Wände" ) )
 	{
 		app.storeySupport = 0.01f * storeyPercent;
-		FinishPhysics( app );
 		nbWorld_SetStoreySupport( app.destruction, app.storeySupport );
 	}
 	if ( ImGui::IsItemHovered() )
@@ -1992,7 +1906,6 @@ static void DrawUi( App& app )
 	}
 	if ( ImGui::SliderFloat( "Statik ohne Decken", &app.supportScale, 0.0f, 4.0f, "x %.2f" ) )
 	{
-		FinishPhysics( app );
 		nbWorld_SetSupportScale( app.destruction, app.supportScale );
 	}
 	if ( ImGui::IsItemHovered() )
@@ -2001,7 +1914,6 @@ static void DrawUi( App& app )
 	}
 	if ( ImGui::SliderInt( "Bewegte Trümmer", &app.maxDebrisBodies, 100, 5000 ) )
 	{
-		FinishPhysics( app );
 		nbWorld_SetDebrisBudget( app.destruction, app.maxDebrisBodies );
 	}
 	if ( ImGui::IsItemHovered() )
@@ -2010,17 +1922,19 @@ static void DrawUi( App& app )
 	}
 	if ( ImGui::SliderFloat( "Ruhezeit", &app.debrisRestTime, 0.02f, 0.5f, "%.2f s" ) )
 	{
-		FinishPhysics( app );
 		nbWorld_SetDebrisRestTime( app.destruction, app.debrisRestTime );
 	}
 	if ( ImGui::IsItemHovered() )
 	{
 		ImGui::SetTooltip( "So lange muss ein Trümmer fast still liegen, bevor er zu Schutt erstarrt.\nKürzer macht die Physik unter Dauerfeuer schneller, kann aber ein\nkleines Stück anhalten, das beim Kippen nur kurz innehält. Vorher 0,2 s." );
 	}
-	ImGui::Checkbox( "Physik parallel zum Zeichnen", &app.parallelPhysics );
+	if ( ImGui::Checkbox( "Physik parallel zum Zeichnen", &app.parallelPhysics ) )
+	{
+		nbWorld_SetAsyncStep( app.destruction, app.parallelPhysics );
+	}
 	if ( ImGui::IsItemHovered() )
 	{
-		ImGui::SetTooltip( "An: Die Physik eines Bilds rechnet auf einem eigenen Thread, während das Bild\ndavor gezeichnet wird. Ein Bild kostet so viel wie der längere der beiden\nTeile statt beide zusammen und zeigt die Welt einen Schritt später.\nAus: alles nacheinander auf einem Thread. Die Welt rechnet in beiden Fällen gleich.\nDie Threads passen sich beim nächsten Laden der Szene an (R)." );
+		ImGui::SetTooltip( "An: Nebenan rechnet die Physik eines Bilds auf einem eigenen Thread, während\ndas Bild davor gezeichnet wird. Ein Bild kostet so viel wie der längere der\nbeiden Teile statt beide zusammen und zeigt die Welt einen Schritt später.\nAus: alles nacheinander auf einem Thread. Die Welt rechnet in beiden Fällen gleich.\nDie Threads passen sich beim nächsten Laden der Szene an (R)." );
 	}
 	if ( app.vsyncAvailable )
 	{
@@ -2038,7 +1952,6 @@ static void DrawUi( App& app )
 	ImGui::SameLine();
 	if ( ImGui::Button( "Trümmer entfernen (C)" ) )
 	{
-		FinishPhysics( app );
 		nbWorld_ClearDebris( app.destruction );
 	}
 
@@ -2763,8 +2676,6 @@ static void OnInit()
 	app.tools[ToolGrenade] = { 1.3f, 3.0e5f, 12.0f, 0, 2.0f };
 	app.tools[ToolCannon] = { 0.25f, 0.0f, 45.0f, 0, 3.0f };
 
-	app.physicsThread.thread = std::thread( PhysicsThreadMain, &app );
-
 	int scene = app.automation.scene >= 0 && app.automation.scene < SceneCount ? app.automation.scene : SceneWall;
 	LoadScene( app, (SceneKind)scene );
 	if ( app.automation.compare )
@@ -2894,6 +2805,7 @@ static void OnFrame()
 	else
 	{
 		StartPhysics( app, dt );
+		FinishPhysics( app );
 		graphicsTicks = b3GetTicks();
 		ApplyPhysics( app );
 		SyncChunks( app );
@@ -3009,7 +2921,6 @@ static void OnEvent( const sapp_event* event )
 			}
 			else if ( event->key_code == SAPP_KEYCODE_C )
 			{
-				FinishPhysics( app );
 				nbWorld_ClearDebris( app.destruction );
 			}
 			else if ( event->key_code == SAPP_KEYCODE_F1 )
@@ -3110,14 +3021,6 @@ static void OnCleanup()
 {
 	App& app = *s_app;
 	DestroyScene( app );
-
-	PhysicsThread& thread = app.physicsThread;
-	{
-		std::lock_guard<std::mutex> lock( thread.mutex );
-		thread.quit = true;
-	}
-	thread.wake.notify_one();
-	thread.thread.join();
 
 	app.renderer.Shutdown();
 	simgui_shutdown();
