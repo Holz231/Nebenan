@@ -4421,6 +4421,7 @@ void nbDestroyWorld( nbWorldId worldId )
 	nbArray_Free( world->moves[1] );
 	nbArray_Free( world->moveSlots );
 	nbArray_Free( world->streams );
+	nbArray_Free( world->movedCenters );
 	nbArena_Destroy( &world->arena );
 	nbStopWorkers( world );
 

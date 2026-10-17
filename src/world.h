@@ -358,6 +358,7 @@ NB_ARRAY_DECLARE( nbChunkId, nbChunkIdArray );
 NB_ARRAY_DECLARE( nbCollisionImpact, nbCollisionImpactArray );
 NB_ARRAY_DECLARE( nbCreation, nbCreationArray );
 NB_ARRAY_DECLARE( b3BodyMoveEvent, nbBodyMoveArray );
+NB_ARRAY_DECLARE( b3Vec3, nbVec3Array );
 
 // A stream of the world, see nbCreateStream. A slot whose stream went keeps its generation for the next one.
 struct nbStream;
@@ -489,8 +490,10 @@ typedef struct nbWorld
 	int moveBuffer;
 	nbIntArray moveSlots;
 
-	// The streams that load and unload destructibles of this world, see nbCreateStream
+	// The streams that load and unload destructibles of this world, see nbCreateStream, and the centers of the bodies
+	// that moved in the last step, gathered once for all of them, see nbMarkStreams
 	nbStreamSlotArray streams;
+	nbVec3Array movedCenters;
 
 	uint16_t worldIndex;
 	uint16_t generation;

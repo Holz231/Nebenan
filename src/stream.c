@@ -50,7 +50,24 @@ typedef struct nbCandidate
 
 NB_ARRAY_DECLARE( nbSite, nbSiteArray );
 NB_ARRAY_DECLARE( nbCandidate, nbCandidateArray );
-NB_ARRAY_DECLARE( b3Vec3, nbVec3Array );
+
+// A cell of the bodies that moved, with the first and the last of its bodies in the order they moved, see nbMarkStream
+typedef struct nbMarkCell
+{
+	int64_t key;
+	int first;
+	int last;
+} nbMarkCell;
+
+// A site that the bodies of a cell may reach, with its bounds as the tree holds them
+typedef struct nbReachedSite
+{
+	b3AABB reach;
+	int site;
+} nbReachedSite;
+
+NB_ARRAY_DECLARE( nbMarkCell, nbMarkCellArray );
+NB_ARRAY_DECLARE( nbReachedSite, nbReachedSiteArray );
 NB_ARRAY_DECLARE( nbDestructibleDef, nbDestructibleDefArray );
 NB_ARRAY_DECLARE( const nbPieceDef*, nbPieceListArray );
 NB_ARRAY_DECLARE( nbDestructibleId, nbDestructibleIdArray );
@@ -90,6 +107,13 @@ typedef struct nbStream
 	nbVec3Array nearViewers;
 	b3Vec3 nearUp;
 	bool nearValid;
+
+	// The marking by cells of moving bodies: a hash table of the cells, the cells in the order they came, the next body
+	// in the same cell, and the sites near the bodies of a cell, see nbMarkStream
+	nbMarkCellArray markCells;
+	nbIntArray markOrder;
+	nbIntArray markNext;
+	nbReachedSiteArray reached;
 
 	nbCandidateArray candidates;
 	nbChunkIdArray chunks;
@@ -295,6 +319,10 @@ static void nbFreeStream( nbStream* stream, bool worldGoes )
 	nbArray_Free( stream->urgent );
 	nbArray_Free( stream->nearby );
 	nbArray_Free( stream->nearViewers );
+	nbArray_Free( stream->markCells );
+	nbArray_Free( stream->markOrder );
+	nbArray_Free( stream->markNext );
+	nbArray_Free( stream->reached );
 	nbArray_Free( stream->candidates );
 	nbArray_Free( stream->chunks );
 	nbFree( stream, sizeof( nbStream ) );
@@ -389,43 +417,153 @@ nbStreamStats nbStream_GetStats( nbStreamId streamId )
 	return stats;
 }
 
-typedef struct nbMarkContext
+// The cell of a point for the marking, in cells of the given size with 21 bits per axis. Points far out may share a
+// cell, which only makes the search of that cell larger.
+static int64_t nbMarkKey( b3Vec3 point, float cellSize )
 {
-	nbStream* stream;
+	const float limit = 1048575.0f;
+	int64_t x = (int64_t)b3ClampFloat( floorf( point.x / cellSize ), -limit, limit ) & 0x1FFFFF;
+	int64_t y = (int64_t)b3ClampFloat( floorf( point.y / cellSize ), -limit, limit ) & 0x1FFFFF;
+	int64_t z = (int64_t)b3ClampFloat( floorf( point.z / cellSize ), -limit, limit ) & 0x1FFFFF;
+	return ( x << 42 ) | ( y << 21 ) | z;
+}
+
+static bool nbReachSite( int proxyId, uint64_t userData, void* context )
+{
+	nbStream* stream = context;
+
+	// The box as the tree holds it, so the site itself stays out of the cache unless a body comes near
+	nbReachedSite reached = { b3DynamicTree_GetAABB( &stream->tree, proxyId ), (int)userData };
+	nbArray_Push( stream->reached, reached );
+	return true;
+}
+
+#if !defined( NDEBUG )
+typedef struct nbCheckContext
+{
+	const nbStream* stream;
 	b3Vec3 point;
 	double time;
-} nbMarkContext;
+} nbCheckContext;
 
-static bool nbMarkSite( int proxyId, uint64_t userData, void* context )
+// A site within the hold radius of a body is marked, and asked for if it is out of the world and near enough
+static bool nbCheckMark( int proxyId, uint64_t userData, void* context )
 {
-	NB_UNUSED( proxyId );
-	nbMarkContext* mark = context;
-	nbStream* stream = mark->stream;
-	int index = (int)userData;
-	nbSite* site = stream->sites.data + index;
-	float distance = nbSquaredBoxDistance( site->reach, mark->point );
+	nbCheckContext* check = context;
+	const nbStream* stream = check->stream;
+	const nbSite* site = stream->sites.data + (int)userData;
+	float distance = nbSquaredBoxDistance( b3DynamicTree_GetAABB( &stream->tree, proxyId ), check->point );
 	float holdRadius = stream->def.activeHoldRadius;
-	if ( distance > holdRadius * holdRadius )
-	{
-		return true;
-	}
-
-	site->activeTime = mark->time;
-
 	float loadRadius = stream->def.activeLoadRadius;
-	if ( distance <= loadRadius * loadRadius && ( site->state == nb_siteOut || site->state == nb_siteSaved ) &&
-		 site->urgent == false )
-	{
-		site->urgent = true;
-		nbArray_Push( stream->urgent, index );
-	}
+	bool held = distance <= holdRadius * holdRadius;
+	bool asked = held && distance <= loadRadius * loadRadius && ( site->state == nb_siteOut || site->state == nb_siteSaved );
+	NB_ASSERT( held == false || site->activeTime == check->time );
+	NB_ASSERT( asked == false || site->urgent );
 	return true;
+}
+#endif
+
+// Every body that moved keeps the sites within the hold radius from going, and asks for the sites out of the world
+// within the active load radius before it can reach them. Debris flies in groups, so the bodies go by cells as large as
+// the hold radius, and each cell searches the tree once for all of its bodies. The nearest body of a cell decides for a
+// site, so a site is marked just as if every body searched on its own.
+static void nbMarkStream( nbStream* stream, const b3Vec3* points, int pointCount, double time )
+{
+	float holdRadius = stream->def.activeHoldRadius;
+	float loadRadius = stream->def.activeLoadRadius;
+	float cellSize = b3MaxFloat( holdRadius, 1.0f );
+
+	// The cells in a hash table with room for twice as many, each with its bodies in a list in the order they moved
+	int capacity = 16;
+	while ( capacity < 2 * pointCount )
+	{
+		capacity *= 2;
+	}
+	nbArray_Reserve( stream->markCells, capacity );
+	nbArray_Reserve( stream->markNext, pointCount );
+	nbMarkCell* cells = stream->markCells.data;
+	int* next = stream->markNext.data;
+	for ( int i = 0; i < capacity; ++i )
+	{
+		cells[i].first = NB_NULL_INDEX;
+	}
+
+	stream->markOrder.count = 0;
+	for ( int i = 0; i < pointCount; ++i )
+	{
+		int64_t key = nbMarkKey( points[i], cellSize );
+		int slot = (int)( nbHashSeed( (uint64_t)key, 0 ) & (uint64_t)( capacity - 1 ) );
+		while ( cells[slot].first != NB_NULL_INDEX && cells[slot].key != key )
+		{
+			slot = ( slot + 1 ) & ( capacity - 1 );
+		}
+
+		next[i] = NB_NULL_INDEX;
+		if ( cells[slot].first == NB_NULL_INDEX )
+		{
+			cells[slot] = (nbMarkCell){ key, i, i };
+			nbArray_Push( stream->markOrder, slot );
+		}
+		else
+		{
+			next[cells[slot].last] = i;
+			cells[slot].last = i;
+		}
+	}
+
+	for ( int c = 0; c < stream->markOrder.count; ++c )
+	{
+		const nbMarkCell* cell = cells + stream->markOrder.data[c];
+		b3AABB box = nbBoxAround( points[cell->first], holdRadius );
+		for ( int i = next[cell->first]; i != NB_NULL_INDEX; i = next[i] )
+		{
+			box = b3AABB_Union( box, nbBoxAround( points[i], holdRadius ) );
+		}
+
+		stream->reached.count = 0;
+		b3DynamicTree_Query( &stream->tree, box, B3_DEFAULT_MASK_BITS, false, nbReachSite, stream );
+		for ( int k = 0; k < stream->reached.count; ++k )
+		{
+			nbReachedSite reached = stream->reached.data[k];
+			float distance = FLT_MAX;
+			for ( int i = cell->first; i != NB_NULL_INDEX && distance > 0.0f; i = next[i] )
+			{
+				distance = b3MinFloat( distance, nbSquaredBoxDistance( reached.reach, points[i] ) );
+			}
+
+			if ( distance > holdRadius * holdRadius )
+			{
+				continue;
+			}
+
+			nbSite* site = stream->sites.data + reached.site;
+			site->activeTime = time;
+			if ( distance <= loadRadius * loadRadius && ( site->state == nb_siteOut || site->state == nb_siteSaved ) &&
+				 site->urgent == false )
+			{
+				site->urgent = true;
+				nbArray_Push( stream->urgent, reached.site );
+			}
+		}
+	}
+
+#if !defined( NDEBUG )
+	// The same marks as a search of its own for every body
+	for ( int i = 0; i < pointCount; ++i )
+	{
+		nbCheckContext check = { stream, points[i], time };
+		b3DynamicTree_Query( &stream->tree, nbBoxAround( points[i], holdRadius ), B3_DEFAULT_MASK_BITS, false, nbCheckMark,
+							 &check );
+	}
+#endif
 }
 
 void nbMarkStreams( nbWorld* world )
 {
 	uint64_t ticks = b3GetTicks();
 	b3BodyEvents events = b3World_GetBodyEvents( world->physicsWorld );
+	nbArray_Reserve( world->movedCenters, events.moveCount );
+	world->movedCenters.count = 0;
 	for ( int e = 0; e < events.moveCount; ++e )
 	{
 		// The program may destroy bodies of its own between b3World_Step and nbWorld_Update
@@ -436,18 +574,15 @@ void nbMarkStreams( nbWorld* world )
 		}
 
 		// The chunks of a body lie in the frame of their destructible, its origin can be meters away
-		b3Vec3 point = b3ToVec3( b3Body_GetWorldCenter( bodyId ) );
-		for ( int s = 0; s < world->streams.count; ++s )
-		{
-			nbStream* stream = world->streams.data[s].stream;
-			if ( stream == NULL || stream->sites.count == 0 )
-			{
-				continue;
-			}
+		world->movedCenters.data[world->movedCenters.count++] = b3ToVec3( b3Body_GetWorldCenter( bodyId ) );
+	}
 
-			nbMarkContext mark = { stream, point, world->time };
-			b3DynamicTree_Query( &stream->tree, nbBoxAround( point, stream->def.activeHoldRadius ), B3_DEFAULT_MASK_BITS, false,
-								 nbMarkSite, &mark );
+	for ( int s = 0; s < world->streams.count; ++s )
+	{
+		nbStream* stream = world->streams.data[s].stream;
+		if ( stream != NULL && stream->sites.count > 0 && world->movedCenters.count > 0 )
+		{
+			nbMarkStream( stream, world->movedCenters.data, world->movedCenters.count, world->time );
 		}
 	}
 
