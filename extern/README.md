@@ -310,8 +310,17 @@ nur noch, wenn die Worker für ein Team zu wenige sind. Die Körper des ersten P
 derselben Reihenfolge wie in einem Paket, die Ergebnisse bleiben dieselben. `b3Counters::teamWork` sagt, wie viel Arbeit
 das Paket des Teams im letzten Schritt hatte.
 
-Die erste, die zweite, die vierte bis achte, die zehnte, die dreizehnte bis einunddreißigste und die dreiunddreißigste
-ändern an den Ergebnissen nichts. Die dritte und die neunte ändern sie in den letzten Bits, dafür hängen sie nicht mehr davon ab, in
+**Zeiten des Teams.** Wo die Bedingungen eines Schritts mit Team hingehen, misst der Löser in jedem achten solchen
+Schritt (`B3_TEAM_SAMPLE` in `src/solver.c`): die Zeit des Teams auf dem aufrufenden Thread, den Teil davon, den er
+allein am Überlauf des Pakets rechnet und am Ende der Stufen auf die anderen wartet, und über alle Worker, wie lange sie
+auf eine neue Stufe warten und wie lange sie die übrigen Pakete rechnen (`b3Profile::teamTime` und die Felder danach).
+`b3Counters::teamSample` sagt, ob der letzte Schritt so gemessen hat, dazu seine Threads, die Stufen mit einer Sperre
+und wie oft die Worker beim Warten ihren Kern abgegeben haben. Die Worker zählen in ihrem `b3TaskContext`. Die Uhr an
+jeder Stufe kostet das Team in diesem Schritt ein paar Prozent, die anderen Schritte nichts. `b3Profile::packWait` misst
+in jedem Schritt mit Paketen, wie lange der aufrufende Thread auf die letzten wartet.
+
+Die erste, die zweite, die vierte bis achte, die zehnte, die dreizehnte bis einunddreißigste, die dreiunddreißigste und
+die vierunddreißigste ändern an den Ergebnissen nichts. Die dritte und die neunte ändern sie in den letzten Bits, dafür hängen sie nicht mehr davon ab, in
 welcher Reihenfolge Formen in die Bäume kommen. Die elfte ändert sie, weil Kontakte zu anderen Zeitpunkten entstehen,
 die zwölfte, weil sie weniger Punkte bekommen, die zweiunddreißigste, weil die Kontakte eines Knotens gebündelt
 gegen Kopien rechnen statt nacheinander. Die Ergänzungen stehen in `CMakeLists.txt`, `src/CMakeLists.txt`,
