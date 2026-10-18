@@ -66,9 +66,10 @@ bleiben.
 | 5 | **Schwellen fürs Wecken** der Bruchrechnung, bitgleich | 1 bis 3 % | ✅ Wecken | ✅ auf `physik-26`: Die Worker helfen, sobald der aufrufende Thread allein dreimal so lange bräuchte, wie einer zum Anlaufen braucht. Auf der VM bleiben sie nahe 32 und 512 |
 | 16 | **Auf dem Ryzen nachmessen**: „Skalierung messen“ mit `physik-26` bei ×4 und ×2 | entschied 17 | 15 und 5 | ✅ am 18. Oktober: Im Team rechnet der aufrufende Thread bei ×4 40 % der Blöcke der Stufen selbst, jeder Worker wartet 47 % |
 | 17 | **Übrige Pakete im Team anders verteilen**: Ein Worker nimmt ein Paket erst nach einer Weile ohne neue Stufe, nur im Überlauf, erst nach der letzten Stufe oder nur, solange wenige andere eines rechnen, bitgleich | – | 16 | ⛔ im Prototyp auf `physik-27`: Der aufrufende Thread rechnet dann weniger Blöcke selbst, aber die Pakete fehlen an anderer Stelle, das Team wird nicht kürzer |
+| 20 | **Lagen zum Zeichnen zwischen zwei Schritten**: Die Bibliothek gibt zum Zeichnen eine Lage zwischen den letzten zwei Ständen der Physik, die Demo ruft das nur auf | flüssige Bewegung auf Monitoren über 60 Hz, keine Rechenzeit, das Bild liegt einen Schritt zurück | – | als Nächstes, aufgenommen am 18. Oktober |
 | 6 | **Typwechsel gesammelt**, bitgleich | unter 1 % | – | zurückgestellt nach 16: Ein Typwechsel ist vor allem Warten auf Speicher, der Ryzen braucht 2,6 bis 3,2 µs dafür |
 | 18 | **Kontakt-Kerne von upstream #189 messen**: ob upstreams neue breite Kontakt-Kerne im Haufen aus Hüllen schneller rechnen als die des Forks | prüfen, bei Erfolg 1 bis 3 %, ändert die Ergebnisse | – | offen, Vorschlag |
-| 19 | **Physik mit 30 Hz und 8 Teilschritten**, als Versuch auf einer eigenen Branch, ändert das Verhalten überall | pro simulierter Sekunde ein Viertel bis ein Drittel der Physik | – | offen, nur als Versuch |
+| 19 | **Physik mit 30 Hz und 8 Teilschritten**, als Versuch auf einer eigenen Branch, ändert das Verhalten überall | pro simulierter Sekunde ein Viertel bis ein Drittel der Physik | 20 | zurückgestellt am 18. Oktober: bringt nur Rechenzeit, und die fehlt auf dem Ryzen nicht. Den Takt wählt ein Spiel selbst, mit 20 ohne Ruckeln |
 | 7 | **Rand der Boxen mit 8 Threads** nachmessen, ändert die Ergebnisse | klein | 2 | offen, niedrig |
 | 8 | **Kompakte Paare** statt Kontakte für nicht berührende Paare, ändert die Ergebnisse | 2 bis 4 % | 2 | offen, niedrig |
 | 11 | **Überlauf in unabhängigen Gruppen** auf mehreren Threads, bitgleich | höchstens 1 bis 2 %: der Überlauf ist mit 8 Threads noch 4 und 6 % des Frames | 2c | zurückgestellt nach 12, nach 16 weiter: Der Überlauf allein ist mit 8 Threads 28 und 29 % der Zeit des Teams, unter einem Drittel |
@@ -234,8 +235,13 @@ lagen bei ×4 auch die Stufen, an denen sich nichts geändert hat, 2 bis 6 % hö
 
 ## Was als Nächstes in Frage kommt
 
-Nach `physik-27` ist kein kleiner Schritt mehr übrig, der mit 8 Threads mehr als 1 bis 2 % des Frames verspricht, siehe
-die Schritte 6, 7 und 11 und die kleineren Punkte unten. Was mehr bringen könnte, ist größer oder ändert das Verhalten:
+Als Nächstes kommt Schritt 20, die Lagen zum Zeichnen zwischen zwei Schritten. Er spart keine Rechenzeit, macht aber die
+Bewegung auf Monitoren über 60 Hz flüssig, und erst mit ihm kann ein Spiel einen langsameren Takt der Physik wählen,
+ohne dass es ruckelt, siehe „Lagen zum Zeichnen zwischen zwei Schritten“.
+
+Bei der Rechenzeit ist nach `physik-27` kein kleiner Schritt mehr übrig, der mit 8 Threads mehr als 1 bis 2 % des Frames
+verspricht, siehe die Schritte 6, 7 und 11 und die kleineren Punkte unten. Was mehr bringen könnte, ist größer oder
+ändert das Verhalten:
 
 - **Schritt 18**, die Kontakt-Kerne von upstream #189 messen: Zuerst ein Vergleich im Haufen aus Hüllen, wie bei
   „SAT-Verbesserungen von upstream“. Nur wenn upstream dort schneller rechnet, die Kerne in den Fork übernehmen, von
@@ -243,8 +249,10 @@ die Schritte 6, 7 und 11 und die kleineren Punkte unten. Was mehr bringen könnt
 - **Schritt 8**, kompakte Paare für nicht berührende Kontakte: Wochen Umbau in Box3D für geschätzt 2 bis 4 % mit 8
   Threads. Ändert die Ergebnisse.
 - **Schritt 19**, Physik mit 30 Hz und 8 Teilschritten: der einzige große Hebel, pro simulierter Sekunde ein Viertel bis
-  ein Drittel der Physik, aber Kontakte entstehen später, Treffer kommen ein Bild später, und das Spiel muss zwischen
-  zwei Lagen zeichnen. Nur als Versuch auf einer eigenen Branch, siehe „Physik mit 30 Hz und 8 Teilschritten“.
+  ein Drittel der Physik, aber Kontakte entstehen später, Treffer kommen später, und mit den Lagen aus Schritt 20 läge
+  das Bild 33 statt 17 ms hinter der Physik. Gewonnen wäre nur Rechenzeit, und die fehlt auf dem Ryzen nicht: Ein
+  Schritt kostet dort mit 8 Threads 8 bis 17 % eines Frames mit 60 Hz. Zurückgestellt, bis die Physik irgendwo den Frame
+  begrenzt, siehe „Physik mit 30 Hz und 8 Teilschritten“.
 
 ## Kleinere Punkte
 
