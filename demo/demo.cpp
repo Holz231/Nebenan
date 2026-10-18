@@ -81,11 +81,14 @@ struct Ball
 	float age;
 };
 
-// The slots of the chunks of a body, by the index of the body in Box3D, so the moves of a frame find them quickly
+// The slots of the chunks of a body, by the index of the body in Box3D, so the poses of a frame find them quickly, and
+// the pose the body was last drawn at, for a chunk that comes to it
 struct BodySlots
 {
 	uint16_t generation = 0;
 	std::vector<int> slots;
+	b3WorldTransform pose = {};
+	bool posed = false;
 };
 
 
@@ -170,6 +173,7 @@ struct Comparison
 	bool parallelPhysics = true;
 	bool vsync = false;
 	bool paused = false;
+	bool slowMotion = false;
 
 	// Per run: its threads and frames, the frame times, the CPU time of the simulation, the graphics and the wait for the
 	// physics, the longest simulation and wait in a frame, and where the chunks ended up
@@ -377,12 +381,17 @@ struct App
 	nbImpactResult lastImpact = {};
 
 	// The physics on the thread of Nebenan while the frame is drawn, see nbWorldDef::asyncStep. The steps started last,
-	// whether they are not applied yet, the bodies they moved, and in this frame the CPU time of the physics and how long
-	// the main thread waited for it.
+	// whether they are not applied yet, the poses to draw the bodies at, and in this frame the CPU time of the physics and
+	// how long the main thread waited for it.
 	bool parallelPhysics = true;
 	int physicsSteps = 0;
 	bool physicsPending = false;
-	b3BodyEvents moves = {};
+	nbDrawPoses poses = {};
+
+	// Draw the bodies between the poses before and after the last step, see nbWorld_GetDrawPoses, else at the poses after
+	// it. Slow motion gives the physics a quarter of the time, so the difference shows on any monitor.
+	bool interpolate = true;
+	bool slowMotion = false;
 	float simulationTime = 0.0f;
 	float waitTime = 0.0f;
 	WorldView view;
@@ -457,10 +466,11 @@ static void AttachSlot( App& app, b3BodyId body, int slot )
 	{
 		entry.generation = body.generation;
 		entry.slots.clear();
+		entry.posed = false;
 	}
 	entry.slots.push_back( slot );
 
-	b3WorldTransform transform = b3Body_GetTransform( body );
+	b3WorldTransform transform = entry.posed ? entry.pose : b3Body_GetTransform( body );
 	app.renderer.SetSlot( slot, b3ToVec3( transform.p ), transform.q );
 }
 
@@ -1019,8 +1029,8 @@ static void BuildCityScene( App& app )
 
 static void DestroyScene( App& app )
 {
-	// The worlds wait for their last steps by themselves, and their moves go with them
-	app.moves = {};
+	// The worlds wait for their last steps by themselves, and their poses go with them
+	app.poses = {};
 	app.physicsPending = false;
 
 	if ( nbWorld_IsValid( app.destruction ) )
@@ -1275,7 +1285,8 @@ static void UpdateBalls( App& app, float dt )
 static void StartPhysics( App& app, float frameDt )
 {
 	const float step = 1.0f / 60.0f;
-	int steps = app.paused ? 0 : nbWorld_PlanSteps( app.destruction, frameDt, step );
+	float physicsDt = app.slowMotion ? 0.25f * frameDt : frameDt;
+	int steps = app.paused ? 0 : nbWorld_PlanSteps( app.destruction, physicsDt, step );
 	app.physicsSteps = steps;
 	app.physicsPending = steps > 0 || app.scene == SceneCity;
 	UpdateBalls( app, (float)steps * step );
@@ -1291,34 +1302,37 @@ static void StartPhysics( App& app, float frameDt )
 	}
 }
 
-// Wait for the steps of the frame before and take the bodies they moved. Everything that touches the worlds or the city
-// on the main thread comes after this, or waits for the steps by itself.
+// Wait for the steps of the frame before and take the poses to draw the bodies at. Everything that touches the worlds or
+// the city on the main thread comes after this, or waits for the steps by itself.
 static void FinishPhysics( App& app )
 {
 	uint64_t ticks = b3GetTicks();
-	app.moves = nbWorld_GetBodyEvents( app.destruction );
+	float fraction = app.interpolate ? nbWorld_GetStepFraction( app.destruction ) : 1.0f;
+	app.poses = nbWorld_GetDrawPoses( app.destruction, fraction );
 	app.waitTime += b3GetMilliseconds( ticks );
 }
 
-// Hand the transforms of the bodies that moved to the renderer
+// Hand the poses of the bodies to the renderer
 static void ApplyPhysics( App& app )
 {
-	for ( int i = 0; i < app.moves.moveCount; ++i )
+	for ( int i = 0; i < app.poses.count; ++i )
 	{
-		const b3BodyMoveEvent& move = app.moves.moveEvents[i];
-		BodySlots* entry = FindBodySlots( app, move.bodyId );
+		const nbDrawPose& pose = app.poses.poses[i];
+		BodySlots* entry = FindBodySlots( app, pose.bodyId );
 		if ( entry == nullptr )
 		{
 			continue;
 		}
 
-		b3Vec3 position = b3ToVec3( move.transform.p );
+		entry->pose = pose.transform;
+		entry->posed = true;
+		b3Vec3 position = b3ToVec3( pose.transform.p );
 		for ( int slot : entry->slots )
 		{
-			app.renderer.SetSlot( slot, position, move.transform.q );
+			app.renderer.SetSlot( slot, position, pose.transform.q );
 		}
 	}
-	app.moves = {};
+	app.poses = {};
 
 	// The CPU time of the steps with their updates, and of the streaming after them
 	if ( app.physicsPending == false )
@@ -1618,6 +1632,17 @@ static void DrawUi( App& app )
 	if ( ImGui::IsItemHovered() )
 	{
 		ImGui::SetTooltip( "An: Nebenan rechnet die Physik eines Bilds auf einem eigenen Thread, während\ndas Bild davor gezeichnet wird. Ein Bild kostet so viel wie der längere der\nbeiden Teile statt beide zusammen und zeigt die Welt einen Schritt später.\nAus: alles nacheinander auf einem Thread. Die Welt rechnet in beiden Fällen gleich.\nDie Threads passen sich beim nächsten Laden der Szene an (R)." );
+	}
+	ImGui::Checkbox( "Zwischen Schritten zeichnen", &app.interpolate );
+	if ( ImGui::IsItemHovered() )
+	{
+		ImGui::SetTooltip( "An: Die Bibliothek gibt jedem Bild Lagen zwischen den letzten zwei Schritten der\nPhysik. So bewegen sich die Trümmer flüssig, wenn mehr Bilder kommen als Schritte,\netwa auf Monitoren mit 144 Hz. Das Bild liegt dann einen Schritt hinter der Physik.\nAus: Jedes Bild zeigt den Stand nach dem letzten Schritt. Die Physik rechnet gleich." );
+	}
+	ImGui::SameLine();
+	ImGui::Checkbox( "Zeitlupe", &app.slowMotion );
+	if ( ImGui::IsItemHovered() )
+	{
+		ImGui::SetTooltip( "Die Physik bekommt ein Viertel der Zeit. Dann kommen viermal so viele Bilder wie\nSchritte, und der Unterschied von „Zwischen Schritten zeichnen“ zeigt sich auf\njedem Monitor." );
 	}
 	if ( app.vsyncAvailable )
 	{
@@ -2112,9 +2137,11 @@ static void StartComparison( App& app )
 	comparison.parallelPhysics = app.parallelPhysics;
 	comparison.vsync = app.vsync;
 	comparison.paused = app.paused;
+	comparison.slowMotion = app.slowMotion;
 
-	// Frames as fast as they come, else both would wait for the display
+	// Frames as fast as they come, else both would wait for the display, and steps at their normal pace
 	app.paused = false;
+	app.slowMotion = false;
 	if ( app.vsyncAvailable )
 	{
 		app.vsync = false;
@@ -2133,6 +2160,7 @@ static void StopComparison( App& app )
 	app.maxDebrisBodies = comparison.maxDebrisBodies;
 	app.parallelPhysics = comparison.parallelPhysics;
 	app.paused = comparison.paused;
+	app.slowMotion = comparison.slowMotion;
 	if ( app.vsyncAvailable )
 	{
 		app.vsync = comparison.vsync;

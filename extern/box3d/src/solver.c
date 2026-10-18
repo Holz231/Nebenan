@@ -803,6 +803,9 @@ static void b3FinalizeBodiesTask( int startIndex, int endIndex, int workerIndex,
 		b3BodyState* state = states + simIndex;
 		b3BodySim* sim = sims + simIndex;
 
+		// Added for Nebenan: the transform before the step for the move event
+		b3WorldTransform previousTransform = sim->transform;
+
 		b3Vec3 v = state->linearVelocity;
 		b3Vec3 w = state->angularVelocity;
 		b3Vec3 localOmega = b3InvRotateVector( sim->transform.q, w );
@@ -847,6 +850,8 @@ static void b3FinalizeBodiesTask( int startIndex, int endIndex, int workerIndex,
 
 		moveEvents[simIndex].userData = body->userData;
 		moveEvents[simIndex].transform = sim->transform;
+		moveEvents[simIndex].previousTransform = previousTransform;
+		moveEvents[simIndex].localCenter = sim->localCenter;
 		moveEvents[simIndex].bodyId = (b3BodyId){ sim->bodyId + 1, worldId, body->generation };
 		moveEvents[simIndex].fellAsleep = false;
 

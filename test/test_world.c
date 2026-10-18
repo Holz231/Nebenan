@@ -4163,6 +4163,122 @@ static int PlanStepsTest( void )
 	return 0;
 }
 
+// The pose that nbWorld_GetDrawPoses handed out for a body, null if it has none
+static const nbDrawPose* FindDrawPose( nbDrawPoses poses, b3BodyId bodyId )
+{
+	for ( int i = 0; i < poses.count; ++i )
+	{
+		if ( B3_ID_EQUALS( poses.poses[i].bodyId, bodyId ) )
+		{
+			return poses.poses + i;
+		}
+	}
+	return NULL;
+}
+
+// nbWorld_GetDrawPoses draws a body between its poses before and after the last step. At the ends it draws them exactly,
+// in between its center of mass lies on the straight line and it turns the short way, though its origin lies 3 m away.
+// With several steps between two calls the poses are those around the last step. A body that stops is drawn once more at
+// its last pose, one that goes is not drawn, and a call without a step draws the same bodies again. With the step thread
+// the poses are the same to the bit. nbWorld_GetStepFraction tells how far the time nbWorld_PlanSteps left over reaches.
+static int DrawPoseTest( void )
+{
+	const float step = 1.0f / 64.0f;
+	b3WorldTransform halfways[2];
+	for ( int pass = 0; pass < 2; ++pass )
+	{
+		TestScene scene = CreateScene();
+		nbWorld_SetAsyncStep( scene.world, pass == 1 );
+		ENSURE( nbWorld_GetStepFraction( scene.world ) == 1.0f );
+
+		// A box 3 m beside its origin that spins as it flies, and two boxes that stop and go
+		b3BodyDef bodyDef = b3DefaultBodyDef();
+		bodyDef.type = b3_dynamicBody;
+		bodyDef.enableSleep = false;
+		bodyDef.position = (b3Vec3){ 0.0f, 10.0f, 0.0f };
+		bodyDef.linearVelocity = (b3Vec3){ 2.0f, 0.0f, 0.0f };
+		bodyDef.angularVelocity = (b3Vec3){ 0.0f, 0.0f, 8.0f };
+		b3BodyId spinner = b3CreateBody( scene.physicsWorld, &bodyDef );
+		b3BoxHull offsetBox = b3MakeOffsetBoxHull( 0.5f, 0.5f, 0.5f, (b3Vec3){ 3.0f, 0.0f, 0.0f } );
+		b3ShapeDef shapeDef = b3DefaultShapeDef();
+		b3CreateHullShape( spinner, &shapeDef, &offsetBox.base );
+
+		bodyDef.linearVelocity = b3Vec3_zero;
+		bodyDef.angularVelocity = b3Vec3_zero;
+		b3BoxHull box = b3MakeCubeHull( 0.5f );
+		bodyDef.position = (b3Vec3){ 10.0f, 10.0f, 0.0f };
+		b3BodyId stopper = b3CreateBody( scene.physicsWorld, &bodyDef );
+		b3CreateHullShape( stopper, &shapeDef, &box.base );
+		bodyDef.position = (b3Vec3){ -10.0f, 10.0f, 0.0f };
+		b3BodyId goner = b3CreateBody( scene.physicsWorld, &bodyDef );
+		b3CreateHullShape( goner, &shapeDef, &box.base );
+
+		// The first call starts collecting
+		ENSURE( nbWorld_GetDrawPoses( scene.world, 1.0f ).count == 0 );
+
+		b3WorldTransform start = b3Body_GetTransform( spinner );
+		nbWorld_Step( scene.world, step, 4 );
+		nbDrawPoses poses = nbWorld_GetDrawPoses( scene.world, 1.0f );
+		ENSURE( poses.count == 3 );
+		b3BodyId bodies[3] = { spinner, stopper, goner };
+		for ( int i = 0; i < 3; ++i )
+		{
+			const nbDrawPose* pose = FindDrawPose( poses, bodies[i] );
+			b3WorldTransform transform = b3Body_GetTransform( bodies[i] );
+			ENSURE( pose != NULL && memcmp( &pose->transform, &transform, sizeof( transform ) ) == 0 );
+		}
+
+		// Without a step the same bodies, now at the start of the step
+		poses = nbWorld_GetDrawPoses( scene.world, 0.0f );
+		ENSURE( poses.count == 3 );
+		ENSURE( memcmp( &FindDrawPose( poses, spinner )->transform, &start, sizeof( start ) ) == 0 );
+
+		// Halfway the center of mass lies halfway, not the origin
+		b3WorldTransform end = b3Body_GetTransform( spinner );
+		b3Vec3 localCenter = b3Body_GetLocalCenter( spinner );
+		poses = nbWorld_GetDrawPoses( scene.world, 0.5f );
+		b3WorldTransform halfway = FindDrawPose( poses, spinner )->transform;
+		b3Pos fromCenter = b3TransformWorldPoint( start, localCenter );
+		b3Pos toCenter = b3TransformWorldPoint( end, localCenter );
+		b3Vec3 offCenter = b3SubPos( b3TransformWorldPoint( halfway, localCenter ), b3LerpPosition( fromCenter, toCenter, 0.5f ) );
+		ENSURE_SMALL( b3Length( offCenter ), 1.0e-5f );
+		b3Quat turn = b3NLerp( start.q, end.q, 0.5f );
+		ENSURE_SMALL( 1.0f - b3AbsFloat( b3DotQuat( halfway.q, turn ) ), 1.0e-6f );
+		ENSURE( b3Length( b3SubPos( halfway.p, b3LerpPosition( start.p, end.p, 0.5f ) ) ) > 1.0e-3f );
+		halfways[pass] = halfway;
+
+		// Two steps between two calls, the poses are those around the second
+		nbWorld_Step( scene.world, step, 4 );
+		b3WorldTransform beforeLast = b3Body_GetTransform( spinner );
+		nbWorld_Step( scene.world, step, 4 );
+		poses = nbWorld_GetDrawPoses( scene.world, 0.0f );
+		ENSURE( poses.count == 3 );
+		ENSURE( memcmp( &FindDrawPose( poses, spinner )->transform, &beforeLast, sizeof( beforeLast ) ) == 0 );
+
+		// One stops and one goes. The one that stopped is drawn once more at its last pose.
+		b3Body_SetType( stopper, b3_staticBody );
+		b3WorldTransform stopped = b3Body_GetTransform( stopper );
+		b3DestroyBody( goner );
+		nbWorld_Step( scene.world, step, 4 );
+		poses = nbWorld_GetDrawPoses( scene.world, 0.5f );
+		ENSURE( poses.count == 2 && FindDrawPose( poses, goner ) == NULL && FindDrawPose( poses, spinner ) != NULL );
+		const nbDrawPose* last = FindDrawPose( poses, stopper );
+		ENSURE( last != NULL && memcmp( &last->transform, &stopped, sizeof( stopped ) ) == 0 );
+		poses = nbWorld_GetDrawPoses( scene.world, 0.5f );
+		ENSURE( poses.count == 1 && FindDrawPose( poses, spinner ) != NULL );
+
+		// The fraction of what nbWorld_PlanSteps leaves over
+		ENSURE( nbWorld_PlanSteps( scene.world, 0.5f * step, step ) == 0 );
+		ENSURE( nbWorld_GetStepFraction( scene.world ) == 0.5f );
+		ENSURE( nbWorld_PlanSteps( scene.world, 0.75f * step, step ) == 1 );
+		ENSURE( nbWorld_GetStepFraction( scene.world ) == 0.25f );
+		DestroyScene( &scene );
+	}
+
+	ENSURE( memcmp( halfways + 0, halfways + 1, sizeof( halfways[0] ) ) == 0 );
+	return 0;
+}
+
 // The profile counts the steps and impacts since its reset, and every stage holds its parts
 static int ProfileTest( void )
 {
@@ -4524,6 +4640,7 @@ int WorldTest( void )
 	RUN_TEST( SettleWorkersTest );
 	RUN_TEST( AsyncStepTest );
 	RUN_TEST( PlanStepsTest );
+	RUN_TEST( DrawPoseTest );
 	RUN_TEST( ProfileTest );
 	RUN_TEST( ScalingFitTest );
 	RUN_TEST( WorkerCountTest );

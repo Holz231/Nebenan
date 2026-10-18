@@ -4559,6 +4559,9 @@ void nbDestroyWorld( nbWorldId worldId )
 	nbArray_Free( world->moves[0] );
 	nbArray_Free( world->moves[1] );
 	nbArray_Free( world->moveSlots );
+	nbArray_Free( world->drawBodies );
+	nbArray_Free( world->drawSlots );
+	nbArray_Free( world->drawPoses );
 	nbArray_Free( world->streams );
 	nbArray_Free( world->movedCenters );
 	nbArena_Destroy( &world->arena );
@@ -6102,10 +6105,58 @@ void nbWorld_Update( nbWorldId worldId, float timeStep )
 	nbUpdate( world, timeStep );
 }
 
+// Count the step and keep the poses before and after it of every body that moved in it, see nbWorld_GetDrawPoses. A slot
+// from before may point anywhere, the body at it tells, as with the moves.
+static void nbCollectDrawMoves( nbWorld* world, b3BodyEvents events )
+{
+	world->drawStep += 1;
+	nbArray_Reserve( world->drawBodies, world->drawBodies.count + events.moveCount );
+	for ( int i = 0; i < events.moveCount; ++i )
+	{
+		const b3BodyMoveEvent* event = events.moveEvents + i;
+		int bodyIndex = event->bodyId.index1 - 1;
+		if ( bodyIndex >= world->drawSlots.count )
+		{
+			nbArray_Reserve( world->drawSlots, bodyIndex + 1 );
+			for ( int k = world->drawSlots.count; k <= bodyIndex; ++k )
+			{
+				world->drawSlots.data[k] = NB_NULL_INDEX;
+			}
+			world->drawSlots.count = bodyIndex + 1;
+		}
+
+		int slot = world->drawSlots.data[bodyIndex];
+		if ( slot < 0 || slot >= world->drawBodies.count || world->drawBodies.data[slot].bodyId.index1 != event->bodyId.index1 )
+		{
+			slot = world->drawBodies.count++;
+			world->drawSlots.data[bodyIndex] = slot;
+		}
+
+		nbDrawBody* body = world->drawBodies.data + slot;
+		body->bodyId = event->bodyId;
+		body->userData = event->userData;
+		body->to = event->transform;
+#if defined( B3_HAS_PREVIOUS_TRANSFORM )
+		body->from = event->previousTransform;
+		body->localCenter = event->localCenter;
+#else
+		// Without the pose before the step a body is drawn where the step left it
+		body->from = event->transform;
+		body->localCenter = b3Vec3_zero;
+#endif
+		body->step = world->drawStep;
+	}
+}
+
 // Keep the latest move of every body that moved in the step, see nbWorld_GetBodyEvents
 static void nbCollectMoves( nbWorld* world )
 {
 	b3BodyEvents events = b3World_GetBodyEvents( world->physicsWorld );
+	if ( world->drawEnabled )
+	{
+		nbCollectDrawMoves( world, events );
+	}
+
 	nbBodyMoveArray* moves = world->moves + world->moveBuffer;
 	nbArray_Reserve( *moves, moves->count + events.moveCount );
 
@@ -6258,6 +6309,7 @@ int nbWorld_PlanSteps( nbWorldId worldId, float frameTime, float timeStep )
 	}
 
 	int maxSteps = world->stats.stepTime + world->stats.updateTime < NB_PLAN_CHEAP_TIME ? NB_PLAN_MAX_STEPS : 1;
+	world->planStep = timeStep;
 	world->stepClock += b3ClampFloat( frameTime, 0.0f, NB_PLAN_MAX_FRAME );
 	int steps = 0;
 	while ( world->stepClock >= timeStep && steps < maxSteps )
@@ -6324,6 +6376,83 @@ b3BodyEvents nbWorld_GetBodyEvents( nbWorldId worldId )
 	events.moveEvents = moves->data;
 	events.moveCount = moves->count;
 	return events;
+}
+
+// The pose fraction of the way from the pose before the step to the one after it. The center of mass moves on a straight
+// line, for the origin of a body can lie meters away from it, and the rotation turns the short way.
+static b3WorldTransform nbDrawBetween( const nbDrawBody* body, float fraction )
+{
+	if ( fraction <= 0.0f )
+	{
+		return body->from;
+	}
+	if ( fraction >= 1.0f )
+	{
+		return body->to;
+	}
+
+	b3Pos from = b3TransformWorldPoint( body->from, body->localCenter );
+	b3Pos to = b3TransformWorldPoint( body->to, body->localCenter );
+	b3Pos center = b3OffsetPos( from, b3MulSV( fraction, b3SubPos( to, from ) ) );
+	b3Quat q = b3NLerp( body->from.q, body->to.q, fraction );
+	b3WorldTransform pose = { b3OffsetPos( center, b3Neg( b3RotateVector( q, body->localCenter ) ) ), q };
+	return pose;
+}
+
+nbDrawPoses nbWorld_GetDrawPoses( nbWorldId worldId, float fraction )
+{
+	nbDrawPoses poses = { 0 };
+	nbWorld* world = nbFindWorld( worldId );
+	if ( world == NULL )
+	{
+		return poses;
+	}
+
+	nbWaitForSteps( world );
+	world->drawEnabled = true;
+	fraction = b3ClampFloat( fraction, 0.0f, 1.0f );
+
+	// A body that moved in the last step is drawn between its poses, one that stopped since at its last pose, then it goes.
+	// The bodies that went meanwhile go without a pose.
+	nbDrawBodyArray* bodies = &world->drawBodies;
+	nbArray_Reserve( world->drawPoses, bodies->count );
+	world->drawPoses.count = 0;
+	int kept = 0;
+	for ( int i = 0; i < bodies->count; ++i )
+	{
+		nbDrawBody body = bodies->data[i];
+		if ( b3Body_IsValid( body.bodyId ) == false )
+		{
+			continue;
+		}
+
+		bool moving = body.step == world->drawStep;
+		nbDrawPose* pose = world->drawPoses.data + world->drawPoses.count++;
+		pose->bodyId = body.bodyId;
+		pose->userData = body.userData;
+		pose->transform = moving ? nbDrawBetween( &body, fraction ) : body.to;
+		if ( moving )
+		{
+			world->drawSlots.data[body.bodyId.index1 - 1] = kept;
+			bodies->data[kept++] = body;
+		}
+	}
+	bodies->count = kept;
+
+	poses.poses = world->drawPoses.data;
+	poses.count = world->drawPoses.count;
+	return poses;
+}
+
+float nbWorld_GetStepFraction( nbWorldId worldId )
+{
+	// Only nbWorld_PlanSteps changes the clock, on the thread that plans the steps, so this need not wait for them
+	nbWorld* world = nbFindWorld( worldId );
+	if ( world == NULL || world->planStep <= 0.0f )
+	{
+		return 1.0f;
+	}
+	return b3ClampFloat( world->stepClock / world->planStep, 0.0f, 1.0f );
 }
 
 void nbWorld_SetAsyncStep( nbWorldId worldId, bool enabled )

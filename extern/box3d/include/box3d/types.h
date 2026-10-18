@@ -1301,12 +1301,20 @@ typedef struct b3BodyMoveEvent
 	/// The body transform.
 	b3WorldTransform transform;
 
+	/// Added for Nebenan: the body transform before the time step, and the center of mass in the frame of the body, so a
+	/// program can draw the body between the two transforms with the center of mass on a straight line.
+	b3WorldTransform previousTransform;
+	b3Vec3 localCenter;
+
 	/// The body id.
 	b3BodyId bodyId;
 
 	/// Did the body fall asleep this time step?
 	bool fellAsleep;
 } b3BodyMoveEvent;
+
+/// This Box3D has b3BodyMoveEvent::previousTransform and b3BodyMoveEvent::localCenter
+#define B3_HAS_PREVIOUS_TRANSFORM 1
 
 /// Body events are buffered in the world and are available
 ///	as event arrays after the time step is complete.

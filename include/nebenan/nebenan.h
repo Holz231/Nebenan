@@ -7,11 +7,13 @@
 //
 // Typical frame:
 //
-//   b3BodyEvents moves = nbWorld_GetBodyEvents( destructionWorld );
+//   nbDrawPoses poses = nbWorld_GetDrawPoses( destructionWorld, nbWorld_GetStepFraction( destructionWorld ) );
 //   nbEvents events = nbWorld_GetEvents( destructionWorld );
-//   // move the render meshes of the bodies that moved, update them from the events, apply impacts
-//   nbWorld_Step( destructionWorld, 1.0f / 60.0f, 4 );
-//   // draw every chunk with the transform of its body while the step runs on a thread of its own
+//   // move the render meshes of the bodies to their poses, update them from the events, apply impacts
+//   int steps = nbWorld_PlanSteps( destructionWorld, frameTime, 1.0f / 60.0f );
+//   for ( int i = 0; i < steps; ++i )
+//       nbWorld_Step( destructionWorld, 1.0f / 60.0f, 4 );
+//   // draw every chunk at the pose of its body while the steps run on a thread of their own
 
 #pragma once
 
@@ -86,6 +88,18 @@ NB_API int nbWorld_PlanSteps( nbWorldId worldId, float frameTime, float timeStep
 /// The latest move of every body that moved in the steps of nbWorld_Step since the previous call, without the bodies that
 /// went meanwhile. Waits for the steps, from any thread. The array stays valid until the next call.
 NB_API b3BodyEvents nbWorld_GetBodyEvents( nbWorldId worldId );
+
+/// Where to draw the bodies that move: between their poses before and after the last step of nbWorld_Step, fraction of
+/// the way, so the picture moves smoothly when frames come more often than steps. With nbWorld_GetStepFraction the
+/// picture lies one step behind the physics. The center of mass moves on a straight line and the body turns the short
+/// way. Holds every body whose pose to draw changed since the previous call: the ones that moved in the last step, and
+/// once more the ones that stopped since, at their last pose. Collects from the first call on, which has none. Waits for
+/// the steps, from any thread. The array stays valid until the next call.
+NB_API nbDrawPoses nbWorld_GetDrawPoses( nbWorldId worldId, float fraction );
+
+/// How far the time that nbWorld_PlanSteps left over for the next step reaches into it, from 0 to 1, the fraction for
+/// nbWorld_GetDrawPoses. 1 until the first call of nbWorld_PlanSteps.
+NB_API float nbWorld_GetStepFraction( nbWorldId worldId );
 
 /// Run fcn( context ) after the steps that the calling thread started with nbWorld_Step, on the thread that takes them and
 /// before the steps that follow, or right here if none runs. Like a step, fcn may use the two worlds while the calling

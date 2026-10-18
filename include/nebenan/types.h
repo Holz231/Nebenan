@@ -446,6 +446,21 @@ typedef struct nbEvents
 	int exposedCount;
 } nbEvents;
 
+/// A body and where to draw it, see nbWorld_GetDrawPoses
+typedef struct nbDrawPose
+{
+	b3BodyId bodyId;
+	void* userData;
+	b3WorldTransform transform;
+} nbDrawPose;
+
+/// The bodies whose pose to draw changed since the last call to nbWorld_GetDrawPoses
+typedef struct nbDrawPoses
+{
+	const nbDrawPose* poses;
+	int count;
+} nbDrawPoses;
+
 /// Counters and timings of a destruction world.
 typedef struct nbStats
 {

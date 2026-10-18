@@ -350,6 +350,21 @@ NB_ARRAY_DECLARE( nbCreation, nbCreationArray );
 NB_ARRAY_DECLARE( b3BodyMoveEvent, nbBodyMoveArray );
 NB_ARRAY_DECLARE( b3Vec3, nbVec3Array );
 
+// A body that moved, with its poses before and after the latest step it moved in and the number of that step, see
+// nbWorld::drawStep and nbWorld_GetDrawPoses
+typedef struct nbDrawBody
+{
+	b3BodyId bodyId;
+	void* userData;
+	b3WorldTransform from;
+	b3WorldTransform to;
+	b3Vec3 localCenter;
+	int step;
+} nbDrawBody;
+
+NB_ARRAY_DECLARE( nbDrawBody, nbDrawBodyArray );
+NB_ARRAY_DECLARE( nbDrawPose, nbDrawPoseArray );
+
 // A stream of the world, see nbCreateStream. A slot whose stream went keeps its generation for the next one.
 struct nbStream;
 typedef struct nbStreamSlot
@@ -519,6 +534,16 @@ typedef struct nbWorld
 	nbBodyMoveArray moves[2];
 	int moveBuffer;
 	nbIntArray moveSlots;
+
+	// The bodies to draw between two steps once nbWorld_GetDrawPoses was called: those that moved at its last call and
+	// those that moved since, with drawSlots holding where a body is by its Box3D index, the steps counted in drawStep,
+	// and what the last call handed out. planStep is the step of nbWorld_PlanSteps, zero before its first call.
+	nbDrawBodyArray drawBodies;
+	nbIntArray drawSlots;
+	nbDrawPoseArray drawPoses;
+	int drawStep;
+	bool drawEnabled;
+	float planStep;
 
 	// The streams that load and unload destructibles of this world, see nbCreateStream, and the centers of the bodies
 	// that moved in the last step, gathered once for all of them, see nbMarkStreams
