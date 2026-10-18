@@ -2582,14 +2582,20 @@ static void OnFrame()
 		dt = 1.0f / 60.0f;
 	}
 
-	// With parallel physics the steps of the frame before ran while it was drawn, and this frame shows their result
+	// With parallel physics the steps of the frame before ran while it was drawn, and this frame shows their result.
+	// Without, the frame before took its steps and their poses itself.
 	uint64_t cpuTicks = b3GetTicks();
 	app.simulationTime = 0.0f;
 	app.waitTime = 0.0f;
-	FinishPhysics( app );
 	uint64_t graphicsTicks = b3GetTicks();
-	ApplyPhysics( app );
-	float graphicsTime = b3GetMilliseconds( graphicsTicks );
+	float graphicsTime = 0.0f;
+	if ( app.parallelPhysics )
+	{
+		FinishPhysics( app );
+		graphicsTicks = b3GetTicks();
+		ApplyPhysics( app );
+		graphicsTime = b3GetMilliseconds( graphicsTicks );
+	}
 
 	// During the comparison the camera stays, it decides what is drawn
 	if ( app.comparison.active == false )

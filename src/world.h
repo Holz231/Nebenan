@@ -350,14 +350,17 @@ NB_ARRAY_DECLARE( nbCreation, nbCreationArray );
 NB_ARRAY_DECLARE( b3BodyMoveEvent, nbBodyMoveArray );
 NB_ARRAY_DECLARE( b3Vec3, nbVec3Array );
 
-// A body that moved, with its poses before and after the latest step it moved in and the number of that step, see
-// nbWorld::drawStep and nbWorld_GetDrawPoses
+// A body that moved, with its poses and centers of mass before and after the latest step it moved in and the number of
+// that step, see nbWorld::drawStep and nbWorld_GetDrawPoses. The step thread works out the centers once per step, so a
+// frame in between only interpolates.
 typedef struct nbDrawBody
 {
 	b3BodyId bodyId;
 	void* userData;
 	b3WorldTransform from;
 	b3WorldTransform to;
+	b3Pos fromCenter;
+	b3Pos toCenter;
 	b3Vec3 localCenter;
 	int step;
 } nbDrawBody;

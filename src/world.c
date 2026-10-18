@@ -6144,6 +6144,8 @@ static void nbCollectDrawMoves( nbWorld* world, b3BodyEvents events )
 		body->from = event->transform;
 		body->localCenter = b3Vec3_zero;
 #endif
+		body->fromCenter = b3TransformWorldPoint( body->from, body->localCenter );
+		body->toCenter = b3TransformWorldPoint( body->to, body->localCenter );
 		body->step = world->drawStep;
 	}
 }
@@ -6391,9 +6393,7 @@ static b3WorldTransform nbDrawBetween( const nbDrawBody* body, float fraction )
 		return body->to;
 	}
 
-	b3Pos from = b3TransformWorldPoint( body->from, body->localCenter );
-	b3Pos to = b3TransformWorldPoint( body->to, body->localCenter );
-	b3Pos center = b3OffsetPos( from, b3MulSV( fraction, b3SubPos( to, from ) ) );
+	b3Pos center = b3OffsetPos( body->fromCenter, b3MulSV( fraction, b3SubPos( body->toCenter, body->fromCenter ) ) );
 	b3Quat q = b3NLerp( body->from.q, body->to.q, fraction );
 	b3WorldTransform pose = { b3OffsetPos( center, b3Neg( b3RotateVector( q, body->localCenter ) ) ), q };
 	return pose;
@@ -6416,28 +6416,35 @@ nbDrawPoses nbWorld_GetDrawPoses( nbWorldId worldId, float fraction )
 	// The bodies that went meanwhile go without a pose.
 	nbDrawBodyArray* bodies = &world->drawBodies;
 	nbArray_Reserve( world->drawPoses, bodies->count );
-	world->drawPoses.count = 0;
+	nbDrawPose* poseData = world->drawPoses.data;
+	int poseCount = 0;
 	int kept = 0;
 	for ( int i = 0; i < bodies->count; ++i )
 	{
-		nbDrawBody body = bodies->data[i];
-		if ( b3Body_IsValid( body.bodyId ) == false )
+		const nbDrawBody* body = bodies->data + i;
+		if ( b3Body_IsValid( body->bodyId ) == false )
 		{
 			continue;
 		}
 
-		bool moving = body.step == world->drawStep;
-		nbDrawPose* pose = world->drawPoses.data + world->drawPoses.count++;
-		pose->bodyId = body.bodyId;
-		pose->userData = body.userData;
-		pose->transform = moving ? nbDrawBetween( &body, fraction ) : body.to;
+		bool moving = body->step == world->drawStep;
+		nbDrawPose* pose = poseData + poseCount++;
+		pose->bodyId = body->bodyId;
+		pose->userData = body->userData;
+		pose->transform = moving ? nbDrawBetween( body, fraction ) : body->to;
 		if ( moving )
 		{
-			world->drawSlots.data[body.bodyId.index1 - 1] = kept;
-			bodies->data[kept++] = body;
+			// Only once a body went before it does one move up
+			if ( kept != i )
+			{
+				world->drawSlots.data[body->bodyId.index1 - 1] = kept;
+				bodies->data[kept] = *body;
+			}
+			kept += 1;
 		}
 	}
 	bodies->count = kept;
+	world->drawPoses.count = poseCount;
 
 	poses.poses = world->drawPoses.data;
 	poses.count = world->drawPoses.count;
