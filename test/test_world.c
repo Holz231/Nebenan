@@ -3867,6 +3867,7 @@ static int TaskSystemTest( void )
 		int maxAwake = 0;
 		int maxTasks = 0;
 		int teamSteps = 0;
+		int timedSteps = 0;
 		for ( int i = 0; i < 180; ++i )
 		{
 			Step( &scene, 1 );
@@ -3874,9 +3875,30 @@ static int TaskSystemTest( void )
 			maxAwake = b3MaxInt( maxAwake, counters.awakeContactCount );
 			maxTasks = b3MaxInt( maxTasks, counters.taskCount );
 			teamSteps += counters.teamWork > 0 ? 1 : 0;
+			timedSteps += counters.teamSample;
+			ENSURE( counters.teamSample == 0 ||
+					( counters.teamWork > 0 && 2 <= counters.teamWorkerCount && counters.teamWorkerCount <= 4 ) );
 		}
 		ENSURE( maxAwake >= 1000 && ( pass == 0 || maxTasks > 0 ) );
 		ENSURE( pass == 0 ? teamSteps == 0 : teamSteps > 0 );
+
+		// Every eighth step with a team timed where its constraints went, see b3Profile::teamTime. The parts of the calling
+		// thread lie within the time of its team.
+		nbProfile profile = nbWorld_GetProfile( scene.world );
+		ENSURE( profile.teamSampleCount == timedSteps && timedSteps <= teamSteps );
+		if ( pass == 1 )
+		{
+			printf( "  team in %d of 180 steps, %d of them timed, overflow alone %.3f of %.3f ms\n", teamSteps, timedSteps,
+					profile.teamOverflow, profile.teamTime );
+		}
+
+		if ( timedSteps > 0 )
+		{
+			const float slack = 1.0e-3f;
+			ENSURE( profile.teamTime > 0.0f && profile.teamStageCount > 0.0f );
+			ENSURE( profile.teamOverflow + profile.teamStageWait <= profile.teamTime + slack );
+			ENSURE( profile.teamWorkerWait >= -slack && profile.teamWorkerPacks >= 0.0f && profile.teamYieldCount >= 0.0f );
+		}
 		hashes[pass] = HashCreated( &scene, ids, houseCount );
 		DestroyScene( &scene );
 	}
@@ -4220,8 +4242,11 @@ static int ProfileTest( void )
 	ENSURE( profile.teamStepCount <= profile.islandStepCount );
 	ENSURE( profile.teamStepCount == 0 || ( 1.25f / 4.0f < profile.teamShare && profile.teamShare <= 1.0f ) );
 
-	// The cells of the impact went to the workers
+	// The cells of the impact went to the workers. From how many items they help next time depends on how fast they
+	// started, between the bounds of nbFractureWorkerItems and nbSettleWorkerPieces.
 	ENSURE( profile.wakeCount > 0 && profile.wakeTime >= 0.0f && profile.longestWake >= profile.wakeTime );
+	ENSURE( 8 <= profile.fractureWorkerItems && profile.fractureWorkerItems <= 32 );
+	ENSURE( 128 <= profile.settleWorkerPieces && profile.settleWorkerPieces <= 512 );
 
 	nbWorld_ResetProfile( scene.world );
 	ENSURE( nbWorld_GetProfile( scene.world ).stepCount == 0 );

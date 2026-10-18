@@ -489,7 +489,7 @@ typedef struct nbWorld
 
 	// How long a sleeping worker takes to start a task, and how long one thread takes for an item of a fracture and for the
 	// checks of a moving piece in nbSettleDebris, in milliseconds. Each is a running mean of the latest measurements and zero
-	// until the first. They set from how much work the workers help, see nbWorkerThreshold.
+	// until the first. They decide from how much work on the workers help, see nbWorkerThreshold.
 	float wakeEstimate;
 	float cellEstimate;
 	float settleEstimate;

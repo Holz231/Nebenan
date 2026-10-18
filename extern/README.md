@@ -315,9 +315,9 @@ Schritt (`B3_TEAM_SAMPLE` in `src/solver.c`): die Zeit des Teams auf dem aufrufe
 allein am Überlauf des Pakets rechnet und am Ende der Stufen auf die anderen wartet, und über alle Worker, wie lange sie
 auf eine neue Stufe warten und wie lange sie die übrigen Pakete rechnen (`b3Profile::teamTime` und die Felder danach).
 `b3Counters::teamSample` sagt, ob der letzte Schritt so gemessen hat, dazu seine Threads, die Stufen mit einer Sperre
-und wie oft die Worker beim Warten ihren Kern abgegeben haben. Die Worker zählen in ihrem `b3TaskContext`. Die Uhr an
-jeder Stufe kostet das Team in diesem Schritt ein paar Prozent, die anderen Schritte nichts. `b3Profile::packWait` misst
-in jedem Schritt mit Paketen, wie lange der aufrufende Thread auf die letzten wartet.
+und wie oft die Worker beim Warten ihren Kern abgegeben haben. Die Worker zählen in ihrem `b3TaskContext`. Nur dieser
+Schritt liest an jeder Stufe die Uhr, die anderen kosten nichts. `b3Profile::packWait` misst in jedem Schritt mit
+Paketen, wie lange der aufrufende Thread auf die letzten wartet.
 
 Die erste, die zweite, die vierte bis achte, die zehnte, die dreizehnte bis einunddreißigste, die dreiunddreißigste und
 die vierunddreißigste ändern an den Ergebnissen nichts. Die dritte und die neunte ändern sie in den letzten Bits, dafür hängen sie nicht mehr davon ab, in

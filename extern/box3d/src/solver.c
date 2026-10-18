@@ -1978,7 +1978,7 @@ _Static_assert( B3_MAX_PACKS <= 256, "a pack needs to fit in a byte" );
 #define B3_TEAM_SHARE_DEN 4
 
 // Added for Nebenan: every this many steps a step with a team times where its constraints go, see b3Profile::teamTime.
-// Reading the clock at every stage costs the team a few percent in that step, the others pay nothing.
+// Only that step reads the clock at every stage, the others pay nothing.
 #define B3_TEAM_SAMPLE 8
 
 // Added for Nebenan: the work of the awake islands as b3BuildPacks weighs it, for a step of a world with workers that
