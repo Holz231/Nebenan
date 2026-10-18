@@ -1054,6 +1054,14 @@ Im Benchmark kosten die Bedingungen des Lösers auf der VM damit 1 bis 8,5 % wen
 Demo bei ×4 1,9 bis 4,9 %. Die Ergebnisse ändern sich, bleiben aber mit jeder Zahl von Threads und auf jeder Plattform
 gleich.
 
+Seit `physik-30` sucht der Test zweier Hüllen die Trennachse wie upstream Box3D seit
+[#173](https://github.com/erincatto/box3d/pull/173) und [#177](https://github.com/erincatto/box3d/pull/177), siehe
+„Trennachsen-Suche wie upstream #173 und #177“ in [`extern/README.md`](extern/README.md). Auf denselben Hüllenpaaren
+braucht die Suche 5,1 % weniger Takte, mit einem Thread 0,5 bis 0,7 % eines Schritts, und sie erkennt getrennte Hüllen,
+die die alte übersah. Anders als upstream behält der Fork die volle zweite Suche, wenn der Schnitt der Flächen keinen
+Punkt ergibt, damit Hüllen, die sich überlappen, auch dann einen Kontakt bekommen, und das Format der Hüllen bleibt. Die
+Ergebnisse ändern sich, bleiben aber mit jeder Zahl von Threads und auf jeder Plattform gleich.
+
 Ganze Einschläge (Bruch, Stützgraph, neue Box3D-Körper) und der Box3D-Schritt danach bei 60 Hz mit
 4 Substeps, jeweils mit 1 und 4 Threads, der Median aus sechs Läufen:
 

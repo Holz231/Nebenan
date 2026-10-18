@@ -340,12 +340,24 @@ zwei Nullen mit verschiedenem Vorzeichen vergleichen, und SSE, NEON und der skal
 Die Drehreibung um die Normale bleibt ebenfalls, upstreams neue Form spart dort nichts. Die Knoten aus „Knoten im
 Überlauf“ rechnen mit denselben Kernen.
 
+**Trennachsen-Suche wie upstream #173 und #177.** Die Suche nach der Trennachse zweier Hüllen (`b3ComputeSeparatingAxis`
+in `src/convex_manifold.c`) ist die von upstream Box3D seit [#173](https://github.com/erincatto/box3d/pull/173) und
+[#177](https://github.com/erincatto/box3d/pull/177): Ein neuer Test prüft, ob ein Kantenpaar die beste Fläche noch
+schlagen kann, die übrigen Paare siebt sie ein zweites Mal gegen einen Punkt der anderen Hülle, und die Trennung der
+Fläche, mit der sie beginnt, rechnet sie nur einmal. Die breiten Vektoren dafür, die upstream in `src/simd.h` hat,
+stehen am Anfang von `src/convex_manifold.c`, denn die Kerne des Lösers benennen ihre eigenen nach der Zahl der Spuren.
+Anders als upstream rechnet der Fork den Kosinus zwischen den beiden Flächen einer Kante jedes Mal aus ihren Normalen,
+statt ihn in der Hülle zu speichern. So behalten die Hüllen, die Nebenan selbst baut und in seinen Paketen ablegt, ihr
+Format. Und er behält die volle zweite Suche, wenn der Schnitt der Flächen keinen Punkt ergibt, die upstream in #173
+gestrichen hat. Ohne sie bekämen zwei Hüllen dann gar keinen Kontakt, auch wenn sie sich überlappen.
+
 Die erste, die zweite, die vierte bis achte, die zehnte, die dreizehnte bis einunddreißigste und die dreiunddreißigste
 bis fünfunddreißigste ändern an den Ergebnissen nichts. Die dritte und die neunte ändern sie in den letzten Bits, dafür
 hängen sie nicht mehr davon ab, in welcher Reihenfolge Formen in die Bäume kommen. Die elfte ändert sie, weil Kontakte
 zu anderen Zeitpunkten entstehen, die zwölfte, weil sie weniger Punkte bekommen, die zweiunddreißigste, weil die
-Kontakte eines Knotens gebündelt gegen Kopien rechnen statt nacheinander, und die sechsunddreißigste, weil die Kerne
-dieselbe Rechnung anders zusammenfassen und deshalb anders runden. Die Ergänzungen stehen in `CMakeLists.txt`,
+Kontakte eines Knotens gebündelt gegen Kopien rechnen statt nacheinander, die sechsunddreißigste, weil die Kerne
+dieselbe Rechnung anders zusammenfassen und deshalb anders runden, und die siebenunddreißigste, weil die Suche andere
+Kantenpaare aussiebt und getrennte Hüllen erkennt, die die alte übersah. Die Ergänzungen stehen in `CMakeLists.txt`,
 `src/CMakeLists.txt`, `include/box3d/base.h`, `include/box3d/box3d.h`, `include/box3d/types.h`,
 `include/box3d/constants.h`, `src/core.h`, `src/core.c`, `src/shape.h`, `src/shape.c`, `src/body.c`, `src/contact.h`,
 `src/contact.c`, `src/contact_solver.h`, `src/contact_solver.c`, `src/contact_solver_wide.inl`, `src/wide8.c`,
