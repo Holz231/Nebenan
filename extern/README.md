@@ -319,20 +319,29 @@ und wie oft die Worker beim Warten ihren Kern abgegeben haben. Die Worker zähle
 Schritt liest an jeder Stufe die Uhr, die anderen kosten nichts. `b3Profile::packWait` misst in jedem Schritt mit
 Paketen, wie lange der aufrufende Thread auf die letzten wartet.
 
-Die erste, die zweite, die vierte bis achte, die zehnte, die dreizehnte bis einunddreißigste, die dreiunddreißigste und
-die vierunddreißigste ändern an den Ergebnissen nichts. Die dritte und die neunte ändern sie in den letzten Bits, dafür hängen sie nicht mehr davon ab, in
-welcher Reihenfolge Formen in die Bäume kommen. Die elfte ändert sie, weil Kontakte zu anderen Zeitpunkten entstehen,
-die zwölfte, weil sie weniger Punkte bekommen, die zweiunddreißigste, weil die Kontakte eines Knotens gebündelt
-gegen Kopien rechnen statt nacheinander. Die Ergänzungen stehen in `CMakeLists.txt`, `src/CMakeLists.txt`,
-`include/box3d/base.h`, `include/box3d/box3d.h`, `include/box3d/types.h`, `include/box3d/constants.h`, `src/core.h`,
-`src/core.c`, `src/shape.h`, `src/shape.c`, `src/body.c`, `src/contact.h`, `src/contact.c`, `src/contact_solver.h`,
-`src/contact_solver.c`, `src/contact_solver_wide.inl`, `src/wide8.c`, `src/simd.c`, `src/simd_avx2.h`,
-`src/constraint_graph.h`, `src/convex_manifold.c`, `src/world_snapshot.c`, `src/recording.c`, `src/solver.h`,
-`src/solver.c`, `src/broad_phase.h`, `src/broad_phase.c`, `src/dynamic_tree.h`, `src/dynamic_tree.c`,
-`src/parallel_for.c`, `src/scheduler.h`, `src/scheduler.c`, `src/physics_world.h` und `src/physics_world.c`, jeweils mit
-„Added for Nebenan“ markiert. `B3_HAS_UNIQUE_HULLS`, `B3_HAS_SHAPE_BATCH`, `B3_HAS_SHAPE_CONTACT_LISTS`,
-`B3_HAS_EXTERNAL_HULLS`, `B3_HAS_BODY_PREFETCH` und `B3_HAS_STEP_GUARD` zeigen die zweite, die vierte, die fünfte, die
-sechste, die neunzehnte und die dreißigste an. Fehlen sie, etwa mit einem eigenen Box3D, läuft Nebenan wie zuvor, nur
-wachsen Box3Ds Arrays dann durch Umkopieren, die Hüllen gehen durch die Tabelle, jede Form geht einzeln in den Baum,
-jedes stehende Bruchstück bekommt einen eigenen Körper, Box3D hält eine Kopie jeder Hülle, Nebenan holt die Körper der
-Trümmer nicht voraus, und `nbWorld_Step` rechnet auf dem aufrufenden Thread.
+**Lage vor dem Schritt im Bewegungsereignis.** Ein `b3BodyMoveEvent` trug nur die Lage eines Körpers nach dem Schritt.
+Um zwischen zwei Schritten zu zeichnen, braucht ein Programm auch die Lage davor und den Schwerpunkt im Rahmen des
+Körpers, denn bei den Trümmern eines Hauses liegt der Ursprung oft Meter daneben, und nur der Schwerpunkt läuft auf
+einer Geraden. `b3FinalizeBodiesTask` merkt sich die Lage, bevor es sie fortschreibt, und schreibt sie mit dem
+Schwerpunkt in das Ereignis (`b3BodyMoveEvent::previousTransform` und `b3BodyMoveEvent::localCenter`). Setzt die CCD
+einen Körper auf die Lage seines Treffers zurück, liegt er zwischen der Lage davor und dieser. Nebenan nutzt das in
+`nbWorld_GetDrawPoses`.
+
+Die erste, die zweite, die vierte bis achte, die zehnte, die dreizehnte bis einunddreißigste und die dreiunddreißigste
+bis fünfunddreißigste ändern an den Ergebnissen nichts. Die dritte und die neunte ändern sie in den letzten Bits, dafür
+hängen sie nicht mehr davon ab, in welcher Reihenfolge Formen in die Bäume kommen. Die elfte ändert sie, weil Kontakte
+zu anderen Zeitpunkten entstehen, die zwölfte, weil sie weniger Punkte bekommen, die zweiunddreißigste, weil die
+Kontakte eines Knotens gebündelt gegen Kopien rechnen statt nacheinander. Die Ergänzungen stehen in `CMakeLists.txt`,
+`src/CMakeLists.txt`, `include/box3d/base.h`, `include/box3d/box3d.h`, `include/box3d/types.h`,
+`include/box3d/constants.h`, `src/core.h`, `src/core.c`, `src/shape.h`, `src/shape.c`, `src/body.c`, `src/contact.h`,
+`src/contact.c`, `src/contact_solver.h`, `src/contact_solver.c`, `src/contact_solver_wide.inl`, `src/wide8.c`,
+`src/simd.c`, `src/simd_avx2.h`, `src/constraint_graph.h`, `src/convex_manifold.c`, `src/world_snapshot.c`,
+`src/recording.c`, `src/solver.h`, `src/solver.c`, `src/broad_phase.h`, `src/broad_phase.c`, `src/dynamic_tree.h`,
+`src/dynamic_tree.c`, `src/parallel_for.c`, `src/scheduler.h`, `src/scheduler.c`, `src/physics_world.h` und
+`src/physics_world.c`, jeweils mit „Added for Nebenan“ markiert. `B3_HAS_UNIQUE_HULLS`, `B3_HAS_SHAPE_BATCH`,
+`B3_HAS_SHAPE_CONTACT_LISTS`, `B3_HAS_EXTERNAL_HULLS`, `B3_HAS_BODY_PREFETCH`, `B3_HAS_STEP_GUARD` und
+`B3_HAS_PREVIOUS_TRANSFORM` zeigen die zweite, die vierte, die fünfte, die sechste, die neunzehnte, die dreißigste und
+die fünfunddreißigste an. Fehlen sie, etwa mit einem eigenen Box3D, läuft Nebenan wie zuvor, nur wachsen Box3Ds Arrays
+dann durch Umkopieren, die Hüllen gehen durch die Tabelle, jede Form geht einzeln in den Baum, jedes stehende Bruchstück
+bekommt einen eigenen Körper, Box3D hält eine Kopie jeder Hülle, Nebenan holt die Körper der Trümmer nicht voraus,
+`nbWorld_Step` rechnet auf dem aufrufenden Thread, und `nbWorld_GetDrawPoses` gibt die Lagen nach dem Schritt.

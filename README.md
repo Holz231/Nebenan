@@ -15,7 +15,8 @@ gelöscht. Kein Staub, keine Schatten: Jede Millisekunde geht in die Zerstörung
   am Einschlag auf. Das Ergebnis hängt nicht von der Zahl der Threads ab
 - Die Physik rechnet auf einem eigenen Thread, während das Programm zeichnet (`nbWorld_Step`). Wer danach die Welt
   anfasst, wartet automatisch auf den Schritt, und die Welt rechnet bitgleich wie ohne. Wie viele Schritte ein Bild
-  braucht, sagt `nbWorld_PlanSteps`
+  braucht, sagt `nbWorld_PlanSteps`, und `nbWorld_GetDrawPoses` gibt jedem Bild Lagen zwischen den letzten zwei
+  Schritten, damit die Trümmer auch auf Monitoren mit mehr als 60 Hz flüssig fliegen
 - Einsturz Etage für Etage, auf jeder Höhe und in jeder Reihenfolge: Hat eine Etage weniger als die Hälfte ihrer Wände,
   fliegen ihre letzten Wände mit Wucht heraus, und alles darüber kommt als ein Stück herunter, gekippt zur Seite, wo
   die Wände fehlen. Die Räume oben bleiben ganz und geben wieder Deckung. Sonst stürzt an einem Haus nichts ein,
@@ -134,6 +135,10 @@ viele FPS die CPU schaffen würde. Die Physik rechnet unabhängig davon 60 Schri
   (`nbWorld_Step`), während der Hauptthread das Bild davor zeichnet. Ein Bild kostet dann so viel wie der längere der beiden Teile statt beide
   zusammen und zeigt die Welt einen Schritt später. Die Welt rechnet mit und ohne genau gleich, die Zahl der Threads
   passt sich beim nächsten Laden der Szene an.
+- **Zwischen Schritten zeichnen** (Standard an): Jedes Bild zeigt die Trümmer zwischen den letzten zwei Schritten der
+  Physik, siehe Zeichnen zwischen zwei Schritten. Aus zeigt jedes Bild den Stand nach dem letzten Schritt. **Zeitlupe**
+  gibt der Physik ein Viertel der Zeit, dann kommen viermal so viele Bilder wie Schritte, und der Unterschied zeigt sich
+  auf jedem Monitor.
 
 Daneben stellt **Etage braucht** ein, wie viel ihrer Wände eine Etage zum Stehen braucht (Standard 50 %), und
 **Statik ohne Decken** schaltet die Lastprüfung für die Mauern ein (Standard aus).
@@ -259,16 +264,17 @@ gibt: einen für je 250 wache Kontakte, darunter rechnet der aufrufende Thread d
 wecken und auf sie warten könnte, und unter Dauerbeschuss rechnen alle mit.
 
 **Der Schritt auf einem eigenen Thread.** `nbWorld_Step` rechnet den Box3D-Schritt samt Update auf einem Thread von
-Nebenan und kehrt sofort zurück, so zeichnet das Programm sein Bild, während die Physik rechnet. Ein Bild kostet dann
-so viel wie der längere der beiden Teile statt beide zusammen. Ruft der Thread, der den Schritt gestartet hat, danach
+Nebenan und kehrt sofort zurück, so zeichnet das Programm sein Bild, während die Physik rechnet. Ein Bild kostet dann so
+viel wie der längere der beiden Teile statt beide zusammen. Ruft der Thread, der den Schritt gestartet hat, danach
 irgendeine Funktion von Nebenan oder Box3D für die beiden Welten auf, wartet sie zuerst auf den Schritt. Box3D prüft
 dazu bei jedem Zugriff auf eine Welt, ob ein anderer Thread sie gerade rechnet (eine Ergänzung, siehe
 [`extern/README.md`](extern/README.md)). Der Schritt-Thread und die Worker gehen ohne Warten durch. So bleibt die
-Reihenfolge aller Änderungen dieselbe wie ohne eigenen Thread, und die Welt rechnet bitgleich, das Programm muss
-nichts dafür bauen. Mehrere Schritte in einem Bild warten nicht aufeinander, sie folgen auf dem Thread hintereinander.
-`nbWorld_GetBodyEvents` gibt am Anfang des nächsten Bilds die letzte Lage jedes Körpers, der sich seitdem bewegt hat
-und noch da ist. Mit `nbWorld_RunAfterStep` legt ein Programm eigene Arbeit an der Welt hinter den Schritt auf
-denselben Thread, die Demo etwa das Streaming der großen Stadt.
+Reihenfolge aller Änderungen dieselbe wie ohne eigenen Thread, und die Welt rechnet bitgleich, das Programm muss nichts
+dafür bauen. Mehrere Schritte in einem Bild warten nicht aufeinander, sie folgen auf dem Thread hintereinander.
+`nbWorld_GetBodyEvents` gibt am Anfang des nächsten Bilds die letzte Lage jedes Körpers, der sich seitdem bewegt hat und
+noch da ist, `nbWorld_GetDrawPoses` die Lagen zum Zeichnen, siehe Zeichnen zwischen zwei Schritten. Mit
+`nbWorld_RunAfterStep` legt ein Programm eigene Arbeit an der Welt hinter den Schritt auf denselben Thread, die Demo
+etwa das Streaming der großen Stadt.
 
 **Stützgraph.** Zwei Bruchstücke sind verbunden, wenn sich ihre Flächen berühren. Jede Verbindung hält
 `strength × Kontaktfläche` aus, zwischen zwei Materialien mit dem kleineren `strength`. Der Schaden eines
@@ -467,11 +473,11 @@ grenade.ejectSpeed = 12.0f;
 grenade.explosionImpulse = 40.0f * grenade.ejectSpeed;
 nbWorld_ApplyImpact( world, &grenade );
 
-// Pro Frame: zuerst die Körper, die der Schritt des letzten Frames bewegt hat
-b3BodyEvents moves = nbWorld_GetBodyEvents( world );
-for ( int i = 0; i < moves.moveCount; ++i )
+// Pro Frame: zuerst die Lagen der Körper, die sich bewegen, zwischen den letzten zwei Schritten
+nbDrawPoses poses = nbWorld_GetDrawPoses( world, nbWorld_GetStepFraction( world ) );
+for ( int i = 0; i < poses.count; ++i )
 {
-	// moves.moveEvents[i].transform an die Meshes des Körpers moves.moveEvents[i].bodyId
+	// poses.poses[i].transform an die Meshes des Körpers poses.poses[i].bodyId
 }
 
 nbEvents events = nbWorld_GetEvents( world );
@@ -506,6 +512,21 @@ die Schritte nicht hinterher, wird die Simulation langsamer, statt mit immer meh
 zu bremsen: höchstens zwei Schritte pro Bild, einen zweiten nur, solange der letzte Schritt samt Update unter 4 ms
 blieb, und ein Bild zählt höchstens 0,1 s. Wer schon eine eigene Schleife mit festem Schritt hat, ruft nur
 `nbWorld_Step`.
+
+**Zeichnen zwischen zwei Schritten.** Die Physik rechnet in festen Schritten, meist 60 pro Sekunde, gezeichnet wird oft
+öfter, auf einem Monitor mit 144 Hz zwei- bis dreimal pro Schritt. Mit der Lage nach dem letzten Schritt bleiben die
+Trümmer dann für zwei oder drei Bilder stehen und springen weiter, das ruckelt leicht. `nbWorld_GetDrawPoses` gibt jedem
+Bild deshalb die Lagen der Körper zwischen ihren Lagen vor und nach dem letzten Schritt, so weit, wie
+`nbWorld_GetStepFraction` sagt, also wie weit die Zeit, die `nbWorld_PlanSteps` übrig gelassen hat, in den nächsten
+Schritt reicht. Der Schwerpunkt läuft dabei auf einer Geraden, auch wenn der Ursprung eines Körpers Meter daneben liegt
+wie bei den Trümmern eines Hauses, und die Drehung nimmt den kürzeren Weg. Das Bild liegt so genau einen Schritt hinter
+der Physik, bei 60 Hz 17 ms, ohne die Lagen dazwischen im Mittel einen halben. Die Liste hält jeden Körper, dessen Lage
+zum Zeichnen sich seit dem letzten Aufruf geändert hat: die im letzten Schritt bewegten und einmal noch die, die seitdem
+stehen geblieben sind, mit ihrer letzten Lage. Mit dem Anteil 1 sind es die Lagen nach dem letzten Schritt. Die Lage vor
+dem Schritt und den Schwerpunkt liefert Box3D in jedem Bewegungsereignis mit (eine Ergänzung, siehe
+[`extern/README.md`](extern/README.md)). Die Physik ändert sich dadurch nicht. Ein Spiel, das mit einem langsameren Takt
+rechnen will, kann so auch mit 30 Schritten pro Sekunde flüssig zeichnen, siehe „Physik mit 30 Hz und 8 Teilschritten“
+in [docs/Optimierungen.md](docs/Optimierungen.md).
 
 Gebäude entstehen aus mehreren konvexen Teilen mit `nbCreateDestructible`. Sich berührende Flächen
 verschiedener Teile werden automatisch verbunden, `cellSize` zerlegt die Teile schon beim Laden. Ein Teil
@@ -1019,6 +1040,12 @@ bekommt beides ohne eigenen Aufruf. Auf der VM, wo ein Worker erst nach rund 100
 kaum, und ein Schritt kostet gepaart gegen `physik-25` gleich viel. Die Ergebnisse bleiben bitgleich. Mit 8 Threads auf
 dem Ryzen 7 7800X3D helfen die Worker bei einem Bruch schon ab 8 Zellen und Stücken, ein Schritt kostet bei ×4 aber
 ebenfalls gleich viel, siehe „Skalierung auf dem Ryzen mit `physik-26`“.
+
+Seit `physik-28` gibt `nbWorld_GetDrawPoses` jedem Bild die Lagen der Körper zwischen den letzten zwei Schritten, siehe
+Zeichnen zwischen zwei Schritten. Die Demo zeichnet damit, und im Menü zeigen „Zwischen Schritten zeichnen“ und
+„Zeitlupe“ den Unterschied. Ein Aufruf kostet beim Abriss auf der VM bei ×4 mit rund 1 700 fliegenden Trümmern 0,16 ms
+pro Bild, bei ×2 mit rund 3 000 0,30 ms, die Bewegungsereignisse für dieselben Körper 0,06 und 0,12 ms. Die Physik
+rechnet unverändert.
 
 Ganze Einschläge (Bruch, Stützgraph, neue Box3D-Körper) und der Box3D-Schritt danach bei 60 Hz mit
 4 Substeps, jeweils mit 1 und 4 Threads, der Median aus sechs Läufen:
