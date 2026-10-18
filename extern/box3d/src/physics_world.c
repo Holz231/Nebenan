@@ -2532,6 +2532,10 @@ b3Counters b3World_GetCounters( b3WorldId worldId )
 	s.knotContactCount = world->knotContactCount;
 	s.knotBatchCount = world->knotBatchCount;
 	s.teamWork = world->teamWork;
+	s.teamSample = world->teamSample;
+	s.teamWorkerCount = world->teamWorkerCount;
+	s.teamStageCount = world->teamStageCount;
+	s.teamYieldCount = world->teamYieldCount;
 	memcpy( s.manifoldCounts, world->manifoldCounts, B3_CONTACT_MANIFOLD_COUNT_BUCKETS * sizeof( int ) );
 	s.stackUsed = world->stack.maxAllocation;
 	s.byteCount = b3GetByteCount();

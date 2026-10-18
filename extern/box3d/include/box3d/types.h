@@ -602,6 +602,19 @@ typedef struct b3Profile
 	/// the knots and the other overflow constraints, in a step that solves by colors. With packs every pack solves its
 	/// own overflow.
 	float overflow;
+
+	/// Added for Nebenan: where the constraints of a step with a team go, timed in every eighth such step, see
+	/// b3Counters::teamSample, zero in the others. The time of the team on the calling thread, the part of it the calling
+	/// thread spends alone on the overflow of the team's pack and waiting at the end of the stages for the others, and over
+	/// all workers the time they wait for a new stage and the time they solve the other packs.
+	float teamTime;
+	float teamOverflow;
+	float teamStageWait;
+	float teamWorkerWait;
+	float teamWorkerPacks;
+
+	/// Added for Nebenan: the time the calling thread waits for the last packs of islands, in every step with packs
+	float packWait;
 } b3Profile;
 
 /// Counters that give details of the simulation size.
@@ -655,6 +668,13 @@ typedef struct b3Counters
 	/// it in the last step, stage by stage with a barrier after each, while they solved the other packs whole in between.
 	/// A team takes a pack that holds clearly more than the even share of a worker. Zero if the step had none.
 	int teamWork;
+
+	/// Added for Nebenan: one if the last step timed its team, see b3Profile::teamTime, and then its threads, the calling one
+	/// included, the stages with a barrier in it and how often the workers gave up their core while they waited for a stage
+	int teamSample;
+	int teamWorkerCount;
+	int teamStageCount;
+	int teamYieldCount;
 } b3Counters;
 
 /// Joint type enumeration. This is useful because all joint types use b3JointId and sometimes you

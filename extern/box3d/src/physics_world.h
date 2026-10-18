@@ -99,6 +99,14 @@ typedef struct b3TaskContext
 	float splitSleepTime;
 	int splitIslandId;
 
+	// Added for Nebenan: the timing of a step with a team, see b3Profile::teamTime. The calling thread sums its waits at the
+	// end of the stages and counts the stages, a worker its waits for a new stage, the other packs it solves and how often it
+	// gives up its core.
+	float teamWait;
+	float teamPacks;
+	int teamStages;
+	int teamYields;
+
 	// Profiling
 	int satCallCount;
 	int satCacheHitCount;
@@ -297,6 +305,12 @@ typedef struct b3World
 
 	// Added for Nebenan: the work of the pack a team solved in the last step, see b3Counters::teamWork
 	int teamWork;
+
+	// Added for Nebenan: see b3Counters::teamSample
+	int teamSample;
+	int teamWorkerCount;
+	int teamStageCount;
+	int teamYieldCount;
 
 	b3EnqueueTaskCallback* enqueueTaskFcn;
 	b3FinishTaskCallback* finishTaskFcn;

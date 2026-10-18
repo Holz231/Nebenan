@@ -4109,6 +4109,9 @@ typedef struct nbFractureTask
 
 	nbArena* arena;
 	nbFractureCounters counters;
+
+	// The items this task took
+	int takenCount;
 } nbFractureTask;
 
 static void nbFractureTaskMain( void* context )
@@ -4129,6 +4132,7 @@ static void nbFractureTaskMain( void* context )
 		{
 			break;
 		}
+		task->takenCount += 1;
 
 		// The sites of every job come first. A cell of a job whose sites another worker still draws waits for them, all
 		// of them were handed out before any cell.
@@ -4158,8 +4162,44 @@ static void nbFractureTaskMain( void* context )
 	}
 }
 
-// Items from which the workers help with a fracture, see nbRunFractureJobs
+// How fast the running means of nbWorld::wakeEstimate follow a new measurement
+#define NB_ESTIMATE_WEIGHT 0.125f
+
+static void nbEstimate( float* estimate, float value )
+{
+	*estimate = *estimate > 0.0f ? *estimate + NB_ESTIMATE_WEIGHT * ( value - *estimate ) : value;
+}
+
+// The workers help once the calling thread alone would take this many times as long as a sleeping worker takes to start.
+// While the workers start, the calling thread does the first items itself, but handing out the tasks and taking their
+// results from the caches of other cores cost about as much again. On the VM the cells of a fracture went to the workers
+// from 16 items with 67 us to start and were slower than alone, see "Kleine Einschläge ohne Worker" in the docs.
+#define NB_WORKER_WAKE_FACTOR 3.0f
+
+// The items from which the workers help with work whose items take itemTime milliseconds each on one thread, see
+// NB_WORKER_WAKE_FACTOR and nbWorld::wakeEstimate. Never below minItems and never above maxItems, maxItems until the world
+// measured both times. The result of the work must not depend on how many threads share it.
+static int nbWorkerThreshold( const nbWorld* world, float itemTime, int minItems, int maxItems )
+{
+	if ( world->wakeEstimate <= 0.0f || itemTime <= 0.0f )
+	{
+		return maxItems;
+	}
+
+	float items = NB_WORKER_WAKE_FACTOR * world->wakeEstimate / itemTime;
+	return items >= (float)maxItems ? maxItems : b3MaxInt( (int)ceilf( items ), minItems );
+}
+
+// Items from which the workers help with a fracture at most and at least, see nbWorkerThreshold. A grenade on a house at
+// fragment scale 4 has 15 to 30 items. Where a worker takes long to start, as on the VM with 67 us, the calling thread alone
+// is done with them sooner than with the workers it would have to wake, and their cells in the caches of other cores.
 #define NB_PARALLEL_FRACTURE_ITEMS 32
+#define NB_MIN_PARALLEL_FRACTURE_ITEMS 8
+
+int nbFractureWorkerItems( const nbWorld* world )
+{
+	return nbWorkerThreshold( world, world->cellEstimate, NB_MIN_PARALLEL_FRACTURE_ITEMS, NB_PARALLEL_FRACTURE_ITEMS );
+}
 
 void nbStartFractureJobs( nbWorld* world, nbFractureRun* run, nbFractureJob* jobs, int jobCount, nbPrepareJobFn* prepare,
 						  void* prepareContext, nbArena* arena, nbArena* workerArenas )
@@ -4197,10 +4237,8 @@ void nbStartFractureJobs( nbWorld* world, nbFractureRun* run, nbFractureJob* job
 		}
 	}
 
-	// Waking threads costs more than a few dozen cells. A grenade on a house at fragment scale 4 has 15 to 30 items, and
-	// the calling thread alone is done with them sooner than with the workers it would have to wake, and their cells in
-	// the caches of other cores.
-	int taskCount = world->enqueueTask != NULL && itemCount >= NB_PARALLEL_FRACTURE_ITEMS ? world->workerCount : 1;
+	// Waking threads costs more than a few cells, see nbFractureWorkerItems
+	int taskCount = world->enqueueTask != NULL && itemCount >= nbFractureWorkerItems( world ) ? world->workerCount : 1;
 	taskCount = taskCount < itemCount ? taskCount : itemCount;
 
 	run->tasks = nbArena_AllocArray( arena, nbFractureTask, taskCount );
@@ -4237,7 +4275,10 @@ void nbFinishFractureJobs( nbWorld* world, nbFractureRun* run )
 		return;
 	}
 
+	uint64_t ticks = b3GetTicks();
 	nbFractureTaskMain( run->tasks + 0 );
+	run->callerTime = b3GetMilliseconds( ticks );
+	run->callerItems = run->tasks[0].takenCount;
 	for ( int i = 1; i < run->taskCount; ++i )
 	{
 		if ( run->userTasks[i] != NULL )
@@ -4283,7 +4324,14 @@ void nbRunFractureJobs( nbWorld* world, nbFractureJob* jobs, int jobCount, nbPre
 			profile->wakeTime += wake;
 			profile->longestWake = b3MaxFloat( profile->longestWake, wake );
 			profile->wakeCount += 1;
+			nbEstimate( &world->wakeEstimate, wake );
 		}
+	}
+
+	// An item on the calling thread, for the next fracture, see nbFractureWorkerItems
+	if ( run.callerItems > 0 )
+	{
+		nbEstimate( &world->cellEstimate, run.callerTime / (float)run.callerItems );
 	}
 }
 
@@ -5261,9 +5309,16 @@ static bool nbCarriesWithout( const nbWorld* world, const nbCarrier* carriers, i
 // Moving debris per block of the checks in nbSettleDebris
 #define NB_SETTLE_BLOCK 64
 
-// The checks of nbSettleDebris go to the workers from this much moving debris on. With less, the calling thread is done
-// before a sleeping worker starts, see nbProfile::wakeTime.
+// Moving debris from which the workers help with the checks of nbSettleDebris at most and at least, see nbWorkerThreshold.
+// A piece takes the calling thread about 0.2 us on the VM, where a worker starts after 67 us, so with less than 512 it is
+// done sooner alone.
 #define NB_PARALLEL_SETTLE 512
+#define NB_MIN_PARALLEL_SETTLE 128
+
+int nbSettleWorkerPieces( const nbWorld* world )
+{
+	return nbWorkerThreshold( world, world->settleEstimate, NB_MIN_PARALLEL_SETTLE, NB_PARALLEL_SETTLE );
+}
 
 // A quiet piece and what carries it, as the checks of nbSettleDebris found it
 typedef struct nbQuietPiece
@@ -5530,7 +5585,7 @@ static void nbSettleDebris( nbWorld* world, b3Vec3 up, float timeStep )
 	nbSupportFan fan = nbMakeSupportFan( up );
 	int blockCount = ( movingCount + NB_SETTLE_BLOCK - 1 ) / NB_SETTLE_BLOCK;
 	nbSettleBlock* blocks = nbArena_AllocArray( &world->arena, nbSettleBlock, blockCount );
-	int taskCount = world->enqueueTask != NULL && movingCount >= NB_PARALLEL_SETTLE ? world->workerCount : 1;
+	int taskCount = world->enqueueTask != NULL && movingCount >= nbSettleWorkerPieces( world ) ? world->workerCount : 1;
 	taskCount = b3MinInt( taskCount, blockCount );
 	int nextBlock = 0;
 	nbSettleTask tasks[NB_MAX_WORKERS];
@@ -5559,7 +5614,9 @@ static void nbSettleDebris( nbWorld* world, b3Vec3 up, float timeStep )
 		userTasks[i] = world->enqueueTask( nbSettleTaskMain, tasks + i, world->userTaskContext, "nebenan settle" );
 	}
 
+	uint64_t callerTicks = b3GetTicks();
 	nbSettleTaskMain( tasks );
+	float callerTime = b3GetMilliseconds( callerTicks );
 
 	for ( int i = 1; i < taskCount; ++i )
 	{
@@ -5567,6 +5624,12 @@ static void nbSettleDebris( nbWorld* world, b3Vec3 up, float timeStep )
 		{
 			world->finishTask( userTasks[i], world->userTaskContext );
 		}
+	}
+
+	// A piece on the calling thread and how long the workers took to start, for the next update, see nbSettleWorkerPieces
+	if ( tasks[0].checkCount > 0 )
+	{
+		nbEstimate( &world->settleEstimate, callerTime / (float)tasks[0].checkCount );
 	}
 
 	// How much the workers took and how long they took to start
@@ -5581,6 +5644,7 @@ static void nbSettleDebris( nbWorld* world, b3Vec3 up, float timeStep )
 			{
 				profile->settleWakeTime += tasks[i].wakeTime;
 				profile->settleWakeCount += 1;
+				nbEstimate( &world->wakeEstimate, tasks[i].wakeTime );
 			}
 		}
 		profile->settleSplitCount += 1;

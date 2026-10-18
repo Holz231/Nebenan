@@ -382,6 +382,15 @@ typedef struct nbProfileSums
 	double settleWorkerShare;
 	double settleWakeTime;
 	int settleWakeCount;
+	int teamSampleCount;
+	double teamTime;
+	double teamOverflow;
+	double teamStageWait;
+	double teamWorkerWait;
+	double teamWorkerPacks;
+	double teamStageCount;
+	double teamYieldCount;
+	double packWait;
 	int stepCount;
 	int impactCount;
 } nbProfileSums;
@@ -478,6 +487,13 @@ typedef struct nbWorld
 	uint32_t searchStamp;
 	uint32_t settleStamp;
 
+	// How long a sleeping worker takes to start a task, and how long one thread takes for an item of a fracture and for the
+	// checks of a moving piece in nbSettleDebris, in milliseconds. Each is a running mean of the latest measurements and zero
+	// until the first. They set from how much work the workers help, see nbWorkerThreshold.
+	float wakeEstimate;
+	float cellEstimate;
+	float settleEstimate;
+
 	// A collapse is breaking a structure apart, the parts it drops come from it
 	bool collapsing;
 
@@ -562,12 +578,21 @@ typedef struct nbFractureRun
 	void* userTasks[NB_MAX_WORKERS];
 	int taskCount;
 	int nextItem;
+
+	// The items the calling thread took and how long it took for them, see nbWorld::cellEstimate
+	int callerItems;
+	float callerTime;
 } nbFractureRun;
 
 // The two halves of nbRunFractureJobs. Start hands the jobs to the workers and returns, finish has the calling thread
 // join them and waits until all cells are done. In between the calling thread may do anything that touches neither the
 // jobs nor the arenas. The cell arrays, the work items and the tasks live in the arena, what a task allocates in its
 // worker arena, one per worker. The run must stay in place until it is finished.
+// From how many items the workers help with a fracture, and from how much moving debris with the checks of the update,
+// chosen by how fast a worker starts, see nbWorld::wakeEstimate
+int nbFractureWorkerItems( const nbWorld* world );
+int nbSettleWorkerPieces( const nbWorld* world );
+
 void nbStartFractureJobs( nbWorld* world, nbFractureRun* run, struct nbFractureJob* jobs, int jobCount,
 						  nbPrepareJobFn* prepare, void* prepareContext, nbArena* arena, nbArena* workerArenas );
 void nbFinishFractureJobs( nbWorld* world, nbFractureRun* run );

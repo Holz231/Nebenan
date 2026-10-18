@@ -583,6 +583,28 @@ typedef struct nbProfile
 	int settleSplitCount;
 	float settleWorkerShare;
 	float settleWakeTime;
+
+	/// Where the constraints of the steps with a team go, timed in every eighth of them, see b3Profile::teamTime: the timed
+	/// steps, and in milliseconds per timed step the time of the team, the part the calling thread spends alone on the
+	/// overflow of the team's pack and waiting at the end of the stages, and per worker the waits for a new stage and the
+	/// time on other packs. Then per timed step the stages with a barrier and how often a worker gave up its core.
+	int teamSampleCount;
+	float teamTime;
+	float teamOverflow;
+	float teamStageWait;
+	float teamWorkerWait;
+	float teamWorkerPacks;
+	float teamStageCount;
+	float teamYieldCount;
+
+	/// How long the calling thread waits for the last packs of islands, milliseconds per step
+	float packWait;
+
+	/// From how many items the workers help with a fracture and from how many moving pieces with the checks of the update,
+	/// when the profile was read. Nebenan chooses both by how fast a worker starts: the calling thread alone would take
+	/// longer than three times that time. Where workers start slowly they stay at 32 and 512.
+	int fractureWorkerItems;
+	int settleWorkerPieces;
 } nbProfile;
 
 /// The stages of profiles measured with different numbers of workers, fitted to T(n) = serial + parallel / n

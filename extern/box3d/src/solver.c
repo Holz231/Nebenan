@@ -1262,6 +1262,9 @@ static void b3ExecuteMainStage( b3SolverStage* stage, b3StepContext* context, ui
 
 		b3ExecuteStage( stage, context, previousSyncIndex, syncIndex, workerIndex );
 
+		// Added for Nebenan: the wait for the others, see b3Profile::teamStageWait
+		uint64_t waitTicks = context->sampleTeam ? b3GetTicks() : 0;
+
 		// Spin waiting for thieves to finish
 		while ( b3AtomicLoadInt( &stage->completionCount ) != blockCount )
 		{
@@ -1269,6 +1272,13 @@ static void b3ExecuteMainStage( b3SolverStage* stage, b3StepContext* context, ui
 		}
 
 		b3AtomicStoreInt( &stage->completionCount, 0 );
+
+		if ( context->sampleTeam )
+		{
+			b3TaskContext* taskContext = context->world->taskContexts.data + workerIndex;
+			taskContext->teamWait += b3GetMilliseconds( waitTicks );
+			taskContext->teamStages += 1;
+		}
 	}
 }
 
@@ -1552,6 +1562,7 @@ static void b3SolverTask( void* taskContext )
 			float wait = b3GetMilliseconds( waitTicks );
 			float total = b3GetMillisecondsAndReset( &ticks );
 			profile->solveImpulses += total;
+			profile->packWait += wait;
 			b3UpdatePackHold( context->world, wait, total );
 
 			// Signal workers to finish
@@ -1762,7 +1773,15 @@ static void b3SolverTask( void* taskContext )
 
 			float wait = b3GetMilliseconds( waitTicks );
 			profile->solveImpulses += b3GetMillisecondsAndReset( &ticks );
+			profile->packWait += wait;
 			b3UpdatePackHold( context->world, wait, b3GetMilliseconds( teamTicks ) );
+
+			// Added for Nebenan: see b3Profile::teamTime
+			if ( context->sampleTeam )
+			{
+				profile->teamTime = b3GetMilliseconds( teamTicks );
+				profile->teamOverflow = profile->overflow;
+			}
 		}
 
 		// Signal workers to finish
@@ -1775,6 +1794,9 @@ static void b3SolverTask( void* taskContext )
 	// Worker spins and waits for work
 	uint32_t lastSyncBits = 0;
 	// uint64_t maxSpinTime = 10;
+
+	// Added for Nebenan: the waits of this worker in a step that times its team, see b3Profile::teamWorkerWait
+	b3TaskContext* sampleContext = context->sampleTeam ? context->world->taskContexts.data + workerIndex : NULL;
 	while ( true )
 	{
 		// Spin until main thread bumps changes the sync bits. This can waste significant time overall, but it is necessary for
@@ -1782,19 +1804,35 @@ static void b3SolverTask( void* taskContext )
 		// todo improve this spinner
 		uint32_t syncBits;
 		int spinCount = 0;
+		uint64_t waitTicks = sampleContext != NULL ? b3GetTicks() : 0;
 		while ( ( syncBits = b3AtomicLoadU32( &context->atomicSyncBits ) ) == lastSyncBits )
 		{
-			// Added for Nebenan: without a new stage of the team, one of the other packs, see b3SolveOtherPack
-			if ( context->team && b3SolveOtherPack( context, workerIndex ) )
+			// Added for Nebenan: without a new stage of the team, one of the other packs, see b3SolveOtherPack. Its time does
+			// not count as a wait.
+			if ( context->team && b3AtomicLoadInt( &context->packNext ) < context->packCount )
 			{
-				spinCount = 0;
-				continue;
+				uint64_t packTicks = sampleContext != NULL ? b3GetTicks() : 0;
+				if ( b3SolveOtherPack( context, workerIndex ) )
+				{
+					if ( sampleContext != NULL )
+					{
+						float packTime = b3GetMilliseconds( packTicks );
+						sampleContext->teamPacks += packTime;
+						sampleContext->teamWait -= packTime;
+					}
+					spinCount = 0;
+					continue;
+				}
 			}
 
 			if ( spinCount > 5 )
 			{
 				b3Yield();
 				spinCount = 0;
+				if ( sampleContext != NULL )
+				{
+					sampleContext->teamYields += 1;
+				}
 			}
 			else
 			{
@@ -1811,6 +1849,11 @@ static void b3SolverTask( void* taskContext )
 				b3Pause();
 				spinCount += 1;
 			}
+		}
+
+		if ( sampleContext != NULL )
+		{
+			sampleContext->teamWait += b3GetMilliseconds( waitTicks );
 		}
 
 		if ( syncBits == UINT_MAX )
@@ -1933,6 +1976,10 @@ _Static_assert( B3_MAX_PACKS <= 256, "a pack needs to fit in a byte" );
 // b3SolveOtherPack. Below that one thread alone is about as fast as the team with its barriers.
 #define B3_TEAM_SHARE_NUM 5
 #define B3_TEAM_SHARE_DEN 4
+
+// Added for Nebenan: every this many steps a step with a team times where its constraints go, see b3Profile::teamTime.
+// Reading the clock at every stage costs the team a few percent in that step, the others pay nothing.
+#define B3_TEAM_SAMPLE 8
 
 // Added for Nebenan: the work of the awake islands as b3BuildPacks weighs it, for a step of a world with workers that
 // solves without packs, see b3Counters::islandWork. A world without workers skips it: its islands could be many.
@@ -2517,10 +2564,14 @@ void b3Solve( b3World* world, b3StepContext* stepContext )
 	b3SolverSet* awakeSet = b3Array_Get( world->solverSets, b3_awakeSet );
 	int awakeBodyCount = awakeSet->bodySims.count;
 
-	// Added for Nebenan: see b3Counters::knotContactCount and b3Counters::teamWork
+	// Added for Nebenan: see b3Counters::knotContactCount, b3Counters::teamWork and b3Counters::teamSample
 	world->knotContactCount = 0;
 	world->knotBatchCount = 0;
 	world->teamWork = 0;
+	world->teamSample = 0;
+	world->teamWorkerCount = 0;
+	world->teamStageCount = 0;
+	world->teamYieldCount = 0;
 
 	if ( awakeBodyCount == 0 )
 	{
@@ -3087,6 +3138,7 @@ void b3Solve( b3World* world, b3StepContext* stepContext )
 		// Added for Nebenan
 		stepContext->packCount = packCount;
 		stepContext->team = team;
+		stepContext->sampleTeam = team && world->stepIndex % B3_TEAM_SAMPLE == 0;
 		stepContext->packBodyStarts = packBodyStarts;
 		stepContext->packBodies = packBodies;
 		stepContext->packOverflowStarts = packOverflowStarts;
@@ -3121,6 +3173,12 @@ void b3Solve( b3World* world, b3StepContext* stepContext )
 			b3SetBitCountAndClear( &taskContext->jointStateBitSet, jointIdCapacity );
 			b3SetBitCountAndClear( &taskContext->hitEventBitSet, contactIdCapacity );
 			taskContext->hasHitEvents = false;
+
+			// Added for Nebenan: see b3Profile::teamTime
+			taskContext->teamWait = 0.0f;
+			taskContext->teamPacks = 0.0f;
+			taskContext->teamStages = 0;
+			taskContext->teamYields = 0;
 		}
 
 		for ( int i = 0; i < workerCount; ++i )
@@ -3185,6 +3243,23 @@ void b3Solve( b3World* world, b3StepContext* stepContext )
 
 		world->profile.constraints = b3GetMillisecondsAndReset( &constraintTicks );
 		b3TracyCZoneEnd( solve_constraints );
+
+		// Added for Nebenan: the waits of the calling thread and of the workers in a step that timed its team, see
+		// b3Profile::teamTime
+		if ( stepContext->sampleTeam )
+		{
+			world->teamSample = 1;
+			world->teamWorkerCount = workerCount;
+			world->teamStageCount = world->taskContexts.data[0].teamStages;
+			world->profile.teamStageWait = world->taskContexts.data[0].teamWait;
+			for ( int i = 1; i < workerCount; ++i )
+			{
+				b3TaskContext* taskContext = world->taskContexts.data + i;
+				world->profile.teamWorkerWait += taskContext->teamWait;
+				world->profile.teamWorkerPacks += taskContext->teamPacks;
+				world->teamYieldCount += taskContext->teamYields;
+			}
+		}
 
 		b3TracyCZoneNC( update_transforms, "Update Transforms", b3_colorMediumSeaGreen, true );
 		uint64_t transformTicks = b3GetTicks();

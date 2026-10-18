@@ -51,6 +51,19 @@ void nbProfileStep( nbWorld* world )
 	// b3Counters::teamWork
 	b3Counters counters = b3World_GetCounters( world->physicsWorld );
 	sums->overflowCount += counters.colorCounts[B3_GRAPH_COLOR_COUNT - 1];
+	sums->packWait += step.packWait;
+	if ( counters.teamSample != 0 )
+	{
+		sums->teamSampleCount += 1;
+		sums->teamTime += step.teamTime;
+		sums->teamOverflow += step.teamOverflow;
+		sums->teamStageWait += step.teamStageWait;
+		double workers = (double)b3MaxInt( counters.teamWorkerCount - 1, 1 );
+		sums->teamWorkerWait += step.teamWorkerWait / workers;
+		sums->teamWorkerPacks += step.teamWorkerPacks / workers;
+		sums->teamStageCount += counters.teamStageCount;
+		sums->teamYieldCount += counters.teamYieldCount / workers;
+	}
 	sums->knotContactCount += counters.knotContactCount;
 	sums->knotBatchCount += counters.knotBatchCount;
 	if ( counters.islandWork > 0 )
@@ -136,6 +149,22 @@ nbProfile nbWorld_GetProfile( nbWorldId worldId )
 	{
 		profile.settleWorkerShare = (float)( sums->settleWorkerShare / (double)sums->settleSplitCount );
 	}
+
+	if ( sums->teamSampleCount > 0 )
+	{
+		double samples = (double)sums->teamSampleCount;
+		profile.teamTime = (float)( sums->teamTime / samples );
+		profile.teamOverflow = (float)( sums->teamOverflow / samples );
+		profile.teamStageWait = (float)( sums->teamStageWait / samples );
+		profile.teamWorkerWait = (float)( sums->teamWorkerWait / samples );
+		profile.teamWorkerPacks = (float)( sums->teamWorkerPacks / samples );
+		profile.teamStageCount = (float)( sums->teamStageCount / samples );
+		profile.teamYieldCount = (float)( sums->teamYieldCount / samples );
+	}
+	profile.teamSampleCount = sums->teamSampleCount;
+	profile.packWait = (float)( sums->packWait / steps );
+	profile.fractureWorkerItems = nbFractureWorkerItems( world );
+	profile.settleWorkerPieces = nbSettleWorkerPieces( world );
 	if ( sums->settleWakeCount > 0 )
 	{
 		profile.settleWakeTime = (float)( 1000.0 * sums->settleWakeTime / (double)sums->settleWakeCount );
@@ -423,6 +452,94 @@ int nbFormatScalingReport( const nbProfile* profiles, int count, char* text, int
 	{
 		nbAppend( &out, "Workers not measured, no fracture had enough cells for them\n" );
 	}
+	// Where the time of the team goes, per number of workers, from the profiles whose steps timed it
+	int teamColumns[NB_REPORT_COLUMNS];
+	int teamColumnCount = 0;
+	for ( int c = 0; c < columnCount; ++c )
+	{
+		for ( int i = 0; i < count; ++i )
+		{
+			if ( profiles[i].workerCount == columns[c] && profiles[i].teamSampleCount > 0 )
+			{
+				teamColumns[teamColumnCount++] = columns[c];
+				break;
+			}
+		}
+	}
+
+	if ( teamColumnCount > 0 )
+	{
+		nbAppend( &out, "The team in every eighth step with one, milliseconds per timed step\n" );
+		nbAppend( &out, "%-30s", "part" );
+		for ( int c = 0; c < teamColumnCount; ++c )
+		{
+			nbAppend( &out, " %5d w", teamColumns[c] );
+		}
+		nbAppend( &out, "\n" );
+
+		enum
+		{
+			rowCount = 8
+		};
+		const char* rowNames[rowCount] = {
+			"timed steps",
+			"team on the calling thread",
+			"  overflow alone",
+			"  waits at the end of stages",
+			"  stages with a barrier",
+			"per worker waits for a stage",
+			"  other packs",
+			"  yields of the core",
+		};
+		for ( int r = 0; r < rowCount; ++r )
+		{
+			nbAppend( &out, "%-30s", rowNames[r] );
+			for ( int c = 0; c < teamColumnCount; ++c )
+			{
+				double sum = 0.0, samples = 0.0;
+				for ( int i = 0; i < count; ++i )
+				{
+					const nbProfile* p = profiles + i;
+					if ( p->workerCount != teamColumns[c] || p->teamSampleCount == 0 )
+					{
+						continue;
+					}
+
+					double values[rowCount] = { 0.0,
+												p->teamTime,
+												p->teamOverflow,
+												p->teamStageWait,
+												p->teamStageCount,
+												p->teamWorkerWait,
+												p->teamWorkerPacks,
+												p->teamYieldCount };
+					sum += values[r] * (double)p->teamSampleCount;
+					samples += (double)p->teamSampleCount;
+				}
+
+				if ( r == 0 )
+				{
+					nbAppend( &out, " %7.0f", samples );
+				}
+				else
+				{
+					nbAppend( &out, r == 4 || r == 7 ? " %7.1f" : " %7.3f", sum / samples );
+				}
+			}
+			nbAppend( &out, "\n" );
+		}
+	}
+
+	double packWait = 0.0;
+	for ( int i = 0; i < count; ++i )
+	{
+		packWait += profiles[i].packWait * (double)profiles[i].stepCount;
+	}
+	if ( steps > 0.0 && packWait > 0.0 )
+	{
+		nbAppend( &out, "The calling thread waited for the last packs of islands %.3f ms per step\n", packWait / steps );
+	}
+
 	if ( settleSplits > 0.0 )
 	{
 		nbAppend( &out,
@@ -433,6 +550,20 @@ int nbFormatScalingReport( const nbProfile* profiles, int count, char* text, int
 	else if ( workerSteps > 0.0 )
 	{
 		nbAppend( &out, "The checks of the update stayed on the calling thread, too little debris moved for the workers\n" );
+	}
+
+	// The thresholds at the end of the profile with the most workers, see nbProfile::fractureWorkerItems
+	const nbProfile* most = profiles;
+	for ( int i = 1; i < count; ++i )
+	{
+		most = profiles[i].workerCount >= most->workerCount ? profiles + i : most;
+	}
+	if ( most->workerCount > 1 )
+	{
+		nbAppend( &out,
+				  "With %d workers they helped with a fracture from %d items on and with the checks of the update from %d moving "
+				  "pieces on\n",
+				  most->workerCount, most->fractureWorkerItems, most->settleWorkerPieces );
 	}
 	return out.length;
 }

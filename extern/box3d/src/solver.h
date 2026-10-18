@@ -266,6 +266,9 @@ typedef struct b3StepContext
 	// the first pack, and the threads solve the others whole in between, see b3SolveOtherPack.
 	int packCount;
 	bool team;
+
+	// Added for Nebenan: this step times its team, see b3Profile::teamTime
+	bool sampleTeam;
 	const int* packBodyStarts;
 	const int* packBodies;
 	const int* packOverflowStarts;
