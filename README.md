@@ -1016,7 +1016,9 @@ der Zeit des Teams allein am Überlauf, und jeder Worker wartet ein Drittel davo
 und bei den Prüfungen des Updates ab einer Menge, die die Bibliothek danach wählt, wie schnell ihre Worker zuletzt
 anliefen, siehe „Schwellen fürs Wecken auf dem Ryzen“ in [docs/Optimierungen.md](docs/Optimierungen.md). Ein Spiel
 bekommt beides ohne eigenen Aufruf. Auf der VM, wo ein Worker erst nach rund 100 µs anläuft, ändern sich die Schwellen
-kaum, und ein Schritt kostet gepaart gegen `physik-25` gleich viel. Die Ergebnisse bleiben bitgleich.
+kaum, und ein Schritt kostet gepaart gegen `physik-25` gleich viel. Die Ergebnisse bleiben bitgleich. Mit 8 Threads auf
+dem Ryzen 7 7800X3D helfen die Worker bei einem Bruch schon ab 8 Zellen und Stücken, ein Schritt kostet bei ×4 aber
+ebenfalls gleich viel, siehe „Skalierung auf dem Ryzen mit `physik-26`“.
 
 Ganze Einschläge (Bruch, Stützgraph, neue Box3D-Körper) und der Box3D-Schritt danach bei 60 Hz mit
 4 Substeps, jeweils mit 1 und 4 Threads, der Median aus sechs Läufen:
