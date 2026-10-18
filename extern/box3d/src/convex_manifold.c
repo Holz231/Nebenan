@@ -498,10 +498,13 @@ void b3CollideSpheres( b3LocalManifold* manifold, int capacity, const b3Sphere* 
 	b3Vec3 center2 = b3TransformPoint( transformBtoA, sphereB->center );
 
 	float totalRadius = sphereA->radius + sphereB->radius;
+
+	// Added for Nebenan, from upstream Box3D (#187): speculative contact before the spheres touch
+	float maxDistance = totalRadius + B3_SPECULATIVE_DISTANCE;
 	b3Vec3 offset = b3Sub( center2, center1 );
 	float distanceSq = b3LengthSquared( offset );
 
-	if ( distanceSq > totalRadius * totalRadius )
+	if ( distanceSq > maxDistance * maxDistance )
 	{
 		// We found a separating axis
 		return;
@@ -546,11 +549,14 @@ void b3CollideCapsuleAndSphere( b3LocalManifold* manifold, int capacity, const b
 
 	float totalRadius = sphereB->radius + capsuleA->radius;
 
+	// Added for Nebenan, from upstream Box3D (#187): speculative contact before the shapes touch
+	float maxDistance = totalRadius + B3_SPECULATIVE_DISTANCE;
+
 	b3Vec3 closestPoint = b3PointToSegmentDistance( center1, center2, center );
 	b3Vec3 offset = b3Sub( center, closestPoint );
 	float distanceSq = b3LengthSquared( offset );
 
-	if ( distanceSq > totalRadius * totalRadius )
+	if ( distanceSq > maxDistance * maxDistance )
 	{
 		// We found a separating axis
 		return;

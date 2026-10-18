@@ -865,6 +865,56 @@ static int ShapeContactListTest( void )
 	return 0;
 }
 
+// A sphere closer to another sphere than the speculative distance gets a contact point before they touch, and so does a
+// sphere over a capsule, as in upstream Box3D since #187. A step of zero time runs the collision but not the solver.
+static int SpeculativeSphereTest( void )
+{
+	b3WorldDef worldDef = b3DefaultWorldDef();
+	worldDef.gravity = b3Vec3_zero;
+	b3WorldId worldId = b3CreateWorld( &worldDef );
+	b3ShapeDef shapeDef = b3DefaultShapeDef();
+	b3BodyDef bodyDef = b3DefaultBodyDef();
+	bodyDef.type = b3_dynamicBody;
+
+	b3Sphere sphere = { b3Vec3_zero, 0.5f };
+	b3Capsule capsule = { { -0.5f, 0.0f, 0.0f }, { 0.5f, 0.0f, 0.0f }, 0.5f };
+	float gap = 0.5f * B3_SPECULATIVE_DISTANCE;
+
+	b3ShapeId upper[2];
+	for ( int i = 0; i < 2; ++i )
+	{
+		bodyDef.position = (b3Pos){ 5.0f * (float)i, 0.0f, 0.0f };
+		b3BodyId lowerId = b3CreateBody( worldId, &bodyDef );
+		if ( i == 0 )
+		{
+			b3CreateSphereShape( lowerId, &shapeDef, &sphere );
+		}
+		else
+		{
+			b3CreateCapsuleShape( lowerId, &shapeDef, &capsule );
+		}
+
+		bodyDef.position = (b3Pos){ 5.0f * (float)i, 1.0f + gap, 0.0f };
+		b3BodyId upperId = b3CreateBody( worldId, &bodyDef );
+		upper[i] = b3CreateSphereShape( upperId, &shapeDef, &sphere );
+	}
+
+	// The first step finds the pairs, the second updates their contacts
+	b3World_Step( worldId, 0.0f, 4 );
+	b3World_Step( worldId, 0.0f, 4 );
+
+	for ( int i = 0; i < 2; ++i )
+	{
+		b3ContactData contact;
+		ENSURE( b3Shape_GetContactData( upper[i], &contact, 1 ) == 1 );
+		ENSURE( contact.manifoldCount == 1 && contact.manifolds[0].pointCount == 1 );
+		ENSURE( fabsf( contact.manifolds[0].points[0].separation - gap ) < 1.0e-4f );
+	}
+
+	b3DestroyWorld( worldId );
+	return 0;
+}
+
 // The static chunks of a destructible sit on one Box3D body, which goes with the destructible or the world
 static int SharedStaticBodyTest( void )
 {
@@ -4613,6 +4663,7 @@ int WorldTest( void )
 	RUN_TEST( ExternalHullTest );
 	RUN_TEST( ShapeBatchTest );
 	RUN_TEST( ShapeContactListTest );
+	RUN_TEST( SpeculativeSphereTest );
 	RUN_TEST( SharedStaticBodyTest );
 	RUN_TEST( LargeBlockTest );
 	RUN_TEST( EventTest );
