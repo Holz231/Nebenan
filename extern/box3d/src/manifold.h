@@ -47,6 +47,22 @@ int b3ClipPolygon( b3ClipVertex* out, b3ClipVertex* polygon, int count, b3Plane 
 
 b3AxisQuery b3ComputeSeparatingAxis( const b3HullData* hullA, const b3HullData* hullB, b3Transform xfB, bool earlyReturn );
 
+// Added for Nebenan: the collision of convex shapes compiled a second time for AVX2, see convex_manifold_avx2.c. They exist
+// with B3_SIMD_HAS_WIDTH_8.
+void b3CollideSpheresAVX2( b3LocalManifold* manifold, int capacity, const b3Sphere* sphereA, const b3Sphere* sphereB,
+						   b3Transform transformBtoA );
+void b3CollideCapsuleAndSphereAVX2( b3LocalManifold* manifold, int capacity, const b3Capsule* capsuleA, const b3Sphere* sphereB,
+									b3Transform transformBtoA );
+void b3CollideHullAndSphereAVX2( b3LocalManifold* manifold, int capacity, const b3HullData* hullA, const b3Sphere* sphereB,
+								 b3Transform transformBtoA, b3SimplexCache* cache );
+void b3CollideCapsulesAVX2( b3LocalManifold* manifold, int capacity, const b3Capsule* capsuleA, const b3Capsule* capsuleB,
+							b3Transform transformBtoA );
+void b3CollideHullAndCapsuleAVX2( b3LocalManifold* manifold, int capacity, const b3HullData* hullA, const b3Capsule* capsuleB,
+								  b3Transform transformBtoA, b3SimplexCache* cache );
+void b3CollideHullsAVX2( b3LocalManifold* manifold, int capacity, const b3HullData* hullA, const b3HullData* hullB,
+						 b3Transform transformBtoA, b3SATCache* cache );
+b3AxisQuery b3ComputeSeparatingAxisAVX2( const b3HullData* hullA, const b3HullData* hullB, b3Transform xfB, bool earlyReturn );
+
 #if B3_ENABLE_VALIDATION
 bool b3ValidatePolygon( b3ClipVertex* polygon, int count );
 #endif

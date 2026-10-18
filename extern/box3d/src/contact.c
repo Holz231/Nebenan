@@ -541,21 +541,31 @@ static bool b3ComputeConvexManifold( b3World* world, int workerIndex, b3Contact*
 
 	b3Transform transformBtoA = b3InvMulWorldTransforms( xfA, xfB );
 
+	// Added for Nebenan: a world with eight lanes collides with the functions compiled for AVX2, see
+	// convex_manifold_avx2.c. Both compute the same results.
+#if defined( B3_SIMD_HAS_WIDTH_8 )
+	bool avx2 = world->simdWidth == 8;
+#define B3_COLLIDE( name, ... ) ( avx2 ? name##AVX2( __VA_ARGS__ ) : name( __VA_ARGS__ ) )
+#else
+#define B3_COLLIDE( name, ... ) name( __VA_ARGS__ )
+#endif
+
 	if ( typeA == b3_sphereShape )
 	{
 		B3_ASSERT( typeB == b3_sphereShape );
-		b3CollideSpheres( &geomManifold, pointCapacity, &shapeA->sphere, &shapeB->sphere, transformBtoA );
+		B3_COLLIDE( b3CollideSpheres, &geomManifold, pointCapacity, &shapeA->sphere, &shapeB->sphere, transformBtoA );
 	}
 	else if ( typeA == b3_capsuleShape )
 	{
 		if ( typeB == b3_sphereShape )
 		{
-			b3CollideCapsuleAndSphere( &geomManifold, pointCapacity, &shapeA->capsule, &shapeB->sphere, transformBtoA );
+			B3_COLLIDE( b3CollideCapsuleAndSphere, &geomManifold, pointCapacity, &shapeA->capsule, &shapeB->sphere,
+						transformBtoA );
 		}
 		else
 		{
 			B3_ASSERT( typeB == b3_capsuleShape );
-			b3CollideCapsules( &geomManifold, pointCapacity, &shapeA->capsule, &shapeB->capsule, transformBtoA );
+			B3_COLLIDE( b3CollideCapsules, &geomManifold, pointCapacity, &shapeA->capsule, &shapeB->capsule, transformBtoA );
 		}
 	}
 	else
@@ -564,22 +574,25 @@ static bool b3ComputeConvexManifold( b3World* world, int workerIndex, b3Contact*
 
 		if ( typeB == b3_sphereShape )
 		{
-			b3CollideHullAndSphere( &geomManifold, pointCapacity, shapeA->hull, &shapeB->sphere, transformBtoA,
-									&cache->simplexCache );
+			B3_COLLIDE( b3CollideHullAndSphere, &geomManifold, pointCapacity, shapeA->hull, &shapeB->sphere, transformBtoA,
+						&cache->simplexCache );
 		}
 		else if ( typeB == b3_capsuleShape )
 		{
-			b3CollideHullAndCapsule( &geomManifold, pointCapacity, shapeA->hull, &shapeB->capsule, transformBtoA,
-									 &cache->simplexCache );
+			B3_COLLIDE( b3CollideHullAndCapsule, &geomManifold, pointCapacity, shapeA->hull, &shapeB->capsule, transformBtoA,
+						&cache->simplexCache );
 		}
 		else
 		{
 			B3_ASSERT( typeB == b3_hullShape );
-			b3CollideHulls( &geomManifold, pointCapacity, shapeA->hull, shapeB->hull, transformBtoA, &cache->satCache );
+			B3_COLLIDE( b3CollideHulls, &geomManifold, pointCapacity, shapeA->hull, shapeB->hull, transformBtoA,
+						&cache->satCache );
 			world->taskContexts.data[workerIndex].satCallCount += 1;
 			world->taskContexts.data[workerIndex].satCacheHitCount += cache->satCache.hit;
 		}
 	}
+
+#undef B3_COLLIDE
 
 	if ( geomManifold.pointCount == 0 )
 	{

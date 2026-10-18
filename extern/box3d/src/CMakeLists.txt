@@ -93,6 +93,7 @@ set(BOX3D_SOURCE_FILES
 	weld_joint.c
 	wheel_joint.c
 	wide8.c
+	convex_manifold_avx2.c
 
 	box3d.natvis
 )
@@ -206,9 +207,10 @@ if (MSVC)
 		target_compile_options(box3d PRIVATE -Wmissing-prototypes)
 	endif()
 
-	# Added for Nebenan: MSVC has no AVX2 pragma, the eight lanes need the whole file in AVX2, see src/wide8.c
+	# Added for Nebenan: MSVC has no AVX2 pragma, the eight lanes need the whole file in AVX2, see src/wide8.c, and so does the
+	# collision compiled a second time, see src/convex_manifold_avx2.c
 	if (BOX3D_AVX2 AND NOT CMAKE_C_COMPILER_ID STREQUAL "Clang" AND CMAKE_C_COMPILER_ARCHITECTURE_ID MATCHES "^(x64|X86)$")
-		set_source_files_properties(wide8.c PROPERTIES COMPILE_OPTIONS "/arch:AVX2")
+		set_source_files_properties(wide8.c convex_manifold_avx2.c PROPERTIES COMPILE_OPTIONS "/arch:AVX2")
 	endif()
 
 elseif (MINGW)

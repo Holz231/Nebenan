@@ -14,6 +14,17 @@
 #include <stdbool.h>
 #include <stddef.h>
 
+// Added for Nebenan: convex_manifold_avx2.c compiles this file a second time for AVX2, under these names
+#if defined( B3_CONVEX_MANIFOLD_AVX2 )
+#define b3CollideSpheres b3CollideSpheresAVX2
+#define b3CollideCapsuleAndSphere b3CollideCapsuleAndSphereAVX2
+#define b3CollideHullAndSphere b3CollideHullAndSphereAVX2
+#define b3CollideCapsules b3CollideCapsulesAVX2
+#define b3CollideHullAndCapsule b3CollideHullAndCapsuleAVX2
+#define b3CollideHulls b3CollideHullsAVX2
+#define b3ComputeSeparatingAxis b3ComputeSeparatingAxisAVX2
+#endif
+
 // Added for Nebenan: the wide vec3 of upstream's simd.h since #173, here because the contact solver kernels name their
 // own wide vec3 after the width, see contact_solver_wide.inl
 typedef struct b3Vec3W

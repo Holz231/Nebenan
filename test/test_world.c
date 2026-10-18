@@ -1073,8 +1073,9 @@ static int WorkerTest( void )
 	return 0;
 }
 
-// Box3D solves contacts in eight lanes on x86 with AVX2 and in four otherwise, see b3GetSIMDWidth. Both must give the
-// same bits, on one thread and with workers, which solve whole islands. Without AVX2 this runs four lanes twice.
+// Box3D solves contacts in eight lanes on x86 with AVX2 and in four otherwise, see b3GetSIMDWidth, and with eight it
+// collides convex shapes with code compiled for AVX2. Both must give the same bits, on one thread and with workers, which
+// solve whole islands. Without AVX2 this runs four lanes twice.
 static int SIMDWidthTest( void )
 {
 	int widths[2] = { 4, 8 };
