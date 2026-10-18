@@ -5258,7 +5258,7 @@ static bool nbCarriesWithout( const nbWorld* world, const nbCarrier* carriers, i
 	return false;
 }
 
-// Moving debris per block of the checks in nbSettleDebris, a word of nbWorld::movingDebris
+// Moving debris per block of the checks in nbSettleDebris
 #define NB_SETTLE_BLOCK 64
 
 // The checks of nbSettleDebris go to the workers from this much moving debris on. With less, the calling thread is done
@@ -5302,9 +5302,17 @@ typedef struct nbSettleTask
 {
 	nbWorld* world;
 	nbArena* arena;
+
+	// The moving debris as actors in the order of the debris, and its blocks
+	const int* moving;
+	int movingCount;
 	nbSettleBlock* blocks;
 	int blockCount;
 	int* nextBlock;
+
+	// The block this task checked last, the loop prefetches into the next one
+	int lastBlock;
+
 	const nbSupportFan* fan;
 	b3Vec3 up;
 	float timeStep;
@@ -5393,45 +5401,59 @@ static void nbInspectQuietPiece( const nbSettleTask* task, nbQuietPiece* piece, 
 	piece->held = large ? support.braced : support.grounded;
 }
 
-// The quiet pieces of a block of the debris and what carries them. A piece changes only its own rest, and the search for
-// its support only reads, so the blocks run on any thread in any order.
+// The piece up to the pose it holds rubble at, see nbSettleDebris
+static void nbPrefetchPiece( const nbWorld* world, int actorIndex )
+{
+	const char* piece = (const char*)( world->actors.data + actorIndex );
+	const char* poseEnd = piece + offsetof( nbActor, holdBounds ) - 1;
+	for ( const char* line = piece; line < poseEnd; line += 64 )
+	{
+		NB_PREFETCH( line );
+	}
+	NB_PREFETCH( poseEnd );
+}
+
+// The quiet pieces of a block of the moving debris and what carries them. A piece changes only its own rest, and the search
+// for its support only reads, so the blocks run on any thread in any order.
 static void nbCheckSettleBlock( nbSettleTask* task, int blockIndex )
 {
 	nbWorld* world = task->world;
-	int moving[NB_SETTLE_BLOCK];
-	int movingCount = 0;
-	for ( uint64_t word = world->movingDebris.data[blockIndex]; word != 0; word &= word - 1 )
-	{
-		moving[movingCount++] = world->debris.data[NB_SETTLE_BLOCK * blockIndex + nbCTZ64( word )];
-	}
-	task->checkCount += movingCount;
+	const int* moving = task->moving;
+	int count = task->movingCount;
+	int begin = NB_SETTLE_BLOCK * blockIndex;
+	int end = b3MinInt( begin + NB_SETTLE_BLOCK, count );
+	task->checkCount += end - begin;
 
 	// The loop reads each piece, and the record, the transform and the velocities of its body, all from scattered memory,
-	// and it waited for them most. Three cursors run ahead of it. Eight pieces ahead it prefetches the piece up to the pose
-	// it holds rubble at, four ahead the record of the body, which needs the piece, and two ahead the motion of the body,
-	// which needs the record, see b3Body_Prefetch.
+	// and it waited for them most. Three cursors run ahead of it, on into the next block, which the same thread takes when
+	// it is alone. Eight pieces ahead it prefetches the piece, four ahead the record of the body, which needs the piece, and
+	// two ahead the motion of the body, which needs the record, see b3Body_Prefetch. A thread that comes from another block
+	// first prefetches the pieces it would have.
+	if ( blockIndex != task->lastBlock + 1 )
+	{
+		for ( int k = begin; k < b3MinInt( begin + 8, count ); ++k )
+		{
+			nbPrefetchPiece( world, moving[k] );
+		}
+	}
+	task->lastBlock = blockIndex;
+
 	int quiet[NB_SETTLE_BLOCK];
 	int quietCount = 0;
-	for ( int k = 0; k < movingCount; ++k )
+	for ( int k = begin; k < end; ++k )
 	{
-		if ( k + 8 < movingCount )
+		if ( k + 8 < count )
 		{
-			const char* piece = (const char*)( world->actors.data + moving[k + 8] );
-			const char* poseEnd = piece + offsetof( nbActor, holdBounds ) - 1;
-			for ( const char* line = piece; line < poseEnd; line += 64 )
-			{
-				NB_PREFETCH( line );
-			}
-			NB_PREFETCH( poseEnd );
+			nbPrefetchPiece( world, moving[k + 8] );
 		}
 
 #if defined( B3_HAS_BODY_PREFETCH )
-		if ( k + 4 < movingCount )
+		if ( k + 4 < count )
 		{
 			b3Body_Prefetch( world->actors.data[moving[k + 4]].bodyId );
 		}
 
-		if ( k + 2 < movingCount )
+		if ( k + 2 < count )
 		{
 			b3Body_PrefetchMotion( world->actors.data[moving[k + 2]].bodyId );
 		}
@@ -5488,10 +5510,26 @@ static void nbSettleDebris( nbWorld* world, b3Vec3 up, float timeStep )
 	nbBeginOperation( world );
 	world->settleStamp += 1;
 	uint32_t stamp = world->settleStamp;
+
+	// The moving debris in the order of the debris, in blocks for the workers
+	int* moving = nbArena_AllocArray( &world->arena, int, world->debris.count );
+	int movingCount = 0;
+	for ( int w = 0; w < world->movingDebris.count; ++w )
+	{
+		for ( uint64_t word = world->movingDebris.data[w]; word != 0; word &= word - 1 )
+		{
+			moving[movingCount++] = world->debris.data[64 * w + nbCTZ64( word )];
+		}
+	}
+
+	if ( movingCount == 0 )
+	{
+		return;
+	}
+
 	nbSupportFan fan = nbMakeSupportFan( up );
-	int blockCount = world->movingDebris.count;
+	int blockCount = ( movingCount + NB_SETTLE_BLOCK - 1 ) / NB_SETTLE_BLOCK;
 	nbSettleBlock* blocks = nbArena_AllocArray( &world->arena, nbSettleBlock, blockCount );
-	int movingCount = world->debris.count - world->rubbleCount;
 	int taskCount = world->enqueueTask != NULL && movingCount >= NB_PARALLEL_SETTLE ? world->workerCount : 1;
 	taskCount = b3MinInt( taskCount, blockCount );
 	int nextBlock = 0;
@@ -5499,8 +5537,20 @@ static void nbSettleDebris( nbWorld* world, b3Vec3 up, float timeStep )
 	void* userTasks[NB_MAX_WORKERS];
 	for ( int i = 0; i < taskCount; ++i )
 	{
-		tasks[i] = ( nbSettleTask ){ world,	   world->workerArenas + i, blocks, blockCount, &nextBlock, &fan, up,
-									 timeStep, .wakeTime = -1.0f };
+		tasks[i] = ( nbSettleTask ){
+			.world = world,
+			.arena = world->workerArenas + i,
+			.moving = moving,
+			.movingCount = movingCount,
+			.blocks = blocks,
+			.blockCount = blockCount,
+			.nextBlock = &nextBlock,
+			.lastBlock = -2,
+			.fan = &fan,
+			.up = up,
+			.timeStep = timeStep,
+			.wakeTime = -1.0f,
+		};
 	}
 
 	for ( int i = 1; i < taskCount; ++i )
