@@ -327,11 +327,25 @@ Schwerpunkt in das Ereignis (`b3BodyMoveEvent::previousTransform` und `b3BodyMov
 einen Körper auf die Lage seines Treffers zurück, liegt er zwischen der Lage davor und dieser. Nebenan nutzt das in
 `nbWorld_GetDrawPoses`.
 
+**Normalimpulse wie upstream #189.** Für jeden Punkt eines Kontakts rechneten die breiten Kerne die Geschwindigkeit
+beider Körper am Punkt aus, mit einem Kreuzprodukt pro Körper, und brachten den Normalimpuls mit zwei weiteren
+Kreuzprodukten auf beide Körper, linear und als Drehung. Wie upstream Box3D seit
+[#189](https://github.com/erincatto/box3d/pull/189) rechnen `b3PushContactW` und `b3SolveContactW` in
+`src/contact_solver_wide.inl` pro Punkt jetzt nur die beiden Richtungen, in die ein Normalimpuls die Drehungen ändert,
+führen die relative Geschwindigkeit entlang der Normalen über die Punkte mit und bringen den linearen Teil der
+Normalimpulse einmal nach den Punkten auf, beim Lösen zusammen mit der Reibung. Ein Normalimpuls ändert die lineare
+Geschwindigkeit nur entlang der Normalen, die Reibung sieht deshalb dieselbe Geschwindigkeit quer dazu wie vorher.
+Anders als upstream begrenzt der Fork den Impuls wie zuvor, denn upstreams `b3MaxW( -negImpulse, -normalImpulses )` kann
+zwei Nullen mit verschiedenem Vorzeichen vergleichen, und SSE, NEON und der skalare Weg geben dort verschiedene zurück.
+Die Drehreibung um die Normale bleibt ebenfalls, upstreams neue Form spart dort nichts. Die Knoten aus „Knoten im
+Überlauf“ rechnen mit denselben Kernen.
+
 Die erste, die zweite, die vierte bis achte, die zehnte, die dreizehnte bis einunddreißigste und die dreiunddreißigste
 bis fünfunddreißigste ändern an den Ergebnissen nichts. Die dritte und die neunte ändern sie in den letzten Bits, dafür
 hängen sie nicht mehr davon ab, in welcher Reihenfolge Formen in die Bäume kommen. Die elfte ändert sie, weil Kontakte
 zu anderen Zeitpunkten entstehen, die zwölfte, weil sie weniger Punkte bekommen, die zweiunddreißigste, weil die
-Kontakte eines Knotens gebündelt gegen Kopien rechnen statt nacheinander. Die Ergänzungen stehen in `CMakeLists.txt`,
+Kontakte eines Knotens gebündelt gegen Kopien rechnen statt nacheinander, und die sechsunddreißigste, weil die Kerne
+dieselbe Rechnung anders zusammenfassen und deshalb anders runden. Die Ergänzungen stehen in `CMakeLists.txt`,
 `src/CMakeLists.txt`, `include/box3d/base.h`, `include/box3d/box3d.h`, `include/box3d/types.h`,
 `include/box3d/constants.h`, `src/core.h`, `src/core.c`, `src/shape.h`, `src/shape.c`, `src/body.c`, `src/contact.h`,
 `src/contact.c`, `src/contact_solver.h`, `src/contact_solver.c`, `src/contact_solver_wide.inl`, `src/wide8.c`,

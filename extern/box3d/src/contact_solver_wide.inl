@@ -1267,6 +1267,12 @@ B3_FORCE_INLINE void b3PushContactW( b3ContactConstraintWide* c, b3BodyStateW* b
 	b3Vec3W normalA = b3InvRotateVectorW( bA->dq, c->normal );
 	b3Vec3W normalB = b3InvRotateVectorW( bB->dq, c->normal );
 
+	// Added for Nebenan, from upstream Box3D (#189): the normal impulses move the linear velocities only along the
+	// normal. Track the relative normal velocity and apply the linear impulse once after the points.
+	b3FloatW invMass = b3AddW( c->invMassA, c->invMassB );
+	b3FloatW linearNormalVelocity = b3DotW( c->normal, b3SubVW( bB->v, bA->v ) );
+	b3FloatW linearImpulse = b3ZeroW();
+
 	for ( int pointIndex = 0; pointIndex < pointCount; ++pointIndex )
 	{
 		b3ContactConstraintPointWide* cp = c->points + pointIndex;
@@ -1291,27 +1297,35 @@ B3_FORCE_INLINE void b3PushContactW( b3ContactConstraintWide* c, b3BodyStateW* b
 		b3FloatW pointMassScale = b3BlendW( massScale, k->oneW, separated );
 		b3FloatW pointImpulseScale = b3BlendW( impulseScale, b3ZeroW(), separated );
 
-		// Relative velocity at contact
-		b3Vec3W vrA = b3AddVW( bA->v, b3CrossW( bA->w, rA ) );
-		b3Vec3W vrB = b3AddVW( bB->v, b3CrossW( bB->w, rB ) );
-		b3FloatW vn = b3DotW( b3SubVW( vrB, vrA ), c->normal );
+		// Angular directions of the normal impulse
+		b3Vec3W uA = b3CrossW( rA, c->normal );
+		b3Vec3W uB = b3CrossW( rB, c->normal );
+		b3Vec3W gA = b3MulMVW( c->invIA, uA );
+		b3Vec3W gB = b3MulMVW( c->invIB, uB );
+
+		// Relative normal velocity at contact
+		b3FloatW vn = b3AddW( linearNormalVelocity, b3SubW( b3DotW( uB, bB->w ), b3DotW( uA, bA->w ) ) );
 
 		// Compute normal impulse
 		b3FloatW negImpulse = b3AddW( b3MulW( cp->normalMasses, b3AddW( b3MulW( pointMassScale, vn ), velocityBias ) ),
 									  b3MulW( pointImpulseScale, cp->normalImpulses ) );
 
-		// Clamp the accumulated impulse
+		// Clamp the accumulated impulse. Not as upstream #189 with b3MaxW( -negImpulse, -normalImpulses ), where two
+		// zeros of opposite sign can meet, and SSE, NEON and the scalar path return different ones.
 		b3FloatW newImpulse = b3MaxW( b3SubW( cp->normalImpulses, negImpulse ), b3ZeroW() );
 		b3FloatW deltaImpulse = b3SubW( newImpulse, cp->normalImpulses );
 		cp->normalImpulses = newImpulse;
 
 		// Apply contact impulse
-		b3Vec3W P = b3MulSVW( deltaImpulse, c->normal );
-		bA->w = b3MulSubMVW( bA->w, c->invIA, b3CrossW( rA, P ) );
-		bA->v = b3MulSubSVW( bA->v, c->invMassA, P );
-		bB->w = b3MulAddMVW( bB->w, c->invIB, b3CrossW( rB, P ) );
-		bB->v = b3MulAddSVW( bB->v, c->invMassB, P );
+		linearNormalVelocity = b3MulAddW( linearNormalVelocity, invMass, deltaImpulse );
+		linearImpulse = b3AddW( linearImpulse, deltaImpulse );
+		bA->w = b3MulSubSVW( bA->w, deltaImpulse, gA );
+		bB->w = b3MulAddSVW( bB->w, deltaImpulse, gB );
 	}
+
+	b3Vec3W P = b3MulSVW( linearImpulse, c->normal );
+	bA->v = b3MulSubSVW( bA->v, c->invMassA, P );
+	bB->v = b3MulAddSVW( bB->v, c->invMassB, P );
 }
 
 // Solve the non-penetration constraints with the soft bias. No friction and no restitution.
@@ -1369,6 +1383,12 @@ B3_FORCE_INLINE void b3SolveContactW( b3ContactConstraintWide* c, b3BodyStateW* 
 	b3Vec3W normalA = b3InvRotateVectorW( bA->dq, c->normal );
 	b3Vec3W normalB = b3InvRotateVectorW( bB->dq, c->normal );
 
+	// Added for Nebenan, from upstream Box3D (#189): the normal impulses move the linear velocities only along the
+	// normal. Track the relative normal velocity and apply the linear impulse with the friction.
+	b3FloatW invMass = b3AddW( c->invMassA, c->invMassB );
+	b3FloatW linearNormalVelocity = b3DotW( c->normal, b3SubVW( bB->v, bA->v ) );
+	b3FloatW linearImpulse = b3ZeroW();
+
 	b3FloatW totalNormalImpulse = b3ZeroW();
 	b3FloatW totalTwistLimit = b3ZeroW();
 
@@ -1386,15 +1406,20 @@ B3_FORCE_INLINE void b3SolveContactW( b3ContactConstraintWide* c, b3BodyStateW* 
 		// Speculative bias, positive if separated and zero if overlapped
 		b3FloatW velocityBias = b3MaxW( b3ZeroW(), b3MulW( s, k->inv_h ) );
 
-		// Relative velocity at contact
-		b3Vec3W vrA = b3AddVW( bA->v, b3CrossW( bA->w, rA ) );
-		b3Vec3W vrB = b3AddVW( bB->v, b3CrossW( bB->w, rB ) );
-		b3FloatW vn = b3DotW( b3SubVW( vrB, vrA ), c->normal );
+		// Angular directions of the normal impulse
+		b3Vec3W uA = b3CrossW( rA, c->normal );
+		b3Vec3W uB = b3CrossW( rB, c->normal );
+		b3Vec3W gA = b3MulMVW( c->invIA, uA );
+		b3Vec3W gB = b3MulMVW( c->invIB, uB );
+
+		// Relative normal velocity at contact
+		b3FloatW vn = b3AddW( linearNormalVelocity, b3SubW( b3DotW( uB, bB->w ), b3DotW( uA, bA->w ) ) );
 
 		// Compute normal impulse
 		b3FloatW negImpulse = b3MulW( cp->normalMasses, b3AddW( vn, velocityBias ) );
 
-		// Clamp the accumulated impulse
+		// Clamp the accumulated impulse. Not as upstream #189 with b3MaxW( -negImpulse, -normalImpulses ), where two
+		// zeros of opposite sign can meet, and SSE, NEON and the scalar path return different ones.
 		b3FloatW newImpulse = b3MaxW( b3SubW( cp->normalImpulses, negImpulse ), b3ZeroW() );
 		b3FloatW deltaImpulse = b3SubW( newImpulse, cp->normalImpulses );
 		cp->normalImpulses = newImpulse;
@@ -1403,11 +1428,10 @@ B3_FORCE_INLINE void b3SolveContactW( b3ContactConstraintWide* c, b3BodyStateW* 
 		totalTwistLimit = b3AddW( totalTwistLimit, b3MulW( cp->leverArms, newImpulse ) );
 
 		// Apply contact impulse
-		b3Vec3W P = b3MulSVW( deltaImpulse, c->normal );
-		bA->w = b3MulSubMVW( bA->w, c->invIA, b3CrossW( rA, P ) );
-		bA->v = b3MulSubSVW( bA->v, c->invMassA, P );
-		bB->w = b3MulAddMVW( bB->w, c->invIB, b3CrossW( rB, P ) );
-		bB->v = b3MulAddSVW( bB->v, c->invMassB, P );
+		linearNormalVelocity = b3MulAddW( linearNormalVelocity, invMass, deltaImpulse );
+		linearImpulse = b3AddW( linearImpulse, deltaImpulse );
+		bA->w = b3MulSubSVW( bA->w, deltaImpulse, gA );
+		bB->w = b3MulAddSVW( bB->w, deltaImpulse, gB );
 	}
 
 	// Rolling resistance
@@ -1510,11 +1534,13 @@ B3_FORCE_INLINE void b3SolveContactW( b3ContactConstraintWide* c, b3BodyStateW* 
 
 		c->frictionImpulse = newImpulse;
 
-		// Apply delta impulse
+		// Apply delta impulse, the linear part with the normal impulse
 		b3Vec3W P = b3AddVW( b3MulSVW( deltaImpulse.x, tangent1 ), b3MulSVW( deltaImpulse.y, tangent2 ) );
 		bA->w = b3MulSubMVW( bA->w, c->invIA, b3CrossW( rA, P ) );
-		bA->v = b3MulSubSVW( bA->v, c->invMassA, P );
 		bB->w = b3MulAddMVW( bB->w, c->invIB, b3CrossW( rB, P ) );
+
+		P = b3MulAddSVW( P, linearImpulse, c->normal );
+		bA->v = b3MulSubSVW( bA->v, c->invMassA, P );
 		bB->v = b3MulAddSVW( bB->v, c->invMassB, P );
 	}
 }
