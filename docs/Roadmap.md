@@ -3,8 +3,8 @@
 Die nächsten möglichen Schritte für die Physik, nach der Untersuchung vom 17. Oktober 2026 auf `physik-19` und
 `physik-20`, der Messung auf dem Ryzen mit `physik-21`, den Knoten auf `physik-22`, dem Team für die größte Insel auf
 `physik-24`, den Prüfungen des Updates auf den Workern auf `physik-25` und den Zeiten des Teams und den Schwellen fürs
-Wecken auf `physik-26`, alle vier auf dem Ryzen nachgemessen, den Prototypen und Zerlegungen auf `physik-27` und den
-Lagen zum Zeichnen zwischen zwei Schritten auf `physik-28`.
+Wecken auf `physik-26`, alle vier auf dem Ryzen nachgemessen, den Prototypen und Zerlegungen auf `physik-27`, den Lagen
+zum Zeichnen zwischen zwei Schritten auf `physik-28` und den Kontakt-Kernen von upstream #189 auf `physik-29`.
 Begründungen und Messwerte stehen in [`Optimierungen.md`](Optimierungen.md), hier nur das Fazit und die Reihenfolge.
 Nach jeder Runde wird der Stand hier nachgetragen.
 
@@ -68,8 +68,8 @@ bleiben.
 | 16 | **Auf dem Ryzen nachmessen**: „Skalierung messen“ mit `physik-26` bei ×4 und ×2 | entschied 17 | 15 und 5 | ✅ am 18. Oktober: Im Team rechnet der aufrufende Thread bei ×4 40 % der Blöcke der Stufen selbst, jeder Worker wartet 47 % |
 | 17 | **Übrige Pakete im Team anders verteilen**: Ein Worker nimmt ein Paket erst nach einer Weile ohne neue Stufe, nur im Überlauf, erst nach der letzten Stufe oder nur, solange wenige andere eines rechnen, bitgleich | – | 16 | ⛔ im Prototyp auf `physik-27`: Der aufrufende Thread rechnet dann weniger Blöcke selbst, aber die Pakete fehlen an anderer Stelle, das Team wird nicht kürzer |
 | 20 | **Lagen zum Zeichnen zwischen zwei Schritten**: Die Bibliothek gibt zum Zeichnen eine Lage zwischen den letzten zwei Ständen der Physik, die Demo ruft das nur auf | flüssige Bewegung auf Monitoren über 60 Hz, keine Rechenzeit, das Bild liegt einen Schritt zurück | – | ✅ auf `physik-28`: `nbWorld_GetDrawPoses` und `nbWorld_GetStepFraction`, in der Demo mit Schalter und Zeitlupe. Ein Aufruf kostet auf der VM bei ×4 0,16 ms pro Bild |
+| 18 | **Kontakt-Kerne von upstream #189 messen**: ob upstreams neue breite Kontakt-Kerne im Haufen aus Hüllen schneller rechnen als die des Forks | prüfen, bei Erfolg 1 bis 3 %, ändert die Ergebnisse | – | ✅ auf `physik-29`: Upstream rechnet die Bedingungen mit #189 2 bis 8 % billiger. Übernommen kosten sie im Benchmark auf der VM 1 bis 8,5 % weniger, meist 3 bis 4 %, beim Abriss in der Demo bei ×4 1,9 bis 4,9 % |
 | 6 | **Typwechsel gesammelt**, bitgleich | unter 1 % | – | zurückgestellt nach 16: Ein Typwechsel ist vor allem Warten auf Speicher, der Ryzen braucht 2,6 bis 3,2 µs dafür |
-| 18 | **Kontakt-Kerne von upstream #189 messen**: ob upstreams neue breite Kontakt-Kerne im Haufen aus Hüllen schneller rechnen als die des Forks | prüfen, bei Erfolg 1 bis 3 %, ändert die Ergebnisse | – | offen, Vorschlag |
 | 19 | **Physik mit 30 Hz und 8 Teilschritten**, als Versuch auf einer eigenen Branch, ändert das Verhalten überall | pro simulierter Sekunde ein Viertel bis ein Drittel der Physik | 20 | zurückgestellt am 18. Oktober: bringt nur Rechenzeit, und die fehlt auf dem Ryzen nicht. Den Takt wählt ein Spiel selbst, mit 20 ohne Ruckeln |
 | 7 | **Rand der Boxen mit 8 Threads** nachmessen, ändert die Ergebnisse | klein | 2 | offen, niedrig |
 | 8 | **Kompakte Paare** statt Kontakte für nicht berührende Paare, ändert die Ergebnisse | 2 bis 4 % | 2 | offen, niedrig |
@@ -242,13 +242,16 @@ wählen, ohne dass es ruckelt, siehe „Lagen zum Zeichnen zwischen zwei Schritt
 nur anzusehen: in der Demo „Zeitlupe“ an und „Zwischen Schritten zeichnen“ an und aus, am besten mit der Kanone. Ohne
 die Lagen dazwischen springen die Trümmer in der Zeitlupe sichtbar von Schritt zu Schritt.
 
-Bei der Rechenzeit ist nach `physik-27` kein kleiner Schritt mehr übrig, der mit 8 Threads mehr als 1 bis 2 % des Frames
+Schritt 18, die Kontakt-Kerne von upstream #189, ist auf `physik-29` übernommen: Pro Punkt eines Kontakts rechnen sie
+weniger, und die Bedingungen kosten im Benchmark auf der VM 1 bis 8,5 % weniger, meist 3 bis 4 %, beim Abriss in der
+Demo bei ×4 1,9 bis 4,9 %. Auf dem Ryzen wäre das mit 8 Threads rund 1 % des Frames, siehe „Löser-Umbau von upstream
+#189“. Nachmessen lässt es sich dort mit „Skalierung messen“ bei ×4 und ×2, die Zeile `constraints` sollte um 3 bis 4 %
+sinken. Das liegt aber innerhalb dessen, was die Läufe dort streuen, und entscheidet nichts.
+
+Bei der Rechenzeit ist nach `physik-29` kein kleiner Schritt mehr übrig, der mit 8 Threads mehr als 1 bis 2 % des Frames
 verspricht, siehe die Schritte 6, 7 und 11 und die kleineren Punkte unten. Was mehr bringen könnte, ist größer oder
 ändert das Verhalten:
 
-- **Schritt 18**, die Kontakt-Kerne von upstream #189 messen: Zuerst ein Vergleich im Haufen aus Hüllen, wie bei
-  „SAT-Verbesserungen von upstream“. Nur wenn upstream dort schneller rechnet, die Kerne in den Fork übernehmen, von
-  Hand, denn der Fork hat sie für AVX2 und die Pakete umgebaut. Ändert die Ergebnisse.
 - **Schritt 8**, kompakte Paare für nicht berührende Kontakte: Wochen Umbau in Box3D für geschätzt 2 bis 4 % mit 8
   Threads. Ändert die Ergebnisse.
 - **Schritt 19**, Physik mit 30 Hz und 8 Teilschritten: der einzige große Hebel, pro simulierter Sekunde ein Viertel bis
@@ -259,9 +262,9 @@ verspricht, siehe die Schritte 6, 7 und 11 und die kleineren Punkte unten. Was m
 
 ## Kleinere Punkte
 
-Mit niedriger Priorität vorgemerkt, sie sparen vor allem Arbeit, die schon parallel läuft: „Box gegen gemerkte Fläche
-im ersten Durchgang“, „Kollision zweimal übersetzen“, „Gyroskopische Drehung nach upstream #191“, „Löser-Umbau von
-upstream #189“ und, nur als Versuch, „Physik mit 30 Hz und 8 Teilschritten“.
+Mit niedriger Priorität vorgemerkt, sie sparen vor allem Arbeit, die schon parallel läuft: „Box gegen gemerkte Fläche im
+ersten Durchgang“, „Kollision zweimal übersetzen“, „Gyroskopische Drehung nach upstream #191“, „SAT-Verbesserungen von
+upstream“ und, nur als Versuch, „Physik mit 30 Hz und 8 Teilschritten“.
 
 ## Verworfen
 

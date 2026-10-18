@@ -1047,6 +1047,13 @@ Zeichnen zwischen zwei Schritten. Die Demo zeichnet damit, und im Menü zeigen �
 pro Bild, bei ×2 mit rund 3 000 0,30 ms, die Bewegungsereignisse für dieselben Körper 0,06 und 0,12 ms. Die Physik
 rechnet unverändert.
 
+Seit `physik-29` rechnen die Kontakt-Kerne des Lösers die Normalen wie upstream Box3D seit
+[#189](https://github.com/erincatto/box3d/pull/189): pro Punkt eines Kontakts weniger Kreuzprodukte, und den linearen
+Teil der Impulse einmal pro Kontakt, siehe „Normalimpulse wie upstream #189“ in [`extern/README.md`](extern/README.md).
+Im Benchmark kosten die Bedingungen des Lösers auf der VM damit 1 bis 8,5 % weniger, meist 3 bis 4 %, beim Abriss in der
+Demo bei ×4 1,9 bis 4,9 %. Die Ergebnisse ändern sich, bleiben aber mit jeder Zahl von Threads und auf jeder Plattform
+gleich.
+
 Ganze Einschläge (Bruch, Stützgraph, neue Box3D-Körper) und der Box3D-Schritt danach bei 60 Hz mit
 4 Substeps, jeweils mit 1 und 4 Threads, der Median aus sechs Läufen:
 
