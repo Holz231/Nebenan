@@ -1,8 +1,8 @@
 # Roadmap
 
 Die nächsten möglichen Schritte für die Physik, nach der Untersuchung vom 17. Oktober 2026 auf `physik-19` und
-`physik-20`, der Messung auf dem Ryzen mit `physik-21`, den Knoten auf `physik-22`, der Messung auf dem Ryzen damit und
-dem Team für die größte Insel auf `physik-24`. Begründungen und Messwerte stehen in
+`physik-20`, der Messung auf dem Ryzen mit `physik-21`, den Knoten auf `physik-22` und dem Team für die größte Insel auf
+`physik-24`, beide auf dem Ryzen nachgemessen. Begründungen und Messwerte stehen in
 [`Optimierungen.md`](Optimierungen.md), hier nur das Fazit und die Reihenfolge. Nach jeder Runde wird der Stand hier
 nachgetragen.
 
@@ -10,15 +10,17 @@ nachgetragen.
 
 - **Ein eigenes Box3D lohnt nicht.** Hüllentest, Löser und CCD kosten in jeder Engine dasselbe, und der Fork lässt sich
   an jeder Stelle ändern, siehe „Eigene Engine statt Box3D, dritte Prüfung“.
-- **Mit 8 Threads bestimmt der serielle Teil den Frame.** Auf dem Ryzen beim Abriss der Stadt in der Demo gemessen:
-  Mit 8 Threads kostet ein Schritt seit `physik-22` bei ×4 1,29 und bei ×2 2,81 ms, vorher 1,74 und 3,46 ms, und
-  hochgerechnet bleiben 63 % auf einem Thread, vorher 72 und 68 %, siehe „Skalierung auf dem Ryzen mit `physik-22`“.
-- **Was dort bremst, ist weiter vor allem der Löser.** Die Bedingungen sind mit 8 Threads 31 und 26 % des Frames, vorher
-  48 und 43 %. Mit Farben wie mit Paketen brauchen sie ein Drittel der Zeit eines Threads, und bei ×4 werden sie von 4
-  auf 8 Threads nur noch 8 % schneller: Dort lösen 59 % der Schritte in Paketen, und das Paket der größten Insel
-  rechnete ein Thread allein, mit mindestens 34 % der Arbeit. Update, Einschläge, Anlegen und Zustandswechsel der
-  Kontakte sind zusammen 28 und 25 % des Frames. Seit `physik-24` rechnet ein Team aller Threads dieses Paket: Auf der
-  VM mit 4 Threads kosten die Bedingungen bei ×4 15 % weniger, bei ×2 4 %, siehe „Größte Insel im Team“.
+- **Mit 8 Threads bestimmt der serielle Teil den Frame.** Auf dem Ryzen beim Abriss der Stadt in der Demo gemessen: Mit
+  8 Threads kostet ein Schritt seit `physik-24` bei ×4 1,23 und bei ×2 2,58 ms, mit `physik-22` 1,29 und 2,81 ms, davor
+  1,74 und 3,46 ms. Bei ×2 liegt der Unterschied zu `physik-22` im Rauschen. Hochgerechnet bleiben 62 und 59 % auf einem
+  Thread, mit `physik-22` 63 %, davor 72 und 68 %, siehe „Skalierung auf dem Ryzen mit `physik-24`“.
+- **Was dort bremst, sind der Löser und das Update.** Die Bedingungen sind mit 8 Threads 27 und 26 % des Frames, mit
+  `physik-22` 31 und 26 %, davor 48 und 43 %. Seit `physik-24` rechnet ein Team aller Threads das Paket der größten
+  Insel, das vorher ein Thread allein rechnete, mit mindestens 34 % der Arbeit: Auf dem Ryzen kosten die Bedingungen mit
+  8 Threads bei ×4 damit 16 % weniger und werden von 4 auf 8 Threads wieder 15 statt 8 % schneller, bei ×2 bleiben sie
+  gleich, siehe „Größte Insel im Team“. Sie brauchen aber noch 31 % der Zeit eines Threads. Update und Einschläge sind
+  zusammen 24 und 17 % des Frames, die Ruhe-Prüfung allein 10 und 8 %, Anlegen und Zustandswechsel der Kontakte 5
+  und 8 %.
 - **Der Löser hing am Überlauf des Graphen.** Kontakte, für die keine der 20 Farben frei ist, löst Box3D auf dem
   aufrufenden Thread allein. Beim Abriss sind das die Kontakte an Knoten: große abgebrochene Teile aus Dutzenden bis
   Hunderten Bruchstücken, an denen Hunderte kleine Trümmer liegen, siehe „Der Überlauf beim Abriss“. Seit `physik-22`
@@ -43,8 +45,8 @@ bleiben.
 | 10 | **Knoten im Überlauf mit geteilter Masse**: bis zu acht Kontakte eines Knotens in den acht Spuren einer breiten Bedingung, jede gegen eine Kopie mit einem Achtel seiner Masse, ändert die Ergebnisse | 15 bis 20 %, mit einem Thread 5 bis 11 % | 2c | ✅ auf `physik-22`: auf dem Ryzen mit 8 Threads die Bedingungen 53 und 51 % und ein Schritt 26 und 19 % billiger |
 | 12 | **Auf dem Ryzen nachmessen**: „Skalierung messen“ mit `physik-22` bei ×4 und ×2 | entschied 11, 2b und 4 | 10 | ✅ am 17. Oktober: bei ×4 bremst jetzt die größte Insel |
 | 4 | **Größte Insel im Team**: Alle Threads rechnen sie Farbe für Farbe, die übrigen Inseln füllen als Pakete die Zeit, in der ein Thread sonst an einer Sperre oder auf den Überlauf wartet, bitgleich | ×4 3 bis 8 %, ×2 2 bis 4 % | ✅ 12 | ✅ auf `physik-24`: auf der VM mit 4 Threads die Bedingungen bei ×4 15 % und bei ×2 4 % billiger |
-| 13 | **Auf dem Ryzen nachmessen**: „Skalierung messen“ mit `physik-24` bei ×4 und ×2 | entscheidet 3 und wie es im Löser weitergeht | 4 | als Nächstes |
-| 3 | **Prüfungen des Updates auf den Workern, zweiter Versuch**, bitgleich | 4 bis 6 % | ✅ Wecken in 7 bis 10 µs | offen, nach 13 |
+| 13 | **Auf dem Ryzen nachmessen**: „Skalierung messen“ mit `physik-24` bei ×4 und ×2 | entschied 3 | 4 | ✅ am 18. Oktober: Das Team trägt, bei ×4 mit 8 Threads kosten die Bedingungen 16 % weniger |
+| 3 | **Prüfungen des Updates auf den Workern, zweiter Versuch**, bitgleich | 4 bis 6 % | ✅ Wecken in 7 bis 10 µs | als Nächstes, auf `physik-25` |
 | 5 | **Schwellen fürs Wecken** der Bruchrechnung, bitgleich | 1 bis 3 % | ✅ Wecken | offen |
 | 6 | **Typwechsel gesammelt**, bitgleich | rund 1 % | – | offen |
 | 7 | **Rand der Boxen mit 8 Threads** nachmessen, ändert die Ergebnisse | klein | 2 | offen, niedrig |
@@ -94,19 +96,31 @@ Prozessor, auf der die Demo dort lief. Für Bildzeiten der Demo auf dem Ryzen ko
 Grafik sie zeichnet. Seit `physik-23` nimmt die Demo unter Windows selbst die Grafik mit der höchsten Leistung, siehe
 „Stärkste Grafikkarte in der Demo“.
 
-## Was die nächste Messung auf dem Ryzen entscheidet
+## Was die Messung mit `physik-24` gezeigt hat
 
-Dieselbe Messung mit `physik-24`, bei ×4 und ×2. Neu im Bericht sind die Grafikkarte und eine Zeile, in wie vielen
-Schritten ein Team das größte Paket rechnet und wie viel Arbeit es dort hält. Verglichen wird mit „Skalierung auf dem
-Ryzen mit `physik-22`“, an der Physik hat `physik-23` nichts geändert.
+Dieselbe Messung mit `physik-24`, am 18. Oktober 2026 bei ×4 und ×2, zum ersten Mal auf der Grafikkarte, siehe
+„Skalierung auf dem Ryzen mit `physik-24`“. Neu im Bericht waren die Grafikkarte und eine Zeile, in wie vielen Schritten
+ein Team das größte Paket rechnet und wie viel Arbeit es dort hält. Verglichen mit „Skalierung auf dem Ryzen mit
+`physik-22`“, an der Physik hat `physik-23` nichts geändert, und die Welt endet wie dort. Die Regeln, nach denen die
+Messung entscheiden sollte, und was daraus wurde:
 
 - **Bedingungen mit 8 Threads** bei ×4 deutlich unter den 0,393 ms von `physik-22`, und von 4 auf 8 Threads wieder
   schneller: Das Team trägt, als Nächstes das Update (Schritt 3). Bleiben sie nah bei 0,39 ms, bremsen die Sperren des
   Teams. Dann zuerst zählen, wie lange die Threads dort warten, und was ein Team mit weniger Stufen bringen würde.
+  Gemessen 0,329 ms, 16 % weniger, an der Kontakt-Schleife gemessen 17 %, und von 4 auf 8 Threads 15 statt 8 %
+  schneller. Das Team trägt, Schritt 3 ist dran. Mit 8 Threads brauchen die Bedingungen aber noch 31 % der Zeit eines
+  Threads statt eines Achtels. Was davon die Sperren des Teams kosten und was der Überlauf, den der aufrufende Thread
+  jetzt mit 0,087 ms rechnet, ist nach Schritt 3 zu zählen.
 - **Bei ×2** rechnete schon vorher ein Löser mit Farben über alle Threads, dort ist wenig zu erwarten. Werden die
   Bedingungen dort langsamer als 0,744 ms, kostet das Team mehr, als die Pakete nebenher sparen, dann die Schwelle
-  `B3_TEAM_SHARE_NUM` / `B3_TEAM_SHARE_DEN` prüfen.
-- **Update und Einschläge** wie zuletzt bei rund einem Viertel des Frames: Schritt 3.
+  `B3_TEAM_SHARE_NUM` / `B3_TEAM_SHARE_DEN` prüfen. Gemessen 0,678 ms, an der Kontakt-Schleife gemessen so viel wie mit
+  `physik-22`, bei Läufen, die dort um bis zu 16 % schwankten. Die Schwelle bleibt.
+- **Update und Einschläge** wie zuletzt bei rund einem Viertel des Frames: Schritt 3. Gemessen 24 und 17 %, die
+  Ruhe-Prüfung allein 0,125 und 0,212 ms, 10 und 8 %. Schritt 3 kommt als Nächstes, auf `physik-25`.
+
+Mit der Grafikkarte sagen jetzt auch die Bildzeiten etwas: Bei ×2 mit 8 Threads dauert ein Bild 2,99 statt 6,31 ms,
+schneller als mit 4 Threads, und das 1 % Low steigt von 29 auf 189 FPS. Neben der Simulation kostet ein Bild mit 8
+Threads rund 0,5 ms.
 
 ## Kleinere Punkte
 

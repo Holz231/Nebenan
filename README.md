@@ -991,7 +991,9 @@ Thread im Mittel bekommt: Farbe für Farbe in den Stufen des Lösers, und wer ke
 übrigen Pakete ganz, siehe „Ein Team für das größte Paket“ in [`extern/README.md`](extern/README.md). Vorher rechnete
 ein Thread dieses Paket allein, beim Abriss auf dem Ryzen mit 8 Threads mindestens ein Drittel der Arbeit. Beim Abriss
 in der Demo auf der VM mit 4 Threads kosten die Bedingungen des Lösers damit bei ×4 15 % weniger und ein Schritt samt
-Update 7 %, bei ×2 die Bedingungen 4 %. Die Ergebnisse bleiben bitgleich, und mit einem Thread ändert sich nichts.
+Update 7 %, bei ×2 die Bedingungen 4 %. Auf dem Ryzen 7 7800X3D kosten die Bedingungen mit 8 Threads bei ×4 16 % weniger
+und ein Schritt 4 %, bei ×2 bleibt es gleich, siehe „Skalierung auf dem Ryzen mit `physik-24`“. Die Ergebnisse bleiben
+bitgleich, und mit einem Thread ändert sich nichts.
 
 Ganze Einschläge (Bruch, Stützgraph, neue Box3D-Körper) und der Box3D-Schritt danach bei 60 Hz mit
 4 Substeps, jeweils mit 1 und 4 Threads, der Median aus sechs Läufen:
