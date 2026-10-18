@@ -4,10 +4,10 @@ Die nächsten möglichen Schritte für die Physik, nach der Untersuchung vom 17.
 `physik-20`, der Messung auf dem Ryzen mit `physik-21`, den Knoten auf `physik-22`, dem Team für die größte Insel auf
 `physik-24`, den Prüfungen des Updates auf den Workern auf `physik-25` und den Zeiten des Teams und den Schwellen fürs
 Wecken auf `physik-26`, alle vier auf dem Ryzen nachgemessen, den Prototypen und Zerlegungen auf `physik-27`, den Lagen
-zum Zeichnen zwischen zwei Schritten auf `physik-28`, den Kontakt-Kernen von upstream #189 auf `physik-29` und der
-Trennachsen-Suche von upstream #173 und #177 auf `physik-30`. Begründungen und Messwerte stehen in
-[`Optimierungen.md`](Optimierungen.md), hier nur das Fazit und die Reihenfolge. Nach jeder Runde wird der Stand hier
-nachgetragen.
+zum Zeichnen zwischen zwei Schritten auf `physik-28`, den Kontakt-Kernen von upstream #189 auf `physik-29`, der
+Trennachsen-Suche von upstream #173 und #177 auf `physik-30` und der Sichtung von upstream auf `physik-31`. Begründungen
+und Messwerte stehen in [`Optimierungen.md`](Optimierungen.md), hier nur das Fazit und die Reihenfolge. Nach jeder Runde
+wird der Stand hier nachgetragen.
 
 ## Fazit
 
@@ -71,7 +71,7 @@ bleiben.
 | 20 | **Lagen zum Zeichnen zwischen zwei Schritten**: Die Bibliothek gibt zum Zeichnen eine Lage zwischen den letzten zwei Ständen der Physik, die Demo ruft das nur auf | flüssige Bewegung auf Monitoren über 60 Hz, keine Rechenzeit, das Bild liegt einen Schritt zurück | – | ✅ auf `physik-28`: `nbWorld_GetDrawPoses` und `nbWorld_GetStepFraction`, in der Demo mit Schalter und Zeitlupe. Ein Aufruf kostet auf der VM bei ×4 0,16 ms pro Bild |
 | 18 | **Kontakt-Kerne von upstream #189 messen**: ob upstreams neue breite Kontakt-Kerne im Haufen aus Hüllen schneller rechnen als die des Forks | prüfen, bei Erfolg 1 bis 3 %, ändert die Ergebnisse | – | ✅ auf `physik-29`: Upstream rechnet die Bedingungen mit #189 2 bis 8 % billiger. Übernommen kosten sie im Benchmark auf der VM 1 bis 8,5 % weniger, meist 3 bis 4 %, beim Abriss in der Demo bei ×4 1,9 bis 4,9 % |
 | 21 | **Trennachsen-Suche von upstream #173 und #177**: der Test zweier Hüllen wie upstream, ändert die Ergebnisse | rund 1 % | – | ✅ auf `physik-30`: Die Suche braucht auf denselben Hüllenpaaren 5,1 % weniger Takte, mit einem Thread 0,5 bis 0,7 % eines Schritts, und erkennt getrennte Hüllen, die die alte übersah. Die zweite Suche, die upstream gestrichen hat, bleibt, ebenso das Format der Hüllen |
-| 22 | **Upstream sichten**: was upstream Box3D nach #191 geändert hat, im Haufen aus Hüllen messen und übernehmen, was sich lohnt, wie bei 18 und 21 | unbekannt | – | offen |
+| 22 | **Upstream sichten**: was upstream Box3D nach #191 geändert hat, im Haufen aus Hüllen messen und übernehmen, was sich lohnt, wie bei 18 und 21 | unbekannt | – | ✅ auf `physik-31`: Nach #191 kam nichts mehr. Von den PRs seit dem gepinnten Stand betreffen Nebenan nur die drei Fehlerbehebungen aus #187, übernommen, für Nebenans Trümmer bitgleich |
 | 6 | **Typwechsel gesammelt**, bitgleich | unter 1 % | – | zurückgestellt nach 16: Ein Typwechsel ist vor allem Warten auf Speicher, der Ryzen braucht 2,6 bis 3,2 µs dafür |
 | 19 | **Physik mit 30 Hz und 8 Teilschritten**, als Versuch auf einer eigenen Branch, ändert das Verhalten überall | pro simulierter Sekunde ein Viertel bis ein Drittel der Physik | 20 | zurückgestellt am 18. Oktober: bringt nur Rechenzeit, und die fehlt auf dem Ryzen nicht. Den Takt wählt ein Spiel selbst, mit 20 ohne Ruckeln |
 | 7 | **Rand der Boxen mit 8 Threads** nachmessen, ändert die Ergebnisse | klein | 2 | offen, niedrig |
@@ -260,7 +260,14 @@ aus den Normalen, statt ihn wie upstream in der Hülle zu speichern, damit Hüll
 „SAT-Verbesserungen von upstream“. Auf dem Ryzen ist nichts zu entscheiden, der Gewinn liegt unter dem, was die Läufe
 dort streuen.
 
-Bei der Rechenzeit ist nach `physik-30` kein kleiner Schritt mehr übrig, der mit 8 Threads mehr als 1 bis 2 % des Frames
+Schritt 22, upstream sichten, ist auf `physik-31` erledigt: Nach #191 vom 15. Oktober hat upstream nichts mehr geändert.
+Von den PRs seit dem gepinnten Stand betreffen die meisten, was Nebenan nicht nutzt, Netze, Compounds, Recording und
+Mover. Übernommen sind die drei Fehlerbehebungen aus #187: vorausschauende Kontakte zwischen Kugeln und Kugeln oder
+Kapseln, kein Wiederverwenden ohne vorausschauende Punkte und eine verfallene Lage, wenn PreSolve einen Kontakt
+abschaltet, siehe „Upstream bis #191 gesichtet“. Für Nebenans Trümmer ändert sich nichts. Wieder zu sichten, wenn
+upstream am Löser oder am Test zweier Hüllen etwas ändert.
+
+Bei der Rechenzeit ist nach `physik-31` kein kleiner Schritt mehr übrig, der mit 8 Threads mehr als 1 bis 2 % des Frames
 verspricht, siehe die Schritte 6, 7 und 11 und die kleineren Punkte unten. Was mehr bringen könnte, ist größer oder
 ändert das Verhalten:
 
@@ -271,10 +278,6 @@ verspricht, siehe die Schritte 6, 7 und 11 und die kleineren Punkte unten. Was m
   das Bild 33 statt 17 ms hinter der Physik. Gewonnen wäre nur Rechenzeit, und die fehlt auf dem Ryzen nicht: Ein
   Schritt kostet dort mit 8 Threads 8 bis 17 % eines Frames mit 60 Hz. Zurückgestellt, bis die Physik irgendwo den Frame
   begrenzt, siehe „Physik mit 30 Hz und 8 Teilschritten“.
-
-Daneben bleibt **Schritt 22**, upstream sichten: Die Runden 18 und 21 haben übernommen, was upstream bis #191 an Löser
-und Test zweier Hüllen geändert hat, und beide Male war es messbar billiger, wenn auch nur um wenige Prozent. Was
-upstream danach geändert hat, ist noch nicht gesichtet.
 
 ## Kleinere Punkte
 

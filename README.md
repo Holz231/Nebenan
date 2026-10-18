@@ -1062,6 +1062,13 @@ die die alte übersah. Anders als upstream behält der Fork die volle zweite Suc
 Punkt ergibt, damit Hüllen, die sich überlappen, auch dann einen Kontakt bekommen, und das Format der Hüllen bleibt. Die
 Ergebnisse ändern sich, bleiben aber mit jeder Zahl von Threads und auf jeder Plattform gleich.
 
+Seit `physik-31` enthält der Fork auch die Fehlerbehebungen von upstream Box3D aus
+[#187](https://github.com/erincatto/box3d/pull/187), siehe „Fehlerbehebungen wie upstream #187“ in
+[`extern/README.md`](extern/README.md): Kugeln bekommen mit Kugeln und Kapseln vorausschauende Kontakte, bevor sie sich
+berühren. Nebenans Trümmer rechnen bitgleich weiter, ein Spiel mit Kugeln, etwa für Geschosse, bekommt die
+Fehlerbehebungen mit. Was upstream sonst bis #191 geändert hat, betrifft Netze, Compounds, Recording und Mover, die
+Nebenan nicht nutzt.
+
 Ganze Einschläge (Bruch, Stützgraph, neue Box3D-Körper) und der Box3D-Schritt danach bei 60 Hz mit
 4 Substeps, jeweils mit 1 und 4 Threads, der Median aus sechs Läufen:
 
