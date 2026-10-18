@@ -233,27 +233,30 @@ statt aus Tausenden.
 zerteilen kann, schätzen sie zuerst, wie viel von jedem in der Schadenskugel liegt, jedes Stück mit einem eigenen
 Zufallsstrom. Daraus verteilt der aufrufende Thread die Splitter auf die Stücke und gibt jedem Stück in fester
 Reihenfolge den Zufallsstrom für seine Bruchpunkte. Dann ziehen die Worker die Bruchpunkte und berechnen die
-Voronoi-Zellen samt Box3D-Hüllen, eine Zelle wartet nur auf die Punkte ihres Stücks. Einen Einschlag mit weniger als
-32 Zellen und Stücken rechnet der aufrufende Thread allein: Bei vierfacher Bruchstückgröße hat eine Granate auf ein
-Haus 15 bis 30, und die Worker zu wecken kostete mehr, als sie abnahmen. Jede Arbeit hängt nur von ihren Eingaben ab,
-die Worker holen sich die nächste über einen atomaren Zähler und schreiben in eine eigene Arena. Währenddessen weckt
-der aufrufende Thread den Schutt auf, den der Einschlag bewegt, denn Änderungen an der Box3D-Welt dürfen nur von einem
-Thread kommen. Zuletzt werden Stücke und Verbindungen wieder in fester Reihenfolge eingebaut. Deshalb ist das Ergebnis
-mit einem, vier oder acht Threads bitgleich. Wie Box3D nimmt Nebenan das Task-System der Anwendung (`enqueueTask` und
-`finishTask` mit denselben Signaturen wie in Box3D) oder startet eigene Threads. Die Vorzerlegung beim Laden läuft
-genauso, und dort messen die Worker auch die Flächen, mit denen sich die Bruchstücke berühren. Die Verbindungen daraus
-baut der aufrufende Thread in fester Reihenfolge. Legt die Anwendung viele Zerstörbare auf einmal an, mit
-`nbCreateDestructibles`, berechnen die Worker schon die Zellen des nächsten, während der aufrufende Thread eines in
-die Welt einbaut. So lädt eine Stadt ein Drittel schneller, mit denselben Bruchstücken, Verbindungen und Ids wie
-einzeln angelegt. Mit `nbStartCreating` bereiten die Worker Zerstörbare im Hintergrund vor, während der aufrufende
-Thread weitermacht, etwa mit dem Box3D-Schritt, und `nbFinishCreating` baut sie später nur noch ein. Die eingebauten
-Threads nehmen dabei alles andere zuerst, und wer auf einen Einschlag wartet, hilft nie bei einem Haus im Hintergrund.
-Sie holen sich ihre Aufgaben ohne Sperre wie der Scheduler von Box3D, nur behält eine Aufgabe ihren Platz, bis sie
-abgeschlossen ist, auch über mehrere Schritte. Wer auf eine Aufgabe wartet, hilft mit oder gibt den Kern kurz ab, statt
-zu schlafen. Mit `nbCreateTaskSystem` teilen sich Box3D und Nebenan diese Threads, siehe Benutzung. Box3D selbst weckt
-seine Worker nur, wenn es genug zu tun gibt: einen für je 250 wache Kontakte, darunter rechnet der aufrufende Thread den
-Schritt allein (eine Ergänzung, siehe [`extern/README.md`](extern/README.md)). Ein paar Dutzend wache Trümmer rechnet
-er so schneller, als er die Worker wecken und auf sie warten könnte, und unter Dauerbeschuss rechnen alle mit.
+Voronoi-Zellen samt Box3D-Hüllen, eine Zelle wartet nur auf die Punkte ihres Stücks. Kleine Einschläge rechnet der
+aufrufende Thread allein, denn mit wenigen Zellen ist er fertig, bevor ein schlafender Worker anläuft. Ab wie vielen
+Zellen und Stücken die Worker helfen, misst die Bibliothek selbst: sobald der aufrufende Thread allein dreimal so lange
+bräuchte, wie ein Worker zum Anlaufen braucht, zwischen 8 und 32. Auf der VM, wo ein Worker erst nach rund 100 µs
+anläuft, liegt diese Schwelle bei 24 bis 32: Bei vierfacher Bruchstückgröße hat eine Granate auf ein Haus 15 bis 30, und
+die Worker zu wecken kostete dort mehr, als sie abnahmen. Jede Arbeit hängt nur von ihren Eingaben ab, die Worker holen
+sich die nächste über einen atomaren Zähler und schreiben in eine eigene Arena. Währenddessen weckt der aufrufende
+Thread den Schutt auf, den der Einschlag bewegt, denn Änderungen an der Box3D-Welt dürfen nur von einem Thread kommen.
+Zuletzt werden Stücke und Verbindungen wieder in fester Reihenfolge eingebaut. Deshalb ist das Ergebnis mit einem, vier
+oder acht Threads bitgleich. Wie Box3D nimmt Nebenan das Task-System der Anwendung (`enqueueTask` und `finishTask` mit
+denselben Signaturen wie in Box3D) oder startet eigene Threads. Die Vorzerlegung beim Laden läuft genauso, und dort
+messen die Worker auch die Flächen, mit denen sich die Bruchstücke berühren. Die Verbindungen daraus baut der aufrufende
+Thread in fester Reihenfolge. Legt die Anwendung viele Zerstörbare auf einmal an, mit `nbCreateDestructibles`, berechnen
+die Worker schon die Zellen des nächsten, während der aufrufende Thread eines in die Welt einbaut. So lädt eine Stadt
+ein Drittel schneller, mit denselben Bruchstücken, Verbindungen und Ids wie einzeln angelegt. Mit `nbStartCreating`
+bereiten die Worker Zerstörbare im Hintergrund vor, während der aufrufende Thread weitermacht, etwa mit dem
+Box3D-Schritt, und `nbFinishCreating` baut sie später nur noch ein. Die eingebauten Threads nehmen dabei alles andere
+zuerst, und wer auf einen Einschlag wartet, hilft nie bei einem Haus im Hintergrund. Sie holen sich ihre Aufgaben ohne
+Sperre wie der Scheduler von Box3D, nur behält eine Aufgabe ihren Platz, bis sie abgeschlossen ist, auch über mehrere
+Schritte. Wer auf eine Aufgabe wartet, hilft mit oder gibt den Kern kurz ab, statt zu schlafen. Mit `nbCreateTaskSystem`
+teilen sich Box3D und Nebenan diese Threads, siehe Benutzung. Box3D selbst weckt seine Worker nur, wenn es genug zu tun
+gibt: einen für je 250 wache Kontakte, darunter rechnet der aufrufende Thread den Schritt allein (eine Ergänzung, siehe
+[`extern/README.md`](extern/README.md)). Ein paar Dutzend wache Trümmer rechnet er so schneller, als er die Worker
+wecken und auf sie warten könnte, und unter Dauerbeschuss rechnen alle mit.
 
 **Der Schritt auf einem eigenen Thread.** `nbWorld_Step` rechnet den Box3D-Schritt samt Update auf einem Thread von
 Nebenan und kehrt sofort zurück, so zeichnet das Programm sein Bild, während die Physik rechnet. Ein Bild kostet dann
@@ -670,9 +673,9 @@ Wo die Zeit der Schritte hingeht, sagt `nbWorld_GetProfile`, pro Schritt seit de
 `nbWorld_ResetProfile`: die Stufen des Box3D-Schritts samt der Teile, die auf dem aufrufenden Thread allein laufen,
 darunter der Überlauf des Constraint-Graphen mit den Kontakten, die Box3D an Knoten bündelt, die Teile des Updates, die
 Einschläge, Erstarren und Auftauen, die Zellen der Brüche, der Anteil der größten Insel an der Arbeit des Lösers, wie
-oft ein Team aller Threads das größte Paket von Inseln rechnet und wie lange ein schlafender Worker braucht, bis er
-anläuft. Ist dieselbe Arbeit mit verschieden vielen Threads gemessen, rechnet die Bibliothek aus, was davon parallel
-läuft und was mit mehr Threads bleibt:
+oft ein Team aller Threads das größte Paket von Inseln rechnet, wo dessen Zeit hingeht, wie lange ein schlafender
+Worker braucht, bis er anläuft, und ab wie viel Arbeit die Worker deshalb helfen. Ist dieselbe Arbeit mit verschieden
+vielen Threads gemessen, rechnet die Bibliothek aus, was davon parallel läuft und was mit mehr Threads bleibt:
 
 ```c
 int counts[8];
@@ -1004,6 +1007,17 @@ Trümmer zusammen und lässt erstarren wie vorher. Ein Spiel bekommt das mit meh
 weniger, das Update 32 und 28 %, siehe „Skalierung auf dem Ryzen mit `physik-25`“. Die Ergebnisse bleiben bitgleich, und
 `nbWorld_GetProfile` zählt, wie viel davon die Worker übernehmen und wie schnell sie anlaufen.
 
+Seit `physik-26` misst Box3D in jedem achten Schritt, in dem ein Team das größte Paket rechnet, wohin dessen Zeit geht:
+was der aufrufende Thread allein am Überlauf des Pakets rechnet und wie lange er am Ende der Stufen auf die anderen
+wartet, und wie lange jeder Worker auf eine neue Stufe wartet und die übrigen Pakete rechnet, siehe „Zeiten des Teams“
+in [`extern/README.md`](extern/README.md). `nbWorld_GetProfile` gibt das weiter, und der Bericht von „Skalierung messen“
+zeigt es als Tabelle. Beim Abriss auf der VM mit 4 Threads rechnet der aufrufende Thread ein Fünftel bis ein Sechstel
+der Zeit des Teams allein am Überlauf, und jeder Worker wartet ein Drittel davon. Außerdem helfen die Worker bei Brüchen
+und bei den Prüfungen des Updates ab einer Menge, die die Bibliothek danach wählt, wie schnell ihre Worker zuletzt
+anliefen, siehe „Schwellen fürs Wecken auf dem Ryzen“ in [docs/Optimierungen.md](docs/Optimierungen.md). Ein Spiel
+bekommt beides ohne eigenen Aufruf. Auf der VM, wo ein Worker erst nach rund 100 µs anläuft, ändern sich die Schwellen
+kaum, und ein Schritt kostet gepaart gegen `physik-25` gleich viel. Die Ergebnisse bleiben bitgleich.
+
 Ganze Einschläge (Bruch, Stützgraph, neue Box3D-Körper) und der Box3D-Schritt danach bei 60 Hz mit
 4 Substeps, jeweils mit 1 und 4 Threads, der Median aus sechs Läufen:
 
@@ -1111,8 +1125,8 @@ Nach Änderungen an `demo/shaders/scene.glsl` die Shader neu erzeugen, im Ordner
   braucht die Stadt unter Dauerbeschuss 1,2- bis 1,8-mal so lange wie ohne Einstürze, siehe Leistung.
 - Was die Box3D-Welt ändert, bleibt auf dem aufrufenden Thread, Box3D erlaubt das nur von einem Thread aus: Schutt
   aufwecken, Körper und Formen anlegen. Dort bleiben auch der Einbau der Stücke und die Suche nach losen Teilen. Das
-  Aufwecken läuft gleichzeitig mit den Voronoi-Zellen, sobald die Worker helfen, ab 32 Zellen und Stücken. Der Rest
-  kommt danach, bei großen Explosionen ist das der größere Teil.
+  Aufwecken läuft gleichzeitig mit den Voronoi-Zellen, sobald die Worker helfen, je nachdem, wie schnell sie anlaufen,
+  ab 8 bis 32 Zellen und Stücken. Der Rest kommt danach, bei großen Explosionen ist das der größere Teil.
 - Ein Trümmerteil, das in einem Schritt weniger zurücklegt als den doppelten Radius seiner Innenkugel oder
   `debrisSweepDistance`, verfolgt Box3D nicht gegen Wände. Es dringt ein Stück ein und wird zurückgeschoben. Durch
   eine Wand, die dünner ist als dieser Weg, kann ein großes Teil aber durchschlagen. Dann den Wert senken, 0 nimmt
