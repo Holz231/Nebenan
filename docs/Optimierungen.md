@@ -452,6 +452,17 @@ Seit der Liste ist dazugekommen oder gemessen worden:
   mit 4 Threads, und das 1 % Low steigt von 29 auf 189 FPS. Bei ×4 sind es 1,61 statt 2,11 ms und 373 statt 344 FPS. Mit
   8 Threads kostet ein Bild neben der Simulation jetzt rund 0,5 ms, auf der Grafik im Prozessor waren es bei ×2 3,6 ms.
   Ein Worker läuft nach im Mittel 10 und 8 µs an.
+- **Ruhe-Prüfung beim Abriss.** Gezählt am 18. Oktober 2026 auf der VM in einer Kopie der Quellen mit Zählern, beim
+  Abriss der Stadt in der Demo ohne Zeichnen, ×4 über 1 215 und ×2 über 4 000 Bilder mit 1, 2 und 4 Threads. Ein Update
+  prüft bei ×4 im Mittel 1 761 bewegte Stücke, davon sind 29,7 ruhig und 7,8 davon groß, ab 0,1 m³, bei ×2 3 090 mit
+  27,7 ruhigen und 1,0 großen. Von der Zeit der Ruhe-Prüfung, auf der VM 0,53 und 0,99 ms pro Update, gehen 33 und 31 %
+  in die Frage, welche Stücke ruhig sind, rund 100 ns je bewegtes Stück, 15 und 19 % in die Suche nach Auflagen der
+  kleinen, 3,7 und 6,9 µs je Stück, 21 und 7 % in die der großen, 14 und 69 µs je Stück, und 31 und 43 % in das
+  Erstarren samt dem Einsortieren in die Bäume Box3Ds. Der Graph der tragenden Kontakte und die Suche darin kosten 0,2
+  %. Bis auf das Erstarren liest das alles nur, außer den Stempeln, mit denen die Suche nach Auflagen eines großen
+  Stücks die Körper markiert, die auf ihm liegen, und den Schutt, den sie gesehen hat. Auf den Ryzen übertragen, wo die
+  Ruhe-Prüfung mit 8 Threads 0,125 und 0,212 ms kostet, ließen sich 69 und 57 % davon verteilen, rund 0,09 und 0,12 ms,
+  siehe „Prüfungen des Updates auf den Workern, zweiter Versuch“.
 
 ## Physik, Zerstörung und Schutt
 
