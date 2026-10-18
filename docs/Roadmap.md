@@ -71,6 +71,7 @@ bleiben.
 | 20 | **Lagen zum Zeichnen zwischen zwei Schritten**: Die Bibliothek gibt zum Zeichnen eine Lage zwischen den letzten zwei Ständen der Physik, die Demo ruft das nur auf | flüssige Bewegung auf Monitoren über 60 Hz, keine Rechenzeit, das Bild liegt einen Schritt zurück | – | ✅ auf `physik-28`: `nbWorld_GetDrawPoses` und `nbWorld_GetStepFraction`, in der Demo mit Schalter und Zeitlupe. Ein Aufruf kostet auf der VM bei ×4 0,16 ms pro Bild |
 | 18 | **Kontakt-Kerne von upstream #189 messen**: ob upstreams neue breite Kontakt-Kerne im Haufen aus Hüllen schneller rechnen als die des Forks | prüfen, bei Erfolg 1 bis 3 %, ändert die Ergebnisse | – | ✅ auf `physik-29`: Upstream rechnet die Bedingungen mit #189 2 bis 8 % billiger. Übernommen kosten sie im Benchmark auf der VM 1 bis 8,5 % weniger, meist 3 bis 4 %, beim Abriss in der Demo bei ×4 1,9 bis 4,9 % |
 | 21 | **Trennachsen-Suche von upstream #173 und #177**: der Test zweier Hüllen wie upstream, ändert die Ergebnisse | rund 1 % | – | ✅ auf `physik-30`: Die Suche braucht auf denselben Hüllenpaaren 5,1 % weniger Takte, mit einem Thread 0,5 bis 0,7 % eines Schritts, und erkennt getrennte Hüllen, die die alte übersah. Die zweite Suche, die upstream gestrichen hat, bleibt, ebenso das Format der Hüllen |
+| 22 | **Upstream sichten**: was upstream Box3D nach #191 geändert hat, im Haufen aus Hüllen messen und übernehmen, was sich lohnt, wie bei 18 und 21 | unbekannt | – | offen |
 | 6 | **Typwechsel gesammelt**, bitgleich | unter 1 % | – | zurückgestellt nach 16: Ein Typwechsel ist vor allem Warten auf Speicher, der Ryzen braucht 2,6 bis 3,2 µs dafür |
 | 19 | **Physik mit 30 Hz und 8 Teilschritten**, als Versuch auf einer eigenen Branch, ändert das Verhalten überall | pro simulierter Sekunde ein Viertel bis ein Drittel der Physik | 20 | zurückgestellt am 18. Oktober: bringt nur Rechenzeit, und die fehlt auf dem Ryzen nicht. Den Takt wählt ein Spiel selbst, mit 20 ohne Ruckeln |
 | 7 | **Rand der Boxen mit 8 Threads** nachmessen, ändert die Ergebnisse | klein | 2 | offen, niedrig |
@@ -271,14 +272,29 @@ verspricht, siehe die Schritte 6, 7 und 11 und die kleineren Punkte unten. Was m
   Schritt kostet dort mit 8 Threads 8 bis 17 % eines Frames mit 60 Hz. Zurückgestellt, bis die Physik irgendwo den Frame
   begrenzt, siehe „Physik mit 30 Hz und 8 Teilschritten“.
 
+Daneben bleibt **Schritt 22**, upstream sichten: Die Runden 18 und 21 haben übernommen, was upstream bis #191 an Löser
+und Test zweier Hüllen geändert hat, und beide Male war es messbar billiger, wenn auch nur um wenige Prozent. Was
+upstream danach geändert hat, ist noch nicht gesichtet.
+
 ## Kleinere Punkte
 
-Mit niedriger Priorität vorgemerkt, sie sparen vor allem Arbeit, die schon parallel läuft: „Box gegen gemerkte Fläche im
-ersten Durchgang“, „Kollision zweimal übersetzen“, „Gyroskopische Drehung nach upstream #191“ und, nur als Versuch,
-„Physik mit 30 Hz und 8 Teilschritten“.
+Mit niedriger Priorität vorgemerkt, sie sparen vor allem Arbeit, die schon parallel läuft. Der Gewinn gilt mit einem
+Thread, mit 8 Threads ist er kleiner:
+
+- „Kollision zweimal übersetzen“: die Dateien der Kollision ein zweites Mal mit AVX2 übersetzen, gewählt zur Laufzeit
+  wie beim Löser. Ganz mit AVX2 übersetzt kostete die Kollision 5,2 bis 5,6 % weniger, geschätzt 1 bis 2 % eines Frames.
+  Ob das bitgleich bleibt, ist zu prüfen.
+- „Box gegen gemerkte Fläche im ersten Durchgang“: ein billiger Vortest für Kontakte, die nicht berühren, bitgleich, bei
+  ×1 2 bis 3 % der Instruktionen eines Frames, bei ×4 rund 1 %. Dafür müsste sich der Kontakt Ebene und Box merken.
+- „Zweite Suche nur bei Überlappung“: die volle zweite Suche des Tests zweier Hüllen nur, wenn keine Fläche die Hüllen
+  trennt. Bei ×1 bis 0,5 % eines Schritts, ändert die Ergebnisse, und 12 fragwürdige Kontakte im Benchmark fielen weg.
+- „Gyroskopische Drehung nach upstream #191“: das Drehmoment ganz abstellen spart höchstens 2 bis 3 %, aber drehende
+  Trümmer verlören ihr Taumeln. Nur, falls ein Spiel das nicht braucht.
+- Nur als Versuch, beide ändern das Verhalten: „Weniger Substeps für langsame Inseln“ und „Physik mit 30 Hz und 8
+  Teilschritten“.
 
 ## Verworfen
 
 Mit Grund in [`Optimierungen.md`](Optimierungen.md): ein eigenes Box3D, Einschläge gesammelt rechnen, 16 Threads mit
 SMT, AVX-512 auf Zen 4, ein Jacobi-Löser statt Inseln und Farben, Physik auf der GPU, kleine Trümmer als Partikel, mehr
-Farben im Graphen und den Überlauf nachträglich einfärben.
+Farben im Graphen, den Überlauf nachträglich einfärben und die Kosinusse der Kanten in der Hülle wie upstream.
