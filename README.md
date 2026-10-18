@@ -1000,8 +1000,9 @@ mindestens 512 Stücke bewegen, siehe „Prüfungen des Updates auf den Workern,
 [docs/Optimierungen.md](docs/Optimierungen.md). Der aufrufende Thread setzt ihre Antworten in der Reihenfolge der
 Trümmer zusammen und lässt erstarren wie vorher. Ein Spiel bekommt das mit mehr als einem Worker in `nbWorld_Update` und
 `nbWorld_Step`, ohne eigenen Aufruf. Beim Abriss in der Demo auf der VM mit 4 Threads kostet die Ruhe-Prüfung damit bei
-×4 21 % und bei ×2 25 % weniger, das Update 14 und 17 %. Die Ergebnisse bleiben bitgleich, und `nbWorld_GetProfile`
-zählt, wie viel davon die Worker übernehmen und wie schnell sie anlaufen.
+×4 21 % und bei ×2 25 % weniger, das Update 14 und 17 %. Auf dem Ryzen 7 7800X3D kostet sie mit 8 Threads 43 und 42 %
+weniger, das Update 32 und 28 %, siehe „Skalierung auf dem Ryzen mit `physik-25`“. Die Ergebnisse bleiben bitgleich, und
+`nbWorld_GetProfile` zählt, wie viel davon die Worker übernehmen und wie schnell sie anlaufen.
 
 Ganze Einschläge (Bruch, Stützgraph, neue Box3D-Körper) und der Box3D-Schritt danach bei 60 Hz mit
 4 Substeps, jeweils mit 1 und 4 Threads, der Median aus sechs Läufen:
