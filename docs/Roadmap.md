@@ -5,9 +5,9 @@ Die nächsten möglichen Schritte für die Physik, nach der Untersuchung vom 17.
 `physik-24`, den Prüfungen des Updates auf den Workern auf `physik-25` und den Zeiten des Teams und den Schwellen fürs
 Wecken auf `physik-26`, alle vier auf dem Ryzen nachgemessen, den Prototypen und Zerlegungen auf `physik-27`, den Lagen
 zum Zeichnen zwischen zwei Schritten auf `physik-28`, den Kontakt-Kernen von upstream #189 auf `physik-29`, der
-Trennachsen-Suche von upstream #173 und #177 auf `physik-30` und der Sichtung von upstream auf `physik-31`. Begründungen
-und Messwerte stehen in [`Optimierungen.md`](Optimierungen.md), hier nur das Fazit und die Reihenfolge. Nach jeder Runde
-wird der Stand hier nachgetragen.
+Trennachsen-Suche von upstream #173 und #177 auf `physik-30`, der Sichtung von upstream auf `physik-31` und der
+Kollision mit AVX2 auf `physik-32`. Begründungen und Messwerte stehen in [`Optimierungen.md`](Optimierungen.md), hier
+nur das Fazit und die Reihenfolge. Nach jeder Runde wird der Stand hier nachgetragen.
 
 ## Fazit
 
@@ -267,7 +267,13 @@ Kapseln, kein Wiederverwenden ohne vorausschauende Punkte und eine verfallene La
 abschaltet, siehe „Upstream bis #191 gesichtet“. Für Nebenans Trümmer ändert sich nichts. Wieder zu sichten, wenn
 upstream am Löser oder am Test zweier Hüllen etwas ändert.
 
-Bei der Rechenzeit ist nach `physik-31` kein kleiner Schritt mehr übrig, der mit 8 Threads mehr als 1 bis 2 % des Frames
+Der kleine Punkt „Kollision zweimal übersetzen“ ist auf `physik-32` umgesetzt: Eine Welt mit acht Spuren kollidiert
+konvexe Formen mit einer zweiten Fassung von `convex_manifold.c`, übersetzt für AVX2. Gemessen mit beiden Fassungen auf
+denselben Hüllenpaaren braucht der Test zweier Hüllen damit 3,4 bis 3,9 % weniger Takte, gut 1 % eines Schritts mit
+einem Thread, bitgleich. Im Benchmark ist das nicht zu sehen, und auf dem Ryzen läge es unter dem, was die Läufe
+streuen, siehe „Kollision zweimal übersetzen“.
+
+Bei der Rechenzeit ist nach `physik-32` kein kleiner Schritt mehr übrig, der mit 8 Threads mehr als 1 bis 2 % des Frames
 verspricht, siehe die Schritte 6, 7 und 11 und die kleineren Punkte unten. Was mehr bringen könnte, ist größer oder
 ändert das Verhalten:
 
@@ -284,9 +290,6 @@ verspricht, siehe die Schritte 6, 7 und 11 und die kleineren Punkte unten. Was m
 Mit niedriger Priorität vorgemerkt, sie sparen vor allem Arbeit, die schon parallel läuft. Der Gewinn gilt mit einem
 Thread, mit 8 Threads ist er kleiner:
 
-- „Kollision zweimal übersetzen“: die Dateien der Kollision ein zweites Mal mit AVX2 übersetzen, gewählt zur Laufzeit
-  wie beim Löser. Ganz mit AVX2 übersetzt kostete die Kollision 5,2 bis 5,6 % weniger, geschätzt 1 bis 2 % eines Frames.
-  Ob das bitgleich bleibt, ist zu prüfen.
 - „Box gegen gemerkte Fläche im ersten Durchgang“: ein billiger Vortest für Kontakte, die nicht berühren, bitgleich, bei
   ×1 2 bis 3 % der Instruktionen eines Frames, bei ×4 rund 1 %. Dafür müsste sich der Kontakt Ebene und Box merken.
 - „Zweite Suche nur bei Überlappung“: die volle zweite Suche des Tests zweier Hüllen nur, wenn keine Fläche die Hüllen

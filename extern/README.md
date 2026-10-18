@@ -360,25 +360,32 @@ Lage, mit der es ihn wiederverwenden würde (`b3UpdateConvexContact`). Nebenan s
 und lässt die vorausschauenden Kontakte an, für seine Trümmer ändert sich nichts. Ein Spiel mit Kugeln, etwa für
 Geschosse, bekommt die Fehlerbehebungen mit.
 
-Die erste, die zweite, die vierte bis achte, die zehnte, die dreizehnte bis einunddreißigste und die dreiunddreißigste
-bis fünfunddreißigste ändern an den Ergebnissen nichts. Die dritte und die neunte ändern sie in den letzten Bits, dafür
-hängen sie nicht mehr davon ab, in welcher Reihenfolge Formen in die Bäume kommen. Die elfte ändert sie, weil Kontakte
-zu anderen Zeitpunkten entstehen, die zwölfte, weil sie weniger Punkte bekommen, die zweiunddreißigste, weil die
-Kontakte eines Knotens gebündelt gegen Kopien rechnen statt nacheinander, die sechsunddreißigste, weil die Kerne
-dieselbe Rechnung anders zusammenfassen und deshalb anders runden, und die siebenunddreißigste, weil die Suche andere
-Kantenpaare aussiebt und getrennte Hüllen erkennt, die die alte übersah. Die achtunddreißigste ändert sie nur, wo Kugeln
-Kugeln oder Kapseln berühren, Kontakte ohne vorausschauende Punkte rechnen oder der PreSolve-Callback Kontakte
-abschaltet, in Nebenans Szenen nicht. Die Ergänzungen stehen in `CMakeLists.txt`, `src/CMakeLists.txt`,
-`include/box3d/base.h`, `include/box3d/box3d.h`, `include/box3d/types.h`, `include/box3d/constants.h`, `src/core.h`,
-`src/core.c`, `src/shape.h`, `src/shape.c`, `src/body.c`, `src/contact.h`, `src/contact.c`, `src/contact_solver.h`,
-`src/contact_solver.c`, `src/contact_solver_wide.inl`, `src/wide8.c`, `src/simd.c`, `src/simd_avx2.h`,
-`src/constraint_graph.h`, `src/convex_manifold.c`, `src/world_snapshot.c`, `src/recording.c`, `src/solver.h`,
-`src/solver.c`, `src/broad_phase.h`, `src/broad_phase.c`, `src/dynamic_tree.h`, `src/dynamic_tree.c`,
-`src/parallel_for.c`, `src/scheduler.h`, `src/scheduler.c`, `src/physics_world.h` und `src/physics_world.c`, jeweils mit
-„Added for Nebenan“ markiert. `B3_HAS_UNIQUE_HULLS`, `B3_HAS_SHAPE_BATCH`, `B3_HAS_SHAPE_CONTACT_LISTS`,
-`B3_HAS_EXTERNAL_HULLS`, `B3_HAS_BODY_PREFETCH`, `B3_HAS_STEP_GUARD` und `B3_HAS_PREVIOUS_TRANSFORM` zeigen die zweite,
-die vierte, die fünfte, die sechste, die neunzehnte, die dreißigste und die fünfunddreißigste an. Fehlen sie, etwa mit
-einem eigenen Box3D, läuft Nebenan wie zuvor, nur wachsen Box3Ds Arrays dann durch Umkopieren, die Hüllen gehen durch
-die Tabelle, jede Form geht einzeln in den Baum, jedes stehende Bruchstück bekommt einen eigenen Körper, Box3D hält eine
-Kopie jeder Hülle, Nebenan holt die Körper der Trümmer nicht voraus, `nbWorld_Step` rechnet auf dem aufrufenden Thread,
-und `nbWorld_GetDrawPoses` gibt die Lagen nach dem Schritt.
+**Kollision mit AVX2.** `src/convex_manifold_avx2.c` übersetzt die Kollision konvexer Formen aus `src/convex_manifold.c`
+ein zweites Mal für AVX2, unter GCC und Clang zwischen `B3_AVX2_BEGIN` und `B3_AVX2_END`, unter MSVC mit `/arch:AVX2`
+wie `src/wide8.c`. Dort tragen die Funktionen `AVX2` am Ende ihres Namens, etwa `b3CollideHullsAVX2`, deklariert in
+`src/manifold.h`. Eine Welt mit acht Spuren kollidiert mit ihnen, siehe `b3ComputeConvexManifold` in `src/contact.c`.
+Ohne FMA schreibt der Übersetzer dieselben Befehle nur in ihrer AVX-Form, die Ergebnisse bleiben dieselben.
+
+Die erste, die zweite, die vierte bis achte, die zehnte, die dreizehnte bis einunddreißigste, die dreiunddreißigste bis
+fünfunddreißigste und die neununddreißigste ändern an den Ergebnissen nichts. Die dritte und die neunte ändern sie in
+den letzten Bits, dafür hängen sie nicht mehr davon ab, in welcher Reihenfolge Formen in die Bäume kommen. Die elfte
+ändert sie, weil Kontakte zu anderen Zeitpunkten entstehen, die zwölfte, weil sie weniger Punkte bekommen, die
+zweiunddreißigste, weil die Kontakte eines Knotens gebündelt gegen Kopien rechnen statt nacheinander, die
+sechsunddreißigste, weil die Kerne dieselbe Rechnung anders zusammenfassen und deshalb anders runden, und die
+siebenunddreißigste, weil die Suche andere Kantenpaare aussiebt und getrennte Hüllen erkennt, die die alte übersah. Die
+achtunddreißigste ändert sie nur, wo Kugeln Kugeln oder Kapseln berühren, Kontakte ohne vorausschauende Punkte rechnen
+oder der PreSolve-Callback Kontakte abschaltet, in Nebenans Szenen nicht. Die Ergänzungen stehen in `CMakeLists.txt`,
+`src/CMakeLists.txt`, `include/box3d/base.h`, `include/box3d/box3d.h`, `include/box3d/types.h`,
+`include/box3d/constants.h`, `src/core.h`, `src/core.c`, `src/shape.h`, `src/shape.c`, `src/body.c`, `src/contact.h`,
+`src/contact.c`, `src/contact_solver.h`, `src/contact_solver.c`, `src/contact_solver_wide.inl`, `src/wide8.c`,
+`src/simd.c`, `src/simd_avx2.h`, `src/constraint_graph.h`, `src/manifold.h`, `src/convex_manifold.c`,
+`src/convex_manifold_avx2.c`, `src/world_snapshot.c`, `src/recording.c`, `src/solver.h`, `src/solver.c`,
+`src/broad_phase.h`, `src/broad_phase.c`, `src/dynamic_tree.h`, `src/dynamic_tree.c`, `src/parallel_for.c`,
+`src/scheduler.h`, `src/scheduler.c`, `src/physics_world.h` und `src/physics_world.c`, jeweils mit „Added for Nebenan“
+markiert. `B3_HAS_UNIQUE_HULLS`, `B3_HAS_SHAPE_BATCH`, `B3_HAS_SHAPE_CONTACT_LISTS`, `B3_HAS_EXTERNAL_HULLS`,
+`B3_HAS_BODY_PREFETCH`, `B3_HAS_STEP_GUARD` und `B3_HAS_PREVIOUS_TRANSFORM` zeigen die zweite, die vierte, die fünfte,
+die sechste, die neunzehnte, die dreißigste und die fünfunddreißigste an. Fehlen sie, etwa mit einem eigenen Box3D,
+läuft Nebenan wie zuvor, nur wachsen Box3Ds Arrays dann durch Umkopieren, die Hüllen gehen durch die Tabelle, jede Form
+geht einzeln in den Baum, jedes stehende Bruchstück bekommt einen eigenen Körper, Box3D hält eine Kopie jeder Hülle,
+Nebenan holt die Körper der Trümmer nicht voraus, `nbWorld_Step` rechnet auf dem aufrufenden Thread, und
+`nbWorld_GetDrawPoses` gibt die Lagen nach dem Schritt.

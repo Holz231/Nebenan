@@ -1069,6 +1069,11 @@ berühren. Nebenans Trümmer rechnen bitgleich weiter, ein Spiel mit Kugeln, etw
 Fehlerbehebungen mit. Was upstream sonst bis #191 geändert hat, betrifft Netze, Compounds, Recording und Mover, die
 Nebenan nicht nutzt.
 
+Seit `physik-32` kollidiert eine Welt mit acht Spuren konvexe Formen mit einer zweiten Fassung des Tests zweier Hüllen,
+übersetzt für AVX2, siehe „Kollision mit AVX2“ in [`extern/README.md`](extern/README.md). Der Test braucht damit auf
+denselben Hüllenpaaren 3,4 bis 3,9 % weniger Takte, mit einem Thread gut 1 % eines Schritts. Die Ergebnisse bleiben
+bitgleich, auf Prozessoren ohne AVX2 rechnet Box3D wie vorher.
+
 Ganze Einschläge (Bruch, Stützgraph, neue Box3D-Körper) und der Box3D-Schritt danach bei 60 Hz mit
 4 Substeps, jeweils mit 1 und 4 Threads, der Median aus sechs Läufen:
 
