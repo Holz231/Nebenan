@@ -15,8 +15,8 @@ _Static_assert( sizeof( nb_profileNames ) / sizeof( nb_profileNames[0] ) == nb_p
 
 // How deep a stage sits in the table under the stage that holds it, and whether it runs on the calling thread alone
 static const int nb_profileDepths[] = { 0, 1, 2, 3, 2, 3, 2, 3, 3, 4, 2, 1, 2, 2, 2, 2, 1, 1, 1, 2 };
-static const bool nb_profileAlone[] = { false, false, false, true, false, true, false, true,  false, true,
-										false, false, false, true, true,  true, true,  false, false, true };
+static const bool nb_profileAlone[] = { false, false, false, true,	false, true, false, true,  false, true,
+										false, false, false, false, true,  true, true,	false, false, true };
 _Static_assert( sizeof( nb_profileDepths ) / sizeof( nb_profileDepths[0] ) == nb_profileStageCount, "a depth per stage" );
 _Static_assert( sizeof( nb_profileAlone ) / sizeof( nb_profileAlone[0] ) == nb_profileStageCount, "a flag per stage" );
 
@@ -131,6 +131,16 @@ nbProfile nbWorld_GetProfile( nbWorldId worldId )
 		profile.longestWake = 1000.0f * sums->longestWake;
 	}
 	profile.wakeCount = sums->wakeCount;
+
+	if ( sums->settleSplitCount > 0 )
+	{
+		profile.settleWorkerShare = (float)( sums->settleWorkerShare / (double)sums->settleSplitCount );
+	}
+	if ( sums->settleWakeCount > 0 )
+	{
+		profile.settleWakeTime = (float)( 1000.0 * sums->settleWakeTime / (double)sums->settleWakeCount );
+	}
+	profile.settleSplitCount = sums->settleSplitCount;
 	return profile;
 }
 
@@ -333,6 +343,7 @@ int nbFormatScalingReport( const nbProfile* profiles, int count, char* text, int
 	double teamShare = 0.0, teamSteps = 0.0;
 	double wake = 0.0, wakes = 0.0;
 	float longestWake = 0.0f;
+	double workerSteps = 0.0, settleSplits = 0.0, settleShare = 0.0, settleWake = 0.0, settleTasks = 0.0;
 	for ( int i = 0; i < count; ++i )
 	{
 		const nbProfile* p = profiles + i;
@@ -354,6 +365,17 @@ int nbFormatScalingReport( const nbProfile* profiles, int count, char* text, int
 		wake += p->wakeTime * (double)p->wakeCount;
 		wakes += (double)p->wakeCount;
 		longestWake = b3MaxFloat( longestWake, p->longestWake );
+
+		// A split update gives a task to every worker but the calling thread
+		if ( p->workerCount > 1 )
+		{
+			double tasks = (double)p->settleSplitCount * (double)( p->workerCount - 1 );
+			workerSteps += (double)p->stepCount;
+			settleSplits += (double)p->settleSplitCount;
+			settleShare += p->settleWorkerShare * (double)p->settleSplitCount;
+			settleWake += p->settleWakeTime * tasks;
+			settleTasks += tasks;
+		}
 	}
 
 	if ( steps > 0.0 )
@@ -400,6 +422,17 @@ int nbFormatScalingReport( const nbProfile* profiles, int count, char* text, int
 	else
 	{
 		nbAppend( &out, "Workers not measured, no fracture had enough cells for them\n" );
+	}
+	if ( settleSplits > 0.0 )
+	{
+		nbAppend( &out,
+				  "The checks of the update went to the workers in %.1f %% of the steps with workers, they checked %.1f %% "
+				  "of the moving debris there and started %.0f us after on average\n",
+				  100.0 * settleSplits / workerSteps, 100.0 * settleShare / settleSplits, settleWake / settleTasks );
+	}
+	else if ( workerSteps > 0.0 )
+	{
+		nbAppend( &out, "The checks of the update stayed on the calling thread, too little debris moved for the workers\n" );
 	}
 	return out.length;
 }

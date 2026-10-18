@@ -1299,18 +1299,60 @@ static bool nbStillCarries( const nbChunk* chunk, b3Vec3 point )
 		   point.y <= box.upperBound.y + slack && box.lowerBound.z - slack <= point.z && point.z <= box.upperBound.z + slack;
 }
 
+// Whether a sorted list of actors holds one
+static bool nbHoldsActor( const int* actors, int count, int actorIndex )
+{
+	int low = 0;
+	int high = count;
+	while ( low < high )
+	{
+		int middle = ( low + high ) >> 1;
+		if ( actors[middle] < actorIndex )
+		{
+			low = middle + 1;
+		}
+		else
+		{
+			high = middle;
+		}
+	}
+	return low < count && actors[low] == actorIndex;
+}
+
+// The rubble a search of nbIsSupportedWithout has seen: the first and every carrier it pushes, up to NB_MAX_CARRIERS for
+// each of the NB_SUPPORT_SEARCH bodies it visits, in a table with open addressing that stays about half full. The search
+// keeps it on its own stack instead of a stamp in the actors, so several threads can search at once.
+#define NB_SEEN_PLACES 512
+_Static_assert( NB_SEEN_PLACES >= 2 * NB_SUPPORT_SEARCH * NB_MAX_CARRIERS, "the table of the search stays about half full" );
+
+// Whether the actor is new to the table, which then holds it
+static bool nbSee( int* places, int actorIndex )
+{
+	uint32_t place = ( (uint32_t)actorIndex * 2654435761u ) >> 23;
+	while ( places[place] != NB_NULL_INDEX )
+	{
+		if ( places[place] == actorIndex )
+		{
+			return false;
+		}
+		place = ( place + 1 ) & ( NB_SEEN_PLACES - 1 );
+	}
+	places[place] = actorIndex;
+	return true;
+}
+
 // Whether rubble lies on something that holds without an actor, following the chunks each rubble body froze on. Chunks
-// that are gone, moved away or part of the actor carry nothing, and so do moving bodies that rest on the actor, see
-// nbFindSupport, and rubble frozen in flight without a record. Everything else counts as carried: the ground, a structure,
-// other moving bodies, and rubble whose search runs past the limit.
-static bool nbIsSupportedWithout( nbWorld* world, int rubbleIndex, int actorIndex, uint32_t restStamp )
+// that are gone, moved away or part of the actor carry nothing, and so do moving bodies that rest on the actor, the sorted
+// list from nbFindSupport, and rubble frozen in flight without a record. Everything else counts as carried: the ground, a
+// structure, other moving bodies, and rubble whose search runs past the limit. It only reads the world.
+static bool nbIsSupportedWithout( const nbWorld* world, int rubbleIndex, int actorIndex, const int* resting, int restingCount )
 {
 	int stack[NB_SUPPORT_SEARCH];
 	int count = 0;
 	int visits = 0;
-	world->supportStamp += 1;
-	uint32_t stamp = world->supportStamp;
-	world->actors.data[rubbleIndex].supportStamp = stamp;
+	int seen[NB_SEEN_PLACES];
+	memset( seen, 0xff, sizeof( seen ) );
+	nbSee( seen, rubbleIndex );
 	stack[count++] = rubbleIndex;
 	while ( count > 0 )
 	{
@@ -1335,23 +1377,22 @@ static bool nbIsSupportedWithout( nbWorld* world, int rubbleIndex, int actorInde
 				continue;
 			}
 
-			nbActor* carrier = world->actors.data + chunk->actorIndex;
+			const nbActor* carrier = world->actors.data + chunk->actorIndex;
 			if ( carrier->isRubble == false )
 			{
-				if ( carrier->isStatic || carrier->restStamp != restStamp )
+				if ( carrier->isStatic || nbHoldsActor( resting, restingCount, chunk->actorIndex ) == false )
 				{
 					return true;
 				}
 				continue;
 			}
 
-			if ( carrier->supportStamp != stamp )
+			if ( nbSee( seen, chunk->actorIndex ) )
 			{
 				if ( count == NB_SUPPORT_SEARCH )
 				{
 					return true;
 				}
-				carrier->supportStamp = stamp;
 				stack[count++] = chunk->actorIndex;
 			}
 		}
@@ -4803,16 +4844,37 @@ static bool nbCarries( const b3ContactData* contact, bool isA, b3Vec3 up )
 	return false;
 }
 
-// nbIsSupportedWithout for the carriers of one piece, each carrier searched once. The stamp changes with the piece.
-static bool nbIsCarrierSupported( nbWorld* world, int carrierIndex, int actorIndex, uint32_t answerStamp )
+// The answers of nbIsSupportedWithout for the rubble one large piece lies on, see nbFindSupport. A piece lies on few, the
+// answers past the room are searched again and come out the same.
+#define NB_CARRIER_ANSWERS 16
+
+typedef struct nbCarrierAnswers
 {
-	nbActor* carrier = world->actors.data + carrierIndex;
-	if ( carrier->answerStamp != answerStamp )
+	int carriers[NB_CARRIER_ANSWERS];
+	bool supported[NB_CARRIER_ANSWERS];
+	int count;
+} nbCarrierAnswers;
+
+// nbIsSupportedWithout for the carriers of one piece, each carrier searched once
+static bool nbIsCarrierSupported( const nbWorld* world, nbCarrierAnswers* answers, int carrierIndex, int actorIndex,
+								  const int* resting, int restingCount )
+{
+	for ( int k = 0; k < answers->count; ++k )
 	{
-		carrier->answerStamp = answerStamp;
-		carrier->supported = nbIsSupportedWithout( world, carrierIndex, actorIndex, answerStamp );
+		if ( answers->carriers[k] == carrierIndex )
+		{
+			return answers->supported[k];
+		}
 	}
-	return carrier->supported;
+
+	bool supported = nbIsSupportedWithout( world, carrierIndex, actorIndex, resting, restingCount );
+	if ( answers->count < NB_CARRIER_ANSWERS )
+	{
+		answers->carriers[answers->count] = carrierIndex;
+		answers->supported[answers->count] = supported;
+		answers->count += 1;
+	}
+	return supported;
 }
 
 // Remember a chunk a piece lies on, one per carrying body. NB_NULL_INDEX stands for a body that is no chunk.
@@ -5050,32 +5112,35 @@ typedef struct nbSupport
 // see nbIsSupportedWithout. Otherwise the two would hold each other up in the air: rubble that froze on a floor while it
 // was part of the structure, and wedged between the floor and its lintels once the floor came down. Such rubble goes to
 // the list, and the piece must stay balanced without it: a piece wedged under the floor that rests on the floor itself
-// carries nothing either, however it touches. Smaller pieces lie on whatever they touch.
-static void nbFindSupport( nbWorld* world, int actorIndex, const b3ContactData* contacts, int contactCount, b3Vec3 up,
-						   const nbSupportFan* baseFan, nbSupport* support, int* unsupported, int* unsupportedCount,
+// carries nothing either, however it touches. Smaller pieces lie on whatever they touch. The resting list has room for a
+// body per contact. The search only reads the world, so the workers look at many pieces at once, see nbSettleDebris.
+static void nbFindSupport( const nbWorld* world, int actorIndex, const b3ContactData* contacts, int contactCount, b3Vec3 up,
+						   const nbSupportFan* baseFan, int* resting, nbSupport* support, int* unsupported, int* unsupportedCount,
 						   int unsupportedCapacity )
 {
 	const nbActor* actor = world->actors.data + actorIndex;
 	bool large = actor->volume >= NB_CHECKED_VOLUME;
 	b3Vec3 center = b3ToVec3( b3Body_GetWorldCenter( actor->bodyId ) );
-	world->answerStamp += 1;
-	uint32_t stamp = world->answerStamp;
 	support->grounded = false;
 	support->carrierCount = 0;
 	int firstUnsupported = *unsupportedCount;
 	nbSupportFan fan = *baseFan;
 	nbSupportFan fixedFan = *baseFan;
+	nbCarrierAnswers answers;
+	answers.count = 0;
 
-	// Moving bodies that rest on a large piece carry nothing
+	// Moving bodies that rest on a large piece carry nothing, sorted to look them up
+	int restingCount = 0;
 	for ( int c = 0; large && c < contactCount; ++c )
 	{
 		bool isA = B3_ID_EQUALS( b3Shape_GetBody( contacts[c].shapeIdA ), actor->bodyId );
 		int otherIndex = nbFindActorFromBody( world, b3Shape_GetBody( isA ? contacts[c].shapeIdB : contacts[c].shapeIdA ) );
 		if ( otherIndex != NB_NULL_INDEX && nbCarries( contacts + c, isA == false, up ) )
 		{
-			world->actors.data[otherIndex].restStamp = stamp;
+			resting[restingCount++] = otherIndex;
 		}
 	}
+	qsort( resting, (size_t)restingCount, sizeof( int ), nbCompareInts );
 
 	for ( int c = 0; c < contactCount; ++c )
 	{
@@ -5099,7 +5164,7 @@ static void nbFindSupport( nbWorld* world, int actorIndex, const b3ContactData* 
 		if ( b3Body_GetType( otherBodyId ) == b3_staticBody )
 		{
 			if ( large && otherIndex != NB_NULL_INDEX && world->actors.data[otherIndex].isRubble &&
-				 nbIsCarrierSupported( world, otherIndex, actorIndex, stamp ) == false )
+				 nbIsCarrierSupported( world, &answers, otherIndex, actorIndex, resting, restingCount ) == false )
 			{
 				bool listed = false;
 				for ( int k = firstUnsupported; k < *unsupportedCount && listed == false; ++k )
@@ -5130,7 +5195,7 @@ static void nbFindSupport( nbWorld* world, int actorIndex, const b3ContactData* 
 		{
 			continue;
 		}
-		else if ( world->actors.data[otherIndex].restStamp == stamp )
+		else if ( nbHoldsActor( resting, restingCount, otherIndex ) )
 		{
 			continue;
 		}
@@ -5158,7 +5223,7 @@ static void nbFindSupport( nbWorld* world, int actorIndex, const b3ContactData* 
 		bool fixed = b3Body_GetType( b3Shape_GetBody( otherShapeId ) ) == b3_staticBody;
 		b3Vec3 point;
 		if ( ( fixed || ( chunkIndex != NB_NULL_INDEX &&
-						  world->actors.data[world->chunks.data[chunkIndex].actorIndex].restStamp != stamp ) ) &&
+						  nbHoldsActor( resting, restingCount, world->chunks.data[chunkIndex].actorIndex ) == false ) ) &&
 			 nbTouchPoint( contacts + c, isA, center, FLT_MAX, &point ) )
 		{
 			nbAddCarrier( world, support->carriers, &support->carrierCount, chunkIndex, point );
@@ -5172,9 +5237,8 @@ static void nbFindSupport( nbWorld* world, int actorIndex, const b3ContactData* 
 // Whether a piece lies on something fixed that holds without a large piece resting on it: the ground, a structure or
 // rubble that holds without it. A piece that only lies on moving pieces or on the large piece's own rubble passes
 // nothing on to it.
-static bool nbCarriesWithout( nbWorld* world, const nbCarrier* carriers, int count, int actorIndex )
+static bool nbCarriesWithout( const nbWorld* world, const nbCarrier* carriers, int count, int actorIndex )
 {
-	world->answerStamp += 1;
 	for ( int k = 0; k < count; ++k )
 	{
 		const nbCarrier* record = carriers + k;
@@ -5186,8 +5250,7 @@ static bool nbCarriesWithout( nbWorld* world, const nbCarrier* carriers, int cou
 		int carrierIndex = world->chunks.data[record->chunkIndex].actorIndex;
 		const nbActor* carrier = world->actors.data + carrierIndex;
 		if ( carrierIndex != actorIndex &&
-			 ( carrier->isStatic ||
-			   ( carrier->isRubble && nbIsSupportedWithout( world, carrierIndex, actorIndex, world->answerStamp ) ) ) )
+			 ( carrier->isStatic || ( carrier->isRubble && nbIsSupportedWithout( world, carrierIndex, actorIndex, NULL, 0 ) ) ) )
 		{
 			return true;
 		}
@@ -5195,10 +5258,226 @@ static bool nbCarriesWithout( nbWorld* world, const nbCarrier* carriers, int cou
 	return false;
 }
 
+// Moving debris per block of the checks in nbSettleDebris, a word of nbWorld::movingDebris
+#define NB_SETTLE_BLOCK 64
+
+// The checks of nbSettleDebris go to the workers from this much moving debris on. With less, the calling thread is done
+// before a sleeping worker starts, see nbProfile::wakeTime.
+#define NB_PARALLEL_SETTLE 512
+
+// A quiet piece and what carries it, as the checks of nbSettleDebris found it
+typedef struct nbQuietPiece
+{
+	int actorIndex;
+
+	// Lies on something that holds, see nbSupport::grounded and nbSupport::braced
+	bool held;
+
+	// A large piece that would not stay balanced, it does not freeze
+	bool blocked;
+
+	// A larger moving body that presses into it, see NB_SQUEEZE_DEPTH
+	b3BodyId squeezer;
+
+	nbCarrier carriers[NB_MAX_CARRIERS];
+	int carrierCount;
+
+	// The moving pieces it lies on, in the order of its contacts. Those that are quiet too carry it in the search.
+	int* below;
+	int belowCount;
+
+	// The rubble a large piece found to rest on itself, see nbFindSupport
+	int* unsupported;
+	int unsupportedCount;
+} nbQuietPiece;
+
+// The quiet pieces of a block in the order of the debris
+typedef struct nbSettleBlock
+{
+	nbQuietPiece* pieces;
+	int count;
+} nbSettleBlock;
+
+typedef struct nbSettleTask
+{
+	nbWorld* world;
+	nbArena* arena;
+	nbSettleBlock* blocks;
+	int blockCount;
+	int* nextBlock;
+	const nbSupportFan* fan;
+	b3Vec3 up;
+	float timeStep;
+
+	// When the task went to a worker, and how many milliseconds later it started there, negative for the task of the
+	// calling thread. And the moving debris it checked, see nbProfile::settleWorkerShare.
+	uint64_t enqueueTicks;
+	float wakeTime;
+	int checkCount;
+} nbSettleTask;
+
+// What carries a quiet piece. It only reads the world and writes the record.
+static void nbInspectQuietPiece( const nbSettleTask* task, nbQuietPiece* piece, int actorIndex )
+{
+	const nbWorld* world = task->world;
+	const nbActor* actor = world->actors.data + actorIndex;
+	piece->actorIndex = actorIndex;
+	piece->held = false;
+	piece->blocked = false;
+	piece->squeezer = b3_nullBodyId;
+	piece->carrierCount = 0;
+	piece->below = NULL;
+	piece->belowCount = 0;
+	piece->unsupported = NULL;
+	piece->unsupportedCount = 0;
+	int capacity = b3Body_GetContactCapacity( actor->bodyId );
+	if ( capacity == 0 )
+	{
+		return;
+	}
+
+	b3ContactData* contacts = nbArena_AllocArray( task->arena, b3ContactData, capacity );
+	int contactCount = b3Body_GetContactData( actor->bodyId, contacts, capacity );
+	int* room = nbArena_AllocArray( task->arena, int, 2 * contactCount );
+	int unsupported[NB_MAX_RELEASES];
+	int unsupportedCount = 0;
+	nbSupport support;
+	nbFindSupport( world, actorIndex, contacts, contactCount, task->up, task->fan, room, &support, unsupported, &unsupportedCount,
+				   NB_MAX_RELEASES );
+	piece->carrierCount = support.carrierCount;
+	for ( int k = 0; k < support.carrierCount; ++k )
+	{
+		piece->carriers[k] = support.carriers[k];
+	}
+
+	// A large piece that would not stay balanced does not freeze, and the rubble that nothing else holds comes back to
+	// life, the piece tips or falls without it. Otherwise that rubble stays where it is.
+	bool large = actor->volume >= NB_CHECKED_VOLUME;
+	if ( support.balanced == false )
+	{
+		piece->blocked = true;
+	}
+	else if ( large )
+	{
+		unsupportedCount = 0;
+	}
+
+	if ( unsupportedCount > 0 )
+	{
+		piece->unsupported = nbArena_AllocArray( task->arena, int, unsupportedCount );
+		memcpy( piece->unsupported, unsupported, sizeof( int ) * (size_t)unsupportedCount );
+		piece->unsupportedCount = unsupportedCount;
+	}
+
+	piece->squeezer = nbFindSqueezer( world, actor, contacts, contactCount );
+
+	// The moving pieces that carry this one, the room after the resting bodies of nbFindSupport
+	piece->below = room + contactCount;
+	for ( int c = 0; c < contactCount; ++c )
+	{
+		bool isA = B3_ID_EQUALS( b3Shape_GetBody( contacts[c].shapeIdA ), actor->bodyId );
+		b3BodyId otherBodyId = b3Shape_GetBody( isA ? contacts[c].shapeIdB : contacts[c].shapeIdA );
+		if ( b3Body_GetType( otherBodyId ) != b3_dynamicBody || nbCarries( contacts + c, isA, task->up ) == false )
+		{
+			continue;
+		}
+
+		int other = nbFindActorFromBody( world, otherBodyId );
+		if ( other != NB_NULL_INDEX )
+		{
+			piece->below[piece->belowCount++] = other;
+		}
+	}
+
+	// A large piece must be held by what holds without it, balanced over it or wedged in
+	piece->held = large ? support.braced : support.grounded;
+}
+
+// The quiet pieces of a block of the debris and what carries them. A piece changes only its own rest, and the search for
+// its support only reads, so the blocks run on any thread in any order.
+static void nbCheckSettleBlock( nbSettleTask* task, int blockIndex )
+{
+	nbWorld* world = task->world;
+	int moving[NB_SETTLE_BLOCK];
+	int movingCount = 0;
+	for ( uint64_t word = world->movingDebris.data[blockIndex]; word != 0; word &= word - 1 )
+	{
+		moving[movingCount++] = world->debris.data[NB_SETTLE_BLOCK * blockIndex + nbCTZ64( word )];
+	}
+	task->checkCount += movingCount;
+
+	// The loop reads each piece, and the record, the transform and the velocities of its body, all from scattered memory,
+	// and it waited for them most. Three cursors run ahead of it. Eight pieces ahead it prefetches the piece up to the pose
+	// it holds rubble at, four ahead the record of the body, which needs the piece, and two ahead the motion of the body,
+	// which needs the record, see b3Body_Prefetch.
+	int quiet[NB_SETTLE_BLOCK];
+	int quietCount = 0;
+	for ( int k = 0; k < movingCount; ++k )
+	{
+		if ( k + 8 < movingCount )
+		{
+			const char* piece = (const char*)( world->actors.data + moving[k + 8] );
+			const char* poseEnd = piece + offsetof( nbActor, holdBounds ) - 1;
+			for ( const char* line = piece; line < poseEnd; line += 64 )
+			{
+				NB_PREFETCH( line );
+			}
+			NB_PREFETCH( poseEnd );
+		}
+
+#if defined( B3_HAS_BODY_PREFETCH )
+		if ( k + 4 < movingCount )
+		{
+			b3Body_Prefetch( world->actors.data[moving[k + 4]].bodyId );
+		}
+
+		if ( k + 2 < movingCount )
+		{
+			b3Body_PrefetchMotion( world->actors.data[moving[k + 2]].bodyId );
+		}
+#endif
+
+		if ( nbIsQuiet( world, world->actors.data + moving[k], task->timeStep ) )
+		{
+			quiet[quietCount++] = moving[k];
+		}
+	}
+
+	nbSettleBlock* block = task->blocks + blockIndex;
+	block->count = quietCount;
+	block->pieces = quietCount > 0 ? nbArena_AllocArray( task->arena, nbQuietPiece, quietCount ) : NULL;
+	for ( int k = 0; k < quietCount; ++k )
+	{
+		nbInspectQuietPiece( task, block->pieces + k, quiet[k] );
+	}
+}
+
+static void nbSettleTaskMain( void* context )
+{
+	nbSettleTask* task = context;
+	if ( task->enqueueTicks != 0 )
+	{
+		task->wakeTime = b3GetMilliseconds( task->enqueueTicks );
+	}
+
+	for ( ;; )
+	{
+		int blockIndex = nbAtomicFetchAddInt( task->nextBlock, 1 );
+		if ( blockIndex >= task->blockCount )
+		{
+			break;
+		}
+
+		nbCheckSettleBlock( task, blockIndex );
+	}
+}
+
 // Quiet debris freezes into rubble when something that does not move carries it: the ground, a structure, rubble, or
 // quiet debris that is carried itself. The carrying contacts form a graph from the ground up, and a search from the
 // grounded pieces freezes whole piles at once, from the bottom up. Nothing freezes while it lies on a moving piece, and
-// rubble only carries what does not carry it in turn, see nbFindSupport. Each piece remembers what it froze on.
+// rubble only carries what does not carry it in turn, see nbFindSupport. Each piece remembers what it froze on. The
+// workers check the pieces, then the calling thread puts their answers together in the order of the debris and freezes,
+// so the result does not depend on the workers.
 static void nbSettleDebris( nbWorld* world, b3Vec3 up, float timeStep )
 {
 	if ( world->def.enableRubble == false || world->debris.count == 0 )
@@ -5209,58 +5488,60 @@ static void nbSettleDebris( nbWorld* world, b3Vec3 up, float timeStep )
 	nbBeginOperation( world );
 	world->settleStamp += 1;
 	uint32_t stamp = world->settleStamp;
-	int* quiet = nbArena_AllocArray( &world->arena, int, world->debris.count );
-	int quietCount = 0;
-
-	// The loop reads each piece, and the record, the transform and the velocities of its body, all from scattered memory,
-	// and it waited for them most. Three cursors run ahead of it. Eight pieces ahead it prefetches the piece, up to the
-	// pose it holds rubble at, and its settle slot. Four ahead it prefetches the record of the body, which needs the
-	// piece, and two ahead the motion of the body, which needs the record, see b3Body_Prefetch.
-	int first = nbNextMoving( world, 0 );
-	int pieceAhead = nbMovingAhead( world, first, 8 );
-#if defined( B3_HAS_BODY_PREFETCH )
-	int bodyAhead = nbMovingAhead( world, first, 4 );
-	int motionAhead = nbMovingAhead( world, first, 2 );
-#endif
-	for ( int i = first; i < world->debris.count; i = nbNextMoving( world, i + 1 ) )
+	nbSupportFan fan = nbMakeSupportFan( up );
+	int blockCount = world->movingDebris.count;
+	nbSettleBlock* blocks = nbArena_AllocArray( &world->arena, nbSettleBlock, blockCount );
+	int movingCount = world->debris.count - world->rubbleCount;
+	int taskCount = world->enqueueTask != NULL && movingCount >= NB_PARALLEL_SETTLE ? world->workerCount : 1;
+	taskCount = b3MinInt( taskCount, blockCount );
+	int nextBlock = 0;
+	nbSettleTask tasks[NB_MAX_WORKERS];
+	void* userTasks[NB_MAX_WORKERS];
+	for ( int i = 0; i < taskCount; ++i )
 	{
-		if ( pieceAhead < world->debris.count )
+		tasks[i] = ( nbSettleTask ){ world,	   world->workerArenas + i, blocks, blockCount, &nextBlock, &fan, up,
+									 timeStep, .wakeTime = -1.0f };
+	}
+
+	for ( int i = 1; i < taskCount; ++i )
+	{
+		tasks[i].enqueueTicks = b3GetTicks();
+		userTasks[i] = world->enqueueTask( nbSettleTaskMain, tasks + i, world->userTaskContext, "nebenan settle" );
+	}
+
+	nbSettleTaskMain( tasks );
+
+	for ( int i = 1; i < taskCount; ++i )
+	{
+		if ( userTasks[i] != NULL )
 		{
-			const char* piece = (const char*)( world->actors.data + world->debris.data[pieceAhead] );
-			const char* poseEnd = piece + offsetof( nbActor, holdBounds ) - 1;
-			for ( const char* line = piece; line < poseEnd; line += 64 )
+			world->finishTask( userTasks[i], world->userTaskContext );
+		}
+	}
+
+	// How much the workers took and how long they took to start
+	if ( taskCount > 1 )
+	{
+		nbProfileSums* profile = &world->profile;
+		int workerChecks = 0;
+		for ( int i = 1; i < taskCount; ++i )
+		{
+			workerChecks += tasks[i].checkCount;
+			if ( tasks[i].wakeTime >= 0.0f )
 			{
-				NB_PREFETCH( line );
+				profile->settleWakeTime += tasks[i].wakeTime;
+				profile->settleWakeCount += 1;
 			}
-			NB_PREFETCH( poseEnd );
-			NB_PREFETCH( piece + offsetof( nbActor, settleSlot ) );
-			pieceAhead = nbNextMoving( world, pieceAhead + 1 );
 		}
+		profile->settleSplitCount += 1;
+		profile->settleWorkerShare += (double)workerChecks / (double)movingCount;
+	}
 
-#if defined( B3_HAS_BODY_PREFETCH )
-		if ( bodyAhead < world->debris.count )
-		{
-			b3Body_Prefetch( world->actors.data[world->debris.data[bodyAhead]].bodyId );
-			bodyAhead = nbNextMoving( world, bodyAhead + 1 );
-		}
-
-		if ( motionAhead < world->debris.count )
-		{
-			b3Body_PrefetchMotion( world->actors.data[world->debris.data[motionAhead]].bodyId );
-			motionAhead = nbNextMoving( world, motionAhead + 1 );
-		}
-#endif
-
-		int actorIndex = world->debris.data[i];
-		nbActor* actor = world->actors.data + actorIndex;
-		if ( nbIsQuiet( world, actor, timeStep ) == false )
-		{
-			continue;
-		}
-
-		actor->settleSlot = quietCount;
-		actor->settleStamp = stamp;
-		quiet[quietCount++] = actorIndex;
+	// The quiet pieces get their slots in the order of the debris
+	int quietCount = 0;
+	for ( int b = 0; b < blockCount; ++b )
+	{
+		quietCount += blocks[b].count;
 	}
 
 	if ( quietCount == 0 )
@@ -5268,103 +5549,69 @@ static void nbSettleDebris( nbWorld* world, b3Vec3 up, float timeStep )
 		return;
 	}
 
-	// Carrying contacts between quiet pieces, and the pieces something fixed carries
+	int* quiet = nbArena_AllocArray( &world->arena, int, quietCount );
+	const nbQuietPiece** pieces = nbArena_AllocArray( &world->arena, const nbQuietPiece*, quietCount );
+	int slot = 0;
+	for ( int b = 0; b < blockCount; ++b )
+	{
+		for ( int k = 0; k < blocks[b].count; ++k )
+		{
+			const nbQuietPiece* piece = blocks[b].pieces + k;
+			nbActor* actor = world->actors.data + piece->actorIndex;
+			actor->settleSlot = slot;
+			actor->settleStamp = stamp;
+			quiet[slot] = piece->actorIndex;
+			pieces[slot] = piece;
+			slot += 1;
+		}
+	}
+
+	// Carrying contacts between quiet pieces, and the rubble found to rest on the very piece it would carry
 	int* queue = nbArena_AllocArray( &world->arena, int, quietCount );
-	bool* held = nbArena_AllocArray( &world->arena, bool, quietCount );
 	bool* stable = nbArena_AllocArray( &world->arena, bool, quietCount );
 	bool* blocked = nbArena_AllocArray( &world->arena, bool, quietCount );
-	b3BodyId* squeezers = nbArena_AllocArray( &world->arena, b3BodyId, quietCount );
 	int* edgeCounts = nbArena_AllocArray( &world->arena, int, quietCount + 1 );
-	for ( int slot = 0; slot < quietCount; ++slot )
+	for ( slot = 0; slot < quietCount; ++slot )
 	{
 		stable[slot] = false;
+		blocked[slot] = pieces[slot]->blocked;
 		edgeCounts[slot + 1] = 0;
 	}
 	edgeCounts[0] = 0;
 	nbIntArray* edges = &world->scratchList;
 	edges->count = 0;
-
-	// The chunks each quiet piece lies on, one per carrying body, remembered by the pieces that freeze
-	nbCarrier* carriers = nbArena_AllocArray( &world->arena, nbCarrier, quietCount * NB_MAX_CARRIERS );
-	int* carrierCounts = nbArena_AllocArray( &world->arena, int, quietCount );
-
-	// Rubble found to rest on the very piece it would carry
 	int unsupported[NB_MAX_RELEASES];
 	int unsupportedCount = 0;
-	nbSupportFan fan = nbMakeSupportFan( up );
-
-	for ( int slot = 0; slot < quietCount; ++slot )
+	for ( slot = 0; slot < quietCount; ++slot )
 	{
-		int actorIndex = quiet[slot];
-		const nbActor* actor = world->actors.data + actorIndex;
-		carrierCounts[slot] = 0;
-		held[slot] = false;
-		blocked[slot] = false;
-		squeezers[slot] = b3_nullBodyId;
-		int capacity = b3Body_GetContactCapacity( actor->bodyId );
-		if ( capacity == 0 )
+		const nbQuietPiece* piece = pieces[slot];
+		for ( int k = 0; k < piece->unsupportedCount && unsupportedCount < NB_MAX_RELEASES; ++k )
 		{
-			continue;
+			unsupported[unsupportedCount++] = piece->unsupported[k];
 		}
-
-		b3ContactData* contacts = nbArena_AllocArray( &world->arena, b3ContactData, capacity );
-		int contactCount = b3Body_GetContactData( actor->bodyId, contacts, capacity );
-		nbSupport support;
-		int firstUnsupported = unsupportedCount;
-		nbFindSupport( world, actorIndex, contacts, contactCount, up, &fan, &support, unsupported, &unsupportedCount,
-					   NB_MAX_RELEASES );
-		carrierCounts[slot] = support.carrierCount;
-		for ( int k = 0; k < support.carrierCount; ++k )
-		{
-			carriers[slot * NB_MAX_CARRIERS + k] = support.carriers[k];
-		}
-
-		// A large piece that would not stay balanced does not freeze, and the rubble that nothing else holds comes back to
-		// life, the piece tips or falls without it. Otherwise that rubble stays where it is.
-		if ( support.balanced == false )
-		{
-			blocked[slot] = true;
-		}
-		else if ( actor->volume >= NB_CHECKED_VOLUME )
-		{
-			unsupportedCount = firstUnsupported;
-		}
-
-		squeezers[slot] = nbFindSqueezer( world, actor, contacts, contactCount );
 
 		// An edge from each quiet piece that carries this one
-		for ( int c = 0; c < contactCount; ++c )
+		for ( int e = 0; e < piece->belowCount; ++e )
 		{
-			bool isA = B3_ID_EQUALS( b3Shape_GetBody( contacts[c].shapeIdA ), actor->bodyId );
-			b3BodyId otherBodyId = b3Shape_GetBody( isA ? contacts[c].shapeIdB : contacts[c].shapeIdA );
-			if ( b3Body_GetType( otherBodyId ) != b3_dynamicBody || nbCarries( contacts + c, isA, up ) == false )
+			const nbActor* other = world->actors.data + piece->below[e];
+			if ( other->settleStamp == stamp )
 			{
-				continue;
-			}
-
-			int other = nbFindActorFromBody( world, otherBodyId );
-			if ( other != NB_NULL_INDEX && world->actors.data[other].settleStamp == stamp )
-			{
-				int below = world->actors.data[other].settleSlot;
-				nbArray_Push( *edges, below );
+				nbArray_Push( *edges, other->settleSlot );
 				nbArray_Push( *edges, slot );
-				edgeCounts[below + 1] += 1;
+				edgeCounts[other->settleSlot + 1] += 1;
 			}
 		}
-
-		// A large piece must be held by what holds without it, balanced over it or wedged in
-		held[slot] = actor->volume >= NB_CHECKED_VOLUME ? support.braced : support.grounded;
 	}
 
 	// The pieces each quiet piece carries, grouped by carrier
-	for ( int slot = 0; slot < quietCount; ++slot )
+	for ( slot = 0; slot < quietCount; ++slot )
 	{
 		edgeCounts[slot + 1] += edgeCounts[slot];
 	}
 	int edgeCount = edges->count / 2;
 	int* carried = nbArena_AllocArray( &world->arena, int, edgeCount + 1 );
 	int* cursor = nbArena_AllocArray( &world->arena, int, quietCount );
-	for ( int slot = 0; slot < quietCount; ++slot )
+	for ( slot = 0; slot < quietCount; ++slot )
 	{
 		cursor[slot] = edgeCounts[slot];
 	}
@@ -5380,9 +5627,9 @@ static void nbSettleDebris( nbWorld* world, b3Vec3 up, float timeStep )
 	for ( bool again = true; again; )
 	{
 		queueCount = 0;
-		for ( int slot = 0; slot < quietCount; ++slot )
+		for ( slot = 0; slot < quietCount; ++slot )
 		{
-			stable[slot] = held[slot] && blocked[slot] == false;
+			stable[slot] = pieces[slot]->held && blocked[slot] == false;
 			if ( stable[slot] )
 			{
 				queue[queueCount++] = slot;
@@ -5391,13 +5638,13 @@ static void nbSettleDebris( nbWorld* world, b3Vec3 up, float timeStep )
 
 		for ( int head = 0; head < queueCount; ++head )
 		{
-			int slot = queue[head];
-			for ( int e = edgeCounts[slot]; e < edgeCounts[slot + 1]; ++e )
+			const nbQuietPiece* piece = pieces[queue[head]];
+			for ( int e = edgeCounts[queue[head]]; e < edgeCounts[queue[head] + 1]; ++e )
 			{
 				int above = carried[e];
 				if ( stable[above] == false && blocked[above] == false &&
 					 ( world->actors.data[quiet[above]].volume < NB_CHECKED_VOLUME ||
-					   nbCarriesWithout( world, carriers + slot * NB_MAX_CARRIERS, carrierCounts[slot], quiet[above] ) ) )
+					   nbCarriesWithout( world, piece->carriers, piece->carrierCount, quiet[above] ) ) )
 				{
 					stable[above] = true;
 					queue[queueCount++] = above;
@@ -5408,13 +5655,13 @@ static void nbSettleDebris( nbWorld* world, b3Vec3 up, float timeStep )
 		again = false;
 		for ( int k = 0; k < queueCount; ++k )
 		{
-			int slot = queue[k];
-			if ( B3_IS_NULL( squeezers[slot] ) )
+			slot = queue[k];
+			if ( B3_IS_NULL( pieces[slot]->squeezer ) )
 			{
 				continue;
 			}
 
-			int other = nbFindActorFromBody( world, squeezers[slot] );
+			int other = nbFindActorFromBody( world, pieces[slot]->squeezer );
 			const nbActor* squeezer = other != NB_NULL_INDEX ? world->actors.data + other : NULL;
 			if ( squeezer == NULL || squeezer->settleStamp != stamp || stable[squeezer->settleSlot] == false )
 			{
@@ -5432,13 +5679,13 @@ static void nbSettleDebris( nbWorld* world, b3Vec3 up, float timeStep )
 
 	for ( int k = 0; k < queueCount; ++k )
 	{
-		int slot = queue[k];
-		nbFreezeOnCarriers( world, quiet[slot], carriers + slot * NB_MAX_CARRIERS, carrierCounts[slot] );
+		slot = queue[k];
+		nbFreezeOnCarriers( world, quiet[slot], pieces[slot]->carriers, pieces[slot]->carrierCount );
 	}
 
 	// What sleeps and could not freeze waits for Box3D to wake it. Its island sleeps as a whole, a piece that touches it
 	// wakes all of it.
-	for ( int slot = 0; slot < quietCount; ++slot )
+	for ( slot = 0; slot < quietCount; ++slot )
 	{
 		nbActor* actor = world->actors.data + quiet[slot];
 		actor->checkedAsleep = actor->isRubble == false && b3Body_IsAwake( actor->bodyId ) == false;
@@ -5565,8 +5812,9 @@ static void nbEnforceDebrisBudget( nbWorld* world, b3Vec3 up )
 				}
 
 				int firstUnsupported = unsupportedCount;
-				nbFindSupport( world, actorIndex, contacts, contactCount, up, &fan, &support, unsupported, &unsupportedCount,
-							   NB_MAX_RELEASES );
+				int* resting = nbArena_AllocArray( &world->arena, int, contactCount );
+				nbFindSupport( world, actorIndex, contacts, contactCount, up, &fan, resting, &support, unsupported,
+							   &unsupportedCount, NB_MAX_RELEASES );
 				if ( pass > 0 || actor->volume < NB_CHECKED_VOLUME || support.balanced )
 				{
 					unsupportedCount = firstUnsupported;

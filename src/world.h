@@ -238,18 +238,8 @@ typedef struct nbActor
 	int settleSlot;
 	uint32_t settleStamp;
 
-	// Visit stamp of the search for what carries rubble, see nbIsSupportedWithout
-	uint32_t supportStamp;
-
-	// The last answer of that search for this rubble, valid while the stamp matches
-	uint32_t answerStamp;
-
 	// A collapse is breaking a structure apart, the parts it drops come from it
 	bool collapsing;
-	bool supported;
-
-	// Rests on the piece whose support is being inspected, valid while the stamp matches, see nbFindSupport
-	uint32_t restStamp;
 } nbActor;
 
 // The room under a floor of a building, along the local Y axis of its destructible, see nbCheckStoreys. It runs from
@@ -388,6 +378,10 @@ typedef struct nbProfileSums
 	double wakeTime;
 	float longestWake;
 	int wakeCount;
+	int settleSplitCount;
+	double settleWorkerShare;
+	double settleWakeTime;
+	int settleWakeCount;
 	int stepCount;
 	int impactCount;
 } nbProfileSums;
@@ -483,8 +477,6 @@ typedef struct nbWorld
 	uint32_t bondStamp;
 	uint32_t searchStamp;
 	uint32_t settleStamp;
-	uint32_t supportStamp;
-	uint32_t answerStamp;
 
 	// A collapse is breaking a structure apart, the parts it drops come from it
 	bool collapsing;

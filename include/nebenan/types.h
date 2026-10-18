@@ -576,6 +576,13 @@ typedef struct nbProfile
 	float wakeTime;
 	float longestWake;
 	int wakeCount;
+
+	/// The updates whose checks of the debris that comes to rest went to the workers, the share of the moving debris the
+	/// workers checked in them, mean over those updates, and how long a sleeping worker took to start them, in
+	/// microseconds, mean over their tasks. The calling thread checks what the workers do not take.
+	int settleSplitCount;
+	float settleWorkerShare;
+	float settleWakeTime;
 } nbProfile;
 
 /// The stages of profiles measured with different numbers of workers, fitted to T(n) = serial + parallel / n

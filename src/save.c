@@ -646,9 +646,6 @@ size_t nbSaveDestructibles( const nbDestructibleId* ids, int count, void* buffer
 			copy->generation = 0;
 			copy->settleSlot = 0;
 			copy->settleStamp = 0;
-			copy->supportStamp = 0;
-			copy->answerStamp = 0;
-			copy->restStamp = 0;
 
 			const nbActor* holdSource = nbGetHoldSource( world, actor );
 			copy->holdSource = actor->holdSource == NB_NULL_INDEX ? NB_NULL_INDEX
