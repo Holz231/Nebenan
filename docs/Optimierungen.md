@@ -606,6 +606,20 @@ Seit der Liste ist dazugekommen oder gemessen worden:
   Schritt damit 7 und 15 % eines Bildes bei 60 Hz. Was dort bleibt, ist vor allem der Löser: Bei ×2 rechnet der
   aufrufende Thread in den gemessenen Schritten mit Team 0,20 ms allein am Überlauf, und jeder Worker wartet 0,34 ms auf
   eine neue Stufe, kaum weniger als mit `physik-26`, siehe „Überlauf in unabhängigen Gruppen“.
+- **Was mehr Realismus kostet.** Gemessen am 19. Oktober 2026 auf `physik-37` im Benchmark auf der VM, je ein Lauf über
+  die drei Städte mit 1, 2 und 4 Threads, die Vorgaben zweimal. Drei Einstellungen tauschen Rechenzeit gegen Aussehen,
+  und ein Spiel kann sie zur Laufzeit setzen: die Bruchstückgröße (`nbWorld_SetFragmentScale`), das Budget der bewegten
+  Trümmer (`nbWorld_SetDebrisBudget`, Vorgabe 1 500), über dem die langsamsten zu Schutt erstarren, und die Ruhezeit
+  (`nbWorld_SetDebrisRestTime`, Vorgabe 0,1 s). Mit 5 000 statt 1 500 bewegten Trümmern kostet ein Bild mit 4 Threads
+  bei ×1 54 % mehr, 9,26 statt 6,01 ms: Unter Dauerfeuer bleiben dort bis zu 3 665 statt 1 731 Trümmer beweglich, die
+  Kontakte steigen auf das 2,6-Fache. Bei ×2 greift das Budget nicht, die Welt endet gleich, und im Block bei ×4 kostet
+  es 7 % mehr. Mit 0,2 statt 0,1 s Ruhezeit kostet ein Bild bei ×2 18 % mehr, mit 10 % mehr bewegten Trümmern und 31 %
+  mehr Kontakten, bei ×1 und ×4 ändert es kaum etwas, dort bestimmt das Budget, was erstarrt. Beides zusammen kostet bei
+  ×1 70 %, bei ×2 20 % und bei ×4 22 % mehr. ×1 statt ×2 kostet drei- bis viermal so viel Physik, siehe die Städte im
+  Benchmark. Auf dem Ryzen mit 8 Threads kostet ein Schritt beim Abriss bei ×2 rund 2,5 ms, mit Budget 5 000 und
+  höchstens 3 000 fliegenden Trümmern, siehe „Skalierung auf dem Ryzen mit `physik-36`“. Die Vorgaben bleiben, denn sie
+  sollen auch auf schwächeren Rechnern reichen, und ein Spiel wählt seine Einstellungen selbst. Von der gemessenen Zeit
+  abhängig darf die Bibliothek sie nicht wählen, sonst endete dieselbe Szene auf verschiedenen Rechnern verschieden.
 
 ## Physik, Zerstörung und Schutt
 
