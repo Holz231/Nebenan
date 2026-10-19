@@ -1097,7 +1097,10 @@ wegrückendes Stück oder ein Einschlag freigibt, nur noch im Baum der statische
 vorausladen“ und „Abfrage nur der statischen Formen“ in [`extern/README.md`](extern/README.md). Gepaart gegen
 `physik-35` kostet das Lösen von Schutt bei ×1 30 bis 32 % weniger, die Zustandswechsel der Kontakte bis 10 % und die
 Typwechsel 3 bis 7 %, zusammen 0,06 bis 0,12 ms pro Schritt auf dem aufrufenden Thread. Ein Spiel muss dafür nichts
-aufrufen. Die Ergebnisse bleiben bitgleich.
+aufrufen. Die Ergebnisse bleiben bitgleich. Auf einem Ryzen 7 7800X3D kostet beim Abriss der Stadt mit `physik-33` bis
+`physik-36` zusammen die Kollision 4 bis 7 % weniger, die Zustandswechsel 7 bis 18 % und das Lösen von Schutt 23 bis 33
+%, ein Schritt mit 1 bis 4 Threads 2 bis 4 % und mit 8 Threads bis 2 %, siehe „Skalierung auf dem Ryzen mit `physik-36`“
+in [docs/Optimierungen.md](docs/Optimierungen.md).
 
 Ganze Einschläge (Bruch, Stützgraph, neue Box3D-Körper) und der Box3D-Schritt danach bei 60 Hz mit
 4 Substeps, jeweils mit 1 und 4 Threads, der Median aus sechs Läufen:
