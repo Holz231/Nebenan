@@ -197,6 +197,10 @@ void b3InitializeContactRegisters( void );
 void b3CreateContact( b3World* world, b3Shape* shapeA, b3Shape* shapeB, int childIndex );
 void b3DestroyContact( b3World* world, b3Contact* contact, bool wakeBodies );
 
+// Added for Nebenan: prefetch what b3DestroyContact touches besides the contact itself, for a contact that a loop destroys
+// soon
+void b3PrefetchContactDestroy( const b3World* world, const b3Contact* contact );
+
 bool b3UpdateContact( b3World* world, int workerIndex, b3Contact* contact, b3Shape* shapeA, b3Vec3 localCenterA, b3WorldTransform xfA,
 					  b3Shape* shapeB, b3Vec3 localCenterB, b3WorldTransform xfB, bool isFast, b3Arena arena );
 

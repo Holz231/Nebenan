@@ -160,7 +160,10 @@ static void b3RemoveBodyFromIsland( b3World* world, b3Body* body )
 
 static void b3DestroyBodyContacts( b3World* world, b3Body* body, bool wakeBodies )
 {
-	// Destroy the attached contacts
+	// Destroy the attached contacts. Added for Nebenan: a piece of debris that freezes into rubble loses 7 to 17 contacts
+	// at once, and the loop waited most for what destroying each touches. While it destroys one contact it prefetches what
+	// destroying the next touches, see b3PrefetchContactDestroy, and the contact after that. Prefetching only reads, the
+	// contacts go in the same order.
 	int edgeKey = body->headContactKey;
 	while ( edgeKey != B3_NULL_INDEX )
 	{
@@ -169,6 +172,21 @@ static void b3DestroyBodyContacts( b3World* world, b3Body* body, bool wakeBodies
 
 		b3Contact* contact = b3Array_Get( world->contacts, contactId );
 		edgeKey = contact->edges[edgeIndex].nextKey;
+
+		if ( edgeKey != B3_NULL_INDEX )
+		{
+			const b3Contact* next = world->contacts.data + ( edgeKey >> 1 );
+			int aheadKey = next->edges[edgeKey & 1].nextKey;
+			if ( aheadKey != B3_NULL_INDEX )
+			{
+				const char* ahead = (const char*)( world->contacts.data + ( aheadKey >> 1 ) );
+				b3Prefetch( ahead );
+				b3Prefetch( ahead + offsetof( b3Contact, manifoldCount ) );
+			}
+
+			b3PrefetchContactDestroy( world, next );
+		}
+
 		b3DestroyContact( world, contact, wakeBodies );
 	}
 

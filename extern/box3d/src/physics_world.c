@@ -1255,7 +1255,14 @@ static void b3Collide( b3StepContext* context )
 
 		if ( n + stateDataPrefetchDistance < changedCount )
 		{
-			b3PrefetchContactStateData( world, world->contacts.data + changedIds[n + stateDataPrefetchDistance] );
+			const b3Contact* ahead = world->contacts.data + changedIds[n + stateDataPrefetchDistance];
+			b3PrefetchContactStateData( world, ahead );
+
+			// Added for Nebenan: a contact whose boxes no longer overlap is destroyed, see b3PrefetchContactDestroy
+			if ( ahead->flags & b3_simDisjoint )
+			{
+				b3PrefetchContactDestroy( world, ahead );
+			}
 		}
 
 		{
@@ -3052,6 +3059,26 @@ static bool TreeQueryCallback( int proxyId, uint64_t userData, void* context )
 	b3ShapeId id = { shapeId + 1, world->worldId, shape->generation };
 	bool result = worldContext->fcn( id, worldContext->userContext );
 	return result;
+}
+
+// Added for Nebenan, see box3d.h. Not recorded, like the shape batches.
+b3TreeStats b3World_OverlapStaticAABB( b3WorldId worldId, b3AABB aabb, b3QueryFilter filter, b3OverlapResultFcn* fcn,
+									   void* context )
+{
+	b3TreeStats treeStats = { 0 };
+
+	b3World* world = b3GetUnlockedWorldFromId( worldId );
+	if ( world == NULL )
+	{
+		return treeStats;
+	}
+
+	B3_ASSERT( b3IsValidAABB( aabb ) );
+
+	WorldQueryContext worldContext = { world, fcn, filter, context };
+	treeStats = b3DynamicTree_Query( world->broadPhase.trees + b3_staticBody, aabb, filter.maskBits, false, TreeQueryCallback,
+									 &worldContext );
+	return treeStats;
 }
 
 b3TreeStats b3World_OverlapAABB( b3WorldId worldId, b3AABB aabb, b3QueryFilter filter, b3OverlapResultFcn* fcn, void* context )

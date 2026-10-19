@@ -77,6 +77,14 @@ B3_API b3JointEvents b3World_GetJointEvents( b3WorldId worldId );
 B3_API b3TreeStats b3World_OverlapAABB( b3WorldId worldId, b3AABB aabb, b3QueryFilter filter, b3OverlapResultFcn* fcn,
 										void* context );
 
+/// Overlap test for the shapes of static bodies only, see b3World_OverlapAABB. It searches the tree of the static bodies
+/// alone and skips the others. Added for Nebenan.
+B3_API b3TreeStats b3World_OverlapStaticAABB( b3WorldId worldId, b3AABB aabb, b3QueryFilter filter, b3OverlapResultFcn* fcn,
+											  void* context );
+
+/// This Box3D has b3World_OverlapStaticAABB
+#define B3_HAS_STATIC_OVERLAP 1
+
 /// Overlap test for all shapes that overlap the provided shape proxy. The proxy points are relative
 /// to the world origin, which lets the query stay precise far from the world origin.
 B3_API b3TreeStats b3World_OverlapShape( b3WorldId worldId, b3Pos origin, const b3ShapeProxy* proxy, b3QueryFilter filter,

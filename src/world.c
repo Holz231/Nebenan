@@ -1503,7 +1503,20 @@ static void nbThawRubbleInBoxes( nbWorld* world, const b3AABB* boxes, int boxCou
 		.holder = filter != NULL ? filter->holder : NB_NULL_INDEX,
 		.collapse = filter != NULL && filter->collapse,
 	};
+#if defined( B3_HAS_STATIC_OVERLAP )
+	// Rubble is static, so only Box3D's tree of static bodies holds it. A collapse also gives the moving debris in the boxes
+	// the grace and needs the other trees, whose shapes the callback skips otherwise.
+	if ( context.collapse == false )
+	{
+		b3World_OverlapStaticAABB( world->physicsWorld, total, b3DefaultQueryFilter(), nbThawCallback, &context );
+	}
+	else
+	{
+		b3World_OverlapAABB( world->physicsWorld, total, b3DefaultQueryFilter(), nbThawCallback, &context );
+	}
+#else
 	b3World_OverlapAABB( world->physicsWorld, total, b3DefaultQueryFilter(), nbThawCallback, &context );
+#endif
 
 	// Box3D finds the rubble in the order of its static tree, which depends on how the shapes went in. The order of the
 	// actors does not, so the same rubble comes back to life first.

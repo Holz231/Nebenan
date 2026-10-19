@@ -9,6 +9,7 @@
 #include "island.h"
 #include "manifold.h"
 #include "physics_world.h"
+#include "platform.h"
 #include "shape.h"
 #include "solver_set.h"
 #include "table.h"
@@ -349,6 +350,82 @@ void b3CreateContact( b3World* world, b3Shape* shapeA, b3Shape* shapeB, int chil
 	if ( ( shapeA->flags & b3_enablePreSolveEvents ) || ( shapeB->flags & b3_enablePreSolveEvents ) )
 	{
 		contact->flags |= b3_simEnablePreSolveEvents;
+	}
+}
+
+// Added for Nebenan: what b3DestroyContact touches besides the contact itself, the slot of the pair in the pair set, the
+// manifolds, both bodies, the neighbours in the contact lists of the bodies and of the shapes, the island and the slot in
+// the array of the color or the set the contact leaves. All of it lies scattered over the world. Not inline, so GCC cannot
+// drop the call as one without effect, see b3PrefetchContactData.
+void b3PrefetchContactDestroy( const b3World* world, const b3Contact* contact )
+{
+	const b3HashSet* pairSet = &world->broadPhase.pairSet;
+	uint64_t pairKey = b3ShapePairKey( contact->shapeIdA, contact->shapeIdB, contact->childIndex );
+	b3Prefetch( pairSet->items + ( b3KeyHash( pairKey ) & ( pairSet->capacity - 1 ) ) );
+
+	if ( contact->manifolds != NULL )
+	{
+		b3Prefetch( contact->manifolds );
+	}
+
+	const b3Contact* contacts = world->contacts.data;
+	for ( int i = 0; i < 2; ++i )
+	{
+		const b3ContactEdge* edge = contact->edges + i;
+		b3Prefetch( &world->bodies.data[edge->bodyId].headContactKey );
+		if ( edge->prevKey != B3_NULL_INDEX )
+		{
+			b3Prefetch( contacts[edge->prevKey >> 1].edges );
+		}
+
+		if ( edge->nextKey != B3_NULL_INDEX )
+		{
+			b3Prefetch( contacts[edge->nextKey >> 1].edges );
+		}
+
+		int shapeId = i == 0 ? contact->shapeIdA : contact->shapeIdB;
+		b3Prefetch( &world->shapes.data[shapeId].headContactKey );
+		if ( contact->shapePrevKey[i] != B3_NULL_INDEX )
+		{
+			b3Prefetch( contacts[contact->shapePrevKey[i] >> 1].shapeNextKey );
+		}
+
+		if ( contact->shapeNextKey[i] != B3_NULL_INDEX )
+		{
+			b3Prefetch( contacts[contact->shapeNextKey[i] >> 1].shapePrevKey );
+		}
+	}
+
+	if ( contact->islandId != B3_NULL_INDEX )
+	{
+		b3Prefetch( world->islands.data + contact->islandId );
+	}
+
+	if ( contact->colorIndex != B3_NULL_INDEX )
+	{
+		const b3GraphColor* color = world->constraintGraph.colors + contact->colorIndex;
+		if ( ( contact->flags & b3_simMeshContact ) || contact->colorIndex == B3_OVERFLOW_INDEX )
+		{
+			b3Prefetch( color->contacts.data + contact->localIndex );
+		}
+		else
+		{
+			b3Prefetch( color->convexContacts.data + contact->localIndex );
+		}
+
+		for ( int i = 0; i < 2 && contact->colorIndex != B3_OVERFLOW_INDEX; ++i )
+		{
+			uint32_t block = (uint32_t)contact->edges[i].bodyId >> 6;
+			if ( block < color->bodySet.blockCount )
+			{
+				b3Prefetch( color->bodySet.bits + block );
+			}
+		}
+	}
+	else if ( contact->setIndex != B3_NULL_INDEX )
+	{
+		const b3SolverSet* set = world->solverSets.data + contact->setIndex;
+		b3Prefetch( set->contactIndices.data + contact->localIndex );
 	}
 }
 

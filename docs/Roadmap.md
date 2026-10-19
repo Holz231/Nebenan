@@ -7,9 +7,9 @@ Wecken auf `physik-26`, alle vier auf dem Ryzen nachgemessen, den Prototypen und
 zum Zeichnen zwischen zwei Schritten auf `physik-28`, den Kontakt-Kernen von upstream #189 auf `physik-29`, der
 Trennachsen-Suche von upstream #173 und #177 auf `physik-30`, der Sichtung von upstream auf `physik-31`, der Kollision
 mit AVX2 auf `physik-32`, der schärferen Schranke für getrennte Hüllen auf `physik-33`, den ganz vorausgeholten Hüllen
-auf `physik-34` und den seriellen Schleifen der Kontakte auf `physik-35`. Begründungen und Messwerte stehen in
-[`Optimierungen.md`](Optimierungen.md), hier nur das Fazit und die Reihenfolge. Nach jeder Runde wird der Stand hier
-nachgetragen.
+auf `physik-34`, den seriellen Schleifen der Kontakte auf `physik-35` und dem Abbau der Kontakte und der Suche nach
+Schutt auf `physik-36`. Begründungen und Messwerte stehen in [`Optimierungen.md`](Optimierungen.md), hier nur das Fazit
+und die Reihenfolge. Nach jeder Runde wird der Stand hier nachgetragen.
 
 ## Fazit
 
@@ -300,10 +300,18 @@ aufrufenden Thread laufen. Zwei davon in Box3D holen jetzt voraus, was sie lesen
 vorausladen“. Gepaart gegen `physik-34` fallen bei ×1 0,20 bis 0,23 ms pro Schritt auf dem aufrufenden Thread weg. Auf
 dem Ryzen nachzumessen.
 
-Bei der Rechenzeit ist nach `physik-35` kein gemessener kleiner Schritt mehr übrig, der mit 8 Threads mehr als 1 bis 2 %
-des Frames verspricht, siehe die Schritte 6, 7 und 11 und die kleineren Punkte unten. Offen ist, was die übrigen
-seriellen Stufen hergeben, siehe „Weitere serielle Stufen vorausladen“. Was mehr bringen könnte, ist sonst größer oder
-ändert das Verhalten:
+Auf `physik-36` ist gemessen, worauf die übrigen seriellen Stufen warten, siehe „Worauf die übrigen seriellen Stufen
+warten“. Gerechnet wird dort wenig, gewartet auf Box3Ds Buchführung: verkettete Listen, Lücken in Arrays und die Bäume.
+Zwei Dinge ließen sich bitgleich holen: Box3D holt beim Löschen von Kontakten voraus, was es anfasst, und Nebenan sucht
+den Schutt, den ein wegrückendes Stück freigibt, nur noch im Baum der statischen Körper. Gepaart gegen `physik-35`
+kostet das Lösen von Schutt bei ×1 30 bis 32 % weniger, die Zustandswechsel der Kontakte bis 10 % und die Typwechsel 3
+bis 7 %, zusammen 0,06 bis 0,12 ms pro Schritt auf dem aufrufenden Thread, siehe „Abbau der Kontakte vorausladen“ und
+„Schutt nur im statischen Baum suchen“. Der größte Posten des Updates auf der VM, der Kollisionsschaden, wartet dort auf
+Zellen, die auf dem Ryzen schon die Worker rechnen. Auf dem Ryzen nachzumessen.
+
+Bei der Rechenzeit ist nach `physik-36` kein gemessener kleiner Schritt mehr übrig, der mit 8 Threads mehr als 1 bis 2 %
+des Frames verspricht, siehe die Schritte 6, 7 und 11 und die kleineren Punkte unten, auch nicht in den seriellen
+Stufen. Was mehr bringen könnte, ist größer oder ändert das Verhalten:
 
 - **Schritt 8**, kompakte Paare für nicht berührende Kontakte: Wochen Umbau in Box3D für geschätzt 2 bis 4 % mit 8
   Threads. Ändert die Ergebnisse.
@@ -318,10 +326,6 @@ seriellen Stufen hergeben, siehe „Weitere serielle Stufen vorausladen“. Was 
 Mit niedriger Priorität vorgemerkt, sie sparen vor allem Arbeit, die schon parallel läuft. Der Gewinn gilt mit einem
 Thread, mit 8 Threads ist er kleiner:
 
-- „Weitere serielle Stufen vorausladen“: Allein auf dem aufrufenden Thread laufen bei ×1 noch die Typwechsel mit 0,47 ms
-  pro Schritt und aus Nebenans Update das Budget der Trümmer mit 0,52 und das Lösen von Schutt ohne Halt mit 0,14 ms. Der
-  Kollisionsschaden mit 0,51 und die Trümmer, die zur Ruhe kommen, mit 0,24 ms skalieren kaum. Mit 8 Threads liegt jede
-  davon auf dem kritischen Pfad. Erst messen, worauf sie warten.
 - „Paarsuche mit mehr Ladevorgängen gleichzeitig“: der Durchlauf durch die Bäume mit mehr Zeit für die Ladevorgänge,
   bitgleich, höchstens 1,5 bis 2 % in Stufen, die schon parallel laufen.
 - „Zweite Suche nur bei Überlappung“: die volle zweite Suche des Tests zweier Hüllen nur, wenn keine Fläche die Hüllen

@@ -384,11 +384,24 @@ die zu berühren beginnen, aufhören oder sich nicht mehr überlappen (`b3Collid
 sie jetzt zuerst in der Reihenfolge ihrer Bits und holt jeden Kontakt vier und seine Formen und Körper zwei Plätze
 voraus (`b3PrefetchContactStateData`). Die Reihenfolge bleibt dieselbe.
 
+**Abbau der Kontakte vorausladen.** Wo Box3D viele Kontakte hintereinander löscht, holt es für den nächsten voraus, was
+`b3DestroyContact` außer dem Kontakt selbst anfasst: den Platz des Paars in der Paar-Tabelle, die Manifolds, beide
+Körper, die Nachbarn in den Kontaktlisten der Körper und der Formen, die Insel und den Platz im Array der Farbe oder des
+Satzes (`b3PrefetchContactDestroy` in `src/contact.c`). Das gilt für die Kontakte eines Körpers, der den Typ wechselt,
+abgeschaltet oder gelöscht wird (`b3DestroyBodyContacts` in `src/body.c`), dort mit dem Kontakt danach in der Liste des
+Körpers, und für die Paare, deren Boxen sich nicht mehr überlappen, in der Schleife der Zustandswechsel (`b3Collide` in
+`src/physics_world.c`). Die Reihenfolge bleibt dieselbe.
+
+**Abfrage nur der statischen Formen.** `b3World_OverlapStaticAABB` findet wie `b3World_OverlapAABB` die Formen in einer
+Box, durchsucht aber nur den Baum der statischen Körper. Nebenan sucht damit den Schutt, den ein wegrückendes Stück oder
+ein Einschlag freigibt (`nbThawRubbleInBoxes`), denn Schutt ist statisch. Die Abfrage wird nicht aufgezeichnet, wie das
+gesammelte Einsortieren der Formen.
+
 Die erste, die zweite, die vierte bis achte, die zehnte, die dreizehnte bis einunddreißigste, die dreiunddreißigste bis
-fünfunddreißigste, die neununddreißigste und die vierzigste ändern an den Ergebnissen nichts. Die dritte und die neunte
-ändern sie in den letzten Bits, dafür hängen sie nicht mehr davon ab, in welcher Reihenfolge Formen in die Bäume kommen.
-Die elfte ändert sie, weil Kontakte zu anderen Zeitpunkten entstehen, die zwölfte, weil sie weniger Punkte bekommen, die
-zweiunddreißigste, weil die Kontakte eines Knotens gebündelt gegen Kopien rechnen statt nacheinander, die
+fünfunddreißigste und die neununddreißigste bis zweiundvierzigste ändern an den Ergebnissen nichts. Die dritte und die
+neunte ändern sie in den letzten Bits, dafür hängen sie nicht mehr davon ab, in welcher Reihenfolge Formen in die Bäume
+kommen. Die elfte ändert sie, weil Kontakte zu anderen Zeitpunkten entstehen, die zwölfte, weil sie weniger Punkte
+bekommen, die zweiunddreißigste, weil die Kontakte eines Knotens gebündelt gegen Kopien rechnen statt nacheinander, die
 sechsunddreißigste, weil die Kerne dieselbe Rechnung anders zusammenfassen und deshalb anders runden, und die
 siebenunddreißigste, weil die Suche andere Kantenpaare aussiebt und getrennte Hüllen erkennt, die die alte übersah. Die
 achtunddreißigste ändert sie nur, wo Kugeln Kugeln oder Kapseln berühren, Kontakte ohne vorausschauende Punkte rechnen
@@ -401,9 +414,9 @@ oder der PreSolve-Callback Kontakte abschaltet, in Nebenans Szenen nicht. Die Er
 `src/broad_phase.h`, `src/broad_phase.c`, `src/dynamic_tree.h`, `src/dynamic_tree.c`, `src/parallel_for.c`,
 `src/scheduler.h`, `src/scheduler.c`, `src/physics_world.h` und `src/physics_world.c`, jeweils mit „Added for Nebenan“
 markiert. `B3_HAS_UNIQUE_HULLS`, `B3_HAS_SHAPE_BATCH`, `B3_HAS_SHAPE_CONTACT_LISTS`, `B3_HAS_EXTERNAL_HULLS`,
-`B3_HAS_BODY_PREFETCH`, `B3_HAS_STEP_GUARD` und `B3_HAS_PREVIOUS_TRANSFORM` zeigen die zweite, die vierte, die fünfte,
-die sechste, die neunzehnte, die dreißigste und die fünfunddreißigste an. Fehlen sie, etwa mit einem eigenen Box3D,
-läuft Nebenan wie zuvor, nur wachsen Box3Ds Arrays dann durch Umkopieren, die Hüllen gehen durch die Tabelle, jede Form
-geht einzeln in den Baum, jedes stehende Bruchstück bekommt einen eigenen Körper, Box3D hält eine Kopie jeder Hülle,
-Nebenan holt die Körper der Trümmer nicht voraus, `nbWorld_Step` rechnet auf dem aufrufenden Thread, und
-`nbWorld_GetDrawPoses` gibt die Lagen nach dem Schritt.
+`B3_HAS_BODY_PREFETCH`, `B3_HAS_STEP_GUARD`, `B3_HAS_PREVIOUS_TRANSFORM` und `B3_HAS_STATIC_OVERLAP` zeigen die zweite,
+die vierte, die fünfte, die sechste, die neunzehnte, die dreißigste, die fünfunddreißigste und die zweiundvierzigste an.
+Fehlen sie, etwa mit einem eigenen Box3D, läuft Nebenan wie zuvor, nur wachsen Box3Ds Arrays dann durch Umkopieren, die
+Hüllen gehen durch die Tabelle, jede Form geht einzeln in den Baum, jedes stehende Bruchstück bekommt einen eigenen
+Körper, Box3D hält eine Kopie jeder Hülle, Nebenan holt die Körper der Trümmer nicht voraus, `nbWorld_Step` rechnet auf
+dem aufrufenden Thread, `nbWorld_GetDrawPoses` gibt die Lagen nach dem Schritt, und Schutt wird in allen Bäumen gesucht.

@@ -1092,6 +1092,13 @@ und Zustandswechsel vorausladen“ in [`extern/README.md`](extern/README.md). Ge
 bei ×1 28 bis 36 % weniger und das Abarbeiten 17 bis 20 %, zusammen 0,20 bis 0,23 ms pro Schritt. Mit vielen Threads
 liegt genau dieser Teil auf dem kritischen Pfad. Die Ergebnisse bleiben bitgleich.
 
+Seit `physik-36` holt Box3D beim Löschen von Kontakten voraus, was es anfasst, und Nebenan sucht den Schutt, den ein
+wegrückendes Stück oder ein Einschlag freigibt, nur noch im Baum der statischen Körper, siehe „Abbau der Kontakte
+vorausladen“ und „Abfrage nur der statischen Formen“ in [`extern/README.md`](extern/README.md). Gepaart gegen
+`physik-35` kostet das Lösen von Schutt bei ×1 30 bis 32 % weniger, die Zustandswechsel der Kontakte bis 10 % und die
+Typwechsel 3 bis 7 %, zusammen 0,06 bis 0,12 ms pro Schritt auf dem aufrufenden Thread. Ein Spiel muss dafür nichts
+aufrufen. Die Ergebnisse bleiben bitgleich.
+
 Ganze Einschläge (Bruch, Stützgraph, neue Box3D-Körper) und der Box3D-Schritt danach bei 60 Hz mit
 4 Substeps, jeweils mit 1 und 4 Threads, der Median aus sechs Läufen:
 
