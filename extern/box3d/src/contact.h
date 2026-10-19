@@ -71,7 +71,7 @@ enum b3ContactFlags
 	// Enable speculative contact points
 	b3_enableSpeculativePoints = 0x01000000,
 
-	// Added for Nebenan: two hulls a face of one kept apart at the last test, see b3ConvexContact::gapCenter
+	// Added for Nebenan: two hulls a face of one kept apart at the last test, see b3ConvexContact::gapPlane
 	b3_simSeparatedHulls = 0x02000000,
 };
 
@@ -97,12 +97,13 @@ typedef struct b3ConvexContact
 {
 	b3ContactCache cache;
 
-	// Added for Nebenan: for two hulls a face kept apart, the center and the radius of the bounds of the other hull in
-	// the frame of its body. With b3SATCache::gap they tell how far the bodies may move until the face could let the
-	// hulls come within the speculative distance, see b3CollideTask. Inside the union with b3MeshContact, which is
-	// larger, so a contact stays the same size.
+	// Added for Nebenan: for two hulls a face kept apart, the plane of that face in the frame of its body, and the center
+	// and the half extents of the bounds of the other hull in the frame of its body. With b3SATCache::gap they tell how
+	// far the bodies may move until the face could let the hulls come within the speculative distance, see
+	// b3CollideTask. Larger than b3MeshContact, so a contact takes 248 bytes instead of 232.
+	b3Plane gapPlane;
 	b3Vec3 gapCenter;
-	float gapRadius;
+	b3Vec3 gapExtents;
 } b3ConvexContact;
 
 // Represents the persistent interaction between two shapes

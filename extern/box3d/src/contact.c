@@ -926,9 +926,12 @@ bool b3UpdateContact( b3World* world, int workerIndex, b3Contact* contact, b3Sha
 		if ( touching == false && shapeA->type == b3_hullShape && shapeB->type == b3_hullShape && satCache->gap > 0.0f &&
 			 ( satCache->type == b3_faceAxisA || satCache->type == b3_faceAxisB ) )
 		{
-			b3AABB bounds = satCache->type == b3_faceAxisA ? shapeB->hullBounds : shapeA->hullBounds;
+			bool faceA = satCache->type == b3_faceAxisA;
+			const b3Plane* planes = b3GetHullPlanes( faceA ? shapeA->hull : shapeB->hull );
+			b3AABB bounds = faceA ? shapeB->hullBounds : shapeA->hullBounds;
+			contact->convexContact.gapPlane = planes[faceA ? satCache->indexA : satCache->indexB];
 			contact->convexContact.gapCenter = b3AABB_Center( bounds );
-			contact->convexContact.gapRadius = b3Length( b3AABB_Extents( bounds ) );
+			contact->convexContact.gapExtents = b3AABB_Extents( bounds );
 			contact->flags |= b3_simSeparatedHulls;
 		}
 	}

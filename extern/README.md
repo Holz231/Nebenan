@@ -137,13 +137,17 @@ Cache ist, auch seine Boxen, die Daten seiner Körper und, wenn er berührt, sei
 
 **Getrennte Hüllen ohne neuen Test.** Zwei Hüllen, die beim letzten Test eine Fläche der einen auseinanderhielt, testete
 Box3D neu, sobald sich ihre Körper zueinander mehr als 1 cm bewegt oder gedreht hatten. Jetzt merkt es sich den Abstand
-zur Fläche (`b3SATCache::gap` in `include/box3d/types.h`) und die Grenzen der anderen Hülle als Mitte und halbe
-Diagonale (`b3ConvexContact` in `src/contact.h`). Daraus folgt, wie nah die andere Hülle der Fläche seitdem höchstens
-gekommen ist: um die Verschiebung der Mitte und den Bogen der halben Diagonale. Bleibt der Abstand damit mehr als 1 mm
-über dem spekulativen, fände der Test die Hüllen wieder getrennt, und Box3D erledigt nur seine Buchführung, die gemerkte
-Lage und den Zwischenspeicher, als hätte es getestet (`b3CollideTask` in `src/physics_world.c`). Der Rand von 1 mm liegt
-hundertfach über der Rechenungenauigkeit des Abstands. Über ein Kantenpaar geht das nicht, dessen Achse dreht sich mit
-den Körpern.
+zur Fläche (`b3SATCache::gap` in `include/box3d/types.h`), die Ebene der Fläche und die Grenzen der anderen Hülle als
+Mitte und halbe Ausdehnung, jeweils im Rahmen ihres Körpers (`b3ConvexContact` in `src/contact.h`). Daraus folgen zwei
+untere Schranken für den Abstand jetzt. Erstens der gemerkte Abstand, verschoben um die Bewegung der Mitte entlang der
+Normalen, abzüglich dessen, was die Drehung der Normalen im Rahmen der anderen Hülle aus der halben Ausdehnung macht.
+Zweitens die Grenzen, wie sie jetzt liegen, gegen die Ebene. Bleibt die größere mehr als 1 mm über dem spekulativen
+Abstand, fände der Test die Hüllen wieder getrennt, und Box3D erledigt nur seine Buchführung, die gemerkte Lage und den
+Zwischenspeicher, als hätte es getestet (`b3CollideTask` in `src/physics_world.c`). Der Rand von 1 mm liegt hundertfach
+über der Rechenungenauigkeit des Abstands. Über ein Kantenpaar geht das nicht, dessen Achse dreht sich mit den Körpern.
+Mit Ebene und Ausdehnung ist ein Kontakt 248 statt 232 Byte groß. Die Schleife holt deshalb auch das Ende dieser Daten
+voraus, das in einer fünften Cache-Zeile liegen kann (`b3PrefetchContact`). Bis `physik-32` war die Schranke gröber: die
+volle Verschiebung der Mitte und der Bogen der halben Diagonale, ohne die Ebene.
 
 **Zweistufige Kontakt-Schleife.** Die Schleife der Kollision entscheidet für jeden Kontakt erst nur, ob er nicht mehr
 überlappt, wiederverwendet wird, beweisbar getrennt ist oder getestet werden muss. Die zu testenden sammelt sie, und eine

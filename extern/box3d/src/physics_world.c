@@ -587,6 +587,9 @@ static inline void b3PrefetchContact( const b3Contact* contact )
 	b3Prefetch( p + 64 );
 	b3Prefetch( p + 128 );
 	b3Prefetch( p + 192 );
+
+	// Added for Nebenan: the end of the gap data of two separated hulls, which can lie in a fifth line
+	b3Prefetch( (const char*)( &contact->convexContact.gapExtents + 1 ) - 1 );
 }
 
 // Added for Nebenan: issues T0 prefetches for what the collide loop reads for a contact besides the contact itself: the
@@ -865,10 +868,12 @@ static void b3CollideTask( int startIndex, int endIndex, int workerIndex, void* 
 		}
 
 		// Added for Nebenan: two hulls a face of one kept apart at the last test, see b3_simSeparatedHulls. The other
-		// hull lies within gapRadius of gapCenter in the frame of its body, so against the face each of its points moved
-		// at most as far as that center plus the arc of that radius. While the gap less this stays above the speculative
-		// distance, with a margin far above round-off, the test would find them apart again. Only its bookkeeping
-		// remains, and the results stay the same to the bit.
+		// hull lies within gapExtents of gapCenter in the frame of its body. Against the face each of its points moved as
+		// far as that center along the normal, give or take what the turn of the normal in the frame of the other body
+		// makes of the extents, so the gap less this still holds. The bounds as they lie now hold against the face too,
+		// and the larger of the two counts. While it stays above the speculative distance, with a margin far above
+		// round-off, the test would find the hulls apart again. Only its bookkeeping remains, and the results stay the
+		// same to the bit.
 		if ( ( contact->flags & ( b3_simSeparatedHulls | b3_relativeTransformValid ) ) ==
 				 ( b3_simSeparatedHulls | b3_relativeTransformValid ) &&
 			 wasTouching == false )
@@ -877,20 +882,31 @@ static void b3CollideTask( int startIndex, int endIndex, int workerIndex, void* 
 			b3SATCache* satCache = &convex->cache.satCache;
 			b3Transform xf = b3InvMulWorldTransforms( transformA, transformB );
 			b3Transform xfc = contact->cachedRelativePose;
-			b3Vec3 center = convex->gapCenter;
-			b3Vec3 move;
+			b3Plane plane = convex->gapPlane;
+			b3Vec3 extents = convex->gapExtents;
+
+			// The center in the frame of the face and the normal in the frame of the other body, now and when the gap
+			// was set
+			b3Vec3 center, cachedCenter, normal, cachedNormal;
 			if ( satCache->type == b3_faceAxisA )
 			{
-				move = b3Sub( b3TransformPoint( xf, center ), b3TransformPoint( xfc, center ) );
+				center = b3TransformPoint( xf, convex->gapCenter );
+				cachedCenter = b3TransformPoint( xfc, convex->gapCenter );
+				normal = b3InvRotateVector( xf.q, plane.normal );
+				cachedNormal = b3InvRotateVector( xfc.q, plane.normal );
 			}
 			else
 			{
-				move = b3Sub( b3InvTransformPoint( xf, center ), b3InvTransformPoint( xfc, center ) );
+				center = b3InvTransformPoint( xf, convex->gapCenter );
+				cachedCenter = b3InvTransformPoint( xfc, convex->gapCenter );
+				normal = b3RotateVector( xf.q, plane.normal );
+				cachedNormal = b3RotateVector( xfc.q, plane.normal );
 			}
 
-			b3Quat qr = b3InvMulQuat( xfc.q, xf.q );
-			float reach = b3Length( move ) + 2.0f * b3Length( qr.v ) * convex->gapRadius;
-			float gap = satCache->gap - reach;
+			float moved = b3Dot( plane.normal, b3Sub( center, cachedCenter ) );
+			float turned = b3Dot( b3Abs( b3Sub( normal, cachedNormal ) ), extents );
+			float bounds = b3PlaneSeparation( plane, center ) - b3Dot( b3Abs( normal ), extents );
+			float gap = b3MaxFloat( satCache->gap + moved - turned, bounds );
 			if ( gap >= speculativeDistance + 0.2f * B3_LINEAR_SLOP )
 			{
 				contact->cachedRotationA = transformA.q;

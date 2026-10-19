@@ -915,6 +915,95 @@ static int SpeculativeSphereTest( void )
 	return 0;
 }
 
+// Two hulls a face keeps apart skip their test while a bound shows they stay apart, see b3CollideTask in Box3D. The upper
+// hull swings down onto the lower one and back, turning and trembling, in steps of zero time. Whenever GJK finds the two
+// closer than the speculative distance, their contact must have points. The first pass holds a rock over the top face of
+// a box, the second a slab over an edge of a tilted box, so the face is once on the lower hull and once on the upper.
+static int SeparatedHullsTest( void )
+{
+	b3Vec3 points[] = { { -0.4f, -0.3f, -0.2f }, { 0.45f, -0.25f, -0.3f }, { 0.1f, 0.35f, -0.25f }, { -0.3f, 0.2f, 0.3f },
+						{ 0.35f, 0.1f, 0.4f },	 { 0.05f, -0.35f, 0.25f }, { -0.45f, 0.05f, -0.05f } };
+	b3HullData* rock = b3CreateHull( points, 7, B3_MAX_HULL_VERTICES );
+	ENSURE( rock != NULL );
+	b3BoxHull box = b3MakeBoxHull( 0.6f, 0.2f, 0.5f );
+	b3BoxHull slab = b3MakeBoxHull( 0.7f, 0.1f, 0.7f );
+	b3Vec3 axis = b3Normalize( (b3Vec3){ 1.0f, 0.4f, 0.7f } );
+
+	for ( int pass = 0; pass < 2; ++pass )
+	{
+		b3WorldDef worldDef = b3DefaultWorldDef();
+		worldDef.gravity = b3Vec3_zero;
+		b3WorldId worldId = b3CreateWorld( &worldDef );
+
+		// Recycling would keep a contact without a test as well
+		b3World_SetContactRecycleDistance( worldId, 0.0f );
+
+		b3ShapeDef shapeDef = b3DefaultShapeDef();
+		b3BodyDef bodyDef = b3DefaultBodyDef();
+		bodyDef.type = b3_dynamicBody;
+		bodyDef.rotation = pass == 0 ? b3Quat_identity : b3MakeQuatFromAxisAngle( b3Vec3_axisX, 0.25f * B3_PI );
+		b3BodyId lowerId = b3CreateBody( worldId, &bodyDef );
+		b3CreateHullShape( lowerId, &shapeDef, &box.base );
+
+		const b3HullData* upper = pass == 0 ? rock : &slab.base;
+		bodyDef.rotation = b3Quat_identity;
+		b3BodyId upperId = b3CreateBody( worldId, &bodyDef );
+		b3ShapeId upperShapeId = b3CreateHullShape( upperId, &shapeDef, upper );
+
+		b3DistanceInput input = { 0 };
+		input.proxyA = (b3ShapeProxy){ b3GetHullPoints( &box.base ), box.base.vertexCount, 0.0f };
+		input.proxyB = (b3ShapeProxy){ b3GetHullPoints( upper ), upper->vertexCount, 0.0f };
+
+		// The height at which the upper hull, not turned, would touch the lower one
+		b3SimplexCache cache = { 0 };
+		input.transform = b3InvMulWorldTransforms( b3Body_GetTransform( lowerId ),
+												   (b3WorldTransform){ { 0.0f, 2.0f, 0.0f }, b3Quat_identity } );
+		float touchHeight = 2.0f - b3ShapeDistance( &input, &cache, NULL, 0 ).distance;
+
+		int nearCount = 0;
+		int apartCount = 0;
+		bool hadContact = false;
+		int stepCount = 1500;
+		for ( int i = 0; i < stepCount; ++i )
+		{
+			// Three swings from 12 cm above touching to 1 cm into the lower hull, with a slow sway and turn and a tremble
+			float t = (float)i / (float)stepCount;
+			float swing = 0.5f + 0.5f * cosf( 6.0f * B3_PI * t );
+			float height = touchHeight - 0.01f + 0.13f * swing + 0.0004f * sinf( 1.7f * (float)i );
+			b3Pos position = { 0.06f * sinf( 10.0f * B3_PI * t ), height, 0.05f * cosf( 8.0f * B3_PI * t ) };
+			float angle = 0.15f * sinf( 4.0f * B3_PI * t ) + 0.003f * sinf( 2.3f * (float)i );
+			b3Body_SetTransform( upperId, position, b3MakeQuatFromAxisAngle( axis, angle ) );
+			b3World_Step( worldId, 0.0f, 1 );
+
+			// Only a contact that was there before the step got the collision in it
+			bool hasContact = b3World_GetCounters( worldId ).contactCount == 1;
+			bool tested = hadContact && hasContact;
+			hadContact = hasContact;
+
+			cache = (b3SimplexCache){ 0 };
+			input.transform = b3InvMulWorldTransforms( b3Body_GetTransform( lowerId ), b3Body_GetTransform( upperId ) );
+			float distance = b3ShapeDistance( &input, &cache, NULL, 0 ).distance;
+			b3ContactData contact;
+			bool touching = b3Shape_GetContactData( upperShapeId, &contact, 1 ) == 1;
+			if ( tested && distance < B3_SPECULATIVE_DISTANCE - 0.2f * B3_LINEAR_SLOP )
+			{
+				ENSURE( touching );
+				nearCount += 1;
+			}
+			else if ( tested && touching == false )
+			{
+				apartCount += 1;
+			}
+		}
+
+		ENSURE( nearCount > 50 && apartCount > 200 );
+		b3DestroyWorld( worldId );
+	}
+
+	b3DestroyHull( rock );
+	return 0;
+}
+
 // The static chunks of a destructible sit on one Box3D body, which goes with the destructible or the world
 static int SharedStaticBodyTest( void )
 {
@@ -4665,6 +4754,7 @@ int WorldTest( void )
 	RUN_TEST( ShapeBatchTest );
 	RUN_TEST( ShapeContactListTest );
 	RUN_TEST( SpeculativeSphereTest );
+	RUN_TEST( SeparatedHullsTest );
 	RUN_TEST( SharedStaticBodyTest );
 	RUN_TEST( LargeBlockTest );
 	RUN_TEST( EventTest );

@@ -1074,6 +1074,13 @@ Seit `physik-32` kollidiert eine Welt mit acht Spuren konvexe Formen mit einer z
 denselben Hüllenpaaren 3,4 bis 3,9 % weniger Takte, mit einem Thread gut 1 % eines Schritts. Die Ergebnisse bleiben
 bitgleich, auf Prozessoren ohne AVX2 rechnet Box3D wie vorher.
 
+Seit `physik-33` überspringt die Kollision mehr Tests zweier Hüllen, die eine Fläche auseinanderhält, siehe „Getrennte
+Hüllen ohne neuen Test“ in [`extern/README.md`](extern/README.md). Der Kontakt merkt sich dafür die Ebene der Fläche und
+die Grenzen der anderen Hülle, und die Schranke zählt nur die Bewegung entlang der Normalen. In den drei Städten des
+Benchmarks kommen 31 % weniger Kontakte in den Test, die zweite Schleife der Kollision braucht 6,7 % weniger Takte. Ein
+Kontakt ist dafür 248 statt 232 Byte groß. Die Ergebnisse bleiben bitgleich. Gepaart gegen `physik-32` kostet die
+Kollision bei ×1 rund 5 % weniger.
+
 Ganze Einschläge (Bruch, Stützgraph, neue Box3D-Körper) und der Box3D-Schritt danach bei 60 Hz mit
 4 Substeps, jeweils mit 1 und 4 Threads, der Median aus sechs Läufen:
 
