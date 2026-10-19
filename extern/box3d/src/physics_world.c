@@ -690,6 +690,24 @@ B3_FORCE_INLINE void b3PrefetchContactHullArrays( const b3Contact* contact, cons
 	}
 }
 
+// Added for Nebenan: what the update of a contact with a new state reads besides the contact itself: the two shapes for
+// the ids of the events, and the two bodies, which linking, unlinking and destroying the contact all read and write. The
+// contact must be in the cache already, see the contact states in b3Collide.
+B3_FORCE_INLINE void b3PrefetchContactStateData( const b3World* world, const b3Contact* contact )
+{
+	const b3Shape* shapes = world->shapes.data;
+	const b3Shape* pair[2] = { shapes + contact->shapeIdA, shapes + contact->shapeIdB };
+	for ( int k = 0; k < 2; ++k )
+	{
+		b3Prefetch( pair[k] );
+		b3Prefetch( &pair[k]->generation );
+
+		const b3Body* body = world->bodies.data + contact->edges[k].bodyId;
+		b3Prefetch( body );
+		b3Prefetch( (const char*)( body + 1 ) - 1 );
+	}
+}
+
 static inline b3BodySim* b3ResolveContactBodySim( b3World* world, b3BodySim* awakeSims, b3BodySim* staticSims, int encodedIndex,
 												  int bodyId )
 {
@@ -1202,13 +1220,46 @@ static void b3Collide( b3StepContext* context )
 	// Process contact state changes. Iterate over set bits. Added for Nebenan: on the calling thread alone, see
 	// b3Profile::contactStates
 	uint64_t stateTicks = b3GetTicks();
+
+	// Added for Nebenan: the contacts with a new state first, in the order of their bits, so the loop below can prefetch
+	// each contact four ahead and its shapes and bodies two ahead, which it waited for most. Nothing in the loop changes
+	// the bits, so the order and the results stay the same.
+	int changedCount = 0;
+	for ( uint32_t k = 0; k < bitSet->blockCount; ++k )
+	{
+		changedCount += b3PopCount64( bitSet->bits[k] );
+	}
+
+	int* changedIds = b3StackAlloc( &world->stack, b3MaxInt( changedCount, 1 ) * (int)sizeof( int ), "changed contacts" );
+	int changedIndex = 0;
 	for ( uint32_t k = 0; k < bitSet->blockCount; ++k )
 	{
 		uint64_t bits = bitSet->bits[k];
 		while ( bits != 0 )
 		{
-			uint32_t ctz = b3CTZ64( bits );
-			int contactId = (int)( 64 * k + ctz );
+			changedIds[changedIndex++] = (int)( 64 * k + b3CTZ64( bits ) );
+
+			// Clear the smallest set bit
+			bits = bits & ( bits - 1 );
+		}
+	}
+
+	const int stateContactPrefetchDistance = 4;
+	const int stateDataPrefetchDistance = 2;
+	for ( int n = 0; n < changedCount; ++n )
+	{
+		if ( n + stateContactPrefetchDistance < changedCount )
+		{
+			b3PrefetchContact( world->contacts.data + changedIds[n + stateContactPrefetchDistance] );
+		}
+
+		if ( n + stateDataPrefetchDistance < changedCount )
+		{
+			b3PrefetchContactStateData( world, world->contacts.data + changedIds[n + stateDataPrefetchDistance] );
+		}
+
+		{
+			int contactId = changedIds[n];
 
 			b3Contact* contact = b3Array_Get( world->contacts, contactId );
 			B3_ASSERT( contact->setIndex == b3_awakeSet );
@@ -1288,11 +1339,10 @@ static void b3Collide( b3StepContext* context )
 				b3RemoveContactFromGraph( world, bodyIdA, bodyIdB, colorIndex, localIndex, isMeshContact );
 				contact = NULL;
 			}
-
-			// Clear the smallest set bit
-			bits = bits & ( bits - 1 );
 		}
 	}
+
+	b3StackFree( &world->stack, changedIds );
 	world->profile.contactStates = b3GetMilliseconds( stateTicks );
 
 	b3ValidateSolverSets( world );

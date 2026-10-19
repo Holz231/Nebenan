@@ -740,6 +740,76 @@ static void b3EnqueueTreeUpdate( b3World* world )
 	}
 }
 
+// Added for Nebenan: b3CreateContact reads and writes scattered memory for each pair, one piece after the other, and it
+// waited for most of it. The new contacts come in the order of the sorted keys, so the loop knows them ahead: four keys
+// ahead it prefetches the two shapes and the slot in the pair set, two ahead the two bodies, the heads of the contact
+// lists of the shapes and the contact the id pool hands out next, and one ahead the heads of the contact lists of the
+// bodies. A key that makes no contact only costs a wasted prefetch, and the contacts stay the same.
+B3_FORCE_INLINE void b3PrefetchPairShapes( b3World* world, uint64_t key )
+{
+	const b3Shape* shapes = world->shapes.data;
+	const b3Shape* pair[2] = {
+		shapes + (int)( ( key >> ( 64 - B3_SHAPE_POWER ) ) & B3_SHAPE_MASK ),
+		shapes + (int)( ( key >> ( 64 - 2 * B3_SHAPE_POWER ) ) & B3_SHAPE_MASK ),
+	};
+	for ( int k = 0; k < 2; ++k )
+	{
+		b3Prefetch( pair[k] );
+		b3Prefetch( &pair[k]->materials );
+		b3Prefetch( (const char*)( pair[k] + 1 ) - 1 );
+	}
+
+	b3PrefetchHash( &world->broadPhase.pairSet, b3KeyHash( key ) );
+}
+
+B3_FORCE_INLINE void b3PrefetchPairBodies( b3World* world, uint64_t key, int keysAhead )
+{
+	const b3Shape* shapes = world->shapes.data;
+	const b3Shape* pair[2] = {
+		shapes + (int)( ( key >> ( 64 - B3_SHAPE_POWER ) ) & B3_SHAPE_MASK ),
+		shapes + (int)( ( key >> ( 64 - 2 * B3_SHAPE_POWER ) ) & B3_SHAPE_MASK ),
+	};
+	for ( int k = 0; k < 2; ++k )
+	{
+		const b3Body* body = world->bodies.data + pair[k]->bodyId;
+		b3Prefetch( body );
+		b3Prefetch( (const char*)( body + 1 ) - 1 );
+		if ( pair[k]->headContactKey != B3_NULL_INDEX )
+		{
+			b3Prefetch( world->contacts.data + ( pair[k]->headContactKey >> 1 ) );
+		}
+	}
+
+	// The id pool hands out its free ids from the back
+	const b3IdPool* pool = &world->contactIdPool;
+	if ( pool->freeArray.count > keysAhead )
+	{
+		const char* contact = (const char*)( world->contacts.data + pool->freeArray.data[pool->freeArray.count - 1 - keysAhead] );
+		for ( int offset = 0; offset < (int)sizeof( b3Contact ); offset += 64 )
+		{
+			b3Prefetch( contact + offset );
+		}
+		b3Prefetch( contact + sizeof( b3Contact ) - 1 );
+	}
+}
+
+B3_FORCE_INLINE void b3PrefetchPairBodyContacts( b3World* world, uint64_t key )
+{
+	const b3Shape* shapes = world->shapes.data;
+	int shapeIds[2] = {
+		(int)( ( key >> ( 64 - B3_SHAPE_POWER ) ) & B3_SHAPE_MASK ),
+		(int)( ( key >> ( 64 - 2 * B3_SHAPE_POWER ) ) & B3_SHAPE_MASK ),
+	};
+	for ( int k = 0; k < 2; ++k )
+	{
+		int headContactKey = world->bodies.data[shapes[shapeIds[k]].bodyId].headContactKey;
+		if ( headContactKey != B3_NULL_INDEX )
+		{
+			b3Prefetch( world->contacts.data + ( headContactKey >> 1 ) );
+		}
+	}
+}
+
 void b3UpdateBroadPhasePairs( b3World* world )
 {
 	b3BroadPhase* bp = &world->broadPhase;
@@ -844,8 +914,27 @@ void b3UpdateBroadPhasePairs( b3World* world )
 #undef SWAP
 	}
 
+	// Added for Nebenan: the loop knows the pairs ahead, see b3PrefetchPairShapes
+	const int pairShapePrefetchDistance = 4;
+	const int pairBodyPrefetchDistance = 2;
+	const int pairContactPrefetchDistance = 1;
 	for ( int i = 0; i < keyCount; ++i )
 	{
+		if ( i + pairShapePrefetchDistance < keyCount )
+		{
+			b3PrefetchPairShapes( world, pairKeys[i + pairShapePrefetchDistance] );
+		}
+
+		if ( i + pairBodyPrefetchDistance < keyCount )
+		{
+			b3PrefetchPairBodies( world, pairKeys[i + pairBodyPrefetchDistance], pairBodyPrefetchDistance );
+		}
+
+		if ( i + pairContactPrefetchDistance < keyCount )
+		{
+			b3PrefetchPairBodyContacts( world, pairKeys[i + pairContactPrefetchDistance] );
+		}
+
 		uint64_t key = pairKeys[i];
 
 		// The traversal is cross subtree and the seeds are disjoint, so a duplicate key means a

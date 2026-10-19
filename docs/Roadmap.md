@@ -6,9 +6,10 @@ Die nächsten möglichen Schritte für die Physik, nach der Untersuchung vom 17.
 Wecken auf `physik-26`, alle vier auf dem Ryzen nachgemessen, den Prototypen und Zerlegungen auf `physik-27`, den Lagen
 zum Zeichnen zwischen zwei Schritten auf `physik-28`, den Kontakt-Kernen von upstream #189 auf `physik-29`, der
 Trennachsen-Suche von upstream #173 und #177 auf `physik-30`, der Sichtung von upstream auf `physik-31`, der Kollision
-mit AVX2 auf `physik-32`, der schärferen Schranke für getrennte Hüllen auf `physik-33` und den ganz vorausgeholten
-Hüllen auf `physik-34`. Begründungen und Messwerte stehen in [`Optimierungen.md`](Optimierungen.md), hier nur das Fazit
-und die Reihenfolge. Nach jeder Runde wird der Stand hier nachgetragen.
+mit AVX2 auf `physik-32`, der schärferen Schranke für getrennte Hüllen auf `physik-33`, den ganz vorausgeholten Hüllen
+auf `physik-34` und den seriellen Schleifen der Kontakte auf `physik-35`. Begründungen und Messwerte stehen in
+[`Optimierungen.md`](Optimierungen.md), hier nur das Fazit und die Reihenfolge. Nach jeder Runde wird der Stand hier
+nachgetragen.
 
 ## Fazit
 
@@ -290,8 +291,18 @@ bitgleich. Gepaart gegen `physik-33` kostet sie bei ×1 8 bis 13 % weniger, bei 
 % und bei ×4 7 bis 10 %, siehe „Hüllen ganz vorausladen“. Auf dem Ryzen antwortet der L3 schneller, dort ist
 nachzumessen.
 
-Bei der Rechenzeit ist nach `physik-34` kein kleiner Schritt mehr übrig, der mit 8 Threads mehr als 1 bis 2 % des Frames
-verspricht, siehe die Schritte 6, 7 und 11 und die kleineren Punkte unten. Was mehr bringen könnte, ist größer oder
+Auf `physik-35` ist nachgesehen, ob auch die Suche in den Bäumen auf Speicher wartet. Die Abfragen kommen vor allem von
+der CCD, und dort kostet nicht der Baum, sondern die Zeit bis zum Treffer, die in 79 % der Fälle keinen findet. Die
+Kinder vorauszuholen bringt nichts, ein schärferer Vortest der CCD netto 0,6 %, beides nicht gebaut, siehe „Kinder im
+Baum bei Abfragen vorausladen“ und „Schärferer CCD-Vortest“. Mit 8 Threads zählen aber die Stufen, die allein auf dem
+aufrufenden Thread laufen. Zwei davon in Box3D holen jetzt voraus, was sie lesen: Das Anlegen neuer Kontakte kostet bei
+×1 28 bis 36 % weniger, das Abarbeiten der Kontakte mit neuem Zustand 17 bis 20 %, bitgleich, siehe „Serielle Schleifen
+vorausladen“. Gepaart gegen `physik-34` fallen bei ×1 0,20 bis 0,23 ms pro Schritt auf dem aufrufenden Thread weg. Auf
+dem Ryzen nachzumessen.
+
+Bei der Rechenzeit ist nach `physik-35` kein gemessener kleiner Schritt mehr übrig, der mit 8 Threads mehr als 1 bis 2 %
+des Frames verspricht, siehe die Schritte 6, 7 und 11 und die kleineren Punkte unten. Offen ist, was die übrigen
+seriellen Stufen hergeben, siehe „Weitere serielle Stufen vorausladen“. Was mehr bringen könnte, ist sonst größer oder
 ändert das Verhalten:
 
 - **Schritt 8**, kompakte Paare für nicht berührende Kontakte: Wochen Umbau in Box3D für geschätzt 2 bis 4 % mit 8
@@ -307,6 +318,12 @@ verspricht, siehe die Schritte 6, 7 und 11 und die kleineren Punkte unten. Was m
 Mit niedriger Priorität vorgemerkt, sie sparen vor allem Arbeit, die schon parallel läuft. Der Gewinn gilt mit einem
 Thread, mit 8 Threads ist er kleiner:
 
+- „Weitere serielle Stufen vorausladen“: Allein auf dem aufrufenden Thread laufen bei ×1 noch die Typwechsel mit 0,47 ms
+  pro Schritt und aus Nebenans Update das Budget der Trümmer mit 0,52 und das Lösen von Schutt ohne Halt mit 0,14 ms. Der
+  Kollisionsschaden mit 0,51 und die Trümmer, die zur Ruhe kommen, mit 0,24 ms skalieren kaum. Mit 8 Threads liegt jede
+  davon auf dem kritischen Pfad. Erst messen, worauf sie warten.
+- „Paarsuche mit mehr Ladevorgängen gleichzeitig“: der Durchlauf durch die Bäume mit mehr Zeit für die Ladevorgänge,
+  bitgleich, höchstens 1,5 bis 2 % in Stufen, die schon parallel laufen.
 - „Zweite Suche nur bei Überlappung“: die volle zweite Suche des Tests zweier Hüllen nur, wenn keine Fläche die Hüllen
   trennt. Bei ×1 bis 0,5 % eines Schritts, ändert die Ergebnisse, und 12 fragwürdige Kontakte im Benchmark fielen weg.
 - „Gyroskopische Drehung nach upstream #191“: das Drehmoment ganz abstellen spart höchstens 2 bis 3 %, aber drehende

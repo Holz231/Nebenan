@@ -373,10 +373,21 @@ wie `src/wide8.c`. Dort tragen die Funktionen `AVX2` am Ende ihres Namens, etwa 
 `src/manifold.h`. Eine Welt mit acht Spuren kollidiert mit ihnen, siehe `b3ComputeConvexManifold` in `src/contact.c`.
 Ohne FMA schreibt der Übersetzer dieselben Befehle nur in ihrer AVX-Form, die Ergebnisse bleiben dieselben.
 
+**Neue Kontakte und Zustandswechsel vorausladen.** Zwei Schleifen eines Schritts laufen allein auf dem aufrufenden
+Thread und warteten vor allem auf Speicher. Die eine legt die neuen Kontakte an (`b3UpdateBroadPhasePairs` in
+`src/broad_phase.c`): Für jedes Paar liest `b3CreateContact` die beiden Formen und ihre Körper, die Köpfe ihrer
+Kontaktlisten und die Paar-Tabelle und schreibt den neuen Kontakt. Die Paare kommen sortiert, also holt die Schleife
+vier Schlüssel voraus die Formen und den Platz in der Tabelle, zwei voraus die Körper, die Köpfe der Listen der Formen
+und den Kontakt, den der Pool der Ids als nächsten vergibt, und einen voraus die Köpfe der Listen der Körper
+(`b3PrefetchPairShapes`, `b3PrefetchPairBodies` und `b3PrefetchPairBodyContacts`). Die andere arbeitet die Kontakte ab,
+die zu berühren beginnen, aufhören oder sich nicht mehr überlappen (`b3Collide` in `src/physics_world.c`). Sie sammelt
+sie jetzt zuerst in der Reihenfolge ihrer Bits und holt jeden Kontakt vier und seine Formen und Körper zwei Plätze
+voraus (`b3PrefetchContactStateData`). Die Reihenfolge bleibt dieselbe.
+
 Die erste, die zweite, die vierte bis achte, die zehnte, die dreizehnte bis einunddreißigste, die dreiunddreißigste bis
-fünfunddreißigste und die neununddreißigste ändern an den Ergebnissen nichts. Die dritte und die neunte ändern sie in
-den letzten Bits, dafür hängen sie nicht mehr davon ab, in welcher Reihenfolge Formen in die Bäume kommen. Die elfte
-ändert sie, weil Kontakte zu anderen Zeitpunkten entstehen, die zwölfte, weil sie weniger Punkte bekommen, die
+fünfunddreißigste, die neununddreißigste und die vierzigste ändern an den Ergebnissen nichts. Die dritte und die neunte
+ändern sie in den letzten Bits, dafür hängen sie nicht mehr davon ab, in welcher Reihenfolge Formen in die Bäume kommen.
+Die elfte ändert sie, weil Kontakte zu anderen Zeitpunkten entstehen, die zwölfte, weil sie weniger Punkte bekommen, die
 zweiunddreißigste, weil die Kontakte eines Knotens gebündelt gegen Kopien rechnen statt nacheinander, die
 sechsunddreißigste, weil die Kerne dieselbe Rechnung anders zusammenfassen und deshalb anders runden, und die
 siebenunddreißigste, weil die Suche andere Kantenpaare aussiebt und getrennte Hüllen erkennt, die die alte übersah. Die

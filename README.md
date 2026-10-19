@@ -1086,6 +1086,12 @@ Kontakt-Schleife“ in [`extern/README.md`](extern/README.md). Vorher wartete de
 Ecken und Kanten. Gepaart gegen `physik-33` kostet die Kollision bei ×1 8 bis 13 % weniger und bei ×4 14 bis 17 %, ein
 Frame bei ×1 3 bis 6 % und bei ×4 7 bis 10 %. Die Ergebnisse bleiben bitgleich.
 
+Seit `physik-35` holen zwei Schleifen von Box3D, die allein auf dem aufrufenden Thread laufen, voraus, was sie lesen:
+das Anlegen neuer Kontakte und das Abarbeiten der Kontakte, die zu berühren beginnen oder aufhören, siehe „Neue Kontakte
+und Zustandswechsel vorausladen“ in [`extern/README.md`](extern/README.md). Gepaart gegen `physik-34` kostet das Anlegen
+bei ×1 28 bis 36 % weniger und das Abarbeiten 17 bis 20 %, zusammen 0,20 bis 0,23 ms pro Schritt. Mit vielen Threads
+liegt genau dieser Teil auf dem kritischen Pfad. Die Ergebnisse bleiben bitgleich.
+
 Ganze Einschläge (Bruch, Stützgraph, neue Box3D-Körper) und der Box3D-Schritt danach bei 60 Hz mit
 4 Substeps, jeweils mit 1 und 4 Threads, der Median aus sechs Läufen:
 
