@@ -150,10 +150,13 @@ voraus, das in einer fünften Cache-Zeile liegen kann (`b3PrefetchContact`). Bis
 volle Verschiebung der Mitte und der Bogen der halben Diagonale, ohne die Ebene.
 
 **Zweistufige Kontakt-Schleife.** Die Schleife der Kollision entscheidet für jeden Kontakt erst nur, ob er nicht mehr
-überlappt, wiederverwendet wird, beweisbar getrennt ist oder getestet werden muss. Die zu testenden sammelt sie, und eine
-zweite Schleife testet sie und holt dabei ihre Formen vier und die Köpfe ihrer Hüllen zwei Kontakte voraus
-(`b3PrefetchContactShapes` und `b3PrefetchContactHulls`). Vorher wartete der Test auf beides nacheinander, denn erst die
-Form sagt, wo die Hülle liegt. Jeder Kontakt wird für sich gerechnet, die Reihenfolge ändert nichts.
+überlappt, wiederverwendet wird, beweisbar getrennt ist oder getestet werden muss. Die zu testenden sammelt sie, und
+eine zweite Schleife testet sie und holt dabei ihre Formen vier Kontakte voraus, die Köpfe ihrer Hüllen zwei und den
+Rest der Hüllen, bis 2 KB je Hülle, einen (`b3PrefetchContactShapes`, `b3PrefetchContactHulls` und
+`b3PrefetchContactHullArrays`). Vorher wartete der Test auf alles nacheinander, denn erst die Form sagt, wo die Hülle
+liegt, und erst deren Kopf, wo ihre Arrays liegen. Die Arrays holt die Schleife seit `physik-34` voraus, davor wartete
+der Test noch auf sie, beim Stützpunkt einer gemerkten Fläche, beim Schnitt der Flächen und bei der vollen Suche nach
+der Trennachse. Jeder Kontakt wird für sich gerechnet, die Reihenfolge ändert nichts.
 
 **Kontakte für den Löser vorausladen.** Bevor die Teilschritte rechnen, liest `b3PrepareContacts_Convex` für jeden
 berührenden Kontakt den Kontakt, seine Punkte und Masse und Trägheit seiner beiden Körper, alles von verstreuten

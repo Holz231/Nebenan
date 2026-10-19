@@ -670,6 +670,26 @@ B3_FORCE_INLINE void b3PrefetchContactHulls( const b3Contact* contact, const b3S
 	}
 }
 
+// Added for Nebenan: the arrays of the hulls of a contact, which the narrowphase reads for the support of a remembered
+// face, for the contact points and, for a new contact, for the search of all separating axes. Up to 2 KB of each hull,
+// a hull of a broken chunk has about 1 KB. The headers must be in the cache already, see b3PrefetchContactHulls.
+B3_FORCE_INLINE void b3PrefetchContactHullArrays( const b3Contact* contact, const b3Shape* shapes )
+{
+	const b3Shape* pair[2] = { shapes + contact->shapeIdA, shapes + contact->shapeIdB };
+	for ( int k = 0; k < 2; ++k )
+	{
+		if ( pair[k]->type == b3_hullShape )
+		{
+			const char* hull = (const char*)pair[k]->hull;
+			int byteCount = b3MinInt( pair[k]->hull->byteCount, 2048 );
+			for ( int offset = 128; offset < byteCount; offset += 64 )
+			{
+				b3Prefetch( hull + offset );
+			}
+		}
+	}
+}
+
 static inline b3BodySim* b3ResolveContactBodySim( b3World* world, b3BodySim* awakeSims, b3BodySim* staticSims, int encodedIndex,
 												  int bodyId )
 {
@@ -926,10 +946,11 @@ static void b3CollideTask( int startIndex, int endIndex, int workerIndex, void* 
 
 	// Added for Nebenan: the narrowphase for the contacts that need it, in a second loop. It reads the two shapes of
 	// each contact and their hulls from scattered memory, and it waited for them most. Here it is known which contacts
-	// need them, so the loop prefetches the shapes four contacts ahead and, two ahead, the hulls they point to. Every
-	// contact is updated on its own, so the order changes nothing.
+	// need them, so the loop prefetches the shapes four contacts ahead, two ahead the headers of the hulls they point to
+	// and one ahead the arrays of the hulls. Every contact is updated on its own, so the order changes nothing.
 	const int shapePrefetchDistance = 4;
 	const int hullPrefetchDistance = 2;
+	const int hullArrayPrefetchDistance = 1;
 	for ( int k = 0; k < pendingCount; ++k )
 	{
 		if ( k + shapePrefetchDistance < pendingCount )
@@ -940,6 +961,11 @@ static void b3CollideTask( int startIndex, int endIndex, int workerIndex, void* 
 		if ( k + hullPrefetchDistance < pendingCount )
 		{
 			b3PrefetchContactHulls( contacts + pending[k + hullPrefetchDistance], shapes );
+		}
+
+		if ( k + hullArrayPrefetchDistance < pendingCount )
+		{
+			b3PrefetchContactHullArrays( contacts + pending[k + hullArrayPrefetchDistance], shapes );
 		}
 
 		int contactIndex = pending[k];

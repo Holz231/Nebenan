@@ -1081,6 +1081,11 @@ Benchmarks kommen 31 % weniger Kontakte in den Test, die zweite Schleife der Kol
 Kontakt ist dafür 248 statt 232 Byte groß. Die Ergebnisse bleiben bitgleich. Gepaart gegen `physik-32` kostet die
 Kollision bei ×1 rund 5 % weniger.
 
+Seit `physik-34` holt die Kollision die Hüllen jedes Kontakts ganz voraus, bis 2 KB je Hülle, siehe „Zweistufige
+Kontakt-Schleife“ in [`extern/README.md`](extern/README.md). Vorher wartete der Test zweier Hüllen auf ihre Ebenen,
+Ecken und Kanten. Gepaart gegen `physik-33` kostet die Kollision bei ×1 8 bis 13 % weniger und bei ×4 14 bis 17 %, ein
+Frame bei ×1 3 bis 6 % und bei ×4 7 bis 10 %. Die Ergebnisse bleiben bitgleich.
+
 Ganze Einschläge (Bruch, Stützgraph, neue Box3D-Körper) und der Box3D-Schritt danach bei 60 Hz mit
 4 Substeps, jeweils mit 1 und 4 Threads, der Median aus sechs Läufen:
 

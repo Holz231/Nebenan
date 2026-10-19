@@ -6,9 +6,9 @@ Die nächsten möglichen Schritte für die Physik, nach der Untersuchung vom 17.
 Wecken auf `physik-26`, alle vier auf dem Ryzen nachgemessen, den Prototypen und Zerlegungen auf `physik-27`, den Lagen
 zum Zeichnen zwischen zwei Schritten auf `physik-28`, den Kontakt-Kernen von upstream #189 auf `physik-29`, der
 Trennachsen-Suche von upstream #173 und #177 auf `physik-30`, der Sichtung von upstream auf `physik-31`, der Kollision
-mit AVX2 auf `physik-32` und der schärferen Schranke für getrennte Hüllen auf `physik-33`. Begründungen und Messwerte
-stehen in [`Optimierungen.md`](Optimierungen.md), hier nur das Fazit und die Reihenfolge. Nach jeder Runde wird der
-Stand hier nachgetragen.
+mit AVX2 auf `physik-32`, der schärferen Schranke für getrennte Hüllen auf `physik-33` und den ganz vorausgeholten
+Hüllen auf `physik-34`. Begründungen und Messwerte stehen in [`Optimierungen.md`](Optimierungen.md), hier nur das Fazit
+und die Reihenfolge. Nach jeder Runde wird der Stand hier nachgetragen.
 
 ## Fazit
 
@@ -283,7 +283,14 @@ braucht 6,7 % weniger Takte, bitgleich. Ein Kontakt ist dafür 248 statt 232 Byt
 die Kollision bei ×1 rund 5 % weniger, bei ×4 mit einem und zwei Threads 3 bis 5 %, bei ×2 ist nichts zu sehen, siehe
 „Box gegen gemerkte Fläche im ersten Durchgang“.
 
-Bei der Rechenzeit ist nach `physik-33` kein kleiner Schritt mehr übrig, der mit 8 Threads mehr als 1 bis 2 % des Frames
+Der kleine Punkt „Neue Kontakte zwischen Hüllen“ ist auf `physik-34` untersucht, und er führte woanders hin: Die volle
+Suche nach der Trennachse ist schon beschnitten und rechnet im Mittel nur 3,2 Stützpunkte, aber der Test wartete auf die
+Arrays der Hüllen, und zwar bei allen Kontakten. Jetzt holt die Kollision die Hüllen jedes Kontakts ganz voraus,
+bitgleich. Gepaart gegen `physik-33` kostet sie bei ×1 8 bis 13 % weniger, bei ×4 14 bis 17 %, ein Frame bei ×1 3 bis 6
+% und bei ×4 7 bis 10 %, siehe „Hüllen ganz vorausladen“. Auf dem Ryzen antwortet der L3 schneller, dort ist
+nachzumessen.
+
+Bei der Rechenzeit ist nach `physik-34` kein kleiner Schritt mehr übrig, der mit 8 Threads mehr als 1 bis 2 % des Frames
 verspricht, siehe die Schritte 6, 7 und 11 und die kleineren Punkte unten. Was mehr bringen könnte, ist größer oder
 ändert das Verhalten:
 
@@ -300,8 +307,6 @@ verspricht, siehe die Schritte 6, 7 und 11 und die kleineren Punkte unten. Was m
 Mit niedriger Priorität vorgemerkt, sie sparen vor allem Arbeit, die schon parallel läuft. Der Gewinn gilt mit einem
 Thread, mit 8 Threads ist er kleiner:
 
-- „Neue Kontakte zwischen Hüllen“: Für neue Kontakte sucht der Test alle Trennachsen voll, das ist gut ein Viertel der
-  zweiten Schleife der Kollision. Bitgleich ginge nur, die Suche selbst zu kürzen. Erst messen, wie viel das spart.
 - „Zweite Suche nur bei Überlappung“: die volle zweite Suche des Tests zweier Hüllen nur, wenn keine Fläche die Hüllen
   trennt. Bei ×1 bis 0,5 % eines Schritts, ändert die Ergebnisse, und 12 fragwürdige Kontakte im Benchmark fielen weg.
 - „Gyroskopische Drehung nach upstream #191“: das Drehmoment ganz abstellen spart höchstens 2 bis 3 %, aber drehende
