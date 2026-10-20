@@ -359,12 +359,16 @@ Thread, mit 8 Threads ist er kleiner:
   0,65 % eines Schritts mit einem Thread, die Ergebnisse ändern sich nur nach einem solchen Kontakt.
 - „Gyroskopische Drehung nach upstream #191“: das Drehmoment ganz abstellen spart höchstens 2 bis 3 %, aber drehende
   Trümmer verlören ihr Taumeln. Nur, falls ein Spiel das nicht braucht.
-- Nur als Versuch, beide ändern das Verhalten: „Weniger Substeps für langsame Inseln“ und „Physik mit 30 Hz und 8
-  Teilschritten“.
+- „Weniger Substeps für langsame Inseln“: auf `physik-40` gezählt und verworfen. Inseln, deren Körper sich alle langsamer
+  als 0,25 m/s bewegen, tragen beim Abriss bei ×4 nur 4,8 % der Arbeit des Lösers, langsame Inseln schlafen bald oder
+  erstarren. Halbe Teilschritte für sie sparten unter 1 % eines Schritts und träfen gerade die Haufen, die zur Ruhe kommen.
+- Nur als Versuch, ändert das Verhalten überall: „Physik mit 30 Hz und 8 Teilschritten“.
 
 ## Verworfen
 
 Mit Grund in [`Optimierungen.md`](Optimierungen.md): ein eigenes Box3D, Einschläge gesammelt rechnen, 16 Threads mit
 SMT, AVX-512 auf Zen 4, ein Jacobi-Löser statt Inseln und Farben, Physik auf der GPU, kleine Trümmer als Partikel, mehr
 Farben im Graphen, den Überlauf nachträglich einfärben, die Kosinusse der Kanten in der Hülle wie upstream, kompakte
-Paare für nicht berührende Kontakte und einen Vorfilter über die Boxen vor dem Hüllentest.
+Paare für nicht berührende Kontakte, einen Vorfilter über die Boxen vor dem Hüllentest, mehr Ladevorgänge gleichzeitig
+in der Paarsuche, den Überlauf in unabhängigen Gruppen, gesammelte Typwechsel und weniger Teilschritte für langsame
+Inseln.
