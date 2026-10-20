@@ -3088,6 +3088,49 @@ static int StoreyTest( void )
 		DestroyScene( &scene );
 	}
 
+	// The same at the -x half of the top story, with only the roof above it. The roof hangs at the side of the walls and
+	// would come down flat past the anchor, so the cells of the anchor it hangs on come down with it and rest on the rest
+	// of the anchor. It tilts over that toward -x like the stories over a storey further down and comes to rest leaning on
+	// it, in a house of three stories with one worker and with four alike, and in one of two.
+	for ( int w = 0; w < 3; ++w )
+	{
+		TestScene scene = w == 1 ? CreateSceneWithWorkers( 4, NULL, NULL, NULL ) : CreateScene();
+		nbWorld_SetFragmentScale( scene.world, 2.0f );
+		int floors = w < 2 ? 3 : 2;
+		nbDestructibleId house = CreateCelledHouse( &scene, floors, 3 );
+		float low = 3.25f * (float)( floors - 1 );
+		BlastStorey( &scene, floors - 1, 3, 0.5f, false );
+		ENSURE( nbWorld_GetStats( scene.world ).collapsedStoreyCount == 1 );
+
+		Step( &scene, 300 );
+		float lowestX = 0.0f;
+		ENSURE( StandingBetween( &scene, low, low + 3.25f, &lowestX ) > 0.0f && lowestX > 2.0f );
+		ENSURE( HighestStanding( &scene ) > low + 1.0f );
+		b3Vec3 axis = LargestAxis( &scene );
+		ENSURE( axis.x < -0.15f && axis.y > 0.85f );
+		ENSURE( FloatingVolume( &scene ) == 0.0f );
+		if ( w < 2 )
+		{
+			hashes[w] = HashDestructible( 2166136261u, house );
+		}
+		DestroyScene( &scene );
+	}
+	ENSURE( hashes[0] == hashes[1] );
+
+	// With the damage all around the top story, the roof comes down about level like the stories over a storey further
+	// down
+	{
+		TestScene scene = CreateScene();
+		nbWorld_SetFragmentScale( scene.world, 2.0f );
+		CreateCelledHouse( &scene, 2, 3 );
+		BlastStorey( &scene, 1, 1, FLT_MAX, false );
+		ENSURE( nbWorld_GetStats( scene.world ).collapsedStoreyCount == 1 );
+		Step( &scene, 300 );
+		ENSURE( LargestAxis( &scene ).y > 0.96f );
+		ENSURE( FloatingVolume( &scene ) == 0.0f );
+		DestroyScene( &scene );
+	}
+
 	// What came down keeps falling when an impact hits it on the way
 	{
 		TestScene scene = CreateScene();

@@ -19,7 +19,9 @@ und die Reihenfolge. Nach jeder Runde wird der Stand hier nachgetragen.
 [`Referenz`](Referenz/README.md). Sie ändert aber, was der Benchmark unter Trommelfeuer bei ×4 misst: Eine Etage gibt
 dort schon nach, wenn 40 % ihrer Wände zerstört sind, und es stürzen 15 statt 12 Etagen ein. Ein Schritt kostet damit
 mit 1 und 2 Threads 3,2 und 6,6 % mehr, siehe „Einsturz nach Kapitel 17 der Roadmap des Spiels“. Wer eine Runde danach
-gegen eine davor misst, vergleicht dort verschiedene Szenen, bei ×1 und ×2 dieselben.
+gegen eine davor misst, vergleicht dort verschiedene Szenen, bei ×1 und ×2 dieselben. `kollaps-2` lässt das Dach über
+der obersten Etage über den Anker kippen wie die Stockwerke über den Etagen darunter. Im Benchmark enden damit alle
+Städte bitgleich wie mit `kollaps-1`.
 
 ## Fazit
 

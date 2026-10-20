@@ -318,6 +318,11 @@ Spiels in [docs/Referenz](docs/Referenz) beschreibt:
 - Es kippt über das, was stehen blieb, wie Schwerkraft und Kontakte es machen, nichts dreht es. Über einem Anker auf
   einer Seite neigt es sich zur zerstörten Seite und kommt dort auf, an den Anker gelehnt: Das Haus der Tests mit dem
   Erdgeschoss auf einer Hälfte zerstört liegt danach um 17° geneigt. Bei Schaden ringsum kommt es fast gerade herunter.
+- Über der obersten Etage liegt nur noch die Decke, das Dach. Es hängt seitlich an den Wänden, nicht auf ihnen, und
+  fiele flach am Anker vorbei. Seit `kollaps-2` kommen darum die Zellen des Ankers, an denen es hängt, mit ihm herunter
+  und liegen auf dem Rest des Ankers auf: Das Dach kippt über ihn wie die Stockwerke über einer Etage weiter unten. Im
+  Haus der Tests liegt es danach um 16° geneigt am Anker, mit zwei und mit drei Stockwerken. Bei Schaden ringsum kommt
+  es fast gerade herunter. Davor zerplatzte die oberste Etage, und das Dach fiel flach hinein.
 - Die Etagen darunter bleiben stehen und tragen, was herunterkam. Gibt später eine von ihnen nach, kommt sie mit allem
   darauf herunter, auch wenn es dort schon als Schutt liegt.
 - Was herunterkam, bleibt ein Haus, solange es nicht mehr als 45° kippt: Verliert eine seiner Etagen 40 % ihrer Wände,

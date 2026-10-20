@@ -23,7 +23,7 @@ das README und `docs/` als umgesetzt nennen, die Roadmap behauptet selbst keinen
 | 14 | Gemeinsame Ereignisse aller Systeme, Rendering, Release |
 | 15 | Reihenfolge M1 bis M8, siehe unten |
 | 16 | Was die Roadmap nicht wiederholt |
-| 17 | Zerstörung: Restanker, Buckling und Kollaps, wie Häuser einstürzen sollen. 17.1 bis 17.3 gebaut auf `kollaps-1`, siehe Einsturz im README, die Rampe in der Decke aus 17.4 ist offen |
+| 17 | Zerstörung: Restanker, Buckling und Kollaps, wie Häuser einstürzen sollen. 17.1 bis 17.3 gebaut auf `kollaps-1`, die oberste Etage unter dem Dach wie die übrigen seit `kollaps-2`, siehe Einsturz im README, die Rampe in der Decke aus 17.4 ist offen |
 | 18 | Parallax Occlusion Mapping |
 | 19 | Figuren aus dem Skelett heraus erzeugen |
 | 20 | Gebäude streamen, Physik aktivieren, vorbereitete Häuser cachen |

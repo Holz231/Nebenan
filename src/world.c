@@ -3140,7 +3140,8 @@ static void nbKeepCell( const nbWorld* world, const int* chunks, const int* root
 // which mostly hang on nothing and fall. remaining and moment are the volume and the first moment of the walls left in
 // the storey in all parts that stand, roots the first part of the cell of every chunk of the part, and the cells carry
 // their volume and center at their first part. Sets the chunks that stay and the cells bonded to them, see nbKeepCell.
-static void nbFindRemains( nbWorld* world, const nbDestructible* destructible, int storeyIndex, float remaining, b3Vec3 moment,
+// Returns whether what stays is an anchor on one side.
+static bool nbFindRemains( nbWorld* world, const nbDestructible* destructible, int storeyIndex, float remaining, b3Vec3 moment,
 						   const int* chunks, const int* roots, const float* cellVolumes, const b3Vec3* centers,
 						   const float* heights, int n, uint32_t stamp, bool* remains, bool* touches )
 {
@@ -3211,6 +3212,7 @@ static void nbFindRemains( nbWorld* world, const nbDestructible* destructible, i
 		kept += cellVolumes[cell];
 		members[pick] = members[--memberCount];
 	}
+	return oneSided;
 }
 
 // Whether every storey of a building keeps clearly more of its walls than it needs, from what is left of them, see
@@ -3235,7 +3237,8 @@ static bool nbStoreysHold( const nbWorld* world, const nbDestructible* destructi
 // and whatever they could still carry. A tenth of the walls that are left stays where it is, see nbFindRemains, and lets
 // go only of what comes down. The rest flies out like the stones under a collapsing block, see nbCheckSupports, and
 // everything above comes down in one piece, so the rooms up there stay whole. It tilts over what stayed as gravity and
-// contacts make it, nothing turns it. A cell goes where its center lies, so the cracks follow the faces of the cells.
+// contacts make it, nothing turns it, and so does the roof over the top storey, which takes the cells of an anchor it
+// hangs on along. A cell goes where its center lies, so the cracks follow the faces of the cells.
 // The storeys count the walls of all static parts of the destructible, and a part lets go of what it holds itself.
 // Returns the chunks to throw and the bonds to break in arena memory, and a chunk of every part that comes down.
 static int nbCheckStoreys( nbWorld* world, int actorIndex, b3Vec3 up, nbOverload** overloadsOut, int** downsOut,
@@ -3528,12 +3531,65 @@ static int nbCheckStoreys( nbWorld* world, int actorIndex, b3Vec3 up, nbOverload
 		}
 	}
 
-	// A tenth of what is left of each storey stays where it is
+	// A tenth of what is left of each storey stays where it is, on one side an anchor
+	bool anchors[NB_MAX_STOREYS];
 	for ( int t = 0; t < storeyCount; ++t )
 	{
 		int s = storeys[t];
-		nbFindRemains( world, destructible, s, volumes[s], moments[s], chunks, cells, cellVolumes, centers, heights, n, stamp,
-					   remains, touches );
+		anchors[t] = nbFindRemains( world, destructible, s, volumes[s], moments[s], chunks, cells, cellVolumes, centers, heights,
+									n, stamp, remains, touches );
+	}
+
+	// A stretch without the walls of a storey in it is only floors, the roof over the top storey, and hangs at the side
+	// of the walls below. It would come down past an anchor. The cells of the anchor that hold it go with it instead and
+	// rest on the rest of the anchor, so it tilts over that like the stories over a storey further down.
+	bool walled[NB_MAX_STOREYS + 1];
+	for ( int t = 0; t <= storeyCount; ++t )
+	{
+		walled[t] = false;
+	}
+
+	for ( int k = 0; k < n; ++k )
+	{
+		for ( int s = 0; s < destructible->storeyCount && stretches[k] > 0; ++s )
+		{
+			const nbStorey* storey = destructible->storeys + s;
+			walled[stretches[k]] = walled[stretches[k]] || ( heights[k] > storey->low && heights[k] < storey->high );
+		}
+	}
+
+	bool* holds = nbArena_AllocArray( &world->arena, bool, n );
+	for ( int k = 0; k < n; ++k )
+	{
+		holds[k] = false;
+	}
+
+	for ( int k = 0; k < n; ++k )
+	{
+		if ( remains[k] == false || anchors[insides[k]] == false || walled[insides[k] + 1] )
+		{
+			continue;
+		}
+
+		const nbChunk* chunk = world->chunks.data + chunks[k];
+		for ( int key = chunk->headBondKey; key != NB_NULL_INDEX; )
+		{
+			const nbBond* bond = world->bonds.data + ( key >> 1 );
+			int side = key & 1;
+			key = bond->nextKey[side];
+
+			int other = world->chunks.data[bond->chunk[side ^ 1]].scratch;
+			holds[cells[k]] = holds[cells[k]] || stretches[other] == insides[k] + 1;
+		}
+	}
+
+	for ( int k = 0; k < n; ++k )
+	{
+		if ( remains[k] && holds[cells[k]] )
+		{
+			stretches[k] = insides[k] + 1;
+			remains[k] = false;
+		}
 	}
 
 	// The rest flies out. What stays lets go of what comes down over its storey and keeps the rest of its bonds, the
