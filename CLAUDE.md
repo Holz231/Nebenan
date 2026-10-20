@@ -38,6 +38,9 @@ Spiel hätte sie nachbauen müssen. Das darf nicht wieder passieren.
 Die nächsten möglichen Schritte stehen mit Gewinn, Voraussetzung und Stand in `docs/Roadmap.md`. Vor jeder neuen Runde
 dort nachsehen, nach jeder Runde den Stand nachtragen.
 
+Die Roadmap des Spiels liegt als Referenz in `docs/Referenz/`, als PDF und als Text. Wie Häuser einstürzen sollen,
+steht dort in Kapitel 17.
+
 ## Sprache
 
 Mit dem Nutzer Deutsch, per du. Code und Kommentare auf Englisch, README und `docs/` auf Deutsch.

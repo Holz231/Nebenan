@@ -1227,7 +1227,8 @@ test/               Tests
 benchmark/          Leistungsmessung
 demo/               PC-Demo mit sokol und Dear ImGui
   shaders/          GLSL-Quelle und die mit sokol-shdc erzeugten Shader (HLSL, Metal, GLSL)
-docs/               vorgemerkte und verworfene Optimierungen
+docs/               vorgemerkte und verworfene Optimierungen, die Roadmap der Physik
+  Referenz/         die Roadmap des Spiels als Referenz
 extern/             Box3D (mit sokol, ergänzt für große Szenen) und Dear ImGui, siehe extern/README.md
 .github/workflows/  CI für Windows, Linux und macOS
 ```
