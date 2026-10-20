@@ -532,6 +532,9 @@ typedef struct nbWorld
 	// The time a frame left over for the steps of the next one, see nbWorld_PlanSteps
 	float stepClock;
 
+	// The step of the current update in steps of 1/60 s, which the limits per update hold for, see nbLimitForStep
+	float stepScale;
+
 	// The latest move of every body that moved in the steps of nbWorld_Step since nbWorld_GetBodyEvents. The steps write
 	// one buffer while the other is handed out, and moveSlots holds where the move of a body is, by its Box3D index.
 	nbBodyMoveArray moves[2];

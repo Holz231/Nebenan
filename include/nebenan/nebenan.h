@@ -10,9 +10,7 @@
 //   nbDrawPoses poses = nbWorld_GetDrawPoses( destructionWorld, nbWorld_GetStepFraction( destructionWorld ) );
 //   nbEvents events = nbWorld_GetEvents( destructionWorld );
 //   // move the render meshes of the bodies to their poses, update them from the events, apply impacts
-//   int steps = nbWorld_PlanSteps( destructionWorld, frameTime, 1.0f / 60.0f );
-//   for ( int i = 0; i < steps; ++i )
-//       nbWorld_Step( destructionWorld, 1.0f / 60.0f, 4 );
+//   nbWorld_Advance( destructionWorld, frameTime );
 //   // draw every chunk at the pose of its body while the steps run on a thread of their own
 
 #pragma once
@@ -81,8 +79,9 @@ NB_API void nbWorld_Step( nbWorldId worldId, float timeStep, int subStepCount );
 
 /// How many steps of timeStep seconds a frame of frameTime seconds takes with nbWorld_Step, the time left over waits for
 /// the next frame. When the steps cannot keep up, the simulation slows down instead of taking more and more steps per
-/// frame, which would slow down every frame further: A frame counts at most 0.1 s and takes at most two steps, a second
-/// one only while the last step with its update took less than 4 ms. Waits for the steps.
+/// frame, which would slow down every frame further: A frame counts at most 0.1 s and takes at most as many steps as
+/// make 1/30 s, rounded, from one to eight, and as make 1/60 s unless the last step with its update took less than 4 ms
+/// per 1/60 s. These are two steps or one at 60 Hz, four or two at 120 Hz and one at 30 Hz. Waits for the steps.
 NB_API int nbWorld_PlanSteps( nbWorldId worldId, float frameTime, float timeStep );
 
 /// The latest move of every body that moved in the steps of nbWorld_Step since the previous call, without the bodies that
@@ -100,6 +99,22 @@ NB_API nbDrawPoses nbWorld_GetDrawPoses( nbWorldId worldId, float fraction );
 /// How far the time that nbWorld_PlanSteps left over for the next step reaches into it, from 0 to 1, the fraction for
 /// nbWorld_GetDrawPoses. 1 until the first call of nbWorld_PlanSteps.
 NB_API float nbWorld_GetStepFraction( nbWorldId worldId );
+
+/// Take the steps that a frame of frameTime seconds needs at the step rate of the world, see nbWorldDef::stepRate: plans
+/// them with nbWorld_PlanSteps and starts each with nbWorld_Step and nbGetSubStepCount substeps. Returns how many it
+/// started.
+NB_API int nbWorld_Advance( nbWorldId worldId, float frameTime );
+
+/// Change the steps per second of nbWorld_Advance from the next call on, see nbWorldDef::stepRate. Call it on the thread
+/// that plans the steps. It does not wait for the steps.
+NB_API void nbWorld_SetStepRate( nbWorldId worldId, float stepRate );
+
+/// The steps per second of nbWorld_Advance, see nbWorldDef::stepRate. Does not wait for the steps.
+NB_API float nbWorld_GetStepRate( nbWorldId worldId );
+
+/// The substeps of a step at stepRate steps per second that make 240 substeps per second: 8 at 30 Hz, 4 at 60 Hz and 2
+/// at 120 Hz, at least one. For a program that steps with nbWorld_Step or b3World_Step on its own.
+NB_API int nbGetSubStepCount( float stepRate );
 
 /// Run fcn( context ) after the steps that the calling thread started with nbWorld_Step, on the thread that takes them and
 /// before the steps that follow, or right here if none runs. Like a step, fcn may use the two worlds while the calling

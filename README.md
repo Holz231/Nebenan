@@ -13,10 +13,12 @@ gelöscht. Kein Staub, keine Schatten: Jede Millisekunde geht in die Zerstörung
 - Ein Einschlag rechnet auf mehreren Threads, über das Task-System der Anwendung oder eingebaute Threads: Schaden
   an den getroffenen Stücken, Bruchpunkte, Voronoi-Zellen und Hüllen. Derweil weckt der aufrufende Thread den Schutt
   am Einschlag auf. Das Ergebnis hängt nicht von der Zahl der Threads ab
-- Die Physik rechnet auf einem eigenen Thread, während das Programm zeichnet (`nbWorld_Step`). Wer danach die Welt
-  anfasst, wartet automatisch auf den Schritt, und die Welt rechnet bitgleich wie ohne. Wie viele Schritte ein Bild
-  braucht, sagt `nbWorld_PlanSteps`, und `nbWorld_GetDrawPoses` gibt jedem Bild Lagen zwischen den letzten zwei
-  Schritten, damit die Trümmer auch auf Monitoren mit mehr als 60 Hz flüssig fliegen
+- Die Physik rechnet auf einem eigenen Thread, während das Programm zeichnet: `nbWorld_Advance` startet die Schritte,
+  die ein Bild braucht. Wer danach die Welt anfasst, wartet automatisch auf den Schritt, und die Welt rechnet bitgleich
+  wie ohne. `nbWorld_GetDrawPoses` gibt jedem Bild Lagen zwischen den letzten zwei Schritten, damit die Trümmer auch auf
+  Monitoren mit mehr als 60 Hz flüssig fliegen
+- Der Takt der Physik ist wählbar, 30, 60 oder 120 Schritte pro Sekunde (`stepRate`), jeder mit so vielen Teilschritten,
+  dass es 240 pro Sekunde sind. 30 Hz kostet weniger, 120 Hz ist genauer, die Vorgabe sind 60 Hz
 - Einsturz Etage für Etage, auf jeder Höhe und in jeder Reihenfolge: Hat eine Etage weniger als die Hälfte ihrer Wände,
   fliegen ihre letzten Wände mit Wucht heraus, und alles darüber kommt als ein Stück herunter, gekippt zur Seite, wo
   die Wände fehlen. Die Räume oben bleiben ganz und geben wieder Deckung. Sonst stürzt an einem Haus nichts ein,
@@ -115,14 +117,15 @@ CMake-Optionen: `NEBENAN_DEMO`, `NEBENAN_TESTS`, `NEBENAN_BENCHMARK` (bei eigens
 | V | VSync ein und aus |
 | F1 | Menü ein- und ausblenden |
 
-**FPS.** Oben rechts steht immer die echte Bildrate, gemessen über die letzten zwei Sekunden: Bilder pro
-Sekunde, die mittlere Bildzeit und das 1 % Low, also die Rate der langsamsten 1 % der Bilder. Daran sieht man
-Ruckler. VSync ist aus, die Demo zeichnet so viele Bilder, wie der PC schafft. Mit **V** oder `--vsync` bindet sie
-sich an die Bildwiederholrate des Monitors. Unter Windows hält das System eine Flip-Swap-Chain sonst auch ohne VSync
-an der Bildwiederholrate fest. Die Demo legt deshalb ihre Swap-Chain mit Tearing-Erlaubnis an, wie Microsoft es für
+**FPS.** Oben rechts steht immer die echte Bildrate, gemessen über die letzten zwei Sekunden: Bilder pro Sekunde,
+die mittlere Bildzeit und das 1 % Low, also die Rate der langsamsten 1 % der Bilder. Daran sieht man Ruckler. VSync
+ist aus, die Demo zeichnet so viele Bilder, wie der PC schafft. Mit **V** oder `--vsync` bindet sie sich an die
+Bildwiederholrate des Monitors. Unter Windows hält das System eine Flip-Swap-Chain sonst auch ohne VSync an der
+Bildwiederholrate fest. Die Demo legt deshalb ihre Swap-Chain mit Tearing-Erlaubnis an, wie Microsoft es für
 ungebremste Bildraten vorsieht. Im Fenster zeigt der Compositor trotzdem nur ganze Bilder. Kleben die FPS dennoch an
 der Bildwiederholrate, sagt das Menü, woran es liegt. Unter macOS bleibt VSync immer an, dort sagt das Menü, wie
-viele FPS die CPU schaffen würde. Die Physik rechnet unabhängig davon 60 Schritte pro Sekunde.
+viele FPS die CPU schaffen würde. Die Physik rechnet unabhängig davon 60 Schritte pro Sekunde, oder so viele, wie
+**Physiktakt** sagt.
 
 **Leistungsregler im Menü**
 
@@ -139,6 +142,10 @@ viele FPS die CPU schaffen würde. Die Physik rechnet unabhängig davon 60 Schri
   Physik, siehe Zeichnen zwischen zwei Schritten. Aus zeigt jedes Bild den Stand nach dem letzten Schritt. **Zeitlupe**
   gibt der Physik ein Viertel der Zeit, dann kommen viermal so viele Bilder wie Schritte, und der Unterschied zeigt sich
   auf jedem Monitor.
+- **Physiktakt** (Standard 60 Hz): 30, 60 oder 120 Schritte der Physik pro Sekunde, jeder mit so vielen Teilschritten,
+  dass es 240 pro Sekunde sind, siehe Der Takt der Physik. 30 Hz kostet weniger, aber Kontakte und Treffer kommen bis zu
+  einen Schritt später, 120 Hz ist genauer und kostet mehr. Mit „Zwischen Schritten zeichnen“ bewegt sich das Bild bei
+  jedem Takt flüssig. Die beiden Messknöpfe rechnen mit dem eingestellten Takt, 1/60 s Physik pro Bild.
 
 Daneben stellt **Etage braucht** ein, wie viel ihrer Wände eine Etage zum Stehen braucht (Standard 50 %), und
 **Statik ohne Decken** schaltet die Lastprüfung für die Mauern ein (Standard aus).
@@ -158,12 +165,13 @@ mit CPU, Grafikkarte und Auflösung in die Zwischenablage, zum Einfügen in eine
 messen“ lädt die Stadt und reißt sie Haus für Haus mit Granaten ab, Wand für Wand von oben nach unten, bis jedes Haus
 unten ist. Er schießt mit Budget 5 000 und nur, solange weniger als 3 000 Trümmer fliegen, denn über dem Budget frieren
 im Schub auch Stücke im Flug ein. Das macht er einmal kurz zum Aufwärmen, dann parallel, nacheinander, nacheinander und
-parallel, mit einem Schritt pro Bild und jeweils mit den passenden Threads. Das Ergebnis mit Bildzeit, FPS und 1 % Low
-für beide und für jeden Lauf kommt ebenso in die Zwischenablage, danach lädt die Szene von vorher neu. „Skalierung
-messen“ reißt die Stadt genauso ab, nach dem Aufwärmen mit 1, 2, 4 und so weiter bis zur empfohlenen Zahl von Threads,
-alle mit der Physik nacheinander. Die Bibliothek misst dabei jede Stufe von Box3D und Nebenan und rechnet aus, was mit
-mehr Threads auf einem Thread übrig bleibt. Die Tabelle dazu kommt in die Zwischenablage, siehe `nbWorld_GetProfile`.
-Jeder Bericht nennt CPU und Grafikkarte, denn auf einer schwachen Grafik begrenzt das Zeichnen die Bildzeit.
+parallel, mit 1/60 s Physik pro Bild, bei 60 Hz einem Schritt, und jeweils mit den passenden Threads. Das Ergebnis mit
+Bildzeit, FPS und 1 % Low für beide und für jeden Lauf kommt ebenso in die Zwischenablage, danach lädt die Szene von
+vorher neu. „Skalierung messen“ reißt die Stadt genauso ab, nach dem Aufwärmen mit 1, 2, 4 und so weiter bis zur
+empfohlenen Zahl von Threads, alle mit der Physik nacheinander. Die Bibliothek misst dabei jede Stufe von Box3D und
+Nebenan und rechnet aus, was mit mehr Threads auf einem Thread übrig bleibt. Die Tabelle dazu kommt in die
+Zwischenablage, siehe `nbWorld_GetProfile`. Jeder Bericht nennt CPU und Grafikkarte, denn auf einer schwachen Grafik
+begrenzt das Zeichnen die Bildzeit.
 
 **Werkzeuge**
 
@@ -189,14 +197,16 @@ Jeder Bericht nennt CPU und Grafikkarte, denn auf einer schwachen Grafik begrenz
 **Aufrufoptionen**: `--scene 0..3` startet eine Szene, `--fragment-scale 3` setzt die Bruchstückgröße, `--vsync`
 schaltet VSync ein, `--msaa 4` schaltet Kantenglättung ein (Standard aus), `--highdpi` rendert auf hochauflösenden
 Bildschirmen in voller Auflösung (Standard aus, kostet Füllrate). `--serial-physics` schaltet die parallele Physik ab,
-`--threads N` setzt die Zahl der Threads. `--compare` misst parallel gegen nacheinander wie der Knopf im Menü, gibt das
-Ergebnis aus und beendet sich. `--demolition` reißt die Stadt ab wie dabei. `--script` feuert eine vorgegebene
-Schussfolge ab, `--frames N` beendet nach N Bildern und meldet Bildzeiten, CPU-Zeiten, Uploads und Dreiecke pro Bild und
-einen Hash der Lagen aller Bruchstücke, `--screenshot datei.ppm` speichert das letzte Bild (nur OpenGL).
+`--threads N` setzt die Zahl der Threads, `--step-rate 30` den Takt der Physik. `--compare` misst parallel gegen
+nacheinander wie der Knopf im Menü, gibt das Ergebnis aus und beendet sich. `--demolition` reißt die Stadt ab wie dabei.
+`--script` feuert eine vorgegebene Schussfolge ab, `--frames N` beendet nach N Bildern und meldet Bildzeiten,
+CPU-Zeiten, Uploads und Dreiecke pro Bild und einen Hash der Lagen aller Bruchstücke, `--screenshot datei.ppm` speichert
+das letzte Bild (nur OpenGL).
 
-Hinkt die Physik hinterher, lässt die Demo die Zeit langsamer laufen, statt Schritte nachzuholen: Ein zweiter
-Schritt im selben Bild kommt nur, wenn ein Schritt weniger als 4 ms kostet. Sonst würde jedes langsame Bild das
-nächste noch langsamer machen.
+Hinkt die Physik hinterher, lässt `nbWorld_Advance` die Zeit langsamer laufen, statt Schritte nachzuholen: Mehr als
+1/60 s Physik im selben Bild kommt nur, solange der letzte Schritt weniger als 4 ms pro 1/60 s kostete, bei 60 Hz
+also ein zweiter Schritt nur nach einem unter 4 ms. Sonst würde jedes langsame Bild das nächste noch langsamer
+machen.
 
 ## So funktioniert es
 
@@ -493,25 +503,34 @@ for ( int i = 0; i < events.createdCount; ++i )
 // events.movedChunks: Bruchstück hängt jetzt an einem anderen Körper
 // events.exposedChunks: Mesh neu bauen, verdeckte Flächen können frei geworden sein
 
-// Einschläge und alles andere, was die Welten ändert, dann die Schritte, die dieses Bild braucht
-int steps = nbWorld_PlanSteps( world, frameTime, 1.0f / 60.0f );
-for ( int i = 0; i < steps; ++i )
-{
-	nbWorld_Step( world, 1.0f / 60.0f, 4 );
-}
+// Einschläge und alles andere, was die Welten ändert, dann die Schritte, die dieses Bild braucht, im Takt der Welt
+nbWorld_Advance( world, frameTime );
 // Zeichnen, die Schritte rechnen derweil auf dem Thread von Nebenan
 ```
 
-`nbWorld_Step` ersetzt `b3World_Step` und `nbWorld_Update`, siehe Der Schritt auf einem eigenen Thread. Nach dem Schritt
-fasst das Programm die Welten bis zum nächsten Frame nicht mehr an, sonst wartet dieser Aufruf auf den Schritt, und
-das Bild verliert den Vorteil. Andere Threads lassen die Welten in der Zeit ganz in Ruhe. Mit `asyncStep` aus oder dem
-alten Weg, `b3World_Step` und danach `nbWorld_Update`, rechnet alles auf dem aufrufenden Thread, mit derselben Welt.
+`nbWorld_Advance` plant die Schritte mit `nbWorld_PlanSteps` und startet jeden mit `nbWorld_Step`. `nbWorld_Step`
+ersetzt `b3World_Step` und `nbWorld_Update`, siehe Der Schritt auf einem eigenen Thread. Nach dem Schritt fasst das
+Programm die Welten bis zum nächsten Frame nicht mehr an, sonst wartet dieser Aufruf auf den Schritt, und das Bild
+verliert den Vorteil. Andere Threads lassen die Welten in der Zeit ganz in Ruhe. Mit `asyncStep` aus oder dem alten Weg,
+`b3World_Step` und danach `nbWorld_Update`, rechnet alles auf dem aufrufenden Thread, mit derselben Welt.
 
 `nbWorld_PlanSteps` sagt, wie viele Schritte ein Bild braucht, und hebt den Rest der Zeit für das nächste auf. Kommen
 die Schritte nicht hinterher, wird die Simulation langsamer, statt mit immer mehr Schritten pro Bild jedes Bild weiter
-zu bremsen: höchstens zwei Schritte pro Bild, einen zweiten nur, solange der letzte Schritt samt Update unter 4 ms
-blieb, und ein Bild zählt höchstens 0,1 s. Wer schon eine eigene Schleife mit festem Schritt hat, ruft nur
-`nbWorld_Step`.
+zu bremsen: Ein Bild rechnet höchstens 1/30 s, mehr als 1/60 s nur, solange der letzte Schritt samt Update weniger als
+4 ms pro 1/60 s kostete, und ein Bild zählt höchstens 0,1 s. Bei 60 Hz sind das zwei Schritte oder einer, bei 120 Hz
+vier oder zwei, bei 30 Hz einer. Wer schon eine eigene Schleife mit festem Schritt hat, ruft nur `nbWorld_Step`, mit so
+vielen Teilschritten, wie `nbGetSubStepCount` für seinen Takt sagt.
+
+**Der Takt der Physik.** Wie viele Schritte die Physik pro Sekunde rechnet, stellt `stepRate` ein, 60 als Vorgabe, zur
+Laufzeit `nbWorld_SetStepRate`. Jeder Schritt bekommt so viele Teilschritte, dass es 240 pro Sekunde sind: 8 bei 30 Hz,
+4 bei 60 Hz, 2 bei 120 Hz. So löst der Löser bei jedem Takt gleich oft. Die Grenzen pro Update, etwa
+`maxCollisionImpactsPerUpdate`, wie viel Schutt ein Update weckt und freigibt oder wie viele Stücke die Lastprüfung
+zerdrückt, gelten für 1/60 s und wachsen und schrumpfen mit dem Schritt, so nimmt die Welt bei jedem Takt gleich viel
+pro Sekunde. Paarsuche, Kollision und Update laufen einmal pro Schritt: 30 Hz kostet pro simulierter Sekunde weniger,
+auf der VM 14 bis 29 %, aber Kontakte und Treffer kommen bis zu einen Schritt später, und schnelle Trümmer durchdringen
+einander leichter. 120 Hz ist genauer und kostet 28 bis 44 % mehr. Die Zerstörung verläuft bei jedem Takt etwas anders,
+aber bei jedem mit jeder Zahl von Threads bitgleich. Mit `nbWorld_GetDrawPoses` bewegen sich die Trümmer auch mit 30 Hz
+flüssig.
 
 **Zeichnen zwischen zwei Schritten.** Die Physik rechnet in festen Schritten, meist 60 pro Sekunde, gezeichnet wird oft
 öfter, auf einem Monitor mit 144 Hz zwei- bis dreimal pro Schritt. Mit der Lage nach dem letzten Schritt bleiben die
@@ -524,9 +543,8 @@ der Physik, bei 60 Hz 17 ms, ohne die Lagen dazwischen im Mittel einen halben. D
 zum Zeichnen sich seit dem letzten Aufruf geändert hat: die im letzten Schritt bewegten und einmal noch die, die seitdem
 stehen geblieben sind, mit ihrer letzten Lage. Mit dem Anteil 1 sind es die Lagen nach dem letzten Schritt. Die Lage vor
 dem Schritt und den Schwerpunkt liefert Box3D in jedem Bewegungsereignis mit (eine Ergänzung, siehe
-[`extern/README.md`](extern/README.md)). Die Physik ändert sich dadurch nicht. Ein Spiel, das mit einem langsameren Takt
-rechnen will, kann so auch mit 30 Schritten pro Sekunde flüssig zeichnen, siehe „Physik mit 30 Hz und 8 Teilschritten“
-in [docs/Optimierungen.md](docs/Optimierungen.md).
+[`extern/README.md`](extern/README.md)). Die Physik ändert sich dadurch nicht. So zeichnet ein Spiel auch mit 30
+Schritten pro Sekunde flüssig, siehe Der Takt der Physik.
 
 Gebäude entstehen aus mehreren konvexen Teilen mit `nbCreateDestructible`. Sich berührende Flächen
 verschiedener Teile werden automatisch verbunden, `cellSize` zerlegt die Teile schon beim Laden. Ein Teil
@@ -758,12 +776,13 @@ beim Einbinden nicht gebaut.
 | `collisionSpeedThreshold` | 4 m/s | Ab dieser Aufprallgeschwindigkeit entsteht Schaden |
 | `collisionDamageScale` | 12 | Umrechnung von Aufprallenergie (J) in Schaden |
 | `collisionRadiusScale` | 0,035 | Schadensradius pro Kubikwurzel der Energie |
-| `maxCollisionImpactsPerUpdate` | 4 | Begrenzt die Kollisionseinschläge pro Frame |
+| `maxCollisionImpactsPerUpdate` | 4 | Begrenzt die Kollisionseinschläge pro Update von 1/60 s, bei anderem Takt anteilig, siehe `stepRate` |
 | `maxFragmentsPerImpact` | 160 | Begrenzt die Kosten großer Explosionen |
 | `collisionPassThrough` | 0,6 | Anteil der Geschwindigkeit, den ein durchschlagendes Geschoss behält |
 | `workerCount` | 1 | Threads für Einschläge: Schaden, Bruchpunkte, Voronoi-Zellen und Hüllen, der aufrufende Thread zählt mit |
 | `enqueueTask`, `finishTask`, `userTaskContext` | leer | Task-System der Anwendung, sonst startet Nebenan eigene Threads |
 | `asyncStep` | an | `nbWorld_Step` rechnet auf einem eigenen Thread, während das Programm zeichnet. Die Welt rechnet bitgleich wie ohne. Die Allokatoren müssen threadsicher sein, und die Worker eines Schritts lassen dem zeichnenden Thread am besten einen Hardware-Thread frei. Zur Laufzeit mit `nbWorld_SetAsyncStep` |
+| `stepRate` | 60 | Schritte der Physik pro Sekunde für `nbWorld_Advance`, 10 bis 240. Jeder Schritt bekommt so viele Teilschritte, dass es 240 pro Sekunde sind (`nbGetSubStepCount`), und die Grenzen pro Update gelten für 1/60 s und wachsen und schrumpfen mit dem Schritt. Weniger kostet weniger, mehr ist genauer, siehe Der Takt der Physik. Zur Laufzeit mit `nbWorld_SetStepRate` |
 
 | Stream (`nbStreamDef`) | Standard | Wirkung |
 | --- | --- | --- |
@@ -1123,6 +1142,22 @@ Seit `physik-43` sortiert Box3D die neuen Paare ab 64 mit einem Radix-Sort, sieh
 sortieren“ in [`extern/README.md`](extern/README.md). Die Reihenfolge bleibt dieselbe, das Sortieren braucht bei ×1 rund
 60 % weniger Takte, und das Anlegen der Kontakte kostet dort 15 % weniger.
 
+Seit `physik-44` wählt ein Spiel den Takt der Physik, siehe Der Takt der Physik und „Physik mit 30 Hz und 8
+Teilschritten“ in [docs/Optimierungen.md](docs/Optimierungen.md). Was eine simulierte Sekunde der Städte unter Beschuss
+auf der VM mit 4 Threads kostet, Box3D-Schritt, Update und Einschläge zusammen, mit den Granaten bei jedem Takt zu
+denselben Zeiten (`nebenan_benchmark rates`):
+
+| Stadt | 30 Hz | 60 Hz | 120 Hz |
+| --- | ---: | ---: | ---: |
+| 16 Häuser, ×1, eine Granate alle 1/12 s | 306 ms | 357 ms | 482 ms |
+| 16 Häuser, ×2, eine Granate alle 1/12 s | 88 ms | 114 ms | 165 ms |
+| 64 Häuser, ×4, vier Granaten alle 1/60 s | 184 ms | 259 ms | 333 ms |
+
+30 Hz spart 14 bis 29 %, nicht die Hälfte: Der Löser rechnet mit 240 Teilschritten pro Sekunde bei jedem Takt gleich
+oft, und das Update hat bei ×1 mehr zu tun, denn es bleiben 6 % mehr Bruchstücke und 14 % mehr Schutt liegen. 120 Hz
+kostet 28 bis 44 % mehr, dort bleiben 1 % weniger Bruchstücke und 8 % weniger Schutt. Bei 60 Hz rechnet alles bitgleich
+wie vorher.
+
 Ganze Einschläge (Bruch, Stützgraph, neue Box3D-Körper) und der Box3D-Schritt danach bei 60 Hz mit
 4 Substeps, jeweils mit 1 und 4 Threads, der Median aus sechs Läufen:
 
@@ -1164,9 +1199,10 @@ Messungen in [docs/Optimierungen.md](docs/Optimierungen.md).
 ## Tests und Benchmark
 
 ```sh
-build/bin/nebenan_test            # 55 Tests: Geometrie, Voronoi, Hüllen, Öffnungen, Stöße, Stützgraph, Etagen, Lastprüfung, Schutt, Ruhe, Durchschlagen, Threads, Knoten, große Blöcke, Suchbaum, Kontaktlisten, Streaming, Stream, Laden im Hintergrund, Speichern und Zurückholen, gemeinsamer Thread-Pool, Ruhe-Prüfung auf den Workern, Schritt auf eigenem Thread, Schritte pro Bild, Wahl der Threads, Profil und Skalierung, Determinismus …
+build/bin/nebenan_test            # 59 Tests: Geometrie, Voronoi, Hüllen, Öffnungen, Stöße, Stützgraph, Etagen, Lastprüfung, Schutt, Ruhe, Durchschlagen, Threads, Knoten, große Blöcke, Suchbaum, Kontaktlisten, Streaming, Stream, Laden im Hintergrund, Speichern und Zurückholen, gemeinsamer Thread-Pool, Ruhe-Prüfung auf den Workern, Schritt auf eigenem Thread, Schritte pro Bild, Takt der Physik, Wahl der Threads, Profil und Skalierung, Determinismus …
 build/bin/nebenan_benchmark 4     # Zahl = Threads für Bruch und Physik, 0 = so viele, wie ein Spiel nähme
 build/bin/nebenan_benchmark scaling   # die Städte unter Beschuss mit 1, 2, 4 … Threads und die Tabelle der Skalierung
+build/bin/nebenan_benchmark rates     # die Städte unter Beschuss mit 30, 60 und 120 Hz, was eine simulierte Sekunde kostet
 ```
 
 Unter Windows liegen die Programme in `build\bin\Release\`. Die CI baut und testet unter Windows, Linux und

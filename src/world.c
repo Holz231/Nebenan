@@ -1011,6 +1011,14 @@ static b3AABB nbGetActorBounds( const nbWorld* world, const nbActor* actor )
 // Rubble bodies that pieces moving away release per update at most. The others follow in the next updates.
 #define NB_MAX_RELEASES 32
 
+// A limit per update for the step of the current update. The limits hold for steps of 1/60 s and grow and shrink with the
+// step, so the world takes as much per second at any step rate, see nbWorldDef::stepRate. At least one, and steps longer
+// than a second count as one second.
+static int nbLimitForStep( const nbWorld* world, int limit )
+{
+	return b3MaxInt( 1, (int)( (float)limit * world->stepScale + 0.5f ) );
+}
+
 // Rubble bodies the search for what carries rubble visits at most, see nbIsSupportedWithout
 #define NB_SUPPORT_SEARCH 64
 
@@ -2157,8 +2165,10 @@ void nbSplitActors( nbWorld* world, nbImpactResult* result )
 // A bond fails above this utilization, a little over one so float noise cannot break a structure that just holds
 #define NB_FAILURE_UTILIZATION 1.02f
 
-// Chunks crushed in one structure per update at most. The next update carries on with what is left.
+// Chunks crushed in one structure per update of 1/60 s at most, in proportion for other steps, see nbLimitForStep, but
+// never more than NB_CRUSH_ROOM. The next update carries on with what is left.
 #define NB_MAX_CRUSHES 4
+#define NB_CRUSH_ROOM 32
 
 // A crushed chunk bursts into this many fragments that fly apart at this speed in meters per second. A few are enough
 // to take the load off, more only cost. On top of that they are pushed out of the wall at NB_CRUSH_PUSH, otherwise they
@@ -2175,7 +2185,8 @@ void nbSplitActors( nbWorld* world, nbImpactResult* result )
 // strength just lets go.
 #define NB_CRUSH_INTEGRITY 0.5f
 
-// Chunks the load checks of one update visit at most. Structures beyond wait for the next update.
+// Chunks the load checks of one update of 1/60 s visit at most, in proportion for other steps, see nbLimitForStep.
+// Structures beyond wait for the next update.
 #define NB_SUPPORT_BUDGET 65536
 
 // A bond through which a chunk passes load to a neighbor closer to the anchors
@@ -3672,6 +3683,7 @@ static void nbCheckSupports( nbWorld* world )
 	world->supportChecks.count = 0;
 	world->supportQueue = queue;
 
+	int budget = nbLimitForStep( world, NB_SUPPORT_BUDGET );
 	int visited = 0;
 	for ( int q = 0; q < queue.count; ++q )
 	{
@@ -3684,7 +3696,7 @@ static void nbCheckSupports( nbWorld* world )
 			continue;
 		}
 
-		if ( visited > 0 && visited + actor->chunkCount > NB_SUPPORT_BUDGET )
+		if ( visited > 0 && visited + actor->chunkCount > budget )
 		{
 			nbArray_Push( world->supportChecks, actorIndex );
 			continue;
@@ -3753,10 +3765,11 @@ static void nbCheckSupports( nbWorld* world )
 		}
 
 		// Of the rest the most overloaded bonds crush first
-		int crushes[NB_MAX_CRUSHES];
-		uint16_t crushGenerations[NB_MAX_CRUSHES];
+		int crushes[NB_CRUSH_ROOM];
+		uint16_t crushGenerations[NB_CRUSH_ROOM];
+		int maxCrushes = b3MinInt( nbLimitForStep( world, NB_MAX_CRUSHES ), NB_CRUSH_ROOM );
 		int crushCount = 0;
-		for ( ; crushCount < NB_MAX_CRUSHES; ++crushCount )
+		for ( ; crushCount < maxCrushes; ++crushCount )
 		{
 			int best = NB_NULL_INDEX;
 			for ( int k = 0; k < overloadCount; ++k )
@@ -4037,6 +4050,7 @@ nbWorldDef nbDefaultWorldDef( void )
 	def.collisionPassThrough = 0.6f;
 	def.workerCount = 1;
 	def.asyncStep = true;
+	def.stepRate = 60.0f;
 	def.internalValue = NB_SECRET_COOKIE;
 	return def;
 }
@@ -4443,6 +4457,19 @@ void nbWorld_SetDebrisRestTime( nbWorldId worldId, float seconds )
 	world->def.debrisRestTime = b3ClampFloat( seconds, 0.0f, 1.0f );
 }
 
+// The steps per second of nbWorld_Advance, see nbWorldDef::stepRate
+#define NB_MIN_STEP_RATE 10.0f
+#define NB_MAX_STEP_RATE 240.0f
+#define NB_DEFAULT_STEP_RATE 60.0f
+
+// Substeps per second, see nbGetSubStepCount
+#define NB_SUBSTEP_RATE 240.0f
+
+static float nbClampStepRate( float stepRate )
+{
+	return stepRate > 0.0f ? b3ClampFloat( stepRate, NB_MIN_STEP_RATE, NB_MAX_STEP_RATE ) : NB_DEFAULT_STEP_RATE;
+}
+
 nbWorldId nbCreateWorld( const nbWorldDef* def )
 {
 	NB_ASSERT( def->internalValue == NB_SECRET_COOKIE );
@@ -4475,6 +4502,8 @@ nbWorldId nbCreateWorld( const nbWorldDef* def )
 	world->def = *def;
 	world->def.fragmentScale = def->fragmentScale > 0.0f ? def->fragmentScale : 1.0f;
 	world->def.debrisRestTime = b3ClampFloat( def->debrisRestTime, 0.0f, 1.0f );
+	world->def.stepRate = nbClampStepRate( def->stepRate );
+	world->stepScale = 1.0f;
 	world->physicsWorld = def->physicsWorld;
 	nbArena_Create( &world->arena, 256 * 1024 );
 	nbStartWorkers( world, def->workerCount );
@@ -4790,7 +4819,8 @@ static void nbWakeHitRubble( nbWorld* world )
 
 	int woken = 0;
 	b3ContactEvents contactEvents = b3World_GetContactEvents( world->physicsWorld );
-	for ( int i = 0; i < contactEvents.hitCount && woken < NB_MAX_RUBBLE_HITS; ++i )
+	int maxWoken = nbLimitForStep( world, NB_MAX_RUBBLE_HITS );
+	for ( int i = 0; i < contactEvents.hitCount && woken < maxWoken; ++i )
 	{
 		const b3ContactHitEvent* event = contactEvents.hitEvents + i;
 		if ( event->approachSpeed < NB_WAKE_SPEED )
@@ -4849,7 +4879,8 @@ static void nbReleaseHeldRubble( nbWorld* world, b3Vec3 up )
 	// the flag eight pieces ahead.
 	int first = nbNextMoving( world, 0 );
 	int ahead = nbMovingAhead( world, first, 8 );
-	for ( int i = first; i < world->debris.count && rubbleCount - world->rubbleCount < NB_MAX_RELEASES;
+	int maxReleases = nbLimitForStep( world, NB_MAX_RELEASES );
+	for ( int i = first; i < world->debris.count && rubbleCount - world->rubbleCount < maxReleases;
 		  i = nbNextMoving( world, i + 1 ) )
 	{
 		if ( ahead < world->debris.count )
@@ -5903,7 +5934,7 @@ static void nbEnforceDebrisBudget( nbWorld* world, b3Vec3 up )
 	nbSupportFan fan = nbMakeSupportFan( up );
 	int unsupported[NB_MAX_RELEASES];
 	int unsupportedCount = 0;
-	int excess = b3MinInt( count - budget + budget / 10, NB_MAX_BUDGET_FREEZES );
+	int excess = b3MinInt( count - budget + budget / 10, nbLimitForStep( world, NB_MAX_BUDGET_FREEZES ) );
 	int frozen = 0;
 
 #if defined( B3_HAS_SHAPE_BATCH )
@@ -5986,6 +6017,7 @@ static void nbEnforceDebrisBudget( nbWorld* world, b3Vec3 up )
 static void nbUpdate( nbWorld* world, float timeStep )
 {
 	uint64_t ticks = b3GetTicks();
+	world->stepScale = b3ClampFloat( 60.0f * timeStep, 0.0f, 60.0f );
 
 	// The stages of the step before, see nbWorld_GetProfile
 	nbProfileStep( world );
@@ -6047,9 +6079,11 @@ static void nbUpdate( nbWorld* world, float timeStep )
 	// Collision damage, strongest first, limited per update
 	uint64_t lap = b3GetTicks();
 	int impactCount = world->collisionImpacts.count;
-	if ( impactCount > world->def.maxCollisionImpactsPerUpdate )
+	int maxImpacts =
+		world->def.maxCollisionImpactsPerUpdate > 0 ? nbLimitForStep( world, world->def.maxCollisionImpactsPerUpdate ) : 0;
+	if ( impactCount > maxImpacts )
 	{
-		impactCount = world->def.maxCollisionImpactsPerUpdate;
+		impactCount = maxImpacts;
 	}
 
 	for ( int i = 0; i < impactCount; ++i )
@@ -6308,9 +6342,10 @@ void nbWorld_Step( nbWorldId worldId, float timeStep, int subStepCount )
 	nbStepThread_Push( world->stepThread, &step );
 }
 
-// A frame takes at most so many steps, more than one only while the last step with its update took less than so many
-// milliseconds, and counts at most so many seconds, see nbWorld_PlanSteps
-#define NB_PLAN_MAX_STEPS 2
+// A frame takes steps of at most so many seconds together, half of it unless the last step with its update took less than
+// so many milliseconds per step of 1/60 s, and counts at most so many seconds, see nbWorld_PlanSteps. At 60 Hz these are
+// two steps or one, at 120 Hz four or two, at 30 Hz one, and never more than at the highest step rate.
+#define NB_PLAN_MAX_TIME ( 2.0f / 60.0f )
 #define NB_PLAN_CHEAP_TIME 4.0f
 #define NB_PLAN_MAX_FRAME 0.1f
 
@@ -6323,7 +6358,9 @@ int nbWorld_PlanSteps( nbWorldId worldId, float frameTime, float timeStep )
 		return 0;
 	}
 
-	int maxSteps = world->stats.stepTime + world->stats.updateTime < NB_PLAN_CHEAP_TIME ? NB_PLAN_MAX_STEPS : 1;
+	bool cheap = world->stats.stepTime + world->stats.updateTime < NB_PLAN_CHEAP_TIME * 60.0f * timeStep;
+	float maxTime = cheap ? NB_PLAN_MAX_TIME : 0.5f * NB_PLAN_MAX_TIME;
+	int maxSteps = (int)( b3ClampFloat( maxTime / timeStep, 1.0f, NB_PLAN_MAX_TIME * NB_MAX_STEP_RATE ) + 0.5f );
 	world->planStep = timeStep;
 	world->stepClock += b3ClampFloat( frameTime, 0.0f, NB_PLAN_MAX_FRAME );
 	int steps = 0;
@@ -6339,6 +6376,48 @@ int nbWorld_PlanSteps( nbWorldId worldId, float frameTime, float timeStep )
 		world->stepClock = b3MinFloat( world->stepClock, timeStep );
 	}
 	return steps;
+}
+
+int nbGetSubStepCount( float stepRate )
+{
+	return b3MaxInt( 1, (int)( NB_SUBSTEP_RATE / nbClampStepRate( stepRate ) + 0.5f ) );
+}
+
+int nbWorld_Advance( nbWorldId worldId, float frameTime )
+{
+	nbWorld* world = nbGetWorldFromId( worldId );
+	if ( world == NULL )
+	{
+		return 0;
+	}
+
+	float stepRate = world->def.stepRate;
+	float timeStep = 1.0f / stepRate;
+	int subStepCount = nbGetSubStepCount( stepRate );
+	int steps = nbWorld_PlanSteps( worldId, frameTime, timeStep );
+	for ( int i = 0; i < steps; ++i )
+	{
+		nbWorld_Step( worldId, timeStep, subStepCount );
+	}
+	return steps;
+}
+
+void nbWorld_SetStepRate( nbWorldId worldId, float stepRate )
+{
+	// Only nbWorld_Advance uses the rate, on the thread that plans the steps, so this need not wait for them
+	nbWorld* world = nbFindWorld( worldId );
+	if ( world == NULL )
+	{
+		return;
+	}
+
+	world->def.stepRate = nbClampStepRate( stepRate );
+}
+
+float nbWorld_GetStepRate( nbWorldId worldId )
+{
+	nbWorld* world = nbFindWorld( worldId );
+	return world != NULL ? world->def.stepRate : NB_DEFAULT_STEP_RATE;
 }
 
 void nbWorld_RunAfterStep( nbWorldId worldId, nbAfterStepFcn* fcn, void* context )

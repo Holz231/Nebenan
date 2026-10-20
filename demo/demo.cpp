@@ -380,11 +380,12 @@ struct App
 	float destructionTime = 0.0f;
 	nbImpactResult lastImpact = {};
 
-	// The physics on the thread of Nebenan while the frame is drawn, see nbWorldDef::asyncStep. The steps started last,
-	// whether they are not applied yet, the poses to draw the bodies at, and in this frame the CPU time of the physics and
-	// how long the main thread waited for it.
+	// The physics on the thread of Nebenan while the frame is drawn, see nbWorldDef::asyncStep. The steps started last and
+	// the time they simulate, whether they are not applied yet, the poses to draw the bodies at, and in this frame the CPU
+	// time of the physics and how long the main thread waited for it.
 	bool parallelPhysics = true;
 	int physicsSteps = 0;
+	float physicsStepTime = 0.0f;
 	bool physicsPending = false;
 	nbDrawPoses poses = {};
 
@@ -392,6 +393,9 @@ struct App
 	// it. Slow motion gives the physics a quarter of the time, so the difference shows on any monitor.
 	bool interpolate = true;
 	bool slowMotion = false;
+
+	// Steps per second of the physics, chosen in the menu, see nbWorldDef::stepRate
+	float stepRate = 60.0f;
 	float simulationTime = 0.0f;
 	float waitTime = 0.0f;
 	WorldView view;
@@ -1032,6 +1036,7 @@ static void DestroyScene( App& app )
 	// The worlds wait for their last steps by themselves, and their poses go with them
 	app.poses = {};
 	app.physicsPending = false;
+	app.physicsStepTime = 0.0f;
 
 	if ( nbWorld_IsValid( app.destruction ) )
 	{
@@ -1106,7 +1111,9 @@ static void LoadScene( App& app, SceneKind scene )
 	def.supportScale = app.supportScale;
 	def.storeySupport = app.storeySupport;
 	def.asyncStep = app.parallelPhysics;
+	def.stepRate = app.stepRate;
 	app.destruction = nbCreateWorld( &def );
+	app.stepRate = nbWorld_GetStepRate( app.destruction );
 
 	switch ( scene )
 	{
@@ -1279,21 +1286,18 @@ static void UpdateBalls( App& app, float dt )
 //----------------------------------------------------------------------------------------------------------------------
 // Simulation
 
-// Start the steps this frame needs, see nbWorld_PlanSteps. With parallel physics they run on the thread of Nebenan while
-// the frame is drawn, else right here. Either way the main thread does not touch the worlds again before it waits for
-// them, see FinishPhysics.
+// Start the steps this frame needs at the step rate of the world, see nbWorld_Advance. With parallel physics they run on
+// the thread of Nebenan while the frame is drawn, else right here. Either way the main thread does not touch the worlds
+// again before it waits for them, see FinishPhysics.
 static void StartPhysics( App& app, float frameDt )
 {
-	const float step = 1.0f / 60.0f;
+	// The balls age by the time the steps of the frame before simulated, which are done by now
+	UpdateBalls( app, app.physicsStepTime );
 	float physicsDt = app.slowMotion ? 0.25f * frameDt : frameDt;
-	int steps = app.paused ? 0 : nbWorld_PlanSteps( app.destruction, physicsDt, step );
+	int steps = app.paused ? 0 : nbWorld_Advance( app.destruction, physicsDt );
 	app.physicsSteps = steps;
+	app.physicsStepTime = (float)steps / app.stepRate;
 	app.physicsPending = steps > 0 || app.scene == SceneCity;
-	UpdateBalls( app, (float)steps * step );
-	for ( int i = 0; i < steps; ++i )
-	{
-		nbWorld_Step( app.destruction, step, 4 );
-	}
 
 	// The city streams after the steps on their thread, also while the simulation pauses
 	if ( app.scene == SceneCity )
@@ -1445,6 +1449,13 @@ static void Appendf( std::string& text, const char* format, ... )
 	text += buffer;
 }
 
+// The step rate of the physics for the reports, like "30 Hz mit 8 Teilschritten"
+static void AppendStepRate( std::string& text, const App& app )
+{
+	int subStepCount = nbGetSubStepCount( app.stepRate );
+	Appendf( text, "%.0f Hz mit %d %s", app.stepRate, subStepCount, subStepCount == 1 ? "Teilschritt" : "Teilschritten" );
+}
+
 // Everything it takes to tell where the time of a frame goes, to paste into a message
 static std::string BuildReport( const App& app )
 {
@@ -1481,7 +1492,9 @@ static std::string BuildReport( const App& app )
 	{
 		Appendf( text, "Physik parallel zum Zeichnen: aus\n" );
 	}
-	Appendf( text, "Pro Schritt: Box3D %.2f ms, Zerstörung %.2f ms\n", app.physicsTime, app.destructionTime );
+	Appendf( text, "Physiktakt " );
+	AppendStepRate( text, app );
+	Appendf( text, ", pro Schritt: Box3D %.2f ms, Zerstörung %.2f ms\n", app.physicsTime, app.destructionTime );
 	Appendf( text, "Welt: %d Bruchstücke, %d Verbindungen, %d Trümmerkörper (%d wach), %d Schutt, %d Kontakte, Budget %d, Ruhezeit %.2f s, Bruchstückgröße x%.2f\n",
 			 stats.chunkCount, stats.bondCount, stats.dynamicBodyCount, view.awakeBodies, stats.rubbleCount,
 			 view.counters.contactCount, app.maxDebrisBodies, app.debrisRestTime, app.fragmentScale );
@@ -1643,6 +1656,18 @@ static void DrawUi( App& app )
 	if ( ImGui::IsItemHovered() )
 	{
 		ImGui::SetTooltip( "Die Physik bekommt ein Viertel der Zeit. Dann kommen viermal so viele Bilder wie\nSchritte, und der Unterschied von „Zwischen Schritten zeichnen“ zeigt sich auf\njedem Monitor." );
+	}
+	static const float s_stepRates[3] = { 30.0f, 60.0f, 120.0f };
+	static const char* s_stepRateNames[3] = { "30 Hz", "60 Hz", "120 Hz" };
+	int stepRateIndex = app.stepRate < 45.0f ? 0 : ( app.stepRate < 90.0f ? 1 : 2 );
+	if ( ImGui::Combo( "Physiktakt", &stepRateIndex, s_stepRateNames, 3 ) )
+	{
+		app.stepRate = s_stepRates[stepRateIndex];
+		nbWorld_SetStepRate( app.destruction, app.stepRate );
+	}
+	if ( ImGui::IsItemHovered() )
+	{
+		ImGui::SetTooltip( "So viele Schritte rechnet die Physik pro Sekunde, jeden mit so vielen Teilschritten,\ndass es 240 pro Sekunde sind. 30 Hz kostet weniger, aber Kontakte und Treffer kommen\nbis zu einen Schritt später, und schnelle Trümmer durchdringen einander leichter.\n120 Hz ist genauer und kostet mehr. Mit „Zwischen Schritten zeichnen“ bewegt sich\ndas Bild bei jedem Takt flüssig. Vorgabe 60 Hz." );
 	}
 	if ( app.vsyncAvailable )
 	{
@@ -2275,9 +2300,10 @@ static void FinishScaling( App& app )
 	const Demolition& demolition = comparison.demolition;
 	Appendf( text,
 			 "Abriss mit %d Granaten, bis zu %d pro Bild, solange weniger als %d Trümmer fliegen, Bruchstückgröße x%.2f, "
-			 "Budget %d, ein Schritt pro Bild, erst ein Lauf mit %d Bildern zum Aufwärmen, der nicht zählt\n",
-			 demolition.shots, DemolitionShotsPerFrame, DemolitionMovingLimit, app.fragmentScale, DemolitionBudget,
-			 Comparison::WarmupFrames );
+			 "Budget %d, Physiktakt ",
+			 demolition.shots, DemolitionShotsPerFrame, DemolitionMovingLimit, app.fragmentScale, DemolitionBudget );
+	AppendStepRate( text, app );
+	Appendf( text, ", 1/60 s pro Bild, erst ein Lauf mit %d Bildern zum Aufwärmen, der nicht zählt\n", Comparison::WarmupFrames );
 	if ( demolition.doneFrame >= 0 )
 	{
 		Appendf( text, "Alle %d Häuser nach %d Bildern unten, %d Bilder pro Lauf\n", demolition.house, demolition.doneFrame,
@@ -2355,8 +2381,10 @@ static void FinishComparison( App& app )
 	AppendMachine( text, app );
 	const Demolition& demolition = comparison.demolition;
 	Appendf( text, "Abriss der Stadt Haus für Haus mit %d Granaten, bis zu %d pro Bild, solange weniger als %d Trümmer fliegen, "
-			 "Bruchstückgröße x%.2f, Budget %d, höchstens %d Trümmer zugleich unterwegs, ein Schritt pro Bild\n",
+			 "Bruchstückgröße x%.2f, Budget %d, höchstens %d Trümmer zugleich unterwegs, Physiktakt ",
 			 demolition.shots, DemolitionShotsPerFrame, DemolitionMovingLimit, app.fragmentScale, DemolitionBudget, demolition.maxMoving );
+	AppendStepRate( text, app );
+	Appendf( text, ", 1/60 s pro Bild\n" );
 	if ( demolition.doneFrame >= 0 )
 	{
 		Appendf( text, "Alle %d Häuser nach %d Bildern unten, %d Bilder pro Lauf, erst einer mit %d zum Aufwärmen, der nicht zählt\n",
@@ -2576,7 +2604,8 @@ static void OnFrame()
 	float dt = (float)sapp_frame_duration();
 	dt = b3ClampFloat( dt, 0.0f, 0.1f );
 
-	// Automated runs and the comparison advance one physics step per frame, so they repeat exactly on any machine
+	// Automated runs and the comparison advance the physics 1/60 s per frame, one step at 60 Hz, so they repeat exactly on
+	// any machine and take the same time at every step rate
 	if ( app.automation.frameLimit > 0 || app.comparison.active )
 	{
 		dt = 1.0f / 60.0f;
@@ -2909,6 +2938,10 @@ int main( int argc, char** argv )
 		else if ( strcmp( argv[i], "--serial-physics" ) == 0 )
 		{
 			app.parallelPhysics = false;
+		}
+		else if ( strcmp( argv[i], "--step-rate" ) == 0 && i + 1 < argc )
+		{
+			app.stepRate = (float)atof( argv[++i] );
 		}
 		else if ( strcmp( argv[i], "--compare" ) == 0 )
 		{

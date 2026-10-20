@@ -4303,6 +4303,101 @@ static int PlanStepsTest( void )
 	return 0;
 }
 
+// The determinism scenario in frames of 1/60 s through nbWorld_Advance at stepRate steps per second, with the impacts at
+// the same times, then settle frames until all of it rests. Counts the steps and the frames it settled.
+static uint32_t RunScenarioAtRate( TestScene scene, float stepRate, int settleFrames, int* stepCount, int* awakeCount )
+{
+	nbWorld_SetStepRate( scene.world, stepRate );
+	nbDestructibleId wall = CreateWall( &scene, (b3Vec3){ 2.5f, 1.5f, 0.12f }, 5 );
+	nbDestructibleId gate = CreateGate( &scene, 10.0f, 6 );
+
+	nbImpactDef impact = { 0 };
+	impact.direction = (b3Vec3){ 0.2f, 0.0f, -1.0f };
+	impact.radius = 0.45f;
+	impact.damage = 8.0e4f;
+	impact.ejectSpeed = 9.0f;
+
+	*stepCount = 0;
+	for ( int frame = 0; frame < 120 + settleFrames; ++frame )
+	{
+		if ( frame < 120 && frame % 20 == 0 )
+		{
+			impact.point = (b3Vec3){ -1.5f + 0.5f * (float)( frame / 20 ), 0.6f + 0.2f * (float)( frame / 20 ), 0.12f };
+			nbWorld_ApplyImpact( scene.world, &impact );
+		}
+		if ( frame == 10 )
+		{
+			nbImpactDef blast = { 0 };
+			blast.point = (b3Vec3){ 13.0f, 2.3f, 0.0f };
+			blast.radius = 1.0f;
+			blast.damage = 1.0e8f;
+			blast.ejectSpeed = 2.0f;
+			nbWorld_ApplyImpact( scene.world, &blast );
+		}
+		*stepCount += nbWorld_Advance( scene.world, 1.0f / 60.0f );
+	}
+
+	nbStats stats = nbWorld_GetStats( scene.world );
+	*awakeCount = b3World_GetAwakeBodyCount( scene.physicsWorld );
+	uint32_t hash = HashDestructible( 2166136261u, wall );
+	hash = HashDestructible( hash, gate );
+	hash = ( hash ^ (uint32_t)stats.bondCount ) * 16777619u;
+	DestroyScene( &scene );
+	return hash;
+}
+
+// The results of the determinism scenario at 30 and 120 Hz with ten seconds to settle, the same on every platform like
+// NB_EXPECTED_DETERMINISM_HASH
+#define NB_EXPECTED_HASH_30HZ 0x00be7373u
+#define NB_EXPECTED_HASH_120HZ 0xf7e73ed5u
+
+// The steps per second of nbWorld_Advance. At 60 Hz it takes the steps of the determinism scenario to the bit. At 30 and
+// 120 Hz every frame of 1/60 s takes half a step and two, whatever the steps cost, the world ends the same with one and
+// four threads and on every platform, and everything comes to rest. Each step gets the substeps that make 240 per second.
+static int StepRateTest( void )
+{
+	ENSURE( nbGetSubStepCount( 30.0f ) == 8 );
+	ENSURE( nbGetSubStepCount( 60.0f ) == 4 );
+	ENSURE( nbGetSubStepCount( 120.0f ) == 2 );
+	ENSURE( nbGetSubStepCount( 144.0f ) == 2 );
+	ENSURE( nbGetSubStepCount( 240.0f ) == 1 );
+	ENSURE( nbGetSubStepCount( 1000.0f ) == 1 );
+	ENSURE( nbGetSubStepCount( 0.0f ) == 4 );
+
+	{
+		TestScene scene = CreateScene();
+		ENSURE( nbWorld_GetStepRate( scene.world ) == 60.0f );
+		nbWorld_SetStepRate( scene.world, 1.0f );
+		ENSURE( nbWorld_GetStepRate( scene.world ) == 10.0f );
+		nbWorld_SetStepRate( scene.world, 1000.0f );
+		ENSURE( nbWorld_GetStepRate( scene.world ) == 240.0f );
+
+		// Two steps of 1/120 s fit into a frame of 1/60 s, and four when the steps are cheap
+		ENSURE( nbWorld_PlanSteps( scene.world, 1.0f / 60.0f, 1.0f / 120.0f ) == 2 );
+		ENSURE( nbWorld_PlanSteps( scene.world, 1.0f, 1.0f / 120.0f ) == 4 );
+		DestroyScene( &scene );
+	}
+
+	int steps = 0, awake = 0;
+	ENSURE( RunScenarioAtRate( CreateScene(), 60.0f, 0, &steps, &awake ) == NB_EXPECTED_DETERMINISM_HASH );
+	ENSURE( steps == 120 );
+
+	const float rates[2] = { 30.0f, 120.0f };
+	const uint32_t expected[2] = { NB_EXPECTED_HASH_30HZ, NB_EXPECTED_HASH_120HZ };
+	for ( int r = 0; r < 2; ++r )
+	{
+		int steps1 = 0, steps4 = 0, awake1 = 0, awake4 = 0;
+		uint32_t hash1 = RunScenarioAtRate( CreateScene(), rates[r], 600, &steps1, &awake1 );
+		uint32_t hash4 = RunScenarioAtRate( CreateSceneWithWorkers( 4, NULL, NULL, NULL ), rates[r], 600, &steps4, &awake4 );
+		printf( "  %.0f Hz: %d steps, hash 0x%08x, %d bodies awake after 10 s\n", rates[r], steps1, hash1, awake1 );
+		ENSURE( hash1 == hash4 );
+		ENSURE( hash1 == expected[r] );
+		ENSURE( steps1 == (int)( 720.0f * rates[r] / 60.0f ) && steps4 == steps1 );
+		ENSURE( awake1 == 0 && awake4 == 0 );
+	}
+	return 0;
+}
+
 // The pose that nbWorld_GetDrawPoses handed out for a body, null if it has none
 static const nbDrawPose* FindDrawPose( nbDrawPoses poses, b3BodyId bodyId )
 {
@@ -4782,6 +4877,7 @@ int WorldTest( void )
 	RUN_TEST( SettleWorkersTest );
 	RUN_TEST( AsyncStepTest );
 	RUN_TEST( PlanStepsTest );
+	RUN_TEST( StepRateTest );
 	RUN_TEST( DrawPoseTest );
 	RUN_TEST( ProfileTest );
 	RUN_TEST( ScalingFitTest );

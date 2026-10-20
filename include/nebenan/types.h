@@ -370,7 +370,8 @@ typedef struct nbWorldDef
 	/// Damage radius of a collision is this scale times the cube root of the collision energy (Joule).
 	float collisionRadiusScale;
 
-	/// Maximum number of collision impacts processed per update. Limits worst case frame time.
+	/// Maximum number of collision impacts processed per update of 1/60 s, in proportion for other steps, see stepRate.
+	/// Limits worst case frame time.
 	int maxCollisionImpactsPerUpdate;
 
 	/// Upper bound for the fragments one impact creates. Bounds the cost of large explosions.
@@ -414,6 +415,15 @@ typedef struct nbWorldDef
 	/// without sleeping, so leave the thread that draws a hardware thread of its own. On by default, see
 	/// nbWorld_SetAsyncStep.
 	bool asyncStep;
+
+	/// Steps per second of nbWorld_Advance, 60 by default. Every step gets as many substeps as make 240 per second, see
+	/// nbGetSubStepCount, so the solver works the same at any rate, and the limits per update, like
+	/// maxCollisionImpactsPerUpdate, grow and shrink with the step, so the world takes as much per second. The pair search,
+	/// the collision and the update run once per step: a lower rate costs less per second, but contacts and hits come up
+	/// to a step later and fast debris passes through other debris more easily. A higher rate is more exact and costs more.
+	/// The results are the same with any number of threads at every rate. Clamped to [10, 240], change it at run time
+	/// with nbWorld_SetStepRate.
+	float stepRate;
 
 	/// Used internally to detect a valid definition. DO NOT SET.
 	int internalValue;
