@@ -331,9 +331,15 @@ static void nbFindStoreys( nbWorld* world, int destructibleIndex, int actorIndex
 	{
 		if ( lows[k] > low && destructible->storeyCount < NB_MAX_STOREYS )
 		{
-			destructible->storeys[destructible->storeyCount++] = (nbStorey){ low, lows[k], 0.0f };
+			destructible->storeys[destructible->storeyCount++] = (nbStorey){ low, lows[k], 0.0f, b3Vec3_zero, b3Vec3_zero };
 		}
 		low = b3MaxFloat( low, highs[k] );
+	}
+
+	b3AABB bounds[NB_MAX_STOREYS];
+	for ( int s = 0; s < destructible->storeyCount; ++s )
+	{
+		bounds[s] = (b3AABB){ { FLT_MAX, FLT_MAX, FLT_MAX }, { -FLT_MAX, -FLT_MAX, -FLT_MAX } };
 	}
 
 	const nbActor* actor = world->actors.data + actorIndex;
@@ -343,16 +349,24 @@ static void nbFindStoreys( nbWorld* world, int destructibleIndex, int actorIndex
 		for ( int s = 0; s < destructible->storeyCount; ++s )
 		{
 			nbStorey* storey = destructible->storeys + s;
-			storey->volume += shape->centroid.y >= storey->low && shape->centroid.y < storey->high ? shape->volume : 0.0f;
+			if ( shape->centroid.y >= storey->low && shape->centroid.y < storey->high )
+			{
+				storey->volume += shape->volume;
+				storey->center = b3MulAdd( storey->center, shape->volume, shape->centroid );
+				bounds[s] = b3AABB_Union( bounds[s], shape->bounds );
+			}
 		}
 	}
 
 	int count = 0;
 	for ( int s = 0; s < destructible->storeyCount; ++s )
 	{
-		if ( destructible->storeys[s].volume > 0.0f )
+		nbStorey* storey = destructible->storeys + s;
+		if ( storey->volume > 0.0f )
 		{
-			destructible->storeys[count++] = destructible->storeys[s];
+			storey->center = b3MulSV( 1.0f / storey->volume, storey->center );
+			storey->extent = b3MulSV( 0.5f, b3Sub( bounds[s].upperBound, bounds[s].lowerBound ) );
+			destructible->storeys[count++] = *storey;
 		}
 	}
 	destructible->storeyCount = count;

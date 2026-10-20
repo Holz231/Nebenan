@@ -2229,10 +2229,6 @@ typedef struct nbOverload
 	bool eject;
 } nbOverload;
 
-// What comes down over a storey that gave way starts to turn at up to this many radians per second toward the side where
-// the walls are missing, see nbCheckStoreys. It only turns, a push on top would throw it.
-#define NB_TILT_SPEED 0.5f
-
 // A part of a building that came down keeps its storeys while its local Y axis stays within 45 degrees of up
 #define NB_UPRIGHT 0.7071f
 
@@ -2242,12 +2238,16 @@ typedef struct nbOverload
 // A storey that gave way does not give way again for remains of less than this part of its walls
 #define NB_STOREY_REMAINS 0.1f
 
-// How a chunk comes down over a storey that gave way
-typedef struct nbTilt
-{
-	int chunkIndex;
-	b3Vec3 angularVelocity;
-} nbTilt;
+// Of the walls left in a storey that gives way, this part stays where it is, see nbFindRemains. It is a part of what is
+// left, not of the walls the storey had, so it stays below NB_STOREY_REMAINS.
+#define NB_STOREY_RESIDUE 0.1f
+
+// The walls a storey lost lie on one side when their center lies farther from the center of the walls it had than this
+// part of the way to the edge of the storey, see nbFindRemains
+#define NB_ONE_SIDED 0.35f
+
+// The random numbers that pick what stays of a storey with damage all around, one stream for every storey
+#define NB_REMAINS_STREAM 0x52454d41494e53ull
 
 // Remaining health of a bond over the health of an undamaged bond of the same area and materials
 static float nbBondIntegrity( const nbWorld* world, const nbBond* bond )
@@ -3098,6 +3098,121 @@ static int nbCheckSupport( nbWorld* world, int actorIndex, float gravity, b3Vec3
 // Four times the largest relative error of rounding to a float
 #define NB_FLOAT_SLACK ( 4.0 / 16777216.0 )
 
+// The part of the walls it had that a storey keeps at least before it gives way, see nbWorldDef::storeyCollapseDamage
+static float nbStoreyKeep( const nbWorld* world )
+{
+	return 1.0f - world->def.storeyCollapseDamage;
+}
+
+// Keeps the chunks of a cell, by its first part, among those that stay, see nbFindRemains, and marks every cell bonded to
+// one of them at its first part. The chunks of the part carry the stamp and their place in its list.
+static void nbKeepCell( const nbWorld* world, const int* chunks, const int* roots, int cell, int n, uint32_t stamp, bool* remains,
+						bool* touches )
+{
+	for ( int k = cell; k < n; ++k )
+	{
+		if ( roots[k] != cell )
+		{
+			continue;
+		}
+
+		remains[k] = true;
+		const nbChunk* chunk = world->chunks.data + chunks[k];
+		for ( int key = chunk->headBondKey; key != NB_NULL_INDEX; )
+		{
+			const nbBond* bond = world->bonds.data + ( key >> 1 );
+			int side = key & 1;
+			key = bond->nextKey[side];
+
+			const nbChunk* other = world->chunks.data + bond->chunk[side ^ 1];
+			if ( other->searchStamp == stamp )
+			{
+				touches[roots[other->scratch]] = true;
+			}
+		}
+	}
+}
+
+// What stays of a storey that gives way: NB_STOREY_RESIDUE of the walls the part has left in it, as whole cells, as
+// close to that as whole cells come. When the walls the storey lost lie mostly on one side, the cells closest to the
+// middle of the opposite side, bonded to each other, the anchor the part above tilts over. A column of them from the
+// floor to the ceiling keeps its bonds to what is below. When the damage is spread around, cells picked at random,
+// which mostly hang on nothing and fall. remaining and moment are the volume and the first moment of the walls left in
+// the storey in all parts that stand, roots the first part of the cell of every chunk of the part, and the cells carry
+// their volume and center at their first part. Sets the chunks that stay and the cells bonded to them, see nbKeepCell.
+static void nbFindRemains( nbWorld* world, const nbDestructible* destructible, int storeyIndex, float remaining, b3Vec3 moment,
+						   const int* chunks, const int* roots, const float* cellVolumes, const b3Vec3* centers,
+						   const float* heights, int n, uint32_t stamp, bool* remains, bool* touches )
+{
+	const nbStorey* storey = destructible->storeys + storeyIndex;
+	int* members = nbArena_AllocArray( &world->arena, int, n );
+	int memberCount = 0;
+	float walls = 0.0f;
+	for ( int k = 0; k < n; ++k )
+	{
+		if ( roots[k] == k && heights[k] > storey->low && heights[k] < storey->high )
+		{
+			members[memberCount++] = k;
+			walls += cellVolumes[k];
+		}
+	}
+
+	// The center of what the storey lost lies across the center it had from the center of what is left
+	float target = NB_STOREY_RESIDUE * walls;
+	float lost = storey->volume - remaining;
+	b3Vec3 offset = b3Vec3_zero;
+	if ( lost > 0.0f && remaining > 0.0f )
+	{
+		offset = b3MulSV( remaining / lost, b3Sub( storey->center, b3MulSV( 1.0f / remaining, moment ) ) );
+	}
+	offset.y = 0.0f;
+	float distance = b3Length( offset );
+	b3Vec3 direction = distance > 0.0f ? b3MulSV( 1.0f / distance, offset ) : b3Vec3_zero;
+	float reach = b3AbsFloat( direction.x ) * storey->extent.x + b3AbsFloat( direction.z ) * storey->extent.z;
+	bool oneSided = reach > 0.0f && distance > NB_ONE_SIDED * reach;
+	b3Vec3 aim = b3MulSub( storey->center, reach, direction );
+	nbRandom rng = nbMakeRandom( destructible->seed, NB_REMAINS_STREAM + (uint64_t)storeyIndex );
+
+	float kept = 0.0f;
+	while ( memberCount > 0 && target > 0.0f )
+	{
+		// On one side the cell closest to the middle of the strongest side that is bonded to a cell that stays, or the
+		// closest of all when none is
+		int pick = 0;
+		if ( oneSided )
+		{
+			bool pickBonded = false;
+			float pickDistance = FLT_MAX;
+			for ( int m = 0; m < memberCount; ++m )
+			{
+				bool bonded = kept > 0.0f && touches[members[m]];
+				b3Vec3 d = b3Sub( centers[members[m]], aim );
+				float d2 = d.x * d.x + d.z * d.z;
+				if ( ( bonded && pickBonded == false ) || ( bonded == pickBonded && d2 < pickDistance ) )
+				{
+					pick = m;
+					pickBonded = bonded;
+					pickDistance = d2;
+				}
+			}
+		}
+		else
+		{
+			pick = (int)( nbRandomU32( &rng ) % (uint32_t)memberCount );
+		}
+
+		int cell = members[pick];
+		if ( kept > 0.0f && kept + 0.5f * cellVolumes[cell] > target )
+		{
+			break;
+		}
+
+		nbKeepCell( world, chunks, roots, cell, n, stamp, remains, touches );
+		kept += cellVolumes[cell];
+		members[pick] = members[--memberCount];
+	}
+}
+
 // Whether every storey of a building keeps clearly more of its walls than it needs, from what is left of them, see
 // nbDestructible::standing. The sum in nbCheckStoreys adds up the same volumes in float, and its rounding errors add up
 // to at most one such error per chunk. This keeps four times that apart, so the sum would not find a storey that gives
@@ -3107,7 +3222,7 @@ static bool nbStoreysHold( const nbWorld* world, const nbDestructible* destructi
 	double keep = 1.0 - ( destructible->chunkCount + 16.0 ) * NB_FLOAT_SLACK;
 	for ( int s = 0; s < destructible->storeyCount; ++s )
 	{
-		double need = (double)world->def.storeySupport * destructible->storeys[s].volume * ( 1.0 + NB_FLOAT_SLACK );
+		double need = (double)nbStoreyKeep( world ) * destructible->storeys[s].volume * ( 1.0 + NB_FLOAT_SLACK );
 		if ( keep * destructible->standing[s] < need )
 		{
 			return false;
@@ -3116,20 +3231,20 @@ static bool nbStoreysHold( const nbWorld* world, const nbDestructible* destructi
 	return true;
 }
 
-// A storey of a building gives way when less than nbWorldDef::storeySupport of the walls it had is left, on any floor
-// and whatever they could still carry. The chunks in it fly out like the stones under a collapsing block, see
-// nbCheckSupports, and everything above comes down in one piece, so the rooms up there stay whole. It tilts toward the
-// side where the walls are missing, the faster the farther its center of mass lies beside the middle of the walls that
-// are left. A cell goes where its center lies, so the cracks follow the faces of the cells. The storeys count the walls
-// of all static parts of the destructible, and a part lets go of what it holds itself. Returns the chunks to throw and
-// the bonds to break in arena memory, and the spin of the chunks that come down.
-static int nbCheckStoreys( nbWorld* world, int actorIndex, b3Vec3 up, nbOverload** overloadsOut, nbTilt** tiltsOut,
-						   int* tiltCountOut )
+// A storey of a building gives way once nbWorldDef::storeyCollapseDamage of the walls it had is destroyed, on any floor
+// and whatever they could still carry. A tenth of the walls that are left stays where it is, see nbFindRemains, and lets
+// go only of what comes down. The rest flies out like the stones under a collapsing block, see nbCheckSupports, and
+// everything above comes down in one piece, so the rooms up there stay whole. It tilts over what stayed as gravity and
+// contacts make it, nothing turns it. A cell goes where its center lies, so the cracks follow the faces of the cells.
+// The storeys count the walls of all static parts of the destructible, and a part lets go of what it holds itself.
+// Returns the chunks to throw and the bonds to break in arena memory, and a chunk of every part that comes down.
+static int nbCheckStoreys( nbWorld* world, int actorIndex, b3Vec3 up, nbOverload** overloadsOut, int** downsOut,
+						   int* downCountOut )
 {
-	*tiltCountOut = 0;
+	*downCountOut = 0;
 	const nbActor* actor = world->actors.data + actorIndex;
 	const nbDestructible* destructible = world->destructibles.data + actor->destructibleIndex;
-	if ( world->def.storeySupport <= 0.0f || destructible->storeyCount == 0 )
+	if ( world->def.storeyCollapseDamage <= 0.0f || destructible->storeyCount == 0 )
 	{
 		return 0;
 	}
@@ -3150,11 +3265,13 @@ static int nbCheckStoreys( nbWorld* world, int actorIndex, b3Vec3 up, nbOverload
 	}
 #endif
 
-	// What is left of every storey, in the parts of the building that stand and those that came down
+	// What is left of every storey, in the parts of the building that stand and those that came down, and where it is
 	float volumes[NB_MAX_STOREYS];
+	b3Vec3 moments[NB_MAX_STOREYS];
 	for ( int s = 0; s < destructible->storeyCount; ++s )
 	{
 		volumes[s] = 0.0f;
+		moments[s] = b3Vec3_zero;
 	}
 
 	// The parts that stand, found from the end of the list: The list holds every fragment of the building, newest first,
@@ -3214,6 +3331,7 @@ static int nbCheckStoreys( nbWorld* world, int actorIndex, b3Vec3 up, nbOverload
 			if ( s >= 0 )
 			{
 				volumes[s] += shape->volume;
+				moments[s] = b3MulAdd( moments[s], shape->volume, shape->centroid );
 			}
 		}
 	}
@@ -3222,7 +3340,7 @@ static int nbCheckStoreys( nbWorld* world, int actorIndex, b3Vec3 up, nbOverload
 	int failingCount = 0;
 	for ( int s = 0; s < destructible->storeyCount; ++s )
 	{
-		if ( volumes[s] < world->def.storeySupport * destructible->storeys[s].volume )
+		if ( volumes[s] < nbStoreyKeep( world ) * destructible->storeys[s].volume )
 		{
 			failing[failingCount++] = s;
 		}
@@ -3244,12 +3362,14 @@ static int nbCheckStoreys( nbWorld* world, int actorIndex, b3Vec3 up, nbOverload
 		return 0;
 	}
 
-	// The height of the center of the cell of every chunk, see nbBond::sibling
+	// The height of the center of the cell of every chunk, see nbBond::sibling, and the center of every cell at its first
+	// part
 	int n = actor->chunkCount;
 	int* chunks = nbArena_AllocArray( &world->arena, int, n );
 	int* cells = nbArena_AllocArray( &world->arena, int, n );
 	float* cellVolumes = nbArena_AllocArray( &world->arena, float, n );
 	float* heights = nbArena_AllocArray( &world->arena, float, n );
+	b3Vec3* centers = nbArena_AllocArray( &world->arena, b3Vec3, n );
 	world->searchStamp += 1;
 	uint32_t stamp = world->searchStamp;
 	int bondKeys = 0;
@@ -3263,6 +3383,7 @@ static int nbCheckStoreys( nbWorld* world, int actorIndex, b3Vec3 up, nbOverload
 		cells[count] = count;
 		cellVolumes[count] = 0.0f;
 		heights[count] = 0.0f;
+		centers[count] = b3Vec3_zero;
 		bondKeys += chunk->bondCount;
 		count += 1;
 	}
@@ -3292,6 +3413,7 @@ static int nbCheckStoreys( nbWorld* world, int actorIndex, b3Vec3 up, nbOverload
 		int root = nbFindBlock( cells, k );
 		cellVolumes[root] += shape->volume;
 		heights[root] += shape->volume * shape->centroid.y;
+		centers[root] = b3MulAdd( centers[root], shape->volume, shape->centroid );
 	}
 
 	// A cell's root is its first part, so it is done before the other parts
@@ -3299,6 +3421,8 @@ static int nbCheckStoreys( nbWorld* world, int actorIndex, b3Vec3 up, nbOverload
 	{
 		int root = nbFindBlock( cells, k );
 		heights[k] = k == root ? heights[k] / cellVolumes[k] : heights[root];
+		centers[k] = k == root ? b3MulSV( 1.0f / cellVolumes[k], centers[k] ) : centers[k];
+		cells[k] = root;
 	}
 
 	// What an impact cut off the building since the last update, a part as large as a tenth of a storey or more
@@ -3381,26 +3505,44 @@ static int nbCheckStoreys( nbWorld* world, int actorIndex, b3Vec3 up, nbOverload
 		}
 	}
 
-	// Every chunk flies out of a storey that gives way, -1, or stays with the stretch of the building between two of them
+	// Every chunk flies out of a storey that gives way, -1, or stays with the stretch of the building between two of them.
+	// The storey of every chunk in one, by its place among the storeys that give way.
 	int* stretches = nbArena_AllocArray( &world->arena, int, n );
+	int* insides = nbArena_AllocArray( &world->arena, int, n );
+	bool* remains = nbArena_AllocArray( &world->arena, bool, n );
+	bool* touches = nbArena_AllocArray( &world->arena, bool, n );
 	for ( int k = 0; k < n; ++k )
 	{
 		stretches[k] = 0;
+		insides[k] = -1;
+		remains[k] = false;
+		touches[k] = false;
 		for ( int t = 0; t < storeyCount && heights[k] > destructible->storeys[storeys[t]].low; ++t )
 		{
 			stretches[k] = heights[k] >= destructible->storeys[storeys[t]].high ? t + 1 : -1;
 			if ( stretches[k] < 0 )
 			{
+				insides[k] = t;
 				break;
 			}
 		}
 	}
 
+	// A tenth of what is left of each storey stays where it is
+	for ( int t = 0; t < storeyCount; ++t )
+	{
+		int s = storeys[t];
+		nbFindRemains( world, destructible, s, volumes[s], moments[s], chunks, cells, cellVolumes, centers, heights, n, stamp,
+					   remains, touches );
+	}
+
+	// The rest flies out. What stays lets go of what comes down over its storey and keeps the rest of its bonds, the
+	// ones to chunks that fly out break with them.
 	nbOverload* overloads = nbArena_AllocArray( &world->arena, nbOverload, n + bondKeys );
 	int overloadCount = 0;
 	for ( int k = 0; k < n; ++k )
 	{
-		if ( stretches[k] < 0 )
+		if ( stretches[k] < 0 && remains[k] == false )
 		{
 			overloads[overloadCount++] = (nbOverload){ NB_NULL_INDEX, chunks[k], 1.0f, true };
 			continue;
@@ -3415,72 +3557,23 @@ static int nbCheckStoreys( nbWorld* world, int actorIndex, b3Vec3 up, nbOverload
 			key = bond->nextKey[side];
 
 			int other = world->chunks.data[bond->chunk[side ^ 1]].scratch;
-			if ( other > k && stretches[other] >= 0 && stretches[other] != stretches[k] )
+			bool breaks = stretches[k] >= 0 ? other > k && stretches[other] >= 0 && stretches[other] != stretches[k]
+											: remains[other] == false && stretches[other] > insides[k];
+			if ( breaks )
 			{
 				overloads[overloadCount++] = (nbOverload){ bondIndex, NB_NULL_INDEX, 1.0f, false };
 			}
 		}
 	}
 
-	// What comes down over a storey turns toward the side it lost, away from the middle of what was left of the storey
-	b3Vec3 spins[NB_MAX_STOREYS + 1];
-	for ( int t = 0; t <= storeyCount; ++t )
-	{
-		spins[t] = b3Vec3_zero;
-	}
-
-	for ( int t = 0; t < storeyCount; ++t )
-	{
-		const nbStorey* storey = destructible->storeys + storeys[t];
-		float mass = 0.0f, left = 0.0f;
-		b3Vec3 moment = b3Vec3_zero, middle = b3Vec3_zero;
-		b3AABB box = { { FLT_MAX, FLT_MAX, FLT_MAX }, { -FLT_MAX, -FLT_MAX, -FLT_MAX } };
-		for ( int k = 0; k < n; ++k )
-		{
-			const nbChunk* chunk = world->chunks.data + chunks[k];
-			if ( stretches[k] == t + 1 )
-			{
-				float chunkMass = chunk->shape->volume * nbGetChunkMaterial( world, chunk )->density;
-				mass += chunkMass;
-				moment = b3MulAdd( moment, chunkMass, chunk->shape->centroid );
-				box = b3AABB_Union( box, chunk->shape->bounds );
-			}
-			else if ( stretches[k] < 0 && heights[k] > storey->low && heights[k] < storey->high )
-			{
-				left += chunk->shape->volume;
-				middle = b3MulAdd( middle, chunk->shape->volume, chunk->shape->centroid );
-			}
-		}
-
-		if ( mass <= 0.0f || left <= 0.0f )
-		{
-			continue;
-		}
-
-		middle = b3MulSV( 1.0f / left, middle );
-		b3Vec3 offset = b3Sub( b3MulSV( 1.0f / mass, moment ), middle );
-		offset.y = 0.0f;
-		float distance = b3Length( offset );
-		if ( distance < 1.0e-3f )
-		{
-			continue;
-		}
-
-		b3Vec3 direction = b3MulSV( 1.0f / distance, offset );
-		b3Vec3 size = b3Sub( box.upperBound, box.lowerBound );
-		float reach = 0.5f * ( b3AbsFloat( direction.x ) * size.x + b3AbsFloat( direction.z ) * size.z );
-		float speed = NB_TILT_SPEED * b3MinFloat( distance / b3MaxFloat( reach, 1.0e-3f ), 1.0f );
-		spins[t + 1] = b3RotateVector( transform.q, b3MulSV( speed, b3Cross( b3Vec3_axisY, direction ) ) );
-	}
-
 	// Every stretch that comes down stays a building, and so does what is left of a part that came down before
-	nbTilt* tilts = nbArena_AllocArray( &world->arena, nbTilt, n );
-	int tiltCount = 0;
+	int* downs = nbArena_AllocArray( &world->arena, int, n );
+	int downCount = 0;
 	for ( int k = 0; k < n; ++k )
 	{
 		if ( stretches[k] > 0 || ( stretches[k] == 0 && actor->isStatic == false ) )
 		{
-			tilts[tiltCount++] = (nbTilt){ chunks[k], spins[stretches[k]] };
+			downs[downCount++] = chunks[k];
 		}
 	}
 
@@ -3493,8 +3586,8 @@ static int nbCheckStoreys( nbWorld* world, int actorIndex, b3Vec3 up, nbOverload
 		building->collapsedStoreys |= bit;
 	}
 	*overloadsOut = overloads;
-	*tiltsOut = tilts;
-	*tiltCountOut = tiltCount;
+	*downsOut = downs;
+	*downCountOut = downCount;
 	return overloadCount;
 }
 
@@ -3666,7 +3759,7 @@ static void nbCheckSupports( nbWorld* world )
 
 	b3Vec3 gravityVector = b3World_GetGravity( world->physicsWorld );
 	float gravity = b3Length( gravityVector );
-	if ( ( world->def.supportScale <= 0.0f && world->def.storeySupport <= 0.0f ) || gravity <= 0.0f )
+	if ( ( world->def.supportScale <= 0.0f && world->def.storeyCollapseDamage <= 0.0f ) || gravity <= 0.0f )
 	{
 		for ( int i = 0; i < world->supportChecks.count; ++i )
 		{
@@ -3707,10 +3800,10 @@ static void nbCheckSupports( nbWorld* world )
 		// A building gives way storey by storey and never above a hole, only other structures take the load check
 		nbBeginOperation( world );
 		nbOverload* overloads = NULL;
-		nbTilt* tilts = NULL;
-		int tiltCount = 0;
+		int* downs = NULL;
+		int downCount = 0;
 		bool collapsed = false;
-		int overloadCount = nbCheckStoreys( world, actorIndex, up, &overloads, &tilts, &tiltCount );
+		int overloadCount = nbCheckStoreys( world, actorIndex, up, &overloads, &downs, &downCount );
 		bool storey = overloadCount > 0;
 		if ( storey )
 		{
@@ -3909,17 +4002,13 @@ static void nbCheckSupports( nbWorld* world )
 			b3Body_SetLinearVelocity( ejected->bodyId, setVelocities[s] );
 		}
 
-		// What comes down over a storey stays a building and starts to turn toward the side it lost
-		for ( int t = 0; t < tiltCount; ++t )
+		// What comes down over a storey stays a building
+		for ( int d = 0; d < downCount; ++d )
 		{
-			nbActor* part = world->actors.data + world->chunks.data[tilts[t].chunkIndex].actorIndex;
+			nbActor* part = world->actors.data + world->chunks.data[downs[d]].actorIndex;
 			if ( part->isStatic == false )
 			{
 				nbMakeBuildingPart( world, part );
-				if ( b3LengthSquared( tilts[t].angularVelocity ) > 0.0f )
-				{
-					b3Body_SetAngularVelocity( part->bodyId, tilts[t].angularVelocity );
-				}
 			}
 		}
 
@@ -4010,7 +4099,7 @@ void nbWorld_SetSupportScale( nbWorldId worldId, float scale )
 	}
 }
 
-void nbWorld_SetStoreySupport( nbWorldId worldId, float fraction )
+void nbWorld_SetStoreyCollapseDamage( nbWorldId worldId, float fraction )
 {
 	nbWorld* world = nbGetWorldFromId( worldId );
 	if ( world == NULL )
@@ -4018,7 +4107,7 @@ void nbWorld_SetStoreySupport( nbWorldId worldId, float fraction )
 		return;
 	}
 
-	world->def.storeySupport = b3ClampFloat( fraction, 0.0f, 1.0f );
+	world->def.storeyCollapseDamage = b3ClampFloat( fraction, 0.0f, 1.0f );
 	for ( int i = 0; i < world->actors.count; ++i )
 	{
 		const nbActor* actor = world->actors.data + i;
@@ -4040,7 +4129,7 @@ nbWorldDef nbDefaultWorldDef( void )
 	def.debrisSweepDistance = 0.2f;
 	def.killDepth = -100.0f;
 	def.supportScale = 0.0f;
-	def.storeySupport = 0.5f;
+	def.storeyCollapseDamage = 0.4f;
 	def.collisionSpeedThreshold = 4.0f;
 	def.collisionDamageScale = 12.0f;
 	def.collisionRadiusScale = 0.035f;

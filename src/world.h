@@ -249,8 +249,11 @@ typedef struct nbStorey
 	float low;
 	float high;
 
-	// Volume of the chunks with their centroid in the storey at creation
+	// Volume of the chunks with their centroid in the storey at creation, their center of volume and half the size of their
+	// bounds
 	float volume;
+	b3Vec3 center;
+	b3Vec3 extent;
 } nbStorey;
 
 #define NB_MAX_STOREYS 32

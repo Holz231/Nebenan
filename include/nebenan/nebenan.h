@@ -186,9 +186,9 @@ NB_API void nbWorld_SetDebrisRestTime( nbWorldId worldId, float seconds );
 /// their shape.
 NB_API void nbWorld_SetSupportScale( nbWorldId worldId, float scale );
 
-/// Change the fraction of its walls a storey needs to stand, see nbWorldDef::storeySupport. The next update checks every
-/// structure again.
-NB_API void nbWorld_SetStoreySupport( nbWorldId worldId, float fraction );
+/// Change the fraction of its walls a storey loses before it gives way, see nbWorldDef::storeyCollapseDamage. The next
+/// update checks every structure again.
+NB_API void nbWorld_SetStoreyCollapseDamage( nbWorldId worldId, float fraction );
 
 /// Change the size of the fragments of all materials, see nbWorldDef::fragmentScale. Applies to the next impacts.
 NB_API void nbWorld_SetFragmentScale( nbWorldId worldId, float scale );

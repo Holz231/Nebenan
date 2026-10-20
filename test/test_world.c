@@ -2802,6 +2802,40 @@ static const nbActor* LargestActor( TestScene* scene )
 	return largest;
 }
 
+// The local Y axis of the largest loose piece in the world, up for a building that stands upright
+static b3Vec3 LargestAxis( TestScene* scene )
+{
+	nbWorld* world = nbGetWorldFromId( scene->world );
+	const nbActor* largest = LargestActor( scene );
+	return largest != NULL ? b3RotateVector( nbActor_GetTransform( world, largest ).q, b3Vec3_axisY ) : b3Vec3_axisY;
+}
+
+// The volume of what stands of a building between two heights, by the centroids of its chunks, and the smallest x of
+// those centroids
+static float StandingBetween( TestScene* scene, float low, float high, float* lowestX )
+{
+	nbWorld* world = nbGetWorldFromId( scene->world );
+	float volume = 0.0f;
+	*lowestX = FLT_MAX;
+	for ( int c = 0; c < world->chunks.count; ++c )
+	{
+		const nbChunk* chunk = world->chunks.data + c;
+		const nbActor* actor = world->actors.data + chunk->actorIndex;
+		if ( chunk->shape == NULL || actor->isStatic == false )
+		{
+			continue;
+		}
+
+		b3Pos centroid = b3TransformWorldPoint( nbActor_GetTransform( world, actor ), chunk->shape->centroid );
+		if ( centroid.y > low && centroid.y < high )
+		{
+			volume += chunk->shape->volume;
+			*lowestX = b3MinFloat( *lowestX, (float)centroid.x );
+		}
+	}
+	return volume;
+}
+
 // Grenades around a storey of the largest loose piece, in its own frame, until a storey gives way. The second round falls
 // between the grenades of the first.
 static int BlastPieceStorey( TestScene* scene, int storey )
@@ -2825,9 +2859,10 @@ static int BlastPieceStorey( TestScene* scene, int storey )
 	return count;
 }
 
-// A building gives way storey by storey: when a storey lost more than half of its walls, on any floor, its last walls
-// fly out and everything above comes down in one piece. Nothing else of a building collapses, not the wall above a hole,
-// not a floor, not a column under load. Only what is cut off from the ground falls.
+// A building gives way storey by storey: when a storey lost 40 % of its walls, on any floor, a tenth of what is left
+// stays, the rest flies out, and everything above comes down in one piece and tilts over what stayed. Nothing else of a
+// building collapses, not the wall above a hole, not a floor, not a column under load. Only what is cut off from the
+// ground falls.
 static int StoreyTest( void )
 {
 	// A four story house stands on its walls, and so does a town house of three stories with doors and windows.
@@ -2891,8 +2926,10 @@ static int StoreyTest( void )
 		DestroyScene( &scene );
 	}
 
-	// Grenades all around its ground floor bring it down. What is left of the ground floor flies out of the house in one
-	// update, and the stories above come down in one piece with their floors, onto the ground. No wall stays standing.
+	// Grenades all around its ground floor bring it down. Nine tenths of what is left of the ground floor fly out of the
+	// house in one update. With the damage all around, the tenth that stays are cells picked at random, which come loose
+	// or stay as stumps no higher than a cell. The stories above come down in one piece with their floors, onto the
+	// ground, about level. No wall stays standing.
 	{
 		TestScene scene = CreateScene();
 		nbWorld_SetFragmentScale( scene.world, 2.0f );
@@ -2930,6 +2967,7 @@ static int StoreyTest( void )
 		ENSURE( low < 1.0f );
 		ENSURE( high < 9.5f );
 		ENSURE( HighestStanding( &scene ) < 2.0f );
+		ENSURE( LargestAxis( &scene ).y > 0.96f );
 
 		// What came down is still a building. Grenades around its second story bring the story above down onto the rest,
 		// the upper story and two floors of 51 cubic meters.
@@ -2959,19 +2997,20 @@ static int StoreyTest( void )
 		DestroyScene( &scene );
 	}
 
-	// Grenades around the second story bring the story above down onto the ground floor, which stands. With the corners of
-	// the second story left whole as well, a rigid shell the old load check never broke. What came down freezes there.
-	// Grenades around the ground floor then bring that down too, with what lies on it, and nothing stays up in the air.
+	// Grenades around the second story bring the story above down onto the ground floor, which stands, with what stays of
+	// the second story. With the corners of the second story left whole as well, a rigid shell the old load check never
+	// broke. What came down freezes there. Grenades around the ground floor then bring that down too, with what lies on
+	// it, and nothing stays up in the air.
 	for ( int corners = 0; corners < 2; ++corners )
 	{
 		TestScene scene = CreateScene();
 		nbWorld_SetFragmentScale( scene.world, 2.0f );
 		CreateCelledHouse( &scene, 3, 3 );
 		BlastStorey( &scene, 1, 1 + corners, FLT_MAX, corners == 1 );
-		Step( &scene, 150 );
+		Step( &scene, 210 );
 		ENSURE( nbWorld_GetStats( scene.world ).collapsedStoreyCount == 1 );
 		float standing = HighestStanding( &scene );
-		ENSURE( 2.9f < standing && standing < 3.6f );
+		ENSURE( 2.9f < standing && standing < 6.5f );
 
 		// The upper story and two floors are 51 cubic meters
 		const nbActor* upper = LargestActor( &scene );
@@ -3002,7 +3041,37 @@ static int StoreyTest( void )
 		DestroyScene( &scene );
 	}
 
-	// With the walls of the second story left only at +x, what comes down over it turns toward -x
+	// Grenades at the -x half of the ground floor bring it down with the damage on one side. A tenth of what is left
+	// stays as an anchor on the +x side, bonded to the ground and up to the ceiling, and the stories above tilt over it
+	// toward -x as gravity makes them, nothing turns them, and come to rest leaning on it, nothing up in the air. The same
+	// with one worker and with four.
+	uint32_t hashes[2];
+	for ( int w = 0; w < 2; ++w )
+	{
+		TestScene scene = w == 0 ? CreateScene() : CreateSceneWithWorkers( 4, NULL, NULL, NULL );
+		nbWorld_SetFragmentScale( scene.world, 2.0f );
+		nbDestructibleId house = CreateCelledHouse( &scene, 3, 3 );
+		BlastStorey( &scene, 0, 3, 0.5f, false );
+		ENSURE( nbWorld_GetStats( scene.world ).collapsedStoreyCount == 1 );
+
+		float walls = nbGetWorldFromId( scene.world )->destructibles.data[house.index1 - 1].storeys[0].volume;
+		float lowestX = 0.0f;
+		float anchor = StandingBetween( &scene, 0.0f, 3.25f, &lowestX );
+		ENSURE( 0.03f * walls < anchor && anchor < 0.1f * walls );
+		ENSURE( lowestX > 2.0f );
+		ENSURE( HighestStanding( &scene ) > 2.5f );
+
+		Step( &scene, 300 );
+		b3Vec3 axis = LargestAxis( &scene );
+		ENSURE( axis.x < -0.15f && axis.y > 0.85f );
+		ENSURE( FloatingVolume( &scene ) == 0.0f );
+		hashes[w] = HashDestructible( 2166136261u, house );
+		DestroyScene( &scene );
+	}
+	ENSURE( hashes[0] == hashes[1] );
+
+	// The same at the -x half of the second story: what comes down tilts toward -x over the anchor at +x, which stays
+	// standing on the ground floor
 	{
 		TestScene scene = CreateScene();
 		nbWorld_SetFragmentScale( scene.world, 2.0f );
@@ -3010,16 +3079,12 @@ static int StoreyTest( void )
 		BlastStorey( &scene, 1, 3, 0.5f, false );
 		ENSURE( nbWorld_GetStats( scene.world ).collapsedStoreyCount == 1 );
 
-		nbWorld* world = nbGetWorldFromId( scene.world );
-		const nbActor* largest = NULL;
-		for ( int i = 0; i < world->debris.count; ++i )
-		{
-			const nbActor* actor = world->actors.data + world->debris.data[i];
-			largest = largest == NULL || actor->volume > largest->volume ? actor : largest;
-		}
-		ENSURE( largest != NULL && largest->volume > 40.0f );
-		b3Vec3 spin = b3Body_GetAngularVelocity( largest->bodyId );
-		ENSURE( spin.z > 0.2f && fabsf( spin.x ) < spin.z );
+		float lowestX = 0.0f;
+		ENSURE( StandingBetween( &scene, 3.25f, 6.5f, &lowestX ) > 0.0f && lowestX > 2.0f );
+		Step( &scene, 40 );
+		ENSURE( LargestAxis( &scene ).x < -0.1f );
+		Step( &scene, 300 );
+		ENSURE( FloatingVolume( &scene ) == 0.0f );
 		DestroyScene( &scene );
 	}
 

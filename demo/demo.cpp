@@ -353,8 +353,8 @@ struct App
 	// How long debris keeps still before it freezes into rubble
 	float debrisRestTime = nbDefaultWorldDef().debrisRestTime;
 
-	// A storey gives way when less than this fraction of its walls is left
-	float storeySupport = nbDefaultWorldDef().storeySupport;
+	// A storey gives way once this fraction of its walls is destroyed
+	float storeyCollapseDamage = nbDefaultWorldDef().storeyCollapseDamage;
 
 	// Load check for structures without floors, like the walls, off by default
 	float supportScale = nbDefaultWorldDef().supportScale;
@@ -1109,7 +1109,7 @@ static void LoadScene( App& app, SceneKind scene )
 	def.debrisRestTime = app.debrisRestTime;
 	def.fragmentScale = app.fragmentScale;
 	def.supportScale = app.supportScale;
-	def.storeySupport = app.storeySupport;
+	def.storeyCollapseDamage = app.storeyCollapseDamage;
 	def.asyncStep = app.parallelPhysics;
 	def.stepRate = app.stepRate;
 	app.destruction = nbCreateWorld( &def );
@@ -1498,8 +1498,8 @@ static std::string BuildReport( const App& app )
 	Appendf( text, "Welt: %d Bruchstücke, %d Verbindungen, %d Trümmerkörper (%d wach), %d Schutt, %d Kontakte, Budget %d, Ruhezeit %.2f s, Bruchstückgröße x%.2f\n",
 			 stats.chunkCount, stats.bondCount, stats.dynamicBodyCount, view.awakeBodies, stats.rubbleCount,
 			 view.counters.contactCount, app.maxDebrisBodies, app.debrisRestTime, app.fragmentScale );
-	Appendf( text, "Einsturz: %d Etagen eingestürzt, eine Etage braucht %.0f %% ihrer Wände; Statik ohne Decken x%.2f, %d Verbindungen gebrochen\n",
-			 stats.collapsedStoreyCount, 100.0f * app.storeySupport, app.supportScale, stats.overloadedBondCount );
+	Appendf( text, "Einsturz: %d Etagen eingestürzt, eine Etage gibt nach, wenn %.0f %% ihrer Wände zerstört sind; Statik ohne Decken x%.2f, %d Verbindungen gebrochen\n",
+			 stats.collapsedStoreyCount, 100.0f * app.storeyCollapseDamage, app.supportScale, stats.overloadedBondCount );
 	Appendf( text, "Grafik: %dk Dreiecke, %d Draw Calls, %d kB Upload\n", rs.triangleCount / 1000, rs.drawCalls, rs.uploadedBytes / 1024 );
 	if ( app.scene == SceneCity )
 	{
@@ -1604,15 +1604,15 @@ static void DrawUi( App& app )
 	{
 		ImGui::SetTooltip( "Größere Bruchstücke: weniger Teile pro Einschlag, weniger Körper,\nKontakte und Dreiecke. x2 halbiert ungefähr die Zeit\nbei Massenzerstörung. Gilt für die nächsten Einschläge." );
 	}
-	float storeyPercent = 100.0f * app.storeySupport;
-	if ( ImGui::SliderFloat( "Etage braucht", &storeyPercent, 0.0f, 100.0f, "%.0f %% der Wände" ) )
+	float storeyPercent = 100.0f * app.storeyCollapseDamage;
+	if ( ImGui::SliderFloat( "Etage gibt nach", &storeyPercent, 0.0f, 100.0f, "bei %.0f %% zerstört" ) )
 	{
-		app.storeySupport = 0.01f * storeyPercent;
-		nbWorld_SetStoreySupport( app.destruction, app.storeySupport );
+		app.storeyCollapseDamage = 0.01f * storeyPercent;
+		nbWorld_SetStoreyCollapseDamage( app.destruction, app.storeyCollapseDamage );
 	}
 	if ( ImGui::IsItemHovered() )
 	{
-		ImGui::SetTooltip( "Hat eine Etage weniger als diesen Teil ihrer Wände, gibt sie nach:\nihre letzten Wände fliegen heraus, und alles darüber kommt\nin einem Stück herunter. Sonst stürzt an einem Haus nichts ein.\n0 schaltet es ab." );
+		ImGui::SetTooltip( "Ist so viel der Wände einer Etage zerstört, gibt sie nach: Ein Zehntel\nder übrigen Wände bleibt stehen, bei Schaden auf einer Seite als Anker\nauf der stärksten Seite, sonst lose an zufälligen Stellen. Der Rest\nfliegt heraus, und alles darüber kommt in einem Stück herunter und\nkippt über den Anker. Sonst stürzt an einem Haus nichts ein.\n0 schaltet es ab." );
 	}
 	if ( ImGui::SliderFloat( "Statik ohne Decken", &app.supportScale, 0.0f, 4.0f, "x %.2f" ) )
 	{

@@ -345,7 +345,7 @@ typedef struct nbWorldDef
 	float killDepth;
 
 	/// A load check for structures without floors, like a single wall or a bridge. Buildings with floors never take it,
-	/// they only give way storey by storey, see storeySupport. The load of every chunk flows along its bonds to the
+	/// they only give way storey by storey, see storeyCollapseDamage. The load of every chunk flows along its bonds to the
 	/// anchors, and a bond fails when the force through it exceeds its area times the strength of the weaker material,
 	/// or the bending of an overhang exceeds what the shape of the bond carries. The part that loses its way to the
 	/// anchors falls as one piece, and a chunk crushed under too much weight bursts into fragments. Lower values let
@@ -353,13 +353,16 @@ typedef struct nbWorldDef
 	/// from its anchors. Change it at run time with nbWorld_SetSupportScale.
 	float supportScale;
 
-	/// A storey of a static building gives way when less than this fraction of the walls it had at creation is left,
-	/// on any floor and whatever the walls could still carry. Its last walls fly out, and everything above comes down
-	/// in one piece, tilting toward the side where the walls are missing. Nothing else of a building collapses, no wall
-	/// above a hole and no floor, only what is cut off from the anchors falls. Floors are the flat pieces of a
-	/// destructible, at most a quarter as high along its local Y axis as they are wide in both other directions, and a
-	/// storey is the room under a floor. Zero turns it off. Change it at run time with nbWorld_SetStoreySupport.
-	float storeySupport;
+	/// A storey of a static building gives way once this fraction of the walls it had at creation is destroyed, 0.4 by
+	/// default, on any floor and whatever the walls could still carry. A tenth of the walls that are left stays where it
+	/// is without a push: When the damage lies mostly on one side, it is one piece on the strongest side that stays
+	/// bonded to what is below it, an anchor. When the damage is spread around, it is cells picked at random that come
+	/// loose. The rest of the walls flies out, and everything above comes down in one piece and tilts over what stayed,
+	/// as gravity and contacts make it. Nothing else of a building collapses, no wall above a hole and no floor, only what
+	/// is cut off from the anchors falls. Floors are the flat pieces of a destructible, at most a quarter as high along
+	/// its local Y axis as they are wide in both other directions, and a storey is the room under a floor. Zero turns it
+	/// off. Change it at run time with nbWorld_SetStoreyCollapseDamage.
+	float storeyCollapseDamage;
 
 	/// Minimum approach speed for collision damage in meters per second.
 	float collisionSpeedThreshold;
@@ -490,7 +493,7 @@ typedef struct nbStats
 	int createdChunkCount;
 	int overloadedBondCount;
 
-	/// Storeys that gave way, see nbWorldDef::storeySupport. Total since the world was created.
+	/// Storeys that gave way, see nbWorldDef::storeyCollapseDamage. Total since the world was created.
 	int collapsedStoreyCount;
 
 	/// Chunks whose physics hull needed the quickhull fallback instead of the direct build.

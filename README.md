@@ -19,10 +19,11 @@ gelöscht. Kein Staub, keine Schatten: Jede Millisekunde geht in die Zerstörung
   Monitoren mit mehr als 60 Hz flüssig fliegen
 - Der Takt der Physik ist wählbar, 30, 60 oder 120 Schritte pro Sekunde (`stepRate`), jeder mit so vielen Teilschritten,
   dass es 240 pro Sekunde sind. 30 Hz kostet weniger, 120 Hz ist genauer, die Vorgabe sind 60 Hz
-- Einsturz Etage für Etage, auf jeder Höhe und in jeder Reihenfolge: Hat eine Etage weniger als die Hälfte ihrer Wände,
-  fliegen ihre letzten Wände mit Wucht heraus, und alles darüber kommt als ein Stück herunter, gekippt zur Seite, wo
-  die Wände fehlen. Die Räume oben bleiben ganz und geben wieder Deckung. Sonst stürzt an einem Haus nichts ein,
-  keine Wand über einem Loch und keine Decke, nur was ganz abgetrennt ist, fällt
+- Einsturz Etage für Etage, auf jeder Höhe und in jeder Reihenfolge: Sind 40 % der Wände einer Etage zerstört, gibt sie
+  nach. Ein Zehntel der übrigen Wände bleibt ohne Stoß stehen, der Rest fliegt mit Wucht heraus, und alles darüber kommt
+  als ein Stück herunter und kippt über das, was stehen blieb, bei Schaden auf einer Seite über einen Anker auf der
+  stärksten Seite zur zerstörten hin. Die Räume oben bleiben ganz und geben wieder Deckung. Sonst stürzt an einem Haus
+  nichts ein, keine Wand über einem Loch und keine Decke, nur was ganz abgetrennt ist, fällt
 - Die Wände sind beim Laden in Zellen zerlegt, die auch um die Hausecken laufen, Fenster und Türen sind
   ausgeschnitten. Der Riss unter dem Teil, das herunterkommt, folgt den Zellen und ist überall polygonal
 - Für Bauwerke ohne Decken gibt es wahlweise eine Lastprüfung nach dem Lastlöser der Referenz-Engine: Last und
@@ -147,8 +148,8 @@ viele FPS die CPU schaffen würde. Die Physik rechnet unabhängig davon 60 Schri
   einen Schritt später, 120 Hz ist genauer und kostet mehr. Mit „Zwischen Schritten zeichnen“ bewegt sich das Bild bei
   jedem Takt flüssig. Die beiden Messknöpfe rechnen mit dem eingestellten Takt, 1/60 s Physik pro Bild.
 
-Daneben stellt **Etage braucht** ein, wie viel ihrer Wände eine Etage zum Stehen braucht (Standard 50 %), und
-**Statik ohne Decken** schaltet die Lastprüfung für die Mauern ein (Standard aus).
+Daneben stellt **Etage gibt nach** ein, wie viel ihrer Wände zerstört sein muss, bis eine Etage nachgibt (Standard
+40 %), und **Statik ohne Decken** schaltet die Lastprüfung für die Mauern ein (Standard aus).
 
 Die Threads wählt die Bibliothek (`nbGetRecommendedWorkerCount`): einen pro Performance-Kern, höchstens 8. Box3D läuft
 am schnellsten ohne Hyper-Threads und Effizienzkerne, und mehr Threads als Kerne bremsen. Mit paralleler Physik bleibt
@@ -297,26 +298,34 @@ keine Decke, kein Pfeiler unter Last. Nur was ganz vom Boden abgeschnitten ist, 
 
 Beim Laden sucht Nebenan die Decken eines Hauses, die flachen Teile: höchstens ein Viertel so hoch entlang der lokalen
 Y-Achse wie breit in beiden anderen Richtungen. Decken, die sich in der Höhe überschneiden, bilden eine Ebene. Eine
-Etage ist der Raum unter einer Ebene, von der Ebene darunter oder dem Fuß des Hauses an, und merkt sich das Volumen
-der Bruchstücke, deren Mitte in ihr liegt. Ändert sich ein Haus, prüft das nächste Update seine Etagen. Hat eine
-Etage weniger als `storeySupport` davon übrig, Standard die Hälfte, gibt sie nach, auf jeder Höhe:
+Etage ist der Raum unter einer Ebene, von der Ebene darunter oder dem Fuß des Hauses an, und merkt sich das Volumen der
+Bruchstücke, deren Mitte in ihr liegt. Ändert sich ein Haus, prüft das nächste Update seine Etagen. Ist von einer Etage
+`storeyCollapseDamage` davon zerstört, Standard 40 %, gibt sie nach, auf jeder Höhe, wie es Kapitel 17 der Roadmap des
+Spiels in [docs/Referenz](docs/Referenz) beschreibt:
 
-- Ihre letzten Wände fliegen mit 6 m/s aus dem Haus, jedes Stück durch die Seite, an der es frei liegt, bei zwei
-  freien Seiten weg von der Mitte des Hauses. Die Teile einer Zelle fliegen zusammen. Aller Schutt bis 1 m um sie
-  herum wacht auf, auch der aus früheren Einstürzen, sonst verkeilten sich die Reste darin, und die Trümmer dort
-  zählen für das Budget wie neue.
+- Ein Zehntel der Wände, die ihr bleiben, bleibt ohne Stoß stehen, in ganzen Zellen, so nah an einem Zehntel, wie ganze
+  Zellen kommen. Liegt der Schaden vor allem auf einer Seite, die Mitte des Verlorenen also mehr als 35 % des Wegs zur
+  Außenwand von der Mitte der Etage entfernt, sind es Zellen in der Mitte der Gegenseite, der stärksten, die aneinander
+  hängen: ein Anker, der an dem bleibt, was darunter liegt, und nur die Verbindungen nach oben verliert. Ist der Schaden
+  ringsum verteilt, sind es Zellen, die der Zufall wählt, immer dieselben für dasselbe Haus. Sie hängen meist an nichts
+  mehr und fallen, nur Zellen am Boden der Etage bleiben als Stümpfe.
+- Die übrigen Wände fliegen mit 6 m/s aus dem Haus, jedes Stück durch die Seite, an der es frei liegt, bei zwei freien
+  Seiten weg von der Mitte des Hauses. Die Teile einer Zelle fliegen zusammen. Aller Schutt bis 1 m um sie herum wacht
+  auf, auch der aus früheren Einstürzen, sonst verkeilten sich die Reste darin, und die Trümmer dort zählen für das
+  Budget wie neue.
 - Alles darüber kommt als ein Stück herunter und bleibt ganz, die Räume oben geben danach wieder Deckung. Eine Zelle
   gehört dorthin, wo ihre Mitte liegt, so folgt der Riss den Zellgrenzen und ist polygonal, auch an den Ecken.
-- Es beginnt, zur Seite zu kippen, wo die Wände fehlen, umso schneller, je weiter sein Schwerpunkt neben der Mitte der
-  letzten Wände liegt, bis 0,5 rad/s. Stehen die Reste ringsum gleich, fällt es gerade herunter. Es wird nur gedreht,
-  nicht angeschoben, ein Stoß würde es davonwerfen.
-- Die Etagen darunter bleiben stehen und tragen, was herunterkam. Gibt später eine von ihnen nach, kommt sie mit
-  allem darauf herunter, auch wenn es dort schon als Schutt liegt.
-- Was herunterkam, bleibt ein Haus, solange es nicht mehr als 45° kippt: Verliert eine seiner Etagen die Hälfte ihrer
-  Wände, stürzt sie genauso ein, auch von unten nach oben. Eine Etage, die schon eingestürzt ist, gibt für Reste von
-  weniger als einem Zehntel ihrer Wände nicht noch einmal nach, und `nbStats` zählt jede Etage nur einmal.
-- Schneiden Einschläge das Haus über einer Etage ganz ab, bevor sie unter die Hälfte fällt, kommt der Teil darüber
-  genauso herunter, und die Reste der Etage fliegen unter ihm heraus.
+- Es kippt über das, was stehen blieb, wie Schwerkraft und Kontakte es machen, nichts dreht es. Über einem Anker auf
+  einer Seite neigt es sich zur zerstörten Seite und kommt dort auf, an den Anker gelehnt: Das Haus der Tests mit dem
+  Erdgeschoss auf einer Hälfte zerstört liegt danach um 17° geneigt. Bei Schaden ringsum kommt es fast gerade herunter.
+- Die Etagen darunter bleiben stehen und tragen, was herunterkam. Gibt später eine von ihnen nach, kommt sie mit allem
+  darauf herunter, auch wenn es dort schon als Schutt liegt.
+- Was herunterkam, bleibt ein Haus, solange es nicht mehr als 45° kippt: Verliert eine seiner Etagen 40 % ihrer Wände,
+  stürzt sie genauso ein, auch von unten nach oben. Eine Etage, die schon eingestürzt ist, gibt für Reste von weniger
+  als einem Zehntel ihrer Wände nicht noch einmal nach, und `nbStats` zählt jede Etage nur einmal. Was als Anker stehen
+  blieb, ist weniger.
+- Schneiden Einschläge das Haus über einer Etage ganz ab, bevor sie nachgibt, kommt der Teil darüber genauso herunter,
+  und die Reste der Etage fliegen unter ihm heraus.
 
 Was ein Einsturz herunterbringt, bricht nicht und beschädigt nichts, worauf es landet. Kollisionsschaden wäre das
 Teuerste an einem Einsturz. Die Prüfung ist ein Durchlauf über die Bruchstücke eines Hauses und läuft nur, wenn es
@@ -765,7 +774,7 @@ beim Einbinden nicht gebaut.
 | Welt (`nbWorldDef`) | Standard | Wirkung |
 | --- | --- | --- |
 | `fragmentScale` | 1 | Multipliziert die Bruchstückgröße aller Materialien. Der wichtigste Regler für die Leistung: doppelte Größe halbiert die Zeit bei Massenzerstörung. Zur Laufzeit mit `nbWorld_SetFragmentScale` |
-| `storeySupport` | 0,5 | Anteil ihrer Wände, den eine Etage zum Stehen braucht. Darunter gibt sie nach, und alles darüber kommt in einem Stück herunter. 0 schaltet es ab. Zur Laufzeit mit `nbWorld_SetStoreySupport` |
+| `storeyCollapseDamage` | 0,4 | Anteil ihrer Wände, den eine Etage verlieren kann, bevor sie nachgibt. Dann bleibt ein Zehntel der übrigen Wände ohne Stoß stehen, bei Schaden auf einer Seite als Anker auf der stärksten, der Rest fliegt heraus, und alles darüber kommt in einem Stück herunter und kippt über das, was blieb. 0 schaltet es ab. Zur Laufzeit mit `nbWorld_SetStoreyCollapseDamage` |
 | `supportScale` | 0 | Lastprüfung für Bauwerke ohne Decken, Tragfähigkeit der Verbindungen. Kleiner: sie geben früher nach, 0 schaltet sie ab. Häuser prüft sie nie. Zur Laufzeit mit `nbWorld_SetSupportScale` |
 | `maxDebrisBodies` | 1500 | Obergrenze für bewegte Trümmerkörper, darüber erstarren die langsamsten zu Schutt. Gelöscht wird nichts. Zur Laufzeit mit `nbWorld_SetDebrisBudget` |
 | `enableRubble` | an | Trümmer, die zur Ruhe kommen und auf festem Grund liegen, werden zu statischem Schutt |
@@ -820,18 +829,19 @@ Mit dem früheren spekulativen Abstand von 2 cm in Box3D (siehe [`extern/README.
 selben Tag 18,2, 9,0, 4,6 und 3,0 ms im Mittel, mit der früheren Ruhezeit von 0,2 s statt 0,1 s (`debrisRestTime`) bei
 einer Messung davor 19,2, 9,2, 5,1 und 3,3 ms.
 
-Die 240 Granaten verteilen sich auf die Wände beider Etagen aller Häuser, dabei verliert keine Etage die Hälfte ihrer
-Wände, und nichts stürzt ein. Ohne Einstürze (`storeySupport` 0) sind es fast dieselben Zeiten. `nbWorld_Update`
-kostete dabei mit 4 Threads im Mittel 1,7 ms, mit doppelter Bruchstückgröße 0,4 ms, und enthält den Schaden durch
-Aufprall. Seit es den Schutt nicht mehr in jedem Update einzeln durchgeht, braucht es 26 und 22 % weniger Zeit, am
-selben Tag auf der inzwischen langsameren VM gemessen 2,65 statt 3,59 ms und 0,69 statt 0,88 ms.
+Die 240 Granaten verteilen sich auf die Wände beider Etagen aller Häuser, dabei verliert keine Etage 40 % ihrer Wände,
+und nichts stürzt ein. Ohne Einstürze (`storeyCollapseDamage` 0) sind es fast dieselben Zeiten. `nbWorld_Update` kostete
+dabei mit 4 Threads im Mittel 1,7 ms, mit doppelter Bruchstückgröße 0,4 ms, und enthält den Schaden durch Aufprall. Seit
+es den Schutt nicht mehr in jedem Update einzeln durchgeht, braucht es 26 und 22 % weniger Zeit, am selben Tag auf der
+inzwischen langsameren VM gemessen 2,65 statt 3,59 ms und 0,69 statt 0,88 ms.
 
-Braucht eine Etage 90 % ihrer Wände, stürzen unter demselben Beschuss 20 bis 21 Etagen ein, auch in Teilen, die schon
-heruntergekommen sind. Die Stadt braucht dann mit 4 Threads 1,4-mal so lange wie ohne Einstürze und mit
-`fragmentScale` 2 1,7-mal, mit 1 Thread 1,2- und 1,8-mal, jeweils zur selben Zeit gemessen. Teuer ist, was dann fliegt
-und fällt, bis es als Schutt liegt. Die Prüfung der Etagen selbst kostet kaum etwas, und was herunterkommt, bricht
-nicht und bricht nichts. Mit der Lastprüfung davor, die jedes Haus unter Last einstürzen ließ, brauchte die Stadt
-unter dem Beschuss oben 1,4- bis 1,8-mal so lange wie heute ohne Einstürze.
+Gab eine Etage schon nach, wenn ihr 10 % ihrer Wände fehlten, stürzten unter demselben Beschuss 20 bis 21 Etagen ein,
+gemessen vor `kollaps-1`, als noch alle übrigen Wände herausflogen, auch in Teilen, die schon heruntergekommen sind. Die
+Stadt braucht dann mit 4 Threads 1,4-mal so lange wie ohne Einstürze und mit `fragmentScale` 2 1,7-mal, mit 1 Thread
+1,2- und 1,8-mal, jeweils zur selben Zeit gemessen. Teuer ist, was dann fliegt und fällt, bis es als Schutt liegt. Die
+Prüfung der Etagen selbst kostet kaum etwas, und was herunterkommt, bricht nicht und bricht nichts. Mit der Lastprüfung
+davor, die jedes Haus unter Last einstürzen ließ, brauchte die Stadt unter dem Beschuss oben 1,4- bis 1,8-mal so lange
+wie heute ohne Einstürze.
 
 Die Zeit ist zum größten Teil der Box3D-Schritt, und den bestimmen vier Dinge:
 
@@ -886,6 +896,16 @@ herum, 17 500 davon als Schutt. Der Median aus drei Läufen auf der VM:
 Mit dem früheren spekulativen Abstand von 2 cm waren es am selben Tag 6,0 und 9,3 ms im Mittel und 13,8 und 18,5 ms bei
 99 % der Frames, mit 12 eingestürzten Etagen, mit der früheren Ruhezeit von 0,2 s bei einer Messung davor 6,0 und
 10,0 ms mit 9. Welche Etagen einstürzen, hängt an der Lage jedes Trümmers, und die Einstürze machen die teuersten Frames.
+
+Seit `kollaps-1` gibt eine Etage nach, wenn 40 % ihrer Wände zerstört sind, vorher erst bei der Hälfte, und unter dem
+Trommelfeuer stürzen 15 statt 12 Etagen ein. Gepaart gegen `physik-45`, je drei Läufe im Wechsel, der Median: Ein
+Schritt kostet mit 1 und 2 Threads 3,2 und 6,6 % mehr, mit 4 Threads 1,4 % weniger, das Update 5,8 und 12,8 % mehr und
+2,7 % weniger. Mehr kosten vor allem die Zustandswechsel und das Ablegen der Trümmer, denn jeder Einsturz taut den
+Schutt um die Etage auf und wirft ihre Wände heraus. Gibt eine Etage wie vorher erst bei der Hälfte nach, stürzen
+dieselben 12 Etagen ein, und ein Schritt kostet 1,1 bis 2,4 % mehr. Das ist Rauschen: In denselben Läufen lagen die
+Städte mit einfacher und doppelter Bruchstückgröße, in denen nichts einstürzt und beide Stände gleich rechnen, bis zu
+7 % auseinander. Was von einer Etage stehen bleibt und wie der Teil darüber kippt, kostet also nichts, teurer ist nur,
+dass mehr einstürzt.
 
 Die teuersten Frames folgen auf einen Einsturz: Der Schutt um die Reste der Etage taut auf, und Box3D legt im nächsten
 Schritt Tausende neuer Kontakte an. Das ist echte Arbeit, das meiste davon fällt danach wirklich, siehe
@@ -1186,9 +1206,9 @@ höchstens 213 000 Dreiecke, im Mittel 0,5 MB und höchstens 1,7 MB Upload pro B
 **Wenn es trotzdem ruckelt**, der Reihe nach:
 
 1. Release-Build? Debug ist 5- bis 20-mal langsamer.
-2. „Messwerte kopieren“ im Menü: Ist Simulation groß, Bruchstückgröße erhöhen (×3 macht die Zerstörung grob, aber
-   noch schneller), bewegte Trümmer senken oder „Etage braucht“ senken, dann stürzt weniger ein. Ist Grafik groß
-   oder wartet das Bild auf die Grafikkarte, ohne `--msaa` und `--highdpi` starten.
+2. „Messwerte kopieren“ im Menü: Ist Simulation groß, Bruchstückgröße erhöhen (×3 macht die Zerstörung grob, aber noch
+   schneller), bewegte Trümmer senken oder „Etage gibt nach“ erhöhen, dann stürzt weniger ein. Ist Grafik groß oder
+   wartet das Bild auf die Grafikkarte, ohne `--msaa` und `--highdpi` starten.
 3. Welche Grafik zeichnet? Ihr Name steht im Menü über „Messwerte kopieren“. Unter Windows nimmt die Demo die
    Grafikkarte mit der höchsten Leistung, auch wenn der Monitor an der Grafik im Prozessor hängt. Windows zeigt die
    Bilder dann dort an, direkt an der Karte geht es schneller.
@@ -1243,9 +1263,10 @@ Nach Änderungen an `demo/shaders/scene.glsl` die Shader neu erzeugen, im Ordner
   keine Etagen und stürzt nie ein, es verliert nur, was ganz abgetrennt ist.
 - Ein Objekt sollte ein Haus sein. Die Etagen gelten für das ganze Objekt, und was in einer Etage liegt, die
   nachgibt, fliegt mit heraus, auch ein anderes Bauwerk im selben Objekt.
-- Die Reste einer Etage fliegen alle auf einmal heraus. Braucht eine Etage fast alle ihre Wände, `storeySupport` nahe
-  1, fliegt beinahe eine ganze Etage heraus, und ihre Zellen können sich unter dem Teil darüber verkeilen, der dann
-  auf ihnen liegen bleibt.
+- Neun Zehntel der Reste einer Etage fliegen auf einmal heraus. Gibt eine Etage schon bei wenig Schaden nach,
+  `storeyCollapseDamage` nahe 0, fliegt beinahe eine ganze Etage heraus, und ihre Zellen können sich unter dem Teil
+  darüber verkeilen, der dann auf ihnen liegen bleibt. Was stehen bleibt, sind ganze Zellen, bei groben Zellen auch mehr
+  als ein Zehntel. Decken klappen noch nicht als Rampe herunter, Kapitel 17.4 der Roadmap des Spiels ist offen.
 - Große Szenen brauchen Speicher: rund 0,37 MB pro Haus aus 240 Bruchstücken, vier Fünftel davon in Nebenan, vor allem
   die Formen der Bruchstücke samt ihren Hüllen. Objekte mit gleichen Teilen und gleichem `seed` haben gleiche Hüllen,
   auch die speichert jede Form einzeln. Mit eigenen Speicherfunktionen (`nbSetAllocator`, `b3SetAllocator`) und in
@@ -1263,8 +1284,8 @@ Nach Änderungen an `demo/shaders/scene.glsl` die Shader neu erzeugen, im Ordner
 - Wird das Budget knapp, erstarren auch Trümmer auf bewegten Stücken und schnelle im Flug, und kleine Trümmer unter
   0,1 m³ erstarren auf jedem Schutt, auch auf solchem. Sie können also noch in der Luft hängen bleiben, ein großes Teil
   tragen sie dann aber nicht.
-- Einstürze kosten: Was fällt und fliegt, bewegt sich, bis es als Schutt liegt. Braucht jede Etage 90 % ihrer Wände,
-  braucht die Stadt unter Dauerbeschuss 1,2- bis 1,8-mal so lange wie ohne Einstürze, siehe Leistung.
+- Einstürze kosten: Was fällt und fliegt, bewegt sich, bis es als Schutt liegt. Gab jede Etage schon bei 10 % Schaden
+  nach, brauchte die Stadt unter Dauerbeschuss 1,2- bis 1,8-mal so lange wie ohne Einstürze, siehe Leistung.
 - Was die Box3D-Welt ändert, bleibt auf dem aufrufenden Thread, Box3D erlaubt das nur von einem Thread aus: Schutt
   aufwecken, Körper und Formen anlegen. Dort bleiben auch der Einbau der Stücke und die Suche nach losen Teilen. Das
   Aufwecken läuft gleichzeitig mit den Voronoi-Zellen, sobald die Worker helfen, je nachdem, wie schnell sie anlaufen,
