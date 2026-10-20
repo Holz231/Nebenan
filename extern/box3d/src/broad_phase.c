@@ -792,6 +792,76 @@ B3_FORCE_INLINE void b3PrefetchPairBodyContacts( b3World* world, uint64_t key )
 	}
 }
 
+// Added for Nebenan: from this many new pairs on, b3SortPairKeys sorts them instead of QSORT
+#define B3_RADIX_SORT_MIN_KEYS 64
+
+// Added for Nebenan: the pair keys in ascending order with a radix sort, one stable pass for every byte in which the keys
+// differ, from the lowest to the highest. A byte that is the same in all keys needs no pass: for pairs of plain shapes the
+// bytes of the child index and the high bytes of small shape ids. The order is the same as with QSORT, which took around
+// 100 cycles per key here, scratch takes as many keys.
+static void b3SortPairKeys( uint64_t* keys, uint64_t* scratch, int count )
+{
+	uint64_t anyBits = 0;
+	uint64_t allBits = ~(uint64_t)0;
+	for ( int i = 0; i < count; ++i )
+	{
+		anyBits |= keys[i];
+		allBits &= keys[i];
+	}
+
+	uint64_t differentBits = anyBits ^ allBits;
+	int shifts[8];
+	int passCount = 0;
+	for ( int shift = 0; shift < 64; shift += 8 )
+	{
+		if ( ( ( differentBits >> shift ) & 0xff ) != 0 )
+		{
+			shifts[passCount++] = shift;
+		}
+	}
+
+	uint32_t offsets[8][256];
+	memset( offsets, 0, passCount * sizeof( offsets[0] ) );
+	for ( int i = 0; i < count; ++i )
+	{
+		uint64_t key = keys[i];
+		for ( int pass = 0; pass < passCount; ++pass )
+		{
+			offsets[pass][( key >> shifts[pass] ) & 0xff] += 1;
+		}
+	}
+
+	uint64_t* source = keys;
+	uint64_t* target = scratch;
+	for ( int pass = 0; pass < passCount; ++pass )
+	{
+		uint32_t* passOffsets = offsets[pass];
+		uint32_t offset = 0;
+		for ( int digit = 0; digit < 256; ++digit )
+		{
+			uint32_t digitCount = passOffsets[digit];
+			passOffsets[digit] = offset;
+			offset += digitCount;
+		}
+
+		int shift = shifts[pass];
+		for ( int i = 0; i < count; ++i )
+		{
+			uint64_t key = source[i];
+			target[passOffsets[( key >> shift ) & 0xff]++] = key;
+		}
+
+		uint64_t* swap = source;
+		source = target;
+		target = swap;
+	}
+
+	if ( source != keys )
+	{
+		memcpy( keys, source, count * sizeof( uint64_t ) );
+	}
+}
+
 void b3UpdateBroadPhasePairs( b3World* world )
 {
 	b3BroadPhase* bp = &world->broadPhase;
@@ -877,6 +947,14 @@ void b3UpdateBroadPhasePairs( b3World* world )
 
 	B3_ASSERT( keyCount == pairCount );
 
+	// Added for Nebenan: many keys go through the radix sort, see b3SortPairKeys
+	if ( pairCount >= B3_RADIX_SORT_MIN_KEYS )
+	{
+		uint64_t* scratch = b3StackAlloc( alloc, pairCount * (int)sizeof( uint64_t ), "pair key scratch" );
+		b3SortPairKeys( pairKeys, scratch, pairCount );
+		b3StackFree( alloc, scratch );
+	}
+	else
 	{
 #define LESS( i, j ) ( pairKeys[(int)( i )] < pairKeys[(int)( j )] )
 #define SWAP( i, j )                                                                                                             \

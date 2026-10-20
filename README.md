@@ -1119,6 +1119,10 @@ voraus, was sie schreiben, siehe „Vorausladen zum Schreiben“ in [`extern/REA
 hatten meist kurz vorher andere Threads gelesen, und das Schreiben wartete, bis deren Kopien ungültig waren. Mit 4
 Threads kostet das Anlegen neuer Kontakte damit 13 bis 15 % weniger, bitgleich, mit einem Thread ändert sich kaum etwas.
 
+Seit `physik-43` sortiert Box3D die neuen Paare ab 64 mit einem Radix-Sort, siehe „Paare mit einem Radix-Sort
+sortieren“ in [`extern/README.md`](extern/README.md). Die Reihenfolge bleibt dieselbe, das Sortieren braucht bei ×1 rund
+60 % weniger Takte, und das Anlegen der Kontakte kostet dort 15 % weniger.
+
 Ganze Einschläge (Bruch, Stützgraph, neue Box3D-Körper) und der Box3D-Schritt danach bei 60 Hz mit
 4 Substeps, jeweils mit 1 und 4 Threads, der Median aus sechs Läufen:
 
