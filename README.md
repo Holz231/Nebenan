@@ -1114,6 +1114,11 @@ zweite Suche nur Kontakte, die eine Überlappung von 3 cm bis 1,2 m behaupteten,
 lagen oder sich in einem Punkt berührten, und die Stücke wegstießen. Die Ergebnisse ändern sich nur nach einem solchen
 Kontakt, mit einem Thread spart es bei ×1 0,65 % eines Schritts.
 
+Seit `physik-41` holen die Schleifen, in denen Box3D Kontakte anlegt, abbaut und ihren Zustand wechselt, zum Schreiben
+voraus, was sie schreiben, siehe „Vorausladen zum Schreiben“ in [`extern/README.md`](extern/README.md). Diese Zeilen
+hatten meist kurz vorher andere Threads gelesen, und das Schreiben wartete, bis deren Kopien ungültig waren. Mit 4
+Threads kostet das Anlegen neuer Kontakte damit 13 bis 15 % weniger, bitgleich, mit einem Thread ändert sich kaum etwas.
+
 Ganze Einschläge (Bruch, Stützgraph, neue Box3D-Körper) und der Box3D-Schritt danach bei 60 Hz mit
 4 Substeps, jeweils mit 1 und 4 Threads, der Median aus sechs Läufen:
 

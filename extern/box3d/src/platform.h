@@ -16,6 +16,8 @@
 // selection, so it has to survive a BOX3D_DISABLE_SIMD build.
 #if defined( _M_X64 ) || defined( _M_IX86 )
 #include <xmmintrin.h>
+// Added for Nebenan: _m_prefetchw, see b3PrefetchWrite
+#include <intrin.h>
 #endif
 #endif
 
@@ -29,6 +31,24 @@
 #define b3Prefetch( addr ) __builtin_prefetch( (const void*)( addr ), 0, 3 )
 #else
 #define b3Prefetch( addr ) ( (void)( addr ) )
+#endif
+
+// Added for Nebenan: a prefetch for a line the thread is about to write. A plain prefetch brings a line that other threads
+// have read in a shared state, and the write then waits once more while the other copies are invalidated. Only a hint like
+// b3Prefetch. GCC emits PREFETCHW for a write prefetch only when the target has it, x86 processors without it run it as a
+// NOP.
+#if defined( _MSC_VER )
+#if defined( _M_X64 ) || defined( _M_IX86 )
+#define b3PrefetchWrite( addr ) _m_prefetchw( (const void*)( addr ) )
+#else
+#define b3PrefetchWrite( addr ) __prefetch( (const void*)( addr ) )
+#endif
+#elif ( defined( __GNUC__ ) || defined( __clang__ ) ) && ( defined( __x86_64__ ) || defined( __i386__ ) ) && !defined( __PRFCHW__ )
+#define b3PrefetchWrite( addr ) __asm__ volatile( "prefetchw %0" : : "m"( *(const char*)( addr ) ) )
+#elif defined( __GNUC__ ) || defined( __clang__ )
+#define b3PrefetchWrite( addr ) __builtin_prefetch( (const void*)( addr ), 1, 3 )
+#else
+#define b3PrefetchWrite( addr ) ( (void)( addr ) )
 #endif
 
 static inline void b3AtomicStoreInt( b3AtomicInt* a, int value )

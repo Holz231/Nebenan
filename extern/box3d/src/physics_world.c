@@ -580,16 +580,18 @@ int b3GetMaxWorldCount( void )
 // Issues T0 prefetches across the cache lines of a b3Contact (216 B / 4 lines).
 // Used to hide the random-access latency of contact lookups while we work on an
 // earlier index.
+// Added for Nebenan: for writing, see b3PrefetchWrite. The collide task and the loop over the contacts with a new state
+// both write the contacts they load, and the last to write a contact was mostly another thread.
 static inline void b3PrefetchContact( const b3Contact* contact )
 {
 	const char* p = (const char*)contact;
-	b3Prefetch( p );
-	b3Prefetch( p + 64 );
-	b3Prefetch( p + 128 );
-	b3Prefetch( p + 192 );
+	b3PrefetchWrite( p );
+	b3PrefetchWrite( p + 64 );
+	b3PrefetchWrite( p + 128 );
+	b3PrefetchWrite( p + 192 );
 
 	// Added for Nebenan: the end of the gap data of two separated hulls, which can lie in a fifth line
-	b3Prefetch( (const char*)( &contact->convexContact.gapExtents + 1 ) - 1 );
+	b3PrefetchWrite( (const char*)( &contact->convexContact.gapExtents + 1 ) - 1 );
 }
 
 // Added for Nebenan: issues T0 prefetches for what the collide loop reads for a contact besides the contact itself: the
@@ -691,8 +693,8 @@ B3_FORCE_INLINE void b3PrefetchContactHullArrays( const b3Contact* contact, cons
 }
 
 // Added for Nebenan: what the update of a contact with a new state reads besides the contact itself: the two shapes for
-// the ids of the events, and the two bodies, which linking, unlinking and destroying the contact all read and write. The
-// contact must be in the cache already, see the contact states in b3Collide.
+// the ids of the events, and the two bodies, which linking, unlinking and destroying the contact all read and write, so
+// they are loaded for writing. The contact must be in the cache already, see the contact states in b3Collide.
 B3_FORCE_INLINE void b3PrefetchContactStateData( const b3World* world, const b3Contact* contact )
 {
 	const b3Shape* shapes = world->shapes.data;
@@ -703,8 +705,8 @@ B3_FORCE_INLINE void b3PrefetchContactStateData( const b3World* world, const b3C
 		b3Prefetch( &pair[k]->generation );
 
 		const b3Body* body = world->bodies.data + contact->edges[k].bodyId;
-		b3Prefetch( body );
-		b3Prefetch( (const char*)( body + 1 ) - 1 );
+		b3PrefetchWrite( body );
+		b3PrefetchWrite( (const char*)( body + 1 ) - 1 );
 	}
 }
 

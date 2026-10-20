@@ -721,7 +721,8 @@ static void b3EnqueueTreeUpdate( b3World* world )
 // waited for most of it. The new contacts come in the order of the sorted keys, so the loop knows them ahead: four keys
 // ahead it prefetches the two shapes and the slot in the pair set, two ahead the two bodies, the heads of the contact
 // lists of the shapes and the contact the id pool hands out next, and one ahead the heads of the contact lists of the
-// bodies. A key that makes no contact only costs a wasted prefetch, and the contacts stay the same.
+// bodies. A key that makes no contact only costs a wasted prefetch, and the contacts stay the same. What the loop writes
+// it loads for writing, see b3PrefetchWrite: the workers read the shapes, bodies and the pair set before.
 B3_FORCE_INLINE void b3PrefetchPairShapes( b3World* world, uint64_t key )
 {
 	const b3Shape* shapes = world->shapes.data;
@@ -731,12 +732,14 @@ B3_FORCE_INLINE void b3PrefetchPairShapes( b3World* world, uint64_t key )
 	};
 	for ( int k = 0; k < 2; ++k )
 	{
+		b3PrefetchWrite( &pair[k]->headContactKey );
 		b3Prefetch( pair[k] );
 		b3Prefetch( &pair[k]->materials );
 		b3Prefetch( (const char*)( pair[k] + 1 ) - 1 );
 	}
 
-	b3PrefetchHash( &world->broadPhase.pairSet, b3KeyHash( key ) );
+	const b3HashSet* pairSet = &world->broadPhase.pairSet;
+	b3PrefetchWrite( pairSet->items + ( b3KeyHash( key ) & ( pairSet->capacity - 1 ) ) );
 }
 
 B3_FORCE_INLINE void b3PrefetchPairBodies( b3World* world, uint64_t key, int keysAhead )
@@ -749,11 +752,13 @@ B3_FORCE_INLINE void b3PrefetchPairBodies( b3World* world, uint64_t key, int key
 	for ( int k = 0; k < 2; ++k )
 	{
 		const b3Body* body = world->bodies.data + pair[k]->bodyId;
+		b3PrefetchWrite( &body->headContactKey );
 		b3Prefetch( body );
 		b3Prefetch( (const char*)( body + 1 ) - 1 );
-		if ( pair[k]->headContactKey != B3_NULL_INDEX )
+		int headContactKey = pair[k]->headContactKey;
+		if ( headContactKey != B3_NULL_INDEX )
 		{
-			b3Prefetch( world->contacts.data + ( pair[k]->headContactKey >> 1 ) );
+			b3PrefetchWrite( &world->contacts.data[headContactKey >> 1].shapePrevKey[headContactKey & 1] );
 		}
 	}
 
@@ -764,9 +769,9 @@ B3_FORCE_INLINE void b3PrefetchPairBodies( b3World* world, uint64_t key, int key
 		const char* contact = (const char*)( world->contacts.data + pool->freeArray.data[pool->freeArray.count - 1 - keysAhead] );
 		for ( int offset = 0; offset < (int)sizeof( b3Contact ); offset += 64 )
 		{
-			b3Prefetch( contact + offset );
+			b3PrefetchWrite( contact + offset );
 		}
-		b3Prefetch( contact + sizeof( b3Contact ) - 1 );
+		b3PrefetchWrite( contact + sizeof( b3Contact ) - 1 );
 	}
 }
 
@@ -782,7 +787,7 @@ B3_FORCE_INLINE void b3PrefetchPairBodyContacts( b3World* world, uint64_t key )
 		int headContactKey = world->bodies.data[shapes[shapeIds[k]].bodyId].headContactKey;
 		if ( headContactKey != B3_NULL_INDEX )
 		{
-			b3Prefetch( world->contacts.data + ( headContactKey >> 1 ) );
+			b3PrefetchWrite( &world->contacts.data[headContactKey >> 1].edges[headContactKey & 1] );
 		}
 	}
 }
