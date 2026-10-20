@@ -1102,6 +1102,12 @@ aufrufen. Die Ergebnisse bleiben bitgleich. Auf einem Ryzen 7 7800X3D kostet bei
 %, ein Schritt mit 1 bis 4 Threads 2 bis 4 % und mit 8 Threads bis 2 %, siehe „Skalierung auf dem Ryzen mit `physik-36`“
 in [docs/Optimierungen.md](docs/Optimierungen.md).
 
+Seit `physik-38` sucht Box3D die neuen Paare in einer parallelen Schleife statt in zwei, siehe „Paarsuche in einem
+Durchgang“ in [`extern/README.md`](extern/README.md). Mit vielen Threads warteten die, die mit ihrem Teil der ersten
+Schleife fertig waren, an ihrem Ende, und die zweite weckte die Worker noch einmal. Gepaart gegen `physik-36` kostet die
+Paarsuche auf der VM mit 4 Threads bei ×2 7 bis 10 % weniger, mit einem Thread gleich viel. Die Ergebnisse bleiben
+bitgleich.
+
 Ganze Einschläge (Bruch, Stützgraph, neue Box3D-Körper) und der Box3D-Schritt danach bei 60 Hz mit
 4 Substeps, jeweils mit 1 und 4 Threads, der Median aus sechs Läufen:
 

@@ -7,10 +7,10 @@ Wecken auf `physik-26`, alle vier auf dem Ryzen nachgemessen, den Prototypen und
 zum Zeichnen zwischen zwei Schritten auf `physik-28`, den Kontakt-Kernen von upstream #189 auf `physik-29`, der
 Trennachsen-Suche von upstream #173 und #177 auf `physik-30`, der Sichtung von upstream auf `physik-31`, der Kollision
 mit AVX2 auf `physik-32`, der schärferen Schranke für getrennte Hüllen auf `physik-33`, den ganz vorausgeholten Hüllen
-auf `physik-34`, den seriellen Schleifen der Kontakte auf `physik-35` und dem Abbau der Kontakte und der Suche nach
-Schutt auf `physik-36`, die letzten vier auf dem Ryzen nachgemessen. Begründungen und Messwerte stehen in
-[`Optimierungen.md`](Optimierungen.md), hier nur das Fazit und die Reihenfolge. Nach jeder Runde wird der Stand hier
-nachgetragen.
+auf `physik-34`, den seriellen Schleifen der Kontakte auf `physik-35`, dem Abbau der Kontakte und der Suche nach Schutt
+auf `physik-36`, die letzten vier auf dem Ryzen nachgemessen, und der Paarsuche in einem Durchgang auf `physik-38`.
+Begründungen und Messwerte stehen in [`Optimierungen.md`](Optimierungen.md), hier nur das Fazit und die Reihenfolge.
+Nach jeder Runde wird der Stand hier nachgetragen.
 
 ## Fazit
 
@@ -318,6 +318,14 @@ Schritt dort 7 und 15 % eines Bildes bei 60 Hz, und was bleibt, ist vor allem de
 aufrufenden Thread. Was feinere Bruchstücke, ein größeres Budget der bewegten Trümmer und eine längere Ruhezeit kosten,
 steht in „Was mehr Realismus kostet“. Ein Spiel stellt sie selbst ein, die Vorgaben bleiben.
 
+Auf `physik-38` sucht Box3D die neuen Paare in einer parallelen Schleife statt in zwei, siehe „Paarsuche in einem
+Durchgang“. Auf dem Ryzen kostet die Paarsuche mit 8 Threads bei ×2 0,255 ms pro Schritt, 10 %, und sie wird von 4 auf 8
+Threads nur 1,5-mal schneller: Wer mit seinem Teil der ersten Schleife fertig war, wartete an ihrem Ende, und die zweite
+weckte die Worker noch einmal. Gerechnet aus Uhren je Startpaar brauchten die zwei Schleifen mit 8 Threads 1,37- bis
+1,73-mal so lange wie ein gleichmäßig geteilter Durchgang, in einer sind es 1,19- bis 1,29-mal. Gepaart gegen
+`physik-36` kostet die Paarsuche auf der VM mit 4 Threads bei ×2 7 bis 10 % weniger, bitgleich. Auf dem Ryzen
+nachzumessen, mit „Skalierung messen“ bei ×2 und ×4, die Zeile `pairs` sollte mit 8 Threads sinken.
+
 Bei der Rechenzeit ist nach `physik-36` kein gemessener kleiner Schritt mehr übrig, der mit 8 Threads mehr als 1 bis 2 %
 des Frames verspricht, siehe die Schritte 6, 7 und 11 und die kleineren Punkte unten, auch nicht in den seriellen
 Stufen. Was mehr bringen könnte, ist größer oder ändert das Verhalten:
@@ -338,8 +346,9 @@ Stufen. Was mehr bringen könnte, ist größer oder ändert das Verhalten:
 Mit niedriger Priorität vorgemerkt, sie sparen vor allem Arbeit, die schon parallel läuft. Der Gewinn gilt mit einem
 Thread, mit 8 Threads ist er kleiner:
 
-- „Paarsuche mit mehr Ladevorgängen gleichzeitig“: der Durchlauf durch die Bäume mit mehr Zeit für die Ladevorgänge,
-  bitgleich, höchstens 1,5 bis 2 % in Stufen, die schon parallel laufen.
+- „Paarsuche mit mehr Ladevorgängen gleichzeitig“: auf `physik-38` gemessen und verworfen. Eine kleine Box folgt im Baum
+  meist einem einzigen Pfad, da gibt es nichts, das schon laden könnte, und ein Prototyp kostete 3 bis 22 % mehr.
+  Gebaut ist stattdessen „Paarsuche in einem Durchgang“, siehe oben.
 - „Zweite Suche nur bei Überlappung“: die volle zweite Suche des Tests zweier Hüllen nur, wenn keine Fläche die Hüllen
   trennt. Bei ×1 bis 0,5 % eines Schritts, ändert die Ergebnisse, und 12 fragwürdige Kontakte im Benchmark fielen weg.
 - „Gyroskopische Drehung nach upstream #191“: das Drehmoment ganz abstellen spart höchstens 2 bis 3 %, aber drehende

@@ -29,9 +29,6 @@ typedef struct b3BroadPhase
 	// One tree for each body type.
 	b3DynamicTree trees[b3_bodyTypeCount];
 
-	// The moved siblings gathered from the dynamic body tree.
-	int* movedSiblings;
-
 	// Tracks shape pairs that have a b3Contact
 	// todo pairSet can grow quite large on the first time step and remain large
 	b3HashSet pairSet;

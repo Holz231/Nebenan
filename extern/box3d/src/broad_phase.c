@@ -35,8 +35,6 @@ void b3CreateBroadPhase( b3BroadPhase* bp, const b3Capacity* capacity )
 	int dynamicCapacity = b3MaxInt( 16, capacity->dynamicShapeCount );
 	bp->trees[b3_dynamicBody] = b3DynamicTree_Create( dynamicCapacity );
 
-	bp->movedSiblings = NULL;
-
 	// Added for Nebenan
 	for ( int i = 0; i < b3_bodyTypeCount; ++i )
 	{
@@ -165,27 +163,6 @@ void b3BroadPhase_EndShapeBatch( b3BroadPhase* bp )
 		b3DynamicTree_InsertBatch( bp->trees + i, bp->batches[i].data, bp->batches[i].count );
 		b3Array_Clear( bp->batches[i] );
 	}
-}
-
-// Gather the sibling pairs with a moved node. This is done serially, it is cache friendly.
-static int b3GatherMovedSiblings( const b3DynamicTree* tree, int* pairIndices )
-{
-	const b3TreeNode* nodes = tree->nodes;
-	int nodeEnd = tree->nodeEnd;
-
-	int count = 0;
-
-	// Skip the root.
-	for ( int pair = 2; pair < nodeEnd; pair += 2 )
-	{
-		// Push when either sibling moved.
-		if ( ( nodes[pair].flagIndex | nodes[pair + 1].flagIndex ) & B3_MOVED_NODE )
-		{
-			pairIndices[count++] = pair;
-		}
-	}
-
-	return count;
 }
 
 #define B3_CANDIDATE_BATCH 32
@@ -573,33 +550,6 @@ static void b3CollideCrossPairs( const b3TreeNode* arrayA, const b3TreeNode* arr
 	}
 }
 
-// This takes moved internal nodes and collides their sub-trees against each other.
-static void b3SelfPairsTask( int startIndex, int endIndex, int workerIndex, void* context )
-{
-	b3TracyCZoneNC( self_pairs, "Self", b3_colorCoral, true );
-
-	b3World* world = context;
-	b3BroadPhase* bp = &world->broadPhase;
-	const b3DynamicTree* tree = bp->trees + b3_dynamicBody;
-	const b3TreeNode* nodes = tree->nodes;
-	const int* siblingIndices = bp->movedSiblings;
-
-	b3PairContext pairContext = {
-		.world = world,
-		.pairKeys = &world->taskContexts.data[workerIndex].pairKeys,
-	};
-
-	for ( int i = startIndex; i < endIndex; ++i )
-	{
-		int nodeIndex = siblingIndices[i];
-		b3CollideCrossPairs( nodes, nodes, nodes + nodeIndex, nodes + nodeIndex + 1, &pairContext );
-	}
-
-	b3FlushCandidatePairs( &pairContext );
-
-	b3TracyCZoneEnd( self_pairs );
-}
-
 #define B3_CROSS_SEED_COUNT 64
 _Static_assert( ( B3_CROSS_SEED_COUNT & ( B3_CROSS_SEED_COUNT - 1 ) ) == 0, "must be power of 2" );
 
@@ -664,20 +614,29 @@ static int b3GatherCrossSeeds( const b3DynamicTree* treeA, const b3DynamicTree* 
 	return seedCount;
 }
 
-typedef struct b3CrossContext
+// Added for Nebenan: the search against the static and kinematic trees and the search of the dynamic tree against itself
+// share one parallel loop. Two loops woke the workers twice, and a worker done with its part of the first loop waited at
+// its end. The items are the seeds against the static tree, then those against the kinematic tree, then ranges of sibling
+// pairs of the dynamic tree. A range finds its moved pairs itself, so no thread scans the whole tree first. Which worker
+// finds a pair does not matter, the pairs are sorted before they make contacts.
+#define B3_SIBLING_RANGE 16
+
+typedef struct b3PairsContext
 {
 	b3World* world;
 	const b3NodePair* seeds;
 	int staticSeedCount;
+	int crossSeedCount;
+	int nodeEnd;
 	bool checkCompounds;
-} b3CrossContext;
+} b3PairsContext;
 
-static void b3CrossPairsTask( int startIndex, int endIndex, int workerIndex, void* context )
+static void b3FindPairsTask( int startIndex, int endIndex, int workerIndex, void* context )
 {
-	b3TracyCZoneNC( cross_pairs, "Cross", b3_colorCoral, true );
+	b3TracyCZoneNC( find_pairs, "Pair Search", b3_colorCoral, true );
 
-	b3CrossContext* crossContext = context;
-	b3World* world = crossContext->world;
+	b3PairsContext* pairsContext = context;
+	b3World* world = pairsContext->world;
 	b3BroadPhase* bp = &world->broadPhase;
 	const b3TreeNode* staticNodes = bp->trees[b3_staticBody].nodes;
 	const b3TreeNode* kinematicNodes = bp->trees[b3_kinematicBody].nodes;
@@ -688,27 +647,45 @@ static void b3CrossPairsTask( int startIndex, int endIndex, int workerIndex, voi
 		.pairKeys = &world->taskContexts.data[workerIndex].pairKeys,
 	};
 
-	// Static seeds come first, so the two passes are contiguous sub-ranges. The batch is drained
-	// between them because only the static pass can meet a compound.
-	int staticEnd = b3MinInt( endIndex, crossContext->staticSeedCount );
-
-	pairContext.checkCompounds = crossContext->checkCompounds;
-	for ( int i = startIndex; i < staticEnd; ++i )
+	// Static seeds come first, so the passes are contiguous sub-ranges. The batch is drained
+	// after the static pass because only it can meet a compound.
+	int staticEnd = b3MinInt( endIndex, pairsContext->staticSeedCount );
+	if ( startIndex < staticEnd )
 	{
-		b3NodePair seed = crossContext->seeds[i];
-		b3CollideCrossPairs( dynamicNodes, staticNodes, &seed.a, &seed.b, &pairContext );
+		pairContext.checkCompounds = pairsContext->checkCompounds;
+		for ( int i = startIndex; i < staticEnd; ++i )
+		{
+			b3NodePair seed = pairsContext->seeds[i];
+			b3CollideCrossPairs( dynamicNodes, staticNodes, &seed.a, &seed.b, &pairContext );
+		}
+		b3FlushCandidatePairs( &pairContext );
+		pairContext.checkCompounds = false;
 	}
-	b3FlushCandidatePairs( &pairContext );
 
-	pairContext.checkCompounds = false;
-	for ( int i = b3MaxInt( startIndex, crossContext->staticSeedCount ); i < endIndex; ++i )
+	int crossEnd = b3MinInt( endIndex, pairsContext->crossSeedCount );
+	for ( int i = b3MaxInt( startIndex, pairsContext->staticSeedCount ); i < crossEnd; ++i )
 	{
-		b3NodePair seed = crossContext->seeds[i];
+		b3NodePair seed = pairsContext->seeds[i];
 		b3CollideCrossPairs( dynamicNodes, kinematicNodes, &seed.a, &seed.b, &pairContext );
 	}
+
+	// Collide the sub-trees of each sibling pair with a moved node against each other, skipping the root.
+	for ( int i = b3MaxInt( startIndex, pairsContext->crossSeedCount ); i < endIndex; ++i )
+	{
+		int first = 2 + 2 * B3_SIBLING_RANGE * ( i - pairsContext->crossSeedCount );
+		int last = b3MinInt( first + 2 * B3_SIBLING_RANGE, pairsContext->nodeEnd );
+		for ( int pair = first; pair < last; pair += 2 )
+		{
+			if ( ( dynamicNodes[pair].flagIndex | dynamicNodes[pair + 1].flagIndex ) & B3_MOVED_NODE )
+			{
+				b3CollideCrossPairs( dynamicNodes, dynamicNodes, dynamicNodes + pair, dynamicNodes + pair + 1, &pairContext );
+			}
+		}
+	}
+
 	b3FlushCandidatePairs( &pairContext );
 
-	b3TracyCZoneEnd( cross_pairs );
+	b3TracyCZoneEnd( find_pairs );
 }
 
 static void b3UpdateTreesTask( void* context )
@@ -835,11 +812,7 @@ void b3UpdateBroadPhasePairs( b3World* world )
 	// Generate pairs by querying the dynamic body tree against itself and against
 	// the kinematic and static trees.
 	{
-		// Get the sibling pairs of the dynamic body tree that have moved.
 		const b3DynamicTree* dynamicTree = bp->trees + b3_dynamicBody;
-		int pairCapacity = b3MaxInt( dynamicTree->nodeEnd / 2, 1 );
-		bp->movedSiblings = b3StackAlloc( alloc, pairCapacity * sizeof( int ), "moved pairs" );
-		int dynamicMoveCount = b3GatherMovedSiblings( dynamicTree, bp->movedSiblings );
 
 		// Get seeds for colliding against the static and kinematic trees.
 		b3NodePair crossSeeds[2 * B3_CROSS_SEED_COUNT];
@@ -847,19 +820,21 @@ void b3UpdateBroadPhasePairs( b3World* world )
 		B3_ASSERT( staticSeedCount <= B3_CROSS_SEED_COUNT );
 		int kinematicSeedCount = b3GatherCrossSeeds( dynamicTree, bp->trees + b3_kinematicBody, crossSeeds + staticSeedCount );
 		B3_ASSERT( kinematicSeedCount <= B3_CROSS_SEED_COUNT );
-		int crossMoveCount = staticSeedCount + kinematicSeedCount;
+		int crossSeedCount = staticSeedCount + kinematicSeedCount;
 
-		// Collide the dynamic body tree against the static and kinematic trees.
-		b3CrossContext crossContext = {
+		// Added for Nebenan: collide the dynamic body tree against the static and kinematic trees and against itself in
+		// one loop, see b3FindPairsTask. The sibling pairs start after the root and its empty sibling.
+		int siblingCount = ( dynamicTree->nodeEnd - 1 ) / 2;
+		int rangeCount = ( siblingCount + B3_SIBLING_RANGE - 1 ) / B3_SIBLING_RANGE;
+		b3PairsContext pairsContext = {
 			.world = world,
 			.seeds = crossSeeds,
 			.staticSeedCount = staticSeedCount,
+			.crossSeedCount = crossSeedCount,
+			.nodeEnd = dynamicTree->nodeEnd,
 			.checkCompounds = world->compoundShapeCount > 0,
 		};
-		b3ParallelFor( world, &b3CrossPairsTask, crossMoveCount, 1, &crossContext, "cross pairs" );
-
-		// Collide the dynamic body tree against itself.
-		b3ParallelFor( world, &b3SelfPairsTask, dynamicMoveCount, 64, world, "self pairs" );
+		b3ParallelFor( world, &b3FindPairsTask, crossSeedCount + rangeCount, 1, &pairsContext, "find pairs" );
 	}
 
 	b3DynamicTree_ClearMoved( bp->trees + b3_staticBody );
@@ -959,9 +934,6 @@ void b3UpdateBroadPhasePairs( b3World* world )
 
 	world->profile.createContacts = b3GetMilliseconds( createTicks );
 	b3StackFree( alloc, pairKeys );
-
-	b3StackFree( alloc, bp->movedSiblings );
-	bp->movedSiblings = NULL;
 
 	b3ValidateSolverSets( world );
 

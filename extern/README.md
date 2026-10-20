@@ -397,8 +397,17 @@ Box, durchsucht aber nur den Baum der statischen Körper. Nebenan sucht damit de
 ein Einschlag freigibt (`nbThawRubbleInBoxes`), denn Schutt ist statisch. Die Abfrage wird nicht aufgezeichnet, wie das
 gesammelte Einsortieren der Formen.
 
+**Paarsuche in einem Durchgang.** Box3D suchte neue Paare in zwei parallelen Schleifen nacheinander: erst den Baum der
+bewegten Körper gegen die Bäume der statischen und kinematischen, dann gegen sich selbst. Für die zweite sammelte der
+aufrufende Thread vorher allein die Geschwisterpaare mit einem bewegten Knoten. Mit vielen Threads warteten die, die
+mit ihrem Teil der ersten Schleife fertig waren, an ihrem Ende, und die zweite weckte die Worker noch einmal. Jetzt
+laufen beide Suchen in einer Schleife (`b3FindPairsTask` in `src/broad_phase.c`): erst die Startpaare gegen den
+statischen und den kinematischen Baum, dann Abschnitte von je 16 Geschwisterpaaren, in denen jeder Thread die bewegten
+selbst findet. Welcher Thread ein Paar findet, spielt keine Rolle, denn Box3D sortiert die Paare, bevor sie Kontakte
+werden.
+
 Die erste, die zweite, die vierte bis achte, die zehnte, die dreizehnte bis einunddreißigste, die dreiunddreißigste bis
-fünfunddreißigste und die neununddreißigste bis zweiundvierzigste ändern an den Ergebnissen nichts. Die dritte und die
+fünfunddreißigste und die neununddreißigste bis dreiundvierzigste ändern an den Ergebnissen nichts. Die dritte und die
 neunte ändern sie in den letzten Bits, dafür hängen sie nicht mehr davon ab, in welcher Reihenfolge Formen in die Bäume
 kommen. Die elfte ändert sie, weil Kontakte zu anderen Zeitpunkten entstehen, die zwölfte, weil sie weniger Punkte
 bekommen, die zweiunddreißigste, weil die Kontakte eines Knotens gebündelt gegen Kopien rechnen statt nacheinander, die
