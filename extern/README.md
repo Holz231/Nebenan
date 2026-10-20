@@ -406,6 +406,14 @@ statischen und den kinematischen Baum, dann Abschnitte von je 16 Geschwisterpaar
 selbst findet. Welcher Thread ein Paar findet, spielt keine Rolle, denn Box3D sortiert die Paare, bevor sie Kontakte
 werden.
 
+**Zweite Suche nur bei Überlappung.** Die volle zweite Suche aus „Trennachsen-Suche wie upstream #173 und #177“ läuft
+nur noch, solange keine Fläche die Hüllen trennt (`b3CollideHulls` in `src/convex_manifold.c`). Die erste Suche behält
+jedes Kantenpaar, das die Hüllen weiter trennen könnte als die beste Fläche. Trennt schon eine Fläche, kann die volle
+Suche also nur ein Paar finden, das sie weniger trennt, und dessen Kontakt behauptete eine Überlappung, wo die Hüllen
+auseinanderliegen. In den Städten des Benchmarks ergaben 124 215 solche Suchen genau vier verschiedene Kontakte, alle
+mit 3 cm bis 1,2 m Überlappung zwischen Hüllen, die GJK 1 bis 4 mm auseinander oder in einem Punkt berührend fand.
+Überlappen sich die Hüllen auf allen Flächen, läuft die volle Suche weiter.
+
 Die erste, die zweite, die vierte bis achte, die zehnte, die dreizehnte bis einunddreißigste, die dreiunddreißigste bis
 fünfunddreißigste und die neununddreißigste bis dreiundvierzigste ändern an den Ergebnissen nichts. Die dritte und die
 neunte ändern sie in den letzten Bits, dafür hängen sie nicht mehr davon ab, in welcher Reihenfolge Formen in die Bäume
@@ -414,8 +422,9 @@ bekommen, die zweiunddreißigste, weil die Kontakte eines Knotens gebündelt geg
 sechsunddreißigste, weil die Kerne dieselbe Rechnung anders zusammenfassen und deshalb anders runden, und die
 siebenunddreißigste, weil die Suche andere Kantenpaare aussiebt und getrennte Hüllen erkennt, die die alte übersah. Die
 achtunddreißigste ändert sie nur, wo Kugeln Kugeln oder Kapseln berühren, Kontakte ohne vorausschauende Punkte rechnen
-oder der PreSolve-Callback Kontakte abschaltet, in Nebenans Szenen nicht. Die Ergänzungen stehen in `CMakeLists.txt`,
-`src/CMakeLists.txt`, `include/box3d/base.h`, `include/box3d/box3d.h`, `include/box3d/types.h`,
+oder der PreSolve-Callback Kontakte abschaltet, in Nebenans Szenen nicht. Die vierundvierzigste ändert sie nur, wo die
+volle zweite Suche einen Kontakt zwischen Hüllen ergab, die eine Fläche trennt. Die Ergänzungen stehen in
+`CMakeLists.txt`, `src/CMakeLists.txt`, `include/box3d/base.h`, `include/box3d/box3d.h`, `include/box3d/types.h`,
 `include/box3d/constants.h`, `src/core.h`, `src/core.c`, `src/shape.h`, `src/shape.c`, `src/body.c`, `src/contact.h`,
 `src/contact.c`, `src/contact_solver.h`, `src/contact_solver.c`, `src/contact_solver_wide.inl`, `src/wide8.c`,
 `src/simd.c`, `src/simd_avx2.h`, `src/constraint_graph.h`, `src/manifold.h`, `src/convex_manifold.c`,

@@ -1108,6 +1108,12 @@ Schleife fertig waren, an ihrem Ende, und die zweite weckte die Worker noch einm
 Paarsuche auf der VM mit 4 Threads bei ×2 7 bis 10 % weniger, mit einem Thread gleich viel. Die Ergebnisse bleiben
 bitgleich.
 
+Seit `physik-39` sucht der Test zweier Hüllen nur noch voll ein zweites Mal, solange keine Fläche die Hüllen trennt,
+siehe „Zweite Suche nur bei Überlappung“ in [`extern/README.md`](extern/README.md). Trennte schon eine Fläche, fand die
+zweite Suche nur Kontakte, die eine Überlappung von 3 cm bis 1,2 m behaupteten, wo die Hüllen 1 bis 4 mm auseinander
+lagen oder sich in einem Punkt berührten, und die Stücke wegstießen. Die Ergebnisse ändern sich nur nach einem solchen
+Kontakt, mit einem Thread spart es bei ×1 0,65 % eines Schritts.
+
 Ganze Einschläge (Bruch, Stützgraph, neue Box3D-Körper) und der Box3D-Schritt danach bei 60 Hz mit
 4 Substeps, jeweils mit 1 und 4 Threads, der Median aus sechs Läufen:
 

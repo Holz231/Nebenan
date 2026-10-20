@@ -2456,9 +2456,17 @@ void b3CollideHulls( b3LocalManifold* manifold, int capacity, const b3HullData* 
 	// Kept for Nebenan, upstream dropped this full search in #173: without it two hulls whose face clipping yields no
 	// points get no contact at all, even when they overlap.
 	// If face clipping yields no points then I need to run a full SAT to get the best edge pair.
-	if ( manifold->pointCount == 0 &&
-		 edgeQuery.separation < b3MaxFloat( axisQuery.faceA.separation, axisQuery.faceB.separation ) )
+	float maxFaceSeparation = b3MaxFloat( axisQuery.faceA.separation, axisQuery.faceB.separation );
+	if ( manifold->pointCount == 0 && edgeQuery.separation < maxFaceSeparation )
 	{
+		// Added for Nebenan: not while a face separates the hulls. The search above keeps every edge pair that could
+		// separate them more than the best face, so the full search could only find a pair that separates them less, and
+		// its edge contact claimed an overlap where the hulls are apart.
+		if ( maxFaceSeparation > 0.0f )
+		{
+			return;
+		}
+
 		edgeQuery = b3ComputeSeparatingAxis( hullA, hullB, transformBtoA, false ).edge;
 	}
 
