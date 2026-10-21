@@ -1,9 +1,13 @@
 # Referenz: Roadmap des Spiels
 
-`Nebenan_Roadmap_V1_4_Sifu_Overgrowth_PvP.pdf` ist die Roadmap des Spiels Nebenan in der Fassung V1.4, 39 Seiten,
-mit Ergänzungen vom 9. bis 17. Oktober 2026. Sie beschreibt, was das Spiel werden soll. Gebaut ist davon nur, was
-das README und `docs/` als umgesetzt nennen, die Roadmap behauptet selbst keinen Stand.
-`Nebenan_Roadmap_V1_4_Sifu_Overgrowth_PvP.txt` ist der Text des PDFs, zum Durchsuchen.
+`Nebenan_Roadmap_V1_4_Sifu_Overgrowth_PvP.pdf` ist die Roadmap des Spiels Nebenan in der Fassung V1.4, 39 Seiten, mit
+Ergänzungen vom 9. bis 17. Oktober 2026. Sie beschreibt, was das Spiel werden soll. Gebaut ist davon nur, was das README
+und `docs/` als umgesetzt nennen, die Roadmap behauptet selbst keinen Stand. Am 21. Oktober 2026 ist Seite 6 neu
+gesetzt, Kapitel 17.1 bis 17.3, nach dem Einsturz, wie er in der Demo abgestimmt wurde: Schwellen je Etage aus Bereichen
+statt fester 40 % und der ganze Rest statt der 90/10-Regel, die übrigen Seiten sind unverändert. Die eingebetteten
+Content Credentials (C2PA) der ursprünglichen Fassung passen seitdem nicht mehr zur Datei, ein Prüfwerkzeug zeigt sie
+als nachträglich verändert. `Nebenan_Roadmap_V1_4_Sifu_Overgrowth_PvP.txt` ist der Text des PDFs, zum Durchsuchen,
+erzeugt mit `pdftotext -layout` ohne den letzten Seitenvorschub.
 
 | Kapitel | Inhalt |
 | --- | --- |
@@ -23,7 +27,7 @@ das README und `docs/` als umgesetzt nennen, die Roadmap behauptet selbst keinen
 | 14 | Gemeinsame Ereignisse aller Systeme, Rendering, Release |
 | 15 | Reihenfolge M1 bis M8, siehe unten |
 | 16 | Was die Roadmap nicht wiederholt |
-| 17 | Zerstörung: Restanker, Buckling und Kollaps, wie Häuser einstürzen sollen. 17.1 bis 17.3 gebaut auf `kollaps-1`, die oberste Etage unter dem Dach wie die übrigen seit `kollaps-2`, der Anteil, der stehen bleibt, einstellbar seit `kollaps-3`, seit `kollaps-4` mit eigenen Werten für jede Etage, gezogen aus Bereichen, eigenen Bereichen für die oberste, und der Rest gebrochen wie in 17.1, in seine Zellen, siehe Einsturz im README, die Rampe in der Decke aus 17.4 ist offen |
+| 17 | Zerstörung: Restanker, Buckling und Kollaps, wie Häuser einstürzen sollen. 17.1 bis 17.3 gebaut auf `kollaps-1`, die oberste Etage unter dem Dach wie die übrigen seit `kollaps-2`, der Anteil, der stehen bleibt, einstellbar seit `kollaps-3`, seit `kollaps-4` mit eigenen Werten für jede Etage, gezogen aus Bereichen, eigenen Bereichen für die oberste, und der Rest gebrochen wie in 17.1, in seine Zellen. Am 21. Oktober korrigiert auf die abgestimmten Werte: 17 bis 31 % für alle Etagen, 18 bis 25 % für die oberste, der ganze Rest bleibt stehen. Siehe Einsturz im README, die Rampe in der Decke aus 17.4 ist offen |
 | 18 | Parallax Occlusion Mapping |
 | 19 | Figuren aus dem Skelett heraus erzeugen |
 | 20 | Gebäude streamen, Physik aktivieren, vorbereitete Häuser cachen |

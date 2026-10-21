@@ -2877,8 +2877,9 @@ static float StandingBetween( TestScene* scene, float low, float high, float* lo
 }
 
 // Whether two cells of a building as it was built, no fragments of them, hold together between two heights, by the
-// centroids of their chunks, where they still are where they were built, outside the largest loose piece. The parts of a
-// cell are bonded as siblings, see SeamTest.
+// centroids of their chunks, where they still are where they were built, outside the largest loose piece. Side by side
+// anywhere, one on top of the other only above the lowest half meter, where a cell keeps its bond to the one below. The
+// parts of a cell are bonded as siblings, see SeamTest.
 static bool CellsJoinedBetween( TestScene* scene, float low, float high )
 {
 	nbWorld* world = nbGetWorldFromId( scene->world );
@@ -2905,7 +2906,10 @@ static bool CellsJoinedBetween( TestScene* scene, float low, float high )
 			const nbBond* bond = world->bonds.data + ( key >> 1 );
 			const nbChunk* other = world->chunks.data + bond->chunk[( key & 1 ) ^ 1];
 			b3Pos otherCentroid = b3TransformWorldPoint( home, other->shape->centroid );
-			if ( bond->sibling == false && other->depth == 0 && otherCentroid.y > low && otherCentroid.y < high )
+			bool sideBySide = b3AbsFloat( bond->normal.y ) < 0.7f;
+			bool above = centroid.y > low + 0.5f && otherCentroid.y > low + 0.5f;
+			if ( bond->sibling == false && ( sideBySide || above ) && other->depth == 0 && otherCentroid.y > low &&
+				 otherCentroid.y < high )
 			{
 				return true;
 			}
@@ -3316,22 +3320,25 @@ static int StoreyResidueTest( void )
 		DestroyScene( &scene );
 	}
 
-	// All of the walls that are left stay, as by default, broken into their cells. Nothing flies out, and the stories
-	// above come down onto the cells or stay up on them, nothing up in the air. Grenades at what stayed bring them down
-	// to the ground, and nothing stays up in the air either.
-	for ( uint32_t seed = 3; seed < 5; ++seed )
+	// All of the walls that are left stay, as by default, broken into their cells, of the ground floor and of the top
+	// story under the roof with its own ranges. Nothing flies out, and what is above comes down onto the cells or stays
+	// up on them, nothing up in the air. Grenades at what stayed bring it down onto what is below, and nothing stays up in
+	// the air either.
+	for ( int k = 0; k < 4; ++k )
 	{
+		int floor = k < 2 ? 0 : 2;
+		float low = 3.25f * (float)floor;
 		TestScene scene = CreateScene();
 		nbWorld_SetFragmentScale( scene.world, 2.0f );
-		nbDestructibleId house = CreateCelledHouse( &scene, 3, seed );
+		nbDestructibleId house = CreateCelledHouse( &scene, 3, 3 + (uint32_t)( k % 2 ) );
 		nbWorld* world = nbGetWorldFromId( scene.world );
-		BlastStorey( &scene, 0, 3, 0.5f, false );
+		BlastStorey( &scene, floor, 3, 0.5f, false );
 		ENSURE( nbWorld_GetStats( scene.world ).collapsedStoreyCount == 1 );
 
-		const nbStorey* storey = world->destructibles.data[house.index1 - 1].storeys;
+		const nbStorey* storey = world->destructibles.data[house.index1 - 1].storeys + floor;
 		ENSURE( storey->kept > 0.6f * storey->volume );
-		ENSURE( HighestStanding( &scene ) < 1.2f );
-		ENSURE( CellsJoinedBetween( &scene, 0.0f, 3.25f ) == false );
+		ENSURE( HighestStanding( &scene ) < low + 1.2f );
+		ENSURE( CellsJoinedBetween( &scene, low, low + 3.25f ) == false );
 		int fast = 0;
 		for ( int i = 0; i < world->debris.count; ++i )
 		{
@@ -3343,15 +3350,15 @@ static int StoreyResidueTest( void )
 
 		Step( &scene, 900 );
 		ENSURE( FloatingVolume( &scene ) == 0.0f );
-		for ( int k = 0; k < 32; ++k )
+		for ( int g = 0; g < 32; ++g )
 		{
-			Grenade( &scene, AroundHouse( 31.0f * (float)k / 32.0f + 0.5f, 1.0f ) );
+			Grenade( &scene, AroundHouse( 31.0f * (float)g / 32.0f + 0.5f, low + 1.0f ) );
 			Step( &scene, 10 );
 		}
 		Step( &scene, 600 );
-		float low = 0.0f, high = 0.0f;
-		float largest = LargestPiece( &scene, &low, &high );
-		ENSURE( largest > 60.0f && low < 1.0f );
+		float bottom = 0.0f, top = 0.0f;
+		float largest = LargestPiece( &scene, &bottom, &top );
+		ENSURE( largest > ( floor == 0 ? 60.0f : 15.0f ) && bottom < low + 1.0f );
 		ENSURE( FloatingVolume( &scene ) == 0.0f );
 		DestroyScene( &scene );
 	}
@@ -3405,7 +3412,7 @@ static int StoreyResidueTest( void )
 		nbStoreyCollapse top = nbDefaultWorldDef().topStoreyCollapse;
 		ENSURE( storeys.damageMin == 0.17f && storeys.damageMax == 0.31f && storeys.residueMin == 1.0f &&
 				storeys.residueMax == 1.0f );
-		ENSURE( top.damageMin == 0.4f && top.damageMax == 0.4f && top.residueMin == 0.1f && top.residueMax == 0.1f );
+		ENSURE( top.damageMin == 0.18f && top.damageMax == 0.25f && top.residueMin == 1.0f && top.residueMax == 1.0f );
 	}
 
 	return 0;

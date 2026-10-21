@@ -21,7 +21,7 @@ gelöscht. Kein Staub, keine Schatten: Jede Millisekunde geht in die Zerstörung
   dass es 240 pro Sekunde sind. 30 Hz kostet weniger, 120 Hz ist genauer, die Vorgabe sind 60 Hz
 - Einsturz Etage für Etage, auf jeder Höhe und in jeder Reihenfolge: Jede Etage gibt nach, wenn ein eigener Anteil ihrer
   Wände zerstört ist, mit dem Standard zwischen 17 und 31 %, je Etage zufällig und für dasselbe Haus immer gleich, die
-  oberste unter dem Dach bei 40 %. Was von den Wänden bleibt, mit dem Standard alles, bleibt ohne Stoß stehen und
+  oberste unter dem Dach bei 18 bis 25 %. Was von den Wänden bleibt, mit dem Standard alles, bleibt ohne Stoß stehen und
   zerbricht in seine Zellen, was nicht bleibt, fliegt mit Wucht heraus, alles einstellbar. Alles darüber kommt als ein
   Stück auf die losen Zellen herunter und kippt über das, was stehen blieb, bei Schaden auf einer Seite zur zerstörten
   hin, oder bleibt auf ihnen stehen, bis Treffer sie wegschießen. Die Räume oben bleiben ganz und geben wieder Deckung.
@@ -154,9 +154,9 @@ Daneben stellt **Etage gibt nach** ein, wie viel ihrer Wände zerstört sein mus
 **Stütze bleibt**, wie viel der übrigen Wände dann stehen bleibt, in Zellen zerbrochen. Mit **Zufall je Etage**
 (Standard an) sind beide Regler Bereiche, aus denen jede Etage beim Laden des Hauses ihre Werte zieht, Standard 17 bis
 31 % und 100 %. Ohne nehmen alle Etagen die Werte der Regler, Standard 24 % und 100 %. **Oberste gibt nach** und
-**Oberste Stütze** gelten für die oberste Etage unter dem Dach, Standard 40 % und 10 %. Änderungen gelten sofort, jede
-Etage behält ihren Platz in den Bereichen. **Statik ohne Decken** schaltet die Lastprüfung für die Mauern ein (Standard
-aus).
+**Oberste Stütze** gelten für die oberste Etage unter dem Dach, Standard 18 bis 25 % und 100 %, ohne Zufall 22 % und
+100 %. Änderungen gelten sofort, jede Etage behält ihren Platz in den Bereichen. **Statik ohne Decken** schaltet die
+Lastprüfung für die Mauern ein (Standard aus).
 
 Die Threads wählt die Bibliothek (`nbGetRecommendedWorkerCount`): einen pro Performance-Kern, höchstens 8. Box3D läuft
 am schnellsten ohne Hyper-Threads und Effizienzkerne, und mehr Threads als Kerne bremsen. Mit paralleler Physik bleibt
@@ -311,10 +311,10 @@ sagt `storeyCollapse` mit zwei Bereichen: den Anteil ihrer Wände, den eine Etag
 Standard 17 bis 31 %, und den Anteil der übrigen Wände, der dann stehen bleibt, mit dem Standard alles. Jede Etage zieht
 beim Laden aus dem `seed` des Hauses, wo sie in jedem der Bereiche liegt, für dasselbe Haus immer gleich. So gibt jede
 bei einem eigenen Wert nach und behält einen eigenen Rest. Die oberste Etage unter dem Dach nimmt die Bereiche aus
-`topStoreyCollapse`, Standard 40 % und ein Zehntel. Ein Spiel ändert beide zur Laufzeit mit `nbWorld_SetStoreyCollapse`,
-jede Etage behält dabei ihren Platz in den Bereichen, und gleiche Enden geben allen Etagen dieselben Werte. Ein Schaden
-von 0 schaltet den Einsturz ab. Hat eine Etage ihren Anteil verloren, gibt sie nach, auf jeder Höhe, wie es Kapitel 17
-der Roadmap des Spiels in [docs/Referenz](docs/Referenz) beschreibt:
+`topStoreyCollapse`, Standard 18 bis 25 % und der ganze Rest. Ein Spiel ändert beide zur Laufzeit mit
+`nbWorld_SetStoreyCollapse`, jede Etage behält dabei ihren Platz in den Bereichen, und gleiche Enden geben allen Etagen
+dieselben Werte. Ein Schaden von 0 schaltet den Einsturz ab. Hat eine Etage ihren Anteil verloren, gibt sie nach, auf
+jeder Höhe, wie es Kapitel 17 der Roadmap des Spiels in [docs/Referenz](docs/Referenz) beschreibt:
 
 - Von den Wänden, die ihr bleiben, bleibt ihr Anteil ohne Stoß stehen, in ganzen Zellen, so nah daran, wie ganze Zellen
   kommen. Liegt der Schaden vor allem auf einer Seite, die Mitte des Verlorenen also mehr als 35 % des Wegs zur
@@ -346,9 +346,13 @@ der Roadmap des Spiels in [docs/Referenz](docs/Referenz) beschreibt:
 - Über der obersten Etage liegt nur noch die Decke, das Dach. Es hängt seitlich an den Wänden, nicht auf ihnen, und
   fiele flach am Anker vorbei. Seit `kollaps-2` kommen darum die Zellen des Ankers, an denen es hängt, mit ihm herunter
   und liegen auf dem Rest des Ankers auf, der wie weiter unten in seine Zellen zerbricht: Das Dach kippt über ihn wie
-  die Stockwerke über einer Etage weiter unten, im Haus der Tests im Fallen um 15°, und liegt danach fast gerade, um 4°
-  mit drei Stockwerken und um weniger als 2° mit zwei. Mit dem ganzen Anker vor `kollaps-4` lag es um 16° geneigt. Bei
-  Schaden ringsum kommt es fast gerade herunter. Davor zerplatzte die oberste Etage, und das Dach fiel flach hinein.
+  die Stockwerke über einer Etage weiter unten, mit einem Zehntel Rest im Haus der Tests im Fallen um 15°, und liegt
+  danach fast gerade, um 4° mit drei Stockwerken und um weniger als 2° mit zwei. Mit dem ganzen Anker vor `kollaps-4`
+  lag es um 16° geneigt. Bei Schaden ringsum kommt es fast gerade herunter. Mit dem Standard, 18 bis 25 % und allem
+  Rest, gibt die oberste Etage nach 12 bis 16 Granaten nach statt nach 35 bis 37, und das Dach blieb in 16 Häusern der
+  Tests mit zwei und drei Stockwerken in 11 auf den losen Zellen stehen und sank in 5 um bis zu 14° geneigt ein. 32
+  Granaten auf die Reste brachten es in allen auf die Etage darunter, und nichts blieb in der Luft hängen. Vor
+  `kollaps-2` zerplatzte die oberste Etage, und das Dach fiel flach hinein.
 - Die Etagen darunter bleiben stehen und tragen, was herunterkam. Gibt später eine von ihnen nach, kommt sie mit allem
   darauf herunter, auch wenn es dort schon als Schutt liegt.
 - Was herunterkam, bleibt ein Haus, solange es nicht mehr als 45° kippt: Verliert eine seiner Etagen ihren Anteil der
@@ -807,7 +811,7 @@ beim Einbinden nicht gebaut.
 | --- | --- | --- |
 | `fragmentScale` | 1 | Multipliziert die Bruchstückgröße aller Materialien. Der wichtigste Regler für die Leistung: doppelte Größe halbiert die Zeit bei Massenzerstörung. Zur Laufzeit mit `nbWorld_SetFragmentScale` |
 | `storeyCollapse` | 0,17 bis 0,31 und 1 | Wie die Etagen eines Hauses nachgeben, in zwei Bereichen: `damageMin` bis `damageMax` ist der Anteil ihrer Wände, den eine Etage verlieren kann, bevor sie nachgibt, `residueMin` bis `residueMax` der Anteil der übrigen Wände, der dann ohne Stoß stehen bleibt, in seine Zellen zerbrochen: bei Schaden auf einer Seite als Anker auf der stärksten, über den alles darüber kippt, bei Schaden ringsum an zufälligen Stellen. Jede Etage zieht beim Laden aus dem `seed` des Hauses, wo sie in den Bereichen liegt. Der Rest fliegt heraus, und alles darüber kommt in einem Stück herunter und kippt über das, was blieb. Ein Schaden von 0 schaltet es ab. Zur Laufzeit mit `nbWorld_SetStoreyCollapse`, jede Etage behält ihren Platz in den Bereichen |
-| `topStoreyCollapse` | 0,4 und 0,1 | Dasselbe für die oberste Etage eines Hauses, die unter dem Dach. Zur Laufzeit mit `nbWorld_SetStoreyCollapse` |
+| `topStoreyCollapse` | 0,18 bis 0,25 und 1 | Dasselbe für die oberste Etage eines Hauses, die unter dem Dach. Zur Laufzeit mit `nbWorld_SetStoreyCollapse` |
 | `supportScale` | 0 | Lastprüfung für Bauwerke ohne Decken, Tragfähigkeit der Verbindungen. Kleiner: sie geben früher nach, 0 schaltet sie ab. Häuser prüft sie nie. Zur Laufzeit mit `nbWorld_SetSupportScale` |
 | `maxDebrisBodies` | 1500 | Obergrenze für bewegte Trümmerkörper, darüber erstarren die langsamsten zu Schutt. Gelöscht wird nichts. Zur Laufzeit mit `nbWorld_SetDebrisBudget` |
 | `enableRubble` | an | Trümmer, die zur Ruhe kommen und auf festem Grund liegen, werden zu statischem Schutt |
@@ -869,13 +873,14 @@ mit doppelter Bruchstückgröße 0,4 ms, und enthält den Schaden durch Aufprall
 Update einzeln durchgeht, braucht es 26 und 22 % weniger Zeit, am selben Tag auf der inzwischen langsameren VM gemessen
 2,65 statt 3,59 ms und 0,69 statt 0,88 ms.
 
-Seit `kollaps-4` gibt eine Etage mit dem Standard bei 17 bis 31 % ihrer Wände nach, und alle übrigen bleiben stehen.
-Unter demselben Beschuss stürzen 4 Etagen ein, mit `fragmentScale` 2 eine. Gepaart gegen `kollaps-3`, beide als Release
-gebaut, je drei Läufe im Wechsel, der Median: Ein Frame kostet mit 1, 2 und 4 Threads 13, 22 und 16 % mehr, mit
-`fragmentScale` 2 5, 2 und 8 %. 99 % der Frames brauchen bis zu 36, 24 und 19 ms statt 24, 16 und 14 ms, mit
-`fragmentScale` 2 bis zu 7, 5 und 4 ms statt 6, 4 und 3 ms. Mit den ersten Standardwerten von `kollaps-4`, 19 bis 20 %
-und 5 bis 30 % Rest, stürzten 7 und 4 Etagen ein, und ein Frame kostete 27 bis 28 und 15 bis 23 % mehr. Teuer ist die
-Arbeit der Einstürze selbst, was fällt und sich bewegt, bis es als Schutt liegt.
+Seit `kollaps-4` gibt eine Etage mit dem Standard bei 17 bis 31 % ihrer Wände nach, die oberste bei 18 bis 25 %, und
+alle übrigen Wände bleiben stehen. Unter demselben Beschuss stürzen 6 Etagen ein, mit `fragmentScale` 2 sind es 3.
+Gepaart gegen `kollaps-3`, beide als Release gebaut, je drei Läufe im Wechsel, der Median: Ein Frame kostet mit 1, 2 und
+4 Threads 10, 13 und 15 % mehr, mit `fragmentScale` 2 12, 6 und 14 %. 99 % der Frames brauchen bis zu 30, 21 und 16 ms
+statt 24, 15 und 12 ms, mit `fragmentScale` 2 bis zu 7, 6 und 4 ms statt 6, 4 und 3 ms. Mit den ersten Standardwerten
+von `kollaps-4`, 19 bis 20 % und 5 bis 30 % Rest, die oberste bei 40 % und einem Zehntel, stürzten 7 und 4 Etagen ein,
+und ein Frame kostete 27 bis 28 und 15 bis 23 % mehr. Teuer ist die Arbeit der Einstürze selbst, was fällt und sich
+bewegt, bis es als Schutt liegt.
 
 Gab eine Etage schon nach, wenn ihr 10 % ihrer Wände fehlten, stürzten unter demselben Beschuss 20 bis 21 Etagen ein,
 gemessen vor `kollaps-1`, als noch alle übrigen Wände herausflogen, auch in Teilen, die schon heruntergekommen sind. Die
@@ -949,12 +954,13 @@ Städte mit einfacher und doppelter Bruchstückgröße, in denen nichts einstür
 7 % auseinander. Was von einer Etage stehen bleibt und wie der Teil darüber kippt, kostet also nichts, teurer ist nur,
 dass mehr einstürzt.
 
-Seit `kollaps-4` gibt sie mit dem Standard bei 17 bis 31 % nach, und unter dem Trommelfeuer stürzen 61 statt 15 Etagen
-ein. Gepaart gegen `kollaps-3` wie oben kostet ein Frame mit 1, 2 und 4 Threads 70, 63 und 86 % mehr, ein Schritt 55, 42
-und 61 %, und das Update braucht 2,0 bis 2,3 statt 0,7 bis 0,8 ms. Darin kostet es 0,8 statt 0,2 ms pro Schritt, den
-Schutt über das Budget hinaus erstarren zu lassen, die Zustandswechsel in Box3D kosten 1,2 bis 1,3 statt 0,35 ms und die
-Prüfung, was zur Ruhe kommt, 0,7 bis 0,9 statt 0,3 ms. Mit den ersten Standardwerten stürzten 68 Etagen ein, und ein
-Frame kostete 114 bis 127 % mehr. Wer weniger Einstürze will, stellt die Etagen höher ein.
+Seit `kollaps-4` gibt sie mit dem Standard bei 17 bis 31 % nach, die oberste bei 18 bis 25 %, und unter dem Trommelfeuer
+stürzen 114 statt 15 Etagen ein. Gepaart gegen `kollaps-3` wie oben kostet ein Frame mit 1, 2 und 4 Threads 52, 58 und
+55 % mehr, ein Schritt 41, 42 und 37 %, und das Update braucht 1,7 bis 1,9 statt 0,7 bis 0,8 ms. Darin kostet es 0,7
+statt 0,2 ms pro Schritt, den Schutt über das Budget hinaus erstarren zu lassen, die Zustandswechsel in Box3D kosten 0,8
+bis 0,9 statt 0,3 ms und die Prüfung, was zur Ruhe kommt, 0,5 bis 0,7 statt 0,3 ms. Mit den ersten Standardwerten
+stürzten 68 Etagen ein, und ein Frame kostete 114 bis 127 % mehr: Heute geben mehr Etagen nach, aber was stehen bleibt,
+fliegt nicht heraus. Wer weniger Einstürze will, stellt die Etagen höher ein.
 
 Die teuersten Frames folgen auf einen Einsturz: Der Schutt um die Reste der Etage taut auf, und Box3D legt im nächsten
 Schritt Tausende neuer Kontakte an. Das ist echte Arbeit, das meiste davon fällt danach wirklich, siehe

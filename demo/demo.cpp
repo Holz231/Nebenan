@@ -357,7 +357,7 @@ struct App
 	// picks its values from the ranges, without it every storey takes the values of the sliders
 	bool storeyRandom = true;
 	nbStoreyCollapse randomCollapse[2] = { nbDefaultWorldDef().storeyCollapse, nbDefaultWorldDef().topStoreyCollapse };
-	nbStoreyCollapse fixedCollapse[2] = { { 0.24f, 0.24f, 1.0f, 1.0f }, nbDefaultWorldDef().topStoreyCollapse };
+	nbStoreyCollapse fixedCollapse[2] = { { 0.24f, 0.24f, 1.0f, 1.0f }, { 0.22f, 0.22f, 1.0f, 1.0f } };
 
 	// Load check for structures without floors, like the walls, off by default
 	float supportScale = nbDefaultWorldDef().supportScale;

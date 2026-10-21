@@ -4227,7 +4227,7 @@ nbWorldDef nbDefaultWorldDef( void )
 	def.killDepth = -100.0f;
 	def.supportScale = 0.0f;
 	def.storeyCollapse = (nbStoreyCollapse){ 0.17f, 0.31f, 1.0f, 1.0f };
-	def.topStoreyCollapse = (nbStoreyCollapse){ 0.4f, 0.4f, 0.1f, 0.1f };
+	def.topStoreyCollapse = (nbStoreyCollapse){ 0.18f, 0.25f, 1.0f, 1.0f };
 	def.collisionSpeedThreshold = 4.0f;
 	def.collisionDamageScale = 12.0f;
 	def.collisionRadiusScale = 0.035f;

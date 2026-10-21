@@ -381,7 +381,8 @@ typedef struct nbWorldDef
 	/// at run time with nbWorld_SetStoreyCollapse.
 	nbStoreyCollapse storeyCollapse;
 
-	/// The same for the top storey of a building, the one under the roof, 40 percent and a tenth by default
+	/// The same for the top storey of a building, the one under the roof. By default it gives way at 18 to 25 percent of
+	/// its walls destroyed, and all of the walls that are left stay.
 	nbStoreyCollapse topStoreyCollapse;
 
 	/// Minimum approach speed for collision damage in meters per second.
