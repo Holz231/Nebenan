@@ -2677,9 +2677,10 @@ static bool* FindCarriedPieces( TestScene* scene )
 	return carried;
 }
 
-// Volume of the pieces of at least a cubic meter that hang in the air: nothing lies right below their lowest chunks, and
-// for a moving piece no contacts carry it from below. A part that came down tilted onto a heap rests on what lies below
-// its middle, its lowest corner can hang free.
+// Volume of the pieces of at least a cubic meter that hang in the air: nothing lies right below their lowest chunks, for a
+// moving piece no contacts carry it from below, and its center of mass does not lie over the chunks that something lies
+// right below. A part that came down tilted onto a heap rests on what lies below its middle, its lowest corner can hang
+// free, and so can a cell of a part that came down onto the cells of a storey that stay, which reaches lower between them.
 static float FloatingVolume( TestScene* scene )
 {
 	nbWorld* world = nbGetWorldFromId( scene->world );
@@ -2714,6 +2715,37 @@ static float FloatingVolume( TestScene* scene )
 			FloatQuery query = { world, actorIndex, false };
 			b3World_OverlapAABB( scene->physicsWorld, below, b3DefaultQueryFilter(), FloatQueryCallback, &query );
 			carried = query.found;
+		}
+
+		b3WorldTransform transform = nbActor_GetTransform( world, actor );
+		b3Vec3 center = b3Vec3_zero;
+		float weight = 0.0f;
+		b3AABB footprint = { { FLT_MAX, 0.0f, FLT_MAX }, { -FLT_MAX, 0.0f, -FLT_MAX } };
+		for ( int c = actor->headChunk; c != NB_NULL_INDEX && carried == false; c = world->chunks.data[c].nextChunk )
+		{
+			const nbChunk* chunk = world->chunks.data + c;
+			b3Pos centroid = b3TransformWorldPoint( transform, chunk->shape->centroid );
+			center = b3MulAdd( center, chunk->shape->volume, (b3Vec3){ (float)centroid.x, 0.0f, (float)centroid.z } );
+			weight += chunk->shape->volume;
+
+			b3AABB box = b3Shape_GetAABB( chunk->shapeId );
+			b3AABB below = { { box.lowerBound.x, box.lowerBound.y - 0.12f, box.lowerBound.z },
+							 { box.upperBound.x, box.lowerBound.y + 0.03f, box.upperBound.z } };
+			FloatQuery query = { world, actorIndex, false };
+			b3World_OverlapAABB( scene->physicsWorld, below, b3DefaultQueryFilter(), FloatQueryCallback, &query );
+			if ( query.found )
+			{
+				footprint.lowerBound.x = b3MinFloat( footprint.lowerBound.x, box.lowerBound.x );
+				footprint.lowerBound.z = b3MinFloat( footprint.lowerBound.z, box.lowerBound.z );
+				footprint.upperBound.x = b3MaxFloat( footprint.upperBound.x, box.upperBound.x );
+				footprint.upperBound.z = b3MaxFloat( footprint.upperBound.z, box.upperBound.z );
+			}
+		}
+		if ( carried == false )
+		{
+			center = b3MulSV( 1.0f / weight, center );
+			carried = footprint.lowerBound.x <= center.x && center.x <= footprint.upperBound.x &&
+					  footprint.lowerBound.z <= center.z && center.z <= footprint.upperBound.z;
 		}
 
 		volume += carried ? 0.0f : actor->volume;
@@ -2844,9 +2876,9 @@ static float StandingBetween( TestScene* scene, float low, float high, float* lo
 	return volume;
 }
 
-// Whether two cells of a building hold together between two heights, by the centroids of their chunks, where they
-// still are where they were built, outside the largest loose piece. The parts of a cell are bonded as siblings, see
-// SeamTest.
+// Whether two cells of a building as it was built, no fragments of them, hold together between two heights, by the
+// centroids of their chunks, where they still are where they were built, outside the largest loose piece. The parts of a
+// cell are bonded as siblings, see SeamTest.
 static bool CellsJoinedBetween( TestScene* scene, float low, float high )
 {
 	nbWorld* world = nbGetWorldFromId( scene->world );
@@ -2855,7 +2887,7 @@ static bool CellsJoinedBetween( TestScene* scene, float low, float high )
 	{
 		const nbChunk* chunk = world->chunks.data + c;
 		const nbActor* actor = world->actors.data + chunk->actorIndex;
-		if ( chunk->shape == NULL || actor == largest )
+		if ( chunk->shape == NULL || chunk->depth > 0 || actor == largest )
 		{
 			continue;
 		}
@@ -2873,7 +2905,7 @@ static bool CellsJoinedBetween( TestScene* scene, float low, float high )
 			const nbBond* bond = world->bonds.data + ( key >> 1 );
 			const nbChunk* other = world->chunks.data + bond->chunk[( key & 1 ) ^ 1];
 			b3Pos otherCentroid = b3TransformWorldPoint( home, other->shape->centroid );
-			if ( bond->sibling == false && otherCentroid.y > low && otherCentroid.y < high )
+			if ( bond->sibling == false && other->depth == 0 && otherCentroid.y > low && otherCentroid.y < high )
 			{
 				return true;
 			}
@@ -3284,6 +3316,46 @@ static int StoreyResidueTest( void )
 		DestroyScene( &scene );
 	}
 
+	// All of the walls that are left stay, as by default, broken into their cells. Nothing flies out, and the stories
+	// above come down onto the cells or stay up on them, nothing up in the air. Grenades at what stayed bring them down
+	// to the ground, and nothing stays up in the air either.
+	for ( uint32_t seed = 3; seed < 5; ++seed )
+	{
+		TestScene scene = CreateScene();
+		nbWorld_SetFragmentScale( scene.world, 2.0f );
+		nbDestructibleId house = CreateCelledHouse( &scene, 3, seed );
+		nbWorld* world = nbGetWorldFromId( scene.world );
+		BlastStorey( &scene, 0, 3, 0.5f, false );
+		ENSURE( nbWorld_GetStats( scene.world ).collapsedStoreyCount == 1 );
+
+		const nbStorey* storey = world->destructibles.data[house.index1 - 1].storeys;
+		ENSURE( storey->kept > 0.6f * storey->volume );
+		ENSURE( HighestStanding( &scene ) < 1.2f );
+		ENSURE( CellsJoinedBetween( &scene, 0.0f, 3.25f ) == false );
+		int fast = 0;
+		for ( int i = 0; i < world->debris.count; ++i )
+		{
+			const nbActor* actor = world->actors.data + world->debris.data[i];
+			b3Vec3 velocity = actor->isRubble ? b3Vec3_zero : b3Body_GetLinearVelocity( actor->bodyId );
+			fast += actor->fromCollapse && velocity.x * velocity.x + velocity.z * velocity.z > 3.0f * 3.0f ? 1 : 0;
+		}
+		ENSURE( fast == 0 );
+
+		Step( &scene, 900 );
+		ENSURE( FloatingVolume( &scene ) == 0.0f );
+		for ( int k = 0; k < 32; ++k )
+		{
+			Grenade( &scene, AroundHouse( 31.0f * (float)k / 32.0f + 0.5f, 1.0f ) );
+			Step( &scene, 10 );
+		}
+		Step( &scene, 600 );
+		float low = 0.0f, high = 0.0f;
+		float largest = LargestPiece( &scene, &low, &high );
+		ENSURE( largest > 60.0f && low < 1.0f );
+		ENSURE( FloatingVolume( &scene ) == 0.0f );
+		DestroyScene( &scene );
+	}
+
 	// With half of the walls that are left staying, the roof that came down over the top story takes more than a tenth of
 	// the walls of the story along, the cells of the anchor it hung on. A grenade on it changes it, and the story is
 	// checked again in it, but the cells stay, so it only loses what the grenade breaks off.
@@ -3331,8 +3403,8 @@ static int StoreyResidueTest( void )
 
 		nbStoreyCollapse storeys = nbDefaultWorldDef().storeyCollapse;
 		nbStoreyCollapse top = nbDefaultWorldDef().topStoreyCollapse;
-		ENSURE( storeys.damageMin == 0.19f && storeys.damageMax == 0.2f && storeys.residueMin == 0.05f &&
-				storeys.residueMax == 0.3f );
+		ENSURE( storeys.damageMin == 0.17f && storeys.damageMax == 0.31f && storeys.residueMin == 1.0f &&
+				storeys.residueMax == 1.0f );
 		ENSURE( top.damageMin == 0.4f && top.damageMax == 0.4f && top.residueMin == 0.1f && top.residueMax == 0.1f );
 	}
 

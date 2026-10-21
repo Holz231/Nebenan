@@ -373,11 +373,12 @@ typedef struct nbWorldDef
 	/// into its cells. When the damage lies mostly on one side, they are cells on the strongest side, and those bonded to
 	/// what is below stay with it, an anchor the part above tilts over. When the damage is spread around, they are cells
 	/// picked at random that mostly come loose. The rest of the walls flies out, and everything above comes down in one
-	/// piece and tilts over what stayed, as gravity and contacts make it. Nothing else of a building collapses, no wall
-	/// above a hole and no floor, only what is cut off from the anchors falls. Floors are the flat pieces of a
-	/// destructible, at most a quarter as high along its local Y axis as they are wide in both other directions, and a
-	/// storey is the room under a floor. By default a storey gives way at 19 to 20 percent of its walls destroyed, and 5
-	/// to 30 percent of the walls that are left stay. Change it at run time with nbWorld_SetStoreyCollapse.
+	/// piece onto what stayed and tilts over it as gravity and contacts make it, or stays on its loose cells until hits
+	/// clear them away. Nothing else of a building collapses, no wall above a hole and no floor, only what is cut off from
+	/// the anchors falls. Floors are the flat pieces of a destructible, at most a quarter as high along its local Y axis
+	/// as they are wide in both other directions, and a storey is the room under a floor. By default a storey gives way at
+	/// 17 to 31 percent of its walls destroyed, and all of the walls that are left stay, so nothing flies out. Change it
+	/// at run time with nbWorld_SetStoreyCollapse.
 	nbStoreyCollapse storeyCollapse;
 
 	/// The same for the top storey of a building, the one under the roof, 40 percent and a tenth by default

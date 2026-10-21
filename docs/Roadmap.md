@@ -23,13 +23,14 @@ gegen eine davor misst, vergleicht dort verschiedene Szenen, bei ×1 und ×2 die
 der obersten Etage über den Anker kippen wie die Stockwerke über den Etagen darunter. Im Benchmark enden damit alle
 Städte bitgleich wie mit `kollaps-1`. Seit `kollaps-3` stellt ein Spiel ein, wie viel von einer Etage stehen bleibt
 (`storeyResidue`), mit dem Standard enden die Städte weiter bitgleich. `kollaps-4` gibt jeder Etage eigene Werte aus
-Bereichen, Standard 19 bis 20 % und 5 bis 30 %, der obersten unter dem Dach eigene, und lässt den Rest in seine Zellen
-zerbrechen. Das ändert wieder, was der Benchmark misst: Unter dem Beschuss der Stadt stürzen bei ×1 7 und bei ×2 4
-Etagen ein statt keiner, unter dem Trommelfeuer bei ×4 68 statt 15, und ein Frame kostet dort gut doppelt so viel, siehe
-„Eigene Werte je Etage, Rest in Zellen“. Wer eine Runde danach gegen eine davor misst, vergleicht verschiedene Szenen.
-Bei ×4 wachsen vor allem das Erstarren des Schutts über dem Budget und die Zustandswechsel in Box3D, ein Kandidat für
-eine Runde der Physik. Neue Werte für die Etagen und die oberste gibt der Nutzer noch vor, bis dahin steht die oberste
-auf 40 % und einem Zehntel.
+Bereichen, der obersten unter dem Dach eigene, und lässt den Rest in seine Zellen zerbrechen. Mit den ersten
+Standardwerten, 19 bis 20 % und 5 bis 30 %, änderte das wieder, was der Benchmark misst: Unter dem Beschuss der Stadt
+stürzten bei ×1 7 und bei ×2 4 Etagen ein statt keiner, unter dem Trommelfeuer bei ×4 68 statt 15, und ein Frame kostete
+dort gut doppelt so viel, siehe „Eigene Werte je Etage, Rest in Zellen“. Seitdem stehen sie auf den Werten, die der
+Nutzer in der Demo gewählt hat, 17 bis 31 % und dem ganzen Rest, siehe „Standard nach dem Augenschein“. Wer eine Runde
+danach gegen eine davor misst, vergleicht verschiedene Szenen. Bei ×4 wachsen vor allem das Erstarren des Schutts über
+dem Budget und die Zustandswechsel in Box3D, ein Kandidat für eine Runde der Physik. Werte für die oberste Etage gibt
+der Nutzer noch vor, bis dahin steht sie auf 40 % und einem Zehntel.
 
 ## Fazit
 
