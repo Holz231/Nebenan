@@ -3168,6 +3168,97 @@ static int StoreyTest( void )
 	return 0;
 }
 
+// How much of a storey that gives way stays is up to the game, see nbWorldDef::storeyResidue. A storey that gave way does
+// not give way again for what stayed of it.
+static int StoreyResidueTest( void )
+{
+	// Nothing stays: all of the walls that are left fly out, and the stories above come down about level
+	{
+		TestScene scene = CreateScene();
+		nbWorld_SetFragmentScale( scene.world, 2.0f );
+		nbWorld_SetStoreyResidue( scene.world, 0.0f );
+		CreateCelledHouse( &scene, 3, 3 );
+		BlastStorey( &scene, 0, 3, 0.5f, false );
+		ENSURE( nbWorld_GetStats( scene.world ).collapsedStoreyCount == 1 );
+
+		float lowestX = 0.0f;
+		ENSURE( StandingBetween( &scene, 0.0f, 3.25f, &lowestX ) < 0.05f );
+		Step( &scene, 300 );
+		ENSURE( LargestAxis( &scene ).y > 0.98f );
+		ENSURE( FloatingVolume( &scene ) == 0.0f );
+		DestroyScene( &scene );
+	}
+
+	// Three tenths stay, about 18 % of the walls of the ground floor, and the stories above tilt over the larger anchor
+	// toward -x
+	{
+		TestScene scene = CreateScene();
+		nbWorld_SetFragmentScale( scene.world, 2.0f );
+		nbWorld_SetStoreyResidue( scene.world, 0.3f );
+		nbDestructibleId house = CreateCelledHouse( &scene, 3, 3 );
+		BlastStorey( &scene, 0, 3, 0.5f, false );
+		ENSURE( nbWorld_GetStats( scene.world ).collapsedStoreyCount == 1 );
+
+		const nbStorey* storey = nbGetWorldFromId( scene.world )->destructibles.data[house.index1 - 1].storeys;
+		float lowestX = 0.0f;
+		float anchor = StandingBetween( &scene, 0.0f, 3.25f, &lowestX );
+		ENSURE( 0.15f * storey->volume < anchor && anchor < 0.21f * storey->volume );
+		ENSURE( fabsf( anchor - storey->kept ) < 0.01f * storey->kept );
+		Step( &scene, 300 );
+		b3Vec3 axis = LargestAxis( &scene );
+		ENSURE( axis.x < -0.15f && axis.y > 0.85f );
+		ENSURE( FloatingVolume( &scene ) == 0.0f );
+		DestroyScene( &scene );
+	}
+
+	// With half of the walls that are left staying, the roof that came down over the top story takes more than a tenth of
+	// the walls of the story along, the cells of the anchor it hung on. A grenade on it changes it, and the story is
+	// checked again in it, but the cells stay, so it only loses what the grenade breaks off.
+	{
+		TestScene scene = CreateScene();
+		nbWorld_SetFragmentScale( scene.world, 2.0f );
+		nbWorld_SetStoreyResidue( scene.world, 0.5f );
+		CreateCelledHouse( &scene, 3, 3 );
+		BlastStorey( &scene, 2, 3, 0.5f, false );
+		ENSURE( nbWorld_GetStats( scene.world ).collapsedStoreyCount == 1 );
+		Step( &scene, 300 );
+
+		nbWorld* world = nbGetWorldFromId( scene.world );
+		const nbActor* roof = LargestActor( &scene );
+		float before = roof->volume;
+		ENSURE( before > 15.0f );
+		b3Pos point = b3TransformWorldPoint( nbActor_GetTransform( world, roof ), (b3Vec3){ -2.0f, 9.75f, 0.0f } );
+		Grenade( &scene, (b3Vec3){ (float)point.x, (float)point.y + 0.3f, (float)point.z } );
+		Step( &scene, 300 );
+		ENSURE( LargestActor( &scene )->volume > before - 1.0f );
+		ENSURE( FloatingVolume( &scene ) == 0.0f );
+		DestroyScene( &scene );
+	}
+
+	// The fraction is clamped to what makes sense, also at creation
+	{
+		b3WorldDef physicsDef = b3DefaultWorldDef();
+		b3WorldId physicsWorld = b3CreateWorld( &physicsDef );
+		nbWorldDef def = nbDefaultWorldDef();
+		def.physicsWorld = physicsWorld;
+		def.storeyResidue = -0.5f;
+		nbWorldId other = nbCreateWorld( &def );
+		ENSURE( nbGetWorldFromId( other )->def.storeyResidue == 0.0f );
+		nbDestroyWorld( other );
+		b3DestroyWorld( physicsWorld );
+
+		TestScene scene = CreateScene();
+		nbWorld_SetStoreyResidue( scene.world, 2.0f );
+		ENSURE( nbGetWorldFromId( scene.world )->def.storeyResidue == 1.0f );
+		nbWorld_SetStoreyResidue( scene.world, -1.0f );
+		ENSURE( nbGetWorldFromId( scene.world )->def.storeyResidue == 0.0f );
+		ENSURE( nbDefaultWorldDef().storeyResidue == 0.1f );
+		DestroyScene( &scene );
+	}
+
+	return 0;
+}
+
 // Structures without floors take the load check when it is on, see nbWorldDef::supportScale
 static int SupportTest( void )
 {
@@ -4975,6 +5066,7 @@ int WorldTest( void )
 	RUN_TEST( RestTimeTest );
 	RUN_TEST( FragmentScaleTest );
 	RUN_TEST( StoreyTest );
+	RUN_TEST( StoreyResidueTest );
 	RUN_TEST( SupportTest );
 	RUN_TEST( BondMomentsTest );
 	RUN_TEST( BatchCreateTest );

@@ -20,10 +20,10 @@ gelöscht. Kein Staub, keine Schatten: Jede Millisekunde geht in die Zerstörung
 - Der Takt der Physik ist wählbar, 30, 60 oder 120 Schritte pro Sekunde (`stepRate`), jeder mit so vielen Teilschritten,
   dass es 240 pro Sekunde sind. 30 Hz kostet weniger, 120 Hz ist genauer, die Vorgabe sind 60 Hz
 - Einsturz Etage für Etage, auf jeder Höhe und in jeder Reihenfolge: Sind 40 % der Wände einer Etage zerstört, gibt sie
-  nach. Ein Zehntel der übrigen Wände bleibt ohne Stoß stehen, der Rest fliegt mit Wucht heraus, und alles darüber kommt
-  als ein Stück herunter und kippt über das, was stehen blieb, bei Schaden auf einer Seite über einen Anker auf der
-  stärksten Seite zur zerstörten hin. Die Räume oben bleiben ganz und geben wieder Deckung. Sonst stürzt an einem Haus
-  nichts ein, keine Wand über einem Loch und keine Decke, nur was ganz abgetrennt ist, fällt
+  nach. Ein Zehntel der übrigen Wände bleibt ohne Stoß stehen, einstellbar, der Rest fliegt mit Wucht heraus, und alles
+  darüber kommt als ein Stück herunter und kippt über das, was stehen blieb, bei Schaden auf einer Seite über einen
+  Anker auf der stärksten Seite zur zerstörten hin. Die Räume oben bleiben ganz und geben wieder Deckung. Sonst stürzt
+  an einem Haus nichts ein, keine Wand über einem Loch und keine Decke, nur was ganz abgetrennt ist, fällt
 - Die Wände sind beim Laden in Zellen zerlegt, die auch um die Hausecken laufen, Fenster und Türen sind
   ausgeschnitten. Der Riss unter dem Teil, das herunterkommt, folgt den Zellen und ist überall polygonal
 - Für Bauwerke ohne Decken gibt es wahlweise eine Lastprüfung nach dem Lastlöser der Referenz-Engine: Last und
@@ -149,7 +149,8 @@ viele FPS die CPU schaffen würde. Die Physik rechnet unabhängig davon 60 Schri
   jedem Takt flüssig. Die beiden Messknöpfe rechnen mit dem eingestellten Takt, 1/60 s Physik pro Bild.
 
 Daneben stellt **Etage gibt nach** ein, wie viel ihrer Wände zerstört sein muss, bis eine Etage nachgibt (Standard
-40 %), und **Statik ohne Decken** schaltet die Lastprüfung für die Mauern ein (Standard aus).
+40 %), **Stütze bleibt**, wie viel der übrigen Wände dann stehen bleibt (Standard 10 %), und **Statik ohne Decken**
+schaltet die Lastprüfung für die Mauern ein (Standard aus).
 
 Die Threads wählt die Bibliothek (`nbGetRecommendedWorkerCount`): einen pro Performance-Kern, höchstens 8. Box3D läuft
 am schnellsten ohne Hyper-Threads und Effizienzkerne, und mehr Threads als Kerne bremsen. Mit paralleler Physik bleibt
@@ -303,12 +304,17 @@ Bruchstücke, deren Mitte in ihr liegt. Ändert sich ein Haus, prüft das nächs
 `storeyCollapseDamage` davon zerstört, Standard 40 %, gibt sie nach, auf jeder Höhe, wie es Kapitel 17 der Roadmap des
 Spiels in [docs/Referenz](docs/Referenz) beschreibt:
 
-- Ein Zehntel der Wände, die ihr bleiben, bleibt ohne Stoß stehen, in ganzen Zellen, so nah an einem Zehntel, wie ganze
-  Zellen kommen. Liegt der Schaden vor allem auf einer Seite, die Mitte des Verlorenen also mehr als 35 % des Wegs zur
-  Außenwand von der Mitte der Etage entfernt, sind es Zellen in der Mitte der Gegenseite, der stärksten, die aneinander
-  hängen: ein Anker, der an dem bleibt, was darunter liegt, und nur die Verbindungen nach oben verliert. Ist der Schaden
-  ringsum verteilt, sind es Zellen, die der Zufall wählt, immer dieselben für dasselbe Haus. Sie hängen meist an nichts
-  mehr und fallen, nur Zellen am Boden der Etage bleiben als Stümpfe.
+- `storeyResidue` der Wände, die ihr bleiben, Standard ein Zehntel, bleibt ohne Stoß stehen, in ganzen Zellen, so nah
+  daran, wie ganze Zellen kommen. Liegt der Schaden vor allem auf einer Seite, die Mitte des Verlorenen also mehr als
+  35 % des Wegs zur Außenwand von der Mitte der Etage entfernt, sind es Zellen in der Mitte der Gegenseite, der
+  stärksten, die aneinander hängen: ein Anker, der an dem bleibt, was darunter liegt, und nur die Verbindungen nach oben
+  verliert. Ist der Schaden ringsum verteilt, sind es Zellen, die der Zufall wählt, immer dieselben für dasselbe Haus.
+  Sie hängen meist an nichts mehr und fallen, nur Zellen am Boden der Etage bleiben als Stümpfe. Seit `kollaps-3` stellt
+  ein Spiel den Anteil ein, zur Laufzeit mit `nbWorld_SetStoreyResidue`: Mit 0 fliegen alle Wände heraus, und der Teil
+  darüber kommt fast gerade herunter, mit 0,3 bleiben im Haus der Tests 17 % der Wände des Erdgeschosses, und die
+  Stockwerke darüber kippen um 18° über den größeren Anker, ab etwa 0,5 liegen sie so breit auf, dass sie kaum noch
+  kippen. Das Dach über der obersten Etage, das die Zellen des Ankers mitnimmt, an denen es hängt, kippt auch dann, um
+  17° bis 25°.
 - Die übrigen Wände fliegen mit 6 m/s aus dem Haus, jedes Stück durch die Seite, an der es frei liegt, bei zwei freien
   Seiten weg von der Mitte des Hauses. Die Teile einer Zelle fliegen zusammen. Aller Schutt bis 1 m um sie herum wacht
   auf, auch der aus früheren Einstürzen, sonst verkeilten sich die Reste darin, und die Trümmer dort zählen für das
@@ -327,8 +333,9 @@ Spiels in [docs/Referenz](docs/Referenz) beschreibt:
   darauf herunter, auch wenn es dort schon als Schutt liegt.
 - Was herunterkam, bleibt ein Haus, solange es nicht mehr als 45° kippt: Verliert eine seiner Etagen 40 % ihrer Wände,
   stürzt sie genauso ein, auch von unten nach oben. Eine Etage, die schon eingestürzt ist, gibt für Reste von weniger
-  als einem Zehntel ihrer Wände nicht noch einmal nach, und `nbStats` zählt jede Etage nur einmal. Was als Anker stehen
-  blieb, ist weniger.
+  als einem Zehntel ihrer Wände nicht noch einmal nach und auch nicht für das, was beim Einsturz von ihr stehen blieb,
+  und `nbStats` zählt jede Etage nur einmal. Sonst flögen bei einem größeren `storeyResidue` die Zellen des Ankers, die
+  ein Dach mitnahm, beim nächsten Treffer auf das Dach heraus, und es fiele noch einmal.
 - Schneiden Einschläge das Haus über einer Etage ganz ab, bevor sie nachgibt, kommt der Teil darüber genauso herunter,
   und die Reste der Etage fliegen unter ihm heraus.
 
@@ -779,7 +786,8 @@ beim Einbinden nicht gebaut.
 | Welt (`nbWorldDef`) | Standard | Wirkung |
 | --- | --- | --- |
 | `fragmentScale` | 1 | Multipliziert die Bruchstückgröße aller Materialien. Der wichtigste Regler für die Leistung: doppelte Größe halbiert die Zeit bei Massenzerstörung. Zur Laufzeit mit `nbWorld_SetFragmentScale` |
-| `storeyCollapseDamage` | 0,4 | Anteil ihrer Wände, den eine Etage verlieren kann, bevor sie nachgibt. Dann bleibt ein Zehntel der übrigen Wände ohne Stoß stehen, bei Schaden auf einer Seite als Anker auf der stärksten, der Rest fliegt heraus, und alles darüber kommt in einem Stück herunter und kippt über das, was blieb. 0 schaltet es ab. Zur Laufzeit mit `nbWorld_SetStoreyCollapseDamage` |
+| `storeyCollapseDamage` | 0,4 | Anteil ihrer Wände, den eine Etage verlieren kann, bevor sie nachgibt. Dann bleibt `storeyResidue` der übrigen Wände ohne Stoß stehen, der Rest fliegt heraus, und alles darüber kommt in einem Stück herunter und kippt über das, was blieb. 0 schaltet es ab. Zur Laufzeit mit `nbWorld_SetStoreyCollapseDamage` |
+| `storeyResidue` | 0,1 | Anteil der übrigen Wände, der von einer Etage stehen bleibt, die nachgibt: bei Schaden auf einer Seite als Anker auf der stärksten, über den alles darüber kippt, bei Schaden ringsum an zufälligen Stellen. 0 wirft alle heraus, 1 lässt alle stehen. Zur Laufzeit mit `nbWorld_SetStoreyResidue`, gilt für die Etagen, die danach nachgeben |
 | `supportScale` | 0 | Lastprüfung für Bauwerke ohne Decken, Tragfähigkeit der Verbindungen. Kleiner: sie geben früher nach, 0 schaltet sie ab. Häuser prüft sie nie. Zur Laufzeit mit `nbWorld_SetSupportScale` |
 | `maxDebrisBodies` | 1500 | Obergrenze für bewegte Trümmerkörper, darüber erstarren die langsamsten zu Schutt. Gelöscht wird nichts. Zur Laufzeit mit `nbWorld_SetDebrisBudget` |
 | `enableRubble` | an | Trümmer, die zur Ruhe kommen und auf festem Grund liegen, werden zu statischem Schutt |
@@ -1268,10 +1276,12 @@ Nach Änderungen an `demo/shaders/scene.glsl` die Shader neu erzeugen, im Ordner
   keine Etagen und stürzt nie ein, es verliert nur, was ganz abgetrennt ist.
 - Ein Objekt sollte ein Haus sein. Die Etagen gelten für das ganze Objekt, und was in einer Etage liegt, die
   nachgibt, fliegt mit heraus, auch ein anderes Bauwerk im selben Objekt.
-- Neun Zehntel der Reste einer Etage fliegen auf einmal heraus. Gibt eine Etage schon bei wenig Schaden nach,
-  `storeyCollapseDamage` nahe 0, fliegt beinahe eine ganze Etage heraus, und ihre Zellen können sich unter dem Teil
-  darüber verkeilen, der dann auf ihnen liegen bleibt. Was stehen bleibt, sind ganze Zellen, bei groben Zellen auch mehr
-  als ein Zehntel. Decken klappen noch nicht als Rampe herunter, Kapitel 17.4 der Roadmap des Spiels ist offen.
+- Was von einer Etage nicht stehen bleibt, mit dem Standard neun Zehntel ihrer Reste, fliegt auf einmal heraus. Gibt
+  eine Etage schon bei wenig Schaden nach, `storeyCollapseDamage` nahe 0, fliegt beinahe eine ganze Etage heraus, und
+  ihre Zellen können sich unter dem Teil darüber verkeilen, der dann auf ihnen liegen bleibt. Was stehen bleibt, sind
+  ganze Zellen, bei groben Zellen auch mehr als `storeyResidue`. Bleibt viel stehen, ab etwa 0,6, verkeilen sich lose
+  Reste zwischen dem Teil darüber und den Wänden und erstarren dort, von der Seite gehalten statt von unten. Decken
+  klappen noch nicht als Rampe herunter, Kapitel 17.4 der Roadmap des Spiels ist offen.
 - Große Szenen brauchen Speicher: rund 0,37 MB pro Haus aus 240 Bruchstücken, vier Fünftel davon in Nebenan, vor allem
   die Formen der Bruchstücke samt ihren Hüllen. Objekte mit gleichen Teilen und gleichem `seed` haben gleiche Hüllen,
   auch die speichert jede Form einzeln. Mit eigenen Speicherfunktionen (`nbSetAllocator`, `b3SetAllocator`) und in

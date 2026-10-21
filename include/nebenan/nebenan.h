@@ -190,6 +190,10 @@ NB_API void nbWorld_SetSupportScale( nbWorldId worldId, float scale );
 /// update checks every structure again.
 NB_API void nbWorld_SetStoreyCollapseDamage( nbWorldId worldId, float fraction );
 
+/// Change the fraction of the walls that are left that stays of a storey that gives way, see nbWorldDef::storeyResidue.
+/// Applies to the storeys that give way from now on.
+NB_API void nbWorld_SetStoreyResidue( nbWorldId worldId, float fraction );
+
 /// Change the size of the fragments of all materials, see nbWorldDef::fragmentScale. Applies to the next impacts.
 NB_API void nbWorld_SetFragmentScale( nbWorldId worldId, float scale );
 

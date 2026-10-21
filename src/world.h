@@ -254,6 +254,9 @@ typedef struct nbStorey
 	float volume;
 	b3Vec3 center;
 	b3Vec3 extent;
+
+	// What stayed of its walls when it gave way, in all its parts, see nbFindRemains
+	float kept;
 } nbStorey;
 
 #define NB_MAX_STOREYS 32

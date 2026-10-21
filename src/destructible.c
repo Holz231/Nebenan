@@ -331,7 +331,7 @@ static void nbFindStoreys( nbWorld* world, int destructibleIndex, int actorIndex
 	{
 		if ( lows[k] > low && destructible->storeyCount < NB_MAX_STOREYS )
 		{
-			destructible->storeys[destructible->storeyCount++] = (nbStorey){ low, lows[k], 0.0f, b3Vec3_zero, b3Vec3_zero };
+			destructible->storeys[destructible->storeyCount++] = (nbStorey){ .low = low, .high = lows[k] };
 		}
 		low = b3MaxFloat( low, highs[k] );
 	}

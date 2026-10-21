@@ -21,7 +21,8 @@ dort schon nach, wenn 40 % ihrer Wände zerstört sind, und es stürzen 15 statt
 mit 1 und 2 Threads 3,2 und 6,6 % mehr, siehe „Einsturz nach Kapitel 17 der Roadmap des Spiels“. Wer eine Runde danach
 gegen eine davor misst, vergleicht dort verschiedene Szenen, bei ×1 und ×2 dieselben. `kollaps-2` lässt das Dach über
 der obersten Etage über den Anker kippen wie die Stockwerke über den Etagen darunter. Im Benchmark enden damit alle
-Städte bitgleich wie mit `kollaps-1`.
+Städte bitgleich wie mit `kollaps-1`. Seit `kollaps-3` stellt ein Spiel ein, wie viel von einer Etage stehen bleibt
+(`storeyResidue`), mit dem Standard enden die Städte weiter bitgleich.
 
 ## Fazit
 

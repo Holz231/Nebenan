@@ -354,15 +354,20 @@ typedef struct nbWorldDef
 	float supportScale;
 
 	/// A storey of a static building gives way once this fraction of the walls it had at creation is destroyed, 0.4 by
-	/// default, on any floor and whatever the walls could still carry. A tenth of the walls that are left stays where it
-	/// is without a push: When the damage lies mostly on one side, it is one piece on the strongest side that stays
-	/// bonded to what is below it, an anchor. When the damage is spread around, it is cells picked at random that come
-	/// loose. The rest of the walls flies out, and everything above comes down in one piece and tilts over what stayed,
-	/// as gravity and contacts make it. Nothing else of a building collapses, no wall above a hole and no floor, only what
-	/// is cut off from the anchors falls. Floors are the flat pieces of a destructible, at most a quarter as high along
-	/// its local Y axis as they are wide in both other directions, and a storey is the room under a floor. Zero turns it
-	/// off. Change it at run time with nbWorld_SetStoreyCollapseDamage.
+	/// default, on any floor and whatever the walls could still carry. Part of the walls that are left stays where it is
+	/// without a push, see storeyResidue. The rest of the walls flies out, and everything above comes down in one piece
+	/// and tilts over what stayed, as gravity and contacts make it. Nothing else of a building collapses, no wall above a
+	/// hole and no floor, only what is cut off from the anchors falls. Floors are the flat pieces of a destructible, at
+	/// most a quarter as high along its local Y axis as they are wide in both other directions, and a storey is the room
+	/// under a floor. Zero turns it off. Change it at run time with nbWorld_SetStoreyCollapseDamage.
 	float storeyCollapseDamage;
+
+	/// Of the walls that are left in a storey that gives way, this fraction stays where it is without a push, 0.1 by
+	/// default, as whole cells, as close to it as whole cells come. When the damage lies mostly on one side, it is one
+	/// piece on the strongest side that stays bonded to what is below it, an anchor the part above tilts over. When the
+	/// damage is spread around, it is cells picked at random that mostly come loose. Zero throws all of the walls out, one
+	/// keeps them all. Change it at run time with nbWorld_SetStoreyResidue.
+	float storeyResidue;
 
 	/// Minimum approach speed for collision damage in meters per second.
 	float collisionSpeedThreshold;
