@@ -2506,6 +2506,14 @@ static void BuildCelledHouse( CelledHouse* house, int floors, uint32_t seed, b3V
 	house->def.material.strength = 6.0e5f;
 }
 
+// Every storey of the buildings in the scene gives way at the same damage and keeps the same part of its walls, the top
+// one as well
+static void SetStoreyCollapse( TestScene* scene, float damage, float residue )
+{
+	nbStoreyCollapse collapse = { damage, damage, residue, residue };
+	nbWorld_SetStoreyCollapse( scene->world, collapse, collapse );
+}
+
 static nbDestructibleId CreateCelledHouse( TestScene* scene, int floors, uint32_t seed )
 {
 	CelledHouse* house = malloc( sizeof( CelledHouse ) );
@@ -2836,6 +2844,44 @@ static float StandingBetween( TestScene* scene, float low, float high, float* lo
 	return volume;
 }
 
+// Whether two cells of a building hold together between two heights, by the centroids of their chunks, where they
+// still are where they were built, outside the largest loose piece. The parts of a cell are bonded as siblings, see
+// SeamTest.
+static bool CellsJoinedBetween( TestScene* scene, float low, float high )
+{
+	nbWorld* world = nbGetWorldFromId( scene->world );
+	const nbActor* largest = LargestActor( scene );
+	for ( int c = 0; c < world->chunks.count; ++c )
+	{
+		const nbChunk* chunk = world->chunks.data + c;
+		const nbActor* actor = world->actors.data + chunk->actorIndex;
+		if ( chunk->shape == NULL || actor == largest )
+		{
+			continue;
+		}
+
+		b3WorldTransform home = world->destructibles.data[chunk->destructibleIndex].transform;
+		b3Pos centroid = b3TransformWorldPoint( nbActor_GetTransform( world, actor ), chunk->shape->centroid );
+		b3Pos origin = b3TransformWorldPoint( home, chunk->shape->centroid );
+		if ( centroid.y <= low || centroid.y >= high || b3Length( b3SubPos( centroid, origin ) ) > 0.05f )
+		{
+			continue;
+		}
+
+		for ( int key = chunk->headBondKey; key != NB_NULL_INDEX; key = world->bonds.data[key >> 1].nextKey[key & 1] )
+		{
+			const nbBond* bond = world->bonds.data + ( key >> 1 );
+			const nbChunk* other = world->chunks.data + bond->chunk[( key & 1 ) ^ 1];
+			b3Pos otherCentroid = b3TransformWorldPoint( home, other->shape->centroid );
+			if ( bond->sibling == false && otherCentroid.y > low && otherCentroid.y < high )
+			{
+				return true;
+			}
+		}
+	}
+	return false;
+}
+
 // Grenades around a storey of the largest loose piece, in its own frame, until a storey gives way. The second round falls
 // between the grenades of the first.
 static int BlastPieceStorey( TestScene* scene, int storey )
@@ -2869,6 +2915,7 @@ static int StoreyTest( void )
 	// Buildings never take the load check, not even with bonds that could not carry a thing.
 	{
 		TestScene scene = CreateScene();
+		SetStoreyCollapse( &scene, 0.4f, 0.1f );
 		nbWorld_SetSupportScale( scene.world, 0.01f );
 		CreateHouse( &scene, 4, 15, 0.0f );
 		Step( &scene, 30 );
@@ -2879,6 +2926,7 @@ static int StoreyTest( void )
 	}
 	{
 		TestScene scene = CreateScene();
+		SetStoreyCollapse( &scene, 0.4f, 0.1f );
 		nbWorld_SetSupportScale( scene.world, 0.01f );
 		CreateTownHouse( &scene, 3 );
 		Step( &scene, 30 );
@@ -2891,6 +2939,7 @@ static int StoreyTest( void )
 	// A floor on one wall stays up, and a house stands on thin columns
 	{
 		TestScene scene = CreateScene();
+		SetStoreyCollapse( &scene, 0.4f, 0.1f );
 		nbWorld_SetSupportScale( scene.world, 1.0f );
 		nbDestructibleId house = CreateHouse( &scene, 1, 1, 0.0f );
 		Step( &scene, 120 );
@@ -2900,6 +2949,7 @@ static int StoreyTest( void )
 	}
 	{
 		TestScene scene = CreateScene();
+		SetStoreyCollapse( &scene, 0.4f, 0.1f );
 		nbWorld_SetSupportScale( scene.world, 1.0f );
 		nbDestructibleId house = CreateHouse( &scene, 2, 15, 0.15f );
 		float start = CenterOfChunks( house ).y;
@@ -2909,7 +2959,8 @@ static int StoreyTest( void )
 		DestroyScene( &scene );
 	}
 
-	// A few grenades at a corner of the ground floor of the celled house, as the demo builds it, do not bring it down
+	// A few grenades at a corner of the ground floor of the celled house, as the demo builds it, do not bring it down, not
+	// even with the default ranges, with which a storey gives way at a fifth of its walls destroyed
 	for ( uint32_t seed = 0; seed < 4; ++seed )
 	{
 		TestScene scene = CreateScene();
@@ -2932,6 +2983,7 @@ static int StoreyTest( void )
 	// ground, about level. No wall stays standing.
 	{
 		TestScene scene = CreateScene();
+		SetStoreyCollapse( &scene, 0.4f, 0.1f );
 		nbWorld_SetFragmentScale( scene.world, 2.0f );
 		CreateCelledHouse( &scene, 3, 3 );
 		nbWorld* world = nbGetWorldFromId( scene.world );
@@ -2985,6 +3037,7 @@ static int StoreyTest( void )
 	// froze on it while it was part of the house, or on rubble that froze on that rubble.
 	{
 		TestScene scene = CreateScene();
+		SetStoreyCollapse( &scene, 0.4f, 0.1f );
 		nbWorld_SetFragmentScale( scene.world, 2.0f );
 		CreateTownHouse( &scene, 2 );
 		for ( int k = 0; k < 32; ++k )
@@ -3004,10 +3057,11 @@ static int StoreyTest( void )
 	for ( int corners = 0; corners < 2; ++corners )
 	{
 		TestScene scene = CreateScene();
+		SetStoreyCollapse( &scene, 0.4f, 0.1f );
 		nbWorld_SetFragmentScale( scene.world, 2.0f );
 		CreateCelledHouse( &scene, 3, 3 );
 		BlastStorey( &scene, 1, 1 + corners, FLT_MAX, corners == 1 );
-		Step( &scene, 210 );
+		Step( &scene, 300 );
 		ENSURE( nbWorld_GetStats( scene.world ).collapsedStoreyCount == 1 );
 		float standing = HighestStanding( &scene );
 		ENSURE( 2.9f < standing && standing < 6.5f );
@@ -3042,45 +3096,55 @@ static int StoreyTest( void )
 	}
 
 	// Grenades at the -x half of the ground floor bring it down with the damage on one side. A tenth of what is left
-	// stays as an anchor on the +x side, bonded to the ground and up to the ceiling, and the stories above tilt over it
-	// toward -x as gravity makes them, nothing turns them, and come to rest leaning on it, nothing up in the air. The same
-	// with one worker and with four.
+	// stays as an anchor on the +x side, broken into its cells: those on the ground stay fixed, the others stand on them
+	// where they were. The stories above come down onto it and tilt over it toward -x as gravity makes them, nothing
+	// turns them. The loose cells give way under them, and they come to rest on what is left of it, leaning less,
+	// nothing up in the air. The same with one worker and with four.
 	uint32_t hashes[2];
 	for ( int w = 0; w < 2; ++w )
 	{
 		TestScene scene = w == 0 ? CreateScene() : CreateSceneWithWorkers( 4, NULL, NULL, NULL );
+		SetStoreyCollapse( &scene, 0.4f, 0.1f );
 		nbWorld_SetFragmentScale( scene.world, 2.0f );
 		nbDestructibleId house = CreateCelledHouse( &scene, 3, 3 );
 		BlastStorey( &scene, 0, 3, 0.5f, false );
 		ENSURE( nbWorld_GetStats( scene.world ).collapsedStoreyCount == 1 );
 
-		float walls = nbGetWorldFromId( scene.world )->destructibles.data[house.index1 - 1].storeys[0].volume;
+		const nbStorey* storey = nbGetWorldFromId( scene.world )->destructibles.data[house.index1 - 1].storeys;
+		ENSURE( 0.03f * storey->volume < storey->kept && storey->kept < 0.1f * storey->volume );
 		float lowestX = 0.0f;
 		float anchor = StandingBetween( &scene, 0.0f, 3.25f, &lowestX );
-		ENSURE( 0.03f * walls < anchor && anchor < 0.1f * walls );
-		ENSURE( lowestX > 2.0f );
-		ENSURE( HighestStanding( &scene ) > 2.5f );
+		ENSURE( 0.0f < anchor && anchor < 0.5f * storey->kept && lowestX > 2.0f );
+		ENSURE( HighestStanding( &scene ) < 1.2f );
+		ENSURE( CellsJoinedBetween( &scene, 0.0f, 3.25f ) == false );
 
-		Step( &scene, 300 );
+		Step( &scene, 30 );
 		b3Vec3 axis = LargestAxis( &scene );
-		ENSURE( axis.x < -0.15f && axis.y > 0.85f );
+		ENSURE( axis.x < -0.15f );
+		Step( &scene, 300 );
+		axis = LargestAxis( &scene );
+		ENSURE( axis.y > 0.95f );
 		ENSURE( FloatingVolume( &scene ) == 0.0f );
 		hashes[w] = HashDestructible( 2166136261u, house );
 		DestroyScene( &scene );
 	}
 	ENSURE( hashes[0] == hashes[1] );
 
-	// The same at the -x half of the second story: what comes down tilts toward -x over the anchor at +x, which stays
-	// standing on the ground floor
+	// The same at the -x half of the second story: what comes down tilts toward -x over the anchor at +x, whose cells on
+	// the ground floor stay fixed to it
 	{
 		TestScene scene = CreateScene();
+		SetStoreyCollapse( &scene, 0.4f, 0.1f );
 		nbWorld_SetFragmentScale( scene.world, 2.0f );
 		CreateCelledHouse( &scene, 3, 3 );
 		BlastStorey( &scene, 1, 3, 0.5f, false );
 		ENSURE( nbWorld_GetStats( scene.world ).collapsedStoreyCount == 1 );
 
 		float lowestX = 0.0f;
-		ENSURE( StandingBetween( &scene, 3.25f, 6.5f, &lowestX ) > 0.0f && lowestX > 2.0f );
+		float anchor = StandingBetween( &scene, 3.25f, 6.5f, &lowestX );
+		ENSURE( anchor > 0.0f && lowestX > 2.0f );
+		ENSURE( HighestStanding( &scene ) < 3.25f + 1.2f );
+		ENSURE( CellsJoinedBetween( &scene, 3.25f, 6.5f ) == false );
 		Step( &scene, 40 );
 		ENSURE( LargestAxis( &scene ).x < -0.1f );
 		Step( &scene, 300 );
@@ -3090,11 +3154,13 @@ static int StoreyTest( void )
 
 	// The same at the -x half of the top story, with only the roof above it. The roof hangs at the side of the walls and
 	// would come down flat past the anchor, so the cells of the anchor it hangs on come down with it and rest on the rest
-	// of the anchor. It tilts over that toward -x like the stories over a storey further down and comes to rest leaning on
-	// it, in a house of three stories with one worker and with four alike, and in one of two.
+	// of the anchor, which breaks into its cells like that of a storey further down. It tilts over that toward -x like
+	// the stories over a storey further down and comes to rest on it, in a house of three stories with one worker and
+	// with four alike, and in one of two.
 	for ( int w = 0; w < 3; ++w )
 	{
 		TestScene scene = w == 1 ? CreateSceneWithWorkers( 4, NULL, NULL, NULL ) : CreateScene();
+		SetStoreyCollapse( &scene, 0.4f, 0.1f );
 		nbWorld_SetFragmentScale( scene.world, 2.0f );
 		int floors = w < 2 ? 3 : 2;
 		nbDestructibleId house = CreateCelledHouse( &scene, floors, 3 );
@@ -3102,12 +3168,15 @@ static int StoreyTest( void )
 		BlastStorey( &scene, floors - 1, 3, 0.5f, false );
 		ENSURE( nbWorld_GetStats( scene.world ).collapsedStoreyCount == 1 );
 
-		Step( &scene, 300 );
 		float lowestX = 0.0f;
-		ENSURE( StandingBetween( &scene, low, low + 3.25f, &lowestX ) > 0.0f && lowestX > 2.0f );
-		ENSURE( HighestStanding( &scene ) > low + 1.0f );
-		b3Vec3 axis = LargestAxis( &scene );
-		ENSURE( axis.x < -0.15f && axis.y > 0.85f );
+		float anchor = StandingBetween( &scene, low, low + 3.25f, &lowestX );
+		ENSURE( anchor > 0.0f && lowestX > 2.0f );
+		ENSURE( HighestStanding( &scene ) < low + 1.2f );
+		ENSURE( CellsJoinedBetween( &scene, low, low + 3.25f ) == false );
+		Step( &scene, 30 );
+		ENSURE( LargestAxis( &scene ).x < -0.15f );
+		Step( &scene, 300 );
+		ENSURE( LargestAxis( &scene ).y > 0.95f );
 		ENSURE( FloatingVolume( &scene ) == 0.0f );
 		if ( w < 2 )
 		{
@@ -3121,6 +3190,7 @@ static int StoreyTest( void )
 	// down
 	{
 		TestScene scene = CreateScene();
+		SetStoreyCollapse( &scene, 0.4f, 0.1f );
 		nbWorld_SetFragmentScale( scene.world, 2.0f );
 		CreateCelledHouse( &scene, 2, 3 );
 		BlastStorey( &scene, 1, 1, FLT_MAX, false );
@@ -3134,6 +3204,7 @@ static int StoreyTest( void )
 	// What came down keeps falling when an impact hits it on the way
 	{
 		TestScene scene = CreateScene();
+		SetStoreyCollapse( &scene, 0.4f, 0.1f );
 		nbWorld_SetFragmentScale( scene.world, 2.0f );
 		CreateCelledHouse( &scene, 2, 3 );
 		BlastStorey( &scene, 0, 1, FLT_MAX, false );
@@ -3168,7 +3239,7 @@ static int StoreyTest( void )
 	return 0;
 }
 
-// How much of a storey that gives way stays is up to the game, see nbWorldDef::storeyResidue. A storey that gave way does
+// How much of a storey that gives way stays is up to the game, see nbStoreyCollapse. A storey that gave way does
 // not give way again for what stayed of it.
 static int StoreyResidueTest( void )
 {
@@ -3176,7 +3247,7 @@ static int StoreyResidueTest( void )
 	{
 		TestScene scene = CreateScene();
 		nbWorld_SetFragmentScale( scene.world, 2.0f );
-		nbWorld_SetStoreyResidue( scene.world, 0.0f );
+		SetStoreyCollapse( &scene, 0.4f, 0.0f );
 		CreateCelledHouse( &scene, 3, 3 );
 		BlastStorey( &scene, 0, 3, 0.5f, false );
 		ENSURE( nbWorld_GetStats( scene.world ).collapsedStoreyCount == 1 );
@@ -3189,24 +3260,26 @@ static int StoreyResidueTest( void )
 		DestroyScene( &scene );
 	}
 
-	// Three tenths stay, about 18 % of the walls of the ground floor, and the stories above tilt over the larger anchor
-	// toward -x
+	// Three tenths stay, about 18 % of the walls of the ground floor, broken into their cells, and the stories above tilt
+	// over the larger anchor toward -x
 	{
 		TestScene scene = CreateScene();
 		nbWorld_SetFragmentScale( scene.world, 2.0f );
-		nbWorld_SetStoreyResidue( scene.world, 0.3f );
+		SetStoreyCollapse( &scene, 0.4f, 0.3f );
 		nbDestructibleId house = CreateCelledHouse( &scene, 3, 3 );
 		BlastStorey( &scene, 0, 3, 0.5f, false );
 		ENSURE( nbWorld_GetStats( scene.world ).collapsedStoreyCount == 1 );
 
 		const nbStorey* storey = nbGetWorldFromId( scene.world )->destructibles.data[house.index1 - 1].storeys;
+		ENSURE( 0.15f * storey->volume < storey->kept && storey->kept < 0.21f * storey->volume );
 		float lowestX = 0.0f;
 		float anchor = StandingBetween( &scene, 0.0f, 3.25f, &lowestX );
-		ENSURE( 0.15f * storey->volume < anchor && anchor < 0.21f * storey->volume );
-		ENSURE( fabsf( anchor - storey->kept ) < 0.01f * storey->kept );
+		ENSURE( 0.0f < anchor && anchor < 0.5f * storey->kept && lowestX > 2.0f );
+		ENSURE( CellsJoinedBetween( &scene, 0.0f, 3.25f ) == false );
+		Step( &scene, 30 );
+		ENSURE( LargestAxis( &scene ).x < -0.15f );
 		Step( &scene, 300 );
-		b3Vec3 axis = LargestAxis( &scene );
-		ENSURE( axis.x < -0.15f && axis.y > 0.85f );
+		ENSURE( LargestAxis( &scene ).y > 0.95f );
 		ENSURE( FloatingVolume( &scene ) == 0.0f );
 		DestroyScene( &scene );
 	}
@@ -3217,7 +3290,7 @@ static int StoreyResidueTest( void )
 	{
 		TestScene scene = CreateScene();
 		nbWorld_SetFragmentScale( scene.world, 2.0f );
-		nbWorld_SetStoreyResidue( scene.world, 0.5f );
+		SetStoreyCollapse( &scene, 0.4f, 0.5f );
 		CreateCelledHouse( &scene, 3, 3 );
 		BlastStorey( &scene, 2, 3, 0.5f, false );
 		ENSURE( nbWorld_GetStats( scene.world ).collapsedStoreyCount == 1 );
@@ -3235,24 +3308,131 @@ static int StoreyResidueTest( void )
 		DestroyScene( &scene );
 	}
 
-	// The fraction is clamped to what makes sense, also at creation
+	// The ranges are clamped to what makes sense, also at creation
 	{
 		b3WorldDef physicsDef = b3DefaultWorldDef();
 		b3WorldId physicsWorld = b3CreateWorld( &physicsDef );
 		nbWorldDef def = nbDefaultWorldDef();
 		def.physicsWorld = physicsWorld;
-		def.storeyResidue = -0.5f;
+		def.storeyCollapse = (nbStoreyCollapse){ -0.5f, 2.0f, 0.3f, 0.1f };
 		nbWorldId other = nbCreateWorld( &def );
-		ENSURE( nbGetWorldFromId( other )->def.storeyResidue == 0.0f );
+		nbStoreyCollapse clamped = nbGetWorldFromId( other )->def.storeyCollapse;
+		ENSURE( clamped.damageMin == 0.0f && clamped.damageMax == 1.0f && clamped.residueMin == 0.3f &&
+				clamped.residueMax == 0.3f );
 		nbDestroyWorld( other );
 		b3DestroyWorld( physicsWorld );
 
 		TestScene scene = CreateScene();
-		nbWorld_SetStoreyResidue( scene.world, 2.0f );
-		ENSURE( nbGetWorldFromId( scene.world )->def.storeyResidue == 1.0f );
-		nbWorld_SetStoreyResidue( scene.world, -1.0f );
-		ENSURE( nbGetWorldFromId( scene.world )->def.storeyResidue == 0.0f );
-		ENSURE( nbDefaultWorldDef().storeyResidue == 0.1f );
+		nbWorld_SetStoreyCollapse( scene.world, (nbStoreyCollapse){ 0.5f, 0.2f, -1.0f, 2.0f }, (nbStoreyCollapse){ 0 } );
+		clamped = nbGetWorldFromId( scene.world )->def.storeyCollapse;
+		ENSURE( clamped.damageMin == 0.5f && clamped.damageMax == 0.5f && clamped.residueMin == 0.0f &&
+				clamped.residueMax == 1.0f );
+		DestroyScene( &scene );
+
+		nbStoreyCollapse storeys = nbDefaultWorldDef().storeyCollapse;
+		nbStoreyCollapse top = nbDefaultWorldDef().topStoreyCollapse;
+		ENSURE( storeys.damageMin == 0.19f && storeys.damageMax == 0.2f && storeys.residueMin == 0.05f &&
+				storeys.residueMax == 0.3f );
+		ENSURE( top.damageMin == 0.4f && top.damageMax == 0.4f && top.residueMin == 0.1f && top.residueMax == 0.1f );
+	}
+
+	return 0;
+}
+
+// Every storey picks where it lies in the ranges of nbStoreyCollapse when its building is created, from the seed of the
+// building, and the top storey takes ranges of its own
+static int StoreyPickTest( void )
+{
+	// The picks lie between 0 and 1, differ from storey to storey and from seed to seed, and the same seed picks the same
+	float picks[3][6];
+	uint32_t seeds[3] = { 3, 3, 4 };
+	for ( int h = 0; h < 3; ++h )
+	{
+		TestScene scene = CreateScene();
+		nbDestructibleId house = CreateCelledHouse( &scene, 3, seeds[h] );
+		const nbDestructible* building = nbGetWorldFromId( scene.world )->destructibles.data + ( house.index1 - 1 );
+		ENSURE( building->storeyCount == 3 );
+		for ( int s = 0; s < 3; ++s )
+		{
+			picks[h][2 * s] = building->storeys[s].damageRoll;
+			picks[h][2 * s + 1] = building->storeys[s].residueRoll;
+		}
+		DestroyScene( &scene );
+	}
+	for ( int k = 0; k < 6; ++k )
+	{
+		ENSURE( 0.0f <= picks[0][k] && picks[0][k] < 1.0f );
+		ENSURE( picks[1][k] == picks[0][k] && picks[2][k] != picks[0][k] );
+		ENSURE( k < 2 || picks[0][k] != picks[0][k - 2] );
+	}
+
+	// A storey gives way at the damage its pick sets in the range, and of what is left of it the part its pick sets in
+	// the range stays. Here the ground floor of two houses with grenades all around it, one at a time, each of which
+	// destroys a little more of it until close to half is gone. A run in which nothing gives way finds what stands after
+	// every grenade, and the same run with the range gives way with the grenade that takes the ground floor below its
+	// pick.
+	nbStoreyCollapse wide = { 0.15f, 0.45f, 0.0f, 0.5f };
+	nbStoreyCollapse never = { 1.0f, 1.0f, 0.0f, 0.0f };
+	float damages[2];
+	for ( int h = 0; h < 2; ++h )
+	{
+		float standing[31];
+		int collapseAt[2] = { -1, -1 };
+		float damage = 0.0f, residue = 0.0f, kept = 0.0f;
+		for ( int run = 0; run < 2; ++run )
+		{
+			TestScene scene = CreateScene();
+			nbWorld_SetStoreyCollapse( scene.world, run == 0 ? never : wide, run == 0 ? never : wide );
+			nbWorld_SetFragmentScale( scene.world, 2.0f );
+			nbDestructibleId house = CreateCelledHouse( &scene, 3, 3 + 2 * (uint32_t)h );
+			const nbDestructible* building = nbGetWorldFromId( scene.world )->destructibles.data + ( house.index1 - 1 );
+			const nbStorey* storey = building->storeys;
+			damage = wide.damageMin + storey->damageRoll * ( wide.damageMax - wide.damageMin );
+			residue = wide.residueMin + storey->residueRoll * ( wide.residueMax - wide.residueMin );
+			standing[0] = 1.0f;
+			for ( int k = 0; k < 30 && collapseAt[run] < 0; ++k )
+			{
+				Grenade( &scene, AroundHouse( 31.0f * (float)k / 32.0f, 1.2f ) );
+				Step( &scene, 10 );
+				standing[k + 1] = run == 0 ? (float)( building->standing[0] / storey->volume ) : standing[k + 1];
+				collapseAt[run] = nbWorld_GetStats( scene.world ).collapsedStoreyCount > 0 ? k : -1;
+			}
+			kept = storey->kept / storey->volume;
+			DestroyScene( &scene );
+		}
+
+		int expected = 0;
+		while ( expected < 30 && standing[expected + 1] >= 1.0f - damage )
+		{
+			expected += 1;
+		}
+		ENSURE( collapseAt[0] < 0 && expected < 30 && collapseAt[1] == expected );
+		ENSURE( residue * standing[expected + 1] - 0.02f < kept && kept < residue * standing[expected] + 0.02f );
+		damages[h] = damage;
+	}
+	ENSURE( fabsf( damages[0] - damages[1] ) > 0.05f );
+
+	// The top storey takes the ranges of its own. With them off it does not give way, while the storeys below give way
+	// as before, and the other way around.
+	for ( int top = 0; top < 2; ++top )
+	{
+		nbStoreyCollapse on = { 0.4f, 0.4f, 0.1f, 0.1f };
+		nbStoreyCollapse off = { 0 };
+		TestScene scene = CreateScene();
+		nbWorld_SetStoreyCollapse( scene.world, top == 0 ? on : off, top == 0 ? off : on );
+		nbWorld_SetFragmentScale( scene.world, 2.0f );
+		nbDestructibleId house = CreateCelledHouse( &scene, 3, 3 );
+		const nbDestructible* building = nbGetWorldFromId( scene.world )->destructibles.data + ( house.index1 - 1 );
+		int held = top == 0 ? 2 : 0;
+		for ( int k = 0; k < 30; ++k )
+		{
+			Grenade( &scene, AroundHouse( 31.0f * (float)k / 32.0f, 3.25f * (float)held + 1.2f ) );
+			Step( &scene, 10 );
+		}
+		ENSURE( nbWorld_GetStats( scene.world ).collapsedStoreyCount == 0 );
+		ENSURE( building->standing[held] < 0.6 * building->storeys[held].volume );
+		BlastStorey( &scene, 2 - held, 1, FLT_MAX, false );
+		ENSURE( nbWorld_GetStats( scene.world ).collapsedStoreyCount == 1 );
 		DestroyScene( &scene );
 	}
 
@@ -5067,6 +5247,7 @@ int WorldTest( void )
 	RUN_TEST( FragmentScaleTest );
 	RUN_TEST( StoreyTest );
 	RUN_TEST( StoreyResidueTest );
+	RUN_TEST( StoreyPickTest );
 	RUN_TEST( SupportTest );
 	RUN_TEST( BondMomentsTest );
 	RUN_TEST( BatchCreateTest );

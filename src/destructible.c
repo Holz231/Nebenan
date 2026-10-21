@@ -288,6 +288,9 @@ static int nbAddMaterial( nbMaterial* materials, int* materialCount, const nbMat
 	return ( *materialCount )++;
 }
 
+// The random numbers that place every storey of a building in the ranges of how storeys give way, see nbFindStoreys
+#define NB_STOREY_STREAM 0x53544f524559ull
+
 // Floors are the flat pieces of a building, at most a quarter as high along local Y as they are wide along X and Z, and
 // floors that overlap in height form one level. A storey is the room under a level, from the level below or the foot of
 // the building, and remembers the volume of the chunks in it, see nbCheckStoreys. Storeys without chunks are dropped.
@@ -358,6 +361,8 @@ static void nbFindStoreys( nbWorld* world, int destructibleIndex, int actorIndex
 		}
 	}
 
+	// Where every storey lies in the ranges of how storeys give way, see nbStoreyCollapse
+	nbRandom rng = nbMakeRandom( destructible->seed, NB_STOREY_STREAM );
 	int count = 0;
 	for ( int s = 0; s < destructible->storeyCount; ++s )
 	{
@@ -366,6 +371,8 @@ static void nbFindStoreys( nbWorld* world, int destructibleIndex, int actorIndex
 		{
 			storey->center = b3MulSV( 1.0f / storey->volume, storey->center );
 			storey->extent = b3MulSV( 0.5f, b3Sub( bounds[s].upperBound, bounds[s].lowerBound ) );
+			storey->damageRoll = nbRandomFloat( &rng );
+			storey->residueRoll = nbRandomFloat( &rng );
 			destructible->storeys[count++] = *storey;
 		}
 	}

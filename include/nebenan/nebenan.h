@@ -186,13 +186,10 @@ NB_API void nbWorld_SetDebrisRestTime( nbWorldId worldId, float seconds );
 /// their shape.
 NB_API void nbWorld_SetSupportScale( nbWorldId worldId, float scale );
 
-/// Change the fraction of its walls a storey loses before it gives way, see nbWorldDef::storeyCollapseDamage. The next
-/// update checks every structure again.
-NB_API void nbWorld_SetStoreyCollapseDamage( nbWorldId worldId, float fraction );
-
-/// Change the fraction of the walls that are left that stays of a storey that gives way, see nbWorldDef::storeyResidue.
-/// Applies to the storeys that give way from now on.
-NB_API void nbWorld_SetStoreyResidue( nbWorldId worldId, float fraction );
+/// Change how the storeys of a building give way and the top storey, see nbWorldDef::storeyCollapse and
+/// nbWorldDef::topStoreyCollapse. Every storey keeps where it lies in the ranges. The next update checks every structure
+/// again.
+NB_API void nbWorld_SetStoreyCollapse( nbWorldId worldId, nbStoreyCollapse storeys, nbStoreyCollapse topStorey );
 
 /// Change the size of the fragments of all materials, see nbWorldDef::fragmentScale. Applies to the next impacts.
 NB_API void nbWorld_SetFragmentScale( nbWorldId worldId, float scale );

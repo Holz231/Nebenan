@@ -353,9 +353,11 @@ struct App
 	// How long debris keeps still before it freezes into rubble
 	float debrisRestTime = nbDefaultWorldDef().debrisRestTime;
 
-	// A storey gives way once this fraction of its walls is destroyed, and this fraction of the walls left stays
-	float storeyCollapseDamage = nbDefaultWorldDef().storeyCollapseDamage;
-	float storeyResidue = nbDefaultWorldDef().storeyResidue;
+	// How the storeys give way, the others and the top one, see nbStoreyCollapse: with "Zufall je Etage" every storey
+	// picks its values from the ranges, without it every storey takes the values of the sliders
+	bool storeyRandom = true;
+	nbStoreyCollapse randomCollapse[2] = { nbDefaultWorldDef().storeyCollapse, nbDefaultWorldDef().topStoreyCollapse };
+	nbStoreyCollapse fixedCollapse[2] = { { 0.2f, 0.2f, 0.1f, 0.1f }, nbDefaultWorldDef().topStoreyCollapse };
 
 	// Load check for structures without floors, like the walls, off by default
 	float supportScale = nbDefaultWorldDef().supportScale;
@@ -1081,6 +1083,12 @@ static int PreferredWorkers( const App& app, bool parallelPhysics )
 	return app.automation.threads > 0 ? app.automation.threads : nbGetRecommendedWorkerCount( parallelPhysics );
 }
 
+// How every storey gives way: the ranges it picks from with "Zufall je Etage", the values of the sliders without
+static const nbStoreyCollapse* ActiveCollapse( const App& app )
+{
+	return app.storeyRandom ? app.randomCollapse : app.fixedCollapse;
+}
+
 static void LoadScene( App& app, SceneKind scene )
 {
 	DestroyScene( app );
@@ -1110,8 +1118,8 @@ static void LoadScene( App& app, SceneKind scene )
 	def.debrisRestTime = app.debrisRestTime;
 	def.fragmentScale = app.fragmentScale;
 	def.supportScale = app.supportScale;
-	def.storeyCollapseDamage = app.storeyCollapseDamage;
-	def.storeyResidue = app.storeyResidue;
+	def.storeyCollapse = ActiveCollapse( app )[0];
+	def.topStoreyCollapse = ActiveCollapse( app )[1];
 	def.asyncStep = app.parallelPhysics;
 	def.stepRate = app.stepRate;
 	app.destruction = nbCreateWorld( &def );
@@ -1452,6 +1460,19 @@ static void Appendf( std::string& text, const char* format, ... )
 }
 
 // The step rate of the physics for the reports, like "30 Hz mit 8 Teilschritten"
+// A fraction in percent, or a range of them
+static void AppendRange( std::string& text, float low, float high )
+{
+	if ( low == high )
+	{
+		Appendf( text, "%.0f %%", 100.0f * low );
+	}
+	else
+	{
+		Appendf( text, "%.0f bis %.0f %%", 100.0f * low, 100.0f * high );
+	}
+}
+
 static void AppendStepRate( std::string& text, const App& app )
 {
 	int subStepCount = nbGetSubStepCount( app.stepRate );
@@ -1500,9 +1521,17 @@ static std::string BuildReport( const App& app )
 	Appendf( text, "Welt: %d Bruchstücke, %d Verbindungen, %d Trümmerkörper (%d wach), %d Schutt, %d Kontakte, Budget %d, Ruhezeit %.2f s, Bruchstückgröße x%.2f\n",
 			 stats.chunkCount, stats.bondCount, stats.dynamicBodyCount, view.awakeBodies, stats.rubbleCount,
 			 view.counters.contactCount, app.maxDebrisBodies, app.debrisRestTime, app.fragmentScale );
-	Appendf( text, "Einsturz: %d Etagen eingestürzt, eine Etage gibt nach, wenn %.0f %% ihrer Wände zerstört sind, und %.0f %% der übrigen bleiben als Stütze; Statik ohne Decken x%.2f, %d Verbindungen gebrochen\n",
-			 stats.collapsedStoreyCount, 100.0f * app.storeyCollapseDamage, 100.0f * app.storeyResidue, app.supportScale,
-			 stats.overloadedBondCount );
+	const nbStoreyCollapse* collapse = ActiveCollapse( app );
+	Appendf( text, "Einsturz: %d Etagen eingestürzt, %s, eine Etage gibt nach bei ", stats.collapsedStoreyCount,
+			 app.storeyRandom ? "Zufall je Etage" : "feste Werte" );
+	AppendRange( text, collapse[0].damageMin, collapse[0].damageMax );
+	Appendf( text, " zerstört, es bleiben " );
+	AppendRange( text, collapse[0].residueMin, collapse[0].residueMax );
+	Appendf( text, " der übrigen, die oberste bei " );
+	AppendRange( text, collapse[1].damageMin, collapse[1].damageMax );
+	Appendf( text, ", es bleiben " );
+	AppendRange( text, collapse[1].residueMin, collapse[1].residueMax );
+	Appendf( text, "; Statik ohne Decken x%.2f, %d Verbindungen gebrochen\n", app.supportScale, stats.overloadedBondCount );
 	Appendf( text, "Grafik: %dk Dreiecke, %d Draw Calls, %d kB Upload\n", rs.triangleCount / 1000, rs.drawCalls, rs.uploadedBytes / 1024 );
 	if ( app.scene == SceneCity )
 	{
@@ -1607,25 +1636,63 @@ static void DrawUi( App& app )
 	{
 		ImGui::SetTooltip( "Größere Bruchstücke: weniger Teile pro Einschlag, weniger Körper,\nKontakte und Dreiecke. x2 halbiert ungefähr die Zeit\nbei Massenzerstörung. Gilt für die nächsten Einschläge." );
 	}
-	float storeyPercent = 100.0f * app.storeyCollapseDamage;
-	if ( ImGui::SliderFloat( "Etage gibt nach", &storeyPercent, 0.0f, 100.0f, "bei %.0f %% zerstört" ) )
+	if ( ImGui::Checkbox( "Zufall je Etage", &app.storeyRandom ) )
 	{
-		app.storeyCollapseDamage = 0.01f * storeyPercent;
-		nbWorld_SetStoreyCollapseDamage( app.destruction, app.storeyCollapseDamage );
+		nbWorld_SetStoreyCollapse( app.destruction, ActiveCollapse( app )[0], ActiveCollapse( app )[1] );
 	}
 	if ( ImGui::IsItemHovered() )
 	{
-		ImGui::SetTooltip( "Ist so viel der Wände einer Etage zerstört, gibt sie nach: Was „Stütze\nbleibt“ sagt, bleibt von den übrigen Wänden stehen, der Rest fliegt\nheraus, und alles darüber kommt in einem Stück herunter und kippt\nüber das, was stehen blieb. Sonst stürzt an einem Haus nichts ein.\n0 schaltet es ab." );
+		ImGui::SetTooltip( "An: Jede Etage wählt beim Laden des Hauses ihre Werte zufällig aus den\nBereichen darunter, für dasselbe Haus immer dieselben. Aus: Jede Etage\nnimmt die Werte der Regler." );
 	}
-	float residuePercent = 100.0f * app.storeyResidue;
-	if ( ImGui::SliderFloat( "Stütze bleibt", &residuePercent, 0.0f, 100.0f, "%.0f %% der übrigen Wände" ) )
+	for ( int top = 0; top < 2; ++top )
 	{
-		app.storeyResidue = 0.01f * residuePercent;
-		nbWorld_SetStoreyResidue( app.destruction, app.storeyResidue );
-	}
-	if ( ImGui::IsItemHovered() )
-	{
-		ImGui::SetTooltip( "So viel der übrigen Wände einer Etage, die nachgibt, bleibt stehen:\nbei Schaden auf einer Seite als Anker auf der stärksten Seite, über den\nalles darüber kippt, bei Schaden ringsum an zufälligen Stellen. Der Rest\nfliegt heraus. 0 wirft alle heraus, 100 lässt alle stehen. Gilt für\ndie Etagen, die von jetzt an nachgeben." );
+		nbStoreyCollapse* collapse = ( app.storeyRandom ? app.randomCollapse : app.fixedCollapse ) + top;
+		float damage[2] = { 100.0f * collapse->damageMin, 100.0f * collapse->damageMax };
+		float residue[2] = { 100.0f * collapse->residueMin, 100.0f * collapse->residueMax };
+		const char* damageLabel = top == 1 ? "Oberste gibt nach" : "Etage gibt nach";
+		const char* residueLabel = top == 1 ? "Oberste Stütze" : "Stütze bleibt";
+		const char* damageTip =
+			top == 1 ? "Dasselbe wie „Etage gibt nach“ für die oberste Etage unter dem Dach."
+					 : "Ist so viel der Wände einer Etage zerstört, gibt sie nach. Mit „Zufall je\nEtage“ wählt jede Etage ihren Wert beim Laden aus dem Bereich. Was\n„Stütze bleibt“ sagt, bleibt von den übrigen Wänden stehen, in Zellen\nzerbrochen, der Rest fliegt heraus, und alles darüber kommt in einem\nStück herunter und kippt über das, was blieb. 0 schaltet es ab.";
+		const char* residueTip =
+			top == 1 ? "Dasselbe wie „Stütze bleibt“ für die oberste Etage unter dem Dach."
+					 : "So viel der übrigen Wände einer Etage, die nachgibt, bleibt stehen, in\nZellen zerbrochen: bei Schaden auf einer Seite auf der stärksten Seite,\nsonst an zufälligen Stellen. Der Rest fliegt heraus. 0 wirft alle\nheraus, 100 lässt alle stehen. Gilt für die Etagen, die danach nachgeben.";
+		bool changed = false;
+		if ( app.storeyRandom )
+		{
+			changed |= ImGui::DragFloatRange2( damageLabel, damage, damage + 1, 0.1f, 0.0f, 100.0f, "bei %.0f", "bis %.0f %%",
+											   ImGuiSliderFlags_AlwaysClamp );
+			if ( ImGui::IsItemHovered() )
+			{
+				ImGui::SetTooltip( "%s", damageTip );
+			}
+			changed |= ImGui::DragFloatRange2( residueLabel, residue, residue + 1, 0.1f, 0.0f, 100.0f, "%.0f", "bis %.0f %%",
+											   ImGuiSliderFlags_AlwaysClamp );
+			if ( ImGui::IsItemHovered() )
+			{
+				ImGui::SetTooltip( "%s", residueTip );
+			}
+		}
+		else
+		{
+			changed |= ImGui::SliderFloat( damageLabel, damage, 0.0f, 100.0f, "bei %.0f %% zerstört" );
+			if ( ImGui::IsItemHovered() )
+			{
+				ImGui::SetTooltip( "%s", damageTip );
+			}
+			changed |= ImGui::SliderFloat( residueLabel, residue, 0.0f, 100.0f, "%.0f %% der übrigen Wände" );
+			if ( ImGui::IsItemHovered() )
+			{
+				ImGui::SetTooltip( "%s", residueTip );
+			}
+			damage[1] = damage[0];
+			residue[1] = residue[0];
+		}
+		if ( changed )
+		{
+			*collapse = nbStoreyCollapse{ 0.01f * damage[0], 0.01f * damage[1], 0.01f * residue[0], 0.01f * residue[1] };
+			nbWorld_SetStoreyCollapse( app.destruction, ActiveCollapse( app )[0], ActiveCollapse( app )[1] );
+		}
 	}
 	if ( ImGui::SliderFloat( "Statik ohne Decken", &app.supportScale, 0.0f, 4.0f, "x %.2f" ) )
 	{

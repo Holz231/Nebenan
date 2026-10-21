@@ -257,6 +257,11 @@ typedef struct nbStorey
 
 	// What stayed of its walls when it gave way, in all its parts, see nbFindRemains
 	float kept;
+
+	// Where the storey lies between the ends of the damage it gives way at and of what stays of it, picked at creation,
+	// see nbStoreyCollapse
+	float damageRoll;
+	float residueRoll;
 } nbStorey;
 
 #define NB_MAX_STOREYS 32
