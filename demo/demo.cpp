@@ -353,10 +353,11 @@ struct App
 	// How long debris keeps still before it freezes into rubble
 	float debrisRestTime = nbDefaultWorldDef().debrisRestTime;
 
-	// How the storeys give way, the others and the top one, see nbStoreyCollapse: with "Zufall je Etage" every storey
-	// picks its values from the ranges, without it every storey takes the values of the sliders
+	// How the storeys give way, the others and the top one, see nbStoreyCollapse: with "Zufall je Etage" the ranges of
+	// the library, from which every storey picks its values, and the sliders are off, without it every storey takes the
+	// values of the sliders
 	bool storeyRandom = true;
-	nbStoreyCollapse randomCollapse[2] = { nbDefaultWorldDef().storeyCollapse, nbDefaultWorldDef().topStoreyCollapse };
+	const nbStoreyCollapse randomCollapse[2] = { nbDefaultWorldDef().storeyCollapse, nbDefaultWorldDef().topStoreyCollapse };
 	nbStoreyCollapse fixedCollapse[2] = { { 0.24f, 0.24f, 1.0f, 1.0f }, { 0.22f, 0.22f, 1.0f, 1.0f } };
 
 	// Load check for structures without floors, like the walls, off by default
@@ -1083,7 +1084,7 @@ static int PreferredWorkers( const App& app, bool parallelPhysics )
 	return app.automation.threads > 0 ? app.automation.threads : nbGetRecommendedWorkerCount( parallelPhysics );
 }
 
-// How every storey gives way: the ranges it picks from with "Zufall je Etage", the values of the sliders without
+// How every storey gives way: the fixed ranges it picks from with "Zufall je Etage", the values of the sliders without
 static const nbStoreyCollapse* ActiveCollapse( const App& app )
 {
 	return app.storeyRandom ? app.randomCollapse : app.fixedCollapse;
@@ -1523,7 +1524,7 @@ static std::string BuildReport( const App& app )
 			 view.counters.contactCount, app.maxDebrisBodies, app.debrisRestTime, app.fragmentScale );
 	const nbStoreyCollapse* collapse = ActiveCollapse( app );
 	Appendf( text, "Einsturz: %d Etagen eingestürzt, %s, eine Etage gibt nach bei ", stats.collapsedStoreyCount,
-			 app.storeyRandom ? "Zufall je Etage" : "feste Werte" );
+			 app.storeyRandom ? "Zufall je Etage" : "Werte der Regler" );
 	AppendRange( text, collapse[0].damageMin, collapse[0].damageMax );
 	Appendf( text, " zerstört, es bleiben " );
 	AppendRange( text, collapse[0].residueMin, collapse[0].residueMax );
@@ -1642,55 +1643,69 @@ static void DrawUi( App& app )
 	}
 	if ( ImGui::IsItemHovered() )
 	{
-		ImGui::SetTooltip( "An: Jede Etage wählt beim Laden des Hauses ihre Werte zufällig aus den\nBereichen darunter, für dasselbe Haus immer dieselben. Aus: Jede Etage\nnimmt die Werte der Regler." );
+		ImGui::SetTooltip( "An: Es gelten die festen Bereiche darunter, die Regler sind aus. Jede Etage\nzieht beim Laden des Hauses ihre Werte daraus, für dasselbe Haus immer\ndieselben. Aus: Die Regler sind an, und jede Etage nimmt ihre Werte." );
 	}
 	for ( int top = 0; top < 2; ++top )
 	{
-		nbStoreyCollapse* collapse = ( app.storeyRandom ? app.randomCollapse : app.fixedCollapse ) + top;
-		float damage[2] = { 100.0f * collapse->damageMin, 100.0f * collapse->damageMax };
-		float residue[2] = { 100.0f * collapse->residueMin, 100.0f * collapse->residueMax };
 		const char* damageLabel = top == 1 ? "Oberste gibt nach" : "Etage gibt nach";
 		const char* residueLabel = top == 1 ? "Oberste Stütze" : "Stütze bleibt";
 		const char* damageTip =
 			top == 1 ? "Dasselbe wie „Etage gibt nach“ für die oberste Etage unter dem Dach."
-					 : "Ist so viel der Wände einer Etage zerstört, gibt sie nach. Mit „Zufall je\nEtage“ wählt jede Etage ihren Wert beim Laden aus dem Bereich. Was\n„Stütze bleibt“ sagt, bleibt von den übrigen Wänden stehen, in Zellen\nzerbrochen, der Rest fliegt heraus, und alles darüber kommt in einem\nStück herunter und kippt über das, was blieb. 0 schaltet es ab.";
+					 : "Ist so viel der Wände einer Etage zerstört, gibt sie nach. Mit „Zufall je\nEtage“ gilt der feste Bereich, aus dem jede Etage ihren Wert beim Laden\nzieht. Was „Stütze bleibt“ sagt, bleibt von den übrigen Wänden stehen, in\nZellen zerbrochen, der Rest fliegt heraus. Alles darüber sinkt in einem\nStück darauf und kippt oder bleibt stehen, bis weitere Treffer die Reste\nwegschießen. 0 schaltet es ab.";
 		const char* residueTip =
 			top == 1 ? "Dasselbe wie „Stütze bleibt“ für die oberste Etage unter dem Dach."
 					 : "So viel der übrigen Wände einer Etage, die nachgibt, bleibt stehen, in\nZellen zerbrochen: bei Schaden auf einer Seite auf der stärksten Seite,\nsonst an zufälligen Stellen. Der Rest fliegt heraus. 0 wirft alle\nheraus, 100 lässt alle stehen. Gilt für die Etagen, die danach nachgeben.";
-		bool changed = false;
 		if ( app.storeyRandom )
 		{
-			changed |= ImGui::DragFloatRange2( damageLabel, damage, damage + 1, 0.1f, 0.0f, 100.0f, "bei %.0f", "bis %.0f %%",
-											   ImGuiSliderFlags_AlwaysClamp );
-			if ( ImGui::IsItemHovered() )
+			// The fixed ranges, shown with the sliders off
+			const nbStoreyCollapse* collapse = app.randomCollapse + top;
+			float damage[2] = { 100.0f * collapse->damageMin, 100.0f * collapse->damageMax };
+			float residue[2] = { 100.0f * collapse->residueMin, 100.0f * collapse->residueMax };
+			ImGui::BeginDisabled();
+			if ( damage[0] < damage[1] )
+			{
+				ImGui::DragFloatRange2( damageLabel, damage, damage + 1, 0.1f, 0.0f, 100.0f, "bei %.0f", "bis %.0f %%" );
+			}
+			else
+			{
+				ImGui::SliderFloat( damageLabel, damage, 0.0f, 100.0f, "bei %.0f %% zerstört" );
+			}
+			if ( ImGui::IsItemHovered( ImGuiHoveredFlags_AllowWhenDisabled ) )
 			{
 				ImGui::SetTooltip( "%s", damageTip );
 			}
-			changed |= ImGui::DragFloatRange2( residueLabel, residue, residue + 1, 0.1f, 0.0f, 100.0f, "%.0f", "bis %.0f %%",
-											   ImGuiSliderFlags_AlwaysClamp );
-			if ( ImGui::IsItemHovered() )
+			if ( residue[0] < residue[1] )
+			{
+				ImGui::DragFloatRange2( residueLabel, residue, residue + 1, 0.1f, 0.0f, 100.0f, "%.0f", "bis %.0f %%" );
+			}
+			else
+			{
+				ImGui::SliderFloat( residueLabel, residue, 0.0f, 100.0f, "%.0f %% der übrigen Wände" );
+			}
+			if ( ImGui::IsItemHovered( ImGuiHoveredFlags_AllowWhenDisabled ) )
 			{
 				ImGui::SetTooltip( "%s", residueTip );
 			}
+			ImGui::EndDisabled();
+			continue;
 		}
-		else
+
+		nbStoreyCollapse* collapse = app.fixedCollapse + top;
+		float damage = 100.0f * collapse->damageMin;
+		float residue = 100.0f * collapse->residueMin;
+		bool changed = ImGui::SliderFloat( damageLabel, &damage, 0.0f, 100.0f, "bei %.0f %% zerstört" );
+		if ( ImGui::IsItemHovered() )
 		{
-			changed |= ImGui::SliderFloat( damageLabel, damage, 0.0f, 100.0f, "bei %.0f %% zerstört" );
-			if ( ImGui::IsItemHovered() )
-			{
-				ImGui::SetTooltip( "%s", damageTip );
-			}
-			changed |= ImGui::SliderFloat( residueLabel, residue, 0.0f, 100.0f, "%.0f %% der übrigen Wände" );
-			if ( ImGui::IsItemHovered() )
-			{
-				ImGui::SetTooltip( "%s", residueTip );
-			}
-			damage[1] = damage[0];
-			residue[1] = residue[0];
+			ImGui::SetTooltip( "%s", damageTip );
+		}
+		changed |= ImGui::SliderFloat( residueLabel, &residue, 0.0f, 100.0f, "%.0f %% der übrigen Wände" );
+		if ( ImGui::IsItemHovered() )
+		{
+			ImGui::SetTooltip( "%s", residueTip );
 		}
 		if ( changed )
 		{
-			*collapse = nbStoreyCollapse{ 0.01f * damage[0], 0.01f * damage[1], 0.01f * residue[0], 0.01f * residue[1] };
+			*collapse = nbStoreyCollapse{ 0.01f * damage, 0.01f * damage, 0.01f * residue, 0.01f * residue };
 			nbWorld_SetStoreyCollapse( app.destruction, ActiveCollapse( app )[0], ActiveCollapse( app )[1] );
 		}
 	}

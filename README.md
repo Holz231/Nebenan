@@ -151,12 +151,12 @@ viele FPS die CPU schaffen würde. Die Physik rechnet unabhängig davon 60 Schri
   jedem Takt flüssig. Die beiden Messknöpfe rechnen mit dem eingestellten Takt, 1/60 s Physik pro Bild.
 
 Daneben stellt **Etage gibt nach** ein, wie viel ihrer Wände zerstört sein muss, bis eine Etage nachgibt, und
-**Stütze bleibt**, wie viel der übrigen Wände dann stehen bleibt, in Zellen zerbrochen. Mit **Zufall je Etage**
-(Standard an) sind beide Regler Bereiche, aus denen jede Etage beim Laden des Hauses ihre Werte zieht, Standard 17 bis
-31 % und 100 %. Ohne nehmen alle Etagen die Werte der Regler, Standard 24 % und 100 %. **Oberste gibt nach** und
-**Oberste Stütze** gelten für die oberste Etage unter dem Dach, Standard 18 bis 25 % und 100 %, ohne Zufall 22 % und
-100 %. Änderungen gelten sofort, jede Etage behält ihren Platz in den Bereichen. **Statik ohne Decken** schaltet die
-Lastprüfung für die Mauern ein (Standard aus).
+**Stütze bleibt**, wie viel der übrigen Wände dann stehen bleibt, in Zellen zerbrochen. **Oberste gibt nach** und
+**Oberste Stütze** gelten für die oberste Etage unter dem Dach. Mit **Zufall je Etage** (Standard an) gelten fest die
+Bereiche der Bibliothek, aus denen jede Etage beim Laden des Hauses ihre Werte zieht, 17 bis 31 % und 100 %, für die
+oberste 18 bis 25 % und 100 %. Die Regler zeigen sie dann nur und sind aus. Ohne sind die Regler an, und alle Etagen
+nehmen ihre Werte, Standard 24 % und 100 %, für die oberste 22 % und 100 %. Änderungen gelten sofort, jede Etage behält
+ihren Platz in den Bereichen. **Statik ohne Decken** schaltet die Lastprüfung für die Mauern ein (Standard aus).
 
 Die Threads wählt die Bibliothek (`nbGetRecommendedWorkerCount`): einen pro Performance-Kern, höchstens 8. Box3D läuft
 am schnellsten ohne Hyper-Threads und Effizienzkerne, und mehr Threads als Kerne bremsen. Mit paralleler Physik bleibt
