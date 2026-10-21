@@ -27,10 +27,11 @@ Bereichen, der obersten unter dem Dach eigene, und lässt den Rest in seine Zell
 Standardwerten, 19 bis 20 % und 5 bis 30 %, änderte das wieder, was der Benchmark misst: Unter dem Beschuss der Stadt
 stürzten bei ×1 7 und bei ×2 4 Etagen ein statt keiner, unter dem Trommelfeuer bei ×4 68 statt 15, und ein Frame kostete
 dort gut doppelt so viel, siehe „Eigene Werte je Etage, Rest in Zellen“. Seitdem stehen sie auf den Werten, die der
-Nutzer in der Demo gewählt hat, 17 bis 31 % und dem ganzen Rest, siehe „Standard nach dem Augenschein“. Wer eine Runde
-danach gegen eine davor misst, vergleicht verschiedene Szenen. Bei ×4 wachsen vor allem das Erstarren des Schutts über
-dem Budget und die Zustandswechsel in Box3D, ein Kandidat für eine Runde der Physik. Werte für die oberste Etage gibt
-der Nutzer noch vor, bis dahin steht sie auf 40 % und einem Zehntel.
+Nutzer in der Demo gewählt hat, 17 bis 31 % und dem ganzen Rest, siehe „Standard nach dem Augenschein“. Damit stürzen
+bei ×1 4, bei ×2 eine und bei ×4 61 Etagen ein, und ein Frame kostet bei ×4 63 bis 86 % mehr als mit `kollaps-3`. Wer
+eine Runde danach gegen eine davor misst, vergleicht verschiedene Szenen. Bei ×4 wachsen vor allem das Erstarren des
+Schutts über dem Budget und die Zustandswechsel in Box3D, ein Kandidat für eine Runde der Physik. Werte für die oberste
+Etage gibt der Nutzer noch vor, bis dahin steht sie auf 40 % und einem Zehntel.
 
 ## Fazit
 

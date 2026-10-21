@@ -869,12 +869,13 @@ mit doppelter Bruchstückgröße 0,4 ms, und enthält den Schaden durch Aufprall
 Update einzeln durchgeht, braucht es 26 und 22 % weniger Zeit, am selben Tag auf der inzwischen langsameren VM gemessen
 2,65 statt 3,59 ms und 0,69 statt 0,88 ms.
 
-Mit den ersten Standardwerten von `kollaps-4` gab eine Etage schon bei 19 bis 20 % ihrer Wände nach, 5 bis 30 % der
-übrigen blieben stehen, und unter demselben Beschuss stürzten 7 Etagen ein, mit `fragmentScale` 2 4. Gepaart gegen
-`kollaps-3`, beide als Release gebaut, je drei Läufe im Wechsel, der Median: Ein Frame kostete mit 1, 2 und 4 Threads
-27, 28 und 27 % mehr, mit `fragmentScale` 2 23, 22 und 15 %. 99 % der Frames brauchten bis zu 64, 37 und 27 ms statt 26,
-18 und 12 ms, mit `fragmentScale` 2 bis zu 10, 7 und 7 ms statt 7, 5 und 6 ms. Teuer ist die Arbeit der Einstürze
-selbst, was herausfliegt und fällt, bis es als Schutt liegt.
+Seit `kollaps-4` gibt eine Etage mit dem Standard bei 17 bis 31 % ihrer Wände nach, und alle übrigen bleiben stehen.
+Unter demselben Beschuss stürzen 4 Etagen ein, mit `fragmentScale` 2 eine. Gepaart gegen `kollaps-3`, beide als Release
+gebaut, je drei Läufe im Wechsel, der Median: Ein Frame kostet mit 1, 2 und 4 Threads 13, 22 und 16 % mehr, mit
+`fragmentScale` 2 5, 2 und 8 %. 99 % der Frames brauchen bis zu 36, 24 und 19 ms statt 24, 16 und 14 ms, mit
+`fragmentScale` 2 bis zu 7, 5 und 4 ms statt 6, 4 und 3 ms. Mit den ersten Standardwerten von `kollaps-4`, 19 bis 20 %
+und 5 bis 30 % Rest, stürzten 7 und 4 Etagen ein, und ein Frame kostete 27 bis 28 und 15 bis 23 % mehr. Teuer ist die
+Arbeit der Einstürze selbst, was fällt und sich bewegt, bis es als Schutt liegt.
 
 Gab eine Etage schon nach, wenn ihr 10 % ihrer Wände fehlten, stürzten unter demselben Beschuss 20 bis 21 Etagen ein,
 gemessen vor `kollaps-1`, als noch alle übrigen Wände herausflogen, auch in Teilen, die schon heruntergekommen sind. Die
@@ -948,11 +949,12 @@ Städte mit einfacher und doppelter Bruchstückgröße, in denen nichts einstür
 7 % auseinander. Was von einer Etage stehen bleibt und wie der Teil darüber kippt, kostet also nichts, teurer ist nur,
 dass mehr einstürzt.
 
-Mit den ersten Standardwerten von `kollaps-4` gab sie schon bei 19 bis 20 % nach, und unter dem Trommelfeuer stürzten 68
-statt 15 Etagen ein. Gepaart gegen `kollaps-3` wie oben kostete ein Frame mit 1, 2 und 4 Threads 114, 114 und 127 %
-mehr, ein Schritt 81, 67 und 70 %, und das Update brauchte 3,6 statt 0,8 ms. Darin kostete es 2,1 bis 2,2 statt 0,2 ms
-pro Schritt, den Schutt der vielen Einstürze über das Budget hinaus erstarren zu lassen, und die Zustandswechsel in
-Box3D kosteten 2,3 bis 2,4 statt 0,4 ms. Wer weniger Einstürze will, stellt die Etagen höher ein.
+Seit `kollaps-4` gibt sie mit dem Standard bei 17 bis 31 % nach, und unter dem Trommelfeuer stürzen 61 statt 15 Etagen
+ein. Gepaart gegen `kollaps-3` wie oben kostet ein Frame mit 1, 2 und 4 Threads 70, 63 und 86 % mehr, ein Schritt 55, 42
+und 61 %, und das Update braucht 2,0 bis 2,3 statt 0,7 bis 0,8 ms. Darin kostet es 0,8 statt 0,2 ms pro Schritt, den
+Schutt über das Budget hinaus erstarren zu lassen, die Zustandswechsel in Box3D kosten 1,2 bis 1,3 statt 0,35 ms und die
+Prüfung, was zur Ruhe kommt, 0,7 bis 0,9 statt 0,3 ms. Mit den ersten Standardwerten stürzten 68 Etagen ein, und ein
+Frame kostete 114 bis 127 % mehr. Wer weniger Einstürze will, stellt die Etagen höher ein.
 
 Die teuersten Frames folgen auf einen Einsturz: Der Schutt um die Reste der Etage taut auf, und Box3D legt im nächsten
 Schritt Tausende neuer Kontakte an. Das ist echte Arbeit, das meiste davon fällt danach wirklich, siehe
