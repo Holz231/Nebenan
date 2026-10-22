@@ -5251,12 +5251,21 @@ static void nbFreezeOnCarriers( nbWorld* world, int actorIndex, const nbCarrier*
 	nbFreezeActor( world, actorIndex );
 	nbActor* actor = world->actors.data + actorIndex;
 	actor->carrierCount = count;
+	bool fixed = false;
 	for ( int k = 0; k < count; ++k )
 	{
 		actor->carriers[k] = carriers[k];
+		int chunkIndex = carriers[k].chunkIndex;
+		const nbActor* carrier =
+			chunkIndex != NB_NULL_INDEX ? world->actors.data + world->chunks.data[chunkIndex].actorIndex : NULL;
+		fixed = fixed || carrier == NULL || carrier->isStatic || carrier->isRubble;
+	}
 
-		// A moving piece it lies on brings it back to life once it moves away, otherwise it would hang in the air. A
-		// piece of a pile that freezes with it lets go of that again.
+	// Moving pieces it lies on bring it back to life once they move away, otherwise it would hang in the air. A small
+	// piece that also lies on something fixed needs none of them, but a large one counts them for its balance. A piece
+	// of a pile that freezes with it lets go of that again.
+	for ( int k = 0; k < count && ( fixed == false || actor->volume >= NB_CHECKED_VOLUME ); ++k )
+	{
 		int chunkIndex = carriers[k].chunkIndex;
 		nbActor* carrier = chunkIndex != NB_NULL_INDEX ? world->actors.data + world->chunks.data[chunkIndex].actorIndex : NULL;
 		if ( carrier != NULL && carrier->isStatic == false && carrier->isRubble == false && carrier->holdsRubble == false )

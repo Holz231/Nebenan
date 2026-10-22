@@ -469,7 +469,7 @@ static uint32_t RunDeterminismScenario( void )
 
 // Fracture and physics are bit for bit identical with MSVC, GCC and Clang on x64 and ARM. This is the result
 // with the pinned Box3D commit. Update it when the results change on purpose, never to make one platform pass.
-#define NB_EXPECTED_DETERMINISM_HASH 0x55a25546u
+#define NB_EXPECTED_DETERMINISM_HASH 0x8767985fu
 
 static int DeterminismTest( void )
 {
@@ -2778,8 +2778,9 @@ static int RubbleInTheAir( TestScene* scene )
 	return count;
 }
 
-// Rubble that lies on a moving piece which would not bring it back to life once it moves away: a chunk it froze on is
-// still where it lay on it, but belongs to a moving piece that holds no rubble
+// Rubble that could stay up in the air once what it lies on moves away: a small piece of which none of the chunks it froze
+// on is fixed or belongs to a moving piece that holds it, or a large piece, which counts every moving piece it lies on for
+// its balance, with one that does not hold it
 static int UnheldRubble( TestScene* scene )
 {
 	nbWorld* world = nbGetWorldFromId( scene->world );
@@ -2787,22 +2788,22 @@ static int UnheldRubble( TestScene* scene )
 	for ( int i = 0; i < world->debris.count; ++i )
 	{
 		const nbActor* actor = world->actors.data + world->debris.data[i];
+		bool held = false, unheld = false;
 		for ( int k = 0; actor->isRubble && k < actor->carrierCount; ++k )
 		{
 			const nbCarrier* carrier = actor->carriers + k;
-			if ( carrier->chunkIndex == NB_NULL_INDEX ||
-				 world->chunks.data[carrier->chunkIndex].generation != carrier->generation )
+			const nbChunk* chunk = carrier->chunkIndex != NB_NULL_INDEX ? world->chunks.data + carrier->chunkIndex : NULL;
+			if ( chunk != NULL && chunk->generation != carrier->generation )
 			{
 				continue;
 			}
 
-			const nbActor* holder = world->actors.data + world->chunks.data[carrier->chunkIndex].actorIndex;
-			if ( holder->isStatic == false && holder->isRubble == false && holder->holdsRubble == false )
-			{
-				count += 1;
-				break;
-			}
+			const nbActor* carrierActor = chunk != NULL ? world->actors.data + chunk->actorIndex : NULL;
+			bool holds = carrierActor == NULL || carrierActor->isStatic || carrierActor->isRubble || carrierActor->holdsRubble;
+			held = held || holds;
+			unheld = unheld || holds == false;
 		}
+		count += unheld && ( held == false || actor->volume >= 0.1f ) ? 1 : 0;
 	}
 	return count;
 }
@@ -4894,8 +4895,8 @@ static uint32_t RunScenarioAtRate( TestScene scene, float stepRate, int settleFr
 
 // The results of the determinism scenario at 30 and 120 Hz with ten seconds to settle, the same on every platform like
 // NB_EXPECTED_DETERMINISM_HASH
-#define NB_EXPECTED_HASH_30HZ 0xedea1661u
-#define NB_EXPECTED_HASH_120HZ 0xf9c56a0bu
+#define NB_EXPECTED_HASH_30HZ 0x00be7373u
+#define NB_EXPECTED_HASH_120HZ 0x3da7bd06u
 
 // The steps per second of nbWorld_Advance. At 60 Hz it takes the steps of the determinism scenario to the bit. At 30 and
 // 120 Hz every frame of 1/60 s takes half a step and two, whatever the steps cost, the world ends the same with one and
