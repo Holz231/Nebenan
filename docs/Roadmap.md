@@ -39,7 +39,13 @@ durch es hält, siehe „Kein Hausteil auf seinem eigenen Schutt“, das Update 
 kleine Lücken, siehe „Nichts erstarrt schneller als 1 m/s“: Das Budget friert in einem Schub selten ein schnelles Stück
 in der Luft ein, in der Stadt bei ×1 eins von 2 Litern, und dort stehen 94 Stücke 1 bis 7 cm über ihrer Auflage,
 wahrscheinlich Schutt auf bewegten Stücken, die sich danach setzten. Die naheliegende Regel kostet bei ×1 10 bis 17 %
-und macht das Zweite schlimmer, beides gehört in eine eigene Runde.
+und macht das Zweite schlimmer, beides gehört in eine eigene Runde. Gibt nach einer Etage auch die darunter nach, kommt
+jetzt alles darüber mit herunter, auch was beim ersten Einsturz herunterkam und erstarrte, und Teile von Gebäuden
+erstarren erst, wenn sie mit den Zellen unter ihnen ruhen, siehe „Schutt über einer Etage, die nachgibt, wacht auf“ und
+„Hausteile ruhen erst, wenn ihre Insel schläft“. Ein Frame kostet damit bei ×1 6 bis 11 % und bei ×4 5 bis 10 % mehr.
+Offen bleibt, dass das Budget auch sinkende Teile einfriert, wenn der übrige Schutt nicht reicht: unter dem Trommelfeuer
+bei ×4, und mit dem Standard von 1 500 auch an einem einzelnen Haus, ringsum beschossen in der Hälfte der Läufe. In
+einem von 20 hielt das ein Teil auf erstarrtem Schutt.
 
 ## Fazit
 

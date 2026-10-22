@@ -6238,13 +6238,18 @@ static void nbEnforceDebrisBudget( nbWorld* world, b3Vec3 up )
 	b3World_BeginShapeBatch( world->physicsWorld );
 #endif
 
-	for ( int pass = 0; pass < 2 && frozen < excess; ++pass )
+	// Parts of buildings freeze only when the rest of the debris is not enough. One that sinks onto the loose cells of a
+	// storey that gave way is slow enough to come first, and frozen there it would stand on them, see nbIsQuiet. In a
+	// single house the other debris is mostly enough, under a barrage on a town less often.
+	for ( int round = 0; round < 4 && frozen < excess; ++round )
 	{
+		int pass = round & 1;
+		bool parts = round >= 2;
 		for ( int i = 0; i < rankCount && frozen < excess; ++i )
 		{
 			int actorIndex = ranks[i].actorIndex;
 			const nbActor* actor = world->actors.data + actorIndex;
-			if ( actor->isRubble )
+			if ( actor->isRubble || actor->isBuildingPart != parts )
 			{
 				continue;
 			}

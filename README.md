@@ -340,7 +340,7 @@ jeder Höhe, wie es Kapitel 17 der Roadmap des Spiels in [docs/Referenz](docs/Re
   ringsum kommt es mit einem Zehntel Rest fast gerade herunter, mit 50 bis 80 % um 5 bis 6° geneigt. Mit 20 % Schaden
   und 30 % Rest landet es auf vielen losen Zellen und liegt danach um 26° geneigt. Mit dem Standard, bei dem alles
   stehen bleibt, sank der Teil darüber in 16 Häusern der Tests, Erdgeschoss und zweite Etage, auf einer Seite und
-  ringsum zerstört, in 10 auf die losen Zellen und kippte dabei um bis zu 21°, in 6 blieb er auf ihnen stehen wie ein
+  ringsum zerstört, in 10 auf die losen Zellen und kippte dabei um bis zu 38°, in 6 blieb er auf ihnen stehen wie ein
   Haus, das auf seinen Trümmern sitzt. 32 Granaten auf die Reste brachten ihn in allen 16 herunter, und nichts blieb in
   der Luft hängen.
 - Über der obersten Etage liegt nur noch die Decke, das Dach. Es hängt seitlich an den Wänden, nicht auf ihnen, und
@@ -350,7 +350,7 @@ jeder Höhe, wie es Kapitel 17 der Roadmap des Spiels in [docs/Referenz](docs/Re
   danach fast gerade, um 4° mit drei Stockwerken und um weniger als 2° mit zwei. Mit dem ganzen Anker vor `kollaps-4`
   lag es um 16° geneigt. Bei Schaden ringsum kommt es fast gerade herunter. Mit dem Standard, 18 bis 25 % und allem
   Rest, gibt die oberste Etage nach 12 bis 16 Granaten nach statt nach 35 bis 37, und das Dach blieb in 16 Häusern der
-  Tests mit zwei und drei Stockwerken in 11 auf den losen Zellen stehen und sank in 5 um bis zu 14° geneigt ein. 32
+  Tests mit zwei und drei Stockwerken in 12 auf den losen Zellen stehen und sank in 4 um bis zu 13° geneigt ein. 32
   Granaten auf die Reste brachten es in allen auf die Etage darunter, und nichts blieb in der Luft hängen. Vor
   `kollaps-2` zerplatzte die oberste Etage, und das Dach fiel flach hinein.
 - Die Etagen darunter bleiben stehen und tragen, was herunterkam. Gibt später eine von ihnen nach, kommt sie mit allem
@@ -359,7 +359,11 @@ jeder Höhe, wie es Kapitel 17 der Roadmap des Spiels in [docs/Referenz](docs/Re
   nachgab. Bis dahin wachte nur der Schutt um die Wände auf, die herausfliegen. Mit dem Standard fliegt nichts heraus,
   und was beim ersten Einsturz herunterkam und erstarrte, blieb oben stehen, bis der letzte Rest unter ihm weggeschossen
   war. Im Haus der Tests, mittlere Etage und dann Erdgeschoss mit dem Gewehr der Demo ringsum zerstört, blieb so in 3
-  von 16 Fällen ein Teil auf 5,3 bis 6,2 m, jetzt liegt keins höher als 4,4 m.
+  von 16 Fällen ein Teil auf 5,3 bis 6,2 m, jetzt liegt keins höher als 4,4 m. Was herunterkommt, erstarrt erst, wenn es
+  mit den Zellen unter ihm ruht, siehe „Trümmer und Schutt“: Vorher erstarrte es, während es noch mit ein paar
+  Zentimetern pro Sekunde einsank, und rückte eine Zelle unter ihm weg, wachte es auf und erstarrte nach drei Schritten
+  wieder. Von vorn beschossen blieb der Teil über dem Erdgeschoss so oft auf erstarrtem Schutt stehen, bis der letzte
+  Rest weggeschossen war.
 - Was herunterkam, bleibt ein Haus, solange es nicht mehr als 45° kippt: Verliert eine seiner Etagen ihren Anteil der
   Wände, stürzt sie genauso ein, auch von unten nach oben. Eine Etage, die schon eingestürzt ist, gibt für Reste von
   weniger als einem Zehntel ihrer Wände nicht noch einmal nach und auch nicht für das, was beim Einsturz von ihr stehen
@@ -441,16 +445,20 @@ Bruchstücke nach.
   nächste Update den Rest. So bleibt kein Schutt in der Luft hängen.
 - Wacht Schutt auf und bleibt 0,05 s lang langsamer als 5 cm/s, liegt er noch auf und erstarrt gleich wieder, statt
   die ganze Ruhezeit abzuwarten. Was seine Auflage verloren hat, ist nach einem Schritt freiem Fall schon schneller.
+- Teile eines Gebäudes ruhen erst, wenn Box3D ihre Insel schlafen legt, wenn also auch alles ruht, was sie berühren,
+  oder wenn sie auf der Stelle wackeln. Ein Teil, das auf die losen Zellen einer Etage sinkt und über sie kippt, ist oft
+  langsamer als 5 cm/s und bleibt 0,1 s lang innerhalb von 1 cm. Erstarrt wöge es nichts, und die Zellen unter ihm gäben
+  nie nach.
 - Über `maxDebrisBodies` erstarren die langsamsten Trümmer und merken sich ebenso, woran sie liegen: zuerst, was auf dem
   Boden, einem Bauwerk oder Schutt liegt, erst wenn das nicht reicht, auch Trümmer, die langsamer als 1 m/s auf bewegten
-  Stücken liegen. Diese Stücke wecken sie wieder, sobald sie sich 5 cm bewegen. Trümmer im Flug erstarren nie, auch
-  keine, die nur eingeklemmt sind oder gleich etwas berühren, sie hingen in der Luft: Das Budget wartet, bis sie landen.
-  Große Teile erstarren so nur, wenn sie wie oben im Gleichgewicht liegen, und nie allein auf Schutt, der nur durch sie
-  hält. Ausgenommen sind Trümmer, die jünger als 0,25 s sind, und ebenso lange die Trümmer um eine Etage, die nachgibt,
-  und der Schutt, den ein Hausteil oder ein solches frisches Stück beim Wegrücken freigibt oder ein großes Teil, das
-  nicht erstarrt. Sonst erstarrten sie gleich wieder dort, wo die Etage oder das Teil sie hielt. Höchstens 256 erstarren
-  so in einem Update, nach einer großen Explosion übernehmen die nächsten Updates den Rest, jedes mit einer neuen
-  Rangliste.
+  Stücken liegen. Diese Stücke wecken sie wieder, sobald sie sich 5 cm bewegen. Teile von Gebäuden kommen erst dran,
+  wenn alle anderen Trümmer nicht reichen. Trümmer im Flug erstarren nie, auch keine, die nur eingeklemmt sind oder
+  gleich etwas berühren, sie hingen in der Luft: Das Budget wartet, bis sie landen. Große Teile erstarren so nur, wenn
+  sie wie oben im Gleichgewicht liegen, und nie allein auf Schutt, der nur durch sie hält. Ausgenommen sind Trümmer, die
+  jünger als 0,25 s sind, und ebenso lange die Trümmer um eine Etage, die nachgibt, und der Schutt, den ein Hausteil
+  oder ein solches frisches Stück beim Wegrücken freigibt oder ein großes Teil, das nicht erstarrt. Sonst erstarrten sie
+  gleich wieder dort, wo die Etage oder das Teil sie hielt. Höchstens 256 erstarren so in einem Update, nach einer
+  großen Explosion übernehmen die nächsten Updates den Rest, jedes mit einer neuen Rangliste.
 - Ein Stück, in das ein größeres bewegtes Stück mehr als 2 cm tief eindringt, erstarrt nur zusammen mit diesem, das
   Budget lässt es ganz aus. Allein als statischer Körper drückte es das große Stück auf einmal hinaus und würfe es
   davon, etwa ein Stockwerk, das auf kleinen Trümmern liegt.
@@ -978,7 +986,11 @@ ein Frame unter dem Trommelfeuer mit 1, 2 und 4 Threads 4, 11 und 13 % mehr, in 
 nichts Messbares. Vor allem rechnet das Budget öfter, weil fliegende Trümmer erst landen müssen, bei ×4 1,4 statt 1,1 ms
 pro Schritt. Auch ein Hausteil hängt nicht mehr auf Schutt, der nur durch es hält, siehe „Kein Hausteil auf seinem
 eigenen Schutt“. Das Update kostet damit in keiner Szene mehr, ein Frame liegt bei ×2 und ×4 im Rauschen und kostet bei
-×1 mit 1 und 2 Threads im Mittel 4 % mehr.
+×1 mit 1 und 2 Threads im Mittel 4 % mehr. Gibt nach einer Etage auch die darunter nach, kommt jetzt alles darüber mit
+herunter, und Teile von Gebäuden erstarren erst, wenn sie mit den Zellen unter ihnen ruhen, siehe „Schutt über einer
+Etage, die nachgibt, wacht auf“ und „Hausteile ruhen erst, wenn ihre Insel schläft“. Gepaart gegen den Stand davor
+kostet ein Frame bei ×1 mit 1, 2 und 4 Threads zusammen 6 bis 11 % mehr, weil viel feiner Schutt noch einmal fällt, bei
+×2 nichts Messbares und unter dem Trommelfeuer bei ×4 5 bis 10 %, weil dort mehr Teile wach bleiben.
 
 Die teuersten Frames folgen auf einen Einsturz: Der Schutt um die Reste der Etage taut auf, und Box3D legt im nächsten
 Schritt Tausende neuer Kontakte an. Das ist echte Arbeit, das meiste davon fällt danach wirklich, siehe
