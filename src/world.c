@@ -6134,21 +6134,23 @@ static void nbEnforceDebrisBudget( nbWorld* world, b3Vec3 up )
 		return;
 	}
 
+	// Debris that touches nothing never freezes here and takes no part in the ranking
 	nbBeginOperation( world );
+	bool hasGravity = b3LengthSquared( up ) > 0.0f;
 	nbDebrisRank* ranks = nbArena_AllocArray( &world->arena, nbDebrisRank, count );
 	int rankCount = 0;
 	for ( int i = nbNextMoving( world, 0 ); i < world->debris.count; i = nbNextMoving( world, i + 1 ) )
 	{
 		int actorIndex = world->debris.data[i];
 		const nbActor* actor = world->actors.data + actorIndex;
-		if ( world->time - actor->budgetTime >= NB_FREEZE_GRACE )
+		if ( world->time - actor->budgetTime >= NB_FREEZE_GRACE &&
+			 ( hasGravity == false || b3Body_GetContactCapacity( actor->bodyId ) > 0 ) )
 		{
 			ranks[rankCount++] = (nbDebrisRank){ b3Length( b3Body_GetLinearVelocity( actor->bodyId ) ), actorIndex };
 		}
 	}
 
 	qsort( ranks, (size_t)rankCount, sizeof( nbDebrisRank ), nbCompareDebris );
-	bool hasGravity = b3LengthSquared( up ) > 0.0f;
 	nbSupportFan fan = nbMakeSupportFan( up );
 	int unsupported[NB_MAX_RELEASES];
 	int unsupportedCount = 0;
