@@ -415,8 +415,10 @@ Bruchstücke nach.
   das es berührt, den gemerkten Auflagen bis zum Boden oder zu einem Bauwerk. Führt kein Weg dorthin, sondern nur zum
   Teil selbst, zu Bruchstücken, die zerbrochen oder mehr als 5 cm weggerückt sind, oder zu Schutt, der im Flug
   erstarrt ist, trägt das Stück nicht. Das Teil erstarrt nur, wenn sein Schwerpunkt über dem liegt, was es wirklich
-  trägt, oder es dazwischen verkeilt ist. Sonst wacht der Schutt auf, auf den es sich stützt, und das Teil kippt oder
-  fällt. Kleine Trümmer unter einem großen Teil tragen es nur, wenn sie selbst ohne das Teil liegen.
+  trägt, oder es dazwischen verkeilt ist. Sonst wacht der Schutt auf, der nur durch das Teil hält, zuerst der, auf dem
+  es liegt, höchstens 32 pro Update, und das Teil kippt oder fällt. Das gilt auch, wenn kleine bewegte Stücke an seinen
+  Seiten es im Gleichgewicht halten: Sonst schläferte Box3D das Teil ein, und beide hielten sich für immer in der Luft.
+  Kleine Trümmer unter einem großen Teil tragen es nur, wenn sie selbst ohne das Teil liegen.
 - Einschläge wecken den Schutt in ihrer Reichweite, den sie bewegen: Stücke, die der Stoß mit mindestens 1 m/s
   anschieben würde. Schwerer Schutt bleibt statisch und verliert nur die Stücke, die der Einschlag herausbricht.
   Sonst käme ein Haus, das ohne Anker auf seinen Stümpfen steht, bei jeder Granate mit Hunderten Kontakten wieder
@@ -438,11 +440,12 @@ Bruchstücke nach.
   Boden, einem Bauwerk oder Schutt liegt, erst wenn das nicht reicht, auch Trümmer, die langsamer als 1 m/s auf bewegten
   Stücken liegen. Diese Stücke wecken sie wieder, sobald sie sich 5 cm bewegen. Trümmer im Flug erstarren nie, auch
   keine, die nur eingeklemmt sind oder gleich etwas berühren, sie hingen in der Luft: Das Budget wartet, bis sie landen.
-  Große Teile erstarren so nur, wenn sie wie oben im Gleichgewicht liegen. Ausgenommen sind Trümmer, die jünger als
-  0,25 s sind, und ebenso lange die Trümmer um eine Etage, die nachgibt, und der Schutt, den ein Hausteil oder ein
-  solches frisches Stück beim Wegrücken freigibt. Sonst erstarrten sie gleich wieder dort, wo die Etage sie hielt.
-  Höchstens 256 erstarren so in einem Update, nach einer großen Explosion übernehmen die nächsten Updates den Rest,
-  jedes mit einer neuen Rangliste.
+  Große Teile erstarren so nur, wenn sie wie oben im Gleichgewicht liegen, und nie allein auf Schutt, der nur durch sie
+  hält. Ausgenommen sind Trümmer, die jünger als 0,25 s sind, und ebenso lange die Trümmer um eine Etage, die nachgibt,
+  und der Schutt, den ein Hausteil oder ein solches frisches Stück beim Wegrücken freigibt oder ein großes Teil, das
+  nicht erstarrt. Sonst erstarrten sie gleich wieder dort, wo die Etage oder das Teil sie hielt. Höchstens 256 erstarren
+  so in einem Update, nach einer großen Explosion übernehmen die nächsten Updates den Rest, jedes mit einer neuen
+  Rangliste.
 - Ein Stück, in das ein größeres bewegtes Stück mehr als 2 cm tief eindringt, erstarrt nur zusammen mit diesem, das
   Budget lässt es ganz aus. Allein als statischer Körper drückte es das große Stück auf einmal hinaus und würfe es
   davon, etwa ein Stockwerk, das auf kleinen Trümmern liegt.
@@ -968,7 +971,9 @@ Seitdem bleibt nichts mehr in der Luft hängen: Über dem Budget erstarren keine
 die abbrechen oder wegrücken, kommt mit, siehe „Nichts bleibt in der Luft hängen“. Gepaart gegen den Stand davor kostet
 ein Frame unter dem Trommelfeuer mit 1, 2 und 4 Threads 4, 11 und 13 % mehr, in der Stadt bei ×1 3 bis 7 %, bei ×2
 nichts Messbares. Vor allem rechnet das Budget öfter, weil fliegende Trümmer erst landen müssen, bei ×4 1,4 statt 1,1 ms
-pro Schritt.
+pro Schritt. Auch ein Hausteil hängt nicht mehr auf Schutt, der nur durch es hält, siehe „Kein Hausteil auf seinem
+eigenen Schutt“. Das Update kostet damit in keiner Szene mehr, ein Frame liegt bei ×2 und ×4 im Rauschen und kostet bei
+×1 mit 1 und 2 Threads im Mittel 4 % mehr.
 
 Die teuersten Frames folgen auf einen Einsturz: Der Schutt um die Reste der Etage taut auf, und Box3D legt im nächsten
 Schritt Tausende neuer Kontakte an. Das ist echte Arbeit, das meiste davon fällt danach wirklich, siehe
