@@ -964,6 +964,12 @@ bis 0,9 statt 0,3 ms und die Prüfung, was zur Ruhe kommt, 0,5 bis 0,7 statt 0,3
 stürzten 68 Etagen ein, und ein Frame kostete 114 bis 127 % mehr: Heute geben mehr Etagen nach, aber was stehen bleibt,
 fliegt nicht heraus. Wer weniger Einstürze will, stellt die Etagen höher ein.
 
+Seitdem bleibt nichts mehr in der Luft hängen: Über dem Budget erstarren keine Trümmer im Flug, und Schutt auf Teilen,
+die abbrechen oder wegrücken, kommt mit, siehe „Nichts bleibt in der Luft hängen“. Gepaart gegen den Stand davor kostet
+ein Frame unter dem Trommelfeuer mit 1, 2 und 4 Threads 4, 11 und 13 % mehr, in der Stadt bei ×1 3 bis 7 %, bei ×2
+nichts Messbares. Vor allem rechnet das Budget öfter, weil fliegende Trümmer erst landen müssen, bei ×4 1,4 statt 1,1 ms
+pro Schritt.
+
 Die teuersten Frames folgen auf einen Einsturz: Der Schutt um die Reste der Etage taut auf, und Box3D legt im nächsten
 Schritt Tausende neuer Kontakte an. Das ist echte Arbeit, das meiste davon fällt danach wirklich, siehe
 [`docs/Optimierungen.md`](docs/Optimierungen.md).
