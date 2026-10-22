@@ -359,7 +359,7 @@ jeder Höhe, wie es Kapitel 17 der Roadmap des Spiels in [docs/Referenz](docs/Re
   nachgab. Bis dahin wachte nur der Schutt um die Wände auf, die herausfliegen. Mit dem Standard fliegt nichts heraus,
   und was beim ersten Einsturz herunterkam und erstarrte, blieb oben stehen, bis der letzte Rest unter ihm weggeschossen
   war. Im Haus der Tests, mittlere Etage und dann Erdgeschoss mit dem Gewehr der Demo ringsum zerstört, blieb so in 3
-  von 16 Fällen ein Teil auf 5,3 bis 6,2 m, jetzt liegt keins höher als 4,4 m. Was herunterkommt, erstarrt erst, wenn es
+  von 16 Fällen ein Teil auf 5,3 bis 6,2 m, jetzt liegt keins höher als 4,7 m. Was herunterkommt, erstarrt erst, wenn es
   mit den Zellen unter ihm ruht, siehe „Trümmer und Schutt“: Vorher erstarrte es, während es noch mit ein paar
   Zentimetern pro Sekunde einsank, und rückte eine Zelle unter ihm weg, wachte es auf und erstarrte nach drei Schritten
   wieder. Von vorn beschossen blieb der Teil über dem Erdgeschoss so oft auf erstarrtem Schutt stehen, bis der letzte

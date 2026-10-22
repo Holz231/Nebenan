@@ -3666,7 +3666,7 @@ static int ShootStoreys( uint32_t seed, int extraShots, float* floating, float* 
 // up in the air. Before, one part stayed up so with this seed, and so did one or two in 7 of 32 runs with 16 seeds and 40
 // or 150 shots after each storey gave way. And what came down onto the remains of the middle storey froze there and
 // stayed up when the ground floor gave way, frozen it weighed nothing. With this seed the lowest point of the highest part
-// stayed at 6.2 m, and above 5 m with 3 of 16 seeds. Now it comes down to 3.1 m, and with none of them above 4.4 m.
+// stayed at 6.2 m, and above 5 m with 3 of 16 seeds. Now it comes down to 3.1 m, and with none of them above 4.7 m.
 static int ShotStoreysTest( void )
 {
 	float floating = 0.0f, highest = 0.0f;
