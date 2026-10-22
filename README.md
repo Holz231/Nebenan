@@ -354,7 +354,12 @@ jeder Höhe, wie es Kapitel 17 der Roadmap des Spiels in [docs/Referenz](docs/Re
   Granaten auf die Reste brachten es in allen auf die Etage darunter, und nichts blieb in der Luft hängen. Vor
   `kollaps-2` zerplatzte die oberste Etage, und das Dach fiel flach hinein.
 - Die Etagen darunter bleiben stehen und tragen, was herunterkam. Gibt später eine von ihnen nach, kommt sie mit allem
-  darauf herunter, auch wenn es dort schon als Schutt liegt.
+  darauf herunter, auch wenn es dort schon als Schutt liegt: Aller Schutt über dem, was herunterkommt, wacht auf, bis
+  zur Höhe des Hauses, und drückt wieder mit seinem Gewicht auf die Reste, wie das Haus über der Etage, die zuerst
+  nachgab. Bis dahin wachte nur der Schutt um die Wände auf, die herausfliegen. Mit dem Standard fliegt nichts heraus,
+  und was beim ersten Einsturz herunterkam und erstarrte, blieb oben stehen, bis der letzte Rest unter ihm weggeschossen
+  war. Im Haus der Tests, mittlere Etage und dann Erdgeschoss mit dem Gewehr der Demo ringsum zerstört, blieb so in 3
+  von 16 Fällen ein Teil auf 5,3 bis 6,2 m, jetzt liegt keins höher als 4,4 m.
 - Was herunterkam, bleibt ein Haus, solange es nicht mehr als 45° kippt: Verliert eine seiner Etagen ihren Anteil der
   Wände, stürzt sie genauso ein, auch von unten nach oben. Eine Etage, die schon eingestürzt ist, gibt für Reste von
   weniger als einem Zehntel ihrer Wände nicht noch einmal nach und auch nicht für das, was beim Einsturz von ihr stehen

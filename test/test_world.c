@@ -3592,10 +3592,33 @@ static void Rifle( TestScene* scene, float d, float y )
 	nbWorld_CastImpact( scene->world, origin, b3MulSV( 250.0f, b3Normalize( b3Sub( target, origin ) ) ), &impact, &result );
 }
 
+// The lowest point of the highest of the parts of buildings that came down
+static float HighestPart( TestScene* scene )
+{
+	nbWorld* world = nbGetWorldFromId( scene->world );
+	float highest = -FLT_MAX;
+	for ( int i = 0; i < world->debris.count; ++i )
+	{
+		const nbActor* actor = world->actors.data + world->debris.data[i];
+		if ( actor->isBuildingPart == false )
+		{
+			continue;
+		}
+
+		float bottom = FLT_MAX;
+		for ( int c = actor->headChunk; c != NB_NULL_INDEX; c = world->chunks.data[c].nextChunk )
+		{
+			bottom = b3MinFloat( bottom, b3Shape_GetAABB( world->chunks.data[c].shapeId ).lowerBound.y );
+		}
+		highest = b3MaxFloat( highest, bottom );
+	}
+	return highest;
+}
+
 // The middle storey of a celled house shot away all around with the rifle, 20 shots a second, then the ground floor, as
-// a player would. Returns the large pieces that hang on rubble held only through them once everything came to rest, and
-// the volume of the large pieces that hang in the air.
-static int ShootStoreys( uint32_t seed, int extraShots, float* floating )
+// a player would. Returns the large pieces that hang on rubble held only through them once everything came to rest, the
+// volume of the large pieces that hang in the air, and the lowest point of the highest part of the house that came down.
+static int ShootStoreys( uint32_t seed, int extraShots, float* floating, float* highest )
 {
 	TestScene scene = CreateScene();
 	nbWorld_SetFragmentScale( scene.world, 2.0f );
@@ -3626,6 +3649,7 @@ static int ShootStoreys( uint32_t seed, int extraShots, float* floating )
 	Step( &scene, 600 );
 	int propped = SelfPropped( &scene );
 	*floating = FloatingVolume( &scene );
+	*highest = HighestPart( &scene );
 	DestroyScene( &scene );
 	return propped;
 }
@@ -3634,12 +3658,15 @@ static int ShootStoreys( uint32_t seed, int extraShots, float* floating )
 // rest on rubble that had frozen on it while it was rubble itself, wedged under its edges and jammed in its openings, and
 // on small moving pieces beside it that kept it balanced. It did not freeze, it held that rubble, and the rubble held it
 // up in the air. Before, one part stayed up so with this seed, and so did one or two in 7 of 32 runs with 16 seeds and 40
-// or 150 shots after each storey gave way.
+// or 150 shots after each storey gave way. And what came down onto the remains of the middle storey froze there and
+// stayed up when the ground floor gave way, frozen it weighed nothing. With this seed the lowest point of the highest part
+// stayed at 6.2 m, and above 5 m with 3 of 16 seeds. Now it comes down to 3.1 m, and with none of them above 4.4 m.
 static int ShotStoreysTest( void )
 {
-	float floating = 0.0f;
-	ENSURE( ShootStoreys( 1, 40, &floating ) == 0 );
+	float floating = 0.0f, highest = 0.0f;
+	ENSURE( ShootStoreys( 3, 40, &floating, &highest ) == 0 );
 	ENSURE( floating == 0.0f );
+	ENSURE( highest < 4.5f );
 	return 0;
 }
 

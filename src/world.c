@@ -4006,6 +4006,31 @@ static void nbCheckSupports( nbWorld* world )
 			nbThawRubbleInBoxes( world, &zone, 1, b3Vec3_zero, 0.0f, &filter );
 		}
 
+		// Everything above a storey that gives way comes down onto what stays of it, also what came down there before and
+		// froze, up to the top of the building. Frozen, that weighs nothing: when nothing flies out of the storey, what is
+		// left of it would carry the rest above until the last of it is shot away, while the storey above, which gave way
+		// first, came down onto its own remains with all its weight.
+		if ( storey && downCount > 0 )
+		{
+			const nbDestructible* building = world->destructibles.data + actor->destructibleIndex;
+			b3AABB above = b3Shape_GetAABB( world->chunks.data[downs[0]].shapeId );
+			for ( int d = 1; d < downCount; ++d )
+			{
+				above = b3AABB_Union( above, b3Shape_GetAABB( world->chunks.data[downs[d]].shapeId ) );
+			}
+
+			b3Vec3 center = b3MulSV( 0.5f, b3Add( above.lowerBound, above.upperBound ) );
+			b3Vec3 extents = b3MulSV( 0.5f, b3Sub( above.upperBound, above.lowerBound ) );
+			float bottom = b3Dot( up, center ) - b3Dot( b3Abs( up ), extents );
+			float height = building->storeys[building->storeyCount - 1].high - building->storeys[0].low + NB_CLEARANCE;
+			b3Vec3 clearance = b3MulAdd( (b3Vec3){ NB_CLEARANCE, NB_CLEARANCE, NB_CLEARANCE }, -NB_CLEARANCE, b3Abs( up ) );
+			above.lowerBound = b3Sub( above.lowerBound, clearance );
+			above.upperBound = b3Add( above.upperBound, clearance );
+			above = b3AABB_Union( above, (b3AABB){ b3MulAdd( above.lowerBound, height, up ), b3MulAdd( above.upperBound, height, up ) } );
+			nbThawContext filter = { .skipActor = NB_NULL_INDEX, .holder = NB_NULL_INDEX, .collapse = true };
+			nbThawRubbleInBoxes( world, &above, 1, up, bottom, &filter );
+		}
+
 		// What a collapse drops comes from it
 		world->collapsing = collapsed || ejectCount > 0;
 
