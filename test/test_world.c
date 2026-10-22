@@ -469,7 +469,7 @@ static uint32_t RunDeterminismScenario( void )
 
 // Fracture and physics are bit for bit identical with MSVC, GCC and Clang on x64 and ARM. This is the result
 // with the pinned Box3D commit. Update it when the results change on purpose, never to make one platform pass.
-#define NB_EXPECTED_DETERMINISM_HASH 0xcc306155u
+#define NB_EXPECTED_DETERMINISM_HASH 0x55a25546u
 
 static int DeterminismTest( void )
 {
@@ -2754,6 +2754,92 @@ static float FloatingVolume( TestScene* scene )
 	return volume;
 }
 
+// Rubble that hangs in the air: nothing lies within 30 cm below any of its chunks
+static int RubbleInTheAir( TestScene* scene )
+{
+	nbWorld* world = nbGetWorldFromId( scene->world );
+	int count = 0;
+	for ( int i = 0; i < world->debris.count; ++i )
+	{
+		int actorIndex = world->debris.data[i];
+		const nbActor* actor = world->actors.data + actorIndex;
+		bool carried = actor->isRubble == false;
+		for ( int c = actor->headChunk; c != NB_NULL_INDEX && carried == false; c = world->chunks.data[c].nextChunk )
+		{
+			b3AABB box = b3Shape_GetAABB( world->chunks.data[c].shapeId );
+			b3AABB below = { { box.lowerBound.x, box.lowerBound.y - 0.3f, box.lowerBound.z },
+							 { box.upperBound.x, box.lowerBound.y + 0.03f, box.upperBound.z } };
+			FloatQuery query = { world, actorIndex, false };
+			b3World_OverlapAABB( scene->physicsWorld, below, b3DefaultQueryFilter(), FloatQueryCallback, &query );
+			carried = query.found;
+		}
+		count += carried ? 0 : 1;
+	}
+	return count;
+}
+
+// Rubble that lies on a moving piece which would not bring it back to life once it moves away: a chunk it froze on is
+// still where it lay on it, but belongs to a moving piece that holds no rubble
+static int UnheldRubble( TestScene* scene )
+{
+	nbWorld* world = nbGetWorldFromId( scene->world );
+	int count = 0;
+	for ( int i = 0; i < world->debris.count; ++i )
+	{
+		const nbActor* actor = world->actors.data + world->debris.data[i];
+		for ( int k = 0; actor->isRubble && k < actor->carrierCount; ++k )
+		{
+			const nbCarrier* carrier = actor->carriers + k;
+			if ( carrier->chunkIndex == NB_NULL_INDEX ||
+				 world->chunks.data[carrier->chunkIndex].generation != carrier->generation )
+			{
+				continue;
+			}
+
+			const nbActor* holder = world->actors.data + world->chunks.data[carrier->chunkIndex].actorIndex;
+			if ( holder->isStatic == false && holder->isRubble == false && holder->holdsRubble == false )
+			{
+				count += 1;
+				break;
+			}
+		}
+	}
+	return count;
+}
+
+// Over the budget nothing freezes in flight, it would hang in the air. The budget waits until the debris lands, then it
+// holds again.
+static int DebrisBudgetFlightTest( void )
+{
+	TestScene scene = CreateScene();
+	CreateWall( &scene, (b3Vec3){ 2.0f, 1.0f, 0.12f }, 23 );
+	nbWorld_SetDebrisBudget( scene.world, 5 );
+
+	nbImpactDef impact = { 0 };
+	impact.point = (b3Vec3){ 0.0f, 1.0f, 0.12f };
+	impact.direction = (b3Vec3){ 0.0f, 0.0f, -1.0f };
+	impact.radius = 0.6f;
+	impact.damage = 1.0e8f;
+	impact.ejectSpeed = 8.0f;
+	nbWorld_ApplyImpact( scene.world, &impact );
+	int flying = 0;
+	for ( int i = 0; i < 60; ++i )
+	{
+		Step( &scene, 1 );
+		nbStats stats = nbWorld_GetStats( scene.world );
+		flying = b3MaxInt( flying, stats.debrisCount - stats.rubbleCount );
+		ENSURE( RubbleInTheAir( &scene ) == 0 );
+	}
+	ENSURE( flying > 10 );
+
+	Step( &scene, 240 );
+	nbStats stats = nbWorld_GetStats( scene.world );
+	ENSURE( stats.debrisCount - stats.rubbleCount <= 5 );
+	ENSURE( RubbleInTheAir( &scene ) == 0 );
+	DestroyScene( &scene );
+	return 0;
+}
+
 // A brick wall 3 m wide and 0.3 m thick, pre-fractured into one layer of cells, under a concrete block. Without collision
 // damage every fragment comes from a chunk crushed under the load.
 static void CreateLoadedWall( TestScene* scene )
@@ -3350,10 +3436,12 @@ static int StoreyResidueTest( void )
 
 		Step( &scene, 900 );
 		ENSURE( FloatingVolume( &scene ) == 0.0f );
+		ENSURE( UnheldRubble( &scene ) == 0 );
 		for ( int g = 0; g < 32; ++g )
 		{
 			Grenade( &scene, AroundHouse( 31.0f * (float)g / 32.0f + 0.5f, low + 1.0f ) );
 			Step( &scene, 10 );
+			ENSURE( UnheldRubble( &scene ) == 0 );
 		}
 		Step( &scene, 600 );
 		float bottom = 0.0f, top = 0.0f;
@@ -4806,8 +4894,8 @@ static uint32_t RunScenarioAtRate( TestScene scene, float stepRate, int settleFr
 
 // The results of the determinism scenario at 30 and 120 Hz with ten seconds to settle, the same on every platform like
 // NB_EXPECTED_DETERMINISM_HASH
-#define NB_EXPECTED_HASH_30HZ 0x00be7373u
-#define NB_EXPECTED_HASH_120HZ 0xf7e73ed5u
+#define NB_EXPECTED_HASH_30HZ 0xedea1661u
+#define NB_EXPECTED_HASH_120HZ 0xf9c56a0bu
 
 // The steps per second of nbWorld_Advance. At 60 Hz it takes the steps of the determinism scenario to the bit. At 30 and
 // 120 Hz every frame of 1/60 s takes half a step and two, whatever the steps cost, the world ends the same with one and
@@ -5322,6 +5410,7 @@ int WorldTest( void )
 	RUN_TEST( SweepTest );
 	RUN_TEST( VisibleFaceTest );
 	RUN_TEST( DebrisBudgetTest );
+	RUN_TEST( DebrisBudgetFlightTest );
 	RUN_TEST( RestTimeTest );
 	RUN_TEST( FragmentScaleTest );
 	RUN_TEST( StoreyTest );

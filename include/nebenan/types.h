@@ -328,8 +328,10 @@ typedef struct nbWorldDef
 	/// The Box3D world that simulates the chunks. Required.
 	b3WorldId physicsWorld;
 
-	/// Maximum number of debris bodies that move. Beyond it the slowest debris freezes into rubble right away. Debris is
-	/// never removed, this only bounds the work of the Box3D step.
+	/// Maximum number of debris bodies that move. Beyond it the slowest debris that lies on something freezes into rubble
+	/// right away: first what lies on the ground, a structure or rubble, then what lies slowly on moving pieces, which
+	/// bring it back to life once they move away. Debris in flight never freezes, it would hang in the air, so after a
+	/// large blast more debris moves until it lands. Debris is never removed, this only bounds the work of the Box3D step.
 	int maxDebrisBodies;
 
 	/// Debris that has come to rest turns into static rubble. It stays where it is and costs the physics step nothing.

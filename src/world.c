@@ -1039,7 +1039,7 @@ static int nbLimitForStep( const nbWorld* world, int limit )
 // Rubble bodies that hits bring back to life per update at most
 #define NB_MAX_RUBBLE_HITS 16
 
-// Debris that touches nothing freezes to keep within the budget only when it flies at least this fast, see
+// Debris that lies on moving pieces freezes to keep within the budget only when it is slower than this, see
 // nbEnforceDebrisBudget
 #define NB_FLIGHT_SPEED 1.0f
 
@@ -1266,7 +1266,7 @@ typedef struct nbThawContext
 	bool impact;
 	float ejectSpeed;
 
-	// Rubble to leave alone
+	// Rubble to leave alone, unless it froze on the holder
 	int skipActor;
 	uint16_t skipGeneration;
 
@@ -1425,8 +1425,10 @@ static bool nbThawCallback( b3ShapeId shapeId, void* context )
 		actor->budgetTime = world->time;
 	}
 
+	// The rubble a piece broke off stays, unless it froze on that piece since
 	if ( actor->isRubble == false || actor->settleStamp == world->settleStamp ||
-		 ( actorIndex == thawContext->skipActor && actor->generation == thawContext->skipGeneration ) )
+		 ( actorIndex == thawContext->skipActor && actor->generation == thawContext->skipGeneration &&
+		   ( thawContext->holder == NB_NULL_INDEX || nbRestsOn( world, actor, thawContext->holder ) == false ) ) )
 	{
 		return true;
 	}
@@ -1479,13 +1481,13 @@ static int nbCompareInts( const void* a, const void* b )
 }
 
 // Rubble in the boxes, in the order of the actors. Many boxes are searched with one query over all of them. With a
-// direction, only the rubble above the height.
-static void nbThawRubbleInBoxes( nbWorld* world, const b3AABB* boxes, int boxCount, b3Vec3 up, float height,
-								 const nbThawContext* filter )
+// direction, only the rubble above the height. Returns how much rubble it left past its limit.
+static int nbThawRubbleInBoxes( nbWorld* world, const b3AABB* boxes, int boxCount, b3Vec3 up, float height,
+								const nbThawContext* filter )
 {
 	if ( world->rubbleCount == 0 || boxCount == 0 )
 	{
-		return;
+		return 0;
 	}
 
 	b3AABB total = boxes[0];
@@ -1533,12 +1535,13 @@ static void nbThawRubbleInBoxes( nbWorld* world, const b3AABB* boxes, int boxCou
 		qsort( thawed->data, (size_t)thawed->count, sizeof( int ), nbCompareInts );
 	}
 
-	// Past the limit the rest stays rubble. The rubble goes into Box3D's tree of moving bodies together, see
+	// Past the limit the rest stays rubble for now. The rubble goes into Box3D's tree of moving bodies together, see
 	// b3World_BeginShapeBatch.
 #if defined( B3_HAS_SHAPE_BATCH )
 	b3World_BeginShapeBatch( world->physicsWorld );
 #endif
 	int limit = filter != NULL && filter->collapse ? thawed->count : NB_MAX_THAW;
+	int left = b3MaxInt( thawed->count - limit, 0 );
 	for ( int i = 0; i < thawed->count && i < limit; ++i )
 	{
 		nbThawActor( world, thawed->data[i] );
@@ -1551,6 +1554,7 @@ static void nbThawRubbleInBoxes( nbWorld* world, const b3AABB* boxes, int boxCou
 	nbEndTypeBatch( world );
 #endif
 	thawed->count = 0;
+	return left;
 }
 
 float nbGetImpactPush( const nbWorld* world, const nbActor* actor, float ejectSpeed )
@@ -1842,7 +1846,7 @@ static int nbDetachChunks( nbWorld* world, int sourceIndex, const int* chunks, i
 	actor->sourceLinearVelocity = linearVelocity;
 	actor->sourceAngularVelocity = angularVelocity;
 	actor->sourceCenter = center;
-	actor->fromStructure = source->isStatic || source->isRubble;
+	actor->fromStructure = source->isStatic || source->isRubble || source->holdsRubble || source->fromStructure;
 	actor->fromCollapse = source->fromCollapse || world->collapsing;
 	actor->holdSource = source->isRubble ? sourceIndex : NB_NULL_INDEX;
 	actor->holdSourceGeneration = source->generation;
@@ -5094,7 +5098,8 @@ static void nbReleaseHeldRubble( nbWorld* world, b3Vec3 up )
 		actor->holdsRubble = false;
 		if ( world->rubbleCount > 0 )
 		{
-			// The rubble that rested on it lies higher than its center of mass did, or froze on it
+			// The rubble that rested on it lies higher than its center of mass did, or froze on it. Past the limit of a
+			// thaw it holds on, and the next update brings back the rest.
 			b3Pos center = b3TransformWorldPoint( actor->holdPose, actor->localCenter );
 			nbThawContext filter = {
 				.skipActor = actor->holdSource,
@@ -5102,7 +5107,8 @@ static void nbReleaseHeldRubble( nbWorld* world, b3Vec3 up )
 				.holder = actorIndex,
 				.grace = actor->isBuildingPart || world->time - actor->budgetTime < NB_FREEZE_GRACE,
 			};
-			nbThawRubbleInBoxes( world, &actor->holdBounds, 1, up, b3Dot( up, b3ToVec3( center ) ), &filter );
+			actor->holdsRubble =
+				nbThawRubbleInBoxes( world, &actor->holdBounds, 1, up, b3Dot( up, b3ToVec3( center ) ), &filter ) > 0;
 		}
 	}
 }
@@ -5248,6 +5254,15 @@ static void nbFreezeOnCarriers( nbWorld* world, int actorIndex, const nbCarrier*
 	for ( int k = 0; k < count; ++k )
 	{
 		actor->carriers[k] = carriers[k];
+
+		// A moving piece it lies on brings it back to life once it moves away, otherwise it would hang in the air. A
+		// piece of a pile that freezes with it lets go of that again.
+		int chunkIndex = carriers[k].chunkIndex;
+		nbActor* carrier = chunkIndex != NB_NULL_INDEX ? world->actors.data + world->chunks.data[chunkIndex].actorIndex : NULL;
+		if ( carrier != NULL && carrier->isStatic == false && carrier->isRubble == false && carrier->holdsRubble == false )
+		{
+			nbHoldRubble( world, carrier );
+		}
 	}
 }
 
@@ -5379,6 +5394,9 @@ typedef struct nbSupport
 	// Lies on the ground, a structure or rubble that holds without the piece
 	bool grounded;
 
+	// Lies on something, fixed or moving, and is not only wedged in or about to touch something
+	bool lying;
+
 	// For a piece of at least NB_CHECKED_VOLUME: its center of mass lies over the points where it touches what holds
 	// without it, or bodies that move and do not rest on it. Always true for smaller pieces.
 	bool balanced;
@@ -5498,6 +5516,7 @@ static void nbFindSupport( const nbWorld* world, int actorIndex, const b3Contact
 
 	// A piece that lies on nothing but is wedged in, or about to touch something, remembers what it is closest to, apart
 	// from moving bodies that rest on it
+	support->lying = support->carrierCount > 0;
 	bool wedged = support->carrierCount == 0;
 	for ( int c = 0; wedged && c < contactCount && support->carrierCount < NB_MAX_CARRIERS; ++c )
 	{
@@ -6092,10 +6111,11 @@ static int nbCompareDebris( const void* a, const void* b )
 #define NB_MAX_BUDGET_FREEZES 256
 
 // Freeze the slowest debris over budget into rubble. Nothing is removed. Once over budget a tenth more freezes, so the
-// ranking only runs every so often. What lies on something fixed freezes first: the ground, a structure or rubble.
-// Debris on moving pieces would hang in the air once they move on, it only freezes when the rest is not enough, and so
-// does debris in flight. Each piece remembers the chunks it lies on, none for a piece in flight, and a large piece only
-// freezes where it would in nbSettleDebris. A squeezed piece never freezes here, see NB_SQUEEZE_DEPTH.
+// ranking only runs every so often. What lies on something fixed freezes first: the ground, a structure or rubble. Only
+// when that is not enough, slow debris that lies on moving pieces freezes too, and those pieces bring it back to life
+// once they move away, see nbFreezeOnCarriers. Debris in flight or only wedged in never freezes here, it would hang in
+// the air: the budget waits until it lands. Each piece remembers the chunks it lies on, and a large piece only freezes
+// where it would in nbSettleDebris. A squeezed piece never freezes here, see NB_SQUEEZE_DEPTH.
 static void nbEnforceDebrisBudget( nbWorld* world, b3Vec3 up )
 {
 	int budget = world->def.maxDebrisBodies;
@@ -6142,7 +6162,7 @@ static void nbEnforceDebrisBudget( nbWorld* world, b3Vec3 up )
 				continue;
 			}
 
-			nbSupport support = { .grounded = true, .balanced = true, .braced = true };
+			nbSupport support = { .grounded = true, .lying = true, .balanced = true, .braced = true };
 			int capacity = hasGravity ? b3Body_GetContactCapacity( actor->bodyId ) : 0;
 			if ( capacity > 0 )
 			{
@@ -6172,14 +6192,15 @@ static void nbEnforceDebrisBudget( nbWorld* world, b3Vec3 up )
 			}
 			else if ( hasGravity )
 			{
-				// Nothing touches it, a large piece in flight would hang in the air. So would a slow one, which just lost
-				// what it lay on or came back to life: what breaks off gets a new body, rubble has no contacts with what
-				// is fixed, and Box3D finds the new ones in the next step.
-				support.grounded = false;
-				support.balanced = actor->volume < NB_CHECKED_VOLUME && ranks[i].speed >= NB_FLIGHT_SPEED;
+				// Nothing touches it: it flies, or it just lost what it lay on or came back to life, since what breaks
+				// off gets a new body, rubble has no contacts with what is fixed, and Box3D finds the new ones in the
+				// next step. Frozen, it would hang in the air.
+				continue;
 			}
 
-			if ( support.balanced == false || ( pass == 0 && support.grounded == false ) )
+			// A piece on moving pieces only freezes while it lies on them and they are slow, as it is
+			if ( support.balanced == false || ( pass == 0 && support.grounded == false ) ||
+				 ( pass > 0 && ( support.lying == false || ranks[i].speed >= NB_FLIGHT_SPEED ) ) )
 			{
 				continue;
 			}

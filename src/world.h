@@ -172,8 +172,8 @@ typedef struct nbActor
 	// Actor was created during the current operation
 	bool isNew;
 
-	// Split off the static structure or off rubble during the current operation. What rested on it follows once it
-	// moves.
+	// Split off the static structure, off rubble or off a piece that still holds the rubble on it during the current
+	// operation. What rested on it follows once it moves.
 	bool fromStructure;
 
 	// Rubble that pieces broke off below its center of mass during the current operation, see nbApplyImpact
@@ -224,7 +224,7 @@ typedef struct nbActor
 	b3AABB holdBounds;
 
 	// The rubble this piece broke off. Its release leaves that rubble alone, it came back to life itself if it lost
-	// what carried it, see nbApplyImpact.
+	// what carried it, see nbApplyImpact, unless that rubble froze on this piece since.
 	int holdSource;
 	uint16_t holdSourceGeneration;
 

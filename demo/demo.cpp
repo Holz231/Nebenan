@@ -1723,7 +1723,7 @@ static void DrawUi( App& app )
 	}
 	if ( ImGui::IsItemHovered() )
 	{
-		ImGui::SetTooltip( "So viele Trümmer bewegt Box3D höchstens gleichzeitig.\nDie langsamsten darüber erstarren zu Schutt, gelöscht wird nichts.\nWeniger macht die Physik schneller." );
+		ImGui::SetTooltip( "So viele Trümmer bewegt Box3D höchstens gleichzeitig, sobald sie liegen.\nDie langsamsten darüber erstarren zu Schutt, nie im Flug, gelöscht\nwird nichts. Weniger macht die Physik schneller." );
 	}
 	if ( ImGui::SliderFloat( "Ruhezeit", &app.debrisRestTime, 0.02f, 0.5f, "%.2f s" ) )
 	{

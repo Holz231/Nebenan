@@ -171,13 +171,13 @@ noch auf sie wartet. Es sagt auch, wer die FPS begrenzt: die CPU, die Simulation
 die Grafikkarte (ein Bild dauert deutlich länger, als die CPU dafür braucht) oder VSync. „Messwerte kopieren“ legt alles
 mit CPU, Grafikkarte und Auflösung in die Zwischenablage, zum Einfügen in einen Chat. „Parallel gegen nacheinander
 messen“ lädt die Stadt und reißt sie Haus für Haus mit Granaten ab, Wand für Wand von oben nach unten, bis jedes Haus
-unten ist. Er schießt mit Budget 5 000 und nur, solange weniger als 3 000 Trümmer fliegen, denn über dem Budget frieren
-im Schub auch Stücke im Flug ein. Das macht er einmal kurz zum Aufwärmen, dann parallel, nacheinander, nacheinander und
-parallel, mit 1/60 s Physik pro Bild, bei 60 Hz einem Schritt, und jeweils mit den passenden Threads. Das Ergebnis mit
-Bildzeit, FPS und 1 % Low für beide und für jeden Lauf kommt ebenso in die Zwischenablage, danach lädt die Szene von
-vorher neu. „Skalierung messen“ reißt die Stadt genauso ab, nach dem Aufwärmen mit 1, 2, 4 und so weiter bis zur
-empfohlenen Zahl von Threads, alle mit der Physik nacheinander. Die Bibliothek misst dabei jede Stufe von Box3D und
-Nebenan und rechnet aus, was mit mehr Threads auf einem Thread übrig bleibt. Die Tabelle dazu kommt in die
+unten ist. Er schießt mit Budget 5 000 und nur, solange weniger als 3 000 Trümmer fliegen, denn über dem Budget erstarrt
+Schutt im Schub früher, als er zur Ruhe käme. Das macht er einmal kurz zum Aufwärmen, dann parallel, nacheinander,
+nacheinander und parallel, mit 1/60 s Physik pro Bild, bei 60 Hz einem Schritt, und jeweils mit den passenden Threads.
+Das Ergebnis mit Bildzeit, FPS und 1 % Low für beide und für jeden Lauf kommt ebenso in die Zwischenablage, danach lädt
+die Szene von vorher neu. „Skalierung messen“ reißt die Stadt genauso ab, nach dem Aufwärmen mit 1, 2, 4 und so weiter
+bis zur empfohlenen Zahl von Threads, alle mit der Physik nacheinander. Die Bibliothek misst dabei jede Stufe von Box3D
+und Nebenan und rechnet aus, was mit mehr Threads auf einem Thread übrig bleibt. Die Tabelle dazu kommt in die
 Zwischenablage, siehe `nbWorld_GetProfile`. Jeder Bericht nennt CPU und Grafikkarte, denn auf einer schwachen Grafik
 begrenzt das Zeichnen die Bildzeit.
 
@@ -427,18 +427,20 @@ Bruchstücke nach.
   teilen sich den Impuls wie bei einem unelastischen Stoß, denn Box3D hat den Körper schon am statischen Schutt
   abprallen lassen. Trümmer, die auf Schutt fallen, lassen ihn in Ruhe: Stücke mitten im Haufen zu wecken gibt jedem
   Dutzende Kontakte und kostete in der Stadt mehr als alles andere.
-- Bewegt sich ein Stück 5 cm von dort, wo es lag, wird der Schutt darauf wach, höchstens 32 pro Update: was höher
-  liegt als sein Schwerpunkt und was auf ihm erstarrt ist. Teile, die aus einem Bauwerk oder aus Schutt brechen,
-  nehmen ihren Schutt genauso mit, nur den Schutt nicht, aus dem sie kommen. So bleibt kein Schutt in der Luft hängen.
+- Bewegt sich ein Stück 5 cm von dort, wo es lag, wird der Schutt darauf wach, höchstens 32 pro Update: was höher liegt
+  als sein Schwerpunkt und was auf ihm erstarrt ist. Teile, die aus einem Bauwerk, aus Schutt oder aus einem Teil
+  brechen, das noch Schutt trägt, nehmen ihren Schutt genauso mit, den Schutt, aus dem sie kommen, nur, wenn er
+  inzwischen auf ihnen erstarrt ist. Liegt mehr Schutt darauf, als eine Freigabe auf einmal weckt, 512 Stücke, holt das
+  nächste Update den Rest. So bleibt kein Schutt in der Luft hängen.
 - Wacht Schutt auf und bleibt 0,05 s lang langsamer als 5 cm/s, liegt er noch auf und erstarrt gleich wieder, statt
   die ganze Ruhezeit abzuwarten. Was seine Auflage verloren hat, ist nach einem Schritt freiem Fall schon schneller.
-- Über `maxDebrisBodies` erstarren die langsamsten Trümmer und merken sich ebenso, woran sie liegen: zuerst, was auf
-  dem Boden, einem Bauwerk oder Schutt liegt, erst wenn das nicht reicht, auch Trümmer auf bewegten Stücken und im
-  Flug. Große Teile erstarren so nur, wenn sie wie oben im Gleichgewicht liegen. Ausgenommen sind Trümmer, die jünger
-  als 0,25 s sind, und ebenso lange die Trümmer um eine Etage, die nachgibt, und der Schutt, den ein Hausteil oder ein
+- Über `maxDebrisBodies` erstarren die langsamsten Trümmer und merken sich ebenso, woran sie liegen: zuerst, was auf dem
+  Boden, einem Bauwerk oder Schutt liegt, erst wenn das nicht reicht, auch Trümmer, die langsamer als 1 m/s auf bewegten
+  Stücken liegen. Diese Stücke wecken sie wieder, sobald sie sich 5 cm bewegen. Trümmer im Flug erstarren nie, auch
+  keine, die nur eingeklemmt sind oder gleich etwas berühren, sie hingen in der Luft: Das Budget wartet, bis sie landen.
+  Große Teile erstarren so nur, wenn sie wie oben im Gleichgewicht liegen. Ausgenommen sind Trümmer, die jünger als
+  0,25 s sind, und ebenso lange die Trümmer um eine Etage, die nachgibt, und der Schutt, den ein Hausteil oder ein
   solches frisches Stück beim Wegrücken freigibt. Sonst erstarrten sie gleich wieder dort, wo die Etage sie hielt.
-  Ausgenommen sind auch langsame Trümmer unter 1 m/s, die nichts berühren: Sie haben eben ihre Auflage verloren oder
-  sind aufgewacht, und Box3D kennt ihre Kontakte erst nach dem nächsten Schritt. Erstarrt, hingen sie in der Luft.
   Höchstens 256 erstarren so in einem Update, nach einer großen Explosion übernehmen die nächsten Updates den Rest,
   jedes mit einer neuen Rangliste.
 - Ein Stück, in das ein größeres bewegtes Stück mehr als 2 cm tief eindringt, erstarrt nur zusammen mit diesem, das
@@ -1339,9 +1341,8 @@ Nach Änderungen an `demo/shaders/scene.glsl` die Shader neu erzeugen, im Ordner
 - Schutt ist für Box3D statisch. Trümmer, die auf Schutt fallen, wecken ihn nicht, nur Einschläge, die ihn bewegen,
   fremde Körper, eine wegrutschende Auflage und große Teile, die ohne ihn nicht im Gleichgewicht lägen. Kinematische
   Körper stoßen Schutt nicht an, Box3D lässt kinematische und statische Körper nicht kollidieren.
-- Wird das Budget knapp, erstarren auch Trümmer auf bewegten Stücken und schnelle im Flug, und kleine Trümmer unter
-  0,1 m³ erstarren auf jedem Schutt, auch auf solchem. Sie können also noch in der Luft hängen bleiben, ein großes Teil
-  tragen sie dann aber nicht.
+- Das Budget begrenzt, was liegt, nicht, was fliegt: Nach einem großen Einschlag bewegen sich mehr Trümmer als
+  `maxDebrisBodies`, bis sie gelandet sind, und so lange kostet der Schritt von Box3D mehr.
 - Einstürze kosten: Was fällt und fliegt, bewegt sich, bis es als Schutt liegt. Gab jede Etage schon bei 10 % Schaden
   nach, brauchte die Stadt unter Dauerbeschuss 1,2- bis 1,8-mal so lange wie ohne Einstürze, siehe Leistung.
 - Was die Box3D-Welt ändert, bleibt auf dem aufrufenden Thread, Box3D erlaubt das nur von einem Thread aus: Schutt
