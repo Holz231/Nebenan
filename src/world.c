@@ -1111,7 +1111,10 @@ static bool nbIsRocking( nbActor* actor, b3WorldTransform transform, float timeS
 }
 
 // A piece is quiet when it is slow and stayed in place, or rocks in place. Box3D islands that fell asleep are quiet, until
-// a look found that they cannot freeze yet, see nbActor::checkedAsleep.
+// a look found that they cannot freeze yet, see nbActor::checkedAsleep. A part of a building is quiet only asleep or
+// rocking in place: it sinks onto the loose cells of a storey that gave way and tips over them at a few centimeters a
+// second, which would pass for rest, and frozen there it would stand on them until the last of them is shot away. Box3D
+// lets its island fall asleep only once the cells under it rest too.
 static bool nbIsQuiet( const nbWorld* world, nbActor* actor, float timeStep )
 {
 	if ( b3Body_IsAwake( actor->bodyId ) == false )
@@ -1126,8 +1129,10 @@ static bool nbIsQuiet( const nbWorld* world, nbActor* actor, float timeStep )
 	float spin = b3Length( b3Body_GetAngularVelocity( actor->bodyId ) ) * actor->radius;
 
 	// Rubble that came back to life, when a piece under it moved away or an impact went off nearby, and did not start to
-	// move is still carried. It need not wait the whole rest time, a house on its stubs would cost hundreds of contacts
-	// meanwhile.
+	// move is still carried. It need not wait the whole rest time, a large piece on its stubs would cost hundreds of
+	// contacts meanwhile. A part of a building does not take this way: it comes back to life to sink further, the cells
+	// under it give way slower than this, and it would freeze again after three steps, wake when the next cell moved and
+	// never come down.
 	bool probed = false;
 	if ( actor->probing )
 	{
@@ -1144,6 +1149,11 @@ static bool nbIsQuiet( const nbWorld* world, nbActor* actor, float timeStep )
 
 	// A brief solver spike keeps the rocking history, only a fast body loses it
 	bool rocking = nbIsRocking( actor, transform, timeStep );
+	if ( actor->isBuildingPart )
+	{
+		return rocking;
+	}
+
 	if ( speed > slow || spin > slow )
 	{
 		actor->restTime = 0.0f;

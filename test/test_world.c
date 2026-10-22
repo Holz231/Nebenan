@@ -3185,6 +3185,12 @@ static int StoreyTest( void )
 		CreateCelledHouse( &scene, 3, 3 );
 		BlastStorey( &scene, 1, 1 + corners, FLT_MAX, corners == 1 );
 		Step( &scene, 300 );
+
+		// It freezes once it rests on the cells under it and they rest too, as long as it sinks it stays awake
+		for ( int s = 0; s < 40 && ( LargestActor( &scene ) == NULL || LargestActor( &scene )->isRubble == false ); ++s )
+		{
+			Step( &scene, 30 );
+		}
 		ENSURE( nbWorld_GetStats( scene.world ).collapsedStoreyCount == 1 );
 		float standing = HighestStanding( &scene );
 		ENSURE( 2.9f < standing && standing < 6.5f );
