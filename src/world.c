@@ -1008,7 +1008,8 @@ static b3AABB nbGetActorBounds( const nbWorld* world, const nbActor* actor )
 // Rubble resting on a piece comes back to life once that piece moved this far from where it lay
 #define NB_HOLD_DISTANCE 0.05f
 
-// Rubble bodies that pieces moving away release per update at most. The others follow in the next updates.
+// Rubble bodies that pieces moving away release per update at most, and so do large pieces that do not freeze, see
+// nbSettleDebris. The others follow in the next updates.
 #define NB_MAX_RELEASES 32
 
 // A limit per update for the step of the current update. The limits hold for steps of 1/60 s and grow and shrink with the
@@ -5403,7 +5404,8 @@ typedef struct nbSupport
 	// Lies on the ground, a structure or rubble that holds without the piece
 	bool grounded;
 
-	// Lies on something, fixed or moving, and is not only wedged in or about to touch something
+	// Lies on something, fixed or moving, and is not only wedged in or about to touch something. For a piece of at least
+	// NB_CHECKED_VOLUME rubble that holds only through it does not count.
 	bool lying;
 
 	// For a piece of at least NB_CHECKED_VOLUME: its center of mass lies over the points where it touches what holds
@@ -5433,8 +5435,10 @@ static void nbFindSupport( const nbWorld* world, int actorIndex, const b3Contact
 	bool large = actor->volume >= NB_CHECKED_VOLUME;
 	b3Vec3 center = b3ToVec3( b3Body_GetWorldCenter( actor->bodyId ) );
 	support->grounded = false;
+	support->lying = false;
 	support->carrierCount = 0;
 	int firstUnsupported = *unsupportedCount;
+	int carrying = 0;
 	nbSupportFan fan = *baseFan;
 	nbSupportFan fixedFan = *baseFan;
 	nbCarrierAnswers answers;
@@ -5477,14 +5481,30 @@ static void nbFindSupport( const nbWorld* world, int actorIndex, const b3Contact
 			if ( large && otherIndex != NB_NULL_INDEX && world->actors.data[otherIndex].isRubble &&
 				 nbIsCarrierSupported( world, &answers, otherIndex, actorIndex, resting, restingCount ) == false )
 			{
-				bool listed = false;
-				for ( int k = firstUnsupported; k < *unsupportedCount && listed == false; ++k )
+				// Listed once, the rubble that carries the piece first. A full list makes room for it, the rest comes back
+				// to life later, the piece is still there.
+				int listed = firstUnsupported;
+				while ( listed < *unsupportedCount && unsupported[listed] != otherIndex )
 				{
-					listed = unsupported[k] == otherIndex;
+					listed += 1;
 				}
-				if ( listed == false && *unsupportedCount < unsupportedCapacity )
+
+				int front = firstUnsupported + carrying;
+				if ( listed == *unsupportedCount && *unsupportedCount < unsupportedCapacity )
 				{
 					unsupported[( *unsupportedCount )++] = otherIndex;
+				}
+				else if ( listed == *unsupportedCount && carries && front < listed )
+				{
+					listed -= 1;
+					unsupported[listed] = otherIndex;
+				}
+
+				if ( carries && front <= listed && listed < *unsupportedCount )
+				{
+					unsupported[listed] = unsupported[front];
+					unsupported[front] = otherIndex;
+					carrying += 1;
 				}
 
 				// It is still what the piece lies on, the search decides what holds
@@ -5520,12 +5540,12 @@ static void nbFindSupport( const nbWorld* world, int actorIndex, const b3Contact
 		if ( carries && nbTouchPoint( contacts + c, isA, center, NB_TOUCH_GAP, &point ) )
 		{
 			nbAddCarrier( world, support->carriers, &support->carrierCount, chunkIndex, point );
+			support->lying = true;
 		}
 	}
 
 	// A piece that lies on nothing but is wedged in, or about to touch something, remembers what it is closest to, apart
 	// from moving bodies that rest on it
-	support->lying = support->carrierCount > 0;
 	bool wedged = support->carrierCount == 0;
 	for ( int c = 0; wedged && c < contactCount && support->carrierCount < NB_MAX_CARRIERS; ++c )
 	{
@@ -5677,16 +5697,12 @@ static void nbInspectQuietPiece( const nbSettleTask* task, nbQuietPiece* piece, 
 		piece->carriers[k] = support.carriers[k];
 	}
 
-	// A large piece that would not stay balanced does not freeze, and the rubble that nothing else holds comes back to
-	// life, the piece tips or falls without it. Otherwise that rubble stays where it is.
+	// A large piece that would not stay balanced does not freeze. The rubble that nothing else holds comes back to life
+	// unless the piece freezes after all, see nbSettleDebris, the piece tips or falls without it.
 	bool large = actor->volume >= NB_CHECKED_VOLUME;
 	if ( support.balanced == false )
 	{
 		piece->blocked = true;
-	}
-	else if ( large )
-	{
-		unsupportedCount = 0;
 	}
 
 	if ( unsupportedCount > 0 )
@@ -5958,15 +5974,9 @@ static void nbSettleDebris( nbWorld* world, b3Vec3 up, float timeStep )
 	edgeCounts[0] = 0;
 	nbIntArray* edges = &world->scratchList;
 	edges->count = 0;
-	int unsupported[NB_MAX_RELEASES];
-	int unsupportedCount = 0;
 	for ( slot = 0; slot < quietCount; ++slot )
 	{
 		const nbQuietPiece* piece = pieces[slot];
-		for ( int k = 0; k < piece->unsupportedCount && unsupportedCount < NB_MAX_RELEASES; ++k )
-		{
-			unsupported[unsupportedCount++] = piece->unsupported[k];
-		}
 
 		// An edge from each quiet piece that carries this one
 		for ( int e = 0; e < piece->belowCount; ++e )
@@ -6061,20 +6071,51 @@ static void nbSettleDebris( nbWorld* world, b3Vec3 up, float timeStep )
 		nbFreezeOnCarriers( world, quiet[slot], pieces[slot]->carriers, pieces[slot]->carrierCount );
 	}
 
+	// A large piece that did not freeze lets go of the rubble that only it holds. Frozen, that rubble would hold it up in
+	// the air while it holds the rubble: rubble that froze on the piece while it was rubble itself, wedged under one of
+	// its edges or jammed in its openings. The piece wakes up to tip or fall without it, and the rubble gets the grace of
+	// new debris, see NB_FREEZE_GRACE, the budget would freeze it again where it lies. At most NB_MAX_RELEASES a step
+	// come back to life, a piece with more waits for the next look.
+	int maxReleases = nbLimitForStep( world, NB_MAX_RELEASES );
+	int released = 0;
+	bool* waiting = nbArena_AllocArray( &world->arena, bool, quietCount );
+	for ( slot = 0; slot < quietCount; ++slot )
+	{
+		const nbQuietPiece* piece = pieces[slot];
+		nbActor* actor = world->actors.data + quiet[slot];
+		int first = released;
+		waiting[slot] = false;
+		for ( int k = 0; actor->isRubble == false && k < piece->unsupportedCount; ++k )
+		{
+			int rubbleIndex = piece->unsupported[k];
+			if ( world->actors.data[rubbleIndex].isRubble == false )
+			{
+				continue;
+			}
+
+			if ( released == maxReleases )
+			{
+				waiting[slot] = true;
+				break;
+			}
+
+			nbThawActor( world, rubbleIndex );
+			world->actors.data[rubbleIndex].budgetTime = world->time;
+			released += 1;
+		}
+
+		if ( released > first )
+		{
+			b3Body_SetAwake( actor->bodyId, true );
+		}
+	}
+
 	// What sleeps and could not freeze waits for Box3D to wake it. Its island sleeps as a whole, a piece that touches it
 	// wakes all of it.
 	for ( slot = 0; slot < quietCount; ++slot )
 	{
 		nbActor* actor = world->actors.data + quiet[slot];
-		actor->checkedAsleep = actor->isRubble == false && b3Body_IsAwake( actor->bodyId ) == false;
-	}
-
-	for ( int i = 0; i < unsupportedCount; ++i )
-	{
-		if ( world->actors.data[unsupported[i]].isRubble )
-		{
-			nbThawActor( world, unsupported[i] );
-		}
+		actor->checkedAsleep = actor->isRubble == false && waiting[slot] == false && b3Body_IsAwake( actor->bodyId ) == false;
 	}
 
 #if defined( B3_HAS_SHAPE_BATCH )

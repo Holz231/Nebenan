@@ -3507,6 +3507,142 @@ static int StoreyResidueTest( void )
 	return 0;
 }
 
+// Whether rubble lies on something that holds without a piece, following the chunks it froze on: the ground, a structure
+// or a moving piece other than that one, see nbIsSupportedWithout
+static bool HoldsWithout( nbWorld* world, int rubbleIndex, int actorIndex )
+{
+	int* stack = malloc( sizeof( int ) * (size_t)world->actors.count );
+	bool* seen = calloc( (size_t)world->actors.count, sizeof( bool ) );
+	int count = 0;
+	stack[count++] = rubbleIndex;
+	seen[rubbleIndex] = true;
+	bool holds = false;
+	while ( count > 0 && holds == false )
+	{
+		const nbActor* rubble = world->actors.data + stack[--count];
+		for ( int k = 0; k < rubble->carrierCount && holds == false; ++k )
+		{
+			const nbCarrier* carrier = rubble->carriers + k;
+			const nbChunk* chunk = carrier->chunkIndex != NB_NULL_INDEX ? world->chunks.data + carrier->chunkIndex : NULL;
+			if ( chunk != NULL && ( chunk->generation != carrier->generation || chunk->actorIndex == actorIndex ) )
+			{
+				continue;
+			}
+
+			holds = chunk == NULL || world->actors.data[chunk->actorIndex].isRubble == false;
+			if ( holds == false && seen[chunk->actorIndex] == false )
+			{
+				seen[chunk->actorIndex] = true;
+				stack[count++] = chunk->actorIndex;
+			}
+		}
+	}
+	free( seen );
+	free( stack );
+	return holds;
+}
+
+// Large moving pieces asleep on rubble that holds only through them, the two hold each other up in the air
+static int SelfPropped( TestScene* scene )
+{
+	nbWorld* world = nbGetWorldFromId( scene->world );
+	int count = 0;
+	for ( int i = 0; i < world->debris.count; ++i )
+	{
+		int actorIndex = world->debris.data[i];
+		const nbActor* actor = world->actors.data + actorIndex;
+		b3BodyId bodyId = actor->bodyId;
+		if ( actor->isRubble || actor->volume < 0.1f || b3Body_IsAwake( bodyId ) )
+		{
+			continue;
+		}
+
+		int capacity = b3Body_GetContactCapacity( bodyId );
+		b3ContactData* contacts = malloc( sizeof( b3ContactData ) * (size_t)( capacity + 1 ) );
+		int contactCount = b3Body_GetContactData( bodyId, contacts, capacity );
+		float centerHeight = (float)b3Body_GetWorldCenter( bodyId ).y;
+		bool propped = false;
+		for ( int c = 0; c < contactCount && propped == false; ++c )
+		{
+			bool isA = B3_ID_EQUALS( b3Shape_GetBody( contacts[c].shapeIdA ), bodyId );
+			int other = FindBodyActor( world, b3Shape_GetBody( isA ? contacts[c].shapeIdB : contacts[c].shapeIdA ) );
+			propped = other != NB_NULL_INDEX && world->actors.data[other].isRubble &&
+					  CarriesFromBelow( contacts + c, bodyId, centerHeight ) && HoldsWithout( world, other, actorIndex ) == false;
+		}
+		free( contacts );
+		count += propped ? 1 : 0;
+	}
+	return count;
+}
+
+// A shot of the rifle of the demo at a point on the walls of the celled house, d meters around it, from 12 m outside
+static void Rifle( TestScene* scene, float d, float y )
+{
+	b3Vec3 target = AroundHouse( d, y );
+	b3Vec3 normal = d < 9.0f	? (b3Vec3){ 0.0f, 0.0f, 1.0f }
+				  : d < 15.5f ? (b3Vec3){ 1.0f, 0.0f, 0.0f }
+				  : d < 24.5f ? (b3Vec3){ 0.0f, 0.0f, -1.0f }
+							  : (b3Vec3){ -1.0f, 0.0f, 0.0f };
+	b3Vec3 origin = b3MulAdd( b3MulAdd( target, 12.0f, normal ), 0.3f, b3Vec3_axisY );
+	nbImpactDef impact = { 0 };
+	impact.radius = 0.78f;
+	impact.damage = 2.0e6f;
+	impact.ejectSpeed = 30.0f;
+	nbImpactResult result;
+	nbWorld_CastImpact( scene->world, origin, b3MulSV( 250.0f, b3Normalize( b3Sub( target, origin ) ) ), &impact, &result );
+}
+
+// The middle storey of a celled house shot away all around with the rifle, 20 shots a second, then the ground floor, as
+// a player would. Returns the large pieces that hang on rubble held only through them once everything came to rest, and
+// the volume of the large pieces that hang in the air.
+static int ShootStoreys( uint32_t seed, int extraShots, float* floating )
+{
+	TestScene scene = CreateScene();
+	nbWorld_SetFragmentScale( scene.world, 2.0f );
+	nbWorld_SetDebrisBudget( scene.world, 5000 );
+	CelledHouse* house = malloc( sizeof( CelledHouse ) );
+	BuildCelledHouse( house, 3, 201, b3Vec3_zero );
+	house->def.material.fragmentSize = 0.1f;
+	house->def.material.friction = 0.8f;
+	house->concrete.density = 2400.0f;
+	house->concrete.fragmentSize = 0.13f;
+	nbCreateDestructible( scene.world, &house->def, house->pieces, house->pieceCount );
+	free( house );
+
+	nbRandom rng = nbMakeRandom( seed, 0 );
+	for ( int storey = 1; storey >= 0; --storey )
+	{
+		int collapsed = nbWorld_GetStats( scene.world ).collapsedStoreyCount;
+		int after = -1;
+		for ( int shot = 0; shot < 600 && after < extraShots; ++shot )
+		{
+			float d = nbRandomRange( &rng, 0.0f, 31.0f );
+			Rifle( &scene, d, 3.25f * (float)storey + nbRandomRange( &rng, 0.2f, 3.1f ) );
+			Step( &scene, 3 );
+			after = after >= 0 ? after + 1 : nbWorld_GetStats( scene.world ).collapsedStoreyCount > collapsed ? 0 : -1;
+		}
+		Step( &scene, 120 );
+	}
+	Step( &scene, 600 );
+	int propped = SelfPropped( &scene );
+	*floating = FloatingVolume( &scene );
+	DestroyScene( &scene );
+	return propped;
+}
+
+// The middle storey shot away with the rifle, then the ground floor, as the user did in the demo. The part above came to
+// rest on rubble that had frozen on it while it was rubble itself, wedged under its edges and jammed in its openings, and
+// on small moving pieces beside it that kept it balanced. It did not freeze, it held that rubble, and the rubble held it
+// up in the air. Before, one part stayed up so with this seed, and so did one or two in 7 of 32 runs with 16 seeds and 40
+// or 150 shots after each storey gave way.
+static int ShotStoreysTest( void )
+{
+	float floating = 0.0f;
+	ENSURE( ShootStoreys( 1, 40, &floating ) == 0 );
+	ENSURE( floating == 0.0f );
+	return 0;
+}
+
 // Every storey picks where it lies in the ranges of nbStoreyCollapse when its building is created, from the seed of the
 // building, and the top storey takes ranges of its own
 static int StoreyPickTest( void )
@@ -5416,6 +5552,7 @@ int WorldTest( void )
 	RUN_TEST( FragmentScaleTest );
 	RUN_TEST( StoreyTest );
 	RUN_TEST( StoreyResidueTest );
+	RUN_TEST( ShotStoreysTest );
 	RUN_TEST( StoreyPickTest );
 	RUN_TEST( SupportTest );
 	RUN_TEST( BondMomentsTest );
