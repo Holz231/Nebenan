@@ -69,6 +69,19 @@ typedef struct b3DebugLine
 	b3HexColor color;
 } b3DebugLine;
 
+// Added for Nebenan: single manifolds a worker keeps for the convex contacts of the collide task, the only time contacts
+// allocate and free manifolds on several threads. Taken one at a time under the lock of the shared allocator, they kept
+// the workers waiting for each other: in a town whose storeys collapse, 750 times a step and 0.7 ms summed over the
+// threads, in a task of 1.7 ms. A worker takes them in batches, keeps those its contacts free and gives back what is left
+// after the task, see b3GiveBackManifolds. Which memory a contact gets changes nothing else.
+#define B3_MANIFOLD_BATCH 32
+
+typedef struct b3ManifoldCache
+{
+	void* freeList;
+	int count;
+} b3ManifoldCache;
+
 // Per thread task storage
 typedef struct b3TaskContext
 {
@@ -124,6 +137,10 @@ typedef struct b3TaskContext
 	int lineCount;
 
 	int manifoldCounts[B3_CONTACT_MANIFOLD_COUNT_BUCKETS];
+
+	// Added for Nebenan: the single manifolds this worker keeps for the collide task, see b3ManifoldCache
+	b3ManifoldCache manifoldCache;
+
 	// Prevent false sharing
 	char cacheLine[64];
 } b3TaskContext;
@@ -431,4 +448,58 @@ static inline void b3FreeManifolds( b3World* world, b3Manifold* manifolds, int c
 		b3UnlockMutex( world->manifoldAllocatorMutex );
 	}
 }
+
+// Added for Nebenan: a single manifold for a convex contact of the collide task on a worker, see b3ManifoldCache
+static inline b3Manifold* b3AllocateWorkerManifold( b3World* world, int workerIndex )
+{
+	if ( world->manifoldsShared == false )
+	{
+		return b3AllocateManifolds( world, 1 );
+	}
+
+	b3ManifoldCache* cache = &world->taskContexts.data[workerIndex].manifoldCache;
+	if ( cache->freeList == NULL )
+	{
+		b3LockMutex( world->manifoldAllocatorMutex );
+		if ( world->manifoldAllocators.count == 0 )
+		{
+			b3BlockAllocator allocator = b3CreateBlockAllocator( sizeof( b3Manifold ), 2 * B3_BLOCK_SIZE );
+			b3Array_Push( world->manifoldAllocators, allocator );
+		}
+
+		b3BlockAllocator* allocator = world->manifoldAllocators.data;
+		for ( int i = 0; i < B3_MANIFOLD_BATCH; ++i )
+		{
+			void* element = b3AllocateElement( allocator );
+			*(void**)element = cache->freeList;
+			cache->freeList = element;
+		}
+		cache->count += B3_MANIFOLD_BATCH;
+		b3UnlockMutex( world->manifoldAllocatorMutex );
+	}
+
+	b3Manifold* manifold = (b3Manifold*)cache->freeList;
+	cache->freeList = *(void**)manifold;
+	cache->count -= 1;
+	memset( manifold, 0, sizeof( b3Manifold ) );
+	return manifold;
+}
+
+// Added for Nebenan: free the manifolds of a contact of the collide task on a worker, see b3ManifoldCache
+static inline void b3FreeWorkerManifolds( b3World* world, int workerIndex, b3Manifold* manifolds, int count )
+{
+	if ( world->manifoldsShared == false || count != 1 )
+	{
+		b3FreeManifolds( world, manifolds, count );
+		return;
+	}
+
+	b3ManifoldCache* cache = &world->taskContexts.data[workerIndex].manifoldCache;
+	*(void**)manifolds = cache->freeList;
+	cache->freeList = manifolds;
+	cache->count += 1;
+}
+
+// Added for Nebenan: the manifolds the workers kept go back to the shared allocator after the collide task
+void b3GiveBackManifolds( b3World* world );
 

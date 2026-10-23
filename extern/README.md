@@ -432,8 +432,18 @@ sie einmal stabil auf 256 Fächer, vom niedrigsten Byte zum höchsten. Bytes, di
 überspringt er, bei Paaren einfacher Formen die des Index des Kindes und die hohen Bytes kleiner Ids. Die Reihenfolge
 ist dieselbe wie mit `QSORT`, das für weniger Paare bleibt.
 
+**Manifolds der Worker in der Kontakt-Schleife.** Auch in der Kontakt-Schleife auf mehreren Threads, siehe „Manifolds
+ohne Sperre außerhalb der Kontakt-Schleife“, holte und gab jeder Kontakt sein Manifold einzeln unter der Sperre des
+Allokators, wenn er zu berühren begann oder aufhörte. In der Stadt unter dem Trommelfeuer bei ×4, in der viele Etagen
+einstürzen, waren das 750 pro Schritt, und die Threads warteten dabei zusammen 0,7 ms pro Schritt aufeinander, bei
+1,7 ms für die ganze Schleife. Jetzt hält jeder Worker in `b3TaskContext::manifoldCache` einen Vorrat einzelner
+Manifolds für die Kontakte konvexer Formen, holt ihn unter der Sperre 32 auf einmal, legt dort ab, was seine Kontakte
+freigeben, und gibt nach der Schleife alles übrige zurück (`b3AllocateWorkerManifold`, `b3FreeWorkerManifolds` und
+`b3GiveBackManifolds` in `src/physics_world.h` und `src/physics_world.c`, aufgerufen in `src/contact.c`). Netze mit
+mehreren Manifolds nehmen den alten Weg. Ein Kontakt bekommt anderen Speicher, sonst ändert sich nichts.
+
 Die erste, die zweite, die vierte bis achte, die zehnte, die dreizehnte bis einunddreißigste, die dreiunddreißigste bis
-fünfunddreißigste, die neununddreißigste bis dreiundvierzigste, die fünfundvierzigste und die sechsundvierzigste ändern
+fünfunddreißigste, die neununddreißigste bis dreiundvierzigste und die fünfundvierzigste bis siebenundvierzigste ändern
 an den Ergebnissen nichts. Die dritte und die neunte ändern sie in den letzten Bits, dafür hängen sie nicht mehr davon
 ab, in welcher Reihenfolge Formen in die Bäume kommen. Die elfte ändert sie, weil Kontakte zu anderen Zeitpunkten
 entstehen, die zwölfte, weil sie weniger Punkte bekommen, die zweiunddreißigste, weil die Kontakte eines Knotens

@@ -1083,6 +1083,22 @@ static void b3RemoveNonTouchingContact( b3World* world, int setIndex, int localI
 	}
 }
 
+// Added for Nebenan, see b3ManifoldCache
+void b3GiveBackManifolds( b3World* world )
+{
+	for ( int i = 0; i < world->workerCount; ++i )
+	{
+		b3ManifoldCache* cache = &world->taskContexts.data[i].manifoldCache;
+		while ( cache->freeList != NULL )
+		{
+			void* element = cache->freeList;
+			cache->freeList = *(void**)element;
+			b3FreeElement( world->manifoldAllocators.data, element );
+		}
+		cache->count = 0;
+	}
+}
+
 // Narrow-phase collision
 static void b3Collide( b3StepContext* context )
 {
@@ -1173,10 +1189,11 @@ static void b3Collide( b3StepContext* context )
 	// Task should take at least 40us on a 4GHz CPU (10K cycles)
 	int minRange = 20;
 
-	// Added for Nebenan: the contacts allocate and free manifolds on several threads only here
+	// Added for Nebenan: the contacts allocate and free manifolds on several threads only here, see b3ManifoldCache
 	world->manifoldsShared = world->activeWorkerCount > 1;
 	b3ParallelFor( world, b3CollideTask, contactCount, minRange, context, "collide" );
 	world->manifoldsShared = false;
+	b3GiveBackManifolds( world );
 
 	b3StackFree( &world->stack, contactIndices );
 	context->awakeContactIndices = NULL;

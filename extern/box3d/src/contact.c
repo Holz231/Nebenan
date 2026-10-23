@@ -676,7 +676,7 @@ static bool b3ComputeConvexManifold( b3World* world, int workerIndex, b3Contact*
 	{
 		if ( contact->manifoldCount > 0 )
 		{
-			b3FreeManifolds( world, contact->manifolds, contact->manifoldCount );
+			b3FreeWorkerManifolds( world, workerIndex, contact->manifolds, contact->manifoldCount );
 			contact->manifolds = NULL;
 			contact->manifoldCount = 0;
 		}
@@ -689,7 +689,7 @@ static bool b3ComputeConvexManifold( b3World* world, int workerIndex, b3Contact*
 
 	if ( contact->manifoldCount == 0 )
 	{
-		contact->manifolds = b3AllocateManifolds( world, 1 );
+		contact->manifolds = b3AllocateWorkerManifold( world, workerIndex );
 		contact->manifoldCount = 1;
 	}
 	else
@@ -845,7 +845,7 @@ static bool b3UpdateConvexContact( b3World* world, int workerIndex, b3Contact* c
 		if ( touching == false )
 		{
 			// disable contact
-			b3FreeManifolds( world, contact->manifolds, contact->manifoldCount );
+			b3FreeWorkerManifolds( world, workerIndex, contact->manifolds, contact->manifoldCount );
 			contact->manifolds = NULL;
 			contact->manifoldCount = 0;
 
