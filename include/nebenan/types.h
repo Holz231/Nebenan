@@ -435,11 +435,13 @@ typedef struct nbWorldDef
 	void* userTaskContext;
 
 	/// nbWorld_Step takes the step on a thread of its own and returns right away, so the program draws its frame while
-	/// the physics runs. The thread that called it waits for the step as soon as it calls a function of Nebenan or Box3D
-	/// for the worlds again. Nothing else changes, the worlds end up the same to the bit as with the step on the calling
-	/// thread. The allocators of Nebenan and Box3D must be thread safe. The workers of a step wait for their next task
-	/// without sleeping, so leave the thread that draws a hardware thread of its own. On by default, see
-	/// nbWorld_SetAsyncStep.
+	/// the physics runs. The thread that called it waits for the step as soon as it calls a function of Nebenan or
+	/// Box3D for the worlds again. Nothing else changes, the worlds end up the same to the bit as with the step on the
+	/// calling thread. The allocators of Nebenan and Box3D must be thread safe. The workers of a step wait for their
+	/// next task without sleeping, so leave the thread that draws a hardware thread of its own. It pays off when the
+	/// program has enough to do meanwhile: the threads of the step share the cores with the program, and a stage of the
+	/// step waits for its slowest worker, so the step loses time while the program runs. A program that does little
+	/// between its steps runs faster without. On by default, see nbWorld_SetAsyncStep.
 	bool asyncStep;
 
 	/// Steps per second of nbWorld_Advance, 60 by default. Every step gets as many substeps as make 240 per second, see
