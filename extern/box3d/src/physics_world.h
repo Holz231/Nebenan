@@ -319,6 +319,8 @@ typedef struct b3World
 	// Added for Nebenan: the knots of the overflow in the last step, see b3Counters::knotContactCount
 	int knotContactCount;
 	int knotBatchCount;
+	int knotGroupBatchCount;
+	int knotCopyCount;
 
 	// Added for Nebenan: the work of the pack a team solved in the last step, see b3Counters::teamWork
 	int teamWork;

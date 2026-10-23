@@ -784,12 +784,13 @@ nbWorldId world = nbCreateWorld( &def );
 Gemessen ist das etwa so schnell wie zwei eigene Pools, mit halb so vielen Threads, siehe Leistung.
 
 Wo die Zeit der Schritte hingeht, sagt `nbWorld_GetProfile`, pro Schritt seit dem Anlegen der Welt oder seit
-`nbWorld_ResetProfile`: die Stufen des Box3D-Schritts samt der Teile, die auf dem aufrufenden Thread allein laufen,
-darunter der Überlauf des Constraint-Graphen mit den Kontakten, die Box3D an Knoten bündelt, die Teile des Updates, die
-Einschläge, Erstarren und Auftauen, die Zellen der Brüche, der Anteil der größten Insel an der Arbeit des Lösers, wie
-oft ein Team aller Threads das größte Paket von Inseln rechnet, wo dessen Zeit hingeht, wie lange ein schlafender
-Worker braucht, bis er anläuft, und ab wie viel Arbeit die Worker deshalb helfen. Ist dieselbe Arbeit mit verschieden
-vielen Threads gemessen, rechnet die Bibliothek aus, was davon parallel läuft und was mit mehr Threads bleibt:
+`nbWorld_ResetProfile`: die Stufen des Box3D-Schritts samt der Teile, die auf dem aufrufenden Thread allein laufen, der
+Überlauf des Constraint-Graphen mit den Kontakten, die Box3D an Knoten bündelt, und wie viele dieser Bündel ein Thread
+nacheinander rechnet, die Teile des Updates, die Einschläge, Erstarren und Auftauen, die Zellen der Brüche, der Anteil
+der größten Insel an der Arbeit des Lösers, wie oft ein Team aller Threads das größte Paket von Inseln rechnet, wo
+dessen Zeit hingeht, wie lange ein schlafender Worker braucht, bis er anläuft, und ab wie viel Arbeit die Worker deshalb
+helfen. Ist dieselbe Arbeit mit verschieden vielen Threads gemessen, rechnet die Bibliothek aus, was davon parallel
+läuft und was mit mehr Threads bleibt:
 
 ```c
 int counts[8];
@@ -1017,6 +1018,18 @@ unter dem Trommelfeuer bei ×4 mit 2 und 4 Threads 5 und 7 % weniger, das Update
 5 %. Mit 4 Threads brauchen dort nur noch 60 statt 102 der 1 200 Frames länger als 16,7 ms. Ganz zerstört mit ×2 und
 Budget 5 000, eine Granate pro Schritt, kostet ein Frame mit 4 Threads 19,8 statt 22,2 ms, 11 % weniger, und das Update
 4,6 statt 6,5 ms. Bei ×1 und ×2 bleibt ein Frame im Rauschen, mit einem Thread ändert sich nichts.
+
+Seit `kollaps-7` rechnen mehrere Threads die Bündel an den Knoten großer Inseln zugleich: Box3D verteilt sie auf acht
+Gruppen, die sich keinen bewegten Partner teilen, und ein Knoten in mehreren Gruppen rechnet in jeder gegen eine eigene
+Kopie, siehe „Überlauf an Knoten auf mehreren Threads“ in [docs/Optimierungen.md](docs/Optimierungen.md). Vorher
+rechnete sie der aufrufende Thread allein, während die Worker warteten, beim Abriss auf dem Ryzen mit 8 Threads 0,43 ms
+pro Schritt. Ein Spiel bekommt das mit mehr als einem Worker in `nbWorld_Step`, ohne eigenen Aufruf. Beim Abriss in der
+Demo auf der VM kostet der Überlauf auf dem aufrufenden Thread damit mit 2 und 4 Threads 19 und 42 % weniger und die
+Bedingungen des Lösers 9 und 11 %, in der Stadt des Benchmarks bei ×1 ein Frame 3 bis 6 %, bei ×2 und ×4 bleibt es im
+Rauschen. Mit einem Thread kostet der Überlauf dort, wo sich Knoten teilen, bis zu 17 % mehr pro Kontakt, in der Stadt
+bei ×1 0,04 ms pro Schritt. Die Ergebnisse ändern sich, bleiben aber mit jeder Zahl von Threads gleich. Schwere Teile
+liegen auf Trümmern so hoch wie vorher und kommen öfter zur Ruhe, und der Abriss in der Demo kommt in 4 000 Bildern bis
+zum sechsten statt zum vierten Haus.
 
 Die teuersten Frames folgen auf einen Einsturz: Der Schutt um die Reste der Etage taut auf, und Box3D legt im nächsten
 Schritt Tausende neuer Kontakte an. Das ist echte Arbeit, das meiste davon fällt danach wirklich, siehe
@@ -1332,7 +1345,7 @@ Messungen in [docs/Optimierungen.md](docs/Optimierungen.md).
 ## Tests und Benchmark
 
 ```sh
-build/bin/nebenan_test            # 59 Tests: Geometrie, Voronoi, Hüllen, Öffnungen, Stöße, Stützgraph, Etagen, Lastprüfung, Schutt, Ruhe, Durchschlagen, Threads, Knoten, große Blöcke, Suchbaum, Kontaktlisten, Streaming, Stream, Laden im Hintergrund, Speichern und Zurückholen, gemeinsamer Thread-Pool, Ruhe-Prüfung auf den Workern, Schritt auf eigenem Thread, Schritte pro Bild, Takt der Physik, Wahl der Threads, Profil und Skalierung, Determinismus …
+build/bin/nebenan_test            # 65 Tests: Geometrie, Voronoi, Hüllen, Öffnungen, Stöße, Stützgraph, Etagen, Lastprüfung, Schutt, Ruhe, Durchschlagen, Threads, Knoten, große Blöcke, Suchbaum, Kontaktlisten, Streaming, Stream, Laden im Hintergrund, Speichern und Zurückholen, gemeinsamer Thread-Pool, Ruhe-Prüfung auf den Workern, Schritt auf eigenem Thread, Schritte pro Bild, Takt der Physik, Wahl der Threads, Profil und Skalierung, Determinismus …
 build/bin/nebenan_benchmark 4     # Zahl = Threads für Bruch und Physik, 0 = so viele, wie ein Spiel nähme
 build/bin/nebenan_benchmark scaling   # die Städte unter Beschuss mit 1, 2, 4 … Threads und die Tabelle der Skalierung
 build/bin/nebenan_benchmark rates     # die Städte unter Beschuss mit 30, 60 und 120 Hz, was eine simulierte Sekunde kostet

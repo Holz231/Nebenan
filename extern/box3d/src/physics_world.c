@@ -2649,6 +2649,8 @@ b3Counters b3World_GetCounters( b3WorldId worldId )
 	s.largestIslandWork = world->largestIslandWork;
 	s.knotContactCount = world->knotContactCount;
 	s.knotBatchCount = world->knotBatchCount;
+	s.knotGroupBatchCount = world->knotGroupBatchCount;
+	s.knotCopyCount = world->knotCopyCount;
 	s.teamWork = world->teamWork;
 	s.teamSample = world->teamSample;
 	s.teamWorkerCount = world->teamWorkerCount;

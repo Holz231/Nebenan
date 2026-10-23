@@ -108,6 +108,9 @@ typedef enum b3SolverBlockType
 
 	// Added for Nebenan: block for iterating across the bodies of a pack of islands, see b3SolvePacks
 	b3_packBodyBlock,
+
+	// Added for Nebenan: block for one group of batches of knots, its index as the start, see b3KnotBatch
+	b3_knotBlock,
 } b3SolverBlockType;
 
 // Solver block describes a multithreaded unit of work.
@@ -167,10 +170,16 @@ typedef struct b3WidePrepareSpan
 // Added for Nebenan: the lanes of a batch of knot contacts, two wide constraints of four or one of eight
 #define B3_KNOT_LANES 8
 
+// Added for Nebenan: the groups of batches of knots that the threads solve at once, see b3BuildKnots
+#define B3_KNOT_GROUPS 8
+
 // Added for Nebenan: a knot is a body with many contacts in the overflow of the graph, see b3BuildKnots. A batch holds up
 // to B3_KNOT_LANES of its contacts with different partners, which its lanes solve at once. Each lane changes its own copy
 // of the knot, which carries its share of the knot's mass, and the knot then takes the mean velocity of its copies: mass
 // splitting after Tonge, Benevolenski and Voroshilov, Mass Splitting for Jitter-Free Parallel Rigid Body Simulation, 2012.
+// A large overflow goes into groups with partners of their own, one thread solves a group batch after batch, and a knot
+// in several groups has a copy in each. A batch then changes the copy of its group, and once all groups are through, the
+// knot takes the mean velocity of these copies, see b3KnotSplit.
 typedef struct b3KnotBatch
 {
 	// The awake index of the knot plus one, as b3ContactConstraintWide::indexA
@@ -178,7 +187,31 @@ typedef struct b3KnotBatch
 
 	// The contacts of the batch from the first lane on, the number of copies of the knot
 	int laneCount;
+
+	// The copy of the knot in the group of the batch, see b3KnotCopy, or B3_NULL_INDEX for a knot in one group, which
+	// the batch changes itself
+	int copy;
+
+	// Whether the batch is the first of its knot in its group, which starts the copy from the knot
+	int first;
 } b3KnotBatch;
+
+// Added for Nebenan: the velocity of a knot in one of its groups, on a cache line of its own, see b3KnotBatch
+typedef struct b3KnotCopy
+{
+	b3Vec3 linearVelocity;
+	b3Vec3 angularVelocity;
+	char padding[64 - 2 * sizeof( b3Vec3 )];
+} b3KnotCopy;
+
+// Added for Nebenan: a knot in several groups and its copies, one per group in the order of the groups, see b3KnotBatch
+typedef struct b3KnotSplit
+{
+	// The awake index of the knot
+	int knot;
+	int firstCopy;
+	int copyCount;
+} b3KnotSplit;
 
 typedef struct b3ContactPrepareSpan
 {
@@ -283,6 +316,14 @@ typedef struct b3StepContext
 	void* knotConstraints;
 	int knotWideStart;
 	const int* packKnotStarts;
+
+	// Added for Nebenan: the groups of the batches, pack by pack B3_KNOT_GROUPS, or as many for the step without packs,
+	// as ranges up to the start of the next. The knots in several groups, pack by pack as ranges up to the start of the
+	// next, and their copies, see b3KnotSplit.
+	const int* knotGroupStarts;
+	b3KnotCopy* knotCopies;
+	const b3KnotSplit* knotSplits;
+	const int* packSplitStarts;
 
 	// Added for Nebenan: the overflow contacts outside the knots, solved one at a time
 	int overflowContactCount;

@@ -1680,12 +1680,46 @@ void B3_WIDE( b3ApplyRestitution_Convex )( b3SolverBlock block, b3StepContext* c
 // Added for Nebenan: the wide constraints of a batch of a knot, see b3KnotBatch
 #define B3_KNOT_WIDE ( B3_KNOT_LANES / B3_SIMD_WIDTH )
 
-// Added for Nebenan: the knot of a batch as all its lanes see it, see b3KnotBatch
-B3_FORCE_INLINE b3KnotCopies b3BeginKnotBatch( const b3BodyState* states, int knot )
+// Added for Nebenan: the knot of a batch as all its lanes see it, see b3KnotBatch. A knot in several groups goes on from
+// its copy in the group of the batch, the first batch of the group from the knot.
+B3_FORCE_INLINE b3KnotCopies b3BeginKnotBatch( const b3BodyState* states, const b3KnotCopy* knotCopies, const b3KnotBatch* batch )
 {
-	const b3BodyState* state = states + knot - 1;
+	const b3BodyState* state = states + batch->knot - 1;
 	b3KnotCopies copies = { state->linearVelocity, state->angularVelocity, b3Vec3_zero, b3Vec3_zero };
+	if ( batch->copy != B3_NULL_INDEX && batch->first == false )
+	{
+		const b3KnotCopy* copy = knotCopies + batch->copy;
+		copies.v0 = copy->linearVelocity;
+		copies.w0 = copy->angularVelocity;
+	}
 	return copies;
+}
+
+// Added for Nebenan: the bodies of a wide constraint of a batch, the lanes of the knot with the knot as the batch began
+// it, see b3BeginKnotBatch. Only a copy differs from the knot.
+B3_FORCE_INLINE b3BodyStateW b3GatherKnotBodies( const b3BodyState* B3_RESTRICT states, const int* B3_RESTRICT indices,
+												 const b3KnotBatch* batch, const b3KnotCopies* copies )
+{
+	b3BodyStateW bodies = b3GatherBodies( states, indices );
+	if ( batch->copy == B3_NULL_INDEX || batch->first )
+	{
+		return bodies;
+	}
+
+	float lanes[B3_SIMD_WIDTH];
+	for ( int lane = 0; lane < B3_SIMD_WIDTH; ++lane )
+	{
+		lanes[lane] = indices[lane] == batch->knot ? 1.0f : 0.0f;
+	}
+
+	b3FloatW mask = b3EqualsW( b3LoadW( lanes ), b3SplatW( 1.0f ) );
+	bodies.v.X = b3BlendW( bodies.v.X, b3SplatW( copies->v0.x ), mask );
+	bodies.v.Y = b3BlendW( bodies.v.Y, b3SplatW( copies->v0.y ), mask );
+	bodies.v.Z = b3BlendW( bodies.v.Z, b3SplatW( copies->v0.z ), mask );
+	bodies.w.X = b3BlendW( bodies.w.X, b3SplatW( copies->w0.x ), mask );
+	bodies.w.Y = b3BlendW( bodies.w.Y, b3SplatW( copies->w0.y ), mask );
+	bodies.w.Z = b3BlendW( bodies.w.Z, b3SplatW( copies->w0.z ), mask );
+	return bodies;
 }
 
 // Added for Nebenan: writes the partners of a wide constraint of a knot back and adds up how its lanes changed their copies
@@ -1729,16 +1763,26 @@ B3_FORCE_INLINE void b3ScatterKnotBodies( b3BodyState* B3_RESTRICT states, const
 	b3ScatterBodies( states, partnersB, bB );
 }
 
-// Added for Nebenan: the knot takes the mean velocity of its copies, see b3KnotBatch. A kinematic knot keeps its own.
-B3_FORCE_INLINE void b3EndKnotBatch( b3BodyState* states, const b3KnotBatch* batch, const b3KnotCopies* copies )
+// Added for Nebenan: the knot takes the mean velocity of its copies, see b3KnotBatch, or the copy in the group of the
+// batch for a knot in several groups. A kinematic knot keeps its own.
+B3_FORCE_INLINE void b3EndKnotBatch( b3BodyState* states, b3KnotCopy* knotCopies, const b3KnotBatch* batch,
+									 const b3KnotCopies* copies )
 {
+	float share = 1.0f / (float)batch->laneCount;
+	if ( batch->copy != B3_NULL_INDEX )
+	{
+		b3KnotCopy* copy = knotCopies + batch->copy;
+		copy->linearVelocity = b3MulAdd( copies->v0, share, copies->dv );
+		copy->angularVelocity = b3MulAdd( copies->w0, share, copies->dw );
+		return;
+	}
+
 	b3BodyState* state = states + batch->knot - 1;
 	if ( ( state->flags & b3_dynamicFlag ) == 0 )
 	{
 		return;
 	}
 
-	float share = 1.0f / (float)batch->laneCount;
 	state->linearVelocity = b3MulAdd( copies->v0, share, copies->dv );
 	state->angularVelocity = b3MulAdd( copies->w0, share, copies->dw );
 }
@@ -1750,20 +1794,21 @@ void B3_WIDE( b3WarmStartKnots )( b3StepContext* context, int startBatch, int en
 	b3BodyState* states = context->states;
 	b3ContactConstraintWide* constraints = context->knotConstraints;
 	const b3KnotBatch* batches = context->knotBatches;
+	b3KnotCopy* knotCopies = context->knotCopies;
 
 	for ( int i = startBatch; i < endBatch; ++i )
 	{
 		const b3KnotBatch* batch = batches + i;
-		b3KnotCopies copies = b3BeginKnotBatch( states, batch->knot );
+		b3KnotCopies copies = b3BeginKnotBatch( states, knotCopies, batch );
 		for ( int j = 0; j < B3_KNOT_WIDE && B3_SIMD_WIDTH * j < batch->laneCount; ++j )
 		{
 			b3ContactConstraintWide* c = constraints + B3_KNOT_WIDE * i + j;
-			b3BodyStateW bA = b3GatherBodies( states, c->indexA );
-			b3BodyStateW bB = b3GatherBodies( states, c->indexB );
+			b3BodyStateW bA = b3GatherKnotBodies( states, c->indexA, batch, &copies );
+			b3BodyStateW bB = b3GatherKnotBodies( states, c->indexB, batch, &copies );
 			b3WarmStartContactW( c, &bA, &bB );
 			b3ScatterKnotBodies( states, c, &bA, &bB, batch->knot, &copies );
 		}
-		b3EndKnotBatch( states, batch, &copies );
+		b3EndKnotBatch( states, knotCopies, batch, &copies );
 	}
 
 	b3TracyCZoneEnd( warm_start_knots );
@@ -1776,21 +1821,22 @@ void B3_WIDE( b3PushKnots )( b3StepContext* context, int startBatch, int endBatc
 	b3BodyState* states = context->states;
 	b3ContactConstraintWide* constraints = context->knotConstraints;
 	const b3KnotBatch* batches = context->knotBatches;
+	b3KnotCopy* knotCopies = context->knotCopies;
 	b3PushConstantsW k = b3GetPushConstantsW( context );
 
 	for ( int i = startBatch; i < endBatch; ++i )
 	{
 		const b3KnotBatch* batch = batches + i;
-		b3KnotCopies copies = b3BeginKnotBatch( states, batch->knot );
+		b3KnotCopies copies = b3BeginKnotBatch( states, knotCopies, batch );
 		for ( int j = 0; j < B3_KNOT_WIDE && B3_SIMD_WIDTH * j < batch->laneCount; ++j )
 		{
 			b3ContactConstraintWide* c = constraints + B3_KNOT_WIDE * i + j;
-			b3BodyStateW bA = b3GatherBodies( states, c->indexA );
-			b3BodyStateW bB = b3GatherBodies( states, c->indexB );
+			b3BodyStateW bA = b3GatherKnotBodies( states, c->indexA, batch, &copies );
+			b3BodyStateW bB = b3GatherKnotBodies( states, c->indexB, batch, &copies );
 			b3PushContactW( c, &bA, &bB, &k );
 			b3ScatterKnotBodies( states, c, &bA, &bB, batch->knot, &copies );
 		}
-		b3EndKnotBatch( states, batch, &copies );
+		b3EndKnotBatch( states, knotCopies, batch, &copies );
 	}
 
 	b3TracyCZoneEnd( push_knots );
@@ -1803,21 +1849,22 @@ void B3_WIDE( b3SolveKnots )( b3StepContext* context, int startBatch, int endBat
 	b3BodyState* states = context->states;
 	b3ContactConstraintWide* constraints = context->knotConstraints;
 	const b3KnotBatch* batches = context->knotBatches;
+	b3KnotCopy* knotCopies = context->knotCopies;
 	b3RelaxConstantsW k = b3GetRelaxConstantsW( context );
 
 	for ( int i = startBatch; i < endBatch; ++i )
 	{
 		const b3KnotBatch* batch = batches + i;
-		b3KnotCopies copies = b3BeginKnotBatch( states, batch->knot );
+		b3KnotCopies copies = b3BeginKnotBatch( states, knotCopies, batch );
 		for ( int j = 0; j < B3_KNOT_WIDE && B3_SIMD_WIDTH * j < batch->laneCount; ++j )
 		{
 			b3ContactConstraintWide* c = constraints + B3_KNOT_WIDE * i + j;
-			b3BodyStateW bA = b3GatherBodies( states, c->indexA );
-			b3BodyStateW bB = b3GatherBodies( states, c->indexB );
+			b3BodyStateW bA = b3GatherKnotBodies( states, c->indexA, batch, &copies );
+			b3BodyStateW bB = b3GatherKnotBodies( states, c->indexB, batch, &copies );
 			b3SolveContactW( c, &bA, &bB, &k );
 			b3ScatterKnotBodies( states, c, &bA, &bB, batch->knot, &copies );
 		}
-		b3EndKnotBatch( states, batch, &copies );
+		b3EndKnotBatch( states, knotCopies, batch, &copies );
 	}
 
 	b3TracyCZoneEnd( solve_knots );
@@ -1832,12 +1879,13 @@ void B3_WIDE( b3ApplyKnotRestitution )( b3StepContext* context, int startBatch, 
 	b3BodyState* states = context->states;
 	b3ContactConstraintWide* constraints = context->knotConstraints;
 	const b3KnotBatch* batches = context->knotBatches;
+	b3KnotCopy* knotCopies = context->knotCopies;
 	b3RestitutionConstantsW k = b3GetRestitutionConstantsW( context );
 
 	for ( int i = startBatch; i < endBatch; ++i )
 	{
 		const b3KnotBatch* batch = batches + i;
-		b3KnotCopies copies = b3BeginKnotBatch( states, batch->knot );
+		b3KnotCopies copies = b3BeginKnotBatch( states, knotCopies, batch );
 		for ( int j = 0; j < B3_KNOT_WIDE && B3_SIMD_WIDTH * j < batch->laneCount; ++j )
 		{
 			b3ContactConstraintWide* c = constraints + B3_KNOT_WIDE * i + j;
@@ -1846,12 +1894,12 @@ void B3_WIDE( b3ApplyKnotRestitution )( b3StepContext* context, int startBatch, 
 				continue;
 			}
 
-			b3BodyStateW bA = b3GatherBodies( states, c->indexA );
-			b3BodyStateW bB = b3GatherBodies( states, c->indexB );
+			b3BodyStateW bA = b3GatherKnotBodies( states, c->indexA, batch, &copies );
+			b3BodyStateW bB = b3GatherKnotBodies( states, c->indexB, batch, &copies );
 			b3ApplyRestitutionW( c, &bA, &bB, &k );
 			b3ScatterKnotBodies( states, c, &bA, &bB, batch->knot, &copies );
 		}
-		b3EndKnotBatch( states, batch, &copies );
+		b3EndKnotBatch( states, knotCopies, batch, &copies );
 	}
 
 	b3TracyCZoneEnd( knot_restitution );

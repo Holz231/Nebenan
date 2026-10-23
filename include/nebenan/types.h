@@ -558,8 +558,9 @@ typedef enum nbProfileStage
 	nb_profileSolverSetup,
 	nb_profileConstraints,
 
-	/// The part of the constraints that the calling thread solves alone, the overflow of Box3D's constraint graph, in the
-	/// steps that solve by colors, see b3Profile::overflow
+	/// The part of the constraints that the calling thread spends on the overflow of Box3D's constraint graph, in the
+	/// steps that solve by colors, alone but for the groups of knots that the threads solve at once, see
+	/// b3Profile::overflow
 	nb_profileOverflow,
 	nb_profileTransforms,
 
@@ -624,6 +625,12 @@ typedef struct nbProfile
 	float knotContactCount;
 	float knotBatchCount;
 
+	/// Per step the batches of knots that one thread solves in a row, the most in a group, and the copies of the knots in
+	/// several groups, see b3Counters::knotGroupBatchCount. A large overflow goes into groups that the threads solve at
+	/// once.
+	float knotGroupBatchCount;
+	float knotCopyCount;
+
 	/// How long a sleeping worker of Nebenan took to start a task it was given, in microseconds, mean and longest, over
 	/// the tasks of the impacts and the collision damage that went to the workers
 	float wakeTime;
@@ -637,10 +644,10 @@ typedef struct nbProfile
 	float settleWorkerShare;
 	float settleWakeTime;
 
-	/// Where the constraints of the steps with a team go, timed in every eighth of them, see b3Profile::teamTime: the timed
-	/// steps, and in milliseconds per timed step the time of the team, the part the calling thread spends alone on the
-	/// overflow of the team's pack and waiting at the end of the stages, and per worker the waits for a new stage and the
-	/// time on other packs. Then per timed step the stages with a barrier and how often a worker gave up its core.
+	/// Where the constraints of the steps with a team go, timed in every eighth of them, see b3Profile::teamTime: the
+	/// timed steps, and in milliseconds per timed step the time of the team, the part the calling thread spends on the
+	/// overflow of the team's pack and waiting at the end of the stages, and per worker the waits for a new stage and
+	/// the time on other packs. Then per timed step the stages with a barrier and how often a worker gave up its core.
 	int teamSampleCount;
 	float teamTime;
 	float teamOverflow;

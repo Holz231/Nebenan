@@ -598,14 +598,15 @@ typedef struct b3Profile
 	float createContacts;
 	float contactStates;
 
-	/// Added for Nebenan: the part of constraints the calling thread spends alone on the overflow of the constraint graph,
-	/// the knots and the other overflow constraints, in a step that solves by colors. With packs every pack solves its
-	/// own overflow.
+	/// Added for Nebenan: the part of constraints the calling thread spends on the overflow of the constraint graph,
+	/// the knots and the other overflow constraints, in a step that solves by colors. It solves them alone but for the
+	/// groups of knots, which the threads solve at once while it waits for them, see b3Counters::knotGroupBatchCount.
+	/// With packs every pack solves its own overflow.
 	float overflow;
 
 	/// Added for Nebenan: where the constraints of a step with a team go, timed in every eighth such step, see
 	/// b3Counters::teamSample, zero in the others. The time of the team on the calling thread, the part of it the calling
-	/// thread spends alone on the overflow of the team's pack and waiting at the end of the stages for the others, and over
+	/// thread spends on the overflow of the team's pack and waiting at the end of the stages for the others, and over
 	/// all workers the time they wait for a new stage and the time they solve the other packs.
 	float teamTime;
 	float teamOverflow;
@@ -663,6 +664,12 @@ typedef struct b3Counters
 	/// solve several of them at once against copies of the knot.
 	int knotContactCount;
 	int knotBatchCount;
+
+	/// Added for Nebenan: the batches of knots that one thread solved in a row in the last step, the most in a group. A
+	/// large overflow goes into groups that the threads solve at once, and then a knot in several groups has a copy in
+	/// each, which knotCopyCount counts. Without groups all batches are one.
+	int knotGroupBatchCount;
+	int knotCopyCount;
 
 	/// Added for Nebenan: the work of the largest pack of islands, as islandWork weighs it, if a team of all workers solved
 	/// it in the last step, stage by stage with a barrier after each, while they solved the other packs whole in between.

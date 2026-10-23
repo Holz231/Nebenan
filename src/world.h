@@ -404,6 +404,8 @@ typedef struct nbProfileSums
 	double overflowCount;
 	double knotContactCount;
 	double knotBatchCount;
+	double knotGroupBatchCount;
+	double knotCopyCount;
 	double wakeTime;
 	float longestWake;
 	int wakeCount;

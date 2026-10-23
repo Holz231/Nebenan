@@ -1094,10 +1094,83 @@ static b3SolverStage* b3InitColorStages( b3SolverStage* stage, b3SolverStageType
 	return stage;
 }
 
+// Added for Nebenan: one stage of the batches of knots in [start, end), see b3KnotBatch
+static void b3ExecuteKnots( b3SolverStageType type, b3StepContext* context, int start, int end )
+{
+	if ( start == end )
+	{
+		return;
+	}
+
+	switch ( type )
+	{
+		case b3_stageWarmStart:
+			b3WarmStartKnots( context, start, end );
+			break;
+
+		case b3_stageSolve:
+			b3PushKnots( context, start, end );
+			break;
+
+		case b3_stageRelax:
+			b3SolveKnots( context, start, end );
+			break;
+
+		case b3_stageRestitution:
+			b3ApplyKnotRestitution( context, start, end );
+			break;
+
+		default:
+			B3_ASSERT( false );
+			break;
+	}
+}
+
+// Added for Nebenan: the knots in several groups in [start, end) take the mean velocity of their copies once all groups
+// are through, see b3KnotSplit. A kinematic knot keeps its own.
+static void b3MergeKnots( b3StepContext* context, int start, int end )
+{
+	b3BodyState* states = context->states;
+	const b3KnotSplit* splits = context->knotSplits;
+	const b3KnotCopy* copies = context->knotCopies;
+	for ( int i = start; i < end; ++i )
+	{
+		const b3KnotSplit* split = splits + i;
+		b3BodyState* state = states + split->knot;
+		if ( ( state->flags & b3_dynamicFlag ) == 0 )
+		{
+			continue;
+		}
+
+		b3Vec3 v0 = state->linearVelocity;
+		b3Vec3 w0 = state->angularVelocity;
+		b3Vec3 dv = b3Vec3_zero;
+		b3Vec3 dw = b3Vec3_zero;
+		for ( int j = 0; j < split->copyCount; ++j )
+		{
+			const b3KnotCopy* copy = copies + split->firstCopy + j;
+			dv = b3Add( dv, b3Sub( copy->linearVelocity, v0 ) );
+			dw = b3Add( dw, b3Sub( copy->angularVelocity, w0 ) );
+		}
+
+		float share = 1.0f / (float)split->copyCount;
+		state->linearVelocity = b3MulAdd( v0, share, dv );
+		state->angularVelocity = b3MulAdd( w0, share, dw );
+	}
+}
+
 static void b3ExecuteBlock( b3SolverStage* stage, b3StepContext* context, b3SolverBlock block, int workerIndex )
 {
 	b3SolverStageType stageType = stage->type;
 	b3SolverBlockType blockType = (b3SolverBlockType)block.blockType;
+
+	// Added for Nebenan: one group of batches of knots, see b3BuildKnots
+	if ( blockType == b3_knotBlock )
+	{
+		const int* groupStarts = context->knotGroupStarts;
+		b3ExecuteKnots( stageType, context, groupStarts[block.startIndex], groupStarts[block.startIndex + 1] );
+		return;
+	}
 
 	switch ( stageType )
 	{
@@ -1287,6 +1360,15 @@ static void b3ExecuteMainStage( b3SolverStage* stage, b3StepContext* context, ui
 	}
 }
 
+// Added for Nebenan: one stage of the batches of knots, a thread per group, after which the knots in several groups take
+// the mean velocity of their copies, see b3BuildKnots. With a team only the groups of its pack, the first. With one group
+// the calling thread solves it alone, as b3ExecuteMainStage does with any single block.
+static void b3ExecuteKnotStage( b3SolverStage* stage, b3StepContext* context, uint32_t syncBits )
+{
+	b3ExecuteMainStage( stage, context, syncBits );
+	b3MergeKnots( context, context->packSplitStarts[0], context->packSplitStarts[1] );
+}
+
 // Added for Nebenan: one stage of a pack of islands over [start, end), in blocks that b3SolverBlock::count can hold
 static void b3ExecutePackRange( b3SolverStageType type, b3StepContext* context, int start, int end, uint8_t blockType,
 								uint8_t colorIndex, int workerIndex )
@@ -1301,44 +1383,14 @@ static void b3ExecutePackRange( b3SolverStageType type, b3StepContext* context, 
 	}
 }
 
-// Added for Nebenan: one stage of the batches of knots in [start, end), see b3KnotBatch
-static void b3ExecuteKnots( b3SolverStageType type, b3StepContext* context, int start, int end )
-{
-	if ( start == end )
-	{
-		return;
-	}
-
-	switch ( type )
-	{
-		case b3_stageWarmStart:
-			b3WarmStartKnots( context, start, end );
-			break;
-
-		case b3_stageSolve:
-			b3PushKnots( context, start, end );
-			break;
-
-		case b3_stageRelax:
-			b3SolveKnots( context, start, end );
-			break;
-
-		case b3_stageRestitution:
-			b3ApplyKnotRestitution( context, start, end );
-			break;
-
-		default:
-			B3_ASSERT( false );
-			break;
-	}
-}
-
 // Added for Nebenan: one stage of the constraints of a pack, the overflow constraints first, the knots before the others,
 // and then the colors in order, as b3SolverTask does
 static void b3ExecutePackConstraints( b3SolverStageType type, b3StepContext* context, int pack, int workerIndex )
 {
+	// The groups of the knots of the pack one after the other, see b3BuildKnots
 	const int* knotStarts = context->packKnotStarts;
 	b3ExecuteKnots( type, context, knotStarts[pack], knotStarts[pack + 1] );
+	b3MergeKnots( context, context->packSplitStarts[pack], context->packSplitStarts[pack + 1] );
 
 	const int* overflowStarts = context->packOverflowStarts;
 	b3ExecutePackRange( type, context, overflowStarts[pack], overflowStarts[pack + 1], b3_overflowBlock, B3_OVERFLOW_INDEX,
@@ -1578,9 +1630,10 @@ static void b3SolverTask( void* taskContext )
 		int bodySyncIndex = 1;
 		int stageIndex = 0;
 
-		// Added for Nebenan: the batches of knots before each sweep over the colors, with a team only those of its pack
+		// Added for Nebenan: a stage of the knots before each sweep over the colors, with a team only those of its pack, see
+		// b3ExecuteKnotStage. All of them share the blocks of the groups.
 		uint64_t teamTicks = ticks;
-		int knotCount = context->team ? context->packKnotStarts[1] : context->knotBatchCount;
+		uint32_t knotSyncIndex = 1;
 
 		// Prepare joint constraints
 		uint32_t jointSyncIndex = 1;
@@ -1634,7 +1687,11 @@ static void b3SolverTask( void* taskContext )
 			// Warm start constraints
 			overflowTicks = b3GetTicks();
 			b3WarmStartJoints_Overflow( context );
-			b3WarmStartKnots( context, 0, knotCount );
+			syncBits = ( knotSyncIndex << 16 ) | iterationStageIndex;
+			B3_ASSERT( stages[iterationStageIndex].type == b3_stageWarmStart );
+			b3ExecuteKnotStage( stages + iterationStageIndex, context, syncBits );
+			iterationStageIndex += 1;
+			knotSyncIndex += 1;
 			b3WarmStartContacts_Overflow( context );
 			profile->overflow += b3GetMilliseconds( overflowTicks );
 
@@ -1656,7 +1713,11 @@ static void b3SolverTask( void* taskContext )
 				// Overflow constraints have lower priority. Typically these are dynamic-vs-dynamic.
 				overflowTicks = b3GetTicks();
 				b3SolveJoints_Overflow( context, useBias );
-				b3PushKnots( context, 0, knotCount );
+				syncBits = ( knotSyncIndex << 16 ) | iterationStageIndex;
+				B3_ASSERT( stages[iterationStageIndex].type == b3_stageSolve );
+				b3ExecuteKnotStage( stages + iterationStageIndex, context, syncBits );
+				iterationStageIndex += 1;
+				knotSyncIndex += 1;
 				b3PushContacts_Overflow( context );
 				profile->overflow += b3GetMilliseconds( overflowTicks );
 
@@ -1687,7 +1748,11 @@ static void b3SolverTask( void* taskContext )
 			{
 				overflowTicks = b3GetTicks();
 				b3SolveJoints_Overflow( context, useBias );
-				b3SolveKnots( context, 0, knotCount );
+				syncBits = ( knotSyncIndex << 16 ) | iterationStageIndex;
+				B3_ASSERT( stages[iterationStageIndex].type == b3_stageRelax );
+				b3ExecuteKnotStage( stages + iterationStageIndex, context, syncBits );
+				iterationStageIndex += 1;
+				knotSyncIndex += 1;
 				b3SolveContacts_Overflow( context );
 				profile->overflow += b3GetMilliseconds( overflowTicks );
 
@@ -1706,19 +1771,25 @@ static void b3SolverTask( void* taskContext )
 
 		// Advance the stage according to the sub-stepping tasks just completed
 		// integrate velocities / warm start / solve / integrate positions / relax
-		stageIndex += 1 + activeColorCount + ITERATIONS * activeColorCount + 1 + RELAX_ITERATIONS * activeColorCount;
+		// Added for Nebenan: a stage of the knots before each sweep over the colors
+		stageIndex += 1 + ( 1 + activeColorCount ) + ITERATIONS * ( 1 + activeColorCount ) + 1 +
+					  RELAX_ITERATIONS * ( 1 + activeColorCount );
 
 		int restitutionIterations = context->world->restitutionIterations;
 		if ( restitutionIterations > 0 && b3AtomicLoadInt( &context->anyRestitution ) != 0 )
 		{
 			for ( int j = 0; j < restitutionIterations; ++j )
 			{
+				int iterationStageIndex = stageIndex;
 				overflowTicks = b3GetTicks();
-				b3ApplyKnotRestitution( context, 0, knotCount );
+				syncBits = ( knotSyncIndex << 16 ) | iterationStageIndex;
+				B3_ASSERT( stages[iterationStageIndex].type == b3_stageRestitution );
+				b3ExecuteKnotStage( stages + iterationStageIndex, context, syncBits );
+				iterationStageIndex += 1;
+				knotSyncIndex += 1;
 				b3ApplyRestitution_Overflow( context );
 				profile->overflow += b3GetMilliseconds( overflowTicks );
 
-				int iterationStageIndex = stageIndex;
 				for ( int colorIndex = 0; colorIndex < activeColorCount; ++colorIndex )
 				{
 					syncBits = ( graphSyncIndex << 16 ) | iterationStageIndex;
@@ -1732,7 +1803,7 @@ static void b3SolverTask( void* taskContext )
 			profile->restitution += b3GetMillisecondsAndReset( &ticks );
 		}
 
-		stageIndex += activeColorCount;
+		stageIndex += 1 + activeColorCount;
 
 		// Store impulses
 		overflowTicks = b3GetTicks();
@@ -1986,6 +2057,12 @@ _Static_assert( B3_MAX_PACKS <= 256, "a pack needs to fit in a byte" );
 // Only that step reads the clock at every stage, the others pay nothing.
 #define B3_TEAM_SAMPLE 8
 
+// Added for Nebenan: the work of an island as the packs weigh it, four per contact and one per body
+static int b3GetIslandWork( const b3Island* island )
+{
+	return 4 * island->contacts.count + island->bodies.count;
+}
+
 // Added for Nebenan: the work of the awake islands as b3BuildPacks weighs it, for a step of a world with workers that
 // solves without packs, see b3Counters::islandWork. A world without workers skips it: its islands could be many.
 static void b3MeasureIslandWork( b3World* world, const b3SolverSet* awakeSet )
@@ -1995,7 +2072,7 @@ static void b3MeasureIslandWork( b3World* world, const b3SolverSet* awakeSet )
 	for ( int i = 0; i < awakeSet->islandSims.count; ++i )
 	{
 		const b3Island* island = b3Array_Get( world->islands, awakeSet->islandSims.data[i].islandId );
-		int weight = 4 * island->contacts.count + island->bodies.count;
+		int weight = b3GetIslandWork( island );
 		total += weight;
 		largest = b3MaxInt( largest, weight );
 	}
@@ -2020,7 +2097,7 @@ static int b3BuildPacks( b3World* world, const b3SolverSet* awakeSet, int packLi
 		if ( islandCount == 1 )
 		{
 			const b3Island* island = b3Array_Get( world->islands, awakeSet->islandSims.data[0].islandId );
-			world->islandWork = 4 * island->contacts.count + island->bodies.count;
+			world->islandWork = b3GetIslandWork( island );
 			world->largestIslandWork = world->islandWork;
 		}
 		return 0;
@@ -2039,7 +2116,7 @@ static int b3BuildPacks( b3World* world, const b3SolverSet* awakeSet, int packLi
 	for ( int i = 0; i < islandCount; ++i )
 	{
 		const b3Island* island = b3Array_Get( world->islands, islandSims[i].islandId );
-		int weight = 4 * island->contacts.count + island->bodies.count;
+		int weight = b3GetIslandWork( island );
 		B3_ASSERT( weight > 0 );
 		weights[i] = weight;
 		total += weight;
@@ -2233,6 +2310,13 @@ static int* b3OrderPackContacts( b3World* world, const b3GraphColor* colors, con
 // Added for Nebenan: a moving body with at least this many contacts in the overflow is a knot, see b3BuildKnots
 #define B3_KNOT_MIN_CONTACTS 2
 
+// Added for Nebenan: from this many contacts at knots in the overflow of islands with at least one in
+// B3_KNOT_GROUP_SHARE of the work on, the batches go into B3_KNOT_GROUPS groups, and a knot of such an island spreads
+// over a group for every B3_KNOT_GROUP_CONTACTS of its contacts, see b3BuildKnots
+#define B3_KNOT_GROUP_MIN 256
+#define B3_KNOT_GROUP_SHARE 8
+#define B3_KNOT_GROUP_CONTACTS 32
+
 // Added for Nebenan: the overflow of a step in batches of knots and the contacts left over, in stack memory, see
 // b3BuildKnots
 typedef struct b3Knots
@@ -2248,11 +2332,23 @@ typedef struct b3Knots
 	// With packs, the first batch of every pack and the end
 	int* packStarts;
 
+	// The first batch of every group, B3_KNOT_GROUPS per pack or for the step without packs, and the end, and the most
+	// batches in one group
+	int* groupStarts;
+	int largestGroup;
+
+	// The knots in several groups pack by pack, the first of every pack and the end, and their copies, see b3KnotSplit
+	b3KnotSplit* splits;
+	int* packSplitStarts;
+	int splitCount;
+	b3KnotCopy* copies;
+	int copyCount;
+
 	// The overflow contacts outside the knots, in their order
 	b3ContactSpec* others;
 	int otherCount;
 
-	// All of the above in one block, the stack holds few
+	// All of the above in one block but the copies, which follow it, the stack holds few
 	void* memory;
 } b3Knots;
 
@@ -2264,15 +2360,20 @@ static void* b3TakeKnotMemory( char** cursor, int byteCount )
 	return part;
 }
 
-// Added for Nebenan: the overflow holds the contacts the graph finds no color for, see b3AddContactToGraph, and the calling
-// thread solves them one at a time while the workers wait. Beside a few contacts of tight spots these are the contacts of
-// knots: large parts of a fracture, dozens to hundreds of pieces in one body, with hundreds of small debris resting on and
-// against them. A knot is the awake body with more contacts in the overflow of the two, if it has at least
-// B3_KNOT_MIN_CONTACTS. Its contacts go into batches of B3_KNOT_LANES with different partners: the contact with a partner
-// the knot already met k times in the overflow goes into a batch of round k. Each batch solves its lanes at once against
-// copies of the knot, see b3KnotBatch, which makes the knot's chain of contacts several times shorter, and the batches of
-// the knots take turns. Everything follows from the order of the overflow, so the batches are the same with every number
-// of workers and in either width. With packs the batches go pack by pack, in the same order within each pack.
+// Added for Nebenan: the overflow holds the contacts the graph finds no color for, see b3AddContactToGraph, and the
+// calling thread solves them one at a time while the workers wait. Beside a few contacts of tight spots these are the
+// contacts of knots: large parts of a fracture, dozens to hundreds of pieces in one body, with hundreds of small debris
+// resting on and against them. A knot is the awake body with more contacts in the overflow of the two, if it has at
+// least B3_KNOT_MIN_CONTACTS. Its contacts go into batches of B3_KNOT_LANES with different partners: a contact goes
+// into the oldest batch of its knot that is not full and comes after the last one of its partner. Each batch solves its
+// lanes at once against copies of the knot, see b3KnotBatch, which makes the knot's chain of contacts several times
+// shorter, and the batches of the knots take turns. With B3_KNOT_GROUP_MIN contacts at knots of large islands the
+// batches go into B3_KNOT_GROUPS groups that share no moving partner, which the threads solve at once, and a knot of a
+// large island in several groups has a copy in each. A large island holds at least one in B3_KNOT_GROUP_SHARE of the
+// work of all awake islands, and a team of many threads solves it, see b3SolveOtherPack, while a thread solves a
+// smaller one whole, where copies would only cost. A contact between two knots then stays with the other contacts.
+// Everything follows from the order of the overflow and the islands, so the batches and groups are the same with every
+// number of workers and in either width. With packs the batches go pack by pack, in the same order within each pack.
 static void b3BuildKnots( b3World* world, const b3SolverSet* awakeSet, const b3GraphColor* overflow, const uint8_t* contactPacks,
 						  int packCount, b3Knots* knots )
 {
@@ -2282,9 +2383,16 @@ static void b3BuildKnots( b3World* world, const b3SolverSet* awakeSet, const b3G
 	int awakeBodyCount = awakeSet->bodySims.count;
 	int capacity = b3MaxInt( n, 1 );
 
-	// At most one batch per contact
-	int byteCount = 64 * 6 + capacity * (int)sizeof( b3KnotBatch ) + 3 * B3_KNOT_LANES * capacity * (int)sizeof( int ) +
-					capacity * (int)sizeof( b3ContactSpec ) + ( packCount + 1 ) * (int)sizeof( int );
+	// The groups go pack by pack, all in one without packs
+	int packs = b3MaxInt( packCount, 1 );
+	int groupSlots = B3_KNOT_GROUPS * packs;
+
+	// At most one batch per contact, and a knot in several groups has two contacts at least
+	int splitCapacity = capacity / 2 + 1;
+	int byteCount = 64 * 9 + capacity * (int)sizeof( b3KnotBatch ) + 3 * B3_KNOT_LANES * capacity * (int)sizeof( int ) +
+					capacity * (int)sizeof( b3ContactSpec ) + ( packCount + 1 ) * (int)sizeof( int ) +
+					( groupSlots + 1 ) * (int)sizeof( int ) + splitCapacity * (int)sizeof( b3KnotSplit ) +
+					( packs + 1 ) * (int)sizeof( int );
 	*knots = (b3Knots){ 0 };
 	knots->memory = b3StackAlloc( &world->stack, byteCount, "knots" );
 	char* cursor = (char*)knots->memory;
@@ -2293,6 +2401,17 @@ static void b3BuildKnots( b3World* world, const b3SolverSet* awakeSet, const b3G
 	knots->scaleA = (float*)b3TakeKnotMemory( &cursor, B3_KNOT_LANES * capacity * (int)sizeof( float ) );
 	knots->scaleB = (float*)b3TakeKnotMemory( &cursor, B3_KNOT_LANES * capacity * (int)sizeof( float ) );
 	knots->others = (b3ContactSpec*)b3TakeKnotMemory( &cursor, capacity * (int)sizeof( b3ContactSpec ) );
+	knots->groupStarts = (int*)b3TakeKnotMemory( &cursor, ( groupSlots + 1 ) * (int)sizeof( int ) );
+	knots->splits = (b3KnotSplit*)b3TakeKnotMemory( &cursor, splitCapacity * (int)sizeof( b3KnotSplit ) );
+	knots->packSplitStarts = (int*)b3TakeKnotMemory( &cursor, ( packs + 1 ) * (int)sizeof( int ) );
+	for ( int i = 0; i <= groupSlots; ++i )
+	{
+		knots->groupStarts[i] = 0;
+	}
+	for ( int p = 0; p <= packs; ++p )
+	{
+		knots->packSplitStarts[p] = 0;
+	}
 	if ( packCount > 0 )
 	{
 		knots->packStarts = (int*)b3TakeKnotMemory( &cursor, ( packCount + 1 ) * (int)sizeof( int ) );
@@ -2308,12 +2427,14 @@ static void b3BuildKnots( b3World* world, const b3SolverSet* awakeSet, const b3G
 		return;
 	}
 
-	// Per awake body its contacts in the overflow and the rank of its knot, later the round of a partner and the knot it was
-	// counted for. Per contact its awake bodies, null for a mesh contact, and its knot. Per knot its contacts and batches,
-	// per round of the current knot its open batch, and per batch its contacts. There are at most as many knots, rounds and
-	// batches as contacts.
+	// Per awake body its contacts in the overflow and the rank of its knot, later the group and the last batch of a partner
+	// and the knot it was counted for. Per contact its awake bodies, null for a mesh contact, and its knot. Per knot its
+	// contacts, whether its island is large, its groups as bits, its split, and its batches in the group at hand, the
+	// batches of the current knot that are not full, and per batch its contacts, its knot and whether it is the first of
+	// its knot in its group. Per contact at a knot its group, and the batches in the order of the groups. There are at
+	// most as many knots and batches as contacts.
 	int* temporary = (int*)b3StackAlloc(
-		&world->stack, ( 2 * awakeBodyCount + ( 12 + B3_KNOT_LANES ) * n + 2 ) * (int)sizeof( int ), "knot work" );
+		&world->stack, ( 2 * awakeBodyCount + ( 17 + B3_KNOT_LANES ) * n + 2 + groupSlots ) * (int)sizeof( int ), "knot work" );
 	int* bodyCounts = temporary;
 	int* bodyMarks = bodyCounts + awakeBodyCount;
 	int* bodiesA = bodyMarks + awakeBodyCount;
@@ -2323,11 +2444,18 @@ static void b3BuildKnots( b3World* world, const b3SolverSet* awakeSet, const b3G
 	int* knotStarts = knotBodies + n;
 	int* knotCursors = knotStarts + n + 1;
 	int* knotOrder = knotCursors + n;
-	int* knotBatchStarts = knotOrder + n;
-	int* roundBatches = knotBatchStarts + n + 1;
-	int* roundKnots = roundBatches + n;
-	int* batchLanes = roundKnots + n;
+	int* knotLarge = knotOrder + n;
+	int* knotGroups = knotLarge + n;
+	int* knotSplits = knotGroups + n;
+	int* knotBatchStarts = knotSplits + n;
+	int* openBatches = knotBatchStarts + n + 1;
+	int* batchLanes = openBatches + n;
 	int* batchSlots = batchLanes + n;
+	int* batchKnots = batchSlots + B3_KNOT_LANES * n;
+	int* batchFirsts = batchKnots + n;
+	int* orderGroups = batchFirsts + n;
+	int* slots = orderGroups + n;
+	int* groupCursors = slots + n;
 
 	// The bodies of the contacts, which lie scattered in memory, in one pass
 	for ( int k = 0; k < n; ++k )
@@ -2369,6 +2497,7 @@ static void b3BuildKnots( b3World* world, const b3SolverSet* awakeSet, const b3G
 
 	// The knot of every contact, and the knots ranked by their first contact
 	int knotCount = 0;
+	int knotContactCount = 0;
 	for ( int k = 0; k < n; ++k )
 	{
 		int a = bodiesA[k];
@@ -2386,11 +2515,61 @@ static void b3BuildKnots( b3World* world, const b3SolverSet* awakeSet, const b3G
 		}
 
 		contactKnots[k] = knot;
+		knotContactCount += 1;
 		if ( bodyMarks[knot] == B3_NULL_INDEX )
 		{
 			bodyMarks[knot] = knotCount;
 			knotBodies[knotCount] = knot;
 			knotCount += 1;
+		}
+	}
+
+	// Groups once the knots of large islands have enough contacts. The work of all awake islands is there with workers,
+	// see b3MeasureIslandWork, and the same sum without them.
+	int groupCount = 1;
+	if ( knotContactCount >= B3_KNOT_GROUP_MIN )
+	{
+		int totalWork = world->islandWork;
+		if ( totalWork == 0 )
+		{
+			for ( int i = 0; i < awakeSet->islandSims.count; ++i )
+			{
+				totalWork += b3GetIslandWork( b3Array_Get( world->islands, awakeSet->islandSims.data[i].islandId ) );
+			}
+		}
+
+		const b3BodySim* sims = awakeSet->bodySims.data;
+		const b3Body* bodies = world->bodies.data;
+		for ( int r = 0; r < knotCount; ++r )
+		{
+			const b3Body* body = bodies + sims[knotBodies[r]].bodyId;
+			knotLarge[r] = false;
+			if ( body->islandId != B3_NULL_INDEX )
+			{
+				const b3Island* island = b3Array_Get( world->islands, body->islandId );
+				knotLarge[r] = (int64_t)B3_KNOT_GROUP_SHARE * b3GetIslandWork( island ) >= totalWork;
+			}
+		}
+
+		int largeContactCount = 0;
+		for ( int k = 0; k < n; ++k )
+		{
+			largeContactCount += contactKnots[k] != B3_NULL_INDEX && knotLarge[bodyMarks[contactKnots[k]]] ? 1 : 0;
+		}
+		groupCount = largeContactCount >= B3_KNOT_GROUP_MIN ? B3_KNOT_GROUPS : 1;
+	}
+
+	// In groups a contact between two knots stays with the others, the knots change in different groups at once
+	if ( groupCount > 1 )
+	{
+		for ( int k = 0; k < n; ++k )
+		{
+			int knot = contactKnots[k];
+			int partner = bodiesA[k] == knot ? bodiesB[k] : bodiesA[k];
+			if ( knot != B3_NULL_INDEX && partner != B3_NULL_INDEX && bodyMarks[partner] != B3_NULL_INDEX )
+			{
+				contactKnots[k] = B3_NULL_INDEX;
+			}
 		}
 	}
 
@@ -2428,133 +2607,330 @@ static void b3BuildKnots( b3World* world, const b3SolverSet* awakeSet, const b3G
 		knotCursors[rank] += 1;
 	}
 
-	// The batches, knot after knot. The ranks of the knots are not needed anymore, a partner is now marked with the rank of
-	// the knot it was counted for, below B3_NULL_INDEX to tell it from what is left. A batch is open for its round until it
-	// is full.
-	for ( int i = 0; i < n; ++i )
+	// The group of every contact at a knot. A knot of a large island spreads over a group for every
+	// B3_KNOT_GROUP_CONTACTS of its contacts, at least one, any other stays in one, from the group after the last knot
+	// on, and deals its contacts out to these groups in turn. A moving partner keeps its group for all its contacts,
+	// also with other knots, while a partner that does not move can take any.
+	int contactTotal = knotStarts[knotCount];
+	for ( int i = 0; i < contactTotal; ++i )
 	{
-		roundKnots[i] = B3_NULL_INDEX;
+		orderGroups[i] = 0;
 	}
 
-	int batchCount = 0;
-	int maxBatches = 0;
-	for ( int r = 0; r < knotCount; ++r )
+	if ( groupCount > 1 )
 	{
-		int mark = -2 - r;
-		knotBatchStarts[r] = batchCount;
-		for ( int i = knotStarts[r]; i < knotStarts[r + 1]; ++i )
+		// The group of a moving partner, null until it has one
+		for ( int i = 0; i < contactTotal; ++i )
 		{
 			int k = knotOrder[i];
-			int partner = bodiesA[k] == knotBodies[r] ? bodiesB[k] : bodiesA[k];
-			int round = 0;
+			int partner = bodiesA[k] == contactKnots[k] ? bodiesB[k] : bodiesA[k];
 			if ( partner != B3_NULL_INDEX )
 			{
-				if ( bodyMarks[partner] != mark )
-				{
-					bodyMarks[partner] = mark;
-					bodyCounts[partner] = 0;
-				}
-
-				round = bodyCounts[partner];
-				bodyCounts[partner] += 1;
+				bodyCounts[partner] = B3_NULL_INDEX;
 			}
-
-			if ( roundKnots[round] != r || batchLanes[roundBatches[round]] == B3_KNOT_LANES )
-			{
-				roundKnots[round] = r;
-				roundBatches[round] = batchCount;
-				batchLanes[batchCount] = 0;
-				batchCount += 1;
-			}
-
-			int batch = roundBatches[round];
-			batchSlots[B3_KNOT_LANES * batch + batchLanes[batch]] = k;
-			batchLanes[batch] += 1;
 		}
-		maxBatches = b3MaxInt( maxBatches, batchCount - knotBatchStarts[r] );
-	}
-	knotBatchStarts[knotCount] = batchCount;
 
-	// The knots take turns, batch after batch, so the batches next to each other rarely share a knot. With packs pack by
-	// pack in that order.
-	int* slots = knotOrder;
-	int slotCount = 0;
-	for ( int i = 0; i < maxBatches; ++i )
-	{
+		int offset = 0;
 		for ( int r = 0; r < knotCount; ++r )
 		{
-			if ( knotBatchStarts[r] + i < knotBatchStarts[r + 1] )
+			int spread = 1;
+			if ( knotLarge[r] )
 			{
-				slots[slotCount] = knotBatchStarts[r] + i;
-				slotCount += 1;
+				spread = b3ClampInt( ( knotStarts[r + 1] - knotStarts[r] ) / B3_KNOT_GROUP_CONTACTS, 1, B3_KNOT_GROUPS );
+			}
+			int first = offset;
+			offset = ( offset + spread ) % B3_KNOT_GROUPS;
+
+			int turn = 0;
+			for ( int i = knotStarts[r]; i < knotStarts[r + 1]; ++i )
+			{
+				int k = knotOrder[i];
+				int partner = bodiesA[k] == knotBodies[r] ? bodiesB[k] : bodiesA[k];
+				if ( partner != B3_NULL_INDEX && bodyCounts[partner] != B3_NULL_INDEX )
+				{
+					orderGroups[i] = bodyCounts[partner];
+					continue;
+				}
+
+				orderGroups[i] = ( first + turn % spread ) % B3_KNOT_GROUPS;
+				turn += 1;
+				if ( partner != B3_NULL_INDEX )
+				{
+					bodyCounts[partner] = orderGroups[i];
+				}
+			}
+
+			// The contacts of the knot group by group, in their order within each group
+			int groupContacts[B3_KNOT_GROUPS] = { 0 };
+			for ( int i = knotStarts[r]; i < knotStarts[r + 1]; ++i )
+			{
+				groupContacts[orderGroups[i]] += 1;
+			}
+
+			int starts[B3_KNOT_GROUPS];
+			int start = knotStarts[r];
+			for ( int g = 0; g < B3_KNOT_GROUPS; ++g )
+			{
+				starts[g] = start;
+				start += groupContacts[g];
+			}
+
+			for ( int i = knotStarts[r]; i < knotStarts[r + 1]; ++i )
+			{
+				slots[starts[orderGroups[i]]] = knotOrder[i];
+				starts[orderGroups[i]] += 1;
+			}
+
+			int i = knotStarts[r];
+			for ( int g = 0; g < B3_KNOT_GROUPS; ++g )
+			{
+				for ( int j = 0; j < groupContacts[g]; ++j )
+				{
+					knotOrder[i] = slots[i];
+					orderGroups[i] = g;
+					i += 1;
+				}
 			}
 		}
 	}
+
+	// The groups of every knot as bits, and the knots in more than one, pack by pack in the order of the knots
+	int* packSplitStarts = knots->packSplitStarts;
+	int splitCount = 0;
+	for ( int r = 0; r < knotCount; ++r )
+	{
+		knotGroups[r] = 0;
+		for ( int i = knotStarts[r]; i < knotStarts[r + 1]; ++i )
+		{
+			knotGroups[r] |= 1 << orderGroups[i];
+		}
+
+		knotSplits[r] = B3_NULL_INDEX;
+		if ( b3PopCount64( (uint64_t)knotGroups[r] ) > 1 )
+		{
+			int pack = packCount > 0 ? contactPacks[specs[knotOrder[knotStarts[r]]].contactId] : 0;
+			packSplitStarts[pack + 1] += 1;
+			splitCount += 1;
+		}
+	}
+	for ( int p = 0; p < packs; ++p )
+	{
+		packSplitStarts[p + 1] += packSplitStarts[p];
+	}
+
+	for ( int p = 0; p < packs; ++p )
+	{
+		groupCursors[p] = 0;
+	}
+	for ( int r = 0; r < knotCount; ++r )
+	{
+		int copyCount = b3PopCount64( (uint64_t)knotGroups[r] );
+		if ( copyCount > 1 )
+		{
+			int pack = packCount > 0 ? contactPacks[specs[knotOrder[knotStarts[r]]].contactId] : 0;
+			int split = packSplitStarts[pack] + groupCursors[pack];
+			groupCursors[pack] += 1;
+			knotSplits[r] = split;
+			knots->splits[split] = (b3KnotSplit){ knotBodies[r], 0, copyCount };
+		}
+	}
+
+	int copyCount = 0;
+	for ( int s = 0; s < splitCount; ++s )
+	{
+		knots->splits[s].firstCopy = copyCount;
+		copyCount += knots->splits[s].copyCount;
+	}
+
+	// The batches group by group, in each group knot after knot. The ranks of the knots are not needed anymore, a partner
+	// is now marked with the rank of the knot it was counted for, below B3_NULL_INDEX to tell it from what is left, and
+	// remembers the batch it went into last. A contact goes into the oldest batch of its knot in the group that is not full
+	// and comes after the last one of its partner, so the lanes of a batch have different partners and few batches stay
+	// half full. The knots of a group take turns, batch after batch, so the batches next to each other rarely share a knot.
+	for ( int r = 0; r < knotCount; ++r )
+	{
+		knotCursors[r] = knotStarts[r];
+	}
+
+	int groupSlotStarts[B3_KNOT_GROUPS + 1];
+	int batchCount = 0;
+	int slotCount = 0;
+	for ( int g = 0; g < groupCount; ++g )
+	{
+		groupSlotStarts[g] = slotCount;
+		int maxBatches = 0;
+		for ( int r = 0; r < knotCount; ++r )
+		{
+			int mark = -2 - r;
+			int openCount = 0;
+			knotBatchStarts[r] = batchCount;
+			for ( ; knotCursors[r] < knotStarts[r + 1] && orderGroups[knotCursors[r]] == g; knotCursors[r] += 1 )
+			{
+				int k = knotOrder[knotCursors[r]];
+				int partner = bodiesA[k] == knotBodies[r] ? bodiesB[k] : bodiesA[k];
+				int last = B3_NULL_INDEX;
+				if ( partner != B3_NULL_INDEX && bodyMarks[partner] == mark )
+				{
+					last = bodyCounts[partner];
+				}
+
+				int open = 0;
+				while ( open < openCount && openBatches[open] <= last )
+				{
+					open += 1;
+				}
+
+				if ( open == openCount )
+				{
+					openBatches[openCount] = batchCount;
+					openCount += 1;
+					batchLanes[batchCount] = 0;
+					batchKnots[batchCount] = r;
+					batchFirsts[batchCount] = batchCount == knotBatchStarts[r];
+					batchCount += 1;
+				}
+
+				int batch = openBatches[open];
+				batchSlots[B3_KNOT_LANES * batch + batchLanes[batch]] = k;
+				batchLanes[batch] += 1;
+				if ( partner != B3_NULL_INDEX )
+				{
+					bodyMarks[partner] = mark;
+					bodyCounts[partner] = batch;
+				}
+
+				// A full batch takes no more
+				if ( batchLanes[batch] == B3_KNOT_LANES )
+				{
+					openCount -= 1;
+					for ( int i = open; i < openCount; ++i )
+					{
+						openBatches[i] = openBatches[i + 1];
+					}
+				}
+			}
+			maxBatches = b3MaxInt( maxBatches, batchCount - knotBatchStarts[r] );
+		}
+		knotBatchStarts[knotCount] = batchCount;
+
+		for ( int i = 0; i < maxBatches; ++i )
+		{
+			for ( int r = 0; r < knotCount; ++r )
+			{
+				if ( knotBatchStarts[r] + i < knotBatchStarts[r + 1] )
+				{
+					slots[slotCount] = knotBatchStarts[r] + i;
+					slotCount += 1;
+				}
+			}
+		}
+	}
+	groupSlotStarts[groupCount] = slotCount;
 	B3_ASSERT( slotCount == batchCount );
+
+	// Pack by pack and in each group by group, in the order above
+	int* groupStarts = knots->groupStarts;
+	for ( int g = 0; g < groupCount; ++g )
+	{
+		for ( int i = groupSlotStarts[g]; i < groupSlotStarts[g + 1]; ++i )
+		{
+			int k = batchSlots[B3_KNOT_LANES * slots[i]];
+			int pack = packCount > 0 ? contactPacks[specs[k].contactId] : 0;
+			groupStarts[B3_KNOT_GROUPS * pack + g + 1] += 1;
+		}
+	}
+
+	int largestGroup = 0;
+	for ( int i = 0; i < groupSlots; ++i )
+	{
+		largestGroup = b3MaxInt( largestGroup, groupStarts[i + 1] );
+		groupStarts[i + 1] += groupStarts[i];
+		groupCursors[i] = 0;
+	}
 
 	if ( packCount > 0 )
 	{
-		int* packStarts = knots->packStarts;
-		for ( int i = 0; i < batchCount; ++i )
+		for ( int p = 0; p <= packCount; ++p )
 		{
-			int k = batchSlots[B3_KNOT_LANES * slots[i]];
-			packStarts[contactPacks[specs[k].contactId] + 1] += 1;
-		}
-		for ( int p = 0; p < packCount; ++p )
-		{
-			packStarts[p + 1] += packStarts[p];
+			knots->packStarts[p] = groupStarts[B3_KNOT_GROUPS * p];
 		}
 	}
 
-	int packCursors[B3_MAX_PACKS] = { 0 };
 	int contactCount = 0;
-	for ( int i = 0; i < batchCount; ++i )
+	for ( int g = 0; g < groupCount; ++g )
 	{
-		int batch = slots[i];
-		int laneCount = batchLanes[batch];
-		const int* lanes = batchSlots + B3_KNOT_LANES * batch;
-		int knot = contactKnots[lanes[0]];
-
-		int position = i;
-		if ( packCount > 0 )
+		for ( int i = groupSlotStarts[g]; i < groupSlotStarts[g + 1]; ++i )
 		{
-			int pack = contactPacks[specs[lanes[0]].contactId];
-			position = knots->packStarts[pack] + packCursors[pack];
-			packCursors[pack] += 1;
-		}
+			int batch = slots[i];
+			int laneCount = batchLanes[batch];
+			const int* lanes = batchSlots + B3_KNOT_LANES * batch;
+			int r = batchKnots[batch];
+			int knot = knotBodies[r];
 
-		knots->batches[position] = (b3KnotBatch){ knot + 1, laneCount };
-		int* ids = knots->contactIds + B3_KNOT_LANES * position;
-		float* scaleA = knots->scaleA + B3_KNOT_LANES * position;
-		float* scaleB = knots->scaleB + B3_KNOT_LANES * position;
-		for ( int lane = 0; lane < B3_KNOT_LANES; ++lane )
-		{
-			ids[lane] = B3_NULL_INDEX;
-			scaleA[lane] = 1.0f;
-			scaleB[lane] = 1.0f;
-			if ( lane < laneCount )
+			int slot = g;
+			if ( packCount > 0 )
 			{
-				int k = lanes[lane];
-				bool knotIsA = bodiesA[k] == knot;
-				ids[lane] = specs[k].contactId;
-				scaleA[lane] = knotIsA ? (float)laneCount : 1.0f;
-				scaleB[lane] = knotIsA ? 1.0f : (float)laneCount;
+				slot += B3_KNOT_GROUPS * contactPacks[specs[lanes[0]].contactId];
 			}
+			int position = groupStarts[slot] + groupCursors[slot];
+			groupCursors[slot] += 1;
+
+			// A knot in several groups has a copy in each, in the order of the groups, and its mass splits over all copies
+			int copy = B3_NULL_INDEX;
+			int copies = 1;
+			if ( knotSplits[r] != B3_NULL_INDEX )
+			{
+				const b3KnotSplit* split = knots->splits + knotSplits[r];
+				copy = split->firstCopy + b3PopCount64( (uint64_t)( knotGroups[r] & ( ( 1 << g ) - 1 ) ) );
+				copies = split->copyCount;
+			}
+
+			knots->batches[position] = (b3KnotBatch){ knot + 1, laneCount, copy, batchFirsts[batch] };
+			int* ids = knots->contactIds + B3_KNOT_LANES * position;
+			float* scaleA = knots->scaleA + B3_KNOT_LANES * position;
+			float* scaleB = knots->scaleB + B3_KNOT_LANES * position;
+			for ( int lane = 0; lane < B3_KNOT_LANES; ++lane )
+			{
+				ids[lane] = B3_NULL_INDEX;
+				scaleA[lane] = 1.0f;
+				scaleB[lane] = 1.0f;
+				if ( lane < laneCount )
+				{
+					int k = lanes[lane];
+					bool knotIsA = bodiesA[k] == knot;
+					ids[lane] = specs[k].contactId;
+					scaleA[lane] = knotIsA ? (float)( laneCount * copies ) : 1.0f;
+					scaleB[lane] = knotIsA ? 1.0f : (float)( laneCount * copies );
+				}
+			}
+			contactCount += laneCount;
 		}
-		contactCount += laneCount;
 	}
 
 	knots->batchCount = batchCount;
 	knots->contactCount = contactCount;
+	knots->largestGroup = largestGroup;
+	knots->splitCount = splitCount;
+	knots->copyCount = copyCount;
 	knots->otherCount = otherCount;
 	B3_ASSERT( contactCount + otherCount == n );
 
 	b3StackFree( &world->stack, temporary );
+
+	// After the block of the knots, see b3FreeKnots
+	if ( copyCount > 0 )
+	{
+		knots->copies = (b3KnotCopy*)b3StackAlloc( &world->stack, copyCount * (int)sizeof( b3KnotCopy ), "knot copies" );
+	}
 }
 
 // Added for Nebenan: gives back the memory of b3BuildKnots
 static void b3FreeKnots( b3World* world, b3Knots* knots )
 {
+	if ( knots->copies != NULL )
+	{
+		b3StackFree( &world->stack, knots->copies );
+	}
 	b3StackFree( &world->stack, knots->memory );
 }
 
@@ -2572,6 +2948,8 @@ void b3Solve( b3World* world, b3StepContext* stepContext )
 	// Added for Nebenan: see b3Counters::knotContactCount, b3Counters::teamWork and b3Counters::teamSample
 	world->knotContactCount = 0;
 	world->knotBatchCount = 0;
+	world->knotGroupBatchCount = 0;
+	world->knotCopyCount = 0;
 	world->teamWork = 0;
 	world->teamSample = 0;
 	world->teamWorkerCount = 0;
@@ -2769,6 +3147,8 @@ void b3Solve( b3World* world, b3StepContext* stepContext )
 		b3BuildKnots( world, awakeSet, overflow, contactPacks, packCount, &knots );
 		world->knotContactCount = knots.contactCount;
 		world->knotBatchCount = knots.batchCount;
+		world->knotGroupBatchCount = knots.largestGroup;
+		world->knotCopyCount = knots.copyCount;
 		int knotWideStart = wideContactCount;
 		wideContactCount += knots.batchCount * ( B3_KNOT_LANES >> simdShift );
 
@@ -2984,15 +3364,16 @@ void b3Solve( b3World* world, b3StepContext* stepContext )
 		// b3_stageIntegrateVelocities
 		stageCount += 1;
 		// b3_stageWarmStart
-		stageCount += activeColorCount;
+		// Added for Nebenan: a stage of the knots before each sweep over the colors, see b3ExecuteKnotStage
+		stageCount += 1 + activeColorCount;
 		// b3_stageSolve
-		stageCount += ITERATIONS * activeColorCount;
+		stageCount += ITERATIONS * ( 1 + activeColorCount );
 		// b3_stageIntegratePositions
 		stageCount += 1;
 		// b3_stageRelax
-		stageCount += RELAX_ITERATIONS * activeColorCount;
+		stageCount += RELAX_ITERATIONS * ( 1 + activeColorCount );
 		// b3_stageRestitution
-		stageCount += activeColorCount;
+		stageCount += 1 + activeColorCount;
 		// b3_stageStoreWideImpulses
 		stageCount += 1;
 		// b3_stageStoreImpulses
@@ -3009,6 +3390,22 @@ void b3Solve( b3World* world, b3StepContext* stepContext )
 			(b3SyncBlock*)b3StackAlloc( &world->stack, jointPrepareDim.count * sizeof( b3SyncBlock ), "joint blocks" );
 		b3SyncBlock* graphBlocks =
 			(b3SyncBlock*)b3StackAlloc( &world->stack, graphBlockCount * sizeof( b3SyncBlock ), "graph blocks" );
+
+		// Added for Nebenan: a block per group of knots with batches, with a team those of its pack, the first, see
+		// b3ExecuteKnotStage. All stages of the knots share them.
+		b3SyncBlock* knotBlocks =
+			(b3SyncBlock*)b3StackAlloc( &world->stack, B3_KNOT_GROUPS * sizeof( b3SyncBlock ), "knot blocks" );
+		int knotBlockCount = 0;
+		for ( int g = 0; g < B3_KNOT_GROUPS; ++g )
+		{
+			if ( knots.groupStarts[g] < knots.groupStarts[g + 1] )
+			{
+				b3SyncBlock* block = knotBlocks + knotBlockCount;
+				block->block = (b3SolverBlock){ g, 1, b3_knotBlock, UINT8_MAX };
+				b3AtomicStoreInt( &block->syncIndex, 0 );
+				knotBlockCount += 1;
+			}
+		}
 
 		// Split an awake island. This modifies:
 		// - stack allocator
@@ -3109,13 +3506,25 @@ void b3Solve( b3World* world, b3StepContext* stepContext )
 		stage = b3InitStage( stage, b3_stagePrepareWideContacts, convexBlocks, convexBlockCount, UINT8_MAX );
 		stage = b3InitStage( stage, b3_stagePrepareContacts, meshBlocks, meshPrepareDim.count, UINT8_MAX );
 		stage = b3InitStage( stage, b3_stageIntegrateVelocities, bodyBlocks, bodyDim.count, UINT8_MAX );
+
+		// Added for Nebenan: the stage of the knots before each sweep over the colors, see b3ExecuteKnotStage
+		stage = b3InitStage( stage, b3_stageWarmStart, knotBlocks, knotBlockCount, UINT8_MAX );
 		stage = b3InitColorStages( stage, b3_stageWarmStart, 1, activeColorCount, graphColorBlocks, graphBlockCounts,
 								   activeColorIndices );
-		stage = b3InitColorStages( stage, b3_stageSolve, ITERATIONS, activeColorCount, graphColorBlocks, graphBlockCounts,
-								   activeColorIndices );
+		for ( int j = 0; j < ITERATIONS; ++j )
+		{
+			stage = b3InitStage( stage, b3_stageSolve, knotBlocks, knotBlockCount, UINT8_MAX );
+			stage = b3InitColorStages( stage, b3_stageSolve, 1, activeColorCount, graphColorBlocks, graphBlockCounts,
+									   activeColorIndices );
+		}
 		stage = b3InitStage( stage, b3_stageIntegratePositions, bodyBlocks, bodyDim.count, UINT8_MAX );
-		stage = b3InitColorStages( stage, b3_stageRelax, RELAX_ITERATIONS, activeColorCount, graphColorBlocks, graphBlockCounts,
-								   activeColorIndices );
+		for ( int j = 0; j < RELAX_ITERATIONS; ++j )
+		{
+			stage = b3InitStage( stage, b3_stageRelax, knotBlocks, knotBlockCount, UINT8_MAX );
+			stage = b3InitColorStages( stage, b3_stageRelax, 1, activeColorCount, graphColorBlocks, graphBlockCounts,
+									   activeColorIndices );
+		}
+		stage = b3InitStage( stage, b3_stageRestitution, knotBlocks, knotBlockCount, UINT8_MAX );
 		stage = b3InitColorStages( stage, b3_stageRestitution, 1, activeColorCount, graphColorBlocks, graphBlockCounts,
 								   activeColorIndices );
 		stage = b3InitStage( stage, b3_stageStoreWideImpulses, convexBlocks, convexBlockCount, UINT8_MAX );
@@ -3154,6 +3563,10 @@ void b3Solve( b3World* world, b3StepContext* stepContext )
 		stepContext->knotConstraints = (uint8_t*)wideConstraints + knotWideStart * wideContactByteCount;
 		stepContext->knotWideStart = knotWideStart;
 		stepContext->packKnotStarts = knots.packStarts;
+		stepContext->knotGroupStarts = knots.groupStarts;
+		stepContext->knotCopies = knots.copies;
+		stepContext->knotSplits = knots.splits;
+		stepContext->packSplitStarts = knots.packSplitStarts;
 		// Added for Nebenan: a team solves the overflow of its pack, the first in the order of the packs, and takes the other
 		// packs from the second on, see b3SolveOtherPack
 		stepContext->overflowContactCount = team ? packOverflowStarts[1] : otherCount;
@@ -3295,6 +3708,7 @@ void b3Solve( b3World* world, b3StepContext* stepContext )
 		b3ParallelFor( world, &b3FinalizeBodiesTask, awakeBodyCount, 16, stepContext, "ccd" );
 
 		// Free in reverse order
+		b3StackFree( &world->stack, knotBlocks );
 		b3StackFree( &world->stack, graphBlocks );
 		b3StackFree( &world->stack, jointBlocks );
 		b3StackFree( &world->stack, meshBlocks );

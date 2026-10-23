@@ -15,7 +15,7 @@ _Static_assert( sizeof( nb_profileNames ) / sizeof( nb_profileNames[0] ) == nb_p
 
 // How deep a stage sits in the table under the stage that holds it, and whether it runs on the calling thread alone
 static const int nb_profileDepths[] = { 0, 1, 2, 3, 2, 3, 2, 3, 3, 4, 2, 1, 2, 2, 2, 2, 1, 1, 1, 2 };
-static const bool nb_profileAlone[] = { false, false, false, true,	false, true, false, true,  false, true,
+static const bool nb_profileAlone[] = { false, false, false, true,	false, true, false, true,  false, false,
 										false, false, false, false, true,  true, true,	false, false, true };
 _Static_assert( sizeof( nb_profileDepths ) / sizeof( nb_profileDepths[0] ) == nb_profileStageCount, "a depth per stage" );
 _Static_assert( sizeof( nb_profileAlone ) / sizeof( nb_profileAlone[0] ) == nb_profileStageCount, "a flag per stage" );
@@ -66,6 +66,8 @@ void nbProfileStep( nbWorld* world )
 	}
 	sums->knotContactCount += counters.knotContactCount;
 	sums->knotBatchCount += counters.knotBatchCount;
+	sums->knotGroupBatchCount += counters.knotGroupBatchCount;
+	sums->knotCopyCount += counters.knotCopyCount;
 	if ( counters.islandWork > 0 )
 	{
 		double share = (double)counters.largestIslandWork / (double)counters.islandWork;
@@ -117,6 +119,8 @@ nbProfile nbWorld_GetProfile( nbWorldId worldId )
 	profile.overflowCount = (float)( sums->overflowCount / steps );
 	profile.knotContactCount = (float)( sums->knotContactCount / steps );
 	profile.knotBatchCount = (float)( sums->knotBatchCount / steps );
+	profile.knotGroupBatchCount = (float)( sums->knotGroupBatchCount / steps );
+	profile.knotCopyCount = (float)( sums->knotCopyCount / steps );
 
 	if ( sums->islandStepCount > 0 )
 	{
@@ -367,7 +371,7 @@ int nbFormatScalingReport( const nbProfile* profiles, int count, char* text, int
 
 	// What does not depend on the workers, from the profiles that have it
 	double freezes = 0.0, thaws = 0.0, steps = 0.0;
-	double overflow = 0.0, knotContacts = 0.0, knotBatches = 0.0;
+	double overflow = 0.0, knotContacts = 0.0, knotBatches = 0.0, knotGroupBatches = 0.0, knotCopies = 0.0;
 	double island = 0.0, floors[4] = { 0.0, 0.0, 0.0, 0.0 }, islandSteps = 0.0, colorSteps = 0.0;
 	double teamShare = 0.0, teamSteps = 0.0;
 	double wake = 0.0, wakes = 0.0;
@@ -381,6 +385,8 @@ int nbFormatScalingReport( const nbProfile* profiles, int count, char* text, int
 		overflow += p->overflowCount * (double)p->stepCount;
 		knotContacts += p->knotContactCount * (double)p->stepCount;
 		knotBatches += p->knotBatchCount * (double)p->stepCount;
+		knotGroupBatches += p->knotGroupBatchCount * (double)p->stepCount;
+		knotCopies += p->knotCopyCount * (double)p->stepCount;
 		steps += (double)p->stepCount;
 		island += p->largestIsland * (double)p->islandStepCount;
 		for ( int f = 0; f < 4; ++f )
@@ -412,6 +418,8 @@ int nbFormatScalingReport( const nbProfile* profiles, int count, char* text, int
 		nbAppend( &out, "Freezes %.1f and thaws %.1f per step\n", freezes / steps, thaws / steps );
 		nbAppend( &out, "Overflow of the constraint graph %.1f per step, %.1f contacts of them at knots in %.1f batches\n",
 				  overflow / steps, knotContacts / steps, knotBatches / steps );
+		nbAppend( &out, "Knot batches one thread solves in a row %.1f per step, copies of knots in several groups %.1f\n",
+				  knotGroupBatches / steps, knotCopies / steps );
 	}
 	if ( islandSteps > 0.0 )
 	{
@@ -484,7 +492,7 @@ int nbFormatScalingReport( const nbProfile* profiles, int count, char* text, int
 		const char* rowNames[rowCount] = {
 			"timed steps",
 			"team on the calling thread",
-			"  overflow alone",
+			"  overflow",
 			"  waits at the end of stages",
 			"  stages with a barrier",
 			"per worker waits for a stage",
