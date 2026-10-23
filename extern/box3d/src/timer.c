@@ -74,6 +74,24 @@ float b3GetMillisecondsAndReset( uint64_t* ticks )
 	return ms;
 }
 
+// Added for Nebenan
+float b3TicksToMilliseconds( uint64_t ticks )
+{
+	if ( s_invFrequency == 0.0 )
+	{
+		LARGE_INTEGER frequency;
+		QueryPerformanceFrequency( &frequency );
+
+		s_invFrequency = (double)frequency.QuadPart;
+		if ( s_invFrequency > 0.0 )
+		{
+			s_invFrequency = 1000.0 / s_invFrequency;
+		}
+	}
+
+	return (float)( s_invFrequency * ticks );
+}
+
 void b3Yield( void )
 {
 	SwitchToThread();
@@ -249,6 +267,12 @@ float b3GetMillisecondsAndReset( uint64_t* ticks )
 	float ms = (float)( ( ticksNow - *ticks ) / 1000000.0 );
 	*ticks = ticksNow;
 	return ms;
+}
+
+// Added for Nebenan
+float b3TicksToMilliseconds( uint64_t ticks )
+{
+	return (float)( ticks / 1000000.0 );
 }
 
 void b3Yield( void )
@@ -428,6 +452,21 @@ float b3GetMillisecondsAndReset( uint64_t* ticks )
 	return ms;
 }
 
+// Added for Nebenan
+float b3TicksToMilliseconds( uint64_t ticks )
+{
+	if ( s_invFrequency == 0 )
+	{
+		mach_timebase_info_data_t timebase;
+		mach_timebase_info( &timebase );
+
+		// convert to ns then to ms
+		s_invFrequency = 1e-6 * (double)timebase.numer / (double)timebase.denom;
+	}
+
+	return (float)( s_invFrequency * ticks );
+}
+
 void b3Yield( void )
 {
 	sched_yield();
@@ -574,6 +613,13 @@ float b3GetMilliseconds( uint64_t ticks )
 }
 
 float b3GetMillisecondsAndReset( uint64_t* ticks )
+{
+	( (void)( ticks ) );
+	return 0.0f;
+}
+
+// Added for Nebenan
+float b3TicksToMilliseconds( uint64_t ticks )
 {
 	( (void)( ticks ) );
 	return 0.0f;

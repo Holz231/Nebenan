@@ -468,25 +468,49 @@ und den Inseln. Die Ergebnisse sind deshalb mit jeder Zahl von Threads und in be
 rechnet der Löser die Bündel wie vorher. `b3Counters` zählt mit `knotGroupBatchCount` die meisten Bündel, die ein Thread
 nacheinander rechnet, und mit `knotCopyCount` die Kopien.
 
+**Stufen des Teams.** Wie sich Arbeit und Warten auf die Stufen eines Teams verteilen, zeigten die Zeiten aus „Zeiten
+des Teams“ nur in Summe. In jedem achten Schritt mit Team schreibt jetzt jeder Thread für jede Stufe, an der er
+teilnimmt, einen Eintrag (`b3TeamEntry` in `src/solver.h`): der aufrufende Thread, wann er die Stufe öffnet, wann er
+keinen Block mehr findet und wann er alle fertig sieht, ein Worker, wann er hineinkommt und wann er keinen Block mehr
+findet, dazu die Blöcke, die er gerechnet hat, und ob er beim Warten seinen Kern abgegeben hat. Eine Stufe mit einem
+Block rechnet der aufrufende Thread ohne Sperre allein, auch das schreibt er auf, und ein Worker schreibt jedes der
+übrigen Pakete auf, das er rechnet. Nach dem Schritt fasst `b3SumTeamStages` in `src/solver.c` die Einträge zusammen, in
+Zeilen nach dem, was die Stufen rechnen (`b3TeamStageRow`): Aufbau der Bedingungen, Integration, die Gruppen der Knoten,
+eine Zeile pro Farbe und das Speichern der Impulse. Pro Zeile zählt `b3TeamStage` die Stufen mit Sperre und die allein
+gerechneten, ihre Blöcke, wie viele davon der aufrufende Thread rechnete, und die Einträge der Blöcke, also Körper,
+Bedingungen oder Gruppen, dazu wie lange die Stufen offen waren und wie sich diese Zeit über alle Threads aufteilt:
+Blöcke der Stufe rechnen, eines der übrigen Pakete rechnen, vor dem Hineinkommen warten und nach dem letzten Block
+warten. Ein Worker, der erst nach dem Ende einer Stufe zurückkommt, hat sie verpasst, und ihre ganze Zeit war er im
+Paket oder hat gewartet. `b3TeamStages` hält außerdem, wie lange der aufrufende Thread zwischen den Stufen allein
+rechnet, vor allem den Überlauf außerhalb der Gruppen, davon das Mitteln der Kopien der Knoten, und wie lange nach der
+letzten Stufe, und wie spät die Worker im Mittel in eine Stufe kommen und wie viele sie verpassen.
+`b3World_GetTeamStages` gibt das für den letzten Schritt, wenn er gemessen hat. Nur dieser Schritt liest die Uhr, einmal
+mehr pro Stufe und Thread als vorher, und rechnet die Ticks mit `b3TicksToMilliseconds` aus `src/timer.c` um. Die
+Rechnung des Lösers ändert sich nicht. Die neuen Felder stehen am Ende von `b3World`, `b3StepContext` und
+`b3TaskContext`, damit die übrigen bleiben, wo sie waren: Mitten in diesen Strukturen kostete die Stadt des Benchmarks
+bei ×1 auf der VM mit einem Thread 3 bis 6 % mehr, gleichmäßig über alle Stufen, obwohl mit einem Thread nichts davon
+läuft.
+
 Die erste, die zweite, die vierte bis achte, die zehnte, die dreizehnte bis einunddreißigste, die dreiunddreißigste bis
-fünfunddreißigste, die neununddreißigste bis dreiundvierzigste und die fünfundvierzigste bis siebenundvierzigste ändern
-an den Ergebnissen nichts. Die dritte und die neunte ändern sie in den letzten Bits, dafür hängen sie nicht mehr davon
-ab, in welcher Reihenfolge Formen in die Bäume kommen. Die elfte ändert sie, weil Kontakte zu anderen Zeitpunkten
-entstehen, die zwölfte, weil sie weniger Punkte bekommen, die zweiunddreißigste, weil die Kontakte eines Knotens
-gebündelt gegen Kopien rechnen statt nacheinander, die sechsunddreißigste, weil die Kerne dieselbe Rechnung anders
-zusammenfassen und deshalb anders runden, die siebenunddreißigste, weil die Suche andere Kantenpaare aussiebt und
-getrennte Hüllen erkennt, die die alte übersah, und die achtundvierzigste, weil die Bündel der Knoten dichter liegen und
-die Knoten großer Inseln in Gruppen gegen eigene Kopien rechnen. Die achtunddreißigste ändert sie nur, wo Kugeln Kugeln
-oder Kapseln berühren, Kontakte ohne vorausschauende Punkte rechnen oder der PreSolve-Callback Kontakte abschaltet, in
-Nebenans Szenen nicht. Die vierundvierzigste ändert sie nur, wo die volle zweite Suche einen Kontakt zwischen Hüllen
-ergab, die eine Fläche trennt. Die Ergänzungen stehen in `CMakeLists.txt`, `src/CMakeLists.txt`, `include/box3d/base.h`,
-`include/box3d/box3d.h`, `include/box3d/types.h`, `include/box3d/constants.h`, `src/core.h`, `src/core.c`,
-`src/shape.h`, `src/shape.c`, `src/body.c`, `src/contact.h`, `src/contact.c`, `src/contact_solver.h`,
+fünfunddreißigste, die neununddreißigste bis dreiundvierzigste, die fünfundvierzigste bis siebenundvierzigste und die
+neunundvierzigste ändern an den Ergebnissen nichts. Die dritte und die neunte ändern sie in den letzten Bits, dafür
+hängen sie nicht mehr davon ab, in welcher Reihenfolge Formen in die Bäume kommen. Die elfte ändert sie, weil Kontakte
+zu anderen Zeitpunkten entstehen, die zwölfte, weil sie weniger Punkte bekommen, die zweiunddreißigste, weil die
+Kontakte eines Knotens gebündelt gegen Kopien rechnen statt nacheinander, die sechsunddreißigste, weil die Kerne
+dieselbe Rechnung anders zusammenfassen und deshalb anders runden, die siebenunddreißigste, weil die Suche andere
+Kantenpaare aussiebt und getrennte Hüllen erkennt, die die alte übersah, und die achtundvierzigste, weil die Bündel der
+Knoten dichter liegen und die Knoten großer Inseln in Gruppen gegen eigene Kopien rechnen. Die achtunddreißigste ändert
+sie nur, wo Kugeln Kugeln oder Kapseln berühren, Kontakte ohne vorausschauende Punkte rechnen oder der PreSolve-Callback
+Kontakte abschaltet, in Nebenans Szenen nicht. Die vierundvierzigste ändert sie nur, wo die volle zweite Suche einen
+Kontakt zwischen Hüllen ergab, die eine Fläche trennt. Die Ergänzungen stehen in `CMakeLists.txt`, `src/CMakeLists.txt`,
+`include/box3d/base.h`, `include/box3d/box3d.h`, `include/box3d/types.h`, `include/box3d/constants.h`, `src/core.h`,
+`src/core.c`, `src/shape.h`, `src/shape.c`, `src/body.c`, `src/contact.h`, `src/contact.c`, `src/contact_solver.h`,
 `src/contact_solver.c`, `src/contact_solver_wide.inl`, `src/wide8.c`, `src/simd.c`, `src/simd_avx2.h`,
 `src/constraint_graph.h`, `src/manifold.h`, `src/convex_manifold.c`, `src/convex_manifold_avx2.c`,
 `src/world_snapshot.c`, `src/recording.c`, `src/solver.h`, `src/solver.c`, `src/broad_phase.h`, `src/broad_phase.c`,
 `src/dynamic_tree.h`, `src/dynamic_tree.c`, `src/parallel_for.c`, `src/platform.h`, `src/scheduler.h`,
-`src/scheduler.c`, `src/physics_world.h` und `src/physics_world.c`, jeweils mit „Added for Nebenan“ markiert.
+`src/scheduler.c`, `src/timer.c`, `src/physics_world.h` und `src/physics_world.c`, jeweils mit „Added for Nebenan“
+markiert.
 `B3_HAS_UNIQUE_HULLS`, `B3_HAS_SHAPE_BATCH`, `B3_HAS_SHAPE_CONTACT_LISTS`, `B3_HAS_EXTERNAL_HULLS`,
 `B3_HAS_BODY_PREFETCH`, `B3_HAS_STEP_GUARD`, `B3_HAS_PREVIOUS_TRANSFORM` und `B3_HAS_STATIC_OVERLAP` zeigen die zweite,
 die vierte, die fünfte, die sechste, die neunzehnte, die dreißigste, die fünfunddreißigste und die zweiundvierzigste an.

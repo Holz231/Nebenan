@@ -4,6 +4,7 @@
 
 #include <stdarg.h>
 #include <stdio.h>
+#include <string.h>
 
 // The names of the stages, see nbProfileStage
 static const char* nb_profileNames[] = {
@@ -25,6 +26,8 @@ static const int nb_islandFloorThreads[4] = { 2, 4, 8, 16 };
 
 // The most columns of different worker counts in a report
 #define NB_REPORT_COLUMNS 8
+
+_Static_assert( sizeof( b3TeamStages ) == NB_TEAM_STAGE_VALUES * sizeof( float ), "b3TeamStages holds only floats" );
 
 const char* nbGetProfileStageName( nbProfileStage stage )
 {
@@ -63,6 +66,14 @@ void nbProfileStep( nbWorld* world )
 		sums->teamWorkerPacks += step.teamWorkerPacks / workers;
 		sums->teamStageCount += counters.teamStageCount;
 		sums->teamYieldCount += counters.teamYieldCount / workers;
+
+		b3TeamStages stages = b3World_GetTeamStages( world->physicsWorld );
+		float values[NB_TEAM_STAGE_VALUES];
+		memcpy( values, &stages, sizeof( values ) );
+		for ( int i = 0; i < NB_TEAM_STAGE_VALUES; ++i )
+		{
+			sums->teamStages[i] += values[i];
+		}
 	}
 	sums->knotContactCount += counters.knotContactCount;
 	sums->knotBatchCount += counters.knotBatchCount;
@@ -164,6 +175,13 @@ nbProfile nbWorld_GetProfile( nbWorldId worldId )
 		profile.teamWorkerPacks = (float)( sums->teamWorkerPacks / samples );
 		profile.teamStageCount = (float)( sums->teamStageCount / samples );
 		profile.teamYieldCount = (float)( sums->teamYieldCount / samples );
+
+		float values[NB_TEAM_STAGE_VALUES];
+		for ( int i = 0; i < NB_TEAM_STAGE_VALUES; ++i )
+		{
+			values[i] = (float)( sums->teamStages[i] / samples );
+		}
+		memcpy( &profile.teamStages, values, sizeof( values ) );
 	}
 	profile.teamSampleCount = sums->teamSampleCount;
 	profile.packWait = (float)( sums->packWait / steps );
@@ -283,6 +301,103 @@ static void nbAppend( nbText* text, const char* format, ... )
 	int written = vsnprintf( room > 0 ? text->data + text->length : NULL, room > 0 ? (size_t)room : 0, format, args );
 	va_end( args );
 	text->length += written > 0 ? written : 0;
+}
+
+// The names of the rows of b3TeamStages
+static void nbGetTeamRowName( int row, char* name, int capacity )
+{
+	switch ( row )
+	{
+		case b3_teamPrepare:
+			snprintf( name, (size_t)capacity, "prepare" );
+			break;
+		case b3_teamIntegrate:
+			snprintf( name, (size_t)capacity, "integrate" );
+			break;
+		case b3_teamKnots:
+			snprintf( name, (size_t)capacity, "knots" );
+			break;
+		case b3_teamStore:
+			snprintf( name, (size_t)capacity, "store" );
+			break;
+		default:
+			snprintf( name, (size_t)capacity, "color %d", row - b3_teamColors );
+			break;
+	}
+}
+
+// The stages of a team by row, then what the calling thread did between them and how late the workers came in, see
+// b3TeamStages
+static void nbAppendTeamStages( nbText* out, const b3TeamStages* stages, int workers )
+{
+	nbAppend( out, "The stages of the team with %d workers, per timed step\n", workers );
+	nbAppend( out, "%-10s %7s %6s %6s %7s %8s %8s %6s %7s %6s %6s %8s\n", "stages", "barrier", "alone", "blocks", "items",
+			  "open ms", "alone ms", "work %", "packs %", "late %", "done %", "caller %" );
+
+	b3TeamStage all = { 0 };
+	for ( int r = 0; r <= b3_teamRowCount; ++r )
+	{
+		const b3TeamStage* row = r < b3_teamRowCount ? stages->rows + r : &all;
+		if ( r < b3_teamRowCount )
+		{
+			all.barrierCount += row->barrierCount;
+			all.aloneCount += row->aloneCount;
+			all.blockCount += row->blockCount;
+			all.callerBlockCount += row->callerBlockCount;
+			all.openTime += row->openTime;
+			all.aloneTime += row->aloneTime;
+			all.workTime += row->workTime;
+			all.packTime += row->packTime;
+			all.lateTime += row->lateTime;
+			all.doneTime += row->doneTime;
+		}
+
+		float stageCount = row->barrierCount + row->aloneCount;
+		if ( stageCount <= 0.0f )
+		{
+			continue;
+		}
+
+		// The items count bodies, constraints or groups, depending on the row, so all rows have no sum of them
+		char name[16];
+		char items[16] = "";
+		if ( r == b3_teamRowCount )
+		{
+			snprintf( name, sizeof( name ), "all" );
+		}
+		else
+		{
+			nbGetTeamRowName( r, name, (int)sizeof( name ) );
+			snprintf( items, sizeof( items ), "%.1f", row->itemCount / stageCount );
+		}
+
+		float threadTime = row->workTime + row->packTime + row->lateTime + row->doneTime;
+		float share = threadTime > 0.0f ? 100.0f / threadTime : 0.0f;
+		float blocks = row->barrierCount > 0.0f ? row->blockCount / row->barrierCount : 0.0f;
+		float caller = row->blockCount > 0.0f ? 100.0f * row->callerBlockCount / row->blockCount : 0.0f;
+		nbAppend( out, "%-10s %7.1f %6.1f %6.1f %7s %8.3f %8.3f %6.0f %7.0f %6.0f %6.0f %8.0f\n", name, row->barrierCount,
+				  row->aloneCount, blocks, items, row->openTime, row->aloneTime, share * row->workTime, share * row->packTime,
+				  share * row->lateTime, share * row->doneTime, caller );
+	}
+
+	nbAppend( out,
+			  "The calling thread alone %.3f ms between the stages, %.3f ms of it merging copies of knots, and %.3f ms after the "
+			  "last stage\n",
+			  stages->serialTime, stages->mergeTime, stages->tailTime );
+	if ( stages->entryCount > 0.0f )
+	{
+		nbAppend( out, "A worker came into a stage %.1f us after it opened, time in other packs aside",
+				  1000.0f * stages->entryLateTime / stages->entryCount );
+		if ( stages->yieldEntryCount > 0.0f )
+		{
+			nbAppend( out, ", in %.0f %% of the entries after giving up its core %.1f us",
+					  100.0f * stages->yieldEntryCount / stages->entryCount,
+					  1000.0f * stages->yieldLateTime / stages->yieldEntryCount );
+		}
+		nbAppend( out, ", and missed %.1f stages per timed step, %.0f %% of them in another pack\n",
+				  stages->missedCount / (float)b3MaxInt( workers - 1, 1 ),
+				  stages->missedCount > 0.0f ? 100.0f * stages->missedPackCount / stages->missedCount : 0.0f );
+	}
 }
 
 int nbFormatScalingReport( const nbProfile* profiles, int count, char* text, int capacity )
@@ -536,6 +651,36 @@ int nbFormatScalingReport( const nbProfile* profiles, int count, char* text, int
 			}
 			nbAppend( &out, "\n" );
 		}
+
+		// How the team spent its stages with the most workers that timed it, mean over their profiles
+		int workers = teamColumns[teamColumnCount - 1];
+		double sums[NB_TEAM_STAGE_VALUES] = { 0.0 };
+		double samples = 0.0;
+		for ( int i = 0; i < count; ++i )
+		{
+			const nbProfile* p = profiles + i;
+			if ( p->workerCount != workers || p->teamSampleCount == 0 )
+			{
+				continue;
+			}
+
+			float values[NB_TEAM_STAGE_VALUES];
+			memcpy( values, &p->teamStages, sizeof( values ) );
+			for ( int v = 0; v < NB_TEAM_STAGE_VALUES; ++v )
+			{
+				sums[v] += values[v] * (double)p->teamSampleCount;
+			}
+			samples += (double)p->teamSampleCount;
+		}
+
+		float values[NB_TEAM_STAGE_VALUES];
+		for ( int v = 0; v < NB_TEAM_STAGE_VALUES; ++v )
+		{
+			values[v] = (float)( sums[v] / samples );
+		}
+		b3TeamStages stages;
+		memcpy( &stages, values, sizeof( values ) );
+		nbAppendTeamStages( &out, &stages, workers );
 	}
 
 	double packWait = 0.0;

@@ -213,6 +213,29 @@ typedef struct b3KnotSplit
 	int copyCount;
 } b3KnotSplit;
 
+// Added for Nebenan: a stage of one block the calling thread solved alone, one of the other packs a worker solved, and
+// a stage a worker came into after giving up its core while it waited, see b3TeamEntry
+typedef enum b3TeamEntryFlags
+{
+	b3_teamEntryAlone = 1,
+	b3_teamEntryPack = 2,
+	b3_teamEntryAfterYield = 4,
+} b3TeamEntryFlags;
+
+// Added for Nebenan: a stage one thread took part in, in a step that times its team, see b3TeamStages. The calling
+// thread opens the stage, solves blocks until none is left and sees all of them done, or solves a stage of one block
+// alone. A worker comes into the stage and solves blocks until none is left. Each notes the blocks it solved. A worker
+// also notes each of the other packs it solves, from start to done, so its entries follow each other in time.
+typedef struct b3TeamEntry
+{
+	uint64_t startTicks;
+	uint64_t doneTicks;
+	uint64_t closeTicks;
+	uint32_t syncBits;
+	uint16_t blockCount;
+	uint8_t flags;
+} b3TeamEntry;
+
 typedef struct b3ContactPrepareSpan
 {
 	int start;
@@ -357,6 +380,15 @@ typedef struct b3StepContext
 
 	// padding to prevent false sharing
 	char padding4[64];
+
+	// Added for Nebenan: in a step that times its team the entries of the threads into the stages, from workerIndex *
+	// teamEntryCapacity on, see b3TeamEntry. Then the start and the end of the team on the calling thread and the time
+	// it merges the copies of knots, see b3TeamStages. At the end, where they keep the other fields where they were.
+	b3TeamEntry* teamEntries;
+	int teamEntryCapacity;
+	uint64_t teamStartTicks;
+	uint64_t teamEndTicks;
+	float teamMergeTime;
 } b3StepContext;
 
 void b3Solve( b3World* world, b3StepContext* stepContext );

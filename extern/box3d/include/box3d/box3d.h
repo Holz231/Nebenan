@@ -244,6 +244,10 @@ B3_API b3Profile b3World_GetProfile( b3WorldId worldId );
 /// Get world counters and sizes
 B3_API b3Counters b3World_GetCounters( b3WorldId worldId );
 
+/// Added for Nebenan: how the last step spent the stages of its team, if it timed the team, see b3Counters::teamSample,
+/// and zero otherwise
+B3_API b3TeamStages b3World_GetTeamStages( b3WorldId worldId );
+
 /// Get max capacity. This can be used with b3WorldDef to avoid run-time allocations and copies
 B3_API b3Capacity b3World_GetMaxCapacity( b3WorldId worldId );
 

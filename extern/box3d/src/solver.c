@@ -1278,7 +1278,8 @@ static inline int GetWorkerStartIndex( int workerIndex, int blockCount, int work
 
 // Execute a stage, which is an array of solver blocks, each controlled with an atomic sync index.
 // Each worker starts at its home index and sweeps the ring, CAS-claiming any unclaimed blocks.
-static void b3ExecuteStage( b3SolverStage* stage, b3StepContext* context, int previousSyncIndex, int syncIndex, int workerIndex )
+// Added for Nebenan: returns the blocks it solved, see b3TeamEntry
+static int b3ExecuteStage( b3SolverStage* stage, b3StepContext* context, int previousSyncIndex, int syncIndex, int workerIndex )
 {
 	int completedCount = 0;
 	b3SyncBlock* blocks = stage->blocks;
@@ -1287,7 +1288,7 @@ static void b3ExecuteStage( b3SolverStage* stage, b3StepContext* context, int pr
 	int startIndex = GetWorkerStartIndex( workerIndex, blockCount, context->workerCount );
 	if ( startIndex == B3_NULL_INDEX )
 	{
-		return;
+		return 0;
 	}
 
 	B3_ASSERT( 0 <= startIndex && startIndex < blockCount );
@@ -1313,6 +1314,23 @@ static void b3ExecuteStage( b3SolverStage* stage, b3StepContext* context, int pr
 	}
 
 	(void)b3AtomicFetchAddInt( &stage->completionCount, completedCount );
+	return completedCount;
+}
+
+// Added for Nebenan: a stage a thread took part in, in a step that times its team, see b3TeamEntry
+static void b3AddTeamEntry( b3StepContext* context, int workerIndex, uint32_t syncBits, uint64_t startTicks, uint64_t doneTicks,
+							uint64_t closeTicks, int blockCount, int flags )
+{
+	b3TaskContext* taskContext = context->world->taskContexts.data + workerIndex;
+	B3_ASSERT( taskContext->teamEntryCount < context->teamEntryCapacity );
+	if ( taskContext->teamEntryCount == context->teamEntryCapacity )
+	{
+		return;
+	}
+
+	b3TeamEntry* entry = context->teamEntries + workerIndex * context->teamEntryCapacity + taskContext->teamEntryCount;
+	*entry = (b3TeamEntry){ startTicks, doneTicks, closeTicks, syncBits, (uint16_t)blockCount, (uint8_t)flags };
+	taskContext->teamEntryCount += 1;
 }
 
 // Execute a stage on worker 0 (main thread).
@@ -1326,9 +1344,18 @@ static void b3ExecuteMainStage( b3SolverStage* stage, b3StepContext* context, ui
 
 	const int workerIndex = 0;
 
+	// Added for Nebenan: see b3TeamEntry
+	uint64_t openTicks = context->sampleTeam ? b3GetTicks() : 0;
+
 	if ( blockCount == 1 )
 	{
 		b3ExecuteBlock( stage, context, stage->blocks[0].block, workerIndex );
+
+		if ( context->sampleTeam )
+		{
+			uint64_t closeTicks = b3GetTicks();
+			b3AddTeamEntry( context, workerIndex, syncBits, openTicks, closeTicks, closeTicks, 1, b3_teamEntryAlone );
+		}
 	}
 	else
 	{
@@ -1338,7 +1365,7 @@ static void b3ExecuteMainStage( b3SolverStage* stage, b3StepContext* context, ui
 		B3_ASSERT( syncIndex > 0 );
 		int previousSyncIndex = syncIndex - 1;
 
-		b3ExecuteStage( stage, context, previousSyncIndex, syncIndex, workerIndex );
+		int completedCount = b3ExecuteStage( stage, context, previousSyncIndex, syncIndex, workerIndex );
 
 		// Added for Nebenan: the wait for the others, see b3Profile::teamStageWait
 		uint64_t waitTicks = context->sampleTeam ? b3GetTicks() : 0;
@@ -1353,9 +1380,11 @@ static void b3ExecuteMainStage( b3SolverStage* stage, b3StepContext* context, ui
 
 		if ( context->sampleTeam )
 		{
+			uint64_t closeTicks = b3GetTicks();
 			b3TaskContext* taskContext = context->world->taskContexts.data + workerIndex;
-			taskContext->teamWait += b3GetMilliseconds( waitTicks );
+			taskContext->teamWait += b3TicksToMilliseconds( closeTicks - waitTicks );
 			taskContext->teamStages += 1;
+			b3AddTeamEntry( context, workerIndex, syncBits, openTicks, waitTicks, closeTicks, completedCount, 0 );
 		}
 	}
 }
@@ -1366,7 +1395,13 @@ static void b3ExecuteMainStage( b3SolverStage* stage, b3StepContext* context, ui
 static void b3ExecuteKnotStage( b3SolverStage* stage, b3StepContext* context, uint32_t syncBits )
 {
 	b3ExecuteMainStage( stage, context, syncBits );
+
+	uint64_t mergeTicks = context->sampleTeam ? b3GetTicks() : 0;
 	b3MergeKnots( context, context->packSplitStarts[0], context->packSplitStarts[1] );
+	if ( context->sampleTeam )
+	{
+		context->teamMergeTime += b3GetMilliseconds( mergeTicks );
+	}
 }
 
 // Added for Nebenan: one stage of a pack of islands over [start, end), in blocks that b3SolverBlock::count can hold
@@ -1634,6 +1669,7 @@ static void b3SolverTask( void* taskContext )
 		// b3ExecuteKnotStage. All of them share the blocks of the groups.
 		uint64_t teamTicks = ticks;
 		uint32_t knotSyncIndex = 1;
+		context->teamStartTicks = teamTicks;
 
 		// Prepare joint constraints
 		uint32_t jointSyncIndex = 1;
@@ -1852,10 +1888,11 @@ static void b3SolverTask( void* taskContext )
 			profile->packWait += wait;
 			b3UpdatePackHold( context->world, wait, b3GetMilliseconds( teamTicks ) );
 
-			// Added for Nebenan: see b3Profile::teamTime
+			// Added for Nebenan: see b3Profile::teamTime and b3TeamStages
 			if ( context->sampleTeam )
 			{
-				profile->teamTime = b3GetMilliseconds( teamTicks );
+				context->teamEndTicks = b3GetTicks();
+				profile->teamTime = b3TicksToMilliseconds( context->teamEndTicks - teamTicks );
 				profile->teamOverflow = profile->overflow;
 			}
 		}
@@ -1881,6 +1918,9 @@ static void b3SolverTask( void* taskContext )
 		uint32_t syncBits;
 		int spinCount = 0;
 		uint64_t waitTicks = sampleContext != NULL ? b3GetTicks() : 0;
+
+		// Added for Nebenan: what this worker did while it waited, see b3TeamEntry
+		int waitFlags = 0;
 		while ( ( syncBits = b3AtomicLoadU32( &context->atomicSyncBits ) ) == lastSyncBits )
 		{
 			// Added for Nebenan: without a new stage of the team, one of the other packs, see b3SolveOtherPack. Its time does
@@ -1892,9 +1932,11 @@ static void b3SolverTask( void* taskContext )
 				{
 					if ( sampleContext != NULL )
 					{
-						float packTime = b3GetMilliseconds( packTicks );
+						uint64_t doneTicks = b3GetTicks();
+						float packTime = b3TicksToMilliseconds( doneTicks - packTicks );
 						sampleContext->teamPacks += packTime;
 						sampleContext->teamWait -= packTime;
+						b3AddTeamEntry( context, workerIndex, 0, packTicks, doneTicks, doneTicks, 0, b3_teamEntryPack );
 					}
 					spinCount = 0;
 					continue;
@@ -1908,6 +1950,7 @@ static void b3SolverTask( void* taskContext )
 				if ( sampleContext != NULL )
 				{
 					sampleContext->teamYields += 1;
+					waitFlags |= b3_teamEntryAfterYield;
 				}
 			}
 			else
@@ -1927,9 +1970,11 @@ static void b3SolverTask( void* taskContext )
 			}
 		}
 
+		uint64_t enterTicks = 0;
 		if ( sampleContext != NULL )
 		{
-			sampleContext->teamWait += b3GetMilliseconds( waitTicks );
+			enterTicks = b3GetTicks();
+			sampleContext->teamWait += b3TicksToMilliseconds( enterTicks - waitTicks );
 		}
 
 		if ( syncBits == UINT_MAX )
@@ -1956,7 +2001,14 @@ static void b3SolverTask( void* taskContext )
 		int previousSyncIndex = syncIndex - 1;
 
 		b3SolverStage* stage = stages + stageIndex;
-		b3ExecuteStage( stage, context, previousSyncIndex, syncIndex, workerIndex );
+		int completedCount = b3ExecuteStage( stage, context, previousSyncIndex, syncIndex, workerIndex );
+
+		// Added for Nebenan: see b3TeamEntry
+		if ( sampleContext != NULL )
+		{
+			uint64_t doneTicks = b3GetTicks();
+			b3AddTeamEntry( context, workerIndex, syncBits, enterTicks, doneTicks, doneTicks, completedCount, waitFlags );
+		}
 
 		lastSyncBits = syncBits;
 	}
@@ -2056,6 +2108,181 @@ _Static_assert( B3_MAX_PACKS <= 256, "a pack needs to fit in a byte" );
 // Added for Nebenan: every this many steps a step with a team times where its constraints go, see b3Profile::teamTime.
 // Only that step reads the clock at every stage, the others pay nothing.
 #define B3_TEAM_SAMPLE 8
+
+// Added for Nebenan: the row of b3TeamStages of a stage. The stages of the knots have no color, see b3ExecuteKnotStage.
+static int b3GetTeamRow( const b3SolverStage* stage )
+{
+	switch ( stage->type )
+	{
+		case b3_stagePrepareJoints:
+		case b3_stagePrepareWideContacts:
+		case b3_stagePrepareContacts:
+			return b3_teamPrepare;
+
+		case b3_stageIntegrateVelocities:
+		case b3_stageIntegratePositions:
+			return b3_teamIntegrate;
+
+		case b3_stageStoreWideImpulses:
+		case b3_stageStoreImpulses:
+			return b3_teamStore;
+
+		default:
+			return stage->colorIndex == UINT8_MAX ? b3_teamKnots : b3_teamColors + stage->colorIndex;
+	}
+}
+
+// Added for Nebenan: the ticks two spans share
+static uint64_t b3GetTicksOverlap( uint64_t start1, uint64_t end1, uint64_t start2, uint64_t end2 )
+{
+	uint64_t start = start1 > start2 ? start1 : start2;
+	uint64_t end = end1 < end2 ? end1 : end2;
+	return end > start ? end - start : 0;
+}
+
+// Added for Nebenan: how a step that timed its team spent its stages, from the entries of its threads, see
+// b3TeamStages. The calling thread ran every stage in turn, and each worker came into a part of the stages with a
+// barrier in the same order. Between them it waited or solved other packs, and a stage it never came into, or only
+// after it closed, it missed.
+static void b3SumTeamStages( b3World* world, const b3StepContext* context )
+{
+	b3TeamStages* result = &world->teamStages;
+	*result = (b3TeamStages){ 0 };
+
+	const b3TeamEntry* callerEntries = context->teamEntries;
+	int callerCount = world->taskContexts.data[0].teamEntryCount;
+	uint64_t lastTicks = context->teamStartTicks;
+	for ( int i = 0; i < callerCount; ++i )
+	{
+		const b3TeamEntry* entry = callerEntries + i;
+		const b3SolverStage* stage = context->stages + ( entry->syncBits & 0xFFFF );
+		b3TeamStage* row = result->rows + b3GetTeamRow( stage );
+
+		for ( int j = 0; j < stage->blockCount; ++j )
+		{
+			row->itemCount += (float)stage->blocks[j].block.count;
+		}
+
+		result->serialTime += b3TicksToMilliseconds( entry->startTicks - lastTicks );
+		lastTicks = entry->closeTicks;
+
+		float time = b3TicksToMilliseconds( entry->closeTicks - entry->startTicks );
+		if ( entry->flags & b3_teamEntryAlone )
+		{
+			row->aloneCount += 1.0f;
+			row->aloneTime += time;
+			continue;
+		}
+
+		row->barrierCount += 1.0f;
+		row->blockCount += (float)stage->blockCount;
+		row->callerBlockCount += (float)entry->blockCount;
+		row->openTime += time;
+		row->workTime += b3TicksToMilliseconds( entry->doneTicks - entry->startTicks );
+		row->doneTime += b3TicksToMilliseconds( entry->closeTicks - entry->doneTicks );
+	}
+	result->tailTime = b3TicksToMilliseconds( context->teamEndTicks - lastTicks );
+	result->mergeTime = context->teamMergeTime;
+
+	for ( int workerIndex = 1; workerIndex < context->workerCount; ++workerIndex )
+	{
+		const b3TeamEntry* entries = context->teamEntries + workerIndex * context->teamEntryCapacity;
+		int entryCount = world->taskContexts.data[workerIndex].teamEntryCount;
+		int stageIndex = 0;
+		int firstIndex = 0;
+		for ( int i = 0; i < callerCount; ++i )
+		{
+			const b3TeamEntry* caller = callerEntries + i;
+			if ( caller->flags & b3_teamEntryAlone )
+			{
+				continue;
+			}
+
+			const b3SolverStage* stage = context->stages + ( caller->syncBits & 0xFFFF );
+			b3TeamStage* row = result->rows + b3GetTeamRow( stage );
+			uint64_t openTicks = caller->startTicks;
+			uint64_t closeTicks = caller->closeTicks;
+
+			while ( stageIndex < entryCount && ( entries[stageIndex].flags & b3_teamEntryPack ) )
+			{
+				stageIndex += 1;
+			}
+
+			const b3TeamEntry* entry = NULL;
+			if ( stageIndex < entryCount && entries[stageIndex].syncBits == caller->syncBits )
+			{
+				entry = entries + stageIndex;
+				stageIndex += 1;
+			}
+
+			// The clocks of the threads may differ a little, so the worker stays within the stage. Without a block it
+			// came too late for any.
+			uint64_t inTicks = closeTicks;
+			uint64_t outTicks = closeTicks;
+			if ( entry != NULL && entry->startTicks < closeTicks )
+			{
+				inTicks = entry->startTicks > openTicks ? entry->startTicks : openTicks;
+				outTicks = entry->doneTicks > inTicks ? entry->doneTicks : inTicks;
+				outTicks = outTicks < closeTicks ? outTicks : closeTicks;
+				inTicks = entry->blockCount > 0 ? inTicks : outTicks;
+			}
+			else
+			{
+				entry = NULL;
+			}
+
+			// The other packs the worker solved while the stage was open, before it came in or after its blocks
+			while ( firstIndex < entryCount && entries[firstIndex].doneTicks <= openTicks )
+			{
+				firstIndex += 1;
+			}
+
+			uint64_t lateTicks = inTicks - openTicks;
+			uint64_t doneTicks = closeTicks - outTicks;
+			uint64_t packTicks = 0;
+			for ( int k = firstIndex; k < entryCount && entries[k].startTicks < closeTicks; ++k )
+			{
+				const b3TeamEntry* pack = entries + k;
+				if ( pack->flags & b3_teamEntryPack )
+				{
+					uint64_t beforeTicks = b3GetTicksOverlap( pack->startTicks, pack->doneTicks, openTicks, inTicks );
+					uint64_t afterTicks = b3GetTicksOverlap( pack->startTicks, pack->doneTicks, outTicks, closeTicks );
+					lateTicks -= beforeTicks;
+					doneTicks -= afterTicks;
+					packTicks += beforeTicks + afterTicks;
+				}
+			}
+
+			float late = b3TicksToMilliseconds( lateTicks );
+			row->workTime += b3TicksToMilliseconds( outTicks - inTicks );
+			row->packTime += b3TicksToMilliseconds( packTicks );
+			row->lateTime += late;
+			row->doneTime += b3TicksToMilliseconds( doneTicks );
+
+			if ( entry == NULL )
+			{
+				result->missedCount += 1.0f;
+				result->missedPackCount += packTicks > 0 ? 1.0f : 0.0f;
+				continue;
+			}
+
+			result->entryCount += 1.0f;
+			result->entryLateTime += late;
+			if ( entry->flags & b3_teamEntryAfterYield )
+			{
+				result->yieldEntryCount += 1.0f;
+				result->yieldLateTime += late;
+			}
+		}
+
+		// Every stage the worker came into is one the calling thread opened
+		while ( stageIndex < entryCount && ( entries[stageIndex].flags & b3_teamEntryPack ) )
+		{
+			stageIndex += 1;
+		}
+		B3_ASSERT( stageIndex == entryCount );
+	}
+}
 
 // Added for Nebenan: the work of an island as the packs weigh it, four per contact and one per body
 static int b3GetIslandWork( const b3Island* island )
@@ -3407,6 +3634,21 @@ void b3Solve( b3World* world, b3StepContext* stepContext )
 			}
 		}
 
+		// Added for Nebenan: in a step that times its team an entry per thread for each stage it runs and each pack it
+		// solves, see b3TeamEntry. The substeps and the rounds of restitution run their stages again. Taken before the
+		// split of an island, which takes from the stack on another thread.
+		bool sampleTeam = team && world->stepIndex % B3_TEAM_SAMPLE == 0;
+		int teamEntryCapacity = 0;
+		b3TeamEntry* teamEntries = NULL;
+		if ( sampleTeam )
+		{
+			int colorStages = 1 + activeColorCount;
+			teamEntryCapacity = 5 + stepContext->subStepCount * ( 2 + ( 1 + ITERATIONS + RELAX_ITERATIONS ) * colorStages ) +
+								world->restitutionIterations * colorStages + packCount;
+			teamEntries = (b3TeamEntry*)b3StackAlloc( &world->stack, workerCount * teamEntryCapacity * sizeof( b3TeamEntry ),
+													  "team entries" );
+		}
+
 		// Split an awake island. This modifies:
 		// - stack allocator
 		// - world island array and solver set
@@ -3552,7 +3794,10 @@ void b3Solve( b3World* world, b3StepContext* stepContext )
 		// Added for Nebenan
 		stepContext->packCount = packCount;
 		stepContext->team = team;
-		stepContext->sampleTeam = team && world->stepIndex % B3_TEAM_SAMPLE == 0;
+		stepContext->sampleTeam = sampleTeam;
+		stepContext->teamEntries = teamEntries;
+		stepContext->teamEntryCapacity = teamEntryCapacity;
+		stepContext->teamMergeTime = 0.0f;
 		stepContext->packBodyStarts = packBodyStarts;
 		stepContext->packBodies = packBodies;
 		stepContext->packOverflowStarts = packOverflowStarts;
@@ -3597,6 +3842,7 @@ void b3Solve( b3World* world, b3StepContext* stepContext )
 			taskContext->teamPacks = 0.0f;
 			taskContext->teamStages = 0;
 			taskContext->teamYields = 0;
+			taskContext->teamEntryCount = 0;
 		}
 
 		for ( int i = 0; i < workerCount; ++i )
@@ -3677,6 +3923,8 @@ void b3Solve( b3World* world, b3StepContext* stepContext )
 				world->profile.teamWorkerPacks += taskContext->teamPacks;
 				world->teamYieldCount += taskContext->teamYields;
 			}
+
+			b3SumTeamStages( world, stepContext );
 		}
 
 		b3TracyCZoneNC( update_transforms, "Update Transforms", b3_colorMediumSeaGreen, true );
@@ -3708,6 +3956,10 @@ void b3Solve( b3World* world, b3StepContext* stepContext )
 		b3ParallelFor( world, &b3FinalizeBodiesTask, awakeBodyCount, 16, stepContext, "ccd" );
 
 		// Free in reverse order
+		if ( teamEntries != NULL )
+		{
+			b3StackFree( &world->stack, teamEntries );
+		}
 		b3StackFree( &world->stack, knotBlocks );
 		b3StackFree( &world->stack, graphBlocks );
 		b3StackFree( &world->stack, jointBlocks );

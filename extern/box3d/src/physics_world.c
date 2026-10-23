@@ -2620,6 +2620,17 @@ b3Profile b3World_GetProfile( b3WorldId worldId )
 	return world->profile;
 }
 
+// Added for Nebenan
+b3TeamStages b3World_GetTeamStages( b3WorldId worldId )
+{
+	b3World* world = b3GetUnlockedWorldFromId( worldId );
+	if ( world == NULL || world->teamSample == 0 )
+	{
+		return (b3TeamStages){ 0 };
+	}
+	return world->teamStages;
+}
+
 b3Counters b3World_GetCounters( b3WorldId worldId )
 {
 	b3World* world = b3GetUnlockedWorldFromId( worldId );

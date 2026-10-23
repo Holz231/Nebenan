@@ -657,6 +657,12 @@ typedef struct nbProfile
 	float teamStageCount;
 	float teamYieldCount;
 
+	/// How the timed steps with a team spent the stages, by what they solve and by color, mean per timed step, see
+	/// b3TeamStages: how long the stages were open and how much of that the threads solved blocks or other packs,
+	/// waited before they came in or after their last block, what the calling thread solved alone, and how late the
+	/// workers came in.
+	b3TeamStages teamStages;
+
 	/// How long the calling thread waits for the last packs of islands, milliseconds per step
 	float packWait;
 

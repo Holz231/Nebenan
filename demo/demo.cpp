@@ -3223,8 +3223,9 @@ int main( int argc, char** argv )
 	desc.height = 900;
 	desc.sample_count = app.automation.msaa;
 	desc.high_dpi = app.automation.highDpi;
+	// The reports of the measurements go to the clipboard, the scaling with the stages of the team takes more than 8 KB
 	desc.enable_clipboard = true;
-	desc.clipboard_size = 8192;
+	desc.clipboard_size = 32768;
 	desc.window_title = "Nebenan - polygonale Zerstörung mit Box3D";
 	desc.gl.major_version = 4;
 	desc.gl.minor_version = 3;

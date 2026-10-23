@@ -788,9 +788,9 @@ Wo die Zeit der Schritte hingeht, sagt `nbWorld_GetProfile`, pro Schritt seit de
 Überlauf des Constraint-Graphen mit den Kontakten, die Box3D an Knoten bündelt, und wie viele dieser Bündel ein Thread
 nacheinander rechnet, die Teile des Updates, die Einschläge, Erstarren und Auftauen, die Zellen der Brüche, der Anteil
 der größten Insel an der Arbeit des Lösers, wie oft ein Team aller Threads das größte Paket von Inseln rechnet, wo
-dessen Zeit hingeht, wie lange ein schlafender Worker braucht, bis er anläuft, und ab wie viel Arbeit die Worker deshalb
-helfen. Ist dieselbe Arbeit mit verschieden vielen Threads gemessen, rechnet die Bibliothek aus, was davon parallel
-läuft und was mit mehr Threads bleibt:
+dessen Zeit hingeht und wie sich Arbeit und Warten auf seine Stufen und Farben verteilen, wie lange ein schlafender
+Worker braucht, bis er anläuft, und ab wie viel Arbeit die Worker deshalb helfen. Ist dieselbe Arbeit mit verschieden
+vielen Threads gemessen, rechnet die Bibliothek aus, was davon parallel läuft und was mit mehr Threads bleibt:
 
 ```c
 int counts[8];
@@ -806,8 +806,9 @@ for ( int i = 0; i < countCount; ++i )
 
 nbScaling scaling = nbFitScaling( profiles, countCount );   // T(n) = seriell + parallel / n für jede Stufe
 float withEight = nbScaling_Project( &scaling, nb_profileTotal, 8 );
-char text[8192];
-nbFormatScalingReport( profiles, countCount, text, sizeof( text ) );   // alles als Tabelle für ein Log
+int length = nbFormatScalingReport( profiles, countCount, NULL, 0 );   // die Länge, wie bei snprintf
+char* text = malloc( (size_t)length + 1 );
+nbFormatScalingReport( profiles, countCount, text, length + 1 );   // alles als Tabellen für ein Log
 ```
 
 Die komplette API steht in [include/nebenan/nebenan.h](include/nebenan/nebenan.h).
@@ -1032,6 +1033,17 @@ siehe „Skalierung auf dem Ryzen mit `kollaps-7`“. Mit einem Thread kostet de
 zu 30 % mehr pro Kontakt, in der Stadt bei ×1 auf der VM 0,04 ms pro Schritt. Die Ergebnisse ändern sich, bleiben aber
 mit jeder Zahl von Threads gleich. Schwere Teile liegen auf Trümmern so hoch wie vorher und kommen öfter zur Ruhe, und
 der Abriss in der Demo kommt in 4 000 Bildern bis zum sechsten statt zum vierten Haus.
+
+Seit `kollaps-8` zählt Box3D in jedem achten Schritt mit Team, wie sich Arbeit und Warten auf dessen Stufen verteilen:
+pro Farbe und für Aufbau, Integration, Knoten und Speichern, wie lange die Stufen offen sind, wie viel davon die Threads
+an ihren Blöcken und an den übrigen Paketen rechnen und wie lange sie warten, und was der aufrufende Thread zwischen den
+Stufen allein rechnet, siehe „Stufen des Teams“ in [`extern/README.md`](extern/README.md). `nbWorld_GetProfile` gibt das
+in `nbProfile::teamStages` weiter, ohne eigenen Aufruf, und der Bericht von „Skalierung messen“ zeigt es als Tabelle für
+die meisten Threads. Beim Abriss in der Demo auf der VM bei ×2 mit 4 Threads rechnen die Threads in den offenen Stufen
+65 bis 66 % ihrer Zeit an Blöcken und 18 bis 19 % an den übrigen Paketen und warten 15 bis 16 %, vor allem nach ihrem
+letzten Block. Was die Tabelle mit 8 Threads auf dem Ryzen zeigt, entscheidet, wie es im Löser weitergeht, siehe
+[docs/Roadmap.md](docs/Roadmap.md). Die Ergebnisse bleiben bitgleich, und ein Schritt kostet gepaart gegen `kollaps-7`
+gleich viel.
 
 Die teuersten Frames folgen auf einen Einsturz: Der Schutt um die Reste der Etage taut auf, und Box3D legt im nächsten
 Schritt Tausende neuer Kontakte an. Das ist echte Arbeit, das meiste davon fällt danach wirklich, siehe

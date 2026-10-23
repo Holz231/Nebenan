@@ -155,9 +155,10 @@ bleiben.
 | 28 | **Auf dem Ryzen nachmessen**: „7 gegen 8 Threads messen“ mit `kollaps-6` beim Abriss | bestätigt 27 oder nimmt es zurück | 27 | ✅ am 23. Oktober: Mit 8 Threads ist ein Bild parallel 2,5 % und nacheinander 1,7 % schneller als mit 7, parallel mit 8 nur 2,4 % langsamer als nacheinander. Schritt 27 zurückgenommen |
 | 29 | **Überlauf an Knoten auf mehreren Threads**: die Bündel eines Knotens in einer festen Zahl von Gruppen zugleich auf mehreren Threads rechnen, jede gegen eigene Kopien des Knotens, danach der Mittelwert, wie „Knoten im Überlauf mit geteilter Masse“ über die Spuren hinaus, ändert die Ergebnisse | mit den Einstürzen bei ×2 bis zu 0,3 ms pro Schritt, rund 10 % eines Bilds mit 8 Threads | 25 | ✅ auf `kollaps-7`: Liegen an den Knoten großer Inseln mindestens 256 Kontakte, rechnen die Threads ihre Bündel in acht Gruppen gegen eigene Kopien. Beim Abriss auf der VM bei ×2 kostet der Überlauf auf dem aufrufenden Thread mit 2 und 4 Threads 19 und 42 % weniger, die Bedingungen 9 und 11 %, mit einem Thread pro Kontakt 17 % mehr. Der Abriss verläuft anders, in 4 000 Bildern fallen 6 statt 4 Häuser. Schwere Teile liegen wie vorher und kommen öfter zur Ruhe. Auf dem Ryzen mit 8 Threads am Überlauf 63 % weniger, siehe 30 |
 | 30 | **Auf dem Ryzen nachmessen**: „Skalierung messen“ mit `kollaps-7` beim Abriss bei ×2 | zeigt, was 29 mit 8 Threads bringt | 29 | ✅ am 23. Oktober: Mit 8 Threads rechnet der aufrufende Thread am Überlauf 0,16 statt 0,43 ms pro Schritt, die Bedingungen kosten 19 % weniger, ein Bild dauert 2,80 statt 2,96 ms, obwohl der Abriss weiter ist, und mit 8 Threads bleiben 54 statt 60 % auf einem Thread. Mit einem Thread kostet ein Kontakt an Knoten 30 % mehr |
-| 31 | **Wartezeit des Teams auf eine Stufe zählen**: wie sich mit 8 Threads Arbeit und Warten auf die Stufen der Farben verteilen | Werkzeug, entscheidet, wie es im Löser weitergeht: Jeder Worker wartet im Team 47 % der Zeit, und die Bedingungen haben 0,55 ms seriell | 30 | 🔜 |
+| 31 | **Wartezeit des Teams auf eine Stufe zählen**: wie sich mit 8 Threads Arbeit und Warten auf die Stufen der Farben verteilen | Werkzeug, entscheidet, wie es im Löser weitergeht: Jeder Worker wartet im Team 47 % der Zeit, und die Bedingungen haben 0,55 ms seriell | 30 | ✅ auf `kollaps-8`: In jedem achten Schritt mit Team zählt Box3D pro Farbe und für Aufbau, Integration, Knoten und Speichern, wie lange die Stufen offen sind, wie die Threads die Zeit darin verbringen und was der aufrufende Thread zwischen ihnen allein rechnet, bitgleich. Beim Abriss auf der VM bei ×2 mit 4 Threads rechnen die Threads in den offenen Stufen 65 bis 66 % an Blöcken und 18 bis 19 % an den übrigen Paketen, 12 bis 13 % warten sie nach ihrem letzten Block und 3 % davor. Dort tritt keine der Regeln unter „Was als Nächstes in Frage kommt“ ein, auf dem Ryzen nachzumessen, siehe 34 |
 | 32 | **Aufbau des Lösers auf den Workern**: die Teile des Aufbaus, die nicht voneinander abhängen, parallel, bitgleich | höchstens 0,1 ms pro Schritt, rund 4 % eines Bilds mit 8 Threads | 30 | 🔜 erst messen, welche Teile es sind |
 | 33 | **Weniger Kopien an kleinen Knoten**: eine Gruppe für je 64 statt 32 Kontakte, ändert die Ergebnisse | mit 1 und 2 Threads ein Teil der 30 und 7 % pro Kontakt | 30 | 🔜 niedrig |
+| 34 | **Auf dem Ryzen nachmessen**: „Skalierung messen“ mit `kollaps-8` beim Abriss bei ×2 | zeigt, wo das Team mit 8 Threads wartet, und entscheidet nach den Regeln unter „Was als Nächstes in Frage kommt“, wie es im Löser weitergeht | 31 | 🔜 |
 | 26 | **Worker wach halten statt schlafen legen**: kurz aktiv warten, bevor ein Worker schläft, bitgleich | auf der VM rund ein Zehntel der Ruhe-Prüfung, kostet Rechenzeit beim Zeichnen | 25 | ⛔ nach 25: Auf dem Ryzen laufen die Worker nach 6 bis 7 µs an, aktiv zu warten spart unter 0,5 % eines Schritts |
 
 ## Was die Messung auf dem Ryzen gezeigt hat
@@ -504,6 +505,37 @@ Nach `kollaps-7` ist der Überlauf an Knoten auf dem Ryzen mit 8 Threads 6 % ein
 seriell nennt, weil die Worker im Team fast die Hälfte der Zeit auf eine Stufe warten, die Kontakt-Schleife mit 0,74 ms,
 die gut skaliert, das Update mit 0,29 ms und auf dem aufrufenden Thread allein rund 0,3 ms, davon 0,13 ms für den Aufbau
 des Lösers. Daraus die Schritte 31 bis 33, zuerst das Zählen der Wartezeit im Team.
+
+Auf `kollaps-8` ist Schritt 31 gebaut, siehe „Wartezeit des Teams auf eine Stufe“ in
+[Optimierungen.md](Optimierungen.md): Der Bericht von „Skalierung messen“ zeigt für die meisten Threads eine Tabelle der
+Stufen des Teams, eine Zeile pro Farbe und je eine für Aufbau, Integration, Knoten und Speichern. Beim Abriss auf der VM
+bei ×2 mit 4 Threads dauert das Team 3,91 ms pro gemessenem Schritt: 85 % davon offene Stufen, 3 % Stufen mit einem
+Block, die der aufrufende Thread allein rechnet, 3 % rechnet er zwischen den Stufen allein, fast nur am Überlauf
+außerhalb der Gruppen, und 9 % bleiben nach der letzten Stufe für die letzten Pakete. In den offenen Stufen rechnen die
+Threads 65 bis 66 % ihrer Zeit an Blöcken und 18 bis 19 % an den übrigen Paketen, 12 bis 13 % warten sie nach ihrem
+letzten Block und 3 % davor. Nach diesen Regeln entscheidet die Tabelle mit 8 Threads auf dem Ryzen, Schritt 34:
+
+- **Große Farben**: Warten die Threads in den Farben mit mindestens 8 Blöcken pro Stufe zusammen mehr als ein Viertel
+  ihrer Zeit, vor dem Hineinkommen und nach dem letzten Block, halten die letzten Blöcke die Stufen auf. Dann mehr und
+  kleinere Blöcke für diese Farben mit 8 Threads messen, auf der VM mit 4 Threads hatte das nichts geändert, siehe
+  „Kleinere Blöcke im Löser“. Auf der VM 13 bis 21 %.
+- **Kleine Farben**: Kosten die Farben mit höchstens zwei Blöcken pro Stufe, offen und allein gerechnet, zusammen mehr
+  als ein Zehntel der Zeit des Teams, sind es zu viele Sperren für zu wenig Arbeit. Dann ihre Bedingungen wie die Knoten
+  in Gruppen gegen Kopien rechnen, in der Stufe der Knoten statt in eigenen Stufen, ändert die Ergebnisse. Auf der VM
+  sind es die Farben 12 bis 18 mit 3 %.
+- **Knoten**: Wartet die Stufe der Knoten mehr als ein Drittel nach dem letzten Block, sind ihre Gruppen zu ungleich.
+  Dann die Gruppen nach ihren Bündeln ausgleichen, ändert die Ergebnisse. Auf der VM 14 bis 15 %.
+- **Pakete**: Rechnen die Worker in den offenen Stufen mehr als ein Drittel der Zeit an den übrigen Paketen, während der
+  aufrufende Thread mehr als das Doppelte seines Anteils an den Blöcken rechnet, mit 8 Threads mehr als ein Viertel,
+  warten die Stufen auf ihn. Dann ein Paket an seinen eigenen Stufen unterbrechen, damit sein Worker in eine offene
+  Stufe des Teams kommt und danach weiterrechnet, bitgleich, denn die Körper eines Pakets hängen von keinem anderen ab.
+  Auf der VM 18 bis 19 % und 37 bis 38 % der Blöcke, das 1,5-Fache.
+- **Allein**: Rechnet der aufrufende Thread zwischen den Stufen, in den Stufen mit einem Block und nach der letzten
+  Stufe zusammen mehr als ein Viertel der Zeit des Teams allein, dann am größten dieser Teile weiter: den Überlauf
+  außerhalb der Gruppen in die Gruppen geben oder die letzten Pakete früher verteilen. Auf der VM 15 %, davon 9 % nach
+  der letzten Stufe.
+- **Nichts davon**: Dann verteilt das Team seine Arbeit, und das Warten der Worker liegt nicht an den Stufen. Als
+  Nächstes kommt Schritt 32, der Aufbau des Lösers.
 
 ## Kleinere Punkte
 

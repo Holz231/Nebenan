@@ -141,6 +141,10 @@ typedef struct b3TaskContext
 	// Added for Nebenan: the single manifolds this worker keeps for the collide task, see b3ManifoldCache
 	b3ManifoldCache manifoldCache;
 
+	// Added for Nebenan: the entries of this worker into the stages of a step that times its team, see
+	// b3StepContext::teamEntries. At the end, where it keeps the other fields where they were.
+	int teamEntryCount;
+
 	// Prevent false sharing
 	char cacheLine[64];
 } b3TaskContext;
@@ -370,6 +374,10 @@ typedef struct b3World
 	b3AtomicInt stepGuardOwner;
 	b3StepGuardFcn* stepGuardFcn;
 	void* stepGuardContext;
+
+	// Added for Nebenan: the stages of the last step that timed its team, see b3World_GetTeamStages. At the end, where
+	// it keeps the other fields of the world where they were.
+	b3TeamStages teamStages;
 } b3World;
 
 b3World* b3GetUnlockedWorldFromId( b3WorldId id );

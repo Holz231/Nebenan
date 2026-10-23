@@ -4839,6 +4839,34 @@ static int TaskSystemTest( void )
 			timedSteps += counters.teamSample;
 			ENSURE( counters.teamSample == 0 ||
 					( counters.teamWork > 0 && 2 <= counters.teamWorkerCount && counters.teamWorkerCount <= 4 ) );
+
+			// The stages of a timed step and what the calling thread did alone between them and after the last fill the
+			// time of its team, and every thread took part in each stage with a barrier while it was open, see
+			// b3TeamStages
+			b3TeamStages stages = b3World_GetTeamStages( scene.physicsWorld );
+			if ( counters.teamSample == 0 )
+			{
+				ENSURE( stages.rows[b3_teamColors].barrierCount == 0.0f && stages.serialTime == 0.0f );
+				continue;
+			}
+
+			const float slack = 1.0e-3f;
+			float barriers = 0.0f;
+			float time = stages.serialTime + stages.tailTime;
+			for ( int r = 0; r < b3_teamRowCount; ++r )
+			{
+				const b3TeamStage* row = stages.rows + r;
+				float threadTime = row->workTime + row->packTime + row->lateTime + row->doneTime;
+				ENSURE( fabsf( threadTime - row->openTime * (float)counters.teamWorkerCount ) <= slack );
+				ENSURE( row->callerBlockCount <= row->blockCount && row->packTime >= 0.0f && row->lateTime >= 0.0f );
+				barriers += row->barrierCount;
+				time += row->openTime + row->aloneTime;
+			}
+			ENSURE( barriers > 0.0f && (int)barriers == counters.teamStageCount );
+			ENSURE( fabsf( time - b3World_GetProfile( scene.physicsWorld ).teamTime ) <= slack );
+			ENSURE( stages.entryCount + stages.missedCount == barriers * (float)( counters.teamWorkerCount - 1 ) );
+			ENSURE( stages.yieldEntryCount <= stages.entryCount && stages.missedPackCount <= stages.missedCount );
+			ENSURE( stages.mergeTime <= stages.serialTime + slack && stages.entryLateTime >= 0.0f );
 		}
 		ENSURE( maxAwake >= 1000 && ( pass == 0 || maxTasks > 0 ) );
 		ENSURE( pass == 0 ? teamSteps == 0 : teamSteps > 0 );
@@ -5527,12 +5555,32 @@ static int ScalingFitTest( void )
 	scaling = nbFitScaling( profiles + 2, 2 );
 	ENSURE( scaling.parallel[nb_profileStep] == 0.0f && fabsf( scaling.serial[nb_profileStep] - 4.0f ) < 1.0e-4f );
 
+	// With timed steps of a team the report shows how it spent its stages, with the most workers, see b3TeamStages
+	for ( int i = 2; i < 4; ++i )
+	{
+		profiles[i].teamSampleCount = 10;
+		profiles[i].teamTime = 1.0f;
+		b3TeamStage* row = profiles[i].teamStages.rows + b3_teamColors;
+		*row = (b3TeamStage){ .barrierCount = 13.0f,
+							  .blockCount = 104.0f,
+							  .callerBlockCount = 26.0f,
+							  .itemCount = 832.0f,
+							  .openTime = 0.2f,
+							  .workTime = 0.45f,
+							  .packTime = 0.15f,
+							  .lateTime = 0.15f,
+							  .doneTime = 0.05f };
+		profiles[i].teamStages.entryCount = 39.0f;
+	}
+
 	// The report counts its whole length like snprintf, also into a buffer too small
 	int length = nbFormatScalingReport( profiles, 4, NULL, 0 );
 	ENSURE( length > 200 );
 	char* text = malloc( (size_t)length + 1 );
 	ENSURE( nbFormatScalingReport( profiles, 4, text, length + 1 ) == length );
 	ENSURE( (int)strlen( text ) == length && strstr( text, "createContacts" ) != NULL );
+	const char* colorRow = "color 0       13.0    0.0    8.0    64.0    0.200    0.000     56      19     19      6       25";
+	ENSURE( strstr( text, "The stages of the team with 4 workers" ) != NULL && strstr( text, colorRow ) != NULL );
 	char small[16];
 	ENSURE( nbFormatScalingReport( profiles, 4, small, sizeof( small ) ) == length );
 	ENSURE( strlen( small ) == sizeof( small ) - 1 );

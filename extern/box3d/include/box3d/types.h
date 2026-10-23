@@ -684,6 +684,77 @@ typedef struct b3Counters
 	int teamYieldCount;
 } b3Counters;
 
+/// Added for Nebenan: the rows of b3TeamStages, the stages of a team by what they solve. The stages that prepare the
+/// constraints, those that integrate the velocities and the positions of the bodies, those of the groups of knots in
+/// the overflow, one row per color of the constraint graph from b3_teamColors on, and the stages that store the
+/// impulses.
+typedef enum b3TeamStageRow
+{
+	b3_teamPrepare,
+	b3_teamIntegrate,
+	b3_teamKnots,
+	b3_teamColors,
+	b3_teamStore = b3_teamColors + B3_GRAPH_COLOR_COUNT - 1,
+	b3_teamRowCount
+} b3TeamStageRow;
+
+/// Added for Nebenan: the stages of a row of b3TeamStages. Counts are floats, so that means over several steps fit the
+/// same struct.
+typedef struct b3TeamStage
+{
+	/// The stages with a barrier, whose blocks the threads solve at once, and those with one block, which the calling
+	/// thread solves alone while the workers wait
+	float barrierCount;
+	float aloneCount;
+
+	/// The blocks of the stages with a barrier, the part of them the calling thread solved, and the items of the blocks
+	/// of all the stages: bodies, joints, contacts, wide contact constraints of 4 or 8 lanes, or groups of knots
+	float blockCount;
+	float callerBlockCount;
+	float itemCount;
+
+	/// Milliseconds the stages with a barrier were open, from the moment the calling thread opened one until it saw all
+	/// blocks done, and the milliseconds of the stages the calling thread solved alone
+	float openTime;
+	float aloneTime;
+
+	/// The open time of every thread, the calling one included, in four parts that add up to openTime times the
+	/// threads: the time it solved blocks of the stage, the time a worker solved one of the other packs instead, and
+	/// the time it waited, before it came into the stage and after it had no block left. A worker that only found
+	/// blocks taken waited until then. One that missed the stage, because it came back only after the stage closed,
+	/// spent all of it in other packs or waiting before it.
+	float workTime;
+	float packTime;
+	float lateTime;
+	float doneTime;
+} b3TeamStage;
+
+/// Added for Nebenan: how a step that timed its team spent its stages, see b3Counters::teamSample and
+/// b3World_GetTeamStages. The time of the team on the calling thread, b3Profile::teamTime, goes to the stages of the
+/// rows, to the time it spends alone between them and to the time after the last. Counts are floats as in b3TeamStage.
+typedef struct b3TeamStages
+{
+	b3TeamStage rows[b3_teamRowCount];
+
+	/// Milliseconds the calling thread spent alone between the stages and before the first, on the overflow outside the
+	/// groups of knots, on merging the copies of the knots in several groups, which mergeTime counts, and on opening
+	/// the next stage. Then the time after the last stage, in which it solved the last of the other packs and waited
+	/// for them.
+	float serialTime;
+	float mergeTime;
+	float tailTime;
+
+	/// How often a worker came into a stage with a barrier and the time it waited before, as in lateTime, how often of
+	/// these after giving up its core while it waited and the time it waited then, and how often a worker missed a
+	/// stage and how often of these it solved one of the other packs while the stage was open
+	float entryCount;
+	float entryLateTime;
+	float yieldEntryCount;
+	float yieldLateTime;
+	float missedCount;
+	float missedPackCount;
+} b3TeamStages;
+
 /// Joint type enumeration. This is useful because all joint types use b3JointId and sometimes you
 /// want to get the type of a joint.
 /// @ingroup joint

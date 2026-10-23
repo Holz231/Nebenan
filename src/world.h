@@ -389,6 +389,9 @@ typedef struct nbStreamSlot
 
 NB_ARRAY_DECLARE( nbStreamSlot, nbStreamSlotArray );
 
+// The values of b3TeamStages, all floats, see nbProfile::teamStages
+#define NB_TEAM_STAGE_VALUES ( (int)( sizeof( b3TeamStages ) / sizeof( float ) ) )
+
 // The sums behind nbWorld_GetProfile, see nbProfile. The total stage is the sum of step, update and impacts.
 typedef struct nbProfileSums
 {
@@ -424,6 +427,7 @@ typedef struct nbProfileSums
 	double packWait;
 	int stepCount;
 	int impactCount;
+	double teamStages[NB_TEAM_STAGE_VALUES];
 } nbProfileSums;
 
 typedef struct nbWorld
