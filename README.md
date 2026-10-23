@@ -1026,10 +1026,12 @@ rechnete sie der aufrufende Thread allein, während die Worker warteten, beim Ab
 pro Schritt. Ein Spiel bekommt das mit mehr als einem Worker in `nbWorld_Step`, ohne eigenen Aufruf. Beim Abriss in der
 Demo auf der VM kostet der Überlauf auf dem aufrufenden Thread damit mit 2 und 4 Threads 19 und 42 % weniger und die
 Bedingungen des Lösers 9 und 11 %, in der Stadt des Benchmarks bei ×1 ein Frame 3 bis 6 %, bei ×2 und ×4 bleibt es im
-Rauschen. Mit einem Thread kostet der Überlauf dort, wo sich Knoten teilen, bis zu 17 % mehr pro Kontakt, in der Stadt
-bei ×1 0,04 ms pro Schritt. Die Ergebnisse ändern sich, bleiben aber mit jeder Zahl von Threads gleich. Schwere Teile
-liegen auf Trümmern so hoch wie vorher und kommen öfter zur Ruhe, und der Abriss in der Demo kommt in 4 000 Bildern bis
-zum sechsten statt zum vierten Haus.
+Rauschen. Auf dem Ryzen 7 7800X3D rechnet der aufrufende Thread beim Abriss mit 8 Threads am Überlauf 0,16 statt 0,43 ms
+pro Schritt, die Bedingungen kosten 19 % weniger, und ein Bild dauert 2,80 statt 2,96 ms, obwohl der Abriss weiter ist,
+siehe „Skalierung auf dem Ryzen mit `kollaps-7`“. Mit einem Thread kostet der Überlauf dort, wo sich Knoten teilen, bis
+zu 30 % mehr pro Kontakt, in der Stadt bei ×1 auf der VM 0,04 ms pro Schritt. Die Ergebnisse ändern sich, bleiben aber
+mit jeder Zahl von Threads gleich. Schwere Teile liegen auf Trümmern so hoch wie vorher und kommen öfter zur Ruhe, und
+der Abriss in der Demo kommt in 4 000 Bildern bis zum sechsten statt zum vierten Haus.
 
 Die teuersten Frames folgen auf einen Einsturz: Der Schutt um die Reste der Etage taut auf, und Box3D legt im nächsten
 Schritt Tausende neuer Kontakte an. Das ist echte Arbeit, das meiste davon fällt danach wirklich, siehe
