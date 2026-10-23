@@ -4836,6 +4836,70 @@ static int SettleWorkersTest( void )
 	return 0;
 }
 
+// Over the budget the workers look at the ranked debris before anything freezes, see nbBudgetLook. The calling thread
+// freezes the same pieces as alone, also where a look no longer holds because something it read froze.
+static int BudgetWorkersTest( void )
+{
+	enum
+	{
+		houseCount = 2
+	};
+	CelledHouse* houses = malloc( sizeof( CelledHouse ) * houseCount );
+	nbDestructibleDef defs[houseCount];
+	const nbPieceDef* lists[houseCount];
+	int counts[houseCount];
+	for ( int h = 0; h < houseCount; ++h )
+	{
+		BuildCelledHouse( houses + h, 2, (uint32_t)( 81 + h ), ( b3Vec3 ){ 14.0f * (float)h, 0.0f, 0.0f } );
+		defs[h] = houses[h].def;
+		lists[h] = houses[h].pieces;
+		counts[h] = houses[h].pieceCount;
+	}
+
+	b3Vec3 grenades[] = {
+		{ 0.0f, 1.2f, 3.4f },  { -2.0f, 4.4f, -3.4f }, { 2.5f, 1.2f, -3.4f }, { 4.7f, 1.2f, 0.0f },
+		{ -4.7f, 4.4f, 0.0f }, { -2.5f, 1.2f, 3.4f },  { 2.0f, 4.4f, 3.4f },  { -4.7f, 1.2f, 1.5f },
+	};
+	nbTaskSystem* pool = nbCreateTaskSystem( 3 );
+	uint32_t hashes[2];
+	int rubbleCounts[2];
+	for ( int pass = 0; pass < 2; ++pass )
+	{
+		TestScene scene = pass == 0 ? CreateScene() : CreateSceneWithPool( pool, 4 );
+		nbWorld_SetDebrisBudget( scene.world, 150 );
+		nbDestructibleId ids[houseCount];
+		nbCreateDestructibles( scene.world, defs, lists, counts, houseCount, ids );
+		for ( int h = 0; h < houseCount; ++h )
+		{
+			for ( int g = 0; g < NB_ARRAY_COUNT( grenades ); ++g )
+			{
+				Grenade( &scene, b3Add( grenades[g], ( b3Vec3 ){ 14.0f * (float)h, 0.0f, 0.0f } ) );
+			}
+		}
+
+		int maxMoving = 0;
+		for ( int i = 0; i < 240; ++i )
+		{
+			Step( &scene, 1 );
+			nbStats stats = nbWorld_GetStats( scene.world );
+			maxMoving = b3MaxInt( maxMoving, stats.debrisCount - stats.rubbleCount );
+		}
+
+		// Far over the budget, and only with workers did they look, see nbWorld::lookEstimate
+		const nbWorld* world = nbGetWorldFromId( scene.world );
+		rubbleCounts[pass] = nbWorld_GetStats( scene.world ).rubbleCount;
+		ENSURE( maxMoving > 512 && rubbleCounts[pass] > 0 );
+		ENSURE( pass == 0 ? world->lookEstimate == 0.0f : world->lookEstimate > 0.0f );
+		hashes[pass] = HashCreated( &scene, ids, houseCount );
+		DestroyScene( &scene );
+	}
+	nbDestroyTaskSystem( pool );
+
+	ENSURE( hashes[1] == hashes[0] && rubbleCounts[1] == rubbleCounts[0] );
+	free( houses );
+	return 0;
+}
+
 // What a function after the steps sees of the world, and whether it ran on another thread than the one that stepped
 typedef struct AfterStepProbe
 {
@@ -5595,6 +5659,7 @@ int WorldTest( void )
 	RUN_TEST( SaveLoadTest );
 	RUN_TEST( TaskSystemTest );
 	RUN_TEST( SettleWorkersTest );
+	RUN_TEST( BudgetWorkersTest );
 	RUN_TEST( AsyncStepTest );
 	RUN_TEST( PlanStepsTest );
 	RUN_TEST( StepRateTest );

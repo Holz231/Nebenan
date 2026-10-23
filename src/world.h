@@ -516,12 +516,18 @@ typedef struct nbWorld
 	uint32_t searchStamp;
 	uint32_t settleStamp;
 
-	// How long a sleeping worker takes to start a task, and how long one thread takes for an item of a fracture and for the
-	// checks of a moving piece in nbSettleDebris, in milliseconds. Each is a running mean of the latest measurements and zero
-	// until the first. They decide from how much work on the workers help, see nbWorkerThreshold.
+	// How long a sleeping worker takes to start a task, and how long one thread takes for an item of a fracture, for the
+	// checks of a moving piece in nbSettleDebris and for a look of the budget at a piece, in milliseconds. Each is a running
+	// mean of the latest measurements and zero until the first. They decide from how much work on the workers help, see
+	// nbWorkerThreshold.
 	float wakeEstimate;
 	float cellEstimate;
 	float settleEstimate;
+	float lookEstimate;
+
+	// Ranked debris faster than this gets no look of the budget, how far the budget before got into its ranking with some
+	// room, see NB_LOOK_REACH. Zero for all of it.
+	float lookSpeedLimit;
 
 	// A collapse is breaking a structure apart, the parts it drops come from it
 	bool collapsing;
