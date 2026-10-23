@@ -103,8 +103,9 @@ einem von 20 hielt das ein Teil auf erstarrtem Schutt.
   zeichnet die Demo ein Bild in 0,24 ms, und mit `kollaps-5` ist parallel beim Abriss bei ×2 7,6 % langsamer als
   nacheinander. Der Schritt verliert 18 %, solange der Hauptthread rechnet: Die Threads teilen sich die Kerne, und eine
   Stufe wartet auf ihren langsamsten Worker. Auf der VM ist parallel mit 0,25 ms Arbeit auf dem Hauptthread gleichauf
-  und mit 1 ms 20 % schneller, siehe „Parallel gegen nacheinander mit schneller Grafikkarte“. Ob ein freier Kern den
-  Verlust nimmt, klärt Schritt 27.
+  und mit 1 ms 20 % schneller, siehe „Parallel gegen nacheinander mit schneller Grafikkarte“. Mit 7 Threads und einem
+  freien Kern verliert der Schritt nur noch 11 %, und parallel ist 2,9 % langsamer. Nacheinander kostet der achte Thread
+  nichts Messbares, siehe Schritt 27.
 
 ## Schritte
 
@@ -142,7 +143,7 @@ bleiben.
 | 23 | **Budget auf den Workern**: Die Worker prüfen vorab, was über dem Budget erstarren darf, der aufrufende Thread nimmt eine Prüfung, solange nichts erstarrt ist, was sie gelesen hat, bitgleich | ×4 5 bis 7 % auf der VM | – | ✅ auf `kollaps-5`: auf der VM mit 4 Threads bei ×4 das Budget 24 % und das Update 14 % billiger |
 | 24 | **Manifolds der Worker**: In der Kontakt-Schleife holt jeder Worker Manifolds aus einem eigenen Vorrat statt einzeln unter der Sperre, bitgleich | ×4 1 bis 2 % auf der VM | – | ✅ auf `kollaps-5`: auf der VM mit 4 Threads bei ×4 die Kontakt-Schleife 7 bis 9 % billiger |
 | 25 | **Auf dem Ryzen nachmessen**: „Parallel gegen nacheinander messen“ und „Skalierung messen“ mit `kollaps-5` beim Abriss | entscheidet 26, ergab 27 | 23 und 24 | ✅ „Parallel gegen nacheinander“ am 23. Oktober: parallel 7,6 % langsamer, die Grafik kostet auf der RTX nur noch 0,24 ms, und der Schritt verliert 18 %, solange der Hauptthread zeichnet. „Skalierung messen“ steht noch aus |
-| 27 | **Mit eigenem Schritt einen ganzen Kern frei lassen**: `nbGetRecommendedWorkerCount` lässt mit `asyncStep` auf Prozessoren mit Hyper-Threading oder Effizienzkernen einen Performance-Kern frei statt eines Hardware-Threads, auf dem 7800X3D 7 statt 8 Threads, bitgleich | parallel auf dem Ryzen bis zu 0,3 ms pro Bild, mit mehr Arbeit auf dem Hauptthread mehr | 25 | 🔜 klein, entscheiden kann nur die Messung auf dem Ryzen |
+| 27 | **Mit eigenem Schritt einen ganzen Kern frei lassen**: `nbGetRecommendedWorkerCount` lässt mit `asyncStep` auf Prozessoren mit Hyper-Threading oder Effizienzkernen einen Performance-Kern frei statt eines Hardware-Threads, auf dem 7800X3D 7 statt 8 Threads, bitgleich | parallel auf dem Ryzen rund 6 % pro Bild, mit mehr Arbeit auf dem Hauptthread mehr | 25 | 🔜 klein. Vorab mit `--threads 7` gemessen: parallel 2,9 statt 7,6 % langsamer als nacheinander, der Schritt verliert 11 statt 18 %, und nacheinander kostet der achte Thread nichts Messbares |
 | 26 | **Worker wach halten statt schlafen legen**: kurz aktiv warten, bevor ein Worker schläft, bitgleich | auf der VM rund ein Zehntel der Ruhe-Prüfung, kostet Rechenzeit beim Zeichnen | 25 | 🔜 eine eigene Runde |
 
 ## Was die Messung auf dem Ryzen gezeigt hat
@@ -314,6 +315,8 @@ schnell die Worker dort anlaufen.
   zeigt, warum: Allein rechnet der Schritt auf seinem Thread so schnell wie auf dem aufrufenden. Rechnet der aufrufende
   Thread in der Zeit, verlieren die parallelen Stufen, weil eine Stufe auf ihren langsamsten Worker wartet und einem
   Worker der Kern fehlt. Auf dem Ryzen teilt sich der Hauptthread einen Kern mit einem der 8 Threads. Daraus Schritt 27.
+  Vorab mit `--threads 7` gemessen, beide Arten mit 7 Threads: Parallel ist nur noch 2,9 % langsamer, 3,13 gegen
+  3,04 ms, und der Schritt verliert 11 statt 18 %.
 - **Für Schritt 26** heißt das: Worker, die aktiv warten statt zu schlafen, hielten die Kerne auch im Update besetzt,
   bisher tun das nur die Worker von Box3D im Schritt. Ob sich das lohnt, muss die Messung mit einem Programm zeigen, das
   in der Zeit rechnet, nicht nur mit „Skalierung messen“, wo die Physik nacheinander läuft.
