@@ -184,13 +184,9 @@ int nbGetRecommendedWorkerCount( bool asyncStep )
 	int performance = nbGetPerformanceCoreCount();
 	int workers = performance > 0 ? performance : hardware / 2;
 	workers = workers < hardware ? workers : hardware;
-
-	// The thread that draws keeps a core to itself, with second hardware threads or efficiency cores a whole performance
-	// core: the stages of a step wait for their slowest worker, and a worker that shares its core with it holds them up
 	if ( asyncStep && hardware > 1 )
 	{
-		int cores = performance > 0 ? performance : hardware;
-		workers = workers < cores - 1 ? workers : cores - 1;
+		workers = workers < hardware - 1 ? workers : hardware - 1;
 	}
 	return workers < 1 ? 1 : ( workers > NB_RECOMMENDED_MAX_WORKERS ? NB_RECOMMENDED_MAX_WORKERS : workers );
 }

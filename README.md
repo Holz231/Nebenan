@@ -161,10 +161,11 @@ ihren Platz in den Bereichen. **Statik ohne Decken** schaltet die Lastprüfung f
 
 Die Threads wählt die Bibliothek (`nbGetRecommendedWorkerCount`): einen pro Performance-Kern, höchstens 8. Box3D läuft
 am schnellsten ohne Hyper-Threads und Effizienzkerne, und mehr Threads als Kerne bremsen. Mit paralleler Physik bleibt
-dem Hauptthread ein ganzer Kern frei, auf einem Ryzen 7 7800X3D mit 8 Kernen und 16 Hyper-Threads rechnen dann 7 statt 8
-Threads: Teilt sich der Hauptthread einen Kern mit einem der Worker, warten die Stufen des Schritts auf diesen, siehe
-Der Schritt auf einem eigenen Thread. Im Benchmark auf der Cloud-VM mit 4 Kernen ist ein Frame der Stadt mit
-Bruchstückgröße ×2 mit 4 Threads 1,8-mal so schnell wie mit 1 Thread, mit 8 Threads 10 % langsamer als mit 4.
+dem Hauptthread ein Hardware-Thread frei, auf einem PC mit Hyper-Threads oder Effizienzkernen ändert das nichts. Einen
+ganzen Kern freizulassen ist dort langsamer: Auf einem Ryzen 7 7800X3D ist ein Bild mit 8 Threads parallel 2,5 % und
+nacheinander 1,7 % schneller als mit 7, gemessen mit „7 gegen 8 Threads messen“. Im Benchmark auf der Cloud-VM mit 4
+Kernen ist ein Frame der Stadt mit Bruchstückgröße ×2 mit 4 Threads 1,8-mal so schnell wie mit 1 Thread, mit 8 Threads
+10 % langsamer als mit 4.
 
 **Messung.** Das Menü zeigt die Bildzeit und die CPU-Zeit pro Bild, aufgeteilt in Einschläge, Simulation und Grafik, als
 Mittel und Spitze der letzten 300 Bilder, dazu Box3D-Schritt, Bruchstücke, Körper, Kontakte, Dreiecke, Draw Calls und
@@ -178,14 +179,14 @@ Schutt im Schub früher, als er zur Ruhe käme. Das macht er einmal kurz zum Auf
 nacheinander und parallel, mit 1/60 s Physik pro Bild, bei 60 Hz einem Schritt, und jeweils mit den passenden Threads.
 Das Ergebnis mit Bildzeit, FPS und 1 % Low für beide und für jeden Lauf kommt ebenso in die Zwischenablage, danach lädt
 die Szene von vorher neu. „7 gegen 8 Threads messen“ reißt die Stadt genauso ab, parallel und nacheinander jeweils mit
-beiden Zahlen von Threads, die die Bibliothek wählt, auf einem Ryzen 7 7800X3D parallel 7 und nacheinander 8, und
+so vielen Threads, wie die Bibliothek nacheinander nimmt, und mit einem weniger, auf einem Ryzen 7 7800X3D 8 und 7, und
 dieselben vier Läufe danach noch einmal rückwärts, damit eine Drift des PCs alle gleich trifft. Der Bericht sagt, was
-ein Thread mehr oder weniger in jeder Art ändert und was die Wahl der Bibliothek bringt, parallel mit 7 gegen
-nacheinander mit 8. Wählt die Bibliothek für beide Arten gleich viele Threads, ist der Knopf aus. „Skalierung messen“
-reißt die Stadt genauso ab, nach dem Aufwärmen mit 1, 2, 4 und so weiter bis zur empfohlenen Zahl von Threads, alle mit
-der Physik nacheinander. Die Bibliothek misst dabei jede Stufe von Box3D und Nebenan und rechnet aus, was mit mehr
-Threads auf einem Thread übrig bleibt. Die Tabelle dazu kommt in die Zwischenablage, siehe `nbWorld_GetProfile`. Jeder
-Bericht nennt CPU und Grafikkarte, denn auf einer schwachen Grafik begrenzt das Zeichnen die Bildzeit.
+ein Thread mehr oder weniger in jeder Art ändert und was die Wahl der Bibliothek bringt, parallel gegen nacheinander mit
+den Threads, die sie für jede Art nimmt. „Skalierung messen“ reißt die Stadt genauso ab, nach dem Aufwärmen mit 1, 2, 4
+und so weiter bis zur empfohlenen Zahl von Threads, alle mit der Physik nacheinander. Die Bibliothek misst dabei jede
+Stufe von Box3D und Nebenan und rechnet aus, was mit mehr Threads auf einem Thread übrig bleibt. Die Tabelle dazu kommt
+in die Zwischenablage, siehe `nbWorld_GetProfile`. Jeder Bericht nennt CPU und Grafikkarte, denn auf einer schwachen
+Grafik begrenzt das Zeichnen die Bildzeit.
 
 **Werkzeuge**
 
@@ -292,18 +293,18 @@ Nebenan und kehrt sofort zurück, so zeichnet das Programm sein Bild, während d
 viel wie der längere der beiden Teile statt beide zusammen. Das lohnt, wenn das Programm in der Zeit genug zu tun hat.
 Die Threads des Schritts teilen sich die Kerne mit dem Thread, der zeichnet, und eine Stufe des Schritts wartet auf
 ihren langsamsten Worker, so verliert der Schritt Zeit, solange das Programm rechnet. In der Demo auf einem Ryzen 7
-7800X3D mit einer RTX 4070 SUPER zeichnet der Hauptthread ein Bild in 0,24 ms, und parallel ist ein Bild 7,6 % langsamer
-als nacheinander. Auf der VM ist parallel mit 0,25 ms Arbeit auf dem Hauptthread gleichauf und mit 1 ms 20 % schneller.
-Ein Programm, das zwischen seinen Schritten kaum etwas tut, schaltet es mit `nbWorld_SetAsyncStep` ab. Ruft der Thread,
-der den Schritt gestartet hat, danach irgendeine Funktion von Nebenan oder Box3D für die beiden Welten auf, wartet sie
-zuerst auf den Schritt. Box3D prüft dazu bei jedem Zugriff auf eine Welt, ob ein anderer Thread sie gerade rechnet (eine
-Ergänzung, siehe [`extern/README.md`](extern/README.md)). Der Schritt-Thread und die Worker gehen ohne Warten durch. So
-bleibt die Reihenfolge aller Änderungen dieselbe wie ohne eigenen Thread, und die Welt rechnet bitgleich, das Programm
-muss nichts dafür bauen. Mehrere Schritte in einem Bild warten nicht aufeinander, sie folgen auf dem Thread
-hintereinander. `nbWorld_GetBodyEvents` gibt am Anfang des nächsten Bilds die letzte Lage jedes Körpers, der sich
-seitdem bewegt hat und noch da ist, `nbWorld_GetDrawPoses` die Lagen zum Zeichnen, siehe Zeichnen zwischen zwei
-Schritten. Mit `nbWorld_RunAfterStep` legt ein Programm eigene Arbeit an der Welt hinter den Schritt auf denselben
-Thread, die Demo etwa das Streaming der großen Stadt.
+7800X3D mit einer RTX 4070 SUPER zeichnet der Hauptthread ein Bild in 0,2 ms, und parallel ist ein Bild je nach Sitzung
+2 bis 8 % langsamer als nacheinander. Auf der VM ist parallel mit 0,25 ms Arbeit auf dem Hauptthread gleichauf und mit
+1 ms 20 % schneller. Ein Programm, das zwischen seinen Schritten kaum etwas tut, schaltet es mit `nbWorld_SetAsyncStep`
+ab. Ruft der Thread, der den Schritt gestartet hat, danach irgendeine Funktion von Nebenan oder Box3D für die beiden
+Welten auf, wartet sie zuerst auf den Schritt. Box3D prüft dazu bei jedem Zugriff auf eine Welt, ob ein anderer Thread
+sie gerade rechnet (eine Ergänzung, siehe [`extern/README.md`](extern/README.md)). Der Schritt-Thread und die Worker
+gehen ohne Warten durch. So bleibt die Reihenfolge aller Änderungen dieselbe wie ohne eigenen Thread, und die Welt
+rechnet bitgleich, das Programm muss nichts dafür bauen. Mehrere Schritte in einem Bild warten nicht aufeinander, sie
+folgen auf dem Thread hintereinander. `nbWorld_GetBodyEvents` gibt am Anfang des nächsten Bilds die letzte Lage jedes
+Körpers, der sich seitdem bewegt hat und noch da ist, `nbWorld_GetDrawPoses` die Lagen zum Zeichnen, siehe Zeichnen
+zwischen zwei Schritten. Mit `nbWorld_RunAfterStep` legt ein Programm eigene Arbeit an der Welt hinter den Schritt auf
+denselben Thread, die Demo etwa das Streaming der großen Stadt.
 
 **Stützgraph.** Zwei Bruchstücke sind verbunden, wenn sich ihre Flächen berühren. Jede Verbindung hält
 `strength × Kontaktfläche` aus, zwischen zwei Materialien mit dem kleineren `strength`. Der Schaden eines
@@ -856,7 +857,7 @@ beim Einbinden nicht gebaut.
 | `collisionPassThrough` | 0,6 | Anteil der Geschwindigkeit, den ein durchschlagendes Geschoss behält |
 | `workerCount` | 1 | Threads für Einschläge: Schaden, Bruchpunkte, Voronoi-Zellen und Hüllen, der aufrufende Thread zählt mit |
 | `enqueueTask`, `finishTask`, `userTaskContext` | leer | Task-System der Anwendung, sonst startet Nebenan eigene Threads |
-| `asyncStep` | an | `nbWorld_Step` rechnet auf einem eigenen Thread, während das Programm zeichnet. Die Welt rechnet bitgleich wie ohne. Die Allokatoren müssen threadsicher sein, und die Worker eines Schritts lassen dem zeichnenden Thread am besten einen Kern frei, wie `nbGetRecommendedWorkerCount` sie wählt. Lohnt, wenn das Programm in der Zeit genug zu tun hat, siehe Der Schritt auf einem eigenen Thread. Zur Laufzeit mit `nbWorld_SetAsyncStep` |
+| `asyncStep` | an | `nbWorld_Step` rechnet auf einem eigenen Thread, während das Programm zeichnet. Die Welt rechnet bitgleich wie ohne. Die Allokatoren müssen threadsicher sein, und die Worker eines Schritts lassen dem zeichnenden Thread am besten einen Hardware-Thread frei, wie `nbGetRecommendedWorkerCount` sie wählt. Lohnt, wenn das Programm in der Zeit genug zu tun hat, siehe Der Schritt auf einem eigenen Thread. Zur Laufzeit mit `nbWorld_SetAsyncStep` |
 | `stepRate` | 60 | Schritte der Physik pro Sekunde für `nbWorld_Advance`, 10 bis 240. Jeder Schritt bekommt so viele Teilschritte, dass es 240 pro Sekunde sind (`nbGetSubStepCount`), und die Grenzen pro Update gelten für 1/60 s und wachsen und schrumpfen mit dem Schritt. Weniger kostet weniger, mehr ist genauer, siehe Der Takt der Physik. Zur Laufzeit mit `nbWorld_SetStepRate` |
 
 | Stream (`nbStreamDef`) | Standard | Wirkung |
@@ -1070,8 +1071,8 @@ Seit `physik-16` rechnet die Demo die Physik eines Bilds auf einem eigenen Threa
 und die Welt rechnet genau wie vorher. Ohne die Zeichenaufrufe gemessen, also wie mit einer schnellen Grafikkarte,
 kostet ein Bild auf der VM damit 13 bis 17 % weniger. Auf einem Ryzen 7 7800X3D kostet ein Bild beim Abriss der Stadt
 Haus für Haus bei vierfacher Bruchstückgröße 5,8 % weniger, gemessen mit „Parallel gegen nacheinander messen“. Das lief
-noch auf der Grafik im Prozessor. Auf der RTX 4070 SUPER zeichnet die Demo ein Bild in 0,24 ms, und mit `kollaps-5` ist
-parallel bei ×2 7,6 % langsamer, siehe Der Schritt auf einem eigenen Thread.
+noch auf der Grafik im Prozessor. Auf der RTX 4070 SUPER zeichnet die Demo ein Bild in 0,2 ms, und mit `kollaps-5` ist
+parallel bei ×2 je nach Sitzung 2,4 bis 7,6 % langsamer, siehe Der Schritt auf einem eigenen Thread.
 Seit `physik-17` steckt das in der Bibliothek: `nbWorld_Step` rechnet Schritt und Update auf einem Thread von Nebenan,
 und jedes Programm bekommt es ohne eigenen Thread, siehe Der Schritt auf einem eigenen Thread. Die Demo nutzt nur
 noch diesen Weg.

@@ -127,10 +127,11 @@ struct Demolition
 
 // Parallel against serial physics on this PC with one click: the town taken down house by house, see RunDemolition,
 // alternately with and without parallel physics, each with the threads the library picks for it. Every run takes one
-// step per frame like an automated run, so all do the same work and end in the same world. The same runs measure both
-// numbers of threads the library picks, with and without parallel physics, see nbGetRecommendedWorkerCount, and how the
-// physics scales with the threads: the town taken down with 1, 2, 4 and so on threads, see nbGetScalingWorkerCounts, all
-// with serial physics, and the profile of the library fitted over them, see nbFormatScalingReport.
+// step per frame like an automated run, so all do the same work and end in the same world. The same runs measure the
+// threads the library takes against one fewer, with and without parallel physics, see nbGetRecommendedWorkerCount, and
+// how the physics scales with the threads: the town taken down with 1, 2, 4 and so on threads, see
+// nbGetScalingWorkerCounts, all with serial physics, and the profile of the library fitted over them, see
+// nbFormatScalingReport.
 struct Comparison
 {
 	enum Kind
@@ -1894,9 +1895,9 @@ static void DrawUi( App& app )
 		{
 			ImGui::SetTooltip( "Lädt die Stadt und reißt sie Haus für Haus mit Granaten ab, Wand für Wand von\noben nach unten, bis jedes Haus unten ist, mit Budget 5000 und nur so schnell,\ndass nie mehr als 3000 Trümmer zugleich fliegen: einmal kurz zum Aufwärmen, dann\nparallel, nacheinander, nacheinander und parallel, mit einem Schritt pro Bild und\njeweils mit den passenden Threads. Das Ergebnis kommt in die Zwischenablage,\ndanach lädt die Szene von vorher neu." );
 		}
-		// Both numbers of threads the library picks, the fewer with parallel physics, if they differ on this PC
-		int fewer = nbGetRecommendedWorkerCount( true );
+		// The threads the library takes without parallel physics against one fewer, both ways
 		int more = nbGetRecommendedWorkerCount( false );
+		int fewer = b3MaxInt( more - 1, 1 );
 		char threadsLabel[64];
 		snprintf( threadsLabel, sizeof( threadsLabel ), "%d gegen %d Threads messen", fewer, more );
 		ImGui::BeginDisabled( fewer == more );
@@ -1910,18 +1911,17 @@ static void DrawUi( App& app )
 		{
 			if ( fewer == more )
 			{
-				ImGui::SetTooltip( "Auf diesem PC nimmt die Bibliothek parallel und nacheinander gleich viele Threads, %d.",
-								   more );
+				ImGui::SetTooltip( "Auf diesem PC nimmt die Bibliothek nur einen Thread." );
 			}
 			else
 			{
 				ImGui::SetTooltip( "Reißt die Stadt wie beim Vergleich Haus für Haus ab, einmal kurz zum Aufwärmen, dann\n"
 								   "parallel und nacheinander, jeweils mit %d und mit %d Threads, und dieselben vier\n"
 								   "Läufe noch einmal rückwärts, damit eine Drift des PCs alle gleich trifft. Die\n"
-								   "Bibliothek nimmt parallel %d Threads, damit der zeichnende Thread einen Kern für\n"
-								   "sich hat, und nacheinander %d. Das dauert doppelt so lange wie der Vergleich. Das\n"
-								   "Ergebnis kommt in die Zwischenablage, danach lädt die Szene von vorher neu.",
-								   fewer, more, fewer, more );
+								   "Bibliothek nimmt parallel %d und nacheinander %d Threads. Das dauert doppelt so\n"
+								   "lange wie der Vergleich. Das Ergebnis kommt in die Zwischenablage, danach lädt die\n"
+								   "Szene von vorher neu.",
+								   fewer, more, nbGetRecommendedWorkerCount( true ), more );
 			}
 		}
 		if ( ImGui::Button( "Skalierung messen" ) )
@@ -2283,11 +2283,12 @@ static void StartComparison( App& app )
 		comparison.runWorkers[run] = 0;
 	}
 
-	// Both ways with both counts the library picks, the fewer with parallel physics, then the same the other way round
+	// Both ways with the threads the library takes without parallel physics and with one fewer, then the same the other
+	// way round
 	if ( comparison.kind == Comparison::ThreadCounts )
 	{
-		int fewer = nbGetRecommendedWorkerCount( true );
 		int more = nbGetRecommendedWorkerCount( false );
+		int fewer = b3MaxInt( more - 1, 1 );
 		const bool parallel[] = { true, true, true, false, false, false, false, true, true };
 		const int workers[] = { fewer, fewer, more, more, fewer, fewer, more, more, fewer };
 		comparison.runCount = Comparison::MaxRuns;
@@ -2609,8 +2610,8 @@ static void PublishComparison( App& app, const std::string& text, const char* su
 	StopComparison( app );
 }
 
-// Both ways with both numbers of threads the library picks: what one thread more or less changes, and what the library's
-// choice does, the fewer threads with parallel physics against the more without
+// Both ways with the threads the library takes and one fewer: what one thread more or less changes, and what the
+// library's choice does, parallel against serial each with the threads the library takes for it
 static void FinishThreadCounts( App& app )
 {
 	Comparison& comparison = app.comparison;
@@ -2638,11 +2639,12 @@ static void FinishThreadCounts( App& app )
 	const char* choiceWay;
 	float parallelGain = FrameGain( parallelFewer, parallelMore, &parallelWay );
 	float serialGain = FrameGain( serialFewer, serialMore, &serialWay );
-	float choiceGain = FrameGain( parallelFewer, serialMore, &choiceWay );
+	int parallelChoice = nbGetRecommendedWorkerCount( true );
+	float choiceGain = FrameGain( parallelChoice == fewer ? parallelFewer : parallelMore, serialMore, &choiceWay );
 	Appendf( text, "Mit %d statt %d Threads ist parallel %.1f %% %s, nacheinander %.1f %% %s\n", fewer, more, parallelGain,
 			 parallelWay, serialGain, serialWay );
 	Appendf( text, "Parallel mit %d gegen nacheinander mit %d Threads, wie die Bibliothek sie wählt: parallel %.1f %% %s\n",
-			 fewer, more, choiceGain, choiceWay );
+			 parallelChoice, more, choiceGain, choiceWay );
 	Appendf( text, "Die Welt endet in allen Läufen %s\n", ComparisonRunsAgree( comparison ) ? "gleich" : "verschieden" );
 	AppendRuns( text, comparison, true );
 
