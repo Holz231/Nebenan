@@ -988,9 +988,12 @@ pro Schritt. Auch ein Hausteil hängt nicht mehr auf Schutt, der nur durch es h�
 eigenen Schutt“. Das Update kostet damit in keiner Szene mehr, ein Frame liegt bei ×2 und ×4 im Rauschen und kostet bei
 ×1 mit 1 und 2 Threads im Mittel 4 % mehr. Gibt nach einer Etage auch die darunter nach, kommt jetzt alles darüber mit
 herunter, und Teile von Gebäuden erstarren erst, wenn sie mit den Zellen unter ihnen ruhen, siehe „Schutt über einer
-Etage, die nachgibt, wacht auf“ und „Hausteile ruhen erst, wenn ihre Insel schläft“. Gepaart gegen den Stand davor
-kostet ein Frame bei ×1 mit 1, 2 und 4 Threads zusammen 6 bis 11 % mehr, weil viel feiner Schutt noch einmal fällt, bei
-×2 nichts Messbares und unter dem Trommelfeuer bei ×4 5 bis 10 %, weil dort mehr Teile wach bleiben.
+Etage, die nachgibt, wacht auf“ und „Hausteile ruhen erst, wenn ihre Insel schläft“. Direkt gepaart gegen den Stand
+davor kostet ein Frame bei ×1 mit 1, 2 und 4 Threads +5, +4 und −5 %, bei ×2 nichts Messbares und unter dem
+Trommelfeuer bei ×4 8, 8 und 5 % mehr, weil dort mehr Teile wach bleiben. Ganz zerstört mit ×2 und Budget 5 000, eine
+Granate pro Schritt, bis alle 32 Etagen der Stadt eingestürzt sind, kostet ein Frame mit 4 Threads 7 % mehr, vor allem
+im Budget, siehe „Was die Einstürze die Stadt kosten“. Gegen `kollaps-3` kostet ein Frame bei ×1 18 bis 26 % mehr, bei
+×2 13 bis 15 % und bei ×4 86 bis 101 %, weil viel mehr Etagen einstürzen.
 
 Die teuersten Frames folgen auf einen Einsturz: Der Schutt um die Reste der Etage taut auf, und Box3D legt im nächsten
 Schritt Tausende neuer Kontakte an. Das ist echte Arbeit, das meiste davon fällt danach wirklich, siehe

@@ -42,7 +42,9 @@ wahrscheinlich Schutt auf bewegten Stücken, die sich danach setzten. Die naheli
 und macht das Zweite schlimmer, beides gehört in eine eigene Runde. Gibt nach einer Etage auch die darunter nach, kommt
 jetzt alles darüber mit herunter, auch was beim ersten Einsturz herunterkam und erstarrte, und Teile von Gebäuden
 erstarren erst, wenn sie mit den Zellen unter ihnen ruhen, siehe „Schutt über einer Etage, die nachgibt, wacht auf“ und
-„Hausteile ruhen erst, wenn ihre Insel schläft“. Ein Frame kostet damit bei ×1 6 bis 11 % und bei ×4 5 bis 10 % mehr.
+„Hausteile ruhen erst, wenn ihre Insel schläft“. Direkt gemessen kostet ein Frame damit bei ×1 −5 bis +5 % und bei ×4
+5 bis 8 % mehr, ganz zerstört mit ×2 und Budget 5 000 7 %, siehe „Was die Einstürze die Stadt kosten“. Dort rechnet das
+Budget 3,7 statt 1,9 ms pro Schritt, ein Kandidat für eine Runde der Physik.
 Offen bleibt, dass das Budget auch sinkende Teile einfriert, wenn der übrige Schutt nicht reicht: unter dem Trommelfeuer
 bei ×4, und mit dem Standard von 1 500 auch an einem einzelnen Haus, ringsum beschossen in der Hälfte der Läufe. In
 einem von 20 hielt das ein Teil auf erstarrtem Schutt.
