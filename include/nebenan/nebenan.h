@@ -52,8 +52,9 @@ NB_API int nbGetPerformanceCoreCount( void );
 /// How many threads Box3D and Nebenan run best with on this machine, for b3WorldDef::workerCount and
 /// nbWorldDef::workerCount, and one less for nbCreateTaskSystem: one per performance core, at most 8. Second hardware
 /// threads and efficiency cores add little to the solver or slow it down, and so do more threads than cores. With the
-/// step on a thread of its own, see nbWorldDef::asyncStep, one hardware thread stays free for the thread that draws,
-/// since the workers of a step wait for their next task without sleeping.
+/// step on a thread of its own, see nbWorldDef::asyncStep, a performance core stays free for the thread that draws: the
+/// workers of a step wait for their next task without sleeping, and a stage of the step waits for its slowest worker,
+/// so a worker that shares its core with the thread that draws holds up the others.
 NB_API int nbGetRecommendedWorkerCount( bool asyncStep );
 
 /// Default world definition.

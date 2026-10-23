@@ -126,8 +126,9 @@ struct Demolition
 };
 
 // Parallel against serial physics on this PC with one click: the town taken down house by house, see RunDemolition,
-// alternately with and without parallel physics, each with the threads the demo picks for it. Every run takes one step
-// per frame like an automated run, so all do the same work and end in the same world. The same runs measure how the
+// alternately with and without parallel physics, each with the threads the library picks for it. Every run takes one
+// step per frame like an automated run, so all do the same work and end in the same world. The same runs measure both
+// numbers of threads the library picks, with and without parallel physics, see nbGetRecommendedWorkerCount, and how the
 // physics scales with the threads: the town taken down with 1, 2, 4 and so on threads, see nbGetScalingWorkerCounts, all
 // with serial physics, and the profile of the library fitted over them, see nbFormatScalingReport.
 struct Comparison
@@ -135,28 +136,26 @@ struct Comparison
 	enum Kind
 	{
 		ParallelAgainstSerial,
+		ThreadCounts,
 		Scaling,
 	};
 
 	// A first, shorter run warms up and does not count. Then come two runs with and two without parallel physics, with
-	// first and last, so a slow drift of the machine falls on both alike. A counted run ends when the debris had time to
-	// settle after the last house came down. The scaling warms up with the most threads and then counts a run for each
-	// number of threads.
+	// first and last, so a slow drift of the machine falls on both alike. The thread counts take both ways with both
+	// counts, and then the same runs the other way round. A counted run ends when the debris had time to settle after the
+	// last house came down. The scaling warms up with the most threads and then counts a run for each number of threads.
 	static const int RunCount = 5;
 	static const int MaxRuns = 9;
 	static const int WarmupFrames = 300;
 	static const int SettleFrames = 300;
 	static const int MaxRunFrames = 4000;
 
-	static bool IsParallel( int run )
-	{
-		return run == 0 || run == 1 || run == RunCount - 1;
-	}
-
 	Kind kind = ParallelAgainstSerial;
 	int runCount = RunCount;
 
-	// For the scaling: the threads of every run, and the profile of the library over it
+	// Whether every run steps the physics on a thread of its own and with how many threads, zero for those the library
+	// picks, and for the scaling the profile of the library over every run
+	bool runParallel[MaxRuns] = {};
 	int runWorkers[MaxRuns] = {};
 	nbProfile profiles[MaxRuns] = {};
 
@@ -199,7 +198,7 @@ struct Comparison
 // Whether a run of the comparison steps the physics on a thread of its own. The scaling runs all without.
 static bool RunIsParallel( const Comparison& comparison, int run )
 {
-	return comparison.kind == Comparison::ParallelAgainstSerial && Comparison::IsParallel( run );
+	return comparison.runParallel[run];
 }
 
 // Which run is on, for the menu and the corner
@@ -217,8 +216,14 @@ static void DescribeComparisonRun( const Comparison& comparison, char* text, siz
 				  comparison.runWorkers[comparison.run] );
 		return;
 	}
-	snprintf( text, size, "%s, Lauf %d von %d, %s", kind, comparison.run, comparison.runCount - 1,
-			  Comparison::IsParallel( comparison.run ) ? "parallel" : "nacheinander" );
+	const char* way = RunIsParallel( comparison, comparison.run ) ? "parallel" : "nacheinander";
+	if ( comparison.kind == Comparison::ThreadCounts )
+	{
+		snprintf( text, size, "%s, Lauf %d von %d, %s, %d Threads", kind, comparison.run, comparison.runCount - 1, way,
+				  comparison.runWorkers[comparison.run] );
+		return;
+	}
+	snprintf( text, size, "%s, Lauf %d von %d, %s", kind, comparison.run, comparison.runCount - 1, way );
 }
 
 struct Automation
@@ -228,8 +233,10 @@ struct Automation
 	bool script = false;
 	int scene = -1;
 
-	// Run the comparison or the scaling, print it and quit, or take the town down like the comparison does
+	// Run the comparison, the one of the thread counts or the scaling, print it and quit, or take the town down like the
+	// comparison does
 	bool compare = false;
+	bool threadCounts = false;
 	bool scaling = false;
 	bool demolition = false;
 
@@ -1887,6 +1894,36 @@ static void DrawUi( App& app )
 		{
 			ImGui::SetTooltip( "Lädt die Stadt und reißt sie Haus für Haus mit Granaten ab, Wand für Wand von\noben nach unten, bis jedes Haus unten ist, mit Budget 5000 und nur so schnell,\ndass nie mehr als 3000 Trümmer zugleich fliegen: einmal kurz zum Aufwärmen, dann\nparallel, nacheinander, nacheinander und parallel, mit einem Schritt pro Bild und\njeweils mit den passenden Threads. Das Ergebnis kommt in die Zwischenablage,\ndanach lädt die Szene von vorher neu." );
 		}
+		// Both numbers of threads the library picks, the fewer with parallel physics, if they differ on this PC
+		int fewer = nbGetRecommendedWorkerCount( true );
+		int more = nbGetRecommendedWorkerCount( false );
+		char threadsLabel[64];
+		snprintf( threadsLabel, sizeof( threadsLabel ), "%d gegen %d Threads messen", fewer, more );
+		ImGui::BeginDisabled( fewer == more );
+		if ( ImGui::Button( threadsLabel ) )
+		{
+			comparison.requested = true;
+			comparison.kind = Comparison::ThreadCounts;
+		}
+		ImGui::EndDisabled();
+		if ( ImGui::IsItemHovered( ImGuiHoveredFlags_AllowWhenDisabled ) )
+		{
+			if ( fewer == more )
+			{
+				ImGui::SetTooltip( "Auf diesem PC nimmt die Bibliothek parallel und nacheinander gleich viele Threads, %d.",
+								   more );
+			}
+			else
+			{
+				ImGui::SetTooltip( "Reißt die Stadt wie beim Vergleich Haus für Haus ab, einmal kurz zum Aufwärmen, dann\n"
+								   "parallel und nacheinander, jeweils mit %d und mit %d Threads, und dieselben vier\n"
+								   "Läufe noch einmal rückwärts, damit eine Drift des PCs alle gleich trifft. Die\n"
+								   "Bibliothek nimmt parallel %d Threads, damit der zeichnende Thread einen Kern für\n"
+								   "sich hat, und nacheinander %d. Das dauert doppelt so lange wie der Vergleich. Das\n"
+								   "Ergebnis kommt in die Zwischenablage, danach lädt die Szene von vorher neu.",
+								   fewer, more, fewer, more );
+			}
+		}
 		if ( ImGui::Button( "Skalierung messen" ) )
 		{
 			comparison.requested = true;
@@ -2213,7 +2250,7 @@ static void BeginComparisonRun( App& app )
 {
 	Comparison& comparison = app.comparison;
 	app.parallelPhysics = RunIsParallel( comparison, comparison.run );
-	app.forcedWorkers = comparison.kind == Comparison::Scaling ? comparison.runWorkers[comparison.run] : 0;
+	app.forcedWorkers = comparison.runWorkers[comparison.run];
 	app.maxDebrisBodies = DemolitionBudget;
 	app.demolition = Demolition();
 	LoadScene( app, SceneTown );
@@ -2238,17 +2275,41 @@ static void StartComparison( App& app )
 	comparison.active = true;
 	comparison.run = 0;
 
-	// The scaling warms up with the most threads, then takes a run for each number of threads, the fewest first
+	// Parallel, serial, serial and parallel, each with the threads the library picks for it
 	comparison.runCount = Comparison::RunCount;
+	for ( int run = 0; run < Comparison::MaxRuns; ++run )
+	{
+		comparison.runParallel[run] = run == 0 || run == 1 || run == Comparison::RunCount - 1;
+		comparison.runWorkers[run] = 0;
+	}
+
+	// Both ways with both counts the library picks, the fewer with parallel physics, then the same the other way round
+	if ( comparison.kind == Comparison::ThreadCounts )
+	{
+		int fewer = nbGetRecommendedWorkerCount( true );
+		int more = nbGetRecommendedWorkerCount( false );
+		const bool parallel[] = { true, true, true, false, false, false, false, true, true };
+		const int workers[] = { fewer, fewer, more, more, fewer, fewer, more, more, fewer };
+		comparison.runCount = Comparison::MaxRuns;
+		for ( int run = 0; run < Comparison::MaxRuns; ++run )
+		{
+			comparison.runParallel[run] = parallel[run];
+			comparison.runWorkers[run] = workers[run];
+		}
+	}
+
+	// The scaling warms up with the most threads, then takes a run for each number of threads, the fewest first
 	if ( comparison.kind == Comparison::Scaling )
 	{
 		int counts[Comparison::MaxRuns - 1];
 		int countCount = nbGetScalingWorkerCounts( counts, Comparison::MaxRuns - 1 );
 		comparison.runCount = countCount + 1;
 		comparison.runWorkers[0] = counts[countCount - 1];
+		comparison.runParallel[0] = false;
 		for ( int i = 0; i < countCount; ++i )
 		{
 			comparison.runWorkers[i + 1] = counts[i];
+			comparison.runParallel[i + 1] = false;
 		}
 	}
 	comparison.scene = app.scene;
@@ -2327,14 +2388,15 @@ struct ComparisonResult
 	float waitTime = 0.0f;
 };
 
-static ComparisonResult SumComparison( const Comparison& comparison, bool parallel )
+// The counted runs with or without parallel physics, with so many threads or, with zero, any
+static ComparisonResult SumComparison( const Comparison& comparison, bool parallel, int threads )
 {
 	ComparisonResult result;
 	std::vector<float> times;
-	double simulation = 0.0, graphics = 0.0, wait = 0.0;
-	for ( int run = 1; run < Comparison::RunCount; ++run )
+	double simulation = 0.0, graphics = 0.0, wait = 0.0, frames = 0.0;
+	for ( int run = 1; run < comparison.runCount; ++run )
 	{
-		if ( Comparison::IsParallel( run ) != parallel )
+		if ( RunIsParallel( comparison, run ) != parallel || ( threads > 0 && comparison.threads[run] != threads ) )
 		{
 			continue;
 		}
@@ -2343,13 +2405,8 @@ static ComparisonResult SumComparison( const Comparison& comparison, bool parall
 		simulation += comparison.simulationTime[run];
 		graphics += comparison.graphicsTime[run];
 		wait += comparison.waitTime[run];
+		frames += (double)comparison.frames[run];
 		result.threads = comparison.threads[run];
-	}
-
-	double frames = 0.0;
-	for ( int run = 1; run < Comparison::RunCount; ++run )
-	{
-		frames += Comparison::IsParallel( run ) == parallel ? (double)comparison.frames[run] : 0.0;
 	}
 	frames = b3MaxFloat( (float)frames, 1.0f );
 	result.frames = GetFrameStats( times );
@@ -2443,37 +2500,34 @@ static void FinishScaling( App& app )
 	StopComparison( app );
 }
 
-// The report goes to the clipboard, to paste into a chat
-static void FinishComparison( App& app )
+// Whether every counted run ended with the same world
+static bool ComparisonRunsAgree( const Comparison& comparison )
 {
-	Comparison& comparison = app.comparison;
-	if ( comparison.kind == Comparison::Scaling )
-	{
-		FinishScaling( app );
-		return;
-	}
-
-	ComparisonResult parallel = SumComparison( comparison, true );
-	ComparisonResult serial = SumComparison( comparison, false );
 	bool same = true;
-	for ( int run = 2; run < Comparison::RunCount; ++run )
+	for ( int run = 2; run < comparison.runCount; ++run )
 	{
 		same = same && comparison.hashes[run] == comparison.hashes[1];
 	}
+	return same;
+}
 
+// How much faster the frames of a than those of b, in percent, and the word for it
+static float FrameGain( const ComparisonResult& a, const ComparisonResult& b, const char** direction )
+{
+	float gain = 100.0f * ( b.frames.average - a.frames.average ) / b3MaxFloat( b.frames.average, 0.001f );
+	*direction = gain >= 0.0f ? "schneller" : "langsamer";
+	return fabsf( gain );
+}
+
+// The demolition of a comparison and what is left of the town at the end
+static void AppendDemolition( std::string& text, const App& app )
+{
+	const Comparison& comparison = app.comparison;
 	int storeys = 0;
 	for ( int house = 0; house < TownRows * TownColumns; ++house )
 	{
 		storeys += TownHouseFloors( house );
 	}
-	float gain = 100.0f * ( serial.frames.average - parallel.frames.average ) / b3MaxFloat( serial.frames.average, 0.001f );
-	const char* direction = gain >= 0.0f ? "schneller" : "langsamer";
-
-	b3Version version = b3GetVersion();
-	std::string text;
-	Appendf( text, "Nebenan-Vergleich: Physik parallel zum Zeichnen gegen nacheinander, %s-Build, Box3D %d.%d.%d\n", s_buildType,
-			 version.major, version.minor, version.revision );
-	AppendMachine( text, app );
 	const Demolition& demolition = comparison.demolition;
 	Appendf( text, "Abriss der Stadt Haus für Haus mit %d Granaten, bis zu %d pro Bild, solange weniger als %d Trümmer fliegen, "
 			 "Bruchstückgröße x%.2f, Budget %d, höchstens %d Trümmer zugleich unterwegs, Physiktakt ",
@@ -2493,43 +2547,57 @@ static void FinishComparison( App& app )
 	Appendf( text, "Am Ende: %d von %d Etagen eingestürzt, %d Bruchstücke, %d davon als Trümmer, %d Schutt\n",
 			 comparison.stats.collapsedStoreyCount, storeys, comparison.stats.chunkCount, comparison.stats.dynamicBodyCount,
 			 comparison.stats.rubbleCount );
-	Appendf( text, "Parallel mit %d Threads: %.2f ms pro Bild, %.0f FPS, 1%% Low %.0f FPS; Simulation %.2f, Grafik %.2f, Warten %.2f ms\n",
-			 parallel.threads, parallel.frames.average, 1000.0f / b3MaxFloat( parallel.frames.average, 0.001f ),
-			 parallel.frames.lowFps, parallel.simulationTime, parallel.graphicsTime, parallel.waitTime );
-	Appendf( text, "Nacheinander mit %d Threads: %.2f ms pro Bild, %.0f FPS, 1%% Low %.0f FPS; Simulation %.2f, Grafik %.2f ms\n",
-			 serial.threads, serial.frames.average, 1000.0f / b3MaxFloat( serial.frames.average, 0.001f ), serial.frames.lowFps,
-			 serial.simulationTime, serial.graphicsTime );
-	Appendf( text, "Parallel ist %.1f %% %s, die Welt endet in allen Läufen %s\n", fabsf( gain ), direction,
-			 same ? "gleich" : "verschieden" );
+}
 
-	// Each run on its own, to see where the slow frames come from
-	for ( int run = 0; run < Comparison::RunCount; ++run )
+// The counted runs of one way and number of threads together
+static void AppendResult( std::string& text, const ComparisonResult& result, bool parallel )
+{
+	Appendf( text, "%s mit %d Threads: %.2f ms pro Bild, %.0f FPS, 1%% Low %.0f FPS; Simulation %.2f, Grafik %.2f",
+			 parallel ? "Parallel" : "Nacheinander", result.threads, result.frames.average,
+			 1000.0f / b3MaxFloat( result.frames.average, 0.001f ), result.frames.lowFps, result.simulationTime,
+			 result.graphicsTime );
+	if ( parallel )
+	{
+		Appendf( text, ", Warten %.2f", result.waitTime );
+	}
+	Appendf( text, " ms\n" );
+}
+
+// Each run on its own, to see where the slow frames come from, with its threads if they change from run to run
+static void AppendRuns( std::string& text, const Comparison& comparison, bool threads )
+{
+	for ( int run = 0; run < comparison.runCount; ++run )
 	{
 		FrameStats stats = GetFrameStats( comparison.frameTimes[run] );
-		bool runParallel = Comparison::IsParallel( run );
-		char name[32];
+		bool runParallel = RunIsParallel( comparison, run );
+		std::string name;
 		if ( run == 0 )
 		{
-			snprintf( name, sizeof( name ), "Aufwärmen" );
+			Appendf( name, "Aufwärmen, %s", runParallel ? "parallel" : "nacheinander" );
 		}
 		else
 		{
-			snprintf( name, sizeof( name ), "Lauf %d", run );
+			Appendf( name, "Lauf %d, %s", run, runParallel ? "parallel" : "nacheinander" );
 		}
-		Appendf( text, "  %s, %s: %.2f ms pro Bild, 1%% Low %.0f FPS, längstes Bild %.1f ms, längste Simulation %.1f ms", name,
-				 runParallel ? "parallel" : "nacheinander", stats.average, stats.lowFps, stats.longest,
-				 comparison.longestSimulation[run] );
+		if ( threads )
+		{
+			Appendf( name, ", %d Threads", comparison.threads[run] );
+		}
+		Appendf( text, "  %s: %.2f ms pro Bild, 1%% Low %.0f FPS, längstes Bild %.1f ms, längste Simulation %.1f ms",
+				 name.c_str(), stats.average, stats.lowFps, stats.longest, comparison.longestSimulation[run] );
 		if ( runParallel )
 		{
 			Appendf( text, ", längstes Warten %.1f ms", comparison.longestWait[run] );
 		}
 		Appendf( text, "\n" );
 	}
-	comparison.report = text;
+}
 
-	char summary[160];
-	snprintf( summary, sizeof( summary ), "Parallel %.2f ms, nacheinander %.2f ms pro Bild,\nparallel %.0f %% %s. In der Zwischenablage.",
-			  parallel.frames.average, serial.frames.average, fabsf( gain ), direction );
+// The report goes to the clipboard, to paste into a chat, and with --compare to the console
+static void PublishComparison( App& app, const std::string& text, const char* summary )
+{
+	Comparison& comparison = app.comparison;
+	comparison.report = text;
 	comparison.summary = summary;
 	sapp_set_clipboard_string( text.c_str() );
 
@@ -2539,6 +2607,89 @@ static void FinishComparison( App& app )
 		sapp_request_quit();
 	}
 	StopComparison( app );
+}
+
+// Both ways with both numbers of threads the library picks: what one thread more or less changes, and what the library's
+// choice does, the fewer threads with parallel physics against the more without
+static void FinishThreadCounts( App& app )
+{
+	Comparison& comparison = app.comparison;
+	int fewer = comparison.runWorkers[1];
+	int more = comparison.runWorkers[2];
+	ComparisonResult parallelFewer = SumComparison( comparison, true, fewer );
+	ComparisonResult parallelMore = SumComparison( comparison, true, more );
+	ComparisonResult serialFewer = SumComparison( comparison, false, fewer );
+	ComparisonResult serialMore = SumComparison( comparison, false, more );
+
+	b3Version version = b3GetVersion();
+	std::string text;
+	Appendf( text,
+			 "Nebenan-Threads: Physik parallel zum Zeichnen und nacheinander mit %d und %d Threads, %s-Build, Box3D %d.%d.%d\n",
+			 fewer, more, s_buildType, version.major, version.minor, version.revision );
+	AppendMachine( text, app );
+	AppendDemolition( text, app );
+	AppendResult( text, parallelFewer, true );
+	AppendResult( text, parallelMore, true );
+	AppendResult( text, serialFewer, false );
+	AppendResult( text, serialMore, false );
+
+	const char* parallelWay;
+	const char* serialWay;
+	const char* choiceWay;
+	float parallelGain = FrameGain( parallelFewer, parallelMore, &parallelWay );
+	float serialGain = FrameGain( serialFewer, serialMore, &serialWay );
+	float choiceGain = FrameGain( parallelFewer, serialMore, &choiceWay );
+	Appendf( text, "Mit %d statt %d Threads ist parallel %.1f %% %s, nacheinander %.1f %% %s\n", fewer, more, parallelGain,
+			 parallelWay, serialGain, serialWay );
+	Appendf( text, "Parallel mit %d gegen nacheinander mit %d Threads, wie die Bibliothek sie wählt: parallel %.1f %% %s\n",
+			 fewer, more, choiceGain, choiceWay );
+	Appendf( text, "Die Welt endet in allen Läufen %s\n", ComparisonRunsAgree( comparison ) ? "gleich" : "verschieden" );
+	AppendRuns( text, comparison, true );
+
+	char summary[160];
+	snprintf( summary, sizeof( summary ),
+			  "Parallel %.2f und %.2f, nacheinander %.2f und %.2f ms\npro Bild mit %d und %d Threads. In der Zwischenablage.",
+			  parallelFewer.frames.average, parallelMore.frames.average, serialFewer.frames.average, serialMore.frames.average,
+			  fewer, more );
+	PublishComparison( app, text, summary );
+}
+
+static void FinishComparison( App& app )
+{
+	Comparison& comparison = app.comparison;
+	if ( comparison.kind == Comparison::Scaling )
+	{
+		FinishScaling( app );
+		return;
+	}
+	if ( comparison.kind == Comparison::ThreadCounts )
+	{
+		FinishThreadCounts( app );
+		return;
+	}
+
+	ComparisonResult parallel = SumComparison( comparison, true, 0 );
+	ComparisonResult serial = SumComparison( comparison, false, 0 );
+	const char* direction;
+	float gain = FrameGain( parallel, serial, &direction );
+
+	b3Version version = b3GetVersion();
+	std::string text;
+	Appendf( text, "Nebenan-Vergleich: Physik parallel zum Zeichnen gegen nacheinander, %s-Build, Box3D %d.%d.%d\n", s_buildType,
+			 version.major, version.minor, version.revision );
+	AppendMachine( text, app );
+	AppendDemolition( text, app );
+	AppendResult( text, parallel, true );
+	AppendResult( text, serial, false );
+	Appendf( text, "Parallel ist %.1f %% %s, die Welt endet in allen Läufen %s\n", gain, direction,
+			 ComparisonRunsAgree( comparison ) ? "gleich" : "verschieden" );
+	AppendRuns( text, comparison, false );
+
+	char summary[160];
+	snprintf( summary, sizeof( summary ),
+			  "Parallel %.2f ms, nacheinander %.2f ms pro Bild,\nparallel %.0f %% %s. In der Zwischenablage.",
+			  parallel.frames.average, serial.frames.average, gain, direction );
+	PublishComparison( app, text, summary );
 }
 
 // The first frame of a run also waited for the town to load, it does not count
@@ -2632,7 +2783,8 @@ static void OnInit()
 	LoadScene( app, (SceneKind)scene );
 	if ( app.automation.compare )
 	{
-		app.comparison.kind = app.automation.scaling ? Comparison::Scaling : Comparison::ParallelAgainstSerial;
+		Comparison::Kind kind = app.automation.threadCounts ? Comparison::ThreadCounts : Comparison::ParallelAgainstSerial;
+		app.comparison.kind = app.automation.scaling ? Comparison::Scaling : kind;
 		StartComparison( app );
 	}
 	app.frameTicks = b3GetTicks();
@@ -3041,6 +3193,11 @@ int main( int argc, char** argv )
 		else if ( strcmp( argv[i], "--compare" ) == 0 )
 		{
 			app.automation.compare = true;
+		}
+		else if ( strcmp( argv[i], "--compare-threads" ) == 0 )
+		{
+			app.automation.compare = true;
+			app.automation.threadCounts = true;
 		}
 		else if ( strcmp( argv[i], "--scaling" ) == 0 )
 		{

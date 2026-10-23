@@ -5445,7 +5445,7 @@ static int ScalingFitTest( void )
 	return 0;
 }
 
-// The threads a game should take: one per performance core, at most 8, with one hardware thread left over for the thread
+// The threads a game should take: one per performance core, at most 8, with a performance core left over for the thread
 // that draws while the step runs on a thread of its own
 static int WorkerCountTest( void )
 {
@@ -5461,6 +5461,7 @@ static int WorkerCountTest( void )
 	ENSURE( 1 <= asyncWorkers && asyncWorkers <= workers );
 	ENSURE( hardware == 1 || asyncWorkers <= hardware - 1 );
 	ENSURE( performance == 0 || workers == b3MinInt( performance, 8 ) );
+	ENSURE( hardware == 1 || performance <= 1 || asyncWorkers == b3MinInt( performance - 1, 8 ) );
 	return 0;
 }
 

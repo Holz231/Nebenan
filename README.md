@@ -161,9 +161,10 @@ ihren Platz in den Bereichen. **Statik ohne Decken** schaltet die Lastprüfung f
 
 Die Threads wählt die Bibliothek (`nbGetRecommendedWorkerCount`): einen pro Performance-Kern, höchstens 8. Box3D läuft
 am schnellsten ohne Hyper-Threads und Effizienzkerne, und mehr Threads als Kerne bremsen. Mit paralleler Physik bleibt
-dem Hauptthread ein logischer Kern frei, auf einem PC mit Hyper-Threads oder Effizienzkernen ändert das nichts. Im Benchmark auf der
-Cloud-VM mit 4 Kernen ist ein Frame der Stadt mit Bruchstückgröße ×2 mit 4 Threads 1,8-mal so schnell wie mit 1 Thread,
-mit 8 Threads 10 % langsamer als mit 4.
+dem Hauptthread ein ganzer Kern frei, auf einem Ryzen 7 7800X3D mit 8 Kernen und 16 Hyper-Threads rechnen dann 7 statt 8
+Threads: Teilt sich der Hauptthread einen Kern mit einem der Worker, warten die Stufen des Schritts auf diesen, siehe
+Der Schritt auf einem eigenen Thread. Im Benchmark auf der Cloud-VM mit 4 Kernen ist ein Frame der Stadt mit
+Bruchstückgröße ×2 mit 4 Threads 1,8-mal so schnell wie mit 1 Thread, mit 8 Threads 10 % langsamer als mit 4.
 
 **Messung.** Das Menü zeigt die Bildzeit und die CPU-Zeit pro Bild, aufgeteilt in Einschläge, Simulation und Grafik, als
 Mittel und Spitze der letzten 300 Bilder, dazu Box3D-Schritt, Bruchstücke, Körper, Kontakte, Dreiecke, Draw Calls und
@@ -176,11 +177,15 @@ unten ist. Er schießt mit Budget 5 000 und nur, solange weniger als 3 000 Trüm
 Schutt im Schub früher, als er zur Ruhe käme. Das macht er einmal kurz zum Aufwärmen, dann parallel, nacheinander,
 nacheinander und parallel, mit 1/60 s Physik pro Bild, bei 60 Hz einem Schritt, und jeweils mit den passenden Threads.
 Das Ergebnis mit Bildzeit, FPS und 1 % Low für beide und für jeden Lauf kommt ebenso in die Zwischenablage, danach lädt
-die Szene von vorher neu. „Skalierung messen“ reißt die Stadt genauso ab, nach dem Aufwärmen mit 1, 2, 4 und so weiter
-bis zur empfohlenen Zahl von Threads, alle mit der Physik nacheinander. Die Bibliothek misst dabei jede Stufe von Box3D
-und Nebenan und rechnet aus, was mit mehr Threads auf einem Thread übrig bleibt. Die Tabelle dazu kommt in die
-Zwischenablage, siehe `nbWorld_GetProfile`. Jeder Bericht nennt CPU und Grafikkarte, denn auf einer schwachen Grafik
-begrenzt das Zeichnen die Bildzeit.
+die Szene von vorher neu. „7 gegen 8 Threads messen“ reißt die Stadt genauso ab, parallel und nacheinander jeweils mit
+beiden Zahlen von Threads, die die Bibliothek wählt, auf einem Ryzen 7 7800X3D parallel 7 und nacheinander 8, und
+dieselben vier Läufe danach noch einmal rückwärts, damit eine Drift des PCs alle gleich trifft. Der Bericht sagt, was
+ein Thread mehr oder weniger in jeder Art ändert und was die Wahl der Bibliothek bringt, parallel mit 7 gegen
+nacheinander mit 8. Wählt die Bibliothek für beide Arten gleich viele Threads, ist der Knopf aus. „Skalierung messen“
+reißt die Stadt genauso ab, nach dem Aufwärmen mit 1, 2, 4 und so weiter bis zur empfohlenen Zahl von Threads, alle mit
+der Physik nacheinander. Die Bibliothek misst dabei jede Stufe von Box3D und Nebenan und rechnet aus, was mit mehr
+Threads auf einem Thread übrig bleibt. Die Tabelle dazu kommt in die Zwischenablage, siehe `nbWorld_GetProfile`. Jeder
+Bericht nennt CPU und Grafikkarte, denn auf einer schwachen Grafik begrenzt das Zeichnen die Bildzeit.
 
 **Werkzeuge**
 
@@ -207,10 +212,10 @@ begrenzt das Zeichnen die Bildzeit.
 schaltet VSync ein, `--msaa 4` schaltet Kantenglättung ein (Standard aus), `--highdpi` rendert auf hochauflösenden
 Bildschirmen in voller Auflösung (Standard aus, kostet Füllrate). `--serial-physics` schaltet die parallele Physik ab,
 `--threads N` setzt die Zahl der Threads, `--step-rate 30` den Takt der Physik. `--compare` misst parallel gegen
-nacheinander wie der Knopf im Menü, gibt das Ergebnis aus und beendet sich. `--demolition` reißt die Stadt ab wie dabei.
-`--script` feuert eine vorgegebene Schussfolge ab, `--frames N` beendet nach N Bildern und meldet Bildzeiten,
-CPU-Zeiten, Uploads und Dreiecke pro Bild und einen Hash der Lagen aller Bruchstücke, `--screenshot datei.ppm` speichert
-das letzte Bild (nur OpenGL).
+nacheinander wie der Knopf im Menü, gibt das Ergebnis aus und beendet sich, `--compare-threads` ebenso wie „7 gegen 8
+Threads messen“. `--demolition` reißt die Stadt ab wie dabei. `--script` feuert eine vorgegebene Schussfolge ab,
+`--frames N` beendet nach N Bildern und meldet Bildzeiten, CPU-Zeiten, Uploads und Dreiecke pro Bild und einen Hash der
+Lagen aller Bruchstücke, `--screenshot datei.ppm` speichert das letzte Bild (nur OpenGL).
 
 Hinkt die Physik hinterher, lässt `nbWorld_Advance` die Zeit langsamer laufen, statt Schritte nachzuholen: Mehr als
 1/60 s Physik im selben Bild kommt nur, solange der letzte Schritt weniger als 4 ms pro 1/60 s kostete, bei 60 Hz
@@ -851,7 +856,7 @@ beim Einbinden nicht gebaut.
 | `collisionPassThrough` | 0,6 | Anteil der Geschwindigkeit, den ein durchschlagendes Geschoss behält |
 | `workerCount` | 1 | Threads für Einschläge: Schaden, Bruchpunkte, Voronoi-Zellen und Hüllen, der aufrufende Thread zählt mit |
 | `enqueueTask`, `finishTask`, `userTaskContext` | leer | Task-System der Anwendung, sonst startet Nebenan eigene Threads |
-| `asyncStep` | an | `nbWorld_Step` rechnet auf einem eigenen Thread, während das Programm zeichnet. Die Welt rechnet bitgleich wie ohne. Die Allokatoren müssen threadsicher sein, und die Worker eines Schritts lassen dem zeichnenden Thread am besten einen Hardware-Thread frei. Lohnt, wenn das Programm in der Zeit genug zu tun hat, siehe Der Schritt auf einem eigenen Thread. Zur Laufzeit mit `nbWorld_SetAsyncStep` |
+| `asyncStep` | an | `nbWorld_Step` rechnet auf einem eigenen Thread, während das Programm zeichnet. Die Welt rechnet bitgleich wie ohne. Die Allokatoren müssen threadsicher sein, und die Worker eines Schritts lassen dem zeichnenden Thread am besten einen Kern frei, wie `nbGetRecommendedWorkerCount` sie wählt. Lohnt, wenn das Programm in der Zeit genug zu tun hat, siehe Der Schritt auf einem eigenen Thread. Zur Laufzeit mit `nbWorld_SetAsyncStep` |
 | `stepRate` | 60 | Schritte der Physik pro Sekunde für `nbWorld_Advance`, 10 bis 240. Jeder Schritt bekommt so viele Teilschritte, dass es 240 pro Sekunde sind (`nbGetSubStepCount`), und die Grenzen pro Update gelten für 1/60 s und wachsen und schrumpfen mit dem Schritt. Weniger kostet weniger, mehr ist genauer, siehe Der Takt der Physik. Zur Laufzeit mit `nbWorld_SetStepRate` |
 
 | Stream (`nbStreamDef`) | Standard | Wirkung |
