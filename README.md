@@ -995,6 +995,17 @@ Granate pro Schritt, bis alle 32 Etagen der Stadt eingestürzt sind, kostet ein 
 im Budget, siehe „Was die Einstürze die Stadt kosten“. Gegen `kollaps-3` kostet ein Frame bei ×1 18 bis 26 % mehr, bei
 ×2 13 bis 15 % und bei ×4 86 bis 101 %, weil viel mehr Etagen einstürzen.
 
+Seit `kollaps-5` prüfen die Worker für das Budget vorab, welche Trümmer erstarren dürfen, und der aufrufende Thread
+nimmt ihre Prüfung, solange nichts erstarrt ist, was sie gelesen hat. In der Kontakt-Schleife von Box3D holen die Worker
+ihre Manifolds aus einem eigenen Vorrat statt einzeln unter einer Sperre. Ein Spiel bekommt beides mit mehr als einem
+Worker in `nbWorld_Update` und `nbWorld_Step`, ohne eigenen Aufruf, und an den Ergebnissen ändert sich kein Bit, siehe
+„Das Budget schaut auf den Workern voraus“ und „Manifolds der Worker in der Kontakt-Schleife“ in
+[docs/Optimierungen.md](docs/Optimierungen.md). Gepaart gegen `kollaps-4`, je vier Läufe im Wechsel, kostet ein Frame
+unter dem Trommelfeuer bei ×4 mit 2 und 4 Threads 5 und 7 % weniger, das Update 11 und 14 % und der Box3D-Schritt 3 und
+5 %. Mit 4 Threads brauchen dort nur noch 60 statt 102 der 1 200 Frames länger als 16,7 ms. Ganz zerstört mit ×2 und
+Budget 5 000, eine Granate pro Schritt, kostet ein Frame mit 4 Threads 19,8 statt 22,2 ms, 11 % weniger, und das Update
+4,6 statt 6,5 ms. Bei ×1 und ×2 bleibt ein Frame im Rauschen, mit einem Thread ändert sich nichts.
+
 Die teuersten Frames folgen auf einen Einsturz: Der Schutt um die Reste der Etage taut auf, und Box3D legt im nächsten
 Schritt Tausende neuer Kontakte an. Das ist echte Arbeit, das meiste davon fällt danach wirklich, siehe
 [`docs/Optimierungen.md`](docs/Optimierungen.md).
