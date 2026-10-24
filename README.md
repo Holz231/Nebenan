@@ -1052,8 +1052,9 @@ Threads ein Viertel seiner Zeit. Mit 8 Threads nimmt das Team beim Abriss in der
 40 % seiner Schritte ein zweites Paket mit, mit 4 Threads nie, denn darunter rechnet ein Thread allein das Paket
 schneller, als das Team es mitrechnen könnte. `nbWorld_GetProfile` zählt in `nbProfile::teamJoinStepCount`, wie oft
 weitere Pakete dazukommen, ohne eigenen Aufruf. Die Ergebnisse bleiben bitgleich, und auf der VM mit 4 Threads kostet
-ein Schritt gepaart gegen `kollaps-8` gleich viel. Was es mit 8 Threads bringt, ist auf dem Ryzen nachzumessen, siehe
-[docs/Roadmap.md](docs/Roadmap.md).
+ein Schritt gepaart gegen `kollaps-8` gleich viel. Auf dem Ryzen 7 7800X3D kosten die Bedingungen mit 8 Threads damit
+19 % weniger und ein Bild 6 %, 2,62 statt 2,78 ms, siehe „Skalierung auf dem Ryzen mit `kollaps-9`“ in
+[docs/Optimierungen.md](docs/Optimierungen.md).
 
 Die teuersten Frames folgen auf einen Einsturz: Der Schutt um die Reste der Etage taut auf, und Box3D legt im nächsten
 Schritt Tausende neuer Kontakte an. Das ist echte Arbeit, das meiste davon fällt danach wirklich, siehe
