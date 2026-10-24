@@ -45,9 +45,9 @@ nicht mehr bei, V1.4 steht in der Geschichte des Repositorys.
 | 28 | Übergaben zwischen Steuerung, Animation und Physik. 28.3, der Ausgleichsschritt, und die Abnahmen A, B und E aus 28.5 gebaut auf `ragdoll-2`, die Übergabe aus 28.4 innerhalb der Bibliothek: Die Figur übernimmt erst, wenn ihr Schwerpunkt über den Füßen ruht. Einen Character Controller, an den sie übergeben könnte, gibt es noch nicht |
 | 29 | Angriffswunsch statt sofortiger Schlag |
 | 30 | Physikbasiertes PvP nach Sifu und Overgrowth |
-| 31 | Keyframe- und prozedurale Humanoid-Animation: Clips, Pose-Graph, Anpassung an die Umwelt |
-| 32 | Physik-Pose-Controller: Zielskelett und Physikskelett, Gelenkmotoren, Treffer als Ereignis, optionaler Video-zu-Keyframe-Editor, Stufenplan P0 bis P5. P0 bis P3 gebaut auf `ragdoll-1`, Stützschritt und Recovery auf `ragdoll-2` |
-| 33 | Active-Ragdoll-Controller und Keyframes: wie aus wenigen Keyframes eine Bewegung wird, die Reihenfolge für den Bau und die Abnahme. Die Schritte 1 bis 4 aus 33.4 gebaut auf `ragdoll-1`, Schritt 5, Balance, Stützschritt, Knockdown und Recovery, auf `ragdoll-2`, Schritt 6, Keyframe-Format und Video-Editor, ist offen, siehe `docs/Roadmap.md` |
+| 31 | Keyframe- und prozedurale Humanoid-Animation: Clips, Pose-Graph, Anpassung an die Umwelt. Clips mit Ereignissen und Kontakten und dieselbe Prüfung für Clips von Hand und von einer KI aus 31.2 gebaut auf `ragdoll-3`, Pose-Graph und Anpassung an die Umwelt sind offen |
+| 32 | Physik-Pose-Controller: Zielskelett und Physikskelett, Gelenkmotoren, Treffer als Ereignis, optionaler Video-zu-Keyframe-Editor, Stufenplan P0 bis P5. P0 bis P3 gebaut auf `ragdoll-1`, Stützschritt und Recovery auf `ragdoll-2`, das Clipformat aus 32.6 als JSON, der Editor aus 32.5 und P4 mit Referenzbildern, Keypoints, Freigabe und Sperre und Punkt 4 der Abnahme aus 32.8 auf `ragdoll-3`. Gizmos, ein Assistent im Editor und das Binärformat sind offen |
+| 33 | Active-Ragdoll-Controller und Keyframes: wie aus wenigen Keyframes eine Bewegung wird, die Reihenfolge für den Bau und die Abnahme. Die Schritte 1 bis 4 aus 33.4 gebaut auf `ragdoll-1`, Schritt 5, Balance, Stützschritt, Knockdown und Recovery, auf `ragdoll-2`, Schritt 6, Keyframe-Format, Video-Editor, Vorschläge und Freigabe, auf `ragdoll-3`, mit der Rückkopplung aus 33.2 E: Simulationen werden als eigener Clip gebacken. Siehe `docs/Roadmap.md` |
 
 Die Reihenfolge aus Kapitel 15:
 

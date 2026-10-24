@@ -508,4 +508,151 @@ NB_API nbBalance nbArticulation_GetBalance( nbArticulationId articulationId );
 /// Make a figure with balance fall at once, for a hit the game wants to win, see the roadmap 26.4.
 NB_API void nbArticulation_Knockdown( nbArticulationId articulationId );
 
+/// Play an authored clip on a figure, see nbArticulation_PlayClip: every keyframe, proposed or approved, at its frame
+/// over the frame rate. False if the clip has not as many bones as the figure, or no keyframe.
+NB_API bool nbArticulation_PlayPoseClip( nbArticulationId articulationId, const nbPoseClip* clip, float speed );
+
+/// The pose a figure has: the rotation of every bone against its rest pose, in the frame of the bone, as the bodies are.
+/// The root's is identity. Returns the number of bones written.
+NB_API int nbArticulation_GetPose( nbArticulationId articulationId, b3Quat* rotations, int capacity );
+
+/// Put a figure into a pose with its root at a transform, at rest, and drive its joints to that pose. For setting up a
+/// figure like nbCreateArticulation, not for a figure that moves: it moves the bodies.
+NB_API void nbArticulation_PlacePose( nbArticulationId articulationId, b3WorldTransform root, const b3Quat* rotations );
+
+/** @} */
+
+/**
+ * @defgroup poseclip Authored clips
+ * Clips of keyframes as files for authoring, see the roadmap of the game, chapters 32.5, 32.6 and 33.2, and "Clips als
+ * Dateien" in the README.
+ * @{
+ */
+
+/// An empty clip for the bones of a rig, with their names, at a frame rate in frames per second. The skeleton and the
+/// name identify it in files, up to 63 characters each, see NB_HUMANOID_SKELETON. Destroy it with nbDestroyPoseClip.
+NB_API nbPoseClip* nbCreatePoseClip( const nbRigDef* rig, const char* skeleton, const char* name, int frameRate );
+
+NB_API void nbDestroyPoseClip( nbPoseClip* clip );
+
+/// Read a clip from the text of a file. Null with the reason in error if the text is no clip.
+NB_API nbPoseClip* nbParsePoseClip( const char* text, int length, nbPoseClipError* error );
+
+/// Write a clip as the text of a file, like snprintf: returns the length of the whole text and writes as much as fits into
+/// the buffer, terminated. The same clip gives the same text, and reading it gives the same bits.
+NB_API int nbWritePoseClip( const nbPoseClip* clip, char* buffer, int capacity );
+
+NB_API const char* nbPoseClip_GetSkeleton( const nbPoseClip* clip );
+NB_API const char* nbPoseClip_GetName( const nbPoseClip* clip );
+NB_API void nbPoseClip_SetName( nbPoseClip* clip, const char* name );
+NB_API int nbPoseClip_GetFrameRate( const nbPoseClip* clip );
+NB_API bool nbPoseClip_IsLooping( const nbPoseClip* clip );
+NB_API void nbPoseClip_SetLooping( nbPoseClip* clip, bool loop );
+NB_API nbPoseClipKind nbPoseClip_GetKind( const nbPoseClip* clip );
+NB_API void nbPoseClip_SetKind( nbPoseClip* clip, nbPoseClipKind kind );
+NB_API int nbPoseClip_GetBoneCount( const nbPoseClip* clip );
+NB_API const char* nbPoseClip_GetBoneName( const nbPoseClip* clip, int bone );
+
+/// The keyframes, sorted by frame
+NB_API int nbPoseClip_GetKeyframeCount( const nbPoseClip* clip );
+NB_API nbPoseKeyframe nbPoseClip_GetKeyframe( const nbPoseClip* clip, int keyframe );
+
+/// The keyframe at a frame, -1 for none
+NB_API int nbPoseClip_FindKeyframe( const nbPoseClip* clip, int frame );
+
+/// The frame of the last keyframe, the length of the clip
+NB_API int nbPoseClip_GetLength( const nbPoseClip* clip );
+
+/// Add a proposed keyframe at a frame, with full confidence, or set the pose of the proposed keyframe there. Returns its
+/// index, -1 if an approved keyframe sits at the frame.
+NB_API int nbPoseClip_AddKeyframe( nbPoseClip* clip, int frame, const b3Quat* rotations, b3Transform root,
+								   nbKeyframeOrigin origin );
+
+/// Change the pose of a keyframe by hand. False for an approved keyframe, unlock it first. The change spreads to the
+/// proposed keyframes within this many frames, fading with the distance, so a correction improves its neighbours, see
+/// the roadmap 32.5. Approved keyframes never change.
+NB_API bool nbPoseClip_SetPose( nbPoseClip* clip, int keyframe, const b3Quat* rotations, b3Transform root, int spread );
+
+/// Move a proposed keyframe to another frame, or remove it. False for an approved keyframe or a frame that has one.
+NB_API bool nbPoseClip_MoveKeyframe( nbPoseClip* clip, int keyframe, int frame );
+NB_API bool nbPoseClip_RemoveKeyframe( nbPoseClip* clip, int keyframe );
+
+/// Approve a keyframe and lock it, or unlock it into a proposal again
+NB_API void nbPoseClip_Approve( nbPoseClip* clip, int keyframe, bool approved );
+
+/// The contacts, the frame of the reference video and the confidence of every bone of a keyframe. False for an approved
+/// keyframe.
+NB_API bool nbPoseClip_SetContacts( nbPoseClip* clip, int keyframe, uint32_t contacts );
+NB_API bool nbPoseClip_SetSourceFrame( nbPoseClip* clip, int keyframe, int sourceFrame );
+NB_API bool nbPoseClip_SetConfidence( nbPoseClip* clip, int keyframe, const float* confidence );
+
+/// The events, sorted by frame
+NB_API int nbPoseClip_GetEventCount( const nbPoseClip* clip );
+NB_API nbPoseEvent nbPoseClip_GetEvent( const nbPoseClip* clip, int event );
+
+/// Add an event, up to 31 characters of name, and return its index
+NB_API int nbPoseClip_AddEvent( nbPoseClip* clip, int frame, const char* name );
+NB_API void nbPoseClip_RemoveEvent( nbPoseClip* clip, int event );
+
+/// Take over the keyframes of a clip of proposals, from an estimator or an assistant, with the same bones and frame rate:
+/// a proposal sets the proposed keyframe at its frame or comes in as a new one. An approved keyframe refuses it and stays
+/// as it is to the bit, see the roadmap 32.8. Returns how many came in, and in refused how many an approved keyframe
+/// refused, -1 if the clips do not fit.
+NB_API int nbPoseClip_MergeProposals( nbPoseClip* clip, const nbPoseClip* proposals, int* refused );
+
+/// The pose at a frame, which may lie between keyframes: the rotations interpolated, the root moved in a straight line
+NB_API void nbPoseClip_Sample( const nbPoseClip* clip, float frame, b3Quat* rotations, b3Transform* root );
+
+/// What nbPoseClip_Check lets pass, fit for the humanoid of nbMakeHumanoidBones
+NB_API nbPoseCheckDef nbDefaultPoseCheckDef( void );
+
+/// Check a clip against a rig, see the roadmap 31.2 and 32.5: bones that do not fit, rotations of other than unit length,
+/// joints beyond their limits, unsure bones, bones in the ground, jumps between keyframes faster than a body moves, and
+/// feet or hands in contact that slide. The same rules hold for clips by hand, from an estimator and from an assistant.
+/// Writes up to capacity issues in the order of the keyframes and returns how many it found.
+NB_API int nbPoseClip_Check( const nbPoseClip* clip, const nbRigDef* rig, const nbPoseCheckDef* def, nbPoseIssue* issues,
+							 int capacity );
+
+/// How far a clip lies from another of the same bones, see the roadmap 33.2 E: the largest angle between the rotations of
+/// a joint at the keyframes of the other clip, this one sampled at their frames. For a simulation recorded from a clip,
+/// how far the figure fell behind it. Writes the frame and the bone of that angle, -1 for none, as when the clips do not
+/// fit.
+NB_API float nbPoseClip_Compare( const nbPoseClip* clip, const nbPoseClip* other, int* frame, int* bone );
+
+/// The transforms of the bones of a rig in a pose with the root at a transform, to draw a pose no figure holds
+NB_API void nbComputePoseTransforms( const nbRigDef* rig, b3Transform root, const b3Quat* rotations, b3Transform* transforms );
+
+/// Record the pose a figure has into a clip, as a proposed keyframe of origin simulation, see the roadmap 33.2: a
+/// simulation baked into a clip of its own, which leaves the authored clip alone. Returns its index, -1 if the clip does
+/// not fit the figure or an approved keyframe sits at the frame. Frame by frame while a clip plays, see
+/// nbArticulation_RecordPoseClip.
+NB_API int nbPoseClip_RecordArticulation( nbPoseClip* clip, nbArticulationId articulationId, int frame );
+
+/// Record a figure into a clip while it plays its clip, see the roadmap 33.2 E: in the update after every step that
+/// reaches the next frame of the clip it records into, a keyframe as nbPoseClip_RecordArticulation makes, with the feet
+/// and hands of def that touch something other than the figure as its contacts, null def for the humanoid. A figure with
+/// balance adds an event when its balance changes, named stand, step, fall, down, getUp or off. Frame by frame of the
+/// clip time, so the recording is the same at every frame rate of the program and with any number of threads. It ends
+/// after one pass of the clip, when another clip starts or the figure is placed, or with a null clip. The steps write the
+/// clip: with steps on a thread of their own, see nbWorldDef::asyncStep, read it only after a call of the world or the
+/// figure that waits for them, such as nbArticulation_IsRecording. False if no clip plays or the clip does not fit.
+NB_API bool nbArticulation_RecordPoseClip( nbArticulationId articulationId, nbPoseClip* clip, const nbPoseCheckDef* def );
+
+/// Does the figure still record its clip? See nbArticulation_RecordPoseClip.
+NB_API bool nbArticulation_IsRecording( nbArticulationId articulationId );
+
+/// A pose of the humanoid of nbMakeHumanoidBones from the keypoints of a pose estimator, see the roadmap 32.5: points in
+/// meters in a frame with y up, as many as the layout has, and how sure the estimator was of each. Writes the rotation and
+/// the confidence of every bone and the root, and up to capacity issues for bones whose lengths do not fit the figure,
+/// and returns the number of issues. Bones the layout says nothing about, like hands and feet in COCO, keep their rest
+/// pose with confidence 0. A straight limb leaves its twist unknown, it keeps the least rotation.
+NB_API int nbHumanoidPoseFromKeypoints( float height, nbKeypointLayout layout, const b3Vec3* points, const float* confidence,
+										b3Quat* rotations, float* boneConfidence, b3Transform* root, nbPoseIssue* issues,
+										int capacity );
+
+/// Read the keypoints of an estimator from the text of a file into a clip of proposals for the humanoid of this height.
+/// Bones whose lengths do not fit get a confidence of at most 0.25. Null with the reason in error if the text is no
+/// keypoint file.
+NB_API nbPoseClip* nbParseKeypointClip( const char* text, int length, float height, nbPoseClipError* error );
+
 /** @} */

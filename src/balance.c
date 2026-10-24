@@ -1574,6 +1574,25 @@ void nbFreeBalancer( nbArticulation* articulation )
 	articulation->balancer = NULL;
 }
 
+// The program put the figure into a pose: it stands where it is, on the ground under its soles, with nothing to blend
+void nbBalancePlaced( nbArticulation* articulation )
+{
+	nbBalancer* b = articulation->balancer;
+	b->groundHeight = FLT_MAX;
+	for ( int leg = 0; leg < 2; ++leg )
+	{
+		b3Vec3 ankle = nbAnkle( articulation, b, leg );
+		b->groundHeight = b3MinFloat( b->groundHeight, b3Dot( ankle, b->up ) - b->soleHeight[leg] );
+		b->info.footContact[leg] = false;
+	}
+	memcpy( b->applied, articulation->pose, sizeof( b3Quat ) * (size_t)b->boneCount );
+	b->poseKind = nb_poseBalance;
+	b->blendTime = 0.0f;
+	b->blendDuration = 0.0f;
+	b->liftScale = 0.0f;
+	nbEnter( articulation, b, nb_balanceStanding );
+}
+
 void nbBalanceProfileChanged( nbArticulation* articulation )
 {
 	nbBalancer* b = articulation->balancer;
@@ -1728,6 +1747,11 @@ bool nbArticulation_EnableBalance( nbArticulationId id, const nbBalanceDef* def 
 	nbApplyMotorProfile( a, &a->profile );
 	nbEnter( a, b, nb_balanceStanding );
 	return true;
+}
+
+nbBalanceState nbBalanceStateOf( const nbArticulation* a )
+{
+	return a->balancer != NULL ? a->balancer->info.state : nb_balanceOff;
 }
 
 nbBalance nbArticulation_GetBalance( nbArticulationId id )

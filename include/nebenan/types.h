@@ -1158,4 +1158,199 @@ typedef enum nbHumanoidBone
 	nb_humanoidBoneCount
 } nbHumanoidBone;
 
+/// The skeleton of the humanoid of nbMakeHumanoidBones in the files of clips, see nbCreatePoseClip
+#define NB_HUMANOID_SKELETON "nebenan-humanoid"
+
+/** @} */
+
+/**
+ * @defgroup poseclips Authored clips
+ * Clips of keyframes as files, authored by hand, from a pose estimator or with an assistant, see the roadmap of the game,
+ * chapters 32.5, 32.6 and 33.2. Approved keyframes are locked: nothing but an explicit unlock changes them.
+ * @{
+ */
+
+/// An authored clip, see nbCreatePoseClip. A document of its own, no part of a world.
+typedef struct nbPoseClip nbPoseClip;
+
+/// What a keyframe is: a proposal, which tools and assistants may change, or approved, which nothing changes until it is
+/// unlocked
+typedef enum nbKeyframeStatus
+{
+	nb_keyframeProposed,
+	nb_keyframeApproved,
+} nbKeyframeStatus;
+
+/// Where a keyframe came from
+typedef enum nbKeyframeOrigin
+{
+	/// Posed by hand in an editor
+	nb_originHand,
+
+	/// Proposed by a pose estimator from a reference video, see nbHumanoidPoseFromKeypoints
+	nb_originEstimator,
+
+	/// Proposed by an assistant, an AI that suggests poses
+	nb_originAssistant,
+
+	/// Recorded from a simulated figure, see nbPoseClip_RecordArticulation
+	nb_originSimulation,
+
+	nb_originCount
+} nbKeyframeOrigin;
+
+/// What a clip holds, see the roadmap 32.6: poses authored by hand or with tools, poses computed from them, or the poses
+/// a simulation reached
+typedef enum nbPoseClipKind
+{
+	nb_clipAuthored,
+	nb_clipComputed,
+	nb_clipSimulated,
+	nb_clipKindCount
+} nbPoseClipKind;
+
+/// Contacts of a keyframe, bit flags: the feet and hands that touch the ground or a hold. Two keyframes in a row with the
+/// same contact make an interval in which that foot or hand does not slide.
+typedef enum nbContact
+{
+	nb_contactLeftFoot = 1,
+	nb_contactRightFoot = 2,
+	nb_contactLeftHand = 4,
+	nb_contactRightHand = 8,
+} nbContact;
+
+/// A keyframe of an authored clip, as nbPoseClip_GetKeyframe reads it. The arrays belong to the clip and stay valid until
+/// the clip changes.
+typedef struct nbPoseKeyframe
+{
+	/// When, in frames of the clip, see nbPoseClip_GetFrameRate
+	int frame;
+
+	nbKeyframeStatus status;
+	nbKeyframeOrigin origin;
+
+	/// The frame of the reference video the pose was taken from, -1 for none
+	int sourceFrame;
+
+	/// The root bone relative to the origin of the clip. Shown and checked, but a figure that plays the clip does not
+	/// follow it: the physics moves the root, see the roadmap 31.3.
+	b3Transform root;
+
+	/// The feet and hands in contact, see nbContact
+	uint32_t contacts;
+
+	/// The rotation of every bone against its rest pose, in the frame of the bone, as nbKeyframe has it. The root's is
+	/// unused, the root takes its rotation from root.
+	const b3Quat* rotations;
+
+	/// How sure an estimator was of every bone, from 0 to 1, 1 for poses by hand
+	const float* confidence;
+} nbPoseKeyframe;
+
+/// An event of a clip: a name at a frame, like the start of a phase of an attack, windup, impact, followthrough and
+/// recovery, see the roadmap 33.2
+typedef struct nbPoseEvent
+{
+	int frame;
+	char name[32];
+} nbPoseEvent;
+
+/// Why a text is no clip, see nbParsePoseClip
+typedef struct nbPoseClipError
+{
+	int line;
+	int column;
+	char message[128];
+} nbPoseClipError;
+
+/// What nbPoseClip_Check finds
+typedef enum nbPoseIssueKind
+{
+	/// The rig has a bone the clip lacks. The clip does not fit the rig.
+	nb_issueBoneMissing,
+
+	/// The clip has a bone the rig lacks, or its bones come in another order. The clip does not fit the rig.
+	nb_issueBoneUnknown,
+
+	/// A rotation is not of unit length
+	nb_issueNotNormalized,
+
+	/// A joint is turned beyond its limits: the motors cannot follow there, the figure stops at the limit
+	nb_issueJointLimit,
+
+	/// An estimator was unsure of a bone
+	nb_issueUnsure,
+
+	/// A bone reaches into the ground
+	nb_issueGround,
+
+	/// A bone turns, or the root moves or turns, faster between two keyframes than a body can
+	nb_issueJump,
+
+	/// A foot or hand in contact moves away from where it touched, see nbPoseCheckDef::slideDistance
+	nb_issueSliding,
+
+	/// Keypoints give a bone a length that does not fit the figure, see nbHumanoidPoseFromKeypoints
+	nb_issueBoneLength,
+
+	nb_issueKindCount
+} nbPoseIssueKind;
+
+/// A finding of nbPoseClip_Check
+typedef struct nbPoseIssue
+{
+	nbPoseIssueKind kind;
+
+	/// The keyframe, -1 for the clip as a whole, and the bone, -1 for none
+	int keyframe;
+	int bone;
+
+	/// How far off: radians beyond a limit, the confidence, meters into the ground or slid, radians or meters per second of
+	/// a jump, the ratio of a length to the length it should have
+	float value;
+} nbPoseIssue;
+
+/// What nbPoseClip_Check lets pass. Initialize with nbDefaultPoseCheckDef.
+typedef struct nbPoseCheckDef
+{
+	/// The height of the ground in the frame of the clip, along y, and how far a bone may reach into it, in meters
+	float groundHeight;
+	float groundTolerance;
+
+	/// A bone of less confidence is unsure
+	float minConfidence;
+
+	/// The most a bone turns, in radians per second, and the most the root moves, in meters per second, and turns, in
+	/// radians per second, between two keyframes
+	float maxTurnSpeed;
+	float maxRootSpeed;
+	float maxRootTurnSpeed;
+
+	/// How far a foot or hand in contact may move from where it touched, over all keyframes it stays in contact, in
+	/// meters. A slide found, it touches where it is then.
+	float slideDistance;
+
+	/// How far a joint may turn beyond its limits, in radians
+	float limitTolerance;
+
+	/// The feet and hands of the contacts, left then right, -1 for none. Those of the humanoid by default.
+	int feet[2];
+	int hands[2];
+
+	/// Used internally to detect a valid definition. DO NOT SET.
+	int internalValue;
+} nbPoseCheckDef;
+
+/// How a pose estimator numbers its keypoints, see nbHumanoidPoseFromKeypoints
+typedef enum nbKeypointLayout
+{
+	/// The 17 points of COCO: nose, eyes, ears, shoulders, elbows, wrists, hips, knees and ankles, no hands and feet
+	nb_keypointsCoco17,
+
+	/// The 33 points of MediaPipe Pose, with hands, heels and toes
+	nb_keypointsMediaPipe33,
+
+	nb_keypointLayoutCount
+} nbKeypointLayout;
+
 /** @} */

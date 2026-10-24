@@ -77,6 +77,14 @@ typedef struct nbArticulation
 	float clipTime;
 	float clipSpeed;
 
+	// The clip the figure records itself into while its clip plays, see nbArticulation_RecordPoseClip: the feet and hands
+	// whose contacts it keeps, -1 for none, the last frame it recorded, the frame the pass ends at, and the balance it saw
+	nbPoseClip* recording;
+	int recordBones[4];
+	int recordFrame;
+	int recordEnd;
+	nbBalanceState recordBalance;
+
 	// The ids of the last hits, see NB_HIT_MEMORY, and how many hits landed
 	uint32_t hitIds[NB_HIT_MEMORY];
 	int hitNext;
@@ -116,10 +124,19 @@ void nbApplyMotorProfile( nbArticulation* articulation, const nbMotorProfile* pr
 // Change the most torque of the upright hold, see nbMotorProfile::uprightTorque
 void nbSetUprightTorque( nbArticulation* articulation, float torque );
 
+// The rotations of the first count bones against their rest pose, as the bodies are, see nbArticulation_GetPose
+void nbGetPose( const nbArticulation* articulation, b3Quat* rotations, int count );
+
+// Record a figure into its clip after a step, see nbArticulation_RecordPoseClip and pose_clip.c
+void nbRecordPose( nbWorld* world, int index, nbArticulation* articulation, float timeStep );
+
 // Balance, see balance.c: the update after every step, which sets the targets of the joints, the program changed the
-// motor profile, and the balance goes with its figure
+// motor profile or put the figure into a pose, the state of the balance, off without, and the balance goes with its
+// figure
 void nbUpdateBalance( nbWorld* world, int index, nbArticulation* articulation, float timeStep );
 void nbBalanceProfileChanged( nbArticulation* articulation );
+void nbBalancePlaced( nbArticulation* articulation );
+nbBalanceState nbBalanceStateOf( const nbArticulation* articulation );
 void nbFreeBalancer( nbArticulation* articulation );
 
 // Destroy every articulation of the world with its bodies and free the arrays, for nbDestroyWorld

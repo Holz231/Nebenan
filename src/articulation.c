@@ -518,6 +518,9 @@ static void nbFreeClip( nbArticulation* articulation )
 	articulation->clipKeyframeCount = 0;
 	articulation->clipPlaying = false;
 	articulation->clipTime = 0.0f;
+
+	// A recording ends with its clip
+	articulation->recording = NULL;
 }
 
 void nbUpdateArticulations( nbWorld* world, float timeStep )
@@ -528,6 +531,12 @@ void nbUpdateArticulations( nbWorld* world, float timeStep )
 		if ( articulation->isFree )
 		{
 			continue;
+		}
+
+		// A recording takes the pose the step left, which the targets of the time of the clip drove to
+		if ( articulation->recording != NULL )
+		{
+			nbRecordPose( world, i, articulation, timeStep );
 		}
 
 		bool posed = false;
@@ -961,6 +970,69 @@ void nbArticulation_SetTargetPose( nbArticulationId id, const b3Quat* rotations,
 	{
 		nbSetTargets( articulation, articulation->pose );
 	}
+}
+
+void nbGetPose( const nbArticulation* articulation, b3Quat* rotations, int count )
+{
+	// Every bone against its parent turned by its rest pose, as the target is
+	rotations[0] = b3Quat_identity;
+	for ( int i = 1; i < count; ++i )
+	{
+		const nbBone* bone = articulation->bones + i;
+		b3Quat parent = b3Body_GetRotation( articulation->bones[bone->parent].bodyId );
+		b3Quat rotation = b3Body_GetRotation( bone->bodyId );
+		rotations[i] = b3NormalizeQuat( b3InvMulQuat( b3MulQuat( parent, bone->rest.q ), rotation ) );
+	}
+}
+
+int nbArticulation_GetPose( nbArticulationId id, b3Quat* rotations, int capacity )
+{
+	const nbArticulation* articulation = nbGetArticulationFromId( id, NULL );
+	if ( articulation == NULL || rotations == NULL || capacity < 1 )
+	{
+		return 0;
+	}
+
+	int count = b3MinInt( capacity, articulation->boneCount );
+	nbGetPose( articulation, rotations, count );
+	return count;
+}
+
+void nbArticulation_PlacePose( nbArticulationId id, b3WorldTransform root, const b3Quat* rotations )
+{
+	nbArticulation* articulation = nbGetArticulationFromId( id, NULL );
+	if ( articulation == NULL || rotations == NULL )
+	{
+		return;
+	}
+
+	// The bodies where the pose puts them, at rest, and the pose as the target
+	nbFreeClip( articulation );
+	int count = articulation->boneCount;
+	b3WorldTransform* transforms = nbAlloc( sizeof( b3WorldTransform ) * (size_t)count );
+	transforms[0] = (b3WorldTransform){ root.p, b3NormalizeQuat( root.q ) };
+	articulation->pose[0] = b3Quat_identity;
+	for ( int i = 0; i < count; ++i )
+	{
+		const nbBone* bone = articulation->bones + i;
+		if ( i > 0 )
+		{
+			articulation->pose[i] = b3NormalizeQuat( rotations[i] );
+			b3Transform local = { bone->rest.p, b3MulQuat( bone->rest.q, articulation->pose[i] ) };
+			transforms[i] = b3MulWorldTransforms( transforms[bone->parent], local );
+		}
+		b3Body_SetTransform( bone->bodyId, transforms[i].p, transforms[i].q );
+		b3Body_SetLinearVelocity( bone->bodyId, b3Vec3_zero );
+		b3Body_SetAngularVelocity( bone->bodyId, b3Vec3_zero );
+	}
+	nbFree( transforms, sizeof( b3WorldTransform ) * (size_t)count );
+
+	if ( articulation->balancer != NULL )
+	{
+		nbBalancePlaced( articulation );
+	}
+	nbSetTargets( articulation, articulation->pose );
+	b3Body_SetAwake( articulation->bones[0].bodyId, true );
 }
 
 void nbArticulation_PlayClip( nbArticulationId id, const nbClipDef* clip, float speed )

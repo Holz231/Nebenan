@@ -46,6 +46,11 @@ gelöscht. Kein Staub, keine Schatten: Jede Millisekunde geht in die Zerstörung
   dabei Wände ein wie eine Kanonenkugel. Ein Humanoid aus 15 Knochen liegt bei (`nbMakeHumanoidBones`). Mit Balance
   fängt er Stöße mit Schritten ab, fällt mit Schutzhaltung, wenn kein Schritt reicht, und steht wieder auf, sobald er
   still liegt und Platz hat (`nbArticulation_EnableBalance`)
+- Clips als Dateien nach Kapitel 32 und 33 der Roadmap des Spiels: Keyframes mit Status, Herkunft, Wurzel, Kontakten,
+  Sicherheit und Ereignissen, als JSON bitgenau gelesen und geschrieben (`nbPoseClip`). Freigegebene Keyframes sind
+  gesperrt, Vorschläge eines Pose-Schätzers oder Assistenten kommen nur um sie herum, und eine Prüfung findet
+  Gelenkgrenzen, Knochen im Boden, Sprünge und rutschende Füße. Eine Figur nimmt den Clip, den sie spielt, Schritt für
+  Schritt als eigenen Clip auf. Die Demo hat dazu einen Keyframe-Editor mit den Bildern eines Videos
 - Deterministisch: gleiche Eingaben ergeben bitgleich das gleiche Bruchmuster, unter Windows, Linux und macOS,
   auf x64 und ARM
 - PC-Demo für Windows (Direct3D 11), macOS (Metal) und Linux (OpenGL)
@@ -222,8 +227,18 @@ Grafik begrenzt das Zeichnen die Bildzeit.
   rechts, **Umwerfen** wirft sie sofort um. Das Menü stellt Steifigkeit, Drehmoment, die Hilfe, die das Becken aufrecht
   hält, und die Balance ein und zeigt je Figur die größte Abweichung von der Zielpose, die größte Motorlast und was die
   Balance gerade tut
+- **Keyframes**: der Keyframe-Editor für Clips des Humanoiden. Er zeigt die Pose des Clips am Frame und das Bild des
+  Videos dazu, lädt und speichert den Clip als Datei (`clip.json` im Arbeitsordner, ohne Datei ein Beispiel aus drei
+  Keyframes), legt Keyframes an, gibt sie frei oder entsperrt sie und stellt Wurzel, Gelenke und Kontakte mit Reglern,
+  auf Wunsch auch für die Vorschläge in der Nähe. Vorschläge kommen als Clip- oder Keypoint-Datei, freigegebene
+  Keyframes lehnen sie ab. Die Prüfung listet, was die Bibliothek findet, ein Klick springt zum Keyframe.
+  **Simulieren** spielt den Clip auf einer Figur, auf Wunsch mit Balance, und die Pose des Clips läuft daneben mit, die
+  Motoren lassen sich dabei verstellen. Mit **Backen** nimmt die Bibliothek die Figur auf, und der Editor zeigt, wie
+  weit sie hinter dem Clip blieb, was die Prüfung darin findet und wann die Balance wechselte. Gespeichert wird die
+  Aufnahme als `clip-simuliert.json`. Die Bilder sind BMP- oder PPM-Dateien je Frame, etwa mit
+  `ffmpeg -i video.mp4 -vf fps=30 frames/%04d.bmp` aus einem Video geschnitten
 
-**Aufrufoptionen**: `--scene 0..4` startet eine Szene, `--fragment-scale 3` setzt die Bruchstückgröße, `--vsync`
+**Aufrufoptionen**: `--scene 0..5` startet eine Szene, `--fragment-scale 3` setzt die Bruchstückgröße, `--vsync`
 schaltet VSync ein, `--msaa 4` schaltet Kantenglättung ein (Standard aus), `--highdpi` rendert auf hochauflösenden
 Bildschirmen in voller Auflösung (Standard aus, kostet Füllrate). `--serial-physics` schaltet die parallele Physik ab,
 `--threads N` setzt die Zahl der Threads, `--step-rate 30` den Takt der Physik. `--compare` misst parallel gegen
@@ -581,6 +596,40 @@ Knochen legt dabei mehr als 9,3 cm in einem Schritt zurück. Unter einer Platte 
 zu berühren, und steht auf, sobald sie fort ist. Mit 1 und 4 Threads ergibt die Balance dieselben Bits, und der Test
 hält den Hash für alle Plattformen fest.
 
+**Clips als Dateien.** Ein Clip der Bibliothek (`nbPoseClip`) ist das Format aus Kapitel 32.6 der Roadmap des Spiels:
+ein Skelett mit Namen (`nebenan-humanoid`), die Namen seiner Knochen, eine Bildrate, Keyframes an ganzen Frames und
+Ereignisse. Ein Keyframe hält je Knochen die Drehung gegen die Ruhepose wie `nbClipDef`, dazu die Lage der Wurzel, die
+Kontakte von Füßen und Händen, je Knochen die Sicherheit einer Schätzung, das Bild des Videos, aus dem er stammt, seine
+Herkunft (Hand, Schätzer, Assistent, Simulation) und seinen Status, Vorschlag oder freigegeben. Clips von Hand,
+berechnete und simulierte bleiben getrennt (`nbPoseClipKind`). Die Datei ist JSON mit einer Versionsnummer:
+`nbWritePoseClip` schreibt jede Zahl mit neun Stellen, `nbParsePoseClip` liest sie mit einem eigenen Zahlenleser
+bitgenau zurück, auf jeder Plattform gleich, und meldet einen Fehler mit Zeile, Spalte und Grund. Freigegebene
+Keyframes sind harte Vorgaben (32.5, 32.8): Weder Vorschläge (`nbPoseClip_MergeProposals`) noch Aufnahmen noch
+Korrekturen an Nachbarn ändern sie, von Hand erst nach dem Entsperren. Eine Korrektur (`nbPoseClip_SetPose`) wirkt auf
+Wunsch auch auf die Vorschläge in der Nähe, mit jedem Frame Abstand linear schwächer, als Teil derselben Drehung um
+dieselbe Achse. `nbPoseClip_Check` prüft Clips von Hand, aus Schätzern und von Assistenten nach denselben Regeln: Passen
+die Knochen zum Rig, sind die Drehungen normiert, liegen die Gelenke in ihren Grenzen, wie sicher war der Schätzer,
+reicht ein Knochen in den Boden, dreht sich ein Knochen oder bewegt sich die Wurzel zwischen zwei Keyframes schneller,
+als ein Körper kann, und entfernt sich ein Fuß oder eine Hand im Kontakt mehr als 3 cm von der Stelle, an der der
+Kontakt begann, auch langsam über viele Keyframes. Sie meldet und repariert nichts (33.2 C).
+
+Keypoints eines Pose-Schätzers werden zu einer Pose des Humanoiden (`nbHumanoidPoseFromKeypoints`): die 17 Punkte von
+COCO oder die 33 von MediaPipe Pose, in Metern mit y nach oben. Das Becken richtet sich nach Hüften und Wirbelsäule, der
+Rumpf nach den Schultern, der Kopf nach den Ohren, Arme und Beine nach der Ebene ihrer drei Punkte, Knie und Ellbogen
+nur um ihre Achse, Hände und Füße nach Fingern, Ferse und Zehen, wo das Layout sie hat. Knochen, die danach mehr als ein
+Fünftel kürzer oder ein Viertel länger wären als bei der Figur, meldet die Pose. Eine Keypoint-Datei
+(`nbParseKeypointClip`) wird so zu einem Clip aus Vorschlägen des Schätzers, unpassende Knochen mit höchstens 0,25
+Sicherheit. Eine Figur spielt einen Clip mit `nbArticulation_PlayPoseClip` wie einen `nbClipDef` und nimmt sich dabei
+mit `nbArticulation_RecordPoseClip` selbst auf (33.2 E): im Update nach dem Schritt, jeden Frame des Clips auf dem
+Schritt, der ihm am nächsten liegt, mit Füßen und Händen, die etwas berühren, als Kontakten und einem Ereignis, wenn die
+Balance wechselt. So hängt die Aufnahme nicht an der Bildrate des Programms und ergibt mit jeder Zahl von Threads
+dieselben Bits, auch mit den Schritten auf ihrem eigenen Thread. `nbPoseClip_Compare` misst, wie weit sie hinter dem
+Clip blieb, und dieselbe Prüfung findet Rutschen, Knochen im Boden und Sprünge darin. Gemessen in den Tests: Der Clip
+aus drei Keyframes läuft aus der Datei bitgleich wie als `nbClipDef`, kein Knochen legt mehr als 3,2 cm in einem
+Schritt zurück, und die Aufnahme bleibt höchstens 0,039 rad hinter dem Clip, mit beiden Füßen in allen 49 Frames am
+Boden. Der Test hält ihren Hash für alle Plattformen fest. Aus den Keypoints einer Pose kommt dieselbe Pose zurück, auf
+fünf Stellen genau.
+
 **Demo-Renderer.** So wenig Arbeit pro Bild wie möglich:
 
 - Alle Meshes liegen indiziert (16-Bit-Indizes, 20-Byte-Vertices) in Vertex-Seiten mit je 32 768 Vertices.
@@ -933,6 +982,42 @@ nbMotorProfile passive = nbPassiveMotorProfile();
 nbArticulation_SetMotorProfile( figure, &passive );
 ```
 
+```c
+// Ein Clip als Datei: Keyframes an ganzen Frames, mit Status, Herkunft, Wurzel und Kontakten
+nbPoseClip* clip = nbCreatePoseClip( &rig, NB_HUMANOID_SKELETON, "winken", 30 );   // 30 Bilder pro Sekunde
+b3Transform root = { { 0.0f, rootHeight, 0.0f }, b3Quat_identity };
+int k = nbPoseClip_AddKeyframe( clip, 0, poses[0], root, nb_originHand );
+nbPoseClip_SetContacts( clip, k, nb_contactLeftFoot | nb_contactRightFoot );
+nbPoseClip_Approve( clip, k, true );   // gesperrt: nur wer ihn entsperrt, ändert ihn noch
+int length = nbWritePoseClip( clip, NULL, 0 );   // JSON, die Länge wie bei snprintf
+char* text = malloc( (size_t)length + 1 );
+nbWritePoseClip( clip, text, length + 1 );
+nbPoseClipError error;
+nbPoseClip* again = nbParsePoseClip( text, length, &error );   // bitgenau, sonst NULL mit Zeile, Spalte und Grund
+
+// Vorschläge eines Pose-Schätzers oder Assistenten kommen nur um freigegebene Keyframes herum
+nbPoseClip* proposals = nbParseKeypointClip( keypointText, keypointLength, 1.8f, &error );
+int refused;
+nbPoseClip_MergeProposals( clip, proposals, &refused );
+
+// Prüfen, ohne etwas zu reparieren: Grenzen, Boden, Sprünge, rutschende Füße, unsichere Knochen
+nbPoseCheckDef check = nbDefaultPoseCheckDef();
+nbPoseIssue issues[64];
+int count = nbPoseClip_Check( clip, &rig, &check, issues, 64 );
+
+// Auf einer Figur spielen und dabei als eigenen Clip aufnehmen, Frame für Frame in den Schritten
+nbPoseClip* baked = nbCreatePoseClip( &rig, NB_HUMANOID_SKELETON, "winken simuliert", 30 );
+nbPoseClip_SetKind( baked, nb_clipSimulated );
+nbArticulation_PlayPoseClip( figure, clip, 1.0f );
+nbArticulation_RecordPoseClip( figure, baked, NULL );   // NULL: Füße und Hände des Humanoiden
+// ... Schritte ...
+if ( nbArticulation_IsRecording( figure ) == false )   // wartet auf laufende Schritte, danach ist die Aufnahme lesbar
+{
+	int frame, bone;
+	float behind = nbPoseClip_Compare( clip, baked, &frame, &bone );   // wie weit die Figur hinter dem Clip blieb
+}
+```
+
 Die komplette API steht in [include/nebenan/nebenan.h](include/nebenan/nebenan.h).
 
 Einbinden in ein eigenes CMake-Projekt:
@@ -1033,6 +1118,16 @@ beim Einbinden nicht gebaut.
 | `joint`, `jointFrame` | Kugel, Identität | Scharnier, Kugel oder fest, und der Gelenkrahmen im Rahmen des Knochens: seine z-Achse ist die Scharnierachse oder die Achse des Kegels |
 | `lowerAngle`, `upperAngle`, `coneAngle` | ±0,5, 0,5 rad | Grenzen des Scharniers oder des Twists, und wie weit ein Kugelgelenk aus seiner Ruhelage schwenkt |
 | `strength` | 1 | Multipliziert `maxTorque` für dieses Gelenk |
+
+| Prüfung eines Clips (`nbPoseCheckDef`) | Standard | Wirkung |
+| --- | --- | --- |
+| `groundHeight`, `groundTolerance` | 0, 1 cm | Die Höhe des Bodens im Rahmen des Clips und wie weit ein Knochen hineinreichen darf |
+| `minConfidence` | 0,5 | Ein Knochen, dessen sich der Schätzer weniger sicher war, ist unsicher |
+| `maxTurnSpeed` | 25 rad/s | Schneller dreht sich kein Knochen zwischen zwei Keyframes |
+| `maxRootSpeed`, `maxRootTurnSpeed` | 10 m/s, 15 rad/s | Schneller bewegt und dreht sich die Wurzel nicht |
+| `slideDistance` | 3 cm | So weit darf sich ein Fuß oder eine Hand im Kontakt von der Stelle entfernen, an der der Kontakt begann. Darüber meldet die Prüfung ein Rutschen und misst von dort weiter |
+| `limitTolerance` | 0,02 rad | So weit darf ein Gelenk über seine Grenze |
+| `feet`, `hands` | Humanoid | Die Knochen der Kontakte, links, dann rechts, −1 für keinen. Eine Aufnahme nimmt dieselben |
 
 Die Demo nimmt für Ziegel Dichte 1900, Festigkeit 6·10⁵ und Splitter 0,1 m, für Beton Dichte 2400,
 Festigkeit 1,1·10⁶ und Splitter 0,13 m, beides mit Bruchstückgröße ×2.
@@ -1528,9 +1623,10 @@ Messungen in [docs/Optimierungen.md](docs/Optimierungen.md).
 ## Tests und Benchmark
 
 ```sh
-build/bin/nebenan_test            # 86 Tests: Geometrie, Voronoi, Hüllen, Öffnungen, Stöße, Stützgraph, Etagen, Lastprüfung, Schutt, Ruhe, Durchschlagen, Threads, Knoten, große Blöcke, Suchbaum, Kontaktlisten, Streaming, Stream, Laden im Hintergrund, Speichern und Zurückholen, gemeinsamer Thread-Pool, Ruhe-Prüfung auf den Workern, Schritt auf eigenem Thread, Schritte pro Bild, Takt der Physik, Wahl der Threads, Profil und Skalierung, Determinismus, Figuren: Federn mit Drehmomentgrenze, Pendel, Arm mit Motoren, passive Ragdoll, Standpose, Clip, Treffer, Wand, Determinismus mit 1 und 4 Threads, Balance: Stand, Schritte von vorn, hinten und der Seite, links und rechts gespiegelt, Schritt gegen eine Wand, Boden weg, Umwerfen und Aufstehen, Platte über der Figur, Abbruch durch Treffer und Schutt, Determinismus …
+build/bin/nebenan_test            # 94 Tests: Geometrie, Voronoi, Hüllen, Öffnungen, Stöße, Stützgraph, Etagen, Lastprüfung, Schutt, Ruhe, Durchschlagen, Threads, Knoten, große Blöcke, Suchbaum, Kontaktlisten, Streaming, Stream, Laden im Hintergrund, Speichern und Zurückholen, gemeinsamer Thread-Pool, Ruhe-Prüfung auf den Workern, Schritt auf eigenem Thread, Schritte pro Bild, Takt der Physik, Wahl der Threads, Profil und Skalierung, Determinismus, Figuren: Federn mit Drehmomentgrenze, Pendel, Arm mit Motoren, passive Ragdoll, Standpose, Clip, Treffer, Wand, Determinismus mit 1 und 4 Threads, Balance: Stand, Schritte von vorn, hinten und der Seite, links und rechts gespiegelt, Schritt gegen eine Wand, Boden weg, Umwerfen und Aufstehen, Platte über der Figur, Abbruch durch Treffer und Schutt, Determinismus, Clips: Datei bitgenau, Fehler mit Zeile, Sperren, Vorschläge, Prüfung, Keypoints von COCO und MediaPipe, Spielen und Aufnehmen, Determinismus …
 build/bin/nebenan_test articulation   # nur die Tests der Figuren, eine Zehntelsekunde
 build/bin/nebenan_test balance        # nur die Tests der Balance, eine Viertelsekunde
+build/bin/nebenan_test clips          # nur die Tests der Clips
 build/bin/nebenan_benchmark 4     # Zahl = Threads für Bruch und Physik, 0 = so viele, wie ein Spiel nähme
 build/bin/nebenan_benchmark scaling   # die Städte unter Beschuss mit 1, 2, 4 … Threads und die Tabelle der Skalierung
 build/bin/nebenan_benchmark rates     # die Städte unter Beschuss mit 30, 60 und 120 Hz, was eine simulierte Sekunde kostet
@@ -1547,6 +1643,9 @@ src/
   core.c            Speicher (große Arrays wachsen an Ort und Stelle), Zufallszahlen
   articulation.c    Figuren: Rigs, Gelenkketten mit Federn und Drehmomentgrenze, Motorprofile, Clips aus Keyframes, Treffer
   balance.c         Balance von Zweibeinern: Capture Point, Ausgleichsschritte, Fallen mit Schutzhaltung, Aufstehen
+  pose_clip.c       Clips als Dateien: Keyframes mit Status und Herkunft, Sperren, Vorschläge, Prüfung, Aufnahme
+  keypoints.c       Posen aus den Keypoints eines Pose-Schätzers, COCO und MediaPipe
+  json.c            JSON lesen und schreiben, Zahlen bitgenau auf jeder Plattform
   poly.c            konvexe Polyeder: Schneiden, Masse, Kontaktflächen
   fracture.c        Voronoi-Bruch und Punktverteilung
   hull_builder.c    Box3D-Hüllen direkt aus der Polyeder-Topologie
@@ -1614,8 +1713,8 @@ Nach Änderungen an `demo/shaders/scene.glsl` die Shader neu erzeugen, im Ordner
   Bits, gespiegelte Stöße gespiegelte erste Schritte, die späteren Schritte können sich unterscheiden. Die Figur geht
   nicht, sie tritt nur aus, und sie setzt die Füße waagerecht: Auf Schrägen stünden sie auf einer Kante. Boden bis
   25 cm höher oder tiefer nimmt die Planung an, getestet ist nur ebener Boden.
-- Aufstehen ist eine Spielhilfe, bis Aufstehclips die Gelenke führen (26.15, Schritt 6 aus 33.4): Eine Kraft bis zum
-  1,3-fachen Gewicht hebt die Brust, und die Figur hängt dabei sichtbar daran wie an einem Faden. Ist kein Platz, wartet
+- Aufstehen ist eine Spielhilfe, bis Aufstehclips die Gelenke führen (26.15). Den Editor dafür gibt es jetzt, die Clips
+  noch nicht: Eine Kraft bis zum 1,3-fachen Gewicht hebt die Brust, und die Figur hängt dabei sichtbar daran wie an einem Faden. Ist kein Platz, wartet
   sie, sie kriecht und rollt nicht. Aus dem ruhigen Stand umgeworfen, kippt sie erst nach rund einer Sekunde, weil nur die
   weichen Motoren und die Schutzhaltung sie aus dem Gleichgewicht bringen. Ein Treffer dazu kippt sie sofort.
 - Gelenke dehnen sich bei harten Aufschlägen: Trifft ein Knochen mit mehreren Metern pro Sekunde den Boden, ziehen die
@@ -1631,6 +1730,14 @@ Nach Änderungen an `demo/shaders/scene.glsl` die Shader neu erzeugen, im Ordner
   Balance liest je Update die Kontakte der Füße, im Schritt kommen ein Strahl, eine Überlappung und ein Schwung einer
   Kugel dazu, beim Aufstehen die Kontakte aller Knochen. Gemessen ist das noch nicht, der Benchmark hat keine Szene mit
   Figuren.
+- Der Keypoint-Import braucht Punkte in 3D und in Metern, wie MediaPipe sie als Weltkoordinaten liefert. Aus den
+  2D-Punkten eines Bildes oder aus mehreren Ansichten rekonstruiert er nichts (32.5). Beugt sich jemand in der Hüfte,
+  kippt das Becken mit, denn ohne Punkte an der Wirbelsäule richtet es sich nach Hüften und Schultern. Ein gestrecktes
+  Glied lässt offen, wie weit es um sich selbst gedreht ist, es bekommt die kleinste Drehung.
+- Clips gibt es nur als JSON, nicht binär und nicht als glTF oder FBX. Der Editor stellt Gelenke mit Reglern statt mit
+  Gizmos im Bild, Ereignisse setzt er nicht, und Vorschläge eines Assistenten kommen als Datei, er fragt keinen an (32.7).
+- Eine Aufnahme nimmt höchstens einen Frame je Schritt: Hat der Clip mehr Bilder pro Sekunde, als die Physik Schritte
+  macht, fehlen Frames dazwischen. Sie endet nach einem Durchgang, auch bei einer Schleife.
 - Nur konvexe Teile, aus denen sich Quader ausschneiden lassen. Andere konkave Formen müssen als mehrere konvexe
   Teile angegeben werden.
 - Render- und Physikgeometrie sind dieselben flachen Polygone.

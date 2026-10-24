@@ -2,6 +2,7 @@
 // Nebenan demo: walls that break into polygon fragments on Box3D, built for speed. Flat shading, no shadows, no
 // particles: every millisecond goes to the destruction.
 
+#include "image_file.h"
 #include "renderer.h"
 #include "system_info.h"
 
@@ -46,10 +47,11 @@ enum SceneKind
 	SceneTown,
 	SceneCity,
 	SceneFigures,
+	SceneKeyframes,
 	SceneCount
 };
 
-static const char* s_sceneNames[SceneCount] = { "Mauern", "Stresstest", "Stadt", "Große Stadt", "Figuren" };
+static const char* s_sceneNames[SceneCount] = { "Mauern", "Stresstest", "Stadt", "Große Stadt", "Figuren", "Keyframes" };
 static const char* s_toolNames[ToolCount] = { "Gewehr", "Granate", "Kanone" };
 
 struct ToolSettings
@@ -357,6 +359,61 @@ struct City
 	std::vector<std::unique_ptr<PendingStructure>> building;
 };
 
+// The keyframe editor, see BuildEditorScene: the humanoid, the clip it edits and where it is saved, the frame, the chosen
+// keyframe and bone, the checks of the clip, the meshes of its pose, the figure that plays it, the clip the library records
+// of that figure with what it finds in it, and the reference image of the frame
+struct Editor
+{
+	nbBoneDef bones[nb_humanoidBoneCount] = {};
+	nbRigDef rig = {};
+	float rootHeight = 0.0f;
+	nbPoseClip* clip = nullptr;
+	char path[256] = "clip.json";
+	char proposals[256] = "vorschlaege.json";
+	char images[256] = "frames/%04d.bmp";
+	int firstImage = 1;
+	std::string message;
+
+	float frame = 0.0f;
+	bool playing = false;
+	int keyframe = -1;
+	int bone = nb_humanoidUpperArmLeft;
+	int spread = 0;
+	std::vector<nbPoseIssue> issues;
+	bool changed = true;
+
+	std::vector<int> poseSlots;
+	std::vector<int> poseMeshes;
+	int markerSlot = -1;
+	int markerMesh = -1;
+
+	nbArticulationId figure = {};
+	bool simulating = false;
+	bool balance = false;
+	float motorError = 0.0f;
+	int motorBone = -1;
+	nbBalanceState balanceState = nb_balanceOff;
+
+	// The recording, see nbArticulation_RecordPoseClip, and what the menu shows of it, taken between the steps, which
+	// write it: how far it fell behind the clip, its issues with their frames, and its events
+	bool bake = false;
+	nbPoseClip* baked = nullptr;
+	bool recording = false;
+	int bakedCount = -1;
+	float behind = 0.0f;
+	int behindFrame = -1;
+	int behindBone = -1;
+	std::vector<nbPoseIssue> bakedIssues;
+	std::vector<int> bakedFrames;
+	std::vector<nbPoseEvent> bakedEvents;
+
+	int imageIndex = -1;
+	int imageWidth = 0;
+	int imageHeight = 0;
+	sg_image image = {};
+	sg_view imageView = {};
+};
+
 struct App
 {
 	b3WorldId physics = b3_nullWorldId;
@@ -383,6 +440,7 @@ struct App
 	bool showTargets = true;
 	bool showBalance = true;
 	float hitImpulse = 60.0f;
+	Editor editor;
 	uint32_t hitCounter = 0;
 	std::vector<GpuVertex> vertexScratch;
 	std::vector<uint16_t> indexScratch;
@@ -1187,6 +1245,942 @@ static const char* BalanceName( nbBalanceState state )
 	return names[state];
 }
 
+//----------------------------------------------------------------------------------------------------------------------
+// Keyframe editor: a clip of the humanoid as a file, posed by hand over reference images, checked, approved and locked,
+// proposals of an estimator or an assistant taken in, and the clip played on a figure, see the roadmap of the game,
+// chapters 32.5, 32.6 and 33.2. The clip, its rules and its checks are the library's, here are the menu and the drawing.
+
+static const char* s_boneLabels[nb_humanoidBoneCount] = { "Becken",
+														  "Rumpf",
+														  "Kopf",
+														  "Oberarm links",
+														  "Unterarm links",
+														  "Hand links",
+														  "Oberarm rechts",
+														  "Unterarm rechts",
+														  "Hand rechts",
+														  "Oberschenkel links",
+														  "Unterschenkel links",
+														  "Fuß links",
+														  "Oberschenkel rechts",
+														  "Unterschenkel rechts",
+														  "Fuß rechts" };
+static const char* s_originLabels[nb_originCount] = { "Hand", "Schätzer", "Assistent", "Simulation" };
+static const char* s_issueLabels[nb_issueKindCount] = { "Knochen fehlt", "Knochen unbekannt", "nicht normiert",
+														"Gelenkgrenze",	 "unsicher",		  "im Boden",
+														"Sprung",		 "Fuß rutscht",		  "Knochenlänge" };
+
+// The events of the balance in a recording, see nbArticulation_RecordPoseClip, else the name of the event
+static const char* EventLabel( const char* name )
+{
+	static const char* names[6] = { "off", "stand", "step", "fall", "down", "getUp" };
+	static const char* labels[6] = { "ohne Balance", "steht", "macht einen Schritt", "fällt", "liegt", "steht auf" };
+	for ( int i = 0; i < 6; ++i )
+	{
+		if ( strcmp( name, names[i] ) == 0 )
+		{
+			return labels[i];
+		}
+	}
+	return name;
+}
+
+static bool ReadTextFile( const char* path, std::string& text )
+{
+	FILE* file = fopen( path, "rb" );
+	if ( file == nullptr )
+	{
+		return false;
+	}
+	fseek( file, 0, SEEK_END );
+	long size = ftell( file );
+	fseek( file, 0, SEEK_SET );
+	text.resize( size > 0 ? (size_t)size : 0 );
+	bool ok = size >= 0 && fread( &text[0], 1, text.size(), file ) == text.size();
+	fclose( file );
+	return ok;
+}
+
+static bool WriteTextFile( const char* path, const std::string& text )
+{
+	FILE* file = fopen( path, "wb" );
+	if ( file == nullptr )
+	{
+		return false;
+	}
+	bool ok = fwrite( text.data(), 1, text.size(), file ) == text.size();
+	fclose( file );
+	return ok;
+}
+
+static std::string ClipText( const nbPoseClip* clip )
+{
+	std::string text( (size_t)nbWritePoseClip( clip, nullptr, 0 ) + 1, '\0' );
+	nbWritePoseClip( clip, &text[0], (int)text.size() );
+	text.pop_back();
+	return text;
+}
+
+// Rotations by axis and angle and as angles about x, y and z in degrees, one after the other: for the sliders only, the
+// clip keeps the rotations
+static b3Quat AxisAngle( b3Vec3 axis, float radians )
+{
+	float s = sinf( 0.5f * radians );
+	return { { s * axis.x, s * axis.y, s * axis.z }, cosf( 0.5f * radians ) };
+}
+
+static b3Quat EulerToQuat( b3Vec3 degrees )
+{
+	float r = B3_PI / 180.0f;
+	return b3NormalizeQuat(
+		b3MulQuat( b3MulQuat( AxisAngle( b3Vec3_axisX, degrees.x * r ), AxisAngle( b3Vec3_axisY, degrees.y * r ) ),
+				   AxisAngle( b3Vec3_axisZ, degrees.z * r ) ) );
+}
+
+static b3Vec3 QuatToEuler( b3Quat q )
+{
+	float x = q.v.x, y = q.v.y, z = q.v.z, w = q.s;
+	float r00 = 1.0f - 2.0f * ( y * y + z * z );
+	float r01 = 2.0f * ( x * y - w * z );
+	float r02 = 2.0f * ( x * z + w * y );
+	float r12 = 2.0f * ( y * z - w * x );
+	float r22 = 1.0f - 2.0f * ( x * x + y * y );
+	float d = 180.0f / B3_PI;
+	return { atan2f( -r12, r22 ) * d, asinf( b3ClampFloat( r02, -1.0f, 1.0f ) ) * d, atan2f( -r01, r00 ) * d };
+}
+
+// The clip of three keyframes of chapter 33.4 to start with: the left arm comes up, the elbow bends, the arm goes down
+static nbPoseClip* MakeExampleClip( const Editor& e )
+{
+	nbPoseClip* clip = nbCreatePoseClip( &e.rig, NB_HUMANOID_SKELETON, "Beispiel", 30 );
+	b3Quat pose[nb_humanoidBoneCount];
+	b3Transform root = { { 0.0f, e.rootHeight, 0.0f }, b3Quat_identity };
+	for ( int k = 0; k < 3; ++k )
+	{
+		for ( int i = 0; i < nb_humanoidBoneCount; ++i )
+		{
+			pose[i] = b3Quat_identity;
+		}
+		if ( k == 1 )
+		{
+			pose[nb_humanoidUpperArmLeft] = AxisAngle( b3Vec3_axisX, 1.3f );
+			pose[nb_humanoidForearmLeft] = AxisAngle( b3Vec3_axisX, 1.5f );
+		}
+		int index = nbPoseClip_AddKeyframe( clip, 24 * k, pose, root, nb_originHand );
+		nbPoseClip_SetContacts( clip, index, nb_contactLeftFoot | nb_contactRightFoot );
+	}
+	nbPoseClip_SetLooping( clip, true );
+	return clip;
+}
+
+static void SetEditorClip( Editor& e, nbPoseClip* clip )
+{
+	nbDestroyPoseClip( e.clip );
+	e.clip = clip;
+	e.keyframe = nbPoseClip_GetKeyframeCount( clip ) > 0 ? 0 : -1;
+	e.frame = 0.0f;
+	e.changed = true;
+}
+
+static void LoadEditorClip( Editor& e )
+{
+	std::string text;
+	if ( ReadTextFile( e.path, text ) == false )
+	{
+		e.message = std::string( "Keine Datei " ) + e.path;
+		return;
+	}
+
+	nbPoseClipError error;
+	nbPoseClip* clip = nbParsePoseClip( text.data(), (int)text.size(), &error );
+	if ( clip == nullptr )
+	{
+		char line[256];
+		snprintf( line, sizeof( line ), "%s, Zeile %d, Spalte %d: %s", e.path, error.line, error.column, error.message );
+		e.message = line;
+		return;
+	}
+
+	nbPoseIssue issues[4];
+	nbPoseCheckDef def = nbDefaultPoseCheckDef();
+	int count = nbPoseClip_Check( clip, &e.rig, &def, issues, 4 );
+	if ( count > 0 && ( issues[0].kind == nb_issueBoneMissing || issues[0].kind == nb_issueBoneUnknown ) )
+	{
+		e.message = std::string( e.path ) + " ist kein Clip des Humanoiden";
+		nbDestroyPoseClip( clip );
+		return;
+	}
+	SetEditorClip( e, clip );
+	e.message = std::string( "Geladen: " ) + e.path;
+}
+
+static void SaveEditorClip( Editor& e, const nbPoseClip* clip, const char* path )
+{
+	e.message = WriteTextFile( path, ClipText( clip ) ) ? std::string( "Gespeichert: " ) + path
+														: std::string( "Nicht gespeichert, Ordner fehlt? " ) + path;
+}
+
+// Proposals as a clip file, from an assistant, or as a keypoint file, from a pose estimator. Approved keyframes refuse them.
+static void LoadProposals( Editor& e )
+{
+	std::string text;
+	if ( ReadTextFile( e.proposals, text ) == false )
+	{
+		e.message = std::string( "Keine Datei " ) + e.proposals;
+		return;
+	}
+
+	nbPoseClipError clipError;
+	nbPoseClipError keypointError;
+	nbPoseClip* proposals = nbParsePoseClip( text.data(), (int)text.size(), &clipError );
+	if ( proposals == nullptr )
+	{
+		proposals = nbParseKeypointClip( text.data(), (int)text.size(), 1.8f, &keypointError );
+	}
+	if ( proposals == nullptr )
+	{
+		char line[256];
+		snprintf( line, sizeof( line ), "Zeile %d, Spalte %d: %s", clipError.line, clipError.column, clipError.message );
+		e.message = line;
+		return;
+	}
+
+	int refused = 0;
+	int merged = nbPoseClip_MergeProposals( e.clip, proposals, &refused );
+	nbDestroyPoseClip( proposals );
+	char line[160];
+	if ( merged < 0 )
+	{
+		snprintf( line, sizeof( line ), "Die Vorschläge passen nicht: andere Knochen oder andere Bildrate" );
+	}
+	else
+	{
+		snprintf( line, sizeof( line ), "%d Vorschläge übernommen, %d von freigegebenen Keyframes abgelehnt", merged, refused );
+	}
+	e.message = line;
+	e.changed = true;
+}
+
+// The pose meshes of the bones, solid, and a marker for the chosen bone, both placed every frame
+static void BuildEditorScene( App& app )
+{
+	Editor& e = app.editor;
+	e.rootHeight = nbMakeHumanoidBones( 1.8f, 75.0f, e.bones, nb_humanoidBoneCount );
+	e.rig = nbDefaultRigDef();
+	e.rig.bones = e.bones;
+	e.rig.boneCount = nb_humanoidBoneCount;
+
+	for ( int i = 0; i < nb_humanoidBoneCount; ++i )
+	{
+		const nbBoneDef& bone = e.bones[i];
+		int slot = app.renderer.AllocSlot();
+		if ( bone.shape == nb_boxBone )
+		{
+			BuildBoxMesh( app.vertexScratch, app.indexScratch, bone.center, bone.halfExtents, MaterialPlaster, slot );
+		}
+		else
+		{
+			BuildCapsuleMesh( app.vertexScratch, app.indexScratch, bone.start, bone.end, bone.radius, MaterialPlaster, slot );
+		}
+		e.poseSlots.push_back( slot );
+		e.poseMeshes.push_back( app.renderer.AddMesh( app.vertexScratch.data(), (int)app.vertexScratch.size(),
+													  app.indexScratch.data(), (int)app.indexScratch.size(), slot ) );
+	}
+	e.markerSlot = app.renderer.AllocSlot();
+	BuildBoxMesh( app.vertexScratch, app.indexScratch, b3Vec3_zero, { 0.035f, 0.035f, 0.035f }, MaterialBrick, e.markerSlot );
+	e.markerMesh = app.renderer.AddMesh( app.vertexScratch.data(), (int)app.vertexScratch.size(), app.indexScratch.data(),
+										 (int)app.indexScratch.size(), e.markerSlot );
+
+	// The clip of the last session, or the example
+	std::string text;
+	if ( e.clip == nullptr )
+	{
+		if ( ReadTextFile( e.path, text ) )
+		{
+			LoadEditorClip( e );
+		}
+		if ( e.clip == nullptr )
+		{
+			SetEditorClip( e, MakeExampleClip( e ) );
+		}
+	}
+	e.changed = true;
+
+	app.camera.position = { 0.0f, 1.2f, 3.4f };
+	app.camera.yaw = 0.0f;
+	app.camera.pitch = -0.05f;
+}
+
+static void RemoveFigureVisual( App& app, size_t index )
+{
+	FigureVisual& figure = app.figures[index];
+	for ( size_t i = 0; i < figure.boneSlots.size(); ++i )
+	{
+		if ( nbArticulation_IsValid( figure.id ) )
+		{
+			DetachSlot( app, nbArticulation_GetBody( figure.id, (int)i ), figure.boneSlots[i] );
+		}
+		app.renderer.RemoveMesh( figure.boneMeshes[i] );
+		app.renderer.FreeSlot( figure.boneSlots[i] );
+	}
+	for ( size_t i = 0; i < figure.targetSlots.size(); ++i )
+	{
+		app.renderer.RemoveMesh( figure.targetMeshes[i] );
+		app.renderer.FreeSlot( figure.targetSlots[i] );
+	}
+	app.renderer.RemoveMesh( figure.captureMesh );
+	app.renderer.RemoveMesh( figure.stepMesh );
+	app.renderer.FreeSlot( figure.captureSlot );
+	app.renderer.FreeSlot( figure.stepSlot );
+	app.figures.erase( app.figures.begin() + (long)index );
+}
+
+static void StopEditorSimulation( App& app )
+{
+	Editor& e = app.editor;
+	if ( e.simulating == false )
+	{
+		return;
+	}
+	for ( size_t i = 0; i < app.figures.size(); ++i )
+	{
+		if ( app.figures[i].id.index1 == e.figure.index1 && app.figures[i].id.generation == e.figure.generation )
+		{
+			RemoveFigureVisual( app, i );
+			break;
+		}
+	}
+	nbDestroyArticulation( e.figure );
+	e.figure = nb_nullArticulationId;
+	e.simulating = false;
+	e.recording = false;
+}
+
+// A figure in the first pose of the clip, at its root, that plays the clip with the motors of the figure scene. With
+// baking, the library records the pose it reaches into a clip of its own, frame by frame of the clip in its steps.
+static void StartEditorSimulation( App& app )
+{
+	Editor& e = app.editor;
+	StopEditorSimulation( app );
+	if ( nbPoseClip_GetKeyframeCount( e.clip ) == 0 )
+	{
+		return;
+	}
+
+	nbPoseKeyframe first = nbPoseClip_GetKeyframe( e.clip, 0 );
+	b3WorldTransform root = { b3ToPos( first.root.p ), first.root.q };
+	nbMotorProfile profile = app.figureProfile;
+	e.figure = nbCreateArticulation( app.destruction, &e.rig, root.p, root.q, &profile );
+	nbArticulation_PlacePose( e.figure, root, first.rotations );
+	if ( e.balance )
+	{
+		nbBalanceDef balance = nbDefaultBalanceDef();
+		nbArticulation_EnableBalance( e.figure, &balance );
+	}
+	nbArticulation_PlayPoseClip( e.figure, e.clip, 1.0f );
+	AddFigureVisual( app, e.figure, e.bones, nb_humanoidBoneCount );
+	e.simulating = true;
+
+	nbDestroyPoseClip( e.baked );
+	e.baked = nullptr;
+	e.recording = false;
+	e.bakedCount = -1;
+	if ( e.bake )
+	{
+		e.baked = nbCreatePoseClip( &e.rig, NB_HUMANOID_SKELETON,
+									( std::string( nbPoseClip_GetName( e.clip ) ) + " simuliert" ).c_str(),
+									nbPoseClip_GetFrameRate( e.clip ) );
+		nbPoseClip_SetKind( e.baked, nb_clipSimulated );
+		e.recording = nbArticulation_RecordPoseClip( e.figure, e.baked, nullptr );
+	}
+}
+
+// The reference image of the frame, loaded once it changes
+static void LoadReferenceImage( Editor& e, int index )
+{
+	if ( index == e.imageIndex )
+	{
+		return;
+	}
+	e.imageIndex = index;
+	if ( e.imageView.id != SG_INVALID_ID )
+	{
+		sg_destroy_view( e.imageView );
+		sg_destroy_image( e.image );
+		e.imageView = {};
+		e.image = {};
+	}
+
+	char path[300];
+	snprintf( path, sizeof( path ), e.images, index );
+	std::vector<uint8_t> pixels;
+	int width = 0;
+	int height = 0;
+	if ( LoadImageFile( path, &width, &height, pixels ) == false )
+	{
+		e.imageWidth = 0;
+		return;
+	}
+
+	sg_image_desc desc = {};
+	desc.width = width;
+	desc.height = height;
+	desc.pixel_format = SG_PIXELFORMAT_RGBA8;
+	desc.data.mip_levels[0] = { pixels.data(), pixels.size() };
+	e.image = sg_make_image( &desc );
+	sg_view_desc view = {};
+	view.texture.image = e.image;
+	e.imageView = sg_make_view( &view );
+	e.imageWidth = width;
+	e.imageHeight = height;
+}
+
+static void DestroyEditorScene( App& app )
+{
+	Editor& e = app.editor;
+	for ( size_t i = 0; i < e.poseSlots.size(); ++i )
+	{
+		app.renderer.RemoveMesh( e.poseMeshes[i] );
+		app.renderer.FreeSlot( e.poseSlots[i] );
+	}
+	e.poseSlots.clear();
+	e.poseMeshes.clear();
+	if ( e.markerSlot >= 0 )
+	{
+		app.renderer.RemoveMesh( e.markerMesh );
+		app.renderer.FreeSlot( e.markerSlot );
+		e.markerSlot = -1;
+	}
+	if ( e.imageView.id != SG_INVALID_ID )
+	{
+		sg_destroy_view( e.imageView );
+		sg_destroy_image( e.image );
+		e.imageView = {};
+		e.image = {};
+	}
+	e.imageIndex = -1;
+	e.simulating = false;
+	e.recording = false;
+	e.figure = nb_nullArticulationId;
+	e.playing = false;
+}
+
+// Every frame after the physics, between the steps: the frame plays on, the pose of the clip there is drawn, and what the
+// menu shows of the figure and its recording is taken
+static void UpdateEditor( App& app, float dt )
+{
+	Editor& e = app.editor;
+	if ( app.scene != SceneKeyframes || e.clip == nullptr )
+	{
+		return;
+	}
+
+	int length = nbPoseClip_GetLength( e.clip );
+	float rate = (float)nbPoseClip_GetFrameRate( e.clip );
+	if ( e.simulating && nbArticulation_IsValid( e.figure ) )
+	{
+		// The frame of the figure is the time of its clip
+		e.frame = nbArticulation_GetClipTime( e.figure ) * rate;
+		if ( nbPoseClip_IsLooping( e.clip ) && length > 0 )
+		{
+			e.frame = fmodf( e.frame, (float)length );
+		}
+
+		// The joint furthest from its target now, and the balance
+		e.motorError = 0.0f;
+		e.motorBone = -1;
+		for ( int i = 1; i < nb_humanoidBoneCount; ++i )
+		{
+			float error = nbArticulation_GetJointError( e.figure, i );
+			if ( error > e.motorError )
+			{
+				e.motorError = error;
+				e.motorBone = i;
+			}
+		}
+		e.balanceState = nbArticulation_GetBalance( e.figure ).state;
+		e.recording = nbArticulation_IsRecording( e.figure );
+	}
+
+	// The recording so far, measured against the clip and checked by the rules of the clip: slides, bones in the ground,
+	// jumps, and the events of the balance
+	if ( e.baked != nullptr && nbPoseClip_GetKeyframeCount( e.baked ) != e.bakedCount )
+	{
+		e.bakedCount = nbPoseClip_GetKeyframeCount( e.baked );
+		e.behind = nbPoseClip_Compare( e.clip, e.baked, &e.behindFrame, &e.behindBone );
+		nbPoseCheckDef def = nbDefaultPoseCheckDef();
+		int count = nbPoseClip_Check( e.baked, &e.rig, &def, nullptr, 0 );
+		e.bakedIssues.resize( (size_t)count );
+		e.bakedFrames.resize( (size_t)count );
+		nbPoseClip_Check( e.baked, &e.rig, &def, e.bakedIssues.data(), count );
+		for ( int i = 0; i < count; ++i )
+		{
+			int keyframe = e.bakedIssues[i].keyframe;
+			e.bakedFrames[i] = keyframe >= 0 ? nbPoseClip_GetKeyframe( e.baked, keyframe ).frame : -1;
+		}
+		e.bakedEvents.resize( (size_t)nbPoseClip_GetEventCount( e.baked ) );
+		for ( size_t i = 0; i < e.bakedEvents.size(); ++i )
+		{
+			e.bakedEvents[i] = nbPoseClip_GetEvent( e.baked, (int)i );
+		}
+	}
+	else if ( e.playing && length > 0 )
+	{
+		e.frame += dt * rate;
+		if ( e.frame > (float)length )
+		{
+			e.frame = nbPoseClip_IsLooping( e.clip ) ? fmodf( e.frame, (float)length ) : (float)length;
+			e.playing = nbPoseClip_IsLooping( e.clip );
+		}
+	}
+
+	// The pose of the clip at the frame, beside the figure while it plays
+	b3Quat pose[nb_humanoidBoneCount];
+	b3Transform root;
+	nbPoseClip_Sample( e.clip, e.frame, pose, &root );
+	if ( e.simulating )
+	{
+		root.p.x -= 1.2f;
+	}
+	b3Transform transforms[nb_humanoidBoneCount];
+	nbComputePoseTransforms( &e.rig, root, pose, transforms );
+	for ( int i = 0; i < nb_humanoidBoneCount; ++i )
+	{
+		app.renderer.SetSlot( e.poseSlots[i], transforms[i].p, transforms[i].q );
+	}
+	app.renderer.SetSlot( e.markerSlot, transforms[e.bone].p, transforms[e.bone].q );
+
+	LoadReferenceImage( e, e.firstImage + (int)e.frame );
+
+	if ( e.changed )
+	{
+		nbPoseCheckDef def = nbDefaultPoseCheckDef();
+		int count = nbPoseClip_Check( e.clip, &e.rig, &def, nullptr, 0 );
+		e.issues.resize( (size_t)count );
+		nbPoseClip_Check( e.clip, &e.rig, &def, e.issues.data(), count );
+		e.changed = false;
+	}
+}
+
+// The camera onto the root of the clip from the front, the side or above
+static void LookAtEditorPose( App& app, int view )
+{
+	Editor& e = app.editor;
+	b3Quat pose[nb_humanoidBoneCount];
+	b3Transform root;
+	nbPoseClip_Sample( e.clip, e.frame, pose, &root );
+	b3Vec3 at = root.p;
+	if ( view == 0 )
+	{
+		app.camera.position = { at.x, at.y + 0.2f, at.z + 3.4f };
+		app.camera.yaw = 0.0f;
+		app.camera.pitch = -0.05f;
+	}
+	else if ( view == 1 )
+	{
+		app.camera.position = { at.x + 3.4f, at.y + 0.2f, at.z };
+		app.camera.yaw = -0.5f * B3_PI;
+		app.camera.pitch = -0.05f;
+	}
+	else
+	{
+		app.camera.position = { at.x, at.y + 3.4f, at.z + 0.01f };
+		app.camera.yaw = 0.0f;
+		app.camera.pitch = -1.55f;
+	}
+}
+
+static void DrawEditorUi( App& app )
+{
+	Editor& e = app.editor;
+	if ( e.clip == nullptr )
+	{
+		return;
+	}
+
+	float dpi = sapp_dpi_scale();
+	ImGui::SetNextWindowPos( ImVec2( sapp_widthf() - 400.0f * dpi, 12.0f * dpi ), ImGuiCond_FirstUseEver );
+	ImGui::SetNextWindowSize( ImVec2( 388.0f * dpi, 0.0f ), ImGuiCond_FirstUseEver );
+	ImGui::Begin( "Keyframe-Editor", nullptr, ImGuiWindowFlags_AlwaysAutoResize );
+
+	// The file
+	ImGui::SeparatorText( "Clip" );
+	ImGui::InputText( "Datei", e.path, sizeof( e.path ) );
+	if ( ImGui::Button( "Neu" ) )
+	{
+		StopEditorSimulation( app );
+		SetEditorClip( e, MakeExampleClip( e ) );
+		e.message = "Neuer Clip aus dem Beispiel";
+	}
+	ImGui::SameLine();
+	if ( ImGui::Button( "Laden" ) )
+	{
+		StopEditorSimulation( app );
+		LoadEditorClip( e );
+	}
+	ImGui::SameLine();
+	if ( ImGui::Button( "Speichern" ) )
+	{
+		SaveEditorClip( e, e.clip, e.path );
+	}
+	if ( e.message.empty() == false )
+	{
+		ImGui::TextWrapped( "%s", e.message.c_str() );
+	}
+
+	// Time
+	int length = nbPoseClip_GetLength( e.clip );
+	ImGui::SeparatorText( "Zeit" );
+	ImGui::BeginDisabled( e.simulating );
+	ImGui::SliderFloat( "Frame", &e.frame, 0.0f, (float)b3MaxInt( length, 1 ), "%.0f" );
+	if ( ImGui::Button( e.playing ? "Anhalten" : "Abspielen" ) )
+	{
+		e.playing = !e.playing;
+	}
+	ImGui::SameLine();
+	bool loop = nbPoseClip_IsLooping( e.clip );
+	if ( ImGui::Checkbox( "Schleife", &loop ) )
+	{
+		nbPoseClip_SetLooping( e.clip, loop );
+	}
+	ImGui::SameLine();
+	ImGui::Text( "%d Bilder/s, %d Frames", nbPoseClip_GetFrameRate( e.clip ), length );
+	ImGui::EndDisabled();
+
+	// Keyframes
+	ImGui::SeparatorText( "Keyframes" );
+	int count = nbPoseClip_GetKeyframeCount( e.clip );
+	if ( ImGui::BeginTable( "keyframes", 4, ImGuiTableFlags_RowBg | ImGuiTableFlags_ScrollY | ImGuiTableFlags_SizingFixedFit,
+							ImVec2( 0.0f, 150.0f * dpi ) ) )
+	{
+		ImGui::TableSetupColumn( "Frame" );
+		ImGui::TableSetupColumn( "Status" );
+		ImGui::TableSetupColumn( "Herkunft" );
+		ImGui::TableSetupColumn( "Bild, sicher" );
+		ImGui::TableHeadersRow();
+		for ( int k = 0; k < count; ++k )
+		{
+			nbPoseKeyframe key = nbPoseClip_GetKeyframe( e.clip, k );
+			float sure = 1.0f;
+			for ( int i = 0; i < nb_humanoidBoneCount; ++i )
+			{
+				sure = b3MinFloat( sure, key.confidence[i] );
+			}
+			ImGui::TableNextRow();
+			ImGui::TableNextColumn();
+			char label[32];
+			snprintf( label, sizeof( label ), "%d##key%d", key.frame, k );
+			if ( ImGui::Selectable( label, e.keyframe == k, ImGuiSelectableFlags_SpanAllColumns ) )
+			{
+				e.keyframe = k;
+				e.frame = (float)key.frame;
+				e.playing = false;
+			}
+			ImGui::TableNextColumn();
+			ImGui::TextUnformatted( key.status == nb_keyframeApproved ? "freigegeben" : "Vorschlag" );
+			ImGui::TableNextColumn();
+			ImGui::TextUnformatted( s_originLabels[key.origin] );
+			ImGui::TableNextColumn();
+			if ( key.sourceFrame >= 0 )
+			{
+				ImGui::Text( "%d, %.0f %%", key.sourceFrame, 100.0f * sure );
+			}
+			else
+			{
+				ImGui::Text( "-, %.0f %%", 100.0f * sure );
+			}
+		}
+		ImGui::EndTable();
+	}
+
+	ImGui::BeginDisabled( e.simulating );
+	if ( ImGui::Button( "Keyframe hier" ) )
+	{
+		b3Quat pose[nb_humanoidBoneCount];
+		b3Transform root;
+		int frame = (int)( e.frame + 0.5f );
+		nbPoseClip_Sample( e.clip, (float)frame, pose, &root );
+		int index = nbPoseClip_AddKeyframe( e.clip, frame, pose, root, nb_originHand );
+		if ( index >= 0 )
+		{
+			e.keyframe = index;
+			e.frame = (float)frame;
+			if ( e.imageWidth > 0 )
+			{
+				nbPoseClip_SetSourceFrame( e.clip, index, e.imageIndex );
+			}
+		}
+		e.message = index >= 0 ? "Keyframe angelegt" : "Hier liegt ein freigegebener Keyframe";
+		e.changed = true;
+	}
+	if ( ImGui::IsItemHovered() )
+	{
+		ImGui::SetTooltip( "Ein Keyframe am Frame, in der Pose, die der Clip dort hat. Mit Referenzbild merkt er sich die\n"
+						   "Nummer des Bildes." );
+	}
+
+	bool valid = 0 <= e.keyframe && e.keyframe < count;
+	nbPoseKeyframe key = valid ? nbPoseClip_GetKeyframe( e.clip, e.keyframe ) : nbPoseKeyframe{};
+	bool approved = valid && key.status == nb_keyframeApproved;
+	if ( valid )
+	{
+		ImGui::SameLine();
+		if ( ImGui::Button( approved ? "Entsperren" : "Freigeben" ) )
+		{
+			nbPoseClip_Approve( e.clip, e.keyframe, approved == false );
+			e.changed = true;
+		}
+		if ( ImGui::IsItemHovered() )
+		{
+			ImGui::SetTooltip( "Freigegeben ist ein Keyframe gesperrt: Weder Vorschläge noch Korrekturen an Nachbarn\n"
+							   "ändern ihn, und von Hand erst nach dem Entsperren." );
+		}
+		ImGui::SameLine();
+		ImGui::BeginDisabled( approved );
+		if ( ImGui::Button( "Löschen" ) )
+		{
+			nbPoseClip_RemoveKeyframe( e.clip, e.keyframe );
+			e.keyframe = -1;
+			e.changed = true;
+		}
+		ImGui::EndDisabled();
+	}
+
+	// The pose of the chosen keyframe, bone by bone
+	if ( valid && e.keyframe < nbPoseClip_GetKeyframeCount( e.clip ) )
+	{
+		key = nbPoseClip_GetKeyframe( e.clip, e.keyframe );
+		ImGui::SeparatorText( "Pose" );
+		if ( approved )
+		{
+			ImGui::TextDisabled( "Freigegeben und gesperrt, zum Ändern erst entsperren." );
+		}
+		ImGui::BeginDisabled( approved );
+		ImGui::Combo( "Knochen", &e.bone, s_boneLabels, nb_humanoidBoneCount );
+		ImGui::SliderInt( "Nachbarn", &e.spread, 0, 30, "%d Frames" );
+		if ( ImGui::IsItemHovered() )
+		{
+			ImGui::SetTooltip( "Eine Korrektur wirkt auch auf die Vorschläge in so vielen Frames Abstand, schwächer mit\n"
+							   "dem Abstand. Freigegebene Keyframes ändert sie nie." );
+		}
+
+		b3Quat pose[nb_humanoidBoneCount];
+		memcpy( pose, key.rotations, sizeof( pose ) );
+		b3Transform root = key.root;
+		bool edited = false;
+		if ( e.bone == nb_humanoidPelvis )
+		{
+			b3Vec3 euler = QuatToEuler( root.q );
+			edited |= ImGui::DragFloat3( "Lage", &root.p.x, 0.005f, -10.0f, 10.0f, "%.3f m" );
+			if ( ImGui::DragFloat3( "Drehung", &euler.x, 0.5f, -180.0f, 180.0f, "%.1f°" ) )
+			{
+				root.q = EulerToQuat( euler );
+				edited = true;
+			}
+		}
+		else if ( e.bones[e.bone].joint == nb_hingeJoint )
+		{
+			b3Vec3 euler = QuatToEuler( pose[e.bone] );
+			float bend = euler.x;
+			if ( ImGui::DragFloat( "Beugung", &bend, 0.5f, -180.0f, 180.0f, "%.1f°" ) )
+			{
+				pose[e.bone] = AxisAngle( b3Vec3_axisX, bend * B3_PI / 180.0f );
+				edited = true;
+			}
+		}
+		else
+		{
+			b3Vec3 euler = QuatToEuler( pose[e.bone] );
+			if ( ImGui::DragFloat3( "um x, y, z", &euler.x, 0.5f, -180.0f, 180.0f, "%.1f°" ) )
+			{
+				pose[e.bone] = EulerToQuat( euler );
+				edited = true;
+			}
+		}
+		if ( edited )
+		{
+			nbPoseClip_SetPose( e.clip, e.keyframe, pose, root, e.spread );
+			e.changed = true;
+		}
+
+		static const char* contactLabels[4] = { "Fuß links", "Fuß rechts", "Hand links", "Hand rechts" };
+		uint32_t contacts = key.contacts;
+		for ( int c = 0; c < 4; ++c )
+		{
+			bool on = ( contacts & ( 1u << c ) ) != 0;
+			if ( c % 2 == 1 )
+			{
+				ImGui::SameLine();
+			}
+			if ( ImGui::Checkbox( contactLabels[c], &on ) )
+			{
+				contacts = on ? contacts | ( 1u << c ) : contacts & ~( 1u << c );
+				nbPoseClip_SetContacts( e.clip, e.keyframe, contacts );
+				e.changed = true;
+			}
+		}
+		ImGui::EndDisabled();
+	}
+	ImGui::EndDisabled();
+
+	// Reference images and proposals
+	ImGui::SeparatorText( "Referenz und Vorschläge" );
+	ImGui::InputText( "Bilder", e.images, sizeof( e.images ) );
+	if ( ImGui::IsItemHovered() )
+	{
+		ImGui::SetTooltip( "Ein Bild je Frame, BMP oder PPM, mit der Bildrate des Clips aus dem Video geschnitten:\n"
+						   "ffmpeg -i video.mp4 -vf fps=30 frames/%%04d.bmp" );
+	}
+	if ( ImGui::InputInt( "Erste Nummer", &e.firstImage ) )
+	{
+		e.imageIndex = -1;
+	}
+	ImGui::Text( e.imageWidth > 0 ? "Bild %d, %d x %d" : "Kein Bild %d", e.imageIndex, e.imageWidth, e.imageHeight );
+	ImGui::InputText( "Vorschläge", e.proposals, sizeof( e.proposals ) );
+	if ( ImGui::Button( "Vorschläge laden" ) )
+	{
+		LoadProposals( e );
+	}
+	if ( ImGui::IsItemHovered() )
+	{
+		ImGui::SetTooltip( "Eine Clipdatei, etwa von einem Assistenten, oder eine Keypoint-Datei eines Pose-Schätzers.\n"
+						   "Freigegebene Keyframes lehnen Vorschläge ab." );
+	}
+
+	// The checks of the library
+	ImGui::SeparatorText( "Prüfung" );
+	if ( e.issues.empty() )
+	{
+		ImGui::TextUnformatted( "Keine Funde" );
+	}
+	else
+	{
+		ImGui::Text( "%d Funde", (int)e.issues.size() );
+		ImGui::BeginChild( "issues", ImVec2( 0.0f, 110.0f * dpi ), ImGuiChildFlags_Borders );
+		for ( size_t i = 0; i < e.issues.size(); ++i )
+		{
+			const nbPoseIssue& issue = e.issues[i];
+			char line[160];
+			int frame =
+				issue.keyframe >= 0 && issue.keyframe < count ? nbPoseClip_GetKeyframe( e.clip, issue.keyframe ).frame : -1;
+			const char* bone = issue.bone >= 0 && issue.bone < nb_humanoidBoneCount ? s_boneLabels[issue.bone] : "Wurzel";
+			snprintf( line, sizeof( line ), "Frame %d, %s: %s %.2f##issue%d", frame, bone, s_issueLabels[issue.kind],
+					  (double)issue.value, (int)i );
+			if ( ImGui::Selectable( line ) && issue.keyframe >= 0 && issue.keyframe < count && e.simulating == false )
+			{
+				e.keyframe = issue.keyframe;
+				e.frame = (float)frame;
+				e.bone = issue.bone >= 0 ? issue.bone : nb_humanoidPelvis;
+			}
+		}
+		ImGui::EndChild();
+	}
+
+	// The clip on a figure
+	ImGui::SeparatorText( "Simulation" );
+	ImGui::BeginDisabled( e.simulating );
+	ImGui::Checkbox( "Balance", &e.balance );
+	ImGui::SameLine();
+	ImGui::Checkbox( "Backen", &e.bake );
+	if ( ImGui::IsItemHovered() )
+	{
+		ImGui::SetTooltip( "Die Bibliothek nimmt die Pose, die die Figur erreicht, Frame für Frame in einen eigenen Clip\n"
+						   "auf, mit den Füßen und Händen, die etwas berühren, und den Wechseln der Balance. Der Clip hier\n"
+						   "bleibt, wie er ist." );
+	}
+	ImGui::EndDisabled();
+	ImGui::SameLine();
+	if ( ImGui::Button( e.simulating ? "Stoppen" : "Simulieren" ) )
+	{
+		if ( e.simulating )
+		{
+			StopEditorSimulation( app );
+		}
+		else
+		{
+			StartEditorSimulation( app );
+		}
+	}
+
+	// The motors of the figure, the same as in the figure scene, also while it plays
+	bool motors = ImGui::SliderFloat( "Steifigkeit", &app.figureProfile.stiffness, 0.0f, 3000.0f, "%.0f N m/rad" );
+	motors |= ImGui::SliderFloat( "Drehmoment", &app.figureProfile.maxTorque, 0.0f, 500.0f, "%.0f N m" );
+	motors |= ImGui::SliderFloat( "Aufrecht halten", &app.figureProfile.uprightTorque, 0.0f, 1000.0f, "%.0f N m" );
+	if ( motors && e.simulating )
+	{
+		nbArticulation_SetMotorProfile( e.figure, &app.figureProfile );
+	}
+	if ( e.simulating )
+	{
+		ImGui::Text( "Motorfehler jetzt %.2f rad%s%s", (double)e.motorError, e.motorBone > 0 ? " am " : "",
+					 e.motorBone > 0 ? s_boneLabels[e.motorBone] : "" );
+		if ( e.balanceState != nb_balanceOff )
+		{
+			ImGui::Text( "Balance: %s", BalanceName( e.balanceState ) );
+		}
+	}
+	if ( e.baked != nullptr && e.bakedCount > 0 )
+	{
+		ImGui::Text( e.recording ? "Backt: %d Frames" : "Gebacken: %d Frames", e.bakedCount );
+		ImGui::SameLine();
+		ImGui::BeginDisabled( e.recording );
+		if ( ImGui::Button( "Speichern##baked" ) )
+		{
+			std::string path = e.path;
+			size_t dot = path.rfind( ".json" );
+			path = ( dot != std::string::npos ? path.substr( 0, dot ) : path ) + "-simuliert.json";
+			SaveEditorClip( e, e.baked, path.c_str() );
+		}
+		ImGui::EndDisabled();
+		if ( e.behindBone > 0 )
+		{
+			ImGui::Text( "Hinter dem Clip bis %.2f rad, %s bei Frame %d", (double)e.behind, s_boneLabels[e.behindBone],
+						 e.behindFrame );
+		}
+		for ( const nbPoseEvent& event : e.bakedEvents )
+		{
+			ImGui::Text( "Frame %d: %s", event.frame, EventLabel( event.name ) );
+		}
+		if ( e.bakedIssues.empty() == false )
+		{
+			ImGui::BeginChild( "bakedIssues", ImVec2( 0.0f, 80.0f * dpi ), ImGuiChildFlags_Borders );
+			for ( size_t i = 0; i < e.bakedIssues.size(); ++i )
+			{
+				const nbPoseIssue& issue = e.bakedIssues[i];
+				const char* bone = issue.bone >= 0 && issue.bone < nb_humanoidBoneCount ? s_boneLabels[issue.bone] : "Wurzel";
+				ImGui::Text( "Frame %d, %s: %s %.2f", e.bakedFrames[i], bone, s_issueLabels[issue.kind], (double)issue.value );
+			}
+			ImGui::EndChild();
+		}
+	}
+
+	ImGui::SeparatorText( "Ansicht" );
+	static const char* views[3] = { "Vorn", "Seite", "Oben" };
+	for ( int v = 0; v < 3; ++v )
+	{
+		if ( v > 0 )
+		{
+			ImGui::SameLine();
+		}
+		if ( ImGui::Button( views[v] ) )
+		{
+			LookAtEditorPose( app, v );
+		}
+	}
+	ImGui::End();
+
+	// The reference image of the frame
+	if ( e.imageWidth > 0 )
+	{
+		float width = 360.0f * dpi;
+		float height = width * (float)e.imageHeight / (float)e.imageWidth;
+		ImGui::SetNextWindowPos( ImVec2( 12.0f * dpi, sapp_heightf() - height - 60.0f * dpi ), ImGuiCond_FirstUseEver );
+		ImGui::Begin( "Referenzbild", nullptr, ImGuiWindowFlags_AlwaysAutoResize );
+		ImGui::Image( ImTextureRef( (ImTextureID)simgui_imtextureid( e.imageView ) ), ImVec2( width, height ) );
+		ImGui::End();
+	}
+}
+
 // Brick walls through all floors with their doors and windows cut out, and concrete floors inside them. The walls are
 // pre-fractured into cells, so a wall that gives way cracks along the cells and not along the floors.
 static std::unique_ptr<PendingStructure> PrepareHouse( b3Vec3 position, float yaw, int floors, uint32_t seed )
@@ -1434,6 +2428,7 @@ static void DestroyScene( App& app )
 		app.renderer.FreeSlot( figure.stepSlot );
 	}
 	app.figures.clear();
+	DestroyEditorScene( app );
 	app.bodySlots.clear();
 	app.lastImpact = {};
 	app.city = City();
@@ -1506,6 +2501,9 @@ static void LoadScene( App& app, SceneKind scene )
 			break;
 		case SceneFigures:
 			BuildFigureScene( app );
+			break;
+		case SceneKeyframes:
+			BuildEditorScene( app );
 			break;
 		default:
 			BuildTownScene( app );
@@ -2520,6 +3518,30 @@ static void RunScript( App& app, int frame )
 	int f = frame;
 	switch ( app.scene )
 	{
+		case SceneKeyframes:
+		{
+			// The example clip with its first keyframe approved on a figure, baked, both saved, and the baked frames taken
+			// back in as proposals, which the approved keyframe refuses
+			Editor& e = app.editor;
+			if ( f == 10 )
+			{
+				nbPoseClip_Approve( e.clip, 0, true );
+				e.bake = true;
+				StartEditorSimulation( app );
+			}
+			else if ( f == 200 && e.baked != nullptr && e.recording == false )
+			{
+				SaveEditorClip( e, e.clip, e.path );
+				snprintf( e.proposals, sizeof( e.proposals ), "%s.simuliert.json", e.path );
+				SaveEditorClip( e, e.baked, e.proposals );
+				printf( "Editor: %d Frames gebacken, bis %.3f rad hinter dem Clip, %d Funde und %d Ereignisse in der Aufnahme\n",
+						e.bakedCount, (double)e.behind, (int)e.bakedIssues.size(), (int)e.bakedEvents.size() );
+				LoadProposals( e );
+				printf( "Editor: %s\n", e.message.c_str() );
+			}
+			break;
+		}
+
 		case SceneWall:
 			if ( f >= 20 && f < 80 && f % 4 == 0 )
 			{
@@ -3378,6 +4400,7 @@ static void OnFrame()
 		graphicsTicks = b3GetTicks();
 		ApplyPhysics( app );
 		UpdateFigures( app );
+		UpdateEditor( app, dt );
 		graphicsTime = b3GetMilliseconds( graphicsTicks );
 	}
 
@@ -3429,6 +4452,7 @@ static void OnFrame()
 		graphicsTicks = b3GetTicks();
 		ApplyPhysics( app );
 		UpdateFigures( app );
+		UpdateEditor( app, dt );
 		SyncChunks( app );
 		TakeWorldView( app );
 		graphicsTime += b3GetMilliseconds( graphicsTicks );
@@ -3447,6 +4471,10 @@ static void OnFrame()
 	if ( app.showUi )
 	{
 		DrawUi( app );
+		if ( app.scene == SceneKeyframes )
+		{
+			DrawEditorUi( app );
+		}
 	}
 	DrawOverlay( app );
 

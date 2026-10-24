@@ -8,13 +8,14 @@ int PolyTest( void );
 int WorldTest( void );
 int ArticulationTest( void );
 int BalanceTest( void );
+int PoseClipTest( void );
 
 int main( int argc, char** argv )
 {
 	printf( "Starting Nebenan unit tests\n" );
 	printf( "======================================\n" );
 
-	// One group alone: nebenan_test articulation, nebenan_test balance
+	// One group alone: nebenan_test articulation, nebenan_test balance, nebenan_test clips
 	const char* group = argc > 1 ? argv[1] : "";
 	int failed;
 	if ( strcmp( group, "articulation" ) == 0 )
@@ -25,9 +26,13 @@ int main( int argc, char** argv )
 	{
 		failed = BalanceTest();
 	}
+	else if ( strcmp( group, "clips" ) == 0 )
+	{
+		failed = PoseClipTest();
+	}
 	else
 	{
-		failed = PolyTest() != 0 || WorldTest() != 0 || ArticulationTest() != 0 || BalanceTest() != 0;
+		failed = PolyTest() != 0 || WorldTest() != 0 || ArticulationTest() != 0 || BalanceTest() != 0 || PoseClipTest() != 0;
 	}
 	if ( failed != 0 )
 	{

@@ -30,6 +30,8 @@ set(NEBENAN_SOKOL_DIR "${PROJECT_SOURCE_DIR}/extern/box3d/extern/sokol")
 
 set(NEBENAN_DEMO_FILES
 	demo.cpp
+	image_file.cpp
+	image_file.h
 	imgui_impl.cpp
 	math3d.h
 	renderer.cpp

@@ -19,8 +19,13 @@ beide auf dem Ryzen nachgemessen, und den großen Paketen im Team auf `kollaps-9
 Begründungen und Messwerte stehen in [`Optimierungen.md`](Optimierungen.md), hier nur das Fazit und die Reihenfolge.
 Nach jeder Runde wird der Stand hier nachgetragen.
 
-`ragdoll-1` und `ragdoll-2` sind wie `kollaps-1` keine Runden der Physik: Sie bauen die Figuren auf Box3D nach Kapitel
-26 bis 28, 32 und 33 der Roadmap des Spiels, siehe „Figuren auf Box3D“ und „Balance“ unten. `ragdoll-2` ändert an der
+`ragdoll-1` bis `ragdoll-3` sind wie `kollaps-1` keine Runden der Physik: Sie bauen die Figuren auf Box3D nach Kapitel
+26 bis 28 und 31 bis 33 der Roadmap des Spiels, siehe „Figuren auf Box3D“, „Balance“ und „Clips und Keyframe-Editor“
+unten. `ragdoll-3` ändert an der Physik ebenfalls nichts, Clips und Aufnahmen laufen nur für Figuren, die sie spielen:
+Gepaart gegen `ragdoll-2` auf dem 7800X3D, je zwei Läufe im Wechsel mit 2 Threads, enden alle Szenen des Benchmarks mit
+denselben Zahlen an Bruchstücken, Schutt, Körpern und Kontakten, und ein Frame kostet −0,5 bis 0 %, bei einer Streuung
+von Lauf zu Lauf bis 3 %. Nur der Höchststand des Speichers in der gestreamten Stadt, je Bild abgelesen, während im
+Hintergrund Häuser laden, lag in einem der Läufe 1 MB höher. `ragdoll-2` ändert an der
 Physik nichts, die Balance läuft nur für Figuren, die sie einschalten: Gepaart gegen `ragdoll-1` auf dem 7800X3D, je zwei
 Läufe im Wechsel mit 2 Threads, enden alle Szenen des Benchmarks mit denselben Zahlen, und ein Frame kostet −1,5 bis
 +3 %, bei einer Streuung von Lauf zu Lauf bis 5 %. Der Benchmark misst dasselbe wie vorher: Nebenan benutzte bis dahin
@@ -107,7 +112,7 @@ schwankte die Dehnung zwischen 19 und 61 mm, ohne Richtung.
 | F8 | **Balance und Stützschritt** (33.4 Schritt 5, 27.9, 28.3): Schwerpunkt, Stützpolygon, Schrittziel, Knockdown und Recovery mit Übergabe an die Steuerung ohne Sprung (28.4) | ✅ auf `ragdoll-2`, siehe „Balance“ unten |
 | F9 | **Gelenkdehnung beim Aufprall**: 4 bis 6 cm für wenige Schritte. Bitgleich zu beheben nur mit mehr Teilschritten für die Welt oder einer Projektion der Gelenke nach dem Schritt in Box3D; vorher messen, was ein Spiel davon sieht | 🔜 |
 | F10 | **Kosten messen** (27.14): eine Stufe des Profils für die Figuren, Szenen mit 1, 10 und 50 Figuren im Benchmark und in der Demo, p50 bis p99 wie bei den Trümmern | 🔜 |
-| F11 | **Keyframe-Format und Video-Editor** (32.5, 32.6, 33.4 Schritt 6): erst nach F8 | 🔜 |
+| F11 | **Keyframe-Format und Video-Editor** (32.5, 32.6, 33.4 Schritt 6): erst nach F8 | ✅ auf `ragdoll-3`, siehe „Clips und Keyframe-Editor“ unten |
 
 ## Balance (`ragdoll-2`)
 
@@ -129,7 +134,7 @@ Balance, der Capture Point und das Ziel eines Schritts liegen als Marker auf dem
 | B9 | **Abbruch** (26.15): ein Treffer oder Schutt bricht das Aufstehen ab | ✅ Test: Treffer sofort, ein fallender Block nach 0,18 s |
 | B10 | **Ohne Sprung** (28.4): jede neue Art von Pose blendet ein | ✅ Test: kein Knochen mehr als 9,3 cm in einem Schritt |
 | B11 | **Determinismus**: 1 und 4 Threads bitgleich, der Hash für alle Plattformen festgehalten, nur Rechenarten mit gleichen Bits überall | ✅ Test |
-| B12 | **Aufstehclips** statt der Kraft an der Brust (26.15, 33.4 Schritt 6), Kriechen und Rollen, wenn kein Platz ist | 🔜 mit F11 |
+| B12 | **Aufstehclips** statt der Kraft an der Brust (26.15, 33.4 Schritt 6), Kriechen und Rollen, wenn kein Platz ist | 🔜 der Editor dafür steht seit `ragdoll-3`, die Clips fehlen |
 | B13 | **Schrägen und Stufen**: Füße auf die Neigung des Bodens drehen, Stufen testen | 🔜 |
 | B14 | **Kosten** der Balance je Figur messen, mit F10 | 🔜 |
 
@@ -160,6 +165,43 @@ Verworfen, mit Grund:
   16, und eine Höchstgeschwindigkeit für den Fuß, 7 von 16.
 - **Aufstehen über Knien und Aufsitzen**: Auf Kniehöhe gehalten, drehte die Hilfe für das Becken den liegenden Körper
   nicht auf, die Figur blieb liegen, bis die Zeit ablief. Aufstehen geht deshalb über die volle Höhe.
+
+## Clips und Keyframe-Editor (`ragdoll-3`)
+
+Gebaut am 24. Oktober 2026 nach Kapitel 31.2, 32.5 bis 32.8 und 33.2 der Roadmap des Spiels, Schritt 6 aus Kapitel
+33.4. Was gebaut ist und wie es sich verhält, steht im README unter „Clips als Dateien“, „Szenen“, „Benutzung“,
+„Parameter“ und „Grenzen“, die Abnahme in `test/test_pose_clip.c`. Die Demo-Szene „Keyframes“ ist der Editor.
+
+| Nr. | Schritt | Stand |
+| ---: | --- | --- |
+| K1 | **Format** (32.6): Skelett, Name, Bildrate, Knochennamen, Keyframes mit Status, Herkunft, Bild des Videos, Wurzel, Kontakten, Drehungen und Sicherheit, Ereignisse, getrennt nach Hand, berechnet und simuliert, als JSON mit Version | ✅ Test: ein Clip aus 3 Keyframes und 2 Ereignissen kommt aus der Datei bitgenau zurück, acht kaputte Dateien melden Zeile und Grund |
+| K2 | **Freigeben und Sperren** (32.5, 32.8 Punkt 4): Vorschläge, Aufnahmen und Korrekturen an Nachbarn ändern freigegebene Keyframes nicht, Korrekturen verbessern die Vorschläge in der Nähe | ✅ Test: von drei Vorschlägen zwei übernommen, einer vom freigegebenen Keyframe abgelehnt; eine Korrektur von 0,8 rad dreht den Vorschlag 15 Frames weiter um 0,051 rad |
+| K3 | **Prüfung** (31.2, 32.5, 33.2 C): Knochen, Normierung, Gelenkgrenzen, Unsicherheit, Boden, Sprünge, rutschende Kontakte über den ganzen Kontakt, gleich für Hand, Schätzer und Assistent | ✅ Test: jede Art einmal, ein Fuß, der langsam rutscht, alle 3 cm gefunden |
+| K4 | **Keypoints** (32.5): COCO 17 und MediaPipe 33 zu einer Pose des Humanoiden, unpassende Knochenlängen gemeldet, Keypoint-Dateien als Vorschläge | ✅ Test: dieselbe Pose auf fünf Stellen zurück, ein Unterarm 35 % zu lang gefunden, eine um 10 % kleinere Person ohne Fund |
+| K5 | **Spielen und Aufnehmen** (33.2 D und E, 33.5): ein Clip aus der Datei auf einer Figur, die Aufnahme Frame für Frame in den Schritten mit Kontakten und den Wechseln der Balance, die Abweichung vom Clip | ✅ Tests: bitgleich wie `nbClipDef`, kein Knochen mehr als 3,2 cm in einem Schritt; 49 Frames in 97 Schritten, mit 1 und 4 Threads und den Schritten auf eigenem Thread derselbe Text, 0,039 rad hinter dem Clip, der Sturz bei Frame 15 |
+| K6 | **Editor** (32.7 P4, 33.2 E): Referenzbilder, Keyframes anlegen, freigeben und entsperren, Pose und Kontakte mit Reglern, drei Ansichten, Vorschläge laden, Prüfung, Simulation mit Motoren und Balance, Backen und Speichern | ✅ Demo-Szene „Keyframes“ |
+| K7 | **Gizmos und Ansichten nebeneinander**: Gelenke im Bild ziehen statt mit Reglern, zwei Blickwinkel zugleich für die Prüfung aus 32.5 | 🔜 |
+| K8 | **2D-Keypoints**: Tiefe aus mehreren Ansichten oder von einem Schätzer, der 3D liefert | 🔜 |
+| K9 | **Assistent im Editor** (32.7 P4): Vorschläge anfragen statt als Datei laden | 🔜 nach K7 |
+| K10 | **Ereignisse und Kontakte als Intervalle** im Editor setzen (33.2 C), Phasen mit eigenem Timing (33.2 B) | 🔜 |
+| K11 | **Binärformat** für Clips im Spiel (32.6), das JSON bleibt für den Editor | 🔜 wenn Clips groß werden |
+
+Drei Dinge hat der Bau gezeigt. Erstens nahm der Editor zuerst in jedem gezeichneten Bild auf: Der gebackene Clip hing
+damit an der Bildrate und an der Last des Rechners, und mit der Physik auf ihrem eigenen Thread hätte das Menü den Clip
+gelesen, während der Schritt in ihn schreibt. Die Aufnahme läuft deshalb in der Bibliothek, im Update nach dem Schritt,
+jeder Frame auf dem Schritt, der ihm am nächsten liegt, und das Programm liest sie zwischen den Schritten. Zweitens fand
+die Prüfung rutschende Füße nur von Keyframe zu Keyframe: Ein Fuß, der in einer Aufnahme je Frame 1 cm rutscht, blieb
+immer unter den 3 cm und fiel nie auf. Sie misst deshalb von der Stelle, an der der Kontakt begann. Drittens sind die
+Winkelfunktionen von Box3D Näherungen: Eine Drehung aus Achse und Winkel lag im Keypoint-Import 3,3 mrad daneben. Wo eine
+Pose genau zurückkommen soll, baut die Bibliothek sie aus Achsen statt aus Winkeln, und Knie und Ellbogen kommen auf
+fünf Stellen genau zurück.
+
+Verworfen, mit Grund:
+
+- **Aufnehmen im Programm**, je gezeichnetem Bild: hängt an der Bildrate und liest den Clip, während der Schritt ihn
+  schreibt, siehe oben.
+- **Ein Teil der Korrektur per NLerp** für die Nachbarn: NLerp gibt nicht den Teil des Winkels, den das Gewicht verlangt,
+  je größer die Korrektur, desto weniger. Die Bibliothek nimmt den Teil des Winkels um dieselbe Achse.
 
 ## Fazit
 

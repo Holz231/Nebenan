@@ -4,6 +4,7 @@ set(NEBENAN_TEST_FILES
 	test_articulation.c
 	test_balance.c
 	test_poly.c
+	test_pose_clip.c
 	test_world.c
 )
 

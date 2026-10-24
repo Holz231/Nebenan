@@ -10,8 +10,12 @@ set(NEBENAN_SOURCE_FILES
 	hull_builder.h
 	impact.c
 	destructible.c
+	json.c
+	json.h
+	keypoints.c
 	poly.c
 	poly.h
+	pose_clip.c
 	profile.c
 	save.c
 	scheduler.c
