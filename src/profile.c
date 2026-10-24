@@ -81,6 +81,13 @@ void nbProfileStep( nbWorld* world )
 			sums->teamStages[i] += values[i];
 		}
 	}
+	if ( counters.solverSample != 0 )
+	{
+		sums->solverSampleCount += 1;
+		sums->solverJoints += step.solverJoints;
+		sums->solverContacts += step.solverContacts;
+		sums->solverBodies += step.solverBodies;
+	}
 	sums->knotContactCount += counters.knotContactCount;
 	sums->knotBatchCount += counters.knotBatchCount;
 	sums->knotGroupBatchCount += counters.knotGroupBatchCount;
@@ -193,6 +200,14 @@ nbProfile nbWorld_GetProfile( nbWorldId worldId )
 	}
 	profile.teamSampleCount = sums->teamSampleCount;
 	profile.packWait = (float)( sums->packWait / steps );
+	if ( sums->solverSampleCount > 0 )
+	{
+		double samples = (double)sums->solverSampleCount;
+		profile.solverJoints = (float)( sums->solverJoints / samples );
+		profile.solverContacts = (float)( sums->solverContacts / samples );
+		profile.solverBodies = (float)( sums->solverBodies / samples );
+	}
+	profile.solverSampleCount = sums->solverSampleCount;
 	profile.fractureWorkerItems = nbFractureWorkerItems( world );
 	profile.settleWorkerPieces = nbSettleWorkerPieces( world );
 	if ( sums->settleWakeCount > 0 )

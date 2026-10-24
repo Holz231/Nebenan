@@ -19,10 +19,11 @@ beide auf dem Ryzen nachgemessen, und den großen Paketen im Team auf `kollaps-9
 Begründungen und Messwerte stehen in [`Optimierungen.md`](Optimierungen.md), hier nur das Fazit und die Reihenfolge.
 Nach jeder Runde wird der Stand hier nachgetragen.
 
-`ragdoll-1` bis `ragdoll-5` sind wie `kollaps-1` keine Runden der Physik: Sie bauen die Figuren auf Box3D nach Kapitel
+`ragdoll-1` bis `ragdoll-6` sind wie `kollaps-1` keine Runden der Physik: Sie bauen die Figuren auf Box3D nach Kapitel
 26 bis 28 und 31 bis 33 der Roadmap des Spiels, siehe „Figuren auf Box3D“, „Balance“, „Clips und Keyframe-Editor“ und
-„Kosten der Figuren“ unten. `ragdoll-5` prüft die Kontakte zwischen den Knochen einer Figur und ändert an der Bibliothek
-nichts, der Benchmark bekommt nur einen Schalter dafür. `ragdoll-4` misst, was Figuren kosten, und ändert an der Physik nichts: Gepaart gegen
+„Kosten der Figuren“ unten. `ragdoll-6` misst, wohin der Löser bei Figuren rechnet, mit einer Ergänzung des Profils in
+Box3D, und ändert sonst nichts, siehe „Wohin der Löser bei Figuren rechnet“ unten. `ragdoll-5` prüft die Kontakte
+zwischen den Knochen einer Figur und ändert an der Bibliothek nichts, der Benchmark bekommt nur einen Schalter dafür. `ragdoll-4` misst, was Figuren kosten, und ändert an der Physik nichts: Gepaart gegen
 `ragdoll-3` auf dem 7800X3D, je zwei Läufe im Wechsel mit 2 Threads, enden alle Szenen des Benchmarks mit denselben
 Zahlen, und ein Frame kostet −1,6 bis −0,3 %, bei einer Streuung von Lauf zu Lauf bis 5 %. Beim Messen fiel auf, dass
 im Build mit MinGW die Physik auf ihrem eigenen Thread das Update um ein Vielfaches langsamer machte, siehe
@@ -271,7 +272,9 @@ emulierten Thread-lokalen Variable. Unter Windows nimmt die Nummer jetzt die Ken
 | C5 | **Thread-Nummer unter Windows** ohne Thread-lokale Variable, für MinGW | ✅ |
 | C6 | **Kontakte der Figuren** (27.13 A): 17 Kontaktpaare je stehender Figur, welche davon zwischen ihren eigenen Knochen liegen und ob ein Filter für ungeeignete Paare den Löser entlastet | ⛔ geprüft auf `ragdoll-5`: Die Hälfte der Paare liegt zwischen den Knochen einer Figur, sie kosten aber nur 4 % ihrer Zeit in Box3D, siehe „Kontakte der Figuren“ unten |
 | C7 | **Aktivierungsbudget und LOD** (27.13 B): ferne Figuren ohne Balance oder ruhend, wenn Box3D zu viel kostet | 🔜 erst bei Bedarf |
-| C8 | **Wohin der Löser bei Figuren rechnet**: rund 11 µs je Figur und Schritt im Löser, für 15 Gelenke mit Federn, Grenzen und der Hilfe für das Becken und für die Kontakte mit dem Boden. Erst getrennt messen, etwa mit Figuren ohne Grenzen oder ohne Boden, dann entscheiden | 🔜 |
+| C8 | **Wohin der Löser bei Figuren rechnet**: rund 11 µs je Figur und Schritt im Löser, für 15 Gelenke mit Federn, Grenzen und der Hilfe für das Becken und für die Kontakte mit dem Boden. Erst getrennt messen, etwa mit Figuren ohne Grenzen oder ohne Boden, dann entscheiden | ✅ auf `ragdoll-6`: 83 % in den Gelenken, 5 % in allen Kontakten, und ein waches Gelenk nimmt der ganzen Welt die Pakete, siehe „Wohin der Löser bei Figuren rechnet“ unten |
+| C9 | **Gelenke in den Paketen**: Box3D rechnet Gelenke nur nach Farben mit einer Sperre je Stufe, und ein einziges waches Gelenk schaltet die Pakete für alle Inseln ab. Die Gelenke einer Insel in ihrem Paket rechnen, Farbe für Farbe vor ihren Kontakten wie mit Sperren, damit die Ergebnisse bitgleich bleiben | 🔜 hoch: 19 bis 25 % des Schritts der Trümmer in jeder Welt mit Figuren, dazu die Figuren selbst ohne Sperren |
+| C10 | **Gelenke billiger**: rund 1 µs Rechenzeit je Gelenk und Schritt, skalar, während die Kontakte breit rechnen. Erst messen, welche Art Gelenk was kostet, Kugel mit Kegel, Verdrehung und Feder, Scharnier, die Hilfe für das Becken | 🔜 nach C9 |
 
 ## Kontakte der Figuren (`ragdoll-5`)
 
@@ -302,6 +305,43 @@ Verworfen, mit Grund:
 
 - **Ungeeignete Paare filtern** (27.13 A): höchstens 4 % der Zeit der Figuren in Box3D, ein Filter nur für einen Teil der
   Paare weniger, dafür eine andere Bewegung und eine neue Abstimmung der Balance, siehe oben.
+
+## Wohin der Löser bei Figuren rechnet (`ragdoll-6`)
+
+Gemessen am 25. Oktober 2026, C8 oben. Der Löser von Box3D misst jetzt in jedem achten Schritt, wie viel Rechenzeit seine
+Threads für Gelenke, Kontakte und das Integrieren der Körper brauchen, ohne das Warten an den Sperren, siehe „Wohin der
+Löser rechnet“ in [`extern/README.md`](../extern/README.md), und `nbWorld_GetProfile` gibt das weiter
+(`nbProfile::solverJoints`). Der Benchmark der Figuren zeigt es für jede Stadt, dazu eine Stadt ohne Figuren mit einem
+einzigen Pendel weit weg. Gemessen auf dem Ryzen 7 7800X3D mit MinGW, je zwei Läufe, Rechenzeit in ms je gemessenem
+Schritt über alle Threads:
+
+| Stadt | Threads | Gelenke | Kontakte | Körper | Bedingungen, Uhrzeit |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| ruhig, 50 Figuren | 2 | 0,760 | 0,043 | 0,115 | 0,481 |
+| ruhig, 50 Figuren | 8 | 0,803 | 0,049 | 0,120 | 0,264 |
+| unter Beschuss, ohne Figuren | 2 | – | 0,507 | 0,112 | 0,321 |
+| unter Beschuss, ein Pendel | 2 | 0,003 | 0,542 | 0,152 | 0,408 |
+| unter Beschuss, 50 Figuren | 2 | 1,179 | 0,685 | 0,360 | 1,188 |
+
+Bei den Figuren rechnet der Löser fast nur an ihren Gelenken: 83 % seiner Rechenzeit, 12 % das Integrieren der Körper
+und 5 % alle Kontakte, mit dem Boden und zwischen den Knochen. Das sind rund 15 µs je Figur und Schritt für ihre 14
+Gelenke und die Hilfe, die das Becken aufrecht hält, rund 1 µs je Gelenk über die vier Teilschritte. Die Gelenke rechnet
+Box3D skalar, die Kontakte breit mit SIMD. Die Kontakte mit dem Boden kosten fast nichts.
+
+Teurer für eine zerstörbare Welt ist ein Nebeneffekt: Box3D rechnet Gelenke nur nach Farben mit einer Sperre je Stufe,
+und ein einziges waches Gelenk schaltet die Pakete aus „Ganze Inseln pro Thread“ für die ganze Welt ab. In der Stadt unter
+Beschuss ohne Figuren kostet ein Pendel weit weg den Box3D-Schritt mit 2 Threads 25 % mehr, 0,97 statt 1,21 ms, den Löser
+24 % und das mittlere Bild 1,08 statt 1,40 ms. Mit 8 Threads sind es 19 % im Schritt, 0,38 statt 0,45 ms, 41 % im Löser
+und 1,20 statt 1,29 ms im 99. Perzentil. Mit 2 Threads wird auch die Kollision 27 % langsamer, mit 8 nicht, warum, ist
+noch offen. Mit 8 Threads rechnen die Pakete übrigens mehr Rechenzeit als die Farben, 0,84 gegen 0,58 ms, sind aber in der
+Uhrzeit schneller, 0,13 gegen 0,21 ms, denn ohne Sperren wartet niemand. Jede Welt mit Figuren verliert so ein Fünftel bis
+ein Viertel des Schritts ihrer Trümmer, mehr als die Figuren selbst kosten, solange es wenige sind. Das ist C9.
+
+Die Messung kostet nichts Messbares: Gepaart gegen `ragdoll-5` auf dem 7800X3D, je zwei Läufe im Wechsel mit 2 Threads,
+enden alle Szenen des Benchmarks mit denselben Zahlen, und ein Frame kostet 0 bis +0,9 %, bei einer Streuung von Lauf zu
+Lauf bis 4 %. Die erste Fassung las in den Paketen die Uhr an jedem ihrer vielen kleinen Blöcke: Mit 8 Threads
+rechneten die Pakete der Stadt ohne Figuren dann 0,90 statt 0,84 ms, und die Uhr machte sie in der Messung langsamer, als
+sie sind. Jetzt misst sie ein Paket im Ganzen.
 
 ## Fazit
 

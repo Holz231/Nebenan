@@ -426,6 +426,10 @@ typedef struct nbProfileSums
 	double teamStageCount;
 	double teamYieldCount;
 	double packWait;
+	int solverSampleCount;
+	double solverJoints;
+	double solverContacts;
+	double solverBodies;
 	int stepCount;
 	int impactCount;
 	double teamStages[NB_TEAM_STAGE_VALUES];

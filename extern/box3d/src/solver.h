@@ -393,6 +393,9 @@ typedef struct b3StepContext
 	// Added for Nebenan: the packs whose bodies and constraints the stages hold, the first ones, with a team those it
 	// solves, see b3SolveOtherPack, and one without packs, which holds all knots, see b3BuildKnots
 	int stagePackCount;
+
+	// Added for Nebenan: this step times where its solver works, see b3Profile::solverJoints
+	bool sampleSolver;
 } b3StepContext;
 
 void b3Solve( b3World* world, b3StepContext* stepContext );

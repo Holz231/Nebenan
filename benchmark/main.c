@@ -418,13 +418,15 @@ typedef struct TownCost
 
 // A block of side x side houses under fire for 20 simulated seconds at stepRate steps per second, see RunTown: every
 // interval sixtieths of a second as many grenades, each on a wall of a random house, at the same times at every rate,
-// and figureCount humanoids in its streets, see AddFigures, whose bones collide with each other unless noSelfCollision
+// and figureCount humanoids in its streets, see AddFigures, whose bones collide with each other unless noSelfCollision,
+// and a pendulum far away if pendulum, see AddPendulum
 typedef struct TownSetup
 {
 	int workerCount;
 	float fragmentScale;
 	int side, grenadesPerVolley, interval, stepRate, figureCount;
 	bool noSelfCollision;
+	bool pendulum;
 } TownSetup;
 
 // What RunTown measured: the houses built, the times of every frame by s_townSeries, sorted, and their sums, what Box3D
@@ -484,6 +486,27 @@ static void AddFigures( Scene* scene, int side, int figureCount, bool selfCollis
 		nbArticulation_EnableBalance( figures[k], &balance );
 		nbArticulation_PlayClip( figures[k], &clip, 1.0f );
 	}
+}
+
+// A pendulum far from the town that swings for ever: a single joint that is awake makes Box3D solve the whole world color
+// by color with a barrier per stage instead of in packs of islands, see b3SolvePacks, and this one adds nothing else
+static void AddPendulum( Scene* scene )
+{
+	b3BodyDef bodyDef = b3DefaultBodyDef();
+	bodyDef.position = b3ToPos( (b3Vec3){ 90.0f, 5.0f, 0.0f } );
+	b3BodyId anchor = b3CreateBody( scene->physicsWorld, &bodyDef );
+	bodyDef.type = b3_dynamicBody;
+	bodyDef.position = b3ToPos( (b3Vec3){ 91.0f, 5.0f, 0.0f } );
+	b3BodyId bob = b3CreateBody( scene->physicsWorld, &bodyDef );
+	b3ShapeDef shapeDef = b3DefaultShapeDef();
+	b3Sphere sphere = { b3Vec3_zero, 0.1f };
+	b3CreateSphereShape( bob, &shapeDef, &sphere );
+
+	b3RevoluteJointDef jointDef = b3DefaultRevoluteJointDef();
+	jointDef.base.bodyIdA = anchor;
+	jointDef.base.bodyIdB = bob;
+	jointDef.base.localFrameB.p = (b3Vec3){ -1.0f, 0.0f, 0.0f };
+	b3CreateRevoluteJoint( scene->physicsWorld, &jointDef );
 }
 
 // A figure that stands takes a push on the chest every six seconds, the figures one after the other over the first six:
@@ -560,6 +583,10 @@ static void RunTown( const TownSetup* setup, TownRun* run )
 	int64_t bytes = nbGetByteCount() + b3GetByteCount();
 	AddFigures( &scene, side, figureCount, setup->noSelfCollision == false, figures );
 	run->figureBytes = nbGetByteCount() + b3GetByteCount() - bytes;
+	if ( setup->pendulum )
+	{
+		AddPendulum( &scene );
+	}
 	uint32_t hitCount = 0;
 
 	enum
@@ -719,17 +746,20 @@ static void BenchmarkTown( int workerCount, float fragmentScale, int side, int g
 }
 
 // Stage 6 of 27.14 of the game roadmap: 1, 10 and 50 figures in the town of 16 houses at fragment scale 2 against the
-// town without figures, quiet and under a grenade every 1/12 s, see AddFigures and PushFigures. Where the time goes,
-// what the figures hold in Box3D and in memory, and what they did. Without self collision for what the contacts between
-// the bones of a figure cost, see 27.13 of the game roadmap.
+// town without figures, quiet and under a grenade every 1/12 s, see AddFigures and PushFigures, and the town without
+// figures but with a pendulum, see AddPendulum. Where the time goes, in the solver too, what the figures hold in Box3D
+// and in memory, and what they did. Without self collision for what the contacts between the bones of a figure cost,
+// see 27.13 of the game roadmap.
 static void BenchmarkFigures( int workerCount, bool selfCollision )
 {
 	enum
 	{
-		runCount = 4
+		runCount = 5
 	};
 
-	const int counts[runCount] = { 0, 1, 10, 50 };
+	const int counts[runCount] = { 0, 0, 1, 10, 50 };
+	const bool pendulums[runCount] = { false, true, false, false, false };
+	const char* labels[runCount] = { "0", "0+joint", "1", "10", "50" };
 	for ( int fire = 0; fire < 2; ++fire )
 	{
 		printf( fire == 0
@@ -743,7 +773,7 @@ static void BenchmarkFigures( int workerCount, bool selfCollision )
 		TownRun runs[runCount];
 		for ( int r = 0; r < runCount; ++r )
 		{
-			TownSetup setup = { workerCount, 2.0f, 4, fire, 5, 60, counts[r], selfCollision == false };
+			TownSetup setup = { workerCount, 2.0f, 4, fire, 5, 60, counts[r], selfCollision == false, pendulums[r] };
 			RunTown( &setup, runs + r );
 		}
 
@@ -755,8 +785,8 @@ static void BenchmarkFigures( int workerCount, bool selfCollision )
 			const float* frames = run->times[0];
 			int n = run->frameCount;
 			const float* stages = run->profile.stages;
-			printf( "  %7d |      %7.3f %7.3f %7.3f %7.3f %7.3f | %6.3f %7.3f %7.3f |              %7.4f %6.4f %7.4f %6.4f\n",
-					counts[r], frames[n / 2], frames[n * 95 / 100], frames[n * 99 / 100], frames[n * 999 / 1000], frames[n - 1],
+			printf( "  %7s |      %7.3f %7.3f %7.3f %7.3f %7.3f | %6.3f %7.3f %7.3f |              %7.4f %6.4f %7.4f %6.4f\n",
+					labels[r], frames[n / 2], frames[n * 95 / 100], frames[n * 99 / 100], frames[n * 999 / 1000], frames[n - 1],
 					run->totals[1] / (float)n, run->totals[2] / (float)n, run->totals[3] / (float)n, stages[nb_profileFigures],
 					stages[nb_profileFigureClips], stages[nb_profileFigureBalance], stages[nb_profileFigureMotors] );
 		}
@@ -768,9 +798,9 @@ static void BenchmarkFigures( int workerCount, bool selfCollision )
 			const TownRun* run = runs + r;
 			const float* stages = run->profile.stages;
 			float scale = counts[r] > 0 ? 1000.0f / (float)counts[r] : 0.0f;
-			printf( "  %7d |                        %6.2f %6.2f %7.2f %6.2f |          %7.3f %6.3f |        %6d %6d %8d | %3.0f, "
+			printf( "  %7s |                        %6.2f %6.2f %7.2f %6.2f |          %7.3f %6.3f |        %6d %6d %8d | %3.0f, "
 					"%.0f\n",
-					counts[r], scale * stages[nb_profileFigures], scale * stages[nb_profileFigureClips],
+					labels[r], scale * stages[nb_profileFigures], scale * stages[nb_profileFigureClips],
 					scale * stages[nb_profileFigureBalance], scale * stages[nb_profileFigureMotors], run->collide, run->solve,
 					run->maxBodies, run->maxJoints, run->maxContacts, (double)run->maxBytes / 1048576.0,
 					counts[r] > 0 ? (double)run->figureBytes / 1024.0 / counts[r] : 0.0 );
@@ -782,11 +812,20 @@ static void BenchmarkFigures( int workerCount, bool selfCollision )
 		{
 			const TownRun* run = runs + r;
 			const nbFigureStats* f = &run->figures;
-			printf( "  %7d |             %8d %8d %7d %4d %10d | %5d %6d %6d | %19d | %6d %6d %7d\n", counts[r],
+			printf( "  %7s |             %8d %8d %7d %4d %10d | %5d %6d %6d | %19d | %6d %6d %7d\n", labels[r],
 					f->stateCounts[nb_balanceStanding], f->stateCounts[nb_balanceStepping], f->stateCounts[nb_balanceFalling],
 					f->stateCounts[nb_balanceDown], f->stateCounts[nb_balanceGettingUp], f->fallCount, f->getUpCount,
 					f->failedGetUpCount, f->saturatedJointCount, run->stats.chunkCount, run->stats.rubbleCount,
 					run->stats.collapsedStoreyCount );
+		}
+
+		// Where the solver works, in the steps it times, see nbProfile::solverJoints
+		printf( "  figures | solver CPU ms in a timed step: joints contacts bodies | constraints ms | timed steps\n" );
+		for ( int r = 0; r < runCount; ++r )
+		{
+			const nbProfile* p = &runs[r].profile;
+			printf( "  %7s |                                %7.3f  %7.3f %6.3f |        %7.3f | %11d\n", labels[r],
+					p->solverJoints, p->solverContacts, p->solverBodies, p->stages[nb_profileConstraints], p->solverSampleCount );
 		}
 
 		for ( int r = 0; r < runCount; ++r )

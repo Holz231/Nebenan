@@ -2668,6 +2668,7 @@ b3Counters b3World_GetCounters( b3WorldId worldId )
 	s.teamStageCount = world->teamStageCount;
 	s.teamYieldCount = world->teamYieldCount;
 	s.teamPackCount = world->teamPackCount;
+	s.solverSample = world->solverSample;
 	memcpy( s.manifoldCounts, world->manifoldCounts, B3_CONTACT_MANIFOLD_COUNT_BUCKETS * sizeof( int ) );
 	s.stackUsed = world->stack.maxAllocation;
 	s.byteCount = b3GetByteCount();

@@ -1159,7 +1159,53 @@ static void b3MergeKnots( b3StepContext* context, int start, int end )
 	}
 }
 
-static void b3ExecuteBlock( b3SolverStage* stage, b3StepContext* context, b3SolverBlock block, int workerIndex )
+// Added for Nebenan: what the blocks of the solver work on, see b3Profile::solverJoints. Every this many steps a step times
+// its blocks, the others read no clock for it.
+#define B3_SOLVER_SAMPLE 8
+
+typedef enum b3SolverPart
+{
+	b3_solverJoints,
+	b3_solverContacts,
+	b3_solverBodies,
+} b3SolverPart;
+
+static b3SolverPart b3GetSolverPart( b3SolverStageType stageType, b3SolverBlockType blockType )
+{
+	if ( stageType == b3_stagePrepareJoints || blockType == b3_graphJointBlock )
+	{
+		return b3_solverJoints;
+	}
+	if ( stageType == b3_stageIntegrateVelocities || stageType == b3_stageIntegratePositions )
+	{
+		return b3_solverBodies;
+	}
+	return b3_solverContacts;
+}
+
+// Added for Nebenan: the clock where a step times its solver, zero in the others
+static inline uint64_t b3SampleSolverTicks( const b3StepContext* context )
+{
+	return context->sampleSolver ? b3GetTicks() : 0;
+}
+
+// Added for Nebenan: the ticks since start in a step that times its solver, zero in the others
+static inline uint64_t b3SolverTicksSince( const b3StepContext* context, uint64_t start )
+{
+	return context->sampleSolver ? b3GetTicks() - start : 0;
+}
+
+// Added for Nebenan: the time since start to a part of the solver on a thread, in a step that times its solver
+static inline void b3AddSolverTicks( b3StepContext* context, int workerIndex, b3SolverPart part, uint64_t start )
+{
+	if ( context->sampleSolver )
+	{
+		b3TaskContext* taskContext = context->world->taskContexts.data + workerIndex;
+		taskContext->solverTicks[part] += b3GetTicks() - start;
+	}
+}
+
+static void b3RunBlock( b3SolverStage* stage, b3StepContext* context, b3SolverBlock block, int workerIndex )
 {
 	b3SolverStageType stageType = stage->type;
 	b3SolverBlockType blockType = (b3SolverBlockType)block.blockType;
@@ -1261,6 +1307,13 @@ static void b3ExecuteBlock( b3SolverStage* stage, b3StepContext* context, b3Solv
 			b3StoreImpulses_Mesh( block, context, workerIndex );
 			break;
 	}
+}
+
+static void b3ExecuteBlock( b3SolverStage* stage, b3StepContext* context, b3SolverBlock block, int workerIndex )
+{
+	uint64_t start = b3SampleSolverTicks( context );
+	b3RunBlock( stage, context, block, workerIndex );
+	b3AddSolverTicks( context, workerIndex, b3GetSolverPart( stage->type, (b3SolverBlockType)block.blockType ), start );
 }
 
 // This staggers the worker start indices so they avoid touching the same solver blocks
@@ -1413,7 +1466,7 @@ static void b3ExecutePackRange( b3SolverStageType type, b3StepContext* context, 
 	{
 		int count = b3MinInt( end - start, UINT16_MAX );
 		b3SolverBlock block = { start, (uint16_t)count, blockType, colorIndex };
-		b3ExecuteBlock( &stage, context, block, workerIndex );
+		b3RunBlock( &stage, context, block, workerIndex );
 		start += count;
 	}
 }
@@ -1466,6 +1519,11 @@ static void b3SolvePack( b3StepContext* context, int pack, int workerIndex )
 	int knotWideStart = context->knotWideStart + knotWide * context->packKnotStarts[pack];
 	int knotWideEnd = context->knotWideStart + knotWide * context->packKnotStarts[pack + 1];
 
+	// Added for Nebenan: a step that times its solver times a pack whole and its bodies apart, see b3Profile::solverJoints.
+	// A pack holds no joints, and a clock read at every one of its many small blocks would cost more than some of them.
+	uint64_t packStart = b3SampleSolverTicks( context );
+	uint64_t bodyTicks = 0;
+
 	b3ExecutePackRange( b3_stagePrepareContacts, context, overflowStart, overflowEnd, b3_overflowBlock, B3_OVERFLOW_INDEX,
 						workerIndex );
 	b3ExecutePackRange( b3_stagePrepareWideContacts, context, knotWideStart, knotWideEnd, b3_wideContactBlock, UINT8_MAX,
@@ -1474,10 +1532,14 @@ static void b3SolvePack( b3StepContext* context, int pack, int workerIndex )
 
 	for ( int i = 0; i < context->subStepCount; ++i )
 	{
+		uint64_t bodyClock = b3SampleSolverTicks( context );
 		b3ExecutePackRange( b3_stageIntegrateVelocities, context, bodyStart, bodyEnd, b3_packBodyBlock, UINT8_MAX, workerIndex );
+		bodyTicks += b3SolverTicksSince( context, bodyClock );
 		b3ExecutePackConstraints( b3_stageWarmStart, context, pack, workerIndex );
 		b3ExecutePackConstraints( b3_stageSolve, context, pack, workerIndex );
+		bodyClock = b3SampleSolverTicks( context );
 		b3ExecutePackRange( b3_stageIntegratePositions, context, bodyStart, bodyEnd, b3_packBodyBlock, UINT8_MAX, workerIndex );
+		bodyTicks += b3SolverTicksSince( context, bodyClock );
 		b3ExecutePackConstraints( b3_stageRelax, context, pack, workerIndex );
 	}
 
@@ -1497,6 +1559,14 @@ static void b3SolvePack( b3StepContext* context, int pack, int workerIndex )
 						workerIndex );
 	b3ExecutePackRange( b3_stageStoreImpulses, context, overflowStart, overflowEnd, b3_overflowBlock, B3_OVERFLOW_INDEX,
 						workerIndex );
+
+	if ( context->sampleSolver )
+	{
+		b3TaskContext* taskContext = context->world->taskContexts.data + workerIndex;
+		uint64_t packTicks = b3GetTicks() - packStart;
+		taskContext->solverTicks[b3_solverBodies] += bodyTicks;
+		taskContext->solverTicks[b3_solverContacts] += packTicks - bodyTicks;
+	}
 }
 
 // Added for Nebenan: the constraint solver without a barrier per stage. Two islands never share a moving body, so a thread
@@ -1699,8 +1769,12 @@ static void b3SolverTask( void* taskContext )
 
 		// Single-threaded overflow work. These constraints don't fit in the graph coloring.
 		uint64_t overflowTicks = b3GetTicks();
+		uint64_t partStart = b3SampleSolverTicks( context );
 		b3PrepareJoints_Overflow( context );
+		b3AddSolverTicks( context, 0, b3_solverJoints, partStart );
+		partStart = b3SampleSolverTicks( context );
 		b3PrepareContacts_Overflow( context );
+		b3AddSolverTicks( context, 0, b3_solverContacts, partStart );
 		profile->overflow += b3GetMilliseconds( overflowTicks );
 
 		profile->prepareConstraints += b3GetMillisecondsAndReset( &ticks );
@@ -1724,13 +1798,17 @@ static void b3SolverTask( void* taskContext )
 
 			// Warm start constraints
 			overflowTicks = b3GetTicks();
+			partStart = b3SampleSolverTicks( context );
 			b3WarmStartJoints_Overflow( context );
+			b3AddSolverTicks( context, 0, b3_solverJoints, partStart );
 			syncBits = ( knotSyncIndex << 16 ) | iterationStageIndex;
 			B3_ASSERT( stages[iterationStageIndex].type == b3_stageWarmStart );
 			b3ExecuteKnotStage( stages + iterationStageIndex, context, syncBits );
 			iterationStageIndex += 1;
 			knotSyncIndex += 1;
+			partStart = b3SampleSolverTicks( context );
 			b3WarmStartContacts_Overflow( context );
+			b3AddSolverTicks( context, 0, b3_solverContacts, partStart );
 			profile->overflow += b3GetMilliseconds( overflowTicks );
 
 			for ( int colorIndex = 0; colorIndex < activeColorCount; ++colorIndex )
@@ -1750,13 +1828,17 @@ static void b3SolverTask( void* taskContext )
 			{
 				// Overflow constraints have lower priority. Typically these are dynamic-vs-dynamic.
 				overflowTicks = b3GetTicks();
+				partStart = b3SampleSolverTicks( context );
 				b3SolveJoints_Overflow( context, useBias );
+				b3AddSolverTicks( context, 0, b3_solverJoints, partStart );
 				syncBits = ( knotSyncIndex << 16 ) | iterationStageIndex;
 				B3_ASSERT( stages[iterationStageIndex].type == b3_stageSolve );
 				b3ExecuteKnotStage( stages + iterationStageIndex, context, syncBits );
 				iterationStageIndex += 1;
 				knotSyncIndex += 1;
+				partStart = b3SampleSolverTicks( context );
 				b3PushContacts_Overflow( context );
+				b3AddSolverTicks( context, 0, b3_solverContacts, partStart );
 				profile->overflow += b3GetMilliseconds( overflowTicks );
 
 				for ( int colorIndex = 0; colorIndex < activeColorCount; ++colorIndex )
@@ -1785,13 +1867,17 @@ static void b3SolverTask( void* taskContext )
 			for ( int j = 0; j < RELAX_ITERATIONS; ++j )
 			{
 				overflowTicks = b3GetTicks();
+				partStart = b3SampleSolverTicks( context );
 				b3SolveJoints_Overflow( context, useBias );
+				b3AddSolverTicks( context, 0, b3_solverJoints, partStart );
 				syncBits = ( knotSyncIndex << 16 ) | iterationStageIndex;
 				B3_ASSERT( stages[iterationStageIndex].type == b3_stageRelax );
 				b3ExecuteKnotStage( stages + iterationStageIndex, context, syncBits );
 				iterationStageIndex += 1;
 				knotSyncIndex += 1;
+				partStart = b3SampleSolverTicks( context );
 				b3SolveContacts_Overflow( context );
+				b3AddSolverTicks( context, 0, b3_solverContacts, partStart );
 				profile->overflow += b3GetMilliseconds( overflowTicks );
 
 				for ( int colorIndex = 0; colorIndex < activeColorCount; ++colorIndex )
@@ -1825,7 +1911,9 @@ static void b3SolverTask( void* taskContext )
 				b3ExecuteKnotStage( stages + iterationStageIndex, context, syncBits );
 				iterationStageIndex += 1;
 				knotSyncIndex += 1;
+				partStart = b3SampleSolverTicks( context );
 				b3ApplyRestitution_Overflow( context );
+				b3AddSolverTicks( context, 0, b3_solverContacts, partStart );
 				profile->overflow += b3GetMilliseconds( overflowTicks );
 
 				for ( int colorIndex = 0; colorIndex < activeColorCount; ++colorIndex )
@@ -1845,7 +1933,9 @@ static void b3SolverTask( void* taskContext )
 
 		// Store impulses
 		overflowTicks = b3GetTicks();
+		partStart = b3SampleSolverTicks( context );
 		b3StoreImpulses_Overflow( context );
+		b3AddSolverTicks( context, 0, b3_solverContacts, partStart );
 		profile->overflow += b3GetMilliseconds( overflowTicks );
 
 		syncBits = ( convexSyncIndex << 16 ) | stageIndex;
@@ -3302,6 +3392,7 @@ void b3Solve( b3World* world, b3StepContext* stepContext )
 	world->knotCopyCount = 0;
 	world->teamWork = 0;
 	world->teamSample = 0;
+	world->solverSample = 0;
 	world->teamWorkerCount = 0;
 	world->teamStageCount = 0;
 	world->teamYieldCount = 0;
@@ -3980,6 +4071,7 @@ void b3Solve( b3World* world, b3StepContext* stepContext )
 		stepContext->packCount = packCount;
 		stepContext->team = team;
 		stepContext->sampleTeam = sampleTeam;
+		stepContext->sampleSolver = world->stepIndex % B3_SOLVER_SAMPLE == 0;
 		stepContext->teamEntries = teamEntries;
 		stepContext->teamEntryCapacity = teamEntryCapacity;
 		stepContext->teamMergeTime = 0.0f;
@@ -4023,12 +4115,13 @@ void b3Solve( b3World* world, b3StepContext* stepContext )
 			b3SetBitCountAndClear( &taskContext->hitEventBitSet, contactIdCapacity );
 			taskContext->hasHitEvents = false;
 
-			// Added for Nebenan: see b3Profile::teamTime
+			// Added for Nebenan: see b3Profile::teamTime and b3Profile::solverJoints
 			taskContext->teamWait = 0.0f;
 			taskContext->teamPacks = 0.0f;
 			taskContext->teamStages = 0;
 			taskContext->teamYields = 0;
 			taskContext->teamEntryCount = 0;
+			memset( taskContext->solverTicks, 0, sizeof( taskContext->solverTicks ) );
 		}
 
 		for ( int i = 0; i < workerCount; ++i )
@@ -4093,6 +4186,24 @@ void b3Solve( b3World* world, b3StepContext* stepContext )
 
 		world->profile.constraints = b3GetMillisecondsAndReset( &constraintTicks );
 		b3TracyCZoneEnd( solve_constraints );
+
+		// Added for Nebenan: where the solver worked, summed over the threads, see b3Profile::solverJoints
+		if ( stepContext->sampleSolver )
+		{
+			uint64_t parts[3] = { 0, 0, 0 };
+			for ( int i = 0; i < world->workerCount; ++i )
+			{
+				const b3TaskContext* taskContext = world->taskContexts.data + i;
+				for ( int k = 0; k < 3; ++k )
+				{
+					parts[k] += taskContext->solverTicks[k];
+				}
+			}
+			world->profile.solverJoints = b3TicksToMilliseconds( parts[b3_solverJoints] );
+			world->profile.solverContacts = b3TicksToMilliseconds( parts[b3_solverContacts] );
+			world->profile.solverBodies = b3TicksToMilliseconds( parts[b3_solverBodies] );
+			world->solverSample = 1;
+		}
 
 		// Added for Nebenan: the waits of the calling thread and of the workers in a step that timed its team, see
 		// b3Profile::teamTime

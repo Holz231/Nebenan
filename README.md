@@ -919,7 +919,8 @@ Gemessen ist das etwa so schnell wie zwei eigene Pools, mit halb so vielen Threa
 Wo die Zeit der Schritte hingeht, sagt `nbWorld_GetProfile`, pro Schritt seit dem Anlegen der Welt oder seit
 `nbWorld_ResetProfile`: die Stufen des Box3D-Schritts samt der Teile, die auf dem aufrufenden Thread allein laufen, der
 Überlauf des Constraint-Graphen mit den Kontakten, die Box3D an Knoten bündelt, und wie viele dieser Bündel ein Thread
-nacheinander rechnet, die Teile des Updates mit den Figuren, ihren Clips, ihrer Balance und den Zielen ihrer Gelenke,
+nacheinander rechnet, wie viel Rechenzeit der Löser für Gelenke, Kontakte und Körper braucht, die Teile des Updates
+mit den Figuren, ihren Clips, ihrer Balance und den Zielen ihrer Gelenke,
 die Einschläge, Erstarren und Auftauen, die Zellen der Brüche, der Anteil
 der größten Insel an der Arbeit des Lösers, wie oft ein Team aller Threads die größten Pakete von Inseln rechnet, wo
 dessen Zeit hingeht und wie sich Arbeit und Warten auf seine Stufen und Farben verteilen, wie lange ein schlafender
@@ -1397,7 +1398,14 @@ Figur, und ein Bild kostet parallel 4,2 und nacheinander 4,6 ms, ohne Figuren 3,
 Unterschied nicht: Sie stehen den Trümmern im Weg, und mit ihnen kommt der Abriss in 4 000 Bildern mit 862 statt 711
 Granaten ein Haus weiter. Die Kontakte zwischen den Knochen einer Figur sind die Hälfte ihrer Kontaktpaare, kosten aber
 nur 4 % ihrer Zeit in Box3D, 0,5 µs je Figur und Schritt, fast nur in der Kollision. Ein Filter dafür lohnt nicht, siehe
-„Kontakte der Figuren“ in [docs/Roadmap.md](docs/Roadmap.md).
+„Kontakte der Figuren“ in [docs/Roadmap.md](docs/Roadmap.md). Im Löser rechnen die Figuren fast nur an ihren Gelenken:
+In der ruhigen Stadt mit 50 Figuren gehen 83 % seiner Rechenzeit in die Gelenke, 12 % in das Integrieren der Körper und
+5 % in alle Kontakte, rund 15 µs Rechenzeit je Figur und Schritt für ihre 15 Gelenke. Teurer für eine zerstörbare Welt
+ist etwas anderes: Ein einziges waches Gelenk schaltet die Pakete aus „Ganze Inseln pro Thread“ für die ganze Welt ab,
+und der Löser rechnet alle Trümmer nach Farben mit einer Sperre je Stufe, siehe [`extern/README.md`](extern/README.md).
+In der Stadt unter Beschuss ohne Figuren kostet ein einziges Pendel weit weg den Box3D-Schritt so mit 2 Threads 25 %
+mehr, 0,97 statt 1,21 ms, und mit 8 Threads 19 %, siehe „Wohin der Löser bei Figuren rechnet“ in
+[docs/Roadmap.md](docs/Roadmap.md).
 
 **Eine Stadt größer als der Speicher.** Im Benchmark fliegt eine Kamera mit 30 m/s 900 m weit durch eine Stadt aus
 65 536 Häusern auf 3,6 × 3,1 km und 300 m zurück, Bruchstückgröße ×4. Am Stück bräuchte sie 24 GB. Geladen sind die
@@ -1661,7 +1669,7 @@ build/bin/nebenan_test clips          # nur die Tests der Clips
 build/bin/nebenan_benchmark 4     # Zahl = Threads für Bruch und Physik, 0 = so viele, wie ein Spiel nähme
 build/bin/nebenan_benchmark scaling   # die Städte unter Beschuss mit 1, 2, 4 … Threads und die Tabelle der Skalierung
 build/bin/nebenan_benchmark rates     # die Städte unter Beschuss mit 30, 60 und 120 Hz, was eine simulierte Sekunde kostet
-build/bin/nebenan_benchmark figures 2 # die Stadt mit 0, 1, 10 und 50 Figuren, ruhig und unter Beschuss, mit 2 Threads
+build/bin/nebenan_benchmark figures 2 # die Stadt mit 0, 1, 10 und 50 Figuren und mit einem Pendel, ruhig und unter Beschuss, mit 2 Threads
 build/bin/nebenan_benchmark figures 2 noself   # dasselbe ohne Kollisionen zwischen den Knochen einer Figur
 ```
 
@@ -1764,6 +1772,8 @@ Nach Änderungen an `demo/shaders/scene.glsl` die Shader neu erzeugen, im Ordner
   Kugel dazu, beim Aufstehen die Kontakte aller Knochen. Gemessen, siehe Leistung: rund 17 µs je Figur und Schritt in
   Box3D und 1,2 bis 2,7 µs im Update der Bibliothek, auf dem aufrufenden Thread allein. 50 Figuren heben das mittlere
   Bild der Stadt unter Beschuss von 1,5 auf 2,4 ms.
+- Ein waches Gelenk nimmt dem Löser die Pakete für die ganze Welt, siehe Leistung: Schon eine Figur kostet die Trümmer
+  einer Stadt unter Beschuss ein Fünftel bis ein Viertel des Box3D-Schritts, bis Box3D Gelenke in Paketen rechnet.
 - Der Keypoint-Import braucht Punkte in 3D und in Metern, wie MediaPipe sie als Weltkoordinaten liefert. Aus den
   2D-Punkten eines Bildes oder aus mehreren Ansichten rekonstruiert er nichts (32.5). Beugt sich jemand in der Hüfte,
   kippt das Becken mit, denn ohne Punkte an der Wirbelsäule richtet es sich nach Hüften und Schultern. Ein gestrecktes

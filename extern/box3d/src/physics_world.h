@@ -145,6 +145,10 @@ typedef struct b3TaskContext
 	// b3StepContext::teamEntries. At the end, where it keeps the other fields where they were.
 	int teamEntryCount;
 
+	// Added for Nebenan: in a step that times its solver the ticks of its blocks by what they solve, see b3SolverPart in
+	// src/solver.c. At the end as well.
+	uint64_t solverTicks[3];
+
 	// Prevent false sharing
 	char cacheLine[64];
 } b3TaskContext;
@@ -381,6 +385,9 @@ typedef struct b3World
 
 	// Added for Nebenan: the packs the team solved in the last step, see b3Counters::teamPackCount
 	int teamPackCount;
+
+	// Added for Nebenan: see b3Counters::solverSample
+	int solverSample;
 } b3World;
 
 b3World* b3GetUnlockedWorldFromId( b3WorldId id );

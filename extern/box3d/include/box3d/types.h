@@ -626,6 +626,14 @@ typedef struct b3Profile
 	float setupOrder;
 	float setupKnots;
 	float setupWait;
+
+	/// Added for Nebenan: where the constraint solver works, in every eighth step, see b3Counters::solverSample, zero in the
+	/// others. Over all threads the time of the blocks and of the overflow constraints that solve joints, contacts and the
+	/// bodies, in milliseconds of CPU time. What else b3Profile::constraints holds on the calling thread is waiting at the
+	/// barriers and handing over between the stages.
+	float solverJoints;
+	float solverContacts;
+	float solverBodies;
 } b3Profile;
 
 /// Counters that give details of the simulation size.
@@ -696,6 +704,9 @@ typedef struct b3Counters
 
 	/// Added for Nebenan: the packs the team of the last step solved, see teamWork, zero if the step had none
 	int teamPackCount;
+
+	/// Added for Nebenan: one if the last step timed where its solver works, see b3Profile::solverJoints
+	int solverSample;
 } b3Counters;
 
 /// Added for Nebenan: the rows of b3TeamStages, the stages of a team by what they solve. The stages that prepare the

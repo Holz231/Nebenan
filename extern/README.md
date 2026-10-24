@@ -228,7 +228,9 @@ Paket, sobald einer seiner Kontakte welchen hat. Rechnet es ihn nur, weil ein an
 hat, ändert das nichts, weil Box3D Kontakte ohne Rückprall überspringt. Mit Sperren wie bisher rechnet der Löser, wenn
 nur ein Thread rechnet, ein Gelenk oder ein Kontakt mit einem Netz in den Farben liegt, Box3D den Rückprall fortpflanzt
 oder eine Insel mehr als die Hälfte der Arbeit hält und die Worker für ein Team zu wenige sind, siehe „Ein Team für das
-größte Paket“.
+größte Paket“. Ein einziges waches Gelenk, irgendwo in der Welt, nimmt so allen Inseln die Pakete: In der Stadt des
+Benchmarks unter Beschuss kostet ein Pendel weit weg den Schritt mit 2 Threads 25 % mehr und mit 8 Threads 19 %, siehe
+„Wohin der Löser bei Figuren rechnet“ in [`docs/Roadmap.md`](../docs/Roadmap.md).
 
 **Sperren, solange andere Programme die Kerne belegen.** Verliert ein Thread mitten in einem Paket seinen Kern an ein
 anderes Programm, warten am Ende alle auf dieses Paket, während mit Sperren die anderen die Blöcke übernehmen, die er
@@ -492,6 +494,15 @@ Rechnung des Lösers ändert sich nicht. Die neuen Felder stehen am Ende von `b3
 `b3TaskContext`, damit die übrigen bleiben, wo sie waren: Mitten in diesen Strukturen kostete die Stadt des Benchmarks
 bei ×1 auf der VM mit einem Thread 3 bis 6 % mehr, gleichmäßig über alle Stufen, obwohl mit einem Thread nichts davon
 läuft.
+
+**Wohin der Löser rechnet.** In jedem achten Schritt misst der Löser, wie viel Rechenzeit seine Threads für die Gelenke,
+die Kontakte und das Integrieren der Körper brauchen, über alle Threads zusammen und ohne das Warten an den Sperren
+(`b3Profile::solverJoints`, `solverContacts` und `solverBodies`, `B3_SOLVER_SAMPLE` in `src/solver.c`). Mit Sperren liest
+er die Uhr an jedem Block (`b3ExecuteBlock`) und an den Overflow-Bedingungen des aufrufenden Threads. Ein Paket misst er
+im Ganzen und darin nur die Körper apart, denn es hat keine Gelenke und so viele kleine Blöcke, dass die Uhr an jedem
+die Messung verfälschte (`b3SolvePack`). `b3Counters::solverSample` sagt, ob der letzte Schritt gemessen
+hat, die übrigen lesen keine Uhr dafür. Die neuen Felder stehen wieder am Ende von `b3World`, `b3StepContext` und
+`b3TaskContext`.
 
 **Große Pakete im Team.** Das Team aus „Ein Team für das größte Paket“ rechnete nur das erste Paket. Hielt eine zweite
 Insel ebenfalls mehr als den Anteil eines Threads, rechnete ein Worker ihr Paket allein, und am Ende wartete das Team
