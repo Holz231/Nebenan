@@ -279,46 +279,59 @@ NEBENAN | DETAILROADMAP – NUR NOCH ZU BAUENDE SYSTEME                         
 17 | Destruction: Restanker,
 Buckling und Kollaps
 
-Ergänzung vom 10. Oktober 2026 · Rekonstruktion der gemeinsam ausgearbeiteten Designregeln vom 29.
-September und 7. Oktober. Dieser Abschnitt ergänzt die Roadmap um das gewünschte Kollapsverhalten; er
-behauptet keinen bereits implementierten Stand. Die bisherigen fünf Seiten bleiben unverändert.
+Ergänzung vom 10. Oktober 2026 · korrigiert am 21. Oktober 2026 nach dem Verhalten, das in der Demo von
+Nebenan abgestimmt wurde. Die Werte unten ersetzen die frühere 90/10-Regel mit einer Auslöseschwelle von
+ungefähr 40 %. Die bisherigen fünf Seiten bleiben unverändert.
 
-17.1 | Auslöser und die 90/10-Regel
+17.1 | Auslöser je Etage und Rest
 
 Keine separate Buckling-Funktion: Buckling bezeichnet hier das entstehende Verhalten, keine klassische
-Knicksimulation und keine eigene Funktion, die das Haus gezielt verbiegt oder rotiert. Die ungefähr 10 %
-Restmaterial werden ebenfalls gebrochen, aber nicht weggesprengt. Sie bleiben zunächst stehen; dadurch kippt
-oder knickt das Haus automatisch durch die vorhandene Körperphysik, Schwerkraft und Kontakte.
-Anker-/Scharnierbereich beschreibt diesen Rest, keinen eigens erzeugten Hinge-Joint.
+Knicksimulation und keine eigene Funktion, die das Haus gezielt verbiegt oder rotiert. Was von einer Etage übrig
+ist, wird gebrochen, aber nicht weggesprengt. Es bleibt zunächst stehen; dadurch sinkt, kippt oder knickt das
+Haus automatisch durch die vorhandene Körperphysik, Schwerkraft und Kontakte. Anker-/Scharnierbereich
+beschreibt diesen Rest, keinen eigens erzeugten Hinge-Joint.
 
-Als konkrete Designregel wurde ein Kollaps bei ungefähr 40 % zerstörter Etage festgehalten. Frühere Varianten
-lagen bei etwa 40–50 %; der Schwellwert bleibt abstimmbar. Beim Auslösen werden ungefähr 90 % des noch
-verbleibenden Materials freigesetzt bzw. weggesprengt. Ungefähr 10 % des verbleibenden Materials bleiben
-als gebrochener Anker-/Scharnierbereich, an dem der Rest bzw. die darüberliegende Struktur kippen kann.
+Jede Etage gibt bei ihrem eigenen Schwellwert nach. Sie zieht ihn beim Laden des Hauses zufällig aus einem
+Bereich, für dasselbe Haus immer gleich: 17–31 % zerstörter Wände für alle Etagen, 18–25 % für die oberste
+Etage unter dem Dach. Die Bereiche bleiben abstimmbar. Früher war ein Kollaps bei ungefähr 40 %
+festgehalten, davor bei etwa 40–50 %.
 
-Rechenbeispiel: Ursprünglich 100 %, davon 40 % zerstört → 60 % verbleiben. Davon werden 54 Prozentpunkte
-freigesetzt; 6 Prozentpunkte der ursprünglichen Etage bleiben als Scharnierbereich. Die 10 % sind somit kein
-Anteil der ursprünglichen Gesamtetage.
+Beim Auslösen bleiben 100 % des noch verbleibenden Materials stehen, in der obersten Etage ebenso, in ihre
+Voronoi-Zellen gebrochen: Nur die Zellen, die auf dem stehen, was darunter liegt, bleiben daran fest; die übrigen
+stehen lose aufeinander, wo sie waren. Freigesetzt oder weggesprengt wird nichts. Der Anteil, der stehen bleibt,
+ist ein zweiter abstimmbarer Bereich. Früher wurden ungefähr 90 % freigesetzt, und 10 % blieben als Anker.
 
-Die Regel ist eine bewusst akzeptierte spielerische Näherung. Der Designwert „40 % zerstört“ darf nicht mit
-einem Support-Trigger wie „50 % tragende Wände verbleiben“ gleichgesetzt werden. Materialverlust und
-verbleibende Tragstruktur benötigen getrennte Bezugsgrößen.
+Rechenbeispiel: Eine Etage zieht 24 %. Sind 24 % ihrer Wände zerstört, gibt sie nach; die übrigen 76 % bleiben
+als lose Zellen stehen. Alles darüber kommt in einem Stück auf sie herunter oder bleibt auf ihnen stehen, bis
+weitere Treffer sie wegschießen. Das Dach über der obersten Etage hängt seitlich an den Wänden; die Zellen,
+an denen es hängt, bleiben mit ihm verbunden und stehen auf den übrigen.
+
+Die Regel ist eine bewusst akzeptierte spielerische Näherung. Der Schwellwert misst Materialverlust und darf
+nicht mit einem Support-Trigger wie „50 % tragende Wände verbleiben“ gleichgesetzt werden. Materialverlust
+und verbleibende Tragstruktur benötigen getrennte Bezugsgrößen.
 
 17.2 | Einseitige Zerstörung
 
-Liegt der Schaden überwiegend auf einer Seite, sitzt die Hinge-/Ankerkante auf der stärksten überlebenden
-Seite. Der kleine Rest soll dort zusammenhängend bleiben. Die übrigen Teile werden freigesetzt; der noch
-zusammenhängende obere Bereich knickt bzw. kippt zur zerstörten oder nicht mehr unterstützten Seite. So
-entsteht Sprengung mit anschließendem Buckling statt eines gleichförmigen Verschwindens.
+Liegt der Schaden überwiegend auf einer Seite, steht der Rest vor allem auf der stärksten überlebenden Seite,
+als zusammenhängender Bereich loser Zellen. Der obere Teil sinkt auf ihn und kippt zur zerstörten oder nicht
+mehr unterstützten Seite, so weit Schwerkraft und Kontakte es ergeben, oder bleibt auf den Zellen stehen, bis
+weitere Treffer sie lösen. So entsteht Zerstörung mit anschließendem Buckling statt eines gleichförmigen
+Verschwindens.
 
 17.3 | Gleichmäßig verteilter Schaden
 
-Ist die Etage gleichmäßig durchlöchert, dominiert das Spreng-/Collapse-Verhalten. Die ungefähr 10 %
-Restmaterial können nach der akzeptierten Regel zufällig gewählt werden; eine künstlich bevorzugte starke
-Seite ist dann nicht erforderlich. Die Auswahl darf nicht mit der Einseitigkeitsregel verwechselt werden: einseitig
-bedeutet gezielter zusammenhängender Anker, gleichmäßig bedeutet verteilten Kollaps mit zufälligem Rest.
+Ist die Etage gleichmäßig durchlöchert, steht der Rest verteilt, ebenso gebrochen. Eine künstlich bevorzugte
+starke Seite gibt es dann nicht: Der obere Teil sinkt mehr oder weniger gerade auf die losen Zellen und kippt nur
+so weit, wie sie unter ihm nachgeben. Wird der Anteil, der stehen bleibt, unter 100 % gestellt, ist er einseitig ein
+gezielter zusammenhängender Anker und gleichmäßig zufällig gewählt; die beiden Auswahlen dürfen nicht
+verwechselt werden.
 
-NEBENAN | DETAILROADMAP – ERGÄNZUNG DESTRUCTION                                                                      6
+Im Testhaus von Nebenan sank der obere Teil in 10 von 16 Fällen, Erdgeschoss und zweite Etage, einseitig und
+gleichmäßig zerstört, auf die losen Zellen und kippte dabei um bis zu 21°; in 6 blieb er auf ihnen stehen. Das
+Dach über der obersten Etage blieb in 11 von 16 Fällen auf den Zellen stehen und sank in 5 um bis zu 14°
+geneigt ein. Weitere Treffer auf die Reste brachten alles herunter, und nichts blieb in der Luft hängen.
+
+NEBENAN | DETAILROADMAP – ERGÄNZUNG DESTRUCTION                                                                       6
 17 | Knickverhalten und Umsetzung
 
 17.4 | Böden, Decken und Wände
