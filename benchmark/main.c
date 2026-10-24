@@ -4,7 +4,8 @@
 // Usage: nebenan_benchmark [workerCount], the worker count applies to the fracture and to Box3D
 //        nebenan_benchmark scaling [rounds], the towns under fire with 1, 2, 4 and so on workers, see
 //        nbGetScalingWorkerCounts, and the scaling report of the library for each town
-//        nebenan_benchmark figures [workerCount], only the towns with 0, 1, 10 and 50 figures
+//        nebenan_benchmark figures [workerCount] [noself], only the towns with 0, 1, 10 and 50 figures, noself without
+//        collisions between the bones of a figure
 
 #include "fracture.h"
 #include "hull_builder.h"
@@ -417,12 +418,13 @@ typedef struct TownCost
 
 // A block of side x side houses under fire for 20 simulated seconds at stepRate steps per second, see RunTown: every
 // interval sixtieths of a second as many grenades, each on a wall of a random house, at the same times at every rate,
-// and figureCount humanoids in its streets, see AddFigures
+// and figureCount humanoids in its streets, see AddFigures, whose bones collide with each other unless noSelfCollision
 typedef struct TownSetup
 {
 	int workerCount;
 	float fragmentScale;
 	int side, grenadesPerVolley, interval, stepRate, figureCount;
+	bool noSelfCollision;
 } TownSetup;
 
 // What RunTown measured: the houses built, the times of every frame by s_townSeries, sorted, and their sums, what Box3D
@@ -446,13 +448,14 @@ static const char* s_townSeries[4] = { "frame", "physics step", "update", "impac
 
 // The humanoids of the towns with figures: in the streets between the rows of houses, three meters apart, with balance,
 // playing the arm clip of chapter 33.4 of the game roadmap over and over, see PushFigures
-static void AddFigures( Scene* scene, int side, int figureCount, nbArticulationId* figures )
+static void AddFigures( Scene* scene, int side, int figureCount, bool selfCollision, nbArticulationId* figures )
 {
 	nbBoneDef bones[nb_humanoidBoneCount];
 	float rootHeight = nbMakeHumanoidBones( 1.8f, 75.0f, bones, nb_humanoidBoneCount );
 	nbRigDef rig = nbDefaultRigDef();
 	rig.bones = bones;
 	rig.boneCount = nb_humanoidBoneCount;
+	rig.selfCollision = selfCollision;
 	nbMotorProfile motors = nbDefaultMotorProfile();
 	nbBalanceDef balance = nbDefaultBalanceDef();
 
@@ -555,7 +558,7 @@ static void RunTown( const TownSetup* setup, TownRun* run )
 	nbArticulationId* figures = malloc( sizeof( nbArticulationId ) * (size_t)b3MaxInt( figureCount, 1 ) );
 	int* pushes = calloc( (size_t)b3MaxInt( figureCount, 1 ), sizeof( int ) );
 	int64_t bytes = nbGetByteCount() + b3GetByteCount();
-	AddFigures( &scene, side, figureCount, figures );
+	AddFigures( &scene, side, figureCount, setup->noSelfCollision == false, figures );
 	run->figureBytes = nbGetByteCount() + b3GetByteCount() - bytes;
 	uint32_t hitCount = 0;
 
@@ -717,8 +720,9 @@ static void BenchmarkTown( int workerCount, float fragmentScale, int side, int g
 
 // Stage 6 of 27.14 of the game roadmap: 1, 10 and 50 figures in the town of 16 houses at fragment scale 2 against the
 // town without figures, quiet and under a grenade every 1/12 s, see AddFigures and PushFigures. Where the time goes,
-// what the figures hold in Box3D and in memory, and what they did.
-static void BenchmarkFigures( int workerCount )
+// what the figures hold in Box3D and in memory, and what they did. Without self collision for what the contacts between
+// the bones of a figure cost, see 27.13 of the game roadmap.
+static void BenchmarkFigures( int workerCount, bool selfCollision )
 {
 	enum
 	{
@@ -732,10 +736,14 @@ static void BenchmarkFigures( int workerCount )
 					? "\nFigures in the quiet town (16 houses, fragment scale 2, figures with balance playing a clip, a push "
 					  "every 6 s)\n"
 					: "\nFigures in the town under fire (the same with a grenade every 1/12 s)\n" );
+		if ( selfCollision == false )
+		{
+			printf( "  without collisions between the bones of a figure\n" );
+		}
 		TownRun runs[runCount];
 		for ( int r = 0; r < runCount; ++r )
 		{
-			TownSetup setup = { workerCount, 2.0f, 4, fire, 5, 60, counts[r] };
+			TownSetup setup = { workerCount, 2.0f, 4, fire, 5, 60, counts[r], selfCollision == false };
 			RunTown( &setup, runs + r );
 		}
 
@@ -1142,7 +1150,8 @@ int main( int argc, char** argv )
 	if ( argc > 1 && strcmp( argv[1], "figures" ) == 0 )
 	{
 		int workers = argc > 2 ? atoi( argv[2] ) : 1;
-		BenchmarkFigures( workers == 0 ? nbGetRecommendedWorkerCount( false ) : ( workers < 1 ? 1 : workers ) );
+		bool selfCollision = argc > 3 && strcmp( argv[3], "noself" ) == 0 ? false : true;
+		BenchmarkFigures( workers == 0 ? nbGetRecommendedWorkerCount( false ) : ( workers < 1 ? 1 : workers ), selfCollision );
 		return 0;
 	}
 
@@ -1176,6 +1185,6 @@ int main( int argc, char** argv )
 	BenchmarkCity( workerCount );
 
 	// Stage 6 of 27.14 of the game roadmap: figures in a town that is quiet and one under fire
-	BenchmarkFigures( workerCount );
+	BenchmarkFigures( workerCount, true );
 	return 0;
 }

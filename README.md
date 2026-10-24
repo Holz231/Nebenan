@@ -1395,7 +1395,9 @@ in [docs/Roadmap.md](docs/Roadmap.md). In der Demo, mit MSVC und 8 Threads auf d
 den Straßen der Stadt beim Abriss mit „Parallel gegen nacheinander messen“ 0,13 ms je Schritt im Update, 2,5 µs je
 Figur, und ein Bild kostet parallel 4,2 und nacheinander 4,6 ms, ohne Figuren 3,6 und 3,9 ms. Ganz den Figuren gehört der
 Unterschied nicht: Sie stehen den Trümmern im Weg, und mit ihnen kommt der Abriss in 4 000 Bildern mit 862 statt 711
-Granaten ein Haus weiter.
+Granaten ein Haus weiter. Die Kontakte zwischen den Knochen einer Figur sind die Hälfte ihrer Kontaktpaare, kosten aber
+nur 4 % ihrer Zeit in Box3D, 0,5 µs je Figur und Schritt, fast nur in der Kollision. Ein Filter dafür lohnt nicht, siehe
+„Kontakte der Figuren“ in [docs/Roadmap.md](docs/Roadmap.md).
 
 **Eine Stadt größer als der Speicher.** Im Benchmark fliegt eine Kamera mit 30 m/s 900 m weit durch eine Stadt aus
 65 536 Häusern auf 3,6 × 3,1 km und 300 m zurück, Bruchstückgröße ×4. Am Stück bräuchte sie 24 GB. Geladen sind die
@@ -1660,6 +1662,7 @@ build/bin/nebenan_benchmark 4     # Zahl = Threads für Bruch und Physik, 0 = so
 build/bin/nebenan_benchmark scaling   # die Städte unter Beschuss mit 1, 2, 4 … Threads und die Tabelle der Skalierung
 build/bin/nebenan_benchmark rates     # die Städte unter Beschuss mit 30, 60 und 120 Hz, was eine simulierte Sekunde kostet
 build/bin/nebenan_benchmark figures 2 # die Stadt mit 0, 1, 10 und 50 Figuren, ruhig und unter Beschuss, mit 2 Threads
+build/bin/nebenan_benchmark figures 2 noself   # dasselbe ohne Kollisionen zwischen den Knochen einer Figur
 ```
 
 Unter Windows liegen die Programme in `build\bin\Release\`. Die CI baut und testet unter Windows, Linux und

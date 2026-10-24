@@ -19,9 +19,10 @@ beide auf dem Ryzen nachgemessen, und den großen Paketen im Team auf `kollaps-9
 Begründungen und Messwerte stehen in [`Optimierungen.md`](Optimierungen.md), hier nur das Fazit und die Reihenfolge.
 Nach jeder Runde wird der Stand hier nachgetragen.
 
-`ragdoll-1` bis `ragdoll-4` sind wie `kollaps-1` keine Runden der Physik: Sie bauen die Figuren auf Box3D nach Kapitel
+`ragdoll-1` bis `ragdoll-5` sind wie `kollaps-1` keine Runden der Physik: Sie bauen die Figuren auf Box3D nach Kapitel
 26 bis 28 und 31 bis 33 der Roadmap des Spiels, siehe „Figuren auf Box3D“, „Balance“, „Clips und Keyframe-Editor“ und
-„Kosten der Figuren“ unten. `ragdoll-4` misst, was Figuren kosten, und ändert an der Physik nichts: Gepaart gegen
+„Kosten der Figuren“ unten. `ragdoll-5` prüft die Kontakte zwischen den Knochen einer Figur und ändert an der Bibliothek
+nichts, der Benchmark bekommt nur einen Schalter dafür. `ragdoll-4` misst, was Figuren kosten, und ändert an der Physik nichts: Gepaart gegen
 `ragdoll-3` auf dem 7800X3D, je zwei Läufe im Wechsel mit 2 Threads, enden alle Szenen des Benchmarks mit denselben
 Zahlen, und ein Frame kostet −1,6 bis −0,3 %, bei einer Streuung von Lauf zu Lauf bis 5 %. Beim Messen fiel auf, dass
 im Build mit MinGW die Physik auf ihrem eigenen Thread das Update um ein Vielfaches langsamer machte, siehe
@@ -268,8 +269,39 @@ emulierten Thread-lokalen Variable. Unter Windows nimmt die Nummer jetzt die Ken
 | C3 | **Benchmark** (27.14 Stufe 6): die Stadt mit 0, 1, 10 und 50 Figuren, ruhig und unter Beschuss, p50 bis p99,9, Box3D, Speicher | ✅ |
 | C4 | **Demo**: die Stadt mit 1, 10 oder 50 Figuren, im Menü und im Bericht der Messung | ✅ |
 | C5 | **Thread-Nummer unter Windows** ohne Thread-lokale Variable, für MinGW | ✅ |
-| C6 | **Kontakte der Figuren** (27.13 A): 17 Kontaktpaare je stehender Figur, welche davon zwischen ihren eigenen Knochen liegen und ob ein Filter für ungeeignete Paare den Löser entlastet | 🔜 |
+| C6 | **Kontakte der Figuren** (27.13 A): 17 Kontaktpaare je stehender Figur, welche davon zwischen ihren eigenen Knochen liegen und ob ein Filter für ungeeignete Paare den Löser entlastet | ⛔ geprüft auf `ragdoll-5`: Die Hälfte der Paare liegt zwischen den Knochen einer Figur, sie kosten aber nur 4 % ihrer Zeit in Box3D, siehe „Kontakte der Figuren“ unten |
 | C7 | **Aktivierungsbudget und LOD** (27.13 B): ferne Figuren ohne Balance oder ruhend, wenn Box3D zu viel kostet | 🔜 erst bei Bedarf |
+| C8 | **Wohin der Löser bei Figuren rechnet**: rund 11 µs je Figur und Schritt im Löser, für 15 Gelenke mit Federn, Grenzen und der Hilfe für das Becken und für die Kontakte mit dem Boden. Erst getrennt messen, etwa mit Figuren ohne Grenzen oder ohne Boden, dann entscheiden | 🔜 |
+
+## Kontakte der Figuren (`ragdoll-5`)
+
+Geprüft am 24. Oktober 2026 nach Kapitel 27.13 A der Roadmap des Spiels: Filter für ungeeignete Paare, nachdem die
+tatsächlichen Kosten der Kontakte gemessen sind. Die Knochen einer Figur, die kein Gelenk verbindet, kollidieren
+miteinander (`nbRigDef::selfCollision`), Eltern und Kinder nicht. In der Ruhepose überlappt kein solches Paar: Am
+nächsten liegen Unterarme und Becken und Hände und Oberschenkel, mit 2 cm Luft, mehr als der spekulative Abstand von
+Box3D. Box3D legt für sie trotzdem Kontaktpaare an, sobald sich ihre Hüllquader samt Rand überlappen, und prüft jedes
+Paar in jedem Schritt in der Kollision. `nebenan_benchmark figures 2 noself` rechnet die Städte mit Figuren ohne
+Kollisionen zwischen den Knochen einer Figur. Gemessen auf dem Ryzen 7 7800X3D mit MinGW und 2 Threads, je zwei Läufe im
+Wechsel, die ruhige Stadt mit 50 Figuren:
+
+| 50 Figuren, ruhige Stadt | Kontaktpaare höchstens | Box3D-Schritt | Kollision | Löser |
+| --- | ---: | ---: | ---: | ---: |
+| mit Kollisionen zwischen den Knochen | 851 | 0,615 ms | 0,040 ms | 0,552 ms |
+| ohne | 423 | 0,588 ms | 0,023 ms | 0,544 ms |
+
+Die Paare zwischen den Knochen einer Figur sind die Hälfte aller Kontaktpaare, eine einzelne Figur hat im Fallen und
+Liegen bis zu 13 davon. Sie kosten aber nur 0,027 ms für 50 Figuren, 0,5 µs je Figur und Schritt oder 4 % ihrer Zeit in
+Box3D, fast alles in der Kollision, denn die meisten berühren sich nie, und der Löser rechnet an ihnen kaum. Ein Filter
+nur für ungeeignete Paare brächte weniger als das. Er bräuchte eine Filterfunktion von Nebenan an der Box3D-Welt des
+Programms, die Box3D nur einmal je Welt kennt, oder Filtergelenke, die selbst im Löser mitlaufen, und er änderte die
+Bewegung: Ohne die Kollisionen enden die Figuren der ruhigen Stadt anders, mit 3 statt 2 abgebrochenen Versuchen
+aufzustehen und 16 statt 10 Motoren an der Grenze, und Glieder gehen durcheinander durch. Die Balance müsste neu
+abgestimmt werden. Die Zeit der Figuren in Box3D geht in den Löser, rund 11 µs je Figur und Schritt, siehe C8.
+
+Verworfen, mit Grund:
+
+- **Ungeeignete Paare filtern** (27.13 A): höchstens 4 % der Zeit der Figuren in Box3D, ein Filter nur für einen Teil der
+  Paare weniger, dafür eine andere Bewegung und eine neue Abstimmung der Balance, siehe oben.
 
 ## Fazit
 
