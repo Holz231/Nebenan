@@ -389,6 +389,10 @@ typedef struct b3StepContext
 	uint64_t teamStartTicks;
 	uint64_t teamEndTicks;
 	float teamMergeTime;
+
+	// Added for Nebenan: the packs whose bodies and constraints the stages hold, the first ones, with a team those it
+	// solves, see b3SolveOtherPack, and one without packs, which holds all knots, see b3BuildKnots
+	int stagePackCount;
 } b3StepContext;
 
 void b3Solve( b3World* world, b3StepContext* stepContext );

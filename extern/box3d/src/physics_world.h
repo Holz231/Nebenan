@@ -326,7 +326,7 @@ typedef struct b3World
 	int knotGroupBatchCount;
 	int knotCopyCount;
 
-	// Added for Nebenan: the work of the pack a team solved in the last step, see b3Counters::teamWork
+	// Added for Nebenan: the work of the packs a team solved in the last step, see b3Counters::teamWork
 	int teamWork;
 
 	// Added for Nebenan: see b3Counters::teamSample
@@ -378,6 +378,9 @@ typedef struct b3World
 	// Added for Nebenan: the stages of the last step that timed its team, see b3World_GetTeamStages. At the end, where
 	// it keeps the other fields of the world where they were.
 	b3TeamStages teamStages;
+
+	// Added for Nebenan: the packs the team solved in the last step, see b3Counters::teamPackCount
+	int teamPackCount;
 } b3World;
 
 b3World* b3GetUnlockedWorldFromId( b3WorldId id );

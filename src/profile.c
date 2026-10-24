@@ -88,6 +88,7 @@ void nbProfileStep( nbWorld* world )
 		{
 			sums->teamShare += (double)counters.teamWork / (double)counters.islandWork;
 			sums->teamStepCount += 1;
+			sums->teamJoinStepCount += counters.teamPackCount > 1 ? 1 : 0;
 		}
 		if ( 2 * counters.largestIslandWork > counters.islandWork )
 		{
@@ -152,6 +153,7 @@ nbProfile nbWorld_GetProfile( nbWorldId worldId )
 		profile.teamShare = (float)( sums->teamShare / (double)sums->teamStepCount );
 	}
 	profile.teamStepCount = sums->teamStepCount;
+	profile.teamJoinStepCount = sums->teamJoinStepCount;
 
 	if ( sums->wakeCount > 0 )
 	{
@@ -488,7 +490,7 @@ int nbFormatScalingReport( const nbProfile* profiles, int count, char* text, int
 	double freezes = 0.0, thaws = 0.0, steps = 0.0;
 	double overflow = 0.0, knotContacts = 0.0, knotBatches = 0.0, knotGroupBatches = 0.0, knotCopies = 0.0;
 	double island = 0.0, floors[4] = { 0.0, 0.0, 0.0, 0.0 }, islandSteps = 0.0, colorSteps = 0.0;
-	double teamShare = 0.0, teamSteps = 0.0;
+	double teamShare = 0.0, teamSteps = 0.0, teamJoinSteps = 0.0;
 	double wake = 0.0, wakes = 0.0;
 	float longestWake = 0.0f;
 	double workerSteps = 0.0, settleSplits = 0.0, settleShare = 0.0, settleWake = 0.0, settleTasks = 0.0;
@@ -512,6 +514,7 @@ int nbFormatScalingReport( const nbProfile* profiles, int count, char* text, int
 		colorSteps += (double)p->colorStepCount;
 		teamShare += p->teamShare * (double)p->teamStepCount;
 		teamSteps += (double)p->teamStepCount;
+		teamJoinSteps += (double)p->teamJoinStepCount;
 		wake += p->wakeTime * (double)p->wakeCount;
 		wakes += (double)p->wakeCount;
 		longestWake = b3MaxFloat( longestWake, p->longestWake );
@@ -543,8 +546,9 @@ int nbFormatScalingReport( const nbProfile* profiles, int count, char* text, int
 		if ( teamSteps > 0.0 )
 		{
 			nbAppend( &out,
-					  "A team of all workers solved the largest pack in %.1f %% of these steps, it held %.1f %% of their work\n",
-					  100.0 * teamSteps / islandSteps, 100.0 * teamShare / teamSteps );
+					  "A team of all workers solved the largest pack in %.1f %% of these steps, with further packs in %.1f %% of "
+					  "them, and held %.1f %% of their work\n",
+					  100.0 * teamSteps / islandSteps, 100.0 * teamJoinSteps / teamSteps, 100.0 * teamShare / teamSteps );
 		}
 		else
 		{

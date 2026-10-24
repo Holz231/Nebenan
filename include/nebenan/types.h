@@ -613,11 +613,13 @@ typedef struct nbProfile
 	int islandStepCount;
 	int colorStepCount;
 
-	/// The steps in which a team of all workers solved the largest pack of islands stage by stage, while they solved the
-	/// other packs whole in between, see b3Counters::teamWork, and the share of that pack in the work of the solver, mean
-	/// over those steps. Box3D takes a team once the pack holds clearly more than the even share of a worker.
+	/// The steps in which a team of all workers solved the largest packs of islands stage by stage, while they solved the
+	/// other packs whole in between, see b3Counters::teamWork, and the share of those packs in the work of the solver, mean
+	/// over those steps. Box3D takes a team once the largest pack holds clearly more than the even share of a worker, and
+	/// with it every further pack above that share. teamJoinStepCount counts the steps with more than one pack in the team.
 	int teamStepCount;
 	float teamShare;
+	int teamJoinStepCount;
 
 	/// The constraints in the overflow of Box3D's constraint graph per step, the contacts of them that Box3D solves in
 	/// batches of knots, several at once, and those batches, see b3Counters::knotContactCount

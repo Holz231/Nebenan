@@ -491,26 +491,41 @@ Rechnung des Lösers ändert sich nicht. Die neuen Felder stehen am Ende von `b3
 bei ×1 auf der VM mit einem Thread 3 bis 6 % mehr, gleichmäßig über alle Stufen, obwohl mit einem Thread nichts davon
 läuft.
 
+**Große Pakete im Team.** Das Team aus „Ein Team für das größte Paket“ rechnete nur das erste Paket. Hielt eine zweite
+Insel ebenfalls mehr als den Anteil eines Threads, rechnete ein Worker ihr Paket allein, und am Ende wartete das Team
+auf ihn: beim Abriss in der Demo auf der VM mit 4 Threads in einem Drittel der Schritte mit Team, auf dem Ryzen mit 8
+Threads ein Viertel der Zeit des Teams, siehe „Was nach der letzten Stufe bleibt“ in
+[`docs/Optimierungen.md`](../docs/Optimierungen.md). Jetzt nimmt das Team mit dem ersten Paket jedes weitere, das mehr
+als den Anteil eines Threads hält (`B3_TEAM_JOIN_NUM` und `B3_TEAM_JOIN_DEN` in `src/solver.c`). Die Pakete stehen nach
+ihrer Arbeit in der Reihenfolge, und ihre Körper, die Bedingungen jeder Farbe, die Bündel und Gruppen der Knoten und der
+Überlauf liegen Paket für Paket hintereinander. So umfassen die Blöcke der Stufen die ersten
+`b3StepContext::stagePackCount` Pakete statt eines. Die Stufen bleiben dieselben und bekommen nur mehr Blöcke, die
+Gruppen der Knoten aller Pakete des Teams rechnen in derselben Stufe, und die Kopien ihrer Knoten mittelt der aufrufende
+Thread danach. Die übrigen Pakete nehmen sich die Worker wie bisher. Zwei Inseln teilen sich keinen bewegten Körper, und
+jeder Körper durchläuft seine Schritte in derselben Reihenfolge wie in seinem Paket, die Ergebnisse bleiben dieselben.
+`b3Counters::teamPackCount` sagt, wie viele Pakete das Team im letzten Schritt rechnete, und `b3Counters::teamWork`
+zählt ihre ganze Arbeit.
+
 Die erste, die zweite, die vierte bis achte, die zehnte, die dreizehnte bis einunddreißigste, die dreiunddreißigste bis
-fünfunddreißigste, die neununddreißigste bis dreiundvierzigste, die fünfundvierzigste bis siebenundvierzigste und die
-neunundvierzigste ändern an den Ergebnissen nichts. Die dritte und die neunte ändern sie in den letzten Bits, dafür
-hängen sie nicht mehr davon ab, in welcher Reihenfolge Formen in die Bäume kommen. Die elfte ändert sie, weil Kontakte
-zu anderen Zeitpunkten entstehen, die zwölfte, weil sie weniger Punkte bekommen, die zweiunddreißigste, weil die
-Kontakte eines Knotens gebündelt gegen Kopien rechnen statt nacheinander, die sechsunddreißigste, weil die Kerne
-dieselbe Rechnung anders zusammenfassen und deshalb anders runden, die siebenunddreißigste, weil die Suche andere
-Kantenpaare aussiebt und getrennte Hüllen erkennt, die die alte übersah, und die achtundvierzigste, weil die Bündel der
-Knoten dichter liegen und die Knoten großer Inseln in Gruppen gegen eigene Kopien rechnen. Die achtunddreißigste ändert
-sie nur, wo Kugeln Kugeln oder Kapseln berühren, Kontakte ohne vorausschauende Punkte rechnen oder der PreSolve-Callback
-Kontakte abschaltet, in Nebenans Szenen nicht. Die vierundvierzigste ändert sie nur, wo die volle zweite Suche einen
-Kontakt zwischen Hüllen ergab, die eine Fläche trennt. Die Ergänzungen stehen in `CMakeLists.txt`, `src/CMakeLists.txt`,
-`include/box3d/base.h`, `include/box3d/box3d.h`, `include/box3d/types.h`, `include/box3d/constants.h`, `src/core.h`,
-`src/core.c`, `src/shape.h`, `src/shape.c`, `src/body.c`, `src/contact.h`, `src/contact.c`, `src/contact_solver.h`,
-`src/contact_solver.c`, `src/contact_solver_wide.inl`, `src/wide8.c`, `src/simd.c`, `src/simd_avx2.h`,
-`src/constraint_graph.h`, `src/manifold.h`, `src/convex_manifold.c`, `src/convex_manifold_avx2.c`,
-`src/world_snapshot.c`, `src/recording.c`, `src/solver.h`, `src/solver.c`, `src/broad_phase.h`, `src/broad_phase.c`,
-`src/dynamic_tree.h`, `src/dynamic_tree.c`, `src/parallel_for.c`, `src/platform.h`, `src/scheduler.h`,
-`src/scheduler.c`, `src/timer.c`, `src/physics_world.h` und `src/physics_world.c`, jeweils mit „Added for Nebenan“
-markiert.
+fünfunddreißigste, die neununddreißigste bis dreiundvierzigste, die fünfundvierzigste bis siebenundvierzigste, die
+neunundvierzigste und die fünfzigste ändern an den Ergebnissen nichts. Die dritte und die neunte ändern sie in den
+letzten Bits, dafür hängen sie nicht mehr davon ab, in welcher Reihenfolge Formen in die Bäume kommen. Die elfte ändert
+sie, weil Kontakte zu anderen Zeitpunkten entstehen, die zwölfte, weil sie weniger Punkte bekommen, die
+zweiunddreißigste, weil die Kontakte eines Knotens gebündelt gegen Kopien rechnen statt nacheinander, die
+sechsunddreißigste, weil die Kerne dieselbe Rechnung anders zusammenfassen und deshalb anders runden, die
+siebenunddreißigste, weil die Suche andere Kantenpaare aussiebt und getrennte Hüllen erkennt, die die alte übersah, und
+die achtundvierzigste, weil die Bündel der Knoten dichter liegen und die Knoten großer Inseln in Gruppen gegen eigene
+Kopien rechnen. Die achtunddreißigste ändert sie nur, wo Kugeln Kugeln oder Kapseln berühren, Kontakte ohne
+vorausschauende Punkte rechnen oder der PreSolve-Callback Kontakte abschaltet, in Nebenans Szenen nicht. Die
+vierundvierzigste ändert sie nur, wo die volle zweite Suche einen Kontakt zwischen Hüllen ergab, die eine Fläche trennt.
+Die Ergänzungen stehen in `CMakeLists.txt`, `src/CMakeLists.txt`, `include/box3d/base.h`, `include/box3d/box3d.h`,
+`include/box3d/types.h`, `include/box3d/constants.h`, `src/core.h`, `src/core.c`, `src/shape.h`, `src/shape.c`,
+`src/body.c`, `src/contact.h`, `src/contact.c`, `src/contact_solver.h`, `src/contact_solver.c`,
+`src/contact_solver_wide.inl`, `src/wide8.c`, `src/simd.c`, `src/simd_avx2.h`, `src/constraint_graph.h`,
+`src/manifold.h`, `src/convex_manifold.c`, `src/convex_manifold_avx2.c`, `src/world_snapshot.c`, `src/recording.c`,
+`src/solver.h`, `src/solver.c`, `src/broad_phase.h`, `src/broad_phase.c`, `src/dynamic_tree.h`, `src/dynamic_tree.c`,
+`src/parallel_for.c`, `src/platform.h`, `src/scheduler.h`, `src/scheduler.c`, `src/timer.c`, `src/physics_world.h` und
+`src/physics_world.c`, jeweils mit „Added for Nebenan“ markiert.
 `B3_HAS_UNIQUE_HULLS`, `B3_HAS_SHAPE_BATCH`, `B3_HAS_SHAPE_CONTACT_LISTS`, `B3_HAS_EXTERNAL_HULLS`,
 `B3_HAS_BODY_PREFETCH`, `B3_HAS_STEP_GUARD`, `B3_HAS_PREVIOUS_TRANSFORM` und `B3_HAS_STATIC_OVERLAP` zeigen die zweite,
 die vierte, die fünfte, die sechste, die neunzehnte, die dreißigste, die fünfunddreißigste und die zweiundvierzigste an.

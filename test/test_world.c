@@ -1255,8 +1255,9 @@ static int KnotTest( void )
 // With enough contacts at knots Box3D deals their batches out to groups that the threads solve at once, and a knot in
 // several groups has a copy of itself in each, see b3BuildKnots. Two heavy plates on 400 and 256 small cubes make two
 // such knots in two islands. The plates must come to rest on the cubes as in KnotTest, and the same in every bit with
-// every number of workers: one solves the groups one after the other, two solve the plates whole in packs, four solve the
-// larger plate as a team with a thread per group and the smaller in a pack meanwhile. Four lanes must give the same.
+// every number of workers: one solves the groups one after the other, two solve the plates whole in packs, four solve
+// both plates as one team with a thread per group, since the smaller holds more than the share of a thread, see
+// b3Counters::teamPackCount. Four lanes must give the same.
 static int KnotGroupTest( void )
 {
 	const int sides[2] = { 20, 16 };
@@ -1298,7 +1299,7 @@ static int KnotGroupTest( void )
 				b3CreateHullShape( plates[p], &shapeDef, &slab.base );
 			}
 
-			int knotContacts = 0, rowBatches = 0, copies = 0, packSteps = 0, teamSteps = 0;
+			int knotContacts = 0, rowBatches = 0, copies = 0, packSteps = 0, teamSteps = 0, joinSteps = 0;
 			for ( int step = 0; step < 240; ++step )
 			{
 				nbWorld_Step( scene.world, 1.0f / 60.0f, 4 );
@@ -1308,6 +1309,7 @@ static int KnotGroupTest( void )
 				copies = b3MaxInt( copies, counters.knotCopyCount );
 				packSteps += counters.islandWork > 0 && counters.teamWork == 0 ? 1 : 0;
 				teamSteps += counters.teamWork > 0 ? 1 : 0;
+				joinSteps += counters.teamPackCount > 1 ? 1 : 0;
 			}
 
 			for ( int p = 0; p < 2; ++p )
@@ -1336,12 +1338,14 @@ static int KnotGroupTest( void )
 			if ( pass < 3 )
 			{
 				printf( "  %d worker%s: %d contacts at knots, %d batches of them in a row, %d copies, packs in %d steps, a team "
-						"in %d\n",
-						workers[pass], workers[pass] == 1 ? "" : "s", knotContacts, rowBatches, copies, packSteps, teamSteps );
+						"in %d, with both plates in %d\n",
+						workers[pass], workers[pass] == 1 ? "" : "s", knotContacts, rowBatches, copies, packSteps, teamSteps,
+						joinSteps );
 			}
 			ENSURE( copies > 0 && rowBatches < knotContacts / 8 );
 			ENSURE( pass != 1 || packSteps > 0 );
-			ENSURE( pass != 2 || teamSteps > 0 );
+			ENSURE( pass != 2 || ( teamSteps > 0 && joinSteps > 0 ) );
+			ENSURE( joinSteps <= teamSteps );
 			DestroyScene( &scene );
 		}
 		b3SetSIMDWidth( 0 );
@@ -4828,6 +4832,7 @@ static int TaskSystemTest( void )
 		int maxAwake = 0;
 		int maxTasks = 0;
 		int teamSteps = 0;
+		int joinSteps = 0;
 		int timedSteps = 0;
 		for ( int i = 0; i < 180; ++i )
 		{
@@ -4836,7 +4841,9 @@ static int TaskSystemTest( void )
 			maxAwake = b3MaxInt( maxAwake, counters.awakeContactCount );
 			maxTasks = b3MaxInt( maxTasks, counters.taskCount );
 			teamSteps += counters.teamWork > 0 ? 1 : 0;
+			joinSteps += counters.teamPackCount > 1 ? 1 : 0;
 			timedSteps += counters.teamSample;
+			ENSURE( ( counters.teamWork > 0 ) == ( counters.teamPackCount > 0 ) );
 			ENSURE( counters.teamSample == 0 ||
 					( counters.teamWork > 0 && 2 <= counters.teamWorkerCount && counters.teamWorkerCount <= 4 ) );
 
@@ -4875,10 +4882,11 @@ static int TaskSystemTest( void )
 		// thread lie within the time of its team.
 		nbProfile profile = nbWorld_GetProfile( scene.world );
 		ENSURE( profile.teamSampleCount == timedSteps && timedSteps <= teamSteps );
+		ENSURE( profile.teamJoinStepCount == joinSteps && joinSteps <= teamSteps );
 		if ( pass == 1 )
 		{
-			printf( "  team in %d of 180 steps, %d of them timed, overflow alone %.3f of %.3f ms\n", teamSteps, timedSteps,
-					profile.teamOverflow, profile.teamTime );
+			printf( "  team in %d of 180 steps, %d of them with further packs, %d timed, overflow alone %.3f of %.3f ms\n",
+					teamSteps, joinSteps, timedSteps, profile.teamOverflow, profile.teamTime );
 		}
 
 		if ( timedSteps > 0 )

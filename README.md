@@ -787,7 +787,7 @@ Wo die Zeit der Schritte hingeht, sagt `nbWorld_GetProfile`, pro Schritt seit de
 `nbWorld_ResetProfile`: die Stufen des Box3D-Schritts samt der Teile, die auf dem aufrufenden Thread allein laufen, der
 Überlauf des Constraint-Graphen mit den Kontakten, die Box3D an Knoten bündelt, und wie viele dieser Bündel ein Thread
 nacheinander rechnet, die Teile des Updates, die Einschläge, Erstarren und Auftauen, die Zellen der Brüche, der Anteil
-der größten Insel an der Arbeit des Lösers, wie oft ein Team aller Threads das größte Paket von Inseln rechnet, wo
+der größten Insel an der Arbeit des Lösers, wie oft ein Team aller Threads die größten Pakete von Inseln rechnet, wo
 dessen Zeit hingeht und wie sich Arbeit und Warten auf seine Stufen und Farben verteilen, wie lange ein schlafender
 Worker braucht, bis er anläuft, und ab wie viel Arbeit die Worker deshalb helfen. Ist dieselbe Arbeit mit verschieden
 vielen Threads gemessen, rechnet die Bibliothek aus, was davon parallel läuft und was mit mehr Threads bleibt:

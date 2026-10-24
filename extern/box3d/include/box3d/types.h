@@ -671,9 +671,10 @@ typedef struct b3Counters
 	int knotGroupBatchCount;
 	int knotCopyCount;
 
-	/// Added for Nebenan: the work of the largest pack of islands, as islandWork weighs it, if a team of all workers solved
-	/// it in the last step, stage by stage with a barrier after each, while they solved the other packs whole in between.
-	/// A team takes a pack that holds clearly more than the even share of a worker. Zero if the step had none.
+	/// Added for Nebenan: the work of the largest packs of islands, as islandWork weighs it, if a team of all workers solved
+	/// them in the last step, stage by stage with a barrier after each, while they solved the other packs whole in between.
+	/// A team takes the largest pack once it holds clearly more than the even share of a worker, and with it every further
+	/// pack above that share, see teamPackCount. Zero if the step had none.
 	int teamWork;
 
 	/// Added for Nebenan: one if the last step timed its team, see b3Profile::teamTime, and then its threads, the calling one
@@ -682,6 +683,9 @@ typedef struct b3Counters
 	int teamWorkerCount;
 	int teamStageCount;
 	int teamYieldCount;
+
+	/// Added for Nebenan: the packs the team of the last step solved, see teamWork, zero if the step had none
+	int teamPackCount;
 } b3Counters;
 
 /// Added for Nebenan: the rows of b3TeamStages, the stages of a team by what they solve. The stages that prepare the
