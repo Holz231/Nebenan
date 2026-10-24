@@ -1045,6 +1045,16 @@ letzten Block. Was die Tabelle mit 8 Threads auf dem Ryzen zeigt, entscheidet, w
 [docs/Roadmap.md](docs/Roadmap.md). Die Ergebnisse bleiben bitgleich, und ein Schritt kostet gepaart gegen `kollaps-7`
 gleich viel.
 
+Seit `kollaps-9` rechnet das Team nicht nur das größte Paket von Inseln, sondern auch jedes weitere, das mehr als das
+Doppelte des Anteils eines Threads hält, siehe „Große Pakete im Team“ in [`extern/README.md`](extern/README.md). Vorher
+rechnete ein Thread ein solches Paket allein, und das Team wartete am Ende auf ihn, auf dem Ryzen 7 7800X3D mit 8
+Threads ein Viertel seiner Zeit. Mit 8 Threads nimmt das Team beim Abriss in der Demo nach den Inseln auf der VM in rund
+40 % seiner Schritte ein zweites Paket mit, mit 4 Threads nie, denn darunter rechnet ein Thread allein das Paket
+schneller, als das Team es mitrechnen könnte. `nbWorld_GetProfile` zählt in `nbProfile::teamJoinStepCount`, wie oft
+weitere Pakete dazukommen, ohne eigenen Aufruf. Die Ergebnisse bleiben bitgleich, und auf der VM mit 4 Threads kostet
+ein Schritt gepaart gegen `kollaps-8` gleich viel. Was es mit 8 Threads bringt, ist auf dem Ryzen nachzumessen, siehe
+[docs/Roadmap.md](docs/Roadmap.md).
+
 Die teuersten Frames folgen auf einen Einsturz: Der Schutt um die Reste der Etage taut auf, und Box3D legt im nächsten
 Schritt Tausende neuer Kontakte an. Das ist echte Arbeit, das meiste davon fällt danach wirklich, siehe
 [`docs/Optimierungen.md`](docs/Optimierungen.md).
