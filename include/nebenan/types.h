@@ -1018,6 +1018,125 @@ typedef struct nbClipDef
 	bool loop;
 } nbClipDef;
 
+/// What the balance of a figure does, see nbArticulation_EnableBalance
+typedef enum nbBalanceState
+{
+	/// No balance: the figure follows its motors and its clip, or hangs passive
+	nb_balanceOff,
+
+	/// The feet carry the figure and the capture point lies within their support
+	nb_balanceStanding,
+
+	/// A foot swings to a free spot where the support catches the capture point
+	nb_balanceStepping,
+
+	/// Balance is lost: the upright hold lets go, the motors turn soft and hold a protective pose
+	nb_balanceFalling,
+
+	/// The figure lies at rest and waits until it can get up safely
+	nb_balanceDown,
+
+	/// The figure gets up, its chest lifted by a bounded force, a game aid like the upright hold
+	nb_balanceGettingUp,
+} nbBalanceState;
+
+/// How a biped keeps its balance, see nbArticulation_EnableBalance. Initialize with nbDefaultBalanceDef, which fits the
+/// humanoid of nbMakeHumanoidBones.
+typedef struct nbBalanceDef
+{
+	/// The bones of the legs, left then right. The thighs hang from the root, the pelvis, the shins from the thighs on a
+	/// hinge about their local x axis, the feet from the shins. Thighs and shins point along their local y axis to the
+	/// next joint, the feet are boxes whose bottom is the sole. The pelvis faces its local z axis. The humanoid of
+	/// nbMakeHumanoidBones is built that way.
+	int thighs[2];
+	int shins[2];
+	int feet[2];
+
+	/// Bones that the protective pose of a fall moves, -1 for none: the torso, the head, the upper arms and forearms, left
+	/// then right. Getting up lifts the torso, or the root without one.
+	int torso;
+	int head;
+	int upperArms[2];
+	int forearms[2];
+
+	/// A step starts once the capture point lies this far outside the support of the feet in two updates in a row, in
+	/// meters. After a step the figure stands again once the capture point lies within this margin.
+	float stepMargin;
+
+	/// The farthest an ankle steps from under its hip, in meters
+	float maxStepLength;
+
+	/// Seconds a step takes, and how high the foot swings, in meters
+	float stepTime;
+	float stepHeight;
+
+	/// Steps in a row before the figure gives up and falls
+	int maxSteps;
+
+	/// The figure falls once its pelvis tilts this far from upright, in radians, or its center of mass sinks below this
+	/// part of its height standing
+	float fallAngle;
+	float fallHeight;
+
+	/// Motors while the figure falls and lies, softer than standing. A falling figure has no upright hold.
+	nbMotorProfile fallProfile;
+
+	/// The figure gets up on its own once it lay still this long, in seconds, and the place is safe: ground under it,
+	/// room to stand and nothing on it or moving against it. Zero, it stays down.
+	float getUpDelay;
+
+	/// Getting up, the lift fades over a third of this time, in seconds, once the figure stands upright over its feet, and
+	/// the figure gives up and lies again after four times it. The most force that lifts the chest, times the weight of
+	/// the figure. The lift is a game aid like the upright hold, no muscle.
+	float getUpTime;
+	float getUpForce;
+
+	/// The most torque of the upright hold while the figure gets up, in newton meters, at least that of the motor profile.
+	/// It turns the pelvis up as the figure sits up, a game aid as well.
+	float getUpTorque;
+
+	/// Used internally to detect a valid definition. DO NOT SET.
+	int internalValue;
+} nbBalanceDef;
+
+/// The balance of a figure as the last update saw it, see nbArticulation_GetBalance
+typedef struct nbBalance
+{
+	nbBalanceState state;
+
+	/// Seconds in this state
+	float stateTime;
+
+	/// The center of mass of the figure and its velocity
+	b3Pos center;
+	b3Vec3 velocity;
+
+	/// Where the center of mass would come to rest over the ground if the figure stopped it, on the ground: the center of
+	/// mass ahead by its velocity over the frequency of a pendulum as long as its height, see the roadmap 27.9
+	b3Pos capturePoint;
+
+	/// How far the capture point lies outside the support, in meters, negative inside. FLT_MAX without a foot on the
+	/// ground.
+	float captureMargin;
+
+	/// The support: the corners of the soles on the ground, counter clockwise around up
+	b3Pos support[8];
+	int supportCount;
+
+	/// Which feet carry the figure, left and right
+	bool footContact[2];
+
+	/// The foot that steps, 0 left, 1 right, -1 none, and where its ankle lands
+	int stepFoot;
+	b3Pos stepTarget;
+
+	/// Steps in a row since the figure last stood
+	int stepCount;
+
+	/// The figure lies on its back, else on its front or side
+	bool onBack;
+} nbBalance;
+
 /// The bones of the figure that nbMakeHumanoidBones builds, in the order of its array
 typedef enum nbHumanoidBone
 {

@@ -83,7 +83,8 @@ struct Ball
 };
 
 // A figure of the library with the meshes of its bones, which follow the bodies, and the thinner dark meshes of the pose
-// its joints drive to, drawn over them, see BuildFigureScene
+// its joints drive to, drawn over them, see BuildFigureScene. With balance two flat markers on the ground show its
+// capture point and where a step lands.
 struct FigureVisual
 {
 	nbArticulationId id;
@@ -91,6 +92,10 @@ struct FigureVisual
 	std::vector<int> boneMeshes;
 	std::vector<int> targetSlots;
 	std::vector<int> targetMeshes;
+	int captureSlot = -1;
+	int captureMesh = -1;
+	int stepSlot = -1;
+	int stepMesh = -1;
 };
 
 // The slots of the chunks of a body, by the index of the body in Box3D, so the poses of a frame find them quickly, and
@@ -104,13 +109,15 @@ struct BodySlots
 };
 
 
-// What the menu shows of a figure: the largest error and motor load of its joints, its hits and the time of its clip
+// What the menu shows of a figure: the largest error and motor load of its joints, its hits, the time of its clip and its
+// balance
 struct FigureView
 {
 	float error = 0.0f;
 	float load = 0.0f;
 	int hits = 0;
 	float clipTime = 0.0f;
+	nbBalance balance = {};
 };
 
 // What the menu and the report show of the worlds and the city, read on the main thread while no job runs
@@ -364,14 +371,17 @@ struct App
 	std::vector<uint16_t> ballIndices;
 
 	// The figures of the figure scene, the clip of three keyframes the second one plays, the motors of the figures that
-	// stand, whether the pose they drive to is drawn, how hard a shot hits them and the number of the next hit
+	// stand and whether they keep their balance, whether the pose they drive to and their balance are drawn, how hard a
+	// shot hits them and the number of the next hit
 	std::vector<FigureVisual> figures;
 	std::vector<b3Quat> clipPoses;
 	std::vector<nbKeyframe> clipKeyframes;
 	nbClipDef armClip = {};
 	nbMotorProfile figureProfile = nbDefaultMotorProfile();
 	bool figureMotors = true;
+	bool figureBalance = true;
 	bool showTargets = true;
+	bool showBalance = true;
 	float hitImpulse = 60.0f;
 	uint32_t hitCounter = 0;
 	std::vector<GpuVertex> vertexScratch;
@@ -1007,6 +1017,20 @@ static void AddFigureVisual( App& app, nbArticulationId id, const nbBoneDef* bon
 			}
 		}
 	}
+
+	// The markers of the balance, hidden until UpdateFigures places them
+	for ( int marker = 0; marker < 2; ++marker )
+	{
+		int slot = app.renderer.AllocSlot();
+		b3Vec3 halfExtents = marker == 0 ? b3Vec3{ 0.06f, 0.005f, 0.06f } : b3Vec3{ 0.05f, 0.005f, 0.13f };
+		BuildBoxMesh( app.vertexScratch, app.indexScratch, b3Vec3_zero, halfExtents, marker == 0 ? MaterialBrick : MaterialSteel,
+					  slot );
+		int mesh = app.renderer.AddMesh( app.vertexScratch.data(), (int)app.vertexScratch.size(), app.indexScratch.data(),
+										 (int)app.indexScratch.size(), slot );
+		app.renderer.SetSlotVisible( slot, false );
+		( marker == 0 ? visual.captureSlot : visual.stepSlot ) = slot;
+		( marker == 0 ? visual.captureMesh : visual.stepMesh ) = mesh;
+	}
 	app.figures.push_back( visual );
 }
 
@@ -1033,22 +1057,31 @@ static void MakeArmClip( App& app, int boneCount )
 	app.armClip.loop = true;
 }
 
-// The motors of the figures that stand, as the menu has them
+// The motors of the figures that stand and their balance, as the menu has them. A passive figure has no balance.
 static void ApplyFigureProfile( App& app )
 {
 	nbMotorProfile passive = nbPassiveMotorProfile();
+	nbBalanceDef balance = nbDefaultBalanceDef();
 	for ( size_t i = 0; i < app.figures.size(); ++i )
 	{
 		// The third figure stays passive
 		if ( i < 2 )
 		{
-			nbArticulation_SetMotorProfile( app.figures[i].id, app.figureMotors ? &app.figureProfile : &passive );
+			nbArticulationId id = app.figures[i].id;
+			nbArticulation_SetMotorProfile( id, app.figureMotors ? &app.figureProfile : &passive );
+			bool wanted = app.figureMotors && app.figureBalance;
+			bool has = nbArticulation_GetBalance( id ).state != nb_balanceOff;
+			if ( wanted != has )
+			{
+				nbArticulation_EnableBalance( id, wanted ? &balance : nullptr );
+			}
 		}
 	}
 }
 
-// Three humanoids in front of a brick wall: one stands, one plays the arm clip, one falls passive. The rifle hits them,
-// the wall shows what a thrown figure does to a house.
+// Three humanoids in front of a brick wall: one stands, one plays the arm clip, one falls passive. The two that stand
+// keep their balance with steps, fall and get up. The rifle hits them, the wall shows what a thrown figure does to a
+// house.
 static void BuildFigureScene( App& app )
 {
 	MaterialPreset brick = BrickPreset();
@@ -1073,6 +1106,11 @@ static void BuildFigureScene( App& app )
 		if ( i == 1 )
 		{
 			nbArticulation_PlayClip( id, &app.armClip, 1.0f );
+		}
+		if ( isPassive == false && app.figureMotors && app.figureBalance )
+		{
+			nbBalanceDef balance = nbDefaultBalanceDef();
+			nbArticulation_EnableBalance( id, &balance );
 		}
 		AddFigureVisual( app, id, bones, nb_humanoidBoneCount );
 	}
@@ -1103,11 +1141,33 @@ static void UpdateFigures( App& app )
 			b3WorldTransform pose = b3MulWorldTransforms( drawn, b3InvMulWorldTransforms( root, transforms[i] ) );
 			app.renderer.SetSlot( figure.targetSlots[i], b3ToVec3( pose.p ), pose.q );
 		}
+
+		// The capture point on the ground while the figure is on its feet, and where the swinging foot lands, flat under
+		// its ankle and turned like the figure
+		nbBalance balance = nbArticulation_GetBalance( figure.id );
+		bool upright = balance.state == nb_balanceStanding || balance.state == nb_balanceStepping;
+		bool stepping = balance.state == nb_balanceStepping;
+		app.renderer.SetSlotVisible( figure.captureSlot, app.showBalance && upright );
+		app.renderer.SetSlotVisible( figure.stepSlot, app.showBalance && stepping );
+		if ( upright )
+		{
+			b3Vec3 capture = b3ToVec3( balance.capturePoint );
+			app.renderer.SetSlot( figure.captureSlot, b3Add( capture, { 0.0f, 0.006f, 0.0f } ), b3Quat_identity );
+		}
+		if ( stepping )
+		{
+			b3Vec3 facing = b3RotateVector( root.q, b3Vec3_axisZ );
+			float yaw = b3Atan2( facing.x, facing.z );
+			b3Vec3 target = b3ToVec3( balance.stepTarget );
+			b3Vec3 sole = b3Add( target, b3RotateVector( b3MakeQuatFromAxisAngle( b3Vec3_axisY, yaw ), { 0.0f, 0.0f, 0.09f } ) );
+			sole.y = b3ToVec3( balance.capturePoint ).y + 0.006f;
+			app.renderer.SetSlot( figure.stepSlot, sole, b3MakeQuatFromAxisAngle( b3Vec3_axisY, yaw ) );
+		}
 	}
 }
 
-// One hit on the chest of every figure that stands, backward, with the impulse of the menu
-static void HitChests( App& app )
+// One hit on the chest of every figure that stands, backward or from its right, with the impulse of the menu
+static void HitChests( App& app, b3Vec3 direction )
 {
 	for ( size_t i = 0; i < app.figures.size() && i < 2; ++i )
 	{
@@ -1115,10 +1175,16 @@ static void HitChests( App& app )
 		nbHitDef hit = {};
 		hit.id = ++app.hitCounter;
 		hit.bone = nb_humanoidTorso;
-		hit.impulse = { 0.0f, 0.0f, -app.hitImpulse };
+		hit.impulse = b3MulSV( app.hitImpulse, direction );
 		hit.point = b3Body_GetWorldPoint( torso, { 0.0f, 0.3f, 0.1f } );
 		nbArticulation_ApplyHit( app.figures[i].id, &hit );
 	}
+}
+
+static const char* BalanceName( nbBalanceState state )
+{
+	static const char* names[] = { "ohne Balance", "steht", "macht einen Schritt", "fällt", "liegt", "steht auf" };
+	return names[state];
 }
 
 // Brick walls through all floors with their doors and windows cut out, and concrete floors inside them. The walls are
@@ -1362,6 +1428,10 @@ static void DestroyScene( App& app )
 		{
 			app.renderer.FreeSlot( slot );
 		}
+		app.renderer.RemoveMesh( figure.captureMesh );
+		app.renderer.RemoveMesh( figure.stepMesh );
+		app.renderer.FreeSlot( figure.captureSlot );
+		app.renderer.FreeSlot( figure.stepSlot );
 	}
 	app.figures.clear();
 	app.bodySlots.clear();
@@ -1711,6 +1781,7 @@ static void TakeWorldView( App& app )
 		}
 		figureView.hits = nbArticulation_GetHitCount( figure.id );
 		figureView.clipTime = nbArticulation_GetClipTime( figure.id );
+		figureView.balance = nbArticulation_GetBalance( figure.id );
 		view.figures.push_back( figureView );
 	}
 }
@@ -1946,8 +2017,15 @@ static void DrawUi( App& app )
 		changed |= ImGui::SliderFloat( "Aufrecht halten", &app.figureProfile.uprightTorque, 0.0f, 1000.0f, "%.0f N m" );
 		if ( ImGui::IsItemHovered() )
 		{
-			ImGui::SetTooltip( "Ein äußeres Drehmoment hält das Becken aufrecht, bis hierhin. Kein Muskel, eine\nSpielhilfe anstelle "
-							   "der Balance, bis die Figur Schritte macht. Ein stärkerer Stoß kippt sie." );
+			ImGui::SetTooltip( "Ein äußeres Drehmoment hält das Becken aufrecht, bis hierhin. Kein Muskel, eine\nSpielhilfe. Ohne "
+							   "Balance kippt ein stärkerer Stoß die Figur, mit Balance fängt sie ihn mit Schritten ab." );
+		}
+		changed |= ImGui::Checkbox( "Balance", &app.figureBalance );
+		if ( ImGui::IsItemHovered() )
+		{
+			ImGui::SetTooltip( "An: die linke und die mittlere Figur fangen Stöße mit Schritten ab, fallen mit Schutzhaltung,\n"
+							   "wenn kein Schritt reicht, und stehen wieder auf, sobald sie ruhig liegen und Platz haben.\n"
+							   "Nur mit Motoren." );
 		}
 		if ( changed )
 		{
@@ -1968,15 +2046,40 @@ static void DrawUi( App& app )
 			ImGui::SetTooltip( "Die Pose, zu der die Gelenke ziehen, als dünnes dunkles Skelett über den Knochen.\nWo sie "
 							   "herausschaut, kommt die Figur nicht hin." );
 		}
+		ImGui::SameLine();
+		ImGui::Checkbox( "Balance zeigen", &app.showBalance );
+		if ( ImGui::IsItemHovered() )
+		{
+			ImGui::SetTooltip( "Rot: der Capture Point, wo der Schwerpunkt zur Ruhe käme. Liegt er außerhalb der Füße,\nsetzt "
+							   "die Figur einen Schritt. Dunkel: wohin der Fuß tritt." );
+		}
 		ImGui::SliderFloat( "Treffer", &app.hitImpulse, 5.0f, 300.0f, "%.0f N s" );
 		if ( ImGui::IsItemHovered() )
 		{
-			ImGui::SetTooltip( "Impuls eines Gewehrtreffers auf eine Figur und des Brusttreffers. Mit 20 N s auf die Brust steht\ndie "
-							   "Figur, 120 N s werfen sie um." );
+			ImGui::SetTooltip( "Impuls eines Gewehrtreffers auf eine Figur und des Brusttreffers. Ohne Balance steht die Figur\nbei "
+							   "20 N s auf der Brust, 60 N s werfen sie um. Mit Balance fängt sie 60 N s mit Schritten ab,\n"
+							   "120 N s werfen sie um, dann steht sie wieder auf." );
 		}
 		if ( ImGui::Button( "Brusttreffer" ) )
 		{
-			HitChests( app );
+			HitChests( app, { 0.0f, 0.0f, -1.0f } );
+		}
+		ImGui::SameLine();
+		if ( ImGui::Button( "Seitenstoß" ) )
+		{
+			HitChests( app, { -1.0f, 0.0f, 0.0f } );
+		}
+		ImGui::SameLine();
+		if ( ImGui::Button( "Umwerfen" ) )
+		{
+			for ( size_t i = 0; i < app.figures.size() && i < 2; ++i )
+			{
+				nbArticulation_Knockdown( app.figures[i].id );
+			}
+		}
+		if ( ImGui::IsItemHovered() )
+		{
+			ImGui::SetTooltip( "Die Figuren mit Balance fallen sofort, liegen still und stehen wieder auf." );
 		}
 		ImGui::SameLine();
 		if ( ImGui::Button( "Clip neu starten" ) )
@@ -1992,6 +2095,17 @@ static void DrawUi( App& app )
 			const FigureView& figure = app.view.figures[i];
 			ImGui::Text( "Figur %d: Abweichung %.2f rad, Motorlast %.0f %%, Treffer %d, Clip %.2f s", (int)i + 1, figure.error,
 						 100.0f * figure.load, figure.hits, figure.clipTime );
+			if ( figure.balance.state != nb_balanceOff && figure.balance.supportCount == 0 )
+			{
+				ImGui::Text( "  %s seit %.1f s, Schritte %d, kein Fuß am Boden", BalanceName( figure.balance.state ),
+							 figure.balance.stateTime, figure.balance.stepCount );
+			}
+			else if ( figure.balance.state != nb_balanceOff )
+			{
+				ImGui::Text( "  %s seit %.1f s, Schritte %d, Capture Point %.0f cm %s", BalanceName( figure.balance.state ),
+							 figure.balance.stateTime, figure.balance.stepCount, 100.0f * fabsf( figure.balance.captureMargin ),
+							 figure.balance.captureMargin <= 0.0f ? "innen" : "außen" );
+			}
 		}
 	}
 

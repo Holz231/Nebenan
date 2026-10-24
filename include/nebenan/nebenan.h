@@ -487,4 +487,25 @@ NB_API void nbSampleClip( const nbClipDef* clip, float time, b3Quat* rotations, 
 /// figure.
 NB_API nbArticulationId nbWorld_GetArticulationFromBody( nbWorldId worldId, b3BodyId bodyId, int* bone );
 
+/// Balance for the humanoid of nbMakeHumanoidBones: a step once the capture point lies 3 cm outside the feet, up to
+/// 0.55 m and three steps in a row, a fall beyond 0.6 rad of tilt, and getting up after lying still for a second.
+NB_API nbBalanceDef nbDefaultBalanceDef( void );
+
+/// Give a figure balance, see nbBalanceDef, or take it away with null. In every update after a step the figure measures
+/// its center of mass, the support of its feet and its capture point, see the roadmap 26.14, 27.9 and 28.3. Standing,
+/// the legs follow inverse kinematics to the planted feet and the rest of the body the pose of the program. When the
+/// capture point leaves the support, a foot steps to a free spot on ground that carries it, if one is within reach and
+/// nothing lies in its way. When no step catches the figure, it falls: the upright hold lets go, the motors turn soft
+/// and hold a protective pose, and once the figure lies still on safe ground with room to stand, it gets up, see
+/// nbBalanceDef::getUpDelay. A hit or debris against it while it gets up makes it fall again. Every motion comes from
+/// the joints and bounded forces, nothing is teleported. The figure must not hang passive, see nbMotorProfile.
+/// @return false if the bones do not fit the definition, the figure then has no balance
+NB_API bool nbArticulation_EnableBalance( nbArticulationId articulationId, const nbBalanceDef* def );
+
+/// The balance of a figure as the last update saw it. Its state is nb_balanceOff without balance.
+NB_API nbBalance nbArticulation_GetBalance( nbArticulationId articulationId );
+
+/// Make a figure with balance fall at once, for a hit the game wants to win, see the roadmap 26.4.
+NB_API void nbArticulation_Knockdown( nbArticulationId articulationId );
+
 /** @} */

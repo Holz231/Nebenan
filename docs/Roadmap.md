@@ -19,8 +19,11 @@ beide auf dem Ryzen nachgemessen, und den großen Paketen im Team auf `kollaps-9
 Begründungen und Messwerte stehen in [`Optimierungen.md`](Optimierungen.md), hier nur das Fazit und die Reihenfolge.
 Nach jeder Runde wird der Stand hier nachgetragen.
 
-`ragdoll-1` ist wie `kollaps-1` keine Runde der Physik: Sie baut die Figuren auf Box3D nach Kapitel 27, 32 und 33 der
-Roadmap des Spiels, siehe „Figuren auf Box3D“ unten. Der Benchmark misst dasselbe wie vorher: Nebenan benutzte bis dahin
+`ragdoll-1` und `ragdoll-2` sind wie `kollaps-1` keine Runden der Physik: Sie bauen die Figuren auf Box3D nach Kapitel
+26 bis 28, 32 und 33 der Roadmap des Spiels, siehe „Figuren auf Box3D“ und „Balance“ unten. `ragdoll-2` ändert an der
+Physik nichts, die Balance läuft nur für Figuren, die sie einschalten: Gepaart gegen `ragdoll-1` auf dem 7800X3D, je zwei
+Läufe im Wechsel mit 2 Threads, enden alle Szenen des Benchmarks mit denselben Zahlen, und ein Frame kostet −1,5 bis
++3 %, bei einer Streuung von Lauf zu Lauf bis 5 %. Der Benchmark misst dasselbe wie vorher: Nebenan benutzte bis dahin
 keine Gelenke, und die Ergänzung in Box3D ändert nur Gelenke, deren Feder eine Drehmomentgrenze hat. Gepaart gegen
 `kollaps-10` auf dem 7800X3D, je zwei Läufe im Wechsel mit 2 Threads, enden alle Szenen des Benchmarks mit denselben
 Zahlen an Bruchstücken, Schutt, Körpern, Kontakten und Etagen, und ein Frame kostet 0,1 bis 1 % mehr, bei einer Streuung
@@ -101,10 +104,62 @@ schwankte die Dehnung zwischen 19 und 61 mm, ohne Richtung.
 | F5 | **Standpose, Clip, Treffer** (33.4 Schritte 2 bis 4) | ✅ Tests: steht 5 s mit 0,004 rad Abweichung; der Drei-Keyframe-Clip läuft ohne Sprung, Fehler bis 0,04 rad, der Ellbogen erreicht 1,00 rad; 20 N s auf die Brust: steht, Gelenke 4 mm gedehnt; 120 N s: der Rumpf gibt 0,18 rad nach, die Figur fällt |
 | F6 | **Wand**: eine passive Figur mit 20 m/s bricht eine Wand über die Kollisionsschäden der Welt (26.16, 27.11) | ✅ Test |
 | F7 | **Determinismus**: zwei Figuren mit Clip und Treffer mit 1 und 4 Threads bitgleich | ✅ Test |
-| F8 | **Balance und Stützschritt** (33.4 Schritt 5, 27.9, 28.3): Schwerpunkt, Stützpolygon, Schrittziel, Knockdown und Recovery mit Übergabe an die Steuerung ohne Sprung (28.4). Bis dahin hält ein äußeres Drehmoment das Becken aufrecht, als Spielhilfe ausgewiesen | 🔜 als Nächstes |
+| F8 | **Balance und Stützschritt** (33.4 Schritt 5, 27.9, 28.3): Schwerpunkt, Stützpolygon, Schrittziel, Knockdown und Recovery mit Übergabe an die Steuerung ohne Sprung (28.4) | ✅ auf `ragdoll-2`, siehe „Balance“ unten |
 | F9 | **Gelenkdehnung beim Aufprall**: 4 bis 6 cm für wenige Schritte. Bitgleich zu beheben nur mit mehr Teilschritten für die Welt oder einer Projektion der Gelenke nach dem Schritt in Box3D; vorher messen, was ein Spiel davon sieht | 🔜 |
 | F10 | **Kosten messen** (27.14): eine Stufe des Profils für die Figuren, Szenen mit 1, 10 und 50 Figuren im Benchmark und in der Demo, p50 bis p99 wie bei den Trümmern | 🔜 |
 | F11 | **Keyframe-Format und Video-Editor** (32.5, 32.6, 33.4 Schritt 6): erst nach F8 | 🔜 |
+
+## Balance (`ragdoll-2`)
+
+Gebaut am 24. Oktober 2026 nach Kapitel 26.13 bis 26.15, 27.9 und 28.3 bis 28.5 der Roadmap des Spiels, Schritt 5 aus
+Kapitel 33.4. Was gebaut ist und wie es sich verhält, steht im README unter „Balance“, „Benutzung“, „Parameter“ und
+„Grenzen“, die Abnahme in `test/test_balance.c`. In der Demo-Szene „Figuren“ halten die beiden stehenden Figuren ihre
+Balance, der Capture Point und das Ziel eines Schritts liegen als Marker auf dem Boden.
+
+| Nr. | Schritt | Stand |
+| ---: | --- | --- |
+| B1 | **Messen** (27.9, 26.14): Schwerpunkt, Fußkontakte auf tragfähigem Boden, Stützfläche als Hülle der Sohlen, Capture Point und sein Abstand zur Stützfläche | ✅ |
+| B2 | **Stand**: Beine per IK zu den Füßen, Becken als gedämpfte Feder über der Mitte der Füße, bei weitem Stand tiefer, übriger Körper in der Pose des Programms | ✅ Test: 3 s ohne Schritt, Schwerpunkt wandert 12 mm |
+| B3 | **Ausgleichsschritt** (28.3, 26.14): Ziel aus dem vorhergesagten Capture Point, Reichweite, Boden, Platz und Weg geprüft, Ziel folgt in den ersten 60 % des Schritts, neue Stützfläche nach der Landung geprüft, bis zu drei Schritte | ✅ Tests: 60 N s von vorn, 50 N s von hinten, 60 N s von der Seite werfen die Figur ohne Balance um, mit Balance steht sie nach zwei Schritten |
+| B4 | **Links und rechts** (28.5 A): gespiegelte Stöße, gespiegelter erster Schritt | ✅ Test: 65 N s, Ziel auf 1 cm gespiegelt, gleiche Zahl Schritte |
+| B5 | **Blockierter Schritt** (28.5 B): kein Schritt in eine Wand, kein Fuß durch sie | ✅ Test: Wand in 32 cm, kein Fuß berührt sie, über eine kniehohe Mauer fällt die Figur |
+| B6 | **Boden weg** (26.14): kein Schritt ins Leere, die Figur fällt | ✅ Test: fällt nach 0,2 s |
+| B7 | **Fallen mit Schutzhaltung** (26.13): Hilfe für das Becken lässt los, weiche Motoren, Arme voraus oder eingerollt | ✅ |
+| B8 | **Aufstehen mit Sicherheitsprüfung** (26.15, 28.4, 28.5 E): Ruhe, Boden, Platz, kein Schutt; Kraft an der Brust als Spielhilfe; Übergabe erst, wenn der Schwerpunkt über den Füßen ruht | ✅ Tests: nach vorn und hinten umgeworfen steht die Figur nach 5,7 und 6,2 s wieder und bleibt stehen; unter einer Platte wartet sie, ohne sie zu berühren |
+| B9 | **Abbruch** (26.15): ein Treffer oder Schutt bricht das Aufstehen ab | ✅ Test: Treffer sofort, ein fallender Block nach 0,18 s |
+| B10 | **Ohne Sprung** (28.4): jede neue Art von Pose blendet ein | ✅ Test: kein Knochen mehr als 9,3 cm in einem Schritt |
+| B11 | **Determinismus**: 1 und 4 Threads bitgleich, der Hash für alle Plattformen festgehalten, nur Rechenarten mit gleichen Bits überall | ✅ Test |
+| B12 | **Aufstehclips** statt der Kraft an der Brust (26.15, 33.4 Schritt 6), Kriechen und Rollen, wenn kein Platz ist | 🔜 mit F11 |
+| B13 | **Schrägen und Stufen**: Füße auf die Neigung des Bodens drehen, Stufen testen | 🔜 |
+| B14 | **Kosten** der Balance je Figur messen, mit F10 | 🔜 |
+
+Fünf Dinge hat die Abstimmung gezeigt. Erstens schwingt der Fuß, den die IK vom aufrechten Becken aus führt, am Ziel
+vorbei, sobald ein Stoß das Becken kippt, und vom Becken aus, wie es ist, schaukelt sich der Schwung über das Rollen des
+Beckens selbst auf. Halb dazwischen trifft er am besten: Von 16 Stößen fing die Balance so alle ab, ganz vom Becken aus
+14, ganz vom aufrechten 13. Zweitens hob ein fast gestrecktes Standbein die Figur in einen Hüpfer, sobald das Becken
+höher stand als gewollt, und im weiten Stand zogen Beine, die ein zu hohes Becken nicht erreichten, die Füße vom Boden.
+Die Beine halten das Becken deshalb tiefer, während es steigt, und nie mehr als 2 cm unter dem, wo es ist, und im weiten
+Stand so tief, dass beide Füße unten bleiben: Hüpfer gab es danach in 104 Stößen keinen mehr, vorher in 16. Drittens
+landete ein Fuß, der unterwegs am Boden schleifte, zu früh und hob wieder ab, und die Figur fiel bei 40 N s, während sie
+35 und 45 N s abfing. Seit ein Fuß nur langsam landet, fängt sie in jeder Richtung bis zu einer festen Stärke ab und
+fällt darüber, ohne Ausreißer dazwischen. Viertens dreht die Hilfe für das Becken einen liegenden Körper nicht auf: Ihre
+Feder rechnet Box3D gegen die Trägheit des leichten Beckens, sie brachte gemessen 150 bis 250 N m statt der erlaubten
+500 N m. Die Kraft hebt deshalb die Brust, nicht das Becken, und der Körper richtet sich an ihr hängend auf. Fünftens
+hielten Hüftmotoren am Anschlag das Becken gekippt, solange die IK belastete Füße unter die Hüfte ziehen wollte, sie
+bleiben deshalb stehen, wo sie stehen.
+
+Verworfen, mit Grund:
+
+- **Steifere Motoren für die Schritte**: Mit 1600 statt 800 N m je Radian fing die Balance 77 statt 79 von 104 Stößen
+  ab, mit einer Grenze von 250 statt 150 N m dazu 66, mit 2400 N m je Radian und 300 N m 58. Der Fuß verfehlt sein Ziel
+  nicht aus Schwäche der Motoren.
+- **Das Becken im Schritt absenken**, damit das Bein sein fernes Ziel erreicht: 39 und 36 statt 79 von 104 Stößen, die
+  Figur sank zu tief und fiel.
+- **Schwungbahn schneller als der Schritt**, der Fuß über dem Ziel nach 75 % der Zeit: 6 von 16 Stößen statt 14, er
+  überschwang das Ziel um bis zu 30 cm. Ebenso ein Becken, das um die Verzögerung der Motoren vorausgerechnet wird, 7 von
+  16, und eine Höchstgeschwindigkeit für den Fuß, 7 von 16.
+- **Aufstehen über Knien und Aufsitzen**: Auf Kniehöhe gehalten, drehte die Hilfe für das Becken den liegenden Körper
+  nicht auf, die Figur blieb liegen, bis die Zeit ablief. Aufstehen geht deshalb über die volle Höhe.
 
 ## Fazit
 

@@ -195,7 +195,7 @@ float nbMakeHumanoidBones( float height, float mass, nbBoneDef* bones, int capac
 //----------------------------------------------------------------------------------------------------------------------
 // Lookup
 
-static nbArticulation* nbGetArticulationFromId( nbArticulationId id, nbWorld** worldOut )
+nbArticulation* nbGetArticulationFromId( nbArticulationId id, nbWorld** worldOut )
 {
 	if ( id.index1 < 1 || id.world0 >= NB_MAX_WORLDS )
 	{
@@ -241,6 +241,25 @@ static void nbMapBone( nbWorld* world, b3BodyId bodyId, int articulation, int bo
 		world->bodyToBone.count = bodyIndex + 1;
 	}
 	world->bodyToBone.data[bodyIndex] = (nbBoneRef){ articulation, bone };
+}
+
+bool nbIsArticulationBody( const nbWorld* world, int index, b3BodyId bodyId )
+{
+	int bodyIndex = bodyId.index1 - 1;
+	if ( bodyIndex < 0 || bodyIndex >= world->bodyToBone.count )
+	{
+		return false;
+	}
+
+	nbBoneRef ref = world->bodyToBone.data[bodyIndex];
+	if ( ref.articulation != index )
+	{
+		return false;
+	}
+
+	// The body at the index may be another one by now
+	b3BodyId stored = world->articulations.data[index].bones[ref.bone].bodyId;
+	return stored.index1 == bodyId.index1 && stored.generation == bodyId.generation;
 }
 
 static void nbUnmapBone( nbWorld* world, b3BodyId bodyId )
@@ -327,7 +346,7 @@ static void nbDriveJoint( const nbBone* bone )
 }
 
 // Set the targets of all joints. Wakes the figure when a target moved, so a sleeping figure follows its clip.
-static void nbSetTargets( nbArticulation* articulation, const b3Quat* rotations )
+void nbSetTargets( nbArticulation* articulation, const b3Quat* rotations )
 {
 	bool changed = false;
 	for ( int i = 1; i < articulation->boneCount; ++i )
@@ -353,10 +372,9 @@ static void nbSetTargets( nbArticulation* articulation, const b3Quat* rotations 
 	}
 }
 
-// Apply the motor profile to the joints
-static void nbApplyProfile( nbArticulation* articulation )
+// Apply a motor profile to the joints and the upright hold
+void nbApplyMotorProfile( nbArticulation* articulation, const nbMotorProfile* profile )
 {
-	const nbMotorProfile* profile = &articulation->profile;
 	float stiffness = b3MaxFloat( 0.0f, profile->stiffness );
 	float dampingRatio = b3MaxFloat( 0.0f, profile->dampingRatio );
 	bool enable = stiffness > 0.0f && profile->maxTorque > 0.0f;
@@ -398,6 +416,14 @@ static void nbApplyProfile( nbArticulation* articulation )
 		b3ParallelJoint_SetSpringHertz( articulation->uprightId, hertz );
 		b3ParallelJoint_SetSpringDampingRatio( articulation->uprightId, b3MaxFloat( 0.0f, profile->uprightDampingRatio ) );
 		b3ParallelJoint_SetMaxTorque( articulation->uprightId, b3MaxFloat( 0.0f, profile->uprightTorque ) );
+	}
+}
+
+void nbSetUprightTorque( nbArticulation* articulation, float torque )
+{
+	if ( b3Joint_IsValid( articulation->uprightId ) )
+	{
+		b3ParallelJoint_SetMaxTorque( articulation->uprightId, b3MaxFloat( 0.0f, torque ) );
 	}
 }
 
@@ -499,22 +525,36 @@ void nbUpdateArticulations( nbWorld* world, float timeStep )
 	for ( int i = 0; i < world->articulations.count; ++i )
 	{
 		nbArticulation* articulation = world->articulations.data + i;
-		if ( articulation->isFree || articulation->clipPlaying == false )
+		if ( articulation->isFree )
 		{
 			continue;
 		}
 
-		articulation->clipTime += articulation->clipSpeed * timeStep;
-		float duration = articulation->clipTimes[articulation->clipKeyframeCount - 1];
-		if ( articulation->clipLoop == false && articulation->clipTime >= duration )
+		bool posed = false;
+		if ( articulation->clipPlaying )
 		{
-			// The clip ends on its last pose
-			articulation->clipTime = duration;
-			articulation->clipPlaying = false;
+			articulation->clipTime += articulation->clipSpeed * timeStep;
+			float duration = articulation->clipTimes[articulation->clipKeyframeCount - 1];
+			if ( articulation->clipLoop == false && articulation->clipTime >= duration )
+			{
+				// The clip ends on its last pose
+				articulation->clipTime = duration;
+				articulation->clipPlaying = false;
+			}
+
+			nbSampleArticulationClip( articulation, articulation->pose );
+			posed = true;
 		}
 
-		nbSampleArticulationClip( articulation, articulation->pose );
-		nbSetTargets( articulation, articulation->pose );
+		// Balance takes the pose of the program and sets the targets itself, with the legs and what else it overrides
+		if ( articulation->balancer != NULL )
+		{
+			nbUpdateBalance( world, i, articulation, timeStep );
+		}
+		else if ( posed )
+		{
+			nbSetTargets( articulation, articulation->pose );
+		}
 	}
 }
 
@@ -631,8 +671,52 @@ nbArticulationId nbCreateArticulation( nbWorldId worldId, const nbRigDef* rig, b
 		bone->jointFrame = b3NormalizeQuat( def->jointFrame );
 		bone->target = b3Quat_identity;
 		bone->strength = def->strength;
+		bone->shape = def->shape;
+		bone->center = def->center;
+		bone->halfExtents = def->halfExtents;
+		bone->start = def->start;
+		bone->end = def->end;
+		bone->radius = def->radius;
 		articulation->pose[i] = b3Quat_identity;
 		nbMapBone( world, bodyId, index, i );
+	}
+
+	// How far the figure reaches above and below its root along up, from the shapes at the rest pose
+	articulation->restTop = -FLT_MAX;
+	articulation->restBottom = FLT_MAX;
+	for ( int i = 0; i < rig->boneCount; ++i )
+	{
+		const nbBoneDef* def = rig->bones + i;
+		b3Transform local = b3InvMulWorldTransforms( transforms[0], transforms[i] );
+		b3Vec3 points[8];
+		int pointCount;
+		float radius;
+		if ( def->shape == nb_boxBone )
+		{
+			for ( int k = 0; k < 8; ++k )
+			{
+				b3Vec3 corner = { k & 1 ? def->halfExtents.x : -def->halfExtents.x,
+								  k & 2 ? def->halfExtents.y : -def->halfExtents.y,
+								  k & 4 ? def->halfExtents.z : -def->halfExtents.z };
+				points[k] = b3Add( def->center, corner );
+			}
+			pointCount = 8;
+			radius = 0.0f;
+		}
+		else
+		{
+			points[0] = def->start;
+			points[1] = def->end;
+			pointCount = 2;
+			radius = def->radius;
+		}
+
+		for ( int k = 0; k < pointCount; ++k )
+		{
+			float height = b3Dot( b3TransformPoint( local, points[k] ), articulation->up );
+			articulation->restTop = b3MaxFloat( articulation->restTop, height + radius );
+			articulation->restBottom = b3MinFloat( articulation->restBottom, height - radius );
+		}
 	}
 	nbFree( transforms, sizeof( b3WorldTransform ) * (size_t)rig->boneCount );
 
@@ -764,6 +848,7 @@ static void nbDestroyArticulationAt( nbWorld* world, int index )
 	}
 
 	nbFreeClip( articulation );
+	nbFreeBalancer( articulation );
 	nbFree( articulation->bones, sizeof( nbBone ) * (size_t)articulation->boneCount );
 	nbFree( articulation->pose, sizeof( b3Quat ) * (size_t)articulation->boneCount );
 	articulation->bones = NULL;
@@ -842,7 +927,15 @@ void nbArticulation_SetMotorProfile( nbArticulationId id, const nbMotorProfile* 
 	}
 
 	articulation->profile = *profile;
-	nbApplyProfile( articulation );
+	if ( articulation->balancer != NULL )
+	{
+		// Balance decides when the profile of the program applies, a falling figure keeps its own
+		nbBalanceProfileChanged( articulation );
+	}
+	else
+	{
+		nbApplyMotorProfile( articulation, &articulation->profile );
+	}
 	b3Body_SetAwake( articulation->bones[0].bodyId, true );
 }
 
@@ -861,7 +954,13 @@ void nbArticulation_SetTargetPose( nbArticulationId id, const b3Quat* rotations,
 	}
 
 	nbFreeClip( articulation );
-	nbSetTargets( articulation, rotations );
+	memcpy( articulation->pose, rotations, sizeof( b3Quat ) * (size_t)articulation->boneCount );
+
+	// With balance the next update sets the targets, with what balance overrides
+	if ( articulation->balancer == NULL )
+	{
+		nbSetTargets( articulation, articulation->pose );
+	}
 }
 
 void nbArticulation_PlayClip( nbArticulationId id, const nbClipDef* clip, float speed )
@@ -893,9 +992,12 @@ void nbArticulation_PlayClip( nbArticulationId id, const nbClipDef* clip, float 
 	articulation->clipTime = 0.0f;
 	articulation->clipSpeed = speed;
 
-	// The first pose right away, the update takes it from there
+	// The first pose right away, the update takes it from there. With balance the update sets the targets.
 	nbSampleArticulationClip( articulation, articulation->pose );
-	nbSetTargets( articulation, articulation->pose );
+	if ( articulation->balancer == NULL )
+	{
+		nbSetTargets( articulation, articulation->pose );
+	}
 }
 
 float nbArticulation_GetClipTime( nbArticulationId id )

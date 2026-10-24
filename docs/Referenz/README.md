@@ -40,14 +40,14 @@ nicht mehr bei, V1.4 steht in der Geschichte des Repositorys.
 | 22 | Die CPU bleibt die Quelle der Wahrheit, GPU nur für Darstellung |
 | 23 | Aufzeichnung der langsamsten Bilder und ihrer Ursachen |
 | 24, 25 | Weitere Referenzsysteme: BEPUphysics, Chrono, ReactPhysics3D, Voro++, MuJoCo, PBD, SPlisHSPlasH, Godot, Steam Audio |
-| 26 | Hybride Animation und Trefferreaktionen nach Overgrowth |
-| 27 | Gelenkketten und Motoren auf Box3D. Die Stufen 1 bis 4 der Messmatrix aus 27.14 gebaut auf `ragdoll-1`: Pendel, Drei-Link-Arm, passive und motorisierte Figur, dazu die Federn mit Drehmomentgrenze in Box3D, siehe Figuren im README und `docs/Roadmap.md` |
-| 28 | Übergaben zwischen Steuerung, Animation und Physik |
+| 26 | Hybride Animation und Trefferreaktionen nach Overgrowth. 26.13 bis 26.15, Schutzhaltung, Ausgleichsschritt und Aufstehen mit Sicherheitsprüfung, gebaut auf `ragdoll-2`, das Aufstehen als Spielhilfe ohne Aufstehclips, siehe Balance im README und `docs/Roadmap.md` |
+| 27 | Gelenkketten und Motoren auf Box3D. Die Stufen 1 bis 4 der Messmatrix aus 27.14 gebaut auf `ragdoll-1`: Pendel, Drei-Link-Arm, passive und motorisierte Figur, dazu die Federn mit Drehmomentgrenze in Box3D, siehe Figuren im README und `docs/Roadmap.md`. Schwerpunkt und Capture Point aus 27.9 auf `ragdoll-2` |
+| 28 | Übergaben zwischen Steuerung, Animation und Physik. 28.3, der Ausgleichsschritt, und die Abnahmen A, B und E aus 28.5 gebaut auf `ragdoll-2`, die Übergabe aus 28.4 innerhalb der Bibliothek: Die Figur übernimmt erst, wenn ihr Schwerpunkt über den Füßen ruht. Einen Character Controller, an den sie übergeben könnte, gibt es noch nicht |
 | 29 | Angriffswunsch statt sofortiger Schlag |
 | 30 | Physikbasiertes PvP nach Sifu und Overgrowth |
 | 31 | Keyframe- und prozedurale Humanoid-Animation: Clips, Pose-Graph, Anpassung an die Umwelt |
-| 32 | Physik-Pose-Controller: Zielskelett und Physikskelett, Gelenkmotoren, Treffer als Ereignis, optionaler Video-zu-Keyframe-Editor, Stufenplan P0 bis P5. P0 bis P3 gebaut auf `ragdoll-1`, ohne Stützschritt und Recovery |
-| 33 | Active-Ragdoll-Controller und Keyframes: wie aus wenigen Keyframes eine Bewegung wird, die Reihenfolge für den Bau und die Abnahme. Die Schritte 1 bis 4 aus 33.4 gebaut auf `ragdoll-1`, Schritt 5, Balance und Stützschritt, ist der nächste, siehe `docs/Roadmap.md` |
+| 32 | Physik-Pose-Controller: Zielskelett und Physikskelett, Gelenkmotoren, Treffer als Ereignis, optionaler Video-zu-Keyframe-Editor, Stufenplan P0 bis P5. P0 bis P3 gebaut auf `ragdoll-1`, Stützschritt und Recovery auf `ragdoll-2` |
+| 33 | Active-Ragdoll-Controller und Keyframes: wie aus wenigen Keyframes eine Bewegung wird, die Reihenfolge für den Bau und die Abnahme. Die Schritte 1 bis 4 aus 33.4 gebaut auf `ragdoll-1`, Schritt 5, Balance, Stützschritt, Knockdown und Recovery, auf `ragdoll-2`, Schritt 6, Keyframe-Format und Video-Editor, ist offen, siehe `docs/Roadmap.md` |
 
 Die Reihenfolge aus Kapitel 15:
 

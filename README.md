@@ -43,7 +43,9 @@ gelöscht. Kein Staub, keine Schatten: Jede Millisekunde geht in die Zerstörung
 - Figuren auf Box3D: Gelenkketten aus Körpern in derselben Welt wie die Trümmer, nach Kapitel 27, 32 und 33 der Roadmap
   des Spiels. Ein Rig beschreibt die Knochen, eine Figur hält eine Zielpose mit Federn in den Gelenken, begrenzt im
   Drehmoment, folgt einem Clip aus Keyframes, nimmt einen Treffer genau einmal, fällt als passive Ragdoll und schlägt
-  dabei Wände ein wie eine Kanonenkugel. Ein Humanoid aus 15 Knochen liegt bei (`nbMakeHumanoidBones`)
+  dabei Wände ein wie eine Kanonenkugel. Ein Humanoid aus 15 Knochen liegt bei (`nbMakeHumanoidBones`). Mit Balance
+  fängt er Stöße mit Schritten ab, fällt mit Schutzhaltung, wenn kein Schritt reicht, und steht wieder auf, sobald er
+  still liegt und Platz hat (`nbArticulation_EnableBalance`)
 - Deterministisch: gleiche Eingaben ergeben bitgleich das gleiche Bruchmuster, unter Windows, Linux und macOS,
   auf x64 und ARM
 - PC-Demo für Windows (Direct3D 11), macOS (Metal) und Linux (OpenGL)
@@ -213,10 +215,13 @@ Grafik begrenzt das Zeichnen die Bildzeit.
   ihnen ruht, und kommen von dort zurück. Das Menü zeigt, wie viele Häuser geladen und wie viele gespeichert sind, was
   das Streaming pro Bild kostet und wie viel Speicher Nebenan und Box3D belegen
 - **Figuren**: drei Humanoide der Bibliothek vor einer Ziegelwand. Der linke hält seine Standpose, der mittlere spielt
-  einen Clip aus drei Keyframes, der rechte fällt als passive Ragdoll. Über den Knochen liegt dünn und dunkel die Pose,
-  zu der die Gelenke ziehen. Das Gewehr trifft die Figuren mit dem Impuls aus dem Menü, **Brusttreffer** stößt die
-  beiden stehenden zurück. Das Menü stellt Steifigkeit, Drehmoment und die Hilfe ein, die das Becken aufrecht hält, und
-  zeigt je Figur die größte Abweichung von der Zielpose und die größte Motorlast
+  einen Clip aus drei Keyframes, der rechte fällt als passive Ragdoll. Die beiden stehenden halten ihre Balance: Sie
+  fangen einen Stoß mit Schritten ab oder fallen und stehen wieder auf. Über den Knochen liegt dünn und dunkel die Pose,
+  zu der die Gelenke ziehen, auf dem Boden rot der Capture Point und dunkel das Ziel eines Schritts. Das Gewehr trifft
+  die Figuren mit dem Impuls aus dem Menü, **Brusttreffer** stößt die beiden stehenden zurück, **Seitenstoß** von
+  rechts, **Umwerfen** wirft sie sofort um. Das Menü stellt Steifigkeit, Drehmoment, die Hilfe, die das Becken aufrecht
+  hält, und die Balance ein und zeigt je Figur die größte Abweichung von der Zielpose, die größte Motorlast und was die
+  Balance gerade tut
 
 **Aufrufoptionen**: `--scene 0..4` startet eine Szene, `--fragment-scale 3` setzt die Bruchstückgröße, `--vsync`
 schaltet VSync ein, `--msaa 4` schaltet Kantenglättung ein (Standard aus), `--highdpi` rendert auf hochauflösenden
@@ -527,9 +532,10 @@ für jedes Gelenk aus der Trägheit seiner Knochen um, um die weichste Achse. Di
 gedämpft, so geben ihre Grenzen unter dem Gewicht der Figur um rund 0,1 rad nach statt um bis zu 0,37. Ein Clip
 (`nbClipDef`) aus Keyframes wird kopiert und in jedem Update gesampelt, zwischen zwei Keyframes quaternionisch
 interpoliert, und setzt die Ziele der Gelenke für den nächsten Schritt. Eine Zielpose ist kein garantiertes Ende, die
-Federn sacken unter Last. Bis die Figur Schritte macht, hält ein äußeres Drehmoment das Becken aufrecht, ein
-Parallel-Joint gegen einen statischen Anker mit Drehmomentgrenze, ausdrücklich eine Spielhilfe: Einen Stoß von 20 N s
-auf die Brust steht der Humanoid damit, 120 N s werfen ihn um, und sein Rumpf gibt dabei 0,18 rad nach. Ein Treffer
+Federn sacken unter Last. Ein äußeres Drehmoment hält das Becken aufrecht, ein Parallel-Joint gegen einen statischen
+Anker mit Drehmomentgrenze, ausdrücklich eine Spielhilfe: Ohne Balance steht der Humanoid damit einen Stoß von 20 N s auf
+die Brust, 50 N s von hinten und 60 N s von vorn oder der Seite werfen ihn um, bei 120 N s gibt sein Rumpf 0,18 rad nach.
+Ein Treffer
 (`nbArticulation_ApplyHit`) ist ein Impuls auf einen Knochen, der je Ereignisnummer genau einmal landet, auch wenn ihn
 mehrere Ereignisse melden. Die Knochen melden Treffer-Events wie Kanonenkugeln, so beschädigt eine geworfene Figur Wände
 über die Kollisionsschäden der Welt, ohne eigene Pipeline. Zum Zeichnen gibt es die Knochen, wie die Physik sie hat, und
@@ -537,6 +543,43 @@ die Zielpose auf dem Becken, wie es liegt, zum Überlagern. Gemessen in den Test
 0,004 rad Abweichung, folgt dem Clip bis auf 0,04 rad, und bei harten Aufschlägen dehnen sich Gelenke für wenige
 Schritte um 4 bis 6 cm, bis der Löser sie zurückzieht, siehe Grenzen. Mit jeder Zahl von Threads ergeben die Figuren
 dieselben Bits.
+
+**Balance.** Mit `nbArticulation_EnableBalance` hält ein Zweibeiner seine Balance nach Kapitel 26.13 bis 26.15, 27.9
+und 28.3 bis 28.5 der Roadmap des Spiels, in jedem Update nach dem Schritt und in der Reihenfolge der Figuren. Er misst
+seinen Schwerpunkt und dessen Geschwindigkeit, welche Füße auf tragfähigem Boden stehen, die Stützfläche als konvexe
+Hülle ihrer Sohlen und den Capture Point: den Schwerpunkt, um seine Geschwindigkeit durch die Frequenz eines Pendels
+seiner Höhe weitergerückt. Dort käme er zur Ruhe, wenn die Figur ihn anhielte. Im Stand folgen die Beine per IK den
+Füßen, wo sie stehen, das Becken rückt wie eine gedämpfte Feder zur Mitte der Stützfläche, bei weitem Stand so tief, dass
+beide Füße am Boden bleiben, und der übrige Körper folgt der Pose des Programms. Liegt der Capture Point zwei Updates
+lang mehr als 3 cm außerhalb, tritt ein Fuß aus, dessen anderer Fuß trägt: dorthin, wo der Capture Point bei der
+Landung sein wird, mit der Sohlenmitte 5 cm darüber hinaus, ohne die Beine zu kreuzen, in Reichweite der Hüfte, auf
+Boden, der trägt und höchstens 25 cm höher oder tiefer liegt, mit Platz für den Fuß und freiem Weg dorthin. In den
+ersten 60 % des Schritts folgt das Ziel dem Capture Point, so wird die Vorhersage genauer, je näher die Landung kommt.
+Der Fuß landet, wenn er nahe am Ziel den Boden berührt und dabei langsam ist, ein Fuß, der unterwegs am Boden schleift,
+landet nicht. Dann prüft die Balance die neue Stützfläche wie in 28.3: Liegt der Capture Point darin, steht die Figur,
+sonst folgt der nächste Schritt, und nach drei Schritten oder wenn keiner mehr reicht, fällt sie. Fallend lässt die
+Hilfe für das Becken los, die Motoren werden weich und halten eine Schutzhaltung, nach vorn mit den Armen voraus und dem
+Kopf oben, nach hinten eingerollt mit dem Kinn auf der Brust. Liegt die Figur eine halbe Sekunde still, prüft sie alle
+Viertelsekunde, ob sie aufstehen kann: tragfähiger Boden unter ihr, Platz für eine stehende Figur und nichts, das auf
+ihr liegt oder sich an ihr bewegt. Aufstehen ist eine Spielhilfe, bis Aufstehclips die Gelenke führen: Eine begrenzte
+Kraft hebt die Brust, der Körper hängt daran und richtet sich dabei von selbst auf, die Hilfe für das Becken dreht mit,
+und Füße, die am Boden stehen, bleiben stehen. Aufrecht zieht die Kraft den Schwerpunkt über die Mitte der Füße, erst
+wenn er dort fast ruht, lässt sie nach, und die Figur übernimmt wieder selbst, sobald ihr Capture Point innerhalb der
+Füße liegt (28.4). Ein Treffer oder Schutt bricht das Aufstehen ab (26.15). Jede neue Art von Pose blendet über 0,2 s
+ein, die Ruhepose beim Hinlegen über 0,5 s, so schnappt kein Glied. Alles kommt aus Zielen der Gelenke und begrenzten
+Kräften, nichts wird versetzt, und die Balance rechnet nur mit Operationen, die auf jeder Plattform dieselben Bits
+ergeben: Statt `expf` eine Reihe, statt `sinf` und `acosf` die Funktionen von Box3D.
+
+Gemessen in den Tests und mit 104 Stößen auf die Brust aus acht Richtungen von 30 bis 100 N s: Bis 30 N s steht der
+Humanoid ohne Schritt. Mit Schritten fängt er Stöße von hinten bis 90 N s ab, von vorn und schräg bis 70 bis 80 N s,
+von der Seite bis 65 N s, meist mit zwei bis vier Schritten, darüber fällt er. Ohne Balance werfen ihn schon 50 bis
+60 N s um.
+Von links und von rechts gestoßen, setzt er den gespiegelten Fuß auf das gespiegelte Ziel, auf 1 cm genau. Steht 32 cm
+neben ihm eine Wand, tritt kein Fuß hinein, und er lehnt sich an sie, über eine kniehohe Mauer fällt er. Umgeworfen
+liegt er nach 1,9 bis 2,3 s still, beginnt nach 3,0 bis 3,7 s aufzustehen und steht nach 5,7 bis 6,2 s wieder, kein
+Knochen legt dabei mehr als 9,3 cm in einem Schritt zurück. Unter einer Platte in 60 cm Höhe bleibt er liegen, ohne sie
+zu berühren, und steht auf, sobald sie fort ist. Mit 1 und 4 Threads ergibt die Balance dieselben Bits, und der Test
+hält den Hash für alle Plattformen fest.
 
 **Demo-Renderer.** So wenig Arbeit pro Bild wie möglich:
 
@@ -878,7 +921,14 @@ b3WorldTransform now[nb_humanoidBoneCount], targets[nb_humanoidBoneCount];
 nbArticulation_GetBoneTransforms( figure, now, nb_humanoidBoneCount );
 nbArticulation_GetTargetTransforms( figure, targets, nb_humanoidBoneCount );
 
-// Wer umgeworfen ist, wird passive Ragdoll
+// Balance: Schritte gegen Stöße, Fallen mit Schutzhaltung und Aufstehen, sobald Platz ist
+nbBalanceDef balance = nbDefaultBalanceDef();   // passt zum Humanoid der Bibliothek
+nbArticulation_EnableBalance( figure, &balance );
+nbBalance state = nbArticulation_GetBalance( figure );   // steht, tritt aus, fällt, liegt oder steht auf
+nbArticulation_Knockdown( figure );   // für einen Treffer, der gewinnen soll: die Figur fällt sofort
+
+// Ohne Balance: wer umgeworfen ist, wird passive Ragdoll
+nbArticulation_EnableBalance( figure, NULL );
 nbMotorProfile passive = nbPassiveMotorProfile();
 nbArticulation_SetMotorProfile( figure, &passive );
 ```
@@ -953,8 +1003,22 @@ beim Einbinden nicht gebaut.
 | `stiffness` | 800 N m/rad | Drehmoment je Radian Abweichung von der Zielpose, in jedem Gelenk gleich. Box3D nimmt Hertz gegen die Trägheit der Knochen, die Bibliothek rechnet um, in der Pose beim Setzen des Profils. 0 schaltet die Motoren ab, `nbPassiveMotorProfile` ist ganz 0 |
 | `dampingRatio` | 1 | Dämpfung der Federn, 1 ist kritisch |
 | `maxTorque` | 150 N m | Mehr bringt kein Gelenk auf, mal `strength` des Knochens: beim Humanoid Oberschenkel 2, Rumpf 1,6, Unterschenkel 1,5, Füße 0,8, Oberarme 0,6, Unterarme 0,4, Kopf 0,3, Hände 0,15. Eine Feder mit 800 N m/rad erreicht die Grenze nach wenigen Grad, von da gibt das Gelenk nach |
-| `uprightTorque` | 250 N m | Ein äußeres Drehmoment gegen die Welt hält die Achse `up` des Wurzelknochens nach oben, bis hierhin. Eine Spielhilfe anstelle der Balance, bis die Figur Schritte macht, kein Muskel: Ein stärkerer Stoß kippt sie. 0 schaltet es ab |
+| `uprightTorque` | 250 N m | Ein äußeres Drehmoment gegen die Welt hält die Achse `up` des Wurzelknochens nach oben, bis hierhin. Eine Spielhilfe, kein Muskel: Ohne Balance kippt ein stärkerer Stoß die Figur. Mit Balance hält sie im Stand, im Schritt und beim Aufstehen und lässt beim Fallen los. 0 schaltet es ab |
 | `uprightStiffness`, `uprightDampingRatio` | 1500 N m/rad, 1 | Steifigkeit und Dämpfung dieser Hilfe |
+
+| Balance (`nbBalanceDef`) | Standard | Wirkung |
+| --- | --- | --- |
+| `thighs`, `shins`, `feet` | Humanoid | Die Knochen der Beine, links, dann rechts: die Oberschenkel an der Wurzel, die Unterschenkel an einem Scharnier um ihre x-Achse, die Füße als Kästen, deren Unterseite die Sohle ist. Passt das Rig nicht, gibt `nbArticulation_EnableBalance` false zurück |
+| `torso`, `head`, `upperArms`, `forearms` | Humanoid | Die Knochen der Schutzhaltung beim Fallen, −1 für keinen. Am Rumpf hebt die Kraft beim Aufstehen |
+| `stepMargin` | 3 cm | So weit liegt der Capture Point zwei Updates lang außerhalb der Füße, bevor ein Schritt beginnt. Nach einem Schritt steht die Figur, sobald er innerhalb dieses Abstands liegt |
+| `maxStepLength` | 0,55 m | Am weitesten tritt ein Knöchel von unter seiner Hüfte weg |
+| `stepTime`, `stepHeight` | 0,3 s, 8 cm | Wie lange ein Schritt dauert und wie hoch der Fuß dabei schwingt |
+| `maxSteps` | 3 | Schritte in Folge, dann gibt die Figur auf und fällt |
+| `fallAngle`, `fallHeight` | 0,6 rad, 0,75 | Die Figur fällt, wenn ihr Becken so weit kippt oder ihr Schwerpunkt unter diesen Teil seiner Höhe im Stand sinkt |
+| `fallProfile` | 150 N m/rad, höchstens 40 N m | Die Motoren beim Fallen und Liegen, ohne Hilfe für das Becken |
+| `getUpDelay` | 1 s | So lange liegt die Figur still, bevor sie aufsteht. 0: sie bleibt liegen |
+| `getUpTime`, `getUpForce` | 1,2 s, 1,3 | Über ein Drittel dieser Zeit lässt die Kraft nach, sobald die Figur aufrecht über ihren Füßen steht, und nach dem Vierfachen gibt sie auf und liegt wieder. Dazu die größte Kraft, die beim Aufstehen die Brust hebt, mal dem Gewicht. Eine Spielhilfe wie die für das Becken |
+| `getUpTorque` | 500 N m | Die Hilfe für das Becken beim Aufstehen, mindestens `uprightTorque` des Motorprofils |
 
 | Rig (`nbRigDef`, `nbBoneDef`) | Standard | Wirkung |
 | --- | --- | --- |
@@ -1464,8 +1528,9 @@ Messungen in [docs/Optimierungen.md](docs/Optimierungen.md).
 ## Tests und Benchmark
 
 ```sh
-build/bin/nebenan_test            # 76 Tests: Geometrie, Voronoi, Hüllen, Öffnungen, Stöße, Stützgraph, Etagen, Lastprüfung, Schutt, Ruhe, Durchschlagen, Threads, Knoten, große Blöcke, Suchbaum, Kontaktlisten, Streaming, Stream, Laden im Hintergrund, Speichern und Zurückholen, gemeinsamer Thread-Pool, Ruhe-Prüfung auf den Workern, Schritt auf eigenem Thread, Schritte pro Bild, Takt der Physik, Wahl der Threads, Profil und Skalierung, Determinismus, Figuren: Federn mit Drehmomentgrenze, Pendel, Arm mit Motoren, passive Ragdoll, Standpose, Clip, Treffer, Wand, Determinismus mit 1 und 4 Threads …
+build/bin/nebenan_test            # 86 Tests: Geometrie, Voronoi, Hüllen, Öffnungen, Stöße, Stützgraph, Etagen, Lastprüfung, Schutt, Ruhe, Durchschlagen, Threads, Knoten, große Blöcke, Suchbaum, Kontaktlisten, Streaming, Stream, Laden im Hintergrund, Speichern und Zurückholen, gemeinsamer Thread-Pool, Ruhe-Prüfung auf den Workern, Schritt auf eigenem Thread, Schritte pro Bild, Takt der Physik, Wahl der Threads, Profil und Skalierung, Determinismus, Figuren: Federn mit Drehmomentgrenze, Pendel, Arm mit Motoren, passive Ragdoll, Standpose, Clip, Treffer, Wand, Determinismus mit 1 und 4 Threads, Balance: Stand, Schritte von vorn, hinten und der Seite, links und rechts gespiegelt, Schritt gegen eine Wand, Boden weg, Umwerfen und Aufstehen, Platte über der Figur, Abbruch durch Treffer und Schutt, Determinismus …
 build/bin/nebenan_test articulation   # nur die Tests der Figuren, eine Zehntelsekunde
+build/bin/nebenan_test balance        # nur die Tests der Balance, eine Viertelsekunde
 build/bin/nebenan_benchmark 4     # Zahl = Threads für Bruch und Physik, 0 = so viele, wie ein Spiel nähme
 build/bin/nebenan_benchmark scaling   # die Städte unter Beschuss mit 1, 2, 4 … Threads und die Tabelle der Skalierung
 build/bin/nebenan_benchmark rates     # die Städte unter Beschuss mit 30, 60 und 120 Hz, was eine simulierte Sekunde kostet
@@ -1481,6 +1546,7 @@ include/nebenan/    öffentliche API (C17)
 src/
   core.c            Speicher (große Arrays wachsen an Ort und Stelle), Zufallszahlen
   articulation.c    Figuren: Rigs, Gelenkketten mit Federn und Drehmomentgrenze, Motorprofile, Clips aus Keyframes, Treffer
+  balance.c         Balance von Zweibeinern: Capture Point, Ausgleichsschritte, Fallen mit Schutzhaltung, Aufstehen
   poly.c            konvexe Polyeder: Schneiden, Masse, Kontaktflächen
   fracture.c        Voronoi-Bruch und Punktverteilung
   hull_builder.c    Box3D-Hüllen direkt aus der Polyeder-Topologie
@@ -1543,9 +1609,15 @@ Nach Änderungen an `demo/shaders/scene.glsl` die Shader neu erzeugen, im Ordner
   `debrisSweepDistance`, verfolgt Box3D nicht gegen Wände. Es dringt ein Stück ein und wird zurückgeschoben. Durch
   eine Wand, die dünner ist als dieser Weg, kann ein großes Teil aber durchschlagen. Dann den Wert senken, 0 nimmt
   den vorsichtigeren Box3D-Standard.
-- Die Figuren haben noch keine Balance: Ein äußeres Drehmoment hält das Becken aufrecht, bis zu `uprightTorque`, mehr
-  kippt sie, und sie machen keinen Ausgleichsschritt und stehen nicht auf. Das ist Schritt 5 aus Kapitel 33.4 der Roadmap
-  des Spiels, siehe [`docs/Roadmap.md`](docs/Roadmap.md).
+- Die Balance ist eine Heuristik nach dem Capture Point, kein gelernter Controller. Wo ein Stoß gerade noch abgefangen
+  wird, entscheiden kleine Unterschiede über einen Schritt mehr oder einen Sturz. Gleiche Eingaben ergeben dieselben
+  Bits, gespiegelte Stöße gespiegelte erste Schritte, die späteren Schritte können sich unterscheiden. Die Figur geht
+  nicht, sie tritt nur aus, und sie setzt die Füße waagerecht: Auf Schrägen stünden sie auf einer Kante. Boden bis
+  25 cm höher oder tiefer nimmt die Planung an, getestet ist nur ebener Boden.
+- Aufstehen ist eine Spielhilfe, bis Aufstehclips die Gelenke führen (26.15, Schritt 6 aus 33.4): Eine Kraft bis zum
+  1,3-fachen Gewicht hebt die Brust, und die Figur hängt dabei sichtbar daran wie an einem Faden. Ist kein Platz, wartet
+  sie, sie kriecht und rollt nicht. Aus dem ruhigen Stand umgeworfen, kippt sie erst nach rund einer Sekunde, weil nur die
+  weichen Motoren und die Schutzhaltung sie aus dem Gleichgewicht bringen. Ein Treffer dazu kippt sie sofort.
 - Gelenke dehnen sich bei harten Aufschlägen: Trifft ein Knochen mit mehreren Metern pro Sekunde den Boden, ziehen die
   weichen Bedingungen des Lösers das Gelenk erst über ein, zwei Schritte wieder zusammen, gemessen 4 bis 6 cm an Knöchel
   und Hals einer Figur, die aus einem halben Meter fällt oder umgeworfen wird, die Grenzen von Knie und Ellbogen geben
@@ -1555,8 +1627,10 @@ Nach Änderungen an `demo/shaders/scene.glsl` die Shader neu erzeugen, im Ordner
   in allen Gelenken, wie Box3D sie nimmt, hing der Ellbogen in den Tests bis 0,25 rad unter seinem Ziel, mit den
   800 N m/rad des Standards trifft er es auf 0,01 rad. Die Steifigkeit gilt um die weichste Achse eines Gelenks und wird
   aus der Trägheit der Knochen in der Pose beim Setzen des Profils gerechnet.
-- Figuren kosten: 15 Körper, 14 Gelenke und ein Parallel-Joint je Humanoid, alle wach, solange ein Clip läuft. Gemessen
-  ist das noch nicht, der Benchmark hat keine Szene mit Figuren.
+- Figuren kosten: 15 Körper, 14 Gelenke und ein Parallel-Joint je Humanoid, alle wach, solange ein Clip läuft. Die
+  Balance liest je Update die Kontakte der Füße, im Schritt kommen ein Strahl, eine Überlappung und ein Schwung einer
+  Kugel dazu, beim Aufstehen die Kontakte aller Knochen. Gemessen ist das noch nicht, der Benchmark hat keine Szene mit
+  Figuren.
 - Nur konvexe Teile, aus denen sich Quader ausschneiden lassen. Andere konkave Formen müssen als mehrere konvexe
   Teile angegeben werden.
 - Render- und Physikgeometrie sind dieselben flachen Polygone.

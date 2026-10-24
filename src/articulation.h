@@ -30,7 +30,17 @@ typedef struct nbBone
 
 	// Scales the torque limit of the motor profile for this joint
 	float strength;
+
+	// The collision shape in the frame of the bone, see nbBoneDef
+	nbBoneShape shape;
+	b3Vec3 center;
+	b3Vec3 halfExtents;
+	b3Vec3 start;
+	b3Vec3 end;
+	float radius;
 } nbBone;
+
+struct nbBalancer;
 
 // A figure of bodies and joints, see nbCreateArticulation
 typedef struct nbArticulation
@@ -38,8 +48,15 @@ typedef struct nbArticulation
 	nbBone* bones;
 	int boneCount;
 
-	// Scratch for a sampled pose, one rotation per bone
+	// The pose of the program, one rotation per bone: set with nbArticulation_SetTargetPose or sampled from the clip
 	b3Quat* pose;
+
+	// How far the figure reaches above and below the origin of its root along up at rest, in meters
+	float restTop;
+	float restBottom;
+
+	// Balance, null without, see balance.c
+	struct nbBalancer* balancer;
 
 	// The axis of the root that points up when the figure stands, see nbRigDef::up
 	b3Vec3 up;
@@ -83,6 +100,27 @@ NB_ARRAY_DECLARE( nbBoneRef, nbBoneRefArray );
 
 // Advance the clips of the articulations by a step and set the targets of their joints for the next one, in every update
 void nbUpdateArticulations( nbWorld* world, float timeStep );
+
+// The articulation of an id and its world, null for a stale id
+nbArticulation* nbGetArticulationFromId( nbArticulationId id, nbWorld** worldOut );
+
+// Is this Box3D body a bone of the articulation at this index?
+bool nbIsArticulationBody( const nbWorld* world, int index, b3BodyId bodyId );
+
+// Set the targets of all joints from a pose, one rotation per bone
+void nbSetTargets( nbArticulation* articulation, const b3Quat* rotations );
+
+// Apply a motor profile to the joints and the upright hold
+void nbApplyMotorProfile( nbArticulation* articulation, const nbMotorProfile* profile );
+
+// Change the most torque of the upright hold, see nbMotorProfile::uprightTorque
+void nbSetUprightTorque( nbArticulation* articulation, float torque );
+
+// Balance, see balance.c: the update after every step, which sets the targets of the joints, the program changed the
+// motor profile, and the balance goes with its figure
+void nbUpdateBalance( nbWorld* world, int index, nbArticulation* articulation, float timeStep );
+void nbBalanceProfileChanged( nbArticulation* articulation );
+void nbFreeBalancer( nbArticulation* articulation );
 
 // Destroy every articulation of the world with its bodies and free the arrays, for nbDestroyWorld
 void nbDestroyArticulations( nbWorld* world );
