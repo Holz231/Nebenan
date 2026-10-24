@@ -556,6 +556,12 @@ typedef enum nbProfileStage
 	nb_profileContactStates,
 	nb_profileSolve,
 	nb_profileSolverSetup,
+
+	/// The parts of the solver setup, on the calling thread alone like all of it: the islands in packs, the convex
+	/// contacts of the colors put in order, and the knots of the overflow, see b3Profile::setupPacks
+	nb_profileSetupPacks,
+	nb_profileSetupOrder,
+	nb_profileSetupKnots,
 	nb_profileConstraints,
 
 	/// The part of the constraints that the calling thread spends on the overflow of Box3D's constraint graph, in the

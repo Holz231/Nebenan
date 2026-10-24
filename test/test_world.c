@@ -5569,6 +5569,8 @@ static int ProfileTest( void )
 	ENSURE( t[nb_profileCreateContacts] <= t[nb_profilePairs] + slack );
 	ENSURE( t[nb_profileContactStates] <= t[nb_profileCollide] + slack );
 	ENSURE( t[nb_profileSolverSetup] + t[nb_profileConstraints] <= t[nb_profileSolve] + slack );
+	ENSURE( t[nb_profileSetupPacks] > 0.0f && t[nb_profileSetupOrder] > 0.0f && t[nb_profileSetupKnots] > 0.0f );
+	ENSURE( t[nb_profileSetupPacks] + t[nb_profileSetupOrder] + t[nb_profileSetupKnots] <= t[nb_profileSolverSetup] + slack );
 	ENSURE( t[nb_profileOverflow] <= t[nb_profileConstraints] + slack );
 	ENSURE( t[nb_profileCollisionDamage] + t[nb_profileSettle] + t[nb_profileBudget] + t[nb_profileRelease] <=
 			t[nb_profileUpdate] + slack );
@@ -5681,6 +5683,7 @@ static int ScalingFitTest( void )
 		ENSURE( counts[i] > counts[i - 1] );
 	}
 	ENSURE( strcmp( nbGetProfileStageName( nb_profileContactStates ), "contactStates" ) == 0 );
+	ENSURE( strcmp( nbGetProfileStageName( nb_profileSetupKnots ), "setupKnots" ) == 0 );
 	return 0;
 }
 

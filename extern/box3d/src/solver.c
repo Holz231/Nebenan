@@ -3337,6 +3337,9 @@ void b3Solve( b3World* world, b3StepContext* stepContext )
 		int teamWork = 0;
 		int teamPackCount = 0;
 
+		// Added for Nebenan: the parts of the setup, see b3Profile::setupPacks
+		uint64_t partTicks = b3GetTicks();
+
 		// Added for Nebenan: the work of the islands of this step, from b3BuildPacks or b3MeasureIslandWork
 		world->islandWork = 0;
 		world->largestIslandWork = 0;
@@ -3356,6 +3359,7 @@ void b3Solve( b3World* world, b3StepContext* stepContext )
 			packBodies = (int*)b3StackAlloc( &world->stack, awakeBodyCount * (int)sizeof( int ), "pack bodies" );
 			packCount = b3BuildPacks( world, awakeSet, packLimit, workerCount, contactPacks, packBodyStarts, packBodies,
 									  &teamWork, &teamPackCount );
+			world->profile.setupPacks = b3GetMillisecondsAndReset( &partTicks );
 
 			if ( packCount > 0 )
 			{
@@ -3373,6 +3377,7 @@ void b3Solve( b3World* world, b3StepContext* stepContext )
 					graphWideContactDims[i] = b3ComputeBlockCount( colorWideConstraintCount, minContactsPerBlock, maxBlockCount );
 					graphBlockCount += graphWideContactDims[i].count;
 				}
+				world->profile.setupOrder = b3GetMillisecondsAndReset( &partTicks );
 			}
 			else
 			{
@@ -3387,6 +3392,7 @@ void b3Solve( b3World* world, b3StepContext* stepContext )
 		else if ( world->workerCount > 1 )
 		{
 			b3MeasureIslandWork( world, awakeSet );
+			world->profile.setupPacks = b3GetMillisecondsAndReset( &partTicks );
 		}
 
 		// Added for Nebenan: see b3Counters::teamWork
@@ -3401,6 +3407,7 @@ void b3Solve( b3World* world, b3StepContext* stepContext )
 		// Added for Nebenan: the knots of the overflow in batches, whose wide constraints follow those of the colors, see
 		// b3BuildKnots
 		b3Knots knots;
+		partTicks = b3GetTicks();
 		b3BuildKnots( world, awakeSet, overflow, contactPacks, packCount, &knots );
 		world->knotContactCount = knots.contactCount;
 		world->knotBatchCount = knots.batchCount;
@@ -3470,6 +3477,7 @@ void b3Solve( b3World* world, b3StepContext* stepContext )
 				packOverflowContacts[cursors[contactPacks[spec->contactId]]++] = *spec;
 			}
 		}
+		world->profile.setupKnots = b3GetMillisecondsAndReset( &partTicks );
 
 		// Build the span table for the flat prepare/store parallel-for while I slice the
 		// wide constraint buffer across colors. One entry per active color plus a sentinel
@@ -3479,9 +3487,13 @@ void b3Solve( b3World* world, b3StepContext* stepContext )
 		b3JointPrepareSpan jointPrepareSpans[B3_GRAPH_COLOR_COUNT + 1];
 
 		// Added for Nebenan, with packs see above
-		int* orderedContacts = packCount > 0 ? packContacts
-											 : b3OrderColorContacts( world, colors, activeColorIndices, activeColorCount,
-																	 awakeBodyCount, workerCount );
+		int* orderedContacts = packContacts;
+		if ( packCount == 0 )
+		{
+			orderedContacts =
+				b3OrderColorContacts( world, colors, activeColorIndices, activeColorCount, awakeBodyCount, workerCount );
+			world->profile.setupOrder = b3GetMillisecondsAndReset( &partTicks );
+		}
 		int orderedOffset = 0;
 
 		// Distribute transient constraints to each graph color and prepare spans
