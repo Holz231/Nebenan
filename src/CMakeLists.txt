@@ -1,4 +1,6 @@
 set(NEBENAN_SOURCE_FILES
+	articulation.c
+	articulation.h
 	core.c
 	core.h
 	fracture.c

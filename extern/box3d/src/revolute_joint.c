@@ -169,6 +169,31 @@ float b3RevoluteJoint_GetSpringDampingRatio( b3JointId jointId )
 	return base->revoluteJoint.dampingRatio;
 }
 
+// Added for Nebenan
+void b3RevoluteJoint_SetMaxSpringTorque( b3JointId jointId, float torque )
+{
+	B3_ASSERT( b3IsValidFloat( torque ) && torque >= 0.0f );
+	b3World* world = b3GetWorld( jointId.world0 );
+	B3_REC( world, RevoluteJointSetMaxSpringTorque, jointId, torque );
+	b3JointSim* base = b3GetJointSimCheckType( jointId, b3_revoluteJoint );
+	base->revoluteJoint.maxSpringTorque = torque;
+}
+
+// Added for Nebenan
+float b3RevoluteJoint_GetMaxSpringTorque( b3JointId jointId )
+{
+	b3JointSim* base = b3GetJointSimCheckType( jointId, b3_revoluteJoint );
+	return base->revoluteJoint.maxSpringTorque;
+}
+
+// Added for Nebenan
+float b3RevoluteJoint_GetSpringTorque( b3JointId jointId )
+{
+	b3World* world = b3GetWorld( jointId.world0 );
+	b3JointSim* base = b3GetJointSimCheckType( jointId, b3_revoluteJoint );
+	return world->inv_h * base->revoluteJoint.springImpulse;
+}
+
 void b3RevoluteJoint_EnableMotor( b3JointId jointId, bool enableMotor )
 {
 	b3World* world = b3GetWorld( jointId.world0 );
@@ -425,7 +450,20 @@ void b3SolveRevoluteJoint( b3JointSim* base, b3StepContext* context, bool useBia
 		float cdot = b3Dot( b3Sub( wB, wA ), joint->rotationAxisZ );
 
 		float deltaImpulse = -massScale * joint->axialMass * ( cdot + bias ) - impulseScale * joint->springImpulse;
-		joint->springImpulse += deltaImpulse;
+
+		// Bounded like the motor, so a joint that drives a pose cannot hold it against anything. Without a limit the
+		// impulses add up as before, to the bit. Added for Nebenan.
+		if ( joint->maxSpringTorque < FLT_MAX )
+		{
+			float maxImpulse = joint->maxSpringTorque * context->h;
+			float newImpulse = b3ClampFloat( joint->springImpulse + deltaImpulse, -maxImpulse, maxImpulse );
+			deltaImpulse = newImpulse - joint->springImpulse;
+			joint->springImpulse = newImpulse;
+		}
+		else
+		{
+			joint->springImpulse += deltaImpulse;
+		}
 
 		wA = b3MulSub( wA, deltaImpulse, b3MulMV( iA, joint->rotationAxisZ ) );
 		wB = b3MulAdd( wB, deltaImpulse, b3MulMV( iB, joint->rotationAxisZ ) );

@@ -19,6 +19,13 @@ beide auf dem Ryzen nachgemessen, und den großen Paketen im Team auf `kollaps-9
 Begründungen und Messwerte stehen in [`Optimierungen.md`](Optimierungen.md), hier nur das Fazit und die Reihenfolge.
 Nach jeder Runde wird der Stand hier nachgetragen.
 
+`ragdoll-1` ist wie `kollaps-1` keine Runde der Physik: Sie baut die Figuren auf Box3D nach Kapitel 27, 32 und 33 der
+Roadmap des Spiels, siehe „Figuren auf Box3D“ unten. Der Benchmark misst dasselbe wie vorher: Nebenan benutzte bis dahin
+keine Gelenke, und die Ergänzung in Box3D ändert nur Gelenke, deren Feder eine Drehmomentgrenze hat. Gepaart gegen
+`kollaps-10` auf dem 7800X3D, je zwei Läufe im Wechsel mit 2 Threads, enden alle Szenen des Benchmarks mit denselben
+Zahlen an Bruchstücken, Schutt, Körpern, Kontakten und Etagen, und ein Frame kostet 0,1 bis 1 % mehr, bei einer Streuung
+von Lauf zu Lauf bis 3 %.
+
 `kollaps-1` ist keine Runde der Physik, sie baut den Einsturz nach Kapitel 17 der Roadmap des Spiels, siehe
 [`Referenz`](Referenz/README.md). Sie ändert aber, was der Benchmark unter Trommelfeuer bei ×4 misst: Eine Etage gibt
 dort schon nach, wenn 40 % ihrer Wände zerstört sind, und es stürzen 15 statt 12 Etagen ein. Ein Schritt kostet damit
@@ -63,6 +70,41 @@ einem von 20 hielt das ein Teil auf erstarrtem Schutt. `kollaps-7` ändert die E
 Abriss in der Demo fallen in 4 000 Bildern 6 statt 4 Häuser, und wer eine Runde danach gegen eine davor misst,
 vergleicht dort verschiedene Szenen. Im Benchmark enden die Städte fast gleich, unter dem Trommelfeuer bei ×4 stürzen
 114 statt 116 Etagen ein.
+
+## Figuren auf Box3D (`ragdoll-1`)
+
+Gebaut am 24. Oktober 2026 nach Kapitel 27, 32 und 33 der Roadmap des Spiels, siehe [`Referenz`](Referenz/README.md),
+die Schritte 1 bis 4 aus Kapitel 33.4. Was gebaut ist und wie es sich verhält, steht im README unter „Figuren“, „Benutzung“
+und „Grenzen“, die Abnahme in `test/test_articulation.c`, die Demo-Szene „Figuren“ zeigt es: drei Humanoide vor einer
+Ziegelwand, einer steht, einer spielt den Clip, einer fällt passiv, das Gewehr trifft sie, und die Pose, zu der die Gelenke
+ziehen, liegt als dünnes dunkles Skelett über den Knochen.
+
+Zwei Dinge hat der Bau gezeigt, die in der Roadmap des Spiels nicht stehen. Erstens gibt Box3D die Steifigkeit einer
+Gelenkfeder in Hertz gegen die Trägheit ihrer beiden Körper an: Dieselben Hertz machen am schweren Oberschenkel eine
+starke Feder und am leichten Fuß eine schwache. Mit 15 Hz in allen Gelenken und 3 Hz für die Hilfe, die das Becken
+aufrecht hält, kippte der Humanoid schon nach 15 N s auf die Brust, sein Knöchel brachte bei 0,19 rad Abweichung rund
+19 N m auf, und der Ellbogen hing 0,25 rad unter seinem Ziel. Das Motorprofil nennt die Steifigkeit deshalb in N m je
+Radian, und die Bibliothek rechnet sie je Gelenk in Hertz um. Mit 800 N m je Radian steht die Figur 20 N s, und der
+Ellbogen trifft sein Ziel. Zweitens dehnen sich die Gelenke bei harten Aufschlägen: Schlägt ein Knochen mit einigen
+Metern pro Sekunde auf, dehnt sich sein Gelenk um 4 bis 6 cm, bis der Löser es in den folgenden Schritten zurückzieht,
+gemessen an Knöchel und Hals. Mit einer Dämpfung der Gelenke von 5 statt 2 geben die Grenzen von Knie und Ellbogen dabei
+um rund 0,1 statt bis zu 0,37 rad nach. Box3D begrenzt die Gelenke auf ein Viertel der Teilschritte, 60 Hz, steifer geht
+es ohne mehr Teilschritte nicht. In einer Matrix aus Selbstkollision, Dämpfung der Gelenke und Dämpfung der Körper
+schwankte die Dehnung zwischen 19 und 61 mm, ohne Richtung.
+
+| Nr. | Schritt | Stand |
+| ---: | --- | --- |
+| F1 | **Bestand prüfen** (33.4 Schritt 1, 32.7 P0): Box3D hat Dreh-, Kugel- (Kegel und Twist), Schweiß-, Motor-, Parallel-, Filter-, Abstands-, Schiebe- und Radgelenke, Warmstart, Federn mit Zielwinkel oder Zielrotation, Geschwindigkeitsmotoren mit Drehmomentgrenze und Aufnahmen mit Wiedergabe. Es fehlte die Drehmomentgrenze der Federn, Nebenan benutzte keine Gelenke, RagdollBridge und Pose-Graph gab es nicht | ✅ |
+| F2 | **Federn mit Drehmomentgrenze** in Box3D, `maxSpringTorque` und das Drehmoment der Feder zum Ablesen | ✅ siehe „Federn der Gelenke mit Drehmomentgrenze“ in [`extern/README.md`](../extern/README.md) |
+| F3 | **Pendel, Drei-Link-Arm, passive Ragdoll** (27.4, Stufen 1 bis 3 aus 27.14) | ✅ Tests: Anker des Pendels 0,5 mm, Grenzen gehalten; der Arm erreicht seine Winkel auf 0,03 rad; die Ragdoll aus 0,5 m dehnt ihre Gelenke beim Aufprall bis 4 cm, die Grenzen geben bis 0,07 rad nach, sie kommt zur Ruhe |
+| F4 | **Figuren in der Bibliothek**: Rig, Articulation, Motorprofil in N m je Radian, Clips aus Keyframes im Update gesampelt, Treffer genau einmal, Zielpose und Motorlast zum Zeichnen, Humanoid aus 15 Knochen | ✅ `include/nebenan/types.h`, `include/nebenan/nebenan.h`, `src/articulation.c` |
+| F5 | **Standpose, Clip, Treffer** (33.4 Schritte 2 bis 4) | ✅ Tests: steht 5 s mit 0,004 rad Abweichung; der Drei-Keyframe-Clip läuft ohne Sprung, Fehler bis 0,04 rad, der Ellbogen erreicht 1,00 rad; 20 N s auf die Brust: steht, Gelenke 4 mm gedehnt; 120 N s: der Rumpf gibt 0,18 rad nach, die Figur fällt |
+| F6 | **Wand**: eine passive Figur mit 20 m/s bricht eine Wand über die Kollisionsschäden der Welt (26.16, 27.11) | ✅ Test |
+| F7 | **Determinismus**: zwei Figuren mit Clip und Treffer mit 1 und 4 Threads bitgleich | ✅ Test |
+| F8 | **Balance und Stützschritt** (33.4 Schritt 5, 27.9, 28.3): Schwerpunkt, Stützpolygon, Schrittziel, Knockdown und Recovery mit Übergabe an die Steuerung ohne Sprung (28.4). Bis dahin hält ein äußeres Drehmoment das Becken aufrecht, als Spielhilfe ausgewiesen | 🔜 als Nächstes |
+| F9 | **Gelenkdehnung beim Aufprall**: 4 bis 6 cm für wenige Schritte. Bitgleich zu beheben nur mit mehr Teilschritten für die Welt oder einer Projektion der Gelenke nach dem Schritt in Box3D; vorher messen, was ein Spiel davon sieht | 🔜 |
+| F10 | **Kosten messen** (27.14): eine Stufe des Profils für die Figuren, Szenen mit 1, 10 und 50 Figuren im Benchmark und in der Demo, p50 bis p99 wie bei den Trümmern | 🔜 |
+| F11 | **Keyframe-Format und Video-Editor** (32.5, 32.6, 33.4 Schritt 6): erst nach F8 | 🔜 |
 
 ## Fazit
 

@@ -4835,6 +4835,8 @@ void nbDestroyWorld( nbWorldId worldId )
 		}
 	}
 
+	nbDestroyArticulations( world );
+
 	nbArray_Free( world->chunks );
 	nbArray_Free( world->bonds );
 	nbArray_Free( world->bondMoments );
@@ -6873,6 +6875,9 @@ static void nbUpdate( nbWorld* world, float timeStep )
 	lap = b3GetTicks();
 	nbEnforceDebrisBudget( world, hasGravity ? up : b3Vec3_zero );
 	nbProfileLap( world, nb_profileBudget, &lap );
+
+	// The figures follow their clips: the targets of their joints for the next step
+	nbUpdateArticulations( world, timeStep );
 
 	world->stats.updateTime = b3GetMilliseconds( ticks );
 	world->profile.stages[nb_profileUpdate] += world->stats.updateTime;

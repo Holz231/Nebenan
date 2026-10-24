@@ -75,6 +75,9 @@ public:
 	void FreeSlot( int slot );
 	void SetSlot( int slot, b3Vec3 position, b3Quat rotation );
 
+	// Hide or show the meshes of a slot
+	void SetSlotVisible( int slot, bool visible );
+
 	// Returns a mesh handle. The indices count from the first vertex and all vertices must carry the slot.
 	int AddMesh( const GpuVertex* vertices, int vertexCount, const uint16_t* indices, int indexCount, int slot );
 

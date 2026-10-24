@@ -586,6 +586,7 @@ b3RevoluteJointDef b3RecR_REVOLUTEJOINTDEF( b3RecReader* rdr )
 	def.enableSpring = b3RecR_BOOL( rdr );
 	def.hertz = b3RecR_F32( rdr );
 	def.dampingRatio = b3RecR_F32( rdr );
+	def.maxSpringTorque = b3RecR_F32( rdr ); // Added for Nebenan
 	def.enableLimit = b3RecR_BOOL( rdr );
 	def.lowerAngle = b3RecR_F32( rdr );
 	def.upperAngle = b3RecR_F32( rdr );
@@ -602,6 +603,7 @@ b3SphericalJointDef b3RecR_SPHERICALJOINTDEF( b3RecReader* rdr )
 	def.enableSpring = b3RecR_BOOL( rdr );
 	def.hertz = b3RecR_F32( rdr );
 	def.dampingRatio = b3RecR_F32( rdr );
+	def.maxSpringTorque = b3RecR_F32( rdr ); // Added for Nebenan
 	def.targetRotation = b3RecR_QUAT( rdr );
 	def.enableConeLimit = b3RecR_BOOL( rdr );
 	def.coneAngle = b3RecR_F32( rdr );
@@ -1592,6 +1594,18 @@ static void b3RecDispatch_SphericalJointSetMotorVelocity( const b3RecArgs_Spheri
 static void b3RecDispatch_SphericalJointSetMaxMotorTorque( const b3RecArgs_SphericalJointSetMaxMotorTorque* a, b3RecReader* rdr )
 {
 	b3SphericalJoint_SetMaxMotorTorque( b3RecMakeJointId( rdr, a->joint ), a->torque );
+}
+
+// Added for Nebenan
+static void b3RecDispatch_RevoluteJointSetMaxSpringTorque( const b3RecArgs_RevoluteJointSetMaxSpringTorque* a, b3RecReader* rdr )
+{
+	b3RevoluteJoint_SetMaxSpringTorque( b3RecMakeJointId( rdr, a->joint ), a->torque );
+}
+
+// Added for Nebenan
+static void b3RecDispatch_SphericalJointSetMaxSpringTorque( const b3RecArgs_SphericalJointSetMaxSpringTorque* a, b3RecReader* rdr )
+{
+	b3SphericalJoint_SetMaxSpringTorque( b3RecMakeJointId( rdr, a->joint ), a->torque );
 }
 
 static void b3RecDispatch_WeldJointSetLinearHertz( const b3RecArgs_WeldJointSetLinearHertz* a, b3RecReader* rdr )

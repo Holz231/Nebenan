@@ -506,9 +506,22 @@ jeder Körper durchläuft seine Schritte in derselben Reihenfolge wie in seinem 
 `b3Counters::teamPackCount` sagt, wie viele Pakete das Team im letzten Schritt rechnete, und `b3Counters::teamWork`
 zählt ihre ganze Arbeit.
 
+**Federn der Gelenke mit Drehmomentgrenze.** Die Federn der Dreh- und Kugelgelenke ziehen zu einem Zielwinkel oder einer
+Zielrotation so stark, wie es ihre Steifigkeit verlangt, ohne Grenze, im Drehmoment begrenzt waren nur ihre
+Geschwindigkeitsmotoren. Eine Figur, deren Gelenke so eine Pose halten, hält sie gegen alles. Jetzt begrenzen
+`b3RevoluteJointDef::maxSpringTorque` und `b3SphericalJointDef::maxSpringTorque` das Drehmoment der Feder, wie es der
+Motor-Joint mit seiner Feder tut: Der Löser klemmt den angesammelten Impuls der Feder in jedem Teilschritt auf das
+Drehmoment mal Teilschritt (`src/revolute_joint.c`, `src/spherical_joint.c`). Ohne Grenze, FLT_MAX ist der Standard,
+rechnet er bitgleich wie vorher. `b3RevoluteJoint_SetMaxSpringTorque` und `b3SphericalJoint_SetMaxSpringTorque` stellen
+die Grenze zur Laufzeit, `b3RevoluteJoint_GetSpringTorque` und `b3SphericalJoint_GetSpringTorque` geben das Drehmoment
+der Feder im letzten Schritt, gegen die Grenze zeigt es, wie hart eine Feder arbeitet. Aufnahmen speichern das Feld in den
+Definitionen der Gelenke, deshalb Version 7 statt 6, und die beiden Setter als Operationen 0x8E und 0x8F neben dem
+Schritt, der Bereich der Gelenke war voll. Nebenans Figuren halten damit ihre Pose und geben allem nach, was stärker ist,
+siehe Figuren im README.
+
 Die erste, die zweite, die vierte bis achte, die zehnte, die dreizehnte bis einunddreißigste, die dreiunddreißigste bis
 fünfunddreißigste, die neununddreißigste bis dreiundvierzigste, die fünfundvierzigste bis siebenundvierzigste, die
-neunundvierzigste und die fünfzigste ändern an den Ergebnissen nichts. Die dritte und die neunte ändern sie in den
+neunundvierzigste bis einundfünfzigste ändern an den Ergebnissen nichts. Die dritte und die neunte ändern sie in den
 letzten Bits, dafür hängen sie nicht mehr davon ab, in welcher Reihenfolge Formen in die Bäume kommen. Die elfte ändert
 sie, weil Kontakte zu anderen Zeitpunkten entstehen, die zwölfte, weil sie weniger Punkte bekommen, die
 zweiunddreißigste, weil die Kontakte eines Knotens gebündelt gegen Kopien rechnen statt nacheinander, die
@@ -524,12 +537,15 @@ Die Ergänzungen stehen in `CMakeLists.txt`, `src/CMakeLists.txt`, `include/box3
 `src/contact_solver_wide.inl`, `src/wide8.c`, `src/simd.c`, `src/simd_avx2.h`, `src/constraint_graph.h`,
 `src/manifold.h`, `src/convex_manifold.c`, `src/convex_manifold_avx2.c`, `src/world_snapshot.c`, `src/recording.c`,
 `src/solver.h`, `src/solver.c`, `src/broad_phase.h`, `src/broad_phase.c`, `src/dynamic_tree.h`, `src/dynamic_tree.c`,
-`src/parallel_for.c`, `src/platform.h`, `src/scheduler.h`, `src/scheduler.c`, `src/timer.c`, `src/physics_world.h` und
-`src/physics_world.c`, jeweils mit „Added for Nebenan“ markiert.
+`src/parallel_for.c`, `src/platform.h`, `src/scheduler.h`, `src/scheduler.c`, `src/timer.c`, `src/physics_world.h`,
+`src/physics_world.c`, `src/joint.h`, `src/joint.c`, `src/revolute_joint.c`, `src/spherical_joint.c`, `src/recording.h`,
+`src/recording_ops.inl` und `src/recording_replay.c`, jeweils mit „Added for Nebenan“ markiert.
 `B3_HAS_UNIQUE_HULLS`, `B3_HAS_SHAPE_BATCH`, `B3_HAS_SHAPE_CONTACT_LISTS`, `B3_HAS_EXTERNAL_HULLS`,
-`B3_HAS_BODY_PREFETCH`, `B3_HAS_STEP_GUARD`, `B3_HAS_PREVIOUS_TRANSFORM` und `B3_HAS_STATIC_OVERLAP` zeigen die zweite,
-die vierte, die fünfte, die sechste, die neunzehnte, die dreißigste, die fünfunddreißigste und die zweiundvierzigste an.
+`B3_HAS_BODY_PREFETCH`, `B3_HAS_STEP_GUARD`, `B3_HAS_PREVIOUS_TRANSFORM`, `B3_HAS_STATIC_OVERLAP` und
+`B3_HAS_SPRING_TORQUE_LIMITS` zeigen die zweite, die vierte, die fünfte, die sechste, die neunzehnte, die dreißigste, die
+fünfunddreißigste, die zweiundvierzigste und die einundfünfzigste an.
 Fehlen sie, etwa mit einem eigenen Box3D, läuft Nebenan wie zuvor, nur wachsen Box3Ds Arrays dann durch Umkopieren, die
 Hüllen gehen durch die Tabelle, jede Form geht einzeln in den Baum, jedes stehende Bruchstück bekommt einen eigenen
 Körper, Box3D hält eine Kopie jeder Hülle, Nebenan holt die Körper der Trümmer nicht voraus, `nbWorld_Step` rechnet auf
-dem aufrufenden Thread, `nbWorld_GetDrawPoses` gibt die Lagen nach dem Schritt, und Schutt wird in allen Bäumen gesucht.
+dem aufrufenden Thread, `nbWorld_GetDrawPoses` gibt die Lagen nach dem Schritt, Schutt wird in allen Bäumen gesucht, und
+die Figuren halten ihre Pose mit Federn ohne Drehmomentgrenze, `nbArticulation_GetMotorLoad` gibt 0.

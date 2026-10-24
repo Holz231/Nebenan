@@ -80,6 +80,9 @@ b3RevoluteJointDef b3DefaultRevoluteJointDef( void )
 {
 	b3RevoluteJointDef def = { 0 };
 	def.base = b3DefaultJointDef();
+
+	// Added for Nebenan: no limit
+	def.maxSpringTorque = FLT_MAX;
 	return def;
 }
 
@@ -87,6 +90,9 @@ b3SphericalJointDef b3DefaultSphericalJointDef( void )
 {
 	b3SphericalJointDef def = { 0 };
 	def.base = b3DefaultJointDef();
+
+	// Added for Nebenan: no limit
+	def.maxSpringTorque = FLT_MAX;
 	def.targetRotation = b3Quat_identity;
 	return def;
 }
@@ -605,6 +611,7 @@ b3JointId b3CreateRevoluteJoint( b3WorldId worldId, const b3RevoluteJointDef* de
 	joint->revoluteJoint = (b3RevoluteJoint){ 0 };
 	joint->revoluteJoint.hertz = def->hertz;
 	joint->revoluteJoint.dampingRatio = def->dampingRatio;
+	joint->revoluteJoint.maxSpringTorque = b3MaxFloat( 0.0f, def->maxSpringTorque ); // Added for Nebenan
 	joint->revoluteJoint.targetAngle = b3ClampFloat( def->targetAngle, -B3_PI, B3_PI );
 
 	float lowerAngle = b3MinFloat( def->lowerAngle, def->upperAngle );
@@ -642,6 +649,7 @@ b3JointId b3CreateSphericalJoint( b3WorldId worldId, const b3SphericalJointDef* 
 	joint->sphericalJoint = (b3SphericalJoint){ 0 };
 	joint->sphericalJoint.hertz = def->hertz;
 	joint->sphericalJoint.dampingRatio = def->dampingRatio;
+	joint->sphericalJoint.maxSpringTorque = b3MaxFloat( 0.0f, def->maxSpringTorque ); // Added for Nebenan
 	joint->sphericalJoint.targetRotation = def->targetRotation;
 	joint->sphericalJoint.coneAngle = b3ClampFloat( def->coneAngle, 0.0f, 0.5f * B3_PI );
 

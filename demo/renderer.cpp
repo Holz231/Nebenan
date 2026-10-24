@@ -191,6 +191,13 @@ void Renderer::SetSlot( int slot, b3Vec3 position, b3Quat rotation )
 	m_slotsDirty = true;
 }
 
+void Renderer::SetSlotVisible( int slot, bool visible )
+{
+	float* data = m_slotData.data() + (size_t)slot * SlotFloats;
+	data[3] = visible ? 1.0f : 0.0f;
+	m_slotsDirty = true;
+}
+
 GpuVertex Renderer::MakeVertex( b3Vec3 position, b3Vec3 normal, int material, int slot )
 {
 	GpuVertex vertex;

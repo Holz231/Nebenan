@@ -2,6 +2,7 @@
 
 #pragma once
 
+#include "articulation.h"
 #include "core.h"
 #include "poly.h"
 
@@ -459,6 +460,11 @@ typedef struct nbWorld
 
 	// Box3D body index to dynamic actor index
 	nbIntArray bodyToActor;
+
+	// The figures of bodies and joints, see articulation.h, and by Box3D body index the bone of one
+	nbArticulationArray articulations;
+	nbIntArray freeArticulations;
+	nbBoneRefArray bodyToBone;
 
 	// Free dynamic actors that are subject to lifetime and budget rules
 	nbIntArray debris;

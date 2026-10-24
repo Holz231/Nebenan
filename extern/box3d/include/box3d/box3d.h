@@ -1519,6 +1519,16 @@ B3_API void b3RevoluteJoint_SetSpringDampingRatio( b3JointId jointId, float damp
 /// Get the revolute joint spring damping ratio, non-dimensional
 B3_API float b3RevoluteJoint_GetSpringDampingRatio( b3JointId jointId );
 
+/// Set the most torque the revolute joint spring applies, usually in newton-meters. Added for Nebenan.
+B3_API void b3RevoluteJoint_SetMaxSpringTorque( b3JointId jointId, float torque );
+
+/// Get the most torque the revolute joint spring applies, usually in newton-meters. Added for Nebenan.
+B3_API float b3RevoluteJoint_GetMaxSpringTorque( b3JointId jointId );
+
+/// Get the torque the revolute joint spring applied in the last step, usually in newton-meters. Against the maximum it
+/// tells how hard the spring works. Added for Nebenan.
+B3_API float b3RevoluteJoint_GetSpringTorque( b3JointId jointId );
+
 /// Set the revolute joint target angle in radians
 B3_API void b3RevoluteJoint_SetTargetAngle( b3JointId jointId, float targetRadians );
 
@@ -1629,6 +1639,20 @@ B3_API void b3SphericalJoint_SetSpringDampingRatio( b3JointId jointId, float dam
 
 /// Get the spherical joint spring damping ratio, non-dimensional
 B3_API float b3SphericalJoint_GetSpringDampingRatio( b3JointId jointId );
+
+/// Set the most torque the spherical joint spring applies, usually in newton-meters. Added for Nebenan.
+B3_API void b3SphericalJoint_SetMaxSpringTorque( b3JointId jointId, float torque );
+
+/// Get the most torque the spherical joint spring applies, usually in newton-meters. Added for Nebenan.
+B3_API float b3SphericalJoint_GetMaxSpringTorque( b3JointId jointId );
+
+/// Get the torque the spherical joint spring applied in the last step, in world space, usually in newton-meters. Its
+/// length against the maximum tells how hard the spring works. Added for Nebenan.
+B3_API b3Vec3 b3SphericalJoint_GetSpringTorque( b3JointId jointId );
+
+/// This Box3D bounds the springs of revolute and spherical joints, see b3RevoluteJointDef::maxSpringTorque and
+/// b3SphericalJointDef::maxSpringTorque, and reads their torque back
+#define B3_HAS_SPRING_TORQUE_LIMITS 1
 
 /// Set the spherical joint spring target rotation
 B3_API void b3SphericalJoint_SetTargetRotation( b3JointId jointId, b3Quat targetRotation );

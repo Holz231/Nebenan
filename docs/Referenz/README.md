@@ -1,13 +1,18 @@
 # Referenz: Roadmap des Spiels
 
-`Nebenan_Roadmap_V1_4_Sifu_Overgrowth_PvP.pdf` ist die Roadmap des Spiels Nebenan in der Fassung V1.4, 39 Seiten, mit
-Ergänzungen vom 9. bis 17. Oktober 2026. Sie beschreibt, was das Spiel werden soll. Gebaut ist davon nur, was das README
-und `docs/` als umgesetzt nennen, die Roadmap behauptet selbst keinen Stand. Am 21. Oktober 2026 ist Seite 6 neu
-gesetzt, Kapitel 17.1 bis 17.3, nach dem Einsturz, wie er in der Demo abgestimmt wurde: Schwellen je Etage aus Bereichen
-statt fester 40 % und der ganze Rest statt der 90/10-Regel, die übrigen Seiten sind unverändert. Die eingebetteten
-Content Credentials (C2PA) der ursprünglichen Fassung passen seitdem nicht mehr zur Datei, ein Prüfwerkzeug zeigt sie
-als nachträglich verändert. `Nebenan_Roadmap_V1_4_Sifu_Overgrowth_PvP.txt` ist der Text des PDFs, zum Durchsuchen,
-erzeugt mit `pdftotext -layout` ohne den letzten Seitenvorschub.
+`Nebenan_Roadmap_V1_7_Active_Ragdoll_Keyframes.pdf` ist die Roadmap des Spiels Nebenan in der Fassung V1.7, 46 Seiten,
+mit Ergänzungen vom 9. bis 24. Oktober 2026. Sie beschreibt, was das Spiel werden soll. Gebaut ist davon nur, was das
+README und `docs/` als umgesetzt nennen, die Roadmap behauptet selbst keinen Stand.
+`Nebenan_Roadmap_V1_7_Active_Ragdoll_Keyframes.txt` ist der Text des PDFs, zum Durchsuchen, erzeugt mit
+`pdftotext -layout -enc UTF-8` ohne den letzten Seitenvorschub.
+
+Daneben liegt die Fassung V1.4, 39 Seiten, `Nebenan_Roadmap_V1_4_Sifu_Overgrowth_PvP.pdf` mit ihrem Text. Für Kapitel
+17.1 bis 17.3 gilt sie, nicht V1.7: Am 21. Oktober 2026 ist ihre Seite 6 neu gesetzt, nach dem Einsturz, wie er in der
+Demo abgestimmt wurde, mit Schwellen je Etage aus Bereichen statt fester 40 % und dem ganzen Rest statt der 90/10-Regel.
+V1.7 führt dort wieder den älteren Text, „Auslöser und die 90/10-Regel“, gebaut bleibt der abgestimmte Stand, siehe
+Einsturz im README. Die eingebetteten Content Credentials (C2PA) der ursprünglichen Fassung V1.4 passen seit der neuen
+Seite nicht mehr zur Datei, ein Prüfwerkzeug zeigt sie als nachträglich verändert. Die übrigen Kapitel stehen in V1.7
+wie in V1.4 oder sind ergänzt, Kapitel 31 bis 33 sind neu.
 
 | Kapitel | Inhalt |
 | --- | --- |
@@ -27,7 +32,7 @@ erzeugt mit `pdftotext -layout` ohne den letzten Seitenvorschub.
 | 14 | Gemeinsame Ereignisse aller Systeme, Rendering, Release |
 | 15 | Reihenfolge M1 bis M8, siehe unten |
 | 16 | Was die Roadmap nicht wiederholt |
-| 17 | Zerstörung: Restanker, Buckling und Kollaps, wie Häuser einstürzen sollen. 17.1 bis 17.3 gebaut auf `kollaps-1`, die oberste Etage unter dem Dach wie die übrigen seit `kollaps-2`, der Anteil, der stehen bleibt, einstellbar seit `kollaps-3`, seit `kollaps-4` mit eigenen Werten für jede Etage, gezogen aus Bereichen, eigenen Bereichen für die oberste, und der Rest gebrochen wie in 17.1, in seine Zellen. Am 21. Oktober korrigiert auf die abgestimmten Werte: 17 bis 31 % für alle Etagen, 18 bis 25 % für die oberste, der ganze Rest bleibt stehen. Siehe Einsturz im README, die Rampe in der Decke aus 17.4 ist offen |
+| 17 | Zerstörung: Restanker, Buckling und Kollaps, wie Häuser einstürzen sollen. 17.1 bis 17.3 gebaut auf `kollaps-1`, die oberste Etage unter dem Dach wie die übrigen seit `kollaps-2`, der Anteil, der stehen bleibt, einstellbar seit `kollaps-3`, seit `kollaps-4` mit eigenen Werten für jede Etage, gezogen aus Bereichen, eigenen Bereichen für die oberste, und der Rest gebrochen wie in 17.1, in seine Zellen. Abgestimmt auf 17 bis 31 % für alle Etagen, 18 bis 25 % für die oberste, der ganze Rest bleibt stehen, so steht es in 17.1 bis 17.3 der Fassung V1.4, in V1.7 wieder der ältere Text mit 40 % und der 90/10-Regel. Siehe Einsturz im README, die Rampe in der Decke aus 17.4 ist offen |
 | 18 | Parallax Occlusion Mapping |
 | 19 | Figuren aus dem Skelett heraus erzeugen |
 | 20 | Gebäude streamen, Physik aktivieren, vorbereitete Häuser cachen |
@@ -36,10 +41,13 @@ erzeugt mit `pdftotext -layout` ohne den letzten Seitenvorschub.
 | 23 | Aufzeichnung der langsamsten Bilder und ihrer Ursachen |
 | 24, 25 | Weitere Referenzsysteme: BEPUphysics, Chrono, ReactPhysics3D, Voro++, MuJoCo, PBD, SPlisHSPlasH, Godot, Steam Audio |
 | 26 | Hybride Animation und Trefferreaktionen nach Overgrowth |
-| 27 | Gelenkketten und Motoren auf Box3D |
+| 27 | Gelenkketten und Motoren auf Box3D. Die Stufen 1 bis 4 der Messmatrix aus 27.14 gebaut auf `ragdoll-1`: Pendel, Drei-Link-Arm, passive und motorisierte Figur, dazu die Federn mit Drehmomentgrenze in Box3D, siehe Figuren im README und `docs/Roadmap.md` |
 | 28 | Übergaben zwischen Steuerung, Animation und Physik |
 | 29 | Angriffswunsch statt sofortiger Schlag |
 | 30 | Physikbasiertes PvP nach Sifu und Overgrowth |
+| 31 | Keyframe- und prozedurale Humanoid-Animation: Clips, Pose-Graph, Anpassung an die Umwelt |
+| 32 | Physik-Pose-Controller: Zielskelett und Physikskelett, Gelenkmotoren, Treffer als Ereignis, optionaler Video-zu-Keyframe-Editor, Stufenplan P0 bis P5. P0 bis P3 gebaut auf `ragdoll-1`, ohne Stützschritt und Recovery |
+| 33 | Active-Ragdoll-Controller und Keyframes: wie aus wenigen Keyframes eine Bewegung wird, die Reihenfolge für den Bau und die Abnahme. Die Schritte 1 bis 4 aus 33.4 gebaut auf `ragdoll-1`, Schritt 5, Balance und Stützschritt, ist der nächste, siehe `docs/Roadmap.md` |
 
 Die Reihenfolge aus Kapitel 15:
 

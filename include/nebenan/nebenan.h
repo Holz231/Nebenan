@@ -383,3 +383,108 @@ NB_API nbDestructibleId nbStream_GetDestructible( nbStreamId streamId, int site 
 NB_API nbStreamStats nbStream_GetStats( nbStreamId streamId );
 
 /** @} */
+
+/**
+ * @defgroup articulation Articulation
+ * Figures of Box3D bodies and joints that follow a pose, see the types. The same Box3D world simulates them with the
+ * debris, their bones hit walls like cannonballs do, and every step the update samples the clip of every figure and sets
+ * the targets of its joints for the next step.
+ * @{
+ */
+
+/// Default bone: a capsule of 1 kg along y with a ball joint to its parent.
+NB_API nbBoneDef nbDefaultBoneDef( void );
+
+/// Default rig definition.
+NB_API nbRigDef nbDefaultRigDef( void );
+
+/// A profile that holds a standing pose: joints of 800 N m per radian with 150 N m times the strength of the bone, the
+/// root held upright with 1500 N m per radian up to 250 N m.
+NB_API nbMotorProfile nbDefaultMotorProfile( void );
+
+/// A passive ragdoll: no motors, no upright hold.
+NB_API nbMotorProfile nbPassiveMotorProfile( void );
+
+/// Write the bones of a humanoid of this height in meters and mass in kilograms, nb_humanoidBoneCount of them in the
+/// order of nbHumanoidBone: a pelvis as the root, a torso and a head on ball joints, arms and legs that hang down with
+/// ball joints at the shoulders, hips, wrists and ankles and hinges at the elbows and knees, feet as boxes. It stands
+/// with its y axis up and faces +z. Returns the height of the pelvis origin over the soles, so an articulation created
+/// at that height stands on the ground at y = 0. The names of the bones are static strings.
+NB_API float nbMakeHumanoidBones( float height, float mass, nbBoneDef* bones, int capacity );
+
+/// Create a figure from a rig at the rest pose, the root at this position with this rotation, with these motors or
+/// passive for null. The bones are dynamic Box3D bodies in the world of the destruction world, the joints are Box3D
+/// joints, and the rig can go afterwards.
+NB_API nbArticulationId nbCreateArticulation( nbWorldId worldId, const nbRigDef* rig, b3Pos position, b3Quat rotation,
+											  const nbMotorProfile* profile );
+
+/// Destroy a figure with its bodies and joints.
+NB_API void nbDestroyArticulation( nbArticulationId articulationId );
+
+/// Is this articulation id valid?
+NB_API bool nbArticulation_IsValid( nbArticulationId articulationId );
+
+/// The bones of the figure.
+NB_API int nbArticulation_GetBoneCount( nbArticulationId articulationId );
+
+/// The Box3D body of a bone.
+NB_API b3BodyId nbArticulation_GetBody( nbArticulationId articulationId, int bone );
+
+/// The Box3D joint of a bone to its parent, null for the root.
+NB_API b3JointId nbArticulation_GetJoint( nbArticulationId articulationId, int bone );
+
+/// Change the motors, for example from standing to a soft figure that takes a hit or to a passive ragdoll. Wakes the
+/// figure.
+NB_API void nbArticulation_SetMotorProfile( nbArticulationId articulationId, const nbMotorProfile* profile );
+
+/// The motors of the figure.
+NB_API nbMotorProfile nbArticulation_GetMotorProfile( nbArticulationId articulationId );
+
+/// Set the pose the joints drive to: the rotation of every bone against its rest pose, in the frame of the bone, one per
+/// bone. The root is not driven. Stops a clip that plays. The motors reach the pose as far as their torque, the limits
+/// and the world let them, nothing is teleported.
+NB_API void nbArticulation_SetTargetPose( nbArticulationId articulationId, const b3Quat* rotations, int count );
+
+/// Play a clip from its start, at this speed, 1 for real time. The clip is copied. Every update samples it and sets the
+/// targets of the joints, see nbWorld_Update. Null stops the clip, the joints keep their last targets.
+NB_API void nbArticulation_PlayClip( nbArticulationId articulationId, const nbClipDef* clip, float speed );
+
+/// Seconds into the clip that plays or played last.
+NB_API float nbArticulation_GetClipTime( nbArticulationId articulationId );
+
+/// Is a clip playing? A clip that does not loop stops at its end.
+NB_API bool nbArticulation_IsClipPlaying( nbArticulationId articulationId );
+
+/// Apply a hit: one impulse on a bone, once per hit id, see nbHitDef. The physics takes it from there, the motors give
+/// way as far as their torque limits make them. Wakes the figure.
+/// @return true if the hit landed, false if a hit with this id landed before or the bone does not exist
+NB_API bool nbArticulation_ApplyHit( nbArticulationId articulationId, const nbHitDef* hit );
+
+/// How many hits landed.
+NB_API int nbArticulation_GetHitCount( nbArticulationId articulationId );
+
+/// The pose of the figure as the physics has it: the world transform of every bone, up to capacity.
+/// @return the number of transforms written
+NB_API int nbArticulation_GetBoneTransforms( nbArticulationId articulationId, b3WorldTransform* transforms, int capacity );
+
+/// The pose the joints drive to, placed on the root as the physics has it: the world transform of every bone at its
+/// target rotation, up to capacity. Drawn over the bones it shows how far the figure is from its pose.
+/// @return the number of transforms written
+NB_API int nbArticulation_GetTargetTransforms( nbArticulationId articulationId, b3WorldTransform* transforms, int capacity );
+
+/// How far the joint of a bone is from its target, in radians. Zero for the root and fixed bones.
+NB_API float nbArticulation_GetJointError( nbArticulationId articulationId, int bone );
+
+/// How hard the motor of a bone works: the torque of its spring over its limit, 1 when it is at the limit and cannot
+/// pull the bone any closer to its target. Zero without motors.
+NB_API float nbArticulation_GetMotorLoad( nbArticulationId articulationId, int bone );
+
+/// Sample a clip at a time: the rotations of its bones, interpolated between the two keyframes around the time, up to
+/// capacity. Past the end the last pose, or around again for a clip that loops.
+NB_API void nbSampleClip( const nbClipDef* clip, float time, b3Quat* rotations, int capacity );
+
+/// The figure a Box3D body belongs to and which bone it is, for example the body a ray hit. Null for a body of no
+/// figure.
+NB_API nbArticulationId nbWorld_GetArticulationFromBody( nbWorldId worldId, b3BodyId bodyId, int* bone );
+
+/** @} */

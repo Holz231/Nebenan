@@ -53,11 +53,20 @@ typedef struct nbStreamId
 	uint16_t generation;
 } nbStreamId;
 
+/// A figure of rigid bodies held together by joints, a ragdoll, see nbCreateArticulation.
+typedef struct nbArticulationId
+{
+	int32_t index1;
+	uint16_t world0;
+	uint16_t generation;
+} nbArticulationId;
+
 static const nbWorldId nb_nullWorldId = NB_ZERO_INIT;
 static const nbDestructibleId nb_nullDestructibleId = NB_ZERO_INIT;
 static const nbChunkId nb_nullChunkId = NB_ZERO_INIT;
 static const nbCreationId nb_nullCreationId = NB_ZERO_INIT;
 static const nbStreamId nb_nullStreamId = NB_ZERO_INIT;
+static const nbArticulationId nb_nullArticulationId = NB_ZERO_INIT;
 
 /// Use these to test for null. Example: `if ( NB_IS_NULL( chunkId ) ) { ... }`
 #define NB_IS_NULL( id ) ( ( id ).index1 == 0 )
@@ -835,5 +844,199 @@ typedef struct nbGeometry
 	int faceCount;
 	int indexCount;
 } nbGeometry;
+
+/** @} */
+
+/**
+ * @defgroup articulation Articulation
+ * Figures of Box3D bodies and joints that follow a pose: ragdolls with muscles. A rig describes the bones of a figure at
+ * rest, an articulation is one figure made from it in the world. Every joint is a spring to a target rotation with a
+ * torque limit, so the figure holds its pose but gives way to anything stronger, and nothing teleports it.
+ * @{
+ */
+
+/// How a bone is joined to its parent
+typedef enum nbJointType
+{
+	/// No motion against the parent, the bone is welded on
+	nb_fixedJoint,
+
+	/// One rotation about the z axis of the joint frame, within limits: a knee, an elbow
+	nb_hingeJoint,
+
+	/// Rotation about the pivot: a swing of the bone out of its rest direction, the z axis of the joint frame, within a
+	/// cone, and a twist about that axis within limits: a hip, a shoulder, the neck
+	nb_ballJoint,
+} nbJointType;
+
+/// The collision shape of a bone
+typedef enum nbBoneShape
+{
+	/// A capsule between two points with a radius
+	nb_capsuleBone,
+
+	/// A box around a center, for a foot that needs a flat sole
+	nb_boxBone,
+} nbBoneShape;
+
+/// A bone of a rig: one rigid body with one shape, joined to its parent at the origin of the bone. Initialize with
+/// nbDefaultBoneDef.
+typedef struct nbBoneDef
+{
+	/// Optional name, for debugging
+	const char* name;
+
+	/// Index of the parent bone in the rig, -1 for the root. Parents come before their children.
+	int parent;
+
+	/// The pose of the bone in the frame of its parent at rest. Its position is the pivot of the joint. The root takes the
+	/// pose of the articulation instead.
+	b3Transform restTransform;
+
+	/// The collision shape, in the frame of the bone
+	nbBoneShape shape;
+
+	/// Capsule: the centers of its two ends and its radius
+	b3Vec3 start;
+	b3Vec3 end;
+	float radius;
+
+	/// Box: its center and half extents
+	b3Vec3 center;
+	b3Vec3 halfExtents;
+
+	/// Mass in kilograms. The density follows from it and the shape.
+	float mass;
+
+	/// How the bone is joined to its parent, nothing for the root
+	nbJointType joint;
+
+	/// The joint frame in the frame of the bone: its z axis is the hinge axis, or the axis of the cone, which is the rest
+	/// direction of the bone. Identity puts the axis along z.
+	b3Quat jointFrame;
+
+	/// Hinge: the range of the angle in radians, within -0.99 pi and 0.99 pi. Ball: the range of the twist.
+	float lowerAngle;
+	float upperAngle;
+
+	/// Ball: how far the bone swings out of its rest direction, in radians, up to 0.5 pi
+	float coneAngle;
+
+	/// Scales the torque limit of the motor profile for this joint, 1 by default: strong legs, a weak neck
+	float strength;
+} nbBoneDef;
+
+/// A rig: the bones of a figure at rest, shared by all articulations made from it. Initialize with nbDefaultRigDef.
+typedef struct nbRigDef
+{
+	/// The bones, the root first and every parent before its children
+	const nbBoneDef* bones;
+	int boneCount;
+
+	/// Friction of all shapes
+	float friction;
+
+	/// The axis of the root that points up when the figure stands, y by default, see nbMotorProfile::uprightTorque
+	b3Vec3 up;
+
+	/// Bones that are not joined to each other collide. Off, no bone of a figure collides with another of the same
+	/// figure. Joined bones never collide with each other.
+	bool selfCollision;
+
+	/// The bones damage the destructibles they hit, like cannonballs, see nbWorldDef::collisionDamageScale
+	bool enableCollisionDamage;
+
+	/// Used internally to detect a valid definition. DO NOT SET.
+	int internalValue;
+} nbRigDef;
+
+/// How the joints drive a figure to its target pose, see nbArticulation_SetMotorProfile. Every joint is a spring to its
+/// target with a torque limit. All zero is a passive ragdoll, see nbPassiveMotorProfile.
+typedef struct nbMotorProfile
+{
+	/// Stiffness of every joint in newton meters per radian of error, the same for a hip and a wrist. Zero turns the
+	/// motors off. Box3D sets a joint spring in cycles per second against the inertia of its two bones, so the library
+	/// turns this into cycles per second for every joint from the inertia of its bones, in the pose they have when the
+	/// profile is set. An ankle in quiet standing holds about 800.
+	float stiffness;
+
+	/// Damping ratio of every joint, 1 is critical
+	float dampingRatio;
+
+	/// The most torque a joint applies in newton meters, times the strength of its bone. A spring this stiff reaches it
+	/// after a few degrees, from there the joint gives way.
+	float maxTorque;
+
+	/// The most torque that holds the root upright, in newton meters, zero for none. This is an external torque against
+	/// the world, no muscle: a stand-in for balance until the figure steps to keep it, see the roadmap. A push stronger
+	/// than it topples the figure. Say so to the player, it is a game aid, not physics.
+	float uprightTorque;
+
+	/// Stiffness in newton meters per radian and damping of the upright hold
+	float uprightStiffness;
+	float uprightDampingRatio;
+} nbMotorProfile;
+
+/// A hit on a bone, see nbArticulation_ApplyHit
+typedef struct nbHitDef
+{
+	/// Number of the hit event. A hit with the number of one of the last 16 hits the figure took is ignored, so a hit that
+	/// several events report lands once. A hit with zero always lands.
+	uint32_t id;
+
+	/// The bone that is hit
+	int bone;
+
+	/// Impulse in newton seconds, in world space
+	b3Vec3 impulse;
+
+	/// Where it hits, in world space
+	b3Pos point;
+} nbHitDef;
+
+/// A pose at a time, see nbClipDef
+typedef struct nbKeyframe
+{
+	/// Seconds from the start of the clip
+	float time;
+
+	/// The rotation of every bone against its rest pose, in the frame of the bone, one per bone of the rig. The root is
+	/// not driven, its rotation only places the target pose that is drawn.
+	const b3Quat* rotations;
+} nbKeyframe;
+
+/// A clip of keyframes, sorted by time. Between two keyframes the rotations are interpolated.
+typedef struct nbClipDef
+{
+	const nbKeyframe* keyframes;
+	int keyframeCount;
+
+	/// Bones per keyframe, the bones of the rig
+	int boneCount;
+
+	/// Start over at the end, else the clip ends on its last pose
+	bool loop;
+} nbClipDef;
+
+/// The bones of the figure that nbMakeHumanoidBones builds, in the order of its array
+typedef enum nbHumanoidBone
+{
+	nb_humanoidPelvis,
+	nb_humanoidTorso,
+	nb_humanoidHead,
+	nb_humanoidUpperArmLeft,
+	nb_humanoidForearmLeft,
+	nb_humanoidHandLeft,
+	nb_humanoidUpperArmRight,
+	nb_humanoidForearmRight,
+	nb_humanoidHandRight,
+	nb_humanoidThighLeft,
+	nb_humanoidShinLeft,
+	nb_humanoidFootLeft,
+	nb_humanoidThighRight,
+	nb_humanoidShinRight,
+	nb_humanoidFootRight,
+	nb_humanoidBoneCount
+} nbHumanoidBone;
 
 /** @} */

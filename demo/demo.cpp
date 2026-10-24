@@ -45,10 +45,11 @@ enum SceneKind
 	SceneStress,
 	SceneTown,
 	SceneCity,
+	SceneFigures,
 	SceneCount
 };
 
-static const char* s_sceneNames[SceneCount] = { "Mauern", "Stresstest", "Stadt", "Große Stadt" };
+static const char* s_sceneNames[SceneCount] = { "Mauern", "Stresstest", "Stadt", "Große Stadt", "Figuren" };
 static const char* s_toolNames[ToolCount] = { "Gewehr", "Granate", "Kanone" };
 
 struct ToolSettings
@@ -81,6 +82,17 @@ struct Ball
 	float age;
 };
 
+// A figure of the library with the meshes of its bones, which follow the bodies, and the thinner dark meshes of the pose
+// its joints drive to, drawn over them, see BuildFigureScene
+struct FigureVisual
+{
+	nbArticulationId id;
+	std::vector<int> boneSlots;
+	std::vector<int> boneMeshes;
+	std::vector<int> targetSlots;
+	std::vector<int> targetMeshes;
+};
+
 // The slots of the chunks of a body, by the index of the body in Box3D, so the poses of a frame find them quickly, and
 // the pose the body was last drawn at, for a chunk that comes to it
 struct BodySlots
@@ -91,6 +103,15 @@ struct BodySlots
 	bool posed = false;
 };
 
+
+// What the menu shows of a figure: the largest error and motor load of its joints, its hits and the time of its clip
+struct FigureView
+{
+	float error = 0.0f;
+	float load = 0.0f;
+	int hits = 0;
+	float clipTime = 0.0f;
+};
 
 // What the menu and the report show of the worlds and the city, read on the main thread while no job runs
 struct WorldView
@@ -106,6 +127,7 @@ struct WorldView
 	int saves = 0;
 	int restores = 0;
 	size_t savedBytes = 0;
+	std::vector<FigureView> figures;
 };
 
 // The town taken down house by house, see RunDemolition
@@ -340,6 +362,18 @@ struct App
 	std::vector<Ball> balls;
 	std::vector<GpuVertex> ballVertices;
 	std::vector<uint16_t> ballIndices;
+
+	// The figures of the figure scene, the clip of three keyframes the second one plays, the motors of the figures that
+	// stand, whether the pose they drive to is drawn, how hard a shot hits them and the number of the next hit
+	std::vector<FigureVisual> figures;
+	std::vector<b3Quat> clipPoses;
+	std::vector<nbKeyframe> clipKeyframes;
+	nbClipDef armClip = {};
+	nbMotorProfile figureProfile = nbDefaultMotorProfile();
+	bool figureMotors = true;
+	bool showTargets = true;
+	float hitImpulse = 60.0f;
+	uint32_t hitCounter = 0;
 	std::vector<GpuVertex> vertexScratch;
 	std::vector<uint16_t> indexScratch;
 	int groundSlot = -1;
@@ -726,6 +760,84 @@ static void BuildBallMesh( App& app, float radius )
 	}
 }
 
+// A capsule between two points with smooth normals, for a bone
+static void BuildCapsuleMesh( std::vector<GpuVertex>& vertices, std::vector<uint16_t>& indices, b3Vec3 start, b3Vec3 end,
+							  float radius, int material, int slot )
+{
+	vertices.clear();
+	indices.clear();
+
+	b3Vec3 axis = b3Sub( end, start );
+	float length = b3Length( axis );
+	axis = length > 1.0e-6f ? b3MulSV( 1.0f / length, axis ) : b3Vec3_axisY;
+	b3Vec3 helper = fabsf( axis.y ) < 0.9f ? b3Vec3_axisY : b3Vec3_axisX;
+	b3Vec3 u = b3Normalize( b3Cross( helper, axis ) );
+	b3Vec3 v = b3Cross( axis, u );
+
+	// Rings of the lower hemisphere around the start, then of the upper around the end
+	const int segments = 12;
+	const int rings = 4;
+	for ( int half = 0; half < 2; ++half )
+	{
+		b3Vec3 center = half == 0 ? start : end;
+		for ( int i = 0; i <= rings; ++i )
+		{
+			float latitude = ( half == 0 ? -0.5f : 0.0f ) * B3_PI + 0.5f * B3_PI * (float)i / (float)rings;
+			float c = cosf( latitude );
+			float s = sinf( latitude );
+			for ( int k = 0; k < segments; ++k )
+			{
+				float theta = 2.0f * B3_PI * (float)k / (float)segments;
+				b3Vec3 n = b3MulAdd( b3MulSV( c, b3Add( b3MulSV( cosf( theta ), u ), b3MulSV( sinf( theta ), v ) ) ), s, axis );
+				vertices.push_back( Renderer::MakeVertex( b3MulAdd( center, radius, n ), n, material, slot ) );
+			}
+		}
+	}
+
+	int rows = 2 * ( rings + 1 );
+	for ( int row = 0; row + 1 < rows; ++row )
+	{
+		for ( int k = 0; k < segments; ++k )
+		{
+			uint16_t a = (uint16_t)( row * segments + k );
+			uint16_t b = (uint16_t)( row * segments + ( k + 1 ) % segments );
+			uint16_t c = (uint16_t)( ( row + 1 ) * segments + k );
+			uint16_t d = (uint16_t)( ( row + 1 ) * segments + ( k + 1 ) % segments );
+			indices.insert( indices.end(), { a, b, d, a, d, c } );
+		}
+	}
+}
+
+// A box with flat normals, for a foot. The corners of a face run around its normal, counter clockwise seen from outside.
+static void BuildBoxMesh( std::vector<GpuVertex>& vertices, std::vector<uint16_t>& indices, b3Vec3 center, b3Vec3 halfExtents,
+						  int material, int slot )
+{
+	vertices.clear();
+	indices.clear();
+	const float a[4] = { -1.0f, 1.0f, 1.0f, -1.0f };
+	const float b[4] = { -1.0f, -1.0f, 1.0f, 1.0f };
+	for ( int face = 0; face < 6; ++face )
+	{
+		int axis = face / 2;
+		float sign = face % 2 == 0 ? 1.0f : -1.0f;
+		b3Vec3 n = { axis == 0 ? sign : 0.0f, axis == 1 ? sign : 0.0f, axis == 2 ? sign : 0.0f };
+		b3Vec3 t = axis == 0 ? b3Vec3_axisY : ( axis == 1 ? b3Vec3_axisZ : b3Vec3_axisX );
+		b3Vec3 bt = b3Cross( n, t );
+		uint16_t base = (uint16_t)vertices.size();
+		for ( int corner = 0; corner < 4; ++corner )
+		{
+			b3Vec3 d = b3Add( n, b3Add( b3MulSV( a[corner], t ), b3MulSV( b[corner], bt ) ) );
+			b3Vec3 p = { center.x + d.x * halfExtents.x, center.y + d.y * halfExtents.y, center.z + d.z * halfExtents.z };
+			vertices.push_back( Renderer::MakeVertex( p, n, material, slot ) );
+		}
+		const uint16_t order[6] = { 0, 1, 2, 0, 2, 3 };
+		for ( uint16_t o : order )
+		{
+			indices.push_back( (uint16_t)( base + o ) );
+		}
+	}
+}
+
 //----------------------------------------------------------------------------------------------------------------------
 // Scenes
 
@@ -852,6 +964,161 @@ static void BuildWallScene( App& app )
 	app.camera.position = { 0.0f, 1.8f, 9.0f };
 	app.camera.yaw = 0.0f;
 	app.camera.pitch = -0.05f;
+}
+
+//----------------------------------------------------------------------------------------------------------------------
+// Figures: humanoids of the library that hold a pose, play a clip or hang passive, drawn with the pose they drive to
+
+// The bone and ghost meshes of a figure. The bones follow their bodies through the slots like the balls, the ghosts are
+// moved every frame to the pose the joints drive to, see UpdateFigures.
+static void AddFigureVisual( App& app, nbArticulationId id, const nbBoneDef* bones, int boneCount )
+{
+	FigureVisual visual;
+	visual.id = id;
+	for ( int i = 0; i < boneCount; ++i )
+	{
+		const nbBoneDef& bone = bones[i];
+		for ( int ghost = 0; ghost < 2; ++ghost )
+		{
+			int slot = app.renderer.AllocSlot();
+			int material = ghost == 0 ? MaterialPlaster : MaterialSteel;
+			float scale = ghost == 0 ? 1.0f : 0.4f;
+			if ( bone.shape == nb_boxBone )
+			{
+				BuildBoxMesh( app.vertexScratch, app.indexScratch, bone.center, b3MulSV( scale, bone.halfExtents ), material, slot );
+			}
+			else
+			{
+				BuildCapsuleMesh( app.vertexScratch, app.indexScratch, bone.start, bone.end, scale * bone.radius, material, slot );
+			}
+			int mesh = app.renderer.AddMesh( app.vertexScratch.data(), (int)app.vertexScratch.size(), app.indexScratch.data(),
+											 (int)app.indexScratch.size(), slot );
+			if ( ghost == 0 )
+			{
+				AttachSlot( app, nbArticulation_GetBody( id, i ), slot );
+				visual.boneSlots.push_back( slot );
+				visual.boneMeshes.push_back( mesh );
+			}
+			else
+			{
+				app.renderer.SetSlotVisible( slot, app.showTargets );
+				visual.targetSlots.push_back( slot );
+				visual.targetMeshes.push_back( mesh );
+			}
+		}
+	}
+	app.figures.push_back( visual );
+}
+
+// The clip of three keyframes of chapter 33: the left arm comes up, the elbow bends, the arm goes down, around again
+static void MakeArmClip( App& app, int boneCount )
+{
+	app.clipPoses.assign( (size_t)( 3 * boneCount ), b3Quat_identity );
+	b3Quat* poses = app.clipPoses.data();
+	poses[1 * boneCount + nb_humanoidUpperArmLeft] = b3MakeQuatFromAxisAngle( b3Vec3_axisX, 1.3f );
+	poses[1 * boneCount + nb_humanoidForearmLeft] = b3MakeQuatFromAxisAngle( b3Vec3_axisX, 1.5f );
+	poses[2 * boneCount + nb_humanoidUpperArmLeft] = b3MakeQuatFromAxisAngle( b3Vec3_axisX, 0.2f );
+	poses[2 * boneCount + nb_humanoidUpperArmRight] = b3MakeQuatFromAxisAngle( b3Vec3_axisX, 0.8f );
+
+	float times[3] = { 0.0f, 0.8f, 1.6f };
+	app.clipKeyframes.resize( 3 );
+	for ( int k = 0; k < 3; ++k )
+	{
+		app.clipKeyframes[k].time = times[k];
+		app.clipKeyframes[k].rotations = poses + k * boneCount;
+	}
+	app.armClip.keyframes = app.clipKeyframes.data();
+	app.armClip.keyframeCount = 3;
+	app.armClip.boneCount = boneCount;
+	app.armClip.loop = true;
+}
+
+// The motors of the figures that stand, as the menu has them
+static void ApplyFigureProfile( App& app )
+{
+	nbMotorProfile passive = nbPassiveMotorProfile();
+	for ( size_t i = 0; i < app.figures.size(); ++i )
+	{
+		// The third figure stays passive
+		if ( i < 2 )
+		{
+			nbArticulation_SetMotorProfile( app.figures[i].id, app.figureMotors ? &app.figureProfile : &passive );
+		}
+	}
+}
+
+// Three humanoids in front of a brick wall: one stands, one plays the arm clip, one falls passive. The rifle hits them,
+// the wall shows what a thrown figure does to a house.
+static void BuildFigureScene( App& app )
+{
+	MaterialPreset brick = BrickPreset();
+	AddWall( app, { 0.0f, 0.0f, -4.0f }, 0.0f, { 8.0f, 2.6f, 0.25f }, brick, 7 );
+
+	nbBoneDef bones[nb_humanoidBoneCount];
+	float rootHeight = nbMakeHumanoidBones( 1.8f, 75.0f, bones, nb_humanoidBoneCount );
+	nbRigDef rig = nbDefaultRigDef();
+	rig.bones = bones;
+	rig.boneCount = nb_humanoidBoneCount;
+	MakeArmClip( app, nb_humanoidBoneCount );
+
+	nbMotorProfile passive = nbPassiveMotorProfile();
+	float xs[3] = { -1.5f, 0.0f, 1.5f };
+	for ( int i = 0; i < 3; ++i )
+	{
+		bool isPassive = i == 2;
+		const nbMotorProfile* profile = isPassive || app.figureMotors == false ? &passive : &app.figureProfile;
+		b3Vec3 position = { xs[i], rootHeight + ( isPassive ? 0.3f : 0.0f ), 0.0f };
+		b3Quat rotation = isPassive ? b3MakeQuatFromAxisAngle( b3Vec3_axisX, 0.3f ) : b3Quat_identity;
+		nbArticulationId id = nbCreateArticulation( app.destruction, &rig, b3ToPos( position ), rotation, profile );
+		if ( i == 1 )
+		{
+			nbArticulation_PlayClip( id, &app.armClip, 1.0f );
+		}
+		AddFigureVisual( app, id, bones, nb_humanoidBoneCount );
+	}
+
+	app.camera.position = { 0.0f, 1.6f, 5.5f };
+	app.camera.yaw = 0.0f;
+	app.camera.pitch = -0.08f;
+}
+
+// Move the ghosts to the pose the joints drive to, placed on the root where it is drawn: between two steps the bones
+// are drawn up to a step behind the physics, see nbWorld_GetDrawPoses
+static void UpdateFigures( App& app )
+{
+	b3WorldTransform transforms[nb_humanoidBoneCount];
+	for ( FigureVisual& figure : app.figures )
+	{
+		int count = nbArticulation_GetTargetTransforms( figure.id, transforms, nb_humanoidBoneCount );
+		if ( count == 0 )
+		{
+			continue;
+		}
+
+		b3WorldTransform root = transforms[0];
+		const BodySlots* slots = FindBodySlots( app, nbArticulation_GetBody( figure.id, 0 ) );
+		b3WorldTransform drawn = slots != nullptr && slots->posed ? slots->pose : root;
+		for ( int i = 0; i < count && i < (int)figure.targetSlots.size(); ++i )
+		{
+			b3WorldTransform pose = b3MulWorldTransforms( drawn, b3InvMulWorldTransforms( root, transforms[i] ) );
+			app.renderer.SetSlot( figure.targetSlots[i], b3ToVec3( pose.p ), pose.q );
+		}
+	}
+}
+
+// One hit on the chest of every figure that stands, backward, with the impulse of the menu
+static void HitChests( App& app )
+{
+	for ( size_t i = 0; i < app.figures.size() && i < 2; ++i )
+	{
+		b3BodyId torso = nbArticulation_GetBody( app.figures[i].id, nb_humanoidTorso );
+		nbHitDef hit = {};
+		hit.id = ++app.hitCounter;
+		hit.bone = nb_humanoidTorso;
+		hit.impulse = { 0.0f, 0.0f, -app.hitImpulse };
+		hit.point = b3Body_GetWorldPoint( torso, { 0.0f, 0.3f, 0.1f } );
+		nbArticulation_ApplyHit( app.figures[i].id, &hit );
+	}
 }
 
 // Brick walls through all floors with their doors and windows cut out, and concrete floors inside them. The walls are
@@ -1075,6 +1342,28 @@ static void DestroyScene( App& app )
 		app.renderer.FreeSlot( ball.slot );
 	}
 	app.balls.clear();
+
+	// The figures went with the world, their meshes go here
+	for ( FigureVisual& figure : app.figures )
+	{
+		for ( int mesh : figure.boneMeshes )
+		{
+			app.renderer.RemoveMesh( mesh );
+		}
+		for ( int mesh : figure.targetMeshes )
+		{
+			app.renderer.RemoveMesh( mesh );
+		}
+		for ( int slot : figure.boneSlots )
+		{
+			app.renderer.FreeSlot( slot );
+		}
+		for ( int slot : figure.targetSlots )
+		{
+			app.renderer.FreeSlot( slot );
+		}
+	}
+	app.figures.clear();
 	app.bodySlots.clear();
 	app.lastImpact = {};
 	app.city = City();
@@ -1145,6 +1434,9 @@ static void LoadScene( App& app, SceneKind scene )
 		case SceneCity:
 			BuildCityScene( app );
 			break;
+		case SceneFigures:
+			BuildFigureScene( app );
+			break;
 		default:
 			BuildTownScene( app );
 			break;
@@ -1213,7 +1505,19 @@ static void FireRay( App& app, b3Vec3 origin, b3Vec3 direction )
 			if ( ray.hit )
 			{
 				b3BodyId body = b3Shape_GetBody( ray.shapeId );
-				if ( b3Body_GetType( body ) == b3_dynamicBody )
+				int bone = -1;
+				nbArticulationId figure = nbWorld_GetArticulationFromBody( app.destruction, body, &bone );
+				if ( NB_IS_NON_NULL( figure ) )
+				{
+					// A hit on a figure lands once through the library, with the impulse of the menu
+					nbHitDef hit = {};
+					hit.id = ++app.hitCounter;
+					hit.bone = bone;
+					hit.impulse = b3MulSV( app.hitImpulse, direction );
+					hit.point = ray.point;
+					nbArticulation_ApplyHit( figure, &hit );
+				}
+				else if ( b3Body_GetType( body ) == b3_dynamicBody )
 				{
 					b3Body_ApplyLinearImpulse( body, b3MulSV( 60.0f, direction ), ray.point, true );
 				}
@@ -1393,6 +1697,21 @@ static void TakeWorldView( App& app )
 		view.saves = stream.saves;
 		view.restores = stream.restores;
 		view.savedBytes = stream.savedBytes;
+	}
+
+	view.figures.clear();
+	for ( const FigureVisual& figure : app.figures )
+	{
+		FigureView figureView;
+		int boneCount = nbArticulation_GetBoneCount( figure.id );
+		for ( int bone = 1; bone < boneCount; ++bone )
+		{
+			figureView.error = b3MaxFloat( figureView.error, nbArticulation_GetJointError( figure.id, bone ) );
+			figureView.load = b3MaxFloat( figureView.load, nbArticulation_GetMotorLoad( figure.id, bone ) );
+		}
+		figureView.hits = nbArticulation_GetHitCount( figure.id );
+		figureView.clipTime = nbArticulation_GetClipTime( figure.id );
+		view.figures.push_back( figureView );
 	}
 }
 
@@ -1602,6 +1921,78 @@ static void DrawUi( App& app )
 		ImGui::Text( "Gespeichert %d, zurückgeholt %d, %.0f MB im Speicher", view.saves, view.restores,
 					 (double)view.savedBytes / 1048576.0 );
 		ImGui::Text( "Speicher %.0f MB (Nebenan und Box3D)", (double)( view.stats.byteCount + view.counters.byteCount ) / 1048576.0 );
+	}
+
+	if ( app.scene == SceneFigures )
+	{
+		ImGui::SeparatorText( "Figuren" );
+		bool changed = ImGui::Checkbox( "Motoren", &app.figureMotors );
+		if ( ImGui::IsItemHovered() )
+		{
+			ImGui::SetTooltip( "An: die linke und die mittlere Figur halten ihre Pose mit Federn in den Gelenken,\nbegrenzt im "
+							   "Drehmoment. Aus: alle drei sind passive Ragdolls. Die rechte ist es immer." );
+		}
+		changed |= ImGui::SliderFloat( "Steifigkeit", &app.figureProfile.stiffness, 0.0f, 3000.0f, "%.0f N m/rad" );
+		if ( ImGui::IsItemHovered() )
+		{
+			ImGui::SetTooltip( "Drehmoment je Radian Abweichung von der Zielpose, in jedem Gelenk gleich." );
+		}
+		changed |= ImGui::SliderFloat( "Drehmoment", &app.figureProfile.maxTorque, 0.0f, 500.0f, "%.0f N m" );
+		if ( ImGui::IsItemHovered() )
+		{
+			ImGui::SetTooltip( "Mehr als das bringt kein Gelenk auf, mal der Stärke des Knochens: Oberschenkel 2, Rumpf 1,6,\nUnterschenkel 1,5, Oberarme 0,6, Hals "
+							   "0,3. Darüber gibt die Figur nach." );
+		}
+		changed |= ImGui::SliderFloat( "Aufrecht halten", &app.figureProfile.uprightTorque, 0.0f, 1000.0f, "%.0f N m" );
+		if ( ImGui::IsItemHovered() )
+		{
+			ImGui::SetTooltip( "Ein äußeres Drehmoment hält das Becken aufrecht, bis hierhin. Kein Muskel, eine\nSpielhilfe anstelle "
+							   "der Balance, bis die Figur Schritte macht. Ein stärkerer Stoß kippt sie." );
+		}
+		if ( changed )
+		{
+			ApplyFigureProfile( app );
+		}
+		if ( ImGui::Checkbox( "Zielpose zeigen", &app.showTargets ) )
+		{
+			for ( FigureVisual& figure : app.figures )
+			{
+				for ( int slot : figure.targetSlots )
+				{
+					app.renderer.SetSlotVisible( slot, app.showTargets );
+				}
+			}
+		}
+		if ( ImGui::IsItemHovered() )
+		{
+			ImGui::SetTooltip( "Die Pose, zu der die Gelenke ziehen, als dünnes dunkles Skelett über den Knochen.\nWo sie "
+							   "herausschaut, kommt die Figur nicht hin." );
+		}
+		ImGui::SliderFloat( "Treffer", &app.hitImpulse, 5.0f, 300.0f, "%.0f N s" );
+		if ( ImGui::IsItemHovered() )
+		{
+			ImGui::SetTooltip( "Impuls eines Gewehrtreffers auf eine Figur und des Brusttreffers. Mit 20 N s auf die Brust steht\ndie "
+							   "Figur, 120 N s werfen sie um." );
+		}
+		if ( ImGui::Button( "Brusttreffer" ) )
+		{
+			HitChests( app );
+		}
+		ImGui::SameLine();
+		if ( ImGui::Button( "Clip neu starten" ) )
+		{
+			for ( size_t i = 0; i < app.figures.size() && i < 2; ++i )
+			{
+				nbArticulation_PlayClip( app.figures[i].id, &app.armClip, 1.0f );
+			}
+		}
+		// From the view taken before the step, reading the worlds here would wait for it
+		for ( size_t i = 0; i < app.view.figures.size(); ++i )
+		{
+			const FigureView& figure = app.view.figures[i];
+			ImGui::Text( "Figur %d: Abweichung %.2f rad, Motorlast %.0f %%, Treffer %d, Clip %.2f s", (int)i + 1, figure.error,
+						 100.0f * figure.load, figure.hits, figure.clipTime );
+		}
 	}
 
 	ImGui::SeparatorText( "Werkzeug" );
@@ -2872,6 +3263,7 @@ static void OnFrame()
 		FinishPhysics( app );
 		graphicsTicks = b3GetTicks();
 		ApplyPhysics( app );
+		UpdateFigures( app );
 		graphicsTime = b3GetMilliseconds( graphicsTicks );
 	}
 
@@ -2922,6 +3314,7 @@ static void OnFrame()
 		FinishPhysics( app );
 		graphicsTicks = b3GetTicks();
 		ApplyPhysics( app );
+		UpdateFigures( app );
 		SyncChunks( app );
 		TakeWorldView( app );
 		graphicsTime += b3GetMilliseconds( graphicsTicks );

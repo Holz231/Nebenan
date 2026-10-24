@@ -40,6 +40,10 @@ gelöscht. Kein Staub, keine Schatten: Jede Millisekunde geht in die Zerstörung
   Schutt in einen Puffer und kommt daraus bitgleich wieder (`nbSaveDestructibles`, `nbLoadDestructibles`). Die Demo
   hält von 65 536 Häusern nur die um die Kamera und um alles, was sich bewegt
 - Ein Regler für die Bruchstückgröße, der wichtigste Hebel für die Leistung, auch zur Laufzeit
+- Figuren auf Box3D: Gelenkketten aus Körpern in derselben Welt wie die Trümmer, nach Kapitel 27, 32 und 33 der Roadmap
+  des Spiels. Ein Rig beschreibt die Knochen, eine Figur hält eine Zielpose mit Federn in den Gelenken, begrenzt im
+  Drehmoment, folgt einem Clip aus Keyframes, nimmt einen Treffer genau einmal, fällt als passive Ragdoll und schlägt
+  dabei Wände ein wie eine Kanonenkugel. Ein Humanoid aus 15 Knochen liegt bei (`nbMakeHumanoidBones`)
 - Deterministisch: gleiche Eingaben ergeben bitgleich das gleiche Bruchmuster, unter Windows, Linux und macOS,
   auf x64 und ARM
 - PC-Demo für Windows (Direct3D 11), macOS (Metal) und Linux (OpenGL)
@@ -208,8 +212,13 @@ Grafik begrenzt das Zeichnen die Bildzeit.
   Unberührte Häuser weiter weg gehen wieder, beschädigte gehen samt Schutt in den Speicher der Demo, sobald alles an
   ihnen ruht, und kommen von dort zurück. Das Menü zeigt, wie viele Häuser geladen und wie viele gespeichert sind, was
   das Streaming pro Bild kostet und wie viel Speicher Nebenan und Box3D belegen
+- **Figuren**: drei Humanoide der Bibliothek vor einer Ziegelwand. Der linke hält seine Standpose, der mittlere spielt
+  einen Clip aus drei Keyframes, der rechte fällt als passive Ragdoll. Über den Knochen liegt dünn und dunkel die Pose,
+  zu der die Gelenke ziehen. Das Gewehr trifft die Figuren mit dem Impuls aus dem Menü, **Brusttreffer** stößt die
+  beiden stehenden zurück. Das Menü stellt Steifigkeit, Drehmoment und die Hilfe ein, die das Becken aufrecht hält, und
+  zeigt je Figur die größte Abweichung von der Zielpose und die größte Motorlast
 
-**Aufrufoptionen**: `--scene 0..3` startet eine Szene, `--fragment-scale 3` setzt die Bruchstückgröße, `--vsync`
+**Aufrufoptionen**: `--scene 0..4` startet eine Szene, `--fragment-scale 3` setzt die Bruchstückgröße, `--vsync`
 schaltet VSync ein, `--msaa 4` schaltet Kantenglättung ein (Standard aus), `--highdpi` rendert auf hochauflösenden
 Bildschirmen in voller Auflösung (Standard aus, kostet Füllrate). `--serial-physics` schaltet die parallele Physik ab,
 `--threads N` setzt die Zahl der Threads, `--step-rate 30` den Takt der Physik. `--compare` misst parallel gegen
@@ -503,6 +512,31 @@ Hash.
 **Speicher.** Pools mit Freilisten und IDs mit Generationszähler wie in Box3D, sodass veraltete IDs erkannt
 werden. Temporäre Daten eines Einschlags kommen aus einer Arena, die danach in einem Schritt zurückgesetzt
 wird. Eigene Allokatoren lassen sich mit `nbSetAllocator` einhängen, `nbGetByteCount` zählt den Verbrauch.
+
+**Figuren.** Eine Figur (`nbCreateArticulation`) ist eine Kette dynamischer Box3D-Körper aus einem Rig (`nbRigDef`,
+`nbBoneDef`), Kapseln und Kästen, verbunden durch Box3D-Gelenke: Scharniere (revolute) mit Winkelgrenzen für Knie und
+Ellbogen, Kugelgelenke (spherical) mit Kegel und Twist für Hüften, Schultern, Hals, Hand- und Fußgelenke, Schweißnähte
+(weld) für starre Teile. Der Ursprung jedes Knochens ist sein Gelenkpunkt, Eltern stehen vor ihren Kindern, und in der
+Ruhepose fallen beide Rahmen eines Gelenks zusammen, so ist die Ruhepose die Null jedes Winkels. Die Motoren sind die
+Federn der Box3D-Gelenke zu einem Zielwinkel oder einer Zielrotation, ergänzt um eine Drehmomentgrenze
+(`maxSpringTorque`, siehe [`extern/README.md`](extern/README.md)): Die Figur hält ihre Pose, gibt aber allem nach, was
+stärker ist, und nichts teleportiert einen Knochen durch eine Wand. Box3D gibt die Steifigkeit einer Feder in Hertz
+gegen die Trägheit ihrer beiden Körper an, in denselben Hertz ist ein Fuß schwach und ein Oberschenkel stark. Das
+Motorprofil (`nbMotorProfile`) nennt sie deshalb in N m je Radian, gleich für jedes Gelenk, und die Bibliothek rechnet sie
+für jedes Gelenk aus der Trägheit seiner Knochen um, um die weichste Achse. Die Gelenke sind mit 5 statt Box3Ds 2
+gedämpft, so geben ihre Grenzen unter dem Gewicht der Figur um rund 0,1 rad nach statt um bis zu 0,37. Ein Clip
+(`nbClipDef`) aus Keyframes wird kopiert und in jedem Update gesampelt, zwischen zwei Keyframes quaternionisch
+interpoliert, und setzt die Ziele der Gelenke für den nächsten Schritt. Eine Zielpose ist kein garantiertes Ende, die
+Federn sacken unter Last. Bis die Figur Schritte macht, hält ein äußeres Drehmoment das Becken aufrecht, ein
+Parallel-Joint gegen einen statischen Anker mit Drehmomentgrenze, ausdrücklich eine Spielhilfe: Einen Stoß von 20 N s
+auf die Brust steht der Humanoid damit, 120 N s werfen ihn um, und sein Rumpf gibt dabei 0,18 rad nach. Ein Treffer
+(`nbArticulation_ApplyHit`) ist ein Impuls auf einen Knochen, der je Ereignisnummer genau einmal landet, auch wenn ihn
+mehrere Ereignisse melden. Die Knochen melden Treffer-Events wie Kanonenkugeln, so beschädigt eine geworfene Figur Wände
+über die Kollisionsschäden der Welt, ohne eigene Pipeline. Zum Zeichnen gibt es die Knochen, wie die Physik sie hat, und
+die Zielpose auf dem Becken, wie es liegt, zum Überlagern. Gemessen in den Tests: Die Figur steht fünf Sekunden mit
+0,004 rad Abweichung, folgt dem Clip bis auf 0,04 rad, und bei harten Aufschlägen dehnen sich Gelenke für wenige
+Schritte um 4 bis 6 cm, bis der Löser sie zurückzieht, siehe Grenzen. Mit jeder Zahl von Threads ergeben die Figuren
+dieselben Bits.
 
 **Demo-Renderer.** So wenig Arbeit pro Bild wie möglich:
 
@@ -811,6 +845,44 @@ char* text = malloc( (size_t)length + 1 );
 nbFormatScalingReport( profiles, countCount, text, length + 1 );   // alles als Tabellen für ein Log
 ```
 
+```c
+// Eine Figur: der Humanoid der Bibliothek, 1,8 m und 75 kg, steht mit den Sohlen auf y = 0
+nbBoneDef bones[nb_humanoidBoneCount];
+float rootHeight = nbMakeHumanoidBones( 1.8f, 75.0f, bones, nb_humanoidBoneCount );
+nbRigDef rig = nbDefaultRigDef();
+rig.bones = bones;
+rig.boneCount = nb_humanoidBoneCount;
+nbMotorProfile stand = nbDefaultMotorProfile();   // 800 N m/rad je Gelenk, höchstens 150 N m mal Stärke des Knochens
+nbArticulationId figure =
+	nbCreateArticulation( world, &rig, b3ToPos( (b3Vec3){ 0.0f, rootHeight, 0.0f } ), b3Quat_identity, &stand );
+
+// Ein Clip aus drei Keyframes: je Knochen die Drehung gegen die Ruhepose, im Rahmen des Knochens, zuerst alle
+// b3Quat_identity, dann
+b3Quat poses[3][nb_humanoidBoneCount];
+poses[1][nb_humanoidUpperArmLeft] = b3MakeQuatFromAxisAngle( b3Vec3_axisX, 1.3f );   // der linke Arm kommt nach vorn
+poses[1][nb_humanoidForearmLeft] = b3MakeQuatFromAxisAngle( b3Vec3_axisX, 1.5f );    // mit gebeugtem Ellbogen
+nbKeyframe keyframes[3] = { { 0.0f, poses[0] }, { 0.6f, poses[1] }, { 1.2f, poses[2] } };
+nbClipDef clip = { keyframes, 3, nb_humanoidBoneCount, true };
+nbArticulation_PlayClip( figure, &clip, 1.0f );   // jedes Update setzt die Ziele der Gelenke, der Clip wird kopiert
+
+// Ein Treffer landet genau einmal, auch wenn ihn zwei Ereignisse melden
+nbHitDef hit = { 0 };
+hit.id = eventNumber;
+hit.bone = nb_humanoidTorso;
+hit.impulse = (b3Vec3){ 0.0f, 0.0f, -60.0f };
+hit.point = contactPoint;
+nbArticulation_ApplyHit( figure, &hit );
+
+// Zum Zeichnen die Knochen, wie die Physik sie hat, und darüber die Pose, zu der die Gelenke ziehen
+b3WorldTransform now[nb_humanoidBoneCount], targets[nb_humanoidBoneCount];
+nbArticulation_GetBoneTransforms( figure, now, nb_humanoidBoneCount );
+nbArticulation_GetTargetTransforms( figure, targets, nb_humanoidBoneCount );
+
+// Wer umgeworfen ist, wird passive Ragdoll
+nbMotorProfile passive = nbPassiveMotorProfile();
+nbArticulation_SetMotorProfile( figure, &passive );
+```
+
 Die komplette API steht in [include/nebenan/nebenan.h](include/nebenan/nebenan.h).
 
 Einbinden in ein eigenes CMake-Projekt:
@@ -875,6 +947,28 @@ beim Einbinden nicht gebaut.
 | `loadDelay` | 1 | Updates vom Start im Hintergrund bis zum Einbauen. Eins passt für ein Spiel, mehr für Updates, die direkt aufeinander folgen |
 | `prepareFcn`, `releaseFcn` | – | Was auf einem Platz steht, und die Rückgabe der Teile. `prepareFcn` ist Pflicht |
 | `storeFcn`, `fetchFcn` | leer | Wohin beschädigte Plätze samt Schutt gehen, etwa in eine Datei. Ohne sie bleiben sie im Speicher |
+
+| Motoren einer Figur (`nbMotorProfile`) | Standard | Wirkung |
+| --- | --- | --- |
+| `stiffness` | 800 N m/rad | Drehmoment je Radian Abweichung von der Zielpose, in jedem Gelenk gleich. Box3D nimmt Hertz gegen die Trägheit der Knochen, die Bibliothek rechnet um, in der Pose beim Setzen des Profils. 0 schaltet die Motoren ab, `nbPassiveMotorProfile` ist ganz 0 |
+| `dampingRatio` | 1 | Dämpfung der Federn, 1 ist kritisch |
+| `maxTorque` | 150 N m | Mehr bringt kein Gelenk auf, mal `strength` des Knochens: beim Humanoid Oberschenkel 2, Rumpf 1,6, Unterschenkel 1,5, Füße 0,8, Oberarme 0,6, Unterarme 0,4, Kopf 0,3, Hände 0,15. Eine Feder mit 800 N m/rad erreicht die Grenze nach wenigen Grad, von da gibt das Gelenk nach |
+| `uprightTorque` | 250 N m | Ein äußeres Drehmoment gegen die Welt hält die Achse `up` des Wurzelknochens nach oben, bis hierhin. Eine Spielhilfe anstelle der Balance, bis die Figur Schritte macht, kein Muskel: Ein stärkerer Stoß kippt sie. 0 schaltet es ab |
+| `uprightStiffness`, `uprightDampingRatio` | 1500 N m/rad, 1 | Steifigkeit und Dämpfung dieser Hilfe |
+
+| Rig (`nbRigDef`, `nbBoneDef`) | Standard | Wirkung |
+| --- | --- | --- |
+| `bones`, `boneCount` | – | Die Knochen, die Wurzel zuerst, jeder Elternknochen vor seinen Kindern |
+| `friction` | 0,6 | Reibung aller Formen |
+| `up` | y | Die Achse der Wurzel, die beim Stehen nach oben zeigt, für `uprightTorque` |
+| `selfCollision` | an | Knochen, die nicht direkt verbunden sind, kollidieren miteinander. Aus: kein Knochen einer Figur mit einem anderen derselben |
+| `enableCollisionDamage` | an | Die Knochen beschädigen, was sie treffen, wie Kanonenkugeln, siehe `collisionDamageScale` |
+| `parent`, `restTransform` | – | Der Elternknochen und die Lage des Knochens in dessen Rahmen in Ruhe, der Ursprung ist der Gelenkpunkt |
+| `shape`, `start`, `end`, `radius`, `center`, `halfExtents` | Kapsel | Kapsel zwischen zwei Punkten oder Kasten um eine Mitte, im Rahmen des Knochens |
+| `mass` | 1 kg | Masse, die Dichte folgt aus der Form. Mehr als 30 zu 1 zwischen verbundenen Knochen mag der Löser nicht, der Humanoid gibt den Füßen 2,5 kg |
+| `joint`, `jointFrame` | Kugel, Identität | Scharnier, Kugel oder fest, und der Gelenkrahmen im Rahmen des Knochens: seine z-Achse ist die Scharnierachse oder die Achse des Kegels |
+| `lowerAngle`, `upperAngle`, `coneAngle` | ±0,5, 0,5 rad | Grenzen des Scharniers oder des Twists, und wie weit ein Kugelgelenk aus seiner Ruhelage schwenkt |
+| `strength` | 1 | Multipliziert `maxTorque` für dieses Gelenk |
 
 Die Demo nimmt für Ziegel Dichte 1900, Festigkeit 6·10⁵ und Splitter 0,1 m, für Beton Dichte 2400,
 Festigkeit 1,1·10⁶ und Splitter 0,13 m, beides mit Bruchstückgröße ×2.
@@ -1370,7 +1464,8 @@ Messungen in [docs/Optimierungen.md](docs/Optimierungen.md).
 ## Tests und Benchmark
 
 ```sh
-build/bin/nebenan_test            # 65 Tests: Geometrie, Voronoi, Hüllen, Öffnungen, Stöße, Stützgraph, Etagen, Lastprüfung, Schutt, Ruhe, Durchschlagen, Threads, Knoten, große Blöcke, Suchbaum, Kontaktlisten, Streaming, Stream, Laden im Hintergrund, Speichern und Zurückholen, gemeinsamer Thread-Pool, Ruhe-Prüfung auf den Workern, Schritt auf eigenem Thread, Schritte pro Bild, Takt der Physik, Wahl der Threads, Profil und Skalierung, Determinismus …
+build/bin/nebenan_test            # 76 Tests: Geometrie, Voronoi, Hüllen, Öffnungen, Stöße, Stützgraph, Etagen, Lastprüfung, Schutt, Ruhe, Durchschlagen, Threads, Knoten, große Blöcke, Suchbaum, Kontaktlisten, Streaming, Stream, Laden im Hintergrund, Speichern und Zurückholen, gemeinsamer Thread-Pool, Ruhe-Prüfung auf den Workern, Schritt auf eigenem Thread, Schritte pro Bild, Takt der Physik, Wahl der Threads, Profil und Skalierung, Determinismus, Figuren: Federn mit Drehmomentgrenze, Pendel, Arm mit Motoren, passive Ragdoll, Standpose, Clip, Treffer, Wand, Determinismus mit 1 und 4 Threads …
+build/bin/nebenan_test articulation   # nur die Tests der Figuren, eine Zehntelsekunde
 build/bin/nebenan_benchmark 4     # Zahl = Threads für Bruch und Physik, 0 = so viele, wie ein Spiel nähme
 build/bin/nebenan_benchmark scaling   # die Städte unter Beschuss mit 1, 2, 4 … Threads und die Tabelle der Skalierung
 build/bin/nebenan_benchmark rates     # die Städte unter Beschuss mit 30, 60 und 120 Hz, was eine simulierte Sekunde kostet
@@ -1385,6 +1480,7 @@ macOS und läuft zusätzlich mit AddressSanitizer, UndefinedBehaviorSanitizer un
 include/nebenan/    öffentliche API (C17)
 src/
   core.c            Speicher (große Arrays wachsen an Ort und Stelle), Zufallszahlen
+  articulation.c    Figuren: Rigs, Gelenkketten mit Federn und Drehmomentgrenze, Motorprofile, Clips aus Keyframes, Treffer
   poly.c            konvexe Polyeder: Schneiden, Masse, Kontaktflächen
   fracture.c        Voronoi-Bruch und Punktverteilung
   hull_builder.c    Box3D-Hüllen direkt aus der Polyeder-Topologie
@@ -1447,6 +1543,20 @@ Nach Änderungen an `demo/shaders/scene.glsl` die Shader neu erzeugen, im Ordner
   `debrisSweepDistance`, verfolgt Box3D nicht gegen Wände. Es dringt ein Stück ein und wird zurückgeschoben. Durch
   eine Wand, die dünner ist als dieser Weg, kann ein großes Teil aber durchschlagen. Dann den Wert senken, 0 nimmt
   den vorsichtigeren Box3D-Standard.
+- Die Figuren haben noch keine Balance: Ein äußeres Drehmoment hält das Becken aufrecht, bis zu `uprightTorque`, mehr
+  kippt sie, und sie machen keinen Ausgleichsschritt und stehen nicht auf. Das ist Schritt 5 aus Kapitel 33.4 der Roadmap
+  des Spiels, siehe [`docs/Roadmap.md`](docs/Roadmap.md).
+- Gelenke dehnen sich bei harten Aufschlägen: Trifft ein Knochen mit mehreren Metern pro Sekunde den Boden, ziehen die
+  weichen Bedingungen des Lösers das Gelenk erst über ein, zwei Schritte wieder zusammen, gemessen 4 bis 6 cm an Knöchel
+  und Hals einer Figur, die aus einem halben Meter fällt oder umgeworfen wird, die Grenzen von Knie und Ellbogen geben
+  dabei bis 0,1 rad nach. Steifer geht es mit 240 Teilschritten pro Sekunde nicht, Box3D begrenzt die Gelenke auf 60 Hz.
+  Schwerere Füße helfen ein wenig: Mit 2,5 statt 1,1 kg je Fuß dehnte sich der Knöchel 42 statt 48 mm.
+- Eine Zielpose ist kein garantiertes Ende: Die Federn sacken unter Last, je weicher die Motoren, desto mehr. Mit 15 Hz
+  in allen Gelenken, wie Box3D sie nimmt, hing der Ellbogen in den Tests bis 0,25 rad unter seinem Ziel, mit den
+  800 N m/rad des Standards trifft er es auf 0,01 rad. Die Steifigkeit gilt um die weichste Achse eines Gelenks und wird
+  aus der Trägheit der Knochen in der Pose beim Setzen des Profils gerechnet.
+- Figuren kosten: 15 Körper, 14 Gelenke und ein Parallel-Joint je Humanoid, alle wach, solange ein Clip läuft. Gemessen
+  ist das noch nicht, der Benchmark hat keine Szene mit Figuren.
 - Nur konvexe Teile, aus denen sich Quader ausschneiden lassen. Andere konkave Formen müssen als mehrere konvexe
   Teile angegeben werden.
 - Render- und Physikgeometrie sind dieselben flachen Polygone.
