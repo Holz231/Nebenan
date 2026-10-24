@@ -5595,6 +5595,21 @@ static int ProfileTest( void )
 	ENSURE( 0.0f <= profile.collideMissedCount && profile.collideMissedCount < profile.collideTaskCount );
 	ENSURE( profile.collideContactCount > 0.0f && profile.collideNarrowphaseCount > 0.0f );
 
+	// The parts of the checks of the update run inside them, and every eighth update times how the threads spent the
+	// checks: the support of the quiet pieces is part of the blocks, and the checks have at most as many tasks as workers
+	float settleParts =
+		t[nb_profileGatherMoving] + t[nb_profileCheckMoving] + t[nb_profileSearchSupport] + t[nb_profileFreezeRubble];
+	ENSURE( t[nb_profileCheckMoving] > 0.0f && settleParts <= t[nb_profileSettle] + slack );
+	ENSURE( 0 < profile.settleSampleCount && profile.settleSampleCount <= ( stepCount + 7 ) / 8 );
+	ENSURE( profile.settleWork > 0.0f && profile.settleSupportWork <= profile.settleWork + slack );
+	ENSURE( profile.settleLongestBlock <= profile.settleWork + slack );
+	ENSURE( profile.settleLate >= 0.0f && profile.settleClaim > -slack && profile.settleDone >= 0.0f );
+	ENSURE( 1.0f <= profile.settleTaskCount && profile.settleTaskCount <= 4.0f );
+	ENSURE( profile.settleTaskCount <= profile.settleBlockCount );
+	ENSURE( 0.0f <= profile.settleMissedCount && profile.settleMissedCount < profile.settleTaskCount );
+	ENSURE( profile.settleMovingCount > 0.0f && profile.settleQuietCount <= profile.settleMovingCount );
+	ENSURE( profile.settleCallerCount <= profile.settleMovingCount );
+
 	// A world with workers knows its islands. None of the three holds more than half of the work in the steps with packs,
 	// and the bound of the packs is at least the even share.
 	ENSURE( profile.islandStepCount > 0 && profile.colorStepCount < profile.islandStepCount );
@@ -5689,6 +5704,21 @@ static int ScalingFitTest( void )
 		profiles[i].collideBlockCount = 128.0f;
 		profiles[i].collideContactCount = 8000.0f;
 		profiles[i].collideNarrowphaseCount = 2000.0f;
+
+		// And how the threads spent the checks of the update, see nbProfile::settleWork
+		profiles[i].settleSampleCount = 10;
+		profiles[i].settleCall = 0.1f;
+		profiles[i].settleWork = 0.3f;
+		profiles[i].settleSupportWork = 0.1f;
+		profiles[i].settleLate = 0.05f;
+		profiles[i].settleClaim = 0.01f;
+		profiles[i].settleDone = 0.04f;
+		profiles[i].settleLongestBlock = 0.02f;
+		profiles[i].settleTaskCount = 4.0f;
+		profiles[i].settleBlockCount = 32.0f;
+		profiles[i].settleMovingCount = 2000.0f;
+		profiles[i].settleQuietCount = 100.0f;
+		profiles[i].settleCallerCount = 500.0f;
 	}
 
 	// The report counts its whole length like snprintf, also into a buffer too small
@@ -5703,6 +5733,13 @@ static int ScalingFitTest( void )
 	const char* shareRow = "in blocks of the tasks %          80.0";
 	ENSURE( strstr( text, "The contact loop in every eighth step" ) != NULL );
 	ENSURE( strstr( text, contactRow ) != NULL && strstr( text, shareRow ) != NULL );
+	const char* restRow = "ns per check for rest            100.0";
+	const char* supportRow = "us per support of a piece         1.00";
+	const char* settleShareRow = "in blocks of the tasks %          75.0";
+	const char* callerRow = "  on the calling thread %         25.0";
+	ENSURE( strstr( text, "The checks of the update in every eighth update" ) != NULL );
+	ENSURE( strstr( text, restRow ) != NULL && strstr( text, supportRow ) != NULL );
+	ENSURE( strstr( text, settleShareRow ) != NULL && strstr( text, callerRow ) != NULL );
 	char small[16];
 	ENSURE( nbFormatScalingReport( profiles, 4, small, sizeof( small ) ) == length );
 	ENSURE( strlen( small ) == sizeof( small ) - 1 );
@@ -5719,6 +5756,8 @@ static int ScalingFitTest( void )
 	ENSURE( strcmp( nbGetProfileStageName( nb_profileContactStates ), "contactStates" ) == 0 );
 	ENSURE( strcmp( nbGetProfileStageName( nb_profileSetupKnots ), "setupKnots" ) == 0 );
 	ENSURE( strcmp( nbGetProfileStageName( nb_profileUpdateContacts ), "updateContacts" ) == 0 );
+	ENSURE( strcmp( nbGetProfileStageName( nb_profileCheckMoving ), "checkMoving" ) == 0 );
+	ENSURE( strcmp( nbGetProfileStageName( nb_profileTypeChanges ), "typeChanges" ) == 0 );
 	return 0;
 }
 

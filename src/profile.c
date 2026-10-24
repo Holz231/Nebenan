@@ -8,18 +8,20 @@
 
 // The names of the stages, see nbProfileStage
 static const char* nb_profileNames[] = {
-	"total",		 "step",		  "pairs",		 "createContacts", "collide",	 "gatherContacts",	"updateContacts",
-	"mergeContacts", "contactStates", "solve",		 "solverSetup",	   "setupPacks", "setupTasks",		"setupKnots",
-	"setupWait",	 "constraints",	  "overflow",	 "transforms",	   "update",	 "collisionDamage", "settle",
-	"budget",		 "release",		  "typeChanges", "impacts",		   "cells",		 "cellsAlone",
+	"total",		 "step",		  "pairs",		   "createContacts", "collide",	   "gatherContacts",  "updateContacts",
+	"mergeContacts", "contactStates", "solve",		   "solverSetup",	 "setupPacks", "setupTasks",	  "setupKnots",
+	"setupWait",	 "constraints",	  "overflow",	   "transforms",	 "update",	   "collisionDamage", "settle",
+	"gatherMoving",	 "checkMoving",	  "searchSupport", "freezeRubble",	 "budget",	   "release",		  "typeChanges",
+	"impacts",		 "cells",		  "cellsAlone",
 };
 _Static_assert( sizeof( nb_profileNames ) / sizeof( nb_profileNames[0] ) == nb_profileStageCount, "a name per stage" );
 
 // How deep a stage sits in the table under the stage that holds it, and whether it runs on the calling thread alone
-static const int nb_profileDepths[] = { 0, 1, 2, 3, 2, 3, 3, 3, 3, 2, 3, 4, 4, 4, 4, 3, 4, 2, 1, 2, 2, 2, 2, 1, 1, 1, 2 };
-static const bool nb_profileAlone[] = { false, false, false, true,	false, true, false, true,  true,
-										false, true,  true,	 false, true,  true, false, false, false,
-										false, false, false, true,	true,  true, false, false, true };
+static const int nb_profileDepths[] = { 0, 1, 2, 3, 2, 3, 3, 3, 3, 2, 3, 4, 4, 4, 4, 3,
+										4, 2, 1, 2, 2, 3, 3, 3, 3, 2, 2, 1, 1, 1, 2 };
+static const bool nb_profileAlone[] = { false, false, false, true, false, true,	 false, true,  true,  false, true,
+										true,  false, true,	 true, false, false, false, false, false, false, true,
+										false, true,  true,	 true, true,  true,	 false, false, true };
 _Static_assert( sizeof( nb_profileDepths ) / sizeof( nb_profileDepths[0] ) == nb_profileStageCount, "a depth per stage" );
 _Static_assert( sizeof( nb_profileAlone ) / sizeof( nb_profileAlone[0] ) == nb_profileStageCount, "a flag per stage" );
 
@@ -232,6 +234,25 @@ nbProfile nbWorld_GetProfile( nbWorldId worldId )
 		profile.collideNarrowphaseCount = (float)( sums->collideNarrowphaseCount / samples );
 	}
 	profile.collideSampleCount = sums->collideSampleCount;
+
+	if ( sums->settleSampleCount > 0 )
+	{
+		double samples = (double)sums->settleSampleCount;
+		profile.settleCall = (float)( sums->settleCall / samples );
+		profile.settleWork = (float)( sums->settleWork / samples );
+		profile.settleSupportWork = (float)( sums->settleSupportWork / samples );
+		profile.settleLate = (float)( sums->settleLate / samples );
+		profile.settleClaim = (float)( sums->settleClaim / samples );
+		profile.settleDone = (float)( sums->settleDone / samples );
+		profile.settleLongestBlock = (float)( sums->settleLongestBlock / samples );
+		profile.settleTaskCount = (float)( sums->settleTaskCount / samples );
+		profile.settleBlockCount = (float)( sums->settleBlockCount / samples );
+		profile.settleMissedCount = (float)( sums->settleMissedCount / samples );
+		profile.settleMovingCount = (float)( sums->settleMovingCount / samples );
+		profile.settleQuietCount = (float)( sums->settleQuietCount / samples );
+		profile.settleCallerCount = (float)( sums->settleCallerCount / samples );
+	}
+	profile.settleSampleCount = sums->settleSampleCount;
 	profile.fractureWorkerItems = nbFractureWorkerItems( world );
 	profile.settleWorkerPieces = nbSettleWorkerPieces( world );
 	if ( sums->settleWakeCount > 0 )
@@ -829,6 +850,128 @@ int nbFormatScalingReport( const nbProfile* profiles, int count, char* text, int
 					nbAppend( &out, " %7.1f", sums[12] > 0.0 ? 1.0e6 * sums[2] / sums[12] : 0.0 );
 				}
 				else if ( r == rowCount - 1 )
+				{
+					nbAppend( &out, " %7.1f", taskTime > 0.0 ? 100.0 * sums[2] / taskTime : 0.0 );
+				}
+				else
+				{
+					nbAppend( &out, r >= 9 ? " %7.1f" : " %7.3f", sums[r] / samples );
+				}
+			}
+			nbAppend( &out, "\n" );
+		}
+	}
+
+	// How the threads spent the checks of the update, per number of workers, from the profiles whose updates timed them
+	int settleColumns[NB_REPORT_COLUMNS];
+	int settleColumnCount = 0;
+	for ( int c = 0; c < columnCount; ++c )
+	{
+		for ( int i = 0; i < count; ++i )
+		{
+			if ( profiles[i].workerCount == columns[c] && profiles[i].settleSampleCount > 0 )
+			{
+				settleColumns[settleColumnCount++] = columns[c];
+				break;
+			}
+		}
+	}
+
+	if ( settleColumnCount > 0 )
+	{
+		nbAppend( &out, "The checks of the update in every eighth update, milliseconds per timed update, over all tasks of "
+						"the checks\n" );
+		nbAppend( &out, "%-30s", "part" );
+		for ( int c = 0; c < settleColumnCount; ++c )
+		{
+			nbAppend( &out, " %5d w", settleColumns[c] );
+		}
+		nbAppend( &out, "\n" );
+
+		enum
+		{
+			rowCount = 18
+		};
+		const char* rowNames[rowCount] = {
+			"timed updates",
+			"checks on the calling thread",
+			"in blocks",
+			"  checks for rest",
+			"  support of quiet pieces",
+			"before the first block",
+			"between the blocks",
+			"after the last block",
+			"longest block",
+			"tasks",
+			"  without a block",
+			"blocks",
+			"moving pieces",
+			"  quiet",
+			"  on the calling thread %",
+			"ns per check for rest",
+			"us per support of a piece",
+			"in blocks of the tasks %",
+		};
+		for ( int r = 0; r < rowCount; ++r )
+		{
+			nbAppend( &out, "%-30s", rowNames[r] );
+			for ( int c = 0; c < settleColumnCount; ++c )
+			{
+				double sums[rowCount] = { 0.0 };
+				double samples = 0.0;
+				for ( int i = 0; i < count; ++i )
+				{
+					const nbProfile* p = profiles + i;
+					if ( p->workerCount != settleColumns[c] || p->settleSampleCount == 0 )
+					{
+						continue;
+					}
+
+					double values[rowCount] = { 0.0,
+												p->settleCall,
+												p->settleWork,
+												p->settleWork - p->settleSupportWork,
+												p->settleSupportWork,
+												p->settleLate,
+												p->settleClaim,
+												p->settleDone,
+												p->settleLongestBlock,
+												p->settleTaskCount,
+												p->settleMissedCount,
+												p->settleBlockCount,
+												p->settleMovingCount,
+												p->settleQuietCount,
+												p->settleCallerCount,
+												0.0,
+												0.0,
+												0.0 };
+					for ( int v = 0; v < rowCount; ++v )
+					{
+						sums[v] += values[v] * (double)p->settleSampleCount;
+					}
+					samples += (double)p->settleSampleCount;
+				}
+
+				// The last rows relate the time in blocks to the pieces and to the time of the tasks in the checks, which
+				// the time in blocks, before the first, between them and after the last add up to
+				double taskTime = sums[2] + sums[5] + sums[6] + sums[7];
+				if ( r == 0 )
+				{
+					nbAppend( &out, " %7.0f", samples );
+				}
+				else if ( r == 14 )
+				{
+					nbAppend( &out, " %7.1f", sums[12] > 0.0 ? 100.0 * sums[14] / sums[12] : 0.0 );
+				}
+				else if ( r == 15 )
+				{
+					nbAppend( &out, " %7.1f", sums[12] > 0.0 ? 1.0e6 * sums[3] / sums[12] : 0.0 );
+				}
+				else if ( r == 16 )
+				{
+					nbAppend( &out, " %7.2f", sums[13] > 0.0 ? 1.0e3 * sums[4] / sums[13] : 0.0 );
+				}
+				else if ( r == 17 )
 				{
 					nbAppend( &out, " %7.1f", taskTime > 0.0 ? 100.0 * sums[2] / taskTime : 0.0 );
 				}

@@ -5666,6 +5666,9 @@ static bool nbCarriesWithout( const nbWorld* world, const nbCarrier* carriers, i
 // Moving debris per block of the checks in nbSettleDebris
 #define NB_SETTLE_BLOCK 64
 
+// Every this many updates time how the threads spend the checks of nbSettleDebris, see nbProfile::settleWork
+#define NB_SETTLE_SAMPLE 8
+
 // Moving debris from which the workers help with the checks of nbSettleDebris at most and at least, see nbWorkerThreshold.
 // A piece takes the calling thread about 0.2 us on the VM, where a worker starts after 67 us, so with less than 512 it is
 // done sooner alone.
@@ -5734,6 +5737,19 @@ typedef struct nbSettleTask
 	uint64_t enqueueTicks;
 	float wakeTime;
 	int checkCount;
+
+	// In a timed update, see NB_SETTLE_SAMPLE, the milliseconds from the start of the checks to the start and the end of
+	// the task, in its blocks, of that on the support of the quiet pieces, and in its longest block. Then its blocks and
+	// quiet pieces.
+	bool timed;
+	uint64_t callTicks;
+	float startTime;
+	float endTime;
+	float workTime;
+	float supportTime;
+	float longestBlock;
+	int timedBlockCount;
+	int quietCount;
 } nbSettleTask;
 
 // What carries a quiet piece. It only reads the world and writes the record.
@@ -5876,9 +5892,16 @@ static void nbCheckSettleBlock( nbSettleTask* task, int blockIndex )
 	nbSettleBlock* block = task->blocks + blockIndex;
 	block->count = quietCount;
 	block->pieces = quietCount > 0 ? nbArena_AllocArray( task->arena, nbQuietPiece, quietCount ) : NULL;
+	uint64_t supportTicks = task->timed ? b3GetTicks() : 0;
 	for ( int k = 0; k < quietCount; ++k )
 	{
 		nbInspectQuietPiece( task, block->pieces + k, quiet[k] );
+	}
+
+	if ( task->timed )
+	{
+		task->supportTime += b3GetMilliseconds( supportTicks );
+		task->quietCount += quietCount;
 	}
 }
 
@@ -5890,6 +5913,11 @@ static void nbSettleTaskMain( void* context )
 		task->wakeTime = b3GetMilliseconds( task->enqueueTicks );
 	}
 
+	if ( task->timed )
+	{
+		task->startTime = b3GetMilliseconds( task->callTicks );
+	}
+
 	for ( ;; )
 	{
 		int blockIndex = nbAtomicFetchAddInt( task->nextBlock, 1 );
@@ -5898,7 +5926,23 @@ static void nbSettleTaskMain( void* context )
 			break;
 		}
 
+		if ( task->timed == false )
+		{
+			nbCheckSettleBlock( task, blockIndex );
+			continue;
+		}
+
+		uint64_t blockTicks = b3GetTicks();
 		nbCheckSettleBlock( task, blockIndex );
+		float blockTime = b3GetMilliseconds( blockTicks );
+		task->workTime += blockTime;
+		task->longestBlock = b3MaxFloat( task->longestBlock, blockTime );
+		task->timedBlockCount += 1;
+	}
+
+	if ( task->timed )
+	{
+		task->endTime = b3GetMilliseconds( task->callTicks );
 	}
 }
 
@@ -5915,6 +5959,8 @@ static void nbSettleDebris( nbWorld* world, b3Vec3 up, float timeStep )
 		return;
 	}
 
+	// The parts of the checks in the profile, see nb_profileGatherMoving
+	uint64_t lap = b3GetTicks();
 	nbBeginOperation( world );
 	world->settleStamp += 1;
 	uint32_t stamp = world->settleStamp;
@@ -5932,6 +5978,7 @@ static void nbSettleDebris( nbWorld* world, b3Vec3 up, float timeStep )
 
 	if ( movingCount == 0 )
 	{
+		nbProfileLap( world, nb_profileGatherMoving, &lap );
 		return;
 	}
 
@@ -5943,6 +5990,8 @@ static void nbSettleDebris( nbWorld* world, b3Vec3 up, float timeStep )
 	int nextBlock = 0;
 	nbSettleTask tasks[NB_MAX_WORKERS];
 	void* userTasks[NB_MAX_WORKERS];
+	bool timed = stamp % NB_SETTLE_SAMPLE == 0;
+	nbProfileLap( world, nb_profileGatherMoving, &lap );
 	for ( int i = 0; i < taskCount; ++i )
 	{
 		tasks[i] = ( nbSettleTask ){
@@ -5958,6 +6007,8 @@ static void nbSettleDebris( nbWorld* world, b3Vec3 up, float timeStep )
 			.up = up,
 			.timeStep = timeStep,
 			.wakeTime = -1.0f,
+			.timed = timed,
+			.callTicks = lap,
 		};
 	}
 
@@ -5977,6 +6028,35 @@ static void nbSettleDebris( nbWorld* world, b3Vec3 up, float timeStep )
 		{
 			world->finishTask( userTasks[i], world->userTaskContext );
 		}
+	}
+
+	// How the tasks spent the checks: before their first block, in their blocks, between them and after their last block,
+	// which adds up to the time of the checks for every task
+	float checkTime = b3GetMillisecondsAndReset( &lap );
+	world->profile.stages[nb_profileCheckMoving] += checkTime;
+	if ( timed )
+	{
+		nbProfileSums* profile = &world->profile;
+		float longestBlock = 0.0f;
+		for ( int i = 0; i < taskCount; ++i )
+		{
+			const nbSettleTask* task = tasks + i;
+			profile->settleWork += task->workTime;
+			profile->settleSupportWork += task->supportTime;
+			profile->settleLate += task->startTime;
+			profile->settleClaim += task->endTime - task->startTime - task->workTime;
+			profile->settleDone += checkTime - task->endTime;
+			profile->settleMissedCount += task->timedBlockCount == 0 ? 1.0 : 0.0;
+			profile->settleQuietCount += task->quietCount;
+			longestBlock = b3MaxFloat( longestBlock, task->longestBlock );
+		}
+		profile->settleSampleCount += 1;
+		profile->settleCall += checkTime;
+		profile->settleLongestBlock += longestBlock;
+		profile->settleTaskCount += taskCount;
+		profile->settleBlockCount += blockCount;
+		profile->settleMovingCount += movingCount;
+		profile->settleCallerCount += tasks[0].checkCount;
 	}
 
 	// A piece on the calling thread and how long the workers took to start, for the next update, see nbSettleWorkerPieces
@@ -6013,6 +6093,7 @@ static void nbSettleDebris( nbWorld* world, b3Vec3 up, float timeStep )
 
 	if ( quietCount == 0 )
 	{
+		nbProfileLap( world, nb_profileSearchSupport, &lap );
 		return;
 	}
 
@@ -6131,6 +6212,7 @@ static void nbSettleDebris( nbWorld* world, b3Vec3 up, float timeStep )
 			}
 		}
 	}
+	nbProfileLap( world, nb_profileSearchSupport, &lap );
 
 #if defined( B3_HAS_SHAPE_BATCH )
 	// Box3D sorts every piece that freezes or comes back to life into its tree with a search from the root. The pieces of a
@@ -6194,6 +6276,7 @@ static void nbSettleDebris( nbWorld* world, b3Vec3 up, float timeStep )
 #if defined( B3_HAS_SHAPE_BATCH )
 	nbEndTypeBatch( world );
 #endif
+	nbProfileLap( world, nb_profileFreezeRubble, &lap );
 }
 
 // Whether one of the contacts of a body is with a static body

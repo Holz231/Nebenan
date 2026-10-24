@@ -443,6 +443,20 @@ typedef struct nbProfileSums
 	double collideMissedCount;
 	double collideContactCount;
 	double collideNarrowphaseCount;
+	int settleSampleCount;
+	double settleCall;
+	double settleWork;
+	double settleSupportWork;
+	double settleLate;
+	double settleClaim;
+	double settleDone;
+	double settleLongestBlock;
+	double settleTaskCount;
+	double settleBlockCount;
+	double settleMissedCount;
+	double settleMovingCount;
+	double settleQuietCount;
+	double settleCallerCount;
 } nbProfileSums;
 
 typedef struct nbWorld

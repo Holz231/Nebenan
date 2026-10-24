@@ -584,6 +584,14 @@ typedef enum nbProfileStage
 	nb_profileUpdate,
 	nb_profileCollisionDamage,
 	nb_profileSettle,
+
+	/// The parts of the checks of the debris that comes to rest: the calling thread gathers the moving debris, the threads
+	/// check it, then the calling thread searches what carries the quiet pieces and freezes them, with the type changes of
+	/// the freezes, see nbProfile::settleWork
+	nb_profileGatherMoving,
+	nb_profileCheckMoving,
+	nb_profileSearchSupport,
+	nb_profileFreezeRubble,
 	nb_profileBudget,
 	nb_profileRelease,
 
@@ -702,6 +710,26 @@ typedef struct nbProfile
 	float collideMissedCount;
 	float collideContactCount;
 	float collideNarrowphaseCount;
+
+	/// How the threads spent the checks of the update, timed in every eighth update, see nb_profileCheckMoving: the timed
+	/// updates, and in milliseconds per timed update the checks on the calling thread and, summed over their tasks, the
+	/// time in blocks, of it the look at what carries the quiet pieces, the time before a task started, between its blocks
+	/// and after it found none left, then the longest block. Then per timed update the tasks, the blocks, the tasks that
+	/// found no block left, the moving pieces, those of them that were quiet and those the calling thread checked.
+	int settleSampleCount;
+	float settleCall;
+	float settleWork;
+	float settleSupportWork;
+	float settleLate;
+	float settleClaim;
+	float settleDone;
+	float settleLongestBlock;
+	float settleTaskCount;
+	float settleBlockCount;
+	float settleMissedCount;
+	float settleMovingCount;
+	float settleQuietCount;
+	float settleCallerCount;
 
 	/// From how many items the workers help with a fracture and from how many moving pieces with the checks of the update,
 	/// when the profile was read. Nebenan chooses both by how fast a worker starts: the calling thread alone would take
