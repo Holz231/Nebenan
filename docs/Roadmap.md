@@ -16,7 +16,7 @@ dem Ryzen nachgemessen, und dem Budget und den Manifolds auf den Workern auf `ko
 nacheinander“ auf dem Ryzen nachgemessen, dem Vergleich von 7 gegen 8 Threads auf `kollaps-6`, auf dem Ryzen
 nachgemessen, dem Überlauf an Knoten auf mehreren Threads auf `kollaps-7` und den Stufen des Teams auf `kollaps-8`,
 beide auf dem Ryzen nachgemessen, den großen Paketen im Team auf `kollaps-9`, auf dem Ryzen nachgemessen, und dem Aufbau
-des Lösers neben den Knoten auf `kollaps-10`. Begründungen und Messwerte stehen in
+des Lösers neben den Knoten auf `kollaps-10`, auf dem Ryzen nachgemessen. Begründungen und Messwerte stehen in
 [`Optimierungen.md`](Optimierungen.md), hier nur das Fazit und die Reihenfolge. Nach jeder Runde wird der Stand hier
 nachgetragen.
 
@@ -166,8 +166,8 @@ bleiben.
 | 34 | **Auf dem Ryzen nachmessen**: „Skalierung messen“ mit `kollaps-8` beim Abriss bei ×2 | zeigt, wo das Team mit 8 Threads wartet, und entscheidet nach den Regeln unter „Was als Nächstes in Frage kommt“, wie es im Löser weitergeht | 31 | ✅ am 24. Oktober: Mit 8 Threads tritt nur die Regel „Allein“ ein. Der aufrufende Thread rechnet 35 % der Zeit des Teams allein, 26 % davon nach der letzten Stufe. Dort wartet er, auf der VM gezählt, auf das Paket einer zweiten großen Insel, das ein Worker allein rechnet, siehe 35 |
 | 35 | **Große Pakete im Team**: Das Team rechnet nicht nur das größte Paket in seinen Stufen, sondern jedes, das mehr als den Anteil eines Threads hält, bitgleich | geschätzt mit 8 Threads rund 15 % der Zeit des Teams, 3 bis 4 % eines Bilds, mit 4 Threads nichts | 34 | ✅ auf `kollaps-9`: Mit dem größten Paket rechnet das Team jedes weitere, das mehr als das Doppelte des Anteils eines Threads hält, bitgleich. Mit dem einfachen Anteil kostete das Team auf der VM mit 4 Threads in den Schritten mit zweitem Paket 5,6 % mehr, denn ein Thread im Team rechnet nur etwas mehr als halb so schnell wie allein. Mit 4 Threads hält eine zweite Insel nie das Doppelte, auf der VM ändert sich nichts. Mit 8 Threads nimmt das Team beim Abriss nach den Inseln auf der VM in rund 40 % seiner Schritte ein zweites Paket mit, auf dem Ryzen nachzumessen, siehe 36. Dort kosten die Bedingungen mit 8 Threads 19 % weniger und ein Bild 6 % |
 | 36 | **Auf dem Ryzen nachmessen**: „Skalierung messen“ mit `kollaps-9` beim Abriss bei ×2 | zeigt, was 35 mit 8 Threads bringt und ob die Schwelle passt | 35 | ✅ am 24. Oktober, `kollaps-8` und `kollaps-9` direkt nacheinander: Mit 8 Threads kostet das Team 0,724 statt 0,894 ms pro gemessenem Schritt, nach der letzten Stufe bleiben 0,001 statt 0,229 ms, die Bedingungen kosten 19 % weniger, ein Schritt 8 % und ein Bild 2,62 statt 2,78 ms, 6 % weniger. Mit 1, 2 und 4 Threads gleich. Von den Regeln tritt keine mehr ein, weiter mit 32 |
-| 32 | **Aufbau des Lösers auf den Workern**: die Teile des Aufbaus, die nicht voneinander abhängen, parallel, bitgleich | höchstens 0,1 ms pro Schritt, rund 4 % eines Bilds mit 8 Threads | 30 | ✅ auf `kollaps-10`: Beim Abriss kosten die Knoten des Überlaufs gut die Hälfte des Aufbaus, die Pakete der Körper und Kontakte und das Ordnen der Kontakte fast den Rest. Zwei Aufgaben auf den Workern rechnen jetzt die Pakete und das Ordnen, während der aufrufende Thread die Knoten baut, ab 256 Kontakten im Überlauf, bitgleich. Auf der VM kostet der Aufbau beim Abriss mit 2 und 4 Threads rund ein Drittel weniger, im Benchmark in den Städten mit vielen Knoten 8 bis 13 %. Auf dem Ryzen nachzumessen, siehe 37 |
-| 37 | **Auf dem Ryzen nachmessen**: „Skalierung messen“ mit `kollaps-10` beim Abriss bei ×2 | zeigt, was 32 mit 8 Threads bringt | 32 | 🔜 |
+| 32 | **Aufbau des Lösers auf den Workern**: die Teile des Aufbaus, die nicht voneinander abhängen, parallel, bitgleich | höchstens 0,1 ms pro Schritt, rund 4 % eines Bilds mit 8 Threads | 30 | ✅ auf `kollaps-10`: Beim Abriss kosten die Knoten des Überlaufs gut die Hälfte des Aufbaus, die Pakete der Körper und Kontakte und das Ordnen der Kontakte fast den Rest. Zwei Aufgaben auf den Workern rechnen jetzt die Pakete und das Ordnen, während der aufrufende Thread die Knoten baut, ab 256 Kontakten im Überlauf, bitgleich. Auf der VM kostet der Aufbau beim Abriss mit 2 und 4 Threads rund ein Drittel weniger, im Benchmark in den Städten mit vielen Knoten 8 bis 13 %. Auf dem Ryzen nachzumessen, siehe 37. Dort kostet der Aufbau mit 8 Threads 23 % weniger |
+| 37 | **Auf dem Ryzen nachmessen**: „Skalierung messen“ mit `kollaps-10` beim Abriss bei ×2 | zeigt, was 32 mit 8 Threads bringt | 32 | ✅ am 24. Oktober, `kollaps-10` und `kollaps-9` direkt nacheinander: Der Aufbau des Lösers kostet mit 2, 4 und 8 Threads 28, 27 und 23 % weniger, mit 8 Threads 0,098 statt 0,127 ms, und der aufrufende Thread wartet nie auf die Worker. Ein Schritt kostet im Rahmen der Schwankungen gleich viel, die 0,03 ms gehen darin unter. Ein erster Lauf war am PC gestört |
 | 33 | **Weniger Kopien an kleinen Knoten**: eine Gruppe für je 64 statt 32 Kontakte, ändert die Ergebnisse | mit 1 und 2 Threads ein Teil der 30 und 7 % pro Kontakt | 30 | 🔜 niedrig |
 | 26 | **Worker wach halten statt schlafen legen**: kurz aktiv warten, bevor ein Worker schläft, bitgleich | auf der VM rund ein Zehntel der Ruhe-Prüfung, kostet Rechenzeit beim Zeichnen | 25 | ⛔ nach 25: Auf dem Ryzen laufen die Worker nach 6 bis 7 µs an, aktiv zu warten spart unter 0,5 % eines Schritts |
 
@@ -601,6 +601,17 @@ rund ein Drittel weniger, 0,20 statt 0,31 bis 0,33 ms, und im Benchmark in den S
 der Stadt bei ×2 mit wenigen gleich viel. Die Ergebnisse bleiben bitgleich. Mit 8 Threads auf dem Ryzen dürfte der
 Aufbau von 0,127 auf rund 0,08 ms fallen, knapp 2 % eines Bilds. Auf dem Ryzen nachzumessen, Schritt 37: Kostet der
 Aufbau dort mit 8 Threads deutlich weniger und bleiben die übrigen Stufen gleich, bleibt es.
+
+Auf dem Ryzen nachgemessen am 24. Oktober, Schritt 37, siehe „Skalierung auf dem Ryzen mit `kollaps-10`“ in
+[Optimierungen.md](Optimierungen.md): Der Aufbau des Lösers kostet mit 8 Threads 0,098 statt 0,127 ms, 23 % weniger, mit
+2 und 4 Threads 28 und 27 %. Die Aufgaben der Worker sind ganz verdeckt, der aufrufende Thread wartet nie auf sie, und
+die Knoten bestimmen mit 0,087 ms allein, wie lange der Aufbau dauert. Ein Schritt kostet mit `kollaps-10` und
+`kollaps-9` im Rahmen der Schwankungen gleich viel: Die 0,03 ms sind gut 1 % eines Schritts, und auch Stufen, an denen
+sich nichts geändert hat, schwanken zwischen zwei Läufen um bis zu 4 %. Ein erster Lauf mit `kollaps-10` direkt nach
+`kollaps-9` war mit 4 und 8 Threads in allen Stufen außer dem Aufbau 12 bis 28 % langsamer, auch in denen, an denen sich
+nichts geändert hat. In umgekehrter Reihenfolge liegt `kollaps-10` bei `kollaps-9`, der erste Lauf lag am PC. Nach den
+Regeln oben tritt in der Tabelle des Teams weiter keine ein. In der Liste der Schritte steht nur noch 33, mit 8 Threads
+bleibt aber die Hälfte eines Schritts auf einem Thread, am meisten in der Kontakt-Schleife und im Löser.
 
 ## Kleinere Punkte
 

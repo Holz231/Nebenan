@@ -1063,8 +1063,9 @@ ihre Pakete eintragen und die Kontakte der Farben ordnen, siehe „Der Aufbau de
 eigenen Aufruf, sobald der Überlauf so viele Kontakte hat, dass die Knoten die Arbeit der Worker überdecken.
 `nbWorld_GetProfile` zeigt die Teile des Aufbaus unter `nb_profileSolverSetup`. Auf der VM kostet der Aufbau beim Abriss
 in der Demo bei ×2 mit 2 und 4 Threads gepaart gegen `kollaps-9` rund ein Drittel weniger, im Benchmark in den Städten
-mit vielen Knoten 8 bis 13 %. Die Ergebnisse bleiben bitgleich. Was es auf dem Ryzen mit 8 Threads bringt, ist
-nachzumessen, siehe [docs/Roadmap.md](docs/Roadmap.md).
+mit vielen Knoten 8 bis 13 %. Die Ergebnisse bleiben bitgleich. Auf dem Ryzen 7 7800X3D kostet der Aufbau mit 8 Threads
+0,098 statt 0,127 ms, ein Schritt im Rahmen der Schwankungen gleich viel, siehe „Skalierung auf dem Ryzen mit
+`kollaps-10`“ in [docs/Optimierungen.md](docs/Optimierungen.md).
 
 Die teuersten Frames folgen auf einen Einsturz: Der Schutt um die Reste der Etage taut auf, und Box3D legt im nächsten
 Schritt Tausende neuer Kontakte an. Das ist echte Arbeit, das meiste davon fällt danach wirklich, siehe
