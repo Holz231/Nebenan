@@ -1057,6 +1057,15 @@ ein Schritt gepaart gegen `kollaps-8` gleich viel. Auf dem Ryzen 7 7800X3D koste
 19 % weniger und ein Bild 6 %, 2,62 statt 2,78 ms, siehe „Skalierung auf dem Ryzen mit `kollaps-9`“ in
 [docs/Optimierungen.md](docs/Optimierungen.md).
 
+Seit `kollaps-10` baut der aufrufende Thread die Knoten des Überlaufs, während zwei Worker die Körper und Kontakte in
+ihre Pakete eintragen und die Kontakte der Farben ordnen, siehe „Der Aufbau des Lösers neben den Knoten“ in
+[`extern/README.md`](extern/README.md). Vorher rechnete er den ganzen Aufbau des Lösers allein. Das geschieht ohne
+eigenen Aufruf, sobald der Überlauf so viele Kontakte hat, dass die Knoten die Arbeit der Worker überdecken.
+`nbWorld_GetProfile` zeigt die Teile des Aufbaus unter `nb_profileSolverSetup`. Auf der VM kostet der Aufbau beim Abriss
+in der Demo bei ×2 mit 2 und 4 Threads gepaart gegen `kollaps-9` rund ein Drittel weniger, im Benchmark in den Städten
+mit vielen Knoten 8 bis 13 %. Die Ergebnisse bleiben bitgleich. Was es auf dem Ryzen mit 8 Threads bringt, ist
+nachzumessen, siehe [docs/Roadmap.md](docs/Roadmap.md).
+
 Die teuersten Frames folgen auf einen Einsturz: Der Schutt um die Reste der Etage taut auf, und Box3D legt im nächsten
 Schritt Tausende neuer Kontakte an. Das ist echte Arbeit, das meiste davon fällt danach wirklich, siehe
 [`docs/Optimierungen.md`](docs/Optimierungen.md).

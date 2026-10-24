@@ -15,9 +15,10 @@ Radix-Sort für die neuen Paare auf `physik-43` und dem wählbaren Takt der Phys
 dem Ryzen nachgemessen, und dem Budget und den Manifolds auf den Workern auf `kollaps-5`, mit „Parallel gegen
 nacheinander“ auf dem Ryzen nachgemessen, dem Vergleich von 7 gegen 8 Threads auf `kollaps-6`, auf dem Ryzen
 nachgemessen, dem Überlauf an Knoten auf mehreren Threads auf `kollaps-7` und den Stufen des Teams auf `kollaps-8`,
-beide auf dem Ryzen nachgemessen, und den großen Paketen im Team auf `kollaps-9`, auf dem Ryzen nachgemessen.
-Begründungen und Messwerte stehen in [`Optimierungen.md`](Optimierungen.md), hier nur das Fazit und die Reihenfolge.
-Nach jeder Runde wird der Stand hier nachgetragen.
+beide auf dem Ryzen nachgemessen, den großen Paketen im Team auf `kollaps-9`, auf dem Ryzen nachgemessen, und dem Aufbau
+des Lösers neben den Knoten auf `kollaps-10`. Begründungen und Messwerte stehen in
+[`Optimierungen.md`](Optimierungen.md), hier nur das Fazit und die Reihenfolge. Nach jeder Runde wird der Stand hier
+nachgetragen.
 
 `kollaps-1` ist keine Runde der Physik, sie baut den Einsturz nach Kapitel 17 der Roadmap des Spiels, siehe
 [`Referenz`](Referenz/README.md). Sie ändert aber, was der Benchmark unter Trommelfeuer bei ×4 misst: Eine Etage gibt
@@ -99,9 +100,10 @@ vergleicht dort verschiedene Szenen. Im Benchmark enden die Städte fast gleich,
   weniger und ein Bild 6 %, siehe Schritt 36.
 - **Was danach bleibt, sind kleine Posten.** Mit 8 Threads auf dem Ryzen kosten die Typwechsel 3 % des Frames, der
   Aufbau des Lösers 3 %, und von den Einschlägen ist jeder Teil, Box3D-Körper, Einbau, Suche und Teilen der Akteure, 1
-  bis 2 %, siehe „Wohin ein Typwechsel und ein Einschlag ihre Zeit geben“. Anlegen und Zustandswechsel der Kontakte
-  sind 6 bis 9 %, aber nur mit einem großen Umbau von Box3D zu holen, siehe Schritt 9. Dessen erste Stufe, die neuen
-  Kontakte parallel anzulegen, lohnte auf `physik-41` nicht, gebaut ist stattdessen „Vorausladen zum Schreiben“.
+  bis 2 %, siehe „Wohin ein Typwechsel und ein Einschlag ihre Zeit geben“. Anlegen und Zustandswechsel der Kontakte sind
+  6 bis 9 %, aber nur mit einem großen Umbau von Box3D zu holen, siehe Schritt 9. Dessen erste Stufe, die neuen Kontakte
+  parallel anzulegen, lohnte auf `physik-41` nicht, gebaut ist stattdessen „Vorausladen zum Schreiben“. Den Aufbau des
+  Lösers teilt sich der aufrufende Thread seit `kollaps-10` mit zwei Workern, siehe Schritt 32.
 - **Der Löser hing am Überlauf des Graphen.** Kontakte, für die keine der 20 Farben frei ist, löst Box3D auf dem
   aufrufenden Thread allein. Beim Abriss sind das die Kontakte an Knoten: große abgebrochene Teile aus Dutzenden bis
   Hunderten Bruchstücken, an denen Hunderte kleine Trümmer liegen, siehe „Der Überlauf beim Abriss“. Seit `physik-22`
@@ -164,7 +166,8 @@ bleiben.
 | 34 | **Auf dem Ryzen nachmessen**: „Skalierung messen“ mit `kollaps-8` beim Abriss bei ×2 | zeigt, wo das Team mit 8 Threads wartet, und entscheidet nach den Regeln unter „Was als Nächstes in Frage kommt“, wie es im Löser weitergeht | 31 | ✅ am 24. Oktober: Mit 8 Threads tritt nur die Regel „Allein“ ein. Der aufrufende Thread rechnet 35 % der Zeit des Teams allein, 26 % davon nach der letzten Stufe. Dort wartet er, auf der VM gezählt, auf das Paket einer zweiten großen Insel, das ein Worker allein rechnet, siehe 35 |
 | 35 | **Große Pakete im Team**: Das Team rechnet nicht nur das größte Paket in seinen Stufen, sondern jedes, das mehr als den Anteil eines Threads hält, bitgleich | geschätzt mit 8 Threads rund 15 % der Zeit des Teams, 3 bis 4 % eines Bilds, mit 4 Threads nichts | 34 | ✅ auf `kollaps-9`: Mit dem größten Paket rechnet das Team jedes weitere, das mehr als das Doppelte des Anteils eines Threads hält, bitgleich. Mit dem einfachen Anteil kostete das Team auf der VM mit 4 Threads in den Schritten mit zweitem Paket 5,6 % mehr, denn ein Thread im Team rechnet nur etwas mehr als halb so schnell wie allein. Mit 4 Threads hält eine zweite Insel nie das Doppelte, auf der VM ändert sich nichts. Mit 8 Threads nimmt das Team beim Abriss nach den Inseln auf der VM in rund 40 % seiner Schritte ein zweites Paket mit, auf dem Ryzen nachzumessen, siehe 36. Dort kosten die Bedingungen mit 8 Threads 19 % weniger und ein Bild 6 % |
 | 36 | **Auf dem Ryzen nachmessen**: „Skalierung messen“ mit `kollaps-9` beim Abriss bei ×2 | zeigt, was 35 mit 8 Threads bringt und ob die Schwelle passt | 35 | ✅ am 24. Oktober, `kollaps-8` und `kollaps-9` direkt nacheinander: Mit 8 Threads kostet das Team 0,724 statt 0,894 ms pro gemessenem Schritt, nach der letzten Stufe bleiben 0,001 statt 0,229 ms, die Bedingungen kosten 19 % weniger, ein Schritt 8 % und ein Bild 2,62 statt 2,78 ms, 6 % weniger. Mit 1, 2 und 4 Threads gleich. Von den Regeln tritt keine mehr ein, weiter mit 32 |
-| 32 | **Aufbau des Lösers auf den Workern**: die Teile des Aufbaus, die nicht voneinander abhängen, parallel, bitgleich | höchstens 0,1 ms pro Schritt, rund 4 % eines Bilds mit 8 Threads | 30 | 🔜 als Nächstes, erst messen, welche Teile es sind |
+| 32 | **Aufbau des Lösers auf den Workern**: die Teile des Aufbaus, die nicht voneinander abhängen, parallel, bitgleich | höchstens 0,1 ms pro Schritt, rund 4 % eines Bilds mit 8 Threads | 30 | ✅ auf `kollaps-10`: Beim Abriss kosten die Knoten des Überlaufs gut die Hälfte des Aufbaus, die Pakete der Körper und Kontakte und das Ordnen der Kontakte fast den Rest. Zwei Aufgaben auf den Workern rechnen jetzt die Pakete und das Ordnen, während der aufrufende Thread die Knoten baut, ab 256 Kontakten im Überlauf, bitgleich. Auf der VM kostet der Aufbau beim Abriss mit 2 und 4 Threads rund ein Drittel weniger, im Benchmark in den Städten mit vielen Knoten 8 bis 13 %. Auf dem Ryzen nachzumessen, siehe 37 |
+| 37 | **Auf dem Ryzen nachmessen**: „Skalierung messen“ mit `kollaps-10` beim Abriss bei ×2 | zeigt, was 32 mit 8 Threads bringt | 32 | 🔜 |
 | 33 | **Weniger Kopien an kleinen Knoten**: eine Gruppe für je 64 statt 32 Kontakte, ändert die Ergebnisse | mit 1 und 2 Threads ein Teil der 30 und 7 % pro Kontakt | 30 | 🔜 niedrig |
 | 26 | **Worker wach halten statt schlafen legen**: kurz aktiv warten, bevor ein Worker schläft, bitgleich | auf der VM rund ein Zehntel der Ruhe-Prüfung, kostet Rechenzeit beim Zeichnen | 25 | ⛔ nach 25: Auf dem Ryzen laufen die Worker nach 6 bis 7 µs an, aktiv zu warten spart unter 0,5 % eines Schritts |
 
@@ -586,6 +589,18 @@ Worker rechnen 11 % an den übrigen Paketen bei 17 % der Blöcke auf dem aufrufe
 der Zeit des Teams. Keine Regel tritt mehr ein, das Team verteilt seine Arbeit. Als Nächstes kommt deshalb Schritt 32,
 der Aufbau des Lösers: mit 8 Threads 0,127 ms pro Schritt auf dem aufrufenden Thread allein, 6 % eines Schritts. Zuerst
 ist zu messen, welche Teile das sind.
+
+Auf `kollaps-10` ist Schritt 32 gebaut, siehe „Aufbau des Lösers beim Abriss“ in [Optimierungen.md](Optimierungen.md).
+Zuerst misst Box3D die Teile des Aufbaus: Beim Abriss auf der VM mit 4 Threads kosten die Knoten 0,17 von 0,33 ms, die
+Pakete der Körper und Kontakte 0,11 ms und das Ordnen der Kontakte 0,04 ms. Das Verteilen der Inseln auf die Pakete
+kostet kaum etwas. Die Knoten brauchen die Pakete ihrer Kontakte erst am Ende, deshalb rechnen jetzt zwei Aufgaben auf
+den Workern die Pakete und das Ordnen, während der aufrufende Thread die Knoten baut, sobald der Überlauf mindestens 256
+Kontakte hat. Mit weniger sind die Knoten zu schnell gebaut, um die Aufgaben zu überdecken, und der aufrufende Thread
+rechnet sie gleich selbst. Gepaart gegen die Runde davor kostet der Aufbau auf der VM beim Abriss mit 2 und 4 Threads
+rund ein Drittel weniger, 0,20 statt 0,31 bis 0,33 ms, und im Benchmark in den Städten mit vielen Knoten 8 bis 13 %, in
+der Stadt bei ×2 mit wenigen gleich viel. Die Ergebnisse bleiben bitgleich. Mit 8 Threads auf dem Ryzen dürfte der
+Aufbau von 0,127 auf rund 0,08 ms fallen, knapp 2 % eines Bilds. Auf dem Ryzen nachzumessen, Schritt 37: Kostet der
+Aufbau dort mit 8 Threads deutlich weniger und bleiben die übrigen Stufen gleich, bleibt es.
 
 ## Kleinere Punkte
 
