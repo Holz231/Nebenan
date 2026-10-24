@@ -557,11 +557,11 @@ typedef enum nbProfileStage
 	nb_profileSolve,
 	nb_profileSolverSetup,
 
-	/// The parts of the solver setup, see b3Profile::setupPacks: the islands in packs on the calling thread, a task on
-	/// a worker that gives every body and contact its pack and puts the contacts in order, meanwhile the knots of the
-	/// overflow on the calling thread, and its wait for the task
+	/// The parts of the solver setup, see b3Profile::setupPacks: the islands in packs on the calling thread, two tasks on
+	/// workers that give every body and contact its pack and put the contacts in order, meanwhile the knots of the
+	/// overflow on the calling thread, and its waits for the tasks
 	nb_profileSetupPacks,
-	nb_profileSetupOrder,
+	nb_profileSetupTasks,
 	nb_profileSetupKnots,
 	nb_profileSetupWait,
 	nb_profileConstraints,

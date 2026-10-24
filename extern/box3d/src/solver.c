@@ -2441,9 +2441,9 @@ static int b3BuildPacks( b3World* world, const b3SolverSet* awakeSet, int packLi
 }
 
 // Added for Nebenan: the awake indices of the bodies of every pack to packBodies from packBodyStarts on, in the order of the
-// awake set, and the pack of every contact of the islands to contactPacks by contact id, see b3BuildPacks
-static void b3FillPacks( const b3World* world, const b3SolverSet* awakeSet, const int* islandPacks, const int* packBodyStarts,
-						 int packCount, int* packBodies, uint8_t* contactPacks )
+// awake set, see b3BuildPacks
+static void b3FillPackBodies( const b3World* world, const b3SolverSet* awakeSet, const int* islandPacks,
+							  const int* packBodyStarts, int packCount, int* packBodies )
 {
 	int cursors[B3_MAX_PACKS];
 	for ( int p = 0; p < packCount; ++p )
@@ -2466,8 +2466,12 @@ static void b3FillPacks( const b3World* world, const b3SolverSet* awakeSet, cons
 		B3_ASSERT( body->setIndex == b3_awakeSet && body->localIndex == i );
 		packBodies[cursors[islandPacks[body->islandId]]++] = i;
 	}
+}
 
-	// Every contact of an island belongs to it, the overflow contacts as well
+// Added for Nebenan: the pack of every contact of the islands to contactPacks by contact id, see b3BuildPacks. Every contact
+// of an island belongs to it, the overflow contacts as well.
+static void b3FillContactPacks( const b3World* world, const b3SolverSet* awakeSet, const int* islandPacks, uint8_t* contactPacks )
+{
 	int islandCount = awakeSet->islandSims.count;
 	const b3IslandSim* islandSims = awakeSet->islandSims.data;
 	for ( int i = 0; i < islandCount; ++i )
@@ -2554,12 +2558,14 @@ static int b3GetPackEntryCapacity( const b3World* world, const b3GraphColor* col
 	return capacity;
 }
 
-// Added for Nebenan: what the solver setup gives to a worker while the calling thread builds the knots, see b3BuildKnots.
-// With packs the pack of every body and contact, see b3FillPacks, and the convex contacts of the colors pack by pack, see
-// b3OrderPackContacts, without packs the convex contacts of the colors in buckets, see b3OrderColorContacts. The knots need
-// the packs of the contacts only at the end and wait for the task there, see b3FinishSetupTask, or run it themselves if no
-// worker took it yet. Only the calling thread takes from the stack, the task fills what it took before. Every result is
-// the same whichever thread computes it.
+// Added for Nebenan: what the solver setup gives to the workers while the calling thread builds the knots, see
+// b3BuildKnots, in two tasks. The first gives every contact its pack, see b3FillContactPacks, and puts the convex contacts
+// of the colors in order pack by pack, see b3OrderPackContacts, or without packs in buckets, see b3OrderColorContacts. The
+// knots need the packs of the contacts only at the end and wait for it there, see b3FinishSetupTask, or run it themselves
+// if no worker took it yet. The second gives every body its pack, see b3FillPackBodies, which only the stages need. The
+// calling thread waits for it at the end of the setup, before the split of an island changes the islands of the bodies,
+// and with a single worker it runs the second task while it waits for the first. Only the calling thread takes from the
+// stack, the tasks fill what it took before. Every result is the same whichever thread computes it.
 typedef struct b3SetupTask
 {
 	const b3World* world;
@@ -2581,6 +2587,9 @@ typedef struct b3SetupTask
 	// The convex contacts of the colors in order, null without workers or contacts, then there is no task
 	int* orderedContacts;
 
+	// Whether this is the second task, which gives the bodies their packs
+	bool bodies;
+
 	// The task in the task system, null if the task system ran it right away, whether it started and was waited for, and
 	// how long it ran
 	void* userTask;
@@ -2595,10 +2604,14 @@ static void b3SetupTaskCallback( void* context )
 
 	b3SetupTask* task = context;
 	uint64_t ticks = b3GetTicks();
-	if ( task->packCount > 0 )
+	if ( task->bodies )
 	{
-		b3FillPacks( task->world, task->awakeSet, task->islandPacks, task->packBodyStarts, task->packCount, task->packBodies,
-					 task->contactPacks );
+		b3FillPackBodies( task->world, task->awakeSet, task->islandPacks, task->packBodyStarts, task->packCount,
+						  task->packBodies );
+	}
+	else if ( task->packCount > 0 )
+	{
+		b3FillContactPacks( task->world, task->awakeSet, task->islandPacks, task->contactPacks );
 		b3OrderPackContacts( task->world, task->colors, task->activeColorIndices, task->activeColorCount, task->contactPacks,
 							 task->packCount, task->orderedContacts, task->packWideStarts, task->packEntryCounts );
 	}
@@ -2612,10 +2625,10 @@ static void b3SetupTaskCallback( void* context )
 	b3TracyCZoneEnd( setup_task );
 }
 
-// Added for Nebenan: hands the setup task to a worker, see b3SetupTask
+// Added for Nebenan: hands a setup task to a worker, see b3SetupTask. The second task only comes with packs.
 static void b3StartSetupTask( b3World* world, b3SetupTask* task )
 {
-	if ( task->orderedContacts == NULL )
+	if ( task->orderedContacts == NULL || ( task->bodies && task->packCount == 0 ) )
 	{
 		return;
 	}
@@ -2633,7 +2646,7 @@ static void b3StartSetupTask( b3World* world, b3SetupTask* task )
 	}
 }
 
-// Added for Nebenan: waits for the setup task once, or runs it if no worker took it yet, see b3Profile::setupWait
+// Added for Nebenan: waits for a setup task once, or runs it if no worker took it yet, see b3Profile::setupWait
 static void b3FinishSetupTask( b3World* world, b3SetupTask* task )
 {
 	if ( task->started == false || task->finished )
@@ -2648,8 +2661,8 @@ static void b3FinishSetupTask( b3World* world, b3SetupTask* task )
 		world->activeTaskCount -= 1;
 	}
 	task->finished = true;
-	world->profile.setupWait = b3GetMilliseconds( ticks );
-	world->profile.setupOrder = task->time;
+	world->profile.setupWait += b3GetMilliseconds( ticks );
+	world->profile.setupTasks += task->time;
 }
 
 // Solve with graph coloring
@@ -3506,8 +3519,8 @@ void b3Solve( b3World* world, b3StepContext* stepContext )
 			}
 		}
 
-		// Added for Nebenan: a worker fills the packs and puts the contacts in order while the calling thread builds the
-		// knots, see b3SetupTask
+		// Added for Nebenan: the workers fill the packs and put the contacts in order while the calling thread builds the
+		// knots, see b3SetupTask. The task the knots wait for goes first.
 		b3SetupTask setupTask = {
 			.world = world,
 			.awakeSet = awakeSet,
@@ -3524,7 +3537,10 @@ void b3Solve( b3World* world, b3StepContext* stepContext )
 			.packEntryCounts = packEntryCounts,
 			.orderedContacts = orderedContacts,
 		};
+		b3SetupTask bodyTask = setupTask;
+		bodyTask.bodies = true;
 		b3StartSetupTask( world, &setupTask );
+		b3StartSetupTask( world, &bodyTask );
 
 		// Added for Nebenan: see b3Counters::teamWork
 		bool team = teamWork > 0;
@@ -3832,6 +3848,10 @@ void b3Solve( b3World* world, b3StepContext* stepContext )
 			teamEntries = (b3TeamEntry*)b3StackAlloc( &world->stack, workerCount * teamEntryCapacity * sizeof( b3TeamEntry ),
 													  "team entries" );
 		}
+
+		// Added for Nebenan: the bodies of the packs, before the split below changes the islands of the bodies, see
+		// b3SetupTask
+		b3FinishSetupTask( world, &bodyTask );
 
 		// Split an awake island. This modifies:
 		// - stack allocator

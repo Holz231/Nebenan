@@ -618,12 +618,13 @@ typedef struct b3Profile
 	float packWait;
 
 	/// Added for Nebenan: parts of solverSetup. The islands in packs on the calling thread, see b3Counters::islandWork,
-	/// or with workers but without packs only their work. Then a task that gives every body and contact its pack and
-	/// puts the convex contacts of the colors in the order the threads solve them, pack by pack with packs, on a worker
-	/// while the calling thread builds the knots of the overflow in batches, see b3Counters::knotContactCount. After the
-	/// knots the calling thread waits for the task, or runs it itself if no worker took it yet.
+	/// or with workers but without packs only their work. Then the time of two tasks on workers that give every contact
+	/// and every body its pack and put the convex contacts of the colors in the order the threads solve them, pack by
+	/// pack with packs, while the calling thread builds the knots of the overflow in batches, see
+	/// b3Counters::knotContactCount. The calling thread waits for the first task near the end of the knots and for the
+	/// second at the end of the setup, or runs them itself if no worker took them yet.
 	float setupPacks;
-	float setupOrder;
+	float setupTasks;
 	float setupKnots;
 	float setupWait;
 } b3Profile;

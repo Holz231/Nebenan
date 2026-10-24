@@ -9,7 +9,7 @@
 // The names of the stages, see nbProfileStage
 static const char* nb_profileNames[] = {
 	"total",		   "step",		 "pairs",	   "createContacts", "collide",		"contactStates", "solve",	   "solverSetup",
-	"setupPacks",	   "setupOrder", "setupKnots", "setupWait",		 "constraints", "overflow",		 "transforms", "update",
+	"setupPacks",	   "setupTasks", "setupKnots", "setupWait",		 "constraints", "overflow",		 "transforms", "update",
 	"collisionDamage", "settle",	 "budget",	   "release",		 "typeChanges", "impacts",		 "cells",	   "cellsAlone",
 };
 _Static_assert( sizeof( nb_profileNames ) / sizeof( nb_profileNames[0] ) == nb_profileStageCount, "a name per stage" );
@@ -46,7 +46,7 @@ void nbProfileStep( nbWorld* world )
 	sums->stages[nb_profileSolve] += step.solve;
 	sums->stages[nb_profileSolverSetup] += step.solverSetup;
 	sums->stages[nb_profileSetupPacks] += step.setupPacks;
-	sums->stages[nb_profileSetupOrder] += step.setupOrder;
+	sums->stages[nb_profileSetupTasks] += step.setupTasks;
 	sums->stages[nb_profileSetupKnots] += step.setupKnots;
 	sums->stages[nb_profileSetupWait] += step.setupWait;
 	sums->stages[nb_profileConstraints] += step.constraints;

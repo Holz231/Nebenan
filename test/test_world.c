@@ -5569,7 +5569,7 @@ static int ProfileTest( void )
 	ENSURE( t[nb_profileCreateContacts] <= t[nb_profilePairs] + slack );
 	ENSURE( t[nb_profileContactStates] <= t[nb_profileCollide] + slack );
 	ENSURE( t[nb_profileSolverSetup] + t[nb_profileConstraints] <= t[nb_profileSolve] + slack );
-	ENSURE( t[nb_profileSetupPacks] > 0.0f && t[nb_profileSetupOrder] > 0.0f && t[nb_profileSetupKnots] > 0.0f );
+	ENSURE( t[nb_profileSetupPacks] > 0.0f && t[nb_profileSetupTasks] > 0.0f && t[nb_profileSetupKnots] > 0.0f );
 	ENSURE( t[nb_profileSetupWait] >= 0.0f );
 	ENSURE( t[nb_profileSetupPacks] + t[nb_profileSetupKnots] + t[nb_profileSetupWait] <= t[nb_profileSolverSetup] + slack );
 	ENSURE( t[nb_profileOverflow] <= t[nb_profileConstraints] + slack );
