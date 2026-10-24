@@ -1076,8 +1076,10 @@ Threads rechnen die Threads 93 % ihrer Zeit in Blöcken, und ein Kontakt kostet 
 ist das Ende: Die teuersten Kontakte liegen an beiden Enden ihres Arrays, und die Threads warteten auf die letzten.
 Seitdem nehmen sie die Blöcke abwechselnd von vorne und von hinten, siehe „Kontakte von beiden Enden“. Beim Abriss
 warten sie nach ihrem letzten Block damit 56 % kürzer, im Benchmark 55 bis 77 %, die Kontakt-Schleife kostet wenige
-Prozent weniger, und die Ergebnisse bleiben bitgleich. Was die Schleife mit 8 Threads auf dem Ryzen bremst, entscheidet,
-wie es weitergeht, siehe [docs/Roadmap.md](docs/Roadmap.md).
+Prozent weniger, und die Ergebnisse bleiben bitgleich. Auf dem Ryzen 7 7800X3D rechnen die Threads mit 8 Threads 95,7 %
+ihrer Zeit in Blöcken, die Kontakt-Schleife kostet mit 2, 4 und 8 Threads 1,4 bis 2,4 % weniger als in den Läufen davor,
+und ein Schritt kostet mit 8 Threads 2,22 ms, so wenig wie nie, siehe „Skalierung auf dem Ryzen mit `kollaps-11`“ in
+[docs/Optimierungen.md](docs/Optimierungen.md).
 
 Die teuersten Frames folgen auf einen Einsturz: Der Schutt um die Reste der Etage taut auf, und Box3D legt im nächsten
 Schritt Tausende neuer Kontakte an. Das ist echte Arbeit, das meiste davon fällt danach wirklich, siehe

@@ -17,8 +17,8 @@ nacheinander“ auf dem Ryzen nachgemessen, dem Vergleich von 7 gegen 8 Threads 
 nachgemessen, dem Überlauf an Knoten auf mehreren Threads auf `kollaps-7` und den Stufen des Teams auf `kollaps-8`,
 beide auf dem Ryzen nachgemessen, den großen Paketen im Team auf `kollaps-9`, auf dem Ryzen nachgemessen, und dem Aufbau
 des Lösers neben den Knoten auf `kollaps-10`, auf dem Ryzen nachgemessen, und der zerlegten Kontakt-Schleife auf
-`kollaps-11`. Begründungen und Messwerte stehen in [`Optimierungen.md`](Optimierungen.md), hier nur das Fazit und die
-Reihenfolge. Nach jeder Runde wird der Stand hier nachgetragen.
+`kollaps-11`, auf dem Ryzen nachgemessen. Begründungen und Messwerte stehen in [`Optimierungen.md`](Optimierungen.md),
+hier nur das Fazit und die Reihenfolge. Nach jeder Runde wird der Stand hier nachgetragen.
 
 `kollaps-1` ist keine Runde der Physik, sie baut den Einsturz nach Kapitel 17 der Roadmap des Spiels, siehe
 [`Referenz`](Referenz/README.md). Sie ändert aber, was der Benchmark unter Trommelfeuer bei ×4 misst: Eine Etage gibt
@@ -79,7 +79,8 @@ vergleicht dort verschiedene Szenen. Im Benchmark enden die Städte fast gleich,
   schneller waren, hochgerechnet bleiben 58 und 55 % auf einem Thread, siehe „Skalierung auf dem Ryzen mit `physik-41`“.
   Mit `physik-44` kostet er bei ×2 2,25 ms, hochgerechnet bleiben 53 % auf einem Thread, siehe „Skalierung auf dem Ryzen
   mit `physik-44`“. Mit den Einstürzen kostet er auf `kollaps-6` bei ×2 2,61 ms, hochgerechnet bleiben 60 % auf einem
-  Thread, siehe „Skalierung auf dem Ryzen mit `kollaps-6`“.
+  Thread, siehe „Skalierung auf dem Ryzen mit `kollaps-6`“. Auf `kollaps-11` kostet er 2,22 ms, hochgerechnet bleiben
+  51 % auf einem Thread, siehe „Skalierung auf dem Ryzen mit `kollaps-11`“.
 - **Was dort bremst, ist vor allem der Löser.** Die Bedingungen sind mit 8 Threads 28 und 26 % des Frames, mit
   `physik-22` 31 und 26 %, davor 48 und 43 %, und brauchen 34 und 33 % der Zeit eines Threads statt eines Achtels. Seit
   `physik-24` rechnet ein Team aller Threads das Paket der größten Insel, das vorher ein Thread allein rechnete: Auf dem
@@ -105,7 +106,8 @@ vergleicht dort verschiedene Szenen. Im Benchmark enden die Städte fast gleich,
   parallel anzulegen, lohnte auf `physik-41` nicht, gebaut ist stattdessen „Vorausladen zum Schreiben“. Den Aufbau des
   Lösers teilt sich der aufrufende Thread seit `kollaps-10` mit zwei Workern, siehe Schritt 32. Die Kontakt-Schleife
   misst Box3D seit `kollaps-11` selbst: Auf der VM warten die Threads mit 4 Threads 7 % ihrer Zeit, vor allem am Ende
-  auf die teuersten Blöcke, und seit sie die Blöcke von beiden Enden nehmen, noch 4 %, siehe Schritt 38 und 39.
+  auf die teuersten Blöcke, und seit sie die Blöcke von beiden Enden nehmen, noch 4 %, siehe Schritt 38 und 39. Auf dem
+  Ryzen warten sie mit 8 Threads 4,3 %, die Kontakt-Schleife skaliert, siehe Schritt 40.
 - **Der Löser hing am Überlauf des Graphen.** Kontakte, für die keine der 20 Farben frei ist, löst Box3D auf dem
   aufrufenden Thread allein. Beim Abriss sind das die Kontakte an Knoten: große abgebrochene Teile aus Dutzenden bis
   Hunderten Bruchstücken, an denen Hunderte kleine Trümmer liegen, siehe „Der Überlauf beim Abriss“. Seit `physik-22`
@@ -172,7 +174,8 @@ bleiben.
 | 37 | **Auf dem Ryzen nachmessen**: „Skalierung messen“ mit `kollaps-10` beim Abriss bei ×2 | zeigt, was 32 mit 8 Threads bringt | 32 | ✅ am 24. Oktober, `kollaps-10` und `kollaps-9` direkt nacheinander: Der Aufbau des Lösers kostet mit 2, 4 und 8 Threads 28, 27 und 23 % weniger, mit 8 Threads 0,098 statt 0,127 ms, und der aufrufende Thread wartet nie auf die Worker. Ein Schritt kostet im Rahmen der Schwankungen gleich viel, die 0,03 ms gehen darin unter. Ein erster Lauf war am PC gestört |
 | 38 | **Kontakt-Schleife zerlegen**: messen, was die Kontakt-Schleife mit 8 Threads bremst, lange Blöcke, die seriellen Teile davor und danach oder der Speicher | Werkzeug, entscheidet, wie es in der Kontakt-Schleife weitergeht: mit 8 Threads rund ein Drittel eines Schritts, und der Fit nennt 0,21 ms davon seriell | 37 | ✅ auf `kollaps-11`: Box3D misst in jedem Schritt das Sammeln vor der Schleife, die Schleife und das Zusammenführen danach und in jedem achten, wie die Threads die Schleife verbringen, bitgleich. Beim Abriss auf der VM bei ×2 mit 4 Threads sind Sammeln und Zusammenführen 2 % der Kontakt-Schleife, und die Threads rechnen 93 % ihrer Zeit in Blöcken, 2 % warten sie vor dem ersten und 5 % nach dem letzten. Ein Kontakt kostet mit 4 Threads so viel wie mit einem. Die teuersten Kontakte liegen an beiden Enden des Arrays, daraus 39 |
 | 39 | **Blöcke der Kontakt-Schleife von beiden Enden**: Die Threads nehmen die Blöcke abwechselnd von vorne und von hinten, wo die teuersten Kontakte liegen, die billigen der Mitte zuletzt, bitgleich | 2 bis 3 % der Kontakt-Schleife | 38 | ✅ auf `kollaps-11`: Auf der VM mit 4 Threads warten die Threads nach ihrem letzten Block im Benchmark 55 bis 77 % und beim Abriss 56 % kürzer und rechnen 96 bis 97 statt 93 bis 95 % ihrer Zeit in Blöcken. Mehr oder weniger Blöcke, Blöcke, die zum Ende kleiner werden, rückwärts und gestreut brachten nichts oder kosteten mehr |
-| 40 | **Auf dem Ryzen nachmessen**: „Skalierung messen“ mit `kollaps-11` beim Abriss bei ×2 | zeigt, was die Kontakt-Schleife mit 8 Threads bremst, und entscheidet nach den Regeln unter „Was als Nächstes in Frage kommt“, wie es weitergeht | 38 und 39 | 🔜 |
+| 40 | **Auf dem Ryzen nachmessen**: „Skalierung messen“ mit `kollaps-11` beim Abriss bei ×2 | zeigt, was die Kontakt-Schleife mit 8 Threads bremst, und entscheidet nach den Regeln unter „Was als Nächstes in Frage kommt“, wie es weitergeht | 38 und 39 | ✅ am 24. Oktober, `kollaps-10` und `kollaps-11` direkt nacheinander: Mit 8 Threads rechnen die Threads der Kontakt-Schleife 95,7 % ihrer Zeit in Blöcken, 2,6 % warten sie vor dem ersten und 1,5 % nach dem letzten, ein Kontakt kostet 9,7 % mehr als mit einem Thread, und Sammeln und Zusammenführen sind 1,7 % der Kontakt-Schleife. Keine Regel tritt ein, die Kontakt-Schleife skaliert. Mit 2, 4 und 8 Threads kostet sie 1,4 bis 2,4 % weniger als im Mittel der fünf Läufe davor, ein Schritt mit 8 Threads 2,222 ms, so wenig wie in keinem Lauf davor. Der Lauf mit `kollaps-10` war am PC gestört. Am weitesten über einem Achtel liegen danach die Bedingungen und die Ruhe-Prüfung, siehe 41 |
+| 41 | **Ruhe-Prüfung zerlegen**: messen, was die Ruhe-Prüfung im Update mit 8 Threads bremst, die Prüfungen auf den Threads, die Verteilung ihrer Blöcke oder das Zusammensetzen und Erstarren danach auf dem aufrufenden Thread | Werkzeug, entscheidet, wie es in der Ruhe-Prüfung weitergeht: mit 8 Threads 0,14 ms über einem Achtel ihrer Zeit mit einem Thread, gut 6 % eines Schritts | 40 | 🔜 |
 | 33 | **Weniger Kopien an kleinen Knoten**: eine Gruppe für je 64 statt 32 Kontakte, ändert die Ergebnisse | mit 1 und 2 Threads ein Teil der 30 und 7 % pro Kontakt | 30 | 🔜 niedrig |
 | 26 | **Worker wach halten statt schlafen legen**: kurz aktiv warten, bevor ein Worker schläft, bitgleich | auf der VM rund ein Zehntel der Ruhe-Prüfung, kostet Rechenzeit beim Zeichnen | 25 | ⛔ nach 25: Auf dem Ryzen laufen die Worker nach 6 bis 7 µs an, aktiv zu warten spart unter 0,5 % eines Schritts |
 
@@ -647,6 +650,27 @@ Schritt 40:
   Thread für jeden Worker Bits für alle Kontakte. Auf der VM 2,2 %.
 - **Nichts davon**: Dann skaliert die Kontakt-Schleife, und was von ihr mit 8 Threads auf einem Thread bleibt, sind die
   Zustandswechsel. Als Nächstes kommt dann, was nach der Tabelle der Stufen mit 8 Threads am meisten seriell bleibt.
+
+Auf dem Ryzen nachgemessen am 24. Oktober, Schritt 40, `kollaps-10` und `kollaps-11` direkt nacheinander, siehe
+„Skalierung auf dem Ryzen mit `kollaps-11`“ in [Optimierungen.md](Optimierungen.md). Der Lauf mit `kollaps-10` war
+gestört: Mit 2, 4 und 8 Threads kostete ein Schritt 18 bis 38 % mehr als mit demselben Stand zuvor, in fast allen
+Stufen. Verglichen mit den fünf ungestörten Läufen seit `kollaps-8` kostet die Kontakt-Schleife mit 2, 4 und 8 Threads
+1,4 bis 2,4 % weniger, und ein Schritt samt Update und Einschlägen kostet mit 8 Threads 2,222 ms, so wenig wie in keinem
+Lauf davor. Mit 8 Threads rechnen die Threads in der Kontakt-Schleife 95,7 % ihrer Zeit in Blöcken. Vor ihrem ersten
+Block warten sie 2,6 %, mit jeder Zahl von Threads zusammen rund 0,14 ms, wohl der Worker, der in dieser Zeit den Baum
+der Formen neu baut, nach ihrem letzten 1,5 %. Ein Kontakt kostet mit 8 Threads 9,7 % mehr als mit einem, und Sammeln
+und Zusammenführen sind 1,7 % der Kontakt-Schleife. Also tritt „Nichts davon“ ein: Die Kontakt-Schleife skaliert, mit 8
+Threads liegt sie 0,085 ms über einem Achtel ihrer Zeit mit einem Thread, mit den Zustandswechseln 0,14 ms. Am weitesten
+über einem Achtel liegen nach der Tabelle der Stufen die Bedingungen des Lösers mit 0,39 ms, der Fit nennt 0,48 ms von
+ihnen seriell. In der Tabelle des Teams tritt aber weiter keine Regel ein: Ihr Rest verteilt sich auf das Warten am Ende
+der Stufen, 20 % der Zeit der Threads in den offenen Stufen, auf das, was der aufrufende Thread allein rechnet, 13 % der
+Zeit des Teams, und auf die Stufe der Knoten, die 26 % nach ihrem letzten Block wartet. Danach kommt die Ruhe-Prüfung im
+Update mit 0,14 ms über einem Achtel, der Fit nennt 0,16 ms seriell. Von den großen Stufen skaliert sie am
+schlechtesten: Mit 8 Threads braucht sie 31 % ihrer Zeit mit einem Thread, die Bedingungen 27 %, die Kontakt-Schleife
+16 %. Und der aufrufende Thread prüft im Mittel der Schritte 30,5 % der bewegten Trümmer statt eines Achtels, wobei
+kleine Schritte mit wenigen Blöcken so viel zählen wie große. Was davon die Prüfungen kosten und was das Zusammensetzen
+und Erstarren danach auf dem aufrufenden Thread, zeigt der Bericht nicht. Daraus Schritt 41: die Ruhe-Prüfung zerlegen
+wie die Kontakt-Schleife.
 
 ## Kleinere Punkte
 
