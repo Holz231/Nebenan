@@ -2042,27 +2042,10 @@ static void b3BulletBodyTask( int startIndex, int endIndex, int workerIndex, voi
 // worker that integrates a range of bodies gets most of their contacts in every color, and the states of those bodies stay
 // in its cache instead of moving between cores from color to color. Only with workers. The collide task wrote the keys,
 // see b3World::contactSortKeys, and the counting sort reads them from that dense array instead of the scattered contacts.
-// Returns the contact ids in stack memory in the order of the active colors, or NULL.
-static int* b3OrderColorContacts( b3World* world, const b3GraphColor* colors, const int* activeColorIndices, int activeColorCount,
-								  int awakeBodyCount, int workerCount )
+// Writes the contact ids to ordered in the order of the active colors, as many as the colors have convex contacts.
+static void b3OrderColorContacts( const b3World* world, const b3GraphColor* colors, const int* activeColorIndices,
+								  int activeColorCount, int awakeBodyCount, int* ordered )
 {
-	if ( workerCount < 2 )
-	{
-		return NULL;
-	}
-
-	int total = 0;
-	for ( int i = 0; i < activeColorCount; ++i )
-	{
-		total += colors[activeColorIndices[i]].convexContacts.count;
-	}
-
-	if ( total == 0 )
-	{
-		return NULL;
-	}
-
-	int* ordered = (int*)b3StackAlloc( &world->stack, total * (int)sizeof( int ), "ordered contacts" );
 	const int* keys = world->contactSortKeys;
 	int offset = 0;
 	for ( int i = 0; i < activeColorCount; ++i )
@@ -2092,8 +2075,6 @@ static int* b3OrderColorContacts( b3World* world, const b3GraphColor* colors, co
 
 		offset += count;
 	}
-
-	return ordered;
 }
 
 // Added for Nebenan: packs of islands per worker, enough for the workers to even out the work, see b3BuildPacks. A byte
@@ -2317,12 +2298,12 @@ static void b3MeasureIslandWork( b3World* world, const b3SolverSet* awakeSet )
 }
 
 // Added for Nebenan: the awake islands in packs of about equal work, the largest pack first, for b3SolvePacks. Writes the
-// pack of every contact of the islands to contactPacks by contact id, and the awake indices of the bodies of every pack to
-// packBodies from packBodyStarts on. Returns the pack count, or zero if one island holds more than half of the work and
-// the workers are too few for a team, then the colors share it better. If a team solves the first packs, see
-// b3SolveOtherPack, writes how many to teamPackCount and their work to teamWork, and zero to both otherwise.
-static int b3BuildPacks( b3World* world, const b3SolverSet* awakeSet, int packLimit, int workerCount, uint8_t* contactPacks,
-						 int* packBodyStarts, int* packBodies, int* teamWork, int* teamPackCount )
+// pack of every awake island to islandPacks by island id, and where the bodies of every pack start to packBodyStarts, for
+// b3FillPacks. Returns the pack count, or zero if one island holds more than half of the work and the workers are too few
+// for a team, then the colors share it better. If a team solves the first packs, see b3SolveOtherPack, writes how many to
+// teamPackCount and their work to teamWork, and zero to both otherwise.
+static int b3BuildPacks( b3World* world, const b3SolverSet* awakeSet, int packLimit, int workerCount, int* islandPacks,
+						 int* packBodyStarts, int* teamWork, int* teamPackCount )
 {
 	*teamWork = 0;
 	*teamPackCount = 0;
@@ -2343,7 +2324,6 @@ static int b3BuildPacks( b3World* world, const b3SolverSet* awakeSet, int packLi
 	const b3IslandSim* islandSims = awakeSet->islandSims.data;
 	int* weights = (int*)b3StackAlloc( &world->stack, islandCount * (int)sizeof( int ), "island weights" );
 	int* order = (int*)b3StackAlloc( &world->stack, islandCount * (int)sizeof( int ), "island order" );
-	int* islandPacks = (int*)b3StackAlloc( &world->stack, world->islands.count * (int)sizeof( int ), "island packs" );
 
 	// The work of an island in its contacts, which cost the most, and its bodies. The islands go in buckets by the leading
 	// zeros of their work, the largest first, which is order enough for the packs.
@@ -2452,65 +2432,73 @@ static int b3BuildPacks( b3World* world, const b3SolverSet* awakeSet, int packLi
 		{
 			packBodyStarts[p] = cursors[p];
 		}
-
-		// The bodies of every pack in the order of the awake set
-		int bodyCount = awakeSet->bodySims.count;
-		B3_ASSERT( cursors[packCount] == bodyCount );
-		const b3BodySim* sims = awakeSet->bodySims.data;
-		const b3Body* bodies = world->bodies.data;
-		for ( int i = 0; i < bodyCount; ++i )
-		{
-			if ( i + 8 < bodyCount )
-			{
-				b3Prefetch( &bodies[sims[i + 8].bodyId].islandId );
-			}
-
-			const b3Body* body = bodies + sims[i].bodyId;
-			B3_ASSERT( body->setIndex == b3_awakeSet && body->localIndex == i );
-			packBodies[cursors[islandPacks[body->islandId]]++] = i;
-		}
-
-		// Every contact of an island belongs to it, the overflow contacts as well
-		for ( int i = 0; i < islandCount; ++i )
-		{
-			if ( i + 2 < islandCount )
-			{
-				b3Prefetch( b3Array_Get( world->islands, islandSims[i + 2].islandId )->contacts.data );
-			}
-
-			const b3Island* island = b3Array_Get( world->islands, islandSims[i].islandId );
-			int pack = islandPacks[island->islandId];
-			const b3ContactLink* links = island->contacts.data;
-			for ( int k = 0; k < island->contacts.count; ++k )
-			{
-				contactPacks[links[k].contactId] = (uint8_t)pack;
-			}
-		}
+		B3_ASSERT( packBodyStarts[packCount] == awakeSet->bodySims.count );
 	}
 
-	b3StackFree( &world->stack, islandPacks );
 	b3StackFree( &world->stack, order );
 	b3StackFree( &world->stack, weights );
 	return packCount;
 }
 
+// Added for Nebenan: the awake indices of the bodies of every pack to packBodies from packBodyStarts on, in the order of the
+// awake set, and the pack of every contact of the islands to contactPacks by contact id, see b3BuildPacks
+static void b3FillPacks( const b3World* world, const b3SolverSet* awakeSet, const int* islandPacks, const int* packBodyStarts,
+						 int packCount, int* packBodies, uint8_t* contactPacks )
+{
+	int cursors[B3_MAX_PACKS];
+	for ( int p = 0; p < packCount; ++p )
+	{
+		cursors[p] = packBodyStarts[p];
+	}
+
+	// The bodies of every pack in the order of the awake set
+	int bodyCount = awakeSet->bodySims.count;
+	const b3BodySim* sims = awakeSet->bodySims.data;
+	const b3Body* bodies = world->bodies.data;
+	for ( int i = 0; i < bodyCount; ++i )
+	{
+		if ( i + 8 < bodyCount )
+		{
+			b3Prefetch( &bodies[sims[i + 8].bodyId].islandId );
+		}
+
+		const b3Body* body = bodies + sims[i].bodyId;
+		B3_ASSERT( body->setIndex == b3_awakeSet && body->localIndex == i );
+		packBodies[cursors[islandPacks[body->islandId]]++] = i;
+	}
+
+	// Every contact of an island belongs to it, the overflow contacts as well
+	int islandCount = awakeSet->islandSims.count;
+	const b3IslandSim* islandSims = awakeSet->islandSims.data;
+	for ( int i = 0; i < islandCount; ++i )
+	{
+		if ( i + 2 < islandCount )
+		{
+			b3Prefetch( b3Array_Get( world->islands, islandSims[i + 2].islandId )->contacts.data );
+		}
+
+		const b3Island* island = b3Array_Get( world->islands, islandSims[i].islandId );
+		int pack = islandPacks[island->islandId];
+		const b3ContactLink* links = island->contacts.data;
+		for ( int k = 0; k < island->contacts.count; ++k )
+		{
+			contactPacks[links[k].contactId] = (uint8_t)pack;
+		}
+	}
+}
+
 // Added for Nebenan: the convex contacts of every active color pack by pack for b3SolvePacks, each pack filled up with null
-// ids to whole wide constraints, so no wide constraint holds two packs. Writes for every color where the wide constraints of
-// each pack start, see b3StepContext::packWideStarts, and how many entries the color has. Returns the entries in stack memory.
-static int* b3OrderPackContacts( b3World* world, const b3GraphColor* colors, const int* activeColorIndices, int activeColorCount,
-								 const uint8_t* contactPacks, int packCount, int* packWideStarts, int* entryCounts )
+// ids to whole wide constraints, so no wide constraint holds two packs. Writes the entries, at most b3GetPackEntryCapacity,
+// for every color where the wide constraints of each pack start, see b3StepContext::packWideStarts, and how many entries
+// the color has.
+static void b3OrderPackContacts( const b3World* world, const b3GraphColor* colors, const int* activeColorIndices,
+								 int activeColorCount, const uint8_t* contactPacks, int packCount, int* entries,
+								 int* packWideStarts, int* entryCounts )
 {
 	// The width of the world, see b3World::simdWidth
 	int simdWidth = world->simdWidth;
 	int simdShift = simdWidth == 8 ? 3 : 2;
 
-	int capacity = 0;
-	for ( int i = 0; i < activeColorCount; ++i )
-	{
-		capacity += colors[activeColorIndices[i]].convexContacts.count + ( simdWidth - 1 ) * packCount;
-	}
-
-	int* entries = (int*)b3StackAlloc( &world->stack, b3MaxInt( capacity, 1 ) * (int)sizeof( int ), "pack contacts" );
 	int offset = 0;
 	for ( int i = 0; i < activeColorCount; ++i )
 	{
@@ -2552,8 +2540,116 @@ static int* b3OrderPackContacts( b3World* world, const b3GraphColor* colors, con
 		entryCounts[i] = entryCount;
 		offset += entryCount;
 	}
+}
 
-	return entries;
+// Added for Nebenan: the most entries b3OrderPackContacts writes
+static int b3GetPackEntryCapacity( const b3World* world, const b3GraphColor* colors, const int* activeColorIndices,
+								   int activeColorCount, int packCount )
+{
+	int capacity = 0;
+	for ( int i = 0; i < activeColorCount; ++i )
+	{
+		capacity += colors[activeColorIndices[i]].convexContacts.count + ( world->simdWidth - 1 ) * packCount;
+	}
+	return capacity;
+}
+
+// Added for Nebenan: what the solver setup gives to a worker while the calling thread builds the knots, see b3BuildKnots.
+// With packs the pack of every body and contact, see b3FillPacks, and the convex contacts of the colors pack by pack, see
+// b3OrderPackContacts, without packs the convex contacts of the colors in buckets, see b3OrderColorContacts. The knots need
+// the packs of the contacts only at the end and wait for the task there, see b3FinishSetupTask, or run it themselves if no
+// worker took it yet. Only the calling thread takes from the stack, the task fills what it took before. Every result is
+// the same whichever thread computes it.
+typedef struct b3SetupTask
+{
+	const b3World* world;
+	const b3SolverSet* awakeSet;
+	const b3GraphColor* colors;
+	const int* activeColorIndices;
+	int activeColorCount;
+	int awakeBodyCount;
+
+	// With packs, see b3BuildPacks
+	int packCount;
+	const int* islandPacks;
+	const int* packBodyStarts;
+	int* packBodies;
+	uint8_t* contactPacks;
+	int* packWideStarts;
+	int* packEntryCounts;
+
+	// The convex contacts of the colors in order, null without workers or contacts, then there is no task
+	int* orderedContacts;
+
+	// The task in the task system, null if the task system ran it right away, whether it started and was waited for, and
+	// how long it ran
+	void* userTask;
+	bool started;
+	bool finished;
+	float time;
+} b3SetupTask;
+
+static void b3SetupTaskCallback( void* context )
+{
+	b3TracyCZoneNC( setup_task, "Setup Task", b3_colorDarkOrange, true );
+
+	b3SetupTask* task = context;
+	uint64_t ticks = b3GetTicks();
+	if ( task->packCount > 0 )
+	{
+		b3FillPacks( task->world, task->awakeSet, task->islandPacks, task->packBodyStarts, task->packCount, task->packBodies,
+					 task->contactPacks );
+		b3OrderPackContacts( task->world, task->colors, task->activeColorIndices, task->activeColorCount, task->contactPacks,
+							 task->packCount, task->orderedContacts, task->packWideStarts, task->packEntryCounts );
+	}
+	else
+	{
+		b3OrderColorContacts( task->world, task->colors, task->activeColorIndices, task->activeColorCount, task->awakeBodyCount,
+							  task->orderedContacts );
+	}
+	task->time = b3GetMilliseconds( ticks );
+
+	b3TracyCZoneEnd( setup_task );
+}
+
+// Added for Nebenan: hands the setup task to a worker, see b3SetupTask
+static void b3StartSetupTask( b3World* world, b3SetupTask* task )
+{
+	if ( task->orderedContacts == NULL )
+	{
+		return;
+	}
+
+	task->started = true;
+	if ( world->activeWorkerCount > 1 && world->taskCount < B3_MAX_TASKS )
+	{
+		task->userTask = world->enqueueTaskFcn( &b3SetupTaskCallback, task, world->userTaskContext, "setup" );
+		world->taskCount += 1;
+		world->activeTaskCount += task->userTask == NULL ? 0 : 1;
+	}
+	else
+	{
+		b3SetupTaskCallback( task );
+	}
+}
+
+// Added for Nebenan: waits for the setup task once, or runs it if no worker took it yet, see b3Profile::setupWait
+static void b3FinishSetupTask( b3World* world, b3SetupTask* task )
+{
+	if ( task->started == false || task->finished )
+	{
+		return;
+	}
+
+	uint64_t ticks = b3GetTicks();
+	if ( task->userTask != NULL )
+	{
+		world->finishTaskFcn( task->userTask, world->userTaskContext );
+		world->activeTaskCount -= 1;
+	}
+	task->finished = true;
+	world->profile.setupWait = b3GetMilliseconds( ticks );
+	world->profile.setupOrder = task->time;
 }
 
 // Solve with graph coloring
@@ -2623,9 +2719,10 @@ static void* b3TakeKnotMemory( char** cursor, int byteCount )
 // work of all awake islands, and a team of many threads solves it, see b3SolveOtherPack, while a thread solves a
 // smaller one whole, where copies would only cost. A contact between two knots then stays with the other contacts.
 // Everything follows from the order of the overflow and the islands, so the batches and groups are the same with every
-// number of workers and in either width. With packs the batches go pack by pack, in the same order within each pack.
+// number of workers and in either width. With packs the batches go pack by pack, in the same order within each pack. The
+// packs of the contacts come from the setup task, the knots wait for it before they need them.
 static void b3BuildKnots( b3World* world, const b3SolverSet* awakeSet, const b3GraphColor* overflow, const uint8_t* contactPacks,
-						  int packCount, b3Knots* knots )
+						  int packCount, b3SetupTask* setupTask, b3Knots* knots )
 {
 	int n = overflow->contacts.count;
 	const b3ContactSpec* specs = overflow->contacts.data;
@@ -2944,54 +3041,6 @@ static void b3BuildKnots( b3World* world, const b3SolverSet* awakeSet, const b3G
 		}
 	}
 
-	// The groups of every knot as bits, and the knots in more than one, pack by pack in the order of the knots
-	int* packSplitStarts = knots->packSplitStarts;
-	int splitCount = 0;
-	for ( int r = 0; r < knotCount; ++r )
-	{
-		knotGroups[r] = 0;
-		for ( int i = knotStarts[r]; i < knotStarts[r + 1]; ++i )
-		{
-			knotGroups[r] |= 1 << orderGroups[i];
-		}
-
-		knotSplits[r] = B3_NULL_INDEX;
-		if ( b3PopCount64( (uint64_t)knotGroups[r] ) > 1 )
-		{
-			int pack = packCount > 0 ? contactPacks[specs[knotOrder[knotStarts[r]]].contactId] : 0;
-			packSplitStarts[pack + 1] += 1;
-			splitCount += 1;
-		}
-	}
-	for ( int p = 0; p < packs; ++p )
-	{
-		packSplitStarts[p + 1] += packSplitStarts[p];
-	}
-
-	for ( int p = 0; p < packs; ++p )
-	{
-		groupCursors[p] = 0;
-	}
-	for ( int r = 0; r < knotCount; ++r )
-	{
-		int copyCount = b3PopCount64( (uint64_t)knotGroups[r] );
-		if ( copyCount > 1 )
-		{
-			int pack = packCount > 0 ? contactPacks[specs[knotOrder[knotStarts[r]]].contactId] : 0;
-			int split = packSplitStarts[pack] + groupCursors[pack];
-			groupCursors[pack] += 1;
-			knotSplits[r] = split;
-			knots->splits[split] = (b3KnotSplit){ knotBodies[r], 0, copyCount };
-		}
-	}
-
-	int copyCount = 0;
-	for ( int s = 0; s < splitCount; ++s )
-	{
-		knots->splits[s].firstCopy = copyCount;
-		copyCount += knots->splits[s].copyCount;
-	}
-
 	// The batches group by group, in each group knot after knot. The ranks of the knots are not needed anymore, a partner
 	// is now marked with the rank of the knot it was counted for, below B3_NULL_INDEX to tell it from what is left, and
 	// remembers the batch it went into last. A contact goes into the oldest batch of its knot in the group that is not full
@@ -3077,6 +3126,57 @@ static void b3BuildKnots( b3World* world, const b3SolverSet* awakeSet, const b3G
 	}
 	groupSlotStarts[groupCount] = slotCount;
 	B3_ASSERT( slotCount == batchCount );
+
+	// From here on the packs of the contacts
+	b3FinishSetupTask( world, setupTask );
+
+	// The groups of every knot as bits, and the knots in more than one, pack by pack in the order of the knots
+	int* packSplitStarts = knots->packSplitStarts;
+	int splitCount = 0;
+	for ( int r = 0; r < knotCount; ++r )
+	{
+		knotGroups[r] = 0;
+		for ( int i = knotStarts[r]; i < knotStarts[r + 1]; ++i )
+		{
+			knotGroups[r] |= 1 << orderGroups[i];
+		}
+
+		knotSplits[r] = B3_NULL_INDEX;
+		if ( b3PopCount64( (uint64_t)knotGroups[r] ) > 1 )
+		{
+			int pack = packCount > 0 ? contactPacks[specs[knotOrder[knotStarts[r]]].contactId] : 0;
+			packSplitStarts[pack + 1] += 1;
+			splitCount += 1;
+		}
+	}
+	for ( int p = 0; p < packs; ++p )
+	{
+		packSplitStarts[p + 1] += packSplitStarts[p];
+	}
+
+	for ( int p = 0; p < packs; ++p )
+	{
+		groupCursors[p] = 0;
+	}
+	for ( int r = 0; r < knotCount; ++r )
+	{
+		int copyCount = b3PopCount64( (uint64_t)knotGroups[r] );
+		if ( copyCount > 1 )
+		{
+			int pack = packCount > 0 ? contactPacks[specs[knotOrder[knotStarts[r]]].contactId] : 0;
+			int split = packSplitStarts[pack] + groupCursors[pack];
+			groupCursors[pack] += 1;
+			knotSplits[r] = split;
+			knots->splits[split] = (b3KnotSplit){ knotBodies[r], 0, copyCount };
+		}
+	}
+
+	int copyCount = 0;
+	for ( int s = 0; s < splitCount; ++s )
+	{
+		knots->splits[s].firstCopy = copyCount;
+		copyCount += knots->splits[s].copyCount;
+	}
 
 	// Pack by pack and in each group by group, in the order above
 	int* groupStarts = knots->groupStarts;
@@ -3346,6 +3446,7 @@ void b3Solve( b3World* world, b3StepContext* stepContext )
 		uint8_t* contactPacks = NULL;
 		int* packBodyStarts = NULL;
 		int* packBodies = NULL;
+		int* islandPacks = NULL;
 		int* packWideStarts = NULL;
 		int* packContacts = NULL;
 		int packEntryCounts[B3_GRAPH_COLOR_COUNT];
@@ -3357,33 +3458,26 @@ void b3Solve( b3World* world, b3StepContext* stepContext )
 			contactPacks = (uint8_t*)b3StackAlloc( &world->stack, contactIdCapacity, "contact packs" );
 			packBodyStarts = (int*)b3StackAlloc( &world->stack, ( packLimit + 1 ) * (int)sizeof( int ), "pack body starts" );
 			packBodies = (int*)b3StackAlloc( &world->stack, awakeBodyCount * (int)sizeof( int ), "pack bodies" );
-			packCount = b3BuildPacks( world, awakeSet, packLimit, workerCount, contactPacks, packBodyStarts, packBodies,
-									  &teamWork, &teamPackCount );
-			world->profile.setupPacks = b3GetMillisecondsAndReset( &partTicks );
+			islandPacks = (int*)b3StackAlloc( &world->stack, world->islands.count * (int)sizeof( int ), "island packs" );
+			packCount =
+				b3BuildPacks( world, awakeSet, packLimit, workerCount, islandPacks, packBodyStarts, &teamWork, &teamPackCount );
 
+			// The setup task fills the bodies and contacts of the packs and the entries of the colors, see b3SetupTask
 			if ( packCount > 0 )
 			{
 				packWideStarts = (int*)b3StackAlloc( &world->stack, activeColorCount * ( packCount + 1 ) * (int)sizeof( int ),
 													 "pack wide starts" );
-				packContacts = b3OrderPackContacts( world, colors, activeColorIndices, activeColorCount, contactPacks, packCount,
-													packWideStarts, packEntryCounts );
-
-				for ( int i = 0; i < activeColorCount; ++i )
-				{
-					int colorWideConstraintCount = packEntryCounts[i] >> simdShift;
-					wideContactCount += colorWideConstraintCount - colorWideContactCounts[i];
-					colorWideContactCounts[i] = colorWideConstraintCount;
-					graphBlockCount -= graphWideContactDims[i].count;
-					graphWideContactDims[i] = b3ComputeBlockCount( colorWideConstraintCount, minContactsPerBlock, maxBlockCount );
-					graphBlockCount += graphWideContactDims[i].count;
-				}
-				world->profile.setupOrder = b3GetMillisecondsAndReset( &partTicks );
+				int entryCapacity = b3GetPackEntryCapacity( world, colors, activeColorIndices, activeColorCount, packCount );
+				packContacts =
+					(int*)b3StackAlloc( &world->stack, b3MaxInt( entryCapacity, 1 ) * (int)sizeof( int ), "pack contacts" );
 			}
 			else
 			{
+				b3StackFree( &world->stack, islandPacks );
 				b3StackFree( &world->stack, packBodies );
 				b3StackFree( &world->stack, packBodyStarts );
 				b3StackFree( &world->stack, contactPacks );
+				islandPacks = NULL;
 				packBodies = NULL;
 				packBodyStarts = NULL;
 				contactPacks = NULL;
@@ -3392,8 +3486,45 @@ void b3Solve( b3World* world, b3StepContext* stepContext )
 		else if ( world->workerCount > 1 )
 		{
 			b3MeasureIslandWork( world, awakeSet );
-			world->profile.setupPacks = b3GetMillisecondsAndReset( &partTicks );
 		}
+		world->profile.setupPacks = b3GetMilliseconds( partTicks );
+
+		// Added for Nebenan: without packs but with workers the convex contacts of the colors go in buckets, see
+		// b3OrderColorContacts
+		int* orderedContacts = packContacts;
+		if ( packCount == 0 && workerCount > 1 )
+		{
+			int convexCount = 0;
+			for ( int i = 0; i < activeColorCount; ++i )
+			{
+				convexCount += colors[activeColorIndices[i]].convexContacts.count;
+			}
+
+			if ( convexCount > 0 )
+			{
+				orderedContacts = (int*)b3StackAlloc( &world->stack, convexCount * (int)sizeof( int ), "ordered contacts" );
+			}
+		}
+
+		// Added for Nebenan: a worker fills the packs and puts the contacts in order while the calling thread builds the
+		// knots, see b3SetupTask
+		b3SetupTask setupTask = {
+			.world = world,
+			.awakeSet = awakeSet,
+			.colors = colors,
+			.activeColorIndices = activeColorIndices,
+			.activeColorCount = activeColorCount,
+			.awakeBodyCount = awakeBodyCount,
+			.packCount = packCount,
+			.islandPacks = islandPacks,
+			.packBodyStarts = packBodyStarts,
+			.packBodies = packBodies,
+			.contactPacks = contactPacks,
+			.packWideStarts = packWideStarts,
+			.packEntryCounts = packEntryCounts,
+			.orderedContacts = orderedContacts,
+		};
+		b3StartSetupTask( world, &setupTask );
 
 		// Added for Nebenan: see b3Counters::teamWork
 		bool team = teamWork > 0;
@@ -3408,11 +3539,28 @@ void b3Solve( b3World* world, b3StepContext* stepContext )
 		// b3BuildKnots
 		b3Knots knots;
 		partTicks = b3GetTicks();
-		b3BuildKnots( world, awakeSet, overflow, contactPacks, packCount, &knots );
+		b3BuildKnots( world, awakeSet, overflow, contactPacks, packCount, &setupTask, &knots );
+		b3FinishSetupTask( world, &setupTask );
 		world->knotContactCount = knots.contactCount;
 		world->knotBatchCount = knots.batchCount;
 		world->knotGroupBatchCount = knots.largestGroup;
 		world->knotCopyCount = knots.copyCount;
+
+		// Added for Nebenan: with packs the wide constraints of the colors as the setup task filled them, see
+		// b3OrderPackContacts
+		if ( packCount > 0 )
+		{
+			for ( int i = 0; i < activeColorCount; ++i )
+			{
+				int colorWideConstraintCount = packEntryCounts[i] >> simdShift;
+				wideContactCount += colorWideConstraintCount - colorWideContactCounts[i];
+				colorWideContactCounts[i] = colorWideConstraintCount;
+				graphBlockCount -= graphWideContactDims[i].count;
+				graphWideContactDims[i] = b3ComputeBlockCount( colorWideConstraintCount, minContactsPerBlock, maxBlockCount );
+				graphBlockCount += graphWideContactDims[i].count;
+			}
+		}
+
 		int knotWideStart = wideContactCount;
 		wideContactCount += knots.batchCount * ( B3_KNOT_LANES >> simdShift );
 
@@ -3477,7 +3625,7 @@ void b3Solve( b3World* world, b3StepContext* stepContext )
 				packOverflowContacts[cursors[contactPacks[spec->contactId]]++] = *spec;
 			}
 		}
-		world->profile.setupKnots = b3GetMillisecondsAndReset( &partTicks );
+		world->profile.setupKnots = b3GetMilliseconds( partTicks ) - world->profile.setupWait;
 
 		// Build the span table for the flat prepare/store parallel-for while I slice the
 		// wide constraint buffer across colors. One entry per active color plus a sentinel
@@ -3486,14 +3634,7 @@ void b3Solve( b3World* world, b3StepContext* stepContext )
 		b3ContactPrepareSpan contactPrepareSpans[B3_GRAPH_COLOR_COUNT + 1];
 		b3JointPrepareSpan jointPrepareSpans[B3_GRAPH_COLOR_COUNT + 1];
 
-		// Added for Nebenan, with packs see above
-		int* orderedContacts = packContacts;
-		if ( packCount == 0 )
-		{
-			orderedContacts =
-				b3OrderColorContacts( world, colors, activeColorIndices, activeColorCount, awakeBodyCount, workerCount );
-			world->profile.setupOrder = b3GetMillisecondsAndReset( &partTicks );
-		}
+		// Added for Nebenan: in the order of the setup task, see b3SetupTask
 		int orderedOffset = 0;
 
 		// Distribute transient constraints to each graph color and prepare spans
@@ -4012,10 +4153,6 @@ void b3Solve( b3World* world, b3StepContext* stepContext )
 		b3StackFree( &world->stack, convexBlocks );
 		b3StackFree( &world->stack, bodyBlocks );
 		b3StackFree( &world->stack, stages );
-		if ( orderedContacts != NULL && packCount == 0 )
-		{
-			b3StackFree( &world->stack, orderedContacts );
-		}
 		if ( packCount > 0 )
 		{
 			b3StackFree( &world->stack, packOverflowContacts );
@@ -4027,10 +4164,15 @@ void b3Solve( b3World* world, b3StepContext* stepContext )
 		b3StackFree( &world->stack, contactConstraints );
 		b3StackFree( &world->stack, wideConstraints );
 		b3FreeKnots( world, &knots );
+		if ( orderedContacts != NULL && packCount == 0 )
+		{
+			b3StackFree( &world->stack, orderedContacts );
+		}
 		if ( packCount > 0 )
 		{
 			b3StackFree( &world->stack, packContacts );
 			b3StackFree( &world->stack, packWideStarts );
+			b3StackFree( &world->stack, islandPacks );
 			b3StackFree( &world->stack, packBodies );
 			b3StackFree( &world->stack, packBodyStarts );
 			b3StackFree( &world->stack, contactPacks );
