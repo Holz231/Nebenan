@@ -521,9 +521,35 @@ vom Stapel nimmt nur er, die Aufgaben füllen, was er vorher genommen hat. Jedes
 Thread es rechnet, die Ergebnisse bleiben dieselben. `b3Profile` misst mit `setupPacks`, `setupTasks`, `setupKnots` und
 `setupWait`, was die Teile kosten.
 
+**Zeiten der Kontakt-Schleife.** Wohin die Zeit der Kontakt-Schleife (`b3Collide` in `src/physics_world.c`) geht, misst
+Box3D jetzt in drei Teilen vor den Zustandswechseln aus `contactStates`: `b3Profile::gatherContacts`, in dem der
+aufrufende Thread die wachen Kontakte in ein Array sammelt und die Bits der Worker leert, `updateContacts`, die
+parallele Schleife über die Kontakte, und `mergeContacts`, in dem er zusammenführt, was die Worker gefunden haben, und
+die Manifolds zurückgibt, die sie freigegeben haben. In jedem achten Schritt (`B3_COLLIDE_SAMPLE`) misst die Schleife
+ihre Blöcke über `b3ParallelForOrdered` in `src/parallel_for.c`: Jede Aufgabe liest die Uhr um jeden ihrer Blöcke und
+schreibt in eine eigene Cache-Zeile, wann sie anfing und aufhörte, wie lange sie in Blöcken rechnete, wie viele es waren
+und wie lange der längste dauerte. `b3ParallelForTimes` fasst das über die Aufgaben zusammen: die Zeit in Blöcken, vor
+dem Start einer Aufgabe, zwischen ihren Blöcken und nach ihrem letzten, zusammen der Aufruf mal die Aufgaben. Die
+Kontakt-Schleife teilt die Zeit in Blöcken noch auf die zwei Stufen aus „Zweistufige Kontakt-Schleife“ auf, die
+Entscheidung über jeden Kontakt und den Test der übrigen (`b3Profile::collideWork` und die Felder danach).
+`b3Counters::narrowphaseCount` zählt in jedem Schritt die Kontakte, die getestet wurden, `collideSample` sagt, ob der
+letzte Schritt gemessen hat, dazu seine Aufgaben, Blöcke und die Aufgaben, die keinen Block mehr fanden. Nur dieser
+Schritt liest die Uhr an jedem Block, in den anderen liest die Kontakt-Schleife sie fünfmal statt zweimal. Die Rechnung
+ändert sich nicht.
+
+**Kontakte von beiden Enden.** Die Threads der Kontakt-Schleife nahmen ihre Blöcke von vorne nach hinten. Die teuersten
+Kontakte liegen aber an beiden Enden des Arrays: vorne in den ersten Farben die Kontakte zwischen zwei bewegten Körpern,
+die der Graph von unten füllt, während Kontakte mit statischen Körpern die Farben von oben füllen, und hinten die Paare,
+die in diesem Schritt dazukamen und zum ersten Mal getestet werden. Beim Abriss in der Demo trägt das erste Fünftel 45 %
+der Zeit, in der Stadt bei ×4 das letzte Zehntel 27 %. Von vorne nach hinten kamen die teuren Blöcke von hinten zuletzt,
+und die anderen Threads warteten am Ende auf sie. Jetzt nehmen die Threads die Blöcke abwechselnd von vorne und von
+hinten (`b3_blocksFromBothEnds` in `src/parallel_for.h`), die billigen Blöcke der Mitte kommen zuletzt. Auf der VM mit 4
+Threads warten sie nach ihrem letzten Block damit 55 bis 77 % kürzer. Mit einer Aufgabe bleibt die Reihenfolge, wie sie
+war. Jeder Kontakt wird für sich gerechnet, die Reihenfolge ändert an den Ergebnissen nichts.
+
 Die erste, die zweite, die vierte bis achte, die zehnte, die dreizehnte bis einunddreißigste, die dreiunddreißigste bis
 fünfunddreißigste, die neununddreißigste bis dreiundvierzigste, die fünfundvierzigste bis siebenundvierzigste, die
-neunundvierzigste bis einundfünfzigste ändern an den Ergebnissen nichts. Die dritte und die neunte ändern sie in den
+neunundvierzigste bis dreiundfünfzigste ändern an den Ergebnissen nichts. Die dritte und die neunte ändern sie in den
 letzten Bits, dafür hängen sie nicht mehr davon ab, in welcher Reihenfolge Formen in die Bäume kommen. Die elfte ändert
 sie, weil Kontakte zu anderen Zeitpunkten entstehen, die zwölfte, weil sie weniger Punkte bekommen, die
 zweiunddreißigste, weil die Kontakte eines Knotens gebündelt gegen Kopien rechnen statt nacheinander, die
@@ -539,8 +565,8 @@ Die Ergänzungen stehen in `CMakeLists.txt`, `src/CMakeLists.txt`, `include/box3
 `src/contact_solver_wide.inl`, `src/wide8.c`, `src/simd.c`, `src/simd_avx2.h`, `src/constraint_graph.h`,
 `src/manifold.h`, `src/convex_manifold.c`, `src/convex_manifold_avx2.c`, `src/world_snapshot.c`, `src/recording.c`,
 `src/solver.h`, `src/solver.c`, `src/broad_phase.h`, `src/broad_phase.c`, `src/dynamic_tree.h`, `src/dynamic_tree.c`,
-`src/parallel_for.c`, `src/platform.h`, `src/scheduler.h`, `src/scheduler.c`, `src/timer.c`, `src/physics_world.h` und
-`src/physics_world.c`, jeweils mit „Added for Nebenan“ markiert.
+`src/parallel_for.h`, `src/parallel_for.c`, `src/platform.h`, `src/scheduler.h`, `src/scheduler.c`, `src/timer.c`,
+`src/physics_world.h` und `src/physics_world.c`, jeweils mit „Added for Nebenan“ markiert.
 `B3_HAS_UNIQUE_HULLS`, `B3_HAS_SHAPE_BATCH`, `B3_HAS_SHAPE_CONTACT_LISTS`, `B3_HAS_EXTERNAL_HULLS`,
 `B3_HAS_BODY_PREFETCH`, `B3_HAS_STEP_GUARD`, `B3_HAS_PREVIOUS_TRANSFORM` und `B3_HAS_STATIC_OVERLAP` zeigen die zweite,
 die vierte, die fünfte, die sechste, die neunzehnte, die dreißigste, die fünfunddreißigste und die zweiundvierzigste an.

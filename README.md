@@ -784,14 +784,14 @@ nbWorldId world = nbCreateWorld( &def );
 Gemessen ist das etwa so schnell wie zwei eigene Pools, mit halb so vielen Threads, siehe Leistung.
 
 Wo die Zeit der Schritte hingeht, sagt `nbWorld_GetProfile`, pro Schritt seit dem Anlegen der Welt oder seit
-`nbWorld_ResetProfile`: die Stufen des Box3D-Schritts samt der Teile, die auf dem aufrufenden Thread allein laufen, und
-der Teile des Aufbaus des Lösers, der Überlauf des Constraint-Graphen mit den Kontakten, die Box3D an Knoten bündelt,
-und wie viele dieser Bündel ein Thread nacheinander rechnet, die Teile des Updates, die Einschläge, Erstarren und
-Auftauen, die Zellen der Brüche, der Anteil der größten Insel an der Arbeit des Lösers, wie oft ein Team aller Threads
-die größten Pakete von Inseln rechnet, wo dessen Zeit hingeht und wie sich Arbeit und Warten auf seine Stufen und Farben
-verteilen, wie lange ein schlafender Worker braucht, bis er anläuft, und ab wie viel Arbeit die Worker deshalb helfen.
-Ist dieselbe Arbeit mit verschieden vielen Threads gemessen, rechnet die Bibliothek aus, was davon parallel läuft und
-was mit mehr Threads bleibt:
+`nbWorld_ResetProfile`: die Stufen des Box3D-Schritts samt der Teile, die auf dem aufrufenden Thread allein laufen, der
+Teile der Kontakt-Schleife und des Aufbaus des Lösers, wie die Threads die Kontakt-Schleife verbringen, der Überlauf des
+Constraint-Graphen mit den Kontakten, die Box3D an Knoten bündelt, und wie viele dieser Bündel ein Thread nacheinander
+rechnet, die Teile des Updates, die Einschläge, Erstarren und Auftauen, die Zellen der Brüche, der Anteil der größten
+Insel an der Arbeit des Lösers, wie oft ein Team aller Threads die größten Pakete von Inseln rechnet, wo dessen Zeit
+hingeht und wie sich Arbeit und Warten auf seine Stufen und Farben verteilen, wie lange ein schlafender Worker braucht,
+bis er anläuft, und ab wie viel Arbeit die Worker deshalb helfen. Ist dieselbe Arbeit mit verschieden vielen Threads
+gemessen, rechnet die Bibliothek aus, was davon parallel läuft und was mit mehr Threads bleibt:
 
 ```c
 int counts[8];
@@ -1066,6 +1066,18 @@ in der Demo bei ×2 mit 2 und 4 Threads gepaart gegen `kollaps-9` rund ein Dritt
 mit vielen Knoten 8 bis 13 %. Die Ergebnisse bleiben bitgleich. Auf dem Ryzen 7 7800X3D kostet der Aufbau mit 8 Threads
 0,098 statt 0,127 ms, ein Schritt im Rahmen der Schwankungen gleich viel, siehe „Skalierung auf dem Ryzen mit
 `kollaps-10`“ in [docs/Optimierungen.md](docs/Optimierungen.md).
+
+Seit `kollaps-11` misst Box3D, wohin die Zeit der Kontakt-Schleife geht: was der aufrufende Thread davor und danach
+allein rechnet, und in jedem achten Schritt, wie die Threads die parallele Schleife verbringen, in Blöcken, vor ihrem
+ersten und nach ihrem letzten, siehe „Zeiten der Kontakt-Schleife“ in [`extern/README.md`](extern/README.md).
+`nbWorld_GetProfile` zeigt die Teile unter `nb_profileCollide`, und der Bericht von „Skalierung messen“ zeigt die
+Schleife als Tabelle für jede Zahl von Threads, ohne eigenen Aufruf. Beim Abriss in der Demo auf der VM bei ×2 mit 4
+Threads rechnen die Threads 93 % ihrer Zeit in Blöcken, und ein Kontakt kostet so viel wie mit einem Thread. Was bremst,
+ist das Ende: Die teuersten Kontakte liegen an beiden Enden ihres Arrays, und die Threads warteten auf die letzten.
+Seitdem nehmen sie die Blöcke abwechselnd von vorne und von hinten, siehe „Kontakte von beiden Enden“. Beim Abriss
+warten sie nach ihrem letzten Block damit 56 % kürzer, im Benchmark 55 bis 77 %, die Kontakt-Schleife kostet wenige
+Prozent weniger, und die Ergebnisse bleiben bitgleich. Was die Schleife mit 8 Threads auf dem Ryzen bremst, entscheidet,
+wie es weitergeht, siehe [docs/Roadmap.md](docs/Roadmap.md).
 
 Die teuersten Frames folgen auf einen Einsturz: Der Schutt um die Reste der Etage taut auf, und Box3D legt im nächsten
 Schritt Tausende neuer Kontakte an. Das ist echte Arbeit, das meiste davon fällt danach wirklich, siehe
