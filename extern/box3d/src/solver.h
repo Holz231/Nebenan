@@ -325,6 +325,9 @@ typedef struct b3StepContext
 
 	// Added for Nebenan: this step times its team, see b3Profile::teamTime
 	bool sampleTeam;
+
+	// Added for Nebenan: this step times its contact loop, see b3Profile::collideWork
+	bool sampleCollide;
 	const int* packBodyStarts;
 	const int* packBodies;
 	const int* packOverflowStarts;

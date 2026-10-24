@@ -145,6 +145,12 @@ typedef struct b3TaskContext
 	// b3StepContext::teamEntries. At the end, where it keeps the other fields where they were.
 	int teamEntryCount;
 
+	// Added for Nebenan: the contacts of this worker that needed the narrowphase in the collide task, and in a step that
+	// times the task the ticks of its checks and of the narrowphase, see b3Profile::collideChecks
+	int narrowphaseCount;
+	uint64_t checkTicks;
+	uint64_t narrowphaseTicks;
+
 	// Prevent false sharing
 	char cacheLine[64];
 } b3TaskContext;
@@ -334,6 +340,13 @@ typedef struct b3World
 	int teamWorkerCount;
 	int teamStageCount;
 	int teamYieldCount;
+
+	// Added for Nebenan: see b3Counters::narrowphaseCount and b3Counters::collideSample
+	int narrowphaseCount;
+	int collideSample;
+	int collideTaskCount;
+	int collideBlockCount;
+	int collideMissedCount;
 
 	b3EnqueueTaskCallback* enqueueTaskFcn;
 	b3FinishTaskCallback* finishTaskFcn;

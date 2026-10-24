@@ -429,6 +429,20 @@ typedef struct nbProfileSums
 	int impactCount;
 	double teamStages[NB_TEAM_STAGE_VALUES];
 	int teamJoinStepCount;
+	int collideSampleCount;
+	double collideLoop;
+	double collideWork;
+	double collideChecks;
+	double collideNarrowphase;
+	double collideLate;
+	double collideClaim;
+	double collideDone;
+	double collideLongestBlock;
+	double collideTaskCount;
+	double collideBlockCount;
+	double collideMissedCount;
+	double collideContactCount;
+	double collideNarrowphaseCount;
 } nbProfileSums;
 
 typedef struct nbWorld

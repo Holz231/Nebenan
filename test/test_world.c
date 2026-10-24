@@ -5567,7 +5567,9 @@ static int ProfileTest( void )
 	const float slack = 1.0e-3f;
 	ENSURE( t[nb_profilePairs] + t[nb_profileCollide] + t[nb_profileSolve] <= t[nb_profileStep] + slack );
 	ENSURE( t[nb_profileCreateContacts] <= t[nb_profilePairs] + slack );
-	ENSURE( t[nb_profileContactStates] <= t[nb_profileCollide] + slack );
+	ENSURE( t[nb_profileGatherContacts] > 0.0f && t[nb_profileUpdateContacts] > 0.0f && t[nb_profileMergeContacts] > 0.0f );
+	float collideParts = t[nb_profileGatherContacts] + t[nb_profileUpdateContacts] + t[nb_profileMergeContacts];
+	ENSURE( collideParts + t[nb_profileContactStates] <= t[nb_profileCollide] + slack );
 	ENSURE( t[nb_profileSolverSetup] + t[nb_profileConstraints] <= t[nb_profileSolve] + slack );
 	ENSURE( t[nb_profileSetupPacks] > 0.0f && t[nb_profileSetupTasks] > 0.0f && t[nb_profileSetupKnots] > 0.0f );
 	ENSURE( t[nb_profileSetupWait] >= 0.0f );
@@ -5580,6 +5582,18 @@ static int ProfileTest( void )
 	ENSURE( profile.freezeCount >= 0.0f && profile.thawCount >= 0.0f );
 	ENSURE( 0.0f <= profile.knotContactCount && profile.knotContactCount <= profile.overflowCount );
 	ENSURE( profile.knotBatchCount <= profile.knotContactCount );
+
+	// Every eighth step times its contact loop: the checks and the narrowphase run in the blocks, and the loop has at most
+	// as many tasks as workers and at least as many blocks as tasks
+	ENSURE( 0 < profile.collideSampleCount && profile.collideSampleCount <= ( stepCount + 7 ) / 8 );
+	ENSURE( profile.collideWork > 0.0f && profile.collideChecks > 0.0f && profile.collideNarrowphase > 0.0f );
+	ENSURE( profile.collideChecks + profile.collideNarrowphase <= profile.collideWork + slack );
+	ENSURE( profile.collideLongestBlock <= profile.collideWork + slack );
+	ENSURE( profile.collideLate >= 0.0f && profile.collideClaim >= 0.0f && profile.collideDone >= 0.0f );
+	ENSURE( 1.0f <= profile.collideTaskCount && profile.collideTaskCount <= 4.0f );
+	ENSURE( profile.collideTaskCount <= profile.collideBlockCount );
+	ENSURE( 0.0f <= profile.collideMissedCount && profile.collideMissedCount < profile.collideTaskCount );
+	ENSURE( profile.collideContactCount > 0.0f && profile.collideNarrowphaseCount > 0.0f );
 
 	// A world with workers knows its islands. None of the three holds more than half of the work in the steps with packs,
 	// and the bound of the packs is at least the even share.
@@ -5660,6 +5674,21 @@ static int ScalingFitTest( void )
 							  .lateTime = 0.15f,
 							  .doneTime = 0.05f };
 		profiles[i].teamStages.entryCount = 39.0f;
+
+		// And how the threads spent the contact loop, see b3Profile::collideWork
+		profiles[i].collideSampleCount = 10;
+		profiles[i].collideLoop = 0.5f;
+		profiles[i].collideWork = 1.6f;
+		profiles[i].collideChecks = 0.6f;
+		profiles[i].collideNarrowphase = 0.9f;
+		profiles[i].collideLate = 0.2f;
+		profiles[i].collideClaim = 0.04f;
+		profiles[i].collideDone = 0.16f;
+		profiles[i].collideLongestBlock = 0.05f;
+		profiles[i].collideTaskCount = 4.0f;
+		profiles[i].collideBlockCount = 128.0f;
+		profiles[i].collideContactCount = 8000.0f;
+		profiles[i].collideNarrowphaseCount = 2000.0f;
 	}
 
 	// The report counts its whole length like snprintf, also into a buffer too small
@@ -5670,6 +5699,10 @@ static int ScalingFitTest( void )
 	ENSURE( (int)strlen( text ) == length && strstr( text, "createContacts" ) != NULL );
 	const char* colorRow = "color 0       13.0    0.0    8.0    64.0    0.200    0.000     56      19     19      6       25";
 	ENSURE( strstr( text, "The stages of the team with 4 workers" ) != NULL && strstr( text, colorRow ) != NULL );
+	const char* contactRow = "ns in blocks per contact         200.0";
+	const char* shareRow = "in blocks of the tasks %          80.0";
+	ENSURE( strstr( text, "The contact loop in every eighth step" ) != NULL );
+	ENSURE( strstr( text, contactRow ) != NULL && strstr( text, shareRow ) != NULL );
 	char small[16];
 	ENSURE( nbFormatScalingReport( profiles, 4, small, sizeof( small ) ) == length );
 	ENSURE( strlen( small ) == sizeof( small ) - 1 );
@@ -5685,6 +5718,7 @@ static int ScalingFitTest( void )
 	}
 	ENSURE( strcmp( nbGetProfileStageName( nb_profileContactStates ), "contactStates" ) == 0 );
 	ENSURE( strcmp( nbGetProfileStageName( nb_profileSetupKnots ), "setupKnots" ) == 0 );
+	ENSURE( strcmp( nbGetProfileStageName( nb_profileUpdateContacts ), "updateContacts" ) == 0 );
 	return 0;
 }
 

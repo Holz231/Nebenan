@@ -553,6 +553,13 @@ typedef enum nbProfileStage
 	nb_profilePairs,
 	nb_profileCreateContacts,
 	nb_profileCollide,
+
+	/// The parts of the contact loop before the contacts that begin or end touching, see b3Profile::gatherContacts: the
+	/// calling thread gathers the awake contacts and clears the bits of the workers, the threads update the contacts, and
+	/// the calling thread merges what they found
+	nb_profileGatherContacts,
+	nb_profileUpdateContacts,
+	nb_profileMergeContacts,
 	nb_profileContactStates,
 	nb_profileSolve,
 	nb_profileSolverSetup,
@@ -675,6 +682,26 @@ typedef struct nbProfile
 
 	/// How long the calling thread waits for the last packs of islands, milliseconds per step
 	float packWait;
+
+	/// How the threads spent the contact loop, timed in every eighth step, see b3Profile::collideWork: the timed steps, and
+	/// in milliseconds per timed step the loop on the calling thread and, summed over its tasks, the time in blocks, of it
+	/// the checks of the contacts and the narrowphase, the time before a task started, between its blocks and after it
+	/// found none left, then the longest block. Then per timed step the tasks, the blocks, the tasks that found no block
+	/// left, the awake contacts and those of them that needed the narrowphase.
+	int collideSampleCount;
+	float collideLoop;
+	float collideWork;
+	float collideChecks;
+	float collideNarrowphase;
+	float collideLate;
+	float collideClaim;
+	float collideDone;
+	float collideLongestBlock;
+	float collideTaskCount;
+	float collideBlockCount;
+	float collideMissedCount;
+	float collideContactCount;
+	float collideNarrowphaseCount;
 
 	/// From how many items the workers help with a fracture and from how many moving pieces with the checks of the update,
 	/// when the profile was read. Nebenan chooses both by how fast a worker starts: the calling thread alone would take

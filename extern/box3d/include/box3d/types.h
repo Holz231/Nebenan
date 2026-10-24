@@ -628,6 +628,26 @@ typedef struct b3Profile
 	float setupTasks;
 	float setupKnots;
 	float setupWait;
+
+	/// Added for Nebenan: parts of collide before contactStates. The calling thread gathers the awake contacts into one
+	/// array and clears the bits of the workers, the threads update the contacts in a parallel loop, and the calling
+	/// thread merges what they found and gives back the manifolds they freed.
+	float gatherContacts;
+	float updateContacts;
+	float mergeContacts;
+
+	/// Added for Nebenan: how the threads spent the loop of updateContacts, timed in every eighth step, see
+	/// b3Counters::collideSample, zero in the others. Summed over the tasks of the loop: the time in blocks, of it the
+	/// checks whether a contact still overlaps or keeps its manifold and the narrowphase of the others, the time before a
+	/// task started, between its blocks and after it found none left. The calling thread takes tasks too while it waits
+	/// for them. Then the longest block.
+	float collideWork;
+	float collideChecks;
+	float collideNarrowphase;
+	float collideLate;
+	float collideClaim;
+	float collideDone;
+	float collideLongestBlock;
 } b3Profile;
 
 /// Counters that give details of the simulation size.
@@ -698,6 +718,17 @@ typedef struct b3Counters
 
 	/// Added for Nebenan: the packs the team of the last step solved, see teamWork, zero if the step had none
 	int teamPackCount;
+
+	/// Added for Nebenan: the contacts of the last step that needed the narrowphase, the others parted, kept their
+	/// manifolds or stayed provably apart
+	int narrowphaseCount;
+
+	/// Added for Nebenan: one if the last step timed its contact loop, see b3Profile::collideWork, and then the tasks of the
+	/// loop, its blocks and the tasks that started only after all blocks were taken
+	int collideSample;
+	int collideTaskCount;
+	int collideBlockCount;
+	int collideMissedCount;
 } b3Counters;
 
 /// Added for Nebenan: the rows of b3TeamStages, the stages of a team by what they solve. The stages that prepare the

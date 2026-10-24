@@ -764,6 +764,10 @@ static void b3CollideTask( int startIndex, int endIndex, int workerIndex, void* 
 	int* pending = (int*)b3Bump( &arena, ( endIndex - startIndex ) * (int)sizeof( int ) );
 	int pendingCount = 0;
 
+	// Added for Nebenan: see b3Profile::collideChecks
+	bool sample = stepContext->sampleCollide;
+	uint64_t sampleTicks = sample ? b3GetTicks() : 0;
+
 	for ( int i = startIndex; i < endIndex; ++i )
 	{
 		if ( i < prefetchEnd )
@@ -964,6 +968,15 @@ static void b3CollideTask( int startIndex, int endIndex, int workerIndex, void* 
 		pending[pendingCount++] = contactIndex;
 	}
 
+	// Added for Nebenan: see b3Counters::narrowphaseCount and b3Profile::collideChecks
+	taskContext->narrowphaseCount += pendingCount;
+	if ( sample )
+	{
+		uint64_t ticks = b3GetTicks();
+		taskContext->checkTicks += ticks - sampleTicks;
+		sampleTicks = ticks;
+	}
+
 	// Added for Nebenan: the narrowphase for the contacts that need it, in a second loop. It reads the two shapes of
 	// each contact and their hulls from scattered memory, and it waited for them most. Here it is known which contacts
 	// need them, so the loop prefetches the shapes four contacts ahead, two ahead the headers of the hulls they point to
@@ -1056,6 +1069,12 @@ static void b3CollideTask( int startIndex, int endIndex, int workerIndex, void* 
 		}
 	}
 
+	// Added for Nebenan
+	if ( sample )
+	{
+		taskContext->narrowphaseTicks += b3GetTicks() - sampleTicks;
+	}
+
 	b3TracyCZoneEnd( collide_task );
 }
 
@@ -1099,6 +1118,10 @@ void b3GiveBackManifolds( b3World* world )
 	}
 }
 
+// Added for Nebenan: every this many steps the collide task times its blocks, see b3Profile::collideWork. Only that step
+// reads the clock around each block, the others pay nothing.
+#define B3_COLLIDE_SAMPLE 8
+
 // Narrow-phase collision
 static void b3Collide( b3StepContext* context )
 {
@@ -1107,6 +1130,14 @@ static void b3Collide( b3StepContext* context )
 	B3_ASSERT( world->workerCount > 0 );
 
 	b3TracyCZoneNC( collide, "Collide", b3_colorDarkOrchid, true );
+
+	// Added for Nebenan: see b3Profile::gatherContacts and b3Counters::collideSample
+	uint64_t partTicks = b3GetTicks();
+	world->narrowphaseCount = 0;
+	world->collideSample = 0;
+	world->collideTaskCount = 0;
+	world->collideBlockCount = 0;
+	world->collideMissedCount = 0;
 
 	// Gather contacts from all the graph colors into a single array for easier parallel-for
 	int touchingCount = 0;
@@ -1124,6 +1155,7 @@ static void b3Collide( b3StepContext* context )
 
 	if ( contactCount == 0 )
 	{
+		world->profile.gatherContacts = b3GetMilliseconds( partTicks );
 		b3TracyCZoneEnd( collide );
 		return;
 	}
@@ -1184,6 +1216,11 @@ static void b3Collide( b3StepContext* context )
 		taskContext->satCacheHitCount = 0;
 		taskContext->recycledContactCount = 0;
 		memset( taskContext->manifoldCounts, 0, sizeof( taskContext->manifoldCounts ) );
+
+		// Added for Nebenan: see b3Counters::narrowphaseCount and b3Profile::collideChecks
+		taskContext->narrowphaseCount = 0;
+		taskContext->checkTicks = 0;
+		taskContext->narrowphaseTicks = 0;
 	}
 
 	// Task should take at least 40us on a 4GHz CPU (10K cycles)
@@ -1191,7 +1228,40 @@ static void b3Collide( b3StepContext* context )
 
 	// Added for Nebenan: the contacts allocate and free manifolds on several threads only here, see b3ManifoldCache
 	world->manifoldsShared = world->activeWorkerCount > 1;
-	b3ParallelFor( world, b3CollideTask, contactCount, minRange, context, "collide" );
+
+	// Added for Nebenan: see b3Profile::updateContacts and b3Profile::collideWork. The contacts that cost most lie at both
+	// ends of the array: in the first colors the contacts between two dynamic bodies, which move and are tested again
+	// most often, at the end the pairs that came this step and are tested for the first time. The blocks of the middle
+	// come last, so the threads end close together. Every contact is updated on its own, the order changes nothing.
+	world->profile.gatherContacts = b3GetMillisecondsAndReset( &partTicks );
+	context->sampleCollide = world->stepIndex % B3_COLLIDE_SAMPLE == 0;
+	b3ParallelForTimes times = { 0 };
+	b3ParallelForOrdered( world, b3CollideTask, contactCount, minRange, context, "collide", b3_blocksFromBothEnds,
+						  context->sampleCollide ? &times : NULL );
+	if ( context->sampleCollide )
+	{
+		uint64_t checkTicks = 0, narrowphaseTicks = 0;
+		for ( int i = 0; i < times.taskCount; ++i )
+		{
+			checkTicks += world->taskContexts.data[i].checkTicks;
+			narrowphaseTicks += world->taskContexts.data[i].narrowphaseTicks;
+		}
+
+		b3Profile* profile = &world->profile;
+		profile->collideWork = b3TicksToMilliseconds( times.workTicks );
+		profile->collideChecks = b3TicksToMilliseconds( checkTicks );
+		profile->collideNarrowphase = b3TicksToMilliseconds( narrowphaseTicks );
+		profile->collideLate = b3TicksToMilliseconds( times.lateTicks );
+		profile->collideClaim = b3TicksToMilliseconds( times.claimTicks );
+		profile->collideDone = b3TicksToMilliseconds( times.doneTicks );
+		profile->collideLongestBlock = b3TicksToMilliseconds( times.longestTicks );
+		world->collideSample = 1;
+		world->collideTaskCount = times.taskCount;
+		world->collideBlockCount = times.blockCount;
+		world->collideMissedCount = times.missedCount;
+	}
+	world->profile.updateContacts = b3GetMillisecondsAndReset( &partTicks );
+
 	world->manifoldsShared = false;
 	b3GiveBackManifolds( world );
 
@@ -1212,6 +1282,8 @@ static void b3Collide( b3StepContext* context )
 	memcpy( world->manifoldCounts, world->taskContexts.data[0].manifoldCounts,
 			B3_CONTACT_MANIFOLD_COUNT_BUCKETS * sizeof( int ) );
 
+	world->narrowphaseCount = world->taskContexts.data[0].narrowphaseCount;
+
 	for ( int i = 1; i < world->workerCount; ++i )
 	{
 		b3InPlaceUnion( bitSet, &world->taskContexts.data[i].contactStateBitSet );
@@ -1221,6 +1293,9 @@ static void b3Collide( b3StepContext* context )
 		{
 			world->manifoldCounts[j] += world->taskContexts.data[i].manifoldCounts[j];
 		}
+
+		// Added for Nebenan
+		world->narrowphaseCount += world->taskContexts.data[i].narrowphaseCount;
 	}
 
 	// Release per-step overflow blocks and grow the backing capacity if last
@@ -1238,7 +1313,8 @@ static void b3Collide( b3StepContext* context )
 
 	// Process contact state changes. Iterate over set bits. Added for Nebenan: on the calling thread alone, see
 	// b3Profile::contactStates
-	uint64_t stateTicks = b3GetTicks();
+	world->profile.mergeContacts = b3GetMillisecondsAndReset( &partTicks );
+	uint64_t stateTicks = partTicks;
 
 	// Added for Nebenan: the contacts with a new state first, in the order of their bits, so the loop below can prefetch
 	// each contact four ahead and its shapes and bodies two ahead, which it waited for most. Nothing in the loop changes
@@ -2668,6 +2744,11 @@ b3Counters b3World_GetCounters( b3WorldId worldId )
 	s.teamStageCount = world->teamStageCount;
 	s.teamYieldCount = world->teamYieldCount;
 	s.teamPackCount = world->teamPackCount;
+	s.narrowphaseCount = world->narrowphaseCount;
+	s.collideSample = world->collideSample;
+	s.collideTaskCount = world->collideTaskCount;
+	s.collideBlockCount = world->collideBlockCount;
+	s.collideMissedCount = world->collideMissedCount;
 	memcpy( s.manifoldCounts, world->manifoldCounts, B3_CONTACT_MANIFOLD_COUNT_BUCKETS * sizeof( int ) );
 	s.stackUsed = world->stack.maxAllocation;
 	s.byteCount = b3GetByteCount();

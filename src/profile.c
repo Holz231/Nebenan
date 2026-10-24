@@ -8,16 +8,18 @@
 
 // The names of the stages, see nbProfileStage
 static const char* nb_profileNames[] = {
-	"total",		   "step",		 "pairs",	   "createContacts", "collide",		"contactStates", "solve",	   "solverSetup",
-	"setupPacks",	   "setupTasks", "setupKnots", "setupWait",		 "constraints", "overflow",		 "transforms", "update",
-	"collisionDamage", "settle",	 "budget",	   "release",		 "typeChanges", "impacts",		 "cells",	   "cellsAlone",
+	"total",		 "step",		  "pairs",		 "createContacts", "collide",	 "gatherContacts",	"updateContacts",
+	"mergeContacts", "contactStates", "solve",		 "solverSetup",	   "setupPacks", "setupTasks",		"setupKnots",
+	"setupWait",	 "constraints",	  "overflow",	 "transforms",	   "update",	 "collisionDamage", "settle",
+	"budget",		 "release",		  "typeChanges", "impacts",		   "cells",		 "cellsAlone",
 };
 _Static_assert( sizeof( nb_profileNames ) / sizeof( nb_profileNames[0] ) == nb_profileStageCount, "a name per stage" );
 
 // How deep a stage sits in the table under the stage that holds it, and whether it runs on the calling thread alone
-static const int nb_profileDepths[] = { 0, 1, 2, 3, 2, 3, 2, 3, 4, 4, 4, 4, 3, 4, 2, 1, 2, 2, 2, 2, 1, 1, 1, 2 };
-static const bool nb_profileAlone[] = { false, false, false, true,	false, true,  false, true, true, false, true,  true,
-										false, false, false, false, false, false, true,	 true, true, false, false, true };
+static const int nb_profileDepths[] = { 0, 1, 2, 3, 2, 3, 3, 3, 3, 2, 3, 4, 4, 4, 4, 3, 4, 2, 1, 2, 2, 2, 2, 1, 1, 1, 2 };
+static const bool nb_profileAlone[] = { false, false, false, true,	false, true, false, true,  true,
+										false, true,  true,	 false, true,  true, false, false, false,
+										false, false, false, true,	true,  true, false, false, true };
 _Static_assert( sizeof( nb_profileDepths ) / sizeof( nb_profileDepths[0] ) == nb_profileStageCount, "a depth per stage" );
 _Static_assert( sizeof( nb_profileAlone ) / sizeof( nb_profileAlone[0] ) == nb_profileStageCount, "a flag per stage" );
 
@@ -42,6 +44,9 @@ void nbProfileStep( nbWorld* world )
 	sums->stages[nb_profilePairs] += step.pairs;
 	sums->stages[nb_profileCreateContacts] += step.createContacts;
 	sums->stages[nb_profileCollide] += step.collide;
+	sums->stages[nb_profileGatherContacts] += step.gatherContacts;
+	sums->stages[nb_profileUpdateContacts] += step.updateContacts;
+	sums->stages[nb_profileMergeContacts] += step.mergeContacts;
 	sums->stages[nb_profileContactStates] += step.contactStates;
 	sums->stages[nb_profileSolve] += step.solve;
 	sums->stages[nb_profileSolverSetup] += step.solverSetup;
@@ -78,6 +83,23 @@ void nbProfileStep( nbWorld* world )
 		{
 			sums->teamStages[i] += values[i];
 		}
+	}
+	if ( counters.collideSample != 0 )
+	{
+		sums->collideSampleCount += 1;
+		sums->collideLoop += step.updateContacts;
+		sums->collideWork += step.collideWork;
+		sums->collideChecks += step.collideChecks;
+		sums->collideNarrowphase += step.collideNarrowphase;
+		sums->collideLate += step.collideLate;
+		sums->collideClaim += step.collideClaim;
+		sums->collideDone += step.collideDone;
+		sums->collideLongestBlock += step.collideLongestBlock;
+		sums->collideTaskCount += counters.collideTaskCount;
+		sums->collideBlockCount += counters.collideBlockCount;
+		sums->collideMissedCount += counters.collideMissedCount;
+		sums->collideContactCount += counters.awakeContactCount;
+		sums->collideNarrowphaseCount += counters.narrowphaseCount;
 	}
 	sums->knotContactCount += counters.knotContactCount;
 	sums->knotBatchCount += counters.knotBatchCount;
@@ -191,6 +213,25 @@ nbProfile nbWorld_GetProfile( nbWorldId worldId )
 	}
 	profile.teamSampleCount = sums->teamSampleCount;
 	profile.packWait = (float)( sums->packWait / steps );
+
+	if ( sums->collideSampleCount > 0 )
+	{
+		double samples = (double)sums->collideSampleCount;
+		profile.collideLoop = (float)( sums->collideLoop / samples );
+		profile.collideWork = (float)( sums->collideWork / samples );
+		profile.collideChecks = (float)( sums->collideChecks / samples );
+		profile.collideNarrowphase = (float)( sums->collideNarrowphase / samples );
+		profile.collideLate = (float)( sums->collideLate / samples );
+		profile.collideClaim = (float)( sums->collideClaim / samples );
+		profile.collideDone = (float)( sums->collideDone / samples );
+		profile.collideLongestBlock = (float)( sums->collideLongestBlock / samples );
+		profile.collideTaskCount = (float)( sums->collideTaskCount / samples );
+		profile.collideBlockCount = (float)( sums->collideBlockCount / samples );
+		profile.collideMissedCount = (float)( sums->collideMissedCount / samples );
+		profile.collideContactCount = (float)( sums->collideContactCount / samples );
+		profile.collideNarrowphaseCount = (float)( sums->collideNarrowphaseCount / samples );
+	}
+	profile.collideSampleCount = sums->collideSampleCount;
 	profile.fractureWorkerItems = nbFractureWorkerItems( world );
 	profile.settleWorkerPieces = nbSettleWorkerPieces( world );
 	if ( sums->settleWakeCount > 0 )
@@ -689,6 +730,115 @@ int nbFormatScalingReport( const nbProfile* profiles, int count, char* text, int
 		b3TeamStages stages;
 		memcpy( &stages, values, sizeof( values ) );
 		nbAppendTeamStages( &out, &stages, workers );
+	}
+
+	// How the threads spent the contact loop, per number of workers, from the profiles whose steps timed it
+	int collideColumns[NB_REPORT_COLUMNS];
+	int collideColumnCount = 0;
+	for ( int c = 0; c < columnCount; ++c )
+	{
+		for ( int i = 0; i < count; ++i )
+		{
+			if ( profiles[i].workerCount == columns[c] && profiles[i].collideSampleCount > 0 )
+			{
+				collideColumns[collideColumnCount++] = columns[c];
+				break;
+			}
+		}
+	}
+
+	if ( collideColumnCount > 0 )
+	{
+		nbAppend( &out, "The contact loop in every eighth step, milliseconds per timed step, over all tasks of the loop\n" );
+		nbAppend( &out, "%-30s", "part" );
+		for ( int c = 0; c < collideColumnCount; ++c )
+		{
+			nbAppend( &out, " %5d w", collideColumns[c] );
+		}
+		nbAppend( &out, "\n" );
+
+		enum
+		{
+			rowCount = 16
+		};
+		const char* rowNames[rowCount] = {
+			"timed steps",
+			"loop on the calling thread",
+			"in blocks",
+			"  checks",
+			"  narrowphase",
+			"before the first block",
+			"between the blocks",
+			"after the last block",
+			"longest block",
+			"tasks",
+			"  without a block",
+			"blocks",
+			"contacts",
+			"  to the narrowphase",
+			"ns in blocks per contact",
+			"in blocks of the tasks %",
+		};
+		for ( int r = 0; r < rowCount; ++r )
+		{
+			nbAppend( &out, "%-30s", rowNames[r] );
+			for ( int c = 0; c < collideColumnCount; ++c )
+			{
+				double sums[rowCount] = { 0.0 };
+				double samples = 0.0;
+				for ( int i = 0; i < count; ++i )
+				{
+					const nbProfile* p = profiles + i;
+					if ( p->workerCount != collideColumns[c] || p->collideSampleCount == 0 )
+					{
+						continue;
+					}
+
+					double values[rowCount] = { 0.0,
+												p->collideLoop,
+												p->collideWork,
+												p->collideChecks,
+												p->collideNarrowphase,
+												p->collideLate,
+												p->collideClaim,
+												p->collideDone,
+												p->collideLongestBlock,
+												p->collideTaskCount,
+												p->collideMissedCount,
+												p->collideBlockCount,
+												p->collideContactCount,
+												p->collideNarrowphaseCount,
+												0.0,
+												0.0 };
+					for ( int v = 0; v < rowCount; ++v )
+					{
+						sums[v] += values[v] * (double)p->collideSampleCount;
+					}
+					samples += (double)p->collideSampleCount;
+				}
+
+				// The last two rows relate the time in blocks to the contacts and to the time of the tasks in the loop, which
+				// the time in blocks, before the first, between them and after the last add up to
+				double taskTime = sums[2] + sums[5] + sums[6] + sums[7];
+				if ( r == 0 )
+				{
+					nbAppend( &out, " %7.0f", samples );
+				}
+				else if ( r == rowCount - 2 )
+				{
+					nbAppend( &out, " %7.1f", sums[12] > 0.0 ? 1.0e6 * sums[2] / sums[12] : 0.0 );
+				}
+				else if ( r == rowCount - 1 )
+				{
+					nbAppend( &out, " %7.1f", taskTime > 0.0 ? 100.0 * sums[2] / taskTime : 0.0 );
+				}
+				else
+				{
+					nbAppend( &out, r >= 9 ? " %7.1f" : " %7.3f", sums[r] / samples );
+				}
+			}
+			nbAppend( &out, "\n" );
+		}
 	}
 
 	double packWait = 0.0;
