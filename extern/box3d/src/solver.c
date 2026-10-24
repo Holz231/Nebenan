@@ -2107,10 +2107,11 @@ _Static_assert( B3_MAX_PACKS <= 256, "a pack needs to fit in a byte" );
 #define B3_TEAM_SHARE_NUM 5
 #define B3_TEAM_SHARE_DEN 4
 
-// Added for Nebenan: with a team every further pack that holds more than the even share of a thread joins it, see
-// b3BuildPacks. One thread alone would take longer for such a pack than the team for its stages, while the team only
-// gets more blocks in the same stages.
-#define B3_TEAM_JOIN_NUM 1
+// Added for Nebenan: with a team every further pack that holds more than twice the even share of a thread joins it, see
+// b3BuildPacks. The team only gets more blocks in the same stages, but a thread in the team solves its share of the work
+// about half as fast as a thread alone solves a pack, with the barriers and the waits. Below that one thread alone ends
+// such a pack before the team would end it with all of them.
+#define B3_TEAM_JOIN_NUM 2
 #define B3_TEAM_JOIN_DEN 1
 
 // Added for Nebenan: every this many steps a step with a team times where its constraints go, see b3Profile::teamTime.

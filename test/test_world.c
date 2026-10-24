@@ -1255,9 +1255,9 @@ static int KnotTest( void )
 // With enough contacts at knots Box3D deals their batches out to groups that the threads solve at once, and a knot in
 // several groups has a copy of itself in each, see b3BuildKnots. Two heavy plates on 400 and 256 small cubes make two
 // such knots in two islands. The plates must come to rest on the cubes as in KnotTest, and the same in every bit with
-// every number of workers: one solves the groups one after the other, two solve the plates whole in packs, four solve
-// both plates as one team with a thread per group, since the smaller holds more than the share of a thread, see
-// b3Counters::teamPackCount. Four lanes must give the same.
+// every number of workers: one solves the groups one after the other, two solve the plates whole in packs, four solve the
+// larger plate as a team with a thread per group and the smaller in a pack meanwhile, which holds less than twice the
+// share of a thread, see TeamPacksTest. Four lanes must give the same.
 static int KnotGroupTest( void )
 {
 	const int sides[2] = { 20, 16 };
@@ -1344,8 +1344,8 @@ static int KnotGroupTest( void )
 			}
 			ENSURE( copies > 0 && rowBatches < knotContacts / 8 );
 			ENSURE( pass != 1 || packSteps > 0 );
-			ENSURE( pass != 2 || ( teamSteps > 0 && joinSteps > 0 ) );
-			ENSURE( joinSteps <= teamSteps );
+			ENSURE( pass != 2 || teamSteps > 0 );
+			ENSURE( joinSteps == 0 );
 			DestroyScene( &scene );
 		}
 		b3SetSIMDWidth( 0 );
@@ -1356,6 +1356,84 @@ static int KnotGroupTest( void )
 		}
 	}
 	nbDestroyTaskSystem( pool );
+	return 0;
+}
+
+// Two heavy plates on two equal heaps of cubes make two islands with the same work and a knot each. With 8 workers each
+// holds more than twice the share of a thread, so one team solves both in its stages, see b3Counters::teamPackCount, and
+// the groups of both knots run in its stages of the knots. With 4 the second holds no more than twice the share, and a
+// worker solves it whole while the team solves the first. Every number of workers and either width must end the same in
+// every bit.
+static int TeamPacksTest( void )
+{
+	const int workers[4] = { 1, 4, 8, 8 };
+	nbTaskSystem* pool = nbCreateTaskSystem( 3 );
+	b3Pos ends[4][2];
+	for ( int pass = 0; pass < 4; ++pass )
+	{
+		b3SetSIMDWidth( pass == 3 ? 4 : 0 );
+		TestScene scene = pass == 0 ? CreateScene() : CreateSceneWithPool( pool, workers[pass] );
+
+		b3BodyDef bodyDef = b3DefaultBodyDef();
+		bodyDef.type = b3_dynamicBody;
+		b3ShapeDef shapeDef = b3DefaultShapeDef();
+		b3BoxHull cube = b3MakeBoxHull( 0.05f, 0.05f, 0.05f );
+		const int side = 20;
+		b3BodyId plates[2];
+		for ( int p = 0; p < 2; ++p )
+		{
+			float center = p == 0 ? -1.6f : 1.6f;
+			float offset = 0.06f * (float)( side - 1 );
+			shapeDef.density = 1000.0f;
+			for ( int i = 0; i < side * side; ++i )
+			{
+				bodyDef.position =
+					(b3Vec3){ center + 0.12f * (float)( i % side ) - offset, 0.05f, 0.12f * (float)( i / side ) - offset };
+				b3BodyId body = b3CreateBody( scene.physicsWorld, &bodyDef );
+				b3CreateHullShape( body, &shapeDef, &cube.base );
+			}
+
+			bodyDef.position = (b3Vec3){ center, 0.151f, 0.0f };
+			plates[p] = b3CreateBody( scene.physicsWorld, &bodyDef );
+			b3BoxHull slab = b3MakeBoxHull( 0.06f * (float)side, 0.05f, 0.06f * (float)side );
+			shapeDef.density = 20000.0f;
+			b3CreateHullShape( plates[p], &shapeDef, &slab.base );
+		}
+
+		int teamSteps = 0, joinSteps = 0;
+		for ( int step = 0; step < 240; ++step )
+		{
+			nbWorld_Step( scene.world, 1.0f / 60.0f, 4 );
+			b3Counters counters = b3World_GetCounters( scene.physicsWorld );
+			teamSteps += counters.teamWork > 0 ? 1 : 0;
+			joinSteps += counters.teamPackCount > 1 ? 1 : 0;
+			ENSURE( counters.teamPackCount <= 2 && ( counters.teamWork > 0 ) == ( counters.teamPackCount > 0 ) );
+		}
+
+		for ( int p = 0; p < 2; ++p )
+		{
+			b3Pos position = b3Body_GetPosition( plates[p] );
+			ENSURE( 0.135f < (float)position.y && (float)position.y < 0.155f );
+			ENSURE( b3Length( b3Body_GetLinearVelocity( plates[p] ) ) < 0.01f );
+			ends[pass][p] = position;
+		}
+
+		if ( pass < 3 )
+		{
+			printf( "  %d worker%s: a team in %d steps, with both heaps in %d\n", workers[pass], workers[pass] == 1 ? "" : "s",
+					teamSteps, joinSteps );
+		}
+		ENSURE( pass != 2 || joinSteps > 0 );
+		ENSURE( joinSteps <= teamSteps );
+		DestroyScene( &scene );
+	}
+	b3SetSIMDWidth( 0 );
+	nbDestroyTaskSystem( pool );
+
+	for ( int pass = 1; pass < 4; ++pass )
+	{
+		ENSURE( memcmp( ends + pass, ends, sizeof( ends[0] ) ) == 0 );
+	}
 	return 0;
 }
 
@@ -5786,6 +5864,7 @@ int WorldTest( void )
 	RUN_TEST( SIMDWidthTest );
 	RUN_TEST( KnotTest );
 	RUN_TEST( KnotGroupTest );
+	RUN_TEST( TeamPacksTest );
 	RUN_TEST( UniqueHullTest );
 	RUN_TEST( ExternalHullTest );
 	RUN_TEST( ShapeBatchTest );
