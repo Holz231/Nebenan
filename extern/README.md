@@ -506,9 +506,24 @@ jeder Körper durchläuft seine Schritte in derselben Reihenfolge wie in seinem 
 `b3Counters::teamPackCount` sagt, wie viele Pakete das Team im letzten Schritt rechnete, und `b3Counters::teamWork`
 zählt ihre ganze Arbeit.
 
+**Der Aufbau des Lösers neben den Knoten.** Vor den Stufen baut der aufrufende Thread den Aufbau des Lösers allein, beim
+Abriss in der Demo auf der VM mit 4 Threads 0,33 ms pro Schritt, auf dem Ryzen mit 8 Threads 0,127 ms. Gut die Hälfte
+davon kosten die Knoten aus „Knoten im Überlauf“, fast den ganzen Rest die Pakete der Körper und Kontakte aus „Ganze
+Inseln pro Thread“ und das Ordnen der konvexen Kontakte aus „Kontakte jeder Farbe nach Körpern ordnen“. Jetzt verteilt
+der aufrufende Thread nur noch die Inseln auf die Pakete (`b3BuildPacks` in `src/solver.c`) und gibt den Rest zwei
+Aufgaben (`b3SetupTask`): Die erste trägt jeden Kontakt in sein Paket ein und ordnet die konvexen Kontakte jeder Farbe,
+die zweite trägt jeden Körper in sein Paket ein. Hat der Überlauf mindestens 256 Kontakte (`B3_SETUP_TASK_OVERFLOW`),
+nehmen Worker die Aufgaben, während der aufrufende Thread die Knoten baut. Auf die erste wartet er erst, wo die Knoten
+die Pakete ihrer Kontakte brauchen, auf die zweite am Ende des Aufbaus, bevor die Teilung einer Insel die Inseln der
+Körper ändert, und hat noch kein Worker eine Aufgabe genommen, rechnet er sie selbst. Mit weniger Kontakten im Überlauf
+sind die Knoten zu schnell gebaut, um die Aufgaben zu überdecken, und er rechnet sie gleich selbst, wie vorher. Speicher
+vom Stapel nimmt nur er, die Aufgaben füllen, was er vorher genommen hat. Jedes Ergebnis ist dasselbe, gleich welcher
+Thread es rechnet, die Ergebnisse bleiben dieselben. `b3Profile` misst mit `setupPacks`, `setupTasks`, `setupKnots` und
+`setupWait`, was die Teile kosten.
+
 Die erste, die zweite, die vierte bis achte, die zehnte, die dreizehnte bis einunddreißigste, die dreiunddreißigste bis
 fünfunddreißigste, die neununddreißigste bis dreiundvierzigste, die fünfundvierzigste bis siebenundvierzigste, die
-neunundvierzigste und die fünfzigste ändern an den Ergebnissen nichts. Die dritte und die neunte ändern sie in den
+neunundvierzigste bis einundfünfzigste ändern an den Ergebnissen nichts. Die dritte und die neunte ändern sie in den
 letzten Bits, dafür hängen sie nicht mehr davon ab, in welcher Reihenfolge Formen in die Bäume kommen. Die elfte ändert
 sie, weil Kontakte zu anderen Zeitpunkten entstehen, die zwölfte, weil sie weniger Punkte bekommen, die
 zweiunddreißigste, weil die Kontakte eines Knotens gebündelt gegen Kopien rechnen statt nacheinander, die
