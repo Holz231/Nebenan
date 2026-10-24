@@ -2558,6 +2558,11 @@ static int b3GetPackEntryCapacity( const b3World* world, const b3GraphColor* col
 	return capacity;
 }
 
+// Added for Nebenan: from this many contacts in the overflow the knots take long enough for the setup tasks on the workers,
+// see b3SetupTask. With fewer the calling thread would wait for the workers, which fetch the data from its caches, and it
+// runs the tasks itself right away.
+#define B3_SETUP_TASK_OVERFLOW 256
+
 // Added for Nebenan: what the solver setup gives to the workers while the calling thread builds the knots, see
 // b3BuildKnots, in two tasks. The first gives every contact its pack, see b3FillContactPacks, and puts the convex contacts
 // of the colors in order pack by pack, see b3OrderPackContacts, or without packs in buckets, see b3OrderColorContacts. The
@@ -2587,8 +2592,10 @@ typedef struct b3SetupTask
 	// The convex contacts of the colors in order, null without workers or contacts, then there is no task
 	int* orderedContacts;
 
-	// Whether this is the second task, which gives the bodies their packs
+	// Whether this is the second task, which gives the bodies their packs, and whether the tasks go to the workers, see
+	// B3_SETUP_TASK_OVERFLOW
 	bool bodies;
+	bool workers;
 
 	// The task in the task system, null if the task system ran it right away, whether it started and was waited for, and
 	// how long it ran
@@ -2634,7 +2641,7 @@ static void b3StartSetupTask( b3World* world, b3SetupTask* task )
 	}
 
 	task->started = true;
-	if ( world->activeWorkerCount > 1 && world->taskCount < B3_MAX_TASKS )
+	if ( task->workers && world->activeWorkerCount > 1 && world->taskCount < B3_MAX_TASKS )
 	{
 		task->userTask = world->enqueueTaskFcn( &b3SetupTaskCallback, task, world->userTaskContext, "setup" );
 		world->taskCount += 1;
@@ -3536,6 +3543,7 @@ void b3Solve( b3World* world, b3StepContext* stepContext )
 			.packWideStarts = packWideStarts,
 			.packEntryCounts = packEntryCounts,
 			.orderedContacts = orderedContacts,
+			.workers = overflowCount >= B3_SETUP_TASK_OVERFLOW,
 		};
 		b3SetupTask bodyTask = setupTask;
 		bodyTask.bodies = true;
