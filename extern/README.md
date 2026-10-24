@@ -265,9 +265,11 @@ Box3D aufruft, bevor der Thread, der den Wächter gesetzt hat, die Welt anfasst:
 nachschlagen, und in `b3Body_IsValid`, `b3Shape_IsValid`, `b3Joint_IsValid` und `b3Contact_IsValid`, über die jeder
 Zugriff von außen geht. Nebenan wartet darin auf den Schritt, den sein eigener Thread rechnet, siehe `nbWorld_Step`,
 und nimmt den Wächter danach wieder weg. Jeder andere Thread geht durch, der Schritt-Thread und die Worker
-eingeschlossen. Ein Thread erkennt sich an einer Nummer, die er beim ersten Mal zieht (`b3GetThreadToken` in
-`src/core.c`), und die Welt hält die Nummer des Besitzers in einem atomaren Feld (`b3World::stepGuardOwner`), null ohne
-Wächter. Ohne Wächter kostet ein Zugriff damit ein Laden mehr, mit Wächter dazu den Blick auf die eigene Nummer.
+eingeschlossen. Ein Thread erkennt sich an einer Nummer (`b3GetThreadToken` in `src/core.c`), unter Windows an der
+Kennung, die das System für ihn bereithält, sonst an einer, die er beim ersten Mal zieht. Die Welt hält die Nummer des
+Besitzers in einem atomaren Feld (`b3World::stepGuardOwner`), null ohne Wächter. Ohne Wächter kostet ein Zugriff damit
+ein Laden mehr, mit Wächter dazu den Blick auf die eigene Nummer. Eine Thread-lokale Variable dafür emuliert MinGW mit
+einer eigenen Suche bei jedem Zugriff: Mit ihr kostete das Update im Schritt-Thread im Abriss der Demo 7,8 statt 0,4 ms.
 `b3World_IsValid` liest nur, was kein Schritt ändert, und wartet nicht.
 
 **Zeiten und Inseln für das Profil.** `b3Profile` hat zwei Felder mehr für die Teile des Schritts, die auf dem

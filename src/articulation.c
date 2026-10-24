@@ -27,6 +27,9 @@
 #define NB_SPRING_TORQUE_LIMITS 0
 #endif
 
+// A motor at this part of its torque limit works at it, see nbFigureStats::saturatedJointCount
+#define NB_SATURATED_LOAD 0.99f
+
 //----------------------------------------------------------------------------------------------------------------------
 // Definitions
 
@@ -528,41 +531,51 @@ void nbUpdateArticulations( nbWorld* world, float timeStep )
 	for ( int i = 0; i < world->articulations.count; ++i )
 	{
 		nbArticulation* articulation = world->articulations.data + i;
-		if ( articulation->isFree )
+		bool clip = articulation->recording != NULL || articulation->clipPlaying;
+		if ( articulation->isFree || ( clip == false && articulation->balancer == NULL ) )
 		{
 			continue;
 		}
 
-		// A recording takes the pose the step left, which the targets of the time of the clip drove to
-		if ( articulation->recording != NULL )
+		// Each part timed for the figures that do it, see nb_profileFigures
+		uint64_t lap = b3GetTicks();
+		const b3Quat* targets = NULL;
+		if ( clip )
 		{
-			nbRecordPose( world, i, articulation, timeStep );
-		}
-
-		bool posed = false;
-		if ( articulation->clipPlaying )
-		{
-			articulation->clipTime += articulation->clipSpeed * timeStep;
-			float duration = articulation->clipTimes[articulation->clipKeyframeCount - 1];
-			if ( articulation->clipLoop == false && articulation->clipTime >= duration )
+			// A recording takes the pose the step left, which the targets of the time of the clip drove to
+			if ( articulation->recording != NULL )
 			{
-				// The clip ends on its last pose
-				articulation->clipTime = duration;
-				articulation->clipPlaying = false;
+				nbRecordPose( world, i, articulation, timeStep );
 			}
 
-			nbSampleArticulationClip( articulation, articulation->pose );
-			posed = true;
+			if ( articulation->clipPlaying )
+			{
+				articulation->clipTime += articulation->clipSpeed * timeStep;
+				float duration = articulation->clipTimes[articulation->clipKeyframeCount - 1];
+				if ( articulation->clipLoop == false && articulation->clipTime >= duration )
+				{
+					// The clip ends on its last pose
+					articulation->clipTime = duration;
+					articulation->clipPlaying = false;
+				}
+
+				nbSampleArticulationClip( articulation, articulation->pose );
+				targets = articulation->pose;
+			}
+			nbProfileLap( world, nb_profileFigureClips, &lap );
 		}
 
-		// Balance takes the pose of the program and sets the targets itself, with the legs and what else it overrides
+		// Balance takes the pose of the program and gives the targets itself, with the legs and what else it overrides
 		if ( articulation->balancer != NULL )
 		{
-			nbUpdateBalance( world, i, articulation, timeStep );
+			targets = nbUpdateBalance( world, i, articulation, timeStep );
+			nbProfileLap( world, nb_profileFigureBalance, &lap );
 		}
-		else if ( posed )
+
+		if ( targets != NULL )
 		{
-			nbSetTargets( articulation, articulation->pose );
+			nbSetTargets( articulation, targets );
+			nbProfileLap( world, nb_profileFigureMotors, &lap );
 		}
 	}
 }
@@ -1161,14 +1174,9 @@ static float nbRotationAngle( b3Quat q )
 	return angle > B3_PI ? 2.0f * B3_PI - angle : angle;
 }
 
-float nbArticulation_GetJointError( nbArticulationId id, int bone )
+// How far the joint of a bone is from its target, see nbArticulation_GetJointError
+static float nbJointError( const nbArticulation* articulation, int bone )
 {
-	const nbArticulation* articulation = nbGetArticulationFromId( id, NULL );
-	if ( articulation == NULL || bone < 1 || bone >= articulation->boneCount )
-	{
-		return 0.0f;
-	}
-
 	const nbBone* b = articulation->bones + bone;
 	if ( b->joint == nb_fixedJoint )
 	{
@@ -1199,14 +1207,19 @@ float nbArticulation_GetJointError( nbArticulationId id, int bone )
 	return nbRotationAngle( b3InvMulQuat( target, relative ) );
 }
 
-float nbArticulation_GetMotorLoad( nbArticulationId id, int bone )
+float nbArticulation_GetJointError( nbArticulationId id, int bone )
 {
 	const nbArticulation* articulation = nbGetArticulationFromId( id, NULL );
 	if ( articulation == NULL || bone < 1 || bone >= articulation->boneCount )
 	{
 		return 0.0f;
 	}
+	return nbJointError( articulation, bone );
+}
 
+// How hard the motor of a bone works, see nbArticulation_GetMotorLoad
+static float nbMotorLoad( const nbArticulation* articulation, int bone )
+{
 	const nbBone* b = articulation->bones + bone;
 	float maxTorque = articulation->profile.maxTorque * b->strength;
 	if ( maxTorque <= 0.0f || articulation->profile.stiffness <= 0.0f )
@@ -1226,6 +1239,60 @@ float nbArticulation_GetMotorLoad( nbArticulationId id, int bone )
 	}
 #endif
 	return torque / maxTorque;
+}
+
+float nbArticulation_GetMotorLoad( nbArticulationId id, int bone )
+{
+	const nbArticulation* articulation = nbGetArticulationFromId( id, NULL );
+	if ( articulation == NULL || bone < 1 || bone >= articulation->boneCount )
+	{
+		return 0.0f;
+	}
+	return nbMotorLoad( articulation, bone );
+}
+
+nbFigureStats nbWorld_GetFigureStats( nbWorldId worldId )
+{
+	nbFigureStats stats = { 0 };
+	const nbWorld* world = nbGetWorldFromId( worldId );
+	if ( world == NULL )
+	{
+		return stats;
+	}
+
+	for ( int i = 0; i < world->articulations.count; ++i )
+	{
+		const nbArticulation* articulation = world->articulations.data + i;
+		if ( articulation->isFree )
+		{
+			continue;
+		}
+
+		stats.figureCount += 1;
+		stats.boneCount += articulation->boneCount;
+		stats.jointCount += articulation->boneCount - 1 + ( B3_IS_NON_NULL( articulation->uprightId ) ? 1 : 0 );
+		stats.playingCount += articulation->clipPlaying ? 1 : 0;
+
+		const nbBalance* balance = nbBalanceInfoOf( articulation );
+		stats.stateCounts[balance != NULL ? balance->state : nb_balanceOff] += 1;
+		if ( balance != NULL )
+		{
+			stats.fallCount += balance->fallCount;
+			stats.getUpCount += balance->getUpCount;
+			stats.failedGetUpCount += balance->failedGetUpCount;
+		}
+
+		for ( int bone = 0; bone < articulation->boneCount; ++bone )
+		{
+			stats.awakeBoneCount += b3Body_IsAwake( articulation->bones[bone].bodyId ) ? 1 : 0;
+			if ( bone > 0 && articulation->bones[bone].joint != nb_fixedJoint )
+			{
+				stats.saturatedJointCount += nbMotorLoad( articulation, bone ) >= NB_SATURATED_LOAD ? 1 : 0;
+				stats.largestJointError = b3MaxFloat( stats.largestJointError, nbJointError( articulation, bone ) );
+			}
+		}
+	}
+	return stats;
 }
 
 nbArticulationId nbWorld_GetArticulationFromBody( nbWorldId worldId, b3BodyId bodyId, int* bone )

@@ -15,6 +15,17 @@
 #include <malloc.h>
 #endif
 
+// The id of the thread, see nbGetThreadToken
+#if defined( _WIN32 )
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#endif
+
 #if defined( NB_LARGE_BLOCKS )
 #if defined( _WIN64 )
 #ifndef WIN32_LEAN_AND_MEAN
@@ -64,13 +75,20 @@ int nbAtomicFetchAddInt( int* value, int delta )
 #endif
 }
 
-// Every thread draws its number on first use
-#if defined( _MSC_VER )
-static __declspec( thread ) int nb_threadToken;
-#else
-static _Thread_local int nb_threadToken;
-#endif
+// A number of its own for every thread. The steps on a thread of their own ask for it in every call of the API from
+// another thread than the one that handed them over, so it must be cheap: on Windows the id that the system keeps at hand
+// for the thread, as MinGW emulates thread local variables with a lookup of its own in every access. Elsewhere a thread
+// draws its number on first use.
+#if defined( _WIN32 )
 
+int nbGetThreadToken( void )
+{
+	return (int)GetCurrentThreadId();
+}
+
+#else
+
+static _Thread_local int nb_threadToken;
 static int nb_threadTokenCount;
 
 int nbGetThreadToken( void )
@@ -81,6 +99,8 @@ int nbGetThreadToken( void )
 	}
 	return nb_threadToken;
 }
+
+#endif
 
 static int nbDefaultAssertFcn( const char* condition, const char* fileName, int lineNumber )
 {

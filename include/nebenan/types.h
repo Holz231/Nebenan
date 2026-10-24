@@ -581,13 +581,21 @@ typedef enum nbProfileStage
 	nb_profileOverflow,
 	nb_profileTransforms,
 
-	/// nbWorld_Update with its collision damage, the debris that comes to rest, the debris budget and the rubble that
-	/// lost what held it
+	/// nbWorld_Update with its collision damage, the debris that comes to rest, the debris budget, the rubble that lost
+	/// what held it and the figures
 	nb_profileUpdate,
 	nb_profileCollisionDamage,
 	nb_profileSettle,
 	nb_profileBudget,
 	nb_profileRelease,
+
+	/// The figures in the update on the calling thread, see nbCreateArticulation and the roadmap of the game, 27.14: their
+	/// clips with their recordings, their balance with what it measures and plans and the legs it moves, and the targets
+	/// of their joints, which go to Box3D. Their joints and contacts cost in the step.
+	nb_profileFigures,
+	nb_profileFigureClips,
+	nb_profileFigureBalance,
+	nb_profileFigureMotors,
 
 	/// Debris that freezes into rubble and rubble that comes back to life, in the update and the impacts
 	nb_profileTypeChanges,
@@ -1038,6 +1046,9 @@ typedef enum nbBalanceState
 
 	/// The figure gets up, its chest lifted by a bounded force, a game aid like the upright hold
 	nb_balanceGettingUp,
+
+	/// The number of states
+	nb_balanceStateCount
 } nbBalanceState;
 
 /// How a biped keeps its balance, see nbArticulation_EnableBalance. Initialize with nbDefaultBalanceDef, which fits the
@@ -1135,7 +1146,38 @@ typedef struct nbBalance
 
 	/// The figure lies on its back, else on its front or side
 	bool onBack;
+
+	/// Since the figure got balance: its falls, the times it got up and stood, and the times getting up ended in a fall
+	int fallCount;
+	int getUpCount;
+	int failedGetUpCount;
 } nbBalance;
+
+/// What the figures of a world do, see nbWorld_GetFigureStats and the roadmap of the game, 27.14 and 32.8
+typedef struct nbFigureStats
+{
+	/// The figures, their bones, their joints with the upright hold, the bones that are awake, and the figures that play
+	/// a clip
+	int figureCount;
+	int boneCount;
+	int jointCount;
+	int awakeBoneCount;
+	int playingCount;
+
+	/// The figures by the state of their balance, see nbBalanceState, those without balance under nb_balanceOff
+	int stateCounts[nb_balanceStateCount];
+
+	/// The falls of the figures there are, the times they got up and stood, and the times getting up ended in a fall,
+	/// see nbBalance::fallCount
+	int fallCount;
+	int getUpCount;
+	int failedGetUpCount;
+
+	/// The joints whose motor works at its torque limit, see nbArticulation_GetMotorLoad, and the largest error of a
+	/// joint from its target, in radians, see nbArticulation_GetJointError
+	int saturatedJointCount;
+	float largestJointError;
+} nbFigureStats;
 
 /// The bones of the figure that nbMakeHumanoidBones builds, in the order of its array
 typedef enum nbHumanoidBone

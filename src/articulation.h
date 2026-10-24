@@ -130,13 +130,14 @@ void nbGetPose( const nbArticulation* articulation, b3Quat* rotations, int count
 // Record a figure into its clip after a step, see nbArticulation_RecordPoseClip and pose_clip.c
 void nbRecordPose( nbWorld* world, int index, nbArticulation* articulation, float timeStep );
 
-// Balance, see balance.c: the update after every step, which sets the targets of the joints, the program changed the
-// motor profile or put the figure into a pose, the state of the balance, off without, and the balance goes with its
-// figure
-void nbUpdateBalance( nbWorld* world, int index, nbArticulation* articulation, float timeStep );
+// Balance, see balance.c: the update after every step, which gives the pose the joints are to take, the program changed
+// the motor profile or put the figure into a pose, the state of the balance, off without, what the balance saw, null
+// without, and the balance goes with its figure
+const b3Quat* nbUpdateBalance( nbWorld* world, int index, nbArticulation* articulation, float timeStep );
 void nbBalanceProfileChanged( nbArticulation* articulation );
 void nbBalancePlaced( nbArticulation* articulation );
 nbBalanceState nbBalanceStateOf( const nbArticulation* articulation );
+const nbBalance* nbBalanceInfoOf( const nbArticulation* articulation );
 void nbFreeBalancer( nbArticulation* articulation );
 
 // Destroy every articulation of the world with its bodies and free the arrays, for nbDestroyWorld

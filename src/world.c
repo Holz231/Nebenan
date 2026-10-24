@@ -6878,6 +6878,7 @@ static void nbUpdate( nbWorld* world, float timeStep )
 
 	// The figures follow their clips: the targets of their joints for the next step
 	nbUpdateArticulations( world, timeStep );
+	nbProfileLap( world, nb_profileFigures, &lap );
 
 	world->stats.updateTime = b3GetMilliseconds( ticks );
 	world->profile.stages[nb_profileUpdate] += world->stats.updateTime;

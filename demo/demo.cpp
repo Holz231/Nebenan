@@ -137,6 +137,11 @@ struct WorldView
 	int restores = 0;
 	size_t savedBytes = 0;
 	std::vector<FigureView> figures;
+
+	// The figures as a whole, see nbWorld_GetFigureStats, and the profile of the library since the scene loaded, with
+	// what the figures cost, both only with figures
+	nbFigureStats figureStats = {};
+	nbProfile profile = {};
 };
 
 // The town taken down house by house, see RunDemolition
@@ -218,8 +223,9 @@ struct Comparison
 	float longestWait[MaxRuns] = {};
 	uint64_t hashes[MaxRuns] = {};
 
-	// What is left of the town at the end, and how the demolition went
+	// What is left of the town at the end, what its figures did, and how the demolition went
 	nbStats stats = {};
+	nbFigureStats figureStats = {};
 	Demolition demolition;
 
 	// The report of the last comparison, and its short form for the menu
@@ -441,6 +447,9 @@ struct App
 	bool showBalance = true;
 	float hitImpulse = 60.0f;
 	Editor editor;
+
+	// Humanoids in the streets of the town, see AddTownFigures
+	int townFigures = 0;
 	uint32_t hitCounter = 0;
 	std::vector<GpuVertex> vertexScratch;
 	std::vector<uint16_t> indexScratch;
@@ -2280,6 +2289,36 @@ static int TownHouseFloors( int house )
 	return house % 3 == 1 ? 3 : 2;
 }
 
+// The figures of the town: humanoids with balance in the streets between the rows, three and a half meters apart, playing
+// the arm clip, as many as the menu says. The demolition of the comparison throws the houses on them, see the roadmap of
+// the game, 27.14.
+static void AddTownFigures( App& app )
+{
+	if ( app.townFigures <= 0 )
+	{
+		return;
+	}
+
+	nbBoneDef bones[nb_humanoidBoneCount];
+	float rootHeight = nbMakeHumanoidBones( 1.8f, 75.0f, bones, nb_humanoidBoneCount );
+	nbRigDef rig = nbDefaultRigDef();
+	rig.bones = bones;
+	rig.boneCount = nb_humanoidBoneCount;
+	MakeArmClip( app, nb_humanoidBoneCount );
+	nbBalanceDef balance = nbDefaultBalanceDef();
+	for ( int k = 0; k < app.townFigures; ++k )
+	{
+		int street = k % ( TownRows - 1 );
+		int slot = k / ( TownRows - 1 );
+		b3Vec3 position = { -28.0f + 3.5f * (float)slot, rootHeight, -6.0f - 12.0f * (float)street };
+		nbArticulationId id =
+			nbCreateArticulation( app.destruction, &rig, b3ToPos( position ), b3Quat_identity, &app.figureProfile );
+		nbArticulation_EnableBalance( id, &balance );
+		nbArticulation_PlayClip( id, &app.armClip, 1.0f );
+		AddFigureVisual( app, id, bones, nb_humanoidBoneCount );
+	}
+}
+
 static void BuildTownScene( App& app )
 {
 	std::vector<std::unique_ptr<PendingStructure>> houses;
@@ -2295,6 +2334,7 @@ static void BuildTownScene( App& app )
 		}
 	}
 	app.townHouses = CreateStructures( app, houses );
+	AddTownFigures( app );
 
 	app.camera.position = { 0.0f, 16.0f, 34.0f };
 	app.camera.yaw = 0.0f;
@@ -2697,6 +2737,63 @@ static void StartPhysics( App& app, float frameDt )
 	}
 }
 
+// How many figures stand in the streets of the town, what they do and what they cost, from the view taken before the
+// steps, see AddTownFigures
+static void DrawTownFigures( App& app )
+{
+	char preview[16];
+	snprintf( preview, sizeof( preview ), app.townFigures > 0 ? "%d" : "keine", app.townFigures );
+	if ( ImGui::BeginCombo( "Figuren", preview ) )
+	{
+		const int counts[4] = { 0, 1, 10, 50 };
+		for ( int count : counts )
+		{
+			char label[16];
+			snprintf( label, sizeof( label ), count > 0 ? "%d" : "keine", count );
+			if ( ImGui::Selectable( label, count == app.townFigures ) && count != app.townFigures )
+			{
+				app.townFigures = count;
+				LoadScene( app, SceneTown );
+			}
+		}
+		ImGui::EndCombo();
+	}
+	if ( ImGui::IsItemHovered() )
+	{
+		ImGui::SetTooltip( "Humanoide mit Balance in den Straßen, die den Clip aus drei Keyframes spielen, mit den Motoren\n"
+						   "der Figurenszene. Die Messung „Parallel gegen nacheinander“ reißt die Häuser über ihnen ab und\n"
+						   "misst sie mit." );
+	}
+
+	const nbFigureStats& figures = app.view.figureStats;
+	if ( figures.figureCount == 0 )
+	{
+		return;
+	}
+	const float* stages = app.view.profile.stages;
+	ImGui::Text( "Stehen %d, Schritt %d, fallen %d, liegen %d, stehen auf %d", figures.stateCounts[nb_balanceStanding],
+				 figures.stateCounts[nb_balanceStepping], figures.stateCounts[nb_balanceFalling],
+				 figures.stateCounts[nb_balanceDown], figures.stateCounts[nb_balanceGettingUp] );
+	ImGui::Text( "Stürze %d, aufgestanden %d, abgebrochen %d, Motoren am Anschlag %d", figures.fallCount, figures.getUpCount,
+				 figures.failedGetUpCount, figures.saturatedJointCount );
+	ImGui::Text( "Je Schritt %.3f ms, %.2f µs je Figur: Clips %.3f, Balance %.3f, Motoren %.3f", stages[nb_profileFigures],
+				 1000.0f * stages[nb_profileFigures] / (float)figures.figureCount, stages[nb_profileFigureClips],
+				 stages[nb_profileFigureBalance], stages[nb_profileFigureMotors] );
+	if ( ImGui::IsItemHovered() )
+	{
+		ImGui::SetTooltip( "Was die Figuren im Update der Bibliothek kosten, im Mittel seit die Szene geladen ist. Ihre\n"
+						   "Gelenke und Kontakte löst Box3D im Schritt, das steht unter Leistung." );
+	}
+	ImGui::Text( "Knochen wach %d von %d, Gelenke %d", figures.awakeBoneCount, figures.boneCount, figures.jointCount );
+	if ( ImGui::Button( "Alle umwerfen" ) )
+	{
+		for ( const FigureVisual& figure : app.figures )
+		{
+			nbArticulation_Knockdown( figure.id );
+		}
+	}
+}
+
 // Wait for the steps of the frame before and take the poses to draw the bodies at. Everything that touches the worlds or
 // the city on the main thread comes after this, or waits for the steps by itself.
 static void FinishPhysics( App& app )
@@ -2768,8 +2865,19 @@ static void TakeWorldView( App& app )
 	}
 
 	view.figures.clear();
+	view.figureStats = {};
+	if ( app.figures.empty() == false )
+	{
+		view.figureStats = nbWorld_GetFigureStats( app.destruction );
+		view.profile = nbWorld_GetProfile( app.destruction );
+	}
 	for ( const FigureVisual& figure : app.figures )
 	{
+		if ( app.scene != SceneFigures )
+		{
+			break;
+		}
+
 		FigureView figureView;
 		int boneCount = nbArticulation_GetBoneCount( figure.id );
 		for ( int bone = 1; bone < boneCount; ++bone )
@@ -2940,6 +3048,23 @@ static std::string BuildReport( const App& app )
 		Appendf( text, "Beschädigte Häuser: %d gespeichert, %d zurückgeholt, %.0f MB gespeichert\n", view.saves, view.restores,
 				 (double)view.savedBytes / 1048576.0 );
 	}
+
+	// The figures, see nbWorld_GetFigureStats and nb_profileFigures, with the cost since the scene loaded
+	const nbFigureStats& figures = view.figureStats;
+	if ( figures.figureCount > 0 )
+	{
+		const float* stages = view.profile.stages;
+		Appendf( text,
+				 "Figuren: %d, je Schritt %.3f ms, %.2f µs je Figur, davon Clips %.3f, Balance %.3f und Motoren %.3f ms; "
+				 "es stehen %d, fallen %d, liegen %d, stehen auf %d, %d Stürze, %d aufgestanden, %d abgebrochen, %d Motoren am "
+				 "Anschlag, %d von %d Knochen wach\n",
+				 figures.figureCount, stages[nb_profileFigures], 1000.0f * stages[nb_profileFigures] / (float)figures.figureCount,
+				 stages[nb_profileFigureClips], stages[nb_profileFigureBalance], stages[nb_profileFigureMotors],
+				 figures.stateCounts[nb_balanceStanding] + figures.stateCounts[nb_balanceStepping],
+				 figures.stateCounts[nb_balanceFalling], figures.stateCounts[nb_balanceDown],
+				 figures.stateCounts[nb_balanceGettingUp], figures.fallCount, figures.getUpCount, figures.failedGetUpCount,
+				 figures.saturatedJointCount, figures.awakeBoneCount, figures.boneCount );
+	}
 	return text;
 }
 
@@ -2990,6 +3115,11 @@ static void DrawUi( App& app )
 		ImGui::Text( "Gespeichert %d, zurückgeholt %d, %.0f MB im Speicher", view.saves, view.restores,
 					 (double)view.savedBytes / 1048576.0 );
 		ImGui::Text( "Speicher %.0f MB (Nebenan und Box3D)", (double)( view.stats.byteCount + view.counters.byteCount ) / 1048576.0 );
+	}
+
+	if ( app.scene == SceneTown )
+	{
+		DrawTownFigures( app );
 	}
 
 	if ( app.scene == SceneFigures )
@@ -3396,7 +3526,12 @@ static void DrawUi( App& app )
 		}
 		if ( ImGui::IsItemHovered() )
 		{
-			ImGui::SetTooltip( "Lädt die Stadt und reißt sie Haus für Haus mit Granaten ab, Wand für Wand von\noben nach unten, bis jedes Haus unten ist, mit Budget 5000 und nur so schnell,\ndass nie mehr als 3000 Trümmer zugleich fliegen: einmal kurz zum Aufwärmen, dann\nparallel, nacheinander, nacheinander und parallel, mit einem Schritt pro Bild und\njeweils mit den passenden Threads. Das Ergebnis kommt in die Zwischenablage,\ndanach lädt die Szene von vorher neu." );
+			ImGui::SetTooltip(
+				"Lädt die Stadt und reißt sie Haus für Haus mit Granaten ab, Wand für Wand von\noben nach unten, bis jedes Haus "
+				"unten ist, mit Budget 5000 und nur so schnell,\ndass nie mehr als 3000 Trümmer zugleich fliegen: einmal kurz "
+				"zum Aufwärmen, dann\nparallel, nacheinander, nacheinander und parallel, mit einem Schritt pro Bild und\njeweils "
+				"mit den passenden Threads. Mit Figuren in der Stadt, siehe Szene, misst er\nsie mit. Das Ergebnis kommt in die "
+				"Zwischenablage, danach lädt die Szene von\nvorher neu." );
 		}
 		// The threads the library takes without parallel physics against one fewer, both ways
 		int more = nbGetRecommendedWorkerCount( false );
@@ -4075,6 +4210,30 @@ static void AppendDemolition( std::string& text, const App& app )
 	Appendf( text, "Am Ende: %d von %d Etagen eingestürzt, %d Bruchstücke, %d davon als Trümmer, %d Schutt\n",
 			 comparison.stats.collapsedStoreyCount, storeys, comparison.stats.chunkCount, comparison.stats.dynamicBodyCount,
 			 comparison.stats.rubbleCount );
+
+	// The figures in the streets: what they cost in the counted runs, see nb_profileFigures, and what they did in the last
+	const nbFigureStats& figures = comparison.figureStats;
+	if ( figures.figureCount > 0 )
+	{
+		float stages[4] = {};
+		const nbProfileStage parts[4] = { nb_profileFigures, nb_profileFigureClips, nb_profileFigureBalance,
+										  nb_profileFigureMotors };
+		for ( int run = 1; run < comparison.runCount; ++run )
+		{
+			for ( int k = 0; k < 4; ++k )
+			{
+				stages[k] += comparison.profiles[run].stages[parts[k]] / (float)( comparison.runCount - 1 );
+			}
+		}
+		Appendf( text,
+				 "%d Figuren in den Straßen mit Balance und Clip: je Schritt %.3f ms, %.2f µs je Figur, davon Clips %.3f, "
+				 "Balance %.3f und Motoren %.3f ms. Am Ende stehen %d, fallen %d, liegen %d, stehen auf %d, %d Stürze, %d "
+				 "aufgestanden, %d abgebrochen\n",
+				 figures.figureCount, stages[0], 1000.0f * stages[0] / (float)figures.figureCount, stages[1], stages[2],
+				 stages[3], figures.stateCounts[nb_balanceStanding] + figures.stateCounts[nb_balanceStepping],
+				 figures.stateCounts[nb_balanceFalling], figures.stateCounts[nb_balanceDown],
+				 figures.stateCounts[nb_balanceGettingUp], figures.fallCount, figures.getUpCount, figures.failedGetUpCount );
+	}
 }
 
 // The counted runs of one way and number of threads together
@@ -4251,6 +4410,7 @@ static void AdvanceComparison( App& app, float frameTime, float graphicsTime )
 	comparison.hashes[run] = HashChunkTransforms( app );
 	comparison.frames[run] = comparison.frame;
 	comparison.stats = nbWorld_GetStats( app.destruction );
+	comparison.figureStats = nbWorld_GetFigureStats( app.destruction );
 	comparison.profiles[run] = nbWorld_GetProfile( app.destruction );
 	comparison.demolition = demolition;
 	comparison.run += 1;
@@ -4746,6 +4906,10 @@ int main( int argc, char** argv )
 			app.automation.demolition = true;
 			app.automation.scene = SceneTown;
 			app.maxDebrisBodies = DemolitionBudget;
+		}
+		else if ( strcmp( argv[i], "--figures" ) == 0 && i + 1 < argc )
+		{
+			app.townFigures = b3ClampInt( atoi( argv[++i] ), 0, 50 );
 		}
 	}
 

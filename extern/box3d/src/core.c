@@ -25,6 +25,14 @@
 #include <stdarg.h>
 #include <string.h>
 
+// Added for Nebenan: the id of the thread, see b3GetThreadToken
+#if defined( _WIN32 )
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN 1
+#endif
+#include <windows.h>
+#endif
+
 #ifdef BOX3D_PROFILE
 
 #include <tracy/TracyC.h>
@@ -471,13 +479,20 @@ uint64_t b3Hash64NonZero( const uint8_t* bytes, int n )
 	return h == 0 ? 1 : h;
 }
 
-// Added for Nebenan: every thread draws its number on first use, see b3World_SetStepGuard
-#if defined( _MSC_VER )
-static __declspec( thread ) int b3_threadToken;
-#else
-static _Thread_local int b3_threadToken;
-#endif
+// Added for Nebenan: a number of its own for every thread, see b3World_SetStepGuard. The guard asks for it in every call
+// of the API from another thread than the one that set it, so it must be cheap: on Windows the id that the system keeps
+// at hand for the thread, as MinGW emulates thread local variables with a lookup of its own in every access. Elsewhere a
+// thread draws its number on first use.
+#if defined( _WIN32 )
 
+int b3GetThreadToken( void )
+{
+	return (int)GetCurrentThreadId();
+}
+
+#else
+
+static _Thread_local int b3_threadToken;
 static b3AtomicInt b3_threadTokenCount;
 
 int b3GetThreadToken( void )
@@ -488,3 +503,5 @@ int b3GetThreadToken( void )
 	}
 	return b3_threadToken;
 }
+
+#endif

@@ -505,6 +505,11 @@ NB_API bool nbArticulation_EnableBalance( nbArticulationId articulationId, const
 /// The balance of a figure as the last update saw it. Its state is nb_balanceOff without balance.
 NB_API nbBalance nbArticulation_GetBalance( nbArticulationId articulationId );
 
+/// What the figures of a world do: how many stand, step, fall, lie and get up, how often they fell and got up, how many
+/// bones are awake and how many motors work at their limit, see nbFigureStats. It reads every joint, so once a frame,
+/// not once a figure. What the figures cost stands in the profile, see nb_profileFigures.
+NB_API nbFigureStats nbWorld_GetFigureStats( nbWorldId worldId );
+
 /// Make a figure with balance fall at once, for a hit the game wants to win, see the roadmap 26.4.
 NB_API void nbArticulation_Knockdown( nbArticulationId articulationId );
 

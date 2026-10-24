@@ -213,7 +213,10 @@ Grafik begrenzt das Zeichnen die Bildzeit.
 - **Stresstest**: 16 Wände für viele Trümmer gleichzeitig
 - **Stadt**: 20 Häuser aus verputzten Ziegelwänden mit Fenstern und Türen und Betondecken, jedes dritte mit drei
   Stockwerken. Die Wände laufen durch alle Stockwerke und sind in Zellen von etwa 1,2 m zerlegt, die auch um die
-  Hausecken laufen, die Decken bleiben ganz
+  Hausecken laufen, die Decken bleiben ganz. Unter **Figuren** stehen auf Wunsch 1, 10 oder 50 Humanoide mit Balance
+  in den Straßen und spielen den Clip aus drei Keyframes. Das Menü zeigt, wie viele stehen, fallen, liegen und
+  aufstehen, wie oft sie gestürzt und aufgestanden sind und was sie im Update kosten, **Alle umwerfen** wirft sie um,
+  und „Parallel gegen nacheinander messen“ reißt die Häuser über ihnen ab und misst sie mit
 - **Große Stadt**: 65 536 solche Häuser auf 3,6 × 3,1 km, am Stück wären das rund 24 GB. Geladen sind nur die
   Häuser im **Laderadius** um die Kamera (Standard 100 m) und die in der Nähe von allem, was sich bewegt.
   Unberührte Häuser weiter weg gehen wieder, beschädigte gehen samt Schutt in den Speicher der Demo, sobald alles an
@@ -245,7 +248,8 @@ Bildschirmen in voller Auflösung (Standard aus, kostet Füllrate). `--serial-ph
 nacheinander wie der Knopf im Menü, gibt das Ergebnis aus und beendet sich, `--compare-threads` ebenso wie „7 gegen 8
 Threads messen“. `--demolition` reißt die Stadt ab wie dabei. `--script` feuert eine vorgegebene Schussfolge ab,
 `--frames N` beendet nach N Bildern und meldet Bildzeiten, CPU-Zeiten, Uploads und Dreiecke pro Bild und einen Hash der
-Lagen aller Bruchstücke, `--screenshot datei.ppm` speichert das letzte Bild (nur OpenGL).
+Lagen aller Bruchstücke, `--screenshot datei.ppm` speichert das letzte Bild (nur OpenGL). `--figures N` stellt N Figuren
+in die Stadt, bis 50.
 
 Hinkt die Physik hinterher, lässt `nbWorld_Advance` die Zeit langsamer laufen, statt Schritte nachzuholen: Mehr als
 1/60 s Physik im selben Bild kommt nur, solange der letzte Schritt weniger als 4 ms pro 1/60 s kostete, bei 60 Hz
@@ -328,7 +332,10 @@ ihren langsamsten Worker, so verliert der Schritt Zeit, solange das Programm rec
 ab. Ruft der Thread, der den Schritt gestartet hat, danach irgendeine Funktion von Nebenan oder Box3D für die beiden
 Welten auf, wartet sie zuerst auf den Schritt. Box3D prüft dazu bei jedem Zugriff auf eine Welt, ob ein anderer Thread
 sie gerade rechnet (eine Ergänzung, siehe [`extern/README.md`](extern/README.md)). Der Schritt-Thread und die Worker
-gehen ohne Warten durch. So bleibt die Reihenfolge aller Änderungen dieselbe wie ohne eigenen Thread, und die Welt
+gehen ohne Warten durch. Woran sich ein Thread dabei erkennt, kostet fast nichts: Unter Windows ist es die Kennung, die
+das System für den Thread bereithält. Bis `ragdoll-4` lag die Nummer in einer Thread-lokalen Variable, die MinGW
+emuliert, und mit MinGW kostete das Update auf dem Schritt-Thread ein Vielfaches, beim Abriss der Stadt 7,8 statt 0,4 ms
+je Schritt. So bleibt die Reihenfolge aller Änderungen dieselbe wie ohne eigenen Thread, und die Welt
 rechnet bitgleich, das Programm muss nichts dafür bauen. Mehrere Schritte in einem Bild warten nicht aufeinander, sie
 folgen auf dem Thread hintereinander. `nbWorld_GetBodyEvents` gibt am Anfang des nächsten Bilds die letzte Lage jedes
 Körpers, der sich seitdem bewegt hat und noch da ist, `nbWorld_GetDrawPoses` die Lagen zum Zeichnen, siehe Zeichnen
@@ -912,7 +919,8 @@ Gemessen ist das etwa so schnell wie zwei eigene Pools, mit halb so vielen Threa
 Wo die Zeit der Schritte hingeht, sagt `nbWorld_GetProfile`, pro Schritt seit dem Anlegen der Welt oder seit
 `nbWorld_ResetProfile`: die Stufen des Box3D-Schritts samt der Teile, die auf dem aufrufenden Thread allein laufen, der
 Überlauf des Constraint-Graphen mit den Kontakten, die Box3D an Knoten bündelt, und wie viele dieser Bündel ein Thread
-nacheinander rechnet, die Teile des Updates, die Einschläge, Erstarren und Auftauen, die Zellen der Brüche, der Anteil
+nacheinander rechnet, die Teile des Updates mit den Figuren, ihren Clips, ihrer Balance und den Zielen ihrer Gelenke,
+die Einschläge, Erstarren und Auftauen, die Zellen der Brüche, der Anteil
 der größten Insel an der Arbeit des Lösers, wie oft ein Team aller Threads die größten Pakete von Inseln rechnet, wo
 dessen Zeit hingeht und wie sich Arbeit und Warten auf seine Stufen und Farben verteilen, wie lange ein schlafender
 Worker braucht, bis er anläuft, und ab wie viel Arbeit die Worker deshalb helfen. Ist dieselbe Arbeit mit verschieden
@@ -975,6 +983,12 @@ nbBalanceDef balance = nbDefaultBalanceDef();   // passt zum Humanoid der Biblio
 nbArticulation_EnableBalance( figure, &balance );
 nbBalance state = nbArticulation_GetBalance( figure );   // steht, tritt aus, fällt, liegt oder steht auf
 nbArticulation_Knockdown( figure );   // für einen Treffer, der gewinnen soll: die Figur fällt sofort
+
+// Was die Figuren einer Welt tun und kosten: wie viele stehen, fallen, liegen und aufstehen, Stürze und Aufstehen,
+// Motoren am Anschlag, und im Profil die Zeit ihrer Clips, ihrer Balance und ihrer Gelenkziele je Schritt
+nbFigureStats figures = nbWorld_GetFigureStats( world );   // liest jedes Gelenk, also höchstens einmal pro Bild
+nbProfile profile = nbWorld_GetProfile( world );
+float figureTime = profile.stages[nb_profileFigures];   // Teile: nb_profileFigureClips, …Balance, …Motors
 
 // Ohne Balance: wer umgeworfen ist, wird passive Ragdoll
 nbArticulation_EnableBalance( figure, NULL );
@@ -1368,6 +1382,21 @@ Seit `physik-17` steckt das in der Bibliothek: `nbWorld_Step` rechnet Schritt un
 und jedes Programm bekommt es ohne eigenen Thread, siehe Der Schritt auf einem eigenen Thread. Die Demo nutzt nur
 noch diesen Weg.
 
+**Figuren.** `nebenan_benchmark figures` stellt in die Stadt aus 16 Häusern mit doppelter Bruchstückgröße 1, 10 und 50
+Humanoide mit Balance, die einen Clip spielen und alle 6 s einen Stoß bekommen, abwechselnd einen, den sie mit
+Schritten abfangen, und einen, der sie umwirft, einmal ruhig und einmal unter einer Granate alle 1/12 s, nach Stufe 6
+aus Kapitel 27.14 der Roadmap des Spiels. Gemessen auf dem Ryzen 7 7800X3D mit MinGW und 2 Threads: In der ruhigen Stadt
+kosten 50 Figuren 0,87 ms im Box3D-Schritt, 17 µs je Figur, fast alles im Löser für ihre Gelenke und Kontakte, und
+0,07 ms im Update der Bibliothek, 1,4 µs je Figur, davon zwei Drittel die Balance, ein Fünftel die Ziele der Gelenke
+und ein Achtel die Clips. Unter Beschuss sind es im Update 1,6 µs je Figur, denn die Figuren fallen, liegen und stehen
+öfter auf. Mit 50 Figuren steigt dort das mittlere Bild von 1,5 auf 2,4 ms und das 99. Perzentil von 3,1 auf 4,3 ms,
+und je Figur kommen rund 45 KB in Nebenan und Box3D dazu. Die Tabelle mit 1 und 10 Figuren und allen Perzentilen steht
+in [docs/Roadmap.md](docs/Roadmap.md). In der Demo, mit MSVC und 8 Threads auf der RTX 4070 SUPER, kosten 50 Figuren in
+den Straßen der Stadt beim Abriss mit „Parallel gegen nacheinander messen“ 0,13 ms je Schritt im Update, 2,5 µs je
+Figur, und ein Bild kostet parallel 4,2 und nacheinander 4,6 ms, ohne Figuren 3,6 und 3,9 ms. Ganz den Figuren gehört der
+Unterschied nicht: Sie stehen den Trümmern im Weg, und mit ihnen kommt der Abriss in 4 000 Bildern mit 862 statt 711
+Granaten ein Haus weiter.
+
 **Eine Stadt größer als der Speicher.** Im Benchmark fliegt eine Kamera mit 30 m/s 900 m weit durch eine Stadt aus
 65 536 Häusern auf 3,6 × 3,1 km und 300 m zurück, Bruchstückgröße ×4. Am Stück bräuchte sie 24 GB. Geladen sind die
 Häuser bis 120 m um die Kamera, höchstens zwei neue pro Frame, und die bis 10 m um alles, was sich bewegt. Die Worker
@@ -1623,13 +1652,14 @@ Messungen in [docs/Optimierungen.md](docs/Optimierungen.md).
 ## Tests und Benchmark
 
 ```sh
-build/bin/nebenan_test            # 94 Tests: Geometrie, Voronoi, Hüllen, Öffnungen, Stöße, Stützgraph, Etagen, Lastprüfung, Schutt, Ruhe, Durchschlagen, Threads, Knoten, große Blöcke, Suchbaum, Kontaktlisten, Streaming, Stream, Laden im Hintergrund, Speichern und Zurückholen, gemeinsamer Thread-Pool, Ruhe-Prüfung auf den Workern, Schritt auf eigenem Thread, Schritte pro Bild, Takt der Physik, Wahl der Threads, Profil und Skalierung, Determinismus, Figuren: Federn mit Drehmomentgrenze, Pendel, Arm mit Motoren, passive Ragdoll, Standpose, Clip, Treffer, Wand, Determinismus mit 1 und 4 Threads, Balance: Stand, Schritte von vorn, hinten und der Seite, links und rechts gespiegelt, Schritt gegen eine Wand, Boden weg, Umwerfen und Aufstehen, Platte über der Figur, Abbruch durch Treffer und Schutt, Determinismus, Clips: Datei bitgenau, Fehler mit Zeile, Sperren, Vorschläge, Prüfung, Keypoints von COCO und MediaPipe, Spielen und Aufnehmen, Determinismus …
+build/bin/nebenan_test            # 95 Tests: Geometrie, Voronoi, Hüllen, Öffnungen, Stöße, Stützgraph, Etagen, Lastprüfung, Schutt, Ruhe, Durchschlagen, Threads, Knoten, große Blöcke, Suchbaum, Kontaktlisten, Streaming, Stream, Laden im Hintergrund, Speichern und Zurückholen, gemeinsamer Thread-Pool, Ruhe-Prüfung auf den Workern, Schritt auf eigenem Thread, Schritte pro Bild, Takt der Physik, Wahl der Threads, Profil und Skalierung, Determinismus, Figuren: Federn mit Drehmomentgrenze, Pendel, Arm mit Motoren, passive Ragdoll, Standpose, Clip, Treffer, Wand, Determinismus mit 1 und 4 Threads, Balance: Stand, Schritte von vorn, hinten und der Seite, links und rechts gespiegelt, Schritt gegen eine Wand, Boden weg, Umwerfen und Aufstehen, Platte über der Figur, Abbruch durch Treffer und Schutt, was die Figuren tun und kosten, Determinismus, Clips: Datei bitgenau, Fehler mit Zeile, Sperren, Vorschläge, Prüfung, Keypoints von COCO und MediaPipe, Spielen und Aufnehmen, Determinismus …
 build/bin/nebenan_test articulation   # nur die Tests der Figuren, eine Zehntelsekunde
 build/bin/nebenan_test balance        # nur die Tests der Balance, eine Viertelsekunde
 build/bin/nebenan_test clips          # nur die Tests der Clips
 build/bin/nebenan_benchmark 4     # Zahl = Threads für Bruch und Physik, 0 = so viele, wie ein Spiel nähme
 build/bin/nebenan_benchmark scaling   # die Städte unter Beschuss mit 1, 2, 4 … Threads und die Tabelle der Skalierung
 build/bin/nebenan_benchmark rates     # die Städte unter Beschuss mit 30, 60 und 120 Hz, was eine simulierte Sekunde kostet
+build/bin/nebenan_benchmark figures 2 # die Stadt mit 0, 1, 10 und 50 Figuren, ruhig und unter Beschuss, mit 2 Threads
 ```
 
 Unter Windows liegen die Programme in `build\bin\Release\`. Die CI baut und testet unter Windows, Linux und
@@ -1728,8 +1758,9 @@ Nach Änderungen an `demo/shaders/scene.glsl` die Shader neu erzeugen, im Ordner
   aus der Trägheit der Knochen in der Pose beim Setzen des Profils gerechnet.
 - Figuren kosten: 15 Körper, 14 Gelenke und ein Parallel-Joint je Humanoid, alle wach, solange ein Clip läuft. Die
   Balance liest je Update die Kontakte der Füße, im Schritt kommen ein Strahl, eine Überlappung und ein Schwung einer
-  Kugel dazu, beim Aufstehen die Kontakte aller Knochen. Gemessen ist das noch nicht, der Benchmark hat keine Szene mit
-  Figuren.
+  Kugel dazu, beim Aufstehen die Kontakte aller Knochen. Gemessen, siehe Leistung: rund 17 µs je Figur und Schritt in
+  Box3D und 1,2 bis 2,7 µs im Update der Bibliothek, auf dem aufrufenden Thread allein. 50 Figuren heben das mittlere
+  Bild der Stadt unter Beschuss von 1,5 auf 2,4 ms.
 - Der Keypoint-Import braucht Punkte in 3D und in Metern, wie MediaPipe sie als Weltkoordinaten liefert. Aus den
   2D-Punkten eines Bildes oder aus mehreren Ansichten rekonstruiert er nichts (32.5). Beugt sich jemand in der Hüfte,
   kippt das Becken mit, denn ohne Punkte an der Wirbelsäule richtet es sich nach Hüften und Schultern. Ein gestrecktes

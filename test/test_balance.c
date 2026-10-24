@@ -3,7 +3,7 @@
 // Balance of the humanoid, see the roadmap of the game, chapters 26.13 to 26.15 and 28.3 to 28.5: standing still, steps
 // that catch pushes from the back, the front and the side, left and right alike, a step that a wall blocks, ground that
 // falls away, a knockdown and getting up without a jump of any bone, waiting under a slab, a hit and debris that break off
-// getting up, and the same bits with any number of threads on every platform.
+// getting up, what the figures of a world do and cost, and the same bits with any number of threads on every platform.
 
 #include "test_macros.h"
 
@@ -582,6 +582,76 @@ static int BalanceAbortTest( void )
 	return 0;
 }
 
+// Chapters 27.14 and 32.8: what the figures of a world do and what they cost. One with balance plays a clip, one has
+// balance, one has none. The stats count them by state, a knockdown counts a fall, getting up that ends standing a getting
+// up, and a hit while getting up one that failed. The time of the figures in the update holds its parts.
+static int BalanceStatsTest( void )
+{
+	BalanceScene scene = CreateBalanceScene( 1 );
+	nbArticulationId playing = CreateStander( &scene, (b3Vec3){ -1.5f, 0.0f, 0.0f }, true );
+	nbArticulationId id = CreateStander( &scene, b3Vec3_zero, true );
+	CreateStander( &scene, (b3Vec3){ 1.5f, 0.0f, 0.0f }, false );
+
+	// The left arm comes up and goes down again, around and around
+	b3Quat poses[2][nb_humanoidBoneCount];
+	for ( int k = 0; k < 2; ++k )
+	{
+		for ( int i = 0; i < nb_humanoidBoneCount; ++i )
+		{
+			poses[k][i] = b3Quat_identity;
+		}
+	}
+	poses[1][nb_humanoidUpperArmLeft] = b3MakeQuatFromAxisAngle( b3Vec3_axisX, 1.0f );
+	nbKeyframe keyframes[3] = { { 0.0f, poses[0] }, { 0.5f, poses[1] }, { 1.0f, poses[0] } };
+	nbClipDef clip = { keyframes, 3, nb_humanoidBoneCount, true };
+	nbArticulation_PlayClip( playing, &clip, 1.0f );
+
+	nbWorld_ResetProfile( scene.world );
+	StepBalance( &scene, 30 );
+	nbFigureStats stats = nbWorld_GetFigureStats( scene.world );
+	printf( "three figures: %d bones, %d joints, %d awake, %d playing, %d standing, %d without balance, %d motors at the limit, "
+			"joints at most %.3f rad off\n",
+			stats.boneCount, stats.jointCount, stats.awakeBoneCount, stats.playingCount, stats.stateCounts[nb_balanceStanding],
+			stats.stateCounts[nb_balanceOff], stats.saturatedJointCount, stats.largestJointError );
+	ENSURE( stats.figureCount == 3 && stats.boneCount == 3 * nb_humanoidBoneCount );
+	ENSURE( stats.jointCount == 3 * nb_humanoidBoneCount );
+	ENSURE( stats.playingCount == 1 );
+	ENSURE( stats.stateCounts[nb_balanceStanding] == 2 && stats.stateCounts[nb_balanceOff] == 1 );
+	ENSURE( stats.fallCount == 0 && stats.getUpCount == 0 && stats.failedGetUpCount == 0 );
+	ENSURE( stats.saturatedJointCount == 0 && stats.largestJointError < 0.1f );
+
+	// The time of the figures in the update and its parts, each lap inside the one before
+	nbProfile profile = nbWorld_GetProfile( scene.world );
+	float figures = profile.stages[nb_profileFigures];
+	float clips = profile.stages[nb_profileFigureClips];
+	float balance = profile.stages[nb_profileFigureBalance];
+	float motors = profile.stages[nb_profileFigureMotors];
+	printf( "the figures take %.4f ms a step: clips %.4f, balance %.4f, motors %.4f, of an update of %.4f\n", figures, clips,
+			balance, motors, profile.stages[nb_profileUpdate] );
+	ENSURE( clips > 0.0f && balance > 0.0f && motors > 0.0f );
+	ENSURE( clips + balance + motors <= 1.001f * figures + 1.0e-5f );
+	ENSURE( figures <= 1.001f * profile.stages[nb_profileUpdate] + 1.0e-5f );
+
+	// Down, getting up, a hit that breaks it off, and getting up to the end
+	nbArticulation_Knockdown( id );
+	ENSURE( StepUntil( &scene, id, nb_balanceGettingUp, 900 ) );
+	StepBalance( &scene, 20 );
+	ENSURE( State( id ) == nb_balanceGettingUp );
+	Push( id, 7, (b3Vec3){ 0.0f, 0.0f, -15.0f } );
+	StepBalance( &scene, 1 );
+	ENSURE( State( id ) == nb_balanceFalling );
+	ENSURE( StepUntil( &scene, id, nb_balanceGettingUp, 900 ) );
+	ENSURE( StepUntil( &scene, id, nb_balanceStanding, 900 ) );
+	stats = nbWorld_GetFigureStats( scene.world );
+	nbBalance counted = nbArticulation_GetBalance( id );
+	printf( "%d falls, %d times up, %d times broken off\n", stats.fallCount, stats.getUpCount, stats.failedGetUpCount );
+	ENSURE( stats.fallCount == 2 && stats.getUpCount == 1 && stats.failedGetUpCount == 1 );
+	ENSURE( counted.fallCount == 2 && counted.getUpCount == 1 && counted.failedGetUpCount == 1 );
+
+	DestroyBalanceScene( &scene );
+	return 0;
+}
+
 static uint32_t HashStander( uint32_t hash, nbArticulationId id )
 {
 	b3WorldTransform transforms[nb_humanoidBoneCount];
@@ -656,6 +726,7 @@ int BalanceTest( void )
 	RUN_TEST( BalanceKnockdownTest );
 	RUN_TEST( BalanceSlabTest );
 	RUN_TEST( BalanceAbortTest );
+	RUN_TEST( BalanceStatsTest );
 	RUN_TEST( BalanceDeterminismTest );
 	return 0;
 }

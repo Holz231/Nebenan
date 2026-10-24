@@ -4,6 +4,7 @@
 // Usage: nebenan_benchmark [workerCount], the worker count applies to the fracture and to Box3D
 //        nebenan_benchmark scaling [rounds], the towns under fire with 1, 2, 4 and so on workers, see
 //        nbGetScalingWorkerCounts, and the scaling report of the library for each town
+//        nebenan_benchmark figures [workerCount], only the towns with 0, 1, 10 and 50 figures
 
 #include "fracture.h"
 #include "hull_builder.h"
@@ -414,20 +415,112 @@ typedef struct TownCost
 	int steps, chunks, rubble, collapsed;
 } TownCost;
 
-// A town of 16 houses wrecked by a grenade every five frames, twelve per second, like holding the fire button
-// A block of side x side houses under fire for 20 simulated seconds at stepRate steps per second: every interval
-// sixtieths of a second as many grenades, each on a wall of a random house, at the same times at every rate. The profile
-// of the library over the frames under fire goes to profile and the cost to cost if they are not null.
-static void BenchmarkTown( int workerCount, float fragmentScale, int side, int grenadesPerVolley, int interval,
-						   nbProfile* profile, int stepRate, TownCost* cost )
+// A block of side x side houses under fire for 20 simulated seconds at stepRate steps per second, see RunTown: every
+// interval sixtieths of a second as many grenades, each on a wall of a random house, at the same times at every rate,
+// and figureCount humanoids in its streets, see AddFigures
+typedef struct TownSetup
 {
-	Scene scene = CreateScene( workerCount );
-	nbWorld_SetFragmentScale( scene.world, fragmentScale );
+	int workerCount;
+	float fragmentScale;
+	int side, grenadesPerVolley, interval, stepRate, figureCount;
+} TownSetup;
+
+// What RunTown measured: the houses built, the times of every frame by s_townSeries, sorted, and their sums, what Box3D
+// spent and held per frame, the memory at most, what the figures took, and at the end the stats, the profile of the
+// library over the frames and what the figures did
+typedef struct TownRun
+{
+	int houseCount, builtChunks, frameCount, grenades, slowFrames;
+	float createTime;
+	float* times[4];
+	float totals[4];
+	float collide, solve, awakeContacts;
+	int maxBodies, maxAwake, maxContacts, maxJoints;
+	int64_t maxBytes, figureBytes;
+	nbStats stats;
+	nbProfile profile;
+	nbFigureStats figures;
+} TownRun;
+
+static const char* s_townSeries[4] = { "frame", "physics step", "update", "impacts" };
+
+// The humanoids of the towns with figures: in the streets between the rows of houses, three meters apart, with balance,
+// playing the arm clip of chapter 33.4 of the game roadmap over and over, see PushFigures
+static void AddFigures( Scene* scene, int side, int figureCount, nbArticulationId* figures )
+{
+	nbBoneDef bones[nb_humanoidBoneCount];
+	float rootHeight = nbMakeHumanoidBones( 1.8f, 75.0f, bones, nb_humanoidBoneCount );
+	nbRigDef rig = nbDefaultRigDef();
+	rig.bones = bones;
+	rig.boneCount = nb_humanoidBoneCount;
+	nbMotorProfile motors = nbDefaultMotorProfile();
+	nbBalanceDef balance = nbDefaultBalanceDef();
+
+	b3Quat poses[3][nb_humanoidBoneCount];
+	for ( int k = 0; k < 3; ++k )
+	{
+		for ( int i = 0; i < nb_humanoidBoneCount; ++i )
+		{
+			poses[k][i] = b3Quat_identity;
+		}
+	}
+	poses[1][nb_humanoidUpperArmLeft] = b3MakeQuatFromAxisAngle( b3Vec3_axisX, 1.3f );
+	poses[1][nb_humanoidForearmLeft] = b3MakeQuatFromAxisAngle( b3Vec3_axisX, 1.5f );
+	nbKeyframe keyframes[3] = { { 0.0f, poses[0] }, { 0.6f, poses[1] }, { 1.2f, poses[2] } };
+	nbClipDef clip = { keyframes, 3, nb_humanoidBoneCount, true };
+
+	// The streets run along x halfway between the rows, the first figure of each three meters in from the end of the town
+	int streets = b3MaxInt( side - 1, 1 );
+	float half = 0.5f * (float)( side - 1 );
+	for ( int k = 0; k < figureCount; ++k )
+	{
+		int street = k % streets;
+		int slot = k / streets;
+		b3Vec3 position = { -14.0f * half - 3.0f + 3.0f * (float)slot, rootHeight, 12.0f * ( (float)street - half ) + 6.0f };
+		figures[k] = nbCreateArticulation( scene->world, &rig, b3ToPos( position ), b3Quat_identity, &motors );
+		nbArticulation_EnableBalance( figures[k], &balance );
+		nbArticulation_PlayClip( figures[k], &clip, 1.0f );
+	}
+}
+
+// A figure that stands takes a push on the chest every six seconds, the figures one after the other over the first six:
+// in turn one it catches with steps and one that throws it, from the front, a side and the back, see the roadmap 26.14
+// and 26.15. A figure that does not stand waits for its next time. The pushes are the hits of a game, the grenades add
+// debris.
+static void PushFigures( const nbArticulationId* figures, int figureCount, int frame, int* pushes, uint32_t* hitCount )
+{
+	static const b3Vec3 directions[4] = {
+		{ 0.0f, 0.0f, -1.0f }, { 1.0f, 0.0f, 0.0f }, { 0.0f, 0.0f, 1.0f }, { -1.0f, 0.0f, 0.0f } };
+	for ( int f = 0; f < figureCount; ++f )
+	{
+		int offset = frame - 30 - f * 360 / figureCount;
+		if ( offset < 0 || offset % 360 != 0 || nbArticulation_GetBalance( figures[f] ).state != nb_balanceStanding )
+		{
+			continue;
+		}
+
+		b3BodyId torso = nbArticulation_GetBody( figures[f], nb_humanoidTorso );
+		nbHitDef hit = { 0 };
+		hit.id = ++*hitCount;
+		hit.bone = nb_humanoidTorso;
+		hit.impulse = b3MulSV( pushes[f] % 2 == 0 ? 60.0f : 150.0f, directions[( f + pushes[f] ) % 4] );
+		hit.point = b3Body_GetWorldPoint( torso, (b3Vec3){ 0.0f, 0.3f, 0.1f } );
+		nbArticulation_ApplyHit( figures[f], &hit );
+		pushes[f] += 1;
+	}
+}
+
+static void RunTown( const TownSetup* setup, TownRun* run )
+{
+	memset( run, 0, sizeof( TownRun ) );
+	Scene scene = CreateScene( setup->workerCount );
+	nbWorld_SetFragmentScale( scene.world, setup->fragmentScale );
 	nbMaterial concrete = nbDefaultMaterial();
 	concrete.strength = 1.1e6f;
 	concrete.fragmentSize = 0.13f;
 
 	// All houses at once: while the calling thread builds one into the world, the workers fracture the next
+	int side = setup->side;
 	int houseCount = side * side;
 	b3Vec3* houses = malloc( sizeof( b3Vec3 ) * (size_t)houseCount );
 	House* town = malloc( sizeof( House ) * (size_t)houseCount );
@@ -448,28 +541,41 @@ static void BenchmarkTown( int workerCount, float fragmentScale, int side, int g
 
 	uint64_t ticks = b3GetTicks();
 	nbCreateDestructibles( scene.world, defs, pieceLists, pieceCounts, houseCount, ids );
-	float createTime = b3GetMilliseconds( ticks );
+	run->createTime = b3GetMilliseconds( ticks );
 	free( town );
 	free( defs );
 	free( pieceLists );
 	free( pieceCounts );
 	free( ids );
-	nbStats created = nbWorld_GetStats( scene.world );
-	printf( "  town of %d houses with %d chunks built in %.2f ms, fragment scale %.1f\n", houseCount, created.chunkCount, createTime,
-			fragmentScale );
+	run->houseCount = houseCount;
+	run->builtChunks = nbWorld_GetStats( scene.world ).chunkCount;
+
+	// The figures, and what they take in Nebenan and Box3D
+	int figureCount = setup->figureCount;
+	nbArticulationId* figures = malloc( sizeof( nbArticulationId ) * (size_t)b3MaxInt( figureCount, 1 ) );
+	int* pushes = calloc( (size_t)b3MaxInt( figureCount, 1 ), sizeof( int ) );
+	int64_t bytes = nbGetByteCount() + b3GetByteCount();
+	AddFigures( &scene, side, figureCount, figures );
+	run->figureBytes = nbGetByteCount() + b3GetByteCount() - bytes;
+	uint32_t hitCount = 0;
 
 	enum
 	{
 		sixtiethCount = 1200
 	};
 
+	int stepRate = setup->stepRate;
 	int frameCount = sixtiethCount * stepRate / 60;
 	float timeStep = 1.0f / (float)stepRate;
 	int subStepCount = nbGetSubStepCount( (float)stepRate );
-	float* impactTimes = malloc( sizeof( float ) * (size_t)frameCount );
-	float* updateTimes = malloc( sizeof( float ) * (size_t)frameCount );
-	float* stepTimes = malloc( sizeof( float ) * (size_t)frameCount );
-	float* frameTimes = malloc( sizeof( float ) * (size_t)frameCount );
+	for ( int k = 0; k < 4; ++k )
+	{
+		run->times[k] = malloc( sizeof( float ) * (size_t)frameCount );
+	}
+	float* frameTimes = run->times[0];
+	float* stepTimes = run->times[1];
+	float* updateTimes = run->times[2];
+	float* impactTimes = run->times[3];
 	int sixtieth = 0;
 	nbRandom rng = nbMakeRandom( 9, 0 );
 	nbImpactDef impact = { 0 };
@@ -477,8 +583,7 @@ static void BenchmarkTown( int workerCount, float fragmentScale, int side, int g
 	impact.damage = 3.0e5f;
 	impact.ejectSpeed = 12.0f;
 	impact.explosionImpulse = 40.0f * impact.ejectSpeed;
-	int maxBodies = 0, maxAwake = 0, maxContacts = 0, grenades = 0;
-	float physicsProfile[8] = { 0 };
+	float collide = 0.0f, solve = 0.0f, awakeContacts = 0.0f;
 	nbWorld_ResetProfile( scene.world );
 
 	for ( int frame = 0; frame < frameCount; ++frame )
@@ -488,7 +593,7 @@ static void BenchmarkTown( int workerCount, float fragmentScale, int side, int g
 		int sixtiethEnd = frame * 60 / stepRate + 1;
 		for ( ; sixtieth < sixtiethEnd; ++sixtieth )
 		{
-			for ( int g = 0; g < ( sixtieth % interval == 0 ? grenadesPerVolley : 0 ); ++g )
+			for ( int g = 0; g < ( sixtieth % setup->interval == 0 ? setup->grenadesPerVolley : 0 ); ++g )
 			{
 				// A wall of a random house, on either story
 				b3Vec3 house = houses[(int)( nbRandomRange( &rng, 0.0f, (float)houseCount - 0.001f ) )];
@@ -503,9 +608,10 @@ static void BenchmarkTown( int workerCount, float fragmentScale, int side, int g
 
 				nbImpactResult result = nbWorld_ApplyImpact( scene.world, &impact );
 				impactTime += result.totalTime;
-				grenades += 1;
+				run->grenades += 1;
 			}
 		}
+		PushFigures( figures, figureCount, frame, pushes, &hitCount );
 
 		ticks = b3GetTicks();
 		b3World_Step( scene.physicsWorld, timeStep, subStepCount );
@@ -521,57 +627,165 @@ static void BenchmarkTown( int workerCount, float fragmentScale, int side, int g
 
 		b3Counters counters = b3World_GetCounters( scene.physicsWorld );
 		b3Profile profile = b3World_GetProfile( scene.physicsWorld );
-		physicsProfile[1] += profile.collide;
-		physicsProfile[2] += profile.solve;
-		physicsProfile[6] += (float)counters.awakeContactCount;
-		maxBodies = b3MaxInt( maxBodies, counters.bodyCount );
-		maxAwake = b3MaxInt( maxAwake, b3World_GetAwakeBodyCount( scene.physicsWorld ) );
-		maxContacts = b3MaxInt( maxContacts, counters.contactCount );
+		collide += profile.collide;
+		solve += profile.solve;
+		awakeContacts += (float)counters.awakeContactCount;
+		run->maxBodies = b3MaxInt( run->maxBodies, counters.bodyCount );
+		run->maxAwake = b3MaxInt( run->maxAwake, b3World_GetAwakeBodyCount( scene.physicsWorld ) );
+		run->maxContacts = b3MaxInt( run->maxContacts, counters.contactCount );
+		run->maxJoints = b3MaxInt( run->maxJoints, counters.jointCount );
+		int64_t frameBytes = nbGetByteCount() + b3GetByteCount();
+		run->maxBytes = frameBytes > run->maxBytes ? frameBytes : run->maxBytes;
 	}
 
-	int slowFrames = 0;
 	for ( int i = 0; i < frameCount; ++i )
 	{
-		slowFrames += frameTimes[i] > 1000.0f / 60.0f ? 1 : 0;
+		run->slowFrames += frameTimes[i] > 1000.0f / 60.0f ? 1 : 0;
 	}
-
-	float* series[4] = { frameTimes, stepTimes, updateTimes, impactTimes };
-	const char* names[4] = { "frame", "physics step", "update", "impacts" };
-	float totals[4] = { 0 };
 	for ( int k = 0; k < 4; ++k )
 	{
 		float total = 0.0f;
 		for ( int i = 0; i < frameCount; ++i )
 		{
-			total += series[k][i];
+			total += run->times[k][i];
 		}
-		totals[k] = total;
-		qsort( series[k], frameCount, sizeof( float ), CompareFloats );
-		printf( "  %-13s avg %6.2f ms  p95 %6.2f ms  max %6.2f ms\n", names[k], total / (float)frameCount,
-				series[k][frameCount * 95 / 100], series[k][frameCount - 1] );
+		run->totals[k] = total;
+		qsort( run->times[k], frameCount, sizeof( float ), CompareFloats );
 	}
 
-	printf( "  99 %% of the frames up to %.2f ms, %d frames over 16.7 ms\n", frameTimes[frameCount * 99 / 100], slowFrames );
-	printf( "  Box3D per step: collide %.2f ms, solve %.2f ms, %.0f awake contacts\n", physicsProfile[1] / frameCount,
-			physicsProfile[2] / frameCount, physicsProfile[6] / frameCount );
-	nbStats stats = nbWorld_GetStats( scene.world );
+	run->frameCount = frameCount;
+	run->collide = collide / frameCount;
+	run->solve = solve / frameCount;
+	run->awakeContacts = awakeContacts / frameCount;
+	run->stats = nbWorld_GetStats( scene.world );
+	run->profile = nbWorld_GetProfile( scene.world );
+	run->figures = nbWorld_GetFigureStats( scene.world );
+	free( pushes );
+	free( figures );
+	free( houses );
+	DestroyScene( &scene );
+}
+
+static void FreeTownRun( TownRun* run )
+{
+	for ( int k = 0; k < 4; ++k )
+	{
+		free( run->times[k] );
+	}
+}
+
+// A town of 16 houses wrecked by a grenade every five frames, twelve per second, like holding the fire button
+// A block of side x side houses under fire, see TownSetup. The profile of the library over the frames under fire goes to
+// profile and the cost to cost if they are not null.
+static void BenchmarkTown( int workerCount, float fragmentScale, int side, int grenadesPerVolley, int interval,
+						   nbProfile* profile, int stepRate, TownCost* cost )
+{
+	TownSetup setup = { workerCount, fragmentScale, side, grenadesPerVolley, interval, stepRate, 0 };
+	TownRun run;
+	RunTown( &setup, &run );
+	printf( "  town of %d houses with %d chunks built in %.2f ms, fragment scale %.1f\n", run.houseCount, run.builtChunks,
+			run.createTime, fragmentScale );
+
+	int n = run.frameCount;
+	for ( int k = 0; k < 4; ++k )
+	{
+		printf( "  %-13s avg %6.2f ms  p95 %6.2f ms  max %6.2f ms\n", s_townSeries[k], run.totals[k] / (float)n,
+				run.times[k][n * 95 / 100], run.times[k][n - 1] );
+	}
+	printf( "  99 %% of the frames up to %.2f ms, %d frames over 16.7 ms\n", run.times[0][n * 99 / 100], run.slowFrames );
+	printf( "  Box3D per step: collide %.2f ms, solve %.2f ms, %.0f awake contacts\n", run.collide, run.solve,
+			run.awakeContacts );
 	printf( "  %d grenades, %d storeys collapsed, chunks %d, rubble %d, bodies at most %d (awake %d), contacts at most %d\n",
-			grenades, stats.collapsedStoreyCount, stats.chunkCount, stats.rubbleCount, maxBodies, maxAwake, maxContacts );
+			run.grenades, run.stats.collapsedStoreyCount, run.stats.chunkCount, run.stats.rubbleCount, run.maxBodies,
+			run.maxAwake, run.maxContacts );
 	if ( profile != NULL )
 	{
-		*profile = nbWorld_GetProfile( scene.world );
+		*profile = run.profile;
 	}
 	if ( cost != NULL )
 	{
-		*cost = (TownCost){ totals[1], totals[2], totals[3], frameCount, stats.chunkCount, stats.rubbleCount,
-							stats.collapsedStoreyCount };
+		*cost = (TownCost){ run.totals[1],
+							run.totals[2],
+							run.totals[3],
+							n,
+							run.stats.chunkCount,
+							run.stats.rubbleCount,
+							run.stats.collapsedStoreyCount };
 	}
-	free( impactTimes );
-	free( updateTimes );
-	free( stepTimes );
-	free( frameTimes );
-	free( houses );
-	DestroyScene( &scene );
+	FreeTownRun( &run );
+}
+
+// Stage 6 of 27.14 of the game roadmap: 1, 10 and 50 figures in the town of 16 houses at fragment scale 2 against the
+// town without figures, quiet and under a grenade every 1/12 s, see AddFigures and PushFigures. Where the time goes,
+// what the figures hold in Box3D and in memory, and what they did.
+static void BenchmarkFigures( int workerCount )
+{
+	enum
+	{
+		runCount = 4
+	};
+
+	const int counts[runCount] = { 0, 1, 10, 50 };
+	for ( int fire = 0; fire < 2; ++fire )
+	{
+		printf( fire == 0
+					? "\nFigures in the quiet town (16 houses, fragment scale 2, figures with balance playing a clip, a push "
+					  "every 6 s)\n"
+					: "\nFigures in the town under fire (the same with a grenade every 1/12 s)\n" );
+		TownRun runs[runCount];
+		for ( int r = 0; r < runCount; ++r )
+		{
+			TownSetup setup = { workerCount, 2.0f, 4, fire, 5, 60, counts[r] };
+			RunTown( &setup, runs + r );
+		}
+
+		printf( "  figures | frame ms  p50     p95     p99   p99.9     max |   step  update impacts | per step ms: figures  "
+				"clips balance motors\n" );
+		for ( int r = 0; r < runCount; ++r )
+		{
+			const TownRun* run = runs + r;
+			const float* frames = run->times[0];
+			int n = run->frameCount;
+			const float* stages = run->profile.stages;
+			printf( "  %7d |      %7.3f %7.3f %7.3f %7.3f %7.3f | %6.3f %7.3f %7.3f |              %7.4f %6.4f %7.4f %6.4f\n",
+					counts[r], frames[n / 2], frames[n * 95 / 100], frames[n * 99 / 100], frames[n * 999 / 1000], frames[n - 1],
+					run->totals[1] / (float)n, run->totals[2] / (float)n, run->totals[3] / (float)n, stages[nb_profileFigures],
+					stages[nb_profileFigureClips], stages[nb_profileFigureBalance], stages[nb_profileFigureMotors] );
+		}
+
+		printf( "  figures | a figure per step us: total  clips balance motors | Box3D ms: collide  solve | at most: bodies "
+				"joints contacts | MB, KB a figure\n" );
+		for ( int r = 0; r < runCount; ++r )
+		{
+			const TownRun* run = runs + r;
+			const float* stages = run->profile.stages;
+			float scale = counts[r] > 0 ? 1000.0f / (float)counts[r] : 0.0f;
+			printf( "  %7d |                        %6.2f %6.2f %7.2f %6.2f |          %7.3f %6.3f |        %6d %6d %8d | %3.0f, "
+					"%.0f\n",
+					counts[r], scale * stages[nb_profileFigures], scale * stages[nb_profileFigureClips],
+					scale * stages[nb_profileFigureBalance], scale * stages[nb_profileFigureMotors], run->collide, run->solve,
+					run->maxBodies, run->maxJoints, run->maxContacts, (double)run->maxBytes / 1048576.0,
+					counts[r] > 0 ? (double)run->figureBytes / 1024.0 / counts[r] : 0.0 );
+		}
+
+		printf( "  figures | at the end: standing stepping falling down getting up | falls got up failed | motors at the "
+				"limit | chunks rubble storeys\n" );
+		for ( int r = 0; r < runCount; ++r )
+		{
+			const TownRun* run = runs + r;
+			const nbFigureStats* f = &run->figures;
+			printf( "  %7d |             %8d %8d %7d %4d %10d | %5d %6d %6d | %19d | %6d %6d %7d\n", counts[r],
+					f->stateCounts[nb_balanceStanding], f->stateCounts[nb_balanceStepping], f->stateCounts[nb_balanceFalling],
+					f->stateCounts[nb_balanceDown], f->stateCounts[nb_balanceGettingUp], f->fallCount, f->getUpCount,
+					f->failedGetUpCount, f->saturatedJointCount, run->stats.chunkCount, run->stats.rubbleCount,
+					run->stats.collapsedStoreyCount );
+		}
+
+		for ( int r = 0; r < runCount; ++r )
+		{
+			FreeTownRun( runs + r );
+		}
+	}
 }
 
 // The towns of the scaling and the step rates: 16 houses with a grenade every 1/12 s at fragment scale 1 and 2, and 64
@@ -925,6 +1139,13 @@ int main( int argc, char** argv )
 		return 0;
 	}
 
+	if ( argc > 1 && strcmp( argv[1], "figures" ) == 0 )
+	{
+		int workers = argc > 2 ? atoi( argv[2] ) : 1;
+		BenchmarkFigures( workers == 0 ? nbGetRecommendedWorkerCount( false ) : ( workers < 1 ? 1 : workers ) );
+		return 0;
+	}
+
 	// Zero takes as many as a game would on this machine, see nbGetRecommendedWorkerCount
 	int workerCount = argc > 1 ? atoi( argv[1] ) : 1;
 	workerCount = workerCount == 0 ? nbGetRecommendedWorkerCount( false ) : ( workerCount < 1 ? 1 : workerCount );
@@ -953,5 +1174,8 @@ int main( int argc, char** argv )
 
 	printf( "\nCity streamed around a camera flying through it, fragment scale 4.0 (streaming, grenades, Box3D step, update)\n" );
 	BenchmarkCity( workerCount );
+
+	// Stage 6 of 27.14 of the game roadmap: figures in a town that is quiet and one under fire
+	BenchmarkFigures( workerCount );
 	return 0;
 }

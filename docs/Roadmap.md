@@ -19,9 +19,14 @@ beide auf dem Ryzen nachgemessen, und den großen Paketen im Team auf `kollaps-9
 Begründungen und Messwerte stehen in [`Optimierungen.md`](Optimierungen.md), hier nur das Fazit und die Reihenfolge.
 Nach jeder Runde wird der Stand hier nachgetragen.
 
-`ragdoll-1` bis `ragdoll-3` sind wie `kollaps-1` keine Runden der Physik: Sie bauen die Figuren auf Box3D nach Kapitel
-26 bis 28 und 31 bis 33 der Roadmap des Spiels, siehe „Figuren auf Box3D“, „Balance“ und „Clips und Keyframe-Editor“
-unten. `ragdoll-3` ändert an der Physik ebenfalls nichts, Clips und Aufnahmen laufen nur für Figuren, die sie spielen:
+`ragdoll-1` bis `ragdoll-4` sind wie `kollaps-1` keine Runden der Physik: Sie bauen die Figuren auf Box3D nach Kapitel
+26 bis 28 und 31 bis 33 der Roadmap des Spiels, siehe „Figuren auf Box3D“, „Balance“, „Clips und Keyframe-Editor“ und
+„Kosten der Figuren“ unten. `ragdoll-4` misst, was Figuren kosten, und ändert an der Physik nichts: Gepaart gegen
+`ragdoll-3` auf dem 7800X3D, je zwei Läufe im Wechsel mit 2 Threads, enden alle Szenen des Benchmarks mit denselben
+Zahlen, und ein Frame kostet −1,6 bis −0,3 %, bei einer Streuung von Lauf zu Lauf bis 5 %. Beim Messen fiel auf, dass
+im Build mit MinGW die Physik auf ihrem eigenen Thread das Update um ein Vielfaches langsamer machte, siehe
+„Thread-Nummer ohne Thread-lokale Variable unter Windows“ in [`Optimierungen.md`](Optimierungen.md). `ragdoll-3` ändert
+an der Physik ebenfalls nichts, Clips und Aufnahmen laufen nur für Figuren, die sie spielen:
 Gepaart gegen `ragdoll-2` auf dem 7800X3D, je zwei Läufe im Wechsel mit 2 Threads, enden alle Szenen des Benchmarks mit
 denselben Zahlen an Bruchstücken, Schutt, Körpern und Kontakten, und ein Frame kostet −0,5 bis 0 %, bei einer Streuung
 von Lauf zu Lauf bis 3 %. Nur der Höchststand des Speichers in der gestreamten Stadt, je Bild abgelesen, während im
@@ -111,7 +116,7 @@ schwankte die Dehnung zwischen 19 und 61 mm, ohne Richtung.
 | F7 | **Determinismus**: zwei Figuren mit Clip und Treffer mit 1 und 4 Threads bitgleich | ✅ Test |
 | F8 | **Balance und Stützschritt** (33.4 Schritt 5, 27.9, 28.3): Schwerpunkt, Stützpolygon, Schrittziel, Knockdown und Recovery mit Übergabe an die Steuerung ohne Sprung (28.4) | ✅ auf `ragdoll-2`, siehe „Balance“ unten |
 | F9 | **Gelenkdehnung beim Aufprall**: 4 bis 6 cm für wenige Schritte. Bitgleich zu beheben nur mit mehr Teilschritten für die Welt oder einer Projektion der Gelenke nach dem Schritt in Box3D; vorher messen, was ein Spiel davon sieht | 🔜 |
-| F10 | **Kosten messen** (27.14): eine Stufe des Profils für die Figuren, Szenen mit 1, 10 und 50 Figuren im Benchmark und in der Demo, p50 bis p99 wie bei den Trümmern | 🔜 |
+| F10 | **Kosten messen** (27.14): eine Stufe des Profils für die Figuren, Szenen mit 1, 10 und 50 Figuren im Benchmark und in der Demo, p50 bis p99 wie bei den Trümmern | ✅ auf `ragdoll-4`, siehe „Kosten der Figuren“ unten |
 | F11 | **Keyframe-Format und Video-Editor** (32.5, 32.6, 33.4 Schritt 6): erst nach F8 | ✅ auf `ragdoll-3`, siehe „Clips und Keyframe-Editor“ unten |
 
 ## Balance (`ragdoll-2`)
@@ -136,7 +141,7 @@ Balance, der Capture Point und das Ziel eines Schritts liegen als Marker auf dem
 | B11 | **Determinismus**: 1 und 4 Threads bitgleich, der Hash für alle Plattformen festgehalten, nur Rechenarten mit gleichen Bits überall | ✅ Test |
 | B12 | **Aufstehclips** statt der Kraft an der Brust (26.15, 33.4 Schritt 6), Kriechen und Rollen, wenn kein Platz ist | 🔜 der Editor dafür steht seit `ragdoll-3`, die Clips fehlen |
 | B13 | **Schrägen und Stufen**: Füße auf die Neigung des Bodens drehen, Stufen testen | 🔜 |
-| B14 | **Kosten** der Balance je Figur messen, mit F10 | 🔜 |
+| B14 | **Kosten** der Balance je Figur messen, mit F10 | ✅ auf `ragdoll-4`: 0,8 bis 0,9 µs je Figur und Schritt in der ruhigen Stadt, 1,1 bis 2,0 µs unter Beschuss |
 
 Fünf Dinge hat die Abstimmung gezeigt. Erstens schwingt der Fuß, den die IK vom aufrechten Becken aus führt, am Ziel
 vorbei, sobald ein Stoß das Becken kippt, und vom Becken aus, wie es ist, schaukelt sich der Schwung über das Rollen des
@@ -202,6 +207,69 @@ Verworfen, mit Grund:
   schreibt, siehe oben.
 - **Ein Teil der Korrektur per NLerp** für die Nachbarn: NLerp gibt nicht den Teil des Winkels, den das Gewicht verlangt,
   je größer die Korrektur, desto weniger. Die Bibliothek nimmt den Teil des Winkels um dieselbe Achse.
+
+## Kosten der Figuren (`ragdoll-4`)
+
+Gebaut und gemessen am 24. Oktober 2026 nach Kapitel 27.14, Stufe 6 der Messmatrix, und 32.8 der Roadmap des Spiels.
+Das Profil der Bibliothek hat eine Stufe für die Figuren im Update mit ihren Teilen: Clips samt Aufnahmen, Balance und
+die Ziele der Gelenke (`nb_profileFigures`). `nbWorld_GetFigureStats` sagt, was die Figuren einer Welt tun: wie viele
+stehen, austreten, fallen, liegen und aufstehen, wie oft sie gestürzt und aufgestanden sind, wie oft Aufstehen abbrach,
+wie viele Knochen wach sind und wie viele Motoren an ihrer Grenze arbeiten. Der Benchmark hat die Stadt aus 16 Häusern
+mit doppelter Bruchstückgröße mit 0, 1, 10 und 50 Figuren in den Straßen, ruhig und unter einer Granate alle 1/12 s
+(`nebenan_benchmark figures`). Die Figuren haben Balance und spielen einen Clip, und jede, die steht, bekommt alle 6 s
+einen Stoß, abwechselnd einen, den sie mit Schritten abfängt, und einen, der sie umwirft. In der Demo stehen in der Stadt
+auf Wunsch 1, 10 oder 50 Figuren, das Menü zeigt, was sie tun und kosten, und „Parallel gegen nacheinander messen“ misst
+sie mit. Die Abnahme steht in `test/test_balance.c`.
+
+Gemessen auf dem Ryzen 7 7800X3D mit MinGW und 2 Threads, Mittel aus zwei Läufen, Zeiten in ms pro Schritt von 1/60 s,
+die Figuren im Update in µs je Figur:
+
+| Stadt | Figuren | Bild p50 | p95 | p99 | p99,9 | Max | Box3D | Update | Figuren je Figur |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| ruhig | 1 | 0,03 | 0,03 | 0,04 | 0,06 | 0,11 | 0,03 | 0,002 | 1,3 µs |
+| ruhig | 10 | 0,24 | 0,26 | 0,28 | 0,32 | 0,34 | 0,21 | 0,013 | 1,2 µs |
+| ruhig | 50 | 0,96 | 1,05 | 1,07 | 1,14 | 1,17 | 0,87 | 0,073 | 1,4 µs |
+| unter Beschuss | 0 | 1,49 | 2,49 | 3,12 | 3,66 | 6,01 | 1,35 | 0,129 | – |
+| unter Beschuss | 1 | 1,45 | 2,70 | 3,45 | 4,31 | 4,93 | 1,38 | 0,130 | 2,7 µs |
+| unter Beschuss | 10 | 1,67 | 2,79 | 3,32 | 4,75 | 6,31 | 1,51 | 0,149 | 1,8 µs |
+| unter Beschuss | 50 | 2,44 | 3,59 | 4,26 | 6,44 | 6,58 | 2,22 | 0,214 | 1,6 µs |
+
+Die Figuren kosten vor allem in Box3D. In der ruhigen Stadt brauchen 50 Figuren 0,87 ms im Schritt, 17 µs je Figur, fast
+alles im Löser, für 750 Gelenke mit der Hilfe, die das Becken aufrecht hält, und rund 850 Kontakte. Im Update der
+Bibliothek kosten sie 1,2 bis 1,4 µs je Figur, davon rund zwei Drittel die Balance, ein Fünftel die Ziele der Gelenke
+und ein Achtel die Clips. Unter Beschuss sind es 1,6 bis 2,7 µs, denn öfter fallen, liegen und stehen Figuren auf, und
+die Balance liest dann die Kontakte aller Knochen und prüft den Platz zum Aufstehen. Mit 50 Figuren steigt das mittlere
+Bild unter Beschuss von 1,5 auf 2,4 ms und das 99. Perzentil von 3,1 auf 4,3 ms. Mit 1 und 10 Figuren gehört nur ein
+Teil des Unterschieds zu ihnen: Sie stehen den Trümmern im Weg, und die Zerstörung verläuft anders, am Ende liegen
+0,8 bis 1,9 % mehr Bruchstücke. Je Figur kommen rund 45 KB in Nebenan und Box3D dazu. Was die Figuren tun, ist von Lauf zu
+Lauf bitgleich: In der ruhigen Stadt stürzen die 50 in den 20 s 58-mal, stehen 29-mal wieder auf, und zweimal bricht
+Aufstehen ab, unter Beschuss sind es 60, 28 und 6, die Trümmer brechen das Aufstehen öfter ab. Zwischen zwei Sitzungen
+schwankte der Schritt der ruhigen Stadt mit 50 Figuren um ein Drittel, zwischen den beiden gepaarten Läufen um 0,1 %.
+
+In der Demo, mit MSVC und 8 Threads auf der RTX 4070 SUPER, gemessen mit „Parallel gegen nacheinander messen“ beim Abriss
+der Stadt mit 50 Figuren in den Straßen: Die Figuren kosten im Update 0,13 ms je Schritt, 2,5 µs je Figur, davon 0,075 ms
+die Balance, 0,038 ms die Ziele der Gelenke und 0,013 ms die Clips. Ein Bild kostet parallel 4,2 und nacheinander 4,6 ms,
+parallel ist 8,6 % schneller, ohne Figuren sind es 3,6 und 3,9 ms und 5,9 %. Ganz den Figuren gehört der Unterschied nicht,
+mit ihnen kommt der Abriss in 4 000 Bildern mit 862 statt 711 Granaten ein Haus weiter. Am Ende stehen 22 der 50, 25
+liegen, 30-mal sind sie gestürzt. In einer ersten Messung mit Figuren kostete ein paralleler Lauf 10,5 ms pro Bild bei
+derselben Zeit der Simulation, die Zeit ging also außerhalb der Physik verloren, und die Wiederholung lief glatt.
+
+Beim Messen in der Demo fiel auf, dass im Build mit MinGW mit der Physik auf ihrem eigenen Thread das Update um ein
+Vielfaches langsamer war, auch ohne Figuren: beim Abriss der Stadt 7,8 statt 0,37 ms je Schritt, 50 Figuren 2,27 statt
+0,07 ms. Jeder Zugriff aus dem Schritt-Thread fragte nach der Nummer des eigenen Threads, und die liegt bei MinGW in einer
+emulierten Thread-lokalen Variable. Unter Windows nimmt die Nummer jetzt die Kennung des Threads, siehe
+„Thread-Nummer ohne Thread-lokale Variable unter Windows“ in [`Optimierungen.md`](Optimierungen.md). Mit MSVC, wie
+`build.bat` und die CI bauen, war es nie so.
+
+| Nr. | Schritt | Stand |
+| ---: | --- | --- |
+| C1 | **Profil**: eine Stufe für die Figuren im Update, mit Clips, Balance und Zielen der Gelenke, je Figur gemessen, ohne die Reihenfolge der Figuren zu ändern | ✅ |
+| C2 | **Was die Figuren tun** (32.8): Zustände der Balance, Stürze, Aufstehen und Abbrüche, wache Knochen, Motoren an der Grenze, Gelenke | ✅ Test: drei Figuren gezählt, ein Sturz, ein Abbruch durch einen Treffer und ein Aufstehen |
+| C3 | **Benchmark** (27.14 Stufe 6): die Stadt mit 0, 1, 10 und 50 Figuren, ruhig und unter Beschuss, p50 bis p99,9, Box3D, Speicher | ✅ |
+| C4 | **Demo**: die Stadt mit 1, 10 oder 50 Figuren, im Menü und im Bericht der Messung | ✅ |
+| C5 | **Thread-Nummer unter Windows** ohne Thread-lokale Variable, für MinGW | ✅ |
+| C6 | **Kontakte der Figuren** (27.13 A): 17 Kontaktpaare je stehender Figur, welche davon zwischen ihren eigenen Knochen liegen und ob ein Filter für ungeeignete Paare den Löser entlastet | 🔜 |
+| C7 | **Aktivierungsbudget und LOD** (27.13 B): ferne Figuren ohne Balance oder ruhend, wenn Box3D zu viel kostet | 🔜 erst bei Bedarf |
 
 ## Fazit
 

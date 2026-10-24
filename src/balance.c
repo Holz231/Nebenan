@@ -762,6 +762,17 @@ static void nbUseProfile( nbArticulation* a, nbBalancer* b, bool user )
 
 static void nbEnter( nbArticulation* a, nbBalancer* b, nbBalanceState state )
 {
+	// What the figure went through, see nbBalance::fallCount
+	if ( state == nb_balanceFalling )
+	{
+		b->info.fallCount += 1;
+		b->info.failedGetUpCount += b->info.state == nb_balanceGettingUp ? 1 : 0;
+	}
+	else if ( state == nb_balanceStanding && b->info.state == nb_balanceGettingUp )
+	{
+		b->info.getUpCount += 1;
+	}
+
 	b->info.state = state;
 	b->info.stateTime = 0.0f;
 	switch ( state )
@@ -1500,7 +1511,7 @@ static void nbRamp( nbArticulation* a, nbBalancer* b, float timeStep )
 	}
 }
 
-void nbUpdateBalance( nbWorld* world, int index, nbArticulation* a, float timeStep )
+const b3Quat* nbUpdateBalance( nbWorld* world, int index, nbArticulation* a, float timeStep )
 {
 	nbBalancer* b = a->balancer;
 	b3Vec3 gravity = b3World_GetGravity( world->physicsWorld );
@@ -1519,7 +1530,7 @@ void nbUpdateBalance( nbWorld* world, int index, nbArticulation* a, float timeSt
 	nbRamp( a, b, timeStep );
 	nbPoseKind kind = nbPose( a, b );
 	nbBlend( b, kind, timeStep );
-	nbSetTargets( a, b->pose );
+	return b->pose;
 }
 
 //----------------------------------------------------------------------------------------------------------------------
@@ -1590,6 +1601,9 @@ void nbBalancePlaced( nbArticulation* articulation )
 	b->blendTime = 0.0f;
 	b->blendDuration = 0.0f;
 	b->liftScale = 0.0f;
+
+	// The program put it there, it did not get up on its own
+	b->info.state = nb_balanceOff;
 	nbEnter( articulation, b, nb_balanceStanding );
 }
 
@@ -1752,6 +1766,11 @@ bool nbArticulation_EnableBalance( nbArticulationId id, const nbBalanceDef* def 
 nbBalanceState nbBalanceStateOf( const nbArticulation* a )
 {
 	return a->balancer != NULL ? a->balancer->info.state : nb_balanceOff;
+}
+
+const nbBalance* nbBalanceInfoOf( const nbArticulation* a )
+{
+	return a->balancer != NULL ? &a->balancer->info : NULL;
 }
 
 nbBalance nbArticulation_GetBalance( nbArticulationId id )
