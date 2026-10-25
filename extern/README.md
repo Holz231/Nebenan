@@ -213,9 +213,10 @@ in jedem Teilschritt die Geschwindigkeiten integrieren, Warmstart, Lösen und En
 Lagen integrieren, am Ende der Rückprall und das Zurückschreiben der Stöße. Nach jeder Stufe warteten alle Threads, bis
 die letzte fertig war, bei ×2 mit 23 Farben über 300-mal pro Schritt. Zwei Inseln teilen sich aber nie einen beweglichen
 Körper. Jetzt verteilt der Löser die wachen Inseln auf vier Pakete pro Worker mit etwa gleich viel Arbeit, gewichtet mit
-viermal ihren Kontakten und einmal ihren Körpern, die größten Inseln zuerst, jede auf das Paket mit der wenigsten Arbeit
-(`b3BuildPacks` in `src/solver.c`). Die Worker und der aufrufende Thread nehmen sich ganze Pakete, die größten zuerst,
-und rechnen jedes allein, vom Vorbereiten seiner Bedingungen über alle Teilschritte und den Rückprall bis zum
+viermal ihren Kontakten und einmal ihren Körpern, seit „Gelenke in den Paketen“ dazu achtmal ihren Gelenken, die größten
+Inseln zuerst, jede auf das Paket mit der wenigsten Arbeit (`b3BuildPacks` in `src/solver.c`). Die Worker und der
+aufrufende Thread nehmen sich ganze Pakete, die größten zuerst, und rechnen jedes allein, vom Vorbereiten seiner
+Bedingungen über alle Teilschritte und den Rückprall bis zum
 Zurückschreiben der Stöße, ohne eine einzige Sperre (`b3SolvePacks`). Dafür gehen die konvexen Kontakte jeder Farbe
 Paket für Paket, jedes Paket mit leeren Spuren zu ganzen breiten Bedingungen aufgefüllt, damit keine breite Bedingung
 zwei Pakete mischt (`b3OrderPackContacts`, eine leere Spur hat die Nummer `B3_NULL_INDEX`, siehe `b3PrepareContactWide`
@@ -226,11 +227,9 @@ Overflow-Kontakte gehen ebenso Paket für Paket, und die Körper jedes Pakets st
 anläuft. Jeder Körper durchläuft seine Schritte in derselben Reihenfolge wie mit Sperren. Den Rückprall rechnet ein
 Paket, sobald einer seiner Kontakte welchen hat. Rechnet es ihn nur, weil ein anderes Paket das Zeichen dafür gesetzt
 hat, ändert das nichts, weil Box3D Kontakte ohne Rückprall überspringt. Mit Sperren wie bisher rechnet der Löser, wenn
-nur ein Thread rechnet, ein Gelenk oder ein Kontakt mit einem Netz in den Farben liegt, Box3D den Rückprall fortpflanzt
-oder eine Insel mehr als die Hälfte der Arbeit hält und die Worker für ein Team zu wenige sind, siehe „Ein Team für das
-größte Paket“. Ein einziges waches Gelenk, irgendwo in der Welt, nimmt so allen Inseln die Pakete: In der Stadt des
-Benchmarks unter Beschuss kostet ein Pendel weit weg den Schritt mit 2 Threads 25 % mehr und mit 8 Threads 19 %, siehe
-„Wohin der Löser bei Figuren rechnet“ in [`docs/Roadmap.md`](../docs/Roadmap.md).
+nur ein Thread rechnet, ein Kontakt mit einem Netz in den Farben liegt, Box3D den Rückprall fortpflanzt oder eine Insel
+mehr als die Hälfte der Arbeit hält und die Worker für ein Team zu wenige sind, siehe „Ein Team für das größte Paket“.
+Bis `ragdoll-6` tat er das auch, sobald irgendwo in der Welt ein Gelenk wach war, siehe „Gelenke in den Paketen“.
 
 **Sperren, solange andere Programme die Kerne belegen.** Verliert ein Thread mitten in einem Paket seinen Kern an ein
 anderes Programm, warten am Ende alle auf dieses Paket, während mit Sperren die anderen die Blöcke übernehmen, die er
@@ -499,10 +498,10 @@ läuft.
 die Kontakte und das Integrieren der Körper brauchen, über alle Threads zusammen und ohne das Warten an den Sperren
 (`b3Profile::solverJoints`, `solverContacts` und `solverBodies`, `B3_SOLVER_SAMPLE` in `src/solver.c`). Mit Sperren liest
 er die Uhr an jedem Block (`b3ExecuteBlock`) und an den Overflow-Bedingungen des aufrufenden Threads. Ein Paket misst er
-im Ganzen und darin nur die Körper apart, denn es hat keine Gelenke und so viele kleine Blöcke, dass die Uhr an jedem
-die Messung verfälschte (`b3SolvePack`). `b3Counters::solverSample` sagt, ob der letzte Schritt gemessen
-hat, die übrigen lesen keine Uhr dafür. Die neuen Felder stehen wieder am Ende von `b3World`, `b3StepContext` und
-`b3TaskContext`.
+im Ganzen und darin die Körper und, seit „Gelenke in den Paketen“, die Gelenke apart, denn es hat so viele kleine Blöcke
+von Kontakten, dass die Uhr an jedem die Messung verfälschte (`b3SolvePack`). `b3Counters::solverSample` sagt, ob der
+letzte Schritt gemessen hat, die übrigen lesen keine Uhr dafür. Die neuen Felder stehen wieder am Ende von `b3World`,
+`b3StepContext` und `b3TaskContext`.
 
 **Große Pakete im Team.** Das Team aus „Ein Team für das größte Paket“ rechnete nur das erste Paket. Hielt eine zweite
 Insel ebenfalls mehr als den Anteil eines Threads, rechnete ein Worker ihr Paket allein, und am Ende wartete das Team
@@ -532,9 +531,44 @@ Definitionen der Gelenke, deshalb Version 7 statt 6, und die beiden Setter als O
 Schritt, der Bereich der Gelenke war voll. Nebenans Figuren halten damit ihre Pose und geben allem nach, was stärker ist,
 siehe Figuren im README.
 
+**Gelenke in den Paketen.** Box3D rechnete Gelenke nur nach Farben mit einer Sperre je Stufe, und ein einziges waches
+Gelenk, irgendwo in der Welt, nahm allen Inseln die Pakete aus „Ganze Inseln pro Thread“: In der Stadt des Benchmarks
+unter Beschuss kostete ein Pendel weit weg den Schritt mit 8 Threads 19 % mehr, siehe „Gelenke in den Paketen“ in
+[`docs/Roadmap.md`](../docs/Roadmap.md). Jetzt rechnet ein Paket auch die Gelenke seiner Inseln, und mit 8 Threads
+kostet das Pendel nichts mehr. Jedes wache Gelenk gehört zur Insel seiner Körper (`b3LinkJoint` in `src/island.c`), auch
+ein kinematischer Körper gehört zu einer Insel, und Box3D schreibt nur in dynamische Körper. Die Aufgabe der Einrichtung
+legt die Gelenke jeder Farbe und des Überlaufs Paket für Paket in eine Liste ihrer Nummern in der Farbe, in ihrer
+Reihenfolge (`b3OrderPackJoints` in `src/solver.c`, `b3StepContext::packJoints` in `src/solver.h`). Ein Paket bereitet
+seine Gelenke mit seinen Kontakten vor und rechnet in jeder Stufe zuerst seine Gelenke im Überlauf, dann seine Knoten
+und Kontakte im Überlauf und dann Farbe für Farbe seine Gelenke und Kontakte (`b3ExecutePackConstraints`), wie die
+Stufen mit Sperre, in denen der aufrufende Thread die Gelenke im Überlauf vor den Knoten rechnet. Eine Farbe hält keinen
+bewegten Körper zweimal, so ist es gleich, ob in ihr die Gelenke oder die Kontakte zuerst gehen. Jeder Körper durchläuft
+seine Schritte wie mit Sperren, und die Ergebnisse bleiben bitgleich, auch die Ereignisse der Gelenke: Wie in den Stufen
+melden nur die Gelenke der Farben, wenn sie fest ziehen, die im Überlauf nicht. Mit Team halten die Stufen nur die
+Gelenke seiner Pakete, in Blöcken über deren Bereich jeder Farbe (`b3_packJointBlock`), und der aufrufende Thread
+rechnet nur deren Gelenke im Überlauf (`b3ExecuteOverflowJoints`), die übrigen Pakete rechnen ihre eigenen. Ein Paket
+ohne Gelenke überspringt sie in allen Stufen, wie die meisten Pakete einer zerstörbaren Welt. In den Paketen misst der
+Löser die Gelenke apart, einmal je Farbe, in der ein Paket Gelenke hat (`b3ExecutePackJoints`). `b3Counters::packCount`
+sagt, wie viele Pakete der letzte Schritt rechnete, null, wenn er nach Farben mit Sperren rechnete.
+
+Beim Verteilen auf die Pakete wiegt ein Gelenk so viel wie acht Körper (`B3_PACK_JOINT_WORK`), denn Box3D rechnet
+Gelenke einzeln und die Kontakte breit. Die Arbeit einer Insel ohne die Gelenke bleibt, wie sie war (`b3GetIslandWork`,
+`b3Counters::islandWork` und `teamWork`): Nach ihr gehen die Knoten großer Inseln in Gruppen mit Kopien, siehe „Knoten
+in Gruppen“, und das ändert die Rechnung. Mit den Gelenken in dieser Arbeit endete die Stadt des Benchmarks unter
+Beschuss mit 10 und 50 Figuren anders, schon mit einem Thread.
+
+Der Stapel, aus dem ein Schritt seine Daten nimmt, hielt höchstens 32 Einträge (`B3_MAX_STACK_ENTRIES` in
+`src/arena_allocator.h`). Mit Paketen, Knoten und Team hielt der Löser bis zu 24, und die Teilung einer Insel nimmt auf
+einem Worker neben ihm 8 dazu, das waren genau 32. Mit zwei eigenen Einträgen für die Listen der Gelenke ging es
+darüber, und die Teilung stürzte ab. Jetzt liegen die Listen im selben Block wie die Anfänge der breiten Bedingungen der
+Pakete, und der Stapel hat 64 Einträge. Die Felder von `b3World` hinter dem Stapel rücken dadurch um 768 Bytes, zwölf
+ganze Cache-Zeilen, und liegen zueinander wie vorher. Gemessen kostet das nichts: Mit 8 Threads rechnet die Stadt unter
+Beschuss ohne Gelenk mit 64 Einträgen wie mit 32 und wie mit `ragdoll-6`, siehe „Gelenke in den Paketen“ in
+[`docs/Roadmap.md`](../docs/Roadmap.md).
+
 Die erste, die zweite, die vierte bis achte, die zehnte, die dreizehnte bis einunddreißigste, die dreiunddreißigste bis
 fünfunddreißigste, die neununddreißigste bis dreiundvierzigste, die fünfundvierzigste bis siebenundvierzigste, die
-neunundvierzigste bis einundfünfzigste ändern an den Ergebnissen nichts. Die dritte und die neunte ändern sie in den
+neunundvierzigste bis dreiundfünfzigste ändern an den Ergebnissen nichts. Die dritte und die neunte ändern sie in den
 letzten Bits, dafür hängen sie nicht mehr davon ab, in welcher Reihenfolge Formen in die Bäume kommen. Die elfte ändert
 sie, weil Kontakte zu anderen Zeitpunkten entstehen, die zwölfte, weil sie weniger Punkte bekommen, die
 zweiunddreißigste, weil die Kontakte eines Knotens gebündelt gegen Kopien rechnen statt nacheinander, die
@@ -545,18 +579,19 @@ Kopien rechnen. Die achtunddreißigste ändert sie nur, wo Kugeln Kugeln oder Ka
 vorausschauende Punkte rechnen oder der PreSolve-Callback Kontakte abschaltet, in Nebenans Szenen nicht. Die
 vierundvierzigste ändert sie nur, wo die volle zweite Suche einen Kontakt zwischen Hüllen ergab, die eine Fläche trennt.
 Die Ergänzungen stehen in `CMakeLists.txt`, `src/CMakeLists.txt`, `include/box3d/base.h`, `include/box3d/box3d.h`,
-`include/box3d/types.h`, `include/box3d/constants.h`, `src/core.h`, `src/core.c`, `src/shape.h`, `src/shape.c`,
-`src/body.c`, `src/contact.h`, `src/contact.c`, `src/contact_solver.h`, `src/contact_solver.c`,
-`src/contact_solver_wide.inl`, `src/wide8.c`, `src/simd.c`, `src/simd_avx2.h`, `src/constraint_graph.h`,
-`src/manifold.h`, `src/convex_manifold.c`, `src/convex_manifold_avx2.c`, `src/world_snapshot.c`, `src/recording.c`,
-`src/solver.h`, `src/solver.c`, `src/broad_phase.h`, `src/broad_phase.c`, `src/dynamic_tree.h`, `src/dynamic_tree.c`,
-`src/parallel_for.c`, `src/platform.h`, `src/scheduler.h`, `src/scheduler.c`, `src/timer.c`, `src/physics_world.h`,
-`src/physics_world.c`, `src/joint.h`, `src/joint.c`, `src/revolute_joint.c`, `src/spherical_joint.c`, `src/recording.h`,
-`src/recording_ops.inl` und `src/recording_replay.c`, jeweils mit „Added for Nebenan“ markiert.
+`include/box3d/types.h`, `include/box3d/constants.h`, `src/arena_allocator.h`, `src/core.h`, `src/core.c`,
+`src/shape.h`, `src/shape.c`, `src/body.c`, `src/contact.h`, `src/contact.c`, `src/contact_solver.h`,
+`src/contact_solver.c`, `src/contact_solver_wide.inl`, `src/wide8.c`, `src/simd.c`, `src/simd_avx2.h`,
+`src/constraint_graph.h`, `src/manifold.h`, `src/convex_manifold.c`, `src/convex_manifold_avx2.c`,
+`src/world_snapshot.c`, `src/recording.c`, `src/solver.h`, `src/solver.c`, `src/broad_phase.h`, `src/broad_phase.c`,
+`src/dynamic_tree.h`, `src/dynamic_tree.c`, `src/parallel_for.c`, `src/platform.h`, `src/scheduler.h`,
+`src/scheduler.c`, `src/timer.c`, `src/physics_world.h`, `src/physics_world.c`, `src/joint.h`, `src/joint.c`,
+`src/revolute_joint.c`, `src/spherical_joint.c`, `src/recording.h`, `src/recording_ops.inl` und
+`src/recording_replay.c`, jeweils mit „Added for Nebenan“ markiert.
 `B3_HAS_UNIQUE_HULLS`, `B3_HAS_SHAPE_BATCH`, `B3_HAS_SHAPE_CONTACT_LISTS`, `B3_HAS_EXTERNAL_HULLS`,
 `B3_HAS_BODY_PREFETCH`, `B3_HAS_STEP_GUARD`, `B3_HAS_PREVIOUS_TRANSFORM`, `B3_HAS_STATIC_OVERLAP` und
 `B3_HAS_SPRING_TORQUE_LIMITS` zeigen die zweite, die vierte, die fünfte, die sechste, die neunzehnte, die dreißigste, die
-fünfunddreißigste, die zweiundvierzigste und die einundfünfzigste an.
+fünfunddreißigste, die zweiundvierzigste und die zweiundfünfzigste an.
 Fehlen sie, etwa mit einem eigenen Box3D, läuft Nebenan wie zuvor, nur wachsen Box3Ds Arrays dann durch Umkopieren, die
 Hüllen gehen durch die Tabelle, jede Form geht einzeln in den Baum, jedes stehende Bruchstück bekommt einen eigenen
 Körper, Box3D hält eine Kopie jeder Hülle, Nebenan holt die Körper der Trümmer nicht voraus, `nbWorld_Step` rechnet auf

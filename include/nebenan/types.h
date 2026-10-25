@@ -695,12 +695,17 @@ typedef struct nbProfile
 
 	/// Where the constraint solver of Box3D works, measured in every eighth step, see b3Profile::solverJoints: the steps
 	/// measured, and per such step over all threads the time it solves joints, contacts and the bodies, in milliseconds of
-	/// CPU time. A single joint that is awake makes Box3D solve the whole world color by color with a barrier per stage
-	/// instead of in packs of islands, see b3SolvePacks in extern/box3d/src/solver.c.
+	/// CPU time.
 	int solverSampleCount;
 	float solverJoints;
 	float solverContacts;
 	float solverBodies;
+
+	/// The steps in which Box3D solved whole islands in packs, one thread each without a barrier per stage, with a team for
+	/// the largest packs or without, see b3Counters::packCount and b3SolvePacks in extern/box3d/src/solver.c. The others
+	/// solved color by color with a barrier per stage, for example without workers, with contacts on meshes or with a
+	/// single awake island.
+	int packStepCount;
 
 	/// From how many items the workers help with a fracture and from how many moving pieces with the checks of the update,
 	/// when the profile was read. Nebenan chooses both by how fast a worker starts: the calling thread alone would take

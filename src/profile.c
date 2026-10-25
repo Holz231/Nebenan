@@ -88,6 +88,7 @@ void nbProfileStep( nbWorld* world )
 		sums->solverContacts += step.solverContacts;
 		sums->solverBodies += step.solverBodies;
 	}
+	sums->packStepCount += counters.packCount > 0 ? 1 : 0;
 	sums->knotContactCount += counters.knotContactCount;
 	sums->knotBatchCount += counters.knotBatchCount;
 	sums->knotGroupBatchCount += counters.knotGroupBatchCount;
@@ -208,6 +209,7 @@ nbProfile nbWorld_GetProfile( nbWorldId worldId )
 		profile.solverBodies = (float)( sums->solverBodies / samples );
 	}
 	profile.solverSampleCount = sums->solverSampleCount;
+	profile.packStepCount = sums->packStepCount;
 	profile.fractureWorkerItems = nbFractureWorkerItems( world );
 	profile.settleWorkerPieces = nbSettleWorkerPieces( world );
 	if ( sums->settleWakeCount > 0 )
@@ -511,7 +513,7 @@ int nbFormatScalingReport( const nbProfile* profiles, int count, char* text, int
 	double freezes = 0.0, thaws = 0.0, steps = 0.0;
 	double overflow = 0.0, knotContacts = 0.0, knotBatches = 0.0, knotGroupBatches = 0.0, knotCopies = 0.0;
 	double island = 0.0, floors[4] = { 0.0, 0.0, 0.0, 0.0 }, islandSteps = 0.0, colorSteps = 0.0;
-	double teamShare = 0.0, teamSteps = 0.0, teamJoinSteps = 0.0;
+	double teamShare = 0.0, teamSteps = 0.0, teamJoinSteps = 0.0, packStepTotal = 0.0;
 	double wake = 0.0, wakes = 0.0;
 	float longestWake = 0.0f;
 	double workerSteps = 0.0, settleSplits = 0.0, settleShare = 0.0, settleWake = 0.0, settleTasks = 0.0;
@@ -536,6 +538,7 @@ int nbFormatScalingReport( const nbProfile* profiles, int count, char* text, int
 		teamShare += p->teamShare * (double)p->teamStepCount;
 		teamSteps += (double)p->teamStepCount;
 		teamJoinSteps += (double)p->teamJoinStepCount;
+		packStepTotal += (double)p->packStepCount;
 		wake += p->wakeTime * (double)p->wakeCount;
 		wakes += (double)p->wakeCount;
 		longestWake = b3MaxFloat( longestWake, p->longestWake );
@@ -564,6 +567,8 @@ int nbFormatScalingReport( const nbProfile* profiles, int count, char* text, int
 	{
 		nbAppend( &out, "Largest island %.1f %% of the solver work in %.0f steps, more than half in %.1f %% of them\n",
 				  100.0 * island / islandSteps, islandSteps, 100.0 * colorSteps / islandSteps );
+		nbAppend( &out, "Box3D solved whole islands in packs in %.1f %% of these steps, the others color by color\n",
+				  100.0 * packStepTotal / islandSteps );
 		if ( teamSteps > 0.0 )
 		{
 			nbAppend( &out,

@@ -19,6 +19,13 @@ beide auf dem Ryzen nachgemessen, und den großen Paketen im Team auf `kollaps-9
 Begründungen und Messwerte stehen in [`Optimierungen.md`](Optimierungen.md), hier nur das Fazit und die Reihenfolge.
 Nach jeder Runde wird der Stand hier nachgetragen.
 
+`ragdoll-7` ist eine Runde der Physik: Box3D rechnet die Gelenke jetzt in den Paketen aus „Ganze Inseln pro Thread“, und
+eine Welt mit Figuren verliert ihre Pakete nicht mehr, siehe „Gelenke in den Paketen“ unten. Gepaart gegen `ragdoll-6`
+auf dem 7800X3D, je zwei Läufe im Wechsel mit 2 Threads, enden alle Szenen des Benchmarks mit denselben Zahlen, die
+Städte mit Figuren auch mit 1 und 8 Threads, und ein Frame kostet −0,7 bis +5,6 %, bei einer Streuung von
+Lauf zu Lauf bis 7 %: Dieselbe Fassung rechnete den Block aus 64 Häusern in zwei Läufen 4,35 und 4,64 ms je Frame,
+auch im Update, an dem sich nichts geändert hat.
+
 `ragdoll-1` bis `ragdoll-6` sind wie `kollaps-1` keine Runden der Physik: Sie bauen die Figuren auf Box3D nach Kapitel
 26 bis 28 und 31 bis 33 der Roadmap des Spiels, siehe „Figuren auf Box3D“, „Balance“, „Clips und Keyframe-Editor“ und
 „Kosten der Figuren“ unten. `ragdoll-6` misst, wohin der Löser bei Figuren rechnet, mit einer Ergänzung des Profils in
@@ -273,8 +280,9 @@ emulierten Thread-lokalen Variable. Unter Windows nimmt die Nummer jetzt die Ken
 | C6 | **Kontakte der Figuren** (27.13 A): 17 Kontaktpaare je stehender Figur, welche davon zwischen ihren eigenen Knochen liegen und ob ein Filter für ungeeignete Paare den Löser entlastet | ⛔ geprüft auf `ragdoll-5`: Die Hälfte der Paare liegt zwischen den Knochen einer Figur, sie kosten aber nur 4 % ihrer Zeit in Box3D, siehe „Kontakte der Figuren“ unten |
 | C7 | **Aktivierungsbudget und LOD** (27.13 B): ferne Figuren ohne Balance oder ruhend, wenn Box3D zu viel kostet | 🔜 erst bei Bedarf |
 | C8 | **Wohin der Löser bei Figuren rechnet**: rund 11 µs je Figur und Schritt im Löser, für 15 Gelenke mit Federn, Grenzen und der Hilfe für das Becken und für die Kontakte mit dem Boden. Erst getrennt messen, etwa mit Figuren ohne Grenzen oder ohne Boden, dann entscheiden | ✅ auf `ragdoll-6`: 83 % in den Gelenken, 5 % in allen Kontakten, und ein waches Gelenk nimmt der ganzen Welt die Pakete, siehe „Wohin der Löser bei Figuren rechnet“ unten |
-| C9 | **Gelenke in den Paketen**: Box3D rechnet Gelenke nur nach Farben mit einer Sperre je Stufe, und ein einziges waches Gelenk schaltet die Pakete für alle Inseln ab. Die Gelenke einer Insel in ihrem Paket rechnen, Farbe für Farbe vor ihren Kontakten wie mit Sperren, damit die Ergebnisse bitgleich bleiben | 🔜 hoch: 19 bis 25 % des Schritts der Trümmer in jeder Welt mit Figuren, dazu die Figuren selbst ohne Sperren |
-| C10 | **Gelenke billiger**: rund 1 µs Rechenzeit je Gelenk und Schritt, skalar, während die Kontakte breit rechnen. Erst messen, welche Art Gelenk was kostet, Kugel mit Kegel, Verdrehung und Feder, Scharnier, die Hilfe für das Becken | 🔜 nach C9 |
+| C9 | **Gelenke in den Paketen**: Box3D rechnet Gelenke nur nach Farben mit einer Sperre je Stufe, und ein einziges waches Gelenk schaltet die Pakete für alle Inseln ab. Die Gelenke einer Insel in ihrem Paket rechnen, Farbe für Farbe vor ihren Kontakten wie mit Sperren, damit die Ergebnisse bitgleich bleiben | ✅ auf `ragdoll-7`, bitgleich: Mit 8 Threads kostet ein waches Gelenk die Stadt unter Beschuss nichts mehr, mit 1 bis 50 Figuren ist der Box3D-Schritt 14 bis 18 % schneller, mit 2 Threads gleich schnell, siehe „Gelenke in den Paketen“ unten |
+| C11 | **Messen ohne Verlauf**: Dieselbe Stadt rechnet im selben Prozess später bis zu 35 % langsamer, in Kollision und Löser, und wann es anfängt, hängt davon ab, was vorher lief. Die Zeilen der Tabellen der Figuren vergleichen so verschiedene Zustände. Ursache finden, jede Stadt des Benchmarks in einem eigenen Prozess rechnen | 🔜 vor der nächsten Messung der Figuren |
+| C10 | **Gelenke billiger**: rund 1 µs Rechenzeit je Gelenk und Schritt, skalar, während die Kontakte breit rechnen. Erst messen, welche Art Gelenk was kostet, Kugel mit Kegel, Verdrehung und Feder, Scharnier, die Hilfe für das Becken | 🔜 als Nächstes, C9 ist gebaut |
 
 ## Kontakte der Figuren (`ragdoll-5`)
 
@@ -342,6 +350,59 @@ enden alle Szenen des Benchmarks mit denselben Zahlen, und ein Frame kostet 0 bi
 Lauf bis 4 %. Die erste Fassung las in den Paketen die Uhr an jedem ihrer vielen kleinen Blöcke: Mit 8 Threads
 rechneten die Pakete der Stadt ohne Figuren dann 0,90 statt 0,84 ms, und die Uhr machte sie in der Messung langsamer, als
 sie sind. Jetzt misst sie ein Paket im Ganzen.
+
+Nachgemessen auf `ragdoll-7`: Die 25 % mit 2 Threads und die langsamere Kollision kamen nicht vom Pendel, sondern daher,
+dass dieselbe Stadt im selben Prozess später langsamer rechnet. Mit 2 Threads kostete das Pendel schon hier nur rund
+1 %, mit 8 Threads stimmen die 19 %, siehe „Gelenke in den Paketen“ unten.
+
+## Gelenke in den Paketen (`ragdoll-7`)
+
+Gebaut am 25. Oktober 2026, C9 oben. Box3D rechnet die Gelenke einer Insel jetzt in ihrem Paket, siehe „Gelenke in den
+Paketen“ in [`extern/README.md`](../extern/README.md): in jeder Stufe zuerst die Gelenke im Überlauf, dann Knoten und
+Kontakte im Überlauf, dann Farbe für Farbe Gelenke und Kontakte, wie die Stufen mit Sperren. Jeder Körper nimmt seine
+Schritte in derselben Reihenfolge, und die Ergebnisse bleiben bitgleich. `JointPacksTest` rechnet zwei Naben mit je 30
+Armen an Scharnieren mit Motoren, von denen 10 und 11 im Überlauf liegen, vier schwingende Ketten, deren Gelenke melden,
+wenn sie fest ziehen, und den schweren Haufen aus `TeamPacksTest`, an dem eine der Naben hängt, mit 1, 2, 4 und 8
+Threads und in beiden Breiten: bitgleich, die 732 Ereignisse der Gelenke eingeschlossen, mit Workern in 239 von 240
+Schritten in Paketen, am Haufen mit Team. `nbProfile::packStepCount` zählt die Schritte in Paketen, der Benchmark der
+Figuren und der Bericht von „Skalierung messen“ zeigen ihren Anteil.
+
+Gemessen auf dem Ryzen 7 7800X3D mit MinGW, jede Stadt unter Beschuss in einem eigenen Prozess, je drei Läufe im Wechsel
+mit `ragdoll-6`, Box3D-Schritt in ms:
+
+| Stadt unter Beschuss | 8 Threads `ragdoll-6` | `ragdoll-7` | 2 Threads `ragdoll-6` | `ragdoll-7` |
+| --- | ---: | ---: | ---: | ---: |
+| ohne Figuren | 0,380 | 0,388 | 0,981 | 0,975 |
+| ohne Figuren, ein Pendel | 0,455 | 0,386 | 0,973 | 0,976 |
+| 1 Figur | 0,473 | 0,405 | 1,033 | 1,040 |
+| 10 Figuren | 0,510 | 0,417 | 1,131 | 1,121 |
+| 50 Figuren | 0,666 | 0,568 | 1,607 | 1,611 |
+
+Mit 8 Threads kostet ein waches Gelenk die Welt nichts mehr: Mit dem Pendel rechnet die Stadt so schnell wie ohne, die
+Bedingungen 0,133 statt 0,208 ms je Schritt, ohne Pendel 0,130 ms. Ohne Gelenk streuen die Läufe, in diesen drei
+0,380 gegen 0,388 ms, in sechs weiteren im Wechsel 0,382 gegen 0,382 ms. Mit Figuren ist der Box3D-Schritt 14 bis
+18 % schneller, die Trümmer rechnen wieder in Paketen und die Figuren mit ihnen. Mit 2 Threads ändert sich nichts,
+dort rechneten die Pakete auch ohne Gelenke kaum schneller als die Farben. Mit Figuren rechnen die Pakete etwas mehr
+Rechenzeit in den Kontakten, weil jedes Paket die wenigen Kontakte einer Farbe mit leeren Spuren zu ganzen breiten
+Bedingungen auffüllt.
+
+Jede Stadt in einem eigenen Prozess, weil der Benchmark die Städte sonst in verschiedenen Zuständen misst: Dieselbe
+Stadt rechnet im selben Prozess später bis zu 35 % langsamer, in Kollision und Löser am meisten, und wann es anfängt,
+hängt davon ab, was vorher lief. Mit den Städten unter Beschuss in der Reihenfolge ohne Figuren, mit Pendel, ohne, mit
+Pendel, ohne rechnen mit 2 Threads die ersten beiden 0,97 ms, die übrigen 1,31 bis 1,36 ms, mit Pendel wie ohne. So
+kamen die 25 % aus „Wohin der Löser bei Figuren rechnet“ zustande: In der Reihenfolge des Benchmarks lief die Stadt mit
+dem Pendel schon im langsamen Zustand. Mit 8 Threads kostete das Pendel an jedem Platz 19 %, 0,38 gegen 0,45 ms. Die
+Ursache ist offen, C11 oben. Die Demo misst mit „Parallel gegen nacheinander messen“ deshalb schon im Wechsel und mit
+einem Lauf zum Aufwärmen.
+
+Zwei Fehler kamen beim Bauen heraus. Erst zählten die Gelenke in der Arbeit der Inseln mit, nach der die Pakete verteilt
+werden. Nach derselben Arbeit gehen aber die Knoten großer Inseln in Gruppen mit Kopien, und das ändert die Rechnung:
+Die Stadt unter Beschuss mit 10 und 50 Figuren endete anders, schon mit einem Thread. Jetzt wiegen nur die Pakete die
+Gelenke dazu, achtfach. Und der Stapel von Box3D für die Daten eines Schritts lief über, die Teilung einer Insel auf
+einem Worker stürzte ab: Mit Paketen, Knoten und Team war er im ungünstigsten Schritt schon vorher ganz voll, siehe
+`extern/README.md`. Nebenbei: Eine Nabe von 27 kg mit 30 Armen von zusammen 16 kg an Gelenken reißt in Box3D binnen
+einer Sekunde auseinander, mit einem Thread wie mit Paketen und mit Scharnieren, Kugel- und Schweißgelenken gleich, mit
+25 Armen oder einer Nabe von 540 kg hält sie. Für C10 und für Figuren mit schweren Teilen an leichten Knochen zu merken.
 
 ## Fazit
 

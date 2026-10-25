@@ -285,6 +285,27 @@ static void b3WarmStartJointsTask( b3SolverBlock block, b3StepContext* context )
 	b3TracyCZoneEnd( warm_joints );
 }
 
+// Added for Nebenan: solves a joint of a graph color and flags it for an event once its reaction reaches a threshold, in
+// the stages as in the packs of islands, see b3PackJointsTask
+static void b3SolveColorJoint( b3JointSim* joint, b3StepContext* context, bool useBias, b3BitSet* jointStateBitSet )
+{
+	b3SolveJoint( joint, context, useBias );
+
+	if ( useBias && ( joint->forceThreshold < FLT_MAX || joint->torqueThreshold < FLT_MAX ) &&
+		 b3GetBit( jointStateBitSet, joint->jointId ) == false )
+	{
+		float force, torque;
+		b3GetJointReaction( context->world, joint, context->inv_h, &force, &torque );
+
+		// Check thresholds. A zero threshold means all awake joints get reported.
+		if ( force >= joint->forceThreshold || torque >= joint->torqueThreshold )
+		{
+			// Flag this joint for processing.
+			b3SetBit( jointStateBitSet, joint->jointId );
+		}
+	}
+}
+
 static void b3SolveJointsTask( b3SolverBlock block, b3StepContext* context, bool useBias, int workerIndex )
 {
 	b3TracyCZoneNC( solve_joints, "SolveJoints", b3_colorLemonChiffon, true );
@@ -298,25 +319,62 @@ static void b3SolveJointsTask( b3SolverBlock block, b3StepContext* context, bool
 
 	for ( int i = block.startIndex; i < block.startIndex + block.count; ++i )
 	{
-		b3JointSim* joint = joints + i;
-		b3SolveJoint( joint, context, useBias );
-
-		if ( useBias && ( joint->forceThreshold < FLT_MAX || joint->torqueThreshold < FLT_MAX ) &&
-			 b3GetBit( jointStateBitSet, joint->jointId ) == false )
-		{
-			float force, torque;
-			b3GetJointReaction( context->world, joint, context->inv_h, &force, &torque );
-
-			// Check thresholds. A zero threshold means all awake joints get reported.
-			if ( force >= joint->forceThreshold || torque >= joint->torqueThreshold )
-			{
-				// Flag this joint for processing.
-				b3SetBit( jointStateBitSet, joint->jointId );
-			}
-		}
+		b3SolveColorJoint( joints + i, context, useBias, jointStateBitSet );
 	}
 
 	b3TracyCZoneEnd( solve_joints );
+}
+
+// Added for Nebenan: the joints of a block of type b3_packJointBlock in one graph color or the overflow, by their place in
+// b3StepContext::packJoints, for the packs of islands and the stages of a team, see b3SolvePacks. As in the stages only
+// the joints of the colors report events, see b3SolveJoints_Overflow. Joints take no part in restitution.
+static void b3PackJointsTask( b3SolverStageType type, b3SolverBlock block, b3StepContext* context, int workerIndex )
+{
+	b3JointSim* joints = context->graph->colors[block.colorIndex].jointSims.data;
+	const int* indices = context->packJoints + block.startIndex;
+	int count = block.count;
+
+	switch ( type )
+	{
+		case b3_stagePrepareJoints:
+			for ( int i = 0; i < count; ++i )
+			{
+				b3PrepareJoint( joints + indices[i], context );
+			}
+			break;
+
+		case b3_stageWarmStart:
+			for ( int i = 0; i < count; ++i )
+			{
+				b3WarmStartJoint( joints + indices[i], context );
+			}
+			break;
+
+		case b3_stageSolve:
+		case b3_stageRelax:
+		{
+			bool useBias = type == b3_stageSolve;
+			if ( block.colorIndex == B3_OVERFLOW_INDEX )
+			{
+				for ( int i = 0; i < count; ++i )
+				{
+					b3SolveJoint( joints + indices[i], context, useBias );
+				}
+			}
+			else
+			{
+				b3BitSet* jointStateBitSet = &context->world->taskContexts.data[workerIndex].jointStateBitSet;
+				for ( int i = 0; i < count; ++i )
+				{
+					b3SolveColorJoint( joints + indices[i], context, useBias, jointStateBitSet );
+				}
+			}
+		}
+		break;
+
+		default:
+			break;
+	}
 }
 
 #define B2_MAX_CONTINUOUS_SENSOR_HITS 8
@@ -1172,7 +1230,7 @@ typedef enum b3SolverPart
 
 static b3SolverPart b3GetSolverPart( b3SolverStageType stageType, b3SolverBlockType blockType )
 {
-	if ( stageType == b3_stagePrepareJoints || blockType == b3_graphJointBlock )
+	if ( stageType == b3_stagePrepareJoints || blockType == b3_graphJointBlock || blockType == b3_packJointBlock )
 	{
 		return b3_solverJoints;
 	}
@@ -1215,6 +1273,13 @@ static void b3RunBlock( b3SolverStage* stage, b3StepContext* context, b3SolverBl
 	{
 		const int* groupStarts = context->knotGroupStarts;
 		b3ExecuteKnots( stageType, context, groupStarts[block.startIndex], groupStarts[block.startIndex + 1] );
+		return;
+	}
+
+	// Added for Nebenan: joints of packs of islands, see b3PackJointsTask
+	if ( blockType == b3_packJointBlock )
+	{
+		b3PackJointsTask( stageType, block, context, workerIndex );
 		return;
 	}
 
@@ -1471,10 +1536,65 @@ static void b3ExecutePackRange( b3SolverStageType type, b3StepContext* context, 
 	}
 }
 
-// Added for Nebenan: one stage of the constraints of a pack, the overflow constraints first, the knots before the others,
-// and then the colors in order, as b3SolverTask does
-static void b3ExecutePackConstraints( b3SolverStageType type, b3StepContext* context, int pack, int workerIndex )
+// Added for Nebenan: one stage of the joints of a pack in a row of b3StepContext::packJoints, an active color or the
+// overflow after them. A step that times its solver adds their time to jointTicks, see b3Profile::solverJoints. A pack
+// without joints in the row reads no clock.
+static void b3ExecutePackJoints( b3SolverStageType type, b3StepContext* context, int row, int pack, int workerIndex,
+								 uint64_t* jointTicks )
 {
+	const int* starts = context->packJointStarts + row * ( context->packCount + 1 );
+	int start = starts[pack];
+	int end = starts[pack + 1];
+	if ( start == end )
+	{
+		return;
+	}
+
+	int colorIndex = row < context->activeColorCount ? context->activeColorIndices[row] : B3_OVERFLOW_INDEX;
+	uint64_t clock = b3SampleSolverTicks( context );
+	b3ExecutePackRange( type, context, start, end, b3_packJointBlock, (uint8_t)colorIndex, workerIndex );
+	*jointTicks += b3SolverTicksSince( context, clock );
+}
+
+// Added for Nebenan: one stage of the overflow joints, which the calling thread solves alone before the knots. With a
+// team only those of its packs, the first ones, the other packs solve their own, see b3SolveOtherPack.
+static void b3ExecuteOverflowJoints( b3SolverStageType type, b3StepContext* context )
+{
+	uint64_t start = b3SampleSolverTicks( context );
+	if ( context->team )
+	{
+		const int* starts = context->packJointStarts + context->activeColorCount * ( context->packCount + 1 );
+		b3ExecutePackRange( type, context, starts[0], starts[context->stagePackCount], b3_packJointBlock, B3_OVERFLOW_INDEX, 0 );
+	}
+	else if ( type == b3_stagePrepareJoints )
+	{
+		b3PrepareJoints_Overflow( context );
+	}
+	else if ( type == b3_stageWarmStart )
+	{
+		b3WarmStartJoints_Overflow( context );
+	}
+	else
+	{
+		b3SolveJoints_Overflow( context, type == b3_stageSolve );
+	}
+	b3AddSolverTicks( context, 0, b3_solverJoints, start );
+}
+
+// Added for Nebenan: one stage of the constraints of a pack as b3SolverTask runs it, the overflow first, its joints before
+// the knots and its contacts after them, and then the colors in order, each with its joints and its convex contacts. A
+// pack without joints and a stage of restitution skip the joints. A step that times its solver adds the time of the
+// joints to jointTicks.
+static void b3ExecutePackConstraints( b3SolverStageType type, b3StepContext* context, int pack, bool hasJoints, int workerIndex,
+									  uint64_t* jointTicks )
+{
+	int activeColorCount = context->activeColorCount;
+	bool joints = hasJoints && type != b3_stageRestitution;
+	if ( joints )
+	{
+		b3ExecutePackJoints( type, context, activeColorCount, pack, workerIndex, jointTicks );
+	}
+
 	// The groups of the knots of the pack one after the other, see b3BuildKnots
 	const int* knotStarts = context->packKnotStarts;
 	b3ExecuteKnots( type, context, knotStarts[pack], knotStarts[pack + 1] );
@@ -1484,8 +1604,14 @@ static void b3ExecutePackConstraints( b3SolverStageType type, b3StepContext* con
 	b3ExecutePackRange( type, context, overflowStarts[pack], overflowStarts[pack + 1], b3_overflowBlock, B3_OVERFLOW_INDEX,
 						workerIndex );
 
-	for ( int i = 0; i < context->activeColorCount; ++i )
+	// A color holds no two constraints of the same moving body, so its joints and contacts may go in either order
+	for ( int i = 0; i < activeColorCount; ++i )
 	{
+		if ( joints )
+		{
+			b3ExecutePackJoints( type, context, i, pack, workerIndex, jointTicks );
+		}
+
 		const int* wideStarts = context->packWideStarts + i * ( context->packCount + 1 );
 		b3ExecutePackRange( type, context, wideStarts[pack], wideStarts[pack + 1], b3_graphWideContactBlock,
 							(uint8_t)context->activeColorIndices[i], workerIndex );
@@ -1519,11 +1645,22 @@ static void b3SolvePack( b3StepContext* context, int pack, int workerIndex )
 	int knotWideStart = context->knotWideStart + knotWide * context->packKnotStarts[pack];
 	int knotWideEnd = context->knotWideStart + knotWide * context->packKnotStarts[pack + 1];
 
-	// Added for Nebenan: a step that times its solver times a pack whole and its bodies apart, see b3Profile::solverJoints.
-	// A pack holds no joints, and a clock read at every one of its many small blocks would cost more than some of them.
+	// Added for Nebenan: a step that times its solver times a pack whole and its bodies and joints apart, see
+	// b3Profile::solverJoints. A clock read at every one of its many small blocks of contacts would cost more than some of
+	// them.
 	uint64_t packStart = b3SampleSolverTicks( context );
 	uint64_t bodyTicks = 0;
+	uint64_t jointTicks = 0;
 
+	// The joints of the pack in the colors and in the overflow, see b3OrderPackJoints. A pack without joints skips them in
+	// the stages, most packs of a destructible world have none.
+	bool hasJoints = false;
+	for ( int row = 0; row <= context->activeColorCount; ++row )
+	{
+		const int* jointStarts = context->packJointStarts + row * ( context->packCount + 1 );
+		hasJoints = hasJoints || jointStarts[pack] < jointStarts[pack + 1];
+		b3ExecutePackJoints( b3_stagePrepareJoints, context, row, pack, workerIndex, &jointTicks );
+	}
 	b3ExecutePackRange( b3_stagePrepareContacts, context, overflowStart, overflowEnd, b3_overflowBlock, B3_OVERFLOW_INDEX,
 						workerIndex );
 	b3ExecutePackRange( b3_stagePrepareWideContacts, context, knotWideStart, knotWideEnd, b3_wideContactBlock, UINT8_MAX,
@@ -1535,12 +1672,12 @@ static void b3SolvePack( b3StepContext* context, int pack, int workerIndex )
 		uint64_t bodyClock = b3SampleSolverTicks( context );
 		b3ExecutePackRange( b3_stageIntegrateVelocities, context, bodyStart, bodyEnd, b3_packBodyBlock, UINT8_MAX, workerIndex );
 		bodyTicks += b3SolverTicksSince( context, bodyClock );
-		b3ExecutePackConstraints( b3_stageWarmStart, context, pack, workerIndex );
-		b3ExecutePackConstraints( b3_stageSolve, context, pack, workerIndex );
+		b3ExecutePackConstraints( b3_stageWarmStart, context, pack, hasJoints, workerIndex, &jointTicks );
+		b3ExecutePackConstraints( b3_stageSolve, context, pack, hasJoints, workerIndex, &jointTicks );
 		bodyClock = b3SampleSolverTicks( context );
 		b3ExecutePackRange( b3_stageIntegratePositions, context, bodyStart, bodyEnd, b3_packBodyBlock, UINT8_MAX, workerIndex );
 		bodyTicks += b3SolverTicksSince( context, bodyClock );
-		b3ExecutePackConstraints( b3_stageRelax, context, pack, workerIndex );
+		b3ExecutePackConstraints( b3_stageRelax, context, pack, hasJoints, workerIndex, &jointTicks );
 	}
 
 	// Preparing a constraint with restitution sets the flag, so a pack with one always sees it. A pack that sees it set by
@@ -1550,7 +1687,7 @@ static void b3SolvePack( b3StepContext* context, int pack, int workerIndex )
 	{
 		for ( int j = 0; j < context->world->restitutionIterations; ++j )
 		{
-			b3ExecutePackConstraints( b3_stageRestitution, context, pack, workerIndex );
+			b3ExecutePackConstraints( b3_stageRestitution, context, pack, false, workerIndex, &jointTicks );
 		}
 	}
 
@@ -1565,15 +1702,16 @@ static void b3SolvePack( b3StepContext* context, int pack, int workerIndex )
 		b3TaskContext* taskContext = context->world->taskContexts.data + workerIndex;
 		uint64_t packTicks = b3GetTicks() - packStart;
 		taskContext->solverTicks[b3_solverBodies] += bodyTicks;
-		taskContext->solverTicks[b3_solverContacts] += packTicks - bodyTicks;
+		taskContext->solverTicks[b3_solverJoints] += jointTicks;
+		taskContext->solverTicks[b3_solverContacts] += packTicks - bodyTicks - jointTicks;
 	}
 }
 
-// Added for Nebenan: the constraint solver without a barrier per stage. Two islands never share a moving body, so a thread
-// can take an island from preparing its constraints through all substeps to storing their impulses alone, and its bodies
-// and constraints stay in its cache. Each body takes its steps in the same order as with a barrier per stage, so nothing
-// changes in the results. The threads take whole packs of islands, the largest first, until none is left. One that loses
-// its core holds up only the pack it is on.
+// Added for Nebenan: the constraint solver without a barrier per stage. Two islands never share a moving body, and every
+// joint and contact belongs to the island of its bodies, so a thread can take an island from preparing its constraints
+// through all substeps to storing their impulses alone, and its bodies and constraints stay in its cache. Each body takes
+// its steps in the same order as with a barrier per stage, so nothing changes in the results. The threads take whole packs
+// of islands, the largest first, until none is left. One that loses its core holds up only the pack it is on.
 static void b3SolvePacks( b3StepContext* context, int workerIndex )
 {
 	int solved = 0;
@@ -1768,11 +1906,10 @@ static void b3SolverTask( void* taskContext )
 		meshSyncIndex += 1;
 
 		// Single-threaded overflow work. These constraints don't fit in the graph coloring.
+		// Added for Nebenan: with a team only those of its packs, see b3ExecuteOverflowJoints
 		uint64_t overflowTicks = b3GetTicks();
+		b3ExecuteOverflowJoints( b3_stagePrepareJoints, context );
 		uint64_t partStart = b3SampleSolverTicks( context );
-		b3PrepareJoints_Overflow( context );
-		b3AddSolverTicks( context, 0, b3_solverJoints, partStart );
-		partStart = b3SampleSolverTicks( context );
 		b3PrepareContacts_Overflow( context );
 		b3AddSolverTicks( context, 0, b3_solverContacts, partStart );
 		profile->overflow += b3GetMilliseconds( overflowTicks );
@@ -1798,9 +1935,7 @@ static void b3SolverTask( void* taskContext )
 
 			// Warm start constraints
 			overflowTicks = b3GetTicks();
-			partStart = b3SampleSolverTicks( context );
-			b3WarmStartJoints_Overflow( context );
-			b3AddSolverTicks( context, 0, b3_solverJoints, partStart );
+			b3ExecuteOverflowJoints( b3_stageWarmStart, context );
 			syncBits = ( knotSyncIndex << 16 ) | iterationStageIndex;
 			B3_ASSERT( stages[iterationStageIndex].type == b3_stageWarmStart );
 			b3ExecuteKnotStage( stages + iterationStageIndex, context, syncBits );
@@ -1823,14 +1958,11 @@ static void b3SolverTask( void* taskContext )
 			profile->warmStart += b3GetMillisecondsAndReset( &ticks );
 
 			// Solve constraints
-			bool useBias = true;
 			for ( int j = 0; j < ITERATIONS; ++j )
 			{
 				// Overflow constraints have lower priority. Typically these are dynamic-vs-dynamic.
 				overflowTicks = b3GetTicks();
-				partStart = b3SampleSolverTicks( context );
-				b3SolveJoints_Overflow( context, useBias );
-				b3AddSolverTicks( context, 0, b3_solverJoints, partStart );
+				b3ExecuteOverflowJoints( b3_stageSolve, context );
 				syncBits = ( knotSyncIndex << 16 ) | iterationStageIndex;
 				B3_ASSERT( stages[iterationStageIndex].type == b3_stageSolve );
 				b3ExecuteKnotStage( stages + iterationStageIndex, context, syncBits );
@@ -1863,13 +1995,10 @@ static void b3SolverTask( void* taskContext )
 			profile->integratePositions += b3GetMillisecondsAndReset( &ticks );
 
 			// Relax constraints
-			useBias = false;
 			for ( int j = 0; j < RELAX_ITERATIONS; ++j )
 			{
 				overflowTicks = b3GetTicks();
-				partStart = b3SampleSolverTicks( context );
-				b3SolveJoints_Overflow( context, useBias );
-				b3AddSolverTicks( context, 0, b3_solverJoints, partStart );
+				b3ExecuteOverflowJoints( b3_stageRelax, context );
 				syncBits = ( knotSyncIndex << 16 ) | iterationStageIndex;
 				B3_ASSERT( stages[iterationStageIndex].type == b3_stageRelax );
 				b3ExecuteKnotStage( stages + iterationStageIndex, context, syncBits );
@@ -2364,11 +2493,17 @@ static void b3SumTeamStages( b3World* world, const b3StepContext* context )
 	}
 }
 
-// Added for Nebenan: the work of an island as the packs weigh it, four per contact and one per body
+// Added for Nebenan: the work of an island, four per contact and one per body, see b3Counters::islandWork. The knots of
+// large islands go in groups by it, see b3BuildKnots, which changes the results, so it leaves out the joints, which the
+// packs weigh on top, see B3_PACK_JOINT_WORK.
 static int b3GetIslandWork( const b3Island* island )
 {
 	return 4 * island->contacts.count + island->bodies.count;
 }
+
+// Added for Nebenan: the packs weigh a joint as much as eight bodies, Box3D solves joints one at a time while the contacts
+// go wide. The packs only share out the work, so the weight changes no result.
+#define B3_PACK_JOINT_WORK 8
 
 // Added for Nebenan: the work of the awake islands as b3BuildPacks weighs it, for a step of a world with workers that
 // solves without packs, see b3Counters::islandWork. A world without workers skips it: its islands could be many.
@@ -2391,7 +2526,8 @@ static void b3MeasureIslandWork( b3World* world, const b3SolverSet* awakeSet )
 // pack of every awake island to islandPacks by island id, and where the bodies of every pack start to packBodyStarts, for
 // b3FillPacks. Returns the pack count, or zero if one island holds more than half of the work and the workers are too few
 // for a team, then the colors share it better. If a team solves the first packs, see b3SolveOtherPack, writes how many to
-// teamPackCount and their work to teamWork, and zero to both otherwise.
+// teamPackCount and their work to teamWork, and zero to both otherwise. The packs weigh the joints on top of the work of
+// an island, see B3_PACK_JOINT_WORK, the counters and teamWork take it without them, see b3GetIslandWork.
 static int b3BuildPacks( b3World* world, const b3SolverSet* awakeSet, int packLimit, int workerCount, int* islandPacks,
 						 int* packBodyStarts, int* teamWork, int* teamPackCount )
 {
@@ -2411,29 +2547,37 @@ static int b3BuildPacks( b3World* world, const b3SolverSet* awakeSet, int packLi
 		return 0;
 	}
 
+	// The weights of the packs and the work of the islands in one block
 	const b3IslandSim* islandSims = awakeSet->islandSims.data;
-	int* weights = (int*)b3StackAlloc( &world->stack, islandCount * (int)sizeof( int ), "island weights" );
+	int* weights = (int*)b3StackAlloc( &world->stack, 2 * islandCount * (int)sizeof( int ), "island weights" );
+	int* works = weights + islandCount;
 	int* order = (int*)b3StackAlloc( &world->stack, islandCount * (int)sizeof( int ), "island order" );
 
-	// The work of an island in its contacts, which cost the most, and its bodies. The islands go in buckets by the leading
-	// zeros of their work, the largest first, which is order enough for the packs.
+	// The work of an island in its contacts, which cost the most, its bodies and its joints. The islands go in buckets by
+	// the leading zeros of their work, the largest first, which is order enough for the packs.
 	int bucketStarts[33] = { 0 };
 	int total = 0;
 	int largest = 0;
+	int islandTotal = 0;
+	int islandLargest = 0;
 	for ( int i = 0; i < islandCount; ++i )
 	{
 		const b3Island* island = b3Array_Get( world->islands, islandSims[i].islandId );
-		int weight = b3GetIslandWork( island );
+		int work = b3GetIslandWork( island );
+		int weight = work + B3_PACK_JOINT_WORK * island->joints.count;
 		B3_ASSERT( weight > 0 );
 		weights[i] = weight;
+		works[i] = work;
 		total += weight;
 		largest = b3MaxInt( largest, weight );
+		islandTotal += work;
+		islandLargest = b3MaxInt( islandLargest, work );
 		bucketStarts[b3CLZ32( (uint32_t)weight )] += 1;
 	}
 
 	// Added for Nebenan: see b3Counters::islandWork
-	world->islandWork = total;
-	world->largestIslandWork = largest;
+	world->islandWork = islandTotal;
+	world->largestIslandWork = islandLargest;
 
 	// Added for Nebenan: an island with more than half of the work has a pack of its own, the first, see b3SolveOtherPack
 	int packCount = 0;
@@ -2456,6 +2600,7 @@ static int b3BuildPacks( b3World* world, const b3SolverSet* awakeSet, int packLi
 		// Each island to the pack with the least work so far
 		packCount = b3MinInt( packLimit, islandCount );
 		int loads[B3_MAX_PACKS] = { 0 };
+		int packWorks[B3_MAX_PACKS] = { 0 };
 		for ( int k = 0; k < islandCount; ++k )
 		{
 			int lightest = 0;
@@ -2466,6 +2611,7 @@ static int b3BuildPacks( b3World* world, const b3SolverSet* awakeSet, int packLi
 
 			int i = order[k];
 			loads[lightest] += weights[i];
+			packWorks[lightest] += works[i];
 			islandPacks[islandSims[i].islandId] = lightest;
 		}
 
@@ -2494,10 +2640,10 @@ static int b3BuildPacks( b3World* world, const b3SolverSet* awakeSet, int packLi
 		{
 			int64_t joinShares = (int64_t)B3_TEAM_JOIN_NUM * total;
 			int teamCount = 1;
-			int work = loads[ranked[0]];
+			int work = packWorks[ranked[0]];
 			while ( teamCount < packCount && (int64_t)B3_TEAM_JOIN_DEN * workerCount * loads[ranked[teamCount]] > joinShares )
 			{
-				work += loads[ranked[teamCount]];
+				work += packWorks[ranked[teamCount]];
 				teamCount += 1;
 			}
 			*teamWork = work;
@@ -2644,12 +2790,58 @@ static int b3GetPackEntryCapacity( const b3World* world, const b3GraphColor* col
 	return capacity;
 }
 
+// Added for Nebenan: the joints of every active color and then those of the overflow pack by pack for b3SolvePacks, in
+// their order within each pack, as their indices in the joints of their color. A joint belongs to the island of its
+// bodies, see b3LinkJoint, so in a pack it keeps its place among the constraints of every body. Writes for every row, a
+// color or the overflow, where the joints of each pack start in packJoints, see b3StepContext::packJointStarts.
+static void b3OrderPackJoints( const b3World* world, const b3GraphColor* colors, const int* activeColorIndices,
+							   int activeColorCount, const int* islandPacks, int packCount, int* packJoints,
+							   int* packJointStarts )
+{
+	const b3Joint* joints = world->joints.data;
+	int offset = 0;
+	for ( int row = 0; row <= activeColorCount; ++row )
+	{
+		const b3GraphColor* color = colors + ( row < activeColorCount ? activeColorIndices[row] : B3_OVERFLOW_INDEX );
+		const b3JointSim* sims = color->jointSims.data;
+		int count = color->jointSims.count;
+		int* starts = packJointStarts + row * ( packCount + 1 );
+
+		int cursors[B3_MAX_PACKS + 1] = { 0 };
+		for ( int k = 0; k < count; ++k )
+		{
+			const b3Joint* joint = joints + sims[k].jointId;
+			B3_ASSERT( joint->islandId != B3_NULL_INDEX );
+			B3_ASSERT( 0 <= islandPacks[joint->islandId] && islandPacks[joint->islandId] < packCount );
+			cursors[islandPacks[joint->islandId] + 1] += 1;
+		}
+
+		cursors[0] = offset;
+		for ( int p = 0; p < packCount; ++p )
+		{
+			cursors[p + 1] += cursors[p];
+		}
+
+		for ( int p = 0; p <= packCount; ++p )
+		{
+			starts[p] = cursors[p];
+		}
+
+		for ( int k = 0; k < count; ++k )
+		{
+			packJoints[cursors[islandPacks[joints[sims[k].jointId].islandId]]++] = k;
+		}
+
+		offset += count;
+	}
+}
+
 // Added for Nebenan: what the solver setup gives to a worker while the calling thread builds the knots, see b3BuildKnots.
-// With packs the pack of every body and contact, see b3FillPacks, and the convex contacts of the colors pack by pack, see
-// b3OrderPackContacts, without packs the convex contacts of the colors in buckets, see b3OrderColorContacts. The knots need
-// the packs of the contacts only at the end and wait for the task there, see b3FinishSetupTask, or run it themselves if no
-// worker took it yet. Only the calling thread takes from the stack, the task fills what it took before. Every result is
-// the same whichever thread computes it.
+// With packs the pack of every body and contact, see b3FillPacks, the convex contacts of the colors pack by pack, see
+// b3OrderPackContacts, and the joints, see b3OrderPackJoints, without packs the convex contacts of the colors in buckets,
+// see b3OrderColorContacts. The knots need the packs of the contacts only at the end and wait for the task there, see
+// b3FinishSetupTask, or run it themselves if no worker took it yet. Only the calling thread takes from the stack, the task
+// fills what it took before. Every result is the same whichever thread computes it.
 typedef struct b3SetupTask
 {
 	const b3World* world;
@@ -2667,6 +2859,8 @@ typedef struct b3SetupTask
 	uint8_t* contactPacks;
 	int* packWideStarts;
 	int* packEntryCounts;
+	int* packJoints;
+	int* packJointStarts;
 
 	// The convex contacts of the colors in order, null without workers or contacts, then there is no task
 	int* orderedContacts;
@@ -2691,6 +2885,8 @@ static void b3SetupTaskCallback( void* context )
 					 task->contactPacks );
 		b3OrderPackContacts( task->world, task->colors, task->activeColorIndices, task->activeColorCount, task->contactPacks,
 							 task->packCount, task->orderedContacts, task->packWideStarts, task->packEntryCounts );
+		b3OrderPackJoints( task->world, task->colors, task->activeColorIndices, task->activeColorCount, task->islandPacks,
+						   task->packCount, task->packJoints, task->packJointStarts );
 	}
 	else
 	{
@@ -3397,6 +3593,7 @@ void b3Solve( b3World* world, b3StepContext* stepContext )
 	world->teamStageCount = 0;
 	world->teamYieldCount = 0;
 	world->teamPackCount = 0;
+	world->packCount = 0;
 
 	if ( awakeBodyCount == 0 )
 	{
@@ -3508,11 +3705,11 @@ void b3Solve( b3World* world, b3StepContext* stepContext )
 		b3GraphColor* overflow = colors + B3_OVERFLOW_INDEX;
 		int overflowCount = overflow->contacts.count;
 
-		// Added for Nebenan: whole islands per thread if the step allows, see b3SolvePacks. Joints, mesh contacts and the
-		// propagation of restitution, which needs to know whether any constraint of the step has restitution before the
-		// first pack starts, keep the barrier per stage, and so does a step while other programs take the cores, see
-		// b3UpdatePackHold. With packs the convex contacts of every color go pack by pack, which can take more wide
-		// constraints.
+		// Added for Nebenan: whole islands per thread if the step allows, see b3SolvePacks. Mesh contacts and the propagation
+		// of restitution, which needs to know whether any constraint of the step has restitution before the first pack
+		// starts, keep the barrier per stage, and so does a step while other programs take the cores, see b3UpdatePackHold.
+		// With packs the convex contacts of every color go pack by pack, which can take more wide constraints, and so do
+		// the joints, see b3OrderPackJoints.
 		bool held = world->packHoldSteps > 0;
 		if ( held )
 		{
@@ -3540,9 +3737,11 @@ void b3Solve( b3World* world, b3StepContext* stepContext )
 		int* islandPacks = NULL;
 		int* packWideStarts = NULL;
 		int* packContacts = NULL;
+		int* packJointStarts = NULL;
+		int* packJoints = NULL;
 		int packEntryCounts[B3_GRAPH_COLOR_COUNT];
-		if ( held == false && workerCount > 1 && contactCount == 0 && jointCount == 0 && overflow->jointSims.count == 0 &&
-			 overflowCount <= UINT16_MAX && world->enableRestitutionPropagation == false )
+		if ( held == false && workerCount > 1 && contactCount == 0 && overflowCount <= UINT16_MAX &&
+			 world->enableRestitutionPropagation == false )
 		{
 			int packLimit = B3_PACKS_PER_WORKER * workerCount;
 			int contactIdCapacity = b3GetIdCapacity( &world->contactIdPool );
@@ -3556,8 +3755,16 @@ void b3Solve( b3World* world, b3StepContext* stepContext )
 			// The setup task fills the bodies and contacts of the packs and the entries of the colors, see b3SetupTask
 			if ( packCount > 0 )
 			{
-				packWideStarts = (int*)b3StackAlloc( &world->stack, activeColorCount * ( packCount + 1 ) * (int)sizeof( int ),
-													 "pack wide starts" );
+				// Added for Nebenan: the joints of the colors and of the overflow, a row each, see b3OrderPackJoints, in one
+				// block with the starts of the wide constraints, the stack holds few entries, see B3_MAX_STACK_ENTRIES
+				int wideStartCount = activeColorCount * ( packCount + 1 );
+				int jointStartCount = ( activeColorCount + 1 ) * ( packCount + 1 );
+				int packJointCount = jointCount + overflow->jointSims.count;
+				packWideStarts = (int*)b3StackAlloc(
+					&world->stack, ( wideStartCount + jointStartCount + packJointCount ) * (int)sizeof( int ), "pack starts" );
+				packJointStarts = packWideStarts + wideStartCount;
+				packJoints = packJointStarts + jointStartCount;
+
 				int entryCapacity = b3GetPackEntryCapacity( world, colors, activeColorIndices, activeColorCount, packCount );
 				packContacts =
 					(int*)b3StackAlloc( &world->stack, b3MaxInt( entryCapacity, 1 ) * (int)sizeof( int ), "pack contacts" );
@@ -3613,6 +3820,8 @@ void b3Solve( b3World* world, b3StepContext* stepContext )
 			.contactPacks = contactPacks,
 			.packWideStarts = packWideStarts,
 			.packEntryCounts = packEntryCounts,
+			.packJoints = packJoints,
+			.packJointStarts = packJointStarts,
 			.orderedContacts = orderedContacts,
 		};
 		b3StartSetupTask( world, &setupTask );
@@ -3621,6 +3830,7 @@ void b3Solve( b3World* world, b3StepContext* stepContext )
 		bool team = teamWork > 0;
 		world->teamWork = teamWork;
 		world->teamPackCount = teamPackCount;
+		world->packCount = packCount;
 
 		// Added for Nebenan: the packs whose bodies and constraints the stages hold, the first ones, with a team those it
 		// solves, see b3SolveOtherPack. Without packs the knots lie in one, see b3BuildKnots.
@@ -3830,15 +4040,18 @@ void b3Solve( b3World* world, b3StepContext* stepContext )
 		overflowSpans[1].contacts = NULL;
 
 		// Added for Nebenan: with a team the stages hold only the bodies and constraints of its packs, the first ones, see
-		// b3SolveOtherPack. Their convex constraints lie in one range per color and their knots in one more. A block of the
-		// stages that prepare and store them stays in one range, so they need one more block per range at most.
+		// b3SolveOtherPack. Their convex constraints lie in one range per color and their knots in one more, and so do their
+		// joints, see b3OrderPackJoints, the overflow aside. A block of the stages that prepare and store them stays in one
+		// range, so they need one more block per range at most.
 		int knotWide = B3_KNOT_LANES >> simdShift;
 		int teamWideSize = 0;
+		int teamJointSize = 0;
 		if ( team )
 		{
 			bodyDim = b3ComputeBlockCount( packBodyStarts[teamPackCount] - packBodyStarts[0], minBodiesPerBlock, maxBlockCount );
 
 			int teamWideCount = knotWide * ( knots.packStarts[teamPackCount] - knots.packStarts[0] );
+			int teamJointCount = 0;
 			graphBlockCount = 0;
 			for ( int i = 0; i < activeColorCount; ++i )
 			{
@@ -3846,12 +4059,21 @@ void b3Solve( b3World* world, b3StepContext* stepContext )
 				int count = starts[teamPackCount] - starts[0];
 				teamWideCount += count;
 				graphWideContactDims[i] = b3ComputeBlockCount( count, minContactsPerBlock, maxBlockCount );
-				graphBlockCount += graphWideContactDims[i].count;
+
+				const int* jointStarts = packJointStarts + i * ( packCount + 1 );
+				int colorJointCount = jointStarts[teamPackCount] - jointStarts[0];
+				teamJointCount += colorJointCount;
+				graphJointDims[i] = b3ComputeBlockCount( colorJointCount, minJointsPerBlock, maxBlockCount );
+				graphBlockCount += graphJointDims[i].count + graphWideContactDims[i].count;
 			}
 
 			b3BlockDim teamWideDim = b3ComputeBlockCount( teamWideCount, minContactsPerBlock, maxBlockCount );
 			teamWideSize = teamWideDim.size;
 			convexPrepareDim.count = teamWideDim.count + activeColorCount + 1;
+
+			b3BlockDim teamJointDim = b3ComputeBlockCount( teamJointCount, minJointsPerBlock, maxBlockCount );
+			teamJointSize = teamJointDim.size;
+			jointPrepareDim.count = teamJointDim.count + activeColorCount;
 		}
 
 		int stageCount = 0;
@@ -3983,7 +4205,24 @@ void b3Solve( b3World* world, b3StepContext* stepContext )
 			b3InitBlocks( convexBlocks, convexPrepareDim, wideContactCount, b3_wideContactBlock, UINT8_MAX );
 		}
 		b3InitBlocks( meshBlocks, meshPrepareDim, contactCount, b3_contactBlock, UINT8_MAX );
-		b3InitBlocks( jointBlocks, jointPrepareDim, jointCount, b3_jointBlock, UINT8_MAX );
+
+		// Added for Nebenan: with a team over the ranges of its packs, see above
+		int jointBlockCount = jointPrepareDim.count;
+		if ( team )
+		{
+			jointBlockCount = 0;
+			for ( int i = 0; i < activeColorCount; ++i )
+			{
+				const int* starts = packJointStarts + i * ( packCount + 1 );
+				jointBlockCount += b3InitRangeBlocks( jointBlocks + jointBlockCount, starts[0], starts[teamPackCount] - starts[0],
+													  teamJointSize, b3_packJointBlock, (uint8_t)activeColorIndices[i] );
+			}
+			B3_ASSERT( jointBlockCount <= jointPrepareDim.count );
+		}
+		else
+		{
+			b3InitBlocks( jointBlocks, jointPrepareDim, jointCount, b3_jointBlock, UINT8_MAX );
+		}
 
 		// Prepare graph work blocks. Each color gets joint blocks followed by contact blocks.
 		b3SyncBlock* graphColorBlocks[B3_GRAPH_COLOR_COUNT] = { 0 };
@@ -3994,7 +4233,18 @@ void b3Solve( b3World* world, b3StepContext* stepContext )
 			graphColorBlocks[i] = baseGraphBlock;
 
 			uint8_t colorIndex = (uint8_t)activeColorIndices[i];
-			b3InitBlocks( baseGraphBlock, graphJointDims[i], colorJointCounts[i], b3_graphJointBlock, colorIndex );
+
+			// Added for Nebenan: with a team the joints of its packs, see above
+			if ( team )
+			{
+				const int* starts = packJointStarts + i * ( packCount + 1 );
+				b3InitRangeBlocks( baseGraphBlock, starts[0], starts[teamPackCount] - starts[0], graphJointDims[i].size,
+								   b3_packJointBlock, colorIndex );
+			}
+			else
+			{
+				b3InitBlocks( baseGraphBlock, graphJointDims[i], colorJointCounts[i], b3_graphJointBlock, colorIndex );
+			}
 			baseGraphBlock += graphJointDims[i].count;
 
 			// Added for Nebenan: with a team the range of its packs, see above
@@ -4020,7 +4270,7 @@ void b3Solve( b3World* world, b3StepContext* stepContext )
 		B3_ASSERT( (ptrdiff_t)( baseGraphBlock - graphBlocks ) == graphBlockCount );
 
 		b3SolverStage* stage = stages;
-		stage = b3InitStage( stage, b3_stagePrepareJoints, jointBlocks, jointPrepareDim.count, UINT8_MAX );
+		stage = b3InitStage( stage, b3_stagePrepareJoints, jointBlocks, jointBlockCount, UINT8_MAX );
 		stage = b3InitStage( stage, b3_stagePrepareWideContacts, convexBlocks, convexBlockCount, UINT8_MAX );
 		stage = b3InitStage( stage, b3_stagePrepareContacts, meshBlocks, meshPrepareDim.count, UINT8_MAX );
 		stage = b3InitStage( stage, b3_stageIntegrateVelocities, bodyBlocks, bodyDim.count, UINT8_MAX );
@@ -4079,6 +4329,8 @@ void b3Solve( b3World* world, b3StepContext* stepContext )
 		stepContext->packBodies = packBodies;
 		stepContext->packOverflowStarts = packOverflowStarts;
 		stepContext->packWideStarts = packWideStarts;
+		stepContext->packJoints = packJoints;
+		stepContext->packJointStarts = packJointStarts;
 		stepContext->activeColorIndices = activeColorIndices;
 		stepContext->knotBatches = knots.batches;
 		stepContext->knotBatchCount = knots.batchCount;

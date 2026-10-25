@@ -111,6 +111,10 @@ typedef enum b3SolverBlockType
 
 	// Added for Nebenan: block for one group of batches of knots, its index as the start, see b3KnotBatch
 	b3_knotBlock,
+
+	// Added for Nebenan: block for iterating across the joints of packs of islands in one graph color or the overflow, by
+	// their place in b3StepContext::packJoints, see b3PackJointsTask
+	b3_packJointBlock,
 } b3SolverBlockType;
 
 // Solver block describes a multithreaded unit of work.
@@ -318,8 +322,9 @@ typedef struct b3StepContext
 
 	// Added for Nebenan: the awake islands in packs, each solved whole by one thread without a barrier, see b3SolvePacks.
 	// No packs if the step solves color by color. Per pack its bodies as awake indices, its overflow constraints and, per
-	// active color, its wide constraints, each as a range up to the start of the next pack. With a team the stages hold
-	// the first pack, and the threads solve the others whole in between, see b3SolveOtherPack.
+	// active color, its wide constraints, each as a range up to the start of the next pack, and its joints, see
+	// packJoints. With a team the stages hold the first pack, and the threads solve the others whole in between, see
+	// b3SolveOtherPack.
 	int packCount;
 	bool team;
 
@@ -396,6 +401,12 @@ typedef struct b3StepContext
 
 	// Added for Nebenan: this step times where its solver works, see b3Profile::solverJoints
 	bool sampleSolver;
+
+	// Added for Nebenan: with packs the joints of every active color and then those of the overflow, each such row pack by
+	// pack, as their indices in the joints of their color. Per row of packCount + 1 where those of each pack start in
+	// packJoints, as with packWideStarts, the overflow last. See b3OrderPackJoints.
+	const int* packJoints;
+	const int* packJointStarts;
 } b3StepContext;
 
 void b3Solve( b3World* world, b3StepContext* stepContext );

@@ -488,8 +488,8 @@ static void AddFigures( Scene* scene, int side, int figureCount, bool selfCollis
 	}
 }
 
-// A pendulum far from the town that swings for ever: a single joint that is awake makes Box3D solve the whole world color
-// by color with a barrier per stage instead of in packs of islands, see b3SolvePacks, and this one adds nothing else
+// A pendulum far from the town that swings for ever, a single joint in an island of its own: it shows what a joint that is
+// awake costs the packs of islands, see b3SolvePacks, and adds nothing else
 static void AddPendulum( Scene* scene )
 {
 	b3BodyDef bodyDef = b3DefaultBodyDef();
@@ -819,13 +819,18 @@ static void BenchmarkFigures( int workerCount, bool selfCollision )
 					run->stats.collapsedStoreyCount );
 		}
 
-		// Where the solver works, in the steps it times, see nbProfile::solverJoints
-		printf( "  figures | solver CPU ms in a timed step: joints contacts bodies | constraints ms | timed steps\n" );
+		// Where the solver works, in the steps it times, see nbProfile::solverJoints, and the steps it solved in packs of
+		// islands, see nbProfile::packStepCount
+		printf( "  figures | solver CPU ms in a timed step: joints contacts bodies | constraints ms | timed steps | steps "
+				"in packs %%, with a team %%\n" );
 		for ( int r = 0; r < runCount; ++r )
 		{
 			const nbProfile* p = &runs[r].profile;
-			printf( "  %7s |                                %7.3f  %7.3f %6.3f |        %7.3f | %11d\n", labels[r],
-					p->solverJoints, p->solverContacts, p->solverBodies, p->stages[nb_profileConstraints], p->solverSampleCount );
+			float steps = (float)b3MaxInt( p->stepCount, 1 );
+			printf(
+				"  %7s |                                %7.3f  %7.3f %6.3f |        %7.3f | %11d |                %6.1f %6.1f\n",
+				labels[r], p->solverJoints, p->solverContacts, p->solverBodies, p->stages[nb_profileConstraints],
+				p->solverSampleCount, 100.0f * (float)p->packStepCount / steps, 100.0f * (float)p->teamStepCount / steps );
 		}
 
 		for ( int r = 0; r < runCount; ++r )

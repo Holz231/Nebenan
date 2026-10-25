@@ -672,8 +672,9 @@ typedef struct b3Counters
 	/// Maximum TOI root solver iterations.
 	int rootIterations;
 
-	/// Added for Nebenan: the work of the awake islands in the last step, four per contact and one per body as the packs
-	/// weigh it, and that of the largest island, which a pack gives to one thread alone. Zero in a world without workers.
+	/// Added for Nebenan: the work of the awake islands in the last step, four per contact and one per body, and that of
+	/// the largest island, which a pack gives to one thread alone. The packs weigh each joint as eight bodies on top. Zero
+	/// in a world without workers.
 	int islandWork;
 	int largestIslandWork;
 
@@ -707,6 +708,10 @@ typedef struct b3Counters
 
 	/// Added for Nebenan: one if the last step timed where its solver works, see b3Profile::solverJoints
 	int solverSample;
+
+	/// Added for Nebenan: the packs of islands the last step solved, each whole on one thread without a barrier per stage,
+	/// those of a team included, see teamPackCount. Zero if it solved color by color with a barrier per stage.
+	int packCount;
 } b3Counters;
 
 /// Added for Nebenan: the rows of b3TeamStages, the stages of a team by what they solve. The stages that prepare the

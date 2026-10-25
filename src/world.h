@@ -434,6 +434,7 @@ typedef struct nbProfileSums
 	int impactCount;
 	double teamStages[NB_TEAM_STAGE_VALUES];
 	int teamJoinStepCount;
+	int packStepCount;
 } nbProfileSums;
 
 typedef struct nbWorld

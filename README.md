@@ -922,7 +922,8 @@ Wo die Zeit der Schritte hingeht, sagt `nbWorld_GetProfile`, pro Schritt seit de
 nacheinander rechnet, wie viel Rechenzeit der Löser für Gelenke, Kontakte und Körper braucht, die Teile des Updates
 mit den Figuren, ihren Clips, ihrer Balance und den Zielen ihrer Gelenke,
 die Einschläge, Erstarren und Auftauen, die Zellen der Brüche, der Anteil
-der größten Insel an der Arbeit des Lösers, wie oft ein Team aller Threads die größten Pakete von Inseln rechnet, wo
+der größten Insel an der Arbeit des Lösers, wie oft Box3D ganze Inseln in Paketen rechnet und wie oft ein Team aller
+Threads die größten Pakete rechnet, wo
 dessen Zeit hingeht und wie sich Arbeit und Warten auf seine Stufen und Farben verteilen, wie lange ein schlafender
 Worker braucht, bis er anläuft, und ab wie viel Arbeit die Worker deshalb helfen. Ist dieselbe Arbeit mit verschieden
 vielen Threads gemessen, rechnet die Bibliothek aus, was davon parallel läuft und was mit mehr Threads bleibt:
@@ -1401,11 +1402,13 @@ nur 4 % ihrer Zeit in Box3D, 0,5 µs je Figur und Schritt, fast nur in der Kolli
 „Kontakte der Figuren“ in [docs/Roadmap.md](docs/Roadmap.md). Im Löser rechnen die Figuren fast nur an ihren Gelenken:
 In der ruhigen Stadt mit 50 Figuren gehen 83 % seiner Rechenzeit in die Gelenke, 12 % in das Integrieren der Körper und
 5 % in alle Kontakte, rund 15 µs Rechenzeit je Figur und Schritt für ihre 15 Gelenke. Teurer für eine zerstörbare Welt
-ist etwas anderes: Ein einziges waches Gelenk schaltet die Pakete aus „Ganze Inseln pro Thread“ für die ganze Welt ab,
-und der Löser rechnet alle Trümmer nach Farben mit einer Sperre je Stufe, siehe [`extern/README.md`](extern/README.md).
-In der Stadt unter Beschuss ohne Figuren kostet ein einziges Pendel weit weg den Box3D-Schritt so mit 2 Threads 25 %
-mehr, 0,97 statt 1,21 ms, und mit 8 Threads 19 %, siehe „Wohin der Löser bei Figuren rechnet“ in
-[docs/Roadmap.md](docs/Roadmap.md).
+war bis `ragdoll-6` etwas anderes: Ein einziges waches Gelenk schaltete die Pakete aus „Ganze Inseln pro Thread“ für die
+ganze Welt ab, und der Löser rechnete alle Trümmer nach Farben mit einer Sperre je Stufe. Seit `ragdoll-7` rechnet ein
+Paket die Gelenke seiner Inseln selbst, bitgleich, siehe „Gelenke in den Paketen“ in
+[`extern/README.md`](extern/README.md). Mit 8 Threads kostet ein Pendel weit weg die Stadt unter Beschuss nichts mehr,
+0,39 statt 0,46 ms je Box3D-Schritt, und mit 1, 10 und 50 Figuren ist der Schritt 14 bis 18 % schneller. Mit 2 Threads
+ändert sich nichts, dort rechneten die Pakete auch ohne Gelenke kaum schneller als die Farben, siehe „Gelenke in den
+Paketen“ in [docs/Roadmap.md](docs/Roadmap.md).
 
 **Eine Stadt größer als der Speicher.** Im Benchmark fliegt eine Kamera mit 30 m/s 900 m weit durch eine Stadt aus
 65 536 Häusern auf 3,6 × 3,1 km und 300 m zurück, Bruchstückgröße ×4. Am Stück bräuchte sie 24 GB. Geladen sind die
@@ -1772,8 +1775,6 @@ Nach Änderungen an `demo/shaders/scene.glsl` die Shader neu erzeugen, im Ordner
   Kugel dazu, beim Aufstehen die Kontakte aller Knochen. Gemessen, siehe Leistung: rund 17 µs je Figur und Schritt in
   Box3D und 1,2 bis 2,7 µs im Update der Bibliothek, auf dem aufrufenden Thread allein. 50 Figuren heben das mittlere
   Bild der Stadt unter Beschuss von 1,5 auf 2,4 ms.
-- Ein waches Gelenk nimmt dem Löser die Pakete für die ganze Welt, siehe Leistung: Schon eine Figur kostet die Trümmer
-  einer Stadt unter Beschuss ein Fünftel bis ein Viertel des Box3D-Schritts, bis Box3D Gelenke in Paketen rechnet.
 - Der Keypoint-Import braucht Punkte in 3D und in Metern, wie MediaPipe sie als Weltkoordinaten liefert. Aus den
   2D-Punkten eines Bildes oder aus mehreren Ansichten rekonstruiert er nichts (32.5). Beugt sich jemand in der Hüfte,
   kippt das Becken mit, denn ohne Punkte an der Wirbelsäule richtet es sich nach Hüften und Schultern. Ein gestrecktes

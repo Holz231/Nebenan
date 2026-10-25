@@ -1437,6 +1437,194 @@ static int TeamPacksTest( void )
 	return 0;
 }
 
+// Joints solve in the packs of islands as well, see b3OrderPackJoints: a pack solves the overflow joints of its islands
+// before their knots and the joints of every color with its contacts, as the stages do. Two hubs swing on ball joints
+// with 30 arms each that spin on hinges with motors, and with one color per arm 10 or 11 of them lie in the overflow.
+// Four chains of four links swing on hinges and report when they pull hard, see b3JointEvent. Without the heap both
+// hubs hang from the ground beside a field of cubes that stay awake, each an island of its own, so that the step wakes
+// the workers, see b3GetStepWorkerCount, and they solve all of it in packs. With the heap of TeamPacksTest one hub
+// hangs from the plate, and a team solves that island with its joints in its stages and its overflow joints on the
+// calling thread, while the workers solve the others whole. Every number of workers and either width must end the same
+// in every bit, the joint events included.
+static int JointPacksTest( void )
+{
+	const int workers[5] = { 1, 2, 4, 8, 8 };
+	nbTaskSystem* pool = nbCreateTaskSystem( 3 );
+	for ( int heap = 0; heap < 2; ++heap )
+	{
+		uint32_t hashes[5];
+		for ( int pass = 0; pass < 5; ++pass )
+		{
+			b3SetSIMDWidth( pass == 4 ? 4 : 0 );
+			TestScene scene = pass == 0 ? CreateScene() : CreateSceneWithPool( pool, workers[pass] );
+			b3Vec3 groundOrigin = { 0.0f, -1.0f, 0.0f };
+
+			b3BodyDef bodyDef = b3DefaultBodyDef();
+			bodyDef.type = b3_dynamicBody;
+			b3ShapeDef shapeDef = b3DefaultShapeDef();
+			b3BodyId bodies[1024];
+			int bodyCount = 0;
+
+			// The heap of TeamPacksTest or the field of cubes
+			b3BodyId plate = scene.groundId;
+			b3Vec3 plateOrigin = groundOrigin;
+			b3BoxHull cube = b3MakeBoxHull( 0.05f, 0.05f, 0.05f );
+			if ( heap == 0 )
+			{
+				bodyDef.enableSleep = false;
+				for ( int i = 0; i < 900; ++i )
+				{
+					bodyDef.position = (b3Vec3){ -12.0f + 0.3f * (float)( i % 30 ), 0.05f, -4.5f + 0.3f * (float)( i / 30 ) };
+					bodies[bodyCount] = b3CreateBody( scene.physicsWorld, &bodyDef );
+					b3CreateHullShape( bodies[bodyCount++], &shapeDef, &cube.base );
+				}
+				bodyDef.enableSleep = true;
+			}
+			else
+			{
+				const int side = 20;
+				float offset = 0.06f * (float)( side - 1 );
+				for ( int i = 0; i < side * side; ++i )
+				{
+					bodyDef.position =
+						(b3Vec3){ -1.6f + 0.12f * (float)( i % side ) - offset, 0.05f, 0.12f * (float)( i / side ) - offset };
+					bodies[bodyCount] = b3CreateBody( scene.physicsWorld, &bodyDef );
+					b3CreateHullShape( bodies[bodyCount++], &shapeDef, &cube.base );
+				}
+
+				plateOrigin = (b3Vec3){ -1.6f, 0.151f, 0.0f };
+				bodyDef.position = plateOrigin;
+				plate = b3CreateBody( scene.physicsWorld, &bodyDef );
+				b3BoxHull slab = b3MakeBoxHull( 0.06f * (float)side, 0.05f, 0.06f * (float)side );
+				shapeDef.density = 20000.0f;
+				b3CreateHullShape( plate, &shapeDef, &slab.base );
+				bodies[bodyCount++] = plate;
+			}
+
+			// The hubs, their arms and the chains collide with nothing. A hub weighs 540 kg, 35 times as much as its arms.
+			// With 27 kg the 30 arms tear away from it within a second, with one thread as with packs and with hinges, ball
+			// joints and welds alike, with 25 arms they hold.
+			b3ShapeDef ballDef = b3DefaultShapeDef();
+			ballDef.filter.maskBits = 0;
+			b3Sphere ball = { b3Vec3_zero, 0.05f };
+			b3ShapeDef hubDef = ballDef;
+			hubDef.density = 20000.0f;
+			b3BoxHull block = b3MakeBoxHull( 0.15f, 0.15f, 0.15f );
+			for ( int h = 0; h < 2; ++h )
+			{
+				b3Vec3 center = { h == 0 ? -1.6f : 2.0f, 1.3f, 0.0f };
+				bodyDef.position = center;
+				b3BodyId hub = b3CreateBody( scene.physicsWorld, &bodyDef );
+				b3CreateHullShape( hub, &hubDef, &block.base );
+				bodies[bodyCount++] = hub;
+
+				b3SphericalJointDef pivot = b3DefaultSphericalJointDef();
+				pivot.base.bodyIdA = h == 0 ? plate : scene.groundId;
+				pivot.base.bodyIdB = hub;
+				pivot.base.localFrameA.p = b3Sub( center, h == 0 ? plateOrigin : groundOrigin );
+				b3CreateSphericalJoint( scene.physicsWorld, &pivot );
+
+				// The arms below the hub and to one side, so that it swings
+				for ( int a = 0; a < 30; ++a )
+				{
+					b3Vec3 offset = { 0.15f * (float)( a % 6 ) - 0.3f, -0.2f, 0.15f * (float)( a / 6 ) - 0.3f };
+					bodyDef.position = b3Add( center, offset );
+					b3BodyId arm = b3CreateBody( scene.physicsWorld, &bodyDef );
+					b3CreateSphereShape( arm, &ballDef, &ball );
+					bodies[bodyCount++] = arm;
+
+					b3RevoluteJointDef hinge = b3DefaultRevoluteJointDef();
+					hinge.base.bodyIdA = hub;
+					hinge.base.bodyIdB = arm;
+					hinge.base.localFrameA.p = offset;
+					hinge.enableMotor = true;
+					hinge.motorSpeed = a % 2 == 0 ? 3.0f : -2.0f;
+					hinge.maxMotorTorque = 0.05f;
+					b3CreateRevoluteJoint( scene.physicsWorld, &hinge );
+				}
+			}
+
+			// The chains start level
+			for ( int c = 0; c < 4; ++c )
+			{
+				b3Vec3 anchor = { 4.0f + 0.6f * (float)c, 1.5f, 0.0f };
+				b3BodyId previous = scene.groundId;
+				for ( int k = 0; k < 4; ++k )
+				{
+					bodyDef.position = (b3Vec3){ anchor.x + 0.2f * (float)( k + 1 ), anchor.y, anchor.z };
+					b3BodyId link = b3CreateBody( scene.physicsWorld, &bodyDef );
+					b3CreateSphereShape( link, &ballDef, &ball );
+					bodies[bodyCount++] = link;
+
+					b3RevoluteJointDef hinge = b3DefaultRevoluteJointDef();
+					hinge.base.bodyIdA = previous;
+					hinge.base.bodyIdB = link;
+					hinge.base.localFrameA.p = k == 0 ? b3Sub( anchor, groundOrigin ) : b3Vec3_zero;
+					hinge.base.localFrameB.p = (b3Vec3){ -0.2f, 0.0f, 0.0f };
+					hinge.base.forceThreshold = 30.0f;
+					b3CreateRevoluteJoint( scene.physicsWorld, &hinge );
+					previous = link;
+				}
+			}
+
+			uint32_t hash = 2166136261u;
+			int packSteps = 0, teamSteps = 0, joinSteps = 0, events = 0;
+			for ( int step = 0; step < 240; ++step )
+			{
+				nbWorld_Step( scene.world, 1.0f / 60.0f, 4 );
+				b3Counters counters = b3World_GetCounters( scene.physicsWorld );
+				packSteps += counters.packCount > 0 ? 1 : 0;
+				teamSteps += counters.teamWork > 0 ? 1 : 0;
+				joinSteps += counters.teamPackCount > 1 ? 1 : 0;
+
+				b3JointEvents jointEvents = b3World_GetJointEvents( scene.physicsWorld );
+				events += jointEvents.count;
+				for ( int e = 0; e < jointEvents.count; ++e )
+				{
+					hash = ( hash ^ (uint32_t)jointEvents.jointEvents[e].jointId.index1 ) * 16777619u;
+				}
+				hash = ( hash ^ (uint32_t)step ) * 16777619u;
+			}
+
+			for ( int i = 0; i < bodyCount; ++i )
+			{
+				b3WorldTransform transform = b3Body_GetTransform( bodies[i] );
+				b3Vec3 p = b3ToVec3( transform.p );
+				b3Quat q = transform.q;
+				b3Vec3 v = b3Body_GetLinearVelocity( bodies[i] );
+				b3Vec3 w = b3Body_GetAngularVelocity( bodies[i] );
+				float values[13] = { p.x, p.y, p.z, q.v.x, q.v.y, q.v.z, q.s, v.x, v.y, v.z, w.x, w.y, w.z };
+				const uint8_t* bytes = (const uint8_t*)values;
+				for ( size_t k = 0; k < sizeof( values ); ++k )
+				{
+					hash = ( hash ^ bytes[k] ) * 16777619u;
+				}
+			}
+			hashes[pass] = hash;
+
+			if ( pass < 4 )
+			{
+				printf( "  %s, %d worker%s: packs in %d of 240 steps, a team in %d, with two packs in %d, %d joint events, hash "
+						"0x%08x\n",
+						heap == 0 ? "hubs on the ground" : "a hub on the heap", workers[pass], workers[pass] == 1 ? "" : "s",
+						packSteps, teamSteps, joinSteps, events, hash );
+			}
+			ENSURE( ( pass == 0 ) == ( packSteps == 0 ) );
+			ENSURE( heap == 0 || pass == 0 || teamSteps > 0 );
+			ENSURE( events > 0 );
+			DestroyScene( &scene );
+		}
+		b3SetSIMDWidth( 0 );
+
+		for ( int pass = 1; pass < 5; ++pass )
+		{
+			ENSURE( hashes[pass] == hashes[0] );
+		}
+	}
+	nbDestroyTaskSystem( pool );
+	return 0;
+}
+
 // Replaying the events must reproduce the set of live chunks, which is what a renderer relies on.
 static int EventTest( void )
 {
@@ -5869,6 +6057,7 @@ int WorldTest( void )
 	RUN_TEST( KnotTest );
 	RUN_TEST( KnotGroupTest );
 	RUN_TEST( TeamPacksTest );
+	RUN_TEST( JointPacksTest );
 	RUN_TEST( UniqueHullTest );
 	RUN_TEST( ExternalHullTest );
 	RUN_TEST( ShapeBatchTest );

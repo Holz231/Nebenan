@@ -8,7 +8,10 @@
 #include <stdbool.h>
 #include <stddef.h>
 
-#define B3_MAX_STACK_ENTRIES 32
+// Added for Nebenan: 64 instead of 32. With packs, knots and a team the solver holds up to 24 entries, and the split of
+// an island takes 8 more on a worker while the solver runs, see b3Solve, which filled all 32. The 32 more entries move
+// the fields of b3World behind its stack by 768 bytes, twelve whole cache lines.
+#define B3_MAX_STACK_ENTRIES 64
 
 typedef struct b3StackEntry
 {
