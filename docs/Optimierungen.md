@@ -1065,6 +1065,61 @@ Seit der Liste ist dazugekommen oder gemessen worden:
   die Schleife über den Block schiebt, ändern daran nichts, und die Prüfungen kosten bei ×4 damit 3 bis 6 % mehr, siehe
   die Tabelle unten. Die Ergebnisse bleiben bitgleich: Der Hash des Determinismus-Szenarios bleibt, beim Abriss endet
   die Welt mit 4 Threads mit demselben Hash wie mit `kollaps-12`, und alle Läufe enden gleich.
+- **Skalierung auf dem Ryzen mit `kollaps-13`.** Gemessen am 25. Oktober 2026 vom Nutzer mit „Skalierung messen“ auf dem
+  Ryzen 7 7800X3D, beim Abriss der Stadt in der Demo bei ×2 mit Budget 5 000 und 1, 2, 4 und 8 Threads, die Physik
+  nacheinander, im Fenster mit 2 560 × 1 369 Bildpunkten, zuerst `kollaps-12`, dann `kollaps-13`. Beide Läufe enden
+  gleich, alle Zähler stimmen überein. Mit Workern war der PC in diesem Durchgang langsamer als am Morgen: Mit
+  `kollaps-12` kostete ein Schritt samt Update und Einschlägen mit 2, 4 und 8 Threads 18, 17 und 15 % mehr als bei der
+  Messung von `kollaps-12` am Morgen, mit einem Thread gleich viel, und die Kontakt-Schleife, die seit `kollaps-11`
+  keine Runde geändert hat, mit Workern 15 bis 19 % mehr als bei der Messung von `kollaps-11`, ein Kontakt mit 8 Threads
+  149 statt 116 ns. Auf dem PC lief also etwas mit, das die Threads bremst, nicht aber einen Thread allein. Verglichen
+  wird deshalb nur innerhalb des Durchgangs. Darin war mit 2 Threads auch der Lauf mit `kollaps-13` gestört, die
+  Kontakt-Schleife und die Bedingungen kosteten 16 und 22 % mehr als mit `kollaps-12`, und mit `kollaps-12` mit 4
+  Threads das Bild, 14,24 ms bei 3,91 ms Simulation, nicht die Physik. Mit 1, 4 und 8 Threads kostet der Schritt von
+  Box3D, den keine der beiden Runden ändert, 0,1, 1,7 und 0,3 % mehr. Die Prüfungen kosten mit `kollaps-13` mit 1, 2, 4
+  und 8 Threads 0,548, 0,417, 0,252 und 0,168 statt 0,750, 0,502, 0,271 und 0,180 ms pro gemessenem Update, 27, 17, 7
+  und 7 % weniger, die Ruhe-Prüfung 25, 15, 7 und 6 % und das Update 24, 14, 7 und 5 %. Ein Schritt samt Update und
+  Einschlägen kostet mit einem Thread 2,0 % weniger, mit 4 und 8 Threads im Rahmen der Schwankungen gleich viel, mit 8
+  Threads 2,605 statt 2,615 ms, und ein Bild 3,08 statt 3,11 ms. Der Blick auf ein ruhiges Stück kostet mit 1, 2, 4 und
+  8 Threads 0,80, 1,18, 1,30 und 1,25 statt 1,16, 1,48, 1,55 und 1,59 µs, 31, 20, 16 und 21 % weniger, auf der VM waren
+  es 48 bis 49 %. Vorhergesagt waren für die Prüfungen mit 8 Threads rund 0,10 ms und mit einem Thread 0,44 ms. Die
+  Tabelle der Prüfungen mit 8 Threads: Die Threads rechnen 64,7 statt 73,1 % ihrer Zeit in Blöcken, 9,9 % warten sie vor
+  ihrem ersten Block, 0,2 % zwischen den Blöcken und 25,2 statt 17,8 % nach ihrem letzten. Der längste Block dauert
+  0,123 statt 0,128 ms, länger als die Blöcke eines Threads zusammen, 0,109 ms. Der Blick auf ein ruhiges Stück kostet
+  mit 8 Threads 56 % mehr als mit einem, die Frage, ob ein Stück ruhig ist, 69 %, beides in einem Durchgang, in dem die
+  Threads ohnehin langsamer waren. Sammeln, Suche und Erstarren sind 29,2 % der Ruhe-Prüfung. Mit 8 Threads liegen die
+  Prüfungen 0,100 ms über einem Achtel ihrer Zeit mit einem Thread, davon 0,042 ms am Ende, 0,040 ms, weil ein Stück
+  mehr kostet, 0,031 ms davon im Blick, und 0,017 ms vor dem ersten Block. Nach den Regeln der [Roadmap](Roadmap.md)
+  treten „Ende“ und „Speicher“ ein, „Anlauf“ und „Seriell“ nicht, und „Ende“ hat mit 0,042 ms pro Update die meiste Zeit
+  hinter sich.
+- **Was die Prüfungen am Ende aufhält.** Gemessen auf `kollaps-13` auf der VM, in einer Kopie, die beim Abriss der Stadt
+  in der Demo bei ×2 mit einem Thread über 4 000 Bilder für jedes ruhige Stück die Zeit des Blicks und die Länge seiner
+  Kontaktliste schreibt und für jeden Block die Zeit der Fragen, ob ein Stück ruhig ist, und des Ablaufens der Listen,
+  und in einer zweiten Kopie die Takte der Teile des Blicks auf große Stücke. Die Welt endet dabei wie ohne Zähler. In
+  den 3 979 Updates mit mindestens 128 bewegten Stücken sind im Mittel 564 von 3 100 ruhig, und die Prüfungen kosten pro
+  Update 0,21 ms für die Fragen, 0,55 ms für das Ablaufen der Listen und 0,82 ms für die Blicke. Eine Liste hat im
+  Median 26 Einträge, 99 % haben höchstens 123, die längste 6 281. Der längste Block eines Updates hält 17,3 % der
+  Arbeit, mehr als das Achtel eines Threads, und 69 % davon gehen in ein einziges Stück, seinen Blick und das Stück
+  seiner Liste, das Box3D allein abläuft. Das kann keine Verteilung der Blicke teilen. Mit diesen Zeiten, auf die Summen
+  und Anläufe des Ryzen skaliert, trifft die Simulation den Ryzen mit 1 und 4 Threads fast genau, 0,547 und 0,257 gegen
+  0,548 und 0,252 ms, den längsten Block mit 0,090 und 0,148 gegen 0,086 und 0,145 ms. Mit 8 Threads sagt sie 0,185
+  statt 0,168 ms voraus und den längsten Block 16 % zu lang: Das Ablaufen der Listen kostet auf dem Ryzen im Verhältnis
+  weniger, sein L3 antwortet schneller. Was „Ende“ vorschlägt, zwei Runden, erst alle Fragen, dann die Blicke in Teilen
+  von 128 Einträgen, die längsten Listen zuerst, brächte mit 8 Threads danach nur 1 bis 2 %, in Teilen von 512 Einträgen
+  kostete es 3,5 % mehr. Die teuren Stücke sind die großen: Im Mittel liegen pro Update 3,4 große ruhige Stücke im
+  Blick, jedes kostet 34 µs, und in 888 der 3 979 Updates eines mit mindestens 1 024 Einträgen in der Liste. Ein Blick
+  auf ein solches Stück kostet im Mittel 353 µs, bei 4 610 Einträgen, 1 094 berührenden Kontakten, 200 Formen und 983
+  bewegten Stücken, die darauf liegen, und das Ablaufen der Listen seines Blocks 400 µs. 877 dieser 901 Blicke gelten
+  einem einzigen Stück, das in diesen Updates ruhig liegt, ohne zu erstarren. Vom Blick gehen 29 % in die Liste der
+  bewegten Stücke, die darauf liegen und deshalb nichts tragen, samt ihrem `qsort`, 35 % in die Hauptschleife der Suche
+  nach dem, was trägt, die darin für fast jeden Kontakt binär sucht, und 15 % ins Nachschlagen der anderen Seite. Ein
+  `qsort` von 983 Zahlen kostet auf der VM 50 µs, 1 094 binäre Suchen darin 48 µs. Billiger zu machen ist damit der
+  Blick auf große Stücke: die aufliegenden Stücke in einer Menge mit offener Adressierung statt sortiert und durchsucht,
+  Bruchstück und Trümmerteil der anderen Seite einmal nachschlagen und vorausladen, wie „Speicher“ vorschlägt, und lange
+  Listen über die Listen ihrer Formen nebeneinander vorausladen, bevor Box3D sie in ihrer Reihenfolge abläuft. Mit
+  Blicken auf Stücke mit mindestens 1 024 Einträgen um 40 %, auf die übrigen großen um 15 % und auf kleine um 5 %
+  billiger sagt die Simulation mit 8 Threads 11 bis 13 % kürzere Prüfungen voraus, mit den Listen ab 256 Einträgen im
+  Tempo nebeneinander abgelaufener Listen 17 bis 21 %, und mit einem Thread 5 und 8 %.
 
 ## Physik, Zerstörung und Schutt
 
@@ -1417,5 +1472,7 @@ Seit der Liste ist dazugekommen oder gemessen worden:
 | Große Stücke in Blöcken für sich | ⛔ | Jedes große Stück in einem Block für sich, die die Threads zuerst nehmen. Beim Abriss auf der VM warten die Threads mit 4 Threads nach ihrem letzten Block nur noch 0,06 statt 0,53 ms. In der Stadt des Benchmarks bei ×4 ist aber ein Drittel der bewegten Stücke groß, es wurden 424 statt 21 Blöcke pro Update, und das Vorausladen lief bei jedem neu an: Die Prüfungen kosteten dort mit einem Thread 10 % und mit zwei 15 % mehr, siehe „Große Stücke in der Ruhe-Prüfung“. |
 | Blöcke der Ruhe-Prüfung nach erwarteten Kosten | ⛔ | Die Blöcke nach der Zahl der Stücke schneiden, die in den Prüfungen davor ruhig waren, damit kein Block viele ruhige hält. Nur 44 % der ruhigen Stücke waren es schon davor, ganze Haufen kommen auf einmal zur Ruhe, wenn ihre Insel einschläft. Die Simulation sagte mit 8 Threads 1,5 % voraus, siehe „Große Stücke in der Ruhe-Prüfung“. Nicht gebaut. |
 | Ruhige Stücke in einer zweiten Runde | ⛔ | Zuerst prüfen alle Threads, welche Stücke ruhig sind, dann teilen sie sich den Blick auf das, was sie trägt, Stück für Stück, die großen zuerst. Die Threads warten dazwischen auf den letzten Block der ersten Runde. In der Simulation mit 8 Threads 18 % weniger, weniger als die großen Stücke für sich, siehe „Große Stücke in der Ruhe-Prüfung“. Nicht gebaut. |
-| Kontaktlisten der ruhigen Stücke nebeneinander | ✅ auf `kollaps-13` | Der Blick auf ein ruhiges Stück ging auf der VM zu 61 % in die Kontaktliste seines Körpers in Box3D, im Mittel 28 Einträge für 6 berührende Kontakte, jeder an einer anderen Stelle im Speicher, siehe „Wohin der Blick auf ein ruhiges Stück geht“. Box3D läuft jetzt die Listen aller ruhigen Stücke eines Blocks nebeneinander ab (`b3Body_GetContactDataOfBodies`, siehe „Kontakte mehrerer Körper nebeneinander“ in [`extern/README.md`](../extern/README.md)), und Nebenan schlägt für jeden berührenden Kontakt die andere Seite einmal nach statt in jedem Durchgang, bitgleich. Beim Abriss auf der VM kostet der Blick damit 48 bis 49 % weniger, die Prüfungen 40 bis 42 %, ein Schritt 4 bis 6 %, im Benchmark in der Stadt bei ×4 die Prüfungen 13 bis 14 %, siehe „Kontaktlisten der ruhigen Stücke nebeneinander“. Auf dem Ryzen nachzumessen, siehe Schritt 45 der [Roadmap](Roadmap.md). |
+| Kontaktlisten der ruhigen Stücke nebeneinander | ✅ auf `kollaps-13` | Der Blick auf ein ruhiges Stück ging auf der VM zu 61 % in die Kontaktliste seines Körpers in Box3D, im Mittel 28 Einträge für 6 berührende Kontakte, jeder an einer anderen Stelle im Speicher, siehe „Wohin der Blick auf ein ruhiges Stück geht“. Box3D läuft jetzt die Listen aller ruhigen Stücke eines Blocks nebeneinander ab (`b3Body_GetContactDataOfBodies`, siehe „Kontakte mehrerer Körper nebeneinander“ in [`extern/README.md`](../extern/README.md)), und Nebenan schlägt für jeden berührenden Kontakt die andere Seite einmal nach statt in jedem Durchgang, bitgleich. Beim Abriss auf der VM kostet der Blick damit 48 bis 49 % weniger, die Prüfungen 40 bis 42 %, ein Schritt 4 bis 6 %, im Benchmark in der Stadt bei ×4 die Prüfungen 13 bis 14 %, siehe „Kontaktlisten der ruhigen Stücke nebeneinander“. Auf dem Ryzen nachzumessen, siehe Schritt 45 der [Roadmap](Roadmap.md). Auf dem Ryzen gemessen am 25. Oktober, siehe „Skalierung auf dem Ryzen mit `kollaps-13`“: Die Prüfungen kosten mit 1, 4 und 8 Threads 27, 7 und 7 % weniger, der Blick 16 bis 31 % statt 48 bis 49 %, und mit 8 Threads warten die Threads 25 % ihrer Zeit nach ihrem letzten Block, auf den Blick auf einzelne große Stücke, siehe „Was die Prüfungen am Ende aufhält“. „Ende“ und „Speicher“ treten ein. |
 | Blicke eines Blocks in eigener Funktion | ⛔ | In den Städten des Benchmarks bei ×1 und ×2 kostet die Frage, ob ein Stück ruhig ist, mit den Kontaktlisten nebeneinander 1 bis 7 % mehr, und der Compiler hatte das Ablaufen der Listen mitten in die Schleife über den Block gelegt. In einer eigenen Funktion, die er nicht einschiebt, blieb das Mehr aber gleich, und die Prüfungen kosteten in der Stadt bei ×4 3 bis 6 % mehr als ohne, je drei Läufe im Wechsel, siehe „Kontaktlisten der ruhigen Stücke nebeneinander“. Nicht übernommen. |
+| Prüfungen in zwei Runden | ⛔ | Vorgeschlagen von „Ende“ in Schritt 45 der [Roadmap](Roadmap.md): erst alle Fragen, ob ein Stück ruhig ist, in Blöcken, dann die Blicke in Teilen, die Stücke mit den längsten Listen zuerst. Nach der Simulation mit den Zeiten von `kollaps-13`, die den Ryzen mit 1 und 4 Threads fast genau trifft, dauerten die Prüfungen mit 8 Threads damit nur 1 bis 2 % kürzer, in Teilen von 512 Einträgen 3,5 % länger. Am Ende warten die Threads auf einzelne große Stücke, deren Blick sich nicht teilen lässt, siehe „Was die Prüfungen am Ende aufhält“. Nicht gebaut. |
+| Blick auf große Stücke billiger | 🔜 hoch | Am Ende der Prüfungen warten die Threads auf den Blick auf einzelne große Stücke, beim Abriss vor allem auf einen Rest mit Tausenden Einträgen in der Liste, auf dem fast tausend bewegte Stücke liegen, siehe „Was die Prüfungen am Ende aufhält“. Gut ein Viertel dieses Blicks geht ins Sortieren und Durchsuchen der aufliegenden Stücke, 15 % ins Nachschlagen der anderen Seite, und Box3D läuft seine lange Liste allein ab. Vorgeschlagen als Schritt 46 der [Roadmap](Roadmap.md): die aufliegenden Stücke in einer Menge mit offener Adressierung, die andere Seite einmal nachschlagen und vorausladen, lange Listen über die Listen ihrer Formen vorausladen, bitgleich. Nach der Simulation mit 8 Threads 11 bis 21 % kürzere Prüfungen, mit einem Thread 5 bis 8 %. |

@@ -1100,7 +1100,11 @@ geht“ in [docs/Optimierungen.md](docs/Optimierungen.md). Seit `kollaps-13` lä
 eines Blocks nebeneinander ab, und Nebenan schlägt für jeden berührenden Kontakt die andere Seite nur einmal nach, ein
 Spiel ruft dafür nichts Neues auf. Beim Abriss auf der VM kostet der Blick damit halb so viel, die Prüfungen 40 bis 42 %
 weniger und ein Schritt 4 bis 6 %, und die Ergebnisse bleiben bitgleich, siehe „Kontaktlisten der ruhigen Stücke
-nebeneinander“. Was das auf dem Ryzen bringt, entscheidet, wie es weitergeht, siehe [docs/Roadmap.md](docs/Roadmap.md).
+nebeneinander“. Auf dem Ryzen 7 7800X3D kosten die Prüfungen damit mit einem Thread 27 % weniger und mit 8 Threads 7 %,
+siehe „Skalierung auf dem Ryzen mit `kollaps-13`“. Mit 8 Threads warten die Threads dort ein Viertel ihrer Zeit auf den
+Blick auf einzelne große Stücke, beim Abriss vor allem auf einen Rest, auf dem fast tausend bewegte Stücke liegen, siehe
+„Was die Prüfungen am Ende aufhält“ in [docs/Optimierungen.md](docs/Optimierungen.md). Wie es weitergeht, steht in
+[docs/Roadmap.md](docs/Roadmap.md).
 
 Die teuersten Frames folgen auf einen Einsturz: Der Schutt um die Reste der Etage taut auf, und Box3D legt im nächsten
 Schritt Tausende neuer Kontakte an. Das ist echte Arbeit, das meiste davon fällt danach wirklich, siehe

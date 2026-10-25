@@ -18,9 +18,9 @@ nachgemessen, dem Überlauf an Knoten auf mehreren Threads auf `kollaps-7` und d
 beide auf dem Ryzen nachgemessen, den großen Paketen im Team auf `kollaps-9`, auf dem Ryzen nachgemessen, und dem Aufbau
 des Lösers neben den Knoten auf `kollaps-10`, auf dem Ryzen nachgemessen, und der zerlegten Kontakt-Schleife auf
 `kollaps-11`, auf dem Ryzen nachgemessen, und der zerlegten Ruhe-Prüfung auf `kollaps-12`, auf dem Ryzen nachgemessen,
-und den Kontaktlisten der ruhigen Stücke nebeneinander auf `kollaps-13`. Begründungen und Messwerte stehen in
-[`Optimierungen.md`](Optimierungen.md), hier nur das Fazit und die Reihenfolge. Nach jeder Runde wird der Stand hier
-nachgetragen.
+und den Kontaktlisten der ruhigen Stücke nebeneinander auf `kollaps-13`, auf dem Ryzen nachgemessen. Begründungen und
+Messwerte stehen in [`Optimierungen.md`](Optimierungen.md), hier nur das Fazit und die Reihenfolge. Nach jeder Runde
+wird der Stand hier nachgetragen.
 
 `kollaps-1` ist keine Runde der Physik, sie baut den Einsturz nach Kapitel 17 der Roadmap des Spiels, siehe
 [`Referenz`](Referenz/README.md). Sie ändert aber, was der Benchmark unter Trommelfeuer bei ×4 misst: Eine Etage gibt
@@ -117,7 +117,9 @@ vergleicht dort verschiedene Szenen. Im Benchmark enden die Städte fast gleich,
   drankommen, noch 4 %, siehe Schritt 41 und 42. Auf dem Ryzen warten sie mit 8 Threads 19 % ihrer Zeit nach ihrem
   letzten Block, und der Blick auf ein ruhiges Stück geht auf der VM zu 61 % in die Liste seiner Kontakte in Box3D,
   siehe Schritt 43. Seit `kollaps-13` läuft Box3D die Listen aller ruhigen Stücke eines Blocks nebeneinander ab: Beim
-  Abriss auf der VM kostet der Blick damit halb so viel und die Prüfungen 40 bis 42 % weniger, siehe Schritt 44.
+  Abriss auf der VM kostet der Blick damit halb so viel und die Prüfungen 40 bis 42 % weniger, siehe Schritt 44. Auf dem
+  Ryzen kosten die Prüfungen damit mit einem Thread 27 % weniger und mit 8 Threads 7 %, und mit 8 Threads warten die
+  Threads ein Viertel ihrer Zeit auf den Blick auf einzelne große Stücke, siehe Schritt 45.
 - **Der Löser hing am Überlauf des Graphen.** Kontakte, für die keine der 20 Farben frei ist, löst Box3D auf dem
   aufrufenden Thread allein. Beim Abriss sind das die Kontakte an Knoten: große abgebrochene Teile aus Dutzenden bis
   Hunderten Bruchstücken, an denen Hunderte kleine Trümmer liegen, siehe „Der Überlauf beim Abriss“. Seit `physik-22`
@@ -189,7 +191,8 @@ bleiben.
 | 42 | **Blöcke mit großen Stücken zuerst**: Die Welt führt ein Bit für die großen Trümmer, und mit Workern nehmen die Threads die Blöcke mit einem großen Stück zuerst, bitgleich | mit 8 Threads geschätzt 15 % der Prüfungen, rund 0,02 bis 0,03 ms pro Schritt | 41 | ✅ auf `kollaps-12`: Beim Abriss auf der VM mit 4 Threads warten die Threads nach ihrem letzten Block 65 % kürzer, und die Prüfungen kosten 4,7 % weniger, in einem Lauf, in dem die VM sonst 1,3 bis 2,6 % langsamer war. Im Benchmark gleich viel. Jedes große Stück in einem Block für sich kostete in der Stadt bei ×4 bis 15 % mehr |
 | 43 | **Auf dem Ryzen nachmessen**: „Skalierung messen“ mit `kollaps-12` beim Abriss bei ×2 | zeigt, was die Ruhe-Prüfung mit 8 Threads bremst, und entscheidet nach den Regeln unter „Was als Nächstes in Frage kommt“, wie es weitergeht | 41 und 42 | ✅ am 25. Oktober, `kollaps-11` und `kollaps-12` direkt nacheinander: Mit 8 Threads rechnen die Threads der Prüfungen 72,1 % ihrer Zeit in Blöcken, 8,3 % warten sie vor ihrem ersten Block und 19,4 % nach ihrem letzten, der Blick auf ein ruhiges Stück kostet 26,5 % mehr als mit einem Thread, und Sammeln, Suche und Erstarren sind 31,5 % der Ruhe-Prüfung. „Ende“ und „Speicher“ treten ein. Kleinere Teile brächten nach der Simulation höchstens 7 bis 10 %, ein billigerer Blick mehr. Die Ruhe-Prüfung kostet mit 4 und 8 Threads 2 bis 3 % weniger als im Mittel der Läufe davor, nicht die vorhergesagten 15 %, ein Schritt gleich viel. Der Lauf mit `kollaps-11` war am PC gestört. Auf der VM geht der Blick zu 61 % in die Liste der Kontakte in Box3D, daraus 44 |
 | 44 | **Kontaktlisten der ruhigen Stücke nebeneinander**: Box3D läuft die Listen der Kontakte aller ruhigen Stücke eines Blocks zugleich ab, jede in ihrer Reihenfolge, sodass sich das Warten auf den Speicher überlappt, und Nebenan schlägt jeden berührenden Kontakt nur einmal nach statt in drei Durchgängen, bitgleich | im Nachbau auf der VM die Blicke 37,5 % billiger, nach der Simulation die Prüfungen mit 1 bis 8 Threads 29 bis 33 %, auf dem Ryzen mit 8 Threads rund 0,05 ms pro Schritt, 2 % eines Bilds, mit einem Thread 0,25 ms | 43 | ✅ auf `kollaps-13`: `b3Body_GetContactDataOfBodies` in Box3D, `nbTouch` in Nebenan. Beim Abriss auf der VM bei ×2 kostet der Blick auf ein ruhiges Stück mit 1, 2 und 4 Threads 48 bis 49 % weniger, die Prüfungen 40 bis 42 %, die Ruhe-Prüfung 33 bis 39 % und ein Schritt 4,2 bis 6,0 %, die Welt endet bitgleich. Im Benchmark in der Stadt bei ×4 die Prüfungen 13 bis 14 % weniger, bei ×1 und ×2 2 bis 5 %. Mit 4 Threads warten die Threads jetzt 11,4 % ihrer Zeit vor ihrem ersten Block und 7,2 % nach ihrem letzten, auf dem Ryzen nachzumessen, siehe 45 |
-| 45 | **Auf dem Ryzen nachmessen**: „Skalierung messen“ mit `kollaps-13` beim Abriss bei ×2 | zeigt, was 44 mit 8 Threads bringt, und entscheidet nach den Regeln unter „Was als Nächstes in Frage kommt“, wie es weitergeht | 44 | 🔜 |
+| 45 | **Auf dem Ryzen nachmessen**: „Skalierung messen“ mit `kollaps-13` beim Abriss bei ×2 | zeigt, was 44 mit 8 Threads bringt, und entscheidet nach den Regeln unter „Was als Nächstes in Frage kommt“, wie es weitergeht | 44 | ✅ am 25. Oktober, `kollaps-12` und `kollaps-13` direkt nacheinander, mit Workern beide 15 bis 18 % langsamer als `kollaps-12` am Morgen: Die Prüfungen kosten mit 1, 4 und 8 Threads 27, 7 und 7 % weniger, der Blick auf ein ruhiges Stück 16 bis 31 % statt wie auf der VM 48 bis 49 %, ein Schritt mit einem Thread 2 %, mit 8 Threads gleich viel. Mit 8 Threads rechnen die Threads 64,7 % ihrer Zeit in Blöcken und warten 25,2 % nach ihrem letzten, und der Blick kostet 56 % mehr als mit einem Thread. „Ende“ und „Speicher“ treten ein. Zwei Runden brächten nach der Simulation nur 1 bis 2 %, am Ende warten die Threads auf den Blick auf einzelne große Stücke, daraus 46 |
+| 46 | **Blick auf große Stücke billiger**: die bewegten Stücke, die auf einem großen liegen, in einer Menge mit offener Adressierung statt sortiert und binär durchsucht, Bruchstück und Trümmerteil der anderen Seite jedes Kontakts einmal nachschlagen und vorausladen, wie „Speicher“ vorschlägt, und lange Kontaktlisten über die Listen ihrer Formen nebeneinander vorausladen, bevor Box3D sie in ihrer Reihenfolge abläuft, bitgleich | nach der Simulation mit 8 Threads 11 bis 21 % der Prüfungen, auf dem Ryzen rund 0,02 bis 0,035 ms pro Schritt, mit einem Thread 5 bis 8 % | 45 | 🔜 |
 | 33 | **Weniger Kopien an kleinen Knoten**: eine Gruppe für je 64 statt 32 Kontakte, ändert die Ergebnisse | mit 1 und 2 Threads ein Teil der 30 und 7 % pro Kontakt | 30 | 🔜 niedrig |
 | 26 | **Worker wach halten statt schlafen legen**: kurz aktiv warten, bevor ein Worker schläft, bitgleich | auf der VM rund ein Zehntel der Ruhe-Prüfung, kostet Rechenzeit beim Zeichnen | 25 | ⛔ nach 25: Auf dem Ryzen laufen die Worker nach 6 bis 7 µs an, aktiv zu warten spart unter 0,5 % eines Schritts |
 
@@ -773,6 +776,31 @@ der meisten Zeit pro Schritt dahinter:
   mit 4 Threads 20 %.
 - **Nichts davon**: Dann skaliert die Ruhe-Prüfung. Als Nächstes kommt, was nach der Tabelle der Stufen mit 8 Threads am
   meisten seriell bleibt.
+
+Auf dem Ryzen nachgemessen am 25. Oktober, Schritt 45, `kollaps-12` und `kollaps-13` direkt nacheinander, siehe
+„Skalierung auf dem Ryzen mit `kollaps-13`“ in [Optimierungen.md](Optimierungen.md). Mit Workern waren beide Läufe 15
+bis 18 % langsamer als `kollaps-12` am Morgen, mit einem Thread gleich schnell, auch in Stufen, die seit `kollaps-11`
+keine Runde geändert hat: Auf dem PC lief etwas mit. Verglichen wird deshalb nur innerhalb des Durchgangs. Die Prüfungen
+kosten mit `kollaps-13` mit 1, 4 und 8 Threads 27, 7 und 7 % weniger, die Ruhe-Prüfung 25, 7 und 6 %, ein Schritt mit
+einem Thread 2 %, mit 4 und 8 Threads gleich viel. Der Blick auf ein ruhiges Stück kostet auf dem Ryzen 16 bis 31 %
+weniger, auf der VM 48 bis 49 %, und mit 8 Threads dauern die Prüfungen 0,168 statt der vorhergesagten 0,10 ms. Die
+Threads rechnen 64,7 % ihrer Zeit in Blöcken, 9,9 % warten sie vor ihrem ersten Block und 25,2 % nach ihrem letzten, der
+Blick kostet 56 % mehr als mit einem Thread, und Sammeln, Suche und Erstarren sind 29,2 % der Ruhe-Prüfung. Also treten
+„Ende“ und „Speicher“ ein, „Anlauf“ und „Seriell“ nicht, und „Ende“ hat mit 0,042 ms pro Update mehr Zeit hinter sich
+als „Speicher“ mit 0,031 ms.
+
+Was „Ende“ vorschlägt, lohnt aber nicht, siehe „Was die Prüfungen am Ende aufhält“ in
+[Optimierungen.md](Optimierungen.md). Der längste Block hält auf der VM 17 % der Arbeit eines Updates, mehr als das
+Achtel eines Threads, und 69 % davon gehen in ein einziges großes Stück, das keine Verteilung teilen kann. Zwei Runden,
+die längsten Listen zuerst, brächten nach der Simulation, die den Ryzen mit 1 und 4 Threads fast genau trifft, mit 8
+Threads nur 1 bis 2 %. Am Ende warten die Threads auf den Blick auf große Stücke: Im Mittel liegen 3,4 pro Update im
+Blick, und in 22 % der Updates eines mit Tausenden Einträgen in der Liste, auf dem fast tausend bewegte Stücke liegen,
+fast immer dasselbe. Ein Blick darauf kostet auf der VM 353 µs und das Ablaufen der Listen seines Blocks 400 µs. Gut ein
+Viertel des Blicks geht ins Sortieren und Durchsuchen der Stücke, die darauf liegen, 15 % ins Nachschlagen der anderen
+Seite. Daraus Schritt 46: den Blick auf große Stücke billiger machen, mit dem Vorausladen der anderen Seite, das
+„Speicher“ vorschlägt, und lange Listen über die Listen ihrer Formen vorausladen. Die Simulation sagt dafür mit 8
+Threads 11 bis 21 % kürzere Prüfungen voraus, auf dem Ryzen rund 0,02 bis 0,035 ms pro Schritt, und mit einem Thread 5
+bis 8 %.
 
 ## Kleinere Punkte
 
