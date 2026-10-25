@@ -970,7 +970,10 @@ static void b3DesContacts( b3SnapReader* r, b3World* world )
 	if ( r->ok )
 	{
 		b3Array_Resize( world->contactTouches, count );
-		b3SnapR_Bytes( r, world->contactTouches.data, count * (int)sizeof( b3ContactTouch ) );
+		if ( count > 0 )
+		{
+			b3SnapR_Bytes( r, world->contactTouches.data, count * (int)sizeof( b3ContactTouch ) );
+		}
 		uint64_t low = b3SnapR_U32( r );
 		uint64_t high = b3SnapR_U32( r );
 		world->contactCreations = low | ( high << 32 );
@@ -1327,7 +1330,8 @@ bool b3DeserializeIntoShell( const uint8_t* data, int size, b3World* world, b3Re
 		{
 			r->ok = false;
 		}
-		if ( r->ok )
+		// Changed for Nebenan: without sensors the new array has no memory, and memset wants a valid pointer even for no bytes
+		if ( r->ok && sensorCount > 0 )
 		{
 			b3Array_Resize( world->sensors, sensorCount );
 			memset( world->sensors.data, 0, (size_t)sensorCount * sizeof( b3Sensor ) );
@@ -1356,7 +1360,8 @@ bool b3DeserializeIntoShell( const uint8_t* data, int size, b3World* world, b3Re
 		{
 			r->ok = false;
 		}
-		if ( r->ok )
+		// Changed for Nebenan: the same without islands
+		if ( r->ok && islandCount > 0 )
 		{
 			b3Array_Resize( world->islands, islandCount );
 			memset( world->islands.data, 0, (size_t)islandCount * sizeof( b3Island ) );
