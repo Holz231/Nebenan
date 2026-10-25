@@ -560,9 +560,20 @@ Stücke eines Blocks auf einmal, siehe „Kontaktlisten der ruhigen Stücke nebe
 [`docs/Optimierungen.md`](../docs/Optimierungen.md). In einer Kopie mit Zählern kostete ein Eintrag beim Abriss auf der
 VM so 61 statt 184 Takte.
 
+**Lange Kontaktlisten über ihre Formen.** In `b3Body_GetContactDataOfBodies` läuft ein Körper mit langer Liste, ab 256
+Kontakten und 8 Formen, zuerst die Listen seiner Formen nebeneinander ab, bis zu 64 zugleich, in jeder Runde einen
+Eintrag jeder Liste, und lädt dabei jeden Kontakt voraus (`b3PrefetchContactsOfShapes` in `src/body.c`). Seit „Kontakte
+pro Form“ führt jede Form ihre Kontakte in einer eigenen Liste, dieselben wie die Liste des Körpers, nur in kurzen
+Stücken. Danach läuft die Liste des Körpers wie zuvor in ihrer Reihenfolge ab und findet den nächsten Eintrag und die
+Flags jedes Kontakts im Cache, die Kontakte und ihre Reihenfolge bleiben dieselben. Beim Abriss in der Demo liegt in
+einem Fünftel der Updates der Rest einer Etage mit über 4 000 Einträgen und 200 Formen ruhig, und seine Liste lief
+allein weiter, lange nachdem die der anderen Stücke seines Blocks geendet hatten. Auf der VM dauert der längste Block
+der Ruhe-Prüfung damit 10 bis 17 % kürzer, siehe „Blick auf große Stücke billiger“ in
+[`docs/Optimierungen.md`](../docs/Optimierungen.md).
+
 Die erste, die zweite, die vierte bis achte, die zehnte, die dreizehnte bis einunddreißigste, die dreiunddreißigste bis
 fünfunddreißigste, die neununddreißigste bis dreiundvierzigste, die fünfundvierzigste bis siebenundvierzigste, die
-neunundvierzigste bis vierundfünfzigste ändern an den Ergebnissen nichts. Die dritte und die neunte ändern sie in den
+neunundvierzigste bis fünfundfünfzigste ändern an den Ergebnissen nichts. Die dritte und die neunte ändern sie in den
 letzten Bits, dafür hängen sie nicht mehr davon ab, in welcher Reihenfolge Formen in die Bäume kommen. Die elfte ändert
 sie, weil Kontakte zu anderen Zeitpunkten entstehen, die zwölfte, weil sie weniger Punkte bekommen, die
 zweiunddreißigste, weil die Kontakte eines Knotens gebündelt gegen Kopien rechnen statt nacheinander, die
@@ -579,13 +590,12 @@ Die Ergänzungen stehen in `CMakeLists.txt`, `src/CMakeLists.txt`, `include/box3
 `src/manifold.h`, `src/convex_manifold.c`, `src/convex_manifold_avx2.c`, `src/world_snapshot.c`, `src/recording.c`,
 `src/solver.h`, `src/solver.c`, `src/broad_phase.h`, `src/broad_phase.c`, `src/dynamic_tree.h`, `src/dynamic_tree.c`,
 `src/parallel_for.h`, `src/parallel_for.c`, `src/platform.h`, `src/scheduler.h`, `src/scheduler.c`, `src/timer.c`,
-`src/physics_world.h` und `src/physics_world.c`, jeweils mit „Added for Nebenan“ markiert.
-`B3_HAS_UNIQUE_HULLS`, `B3_HAS_SHAPE_BATCH`, `B3_HAS_SHAPE_CONTACT_LISTS`, `B3_HAS_EXTERNAL_HULLS`,
-`B3_HAS_BODY_PREFETCH`, `B3_HAS_STEP_GUARD`, `B3_HAS_PREVIOUS_TRANSFORM`, `B3_HAS_STATIC_OVERLAP` und
-`B3_HAS_CONTACT_DATA_OF_BODIES` zeigen die zweite, die vierte, die fünfte, die sechste, die neunzehnte, die dreißigste,
-die fünfunddreißigste, die zweiundvierzigste und die vierundfünfzigste an. Fehlen sie, etwa mit einem eigenen Box3D,
-läuft Nebenan wie zuvor, nur wachsen Box3Ds Arrays dann durch Umkopieren, die Hüllen gehen durch die Tabelle, jede Form
-geht einzeln in den Baum, jedes stehende Bruchstück bekommt einen eigenen Körper, Box3D hält eine Kopie jeder Hülle,
-Nebenan holt die Körper der Trümmer nicht voraus, `nbWorld_Step` rechnet auf dem aufrufenden Thread,
-`nbWorld_GetDrawPoses` gibt die Lagen nach dem Schritt, Schutt wird in allen Bäumen gesucht, und die Ruhe-Prüfung holt
-die Kontakte jedes ruhigen Stücks für sich.
+`src/physics_world.h` und `src/physics_world.c`, jeweils mit „Added for Nebenan“ markiert. `B3_HAS_UNIQUE_HULLS`,
+`B3_HAS_SHAPE_BATCH`, `B3_HAS_SHAPE_CONTACT_LISTS`, `B3_HAS_EXTERNAL_HULLS`, `B3_HAS_BODY_PREFETCH`,
+`B3_HAS_STEP_GUARD`, `B3_HAS_PREVIOUS_TRANSFORM`, `B3_HAS_STATIC_OVERLAP` und `B3_HAS_CONTACT_DATA_OF_BODIES` zeigen die
+zweite, die vierte, die fünfte, die sechste, die neunzehnte, die dreißigste, die fünfunddreißigste, die
+zweiundvierzigste und die vierundfünfzigste an. Fehlen sie, etwa mit einem eigenen Box3D, läuft Nebenan wie zuvor, nur
+wachsen Box3Ds Arrays dann durch Umkopieren, die Hüllen gehen durch die Tabelle, jede Form geht einzeln in den Baum,
+jedes stehende Bruchstück bekommt einen eigenen Körper, Box3D hält eine Kopie jeder Hülle, Nebenan holt die Körper der
+Trümmer nicht voraus, `nbWorld_Step` rechnet auf dem aufrufenden Thread, `nbWorld_GetDrawPoses` gibt die Lagen nach dem
+Schritt, Schutt wird in allen Bäumen gesucht, und die Ruhe-Prüfung holt die Kontakte jedes ruhigen Stücks für sich.
