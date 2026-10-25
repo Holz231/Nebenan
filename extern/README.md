@@ -547,9 +547,22 @@ hinten (`b3_blocksFromBothEnds` in `src/parallel_for.h`), die billigen Blöcke d
 Threads warten sie nach ihrem letzten Block damit 55 bis 77 % kürzer. Mit einer Aufgabe bleibt die Reihenfolge, wie sie
 war. Jeder Kontakt wird für sich gerechnet, die Reihenfolge ändert an den Ergebnissen nichts.
 
+**Kontakte mehrerer Körper nebeneinander.** `b3Body_GetContactDataOfBodies` gibt für bis zu 64 Körper einer Welt die
+berührenden Kontakte, jedem Körper dieselben wie `b3Body_GetContactData` und in derselben Reihenfolge (`src/body.c`).
+Box3D führt die Kontakte eines Körpers in einer Liste, in der jeder Eintrag erst sagt, wo der nächste liegt, und in
+einem Haufen Trümmer berühren die meisten Einträge nicht: Ein kleines ruhiges Stück beim Abriss in der Demo hat im
+Mittel 28 Einträge für 6 Kontakte, die berühren, jeden an einer anderen Stelle im Speicher. Die Funktion geht die Listen
+deshalb nebeneinander durch, in jeder Runde einen Eintrag jeder Liste, und lädt den nächsten Eintrag einer Liste voraus,
+sobald er bekannt ist, so überlappen sich die Wartezeiten der Listen. Für einen berührenden Kontakt lädt sie voraus, was
+danach gelesen wird, seine Generation, die Einträge seiner Formen und den Körper auf der anderen Seite, und holt die
+Generationen der Ids in einem zweiten Durchgang. Nebenan holt damit in der Ruhe-Prüfung die Kontakte aller ruhigen
+Stücke eines Blocks auf einmal, siehe „Kontaktlisten der ruhigen Stücke nebeneinander“ in
+[`docs/Optimierungen.md`](../docs/Optimierungen.md). In einer Kopie mit Zählern kostete ein Eintrag beim Abriss auf der
+VM so 61 statt 184 Takte.
+
 Die erste, die zweite, die vierte bis achte, die zehnte, die dreizehnte bis einunddreißigste, die dreiunddreißigste bis
 fünfunddreißigste, die neununddreißigste bis dreiundvierzigste, die fünfundvierzigste bis siebenundvierzigste, die
-neunundvierzigste bis dreiundfünfzigste ändern an den Ergebnissen nichts. Die dritte und die neunte ändern sie in den
+neunundvierzigste bis vierundfünfzigste ändern an den Ergebnissen nichts. Die dritte und die neunte ändern sie in den
 letzten Bits, dafür hängen sie nicht mehr davon ab, in welcher Reihenfolge Formen in die Bäume kommen. Die elfte ändert
 sie, weil Kontakte zu anderen Zeitpunkten entstehen, die zwölfte, weil sie weniger Punkte bekommen, die
 zweiunddreißigste, weil die Kontakte eines Knotens gebündelt gegen Kopien rechnen statt nacheinander, die
@@ -568,9 +581,11 @@ Die Ergänzungen stehen in `CMakeLists.txt`, `src/CMakeLists.txt`, `include/box3
 `src/parallel_for.h`, `src/parallel_for.c`, `src/platform.h`, `src/scheduler.h`, `src/scheduler.c`, `src/timer.c`,
 `src/physics_world.h` und `src/physics_world.c`, jeweils mit „Added for Nebenan“ markiert.
 `B3_HAS_UNIQUE_HULLS`, `B3_HAS_SHAPE_BATCH`, `B3_HAS_SHAPE_CONTACT_LISTS`, `B3_HAS_EXTERNAL_HULLS`,
-`B3_HAS_BODY_PREFETCH`, `B3_HAS_STEP_GUARD`, `B3_HAS_PREVIOUS_TRANSFORM` und `B3_HAS_STATIC_OVERLAP` zeigen die zweite,
-die vierte, die fünfte, die sechste, die neunzehnte, die dreißigste, die fünfunddreißigste und die zweiundvierzigste an.
-Fehlen sie, etwa mit einem eigenen Box3D, läuft Nebenan wie zuvor, nur wachsen Box3Ds Arrays dann durch Umkopieren, die
-Hüllen gehen durch die Tabelle, jede Form geht einzeln in den Baum, jedes stehende Bruchstück bekommt einen eigenen
-Körper, Box3D hält eine Kopie jeder Hülle, Nebenan holt die Körper der Trümmer nicht voraus, `nbWorld_Step` rechnet auf
-dem aufrufenden Thread, `nbWorld_GetDrawPoses` gibt die Lagen nach dem Schritt, und Schutt wird in allen Bäumen gesucht.
+`B3_HAS_BODY_PREFETCH`, `B3_HAS_STEP_GUARD`, `B3_HAS_PREVIOUS_TRANSFORM`, `B3_HAS_STATIC_OVERLAP` und
+`B3_HAS_CONTACT_DATA_OF_BODIES` zeigen die zweite, die vierte, die fünfte, die sechste, die neunzehnte, die dreißigste,
+die fünfunddreißigste, die zweiundvierzigste und die vierundfünfzigste an. Fehlen sie, etwa mit einem eigenen Box3D,
+läuft Nebenan wie zuvor, nur wachsen Box3Ds Arrays dann durch Umkopieren, die Hüllen gehen durch die Tabelle, jede Form
+geht einzeln in den Baum, jedes stehende Bruchstück bekommt einen eigenen Körper, Box3D hält eine Kopie jeder Hülle,
+Nebenan holt die Körper der Trümmer nicht voraus, `nbWorld_Step` rechnet auf dem aufrufenden Thread,
+`nbWorld_GetDrawPoses` gibt die Lagen nach dem Schritt, Schutt wird in allen Bäumen gesucht, und die Ruhe-Prüfung holt
+die Kontakte jedes ruhigen Stücks für sich.

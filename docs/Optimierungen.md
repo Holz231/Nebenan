@@ -1043,6 +1043,28 @@ Seit der Liste ist dazugekommen oder gemessen worden:
   184 Takte, der Rest des Blicks 10 % mehr, die Blicke zusammen 37,5 % weniger, und die Welt endet bitgleich. Mit diesen
   Zeiten sagt die Simulation für die Prüfungen mit 1, 2, 4 und 8 Threads 33, 32, 32 und 29 % weniger voraus, auf dem
   Ryzen mit 8 Threads rund 0,05 ms pro Schritt, mit einem Thread 0,25 ms.
+- **Kontaktlisten der ruhigen Stücke nebeneinander.** Gemessen auf `kollaps-13` auf der VM gegen `kollaps-12`, im
+  Benchmark der Städte sechs Läufe im Wechsel und beim Abriss der Stadt in der Demo bei ×2 einer direkt nach dem
+  anderen. Box3D läuft die Kontaktlisten aller ruhigen Stücke eines Blocks nebeneinander ab, siehe „Kontakte mehrerer
+  Körper nebeneinander“ in [`extern/README.md`](../extern/README.md), und Nebenan schlägt für jeden berührenden Kontakt
+  die Seite des Stücks, den Körper auf der anderen Seite, dessen Typ und dessen Trümmerteil einmal nach (`nbTouch`),
+  statt in jedem Durchgang der Suche nach dem, was das Stück trägt, der Frage, ob ein größeres Stück es eindrückt, und
+  der Liste der bewegten Stücke darunter. Dasselbe gilt für die Blicke des Budgets. Beim Abriss kostet der Blick auf ein
+  ruhiges Stück mit 1, 2 und 4 Threads 2,74, 3,23 und 3,28 statt 5,36, 6,22 und 6,45 µs, 48 bis 49 % weniger, in einem
+  Lauf, in dem die VM rund 10 % langsamer war als bei der Messung von `kollaps-12`. Die Prüfungen kosten 1,95, 1,19 und
+  0,69 statt 3,37, 2,04 und 1,14 ms pro Update, 40 bis 42 % weniger, die Ruhe-Prüfung 33 bis 39 %, das Update 28 bis
+  36 % und ein Schritt samt Update und Einschlägen 4,2, 4,4 und 6,0 %. Mit 4 Threads rechnen die Threads aber nur noch
+  81,1 statt 88,9 % ihrer Zeit in Blöcken, 11,4 % warten sie vor ihrem ersten Block, wo der Anlauf der Worker auf der VM
+  gleich lang bleibt, und 7,2 % nach ihrem letzten. Der längste Block dauert 26 bis 29 % kürzer. Sammeln, Suche und
+  Erstarren sind mit 4 Threads 27 statt 18 % der Ruhe-Prüfung. Im Benchmark kostet der Blick auf ein ruhiges Stück 17
+  bis 24 % weniger, in der Stadt bei ×4, wo 118 von 1 290 bewegten Stücken pro Update ruhig sind, die Prüfungen 13 bis
+  14 %, die Ruhe-Prüfung 7 bis 11 %, das Update 4 bis 5 % und das Budget 3 bis 5 %. In den Städten bei ×1 und ×2, wo 19
+  von 1 479 und 29 von 669 Stücken ruhig sind, kosten die Prüfungen 2 bis 5 % weniger, die Frage, ob ein Stück ruhig
+  ist, dort aber 1 bis 7 % mehr, beim Abriss und bei ×4 nicht. Ein Schritt kostet im Benchmark 2,1 % weniger bis 1,6 %
+  mehr, im Rahmen der Schwankungen. Die Blicke eines Blocks in einer eigenen Funktion, damit der Compiler sie nicht in
+  die Schleife über den Block schiebt, ändern daran nichts, und die Prüfungen kosten bei ×4 damit 3 bis 6 % mehr, siehe
+  die Tabelle unten. Die Ergebnisse bleiben bitgleich: Der Hash des Determinismus-Szenarios bleibt, beim Abriss endet
+  die Welt mit 4 Threads mit demselben Hash wie mit `kollaps-12`, und alle Läufe enden gleich.
 
 ## Physik, Zerstörung und Schutt
 
@@ -1395,3 +1417,5 @@ Seit der Liste ist dazugekommen oder gemessen worden:
 | Große Stücke in Blöcken für sich | ⛔ | Jedes große Stück in einem Block für sich, die die Threads zuerst nehmen. Beim Abriss auf der VM warten die Threads mit 4 Threads nach ihrem letzten Block nur noch 0,06 statt 0,53 ms. In der Stadt des Benchmarks bei ×4 ist aber ein Drittel der bewegten Stücke groß, es wurden 424 statt 21 Blöcke pro Update, und das Vorausladen lief bei jedem neu an: Die Prüfungen kosteten dort mit einem Thread 10 % und mit zwei 15 % mehr, siehe „Große Stücke in der Ruhe-Prüfung“. |
 | Blöcke der Ruhe-Prüfung nach erwarteten Kosten | ⛔ | Die Blöcke nach der Zahl der Stücke schneiden, die in den Prüfungen davor ruhig waren, damit kein Block viele ruhige hält. Nur 44 % der ruhigen Stücke waren es schon davor, ganze Haufen kommen auf einmal zur Ruhe, wenn ihre Insel einschläft. Die Simulation sagte mit 8 Threads 1,5 % voraus, siehe „Große Stücke in der Ruhe-Prüfung“. Nicht gebaut. |
 | Ruhige Stücke in einer zweiten Runde | ⛔ | Zuerst prüfen alle Threads, welche Stücke ruhig sind, dann teilen sie sich den Blick auf das, was sie trägt, Stück für Stück, die großen zuerst. Die Threads warten dazwischen auf den letzten Block der ersten Runde. In der Simulation mit 8 Threads 18 % weniger, weniger als die großen Stücke für sich, siehe „Große Stücke in der Ruhe-Prüfung“. Nicht gebaut. |
+| Kontaktlisten der ruhigen Stücke nebeneinander | ✅ auf `kollaps-13` | Der Blick auf ein ruhiges Stück ging auf der VM zu 61 % in die Kontaktliste seines Körpers in Box3D, im Mittel 28 Einträge für 6 berührende Kontakte, jeder an einer anderen Stelle im Speicher, siehe „Wohin der Blick auf ein ruhiges Stück geht“. Box3D läuft jetzt die Listen aller ruhigen Stücke eines Blocks nebeneinander ab (`b3Body_GetContactDataOfBodies`, siehe „Kontakte mehrerer Körper nebeneinander“ in [`extern/README.md`](../extern/README.md)), und Nebenan schlägt für jeden berührenden Kontakt die andere Seite einmal nach statt in jedem Durchgang, bitgleich. Beim Abriss auf der VM kostet der Blick damit 48 bis 49 % weniger, die Prüfungen 40 bis 42 %, ein Schritt 4 bis 6 %, im Benchmark in der Stadt bei ×4 die Prüfungen 13 bis 14 %, siehe „Kontaktlisten der ruhigen Stücke nebeneinander“. Auf dem Ryzen nachzumessen, siehe Schritt 45 der [Roadmap](Roadmap.md). |
+| Blicke eines Blocks in eigener Funktion | ⛔ | In den Städten des Benchmarks bei ×1 und ×2 kostet die Frage, ob ein Stück ruhig ist, mit den Kontaktlisten nebeneinander 1 bis 7 % mehr, und der Compiler hatte das Ablaufen der Listen mitten in die Schleife über den Block gelegt. In einer eigenen Funktion, die er nicht einschiebt, blieb das Mehr aber gleich, und die Prüfungen kosteten in der Stadt bei ×4 3 bis 6 % mehr als ohne, je drei Läufe im Wechsel, siehe „Kontaktlisten der ruhigen Stücke nebeneinander“. Nicht übernommen. |
