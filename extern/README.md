@@ -558,7 +558,8 @@ danach gelesen wird, seine Generation, die Einträge seiner Formen und den Körp
 Generationen der Ids in einem zweiten Durchgang. Nebenan holt damit in der Ruhe-Prüfung die Kontakte aller ruhigen
 Stücke eines Blocks auf einmal, siehe „Kontaktlisten der ruhigen Stücke nebeneinander“ in
 [`docs/Optimierungen.md`](../docs/Optimierungen.md). In einer Kopie mit Zählern kostete ein Eintrag beim Abriss auf der
-VM so 61 statt 184 Takte.
+VM so 61 statt 184 Takte. Seit „Listen der berührenden Kontakte“, siehe unten, gehen die Listen nur noch über berührende
+Kontakte.
 
 **Lange Kontaktlisten über ihre Formen.** In `b3Body_GetContactDataOfBodies` läuft ein Körper mit langer Liste, ab 256
 Kontakten und 8 Formen, zuerst die Listen seiner Formen nebeneinander ab, bis zu 64 zugleich, in jeder Runde einen
@@ -569,11 +570,36 @@ Flags jedes Kontakts im Cache, die Kontakte und ihre Reihenfolge bleiben dieselb
 einem Fünftel der Updates der Rest einer Etage mit über 4 000 Einträgen und 200 Formen ruhig, und seine Liste lief
 allein weiter, lange nachdem die der anderen Stücke seines Blocks geendet hatten. Auf der VM dauert der längste Block
 der Ruhe-Prüfung damit 10 bis 17 % kürzer, siehe „Blick auf große Stücke billiger“ in
-[`docs/Optimierungen.md`](../docs/Optimierungen.md).
+[`docs/Optimierungen.md`](../docs/Optimierungen.md). Seit „Listen der berührenden Kontakte“, siehe unten, laufen die
+Abfragen die Liste des Körpers nicht mehr ab, und das Vorausladen ist entfallen.
+
+**Listen der berührenden Kontakte.** Box3D führt für jeden Körper, der nicht statisch ist, neben der Liste aller seiner
+Kontakte eine Liste nur der berührenden (`b3Body::headTouchKey` in `src/body.h`). Ihre Verweise stehen nicht im Kontakt,
+sondern daneben in einem Array nach Kontakt-Id, zusammen mit den Formen des Kontakts (`b3ContactTouch` in
+`src/contact.h`): Ein Kontakt bleibt 248 Bytes groß, die Kontakt-Schleife liest nicht mehr als zuvor, und wer die Liste
+abläuft, liest von einem Kontakt nur diesen Eintrag und seine Manifolds. Ein Kontakt kommt an den Anfang der Listen
+seiner Körper, wenn er zu berühren beginnt, und geht wieder hinaus, wenn er aufhört oder gelöscht wird
+(`b3LinkTouchingContact` und `b3UnlinkTouchingContact` in `src/contact.c`). Statische Körper führen keine Liste, ihre
+wäre die längste, und nichts fragt sie oft ab. Ein Körper wechselt seinen Typ erst, wenn er alle Kontakte verloren hat,
+also nimmt jeder Kontakt dieselben Verweise heraus, die er bekommen hat. `b3Body_GetContactData` und
+`b3Body_GetContactDataOfBodies` laufen für die anderen Körper nur noch diese Listen ab. In einem Haufen Trümmer berühren
+vier von fünf Kontakten nicht: Beim Abriss in der Demo hat ein ruhiges Stück im Mittel 31 Einträge für 6 berührende
+Kontakte, der Rest einer Etage 4 610 für 1 094. Die Reihenfolge bleibt die der Liste aller Kontakte. Dort setzt ein
+Körper jeden neuen Kontakt an den Anfang, sie läuft also vom zuletzt angelegten Kontakt zum ersten. Jeder Kontakt
+bekommt beim Anlegen die Zahl der Kontakte, die die Welt vor ihm angelegt hat, und die Abfragen sortieren, was sie
+finden, absteigend danach, bis 32 Kontakte durch Einfügen, darüber durch Mischen. Hat der Aufrufer weniger Platz, als
+der Körper berührende Kontakte hat, läuft die Abfrage die Liste aller Kontakte ab wie zuvor, denn dann gibt sie deren
+erste. In Debug-Builds vergleicht jede Abfrage ihr Ergebnis mit der Liste aller Kontakte, die Validierung prüft die
+Listen (`b3ValidateContacts`), und der Snapshot einer Aufnahme trägt sie mit (`src/world_snapshot.c`). Beim Einlesen
+eines Snapshots rief Box3D für eine Welt ohne Sensoren oder Inseln `memset` auf ein Array ohne Speicher auf, jetzt nicht
+mehr. Das Vorausladen über die Listen der Formen, siehe oben, ist entfallen. Beim Abriss in der Demo auf der VM kostet
+der Blick auf ein ruhiges Stück damit 20 bis 24 % weniger, und die Pflege der Listen kostet in der seriellen Schleife
+der Zustandswechsel 0,014 bis 0,024 ms pro Schritt. Die Ergebnisse bleiben bitgleich, siehe „Nur berührende Kontakte
+ablaufen“ in [`docs/Optimierungen.md`](../docs/Optimierungen.md).
 
 Die erste, die zweite, die vierte bis achte, die zehnte, die dreizehnte bis einunddreißigste, die dreiunddreißigste bis
 fünfunddreißigste, die neununddreißigste bis dreiundvierzigste, die fünfundvierzigste bis siebenundvierzigste, die
-neunundvierzigste bis fünfundfünfzigste ändern an den Ergebnissen nichts. Die dritte und die neunte ändern sie in den
+neunundvierzigste bis sechsundfünfzigste ändern an den Ergebnissen nichts. Die dritte und die neunte ändern sie in den
 letzten Bits, dafür hängen sie nicht mehr davon ab, in welcher Reihenfolge Formen in die Bäume kommen. Die elfte ändert
 sie, weil Kontakte zu anderen Zeitpunkten entstehen, die zwölfte, weil sie weniger Punkte bekommen, die
 zweiunddreißigste, weil die Kontakte eines Knotens gebündelt gegen Kopien rechnen statt nacheinander, die
@@ -585,17 +611,18 @@ vorausschauende Punkte rechnen oder der PreSolve-Callback Kontakte abschaltet, i
 vierundvierzigste ändert sie nur, wo die volle zweite Suche einen Kontakt zwischen Hüllen ergab, die eine Fläche trennt.
 Die Ergänzungen stehen in `CMakeLists.txt`, `src/CMakeLists.txt`, `include/box3d/base.h`, `include/box3d/box3d.h`,
 `include/box3d/types.h`, `include/box3d/constants.h`, `src/core.h`, `src/core.c`, `src/shape.h`, `src/shape.c`,
-`src/body.c`, `src/contact.h`, `src/contact.c`, `src/contact_solver.h`, `src/contact_solver.c`,
+`src/body.h`, `src/body.c`, `src/contact.h`, `src/contact.c`, `src/contact_solver.h`, `src/contact_solver.c`,
 `src/contact_solver_wide.inl`, `src/wide8.c`, `src/simd.c`, `src/simd_avx2.h`, `src/constraint_graph.h`,
 `src/manifold.h`, `src/convex_manifold.c`, `src/convex_manifold_avx2.c`, `src/world_snapshot.c`, `src/recording.c`,
-`src/solver.h`, `src/solver.c`, `src/broad_phase.h`, `src/broad_phase.c`, `src/dynamic_tree.h`, `src/dynamic_tree.c`,
-`src/parallel_for.h`, `src/parallel_for.c`, `src/platform.h`, `src/scheduler.h`, `src/scheduler.c`, `src/timer.c`,
-`src/physics_world.h` und `src/physics_world.c`, jeweils mit „Added for Nebenan“ markiert. `B3_HAS_UNIQUE_HULLS`,
-`B3_HAS_SHAPE_BATCH`, `B3_HAS_SHAPE_CONTACT_LISTS`, `B3_HAS_EXTERNAL_HULLS`, `B3_HAS_BODY_PREFETCH`,
-`B3_HAS_STEP_GUARD`, `B3_HAS_PREVIOUS_TRANSFORM`, `B3_HAS_STATIC_OVERLAP` und `B3_HAS_CONTACT_DATA_OF_BODIES` zeigen die
-zweite, die vierte, die fünfte, die sechste, die neunzehnte, die dreißigste, die fünfunddreißigste, die
-zweiundvierzigste und die vierundfünfzigste an. Fehlen sie, etwa mit einem eigenen Box3D, läuft Nebenan wie zuvor, nur
-wachsen Box3Ds Arrays dann durch Umkopieren, die Hüllen gehen durch die Tabelle, jede Form geht einzeln in den Baum,
-jedes stehende Bruchstück bekommt einen eigenen Körper, Box3D hält eine Kopie jeder Hülle, Nebenan holt die Körper der
-Trümmer nicht voraus, `nbWorld_Step` rechnet auf dem aufrufenden Thread, `nbWorld_GetDrawPoses` gibt die Lagen nach dem
-Schritt, Schutt wird in allen Bäumen gesucht, und die Ruhe-Prüfung holt die Kontakte jedes ruhigen Stücks für sich.
+`src/solver.h`, `src/solver.c`, `src/solver_set.c`, `src/broad_phase.h`, `src/broad_phase.c`, `src/dynamic_tree.h`,
+`src/dynamic_tree.c`, `src/parallel_for.h`, `src/parallel_for.c`, `src/platform.h`, `src/scheduler.h`,
+`src/scheduler.c`, `src/timer.c`, `src/physics_world.h` und `src/physics_world.c`, jeweils mit „Added for Nebenan“
+markiert. `B3_HAS_UNIQUE_HULLS`, `B3_HAS_SHAPE_BATCH`, `B3_HAS_SHAPE_CONTACT_LISTS`, `B3_HAS_EXTERNAL_HULLS`,
+`B3_HAS_BODY_PREFETCH`, `B3_HAS_STEP_GUARD`, `B3_HAS_PREVIOUS_TRANSFORM`, `B3_HAS_STATIC_OVERLAP` und
+`B3_HAS_CONTACT_DATA_OF_BODIES` zeigen die zweite, die vierte, die fünfte, die sechste, die neunzehnte, die dreißigste,
+die fünfunddreißigste, die zweiundvierzigste und die vierundfünfzigste an. Fehlen sie, etwa mit einem eigenen Box3D,
+läuft Nebenan wie zuvor, nur wachsen Box3Ds Arrays dann durch Umkopieren, die Hüllen gehen durch die Tabelle, jede Form
+geht einzeln in den Baum, jedes stehende Bruchstück bekommt einen eigenen Körper, Box3D hält eine Kopie jeder Hülle,
+Nebenan holt die Körper der Trümmer nicht voraus, `nbWorld_Step` rechnet auf dem aufrufenden Thread,
+`nbWorld_GetDrawPoses` gibt die Lagen nach dem Schritt, Schutt wird in allen Bäumen gesucht, und die Ruhe-Prüfung holt
+die Kontakte jedes ruhigen Stücks für sich.

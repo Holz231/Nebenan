@@ -1111,8 +1111,12 @@ damit 14 % weniger, am Ende warten die Threads 68 % kürzer, und die Ergebnisse 
 Stücke billiger“. Auf dem Ryzen 7 7800X3D kosten die Prüfungen damit mit 8 Threads 18 % weniger und mit einem Thread
 2 %, siehe „Skalierung auf dem Ryzen mit `kollaps-14`“. Beim größten Stück kostet jetzt das Ablaufen seiner Kontaktliste
 in Box3D mehr als der Blick, und bei allen Stücken berühren vier von fünf Einträgen darin nicht, siehe „Wohin der Blick
-auf große Stücke jetzt geht“ in [docs/Optimierungen.md](docs/Optimierungen.md). Wie es weitergeht, steht in
-[docs/Roadmap.md](docs/Roadmap.md).
+auf große Stücke jetzt geht“ in [docs/Optimierungen.md](docs/Optimierungen.md). Seit `kollaps-15` führt Box3D für jeden
+Körper, der nicht statisch ist, eine Liste seiner berührenden Kontakte, und die Abfragen der Kontakte laufen nur sie ab.
+Ein Spiel ruft dafür nichts Neues auf, und die Ergebnisse bleiben bitgleich. Beim Abriss auf der VM kostet der Blick
+damit 20 bis 24 % weniger, und ein Schritt mit 1, 2 und 4 Threads spart 0,27, 0,12 und 0,04 ms, die Pflege der Listen
+eingerechnet, siehe „Nur berührende Kontakte ablaufen“ in [docs/Optimierungen.md](docs/Optimierungen.md). Wie es
+weitergeht, steht in [docs/Roadmap.md](docs/Roadmap.md).
 
 Die teuersten Frames folgen auf einen Einsturz: Der Schutt um die Reste der Etage taut auf, und Box3D legt im nächsten
 Schritt Tausende neuer Kontakte an. Das ist echte Arbeit, das meiste davon fällt danach wirklich, siehe
