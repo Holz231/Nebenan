@@ -222,6 +222,8 @@ void b3CreateContact( b3World* world, b3Shape* shapeA, b3Shape* shapeB, int chil
 	touch->nextKey[0] = B3_NULL_INDEX;
 	touch->nextKey[1] = B3_NULL_INDEX;
 	touch->creation = world->contactCreations;
+	touch->shapeIdA = shapeIdA;
+	touch->shapeIdB = shapeIdB;
 	world->contactCreations += 1;
 	contact->shapeIdA = shapeIdA;
 	contact->shapeIdB = shapeIdB;
@@ -410,12 +412,6 @@ void b3PrefetchContactDestroy( const b3World* world, const b3Contact* contact )
 		}
 	}
 
-	// A touching contact also leaves the lists of the touching contacts of its bodies, see b3ContactTouch
-	if ( contact->flags & b3_contactTouchingFlag )
-	{
-		b3PrefetchTouchLinks( world, contact );
-	}
-
 	if ( contact->islandId != B3_NULL_INDEX )
 	{
 		b3PrefetchWrite( world->islands.data + contact->islandId );
@@ -449,30 +445,6 @@ void b3PrefetchContactDestroy( const b3World* world, const b3Contact* contact )
 	}
 }
 
-void b3PrefetchTouchLinks( const b3World* world, const b3Contact* contact )
-{
-	const b3ContactTouch* touches = world->contactTouches.data;
-	const b3ContactTouch* touch = touches + contact->contactId;
-	bool starts = ( contact->flags & b3_contactTouchingFlag ) == 0;
-	for ( int i = 0; i < 2; ++i )
-	{
-		int keys[2] = { touch->prevKey[i], touch->nextKey[i] };
-		if ( starts )
-		{
-			keys[0] = world->bodies.data[contact->edges[i].bodyId].headTouchKey;
-			keys[1] = B3_NULL_INDEX;
-		}
-
-		for ( int k = 0; k < 2; ++k )
-		{
-			if ( keys[k] != B3_NULL_INDEX )
-			{
-				b3PrefetchWrite( touches + ( keys[k] >> 1 ) );
-			}
-		}
-	}
-}
-
 void b3LinkTouchingContact( b3World* world, const b3Contact* contact )
 {
 	b3ContactTouch* touch = b3Array_Get( world->contactTouches, contact->contactId );
@@ -490,13 +462,20 @@ void b3LinkTouchingContact( b3World* world, const b3Contact* contact )
 	}
 }
 
-void b3UnlinkTouchingContact( b3World* world, const b3Contact* contact )
+void b3UnlinkTouchingContact( b3World* world, const b3Contact* contact, int droppedBodyId )
 {
 	b3ContactTouch* touch = b3Array_Get( world->contactTouches, contact->contactId );
 	for ( int i = 0; i < 2; ++i )
 	{
 		int prevKey = touch->prevKey[i];
 		int nextKey = touch->nextKey[i];
+		touch->prevKey[i] = B3_NULL_INDEX;
+		touch->nextKey[i] = B3_NULL_INDEX;
+		if ( contact->edges[i].bodyId == droppedBodyId )
+		{
+			continue;
+		}
+
 		if ( prevKey != B3_NULL_INDEX )
 		{
 			b3Array_Get( world->contactTouches, prevKey >> 1 )->nextKey[prevKey & 1] = nextKey;
@@ -512,9 +491,6 @@ void b3UnlinkTouchingContact( b3World* world, const b3Contact* contact )
 		{
 			b3Array_Get( world->contactTouches, nextKey >> 1 )->prevKey[nextKey & 1] = prevKey;
 		}
-
-		touch->prevKey[i] = B3_NULL_INDEX;
-		touch->nextKey[i] = B3_NULL_INDEX;
 	}
 }
 
@@ -525,7 +501,8 @@ void b3UnlinkTouchingContact( b3World* world, const b3Contact* contact )
 // - a body changes type from dynamic to kinematic or static
 // - a shape is destroyed
 // - contact filtering is modified
-void b3DestroyContact( b3World* world, b3Contact* contact, bool wakeBodies )
+// Changed for Nebenan: droppedBodyId, see b3DestroyContactOfBody
+static void b3DestroyContactAndLinks( b3World* world, b3Contact* contact, bool wakeBodies, int droppedBodyId )
 {
 	// Remove pair from set
 	uint64_t pairKey = b3ShapePairKey( contact->shapeIdA, contact->shapeIdB, contact->childIndex );
@@ -549,7 +526,7 @@ void b3DestroyContact( b3World* world, b3Contact* contact, bool wakeBodies )
 	// Added for Nebenan
 	if ( touching )
 	{
-		b3UnlinkTouchingContact( world, contact );
+		b3UnlinkTouchingContact( world, contact, droppedBodyId );
 	}
 
 	// End touch event
@@ -695,6 +672,16 @@ void b3DestroyContact( b3World* world, b3Contact* contact, bool wakeBodies )
 		b3WakeBody( world, bodyA );
 		b3WakeBody( world, bodyB );
 	}
+}
+
+void b3DestroyContact( b3World* world, b3Contact* contact, bool wakeBodies )
+{
+	b3DestroyContactAndLinks( world, contact, wakeBodies, B3_NULL_INDEX );
+}
+
+void b3DestroyContactOfBody( b3World* world, b3Contact* contact, bool wakeBodies, int bodyId )
+{
+	b3DestroyContactAndLinks( world, contact, wakeBodies, bodyId );
 }
 
 static bool b3ComputeConvexManifold( b3World* world, int workerIndex, b3Contact* contact, const b3Shape* shapeA,

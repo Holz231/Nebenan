@@ -91,13 +91,15 @@ typedef struct b3ContactEdge
 // b3World::contactTouches by contact id, apart from the contact, so the collide loop reads no more than before. The keys
 // are [31 : contactId | 1 : edgeIndex] like those of the contact lists of the bodies. Creation counts the contacts the
 // world created before this one. A body puts a new contact at the front of its contact list, so that list runs from the
-// highest creation to the lowest. Padded to 32 bytes, so a record never straddles two cache lines.
+// highest creation to the lowest. The shapes are those of the contact, kept here as well, so a walk through the lists
+// reads of a contact only this record and its manifolds. 32 bytes, so a record never straddles two cache lines.
 typedef struct b3ContactTouch
 {
 	int prevKey[2];
 	int nextKey[2];
 	uint64_t creation;
-	uint64_t padding;
+	int shapeIdA;
+	int shapeIdB;
 } b3ContactTouch;
 
 typedef struct b3MeshContact
@@ -210,19 +212,20 @@ void b3InitializeContactRegisters( void );
 void b3CreateContact( b3World* world, b3Shape* shapeA, b3Shape* shapeB, int childIndex );
 void b3DestroyContact( b3World* world, b3Contact* contact, bool wakeBodies );
 
+// Added for Nebenan: b3DestroyContact for a contact of the body bodyId while all its contacts go, see b3DestroyBodyContacts.
+// It takes the contact out of the list of the touching contacts of the other body only, the caller drops the list of the
+// body as a whole.
+void b3DestroyContactOfBody( b3World* world, b3Contact* contact, bool wakeBodies, int bodyId );
+
 // Added for Nebenan: prefetch what b3DestroyContact touches besides the contact itself, for a contact that a loop destroys
 // soon
 void b3PrefetchContactDestroy( const b3World* world, const b3Contact* contact );
 
 // Added for Nebenan: put a contact that starts touching at the front of the lists of the touching contacts of its bodies,
-// and take one that stops touching or is destroyed out of them, see b3ContactTouch
+// and take one that stops touching or is destroyed out of them, see b3ContactTouch. Unlinking leaves the list of the body
+// droppedBodyId alone, which its caller drops as a whole, B3_NULL_INDEX for none.
 void b3LinkTouchingContact( b3World* world, const b3Contact* contact );
-void b3UnlinkTouchingContact( b3World* world, const b3Contact* contact );
-
-// Added for Nebenan: prefetch what linking a contact that is not touching yet, or unlinking a touching one, writes in the
-// records of other contacts: the first records of the lists of its bodies, or its neighbours there. It reads the bodies
-// and the record of the contact, which a loop prefetches a step before.
-void b3PrefetchTouchLinks( const b3World* world, const b3Contact* contact );
+void b3UnlinkTouchingContact( b3World* world, const b3Contact* contact, int droppedBodyId );
 
 bool b3UpdateContact( b3World* world, int workerIndex, b3Contact* contact, b3Shape* shapeA, b3Vec3 localCenterA, b3WorldTransform xfA,
 					  b3Shape* shapeB, b3Vec3 localCenterB, b3WorldTransform xfB, bool isFast, b3Arena arena );

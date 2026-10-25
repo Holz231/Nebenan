@@ -163,7 +163,8 @@ static void b3DestroyBodyContacts( b3World* world, b3Body* body, bool wakeBodies
 	// Destroy the attached contacts. Added for Nebenan: a piece of debris that freezes into rubble loses 7 to 17 contacts
 	// at once, and the loop waited most for what destroying each touches. While it destroys one contact it prefetches what
 	// destroying the next touches, see b3PrefetchContactDestroy, and the contact after that, for writing. Prefetching
-	// changes nothing, the contacts go in the same order.
+	// changes nothing, the contacts go in the same order. The list of the touching contacts of the body goes as a whole,
+	// each touching contact leaves only that of the other body, see b3DestroyContactOfBody.
 	int edgeKey = body->headContactKey;
 	while ( edgeKey != B3_NULL_INDEX )
 	{
@@ -182,17 +183,15 @@ static void b3DestroyBodyContacts( b3World* world, b3Body* body, bool wakeBodies
 				const char* ahead = (const char*)( world->contacts.data + ( aheadKey >> 1 ) );
 				b3PrefetchWrite( ahead );
 				b3PrefetchWrite( ahead + offsetof( b3Contact, manifoldCount ) );
-
-				// Added for Nebenan: its record in the lists of the touching contacts, see b3PrefetchTouchLinks
-				b3PrefetchWrite( world->contactTouches.data + ( aheadKey >> 1 ) );
 			}
 
 			b3PrefetchContactDestroy( world, next );
 		}
 
-		b3DestroyContact( world, contact, wakeBodies );
+		b3DestroyContactOfBody( world, contact, wakeBodies, body->id );
 	}
 
+	body->headTouchKey = B3_NULL_INDEX;
 	b3ValidateSolverSets( world );
 }
 
@@ -655,20 +654,21 @@ int b3Body_GetContactData( b3BodyId bodyId, b3ContactData* contactData, int capa
 	while ( touchKey != B3_NULL_INDEX && index < capacity )
 	{
 		int contactId = touchKey >> 1;
+		const b3ContactTouch* touch = touches + contactId;
 		b3Contact* contact = b3Array_Get( world->contacts, contactId );
 		B3_ASSERT( contact->flags & b3_contactTouchingFlag );
 
-		b3Shape* shapeA = b3Array_Get( world->shapes, contact->shapeIdA );
-		b3Shape* shapeB = b3Array_Get( world->shapes, contact->shapeIdB );
+		b3Shape* shapeA = b3Array_Get( world->shapes, touch->shapeIdA );
+		b3Shape* shapeB = b3Array_Get( world->shapes, touch->shapeIdB );
 
-		contactData[index].contactId = (b3ContactId){ contact->contactId + 1, bodyId.world0, 0, contact->generation };
+		contactData[index].contactId = (b3ContactId){ contactId + 1, bodyId.world0, 0, contact->generation };
 		contactData[index].shapeIdA = (b3ShapeId){ shapeA->id + 1, bodyId.world0, shapeA->generation };
 		contactData[index].shapeIdB = (b3ShapeId){ shapeB->id + 1, bodyId.world0, shapeB->generation };
 		contactData[index].manifolds = contact->manifolds;
 		contactData[index].manifoldCount = contact->manifoldCount;
 		index += 1;
 
-		touchKey = touches[contactId].nextKey[touchKey & 1];
+		touchKey = touch->nextKey[touchKey & 1];
 	}
 
 	// More touching contacts than room: those that come first in the contact list
@@ -686,21 +686,21 @@ int b3Body_GetContactData( b3BodyId bodyId, b3ContactData* contactData, int capa
 	return index;
 }
 
-// Added for Nebenan: the lines of a contact that the walks of the touching contacts read, its next key in the list of
-// the touching contacts and its contact data
+// Added for Nebenan: what the walks of the touching contacts read of a contact, its record with the next key and the
+// shapes, see b3ContactTouch, and its manifolds
 static void b3PrefetchTouchingContact( const b3World* world, int contactId )
 {
 	const b3Contact* contact = world->contacts.data + contactId;
 	b3Prefetch( world->contactTouches.data + contactId );
-	b3Prefetch( &contact->edges );
+	b3Prefetch( &contact->manifolds );
 	b3Prefetch( (const char*)( &contact->manifoldCount + 1 ) - 1 );
 }
 
 // Changed for Nebenan: the lists of the touching contacts one after the other, a step in each list per round, see
 // b3ContactTouch. A step reads the next key, which it prefetches with the contact as soon as it is known, and writes the
-// contact data. It prefetches what the generations below and the lookups of the caller read: the generation of the
-// contact, the records of its shapes and the body on the other side. Then the data of each body goes into the order of
-// its contact list.
+// contact data. It prefetches what the generations below read, the generation of the contact and the records of its
+// shapes. Then the data of each body goes into the order of its contact list, and the generations prefetch the body on
+// the other side, which the lookups of the caller read.
 void b3Body_GetContactDataOfBodies( const b3BodyId* bodyIds, int bodyCount, b3ContactData* contactData, const int* offsets,
 									int* counts )
 {
@@ -748,7 +748,8 @@ void b3Body_GetContactDataOfBodies( const b3BodyId* bodyIds, int bodyCount, b3Co
 
 			int contactId = touchKey >> 1;
 			int edgeIndex = touchKey & 1;
-			int nextKey = touches[contactId].nextKey[edgeIndex];
+			const b3ContactTouch* touch = touches + contactId;
+			int nextKey = touch->nextKey[edgeIndex];
 			if ( nextKey != B3_NULL_INDEX )
 			{
 				b3PrefetchTouchingContact( world, nextKey >> 1 );
@@ -765,22 +766,19 @@ void b3Body_GetContactDataOfBodies( const b3BodyId* bodyIds, int bodyCount, b3Co
 			// The generations come below
 			b3ContactData* data = contactData + offsets[k] + counts[k];
 			counts[k] += 1;
-			data->contactId = (b3ContactId){ contact->contactId + 1, bodyIds[k].world0, 0, 0 };
-			data->shapeIdA = (b3ShapeId){ contact->shapeIdA + 1, bodyIds[k].world0, 0 };
-			data->shapeIdB = (b3ShapeId){ contact->shapeIdB + 1, bodyIds[k].world0, 0 };
+			data->contactId = (b3ContactId){ contactId + 1, bodyIds[k].world0, 0, 0 };
+			data->shapeIdA = (b3ShapeId){ touch->shapeIdA + 1, bodyIds[k].world0, 0 };
+			data->shapeIdB = (b3ShapeId){ touch->shapeIdB + 1, bodyIds[k].world0, 0 };
 			data->manifolds = contact->manifolds;
 			data->manifoldCount = contact->manifoldCount;
 
-			b3Shape* shapeA = b3Array_Get( world->shapes, contact->shapeIdA );
-			b3Shape* shapeB = b3Array_Get( world->shapes, contact->shapeIdB );
-			b3Body* other = b3Array_Get( world->bodies, contact->edges[1 - edgeIndex].bodyId );
+			b3Shape* shapeA = b3Array_Get( world->shapes, touch->shapeIdA );
+			b3Shape* shapeB = b3Array_Get( world->shapes, touch->shapeIdB );
 			b3Prefetch( &contact->generation );
 			b3Prefetch( &shapeA->bodyId );
 			b3Prefetch( &shapeA->generation );
 			b3Prefetch( &shapeB->bodyId );
 			b3Prefetch( &shapeB->generation );
-			b3Prefetch( &other->type );
-			b3Prefetch( &other->generation );
 		}
 	}
 
@@ -788,6 +786,7 @@ void b3Body_GetContactDataOfBodies( const b3BodyId* bodyIds, int bodyCount, b3Co
 	{
 		b3ContactData* data = contactData + offsets[k];
 		b3SortContactData( world, data, counts[k] );
+		int bodyId = bodyIds[k].index1 - 1;
 		for ( int i = 0; i < counts[k]; ++i )
 		{
 			b3Contact* contact = b3Array_Get( world->contacts, data[i].contactId.index1 - 1 );
@@ -796,6 +795,10 @@ void b3Body_GetContactDataOfBodies( const b3BodyId* bodyIds, int bodyCount, b3Co
 			data[i].contactId.generation = contact->generation;
 			data[i].shapeIdA.generation = shapeA->generation;
 			data[i].shapeIdB.generation = shapeB->generation;
+
+			b3Body* other = b3Array_Get( world->bodies, shapeA->bodyId == bodyId ? shapeB->bodyId : shapeA->bodyId );
+			b3Prefetch( &other->type );
+			b3Prefetch( &other->generation );
 		}
 
 #if B3_DEBUG

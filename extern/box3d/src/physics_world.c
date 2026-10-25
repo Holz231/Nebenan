@@ -710,9 +710,6 @@ B3_FORCE_INLINE void b3PrefetchContactStateData( const b3World* world, const b3C
 		b3PrefetchWrite( body );
 		b3PrefetchWrite( (const char*)( body + 1 ) - 1 );
 	}
-
-	// Added for Nebenan: the record of the contact in the lists of the touching contacts, see b3PrefetchTouchLinks
-	b3PrefetchWrite( world->contactTouches.data + contact->contactId );
 }
 
 static inline b3BodySim* b3ResolveContactBodySim( b3World* world, b3BodySim* awakeSims, b3BodySim* staticSims, int encodedIndex,
@@ -1365,17 +1362,6 @@ static void b3Collide( b3StepContext* context )
 			}
 		}
 
-		// Added for Nebenan: a contact that starts or stops touching goes into or out of the lists of the touching contacts
-		// of its bodies, and the step before prefetched its record and its bodies
-		if ( n + 1 < changedCount )
-		{
-			const b3Contact* next = world->contacts.data + changedIds[n + 1];
-			if ( ( next->flags & b3_simDisjoint ) == 0 && ( next->flags & ( b3_simStartedTouching | b3_simStoppedTouching ) ) )
-			{
-				b3PrefetchTouchLinks( world, next );
-			}
-		}
-
 		{
 			int contactId = changedIds[n];
 
@@ -1435,7 +1421,7 @@ static void b3Collide( b3StepContext* context )
 			{
 				contact->flags &= ~b3_simStoppedTouching;
 				contact->flags &= ~b3_contactTouchingFlag;
-				b3UnlinkTouchingContact( world, contact ); // Added for Nebenan
+				b3UnlinkTouchingContact( world, contact, B3_NULL_INDEX ); // Added for Nebenan
 
 				if ( contact->flags & b3_contactEnableContactEvents )
 				{
@@ -4783,6 +4769,7 @@ void b3ValidateContacts( b3World* world )
 			int edgeIndex = touchKey & 1;
 			B3_ASSERT( contact->contactId == ( touchKey >> 1 ) );
 			B3_ASSERT( ( contact->flags & b3_contactTouchingFlag ) != 0 );
+			B3_ASSERT( touch->shapeIdA == contact->shapeIdA && touch->shapeIdB == contact->shapeIdB );
 			B3_ASSERT( contact->edges[edgeIndex].bodyId == bodyIndex );
 			B3_ASSERT( touch->prevKey[edgeIndex] == prevKey );
 			prevKey = touchKey;
