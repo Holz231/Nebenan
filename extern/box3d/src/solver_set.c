@@ -567,6 +567,7 @@ void b3MergeSolverSets( b3World* world, int setId1, int setId2 )
 void b3TransferBody( b3World* world, b3SolverSet* targetSet, b3SolverSet* sourceSet, b3Body* body )
 {
 	B3_ASSERT( body->headContactKey == B3_NULL_INDEX );
+	B3_ASSERT( body->headTouchKey == B3_NULL_INDEX ); // Added for Nebenan
 
 	if ( targetSet == sourceSet )
 	{

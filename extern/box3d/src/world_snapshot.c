@@ -51,6 +51,7 @@ static uint32_t b3ComputeLayoutHash( void )
 	MIX( sizeof( b3BodyState ) )
 	MIX( sizeof( b3Shape ) )
 	MIX( sizeof( b3Contact ) )
+	MIX( sizeof( b3ContactTouch ) ) // Added for Nebenan
 	MIX( sizeof( b3Manifold ) )
 	MIX( sizeof( b3Joint ) )
 	MIX( sizeof( b3JointSim ) )
@@ -881,6 +882,12 @@ static void b3SerContacts( b3RecBuffer* buf, b3World* world )
 			}
 		}
 	}
+
+	// Added for Nebenan: the records of the contacts in the lists of the touching contacts and the creations so far, see
+	// b3ContactTouch
+	b3SnapW_Bytes( buf, world->contactTouches.data, count * (int)sizeof( b3ContactTouch ) );
+	b3SnapW_U32( buf, (uint32_t)world->contactCreations );
+	b3SnapW_U32( buf, (uint32_t)( world->contactCreations >> 32 ) );
 }
 
 static void b3DesContacts( b3SnapReader* r, b3World* world )
@@ -957,6 +964,16 @@ static void b3DesContacts( b3SnapReader* r, b3World* world )
 				b3SnapR_Bytes( r, dst->meshContact.triangleCache.data, cacheCount * (int)sizeof( b3TriangleCache ) );
 			}
 		}
+	}
+
+	// Added for Nebenan: the records of the contacts in the lists of the touching contacts and the creations so far
+	if ( r->ok )
+	{
+		b3Array_Resize( world->contactTouches, count );
+		b3SnapR_Bytes( r, world->contactTouches.data, count * (int)sizeof( b3ContactTouch ) );
+		uint64_t low = b3SnapR_U32( r );
+		uint64_t high = b3SnapR_U32( r );
+		world->contactCreations = low | ( high << 32 );
 	}
 }
 

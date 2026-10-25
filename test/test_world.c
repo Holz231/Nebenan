@@ -1021,6 +1021,247 @@ static int ContactDataOfLargeBodyTest( void )
 	return 0;
 }
 
+// The touching contacts of a body, from the touching contacts of its shapes, which their own lists hold
+static int TouchingContactsOfShapes( b3BodyId bodyId, b3ContactId* ids, int capacity )
+{
+	b3ShapeId shapes[8];
+	int shapeCount = b3Body_GetShapes( bodyId, shapes, 8 );
+	int count = 0;
+	for ( int s = 0; s < shapeCount; ++s )
+	{
+		int room = b3Shape_GetContactCapacity( shapes[s] );
+		b3ContactData* data = malloc( sizeof( b3ContactData ) * (size_t)( room > 0 ? room : 1 ) );
+		int found = b3Shape_GetContactData( shapes[s], data, room );
+		for ( int i = 0; i < found && count < capacity; ++i )
+		{
+			ids[count++] = data[i].contactId;
+		}
+		free( data );
+	}
+	return count;
+}
+
+// The contact data of a body is that of the touching contacts of its shapes, and with less room the start of it. Zero
+// if it is, and the count of the touching contacts.
+static int CheckTouchingContacts( b3BodyId bodyId, int* touchingCount )
+{
+	int capacity = b3Body_GetContactCapacity( bodyId );
+	b3ContactData* data = malloc( sizeof( b3ContactData ) * (size_t)( capacity > 0 ? capacity : 1 ) );
+	b3ContactId* ids = malloc( sizeof( b3ContactId ) * (size_t)( capacity > 0 ? capacity : 1 ) );
+	int count = b3Body_GetContactData( bodyId, data, capacity );
+	int shapeCount = TouchingContactsOfShapes( bodyId, ids, capacity );
+	ENSURE( count == shapeCount );
+	for ( int i = 0; i < count; ++i )
+	{
+		ENSURE( b3Contact_IsValid( data[i].contactId ) );
+		bool found = false;
+		for ( int j = 0; j < shapeCount && found == false; ++j )
+		{
+			found = B3_ID_EQUALS( data[i].contactId, ids[j] );
+		}
+		ENSURE( found );
+	}
+
+	int half = count / 2;
+	b3ContactData* start = malloc( sizeof( b3ContactData ) * (size_t)( half > 0 ? half : 1 ) );
+	ENSURE( b3Body_GetContactData( bodyId, start, half ) == half );
+	for ( int i = 0; i < half; ++i )
+	{
+		ENSURE( B3_ID_EQUALS( start[i].contactId, data[i].contactId ) );
+	}
+
+	free( start );
+	free( ids );
+	free( data );
+	*touchingCount = count;
+	return 0;
+}
+
+// Box3D keeps the touching contacts of every body in a list of their own, and the contact data comes from it. It stays
+// the same as from the shapes of the body while contacts start and stop touching, bodies go and change type and shapes
+// go, for a body with a few contacts and for the floor with hundreds, also in batches of bodies.
+static int TouchingContactsTest( void )
+{
+	int64_t baseBytes = b3GetByteCount();
+	b3WorldDef worldDef = b3DefaultWorldDef();
+	b3WorldId worldId = b3CreateWorld( &worldDef );
+	b3BodyDef bodyDef = b3DefaultBodyDef();
+	b3BodyId floorId = b3CreateBody( worldId, &bodyDef );
+	b3ShapeDef shapeDef = b3DefaultShapeDef();
+	b3BoxHull floor = b3MakeBoxHull( 20.0f, 0.5f, 20.0f );
+	b3CreateHullShape( floorId, &shapeDef, &floor.base );
+
+	// Boxes of two cells each, dropped from different heights, so they land and bounce at different times
+	enum
+	{
+		boxCount = 120
+	};
+	b3BodyId boxes[boxCount];
+	bool alive[boxCount];
+	bodyDef.type = b3_dynamicBody;
+	b3BoxHull left = b3MakeOffsetBoxHull( 0.25f, 0.25f, 0.25f, (b3Vec3){ -0.25f, 0.0f, 0.0f } );
+	b3BoxHull right = b3MakeOffsetBoxHull( 0.25f, 0.25f, 0.25f, (b3Vec3){ 0.25f, 0.0f, 0.0f } );
+	for ( int i = 0; i < boxCount; ++i )
+	{
+		bodyDef.position =
+			(b3Pos){ 0.6f * (float)( i % 10 ) - 3.0f, 1.0f + 0.7f * (float)( i / 10 ), 0.35f * (float)( i % 7 ) - 1.0f };
+		boxes[i] = b3CreateBody( worldId, &bodyDef );
+		b3CreateHullShape( boxes[i], &shapeDef, &left.base );
+		b3CreateHullShape( boxes[i], &shapeDef, &right.base );
+		alive[i] = true;
+	}
+
+	int floorMost = 0;
+	for ( int step = 1; step <= 240; ++step )
+	{
+		b3World_Step( worldId, 1.0f / 60.0f, 4 );
+		for ( int i = 0; i < boxCount; ++i )
+		{
+			if ( alive[i] == false )
+			{
+				continue;
+			}
+
+			if ( step == 100 && i % 10 == 3 )
+			{
+				b3DestroyBody( boxes[i] );
+				alive[i] = false;
+			}
+			else if ( step == 130 && i % 7 == 2 )
+			{
+				b3Body_SetType( boxes[i], b3_staticBody );
+			}
+			else if ( step == 160 && i % 7 == 2 )
+			{
+				b3Body_SetType( boxes[i], b3_dynamicBody );
+			}
+			else if ( step == 190 && i % 9 == 4 )
+			{
+				b3ShapeId shapes[2];
+				ENSURE( b3Body_GetShapes( boxes[i], shapes, 2 ) == 2 );
+				b3DestroyShape( shapes[1], true );
+			}
+		}
+
+		if ( step % 10 != 0 && step != 101 && step != 131 && step != 161 && step != 191 )
+		{
+			continue;
+		}
+
+		int batch[B3_CONTACT_DATA_BODIES];
+		int batchCount = 0;
+		for ( int i = 0; i < boxCount; ++i )
+		{
+			if ( alive[i] )
+			{
+				int count;
+				ENSURE( CheckTouchingContacts( boxes[i], &count ) == 0 );
+				if ( batchCount < B3_CONTACT_DATA_BODIES )
+				{
+					batch[batchCount++] = i;
+				}
+			}
+		}
+		int floorCount;
+		ENSURE( CheckTouchingContacts( floorId, &floorCount ) == 0 );
+		floorMost = b3MaxInt( floorMost, floorCount );
+
+		// A batch of bodies gives each the same as alone
+		b3BodyId bodyIds[B3_CONTACT_DATA_BODIES];
+		int offsets[B3_CONTACT_DATA_BODIES];
+		int counts[B3_CONTACT_DATA_BODIES];
+		int room = 0;
+		for ( int k = 0; k < batchCount; ++k )
+		{
+			bodyIds[k] = boxes[batch[k]];
+			offsets[k] = room;
+			room += b3Body_GetContactCapacity( bodyIds[k] );
+		}
+
+		b3ContactData* walked = malloc( sizeof( b3ContactData ) * (size_t)( room > 0 ? room : 1 ) );
+		b3ContactData* single = malloc( sizeof( b3ContactData ) * (size_t)( room > 0 ? room : 1 ) );
+		b3Body_GetContactDataOfBodies( bodyIds, batchCount, walked, offsets, counts );
+		for ( int k = 0; k < batchCount; ++k )
+		{
+			int count = b3Body_GetContactData( bodyIds[k], single, b3Body_GetContactCapacity( bodyIds[k] ) );
+			ENSURE( counts[k] == count );
+			for ( int i = 0; i < count; ++i )
+			{
+				ENSURE( B3_ID_EQUALS( walked[offsets[k] + i].contactId, single[i].contactId ) );
+			}
+		}
+		free( walked );
+		free( single );
+	}
+
+	// The floor held more touching contacts than a body sorts by insertion
+	printf( "  floor: at most %d touching contacts\n", floorMost );
+	ENSURE( floorMost > 64 );
+
+	b3DestroyWorld( worldId );
+	ENSURE( b3GetByteCount() == baseBytes );
+	return 0;
+}
+
+// A recording of a world with touching contacts replays to the same states. The snapshot it starts from carries the
+// lists of the touching contacts and when each contact was created, see b3ContactTouch, and the replay links and
+// unlinks contacts in them from there.
+static int TouchingContactsReplayTest( void )
+{
+	int64_t baseBytes = b3GetByteCount();
+	b3WorldDef worldDef = b3DefaultWorldDef();
+	b3WorldId worldId = b3CreateWorld( &worldDef );
+	b3BodyDef bodyDef = b3DefaultBodyDef();
+	b3BodyId floorId = b3CreateBody( worldId, &bodyDef );
+	b3ShapeDef shapeDef = b3DefaultShapeDef();
+	b3BoxHull floor = b3MakeBoxHull( 10.0f, 0.5f, 10.0f );
+	b3CreateHullShape( floorId, &shapeDef, &floor.base );
+
+	enum
+	{
+		boxCount = 40
+	};
+	b3BodyId boxes[boxCount];
+	bodyDef.type = b3_dynamicBody;
+	b3BoxHull box = b3MakeBoxHull( 0.25f, 0.25f, 0.25f );
+	for ( int i = 0; i < boxCount; ++i )
+	{
+		bodyDef.position = (b3Pos){ 0.4f * (float)( i % 5 ) - 1.0f, 1.0f + 0.6f * (float)( i / 5 ), 0.3f * (float)( i % 3 ) };
+		boxes[i] = b3CreateBody( worldId, &bodyDef );
+		b3CreateHullShape( boxes[i], &shapeDef, &box.base );
+	}
+
+	// The pile lands before the recording starts, so its snapshot holds touching contacts
+	for ( int step = 0; step < 60; ++step )
+	{
+		b3World_Step( worldId, 1.0f / 60.0f, 4 );
+	}
+	int floorCapacity = b3Body_GetContactCapacity( floorId );
+	b3ContactData* floorContacts = malloc( sizeof( b3ContactData ) * (size_t)( floorCapacity > 0 ? floorCapacity : 1 ) );
+	ENSURE( b3Body_GetContactData( floorId, floorContacts, floorCapacity ) > 0 );
+	free( floorContacts );
+
+	b3Recording* recording = b3CreateRecording( 0 );
+	b3World_StartRecording( worldId, recording );
+	for ( int step = 0; step < 90; ++step )
+	{
+		if ( step == 30 )
+		{
+			b3DestroyBody( boxes[3] );
+			b3DestroyBody( boxes[17] );
+		}
+		b3World_Step( worldId, 1.0f / 60.0f, 4 );
+	}
+	b3World_StopRecording( worldId );
+
+	ENSURE( b3ValidateReplay( b3Recording_GetData( recording ), b3Recording_GetSize( recording ), 1 ) );
+
+	b3DestroyRecording( recording );
+	b3DestroyWorld( worldId );
+	ENSURE( b3GetByteCount() == baseBytes );
+	return 0;
+}
+
 // A sphere closer to another sphere than the speculative distance gets a contact point before they touch, and so does a
 // sphere over a capsule, as in upstream Box3D since #187. A step of zero time runs the collision but not the solver.
 static int SpeculativeSphereTest( void )
@@ -6104,6 +6345,8 @@ int WorldTest( void )
 	RUN_TEST( ShapeContactListTest );
 	RUN_TEST( ContactDataOfBodiesTest );
 	RUN_TEST( ContactDataOfLargeBodyTest );
+	RUN_TEST( TouchingContactsTest );
+	RUN_TEST( TouchingContactsReplayTest );
 	RUN_TEST( SpeculativeSphereTest );
 	RUN_TEST( SeparatedHullsTest );
 	RUN_TEST( SharedStaticBodyTest );

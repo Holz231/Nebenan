@@ -193,6 +193,10 @@ void b3CreateContact( b3World* world, b3Shape* shapeA, b3Shape* shapeB, int chil
 	{
 		b3Contact emptyContact = { 0 };
 		b3Array_Push( world->contacts, emptyContact );
+
+		// Added for Nebenan
+		b3ContactTouch emptyTouch = { 0 };
+		b3Array_Push( world->contactTouches, emptyTouch );
 	}
 
 	int shapeIdA = shapeA->id;
@@ -210,6 +214,15 @@ void b3CreateContact( b3World* world, b3Shape* shapeA, b3Shape* shapeB, int chil
 	contact->islandIndex = B3_NULL_INDEX;
 	// Added for Nebenan: the collide task writes the first key, see b3Contact::sortKey
 	contact->sortKey = B3_NULL_INDEX;
+
+	// Added for Nebenan: not touching yet, and the next creation, see b3ContactTouch
+	b3ContactTouch* touch = world->contactTouches.data + contactId;
+	touch->prevKey[0] = B3_NULL_INDEX;
+	touch->prevKey[1] = B3_NULL_INDEX;
+	touch->nextKey[0] = B3_NULL_INDEX;
+	touch->nextKey[1] = B3_NULL_INDEX;
+	touch->creation = world->contactCreations;
+	world->contactCreations += 1;
 	contact->shapeIdA = shapeIdA;
 	contact->shapeIdB = shapeIdB;
 	contact->childIndex = childIndex;
@@ -397,6 +410,12 @@ void b3PrefetchContactDestroy( const b3World* world, const b3Contact* contact )
 		}
 	}
 
+	// A touching contact also leaves the lists of the touching contacts of its bodies, see b3ContactTouch
+	if ( contact->flags & b3_contactTouchingFlag )
+	{
+		b3PrefetchTouchLinks( world, contact );
+	}
+
 	if ( contact->islandId != B3_NULL_INDEX )
 	{
 		b3PrefetchWrite( world->islands.data + contact->islandId );
@@ -430,6 +449,75 @@ void b3PrefetchContactDestroy( const b3World* world, const b3Contact* contact )
 	}
 }
 
+void b3PrefetchTouchLinks( const b3World* world, const b3Contact* contact )
+{
+	const b3ContactTouch* touches = world->contactTouches.data;
+	const b3ContactTouch* touch = touches + contact->contactId;
+	bool starts = ( contact->flags & b3_contactTouchingFlag ) == 0;
+	for ( int i = 0; i < 2; ++i )
+	{
+		int keys[2] = { touch->prevKey[i], touch->nextKey[i] };
+		if ( starts )
+		{
+			keys[0] = world->bodies.data[contact->edges[i].bodyId].headTouchKey;
+			keys[1] = B3_NULL_INDEX;
+		}
+
+		for ( int k = 0; k < 2; ++k )
+		{
+			if ( keys[k] != B3_NULL_INDEX )
+			{
+				b3PrefetchWrite( touches + ( keys[k] >> 1 ) );
+			}
+		}
+	}
+}
+
+void b3LinkTouchingContact( b3World* world, const b3Contact* contact )
+{
+	b3ContactTouch* touch = b3Array_Get( world->contactTouches, contact->contactId );
+	for ( int i = 0; i < 2; ++i )
+	{
+		b3Body* body = b3Array_Get( world->bodies, contact->edges[i].bodyId );
+		int headKey = body->headTouchKey;
+		touch->prevKey[i] = B3_NULL_INDEX;
+		touch->nextKey[i] = headKey;
+		if ( headKey != B3_NULL_INDEX )
+		{
+			b3Array_Get( world->contactTouches, headKey >> 1 )->prevKey[headKey & 1] = ( contact->contactId << 1 ) | i;
+		}
+		body->headTouchKey = ( contact->contactId << 1 ) | i;
+	}
+}
+
+void b3UnlinkTouchingContact( b3World* world, const b3Contact* contact )
+{
+	b3ContactTouch* touch = b3Array_Get( world->contactTouches, contact->contactId );
+	for ( int i = 0; i < 2; ++i )
+	{
+		int prevKey = touch->prevKey[i];
+		int nextKey = touch->nextKey[i];
+		if ( prevKey != B3_NULL_INDEX )
+		{
+			b3Array_Get( world->contactTouches, prevKey >> 1 )->nextKey[prevKey & 1] = nextKey;
+		}
+		else
+		{
+			b3Body* body = b3Array_Get( world->bodies, contact->edges[i].bodyId );
+			B3_ASSERT( body->headTouchKey == ( ( contact->contactId << 1 ) | i ) );
+			body->headTouchKey = nextKey;
+		}
+
+		if ( nextKey != B3_NULL_INDEX )
+		{
+			b3Array_Get( world->contactTouches, nextKey >> 1 )->prevKey[nextKey & 1] = prevKey;
+		}
+
+		touch->prevKey[i] = B3_NULL_INDEX;
+		touch->nextKey[i] = B3_NULL_INDEX;
+	}
+}
+
 // A contact is destroyed when:
 // - broad-phase proxies stop overlapping
 // - a body is destroyed
@@ -457,6 +545,12 @@ void b3DestroyContact( b3World* world, b3Contact* contact, bool wakeBodies )
 
 	uint32_t flags = contact->flags;
 	bool touching = ( flags & b3_contactTouchingFlag ) != 0;
+
+	// Added for Nebenan
+	if ( touching )
+	{
+		b3UnlinkTouchingContact( world, contact );
+	}
 
 	// End touch event
 	if ( touching && ( flags & b3_contactEnableContactEvents ) != 0 )

@@ -322,6 +322,7 @@ b3WorldId b3CreateWorld( const b3WorldDef* def )
 
 	world->contactIdPool = b3CreateIdPool();
 	b3Array_Reserve( world->contacts, b3MaxInt( 16, def->capacity.contactCount ) );
+	b3Array_Reserve( world->contactTouches, b3MaxInt( 16, def->capacity.contactCount ) ); // Added for Nebenan
 
 	world->jointIdPool = b3CreateIdPool();
 	b3Array_Reserve( world->joints, 16 );
@@ -511,6 +512,7 @@ void b3DestroyWorld( b3WorldId worldId )
 	b3Array_Destroy( world->shapes );
 	b3Array_Destroy( world->fatAABBs );
 	b3Array_Destroy( world->contacts );
+	b3Array_Destroy( world->contactTouches ); // Added for Nebenan
 	if ( world->contactSortKeys != NULL )
 	{
 		b3Free( world->contactSortKeys, world->contactSortKeyCapacity * (int)sizeof( int ) );
@@ -708,6 +710,9 @@ B3_FORCE_INLINE void b3PrefetchContactStateData( const b3World* world, const b3C
 		b3PrefetchWrite( body );
 		b3PrefetchWrite( (const char*)( body + 1 ) - 1 );
 	}
+
+	// Added for Nebenan: the record of the contact in the lists of the touching contacts, see b3PrefetchTouchLinks
+	b3PrefetchWrite( world->contactTouches.data + contact->contactId );
 }
 
 static inline b3BodySim* b3ResolveContactBodySim( b3World* world, b3BodySim* awakeSims, b3BodySim* staticSims, int encodedIndex,
@@ -1360,6 +1365,17 @@ static void b3Collide( b3StepContext* context )
 			}
 		}
 
+		// Added for Nebenan: a contact that starts or stops touching goes into or out of the lists of the touching contacts
+		// of its bodies, and the step before prefetched its record and its bodies
+		if ( n + 1 < changedCount )
+		{
+			const b3Contact* next = world->contacts.data + changedIds[n + 1];
+			if ( ( next->flags & b3_simDisjoint ) == 0 && ( next->flags & ( b3_simStartedTouching | b3_simStoppedTouching ) ) )
+			{
+				b3PrefetchTouchLinks( world, next );
+			}
+		}
+
 		{
 			int contactId = changedIds[n];
 
@@ -1401,6 +1417,7 @@ static void b3Collide( b3StepContext* context )
 				// are in the correct place.
 				contact->flags &= ~b3_simStartedTouching;
 				contact->flags |= b3_contactTouchingFlag;
+				b3LinkTouchingContact( world, contact ); // Added for Nebenan
 				b3LinkContact( world, contact );
 
 				// Make sure these didn't change
@@ -1418,6 +1435,7 @@ static void b3Collide( b3StepContext* context )
 			{
 				contact->flags &= ~b3_simStoppedTouching;
 				contact->flags &= ~b3_contactTouchingFlag;
+				b3UnlinkTouchingContact( world, contact ); // Added for Nebenan
 
 				if ( contact->flags & b3_contactEnableContactEvents )
 				{
@@ -2956,7 +2974,7 @@ void b3World_DumpMemoryStats( b3WorldId worldId )
 	int bodyArrayBytes = b3Array_ByteCount( world->bodies );
 	int solverSetArrayBytes = b3Array_ByteCount( world->solverSets );
 	int jointArrayBytes = b3Array_ByteCount( world->joints );
-	int contactArrayBytes = b3Array_ByteCount( world->contacts );
+	int contactArrayBytes = b3Array_ByteCount( world->contacts ) + b3Array_ByteCount( world->contactTouches );
 	int islandArrayBytes = b3Array_ByteCount( world->islands );
 	int shapeArrayBytes = b3Array_ByteCount( world->shapes );
 	int sensorArrayBytes = b3Array_ByteCount( world->sensors );
@@ -4303,6 +4321,7 @@ void b3ValidateSolverSets( b3World* world )
 					if ( setIndex == b3_disabledSet )
 					{
 						B3_ASSERT( body->headContactKey == B3_NULL_INDEX );
+						B3_ASSERT( body->headTouchKey == B3_NULL_INDEX ); // Added for Nebenan
 					}
 
 					// Validate body shapes
@@ -4601,7 +4620,9 @@ void b3ValidateContacts( b3World* world )
 	b3ConstraintGraph* graph = &world->constraintGraph;
 	int contactCount = world->contacts.count;
 	B3_ASSERT( contactCount == b3GetIdCapacity( &world->contactIdPool ) );
+	B3_ASSERT( world->contactTouches.count == contactCount );
 	int allocatedContactCount = 0;
+	int touchingContactCount = 0;
 
 	for ( int contactIndex = 0; contactIndex < contactCount; ++contactIndex )
 	{
@@ -4616,6 +4637,7 @@ void b3ValidateContacts( b3World* world )
 		allocatedContactCount += 1;
 
 		bool touching = ( contact->flags & b3_contactTouchingFlag ) != 0;
+		touchingContactCount += touching ? 1 : 0;
 
 		int setId = contact->setIndex;
 		b3SolverSet* set = b3Array_Get( world->solverSets, setId );
@@ -4740,6 +4762,35 @@ void b3ValidateContacts( b3World* world )
 		}
 	}
 	B3_ASSERT( shapeLinkCount == 2 * allocatedContactCount );
+
+	// Added for Nebenan: every touching contact sits in the lists of the touching contacts of its two bodies, and no other,
+	// see b3ContactTouch
+	int touchLinkCount = 0;
+	for ( int bodyIndex = 0; bodyIndex < world->bodies.count; ++bodyIndex )
+	{
+		b3Body* body = world->bodies.data + bodyIndex;
+		if ( body->id != bodyIndex )
+		{
+			continue;
+		}
+
+		int prevKey = B3_NULL_INDEX;
+		int touchKey = body->headTouchKey;
+		while ( touchKey != B3_NULL_INDEX )
+		{
+			b3Contact* contact = b3Array_Get( world->contacts, touchKey >> 1 );
+			const b3ContactTouch* touch = world->contactTouches.data + ( touchKey >> 1 );
+			int edgeIndex = touchKey & 1;
+			B3_ASSERT( contact->contactId == ( touchKey >> 1 ) );
+			B3_ASSERT( ( contact->flags & b3_contactTouchingFlag ) != 0 );
+			B3_ASSERT( contact->edges[edgeIndex].bodyId == bodyIndex );
+			B3_ASSERT( touch->prevKey[edgeIndex] == prevKey );
+			prevKey = touchKey;
+			touchKey = touch->nextKey[edgeIndex];
+			touchLinkCount += 1;
+		}
+	}
+	B3_ASSERT( touchLinkCount == 2 * touchingContactCount );
 }
 
 #else

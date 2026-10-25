@@ -131,6 +131,10 @@ typedef struct b3Body
 	// This is monotonically advanced when a body is allocated in this slot
 	// Used to check for invalid b3BodyId
 	uint16_t generation;
+
+	// Added for Nebenan: the first of the touching contacts of the body, the one that started touching last, see
+	// b3ContactTouch. [31 : contactId | 1 : edgeIndex]. It fills the padding at the end, a body stays the same size.
+	int headTouchKey;
 } b3Body;
 
 // Body State

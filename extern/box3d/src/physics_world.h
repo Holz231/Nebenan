@@ -25,6 +25,7 @@ typedef struct b3Sensor b3Sensor;
 typedef struct b3SensorTaskContext b3SensorTaskContext;
 typedef struct b3SensorHit b3SensorHit;
 typedef struct b3Shape b3Shape;
+typedef struct b3ContactTouch b3ContactTouch;
 typedef struct b3SolverSet b3SolverSet;
 
 b3DeclareArray( b3BlockAllocator );
@@ -32,6 +33,7 @@ b3DeclareArray( b3Body );
 b3DeclareArray( b3SolverSet );
 b3DeclareArray( b3Joint );
 b3DeclareArray( b3Contact );
+b3DeclareArray( b3ContactTouch );
 b3DeclareArray( b3Island );
 b3DeclareArray( b3AABB );
 b3DeclareArray( b3Shape );
@@ -205,6 +207,11 @@ typedef struct b3World
 	// This is a sparse array that maps contact ids to the contact data stored in the constraint graph
 	// or in the solver sets.
 	b3Array( b3Contact ) contacts;
+
+	// Added for Nebenan: for every contact id its links in the lists of the touching contacts of its bodies and when it
+	// was created, see b3ContactTouch, and how many contacts the world created so far
+	b3Array( b3ContactTouch ) contactTouches;
+	uint64_t contactCreations;
 
 	// Added for Nebenan: for every contact id the smaller awake index of its bodies, written by the collide task, so the
 	// solver orders the contacts of each color without visiting them, see b3OrderColorContacts. Zero for ids not seen yet.
