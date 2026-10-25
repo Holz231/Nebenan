@@ -6707,8 +6707,9 @@ typedef struct nbLookTask
 	b3Vec3 up;
 	float speedLimit;
 
-	// The moving debris this task ranked, see nbWorld::lookEstimate
+	// The moving debris this task ranked and how long it took, in milliseconds, see nbWorld::lookEstimate
 	int rankedCount;
+	float workTime;
 } nbLookTask;
 
 // The ranking of a block of the moving debris and the looks at what it ranks. Parts of buildings freeze last and touch
@@ -6770,6 +6771,7 @@ static void nbLookAtBlock( nbLookTask* task, int blockIndex )
 static void nbLookTaskMain( void* context )
 {
 	nbLookTask* task = context;
+	uint64_t ticks = b3GetTicks();
 	for ( ;; )
 	{
 		int blockIndex = nbAtomicFetchAddInt( task->nextBlock, 1 );
@@ -6780,6 +6782,7 @@ static void nbLookTaskMain( void* context )
 
 		nbLookAtBlock( task, blockIndex );
 	}
+	task->workTime = b3GetMilliseconds( ticks );
 }
 
 // Rank the moving debris for the budget: what is past the grace and touches something, or with no gravity all of it.
@@ -6850,9 +6853,7 @@ static int nbRankDebris( nbWorld* world, nbDebrisRank* ranks, bool hasGravity, b
 		userTasks[i] = world->enqueueTask( nbLookTaskMain, tasks + i, world->userTaskContext, "nebenan budget" );
 	}
 
-	uint64_t callerTicks = b3GetTicks();
 	nbLookTaskMain( tasks );
-	float callerTime = b3GetMilliseconds( callerTicks );
 
 	for ( int i = 1; i < taskCount; ++i )
 	{
@@ -6862,9 +6863,19 @@ static int nbRankDebris( nbWorld* world, nbDebrisRank* ranks, bool hasGravity, b
 		}
 	}
 
-	if ( tasks[0].rankedCount > 0 )
+	// A look on one thread, for the next update, from all tasks: where the workers start quickly, they can take every block
+	// before the calling thread gets to one
+	float workTime = 0.0f;
+	int rankedCount = 0;
+	for ( int i = 0; i < taskCount; ++i )
 	{
-		nbEstimate( &world->lookEstimate, callerTime / (float)tasks[0].rankedCount );
+		workTime += tasks[i].workTime;
+		rankedCount += tasks[i].rankedCount;
+	}
+
+	if ( rankedCount > 0 )
+	{
+		nbEstimate( &world->lookEstimate, workTime / (float)rankedCount );
 	}
 
 	for ( int k = 0; k < movingCount; ++k )
