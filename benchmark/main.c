@@ -6,6 +6,8 @@
 //        nbGetScalingWorkerCounts, and the scaling report of the library for each town
 //        nebenan_benchmark figures [workerCount] [noself], only the towns with 0, 1, 10 and 50 figures, noself without
 //        collisions between the bones of a figure
+//        nebenan_benchmark repeat [count] [workerCount] [system], the town under fire count times in the same process,
+//        system leaves its speed to the system, see nbKeepFullSpeed
 
 #include "fracture.h"
 #include "hull_builder.h"
@@ -840,6 +842,39 @@ static void BenchmarkFigures( int workerCount, bool selfCollision )
 	}
 }
 
+// The town under fire again and again in the same process, for whether a town costs the same early and late. Without
+// nbKeepFullSpeed Windows slows a process without a window in front down after a few seconds and moves its threads to
+// its slowest cores, and the later towns cost more.
+static void BenchmarkRepeat( int count, int workerCount )
+{
+	printf( "The town under fire %d times in the same process (16 houses, fragment scale 2, a grenade every 1/12 s), %d "
+			"workers\n",
+			count, workerCount );
+	printf( "  town |  step ms collide   solve  update | chunks rubble\n" );
+	float first = 0.0f, later = 0.0f, lowest = 1.0e9f, highest = 0.0f;
+	for ( int r = 0; r < count; ++r )
+	{
+		TownSetup setup = { workerCount, 2.0f, 4, 1, 5, 60, 0, false, false };
+		TownRun run;
+		RunTown( &setup, &run );
+		int n = run.frameCount;
+		float step = run.totals[1] / (float)n;
+		printf( "  %4d |  %7.3f %7.3f %7.3f %7.3f | %6d %6d\n", r + 1, step, run.collide, run.solve, run.totals[2] / (float)n,
+				run.stats.chunkCount, run.stats.rubbleCount );
+		fflush( stdout );
+		first += r < 2 ? step : 0.0f;
+		later += r < 2 ? 0.0f : step;
+		lowest = step < lowest ? step : lowest;
+		highest = step > highest ? step : highest;
+		FreeTownRun( &run );
+	}
+	if ( count > 2 )
+	{
+		printf( "  the first two towns %.3f ms per step, the others %.3f ms, from the fastest to the slowest town +%.1f %%\n",
+				first / 2.0f, later / (float)( count - 2 ), 100.0f * ( highest - lowest ) / lowest );
+	}
+}
+
 // The towns of the scaling and the step rates: 16 houses with a grenade every 1/12 s at fragment scale 1 and 2, and 64
 // houses with four every 1/60 s at fragment scale 4
 typedef struct Town
@@ -1177,6 +1212,19 @@ static void BenchmarkCity( int workerCount )
 
 int main( int argc, char** argv )
 {
+	// A benchmark has no window in front, and Windows would slow it down after a few seconds, see nbKeepFullSpeed
+	bool system = argc > 4 && strcmp( argv[1], "repeat" ) == 0 && strcmp( argv[4], "system" ) == 0;
+	bool fullSpeed = system == false && nbKeepFullSpeed( true );
+	printf( "Full speed without a window in front: %s\n", fullSpeed ? "yes" : "no, the system decides" );
+
+	if ( argc > 1 && strcmp( argv[1], "repeat" ) == 0 )
+	{
+		int count = argc > 2 ? atoi( argv[2] ) : 6;
+		int workers = argc > 3 ? atoi( argv[3] ) : 2;
+		BenchmarkRepeat( count < 1 ? 1 : count, workers < 1 ? 1 : workers );
+		return 0;
+	}
+
 	if ( argc > 1 && strcmp( argv[1], "rates" ) == 0 )
 	{
 		int rounds = argc > 2 ? atoi( argv[2] ) : 1;

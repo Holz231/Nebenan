@@ -3937,6 +3937,9 @@ static void StartComparison( App& app )
 	comparison.active = true;
 	comparison.run = 0;
 
+	// Windows would slow the demo down while another window is in front, see nbKeepFullSpeed
+	nbKeepFullSpeed( true );
+
 	// Parallel, serial, serial and parallel, each with the threads the library picks for it
 	comparison.runCount = Comparison::RunCount;
 	for ( int run = 0; run < Comparison::MaxRuns; ++run )
@@ -3999,6 +4002,7 @@ static void StopComparison( App& app )
 {
 	Comparison& comparison = app.comparison;
 	comparison.active = false;
+	nbKeepFullSpeed( false );
 	app.forcedWorkers = 0;
 	app.tool = comparison.tool;
 	app.maxDebrisBodies = comparison.maxDebrisBodies;

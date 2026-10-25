@@ -56,6 +56,13 @@ NB_API int nbGetPerformanceCoreCount( void );
 /// since the workers of a step wait for their next task without sleeping.
 NB_API int nbGetRecommendedWorkerCount( bool asyncStep );
 
+/// Keep this process at full speed when no window of it is in front. Windows 11 takes such a process for background work
+/// after a few seconds, slows it down and moves its threads to its slowest cores, two of them onto the two halves of
+/// one core: with 2 threads a step of Box3D then takes about 35 % longer. A server, a tool or a benchmark without a
+/// window keeps its speed with true, false gives the decision back to the system, and a game that is not in front may
+/// well want to slow down. Returns whether the system took the setting, false where there is nothing to set.
+NB_API bool nbKeepFullSpeed( bool keep );
+
 /// Default world definition.
 NB_API nbWorldDef nbDefaultWorldDef( void );
 

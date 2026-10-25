@@ -19,6 +19,12 @@ beide auf dem Ryzen nachgemessen, und den großen Paketen im Team auf `kollaps-9
 Begründungen und Messwerte stehen in [`Optimierungen.md`](Optimierungen.md), hier nur das Fazit und die Reihenfolge.
 Nach jeder Runde wird der Stand hier nachgetragen.
 
+`ragdoll-8` findet, warum dieselbe Stadt im selben Prozess später langsamer rechnete: Windows 11 drosselte den Benchmark
+nach ein paar Sekunden ohne Fenster im Vordergrund, siehe „Messen ohne Verlauf“ unten. Mit `nbKeepFullSpeed` behält er
+jetzt seine volle Geschwindigkeit, an der Physik ändert sich nichts: Gepaart gegen `ragdoll-7` auf dem 7800X3D, je zwei
+Läufe im Wechsel mit 2 Threads, enden alle Szenen des Benchmarks mit denselben Zahlen, und ein Frame kostet 19 bis 25 %
+weniger, so viel rechnete `ragdoll-7` nach den ersten Sekunden gedrosselt zu langsam.
+
 `ragdoll-7` ist eine Runde der Physik: Box3D rechnet die Gelenke jetzt in den Paketen aus „Ganze Inseln pro Thread“, und
 eine Welt mit Figuren verliert ihre Pakete nicht mehr, siehe „Gelenke in den Paketen“ unten. Gepaart gegen `ragdoll-6`
 auf dem 7800X3D, je zwei Läufe im Wechsel mit 2 Threads, enden alle Szenen des Benchmarks mit denselben Zahlen, die
@@ -281,7 +287,7 @@ emulierten Thread-lokalen Variable. Unter Windows nimmt die Nummer jetzt die Ken
 | C7 | **Aktivierungsbudget und LOD** (27.13 B): ferne Figuren ohne Balance oder ruhend, wenn Box3D zu viel kostet | 🔜 erst bei Bedarf |
 | C8 | **Wohin der Löser bei Figuren rechnet**: rund 11 µs je Figur und Schritt im Löser, für 15 Gelenke mit Federn, Grenzen und der Hilfe für das Becken und für die Kontakte mit dem Boden. Erst getrennt messen, etwa mit Figuren ohne Grenzen oder ohne Boden, dann entscheiden | ✅ auf `ragdoll-6`: 83 % in den Gelenken, 5 % in allen Kontakten, und ein waches Gelenk nimmt der ganzen Welt die Pakete, siehe „Wohin der Löser bei Figuren rechnet“ unten |
 | C9 | **Gelenke in den Paketen**: Box3D rechnet Gelenke nur nach Farben mit einer Sperre je Stufe, und ein einziges waches Gelenk schaltet die Pakete für alle Inseln ab. Die Gelenke einer Insel in ihrem Paket rechnen, Farbe für Farbe vor ihren Kontakten wie mit Sperren, damit die Ergebnisse bitgleich bleiben | ✅ auf `ragdoll-7`, bitgleich: Mit 8 Threads kostet ein waches Gelenk die Stadt unter Beschuss nichts mehr, mit 1 bis 50 Figuren ist der Box3D-Schritt 14 bis 18 % schneller, mit 2 Threads gleich schnell, siehe „Gelenke in den Paketen“ unten |
-| C11 | **Messen ohne Verlauf**: Dieselbe Stadt rechnet im selben Prozess später bis zu 35 % langsamer, in Kollision und Löser, und wann es anfängt, hängt davon ab, was vorher lief. Die Zeilen der Tabellen der Figuren vergleichen so verschiedene Zustände. Ursache finden, jede Stadt des Benchmarks in einem eigenen Prozess rechnen | 🔜 vor der nächsten Messung der Figuren |
+| C11 | **Messen ohne Verlauf**: Dieselbe Stadt rechnet im selben Prozess später bis zu 35 % langsamer, in Kollision und Löser, und wann es anfängt, hängt davon ab, was vorher lief. Die Zeilen der Tabellen der Figuren vergleichen so verschiedene Zustände. Ursache finden, jede Stadt des Benchmarks in einem eigenen Prozess rechnen | ✅ auf `ragdoll-8`: Windows 11 drosselte den Benchmark nach zwei bis drei Sekunden ohne Fenster im Vordergrund und legte seine Threads auf die beiden Hälften seines langsamsten Kerns. `nbKeepFullSpeed` bestellt das ab, der Benchmark ruft es beim Start, und sechs Städte hintereinander kosten gleich viel, siehe „Messen ohne Verlauf“ unten |
 | C10 | **Gelenke billiger**: rund 1 µs Rechenzeit je Gelenk und Schritt, skalar, während die Kontakte breit rechnen. Erst messen, welche Art Gelenk was kostet, Kugel mit Kegel, Verdrehung und Feder, Scharnier, die Hilfe für das Becken | 🔜 als Nächstes, C9 ist gebaut |
 
 ## Kontakte der Figuren (`ragdoll-5`)
@@ -353,7 +359,8 @@ sie sind. Jetzt misst sie ein Paket im Ganzen.
 
 Nachgemessen auf `ragdoll-7`: Die 25 % mit 2 Threads und die langsamere Kollision kamen nicht vom Pendel, sondern daher,
 dass dieselbe Stadt im selben Prozess später langsamer rechnet. Mit 2 Threads kostete das Pendel schon hier nur rund
-1 %, mit 8 Threads stimmen die 19 %, siehe „Gelenke in den Paketen“ unten.
+1 %, mit 8 Threads stimmen die 19 %, siehe „Gelenke in den Paketen“ unten. Windows drosselte den Benchmark nach den
+ersten Sekunden, siehe „Messen ohne Verlauf“ unten, und alle Zeiten dieses Abschnitts rechneten zum Teil gedrosselt.
 
 ## Gelenke in den Paketen (`ragdoll-7`)
 
@@ -392,8 +399,10 @@ hängt davon ab, was vorher lief. Mit den Städten unter Beschuss in der Reihenf
 Pendel, ohne rechnen mit 2 Threads die ersten beiden 0,97 ms, die übrigen 1,31 bis 1,36 ms, mit Pendel wie ohne. So
 kamen die 25 % aus „Wohin der Löser bei Figuren rechnet“ zustande: In der Reihenfolge des Benchmarks lief die Stadt mit
 dem Pendel schon im langsamen Zustand. Mit 8 Threads kostete das Pendel an jedem Platz 19 %, 0,38 gegen 0,45 ms. Die
-Ursache ist offen, C11 oben. Die Demo misst mit „Parallel gegen nacheinander messen“ deshalb schon im Wechsel und mit
-einem Lauf zum Aufwärmen.
+Ursache fand `ragdoll-8`: Windows 11 drosselt einen Prozess ohne Fenster im Vordergrund nach zwei bis drei Sekunden,
+siehe „Messen ohne Verlauf“ unten. Mit voller Geschwindigkeit nachgemessen bleiben die Gewinne: Mit 8 Threads kostet die
+Stadt mit dem Pendel auf `ragdoll-7` 0,401 ms, ohne 0,392 ms, auf `ragdoll-6` 0,466 ms, und mit 1, 10 und 50 Figuren ist
+der Schritt 14, 18,5 und 17 % schneller, mit 2 Threads bleibt alles innerhalb von 1 %, je drei Läufe im Wechsel.
 
 Zwei Fehler kamen beim Bauen heraus. Erst zählten die Gelenke in der Arbeit der Inseln mit, nach der die Pakete verteilt
 werden. Nach derselben Arbeit gehen aber die Knoten großer Inseln in Gruppen mit Kopien, und das ändert die Rechnung:
@@ -403,6 +412,57 @@ einem Worker stürzte ab: Mit Paketen, Knoten und Team war er im ungünstigsten 
 `extern/README.md`. Nebenbei: Eine Nabe von 27 kg mit 30 Armen von zusammen 16 kg an Gelenken reißt in Box3D binnen
 einer Sekunde auseinander, mit einem Thread wie mit Paketen und mit Scharnieren, Kugel- und Schweißgelenken gleich, mit
 25 Armen oder einer Nabe von 540 kg hält sie. Für C10 und für Figuren mit schweren Teilen an leichten Knochen zu merken.
+
+## Messen ohne Verlauf (`ragdoll-8`)
+
+Gebaut am 25. Oktober 2026, C11 oben. Auf `ragdoll-7` rechnete dieselbe Stadt im selben Prozess später bis zu 35 %
+langsamer. Gesucht mit `nebenan_benchmark repeat`, das die Stadt unter Beschuss mehrmals hintereinander im selben
+Prozess rechnet, mit 2 Threads auf dem Ryzen 7 7800X3D:
+
+- Kein Leck: Nach jeder Stadt laufen wieder 2 Threads, und Nebenan und Box3D halten 0 Byte.
+- Nicht der Heap: Mit einem frischen Heap je Stadt wurden die Städte genauso ab der dritten langsam.
+- Nicht die Wärme: Mit zehn Sekunden Pause zwischen den Städten schon ab der zweiten.
+- Nicht das Parken von Kernen: Am Netz parkt Windows keinen.
+- Die Kerne: In jeder langsamen Stadt rechneten der aufrufende Thread und der Worker von Box3D auf den beiden Hälften
+  desselben Kerns, den logischen Prozessoren 14 und 15, in jeder schnellen auf zwei Kernen. Auf einen Kern gezwungen
+  rechnet die Stadt 1,39 bis 1,45 ms je Schritt wie die langsamen, auf zwei Kerne 1,00 ms wie die schnellen. Bevorzugte
+  Prozessoren für die Worker änderten nichts.
+- Der Grund: Der Kern mit den Prozessoren 14 und 15 hat bei Windows den niedrigsten Rang (`SchedulingClass` 0), die
+  schnellsten Kerne den höchsten (6). Dorthin legt Windows 11 die Threads eines Prozesses, den es für Hintergrundarbeit
+  hält: Nach zwei bis drei Sekunden ohne Fenster im Vordergrund drosselt es ihn (EcoQoS). Der Benchmark läuft ohne
+  Fenster aus einer Shell. Mit abbestellter Drosselung wurden 0 von 30 Städten langsam, ohne 20 von 30.
+
+`nbKeepFullSpeed( true )` bestellt die Drosselung für den ganzen Prozess ab, `false` gibt die Entscheidung an Windows
+zurück, auf anderen Systemen tut es nichts. Ein Server, ein Werkzeug oder ein Benchmark ohne Fenster bleibt damit
+schnell, ein Spiel, das nicht vorn ist, darf langsamer werden und entscheidet selbst. Der Benchmark ruft es beim Start
+auf, die Demo, solange sie misst. `nebenan_benchmark repeat 6 2` zeigt, ob eine Stadt früh und spät gleich viel kostet,
+mit `system` am Ende so, wie Windows es will. Je zwei Läufe, Box3D-Schritt in ms:
+
+| `repeat`, 6 Städte | Stadt 1 und 2 | Stadt 3 bis 6 |
+| --- | ---: | ---: |
+| 2 Threads, volle Geschwindigkeit | 1,00 | 0,99 |
+| 2 Threads, wie Windows will | 1,00 | 1,33 |
+| 8 Threads, volle Geschwindigkeit | 0,40 | 0,40 |
+| 8 Threads, wie Windows will | 0,39 | 0,44, Stadt 6 bis 0,52 |
+
+Betroffen war jeder Lauf des Benchmarks auf dem Ryzen seit `ragdoll-1`: Nach den ersten Sekunden rechnete er gedrosselt.
+Gepaart gegen `ragdoll-7`, je zwei Läufe im Wechsel mit 2 Threads, enden alle Szenen mit denselben Zahlen, und ein Frame
+kostet ohne die Drosselung deutlich weniger:
+
+| 2 Threads, Frame im Mittel | `ragdoll-7`, gedrosselt | `ragdoll-8` |
+| --- | ---: | ---: |
+| Stadt unter Beschuss | 4,85 ms | 3,95 ms |
+| dieselbe mit doppelter Bruchstückgröße | 1,54 ms | 1,15 ms |
+| 64 Häuser unter Trommelfeuer | 4,36 ms | 3,42 ms |
+| gestreamte Stadt | 0,97 ms | 0,79 ms |
+| Stadt der Figuren unter Beschuss, ohne Figuren, im Median | 1,30 ms | 1,10 ms |
+
+Gepaarte Vergleiche liefen beide gedrosselt und halten, wo sie dieselben Plätze verglichen. Was Zeilen verschiedener
+Plätze verglich, wie das Pendel aus „Wohin der Löser bei Figuren rechnet“, hält nicht, und die Zeiten aus „Kosten der
+Figuren“ und „Wohin der Löser bei Figuren rechnet“ liegen bis 20 % zu hoch. Mit 8 Threads drosselte Windows
+unzuverlässig, in `repeat` ab der fünften Stadt, im Lauf der Figuren gar nicht. Die Gewinne von C9 halten,
+nachgemessen mit voller Geschwindigkeit, siehe „Gelenke in den Paketen“ oben. Die Demo betrifft es nicht, solange ihr
+Fenster vorn bleibt, und während ihrer Messungen hält sie jetzt auch dahinter die Geschwindigkeit.
 
 ## Fazit
 

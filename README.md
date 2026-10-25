@@ -914,6 +914,12 @@ nbWorldId world = nbCreateWorld( &def );
 // … am Ende erst beide Welten löschen, dann den Pool mit nbDestroyTaskSystem
 ```
 
+Ein Programm ohne Fenster im Vordergrund, etwa ein Server, ein Werkzeug oder ein Benchmark, bremst Windows 11 nach ein
+paar Sekunden: Es hält es für Hintergrundarbeit und legt seine Threads auf seinen langsamsten Kern, zwei davon auf
+dessen beide Hälften. Mit 2 Threads kostet ein Box3D-Schritt dann rund 35 % mehr. `nbKeepFullSpeed( true )` hält den
+Prozess schnell, `false` lässt wieder Windows entscheiden, auf anderen Systemen tut es nichts. Ein Spiel, das nicht vorn
+ist, darf ruhig langsamer werden.
+
 Gemessen ist das etwa so schnell wie zwei eigene Pools, mit halb so vielen Threads, siehe Leistung.
 
 Wo die Zeit der Schritte hingeht, sagt `nbWorld_GetProfile`, pro Schritt seit dem Anlegen der Welt oder seit
@@ -1385,30 +1391,31 @@ und jedes Programm bekommt es ohne eigenen Thread, siehe Der Schritt auf einem e
 noch diesen Weg.
 
 **Figuren.** `nebenan_benchmark figures` stellt in die Stadt aus 16 Häusern mit doppelter Bruchstückgröße 1, 10 und 50
-Humanoide mit Balance, die einen Clip spielen und alle 6 s einen Stoß bekommen, abwechselnd einen, den sie mit
-Schritten abfangen, und einen, der sie umwirft, einmal ruhig und einmal unter einer Granate alle 1/12 s, nach Stufe 6
-aus Kapitel 27.14 der Roadmap des Spiels. Gemessen auf dem Ryzen 7 7800X3D mit MinGW und 2 Threads: In der ruhigen Stadt
-kosten 50 Figuren 0,87 ms im Box3D-Schritt, 17 µs je Figur, fast alles im Löser für ihre Gelenke und Kontakte, und
-0,07 ms im Update der Bibliothek, 1,4 µs je Figur, davon zwei Drittel die Balance, ein Fünftel die Ziele der Gelenke
-und ein Achtel die Clips. Unter Beschuss sind es im Update 1,6 µs je Figur, denn die Figuren fallen, liegen und stehen
-öfter auf. Mit 50 Figuren steigt dort das mittlere Bild von 1,5 auf 2,4 ms und das 99. Perzentil von 3,1 auf 4,3 ms,
-und je Figur kommen rund 45 KB in Nebenan und Box3D dazu. Die Tabelle mit 1 und 10 Figuren und allen Perzentilen steht
-in [docs/Roadmap.md](docs/Roadmap.md). In der Demo, mit MSVC und 8 Threads auf der RTX 4070 SUPER, kosten 50 Figuren in
-den Straßen der Stadt beim Abriss mit „Parallel gegen nacheinander messen“ 0,13 ms je Schritt im Update, 2,5 µs je
-Figur, und ein Bild kostet parallel 4,2 und nacheinander 4,6 ms, ohne Figuren 3,6 und 3,9 ms. Ganz den Figuren gehört der
-Unterschied nicht: Sie stehen den Trümmern im Weg, und mit ihnen kommt der Abriss in 4 000 Bildern mit 862 statt 711
-Granaten ein Haus weiter. Die Kontakte zwischen den Knochen einer Figur sind die Hälfte ihrer Kontaktpaare, kosten aber
-nur 4 % ihrer Zeit in Box3D, 0,5 µs je Figur und Schritt, fast nur in der Kollision. Ein Filter dafür lohnt nicht, siehe
-„Kontakte der Figuren“ in [docs/Roadmap.md](docs/Roadmap.md). Im Löser rechnen die Figuren fast nur an ihren Gelenken:
-In der ruhigen Stadt mit 50 Figuren gehen 83 % seiner Rechenzeit in die Gelenke, 12 % in das Integrieren der Körper und
-5 % in alle Kontakte, rund 15 µs Rechenzeit je Figur und Schritt für ihre 15 Gelenke. Teurer für eine zerstörbare Welt
-war bis `ragdoll-6` etwas anderes: Ein einziges waches Gelenk schaltete die Pakete aus „Ganze Inseln pro Thread“ für die
-ganze Welt ab, und der Löser rechnete alle Trümmer nach Farben mit einer Sperre je Stufe. Seit `ragdoll-7` rechnet ein
-Paket die Gelenke seiner Inseln selbst, bitgleich, siehe „Gelenke in den Paketen“ in
-[`extern/README.md`](extern/README.md). Mit 8 Threads kostet ein Pendel weit weg die Stadt unter Beschuss nichts mehr,
-0,39 statt 0,46 ms je Box3D-Schritt, und mit 1, 10 und 50 Figuren ist der Schritt 14 bis 18 % schneller. Mit 2 Threads
-ändert sich nichts, dort rechneten die Pakete auch ohne Gelenke kaum schneller als die Farben, siehe „Gelenke in den
-Paketen“ in [docs/Roadmap.md](docs/Roadmap.md).
+Humanoide mit Balance, die einen Clip spielen und alle 6 s einen Stoß bekommen, abwechselnd einen, den sie mit Schritten
+abfangen, und einen, der sie umwirft, einmal ruhig und einmal unter einer Granate alle 1/12 s, nach Stufe 6 aus Kapitel
+27.14 der Roadmap des Spiels. Gemessen auf dem Ryzen 7 7800X3D mit MinGW und 2 Threads, auf `ragdoll-8` mit voller
+Geschwindigkeit, bis `ragdoll-7` drosselte Windows den Benchmark nach den ersten Sekunden, siehe „Messen ohne Verlauf“
+in [docs/Roadmap.md](docs/Roadmap.md): In der ruhigen Stadt kosten 50 Figuren 0,62 ms im Box3D-Schritt, 12 µs je Figur,
+fast alles im Löser für ihre Gelenke und Kontakte, und 0,07 ms im Update der Bibliothek, 1,4 µs je Figur, davon zwei
+Drittel die Balance, ein Fünftel die Ziele der Gelenke und ein Achtel die Clips. Unter Beschuss sind es im Update 1,6 µs
+je Figur, denn die Figuren fallen, liegen und stehen öfter auf. Mit 50 Figuren steigt dort das mittlere Bild von 1,1 auf
+1,8 ms und das 99. Perzentil von 2,4 auf 3,4 ms, und je Figur kommen rund 45 KB in Nebenan und Box3D dazu. Die Tabelle
+mit 1 und 10 Figuren und allen Perzentilen steht in [docs/Roadmap.md](docs/Roadmap.md). In der Demo, mit MSVC und 8
+Threads auf der RTX 4070 SUPER, kosten 50 Figuren in den Straßen der Stadt beim Abriss mit „Parallel gegen nacheinander
+messen“ 0,13 ms je Schritt im Update, 2,5 µs je Figur, und ein Bild kostet parallel 4,2 und nacheinander 4,6 ms, ohne
+Figuren 3,6 und 3,9 ms. Ganz den Figuren gehört der Unterschied nicht: Sie stehen den Trümmern im Weg, und mit ihnen
+kommt der Abriss in 4 000 Bildern mit 862 statt 711 Granaten ein Haus weiter. Die Kontakte zwischen den Knochen einer
+Figur sind die Hälfte ihrer Kontaktpaare, kosten aber nur 4 % ihrer Zeit in Box3D, 0,5 µs je Figur und Schritt, fast nur
+in der Kollision. Ein Filter dafür lohnt nicht, siehe „Kontakte der Figuren“ in [docs/Roadmap.md](docs/Roadmap.md). Im
+Löser rechnen die Figuren fast nur an ihren Gelenken: In der ruhigen Stadt mit 50 Figuren gehen 83 % seiner Rechenzeit
+in die Gelenke, 12 % in das Integrieren der Körper und 5 % in alle Kontakte, rund 15 µs Rechenzeit je Figur und Schritt
+für ihre 15 Gelenke. Teurer für eine zerstörbare Welt war bis `ragdoll-6` etwas anderes: Ein einziges waches Gelenk
+schaltete die Pakete aus „Ganze Inseln pro Thread“ für die ganze Welt ab, und der Löser rechnete alle Trümmer nach
+Farben mit einer Sperre je Stufe. Seit `ragdoll-7` rechnet ein Paket die Gelenke seiner Inseln selbst, bitgleich, siehe
+„Gelenke in den Paketen“ in [`extern/README.md`](extern/README.md). Mit 8 Threads kostet ein Pendel weit weg die Stadt
+unter Beschuss nichts mehr, 0,39 statt 0,46 ms je Box3D-Schritt, und mit 1, 10 und 50 Figuren ist der Schritt 14 bis 18
+% schneller. Mit 2 Threads ändert sich nichts, dort rechneten die Pakete auch ohne Gelenke kaum schneller als die
+Farben, siehe „Gelenke in den Paketen“ in [docs/Roadmap.md](docs/Roadmap.md).
 
 **Eine Stadt größer als der Speicher.** Im Benchmark fliegt eine Kamera mit 30 m/s 900 m weit durch eine Stadt aus
 65 536 Häusern auf 3,6 × 3,1 km und 300 m zurück, Bruchstückgröße ×4. Am Stück bräuchte sie 24 GB. Geladen sind die
@@ -1665,7 +1672,7 @@ Messungen in [docs/Optimierungen.md](docs/Optimierungen.md).
 ## Tests und Benchmark
 
 ```sh
-build/bin/nebenan_test            # 95 Tests: Geometrie, Voronoi, Hüllen, Öffnungen, Stöße, Stützgraph, Etagen, Lastprüfung, Schutt, Ruhe, Durchschlagen, Threads, Knoten, große Blöcke, Suchbaum, Kontaktlisten, Streaming, Stream, Laden im Hintergrund, Speichern und Zurückholen, gemeinsamer Thread-Pool, Ruhe-Prüfung auf den Workern, Schritt auf eigenem Thread, Schritte pro Bild, Takt der Physik, Wahl der Threads, Profil und Skalierung, Determinismus, Figuren: Federn mit Drehmomentgrenze, Pendel, Arm mit Motoren, passive Ragdoll, Standpose, Clip, Treffer, Wand, Determinismus mit 1 und 4 Threads, Balance: Stand, Schritte von vorn, hinten und der Seite, links und rechts gespiegelt, Schritt gegen eine Wand, Boden weg, Umwerfen und Aufstehen, Platte über der Figur, Abbruch durch Treffer und Schutt, was die Figuren tun und kosten, Determinismus, Clips: Datei bitgenau, Fehler mit Zeile, Sperren, Vorschläge, Prüfung, Keypoints von COCO und MediaPipe, Spielen und Aufnehmen, Determinismus …
+build/bin/nebenan_test            # 97 Tests: Geometrie, Voronoi, Hüllen, Öffnungen, Stöße, Stützgraph, Etagen, Lastprüfung, Schutt, Ruhe, Durchschlagen, Threads, Knoten, Gelenke in Paketen, große Blöcke, Suchbaum, Kontaktlisten, Streaming, Stream, Laden im Hintergrund, Speichern und Zurückholen, gemeinsamer Thread-Pool, Ruhe-Prüfung auf den Workern, Schritt auf eigenem Thread, Schritte pro Bild, Takt der Physik, Wahl der Threads, volle Geschwindigkeit, Profil und Skalierung, Determinismus, Figuren: Federn mit Drehmomentgrenze, Pendel, Arm mit Motoren, passive Ragdoll, Standpose, Clip, Treffer, Wand, Determinismus mit 1 und 4 Threads, Balance: Stand, Schritte von vorn, hinten und der Seite, links und rechts gespiegelt, Schritt gegen eine Wand, Boden weg, Umwerfen und Aufstehen, Platte über der Figur, Abbruch durch Treffer und Schutt, was die Figuren tun und kosten, Determinismus, Clips: Datei bitgenau, Fehler mit Zeile, Sperren, Vorschläge, Prüfung, Keypoints von COCO und MediaPipe, Spielen und Aufnehmen, Determinismus …
 build/bin/nebenan_test articulation   # nur die Tests der Figuren, eine Zehntelsekunde
 build/bin/nebenan_test balance        # nur die Tests der Balance, eine Viertelsekunde
 build/bin/nebenan_test clips          # nur die Tests der Clips
@@ -1674,7 +1681,11 @@ build/bin/nebenan_benchmark scaling   # die Städte unter Beschuss mit 1, 2, 4 �
 build/bin/nebenan_benchmark rates     # die Städte unter Beschuss mit 30, 60 und 120 Hz, was eine simulierte Sekunde kostet
 build/bin/nebenan_benchmark figures 2 # die Stadt mit 0, 1, 10 und 50 Figuren und mit einem Pendel, ruhig und unter Beschuss, mit 2 Threads
 build/bin/nebenan_benchmark figures 2 noself   # dasselbe ohne Kollisionen zwischen den Knochen einer Figur
+build/bin/nebenan_benchmark repeat 6 2   # die Stadt unter Beschuss sechsmal im selben Prozess, mit system am Ende so schnell, wie Windows will
 ```
+
+Der Benchmark hält mit `nbKeepFullSpeed` seine volle Geschwindigkeit, auch ohne Fenster im Vordergrund. Bis `ragdoll-7`
+drosselte Windows ihn nach den ersten Sekunden, siehe „Messen ohne Verlauf“ in [docs/Roadmap.md](docs/Roadmap.md).
 
 Unter Windows liegen die Programme in `build\bin\Release\`. Die CI baut und testet unter Windows, Linux und
 macOS und läuft zusätzlich mit AddressSanitizer, UndefinedBehaviorSanitizer und ThreadSanitizer.
@@ -1772,9 +1783,9 @@ Nach Änderungen an `demo/shaders/scene.glsl` die Shader neu erzeugen, im Ordner
   aus der Trägheit der Knochen in der Pose beim Setzen des Profils gerechnet.
 - Figuren kosten: 15 Körper, 14 Gelenke und ein Parallel-Joint je Humanoid, alle wach, solange ein Clip läuft. Die
   Balance liest je Update die Kontakte der Füße, im Schritt kommen ein Strahl, eine Überlappung und ein Schwung einer
-  Kugel dazu, beim Aufstehen die Kontakte aller Knochen. Gemessen, siehe Leistung: rund 17 µs je Figur und Schritt in
-  Box3D und 1,2 bis 2,7 µs im Update der Bibliothek, auf dem aufrufenden Thread allein. 50 Figuren heben das mittlere
-  Bild der Stadt unter Beschuss von 1,5 auf 2,4 ms.
+  Kugel dazu, beim Aufstehen die Kontakte aller Knochen. Gemessen, siehe Leistung: rund 12 µs je Figur und Schritt in
+  Box3D und 1,2 bis 2,4 µs im Update der Bibliothek, auf dem aufrufenden Thread allein. 50 Figuren heben das mittlere
+  Bild der Stadt unter Beschuss von 1,1 auf 1,8 ms.
 - Der Keypoint-Import braucht Punkte in 3D und in Metern, wie MediaPipe sie als Weltkoordinaten liefert. Aus den
   2D-Punkten eines Bildes oder aus mehreren Ansichten rekonstruiert er nichts (32.5). Beugt sich jemand in der Hüfte,
   kippt das Becken mit, denn ohne Punkte an der Wirbelsäule richtet es sich nach Hüften und Schultern. Ein gestrecktes

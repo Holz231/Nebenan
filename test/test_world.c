@@ -5895,6 +5895,20 @@ static int WorkerCountTest( void )
 	return 0;
 }
 
+// Keeping the speed without a window in front, see nbKeepFullSpeed: the system takes both settings or neither, and only
+// Windows has them
+static int FullSpeedTest( void )
+{
+	bool keep = nbKeepFullSpeed( true );
+	bool back = nbKeepFullSpeed( false );
+	printf( "  full speed kept: %s, given back: %s\n", keep ? "yes" : "no", back ? "yes" : "no" );
+	ENSURE( keep == back );
+#if !defined( _WIN32 )
+	ENSURE( keep == false );
+#endif
+	return 0;
+}
+
 // The sites of the stream test: walls along a road, 20 m apart, built from the pieces the stream asks for
 typedef struct StreamTestSites
 {
@@ -6101,6 +6115,7 @@ int WorldTest( void )
 	RUN_TEST( ProfileTest );
 	RUN_TEST( ScalingFitTest );
 	RUN_TEST( WorkerCountTest );
+	RUN_TEST( FullSpeedTest );
 	RUN_TEST( StreamSiteTest );
 	RUN_TEST( RestTest );
 	RUN_TEST( LandingTest );

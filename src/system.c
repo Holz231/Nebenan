@@ -178,6 +178,48 @@ int nbGetPerformanceCoreCount( void )
 #endif
 }
 
+bool nbKeepFullSpeed( bool keep )
+{
+#if defined( _WIN32 )
+	// SetProcessInformation exists from Windows 8 on and takes the power throttling from Windows 10 1709 on, older headers
+	// do not have it, so it comes from kernel32 at run time
+	typedef BOOL( WINAPI * nbSetProcessInformationFn )( HANDLE, int, LPVOID, DWORD );
+	HMODULE kernel = GetModuleHandleW( L"kernel32.dll" );
+	if ( kernel == NULL )
+	{
+		return false;
+	}
+
+#if defined( _MSC_VER )
+#pragma warning( push )
+#pragma warning( disable : 4191 )
+#endif
+	nbSetProcessInformationFn setInformation =
+		(nbSetProcessInformationFn)(void ( * )( void ))GetProcAddress( kernel, "SetProcessInformation" );
+#if defined( _MSC_VER )
+#pragma warning( pop )
+#endif
+	if ( setInformation == NULL )
+	{
+		return false;
+	}
+
+	// PROCESS_POWER_THROTTLING_STATE for ProcessPowerThrottling, the class 4: version 1 and the bit of
+	// PROCESS_POWER_THROTTLING_EXECUTION_SPEED in the control mask, but not in the state mask, keeps the speed. Neither
+	// bit leaves it to the system.
+	struct
+	{
+		ULONG version;
+		ULONG controlMask;
+		ULONG stateMask;
+	} state = { 1, keep ? 1u : 0u, 0u };
+	return setInformation( GetCurrentProcess(), 4, &state, sizeof( state ) ) != FALSE;
+#else
+	(void)keep;
+	return false;
+#endif
+}
+
 int nbGetRecommendedWorkerCount( bool asyncStep )
 {
 	int hardware = nbGetHardwareThreadCount();
