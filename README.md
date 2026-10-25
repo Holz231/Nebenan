@@ -227,16 +227,19 @@ Grafik begrenzt das Zeichnen die Bildzeit.
   fangen einen Stoß mit Schritten ab oder fallen und stehen wieder auf. Über den Knochen liegt dünn und dunkel die Pose,
   zu der die Gelenke ziehen, auf dem Boden rot der Capture Point und dunkel das Ziel eines Schritts. Das Gewehr trifft
   die Figuren mit dem Impuls aus dem Menü, **Brusttreffer** stößt die beiden stehenden zurück, **Seitenstoß** von
-  rechts, **Umwerfen** wirft sie sofort um. Das Menü stellt Steifigkeit, Drehmoment, die Hilfe, die das Becken aufrecht
+  rechts, **Umwerfen** wirft sie sofort um, und sie stehen mit den Aufstehclips der Bibliothek wieder auf. Das Menü
+  stellt Steifigkeit, Drehmoment, die Hilfe, die das Becken aufrecht
   hält, und die Balance ein und zeigt je Figur die größte Abweichung von der Zielpose, die größte Motorlast und was die
   Balance gerade tut
 - **Keyframes**: der Keyframe-Editor für Clips des Humanoiden. Er zeigt die Pose des Clips am Frame und das Bild des
   Videos dazu, lädt und speichert den Clip als Datei (`clip.json` im Arbeitsordner, ohne Datei ein Beispiel aus drei
-  Keyframes), legt Keyframes an, gibt sie frei oder entsperrt sie und stellt Wurzel, Gelenke und Kontakte mit Reglern,
+  Keyframes, **Aufstehen von vorn** und **von hinten** die Aufstehclips der Bibliothek), legt Keyframes an, gibt sie
+  frei oder entsperrt sie und stellt Wurzel, Gelenke und Kontakte mit Reglern,
   auf Wunsch auch für die Vorschläge in der Nähe. Vorschläge kommen als Clip- oder Keypoint-Datei, freigegebene
   Keyframes lehnen sie ab. Die Prüfung listet, was die Bibliothek findet, ein Klick springt zum Keyframe.
   **Simulieren** spielt den Clip auf einer Figur, auf Wunsch mit Balance, und die Pose des Clips läuft daneben mit, die
-  Motoren lassen sich dabei verstellen. Mit **Backen** nimmt die Bibliothek die Figur auf, und der Editor zeigt, wie
+  Motoren lassen sich dabei verstellen. Mit **Aufstehen** liegt die Figur in der ersten Pose und steht mit dem Clip als
+  Aufstehclip ihrer Balance auf, so wie im Spiel. Mit **Backen** nimmt die Bibliothek die Figur auf, und der Editor zeigt, wie
   weit sie hinter dem Clip blieb, was die Prüfung darin findet und wann die Balance wechselte. Gespeichert wird die
   Aufnahme als `clip-simuliert.json`. Die Bilder sind BMP- oder PPM-Dateien je Frame, etwa mit
   `ffmpeg -i video.mp4 -vf fps=30 frames/%04d.bmp` aus einem Video geschnitten
@@ -583,11 +586,18 @@ sonst folgt der nächste Schritt, und nach drei Schritten oder wenn keiner mehr 
 Hilfe für das Becken los, die Motoren werden weich und halten eine Schutzhaltung, nach vorn mit den Armen voraus und dem
 Kopf oben, nach hinten eingerollt mit dem Kinn auf der Brust. Liegt die Figur eine halbe Sekunde still, prüft sie alle
 Viertelsekunde, ob sie aufstehen kann: tragfähiger Boden unter ihr, Platz für eine stehende Figur und nichts, das auf
-ihr liegt oder sich an ihr bewegt. Aufstehen ist eine Spielhilfe, bis Aufstehclips die Gelenke führen: Eine begrenzte
-Kraft hebt die Brust, der Körper hängt daran und richtet sich dabei von selbst auf, die Hilfe für das Becken dreht mit,
-und Füße, die am Boden stehen, bleiben stehen. Aufrecht zieht die Kraft den Schwerpunkt über die Mitte der Füße, erst
-wenn er dort fast ruht, lässt sie nach, und die Figur übernimmt wieder selbst, sobald ihr Capture Point innerhalb der
-Füße liegt (28.4). Ein Treffer oder Schutt bricht das Aufstehen ab (26.15). Jede neue Art von Pose blendet über 0,2 s
+ihr liegt oder gegen sie kommt. Dann steht sie mit einem Aufstehclip auf, einem für den Bauch und einem für den Rücken
+(`nbBalanceDef::getUpClips`, ohne eigene die der Bibliothek aus `nbMakeGetUpClip`). Keine Kraft hebt sie mehr: Der Clip
+führt alle Gelenke, und die Drehung seiner Wurzel ist das Ziel einer begrenzten Hilfe für das Becken, eines Motorgelenks
+von Box3D gegen die Welt mit höchstens 500 N m, das nur dreht. Die Figur steht in die Richtung auf, in die ihr Kopf lag.
+Bleibt das Becken mehr als 0,6 rad hinter dem Clip zurück, wartet der Clip, fällt es mehr als 1 rad heraus, fällt die
+Figur. Vom Bauch zieht sie die Knie unter die Brust, stemmt sich auf Hände und Knie, kniet sich auf, nimmt das Gewicht
+aufs rechte Knie, hebt das linke Knie hoch und setzt den Fuß in der Luft nach vorn, bringt das Gewicht über den linken
+Fuß, steht auf ihm auf und setzt den rechten Fuß daneben. Vom Rücken rollt sie zuerst über die linke Seite auf den
+Bauch. Nach dem letzten Keyframe übernimmt die Balance, sobald beide Füße tragen und der Capture Point zwischen ihnen
+liegt (28.4). Ein Treffer, Schutt oder eine Figur, die gegen sie fällt, bricht das Aufstehen ab (26.15), eine Figur, die
+daneben steht, liegt oder aufsteht, nicht. Eine Figur, die das Programm liegend hinlegt, liegt und steht auf, sobald sie
+kann. Jede neue Art von Pose blendet über 0,2 s
 ein, die Ruhepose beim Hinlegen über 0,5 s, so schnappt kein Glied. Alles kommt aus Zielen der Gelenke und begrenzten
 Kräften, nichts wird versetzt, und die Balance rechnet nur mit Operationen, die auf jeder Plattform dieselben Bits
 ergeben: Statt `expf` eine Reihe, statt `sinf` und `acosf` die Funktionen von Box3D.
@@ -598,9 +608,13 @@ von der Seite bis 65 N s, meist mit zwei bis vier Schritten, darüber fällt er.
 60 N s um.
 Von links und von rechts gestoßen, setzt er den gespiegelten Fuß auf das gespiegelte Ziel, auf 1 cm genau. Steht 32 cm
 neben ihm eine Wand, tritt kein Fuß hinein, und er lehnt sich an sie, über eine kniehohe Mauer fällt er. Umgeworfen
-liegt er nach 1,9 bis 2,3 s still, beginnt nach 3,0 bis 3,7 s aufzustehen und steht nach 5,7 bis 6,2 s wieder, kein
-Knochen legt dabei mehr als 9,3 cm in einem Schritt zurück. Unter einer Platte in 60 cm Höhe bleibt er liegen, ohne sie
-zu berühren, und steht auf, sobald sie fort ist. Mit 1 und 4 Threads ergibt die Balance dieselben Bits, und der Test
+liegt er nach 1,9 bis 2,3 s still, beginnt nach 3,0 bis 3,7 s aufzustehen und steht nach 8,3 s vom Bauch und 10,2 s
+vom Rücken wieder, mit dem Blick dahin, wo sein Kopf lag. Kein Knochen legt dabei mehr als 9,3 cm in einem Schritt
+zurück, und der linke Fuß, der ihn allein aus dem Knien hebt, sinkt bis 2,3 cm in den weichen Kontakt. Aus vier
+Richtungen mit 15 bis 40 N s umgeworfen, steht er jedes Mal wieder auf, auch mit dem 0,8- bis 1,5-fachen Tempo der
+Clips: vom Bauch in 5,3 s rund 0,45 m von da, wo er lag, vom Rücken in 6,5 s rund 1 m daneben, mit den Füßen höchstens
+0,38 m auseinander. Unter einer Platte in 60 cm Höhe bleibt er liegen, ohne sie zu berühren, und steht auf, sobald sie
+fort ist. Mit 1 und 4 Threads ergibt die Balance dieselben Bits, und der Test
 hält den Hash für alle Plattformen fest.
 
 **Clips als Dateien.** Ein Clip der Bibliothek (`nbPoseClip`) ist das Format aus Kapitel 32.6 der Roadmap des Spiels:
@@ -986,10 +1000,11 @@ b3WorldTransform now[nb_humanoidBoneCount], targets[nb_humanoidBoneCount];
 nbArticulation_GetBoneTransforms( figure, now, nb_humanoidBoneCount );
 nbArticulation_GetTargetTransforms( figure, targets, nb_humanoidBoneCount );
 
-// Balance: Schritte gegen Stöße, Fallen mit Schutzhaltung und Aufstehen, sobald Platz ist
-nbBalanceDef balance = nbDefaultBalanceDef();   // passt zum Humanoid der Bibliothek
+// Balance: Schritte gegen Stöße, Fallen mit Schutzhaltung und Aufstehen mit Clips, sobald Platz ist
+nbBalanceDef balance = nbDefaultBalanceDef();   // passt zum Humanoid der Bibliothek, mit ihren Aufstehclips
 nbArticulation_EnableBalance( figure, &balance );
 nbBalance state = nbArticulation_GetBalance( figure );   // steht, tritt aus, fällt, liegt oder steht auf
+float played = state.getUpTime;   // wie weit der Aufstehclip state.getUpClip gespielt ist
 nbArticulation_Knockdown( figure );   // für einen Treffer, der gewinnen soll: die Figur fällt sofort
 
 // Was die Figuren einer Welt tun und kosten: wie viele stehen, fallen, liegen und aufstehen, Stürze und Aufstehen,
@@ -1038,6 +1053,18 @@ if ( nbArticulation_IsRecording( figure ) == false )   // wartet auf laufende Sc
 	int frame, bone;
 	float behind = nbPoseClip_Compare( clip, baked, &frame, &bone );   // wie weit die Figur hinter dem Clip blieb
 }
+
+// Ein Aufstehclip der Bibliothek als Datei zum Bearbeiten, und ein bearbeiteter als Aufstehclip der Balance
+nbKeyframe keys[NB_GETUP_KEYFRAMES];
+b3Quat rotations[NB_GETUP_KEYFRAMES * nb_humanoidBoneCount];
+int count = nbMakeGetUpClip( &balance, nb_humanoidBoneCount, false, keys, rotations, NB_GETUP_KEYFRAMES );
+nbClipDef getUp = { keys, count, nb_humanoidBoneCount, false };
+nbPoseClip* editable = nbCreatePoseClipFromClip( &rig, NB_HUMANOID_SKELETON, "aufstehen", 30, &getUp );
+// ... bearbeiten, speichern, laden ...
+count = nbPoseClip_GetClip( editable, keys, rotations, NB_GETUP_KEYFRAMES );
+getUp.keyframeCount = count;
+balance.getUpClips[0] = &getUp;   // vom Bauch, kopiert beim Einschalten
+nbArticulation_EnableBalance( figure, &balance );
 ```
 
 Die komplette API steht in [include/nebenan/nebenan.h](include/nebenan/nebenan.h).
@@ -1116,7 +1143,7 @@ beim Einbinden nicht gebaut.
 | Balance (`nbBalanceDef`) | Standard | Wirkung |
 | --- | --- | --- |
 | `thighs`, `shins`, `feet` | Humanoid | Die Knochen der Beine, links, dann rechts: die Oberschenkel an der Wurzel, die Unterschenkel an einem Scharnier um ihre x-Achse, die Füße als Kästen, deren Unterseite die Sohle ist. Passt das Rig nicht, gibt `nbArticulation_EnableBalance` false zurück |
-| `torso`, `head`, `upperArms`, `forearms` | Humanoid | Die Knochen der Schutzhaltung beim Fallen, −1 für keinen. Am Rumpf hebt die Kraft beim Aufstehen |
+| `torso`, `head`, `upperArms`, `forearms` | Humanoid | Die Knochen der Schutzhaltung beim Fallen und der Aufstehclips der Bibliothek, −1 für keinen |
 | `stepMargin` | 3 cm | So weit liegt der Capture Point zwei Updates lang außerhalb der Füße, bevor ein Schritt beginnt. Nach einem Schritt steht die Figur, sobald er innerhalb dieses Abstands liegt |
 | `maxStepLength` | 0,55 m | Am weitesten tritt ein Knöchel von unter seiner Hüfte weg |
 | `stepTime`, `stepHeight` | 0,3 s, 8 cm | Wie lange ein Schritt dauert und wie hoch der Fuß dabei schwingt |
@@ -1124,8 +1151,9 @@ beim Einbinden nicht gebaut.
 | `fallAngle`, `fallHeight` | 0,6 rad, 0,75 | Die Figur fällt, wenn ihr Becken so weit kippt oder ihr Schwerpunkt unter diesen Teil seiner Höhe im Stand sinkt |
 | `fallProfile` | 150 N m/rad, höchstens 40 N m | Die Motoren beim Fallen und Liegen, ohne Hilfe für das Becken |
 | `getUpDelay` | 1 s | So lange liegt die Figur still, bevor sie aufsteht. 0: sie bleibt liegen |
-| `getUpTime`, `getUpForce` | 1,2 s, 1,3 | Über ein Drittel dieser Zeit lässt die Kraft nach, sobald die Figur aufrecht über ihren Füßen steht, und nach dem Vierfachen gibt sie auf und liegt wieder. Dazu die größte Kraft, die beim Aufstehen die Brust hebt, mal dem Gewicht. Eine Spielhilfe wie die für das Becken |
-| `getUpTorque` | 500 N m | Die Hilfe für das Becken beim Aufstehen, mindestens `uprightTorque` des Motorprofils |
+| `getUpClips` | die der Bibliothek | Die Aufstehclips vom Bauch und vom Rücken, siehe `nbMakeGetUpClip`. Die Drehung ihrer Wurzel ist das Ziel der Hilfe für das Becken, im Rahmen der Figur, die mit dem Kopf voraus liegt: y oben, z voraus. Der erste Keyframe liegt, der letzte steht. Die Bibliothek kopiert sie |
+| `getUpSpeed` | 1 | Wie schnell die Aufstehclips laufen. Getestet von 0,8 bis 1,5. Nach dem Doppelten ihrer Länge gibt die Figur auf und liegt wieder |
+| `getUpTorque` | 500 N m | Die Hilfe für das Becken beim Aufstehen: ein Motorgelenk gegen die Welt, das die Wurzel den Clip entlang dreht, auch um die Hochachse. Es hebt nicht, eine Spielhilfe wie die für das Becken im Stand |
 
 | Rig (`nbRigDef`, `nbBoneDef`) | Standard | Wirkung |
 | --- | --- | --- |
@@ -1677,7 +1705,7 @@ Messungen in [docs/Optimierungen.md](docs/Optimierungen.md).
 ## Tests und Benchmark
 
 ```sh
-build/bin/nebenan_test            # 97 Tests: Geometrie, Voronoi, Hüllen, Öffnungen, Stöße, Stützgraph, Etagen, Lastprüfung, Schutt, Ruhe, Durchschlagen, Threads, Knoten, Gelenke in Paketen, große Blöcke, Suchbaum, Kontaktlisten, Streaming, Stream, Laden im Hintergrund, Speichern und Zurückholen, gemeinsamer Thread-Pool, Ruhe-Prüfung auf den Workern, Schritt auf eigenem Thread, Schritte pro Bild, Takt der Physik, Wahl der Threads, volle Geschwindigkeit, Profil und Skalierung, Determinismus, Figuren: Federn mit Drehmomentgrenze, Pendel, Arm mit Motoren, passive Ragdoll, Standpose, Clip, Treffer, Wand, Determinismus mit 1 und 4 Threads, Balance: Stand, Schritte von vorn, hinten und der Seite, links und rechts gespiegelt, Schritt gegen eine Wand, Boden weg, Umwerfen und Aufstehen, Platte über der Figur, Abbruch durch Treffer und Schutt, was die Figuren tun und kosten, Determinismus, Clips: Datei bitgenau, Fehler mit Zeile, Sperren, Vorschläge, Prüfung, Keypoints von COCO und MediaPipe, Spielen und Aufnehmen, Determinismus …
+build/bin/nebenan_test            # 100 Tests: Geometrie, Voronoi, Hüllen, Öffnungen, Stöße, Stützgraph, Etagen, Lastprüfung, Schutt, Ruhe, Durchschlagen, Threads, Knoten, Gelenke in Paketen, große Blöcke, Suchbaum, Kontaktlisten, Streaming, Stream, Laden im Hintergrund, Speichern und Zurückholen, gemeinsamer Thread-Pool, Ruhe-Prüfung auf den Workern, Schritt auf eigenem Thread, Schritte pro Bild, Takt der Physik, Wahl der Threads, volle Geschwindigkeit, Profil und Skalierung, Determinismus, Figuren: Federn mit Drehmomentgrenze, Pendel, Arm mit Motoren, passive Ragdoll, Standpose, Clip, Treffer, Wand, Determinismus mit 1 und 4 Threads, Balance: Stand, Schritte von vorn, hinten und der Seite, links und rechts gespiegelt, Schritt gegen eine Wand, Boden weg, Umwerfen und Aufstehen mit Clips, Aufstehclips der Bibliothek und eigene, liegend hingelegt, Platte über der Figur, Abbruch durch Treffer und Schutt, was die Figuren tun und kosten, Determinismus, Clips: Datei bitgenau, Fehler mit Zeile, Sperren, Vorschläge, Prüfung, Keypoints von COCO und MediaPipe, Spielen und Aufnehmen, Aufstehclips als Datei, Determinismus …
 build/bin/nebenan_test articulation   # nur die Tests der Figuren, eine Zehntelsekunde
 build/bin/nebenan_test balance        # nur die Tests der Balance, eine Viertelsekunde
 build/bin/nebenan_test clips          # nur die Tests der Clips
@@ -1774,9 +1802,12 @@ Nach Änderungen an `demo/shaders/scene.glsl` die Shader neu erzeugen, im Ordner
   Bits, gespiegelte Stöße gespiegelte erste Schritte, die späteren Schritte können sich unterscheiden. Die Figur geht
   nicht, sie tritt nur aus, und sie setzt die Füße waagerecht: Auf Schrägen stünden sie auf einer Kante. Boden bis
   25 cm höher oder tiefer nimmt die Planung an, getestet ist nur ebener Boden.
-- Aufstehen ist eine Spielhilfe, bis Aufstehclips die Gelenke führen (26.15). Den Editor dafür gibt es jetzt, die Clips
-  noch nicht: Eine Kraft bis zum 1,3-fachen Gewicht hebt die Brust, und die Figur hängt dabei sichtbar daran wie an einem Faden. Ist kein Platz, wartet
-  sie, sie kriecht und rollt nicht. Aus dem ruhigen Stand umgeworfen, kippt sie erst nach rund einer Sekunde, weil nur die
+- Die Aufstehclips sind für den Humanoiden der Bibliothek gebaut und auf ebenem Boden getestet. Sie dauern 5,3 s vom
+  Bauch und 6,5 s vom Rücken, länger als ein Mensch braucht, und so treffen Schutt und fallende Figuren sie öfter:
+  Unter Beschuss brachen im Benchmark 11 von 64 Stürzen das Aufstehen ab, mit der Kraft an der Brust 6. Die Hilfe für
+  das Becken dreht nur, wo die Füße stehen, entscheidet der Clip: Ein Fuß, der zu früh aufsetzt, oder Beine, die nicht
+  zur Stellung der Füße passen, schieben die Figur über den Boden. Ist kein Platz, wartet sie, sie kriecht und rollt
+  nicht (26.15). Aus dem ruhigen Stand umgeworfen, kippt sie erst nach rund einer Sekunde, weil nur die
   weichen Motoren und die Schutzhaltung sie aus dem Gleichgewicht bringen. Ein Treffer dazu kippt sie sofort.
 - Gelenke dehnen sich bei harten Aufschlägen: Trifft ein Knochen mit mehreren Metern pro Sekunde den Boden, ziehen die
   weichen Bedingungen des Lösers das Gelenk erst über ein, zwei Schritte wieder zusammen, gemessen 4 bis 6 cm an Knöchel
@@ -1789,7 +1820,7 @@ Nach Änderungen an `demo/shaders/scene.glsl` die Shader neu erzeugen, im Ordner
   aus der Trägheit der Knochen in der Pose beim Setzen des Profils gerechnet.
 - Figuren kosten: 15 Körper, 14 Gelenke und ein Parallel-Joint je Humanoid, alle wach, solange ein Clip läuft. Die
   Balance liest je Update die Kontakte der Füße, im Schritt kommen ein Strahl, eine Überlappung und ein Schwung einer
-  Kugel dazu, beim Aufstehen die Kontakte aller Knochen. Gemessen, siehe Leistung: rund 12 µs je Figur und Schritt in
+  Kugel dazu, beim Aufstehen die Kontakte aller Knochen und ein Motorgelenk für die Hilfe am Becken. Gemessen, siehe Leistung: rund 12 µs je Figur und Schritt in
   Box3D und 1,2 bis 2,4 µs im Update der Bibliothek, auf dem aufrufenden Thread allein. 50 Figuren heben das mittlere
   Bild der Stadt unter Beschuss von 1,1 auf 1,8 ms.
 - Der Keypoint-Import braucht Punkte in 3D und in Metern, wie MediaPipe sie als Weltkoordinaten liefert. Aus den

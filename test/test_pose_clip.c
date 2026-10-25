@@ -3,7 +3,7 @@
 // Authored clips, see the roadmap of the game, chapters 31.2, 32.5, 32.6, 32.8, 33.2 and 33.5: the format read and written
 // to the bit, approved keyframes that nothing but an unlock changes, proposals that come in around them, corrections that
 // spread to proposed neighbours, the checks for limits, ground, jumps and sliding feet, poses from the keypoints of a pose
-// estimator, and clips played, recorded step by step and posed on figures.
+// estimator, clips played, recorded step by step and posed on figures, and get-up clips as authored clips and back.
 
 #include "test_macros.h"
 
@@ -991,7 +991,7 @@ static int PoseClipRecordTest( void )
 	printf( "the recording on one thread and on four with the steps on their own: %s, hash 0x%08x and 0x%08x\n",
 			strcmp( texts[0], texts[1] ) == 0 ? "the same text" : "different texts", hashes[0], hashes[1] );
 	ENSURE( strcmp( texts[0], texts[1] ) == 0 && hashes[0] == hashes[1] );
-	ENSURE( hashes[0] == 0xb8ed33abu );
+	ENSURE( hashes[0] == 0x61ab3a9eu );
 	free( texts[0] );
 	free( texts[1] );
 
@@ -1036,6 +1036,72 @@ static int PoseClipRecordTest( void )
 	return 0;
 }
 
+// The roadmap B12: the get-up clips of the library as authored clips, for the editor and files, and back. The keyframes
+// land on whole frames at 30 per second, the root lies on the ground first and stands last, the checks find nothing in
+// the ground and no joint beyond its limits, and the clip read back has the times and rotations it had.
+static int GetUpPoseClipTest( void )
+{
+	Humanoid h;
+	MakeHumanoid( &h );
+	nbBalanceDef balance = nbDefaultBalanceDef();
+	nbPoseCheckDef def = nbDefaultPoseCheckDef();
+	for ( int k = 0; k < 2; ++k )
+	{
+		nbKeyframe keyframes[NB_GETUP_KEYFRAMES];
+		b3Quat rotations[NB_GETUP_KEYFRAMES * nb_humanoidBoneCount];
+		int count = nbMakeGetUpClip( &balance, nb_humanoidBoneCount, k == 1, keyframes, rotations, NB_GETUP_KEYFRAMES );
+		nbClipDef clip = { keyframes, count, nb_humanoidBoneCount, false };
+		nbPoseClip* pose = nbCreatePoseClipFromClip( &h.rig, NB_HUMANOID_SKELETON,
+													 k == 0 ? "up from the front" : "up from the back", 30, &clip );
+		ENSURE( pose != NULL && nbPoseClip_GetKeyframeCount( pose ) == count );
+		for ( int i = 0; i < count; ++i )
+		{
+			ENSURE( fabsf( (float)nbPoseClip_GetKeyframe( pose, i ).frame - 30.0f * keyframes[i].time ) < 1.0e-3f );
+		}
+		float lying = nbPoseClip_GetKeyframe( pose, 0 ).root.p.y;
+		float standing = nbPoseClip_GetKeyframe( pose, count - 1 ).root.p.y;
+
+		nbPoseIssue issues[64];
+		int issueCount = nbPoseClip_Check( pose, &h.rig, &def, issues, 64 );
+		printf( "get-up clip from the %s: %d keyframes, %d frames, the root at %.3f m lying and %.3f m standing, %d issues\n",
+				k == 0 ? "front" : "back", count, nbPoseClip_GetLength( pose ), lying, standing, issueCount );
+		for ( int i = 0; i < issueCount && i < 64; ++i )
+		{
+			printf( "  issue %d: keyframe %d, bone %d, %.3f\n", issues[i].kind, issues[i].keyframe, issues[i].bone,
+					issues[i].value );
+		}
+		ENSURE( lying > 0.05f && lying < 0.25f );
+		ENSURE( fabsf( standing - h.rootHeight ) < 0.01f );
+		ENSURE( CountIssues( issues, issueCount, nb_issueGround, -1 ) == 0 );
+		ENSURE( CountIssues( issues, issueCount, nb_issueJointLimit, -1 ) == 0 );
+
+		// And back, with the turn of the root as the root bone's
+		nbKeyframe back[NB_GETUP_KEYFRAMES];
+		b3Quat backRotations[NB_GETUP_KEYFRAMES * nb_humanoidBoneCount];
+		ENSURE( nbPoseClip_GetClip( pose, back, backRotations, count - 1 ) == 0 );
+		ENSURE( nbPoseClip_GetClip( pose, back, backRotations, NB_GETUP_KEYFRAMES ) == count );
+		float worst = 0.0f;
+		for ( int i = 0; i < count; ++i )
+		{
+			ENSURE( fabsf( back[i].time - keyframes[i].time ) < 1.0e-5f );
+			for ( int b = 0; b < nb_humanoidBoneCount; ++b )
+			{
+				worst = fmaxf( worst, 1.0f - fabsf( b3DotQuat( back[i].rotations[b], keyframes[i].rotations[b] ) ) );
+			}
+		}
+		ENSURE( worst < 1.0e-6f );
+		nbDestroyPoseClip( pose );
+	}
+
+	// A clip of other bones does not fit the rig
+	nbKeyframe keyframes[NB_GETUP_KEYFRAMES];
+	b3Quat rotations[NB_GETUP_KEYFRAMES * nb_humanoidBoneCount];
+	int count = nbMakeGetUpClip( &balance, nb_humanoidBoneCount, false, keyframes, rotations, NB_GETUP_KEYFRAMES );
+	nbClipDef wrong = { keyframes, count, nb_humanoidBoneCount - 1, false };
+	ENSURE( nbCreatePoseClipFromClip( &h.rig, NB_HUMANOID_SKELETON, "wrong", 30, &wrong ) == NULL );
+	return 0;
+}
+
 int PoseClipTest( void );
 
 int PoseClipTest( void )
@@ -1048,5 +1114,6 @@ int PoseClipTest( void )
 	RUN_TEST( KeypointFileTest );
 	RUN_TEST( PoseClipFigureTest );
 	RUN_TEST( PoseClipRecordTest );
+	RUN_TEST( GetUpPoseClipTest );
 	return 0;
 }

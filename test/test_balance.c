@@ -2,14 +2,16 @@
 
 // Balance of the humanoid, see the roadmap of the game, chapters 26.13 to 26.15 and 28.3 to 28.5: standing still, steps
 // that catch pushes from the back, the front and the side, left and right alike, a step that a wall blocks, ground that
-// falls away, a knockdown and getting up without a jump of any bone, waiting under a slab, a hit and debris that break off
-// getting up, what the figures of a world do and cost, and the same bits with any number of threads on every platform.
+// falls away, a knockdown and getting up with a clip without a jump of any bone, the clips of the library and of the
+// program, waiting under a slab, a hit and debris that break off getting up, what the figures of a world do and cost, and
+// the same bits with any number of threads on every platform.
 
 #include "test_macros.h"
 
 #include "nebenan/nebenan.h"
 
 #include <float.h>
+#include <math.h>
 #include <string.h>
 
 #define STEP_TIME ( 1.0f / 60.0f )
@@ -438,7 +440,8 @@ static int BalanceFloorGoneTest( void )
 }
 
 // Chapters 26.13, 26.15 and 28.4: a knockdown makes the figure fall with a protective pose, forward and backward. Once it
-// lies still on safe ground it gets up, and no bone jumps on the way.
+// lies still on safe ground it gets up, and no bone jumps on the way. The foot that lifts the figure out of the kneel on
+// its own sinks up to 2.5 cm into the soft contact of the ground, no bone further.
 static int BalanceKnockdownTest( void )
 {
 	b3Vec3 shoves[2] = { { 0.0f, 0.0f, 20.0f }, { 0.0f, 0.0f, -20.0f } };
@@ -462,6 +465,7 @@ static int BalanceKnockdownTest( void )
 		int gettingUp = -1;
 		int standing = -1;
 		bool onBack = false;
+		b3Vec3 head = b3Vec3_zero;
 		for ( int update = 0; update < 720 && standing < 0; ++update )
 		{
 			StepBalance( &scene, 1 );
@@ -480,30 +484,171 @@ static int BalanceKnockdownTest( void )
 				down = update;
 				onBack = info.onBack;
 			}
-			gettingUp = info.state == nb_balanceGettingUp && gettingUp < 0 ? update : gettingUp;
+			if ( info.state == nb_balanceGettingUp && gettingUp < 0 )
+			{
+				gettingUp = update;
+				b3Quat pelvis = b3Body_GetRotation( nbArticulation_GetBody( id, nb_humanoidPelvis ) );
+				b3Vec3 spine = b3RotateVector( pelvis, b3Vec3_axisY );
+				head = b3Normalize( (b3Vec3){ spine.x, 0.0f, spine.z } );
+			}
 			standing = info.state == nb_balanceStanding && gettingUp >= 0 ? update : standing;
 		}
 
+		// It stands and stays standing, facing where its head lay
+		Reaction after = Watch( &scene, id, 120 );
+		b3Vec3 facing = b3RotateVector( b3Body_GetRotation( nbArticulation_GetBody( id, nb_humanoidPelvis ) ), b3Vec3_axisZ );
+		float ahead = b3Dot( b3Normalize( (b3Vec3){ facing.x, 0.0f, facing.z } ), head );
 		printf(
-			"knockdown %s: lies on its %s after %.2f s, gets up after %.2f s, stands after %.2f s, a bone moved at most %.3f m "
-			"in a step and reached %.3f m below the ground\n",
+			"knockdown %s: lies on its %s after %.2f s, gets up after %.2f s, stands after %.2f s facing %.0f degrees from where "
+			"its head lay, a bone moved at most %.3f m in a step and reached %.3f m below the ground\n",
 			k == 0 ? "forward" : "backward", onBack ? "back" : "front", (float)down * STEP_TIME, (float)gettingUp * STEP_TIME,
-			(float)standing * STEP_TIME, jump, -lowest );
+			(float)standing * STEP_TIME, 57.3f * acosf( b3ClampFloat( ahead, -1.0f, 1.0f ) ), jump, -lowest );
 		ENSURE( down > 0 );
 		ENSURE( gettingUp > down );
 		ENSURE( standing > gettingUp );
 		ENSURE( onBack == ( k == 1 ) );
 		ENSURE( jump < 0.12f );
-		ENSURE( lowest > -0.02f );
-
-		// It stands and stays standing
-		Reaction after = Watch( &scene, id, 120 );
+		ENSURE( lowest > -0.025f );
 		ENSURE( after.fell == false );
 		ENSURE( after.state == nb_balanceStanding );
 		ENSURE( after.pelvis.y > 0.8f );
+		ENSURE( ahead > 0.9f );
 
 		DestroyBalanceScene( &scene );
 	}
+	return 0;
+}
+
+// The roadmap B12: the clips a figure gets up with. Those of the library lie first, with the head ahead, and stand last,
+// from the back the figure rolls onto its front first. Clips of the program, here those of the library played slower,
+// get the figure up as well, and clips that do not fit the rig are refused.
+static int BalanceGetUpClipTest( void )
+{
+	nbBalanceDef def = nbDefaultBalanceDef();
+	static nbKeyframe keyframes[2][NB_GETUP_KEYFRAMES];
+	static b3Quat rotations[2][NB_GETUP_KEYFRAMES * nb_humanoidBoneCount];
+	int counts[2];
+	float lengths[2];
+	for ( int k = 0; k < 2; ++k )
+	{
+		counts[k] = nbMakeGetUpClip( &def, nb_humanoidBoneCount, k == 1, keyframes[k], rotations[k], NB_GETUP_KEYFRAMES );
+		ENSURE( counts[k] >= 2 && counts[k] <= NB_GETUP_KEYFRAMES );
+		ENSURE( keyframes[k][0].time == 0.0f );
+		for ( int i = 1; i < counts[k]; ++i )
+		{
+			ENSURE( keyframes[k][i].time > keyframes[k][i - 1].time );
+		}
+		lengths[k] = keyframes[k][counts[k] - 1].time;
+
+		b3Quat lying = keyframes[k][0].rotations[nb_humanoidPelvis];
+		b3Quat standing = keyframes[k][counts[k] - 1].rotations[nb_humanoidPelvis];
+		ENSURE( b3RotateVector( lying, b3Vec3_axisY ).z > 0.99f );
+		ENSURE( b3RotateVector( lying, b3Vec3_axisZ ).y * ( k == 0 ? -1.0f : 1.0f ) > 0.99f );
+		ENSURE( b3RotateVector( standing, b3Vec3_axisY ).y > 0.99f );
+	}
+	ENSURE( counts[1] > counts[0] && lengths[1] > lengths[0] );
+	ENSURE( nbMakeGetUpClip( &def, nb_humanoidBoneCount, true, keyframes[1], rotations[1], counts[1] - 1 ) == 0 );
+	ENSURE( nbMakeGetUpClip( &def, nb_humanoidBoneCount, true, keyframes[1], rotations[1], NB_GETUP_KEYFRAMES ) == counts[1] );
+
+	// A quarter slower, copied: the rotations are cleared before the figure needs them
+	const float slower = 1.25f;
+	nbClipDef clips[2];
+	for ( int k = 0; k < 2; ++k )
+	{
+		for ( int i = 0; i < counts[k]; ++i )
+		{
+			keyframes[k][i].time *= slower;
+		}
+		clips[k] = (nbClipDef){ keyframes[k], counts[k], nb_humanoidBoneCount, false };
+		def.getUpClips[k] = clips + k;
+	}
+	BalanceScene scene = CreateBalanceScene( 1 );
+	nbArticulationId id = CreateStander( &scene, b3Vec3_zero, false );
+	ENSURE( nbArticulation_EnableBalance( id, &def ) );
+	memset( rotations, 0, sizeof( rotations ) );
+
+	nbArticulation_Knockdown( id );
+	Push( id, 1, (b3Vec3){ 0.0f, 0.0f, 20.0f } );
+	ENSURE( StepUntil( &scene, id, nb_balanceGettingUp, 600 ) );
+	int updates = 0;
+	while ( State( id ) == nb_balanceGettingUp && updates < 900 )
+	{
+		StepBalance( &scene, 1 );
+		updates += 1;
+	}
+	float seconds = (float)updates * STEP_TIME;
+	printf( "get-up clips of the library: %d keyframes from the front, %d from the back, %.2f and %.2f s; a quarter slower "
+			"the figure stands after %.2f s of getting up\n",
+			counts[0], counts[1], lengths[0], lengths[1], seconds );
+	ENSURE( State( id ) == nb_balanceStanding );
+	ENSURE( seconds >= slower * lengths[0] );
+	Reaction after = Watch( &scene, id, 120 );
+	ENSURE( after.fell == false && after.state == nb_balanceStanding );
+
+	// A clip of another rig, or of one keyframe, and no speed are refused, and the figure keeps its balance
+	nbClipDef wrong = clips[0];
+	wrong.boneCount = nb_humanoidBoneCount - 1;
+	def.getUpClips[0] = &wrong;
+	ENSURE( nbArticulation_EnableBalance( id, &def ) == false );
+	wrong = clips[0];
+	wrong.keyframeCount = 1;
+	ENSURE( nbArticulation_EnableBalance( id, &def ) == false );
+	def.getUpClips[0] = NULL;
+	def.getUpClips[1] = NULL;
+	def.getUpSpeed = 0.0f;
+	ENSURE( nbArticulation_EnableBalance( id, &def ) == false );
+	ENSURE( State( id ) == nb_balanceStanding );
+
+	DestroyBalanceScene( &scene );
+	return 0;
+}
+
+// A figure the program places lying lies without a fall and gets up once it can, here on its back as the clip from the
+// back begins. The balance tells which clip plays and how far.
+static int BalancePlacedLyingTest( void )
+{
+	BalanceScene scene = CreateBalanceScene( 1 );
+	nbArticulationId id = CreateStander( &scene, b3Vec3_zero, true );
+	nbBalanceDef def = nbDefaultBalanceDef();
+	nbKeyframe keyframes[NB_GETUP_KEYFRAMES];
+	b3Quat rotations[NB_GETUP_KEYFRAMES * nb_humanoidBoneCount];
+	int count = nbMakeGetUpClip( &def, nb_humanoidBoneCount, true, keyframes, rotations, NB_GETUP_KEYFRAMES );
+	float length = keyframes[count - 1].time;
+	b3WorldTransform root = { b3ToPos( (b3Vec3){ 0.0f, 0.15f, 0.0f } ), keyframes[0].rotations[nb_humanoidPelvis] };
+	nbArticulation_PlacePose( id, root, keyframes[0].rotations );
+	nbBalance placed = nbArticulation_GetBalance( id );
+	ENSURE( placed.state == nb_balanceDown && placed.getUpTime == 0.0f );
+
+	int lying = 0;
+	while ( State( id ) == nb_balanceDown && lying < 300 )
+	{
+		StepBalance( &scene, 1 );
+		lying += 1;
+	}
+	ENSURE( State( id ) == nb_balanceGettingUp );
+	ENSURE( nbArticulation_GetBalance( id ).onBack && nbArticulation_GetBalance( id ).getUpClip == 1 );
+	float played = 0.0f;
+	bool forward = true;
+	int updates = 0;
+	while ( State( id ) == nb_balanceGettingUp && updates < 900 )
+	{
+		StepBalance( &scene, 1 );
+		updates += 1;
+		nbBalance info = nbArticulation_GetBalance( id );
+		if ( info.state == nb_balanceGettingUp )
+		{
+			forward = forward && info.getUpTime >= played;
+			played = info.getUpTime;
+		}
+	}
+	nbBalance stands = nbArticulation_GetBalance( id );
+	printf( "placed on its back: lies %.2f s, gets up in %.2f s, its clip played %.2f of %.2f s, %d falls\n",
+			(float)lying * STEP_TIME, (float)updates * STEP_TIME, played, length, stands.fallCount );
+	ENSURE( stands.state == nb_balanceStanding && stands.getUpTime == 0.0f );
+	ENSURE( forward && played > length - 2.0f * STEP_TIME );
+	ENSURE( stands.fallCount == placed.fallCount && stands.getUpCount == placed.getUpCount + 1 );
+
+	DestroyBalanceScene( &scene );
 	return 0;
 }
 
@@ -699,7 +844,7 @@ static uint32_t RunBalanceScenario( int workerCount )
 
 // Balance gives the same bits with MSVC, GCC and Clang on x64 and ARM, with one thread and with four. This is the result
 // with the pinned Box3D commit. Update it when the results change on purpose, never to make one platform pass.
-#define NB_EXPECTED_BALANCE_HASH 0x948bde1au
+#define NB_EXPECTED_BALANCE_HASH 0x1a58818au
 
 static int BalanceDeterminismTest( void )
 {
@@ -724,6 +869,8 @@ int BalanceTest( void )
 	RUN_TEST( BalanceBlockedStepTest );
 	RUN_TEST( BalanceFloorGoneTest );
 	RUN_TEST( BalanceKnockdownTest );
+	RUN_TEST( BalanceGetUpClipTest );
+	RUN_TEST( BalancePlacedLyingTest );
 	RUN_TEST( BalanceSlabTest );
 	RUN_TEST( BalanceAbortTest );
 	RUN_TEST( BalanceStatsTest );

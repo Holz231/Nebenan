@@ -993,6 +993,61 @@ bool nbArticulation_PlayPoseClip( nbArticulationId articulationId, const nbPoseC
 	return true;
 }
 
+nbPoseClip* nbCreatePoseClipFromClip( const nbRigDef* rig, const char* skeleton, const char* name, int frameRate,
+									  const nbClipDef* clip )
+{
+	if ( rig == NULL || clip == NULL || clip->keyframes == NULL || clip->boneCount != rig->boneCount )
+	{
+		return NULL;
+	}
+
+	nbPoseClip* pose = nbCreatePoseClip( rig, skeleton, name, frameRate );
+	if ( pose == NULL )
+	{
+		return NULL;
+	}
+
+	pose->loop = clip->loop;
+	size_t bones = (size_t)rig->boneCount;
+	b3Transform* transforms = nbAlloc( sizeof( b3Transform ) * bones );
+	for ( int k = 0; k < clip->keyframeCount; ++k )
+	{
+		// The root turned as the keyframe says, lifted until its lowest bone touches the ground
+		const nbKeyframe* key = clip->keyframes + k;
+		b3Transform root = { b3Vec3_zero, b3NormalizeQuat( key->rotations[0] ) };
+		nbComputePoseTransforms( rig, root, key->rotations, transforms );
+		float lowest = FLT_MAX;
+		for ( int i = 0; i < rig->boneCount; ++i )
+		{
+			b3Vec3 middle;
+			lowest = b3MinFloat( lowest, nbShapeBottom( rig->bones + i, transforms[i], &middle ) );
+		}
+		root.p.y = -lowest;
+		int frame = (int)floorf( key->time * (float)pose->frameRate + 0.5f );
+		nbPoseClip_AddKeyframe( pose, frame, key->rotations, root, nb_originHand );
+	}
+	nbFree( transforms, sizeof( b3Transform ) * bones );
+	return pose;
+}
+
+int nbPoseClip_GetClip( const nbPoseClip* clip, nbKeyframe* keyframes, b3Quat* rotations, int capacity )
+{
+	if ( clip == NULL || keyframes == NULL || rotations == NULL || clip->keyframeCount > capacity )
+	{
+		return 0;
+	}
+
+	size_t bones = (size_t)clip->boneCount;
+	for ( int k = 0; k < clip->keyframeCount; ++k )
+	{
+		b3Quat* target = rotations + (size_t)k * bones;
+		memcpy( target, nbRotationsOf( clip, k ), sizeof( b3Quat ) * bones );
+		target[0] = clip->keyframes[k].root.q;
+		keyframes[k] = (nbKeyframe){ (float)clip->keyframes[k].frame / (float)clip->frameRate, target };
+	}
+	return clip->keyframeCount;
+}
+
 int nbPoseClip_RecordArticulation( nbPoseClip* clip, nbArticulationId articulationId, int frame )
 {
 	if ( clip == NULL || nbArticulation_GetBoneCount( articulationId ) != clip->boneCount )

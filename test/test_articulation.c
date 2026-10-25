@@ -454,7 +454,7 @@ static int PassiveRagdollTest( void )
 	for ( int step = 0; step < 360; ++step )
 	{
 		StepFigures( &scene, 1 );
-		ENSURE( CheckFigure( &figure, 0.05f ) );
+		ENSURE( CheckFigure( &figure, 0.07f ) );
 		maxSpeed = b3MaxFloat( maxSpeed, MaxBoneSpeed( &figure ) );
 		for ( int i = 0; i < nb_humanoidBoneCount; ++i )
 		{

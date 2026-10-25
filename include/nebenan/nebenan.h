@@ -503,11 +503,21 @@ NB_API nbBalanceDef nbDefaultBalanceDef( void );
 /// the legs follow inverse kinematics to the planted feet and the rest of the body the pose of the program. When the
 /// capture point leaves the support, a foot steps to a free spot on ground that carries it, if one is within reach and
 /// nothing lies in its way. When no step catches the figure, it falls: the upright hold lets go, the motors turn soft
-/// and hold a protective pose, and once the figure lies still on safe ground with room to stand, it gets up, see
-/// nbBalanceDef::getUpDelay. A hit or debris against it while it gets up makes it fall again. Every motion comes from
-/// the joints and bounded forces, nothing is teleported. The figure must not hang passive, see nbMotorProfile.
+/// and hold a protective pose, and once the figure lies still on safe ground with room to stand, it gets up with a clip,
+/// see nbBalanceDef::getUpClips. A hit or debris against it while it gets up makes it fall again. Every motion comes
+/// from the joints and bounded torques, nothing is teleported. The figure must not hang passive, see nbMotorProfile.
 /// @return false if the bones do not fit the definition, the figure then has no balance
 NB_API bool nbArticulation_EnableBalance( nbArticulationId articulationId, const nbBalanceDef* def );
+
+/// The clip the balance gets a figure up with when a def names none, see nbBalanceDef::getUpClips: from its front the
+/// figure brings its knees under its chest, pushes up to hands and knees, kneels up, sets its left foot forward, rises
+/// over it and sets the right foot beside it, from its back it first rolls onto its front. The keyframes lie on tenths of
+/// a second, whole frames at 30 frames per second, see nbCreatePoseClipFromClip. For a rig of boneCount bones built like
+/// nbMakeHumanoidBones, with the bones the def names. Writes up to capacity keyframes and their rotations, boneCount for
+/// each keyframe one after the other, and returns how many keyframes the clip has, at most NB_GETUP_KEYFRAMES, zero if
+/// the arrays are too small.
+NB_API int nbMakeGetUpClip( const nbBalanceDef* def, int boneCount, bool fromBack, nbKeyframe* keyframes, b3Quat* rotations,
+							int capacity );
 
 /// The balance of a figure as the last update saw it. Its state is nb_balanceOff without balance.
 NB_API nbBalance nbArticulation_GetBalance( nbArticulationId articulationId );
@@ -529,7 +539,8 @@ NB_API bool nbArticulation_PlayPoseClip( nbArticulationId articulationId, const 
 NB_API int nbArticulation_GetPose( nbArticulationId articulationId, b3Quat* rotations, int capacity );
 
 /// Put a figure into a pose with its root at a transform, at rest, and drive its joints to that pose. For setting up a
-/// figure like nbCreateArticulation, not for a figure that moves: it moves the bodies.
+/// figure like nbCreateArticulation, not for a figure that moves: it moves the bodies. With balance a figure placed
+/// upright stands, one placed lying lies and gets up once it can, see nbBalanceDef::getUpDelay.
 NB_API void nbArticulation_PlacePose( nbArticulationId articulationId, b3WorldTransform root, const b3Quat* rotations );
 
 /** @} */
@@ -633,6 +644,19 @@ NB_API float nbPoseClip_Compare( const nbPoseClip* clip, const nbPoseClip* other
 
 /// The transforms of the bones of a rig in a pose with the root at a transform, to draw a pose no figure holds
 NB_API void nbComputePoseTransforms( const nbRigDef* rig, b3Transform root, const b3Quat* rotations, b3Transform* transforms );
+
+/// A clip as an authored clip, to edit it or save it as a file, such as a get-up clip of nbMakeGetUpClip: every keyframe
+/// a proposal by hand at its nearest frame, the later of two on one frame. The root of a keyframe is turned as the rotation
+/// of its root bone says and lifted until its lowest bone touches the ground at y zero. Null if the clip does not have as
+/// many bones as the rig. Destroy it with nbDestroyPoseClip.
+NB_API nbPoseClip* nbCreatePoseClipFromClip( const nbRigDef* rig, const char* skeleton, const char* name, int frameRate,
+											 const nbClipDef* clip );
+
+/// The keyframes of an authored clip as a clip, see nbClipDef, to play it with nbArticulation_PlayClip or to get up with
+/// it, see nbBalanceDef::getUpClips: each at its frame over the frame rate, the rotation of its root as that of the root
+/// bone. Writes up to capacity keyframes and their rotations, the bones of each keyframe one after the other, and returns
+/// how many keyframes the clip has, zero if the arrays are too small.
+NB_API int nbPoseClip_GetClip( const nbPoseClip* clip, nbKeyframe* keyframes, b3Quat* rotations, int capacity );
 
 /// Record the pose a figure has into a clip, as a proposed keyframe of origin simulation, see the roadmap 33.2: a
 /// simulation baked into a clip of its own, which leaves the authored clip alone. Returns its index, -1 if the clip does

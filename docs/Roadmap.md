@@ -19,6 +19,11 @@ beide auf dem Ryzen nachgemessen, und den großen Paketen im Team auf `kollaps-9
 Begründungen und Messwerte stehen in [`Optimierungen.md`](Optimierungen.md), hier nur das Fazit und die Reihenfolge.
 Nach jeder Runde wird der Stand hier nachgetragen.
 
+`ragdoll-10` ist keine Runde der Physik: Die Figuren stehen mit Aufstehclips auf statt mit einer Kraft an der Brust,
+siehe „Aufstehclips“ unten. Gepaart gegen `ragdoll-9` auf dem 7800X3D, sechs Läufe im Wechsel mit 1 Thread, rechnet
+die Stadt ohne Figuren wie vorher, und je Figur und Schritt kostet die Balance dasselbe. Weil das Aufstehen länger
+dauert, stehen in der ruhigen Stadt mit 50 Figuren mehr zugleich auf, sie braucht 6 % mehr je Bild.
+
 `ragdoll-8` findet, warum dieselbe Stadt im selben Prozess später langsamer rechnete: Windows 11 drosselte den Benchmark
 nach ein paar Sekunden ohne Fenster im Vordergrund, siehe „Messen ohne Verlauf“ unten. Mit `nbKeepFullSpeed` behält er
 jetzt seine volle Geschwindigkeit, an der Physik ändert sich nichts: Gepaart gegen `ragdoll-7` auf dem 7800X3D, je zwei
@@ -150,13 +155,14 @@ Balance, der Capture Point und das Ziel eines Schritts liegen als Marker auf dem
 | B5 | **Blockierter Schritt** (28.5 B): kein Schritt in eine Wand, kein Fuß durch sie | ✅ Test: Wand in 32 cm, kein Fuß berührt sie, über eine kniehohe Mauer fällt die Figur |
 | B6 | **Boden weg** (26.14): kein Schritt ins Leere, die Figur fällt | ✅ Test: fällt nach 0,2 s |
 | B7 | **Fallen mit Schutzhaltung** (26.13): Hilfe für das Becken lässt los, weiche Motoren, Arme voraus oder eingerollt | ✅ |
-| B8 | **Aufstehen mit Sicherheitsprüfung** (26.15, 28.4, 28.5 E): Ruhe, Boden, Platz, kein Schutt; Kraft an der Brust als Spielhilfe; Übergabe erst, wenn der Schwerpunkt über den Füßen ruht | ✅ Tests: nach vorn und hinten umgeworfen steht die Figur nach 5,7 und 6,2 s wieder und bleibt stehen; unter einer Platte wartet sie, ohne sie zu berühren |
-| B9 | **Abbruch** (26.15): ein Treffer oder Schutt bricht das Aufstehen ab | ✅ Test: Treffer sofort, ein fallender Block nach 0,18 s |
+| B8 | **Aufstehen mit Sicherheitsprüfung** (26.15, 28.4, 28.5 E): Ruhe, Boden, Platz, kein Schutt; Kraft an der Brust als Spielhilfe; Übergabe erst, wenn der Schwerpunkt über den Füßen ruht | ✅ Tests: nach vorn und hinten umgeworfen steht die Figur nach 5,7 und 6,2 s wieder und bleibt stehen; unter einer Platte wartet sie, ohne sie zu berühren. Seit `ragdoll-10` mit Clips statt der Kraft, siehe B12 |
+| B9 | **Abbruch** (26.15): ein Treffer oder Schutt bricht das Aufstehen ab | ✅ Test: Treffer sofort, ein fallender Block nach 0,18 s, seit `ragdoll-10` nach 0,33 s. Eine Figur, die daneben steht, liegt oder aufsteht, ist seitdem kein Schutt |
 | B10 | **Ohne Sprung** (28.4): jede neue Art von Pose blendet ein | ✅ Test: kein Knochen mehr als 9,3 cm in einem Schritt |
 | B11 | **Determinismus**: 1 und 4 Threads bitgleich, der Hash für alle Plattformen festgehalten, nur Rechenarten mit gleichen Bits überall | ✅ Test |
-| B12 | **Aufstehclips** statt der Kraft an der Brust (26.15, 33.4 Schritt 6), Kriechen und Rollen, wenn kein Platz ist | 🔜 der Editor dafür steht seit `ragdoll-3`, die Clips fehlen |
+| B12 | **Aufstehclips** statt der Kraft an der Brust (26.15, 33.4 Schritt 6): ein Clip vom Bauch, einer vom Rücken, die Wurzel von einer begrenzten Hilfe gedreht, die nur dreht, im Editor als Datei | ✅ auf `ragdoll-10`, Tests: umgeworfen steht die Figur nach 8,3 s vom Bauch und 10,2 s vom Rücken wieder, mit dem Blick dahin, wo ihr Kopf lag; aus vier Richtungen mit 15 bis 40 N s und mit dem 0,8- bis 1,5-fachen Tempo jedes Mal; eigene Clips gehen, falsche werden abgelehnt |
 | B13 | **Schrägen und Stufen**: Füße auf die Neigung des Bodens drehen, Stufen testen | 🔜 |
 | B14 | **Kosten** der Balance je Figur messen, mit F10 | ✅ auf `ragdoll-4`: 0,8 bis 0,9 µs je Figur und Schritt in der ruhigen Stadt, 1,1 bis 2,0 µs unter Beschuss |
+| B15 | **Kriechen und Rollen, wenn kein Platz ist** (26.15): unter einer Platte oder zwischen Trümmern zu einer freien Stelle kriechen oder rollen und dort aufstehen | 🔜 bisher wartet die Figur, bis Platz ist |
 
 Fünf Dinge hat die Abstimmung gezeigt. Erstens schwingt der Fuß, den die IK vom aufrechten Becken aus führt, am Ziel
 vorbei, sobald ein Stoß das Becken kippt, und vom Becken aus, wie es ist, schaukelt sich der Schwung über das Rollen des
@@ -184,7 +190,52 @@ Verworfen, mit Grund:
   überschwang das Ziel um bis zu 30 cm. Ebenso ein Becken, das um die Verzögerung der Motoren vorausgerechnet wird, 7 von
   16, und eine Höchstgeschwindigkeit für den Fuß, 7 von 16.
 - **Aufstehen über Knien und Aufsitzen**: Auf Kniehöhe gehalten, drehte die Hilfe für das Becken den liegenden Körper
-  nicht auf, die Figur blieb liegen, bis die Zeit ablief. Aufstehen geht deshalb über die volle Höhe.
+  nicht auf, die Figur blieb liegen, bis die Zeit ablief. Aufstehen geht deshalb über die volle Höhe. Mit Clips, die die
+  Gelenke führen, geht es seit `ragdoll-10` doch über die Knie, siehe unten.
+
+### Aufstehclips (`ragdoll-10`)
+
+Gebaut am 25. Oktober 2026 nach Kapitel 26.15 und Schritt 6 aus 33.4. Die Kraft an der Brust ist fort. Ein Clip führt
+alle Gelenke, und die Drehung seiner Wurzel ist das Ziel eines Motorgelenks von Box3D gegen die Welt, das nur dreht, mit
+höchstens 500 N m, im Rahmen der Richtung, in die der Kopf lag. Vom Bauch zieht die Figur die Knie unter die Brust,
+stemmt sich auf Hände und Knie, kniet sich auf, nimmt das Gewicht aufs rechte Knie, schwingt den linken Fuß in der Luft
+nach vorn, bringt das Gewicht über ihn, steht auf ihm auf und setzt den rechten Fuß daneben. Vom Rücken rollt sie
+zuerst über die linke Seite auf den Bauch. Der Clip wartet, solange das Becken mehr als 0,6 rad hinter ihm zurückbleibt,
+fällt es mehr als 1 rad heraus, fällt die Figur. `nbMakeGetUpClip` baut die Clips, `nbCreatePoseClipFromClip` und
+`nbPoseClip_GetClip` bringen sie in den Editor und zurück, `nbBalanceDef::getUpClips` nimmt eigene. Eine liegend
+hingelegte Figur liegt und steht auf, und `nbBalance` sagt, welcher Clip wie weit gespielt ist.
+
+Vier Dinge hat die Abstimmung gezeigt. Erstens muss die Richtung, in die die Figur aufsteht, dabei fest bleiben: Las die
+Balance sie weiter in jedem Schritt aus dem Becken, drehte das Rollen vom Rücken den Bauch zur Seite, die Richtung lief
+mit, und die Hilfe drehte die Figur um 180° um die Hochachse. Zweitens schiebt ein Fuß, der zu früh aufsetzt, die ganze
+Figur zurück: Die Motoren des Beins drücken ihn weiter zu seinem Ziel, und das rechte Knie, auf dem sie kniet, rutscht
+weg, gemessen bis 1,3 m. Das linke Knie geht deshalb erst hoch, und der Fuß schwingt in der Luft nach vorn, bevor er
+aufsetzt. Drittens halten Beine, deren Winkel nicht zu den stehenden Füßen passen, die Figur nicht: Sie endete in
+einem 0,8 m weiten Ausfallschritt, ihr Capture Point lag am Ende knapp außerhalb, und in der Stadt mit 50 Figuren kippten
+5 am Ende des Clips. Die Winkel der letzten Keyframes kommen jetzt aus einer IK von Hüfte und Füßen mit dem rechten Knie
+als Drehpunkt, und der rechte Fuß tritt neben den linken: Am Ende stehen die Füße höchstens 0,38 m auseinander, und am
+Clipende kippt keine Figur mehr. Vom Bauch steht sie rund 0,45 m von da auf, wo sie lag, vom Rücken rund 1 m daneben,
+das Rollen versetzt sie. Viertens zählte jede Berührung mit einer anderen Figur als Schutt: 8 von 24 Abbrüchen im
+Benchmark waren Nachbarn, die die aufstehende Figur nur streiften. Jetzt bricht nur ab, was auf ihr liegt oder gegen sie
+kommt, eine andere Figur nur, wenn sie fällt.
+
+Gemessen mit `nebenan_benchmark figures 1`, sechs Runden im Wechsel gegen `ragdoll-9` auf dem Ryzen 7 7800X3D: Je Figur
+und Schritt kostet die Balance dasselbe, −4 bis +1 %, in der ruhigen Stadt 0,74 bis 0,91 µs, unter Beschuss 1,06 bis
+1,70 µs, und die Stadt ohne Figuren rechnet wie vorher, 1,83 ms je Bild.
+Weil das Aufstehen jetzt 5,3 und 6,5 s dauert statt rund 3 s, stehen mehr Figuren zugleich auf: Die ruhige Stadt mit 50
+Figuren braucht 1,07 statt 1,01 ms je Bild, Box3D löst 0,88 statt 0,83 ms, unter Beschuss bleibt es bei 2,9 ms. Von
+den Stürzen standen in der Messzeit weniger wieder auf, 18 statt 29 von 54 bis 58 in der ruhigen Stadt, und unter
+Beschuss brachen Trümmer 11 statt 6 von 60 bis 64 Aufstehen ab: Sie treffen die längeren Aufstehvorgänge öfter.
+
+Verworfen, mit Grund:
+
+- **Übergabe am Clipende ohne Capture Point**, damit die Balance einen Schritt setzt, wenn die Figur am Ende schwankt:
+  Mit dem Ende im Ausfallschritt fielen von 36 Stürzen bei drei Tempi danach 3 wieder um, mit der Prüfung keiner.
+- **Den Ausfallschritt als Ende stehen lassen**: Weg und Fußabstand blieben, 1,4 m und 0,9 m, denn sie entstehen vorher.
+- **Langsamer aus dem Knien aufstehen**, 0,7 statt 0,5 s: Der linke Fuß sank gleich tief in den Boden, die Übergabe kam
+  0,7 s später.
+- **Den linken Fuß beim Vorlehnen flach halten**, die Hüfte 4 cm weiter hinten, damit das Sprunggelenk in seiner Grenze
+  bleibt: Er sank 2,1 statt 2,3 cm ein, aber die Figur kippte am Ende erst zurück und stand 0,7 s später.
 
 ## Clips und Keyframe-Editor (`ragdoll-3`)
 

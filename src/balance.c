@@ -38,7 +38,7 @@
 // How often a figure that lies checks whether it can get up, in seconds
 #define NB_SAFETY_INTERVAL 0.25f
 
-// The upright hold and the lift of getting up come and go over this time, in seconds, so no force jumps
+// The upright hold and the hold of getting up come and go over this time, in seconds, so no torque jumps
 #define NB_RAMP_TIME 0.3f
 
 // Standing, the pelvis stays this far below straight legs, a soft knee, in meters
@@ -66,11 +66,16 @@
 #define NB_LAND_DISTANCE 0.06f
 #define NB_LAND_SPEED 2.0f
 
-// Getting up, the lift pulls the center of mass over the middle of the feet, with the weight of the figure at this
-// distance, and lets go once the center lies this close above it and moves slower than this, in meters per second
-#define NB_CENTER_PULL 0.5f
-#define NB_CENTERED 0.08f
-#define NB_CENTERED_SPEED 0.3f
+// Getting up, the clip waits while the root lags this far behind the hold, in radians, and the figure gives up and lies
+// again once the clip took this many times its length and this many seconds more, see nbBalanceDef::getUpClips. A root
+// this far from the hold fell out of the clip, it falls at once. Following the clip it stays within 0.3 radians.
+#define NB_GETUP_LAG 0.6f
+#define NB_GETUP_PATIENCE 2.0f
+#define NB_GETUP_SETTLE 1.0f
+#define NB_GETUP_LOST 1.0f
+
+// Debris comes at a lying or rising figure faster than this, in meters per second, see nbDebrisContact
+#define NB_DEBRIS_SPEED 0.5f
 
 // A new kind of pose blends in over this many seconds, and the rest pose of a figure that lies down over the second, so
 // no limb snaps to it, see the roadmap 26.15
@@ -84,8 +89,7 @@ typedef enum nbPoseKind
 	nb_poseCatchFall,
 	nb_poseCurl,
 	nb_poseRest,
-	nb_poseTuck,
-	nb_poseRise,
+	nb_poseGetUp,
 } nbPoseKind;
 
 typedef struct nbBalancer
@@ -136,16 +140,18 @@ typedef struct nbBalancer
 	// The figure falls forward, else backward, for its protective pose
 	bool fallForward;
 
-	// Getting up: the phase (rising and turning upright, coming over the feet, letting the legs take the weight), when the
-	// phase began, how high the lift wants the pelvis, the middle of the feet it pulls the center of mass over and with
-	// what part of its force, how far the lift and the upright hold are on, whether the motors run the profile of the
-	// program or the one for falling, and the hits seen
-	int getUpPhase;
-	float riseTime;
-	float liftHeight;
-	b3Vec3 liftMiddle;
-	float liftCap;
-	float liftScale;
+	// Getting up, see nbBalanceDef::getUpClips: the clips from the front and from the back, copied, where the root lay
+	// when it began, the hold that turns the root along the clip, the rotation it turns the root to and how far its torque
+	// is on, how far the upright hold is on, whether the motors run the profile of the program or the one for falling, and
+	// the hits seen. The clip that plays and its time are in info.
+	nbClipDef getUpClips[2];
+	nbKeyframe* getUpKeyframes[2];
+	b3Quat* getUpRotations[2];
+	int getUpCapacity[2];
+	b3Quat rootStart;
+	b3JointId rootHold;
+	b3Quat rootTarget;
+	float rootHoldScale;
 	float uprightScale;
 	bool userProfile;
 	int lastHitCount;
@@ -580,12 +586,13 @@ static void nbMeasure( const nbWorld* world, int index, const nbArticulation* a,
 	b->info.velocity = velocity;
 	b->maxSpeed = maxSpeed;
 
-	// How far the pelvis tilts and where the figure faces, kept from before while the pelvis lies
+	// How far the pelvis tilts and where the figure faces, kept from before while the pelvis lies. Getting up it faces
+	// where its head lay, also while it rolls over and its belly turns to the side.
 	b3WorldTransform pelvis = b3Body_GetTransform( a->bones[0].bodyId );
 	float upright = b3Dot( b3RotateVector( pelvis.q, a->up ), up );
 	b->tilt = nbAcos( upright );
 	b3Vec3 facing = nbFlat( b3RotateVector( pelvis.q, b3Vec3_axisZ ), up );
-	if ( b3Length( facing ) > 0.5f )
+	if ( b3Length( facing ) > 0.5f && b->info.state != nb_balanceGettingUp )
 	{
 		b->forward = b3Normalize( facing );
 	}
@@ -760,6 +767,17 @@ static void nbUseProfile( nbArticulation* a, nbBalancer* b, bool user )
 	}
 }
 
+// The hold of getting up goes, see nbBalanceDef::getUpTorque
+static void nbReleaseRootHold( nbBalancer* b )
+{
+	if ( b3Joint_IsValid( b->rootHold ) )
+	{
+		b3DestroyJoint( b->rootHold, false );
+	}
+	b->rootHold = b3_nullJointId;
+	b->rootHoldScale = 0.0f;
+}
+
 static void nbEnter( nbArticulation* a, nbBalancer* b, nbBalanceState state )
 {
 	// What the figure went through, see nbBalance::fallCount
@@ -775,6 +793,7 @@ static void nbEnter( nbArticulation* a, nbBalancer* b, nbBalanceState state )
 
 	b->info.state = state;
 	b->info.stateTime = 0.0f;
+	b->info.getUpTime = 0.0f;
 	switch ( state )
 	{
 		case nb_balanceStanding:
@@ -791,10 +810,10 @@ static void nbEnter( nbArticulation* a, nbBalancer* b, nbBalanceState state )
 
 		case nb_balanceFalling:
 		{
-			// The upright hold lets go at once, the lift too
+			// The upright hold lets go at once, the hold of getting up too
 			b->info.stepFoot = -1;
 			b->uprightScale = 0.0f;
-			b->liftScale = 0.0f;
+			nbReleaseRootHold( b );
 			b->restTime = 0.0f;
 			b->fallForward = b3Dot( b->info.velocity, b->forward ) >= 0.0f;
 			nbUseProfile( a, b, false );
@@ -808,17 +827,19 @@ static void nbEnter( nbArticulation* a, nbBalancer* b, nbBalanceState state )
 
 		case nb_balanceGettingUp:
 		{
-			// Rise facing away from the head when on the back, toward it otherwise, as the pelvis turns upright
+			// The clip for how the figure lies, played toward its head: it stands up facing where its head lay. The hold
+			// takes the root where it lies and turns it along the clip, see nbBalanceDef::getUpClips.
 			b3Quat pelvis = b3Body_GetRotation( a->bones[0].bodyId );
 			b3Vec3 spine = nbFlat( b3RotateVector( pelvis, a->up ), b->up );
 			if ( b3Length( spine ) > 0.3f )
 			{
-				spine = b3Normalize( spine );
-				b->forward = b->info.onBack ? b3Neg( spine ) : spine;
+				b->forward = b3Normalize( spine );
 			}
-			b->getUpPhase = 0;
-			b->riseTime = 0.0f;
-			b->liftCap = 1.0f;
+			b->info.getUpClip = b->info.onBack ? 1 : 0;
+			b->rootStart = pelvis;
+			b->rootTarget = pelvis;
+			nbReleaseRootHold( b );
+			b->rootHold = nbCreateRootHold( a, pelvis, b3MaxFloat( a->profile.uprightStiffness, 0.0f ) );
 			b->lastHitCount = a->hitCount;
 			nbUseProfile( a, b, true );
 			break;
@@ -826,6 +847,25 @@ static void nbEnter( nbArticulation* a, nbBalancer* b, nbBalanceState state )
 
 		default:
 			break;
+	}
+}
+
+// A figure the program put somewhere, or that got its balance where it is: upright it stands, else it lies and gets up
+// once it can, see nbBalanceDef::getUpDelay. The program put it there, it did not get up or fall on its own.
+static void nbEnterPlaced( nbArticulation* a, nbBalancer* b )
+{
+	b3Quat pelvis = b3Body_GetRotation( a->bones[0].bodyId );
+	float tilt = nbAcos( b3Dot( b3RotateVector( pelvis, a->up ), b->up ) );
+	b->info.state = nb_balanceOff;
+	if ( tilt > b->def.fallAngle )
+	{
+		b->uprightScale = 0.0f;
+		nbUseProfile( a, b, false );
+		nbEnter( a, b, nb_balanceDown );
+	}
+	else
+	{
+		nbEnter( a, b, nb_balanceStanding );
 	}
 }
 
@@ -970,7 +1010,10 @@ static bool nbStartStep( const nbWorld* world, int index, nbArticulation* a, nbB
 	return true;
 }
 
-// Is a bone touched by something that moves, or pressed from above by anything? Then it is not safe to get up.
+// Is a bone hit by something that comes at it, or pressed from above by what is no figure? Then it is not safe to get
+// up, and a figure that gets up falls. What it only touches is no debris, the ground, a wall, rubble at rest, and so is a
+// figure that stands, lies or gets up beside it, even with a limb over its own: whether there is room to stand,
+// nbSafeToGetUp asks before. A figure that falls against it counts, and one without balance.
 static bool nbDebrisContact( const nbWorld* world, int index, const nbArticulation* a, b3Vec3 up )
 {
 	b3ContactData contacts[16];
@@ -984,7 +1027,8 @@ static bool nbDebrisContact( const nbWorld* world, int index, const nbArticulati
 			b3BodyId bodyA = b3Shape_GetBody( contact->shapeIdA );
 			bool boneIsA = B3_ID_EQUALS( bodyA, bone );
 			b3BodyId other = boneIsA ? b3Shape_GetBody( contact->shapeIdB ) : bodyA;
-			if ( nbIsArticulationBody( world, index, other ) )
+			int figure = nbArticulationOfBody( world, other );
+			if ( figure == index )
 			{
 				continue;
 			}
@@ -997,14 +1041,19 @@ static bool nbDebrisContact( const nbWorld* world, int index, const nbArticulati
 					continue;
 				}
 
-				if ( b3Body_GetType( other ) == b3_dynamicBody )
+				// From the other shape to the bone: pointing down, the other lies on the figure
+				b3Vec3 normal = boneIsA ? b3Neg( manifold->normal ) : manifold->normal;
+				if ( figure == NB_NULL_INDEX && b3Dot( normal, up ) < -0.3f )
 				{
 					return true;
 				}
 
-				// From the other shape to the bone: pointing down, the other lies on the figure
-				b3Vec3 normal = boneIsA ? b3Neg( manifold->normal ) : manifold->normal;
-				if ( b3Dot( normal, up ) < -0.3f )
+				// A body that comes at the bone, and a figure that falls against it or has no balance, but no figure that
+				// stands, lies or gets up beside it
+				nbBalanceState state =
+					figure != NB_NULL_INDEX ? nbBalanceStateOf( world->articulations.data + figure ) : nb_balanceOff;
+				if ( b3Body_GetType( other ) == b3_dynamicBody && ( state == nb_balanceOff || state == nb_balanceFalling ) &&
+					 b3Dot( b3Body_GetLinearVelocity( other ), normal ) > NB_DEBRIS_SPEED )
 				{
 					return true;
 				}
@@ -1151,42 +1200,31 @@ static void nbDecide( const nbWorld* world, int index, nbArticulation* a, nbBala
 				break;
 			}
 
-			float pelvisHeight = b3Dot( b3ToVec3( b3Body_GetPosition( a->bones[0].bodyId ) ), b->up ) - b->groundHeight;
-			float phaseTime = b->info.stateTime - b->riseTime;
-			if ( b->getUpPhase == 0 )
+			// The clip plays on while the root follows the hold, so a figure that something holds back waits for itself
+			const nbClipDef* clip = b->getUpClips + b->info.getUpClip;
+			float length = clip->keyframes[clip->keyframeCount - 1].time;
+			b3Quat pelvis = b3Body_GetRotation( a->bones[0].bodyId );
+			float lag = 2.0f * nbAcos( b3MinFloat( b3AbsFloat( b3DotQuat( pelvis, b->rootTarget ) ), 1.0f ) );
+			if ( lag < NB_GETUP_LAG )
 			{
-				// Lifted and turned upright: come over the feet where they stand
-				if ( pelvisHeight > 0.75f * b->standHeight && b->tilt < 0.4f )
-				{
-					b->getUpPhase = 1;
-					b->riseTime = b->info.stateTime;
-					for ( int leg = 0; leg < 2; ++leg )
-					{
-						b->plant[leg] = nbPlant( a, b, leg );
-					}
-				}
+				b->info.getUpTime = b3MinFloat( b->info.getUpTime + def->getUpSpeed * timeStep, length );
 			}
-			else if ( b->getUpPhase == 1 )
+			if ( lag > NB_GETUP_LOST )
 			{
-				// Upright on both feet, the center of mass over them and nearly still: let the legs take the weight
-				b3Vec3 offset = nbFlat( b3Sub( b3ToVec3( b->info.center ), b->liftMiddle ), b->up );
-				float speed = b3Length( nbFlat( b->info.velocity, b->up ) );
-				if ( b->info.footContact[0] && b->info.footContact[1] && b->tilt < 0.3f && phaseTime > 0.2f &&
-					 b3Length( offset ) < NB_CENTERED && speed < NB_CENTERED_SPEED )
-				{
-					b->getUpPhase = 2;
-					b->riseTime = b->info.stateTime;
-				}
+				nbEnter( a, b, nb_balanceFalling );
+				break;
 			}
-			else if ( phaseTime >= def->getUpTime / 3.0f && b->info.captureMargin < 0.0f )
+
+			// After its last keyframe the figure stands on its own once both feet carry it upright and its capture point lies
+			// between them, see the roadmap 28.4
+			if ( b->info.getUpTime >= length && b->info.footContact[0] && b->info.footContact[1] && b->tilt < 0.3f &&
+				 b->info.captureMargin < 0.0f )
 			{
-				// The lift has faded and the capture point lies within the feet: the figure stands on its own, see the
-				// roadmap 28.4
 				nbEnter( a, b, nb_balanceStanding );
 				break;
 			}
 
-			if ( b->info.stateTime > 4.0f * def->getUpTime )
+			if ( b->info.stateTime > NB_GETUP_PATIENCE * length / def->getUpSpeed + NB_GETUP_SETTLE )
 			{
 				// It did not come up, lie and try again later
 				nbEnter( a, b, nb_balanceFalling );
@@ -1256,9 +1294,6 @@ static nbPoseKind nbPose( nbArticulation* a, nbBalancer* b )
 			{
 				nbLegIK( a, b, leg, wanted, b->plant[leg] );
 			}
-
-			// The lift of getting up fades at standing height
-			b->liftHeight = b->standHeight - NB_KNEE_BEND;
 			break;
 		}
 
@@ -1335,86 +1370,23 @@ static nbPoseKind nbPose( nbArticulation* a, nbBalancer* b )
 
 		case nb_balanceGettingUp:
 		{
-			// The lift holds the pelvis at standing height, the upright hold turns it up. A game aid in three phases until
-			// authored get-up clips drive the joints instead: lift with the knees a little bent so the feet clear the
-			// ground, swing the feet under the hips, and let the legs take the weight while the lift fades. Lifted lower,
-			// the upright hold cannot turn a body that lies on the ground.
-			b->liftHeight = b->standHeight - NB_KNEE_BEND;
-			float phaseTime = b->info.stateTime - b->riseTime;
-			if ( b->getUpPhase == 0 )
+			// The clip drives every joint, and its root, in the frame of the heading, is where the hold turns the root.
+			// Until the first keyframe after the start the hold turns from where the root lay to the clip, see
+			// nbBalanceDef::getUpClips.
+			const nbClipDef* clip = b->getUpClips + b->info.getUpClip;
+			nbSampleClip( clip, b->info.getUpTime, b->pose, b->boneCount );
+			b3Quat target = b3MulQuat( nbYaw( up, b->forward ), b->pose[0] );
+			float first = clip->keyframes[1].time;
+			if ( b->info.getUpTime < first )
 			{
-				for ( int i = 0; i < b->boneCount; ++i )
-				{
-					b->pose[i] = b3Quat_identity;
-				}
-				for ( int leg = 0; leg < 2; ++leg )
-				{
-					nbBend( b, def->upperArms[leg], 0.4f );
-				}
-
-				float height = b3Dot( pelvisPoint, up ) - b->groundHeight;
-				if ( height < 0.5f * b->standHeight )
-				{
-					// Low: the knees a little bent, so the feet clear the ground
-					for ( int leg = 0; leg < 2; ++leg )
-					{
-						nbBend( b, def->thighs[leg], 0.4f );
-						nbBend( b, def->shins[leg], -0.7f );
-					}
-					kind = nb_poseTuck;
-				}
-				else
-				{
-					// Half up: a foot on the ground stays where it stands, one in the air comes down under its hip, both
-					// from the pelvis as it lies now. Legs that pulled planted feet under the hips would push the pelvis
-					// over against the upright hold instead.
-					kind = nb_poseRise;
-					b3WorldTransform level = nbWantedPelvis( b, pelvisPoint );
-					for ( int leg = 0; leg < 2; ++leg )
-					{
-						if ( b->info.footContact[leg] )
-						{
-							b->plant[leg] = nbPlant( a, b, leg );
-						}
-						else
-						{
-							b3Vec3 hip = b3ToVec3( b3TransformWorldPoint( level, b->hip[leg] ) );
-							b->plant[leg] = nbAtHeight( hip, up, b->groundHeight + b->soleHeight[leg] );
-						}
-						nbLegIK( a, b, leg, pelvis, b->plant[leg] );
-					}
-				}
-				b->liftCap = 1.0f;
+				target = nbHalfwayAt( b->rootStart, target, nbSmooth( b->info.getUpTime / first ) );
 			}
-			else
+			b->rootTarget = b3NormalizeQuat( target );
+			if ( b3Joint_IsValid( b->rootHold ) )
 			{
-				// Upright on the feet where they stand: the lift pulls the center of mass over their middle, the legs
-				// move the pelvis toward it a little at a time, then the lift fades and the legs take the weight
-				kind = nb_poseRise;
-				for ( int leg = 0; leg < 2; ++leg )
-				{
-					if ( b->info.footContact[leg] )
-					{
-						b->plant[leg] = nbPlant( a, b, leg );
-					}
-				}
-				b->liftMiddle = nbFlat( b3MulSV( 0.5f, b3Add( b->plant[0], b->plant[1] ) ), up );
-				b3Vec3 shift = nbFlat( b3Sub( b->liftMiddle, pelvisPoint ), up );
-				float length = b3Length( shift );
-				if ( length > NB_PELVIS_SHIFT )
-				{
-					shift = b3MulSV( NB_PELVIS_SHIFT / length, shift );
-				}
-				b3Vec3 point = b3Add( pelvisPoint, shift );
-				float height = nbReachableHeight( b, point, b->plant, b->groundHeight + b->standHeight - NB_KNEE_BEND );
-				b->liftHeight = height - b->groundHeight;
-				b3WorldTransform wanted = nbWantedPelvis( b, nbAtHeight( point, up, height ) );
-				for ( int leg = 0; leg < 2; ++leg )
-				{
-					nbLegIK( a, b, leg, wanted, b->plant[leg] );
-				}
-				b->liftCap = b->getUpPhase == 1 ? 1.0f : b3MaxFloat( 0.0f, 1.0f - phaseTime / ( def->getUpTime / 3.0f ) );
+				nbSetRootHold( a, b->rootHold, b->rootTarget, def->getUpTorque * b->rootHoldScale );
 			}
+			kind = nb_poseGetUp;
 			break;
 		}
 
@@ -1422,43 +1394,6 @@ static nbPoseKind nbPose( nbArticulation* a, nbBalancer* b )
 			break;
 	}
 
-	// The lift of getting up, a bounded force toward the wanted height of the pelvis, fading after the figure stands. It
-	// lifts the chest, so the body hangs from it and turns upright on its own, where a lift at the pelvis would leave the
-	// upper body hanging forward.
-	if ( b->liftScale > 0.0f )
-	{
-		b3BodyId lifted = a->bones[def->torso >= 0 ? def->torso : 0].bodyId;
-		float wanted = b->liftHeight;
-		float height = b3Dot( pelvisPoint, up ) - b->groundHeight;
-		float speed = b3Dot( b3Body_GetLinearVelocity( a->bones[0].bodyId ), up );
-		float weight = b->mass * b->gravity;
-		float stiffness = weight / 0.25f;
-		float damping = 2.0f * sqrtf( stiffness * b->mass );
-		float cap = def->getUpForce * weight * b->liftScale * b->liftCap;
-		float force = b3ClampFloat( stiffness * ( wanted - height ) - damping * speed, 0.0f, cap );
-
-		// Across, rising, the lift damps the motion of the chest, so the body does not swing up about its feet like a lever
-		// and the feet slide under it instead. Upright, it pulls the center of mass over the middle of the feet like a
-		// damped spring. Bounded as well.
-		b3Vec3 across;
-		if ( b->info.state == nb_balanceGettingUp && b->getUpPhase > 0 )
-		{
-			float pull = weight / NB_CENTER_PULL;
-			b3Vec3 offset = nbFlat( b3Sub( b->liftMiddle, b3ToVec3( b->info.center ) ), up );
-			across = b3MulSub( b3MulSV( pull, offset ), 2.0f * sqrtf( pull * b->mass ), nbFlat( b->info.velocity, up ) );
-		}
-		else
-		{
-			across = b3MulSV( -4.0f * b->mass, nbFlat( b3Body_GetLinearVelocity( lifted ), up ) );
-		}
-		float acrossLength = b3Length( across );
-		float acrossCap = 0.5f * weight * b->liftScale * b->liftCap;
-		if ( acrossLength > acrossCap )
-		{
-			across = b3MulSV( acrossCap / acrossLength, across );
-		}
-		b3Body_ApplyForceToCenter( lifted, b3MulAdd( across, force, up ), true );
-	}
 	return kind;
 }
 
@@ -1485,29 +1420,32 @@ static void nbBlend( nbBalancer* b, nbPoseKind kind, float timeStep )
 	memcpy( b->applied, b->pose, sizeof( b3Quat ) * (size_t)b->boneCount );
 }
 
-// The upright hold and the lift come and go over NB_RAMP_TIME, the hold lets go at once when the figure falls
+// The upright hold while the figure stands or steps and the hold of getting up while it gets up come and go over
+// NB_RAMP_TIME, so standing up the one takes over from the other. Both let go at once when the figure falls.
 static void nbRamp( nbArticulation* a, nbBalancer* b, float timeStep )
 {
 	nbBalanceState state = b->info.state;
 	float step = timeStep / NB_RAMP_TIME;
-	bool hold = state == nb_balanceStanding || state == nb_balanceStepping || state == nb_balanceGettingUp;
+	bool hold = state == nb_balanceStanding || state == nb_balanceStepping;
 	float upright = hold ? b3MinFloat( b->uprightScale + step, 1.0f ) : 0.0f;
 	if ( upright != b->uprightScale || b->info.stateTime == 0.0f )
 	{
-		// Getting up the hold may be stronger, a game aid as well, see nbBalanceDef::getUpTorque
-		float torque =
-			state == nb_balanceGettingUp ? b3MaxFloat( a->profile.uprightTorque, b->def.getUpTorque ) : a->profile.uprightTorque;
 		b->uprightScale = upright;
-		nbSetUprightTorque( a, b->userProfile ? torque * upright : 0.0f );
+		nbSetUprightTorque( a, b->userProfile ? a->profile.uprightTorque * upright : 0.0f );
 	}
 
-	if ( state == nb_balanceGettingUp )
+	if ( b3Joint_IsValid( b->rootHold ) )
 	{
-		b->liftScale = b3MinFloat( b->liftScale + step, 1.0f );
-	}
-	else
-	{
-		b->liftScale = b3MaxFloat( b->liftScale - step, 0.0f );
+		bool gettingUp = state == nb_balanceGettingUp;
+		b->rootHoldScale = gettingUp ? b3MinFloat( b->rootHoldScale + step, 1.0f ) : b3MaxFloat( b->rootHoldScale - step, 0.0f );
+		if ( gettingUp == false && b->rootHoldScale <= 0.0f )
+		{
+			nbReleaseRootHold( b );
+		}
+		else if ( gettingUp == false )
+		{
+			nbSetRootHold( a, b->rootHold, b->rootTarget, b->def.getUpTorque * b->rootHoldScale );
+		}
 	}
 }
 
@@ -1563,11 +1501,197 @@ nbBalanceDef nbDefaultBalanceDef( void )
 	def.fallProfile.dampingRatio = 1.0f;
 	def.fallProfile.maxTorque = 40.0f;
 	def.getUpDelay = 1.0f;
-	def.getUpTime = 1.2f;
-	def.getUpForce = 1.3f;
+	def.getUpSpeed = 1.0f;
 	def.getUpTorque = 500.0f;
 	def.internalValue = NB_SECRET_COOKIE;
 	return def;
+}
+
+// The keyframes of a clip being built, see nbMakeGetUpClip
+typedef struct nbKeyMaker
+{
+	nbKeyframe* keyframes;
+	b3Quat* rotations;
+	int boneCount;
+	int capacity;
+	int count;
+} nbKeyMaker;
+
+// A keyframe at rest at a time, its root lying with the head along z, rolled about z, tilted from upright about x toward
+// z, so a tilt of a quarter turn lies on the front. Null once the arrays are full.
+static b3Quat* nbAddKey( nbKeyMaker* m, float time, float tilt, float roll )
+{
+	int k = m->count;
+	m->count += 1;
+	if ( k >= m->capacity )
+	{
+		return NULL;
+	}
+
+	b3Quat* rotations = m->rotations + k * m->boneCount;
+	for ( int i = 0; i < m->boneCount; ++i )
+	{
+		rotations[i] = b3Quat_identity;
+	}
+	b3Quat r = b3MakeQuatFromAxisAngle( b3Vec3_axisZ, roll );
+	rotations[0] = b3NormalizeQuat( b3MulQuat( r, b3MakeQuatFromAxisAngle( b3Vec3_axisX, tilt ) ) );
+	m->keyframes[k] = (nbKeyframe){ time, rotations };
+	return rotations;
+}
+
+// A bone of a keyframe turned about an axis of its own, after the turns it has
+static void nbTurn( b3Quat* rotations, int bone, b3Vec3 axis, float angle )
+{
+	if ( rotations != NULL && bone > 0 )
+	{
+		rotations[bone] = b3NormalizeQuat( b3MulQuat( rotations[bone], b3MakeQuatFromAxisAngle( axis, angle ) ) );
+	}
+}
+
+// Both bones of a pair turned the same way about an axis of their own
+static void nbTurnBoth( b3Quat* rotations, const int* bones, b3Vec3 axis, float angle )
+{
+	nbTurn( rotations, bones[0], axis, angle );
+	nbTurn( rotations, bones[1], axis, angle );
+}
+
+// A leg of a keyframe, 0 left, 1 right: the hip bent forward and spread out, the knee bent and the foot turned up
+static void nbLeg( b3Quat* rotations, const nbBalanceDef* def, int leg, float hip, float spread, float knee, float foot )
+{
+	nbTurn( rotations, def->thighs[leg], b3Vec3_axisX, hip );
+	nbTurn( rotations, def->thighs[leg], b3Vec3_axisZ, spread );
+	nbTurn( rotations, def->shins[leg], b3Vec3_axisX, knee );
+	nbTurn( rotations, def->feet[leg], b3Vec3_axisX, foot );
+}
+
+int nbMakeGetUpClip( const nbBalanceDef* def, int boneCount, bool fromBack, nbKeyframe* keyframes, b3Quat* rotations,
+					 int capacity )
+{
+	if ( def == NULL || keyframes == NULL || rotations == NULL || boneCount < 2 )
+	{
+		return 0;
+	}
+
+	const int* bones[5] = { def->thighs, def->shins, def->feet, def->upperArms, def->forearms };
+	for ( int k = 0; k < 5; ++k )
+	{
+		if ( bones[k][0] >= boneCount || bones[k][1] >= boneCount )
+		{
+			return 0;
+		}
+	}
+	if ( def->torso >= boneCount || def->head >= boneCount )
+	{
+		return 0;
+	}
+
+	// Measured on the humanoid of nbMakeHumanoidBones: the motors of nbDefaultMotorProfile lift it, the hold of getting up
+	// keeps its root on course. Every pose comes before the motion that needs it: the knees under the chest before the
+	// hips rise, the weight over the right knee before the left foot swings forward, the foot in the air before it comes
+	// down, the weight over the left foot before the right knee leaves the ground. A foot that touches down early, or legs
+	// that do not fit where the feet stand, push the figure along the ground. The hips bend as far as the root tilts, so
+	// the legs and the hold turn the body together. So it stands up from falls in four directions at speeds from 0.8 to
+	// 1.5, half a meter from where it lay, from its back a meter.
+	nbKeyMaker m = { keyframes, rotations, boneCount, capacity, 0 };
+	const float pi = B3_PI;
+	const int* thighs = def->thighs;
+	const int* shins = def->shins;
+	const int* arms = def->upperArms;
+	const int* forearms = def->forearms;
+	b3Vec3 x = b3Vec3_axisX;
+	b3Vec3 z = b3Vec3_axisZ;
+	float t = 0.0f;
+	b3Quat* r;
+
+	if ( fromBack )
+	{
+		// On the back with the head ahead, the right knee and arm swing across, the left arm makes way, and the figure
+		// rolls over its left side onto its front
+		nbAddKey( &m, 0.0f, 0.5f * pi, pi );
+		r = nbAddKey( &m, 0.4f, 0.5f * pi, 1.25f * pi );
+		nbTurn( r, thighs[1], x, 0.9f );
+		nbTurn( r, thighs[1], z, 0.3f );
+		nbTurn( r, shins[1], x, -1.4f );
+		nbTurn( r, arms[1], x, 1.3f );
+		nbTurn( r, arms[0], z, 0.6f );
+		r = nbAddKey( &m, 0.8f, 0.5f * pi, 1.625f * pi );
+		nbTurn( r, thighs[1], x, 0.6f );
+		nbTurn( r, shins[1], x, -0.8f );
+		nbTurn( r, arms[1], x, 1.0f );
+		nbTurn( r, arms[0], z, 0.6f );
+		t = 1.2f;
+	}
+
+	// On the front: knees under the chest, then hips and chest rise together onto hands and knees
+	nbAddKey( &m, t, 0.5f * pi, 0.0f );
+	r = nbAddKey( &m, t + 0.4f, 0.556f * pi, 0.0f );
+	nbTurnBoth( r, arms, x, 1.5f );
+	nbTurnBoth( r, forearms, x, 0.5f );
+	nbTurnBoth( r, thighs, x, 1.8f );
+	nbTurnBoth( r, shins, x, -2.1f );
+	for ( int k = 0; k < 2; ++k )
+	{
+		r = nbAddKey( &m, t + ( k == 0 ? 0.7f : 0.9f ), 0.333f * pi, 0.0f );
+		nbTurnBoth( r, arms, x, 1.05f );
+		nbTurnBoth( r, thighs, x, 1.05f );
+		nbTurnBoth( r, shins, x, -2.1f );
+		nbTurn( r, def->head, x, -0.3f );
+	}
+
+	// Kneeling up, the weight over the right knee as the chest leans right, the left knee comes up high and the left foot
+	// swings forward in the air before it comes down ahead
+	r = nbAddKey( &m, t + 1.3f, 0.0f, 0.0f );
+	nbLeg( r, def, 0, 0.0f, 0.15f, -2.1f, 0.0f );
+	nbLeg( r, def, 1, 0.0f, 0.15f, -2.1f, 0.0f );
+	nbTurnBoth( r, arms, x, 0.3f );
+	r = nbAddKey( &m, t + 1.7f, 0.0f, 0.0f );
+	nbLeg( r, def, 0, 0.0f, 0.15f, -2.1f, 0.0f );
+	nbLeg( r, def, 1, 0.0f, 0.15f, -2.1f, 0.0f );
+	nbTurn( r, def->torso, z, 0.25f );
+	nbTurnBoth( r, arms, x, 0.3f );
+	r = nbAddKey( &m, t + 2.2f, 0.0f, 0.0f );
+	nbLeg( r, def, 0, 1.5f, 0.15f, -2.3f, 0.5f );
+	nbLeg( r, def, 1, 0.0f, 0.15f, -2.1f, 0.0f );
+	nbTurn( r, def->torso, z, 0.25f );
+	nbTurnBoth( r, arms, x, 0.3f );
+	r = nbAddKey( &m, t + 2.5f, 0.0f, 0.0f );
+	nbLeg( r, def, 0, 1.6f, 0.1f, -2.1f, 0.5f );
+	nbLeg( r, def, 1, 0.0f, 0.1f, -1.97f, 0.0f );
+	nbTurn( r, def->torso, z, 0.2f );
+	nbTurnBoth( r, arms, x, 0.3f );
+	for ( int k = 0; k < 2; ++k )
+	{
+		r = nbAddKey( &m, t + ( k == 0 ? 2.7f : 3.0f ), 0.0f, 0.0f );
+		nbLeg( r, def, 0, 1.59f, 0.1f, -1.66f, 0.07f );
+		nbLeg( r, def, 1, 0.0f, 0.1f, -1.97f, 0.0f );
+		nbTurn( r, def->torso, z, k == 0 ? 0.1f : 0.0f );
+		nbTurnBoth( r, arms, x, k == 0 ? 0.4f : 0.5f );
+	}
+
+	// The legs from here on follow from where the hip and the feet are, so the feet stay where they stand: the weight over
+	// the left foot with the right knee still down and the arms reaching forward, up on the left leg, the right foot steps
+	// beside the left one, and the legs straighten
+	r = nbAddKey( &m, t + 3.5f, 0.6f, 0.0f );
+	nbLeg( r, def, 0, 2.2f, 0.1f, -2.2f, 0.5f );
+	nbLeg( r, def, 1, 0.08f, 0.1f, -1.45f, 0.0f );
+	nbTurnBoth( r, arms, x, 1.0f );
+	r = nbAddKey( &m, t + 4.0f, 0.45f, 0.0f );
+	nbLeg( r, def, 0, 1.32f, 0.1f, -1.52f, 0.5f );
+	nbLeg( r, def, 1, 0.15f, 0.1f, -1.4f, 0.0f );
+	nbTurnBoth( r, arms, x, 0.8f );
+	r = nbAddKey( &m, t + 4.4f, 0.25f, 0.0f );
+	nbLeg( r, def, 0, 0.76f, 0.1f, -0.95f, 0.45f );
+	nbLeg( r, def, 1, 0.6f, 0.1f, -1.1f, 0.5f );
+	nbTurnBoth( r, arms, x, 0.5f );
+	r = nbAddKey( &m, t + 4.8f, 0.05f, 0.0f );
+	nbLeg( r, def, 0, 0.29f, 0.1f, -0.42f, 0.18f );
+	nbLeg( r, def, 1, 0.2f, 0.1f, -0.41f, 0.26f );
+	nbTurnBoth( r, arms, x, 0.2f );
+	r = nbAddKey( &m, t + 5.3f, 0.0f, 0.0f );
+	nbLeg( r, def, 0, 0.06f, 0.1f, -0.03f, -0.03f );
+	nbLeg( r, def, 1, -0.03f, 0.1f, -0.03f, 0.06f );
+
+	return m.count <= capacity ? m.count : 0;
 }
 
 void nbFreeBalancer( nbArticulation* articulation )
@@ -1578,6 +1702,13 @@ void nbFreeBalancer( nbArticulation* articulation )
 		return;
 	}
 
+	nbReleaseRootHold( b );
+	for ( int k = 0; k < 2; ++k )
+	{
+		int capacity = b->getUpCapacity[k];
+		nbFree( b->getUpKeyframes[k], sizeof( nbKeyframe ) * (size_t)capacity );
+		nbFree( b->getUpRotations[k], sizeof( b3Quat ) * (size_t)capacity * (size_t)b->boneCount );
+	}
 	nbFree( b->pose, sizeof( b3Quat ) * (size_t)b->boneCount );
 	nbFree( b->applied, sizeof( b3Quat ) * (size_t)b->boneCount );
 	nbFree( b->blendFrom, sizeof( b3Quat ) * (size_t)b->boneCount );
@@ -1600,11 +1731,8 @@ void nbBalancePlaced( nbArticulation* articulation )
 	b->poseKind = nb_poseBalance;
 	b->blendTime = 0.0f;
 	b->blendDuration = 0.0f;
-	b->liftScale = 0.0f;
-
-	// The program put it there, it did not get up on its own
-	b->info.state = nb_balanceOff;
-	nbEnter( articulation, b, nb_balanceStanding );
+	nbReleaseRootHold( b );
+	nbEnterPlaced( articulation, b );
 }
 
 void nbBalanceProfileChanged( nbArticulation* articulation )
@@ -1662,7 +1790,15 @@ bool nbArticulation_EnableBalance( nbArticulationId id, const nbBalanceDef* def 
 				shin->joint == nb_hingeJoint && fabsf( kneeAxis.x ) > 0.9f && foot->shape == nb_boxBone &&
 				b3Dot( b3RotateVector( thigh->rest.q, b3Vec3_axisY ), a->up ) < -0.8f;
 	}
-	if ( valid == false || def->stepTime <= 0.0f || def->getUpTime <= 0.0f )
+	// A get-up clip of the program fits the rig, from its lying keyframe to its standing one
+	for ( int k = 0; k < 2 && valid; ++k )
+	{
+		const nbClipDef* clip = def->getUpClips[k];
+		valid = clip == NULL ||
+				( clip->keyframes != NULL && clip->keyframeCount >= 2 && clip->boneCount == a->boneCount &&
+				  clip->keyframes[clip->keyframeCount - 1].time > clip->keyframes[1].time && clip->keyframes[1].time > 0.0f );
+	}
+	if ( valid == false || def->stepTime <= 0.0f || def->getUpSpeed <= 0.0f )
 	{
 		return false;
 	}
@@ -1677,7 +1813,38 @@ bool nbArticulation_EnableBalance( nbArticulationId id, const nbBalanceDef* def 
 	b->blendFrom = nbAlloc( sizeof( b3Quat ) * (size_t)a->boneCount );
 	memcpy( b->applied, a->pose, sizeof( b3Quat ) * (size_t)a->boneCount );
 	b->poseKind = nb_poseBalance;
+	b->rootHold = b3_nullJointId;
 	a->balancer = b;
+
+	// The clips of getting up, those of the program copied, the others the library's, see nbMakeGetUpClip
+	for ( int k = 0; k < 2; ++k )
+	{
+		const nbClipDef* clip = def->getUpClips[k];
+		int capacity = clip != NULL ? clip->keyframeCount : NB_GETUP_KEYFRAMES;
+		b->getUpCapacity[k] = capacity;
+		b->getUpKeyframes[k] = nbAlloc( sizeof( nbKeyframe ) * (size_t)capacity );
+		b->getUpRotations[k] = nbAlloc( sizeof( b3Quat ) * (size_t)capacity * (size_t)a->boneCount );
+		int count = 0;
+		if ( clip != NULL )
+		{
+			for ( int i = 0; i < capacity; ++i )
+			{
+				b3Quat* rotations = b->getUpRotations[k] + i * a->boneCount;
+				for ( int j = 0; j < a->boneCount; ++j )
+				{
+					rotations[j] = b3NormalizeQuat( clip->keyframes[i].rotations[j] );
+				}
+				b->getUpKeyframes[k][i] = (nbKeyframe){ clip->keyframes[i].time, rotations };
+			}
+			count = capacity;
+		}
+		else
+		{
+			count = nbMakeGetUpClip( def, a->boneCount, k == 1, b->getUpKeyframes[k], b->getUpRotations[k], capacity );
+		}
+		b->getUpClips[k] = (nbClipDef){ b->getUpKeyframes[k], count, a->boneCount, false };
+		b->def.getUpClips[k] = NULL;
+	}
 
 	// The legs at rest, in the frame of the pelvis
 	float standHeight = 0.0f;
@@ -1759,7 +1926,7 @@ bool nbArticulation_EnableBalance( nbArticulationId id, const nbBalanceDef* def 
 	b->uprightScale = 1.0f;
 	b->lastHitCount = a->hitCount;
 	nbApplyMotorProfile( a, &a->profile );
-	nbEnter( a, b, nb_balanceStanding );
+	nbEnterPlaced( a, b );
 	return true;
 }
 

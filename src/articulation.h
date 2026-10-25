@@ -112,6 +112,9 @@ void nbUpdateArticulations( nbWorld* world, float timeStep );
 // The articulation of an id and its world, null for a stale id
 nbArticulation* nbGetArticulationFromId( nbArticulationId id, nbWorld** worldOut );
 
+// The index of the articulation whose bone this Box3D body is, NB_NULL_INDEX for a body of no articulation
+int nbArticulationOfBody( const nbWorld* world, b3BodyId bodyId );
+
 // Is this Box3D body a bone of the articulation at this index?
 bool nbIsArticulationBody( const nbWorld* world, int index, b3BodyId bodyId );
 
@@ -123,6 +126,12 @@ void nbApplyMotorProfile( nbArticulation* articulation, const nbMotorProfile* pr
 
 // Change the most torque of the upright hold, see nbMotorProfile::uprightTorque
 void nbSetUprightTorque( nbArticulation* articulation, float torque );
+
+// The hold of getting up, see balance.c: a motor joint from the static anchor whose angular spring turns the whole root
+// toward a rotation in the world, heading and all, with a stiffness in newton meters per radian about its softest axis
+// and no torque yet, and a new rotation and most torque for it. The upright hold keeps only the up axis of the root.
+b3JointId nbCreateRootHold( nbArticulation* articulation, b3Quat rotation, float stiffness );
+void nbSetRootHold( nbArticulation* articulation, b3JointId hold, b3Quat rotation, float torque );
 
 // The rotations of the first count bones against their rest pose, as the bodies are, see nbArticulation_GetPose
 void nbGetPose( const nbArticulation* articulation, b3Quat* rotations, int count );

@@ -366,8 +366,8 @@ struct City
 };
 
 // The keyframe editor, see BuildEditorScene: the humanoid, the clip it edits and where it is saved, the frame, the chosen
-// keyframe and bone, the checks of the clip, the meshes of its pose, the figure that plays it, the clip the library records
-// of that figure with what it finds in it, and the reference image of the frame
+// keyframe and bone, the checks of the clip, the meshes of its pose, the figure that plays it or gets up with it, the clip
+// the library records of that figure with what it finds in it, and the reference image of the frame
 struct Editor
 {
 	nbBoneDef bones[nb_humanoidBoneCount] = {};
@@ -396,6 +396,7 @@ struct Editor
 	nbArticulationId figure = {};
 	bool simulating = false;
 	bool balance = false;
+	bool getUp = false;
 	float motorError = 0.0f;
 	int motorBone = -1;
 	nbBalanceState balanceState = nb_balanceOff;
@@ -1382,6 +1383,18 @@ static nbPoseClip* MakeExampleClip( const Editor& e )
 	return clip;
 }
 
+// A get-up clip of the library as a clip of the editor, see nbMakeGetUpClip
+static nbPoseClip* MakeGetUpClip( const Editor& e, bool fromBack )
+{
+	nbBalanceDef balance = nbDefaultBalanceDef();
+	nbKeyframe keyframes[NB_GETUP_KEYFRAMES];
+	b3Quat rotations[NB_GETUP_KEYFRAMES * nb_humanoidBoneCount];
+	int count = nbMakeGetUpClip( &balance, nb_humanoidBoneCount, fromBack, keyframes, rotations, NB_GETUP_KEYFRAMES );
+	nbClipDef clip = { keyframes, count, nb_humanoidBoneCount, false };
+	return nbCreatePoseClipFromClip( &e.rig, NB_HUMANOID_SKELETON, fromBack ? "Aufstehen von hinten" : "Aufstehen von vorn", 30,
+									 &clip );
+}
+
 static void SetEditorClip( Editor& e, nbPoseClip* clip )
 {
 	nbDestroyPoseClip( e.clip );
@@ -1580,13 +1593,34 @@ static void StartEditorSimulation( App& app )
 	b3WorldTransform root = { b3ToPos( first.root.p ), first.root.q };
 	nbMotorProfile profile = app.figureProfile;
 	e.figure = nbCreateArticulation( app.destruction, &e.rig, root.p, root.q, &profile );
-	nbArticulation_PlacePose( e.figure, root, first.rotations );
-	if ( e.balance )
+	if ( e.getUp )
 	{
+		// The clip as the get-up clip of the balance, from the front and from the back, copied by the library. The figure
+		// lies in the first pose and gets up with it once it lay still.
+		int count = nbPoseClip_GetKeyframeCount( e.clip );
+		std::vector<nbKeyframe> keyframes( (size_t)count );
+		std::vector<b3Quat> rotations( (size_t)count * nb_humanoidBoneCount );
+		nbPoseClip_GetClip( e.clip, keyframes.data(), rotations.data(), count );
+		nbClipDef clip = { keyframes.data(), count, nb_humanoidBoneCount, false };
 		nbBalanceDef balance = nbDefaultBalanceDef();
-		nbArticulation_EnableBalance( e.figure, &balance );
+		balance.getUpClips[0] = &clip;
+		balance.getUpClips[1] = &clip;
+		if ( nbArticulation_EnableBalance( e.figure, &balance ) == false )
+		{
+			e.message = "Als Aufstehclip braucht der Clip zwei Keyframes, der zweite nach Frame 0";
+		}
+		nbArticulation_PlacePose( e.figure, root, first.rotations );
 	}
-	nbArticulation_PlayPoseClip( e.figure, e.clip, 1.0f );
+	else
+	{
+		nbArticulation_PlacePose( e.figure, root, first.rotations );
+		if ( e.balance )
+		{
+			nbBalanceDef balance = nbDefaultBalanceDef();
+			nbArticulation_EnableBalance( e.figure, &balance );
+		}
+		nbArticulation_PlayPoseClip( e.figure, e.clip, 1.0f );
+	}
 	AddFigureVisual( app, e.figure, e.bones, nb_humanoidBoneCount );
 	e.simulating = true;
 
@@ -1594,7 +1628,7 @@ static void StartEditorSimulation( App& app )
 	e.baked = nullptr;
 	e.recording = false;
 	e.bakedCount = -1;
-	if ( e.bake )
+	if ( e.bake && e.getUp == false )
 	{
 		e.baked = nbCreatePoseClip( &e.rig, NB_HUMANOID_SKELETON,
 									( std::string( nbPoseClip_GetName( e.clip ) ) + " simuliert" ).c_str(),
@@ -1688,11 +1722,20 @@ static void UpdateEditor( App& app, float dt )
 	float rate = (float)nbPoseClip_GetFrameRate( e.clip );
 	if ( e.simulating && nbArticulation_IsValid( e.figure ) )
 	{
-		// The frame of the figure is the time of its clip
-		e.frame = nbArticulation_GetClipTime( e.figure ) * rate;
-		if ( nbPoseClip_IsLooping( e.clip ) && length > 0 )
+		// The frame of the figure is the time of its clip, or getting up of its get-up clip
+		nbBalance balance = nbArticulation_GetBalance( e.figure );
+		if ( e.getUp )
 		{
-			e.frame = fmodf( e.frame, (float)length );
+			e.frame = balance.state == nb_balanceGettingUp ? balance.getUpTime * rate
+														   : ( balance.getUpCount > 0 ? (float)length : 0.0f );
+		}
+		else
+		{
+			e.frame = nbArticulation_GetClipTime( e.figure ) * rate;
+			if ( nbPoseClip_IsLooping( e.clip ) && length > 0 )
+			{
+				e.frame = fmodf( e.frame, (float)length );
+			}
 		}
 
 		// The joint furthest from its target now, and the balance
@@ -1707,7 +1750,7 @@ static void UpdateEditor( App& app, float dt )
 				e.motorBone = i;
 			}
 		}
-		e.balanceState = nbArticulation_GetBalance( e.figure ).state;
+		e.balanceState = balance.state;
 		e.recording = nbArticulation_IsRecording( e.figure );
 	}
 
@@ -1831,6 +1874,27 @@ static void DrawEditorUi( App& app )
 	if ( ImGui::Button( "Speichern" ) )
 	{
 		SaveEditorClip( e, e.clip, e.path );
+	}
+	for ( int k = 0; k < 2; ++k )
+	{
+		if ( k > 0 )
+		{
+			ImGui::SameLine();
+		}
+		if ( ImGui::Button( k == 0 ? "Aufstehen von vorn" : "Aufstehen von hinten" ) )
+		{
+			StopEditorSimulation( app );
+			SetEditorClip( e, MakeGetUpClip( e, k == 1 ) );
+			e.getUp = true;
+			e.message = std::string( "Aufstehclip der Bibliothek: " ) + nbPoseClip_GetName( e.clip );
+		}
+		if ( ImGui::IsItemHovered() )
+		{
+			ImGui::SetTooltip( "Der Clip, mit dem die Balance eine Figur aufstehen lässt, die auf dem %s liegt. Die Drehung\n"
+							   "der Wurzel ist das Ziel der Hilfe, die das Becken beim Aufstehen mitdreht, mit dem Kopf\n"
+							   "voraus. Mit „Aufstehen“ steht die Figur mit dem Clip auf, wie im Spiel.",
+							   k == 0 ? "Bauch" : "Rücken" );
+		}
 	}
 	if ( e.message.empty() == false )
 	{
@@ -2088,9 +2152,19 @@ static void DrawEditorUi( App& app )
 	// The clip on a figure
 	ImGui::SeparatorText( "Simulation" );
 	ImGui::BeginDisabled( e.simulating );
+	ImGui::Checkbox( "Aufstehen", &e.getUp );
+	if ( ImGui::IsItemHovered() )
+	{
+		ImGui::SetTooltip( "Die Figur liegt in der ersten Pose und steht mit dem Clip als Aufstehclip ihrer Balance auf:\n"
+						   "Die Gelenke folgen dem Clip, eine begrenzte Hilfe dreht das Becken mit, und der Clip wartet,\n"
+						   "wenn das Becken zurückbleibt. Ohne: Die Figur spielt den Clip wie jeden anderen." );
+	}
+	ImGui::SameLine();
+	ImGui::BeginDisabled( e.getUp );
 	ImGui::Checkbox( "Balance", &e.balance );
 	ImGui::SameLine();
 	ImGui::Checkbox( "Backen", &e.bake );
+	ImGui::EndDisabled();
 	if ( ImGui::IsItemHovered() )
 	{
 		ImGui::SetTooltip( "Die Bibliothek nimmt die Pose, die die Figur erreicht, Frame für Frame in einen eigenen Clip\n"
@@ -3207,7 +3281,9 @@ static void DrawUi( App& app )
 		}
 		if ( ImGui::IsItemHovered() )
 		{
-			ImGui::SetTooltip( "Die Figuren mit Balance fallen sofort, liegen still und stehen wieder auf." );
+			ImGui::SetTooltip( "Die Figuren mit Balance fallen sofort, liegen still und stehen mit einem Clip wieder auf: vom\n"
+							   "Bauch über Hände und Knie, vom Rücken rollen sie erst auf den Bauch. Die Clips zeigt der\n"
+							   "Keyframe-Editor." );
 		}
 		ImGui::SameLine();
 		if ( ImGui::Button( "Clip neu starten" ) )
@@ -3656,8 +3732,25 @@ static void RunScript( App& app, int frame )
 		case SceneKeyframes:
 		{
 			// The example clip with its first keyframe approved on a figure, baked, both saved, and the baked frames taken
-			// back in as proposals, which the approved keyframe refuses
+			// back in as proposals, which the approved keyframe refuses. Then the get-up clip from the back of the library on
+			// a figure that gets up with it, as in the game.
 			Editor& e = app.editor;
+			static bool stood = false;
+			if ( f == 240 )
+			{
+				SetEditorClip( e, MakeGetUpClip( e, true ) );
+				e.getUp = true;
+				StartEditorSimulation( app );
+			}
+			else if ( f > 240 && e.getUp && e.simulating && stood == false )
+			{
+				nbBalance balance = nbArticulation_GetBalance( e.figure );
+				if ( balance.getUpCount > 0 )
+				{
+					printf( "Editor: %s, steht nach Frame %d, %d Stürze\n", nbPoseClip_GetName( e.clip ), f, balance.fallCount );
+					stood = true;
+				}
+			}
 			if ( f == 10 )
 			{
 				nbPoseClip_Approve( e.clip, 0, true );

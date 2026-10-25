@@ -1058,7 +1058,8 @@ typedef enum nbBalanceState
 	/// The figure lies at rest and waits until it can get up safely
 	nb_balanceDown,
 
-	/// The figure gets up, its chest lifted by a bounded force, a game aid like the upright hold
+	/// The figure gets up with a clip: its joints lift it and a bounded hold turns its root along the clip, see
+	/// nbBalanceDef::getUpClips
 	nb_balanceGettingUp,
 
 	/// The number of states
@@ -1077,8 +1078,8 @@ typedef struct nbBalanceDef
 	int shins[2];
 	int feet[2];
 
-	/// Bones that the protective pose of a fall moves, -1 for none: the torso, the head, the upper arms and forearms, left
-	/// then right. Getting up lifts the torso, or the root without one.
+	/// Bones that the protective pose of a fall and the get-up clips of the library move, -1 for none: the torso, the head,
+	/// the upper arms and forearms, left then right.
 	int torso;
 	int head;
 	int upperArms[2];
@@ -1110,14 +1111,20 @@ typedef struct nbBalanceDef
 	/// room to stand and nothing on it or moving against it. Zero, it stays down.
 	float getUpDelay;
 
-	/// Getting up, the lift fades over a third of this time, in seconds, once the figure stands upright over its feet, and
-	/// the figure gives up and lies again after four times it. The most force that lifts the chest, times the weight of
-	/// the figure. The lift is a game aid like the upright hold, no muscle.
-	float getUpTime;
-	float getUpForce;
+	/// The clips the figure gets up with, from its front and from its back, null for those of the library, see
+	/// nbMakeGetUpClip. A get-up clip drives the joints like any clip, and the rotation of its root, which plays no part in
+	/// other clips, is where the hold of getting up turns the root: in the frame of the figure lying with its head toward
+	/// where it will stand up facing, y up and z ahead. Its first keyframe lies, its last one stands on both feet. The
+	/// clips are copied.
+	const nbClipDef* getUpClips[2];
 
-	/// The most torque of the upright hold while the figure gets up, in newton meters, at least that of the motor profile.
-	/// It turns the pelvis up as the figure sits up, a game aid as well.
+	/// How fast the get-up clips play, 1 as authored. A clip waits while the root lags behind the hold, the figure falls
+	/// once its root falls out of the clip, and it gives up and lies again once a clip took twice its length.
+	float getUpSpeed;
+
+	/// The most torque of the hold of getting up, in newton meters: a motor joint against the world that turns the root
+	/// along the clip, its heading too. The joints lift the figure, the hold keeps its root on course, a game aid like the
+	/// upright hold.
 	float getUpTorque;
 
 	/// Used internally to detect a valid definition. DO NOT SET.
@@ -1160,6 +1167,11 @@ typedef struct nbBalance
 
 	/// The figure lies on its back, else on its front or side
 	bool onBack;
+
+	/// Getting up, the clip that plays, 0 from the front, 1 from the back, and how far it played, in seconds of the clip,
+	/// see nbBalanceDef::getUpClips. Zero in the other states.
+	int getUpClip;
+	float getUpTime;
 
 	/// Since the figure got balance: its falls, the times it got up and stood, and the times getting up ended in a fall
 	int fallCount;
@@ -1216,6 +1228,9 @@ typedef enum nbHumanoidBone
 
 /// The skeleton of the humanoid of nbMakeHumanoidBones in the files of clips, see nbCreatePoseClip
 #define NB_HUMANOID_SKELETON "nebenan-humanoid"
+
+/// The most keyframes of a get-up clip of the library, see nbMakeGetUpClip
+#define NB_GETUP_KEYFRAMES 24
 
 /** @} */
 

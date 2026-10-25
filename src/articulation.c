@@ -125,7 +125,10 @@ float nbMakeHumanoidBones( float height, float mass, nbBoneDef* bones, int capac
 	float m = mass / NB_HUMANOID_MASS;
 
 	// A limb that hangs down has its local y along world -y. The cone of a ball joint sits on the bone, the hinge axis
-	// runs across it along local x. The foot points forward, along +z.
+	// runs across it along local x. The foot points forward, along +z. The hip bends about the axis across it like a hinge,
+	// with the twist of its ball joint: 132 degrees forward, so the figure can kneel, crawl and get up, 23 back, and its
+	// cone keeps the leg within 40 degrees of that axis when it swings out or turns. A cone along the bone would allow as
+	// much back and out as forward.
 	b3Quat down = b3MakeQuatFromAxisAngle( b3Vec3_axisZ, B3_PI );
 	b3Quat zToY = b3MakeQuatFromAxisAngle( b3Vec3_axisX, -0.5f * B3_PI );
 	b3Quat zToX = b3MakeQuatFromAxisAngle( b3Vec3_axisY, 0.5f * B3_PI );
@@ -168,7 +171,7 @@ float nbMakeHumanoidBones( float height, float mass, nbBoneDef* bones, int capac
 
 		bones[thigh] =
 			nbLimb( side == 0 ? "thigh left" : "thigh right", nb_humanoidPelvis, (b3Vec3){ 0.10f * s * x, -0.03f * s, 0.0f },
-					down, 0.45f * s, 0.075f * s, 7.5f * m, nb_ballJoint, zToY, -0.5f, 0.5f, 1.2f, 2.0f );
+					down, 0.45f * s, 0.075f * s, 7.5f * m, nb_ballJoint, zToX, -0.4f, 2.3f, 0.7f, 2.0f );
 		bones[shin] = nbLimb( side == 0 ? "shin left" : "shin right", thigh, (b3Vec3){ 0.0f, 0.45f * s, 0.0f }, identity,
 							  0.44f * s, 0.055f * s, 3.5f * m, nb_hingeJoint, zToX, -2.4f, 0.05f, 0.0f, 1.5f );
 
@@ -246,23 +249,28 @@ static void nbMapBone( nbWorld* world, b3BodyId bodyId, int articulation, int bo
 	world->bodyToBone.data[bodyIndex] = (nbBoneRef){ articulation, bone };
 }
 
-bool nbIsArticulationBody( const nbWorld* world, int index, b3BodyId bodyId )
+int nbArticulationOfBody( const nbWorld* world, b3BodyId bodyId )
 {
 	int bodyIndex = bodyId.index1 - 1;
 	if ( bodyIndex < 0 || bodyIndex >= world->bodyToBone.count )
 	{
-		return false;
+		return NB_NULL_INDEX;
 	}
 
 	nbBoneRef ref = world->bodyToBone.data[bodyIndex];
-	if ( ref.articulation != index )
+	if ( ref.articulation == NB_NULL_INDEX )
 	{
-		return false;
+		return NB_NULL_INDEX;
 	}
 
 	// The body at the index may be another one by now
-	b3BodyId stored = world->articulations.data[index].bones[ref.bone].bodyId;
-	return stored.index1 == bodyId.index1 && stored.generation == bodyId.generation;
+	b3BodyId stored = world->articulations.data[ref.articulation].bones[ref.bone].bodyId;
+	return stored.index1 == bodyId.index1 && stored.generation == bodyId.generation ? ref.articulation : NB_NULL_INDEX;
+}
+
+bool nbIsArticulationBody( const nbWorld* world, int index, b3BodyId bodyId )
+{
+	return index != NB_NULL_INDEX && nbArticulationOfBody( world, bodyId ) == index;
 }
 
 static void nbUnmapBone( nbWorld* world, b3BodyId bodyId )
@@ -428,6 +436,32 @@ void nbSetUprightTorque( nbArticulation* articulation, float torque )
 	{
 		b3ParallelJoint_SetMaxTorque( articulation->uprightId, b3MaxFloat( 0.0f, torque ) );
 	}
+}
+
+b3JointId nbCreateRootHold( nbArticulation* articulation, b3Quat rotation, float stiffness )
+{
+	b3BodyId root = articulation->bones[0].bodyId;
+	b3MotorJointDef def = b3DefaultMotorJointDef();
+	def.base.bodyIdA = articulation->anchorId;
+	def.base.bodyIdB = root;
+	def.base.localFrameA = (b3Transform){ b3Vec3_zero, b3InvMulQuat( b3Body_GetRotation( articulation->anchorId ), rotation ) };
+	def.base.localFrameB = b3Transform_identity;
+	def.base.collideConnected = false;
+	def.maxVelocityForce = 0.0f;
+	def.maxVelocityTorque = 0.0f;
+	def.linearHertz = 0.0f;
+	def.maxSpringForce = 0.0f;
+	def.angularHertz = nbSpringHertz( articulation->anchorId, root, b3Body_GetRotation( root ), false, stiffness );
+	def.angularDampingRatio = 1.0f;
+	def.maxSpringTorque = 0.0f;
+	return b3CreateMotorJoint( b3Body_GetWorld( root ), &def );
+}
+
+void nbSetRootHold( nbArticulation* articulation, b3JointId hold, b3Quat rotation, float torque )
+{
+	b3Quat local = b3InvMulQuat( b3Body_GetRotation( articulation->anchorId ), b3NormalizeQuat( rotation ) );
+	b3Joint_SetLocalFrameA( hold, (b3Transform){ b3Vec3_zero, local } );
+	b3MotorJoint_SetMaxSpringTorque( hold, b3MaxFloat( 0.0f, torque ) );
 }
 
 //----------------------------------------------------------------------------------------------------------------------
