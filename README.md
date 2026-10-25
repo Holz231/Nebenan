@@ -787,11 +787,12 @@ Wo die Zeit der Schritte hingeht, sagt `nbWorld_GetProfile`, pro Schritt seit de
 `nbWorld_ResetProfile`: die Stufen des Box3D-Schritts samt der Teile, die auf dem aufrufenden Thread allein laufen, der
 Teile der Kontakt-Schleife und des Aufbaus des Lösers, wie die Threads die Kontakt-Schleife verbringen, der Überlauf des
 Constraint-Graphen mit den Kontakten, die Box3D an Knoten bündelt, und wie viele dieser Bündel ein Thread nacheinander
-rechnet, die Teile des Updates, die Einschläge, Erstarren und Auftauen, die Zellen der Brüche, der Anteil der größten
-Insel an der Arbeit des Lösers, wie oft ein Team aller Threads die größten Pakete von Inseln rechnet, wo dessen Zeit
-hingeht und wie sich Arbeit und Warten auf seine Stufen und Farben verteilen, wie lange ein schlafender Worker braucht,
-bis er anläuft, und ab wie viel Arbeit die Worker deshalb helfen. Ist dieselbe Arbeit mit verschieden vielen Threads
-gemessen, rechnet die Bibliothek aus, was davon parallel läuft und was mit mehr Threads bleibt:
+rechnet, die Teile des Updates mit denen der Ruhe-Prüfung und wie die Threads deren Prüfungen verbringen, die
+Einschläge, Erstarren und Auftauen, die Zellen der Brüche, der Anteil der größten Insel an der Arbeit des Lösers, wie
+oft ein Team aller Threads die größten Pakete von Inseln rechnet, wo dessen Zeit hingeht und wie sich Arbeit und Warten
+auf seine Stufen und Farben verteilen, wie lange ein schlafender Worker braucht, bis er anläuft, und ab wie viel Arbeit
+die Worker deshalb helfen. Ist dieselbe Arbeit mit verschieden vielen Threads gemessen, rechnet die Bibliothek aus, was
+davon parallel läuft und was mit mehr Threads bleibt:
 
 ```c
 int counts[8];
@@ -1080,6 +1081,19 @@ Prozent weniger, und die Ergebnisse bleiben bitgleich. Auf dem Ryzen 7 7800X3D r
 ihrer Zeit in Blöcken, die Kontakt-Schleife kostet mit 2, 4 und 8 Threads 1,4 bis 2,4 % weniger als in den Läufen davor,
 und ein Schritt kostet mit 8 Threads 2,22 ms, so wenig wie nie, siehe „Skalierung auf dem Ryzen mit `kollaps-11`“ in
 [docs/Optimierungen.md](docs/Optimierungen.md).
+
+Seit `kollaps-12` misst Nebenan, wohin die Zeit der Ruhe-Prüfung im Update geht: das Sammeln der bewegten Trümmer, die
+Prüfungen auf den Threads, die Suche nach dem, was die ruhigen Stücke trägt, und das Erstarren, und in jedem achten
+Update, wie die Threads die Prüfungen verbringen. `nbWorld_GetProfile` zeigt die Teile unter `nb_profileSettle`, und der
+Bericht von „Skalierung messen“ zeigt die Prüfungen als Tabelle für jede Zahl von Threads, ohne eigenen Aufruf. Beim
+Abriss in der Demo auf der VM bei ×2 geht die Ruhe-Prüfung fast ganz in den Blick auf das, was die ruhigen Stücke trägt.
+Ein großes ruhiges Stück kostet dort im Mittel 20-mal so viel wie ein kleines, bis zu Millisekunden, und mit 4 Threads
+warteten die anderen Threads am Ende 12 % ihrer Zeit darauf. Seitdem führt die Welt ein Bit für die großen Trümmer, und
+mit Workern nehmen die Threads die Blöcke mit einem großen Stück zuerst, siehe „Große Stücke in der Ruhe-Prüfung“ in
+[docs/Optimierungen.md](docs/Optimierungen.md). Beim Abriss warten sie nach ihrem letzten Block damit 65 % kürzer, die
+Prüfungen kosten mit 4 Threads rund 5 % weniger, im Benchmark gleich viel, und die Ergebnisse bleiben bitgleich. Was die
+Ruhe-Prüfung mit 8 Threads auf dem Ryzen bremst, entscheidet, wie es weitergeht, siehe
+[docs/Roadmap.md](docs/Roadmap.md).
 
 Die teuersten Frames folgen auf einen Einsturz: Der Schutt um die Reste der Etage taut auf, und Box3D legt im nächsten
 Schritt Tausende neuer Kontakte an. Das ist echte Arbeit, das meiste davon fällt danach wirklich, siehe

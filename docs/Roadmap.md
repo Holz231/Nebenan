@@ -17,8 +17,9 @@ nacheinander“ auf dem Ryzen nachgemessen, dem Vergleich von 7 gegen 8 Threads 
 nachgemessen, dem Überlauf an Knoten auf mehreren Threads auf `kollaps-7` und den Stufen des Teams auf `kollaps-8`,
 beide auf dem Ryzen nachgemessen, den großen Paketen im Team auf `kollaps-9`, auf dem Ryzen nachgemessen, und dem Aufbau
 des Lösers neben den Knoten auf `kollaps-10`, auf dem Ryzen nachgemessen, und der zerlegten Kontakt-Schleife auf
-`kollaps-11`, auf dem Ryzen nachgemessen. Begründungen und Messwerte stehen in [`Optimierungen.md`](Optimierungen.md),
-hier nur das Fazit und die Reihenfolge. Nach jeder Runde wird der Stand hier nachgetragen.
+`kollaps-11`, auf dem Ryzen nachgemessen, und der zerlegten Ruhe-Prüfung auf `kollaps-12`. Begründungen und Messwerte
+stehen in [`Optimierungen.md`](Optimierungen.md), hier nur das Fazit und die Reihenfolge. Nach jeder Runde wird der
+Stand hier nachgetragen.
 
 `kollaps-1` ist keine Runde der Physik, sie baut den Einsturz nach Kapitel 17 der Roadmap des Spiels, siehe
 [`Referenz`](Referenz/README.md). Sie ändert aber, was der Benchmark unter Trommelfeuer bei ×4 misst: Eine Etage gibt
@@ -107,7 +108,10 @@ vergleicht dort verschiedene Szenen. Im Benchmark enden die Städte fast gleich,
   Lösers teilt sich der aufrufende Thread seit `kollaps-10` mit zwei Workern, siehe Schritt 32. Die Kontakt-Schleife
   misst Box3D seit `kollaps-11` selbst: Auf der VM warten die Threads mit 4 Threads 7 % ihrer Zeit, vor allem am Ende
   auf die teuersten Blöcke, und seit sie die Blöcke von beiden Enden nehmen, noch 4 %, siehe Schritt 38 und 39. Auf dem
-  Ryzen warten sie mit 8 Threads 4,3 %, die Kontakt-Schleife skaliert, siehe Schritt 40.
+  Ryzen warten sie mit 8 Threads 4,3 %, die Kontakt-Schleife skaliert, siehe Schritt 40. Die Ruhe-Prüfung misst Nebenan
+  seit `kollaps-12` selbst: Auf der VM geht sie fast ganz in den Blick auf das, was die ruhigen Stücke trägt, und mit 4
+  Threads warteten die Threads 12 % ihrer Zeit auf große ruhige Stücke, seit die Blöcke mit großen Stücken zuerst
+  drankommen, noch 4 %, siehe Schritt 41 und 42.
 - **Der Löser hing am Überlauf des Graphen.** Kontakte, für die keine der 20 Farben frei ist, löst Box3D auf dem
   aufrufenden Thread allein. Beim Abriss sind das die Kontakte an Knoten: große abgebrochene Teile aus Dutzenden bis
   Hunderten Bruchstücken, an denen Hunderte kleine Trümmer liegen, siehe „Der Überlauf beim Abriss“. Seit `physik-22`
@@ -175,7 +179,9 @@ bleiben.
 | 38 | **Kontakt-Schleife zerlegen**: messen, was die Kontakt-Schleife mit 8 Threads bremst, lange Blöcke, die seriellen Teile davor und danach oder der Speicher | Werkzeug, entscheidet, wie es in der Kontakt-Schleife weitergeht: mit 8 Threads rund ein Drittel eines Schritts, und der Fit nennt 0,21 ms davon seriell | 37 | ✅ auf `kollaps-11`: Box3D misst in jedem Schritt das Sammeln vor der Schleife, die Schleife und das Zusammenführen danach und in jedem achten, wie die Threads die Schleife verbringen, bitgleich. Beim Abriss auf der VM bei ×2 mit 4 Threads sind Sammeln und Zusammenführen 2 % der Kontakt-Schleife, und die Threads rechnen 93 % ihrer Zeit in Blöcken, 2 % warten sie vor dem ersten und 5 % nach dem letzten. Ein Kontakt kostet mit 4 Threads so viel wie mit einem. Die teuersten Kontakte liegen an beiden Enden des Arrays, daraus 39 |
 | 39 | **Blöcke der Kontakt-Schleife von beiden Enden**: Die Threads nehmen die Blöcke abwechselnd von vorne und von hinten, wo die teuersten Kontakte liegen, die billigen der Mitte zuletzt, bitgleich | 2 bis 3 % der Kontakt-Schleife | 38 | ✅ auf `kollaps-11`: Auf der VM mit 4 Threads warten die Threads nach ihrem letzten Block im Benchmark 55 bis 77 % und beim Abriss 56 % kürzer und rechnen 96 bis 97 statt 93 bis 95 % ihrer Zeit in Blöcken. Mehr oder weniger Blöcke, Blöcke, die zum Ende kleiner werden, rückwärts und gestreut brachten nichts oder kosteten mehr |
 | 40 | **Auf dem Ryzen nachmessen**: „Skalierung messen“ mit `kollaps-11` beim Abriss bei ×2 | zeigt, was die Kontakt-Schleife mit 8 Threads bremst, und entscheidet nach den Regeln unter „Was als Nächstes in Frage kommt“, wie es weitergeht | 38 und 39 | ✅ am 24. Oktober, `kollaps-10` und `kollaps-11` direkt nacheinander: Mit 8 Threads rechnen die Threads der Kontakt-Schleife 95,7 % ihrer Zeit in Blöcken, 2,6 % warten sie vor dem ersten und 1,5 % nach dem letzten, ein Kontakt kostet 9,7 % mehr als mit einem Thread, und Sammeln und Zusammenführen sind 1,7 % der Kontakt-Schleife. Keine Regel tritt ein, die Kontakt-Schleife skaliert. Mit 2, 4 und 8 Threads kostet sie 1,4 bis 2,4 % weniger als im Mittel der fünf Läufe davor, ein Schritt mit 8 Threads 2,222 ms, so wenig wie in keinem Lauf davor. Der Lauf mit `kollaps-10` war am PC gestört. Am weitesten über einem Achtel liegen danach die Bedingungen und die Ruhe-Prüfung, siehe 41 |
-| 41 | **Ruhe-Prüfung zerlegen**: messen, was die Ruhe-Prüfung im Update mit 8 Threads bremst, die Prüfungen auf den Threads, die Verteilung ihrer Blöcke oder das Zusammensetzen und Erstarren danach auf dem aufrufenden Thread | Werkzeug, entscheidet, wie es in der Ruhe-Prüfung weitergeht: mit 8 Threads 0,14 ms über einem Achtel ihrer Zeit mit einem Thread, gut 6 % eines Schritts | 40 | 🔜 |
+| 41 | **Ruhe-Prüfung zerlegen**: messen, was die Ruhe-Prüfung im Update mit 8 Threads bremst, die Prüfungen auf den Threads, die Verteilung ihrer Blöcke oder das Zusammensetzen und Erstarren danach auf dem aufrufenden Thread | Werkzeug, entscheidet, wie es in der Ruhe-Prüfung weitergeht: mit 8 Threads 0,14 ms über einem Achtel ihrer Zeit mit einem Thread, gut 6 % eines Schritts | 40 | ✅ auf `kollaps-12`: Nebenan misst in jedem Update das Sammeln, die Prüfungen auf den Threads, die Suche und das Erstarren und in jedem achten, wie die Threads die Prüfungen verbringen, bitgleich. Beim Abriss auf der VM bei ×2 sind 92 % der Ruhe-Prüfung die Prüfungen, 87 % davon der Blick auf das, was die ruhigen Stücke trägt, das Erstarren kostet seriell 0,17 ms. Mit 4 Threads warten die Threads 12,3 % ihrer Zeit nach ihrem letzten Block, vor allem auf große ruhige Stücke, daraus 42 |
+| 42 | **Blöcke mit großen Stücken zuerst**: Die Welt führt ein Bit für die großen Trümmer, und mit Workern nehmen die Threads die Blöcke mit einem großen Stück zuerst, bitgleich | mit 8 Threads geschätzt 15 % der Prüfungen, rund 0,02 bis 0,03 ms pro Schritt | 41 | ✅ auf `kollaps-12`: Beim Abriss auf der VM mit 4 Threads warten die Threads nach ihrem letzten Block 65 % kürzer, und die Prüfungen kosten 4,7 % weniger, in einem Lauf, in dem die VM sonst 1,3 bis 2,6 % langsamer war. Im Benchmark gleich viel. Jedes große Stück in einem Block für sich kostete in der Stadt bei ×4 bis 15 % mehr |
+| 43 | **Auf dem Ryzen nachmessen**: „Skalierung messen“ mit `kollaps-12` beim Abriss bei ×2 | zeigt, was die Ruhe-Prüfung mit 8 Threads bremst, und entscheidet nach den Regeln unter „Was als Nächstes in Frage kommt“, wie es weitergeht | 41 und 42 | 🔜 |
 | 33 | **Weniger Kopien an kleinen Knoten**: eine Gruppe für je 64 statt 32 Kontakte, ändert die Ergebnisse | mit 1 und 2 Threads ein Teil der 30 und 7 % pro Kontakt | 30 | 🔜 niedrig |
 | 26 | **Worker wach halten statt schlafen legen**: kurz aktiv warten, bevor ein Worker schläft, bitgleich | auf der VM rund ein Zehntel der Ruhe-Prüfung, kostet Rechenzeit beim Zeichnen | 25 | ⛔ nach 25: Auf dem Ryzen laufen die Worker nach 6 bis 7 µs an, aktiv zu warten spart unter 0,5 % eines Schritts |
 
@@ -671,6 +677,37 @@ schlechtesten: Mit 8 Threads braucht sie 31 % ihrer Zeit mit einem Thread, die B
 kleine Schritte mit wenigen Blöcken so viel zählen wie große. Was davon die Prüfungen kosten und was das Zusammensetzen
 und Erstarren danach auf dem aufrufenden Thread, zeigt der Bericht nicht. Daraus Schritt 41: die Ruhe-Prüfung zerlegen
 wie die Kontakt-Schleife.
+
+Auf `kollaps-12` ist Schritt 41 gebaut, siehe „Ruhe-Prüfung zerlegt“ in [Optimierungen.md](Optimierungen.md): Nebenan
+misst in jedem Update, was der aufrufende Thread vor und nach den Prüfungen allein rechnet, das Sammeln der bewegten
+Trümmer, die Suche nach dem, was die ruhigen Stücke trägt, und das Erstarren, und in jedem achten, wie die Threads die
+Prüfungen verbringen: in Blöcken, davon in der Frage, ob ein Stück ruhig ist, und im Blick auf das, was ein ruhiges
+Stück trägt, vor ihrem ersten Block, zwischen den Blöcken und nach ihrem letzten. Der Bericht von „Skalierung messen“
+zeigt das als Tabelle für jede Zahl von Threads. Beim Abriss auf der VM bei ×2 kostet die Ruhe-Prüfung mit 4 Threads
+1,29 ms pro Update, davon die Prüfungen 1,07 ms und das Erstarren 0,17 ms. In den Prüfungen geht die Zeit fast ganz in
+die 556 ruhigen von 3 097 bewegten Stücken, mit einem Thread 4,3 µs je ruhiges Stück und 0,11 µs je bewegtes, obwohl nur
+13 pro Schritt erstarren. Mit 4 Threads rechnen die Threads 80,7 % ihrer Zeit in Blöcken, 6,9 % warten sie vor ihrem
+ersten Block, auf der VM laufen die Worker erst nach rund 70 µs an, und 12,3 % nach ihrem letzten. Was am Ende wartet,
+sind vor allem große ruhige Stücke, im Mittel 98 µs, bis zu Millisekunden, siehe „Große Stücke in der Ruhe-Prüfung“.
+Daraus Schritt 42: Mit Workern nehmen die Threads die Blöcke mit einem großen Stück zuerst. Beim Abriss warten sie nach
+ihrem letzten Block damit 65 % kürzer, 4,4 % ihrer Zeit, die Prüfungen kosten 4,7 % weniger, und die Ergebnisse bleiben
+bitgleich. Nach diesen Regeln entscheidet die Tabelle mit 8 Threads auf dem Ryzen, Schritt 43:
+
+- **Anlauf**: Warten die Threads vor ihrem ersten Block mehr als 10 % ihrer Zeit, laufen die Worker zu spät an. Dann die
+  Aufgaben der Prüfungen schon vor dem Lösen des gehaltenen Schutts verteilen, sodass die Worker wach sind, wenn die
+  Liste der bewegten Trümmer steht. Eine Aufgabe, die ein Task-System gleich selbst ausführt, darf dabei nicht auf die
+  Liste warten. Auf der VM 7,5 %.
+- **Ende**: Warten sie nach ihrem letzten Block trotz Schritt 42 mehr als 5 %, halten Haufen ruhiger Stücke die
+  Prüfungen noch auf. Dann den Blick auf das, was die ruhigen Stücke trägt, in kleineren Teilen verteilen als die Frage,
+  ob sie ruhig sind. Auf der VM 4,4 %.
+- **Speicher**: Kostet der Blick auf das, was ein ruhiges Stück trägt, mit 8 Threads mehr als 20 % mehr als mit einem,
+  wartet er auf den Speicher. Dann in diesem Blick die Kontakte des nächsten ruhigen Stücks vorausladen. Auf der VM mit
+  4 Threads 33 %.
+- **Seriell**: Kosten Sammeln, Suche und Erstarren mit 8 Threads zusammen mehr als ein Drittel der Ruhe-Prüfung, hängt
+  sie am aufrufenden Thread. Dann das Erstarren billiger machen, das den größten Teil davon trägt. Auf der VM mit 4
+  Threads 18 %.
+- **Nichts davon**: Dann skaliert die Ruhe-Prüfung. Als Nächstes kommt, was nach der Tabelle der Stufen mit 8 Threads am
+  meisten seriell bleibt.
 
 ## Kleinere Punkte
 

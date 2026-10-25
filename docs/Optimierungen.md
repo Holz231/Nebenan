@@ -958,6 +958,44 @@ Seit der Liste ist dazugekommen oder gemessen worden:
   Thread, die Bedingungen 27 %, die Kontakt-Schleife 16 %, und von den bewegten Trümmern prüfen die Worker im Mittel der
   Schritte 69,5 %, der aufrufende Thread also 30,5 % statt eines Achtels.
 
+- **Ruhe-Prüfung zerlegt.** Gemessen auf `kollaps-12` auf der VM mit 1, 2 und 4 Threads, mit den Uhren, die
+  `nbWorld_GetProfile` seit `kollaps-12` für die Ruhe-Prüfung hat, im Benchmark der Städte zwei Läufe im Wechsel gegen
+  `kollaps-11` und beim Abriss der Stadt in der Demo bei ×2 einer. Beim Abriss kostet die Ruhe-Prüfung mit 1, 2 und 4
+  Threads 2,98, 1,89 und 1,29 ms pro Update. Davon sind die Prüfungen auf den Threads 2,75, 1,67 und 1,07 ms. Seriell
+  bleiben das Sammeln der bewegten Trümmer mit 0,006 ms, die Suche nach dem, was die ruhigen Stücke trägt, mit 0,05 ms
+  und das Erstarren samt Typwechseln mit 0,17 ms. In den Prüfungen sind von 3 097 bewegten Stücken pro Update 556 ruhig,
+  und der Blick auf das, was ein ruhiges Stück trägt, kostet mit einem Thread 4,3 µs, die Frage, ob ein Stück ruhig ist,
+  0,11 µs. So gehen 87 % der Zeit in Blöcken in die ruhigen Stücke, obwohl nur 13 pro Schritt erstarren. Mit 4 Threads
+  rechnen die Threads 80,7 % ihrer Zeit in Blöcken, 6,9 % warten sie vor ihrem ersten Block, auf der VM laufen die
+  Worker erst nach rund 70 µs an, und 12,3 % nach ihrem letzten. Der längste Block dauert 0,41 ms, fast sechsmal so
+  lange wie ein mittlerer. Ein Stück kostet mit 4 Threads in der Frage 23 % und im Blick auf das, was es trägt, 28 %
+  mehr als mit einem. Im Benchmark ist das Erstarren mit 0,07 bis 0,14 ms ein Viertel bis zwei Fünftel der Ruhe-Prüfung,
+  und mit 4 Threads warten die Threads dort 35 bis 46 % ihrer Zeit vor ihrem ersten Block. Die Uhren kosten nichts
+  Messbares, ein Schritt liegt im Benchmark zwischen 2,8 % darunter und 3,7 % darüber, ohne Richtung, und alle Läufe
+  enden gleich.
+- **Große Stücke in der Ruhe-Prüfung.** Gemessen auf `kollaps-12` auf der VM, in einer Kopie, die beim Abriss mit einem
+  Thread über 4 000 Bilder für jedes bewegte Stück aufschreibt, ob es ruhig und groß ist und wie lange der Blick auf das
+  kostet, was es trägt, und damit simuliert, wie die Threads die Blöcke nehmen würden. Die ruhigen Stücke liegen in der
+  Reihenfolge der Trümmer beisammen, in Haufen, die zur Ruhe kamen, rund vier Blöcke pro Update sind zur Hälfte oder
+  mehr ruhig. Von den 25 großen bewegten Stücken pro Update, ab 0,1 m³, sind 3,4 ruhig, und eines kostet dann im Mittel
+  98 µs, rund eines von hundert über 1 ms, bis 6,7 ms. In 17 % der Updates dauert ein einziges Stück länger als ein
+  Achtel der ganzen Arbeit. Wer es spät nimmt, hält die anderen auf. Vorhersagen lässt sich das schlecht: Nur 44 % der
+  ruhigen Stücke und 40 % der großen davon waren schon in den Prüfungen davor ruhig, denn ganze Haufen kommen auf einmal
+  zur Ruhe, wenn ihre Insel einschläft. Hochgerechnet auf den Ryzen mit 8 Threads dauern die Prüfungen 56 % länger als
+  ideal. Jedes große Stück in einem Block für sich, die die Threads zuerst nehmen, sagte die Simulation mit 22 % weniger
+  voraus, mit 4 Threads 10 %. Gebaut kostete das aber in der Stadt des Benchmarks bei ×4, wo ein Drittel der bewegten
+  Stücke groß ist, mit einem Thread 10 % und mit zwei 15 % mehr: 424 statt 21 Blöcke pro Update, und bei jedem läuft das
+  Vorausladen neu an. Gebaut ist deshalb „Blöcke mit großen Stücken zuerst“: Die Blöcke behalten ihre 64 Stücke, und mit
+  Workern nehmen die Threads zuerst die, in denen ein großes Stück liegt, in der Simulation mit 8 Threads 17 % und mit 4
+  Threads 10 % weniger. Gepaart gegen `kollaps-11` mit den Uhren, drei Läufe im Wechsel, liegen die Prüfungen im
+  Benchmark zwischen 10,7 % darunter und 8,6 % darüber, ohne Richtung, und das Plus mit 4 Threads bei ×4 kommt aus dem
+  Anlauf der Worker, der auf der VM von Lauf zu Lauf schwankt. Beim Abriss kosten die Prüfungen mit 1, 2 und 4 Threads
+  0,3 und 1,5 % mehr und 4,7 % weniger, in einem Lauf, in dem die Stufen, an denen sich nichts geändert hat, 1,3 bis
+  2,6 % langsamer waren. Mit 4 Threads warten die Threads nach ihrem letzten Block 0,18 statt 0,53 ms, 4,4 statt 12,3 %
+  ihrer Zeit. Ein Stück kostet in den Blöcken mit 2 und 4 Threads aber 2 bis 6 % mehr als in der Reihenfolge davor, über
+  die langsamere VM hinaus. Die Ergebnisse bleiben bitgleich, der Hash des Determinismus-Szenarios bleibt, und alle
+  Läufe enden gleich.
+
 ## Physik, Zerstörung und Schutt
 
 | Nr. | Idee | Status | Bewertung |
@@ -1304,3 +1342,8 @@ Seit der Liste ist dazugekommen oder gemessen worden:
 | Mehr oder weniger Blöcke in der Kontakt-Schleife | ⛔ | Box3D teilt die Kontakt-Schleife in 32 Blöcke pro Thread. Mit 8 warten die Threads am Ende auf die längeren Blöcke, mit 128 kostet jeder Block rund 1 bis 2 µs, bis das Vorausladen läuft, siehe „Reihenfolge der Blöcke in der Kontakt-Schleife“. Beides kostete im Benchmark auf der VM mit 4 Threads 4 bis 11 % mehr. Auch von beiden Enden war es mit 16 Blöcken pro Thread nicht besser als mit 32. |
 | Blöcke, die zum Ende hin kleiner werden | ⛔ | Jeder Block nimmt einen Teil der übrigen Kontakte, die übrigen durch zwei- oder viermal die Threads, mindestens 20. So gibt es am Anfang wenige große Blöcke mit wenig Anlauf und am Ende kleine, auf die niemand lange wartet. Die Kontakte kosten aber nicht gleich viel: Der erste große Block fängt die teure Spitze vorne und hält die Schleife auf, siehe „Reihenfolge der Blöcke in der Kontakt-Schleife“. Im Benchmark auf der VM mit 4 Threads zwischen 8 % weniger und 9 % mehr. |
 | Blöcke der Kontakt-Schleife rückwärts oder gestreut | ⛔ | Rückwärts kommen die teuren neuen Paare zuerst, aber die teuren Kontakte vorne zuletzt. Gestreut, jeder Block an einer weit entfernten Stelle des Arrays, verteilen sich die teuren Blöcke über die Zeit, aber der letzte ist ein beliebiger. Beides war im Benchmark auf der VM im Mittel gleich oder teurer, und die Simulation mit den Blockzeiten des Abrisses sagt mit 8 Threads 7,3 und 10,3 % über der perfekten Verteilung voraus, von beiden Enden 5,0 %, siehe „Reihenfolge der Blöcke in der Kontakt-Schleife“. |
+| Ruhe-Prüfung zerlegen | ✅ auf `kollaps-12` | Mit 8 Threads liegt die Ruhe-Prüfung beim Abriss auf dem Ryzen 0,14 ms über einem Achtel ihrer Zeit mit einem Thread und skaliert von den großen Stufen am schlechtesten, siehe „Skalierung auf dem Ryzen mit `kollaps-11`“. Umgesetzt auf `kollaps-12`, siehe „Ruhe-Prüfung zerlegt“: Nebenan misst in jedem Update das Sammeln der bewegten Trümmer, die Prüfungen auf den Threads, die Suche nach dem, was die ruhigen Stücke trägt, und das Erstarren, und in jedem achten, wie die Threads die Prüfungen verbringen. Beim Abriss auf der VM gehen 92 % der Ruhe-Prüfung in die Prüfungen, und dort 87 % in den Blick auf das, was die ruhigen Stücke trägt. Mit 4 Threads warten die Threads 12,3 % ihrer Zeit nach ihrem letzten Block, auf große ruhige Stücke, siehe „Große Stücke in der Ruhe-Prüfung“. Daraus „Blöcke mit großen Stücken zuerst“. Auf dem Ryzen nachzumessen, siehe Schritt 43 der [Roadmap](Roadmap.md). |
+| Blöcke mit großen Stücken zuerst | ✅ auf `kollaps-12` | Ein großes ruhiges Stück kostet im Blick auf das, was es trägt, im Mittel 20-mal so viel wie ein kleines, bis zu Millisekunden, und wer es spät nimmt, hält die anderen Threads auf. Die Welt führt neben dem Bit für die bewegten Trümmer eines für die großen, und mit Workern nehmen die Threads die Blöcke mit einem großen Stück zuerst, bitgleich. Auf der VM beim Abriss mit 4 Threads warten sie nach ihrem letzten Block 65 % kürzer, und die Prüfungen kosten rund 5 bis 7 % weniger, im Benchmark gleich viel. Die Simulation sagt mit 8 Threads 17 % voraus, siehe „Große Stücke in der Ruhe-Prüfung“. |
+| Große Stücke in Blöcken für sich | ⛔ | Jedes große Stück in einem Block für sich, die die Threads zuerst nehmen. Beim Abriss auf der VM warten die Threads mit 4 Threads nach ihrem letzten Block nur noch 0,06 statt 0,53 ms. In der Stadt des Benchmarks bei ×4 ist aber ein Drittel der bewegten Stücke groß, es wurden 424 statt 21 Blöcke pro Update, und das Vorausladen lief bei jedem neu an: Die Prüfungen kosteten dort mit einem Thread 10 % und mit zwei 15 % mehr, siehe „Große Stücke in der Ruhe-Prüfung“. |
+| Blöcke der Ruhe-Prüfung nach erwarteten Kosten | ⛔ | Die Blöcke nach der Zahl der Stücke schneiden, die in den Prüfungen davor ruhig waren, damit kein Block viele ruhige hält. Nur 44 % der ruhigen Stücke waren es schon davor, ganze Haufen kommen auf einmal zur Ruhe, wenn ihre Insel einschläft. Die Simulation sagte mit 8 Threads 1,5 % voraus, siehe „Große Stücke in der Ruhe-Prüfung“. Nicht gebaut. |
+| Ruhige Stücke in einer zweiten Runde | ⛔ | Zuerst prüfen alle Threads, welche Stücke ruhig sind, dann teilen sie sich den Blick auf das, was sie trägt, Stück für Stück, die großen zuerst. Die Threads warten dazwischen auf den letzten Block der ersten Runde. In der Simulation mit 8 Threads 18 % weniger, weniger als die großen Stücke für sich, siehe „Große Stücke in der Ruhe-Prüfung“. Nicht gebaut. |
