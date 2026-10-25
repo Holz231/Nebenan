@@ -535,10 +535,64 @@ int b3Body_GetContactData( b3BodyId bodyId, b3ContactData* contactData, int capa
 	return index;
 }
 
+// Added for Nebenan: from this many contacts and shapes on, b3Body_GetContactDataOfBodies prefetches the contacts of a body
+// through the lists of its shapes, see b3PrefetchContactsOfShapes. With fewer shapes their lists are about as long as the
+// list of the body.
+#define B3_LONG_CONTACT_LIST 256
+#define B3_MIN_SHAPE_LISTS 8
+
+// Added for Nebenan: the shape lists b3PrefetchContactsOfShapes runs side by side at most
+#define B3_SHAPE_LISTS 64
+
+// Added for Nebenan: the contacts of a body with a long list, prefetched through the lists of its shapes, see
+// b3Shape::headContactKey. The list of the body reads its entries one after the other, each where the one before says, and
+// a large body with thousands of them walked alone long after the lists of the others ended. It is built from many shapes,
+// and their short lists hold the same contacts: run side by side, a step in each list per round, their waits overlap, and
+// the walk of the body after it finds the next key and the flags of each contact in the cache.
+static void b3PrefetchContactsOfShapes( b3World* world, const b3Body* body )
+{
+	int keys[B3_SHAPE_LISTS];
+	int shapeId = body->headShapeId;
+	while ( shapeId != B3_NULL_INDEX )
+	{
+		int walking = 0;
+		while ( shapeId != B3_NULL_INDEX && walking < B3_SHAPE_LISTS )
+		{
+			const b3Shape* shape = b3Array_Get( world->shapes, shapeId );
+			if ( shape->headContactKey != B3_NULL_INDEX )
+			{
+				keys[walking++] = shape->headContactKey;
+				b3Prefetch( world->contacts.data + ( shape->headContactKey >> 1 ) );
+			}
+			shapeId = shape->nextShapeId;
+		}
+
+		while ( walking > 0 )
+		{
+			for ( int k = 0; k < walking; )
+			{
+				const b3Contact* contact = world->contacts.data + ( keys[k] >> 1 );
+				b3Prefetch( &contact->flags );
+				int nextKey = contact->shapeNextKey[keys[k] & 1];
+				if ( nextKey == B3_NULL_INDEX )
+				{
+					keys[k] = keys[--walking];
+					continue;
+				}
+
+				b3Prefetch( world->contacts.data + ( nextKey >> 1 ) );
+				keys[k] = nextKey;
+				k += 1;
+			}
+		}
+	}
+}
+
 // Added for Nebenan: the entries of the lists one after the other, a step in each list per round. A step reads the next key
 // and the flags of a contact, the next contact of the list is prefetched as soon as its key is known. For a touching contact
 // it prefetches what the generations below and the lookups of the caller read: the generation of the contact, the records of
-// its shapes and the body on the other side.
+// its shapes and the body on the other side. A body with a long list first prefetches its contacts through the lists of its
+// shapes.
 void b3Body_GetContactDataOfBodies( const b3BodyId* bodyIds, int bodyCount, b3ContactData* contactData, const int* offsets,
 									int* counts )
 {
@@ -565,6 +619,11 @@ void b3Body_GetContactDataOfBodies( const b3BodyId* bodyIds, int bodyCount, b3Co
 	{
 		B3_ASSERT( bodyIds[k].world0 == bodyIds[0].world0 );
 		b3Body* body = b3GetBodyFullId( world, bodyIds[k] );
+		if ( body->contactCount >= B3_LONG_CONTACT_LIST && body->shapeCount >= B3_MIN_SHAPE_LISTS )
+		{
+			b3PrefetchContactsOfShapes( world, body );
+		}
+
 		keys[k] = body->headContactKey;
 		if ( keys[k] != B3_NULL_INDEX )
 		{

@@ -1127,6 +1127,10 @@ static bool nbIsRocking( nbActor* actor, b3WorldTransform transform, float timeS
 	return actor->jitterMatches >= NB_JITTER_MATCHES;
 }
 
+// The rest of a moving piece shares no cache line with the flags the looks of other threads read, see nbActor
+_Static_assert( offsetof( nbActor, checkedAsleep ) >= offsetof( nbActor, isRubble ) / NB_ALIGNMENT * NB_ALIGNMENT + 64,
+				"the rest of an actor starts more than a cache line after its flags" );
+
 // A piece is quiet when it is slow and stayed in place, or rocks in place. Box3D islands that fell asleep are quiet, until
 // a look found that they cannot freeze yet, see nbActor::checkedAsleep. A part of a building is quiet only asleep or
 // rocking in place: it sinks onto the loose cells of a storey that gave way and tips over them at a few centimeters a
@@ -1335,24 +1339,71 @@ static bool nbStillCarries( const nbChunk* chunk, b3Vec3 point )
 		   point.y <= box.upperBound.y + slack && box.lowerBound.z - slack <= point.z && point.z <= box.upperBound.z + slack;
 }
 
-// Whether a sorted list of actors holds one
-static bool nbHoldsActor( const int* actors, int count, int actorIndex )
+// The moving bodies that rest on a large piece, see nbFindSupport, in a table with open addressing that stays at most half
+// full. The search looks one up for almost every contact of the piece, and a storey on a heap of debris has a thousand.
+typedef struct nbRestingSet
 {
-	int low = 0;
-	int high = count;
-	while ( low < high )
+	int* places;
+	int bits;
+	int count;
+} nbRestingSet;
+
+// The bits of a place in the resting set of a piece with this many touching contacts. The set has 1 << bits places.
+static int nbRestingBits( int touchCount )
+{
+	int bits = 4;
+	while ( ( 1 << bits ) < 2 * touchCount )
 	{
-		int middle = ( low + high ) >> 1;
-		if ( actors[middle] < actorIndex )
+		bits += 1;
+	}
+	return bits;
+}
+
+static uint32_t nbRestingPlace( const nbRestingSet* set, int actorIndex )
+{
+	return ( (uint32_t)actorIndex * 2654435761u ) >> ( 32 - set->bits );
+}
+
+static void nbAddResting( nbRestingSet* set, int actorIndex )
+{
+	uint32_t mask = ( 1u << set->bits ) - 1;
+	for ( uint32_t place = nbRestingPlace( set, actorIndex );; place = ( place + 1 ) & mask )
+	{
+		if ( set->places[place] == actorIndex )
 		{
-			low = middle + 1;
+			return;
 		}
-		else
+
+		if ( set->places[place] == NB_NULL_INDEX )
 		{
-			high = middle;
+			set->places[place] = actorIndex;
+			set->count += 1;
+			return;
 		}
 	}
-	return low < count && actors[low] == actorIndex;
+}
+
+// Whether a moving body rests on the piece of the set. No set holds none.
+static bool nbHoldsActor( const nbRestingSet* set, int actorIndex )
+{
+	if ( set == NULL || set->count == 0 )
+	{
+		return false;
+	}
+
+	uint32_t mask = ( 1u << set->bits ) - 1;
+	for ( uint32_t place = nbRestingPlace( set, actorIndex );; place = ( place + 1 ) & mask )
+	{
+		if ( set->places[place] == actorIndex )
+		{
+			return true;
+		}
+
+		if ( set->places[place] == NB_NULL_INDEX )
+		{
+			return false;
+		}
+	}
 }
 
 // The rubble a search of nbIsSupportedWithout has seen: the first and every carrier it pushes, up to NB_MAX_CARRIERS for
@@ -1402,11 +1453,11 @@ static void nbLogMover( nbMoverLog* log, int actorIndex )
 }
 
 // Whether rubble lies on something that holds without an actor, following the chunks each rubble body froze on. Chunks
-// that are gone, moved away or part of the actor carry nothing, and so do moving bodies that rest on the actor, the sorted
-// list from nbFindSupport, and rubble frozen in flight without a record. Everything else counts as carried: the ground, a
+// that are gone, moved away or part of the actor carry nothing, and so do moving bodies that rest on the actor, the set
+// from nbFindSupport, and rubble frozen in flight without a record. Everything else counts as carried: the ground, a
 // structure, other moving bodies, and rubble whose search runs past the limit. It only reads the world, and the moving
 // bodies it reads go to the log if there is one.
-static bool nbIsSupportedWithout( const nbWorld* world, int rubbleIndex, int actorIndex, const int* resting, int restingCount,
+static bool nbIsSupportedWithout( const nbWorld* world, int rubbleIndex, int actorIndex, const nbRestingSet* resting,
 								  nbMoverLog* log )
 {
 	int stack[NB_SUPPORT_SEARCH];
@@ -1452,7 +1503,7 @@ static bool nbIsSupportedWithout( const nbWorld* world, int rubbleIndex, int act
 
 			if ( carrier->isRubble == false )
 			{
-				if ( carrier->isStatic || nbHoldsActor( resting, restingCount, chunk->actorIndex ) == false )
+				if ( carrier->isStatic || nbHoldsActor( resting, chunk->actorIndex ) == false )
 				{
 					return true;
 				}
@@ -5218,11 +5269,14 @@ typedef struct nbTouch
 	b3BodyId otherBodyId;
 	b3BodyType otherType;
 
-	// The actor of the other body, see nbFindActorFromBody
+	// The actor of the other body, see nbFindActorFromBody, and the chunk of the other shape, see nbFindChunkFromShape
 	int otherActor;
+	int otherChunk;
 } nbTouch;
 
-// The touching contacts of a body as touches, in their order
+// The touching contacts of a body as touches, in their order. Each lookup of the other side reads a table and then the
+// record it points to, all from scattered memory: the ids from Box3D come first for all touches, the passes after them
+// prefetch the entries of the tables, then the records, and a large piece has hundreds of touches to overlap.
 static void nbDescribeTouches( const nbWorld* world, b3BodyId bodyId, const b3ContactData* contacts, int count, nbTouch* touches )
 {
 	for ( int c = 0; c < count; ++c )
@@ -5233,7 +5287,42 @@ static void nbDescribeTouches( const nbWorld* world, b3BodyId bodyId, const b3Co
 		touch->otherShapeId = touch->isA ? contacts[c].shapeIdB : contacts[c].shapeIdA;
 		touch->otherBodyId = b3Shape_GetBody( touch->otherShapeId );
 		touch->otherType = b3Body_GetType( touch->otherBodyId );
+		int bodyIndex = touch->otherBodyId.index1 - 1;
+		if ( 0 <= bodyIndex && bodyIndex < world->bodyToActor.count )
+		{
+			NB_PREFETCH( world->bodyToActor.data + bodyIndex );
+		}
+
+		int shapeIndex = touch->otherShapeId.index1 - 1;
+		if ( 0 <= shapeIndex && shapeIndex < world->shapeToChunk.count )
+		{
+			NB_PREFETCH( world->shapeToChunk.data + shapeIndex );
+		}
+	}
+
+	for ( int c = 0; c < count; ++c )
+	{
+		const nbTouch* touch = touches + c;
+		int bodyIndex = touch->otherBodyId.index1 - 1;
+		if ( 0 <= bodyIndex && bodyIndex < world->bodyToActor.count && world->bodyToActor.data[bodyIndex] != NB_NULL_INDEX )
+		{
+			const nbActor* actor = world->actors.data + world->bodyToActor.data[bodyIndex];
+			NB_PREFETCH( &actor->bodyId );
+			NB_PREFETCH( &actor->isFree );
+		}
+
+		int shapeIndex = touch->otherShapeId.index1 - 1;
+		if ( 0 <= shapeIndex && shapeIndex < world->shapeToChunk.count && world->shapeToChunk.data[shapeIndex] != NB_NULL_INDEX )
+		{
+			NB_PREFETCH( &world->chunks.data[world->shapeToChunk.data[shapeIndex]].shapeId );
+		}
+	}
+
+	for ( int c = 0; c < count; ++c )
+	{
+		nbTouch* touch = touches + c;
 		touch->otherActor = nbFindActorFromBody( world, touch->otherBodyId );
+		touch->otherChunk = nbFindChunkFromShape( world, touch->otherShapeId );
 	}
 }
 
@@ -5271,7 +5360,7 @@ typedef struct nbCarrierAnswers
 
 // nbIsSupportedWithout for the carriers of one piece, each carrier searched once
 static bool nbIsCarrierSupported( const nbWorld* world, nbCarrierAnswers* answers, int carrierIndex, int actorIndex,
-								  const int* resting, int restingCount, nbMoverLog* log )
+								  const nbRestingSet* resting, nbMoverLog* log )
 {
 	for ( int k = 0; k < answers->count; ++k )
 	{
@@ -5281,7 +5370,7 @@ static bool nbIsCarrierSupported( const nbWorld* world, nbCarrierAnswers* answer
 		}
 	}
 
-	bool supported = nbIsSupportedWithout( world, carrierIndex, actorIndex, resting, restingCount, log );
+	bool supported = nbIsSupportedWithout( world, carrierIndex, actorIndex, resting, log );
 	if ( answers->count < NB_CARRIER_ANSWERS )
 	{
 		answers->carriers[answers->count] = carrierIndex;
@@ -5547,9 +5636,9 @@ typedef struct nbSupport
 // see nbIsSupportedWithout. Otherwise the two would hold each other up in the air: rubble that froze on a floor while it
 // was part of the structure, and wedged between the floor and its lintels once the floor came down. Such rubble goes to
 // the list, and the piece must stay balanced without it: a piece wedged under the floor that rests on the floor itself
-// carries nothing either, however it touches. Smaller pieces lie on whatever they touch. The resting list has room for a
-// body per contact. The search only reads the world, so the workers look at many pieces at once, see nbSettleDebris. The
-// moving bodies the searches through rubble read go to the log if there is one.
+// carries nothing either, however it touches. Smaller pieces lie on whatever they touch. The room for the resting set has
+// 1 << nbRestingBits( touchCount ) places. The search only reads the world, so the workers look at many pieces at once, see
+// nbSettleDebris. The moving bodies the searches through rubble read go to the log if there is one.
 static void nbFindSupport( const nbWorld* world, int actorIndex, const nbTouch* touches, int touchCount, b3Vec3 up,
 						   const nbSupportFan* baseFan, int* resting, nbSupport* support, int* unsupported, int* unsupportedCount,
 						   int unsupportedCapacity, nbMoverLog* log )
@@ -5567,17 +5656,21 @@ static void nbFindSupport( const nbWorld* world, int actorIndex, const nbTouch* 
 	nbCarrierAnswers answers;
 	answers.count = 0;
 
-	// Moving bodies that rest on a large piece carry nothing, sorted to look them up
-	int restingCount = 0;
+	// Moving bodies that rest on a large piece carry nothing, in a set to look them up
+	nbRestingSet restingSet = { resting, nbRestingBits( touchCount ), 0 };
+	if ( large )
+	{
+		memset( resting, 0xff, sizeof( int ) << restingSet.bits );
+	}
+
 	for ( int c = 0; large && c < touchCount; ++c )
 	{
 		const nbTouch* touch = touches + c;
 		if ( touch->otherActor != NB_NULL_INDEX && nbCarries( &touch->data, touch->isA == false, up ) )
 		{
-			resting[restingCount++] = touch->otherActor;
+			nbAddResting( &restingSet, touch->otherActor );
 		}
 	}
-	qsort( resting, (size_t)restingCount, sizeof( int ), nbCompareInts );
 
 	for ( int c = 0; c < touchCount; ++c )
 	{
@@ -5595,12 +5688,12 @@ static void nbFindSupport( const nbWorld* world, int actorIndex, const nbTouch* 
 			continue;
 		}
 
-		int chunkIndex = nbFindChunkFromShape( world, touch->otherShapeId );
+		int chunkIndex = touch->otherChunk;
 		int otherIndex = chunkIndex != NB_NULL_INDEX ? world->chunks.data[chunkIndex].actorIndex : NB_NULL_INDEX;
 		if ( touch->otherType == b3_staticBody )
 		{
 			if ( large && otherIndex != NB_NULL_INDEX && world->actors.data[otherIndex].isRubble &&
-				 nbIsCarrierSupported( world, &answers, otherIndex, actorIndex, resting, restingCount, log ) == false )
+				 nbIsCarrierSupported( world, &answers, otherIndex, actorIndex, &restingSet, log ) == false )
 			{
 				// Listed once, the rubble that carries the piece first. A full list makes room for it, the rest comes back
 				// to life later, the piece is still there.
@@ -5647,7 +5740,7 @@ static void nbFindSupport( const nbWorld* world, int actorIndex, const nbTouch* 
 		{
 			continue;
 		}
-		else if ( nbHoldsActor( resting, restingCount, otherIndex ) )
+		else if ( nbHoldsActor( &restingSet, otherIndex ) )
 		{
 			continue;
 		}
@@ -5671,11 +5764,11 @@ static void nbFindSupport( const nbWorld* world, int actorIndex, const nbTouch* 
 	for ( int c = 0; wedged && c < touchCount && support->carrierCount < NB_MAX_CARRIERS; ++c )
 	{
 		const nbTouch* touch = touches + c;
-		int chunkIndex = nbFindChunkFromShape( world, touch->otherShapeId );
+		int chunkIndex = touch->otherChunk;
 		bool fixed = touch->otherType == b3_staticBody;
 		b3Vec3 point;
 		if ( ( fixed || ( chunkIndex != NB_NULL_INDEX &&
-						  nbHoldsActor( resting, restingCount, world->chunks.data[chunkIndex].actorIndex ) == false ) ) &&
+						  nbHoldsActor( &restingSet, world->chunks.data[chunkIndex].actorIndex ) == false ) ) &&
 			 nbTouchPoint( &touch->data, touch->isA, center, FLT_MAX, &point ) )
 		{
 			nbAddCarrier( world, support->carriers, &support->carrierCount, chunkIndex, point );
@@ -5703,7 +5796,7 @@ static bool nbCarriesWithout( const nbWorld* world, const nbCarrier* carriers, i
 		const nbActor* carrier = world->actors.data + carrierIndex;
 		if ( carrierIndex != actorIndex &&
 			 ( carrier->isStatic ||
-			   ( carrier->isRubble && nbIsSupportedWithout( world, carrierIndex, actorIndex, NULL, 0, NULL ) ) ) )
+			   ( carrier->isRubble && nbIsSupportedWithout( world, carrierIndex, actorIndex, NULL, NULL ) ) ) )
 		{
 			return true;
 		}
@@ -5824,7 +5917,8 @@ static void nbInspectQuietPiece( const nbSettleTask* task, nbQuietPiece* piece, 
 		return;
 	}
 
-	int* room = nbArena_AllocArray( task->arena, int, 2 * touchCount );
+	int places = 1 << nbRestingBits( touchCount );
+	int* room = nbArena_AllocArray( task->arena, int, places + touchCount );
 	int unsupported[NB_MAX_RELEASES];
 	int unsupportedCount = 0;
 	nbSupport support;
@@ -5853,8 +5947,8 @@ static void nbInspectQuietPiece( const nbSettleTask* task, nbQuietPiece* piece, 
 
 	piece->squeezer = nbFindSqueezer( world, actor, touches, touchCount );
 
-	// The moving pieces that carry this one, the room after the resting bodies of nbFindSupport
-	piece->below = room + touchCount;
+	// The moving pieces that carry this one, the room after the resting set of nbFindSupport
+	piece->below = room + places;
 	for ( int c = 0; c < touchCount; ++c )
 	{
 		const nbTouch* touch = touches + c;
@@ -5873,16 +5967,16 @@ static void nbInspectQuietPiece( const nbSettleTask* task, nbQuietPiece* piece, 
 	piece->held = large ? support.braced : support.grounded;
 }
 
-// The piece up to the pose it holds rubble at, see nbSettleDebris
+// The piece up to the end of its rest, see nbSettleDebris
 static void nbPrefetchPiece( const nbWorld* world, int actorIndex )
 {
 	const char* piece = (const char*)( world->actors.data + actorIndex );
-	const char* poseEnd = piece + offsetof( nbActor, holdBounds ) - 1;
-	for ( const char* line = piece; line < poseEnd; line += 64 )
+	const char* restEnd = piece + offsetof( nbActor, probeTime ) + sizeof( float ) - 1;
+	for ( const char* line = piece; line < restEnd; line += 64 )
 	{
 		NB_PREFETCH( line );
 	}
-	NB_PREFETCH( poseEnd );
+	NB_PREFETCH( restEnd );
 }
 
 // The quiet pieces of a block of the moving debris and what carries them. A piece changes only its own rest, and the search
@@ -6547,7 +6641,7 @@ static void nbLookAtDebris( const nbWorld* world, nbArena* arena, int actorIndex
 		// One more place than the budget keeps: a look that fills it found more than the calling thread has room for
 		int unsupported[NB_MAX_RELEASES + 1];
 		int unsupportedCount = 0;
-		int* resting = nbArena_AllocArray( arena, int, contactCount );
+		int* resting = nbArena_AllocArray( arena, int, 1 << nbRestingBits( contactCount ) );
 		look->touchesStatic = nbTouchesStatic( touches, contactCount );
 		nbFindSupport( world, actorIndex, touches, contactCount, up, fan, resting, &look->support, unsupported, &unsupportedCount,
 					   NB_MAX_RELEASES + 1, &log );
@@ -6895,7 +6989,7 @@ static void nbEnforceDebrisBudget( nbWorld* world, b3Vec3 up )
 				}
 
 				int firstUnsupported = unsupportedCount;
-				int* resting = nbArena_AllocArray( &world->arena, int, contactCount );
+				int* resting = nbArena_AllocArray( &world->arena, int, 1 << nbRestingBits( contactCount ) );
 				nbFindSupport( world, actorIndex, touches, contactCount, up, &fan, resting, &support, unsupported,
 							   &unsupportedCount, NB_MAX_RELEASES, NULL );
 				if ( pass > 0 || actor->volume < NB_CHECKED_VOLUME || support.balanced )

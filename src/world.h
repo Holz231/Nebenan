@@ -190,12 +190,23 @@ typedef struct nbActor
 	// Debris at rest, carried by a static body until something disturbs it
 	bool isRubble;
 
+	// A static actor that changed since its last load check, see nbWorldDef::supportScale
+	bool supportDirty;
+
+	// The rubble resting on this actor comes back to life once it moves away from this pose. The bounds are the ones it
+	// had there.
+	bool holdsRubble;
+	b3WorldTransform holdPose;
+	b3AABB holdBounds;
+
+	// From here to probeTime the rest of a moving piece, which the checks of nbSettleDebris write in every update. The
+	// looks of the other threads read the fields before it at the same time, of the pieces that touch theirs: the body,
+	// the volume and the flags. A cache line both written and read would go back and forth between the cores, so the rest
+	// starts more than a cache line after the flags, whether the actors start on 64 bytes or on NB_ALIGNMENT.
+
 	// Asleep in Box3D at the last look of nbSettleDebris, which found that it cannot freeze yet. While it sleeps the
 	// contacts it lies on stay as they are, so it waits for Box3D to wake it before the next look.
 	bool checkedAsleep;
-
-	// A static actor that changed since its last load check, see nbWorldDef::supportScale
-	bool supportDirty;
 
 	// Rest detection after the rubble rest of the reference engine (src/rubble_rest.h on the Referenz branch). The pose
 	// when the quiet time began, and how long the actor stayed within reach of it.
@@ -216,12 +227,6 @@ typedef struct nbActor
 	// rest time, see nbIsQuiet.
 	bool probing;
 	float probeTime;
-
-	// The rubble resting on this actor comes back to life once it moves away from this pose. The bounds are the ones it
-	// had there.
-	bool holdsRubble;
-	b3WorldTransform holdPose;
-	b3AABB holdBounds;
 
 	// The rubble this piece broke off. Its release leaves that rubble alone, it came back to life itself if it lost
 	// what carried it, see nbApplyImpact, unless that rubble froze on this piece since.

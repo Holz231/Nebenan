@@ -945,6 +945,82 @@ static int ContactDataOfBodiesTest( void )
 	return 0;
 }
 
+// A body of many shapes with a long contact list, like a storey on a heap of debris: Box3D first runs through the lists of
+// its shapes, then walks its own list, and the contacts come out as from b3Body_GetContactData
+static int ContactDataOfLargeBodyTest( void )
+{
+#if defined( B3_HAS_CONTACT_DATA_OF_BODIES )
+	int64_t baseBytes = b3GetByteCount();
+	b3WorldDef worldDef = b3DefaultWorldDef();
+	b3WorldId worldId = b3CreateWorld( &worldDef );
+	b3BodyDef bodyDef = b3DefaultBodyDef();
+	b3BodyId floorId = b3CreateBody( worldId, &bodyDef );
+	b3ShapeDef shapeDef = b3DefaultShapeDef();
+	b3BoxHull floor = b3MakeBoxHull( 10.0f, 0.5f, 10.0f );
+	b3CreateHullShape( floorId, &shapeDef, &floor.base );
+
+	// A slab of 16 x 16 cells on the floor, and a box over every corner where four cells meet
+	bodyDef = b3DefaultBodyDef();
+	bodyDef.type = b3_dynamicBody;
+	bodyDef.position = (b3Pos){ 0.0f, 0.75f, 0.0f };
+	b3BodyId slabId = b3CreateBody( worldId, &bodyDef );
+	for ( int i = 0; i < 16; ++i )
+	{
+		for ( int j = 0; j < 16; ++j )
+		{
+			b3BoxHull cell = b3MakeOffsetBoxHull( 0.25f, 0.25f, 0.25f, (b3Vec3){ 0.5f * (float)i, 0.0f, 0.5f * (float)j } );
+			b3CreateHullShape( slabId, &shapeDef, &cell.base );
+		}
+	}
+
+	b3BoxHull box = b3MakeBoxHull( 0.2f, 0.2f, 0.2f );
+	for ( int i = 0; i < 15; ++i )
+	{
+		for ( int j = 0; j < 15; ++j )
+		{
+			bodyDef.position = (b3Pos){ 0.5f * (float)i + 0.25f, 1.2f, 0.5f * (float)j + 0.25f };
+			b3BodyId boxId = b3CreateBody( worldId, &bodyDef );
+			b3CreateHullShape( boxId, &shapeDef, &box.base );
+		}
+	}
+
+	for ( int i = 0; i < 30; ++i )
+	{
+		b3World_Step( worldId, 1.0f / 60.0f, 4 );
+	}
+
+	b3BodyId bodies[2] = { slabId, floorId };
+	int offsets[2] = { 0, b3Body_GetContactCapacity( slabId ) };
+	int room = offsets[1] + b3Body_GetContactCapacity( floorId );
+	printf( "  slab: %d shapes, %d contacts in its list\n", b3Body_GetShapeCount( slabId ), offsets[1] );
+	ENSURE( b3Body_GetShapeCount( slabId ) == 256 && offsets[1] >= 512 );
+
+	b3ContactData* walked = malloc( sizeof( b3ContactData ) * (size_t)room );
+	b3ContactData* single = malloc( sizeof( b3ContactData ) * (size_t)room );
+	int counts[2];
+	b3Body_GetContactDataOfBodies( bodies, 2, walked, offsets, counts );
+	for ( int k = 0; k < 2; ++k )
+	{
+		int count = b3Body_GetContactData( bodies[k], single, b3Body_GetContactCapacity( bodies[k] ) );
+		ENSURE( counts[k] == count && count > 0 );
+		for ( int i = 0; i < count; ++i )
+		{
+			const b3ContactData* contact = walked + offsets[k] + i;
+			ENSURE( B3_ID_EQUALS( contact->contactId, single[i].contactId ) );
+			ENSURE( B3_ID_EQUALS( contact->shapeIdA, single[i].shapeIdA ) );
+			ENSURE( B3_ID_EQUALS( contact->shapeIdB, single[i].shapeIdB ) );
+			ENSURE( contact->manifolds == single[i].manifolds && contact->manifoldCount == single[i].manifoldCount );
+		}
+	}
+
+	free( walked );
+	free( single );
+	b3DestroyWorld( worldId );
+	ENSURE( b3GetByteCount() == baseBytes );
+#endif
+	return 0;
+}
+
 // A sphere closer to another sphere than the speculative distance gets a contact point before they touch, and so does a
 // sphere over a capsule, as in upstream Box3D since #187. A step of zero time runs the collision but not the solver.
 static int SpeculativeSphereTest( void )
@@ -6027,6 +6103,7 @@ int WorldTest( void )
 	RUN_TEST( ShapeBatchTest );
 	RUN_TEST( ShapeContactListTest );
 	RUN_TEST( ContactDataOfBodiesTest );
+	RUN_TEST( ContactDataOfLargeBodyTest );
 	RUN_TEST( SpeculativeSphereTest );
 	RUN_TEST( SeparatedHullsTest );
 	RUN_TEST( SharedStaticBodyTest );
