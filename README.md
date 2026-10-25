@@ -1091,9 +1091,12 @@ Ein großes ruhiges Stück kostet dort im Mittel 20-mal so viel wie ein kleines,
 warteten die anderen Threads am Ende 12 % ihrer Zeit darauf. Seitdem führt die Welt ein Bit für die großen Trümmer, und
 mit Workern nehmen die Threads die Blöcke mit einem großen Stück zuerst, siehe „Große Stücke in der Ruhe-Prüfung“ in
 [docs/Optimierungen.md](docs/Optimierungen.md). Beim Abriss warten sie nach ihrem letzten Block damit 65 % kürzer, die
-Prüfungen kosten mit 4 Threads rund 5 % weniger, im Benchmark gleich viel, und die Ergebnisse bleiben bitgleich. Was die
-Ruhe-Prüfung mit 8 Threads auf dem Ryzen bremst, entscheidet, wie es weitergeht, siehe
-[docs/Roadmap.md](docs/Roadmap.md).
+Prüfungen kosten mit 4 Threads rund 5 % weniger, im Benchmark gleich viel, und die Ergebnisse bleiben bitgleich. Auf dem
+Ryzen 7 7800X3D kostet die Ruhe-Prüfung mit 4 und 8 Threads 2 bis 3 % weniger als in den Läufen davor, und mit 8 Threads
+warten die Threads noch 19 % ihrer Zeit nach ihrem letzten Block, siehe „Skalierung auf dem Ryzen mit `kollaps-12`“.
+Mehr als die Verteilung zählt der Blick selbst: Auf der VM geht er zu 61 % in die Liste der Kontakte, die Box3D für
+jedes Stück abläuft, im Mittel 28 Einträge für 6 Kontakte, die berühren, siehe „Wohin der Blick auf ein ruhiges Stück
+geht“ in [docs/Optimierungen.md](docs/Optimierungen.md). Wie es weitergeht, steht in [docs/Roadmap.md](docs/Roadmap.md).
 
 Die teuersten Frames folgen auf einen Einsturz: Der Schutt um die Reste der Etage taut auf, und Box3D legt im nächsten
 Schritt Tausende neuer Kontakte an. Das ist echte Arbeit, das meiste davon fällt danach wirklich, siehe
