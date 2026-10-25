@@ -61,6 +61,54 @@ typedef struct b3Joint
 	bool collideConnected;
 } b3Joint;
 
+// Added for Nebenan: the point constraint of a joint at the positions its bodies have in a substep: the anchors relative to
+// the centers of mass and the inverse of the effective mass as b3Solve3 applies it, see b3ComputePointPose and
+// b3JointSim::hasPose
+typedef struct b3PointPose
+{
+	b3Vec3 rA;
+	b3Vec3 rB;
+	b3Matrix3 cofactors;
+	float invDet;
+	bool solvable;
+} b3PointPose;
+
+// Added for Nebenan: the two angular constraints across the axis of a revolute or parallel joint at the positions its
+// bodies have in a substep: their axes and the inverse of their effective mass as b3Solve2 applies it, see
+// b3ComputeAxesPose
+typedef struct b3AxesPose
+{
+	b3Vec3 perpAxisX;
+	b3Vec3 perpAxisY;
+	float xx, xy, yx, yy;
+	bool solvable;
+} b3AxesPose;
+
+// Added for Nebenan: what the solver of a parallel joint needs of the positions of its bodies, see b3JointSim::hasPose
+typedef struct b3ParallelPose
+{
+	b3AxesPose axes;
+	b3Vec2 bias;
+} b3ParallelPose;
+
+// Added for Nebenan: what the solver of a revolute joint needs of the positions of its bodies, see b3JointSim::hasPose
+typedef struct b3RevolutePose
+{
+	b3PointPose point;
+	b3AxesPose axes;
+	b3Vec2 collinearity;
+	float angle;
+} b3RevolutePose;
+
+// Added for Nebenan: what the solver of a spherical joint needs of the positions of its bodies, see b3JointSim::hasPose
+typedef struct b3SphericalPose
+{
+	b3PointPose point;
+	b3Vec3 springBias;
+	float twistAngle;
+	float swingAngle;
+} b3SphericalPose;
+
 typedef struct b3DistanceJoint
 {
 	float length;
@@ -136,6 +184,9 @@ typedef struct b3ParallelJoint
 	int indexA;
 	int indexB;
 	b3Softness softness;
+
+	// Added for Nebenan: see b3JointSim::hasPose
+	b3ParallelPose pose;
 } b3ParallelJoint;
 
 typedef struct b3PrismaticJoint
@@ -206,6 +257,9 @@ typedef struct b3RevoluteJoint
 	bool enableSpring;
 	bool enableMotor;
 	bool enableLimit;
+
+	// Added for Nebenan: see b3JointSim::hasPose
+	b3RevolutePose pose;
 } b3RevoluteJoint;
 
 typedef struct b3SphericalJoint
@@ -246,6 +300,9 @@ typedef struct b3SphericalJoint
 	bool enableMotor;
 	bool enableConeLimit;
 	bool enableTwistLimit;
+
+	// Added for Nebenan: see b3JointSim::hasPose
+	b3SphericalPose pose;
 } b3SphericalJoint;
 
 typedef struct b3WeldJoint
@@ -340,6 +397,12 @@ typedef struct b3JointSim
 
 	bool fixedRotation;
 
+	// Added for Nebenan: the bodies move only where the solver integrates their positions, so the relax stage of a substep
+	// sees them where the warm start and the solve of the next substep see them. A spherical, revolute or parallel joint
+	// keeps what it needs of their positions from relax, see b3SphericalPose, and those two stages take it from there
+	// instead of computing it again, to the bit. The first substep of a step computes its own.
+	bool hasPose;
+
 	union
 	{
 		b3DistanceJoint distanceJoint;
@@ -352,6 +415,94 @@ typedef struct b3JointSim
 		b3WheelJoint wheelJoint;
 	};
 } b3JointSim;
+
+// Added for Nebenan: the point constraint of a joint at the positions of its bodies, its anchors in body frames relative to
+// the centers of mass turned by the delta rotations, with the operations of b3Solve3 up to the right hand side, see
+// b3SolvePointPose
+static inline void b3ComputePointPose( b3PointPose* pose, const b3JointSim* base, b3Quat deltaRotationA, b3Vec3 anchorA,
+									   b3Quat deltaRotationB, b3Vec3 anchorB )
+{
+	float mA = base->invMassA;
+	float mB = base->invMassB;
+	b3Vec3 rA = b3RotateVector( deltaRotationA, anchorA );
+	b3Vec3 rB = b3RotateVector( deltaRotationB, anchorB );
+
+	//// K = [(1/m1 + 1/m2) * eye(2) - skew(r1) * invI1 * skew(r1) - skew(r2) * invI2 * skew(r2)]
+	b3Matrix3 sA = b3Skew( rA );
+	b3Matrix3 sB = b3Skew( rB );
+	b3Matrix3 kA = b3MulMM( sA, b3MulMM( base->invIA, sA ) );
+	b3Matrix3 kB = b3MulMM( sB, b3MulMM( base->invIB, sB ) );
+	b3Matrix3 k = b3NegateMat3( b3AddMM( kA, kB ) );
+	k.cx.x += mA + mB;
+	k.cy.y += mA + mB;
+	k.cz.z += mA + mB;
+
+	float det = b3Det( k );
+	pose->solvable = b3AbsFloat( det ) > 1000.0f * FLT_MIN;
+	pose->invDet = pose->solvable ? 1.0f / det : 0.0f;
+	pose->cofactors.cx = b3Cross( k.cy, k.cz );
+	pose->cofactors.cy = b3Cross( k.cz, k.cx );
+	pose->cofactors.cz = b3Cross( k.cx, k.cy );
+	pose->rA = rA;
+	pose->rB = rB;
+}
+
+// Added for Nebenan: the rest of b3Solve3 for the effective mass of a point pose
+static inline b3Vec3 b3SolvePointPose( const b3PointPose* pose, b3Vec3 a )
+{
+	if ( pose->solvable )
+	{
+		float invDet = pose->invDet;
+		return B3_LITERAL( b3Vec3 ){
+			invDet * b3Dot( pose->cofactors.cx, a ),
+			invDet * b3Dot( pose->cofactors.cy, a ),
+			invDet * b3Dot( pose->cofactors.cz, a ),
+		};
+	}
+
+	return b3Vec3_zero;
+}
+
+// Added for Nebenan: the collinearity constraint of a revolute or parallel joint at the positions of its bodies, from the
+// joint frame of body A and the relative rotation, with the operations of b3Solve2 up to the right hand side, see
+// b3SolveAxesPose
+static inline void b3ComputeAxesPose( b3AxesPose* pose, const b3JointSim* base, b3Quat quatA, b3Quat relQ )
+{
+	b3Vec3 perpAxisX =
+		b3MulSV( 0.5f, b3RotateVector( quatA, b3Add( b3MulSV( relQ.s, b3Vec3_axisX ), b3Cross( relQ.v, b3Vec3_axisX ) ) ) );
+	b3Vec3 perpAxisY =
+		b3MulSV( 0.5f, b3RotateVector( quatA, b3Add( b3MulSV( relQ.s, b3Vec3_axisY ), b3Cross( relQ.v, b3Vec3_axisY ) ) ) );
+
+	b3Matrix3 invInertiaSum = b3AddMM( base->invIA, base->invIB );
+	float kxx = b3Dot( perpAxisX, b3MulMV( invInertiaSum, perpAxisX ) );
+	float kyy = b3Dot( perpAxisY, b3MulMV( invInertiaSum, perpAxisY ) );
+	float kxy = b3Dot( perpAxisX, b3MulMV( invInertiaSum, perpAxisY ) );
+
+	b3Matrix2 k = { { kxx, kxy }, { kxy, kyy } };
+	float det = b3Det2( k );
+	pose->solvable = det > 1000.0f * FLT_MIN;
+	float invDet = pose->solvable ? 1.0f / det : 0.0f;
+	pose->xx = invDet * k.cy.y;
+	pose->xy = invDet * k.cy.x;
+	pose->yx = -invDet * k.cx.y;
+	pose->yy = invDet * k.cx.x;
+	pose->perpAxisX = perpAxisX;
+	pose->perpAxisY = perpAxisY;
+}
+
+// Added for Nebenan: the rest of b3Solve2 for the effective mass of an axes pose
+static inline b3Vec2 b3SolveAxesPose( const b3AxesPose* pose, b3Vec2 b )
+{
+	if ( pose->solvable )
+	{
+		return B3_LITERAL( b3Vec2 ){
+			pose->xx * b.x - pose->xy * b.y,
+			pose->yx * b.x + pose->yy * b.y,
+		};
+	}
+
+	return B3_LITERAL( b3Vec2 ){ 0.0f, 0.0f };
+}
 
 void b3DestroyJointInternal( b3World* world, b3Joint* joint, bool wakeBodies );
 
@@ -407,7 +558,7 @@ void b3WarmStartWheelJoint( b3JointSim* base, b3StepContext* context );
 
 void b3SolveDistanceJoint( b3JointSim* base, b3StepContext* context, bool useBias );
 void b3SolveMotorJoint( b3JointSim* base, b3StepContext* context );
-void b3SolveParallelJoint( b3JointSim* base, b3StepContext* context );
+void b3SolveParallelJoint( b3JointSim* base, b3StepContext* context, bool useBias );
 void b3SolvePrismaticJoint( b3JointSim* base, b3StepContext* context, bool useBias );
 void b3SolveRevoluteJoint( b3JointSim* base, b3StepContext* context, bool useBias );
 void b3SolveSphericalJoint( b3JointSim* base, b3StepContext* context, bool useBias );

@@ -288,7 +288,8 @@ emulierten Thread-lokalen Variable. Unter Windows nimmt die Nummer jetzt die Ken
 | C8 | **Wohin der Löser bei Figuren rechnet**: rund 11 µs je Figur und Schritt im Löser, für 15 Gelenke mit Federn, Grenzen und der Hilfe für das Becken und für die Kontakte mit dem Boden. Erst getrennt messen, etwa mit Figuren ohne Grenzen oder ohne Boden, dann entscheiden | ✅ auf `ragdoll-6`: 83 % in den Gelenken, 5 % in allen Kontakten, und ein waches Gelenk nimmt der ganzen Welt die Pakete, siehe „Wohin der Löser bei Figuren rechnet“ unten |
 | C9 | **Gelenke in den Paketen**: Box3D rechnet Gelenke nur nach Farben mit einer Sperre je Stufe, und ein einziges waches Gelenk schaltet die Pakete für alle Inseln ab. Die Gelenke einer Insel in ihrem Paket rechnen, Farbe für Farbe vor ihren Kontakten wie mit Sperren, damit die Ergebnisse bitgleich bleiben | ✅ auf `ragdoll-7`, bitgleich: Mit 8 Threads kostet ein waches Gelenk die Stadt unter Beschuss nichts mehr, mit 1 bis 50 Figuren ist der Box3D-Schritt 14 bis 18 % schneller, mit 2 Threads gleich schnell, siehe „Gelenke in den Paketen“ unten |
 | C11 | **Messen ohne Verlauf**: Dieselbe Stadt rechnet im selben Prozess später bis zu 35 % langsamer, in Kollision und Löser, und wann es anfängt, hängt davon ab, was vorher lief. Die Zeilen der Tabellen der Figuren vergleichen so verschiedene Zustände. Ursache finden, jede Stadt des Benchmarks in einem eigenen Prozess rechnen | ✅ auf `ragdoll-8`: Windows 11 drosselte den Benchmark nach zwei bis drei Sekunden ohne Fenster im Vordergrund und legte seine Threads auf die beiden Hälften seines langsamsten Kerns. `nbKeepFullSpeed` bestellt das ab, der Benchmark ruft es beim Start, und sechs Städte hintereinander kosten gleich viel, siehe „Messen ohne Verlauf“ unten |
-| C10 | **Gelenke billiger**: rund 1 µs Rechenzeit je Gelenk und Schritt, skalar, während die Kontakte breit rechnen. Erst messen, welche Art Gelenk was kostet, Kugel mit Kegel, Verdrehung und Feder, Scharnier, die Hilfe für das Becken | 🔜 als Nächstes, C9 ist gebaut |
+| C10 | **Gelenke billiger**: rund 1 µs Rechenzeit je Gelenk und Schritt, skalar, während die Kontakte breit rechnen. Erst messen, welche Art Gelenk was kostet, Kugel mit Kegel, Verdrehung und Feder, Scharnier, die Hilfe für das Becken | ✅ auf `ragdoll-9`, bitgleich: `nebenan_benchmark joints` misst jede Art, ein Kugelgelenk der Figur kostete 1,14 µs je Schritt, ein Scharnier 1,20 µs. Was ein Gelenk von der Lage seiner Körper braucht, rechnet es jetzt einmal je Teilschritt, und die Gelenke einer Figur kosten 20 % weniger, siehe „Gelenke billiger“ unten |
+| C12 | **Gelenke breit**: Nach C10 bleibt vor allem die Kette durch die Geschwindigkeiten, Feder, Grenzen und Punktbedingung warten jede auf die vorige. Mehrere Gelenke einer Farbe zugleich rechnen, Spur für Spur mit denselben Operationen wie die Kontakte, damit es bitgleich bleibt. Vorher zählen, wie voll die Spuren in den Paketen würden | 🔜 als Nächstes, C10 ist gebaut |
 
 ## Kontakte der Figuren (`ragdoll-5`)
 
@@ -463,6 +464,76 @@ Figuren“ und „Wohin der Löser bei Figuren rechnet“ liegen bis 20 % zu hoc
 unzuverlässig, in `repeat` ab der fünften Stadt, im Lauf der Figuren gar nicht. Die Gewinne von C9 halten,
 nachgemessen mit voller Geschwindigkeit, siehe „Gelenke in den Paketen“ oben. Die Demo betrifft es nicht, solange ihr
 Fenster vorn bleibt, und während ihrer Messungen hält sie jetzt auch dahinter die Geschwindigkeit.
+
+## Gelenke billiger (`ragdoll-9`)
+
+Gebaut am 25. Oktober 2026, C10 oben. `nebenan_benchmark joints` misst, was jede Art Gelenk der Figuren im Löser
+kostet: 64 Figuren aus einem Rig auf dem Boden einer Welt ohne Schlaf, 2 s zum Ankommen und 8 s gemessen, die
+Rechenzeit der Gelenke in den gemessenen Schritten, siehe `nbProfile::solverJoints`. Der Humanoide steht ohne Balance
+und Clip. Ketten aus so vielen Knochen wie er liegen gestreckt, mit Kugelgelenken oder Scharnieren mit den Grenzen von
+`nbDefaultBoneDef` und den Federn von `nbDefaultMotorProfile`, ohne Federn oder mit Schweißgelenken. Jede Figur hält ihr
+Becken aufrecht, allein misst diese Hilfe eine Figur aus einem Knochen, und ein Gelenk einer Kette kostet ein
+Vierzehntel ihrer Figur ohne die Hilfe. Mit einem Thread auf dem Ryzen 7 7800X3D mit MinGW, je drei Läufe im Wechsel,
+Rechenzeit je Gelenk und Schritt mit vier Teilschritten:
+
+| Gelenk | `ragdoll-8` | `ragdoll-9` |
+| --- | ---: | ---: |
+| Kugelgelenk mit Kegel, Verdrehung und Feder | 1,14 µs | 0,91 µs |
+| Kugelgelenk mit Kegel und Verdrehung | 0,98 µs | 0,78 µs |
+| Scharnier mit Grenze und Feder | 1,20 µs | 0,99 µs |
+| Scharnier mit Grenze | 1,09 µs | 0,93 µs |
+| Hilfe für das Becken | 0,50 µs | 0,48 µs |
+| Schweißgelenk | 0,64 µs | 0,65 µs |
+| der Humanoide: 10 Kugelgelenke, 4 Scharniere und die Hilfe | 16,0 µs | 12,8 µs |
+
+Die Feder kostet ein Kugelgelenk 0,16 µs, ein Scharnier 0,11 µs. Ein Scharnier kostet mehr als ein Kugelgelenk, statt
+Kegel und Verdrehung hält es zwei Achsen kollinear, mit einer 2×2-Masse. Mit 8 Threads rechnet jedes Gelenk etwas
+länger, der Humanoide 18,3 µs auf `ragdoll-8` und 15,1 µs jetzt, 17 % weniger.
+
+Wohin die Zeit ging, zeigte ein Build, der die Gelenke je Stufe misst: Auf `ragdoll-8` kostete der Humanoide je Schritt
+0,78 µs im Vorbereiten, 1,12 µs im Warmstart, 7,06 µs im Lösen und 6,96 µs im Entspannen, 88 % in den beiden
+letzten, rund 120 ns je Gelenk und Aufruf. Das meiste eines Aufrufs hängt nur von der Lage der Körper ab: die Rahmen der
+Gelenke und ihre relative Rotation, der Fehler der Feder, die Winkel der Grenzen, die Achsen der Kollinearität mit ihrer
+Masse und die Anker der Punktbedingung mit ihrer 3×3-Masse aus vier Matrixprodukten. Die Körper bewegen sich aber nur
+in der Stufe, die ihre Lagen integriert, und das Entspannen eines Teilschritts sieht sie dort, wo der Warmstart und das
+Lösen des nächsten sie sehen. Jetzt behält ein Gelenk das aus dem Entspannen, und von acht Rechnungen der Lage je
+Schritt bleiben fünf, siehe „Die Lage der Gelenke einmal je Teilschritt“ in [`extern/README.md`](../extern/README.md).
+Jede Zahl entsteht wie vorher, alle Tests enden mit denselben Hashes, mit MinGW und MSVC. Danach kostet der Humanoide
+0,79 µs im Vorbereiten, 0,95 µs im Warmstart, 4,44 µs im Lösen und 6,67 µs im Entspannen: Das Lösen ist 37 % billiger,
+der Warmstart 15 %, das Entspannen 4 %.
+
+Zwei Fassungen flogen raus. Die erste rechnete die Lage im Entspannen in den Speicher und las sie gleich wieder, das
+Entspannen kostete damit 5 % mehr, jetzt rechnet es sie in Registern und legt sie danach ab. Und die Produkte der
+inversen Trägheit mit den Achsen der Grenzen gelten für den ganzen Schritt, einmal im Vorbereiten gerechnet kosteten
+sie dort aber 0,16 µs je Humanoide mehr und sparten im Lösen nichts Messbares, siehe „Trägheit mal Achsen einmal je
+Schritt“ in [`Optimierungen.md`](Optimierungen.md). Ein Gelenk ist 536 statt 448 Byte groß.
+
+Was bleibt, ist die Kette durch die Geschwindigkeiten. Ein Lösen mit behaltener Lage kostet rund 60 ns je Gelenk, fast
+alles für Feder, Grenzen und Punktbedingung, die jede auf die vorige warten, der Prozessor kann sie nicht überlappen.
+Eine Grenze zeigte ein Build, dessen Entspannen die alte Lage nimmt, mit falschen Ergebnissen, nur zum Messen: Das
+Entspannen kostete dann 4,76 statt 6,64 µs je Humanoide. Eine Lage ganz umsonst spart im Entspannen also noch 1,9 µs,
+mit dem ersten Lösen rund 2,4 µs, und die übrigen rund 9 µs von Lösen und Entspannen sind die Kette. Bitgleich schneller
+geht die nur breit, mehrere Gelenke einer Farbe zugleich, Spur für Spur mit denselben Operationen, das ist C12.
+
+In den Städten mit Figuren, gepaart gegen `ragdoll-8` mit `nebenan_benchmark figures`, je zwei Läufe im Wechsel,
+Box3D-Schritt in ms:
+
+| Stadt | 2 Threads `ragdoll-8` | `ragdoll-9` | 8 Threads `ragdoll-8` | `ragdoll-9` |
+| --- | ---: | ---: | ---: | ---: |
+| ruhig, 1 Figur | 0,028 | 0,025 | 0,028 | 0,025 |
+| ruhig, 10 Figuren | 0,214 | 0,186 | 0,212 | 0,185 |
+| ruhig, 50 Figuren | 0,617 | 0,546 | 0,327 | 0,297 |
+| unter Beschuss, ohne Figuren | 0,984 | 0,984 | 0,418 | 0,398 |
+| unter Beschuss, 10 Figuren | 1,158 | 1,127 | 0,450 | 0,436 |
+| unter Beschuss, 50 Figuren | 1,681 | 1,558 | 0,623 | 0,601 |
+
+Die Gelenke rechnen in den Städten mit 10 und 50 Figuren 16 bis 19 % weniger im Löser. Mit 8 Threads streut die Stadt
+unter Beschuss von Lauf zu Lauf um 5 %, auch ohne Figuren, wo sich nichts geändert hat. Alle Städte enden mit denselben
+Zahlen, und die Figuren tun dasselbe: dieselben Zustände, Stürze, Versuche aufzustehen und Motoren an der Grenze, mit 2
+wie mit 8 Threads. Im ganzen Benchmark mit 2 Threads, ein Lauf je Build im Wechsel, enden alle Szenen mit denselben
+Zahlen, und die Frames ohne Figuren kosten so viel wie vorher: 3,93 statt 3,96 ms in der Stadt unter Beschuss, 1,15 und
+1,15 ms bei doppelter Bruchstückgröße, 3,34 statt 3,37 ms unter Trommelfeuer und 0,79 und 0,79 ms in der gestreamten
+Stadt.
 
 ## Fazit
 

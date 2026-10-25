@@ -156,22 +156,12 @@ void b3WarmStartParallelJoint( b3JointSim* base, b3StepContext* context )
 	}
 }
 
-void b3SolveParallelJoint( b3JointSim* base, b3StepContext* context )
+// Added for Nebenan: what b3SolveParallelJoint needs of the positions of the bodies, computed as it did in every stage, see
+// b3JointSim::hasPose
+B3_FORCE_INLINE void b3ComputeParallelPose( b3ParallelPose* pose, const b3JointSim* base, const b3BodyState* stateA,
+											const b3BodyState* stateB )
 {
-	b3Matrix3 iA = base->invIA;
-	b3Matrix3 iB = base->invIB;
-
-	// dummy state for static bodies
-	b3BodyState dummyState = b3_identityBodyState;
-
-	b3ParallelJoint* joint = &base->parallelJoint;
-	b3BodyState* stateA = joint->indexA == B3_NULL_INDEX ? &dummyState : context->states + joint->indexA;
-	b3BodyState* stateB = joint->indexB == B3_NULL_INDEX ? &dummyState : context->states + joint->indexB;
-
-	b3Vec3 wA = stateA->angularVelocity;
-	b3Vec3 wB = stateB->angularVelocity;
-
-	bool fixedRotation = base->fixedRotation;
+	const b3ParallelJoint* joint = &base->parallelJoint;
 	b3Quat quatA = b3MulQuat( stateA->deltaRotation, joint->quatA );
 	b3Quat quatB = b3MulQuat( stateB->deltaRotation, joint->quatB );
 
@@ -183,50 +173,56 @@ void b3SolveParallelJoint( b3JointSim* base, b3StepContext* context )
 
 	b3Quat relQ = b3InvMulQuat( quatA, quatB );
 
-	if ( fixedRotation == false && joint->maxTorque > 0.0f )
+	b3Vec2 c = { relQ.v.x, relQ.v.y };
+	pose->bias = (b3Vec2){ joint->softness.biasRate * c.x, joint->softness.biasRate * c.y };
+	b3ComputeAxesPose( &pose->axes, base, quatA, relQ );
+}
+
+// Added for Nebenan: b3SolveParallelJoint at a pose of the bodies
+B3_FORCE_INLINE void b3SolveParallelJointAt( b3JointSim* base, b3StepContext* context, b3BodyState* stateA, b3BodyState* stateB,
+											 const b3ParallelPose* pose )
+{
+	b3Matrix3 iA = base->invIA;
+	b3Matrix3 iB = base->invIB;
+
+	b3ParallelJoint* joint = &base->parallelJoint;
+
+	b3Vec3 wA = stateA->angularVelocity;
+	b3Vec3 wB = stateB->angularVelocity;
+
+	b3Vec2 bias = pose->bias;
+	float massScale = joint->softness.massScale;
+	float impulseScale = joint->softness.impulseScale;
+
+	// Collinearity constraint as 2-by-2, see b3ComputeAxesPose
+	b3Vec3 perpAxisX = pose->axes.perpAxisX;
+	b3Vec3 perpAxisY = pose->axes.perpAxisY;
+	joint->perpAxisX = perpAxisX;
+	joint->perpAxisY = perpAxisY;
+
+	b3Vec3 wRel = b3Sub( wB, wA );
+	b3Vec2 cdot = { b3Dot( wRel, perpAxisX ), b3Dot( wRel, perpAxisY ) };
+
+	float maxImpulse = context->h * joint->maxTorque;
+	b3Vec2 oldImpulse = joint->perpImpulse;
+	b3Vec2 cdotPlusBias = { cdot.x + bias.x, cdot.y + bias.y };
+	b3Vec2 sol = b3SolveAxesPose( &pose->axes, cdotPlusBias );
+	b3Vec2 deltaImpulse = {
+		-massScale * sol.x - impulseScale * oldImpulse.x,
+		-massScale * sol.y - impulseScale * oldImpulse.y,
+	};
+	joint->perpImpulse = (b3Vec2){ oldImpulse.x + deltaImpulse.x, oldImpulse.y + deltaImpulse.y };
+	if ( b3LengthSquared2( joint->perpImpulse ) > maxImpulse * maxImpulse )
 	{
-		b3Vec2 c = { relQ.v.x, relQ.v.y };
-		b3Vec2 bias = { joint->softness.biasRate * c.x, joint->softness.biasRate * c.y };
-		float massScale = joint->softness.massScale;
-		float impulseScale = joint->softness.impulseScale;
-
-		// Collinearity constraint as 2-by-2
-		b3Vec3 perpAxisX = b3MulSV( 0.5f, b3RotateVector( quatA, b3Add( b3MulSV( relQ.s, b3Vec3_axisX ), b3Cross( relQ.v, b3Vec3_axisX ) ) ) );
-		b3Vec3 perpAxisY = b3MulSV( 0.5f, b3RotateVector( quatA, b3Add( b3MulSV( relQ.s, b3Vec3_axisY ), b3Cross( relQ.v, b3Vec3_axisY ) ) ) );
-		joint->perpAxisX = perpAxisX;
-		joint->perpAxisY = perpAxisY;
-
-		b3Matrix3 invInertiaSum = b3AddMM( iA, iB );
-		float kxx = b3Dot( perpAxisX, b3MulMV( invInertiaSum, perpAxisX ) );
-		float kyy = b3Dot( perpAxisY, b3MulMV( invInertiaSum, perpAxisY ) );
-		float kxy = b3Dot( perpAxisX, b3MulMV( invInertiaSum, perpAxisY ) );
-
-		b3Matrix2 k = { { kxx, kxy }, { kxy, kyy } };
-
-		b3Vec3 wRel = b3Sub( wB, wA );
-		b3Vec2 cdot = { b3Dot( wRel, perpAxisX ), b3Dot( wRel, perpAxisY ) };
-
-		float maxImpulse = context->h * joint->maxTorque;
-		b3Vec2 oldImpulse = joint->perpImpulse;
-		b3Vec2 cdotPlusBias = { cdot.x + bias.x, cdot.y + bias.y };
-		b3Vec2 sol = b3Solve2( k, cdotPlusBias );
-		b3Vec2 deltaImpulse = {
-			-massScale * sol.x - impulseScale * oldImpulse.x,
-			-massScale * sol.y - impulseScale * oldImpulse.y,
-		};
-		joint->perpImpulse = (b3Vec2){ oldImpulse.x + deltaImpulse.x, oldImpulse.y + deltaImpulse.y };
-		if ( b3LengthSquared2( joint->perpImpulse ) > maxImpulse * maxImpulse )
-		{
-			float s = maxImpulse / b3Length2( joint->perpImpulse );
-			joint->perpImpulse = (b3Vec2){ s * joint->perpImpulse.x, s * joint->perpImpulse.y };
-		}
-
-		deltaImpulse = b3Sub2( joint->perpImpulse, oldImpulse );
-
-		b3Vec3 angularImpulse = b3Blend2( deltaImpulse.x, perpAxisX, deltaImpulse.y, perpAxisY );
-		wA = b3Sub( wA, b3MulMV( iA, angularImpulse ) );
-		wB = b3Add( wB, b3MulMV( iB, angularImpulse ) );
+		float s = maxImpulse / b3Length2( joint->perpImpulse );
+		joint->perpImpulse = (b3Vec2){ s * joint->perpImpulse.x, s * joint->perpImpulse.y };
 	}
+
+	deltaImpulse = b3Sub2( joint->perpImpulse, oldImpulse );
+
+	b3Vec3 angularImpulse = b3Blend2( deltaImpulse.x, perpAxisX, deltaImpulse.y, perpAxisY );
+	wA = b3Sub( wA, b3MulMV( iA, angularImpulse ) );
+	wB = b3Add( wB, b3MulMV( iB, angularImpulse ) );
 
 	if ( stateA->flags & b3_dynamicFlag )
 	{
@@ -236,6 +232,39 @@ void b3SolveParallelJoint( b3JointSim* base, b3StepContext* context )
 	if ( stateB->flags & b3_dynamicFlag )
 	{
 		stateB->angularVelocity = wB;
+	}
+}
+
+void b3SolveParallelJoint( b3JointSim* base, b3StepContext* context, bool useBias )
+{
+	// dummy state for static bodies
+	b3BodyState dummyState = b3_identityBodyState;
+
+	b3ParallelJoint* joint = &base->parallelJoint;
+	b3BodyState* stateA = joint->indexA == B3_NULL_INDEX ? &dummyState : context->states + joint->indexA;
+	b3BodyState* stateB = joint->indexB == B3_NULL_INDEX ? &dummyState : context->states + joint->indexB;
+
+	// Added for Nebenan: without rotation or torque the joint does nothing, the velocities stay as they are
+	if ( base->fixedRotation || ( joint->maxTorque > 0.0f ) == false )
+	{
+		return;
+	}
+
+	// Added for Nebenan: the solve stage of a substep after the first takes what it needs of the positions of the bodies
+	// from the relax stage before it, which keeps it for the solve of the next substep, see b3JointSim::hasPose
+	if ( useBias && base->hasPose )
+	{
+		b3SolveParallelJointAt( base, context, stateA, stateB, &joint->pose );
+		return;
+	}
+
+	b3ParallelPose pose;
+	b3ComputeParallelPose( &pose, base, stateA, stateB );
+	b3SolveParallelJointAt( base, context, stateA, stateB, &pose );
+	if ( useBias == false )
+	{
+		joint->pose = pose;
+		base->hasPose = true;
 	}
 }
 

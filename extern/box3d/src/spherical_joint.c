@@ -428,8 +428,9 @@ void b3WarmStartSphericalJoint( b3JointSim* base, b3StepContext* context )
 	b3Vec3 vB = stateB->linearVelocity;
 	b3Vec3 wB = stateB->angularVelocity;
 
-	b3Vec3 rA = b3RotateVector( stateA->deltaRotation, joint->frameA.p );
-	b3Vec3 rB = b3RotateVector( stateB->deltaRotation, joint->frameB.p );
+	// Added for Nebenan: after the first substep the anchors from relax, see b3JointSim::hasPose
+	b3Vec3 rA = base->hasPose ? joint->pose.point.rA : b3RotateVector( stateA->deltaRotation, joint->frameA.p );
+	b3Vec3 rB = base->hasPose ? joint->pose.point.rB : b3RotateVector( stateB->deltaRotation, joint->frameB.p );
 
 	b3Vec3 angularImpulse = b3Add( joint->springImpulse, joint->motorImpulse );
 	angularImpulse = b3MulSub( angularImpulse, joint->swingImpulse, joint->swingAxis );
@@ -454,19 +455,55 @@ void b3WarmStartSphericalJoint( b3JointSim* base, b3StepContext* context )
 	}
 }
 
-void b3SolveSphericalJoint( b3JointSim* base, b3StepContext* context, bool useBias )
+// Added for Nebenan: what b3SolveSphericalJoint needs of the positions of the bodies, computed as it did in every stage,
+// see b3JointSim::hasPose
+B3_FORCE_INLINE void b3ComputeSphericalPose( b3SphericalPose* pose, const b3JointSim* base, const b3BodyState* stateA,
+											 const b3BodyState* stateB )
+{
+	const b3SphericalJoint* joint = &base->sphericalJoint;
+	pose->springBias = b3Vec3_zero;
+	pose->twistAngle = 0.0f;
+	pose->swingAngle = 0.0f;
+
+	if ( base->fixedRotation == false && ( joint->enableSpring || joint->enableTwistLimit || joint->enableConeLimit ) )
+	{
+		b3Quat quatA = b3MulQuat( stateA->deltaRotation, joint->frameA.q );
+		b3Quat quatB = b3MulQuat( stateB->deltaRotation, joint->frameB.q );
+
+		b3Quat relQ = b3InvMulQuat( quatA, quatB );
+
+		if ( joint->enableSpring )
+		{
+			// Rotation constraint error
+			b3Vec3 deltaRotation = b3DeltaQuatToRotation( relQ, joint->targetRotation );
+			b3Vec3 c = b3Neg( b3RotateVector( quatA, deltaRotation ) );
+			pose->springBias = b3MulSV( joint->springSoftness.biasRate, c );
+		}
+
+		if ( joint->enableTwistLimit )
+		{
+			pose->twistAngle = b3GetTwistAngle( relQ );
+		}
+
+		if ( joint->enableConeLimit )
+		{
+			pose->swingAngle = b3GetSwingAngle( relQ );
+		}
+	}
+
+	b3ComputePointPose( &pose->point, base, stateA->deltaRotation, joint->frameA.p, stateB->deltaRotation, joint->frameB.p );
+}
+
+// Added for Nebenan: b3SolveSphericalJoint at a pose of the bodies
+B3_FORCE_INLINE void b3SolveSphericalJointAt( b3JointSim* base, b3StepContext* context, bool useBias, b3BodyState* stateA,
+											  b3BodyState* stateB, const b3SphericalPose* pose )
 {
 	float mA = base->invMassA;
 	float mB = base->invMassB;
 	b3Matrix3 iA = base->invIA;
 	b3Matrix3 iB = base->invIB;
 
-	// dummy state for static bodies
-	b3BodyState dummyState = b3_identityBodyState;
-
 	b3SphericalJoint* joint = &base->sphericalJoint;
-	b3BodyState* stateA = joint->indexA == B3_NULL_INDEX ? &dummyState : context->states + joint->indexA;
-	b3BodyState* stateB = joint->indexB == B3_NULL_INDEX ? &dummyState : context->states + joint->indexB;
 
 	b3Vec3 vA = stateA->linearVelocity;
 	b3Vec3 wA = stateA->angularVelocity;
@@ -474,19 +511,12 @@ void b3SolveSphericalJoint( b3JointSim* base, b3StepContext* context, bool useBi
 	b3Vec3 wB = stateB->angularVelocity;
 
 	bool fixedRotation = base->fixedRotation;
-	b3Quat quatA = b3MulQuat( stateA->deltaRotation, joint->frameA.q );
-	b3Quat quatB = b3MulQuat( stateB->deltaRotation, joint->frameB.q );
-
-	b3Quat relQ = b3InvMulQuat( quatA, quatB );
 
 	// Solve spring
 	if ( joint->enableSpring && fixedRotation == false )
 	{
-		// Rotation constraint error
-		b3Vec3 deltaRotation = b3DeltaQuatToRotation( relQ, joint->targetRotation );
-		b3Vec3 c = b3Neg( b3RotateVector( quatA, deltaRotation ) );
-
-		b3Vec3 bias = b3MulSV( joint->springSoftness.biasRate, c );
+		// Rotation constraint error, see b3ComputeSphericalPose
+		b3Vec3 bias = pose->springBias;
 		float massScale = joint->springSoftness.massScale;
 		float impulseScale = joint->springSoftness.impulseScale;
 		b3Vec3 cdot = b3Sub( wB, wA );
@@ -536,7 +566,7 @@ void b3SolveSphericalJoint( b3JointSim* base, b3StepContext* context, bool useBi
 
 	if ( joint->enableTwistLimit && fixedRotation == false )
 	{
-		float twistAngle = b3GetTwistAngle( relQ );
+		float twistAngle = pose->twistAngle;
 
 		// todo does an updated twist axis help?
 
@@ -603,7 +633,7 @@ void b3SolveSphericalJoint( b3JointSim* base, b3StepContext* context, bool useBi
 
 	if ( joint->enableConeLimit && fixedRotation == false )
 	{
-		float swingAngle = b3GetSwingAngle( relQ );
+		float swingAngle = pose->swingAngle;
 
 		// todo does an updated swing axis help?
 		// b3Vec3 axisA = b3RotateVector( quatA, b3Vec3_axisZ );
@@ -643,8 +673,9 @@ void b3SolveSphericalJoint( b3JointSim* base, b3StepContext* context, bool useBi
 
 	// Solve point-to-point constraint
 	{
-		b3Vec3 rA = b3RotateVector( stateA->deltaRotation, joint->frameA.p );
-		b3Vec3 rB = b3RotateVector( stateB->deltaRotation, joint->frameB.p );
+		// Added for Nebenan: the anchors and the effective mass, see b3ComputePointPose
+		b3Vec3 rA = pose->point.rA;
+		b3Vec3 rB = pose->point.rB;
 
 		b3Vec3 cdot = b3Sub( b3Sub( b3Add( vB, b3Cross( wB, rB ) ), vA ), b3Cross( wA, rA ) );
 
@@ -664,17 +695,7 @@ void b3SolveSphericalJoint( b3JointSim* base, b3StepContext* context, bool useBi
 			impulseScale = base->constraintSoftness.impulseScale;
 		}
 
-		//// K = [(1/m1 + 1/m2) * eye(2) - skew(r1) * invI1 * skew(r1) - skew(r2) * invI2 * skew(r2)]
-		b3Matrix3 sA = b3Skew( rA );
-		b3Matrix3 sB = b3Skew( rB );
-		b3Matrix3 kA = b3MulMM( sA, b3MulMM( base->invIA, sA ) );
-		b3Matrix3 kB = b3MulMM( sB, b3MulMM( base->invIB, sB ) );
-		b3Matrix3 k = b3NegateMat3( b3AddMM( kA, kB ) );
-		k.cx.x += mA + mB;
-		k.cy.y += mA + mB;
-		k.cz.z += mA + mB;
-
-		b3Vec3 b = b3Solve3( k, b3Add( cdot, bias ) );
+		b3Vec3 b = b3SolvePointPose( &pose->point, b3Add( cdot, bias ) );
 
 		b3Vec3 impulse = b3MulSub( b3MulSV( -massScale, b ), impulseScale, joint->linearImpulse );
 		joint->linearImpulse = b3Add( joint->linearImpulse, impulse );
@@ -695,6 +716,34 @@ void b3SolveSphericalJoint( b3JointSim* base, b3StepContext* context, bool useBi
 	{
 		stateB->linearVelocity = vB;
 		stateB->angularVelocity = wB;
+	}
+}
+
+void b3SolveSphericalJoint( b3JointSim* base, b3StepContext* context, bool useBias )
+{
+	// dummy state for static bodies
+	b3BodyState dummyState = b3_identityBodyState;
+
+	b3SphericalJoint* joint = &base->sphericalJoint;
+	b3BodyState* stateA = joint->indexA == B3_NULL_INDEX ? &dummyState : context->states + joint->indexA;
+	b3BodyState* stateB = joint->indexB == B3_NULL_INDEX ? &dummyState : context->states + joint->indexB;
+
+	// Added for Nebenan: the solve stage of a substep after the first takes what it needs of the positions of the bodies
+	// from the relax stage before it, which keeps it for the warm start and the solve of the next substep, see
+	// b3JointSim::hasPose
+	if ( useBias && base->hasPose )
+	{
+		b3SolveSphericalJointAt( base, context, useBias, stateA, stateB, &joint->pose );
+		return;
+	}
+
+	b3SphericalPose pose;
+	b3ComputeSphericalPose( &pose, base, stateA, stateB );
+	b3SolveSphericalJointAt( base, context, useBias, stateA, stateB, &pose );
+	if ( useBias == false )
+	{
+		joint->pose = pose;
+		base->hasPose = true;
 	}
 }
 

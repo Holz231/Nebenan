@@ -1415,7 +1415,12 @@ Farben mit einer Sperre je Stufe. Seit `ragdoll-7` rechnet ein Paket die Gelenke
 „Gelenke in den Paketen“ in [`extern/README.md`](extern/README.md). Mit 8 Threads kostet ein Pendel weit weg die Stadt
 unter Beschuss nichts mehr, 0,39 statt 0,46 ms je Box3D-Schritt, und mit 1, 10 und 50 Figuren ist der Schritt 14 bis 18
 % schneller. Mit 2 Threads ändert sich nichts, dort rechneten die Pakete auch ohne Gelenke kaum schneller als die
-Farben, siehe „Gelenke in den Paketen“ in [docs/Roadmap.md](docs/Roadmap.md).
+Farben, siehe „Gelenke in den Paketen“ in [docs/Roadmap.md](docs/Roadmap.md). Was jede Art Gelenk kostet, misst
+`nebenan_benchmark joints`: Mit einem Thread kostete ein Kugelgelenk der Figur mit Kegel, Verdrehung und Feder 1,14 µs
+je Schritt, ein Scharnier 1,20 µs und die Hilfe für das Becken 0,50 µs. Seit `ragdoll-9` rechnet ein Gelenk, was es von
+der Lage seiner Körper braucht, einmal je Teilschritt statt in jeder Stufe, bitgleich, und die Gelenke einer Figur
+kosten 20 % weniger, 12,8 statt 16,0 µs je Schritt. In der ruhigen Stadt mit 50 Figuren kostet der Box3D-Schritt mit 2
+Threads damit 0,55 statt 0,62 ms, siehe „Gelenke billiger“ in [docs/Roadmap.md](docs/Roadmap.md).
 
 **Eine Stadt größer als der Speicher.** Im Benchmark fliegt eine Kamera mit 30 m/s 900 m weit durch eine Stadt aus
 65 536 Häusern auf 3,6 × 3,1 km und 300 m zurück, Bruchstückgröße ×4. Am Stück bräuchte sie 24 GB. Geladen sind die
@@ -1682,6 +1687,7 @@ build/bin/nebenan_benchmark rates     # die Städte unter Beschuss mit 30, 60 un
 build/bin/nebenan_benchmark figures 2 # die Stadt mit 0, 1, 10 und 50 Figuren und mit einem Pendel, ruhig und unter Beschuss, mit 2 Threads
 build/bin/nebenan_benchmark figures 2 noself   # dasselbe ohne Kollisionen zwischen den Knochen einer Figur
 build/bin/nebenan_benchmark repeat 6 2   # die Stadt unter Beschuss sechsmal im selben Prozess, mit system am Ende so schnell, wie Windows will
+build/bin/nebenan_benchmark joints 1     # was jede Art Gelenk der Figuren im Löser kostet, mit einem Thread
 ```
 
 Der Benchmark hält mit `nbKeepFullSpeed` seine volle Geschwindigkeit, auch ohne Fenster im Vordergrund. Bis `ragdoll-7`

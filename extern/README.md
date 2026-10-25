@@ -566,9 +566,28 @@ ganze Cache-Zeilen, und liegen zueinander wie vorher. Gemessen kostet das nichts
 Beschuss ohne Gelenk mit 64 Einträgen wie mit 32 und wie mit `ragdoll-6`, siehe „Gelenke in den Paketen“ in
 [`docs/Roadmap.md`](../docs/Roadmap.md).
 
+**Die Lage der Gelenke einmal je Teilschritt.** Kugel-, Dreh- und Parallelgelenke rechneten in jeder Stufe neu aus, was
+sie von der Lage ihrer Körper brauchen: die Rahmen der Gelenke und ihre relative Rotation, daraus den Fehler der Feder
+und die Winkel der Grenzen, die beiden Achsen der Kollinearität mit ihrer effektiven Masse und für die Punktbedingung
+die Anker und ihre effektive Masse aus vier Produkten von 3×3-Matrizen. Die Körper bewegen sich aber nur in der Stufe,
+die ihre Lagen integriert. Das Entspannen eines Teilschritts sieht sie also dort, wo der Warmstart und das Lösen des
+nächsten sie sehen. Jetzt behält ein Gelenk aus dem Entspannen, was es von der Lage braucht (`b3SphericalPose`,
+`b3RevolutePose` und `b3ParallelPose` in `src/joint.h`), und Warmstart und Lösen der übrigen Teilschritte nehmen es von
+dort. Von acht Rechnungen der Lage je Schritt mit vier Teilschritten bleiben fünf, die erste rechnet das Lösen des
+ersten Teilschritts. `b3JointSim::hasPose` sagt, ob ein Gelenk eine Lage hat, das Vorbereiten löscht es. Von `b3Solve3`
+und `b3Solve2` bleibt, was nur von der Lage abhängt, die Kofaktoren und der Kehrwert der Determinante, die Produkte mit
+der rechten Seite rechnet jede Stufe (`b3ComputePointPose`, `b3SolvePointPose`, `b3ComputeAxesPose` und
+`b3SolveAxesPose`). Jede Zahl entsteht mit denselben Operationen in derselben Reihenfolge wie vorher, die Ergebnisse
+bleiben bitgleich. Das Entspannen und das erste Lösen rechnen die Lage in Registern und legen sie erst danach ab
+(`b3SolveSphericalJointAt`, `b3SolveRevoluteJointAt` und `b3SolveParallelJointAt`), in den Speicher gerechnet und gleich
+wieder gelesen kostete das Entspannen 5 % mehr. `b3SolveParallelJoint` bekommt dafür `useBias` wie die übrigen. Ein
+Gelenk ist dadurch 536 statt 448 Byte groß. Die Produkte der inversen Trägheit mit den Achsen der Grenzen hängen gar
+nicht von der Lage ab, einmal je Schritt im Vorbereiten gerechnet kosteten sie dort aber mehr, als sie im Lösen
+sparten, siehe „Gelenke billiger“ in [`docs/Roadmap.md`](../docs/Roadmap.md).
+
 Die erste, die zweite, die vierte bis achte, die zehnte, die dreizehnte bis einunddreißigste, die dreiunddreißigste bis
 fünfunddreißigste, die neununddreißigste bis dreiundvierzigste, die fünfundvierzigste bis siebenundvierzigste, die
-neunundvierzigste bis dreiundfünfzigste ändern an den Ergebnissen nichts. Die dritte und die neunte ändern sie in den
+neunundvierzigste bis vierundfünfzigste ändern an den Ergebnissen nichts. Die dritte und die neunte ändern sie in den
 letzten Bits, dafür hängen sie nicht mehr davon ab, in welcher Reihenfolge Formen in die Bäume kommen. Die elfte ändert
 sie, weil Kontakte zu anderen Zeitpunkten entstehen, die zwölfte, weil sie weniger Punkte bekommen, die
 zweiunddreißigste, weil die Kontakte eines Knotens gebündelt gegen Kopien rechnen statt nacheinander, die
@@ -586,7 +605,7 @@ Die Ergänzungen stehen in `CMakeLists.txt`, `src/CMakeLists.txt`, `include/box3
 `src/world_snapshot.c`, `src/recording.c`, `src/solver.h`, `src/solver.c`, `src/broad_phase.h`, `src/broad_phase.c`,
 `src/dynamic_tree.h`, `src/dynamic_tree.c`, `src/parallel_for.c`, `src/platform.h`, `src/scheduler.h`,
 `src/scheduler.c`, `src/timer.c`, `src/physics_world.h`, `src/physics_world.c`, `src/joint.h`, `src/joint.c`,
-`src/revolute_joint.c`, `src/spherical_joint.c`, `src/recording.h`, `src/recording_ops.inl` und
+`src/parallel_joint.c`, `src/revolute_joint.c`, `src/spherical_joint.c`, `src/recording.h`, `src/recording_ops.inl` und
 `src/recording_replay.c`, jeweils mit „Added for Nebenan“ markiert.
 `B3_HAS_UNIQUE_HULLS`, `B3_HAS_SHAPE_BATCH`, `B3_HAS_SHAPE_CONTACT_LISTS`, `B3_HAS_EXTERNAL_HULLS`,
 `B3_HAS_BODY_PREFETCH`, `B3_HAS_STEP_GUARD`, `B3_HAS_PREVIOUS_TRANSFORM`, `B3_HAS_STATIC_OVERLAP` und

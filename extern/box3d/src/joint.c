@@ -1493,6 +1493,9 @@ void b3PrepareJoint( b3JointSim* joint, b3StepContext* context )
 	float hertz = b3MinFloat( joint->constraintHertz, 0.25f * context->inv_h );
 	joint->constraintSoftness = b3MakeSoft( hertz, joint->constraintDampingRatio, context->h );
 
+	// Added for Nebenan: the first substep computes its own pose, see b3JointSim::hasPose
+	joint->hasPose = false;
+
 	switch ( joint->type )
 	{
 		case b3_parallelJoint:
@@ -1586,7 +1589,7 @@ void b3SolveJoint( b3JointSim* joint, b3StepContext* context, bool useBias )
 	switch ( joint->type )
 	{
 		case b3_parallelJoint:
-			b3SolveParallelJoint( joint, context );
+			b3SolveParallelJoint( joint, context, useBias );
 			break;
 
 		case b3_distanceJoint:

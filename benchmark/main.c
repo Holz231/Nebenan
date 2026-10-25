@@ -8,6 +8,7 @@
 //        collisions between the bones of a figure
 //        nebenan_benchmark repeat [count] [workerCount] [system], the town under fire count times in the same process,
 //        system leaves its speed to the system, see nbKeepFullSpeed
+//        nebenan_benchmark joints [workerCount], only what each kind of joint of a figure costs in the solver
 
 #include "fracture.h"
 #include "hull_builder.h"
@@ -875,6 +876,128 @@ static void BenchmarkRepeat( int count, int workerCount )
 	}
 }
 
+// A rig of the joint benchmark: the humanoid, a chain of bones joined by one kind of joint, or a single bone
+typedef struct JointRig
+{
+	const char* name;
+	bool humanoid;
+	int boneCount;
+	nbJointType joint;
+	bool springs;
+} JointRig;
+
+// What the joints of one rig cost the solver: 64 articulations on the ground of a world without sleep, 2 s to settle and
+// 8 s measured, the solver time of the joints in a timed step, see nbProfile::solverJoints. Chains have as many bones as
+// the humanoid and lie along x, 30 cm a bone, with the cone of a ball joint along the bone and the axis of a hinge across
+// it, and the limits of the default bone. Without springs the joints are passive, the upright hold stays.
+static float RunJointRig( int workerCount, const JointRig* setup, int* jointCount )
+{
+	Scene scene = CreateScene( workerCount );
+	b3World_EnableSleeping( scene.physicsWorld, false );
+
+	nbBoneDef bones[nb_humanoidBoneCount];
+	float rootHeight = 0.06f;
+	if ( setup->humanoid )
+	{
+		rootHeight = nbMakeHumanoidBones( 1.8f, 75.0f, bones, nb_humanoidBoneCount );
+	}
+	else
+	{
+		b3Quat zToX = b3MakeQuatFromAxisAngle( b3Vec3_axisY, 0.5f * B3_PI );
+		for ( int i = 0; i < setup->boneCount; ++i )
+		{
+			nbBoneDef def = nbDefaultBoneDef();
+			def.parent = i - 1;
+			def.restTransform.p = i == 0 ? b3Vec3_zero : (b3Vec3){ 0.3f, 0.0f, 0.0f };
+			def.start = (b3Vec3){ 0.05f, 0.0f, 0.0f };
+			def.end = (b3Vec3){ 0.25f, 0.0f, 0.0f };
+			def.mass = 3.0f;
+			def.joint = setup->joint;
+			def.jointFrame = setup->joint == nb_ballJoint ? zToX : b3Quat_identity;
+			bones[i] = def;
+		}
+	}
+
+	nbRigDef rig = nbDefaultRigDef();
+	rig.bones = bones;
+	rig.boneCount = setup->boneCount;
+	nbMotorProfile motors = nbDefaultMotorProfile();
+	motors.stiffness = setup->springs ? motors.stiffness : 0.0f;
+	for ( int k = 0; k < 64; ++k )
+	{
+		b3Vec3 position = { 6.0f * ( (float)( k % 8 ) - 3.5f ), rootHeight, 3.0f * ( (float)( k / 8 ) - 3.5f ) };
+		nbCreateArticulation( scene.world, &rig, b3ToPos( position ), b3Quat_identity, &motors );
+	}
+	*jointCount = b3World_GetCounters( scene.physicsWorld ).jointCount;
+
+	float timeStep = 1.0f / 60.0f;
+	int subStepCount = nbGetSubStepCount( 60.0f );
+	for ( int frame = 0; frame < 600; ++frame )
+	{
+		if ( frame == 120 )
+		{
+			nbWorld_ResetProfile( scene.world );
+		}
+		b3World_Step( scene.physicsWorld, timeStep, subStepCount );
+		nbWorld_Update( scene.world, timeStep );
+	}
+
+	float joints = nbWorld_GetProfile( scene.world ).solverJoints;
+	DestroyScene( &scene );
+	return joints;
+}
+
+// What each kind of joint of a figure costs in the solver, see RunJointRig: the humanoid without balance and clip, the
+// upright hold alone, one bone per articulation, and chains of 15 bones joined by ball joints or hinges, with springs and
+// without, or welds. Every articulation holds its root upright, see nbMotorProfile::uprightTorque, so a joint of a chain
+// costs a fourteenth of its articulation without the upright hold.
+static void BenchmarkJoints( int workerCount )
+{
+	enum
+	{
+		rigCount = 7
+	};
+
+	static const JointRig rigs[rigCount] = {
+		{ "humanoid, 10 balls, 4 hinges, upright", true, nb_humanoidBoneCount, nb_ballJoint, true },
+		{ "upright hold alone", false, 1, nb_ballJoint, true },
+		{ "ball joints, cone, twist, spring", false, nb_humanoidBoneCount, nb_ballJoint, true },
+		{ "ball joints, cone, twist", false, nb_humanoidBoneCount, nb_ballJoint, false },
+		{ "hinges, limit, spring", false, nb_humanoidBoneCount, nb_hingeJoint, true },
+		{ "hinges, limit", false, nb_humanoidBoneCount, nb_hingeJoint, false },
+		{ "welds", false, nb_humanoidBoneCount, nb_fixedJoint, false },
+	};
+
+	printf( "\nJoints in the solver (64 articulations of a rig on the ground, no sleep, %d workers, solver CPU time of the "
+			"joints in the timed steps)\n",
+			workerCount );
+	printf( "  rig                                   | joints |    ms | us per step: articulation  joint | a joint of the "
+			"chain\n" );
+	float perArticulation[rigCount];
+	for ( int r = 0; r < rigCount; ++r )
+	{
+		int jointCount = 0;
+		float ms = RunJointRig( workerCount, rigs + r, &jointCount );
+		perArticulation[r] = 1000.0f * ms / 64.0f;
+		float upright = perArticulation[1];
+		printf( "  %-37s | %6d | %5.3f |              %11.2f %6.3f |", rigs[r].name, jointCount, ms, perArticulation[r],
+				1000.0f * ms / (float)b3MaxInt( jointCount, 1 ) );
+		if ( r >= 2 )
+		{
+			printf( " %8.3f", ( perArticulation[r] - upright ) / (float)( rigs[r].boneCount - 1 ) );
+		}
+		printf( "\n" );
+		fflush( stdout );
+	}
+
+	// The humanoid against its parts: 10 ball joints and 4 hinges with springs and the upright hold
+	float ball = ( perArticulation[2] - perArticulation[1] ) / (float)( nb_humanoidBoneCount - 1 );
+	float hinge = ( perArticulation[4] - perArticulation[1] ) / (float)( nb_humanoidBoneCount - 1 );
+	printf( "  the humanoid costs %.2f us per step, its parts as in the chains %.2f us: 10 x %.3f ball, 4 x %.3f hinge, "
+			"%.3f upright\n",
+			perArticulation[0], 10.0f * ball + 4.0f * hinge + perArticulation[1], ball, hinge, perArticulation[1] );
+}
+
 // The towns of the scaling and the step rates: 16 houses with a grenade every 1/12 s at fragment scale 1 and 2, and 64
 // houses with four every 1/60 s at fragment scale 4
 typedef struct Town
@@ -1239,6 +1362,13 @@ int main( int argc, char** argv )
 		return 0;
 	}
 
+	if ( argc > 1 && strcmp( argv[1], "joints" ) == 0 )
+	{
+		int workers = argc > 2 ? atoi( argv[2] ) : 1;
+		BenchmarkJoints( workers < 1 ? 1 : workers );
+		return 0;
+	}
+
 	if ( argc > 1 && strcmp( argv[1], "figures" ) == 0 )
 	{
 		int workers = argc > 2 ? atoi( argv[2] ) : 1;
@@ -1278,5 +1408,8 @@ int main( int argc, char** argv )
 
 	// Stage 6 of 27.14 of the game roadmap: figures in a town that is quiet and one under fire
 	BenchmarkFigures( workerCount, true );
+
+	// What each kind of joint of a figure costs
+	BenchmarkJoints( workerCount );
 	return 0;
 }
