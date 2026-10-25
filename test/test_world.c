@@ -865,6 +865,86 @@ static int ShapeContactListTest( void )
 	return 0;
 }
 
+// Box3D reads the contact lists of several bodies side by side and gives each body the touching contacts that
+// b3Body_GetContactData gives, in the same order, though most entries of the lists of a pile do not touch
+static int ContactDataOfBodiesTest( void )
+{
+#if defined( B3_HAS_CONTACT_DATA_OF_BODIES )
+	int64_t baseBytes = b3GetByteCount();
+	b3WorldDef worldDef = b3DefaultWorldDef();
+	b3WorldId worldId = b3CreateWorld( &worldDef );
+	b3BodyDef bodyDef = b3DefaultBodyDef();
+	b3BodyId bodies[B3_CONTACT_DATA_BODIES];
+	bodies[0] = b3CreateBody( worldId, &bodyDef );
+	b3ShapeDef shapeDef = b3DefaultShapeDef();
+	b3BoxHull floor = b3MakeBoxHull( 5.0f, 0.5f, 5.0f );
+	b3CreateHullShape( bodies[0], &shapeDef, &floor.base );
+
+	// Two layers of boxes 2 cm apart: closer than 3 cm Box3D keeps a contact, from 1 cm it does not touch
+	b3BoxHull box = b3MakeBoxHull( 0.25f, 0.25f, 0.25f );
+	int bodyCount = 1;
+	for ( int layer = 0; layer < 2; ++layer )
+	{
+		for ( int i = 0; i < 4; ++i )
+		{
+			for ( int j = 0; j < 4; ++j )
+			{
+				bodyDef = b3DefaultBodyDef();
+				bodyDef.type = b3_dynamicBody;
+				bodyDef.position = (b3Pos){ 0.52f * (float)i, 0.75f + 0.5f * (float)layer, 0.52f * (float)j };
+				bodies[bodyCount] = b3CreateBody( worldId, &bodyDef );
+				b3CreateHullShape( bodies[bodyCount], &shapeDef, &box.base );
+				bodyCount += 1;
+			}
+		}
+	}
+
+	for ( int i = 0; i < 60; ++i )
+	{
+		b3World_Step( worldId, 1.0f / 60.0f, 4 );
+	}
+
+	int offsets[B3_CONTACT_DATA_BODIES];
+	int counts[B3_CONTACT_DATA_BODIES];
+	int room = 0;
+	for ( int k = 0; k < bodyCount; ++k )
+	{
+		offsets[k] = room;
+		room += b3Body_GetContactCapacity( bodies[k] );
+	}
+
+	b3ContactData* walked = malloc( sizeof( b3ContactData ) * (size_t)room );
+	b3ContactData* single = malloc( sizeof( b3ContactData ) * (size_t)room );
+	b3Body_GetContactDataOfBodies( bodies, bodyCount, walked, offsets, counts );
+	int touching = 0;
+	for ( int k = 0; k < bodyCount; ++k )
+	{
+		int count = b3Body_GetContactData( bodies[k], single, b3Body_GetContactCapacity( bodies[k] ) );
+		ENSURE( counts[k] == count );
+		for ( int i = 0; i < count; ++i )
+		{
+			const b3ContactData* contact = walked + offsets[k] + i;
+			ENSURE( B3_ID_EQUALS( contact->contactId, single[i].contactId ) );
+			ENSURE( B3_ID_EQUALS( contact->shapeIdA, single[i].shapeIdA ) );
+			ENSURE( B3_ID_EQUALS( contact->shapeIdB, single[i].shapeIdB ) );
+			ENSURE( contact->manifolds == single[i].manifolds && contact->manifoldCount == single[i].manifoldCount );
+		}
+		touching += count;
+	}
+	printf( "  touching contacts: %d of %d entries\n", touching, room );
+	ENSURE( touching > 0 && 2 * touching < room );
+
+	// Without bodies there is nothing to walk
+	b3Body_GetContactDataOfBodies( bodies, 0, walked, offsets, counts );
+
+	free( walked );
+	free( single );
+	b3DestroyWorld( worldId );
+	ENSURE( b3GetByteCount() == baseBytes );
+#endif
+	return 0;
+}
+
 // A sphere closer to another sphere than the speculative distance gets a contact point before they touch, and so does a
 // sphere over a capsule, as in upstream Box3D since #187. A step of zero time runs the collision but not the solver.
 static int SpeculativeSphereTest( void )
@@ -5946,6 +6026,7 @@ int WorldTest( void )
 	RUN_TEST( ExternalHullTest );
 	RUN_TEST( ShapeBatchTest );
 	RUN_TEST( ShapeContactListTest );
+	RUN_TEST( ContactDataOfBodiesTest );
 	RUN_TEST( SpeculativeSphereTest );
 	RUN_TEST( SeparatedHullsTest );
 	RUN_TEST( SharedStaticBodyTest );

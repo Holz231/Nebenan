@@ -823,6 +823,20 @@ B3_API int b3Body_GetContactCapacity( b3BodyId bodyId );
 /// Get the touching contact data for a body
 B3_API int b3Body_GetContactData( b3BodyId bodyId, b3ContactData* contactData, int capacity );
 
+/// The most bodies b3Body_GetContactDataOfBodies takes at once. Added for Nebenan.
+#define B3_CONTACT_DATA_BODIES 64
+
+/// Get the touching contact data for several bodies of one world, for each body the same as b3Body_GetContactData in the
+/// same order. The walks through the contact lists of the bodies run side by side, so the waits for the memory of one
+/// overlap those of the others, and most entries of a list are contacts that do not touch. Body k writes from
+/// contactData + offsets[k] on, where it needs the room of b3Body_GetContactCapacity, and counts[k] gets its count. At most
+/// B3_CONTACT_DATA_BODIES bodies. Added for Nebenan.
+B3_API void b3Body_GetContactDataOfBodies( const b3BodyId* bodyIds, int bodyCount, b3ContactData* contactData, const int* offsets,
+										   int* counts );
+
+/// This Box3D has b3Body_GetContactDataOfBodies
+#define B3_HAS_CONTACT_DATA_OF_BODIES 1
+
 /// Get the current world AABB that contains all the attached shapes. Note that this may not encompass the body origin.
 /// If there are no shapes attached then the returned AABB is empty and centered on the body origin.
 B3_API b3AABB b3Body_ComputeAABB( b3BodyId bodyId );

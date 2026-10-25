@@ -5205,6 +5205,38 @@ static void nbReleaseHeldRubble( nbWorld* world, b3Vec3 up )
 	}
 }
 
+// A touching contact of a piece with the body on its other side. The looks at what carries a piece read its contacts in
+// several passes, and each looked up the other side in Box3D again, see nbDescribeTouches.
+typedef struct nbTouch
+{
+	b3ContactData data;
+
+	// The piece is body A of the contact: its anchors are anchorA, and the normal points away from it
+	bool isA;
+
+	b3ShapeId otherShapeId;
+	b3BodyId otherBodyId;
+	b3BodyType otherType;
+
+	// The actor of the other body, see nbFindActorFromBody
+	int otherActor;
+} nbTouch;
+
+// The touching contacts of a body as touches, in their order
+static void nbDescribeTouches( const nbWorld* world, b3BodyId bodyId, const b3ContactData* contacts, int count, nbTouch* touches )
+{
+	for ( int c = 0; c < count; ++c )
+	{
+		nbTouch* touch = touches + c;
+		touch->data = contacts[c];
+		touch->isA = B3_ID_EQUALS( b3Shape_GetBody( contacts[c].shapeIdA ), bodyId );
+		touch->otherShapeId = touch->isA ? contacts[c].shapeIdB : contacts[c].shapeIdA;
+		touch->otherBodyId = b3Shape_GetBody( touch->otherShapeId );
+		touch->otherType = b3Body_GetType( touch->otherBodyId );
+		touch->otherActor = nbFindActorFromBody( world, touch->otherBodyId );
+	}
+}
+
 // A contact carries a body when one of its manifolds touches with the normal pointing down out of the body
 static bool nbCarries( const b3ContactData* contact, bool isA, b3Vec3 up )
 {
@@ -5307,31 +5339,30 @@ static bool nbTouchPoint( const b3ContactData* contact, bool isA, b3Vec3 center,
 }
 
 // A larger moving body that presses into a piece deeper than NB_SQUEEZE_DEPTH, a null id if there is none
-static b3BodyId nbFindSqueezer( const nbWorld* world, const nbActor* actor, const b3ContactData* contacts, int contactCount )
+static b3BodyId nbFindSqueezer( const nbWorld* world, const nbActor* actor, const nbTouch* touches, int touchCount )
 {
-	for ( int c = 0; c < contactCount; ++c )
+	for ( int c = 0; c < touchCount; ++c )
 	{
-		bool isA = B3_ID_EQUALS( b3Shape_GetBody( contacts[c].shapeIdA ), actor->bodyId );
-		b3BodyId otherBodyId = b3Shape_GetBody( isA ? contacts[c].shapeIdB : contacts[c].shapeIdA );
+		const nbTouch* touch = touches + c;
 		float depth = 0.0f;
-		for ( int m = 0; m < contacts[c].manifoldCount; ++m )
+		for ( int m = 0; m < touch->data.manifoldCount; ++m )
 		{
-			const b3Manifold* manifold = contacts[c].manifolds + m;
+			const b3Manifold* manifold = touch->data.manifolds + m;
 			for ( int p = 0; p < manifold->pointCount; ++p )
 			{
 				depth = b3MaxFloat( depth, -manifold->points[p].separation );
 			}
 		}
 
-		if ( depth <= NB_SQUEEZE_DEPTH || b3Body_GetType( otherBodyId ) != b3_dynamicBody )
+		if ( depth <= NB_SQUEEZE_DEPTH || touch->otherType != b3_dynamicBody )
 		{
 			continue;
 		}
 
-		int other = nbFindActorFromBody( world, otherBodyId );
+		int other = touch->otherActor;
 		if ( other == NB_NULL_INDEX || world->actors.data[other].volume > actor->volume )
 		{
-			return otherBodyId;
+			return touch->otherBodyId;
 		}
 	}
 	return b3_nullBodyId;
@@ -5519,7 +5550,7 @@ typedef struct nbSupport
 // carries nothing either, however it touches. Smaller pieces lie on whatever they touch. The resting list has room for a
 // body per contact. The search only reads the world, so the workers look at many pieces at once, see nbSettleDebris. The
 // moving bodies the searches through rubble read go to the log if there is one.
-static void nbFindSupport( const nbWorld* world, int actorIndex, const b3ContactData* contacts, int contactCount, b3Vec3 up,
+static void nbFindSupport( const nbWorld* world, int actorIndex, const nbTouch* touches, int touchCount, b3Vec3 up,
 						   const nbSupportFan* baseFan, int* resting, nbSupport* support, int* unsupported, int* unsupportedCount,
 						   int unsupportedCapacity, nbMoverLog* log )
 {
@@ -5538,18 +5569,17 @@ static void nbFindSupport( const nbWorld* world, int actorIndex, const b3Contact
 
 	// Moving bodies that rest on a large piece carry nothing, sorted to look them up
 	int restingCount = 0;
-	for ( int c = 0; large && c < contactCount; ++c )
+	for ( int c = 0; large && c < touchCount; ++c )
 	{
-		bool isA = B3_ID_EQUALS( b3Shape_GetBody( contacts[c].shapeIdA ), actor->bodyId );
-		int otherIndex = nbFindActorFromBody( world, b3Shape_GetBody( isA ? contacts[c].shapeIdB : contacts[c].shapeIdA ) );
-		if ( otherIndex != NB_NULL_INDEX && nbCarries( contacts + c, isA == false, up ) )
+		const nbTouch* touch = touches + c;
+		if ( touch->otherActor != NB_NULL_INDEX && nbCarries( &touch->data, touch->isA == false, up ) )
 		{
-			resting[restingCount++] = otherIndex;
+			resting[restingCount++] = touch->otherActor;
 		}
 	}
 	qsort( resting, (size_t)restingCount, sizeof( int ), nbCompareInts );
 
-	for ( int c = 0; c < contactCount; ++c )
+	for ( int c = 0; c < touchCount; ++c )
 	{
 		// A small piece is done once it lies on something and knows enough of what
 		if ( large == false && support->grounded && support->carrierCount == NB_MAX_CARRIERS )
@@ -5557,18 +5587,17 @@ static void nbFindSupport( const nbWorld* world, int actorIndex, const b3Contact
 			break;
 		}
 
-		bool isA = B3_ID_EQUALS( b3Shape_GetBody( contacts[c].shapeIdA ), actor->bodyId );
-		bool carries = nbCarries( contacts + c, isA, up );
+		const nbTouch* touch = touches + c;
+		bool isA = touch->isA;
+		bool carries = nbCarries( &touch->data, isA, up );
 		if ( carries == false && large == false )
 		{
 			continue;
 		}
 
-		b3ShapeId otherShapeId = isA ? contacts[c].shapeIdB : contacts[c].shapeIdA;
-		b3BodyId otherBodyId = b3Shape_GetBody( otherShapeId );
-		int chunkIndex = nbFindChunkFromShape( world, otherShapeId );
+		int chunkIndex = nbFindChunkFromShape( world, touch->otherShapeId );
 		int otherIndex = chunkIndex != NB_NULL_INDEX ? world->chunks.data[chunkIndex].actorIndex : NB_NULL_INDEX;
-		if ( b3Body_GetType( otherBodyId ) == b3_staticBody )
+		if ( touch->otherType == b3_staticBody )
 		{
 			if ( large && otherIndex != NB_NULL_INDEX && world->actors.data[otherIndex].isRubble &&
 				 nbIsCarrierSupported( world, &answers, otherIndex, actorIndex, resting, restingCount, log ) == false )
@@ -5601,7 +5630,7 @@ static void nbFindSupport( const nbWorld* world, int actorIndex, const b3Contact
 
 				// It is still what the piece lies on, the search decides what holds
 				b3Vec3 point;
-				if ( carries && nbTouchPoint( contacts + c, isA, center, NB_TOUCH_GAP, &point ) )
+				if ( carries && nbTouchPoint( &touch->data, isA, center, NB_TOUCH_GAP, &point ) )
 				{
 					nbAddCarrier( world, support->carriers, &support->carrierCount, chunkIndex, point );
 				}
@@ -5611,7 +5640,7 @@ static void nbFindSupport( const nbWorld* world, int actorIndex, const b3Contact
 			support->grounded = support->grounded || carries;
 			if ( large )
 			{
-				nbAddSupportPoints( &fixedFan, contacts + c, isA );
+				nbAddSupportPoints( &fixedFan, &touch->data, isA );
 			}
 		}
 		else if ( otherIndex == NB_NULL_INDEX )
@@ -5625,11 +5654,11 @@ static void nbFindSupport( const nbWorld* world, int actorIndex, const b3Contact
 
 		if ( large )
 		{
-			nbAddSupportPoints( &fan, contacts + c, isA );
+			nbAddSupportPoints( &fan, &touch->data, isA );
 		}
 
 		b3Vec3 point;
-		if ( carries && nbTouchPoint( contacts + c, isA, center, NB_TOUCH_GAP, &point ) )
+		if ( carries && nbTouchPoint( &touch->data, isA, center, NB_TOUCH_GAP, &point ) )
 		{
 			nbAddCarrier( world, support->carriers, &support->carrierCount, chunkIndex, point );
 			support->lying = true;
@@ -5639,16 +5668,15 @@ static void nbFindSupport( const nbWorld* world, int actorIndex, const b3Contact
 	// A piece that lies on nothing but is wedged in, or about to touch something, remembers what it is closest to, apart
 	// from moving bodies that rest on it
 	bool wedged = support->carrierCount == 0;
-	for ( int c = 0; wedged && c < contactCount && support->carrierCount < NB_MAX_CARRIERS; ++c )
+	for ( int c = 0; wedged && c < touchCount && support->carrierCount < NB_MAX_CARRIERS; ++c )
 	{
-		bool isA = B3_ID_EQUALS( b3Shape_GetBody( contacts[c].shapeIdA ), actor->bodyId );
-		b3ShapeId otherShapeId = isA ? contacts[c].shapeIdB : contacts[c].shapeIdA;
-		int chunkIndex = nbFindChunkFromShape( world, otherShapeId );
-		bool fixed = b3Body_GetType( b3Shape_GetBody( otherShapeId ) ) == b3_staticBody;
+		const nbTouch* touch = touches + c;
+		int chunkIndex = nbFindChunkFromShape( world, touch->otherShapeId );
+		bool fixed = touch->otherType == b3_staticBody;
 		b3Vec3 point;
 		if ( ( fixed || ( chunkIndex != NB_NULL_INDEX &&
 						  nbHoldsActor( resting, restingCount, world->chunks.data[chunkIndex].actorIndex ) == false ) ) &&
-			 nbTouchPoint( contacts + c, isA, center, FLT_MAX, &point ) )
+			 nbTouchPoint( &touch->data, touch->isA, center, FLT_MAX, &point ) )
 		{
 			nbAddCarrier( world, support->carriers, &support->carrierCount, chunkIndex, point );
 		}
@@ -5775,8 +5803,10 @@ typedef struct nbSettleTask
 	int quietCount;
 } nbSettleTask;
 
-// What carries a quiet piece. It only reads the world and writes the record.
-static void nbInspectQuietPiece( const nbSettleTask* task, nbQuietPiece* piece, int actorIndex )
+// What carries a quiet piece, from its touching contacts and the room for all its contacts. It only reads the world and
+// writes the record.
+static void nbInspectQuietPiece( const nbSettleTask* task, nbQuietPiece* piece, int actorIndex, int capacity,
+								 const nbTouch* touches, int touchCount )
 {
 	const nbWorld* world = task->world;
 	const nbActor* actor = world->actors.data + actorIndex;
@@ -5789,19 +5819,16 @@ static void nbInspectQuietPiece( const nbSettleTask* task, nbQuietPiece* piece, 
 	piece->belowCount = 0;
 	piece->unsupported = NULL;
 	piece->unsupportedCount = 0;
-	int capacity = b3Body_GetContactCapacity( actor->bodyId );
 	if ( capacity == 0 )
 	{
 		return;
 	}
 
-	b3ContactData* contacts = nbArena_AllocArray( task->arena, b3ContactData, capacity );
-	int contactCount = b3Body_GetContactData( actor->bodyId, contacts, capacity );
-	int* room = nbArena_AllocArray( task->arena, int, 2 * contactCount );
+	int* room = nbArena_AllocArray( task->arena, int, 2 * touchCount );
 	int unsupported[NB_MAX_RELEASES];
 	int unsupportedCount = 0;
 	nbSupport support;
-	nbFindSupport( world, actorIndex, contacts, contactCount, task->up, task->fan, room, &support, unsupported, &unsupportedCount,
+	nbFindSupport( world, actorIndex, touches, touchCount, task->up, task->fan, room, &support, unsupported, &unsupportedCount,
 				   NB_MAX_RELEASES, NULL );
 	piece->carrierCount = support.carrierCount;
 	for ( int k = 0; k < support.carrierCount; ++k )
@@ -5824,23 +5851,21 @@ static void nbInspectQuietPiece( const nbSettleTask* task, nbQuietPiece* piece, 
 		piece->unsupportedCount = unsupportedCount;
 	}
 
-	piece->squeezer = nbFindSqueezer( world, actor, contacts, contactCount );
+	piece->squeezer = nbFindSqueezer( world, actor, touches, touchCount );
 
 	// The moving pieces that carry this one, the room after the resting bodies of nbFindSupport
-	piece->below = room + contactCount;
-	for ( int c = 0; c < contactCount; ++c )
+	piece->below = room + touchCount;
+	for ( int c = 0; c < touchCount; ++c )
 	{
-		bool isA = B3_ID_EQUALS( b3Shape_GetBody( contacts[c].shapeIdA ), actor->bodyId );
-		b3BodyId otherBodyId = b3Shape_GetBody( isA ? contacts[c].shapeIdB : contacts[c].shapeIdA );
-		if ( b3Body_GetType( otherBodyId ) != b3_dynamicBody || nbCarries( contacts + c, isA, task->up ) == false )
+		const nbTouch* touch = touches + c;
+		if ( touch->otherType != b3_dynamicBody || nbCarries( &touch->data, touch->isA, task->up ) == false )
 		{
 			continue;
 		}
 
-		int other = nbFindActorFromBody( world, otherBodyId );
-		if ( other != NB_NULL_INDEX )
+		if ( touch->otherActor != NB_NULL_INDEX )
 		{
-			piece->below[piece->belowCount++] = other;
+			piece->below[piece->belowCount++] = touch->otherActor;
 		}
 	}
 
@@ -5916,9 +5941,39 @@ static void nbCheckSettleBlock( nbSettleTask* task, int blockIndex )
 	block->count = quietCount;
 	block->pieces = quietCount > 0 ? nbArena_AllocArray( task->arena, nbQuietPiece, quietCount ) : NULL;
 	uint64_t supportTicks = task->timed ? b3GetTicks() : 0;
+
+	// The touching contacts of the quiet pieces. Most entries of their lists in Box3D are contacts that do not touch, each in
+	// another place in memory, and walking a list cost most of the look at a small piece. Box3D walks the lists of the
+	// block side by side, so the waits overlap.
+	b3BodyId bodyIds[NB_SETTLE_BLOCK];
+	int capacities[NB_SETTLE_BLOCK];
+	int offsets[NB_SETTLE_BLOCK];
+	int counts[NB_SETTLE_BLOCK];
+	int room = 0;
 	for ( int k = 0; k < quietCount; ++k )
 	{
-		nbInspectQuietPiece( task, block->pieces + k, quiet[k] );
+		bodyIds[k] = world->actors.data[quiet[k]].bodyId;
+		capacities[k] = b3Body_GetContactCapacity( bodyIds[k] );
+		offsets[k] = room;
+		room += capacities[k];
+	}
+
+	b3ContactData* contacts = nbArena_AllocArray( task->arena, b3ContactData, room );
+#if defined( B3_HAS_CONTACT_DATA_OF_BODIES )
+	_Static_assert( NB_SETTLE_BLOCK <= B3_CONTACT_DATA_BODIES, "Box3D walks the lists of a block at once" );
+	b3Body_GetContactDataOfBodies( bodyIds, quietCount, contacts, offsets, counts );
+#else
+	for ( int k = 0; k < quietCount; ++k )
+	{
+		counts[k] = b3Body_GetContactData( bodyIds[k], contacts + offsets[k], capacities[k] );
+	}
+#endif
+
+	for ( int k = 0; k < quietCount; ++k )
+	{
+		nbTouch* touches = nbArena_AllocArray( task->arena, nbTouch, counts[k] );
+		nbDescribeTouches( world, bodyIds[k], contacts + offsets[k], counts[k], touches );
+		nbInspectQuietPiece( task, block->pieces + k, quiet[k], capacities[k], touches, counts[k] );
 	}
 
 	if ( task->timed )
@@ -6332,13 +6387,11 @@ static void nbSettleDebris( nbWorld* world, b3Vec3 up, float timeStep )
 }
 
 // Whether one of the contacts of a body is with a static body
-static bool nbTouchesStatic( const b3ContactData* contacts, int contactCount, b3BodyId bodyId )
+static bool nbTouchesStatic( const nbTouch* touches, int touchCount )
 {
-	for ( int c = 0; c < contactCount; ++c )
+	for ( int c = 0; c < touchCount; ++c )
 	{
-		bool isA = B3_ID_EQUALS( b3Shape_GetBody( contacts[c].shapeIdA ), bodyId );
-		b3BodyId otherBodyId = b3Shape_GetBody( isA ? contacts[c].shapeIdB : contacts[c].shapeIdA );
-		if ( b3Body_GetType( otherBodyId ) == b3_staticBody )
+		if ( touches[c].otherType == b3_staticBody )
 		{
 			return true;
 		}
@@ -6471,13 +6524,13 @@ static void nbLookAtDebris( const nbWorld* world, nbArena* arena, int actorIndex
 	int capacity = b3Body_GetContactCapacity( actor->bodyId );
 	b3ContactData* contacts = nbArena_AllocArray( arena, b3ContactData, capacity );
 	int contactCount = b3Body_GetContactData( actor->bodyId, contacts, capacity );
+	nbTouch* touches = nbArena_AllocArray( arena, nbTouch, contactCount );
+	nbDescribeTouches( world, actor->bodyId, contacts, contactCount, touches );
 	nbMoverLog log = { nbArena_AllocArray( arena, int, contactCount + NB_LOOK_CARRIERS ), 0, contactCount + NB_LOOK_CARRIERS,
 					   false };
 	for ( int c = 0; c < contactCount; ++c )
 	{
-		bool isA = B3_ID_EQUALS( b3Shape_GetBody( contacts[c].shapeIdA ), actor->bodyId );
-		b3BodyId otherBodyId = b3Shape_GetBody( isA ? contacts[c].shapeIdB : contacts[c].shapeIdA );
-		int other = b3Body_GetType( otherBodyId ) == b3_dynamicBody ? nbFindActorFromBody( world, otherBodyId ) : NB_NULL_INDEX;
+		int other = touches[c].otherType == b3_dynamicBody ? touches[c].otherActor : NB_NULL_INDEX;
 		if ( other != NB_NULL_INDEX )
 		{
 			nbLogMover( &log, other );
@@ -6485,7 +6538,7 @@ static void nbLookAtDebris( const nbWorld* world, nbArena* arena, int actorIndex
 	}
 
 	look->support = ( nbSupport ){ 0 };
-	look->squeezed = B3_IS_NULL( nbFindSqueezer( world, actor, contacts, contactCount ) ) == false;
+	look->squeezed = B3_IS_NULL( nbFindSqueezer( world, actor, touches, contactCount ) ) == false;
 	look->touchesStatic = false;
 	look->unsupported = NULL;
 	look->unsupportedCount = 0;
@@ -6495,9 +6548,9 @@ static void nbLookAtDebris( const nbWorld* world, nbArena* arena, int actorIndex
 		int unsupported[NB_MAX_RELEASES + 1];
 		int unsupportedCount = 0;
 		int* resting = nbArena_AllocArray( arena, int, contactCount );
-		look->touchesStatic = nbTouchesStatic( contacts, contactCount, actor->bodyId );
-		nbFindSupport( world, actorIndex, contacts, contactCount, up, fan, resting, &look->support, unsupported,
-					   &unsupportedCount, NB_MAX_RELEASES + 1, &log );
+		look->touchesStatic = nbTouchesStatic( touches, contactCount );
+		nbFindSupport( world, actorIndex, touches, contactCount, up, fan, resting, &look->support, unsupported, &unsupportedCount,
+					   NB_MAX_RELEASES + 1, &log );
 		if ( unsupportedCount > 0 )
 		{
 			look->unsupported = nbArena_AllocArray( arena, int, unsupportedCount );
@@ -6826,7 +6879,9 @@ static void nbEnforceDebrisBudget( nbWorld* world, b3Vec3 up )
 			{
 				b3ContactData* contacts = nbArena_AllocArray( &world->arena, b3ContactData, capacity );
 				int contactCount = b3Body_GetContactData( actor->bodyId, contacts, capacity );
-				if ( B3_IS_NULL( nbFindSqueezer( world, actor, contacts, contactCount ) ) == false )
+				nbTouch* touches = nbArena_AllocArray( &world->arena, nbTouch, contactCount );
+				nbDescribeTouches( world, actor->bodyId, contacts, contactCount, touches );
+				if ( B3_IS_NULL( nbFindSqueezer( world, actor, touches, contactCount ) ) == false )
 				{
 					continue;
 				}
@@ -6834,14 +6889,14 @@ static void nbEnforceDebrisBudget( nbWorld* world, b3Vec3 up )
 				// On the first pass only what lies on something fixed freezes, and only a static body is. Without a
 				// contact to one the search would find nothing and keep no rubble to bring back: half the pieces the
 				// budget looks at in a burst lie on moving ones.
-				if ( pass == 0 && nbTouchesStatic( contacts, contactCount, actor->bodyId ) == false )
+				if ( pass == 0 && nbTouchesStatic( touches, contactCount ) == false )
 				{
 					continue;
 				}
 
 				int firstUnsupported = unsupportedCount;
 				int* resting = nbArena_AllocArray( &world->arena, int, contactCount );
-				nbFindSupport( world, actorIndex, contacts, contactCount, up, &fan, resting, &support, unsupported,
+				nbFindSupport( world, actorIndex, touches, contactCount, up, &fan, resting, &support, unsupported,
 							   &unsupportedCount, NB_MAX_RELEASES, NULL );
 				if ( pass > 0 || actor->volume < NB_CHECKED_VOLUME || support.balanced )
 				{
