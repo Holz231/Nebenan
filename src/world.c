@@ -1127,10 +1127,6 @@ static bool nbIsRocking( nbActor* actor, b3WorldTransform transform, float timeS
 	return actor->jitterMatches >= NB_JITTER_MATCHES;
 }
 
-// The rest of a moving piece shares no cache line with the flags the looks of other threads read, see nbActor
-_Static_assert( offsetof( nbActor, checkedAsleep ) >= offsetof( nbActor, isRubble ) / NB_ALIGNMENT * NB_ALIGNMENT + 64,
-				"the rest of an actor starts more than a cache line after its flags" );
-
 // A piece is quiet when it is slow and stayed in place, or rocks in place. Box3D islands that fell asleep are quiet, until
 // a look found that they cannot freeze yet, see nbActor::checkedAsleep. A part of a building is quiet only asleep or
 // rocking in place: it sinks onto the loose cells of a storey that gave way and tips over them at a few centimeters a
@@ -5967,16 +5963,16 @@ static void nbInspectQuietPiece( const nbSettleTask* task, nbQuietPiece* piece, 
 	piece->held = large ? support.braced : support.grounded;
 }
 
-// The piece up to the end of its rest, see nbSettleDebris
+// The piece up to the pose it holds rubble at, see nbSettleDebris
 static void nbPrefetchPiece( const nbWorld* world, int actorIndex )
 {
 	const char* piece = (const char*)( world->actors.data + actorIndex );
-	const char* restEnd = piece + offsetof( nbActor, probeTime ) + sizeof( float ) - 1;
-	for ( const char* line = piece; line < restEnd; line += 64 )
+	const char* poseEnd = piece + offsetof( nbActor, holdBounds ) - 1;
+	for ( const char* line = piece; line < poseEnd; line += 64 )
 	{
 		NB_PREFETCH( line );
 	}
-	NB_PREFETCH( restEnd );
+	NB_PREFETCH( poseEnd );
 }
 
 // The quiet pieces of a block of the moving debris and what carries them. A piece changes only its own rest, and the search

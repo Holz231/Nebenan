@@ -13,7 +13,7 @@
 // holds the sizes of the structures to tell.
 
 #define NB_SAVE_MAGIC 0x5642454Eu
-#define NB_SAVE_VERSION 2u
+#define NB_SAVE_VERSION 1u
 
 // Every part of the buffer starts on this many bytes from its start
 #define NB_SAVE_ALIGNMENT 16
