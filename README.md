@@ -1108,7 +1108,10 @@ Blick billiger, ein Spiel ruft dafür nichts Neues auf: Die Stücke, die auf ein
 statt in einer sortierten Liste, die andere Seite jedes Kontakts wird einmal nachgeschlagen und vorausgeladen, und Box3D
 lädt lange Kontaktlisten über die Listen ihrer Formen voraus. Beim Abriss auf der VM kosten die Prüfungen mit 4 Threads
 damit 14 % weniger, am Ende warten die Threads 68 % kürzer, und die Ergebnisse bleiben bitgleich, siehe „Blick auf große
-Stücke billiger“. Was das auf dem Ryzen bringt, entscheidet, wie es weitergeht, siehe
+Stücke billiger“. Auf dem Ryzen 7 7800X3D kosten die Prüfungen damit mit 8 Threads 18 % weniger und mit einem Thread
+2 %, siehe „Skalierung auf dem Ryzen mit `kollaps-14`“. Beim größten Stück kostet jetzt das Ablaufen seiner Kontaktliste
+in Box3D mehr als der Blick, und bei allen Stücken berühren vier von fünf Einträgen darin nicht, siehe „Wohin der Blick
+auf große Stücke jetzt geht“ in [docs/Optimierungen.md](docs/Optimierungen.md). Wie es weitergeht, steht in
 [docs/Roadmap.md](docs/Roadmap.md).
 
 Die teuersten Frames folgen auf einen Einsturz: Der Schutt um die Reste der Etage taut auf, und Box3D legt im nächsten
