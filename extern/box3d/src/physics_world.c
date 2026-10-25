@@ -1421,7 +1421,7 @@ static void b3Collide( b3StepContext* context )
 			{
 				contact->flags &= ~b3_simStoppedTouching;
 				contact->flags &= ~b3_contactTouchingFlag;
-				b3UnlinkTouchingContact( world, contact, B3_NULL_INDEX ); // Added for Nebenan
+				b3UnlinkTouchingContact( world, contact ); // Added for Nebenan
 
 				if ( contact->flags & b3_contactEnableContactEvents )
 				{
@@ -4608,7 +4608,7 @@ void b3ValidateContacts( b3World* world )
 	B3_ASSERT( contactCount == b3GetIdCapacity( &world->contactIdPool ) );
 	B3_ASSERT( world->contactTouches.count == contactCount );
 	int allocatedContactCount = 0;
-	int touchingContactCount = 0;
+	int touchingEdgeCount = 0;
 
 	for ( int contactIndex = 0; contactIndex < contactCount; ++contactIndex )
 	{
@@ -4623,7 +4623,12 @@ void b3ValidateContacts( b3World* world )
 		allocatedContactCount += 1;
 
 		bool touching = ( contact->flags & b3_contactTouchingFlag ) != 0;
-		touchingContactCount += touching ? 1 : 0;
+
+		// Added for Nebenan: the edges of a touching contact that sit in lists of touching contacts, see b3ContactTouch
+		for ( int i = 0; i < 2 && touching; ++i )
+		{
+			touchingEdgeCount += b3Array_Get( world->bodies, contact->edges[i].bodyId )->type != b3_staticBody ? 1 : 0;
+		}
 
 		int setId = contact->setIndex;
 		b3SolverSet* set = b3Array_Get( world->solverSets, setId );
@@ -4749,8 +4754,8 @@ void b3ValidateContacts( b3World* world )
 	}
 	B3_ASSERT( shapeLinkCount == 2 * allocatedContactCount );
 
-	// Added for Nebenan: every touching contact sits in the lists of the touching contacts of its two bodies, and no other,
-	// see b3ContactTouch
+	// Added for Nebenan: every touching contact sits in the lists of the touching contacts of its bodies that are not static,
+	// and no other, see b3ContactTouch
 	int touchLinkCount = 0;
 	for ( int bodyIndex = 0; bodyIndex < world->bodies.count; ++bodyIndex )
 	{
@@ -4760,6 +4765,7 @@ void b3ValidateContacts( b3World* world )
 			continue;
 		}
 
+		B3_ASSERT( body->type != b3_staticBody || body->headTouchKey == B3_NULL_INDEX );
 		int prevKey = B3_NULL_INDEX;
 		int touchKey = body->headTouchKey;
 		while ( touchKey != B3_NULL_INDEX )
@@ -4777,7 +4783,7 @@ void b3ValidateContacts( b3World* world )
 			touchLinkCount += 1;
 		}
 	}
-	B3_ASSERT( touchLinkCount == 2 * touchingContactCount );
+	B3_ASSERT( touchLinkCount == touchingEdgeCount );
 }
 
 #else

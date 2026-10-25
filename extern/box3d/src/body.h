@@ -133,7 +133,8 @@ typedef struct b3Body
 	uint16_t generation;
 
 	// Added for Nebenan: the first of the touching contacts of the body, the one that started touching last, see
-	// b3ContactTouch. [31 : contactId | 1 : edgeIndex]. It fills the padding at the end, a body stays the same size.
+	// b3ContactTouch. [31 : contactId | 1 : edgeIndex]. Always B3_NULL_INDEX for a static body. It fills the padding at the
+	// end, a body stays the same size.
 	int headTouchKey;
 } b3Body;
 

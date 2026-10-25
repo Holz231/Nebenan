@@ -92,7 +92,10 @@ typedef struct b3ContactEdge
 // are [31 : contactId | 1 : edgeIndex] like those of the contact lists of the bodies. Creation counts the contacts the
 // world created before this one. A body puts a new contact at the front of its contact list, so that list runs from the
 // highest creation to the lowest. The shapes are those of the contact, kept here as well, so a walk through the lists
-// reads of a contact only this record and its manifolds. 32 bytes, so a record never straddles two cache lines.
+// reads of a contact only this record and its manifolds. 32 bytes, so a record never straddles two cache lines. Static
+// bodies keep no list, the queries walk their contact lists: theirs would be the longest, the ground touches almost
+// everything, and half the upkeep would go into lists nothing walks in a hurry. A body changes type only after losing all
+// its contacts, so a contact keeps the links it got.
 typedef struct b3ContactTouch
 {
 	int prevKey[2];
@@ -212,20 +215,14 @@ void b3InitializeContactRegisters( void );
 void b3CreateContact( b3World* world, b3Shape* shapeA, b3Shape* shapeB, int childIndex );
 void b3DestroyContact( b3World* world, b3Contact* contact, bool wakeBodies );
 
-// Added for Nebenan: b3DestroyContact for a contact of the body bodyId while all its contacts go, see b3DestroyBodyContacts.
-// It takes the contact out of the list of the touching contacts of the other body only, the caller drops the list of the
-// body as a whole.
-void b3DestroyContactOfBody( b3World* world, b3Contact* contact, bool wakeBodies, int bodyId );
-
 // Added for Nebenan: prefetch what b3DestroyContact touches besides the contact itself, for a contact that a loop destroys
 // soon
 void b3PrefetchContactDestroy( const b3World* world, const b3Contact* contact );
 
 // Added for Nebenan: put a contact that starts touching at the front of the lists of the touching contacts of its bodies,
-// and take one that stops touching or is destroyed out of them, see b3ContactTouch. Unlinking leaves the list of the body
-// droppedBodyId alone, which its caller drops as a whole, B3_NULL_INDEX for none.
+// and take one that stops touching or is destroyed out of them, see b3ContactTouch
 void b3LinkTouchingContact( b3World* world, const b3Contact* contact );
-void b3UnlinkTouchingContact( b3World* world, const b3Contact* contact, int droppedBodyId );
+void b3UnlinkTouchingContact( b3World* world, const b3Contact* contact );
 
 bool b3UpdateContact( b3World* world, int workerIndex, b3Contact* contact, b3Shape* shapeA, b3Vec3 localCenterA, b3WorldTransform xfA,
 					  b3Shape* shapeB, b3Vec3 localCenterB, b3WorldTransform xfB, bool isFast, b3Arena arena );

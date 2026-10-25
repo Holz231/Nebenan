@@ -163,8 +163,7 @@ static void b3DestroyBodyContacts( b3World* world, b3Body* body, bool wakeBodies
 	// Destroy the attached contacts. Added for Nebenan: a piece of debris that freezes into rubble loses 7 to 17 contacts
 	// at once, and the loop waited most for what destroying each touches. While it destroys one contact it prefetches what
 	// destroying the next touches, see b3PrefetchContactDestroy, and the contact after that, for writing. Prefetching
-	// changes nothing, the contacts go in the same order. The list of the touching contacts of the body goes as a whole,
-	// each touching contact leaves only that of the other body, see b3DestroyContactOfBody.
+	// changes nothing, the contacts go in the same order.
 	int edgeKey = body->headContactKey;
 	while ( edgeKey != B3_NULL_INDEX )
 	{
@@ -188,10 +187,10 @@ static void b3DestroyBodyContacts( b3World* world, b3Body* body, bool wakeBodies
 			b3PrefetchContactDestroy( world, next );
 		}
 
-		b3DestroyContactOfBody( world, contact, wakeBodies, body->id );
+		b3DestroyContact( world, contact, wakeBodies );
 	}
 
-	body->headTouchKey = B3_NULL_INDEX;
+	B3_ASSERT( body->headTouchKey == B3_NULL_INDEX ); // Added for Nebenan
 	b3ValidateSolverSets( world );
 }
 
@@ -647,6 +646,11 @@ int b3Body_GetContactData( b3BodyId bodyId, b3ContactData* contactData, int capa
 	}
 
 	b3Body* body = b3GetBodyFullId( world, bodyId );
+	if ( body->type == b3_staticBody )
+	{
+		return b3GetContactDataFromList( world, bodyId.world0, body, contactData, capacity );
+	}
+
 	const b3ContactTouch* touches = world->contactTouches.data;
 
 	int touchKey = body->headTouchKey;
@@ -729,6 +733,14 @@ void b3Body_GetContactDataOfBodies( const b3BodyId* bodyIds, int bodyCount, b3Co
 		B3_ASSERT( bodyIds[k].world0 == bodyIds[0].world0 );
 		b3Body* body = b3GetBodyFullId( world, bodyIds[k] );
 		keys[k] = body->headTouchKey;
+
+		// A static body keeps no list of its touching contacts, see b3ContactTouch
+		if ( body->type == b3_staticBody )
+		{
+			counts[k] = b3GetContactDataFromList( world, bodyIds[k].world0, body, contactData + offsets[k], body->contactCount );
+			continue;
+		}
+
 		if ( keys[k] != B3_NULL_INDEX )
 		{
 			b3PrefetchTouchingContact( world, keys[k] >> 1 );
@@ -784,6 +796,12 @@ void b3Body_GetContactDataOfBodies( const b3BodyId* bodyIds, int bodyCount, b3Co
 
 	for ( int k = 0; k < bodyCount; ++k )
 	{
+		const b3Body* body = b3GetBodyFullId( world, bodyIds[k] );
+		if ( body->type == b3_staticBody )
+		{
+			continue;
+		}
+
 		b3ContactData* data = contactData + offsets[k];
 		b3SortContactData( world, data, counts[k] );
 		int bodyId = bodyIds[k].index1 - 1;
@@ -802,7 +820,7 @@ void b3Body_GetContactDataOfBodies( const b3BodyId* bodyIds, int bodyCount, b3Co
 		}
 
 #if B3_DEBUG
-		b3ValidateContactData( world, bodyIds[k].world0, b3GetBodyFullId( world, bodyIds[k] ), data, counts[k] );
+		b3ValidateContactData( world, bodyIds[k].world0, body, data, counts[k] );
 #endif
 	}
 }

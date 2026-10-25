@@ -1077,9 +1077,10 @@ static int CheckTouchingContacts( b3BodyId bodyId, int* touchingCount )
 	return 0;
 }
 
-// Box3D keeps the touching contacts of every body in a list of their own, and the contact data comes from it. It stays
-// the same as from the shapes of the body while contacts start and stop touching, bodies go and change type and shapes
-// go, for a body with a few contacts and for the floor with hundreds, also in batches of bodies.
+// Box3D keeps the touching contacts of every body that is not static in a list of their own, and the contact data comes
+// from it. It stays the same as from the shapes of the body while contacts start and stop touching, bodies go and change
+// type and shapes go, for a body with a few contacts and for a plate with hundreds, also in batches of bodies. The static
+// floor keeps no list, its contact data comes from its contact list.
 static int TouchingContactsTest( void )
 {
 	int64_t baseBytes = b3GetByteCount();
@@ -1091,6 +1092,13 @@ static int TouchingContactsTest( void )
 	b3BoxHull floor = b3MakeBoxHull( 20.0f, 0.5f, 20.0f );
 	b3CreateHullShape( floorId, &shapeDef, &floor.base );
 
+	// A plate on the floor that the boxes land on
+	bodyDef.type = b3_dynamicBody;
+	bodyDef.position = (b3Pos){ 0.0f, 0.6f, 0.0f };
+	b3BodyId plateId = b3CreateBody( worldId, &bodyDef );
+	b3BoxHull plate = b3MakeBoxHull( 6.0f, 0.1f, 6.0f );
+	b3CreateHullShape( plateId, &shapeDef, &plate.base );
+
 	// Boxes of two cells each, dropped from different heights, so they land and bounce at different times
 	enum
 	{
@@ -1098,7 +1106,6 @@ static int TouchingContactsTest( void )
 	};
 	b3BodyId boxes[boxCount];
 	bool alive[boxCount];
-	bodyDef.type = b3_dynamicBody;
 	b3BoxHull left = b3MakeOffsetBoxHull( 0.25f, 0.25f, 0.25f, (b3Vec3){ -0.25f, 0.0f, 0.0f } );
 	b3BoxHull right = b3MakeOffsetBoxHull( 0.25f, 0.25f, 0.25f, (b3Vec3){ 0.25f, 0.0f, 0.0f } );
 	for ( int i = 0; i < boxCount; ++i )
@@ -1111,6 +1118,7 @@ static int TouchingContactsTest( void )
 		alive[i] = true;
 	}
 
+	int plateMost = 0;
 	int floorMost = 0;
 	for ( int step = 1; step <= 240; ++step )
 	{
@@ -1148,8 +1156,11 @@ static int TouchingContactsTest( void )
 			continue;
 		}
 
-		int batch[B3_CONTACT_DATA_BODIES];
+		// The plate, the floor and the first boxes in a batch, the boxes static for a while among them
+		b3BodyId bodyIds[B3_CONTACT_DATA_BODIES];
 		int batchCount = 0;
+		bodyIds[batchCount++] = plateId;
+		bodyIds[batchCount++] = floorId;
 		for ( int i = 0; i < boxCount; ++i )
 		{
 			if ( alive[i] )
@@ -1158,22 +1169,22 @@ static int TouchingContactsTest( void )
 				ENSURE( CheckTouchingContacts( boxes[i], &count ) == 0 );
 				if ( batchCount < B3_CONTACT_DATA_BODIES )
 				{
-					batch[batchCount++] = i;
+					bodyIds[batchCount++] = boxes[i];
 				}
 			}
 		}
-		int floorCount;
+		int plateCount, floorCount;
+		ENSURE( CheckTouchingContacts( plateId, &plateCount ) == 0 );
 		ENSURE( CheckTouchingContacts( floorId, &floorCount ) == 0 );
+		plateMost = b3MaxInt( plateMost, plateCount );
 		floorMost = b3MaxInt( floorMost, floorCount );
 
 		// A batch of bodies gives each the same as alone
-		b3BodyId bodyIds[B3_CONTACT_DATA_BODIES];
 		int offsets[B3_CONTACT_DATA_BODIES];
 		int counts[B3_CONTACT_DATA_BODIES];
 		int room = 0;
 		for ( int k = 0; k < batchCount; ++k )
 		{
-			bodyIds[k] = boxes[batch[k]];
 			offsets[k] = room;
 			room += b3Body_GetContactCapacity( bodyIds[k] );
 		}
@@ -1194,9 +1205,9 @@ static int TouchingContactsTest( void )
 		free( single );
 	}
 
-	// The floor held more touching contacts than a body sorts by insertion
-	printf( "  floor: at most %d touching contacts\n", floorMost );
-	ENSURE( floorMost > 64 );
+	// The plate held more touching contacts than a body sorts by insertion, and some boxes touched the floor
+	printf( "  plate: at most %d touching contacts, floor %d\n", plateMost, floorMost );
+	ENSURE( plateMost > 64 && floorMost > 0 );
 
 	b3DestroyWorld( worldId );
 	ENSURE( b3GetByteCount() == baseBytes );
