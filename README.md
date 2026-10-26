@@ -1075,8 +1075,10 @@ danach weiter, ohne eigenen Aufruf, und der Bericht von „Skalierung messen“ 
 für jede Zahl von Threads: für die Bedingungen auf dem aufrufenden Thread und für die Pakete und die Blöcke des Teams
 über alle Threads. Beim Abriss in der Demo auf der VM bei ×2 braucht ein Thread mit 4 Threads für dieselbe Arbeit in den
 Paketen 1,18-mal und in den Blöcken des Teams 1,39-mal so lange wie ein Thread allein. Die Ergebnisse bleiben bitgleich,
-und ein Schritt kostet im Benchmark gepaart gegen `kollaps-16` im Rahmen der Schwankungen gleich viel. Was die Tabelle
-mit 8 Threads auf dem Ryzen zeigt, entscheidet, wie es im Löser weitergeht, siehe [docs/Roadmap.md](docs/Roadmap.md).
+und ein Schritt kostet im Benchmark gepaart gegen `kollaps-16` im Rahmen der Schwankungen gleich viel. Auf dem
+Ryzen 7 7800X3D braucht ein Thread in den Blöcken des Teams mit 8 Threads das 1,34- bis 1,39-Fache eines Threads allein,
+siehe „Skalierung auf dem Ryzen mit `kollaps-17`“ in [docs/Optimierungen.md](docs/Optimierungen.md). Wie es im Löser
+weitergeht, steht in [docs/Roadmap.md](docs/Roadmap.md).
 
 Seit `kollaps-11` misst Box3D, wohin die Zeit der Kontakt-Schleife geht: was der aufrufende Thread davor und danach
 allein rechnet, und in jedem achten Schritt, wie die Threads die parallele Schleife verbringen, in Blöcken, vor ihrem
