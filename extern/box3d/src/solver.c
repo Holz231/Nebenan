@@ -65,7 +65,7 @@ typedef struct b3WorkerContext
 // Integrate velocities, apply damping, and gyroscopic torque
 static void b3IntegrateVelocitiesTask( b3SolverBlock block, b3StepContext* context )
 {
-	b3TracyCZoneNC( integrate_velocity, "IntVel", b3_colorDeepPink, true );
+	b3TracyCZoneDetailNC( integrate_velocity, "IntVel", b3_colorDeepPink, true );
 
 	B3_VALIDATE( block.startIndex + block.count <= context->world->solverSets.data[b3_awakeSet].bodyStates.count );
 
@@ -171,12 +171,12 @@ static void b3IntegrateVelocitiesTask( b3SolverBlock block, b3StepContext* conte
 		state->angularVelocity = w;
 	}
 
-	b3TracyCZoneEnd( integrate_velocity );
+	b3TracyCZoneDetailEnd( integrate_velocity );
 }
 
 static void b3IntegratePositionsTask( b3SolverBlock block, b3StepContext* context )
 {
-	b3TracyCZoneNC( integrate_positions, "IntPos", b3_colorDarkSeaGreen, true );
+	b3TracyCZoneDetailNC( integrate_positions, "IntPos", b3_colorDarkSeaGreen, true );
 
 	B3_VALIDATE( block.startIndex + block.count <= context->world->solverSets.data[b3_awakeSet].bodyStates.count );
 
@@ -228,7 +228,7 @@ static void b3IntegratePositionsTask( b3SolverBlock block, b3StepContext* contex
 		state->deltaRotation = b3IntegrateRotation( state->deltaRotation, b3MulSV( h, w ) );
 	}
 
-	b3TracyCZoneEnd( integrate_positions );
+	b3TracyCZoneDetailEnd( integrate_positions );
 }
 
 static void b3PrepareJointsTask( b3SolverBlock block, b3StepContext* context )
@@ -1276,6 +1276,33 @@ static inline int GetWorkerStartIndex( int workerIndex, int blockCount, int work
 	return blocksPerWorker * workerIndex + b3MinInt( remainder, workerIndex );
 }
 
+// Added for Nebenan: a zone of the Tracy profiler for every block of a stage, named after the stage, the blocks of the knots
+// with one of their own, see BOX3D_PROFILE. A pack of islands is one zone, see b3SolvePack, its blocks would make a
+// capture several times larger.
+#ifdef BOX3D_PROFILE
+#define B3_BLOCK_ZONE( name, color ) { name, "b3ExecuteStage", __FILE__, (uint32_t)__LINE__, color }
+static const struct ___tracy_source_location_data b3BlockZones[] = {
+	B3_BLOCK_ZONE( "Prepare Joints", b3_colorOldLace ),
+	B3_BLOCK_ZONE( "Prepare Wide Contacts", b3_colorYellow ),
+	B3_BLOCK_ZONE( "Prepare Contacts", b3_colorYellow ),
+	B3_BLOCK_ZONE( "Integrate Velocities", b3_colorDeepPink ),
+	B3_BLOCK_ZONE( "Warm Start", b3_colorGold ),
+	B3_BLOCK_ZONE( "Solve", b3_colorIndigo ),
+	B3_BLOCK_ZONE( "Integrate Positions", b3_colorDarkSeaGreen ),
+	B3_BLOCK_ZONE( "Relax", b3_colorLemonChiffon ),
+	B3_BLOCK_ZONE( "Restitution", b3_colorViolet ),
+	B3_BLOCK_ZONE( "Store Wide Impulses", b3_colorMediumSeaGreen ),
+	B3_BLOCK_ZONE( "Store Impulses", b3_colorMediumSeaGreen ),
+};
+static const struct ___tracy_source_location_data b3KnotBlockZone = B3_BLOCK_ZONE( "Knots", b3_colorFireBrick );
+
+static const struct ___tracy_source_location_data* b3GetBlockZone( const b3SolverStage* stage, b3SolverBlock block )
+{
+	_Static_assert( sizeof( b3BlockZones ) / sizeof( b3BlockZones[0] ) == b3_stageStoreImpulses + 1, "a zone per stage" );
+	return block.blockType == b3_knotBlock ? &b3KnotBlockZone : b3BlockZones + stage->type;
+}
+#endif
+
 // Execute a stage, which is an array of solver blocks, each controlled with an atomic sync index.
 // Each worker starts at its home index and sweeps the ring, CAS-claiming any unclaimed blocks.
 // Added for Nebenan: returns the blocks it solved, see b3TeamEntry
@@ -1307,7 +1334,9 @@ static int b3ExecuteStage( b3SolverStage* stage, b3StepContext* context, int pre
 
 			// Pass the descriptor by value -- the wrapping b3SyncBlock holds the atomic
 			// syncIndex but we only copy .block, so the struct copy never aliases the CAS target.
+			b3TracyCZoneLoc( block_zone, b3GetBlockZone( stage, blocks[blockIndex].block ) );
 			b3ExecuteBlock( stage, context, blocks[blockIndex].block, workerIndex );
+			b3TracyCZoneEnd( block_zone );
 			completedCount += 1;
 		}
 
@@ -1354,7 +1383,9 @@ static void b3ExecuteMainStage( b3SolverStage* stage, b3StepContext* context, ui
 
 	if ( blockCount == 1 )
 	{
+		b3TracyCZoneLoc( block_zone, b3GetBlockZone( stage, stage->blocks[0].block ) );
 		b3ExecuteBlock( stage, context, stage->blocks[0].block, workerIndex );
+		b3TracyCZoneEnd( block_zone );
 
 		if ( context->sampleTeam )
 		{
@@ -1402,7 +1433,9 @@ static void b3ExecuteKnotStage( b3SolverStage* stage, b3StepContext* context, ui
 	b3ExecuteMainStage( stage, context, syncBits );
 
 	uint64_t mergeTicks = context->sampleTeam ? b3GetTicks() : 0;
+	b3TracyCZoneNC( merge_knots, "Merge Knots", b3_colorSalmon, true );
 	b3MergeKnots( context, context->packSplitStarts[0], context->packSplitStarts[context->stagePackCount] );
+	b3TracyCZoneEnd( merge_knots );
 	if ( context->sampleTeam )
 	{
 		context->teamMergeTime += b3GetMilliseconds( mergeTicks );
@@ -1463,6 +1496,7 @@ static void b3SolvePack( b3StepContext* context, int pack, int workerIndex )
 {
 	// Added for Nebenan: see b3Profile::packSolveTime
 	uint64_t sampleTicks = context->sampleSolver ? b3GetTicks() : 0;
+	b3TracyCZoneNC( pack_zone, "Pack", b3_colorSteelBlue, true );
 
 	int bodyStart = context->packBodyStarts[pack];
 	int bodyEnd = context->packBodyStarts[pack + 1];
@@ -1506,6 +1540,7 @@ static void b3SolvePack( b3StepContext* context, int pack, int workerIndex )
 	b3ExecutePackRange( b3_stageStoreImpulses, context, overflowStart, overflowEnd, b3_overflowBlock, B3_OVERFLOW_INDEX,
 						workerIndex );
 
+	b3TracyCZoneEnd( pack_zone );
 	if ( context->sampleSolver )
 	{
 		context->world->taskContexts.data[workerIndex].packTime += b3GetMilliseconds( sampleTicks );
@@ -1591,6 +1626,16 @@ static void b3UpdatePackHold( b3World* world, float wait, float total )
 	world->packHoldSteps = world->packHoldLength;
 	world->packWaitScore = 0;
 }
+
+// Added for Nebenan: the overflow work the calling thread does alone between the stages as a zone, see BOX3D_PROFILE
+#define B3_OVERFLOW_ZONE( call )                                                                                               \
+	do                                                                                                                         \
+	{                                                                                                                          \
+		b3TracyCZoneNC( overflow_zone, "Overflow", b3_colorRed, true );                                                        \
+		call;                                                                                                                  \
+		b3TracyCZoneEnd( overflow_zone );                                                                                      \
+	}                                                                                                                          \
+	while ( 0 )
 
 // Parallel solver task
 static void b3SolverTask( void* taskContext )
@@ -1712,8 +1757,8 @@ static void b3SolverTask( void* taskContext )
 
 		// Single-threaded overflow work. These constraints don't fit in the graph coloring.
 		uint64_t overflowTicks = b3GetTicks();
-		b3PrepareJoints_Overflow( context );
-		b3PrepareContacts_Overflow( context );
+		B3_OVERFLOW_ZONE( b3PrepareJoints_Overflow( context ) );
+		B3_OVERFLOW_ZONE( b3PrepareContacts_Overflow( context ) );
 		profile->overflow += b3GetMilliseconds( overflowTicks );
 
 		profile->prepareConstraints += b3GetMillisecondsAndReset( &ticks );
@@ -1737,13 +1782,13 @@ static void b3SolverTask( void* taskContext )
 
 			// Warm start constraints
 			overflowTicks = b3GetTicks();
-			b3WarmStartJoints_Overflow( context );
+			B3_OVERFLOW_ZONE( b3WarmStartJoints_Overflow( context ) );
 			syncBits = ( knotSyncIndex << 16 ) | iterationStageIndex;
 			B3_ASSERT( stages[iterationStageIndex].type == b3_stageWarmStart );
 			b3ExecuteKnotStage( stages + iterationStageIndex, context, syncBits );
 			iterationStageIndex += 1;
 			knotSyncIndex += 1;
-			b3WarmStartContacts_Overflow( context );
+			B3_OVERFLOW_ZONE( b3WarmStartContacts_Overflow( context ) );
 			profile->overflow += b3GetMilliseconds( overflowTicks );
 
 			for ( int colorIndex = 0; colorIndex < activeColorCount; ++colorIndex )
@@ -1763,13 +1808,13 @@ static void b3SolverTask( void* taskContext )
 			{
 				// Overflow constraints have lower priority. Typically these are dynamic-vs-dynamic.
 				overflowTicks = b3GetTicks();
-				b3SolveJoints_Overflow( context, useBias );
+				B3_OVERFLOW_ZONE( b3SolveJoints_Overflow( context, useBias ) );
 				syncBits = ( knotSyncIndex << 16 ) | iterationStageIndex;
 				B3_ASSERT( stages[iterationStageIndex].type == b3_stageSolve );
 				b3ExecuteKnotStage( stages + iterationStageIndex, context, syncBits );
 				iterationStageIndex += 1;
 				knotSyncIndex += 1;
-				b3PushContacts_Overflow( context );
+				B3_OVERFLOW_ZONE( b3PushContacts_Overflow( context ) );
 				profile->overflow += b3GetMilliseconds( overflowTicks );
 
 				for ( int colorIndex = 0; colorIndex < activeColorCount; ++colorIndex )
@@ -1798,13 +1843,13 @@ static void b3SolverTask( void* taskContext )
 			for ( int j = 0; j < RELAX_ITERATIONS; ++j )
 			{
 				overflowTicks = b3GetTicks();
-				b3SolveJoints_Overflow( context, useBias );
+				B3_OVERFLOW_ZONE( b3SolveJoints_Overflow( context, useBias ) );
 				syncBits = ( knotSyncIndex << 16 ) | iterationStageIndex;
 				B3_ASSERT( stages[iterationStageIndex].type == b3_stageRelax );
 				b3ExecuteKnotStage( stages + iterationStageIndex, context, syncBits );
 				iterationStageIndex += 1;
 				knotSyncIndex += 1;
-				b3SolveContacts_Overflow( context );
+				B3_OVERFLOW_ZONE( b3SolveContacts_Overflow( context ) );
 				profile->overflow += b3GetMilliseconds( overflowTicks );
 
 				for ( int colorIndex = 0; colorIndex < activeColorCount; ++colorIndex )
@@ -1838,7 +1883,7 @@ static void b3SolverTask( void* taskContext )
 				b3ExecuteKnotStage( stages + iterationStageIndex, context, syncBits );
 				iterationStageIndex += 1;
 				knotSyncIndex += 1;
-				b3ApplyRestitution_Overflow( context );
+				B3_OVERFLOW_ZONE( b3ApplyRestitution_Overflow( context ) );
 				profile->overflow += b3GetMilliseconds( overflowTicks );
 
 				for ( int colorIndex = 0; colorIndex < activeColorCount; ++colorIndex )
@@ -1858,7 +1903,7 @@ static void b3SolverTask( void* taskContext )
 
 		// Store impulses
 		overflowTicks = b3GetTicks();
-		b3StoreImpulses_Overflow( context );
+		B3_OVERFLOW_ZONE( b3StoreImpulses_Overflow( context ) );
 		profile->overflow += b3GetMilliseconds( overflowTicks );
 
 		syncBits = ( convexSyncIndex << 16 ) | stageIndex;
@@ -1920,6 +1965,8 @@ static void b3SolverTask( void* taskContext )
 	}
 
 	// Worker spins and waits for work
+	// Added for Nebenan: the time of a worker in the solver as a zone, the time between its blocks and packs is waiting
+	b3TracyCZoneNC( solver_worker, "Solver Worker", b3_colorTeal, true );
 	uint32_t lastSyncBits = 0;
 	// uint64_t maxSpinTime = 10;
 
@@ -2027,6 +2074,8 @@ static void b3SolverTask( void* taskContext )
 
 		lastSyncBits = syncBits;
 	}
+
+	b3TracyCZoneEnd( solver_worker );
 }
 
 static void b3BulletBodyTask( int startIndex, int endIndex, int workerIndex, void* context )
@@ -3502,8 +3551,10 @@ void b3Solve( b3World* world, b3StepContext* stepContext )
 			packBodyStarts = (int*)b3StackAlloc( &world->stack, ( packLimit + 1 ) * (int)sizeof( int ), "pack body starts" );
 			packBodies = (int*)b3StackAlloc( &world->stack, awakeBodyCount * (int)sizeof( int ), "pack bodies" );
 			islandPacks = (int*)b3StackAlloc( &world->stack, world->islands.count * (int)sizeof( int ), "island packs" );
+			b3TracyCZoneNC( build_packs, "Build Packs", b3_colorOrange, true );
 			packCount =
 				b3BuildPacks( world, awakeSet, packLimit, workerCount, islandPacks, packBodyStarts, &teamWork, &teamPackCount );
+			b3TracyCZoneEnd( build_packs );
 
 			// The setup task fills the bodies and contacts of the packs and the entries of the colors, see b3SetupTask
 			if ( packCount > 0 )
@@ -3586,7 +3637,9 @@ void b3Solve( b3World* world, b3StepContext* stepContext )
 		// b3BuildKnots
 		b3Knots knots;
 		partTicks = b3GetTicks();
+		b3TracyCZoneNC( build_knots, "Build Knots", b3_colorKhaki, true );
 		b3BuildKnots( world, awakeSet, overflow, contactPacks, packCount, &setupTask, &knots );
+		b3TracyCZoneEnd( build_knots );
 		b3FinishSetupTask( world, &setupTask );
 		world->knotContactCount = knots.contactCount;
 		world->knotBatchCount = knots.batchCount;

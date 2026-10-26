@@ -148,12 +148,15 @@ if (BOX3D_PROFILE)
    	set(TRACY_DELAYED_INIT ON CACHE BOOL "Enable delayed init for Tracy" FORCE)
     set(TRACY_MANUAL_LIFETIME ON CACHE BOOL "Enable manual lifetime for Tracy" FORCE)
 
+	# Added for Nebenan: the client leaves the user and host name out of the information it sends with a capture, so a
+	# capture can be shared, see tracy_hide_user.cmake
 	FetchContent_Declare(
 		tracy
 		GIT_REPOSITORY https://github.com/wolfpld/tracy.git
         GIT_TAG v0.13.1
 		GIT_SHALLOW TRUE
 		GIT_PROGRESS TRUE
+		PATCH_COMMAND ${CMAKE_COMMAND} -P ${CMAKE_CURRENT_SOURCE_DIR}/tracy_hide_user.cmake
 	)
 	FetchContent_MakeAvailable(tracy)
 

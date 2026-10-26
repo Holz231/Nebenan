@@ -111,11 +111,24 @@
 	#define b3TracyCZoneNC( ctx, name, color, active ) TracyCZoneNC( ctx, name, color, active )
 	#define b3TracyCZoneEnd( ctx ) TracyCZoneEnd( ctx )
 	#define b3TracyCFrame TracyCFrameMark
+	// Added for Nebenan: a zone at a source location chosen at run time, for example by the type of a solver stage
+	#define b3TracyCZoneLoc( ctx, srcloc ) TracyCZoneCtx ctx = ___tracy_emit_zone_begin( srcloc, 1 )
 #else
 	#define b3TracyCZoneC( ctx, color, active )
 	#define b3TracyCZoneNC( ctx, name, color, active )
 	#define b3TracyCZoneEnd( ctx )
 	#define b3TracyCFrame
+	#define b3TracyCZoneLoc( ctx, srcloc )
+#endif
+
+// Added for Nebenan: the zones inside the kernels of the solver only with BOX3D_PROFILE_DETAIL as well. A pack of islands
+// calls them for every color and every substep, and a capture would be several times larger, see b3SolvePack.
+#if defined( BOX3D_PROFILE ) && defined( BOX3D_PROFILE_DETAIL )
+	#define b3TracyCZoneDetailNC( ctx, name, color, active ) TracyCZoneNC( ctx, name, color, active )
+	#define b3TracyCZoneDetailEnd( ctx ) TracyCZoneEnd( ctx )
+#else
+	#define b3TracyCZoneDetailNC( ctx, name, color, active )
+	#define b3TracyCZoneDetailEnd( ctx )
 #endif
 
 // clang-format on

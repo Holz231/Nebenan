@@ -21,6 +21,13 @@ jobs:
             demo: build/bin/Release/nebenan_demo.exe
             tests: build/bin/Release/nebenan_test.exe
             benchmark: build/bin/Release/nebenan_benchmark.exe
+          # The demo with zones for the Tracy profiler and the script that records the demolition, see NEBENAN_PROFILE in
+          # the README. The benchmark measures the build without.
+          - name: windows-tracy
+            os: windows-latest
+            profile: true
+            demo: build/bin/Release/nebenan_demo.exe
+            tests: build/bin/Release/nebenan_test.exe
           - name: linux
             os: ubuntu-latest
             demo: build/bin/nebenan_demo
@@ -40,7 +47,7 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y libgl-dev libx11-dev libxi-dev libxcursor-dev
 
       - name: Configure
-        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release ${{ matrix.profile && '-DNEBENAN_PROFILE=ON' || '' }}
 
       - name: Build
         run: cmake --build build --config Release --parallel
@@ -49,6 +56,7 @@ jobs:
         run: ${{ matrix.tests }}
 
       - name: Benchmark
+        if: ${{ !matrix.profile }}
         run: ${{ matrix.benchmark }} 2
 
       - name: Package demo
@@ -59,6 +67,10 @@ jobs:
           cp extern/box3d/LICENSE package/lizenzen/box3d.txt
           cp extern/box3d/extern/sokol/LICENSE package/lizenzen/sokol.txt
           cp extern/imgui/LICENSE.txt package/lizenzen/imgui.txt
+          if [ "${{ matrix.profile }}" = "true" ]; then
+            cp demo/Tracy-Aufnahme.bat package/
+            cp .fetchcontent-cache/tracy-src/LICENSE package/lizenzen/tracy.txt
+          fi
 
       - uses: actions/upload-artifact@v4
         with:

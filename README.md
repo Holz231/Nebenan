@@ -51,7 +51,8 @@ Jeder Push baut die Demo automatisch mit GitHub Actions.
 1. Im Repository oben auf **Actions** klicken, links den Workflow **Build** wählen und den neuesten grünen
    Lauf öffnen.
 2. Unten unter **Artifacts** `nebenan-demo-windows` herunterladen (dafür muss man bei GitHub angemeldet
-   sein). Für Mac und Linux gibt es `nebenan-demo-macos` und `nebenan-demo-linux`.
+   sein). Für Mac und Linux gibt es `nebenan-demo-macos` und `nebenan-demo-linux`, für Windows mit Zonen für den
+   Profiler Tracy `nebenan-demo-windows-tracy`, siehe „Mit Tracy messen“.
 3. ZIP entpacken und `nebenan_demo.exe` starten.
 
 Das ist ein Release-Build. Die EXE ist nicht signiert. Wenn Windows SmartScreen warnt: **Weitere
@@ -65,8 +66,8 @@ Auf dem Mac zusätzlich `xattr -d com.apple.quarantine nebenan_demo` oder im Fin
 
 ## Selbst bauen
 
-Voraussetzungen: CMake 3.22 oder neuer und ein C17/C++17-Compiler. Box3D und Dear ImGui liegen als Quellcode im
-Ordner [`extern`](extern) bei und werden mitgebaut, der Build braucht also kein Internet.
+Voraussetzungen: CMake 3.22 oder neuer und ein C17/C++17-Compiler. Box3D und Dear ImGui liegen als Quellcode im Ordner
+[`extern`](extern) bei und werden mitgebaut, der Build braucht also kein Internet, nur mit `NEBENAN_PROFILE`.
 
 **Windows** mit Visual Studio 2022 oder neuer (Workload „Desktopentwicklung mit C++"):
 
@@ -100,8 +101,8 @@ build/bin/nebenan_demo
 build/bin/nebenan_demo
 ```
 
-CMake-Optionen: `NEBENAN_DEMO`, `NEBENAN_TESTS`, `NEBENAN_BENCHMARK` (bei eigenständigem Bau alle an) und
-`NEBENAN_WARNINGS_AS_ERRORS`.
+CMake-Optionen: `NEBENAN_DEMO`, `NEBENAN_TESTS`, `NEBENAN_BENCHMARK` (bei eigenständigem Bau alle an),
+`NEBENAN_WARNINGS_AS_ERRORS` und `NEBENAN_PROFILE` für Zonen des Profilers Tracy, siehe „Mit Tracy messen“.
 
 ## Steuerung
 
@@ -1449,6 +1450,45 @@ höchstens 213 000 Dreiecke, im Mittel 0,5 MB und höchstens 1,7 MB Upload pro B
 Welche Optimierungen noch vorgemerkt sind, welche schon umgesetzt und welche mit Grund verworfen, steht mit den
 Messungen in [docs/Optimierungen.md](docs/Optimierungen.md).
 
+## Mit Tracy messen
+
+[Tracy](https://github.com/wolfpld/tracy) ist ein Profiler: Das Programm schickt ihm, wann welcher Thread welchen
+Abschnitt rechnet, und Tracy zeigt das als Zeitleiste, Thread unter Thread, auf die Mikrosekunde genau. Mit der
+CMake-Option `NEBENAN_PROFILE` bauen Nebenan und Box3D mit solchen Abschnitten, Zonen genannt. Ohne die Option kommt
+nichts davon in den Build.
+
+- Box3D holt beim Konfigurieren den Client von Tracy 0.13.1 von GitHub. Öffnen lässt sich eine Aufnahme nur mit dem
+  Tracy Profiler derselben Version, für Windows `windows-0.13.1.zip` unter
+  [Releases](https://github.com/wolfpld/tracy/releases/tag/v0.13.1).
+- Zonen hat ein Schritt von Box3D in seinen Teilen, im Löser jeder Block einer Stufe des Teams, jedes Paket von Inseln
+  und jedes Stück Überlauf, das der aufrufende Thread allein rechnet, siehe [`extern/README.md`](extern/README.md).
+  Nebenan markiert seinen Schritt, im Update Schaden, Stützen, Lösen, Ruhe und Budget, die Einschläge und seine Aufgaben
+  auf den Workern. Seine Threads heißen „Nebenan Worker“ und „Nebenan Step“, und jeder Schritt ist ein Frame „Physics
+  Step“.
+- Tracy startet mit der ersten Box3D-Welt oder dem ersten Thread-Pool (`b3StartProfiler`) und endet mit dem Programm.
+  Ein Spiel, das schon vorher Threads benennt oder Zonen öffnet, ruft `b3StartProfiler` zuerst auf. Mit der Option ist
+  `NB_PROFILE` gesetzt, und ein Spiel kann über `tracy/TracyC.h` eigene Zonen setzen.
+- Tracy nimmt nur auf, solange ein Profiler verbunden ist, und nimmt nur Verbindungen vom selben Rechner an. Eine
+  Aufnahme enthält die Zonen mit ihren Zeiten, die Namen der Threads, den Namen des Programms und die Pfade der
+  Quelldateien beim Bauen, dazu Betriebssystem, Compiler, CPU, Zahl der Kerne und Arbeitsspeicher. Den Anmeldenamen und
+  den Namen des Rechners lässt Nebenan weg, Aufrufketten, Stichproben, Bildschirmbilder und andere Programme nimmt Tracy
+  nicht auf. So lässt sich eine Aufnahme weitergeben.
+
+**Mit der Demo.** Unter Windows gibt es die Demo mit Zonen fertig als `nebenan-demo-windows-tracy`, siehe „Demo
+herunterladen“. `Tracy-Aufnahme.bat` darin reißt die Stadt bei ×2 mit 8 Threads ab, mit der Physik nacheinander wie
+„Skalierung messen“, 900 Schritte mit 1/60 s, auf jedem PC dieselben, und beendet sich dann. Liegt `tracy-capture.exe`
+aus dem ZIP von Tracy im selben Ordner, schreibt sie die Aufnahme nach `abriss.tracy`, 15 bis 20 MB. Ohne es vorher den
+Tracy Profiler starten und auf **Connect** klicken, er wartet dann auf die Demo, zeigt die Aufnahme und speichert sie.
+Unter Linux und macOS mit `-DNEBENAN_PROFILE=ON` bauen, `tracy-capture -o abriss.tracy -a 127.0.0.1` starten und in
+einem zweiten Terminal die Demo:
+
+```sh
+build/bin/nebenan_demo --demolition --threads 8 --fragment-scale 2 --serial-physics --frames 900
+```
+
+Wie die [Roadmap](docs/Roadmap.md) eine Aufnahme auswertet, steht in `tools/tracy_team.py`: Schritt für Schritt, wie
+lange die Threads im Löser rechnen und worauf sie sonst warten.
+
 ## Tests und Benchmark
 
 ```sh
@@ -1458,8 +1498,9 @@ build/bin/nebenan_benchmark scaling   # die Städte unter Beschuss mit 1, 2, 4 �
 build/bin/nebenan_benchmark rates     # die Städte unter Beschuss mit 30, 60 und 120 Hz, was eine simulierte Sekunde kostet
 ```
 
-Unter Windows liegen die Programme in `build\bin\Release\`. Die CI baut und testet unter Windows, Linux und
-macOS und läuft zusätzlich mit AddressSanitizer, UndefinedBehaviorSanitizer und ThreadSanitizer.
+Unter Windows liegen die Programme in `build\bin\Release\`. Die CI baut und testet unter Windows, Linux und macOS, unter
+Windows auch mit `NEBENAN_PROFILE`, und läuft zusätzlich mit AddressSanitizer, UndefinedBehaviorSanitizer und
+ThreadSanitizer.
 
 ## Projektstruktur
 
@@ -1481,6 +1522,7 @@ benchmark/          Leistungsmessung
 demo/               PC-Demo mit sokol und Dear ImGui
   shaders/          GLSL-Quelle und die mit sokol-shdc erzeugten Shader (HLSL, Metal, GLSL)
 docs/               vorgemerkte und verworfene Optimierungen, die Roadmap der Physik
+tools/              Auswertung einer Aufnahme von Tracy
   Referenz/         die Roadmap des Spiels als Referenz
 extern/             Box3D (mit sokol, ergänzt für große Szenen) und Dear ImGui, siehe extern/README.md
 .github/workflows/  CI für Windows, Linux und macOS
@@ -1541,6 +1583,7 @@ Nebenan steht unter der MIT-Lizenz (SPDX-Kennung in jeder Quelldatei). Verwendet
 - [Box3D](https://github.com/erincatto/box3d) von Erin Catto, MIT-Lizenz
 - [sokol](https://github.com/floooh/sokol) von Andre Weissflog, zlib-Lizenz (kommt mit Box3D)
 - [Dear ImGui](https://github.com/ocornut/imgui) von Omar Cornut, MIT-Lizenz
+- [Tracy](https://github.com/wolfpld/tracy) von Bartosz Taudul, BSD-Lizenz mit drei Klauseln, nur mit `NEBENAN_PROFILE`
 
 Die Lizenztexte liegen in `extern` neben dem Quellcode der Bibliotheken und dem Demo-Download im Ordner
-`lizenzen` bei.
+`lizenzen` bei, der von Tracy nur in `nebenan-demo-windows-tracy`.

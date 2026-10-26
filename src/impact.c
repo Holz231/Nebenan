@@ -805,6 +805,7 @@ nbImpactResult nbWorld_ApplyImpact( nbWorldId worldId, const nbImpactDef* def )
 		return (nbImpactResult){ 0 };
 	}
 
+	NB_ZONE( impact_zone, "Impact" );
 	uint64_t ticks = b3GetTicks();
 	nbImpactResult result = nbApplyImpact( world, def, NB_NULL_INDEX );
 
@@ -819,6 +820,7 @@ nbImpactResult nbWorld_ApplyImpact( nbWorldId worldId, const nbImpactDef* def )
 		b3World_Explode( world->physicsWorld, &explosion );
 	}
 
+	NB_ZONE_END( impact_zone );
 	world->profile.stages[nb_profileImpacts] += b3GetMilliseconds( ticks );
 	world->profile.impactCount += 1;
 	return result;

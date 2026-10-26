@@ -4472,6 +4472,7 @@ typedef struct nbFractureTask
 
 static void nbFractureTaskMain( void* context )
 {
+	NB_ZONE( fracture_zone, "Fracture Task" );
 	nbFractureTask* task = context;
 	if ( task->enqueueTicks != 0 )
 	{
@@ -4516,6 +4517,7 @@ static void nbFractureTaskMain( void* context )
 			nbComputeCell( job, cellIndex, task->arena, &scratch, &task->counters );
 		}
 	}
+	NB_ZONE_END( fracture_zone );
 }
 
 // How fast the running means of nbWorld::wakeEstimate follow a new measurement
@@ -4654,6 +4656,7 @@ void nbRunFractureJobs( nbWorld* world, nbFractureJob* jobs, int jobCount, nbPre
 						nbCallerWorkFn* callerWork, void* callerContext )
 {
 	// The calling thread does its own work while the workers start, then it works on the cells as well
+	NB_ZONE( cells_zone, "Cells" );
 	uint64_t ticks = b3GetTicks();
 	nbFractureRun run;
 	nbStartFractureJobs( world, &run, jobs, jobCount, prepare, prepareContext, &world->arena, world->workerArenas );
@@ -4663,6 +4666,7 @@ void nbRunFractureJobs( nbWorld* world, nbFractureJob* jobs, int jobCount, nbPre
 		callerWork( callerContext );
 	}
 	nbFinishFractureJobs( world, &run );
+	NB_ZONE_END( cells_zone );
 
 	// The cells in the profile, those of the calling thread alone, and how long the workers took to start
 	nbProfileSums* profile = &world->profile;
@@ -4701,6 +4705,7 @@ typedef struct nbParallelTask
 
 static void nbParallelTaskMain( void* context )
 {
+	NB_ZONE( task_zone, "Nebenan Task" );
 	nbParallelTask* task = context;
 	for ( ;; )
 	{
@@ -4712,6 +4717,7 @@ static void nbParallelTaskMain( void* context )
 
 		task->fn( task->context, item );
 	}
+	NB_ZONE_END( task_zone );
 }
 
 void nbParallelFor( nbWorld* world, int itemCount, int minItems, nbParallelFn* fn, void* context )
@@ -7105,6 +7111,7 @@ static void nbUpdate( nbWorld* world, float timeStep )
 	nbWakeHitRubble( world );
 
 	// Collision damage, strongest first, limited per update
+	NB_ZONE( damage_zone, "Collision Damage" );
 	uint64_t lap = b3GetTicks();
 	int impactCount = world->collisionImpacts.count;
 	int maxImpacts =
@@ -7144,9 +7151,12 @@ static void nbUpdate( nbWorld* world, float timeStep )
 		}
 	}
 	nbProfileLap( world, nb_profileCollisionDamage, &lap );
+	NB_ZONE_END( damage_zone );
 
 	// Structures that cannot carry themselves give way
+	NB_ZONE( supports_zone, "Check Supports" );
 	nbCheckSupports( world );
+	NB_ZONE_END( supports_zone );
 
 	// Debris ages with the world time, rubble without being visited
 	world->time += timeStep;
@@ -7156,13 +7166,19 @@ static void nbUpdate( nbWorld* world, float timeStep )
 	if ( hasGravity )
 	{
 		lap = b3GetTicks();
+		NB_ZONE( release_zone, "Release" );
 		nbReleaseHeldRubble( world, up );
+		NB_ZONE_END( release_zone );
 		nbProfileLap( world, nb_profileRelease, &lap );
+		NB_ZONE( settle_zone, "Settle" );
 		nbSettleDebris( world, up, timeStep );
+		NB_ZONE_END( settle_zone );
 		nbProfileLap( world, nb_profileSettle, &lap );
 	}
 	lap = b3GetTicks();
+	NB_ZONE( budget_zone, "Budget" );
 	nbEnforceDebrisBudget( world, hasGravity ? up : b3Vec3_zero );
+	NB_ZONE_END( budget_zone );
 	nbProfileLap( world, nb_profileBudget, &lap );
 
 	world->stats.updateTime = b3GetMilliseconds( ticks );
@@ -7270,12 +7286,17 @@ static void nbCollectMoves( nbWorld* world )
 // One step of nbWorld_Step, on the step thread or the calling one
 static void nbTakeStep( nbWorld* world, float timeStep, int subStepCount )
 {
+	NB_ZONE( step_zone, "Nebenan Step" );
 	uint64_t ticks = b3GetTicks();
 	b3World_Step( world->physicsWorld, timeStep, subStepCount );
 	world->stats.stepTime = b3GetMilliseconds( ticks );
 
 	nbCollectMoves( world );
+	NB_ZONE( update_zone, "Nebenan Update" );
 	nbUpdate( world, timeStep );
+	NB_ZONE_END( update_zone );
+	NB_ZONE_END( step_zone );
+	NB_FRAME( "Physics Step" );
 }
 
 #if defined( B3_HAS_STEP_GUARD )

@@ -25,9 +25,10 @@ verworfen, und der Arbeit des Lösers pro Einheit auf `kollaps-17`, auf dem Ryze
 Blöcke des Teams auf `kollaps-18`, simuliert und verworfen, und dem Lesen der Ansprüche vor dem Vergleichstausch auf
 `kollaps-19`, auf dem Ryzen nachgemessen, und dem, was der aufrufende Thread im Team allein rechnet, auf `kollaps-20`,
 und den Durchgängen des Aufbaus der Knoten auf `kollaps-21` und den Zustandswechseln der Kontakte auf `kollaps-22` und
-weniger Durchgängen beim Aufbau der Knoten auf `kollaps-23`, alle vier gemessen und verworfen. Begründungen und
-Messwerte stehen in [`Optimierungen.md`](Optimierungen.md), hier nur das Fazit und die Reihenfolge. Nach jeder Runde
-wird der Stand hier nachgetragen.
+weniger Durchgängen beim Aufbau der Knoten auf `kollaps-23`, alle vier gemessen und verworfen, und dem Werkzeug für eine
+Zeitleiste des Lösers mit Tracy auf `kollaps-24`. Begründungen und Messwerte stehen in
+[`Optimierungen.md`](Optimierungen.md), hier nur das Fazit und die Reihenfolge. Nach jeder Runde wird der Stand hier
+nachgetragen.
 
 `kollaps-1` ist keine Runde der Physik, sie baut den Einsturz nach Kapitel 17 der Roadmap des Spiels, siehe
 [`Referenz`](Referenz/README.md). Sie ändert aber, was der Benchmark unter Trommelfeuer bei ×4 misst: Eine Etage gibt
@@ -238,7 +239,8 @@ bleiben.
 | 57 | **Aufbau der Knoten verteilen**: die Durchgänge von `b3BuildKnots` auf der VM einzeln messen und die, die jeden Kontakt für sich rechnen, vor allem den mit zufälligen Zugriffen auf die Kontakte, auf die Worker legen, die während des Aufbaus warten, bitgleich | mit 8 Threads ein Teil der 0,086 ms pro Schritt, die der aufrufende Thread die Knoten allein baut, während zwei Worker nach 0,032 ms fertig sind und die übrigen warten | 56 | ⛔ auf `kollaps-21` gemessen: Am teuersten sind das Lesen der Körper aus den verstreuten Kontakten mit 23 % des Aufbaus, das Bündeln mit 21 % und das Verteilen auf die Gruppen mit 18 %. Jeden Kontakt für sich rechnen 46 %, auf die wartenden Worker verteilt sparen sie auf dem Ryzen rund 0,013 ms pro Schritt, höchstens 0,029 ms. „Verteilen“ tritt nicht ein, nicht gebaut, daraus 58 |
 | 58 | **Zustandswechsel zerlegen**: die Schleife der Zustandswechsel der Kontakte auf der VM nach der Art des Wechsels und nach ihren Teilen messen, getrennte Paare löschen, Berührungen beginnen und enden lassen, darin Inseln, Graph, Listen und Sätze, und was jeden Kontakt für sich rechnet und nichts ändert, was ein anderer Wechsel liest, in die Kontakt-Schleife auf den Workern vorziehen, bitgleich | mit 8 Threads ein Teil der 0,063 ms pro Schritt, die der aufrufende Thread die Zustandswechsel allein rechnet, während alle Worker warten | 57 | ⛔ auf `kollaps-22` gemessen: Beim Abriss bei ×2 hat ein Schritt im Mittel 881 Wechsel, 441 gelöschte Paare, 258 beginnende und 182 endende Berührungen. Jeden Kontakt für sich, ohne etwas zu ändern, was ein anderer Wechsel liest, rechnen nur das Sammeln der Bits und das Laden der Kontakte und ihrer Formen, 18 % der Schleife, auf dem Ryzen höchstens 0,011 ms pro Schritt. „Vorziehen“ tritt nicht ein, nicht gebaut, daraus 59 |
 | 59 | **Ordnen, Gruppen und Bündeln billiger**: das Ordnen der Kontakte nach Knoten, das Verteilen auf die Gruppen und das Bündeln in `b3BuildKnots` bitgleich mit weniger Durchgängen über die Kontakte bauen und in einer Kopie, die in jedem Schritt beide Fassungen rechnet und vergleicht, gegen die alte messen | mit 1 bis 8 Threads ein Teil der rund 0,038 ms pro Schritt, die diese drei seriellen Durchgänge auf dem Ryzen kosten | 58 | ⛔ auf `kollaps-23` gemessen: Eine Fassung, die beim Verteilen auf die Gruppen vier von sechs Durchgängen spart und beim Ordnen und beim Zählen der großen Inseln je einen, liefert in allen Schritten dieselben Bündel und Gruppen, kostet auf der VM aber nur 6 bis 7 % weniger, 10 bis 12 µs pro Schritt, auf dem Ryzen rund 0,005 ms. Die Zeit liegt in den verstreuten Zugriffen auf Körper und Partner. „Billiger“ tritt nicht ein, nicht gebaut, daraus 60 |
-| 60 | **Erstarren zerlegen**: das Erstarren des Schutts auf der VM nach seinen Teilen messen, die Entscheidungen von Nebenan, die Typwechsel in Box3D mit dem Löschen der Kontakte, dem Umzug der Körper und dem Einbau in die Bäume, und das Lösen von Schutt unter großen Stücken, und was jedes Stück für sich rechnet und nichts ändert, was ein anderes liest, in die Prüfungen auf den Workern vorziehen, bitgleich | mit 8 Threads ein Teil der 0,047 ms pro Schritt, die der aufrufende Thread das Erstarren allein rechnet, während alle Worker warten | 59 | 🔜 |
+| 61 | **Zeitleiste des Teams mit Tracy**: auf dem Ryzen mit `Tracy-Aufnahme.bat` aus `nebenan-demo-windows-tracy` die ersten 900 Schritte des Abrisses bei ×2 mit 8 Threads aufnehmen und mit `tools/tracy_team.py` auswerten, wie lange die Threads im Löser an den Enden der Stufen, in den Übergängen zwischen ihnen, beim Anlaufen und an Störungen verlieren | Werkzeug, entscheidet, ob die größte Insel in Gebiete ohne Sperren zerlegt wird: Mit 8 Threads warten die Threads am Ende der Stufen 21 % der offenen Zeit, und wie sich das Warten auf die rund 232 Stufen pro Schritt verteilt, zeigten bisher nur Summen | 59 | 🔜 gebaut auf `kollaps-24`, die Aufnahme vom Ryzen steht aus |
+| 60 | **Erstarren zerlegen**: das Erstarren des Schutts auf der VM nach seinen Teilen messen, die Entscheidungen von Nebenan, die Typwechsel in Box3D mit dem Löschen der Kontakte, dem Umzug der Körper und dem Einbau in die Bäume, und das Lösen von Schutt unter großen Stücken, und was jedes Stück für sich rechnet und nichts ändert, was ein anderes liest, in die Prüfungen auf den Workern vorziehen, bitgleich | mit 8 Threads ein Teil der 0,047 ms pro Schritt, die der aufrufende Thread das Erstarren allein rechnet, während alle Worker warten | 59 und 61 | 🔜 nach 61 |
 | 33 | **Weniger Kopien an kleinen Knoten**: eine Gruppe für je 64 statt 32 Kontakte, ändert die Ergebnisse | mit 1 und 2 Threads ein Teil der 30 und 7 % pro Kontakt | 30 | 🔜 niedrig |
 | 26 | **Worker wach halten statt schlafen legen**: kurz aktiv warten, bevor ein Worker schläft, bitgleich | auf der VM rund ein Zehntel der Ruhe-Prüfung, kostet Rechenzeit beim Zeichnen | 25 | ⛔ nach 25: Auf dem Ryzen laufen die Worker nach 6 bis 7 µs an, aktiv zu warten spart unter 0,5 % eines Schritts |
 
@@ -1142,6 +1144,44 @@ Prüfungen auf den Workern stehen. Was die Messung der Teile zeigt, entscheidet 
   0,015 ms pro Schritt, werden sie dorthin gelegt, bitgleich, und auf dem Ryzen nachgemessen.
 - **Nichts davon**: Sonst kommt das Anlegen der Kontakte, das der aufrufende Thread mit 8 Threads 0,049 ms pro Schritt
   allein rechnet, zerlegt wie die Zustandswechsel.
+
+Vor Schritt 60 kam die Frage des Nutzers, ob es einen anderen Weg gibt. Die Schritte 56 bis 59 haben gezeigt, dass in
+dem, was der aufrufende Thread um das Team herum allein rechnet, mit 8 Threads nur noch Hundertstel Millisekunden
+liegen. Der größte Posten bleibt das Team selbst: Auf dem Ryzen kostet es mit 8 Threads 0,708 ms pro gemessenem Schritt,
+am Ende der Stufen warten die Threads 21 % der offenen Zeit, und in seinen Blöcken braucht ein Thread pro Einheit das
+1,24-Fache eines Threads allein, siehe Schritt 55. Ein Schritt mit Team hat rund 232 Stufen mit Sperre, und an jeder
+warten alle Threads auf den letzten. Ganz vermeiden ließe sich das nur mit einem großen Umbau: die größte Insel in eine
+feste Zahl von Gebieten zerlegen, die jeder Thread ohne Sperren zwischen den Farben rechnet, die Körper an den Grenzen
+mit geteilter Masse wie die Knoten. Ob sich das lohnt, soll zuerst eine Zeitleiste vom Ryzen zeigen, Block für Block und
+Thread für Thread. Die Zeiten des Teams geben nur Summen, wann und worauf jeder Thread wartet, zeigen sie nicht. Daraus
+Schritt 61, Schritt 60 wartet so lange.
+
+Auf `kollaps-24` ist das Werkzeug gebaut, siehe „Die Zeitleiste des Lösers mit Tracy“ in
+[Optimierungen.md](Optimierungen.md) und „Mit Tracy messen“ in der [README](../README.md). `Tracy-Aufnahme.bat` aus
+`nebenan-demo-windows-tracy` nimmt die ersten 900 Schritte des Abrisses bei ×2 mit 8 Threads auf, mit der Physik
+nacheinander wie „Skalierung messen“. `tools/tracy_team.py` teilt in jedem Schritt mit Team die Zeit jedes Threads im
+Löser in Arbeit und Warten und das Warten danach, was die anderen Threads gerade tun: Ein Worker hat noch nicht
+angefangen („Anlaufen“), ein anderer Thread rechnet noch einen Block der Stufe („Stufen“), dieser Block dauert über
+viermal so lange wie der Median seiner Stufe und über 20 µs („Ausreißer“), ein anderer rechnet ein Paket, der aufrufende
+Thread rechnet allein, oder niemand rechnet, bis zu 20 µs am Stück zwischen zwei Stufen („Übergänge“) oder länger
+(„Pausen“). Ein Warten, geteilt durch die Zahl der Threads, sagt, um wie viel der Löser kürzer würde, wäre es Arbeit.
+Auf der VM zeigt eine Aufnahme mit 4 Threads und der Physik nacheinander 0,76 ms an den Enden der Stufen und 0,20 ms in
+Übergängen bei 4,52 ms Löser, mit der Physik neben dem Zeichnen fast die Hälfte des Lösers in Pausen. Die VM entscheidet
+hier nichts. Was die Aufnahme vom Ryzen zeigt, im Mittel über die Schritte mit Team, entscheidet so:
+
+- **Gestört**: Kosten Ausreißer und Pausen zusammen mindestens 0,05 ms pro Schritt, lief beim Aufnehmen etwas nebenher.
+  Dann eine zweite Aufnahme ohne andere Programme, und die Regeln darunter gelten für die ruhigere der beiden.
+- **Zerlegen**: Kosten die Enden der Stufen und die Übergänge zusammen mindestens 0,10 ms pro Schritt, kommt als
+  Nächstes auf einer eigenen Branch ein Prototyp, der die größte Insel in eine feste Zahl von Gebieten zerlegt und jedes
+  Gebiet ohne Sperren zwischen den Farben rechnet, die Körper an den Grenzen mit geteilter Masse. Die Zahl der Gebiete
+  hängt nicht an der Zahl der Threads, damit die Ergebnisse mit jeder Zahl von Threads gleich bleiben. Gegenüber heute
+  ändert er sie. Gemessen wird er auf der VM und nachgemessen auf dem Ryzen, mit eigenen Regeln.
+- **Anlaufen**: Kostet das Anlaufen der Worker mindestens 0,03 ms pro Schritt, kommt als Nächstes, dass die Worker
+  früher im Löser sind, bitgleich. Treten „Zerlegen“ und „Anlaufen“ beide ein, kommt zuerst, was mehr Zeit dahinter hat.
+- **Nichts davon**: Sonst kommt Schritt 60, das Erstarren des Schutts.
+
+Was der aufrufende Thread allein rechnet und das Warten auf Pakete zeigt die Auswertung mit, sie entscheiden nichts: Das
+eine hat Schritt 56 zerlegt, und auf die Pakete warten die Threads seit Schritt 35 kaum noch.
 
 ## Kleinere Punkte
 

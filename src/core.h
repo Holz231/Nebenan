@@ -45,6 +45,21 @@ int nbInternalAssert( const char* condition, const char* fileName, int lineNumbe
 #define NB_ARRAY_COUNT( A ) (int)( sizeof( A ) / sizeof( A[0] ) )
 #define NB_SECRET_COOKIE 0x4E42414E
 
+// Zones of the Tracy profiler with NEBENAN_PROFILE, nothing without it. Tracy runs with a manual lifetime, the first
+// physics world or pool starts it, see b3StartProfiler.
+#if defined( NB_PROFILE )
+#include <tracy/TracyC.h>
+#define NB_ZONE( ctx, name ) TracyCZoneN( ctx, name, 1 )
+#define NB_ZONE_END( ctx ) TracyCZoneEnd( ctx )
+#define NB_FRAME( name ) ___tracy_emit_frame_mark( name )
+#define NB_THREAD_NAME( name ) ___tracy_set_thread_name( name )
+#else
+#define NB_ZONE( ctx, name )
+#define NB_ZONE_END( ctx )
+#define NB_FRAME( name )
+#define NB_THREAD_NAME( name )
+#endif
+
 // Every allocation starts on this many bytes and is padded to a multiple of them
 #define NB_ALIGNMENT 32
 

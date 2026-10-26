@@ -232,6 +232,9 @@ b3WorldId b3CreateWorld( const b3WorldDef* def )
 {
 	B3_CHECK_DEF( def );
 
+	// Added for Nebenan: the zones of the world need Tracy running, see BOX3D_PROFILE
+	b3StartProfiler();
+
 	B3_ASSERT( B3_LINEAR_SLOP <= B3_MESH_REST_OFFSET );
 	B3_ASSERT( B3_MESH_REST_OFFSET < B3_SPECULATIVE_DISTANCE );
 

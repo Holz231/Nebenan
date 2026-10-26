@@ -25,7 +25,9 @@
 #include <stdarg.h>
 #include <string.h>
 
-#ifdef BOX3D_PROFILE
+// Added for Nebenan: the allocations only with BOX3D_PROFILE_MEMORY. A capture of the step does not need them, and with
+// the manual lifetime of Tracy an allocation could come before the profiler starts.
+#if defined( BOX3D_PROFILE ) && defined( BOX3D_PROFILE_MEMORY )
 
 #include <tracy/TracyC.h>
 #define b3TracyCAlloc( ptr, size ) TracyCAlloc( ptr, size )
@@ -487,4 +489,43 @@ int b3GetThreadToken( void )
 		b3_threadToken = b3AtomicFetchAddInt( &b3_threadTokenCount, 1 ) + 1;
 	}
 	return b3_threadToken;
+}
+
+// Added for Nebenan: see b3StartProfiler
+#ifdef BOX3D_PROFILE
+static void b3StopProfiler( void )
+{
+	___tracy_shutdown_profiler();
+}
+
+// 0 before the start, 1 while a thread starts Tracy, 2 once it runs
+static b3AtomicInt b3_profilerState;
+#endif
+
+void b3StartProfiler( void )
+{
+#ifdef BOX3D_PROFILE
+	if ( b3AtomicLoadInt( &b3_profilerState ) == 2 )
+	{
+		return;
+	}
+
+	if ( b3AtomicCompareExchangeInt( &b3_profilerState, 0, 1 ) )
+	{
+		// Unless the program started it already. It stops when the program ends, after the worlds are gone.
+		if ( TracyCIsStarted == 0 )
+		{
+			___tracy_startup_profiler();
+			atexit( b3StopProfiler );
+		}
+		b3AtomicStoreInt( &b3_profilerState, 2 );
+		return;
+	}
+
+	// Another thread starts it, every zone needs it running
+	while ( b3AtomicLoadInt( &b3_profilerState ) != 2 )
+	{
+		b3Yield();
+	}
+#endif
 }

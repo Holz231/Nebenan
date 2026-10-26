@@ -259,6 +259,7 @@ static bool nbRunPending( nbScheduler* scheduler, bool allowBackground )
 
 static void nbWorkerLoop( nbScheduler* scheduler )
 {
+	NB_THREAD_NAME( "Nebenan Worker" );
 	for ( ;; )
 	{
 		if ( nbRunPending( scheduler, true ) )
@@ -357,6 +358,8 @@ static void nbJoinThread( nbThread thread )
 
 nbScheduler* nbCreateScheduler( int threadCount )
 {
+	// The threads name themselves for the profiler, which has to run before, see NEBENAN_PROFILE
+	b3StartProfiler();
 	nbScheduler* scheduler = nbAlloc( sizeof( nbScheduler ) );
 	memset( scheduler, 0, sizeof( nbScheduler ) );
 	nbMutexInit( &scheduler->mutex );
@@ -511,6 +514,7 @@ struct nbStepThread
 
 static void nbStepLoop( nbStepThread* stepThread )
 {
+	NB_THREAD_NAME( "Nebenan Step" );
 	nbAtomicStoreInt( &stepThread->token, nbGetThreadToken() );
 	nbMutexLock( &stepThread->mutex );
 	for ( ;; )

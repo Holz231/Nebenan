@@ -12,6 +12,11 @@ option(NEBENAN_WARNINGS_AS_ERRORS "Treat compiler warnings as errors" OFF)
 
 option(NEBENAN_DEMO "Build the desktop demo" ${PROJECT_IS_TOP_LEVEL})
 
+# Zones for the Tracy profiler in Box3D and Nebenan, see README. Box3D fetches Tracy 0.13.1, the version of the viewer.
+# A capture is taken from this machine only and holds no source, call stacks or other programs, and no user or host name,
+# so it can be shared. It records only while a viewer is connected.
+option(NEBENAN_PROFILE "Build with zones for the Tracy profiler" OFF)
+
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
 set(CMAKE_LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
@@ -27,6 +32,14 @@ endif()
 # Box3D ships in extern/box3d at a fixed commit, so every build uses the same physics code and needs no
 # download. A project that embeds Nebenan and has its own box3d::box3d target keeps that one.
 if(NOT TARGET box3d::box3d)
+	set(BOX3D_PROFILE ${NEBENAN_PROFILE})
+	if(NEBENAN_PROFILE)
+		foreach(option TRACY_ON_DEMAND TRACY_ONLY_LOCALHOST TRACY_NO_BROADCAST TRACY_NO_CODE_TRANSFER TRACY_NO_CALLSTACK
+				TRACY_NO_SAMPLING TRACY_NO_SYSTEM_TRACING TRACY_NO_CONTEXT_SWITCH TRACY_NO_FRAME_IMAGE TRACY_NO_VSYNC_CAPTURE)
+			set(${option} ON CACHE BOOL "Set by NEBENAN_PROFILE" FORCE)
+		endforeach()
+	endif()
+
 	if(CMAKE_VERSION VERSION_GREATER_EQUAL 3.25)
 		add_subdirectory(extern/box3d SYSTEM)
 	else()

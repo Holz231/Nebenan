@@ -188,6 +188,11 @@ B3_API void b3SetSIMDWidth( int width );
 /// Added for Nebenan: the number of lanes the contact solver of new worlds uses.
 B3_API int b3GetSIMDWidth( void );
 
+/// Added for Nebenan: start the Tracy profiler of a build with BOX3D_PROFILE, once, it stops when the program ends.
+/// Tracy has a manual lifetime there and every zone needs it running. b3CreateWorld calls this, a program calls it first
+/// if it names threads or opens zones of its own before. Does nothing without BOX3D_PROFILE.
+B3_API void b3StartProfiler( void );
+
 /**@}*/
 
 //! @cond

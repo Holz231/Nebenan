@@ -61,5 +61,11 @@ if(UNIX AND NOT APPLE AND NOT EMSCRIPTEN)
 	target_link_libraries(nebenan PUBLIC m)
 endif()
 
+# Zones for the Tracy profiler, see NEBENAN_PROFILE. Box3D brings the client, a program on top sees the define and can
+# mark its frames.
+if(NEBENAN_PROFILE)
+	target_compile_definitions(nebenan PUBLIC NB_PROFILE)
+endif()
+
 source_group(TREE "${CMAKE_CURRENT_SOURCE_DIR}" PREFIX "src" FILES ${NEBENAN_SOURCE_FILES})
 source_group(TREE "${CMAKE_CURRENT_SOURCE_DIR}/../include" PREFIX "include" FILES ${NEBENAN_INCLUDE_FILES})

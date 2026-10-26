@@ -624,9 +624,25 @@ Array oder jeden auf einer eigenen Cache-Zeile zu halten, war beides teurer, sie
 noch, wie Box2D die Blöcke nimmt, vorwärts und rückwärts bis zum ersten genommenen Block, und sagt jetzt, dass Box3D den
 ganzen Ring abläuft. Welcher Thread einen Block rechnet, ändert sich, was er rechnet, nicht.
 
+**Zonen für den Profiler Tracy.** Mit `BOX3D_PROFILE` holt Box3D den Client von Tracy 0.13.1 und markiert Abschnitte des
+Schritts als Zonen, Nebenan schaltet das mit `NEBENAN_PROFILE` ein. Upstream lagen die Zonen in den Kernen des Lösers,
+die ein Paket für jede Farbe und jeden Teilschritt aufruft. Beim Abriss in der Demo waren das auf der VM 836 000 Zonen
+in 10 s, und die Zeitleiste zeigte nicht, wann das Team auf eine Stufe wartet. Jetzt haben die Kerne und die Integration
+ihre Zonen nur noch mit `BOX3D_PROFILE_DETAIL`. Dafür bekommt jeder Block einer Stufe des Teams eine Zone mit dem Namen
+seiner Stufe, die Blöcke der Knoten „Knots“, und je eine Zone jedes Paket („Pack“), jedes Stück Überlauf, das der
+aufrufende Thread allein rechnet („Overflow“), das Mitteln der Kopien der Knoten („Merge Knots“), die Zeit eines Workers
+im Löser („Solver Worker“) und der Aufbau der Pakete und der Knoten (`src/solver.c`). Zwischen seinen Zonen wartet ein
+Thread. Dieselbe Aufnahme hat damit 332 000 Zonen und 2,1 MB. Die Speicheranforderungen meldet Box3D Tracy nur noch mit
+`BOX3D_PROFILE_MEMORY`. Tracy läuft in Box3D mit eigener Lebensdauer, und jede Zone braucht es laufend.
+`b3StartProfiler` in `include/box3d/base.h` startet es einmal, auch wenn mehrere Threads zugleich kommen, und es endet
+mit dem Programm. `b3CreateWorld` ruft das auf, ein Programm, das vorher Threads benennt oder eigene Zonen öffnet,
+ebenso. Hat das Programm Tracy selbst gestartet, bleibt es dabei. Tracy schreibt in jede Aufnahme den Anmeldenamen und
+den Namen des Rechners. `src/tracy_hide_user.cmake` ändert das nach dem Download in „(hidden)“, damit sich eine Aufnahme
+teilen lässt. Ohne `BOX3D_PROFILE` kommt nichts davon in den Build, und `b3StartProfiler` tut nichts.
+
 Die erste, die zweite, die vierte bis achte, die zehnte, die dreizehnte bis einunddreißigste, die dreiunddreißigste bis
 fünfunddreißigste, die neununddreißigste bis dreiundvierzigste, die fünfundvierzigste bis siebenundvierzigste, die
-neunundvierzigste bis achtundfünfzigste ändern an den Ergebnissen nichts. Die dritte und die neunte ändern sie in den
+neunundvierzigste bis neunundfünfzigste ändern an den Ergebnissen nichts. Die dritte und die neunte ändern sie in den
 letzten Bits, dafür hängen sie nicht mehr davon ab, in welcher Reihenfolge Formen in die Bäume kommen. Die elfte ändert
 sie, weil Kontakte zu anderen Zeitpunkten entstehen, die zwölfte, weil sie weniger Punkte bekommen, die
 zweiunddreißigste, weil die Kontakte eines Knotens gebündelt gegen Kopien rechnen statt nacheinander, die
@@ -643,13 +659,13 @@ Die Ergänzungen stehen in `CMakeLists.txt`, `src/CMakeLists.txt`, `include/box3
 `src/manifold.h`, `src/convex_manifold.c`, `src/convex_manifold_avx2.c`, `src/world_snapshot.c`, `src/recording.c`,
 `src/solver.h`, `src/solver.c`, `src/solver_set.c`, `src/broad_phase.h`, `src/broad_phase.c`, `src/dynamic_tree.h`,
 `src/dynamic_tree.c`, `src/parallel_for.h`, `src/parallel_for.c`, `src/platform.h`, `src/scheduler.h`,
-`src/scheduler.c`, `src/timer.c`, `src/physics_world.h` und `src/physics_world.c`, jeweils mit „Added for Nebenan“
-markiert. `B3_HAS_UNIQUE_HULLS`, `B3_HAS_SHAPE_BATCH`, `B3_HAS_SHAPE_CONTACT_LISTS`, `B3_HAS_EXTERNAL_HULLS`,
-`B3_HAS_BODY_PREFETCH`, `B3_HAS_STEP_GUARD`, `B3_HAS_PREVIOUS_TRANSFORM`, `B3_HAS_STATIC_OVERLAP` und
-`B3_HAS_CONTACT_DATA_OF_BODIES` zeigen die zweite, die vierte, die fünfte, die sechste, die neunzehnte, die dreißigste,
-die fünfunddreißigste, die zweiundvierzigste und die vierundfünfzigste an. Fehlen sie, etwa mit einem eigenen Box3D,
-läuft Nebenan wie zuvor, nur wachsen Box3Ds Arrays dann durch Umkopieren, die Hüllen gehen durch die Tabelle, jede Form
-geht einzeln in den Baum, jedes stehende Bruchstück bekommt einen eigenen Körper, Box3D hält eine Kopie jeder Hülle,
-Nebenan holt die Körper der Trümmer nicht voraus, `nbWorld_Step` rechnet auf dem aufrufenden Thread,
-`nbWorld_GetDrawPoses` gibt die Lagen nach dem Schritt, Schutt wird in allen Bäumen gesucht, und die Ruhe-Prüfung holt
-die Kontakte jedes ruhigen Stücks für sich.
+`src/scheduler.c`, `src/timer.c`, `src/physics_world.h`, `src/physics_world.c` und `src/tracy_hide_user.cmake`, jeweils
+mit „Added for Nebenan“ markiert. `B3_HAS_UNIQUE_HULLS`, `B3_HAS_SHAPE_BATCH`, `B3_HAS_SHAPE_CONTACT_LISTS`,
+`B3_HAS_EXTERNAL_HULLS`, `B3_HAS_BODY_PREFETCH`, `B3_HAS_STEP_GUARD`, `B3_HAS_PREVIOUS_TRANSFORM`,
+`B3_HAS_STATIC_OVERLAP` und `B3_HAS_CONTACT_DATA_OF_BODIES` zeigen die zweite, die vierte, die fünfte, die sechste, die
+neunzehnte, die dreißigste, die fünfunddreißigste, die zweiundvierzigste und die vierundfünfzigste an. Fehlen sie, etwa
+mit einem eigenen Box3D, läuft Nebenan wie zuvor, nur wachsen Box3Ds Arrays dann durch Umkopieren, die Hüllen gehen
+durch die Tabelle, jede Form geht einzeln in den Baum, jedes stehende Bruchstück bekommt einen eigenen Körper, Box3D
+hält eine Kopie jeder Hülle, Nebenan holt die Körper der Trümmer nicht voraus, `nbWorld_Step` rechnet auf dem
+aufrufenden Thread, `nbWorld_GetDrawPoses` gibt die Lagen nach dem Schritt, Schutt wird in allen Bäumen gesucht, und die
+Ruhe-Prüfung holt die Kontakte jedes ruhigen Stücks für sich.

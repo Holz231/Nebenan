@@ -1194,7 +1194,7 @@ B3_FORCE_INLINE void b3WarmStartContactW( b3ContactConstraintWide* c, b3BodyStat
 
 void B3_WIDE( b3WarmStartContacts_Convex )( b3SolverBlock block, b3StepContext* context )
 {
-	b3TracyCZoneNC( warm_start_contact, "Warm Start", b3_colorGreen, true );
+	b3TracyCZoneDetailNC( warm_start_contact, "Warm Start", b3_colorGreen, true );
 
 	b3BodyState* states = context->states;
 	b3ContactConstraintWide* constraints = context->graph->colors[block.colorIndex].wideConstraints;
@@ -1209,7 +1209,7 @@ void B3_WIDE( b3WarmStartContacts_Convex )( b3SolverBlock block, b3StepContext* 
 		b3ScatterBodies( states, c->indexB, &bB );
 	}
 
-	b3TracyCZoneEnd( warm_start_contact );
+	b3TracyCZoneDetailEnd( warm_start_contact );
 }
 
 // Added for Nebenan: the constants of b3PushContacts_Convex, for b3PushContactW
@@ -1331,7 +1331,7 @@ B3_FORCE_INLINE void b3PushContactW( b3ContactConstraintWide* c, b3BodyStateW* b
 // Solve the non-penetration constraints with the soft bias. No friction and no restitution.
 void B3_WIDE( b3PushContacts_Convex )( b3SolverBlock block, b3StepContext* context )
 {
-	b3TracyCZoneNC( push_contact, "Push Contact", b3_colorAliceBlue, true );
+	b3TracyCZoneDetailNC( push_contact, "Push Contact", b3_colorAliceBlue, true );
 
 	b3BodyState* states = context->states;
 	b3ContactConstraintWide* constraints = context->graph->colors[block.colorIndex].wideConstraints;
@@ -1347,7 +1347,7 @@ void B3_WIDE( b3PushContacts_Convex )( b3SolverBlock block, b3StepContext* conte
 		b3ScatterBodies( states, c->indexB, &bB );
 	}
 
-	b3TracyCZoneEnd( push_contact );
+	b3TracyCZoneDetailEnd( push_contact );
 }
 
 // Added for Nebenan: the constants of b3SolveContacts_Convex, for b3SolveContactW
@@ -1548,7 +1548,7 @@ B3_FORCE_INLINE void b3SolveContactW( b3ContactConstraintWide* c, b3BodyStateW* 
 // Solve the normal constraint, friction, and rolling resistance.
 void B3_WIDE( b3SolveContacts_Convex )( b3SolverBlock block, b3StepContext* context )
 {
-	b3TracyCZoneNC( solve_contact, "Solve Contact", b3_colorAliceBlue, true );
+	b3TracyCZoneDetailNC( solve_contact, "Solve Contact", b3_colorAliceBlue, true );
 
 	b3BodyState* states = context->states;
 	b3ContactConstraintWide* constraints = context->graph->colors[block.colorIndex].wideConstraints;
@@ -1564,7 +1564,7 @@ void B3_WIDE( b3SolveContacts_Convex )( b3SolverBlock block, b3StepContext* cont
 		b3ScatterBodies( states, c->indexB, &bB );
 	}
 
-	b3TracyCZoneEnd( solve_contact );
+	b3TracyCZoneDetailEnd( solve_contact );
 }
 
 // Added for Nebenan: the constants of b3ApplyRestitution_Convex, for b3ApplyRestitutionW
@@ -1653,7 +1653,7 @@ B3_FORCE_INLINE void b3ApplyRestitutionW( b3ContactConstraintWide* c, b3BodyStat
 
 void B3_WIDE( b3ApplyRestitution_Convex )( b3SolverBlock block, b3StepContext* context )
 {
-	b3TracyCZoneNC( restitution, "Restitution", b3_colorDodgerBlue, true );
+	b3TracyCZoneDetailNC( restitution, "Restitution", b3_colorDodgerBlue, true );
 
 	b3BodyState* states = context->states;
 	b3ContactConstraintWide* constraints = context->graph->colors[block.colorIndex].wideConstraints;
@@ -1674,7 +1674,7 @@ void B3_WIDE( b3ApplyRestitution_Convex )( b3SolverBlock block, b3StepContext* c
 		b3ScatterBodies( states, c->indexB, &bB );
 	}
 
-	b3TracyCZoneEnd( restitution );
+	b3TracyCZoneDetailEnd( restitution );
 }
 
 // Added for Nebenan: the wide constraints of a batch of a knot, see b3KnotBatch
@@ -1789,7 +1789,7 @@ B3_FORCE_INLINE void b3EndKnotBatch( b3BodyState* states, b3KnotCopy* knotCopies
 
 void B3_WIDE( b3WarmStartKnots )( b3StepContext* context, int startBatch, int endBatch )
 {
-	b3TracyCZoneNC( warm_start_knots, "Warm Start Knots", b3_colorGreen, true );
+	b3TracyCZoneDetailNC( warm_start_knots, "Warm Start Knots", b3_colorGreen, true );
 
 	b3BodyState* states = context->states;
 	b3ContactConstraintWide* constraints = context->knotConstraints;
@@ -1811,12 +1811,12 @@ void B3_WIDE( b3WarmStartKnots )( b3StepContext* context, int startBatch, int en
 		b3EndKnotBatch( states, knotCopies, batch, &copies );
 	}
 
-	b3TracyCZoneEnd( warm_start_knots );
+	b3TracyCZoneDetailEnd( warm_start_knots );
 }
 
 void B3_WIDE( b3PushKnots )( b3StepContext* context, int startBatch, int endBatch )
 {
-	b3TracyCZoneNC( push_knots, "Push Knots", b3_colorAliceBlue, true );
+	b3TracyCZoneDetailNC( push_knots, "Push Knots", b3_colorAliceBlue, true );
 
 	b3BodyState* states = context->states;
 	b3ContactConstraintWide* constraints = context->knotConstraints;
@@ -1839,12 +1839,12 @@ void B3_WIDE( b3PushKnots )( b3StepContext* context, int startBatch, int endBatc
 		b3EndKnotBatch( states, knotCopies, batch, &copies );
 	}
 
-	b3TracyCZoneEnd( push_knots );
+	b3TracyCZoneDetailEnd( push_knots );
 }
 
 void B3_WIDE( b3SolveKnots )( b3StepContext* context, int startBatch, int endBatch )
 {
-	b3TracyCZoneNC( solve_knots, "Solve Knots", b3_colorAliceBlue, true );
+	b3TracyCZoneDetailNC( solve_knots, "Solve Knots", b3_colorAliceBlue, true );
 
 	b3BodyState* states = context->states;
 	b3ContactConstraintWide* constraints = context->knotConstraints;
@@ -1867,14 +1867,14 @@ void B3_WIDE( b3SolveKnots )( b3StepContext* context, int startBatch, int endBat
 		b3EndKnotBatch( states, knotCopies, batch, &copies );
 	}
 
-	b3TracyCZoneEnd( solve_knots );
+	b3TracyCZoneDetailEnd( solve_knots );
 }
 
 // Added for Nebenan: as b3ApplyRestitution_Convex, a wide constraint without restitution leaves its copies of the knot as
 // they were
 void B3_WIDE( b3ApplyKnotRestitution )( b3StepContext* context, int startBatch, int endBatch )
 {
-	b3TracyCZoneNC( knot_restitution, "Knot Restitution", b3_colorDodgerBlue, true );
+	b3TracyCZoneDetailNC( knot_restitution, "Knot Restitution", b3_colorDodgerBlue, true );
 
 	b3BodyState* states = context->states;
 	b3ContactConstraintWide* constraints = context->knotConstraints;
@@ -1902,7 +1902,7 @@ void B3_WIDE( b3ApplyKnotRestitution )( b3StepContext* context, int startBatch, 
 		b3EndKnotBatch( states, knotCopies, batch, &copies );
 	}
 
-	b3TracyCZoneEnd( knot_restitution );
+	b3TracyCZoneDetailEnd( knot_restitution );
 }
 
 #undef B3_KNOT_WIDE
@@ -1910,7 +1910,7 @@ void B3_WIDE( b3ApplyKnotRestitution )( b3StepContext* context, int startBatch, 
 // Store impulses by contact constraint
 void B3_WIDE( b3StoreImpulses_Convex )( b3SolverBlock block, b3StepContext* context, int workerIndex )
 {
-	b3TracyCZoneNC( store_impulses, "Store", b3_colorFireBrick, true );
+	b3TracyCZoneDetailNC( store_impulses, "Store", b3_colorFireBrick, true );
 
 	b3World* world = context->world;
 	b3WidePrepareSpan* spans = context->widePrepareSpans;
@@ -2020,7 +2020,7 @@ void B3_WIDE( b3StoreImpulses_Convex )( b3SolverBlock block, b3StepContext* cont
 
 	taskContext->hasHitEvents = hasHitEvents;
 
-	b3TracyCZoneEnd( store_impulses );
+	b3TracyCZoneDetailEnd( store_impulses );
 }
 
 #undef B3_GATHER_LANES
