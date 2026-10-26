@@ -67,7 +67,7 @@ Auf dem Mac zusätzlich `xattr -d com.apple.quarantine nebenan_demo` oder im Fin
 ## Selbst bauen
 
 Voraussetzungen: CMake 3.22 oder neuer und ein C17/C++17-Compiler. Box3D und Dear ImGui liegen als Quellcode im Ordner
-[`extern`](extern) bei und werden mitgebaut, der Build braucht also kein Internet, nur mit `NEBENAN_PROFILE`.
+[`extern`](extern) bei und werden mitgebaut, der Build braucht also kein Internet, außer mit `NEBENAN_PROFILE`.
 
 **Windows** mit Visual Studio 2022 oder neuer (Workload „Desktopentwicklung mit C++"):
 
@@ -1478,7 +1478,7 @@ nichts davon in den Build.
 herunterladen“. `Tracy-Aufnahme.bat` darin reißt die Stadt bei ×2 mit 8 Threads ab, mit der Physik nacheinander wie
 „Skalierung messen“, 900 Schritte mit 1/60 s, auf jedem PC dieselben, und beendet sich dann. Liegen `tracy-capture.exe`
 und `tracy-update.exe` aus dem ZIP von Tracy im selben Ordner, am einfachsten das ZIP dorthin entpacken, schreibt sie
-die Aufnahme mit Zstd gepackt nach `abriss.tracy`, rund 15 MB. Ohne sie vorher den Tracy Profiler starten und auf
+die Aufnahme mit Zstd gepackt nach `abriss.tracy`, rund 15 MB. Ohne die beiden vorher den Tracy Profiler starten und auf
 **Connect** klicken, er wartet dann auf die Demo, zeigt die Aufnahme und speichert sie. Unter Linux und macOS mit
 `-DNEBENAN_PROFILE=ON` bauen, `tracy-capture -o abriss.tracy -a 127.0.0.1` starten und in einem zweiten Terminal die
 Demo:

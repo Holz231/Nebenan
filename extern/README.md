@@ -629,7 +629,7 @@ Schritts als Zonen, Nebenan schaltet das mit `NEBENAN_PROFILE` ein. Upstream lag
 die ein Paket für jede Farbe und jeden Teilschritt aufruft. Beim Abriss in der Demo waren das auf der VM 836 000 Zonen
 in 10 s, und die Zeitleiste zeigte nicht, wann das Team auf eine Stufe wartet. Jetzt haben die Kerne und die Integration
 ihre Zonen nur noch mit `BOX3D_PROFILE_DETAIL`. Dafür bekommt jeder Block einer Stufe des Teams eine Zone mit dem Namen
-seiner Stufe, die Blöcke der Knoten „Knots“, und je eine Zone jedes Paket („Pack“), jedes Stück Überlauf, das der
+seiner Stufe, die Blöcke der Knoten „Knots“. Eigene Zonen haben auch jedes Paket („Pack“), jedes Stück Überlauf, das der
 aufrufende Thread allein rechnet („Overflow“), das Mitteln der Kopien der Knoten („Merge Knots“), die Zeit eines Workers
 im Löser („Solver Worker“) und der Aufbau der Pakete und der Knoten (`src/solver.c`). Zwischen seinen Zonen wartet ein
 Thread. Dieselbe Aufnahme hat damit 332 000 Zonen und 2,1 MB. Die Speicheranforderungen meldet Box3D Tracy nur noch mit
