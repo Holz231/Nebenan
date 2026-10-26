@@ -1068,6 +1068,16 @@ mit vielen Knoten 8 bis 13 %. Die Ergebnisse bleiben bitgleich. Auf dem Ryzen 7 
 0,098 statt 0,127 ms, ein Schritt im Rahmen der Schwankungen gleich viel, siehe „Skalierung auf dem Ryzen mit
 `kollaps-10`“ in [docs/Optimierungen.md](docs/Optimierungen.md).
 
+Seit `kollaps-17` misst Box3D in jedem achten Schritt, was eine Einheit Arbeit des Lösers kostet: die Arbeit der Inseln,
+auch mit einem Thread, und wie lange die Threads ganze Pakete rechnen, siehe „Arbeit des Lösers pro Einheit“ in
+[`extern/README.md`](extern/README.md). `nbWorld_GetProfile` gibt das in `nbProfile::solverSampleCount` und den Feldern
+danach weiter, ohne eigenen Aufruf, und der Bericht von „Skalierung messen“ zeigt die Mikrosekunden pro 1 000 Einheiten
+für jede Zahl von Threads: für die Bedingungen auf dem aufrufenden Thread und für die Pakete und die Blöcke des Teams
+über alle Threads. Beim Abriss in der Demo auf der VM bei ×2 braucht ein Thread mit 4 Threads für dieselbe Arbeit in den
+Paketen 1,18-mal und in den Blöcken des Teams 1,39-mal so lange wie ein Thread allein. Die Ergebnisse bleiben bitgleich,
+und ein Schritt kostet im Benchmark gepaart gegen `kollaps-16` im Rahmen der Schwankungen gleich viel. Was die Tabelle
+mit 8 Threads auf dem Ryzen zeigt, entscheidet, wie es im Löser weitergeht, siehe [docs/Roadmap.md](docs/Roadmap.md).
+
 Seit `kollaps-11` misst Box3D, wohin die Zeit der Kontakt-Schleife geht: was der aufrufende Thread davor und danach
 allein rechnet, und in jedem achten Schritt, wie die Threads die parallele Schleife verbringen, in Blöcken, vor ihrem
 ersten und nach ihrem letzten, siehe „Zeiten der Kontakt-Schleife“ in [`extern/README.md`](extern/README.md).

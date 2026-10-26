@@ -1273,6 +1273,31 @@ Seit der Liste ist dazugekommen oder gemessen worden:
   Grenze nannte, setzten eine Arbeit voraus, die sich in jedem Update gleich auf die Threads verteilen lässt. Kein
   Schnitt kommt an die 0,008 ms der Regel heran, nicht gebaut, siehe „Blöcke der Prüfungen kleiner schneiden“ in der
   Tabelle unten.
+- **Was eine Einheit Arbeit im Löser kostet.** Die Bedingungen des Lösers liegen beim Abriss auf dem Ryzen mit 8 Threads
+  0,377 ms über einem Achtel ihrer Zeit mit einem Thread, siehe „Skalierung auf dem Ryzen mit `kollaps-15`“. Wohin das
+  geht, zeigte der Bericht von dort schon zum größten Teil. In 86 % der Schritte mit Workern rechnet ein Team aller
+  Threads das Paket der größten Insel, mit 81 % der Arbeit dieser Schritte, und mit 8 Threads dauert das Team auf dem
+  aufrufenden Thread 0,733 ms. Über alle Threads sind das 5,86 ms: 3,21 ms rechnen sie in den Blöcken des Teams und
+  0,61 ms in den anderen Paketen, während eine Stufe offen ist, 1,02 ms warten sie nach ihrem letzten Block auf das Ende
+  einer Stufe und 0,26 ms, bevor sie in eine Stufe kommen. 0,77 ms gehen auf die 0,10 ms, die der aufrufende Thread
+  zwischen den Stufen und in Stufen mit einem Block allein rechnet, während die Worker warten oder andere Pakete
+  rechnen. Offen war, wie die 3,21 ms in den Blöcken zu dem stehen, was ein Thread allein für dieselbe Arbeit braucht.
+  Seit `kollaps-17` misst Box3D das in jedem achten Schritt, siehe „Arbeit des Lösers pro Einheit“ in
+  [`extern/README.md`](../extern/README.md): die Arbeit der Inseln, vier Einheiten pro Kontakt und eine pro Körper, auch
+  mit einem Thread, und wie lange die Threads ganze Pakete rechnen. Der Bericht von „Skalierung messen“ zeigt daraus die
+  Mikrosekunden pro 1 000 Einheiten, für die Bedingungen auf dem aufrufenden Thread und für die Pakete und die Blöcke
+  des Teams über alle Threads. Ein Thread allein löst die Farben nacheinander wie das Team, nur ohne Sperren, er ist das
+  Maß. Beim Abriss auf der VM bei ×2 hat jeder Schritt der Stichprobe mit 1, 2 und 4 Threads dieselben 36 380 Einheiten.
+  Mit einem Thread kosten die Bedingungen 254 µs pro 1 000 Einheiten, mit 2 und 4 Threads die Pakete 273 und 301 µs,
+  1,07- und 1,18-mal so viel, und die Blöcke des Teams 299 und 354 µs, 1,18- und 1,39-mal so viel. Mit mehr Threads
+  braucht also jeder Thread für dieselbe Arbeit länger, im Team mehr als in den Paketen, und was der aufrufende Thread
+  im Team allein rechnet, zählen die Blöcke nicht einmal mit. Die Ergebnisse bleiben bitgleich. Gepaart gegen
+  `kollaps-16` kostet ein Schritt im Benchmark im Rahmen der Schwankungen gleich viel: In zwei Durchgängen mit je vier
+  Läufen pro Build im Wechsel, im ersten mit den neuen Feldern mitten in den Strukturen, im zweiten an ihrem Ende,
+  liegen die Mediane zwischen 4 % weniger und 7 % mehr, und schon die Läufe eines Builds liegen bis 22 % auseinander. In
+  der Stadt bei ×2 mit 2 Threads kostet `kollaps-17` in beiden Durchgängen 4 % mehr, dort aber ebenso in der
+  Kontakt-Schleife und im Update, die die Runde nicht ändert, und die Stichprobe liest die Uhr nur zweimal pro Paket in
+  jedem achten Schritt. Auf dem Ryzen nachzumessen, siehe Schritt 52 der [Roadmap](Roadmap.md).
 
 ## Physik, Zerstörung und Schutt
 
@@ -1636,3 +1661,4 @@ Seit der Liste ist dazugekommen oder gemessen worden:
 | Liste eines Körpers, der alle Kontakte verliert, als Ganzes fallen lassen | ⛔ | Gemessen auf `kollaps-15`, siehe „Nur berührende Kontakte ablaufen“: Verliert ein Körper bei einem Typwechsel alle Kontakte, nahm eine Variante jeden berührenden nur aus der Liste des anderen Körpers und ließ die eigene als Ganzes fallen. Die Typwechsel kosteten damit nicht messbar weniger: Die Nachbarn in der eigenen Liste sind die anderen Kontakte des Körpers, die er gleich danach ohnehin löscht. Wieder entfernt. |
 | Zeit pro Blick des Budgets aus allen Tasks | ✅ auf `kollaps-15` | Die Zeit pro Blick des Budgets, nach der Nebenan entscheidet, ab wie vielen bewegten Stücken die Worker mitschauen, kam nur vom aufrufenden Thread. Die Worker nehmen sich die Blöcke selbst, und wo sie schnell starten, nehmen sie alle, bevor der aufrufende Thread zu einem kommt. Dann bekam die Schätzung nie einen Wert, die Schwelle passte sich nie an, und `BudgetWorkersTest` scheiterte in der CI unter Windows, seit die Abfragen der Kontakte billiger sind. Jetzt misst jeder Task seine eigene Zeit, und die Schätzung teilt die Zeit aller Tasks durch alle ihre Blicke. Ein aufrufender Thread, der wartet, bis die Worker jeden Block genommen haben, zeigte den Fehler vorher und besteht jetzt. Die Blicke und die Rangfolge bleiben dieselben. Die Zeiten pro Prüfung eines Stücks und pro Zelle eines Bruchs kommen weiter nur vom aufrufenden Thread und können auf dieselbe Weise ohne Wert bleiben, ihre Schwelle bleibt dann beim Höchstwert. |
 | Blöcke der Prüfungen kleiner schneiden | ⛔ | Gemessen auf `kollaps-16`, siehe „Die Blöcke der Prüfungen schneiden“: Mit 8 Threads warten die Threads auf dem Ryzen 16,7 % ihrer Zeit nach ihrem letzten Block, siehe „Skalierung auf dem Ryzen mit `kollaps-15`“. Vorgeschlagen als Schritt 50 der [Roadmap](Roadmap.md), gebaut nur, wenn ein Schnitt nach der Simulation mit 8 Threads mindestens 0,008 ms pro Update bringt. Nach der Simulation, die den Ryzen mit 8 Threads trifft, verkürzen kleinere Blöcke überall, nur am Ende oder nur um große Stücke die Prüfungen um höchstens 0,002 ms pro Update, denn kleinere Blöcke kosten zusammen 3,5 bis 7,6 % mehr, und selbst ohne jedes Warten am Ende wären es nur 0,006 ms: In 23 % der Updates dauert der längste Block allein länger als ein Achtel der Arbeit. Mit 4 Threads kosten Blöcke von 16 auf der VM gemessen 0,015 ms pro Update mehr. Nicht gebaut. |
+| Bedingungen des Lösers zerlegen | ✅ auf `kollaps-17` | Mit 8 Threads liegen die Bedingungen beim Abriss auf dem Ryzen 0,377 ms über einem Achtel ihrer Zeit mit einem Thread, 18 % eines Schritts, siehe „Skalierung auf dem Ryzen mit `kollaps-15`“. Die Stufen des Teams zählte Box3D schon, offen war, wie lange ein Thread im Team und in den Paketen für dieselbe Arbeit braucht. Vorgeschlagen als Schritt 51 der [Roadmap](Roadmap.md). Umgesetzt auf `kollaps-17`, siehe „Was eine Einheit Arbeit im Löser kostet“ und „Arbeit des Lösers pro Einheit“ in [`extern/README.md`](../extern/README.md): Box3D misst in jedem achten Schritt die Arbeit der Inseln, auch mit einem Thread, und die Zeit der ganzen Pakete, und der Bericht zeigt die Mikrosekunden pro 1 000 Einheiten Arbeit. Auf der VM mit 4 Threads braucht ein Thread in den Paketen 1,18-mal und in den Blöcken des Teams 1,39-mal so lange wie ein Thread allein. Auf dem Ryzen nachzumessen, siehe Schritt 52 |

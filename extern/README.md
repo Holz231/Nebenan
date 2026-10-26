@@ -597,9 +597,23 @@ der Blick auf ein ruhiges Stück damit 20 bis 24 % weniger, und die Pflege der L
 der Zustandswechsel 0,014 bis 0,024 ms pro Schritt. Die Ergebnisse bleiben bitgleich, siehe „Nur berührende Kontakte
 ablaufen“ in [`docs/Optimierungen.md`](../docs/Optimierungen.md).
 
+**Arbeit des Lösers pro Einheit.** Wie lange die Threads für dieselbe Arbeit des Lösers brauchen, im Team und in den
+Paketen gegen einen Thread allein, zeigten die Zeiten des Teams nicht. Jeder achte Schritt misst es jetzt
+(`B3_SOLVER_SAMPLE` in `src/solver.c`, `b3Counters::solverSample`). Er misst die Arbeit der wachen Inseln, vier
+Einheiten pro Kontakt und eine pro Körper wie für die Pakete, auch in einer Welt ohne Worker, die das sonst lässt. Jeder
+Thread misst, wie lange er ganze Pakete rechnet (`b3TaskContext::packTime` in `src/physics_world.h`), und der Schritt
+gibt die Summe über die Threads in `b3Profile::packSolveTime` und die Arbeit dieser Pakete in
+`b3Counters::packSolveWork`, mit einem Team die der übrigen Pakete. Mit der Zeit der Bedingungen, der Arbeit des Teams
+und der Zeit seiner Blöcke aus den Stufen des Teams, siehe oben, ergibt das, was eine Einheit allein, in den Paketen und
+in den Blöcken des Teams kostet. Nur dieser Schritt liest die Uhr, zweimal pro Paket, die Rechnung des Lösers ändert
+sich nicht. Die neuen Felder stehen am Ende von `b3World`, `b3TaskContext` und `b3StepContext`, damit die übrigen
+bleiben, wo sie waren. Beim Abriss in der Demo auf der VM bei ×2 kostet eine Einheit mit 4 Threads in den Paketen
+1,18-mal und in den Blöcken des Teams 1,39-mal so viel wie mit einem Thread, siehe „Was eine Einheit Arbeit im Löser
+kostet“ in [`docs/Optimierungen.md`](../docs/Optimierungen.md).
+
 Die erste, die zweite, die vierte bis achte, die zehnte, die dreizehnte bis einunddreißigste, die dreiunddreißigste bis
 fünfunddreißigste, die neununddreißigste bis dreiundvierzigste, die fünfundvierzigste bis siebenundvierzigste, die
-neunundvierzigste bis sechsundfünfzigste ändern an den Ergebnissen nichts. Die dritte und die neunte ändern sie in den
+neunundvierzigste bis siebenundfünfzigste ändern an den Ergebnissen nichts. Die dritte und die neunte ändern sie in den
 letzten Bits, dafür hängen sie nicht mehr davon ab, in welcher Reihenfolge Formen in die Bäume kommen. Die elfte ändert
 sie, weil Kontakte zu anderen Zeitpunkten entstehen, die zwölfte, weil sie weniger Punkte bekommen, die
 zweiunddreißigste, weil die Kontakte eines Knotens gebündelt gegen Kopien rechnen statt nacheinander, die
