@@ -1082,7 +1082,9 @@ des Mehraufwands machten vergebliche Versuche aus, Blöcke zu nehmen, die andere
 des Teams schneiden“ in [docs/Optimierungen.md](docs/Optimierungen.md). Seit `kollaps-19` liest ein Thread den Anspruch
 eines Blocks, bevor er ihn zu nehmen versucht, ohne eigenen Aufruf und bitgleich, siehe „Ansprüche vor dem Tausch lesen“
 in [`extern/README.md`](extern/README.md). Auf der VM mit 4 Threads kostet ein vergeblicher Versuch damit 42 bis 58 %
-weniger. Wie es im Löser weitergeht, steht in [docs/Roadmap.md](docs/Roadmap.md).
+weniger, auf dem Ryzen kostet das Team mit 8 Threads 0,022 ms pro Schritt weniger, siehe „Skalierung auf dem Ryzen mit
+`kollaps-19`“ in [docs/Optimierungen.md](docs/Optimierungen.md). Wie es im Löser weitergeht, steht in
+[docs/Roadmap.md](docs/Roadmap.md).
 
 Seit `kollaps-11` misst Box3D, wohin die Zeit der Kontakt-Schleife geht: was der aufrufende Thread davor und danach
 allein rechnet, und in jedem achten Schritt, wie die Threads die parallele Schleife verbringen, in Blöcken, vor ihrem
