@@ -1247,6 +1247,32 @@ Seit der Liste ist dazugekommen oder gemessen worden:
   mehr kostet. Nach den Regeln der [Roadmap](Roadmap.md) tritt „Ende“ ein, „Pflege“ mit 0,009 ms knapp nicht. Mit dem
   Anlegen der Kontakte, das die Regel nicht nennt, träte sie mit 0,013 ms ein, „Ende“ hat aber mit 0,016 ms pro Update
   mehr Zeit dahinter.
+- **Die Blöcke der Prüfungen schneiden.** Gemessen auf `kollaps-16` auf der VM, in einer Kopie, die beim Abriss der
+  Stadt in der Demo bei ×2 über 4 000 Bilder für jeden Block der Prüfungen schreibt, wie lange er dauert, wie viele
+  bewegte und ruhige Stücke und berührende Kontakte er hält und wie lange der Blick auf jedes ruhige Stück dauert. Fünf
+  Läufe, mit einem Thread und Blöcken von 64, 32 und 16 bewegten Stücken und mit 4 Threads und Blöcken von 64 und 16,
+  enden alle mit demselben Hash, und die gezählten Updates sind dieselben wie auf dem Ryzen, im Mittel 3 097,3 bewegte
+  Stücke in 48,9 Blöcken, davon 555,5 ruhige. Die VM rechnete die Prüfungen in diesen Läufen rund 50 % langsamer als bei
+  der Messung von `kollaps-15`. Eine Simulation lässt die Threads die Blöcke in ihrer Reihenfolge nehmen, den nächsten,
+  wer zuerst frei ist, und so starten, wie sie es auf dem Ryzen mit 8 Threads im Mittel tun. Mit den eigenen Zeiten der
+  Blöcke trifft sie die Läufe mit 4 Threads auf 0,6 und 1,8 %. Auf den Ryzen gehen die Zeiten pro Stück über, als a ·
+  w^g, mit w, was ein Stück auf der VM kostet, sein Blick und sein Anteil am Ablaufen der Listen und an den Fragen nach
+  der Ruhe. a und g sind so gewählt, dass die Blöcke von 64 zusammen so lange dauern wie auf dem Ryzen mit 8 Threads und
+  ihr längster Block so lange, g ist 0,95. Damit sagt die Simulation für `kollaps-15` mit 8 Threads 0,094 ms für die
+  Prüfungen voraus, gemessen 0,095 ms, und 0,124 ms über alle Threads nach ihrem letzten Block, gemessen 0,127 ms. Alle
+  Blöcke gleich skaliert, sagte sie 0,101 und 0,173 ms voraus: Teure Stücke kosten auf der VM verhältnismäßig mehr als
+  auf dem Ryzen. Kleinere Blöcke kosten zusammen mehr, mit einem Thread Blöcke von 32 3,5 % und Blöcke von 16 7,6 %, mit
+  Blöcken von 16 das Ablaufen der Listen 13 %, denn Box3D läuft dann weniger Listen nebeneinander ab, und mit 4 Threads
+  kosten die Prüfungen mit Blöcken von 16 gemessen 0,015 ms pro Update mehr als mit Blöcken von 64. Mit 8 Threads
+  verkürzen nach der Simulation Blöcke von 32 oder 16 die Prüfungen um weniger als 0,001 ms pro Update, die letzten 4
+  bis 24 Blöcke in Blöcken von 16 ebenso, die Blöcke mit großen Stücken in Blöcken von 16 oder 32 um 0,001 und 0,002 ms
+  und beides zusammen um 0,002 ms. Die Reihenfolge nach der wahren Dauer der Blöcke, die vorher niemand kennt, brächte
+  0,0045 ms, und selbst ohne jedes Warten am Ende wären es nur 0,006 ms: In 23 % der Updates dauert der längste Block
+  allein länger als ein Achtel der Arbeit samt der Anläufe, und sein teuerstes Stück hält im Mittel 35 % davon. Alle
+  Blöcke gleich skaliert, ändert sich daran nichts. Die 0,016 ms, die die [Roadmap](Roadmap.md) für Schritt 50 als
+  Grenze nannte, setzten eine Arbeit voraus, die sich in jedem Update gleich auf die Threads verteilen lässt. Kein
+  Schnitt kommt an die 0,008 ms der Regel heran, nicht gebaut, siehe „Blöcke der Prüfungen kleiner schneiden“ in der
+  Tabelle unten.
 
 ## Physik, Zerstörung und Schutt
 
@@ -1609,3 +1635,4 @@ Seit der Liste ist dazugekommen oder gemessen worden:
 | Nachbarn in den Listen der berührenden Kontakte vorausladen | ⛔ | Gemessen auf `kollaps-15`, siehe „Nur berührende Kontakte ablaufen“: In der seriellen Schleife der Zustandswechsel lud die erste Fassung den Eintrag eines Kontakts zwei Kontakte vorher voraus und seine Nachbarn in den Listen einen vorher, beim Löschen eines Körpers ebenso. Die Nachbarn stehen erst in dem Eintrag, den der Schritt davor gerade angefordert hatte, so wartete das Vorausladen selbst auf den Speicher. Mit ihm kosteten die Zustandswechsel im Benchmark 12 bis 24 % mehr als mit `kollaps-14`, ohne es 6 bis 15 %, beim Abriss mit 4 Threads 17 statt 8 % mehr. Wieder entfernt. |
 | Liste eines Körpers, der alle Kontakte verliert, als Ganzes fallen lassen | ⛔ | Gemessen auf `kollaps-15`, siehe „Nur berührende Kontakte ablaufen“: Verliert ein Körper bei einem Typwechsel alle Kontakte, nahm eine Variante jeden berührenden nur aus der Liste des anderen Körpers und ließ die eigene als Ganzes fallen. Die Typwechsel kosteten damit nicht messbar weniger: Die Nachbarn in der eigenen Liste sind die anderen Kontakte des Körpers, die er gleich danach ohnehin löscht. Wieder entfernt. |
 | Zeit pro Blick des Budgets aus allen Tasks | ✅ auf `kollaps-15` | Die Zeit pro Blick des Budgets, nach der Nebenan entscheidet, ab wie vielen bewegten Stücken die Worker mitschauen, kam nur vom aufrufenden Thread. Die Worker nehmen sich die Blöcke selbst, und wo sie schnell starten, nehmen sie alle, bevor der aufrufende Thread zu einem kommt. Dann bekam die Schätzung nie einen Wert, die Schwelle passte sich nie an, und `BudgetWorkersTest` scheiterte in der CI unter Windows, seit die Abfragen der Kontakte billiger sind. Jetzt misst jeder Task seine eigene Zeit, und die Schätzung teilt die Zeit aller Tasks durch alle ihre Blicke. Ein aufrufender Thread, der wartet, bis die Worker jeden Block genommen haben, zeigte den Fehler vorher und besteht jetzt. Die Blicke und die Rangfolge bleiben dieselben. Die Zeiten pro Prüfung eines Stücks und pro Zelle eines Bruchs kommen weiter nur vom aufrufenden Thread und können auf dieselbe Weise ohne Wert bleiben, ihre Schwelle bleibt dann beim Höchstwert. |
+| Blöcke der Prüfungen kleiner schneiden | ⛔ | Gemessen auf `kollaps-16`, siehe „Die Blöcke der Prüfungen schneiden“: Mit 8 Threads warten die Threads auf dem Ryzen 16,7 % ihrer Zeit nach ihrem letzten Block, siehe „Skalierung auf dem Ryzen mit `kollaps-15`“. Vorgeschlagen als Schritt 50 der [Roadmap](Roadmap.md), gebaut nur, wenn ein Schnitt nach der Simulation mit 8 Threads mindestens 0,008 ms pro Update bringt. Nach der Simulation, die den Ryzen mit 8 Threads trifft, verkürzen kleinere Blöcke überall, nur am Ende oder nur um große Stücke die Prüfungen um höchstens 0,002 ms pro Update, denn kleinere Blöcke kosten zusammen 3,5 bis 7,6 % mehr, und selbst ohne jedes Warten am Ende wären es nur 0,006 ms: In 23 % der Updates dauert der längste Block allein länger als ein Achtel der Arbeit. Mit 4 Threads kosten Blöcke von 16 auf der VM gemessen 0,015 ms pro Update mehr. Nicht gebaut. |
