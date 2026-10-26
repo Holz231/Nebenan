@@ -1115,8 +1115,10 @@ auf große Stücke jetzt geht“ in [docs/Optimierungen.md](docs/Optimierungen.m
 Körper, der nicht statisch ist, eine Liste seiner berührenden Kontakte, und die Abfragen der Kontakte laufen nur sie ab.
 Ein Spiel ruft dafür nichts Neues auf, und die Ergebnisse bleiben bitgleich. Beim Abriss auf der VM kostet der Blick
 damit 20 bis 24 % weniger, und ein Schritt mit 1, 2 und 4 Threads spart 0,27, 0,12 und 0,04 ms, die Pflege der Listen
-eingerechnet, siehe „Nur berührende Kontakte ablaufen“ in [docs/Optimierungen.md](docs/Optimierungen.md). Wie es
-weitergeht, steht in [docs/Roadmap.md](docs/Roadmap.md).
+eingerechnet, siehe „Nur berührende Kontakte ablaufen“ in [docs/Optimierungen.md](docs/Optimierungen.md). Auf dem
+Ryzen 7 7800X3D kosten die Prüfungen damit mit 1 bis 8 Threads 8 bis 12 % weniger, aber mit 8 Threads kostet die Pflege
+der Listen so viel, wie das Update spart, siehe „Skalierung auf dem Ryzen mit `kollaps-15`“. Wie es weitergeht, steht in
+[docs/Roadmap.md](docs/Roadmap.md).
 
 Die teuersten Frames folgen auf einen Einsturz: Der Schutt um die Reste der Etage taut auf, und Box3D legt im nächsten
 Schritt Tausende neuer Kontakte an. Das ist echte Arbeit, das meiste davon fällt danach wirklich, siehe
