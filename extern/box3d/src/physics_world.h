@@ -122,10 +122,6 @@ typedef struct b3TaskContext
 	int teamStages;
 	int teamYields;
 
-	// Added for Nebenan: the time this thread solved whole packs in a step that samples its solver, see
-	// b3Profile::packSolveTime
-	float packTime;
-
 	// Profiling
 	int satCallCount;
 	int satCacheHitCount;
@@ -156,6 +152,10 @@ typedef struct b3TaskContext
 	int narrowphaseCount;
 	uint64_t checkTicks;
 	uint64_t narrowphaseTicks;
+
+	// Added for Nebenan: the time this thread solved whole packs in a step that samples its solver, see
+	// b3Profile::packSolveTime. At the end, where it keeps the other fields where they were.
+	float packTime;
 
 	// Prevent false sharing
 	char cacheLine[64];

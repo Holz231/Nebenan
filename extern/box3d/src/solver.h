@@ -326,9 +326,6 @@ typedef struct b3StepContext
 	// Added for Nebenan: this step times its team, see b3Profile::teamTime
 	bool sampleTeam;
 
-	// Added for Nebenan: this step samples its solver, see b3Counters::solverSample
-	bool sampleSolver;
-
 	// Added for Nebenan: this step times its contact loop, see b3Profile::collideWork
 	bool sampleCollide;
 	const int* packBodyStarts;
@@ -399,6 +396,10 @@ typedef struct b3StepContext
 	// Added for Nebenan: the packs whose bodies and constraints the stages hold, the first ones, with a team those it
 	// solves, see b3SolveOtherPack, and one without packs, which holds all knots, see b3BuildKnots
 	int stagePackCount;
+
+	// Added for Nebenan: this step samples its solver, see b3Counters::solverSample. At the end, where it keeps the other
+	// fields where they were.
+	bool sampleSolver;
 } b3StepContext;
 
 void b3Solve( b3World* world, b3StepContext* stepContext );
