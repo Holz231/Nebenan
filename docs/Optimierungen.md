@@ -1318,6 +1318,41 @@ Seit der Liste ist dazugekommen oder gemessen worden:
   Thread rechnet 13,1 % der Zeit des Teams allein, 0,095 ms. Nach den Regeln der [Roadmap](Roadmap.md) treten
   „Langsamer“, „Ende“ und „Allein“ ein, mit 0,102 bis 0,114, 0,119 und 0,095 ms pro Schritt dahinter. „Ende“ kommt knapp
   zuerst.
+- **Die Blöcke des Teams schneiden.** Gemessen auf `kollaps-18` auf der VM, in einer Kopie, die beim Abriss der Stadt in
+  der Demo bei ×2 über 4 000 Bilder in jedem achten Schritt mit Team jede Stufe des Teams schreibt: ihre Blöcke und
+  deren Einträge, wann jeder Thread hineinkam und durch war und wann jeder Block endete. Mit 8 Workern trifft die VM den
+  Ryzen genau, mit denselben 498 gemessenen Schritten und in jeder Zeile der Tabelle denselben Stufen mit und ohne
+  Sperre, Blöcken und Einträgen. In zwei Läufen rechnet der aufrufende Thread jeden Block allein, einmal mit einem
+  Eintrag pro Block in den Farben und einmal mit den Blöcken von Box3D. Daraus kommen die Kosten jedes Eintrags, auf der
+  VM im Median 0,25 bis 0,32 µs, und was ein Block darüber hinaus kostet, 0,026 µs. Die seltenen Pausen von bis zu
+  16 ms, in denen die VM den Thread anhielt, sind auf das Sechsfache des Medians ihrer Zeile gekappt. Eine Simulation
+  lässt jeden Thread wie Box3D an seinem Heimatblock anfangen und den Ring der Blöcke einmal ablaufen. Jeden freien
+  Block nimmt er mit einem atomaren Vergleichstausch, am Ende zählt er seine Blöcke, und die Stufe schließt, wenn der
+  letzte Thread mit Blöcken durch ist. Mit den gemessenen Zeiten der Blöcke und der Ankünfte trifft sie einen Lauf mit 4
+  Threads auf der VM in jeder Zeile mit mehr als 100 Stufen auf 4 %, meist auf 2 %. An die Tabelle von `kollaps-16` mit
+  8 Threads auf dem Ryzen angepasst, mit Preisen für einen Block, den ersten Block eines Threads in einer Stufe, einen
+  vergeblichen Vergleichstausch, das Zählen, das Bemerken des Endes und die Ankunft der Worker, trifft sie die offene
+  Zeit jeder Zeile auf wenige Prozent, zusammen 652 bis 654 statt 629 µs pro gemessenem Schritt, dazu das Warten am
+  Ende, die Ankunft und den Anteil des aufrufenden Threads. Den Preis eines Blocks legt die Tabelle nicht fest, zwischen
+  0,02 und 0,15 µs passt sie fast gleich gut, wohl aber den eines vergeblichen Vergleichstauschs, 0,034 bis 0,039 µs.
+  Jeder Thread versucht in einer Stufe jeden Block einmal, auch die, die andere längst genommen haben. Mit 8 Threads
+  sind das 17 600 vergebliche Versuche pro Schritt, 0,60 bis 0,69 ms über alle Threads, ein Fünftel der 3,2 ms in den
+  Blöcken des Teams und ein Drittel in den Farben. Feinere Blöcke vervielfachen sie. Nach der Simulation kostet das Team
+  mit Blöcken von zwei Einträgen in den Farben bis 64 Einträge 35 bis 52 µs pro Schritt mehr, mit Blöcken von zwei
+  Einträgen und bis zu acht Blöcken pro Worker 77 bis 110 µs und mit einem Eintrag pro Block bis 64 Einträge 145 bis
+  205 µs. Ob der aufrufende Thread dabei Stufen mit bis zu einem, zwei, vier oder acht Einträgen allein rechnet, ändert
+  daran wenig. Gröbere Blöcke brächten 9 bis 32 µs. Auf der VM mit 4 Threads kostet ein Block der Farben 0,36 bis
+  0,39 µs pro Eintrag und 0,11 bis 0,17 µs für sich, ein vergeblicher Versuch 0,042 bis 0,049 µs. Mit einem Eintrag pro
+  Block in den Farben bis 32 Einträge kostet das Team dort 3,5 % mehr als im Mittel zweier Läufe mit den Blöcken von
+  Box3D, mit zwei Einträgen bis 64 Einträge 1,5 % mehr, und die beiden Läufe liegen 5,7 % auseinander. Alle Läufe enden
+  mit demselben Hash. Kein Schnitt kommt an die 0,04 ms der Regel heran, nicht gebaut, siehe „Blöcke des Teams feiner
+  schneiden“ in der Tabelle unten. Die vergeblichen Versuche erklären aber den größten Teil von „Langsamer“: Ohne sie
+  bräuchte ein Thread im Team mit 8 Threads pro Einheit das 1,05- bis 1,09-Fache eines Threads allein statt des
+  1,34-Fachen. Liest ein Thread den Anspruch eines Blocks, bevor er ihn zu tauschen versucht, kostet ein vergeblicher
+  Versuch auf der VM 0,025 statt 0,042 µs, das Zählen am Ende 0,22 statt 0,28 µs und das Team 4,2 % weniger als im
+  Mittel der Läufe mit den Blöcken von Box3D, bitgleich. Werden ein Versuch und das Zählen am Ende auf dem Ryzen um
+  denselben Anteil billiger, spart das nach der Simulation 0,039 bis 0,046 ms pro Schritt, kostete er nichts, 0,092 bis
+  0,106 ms. Dann brächten auch feinere Blöcke höchstens 0,017 ms. Daraus Schritt 54 der [Roadmap](Roadmap.md).
 
 ## Physik, Zerstörung und Schutt
 
@@ -1682,3 +1717,4 @@ Seit der Liste ist dazugekommen oder gemessen worden:
 | Zeit pro Blick des Budgets aus allen Tasks | ✅ auf `kollaps-15` | Die Zeit pro Blick des Budgets, nach der Nebenan entscheidet, ab wie vielen bewegten Stücken die Worker mitschauen, kam nur vom aufrufenden Thread. Die Worker nehmen sich die Blöcke selbst, und wo sie schnell starten, nehmen sie alle, bevor der aufrufende Thread zu einem kommt. Dann bekam die Schätzung nie einen Wert, die Schwelle passte sich nie an, und `BudgetWorkersTest` scheiterte in der CI unter Windows, seit die Abfragen der Kontakte billiger sind. Jetzt misst jeder Task seine eigene Zeit, und die Schätzung teilt die Zeit aller Tasks durch alle ihre Blicke. Ein aufrufender Thread, der wartet, bis die Worker jeden Block genommen haben, zeigte den Fehler vorher und besteht jetzt. Die Blicke und die Rangfolge bleiben dieselben. Die Zeiten pro Prüfung eines Stücks und pro Zelle eines Bruchs kommen weiter nur vom aufrufenden Thread und können auf dieselbe Weise ohne Wert bleiben, ihre Schwelle bleibt dann beim Höchstwert. |
 | Blöcke der Prüfungen kleiner schneiden | ⛔ | Gemessen auf `kollaps-16`, siehe „Die Blöcke der Prüfungen schneiden“: Mit 8 Threads warten die Threads auf dem Ryzen 16,7 % ihrer Zeit nach ihrem letzten Block, siehe „Skalierung auf dem Ryzen mit `kollaps-15`“. Vorgeschlagen als Schritt 50 der [Roadmap](Roadmap.md), gebaut nur, wenn ein Schnitt nach der Simulation mit 8 Threads mindestens 0,008 ms pro Update bringt. Nach der Simulation, die den Ryzen mit 8 Threads trifft, verkürzen kleinere Blöcke überall, nur am Ende oder nur um große Stücke die Prüfungen um höchstens 0,002 ms pro Update, denn kleinere Blöcke kosten zusammen 3,5 bis 7,6 % mehr, und selbst ohne jedes Warten am Ende wären es nur 0,006 ms: In 23 % der Updates dauert der längste Block allein länger als ein Achtel der Arbeit. Mit 4 Threads kosten Blöcke von 16 auf der VM gemessen 0,015 ms pro Update mehr. Nicht gebaut. |
 | Bedingungen des Lösers zerlegen | ✅ auf `kollaps-17` | Mit 8 Threads liegen die Bedingungen beim Abriss auf dem Ryzen 0,377 ms über einem Achtel ihrer Zeit mit einem Thread, 18 % eines Schritts, siehe „Skalierung auf dem Ryzen mit `kollaps-15`“. Die Stufen des Teams zählte Box3D schon, offen war, wie lange ein Thread im Team und in den Paketen für dieselbe Arbeit braucht. Vorgeschlagen als Schritt 51 der [Roadmap](Roadmap.md). Umgesetzt auf `kollaps-17`, siehe „Was eine Einheit Arbeit im Löser kostet“ und „Arbeit des Lösers pro Einheit“ in [`extern/README.md`](../extern/README.md): Box3D misst in jedem achten Schritt die Arbeit der Inseln, auch mit einem Thread, und die Zeit der ganzen Pakete, und der Bericht zeigt die Mikrosekunden pro 1 000 Einheiten Arbeit. Auf der VM mit 4 Threads braucht ein Thread in den Paketen 1,18-mal und in den Blöcken des Teams 1,39-mal so lange wie ein Thread allein. Auf dem Ryzen nachzumessen, siehe Schritt 52. Auf dem Ryzen gemessen am 26. Oktober, siehe „Skalierung auf dem Ryzen mit `kollaps-17`“: In den Blöcken des Teams braucht ein Thread mit 8 Threads das 1,34- bis 1,39-Fache eines Threads allein, nach ihrem letzten Block warten die Threads 19 % der offenen Zeit einer Stufe, und der aufrufende Thread rechnet 13 % der Zeit des Teams allein. „Ende“ kommt knapp zuerst |
+| Blöcke des Teams feiner schneiden | ⛔ | Gemessen auf `kollaps-18`, siehe „Die Blöcke des Teams schneiden“: Mit 8 Threads warten die Threads auf dem Ryzen nach ihrem letzten Block 19 % der Zeit, in der eine Stufe offen ist, 0,119 ms pro Schritt, siehe „Skalierung auf dem Ryzen mit `kollaps-17`“. Vorgeschlagen als Schritt 53 der [Roadmap](Roadmap.md), gebaut nur, wenn ein Schnitt nach der Simulation mit 8 Threads mindestens 0,04 ms pro Schritt bringt. Jeder Thread versucht in einer Stufe jeden Block einmal mit einem atomaren Vergleichstausch, mit 8 Threads sind das 17 600 vergebliche Versuche pro Schritt, ein Fünftel der Zeit in den Blöcken des Teams. Feinere Blöcke vervielfachen sie: Nach der Simulation kostet jeder feinere Schnitt 35 bis 352 µs pro Schritt mehr, gröbere Blöcke brächten 9 bis 32 µs, und auf der VM mit 4 Threads kosteten die zwei gemessenen feineren Schnitte 1,5 und 3,5 % mehr. Nicht gebaut. Was die vergeblichen Versuche billiger macht, prüft Schritt 54. |
