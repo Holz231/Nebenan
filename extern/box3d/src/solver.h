@@ -31,6 +31,10 @@
 //    already claimed the block, so the stealing worker stops -- preserving
 //    locality under mild imbalance while still draining the queue.
 //
+//    Added for Nebenan: b3ExecuteStage sweeps the whole ring instead and does
+//    not stop at a claimed block. It reads each claim before the CAS, so a
+//    block another worker took costs a read of a shared cache line.
+//
 // A graph color stage lays out joint blocks first, then contact blocks:
 //
 //      stage->blocks ->

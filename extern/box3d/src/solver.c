@@ -1296,7 +1296,12 @@ static int b3ExecuteStage( b3SolverStage* stage, b3StepContext* context, int pre
 	int blockIndex = startIndex;
 	for ( int i = 0; i < blockCount; ++i )
 	{
-		if ( b3AtomicCompareExchangeInt( &blocks[blockIndex].syncIndex, previousSyncIndex, syncIndex ) )
+		// Added for Nebenan: read the claim before the CAS. Most blocks of the ring are taken by the time a thread gets to
+		// them, and reading lets the threads share their cache line, while a failed CAS takes the line away from all of
+		// them. A thread that came into the stage sees every claim of the stage before, so a block that reads as taken is
+		// taken, and a free one gets the CAS as before.
+		b3AtomicInt* claim = &blocks[blockIndex].syncIndex;
+		if ( b3AtomicLoadInt( claim ) == previousSyncIndex && b3AtomicCompareExchangeInt( claim, previousSyncIndex, syncIndex ) )
 		{
 			B3_ASSERT( completedCount < blockCount );
 
