@@ -617,6 +617,11 @@ typedef struct b3Profile
 	/// Added for Nebenan: the time the calling thread waits for the last packs of islands, in every step with packs
 	float packWait;
 
+	/// Added for Nebenan: the time all threads spent solving whole packs of islands, one thread a pack, summed over the
+	/// threads, in a step that samples its solver, see b3Counters::solverSample, zero in the others. With a team these are
+	/// the other packs, see b3Counters::packSolveWork.
+	float packSolveTime;
+
 	/// Added for Nebenan: parts of solverSetup. The islands in packs on the calling thread, see b3Counters::islandWork,
 	/// or with workers but without packs only their work. Then the time of two tasks that give every contact and every
 	/// body its pack and put the convex contacts of the colors in the order the threads solve them, pack by pack with
@@ -687,7 +692,8 @@ typedef struct b3Counters
 	int rootIterations;
 
 	/// Added for Nebenan: the work of the awake islands in the last step, four per contact and one per body as the packs
-	/// weigh it, and that of the largest island, which a pack gives to one thread alone. Zero in a world without workers.
+	/// weigh it, and that of the largest island, which a pack gives to one thread alone. Zero in a world without workers,
+	/// but in a step that samples its solver, see solverSample.
 	int islandWork;
 	int largestIslandWork;
 
@@ -718,6 +724,13 @@ typedef struct b3Counters
 
 	/// Added for Nebenan: the packs the team of the last step solved, see teamWork, zero if the step had none
 	int teamPackCount;
+
+	/// Added for Nebenan: one if the last step sampled its solver, every eighth step, and then the work of the packs of
+	/// islands that one thread each solved whole, as islandWork weighs it, see b3Profile::packSolveTime. With a team that of
+	/// the other packs, without packs zero. With the time of the constraints and islandWork it gives what a unit of work
+	/// costs alone, in packs and in a team, see b3TeamStage::workTime and teamWork.
+	int solverSample;
+	int packSolveWork;
 
 	/// Added for Nebenan: the contacts of the last step that needed the narrowphase, the others parted, kept their
 	/// manifolds or stayed provably apart

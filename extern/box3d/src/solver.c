@@ -1456,6 +1456,9 @@ static void b3ExecutePackWideConstraints( b3SolverStageType type, b3StepContext*
 // restitution to storing their impulses
 static void b3SolvePack( b3StepContext* context, int pack, int workerIndex )
 {
+	// Added for Nebenan: see b3Profile::packSolveTime
+	uint64_t sampleTicks = context->sampleSolver ? b3GetTicks() : 0;
+
 	int bodyStart = context->packBodyStarts[pack];
 	int bodyEnd = context->packBodyStarts[pack + 1];
 	int overflowStart = context->packOverflowStarts[pack];
@@ -1497,6 +1500,11 @@ static void b3SolvePack( b3StepContext* context, int pack, int workerIndex )
 						workerIndex );
 	b3ExecutePackRange( b3_stageStoreImpulses, context, overflowStart, overflowEnd, b3_overflowBlock, B3_OVERFLOW_INDEX,
 						workerIndex );
+
+	if ( context->sampleSolver )
+	{
+		context->world->taskContexts.data[workerIndex].packTime += b3GetMilliseconds( sampleTicks );
+	}
 }
 
 // Added for Nebenan: the constraint solver without a barrier per stage. Two islands never share a moving body, so a thread
@@ -2099,6 +2107,10 @@ _Static_assert( B3_MAX_PACKS <= 256, "a pack needs to fit in a byte" );
 // Only that step reads the clock at every stage, the others pay nothing.
 #define B3_TEAM_SAMPLE 8
 
+// Added for Nebenan: every this many steps a step samples its solver, see b3Counters::solverSample. It reads the clock
+// once per pack and measures the work of the islands also in a world without workers.
+#define B3_SOLVER_SAMPLE 8
+
 // Added for Nebenan: the row of b3TeamStages of a stage. The stages of the knots have no color, see b3ExecuteKnotStage.
 static int b3GetTeamRow( const b3SolverStage* stage )
 {
@@ -2281,7 +2293,8 @@ static int b3GetIslandWork( const b3Island* island )
 }
 
 // Added for Nebenan: the work of the awake islands as b3BuildPacks weighs it, for a step of a world with workers that
-// solves without packs, see b3Counters::islandWork. A world without workers skips it: its islands could be many.
+// solves without packs, see b3Counters::islandWork. A world without workers skips it: its islands could be many. A step
+// that samples its solver measures it anyway, see b3Counters::solverSample.
 static void b3MeasureIslandWork( b3World* world, const b3SolverSet* awakeSet )
 {
 	int total = 0;
@@ -3326,6 +3339,8 @@ void b3Solve( b3World* world, b3StepContext* stepContext )
 	world->teamStageCount = 0;
 	world->teamYieldCount = 0;
 	world->teamPackCount = 0;
+	world->solverSample = 0;
+	world->packSolveWork = 0;
 
 	if ( awakeBodyCount == 0 )
 	{
@@ -3442,6 +3457,9 @@ void b3Solve( b3World* world, b3StepContext* stepContext )
 		// first pack starts, keep the barrier per stage, and so does a step while other programs take the cores, see
 		// b3UpdatePackHold. With packs the convex contacts of every color go pack by pack, which can take more wide
 		// constraints.
+		// Added for Nebenan: see b3Counters::solverSample
+		bool sampleSolver = world->stepIndex % B3_SOLVER_SAMPLE == 0;
+
 		bool held = world->packHoldSteps > 0;
 		if ( held )
 		{
@@ -3503,7 +3521,7 @@ void b3Solve( b3World* world, b3StepContext* stepContext )
 				contactPacks = NULL;
 			}
 		}
-		else if ( world->workerCount > 1 )
+		else if ( world->workerCount > 1 || sampleSolver )
 		{
 			b3MeasureIslandWork( world, awakeSet );
 		}
@@ -4008,6 +4026,7 @@ void b3Solve( b3World* world, b3StepContext* stepContext )
 		stepContext->packCount = packCount;
 		stepContext->team = team;
 		stepContext->sampleTeam = sampleTeam;
+		stepContext->sampleSolver = sampleSolver;
 		stepContext->teamEntries = teamEntries;
 		stepContext->teamEntryCapacity = teamEntryCapacity;
 		stepContext->teamMergeTime = 0.0f;
@@ -4057,6 +4076,7 @@ void b3Solve( b3World* world, b3StepContext* stepContext )
 			taskContext->teamStages = 0;
 			taskContext->teamYields = 0;
 			taskContext->teamEntryCount = 0;
+			taskContext->packTime = 0.0f;
 		}
 
 		for ( int i = 0; i < workerCount; ++i )
@@ -4120,6 +4140,18 @@ void b3Solve( b3World* world, b3StepContext* stepContext )
 		world->splitIslandId = B3_NULL_INDEX;
 
 		world->profile.constraints = b3GetMillisecondsAndReset( &constraintTicks );
+
+		// Added for Nebenan: the whole packs the threads solved in a step that samples its solver, see
+		// b3Counters::solverSample
+		if ( sampleSolver )
+		{
+			world->solverSample = 1;
+			world->packSolveWork = packCount > 0 ? world->islandWork - teamWork : 0;
+			for ( int i = 0; i < workerCount; ++i )
+			{
+				world->profile.packSolveTime += world->taskContexts.data[i].packTime;
+			}
+		}
 		b3TracyCZoneEnd( solve_constraints );
 
 		// Added for Nebenan: the waits of the calling thread and of the workers in a step that timed its team, see

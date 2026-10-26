@@ -122,6 +122,10 @@ typedef struct b3TaskContext
 	int teamStages;
 	int teamYields;
 
+	// Added for Nebenan: the time this thread solved whole packs in a step that samples its solver, see
+	// b3Profile::packSolveTime
+	float packTime;
+
 	// Profiling
 	int satCallCount;
 	int satCacheHitCount;
@@ -401,6 +405,10 @@ typedef struct b3World
 
 	// Added for Nebenan: the packs the team solved in the last step, see b3Counters::teamPackCount
 	int teamPackCount;
+
+	// Added for Nebenan: see b3Counters::solverSample
+	int solverSample;
+	int packSolveWork;
 } b3World;
 
 b3World* b3GetUnlockedWorldFromId( b3WorldId id );

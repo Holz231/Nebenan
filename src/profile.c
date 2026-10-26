@@ -66,9 +66,18 @@ void nbProfileStep( nbWorld* world )
 	b3Counters counters = b3World_GetCounters( world->physicsWorld );
 	sums->overflowCount += counters.colorCounts[B3_GRAPH_COLOR_COUNT - 1];
 	sums->packWait += step.packWait;
+	if ( counters.solverSample != 0 )
+	{
+		sums->solverSampleCount += 1;
+		sums->solverWork += counters.islandWork;
+		sums->solverConstraints += step.constraints;
+		sums->packSolveTime += step.packSolveTime;
+		sums->packSolveWork += counters.packSolveWork;
+	}
 	if ( counters.teamSample != 0 )
 	{
 		sums->teamSampleCount += 1;
+		sums->teamSampleWork += counters.teamWork;
 		sums->teamTime += step.teamTime;
 		sums->teamOverflow += step.teamOverflow;
 		sums->teamStageWait += step.teamStageWait;
@@ -205,6 +214,7 @@ nbProfile nbWorld_GetProfile( nbWorldId worldId )
 		profile.teamWorkerPacks = (float)( sums->teamWorkerPacks / samples );
 		profile.teamStageCount = (float)( sums->teamStageCount / samples );
 		profile.teamYieldCount = (float)( sums->teamYieldCount / samples );
+		profile.teamSampleWork = (float)( sums->teamSampleWork / samples );
 
 		float values[NB_TEAM_STAGE_VALUES];
 		for ( int i = 0; i < NB_TEAM_STAGE_VALUES; ++i )
@@ -215,6 +225,16 @@ nbProfile nbWorld_GetProfile( nbWorldId worldId )
 	}
 	profile.teamSampleCount = sums->teamSampleCount;
 	profile.packWait = (float)( sums->packWait / steps );
+
+	if ( sums->solverSampleCount > 0 )
+	{
+		double samples = (double)sums->solverSampleCount;
+		profile.solverWork = (float)( sums->solverWork / samples );
+		profile.solverConstraints = (float)( sums->solverConstraints / samples );
+		profile.packSolveTime = (float)( sums->packSolveTime / samples );
+		profile.packSolveWork = (float)( sums->packSolveWork / samples );
+	}
+	profile.solverSampleCount = sums->solverSampleCount;
 
 	if ( sums->collideSampleCount > 0 )
 	{
@@ -751,6 +771,128 @@ int nbFormatScalingReport( const nbProfile* profiles, int count, char* text, int
 		b3TeamStages stages;
 		memcpy( &stages, values, sizeof( values ) );
 		nbAppendTeamStages( &out, &stages, workers );
+	}
+
+	// What a unit of the solver's work costs, per number of workers, from the profiles that sampled their solver. A thread
+	// alone solves the colors one after the other. With workers a team solves the largest packs color by color, and the
+	// threads solve the other packs whole, one thread a pack, see b3Counters::solverSample.
+	int solverColumns[NB_REPORT_COLUMNS];
+	int solverColumnCount = 0;
+	for ( int c = 0; c < columnCount; ++c )
+	{
+		for ( int i = 0; i < count; ++i )
+		{
+			if ( profiles[i].workerCount == columns[c] && profiles[i].solverSampleCount > 0 )
+			{
+				solverColumns[solverColumnCount++] = columns[c];
+				break;
+			}
+		}
+	}
+
+	if ( solverColumnCount > 0 )
+	{
+		nbAppend( &out,
+				  "The solver in every eighth step, microseconds per 1000 units of its work, see b3Counters::islandWork\n" );
+		nbAppend( &out, "%-30s", "part" );
+		for ( int c = 0; c < solverColumnCount; ++c )
+		{
+			nbAppend( &out, " %5d w", solverColumns[c] );
+		}
+		nbAppend( &out, "\n" );
+
+		enum
+		{
+			rowCount = 7
+		};
+		const char* rowNames[rowCount] = {
+			"sampled steps",
+			"work per sampled step",
+			"constraints on calling thread",
+			"in packs, over all threads",
+			"  work in packs %",
+			"in team blocks, all threads",
+			"team on the calling thread",
+		};
+		for ( int r = 0; r < rowCount; ++r )
+		{
+			nbAppend( &out, "%-30s", rowNames[r] );
+			for ( int c = 0; c < solverColumnCount; ++c )
+			{
+				double samples = 0.0, work = 0.0, constraints = 0.0, packTime = 0.0, packWork = 0.0;
+				double teamWork = 0.0, teamBlocks = 0.0, teamTime = 0.0;
+				for ( int i = 0; i < count; ++i )
+				{
+					const nbProfile* p = profiles + i;
+					if ( p->workerCount != solverColumns[c] || p->solverSampleCount == 0 )
+					{
+						continue;
+					}
+
+					double n = (double)p->solverSampleCount;
+					samples += n;
+					work += n * p->solverWork;
+					constraints += n * p->solverConstraints;
+					packTime += n * p->packSolveTime;
+					packWork += n * p->packSolveWork;
+
+					// The time of the team's blocks over all threads, from the steps that timed their team, see b3TeamStage
+					double m = (double)p->teamSampleCount;
+					double blocks = 0.0;
+					for ( int row = 0; row < b3_teamRowCount; ++row )
+					{
+						blocks += p->teamStages.rows[row].workTime;
+					}
+					teamWork += m * p->teamSampleWork;
+					teamBlocks += m * blocks;
+					teamTime += m * p->teamTime;
+				}
+
+				// Milliseconds per unit of work times a million make microseconds per 1000 units. A part the profiles do not
+				// have gets a dash.
+				double value = -1.0;
+				if ( r == 0 )
+				{
+					nbAppend( &out, " %7.0f", samples );
+					continue;
+				}
+				else if ( r == 1 )
+				{
+					nbAppend( &out, " %7.0f", samples > 0.0 ? work / samples : 0.0 );
+					continue;
+				}
+				else if ( r == 2 && work > 0.0 )
+				{
+					value = 1.0e6 * constraints / work;
+				}
+				else if ( r == 3 && packWork > 0.0 )
+				{
+					value = 1.0e6 * packTime / packWork;
+				}
+				else if ( r == 4 && work > 0.0 )
+				{
+					value = 100.0 * packWork / work;
+				}
+				else if ( r == 5 && teamWork > 0.0 )
+				{
+					value = 1.0e6 * teamBlocks / teamWork;
+				}
+				else if ( r == 6 && teamWork > 0.0 )
+				{
+					value = 1.0e6 * teamTime / teamWork;
+				}
+
+				if ( value < 0.0 )
+				{
+					nbAppend( &out, " %7s", "-" );
+				}
+				else
+				{
+					nbAppend( &out, " %7.1f", value );
+				}
+			}
+			nbAppend( &out, "\n" );
+		}
 	}
 
 	// How the threads spent the contact loop, per number of workers, from the profiles whose steps timed it

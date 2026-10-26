@@ -457,6 +457,12 @@ typedef struct nbProfileSums
 	double settleMovingCount;
 	double settleQuietCount;
 	double settleCallerCount;
+	int solverSampleCount;
+	double solverWork;
+	double solverConstraints;
+	double packSolveTime;
+	double packSolveWork;
+	double teamSampleWork;
 } nbProfileSums;
 
 typedef struct nbWorld

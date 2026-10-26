@@ -691,6 +691,18 @@ typedef struct nbProfile
 	/// How long the calling thread waits for the last packs of islands, milliseconds per step
 	float packWait;
 
+	/// What a unit of the solver's work costs, sampled in every eighth step, see b3Counters::solverSample: the sampled
+	/// steps, and per sampled step the work of the awake islands, see b3Counters::islandWork, the milliseconds of the
+	/// constraints on the calling thread, the milliseconds all threads spent solving whole packs of islands, one thread a
+	/// pack, and the work of those packs. teamSampleWork is the work of the team per step that timed it, see
+	/// teamSampleCount and b3Counters::teamWork, for the time of its blocks in teamStages.
+	int solverSampleCount;
+	float solverWork;
+	float solverConstraints;
+	float packSolveTime;
+	float packSolveWork;
+	float teamSampleWork;
+
 	/// How the threads spent the contact loop, timed in every eighth step, see b3Profile::collideWork: the timed steps, and
 	/// in milliseconds per timed step the loop on the calling thread and, summed over its tasks, the time in blocks, of it
 	/// the checks of the contacts and the narrowphase, the time before a task started, between its blocks and after it

@@ -5320,10 +5320,25 @@ static int TaskSystemTest( void )
 		int teamSteps = 0;
 		int joinSteps = 0;
 		int timedSteps = 0;
+		int sampledSteps = 0;
+		int packSampleSteps = 0;
 		for ( int i = 0; i < 180; ++i )
 		{
 			Step( &scene, 1 );
 			b3Counters counters = b3World_GetCounters( scene.physicsWorld );
+
+			// Every eighth step samples the solver, also without workers: it measures the work of the islands and what the
+			// threads spent solving whole packs, the work of those packs is part of it, and a step that times its team is
+			// one of them, see b3Counters::solverSample
+			b3Profile stepProfile = b3World_GetProfile( scene.physicsWorld );
+			sampledSteps += counters.solverSample;
+			ENSURE( counters.teamSample <= counters.solverSample );
+			ENSURE( 0 <= counters.packSolveWork && counters.packSolveWork <= counters.islandWork );
+			ENSURE( counters.solverSample == 0 ? counters.packSolveWork == 0 && stepProfile.packSolveTime == 0.0f
+											   : counters.islandWork > 0 );
+			ENSURE( ( counters.packSolveWork > 0 ) == ( stepProfile.packSolveTime > 0.0f ) );
+			ENSURE( pass > 0 || counters.packSolveWork == 0 );
+			packSampleSteps += counters.packSolveWork > 0 ? 1 : 0;
 			maxAwake = b3MaxInt( maxAwake, counters.awakeContactCount );
 			maxTasks = b3MaxInt( maxTasks, counters.taskCount );
 			teamSteps += counters.teamWork > 0 ? 1 : 0;
@@ -5369,6 +5384,10 @@ static int TaskSystemTest( void )
 		nbProfile profile = nbWorld_GetProfile( scene.world );
 		ENSURE( profile.teamSampleCount == timedSteps && timedSteps <= teamSteps );
 		ENSURE( profile.teamJoinStepCount == joinSteps && joinSteps <= teamSteps );
+		ENSURE( profile.solverSampleCount == sampledSteps && 0 < sampledSteps && sampledSteps <= ( 180 + 7 ) / 8 + 1 );
+		ENSURE( profile.solverWork > 0.0f && profile.solverConstraints > 0.0f && profile.packSolveWork <= profile.solverWork );
+		ENSURE( ( profile.packSolveWork > 0.0f ) == ( packSampleSteps > 0 ) && ( pass == 0 || packSampleSteps > 0 ) );
+		ENSURE( ( profile.teamSampleWork > 0.0f ) == ( timedSteps > 0 ) );
 		if ( pass == 1 )
 		{
 			printf( "  team in %d of 180 steps, %d of them with further packs, %d timed, overflow alone %.3f of %.3f ms\n",
@@ -6129,6 +6148,17 @@ static int ScalingFitTest( void )
 		profiles[i].settleCallerCount = 500.0f;
 	}
 
+	// And what a unit of the solver's work costs, alone, in packs and in the team's blocks, see b3Counters::solverSample
+	for ( int i = 0; i < 4; ++i )
+	{
+		profiles[i].solverSampleCount = 10;
+		profiles[i].solverWork = 100000.0f;
+		profiles[i].solverConstraints = 3.0f / (float)workers[i];
+		profiles[i].packSolveTime = i == 0 ? 0.0f : 0.6f;
+		profiles[i].packSolveWork = i == 0 ? 0.0f : 20000.0f;
+		profiles[i].teamSampleWork = i < 2 ? 0.0f : 50000.0f;
+	}
+
 	// The report counts its whole length like snprintf, also into a buffer too small
 	int length = nbFormatScalingReport( profiles, 4, NULL, 0 );
 	ENSURE( length > 200 );
@@ -6148,6 +6178,14 @@ static int ScalingFitTest( void )
 	ENSURE( strstr( text, "The checks of the update in every eighth update" ) != NULL );
 	ENSURE( strstr( text, restRow ) != NULL && strstr( text, supportRow ) != NULL );
 	ENSURE( strstr( text, settleShareRow ) != NULL && strstr( text, callerRow ) != NULL );
+	const char* solverRow = "constraints on calling thread     30.0    15.0     7.5";
+	const char* packRow = "in packs, over all threads           -    30.0    30.0";
+	const char* packShareRow = "  work in packs %                  0.0    20.0    20.0";
+	const char* teamBlockRow = "in team blocks, all threads          -       -     9.0";
+	const char* teamTimeRow = "team on the calling thread           -       -    20.0";
+	ENSURE( strstr( text, "The solver in every eighth step" ) != NULL && strstr( text, solverRow ) != NULL );
+	ENSURE( strstr( text, packRow ) != NULL && strstr( text, packShareRow ) != NULL );
+	ENSURE( strstr( text, teamBlockRow ) != NULL && strstr( text, teamTimeRow ) != NULL );
 	char small[16];
 	ENSURE( nbFormatScalingReport( profiles, 4, small, sizeof( small ) ) == length );
 	ENSURE( strlen( small ) == sizeof( small ) - 1 );
