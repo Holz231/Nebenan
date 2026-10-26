@@ -1077,8 +1077,12 @@ für jede Zahl von Threads: für die Bedingungen auf dem aufrufenden Thread und 
 Paketen 1,18-mal und in den Blöcken des Teams 1,39-mal so lange wie ein Thread allein. Die Ergebnisse bleiben bitgleich,
 und ein Schritt kostet im Benchmark gepaart gegen `kollaps-16` im Rahmen der Schwankungen gleich viel. Auf dem
 Ryzen 7 7800X3D braucht ein Thread in den Blöcken des Teams mit 8 Threads das 1,34- bis 1,39-Fache eines Threads allein,
-siehe „Skalierung auf dem Ryzen mit `kollaps-17`“ in [docs/Optimierungen.md](docs/Optimierungen.md). Wie es im Löser
-weitergeht, steht in [docs/Roadmap.md](docs/Roadmap.md).
+siehe „Skalierung auf dem Ryzen mit `kollaps-17`“ in [docs/Optimierungen.md](docs/Optimierungen.md). Den größten Teil
+des Mehraufwands machten vergebliche Versuche aus, Blöcke zu nehmen, die andere Threads schon hatten, siehe „Die Blöcke
+des Teams schneiden“ in [docs/Optimierungen.md](docs/Optimierungen.md). Seit `kollaps-19` liest ein Thread den Anspruch
+eines Blocks, bevor er ihn zu nehmen versucht, ohne eigenen Aufruf und bitgleich, siehe „Ansprüche vor dem Tausch lesen“
+in [`extern/README.md`](extern/README.md). Auf der VM mit 4 Threads kostet ein vergeblicher Versuch damit 42 bis 58 %
+weniger. Wie es im Löser weitergeht, steht in [docs/Roadmap.md](docs/Roadmap.md).
 
 Seit `kollaps-11` misst Box3D, wohin die Zeit der Kontakt-Schleife geht: was der aufrufende Thread davor und danach
 allein rechnet, und in jedem achten Schritt, wie die Threads die parallele Schleife verbringen, in Blöcken, vor ihrem

@@ -611,9 +611,22 @@ bleiben, wo sie waren. Beim Abriss in der Demo auf der VM bei ×2 kostet eine Ei
 1,18-mal und in den Blöcken des Teams 1,39-mal so viel wie mit einem Thread, siehe „Was eine Einheit Arbeit im Löser
 kostet“ in [`docs/Optimierungen.md`](../docs/Optimierungen.md).
 
+**Ansprüche vor dem Tausch lesen.** In einer Stufe mit Sperre läuft jeder Thread den Ring der Blöcke einmal ab, von
+seinem Heimatblock an, und nimmt jeden freien Block mit einem atomaren Vergleichstausch auf seinen Anspruch
+(`b3ExecuteStage` in `src/solver.c`). Die meisten Blöcke haben andere schon genommen, wenn er zu ihnen kommt. Ein
+fehlgeschlagener Vergleichstausch holt die Cache-Zeile trotzdem exklusiv und nimmt sie allen anderen Threads weg, mit 8
+Threads beim Abriss in der Demo rund 17 600 Mal pro Schritt. Jetzt liest der Thread den Anspruch zuerst und versucht den
+Tausch nur bei einem freien Block, einen genommenen kostet ihn das Lesen einer geteilten Zeile. Wer in die Stufe kam,
+sieht jeden Anspruch der Stufe davor, das Lesen hält einen freien Block also nie für genommen. Auf der VM mit 4 Threads
+kostet ein vergeblicher Versuch damit 0,024 bis 0,025 statt 0,042 bis 0,057 µs. Die Ansprüche dicht in einem eigenen
+Array oder jeden auf einer eigenen Cache-Zeile zu halten, war beides teurer, siehe „Vergebene Blöcke billiger
+überspringen“ in [`docs/Optimierungen.md`](../docs/Optimierungen.md). Der Kopfkommentar von `src/solver.h` beschreibt
+noch, wie Box2D die Blöcke nimmt, vorwärts und rückwärts bis zum ersten genommenen Block, und sagt jetzt, dass Box3D den
+ganzen Ring abläuft. Welcher Thread einen Block rechnet, ändert sich, was er rechnet, nicht.
+
 Die erste, die zweite, die vierte bis achte, die zehnte, die dreizehnte bis einunddreißigste, die dreiunddreißigste bis
 fünfunddreißigste, die neununddreißigste bis dreiundvierzigste, die fünfundvierzigste bis siebenundvierzigste, die
-neunundvierzigste bis siebenundfünfzigste ändern an den Ergebnissen nichts. Die dritte und die neunte ändern sie in den
+neunundvierzigste bis achtundfünfzigste ändern an den Ergebnissen nichts. Die dritte und die neunte ändern sie in den
 letzten Bits, dafür hängen sie nicht mehr davon ab, in welcher Reihenfolge Formen in die Bäume kommen. Die elfte ändert
 sie, weil Kontakte zu anderen Zeitpunkten entstehen, die zwölfte, weil sie weniger Punkte bekommen, die
 zweiunddreißigste, weil die Kontakte eines Knotens gebündelt gegen Kopien rechnen statt nacheinander, die
