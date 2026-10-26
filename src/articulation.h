@@ -25,11 +25,19 @@ typedef struct nbBone
 	b3Transform rest;
 	b3Quat jointFrame;
 
-	// The rotation against the rest pose the joint drives to, in the frame of the bone
+	// The rotation against the rest pose the joint drives to, in the frame of the bone, within the limits
 	b3Quat target;
 
-	// Scales the torque limit of the motor profile for this joint
+	// The limits of the joint as Box3D keeps them: the angle about the z axis of the joint frame, and for a ball joint
+	// how far that axis swings
+	float lowerAngle;
+	float upperAngle;
+	float coneAngle;
+
+	// Scales the torque limit, the stiffness and the damping ratio of the motor profile for this joint
 	float strength;
+	float stiffness;
+	float damping;
 
 	// The collision shape in the frame of the bone, see nbBoneDef
 	nbBoneShape shape;
@@ -111,6 +119,20 @@ void nbUpdateArticulations( nbWorld* world, float timeStep );
 
 // The articulation of an id and its world, null for a stale id
 nbArticulation* nbGetArticulationFromId( nbArticulationId id, nbWorld** worldOut );
+
+// The most points of the shape of a bone, see nbBonePoints
+#define NB_BONE_POINTS 48
+
+// The points that span the shape of a box or a rounded box in the frame of the bone, its hull: 8 corners, or 6 points
+// on each rounded corner. Returns how many, none for a capsule.
+int nbBonePoints( const nbBoneDef* bone, b3Vec3* points );
+
+// The part of a rotation, from none to all of it: the same axis, that part of the angle, the short way round
+b3Quat nbPartOf( b3Quat rotation, float weight );
+
+// The rotation that done count times gives a rotation, the short way round, as exact as floats are: the angles of Box3D
+// are approximations, so nbPartOf alone misses by a few thousandths of a radian
+b3Quat nbRootOf( b3Quat rotation, int count );
 
 // The index of the articulation whose bone this Box3D body is, NB_NULL_INDEX for a body of no articulation
 int nbArticulationOfBody( const nbWorld* world, b3BodyId bodyId );

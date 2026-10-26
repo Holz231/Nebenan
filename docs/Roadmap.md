@@ -129,15 +129,62 @@ schwankte die Dehnung zwischen 19 und 61 mm, ohne Richtung.
 | ---: | --- | --- |
 | F1 | **Bestand prüfen** (33.4 Schritt 1, 32.7 P0): Box3D hat Dreh-, Kugel- (Kegel und Twist), Schweiß-, Motor-, Parallel-, Filter-, Abstands-, Schiebe- und Radgelenke, Warmstart, Federn mit Zielwinkel oder Zielrotation, Geschwindigkeitsmotoren mit Drehmomentgrenze und Aufnahmen mit Wiedergabe. Es fehlte die Drehmomentgrenze der Federn, Nebenan benutzte keine Gelenke, RagdollBridge und Pose-Graph gab es nicht | ✅ |
 | F2 | **Federn mit Drehmomentgrenze** in Box3D, `maxSpringTorque` und das Drehmoment der Feder zum Ablesen | ✅ siehe „Federn der Gelenke mit Drehmomentgrenze“ in [`extern/README.md`](../extern/README.md) |
-| F3 | **Pendel, Drei-Link-Arm, passive Ragdoll** (27.4, Stufen 1 bis 3 aus 27.14) | ✅ Tests: Anker des Pendels 0,5 mm, Grenzen gehalten; der Arm erreicht seine Winkel auf 0,03 rad; die Ragdoll aus 0,5 m dehnt ihre Gelenke beim Aufprall bis 4 cm, die Grenzen geben bis 0,07 rad nach, sie kommt zur Ruhe |
-| F4 | **Figuren in der Bibliothek**: Rig, Articulation, Motorprofil in N m je Radian, Clips aus Keyframes im Update gesampelt, Treffer genau einmal, Zielpose und Motorlast zum Zeichnen, Humanoid aus 15 Knochen | ✅ `include/nebenan/types.h`, `include/nebenan/nebenan.h`, `src/articulation.c` |
-| F5 | **Standpose, Clip, Treffer** (33.4 Schritte 2 bis 4) | ✅ Tests: steht 5 s mit 0,004 rad Abweichung; der Drei-Keyframe-Clip läuft ohne Sprung, Fehler bis 0,04 rad, der Ellbogen erreicht 1,00 rad; 20 N s auf die Brust: steht, Gelenke 4 mm gedehnt; 120 N s: der Rumpf gibt 0,18 rad nach, die Figur fällt |
+| F3 | **Pendel, Drei-Link-Arm, passive Ragdoll** (27.4, Stufen 1 bis 3 aus 27.14) | ✅ Tests: Anker des Pendels 0,5 mm, Grenzen gehalten; der Arm erreicht seine Winkel auf 0,03 rad; die Ragdoll aus 0,5 m dehnt ihre Gelenke beim Aufprall bis 4 cm, die Grenzen geben bis 0,07 rad nach, sie kommt zur Ruhe. Die Gliederpuppe seit `ragdoll-11` bis 4,6 cm und 0,1 rad |
+| F4 | **Figuren in der Bibliothek**: Rig, Articulation, Motorprofil in N m je Radian, Clips aus Keyframes im Update gesampelt, Treffer genau einmal, Zielpose und Motorlast zum Zeichnen, Humanoid aus 15 Knochen | ✅ `include/nebenan/types.h`, `include/nebenan/nebenan.h`, `src/articulation.c`. Seit `ragdoll-11` 18 Knochen, siehe F12 |
+| F5 | **Standpose, Clip, Treffer** (33.4 Schritte 2 bis 4) | ✅ Tests: steht 5 s mit 0,004 rad Abweichung; der Drei-Keyframe-Clip läuft ohne Sprung, Fehler bis 0,04 rad, der Ellbogen erreicht 1,00 rad; 20 N s auf die Brust: steht, Gelenke 4 mm gedehnt; 120 N s: der Rumpf gibt 0,18 rad nach, die Figur fällt. Seit `ragdoll-11` Fehler bis 0,05 rad, und die drei Gelenke des Rumpfs geben zusammen 0,33 rad nach |
 | F6 | **Wand**: eine passive Figur mit 20 m/s bricht eine Wand über die Kollisionsschäden der Welt (26.16, 27.11) | ✅ Test |
 | F7 | **Determinismus**: zwei Figuren mit Clip und Treffer mit 1 und 4 Threads bitgleich | ✅ Test |
 | F8 | **Balance und Stützschritt** (33.4 Schritt 5, 27.9, 28.3): Schwerpunkt, Stützpolygon, Schrittziel, Knockdown und Recovery mit Übergabe an die Steuerung ohne Sprung (28.4) | ✅ auf `ragdoll-2`, siehe „Balance“ unten |
 | F9 | **Gelenkdehnung beim Aufprall**: 4 bis 6 cm für wenige Schritte. Bitgleich zu beheben nur mit mehr Teilschritten für die Welt oder einer Projektion der Gelenke nach dem Schritt in Box3D; vorher messen, was ein Spiel davon sieht | 🔜 |
 | F10 | **Kosten messen** (27.14): eine Stufe des Profils für die Figuren, Szenen mit 1, 10 und 50 Figuren im Benchmark und in der Demo, p50 bis p99 wie bei den Trümmern | ✅ auf `ragdoll-4`, siehe „Kosten der Figuren“ unten |
 | F11 | **Keyframe-Format und Video-Editor** (32.5, 32.6, 33.4 Schritt 6): erst nach F8 | ✅ auf `ragdoll-3`, siehe „Clips und Keyframe-Editor“ unten |
+| F12 | **Gliederpuppe**: Hals, ein Rumpf aus drei abgerundeten Blöcken, der sich rund und hohl biegt und zur Seite neigt, Ziele der Gelenke in ihren Grenzen | ✅ auf `ragdoll-11`, siehe „Gliederpuppe“ unten. Test: der Rumpf rundet sich um 0,89 rad, hält an seinen Grenzen bei 1,36 und −0,44 rad und neigt sich 0,43 rad zur Seite |
+
+### Gliederpuppe (`ragdoll-11`)
+
+Gebaut am 26. Oktober 2026 nach dem Bild einer blauen Gliederpuppe, das der Nutzer geschickt hat: ein Ei als Kopf auf
+einem Hals, eine breite runde Brust, darunter zwei flachere Rollen und ein rundes Becken, Arme und Beine als Kapseln,
+einfache Hände und Füße. Der Humanoid hat jetzt 18 statt 15 Knochen. Bauch, Rippen und Brust sind abgerundete Blöcke
+(`nb_roundedBoxBone`) auf Kugelgelenken, deren Twist um die Achse quer durch den Körper die Beugung ist, 26° nach vorn
+und 9° nach hinten je Gelenk, Neigen und Drehen 11° im Kegel. Das Becken ist ebenfalls ein abgerundeter Block, Hals
+und Kopf sitzen auf je einem Kugelgelenk. Die Demo zeichnet die Figuren blau, die Blöcke aus ihren Hüllen
+(`nbCreateBoneHull`). Die Balance und die Aufstehclips teilen eine Beugung des Rückens auf alle Knochen der Wirbelsäule
+auf, vom Torso bis zur Wurzel, der Keypoint-Import teilt die Drehung zwischen Becken und Brust zu gleichen Teilen.
+
+Fünf Dinge hat der Bau gezeigt. Erstens biegen sich drei Gelenke hintereinander wie eines mit einem Drittel der
+Steifigkeit, die drei des Rumpfs nehmen deshalb die dreifache (`nbBoneDef::stiffness`). Zweitens drückten diese steifen
+Federn ein Gelenk durch seine weichen Grenzen, wenn sein Ziel dahinter lag, um 0,14 rad je Gelenk: Der Rumpf beugte
+sich 1,77 statt 1,35 rad. Die Bibliothek holt jedes Ziel jetzt in die Grenzen zurück, Twist und Schwung je für sich, so
+wie Box3D sie misst, und der Rumpf hält bei 1,36 rad. Drittens krochen die Füße im Stand, sobald das Becken einen Rumpf
+aus drei Gelenken trug: Die Federn der Beine schwangen mit den Beinen, die die Balance führt. Die Beine nehmen deshalb
+die dreifache Dämpfung (`nbBoneDef::damping`), und der Schwerpunkt wandert im Stand 12,6 mm in 3 s. Viertens schüttelte
+der Hals den Kopf mit bis zu 25 rad/s. Er wiegt 1 kg zwischen 12 kg Brust und 5 kg Kopf, und die Bibliothek rechnete
+seine Federn mit 130 Hz, mehr als die Hälfte der 240 Teilschritte. Ab 0,85 der Steifigkeit schaukelt es sich auf, bis
+0,7 nicht, Hals und Kopf nehmen 0,3, und 240 N m/rad halten den Kopf gegen die 7 N m/rad seines Gewichts. Fünftens
+reicht der Kasten, den Box3D um eine gedrehte Hülle legt, bei einem abgerundeten Block Zentimeter über sie hinaus: Der
+Test des Aufstehens maß das Becken 4,5 cm im Boden, an seinen Punkten lag es darüber, und am tiefsten sank der linke
+Fuß mit 1,2 cm. Die Tests messen Höhen deshalb an den Punkten der Formen.
+
+Mit dem höheren Oberkörper schwang die Figur am Ende des Clips vom Bauch mit 0,74 m/s nach hinten über ihre Fersen
+hinaus und stand erst 0,7 s später, beim 1,5-fachen Tempo lag der Capture Point dabei 42 cm außerhalb. Die Wurzel neigt
+sich beim Aufrichten jetzt 0,8-mal so weit, höchstens 0,48 rad: Vom Bauch und vom Rücken steht die Figur genau am Ende
+des Clips, und aus vier Richtungen mit 15 bis 40 N s umgeworfen steht sie beim 0,8- bis 1,5-fachen Tempo jedes Mal
+wieder auf, 48 von 48. Beim 0,8-fachen Tempo schwingt sie wie mit `ragdoll-10` am Ende noch etwas zurück, der Capture
+Point liegt bis 16 cm außerhalb, damals 18 cm. Die Arme hängen 3° nach außen: Mit 7° reichte eine Hand 34,5 cm zur
+Seite, steckte beim Erzeugen in der Wand des Tests 32 cm daneben, und die Wand stieß die Figur um. Gegen diese Wand
+gestoßen, fällt die Figur jetzt, statt sich mit einem Schritt anzulehnen: Der rechte Fuß verfehlte den Capture Point um
+0,295 m, die Grenze ist die halbe Schrittlänge, 0,275 m, mit `ragdoll-10` lag er knapp darunter. 28.3 erlaubt das,
+kein Fuß tritt in die Wand.
+
+Verworfen, mit Grund:
+
+- **Gegen das Kriechen der Füße die Wirbelsäule ändern**: Weder mehr Dämpfung noch mehr Steifigkeit, Trägheit oder
+  Masse der drei Blöcke hielten die Füße, nur die Dämpfung der Beine.
+- **Ein schwererer Hals**: Mit 2 kg schüttelt er den Kopf auch nicht, aber ein Hals wiegt rund 1 kg, und die volle
+  Steifigkeit braucht der Kopf nicht.
+- **Hüften, die der kleineren Neigung folgen**, damit die Oberschenkel ihre Richtung behalten: Die Figur schwang wieder
+  nach hinten, mit dem Capture Point 14 cm außerhalb.
+- **Die Neigung 0,7- oder 0,75-mal**: Beim 0,8- und 1,2-fachen Tempo stand die Figur später auf als mit 0,8.
 
 ## Balance (`ragdoll-2`)
 
@@ -152,14 +199,14 @@ Balance, der Capture Point und das Ziel eines Schritts liegen als Marker auf dem
 | B2 | **Stand**: Beine per IK zu den Füßen, Becken als gedämpfte Feder über der Mitte der Füße, bei weitem Stand tiefer, übriger Körper in der Pose des Programms | ✅ Test: 3 s ohne Schritt, Schwerpunkt wandert 12 mm |
 | B3 | **Ausgleichsschritt** (28.3, 26.14): Ziel aus dem vorhergesagten Capture Point, Reichweite, Boden, Platz und Weg geprüft, Ziel folgt in den ersten 60 % des Schritts, neue Stützfläche nach der Landung geprüft, bis zu drei Schritte | ✅ Tests: 60 N s von vorn, 50 N s von hinten, 60 N s von der Seite werfen die Figur ohne Balance um, mit Balance steht sie nach zwei Schritten |
 | B4 | **Links und rechts** (28.5 A): gespiegelte Stöße, gespiegelter erster Schritt | ✅ Test: 65 N s, Ziel auf 1 cm gespiegelt, gleiche Zahl Schritte |
-| B5 | **Blockierter Schritt** (28.5 B): kein Schritt in eine Wand, kein Fuß durch sie | ✅ Test: Wand in 32 cm, kein Fuß berührt sie, über eine kniehohe Mauer fällt die Figur |
+| B5 | **Blockierter Schritt** (28.5 B): kein Schritt in eine Wand, kein Fuß durch sie | ✅ Test: Wand in 32 cm, kein Fuß berührt sie, über eine kniehohe Mauer fällt die Figur. Seit `ragdoll-11` fällt sie auch an der hohen Wand, ein Fuß berührt sie dabei, ohne einzudringen, siehe „Gliederpuppe“ |
 | B6 | **Boden weg** (26.14): kein Schritt ins Leere, die Figur fällt | ✅ Test: fällt nach 0,2 s |
 | B7 | **Fallen mit Schutzhaltung** (26.13): Hilfe für das Becken lässt los, weiche Motoren, Arme voraus oder eingerollt | ✅ |
 | B8 | **Aufstehen mit Sicherheitsprüfung** (26.15, 28.4, 28.5 E): Ruhe, Boden, Platz, kein Schutt; Kraft an der Brust als Spielhilfe; Übergabe erst, wenn der Schwerpunkt über den Füßen ruht | ✅ Tests: nach vorn und hinten umgeworfen steht die Figur nach 5,7 und 6,2 s wieder und bleibt stehen; unter einer Platte wartet sie, ohne sie zu berühren. Seit `ragdoll-10` mit Clips statt der Kraft, siehe B12 |
 | B9 | **Abbruch** (26.15): ein Treffer oder Schutt bricht das Aufstehen ab | ✅ Test: Treffer sofort, ein fallender Block nach 0,18 s, seit `ragdoll-10` nach 0,33 s. Eine Figur, die daneben steht, liegt oder aufsteht, ist seitdem kein Schutt |
-| B10 | **Ohne Sprung** (28.4): jede neue Art von Pose blendet ein | ✅ Test: kein Knochen mehr als 9,3 cm in einem Schritt |
+| B10 | **Ohne Sprung** (28.4): jede neue Art von Pose blendet ein | ✅ Test: kein Knochen mehr als 9,3 cm in einem Schritt, seit `ragdoll-11` 9,7 cm |
 | B11 | **Determinismus**: 1 und 4 Threads bitgleich, der Hash für alle Plattformen festgehalten, nur Rechenarten mit gleichen Bits überall | ✅ Test |
-| B12 | **Aufstehclips** statt der Kraft an der Brust (26.15, 33.4 Schritt 6): ein Clip vom Bauch, einer vom Rücken, die Wurzel von einer begrenzten Hilfe gedreht, die nur dreht, im Editor als Datei | ✅ auf `ragdoll-10`, Tests: umgeworfen steht die Figur nach 8,3 s vom Bauch und 10,2 s vom Rücken wieder, mit dem Blick dahin, wo ihr Kopf lag; aus vier Richtungen mit 15 bis 40 N s und mit dem 0,8- bis 1,5-fachen Tempo jedes Mal; eigene Clips gehen, falsche werden abgelehnt |
+| B12 | **Aufstehclips** statt der Kraft an der Brust (26.15, 33.4 Schritt 6): ein Clip vom Bauch, einer vom Rücken, die Wurzel von einer begrenzten Hilfe gedreht, die nur dreht, im Editor als Datei | ✅ auf `ragdoll-10`, Tests: umgeworfen steht die Figur nach 8,3 s vom Bauch und 10,2 s vom Rücken wieder, mit dem Blick dahin, wo ihr Kopf lag; aus vier Richtungen mit 15 bis 40 N s und mit dem 0,8- bis 1,5-fachen Tempo jedes Mal; eigene Clips gehen, falsche werden abgelehnt. Die Gliederpuppe seit `ragdoll-11` nach 8,8 und 10,2 s, genau am Ende der Clips |
 | B13 | **Schrägen und Stufen**: Füße auf die Neigung des Bodens drehen, Stufen testen | 🔜 |
 | B14 | **Kosten** der Balance je Figur messen, mit F10 | ✅ auf `ragdoll-4`: 0,8 bis 0,9 µs je Figur und Schritt in der ruhigen Stadt, 1,1 bis 2,0 µs unter Beschuss |
 | B15 | **Kriechen und Rollen, wenn kein Platz ist** (26.15): unter einer Platte oder zwischen Trümmern zu einer freien Stelle kriechen oder rollen und dort aufstehen | 🔜 bisher wartet die Figur, bis Platz ist |

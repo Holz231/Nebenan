@@ -348,19 +348,6 @@ int nbPoseClip_AddKeyframe( nbPoseClip* clip, int frame, const b3Quat* rotations
 	return index;
 }
 
-// The part of a rotation, from none to all of it: the same axis, that part of the angle, the short way round
-static b3Quat nbPartOf( b3Quat rotation, float weight )
-{
-	float angle;
-	b3Vec3 axis = b3GetAxisAngle( &angle, b3NormalizeQuat( rotation ) );
-	if ( b3LengthSquared( axis ) == 0.0f )
-	{
-		return b3Quat_identity;
-	}
-	angle = angle > B3_PI ? angle - 2.0f * B3_PI : angle;
-	return b3MakeQuatFromAxisAngle( axis, b3ClampFloat( weight, 0.0f, 1.0f ) * angle );
-}
-
 bool nbPoseClip_SetPose( nbPoseClip* clip, int keyframe, const b3Quat* rotations, b3Transform root, int spread )
 {
 	if ( nbEditable( clip, keyframe ) == false || rotations == NULL )
@@ -686,15 +673,14 @@ void nbComputePoseTransforms( const nbRigDef* rig, b3Transform root, const b3Qua
 // The lowest point of the shape of a bone along y, and the middle of the shape
 static float nbShapeBottom( const nbBoneDef* bone, b3Transform transform, b3Vec3* middle )
 {
-	if ( bone->shape == nb_boxBone )
+	b3Vec3 points[NB_BONE_POINTS];
+	int count = nbBonePoints( bone, points );
+	if ( count > 0 )
 	{
 		float lowest = FLT_MAX;
-		for ( int k = 0; k < 8; ++k )
+		for ( int k = 0; k < count; ++k )
 		{
-			b3Vec3 corner = { k & 1 ? bone->halfExtents.x : -bone->halfExtents.x,
-							  k & 2 ? bone->halfExtents.y : -bone->halfExtents.y,
-							  k & 4 ? bone->halfExtents.z : -bone->halfExtents.z };
-			lowest = b3MinFloat( lowest, b3TransformPoint( transform, b3Add( bone->center, corner ) ).y );
+			lowest = b3MinFloat( lowest, b3TransformPoint( transform, points[k] ).y );
 		}
 		*middle = b3TransformPoint( transform, bone->center );
 		return lowest;

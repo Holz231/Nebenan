@@ -50,6 +50,8 @@ nbBoneDef nbDefaultBoneDef( void )
 	def.upperAngle = 0.5f;
 	def.coneAngle = 0.5f;
 	def.strength = 1.0f;
+	def.stiffness = 1.0f;
+	def.damping = 1.0f;
 	return def;
 }
 
@@ -108,10 +110,37 @@ static nbBoneDef nbLimb( const char* name, int parent, b3Vec3 pivot, b3Quat rest
 	return def;
 }
 
+// A segment of the trunk: a rounded block around a center, on a ball joint at its pivot that bends about the axis across
+// it with its twist, 26 degrees forward and 9 back, and leans and turns 11 degrees within its cone. Three of them round
+// the back by 77 degrees and arch it by 26, a strong joint each, three times as stiff as the others, so the trunk holds
+// like one joint of the profile.
+static nbBoneDef nbSegment( const char* name, int parent, b3Vec3 pivot, b3Vec3 center, b3Vec3 halfExtents, float rounding,
+							float mass )
+{
+	nbBoneDef def = nbDefaultBoneDef();
+	def.name = name;
+	def.parent = parent;
+	def.restTransform.p = pivot;
+	def.restTransform.q = b3Quat_identity;
+	def.shape = nb_roundedBoxBone;
+	def.center = center;
+	def.halfExtents = halfExtents;
+	def.radius = rounding;
+	def.mass = mass;
+	def.joint = nb_ballJoint;
+	def.jointFrame = b3MakeQuatFromAxisAngle( b3Vec3_axisY, 0.5f * B3_PI );
+	def.lowerAngle = -0.15f;
+	def.upperAngle = 0.45f;
+	def.coneAngle = 0.2f;
+	def.strength = 1.6f;
+	def.stiffness = 3.0f;
+	return def;
+}
+
 // The masses below add up to this, for a figure of 1.8 m. Hands and feet are heavier than on a person: a foot of 1 kg
 // that has to stop the 75 kg landing on it stretches its ankle joint by centimeters for a few steps, a foot of 2.5 kg by
 // less than half of that. The solver likes mass ratios below 30 to 1 between joined bodies.
-#define NB_HUMANOID_MASS 73.0f
+#define NB_HUMANOID_MASS 74.0f
 #define NB_HUMANOID_HEIGHT 1.8f
 
 float nbMakeHumanoidBones( float height, float mass, nbBoneDef* bones, int capacity )
@@ -124,32 +153,61 @@ float nbMakeHumanoidBones( float height, float mass, nbBoneDef* bones, int capac
 	float s = height / NB_HUMANOID_HEIGHT;
 	float m = mass / NB_HUMANOID_MASS;
 
-	// A limb that hangs down has its local y along world -y. The cone of a ball joint sits on the bone, the hinge axis
-	// runs across it along local x. The foot points forward, along +z. The hip bends about the axis across it like a hinge,
-	// with the twist of its ball joint: 132 degrees forward, so the figure can kneel, crawl and get up, 23 back, and its
-	// cone keeps the leg within 40 degrees of that axis when it swings out or turns. A cone along the bone would allow as
-	// much back and out as forward.
+	// Built after a mannequin, measured in its picture from behind: the pelvis origin stands 98 cm above the soles, the
+	// shoulders 1.50 m, the head reaches from 1.60 to 1.80 m on a short neck, and the hands hang to 82 cm, a little out
+	// from the hips. A limb that hangs down has its local y along world -y. The cone of a ball joint sits on the bone, the
+	// hinge axis runs across it along local x. The foot points forward, along +z. The hip bends about the axis across it
+	// like a hinge, with the twist of its ball joint: 132 degrees forward, so the figure can kneel, crawl and get up, 23
+	// back, and its cone keeps the leg within 40 degrees of that axis when it swings out or turns. A cone along the bone
+	// would allow as much back and out as forward.
 	b3Quat down = b3MakeQuatFromAxisAngle( b3Vec3_axisZ, B3_PI );
 	b3Quat zToY = b3MakeQuatFromAxisAngle( b3Vec3_axisX, -0.5f * B3_PI );
 	b3Quat zToX = b3MakeQuatFromAxisAngle( b3Vec3_axisY, 0.5f * B3_PI );
 	b3Quat footRest = b3MakeQuatFromAxisAngle( b3Vec3_axisX, 0.5f * B3_PI );
 	b3Quat identity = b3Quat_identity;
 
-	// Pelvis: a short capsule across the hips, the root
+	// The trunk in four rounded blocks like the mannequin: a round pelvis from 83 cm to 1.05 m, belly and ribs as two
+	// flatter rolls above it, and a broad chest up to the shoulders at 1.56 m. Neighbours overlap, the next but one lies
+	// more than 10 cm away.
 	nbBoneDef pelvis = nbDefaultBoneDef();
 	pelvis.name = "pelvis";
 	pelvis.parent = -1;
-	pelvis.start = (b3Vec3){ -0.06f * s, 0.0f, 0.0f };
-	pelvis.end = (b3Vec3){ 0.06f * s, 0.0f, 0.0f };
-	pelvis.radius = 0.11f * s;
+	pelvis.shape = nb_roundedBoxBone;
+	pelvis.center = (b3Vec3){ 0.0f, -0.04f * s, 0.0f };
+	pelvis.halfExtents = (b3Vec3){ 0.178f * s, 0.11f * s, 0.11f * s };
+	pelvis.radius = 0.08f * s;
 	pelvis.mass = 11.0f * m;
 	pelvis.joint = nb_fixedJoint;
 	bones[nb_humanoidPelvis] = pelvis;
 
-	bones[nb_humanoidTorso] = nbLimb( "torso", nb_humanoidPelvis, (b3Vec3){ 0.0f, 0.10f * s, 0.0f }, identity, 0.48f * s,
-									  0.13f * s, 22.0f * m, nb_ballJoint, zToY, -0.4f, 0.4f, 0.35f, 1.6f );
-	bones[nb_humanoidHead] = nbLimb( "head", nb_humanoidTorso, (b3Vec3){ 0.0f, 0.48f * s, 0.0f }, identity, 0.25f * s, 0.10f * s,
-									 5.0f * m, nb_ballJoint, zToY, -0.8f, 0.8f, 0.6f, 0.3f );
+	bones[nb_humanoidBelly] =
+		nbSegment( "belly", nb_humanoidPelvis, (b3Vec3){ 0.0f, 0.07f * s, 0.0f }, (b3Vec3){ 0.0f, 0.06f * s, 0.0f },
+				   (b3Vec3){ 0.16f * s, 0.06f * s, 0.10f * s }, 0.055f * s, 5.0f * m );
+	bones[nb_humanoidRibs] =
+		nbSegment( "ribs", nb_humanoidBelly, (b3Vec3){ 0.0f, 0.12f * s, 0.0f }, (b3Vec3){ 0.0f, 0.06f * s, 0.0f },
+				   (b3Vec3){ 0.165f * s, 0.055f * s, 0.105f * s }, 0.05f * s, 5.0f * m );
+	bones[nb_humanoidChest] =
+		nbSegment( "chest", nb_humanoidRibs, (b3Vec3){ 0.0f, 0.11f * s, 0.0f }, (b3Vec3){ 0.0f, 0.14f * s, 0.0f },
+				   (b3Vec3){ 0.19f * s, 0.135f * s, 0.12f * s }, 0.07f * s, 12.0f * m );
+
+	// The neck from the top of the chest, and the head on it like an egg, each bending and turning half as far as a neck
+	nbBoneDef neck = nbLimb( "neck", nb_humanoidChest, (b3Vec3){ 0.0f, 0.26f * s, 0.0f }, identity, 0.08f * s, 0.05f * s,
+							 1.0f * m, nb_ballJoint, zToY, -0.4f, 0.4f, 0.3f, 0.3f );
+	neck.start = (b3Vec3){ 0.0f, 0.0f, 0.0f };
+	neck.end = (b3Vec3){ 0.0f, 0.07f * s, 0.0f };
+	nbBoneDef head = nbLimb( "head", nb_humanoidNeck, (b3Vec3){ 0.0f, 0.08f * s, 0.0f }, identity, 0.2f * s, 0.095f * s, 5.0f * m,
+							 nb_ballJoint, zToY, -0.4f, 0.4f, 0.3f, 0.3f );
+	head.start = (b3Vec3){ 0.0f, 0.075f * s, 0.0f };
+	head.end = (b3Vec3){ 0.0f, 0.085f * s, 0.0f };
+
+	// The neck weighs a kilogram between the chest and the head. At the stiffness of the profile its two springs turn it
+	// 130 times a second, more than half the 240 substeps of four per step at 60 Hz, and it shakes the head, at 0.85 of
+	// that stiffness as well, at 0.7 not. At 0.3 they hold the head with 240 Nm/rad of the default profile, its weight
+	// pulls with 7.
+	neck.stiffness = 0.3f;
+	head.stiffness = 0.3f;
+	bones[nb_humanoidNeck] = neck;
+	bones[nb_humanoidHead] = head;
 
 	for ( int side = 0; side < 2; ++side )
 	{
@@ -161,19 +219,24 @@ float nbMakeHumanoidBones( float height, float mass, nbBoneDef* bones, int capac
 		int shin = side == 0 ? nb_humanoidShinLeft : nb_humanoidShinRight;
 		int foot = side == 0 ? nb_humanoidFootLeft : nb_humanoidFootRight;
 
-		bones[upperArm] = nbLimb( side == 0 ? "upper arm left" : "upper arm right", nb_humanoidTorso,
-								  (b3Vec3){ 0.23f * s * x, 0.42f * s, 0.0f }, down, 0.32f * s, 0.045f * s, 2.0f * m, nb_ballJoint,
-								  zToY, -0.8f, 0.8f, 1.5f, 0.6f );
-		bones[forearm] = nbLimb( side == 0 ? "forearm left" : "forearm right", upperArm, (b3Vec3){ 0.0f, 0.32f * s, 0.0f },
-								 identity, 0.28f * s, 0.04f * s, 1.2f * m, nb_hingeJoint, zToX, -0.05f, 2.4f, 0.0f, 0.4f );
-		bones[hand] = nbLimb( side == 0 ? "hand left" : "hand right", forearm, (b3Vec3){ 0.0f, 0.28f * s, 0.0f }, identity,
-							  0.18f * s, 0.035f * s, 0.8f * m, nb_ballJoint, zToY, -0.3f, 0.3f, 0.6f, 0.15f );
+		// The arms hang 3 degrees out from the body, past the trunk by 3 cm and more, the fingertips 30 cm from the middle
+		b3Quat armRest = b3MakeQuatFromAxisAngle( b3Vec3_axisZ, B3_PI + 0.05f * x );
+		bones[upperArm] = nbLimb( side == 0 ? "upper arm left" : "upper arm right", nb_humanoidChest,
+								  (b3Vec3){ 0.23f * s * x, 0.22f * s, 0.0f }, armRest, 0.28f * s, 0.05f * s, 2.0f * m,
+								  nb_ballJoint, zToY, -0.8f, 0.8f, 1.5f, 0.6f );
+		bones[forearm] = nbLimb( side == 0 ? "forearm left" : "forearm right", upperArm, (b3Vec3){ 0.0f, 0.28f * s, 0.0f },
+								 identity, 0.24f * s, 0.045f * s, 1.2f * m, nb_hingeJoint, zToX, -0.05f, 2.4f, 0.0f, 0.4f );
+		bones[hand] = nbLimb( side == 0 ? "hand left" : "hand right", forearm, (b3Vec3){ 0.0f, 0.24f * s, 0.0f }, identity,
+							  0.16f * s, 0.035f * s, 0.8f * m, nb_ballJoint, zToY, -0.3f, 0.3f, 0.6f, 0.15f );
 
+		// The legs carry the body: their joints see far more than their two bones and take three times the damping
 		bones[thigh] =
 			nbLimb( side == 0 ? "thigh left" : "thigh right", nb_humanoidPelvis, (b3Vec3){ 0.10f * s * x, -0.03f * s, 0.0f },
-					down, 0.45f * s, 0.075f * s, 7.5f * m, nb_ballJoint, zToX, -0.4f, 2.3f, 0.7f, 2.0f );
+					down, 0.45f * s, 0.07f * s, 7.5f * m, nb_ballJoint, zToX, -0.4f, 2.3f, 0.7f, 2.0f );
+		bones[thigh].damping = 3.0f;
 		bones[shin] = nbLimb( side == 0 ? "shin left" : "shin right", thigh, (b3Vec3){ 0.0f, 0.45f * s, 0.0f }, identity,
-							  0.44f * s, 0.055f * s, 3.5f * m, nb_hingeJoint, zToX, -2.4f, 0.05f, 0.0f, 1.5f );
+							  0.44f * s, 0.06f * s, 3.5f * m, nb_hingeJoint, zToX, -2.4f, 0.05f, 0.0f, 1.5f );
+		bones[shin].damping = 3.0f;
 
 		// A box with a flat sole, 6 cm under the ankle, reaching forward
 		nbBoneDef footDef = nbDefaultBoneDef();
@@ -191,11 +254,57 @@ float nbMakeHumanoidBones( float height, float mass, nbBoneDef* bones, int capac
 		footDef.upperAngle = 0.35f;
 		footDef.coneAngle = 0.5f;
 		footDef.strength = 0.8f;
+		footDef.damping = 3.0f;
 		bones[foot] = footDef;
 	}
 
 	// Hip 3 cm under the pelvis origin, thigh, shin and the sole 6 cm under the ankle
 	return ( 0.03f + 0.45f + 0.44f + 0.06f ) * s;
+}
+
+b3Quat nbPartOf( b3Quat rotation, float weight )
+{
+	float angle;
+	b3Vec3 axis = b3GetAxisAngle( &angle, b3NormalizeQuat( rotation ) );
+	if ( b3LengthSquared( axis ) == 0.0f )
+	{
+		return b3Quat_identity;
+	}
+	angle = angle > B3_PI ? angle - 2.0f * B3_PI : angle;
+	return b3MakeQuatFromAxisAngle( axis, b3ClampFloat( weight, 0.0f, 1.0f ) * angle );
+}
+
+b3Quat nbRootOf( b3Quat rotation, int count )
+{
+	b3Quat q = b3NormalizeQuat( rotation );
+	if ( q.s < 0.0f )
+	{
+		q = b3NegateQuat( q );
+	}
+	if ( count <= 1 )
+	{
+		return q;
+	}
+
+	// The part from the angle, then what is left of the rotation shared as well: a small turn on the same axis, whose
+	// part its vector part gives to the third power of its angle
+	b3Quat root = nbPartOf( q, 1.0f / (float)count );
+	for ( int iteration = 0; iteration < 2; ++iteration )
+	{
+		b3Quat power = root;
+		for ( int k = 1; k < count; ++k )
+		{
+			power = b3MulQuat( power, root );
+		}
+		b3Quat left = b3InvMulQuat( power, q );
+		if ( left.s < 0.0f )
+		{
+			left = b3NegateQuat( left );
+		}
+		b3Quat part = { b3MulSV( 1.0f / (float)count, left.v ), left.s };
+		root = b3NormalizeQuat( b3MulQuat( root, b3NormalizeQuat( part ) ) );
+	}
+	return root;
 }
 
 //----------------------------------------------------------------------------------------------------------------------
@@ -340,6 +449,51 @@ static b3Quat nbJointRotation( const nbBone* bone, b3Quat rotation )
 	return b3NormalizeQuat( relative );
 }
 
+// A rotation of a bone against its rest pose, brought back into the limits of its joint as Box3D measures them: the
+// twist about the z axis of the joint frame, see b3GetTwistAngle, and the swing of that axis, see b3GetSwingAngle. The
+// limits are soft, a spring that pulls beyond one pushes the joint through it: the three stiff joints of a spine went
+// 0.14 rad past their forward limit each.
+static b3Quat nbWithinLimits( const nbBone* bone, b3Quat rotation )
+{
+	if ( bone->joint != nb_hingeJoint && bone->joint != nb_ballJoint )
+	{
+		return rotation;
+	}
+
+	// The rotation of the joint as swing times twist
+	b3Quat q = nbJointRotation( bone, rotation );
+	if ( q.s < 0.0f )
+	{
+		q = b3NegateQuat( q );
+	}
+	float twistLength = sqrtf( q.s * q.s + q.v.z * q.v.z );
+	b3Quat twist = twistLength > 0.0f ? (b3Quat){ { 0.0f, 0.0f, q.v.z / twistLength }, q.s / twistLength } : b3Quat_identity;
+	b3Quat swing = b3MulQuat( q, b3Conjugate( twist ) );
+	float swingLength = sqrtf( swing.v.x * swing.v.x + swing.v.y * swing.v.y );
+
+	// A hinge turns about its axis alone, the drive ignores the swing
+	float twistAngle = b3GetTwistAngle( q );
+	float limitedTwist = b3ClampFloat( twistAngle, bone->lowerAngle, bone->upperAngle );
+	bool twistInside = limitedTwist == twistAngle;
+	bool swingInside = bone->joint == nb_hingeJoint || swingLength < FLT_EPSILON || b3GetSwingAngle( q ) <= bone->coneAngle;
+	if ( twistInside && swingInside )
+	{
+		return rotation;
+	}
+
+	if ( twistInside == false )
+	{
+		twist = b3MakeQuatFromAxisAngle( b3Vec3_axisZ, limitedTwist );
+	}
+	if ( swingInside == false )
+	{
+		b3Vec3 axis = { swing.v.x / swingLength, swing.v.y / swingLength, 0.0f };
+		swing = b3MakeQuatFromAxisAngle( axis, bone->coneAngle );
+	}
+	b3Quat limited = b3MulQuat( swing, twist );
+	return b3NormalizeQuat( b3MulQuat( b3MulQuat( bone->jointFrame, limited ), b3Conjugate( bone->jointFrame ) ) );
+}
+
 static void nbDriveJoint( const nbBone* bone )
 {
 	b3Quat relative = nbJointRotation( bone, bone->target );
@@ -363,7 +517,7 @@ void nbSetTargets( nbArticulation* articulation, const b3Quat* rotations )
 	for ( int i = 1; i < articulation->boneCount; ++i )
 	{
 		nbBone* bone = articulation->bones + i;
-		b3Quat target = b3NormalizeQuat( rotations[i] );
+		b3Quat target = nbWithinLimits( bone, b3NormalizeQuat( rotations[i] ) );
 
 		// About a tenth of a degree
 		if ( fabsf( b3DotQuat( target, bone->target ) ) < 0.9999995f )
@@ -394,13 +548,13 @@ void nbApplyMotorProfile( nbArticulation* articulation, const nbMotorProfile* pr
 	{
 		const nbBone* bone = articulation->bones + i;
 		float maxTorque = b3MaxFloat( 0.0f, profile->maxTorque * bone->strength );
-		float hertz = bone->joint == nb_fixedJoint ? 0.0f : nbBoneHertz( articulation, bone, stiffness );
+		float hertz = bone->joint == nb_fixedJoint ? 0.0f : nbBoneHertz( articulation, bone, stiffness * bone->stiffness );
 		switch ( bone->joint )
 		{
 			case nb_hingeJoint:
 				b3RevoluteJoint_EnableSpring( bone->jointId, enable );
 				b3RevoluteJoint_SetSpringHertz( bone->jointId, hertz );
-				b3RevoluteJoint_SetSpringDampingRatio( bone->jointId, dampingRatio );
+				b3RevoluteJoint_SetSpringDampingRatio( bone->jointId, dampingRatio * bone->damping );
 #if NB_SPRING_TORQUE_LIMITS
 				b3RevoluteJoint_SetMaxSpringTorque( bone->jointId, maxTorque );
 #endif
@@ -408,7 +562,7 @@ void nbApplyMotorProfile( nbArticulation* articulation, const nbMotorProfile* pr
 			case nb_ballJoint:
 				b3SphericalJoint_EnableSpring( bone->jointId, enable );
 				b3SphericalJoint_SetSpringHertz( bone->jointId, hertz );
-				b3SphericalJoint_SetSpringDampingRatio( bone->jointId, dampingRatio );
+				b3SphericalJoint_SetSpringDampingRatio( bone->jointId, dampingRatio * bone->damping );
 #if NB_SPRING_TORQUE_LIMITS
 				b3SphericalJoint_SetMaxSpringTorque( bone->jointId, maxTorque );
 #endif
@@ -617,6 +771,50 @@ void nbUpdateArticulations( nbWorld* world, float timeStep )
 //----------------------------------------------------------------------------------------------------------------------
 // Create and destroy
 
+int nbBonePoints( const nbBoneDef* bone, b3Vec3* points )
+{
+	b3Vec3 c = bone->center;
+	b3Vec3 h = bone->halfExtents;
+	if ( bone->shape == nb_boxBone )
+	{
+		for ( int k = 0; k < 8; ++k )
+		{
+			points[k] = (b3Vec3){ c.x + ( k & 1 ? h.x : -h.x ), c.y + ( k & 2 ? h.y : -h.y ), c.z + ( k & 4 ? h.z : -h.z ) };
+		}
+		return 8;
+	}
+	if ( bone->shape != nb_roundedBoxBone )
+	{
+		return 0;
+	}
+
+	// Every corner rounded by points on its three axes and halfway between them, so each edge has two faces
+	float r = b3ClampFloat( bone->radius, 0.0f, 0.95f * b3MinFloat( h.x, b3MinFloat( h.y, h.z ) ) );
+	float d = 0.70710678f * r;
+	int count = 0;
+	for ( int k = 0; k < 8; ++k )
+	{
+		float sx = k & 1 ? 1.0f : -1.0f;
+		float sy = k & 2 ? 1.0f : -1.0f;
+		float sz = k & 4 ? 1.0f : -1.0f;
+		b3Vec3 corner = { c.x + sx * ( h.x - r ), c.y + sy * ( h.y - r ), c.z + sz * ( h.z - r ) };
+		const b3Vec3 offsets[6] = { { sx * r, 0.0f, 0.0f },	  { 0.0f, sy * r, 0.0f },	{ 0.0f, 0.0f, sz * r },
+									{ sx * d, sy * d, 0.0f }, { sx * d, 0.0f, sz * d }, { 0.0f, sy * d, sz * d } };
+		for ( int j = 0; j < 6; ++j )
+		{
+			points[count++] = b3Add( corner, offsets[j] );
+		}
+	}
+	return count;
+}
+
+b3HullData* nbCreateBoneHull( const nbBoneDef* bone )
+{
+	b3Vec3 points[NB_BONE_POINTS];
+	int count = bone != NULL ? nbBonePoints( bone, points ) : 0;
+	return count > 0 ? b3CreateHull( points, count, B3_MAX_HULL_VERTICES ) : NULL;
+}
+
 static float nbBoneVolume( const nbBoneDef* def )
 {
 	if ( def->shape == nb_boxBone )
@@ -712,6 +910,13 @@ nbArticulationId nbCreateArticulation( nbWorldId worldId, const nbRigDef* rig, b
 			b3BoxHull box = b3MakeOffsetBoxHull( def->halfExtents.x, def->halfExtents.y, def->halfExtents.z, def->center );
 			b3CreateHullShape( bodyId, &shapeDef, &box.base );
 		}
+		else if ( def->shape == nb_roundedBoxBone )
+		{
+			b3HullData* hull = nbCreateBoneHull( def );
+			shapeDef.density = b3MaxFloat( def->mass, 1.0e-3f ) / b3MaxFloat( hull->volume, 1.0e-6f );
+			b3CreateHullShape( bodyId, &shapeDef, hull );
+			b3DestroyHull( hull );
+		}
 		else
 		{
 			b3Capsule capsule = { def->start, def->end, def->radius };
@@ -726,7 +931,12 @@ nbArticulationId nbCreateArticulation( nbWorldId worldId, const nbRigDef* rig, b
 		bone->rest = def->restTransform;
 		bone->jointFrame = b3NormalizeQuat( def->jointFrame );
 		bone->target = b3Quat_identity;
+		bone->lowerAngle = 0.0f;
+		bone->upperAngle = 0.0f;
+		bone->coneAngle = 0.0f;
 		bone->strength = def->strength;
+		bone->stiffness = b3MaxFloat( 0.0f, def->stiffness );
+		bone->damping = b3MaxFloat( 0.0f, def->damping );
 		bone->shape = def->shape;
 		bone->center = def->center;
 		bone->halfExtents = def->halfExtents;
@@ -744,22 +954,10 @@ nbArticulationId nbCreateArticulation( nbWorldId worldId, const nbRigDef* rig, b
 	{
 		const nbBoneDef* def = rig->bones + i;
 		b3Transform local = b3InvMulWorldTransforms( transforms[0], transforms[i] );
-		b3Vec3 points[8];
-		int pointCount;
-		float radius;
-		if ( def->shape == nb_boxBone )
-		{
-			for ( int k = 0; k < 8; ++k )
-			{
-				b3Vec3 corner = { k & 1 ? def->halfExtents.x : -def->halfExtents.x,
-								  k & 2 ? def->halfExtents.y : -def->halfExtents.y,
-								  k & 4 ? def->halfExtents.z : -def->halfExtents.z };
-				points[k] = b3Add( def->center, corner );
-			}
-			pointCount = 8;
-			radius = 0.0f;
-		}
-		else
+		b3Vec3 points[NB_BONE_POINTS];
+		int pointCount = nbBonePoints( def, points );
+		float radius = 0.0f;
+		if ( pointCount == 0 )
 		{
 			points[0] = def->start;
 			points[1] = def->end;
@@ -791,8 +989,9 @@ nbArticulationId nbCreateArticulation( nbWorldId worldId, const nbRigDef* rig, b
 		b3Transform frameB = { b3Vec3_zero, bone->jointFrame };
 		b3BodyId parentId = articulation->bones[def->parent].bodyId;
 		float maxTorque = b3MaxFloat( 0.0f, motors->maxTorque * def->strength );
-		float hertz =
-			def->joint == nb_fixedJoint ? 0.0f : nbBoneHertz( articulation, bone, b3MaxFloat( 0.0f, motors->stiffness ) );
+		float hertz = def->joint == nb_fixedJoint
+						  ? 0.0f
+						  : nbBoneHertz( articulation, bone, b3MaxFloat( 0.0f, motors->stiffness ) * bone->stiffness );
 		NB_UNUSED( maxTorque );
 
 		switch ( def->joint )
@@ -811,11 +1010,13 @@ nbArticulationId nbCreateArticulation( nbWorldId worldId, const nbRigDef* rig, b
 				jointDef.upperAngle = def->upperAngle;
 				jointDef.enableSpring = enableSpring;
 				jointDef.hertz = hertz;
-				jointDef.dampingRatio = b3MaxFloat( 0.0f, motors->dampingRatio );
+				jointDef.dampingRatio = b3MaxFloat( 0.0f, motors->dampingRatio ) * bone->damping;
 #if NB_SPRING_TORQUE_LIMITS
 				jointDef.maxSpringTorque = maxTorque;
 #endif
 				bone->jointId = b3CreateRevoluteJoint( world->physicsWorld, &jointDef );
+				bone->lowerAngle = b3RevoluteJoint_GetLowerLimit( bone->jointId );
+				bone->upperAngle = b3RevoluteJoint_GetUpperLimit( bone->jointId );
 				break;
 			}
 			case nb_ballJoint:
@@ -834,11 +1035,14 @@ nbArticulationId nbCreateArticulation( nbWorldId worldId, const nbRigDef* rig, b
 				jointDef.upperTwistAngle = def->upperAngle;
 				jointDef.enableSpring = enableSpring;
 				jointDef.hertz = hertz;
-				jointDef.dampingRatio = b3MaxFloat( 0.0f, motors->dampingRatio );
+				jointDef.dampingRatio = b3MaxFloat( 0.0f, motors->dampingRatio ) * bone->damping;
 #if NB_SPRING_TORQUE_LIMITS
 				jointDef.maxSpringTorque = maxTorque;
 #endif
 				bone->jointId = b3CreateSphericalJoint( world->physicsWorld, &jointDef );
+				bone->lowerAngle = b3SphericalJoint_GetLowerTwistLimit( bone->jointId );
+				bone->upperAngle = b3SphericalJoint_GetUpperTwistLimit( bone->jointId );
+				bone->coneAngle = b3SphericalJoint_GetConeLimit( bone->jointId );
 				break;
 			}
 			default:

@@ -899,6 +899,10 @@ typedef enum nbBoneShape
 
 	/// A box around a center, for a foot that needs a flat sole
 	nb_boxBone,
+
+	/// A box around a center with its edges and corners rounded by the radius, like the trunk of a mannequin: a convex
+	/// hull of 48 points, two faces on every edge, see nbCreateBoneHull
+	nb_roundedBoxBone,
 } nbBoneShape;
 
 /// A bone of a rig: one rigid body with one shape, joined to its parent at the origin of the bone. Initialize with
@@ -946,6 +950,17 @@ typedef struct nbBoneDef
 
 	/// Scales the torque limit of the motor profile for this joint, 1 by default: strong legs, a weak neck
 	float strength;
+
+	/// Scales the stiffness of the motor profile for this joint, 1 by default. Joints in a row bend like one joint of a
+	/// third of their stiffness, so the three joints of a spine take three times it to hold the trunk like one. A light
+	/// bone between two springs, like a neck, takes less: they turn it the faster the lighter it is, and from about half
+	/// the substeps per second on it shakes.
+	float stiffness;
+
+	/// Scales the damping ratio of the motor profile for this joint, 1 by default. The library sets a spring against the
+	/// inertia of its two bones, see nbMotorProfile::stiffness, and joints that carry the body, hips, knees and ankles,
+	/// move far more: without more damping their springs swing with the legs that the balance drives.
+	float damping;
 } nbBoneDef;
 
 /// A rig: the bones of a figure at rest, shared by all articulations made from it. Initialize with nbDefaultRigDef.
@@ -1078,8 +1093,9 @@ typedef struct nbBalanceDef
 	int shins[2];
 	int feet[2];
 
-	/// Bones that the protective pose of a fall and the get-up clips of the library move, -1 for none: the torso, the head,
-	/// the upper arms and forearms, left then right.
+	/// Bones that the protective pose of a fall and the get-up clips of the library move, -1 for none: the torso, which the
+	/// arms hang from, the head, the upper arms and forearms, left then right. The torso and the bones it hangs from down
+	/// to the root are the spine: a bend of the back is shared by all of them.
 	int torso;
 	int head;
 	int upperArms[2];
@@ -1205,11 +1221,15 @@ typedef struct nbFigureStats
 	float largestJointError;
 } nbFigureStats;
 
-/// The bones of the figure that nbMakeHumanoidBones builds, in the order of its array
+/// The bones of the figure that nbMakeHumanoidBones builds, in the order of its array. The trunk runs from the pelvis
+/// through belly and ribs to the chest, which carries the arms and on the neck the head.
 typedef enum nbHumanoidBone
 {
 	nb_humanoidPelvis,
-	nb_humanoidTorso,
+	nb_humanoidBelly,
+	nb_humanoidRibs,
+	nb_humanoidChest,
+	nb_humanoidNeck,
 	nb_humanoidHead,
 	nb_humanoidUpperArmLeft,
 	nb_humanoidForearmLeft,

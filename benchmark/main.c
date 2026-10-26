@@ -528,12 +528,12 @@ static void PushFigures( const nbArticulationId* figures, int figureCount, int f
 			continue;
 		}
 
-		b3BodyId torso = nbArticulation_GetBody( figures[f], nb_humanoidTorso );
+		b3BodyId torso = nbArticulation_GetBody( figures[f], nb_humanoidChest );
 		nbHitDef hit = { 0 };
 		hit.id = ++*hitCount;
-		hit.bone = nb_humanoidTorso;
+		hit.bone = nb_humanoidChest;
 		hit.impulse = b3MulSV( pushes[f] % 2 == 0 ? 60.0f : 150.0f, directions[( f + pushes[f] ) % 4] );
-		hit.point = b3Body_GetWorldPoint( torso, (b3Vec3){ 0.0f, 0.3f, 0.1f } );
+		hit.point = b3Body_GetWorldPoint( torso, (b3Vec3){ 0.0f, 0.03f, 0.1f } );
 		nbArticulation_ApplyHit( figures[f], &hit );
 		pushes[f] += 1;
 	}

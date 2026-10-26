@@ -19,6 +19,7 @@ enum RenderMaterial
 	MaterialPlaster = 4,
 	MaterialGround = 8,
 	MaterialSteel = 9,
+	MaterialMannequin = 10,
 };
 
 // 20 byte vertex: position, normal with the material in w, transform slot

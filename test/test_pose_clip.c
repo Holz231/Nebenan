@@ -522,7 +522,10 @@ static int KeypointPoseTest( void )
 	MakeHumanoid( &h );
 	b3Quat pose[nb_humanoidBoneCount];
 	RestPose( pose );
-	pose[nb_humanoidTorso] = b3MakeQuatFromAxisAngle( b3Vec3_axisY, 0.2f );
+	// The trunk turned against the pelvis, shared evenly by its three joints as the points cannot tell more
+	pose[nb_humanoidBelly] = b3MakeQuatFromAxisAngle( b3Vec3_axisY, 0.2f / 3.0f );
+	pose[nb_humanoidRibs] = pose[nb_humanoidBelly];
+	pose[nb_humanoidChest] = pose[nb_humanoidBelly];
 	pose[nb_humanoidHead] = b3MulQuat( TurnX( -0.2f ), b3MakeQuatFromAxisAngle( b3Vec3_axisY, 0.3f ) );
 	pose[nb_humanoidUpperArmLeft] = b3MulQuat( TurnX( 1.0f ), b3MakeQuatFromAxisAngle( b3Vec3_axisY, 0.4f ) );
 	pose[nb_humanoidForearmLeft] = TurnX( 1.2f );
@@ -645,7 +648,7 @@ static int KeypointFileTest( void )
 	ENSURE( nbPoseClip_GetKeyframeCount( proposals ) == 2 );
 	nbPoseKeyframe second = nbPoseClip_GetKeyframe( proposals, 1 );
 	ENSURE( second.frame == 6 && second.sourceFrame == 106 && second.origin == nb_originEstimator );
-	ENSURE( second.confidence[nb_humanoidForearmLeft] == 0.3f && second.confidence[nb_humanoidTorso] == 0.95f );
+	ENSURE( second.confidence[nb_humanoidForearmLeft] == 0.3f && second.confidence[nb_humanoidChest] == 0.95f );
 	ENSURE( fabsf( b3GetQuatAngle( second.rotations[nb_humanoidForearmLeft] ) - b3GetQuatAngle( TurnX( 0.9f ) ) ) < 1.0e-3f );
 
 	// Into a clip whose keyframe at 6 is approved: the proposal at 0 comes in, the one at 6 is refused
@@ -991,7 +994,7 @@ static int PoseClipRecordTest( void )
 	printf( "the recording on one thread and on four with the steps on their own: %s, hash 0x%08x and 0x%08x\n",
 			strcmp( texts[0], texts[1] ) == 0 ? "the same text" : "different texts", hashes[0], hashes[1] );
 	ENSURE( strcmp( texts[0], texts[1] ) == 0 && hashes[0] == hashes[1] );
-	ENSURE( hashes[0] == 0x61ab3a9eu );
+	ENSURE( hashes[0] == 0x0961a5b8u );
 	free( texts[0] );
 	free( texts[1] );
 
@@ -1049,7 +1052,7 @@ static int GetUpPoseClipTest( void )
 	{
 		nbKeyframe keyframes[NB_GETUP_KEYFRAMES];
 		b3Quat rotations[NB_GETUP_KEYFRAMES * nb_humanoidBoneCount];
-		int count = nbMakeGetUpClip( &balance, nb_humanoidBoneCount, k == 1, keyframes, rotations, NB_GETUP_KEYFRAMES );
+		int count = nbMakeGetUpClip( &balance, &h.rig, k == 1, keyframes, rotations, NB_GETUP_KEYFRAMES );
 		nbClipDef clip = { keyframes, count, nb_humanoidBoneCount, false };
 		nbPoseClip* pose = nbCreatePoseClipFromClip( &h.rig, NB_HUMANOID_SKELETON,
 													 k == 0 ? "up from the front" : "up from the back", 30, &clip );
@@ -1096,7 +1099,7 @@ static int GetUpPoseClipTest( void )
 	// A clip of other bones does not fit the rig
 	nbKeyframe keyframes[NB_GETUP_KEYFRAMES];
 	b3Quat rotations[NB_GETUP_KEYFRAMES * nb_humanoidBoneCount];
-	int count = nbMakeGetUpClip( &balance, nb_humanoidBoneCount, false, keyframes, rotations, NB_GETUP_KEYFRAMES );
+	int count = nbMakeGetUpClip( &balance, &h.rig, false, keyframes, rotations, NB_GETUP_KEYFRAMES );
 	nbClipDef wrong = { keyframes, count, nb_humanoidBoneCount - 1, false };
 	ENSURE( nbCreatePoseClipFromClip( &h.rig, NB_HUMANOID_SKELETON, "wrong", 30, &wrong ) == NULL );
 	return 0;

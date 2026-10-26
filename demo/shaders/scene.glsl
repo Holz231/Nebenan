@@ -75,6 +75,10 @@ vec3 material_color( int material )
 	{
 		return vec3( 0.2, 0.2, 0.22 ); // steel ball
 	}
+	if ( material == 10 )
+	{
+		return vec3( 0.43, 0.45, 0.88 ); // the blue of a mannequin
+	}
 	return vec3( 0.7 );
 }
 

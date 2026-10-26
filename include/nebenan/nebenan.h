@@ -413,11 +413,17 @@ NB_API nbMotorProfile nbDefaultMotorProfile( void );
 NB_API nbMotorProfile nbPassiveMotorProfile( void );
 
 /// Write the bones of a humanoid of this height in meters and mass in kilograms, nb_humanoidBoneCount of them in the
-/// order of nbHumanoidBone: a pelvis as the root, a torso and a head on ball joints, arms and legs that hang down with
-/// ball joints at the shoulders, hips, wrists and ankles and hinges at the elbows and knees, feet as boxes. It stands
-/// with its y axis up and faces +z. Returns the height of the pelvis origin over the soles, so an articulation created
+/// order of nbHumanoidBone, built like a mannequin: a round pelvis as the root, a trunk of belly, ribs and a broad chest
+/// as rounded blocks on ball joints that let the back round, arch, lean and turn, a neck and an egg of a head on ball
+/// joints, arms and legs as capsules that hang down with ball joints at the shoulders, hips, wrists and ankles and hinges
+/// at the elbows and knees, simple capsules as hands and boxes as feet.
+/// It stands with its y axis up and faces +z. Returns the height of the pelvis origin over the soles, so an articulation created
 /// at that height stands on the ground at y = 0. The names of the bones are static strings.
 NB_API float nbMakeHumanoidBones( float height, float mass, nbBoneDef* bones, int capacity );
+
+/// The convex hull of a bone that is a box or a rounded box, in the frame of the bone, as the physics has it: to draw it.
+/// Null for a capsule. Destroy it with b3DestroyHull.
+NB_API b3HullData* nbCreateBoneHull( const nbBoneDef* bone );
 
 /// Create a figure from a rig at the rest pose, the root at this position with this rotation, with these motors or
 /// passive for null. The bones are dynamic Box3D bodies in the world of the destruction world, the joints are Box3D
@@ -448,8 +454,9 @@ NB_API void nbArticulation_SetMotorProfile( nbArticulationId articulationId, con
 NB_API nbMotorProfile nbArticulation_GetMotorProfile( nbArticulationId articulationId );
 
 /// Set the pose the joints drive to: the rotation of every bone against its rest pose, in the frame of the bone, one per
-/// bone. The root is not driven. Stops a clip that plays. The motors reach the pose as far as their torque, the limits
-/// and the world let them, nothing is teleported.
+/// bone. The root is not driven. Stops a clip that plays. A rotation beyond the limits of a joint is brought back to
+/// them, the twist and the swing on their own, so a motor never pushes a joint through its soft limits. The motors reach
+/// the pose as far as their torque and the world let them, nothing is teleported.
 NB_API void nbArticulation_SetTargetPose( nbArticulationId articulationId, const b3Quat* rotations, int count );
 
 /// Play a clip from its start, at this speed, 1 for real time. The clip is copied. Every update samples it and sets the
@@ -474,12 +481,12 @@ NB_API int nbArticulation_GetHitCount( nbArticulationId articulationId );
 /// @return the number of transforms written
 NB_API int nbArticulation_GetBoneTransforms( nbArticulationId articulationId, b3WorldTransform* transforms, int capacity );
 
-/// The pose the joints drive to, placed on the root as the physics has it: the world transform of every bone at its
-/// target rotation, up to capacity. Drawn over the bones it shows how far the figure is from its pose.
+/// The pose the joints drive to, within their limits, placed on the root as the physics has it: the world transform of
+/// every bone at its target rotation, up to capacity. Drawn over the bones it shows how far the figure is from its pose.
 /// @return the number of transforms written
 NB_API int nbArticulation_GetTargetTransforms( nbArticulationId articulationId, b3WorldTransform* transforms, int capacity );
 
-/// How far the joint of a bone is from its target, in radians. Zero for the root and fixed bones.
+/// How far the joint of a bone is from its target within the limits, in radians. Zero for the root and fixed bones.
 NB_API float nbArticulation_GetJointError( nbArticulationId articulationId, int bone );
 
 /// How hard the motor of a bone works: the torque of its spring over its limit, 1 when it is at the limit and cannot
@@ -512,11 +519,11 @@ NB_API bool nbArticulation_EnableBalance( nbArticulationId articulationId, const
 /// The clip the balance gets a figure up with when a def names none, see nbBalanceDef::getUpClips: from its front the
 /// figure brings its knees under its chest, pushes up to hands and knees, kneels up, sets its left foot forward, rises
 /// over it and sets the right foot beside it, from its back it first rolls onto its front. The keyframes lie on tenths of
-/// a second, whole frames at 30 frames per second, see nbCreatePoseClipFromClip. For a rig of boneCount bones built like
-/// nbMakeHumanoidBones, with the bones the def names. Writes up to capacity keyframes and their rotations, boneCount for
-/// each keyframe one after the other, and returns how many keyframes the clip has, at most NB_GETUP_KEYFRAMES, zero if
-/// the arrays are too small.
-NB_API int nbMakeGetUpClip( const nbBalanceDef* def, int boneCount, bool fromBack, nbKeyframe* keyframes, b3Quat* rotations,
+/// a second, whole frames at 30 frames per second, see nbCreatePoseClipFromClip. For a rig built like
+/// nbMakeHumanoidBones, with the bones the def names: a turn of the torso is shared by the bones it hangs from down to the
+/// root, its spine. Writes up to capacity keyframes and their rotations, the bones of the rig for each keyframe one after
+/// the other, and returns how many keyframes the clip has, at most NB_GETUP_KEYFRAMES, zero if the arrays are too small.
+NB_API int nbMakeGetUpClip( const nbBalanceDef* def, const nbRigDef* rig, bool fromBack, nbKeyframe* keyframes, b3Quat* rotations,
 							int capacity );
 
 /// The balance of a figure as the last update saw it. Its state is nb_balanceOff without balance.

@@ -43,7 +43,8 @@ gelöscht. Kein Staub, keine Schatten: Jede Millisekunde geht in die Zerstörung
 - Figuren auf Box3D: Gelenkketten aus Körpern in derselben Welt wie die Trümmer, nach Kapitel 27, 32 und 33 der Roadmap
   des Spiels. Ein Rig beschreibt die Knochen, eine Figur hält eine Zielpose mit Federn in den Gelenken, begrenzt im
   Drehmoment, folgt einem Clip aus Keyframes, nimmt einen Treffer genau einmal, fällt als passive Ragdoll und schlägt
-  dabei Wände ein wie eine Kanonenkugel. Ein Humanoid aus 15 Knochen liegt bei (`nbMakeHumanoidBones`). Mit Balance
+  dabei Wände ein wie eine Kanonenkugel. Ein Humanoid aus 18 Knochen nach einer Gliederpuppe liegt bei
+  (`nbMakeHumanoidBones`), mit Hals und einem Rumpf aus abgerundeten Blöcken, der sich rund und hohl biegt. Mit Balance
   fängt er Stöße mit Schritten ab, fällt mit Schutzhaltung, wenn kein Schritt reicht, und steht wieder auf, sobald er
   still liegt und Platz hat (`nbArticulation_EnableBalance`)
 - Clips als Dateien nach Kapitel 32 und 33 der Roadmap des Spiels: Keyframes mit Status, Herkunft, Wurzel, Kontakten,
@@ -222,7 +223,8 @@ Grafik begrenzt das Zeichnen die Bildzeit.
   Unberührte Häuser weiter weg gehen wieder, beschädigte gehen samt Schutt in den Speicher der Demo, sobald alles an
   ihnen ruht, und kommen von dort zurück. Das Menü zeigt, wie viele Häuser geladen und wie viele gespeichert sind, was
   das Streaming pro Bild kostet und wie viel Speicher Nebenan und Box3D belegen
-- **Figuren**: drei Humanoide der Bibliothek vor einer Ziegelwand. Der linke hält seine Standpose, der mittlere spielt
+- **Figuren**: drei Humanoide der Bibliothek als blaue Gliederpuppen vor einer Ziegelwand. Der linke hält seine
+  Standpose, der mittlere spielt
   einen Clip aus drei Keyframes, der rechte fällt als passive Ragdoll. Die beiden stehenden halten ihre Balance: Sie
   fangen einen Stoß mit Schritten ab oder fallen und stehen wieder auf. Über den Knochen liegt dünn und dunkel die Pose,
   zu der die Gelenke ziehen, auf dem Boden rot der Capture Point und dunkel das Ziel eines Schritts. Das Gewehr trifft
@@ -544,8 +546,9 @@ werden. Temporäre Daten eines Einschlags kommen aus einer Arena, die danach in 
 wird. Eigene Allokatoren lassen sich mit `nbSetAllocator` einhängen, `nbGetByteCount` zählt den Verbrauch.
 
 **Figuren.** Eine Figur (`nbCreateArticulation`) ist eine Kette dynamischer Box3D-Körper aus einem Rig (`nbRigDef`,
-`nbBoneDef`), Kapseln und Kästen, verbunden durch Box3D-Gelenke: Scharniere (revolute) mit Winkelgrenzen für Knie und
-Ellbogen, Kugelgelenke (spherical) mit Kegel und Twist für Hüften, Schultern, Hals, Hand- und Fußgelenke, Schweißnähte
+`nbBoneDef`), Kapseln, Kästen und abgerundete Kästen, verbunden durch Box3D-Gelenke: Scharniere (revolute) mit
+Winkelgrenzen für Knie und Ellbogen, Kugelgelenke (spherical) mit Kegel und Twist für Rumpf, Hüften, Schultern, Hals,
+Kopf, Hand- und Fußgelenke, Schweißnähte
 (weld) für starre Teile. Der Ursprung jedes Knochens ist sein Gelenkpunkt, Eltern stehen vor ihren Kindern, und in der
 Ruhepose fallen beide Rahmen eines Gelenks zusammen, so ist die Ruhepose die Null jedes Winkels. Die Motoren sind die
 Federn der Box3D-Gelenke zu einem Zielwinkel oder einer Zielrotation, ergänzt um eine Drehmomentgrenze
@@ -553,20 +556,31 @@ Federn der Box3D-Gelenke zu einem Zielwinkel oder einer Zielrotation, ergänzt u
 stärker ist, und nichts teleportiert einen Knochen durch eine Wand. Box3D gibt die Steifigkeit einer Feder in Hertz
 gegen die Trägheit ihrer beiden Körper an, in denselben Hertz ist ein Fuß schwach und ein Oberschenkel stark. Das
 Motorprofil (`nbMotorProfile`) nennt sie deshalb in N m je Radian, gleich für jedes Gelenk, und die Bibliothek rechnet sie
-für jedes Gelenk aus der Trägheit seiner Knochen um, um die weichste Achse. Die Gelenke sind mit 5 statt Box3Ds 2
+für jedes Gelenk aus der Trägheit seiner Knochen um, um die weichste Achse. Je Knochen skalieren `strength`, `stiffness`
+und `damping` Drehmomentgrenze, Steifigkeit und Dämpfung des Profils. Drei Gelenke hintereinander biegen sich wie eines
+mit einem Drittel der Steifigkeit, die drei des Rumpfs nehmen deshalb die dreifache. Die Beine nehmen die dreifache
+Dämpfung, sonst schwingen ihre Federn mit den Beinen, die die Balance führt. Hals und Kopf nehmen 0,3 der Steifigkeit:
+Der Hals wiegt 1 kg zwischen Brust und Kopf, mit voller Steifigkeit drehten ihn seine Federn 130-mal in der Sekunde,
+mehr als die Hälfte der 240 Teilschritte, und er schüttelte den Kopf. Ein Ziel jenseits der Grenzen eines Gelenks holt
+die Bibliothek in die Grenzen zurück, Twist und Schwung je für sich, so wie Box3D sie misst: Die Grenzen sind weich, und
+die steifen Federn drückten die Wirbelsäule sonst um 0,14 rad je Gelenk hindurch. Ein abgerundeter Kasten ist eine
+konvexe Hülle aus 48 Punkten, sechs auf jeder Ecke, mit zwei Flächen auf jeder Kante, `nbCreateBoneHull` gibt sie zum
+Zeichnen. Die Gelenke sind mit 5 statt Box3Ds 2
 gedämpft, so geben ihre Grenzen unter dem Gewicht der Figur um rund 0,1 rad nach statt um bis zu 0,37. Ein Clip
 (`nbClipDef`) aus Keyframes wird kopiert und in jedem Update gesampelt, zwischen zwei Keyframes quaternionisch
 interpoliert, und setzt die Ziele der Gelenke für den nächsten Schritt. Eine Zielpose ist kein garantiertes Ende, die
 Federn sacken unter Last. Ein äußeres Drehmoment hält das Becken aufrecht, ein Parallel-Joint gegen einen statischen
 Anker mit Drehmomentgrenze, ausdrücklich eine Spielhilfe: Ohne Balance steht der Humanoid damit einen Stoß von 20 N s auf
-die Brust, 50 N s von hinten und 60 N s von vorn oder der Seite werfen ihn um, bei 120 N s gibt sein Rumpf 0,18 rad nach.
+die Brust, 50 N s von hinten und 60 N s von vorn oder der Seite werfen ihn um, bei 120 N s geben die drei Gelenke seines
+Rumpfs zusammen 0,33 rad nach.
 Ein Treffer
 (`nbArticulation_ApplyHit`) ist ein Impuls auf einen Knochen, der je Ereignisnummer genau einmal landet, auch wenn ihn
 mehrere Ereignisse melden. Die Knochen melden Treffer-Events wie Kanonenkugeln, so beschädigt eine geworfene Figur Wände
 über die Kollisionsschäden der Welt, ohne eigene Pipeline. Zum Zeichnen gibt es die Knochen, wie die Physik sie hat, und
 die Zielpose auf dem Becken, wie es liegt, zum Überlagern. Gemessen in den Tests: Die Figur steht fünf Sekunden mit
-0,004 rad Abweichung, folgt dem Clip bis auf 0,04 rad, und bei harten Aufschlägen dehnen sich Gelenke für wenige
-Schritte um 4 bis 6 cm, bis der Löser sie zurückzieht, siehe Grenzen. Mit jeder Zahl von Threads ergeben die Figuren
+0,004 rad Abweichung und folgt dem Clip bis auf 0,05 rad. Ihr Rumpf rundet sich mit 0,3 rad je Gelenk um 0,89 rad, hält
+an seinen Grenzen bei 1,36 rad nach vorn und −0,44 rad nach hinten und neigt sich 0,43 rad zur Seite. Bei harten
+Aufschlägen dehnen sich Gelenke für wenige Schritte um bis zu 5 cm, bis der Löser sie zurückzieht, siehe Grenzen. Mit jeder Zahl von Threads ergeben die Figuren
 dieselben Bits.
 
 **Balance.** Mit `nbArticulation_EnableBalance` hält ein Zweibeiner seine Balance nach Kapitel 26.13 bis 26.15, 27.9
@@ -602,18 +616,18 @@ ein, die Ruhepose beim Hinlegen über 0,5 s, so schnappt kein Glied. Alles kommt
 Kräften, nichts wird versetzt, und die Balance rechnet nur mit Operationen, die auf jeder Plattform dieselben Bits
 ergeben: Statt `expf` eine Reihe, statt `sinf` und `acosf` die Funktionen von Box3D.
 
-Gemessen in den Tests und mit 104 Stößen auf die Brust aus acht Richtungen von 30 bis 100 N s: Bis 30 N s steht der
-Humanoid ohne Schritt. Mit Schritten fängt er Stöße von hinten bis 90 N s ab, von vorn und schräg bis 70 bis 80 N s,
-von der Seite bis 65 N s, meist mit zwei bis vier Schritten, darüber fällt er. Ohne Balance werfen ihn schon 50 bis
-60 N s um.
+Gemessen in den Tests und mit 120 Stößen auf die Brust aus acht Richtungen von 20 bis 100 N s: Bis 30 N s steht der
+Humanoid ohne Schritt, schräg von hinten bis 50 N s. Mit Schritten fängt er Stöße von hinten und von vorn bis 80 N s ab,
+schräg bis 60 bis 80 N s, von der Seite bis 65 N s, meist mit einem bis fünf Schritten, darüber fällt er. Ohne Balance
+werfen ihn schon 40 bis 60 N s um.
 Von links und von rechts gestoßen, setzt er den gespiegelten Fuß auf das gespiegelte Ziel, auf 1 cm genau. Steht 32 cm
-neben ihm eine Wand, tritt kein Fuß hinein, und er lehnt sich an sie, über eine kniehohe Mauer fällt er. Umgeworfen
-liegt er nach 1,9 bis 2,3 s still, beginnt nach 3,0 bis 3,7 s aufzustehen und steht nach 8,3 s vom Bauch und 10,2 s
-vom Rücken wieder, mit dem Blick dahin, wo sein Kopf lag. Kein Knochen legt dabei mehr als 9,3 cm in einem Schritt
-zurück, und der linke Fuß, der ihn allein aus dem Knien hebt, sinkt bis 2,3 cm in den weichen Kontakt. Aus vier
-Richtungen mit 15 bis 40 N s umgeworfen, steht er jedes Mal wieder auf, auch mit dem 0,8- bis 1,5-fachen Tempo der
-Clips: vom Bauch in 5,3 s rund 0,45 m von da, wo er lag, vom Rücken in 6,5 s rund 1 m daneben, mit den Füßen höchstens
-0,38 m auseinander. Unter einer Platte in 60 cm Höhe bleibt er liegen, ohne sie zu berühren, und steht auf, sobald sie
+neben ihm eine Wand, tritt kein Fuß hinein: Kein Schritt reicht weit genug, ohne in die Wand zu gehen, und er fällt,
+wie 28.3 es erlaubt, an einer hohen Wand wie über eine kniehohe Mauer. Umgeworfen liegt er nach 2,2 bis 2,5 s still,
+beginnt nach 3,3 bis 4,2 s aufzustehen und steht nach 8,8 s vom Bauch und 10,2 s vom Rücken wieder, mit dem Blick
+dahin, wo sein Kopf lag. Kein Knochen legt dabei mehr als 9,7 cm in einem Schritt zurück, und der linke Fuß, der ihn
+allein aus dem Knien hebt, sinkt bis 1,4 cm in den weichen Kontakt. Aus vier Richtungen mit 15 bis 40 N s umgeworfen,
+steht er jedes Mal wieder auf, auch mit dem 0,8- bis 1,5-fachen Tempo der Clips: vom Bauch in 5,3 s 0,45 bis 0,7 m von
+da, wo er lag, vom Rücken in 6,5 s rund 1,15 m daneben, mit den Füßen höchstens 0,34 m auseinander. Unter einer Platte in 60 cm Höhe bleibt er liegen, ohne sie zu berühren, und steht auf, sobald sie
 fort ist. Mit 1 und 4 Threads ergibt die Balance dieselben Bits, und der Test
 hält den Hash für alle Plattformen fest.
 
@@ -635,8 +649,9 @@ als ein Körper kann, und entfernt sich ein Fuß oder eine Hand im Kontakt mehr 
 Kontakt begann, auch langsam über viele Keyframes. Sie meldet und repariert nichts (33.2 C).
 
 Keypoints eines Pose-Schätzers werden zu einer Pose des Humanoiden (`nbHumanoidPoseFromKeypoints`): die 17 Punkte von
-COCO oder die 33 von MediaPipe Pose, in Metern mit y nach oben. Das Becken richtet sich nach Hüften und Wirbelsäule, der
-Rumpf nach den Schultern, der Kopf nach den Ohren, Arme und Beine nach der Ebene ihrer drei Punkte, Knie und Ellbogen
+COCO oder die 33 von MediaPipe Pose, in Metern mit y nach oben. Das Becken richtet sich nach Hüften und Wirbelsäule, die
+Brust nach den Schultern, Bauch und Rippen teilen sich die Drehung dazwischen zu gleichen Teilen, der Hals folgt der
+Brust, der Kopf richtet sich nach den Ohren, Arme und Beine nach der Ebene ihrer drei Punkte, Knie und Ellbogen
 nur um ihre Achse, Hände und Füße nach Fingern, Ferse und Zehen, wo das Layout sie hat. Knochen, die danach mehr als ein
 Fünftel kürzer oder ein Viertel länger wären als bei der Figur, meldet die Pose. Eine Keypoint-Datei
 (`nbParseKeypointClip`) wird so zu einem Clip aus Vorschlägen des Schätzers, unpassende Knochen mit höchstens 0,25
@@ -990,15 +1005,28 @@ nbArticulation_PlayClip( figure, &clip, 1.0f );   // jedes Update setzt die Ziel
 // Ein Treffer landet genau einmal, auch wenn ihn zwei Ereignisse melden
 nbHitDef hit = { 0 };
 hit.id = eventNumber;
-hit.bone = nb_humanoidTorso;
+hit.bone = nb_humanoidChest;
 hit.impulse = (b3Vec3){ 0.0f, 0.0f, -60.0f };
 hit.point = contactPoint;
 nbArticulation_ApplyHit( figure, &hit );
+
+// Den Rücken runden: Bauch, Rippen und Brust je 0,3 rad nach vorn, zusammen 0,9 rad. Ein Ziel über die Grenzen eines
+// Gelenks holt die Bibliothek in die Grenzen zurück
+b3Quat bent[nb_humanoidBoneCount];
+for ( int i = 0; i < nb_humanoidBoneCount; ++i )
+{
+	bool spine = i == nb_humanoidBelly || i == nb_humanoidRibs || i == nb_humanoidChest;
+	bent[i] = spine ? b3MakeQuatFromAxisAngle( b3Vec3_axisX, 0.3f ) : b3Quat_identity;
+}
+nbArticulation_SetTargetPose( figure, bent, nb_humanoidBoneCount );
 
 // Zum Zeichnen die Knochen, wie die Physik sie hat, und darüber die Pose, zu der die Gelenke ziehen
 b3WorldTransform now[nb_humanoidBoneCount], targets[nb_humanoidBoneCount];
 nbArticulation_GetBoneTransforms( figure, now, nb_humanoidBoneCount );
 nbArticulation_GetTargetTransforms( figure, targets, nb_humanoidBoneCount );
+b3HullData* hull = nbCreateBoneHull( &bones[nb_humanoidChest] );   // ein abgerundeter Block als Hülle, NULL für Kapseln
+// ... Flächen aus b3GetHullFaces, b3GetHullEdges und b3GetHullPoints ...
+b3DestroyHull( hull );
 
 // Balance: Schritte gegen Stöße, Fallen mit Schutzhaltung und Aufstehen mit Clips, sobald Platz ist
 nbBalanceDef balance = nbDefaultBalanceDef();   // passt zum Humanoid der Bibliothek, mit ihren Aufstehclips
@@ -1057,7 +1085,7 @@ if ( nbArticulation_IsRecording( figure ) == false )   // wartet auf laufende Sc
 // Ein Aufstehclip der Bibliothek als Datei zum Bearbeiten, und ein bearbeiteter als Aufstehclip der Balance
 nbKeyframe keys[NB_GETUP_KEYFRAMES];
 b3Quat rotations[NB_GETUP_KEYFRAMES * nb_humanoidBoneCount];
-int count = nbMakeGetUpClip( &balance, nb_humanoidBoneCount, false, keys, rotations, NB_GETUP_KEYFRAMES );
+int count = nbMakeGetUpClip( &balance, &rig, false, keys, rotations, NB_GETUP_KEYFRAMES );   // die Wirbelsäule aus dem Rig
 nbClipDef getUp = { keys, count, nb_humanoidBoneCount, false };
 nbPoseClip* editable = nbCreatePoseClipFromClip( &rig, NB_HUMANOID_SKELETON, "aufstehen", 30, &getUp );
 // ... bearbeiten, speichern, laden ...
@@ -1136,14 +1164,14 @@ beim Einbinden nicht gebaut.
 | --- | --- | --- |
 | `stiffness` | 800 N m/rad | Drehmoment je Radian Abweichung von der Zielpose, in jedem Gelenk gleich. Box3D nimmt Hertz gegen die Trägheit der Knochen, die Bibliothek rechnet um, in der Pose beim Setzen des Profils. 0 schaltet die Motoren ab, `nbPassiveMotorProfile` ist ganz 0 |
 | `dampingRatio` | 1 | Dämpfung der Federn, 1 ist kritisch |
-| `maxTorque` | 150 N m | Mehr bringt kein Gelenk auf, mal `strength` des Knochens: beim Humanoid Oberschenkel 2, Rumpf 1,6, Unterschenkel 1,5, Füße 0,8, Oberarme 0,6, Unterarme 0,4, Kopf 0,3, Hände 0,15. Eine Feder mit 800 N m/rad erreicht die Grenze nach wenigen Grad, von da gibt das Gelenk nach |
+| `maxTorque` | 150 N m | Mehr bringt kein Gelenk auf, mal `strength` des Knochens: beim Humanoid Oberschenkel 2, die drei Gelenke des Rumpfs 1,6, Unterschenkel 1,5, Füße 0,8, Oberarme 0,6, Unterarme 0,4, Hals und Kopf 0,3, Hände 0,15. Eine Feder mit 800 N m/rad erreicht die Grenze nach wenigen Grad, von da gibt das Gelenk nach |
 | `uprightTorque` | 250 N m | Ein äußeres Drehmoment gegen die Welt hält die Achse `up` des Wurzelknochens nach oben, bis hierhin. Eine Spielhilfe, kein Muskel: Ohne Balance kippt ein stärkerer Stoß die Figur. Mit Balance hält sie im Stand, im Schritt und beim Aufstehen und lässt beim Fallen los. 0 schaltet es ab |
 | `uprightStiffness`, `uprightDampingRatio` | 1500 N m/rad, 1 | Steifigkeit und Dämpfung dieser Hilfe |
 
 | Balance (`nbBalanceDef`) | Standard | Wirkung |
 | --- | --- | --- |
 | `thighs`, `shins`, `feet` | Humanoid | Die Knochen der Beine, links, dann rechts: die Oberschenkel an der Wurzel, die Unterschenkel an einem Scharnier um ihre x-Achse, die Füße als Kästen, deren Unterseite die Sohle ist. Passt das Rig nicht, gibt `nbArticulation_EnableBalance` false zurück |
-| `torso`, `head`, `upperArms`, `forearms` | Humanoid | Die Knochen der Schutzhaltung beim Fallen und der Aufstehclips der Bibliothek, −1 für keinen |
+| `torso`, `head`, `upperArms`, `forearms` | Humanoid | Die Knochen der Schutzhaltung beim Fallen und der Aufstehclips der Bibliothek, −1 für keinen. `torso` und die Knochen, an denen er bis zur Wurzel hängt, sind die Wirbelsäule: Eine Beugung des Rückens teilen sich alle |
 | `stepMargin` | 3 cm | So weit liegt der Capture Point zwei Updates lang außerhalb der Füße, bevor ein Schritt beginnt. Nach einem Schritt steht die Figur, sobald er innerhalb dieses Abstands liegt |
 | `maxStepLength` | 0,55 m | Am weitesten tritt ein Knöchel von unter seiner Hüfte weg |
 | `stepTime`, `stepHeight` | 0,3 s, 8 cm | Wie lange ein Schritt dauert und wie hoch der Fuß dabei schwingt |
@@ -1163,11 +1191,13 @@ beim Einbinden nicht gebaut.
 | `selfCollision` | an | Knochen, die nicht direkt verbunden sind, kollidieren miteinander. Aus: kein Knochen einer Figur mit einem anderen derselben |
 | `enableCollisionDamage` | an | Die Knochen beschädigen, was sie treffen, wie Kanonenkugeln, siehe `collisionDamageScale` |
 | `parent`, `restTransform` | – | Der Elternknochen und die Lage des Knochens in dessen Rahmen in Ruhe, der Ursprung ist der Gelenkpunkt |
-| `shape`, `start`, `end`, `radius`, `center`, `halfExtents` | Kapsel | Kapsel zwischen zwei Punkten oder Kasten um eine Mitte, im Rahmen des Knochens |
+| `shape`, `start`, `end`, `radius`, `center`, `halfExtents` | Kapsel | Kapsel zwischen zwei Punkten, Kasten um eine Mitte oder abgerundeter Kasten mit `radius` als Rundung, im Rahmen des Knochens. `nbCreateBoneHull` gibt Kasten und abgerundeten Kasten als Hülle zum Zeichnen |
 | `mass` | 1 kg | Masse, die Dichte folgt aus der Form. Mehr als 30 zu 1 zwischen verbundenen Knochen mag der Löser nicht, der Humanoid gibt den Füßen 2,5 kg |
 | `joint`, `jointFrame` | Kugel, Identität | Scharnier, Kugel oder fest, und der Gelenkrahmen im Rahmen des Knochens: seine z-Achse ist die Scharnierachse oder die Achse des Kegels |
-| `lowerAngle`, `upperAngle`, `coneAngle` | ±0,5, 0,5 rad | Grenzen des Scharniers oder des Twists, und wie weit ein Kugelgelenk aus seiner Ruhelage schwenkt |
+| `lowerAngle`, `upperAngle`, `coneAngle` | ±0,5, 0,5 rad | Grenzen des Scharniers oder des Twists, und wie weit ein Kugelgelenk aus seiner Ruhelage schwenkt. Ein Ziel jenseits davon holt die Bibliothek zurück |
 | `strength` | 1 | Multipliziert `maxTorque` für dieses Gelenk |
+| `stiffness` | 1 | Multipliziert die Steifigkeit des Profils für dieses Gelenk. Drei Gelenke hintereinander biegen sich wie eines mit einem Drittel davon, der Rumpf des Humanoiden nimmt 3, sein leichter Hals und sein Kopf 0,3 |
+| `damping` | 1 | Multipliziert die Dämpfung des Profils für dieses Gelenk, die Beine des Humanoiden nehmen 3 |
 
 | Prüfung eines Clips (`nbPoseCheckDef`) | Standard | Wirkung |
 | --- | --- | --- |
@@ -1810,22 +1840,23 @@ Nach Änderungen an `demo/shaders/scene.glsl` die Shader neu erzeugen, im Ordner
   nicht (26.15). Aus dem ruhigen Stand umgeworfen, kippt sie erst nach rund einer Sekunde, weil nur die
   weichen Motoren und die Schutzhaltung sie aus dem Gleichgewicht bringen. Ein Treffer dazu kippt sie sofort.
 - Gelenke dehnen sich bei harten Aufschlägen: Trifft ein Knochen mit mehreren Metern pro Sekunde den Boden, ziehen die
-  weichen Bedingungen des Lösers das Gelenk erst über ein, zwei Schritte wieder zusammen, gemessen 4 bis 6 cm an Knöchel
-  und Hals einer Figur, die aus einem halben Meter fällt oder umgeworfen wird, die Grenzen von Knie und Ellbogen geben
+  weichen Bedingungen des Lösers das Gelenk erst über ein, zwei Schritte wieder zusammen, gemessen 4 bis 5 cm an
+  einer Figur, die aus einem halben Meter fällt oder umgeworfen wird, die Grenzen von Knie und Ellbogen geben
   dabei bis 0,1 rad nach. Steifer geht es mit 240 Teilschritten pro Sekunde nicht, Box3D begrenzt die Gelenke auf 60 Hz.
   Schwerere Füße helfen ein wenig: Mit 2,5 statt 1,1 kg je Fuß dehnte sich der Knöchel 42 statt 48 mm.
 - Eine Zielpose ist kein garantiertes Ende: Die Federn sacken unter Last, je weicher die Motoren, desto mehr. Mit 15 Hz
   in allen Gelenken, wie Box3D sie nimmt, hing der Ellbogen in den Tests bis 0,25 rad unter seinem Ziel, mit den
   800 N m/rad des Standards trifft er es auf 0,01 rad. Die Steifigkeit gilt um die weichste Achse eines Gelenks und wird
   aus der Trägheit der Knochen in der Pose beim Setzen des Profils gerechnet.
-- Figuren kosten: 15 Körper, 14 Gelenke und ein Parallel-Joint je Humanoid, alle wach, solange ein Clip läuft. Die
+- Figuren kosten: 18 Körper, 17 Gelenke und ein Parallel-Joint je Humanoid, alle wach, solange ein Clip läuft. Die
   Balance liest je Update die Kontakte der Füße, im Schritt kommen ein Strahl, eine Überlappung und ein Schwung einer
   Kugel dazu, beim Aufstehen die Kontakte aller Knochen und ein Motorgelenk für die Hilfe am Becken. Gemessen, siehe Leistung: rund 12 µs je Figur und Schritt in
   Box3D und 1,2 bis 2,4 µs im Update der Bibliothek, auf dem aufrufenden Thread allein. 50 Figuren heben das mittlere
   Bild der Stadt unter Beschuss von 1,1 auf 1,8 ms.
 - Der Keypoint-Import braucht Punkte in 3D und in Metern, wie MediaPipe sie als Weltkoordinaten liefert. Aus den
   2D-Punkten eines Bildes oder aus mehreren Ansichten rekonstruiert er nichts (32.5). Beugt sich jemand in der Hüfte,
-  kippt das Becken mit, denn ohne Punkte an der Wirbelsäule richtet es sich nach Hüften und Schultern. Ein gestrecktes
+  kippt das Becken mit, denn ohne Punkte an der Wirbelsäule richtet es sich nach Hüften und Schultern, und den Rücken
+  biegt der Import gleichmäßig über Bauch, Rippen und Brust, wo er sich wirklich biegt, sieht er nicht. Ein gestrecktes
   Glied lässt offen, wie weit es um sich selbst gedreht ist, es bekommt die kleinste Drehung.
 - Clips gibt es nur als JSON, nicht binär und nicht als glTF oder FBX. Der Editor stellt Gelenke mit Reglern statt mit
   Gizmos im Bild, Ereignisse setzt er nicht, und Vorschläge eines Assistenten kommen als Datei, er fragt keinen an (32.7).
@@ -1833,7 +1864,10 @@ Nach Änderungen an `demo/shaders/scene.glsl` die Shader neu erzeugen, im Ordner
   macht, fehlen Frames dazwischen. Sie endet nach einem Durchgang, auch bei einer Schleife.
 - Nur konvexe Teile, aus denen sich Quader ausschneiden lassen. Andere konkave Formen müssen als mehrere konvexe
   Teile angegeben werden.
-- Render- und Physikgeometrie sind dieselben flachen Polygone.
+- Render- und Physikgeometrie sind dieselben flachen Polygone, auch die abgerundeten Blöcke der Figuren mit zwei
+  Flächen je Kante. Um eine gedrehte Hülle legt Box3D den Kasten um ihren gedrehten Kasten (`b3Body_ComputeAABB`), bei
+  einem abgerundeten Block reicht er Zentimeter über sie hinaus, wie tief ein Knochen im Boden steckt, sagen ihre
+  Punkte.
 - Box3D ist noch jung (0.x) und kann seine API ändern. Deshalb liegt ein fester Stand bei.
 
 ## Lizenzen

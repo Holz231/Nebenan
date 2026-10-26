@@ -886,6 +886,39 @@ static void BuildCapsuleMesh( std::vector<GpuVertex>& vertices, std::vector<uint
 	}
 }
 
+// A convex hull with flat faces, for a rounded block of a figure, see nbCreateBoneHull. Every face is a polygon around
+// its normal, cut into a fan.
+static void BuildHullMesh( std::vector<GpuVertex>& vertices, std::vector<uint16_t>& indices, const b3HullData* hull, int material,
+						   int slot )
+{
+	vertices.clear();
+	indices.clear();
+	const b3Vec3* points = b3GetHullPoints( hull );
+	const b3HullHalfEdge* edges = b3GetHullEdges( hull );
+	const b3HullFace* faces = b3GetHullFaces( hull );
+	const b3Plane* planes = b3GetHullPlanes( hull );
+	for ( int f = 0; f < hull->faceCount; ++f )
+	{
+		uint16_t first = (uint16_t)vertices.size();
+		int edge = faces[f].edge;
+		do
+		{
+			vertices.push_back( Renderer::MakeVertex( points[edges[edge].origin], planes[f].normal, material, slot ) );
+			edge = edges[edge].next;
+		}
+		while ( edge != faces[f].edge );
+		for ( uint16_t k = (uint16_t)( first + 1 ); k + 1 < (uint16_t)vertices.size(); ++k )
+		{
+			indices.insert( indices.end(), { first, k, (uint16_t)( k + 1 ) } );
+		}
+	}
+}
+
+// The mesh of a bone as the physics has it: a capsule, a box, or the hull of a rounded block. Thinner by a scale, for the
+// pose the joints pull to.
+static void BuildBoneMesh( std::vector<GpuVertex>& vertices, std::vector<uint16_t>& indices, const nbBoneDef& bone, float scale,
+						   int material, int slot );
+
 // A box with flat normals, for a foot. The corners of a face run around its normal, counter clockwise seen from outside.
 static void BuildBoxMesh( std::vector<GpuVertex>& vertices, std::vector<uint16_t>& indices, b3Vec3 center, b3Vec3 halfExtents,
 						  int material, int slot )
@@ -914,6 +947,27 @@ static void BuildBoxMesh( std::vector<GpuVertex>& vertices, std::vector<uint16_t
 			indices.push_back( (uint16_t)( base + o ) );
 		}
 	}
+}
+
+static void BuildBoneMesh( std::vector<GpuVertex>& vertices, std::vector<uint16_t>& indices, const nbBoneDef& bone, float scale,
+						   int material, int slot )
+{
+	if ( bone.shape == nb_capsuleBone )
+	{
+		BuildCapsuleMesh( vertices, indices, bone.start, bone.end, scale * bone.radius, material, slot );
+		return;
+	}
+	if ( bone.shape == nb_boxBone )
+	{
+		BuildBoxMesh( vertices, indices, bone.center, b3MulSV( scale, bone.halfExtents ), material, slot );
+		return;
+	}
+	nbBoneDef thinner = bone;
+	thinner.halfExtents = b3MulSV( scale, bone.halfExtents );
+	thinner.radius = scale * bone.radius;
+	b3HullData* hull = nbCreateBoneHull( &thinner );
+	BuildHullMesh( vertices, indices, hull, material, slot );
+	b3DestroyHull( hull );
 }
 
 //----------------------------------------------------------------------------------------------------------------------
@@ -1059,16 +1113,9 @@ static void AddFigureVisual( App& app, nbArticulationId id, const nbBoneDef* bon
 		for ( int ghost = 0; ghost < 2; ++ghost )
 		{
 			int slot = app.renderer.AllocSlot();
-			int material = ghost == 0 ? MaterialPlaster : MaterialSteel;
+			int material = ghost == 0 ? MaterialMannequin : MaterialSteel;
 			float scale = ghost == 0 ? 1.0f : 0.4f;
-			if ( bone.shape == nb_boxBone )
-			{
-				BuildBoxMesh( app.vertexScratch, app.indexScratch, bone.center, b3MulSV( scale, bone.halfExtents ), material, slot );
-			}
-			else
-			{
-				BuildCapsuleMesh( app.vertexScratch, app.indexScratch, bone.start, bone.end, scale * bone.radius, material, slot );
-			}
+			BuildBoneMesh( app.vertexScratch, app.indexScratch, bone, scale, material, slot );
 			int mesh = app.renderer.AddMesh( app.vertexScratch.data(), (int)app.vertexScratch.size(), app.indexScratch.data(),
 											 (int)app.indexScratch.size(), slot );
 			if ( ghost == 0 )
@@ -1239,12 +1286,12 @@ static void HitChests( App& app, b3Vec3 direction )
 {
 	for ( size_t i = 0; i < app.figures.size() && i < 2; ++i )
 	{
-		b3BodyId torso = nbArticulation_GetBody( app.figures[i].id, nb_humanoidTorso );
+		b3BodyId torso = nbArticulation_GetBody( app.figures[i].id, nb_humanoidChest );
 		nbHitDef hit = {};
 		hit.id = ++app.hitCounter;
-		hit.bone = nb_humanoidTorso;
+		hit.bone = nb_humanoidChest;
 		hit.impulse = b3MulSV( app.hitImpulse, direction );
-		hit.point = b3Body_GetWorldPoint( torso, { 0.0f, 0.3f, 0.1f } );
+		hit.point = b3Body_GetWorldPoint( torso, { 0.0f, 0.03f, 0.1f } );
 		nbArticulation_ApplyHit( app.figures[i].id, &hit );
 	}
 }
@@ -1261,7 +1308,10 @@ static const char* BalanceName( nbBalanceState state )
 // chapters 32.5, 32.6 and 33.2. The clip, its rules and its checks are the library's, here are the menu and the drawing.
 
 static const char* s_boneLabels[nb_humanoidBoneCount] = { "Becken",
-														  "Rumpf",
+														  "Bauch",
+														  "Rippen",
+														  "Brust",
+														  "Hals",
 														  "Kopf",
 														  "Oberarm links",
 														  "Unterarm links",
@@ -1389,7 +1439,7 @@ static nbPoseClip* MakeGetUpClip( const Editor& e, bool fromBack )
 	nbBalanceDef balance = nbDefaultBalanceDef();
 	nbKeyframe keyframes[NB_GETUP_KEYFRAMES];
 	b3Quat rotations[NB_GETUP_KEYFRAMES * nb_humanoidBoneCount];
-	int count = nbMakeGetUpClip( &balance, nb_humanoidBoneCount, fromBack, keyframes, rotations, NB_GETUP_KEYFRAMES );
+	int count = nbMakeGetUpClip( &balance, &e.rig, fromBack, keyframes, rotations, NB_GETUP_KEYFRAMES );
 	nbClipDef clip = { keyframes, count, nb_humanoidBoneCount, false };
 	return nbCreatePoseClipFromClip( &e.rig, NB_HUMANOID_SKELETON, fromBack ? "Aufstehen von hinten" : "Aufstehen von vorn", 30,
 									 &clip );
@@ -1496,14 +1546,7 @@ static void BuildEditorScene( App& app )
 	{
 		const nbBoneDef& bone = e.bones[i];
 		int slot = app.renderer.AllocSlot();
-		if ( bone.shape == nb_boxBone )
-		{
-			BuildBoxMesh( app.vertexScratch, app.indexScratch, bone.center, bone.halfExtents, MaterialPlaster, slot );
-		}
-		else
-		{
-			BuildCapsuleMesh( app.vertexScratch, app.indexScratch, bone.start, bone.end, bone.radius, MaterialPlaster, slot );
-		}
+		BuildBoneMesh( app.vertexScratch, app.indexScratch, bone, 1.0f, MaterialMannequin, slot );
 		e.poseSlots.push_back( slot );
 		e.poseMeshes.push_back( app.renderer.AddMesh( app.vertexScratch.data(), (int)app.vertexScratch.size(),
 													  app.indexScratch.data(), (int)app.indexScratch.size(), slot ) );

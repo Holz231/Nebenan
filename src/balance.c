@@ -74,6 +74,9 @@
 #define NB_GETUP_SETTLE 1.0f
 #define NB_GETUP_LOST 1.0f
 
+// The most bones from the torso down to the root that bend together, see nbSpineOf
+#define NB_SPINE_BONES 8
+
 // Debris comes at a lying or rising figure faster than this, in meters per second, see nbDebrisContact
 #define NB_DEBRIS_SPEED 0.5f
 
@@ -155,6 +158,10 @@ typedef struct nbBalancer
 	float uprightScale;
 	bool userProfile;
 	int lastHitCount;
+
+	// The torso and the bones it hangs from down to the root, without the root, which bend together, see nbSpineOf
+	int spine[NB_SPINE_BONES];
+	int spineCount;
 
 	// The foot that stepped last, so near ties go to the other one
 	int lastFoot;
@@ -1246,6 +1253,15 @@ static void nbBend( nbBalancer* b, int bone, float angle )
 	}
 }
 
+// Round the back: every joint of the spine bends forward by its share of the angle
+static void nbBendSpine( nbBalancer* b, float angle )
+{
+	for ( int k = 0; k < b->spineCount; ++k )
+	{
+		nbBend( b, b->spine[k], angle / (float)b->spineCount );
+	}
+}
+
 // The targets of the joints for the state, and the lift of getting up. Returns the kind of pose.
 static nbPoseKind nbPose( nbArticulation* a, nbBalancer* b )
 {
@@ -1346,7 +1362,7 @@ static nbPoseKind nbPose( nbArticulation* a, nbBalancer* b )
 			else
 			{
 				nbBend( b, def->head, 0.5f );
-				nbBend( b, def->torso, 0.3f );
+				nbBendSpine( b, 0.3f );
 				nbBend( b, def->upperArms[0], 0.9f );
 				nbBend( b, def->upperArms[1], 0.9f );
 				nbBend( b, def->forearms[0], 1.3f );
@@ -1483,7 +1499,7 @@ nbBalanceDef nbDefaultBalanceDef( void )
 	def.shins[1] = nb_humanoidShinRight;
 	def.feet[0] = nb_humanoidFootLeft;
 	def.feet[1] = nb_humanoidFootRight;
-	def.torso = nb_humanoidTorso;
+	def.torso = nb_humanoidChest;
 	def.head = nb_humanoidHead;
 	def.upperArms[0] = nb_humanoidUpperArmLeft;
 	def.upperArms[1] = nb_humanoidUpperArmRight;
@@ -1564,14 +1580,39 @@ static void nbLeg( b3Quat* rotations, const nbBalanceDef* def, int leg, float hi
 	nbTurn( rotations, def->feet[leg], b3Vec3_axisX, foot );
 }
 
-int nbMakeGetUpClip( const nbBalanceDef* def, int boneCount, bool fromBack, nbKeyframe* keyframes, b3Quat* rotations,
+// The spine: the torso and the bones it hangs from down to the root, without the root, from the parents of the bones.
+// Returns how many there are, none without a torso.
+static int nbSpineOf( const int* parents, int boneCount, int torso, int* spine )
+{
+	int count = 0;
+	for ( int bone = torso; bone > 0 && bone < boneCount && count < NB_SPINE_BONES; bone = parents[bone] )
+	{
+		spine[count++] = bone;
+	}
+	return count;
+}
+
+// Every bone of the spine turned by its share of an angle about an axis of its own
+static void nbTurnSpine( b3Quat* rotations, const int* spine, int spineCount, b3Vec3 axis, float angle )
+{
+	for ( int k = 0; k < spineCount; ++k )
+	{
+		nbTurn( rotations, spine[k], axis, angle / (float)spineCount );
+	}
+}
+
+static int nbBuildGetUpClip( const nbBalanceDef* def, int boneCount, const int* spine, int spineCount, bool fromBack,
+							 nbKeyframe* keyframes, b3Quat* rotations, int capacity );
+
+int nbMakeGetUpClip( const nbBalanceDef* def, const nbRigDef* rig, bool fromBack, nbKeyframe* keyframes, b3Quat* rotations,
 					 int capacity )
 {
-	if ( def == NULL || keyframes == NULL || rotations == NULL || boneCount < 2 )
+	if ( def == NULL || rig == NULL || rig->bones == NULL || keyframes == NULL || rotations == NULL || rig->boneCount < 2 )
 	{
 		return 0;
 	}
 
+	int boneCount = rig->boneCount;
 	const int* bones[5] = { def->thighs, def->shins, def->feet, def->upperArms, def->forearms };
 	for ( int k = 0; k < 5; ++k )
 	{
@@ -1585,13 +1626,27 @@ int nbMakeGetUpClip( const nbBalanceDef* def, int boneCount, bool fromBack, nbKe
 		return 0;
 	}
 
+	int* parents = nbAlloc( sizeof( int ) * (size_t)boneCount );
+	for ( int i = 0; i < boneCount; ++i )
+	{
+		parents[i] = rig->bones[i].parent;
+	}
+	int spine[NB_SPINE_BONES];
+	int spineCount = nbSpineOf( parents, boneCount, def->torso, spine );
+	nbFree( parents, sizeof( int ) * (size_t)boneCount );
+	return nbBuildGetUpClip( def, boneCount, spine, spineCount, fromBack, keyframes, rotations, capacity );
+}
+
+static int nbBuildGetUpClip( const nbBalanceDef* def, int boneCount, const int* spine, int spineCount, bool fromBack,
+							 nbKeyframe* keyframes, b3Quat* rotations, int capacity )
+{
 	// Measured on the humanoid of nbMakeHumanoidBones: the motors of nbDefaultMotorProfile lift it, the hold of getting up
 	// keeps its root on course. Every pose comes before the motion that needs it: the knees under the chest before the
 	// hips rise, the weight over the right knee before the left foot swings forward, the foot in the air before it comes
 	// down, the weight over the left foot before the right knee leaves the ground. A foot that touches down early, or legs
 	// that do not fit where the feet stand, push the figure along the ground. The hips bend as far as the root tilts, so
 	// the legs and the hold turn the body together. So it stands up from falls in four directions at speeds from 0.8 to
-	// 1.5, half a meter from where it lay, from its back a meter.
+	// 1.5, up to a meter from where it lay, from its back 1.4 m.
 	nbKeyMaker m = { keyframes, rotations, boneCount, capacity, 0 };
 	const float pi = B3_PI;
 	const int* thighs = def->thighs;
@@ -1647,43 +1702,44 @@ int nbMakeGetUpClip( const nbBalanceDef* def, int boneCount, bool fromBack, nbKe
 	r = nbAddKey( &m, t + 1.7f, 0.0f, 0.0f );
 	nbLeg( r, def, 0, 0.0f, 0.15f, -2.1f, 0.0f );
 	nbLeg( r, def, 1, 0.0f, 0.15f, -2.1f, 0.0f );
-	nbTurn( r, def->torso, z, 0.25f );
+	nbTurnSpine( r, spine, spineCount, z, 0.25f );
 	nbTurnBoth( r, arms, x, 0.3f );
 	r = nbAddKey( &m, t + 2.2f, 0.0f, 0.0f );
 	nbLeg( r, def, 0, 1.5f, 0.15f, -2.3f, 0.5f );
 	nbLeg( r, def, 1, 0.0f, 0.15f, -2.1f, 0.0f );
-	nbTurn( r, def->torso, z, 0.25f );
+	nbTurnSpine( r, spine, spineCount, z, 0.25f );
 	nbTurnBoth( r, arms, x, 0.3f );
 	r = nbAddKey( &m, t + 2.5f, 0.0f, 0.0f );
 	nbLeg( r, def, 0, 1.6f, 0.1f, -2.1f, 0.5f );
 	nbLeg( r, def, 1, 0.0f, 0.1f, -1.97f, 0.0f );
-	nbTurn( r, def->torso, z, 0.2f );
+	nbTurnSpine( r, spine, spineCount, z, 0.2f );
 	nbTurnBoth( r, arms, x, 0.3f );
 	for ( int k = 0; k < 2; ++k )
 	{
 		r = nbAddKey( &m, t + ( k == 0 ? 2.7f : 3.0f ), 0.0f, 0.0f );
 		nbLeg( r, def, 0, 1.59f, 0.1f, -1.66f, 0.07f );
 		nbLeg( r, def, 1, 0.0f, 0.1f, -1.97f, 0.0f );
-		nbTurn( r, def->torso, z, k == 0 ? 0.1f : 0.0f );
+		nbTurnSpine( r, spine, spineCount, z, k == 0 ? 0.1f : 0.0f );
 		nbTurnBoth( r, arms, x, k == 0 ? 0.4f : 0.5f );
 	}
 
 	// The legs from here on follow from where the hip and the feet are, so the feet stay where they stand: the weight over
 	// the left foot with the right knee still down and the arms reaching forward, up on the left leg, the right foot steps
-	// beside the left one, and the legs straighten
-	r = nbAddKey( &m, t + 3.5f, 0.6f, 0.0f );
+	// beside the left one, and the legs straighten. The root leans at most 0.48 rad: leaning further, the trunk carries
+	// the center of mass ahead of the left foot, and once upright the figure swings back past its heels.
+	r = nbAddKey( &m, t + 3.5f, 0.48f, 0.0f );
 	nbLeg( r, def, 0, 2.2f, 0.1f, -2.2f, 0.5f );
 	nbLeg( r, def, 1, 0.08f, 0.1f, -1.45f, 0.0f );
 	nbTurnBoth( r, arms, x, 1.0f );
-	r = nbAddKey( &m, t + 4.0f, 0.45f, 0.0f );
+	r = nbAddKey( &m, t + 4.0f, 0.36f, 0.0f );
 	nbLeg( r, def, 0, 1.32f, 0.1f, -1.52f, 0.5f );
 	nbLeg( r, def, 1, 0.15f, 0.1f, -1.4f, 0.0f );
 	nbTurnBoth( r, arms, x, 0.8f );
-	r = nbAddKey( &m, t + 4.4f, 0.25f, 0.0f );
+	r = nbAddKey( &m, t + 4.4f, 0.2f, 0.0f );
 	nbLeg( r, def, 0, 0.76f, 0.1f, -0.95f, 0.45f );
 	nbLeg( r, def, 1, 0.6f, 0.1f, -1.1f, 0.5f );
 	nbTurnBoth( r, arms, x, 0.5f );
-	r = nbAddKey( &m, t + 4.8f, 0.05f, 0.0f );
+	r = nbAddKey( &m, t + 4.8f, 0.04f, 0.0f );
 	nbLeg( r, def, 0, 0.29f, 0.1f, -0.42f, 0.18f );
 	nbLeg( r, def, 1, 0.2f, 0.1f, -0.41f, 0.26f );
 	nbTurnBoth( r, arms, x, 0.2f );
@@ -1815,6 +1871,13 @@ bool nbArticulation_EnableBalance( nbArticulationId id, const nbBalanceDef* def 
 	b->poseKind = nb_poseBalance;
 	b->rootHold = b3_nullJointId;
 	a->balancer = b;
+	int* parents = nbAlloc( sizeof( int ) * (size_t)a->boneCount );
+	for ( int i = 0; i < a->boneCount; ++i )
+	{
+		parents[i] = a->bones[i].parent;
+	}
+	b->spineCount = nbSpineOf( parents, a->boneCount, def->torso, b->spine );
+	nbFree( parents, sizeof( int ) * (size_t)a->boneCount );
 
 	// The clips of getting up, those of the program copied, the others the library's, see nbMakeGetUpClip
 	for ( int k = 0; k < 2; ++k )
@@ -1840,7 +1903,8 @@ bool nbArticulation_EnableBalance( nbArticulationId id, const nbBalanceDef* def 
 		}
 		else
 		{
-			count = nbMakeGetUpClip( def, a->boneCount, k == 1, b->getUpKeyframes[k], b->getUpRotations[k], capacity );
+			count = nbBuildGetUpClip( def, a->boneCount, b->spine, b->spineCount, k == 1, b->getUpKeyframes[k],
+									  b->getUpRotations[k], capacity );
 		}
 		b->getUpClips[k] = (nbClipDef){ b->getUpKeyframes[k], count, a->boneCount, false };
 		b->def.getUpClips[k] = NULL;

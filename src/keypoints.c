@@ -5,6 +5,7 @@
 // elbow or knee. What the points do not show keeps its rest pose with confidence 0. The result is a proposal: the
 // author checks it in the editor and corrects it before approving it.
 
+#include "articulation.h"
 #include "json.h"
 
 #include "nebenan/nebenan.h"
@@ -194,29 +195,45 @@ int nbHumanoidPoseFromKeypoints( float height, nbKeypointLayout layout, const b3
 							  b3MinFloat( c[nb_pointShoulderLeft], c[nb_pointShoulderRight] ) );
 	boneConfidence[nb_humanoidPelvis] = trunk;
 
-	// The torso from its joint to the shoulders, turned by the line of the shoulders
-	b3Vec3 torsoJoint = b3Add( pelvis, b3RotateVector( world[nb_humanoidPelvis], bones[nb_humanoidTorso].restTransform.p ) );
-	world[nb_humanoidTorso] =
-		nbFrameYX( b3Sub( shoulderMiddle, torsoJoint ), b3Sub( p[nb_pointShoulderLeft], p[nb_pointShoulderRight] ) );
-	boneConfidence[nb_humanoidTorso] = trunk;
+	// The chest from the first joint of the trunk to the shoulders, turned by the line of the shoulders. No point lies on
+	// the spine between them, so belly, ribs and chest share the turn from the pelvis to the chest evenly.
+	b3Vec3 joint = b3Add( pelvis, b3RotateVector( world[nb_humanoidPelvis], bones[nb_humanoidBelly].restTransform.p ) );
+	b3Quat chest = nbFrameYX( b3Sub( shoulderMiddle, joint ), b3Sub( p[nb_pointShoulderLeft], p[nb_pointShoulderRight] ) );
+	b3Quat share = nbRootOf( b3InvMulQuat( world[nb_humanoidPelvis], chest ), 3 );
+	const int spine[3] = { nb_humanoidBelly, nb_humanoidRibs, nb_humanoidChest };
+	for ( int k = 0; k < 3; ++k )
+	{
+		b3Quat parent = world[bones[spine[k]].parent];
+		if ( k > 0 )
+		{
+			joint = b3Add( joint, b3RotateVector( parent, bones[spine[k]].restTransform.p ) );
+		}
+		world[spine[k]] = b3NormalizeQuat( b3MulQuat( parent, share ) );
+		boneConfidence[spine[k]] = trunk;
+	}
 
-	// The head from the neck to the middle of the ears, turned by the line of the ears, or toward the nose without them
-	b3Vec3 neck = b3Add( torsoJoint, b3RotateVector( world[nb_humanoidTorso], bones[nb_humanoidHead].restTransform.p ) );
+	// The neck as the chest has it, no point tells how it bends, and the head from the top of the neck to the middle of the
+	// ears, turned by the line of the ears, or toward the nose without them
+	world[nb_humanoidNeck] = world[nb_humanoidChest];
+	b3Vec3 neckBase = b3Add( joint, b3RotateVector( world[nb_humanoidChest], bones[nb_humanoidNeck].restTransform.p ) );
+	b3Vec3 neck = b3Add( neckBase, b3RotateVector( world[nb_humanoidNeck], bones[nb_humanoidHead].restTransform.p ) );
 	float ears = b3MinFloat( c[nb_pointEarLeft], c[nb_pointEarRight] );
 	if ( ears > 0.0f )
 	{
 		b3Vec3 earMiddle = b3MulSV( 0.5f, b3Add( p[nb_pointEarLeft], p[nb_pointEarRight] ) );
 		world[nb_humanoidHead] = nbFrameYX( b3Sub( earMiddle, neck ), b3Sub( p[nb_pointEarLeft], p[nb_pointEarRight] ) );
 		boneConfidence[nb_humanoidHead] = b3MinFloat( ears, trunk );
+		boneConfidence[nb_humanoidNeck] = boneConfidence[nb_humanoidHead];
 	}
 	else if ( c[nb_pointNose] > 0.0f )
 	{
-		world[nb_humanoidHead] = nbSwingY( world[nb_humanoidTorso], b3Sub( p[nb_pointNose], neck ) );
+		world[nb_humanoidHead] = nbSwingY( world[nb_humanoidChest], b3Sub( p[nb_pointNose], neck ) );
 		boneConfidence[nb_humanoidHead] = 0.5f * b3MinFloat( c[nb_pointNose], trunk );
+		boneConfidence[nb_humanoidNeck] = boneConfidence[nb_humanoidHead];
 	}
 	else
 	{
-		world[nb_humanoidHead] = world[nb_humanoidTorso];
+		world[nb_humanoidHead] = world[nb_humanoidChest];
 	}
 
 	// The arms: the upper arm along shoulder to elbow, turned so the elbow bends the forearm toward its front, the forearm
@@ -236,7 +253,7 @@ int nbHumanoidPoseFromKeypoints( float height, nbKeypointLayout layout, const b3
 		b3Vec3 u = b3Sub( elbow, shoulder );
 		b3Vec3 f = b3Sub( wrist, elbow );
 		b3Vec3 front;
-		b3Quat rest = b3MulQuat( world[nb_humanoidTorso], bones[upper].restTransform.q );
+		b3Quat rest = b3MulQuat( world[nb_humanoidChest], bones[upper].restTransform.q );
 		if ( nbAcross( f, u, &front ) )
 		{
 			world[upper] = nbFrameYZ( u, front );
@@ -348,7 +365,7 @@ int nbHumanoidPoseFromKeypoints( float height, nbKeypointLayout layout, const b3
 							b3Length( bones[side == 0 ? nb_humanoidFootLeft : nb_humanoidFootRight].restTransform.p ),
 							b3MinFloat( c[nb_pointKneeLeft + side], c[nb_pointAnkleLeft + side] ) };
 	}
-	limbs[limbCount++] = (nbLimbLength){ nb_humanoidTorso, b3Distance( p[nb_pointShoulderLeft], p[nb_pointShoulderRight] ),
+	limbs[limbCount++] = (nbLimbLength){ nb_humanoidChest, b3Distance( p[nb_pointShoulderLeft], p[nb_pointShoulderRight] ),
 										 2.0f * fabsf( bones[nb_humanoidUpperArmLeft].restTransform.p.x ), trunk };
 	limbs[limbCount++] = (nbLimbLength){ nb_humanoidPelvis, b3Distance( p[nb_pointHipLeft], p[nb_pointHipRight] ),
 										 2.0f * fabsf( bones[nb_humanoidThighLeft].restTransform.p.x ), trunk };

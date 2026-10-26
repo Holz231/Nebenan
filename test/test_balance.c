@@ -74,6 +74,37 @@ static b3BodyId CreateBlock( BalanceScene* scene, b3Vec3 center, b3Vec3 halfExte
 	return body;
 }
 
+// How far the shapes of a body reach up and down, from their points: Box3D keeps the box around the turned box of a hull,
+// which reaches past a turned rounded block by centimeters
+static void ShapeHeights( b3BodyId body, float* low, float* high )
+{
+	b3ShapeId shapes[4];
+	int count = b3Body_GetShapes( body, shapes, 4 );
+	b3WorldTransform transform = b3Body_GetTransform( body );
+	for ( int k = 0; k < count; ++k )
+	{
+		if ( b3Shape_GetType( shapes[k] ) == b3_capsuleShape )
+		{
+			b3Capsule capsule = b3Shape_GetCapsule( shapes[k] );
+			float a = b3ToVec3( b3TransformWorldPoint( transform, capsule.center1 ) ).y;
+			float b = b3ToVec3( b3TransformWorldPoint( transform, capsule.center2 ) ).y;
+			*low = b3MinFloat( *low, b3MinFloat( a, b ) - capsule.radius );
+			*high = b3MaxFloat( *high, b3MaxFloat( a, b ) + capsule.radius );
+		}
+		else if ( b3Shape_GetType( shapes[k] ) == b3_hullShape )
+		{
+			const b3HullData* hull = b3Shape_GetHull( shapes[k] );
+			const b3Vec3* points = b3GetHullPoints( hull );
+			for ( int i = 0; i < hull->vertexCount; ++i )
+			{
+				float y = b3ToVec3( b3TransformWorldPoint( transform, points[i] ) ).y;
+				*low = b3MinFloat( *low, y );
+				*high = b3MaxFloat( *high, y );
+			}
+		}
+	}
+}
+
 // A humanoid of 1.8 m and 75 kg with the default motors, standing on ground at a point, with or without balance, settled
 // for a second
 static nbArticulationId CreateStander( BalanceScene* scene, b3Vec3 ground, bool balance )
@@ -95,6 +126,16 @@ static nbArticulationId CreateStander( BalanceScene* scene, b3Vec3 ground, bool 
 	return id;
 }
 
+// The rig of the humanoid of CreateStander, with its bones in the array given
+static nbRigDef HumanoidRig( nbBoneDef* bones )
+{
+	nbMakeHumanoidBones( 1.8f, 75.0f, bones, nb_humanoidBoneCount );
+	nbRigDef rig = nbDefaultRigDef();
+	rig.bones = bones;
+	rig.boneCount = nb_humanoidBoneCount;
+	return rig;
+}
+
 static b3Vec3 PelvisPoint( nbArticulationId id )
 {
 	return b3ToVec3( b3Body_GetPosition( nbArticulation_GetBody( id, nb_humanoidPelvis ) ) );
@@ -108,12 +149,12 @@ static nbBalanceState State( nbArticulationId id )
 // A push at the chest, like a kick or a shove
 static void Push( nbArticulationId id, uint32_t number, b3Vec3 impulse )
 {
-	b3BodyId torso = nbArticulation_GetBody( id, nb_humanoidTorso );
+	b3BodyId torso = nbArticulation_GetBody( id, nb_humanoidChest );
 	nbHitDef hit = { 0 };
 	hit.id = number;
-	hit.bone = nb_humanoidTorso;
+	hit.bone = nb_humanoidChest;
 	hit.impulse = impulse;
-	hit.point = b3Body_GetWorldPoint( torso, (b3Vec3){ 0.0f, 0.3f, 0.0f } );
+	hit.point = b3Body_GetWorldPoint( torso, (b3Vec3){ 0.0f, 0.03f, 0.0f } );
 	nbArticulation_ApplyHit( id, &hit );
 }
 
@@ -383,8 +424,8 @@ static WallReaction PushAtWall( b3Vec3 impulse, float wall, float height )
 }
 
 // Chapters 28.5 B and 26.14: a wall beside the figure blocks the step a push needs. No step aims into the wall and no foot
-// goes into it. At a wall the figure leans against it, over a low wall it stumbles and falls. In the open the same push is
-// caught by a step to where the wall would stand.
+// goes into it. Where no step reaches far enough without going into the wall, the figure falls, as 28.3 allows, and over
+// a low wall it stumbles and falls. In the open the same push is caught by a step to where the wall would stand.
 static int BalanceBlockedStepTest( void )
 {
 	b3Vec3 impulse = { 60.0f, 0.0f, 0.0f };
@@ -461,6 +502,7 @@ static int BalanceKnockdownTest( void )
 
 		float jump = 0.0f;
 		float lowest = FLT_MAX;
+		float highest = -FLT_MAX;
 		int down = -1;
 		int gettingUp = -1;
 		int standing = -1;
@@ -475,7 +517,7 @@ static int BalanceKnockdownTest( void )
 				b3Vec3 p = b3ToVec3( b3Body_GetPosition( body ) );
 				jump = b3MaxFloat( jump, b3Length( b3Sub( p, previous[i] ) ) );
 				previous[i] = p;
-				lowest = b3MinFloat( lowest, b3Body_ComputeAABB( body ).lowerBound.y );
+				ShapeHeights( body, &lowest, &highest );
 			}
 
 			nbBalance info = nbArticulation_GetBalance( id );
@@ -525,13 +567,15 @@ static int BalanceKnockdownTest( void )
 static int BalanceGetUpClipTest( void )
 {
 	nbBalanceDef def = nbDefaultBalanceDef();
+	nbBoneDef bones[nb_humanoidBoneCount];
+	nbRigDef rig = HumanoidRig( bones );
 	static nbKeyframe keyframes[2][NB_GETUP_KEYFRAMES];
 	static b3Quat rotations[2][NB_GETUP_KEYFRAMES * nb_humanoidBoneCount];
 	int counts[2];
 	float lengths[2];
 	for ( int k = 0; k < 2; ++k )
 	{
-		counts[k] = nbMakeGetUpClip( &def, nb_humanoidBoneCount, k == 1, keyframes[k], rotations[k], NB_GETUP_KEYFRAMES );
+		counts[k] = nbMakeGetUpClip( &def, &rig, k == 1, keyframes[k], rotations[k], NB_GETUP_KEYFRAMES );
 		ENSURE( counts[k] >= 2 && counts[k] <= NB_GETUP_KEYFRAMES );
 		ENSURE( keyframes[k][0].time == 0.0f );
 		for ( int i = 1; i < counts[k]; ++i )
@@ -547,8 +591,8 @@ static int BalanceGetUpClipTest( void )
 		ENSURE( b3RotateVector( standing, b3Vec3_axisY ).y > 0.99f );
 	}
 	ENSURE( counts[1] > counts[0] && lengths[1] > lengths[0] );
-	ENSURE( nbMakeGetUpClip( &def, nb_humanoidBoneCount, true, keyframes[1], rotations[1], counts[1] - 1 ) == 0 );
-	ENSURE( nbMakeGetUpClip( &def, nb_humanoidBoneCount, true, keyframes[1], rotations[1], NB_GETUP_KEYFRAMES ) == counts[1] );
+	ENSURE( nbMakeGetUpClip( &def, &rig, true, keyframes[1], rotations[1], counts[1] - 1 ) == 0 );
+	ENSURE( nbMakeGetUpClip( &def, &rig, true, keyframes[1], rotations[1], NB_GETUP_KEYFRAMES ) == counts[1] );
 
 	// A quarter slower, copied: the rotations are cleared before the figure needs them
 	const float slower = 1.25f;
@@ -610,9 +654,11 @@ static int BalancePlacedLyingTest( void )
 	BalanceScene scene = CreateBalanceScene( 1 );
 	nbArticulationId id = CreateStander( &scene, b3Vec3_zero, true );
 	nbBalanceDef def = nbDefaultBalanceDef();
+	nbBoneDef bones[nb_humanoidBoneCount];
+	nbRigDef rig = HumanoidRig( bones );
 	nbKeyframe keyframes[NB_GETUP_KEYFRAMES];
 	b3Quat rotations[NB_GETUP_KEYFRAMES * nb_humanoidBoneCount];
-	int count = nbMakeGetUpClip( &def, nb_humanoidBoneCount, true, keyframes, rotations, NB_GETUP_KEYFRAMES );
+	int count = nbMakeGetUpClip( &def, &rig, true, keyframes, rotations, NB_GETUP_KEYFRAMES );
 	float length = keyframes[count - 1].time;
 	b3WorldTransform root = { b3ToPos( (b3Vec3){ 0.0f, 0.15f, 0.0f } ), keyframes[0].rotations[nb_humanoidPelvis] };
 	nbArticulation_PlacePose( id, root, keyframes[0].rotations );
@@ -664,6 +710,7 @@ static int BalanceSlabTest( void )
 	b3Vec3 pelvis = PelvisPoint( id );
 	float bottom = 0.6f;
 	b3BodyId slab = CreateBlock( &scene, (b3Vec3){ pelvis.x, bottom + 0.1f, pelvis.z }, (b3Vec3){ 1.0f, 0.1f, 1.5f }, false );
+	float low = FLT_MAX;
 	float top = -FLT_MAX;
 	for ( int update = 0; update < 300; ++update )
 	{
@@ -671,7 +718,7 @@ static int BalanceSlabTest( void )
 		ENSURE( State( id ) == nb_balanceDown );
 		for ( int i = 0; i < nb_humanoidBoneCount; ++i )
 		{
-			top = b3MaxFloat( top, b3Body_ComputeAABB( nbArticulation_GetBody( id, i ) ).upperBound.y );
+			ShapeHeights( nbArticulation_GetBody( id, i ), &low, &top );
 		}
 	}
 
@@ -698,12 +745,12 @@ static int BalanceAbortTest( void )
 	StepBalance( &scene, 20 );
 	ENSURE( State( id ) == nb_balanceGettingUp );
 
-	b3BodyId torso = nbArticulation_GetBody( id, nb_humanoidTorso );
+	b3BodyId torso = nbArticulation_GetBody( id, nb_humanoidChest );
 	nbHitDef hit = { 0 };
 	hit.id = 2;
-	hit.bone = nb_humanoidTorso;
+	hit.bone = nb_humanoidChest;
 	hit.impulse = (b3Vec3){ 0.0f, 0.0f, -15.0f };
-	hit.point = b3Body_GetWorldPoint( torso, (b3Vec3){ 0.0f, 0.2f, 0.0f } );
+	hit.point = b3Body_GetWorldPoint( torso, (b3Vec3){ 0.0f, 0.03f, 0.0f } );
 	ENSURE( nbArticulation_ApplyHit( id, &hit ) );
 	StepBalance( &scene, 1 );
 	ENSURE( State( id ) == nb_balanceFalling );
@@ -844,7 +891,7 @@ static uint32_t RunBalanceScenario( int workerCount )
 
 // Balance gives the same bits with MSVC, GCC and Clang on x64 and ARM, with one thread and with four. This is the result
 // with the pinned Box3D commit. Update it when the results change on purpose, never to make one platform pass.
-#define NB_EXPECTED_BALANCE_HASH 0x1a58818au
+#define NB_EXPECTED_BALANCE_HASH 0x52d24d6cu
 
 static int BalanceDeterminismTest( void )
 {

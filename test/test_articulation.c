@@ -454,7 +454,7 @@ static int PassiveRagdollTest( void )
 	for ( int step = 0; step < 360; ++step )
 	{
 		StepFigures( &scene, 1 );
-		ENSURE( CheckFigure( &figure, 0.07f ) );
+		ENSURE( CheckFigure( &figure, 0.075f ) );
 		maxSpeed = b3MaxFloat( maxSpeed, MaxBoneSpeed( &figure ) );
 		for ( int i = 0; i < nb_humanoidBoneCount; ++i )
 		{
@@ -484,13 +484,13 @@ static int PassiveRagdollTest( void )
 	printf( "passive ragdoll: pelvis %.2f m, lowest center %.3f m, fastest %.1f m/s, at rest %.3f m/s, separation %.1f mm, "
 			"over the limit %.3f rad\n",
 			pelvis, lowest, maxSpeed, restSpeed, 1000.0f * maxSeparation, maxOvershoot );
-	// The joints stretch for a few steps when a bone hits the ground hard, measured 4 to 6 cm with a drop of half a meter,
-	// and the limits give by a tenth of a radian under the weight of the body
+	// The joints stretch for a few steps when a bone hits the ground hard, measured 4 to 7 cm at the ankles with a drop of
+	// half a meter, and the limits give by a tenth of a radian under the weight of the body
 	ENSURE( pelvis < 0.5f );
 	ENSURE( lowest > -0.03f );
 	ENSURE( maxSpeed < 15.0f );
 	ENSURE( restSpeed < 0.3f );
-	ENSURE( maxSeparation < 0.07f );
+	ENSURE( maxSeparation < 0.075f );
 	ENSURE( maxOvershoot < 0.15f );
 
 	DestroyFigureScene( &scene );
@@ -569,6 +569,60 @@ static void MakeArmClip( ArmClip* clip, bool loop )
 	clip->clip.keyframeCount = 3;
 	clip->clip.boneCount = nb_humanoidBoneCount;
 	clip->clip.loop = loop;
+}
+
+// How far the chest leans against the pelvis, forward about the axis across and to the side
+static void TrunkLean( const Figure* figure, float* forward, float* side )
+{
+	b3Quat pelvis = b3Body_GetRotation( nbArticulation_GetBody( figure->id, nb_humanoidPelvis ) );
+	b3Quat chest = b3Body_GetRotation( nbArticulation_GetBody( figure->id, nb_humanoidChest ) );
+	b3Vec3 up = b3RotateVector( b3InvMulQuat( pelvis, chest ), b3Vec3_axisY );
+	*forward = atan2f( up.z, up.y );
+	*side = atan2f( -up.x, up.y );
+}
+
+// The trunk of the humanoid bends: its three joints share a rounded back, stop at their limits, 26 degrees forward and 9
+// back each, and lean to the side. Without gravity, so the figure keeps its place whatever the trunk does.
+static int TrunkBendTest( void )
+{
+	FigureScene scene = CreateFigureScene( 1 );
+	b3World_SetGravity( scene.physicsWorld, b3Vec3_zero );
+	nbMotorProfile motors = nbDefaultMotorProfile();
+	motors.uprightTorque = 0.0f;
+	Figure figure = CreateHumanoid( &scene, b3Vec3_zero, b3Quat_identity, &motors );
+	const int spine[3] = { nb_humanoidBelly, nb_humanoidRibs, nb_humanoidChest };
+
+	// Each joint bent by the same angle, forward, beyond the forward limit, backward beyond its limit, and to the side
+	const b3Vec3 axes[4] = { b3Vec3_axisX, b3Vec3_axisX, b3Vec3_axisX, b3Vec3_axisZ };
+	const float angles[4] = { 0.3f, 0.8f, -0.3f, 0.15f };
+	const float expected[4] = { 0.9f, 1.35f, -0.45f, 0.45f };
+	float found[4];
+	for ( int k = 0; k < 4; ++k )
+	{
+		b3Quat pose[nb_humanoidBoneCount];
+		for ( int i = 0; i < nb_humanoidBoneCount; ++i )
+		{
+			pose[i] = b3Quat_identity;
+		}
+		for ( int j = 0; j < 3; ++j )
+		{
+			pose[spine[j]] = b3MakeQuatFromAxisAngle( axes[k], angles[k] );
+		}
+		nbArticulation_SetTargetPose( figure.id, pose, nb_humanoidBoneCount );
+		StepFigures( &scene, 90 );
+		ENSURE( CheckFigure( &figure, 0.01f ) );
+		float forward, side;
+		TrunkLean( &figure, &forward, &side );
+		found[k] = k == 3 ? side : forward;
+		printf( "  trunk %d: %.3f of %.3f, across %.3f\n", k, found[k], expected[k], k == 3 ? forward : side );
+		ENSURE( fabsf( found[k] - expected[k] ) < 0.08f );
+		ENSURE( fabsf( k == 3 ? forward : side ) < 0.05f );
+	}
+	printf( "trunk: rounded %.2f rad, at its limit %.2f, arched %.2f, leaning to the side %.2f\n", found[0], found[1], found[2],
+			found[3] );
+
+	DestroyFigureScene( &scene );
+	return 0;
 }
 
 // Step 3 of chapter 33: the clip plays without a jump in the pose, the motors follow it, the keyframes come out as they
@@ -700,15 +754,15 @@ static int HitTest( void )
 	Figure figure = CreateHumanoid( &scene, b3Vec3_zero, b3Quat_identity, &stand );
 	StepFigures( &scene, 60 );
 
-	b3BodyId torso = nbArticulation_GetBody( figure.id, nb_humanoidTorso );
+	b3BodyId torso = nbArticulation_GetBody( figure.id, nb_humanoidChest );
 	b3Vec3 before = b3Body_GetLinearVelocity( torso );
 
 	// A push of 20 N s moves 75 kg at 0.27 m/s, about what a person absorbs without a step
 	nbHitDef hit = { 0 };
 	hit.id = 7;
-	hit.bone = nb_humanoidTorso;
+	hit.bone = nb_humanoidChest;
 	hit.impulse = (b3Vec3){ 0.0f, 0.0f, -20.0f };
-	hit.point = b3Body_GetWorldPoint( torso, (b3Vec3){ 0.0f, 0.3f, 0.1f } );
+	hit.point = b3Body_GetWorldPoint( torso, (b3Vec3){ 0.0f, 0.03f, 0.1f } );
 	ENSURE( nbArticulation_ApplyHit( figure.id, &hit ) );
 	ENSURE( nbArticulation_ApplyHit( figure.id, &hit ) == false );
 	ENSURE( nbArticulation_GetHitCount( figure.id ) == 1 );
@@ -743,7 +797,7 @@ static int HitTest( void )
 	// A heavy hit bends the torso back against its motors and knocks the figure down
 	hit.id = 8;
 	hit.impulse = (b3Vec3){ 0.0f, 0.0f, -120.0f };
-	hit.point = b3Body_GetWorldPoint( torso, (b3Vec3){ 0.0f, 0.3f, 0.1f } );
+	hit.point = b3Body_GetWorldPoint( torso, (b3Vec3){ 0.0f, 0.03f, 0.1f } );
 	ENSURE( nbArticulation_ApplyHit( figure.id, &hit ) );
 	maxSpeed = 0.0f;
 	maxSeparation = 0.0f;
@@ -753,14 +807,17 @@ static int HitTest( void )
 		StepFigures( &scene, 1 );
 		ENSURE( CheckFigure( &figure, 0.1f ) );
 		maxSpeed = b3MaxFloat( maxSpeed, MaxBoneSpeed( &figure ) );
-		torsoYield = b3MaxFloat( torsoYield, nbArticulation_GetJointError( figure.id, nb_humanoidTorso ) );
+		float trunk = nbArticulation_GetJointError( figure.id, nb_humanoidBelly ) +
+					  nbArticulation_GetJointError( figure.id, nb_humanoidRibs ) +
+					  nbArticulation_GetJointError( figure.id, nb_humanoidChest );
+		torsoYield = b3MaxFloat( torsoYield, trunk );
 		for ( int i = 1; i < nb_humanoidBoneCount; ++i )
 		{
 			maxSeparation = b3MaxFloat( maxSeparation, b3Joint_GetLinearSeparation( nbArticulation_GetJoint( figure.id, i ) ) );
 		}
 	}
 	float pelvis = PelvisHeight( &figure );
-	printf( "hit of 120 N s: pelvis at %.3f m, fastest bone %.1f m/s, joints stretched %.1f mm, torso gave way %.2f rad\n",
+	printf( "hit of 120 N s: pelvis at %.3f m, fastest bone %.1f m/s, joints stretched %.1f mm, trunk gave way %.2f rad\n",
 			pelvis, maxSpeed, 1000.0f * maxSeparation, torsoYield );
 	ENSURE( pelvis < 0.6f );
 	ENSURE( maxSpeed < 40.0f );
@@ -846,10 +903,10 @@ static uint32_t RunFigureScenario( int workerCount )
 		{
 			nbHitDef hit = { 0 };
 			hit.id = 1;
-			hit.bone = nb_humanoidTorso;
+			hit.bone = nb_humanoidChest;
 			hit.impulse = (b3Vec3){ 30.0f, 0.0f, -300.0f };
 			hit.point =
-				b3Body_GetWorldPoint( nbArticulation_GetBody( figure.id, nb_humanoidTorso ), (b3Vec3){ 0.0f, 0.3f, 0.1f } );
+				b3Body_GetWorldPoint( nbArticulation_GetBody( figure.id, nb_humanoidChest ), (b3Vec3){ 0.0f, 0.03f, 0.1f } );
 			nbArticulation_ApplyHit( figure.id, &hit );
 		}
 		StepFigures( &scene, 1 );
@@ -886,6 +943,7 @@ int ArticulationTest( void )
 	RUN_TEST( ArticulationApiTest );
 	RUN_TEST( PassiveRagdollTest );
 	RUN_TEST( StandTest );
+	RUN_TEST( TrunkBendTest );
 	RUN_TEST( ClipTest );
 	RUN_TEST( HitTest );
 	RUN_TEST( WallHitTest );
