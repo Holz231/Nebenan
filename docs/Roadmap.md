@@ -19,6 +19,11 @@ beide auf dem Ryzen nachgemessen, und den großen Paketen im Team auf `kollaps-9
 Begründungen und Messwerte stehen in [`Optimierungen.md`](Optimierungen.md), hier nur das Fazit und die Reihenfolge.
 Nach jeder Runde wird der Stand hier nachgetragen.
 
+`ragdoll-11` ist keine Runde der Physik: Der Humanoid ist eine Gliederpuppe mit Hals und einem Rumpf, der sich biegt,
+siehe „Gliederpuppe“ unten. Gepaart gegen `ragdoll-10` auf dem 7800X3D, sechs Läufe im Wechsel mit 1 Thread, rechnet die
+Stadt ohne Figuren wie vorher. Mit 50 Figuren kostet ein Bild der ruhigen Stadt 1,34 statt 1,08 ms und unter Beschuss
+3,44 statt 2,90 ms, vor allem für die 18 statt 15 Körper und 17 statt 14 Gelenke im Löser.
+
 `ragdoll-10` ist keine Runde der Physik: Die Figuren stehen mit Aufstehclips auf statt mit einer Kraft an der Brust,
 siehe „Aufstehclips“ unten. Gepaart gegen `ragdoll-9` auf dem 7800X3D, sechs Läufe im Wechsel mit 1 Thread, rechnet
 die Stadt ohne Figuren wie vorher, und je Figur und Schritt kostet die Balance dasselbe. Weil das Aufstehen länger
@@ -185,6 +190,18 @@ Verworfen, mit Grund:
 - **Hüften, die der kleineren Neigung folgen**, damit die Oberschenkel ihre Richtung behalten: Die Figur schwang wieder
   nach hinten, mit dem Capture Point 14 cm außerhalb.
 - **Die Neigung 0,7- oder 0,75-mal**: Beim 0,8- und 1,2-fachen Tempo stand die Figur später auf als mit 0,8.
+
+Gemessen mit `nebenan_benchmark figures 1`, sechs Runden im Wechsel gegen `ragdoll-10` auf dem Ryzen 7 7800X3D, ohne
+andere Last: Die Stadt ohne Figuren rechnet wie vorher, 1,84 ms je Bild unter Beschuss. Mit 50 Figuren kostet ein Bild
+der ruhigen Stadt 1,34 statt 1,08 ms, im 99. Perzentil 1,61 statt 1,24 ms, und unter Beschuss 3,44 statt 2,90 ms. Box3D
+löst in der ruhigen Stadt 1,05 statt 0,88 ms, die Gelenke 0,77 statt 0,63 ms, so viel mehr, wie es Gelenke sind. Die
+Kollision kostet 0,12 statt 0,06 ms: Die Blöcke sind Hüllen mit vielen Flächen, und Arme und Rumpf liegen dichter
+beieinander, mit 1 191 statt 851 Paaren. Das Update braucht je Figur 1,64 statt 1,37 µs, die Balance 0,99 statt 0,90 µs
+und die Ziele der Gelenke 0,43 statt 0,28 µs. In der ersten Fassung kosteten diese 0,88 µs: Die Prüfung gegen die
+Grenzen rechnete in jedem Update zwei Arkustangens je Gelenk. Jetzt vergleicht sie Kosinus und Sinus der halben
+Grenzwinkel, die der Knochen beim Anlegen einmal rechnet, und zerlegt nur ein Ziel jenseits einer Grenze, das Update
+kostet damit 22 % weniger. Je Figur kommen 7 KB dazu, 66 statt 59 KB bei 50 Figuren. Unter Beschuss stürzten 65 Figuren,
+17 standen in der Messzeit wieder auf, und Trümmer brachen 11 Aufstehen ab, wie mit `ragdoll-10`.
 
 ## Balance (`ragdoll-2`)
 

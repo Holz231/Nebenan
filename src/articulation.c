@@ -449,54 +449,47 @@ static b3Quat nbJointRotation( const nbBone* bone, b3Quat rotation )
 	return b3NormalizeQuat( relative );
 }
 
-// A rotation of a bone against its rest pose, brought back into the limits of its joint as Box3D measures them: the
-// twist about the z axis of the joint frame, see b3GetTwistAngle, and the swing of that axis, see b3GetSwingAngle. The
-// limits are soft, a spring that pulls beyond one pushes the joint through it: the three stiff joints of a spine went
-// 0.14 rad past their forward limit each.
-static b3Quat nbWithinLimits( const nbBone* bone, b3Quat rotation )
+// Bring a rotation of a joint as Box3D sees it back into the limits of the joint, as Box3D measures them: the twist about
+// the z axis of the joint frame, see b3GetTwistAngle, and the swing of that axis, see b3GetSwingAngle. The limits are
+// soft, a spring that pulls beyond one pushes the joint through it: the three stiff joints of a spine went 0.14 rad past
+// their forward limit each. Every update checks every target, so the halves of the angles are compared by their cosines
+// and sines, without an arc tangent. Returns false for a rotation within the limits, which stays as it is.
+static bool nbLimitJointRotation( const nbBone* bone, b3Quat* relative )
 {
-	if ( bone->joint != nb_hingeJoint && bone->joint != nb_ballJoint )
+	// The rotation as swing times twist. The twist is the direction (s, z) on the half circle at half its angle, beyond
+	// a limit when it lies past the direction of half the limit. The cosine of half the swing is the length of (s, z).
+	b3Quat q = relative->s < 0.0f ? b3NegateQuat( *relative ) : *relative;
+	bool aboveUpper = bone->upperHalf.cosine * q.v.z - bone->upperHalf.sine * q.s > 0.0f;
+	bool belowLower = bone->lowerHalf.cosine * q.v.z - bone->lowerHalf.sine * q.s < 0.0f;
+	float twistSquared = q.s * q.s + q.v.z * q.v.z;
+	bool beyondCone = bone->joint == nb_ballJoint && twistSquared < bone->coneHalf.cosine * bone->coneHalf.cosine;
+	if ( aboveUpper == false && belowLower == false && beyondCone == false )
 	{
-		return rotation;
+		return false;
 	}
 
-	// The rotation of the joint as swing times twist
-	b3Quat q = nbJointRotation( bone, rotation );
-	if ( q.s < 0.0f )
-	{
-		q = b3NegateQuat( q );
-	}
-	float twistLength = sqrtf( q.s * q.s + q.v.z * q.v.z );
+	// A hinge turns about its axis alone, its drive ignores the swing
+	float twistLength = sqrtf( twistSquared );
 	b3Quat twist = twistLength > 0.0f ? (b3Quat){ { 0.0f, 0.0f, q.v.z / twistLength }, q.s / twistLength } : b3Quat_identity;
 	b3Quat swing = b3MulQuat( q, b3Conjugate( twist ) );
+	if ( aboveUpper || belowLower )
+	{
+		b3CosSin limit = aboveUpper ? bone->upperHalf : bone->lowerHalf;
+		twist = (b3Quat){ { 0.0f, 0.0f, limit.sine }, limit.cosine };
+	}
 	float swingLength = sqrtf( swing.v.x * swing.v.x + swing.v.y * swing.v.y );
-
-	// A hinge turns about its axis alone, the drive ignores the swing
-	float twistAngle = b3GetTwistAngle( q );
-	float limitedTwist = b3ClampFloat( twistAngle, bone->lowerAngle, bone->upperAngle );
-	bool twistInside = limitedTwist == twistAngle;
-	bool swingInside = bone->joint == nb_hingeJoint || swingLength < FLT_EPSILON || b3GetSwingAngle( q ) <= bone->coneAngle;
-	if ( twistInside && swingInside )
+	if ( beyondCone && swingLength > 0.0f )
 	{
-		return rotation;
+		float scale = bone->coneHalf.sine / swingLength;
+		swing = (b3Quat){ { scale * swing.v.x, scale * swing.v.y, 0.0f }, bone->coneHalf.cosine };
 	}
-
-	if ( twistInside == false )
-	{
-		twist = b3MakeQuatFromAxisAngle( b3Vec3_axisZ, limitedTwist );
-	}
-	if ( swingInside == false )
-	{
-		b3Vec3 axis = { swing.v.x / swingLength, swing.v.y / swingLength, 0.0f };
-		swing = b3MakeQuatFromAxisAngle( axis, bone->coneAngle );
-	}
-	b3Quat limited = b3MulQuat( swing, twist );
-	return b3NormalizeQuat( b3MulQuat( b3MulQuat( bone->jointFrame, limited ), b3Conjugate( bone->jointFrame ) ) );
+	*relative = b3NormalizeQuat( b3MulQuat( swing, twist ) );
+	return true;
 }
 
-static void nbDriveJoint( const nbBone* bone )
+// Drive the joint of a bone to a rotation as Box3D sees it, see nbJointRotation
+static void nbDriveJoint( const nbBone* bone, b3Quat relative )
 {
-	b3Quat relative = nbJointRotation( bone, bone->target );
 	switch ( bone->joint )
 	{
 		case nb_hingeJoint:
@@ -517,7 +510,17 @@ void nbSetTargets( nbArticulation* articulation, const b3Quat* rotations )
 	for ( int i = 1; i < articulation->boneCount; ++i )
 	{
 		nbBone* bone = articulation->bones + i;
-		b3Quat target = nbWithinLimits( bone, b3NormalizeQuat( rotations[i] ) );
+		b3Quat target = b3NormalizeQuat( rotations[i] );
+		if ( bone->joint == nb_hingeJoint || bone->joint == nb_ballJoint )
+		{
+			// Within the limits, back in the frame of the bone when it was beyond them
+			b3Quat relative = nbJointRotation( bone, target );
+			if ( nbLimitJointRotation( bone, &relative ) )
+			{
+				target = b3NormalizeQuat( b3MulQuat( b3MulQuat( bone->jointFrame, relative ), b3Conjugate( bone->jointFrame ) ) );
+			}
+			nbDriveJoint( bone, relative );
+		}
 
 		// About a tenth of a degree
 		if ( fabsf( b3DotQuat( target, bone->target ) ) < 0.9999995f )
@@ -525,10 +528,6 @@ void nbSetTargets( nbArticulation* articulation, const b3Quat* rotations )
 			changed = true;
 		}
 		bone->target = target;
-		if ( bone->joint != nb_fixedJoint )
-		{
-			nbDriveJoint( bone );
-		}
 	}
 
 	if ( changed && articulation->profile.stiffness > 0.0f )
@@ -931,9 +930,9 @@ nbArticulationId nbCreateArticulation( nbWorldId worldId, const nbRigDef* rig, b
 		bone->rest = def->restTransform;
 		bone->jointFrame = b3NormalizeQuat( def->jointFrame );
 		bone->target = b3Quat_identity;
-		bone->lowerAngle = 0.0f;
-		bone->upperAngle = 0.0f;
-		bone->coneAngle = 0.0f;
+		bone->lowerHalf = (b3CosSin){ 1.0f, 0.0f };
+		bone->upperHalf = (b3CosSin){ 1.0f, 0.0f };
+		bone->coneHalf = (b3CosSin){ 1.0f, 0.0f };
 		bone->strength = def->strength;
 		bone->stiffness = b3MaxFloat( 0.0f, def->stiffness );
 		bone->damping = b3MaxFloat( 0.0f, def->damping );
@@ -1015,8 +1014,8 @@ nbArticulationId nbCreateArticulation( nbWorldId worldId, const nbRigDef* rig, b
 				jointDef.maxSpringTorque = maxTorque;
 #endif
 				bone->jointId = b3CreateRevoluteJoint( world->physicsWorld, &jointDef );
-				bone->lowerAngle = b3RevoluteJoint_GetLowerLimit( bone->jointId );
-				bone->upperAngle = b3RevoluteJoint_GetUpperLimit( bone->jointId );
+				bone->lowerHalf = b3ComputeCosSin( 0.5f * b3RevoluteJoint_GetLowerLimit( bone->jointId ) );
+				bone->upperHalf = b3ComputeCosSin( 0.5f * b3RevoluteJoint_GetUpperLimit( bone->jointId ) );
 				break;
 			}
 			case nb_ballJoint:
@@ -1040,9 +1039,9 @@ nbArticulationId nbCreateArticulation( nbWorldId worldId, const nbRigDef* rig, b
 				jointDef.maxSpringTorque = maxTorque;
 #endif
 				bone->jointId = b3CreateSphericalJoint( world->physicsWorld, &jointDef );
-				bone->lowerAngle = b3SphericalJoint_GetLowerTwistLimit( bone->jointId );
-				bone->upperAngle = b3SphericalJoint_GetUpperTwistLimit( bone->jointId );
-				bone->coneAngle = b3SphericalJoint_GetConeLimit( bone->jointId );
+				bone->lowerHalf = b3ComputeCosSin( 0.5f * b3SphericalJoint_GetLowerTwistLimit( bone->jointId ) );
+				bone->upperHalf = b3ComputeCosSin( 0.5f * b3SphericalJoint_GetUpperTwistLimit( bone->jointId ) );
+				bone->coneHalf = b3ComputeCosSin( 0.5f * b3SphericalJoint_GetConeLimit( bone->jointId ) );
 				break;
 			}
 			default:

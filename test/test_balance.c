@@ -891,7 +891,7 @@ static uint32_t RunBalanceScenario( int workerCount )
 
 // Balance gives the same bits with MSVC, GCC and Clang on x64 and ARM, with one thread and with four. This is the result
 // with the pinned Box3D commit. Update it when the results change on purpose, never to make one platform pass.
-#define NB_EXPECTED_BALANCE_HASH 0x52d24d6cu
+#define NB_EXPECTED_BALANCE_HASH 0x763a018bu
 
 static int BalanceDeterminismTest( void )
 {

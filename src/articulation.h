@@ -28,11 +28,11 @@ typedef struct nbBone
 	// The rotation against the rest pose the joint drives to, in the frame of the bone, within the limits
 	b3Quat target;
 
-	// The limits of the joint as Box3D keeps them: the angle about the z axis of the joint frame, and for a ball joint
-	// how far that axis swings
-	float lowerAngle;
-	float upperAngle;
-	float coneAngle;
+	// The limits of the joint as Box3D keeps them, as the cosine and sine of half of each angle: the twist about the z
+	// axis of the joint frame below and above, and for a ball joint how far that axis swings, see nbLimitJointRotation
+	b3CosSin lowerHalf;
+	b3CosSin upperHalf;
+	b3CosSin coneHalf;
 
 	// Scales the torque limit, the stiffness and the damping ratio of the motor profile for this joint
 	float strength;

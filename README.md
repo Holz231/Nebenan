@@ -1478,7 +1478,12 @@ Farben, siehe „Gelenke in den Paketen“ in [docs/Roadmap.md](docs/Roadmap.md)
 je Schritt, ein Scharnier 1,20 µs und die Hilfe für das Becken 0,50 µs. Seit `ragdoll-9` rechnet ein Gelenk, was es von
 der Lage seiner Körper braucht, einmal je Teilschritt statt in jeder Stufe, bitgleich, und die Gelenke einer Figur
 kosten 20 % weniger, 12,8 statt 16,0 µs je Schritt. In der ruhigen Stadt mit 50 Figuren kostet der Box3D-Schritt mit 2
-Threads damit 0,55 statt 0,62 ms, siehe „Gelenke billiger“ in [docs/Roadmap.md](docs/Roadmap.md).
+Threads damit 0,55 statt 0,62 ms, siehe „Gelenke billiger“ in [docs/Roadmap.md](docs/Roadmap.md). Seit `ragdoll-11` ist
+der Humanoid eine Gliederpuppe aus 18 Körpern und 17 Gelenken statt 15 und 14, mit einem Rumpf aus Hüllen. Gepaart gegen
+`ragdoll-10`, sechs Läufe im Wechsel mit 1 Thread, kostet ein Bild der ruhigen Stadt mit 50 Figuren damit 1,34 statt
+1,08 ms: Box3D löst 1,05 statt 0,88 ms, die Kollision kostet 0,12 statt 0,06 ms, und das Update braucht je Figur 1,64
+statt 1,37 µs. Unter Beschuss kostet ein Bild mit 50 Figuren 3,44 statt 2,90 ms, ohne Figuren rechnet die Stadt wie
+vorher, siehe „Gliederpuppe“ in [docs/Roadmap.md](docs/Roadmap.md).
 
 **Eine Stadt größer als der Speicher.** Im Benchmark fliegt eine Kamera mit 30 m/s 900 m weit durch eine Stadt aus
 65 536 Häusern auf 3,6 × 3,1 km und 300 m zurück, Bruchstückgröße ×4. Am Stück bräuchte sie 24 GB. Geladen sind die
@@ -1834,7 +1839,7 @@ Nach Änderungen an `demo/shaders/scene.glsl` die Shader neu erzeugen, im Ordner
   25 cm höher oder tiefer nimmt die Planung an, getestet ist nur ebener Boden.
 - Die Aufstehclips sind für den Humanoiden der Bibliothek gebaut und auf ebenem Boden getestet. Sie dauern 5,3 s vom
   Bauch und 6,5 s vom Rücken, länger als ein Mensch braucht, und so treffen Schutt und fallende Figuren sie öfter:
-  Unter Beschuss brachen im Benchmark 11 von 64 Stürzen das Aufstehen ab, mit der Kraft an der Brust 6. Die Hilfe für
+  Unter Beschuss brachen im Benchmark 11 von 65 Stürzen das Aufstehen ab, mit der Kraft an der Brust 6. Die Hilfe für
   das Becken dreht nur, wo die Füße stehen, entscheidet der Clip: Ein Fuß, der zu früh aufsetzt, oder Beine, die nicht
   zur Stellung der Füße passen, schieben die Figur über den Boden. Ist kein Platz, wartet sie, sie kriecht und rollt
   nicht (26.15). Aus dem ruhigen Stand umgeworfen, kippt sie erst nach rund einer Sekunde, weil nur die
@@ -1850,9 +1855,9 @@ Nach Änderungen an `demo/shaders/scene.glsl` die Shader neu erzeugen, im Ordner
   aus der Trägheit der Knochen in der Pose beim Setzen des Profils gerechnet.
 - Figuren kosten: 18 Körper, 17 Gelenke und ein Parallel-Joint je Humanoid, alle wach, solange ein Clip läuft. Die
   Balance liest je Update die Kontakte der Füße, im Schritt kommen ein Strahl, eine Überlappung und ein Schwung einer
-  Kugel dazu, beim Aufstehen die Kontakte aller Knochen und ein Motorgelenk für die Hilfe am Becken. Gemessen, siehe Leistung: rund 12 µs je Figur und Schritt in
-  Box3D und 1,2 bis 2,4 µs im Update der Bibliothek, auf dem aufrufenden Thread allein. 50 Figuren heben das mittlere
-  Bild der Stadt unter Beschuss von 1,1 auf 1,8 ms.
+  Kugel dazu, beim Aufstehen die Kontakte aller Knochen und ein Motorgelenk für die Hilfe am Becken. Gemessen mit
+  1 Thread, siehe Leistung: rund 23 µs je Figur und Schritt in Box3D und 1,6 bis 1,8 µs im Update der Bibliothek, auf
+  dem aufrufenden Thread allein. 50 Figuren heben das mittlere Bild der Stadt unter Beschuss von 1,8 auf 3,4 ms.
 - Der Keypoint-Import braucht Punkte in 3D und in Metern, wie MediaPipe sie als Weltkoordinaten liefert. Aus den
   2D-Punkten eines Bildes oder aus mehreren Ansichten rekonstruiert er nichts (32.5). Beugt sich jemand in der Hüfte,
   kippt das Becken mit, denn ohne Punkte an der Wirbelsäule richtet es sich nach Hüften und Schultern, und den Rücken
