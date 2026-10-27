@@ -129,37 +129,37 @@ vergleicht dort verschiedene Szenen. Im Benchmark enden die Städte fast gleich,
   Aufbau des Lösers 3 %, und von den Einschlägen ist jeder Teil, Box3D-Körper, Einbau, Suche und Teilen der Akteure, 1
   bis 2 %, siehe „Wohin ein Typwechsel und ein Einschlag ihre Zeit geben“. Anlegen und Zustandswechsel der Kontakte sind
   6 bis 9 %, aber nur mit einem großen Umbau von Box3D zu holen, siehe Schritt 9. Dessen erste Stufe, die neuen Kontakte
-  parallel anzulegen, lohnte auf `physik-41` nicht, gebaut ist stattdessen „Vorausladen zum Schreiben“. Den Aufbau des
-  Lösers teilt sich der aufrufende Thread seit `kollaps-10` mit zwei Workern, siehe Schritt 32. Was er daneben an den
-  Knoten baut, lässt sich kaum verteilen: Nur knapp die Hälfte rechnet jeden Kontakt für sich, und auf die wartenden
-  Worker verteilt spart das mit 8 Threads rund 0,013 ms, siehe Schritt 57. Die Zustandswechsel der Kontakte lassen sich
-  ebenso wenig auf den Workern vorbereiten: Fast alles daran ändert, was der nächste Wechsel liest, siehe Schritt 58.
-  Weniger Durchgänge beim Aufbau der Knoten sparen auf dem Ryzen nur rund 0,005 ms, siehe Schritt 59. Auch das Erstarren
-  des Schutts lässt sich kaum vorbereiten: Zwei Drittel davon sind die Typwechsel in Box3D, die Kontakte, Sätze, Inseln
-  und Bäume in fester Reihenfolge ändern, siehe Schritt 60. Ebenso das Anlegen der Kontakte: Die Hälfte davon wartet auf
-  die Zeilen, die der aufrufende Thread selbst schreibt, siehe Schritt 63. Die Kontakt-Schleife misst Box3D seit
-  `kollaps-11` selbst: Auf der VM warten die Threads mit 4 Threads 7 % ihrer Zeit, vor allem am Ende auf die teuersten
-  Blöcke, und seit sie die Blöcke von beiden Enden nehmen, noch 4 %, siehe Schritt 38 und 39. Auf dem Ryzen warten sie
-  mit 8 Threads 4,3 %, die Kontakt-Schleife skaliert, siehe Schritt 40. Die Ruhe-Prüfung misst Nebenan seit `kollaps-12`
-  selbst: Auf der VM geht sie fast ganz in den Blick auf das, was die ruhigen Stücke trägt, und mit 4 Threads warteten
-  die Threads 12 % ihrer Zeit auf große ruhige Stücke, seit die Blöcke mit großen Stücken zuerst drankommen, noch 4 %,
-  siehe Schritt 41 und 42. Auf dem Ryzen warten sie mit 8 Threads 19 % ihrer Zeit nach ihrem letzten Block, und der
-  Blick auf ein ruhiges Stück geht auf der VM zu 61 % in die Liste seiner Kontakte in Box3D, siehe Schritt 43. Seit
-  `kollaps-13` läuft Box3D die Listen aller ruhigen Stücke eines Blocks nebeneinander ab: Beim Abriss auf der VM kostet
-  der Blick damit halb so viel und die Prüfungen 40 bis 42 % weniger, siehe Schritt 44. Auf dem Ryzen kosten die
-  Prüfungen damit mit einem Thread 27 % weniger und mit 8 Threads 7 %, und mit 8 Threads warten die Threads ein Viertel
-  ihrer Zeit auf den Blick auf einzelne große Stücke, siehe Schritt 45. Seit `kollaps-14` ist der Blick auf große Stücke
-  billiger: Beim Abriss auf der VM kosten die Prüfungen mit 4 Threads 14 % weniger, und am Ende warten die Threads 68 %
-  kürzer, siehe Schritt 46. Auf dem Ryzen kosten die Prüfungen damit mit 8 Threads 18 % weniger, mit einem Thread 2 %.
-  Am meisten kostet beim größten Stück jetzt das Ablaufen seiner Liste in Box3D, und bei allen Stücken berühren vier von
-  fünf Einträgen darin nicht, siehe Schritt 47. Seit `kollaps-15` läuft Box3D für die Prüfungen nur noch die berührenden
-  Kontakte ab: Beim Abriss auf der VM kostet der Blick damit 20 bis 24 % weniger und die Prüfungen 13 bis 20 %, die
-  Pflege der Listen kostet in der seriellen Schleife der Zustandswechsel 0,014 bis 0,024 ms pro Schritt, siehe
-  Schritt 48. Auf dem Ryzen kosten die Prüfungen damit 8 bis 12 % weniger, aber mit 8 Threads kostet die Pflege der
-  Listen samt dem Anlegen der Kontakte so viel, wie das Update spart, und die Threads warten 17 % ihrer Zeit nach ihrem
-  letzten Block, siehe Schritt 49. Kleinere Blöcke brächten dort nach einer Simulation höchstens 0,002 ms pro Update,
-  denn sie kosten zusammen mehr, und in fast einem Viertel der Updates dauert der längste Block allein länger als ein
-  Achtel der Arbeit, siehe Schritt 50.
+  parallel anzulegen, lohnte auf `physik-41` nicht, gebaut ist stattdessen „Vorausladen zum Schreiben“. Am 27. Oktober
+  hat der Nutzer den Umbau ganz verworfen, siehe Schritt 63. Den Aufbau des Lösers teilt sich der aufrufende Thread seit
+  `kollaps-10` mit zwei Workern, siehe Schritt 32. Was er daneben an den Knoten baut, lässt sich kaum verteilen: Nur
+  knapp die Hälfte rechnet jeden Kontakt für sich, und auf die wartenden Worker verteilt spart das mit 8 Threads rund
+  0,013 ms, siehe Schritt 57. Die Zustandswechsel der Kontakte lassen sich ebenso wenig auf den Workern vorbereiten:
+  Fast alles daran ändert, was der nächste Wechsel liest, siehe Schritt 58. Weniger Durchgänge beim Aufbau der Knoten
+  sparen auf dem Ryzen nur rund 0,005 ms, siehe Schritt 59. Auch das Erstarren des Schutts lässt sich kaum vorbereiten:
+  Zwei Drittel davon sind die Typwechsel in Box3D, die Kontakte, Sätze, Inseln und Bäume in fester Reihenfolge ändern,
+  siehe Schritt 60. Ebenso das Anlegen der Kontakte: Die Hälfte davon wartet auf die Zeilen, die der aufrufende Thread
+  selbst schreibt, siehe Schritt 63. Die Kontakt-Schleife misst Box3D seit `kollaps-11` selbst: Auf der VM warten die
+  Threads mit 4 Threads 7 % ihrer Zeit, vor allem am Ende auf die teuersten Blöcke, und seit sie die Blöcke von beiden
+  Enden nehmen, noch 4 %, siehe Schritt 38 und 39. Auf dem Ryzen warten sie mit 8 Threads 4,3 %, die Kontakt-Schleife
+  skaliert, siehe Schritt 40. Die Ruhe-Prüfung misst Nebenan seit `kollaps-12` selbst: Auf der VM geht sie fast ganz in
+  den Blick auf das, was die ruhigen Stücke trägt, und mit 4 Threads warteten die Threads 12 % ihrer Zeit auf große
+  ruhige Stücke, seit die Blöcke mit großen Stücken zuerst drankommen, noch 4 %, siehe Schritt 41 und 42. Auf dem Ryzen
+  warten sie mit 8 Threads 19 % ihrer Zeit nach ihrem letzten Block, und der Blick auf ein ruhiges Stück geht auf der VM
+  zu 61 % in die Liste seiner Kontakte in Box3D, siehe Schritt 43. Seit `kollaps-13` läuft Box3D die Listen aller
+  ruhigen Stücke eines Blocks nebeneinander ab: Beim Abriss auf der VM kostet der Blick damit halb so viel und die
+  Prüfungen 40 bis 42 % weniger, siehe Schritt 44. Auf dem Ryzen kosten die Prüfungen damit mit einem Thread 27 %
+  weniger und mit 8 Threads 7 %, und mit 8 Threads warten die Threads ein Viertel ihrer Zeit auf den Blick auf einzelne
+  große Stücke, siehe Schritt 45. Seit `kollaps-14` ist der Blick auf große Stücke billiger: Beim Abriss auf der VM
+  kosten die Prüfungen mit 4 Threads 14 % weniger, und am Ende warten die Threads 68 % kürzer, siehe Schritt 46. Auf dem
+  Ryzen kosten die Prüfungen damit mit 8 Threads 18 % weniger, mit einem Thread 2 %. Am meisten kostet beim größten
+  Stück jetzt das Ablaufen seiner Liste in Box3D, und bei allen Stücken berühren vier von fünf Einträgen darin nicht,
+  siehe Schritt 47. Seit `kollaps-15` läuft Box3D für die Prüfungen nur noch die berührenden Kontakte ab: Beim Abriss
+  auf der VM kostet der Blick damit 20 bis 24 % weniger und die Prüfungen 13 bis 20 %, die Pflege der Listen kostet in
+  der seriellen Schleife der Zustandswechsel 0,014 bis 0,024 ms pro Schritt, siehe Schritt 48. Auf dem Ryzen kosten die
+  Prüfungen damit 8 bis 12 % weniger, aber mit 8 Threads kostet die Pflege der Listen samt dem Anlegen der Kontakte so
+  viel, wie das Update spart, und die Threads warten 17 % ihrer Zeit nach ihrem letzten Block, siehe Schritt 49.
+  Kleinere Blöcke brächten dort nach einer Simulation höchstens 0,002 ms pro Update, denn sie kosten zusammen mehr, und
+  in fast einem Viertel der Updates dauert der längste Block allein länger als ein Achtel der Arbeit, siehe Schritt 50.
 - **Der Löser hing am Überlauf des Graphen.** Kontakte, für die keine der 20 Farben frei ist, löst Box3D auf dem
   aufrufenden Thread allein. Beim Abriss sind das die Kontakte an Knoten: große abgebrochene Teile aus Dutzenden bis
   Hunderten Bruchstücken, an denen Hunderte kleine Trümmer liegen, siehe „Der Überlauf beim Abriss“. Seit `physik-22`
@@ -210,7 +210,7 @@ bleiben.
 | 8 | **Kompakte Paare** statt Kontakte für nicht berührende Paare, ändert die Ergebnisse | 2 bis 4 % | 2 | ⛔ verworfen am 20. Oktober: Die vollen Tests bleiben auch mit kompakten Paaren, auf dem Ryzen wären mit 8 Threads 1 bis 2 % zu holen, und Box3D bekäme für jedes Paar zwei Wege |
 | 11 | **Überlauf in unabhängigen Gruppen** auf mehreren Threads, bitgleich | höchstens 1 bis 2 %: der Überlauf ist mit 8 Threads noch 4 und 6 % des Frames | 2c | ⛔ gezählt am 20. Oktober: Beim Abriss trägt die größte Gruppe bei ×2 88 bis 90 % des Überlaufs, den der aufrufende Thread allein rechnet, bei ×4 78 bis 79 %. Er würde höchstens 10 und 22 % kürzer, auf dem Ryzen rund 0,02 ms pro Schritt, für zwölf Sperren mehr |
 | 2b | **Schwelle zwischen Paketen und Farben nach Threads**: Box3D nimmt Farben erst über der Hälfte, bitgleich | allein nichts: Farben und Pakete stehen mit 8 Threads beide bei einem Drittel der Zeit eines Threads | 12 | ✅ in 4 aufgegangen: Ein Team nimmt das größte Paket ab fünf Vierteln des Anteils eines Workers, auch über der Hälfte |
-| 9 | **Buchhaltung von Box3D pro Schritt neu bauen**, großer Umbau über Monate, ändert die Ergebnisse | höchstens 4 bis 6 % | 2 | ⛔ nach der ersten Stufe verworfen am 20. Oktober: Neue Kontakte parallel anzulegen kostete mit 4 Threads 3 bis 10 % mehr als die serielle Schleife, die seit `physik-41` zum Schreiben vorauslädt. Hochgerechnet auf 8 Threads blieben höchstens 0,03 ms pro Schritt |
+| 9 | **Buchhaltung von Box3D pro Schritt neu bauen**, großer Umbau über Monate, ändert die Ergebnisse | höchstens 4 bis 6 % | 2 | ⛔ nach der ersten Stufe verworfen am 20. Oktober: Neue Kontakte parallel anzulegen kostete mit 4 Threads 3 bis 10 % mehr als die serielle Schleife, die seit `physik-41` zum Schreiben vorauslädt. Hochgerechnet auf 8 Threads blieben höchstens 0,03 ms pro Schritt. Am 27. Oktober vom Nutzer ganz verworfen: Zustandswechsel, Erstarren und Anlegen warten vor allem auf die Zeilen, die sie selbst schreiben, siehe 58, 60 und 63, zusammen auf dem Ryzen rund 0,16 ms pro Schritt |
 | 23 | **Budget auf den Workern**: Die Worker prüfen vorab, was über dem Budget erstarren darf, der aufrufende Thread nimmt eine Prüfung, solange nichts erstarrt ist, was sie gelesen hat, bitgleich | ×4 5 bis 7 % auf der VM | – | ✅ auf `kollaps-5`: auf der VM mit 4 Threads bei ×4 das Budget 24 % und das Update 14 % billiger |
 | 24 | **Manifolds der Worker**: In der Kontakt-Schleife holt jeder Worker Manifolds aus einem eigenen Vorrat statt einzeln unter der Sperre, bitgleich | ×4 1 bis 2 % auf der VM | – | ✅ auf `kollaps-5`: auf der VM mit 4 Threads bei ×4 die Kontakt-Schleife 7 bis 9 % billiger |
 | 25 | **Auf dem Ryzen nachmessen**: „Parallel gegen nacheinander messen“ und „Skalierung messen“ mit `kollaps-5` beim Abriss | entscheidet 26, ergab 27 | 23 und 24 | ✅ „Parallel gegen nacheinander“ am 23. Oktober: parallel 7,6 % langsamer, die Grafik kostet auf der RTX nur noch 0,24 ms, und der Schritt verliert 18 %, solange der Hauptthread zeichnet. „Skalierung messen“ am 23. Oktober mit `kollaps-6`: Die Worker laufen nach 6 bis 7 µs an, mit 8 Threads bleiben 60 % auf einem Thread, und der Überlauf an Knoten kostet 0,43 ms pro Schritt |
@@ -1274,6 +1274,15 @@ Threads verteilt, jetzt auch bei ×4. Was sie zeigt, entscheidet so:
   nach seinen Teilen zu messen, der größte zuerst.
 - **Nichts davon**: Sonst bleibt in der Physik mit 8 Threads nur, was ein großer Umbau holt, und als Nächstes kommt die
   Grafik.
+
+Am 27. Oktober hat der Nutzer den Umbau der Buchhaltung von Box3D, Schritt 9, ganz verworfen. Die Zustandswechsel, das
+Erstarren und das Anlegen der Kontakte kosten auf dem Ryzen mit 8 Threads zusammen rund 0,16 ms pro Schritt, und die
+Schritte 58, 60 und 63 zeigen, dass ihre Schleifen vor allem auf die Zeilen warten, die sie selbst schreiben. Mehr holte
+auch ein Neubau nicht, für Monate Arbeit und andere Ergebnisse. Als großer Umbau bleiben die dauerhaften Gebiete: Box3D
+führte die Gebiete der großen Inseln wie die Farben im Graphen über die Schritte. Jeder Körper gehörte fest zu einem,
+jeder Kontakt bekäme Gebiet und Farbe, wenn er zu berühren beginnt, und neu geschnitten würde nur selten. Dann fiele der
+Aufbau weg, an dem der Prototyp von Schritt 62 mit einem Thread scheiterte, und die Sperren zwischen den Farben blieben
+weg. Ob diese Sperren mit 8 Threads der größte Posten bleiben, zeigt Schritt 64.
 
 ## Kleinere Punkte
 
