@@ -127,11 +127,26 @@ void b3PrepareContacts_Mesh( b3SolverBlock block, b3StepContext* context )
 				iB = simB->invInertiaWorld;
 			}
 
+			// Added for Nebenan: in a domain the bodies solve on their copies, which carry their share of the mass, see
+			// b3Domains
+			const b3ContactPrepareSpan* span = spans + colorIndex;
+			int slotA = indexA;
+			int slotB = indexB;
+			if ( span->slotA != NULL )
+			{
+				slotA = span->slotA[localIndex];
+				slotB = span->slotB[localIndex];
+				mA *= span->scaleA[localIndex];
+				mB *= span->scaleB[localIndex];
+				iA = b3MulSM( span->scaleA[localIndex], iA );
+				iB = b3MulSM( span->scaleB[localIndex], iB );
+			}
+
 			int manifoldCount = contact->manifoldCount;
 			contactConstraint->contact = contact;
 			contactConstraint->manifoldCount = manifoldCount;
-			contactConstraint->indexA = indexA;
-			contactConstraint->indexB = indexB;
+			contactConstraint->indexA = slotA;
+			contactConstraint->indexB = slotB;
 			contactConstraint->invIA = iA;
 			contactConstraint->invMassA = mA;
 			contactConstraint->invIB = iB;
@@ -1079,6 +1094,18 @@ void b3ApplyKnotRestitution( b3StepContext* context, int startBatch, int endBatc
 	}
 #endif
 	b3ApplyKnotRestitutionW4( context, startBatch, endBatch );
+}
+
+void b3SolveDomainContacts( b3SolverStageType type, b3StepContext* context, int start, int end )
+{
+#if defined( B3_SIMD_HAS_WIDTH_8 )
+	if ( context->world->simdWidth == 8 )
+	{
+		b3SolveDomainContactsW8( type, context, start, end );
+		return;
+	}
+#endif
+	b3SolveDomainContactsW4( type, context, start, end );
 }
 
 void b3PrepareContacts_Overflow( b3StepContext* context )

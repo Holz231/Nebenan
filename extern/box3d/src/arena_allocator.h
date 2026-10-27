@@ -8,7 +8,9 @@
 #include <stdbool.h>
 #include <stddef.h>
 
-#define B3_MAX_STACK_ENTRIES 32
+// Added for Nebenan: 48 instead of 32. A step with domains holds two more, see b3Domains, while the split of an island takes
+// its own on another thread.
+#define B3_MAX_STACK_ENTRIES 48
 
 typedef struct b3StackEntry
 {
