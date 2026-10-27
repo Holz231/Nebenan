@@ -132,6 +132,10 @@ typedef struct b3Body
 	// Used to check for invalid b3BodyId
 	uint16_t generation;
 
+	// Added for Nebenan: the domain of the body in an island with domains, -1 otherwise, see b3Island::domains. It fills
+	// the padding before headTouchKey.
+	int8_t domain;
+
 	// Added for Nebenan: the first of the touching contacts of the body, the one that started touching last, see
 	// b3ContactTouch. [31 : contactId | 1 : edgeIndex]. Always B3_NULL_INDEX for a static body. It fills the padding at the
 	// end, a body stays the same size.

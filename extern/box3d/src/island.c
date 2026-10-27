@@ -4,6 +4,7 @@
 #include "island.h"
 
 #include "body.h"
+#include "constraint_graph.h"
 #include "contact.h"
 #include "core.h"
 #include "id_pool.h"
@@ -40,6 +41,11 @@ b3Island* b3CreateIsland( b3World* world, int setIndex )
 	b3Array_Create( island->joints );
 	island->constraintRemoveCount = 0;
 
+	// Added for Nebenan
+	island->domains = false;
+	memset( island->domainContacts, 0, sizeof( island->domainContacts ) );
+	island->domainCutStep = 0;
+
 	b3IslandSim* islandSim = b3Array_Emplace( set->islandSims );
 	islandSim->islandId = islandId;
 
@@ -71,6 +77,7 @@ void b3DestroyIsland( b3World* world, int islandId )
 	b3Array_Destroy( island->contacts );
 	b3Array_Destroy( island->joints );
 	island->constraintRemoveCount = 0;
+	island->domains = false; // Added for Nebenan
 	island->localIndex = B3_NULL_INDEX;
 	island->islandId = B3_NULL_INDEX;
 	island->setIndex = B3_NULL_INDEX;
@@ -78,8 +85,45 @@ void b3DestroyIsland( b3World* world, int islandId )
 	b3FreeId( &world->islandIdPool, islandId );
 }
 
-static int b3MergeIslands( b3World* world, int islandIdA, int islandIdB )
+void b3RemoveIslandDomains( b3World* world, b3Island* island )
 {
+	if ( island->domains == false )
+	{
+		return;
+	}
+
+	// The touching contacts of an awake island lie in the graph, those of a sleeping one in its set
+	for ( int i = 0; i < island->contacts.count; ++i )
+	{
+		b3Contact* contact = b3Array_Get( world->contacts, island->contacts.data[i].contactId );
+		if ( contact->colorIndex != B3_NULL_INDEX )
+		{
+			b3SetContactDomain( world, contact, -1 );
+		}
+		B3_ASSERT( b3GetContactDomain( contact ) == -1 );
+	}
+
+	for ( int i = 0; i < island->bodies.count; ++i )
+	{
+		b3Array_Get( world->bodies, island->bodies.data[i] )->domain = -1;
+	}
+
+	island->domains = false;
+	for ( int d = 0; d < B3_DOMAINS; ++d )
+	{
+		B3_ASSERT( island->domainContacts[d] == 0 );
+		island->domainContacts[d] = 0;
+	}
+}
+
+// Added for Nebenan: absorbBody and absorbContact tell where the bodies and contacts of an island without domains start
+// in one with domains it joins, else B3_NULL_INDEX, see b3LinkContact. Of a small island with domains that joins a big
+// one without them, the contacts go back to the colors.
+static int b3MergeIslands( b3World* world, int islandIdA, int islandIdB, int* absorbBody, int* absorbContact )
+{
+	*absorbBody = B3_NULL_INDEX;
+	*absorbContact = B3_NULL_INDEX;
+
 	if ( islandIdA == islandIdB )
 	{
 		return islandIdA;
@@ -113,6 +157,28 @@ static int b3MergeIslands( b3World* world, int islandIdA, int islandIdB )
 		{
 			bigIsland = islandB;
 			smallIsland = islandA;
+		}
+	}
+
+	// Added for Nebenan: the domains of the big island stay, see b3Island::domains
+	if ( smallIsland->domains && bigIsland->domains == false )
+	{
+		b3RemoveIslandDomains( world, smallIsland );
+	}
+
+	if ( bigIsland->domains )
+	{
+		if ( smallIsland->domains )
+		{
+			for ( int d = 0; d < B3_DOMAINS; ++d )
+			{
+				bigIsland->domainContacts[d] += smallIsland->domainContacts[d];
+			}
+		}
+		else
+		{
+			*absorbBody = bigIsland->bodies.count;
+			*absorbContact = bigIsland->contacts.count;
 		}
 	}
 
@@ -224,7 +290,34 @@ void b3LinkContact( b3World* world, b3Contact* contact )
 	B3_ASSERT( islandIdA != B3_NULL_INDEX || islandIdB != B3_NULL_INDEX );
 
 	// Merge islands. This will destroy one of the islands.
-	int finalIslandId = b3MergeIslands( world, islandIdA, islandIdB );
+	int absorbBody, absorbContact;
+	int finalIslandId = b3MergeIslands( world, islandIdA, islandIdB, &absorbBody, &absorbContact );
+
+	// Added for Nebenan: the bodies of an island without domains that joins one with domains take the domain of the body of
+	// this contact that was there already, and their contacts go to their domains, see b3Island::domains
+	if ( absorbBody != B3_NULL_INDEX )
+	{
+		b3Island* island = b3Array_Get( world->islands, finalIslandId );
+		const b3Body* inside = bodyA->islandIndex < absorbBody ? bodyA : bodyB;
+		B3_ASSERT( inside->islandIndex < absorbBody && 0 <= inside->domain );
+		for ( int i = absorbBody; i < island->bodies.count; ++i )
+		{
+			b3Array_Get( world->bodies, island->bodies.data[i] )->domain = inside->domain;
+		}
+
+		for ( int i = absorbContact; i < island->contacts.count; ++i )
+		{
+			const b3ContactLink* link = island->contacts.data + i;
+			b3Contact* other = b3Array_Get( world->contacts, link->contactId );
+			B3_ASSERT( other->setIndex == b3_awakeSet && other->colorIndex != B3_NULL_INDEX );
+			if ( ( other->flags & b3_simMeshContact ) == 0 )
+			{
+				const b3Body* otherA = b3Array_Get( world->bodies, link->bodyIdA );
+				const b3Body* otherB = b3Array_Get( world->bodies, link->bodyIdB );
+				b3SetContactDomain( world, other, b3GetAnchorDomain( otherA, otherB ) );
+			}
+		}
+	}
 
 	// Add contact to the island that survived
 	b3AddContactToIsland( world, finalIslandId, contact );
@@ -301,7 +394,11 @@ void b3LinkJoint( b3World* world, b3Joint* joint )
 	B3_ASSERT( islandIdA != B3_NULL_INDEX || islandIdB != B3_NULL_INDEX );
 
 	// Merge islands. This will destroy one of the islands.
-	int finalIslandId = b3MergeIslands( world, islandIdA, islandIdB );
+	int absorbBody, absorbContact;
+	int finalIslandId = b3MergeIslands( world, islandIdA, islandIdB, &absorbBody, &absorbContact );
+
+	// Added for Nebenan: an island with joints solves in the colors, see b3Island::domains
+	b3RemoveIslandDomains( world, b3Array_Get( world->islands, finalIslandId ) );
 
 	// Add joint the island that survived
 	b3AddJointToIsland( world, finalIslandId, joint );
@@ -406,6 +503,10 @@ void b3SplitIsland( b3World* world, int baseId )
 	int baseJointCount = baseIsland->joints.count;
 	b3JointLink* baseJoints = baseIsland->joints.data;
 	int baseJointCapacity = baseIsland->joints.capacity;
+
+	// Added for Nebenan: the parts keep the domains of the island, see b3Island::domains
+	bool baseDomains = baseIsland->domains;
+	int baseCutStep = baseIsland->domainCutStep;
 
 	b3Stack* alloc = &world->stack;
 
@@ -564,6 +665,8 @@ void b3SplitIsland( b3World* world, int baseId )
 		// WARNING: this invalidates baseIsland pointer
 		b3Island* newIsland = b3CreateIsland( world, b3_awakeSet );
 		islandIds[i] = newIsland->islandId;
+		newIsland->domains = baseDomains; // Added for Nebenan
+		newIsland->domainCutStep = baseCutStep;
 
 		// Reserve arrays to avoid wasteful growth and memcpy.
 		b3Array_Reserve( newIsland->bodies, componentBodyCounts[i] );
@@ -603,6 +706,13 @@ void b3SplitIsland( b3World* world, int baseId )
 		b3Island* targetIsland = b3Array_Get( world->islands, targetIslandId );
 		contact->islandId = targetIslandId;
 		contact->islandIndex = targetIsland->contacts.count;
+
+		// Added for Nebenan
+		int domain = b3GetContactDomain( contact );
+		if ( domain >= 0 )
+		{
+			targetIsland->domainContacts[domain] += 1;
+		}
 
 		// Ensure the array has the correct capacity
 		B3_VALIDATE( targetIsland->contacts.count < targetIsland->contacts.capacity );

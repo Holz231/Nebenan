@@ -49,6 +49,10 @@ typedef struct b3GraphColor
 	b3Array( int ) convexContacts;
 	b3Array( b3ContactSpec ) contacts;
 
+	// Added for Nebenan: the convex contacts of the islands with domains in this color, domain by domain, apart from
+	// convexContacts, see b3Island::domains. The overflow of the domains lies in b3ConstraintGraph::domainOverflow.
+	b3Array( int ) domainContacts[B3_DOMAINS];
+
 	// These are used for convex contacts
 	void* wideConstraints; // Added for Nebenan: in the width of the world
 	int wideConstraintCount;
@@ -64,13 +68,33 @@ typedef struct b3ConstraintGraph
 {
 	// including overflow at the end
 	b3GraphColor colors[B3_GRAPH_COLOR_COUNT];
+
+	// Added for Nebenan: the contacts of the islands with domains in the overflow, domain by domain
+	b3Array( b3ContactSpec ) domainOverflow[B3_DOMAINS];
 } b3ConstraintGraph;
+
+// Added for Nebenan: per body id how many contacts of the body lie in each domain, see b3Island::domains
+typedef struct b3DomainCounts
+{
+	uint16_t counts[B3_DOMAINS];
+} b3DomainCounts;
+
+b3DeclareArray( b3DomainCounts );
 
 void b3CreateGraph( b3ConstraintGraph* graph, int bodyCapacity );
 void b3DestroyGraph( b3ConstraintGraph* graph );
 
 void b3AddContactToGraph( b3World* world, b3Contact* contact );
-void b3RemoveContactFromGraph( b3World* world, int bodyIdA, int bodyIdB, int colorIndex, int localIndex, bool meshContact );
+
+// Added for Nebenan: the contact itself for its domain, see b3GetContactDomain, which this clears
+void b3RemoveContactFromGraph( b3World* world, b3Contact* contact, int bodyIdA, int bodyIdB, int colorIndex, int localIndex,
+							   bool meshContact );
+
+// Added for Nebenan: moves a touching contact of the awake set to a domain, -1 for none, in its color, see b3Island::domains
+void b3SetContactDomain( b3World* world, b3Contact* contact, int domain );
+
+// Added for Nebenan: the domain a contact of an island with domains goes to, that of its body with fewer contacts
+int b3GetAnchorDomain( const b3Body* bodyA, const b3Body* bodyB );
 
 b3JointSim* b3CreateJointInGraph( b3World* world, b3Joint* joint );
 void b3AddJointToGraph( b3World* world, b3JointSim* jointSim, b3Joint* joint );

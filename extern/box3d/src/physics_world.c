@@ -478,6 +478,7 @@ void b3DestroyWorld( b3WorldId worldId )
 
 	b3Array_Destroy( world->sensors );
 	b3Array_Destroy( world->bodies );
+	b3Array_Destroy( world->bodyDomainCounts ); // Added for Nebenan
 
 	int shapeCapacity = world->shapes.count;
 	b3Shape* shapes = world->shapes.data;
@@ -1151,6 +1152,16 @@ static void b3Collide( b3StepContext* context )
 	for ( int i = 0; i < B3_GRAPH_COLOR_COUNT; ++i )
 	{
 		touchingCount += graphColors[i].convexContacts.count + graphColors[i].contacts.count;
+
+		// Added for Nebenan: the contacts of the domains, see b3Island::domains
+		for ( int d = 0; d < B3_DOMAINS; ++d )
+		{
+			touchingCount += graphColors[i].domainContacts[d].count;
+		}
+	}
+	for ( int d = 0; d < B3_DOMAINS; ++d )
+	{
+		touchingCount += world->constraintGraph.domainOverflow[d].count;
 	}
 
 	b3SolverSet* awakeSet = b3Array_Get( world->solverSets, b3_awakeSet );
@@ -1182,6 +1193,28 @@ static void b3Collide( b3StepContext* context )
 		for ( int j = 0; j < count; ++j )
 		{
 			contactIndices[contactIndex] = color->contacts.data[j].contactId;
+			contactIndex += 1;
+		}
+
+		// Added for Nebenan: the contacts of the domains, see b3Island::domains
+		for ( int d = 0; d < B3_DOMAINS; ++d )
+		{
+			count = color->domainContacts[d].count;
+			for ( int j = 0; j < count; ++j )
+			{
+				contactIndices[contactIndex] = color->domainContacts[d].data[j];
+				contactIndex += 1;
+			}
+		}
+	}
+
+	for ( int d = 0; d < B3_DOMAINS; ++d )
+	{
+		const b3ContactSpec* specs = world->constraintGraph.domainOverflow[d].data;
+		int count = world->constraintGraph.domainOverflow[d].count;
+		for ( int j = 0; j < count; ++j )
+		{
+			contactIndices[contactIndex] = specs[j].contactId;
 			contactIndex += 1;
 		}
 	}
@@ -1445,7 +1478,7 @@ static void b3Collide( b3StepContext* context )
 				b3AddNonTouchingContact( world, contact );
 
 				bool isMeshContact = contact->flags & b3_simMeshContact;
-				b3RemoveContactFromGraph( world, bodyIdA, bodyIdB, colorIndex, localIndex, isMeshContact );
+				b3RemoveContactFromGraph( world, contact, bodyIdA, bodyIdB, colorIndex, localIndex, isMeshContact );
 				contact = NULL;
 			}
 		}
@@ -1474,6 +1507,16 @@ static int b3GetStepWorkerCount( b3World* world )
 	for ( int i = 0; i < B3_GRAPH_COLOR_COUNT; ++i )
 	{
 		count += colors[i].convexContacts.count + colors[i].contacts.count + colors[i].jointSims.count;
+
+		// Added for Nebenan: the contacts of the domains, see b3Island::domains
+		for ( int d = 0; d < B3_DOMAINS; ++d )
+		{
+			count += colors[i].domainContacts[d].count;
+		}
+	}
+	for ( int d = 0; d < B3_DOMAINS; ++d )
+	{
+		count += world->constraintGraph.domainOverflow[d].count;
 	}
 	return b3ClampInt( count / B3_CONTACTS_PER_WORKER, 1, world->workerCount );
 }
@@ -2772,6 +2815,14 @@ b3Counters b3World_GetCounters( b3WorldId worldId )
 	{
 		b3GraphColor* color = world->constraintGraph.colors + i;
 		int colorContactCount = color->convexContacts.count + color->contacts.count;
+
+		// Added for Nebenan: with the contacts of the domains, see b3Island::domains
+		for ( int d = 0; d < B3_DOMAINS; ++d )
+		{
+			colorContactCount += color->domainContacts[d].count;
+			colorContactCount += i == B3_OVERFLOW_INDEX ? world->constraintGraph.domainOverflow[d].count : 0;
+		}
+
 		s.colorCounts[i] = colorContactCount + color->jointSims.count;
 		s.awakeContactCount += colorContactCount;
 	}
@@ -3090,6 +3141,13 @@ void b3World_DumpMemoryStats( b3WorldId worldId )
 		bodyBitSetBytes += b3GetBitSetBytes( &c->bodySet );
 		graphContactBytes += b3Array_ByteCount( c->convexContacts ) + b3Array_ByteCount( c->contacts );
 		graphJointSimBytes += b3Array_ByteCount( c->jointSims );
+
+		// Added for Nebenan: the contacts of the domains, see b3Island::domains
+		for ( int d = 0; d < B3_DOMAINS; ++d )
+		{
+			graphContactBytes += b3Array_ByteCount( c->domainContacts[d] );
+			graphContactBytes += i == 0 ? b3Array_ByteCount( world->constraintGraph.domainOverflow[d] ) : 0;
+		}
 	}
 	total += (uint64_t)bodyBitSetBytes + graphJointSimBytes + graphContactBytes;
 
@@ -4551,6 +4609,37 @@ void b3ValidateSolverSets( b3World* world )
 			}
 		}
 
+		// Added for Nebenan: the contacts of the domains, see b3Island::domains
+		for ( int d = 0; d < B3_DOMAINS; ++d )
+		{
+			int count = colorIndex == B3_OVERFLOW_INDEX ? world->constraintGraph.domainOverflow[d].count
+													  : color->domainContacts[d].count;
+			totalContactCount += count;
+			for ( int i = 0; i < count; ++i )
+			{
+				int contactId = colorIndex == B3_OVERFLOW_INDEX ? world->constraintGraph.domainOverflow[d].data[i].contactId
+															   : color->domainContacts[d].data[i];
+				b3Contact* contact = b3Array_Get( world->contacts, contactId );
+				B3_ASSERT( contact->manifoldCount > 0 || ( contact->flags & ( b3_simStoppedTouching | b3_simDisjoint ) ) != 0 );
+				B3_ASSERT( contact->setIndex == b3_awakeSet );
+				B3_ASSERT( contact->colorIndex == colorIndex );
+				B3_ASSERT( contact->localIndex == i );
+				B3_ASSERT( b3GetContactDomain( contact ) == d );
+				B3_ASSERT( ( contact->flags & b3_simMeshContact ) == 0 );
+
+				if ( colorIndex < B3_OVERFLOW_INDEX )
+				{
+					b3Body* bodyA = b3Array_Get( world->bodies, contact->edges[0].bodyId );
+					b3Body* bodyB = b3Array_Get( world->bodies, contact->edges[1].bodyId );
+					B3_ASSERT( b3GetBit( &color->bodySet, bodyA->id ) == ( bodyA->type == b3_dynamicBody ) );
+					B3_ASSERT( b3GetBit( &color->bodySet, bodyB->id ) == ( bodyB->type == b3_dynamicBody ) );
+
+					bitCount += bodyA->type == b3_dynamicBody ? 1 : 0;
+					bitCount += bodyB->type == b3_dynamicBody ? 1 : 0;
+				}
+			}
+		}
+
 		// Validate the bit population for this graph color
 		B3_ASSERT( bitCount == b3CountSetBits( &color->bodySet ) );
 	}
@@ -4646,7 +4735,21 @@ void b3ValidateContacts( b3World* world )
 			{
 				B3_ASSERT( 0 <= contact->colorIndex && contact->colorIndex < B3_GRAPH_COLOR_COUNT );
 
-				if ( ( contact->flags & b3_simMeshContact ) != 0 || contact->colorIndex == B3_OVERFLOW_INDEX )
+				// Added for Nebenan: a contact in a domain, see b3Island::domains
+				int domain = b3GetContactDomain( contact );
+				if ( domain >= 0 )
+				{
+					b3GraphColor* color = graph->colors + contact->colorIndex;
+					int contactId = contact->colorIndex == B3_OVERFLOW_INDEX
+										? b3Array_Get( graph->domainOverflow[domain], contact->localIndex )->contactId
+										: *b3Array_Get( color->domainContacts[domain], contact->localIndex );
+					B3_ASSERT( contactId == contactIndex );
+					b3Body* bodyA = b3Array_Get( world->bodies, contact->edges[0].bodyId );
+					b3Body* bodyB = b3Array_Get( world->bodies, contact->edges[1].bodyId );
+					B3_ASSERT( b3GetAnchorDomain( bodyA, bodyB ) >= 0 );
+					B3_ASSERT( b3Array_Get( world->islands, contact->islandId )->domains );
+				}
+				else if ( ( contact->flags & b3_simMeshContact ) != 0 || contact->colorIndex == B3_OVERFLOW_INDEX )
 				{
 					b3GraphColor* color = graph->colors + contact->colorIndex;
 					int contactId = b3Array_Get( color->contacts, contact->localIndex )->contactId;

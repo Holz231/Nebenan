@@ -958,6 +958,57 @@ B3_FORCE_INLINE bool b3PrepareContactWide( b3World* world, b3BodySim* sims, b3Bo
 	return haveRestitution;
 }
 
+// Added for Nebenan: for the lanes of a wide constraint of a domain the states their bodies solve on plus one and the
+// scales of their mass: a body with contacts in several domains solves on its copy in this one, which carries its share of
+// the mass, see b3Domains in src/solver.c
+B3_FORCE_INLINE void b3GetDomainLanes( const b3StepContext* context, const b3Contact* contacts, int domain, const int* contactIds,
+									   int laneCount, int* slotA, int* slotB, float* scaleA, float* scaleB )
+{
+	const uint8_t* masks = context->domainBodyMasks;
+	const int* copies = context->domainBodyCopies;
+	int copyBase = context->domainAwakeBodyCount + 1;
+	uint32_t before = ( 1u << domain ) - 1u;
+	for ( int lane = 0; lane < B3_SIMD_WIDTH; ++lane )
+	{
+		slotA[lane] = 0;
+		slotB[lane] = 0;
+		scaleA[lane] = 1.0f;
+		scaleB[lane] = 1.0f;
+		if ( lane >= laneCount || contactIds[lane] == B3_NULL_INDEX )
+		{
+			continue;
+		}
+
+		const b3Contact* contact = contacts + contactIds[lane];
+		int bodies[2] = { b3DecodeAwakeIndex( contact->encodedBodySimA ), b3DecodeAwakeIndex( contact->encodedBodySimB ) };
+		int slots[2] = { 0, 0 };
+		float scales[2] = { 1.0f, 1.0f };
+		for ( int e = 0; e < 2; ++e )
+		{
+			int body = bodies[e];
+			if ( body == B3_NULL_INDEX )
+			{
+				continue;
+			}
+
+			uint32_t mask = masks[body];
+			if ( ( mask & ( mask - 1 ) ) == 0 )
+			{
+				slots[e] = body + 1;
+				continue;
+			}
+
+			slots[e] = copyBase + copies[body] + b3PopCount64( mask & before );
+			scales[e] = (float)b3PopCount64( mask );
+		}
+
+		slotA[lane] = slots[0];
+		slotB[lane] = slots[1];
+		scaleA[lane] = scales[0];
+		scaleB[lane] = scales[1];
+	}
+}
+
 void B3_WIDE( b3PrepareContacts_Convex )( b3SolverBlock block, b3StepContext* context )
 {
 	b3TracyCZoneNC( prepare_contact, "Prepare Contact", b3_colorYellow, true );
@@ -991,6 +1042,7 @@ void B3_WIDE( b3PrepareContacts_Convex )( b3SolverBlock block, b3StepContext* co
 		const float* scaleB = spans[colorIndex].scaleB;
 		const int* slotA = spans[colorIndex].slotA;
 		const int* slotB = spans[colorIndex].slotB;
+		int domain = spans[colorIndex].domain;
 
 		// Loop over color
 		for ( ; wideIndex < colorWideEndIndex; ++wideIndex )
@@ -1018,10 +1070,26 @@ void B3_WIDE( b3PrepareContacts_Convex )( b3SolverBlock block, b3StepContext* co
 
 			int laneCount = b3MinInt( B3_SIMD_WIDTH, colorContactCount - B3_SIMD_WIDTH * localWideIndex );
 			int laneStart = B3_SIMD_WIDTH * localWideIndex;
-			bool haveRestitution = b3PrepareContactWide(
-				world, sims, states, c, contactIds + laneStart, laneCount, warmStartScale, scaleA != NULL ? scaleA + laneStart : NULL,
-				scaleB != NULL ? scaleB + laneStart : NULL, slotA != NULL ? slotA + laneStart : NULL,
-				slotB != NULL ? slotB + laneStart : NULL );
+			bool haveRestitution;
+			if ( domain >= 0 )
+			{
+				// Added for Nebenan: in a domain the bodies may solve on their copies, see b3GetDomainLanes
+				int laneSlotA[B3_SIMD_WIDTH];
+				int laneSlotB[B3_SIMD_WIDTH];
+				float laneScaleA[B3_SIMD_WIDTH];
+				float laneScaleB[B3_SIMD_WIDTH];
+				b3GetDomainLanes( context, world->contacts.data, domain, contactIds + laneStart, laneCount, laneSlotA, laneSlotB,
+								  laneScaleA, laneScaleB );
+				haveRestitution = b3PrepareContactWide( world, sims, states, c, contactIds + laneStart, laneCount, warmStartScale,
+														laneScaleA, laneScaleB, laneSlotA, laneSlotB );
+			}
+			else
+			{
+				haveRestitution = b3PrepareContactWide(
+					world, sims, states, c, contactIds + laneStart, laneCount, warmStartScale,
+					scaleA != NULL ? scaleA + laneStart : NULL, scaleB != NULL ? scaleB + laneStart : NULL,
+					slotA != NULL ? slotA + laneStart : NULL, slotB != NULL ? slotB + laneStart : NULL );
+			}
 			anyRestitution = anyRestitution || haveRestitution;
 		}
 

@@ -6,6 +6,7 @@
 #include "bitset.h"
 #include "body.h"
 #include "contact.h"
+#include "island.h"
 #include "joint.h"
 #include "physics_world.h"
 
@@ -70,7 +71,67 @@ void b3DestroyGraph( b3ConstraintGraph* graph )
 		b3Array_Destroy( color->convexContacts );
 		b3Array_Destroy( color->contacts );
 		b3Array_Destroy( color->jointSims );
+
+		// Added for Nebenan
+		for ( int d = 0; d < B3_DOMAINS; ++d )
+		{
+			b3Array_Destroy( color->domainContacts[d] );
+		}
 	}
+
+	// Added for Nebenan
+	for ( int d = 0; d < B3_DOMAINS; ++d )
+	{
+		b3Array_Destroy( graph->domainOverflow[d] );
+	}
+}
+
+// Added for Nebenan: counts a contact in or out of a domain at its bodies in an island and at that island, see
+// b3Island::domains. A static body is in no island and counts nothing.
+static void b3CountDomainContact( b3World* world, const b3Body* bodyA, const b3Body* bodyB, int domain, int delta )
+{
+	const b3Body* ends[2] = { bodyA, bodyB };
+	int islandId = B3_NULL_INDEX;
+	for ( int e = 0; e < 2; ++e )
+	{
+		const b3Body* body = ends[e];
+		if ( body->islandId == B3_NULL_INDEX )
+		{
+			continue;
+		}
+
+		islandId = body->islandId;
+		if ( body->id >= world->bodyDomainCounts.count )
+		{
+			int oldCount = world->bodyDomainCounts.count;
+			b3Array_Resize( world->bodyDomainCounts, world->bodies.count );
+			memset( world->bodyDomainCounts.data + oldCount, 0,
+					(size_t)( world->bodyDomainCounts.count - oldCount ) * sizeof( b3DomainCounts ) );
+		}
+
+		uint16_t* count = world->bodyDomainCounts.data[body->id].counts + domain;
+		B3_ASSERT( delta > 0 ? *count < UINT16_MAX : *count > 0 );
+		*count = (uint16_t)( *count + delta );
+	}
+
+	B3_ASSERT( islandId != B3_NULL_INDEX );
+	b3Island* island = b3Array_Get( world->islands, islandId );
+	island->domainContacts[domain] += delta;
+}
+
+int b3GetAnchorDomain( const b3Body* bodyA, const b3Body* bodyB )
+{
+	// A static body has no island. Of two bodies in the island the one with fewer contacts, so the contacts of a knot go
+	// to the domains of its partners, the lower id of two with as many.
+	const b3Body* anchor = bodyA->islandId != B3_NULL_INDEX ? bodyA : bodyB;
+	if ( bodyA->islandId != B3_NULL_INDEX && bodyB->islandId != B3_NULL_INDEX &&
+		 ( bodyB->contactCount < bodyA->contactCount || ( bodyB->contactCount == bodyA->contactCount && bodyB->id < bodyA->id ) ) )
+	{
+		anchor = bodyB;
+	}
+
+	B3_ASSERT( 0 <= anchor->domain && anchor->domain < B3_DOMAINS );
+	return anchor->domain;
 }
 
 // Contacts are always created as non-touching. They get cloned into the constraint
@@ -152,6 +213,35 @@ void b3AddContactToGraph( b3World* world, b3Contact* contact )
 	contact->encodedBodySimA = b3EncodeBodySimIndex( bodyA );
 	contact->encodedBodySimB = b3EncodeBodySimIndex( bodyB );
 
+	// Added for Nebenan: a convex contact of an island with domains lies in the domain of its body with fewer contacts, in
+	// the same color, see b3Island::domains. A mesh contact stays with the others, it keeps the solver from domains.
+	B3_ASSERT( b3GetContactDomain( contact ) == -1 );
+	if ( ( contact->flags & b3_simMeshContact ) == 0 && contact->islandId != B3_NULL_INDEX &&
+		 world->islands.data[contact->islandId].domains )
+	{
+		int domain = b3GetAnchorDomain( bodyA, bodyB );
+		if ( colorIndex == B3_OVERFLOW_INDEX )
+		{
+			B3_ASSERT( contact->manifoldCount < UINT16_MAX );
+			contact->localIndex = graph->domainOverflow[domain].count;
+			b3ContactSpec spec = {
+				.contactId = contact->contactId,
+				.manifoldStart = 0,
+				.manifoldCount = (uint16_t)contact->manifoldCount,
+			};
+			b3Array_Push( graph->domainOverflow[domain], spec );
+		}
+		else
+		{
+			contact->localIndex = color->domainContacts[domain].count;
+			b3Array_Push( color->domainContacts[domain], contact->contactId );
+		}
+
+		contact->flags |= (uint32_t)( domain + 1 ) << B3_CONTACT_DOMAIN_SHIFT;
+		b3CountDomainContact( world, bodyA, bodyB, domain, 1 );
+		return;
+	}
+
 	if ( isScalar )
 	{
 		B3_ASSERT( contact->manifoldCount < UINT16_MAX );
@@ -168,7 +258,123 @@ void b3AddContactToGraph( b3World* world, b3Contact* contact )
 	}
 }
 
-void b3RemoveContactFromGraph( b3World* world, int bodyIdA, int bodyIdB, int colorIndex, int localIndex, bool meshContact )
+// Added for Nebenan: takes a contact out of the array of its domain at colorIndex and localIndex, see b3Island::domains
+static void b3RemoveDomainContact( b3World* world, b3Contact* contact, int domain, int colorIndex, int localIndex )
+{
+	b3ConstraintGraph* graph = &world->constraintGraph;
+	if ( colorIndex == B3_OVERFLOW_INDEX )
+	{
+		int movedIndex = b3Array_RemoveSwap( graph->domainOverflow[domain], localIndex );
+		if ( movedIndex != B3_NULL_INDEX )
+		{
+			int movedContactId = graph->domainOverflow[domain].data[localIndex].contactId;
+			b3Contact* movedContact = b3Array_Get( world->contacts, movedContactId );
+			B3_ASSERT( movedContact->colorIndex == colorIndex && movedContact->localIndex == movedIndex );
+			B3_ASSERT( b3GetContactDomain( movedContact ) == domain );
+			movedContact->localIndex = localIndex;
+		}
+	}
+	else
+	{
+		b3Array( int )* contacts = graph->colors[colorIndex].domainContacts + domain;
+		int movedIndex = b3Array_RemoveSwap( *contacts, localIndex );
+		if ( movedIndex != B3_NULL_INDEX )
+		{
+			b3Contact* movedContact = b3Array_Get( world->contacts, contacts->data[localIndex] );
+			B3_ASSERT( movedContact->colorIndex == colorIndex && movedContact->localIndex == movedIndex );
+			B3_ASSERT( b3GetContactDomain( movedContact ) == domain );
+			movedContact->localIndex = localIndex;
+		}
+	}
+
+	const b3Body* bodyA = b3Array_Get( world->bodies, contact->edges[0].bodyId );
+	const b3Body* bodyB = b3Array_Get( world->bodies, contact->edges[1].bodyId );
+	b3CountDomainContact( world, bodyA, bodyB, domain, -1 );
+	contact->flags &= ~(uint32_t)b3_contactDomainBits;
+}
+
+void b3SetContactDomain( b3World* world, b3Contact* contact, int domain )
+{
+	B3_ASSERT( contact->setIndex == b3_awakeSet && contact->colorIndex != B3_NULL_INDEX );
+	int current = b3GetContactDomain( contact );
+	if ( current == domain )
+	{
+		return;
+	}
+
+	// A mesh contact never lies in a domain
+	B3_ASSERT( ( contact->flags & b3_simMeshContact ) == 0 );
+
+	b3ConstraintGraph* graph = &world->constraintGraph;
+	int colorIndex = contact->colorIndex;
+	b3GraphColor* color = graph->colors + colorIndex;
+	const b3Body* bodyA = b3Array_Get( world->bodies, contact->edges[0].bodyId );
+	const b3Body* bodyB = b3Array_Get( world->bodies, contact->edges[1].bodyId );
+
+	// Out of its array, the color keeps its bodies
+	if ( current >= 0 )
+	{
+		b3RemoveDomainContact( world, contact, current, colorIndex, contact->localIndex );
+	}
+	else if ( colorIndex == B3_OVERFLOW_INDEX )
+	{
+		int localIndex = contact->localIndex;
+		int movedIndex = b3Array_RemoveSwap( color->contacts, localIndex );
+		if ( movedIndex != B3_NULL_INDEX )
+		{
+			b3Contact* movedContact = b3Array_Get( world->contacts, color->contacts.data[localIndex].contactId );
+			B3_ASSERT( movedContact->localIndex == movedIndex );
+			movedContact->localIndex = localIndex;
+		}
+	}
+	else
+	{
+		int localIndex = contact->localIndex;
+		int movedIndex = b3Array_RemoveSwap( color->convexContacts, localIndex );
+		if ( movedIndex != B3_NULL_INDEX )
+		{
+			b3Contact* movedContact = b3Array_Get( world->contacts, color->convexContacts.data[localIndex] );
+			B3_ASSERT( movedContact->localIndex == movedIndex );
+			movedContact->localIndex = localIndex;
+		}
+	}
+
+	// Into the array of the new domain, or of the color
+	b3ContactSpec spec = {
+		.contactId = contact->contactId,
+		.manifoldStart = 0,
+		.manifoldCount = (uint16_t)contact->manifoldCount,
+	};
+	if ( domain >= 0 )
+	{
+		if ( colorIndex == B3_OVERFLOW_INDEX )
+		{
+			contact->localIndex = graph->domainOverflow[domain].count;
+			b3Array_Push( graph->domainOverflow[domain], spec );
+		}
+		else
+		{
+			contact->localIndex = color->domainContacts[domain].count;
+			b3Array_Push( color->domainContacts[domain], contact->contactId );
+		}
+
+		contact->flags |= (uint32_t)( domain + 1 ) << B3_CONTACT_DOMAIN_SHIFT;
+		b3CountDomainContact( world, bodyA, bodyB, domain, 1 );
+	}
+	else if ( colorIndex == B3_OVERFLOW_INDEX )
+	{
+		contact->localIndex = color->contacts.count;
+		b3Array_Push( color->contacts, spec );
+	}
+	else
+	{
+		contact->localIndex = color->convexContacts.count;
+		b3Array_Push( color->convexContacts, contact->contactId );
+	}
+}
+
+void b3RemoveContactFromGraph( b3World* world, b3Contact* contact, int bodyIdA, int bodyIdB, int colorIndex, int localIndex,
+							   bool meshContact )
 {
 	b3ConstraintGraph* graph = &world->constraintGraph;
 
@@ -180,6 +386,14 @@ void b3RemoveContactFromGraph( b3World* world, int bodyIdA, int bodyIdB, int col
 		// This might clear a bit for a static body, but this has no effect
 		b3ClearBit( &color->bodySet, bodyIdA );
 		b3ClearBit( &color->bodySet, bodyIdB );
+	}
+
+	// Added for Nebenan: a contact in a domain, see b3Island::domains
+	int domain = b3GetContactDomain( contact );
+	if ( domain >= 0 )
+	{
+		b3RemoveDomainContact( world, contact, domain, colorIndex, localIndex );
+		return;
 	}
 
 	if ( meshContact || colorIndex == B3_OVERFLOW_INDEX )

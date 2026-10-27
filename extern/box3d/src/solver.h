@@ -54,6 +54,7 @@
 
 #include "container.h"
 #include "core.h"
+#include "island.h"
 
 #include "box3d/math_functions.h"
 
@@ -180,6 +181,10 @@ typedef struct b3WidePrepareSpan
 	// copies of the domains, or null, see b3Domains
 	const int* slotA;
 	const int* slotB;
+
+	// Added for Nebenan: the domain of the contacts or -1. In a domain the prepare finds the states the bodies solve on and
+	// the scales of their mass from b3StepContext::domainBodyMasks, see b3Domains.
+	int domain;
 } b3WidePrepareSpan;
 
 // Added for Nebenan: the lanes of a batch of knot contacts, two wide constraints of four or one of eight
@@ -228,13 +233,8 @@ typedef struct b3KnotSplit
 	int copyCount;
 } b3KnotSplit;
 
-// Added for Nebenan: the domains a large island splits into, see b3BuildDomains, as many as the groups of the knots. In such
-// an island the groups of the knots are its domains.
-#define B3_DOMAINS B3_KNOT_GROUPS
-
-// Added for Nebenan: the large islands that split into domains in one step at most. Each holds at least one in
-// B3_KNOT_GROUP_SHARE of the work, see b3FindLargeIslands.
-#define B3_MAX_LARGE_ISLANDS 8
+// Added for Nebenan: the domains of an island with domains, see b3Island::domains, are the groups of its knots
+_Static_assert( B3_DOMAINS == B3_KNOT_GROUPS, "a group of knots per domain" );
 
 // Added for Nebenan: a copy of a body in one of its domains, which the domain starts from the body before each pass of the
 // solver, see b3Domains. The slot is the state of the copy, past the awake states, and the body its awake index.
@@ -401,10 +401,11 @@ typedef struct b3StepContext
 	// Added for Nebenan: the overflow contacts outside the knots, solved one at a time
 	int overflowContactCount;
 
-	// Added for Nebenan: the domains of the large islands, see b3Domains. Per domain the copies it starts as a range of
-	// domainCopies, its batches of knots as the range of its group, its overflow contacts outside the knots as a range of
-	// the overflow and its wide constraints as a range of all of them, each up to the start of the next domain. The bodies
-	// with copies merge after each pass, see b3DomainMerge.
+	// Added for Nebenan: the domains of the islands with domains, see b3Domains. Per domain the copies it starts as a range
+	// of domainCopies, its batches of knots as the range of its group, its overflow contacts outside the knots as a range
+	// of the overflow and its wide constraints as a range of all of them, each up to the start of the next domain. The
+	// bodies with copies merge after each pass, see b3DomainMerge. Per awake body the domains that hold its contacts as
+	// bits and for a body in several the first of its copies past the awake states, for the prepare stage.
 	int domainCount;
 	const b3DomainCopy* domainCopies;
 	const int* domainCopyStarts;
@@ -412,6 +413,9 @@ typedef struct b3StepContext
 	const int* domainWideStarts;
 	const b3DomainMerge* domainMerges;
 	int domainMergeCount;
+	const uint8_t* domainBodyMasks;
+	const int* domainBodyCopies;
+	int domainAwakeBodyCount;
 
 	// padding to prevent false sharing
 	char padding1[64];

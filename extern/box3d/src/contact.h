@@ -73,7 +73,14 @@ enum b3ContactFlags
 
 	// Added for Nebenan: two hulls a face of one kept apart at the last test, see b3ConvexContact::gapPlane
 	b3_simSeparatedHulls = 0x02000000,
+
+	// Added for Nebenan: the domain of a contact in the graph plus one, zero outside the domains, see b3GetContactDomain
+	b3_contactDomainBits = 0x00000F00,
 };
+
+// Added for Nebenan: the domain a touching contact of an island with domains lies in, see b3Island::domains, -1 for any other
+#define B3_CONTACT_DOMAIN_SHIFT 8
+#define b3GetContactDomain( contact ) ( (int)( ( ( contact )->flags & b3_contactDomainBits ) >> B3_CONTACT_DOMAIN_SHIFT ) - 1 )
 
 // A contact edge is used to connect bodies and contacts together
 // in a contact graph where each body is a node and each contact

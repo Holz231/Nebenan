@@ -420,7 +420,19 @@ void b3PrefetchContactDestroy( const b3World* world, const b3Contact* contact )
 	if ( contact->colorIndex != B3_NULL_INDEX )
 	{
 		const b3GraphColor* color = world->constraintGraph.colors + contact->colorIndex;
-		if ( ( contact->flags & b3_simMeshContact ) || contact->colorIndex == B3_OVERFLOW_INDEX )
+		int domain = b3GetContactDomain( contact );
+		if ( domain >= 0 ) // Added for Nebenan: see b3Island::domains
+		{
+			if ( contact->colorIndex == B3_OVERFLOW_INDEX )
+			{
+				b3PrefetchWrite( world->constraintGraph.domainOverflow[domain].data + contact->localIndex );
+			}
+			else
+			{
+				b3PrefetchWrite( color->domainContacts[domain].data + contact->localIndex );
+			}
+		}
+		else if ( ( contact->flags & b3_simMeshContact ) || contact->colorIndex == B3_OVERFLOW_INDEX )
 		{
 			b3PrefetchWrite( color->contacts.data + contact->localIndex );
 		}
@@ -649,7 +661,7 @@ void b3DestroyContact( b3World* world, b3Contact* contact, bool wakeBodies )
 		// contact is an active constraint
 		B3_ASSERT( contact->setIndex == b3_awakeSet );
 		bool meshContact = contact->flags & b3_simMeshContact;
-		b3RemoveContactFromGraph( world, bodyIdA, bodyIdB, contact->colorIndex, contact->localIndex, meshContact );
+		b3RemoveContactFromGraph( world, contact, bodyIdA, bodyIdB, contact->colorIndex, contact->localIndex, meshContact );
 	}
 	else
 	{

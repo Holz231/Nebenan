@@ -450,6 +450,12 @@ static void b3SerGraphColor( b3RecBuffer* buf, const b3GraphColor* color, bool i
 	b3SerPodArray( buf, color->jointSims );
 	b3SerPodArray( buf, color->convexContacts );
 	b3SerPodArray( buf, color->contacts );
+
+	// Added for Nebenan: the contacts of the domains, see b3Island::domains
+	for ( int d = 0; d < B3_DOMAINS; ++d )
+	{
+		b3SerPodArray( buf, color->domainContacts[d] );
+	}
 	// wideConstraints / manifoldConstraints / contactConstraints are transient, not serialized
 }
 
@@ -462,6 +468,12 @@ static void b3DesGraphColor( b3SnapReader* r, b3GraphColor* color, bool isOverfl
 	b3DesPodArray( r, color->jointSims );
 	b3DesPodArray( r, color->convexContacts );
 	b3DesPodArray( r, color->contacts );
+
+	// Added for Nebenan: the contacts of the domains, see b3Island::domains
+	for ( int d = 0; d < B3_DOMAINS; ++d )
+	{
+		b3DesPodArray( r, color->domainContacts[d] );
+	}
 	// Transient pointers left at NULL/0 from shell
 }
 
@@ -1146,6 +1158,15 @@ int b3SerializeWorld( b3World* world, b3RecBuffer* buf, b3Recording* rec )
 			b3SnapW_I32( buf, island->localIndex );
 			b3SnapW_I32( buf, island->islandId );
 			b3SnapW_I32( buf, island->constraintRemoveCount );
+
+			// Added for Nebenan: see b3Island::domains
+			b3SnapW_I32( buf, island->domains ? 1 : 0 );
+			for ( int d = 0; d < B3_DOMAINS; ++d )
+			{
+				b3SnapW_I32( buf, island->domainContacts[d] );
+			}
+			b3SnapW_I32( buf, island->domainCutStep );
+
 			b3SerPodArray( buf, island->bodies );
 			b3SerPodArray( buf, island->contacts );
 			b3SerPodArray( buf, island->joints );
@@ -1166,6 +1187,13 @@ int b3SerializeWorld( b3World* world, b3RecBuffer* buf, b3Recording* rec )
 	{
 		b3SerGraphColor( buf, &graph->colors[c], c == B3_OVERFLOW_INDEX );
 	}
+
+	// Added for Nebenan: the overflow of the domains and the domains of the contacts of every body, see b3Island::domains
+	for ( int d = 0; d < B3_DOMAINS; ++d )
+	{
+		b3SerPodArray( buf, graph->domainOverflow[d] );
+	}
+	b3SerPodArray( buf, world->bodyDomainCounts );
 
 	b3SerNames( buf, &world->names );
 
@@ -1374,6 +1402,15 @@ bool b3DeserializeIntoShell( const uint8_t* data, int size, b3World* world, b3Re
 			island->localIndex = b3SnapR_I32( r );
 			island->islandId = b3SnapR_I32( r );
 			island->constraintRemoveCount = b3SnapR_I32( r );
+
+			// Added for Nebenan: see b3Island::domains
+			island->domains = b3SnapR_I32( r ) != 0;
+			for ( int d = 0; d < B3_DOMAINS; ++d )
+			{
+				island->domainContacts[d] = b3SnapR_I32( r );
+			}
+			island->domainCutStep = b3SnapR_I32( r );
+
 			b3Array_Create( island->bodies );
 			b3Array_Create( island->contacts );
 			b3Array_Create( island->joints );
@@ -1402,6 +1439,13 @@ bool b3DeserializeIntoShell( const uint8_t* data, int size, b3World* world, b3Re
 		{
 			b3DesGraphColor( r, &graph->colors[c], c == B3_OVERFLOW_INDEX );
 		}
+
+		// Added for Nebenan: see b3SerializeWorld
+		for ( int d = 0; d < B3_DOMAINS; ++d )
+		{
+			b3DesPodArray( r, graph->domainOverflow[d] );
+		}
+		b3DesPodArray( r, world->bodyDomainCounts );
 	}
 
 	b3DesNames( r, &world->names );

@@ -11,6 +11,9 @@ typedef struct b3Contact b3Contact;
 typedef struct b3Joint b3Joint;
 typedef struct b3World b3World;
 
+// Added for Nebenan: the domains a large island solves in, see b3Domains in src/solver.c
+#define B3_DOMAINS 8
+
 // Cached contact data stored in the island for fast contiguous iteration.
 // Avoids touching b3Contact during union-find in b3SplitIsland.
 typedef struct b3ContactLink
@@ -72,6 +75,12 @@ typedef struct b3Island
 	b3Array( b3ContactLink ) contacts;
 	b3Array( b3JointLink ) joints;
 
+	// Added for Nebenan: the island solves in domains, each of its bodies has one and its touching contacts lie in the
+	// domains of the graph, see b3Domains in src/solver.c. How many contacts lie in each domain while the island is awake,
+	// and the step the domains were cut last.
+	bool domains;
+	int domainContacts[B3_DOMAINS];
+	int domainCutStep;
 } b3Island;
 
 // This is used to move islands across solver sets
@@ -97,5 +106,9 @@ void b3UnlinkJoint( b3World* world, b3Joint* joint );
 
 void b3SplitIsland( b3World* world, int baseId );
 void b3SplitIslandTask( void* context );
+
+// Added for Nebenan: the contacts of an island with domains go back to the colors and its bodies lose their domains, see
+// b3Island::domains
+void b3RemoveIslandDomains( b3World* world, b3Island* island );
 
 void b3ValidateIsland( b3World* world, int islandId );

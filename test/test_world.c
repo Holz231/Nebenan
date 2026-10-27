@@ -1950,6 +1950,176 @@ static int DomainTest( void )
 	return 0;
 }
 
+// The domains of a large island last from step to step and follow what happens to it, see b3Island::domains. A stack that
+// falls on the plate of DomainTest joins its domains. A joint or a mesh contact in the world takes them back to the colors,
+// and they come back once it is gone. Without the plate and a row of upper cubes the island splits into two halves that
+// keep the domains, fall asleep with them and have them again when one wakes. Every body must end the same in every bit
+// with one and four workers and in four lanes.
+static int DomainLifeTest( void )
+{
+	enum
+	{
+		side = 24,
+		cubeCount = side * side + ( side - 1 ) * ( side - 1 ),
+		stackCount = 3,
+		stepCount = 250,
+	};
+	nbTaskSystem* pool = nbCreateTaskSystem( 3 );
+	uint32_t hashes[3];
+	for ( int pass = 0; pass < 3; ++pass )
+	{
+		b3SetSIMDWidth( pass == 2 ? 4 : 0 );
+		TestScene scene = pass == 0 ? CreateScene() : CreateSceneWithPool( pool, 4 );
+
+		b3BodyDef bodyDef = b3DefaultBodyDef();
+		bodyDef.type = b3_dynamicBody;
+		b3ShapeDef shapeDef = b3DefaultShapeDef();
+		b3BoxHull cube = b3MakeBoxHull( 0.05f, 0.05f, 0.05f );
+		b3BodyId bodies[cubeCount + 1 + stackCount];
+		bool alive[cubeCount + 1 + stackCount];
+		int count = 0;
+		for ( int layer = 0; layer < 2; ++layer )
+		{
+			int cubes = side - layer;
+			float offset = 0.06f * (float)( cubes - 1 );
+			for ( int i = 0; i < cubes * cubes; ++i )
+			{
+				bodyDef.position = (b3Vec3){ 0.12f * (float)( i % cubes ) - offset, 0.05f + 0.1f * (float)layer,
+											 0.12f * (float)( i / cubes ) - offset };
+				bodies[count] = b3CreateBody( scene.physicsWorld, &bodyDef );
+				b3CreateHullShape( bodies[count], &shapeDef, &cube.base );
+				count += 1;
+			}
+		}
+
+		bodyDef.position = (b3Vec3){ 0.0f, 0.251f, 0.0f };
+		int plate = cubeCount;
+		bodies[plate] = b3CreateBody( scene.physicsWorld, &bodyDef );
+		b3BoxHull slab = b3MakeBoxHull( 0.06f * (float)side, 0.05f, 0.06f * (float)side );
+		b3ShapeDef plateDef = shapeDef;
+		plateDef.density = 20000.0f;
+		b3CreateHullShape( bodies[plate], &plateDef, &slab.base );
+		for ( int i = 0; i < cubeCount + 1 + stackCount; ++i )
+		{
+			alive[i] = i <= cubeCount;
+		}
+
+		b3JointId joint = b3_nullJointId;
+		b3BodyId meshBody = b3_nullBodyId;
+		b3MeshData* mesh = NULL;
+		int domainCounts[stepCount], islandCounts[stepCount];
+		for ( int step = 0; step < stepCount; ++step )
+		{
+			if ( step == 20 )
+			{
+				// A stack of three cubes falls on the plate
+				for ( int k = 0; k < stackCount; ++k )
+				{
+					bodyDef.position = (b3Vec3){ 0.3f, 0.36f + 0.11f * (float)k, 0.3f };
+					bodies[plate + 1 + k] = b3CreateBody( scene.physicsWorld, &bodyDef );
+					b3CreateHullShape( bodies[plate + 1 + k], &shapeDef, &cube.base );
+					alive[plate + 1 + k] = true;
+				}
+			}
+			else if ( step == 50 )
+			{
+				// Two upper cubes held apart
+				b3DistanceJointDef jointDef = b3DefaultDistanceJointDef();
+				jointDef.base.bodyIdA = bodies[side * side];
+				jointDef.base.bodyIdB = bodies[side * side + 1];
+				jointDef.length = 0.12f;
+				joint = b3CreateDistanceJoint( scene.physicsWorld, &jointDef );
+			}
+			else if ( step == 60 )
+			{
+				b3DestroyJoint( joint, true );
+			}
+			else if ( step == 80 )
+			{
+				// A mesh on the ground under the corner
+				mesh = b3CreateGridMesh( 4, 4, 0.1f, 1, false );
+				b3BodyDef meshDef = b3DefaultBodyDef();
+				meshDef.position = (b3Vec3){ -0.06f * (float)( side - 1 ), 0.0f, -0.06f * (float)( side - 1 ) };
+				meshBody = b3CreateBody( scene.physicsWorld, &meshDef );
+				b3CreateMeshShape( meshBody, &shapeDef, mesh, (b3Vec3){ 1.0f, 1.0f, 1.0f } );
+			}
+			else if ( step == 90 )
+			{
+				b3DestroyBody( meshBody );
+				b3DestroyMesh( mesh );
+			}
+			else if ( step == 110 )
+			{
+				// Without the plate, the stack and the middle row of upper cubes the island falls into two halves
+				for ( int i = 0; i < cubeCount + 1 + stackCount; ++i )
+				{
+					int row = ( i - side * side ) / ( side - 1 );
+					if ( i >= cubeCount || ( i >= side * side && row == side / 2 - 1 ) )
+					{
+						b3DestroyBody( bodies[i] );
+						alive[i] = false;
+					}
+				}
+			}
+			else if ( step == 230 )
+			{
+				ENSURE( b3Body_IsAwake( bodies[0] ) == false && b3Body_IsAwake( bodies[side * side - 1] ) == false );
+				b3Body_SetAwake( bodies[0], true );
+			}
+
+			nbWorld_Step( scene.world, 1.0f / 60.0f, 4 );
+			b3Counters counters = b3World_GetCounters( scene.physicsWorld );
+			domainCounts[step] = counters.domainCount;
+			islandCounts[step] = counters.islandCount;
+		}
+
+		// The half that woke has domains, the other sleeps
+		ENSURE( b3Body_IsAwake( bodies[0] ) && b3Body_IsAwake( bodies[side * side - 1] ) == false );
+
+		uint32_t hash = 2166136261u;
+		for ( int i = 0; i < cubeCount + 1 + stackCount; ++i )
+		{
+			if ( alive[i] == false )
+			{
+				continue;
+			}
+
+			b3WorldTransform transform = b3Body_GetTransform( bodies[i] );
+			const unsigned char* bytes = (const unsigned char*)&transform;
+			for ( int k = 0; k < (int)sizeof( transform ); ++k )
+			{
+				hash = ( hash ^ bytes[k] ) * 16777619u;
+			}
+
+			// Nothing hangs in the air
+			float y = (float)b3Body_GetPosition( bodies[i] ).y;
+			ENSURE( i < side * side ? ( 0.04f < y && y < 0.06f ) : ( 0.14f < y && y < 0.16f ) );
+		}
+		hashes[pass] = hash;
+
+		if ( pass == 0 )
+		{
+			printf( "  domains at steps 19, 49, 59, 79, 89, 109, 140, 229 and 249: %d %d %d %d %d %d %d %d %d, %d islands at 140\n",
+					domainCounts[19], domainCounts[49], domainCounts[59], domainCounts[79], domainCounts[89], domainCounts[109],
+					domainCounts[140], domainCounts[229], domainCounts[249], islandCounts[140] );
+		}
+
+		// With the domains from the start, with the stack, without them while the joint and the mesh are there, again
+		// after, in the halves and asleep, and in the half that woke
+		ENSURE( domainCounts[19] == 8 && domainCounts[49] == 8 );
+		ENSURE( domainCounts[50] == 0 && domainCounts[59] == 0 && domainCounts[61] == 8 && domainCounts[79] == 8 );
+		ENSURE( domainCounts[81] == 0 && domainCounts[89] == 0 && domainCounts[91] == 8 && domainCounts[109] == 8 );
+		ENSURE( islandCounts[140] == 2 && domainCounts[140] == 8 );
+		ENSURE( domainCounts[229] == 0 && domainCounts[230] == 8 && domainCounts[249] == 8 );
+		DestroyScene( &scene );
+	}
+	b3SetSIMDWidth( 0 );
+	nbDestroyTaskSystem( pool );
+
+	ENSURE( hashes[1] == hashes[0] && hashes[2] == hashes[0] );
+	return 0;
+}
+
 // Replaying the events must reproduce the set of live chunks, which is what a renderer relies on.
 static int EventTest( void )
 {
@@ -5879,7 +6049,7 @@ static uint32_t RunScenarioAtRate( TestScene scene, float stepRate, int settleFr
 
 // The results of the determinism scenario at 30 and 120 Hz with ten seconds to settle, the same on every platform like
 // NB_EXPECTED_DETERMINISM_HASH
-#define NB_EXPECTED_HASH_30HZ 0x8b9f6c13u
+#define NB_EXPECTED_HASH_30HZ 0xdbc3ee87u
 #define NB_EXPECTED_HASH_120HZ 0x54b385feu
 
 // The steps per second of nbWorld_Advance. At 60 Hz it takes the steps of the determinism scenario to the bit. At 30 and
@@ -6494,6 +6664,7 @@ int WorldTest( void )
 	RUN_TEST( KnotGroupTest );
 	RUN_TEST( TeamPacksTest );
 	RUN_TEST( DomainTest );
+	RUN_TEST( DomainLifeTest );
 	RUN_TEST( UniqueHullTest );
 	RUN_TEST( ExternalHullTest );
 	RUN_TEST( ShapeBatchTest );

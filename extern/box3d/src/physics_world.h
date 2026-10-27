@@ -190,6 +190,10 @@ typedef struct b3World
 	// Indices come from id pool.
 	b3Array( b3Body ) bodies;
 
+	// Added for Nebenan: per body id how many of its contacts lie in each domain, see b3Island::domains. It grows to the
+	// bodies on demand, see b3CountDomainContact.
+	b3Array( b3DomainCounts ) bodyDomainCounts;
+
 	// Provides free list for solver sets.
 	b3IdPool solverSetIdPool;
 

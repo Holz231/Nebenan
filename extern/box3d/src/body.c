@@ -156,6 +156,7 @@ static void b3RemoveBodyFromIsland( b3World* world, b3Body* body )
 
 	body->islandId = B3_NULL_INDEX;
 	body->islandIndex = B3_NULL_INDEX;
+	body->domain = -1; // Added for Nebenan
 }
 
 static void b3DestroyBodyContacts( b3World* world, b3Body* body, bool wakeBodies )
@@ -323,6 +324,7 @@ b3BodyId b3CreateBody( b3WorldId worldId, const b3BodyDef* def )
 	body->jointCount = 0;
 	body->islandId = B3_NULL_INDEX;
 	body->islandIndex = B3_NULL_INDEX;
+	body->domain = -1; // Added for Nebenan
 	body->bodyMoveIndex = B3_NULL_INDEX;
 	body->id = bodyId;
 	body->sleepThreshold = def->sleepThreshold;
