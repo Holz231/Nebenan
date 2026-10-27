@@ -80,7 +80,8 @@ jobs:
           cp extern/box3d/extern/sokol/LICENSE package/lizenzen/sokol.txt
           cp extern/imgui/LICENSE.txt package/lizenzen/imgui.txt
           if [ "${{ matrix.profile }}" = "true" ]; then
-            cp demo/Tracy-Aufnahme.bat package/
+            # The build put the script next to the demo, as it does for build.bat tracy
+            cp "$(dirname "${{ matrix.demo }}")/Tracy-Aufnahme.bat" package/
             cp .fetchcontent-cache/tracy-src/LICENSE package/lizenzen/tracy.txt
           fi
 
