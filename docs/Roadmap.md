@@ -27,8 +27,9 @@ Blöcke des Teams auf `kollaps-18`, simuliert und verworfen, und dem Lesen der A
 und den Durchgängen des Aufbaus der Knoten auf `kollaps-21` und den Zustandswechseln der Kontakte auf `kollaps-22` und
 weniger Durchgängen beim Aufbau der Knoten auf `kollaps-23`, alle vier gemessen und verworfen, und der Zeitleiste des
 Lösers mit Tracy auf `kollaps-24`, auf dem Ryzen aufgenommen, und den Gebieten der größten Insel auf `kollaps-25`,
-gebaut und verworfen. Begründungen und Messwerte stehen in [`Optimierungen.md`](Optimierungen.md), hier nur das Fazit
-und die Reihenfolge. Nach jeder Runde wird der Stand hier nachgetragen.
+gebaut und verworfen, und dem Erstarren des Schutts auf `kollaps-26`, gemessen und verworfen. Begründungen und Messwerte
+stehen in [`Optimierungen.md`](Optimierungen.md), hier nur das Fazit und die Reihenfolge. Nach jeder Runde wird der
+Stand hier nachgetragen.
 
 `kollaps-1` ist keine Runde der Physik, sie baut den Einsturz nach Kapitel 17 der Roadmap des Spiels, siehe
 [`Referenz`](Referenz/README.md). Sie ändert aber, was der Benchmark unter Trommelfeuer bei ×4 misst: Eine Etage gibt
@@ -120,7 +121,10 @@ vergleicht dort verschiedene Szenen. Im Benchmark enden die Städte fast gleich,
   versucht, und ein vergeblicher Versuch kostet auf der VM 42 bis 58 % weniger, siehe Schritt 54. Auf dem Ryzen kostet
   das Team mit 8 Threads damit 0,022 ms pro Schritt weniger, siehe Schritt 55. Was der aufrufende Thread im Team allein
   rechnet, lässt sich kaum verteilen: 97 % der Kontakte des Überlaufs außerhalb der Knoten hängen an den Bündeln der
-  Knoten, siehe Schritt 56.
+  Knoten, siehe Schritt 56. An den Sperren nach den rund 232 Stufen pro Schritt verlieren die Threads mit 8 Threads
+  0,255 ms pro Schritt mit Team, siehe Schritt 61. Gebiete, die ein Thread ohne Sperren rechnet, sparen das auf der VM
+  mit 4 Threads, kosten aber mit einem Thread 8 bis 11 % mehr, weil sie in jedem Schritt neu entstehen, siehe
+  Schritt 62.
 - **Was danach bleibt, sind kleine Posten.** Mit 8 Threads auf dem Ryzen kosten die Typwechsel 3 % des Frames, der
   Aufbau des Lösers 3 %, und von den Einschlägen ist jeder Teil, Box3D-Körper, Einbau, Suche und Teilen der Akteure, 1
   bis 2 %, siehe „Wohin ein Typwechsel und ein Einschlag ihre Zeit geben“. Anlegen und Zustandswechsel der Kontakte sind
@@ -130,29 +134,31 @@ vergleicht dort verschiedene Szenen. Im Benchmark enden die Städte fast gleich,
   Knoten baut, lässt sich kaum verteilen: Nur knapp die Hälfte rechnet jeden Kontakt für sich, und auf die wartenden
   Worker verteilt spart das mit 8 Threads rund 0,013 ms, siehe Schritt 57. Die Zustandswechsel der Kontakte lassen sich
   ebenso wenig auf den Workern vorbereiten: Fast alles daran ändert, was der nächste Wechsel liest, siehe Schritt 58.
-  Weniger Durchgänge beim Aufbau der Knoten sparen auf dem Ryzen nur rund 0,005 ms, siehe Schritt 59. Die
-  Kontakt-Schleife misst Box3D seit `kollaps-11` selbst: Auf der VM warten die Threads mit 4 Threads 7 % ihrer Zeit, vor
-  allem am Ende auf die teuersten Blöcke, und seit sie die Blöcke von beiden Enden nehmen, noch 4 %, siehe Schritt 38
-  und 39. Auf dem Ryzen warten sie mit 8 Threads 4,3 %, die Kontakt-Schleife skaliert, siehe Schritt 40. Die
-  Ruhe-Prüfung misst Nebenan seit `kollaps-12` selbst: Auf der VM geht sie fast ganz in den Blick auf das, was die
-  ruhigen Stücke trägt, und mit 4 Threads warteten die Threads 12 % ihrer Zeit auf große ruhige Stücke, seit die Blöcke
-  mit großen Stücken zuerst drankommen, noch 4 %, siehe Schritt 41 und 42. Auf dem Ryzen warten sie mit 8 Threads 19 %
-  ihrer Zeit nach ihrem letzten Block, und der Blick auf ein ruhiges Stück geht auf der VM zu 61 % in die Liste seiner
-  Kontakte in Box3D, siehe Schritt 43. Seit `kollaps-13` läuft Box3D die Listen aller ruhigen Stücke eines Blocks
-  nebeneinander ab: Beim Abriss auf der VM kostet der Blick damit halb so viel und die Prüfungen 40 bis 42 % weniger,
-  siehe Schritt 44. Auf dem Ryzen kosten die Prüfungen damit mit einem Thread 27 % weniger und mit 8 Threads 7 %, und
-  mit 8 Threads warten die Threads ein Viertel ihrer Zeit auf den Blick auf einzelne große Stücke, siehe Schritt 45.
-  Seit `kollaps-14` ist der Blick auf große Stücke billiger: Beim Abriss auf der VM kosten die Prüfungen mit 4 Threads
-  14 % weniger, und am Ende warten die Threads 68 % kürzer, siehe Schritt 46. Auf dem Ryzen kosten die Prüfungen damit
-  mit 8 Threads 18 % weniger, mit einem Thread 2 %. Am meisten kostet beim größten Stück jetzt das Ablaufen seiner Liste
-  in Box3D, und bei allen Stücken berühren vier von fünf Einträgen darin nicht, siehe Schritt 47. Seit `kollaps-15`
-  läuft Box3D für die Prüfungen nur noch die berührenden Kontakte ab: Beim Abriss auf der VM kostet der Blick damit 20
-  bis 24 % weniger und die Prüfungen 13 bis 20 %, die Pflege der Listen kostet in der seriellen Schleife der
-  Zustandswechsel 0,014 bis 0,024 ms pro Schritt, siehe Schritt 48. Auf dem Ryzen kosten die Prüfungen damit 8 bis 12 %
-  weniger, aber mit 8 Threads kostet die Pflege der Listen samt dem Anlegen der Kontakte so viel, wie das Update spart,
-  und die Threads warten 17 % ihrer Zeit nach ihrem letzten Block, siehe Schritt 49. Kleinere Blöcke brächten dort nach
-  einer Simulation höchstens 0,002 ms pro Update, denn sie kosten zusammen mehr, und in fast einem Viertel der Updates
-  dauert der längste Block allein länger als ein Achtel der Arbeit, siehe Schritt 50.
+  Weniger Durchgänge beim Aufbau der Knoten sparen auf dem Ryzen nur rund 0,005 ms, siehe Schritt 59. Auch das Erstarren
+  des Schutts lässt sich kaum vorbereiten: Zwei Drittel davon sind die Typwechsel in Box3D, die Kontakte, Sätze, Inseln
+  und Bäume in fester Reihenfolge ändern, siehe Schritt 60. Die Kontakt-Schleife misst Box3D seit `kollaps-11` selbst:
+  Auf der VM warten die Threads mit 4 Threads 7 % ihrer Zeit, vor allem am Ende auf die teuersten Blöcke, und seit sie
+  die Blöcke von beiden Enden nehmen, noch 4 %, siehe Schritt 38 und 39. Auf dem Ryzen warten sie mit 8 Threads 4,3 %,
+  die Kontakt-Schleife skaliert, siehe Schritt 40. Die Ruhe-Prüfung misst Nebenan seit `kollaps-12` selbst: Auf der VM
+  geht sie fast ganz in den Blick auf das, was die ruhigen Stücke trägt, und mit 4 Threads warteten die Threads 12 %
+  ihrer Zeit auf große ruhige Stücke, seit die Blöcke mit großen Stücken zuerst drankommen, noch 4 %, siehe Schritt 41
+  und 42. Auf dem Ryzen warten sie mit 8 Threads 19 % ihrer Zeit nach ihrem letzten Block, und der Blick auf ein ruhiges
+  Stück geht auf der VM zu 61 % in die Liste seiner Kontakte in Box3D, siehe Schritt 43. Seit `kollaps-13` läuft Box3D
+  die Listen aller ruhigen Stücke eines Blocks nebeneinander ab: Beim Abriss auf der VM kostet der Blick damit halb so
+  viel und die Prüfungen 40 bis 42 % weniger, siehe Schritt 44. Auf dem Ryzen kosten die Prüfungen damit mit einem
+  Thread 27 % weniger und mit 8 Threads 7 %, und mit 8 Threads warten die Threads ein Viertel ihrer Zeit auf den Blick
+  auf einzelne große Stücke, siehe Schritt 45. Seit `kollaps-14` ist der Blick auf große Stücke billiger: Beim Abriss
+  auf der VM kosten die Prüfungen mit 4 Threads 14 % weniger, und am Ende warten die Threads 68 % kürzer, siehe
+  Schritt 46. Auf dem Ryzen kosten die Prüfungen damit mit 8 Threads 18 % weniger, mit einem Thread 2 %. Am meisten
+  kostet beim größten Stück jetzt das Ablaufen seiner Liste in Box3D, und bei allen Stücken berühren vier von fünf
+  Einträgen darin nicht, siehe Schritt 47. Seit `kollaps-15` läuft Box3D für die Prüfungen nur noch die berührenden
+  Kontakte ab: Beim Abriss auf der VM kostet der Blick damit 20 bis 24 % weniger und die Prüfungen 13 bis 20 %, die
+  Pflege der Listen kostet in der seriellen Schleife der Zustandswechsel 0,014 bis 0,024 ms pro Schritt, siehe
+  Schritt 48. Auf dem Ryzen kosten die Prüfungen damit 8 bis 12 % weniger, aber mit 8 Threads kostet die Pflege der
+  Listen samt dem Anlegen der Kontakte so viel, wie das Update spart, und die Threads warten 17 % ihrer Zeit nach ihrem
+  letzten Block, siehe Schritt 49. Kleinere Blöcke brächten dort nach einer Simulation höchstens 0,002 ms pro Update,
+  denn sie kosten zusammen mehr, und in fast einem Viertel der Updates dauert der längste Block allein länger als ein
+  Achtel der Arbeit, siehe Schritt 50.
 - **Der Löser hing am Überlauf des Graphen.** Kontakte, für die keine der 20 Farben frei ist, löst Box3D auf dem
   aufrufenden Thread allein. Beim Abriss sind das die Kontakte an Knoten: große abgebrochene Teile aus Dutzenden bis
   Hunderten Bruchstücken, an denen Hunderte kleine Trümmer liegen, siehe „Der Überlauf beim Abriss“. Seit `physik-22`
@@ -241,7 +247,8 @@ bleiben.
 | 59 | **Ordnen, Gruppen und Bündeln billiger**: das Ordnen der Kontakte nach Knoten, das Verteilen auf die Gruppen und das Bündeln in `b3BuildKnots` bitgleich mit weniger Durchgängen über die Kontakte bauen und in einer Kopie, die in jedem Schritt beide Fassungen rechnet und vergleicht, gegen die alte messen | mit 1 bis 8 Threads ein Teil der rund 0,038 ms pro Schritt, die diese drei seriellen Durchgänge auf dem Ryzen kosten | 58 | ⛔ auf `kollaps-23` gemessen: Eine Fassung, die beim Verteilen auf die Gruppen vier von sechs Durchgängen spart und beim Ordnen und beim Zählen der großen Inseln je einen, liefert in allen Schritten dieselben Bündel und Gruppen, kostet auf der VM aber nur 6 bis 7 % weniger, 10 bis 12 µs pro Schritt, auf dem Ryzen rund 0,005 ms. Die Zeit liegt in den verstreuten Zugriffen auf Körper und Partner. „Billiger“ tritt nicht ein, nicht gebaut, daraus 60 |
 | 61 | **Zeitleiste des Teams mit Tracy**: auf dem Ryzen mit `Tracy-Aufnahme.bat` aus `nebenan-demo-windows-tracy` die ersten 900 Schritte des Abrisses bei ×2 mit 8 Threads aufnehmen und mit `tools/tracy_team.py` auswerten, wie lange die Threads im Löser an den Enden der Stufen, in den Übergängen zwischen ihnen, beim Anlaufen und an Störungen verlieren | Werkzeug, entscheidet, ob die größte Insel in Gebiete ohne Sperren zerlegt wird: Mit 8 Threads warten die Threads am Ende der Stufen 21 % der offenen Zeit, und wie sich das Warten auf die rund 232 Stufen pro Schritt verteilt, zeigten bisher nur Summen | 59 | ✅ am 27. Oktober auf dem Ryzen aufgenommen, 852 der 900 Schritte: In den 848 Schritten mit Team dauert der Löser mit 8 Threads 0,755 ms. Die Threads verlieren 0,219 ms an den Enden der Stufen und 0,036 ms in den Übergängen, zusammen 0,255 ms, ein Drittel des Lösers. Ausreißer und Pausen kosten 0,008 ms, das Anlaufen 0,006 ms. „Zerlegen“ tritt ein, daraus 62 |
 | 62 | **Größte Insel in Gebiete zerlegen**: auf einer eigenen Branch die größte Insel in eine feste Zahl von Gebieten teilen, die ein Thread jeweils ohne Sperren zwischen den Farben rechnet, die Körper an den Grenzen mit geteilter Masse wie bei den Knoten, nach jedem Durchgang des Lösers gemittelt, ändert die Ergebnisse | mit 8 Threads ein Teil der 0,255 ms pro Schritt mit Team, die die Threads an den Enden der Stufen und in den Übergängen verlieren, gut ein Zehntel eines Schritts | 61 | ⛔ auf `kollaps-25` gebaut und verworfen: Die Ergebnisse bleiben mit jeder Zahl von Threads und auf Windows, Linux und macOS gleich, die Tests grün, nichts hängt in der Luft. Mit einem Thread kostet der Löser auf der VM gepaart aber in zwei Messungen im Mittel 8,1 und 10,7 % mehr, erlaubt sind 5 %: Ein Thread baut die Gebiete in jedem Schritt neu, 0,67 ms, rund 100 ns pro Kontakt der großen Inseln. Auf dem Ryzen kostete das geschätzt 0,19 ms, selbst ohne jede Sperre blieben dort höchstens 0,065 statt der verlangten 0,10 ms. „Verwerfen“ tritt ein, der Prototyp liegt im Verlauf von `kollaps-25`, daraus 60 |
-| 60 | **Erstarren zerlegen**: das Erstarren des Schutts auf der VM nach seinen Teilen messen, die Entscheidungen von Nebenan, die Typwechsel in Box3D mit dem Löschen der Kontakte, dem Umzug der Körper und dem Einbau in die Bäume, und das Lösen von Schutt unter großen Stücken, und was jedes Stück für sich rechnet und nichts ändert, was ein anderes liest, in die Prüfungen auf den Workern vorziehen, bitgleich | mit 8 Threads ein Teil der 0,047 ms pro Schritt, die der aufrufende Thread das Erstarren allein rechnet, während alle Worker warten | 59 und 62 | 🔜 |
+| 60 | **Erstarren zerlegen**: das Erstarren des Schutts auf der VM nach seinen Teilen messen, die Entscheidungen von Nebenan, die Typwechsel in Box3D mit dem Löschen der Kontakte, dem Umzug der Körper und dem Einbau in die Bäume, und das Lösen von Schutt unter großen Stücken, und was jedes Stück für sich rechnet und nichts ändert, was ein anderes liest, in die Prüfungen auf den Workern vorziehen, bitgleich | mit 8 Threads ein Teil der 0,047 ms pro Schritt, die der aufrufende Thread das Erstarren allein rechnet, während alle Worker warten | 59 und 62 | ⛔ auf `kollaps-26` gemessen: Beim Abriss bei ×2 erstarren pro Schritt 13,4 Stücke mit je 19 Kontakten. Ein Erstarren kostet auf der VM 16,7 µs, davon 55 % das Löschen der Kontakte und 25 % der Umzug in den statischen Satz. Jedes Stück für sich rechnen großzügig gerechnet 17 % des Erstarrens, auf dem Ryzen 0,008 ms pro Schritt. „Vorziehen“ tritt nicht ein, nicht gebaut, daraus 63 |
+| 63 | **Anlegen zerlegen**: das Anlegen der Kontakte für neue Paare auf der VM nach seinen Teilen messen, die Schlüssel und Formen der Paare, die Kontakte selbst mit ihren Ids, die Menge der Paare und die Listen der Körper, und was jeden neuen Kontakt für sich rechnet und nichts ändert, was das Anlegen eines anderen liest, in die Paarsuche auf den Workern vorziehen, bitgleich | mit 8 Threads ein Teil der 0,049 ms pro Schritt, die der aufrufende Thread das Anlegen allein rechnet, während alle Worker warten | 60 | 🔜 |
 | 33 | **Weniger Kopien an kleinen Knoten**: eine Gruppe für je 64 statt 32 Kontakte, ändert die Ergebnisse | mit 1 und 2 Threads ein Teil der 30 und 7 % pro Kontakt | 30 | 🔜 niedrig |
 | 26 | **Worker wach halten statt schlafen legen**: kurz aktiv warten, bevor ein Worker schläft, bitgleich | auf der VM rund ein Zehntel der Ruhe-Prüfung, kostet Rechenzeit beim Zeichnen | 25 | ⛔ nach 25: Auf dem Ryzen laufen die Worker nach 6 bis 7 µs an, aktiv zu warten spart unter 0,5 % eines Schritts |
 
@@ -1225,6 +1232,25 @@ rund 0,19 ms pro Schritt auf dem aufrufenden Thread. Selbst wenn die Gebiete all
 an den Sperren verlieren, blieben höchstens rund 0,065 ms, verlangt sind 0,10 ms. Beide Regeln hängen am selben Hebel,
 einem rund halb so teuren Aufbau. Derselbe Aufbau, schneller gerechnet, gäbe dieselben Gebiete und Spuren und damit
 bitgleich dieselben Ergebnisse wie der Prototyp.
+
+Auf `kollaps-26` ist Schritt 60 gemessen, siehe „Das Erstarren zerlegt“ in [Optimierungen.md](Optimierungen.md). Beim
+Abriss bei ×2 sind pro Schritt 564 Stücke ruhig, und 13,4 erstarren, mit je 19 Kontakten. Mit 4 Threads kostet das
+Erstarren auf der VM 335 µs pro Schritt, ein Erstarren 16,7 µs, davon 55 % das Löschen der Kontakte, 25 % der Umzug in
+den statischen Satz und 11 % die Formen. Ein Fünftel des ganzen Erstarrens ist das gesammelte Einsortieren in den
+statischen Baum. Jedes Stück für sich, ohne etwas zu ändern, was ein anderes liest, rechnen großzügig gerechnet 17 %,
+auf dem Ryzen 0,008 ms pro Schritt. „Vorziehen“ tritt nicht ein, also „Nichts davon“. Daraus Schritt 63, das Anlegen der
+Kontakte für neue Paare. Mit 8 Threads rechnet es der aufrufende Thread nach der Paarsuche auf den Workern in 0,049 ms
+pro Schritt allein. Es schreibt die Kontakte, ihre Ids, die Menge der Paare und die Listen der Körper in fester
+Reihenfolge. Die Kontakte parallel anzulegen, die erste Stufe von Schritt 9, lohnte auf `physik-41` nicht. Was jeden
+neuen Kontakt für sich rechnet, könnte aber schon in der Paarsuche stehen. Was die Messung der Teile zeigt, entscheidet
+so:
+
+- **Vorziehen**: Rechnen Teile des Anlegens jeden neuen Kontakt für sich und ändern nichts, was das Anlegen eines
+  anderen liest, und sparen sie, in der Paarsuche auf den Workern vorbereitet, mit 8 Threads nach der Messung auf der
+  VM mindestens 0,015 ms pro Schritt, werden sie dorthin gelegt, bitgleich, und auf dem Ryzen nachgemessen.
+- **Nichts davon**: Sonst sind die Teile, die der aufrufende Thread um das Team herum allein rechnet, alle ausgemessen.
+  Dann kommt ein neuer Blick auf das ganze Bild, „Skalierung messen“ auf dem Ryzen beim Abriss bei ×2 und ×4, und die
+  nächsten Schritte folgen aus dem, was dort mit 8 Threads am meisten kostet.
 
 ## Kleinere Punkte
 
