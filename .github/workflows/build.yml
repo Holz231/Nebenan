@@ -59,6 +59,18 @@ jobs:
         if: ${{ !matrix.profile }}
         run: ${{ matrix.benchmark }} 2
 
+      # Without the tools of Tracy next to it, the script that records the demolition fetches them first
+      - name: Test fetching Tracy in the recording script
+        if: ${{ matrix.profile }}
+        shell: cmd
+        run: |
+          mkdir script-test
+          copy demo\Tracy-Aufnahme.bat script-test\
+          call script-test\Tracy-Aufnahme.bat fetch
+          if not exist script-test\tracy-capture.exe exit /b 1
+          if not exist script-test\tracy-update.exe exit /b 1
+          if not exist script-test\tracy-profiler.exe exit /b 1
+
       - name: Package demo
         run: |
           mkdir -p package/lizenzen

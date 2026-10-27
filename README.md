@@ -1476,14 +1476,15 @@ nichts davon in den Build.
 
 **Mit der Demo.** Unter Windows gibt es die Demo mit Zonen fertig als `nebenan-demo-windows-tracy`, siehe „Demo
 herunterladen“. `Tracy-Aufnahme.bat` darin reißt die Stadt bei ×2 mit 8 Threads ab, mit der Physik nacheinander wie
-„Skalierung messen“, 900 Schritte mit 1/60 s, auf jedem PC dieselben, und beendet sich dann. Liegen `tracy-capture.exe`
-und `tracy-update.exe` aus dem ZIP von Tracy im selben Ordner, am einfachsten das ZIP dorthin entpacken, schreibt sie
-die Aufnahme mit Zstd gepackt nach `abriss.tracy`, rund 15 MB. Ohne die beiden vorher den Tracy Profiler starten und auf
-**Connect** klicken, er wartet dann auf die Demo, zeigt die Aufnahme und speichert sie. Unter Linux und macOS mit
-`-DNEBENAN_PROFILE=ON` bauen, `tracy-capture -o abriss.tracy -a 127.0.0.1` starten und in einem zweiten Terminal die
-Demo:
+„Skalierung messen“, 900 Schritte mit 1/60 s, auf jedem PC dieselben, und beendet sich dann. `tracy-capture.exe` aus
+Tracy 0.13.1 nimmt dabei auf, `tracy-update.exe` packt die Aufnahme mit Zstd nach `abriss.tracy`, rund 15 MB. Liegen die
+beiden nicht im Ordner, lädt die Datei beim ersten Start `windows-0.13.1.zip` von GitHub, prüft seine Prüfsumme und
+entpackt daraus die beiden und den Tracy Profiler, der eine Aufnahme zeigt. Das Artefakt selbst enthält von Tracy nur
+den Client in der Demo. Unter Linux und macOS mit `-DNEBENAN_PROFILE=ON` bauen und in zwei Terminals erst
+`tracy-capture`, dann die Demo starten:
 
 ```sh
+tracy-capture -o abriss.tracy -a 127.0.0.1
 build/bin/nebenan_demo --demolition --threads 8 --fragment-scale 2 --serial-physics --frames 900
 ```
 
