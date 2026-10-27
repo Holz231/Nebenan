@@ -108,6 +108,45 @@ jobs:
           taskkill //F //IM nebenan_demo.exe > /dev/null 2>&1 || true
           taskkill //F //IM tracy-capture.exe > /dev/null 2>&1 || true
 
+      # The same while tracy-capture falls behind, as on the Ryzen: it is held until the demo has closed its window and
+      # then goes on. If the demo still runs after that, the stacks of its threads show where it waits.
+      - name: End the demo while Tracy falls behind
+        if: ${{ matrix.profile }}
+        continue-on-error: true
+        timeout-minutes: 10
+        shell: pwsh
+        run: |
+          Add-Type -Namespace Win32 -Name NtDll -MemberDefinition @'
+          [DllImport("ntdll.dll")] public static extern int NtSuspendProcess(IntPtr handle);
+          [DllImport("ntdll.dll")] public static extern int NtResumeProcess(IntPtr handle);
+          '@
+          $capture = Start-Process -FilePath script-test\tracy-capture.exe -ArgumentList '-o','lag.tracy','-a','127.0.0.1','-f' -RedirectStandardOutput lag-capture.log -PassThru -NoNewWindow
+          Start-Sleep -Seconds 2
+          $demo = Start-Process -FilePath build\bin\Release\nebenan_demo.exe -ArgumentList '--demolition','--threads','8','--fragment-scale','2','--serial-physics','--frames','120' -PassThru
+          do { Start-Sleep -Seconds 1; $demo.Refresh() } while ($demo.MainWindowHandle -eq 0 -and -not $demo.HasExited)
+          Start-Sleep -Seconds 6
+          [Win32.NtDll]::NtSuspendProcess($capture.Handle) | Out-Null
+          "capture held"
+          $deadline = (Get-Date).AddSeconds(240)
+          do { Start-Sleep -Seconds 2; $demo.Refresh() } while ((Get-Date) -lt $deadline -and $demo.MainWindowHandle -ne 0 -and -not $demo.HasExited)
+          "demo window closed: $($demo.MainWindowHandle -eq 0), demo ended: $($demo.HasExited)"
+          Start-Sleep -Seconds 5
+          [Win32.NtDll]::NtResumeProcess($capture.Handle) | Out-Null
+          "capture goes on"
+          $deadline = (Get-Date).AddSeconds(90)
+          while ((Get-Date) -lt $deadline -and -not ($demo.HasExited -and $capture.HasExited)) { Start-Sleep -Seconds 2 }
+          "after 90 s: demo ended $($demo.HasExited), capture ended $($capture.HasExited)"
+          if (-not $demo.HasExited) {
+            $demo.Refresh(); $t0 = $demo.TotalProcessorTime.TotalSeconds; Start-Sleep -Seconds 5; $demo.Refresh()
+            "demo used $([math]::Round($demo.TotalProcessorTime.TotalSeconds - $t0, 2)) s of CPU in 5 s"
+            $cdb = Get-ChildItem 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\cdb.exe' -ErrorAction SilentlyContinue
+            if ($cdb) { & $cdb.FullName -p $demo.Id -y build\bin\Release -c "~*k 20; qd" 2>&1 | Select-String -NotMatch '^\*\*\*|^Symbol|^ModLoad' }
+            else { "no cdb on this runner" }
+          }
+          Get-Content lag-capture.log -Tail 8
+          Stop-Process -Id $demo.Id -Force -ErrorAction SilentlyContinue
+          Stop-Process -Id $capture.Id -Force -ErrorAction SilentlyContinue
+
       - name: Package demo
         run: |
           mkdir -p package/lizenzen
