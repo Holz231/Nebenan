@@ -216,9 +216,10 @@ schaltet VSync ein, `--msaa 4` schaltet Kantenglättung ein (Standard aus), `--h
 Bildschirmen in voller Auflösung (Standard aus, kostet Füllrate). `--serial-physics` schaltet die parallele Physik ab,
 `--threads N` setzt die Zahl der Threads, `--step-rate 30` den Takt der Physik. `--compare` misst parallel gegen
 nacheinander wie der Knopf im Menü, gibt das Ergebnis aus und beendet sich, `--compare-threads` ebenso wie „7 gegen 8
-Threads messen“. `--demolition` reißt die Stadt ab wie dabei. `--script` feuert eine vorgegebene Schussfolge ab,
-`--frames N` beendet nach N Bildern und meldet Bildzeiten, CPU-Zeiten, Uploads und Dreiecke pro Bild und einen Hash der
-Lagen aller Bruchstücke, `--screenshot datei.ppm` speichert das letzte Bild (nur OpenGL).
+Threads messen“ und `--scaling` wie „Skalierung messen“. Diese Messungen reißen die Stadt selbst ab, Lauf für Lauf, auch
+mit `--demolition`. Ohne sie reißt `--demolition` die Stadt ab wie dabei. `--script` feuert eine vorgegebene Schussfolge
+ab, `--frames N` beendet nach N Bildern und meldet Bildzeiten, CPU-Zeiten, Uploads und Dreiecke pro Bild und einen Hash
+der Lagen aller Bruchstücke, `--screenshot datei.ppm` speichert das letzte Bild (nur OpenGL).
 
 Hinkt die Physik hinterher, lässt `nbWorld_Advance` die Zeit langsamer laufen, statt Schritte nachzuholen: Mehr als
 1/60 s Physik im selben Bild kommt nur, solange der letzte Schritt weniger als 4 ms pro 1/60 s kostete, bei 60 Hz

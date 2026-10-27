@@ -2894,17 +2894,19 @@ static void OnFrame()
 		app.fireCooldown = 1.0f / app.tools[app.tool].rate;
 	}
 
+	// A comparison takes the town down by the frames of each of its runs, also with --demolition, else its runs would end
+	// at different frames in different worlds
 	if ( app.automation.script )
 	{
 		RunScript( app, app.frame );
 	}
-	else if ( app.automation.demolition )
-	{
-		RunDemolition( app, app.frame );
-	}
 	else if ( app.comparison.active )
 	{
 		RunDemolition( app, app.comparison.frame );
+	}
+	else if ( app.automation.demolition )
+	{
+		RunDemolition( app, app.frame );
 	}
 	float impactTime = b3GetMilliseconds( impactTicks );
 
