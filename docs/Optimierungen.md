@@ -1527,6 +1527,51 @@ Seit der Liste ist dazugekommen oder gemessen worden:
   geschlossen. In der CI endet die Demo unter Windows mit und ohne Aufnahme, auch wenn `tracy-capture` angehalten wird,
   bis die Demo ihr Fenster geschlossen hat: 2 s, nachdem es weiterläuft, sind beide beendet. Unter Linux ebenso, auch
   wenn `tracy-capture` minutenlang zurückliegt.
+- **Gebiete der größten Insel.** Gebaut als Prototyp auf `kollaps-25` nach Schritt 62 der [Roadmap](Roadmap.md). Eine
+  wache Insel mit mindestens 1 024 Kontakten und mindestens einem Achtel der Arbeit aller wachen Inseln rechnet nicht
+  mehr Farbe für Farbe, sondern in acht Gebieten, unabhängig von der Zahl der Threads. In jedem Schritt gehen ihre
+  Körper, die Kontakte halten, nach ihrer Lage in ein Raster von 64 mal 64 Zellen über die beiden längeren Seiten ihrer
+  Box, und Box3D schneidet es immer quer zur längeren Seite dort, wo sich die Kontakte am gleichmäßigsten teilen. Jeder
+  Kontakt gehört zu dem seiner Körper mit weniger Kontakten. Ein Thread rechnet ein Gebiet in jedem Durchgang des Lösers
+  ganz, seine Knoten, seinen übrigen Überlauf und seine konvexen Kontakte in der Reihenfolge der Farben, ohne Sperre
+  dazwischen. Ein Körper mit Kontakten in mehreren Gebieten rechnet in jedem auf einer Kopie mit einem Anteil seiner
+  Masse, wie bei den Knoten, und nach jedem Durchgang nimmt er das Mittel seiner Kopien. Statt rund 232 Sperren pro
+  Schritt mit Team bleiben mit vier Teilschritten 36, zwischen den Durchgängen. Die konvexen Kontakte eines Gebiets
+  gehen so in breite Bedingungen, dass jeder Körper seine Kontakte in der Reihenfolge der Farben sieht, in beiden
+  Breiten. Die Ergebnisse ändern sich, bleiben aber mit jeder Zahl von Threads und in beiden Breiten gleich: Ein neuer
+  Test legt eine schwere Platte auf zwei Lagen aus 1 985 Würfeln, eine Insel mit rund 5 800 Kontakten, und vergleicht
+  alle Lagen nach 240 Schritten mit 1, 2, 4 und 8 Workern und mit vier Spuren Bit für Bit. Beim Abriss endet die Demo
+  mit 1 und 4 Threads mit demselben Hash. Die CI bestand unter Windows, Linux und macOS, dort mit vier Spuren auf ARM,
+  auch mit ASan, UBSan und TSan, und auf allen drei kommt derselbe Hash bei 30 Hz heraus. Alle Tests bleiben grün, auch
+  alle, die prüfen, dass nach einem Einsturz nichts in der Luft hängt, neu ist nur der Hash bei 30 Hz. Unter der Platte
+  geben die Würfel bis zu 1,6 mm mehr nach als mit `kollaps-24`, weil über die Grenzen der Gebiete nur noch einmal pro
+  Durchgang gemittelt wird. Beim Abriss der Stadt in der Demo bei ×2 rechnen in 876 der 880 Schritte große Inseln in
+  Gebieten, im Mittel 1,48 Inseln mit zusammen 2 479 Körpern und 6 541 Kontakten, 1 464 davon im Überlauf. 287 Körper
+  haben Kopien, zusammen 613. Das größte der acht Gebiete der ersten Insel hat 8,5 % mehr Kontakte als der Durchschnitt.
+  Die breiten Bedingungen der Gebiete sind zu 96,5 % voll, es sind 658, wo die Farben für dieselben Kontakte 645
+  bräuchten. Mit einem Thread kostet der Löser auf der VM, je vier Läufe im Wechsel mit `kollaps-24`, in zwei Messungen
+  im Mittel 8,1 und 10,7 % mehr, im Median 7,4 und 10,0 %, 0,95 und 1,24 ms pro Schritt. Kein Paar liegt unter 4,9 %,
+  und die Läufe von `kollaps-24` streuen zwischen 11,43 und 12,15 ms. Die Bedingungen selbst kosten 0,09 und 0,38 ms
+  mehr, das Starten und Mitteln der Kopien fällt kaum ins Gewicht. In beiden Messungen gleich liegen 0,87 ms im Aufbau:
+  Die Gebiete kosten 0,67 ms pro Schritt, rund 100 ns pro Kontakt der großen Inseln, und die Pakete, die ein Thread ohne
+  Gebiete nicht braucht, 0,19 ms. Vom Aufbau der Gebiete gehen 0,05 ms in das Leeren der Tabellen und die Farben aller
+  Kontakte, 0,18 ms in die Körper, Lagen und Kontakte der Inseln, 0,16 ms in Anker, Raster, Schnitt und Gebiete, 0,03 ms
+  in die Kopien, 0,13 ms in die Zustände und das Sortieren nach Gebiet und Farbe, 0,06 ms in das Bündeln in breite
+  Bedingungen und 0,08 ms in das Füllen der Spuren. Die Durchgänge über die Kontakte kosten je 12 bis 27 ns pro Kontakt,
+  ohne einen großen Posten: verstreute Zugriffe auf Körper, Kontakte und Zustände, wie beim Aufbau der Knoten in
+  Schritt 59. Die Lagen der Körper nur einmal zu lesen und die Zustände nur für Kontakte außerhalb des Überlaufs zu
+  suchen, sparte rund 0,02 ms. Mit 4 Threads kostet der Löser auf der VM dagegen 5,1 % weniger, drei Paare, 4,8 bis
+  5,3 % in jedem, 5,43 statt 5,72 ms pro Schritt: Der Aufbau kostet dort 0,69 ms mehr, die Bedingungen aber 0,99 ms
+  weniger. Auf der VM warten vier Threads an jeder Sperre lange aufeinander, auf dem Ryzen kosten die Sperren mit 8
+  Threads nur 0,255 ms pro Schritt. Die Regel der [Roadmap](Roadmap.md) erlaubt mit einem Thread höchstens 5 %,
+  „Verwerfen“ tritt ein. Die Zeitleiste vom Ryzen braucht es dafür nicht, und auch ihre Regel hätte der Prototyp wohl
+  verfehlt: Übertragen wie der Aufbau der Knoten, der auf dem Ryzen 3,5-mal so schnell läuft wie auf der VM, kostete der
+  Aufbau der Gebiete dort rund 0,19 ms pro Schritt auf dem aufrufenden Thread. Selbst wenn die Gebiete alle 0,255 ms
+  sparten, die die Threads an den Sperren verlieren, blieben höchstens rund 0,065 ms, verlangt sind 0,10 ms. Der Löser
+  bleibt, wie er ist. Der Prototyp liegt im Verlauf von `kollaps-25`, Commit `6fa0f53`, bestand dort die CI und lässt
+  sich mit einem Revert des Reverts zurückholen. Beide Regeln hängen am selben Hebel, einem rund halb so teuren Aufbau.
+  Derselbe Aufbau, schneller gerechnet, gäbe dieselben Gebiete und Spuren und damit bitgleich dieselben Ergebnisse, das
+  ließe sich gegen den Prototyp prüfen. Einen Weg, der das sicher schafft, zeigen die Durchgänge nicht.
 
 ## Physik, Zerstörung und Schutt
 
@@ -1898,4 +1943,4 @@ Seit der Liste ist dazugekommen oder gemessen worden:
 | Zustandswechsel vorziehen | ⛔ | Gemessen auf `kollaps-22`, siehe „Die Zustandswechsel der Kontakte zerlegt“: Auf dem Ryzen rechnet der aufrufende Thread die Zustandswechsel der Kontakte mit 8 Threads in 0,063 ms pro Schritt allein, während alle Worker warten, siehe „Skalierung auf dem Ryzen mit `kollaps-19`“. Vorgeschlagen als Schritt 58 der [Roadmap](Roadmap.md), gebaut nur, wenn sich Teile, die jeden Kontakt für sich rechnen und nichts ändern, was ein anderer Wechsel liest, in der Kontakt-Schleife auf den Workern vorbereiten lassen und mit 8 Threads mindestens 0,02 ms pro Schritt sparen. Das sind nur das Sammeln der Bits und das Laden der Kontakte und ihrer Formen, 18 % der Schleife, auf dem Ryzen höchstens 0,011 ms, und die Zeilen der Kontakte braucht die Schleife zum Schreiben ohnehin. Alles andere ändert Paarmenge, Listen, Inseln, Farben, Sätze und Ids in der Reihenfolge der Bits. Nicht gebaut. |
 | Ordnen, Gruppen und Bündeln billiger | ⛔ | Gemessen auf `kollaps-23`, siehe „Weniger Durchgänge beim Aufbau der Knoten“: Das Ordnen der Kontakte nach Knoten, das Verteilen auf die Gruppen und das Bündeln kosten auf dem Ryzen mit 8 Threads rund 0,038 ms pro Schritt, siehe „Die Durchgänge des Aufbaus der Knoten“. Vorgeschlagen als Schritt 59 der [Roadmap](Roadmap.md), gebaut nur, wenn eine Fassung mit weniger Durchgängen auf den Ryzen übertragen mindestens 0,01 ms pro Schritt spart, mit denselben Bündeln und Gruppen in jedem Schritt. Eine Fassung, die beim Verteilen auf die Gruppen vier von sechs Durchgängen spart und beim Ordnen und beim Zählen der großen Inseln je einen, liefert in allen Schritten dasselbe, kostet auf der VM aber nur 6 bis 7 % weniger, 10 bis 12 µs pro Schritt, auf dem Ryzen rund 0,005 ms. Die Zeit liegt in den verstreuten Zugriffen auf Körper und Partner, nicht in der Zahl der Durchgänge. Nicht gebaut. |
 | Zeitleiste des Teams mit Tracy | ✅ Werkzeug auf `kollaps-24` | Nach den Schritten 56 bis 59 liegt in dem, was der aufrufende Thread um das Team herum allein rechnet, kaum noch etwas. Der größte Posten bleibt das Team mit seinen Sperren: Mit 8 Threads warten die Threads am Ende der Stufen 21 % der offenen Zeit, siehe „Skalierung auf dem Ryzen mit `kollaps-19`“. Ob sich ein großer Umbau lohnt, der die größte Insel in Gebiete ohne Sperren zerlegt, soll eine Zeitleiste vom Ryzen zeigen. Umgesetzt auf `kollaps-24`, siehe „Die Zeitleiste des Lösers mit Tracy“: Zonen für Tracy mit `NEBENAN_PROFILE`, die Demo dazu als `nebenan-demo-windows-tracy` mit `Tracy-Aufnahme.bat` und die Auswertung in `tools/tracy_team.py`. Ohne verbundenen Profiler kostet das im Benchmark nichts Messbares, die Ergebnisse bleiben bitgleich. Die Aufnahme vom Ryzen steht aus, mit ihr entscheidet Schritt 61 der [Roadmap](Roadmap.md). Auf dem Ryzen aufgenommen am 27. Oktober, siehe „Zeitleiste des Teams auf dem Ryzen“: Mit 8 Threads verlieren die Threads 0,255 ms pro Schritt mit Team an den Enden der Stufen und in den Übergängen, ein Drittel des Lösers, „Zerlegen“ tritt ein. |
-| Größte Insel in Gebiete zerlegen | 🔜 | Vorgeschlagen als Schritt 62 der [Roadmap](Roadmap.md), nach „Zeitleiste des Teams auf dem Ryzen“: Mit 8 Threads verlieren die Threads im Team 0,255 ms pro Schritt an den Enden der rund 232 Stufen und in den Übergängen dazwischen, weil an jeder Sperre alle auf den letzten Block warten. Ein Prototyp auf einer eigenen Branch teilt die größte Insel in eine feste Zahl von Gebieten, unabhängig von der Zahl der Threads, und ein Thread rechnet ein Gebiet ohne Sperren zwischen den Farben. Ein Körper an einer Grenze rechnet in jedem Gebiet mit einer Kopie und einem Anteil seiner Masse, wie bei den Knoten, und nach jedem Durchgang des Lösers mitteln die Kopien. Das ändert die Ergebnisse. Übernommen wird er nur, wenn die Ergebnisse mit jeder Zahl von Threads und auf jeder Plattform gleich bleiben, die Tests grün bleiben, nichts in der Luft hängen bleibt, der Löser auf dem Ryzen mit 8 Threads mindestens 0,10 ms pro Schritt mit Team kürzer dauert und mit einem Thread höchstens 5 % mehr kostet. |
+| Größte Insel in Gebiete zerlegen | ⛔ | Vorgeschlagen als Schritt 62 der [Roadmap](Roadmap.md), nach „Zeitleiste des Teams auf dem Ryzen“: Mit 8 Threads verlieren die Threads im Team 0,255 ms pro Schritt an den Enden der rund 232 Stufen und in den Übergängen dazwischen, weil an jeder Sperre alle auf den letzten Block warten. Ein Prototyp auf einer eigenen Branch teilt die größte Insel in eine feste Zahl von Gebieten, unabhängig von der Zahl der Threads, und ein Thread rechnet ein Gebiet ohne Sperren zwischen den Farben. Ein Körper an einer Grenze rechnet in jedem Gebiet mit einer Kopie und einem Anteil seiner Masse, wie bei den Knoten, und nach jedem Durchgang des Lösers mitteln die Kopien. Das ändert die Ergebnisse. Übernommen wird er nur, wenn die Ergebnisse mit jeder Zahl von Threads und auf jeder Plattform gleich bleiben, die Tests grün bleiben, nichts in der Luft hängen bleibt, der Löser auf dem Ryzen mit 8 Threads mindestens 0,10 ms pro Schritt mit Team kürzer dauert und mit einem Thread höchstens 5 % mehr kostet. Auf `kollaps-25` gebaut und verworfen, siehe „Gebiete der größten Insel“: Die Ergebnisse bleiben mit jeder Zahl von Threads und auf jeder Plattform gleich, die Tests grün, und nichts hängt in der Luft. Mit einem Thread kostet der Löser auf der VM gepaart aber in zwei Messungen im Mittel 8,1 und 10,7 % mehr, weil ein Thread die Gebiete in jedem Schritt neu baut, 0,67 ms. Auf dem Ryzen hätte der Aufbau geschätzt 0,19 ms gekostet, drei Viertel der 0,255 ms, die die Sperren dort kosten. Der Prototyp liegt im Verlauf von `kollaps-25`, Commit `6fa0f53`. |
