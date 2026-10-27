@@ -643,12 +643,11 @@ B3_FORCE_INLINE void b3PrefetchPrepareData( const b3Contact* contact, const b3Bo
 
 // Added for Nebenan: one wide constraint from the contacts in its lanes, for b3PrepareContacts_Convex and
 // b3PreparePackContacts_Convex. A lane from laneCount on or with a null id stays empty. The scales, null or one per lane,
-// multiply the inverse mass and inertia of the bodies, for the copies of a knot, see b3KnotBatch, or of a domain. The
-// slots, null or one per lane, are the states the bodies solve on in a domain, see b3Domains. Returns whether a lane has
-// restitution.
+// multiply the inverse mass and inertia of the bodies, for the copies of a knot, see b3KnotBatch. Returns whether a lane
+// has restitution.
 B3_FORCE_INLINE bool b3PrepareContactWide( b3World* world, b3BodySim* sims, b3BodyState* states, b3ContactConstraintWide* c,
 										   const int* contactIds, int laneCount, b3FloatW warmStartScale, const float* scaleA,
-										   const float* scaleB, const int* slotA, const int* slotB )
+										   const float* scaleB )
 {
 #if B3_ENABLE_VALIDATION
 	b3Body* bodies = world->bodies.data;
@@ -942,19 +941,6 @@ B3_FORCE_INLINE bool b3PrepareContactWide( b3World* world, b3BodySim* sims, b3Bo
 		}
 	}
 
-	// Added for Nebenan: the bodies solve on their copies in a domain, the velocities above came from the bodies
-	if ( slotA != NULL )
-	{
-		for ( int lane = 0; lane < B3_SIMD_WIDTH; ++lane )
-		{
-			if ( c->manifolds[lane] != NULL )
-			{
-				c->indexA[lane] = slotA[lane];
-				c->indexB[lane] = slotB[lane];
-			}
-		}
-	}
-
 	return haveRestitution;
 }
 
@@ -989,8 +975,6 @@ void B3_WIDE( b3PrepareContacts_Convex )( b3SolverBlock block, b3StepContext* co
 		int* contactIds = spans[colorIndex].contacts;
 		const float* scaleA = spans[colorIndex].scaleA;
 		const float* scaleB = spans[colorIndex].scaleB;
-		const int* slotA = spans[colorIndex].slotA;
-		const int* slotB = spans[colorIndex].slotB;
 
 		// Loop over color
 		for ( ; wideIndex < colorWideEndIndex; ++wideIndex )
@@ -1018,10 +1002,9 @@ void B3_WIDE( b3PrepareContacts_Convex )( b3SolverBlock block, b3StepContext* co
 
 			int laneCount = b3MinInt( B3_SIMD_WIDTH, colorContactCount - B3_SIMD_WIDTH * localWideIndex );
 			int laneStart = B3_SIMD_WIDTH * localWideIndex;
-			bool haveRestitution = b3PrepareContactWide(
-				world, sims, states, c, contactIds + laneStart, laneCount, warmStartScale, scaleA != NULL ? scaleA + laneStart : NULL,
-				scaleB != NULL ? scaleB + laneStart : NULL, slotA != NULL ? slotA + laneStart : NULL,
-				slotB != NULL ? slotB + laneStart : NULL );
+			bool haveRestitution =
+				b3PrepareContactWide( world, sims, states, c, contactIds + laneStart, laneCount, warmStartScale,
+									  scaleA != NULL ? scaleA + laneStart : NULL, scaleB != NULL ? scaleB + laneStart : NULL );
 			anyRestitution = anyRestitution || haveRestitution;
 		}
 
@@ -1147,7 +1130,7 @@ void B3_WIDE( b3PreparePackContacts_Convex )( b3StepContext* context, int pack )
 
 			b3ContactConstraintWide* c = wideBase + segmentStarts[segment] + index;
 			bool haveRestitution = b3PrepareContactWide( world, sims, states, c, segmentIds[segment] + B3_SIMD_WIDTH * index,
-														 B3_SIMD_WIDTH, warmStartScale, NULL, NULL, NULL, NULL );
+														 B3_SIMD_WIDTH, warmStartScale, NULL, NULL );
 			anyRestitution = anyRestitution || haveRestitution;
 		}
 	}
@@ -1692,83 +1675,6 @@ void B3_WIDE( b3ApplyRestitution_Convex )( b3SolverBlock block, b3StepContext* c
 	}
 
 	b3TracyCZoneDetailEnd( restitution );
-}
-
-// Added for Nebenan: one pass of the wide constraints of a domain, [start, end) of all wide constraints, as the stages of
-// the colors run it, see b3Domains
-void B3_WIDE( b3SolveDomainContacts )( b3SolverStageType type, b3StepContext* context, int start, int end )
-{
-	b3BodyState* states = context->states;
-	b3ContactConstraintWide* constraints = context->wideConstraints;
-
-	switch ( type )
-	{
-		case b3_stageWarmStart:
-			for ( int i = start; i < end; ++i )
-			{
-				b3ContactConstraintWide* c = constraints + i;
-				b3BodyStateW bA = b3GatherBodies( states, c->indexA );
-				b3BodyStateW bB = b3GatherBodies( states, c->indexB );
-				b3WarmStartContactW( c, &bA, &bB );
-				b3ScatterBodies( states, c->indexA, &bA );
-				b3ScatterBodies( states, c->indexB, &bB );
-			}
-			break;
-
-		case b3_stageSolve:
-		{
-			b3PushConstantsW k = b3GetPushConstantsW( context );
-			for ( int i = start; i < end; ++i )
-			{
-				b3ContactConstraintWide* c = constraints + i;
-				b3BodyStateW bA = b3GatherBodies( states, c->indexA );
-				b3BodyStateW bB = b3GatherBodies( states, c->indexB );
-				b3PushContactW( c, &bA, &bB, &k );
-				b3ScatterBodies( states, c->indexA, &bA );
-				b3ScatterBodies( states, c->indexB, &bB );
-			}
-			break;
-		}
-
-		case b3_stageRelax:
-		{
-			b3RelaxConstantsW k = b3GetRelaxConstantsW( context );
-			for ( int i = start; i < end; ++i )
-			{
-				b3ContactConstraintWide* c = constraints + i;
-				b3BodyStateW bA = b3GatherBodies( states, c->indexA );
-				b3BodyStateW bB = b3GatherBodies( states, c->indexB );
-				b3SolveContactW( c, &bA, &bB, &k );
-				b3ScatterBodies( states, c->indexA, &bA );
-				b3ScatterBodies( states, c->indexB, &bB );
-			}
-			break;
-		}
-
-		case b3_stageRestitution:
-		{
-			b3RestitutionConstantsW k = b3GetRestitutionConstantsW( context );
-			for ( int i = start; i < end; ++i )
-			{
-				b3ContactConstraintWide* c = constraints + i;
-				if ( k.propagate == false && b3AllZeroW( c->restitution ) )
-				{
-					continue;
-				}
-
-				b3BodyStateW bA = b3GatherBodies( states, c->indexA );
-				b3BodyStateW bB = b3GatherBodies( states, c->indexB );
-				b3ApplyRestitutionW( c, &bA, &bB, &k );
-				b3ScatterBodies( states, c->indexA, &bA );
-				b3ScatterBodies( states, c->indexB, &bB );
-			}
-			break;
-		}
-
-		default:
-			B3_ASSERT( false );
-			break;
-	}
 }
 
 // Added for Nebenan: the wide constraints of a batch of a knot, see b3KnotBatch

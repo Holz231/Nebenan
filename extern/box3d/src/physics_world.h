@@ -343,10 +343,6 @@ typedef struct b3World
 	int knotGroupBatchCount;
 	int knotCopyCount;
 
-	// Added for Nebenan: the domains of the last step and the copies of their bodies, see b3Counters::domainCount
-	int domainCount;
-	int domainCopyCount;
-
 	// Added for Nebenan: the work of the packs a team solved in the last step, see b3Counters::teamWork
 	int teamWork;
 

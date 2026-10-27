@@ -115,12 +115,6 @@ typedef enum b3SolverBlockType
 
 	// Added for Nebenan: block for one group of batches of knots, its index as the start, see b3KnotBatch
 	b3_knotBlock,
-
-	// Added for Nebenan: block for one domain of a large island, its index as the start, see b3Domains
-	b3_domainBlock,
-
-	// Added for Nebenan: block for the bodies of the large islands with copies, see b3DomainMerge
-	b3_mergeBlock,
 } b3SolverBlockType;
 
 // Solver block describes a multithreaded unit of work.
@@ -175,11 +169,6 @@ typedef struct b3WidePrepareSpan
 	// null, see b3KnotBatch
 	const float* scaleA;
 	const float* scaleB;
-
-	// Added for Nebenan: per contact the states its bodies solve on plus one, as b3ContactConstraintWide::indexA, for the
-	// copies of the domains, or null, see b3Domains
-	const int* slotA;
-	const int* slotB;
 } b3WidePrepareSpan;
 
 // Added for Nebenan: the lanes of a batch of knot contacts, two wide constraints of four or one of eight
@@ -228,31 +217,6 @@ typedef struct b3KnotSplit
 	int copyCount;
 } b3KnotSplit;
 
-// Added for Nebenan: the domains a large island splits into, see b3BuildDomains, as many as the groups of the knots. In such
-// an island the groups of the knots are its domains.
-#define B3_DOMAINS B3_KNOT_GROUPS
-
-// Added for Nebenan: the large islands that split into domains in one step at most. Each holds at least one in
-// B3_KNOT_GROUP_SHARE of the work, see b3FindLargeIslands.
-#define B3_MAX_LARGE_ISLANDS 8
-
-// Added for Nebenan: a copy of a body in one of its domains, which the domain starts from the body before each pass of the
-// solver, see b3Domains. The slot is the state of the copy, past the awake states, and the body its awake index.
-typedef struct b3DomainCopy
-{
-	int slot;
-	int body;
-} b3DomainCopy;
-
-// Added for Nebenan: a body with contacts in several domains, with its copies from slot on, one per domain in the order of
-// the domains. After each pass the body takes the mean velocity of its copies, see b3MergeDomains.
-typedef struct b3DomainMerge
-{
-	int body;
-	int slot;
-	int copyCount;
-} b3DomainMerge;
-
 // Added for Nebenan: a stage of one block the calling thread solved alone, one of the other packs a worker solved, and
 // a stage a worker came into after giving up its core while it waited, see b3TeamEntry
 typedef enum b3TeamEntryFlags
@@ -281,13 +245,6 @@ typedef struct b3ContactPrepareSpan
 	int start;
 	int count;
 	b3ContactSpec* contacts;
-
-	// Added for Nebenan: per contact the states its bodies solve on, as b3ContactConstraint::indexA, and the scales of their
-	// inverse mass and inertia, for the copies of the domains, or null, see b3Domains
-	const int* slotA;
-	const int* slotB;
-	const float* scaleA;
-	const float* scaleB;
 } b3ContactPrepareSpan;
 
 typedef struct b3JointPrepareSpan
@@ -400,18 +357,6 @@ typedef struct b3StepContext
 
 	// Added for Nebenan: the overflow contacts outside the knots, solved one at a time
 	int overflowContactCount;
-
-	// Added for Nebenan: the domains of the large islands, see b3Domains. Per domain the copies it starts as a range of
-	// domainCopies, its batches of knots as the range of its group, its overflow contacts outside the knots as a range of
-	// the overflow and its wide constraints as a range of all of them, each up to the start of the next domain. The bodies
-	// with copies merge after each pass, see b3DomainMerge.
-	int domainCount;
-	const b3DomainCopy* domainCopies;
-	const int* domainCopyStarts;
-	const int* domainOverflowStarts;
-	const int* domainWideStarts;
-	const b3DomainMerge* domainMerges;
-	int domainMergeCount;
 
 	// padding to prevent false sharing
 	char padding1[64];

@@ -640,31 +640,6 @@ ebenso. Hat das Programm Tracy selbst gestartet, bleibt es dabei. Tracy schreibt
 den Namen des Rechners. `src/tracy_hide_user.cmake` ändert das nach dem Download in „(hidden)“, damit sich eine Aufnahme
 teilen lässt. Ohne `BOX3D_PROFILE` kommt nichts davon in den Build, und `b3StartProfiler` tut nichts.
 
-**Gebiete großer Inseln.** Eine Insel mit mindestens einem Achtel der Arbeit aller wachen Inseln und mindestens 1 024
-Kontakten rechnet nicht mehr Farbe für Farbe mit einer Sperre nach jeder Stufe, beim Abriss rund 230 pro Schritt, an
-denen alle Threads auf den letzten Block warten, sondern in acht Gebieten (`b3Domains` und `b3FindLargeIslands` in
-`src/solver.c`, `B3_DOMAINS` in `src/solver.h`). Ein Thread rechnet in jedem Durchgang des Lösers ein Gebiet ganz, seine
-Knoten, seine übrigen Kontakte im Überlauf und seine konvexen Kontakte in der Reihenfolge der Farben, ohne Sperre
-dazwischen. Jeder Kontakt liegt im Gebiet seines Körpers mit weniger Kontakten, die Kontakte eines Knotens also in den
-Gebieten seiner Partner, und die Gruppen der Knoten einer großen Insel sind ihre Gebiete. Die Gebiete schneidet
-`b3CutDomains` nach der Lage der Körper in einem Raster über die zwei längeren Seiten ihrer Box, jeweils quer zur
-längeren Seite dort, wo sich die Kontakte am gleichmäßigsten teilen. Ein Körper mit Kontakten in mehreren Gebieten hat
-in jedem eine Kopie mit einem Anteil seiner Masse, die das Gebiet vor jedem Durchgang aus dem Körper startet, und nach
-jedem Durchgang nimmt der Körper das Mittel seiner Kopien (`b3MergeDomains`), wie bei den Knoten nach Tonge,
-Benevolenski und Voroshilov. Die Kopien liegen hinter den wachen Zuständen, die Bedingungen eines Gebiets zeigen auf sie
-(`b3WidePrepareSpan::slotA`, `b3ContactPrepareSpan::slotA`). Gesperrt wird nur noch zwischen den Durchgängen, mit vier
-Teilschritten 36 Mal pro Schritt (`b3SolveDomainStages`). Die konvexen Kontakte eines Gebiets gehen in breite
-Bedingungen, jeder in die älteste mit freier Spur nach der letzten jedes seiner bewegten Körper. So sieht jeder Körper
-seine Kontakte in der Reihenfolge der Farben, und kaum eine Spur bleibt leer (`b3SolveDomainContacts` in
-`src/contact_solver_wide.inl`). Große Inseln brauchen Pakete, also keine Gelenke, keine Kontakte mit Netzen in den
-Farben und keine Weitergabe der Restitution. Dann sind sie immer die ersten Pakete, mit jeder Zahl von Workern, auch mit
-einem und während andere Programme die Kerne nehmen, und die übrigen Inseln rechnet je ein Thread ganz. Alles folgt aus
-den Inseln, ihren Kontakten und der Lage ihrer Körper, die Ergebnisse sind mit jeder Zahl von Workern und in beiden
-Breiten gleich. `b3Counters::domainCount` und `domainCopyCount` zählen Gebiete und Kopien. Der Stapel von Box3D hält 48
-statt 32 Einträge (`src/arena_allocator.h`), ein Schritt mit Gebieten nimmt zwei mehr, während das Teilen einer Insel
-auf einem anderen Thread eigene nimmt. Ein Prototyp für Schritt 62 der [Roadmap](../docs/Roadmap.md), siehe „Größte
-Insel in Gebiete zerlegen“ in [`docs/Optimierungen.md`](../docs/Optimierungen.md).
-
 Die erste, die zweite, die vierte bis achte, die zehnte, die dreizehnte bis einunddreißigste, die dreiunddreißigste bis
 fünfunddreißigste, die neununddreißigste bis dreiundvierzigste, die fünfundvierzigste bis siebenundvierzigste, die
 neunundvierzigste bis neunundfünfzigste ändern an den Ergebnissen nichts. Die dritte und die neunte ändern sie in den
@@ -674,24 +649,23 @@ zweiunddreißigste, weil die Kontakte eines Knotens gebündelt gegen Kopien rech
 sechsunddreißigste, weil die Kerne dieselbe Rechnung anders zusammenfassen und deshalb anders runden, die
 siebenunddreißigste, weil die Suche andere Kantenpaare aussiebt und getrennte Hüllen erkennt, die die alte übersah, und
 die achtundvierzigste, weil die Bündel der Knoten dichter liegen und die Knoten großer Inseln in Gruppen gegen eigene
-Kopien rechnen, und die sechzigste, weil große Inseln in Gebieten rechnen und ihre Körper an den Grenzen gegen Kopien
-mit einem Anteil ihrer Masse. Die achtunddreißigste ändert sie nur, wo Kugeln Kugeln oder Kapseln berühren, Kontakte
-ohne vorausschauende Punkte rechnen oder der PreSolve-Callback Kontakte abschaltet, in Nebenans Szenen nicht. Die
+Kopien rechnen. Die achtunddreißigste ändert sie nur, wo Kugeln Kugeln oder Kapseln berühren, Kontakte ohne
+vorausschauende Punkte rechnen oder der PreSolve-Callback Kontakte abschaltet, in Nebenans Szenen nicht. Die
 vierundvierzigste ändert sie nur, wo die volle zweite Suche einen Kontakt zwischen Hüllen ergab, die eine Fläche trennt.
 Die Ergänzungen stehen in `CMakeLists.txt`, `src/CMakeLists.txt`, `include/box3d/base.h`, `include/box3d/box3d.h`,
 `include/box3d/types.h`, `include/box3d/constants.h`, `src/core.h`, `src/core.c`, `src/shape.h`, `src/shape.c`,
 `src/body.h`, `src/body.c`, `src/contact.h`, `src/contact.c`, `src/contact_solver.h`, `src/contact_solver.c`,
 `src/contact_solver_wide.inl`, `src/wide8.c`, `src/simd.c`, `src/simd_avx2.h`, `src/constraint_graph.h`,
 `src/manifold.h`, `src/convex_manifold.c`, `src/convex_manifold_avx2.c`, `src/world_snapshot.c`, `src/recording.c`,
-`src/solver.h`, `src/solver.c`, `src/solver_set.c`, `src/arena_allocator.h`, `src/broad_phase.h`, `src/broad_phase.c`,
-`src/dynamic_tree.h`, `src/dynamic_tree.c`, `src/parallel_for.h`, `src/parallel_for.c`, `src/platform.h`,
-`src/scheduler.h`, `src/scheduler.c`, `src/timer.c`, `src/physics_world.h`, `src/physics_world.c` und
-`src/tracy_hide_user.cmake`, jeweils mit „Added for Nebenan“ markiert. `B3_HAS_UNIQUE_HULLS`, `B3_HAS_SHAPE_BATCH`,
-`B3_HAS_SHAPE_CONTACT_LISTS`, `B3_HAS_EXTERNAL_HULLS`, `B3_HAS_BODY_PREFETCH`, `B3_HAS_STEP_GUARD`,
-`B3_HAS_PREVIOUS_TRANSFORM`, `B3_HAS_STATIC_OVERLAP` und `B3_HAS_CONTACT_DATA_OF_BODIES` zeigen die zweite, die vierte,
-die fünfte, die sechste, die neunzehnte, die dreißigste, die fünfunddreißigste, die zweiundvierzigste und die
-vierundfünfzigste an. Fehlen sie, etwa mit einem eigenen Box3D, läuft Nebenan wie zuvor, nur wachsen Box3Ds Arrays dann
-durch Umkopieren, die Hüllen gehen durch die Tabelle, jede Form geht einzeln in den Baum, jedes stehende Bruchstück
-bekommt einen eigenen Körper, Box3D hält eine Kopie jeder Hülle, Nebenan holt die Körper der Trümmer nicht voraus,
-`nbWorld_Step` rechnet auf dem aufrufenden Thread, `nbWorld_GetDrawPoses` gibt die Lagen nach dem Schritt, Schutt wird
-in allen Bäumen gesucht, und die Ruhe-Prüfung holt die Kontakte jedes ruhigen Stücks für sich.
+`src/solver.h`, `src/solver.c`, `src/solver_set.c`, `src/broad_phase.h`, `src/broad_phase.c`, `src/dynamic_tree.h`,
+`src/dynamic_tree.c`, `src/parallel_for.h`, `src/parallel_for.c`, `src/platform.h`, `src/scheduler.h`,
+`src/scheduler.c`, `src/timer.c`, `src/physics_world.h`, `src/physics_world.c` und `src/tracy_hide_user.cmake`, jeweils
+mit „Added for Nebenan“ markiert. `B3_HAS_UNIQUE_HULLS`, `B3_HAS_SHAPE_BATCH`, `B3_HAS_SHAPE_CONTACT_LISTS`,
+`B3_HAS_EXTERNAL_HULLS`, `B3_HAS_BODY_PREFETCH`, `B3_HAS_STEP_GUARD`, `B3_HAS_PREVIOUS_TRANSFORM`,
+`B3_HAS_STATIC_OVERLAP` und `B3_HAS_CONTACT_DATA_OF_BODIES` zeigen die zweite, die vierte, die fünfte, die sechste, die
+neunzehnte, die dreißigste, die fünfunddreißigste, die zweiundvierzigste und die vierundfünfzigste an. Fehlen sie, etwa
+mit einem eigenen Box3D, läuft Nebenan wie zuvor, nur wachsen Box3Ds Arrays dann durch Umkopieren, die Hüllen gehen
+durch die Tabelle, jede Form geht einzeln in den Baum, jedes stehende Bruchstück bekommt einen eigenen Körper, Box3D
+hält eine Kopie jeder Hülle, Nebenan holt die Körper der Trümmer nicht voraus, `nbWorld_Step` rechnet auf dem
+aufrufenden Thread, `nbWorld_GetDrawPoses` gibt die Lagen nach dem Schritt, Schutt wird in allen Bäumen gesucht, und die
+Ruhe-Prüfung holt die Kontakte jedes ruhigen Stücks für sich.

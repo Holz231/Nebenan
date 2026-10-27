@@ -85,9 +85,6 @@ void b3PushKnots( b3StepContext* context, int startBatch, int endBatch );
 void b3SolveKnots( b3StepContext* context, int startBatch, int endBatch );
 void b3ApplyKnotRestitution( b3StepContext* context, int startBatch, int endBatch );
 
-// Added for Nebenan: one pass of the wide constraints of a domain, [start, end) of all wide constraints, see b3Domains
-void b3SolveDomainContacts( b3SolverStageType type, b3StepContext* context, int start, int end );
-
 // Added for Nebenan: the functions above pick these by the width of the world, see contact_solver_wide.inl
 int b3GetWideContactConstraintByteCountW4( void );
 void b3PrepareContacts_ConvexW4( b3SolverBlock block, b3StepContext* context );
@@ -101,7 +98,6 @@ void b3WarmStartKnotsW4( b3StepContext* context, int startBatch, int endBatch );
 void b3PushKnotsW4( b3StepContext* context, int startBatch, int endBatch );
 void b3SolveKnotsW4( b3StepContext* context, int startBatch, int endBatch );
 void b3ApplyKnotRestitutionW4( b3StepContext* context, int startBatch, int endBatch );
-void b3SolveDomainContactsW4( b3SolverStageType type, b3StepContext* context, int start, int end );
 #if defined( B3_SIMD_HAS_WIDTH_8 )
 int b3GetWideContactConstraintByteCountW8( void );
 void b3PrepareContacts_ConvexW8( b3SolverBlock block, b3StepContext* context );
@@ -115,7 +111,6 @@ void b3WarmStartKnotsW8( b3StepContext* context, int startBatch, int endBatch );
 void b3PushKnotsW8( b3StepContext* context, int startBatch, int endBatch );
 void b3SolveKnotsW8( b3StepContext* context, int startBatch, int endBatch );
 void b3ApplyKnotRestitutionW8( b3StepContext* context, int startBatch, int endBatch );
-void b3SolveDomainContactsW8( b3SolverStageType type, b3StepContext* context, int start, int end );
 #endif
 
 // Added for Nebenan: the copies of a knot in a batch, its velocity before the batch and the sum of the changes of its

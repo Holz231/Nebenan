@@ -2745,8 +2745,6 @@ b3Counters b3World_GetCounters( b3WorldId worldId )
 	s.knotBatchCount = world->knotBatchCount;
 	s.knotGroupBatchCount = world->knotGroupBatchCount;
 	s.knotCopyCount = world->knotCopyCount;
-	s.domainCount = world->domainCount;
-	s.domainCopyCount = world->domainCopyCount;
 	s.teamWork = world->teamWork;
 	s.teamSample = world->teamSample;
 	s.teamWorkerCount = world->teamWorkerCount;
