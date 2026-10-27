@@ -1481,7 +1481,9 @@ herunterladen“. `Tracy-Aufnahme.bat` darin reißt die Stadt bei ×2 mit 8 Thre
 Tracy 0.13.1 nimmt dabei auf, `tracy-update.exe` packt die Aufnahme mit Zstd nach `abriss.tracy`, rund 15 MB. Liegen die
 beiden nicht im Ordner, lädt die Datei beim ersten Start `windows-0.13.1.zip` von GitHub, prüft seine Prüfsumme und
 entpackt daraus die beiden und den Tracy Profiler, der eine Aufnahme zeigt. Das Artefakt selbst enthält von Tracy nur
-den Client in der Demo. Selbst gebaut legt `build.bat tracy` Demo und Startdatei nach `build-tracy\bin\Release`. Unter
+den Client in der Demo. Unter Windows wartet die Demo nach dem Ende mitunter auf `tracy-capture` und `tracy-capture` auf
+sie. Dann im schwarzen Fenster Strg+C drücken und die Frage nach dem Abbrechen mit N beantworten, gespeichert und
+gepackt wird trotzdem. Selbst gebaut legt `build.bat tracy` Demo und Startdatei nach `build-tracy\bin\Release`. Unter
 Linux und macOS mit `-DNEBENAN_PROFILE=ON` bauen und in zwei Terminals erst `tracy-capture`, dann die Demo starten:
 
 ```sh
