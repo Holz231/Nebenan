@@ -512,6 +512,10 @@ typedef struct nbWorld
 	// the order of debris, and skip the rubble a word at a time. The bits past the end of debris are clear.
 	nbBitArray movingDebris;
 
+	// One bit per entry of debris, set for a piece of at least NB_CHECKED_VOLUME. Such a piece takes the checks of
+	// nbSettleDebris many times as long as a small one once it is quiet, they look at it first, see NB_SETTLE_BLOCK.
+	nbBitArray largeDebris;
+
 	// Seconds simulated so far. Debris ages against it, see nbActor::freeTime.
 	double time;
 

@@ -548,6 +548,18 @@ static void nbMarkMoving( nbWorld* world, const nbActor* actor )
 // nbIsSupportedWithout. Smaller ones freeze on whatever they lie on.
 #define NB_CHECKED_VOLUME 0.1f
 
+// Keep the bit of the debris entry of an actor in step with its volume, see nbWorld::largeDebris
+static void nbMarkLarge( nbWorld* world, const nbActor* actor )
+{
+	int index = actor->debrisIndex;
+	if ( index != NB_NULL_INDEX )
+	{
+		uint64_t bit = (uint64_t)1 << ( index & 63 );
+		uint64_t* word = world->largeDebris.data + ( index >> 6 );
+		*word = actor->volume >= NB_CHECKED_VOLUME ? *word | bit : *word & ~bit;
+	}
+}
+
 // The first entry of debris from the index on that moves, or the debris count. Rubble that comes back to life ahead of
 // a loop over the moving debris is visited, as by a loop over all debris.
 static int nbNextMoving( const nbWorld* world, int index )
@@ -595,10 +607,13 @@ static void nbRemoveDebris( nbWorld* world, int actorIndex )
 	world->debris.data[debrisIndex] = movedActor;
 	world->actors.data[movedActor].debrisIndex = debrisIndex;
 	world->movingDebris.data[last >> 6] &= ~( (uint64_t)1 << ( last & 63 ) );
+	world->largeDebris.data[last >> 6] &= ~( (uint64_t)1 << ( last & 63 ) );
 	world->debris.count -= 1;
 	world->movingDebris.count = ( world->debris.count + 63 ) >> 6;
+	world->largeDebris.count = world->movingDebris.count;
 	actor->debrisIndex = NB_NULL_INDEX;
 	nbMarkMoving( world, world->actors.data + movedActor );
+	nbMarkLarge( world, world->actors.data + movedActor );
 }
 
 // Destroy the Box3D body of an actor, with all shapes still on it
@@ -718,6 +733,7 @@ void nbActor_AddChunk( nbWorld* world, int actorIndex, int chunkIndex )
 	actor->chunkCount += 1;
 	actor->volume += chunk->shape->volume;
 	actor->massDirty = true;
+	nbMarkLarge( world, actor );
 	nbCountStanding( world, actor, chunk, 1.0 );
 }
 
@@ -747,6 +763,7 @@ void nbActor_RemoveChunk( nbWorld* world, int actorIndex, int chunkIndex )
 	actor->chunkCount -= 1;
 	actor->volume -= chunk->shape->volume;
 	actor->massDirty = true;
+	nbMarkLarge( world, actor );
 	nbCountStanding( world, actor, chunk, -1.0 );
 }
 
@@ -1682,8 +1699,10 @@ void nbUpdateDebris( nbWorld* world, int actorIndex )
 		if ( ( actor->debrisIndex >> 6 ) == world->movingDebris.count )
 		{
 			nbArray_Push( world->movingDebris, 0 );
+			nbArray_Push( world->largeDebris, 0 );
 		}
 		nbMarkMoving( world, actor );
+		nbMarkLarge( world, actor );
 	}
 	else if ( isDebris == false && actor->debrisIndex != NB_NULL_INDEX )
 	{
@@ -4905,6 +4924,7 @@ void nbDestroyWorld( nbWorldId worldId )
 	nbArray_Free( world->bodyToActor );
 	nbArray_Free( world->debris );
 	nbArray_Free( world->movingDebris );
+	nbArray_Free( world->largeDebris );
 	nbArray_Free( world->touchedChunks );
 	nbArray_Free( world->touchedActors );
 	nbArray_Free( world->splitSeeds );
@@ -5791,7 +5811,9 @@ static bool nbCarriesWithout( const nbWorld* world, const nbCarrier* carriers, i
 }
 
 // Moving debris per block of the checks in nbSettleDebris. With workers, every thread keeps a segment of the blocks from
-// update to update, see nbClaimSettleBlock.
+// update to update, see nbClaimSettleBlock, and takes the blocks with a piece of at least NB_CHECKED_VOLUME first: Once
+// quiet, such a piece takes the look at what carries it 20 times as long as a small one on the VM, at times milliseconds,
+// and at the end the other threads waited for it.
 #define NB_SETTLE_BLOCK 64
 
 // Blocks the segments of the checks in nbSettleDebris hold at most, the front and the end of one share an int. With more
@@ -5858,11 +5880,12 @@ typedef struct nbSettleTask
 	_Alignas( 64 ) nbWorld* world;
 	nbArena* arena;
 
-	// The moving debris as actors in the order of the debris and its blocks. With workers a segment of the blocks for
-	// every task, else the blocks one after the other.
+	// The moving debris as actors in the order of the debris, its blocks, and the order the threads take them in. With
+	// workers a segment of the order for every task, else the order one after the other.
 	const int* moving;
 	int movingCount;
 	nbSettleBlock* blocks;
+	const int* blockOrder;
 	int blockCount;
 	nbSettleSegment* segments;
 	int segmentCount;
@@ -6109,9 +6132,10 @@ static int nbGetSettleSlot( nbWorld* world )
 	return slot;
 }
 
-// The next block of the checks in nbSettleDebris for the thread in a slot, -1 once all are taken. A thread takes the
-// blocks of its own segment from the front, so it checks about the pieces of the last update, which are still in its
-// caches. Then it helps with the segment that has the most blocks left, from the back.
+// The next place in the order of the blocks of the checks in nbSettleDebris for the thread in a slot, -1 once all are
+// taken. A thread takes the blocks of its own segment from the front, so it checks about the pieces of the last update,
+// which are still in its caches, the large ones first. Then it helps with the segment that has the most blocks left, from
+// the back, where the small ones are.
 static int nbClaimSettleBlock( nbSettleSegment* segments, int segmentCount, int slot )
 {
 	if ( slot < segmentCount )
@@ -6180,23 +6204,25 @@ static void nbSettleTaskMain( void* context )
 	int slot = task->segments != NULL ? nbGetSettleSlot( task->world ) : 0;
 	for ( ;; )
 	{
-		int blockIndex;
+		int claim;
 		if ( task->segments != NULL )
 		{
-			blockIndex = nbClaimSettleBlock( task->segments, task->segmentCount, slot );
-			if ( blockIndex < 0 )
+			claim = nbClaimSettleBlock( task->segments, task->segmentCount, slot );
+			if ( claim < 0 )
 			{
 				break;
 			}
 		}
 		else
 		{
-			blockIndex = nbAtomicFetchAddInt( task->nextBlock, 1 );
-			if ( blockIndex >= task->blockCount )
+			claim = nbAtomicFetchAddInt( task->nextBlock, 1 );
+			if ( claim >= task->blockCount )
 			{
 				break;
 			}
 		}
+
+		int blockIndex = task->blockOrder[claim];
 
 		if ( task->timed == false )
 		{
@@ -6237,14 +6263,22 @@ static void nbSettleDebris( nbWorld* world, b3Vec3 up, float timeStep )
 	world->settleStamp += 1;
 	uint32_t stamp = world->settleStamp;
 
-	// The moving debris in the order of the debris, in blocks for the workers
+	// The moving debris in the order of the debris, in blocks for the workers, and which blocks hold a large piece
 	int* moving = nbArena_AllocArray( &world->arena, int, world->debris.count );
+	bool* largeBlocks = nbArena_AllocArray( &world->arena, bool, world->debris.count / NB_SETTLE_BLOCK + 1 );
 	int movingCount = 0;
 	for ( int w = 0; w < world->movingDebris.count; ++w )
 	{
+		uint64_t largeWord = world->largeDebris.data[w];
 		for ( uint64_t word = world->movingDebris.data[w]; word != 0; word &= word - 1 )
 		{
-			moving[movingCount++] = world->debris.data[64 * w + nbCTZ64( word )];
+			int bit = nbCTZ64( word );
+			if ( movingCount % NB_SETTLE_BLOCK == 0 )
+			{
+				largeBlocks[movingCount / NB_SETTLE_BLOCK] = false;
+			}
+			largeBlocks[movingCount / NB_SETTLE_BLOCK] |= ( ( largeWord >> bit ) & 1 ) != 0;
+			moving[movingCount++] = world->debris.data[64 * w + bit];
 		}
 	}
 
@@ -6260,14 +6294,32 @@ static void nbSettleDebris( nbWorld* world, b3Vec3 up, float timeStep )
 	int taskCount = world->enqueueTask != NULL && movingCount >= nbSettleWorkerPieces( world ) ? world->workerCount : 1;
 	taskCount = b3MinInt( taskCount, blockCount );
 
-	// With workers a segment of the blocks for every task, the first for the first slot, see nbClaimSettleBlock. A thread
-	// alone takes them in order, so its loads run on into the next block.
-	nbSettleSegment segments[NB_MAX_WORKERS];
+	// With workers a segment of the blocks for every task, the first for the first slot, see nbClaimSettleBlock, and in
+	// every segment the blocks with a large piece first, see NB_SETTLE_BLOCK. A thread alone takes them in order, so its
+	// loads run on into the next block.
 	bool segmented = taskCount > 1 && blockCount <= NB_MAX_SEGMENT_BLOCKS;
-	for ( int s = 0; segmented && s < taskCount; ++s )
+	int segmentCount = segmented ? taskCount : 1;
+	int* blockOrder = nbArena_AllocArray( &world->arena, int, blockCount );
+	nbSettleSegment segments[NB_MAX_WORKERS];
+	for ( int s = 0; s < segmentCount; ++s )
 	{
-		int front = s * blockCount / taskCount;
-		int end = ( s + 1 ) * blockCount / taskCount;
+		int front = s * blockCount / segmentCount;
+		int end = ( s + 1 ) * blockCount / segmentCount;
+		int ordered = front;
+		for ( int b = front; b < end; ++b )
+		{
+			if ( taskCount == 1 || largeBlocks[b] )
+			{
+				blockOrder[ordered++] = b;
+			}
+		}
+		for ( int b = front; b < end && taskCount > 1; ++b )
+		{
+			if ( largeBlocks[b] == false )
+			{
+				blockOrder[ordered++] = b;
+			}
+		}
 		segments[s].range = ( front << 16 ) | end;
 	}
 	int nextBlock = 0;
@@ -6283,6 +6335,7 @@ static void nbSettleDebris( nbWorld* world, b3Vec3 up, float timeStep )
 			.moving = moving,
 			.movingCount = movingCount,
 			.blocks = blocks,
+			.blockOrder = blockOrder,
 			.blockCount = blockCount,
 			.segments = segmented ? segments : NULL,
 			.segmentCount = taskCount,
