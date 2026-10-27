@@ -30,9 +30,9 @@ Lösers mit Tracy auf `kollaps-24`, auf dem Ryzen aufgenommen, und den Gebieten 
 gebaut und verworfen, und dem Erstarren des Schutts auf `kollaps-26` und dem Anlegen der Kontakte auf `kollaps-27`,
 beide gemessen und verworfen, und mit `kollaps-27` auf dem Ryzen nachgemessen, und dem Preis eines Kontakts in der
 Kontakt-Schleife auf `kollaps-28` und den Teilen eines Einschlags auf `kollaps-29` und den Prüfungen des Updates auf
-`kollaps-30`, alle drei gemessen und verworfen. Begründungen und Messwerte stehen in
-[`Optimierungen.md`](Optimierungen.md), hier nur das Fazit und die Reihenfolge. Nach jeder Runde wird der Stand hier
-nachgetragen.
+`kollaps-30`, alle drei gemessen und verworfen, und den Prüfungen des Updates auf eigenen Cache-Zeilen auf `kollaps-31`,
+auf Wunsch des Nutzers gebaut. Begründungen und Messwerte stehen in [`Optimierungen.md`](Optimierungen.md), hier nur das
+Fazit und die Reihenfolge. Nach jeder Runde wird der Stand hier nachgetragen.
 
 `kollaps-1` ist keine Runde der Physik, sie baut den Einsturz nach Kapitel 17 der Roadmap des Spiels, siehe
 [`Referenz`](Referenz/README.md). Sie ändert aber, was der Benchmark unter Trommelfeuer bei ×4 misst: Eine Etage gibt
@@ -170,7 +170,10 @@ vergleicht dort verschiedene Szenen. Im Benchmark enden die Städte fast gleich,
   Block allein länger als ein Achtel der Arbeit, siehe Schritt 50. Dass eine Prüfung mit mehreren Threads mehr kostet
   als mit einem, machen die Prüfungen, die gleichzeitig laufen: Die Threads schreiben in Cache-Zeilen, die die anderen
   lesen, im Akteur und in den Arenen. Getrennt holt das auf der VM mit 4 Threads aber weniger als die Hälfte des
-  Anstiegs zurück, siehe Schritt 67.
+  Anstiegs zurück, siehe Schritt 67. Auf Wunsch des Nutzers ist es seit `kollaps-31` trotzdem gebaut, mit einem festen
+  Abschnitt der Blöcke für jeden Thread, in dem die großen Stücke zuerst drankommen: Beim Abriss auf der VM bei ×4
+  kosten die Prüfungen mit 4 Threads 6 % weniger und mit einem Thread 2 % mehr, im Benchmark unter Trommelfeuer 1 bis
+  3 % mehr, siehe Schritt 69.
 - **Der Löser hing am Überlauf des Graphen.** Kontakte, für die keine der 20 Farben frei ist, löst Box3D auf dem
   aufrufenden Thread allein. Beim Abriss sind das die Kontakte an Knoten: große abgebrochene Teile aus Dutzenden bis
   Hunderten Bruchstücken, an denen Hunderte kleine Trümmer liegen, siehe „Der Überlauf beim Abriss“. Seit `physik-22`
@@ -264,8 +267,10 @@ bleiben.
 | 64 | **Auf dem Ryzen messen**: „Skalierung messen“ mit `kollaps-27` beim Abriss bei ×2 und ×4 | zeigt nach den Schritten 56 bis 63, wo mit 8 Threads noch Zeit über einem Achtel der Zeit eines Threads liegt, und entscheidet die nächsten Schritte | 63 | ✅ am 27. Oktober auf dem Ryzen: Mit 8 Threads kostet ein Schritt bei ×2 2,25 und bei ×4 1,64 ms. Über einem Achtel ihrer Zeit mit einem Thread liegen von den Posten, die 56 bis 63 noch nicht zerlegt haben, die Kontakt-Schleife mit 0,083 und 0,152 ms, die Einschläge mit 0,058 und 0,089 ms und bei ×4 die Prüfungen des Updates mit 0,051 ms. Bei ×4 kostet ein Kontakt mit 8 Threads 45 % mehr als mit einem. „Zerlegen“ tritt ein, daraus 65 |
 | 65 | **Kontakt-Schleife bei ×4 zerlegen**: auf der VM beim Abriss bei ×4 messen, was ein Kontakt in den Blöcken der Kontakt-Schleife mit 1, 2 und 4 Threads kostet, nach Prüfungen und Narrowphase, woher der Anstieg mit dem zweiten Thread kommt, etwa weil jeder Block in jedem Schritt auf einem anderen Kern landet, und was ihn behebt, bitgleich | mit 8 Threads ein Teil der 0,152 ms pro Schritt bei ×4 und 0,083 ms bei ×2, die die Kontakt-Schleife über einem Achtel ihrer Zeit mit einem Thread liegt, wo dasselbe hilft auch in den Prüfungen des Updates und in den Paketen | 64 | ⛔ auf `kollaps-28` gemessen: Auf der VM kostet ein Kontakt bei ×4 mit 2 Threads in zwei Läufen 1,6 und 2,0 % mehr als mit einem, nicht 32 % wie auf dem Ryzen. Im Benchmark steigt er mit 2 Threads auch, wenn die Schleife allein auf dem aufrufenden Thread läuft, und feste Blöcke holen nichts Sicheres zurück, daraus 66 |
 | 66 | **Einschläge zerlegen**: auf der VM beim Abriss bei ×4 messen, was ein Einschlag nach seinen Teilen kostet, die Zellen samt dem Warten auf die Worker, die Box3D-Körper und -Formen der neuen Teile, den Einbau der Kinder, die Suche, das Teilen der Akteure, die Überlappungen und die Bindungen, und was davon der aufrufende Thread allein rechnet und sich bitgleich auf die Worker legen oder sparen lässt | mit 8 Threads ein Teil der 0,089 ms pro Schritt bei ×4 und 0,058 ms bei ×2, die die Einschläge über einem Achtel ihrer Zeit mit einem Thread liegen | 65 | ⛔ auf `kollaps-29` gemessen: Ein Einschlag kostet auf der VM bei ×4 rund 310 µs, 73 % davon rechnet der aufrufende Thread allein. Am meisten kostet der Stoß der Explosion in Box3D mit 27 %, auf dem Ryzen 0,028 ms pro Schritt. Seine Schleife über die Formen auf die Worker zu legen brächte dort mit den 7 µs, die sie zum Anlaufen brauchen, 0,013 bis 0,014 ms, jeder andere Teil liegt unter 0,011 ms. „Verteilen“ tritt nicht ein, daraus 67 |
-| 67 | **Prüfungen des Updates bei ×4 zerlegen**: auf der VM beim Abriss bei ×4 messen, was eine Prüfung auf Ruhe und der Blick auf die Auflage eines ruhigen Stücks mit 1, 2 und 4 Threads nach ihren Teilen kosten, woher ihr Anstieg mit dem zweiten Thread kommt, der anders als in der Kontakt-Schleife auch auf der VM auftritt, und was ihn behebt, bitgleich | mit 8 Threads ein Teil der 0,051 ms pro Schritt bei ×4, die die Prüfungen des Updates über einem Achtel ihrer Zeit mit einem Thread liegen | 66 | ⛔ auf `kollaps-30` gemessen: Der Preis pro Stück steigt beim Abriss auf der VM mit 2 und 4 Threads um 11 und 17 %, aber kaum, wenn der aufrufende Thread allein prüft. Die Threads schreiben in Zeilen, die die anderen lesen, im Akteur `checkedAsleep` und seine Ruhe neben `isFree`, `isStatic` und `isRubble`, und in den Arenen der Worker. Getrennt und mit festen Blöcken steigt er beim Abriss noch um 5 und 10 %, das holt mit 4 Threads 42 % zurück statt der Hälfte, daraus 68 |
+| 67 | **Prüfungen des Updates bei ×4 zerlegen**: auf der VM beim Abriss bei ×4 messen, was eine Prüfung auf Ruhe und der Blick auf die Auflage eines ruhigen Stücks mit 1, 2 und 4 Threads nach ihren Teilen kosten, woher ihr Anstieg mit dem zweiten Thread kommt, der anders als in der Kontakt-Schleife auch auf der VM auftritt, und was ihn behebt, bitgleich | mit 8 Threads ein Teil der 0,051 ms pro Schritt bei ×4, die die Prüfungen des Updates über einem Achtel ihrer Zeit mit einem Thread liegen | 66 | ⛔ auf `kollaps-30` gemessen: Der Preis pro Stück steigt beim Abriss auf der VM mit 2 und 4 Threads um 11 und 17 %, aber kaum, wenn der aufrufende Thread allein prüft. Die Threads schreiben in Zeilen, die die anderen lesen, im Akteur `checkedAsleep` und seine Ruhe neben `isFree`, `isStatic` und `isRubble`, und in den Arenen der Worker. Getrennt und mit festen Blöcken steigt er beim Abriss noch um 5 und 10 %, das holt mit 4 Threads 42 % zurück statt der Hälfte, daraus 68. Der Nutzer will die Trennung trotzdem, daraus 69 |
 | 68 | **Dauerhafte Gebiete**: auf einer eigenen Branch die Gebiete der großen Inseln wie die Farben im Graphen über die Schritte führen, jeder Körper fest in einem, jeder Kontakt mit Gebiet und Farbe, sobald er zu berühren beginnt, neu geschnitten nur selten, die Körper an den Grenzen mit geteilter Masse wie im Prototyp von Schritt 62, ändert die Ergebnisse | mit 8 Threads ein Teil der 0,255 ms pro Schritt mit Team, die die Threads an den Sperren zwischen den Stufen verlieren, ohne den Aufbau in jedem Schritt, an dem der Prototyp scheiterte | 67 und die Entscheidung des Nutzers | ❓ der Nutzer entscheidet |
+| 69 | **Prüfungen des Updates auf eigenen Zeilen**: was die Prüfungen von jedem bewegten Stück schreiben, auf eigenen Cache-Zeilen am Ende des Akteurs, alle Allokationen auf 64 Bytes, die Arenen der Worker und die Aufgaben der Prüfungen auf eigenen Zeilen, und mit Workern für jeden Thread ein fester Abschnitt der Blöcke, den er von Update zu Update behält, darin die Blöcke mit großen Stücken zuerst, bitgleich, auf Wunsch des Nutzers trotz „Nichts davon“ in 67 | auf dem Ryzen hochgerechnet rund 0,011 ms pro Schritt bei ×4 mit 8 Threads | 67 und der Wunsch des Nutzers | ✅ auf `kollaps-31`: Die Welt endet bitgleich, die Tests bleiben grün. Beim Abriss auf der VM bei ×4 kosten die Prüfungen mit 2 und 4 Threads 2,8 und 6,2 % weniger, ein Stück in den Blöcken mit 4 Threads 11,6 %, mit einem Thread 1,6 % mehr. Im Benchmark unter Trommelfeuer bei ×4 kosten sie 1,0 bis 3,3 % mehr. Ein Akteur ist 448 statt 384 Bytes groß, die Stadt braucht 1,5 % mehr Speicher. Auf dem Ryzen nachzumessen, siehe 70 |
+| 70 | **Auf dem Ryzen nachmessen**: „Skalierung messen“ mit `kollaps-30` und `kollaps-31` direkt nacheinander beim Abriss bei ×4 und ×2 | zeigt, was 69 mit 8 Threads bringt, und entscheidet nach den Regeln unter „Was als Nächstes in Frage kommt“, ob es bleibt | 69 | 🔜 |
 | 33 | **Weniger Kopien an kleinen Knoten**: eine Gruppe für je 64 statt 32 Kontakte, ändert die Ergebnisse | mit 1 und 2 Threads ein Teil der 30 und 7 % pro Kontakt | 30 | 🔜 niedrig |
 | 26 | **Worker wach halten statt schlafen legen**: kurz aktiv warten, bevor ein Worker schläft, bitgleich | auf der VM rund ein Zehntel der Ruhe-Prüfung, kostet Rechenzeit beim Zeichnen | 25 | ⛔ nach 25: Auf dem Ryzen laufen die Worker nach 6 bis 7 µs an, aktiv zu warten spart unter 0,5 % eines Schritts |
 
@@ -1378,6 +1383,24 @@ entscheidet. Will er ihn, gilt dieselbe Regel wie für den Prototyp von Schritt 
 Ergebnisse mit jeder Zahl von Threads und auf jeder Plattform gleich bleiben, die Tests grün bleiben, nichts in der Luft
 hängen bleibt, der Löser auf dem Ryzen mit 8 Threads mindestens 0,10 ms pro Schritt mit Team kürzer dauert und mit einem
 Thread höchstens 5 % mehr kostet.
+
+Der Nutzer hält die Trennung trotzdem für lohnend, daraus Schritt 69. Gebaut am 27. Oktober auf `kollaps-31`, siehe „Die
+Prüfungen des Updates auf eigenen Zeilen“ in [Optimierungen.md](Optimierungen.md). Was die Prüfungen von jedem bewegten
+Stück schreiben, liegt am Ende des Akteurs auf zwei eigenen Cache-Zeilen, jede Allokation beginnt auf 64 Bytes, die
+Arenen der Worker und die Aufgaben der Prüfungen liegen auf eigenen Zeilen, und mit Workern behält jeder Thread einen
+festen Abschnitt der Blöcke, in dem er die Blöcke mit großen Stücken zuerst nimmt, bevor er den anderen von hinten
+hilft. Die Welt endet bitgleich. Beim Abriss auf der VM bei ×4 kosten die Prüfungen auf den Threads mit 1 Thread 1,6 %
+mehr und mit 2 und 4 Threads 2,8 und 6,2 % weniger, mit 4 Threads 0,553 statt 0,590 ms pro Schritt, und ein Stück in den
+Blöcken kostet mit 4 Threads 11,6 % weniger. Im Benchmark unter Trommelfeuer bei ×4, mit halb so vielen bewegten Stücken
+pro Update, kosten sie 3,3, 1,0 und 2,2 % mehr. Mit einem Thread liest eine Prüfung jetzt fünf statt vier Zeilen eines
+Akteurs. Ob das bleibt, entscheidet der Ryzen, Schritt 70:
+
+- **Behalten**: Kosten die Prüfungen auf den Threads, `checkMoving` im Bericht von „Skalierung messen“, beim Abriss bei
+  ×4 mit 8 Threads weniger als mit `kollaps-30` direkt davor oder danach und mit einem Thread höchstens 5 % mehr, bleibt
+  `kollaps-31`.
+- **Zurücknehmen**: Sonst kommt die Trennung auf einer neuen Branch wieder heraus.
+
+Danach bleibt der große Umbau, die dauerhaften Gebiete, Schritt 68, über den der Nutzer entscheidet.
 
 ## Kleinere Punkte
 

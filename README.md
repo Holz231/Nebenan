@@ -1138,7 +1138,13 @@ Ein Spiel ruft dafür nichts Neues auf, und die Ergebnisse bleiben bitgleich. Be
 damit 20 bis 24 % weniger, und ein Schritt mit 1, 2 und 4 Threads spart 0,27, 0,12 und 0,04 ms, die Pflege der Listen
 eingerechnet, siehe „Nur berührende Kontakte ablaufen“ in [docs/Optimierungen.md](docs/Optimierungen.md). Auf dem
 Ryzen 7 7800X3D kosten die Prüfungen damit mit 1 bis 8 Threads 8 bis 12 % weniger, aber mit 8 Threads kostet die Pflege
-der Listen so viel, wie das Update spart, siehe „Skalierung auf dem Ryzen mit `kollaps-15`“. Wie es weitergeht, steht in
+der Listen so viel, wie das Update spart, siehe „Skalierung auf dem Ryzen mit `kollaps-15`“. Seit `kollaps-31` liegt,
+was die Prüfungen von jedem bewegten Stück schreiben, auf eigenen Cache-Zeilen am Ende des Akteurs, und mit Workern
+behält jeder Thread einen festen Abschnitt der Blöcke von Update zu Update, darin die mit großen Stücken zuerst. Ein
+Spiel ruft dafür nichts Neues auf, ein eigener Allokator, siehe `nbSetAllocator`, bekommt 64 statt 32 Bytes als
+Ausrichtung, und die Ergebnisse bleiben bitgleich. Beim Abriss auf der VM bei ×4 kosten die Prüfungen mit 4 Threads 6 %
+weniger und mit einem Thread 2 % mehr, im Benchmark unter Trommelfeuer 1 bis 3 % mehr, siehe „Die Prüfungen des Updates
+auf eigenen Zeilen“ in [docs/Optimierungen.md](docs/Optimierungen.md). Wie es weitergeht, steht in
 [docs/Roadmap.md](docs/Roadmap.md).
 
 Die teuersten Frames folgen auf einen Einsturz: Der Schutt um die Reste der Etage taut auf, und Box3D legt im nächsten
