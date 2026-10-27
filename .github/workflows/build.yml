@@ -71,6 +71,19 @@ jobs:
           if not exist script-test\tracy-update.exe exit /b 1
           if not exist script-test\tracy-profiler.exe exit /b 1
 
+      # A program that ends while Tracy records sends the rest of its data first, the capture has to end with it
+      - name: Record the unit tests with Tracy
+        if: ${{ matrix.profile }}
+        timeout-minutes: 10
+        run: |
+          script-test/tracy-capture.exe -o tests.tracy -a 127.0.0.1 -f > capture.log 2>&1 &
+          capture=$!
+          sleep 2
+          ${{ matrix.tests }} > tests.log
+          wait $capture
+          tail -c 400 capture.log
+          test -s tests.tracy
+
       - name: Package demo
         run: |
           mkdir -p package/lizenzen
