@@ -709,6 +709,12 @@ typedef struct b3Counters
 	int knotGroupBatchCount;
 	int knotCopyCount;
 
+	/// Added for Nebenan: the domains of the large islands in the last step, eight per island, and the copies of their bodies
+	/// with contacts in several domains. A large island holds at least an eighth of the work and 1024 contacts, and each of
+	/// its domains solves a whole pass of the solver without a barrier between the colors. Zero without such an island.
+	int domainCount;
+	int domainCopyCount;
+
 	/// Added for Nebenan: the work of the largest packs of islands, as islandWork weighs it, if a team of all workers solved
 	/// them in the last step, stage by stage with a barrier after each, while they solved the other packs whole in between.
 	/// A team takes the largest pack once it holds clearly more than the even share of a worker, and with it every further

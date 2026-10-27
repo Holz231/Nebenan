@@ -1845,6 +1845,111 @@ static int TeamPacksTest( void )
 	return 0;
 }
 
+// A heavy plate on two layers of small cubes, 32 by 32 below and 31 by 31 above, each upper cube on the corners of four
+// lower ones, makes one island with about 5 800 contacts, a large island that splits into eight domains, see b3Domains.
+// Each domain solves its passes alone, and a body with contacts in several domains has a copy in each with its share of
+// the mass: the plate and the cubes on the cuts between the domains. The plate must come to rest on the cubes as in
+// KnotTest, and every body must end the same in every bit with one, two, four and eight workers and in four lanes.
+static int DomainTest( void )
+{
+	enum
+	{
+		side = 32,
+		cubeCount = side * side + ( side - 1 ) * ( side - 1 ),
+	};
+	const int workers[5] = { 1, 2, 4, 8, 8 };
+	nbTaskSystem* pool = nbCreateTaskSystem( 7 );
+	uint32_t hashes[5];
+	for ( int pass = 0; pass < 5; ++pass )
+	{
+		b3SetSIMDWidth( pass == 4 ? 4 : 0 );
+		TestScene scene = pass == 0 ? CreateScene() : CreateSceneWithPool( pool, workers[pass] );
+
+		b3BodyDef bodyDef = b3DefaultBodyDef();
+		bodyDef.type = b3_dynamicBody;
+		b3ShapeDef shapeDef = b3DefaultShapeDef();
+		b3BoxHull cube = b3MakeBoxHull( 0.05f, 0.05f, 0.05f );
+		b3BodyId bodies[cubeCount + 1];
+		int count = 0;
+		for ( int layer = 0; layer < 2; ++layer )
+		{
+			int cubes = side - layer;
+			float offset = 0.06f * (float)( cubes - 1 );
+			for ( int i = 0; i < cubes * cubes; ++i )
+			{
+				bodyDef.position = (b3Vec3){ 0.12f * (float)( i % cubes ) - offset, 0.05f + 0.1f * (float)layer,
+											 0.12f * (float)( i / cubes ) - offset };
+				bodies[count] = b3CreateBody( scene.physicsWorld, &bodyDef );
+				b3CreateHullShape( bodies[count], &shapeDef, &cube.base );
+				count += 1;
+			}
+		}
+
+		bodyDef.position = (b3Vec3){ 0.0f, 0.251f, 0.0f };
+		b3BodyId plate = b3CreateBody( scene.physicsWorld, &bodyDef );
+		bodies[cubeCount] = plate;
+		b3BoxHull slab = b3MakeBoxHull( 0.06f * (float)side, 0.05f, 0.06f * (float)side );
+		shapeDef.density = 20000.0f;
+		b3CreateHullShape( plate, &shapeDef, &slab.base );
+
+		int domainSteps = 0, domains = 0, copies = 0;
+		for ( int step = 0; step < 240; ++step )
+		{
+			nbWorld_Step( scene.world, 1.0f / 60.0f, 4 );
+			b3Counters counters = b3World_GetCounters( scene.physicsWorld );
+			domainSteps += counters.domainCount > 0 ? 1 : 0;
+			domains = b3MaxInt( domains, counters.domainCount );
+			copies = b3MaxInt( copies, counters.domainCopyCount );
+		}
+
+		b3Pos position = b3Body_GetPosition( plate );
+		float speed = b3Length( b3Body_GetLinearVelocity( plate ) );
+		float lowest[2] = { 1.0f, 1.0f }, highest[2] = { 0.0f, 0.0f };
+		uint32_t hash = 2166136261u;
+		for ( int i = 0; i <= cubeCount; ++i )
+		{
+			b3WorldTransform transform = b3Body_GetTransform( bodies[i] );
+			const unsigned char* bytes = (const unsigned char*)&transform;
+			for ( int k = 0; k < (int)sizeof( transform ); ++k )
+			{
+				hash = ( hash ^ bytes[k] ) * 16777619u;
+			}
+
+			if ( i < cubeCount )
+			{
+				int layer = i < side * side ? 0 : 1;
+				float y = (float)b3Body_GetPosition( bodies[i] ).y;
+				lowest[layer] = b3MinFloat( lowest[layer], y );
+				highest[layer] = b3MaxFloat( highest[layer], y );
+			}
+		}
+		hashes[pass] = hash;
+
+		if ( pass < 4 )
+		{
+			printf( "  %d worker%s: domains in %d of 240 steps, %d domains, up to %d copies, plate at %.4f m moving %.4f m/s, "
+					"cubes %.4f to %.4f and %.4f to %.4f m\n",
+					workers[pass], workers[pass] == 1 ? "" : "s", domainSteps, domains, copies, (float)position.y, speed,
+					lowest[0], highest[0], lowest[1], highest[1] );
+		}
+
+		ENSURE( domainSteps > 20 && domains == 8 && copies > 8 );
+		ENSURE( 0.235f < (float)position.y && (float)position.y < 0.255f );
+		ENSURE( speed < 0.01f );
+		ENSURE( 0.04f < lowest[0] && highest[0] < 0.06f );
+		ENSURE( 0.14f < lowest[1] && highest[1] < 0.16f );
+		DestroyScene( &scene );
+	}
+	b3SetSIMDWidth( 0 );
+	nbDestroyTaskSystem( pool );
+
+	for ( int pass = 1; pass < 5; ++pass )
+	{
+		ENSURE( hashes[pass] == hashes[0] );
+	}
+	return 0;
+}
+
 // Replaying the events must reproduce the set of live chunks, which is what a renderer relies on.
 static int EventTest( void )
 {
@@ -5774,7 +5879,7 @@ static uint32_t RunScenarioAtRate( TestScene scene, float stepRate, int settleFr
 
 // The results of the determinism scenario at 30 and 120 Hz with ten seconds to settle, the same on every platform like
 // NB_EXPECTED_DETERMINISM_HASH
-#define NB_EXPECTED_HASH_30HZ 0x7f206ff7u
+#define NB_EXPECTED_HASH_30HZ 0x8b9f6c13u
 #define NB_EXPECTED_HASH_120HZ 0x54b385feu
 
 // The steps per second of nbWorld_Advance. At 60 Hz it takes the steps of the determinism scenario to the bit. At 30 and
@@ -6388,6 +6493,7 @@ int WorldTest( void )
 	RUN_TEST( KnotTest );
 	RUN_TEST( KnotGroupTest );
 	RUN_TEST( TeamPacksTest );
+	RUN_TEST( DomainTest );
 	RUN_TEST( UniqueHullTest );
 	RUN_TEST( ExternalHullTest );
 	RUN_TEST( ShapeBatchTest );

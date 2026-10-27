@@ -8,8 +8,9 @@ build with NEBENAN_PROFILE. Python 3, nothing else. first_step and last_step pic
 line for every N steps as well.
 
 For every "Solve Constraints" zone of the calling thread, the solver of one step, it splits the time of every thread in
-that window into work and waiting. Work are the blocks of the team, the packs of islands, what the calling thread
-computes alone (overflow, merging the knots) and other zones. Waiting goes by what the other threads do at the moment:
+that window into work and waiting. Work are the blocks of the team, with domains those of the domains and of the merges
+after them, the packs of islands, what the calling thread computes alone (overflow, merging the knots) and other zones.
+Waiting goes by what the other threads do at the moment:
 
   late        a worker before its solver zone starts
   stage       another thread still solves a block of the team, at the end of a stage, outliers apart
@@ -21,7 +22,8 @@ computes alone (overflow, merging the knots) and other zones. Waiting goes by wh
 
 The loss of a cause is its waiting summed over the threads and divided by their number: how much shorter the window
 would be if that waiting were work. A step has a team when a worker solves blocks outside of packs. The means are over
-the steps with a team. Step 61 of docs/Roadmap.md decides by them.
+the steps with a team. Step 61 of docs/Roadmap.md decides by them. The setup of the solver before each window, which builds
+the knots and the domains, comes with it, for step 62.
 """
 import bisect
 import collections
@@ -30,7 +32,8 @@ import statistics
 import sys
 
 BLOCKS = {'Prepare Joints', 'Prepare Wide Contacts', 'Prepare Contacts', 'Integrate Velocities', 'Warm Start', 'Solve',
-          'Integrate Positions', 'Relax', 'Restitution', 'Store Wide Impulses', 'Store Impulses', 'Knots'}
+          'Integrate Positions', 'Relax', 'Restitution', 'Store Wide Impulses', 'Store Impulses', 'Knots', 'Domain',
+          'Merge Domains'}
 ALONE = {'Overflow', 'Merge Knots'}
 # Zones that hold others or a whole step, no work of their own
 CONTAINERS = {'Solve Constraints', 'Solver Worker', 'Step', 'Nebenan Step', 'Nebenan Update', 'Nebenan Task'}
@@ -86,6 +89,8 @@ def analyze(zones, first=None, last=None):
     medians = {name: statistics.median(values) for name, values in lengths.items()}
 
     windows = [z for z in zones[caller] if z[2] == 'Solve Constraints'][first:last]
+    setups = [z for z in zones[caller] if z[2] == 'Solver Setup']
+    setup_starts = [z[0] for z in setups]
     steps = []
     others = collections.Counter()
     for index, (lo, hi, _) in enumerate(windows):
@@ -169,8 +174,12 @@ def analyze(zones, first=None, last=None):
                     cause = 'pause' if paused[i] else 'transition'
                 waits[t][cause] += b - a
 
+        # The setup of the solver right before the window, which builds the knots and the domains
+        k = bisect.bisect_left(setup_starts, lo) - 1
+        setup = setups[k][1] - setups[k][0] if k >= 0 and setups[k][1] <= lo else 0
+
         runs = sum(1 for i in range(segment_count) if block_cover[i] and (i == 0 or not block_cover[i - 1]))
-        steps.append({'index': index, 'span': hi - lo, 'waits': waits, 'work': work, 'runs': runs,
+        steps.append({'index': index, 'span': hi - lo, 'setup': setup, 'waits': waits, 'work': work, 'runs': runs,
                       'blocks': len(blocks), 'worker_blocks': sum(1 for x in blocks if x[2] != caller),
                       'outliers': sum(1 for x in blocks if x[3])})
     return caller, workers, steps, len(windows), others
@@ -206,6 +215,8 @@ def report(caller, workers, steps, window_count, others):
     for c in CAUSES:
         print('  %-10s %8.1f   %5.1f %% of the window' % (c, loss[c], 100 * loss[c] / span))
     print('  %-10s %8.1f   the window minus the work spread evenly' % ('all', span - totals['work'] / count))
+    setup = mean(steps, lambda s: s['setup']) / 1000
+    print('solver setup %.1f us per step with a team, setup and window %.1f us' % (setup, setup + span))
     print('for step 61 of docs/Roadmap.md, ms per step with a team:')
     print('  outlier and pause     %.3f   disturbed from 0.05' % ((loss['outlier'] + loss['pause']) / 1000))
     print('  stage and transition  %.3f   Zerlegen from 0.10' % ((loss['stage'] + loss['transition']) / 1000))
