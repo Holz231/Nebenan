@@ -84,6 +84,30 @@ jobs:
           tail -c 400 capture.log
           test -s tests.tracy
 
+      # The demo itself ends after 120 steps, without and with Tracy recording, if the runner can draw at all. On the
+      # Ryzen it waited at the end for tracy-capture and the other way round, this shows whether a runner does too.
+      - name: End the demo with and without Tracy
+        if: ${{ matrix.profile }}
+        continue-on-error: true
+        timeout-minutes: 8
+        run: |
+          alive() { tasklist //FI "IMAGENAME eq $1" //NH | grep -qi "$1"; }
+          "${{ matrix.demo }}" --demolition --threads 8 --fragment-scale 2 --serial-physics --frames 120 &
+          for i in $(seq 1 90); do sleep 2; alive nebenan_demo.exe || break; done
+          alive nebenan_demo.exe && echo "without Tracy: the demo still runs after 180 s" || echo "without Tracy: the demo ended"
+          taskkill //F //IM nebenan_demo.exe > /dev/null 2>&1 || true
+          script-test/tracy-capture.exe -o demo.tracy -a 127.0.0.1 -f > demo-capture.log 2>&1 &
+          sleep 2
+          "${{ matrix.demo }}" --demolition --threads 8 --fragment-scale 2 --serial-physics --frames 120 &
+          for i in $(seq 1 90); do sleep 2; alive nebenan_demo.exe || break; done
+          alive nebenan_demo.exe && echo "with Tracy: the demo still runs after 180 s" || echo "with Tracy: the demo ended"
+          for i in $(seq 1 15); do sleep 2; alive tracy-capture.exe || break; done
+          alive tracy-capture.exe && echo "with Tracy: tracy-capture still runs" || echo "with Tracy: tracy-capture ended"
+          tasklist //FI "IMAGENAME eq nebenan_demo.exe" //V || true
+          tail -c 500 demo-capture.log
+          taskkill //F //IM nebenan_demo.exe > /dev/null 2>&1 || true
+          taskkill //F //IM tracy-capture.exe > /dev/null 2>&1 || true
+
       - name: Package demo
         run: |
           mkdir -p package/lizenzen
