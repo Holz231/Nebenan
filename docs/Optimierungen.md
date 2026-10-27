@@ -1520,11 +1520,13 @@ Seit der Liste ist dazugekommen oder gemessen worden:
   Stufen gleichmäßig 0,188 bis 0,245 ms, mit dem größeren Löser in der Mitte des Abrisses am meisten. Nach den Regeln
   der [Roadmap](Roadmap.md) ist die Aufnahme ungestört, Ausreißer und Pausen kosten 0,008 ms, und „Zerlegen“ tritt ein:
   Enden der Stufen und Übergänge kosten 0,255 ms. Daraus Schritt 62, siehe „Größte Insel in Gebiete zerlegen“ in der
-  Tabelle unten. Nach dem Ende der Demo lief ihr Prozess unter Windows weiter und lastete einen Kern aus. Er wartete
-  darauf, dass `tracy-capture` die Verbindung trennt, und `tracy-capture` wartete auf ihn, bis Strg+C die Aufnahme
-  beendete und speicherte. In der Aufnahme sind alle Zonen geschlossen. Unter Linux und beim Aufnehmen der Tests unter
-  Windows in der CI tritt das nicht auf, auch nicht, wenn `tracy-capture` beim Ende des Programms minutenlang
-  zurückliegt.
+  Tabelle unten. Die Aufnahme lief 14,6 s für 2,4 s Abriss: Nach dem Ende der Demo las `tracy-capture` noch den Rest. So
+  lange lief auch der Prozess der Demo weiter und lastete einen Kern aus, denn Tracy wartet beim Beenden in einer
+  Schleife ohne Pause darauf, dass `tracy-capture` die Verbindung trennt. Beim ersten Versuch sah das wie ein Hängen
+  aus, zumal ein Klick in das Fenster von `tracy-capture` dessen Ausgabe anhält. In der Aufnahme sind alle Zonen
+  geschlossen. In der CI endet die Demo unter Windows mit und ohne Aufnahme, auch wenn `tracy-capture` angehalten wird,
+  bis die Demo ihr Fenster geschlossen hat: 2 s, nachdem es weiterläuft, sind beide beendet. Unter Linux ebenso, auch
+  wenn `tracy-capture` minutenlang zurückliegt.
 
 ## Physik, Zerstörung und Schutt
 

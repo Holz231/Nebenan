@@ -17,8 +17,8 @@ echo Die Demo reisst die Stadt bei x2 mit 8 Threads in 900 Schritten ab und been
 start "" nebenan_demo.exe --demolition --threads 8 --fragment-scale 2 --serial-physics --frames 900
 echo Bleibt es bei "Connecting...", ist die Demo ohne Tracy gebaut: Fenster schliessen und die Demo aus
 echo nebenan-demo-windows-tracy oder von build.bat tracy nehmen.
-echo Bleibt es nach dem Ende der Demo ohne Fortschritt stehen: Strg+C druecken, gespeichert wird trotzdem.
-echo Die Frage nach dem Abbrechen des Batchvorgangs dann mit N beantworten.
+echo Nach dem Ende der Demo liest tracy-capture noch den Rest, auf einem schnellen PC bis zu einer halben Minute.
+echo Nicht ins Fenster klicken, das haelt die Ausgabe an, Esc setzt sie fort.
 tracy-capture.exe -o abriss-lz4.tracy -a 127.0.0.1 -f
 if exist tracy-update.exe (
 	tracy-update.exe -z 10 abriss-lz4.tracy abriss.tracy
