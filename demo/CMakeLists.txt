@@ -54,6 +54,13 @@ set_target_properties(nebenan_demo PROPERTIES
 )
 set_source_files_properties(shaders/scene.glsl PROPERTIES HEADER_FILE_ONLY TRUE)
 
+# With the zones for Tracy the script that records the demolition goes next to the demo, as in the download
+if(NEBENAN_PROFILE AND WIN32)
+	add_custom_command(TARGET nebenan_demo POST_BUILD
+		COMMAND ${CMAKE_COMMAND} -E copy_if_different "${CMAKE_CURRENT_SOURCE_DIR}/Tracy-Aufnahme.bat"
+			"$<TARGET_FILE_DIR:nebenan_demo>")
+endif()
+
 if(WIN32)
 	target_compile_definitions(nebenan_demo PRIVATE SOKOL_D3D11 NOMINMAX)
 	target_link_libraries(nebenan_demo PRIVATE d3d11 dxgi dxguid user32 gdi32 shell32 ole32)
