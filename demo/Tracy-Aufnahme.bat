@@ -15,6 +15,8 @@ if not exist tracy-capture.exe (
 )
 echo Die Demo reisst die Stadt bei x2 mit 8 Threads in 900 Schritten ab und beendet sich dann.
 start "" nebenan_demo.exe --demolition --threads 8 --fragment-scale 2 --serial-physics --frames 900
+echo Bleibt es bei "Connecting...", ist die Demo ohne Tracy gebaut: Fenster schliessen und die Demo aus
+echo nebenan-demo-windows-tracy oder von build.bat tracy nehmen.
 tracy-capture.exe -o abriss-lz4.tracy -a 127.0.0.1 -f
 if exist tracy-update.exe (
 	tracy-update.exe -z 10 abriss-lz4.tracy abriss.tracy
