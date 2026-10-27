@@ -28,8 +28,9 @@ und den Durchgängen des Aufbaus der Knoten auf `kollaps-21` und den Zustandswec
 weniger Durchgängen beim Aufbau der Knoten auf `kollaps-23`, alle vier gemessen und verworfen, und der Zeitleiste des
 Lösers mit Tracy auf `kollaps-24`, auf dem Ryzen aufgenommen, und den Gebieten der größten Insel auf `kollaps-25`,
 gebaut und verworfen, und dem Erstarren des Schutts auf `kollaps-26` und dem Anlegen der Kontakte auf `kollaps-27`,
-beide gemessen und verworfen. Begründungen und Messwerte stehen in [`Optimierungen.md`](Optimierungen.md), hier nur das
-Fazit und die Reihenfolge. Nach jeder Runde wird der Stand hier nachgetragen.
+beide gemessen und verworfen, und mit `kollaps-27` auf dem Ryzen nachgemessen. Begründungen und Messwerte stehen in
+[`Optimierungen.md`](Optimierungen.md), hier nur das Fazit und die Reihenfolge. Nach jeder Runde wird der Stand hier
+nachgetragen.
 
 `kollaps-1` ist keine Runde der Physik, sie baut den Einsturz nach Kapitel 17 der Roadmap des Spiels, siehe
 [`Referenz`](Referenz/README.md). Sie ändert aber, was der Benchmark unter Trommelfeuer bei ×4 misst: Eine Etage gibt
@@ -93,7 +94,8 @@ vergleicht dort verschiedene Szenen. Im Benchmark enden die Städte fast gleich,
   Thread, siehe „Skalierung auf dem Ryzen mit `kollaps-6`“. Auf `kollaps-11` kostet er 2,22 ms, hochgerechnet bleiben
   51 % auf einem Thread, siehe „Skalierung auf dem Ryzen mit `kollaps-11`“. Auf `kollaps-12` kostet er 2,27 ms, im
   Rahmen der Schwankungen so viel wie davor, hochgerechnet bleiben 50 % auf einem Thread, siehe „Skalierung auf dem
-  Ryzen mit `kollaps-12`“.
+  Ryzen mit `kollaps-12`“. Auf `kollaps-27` kostet er bei ×2 2,25 und bei ×4 1,64 ms, hochgerechnet bleiben bei ×2 49 %
+  auf einem Thread, siehe „Skalierung auf dem Ryzen mit `kollaps-27`“.
 - **Was dort bremst, ist vor allem der Löser.** Die Bedingungen sind mit 8 Threads 28 und 26 % des Frames, mit
   `physik-22` 31 und 26 %, davor 48 und 43 %, und brauchen 34 und 33 % der Zeit eines Threads statt eines Achtels. Seit
   `physik-24` rechnet ein Team aller Threads das Paket der größten Insel, das vorher ein Thread allein rechnete: Auf dem
@@ -250,7 +252,8 @@ bleiben.
 | 62 | **Größte Insel in Gebiete zerlegen**: auf einer eigenen Branch die größte Insel in eine feste Zahl von Gebieten teilen, die ein Thread jeweils ohne Sperren zwischen den Farben rechnet, die Körper an den Grenzen mit geteilter Masse wie bei den Knoten, nach jedem Durchgang des Lösers gemittelt, ändert die Ergebnisse | mit 8 Threads ein Teil der 0,255 ms pro Schritt mit Team, die die Threads an den Enden der Stufen und in den Übergängen verlieren, gut ein Zehntel eines Schritts | 61 | ⛔ auf `kollaps-25` gebaut und verworfen: Die Ergebnisse bleiben mit jeder Zahl von Threads und auf Windows, Linux und macOS gleich, die Tests grün, nichts hängt in der Luft. Mit einem Thread kostet der Löser auf der VM gepaart aber in zwei Messungen im Mittel 8,1 und 10,7 % mehr, erlaubt sind 5 %: Ein Thread baut die Gebiete in jedem Schritt neu, 0,67 ms, rund 100 ns pro Kontakt der großen Inseln. Auf dem Ryzen kostete das geschätzt 0,19 ms, selbst ohne jede Sperre blieben dort höchstens 0,065 statt der verlangten 0,10 ms. „Verwerfen“ tritt ein, der Prototyp liegt im Verlauf von `kollaps-25`, daraus 60 |
 | 60 | **Erstarren zerlegen**: das Erstarren des Schutts auf der VM nach seinen Teilen messen, die Entscheidungen von Nebenan, die Typwechsel in Box3D mit dem Löschen der Kontakte, dem Umzug der Körper und dem Einbau in die Bäume, und das Lösen von Schutt unter großen Stücken, und was jedes Stück für sich rechnet und nichts ändert, was ein anderes liest, in die Prüfungen auf den Workern vorziehen, bitgleich | mit 8 Threads ein Teil der 0,047 ms pro Schritt, die der aufrufende Thread das Erstarren allein rechnet, während alle Worker warten | 59 und 62 | ⛔ auf `kollaps-26` gemessen: Beim Abriss bei ×2 erstarren pro Schritt 13,4 Stücke mit je 19 Kontakten. Ein Erstarren kostet auf der VM 16,7 µs, davon 55 % das Löschen der Kontakte und 25 % der Umzug in den statischen Satz. Jedes Stück für sich rechnen großzügig gerechnet 17 % des Erstarrens, auf dem Ryzen 0,008 ms pro Schritt. „Vorziehen“ tritt nicht ein, nicht gebaut, daraus 63 |
 | 63 | **Anlegen zerlegen**: das Anlegen der Kontakte für neue Paare auf der VM nach seinen Teilen messen, die Schlüssel und Formen der Paare, die Kontakte selbst mit ihren Ids, die Menge der Paare und die Listen der Körper, und was jeden neuen Kontakt für sich rechnet und nichts ändert, was das Anlegen eines anderen liest, in die Paarsuche auf den Workern vorziehen, bitgleich | mit 8 Threads ein Teil der 0,049 ms pro Schritt, die der aufrufende Thread das Anlegen allein rechnet, während alle Worker warten | 60 | ⛔ auf `kollaps-27` gemessen: Beim Abriss bei ×2 entstehen pro Schritt 776 neue Kontakte, einer kostet auf der VM 461 ns. Die Hälfte davon wartet die Schleife auf die rund 15 Zeilen, die ein neuer Kontakt anfasst und die sie selbst schreibt. Jeden Kontakt für sich rechnen großzügig gerechnet 10 %, mit dem Sortieren auf dem Ryzen 0,007 ms pro Schritt. „Vorziehen“ tritt nicht ein, nicht gebaut, daraus 64 |
-| 64 | **Auf dem Ryzen messen**: „Skalierung messen“ mit `kollaps-27` beim Abriss bei ×2 und ×4 | zeigt nach den Schritten 56 bis 63, wo mit 8 Threads noch Zeit über einem Achtel der Zeit eines Threads liegt, und entscheidet die nächsten Schritte | 63 | 🔜 |
+| 64 | **Auf dem Ryzen messen**: „Skalierung messen“ mit `kollaps-27` beim Abriss bei ×2 und ×4 | zeigt nach den Schritten 56 bis 63, wo mit 8 Threads noch Zeit über einem Achtel der Zeit eines Threads liegt, und entscheidet die nächsten Schritte | 63 | ✅ am 27. Oktober auf dem Ryzen: Mit 8 Threads kostet ein Schritt bei ×2 2,25 und bei ×4 1,64 ms. Über einem Achtel ihrer Zeit mit einem Thread liegen von den Posten, die 56 bis 63 noch nicht zerlegt haben, die Kontakt-Schleife mit 0,083 und 0,152 ms, die Einschläge mit 0,058 und 0,089 ms und bei ×4 die Prüfungen des Updates mit 0,051 ms. Bei ×4 kostet ein Kontakt mit 8 Threads 45 % mehr als mit einem. „Zerlegen“ tritt ein, daraus 65 |
+| 65 | **Kontakt-Schleife bei ×4 zerlegen**: auf der VM beim Abriss bei ×4 messen, was ein Kontakt in den Blöcken der Kontakt-Schleife mit 1, 2 und 4 Threads kostet, nach Prüfungen und Narrowphase, woher der Anstieg mit dem zweiten Thread kommt, etwa weil jeder Block in jedem Schritt auf einem anderen Kern landet, und was ihn behebt, bitgleich | mit 8 Threads ein Teil der 0,152 ms pro Schritt bei ×4 und 0,083 ms bei ×2, die die Kontakt-Schleife über einem Achtel ihrer Zeit mit einem Thread liegt, wo dasselbe hilft auch in den Prüfungen des Updates und in den Paketen | 64 | 🔜 |
 | 33 | **Weniger Kopien an kleinen Knoten**: eine Gruppe für je 64 statt 32 Kontakte, ändert die Ergebnisse | mit 1 und 2 Threads ein Teil der 30 und 7 % pro Kontakt | 30 | 🔜 niedrig |
 | 26 | **Worker wach halten statt schlafen legen**: kurz aktiv warten, bevor ein Worker schläft, bitgleich | auf der VM rund ein Zehntel der Ruhe-Prüfung, kostet Rechenzeit beim Zeichnen | 25 | ⛔ nach 25: Auf dem Ryzen laufen die Worker nach 6 bis 7 µs an, aktiv zu warten spart unter 0,5 % eines Schritts |
 
@@ -1283,6 +1286,28 @@ führte die Gebiete der großen Inseln wie die Farben im Graphen über die Schri
 jeder Kontakt bekäme Gebiet und Farbe, wenn er zu berühren beginnt, und neu geschnitten würde nur selten. Dann fiele der
 Aufbau weg, an dem der Prototyp von Schritt 62 mit einem Thread scheiterte, und die Sperren zwischen den Farben blieben
 weg. Ob diese Sperren mit 8 Threads der größte Posten bleiben, zeigt Schritt 64.
+
+Auf dem Ryzen gemessen am 27. Oktober, Schritt 64, siehe „Skalierung auf dem Ryzen mit `kollaps-27`“ in
+[Optimierungen.md](Optimierungen.md). Mit 8 Threads kostet ein Schritt bei ×2 2,253 ms und bei ×4 1,641 ms. Über einem
+Achtel ihrer Zeit mit einem Thread liegen bei ×2 und ×4 die Bedingungen des Lösers mit 0,373 und 0,313 ms, die
+Kontakt-Schleife mit 0,083 und 0,152 ms und die Einschläge mit 0,058 und 0,089 ms, der Aufbau der Knoten, die
+Zustandswechsel, das Anlegen und das Erstarren mit je 0,03 bis 0,07 ms und bei ×4 die Prüfungen des Updates mit
+0,051 ms. Die Bedingungen, die Knoten, die Zustandswechsel, das Anlegen und das Erstarren haben die Schritte 56 bis 63
+zerlegt, also tritt „Zerlegen“ für die Kontakt-Schleife ein, daraus Schritt 65. Bei ×4 kostet ein Kontakt in ihren
+Blöcken mit einem Thread 124 ns, mit 2 Threads 163 ns und mit 8 Threads 180 ns, in den Prüfungen wie in der Narrowphase,
+bei ×2 mit 8 Threads nur 9 % mehr als mit einem. Bei ×4 kostet auch eine Prüfung auf Ruhe im Update mit 2 Threads 53 %
+mehr als mit einem, und die Pakete des Lösers brauchen pro Einheit der Arbeit mit 2 Threads 57 % und mit 8 Threads 96 %
+mehr als ein Thread allein in den Farben. Bei ×4 rechnen sie mit 8 Threads 72 % der Arbeit, das ist rund die Hälfte
+dessen, was die Bedingungen dort über einem Achtel liegen. Eine Vermutung: Mit einem Thread hält ein Kern seine Daten
+warm, mit mehreren landet jeder Block in jedem Schritt auf einem anderen Kern und fängt kalt an. Was die Messung zeigt,
+entscheidet so:
+
+- **Beheben**: Steigt auf der VM bei ×4 der Preis eines Kontakts mit dem zweiten Thread ebenso, und holt eine Änderung,
+  die bitgleich bleibt, davon mindestens die Hälfte zurück, etwa eine Zuordnung, die jedem Thread in jedem Schritt
+  möglichst dieselben Blöcke gibt, wird sie gebaut, wo sie ebenso hilft auch in den Prüfungen des Updates und in den
+  Paketen, und auf dem Ryzen nachgemessen.
+- **Nichts davon**: Sonst kommen die Einschläge, mit 8 Threads bei ×4 0,089 ms über einem Achtel ihrer Zeit mit einem
+  Thread, nach ihren Teilen gemessen.
 
 ## Kleinere Punkte
 
