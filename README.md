@@ -30,7 +30,7 @@ gelöscht. Kein Staub, keine Schatten: Jede Millisekunde geht in die Zerstörung
   ausgeschnitten. Der Riss unter dem Teil, das herunterkommt, folgt den Zellen und ist überall polygonal
 - Mauern und andere Bauwerke ohne Decken prüft eine Lastprüfung nach dem Lastlöser der Referenz-Engine: Last und
   Schwerpunkt fließen über die Verbindungen zu den Ankern, Verbindungen brechen unter Druck und Biegung. Eine Mauer,
-  der man den Fuß wegschießt, gibt nach und kommt ganz herunter, und ihre großen Teile brechen, wo sie hart aufschlagen
+  der man den Fuß wegschießt, gibt nach und kommt herunter, und ihre großen Teile brechen, wo sie hart aufschlagen
 - Kollisionsschaden: Kanonenkugeln und herabfallende Trümmer beschädigen, was sie treffen. Was ein Einsturz
   herunterbringt, beschädigt nichts
 - Für ganze Städte gebaut, ohne etwas zu löschen: Trümmer, die zur Ruhe kommen und auf festem Grund liegen,
@@ -428,7 +428,8 @@ bewegten Körper braucht es dafür mehr Wucht, im Verhältnis der Massen. Das gi
 Haus herunterkommt, bricht nicht, ebenso wenig ein bewegliches Zerstörbares. `nbStats::landingSplitCount` zählt die
 Brüche. So zerfielen Mauern auf dem Branch `house-buckling-(incomplete)-+-wall-collapse`, Stand 27. September 2026,
 wo dieselbe Lastprüfung auch die Häuser einknicken ließ. Beim Abriss in der Demo enden die Häuser damit bitgleich wie
-vorher.
+vorher. Landet ein großes Stück aufrecht auf dem Schutt an seinem Fuß, bleibt es darauf stehen, auf dem alten Branch
+genauso oft, siehe „Mauern geben nach wie auf dem alten Branch“ in [`docs/Optimierungen.md`](docs/Optimierungen.md).
 
 Die Biegung braucht die zweiten Momente jeder Kontaktfläche. Nebenan rechnet und speichert sie nur für Bauwerke, die
 die Lastprüfung prüft: Sie ist an, und das Bauwerk hat keine Decken. Sonst ist eine Verbindung 64 statt 88 Byte groß.
