@@ -1089,6 +1089,18 @@ weniger, auf dem Ryzen kostet das Team mit 8 Threads 0,022 ms pro Schritt wenige
 `kollaps-19`“ in [docs/Optimierungen.md](docs/Optimierungen.md). Wie es im Löser weitergeht, steht in
 [docs/Roadmap.md](docs/Roadmap.md).
 
+Seit `kollaps-32` rechnen große Inseln in acht Gebieten, die von Schritt zu Schritt bleiben, siehe „Gebiete großer
+Inseln“ in [`extern/README.md`](extern/README.md). Eine Insel mit mindestens 1 024 Kontakten und einem Achtel der Arbeit
+aller wachen Inseln teilt ihre Körper nach ihrer Lage auf, und ein Thread rechnet in jedem Durchgang des Lösers ein
+Gebiet ganz, ohne Sperre zwischen den Farben. Körper an den Grenzen rechnen in jedem Gebiet gegen eine Kopie mit einem
+Anteil ihrer Masse. Statt rund 230 Sperren pro Schritt bleiben 36. Ein Spiel ruft dafür nichts Neues auf,
+`b3Counters::domainCount` und `domainCopyCount` zählen Gebiete und Kopien. Die Ergebnisse ändern sich, bleiben aber mit
+jeder Zahl von Threads und auf jeder Plattform gleich. Beim Abriss in der Demo auf der VM bei ×2 kostet der Löser mit 4
+Threads 12 % weniger und mit einem 0,2 % mehr. Im Benchmark unter Trommelfeuer, wo die größte Insel kleiner ist, kostet
+er mit 1 bis 4 Workern bis zu 9 % mehr, siehe „Dauerhafte Gebiete“ in [docs/Optimierungen.md](docs/Optimierungen.md).
+Gebaut sind sie für 8 Threads, ob sie bleiben, entscheidet die Messung auf dem Ryzen, siehe
+[docs/Roadmap.md](docs/Roadmap.md).
+
 Seit `kollaps-11` misst Box3D, wohin die Zeit der Kontakt-Schleife geht: was der aufrufende Thread davor und danach
 allein rechnet, und in jedem achten Schritt, wie die Threads die parallele Schleife verbringen, in Blöcken, vor ihrem
 ersten und nach ihrem letzten, siehe „Zeiten der Kontakt-Schleife“ in [`extern/README.md`](extern/README.md).
