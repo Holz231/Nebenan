@@ -32,7 +32,8 @@ beide gemessen und verworfen, und mit `kollaps-27` auf dem Ryzen nachgemessen, u
 Kontakt-Schleife auf `kollaps-28` und den Teilen eines Einschlags auf `kollaps-29` und den Prüfungen des Updates auf
 `kollaps-30`, alle drei gemessen und verworfen, und den Prüfungen des Updates auf eigenen Cache-Zeilen auf `kollaps-31`,
 auf Wunsch des Nutzers gebaut, auf dem Ryzen nachgemessen und auf `kollaps-33` zurückgenommen, und den dauerhaften
-Gebieten auf `kollaps-32`, gebaut, auf dem Ryzen nachgemessen und übernommen. Begründungen und Messwerte stehen in
+Gebieten auf `kollaps-32`, gebaut, auf dem Ryzen nachgemessen und übernommen, und dem Ausgleich der Gebiete auf
+`kollaps-34`, gebaut und auf dem Ryzen nachzumessen. Begründungen und Messwerte stehen in
 [`Optimierungen.md`](Optimierungen.md), hier nur das Fazit und die Reihenfolge. Nach jeder Runde wird der Stand hier
 nachgetragen.
 
@@ -138,7 +139,10 @@ Bildern unten.
   einem Thread 0,2 % mehr und mit 4 Threads 12,2 % weniger, siehe Schritt 68. Auf dem Ryzen kostet er damit bei ×2 mit 8
   Threads 0,107 ms pro Schritt weniger, die Gebiete bleiben, siehe Schritt 71. Mit einem Thread kostet er dort 6 % mehr,
   und mit 8 Threads warten die Threads in den Durchgängen der Gebiete 31 % ihrer Zeit auf das langsamste, siehe
-  Schritt 72.
+  Schritt 72. Das größte läuft nach einem Schnitt schnell davon, vor allem, weil Inseln, die dazukommen, ganz in ein
+  Gebiet gingen. Seit `kollaps-34` nehmen ihre Körper das Gebiet, in dem sie liegen: Auf der VM warten die Threads mit
+  8 Threads nachgestellt 23 statt 29 % ihrer Zeit, auf dem Ryzen hochgerechnet rund 0,033 ms pro Schritt, siehe
+  Schritt 73.
 - **Was danach bleibt, sind kleine Posten.** Mit 8 Threads auf dem Ryzen kosten die Typwechsel 3 % des Frames, der
   Aufbau des Lösers 3 %, und von den Einschlägen ist jeder Teil, Box3D-Körper, Einbau, Suche und Teilen der Akteure, 1
   bis 2 %, siehe „Wohin ein Typwechsel und ein Einschlag ihre Zeit geben“. Am meisten kostet an einem Einschlag
@@ -283,7 +287,8 @@ bleiben.
 | 69 | **Prüfungen des Updates auf eigenen Zeilen**: was die Prüfungen von jedem bewegten Stück schreiben, auf eigenen Cache-Zeilen am Ende des Akteurs, alle Allokationen auf 64 Bytes, die Arenen der Worker und die Aufgaben der Prüfungen auf eigenen Zeilen, und mit Workern für jeden Thread ein fester Abschnitt der Blöcke, den er von Update zu Update behält, darin die Blöcke mit großen Stücken zuerst, bitgleich, auf Wunsch des Nutzers trotz „Nichts davon“ in 67 | auf dem Ryzen hochgerechnet rund 0,011 ms pro Schritt bei ×4 mit 8 Threads | 67 und der Wunsch des Nutzers | ⛔ auf `kollaps-31` gebaut, auf `kollaps-33` zurückgenommen: Die Welt endet bitgleich, die Tests bleiben grün. Beim Abriss auf der VM bei ×4 kosten die Prüfungen mit 2 und 4 Threads 2,8 und 6,2 % weniger, ein Stück in den Blöcken mit 4 Threads 11,6 %, mit einem Thread 1,6 % mehr. Im Benchmark unter Trommelfeuer bei ×4 kosten sie 1,0 bis 3,3 % mehr. Ein Akteur ist 448 statt 384 Bytes groß, die Stadt braucht 1,5 % mehr Speicher. Auf dem Ryzen kosten die Prüfungen damit mit 8 Threads 14 % mehr, siehe 70 |
 | 70 | **Auf dem Ryzen nachmessen**: „Skalierung messen“ mit `kollaps-30` und `kollaps-31` direkt nacheinander beim Abriss bei ×4 und ×2 | zeigt, was 69 mit 8 Threads bringt, und entscheidet nach den Regeln unter „Was als Nächstes in Frage kommt“, ob es bleibt | 69 | ✅ am 28. Oktober: Bei ×4 kosten die Prüfungen mit `kollaps-31` mit 8 Threads 0,088 statt 0,077 ms pro Schritt, 14 % mehr, mit einem Thread 0,8 % mehr, bei ×2 mit 8 Threads 0,110 statt 0,105 ms. In den Blöcken kostet ein Stück etwas weniger, aber mit den festen Abschnitten warten die Threads nach ihrem letzten Block bei ×4 zusammen 0,161 statt 0,065 ms. „Zurücknehmen“ tritt ein, auf `kollaps-33` ist die Trennung wieder heraus, bitgleich |
 | 71 | **Auf dem Ryzen nachmessen**: „Skalierung messen“ mit `kollaps-31` und `kollaps-32` direkt nacheinander beim Abriss bei ×2 und ×4, gern mit 70 in einem Zug | zeigt, ob die dauerhaften Gebiete mit 8 Threads mindestens 0,10 ms pro Schritt bringen, und entscheidet nach den Regeln unter „Was als Nächstes in Frage kommt“, ob sie bleiben | 68 | ✅ am 28. Oktober: Der erste Lauf von `kollaps-31` bei ×2 war gestört, auch die Kontakt-Schleife kostete dort 25 % mehr, ein zweiter lief sauber. Darin kostet `solve` mit 8 Threads mit `kollaps-32` 0,860 statt 0,967 ms, 0,107 ms weniger, über alle sauberen Läufe 0,102 ms. „Übernehmen“ tritt ein, knapp, die Gebiete bleiben. Bei ×4 bringen sie mit 8 Threads nichts, und mit einem Thread kostet der Löser auf dem Ryzen bei ×2 6 % mehr. In den Durchgängen der Gebiete warten die Threads 31 % ihrer Zeit auf das langsamste, daraus 72 |
-| 72 | **Durchgänge der Gebiete zerlegen**: auf der VM beim Abriss bei ×2 messen, wie lange jedes Gebiet in jedem Durchgang des Lösers rechnet, mit seinen Kopien, Knoten, dem übrigen Überlauf und den breiten Bedingungen, mit einem Thread einzeln gestoppt, daraus für den Ryzen mit 8 Threads simulieren, wie lange die Threads am Ende der Durchgänge auf das langsamste Gebiet warten und woran das liegt, und was ein Schnitt nach der Arbeit statt nach den Kontakten oder ein früherer Neuschnitt davon holt, ändert die Ergebnisse, wenn gebaut | mit 8 Threads ein Teil der bis zu 0,13 ms pro Schritt bei ×2, die die Threads in den Durchgängen der Gebiete warten, nachdem ihr Gebiet fertig ist | 71 | 🔜 |
+| 72 | **Durchgänge der Gebiete zerlegen**: auf der VM beim Abriss bei ×2 messen, wie lange jedes Gebiet in jedem Durchgang des Lösers rechnet, mit seinen Kopien, Knoten, dem übrigen Überlauf und den breiten Bedingungen, mit einem Thread einzeln gestoppt, daraus für den Ryzen mit 8 Threads simulieren, wie lange die Threads am Ende der Durchgänge auf das langsamste Gebiet warten und woran das liegt, und was ein Schnitt nach der Arbeit statt nach den Kontakten oder ein früherer Neuschnitt davon holt, ändert die Ergebnisse, wenn gebaut | mit 8 Threads ein Teil der bis zu 0,13 ms pro Schritt bei ×2, die die Threads in den Durchgängen der Gebiete warten, nachdem ihr Gebiet fertig ist | 71 | ✅ auf `kollaps-34` gemessen und gebaut: Was ein Gebiet kostet, folgt seinen Kontakten, und nach einem Schnitt läuft das größte schnell davon, nach 16 bis 31 Schritten das 1,79-Fache des Mittels, vor allem, weil Inseln, die dazukommen, ganz in das Gebiet des Körpers gingen, an dem sie hingen. Ein Schnitt kostet 150 ns pro Kontakt. Häufiger schneiden allein brächte auf dem Ryzen netto rund 0,02 ms, die Körper dorthin legen, wo der letzte Schnitt sie hinlegen würde, rund 0,033 ms, beides zusammen rund 0,035 ms. Mit einem Thread kostet beides zusammen 5,1 % mehr, erlaubt sind 2 %, das Platzieren allein 0,9 % weniger. „Ausgleichen“ tritt für das Platzieren ein, gebaut, daraus 73 |
+| 73 | **Auf dem Ryzen nachmessen**: „Skalierung messen“ mit `kollaps-33` und `kollaps-34` direkt nacheinander beim Abriss bei ×2 und ×4 | zeigt, was das Platzieren nach dem Schnitt mit 8 Threads bringt, und entscheidet nach den Regeln unter „Was als Nächstes in Frage kommt“, ob es bleibt | 72 | 🔜 |
 | 33 | **Weniger Kopien an kleinen Knoten**: eine Gruppe für je 64 statt 32 Kontakte, ändert die Ergebnisse | mit 1 und 2 Threads ein Teil der 30 und 7 % pro Kontakt | 30 | 🔜 niedrig |
 | 26 | **Worker wach halten statt schlafen legen**: kurz aktiv warten, bevor ein Worker schläft, bitgleich | auf der VM rund ein Zehntel der Ruhe-Prüfung, kostet Rechenzeit beim Zeichnen | 25 | ⛔ nach 25: Auf dem Ryzen laufen die Worker nach 6 bis 7 µs an, aktiv zu warten spart unter 0,5 % eines Schritts |
 
@@ -1469,6 +1474,32 @@ Schnitt holt, etwa nach der Arbeit statt nach den Kontakten oder früher neu. Wa
   jeder Plattform gleich.
 - **Nichts davon**: Sonst bleibt in der Physik mit 8 Threads nur, was ein neuer großer Umbau holt, und als Nächstes
   kommt die Grafik.
+
+Gemessen am 28. Oktober auf der VM, siehe „Die Durchgänge der Gebiete zerlegt“ in [Optimierungen.md](Optimierungen.md),
+im selben Verlauf wie `kollaps-32` auf dem Ryzen. Mit dem Median jedes Gebiets über die Durchgänge derselben Art warten
+die Threads mit 8 Threads nachgestellt 28,7 % ihrer Zeit in den Durchgängen, auf dem Ryzen 31 %. Was ein Gebiet in einem
+Durchgang kostet, folgt fast ganz seinen Kontakten, ein Schnitt nach der Arbeit brächte also kaum etwas. Direkt nach
+einem Schnitt hält das größte Gebiet einer Insel das 1,16-Fache des Mittels, nach 1 bis 3 Schritten schon das
+1,31-Fache, nach 16 bis 31 Schritten das 1,79-Fache, und neu geschnitten wurde frühestens nach 32. Den größten Teil
+machen Inseln, die dazukommen: Alle ihre Körper nahmen das Gebiet des Körpers, an dem sie hingen. Ein Schnitt kostet bei
+rund 4 200 Kontakten 615 µs auf dem aufrufenden Thread, 150 ns pro Kontakt, fast alles im Umzug der Kontakte. Wie lange
+die Threads warten, hängt stark am Verlauf, mit dem alten Verfahren in ruhigen Verläufen 21 %, in wilden 28 bis 30 %.
+Verglichen sind deshalb nur wilde Verläufe mit 730 bis 870 Granaten, wie der auf dem Ryzen, mit dem alten Stand im
+Mittel 28,8 %. Ein Neuschnitt ab 4 Schritten allein senkt das Warten auf 19 bis 22 %, kostet aber 70 bis 104 statt 27 µs
+pro Schritt an Schnitten, auf dem Ryzen blieben netto rund 0,02 ms. Legt der Schnitt seine Ebenen in der Insel ab und
+nimmt jeder Körper, der mit seiner Insel dazukommt, das Gebiet, in dem er liegt, warten die Threads in vier Verläufen
+22,2 bis 23,6 %, ohne einen Schnitt mehr, rund 0,033 ms. Beides zusammen 18 bis 21 %, netto rund 0,035 ms. Mit einem
+Thread kostet der Löser auf der VM gepaart mit beidem zusammen aber 5,1 % mehr, pro berührendem Kontakt 3,1 %, erlaubt
+sind 2 %. Mit dem Platzieren allein kostet er 0,9 % weniger. „Ausgleichen“ tritt für das Platzieren ein, gebaut auf
+`kollaps-34`, der Neuschnitt bleibt bei 32 Schritten. Die Ergebnisse ändern sich, bleiben aber mit jeder Zahl von
+Threads gleich, die Tests sind grün mit allen Hashes. Was die Messung auf dem Ryzen zeigt, Schritt 73, entscheidet so:
+
+- **Behalten**: Kostet `solve` im Bericht von „Skalierung messen“ beim Abriss bei ×2 mit 8 Threads pro Einheit der
+  Arbeit, `solve` durch „work per sampled step“, mit `kollaps-34` mindestens 3,5 % weniger als mit `kollaps-33` direkt
+  davor oder danach, bei 0,86 ms rund 0,03 ms pro Schritt, bleibt das Platzieren nach dem Schnitt. Pro Einheit der
+  Arbeit, weil jeder Stand einen anderen Verlauf nimmt. Beide Stände werfen dort wilde Verläufe, 829 und 865 Granaten,
+  die Rechnung ist auf jeder Plattform dieselbe.
+- **Zurücknehmen**: Sonst kommt es auf einer neuen Branch wieder heraus, und als Nächstes kommt die Grafik.
 
 ## Kleinere Punkte
 
