@@ -1100,11 +1100,13 @@ Threads 12 % weniger und mit einem 0,2 % mehr. Im Benchmark unter Trommelfeuer, 
 er mit 1 bis 4 Workern bis zu 9 % mehr, siehe „Dauerhafte Gebiete“ in [docs/Optimierungen.md](docs/Optimierungen.md).
 Auf dem Ryzen 7 7800X3D kostet der Löser beim Abriss bei ×2 mit 8 Threads damit 0,107 ms pro Schritt weniger, 11 %, bei
 ×4 gleich viel und mit einem Thread 6 bis 11 % mehr, siehe „Skalierung auf dem Ryzen mit `kollaps-30` bis `kollaps-32`“.
-Seit `kollaps-34` nehmen Körper, die mit ihrer Insel zu einer mit Gebieten stoßen, das Gebiet, in dem sie liegen, statt
-das des Körpers, den sie berühren. Beim Abriss auf der VM warten die Threads damit mit 8 Threads nachgestellt 23 statt
-29 % ihrer Zeit auf das größte Gebiet, und mit einem Thread kostet der Löser nicht mehr, siehe „Die Durchgänge der
-Gebiete zerlegt“ in [docs/Optimierungen.md](docs/Optimierungen.md). Ob das bleibt, entscheidet die Messung auf dem
-Ryzen, siehe [docs/Roadmap.md](docs/Roadmap.md).
+Auf `kollaps-34` nahmen Körper, die mit ihrer Insel zu einer mit Gebieten stoßen, das Gebiet, in dem sie liegen, statt
+das des Körpers, den sie berühren, siehe „Die Durchgänge der Gebiete zerlegt“ in
+[docs/Optimierungen.md](docs/Optimierungen.md). Auf dem Ryzen 7 7800X3D warteten die Threads damit beim Abriss bei ×2
+mit 8 Threads 26 statt 31 % ihrer Zeit auf das größte Gebiet, aber der Löser kostete pro Einheit der Arbeit nur 1,5 %
+weniger. Seit `kollaps-35` ist das wieder heraus, und die Ergebnisse sind wieder die von `kollaps-33`, siehe
+„Skalierung auf dem Ryzen mit `kollaps-33` und `kollaps-34`“. Wie es weitergeht, steht in
+[docs/Roadmap.md](docs/Roadmap.md).
 
 Seit `kollaps-11` misst Box3D, wohin die Zeit der Kontakt-Schleife geht: was der aufrufende Thread davor und danach
 allein rechnet, und in jedem achten Schritt, wie die Threads die parallele Schleife verbringen, in Blöcken, vor ihrem

@@ -648,16 +648,15 @@ Graphen. Jeder Körper der Insel hat sein Gebiet (`b3Body::domain`), und jeder b
 berühren beginnt, in seiner Farbe im Array seines Gebiets (`b3GraphColor::domainContacts`,
 `b3ConstraintGraph::domainOverflow`), im Gebiet seines Körpers mit weniger Kontakten, die Kontakte eines Knotens also in
 den Gebieten seiner Partner. Wie viele Kontakte jeder Körper in jedem Gebiet hat, zählt der Graph mit
-(`b3World::bodyDomainCounts`). Inseln, die sich teilen, schlafen oder aufwachen, behalten ihre Gebiete, und ein Gelenk,
-ein Kontakt mit einem Netz oder eine Insel, die unter die Hälfte einer der beiden Grenzen fällt, gibt sie an die Farben
-zurück (`b3RemoveIslandDomains`). Geschnitten werden sie, wenn eine Insel sie bekommt, und neu nur, wenn das größte ein
-Viertel mehr Kontakte hält als ihr Mittel, höchstens alle 32 Schritte (`b3UpdateDomains`, `b3CutIslandDomains`). Dann
-teilt `b3CutDomains` ein Raster über die zwei längeren Seiten der Box der Körper, jeweils quer zur längeren Seite dort,
-wo sich die Kontakte am gleichmäßigsten teilen. Die Insel behält, wo der Schnitt geteilt hat (`b3DomainCut` in
-`src/island.h`), und ein Körper, der mit seiner Insel dazukommt, nimmt das Gebiet, in das ihn der Schnitt legen würde
-(`b3PlaceInDomain` und `b3LinkContact` in `src/island.c`). Ein Thread rechnet in jedem Durchgang des Lösers ein Gebiet
-ganz, seine Knoten, seine übrigen Kontakte im Überlauf und seine konvexen Kontakte in der Reihenfolge der Farben, ohne
-Sperre dazwischen, und die Gruppen der Knoten einer großen Insel sind ihre Gebiete. Ein Körper mit Kontakten in mehreren
+(`b3World::bodyDomainCounts`). Ein Körper, der dazukommt, nimmt das Gebiet des Körpers, den er berührt (`b3LinkContact`
+in `src/island.c`). Inseln, die sich teilen, schlafen oder aufwachen, behalten ihre Gebiete, und ein Gelenk, ein Kontakt
+mit einem Netz oder eine Insel, die unter die Hälfte einer der beiden Grenzen fällt, gibt sie an die Farben zurück
+(`b3RemoveIslandDomains`). Geschnitten werden sie, wenn eine Insel sie bekommt, und neu nur, wenn das größte ein Viertel
+mehr Kontakte hält als ihr Mittel, höchstens alle 32 Schritte (`b3UpdateDomains`, `b3CutIslandDomains`). Dann teilt
+`b3CutDomains` ein Raster über die zwei längeren Seiten der Box der Körper, jeweils quer zur längeren Seite dort, wo
+sich die Kontakte am gleichmäßigsten teilen. Ein Thread rechnet in jedem Durchgang des Lösers ein Gebiet ganz, seine
+Knoten, seine übrigen Kontakte im Überlauf und seine konvexen Kontakte in der Reihenfolge der Farben, ohne Sperre
+dazwischen, und die Gruppen der Knoten einer großen Insel sind ihre Gebiete. Ein Körper mit Kontakten in mehreren
 Gebieten hat in jedem eine Kopie mit einem Anteil seiner Masse, die das Gebiet vor jedem Durchgang aus dem Körper
 startet, und nach jedem Durchgang nimmt der Körper das Mittel seiner Kopien (`b3MergeDomains`), wie bei den Knoten nach
 Tonge, Benevolenski und Voroshilov. Die Kopien liegen hinter den wachen Zuständen, die Bedingungen eines Gebiets zeigen
@@ -676,9 +675,10 @@ Ergebnisse sind mit jeder Zahl von Workern und in beiden Breiten gleich. `b3Coun
 zählen Gebiete und Kopien. Der Stapel von Box3D hält 48 statt 32 Einträge (`src/arena_allocator.h`), ein Schritt nimmt
 mit Gebieten drei mehr, während das Teilen einer Insel auf einem anderen Thread eigene nimmt. Gebaut für Schritt 68 der
 [Roadmap](../docs/Roadmap.md), siehe „Dauerhafte Gebiete“ in [`docs/Optimierungen.md`](../docs/Optimierungen.md), nach
-dem Prototyp von Schritt 62, der die Gebiete in jedem Schritt neu baute. Dass Körper, die dazukommen, ihr Gebiet nach
-ihrer Lage nehmen statt das des Körpers, den sie berühren, kommt aus Schritt 72, siehe „Die Durchgänge der Gebiete
-zerlegt“: Vorher landeten ganze Haufen in einem Gebiet, und die Threads warteten in den Durchgängen auf das größte.
+dem Prototyp von Schritt 62, der die Gebiete in jedem Schritt neu baute. Auf `kollaps-34` behielt eine Insel, wo ihr
+Schnitt geteilt hat, und Körper, die dazukamen, nahmen ihr Gebiet nach ihrer Lage. Das brachte auf dem Ryzen mit 8
+Threads zu wenig und ist auf `kollaps-35` wieder heraus, siehe „Die Durchgänge der Gebiete zerlegt“ und „Skalierung auf
+dem Ryzen mit `kollaps-33` und `kollaps-34`“.
 
 Die erste, die zweite, die vierte bis achte, die zehnte, die dreizehnte bis einunddreißigste, die dreiunddreißigste bis
 fünfunddreißigste, die neununddreißigste bis dreiundvierzigste, die fünfundvierzigste bis siebenundvierzigste, die
