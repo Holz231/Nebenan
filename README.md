@@ -412,9 +412,10 @@ wenn es sich ändert:
 4. Alle überlasteten Verbindungen reißen zugleich. Was dadurch den Weg zum Anker verliert, fällt als ein Stück.
    Versagt eine unbeschädigte Verbindung unter dem Gewicht darauf, wird das kleinere ihrer beiden Stücke in sechs
    Splitter zerdrückt, die mit 4 m/s quer aus der Wand fliegen.
-5. Gibt das Bauwerk nach, kommt aller Schutt bis einen Meter daneben wieder in Bewegung, wie um die Reste einer
-   Etage, die nachgibt. Sonst blieben die Teile, die abbrechen, auf den Stücken stehen, die Schüsse vorher in die
-   Löcher geschlagen haben und die dort erstarrt sind, und die Mauer hinge auf halber Höhe.
+5. Gibt das Bauwerk nach, kommt der Schutt bis einen Meter neben und unter der Stelle, an der es bricht, wieder in
+   Bewegung, wie um die Reste einer Etage, die nachgibt. Sonst blieben die nächsten Schüsse an den Stücken hängen, die
+   frühere Schüsse in die Löcher geschlagen haben und die dort erstarrt sind, und die Teile, die abbrechen, stünden auf
+   ihnen. Der Schutt am Rest des Bauwerks bleibt, wie er ist.
 
 Die unbeschädigten Zellen eines vorzerlegten Teils tragen dabei zusammen als ein Block, wie das Teil vor der
 Zerlegung. Gibt ein Block nach, kommt er mit allem, was an ihm hängt, in einem Stück herunter. Er reißt unter dem
@@ -428,8 +429,9 @@ bewegten Körper braucht es dafür mehr Wucht, im Verhältnis der Massen. Das gi
 Haus herunterkommt, bricht nicht, ebenso wenig ein bewegliches Zerstörbares. `nbStats::landingSplitCount` zählt die
 Brüche. So zerfielen Mauern auf dem Branch `house-buckling-(incomplete)-+-wall-collapse`, Stand 27. September 2026,
 wo dieselbe Lastprüfung auch die Häuser einknicken ließ. Beim Abriss in der Demo enden die Häuser damit bitgleich wie
-vorher. Landet ein großes Stück aufrecht auf dem Schutt an seinem Fuß, bleibt es darauf stehen, auf dem alten Branch
-genauso oft, siehe „Mauern geben nach wie auf dem alten Branch“ in [`docs/Optimierungen.md`](docs/Optimierungen.md).
+vorher. Landet ein großes Stück aufrecht auf dem Schutt an seinem Fuß, bleibt es darauf stehen, etwas seltener als auf
+dem alten Branch, siehe „Mauern geben nach wie auf dem alten Branch“ in
+[`docs/Optimierungen.md`](docs/Optimierungen.md).
 
 Die Biegung braucht die zweiten Momente jeder Kontaktfläche. Nebenan rechnet und speichert sie nur für Bauwerke, die
 die Lastprüfung prüft: Sie ist an, und das Bauwerk hat keine Decken. Sonst ist eine Verbindung 64 statt 88 Byte groß.
