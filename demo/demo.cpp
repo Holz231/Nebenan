@@ -45,10 +45,11 @@ enum SceneKind
 	SceneStress,
 	SceneTown,
 	SceneCity,
+	SceneFigures,
 	SceneCount
 };
 
-static const char* s_sceneNames[SceneCount] = { "Mauern", "Stresstest", "Stadt", "Große Stadt" };
+static const char* s_sceneNames[SceneCount] = { "Mauern", "Stresstest", "Stadt", "Große Stadt", "Figuren" };
 static const char* s_toolNames[ToolCount] = { "Gewehr", "Granate", "Kanone" };
 
 struct ToolSettings
@@ -81,6 +82,18 @@ struct Ball
 	float age;
 };
 
+// A figure of the library and the meshes of its bones, each on a slot of its own on the body of its bone, see nbCreateFigure.
+// What the overlay shows of it is read while no step runs, see TakeWorldView: what the figure does and the pose it goes for.
+struct FigureVisual
+{
+	nbFigureId id = {};
+	std::vector<b3BodyId> bodies;
+	std::vector<int> slots;
+	std::vector<int> meshes;
+	nbFigureInfo info = {};
+	std::vector<b3WorldTransform> targets;
+};
+
 // The slots of the chunks of a body, by the index of the body in Box3D, so the poses of a frame find them quickly, and
 // the pose the body was last drawn at, for a chunk that comes to it
 struct BodySlots
@@ -96,6 +109,7 @@ struct BodySlots
 struct WorldView
 {
 	nbStats stats = {};
+	nbFigureStats figures = {};
 	b3Counters counters = {};
 	int awakeBodies = 0;
 	int loadedHouses = 0;
@@ -417,6 +431,14 @@ struct App
 	// The houses of the town in the order of TownHousePosition, for the demolition
 	std::vector<nbDestructibleId> townHouses;
 
+	// The figures of the scene with figures and the bones of their rig, to draw them, how hard the rifle hits a figure, and
+	// what the overlay shows of them: what each does, and the pose each goes for
+	std::vector<FigureVisual> figures;
+	nbBoneDef figureBones[nb_humanoidBoneCount] = {};
+	float figureHitImpulse = 80.0f;
+	bool showFigureStates = true;
+	bool showFigureTargets = false;
+
 	// Vertical sync is off, so the frame rate shows what the machine can do. Metal always syncs.
 	bool vsync = false;
 	bool vsyncAvailable = true;
@@ -724,6 +746,126 @@ static void BuildBallMesh( App& app, float radius )
 	{
 		app.ballIndices.push_back( (uint16_t)index );
 	}
+}
+
+//----------------------------------------------------------------------------------------------------------------------
+// Figures
+
+// A capsule from one point to the other with smooth normals: a half sphere at each end and the tube between them
+static void AppendCapsule( App& app, b3Vec3 start, b3Vec3 end, float radius, int material, int slot )
+{
+	const int sides = 14;
+	const int rings = 4;
+	b3Vec3 axis = b3Sub( end, start );
+	float length = b3Length( axis );
+	b3Vec3 y = length > 1.0e-6f ? b3MulSV( 1.0f / length, axis ) : b3Vec3_axisY;
+	b3Vec3 x = b3Normalize( b3Cross( fabsf( y.y ) < 0.9f ? b3Vec3_axisY : b3Vec3_axisX, y ) );
+	b3Vec3 z = b3Cross( x, y );
+
+	// Rows from the pole at the start to the pole at the end, the half sphere at the start up to its equator first
+	uint16_t first = (uint16_t)app.vertexScratch.size();
+	int rows = 2 * ( rings + 1 );
+	for ( int row = 0; row < rows; ++row )
+	{
+		bool top = row > rings;
+		float angle = 0.5f * B3_PI * (float)( top ? row - rings - 1 : row - rings ) / (float)rings;
+		float c = cosf( angle );
+		float s = sinf( angle );
+		b3Vec3 center = top ? end : start;
+		for ( int side = 0; side <= sides; ++side )
+		{
+			float phi = 2.0f * B3_PI * (float)side / (float)sides;
+			b3Vec3 radial = b3Add( b3MulSV( cosf( phi ), x ), b3MulSV( sinf( phi ), z ) );
+			b3Vec3 normal = b3Add( b3MulSV( c, radial ), b3MulSV( s, y ) );
+			app.vertexScratch.push_back( Renderer::MakeVertex( b3MulAdd( center, radius, normal ), normal, material, slot ) );
+		}
+	}
+	for ( int row = 0; row + 1 < rows; ++row )
+	{
+		for ( int side = 0; side < sides; ++side )
+		{
+			uint16_t a = (uint16_t)( first + row * ( sides + 1 ) + side );
+			uint16_t b = (uint16_t)( a + sides + 1 );
+			uint16_t triangles[6] = { a, b, (uint16_t)( a + 1 ), (uint16_t)( a + 1 ), b, (uint16_t)( b + 1 ) };
+			app.indexScratch.insert( app.indexScratch.end(), triangles, triangles + 6 );
+		}
+	}
+}
+
+// The faces of a convex hull, flat, each as a fan
+static void AppendHull( App& app, const b3HullData* hull, int material, int slot )
+{
+	const b3Vec3* points = b3GetHullPoints( hull );
+	const b3HullHalfEdge* edges = b3GetHullEdges( hull );
+	const b3HullFace* faces = b3GetHullFaces( hull );
+	const b3Plane* planes = b3GetHullPlanes( hull );
+	for ( int f = 0; f < hull->faceCount; ++f )
+	{
+		uint16_t first = (uint16_t)app.vertexScratch.size();
+		int edge = faces[f].edge;
+		int count = 0;
+		do
+		{
+			app.vertexScratch.push_back( Renderer::MakeVertex( points[edges[edge].origin], planes[f].normal, material, slot ) );
+			edge = edges[edge].next;
+			count += 1;
+		} while ( edge != faces[f].edge && count < B3_MAX_HULL_VERTICES );
+
+		for ( int k = 1; k + 1 < count; ++k )
+		{
+			uint16_t triangle[3] = { first, (uint16_t)( first + k ), (uint16_t)( first + k + 1 ) };
+			app.indexScratch.insert( app.indexScratch.end(), triangle, triangle + 3 );
+		}
+	}
+}
+
+// Every bone of a figure as the physics has it, capsules round and boxes as their hulls, on a slot on the body of the bone,
+// so the poses of the frames move it. The head gets a dark band across the face, so it shows where the figure looks.
+static void AddFigureVisual( App& app, nbFigureId id )
+{
+	FigureVisual visual;
+	visual.id = id;
+	for ( int i = 0; i < nbFigure_GetBoneCount( id ); ++i )
+	{
+		const nbBoneDef& bone = app.figureBones[i];
+		int slot = app.renderer.AllocSlot();
+		app.vertexScratch.clear();
+		app.indexScratch.clear();
+		if ( bone.shape == nb_capsuleBone )
+		{
+			AppendCapsule( app, bone.start, bone.end, bone.radius, MaterialPlaster, slot );
+		}
+		else if ( bone.shape == nb_boxBone )
+		{
+			b3BoxHull box = b3MakeOffsetBoxHull( bone.halfExtents.x, bone.halfExtents.y, bone.halfExtents.z, bone.center );
+			AppendHull( app, &box.base, MaterialPlaster, slot );
+		}
+		else
+		{
+			b3HullData* hull = nbCreateBoneHull( &bone );
+			if ( hull != nullptr )
+			{
+				AppendHull( app, hull, MaterialPlaster, slot );
+				b3DestroyHull( hull );
+			}
+		}
+		if ( i == nb_humanoidHead )
+		{
+			b3Vec3 eyes = b3MulAdd( bone.end, 0.85f * bone.radius, b3Vec3_axisZ );
+			b3BoxHull band = b3MakeOffsetBoxHull( 0.6f * bone.radius, 0.16f * bone.radius, 0.2f * bone.radius, eyes );
+			AppendHull( app, &band.base, MaterialSteel, slot );
+		}
+
+		int mesh = app.renderer.AddMesh( app.vertexScratch.data(), (int)app.vertexScratch.size(), app.indexScratch.data(),
+										 (int)app.indexScratch.size(), slot );
+		b3BodyId body = nbFigure_GetBody( id, i );
+		visual.bodies.push_back( body );
+		visual.slots.push_back( slot );
+		visual.meshes.push_back( mesh );
+		AttachSlot( app, body, slot );
+	}
+	visual.targets.resize( visual.bodies.size() );
+	app.figures.push_back( visual );
 }
 
 //----------------------------------------------------------------------------------------------------------------------
@@ -1043,6 +1185,55 @@ static void BuildCityScene( App& app )
 	nbStream_LoadAround( city.stream, &app.camera.position, 1 );
 }
 
+// A row of figures in front of a brick wall, two more on a block of concrete that the tools can take from under them, and
+// one on the wall itself. They stand animated until something knocks them down, see nbCreateFigure, and get up again.
+static const int FigureRow = 5;
+
+static void BuildFigureScene( App& app )
+{
+	MaterialPreset brick = BrickPreset();
+	MaterialPreset concrete = ConcretePreset();
+	AddWall( app, { 6.0f, 0.0f, -3.0f }, 0.0f, { 14.0f, 2.6f, 0.3f }, brick, 11 );
+	AddWall( app, { 11.5f, 0.0f, -0.5f }, 0.0f, { 3.2f, 1.2f, 1.6f }, concrete, 12 );
+
+	nbRigDef rig = nbDefaultRigDef();
+	float standHeight = nbMakeHumanoidBones( 1.8f, 74.0f, app.figureBones, nb_humanoidBoneCount );
+	rig.bones = app.figureBones;
+	rig.boneCount = nb_humanoidBoneCount;
+
+	nbFigureDef def = nbDefaultFigureDef();
+	def.rig = &rig;
+	def.standHeight = standHeight;
+	for ( int k = 0; k < FigureRow + 3; ++k )
+	{
+		b3Vec3 position = { 2.0f * (float)k, 0.0f, 0.0f };
+		def.heading = 0.15f * (float)( k - FigureRow / 2 );
+		if ( k >= FigureRow && k < FigureRow + 2 )
+		{
+			// On the concrete block
+			position = { 10.9f + 1.2f * (float)( k - FigureRow ), 1.2f, -0.5f };
+			def.heading = -0.4f;
+		}
+		else if ( k == FigureRow + 2 )
+		{
+			// On top of the brick wall, facing along it
+			position = { 2.5f, 2.6f, -3.0f };
+			def.heading = 0.5f * B3_PI;
+		}
+		def.position = b3ToPos( position );
+		nbFigureId figure = nbCreateFigure( app.destruction, &def );
+		if ( nbFigure_IsValid( figure ) )
+		{
+			AddFigureVisual( app, figure );
+		}
+	}
+
+	// Right of the menu
+	app.camera.position = { 4.4f, 2.6f, 11.0f };
+	app.camera.yaw = 0.0f;
+	app.camera.pitch = -0.14f;
+}
+
 static void DestroyScene( App& app )
 {
 	// The worlds wait for their last steps by themselves, and their poses go with them
@@ -1075,6 +1266,17 @@ static void DestroyScene( App& app )
 		app.renderer.FreeSlot( ball.slot );
 	}
 	app.balls.clear();
+
+	// The figures went with the world
+	for ( FigureVisual& visual : app.figures )
+	{
+		for ( size_t i = 0; i < visual.meshes.size(); ++i )
+		{
+			app.renderer.RemoveMesh( visual.meshes[i] );
+			app.renderer.FreeSlot( visual.slots[i] );
+		}
+	}
+	app.figures.clear();
 	app.bodySlots.clear();
 	app.lastImpact = {};
 	app.city = City();
@@ -1145,6 +1347,9 @@ static void LoadScene( App& app, SceneKind scene )
 		case SceneCity:
 			BuildCityScene( app );
 			break;
+		case SceneFigures:
+			BuildFigureScene( app );
+			break;
 		default:
 			BuildTownScene( app );
 			break;
@@ -1212,8 +1417,16 @@ static void FireRay( App& app, b3Vec3 origin, b3Vec3 direction )
 													  b3DefaultQueryFilter() );
 			if ( ray.hit )
 			{
+				// A figure takes the hit itself: it flinches, or it falls and gets up again, see nbFigure_ApplyHit
 				b3BodyId body = b3Shape_GetBody( ray.shapeId );
-				if ( b3Body_GetType( body ) == b3_dynamicBody )
+				int bone = 0;
+				nbFigureId figure = nbWorld_GetFigureFromBody( app.destruction, body, &bone );
+				if ( nbFigure_IsValid( figure ) )
+				{
+					nbHitDef hit = { 0, bone, b3MulSV( app.figureHitImpulse, direction ), ray.point };
+					nbFigure_ApplyHit( figure, &hit );
+				}
+				else if ( b3Body_GetType( body ) == b3_dynamicBody )
 				{
 					b3Body_ApplyLinearImpulse( body, b3MulSV( 60.0f, direction ), ray.point, true );
 				}
@@ -1382,6 +1595,19 @@ static void TakeWorldView( App& app )
 	view.counters = b3World_GetCounters( app.physics );
 	view.awakeBodies = b3World_GetAwakeBodyCount( app.physics );
 
+	if ( app.scene == SceneFigures )
+	{
+		view.figures = nbWorld_GetFigureStats( app.destruction );
+		for ( FigureVisual& visual : app.figures )
+		{
+			visual.info = nbFigure_GetInfo( visual.id );
+			if ( app.showFigureTargets )
+			{
+				nbFigure_GetTargetTransforms( visual.id, visual.targets.data(), (int)visual.targets.size() );
+			}
+		}
+	}
+
 	if ( app.scene == SceneCity )
 	{
 		nbStreamStats stream = nbStream_GetStats( app.city.stream );
@@ -1543,6 +1769,13 @@ static std::string BuildReport( const App& app )
 	Appendf( text, "; Statik ohne Decken x%.2f, %d Verbindungen gebrochen, %d Teile beim Aufprall zerbrochen\n", app.supportScale,
 			 stats.overloadedBondCount, stats.landingSplitCount );
 	Appendf( text, "Grafik: %dk Dreiecke, %d Draw Calls, %d kB Upload\n", rs.triangleCount / 1000, rs.drawCalls, rs.uploadedBytes / 1024 );
+	if ( app.scene == SceneFigures )
+	{
+		const nbFigureStats& figures = view.figures;
+		Appendf( text, "Figuren: %d, stehen %d, liegen %d (%d wach), stehen auf %d; Treffer %d, umgeworfen %d, aufgestanden %d, abgebrochen %d\n",
+				 figures.figureCount, figures.animatedCount, figures.ragdollCount, figures.awakeRagdollCount, figures.gettingUpCount,
+				 figures.hitCount, figures.knockdownCount, figures.getUpCount, figures.abortCount );
+	}
 	if ( app.scene == SceneCity )
 	{
 		Appendf(
@@ -1603,6 +1836,36 @@ static void DrawUi( App& app )
 		ImGui::Text( "Gespeichert %d, zurückgeholt %d, %.0f MB im Speicher", view.saves, view.restores,
 					 (double)view.savedBytes / 1048576.0 );
 		ImGui::Text( "Speicher %.0f MB (Nebenan und Box3D)", (double)( view.stats.byteCount + view.counters.byteCount ) / 1048576.0 );
+	}
+	if ( app.scene == SceneFigures )
+	{
+		const nbFigureStats& figures = app.view.figures;
+		ImGui::Text( "Figuren %d: stehen %d, liegen %d (%d wach), stehen auf %d", figures.figureCount, figures.animatedCount,
+					 figures.ragdollCount, figures.awakeRagdollCount, figures.gettingUpCount );
+		ImGui::Text( "Treffer %d, umgeworfen %d, aufgestanden %d, abgebrochen %d", figures.hitCount, figures.knockdownCount,
+					 figures.getUpCount, figures.abortCount );
+		ImGui::SliderFloat( "Gewehr auf Figuren", &app.figureHitImpulse, 10.0f, 300.0f, "%.0f N s" );
+		if ( ImGui::IsItemHovered() )
+		{
+			ImGui::SetTooltip( "So stark stößt ein Treffer des Gewehrs eine Figur. Ab 50 N s fällt sie als\naktiver Ragdoll um und steht "
+							   "wieder auf, darunter zuckt sie nur zurück. Granate\nund Kanone werfen Figuren mit ihrer eigenen Wucht um." );
+		}
+		if ( ImGui::Button( "Alle umwerfen" ) )
+		{
+			for ( const FigureVisual& visual : app.figures )
+			{
+				nbFigure_Knockdown( visual.id );
+			}
+		}
+		ImGui::SameLine();
+		ImGui::Checkbox( "Zustand", &app.showFigureStates );
+		ImGui::SameLine();
+		ImGui::Checkbox( "Zielhaltung", &app.showFigureTargets );
+		if ( ImGui::IsItemHovered() )
+		{
+			ImGui::SetTooltip( "Zeigt als Linien, wohin jede Figur ihre Knochen bringen will: stehend und beim\nAufstehen die nächste "
+							   "Haltung ihres Clips, als Ragdoll die Haltung, zu der\nihre Gelenke ziehen, auf ihrem Becken." );
+		}
 	}
 
 	ImGui::SeparatorText( "Werkzeug" );
@@ -1955,9 +2218,126 @@ static void DrawUi( App& app )
 	ImGui::End();
 }
 
+// A point of the world on the screen, in the coordinates of the user interface, false behind the camera
+static bool ProjectToScreen( const App& app, b3Vec3 point, ImVec2* screen )
+{
+	b3Vec3 offset = b3Sub( point, app.camera.position );
+	float depth = b3Dot( offset, app.camera.Forward() );
+	if ( depth < 0.1f )
+	{
+		return false;
+	}
+
+	float width = sapp_widthf();
+	float height = sapp_heightf();
+	float tanY = tanf( 0.5f * app.camera.fovY );
+	float tanX = tanY * width / height;
+	float ndcX = b3Dot( offset, app.camera.Right() ) / ( depth * tanX );
+	float ndcY = b3Dot( offset, app.camera.Up() ) / ( depth * tanY );
+	float dpi = sapp_dpi_scale();
+	*screen = ImVec2( 0.5f * ( ndcX + 1.0f ) * width / dpi, 0.5f * ( 1.0f - ndcY ) * height / dpi );
+	return true;
+}
+
+// What a figure does, for the label over its head
+static const char* FigureStateName( const nbFigureInfo& info )
+{
+	if ( info.state == nb_figureAnimated )
+	{
+		return "steht";
+	}
+	if ( info.state == nb_figureGettingUp )
+	{
+		return info.onBack ? "steht auf, vom Rücken" : "steht auf, vom Bauch";
+	}
+	switch ( info.wait )
+	{
+		case nb_waitGround:
+			return "liegt, kein Boden";
+		case nb_waitRoom:
+			return "liegt, kein Platz";
+		case nb_waitDebris:
+			return "liegt, etwas liegt auf ihr";
+		case nb_waitStaysDown:
+			return "bleibt liegen";
+		default:
+			return info.speed > 1.0f ? "fällt" : "liegt";
+	}
+}
+
+// Over every figure what it does, and as lines the pose it goes for, as the last steps left them, see TakeWorldView
+static void DrawFigureOverlay( App& app )
+{
+	if ( app.scene != SceneFigures || ( app.showFigureStates == false && app.showFigureTargets == false ) )
+	{
+		return;
+	}
+
+	ImDrawList* draw = ImGui::GetForegroundDrawList();
+	ImFont* font = ImGui::GetFont();
+	float size = ImGui::GetFontSize();
+	for ( const FigureVisual& visual : app.figures )
+	{
+		const nbFigureInfo& info = visual.info;
+		ImU32 color = info.state == nb_figureAnimated
+						  ? IM_COL32( 150, 230, 150, 255 )
+						  : ( info.state == nb_figureRagdoll ? IM_COL32( 250, 170, 80, 255 ) : IM_COL32( 120, 200, 250, 255 ) );
+
+		if ( app.showFigureTargets )
+		{
+			for ( size_t i = 0; i < visual.targets.size(); ++i )
+			{
+				const nbBoneDef& bone = app.figureBones[i];
+				b3Vec3 a = bone.start;
+				b3Vec3 b = bone.end;
+				if ( bone.shape != nb_capsuleBone )
+				{
+					// Through the box along its longest axis
+					b3Vec3 h = bone.halfExtents;
+					b3Vec3 along = h.x >= h.y && h.x >= h.z ? b3Vec3{ h.x, 0.0f, 0.0f }
+															: ( h.y >= h.z ? b3Vec3{ 0.0f, h.y, 0.0f } : b3Vec3{ 0.0f, 0.0f, h.z } );
+					a = b3Sub( bone.center, along );
+					b = b3Add( bone.center, along );
+				}
+				ImVec2 pa, pb;
+				const b3WorldTransform& target = visual.targets[i];
+				if ( ProjectToScreen( app, b3ToVec3( b3TransformWorldPoint( target, a ) ), &pa ) &&
+					 ProjectToScreen( app, b3ToVec3( b3TransformWorldPoint( target, b ) ), &pb ) )
+				{
+					draw->AddLine( pa, pb, color, 2.0f );
+				}
+			}
+		}
+
+		// Over the head as it is drawn
+		BodySlots* head = FindBodySlots( app, visual.bodies[nb_humanoidHead] );
+		ImVec2 point;
+		if ( app.showFigureStates && head != nullptr && head->posed &&
+			 ProjectToScreen( app, b3Add( b3ToVec3( head->pose.p ), b3Vec3{ 0.0f, 0.3f, 0.0f } ), &point ) )
+		{
+			char label[64];
+			if ( info.state == nb_figureRagdoll )
+			{
+				snprintf( label, sizeof( label ), "%s, Kraft %.2f", FigureStateName( info ), info.strength );
+			}
+			else
+			{
+				snprintf( label, sizeof( label ), "%s", FigureStateName( info ) );
+			}
+			ImVec2 extent = font->CalcTextSizeA( size, FLT_MAX, 0.0f, label );
+			ImVec2 corner = ImVec2( point.x - 0.5f * extent.x, point.y - extent.y );
+			draw->AddRectFilled( ImVec2( corner.x - 4.0f, corner.y - 2.0f ), ImVec2( corner.x + extent.x + 4.0f, corner.y + extent.y + 2.0f ),
+								 IM_COL32( 16, 20, 26, 160 ), 4.0f );
+			draw->AddText( font, size, corner, color, label );
+		}
+	}
+}
+
 // Frame rate in the top right corner and the crosshair, with and without the menu
 static void DrawOverlay( App& app )
 {
+	DrawFigureOverlay( app );
+
 	float dpi = sapp_dpi_scale();
 	ImDrawList* draw = ImGui::GetForegroundDrawList();
 	const FpsMeter& meter = app.fpsMeter;
@@ -2029,6 +2409,24 @@ static void RunScript( App& app, int frame )
 			else if ( f == 100 )
 			{
 				FireAt( app, ToolCannon, { -2.4f, 1.2f, 0.0f } );
+			}
+			break;
+
+		case SceneFigures:
+			// The rifle on the chests of the row, one from the side, a grenade between two of them, the cannon at the block
+			// under the two on it
+			if ( f >= 30 && f < 70 && f % 10 == 0 )
+			{
+				int k = ( f - 30 ) / 10;
+				FireAt( app, ToolRifle, { 2.0f * (float)k, 1.3f, 0.05f } );
+			}
+			else if ( f == 80 )
+			{
+				FireAt( app, ToolGrenade, { 7.0f, 0.5f, 0.6f } );
+			}
+			else if ( f == 100 )
+			{
+				FireAt( app, ToolCannon, { 11.5f, 0.6f, 0.3f } );
 			}
 			break;
 

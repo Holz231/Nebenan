@@ -1158,8 +1158,9 @@ typedef struct nbFigureDef
 	float flinchLimit;
 	float flinchHertz;
 
-	/// A body that presses on a standing figure with at least this many newtons knocks it down, so what falls on it never
-	/// comes to rest on it
+	/// Bodies that press on a standing figure from above with at least this many newtons knock it down, so what falls on
+	/// it never comes to rest on it. A figure that gets up falls from a quarter of it. What its bones push aside does not
+	/// count.
 	float crushForce;
 
 	/// A ragdoll counts as lying still while its bones move slower than this on average, in meters per second
@@ -1267,7 +1268,8 @@ typedef struct nbHitDef
 	/// The bone that is hit
 	int bone;
 
-	/// Impulse in newton seconds, in world space
+	/// Impulse in newton seconds, in world space. It spreads from the point over the bones near it, see
+	/// nbFigure_ApplyHit.
 	b3Vec3 impulse;
 
 	/// Where it hits, in world space

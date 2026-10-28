@@ -522,8 +522,9 @@ static int FigureWorldTest( void )
 	nbFigureId far = AddFigure( &scene, (b3Vec3){ 12.0f, 0.0f, 0.0f }, 0.0f );
 	StepFigures( &scene, 10 );
 
-	// A brick of 2 kg and a block of 40 kg dropped from 1.5 m over the heads, and a block of 80 kg set down on the head
-	b3Vec3 drops[3] = { { -3.0f, 3.2f, 0.02f }, { 0.0f, 3.2f, 0.02f }, { 3.0f, 2.02f, 0.02f } };
+	// A brick of 2 kg and a block of 40 kg dropped from 1.5 m over the heads, and a block of 80 kg set down on the head,
+	// 5 mm over it: its hit is too light, its weight knocks the figure down
+	b3Vec3 drops[3] = { { -3.0f, 3.2f, 0.02f }, { 0.0f, 3.2f, 0.02f }, { 3.0f, 1.955f, 0.02f } };
 	float masses[3] = { 2.0f, 40.0f, 80.0f };
 	for ( int k = 0; k < 3; ++k )
 	{
@@ -550,8 +551,9 @@ static int FigureWorldTest( void )
 	StepFigures( &scene, 90 );
 	ENSURE( nbFigure_GetState( light ) == nb_figureAnimated );
 	ENSURE( nbFigure_GetInfo( light ).hitCount >= 1 );
-	ENSURE( nbFigure_GetState( heavy ) == nb_figureRagdoll );
-	ENSURE( nbFigure_GetState( pressed ) == nb_figureRagdoll );
+	ENSURE( nbFigure_GetInfo( light ).knockdownCount == 0 );
+	ENSURE( nbFigure_GetInfo( heavy ).knockdownCount == 1 );
+	ENSURE( nbFigure_GetInfo( pressed ).knockdownCount == 1 );
 	ENSURE( nbFigure_GetState( far ) == nb_figureAnimated );
 	DestroyFigureScene( &scene );
 	return 0;
@@ -656,7 +658,7 @@ static uint32_t RunFigureScenario( int threadCount )
 }
 
 // The hash of the figure scenario on every platform, see RunFigureScenario
-#define NB_EXPECTED_FIGURE_HASH 0xd65ccb3eu
+#define NB_EXPECTED_FIGURE_HASH 0x04ed47eeu
 
 static int FigureDeterminismTest( void )
 {

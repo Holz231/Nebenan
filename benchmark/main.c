@@ -4,6 +4,7 @@
 // Usage: nebenan_benchmark [workerCount], the worker count applies to the fracture and to Box3D
 //        nebenan_benchmark scaling [rounds], the towns under fire with 1, 2, 4 and so on workers, see
 //        nbGetScalingWorkerCounts, and the scaling report of the library for each town
+//        nebenan_benchmark figures [workerCount] [rounds], the figures alone, see BenchmarkFigures
 
 #include "fracture.h"
 #include "hull_builder.h"
@@ -672,6 +673,168 @@ static void BenchmarkRates( int rounds )
 	}
 }
 
+// Figures after the hybrid of Overgrowth, see nbCreateFigure and the roadmap of the game, 26.8 and 27.14: humanoids in
+// rows of up to ten, 2.5 m apart, each row 1.5 m behind a brick wall. They stand, flinch from hits every sixth of a
+// second, are knocked down all at once, lie and get up, and then grenades on the other side break the walls, whose debris
+// hits them. Per phase the Box3D step and the update in milliseconds per step, mean, p95, p99 and max, from the profile
+// of the library the figures in the update and the solver and the contacts in the step, and what the figures did. At the
+// end the memory and a hash of every bone, the same with any number of workers.
+typedef struct FigurePhase
+{
+	const char* name;
+	int steps;
+} FigurePhase;
+
+#define FIGURE_MAX 50
+#define FIGURE_PHASE_STEPS 600
+
+static uint32_t HashFigures( const nbFigureId* figures, int count )
+{
+	uint32_t hash = 2166136261u;
+	for ( int k = 0; k < count; ++k )
+	{
+		b3WorldTransform transforms[nb_humanoidBoneCount];
+		int boneCount = nbFigure_GetBoneTransforms( figures[k], transforms, nb_humanoidBoneCount );
+		const uint8_t* bytes = (const uint8_t*)transforms;
+		for ( size_t b = 0; b < sizeof( b3WorldTransform ) * (size_t)boneCount; ++b )
+		{
+			hash = ( hash ^ bytes[b] ) * 16777619u;
+		}
+	}
+	return hash;
+}
+
+static void BenchmarkFigures( int workerCount, int figureCount )
+{
+	figureCount = b3ClampInt( figureCount, 1, FIGURE_MAX );
+	Scene scene = CreateScene( workerCount );
+	nbBoneDef bones[nb_humanoidBoneCount];
+	nbRigDef rig = nbDefaultRigDef();
+	rig.bones = bones;
+	rig.boneCount = nb_humanoidBoneCount;
+	nbFigureDef def = nbDefaultFigureDef();
+	def.rig = &rig;
+	def.standHeight = nbMakeHumanoidBones( 1.8f, 74.0f, bones, nb_humanoidBoneCount );
+
+	int columns = b3MinInt( figureCount, 10 );
+	int rows = ( figureCount + columns - 1 ) / columns;
+	float width = 2.5f * (float)columns;
+	for ( int row = 0; row < rows; ++row )
+	{
+		nbDestructibleDef wall = nbDefaultDestructibleDef();
+		wall.position = (b3Vec3){ 0.5f * width - 1.25f, 1.1f, 1.5f - 6.0f * (float)row };
+		wall.seed = (uint32_t)( 40 + row );
+		nbCreateBox( scene.world, &wall, (b3Vec3){ 0.5f * width, 1.1f, 0.15f } );
+	}
+	nbFigureId figures[FIGURE_MAX];
+	for ( int k = 0; k < figureCount; ++k )
+	{
+		def.position = b3ToPos( (b3Vec3){ 2.5f * (float)( k % columns ), 0.0f, -6.0f * (float)( k / columns ) } );
+		def.heading = 0.3f * (float)( k % 7 ) - 0.9f;
+		figures[k] = nbCreateFigure( scene.world, &def );
+	}
+
+	const FigurePhase phases[5] = {
+		{ "stand", 120 },
+		{ "flinch", 120 },
+		{ "knockdown", 90 },
+		{ "get up", FIGURE_PHASE_STEPS },
+		{ "cover breaks", FIGURE_PHASE_STEPS },
+	};
+	static float stepTimes[FIGURE_PHASE_STEPS], updateTimes[FIGURE_PHASE_STEPS];
+	printf( "  %d figure%s in %d row%s, a wall before each\n", figureCount, figureCount == 1 ? "" : "s", rows,
+			rows == 1 ? "" : "s" );
+	printf( "    phase        steps | step avg    p95    p99    max | update avg    p95    p99    max | figures  solve collide | "
+			"awake ragdolls, knockdowns, get-ups, aborts\n" );
+	uint32_t hitId = 1;
+	for ( int p = 0; p < 5; ++p )
+	{
+		nbWorld_ResetProfile( scene.world );
+		nbFigureStats before = nbWorld_GetFigureStats( scene.world );
+		int awake = 0;
+		int steps = 0;
+		for ( int step = 0; step < phases[p].steps; ++step )
+		{
+			for ( int k = 0; k < figureCount; ++k )
+			{
+				// Flinch from 30 N s every tenth step, all knocked down by 120 N s at once, each from its own side
+				float angle = 2.0f * B3_PI * (float)k / (float)figureCount + 0.7f * (float)( step / 10 );
+				float strength = p == 1 && step % 10 == 0 ? 30.0f : ( p == 2 && step == 0 ? 120.0f : 0.0f );
+				if ( strength > 0.0f )
+				{
+					b3BodyId chest = nbFigure_GetBody( figures[k], nb_humanoidChest );
+					b3CosSin cs = b3ComputeCosSin( angle );
+					nbHitDef hit = { hitId++, nb_humanoidChest, { strength * cs.cosine, 0.0f, strength * cs.sine },
+									 b3Body_GetWorldPoint( chest, (b3Vec3){ 0.0f, 0.2f, 0.0f } ) };
+					nbFigure_ApplyHit( figures[k], &hit );
+				}
+			}
+
+			// Grenades 1 m beyond the walls, one every 2.5 m
+			if ( p == 4 && step == 0 )
+			{
+				nbImpactDef impact = { 0 };
+				impact.radius = 1.3f;
+				impact.damage = 3.0e5f;
+				impact.ejectSpeed = 12.0f;
+				impact.explosionImpulse = 40.0f * impact.ejectSpeed;
+				for ( int row = 0; row < rows; ++row )
+				{
+					for ( int column = 0; column < columns; ++column )
+					{
+						impact.point = b3ToPos( (b3Vec3){ 2.5f * (float)column, 1.0f, 2.65f - 6.0f * (float)row } );
+						nbWorld_ApplyImpact( scene.world, &impact );
+					}
+				}
+			}
+
+			uint64_t ticks = b3GetTicks();
+			b3World_Step( scene.physicsWorld, 1.0f / 60.0f, 4 );
+			stepTimes[step] = b3GetMilliseconds( ticks );
+			ticks = b3GetTicks();
+			nbWorld_Update( scene.world, 1.0f / 60.0f );
+			updateTimes[step] = b3GetMilliseconds( ticks );
+			steps += 1;
+
+			nbFigureStats stats = nbWorld_GetFigureStats( scene.world );
+			awake = b3MaxInt( awake, stats.awakeRagdollCount );
+			if ( p == 3 && stats.animatedCount == figureCount )
+			{
+				break;
+			}
+		}
+
+		float* series[2] = { stepTimes, updateTimes };
+		float values[2][4];
+		for ( int k = 0; k < 2; ++k )
+		{
+			float total = 0.0f;
+			for ( int i = 0; i < steps; ++i )
+			{
+				total += series[k][i];
+			}
+			qsort( series[k], (size_t)steps, sizeof( float ), CompareFloats );
+			values[k][0] = total / (float)steps;
+			values[k][1] = series[k][steps * 95 / 100];
+			values[k][2] = series[k][steps * 99 / 100];
+			values[k][3] = series[k][steps - 1];
+		}
+		nbProfile profile = nbWorld_GetProfile( scene.world );
+		nbFigureStats after = nbWorld_GetFigureStats( scene.world );
+		printf( "    %-12s %5d | %8.3f %6.3f %6.3f %6.3f | %10.3f %6.3f %6.3f %6.3f | %7.3f %6.3f %7.3f | %d, %d, %d, %d\n",
+				phases[p].name, steps, values[0][0], values[0][1], values[0][2], values[0][3], values[1][0], values[1][1],
+				values[1][2], values[1][3], profile.stages[nb_profileFigures], profile.stages[nb_profileSolve],
+				profile.stages[nb_profileCollide], awake, after.knockdownCount - before.knockdownCount,
+				after.getUpCount - before.getUpCount, after.abortCount - before.abortCount );
+	}
+
+	nbFigureStats stats = nbWorld_GetFigureStats( scene.world );
+	printf( "    at the end %d standing, %d lying, %d getting up, memory %.1f MB, figures hash 0x%08x\n", stats.animatedCount,
+			stats.ragdollCount, stats.gettingUpCount, (double)( nbGetByteCount() + b3GetByteCount() ) / 1048576.0,
+			HashFigures( figures, figureCount ) );
+	DestroyScene( &scene );
+}
+
 // The streamed city of BenchmarkCity. The stream of the library decides which houses are loaded, the city says what
 // stands where and keeps the damaged houses that go with their rubble in a file.
 typedef struct City
@@ -911,6 +1074,21 @@ static void BenchmarkCity( int workerCount )
 
 int main( int argc, char** argv )
 {
+	if ( argc > 1 && strcmp( argv[1], "figures" ) == 0 )
+	{
+		int workerCount = argc > 2 ? atoi( argv[2] ) : 0;
+		workerCount = workerCount <= 0 ? nbGetRecommendedWorkerCount( false ) : workerCount;
+		int rounds = argc > 3 ? atoi( argv[3] ) : 1;
+		printf( "Figures after Overgrowth, %d workers, %d round%s\n", workerCount, rounds, rounds == 1 ? "" : "s" );
+		for ( int r = 0; r < b3MaxInt( rounds, 1 ); ++r )
+		{
+			BenchmarkFigures( workerCount, 1 );
+			BenchmarkFigures( workerCount, 10 );
+			BenchmarkFigures( workerCount, 50 );
+		}
+		return 0;
+	}
+
 	if ( argc > 1 && strcmp( argv[1], "rates" ) == 0 )
 	{
 		int rounds = argc > 2 ? atoi( argv[2] ) : 1;
@@ -950,6 +1128,11 @@ int main( int argc, char** argv )
 	// Fragments four times as large keep the cost of a grenade down, so a block four times the size takes four every step
 	printf( "\nBlock of 64 houses under a barrage, fragment scale 4.0 (four grenades every step, Box3D step, update)\n" );
 	BenchmarkTown( workerCount, 4.0f, 8, 4, 1, NULL, 60, NULL );
+
+	printf( "\nFigures after Overgrowth: standing, hit, knocked down, getting up, behind walls that break (Box3D step, update)\n" );
+	BenchmarkFigures( workerCount, 1 );
+	BenchmarkFigures( workerCount, 10 );
+	BenchmarkFigures( workerCount, 50 );
 
 	printf( "\nCity streamed around a camera flying through it, fragment scale 4.0 (streaming, grenades, Box3D step, update)\n" );
 	BenchmarkCity( workerCount );

@@ -34,7 +34,8 @@ Kontakt-Schleife auf `kollaps-28` und den Teilen eines Einschlags auf `kollaps-2
 auf Wunsch des Nutzers gebaut, auf dem Ryzen nachgemessen und auf `kollaps-33` zurückgenommen, und den dauerhaften
 Gebieten auf `kollaps-32`, gebaut, auf dem Ryzen nachgemessen und übernommen, und dem Ausgleich der Gebiete auf
 `kollaps-34`, gebaut, auf dem Ryzen nachgemessen und auf `kollaps-35` zurückgenommen, und den Mauern wie auf dem alten
-Branch auf `kollaps-36`, auf Wunsch des Nutzers. Begründungen und Messwerte stehen in
+Branch auf `kollaps-36`, auf Wunsch des Nutzers, und den Figuren nach Overgrowth auf `active-ragdoll-1`, ebenso auf
+Wunsch des Nutzers. Begründungen und Messwerte stehen in
 [`Optimierungen.md`](Optimierungen.md), hier nur das Fazit und die Reihenfolge. Nach jeder Runde wird der Stand hier
 nachgetragen.
 
@@ -88,6 +89,8 @@ Aufprall, wie auf dem Branch `house-buckling-(incomplete)-+-wall-collapse`, ohne
 geben nach wie auf dem alten Branch“ in [Optimierungen.md](Optimierungen.md). Häuser enden bitgleich, der Abriss in der
 Demo und der Benchmark messen dieselben Städte wie vorher. Anders enden die Szenen „Mauern“ und „Stresstest“ der Demo,
 im Benchmark „rifle“ und „explosions“, die auf Mauern schießen, und in den Tests die Szene mit Mauer und Tor.
+`active-ragdoll-1` ist auch keine Runde der Physik: Figuren nach Overgrowth, auf Wunsch des Nutzers, siehe „Figuren“
+unten. Ohne Figuren rechnet alles bitgleich wie mit `kollaps-36`.
 
 ## Fazit
 
@@ -1522,6 +1525,42 @@ Die größte Insel hat 6,6 % weniger Bedingungen, aber nur 1,5 % weniger Körper
 Damit holt in der Physik mit 8 Threads nur noch ein neuer großer Umbau etwas, und als Nächstes kommt die Grafik, nach
 Punkt 10 der Reihenfolge in [Optimierungen.md](Optimierungen.md): nur bewegte Transformationen hochladen (Nr. 74) und
 räumliche Render-Seiten mit Frustum-Culling (Nr. 49 bis 51). Womit sie anfängt, entscheidet der Nutzer.
+
+## Figuren
+
+Auf `active-ragdoll-1`, neu von `kollaps-36` aus, nach den Kapiteln 26 bis 28 der Roadmap des Spiels und dem Quellcode
+von Overgrowth: Figuren, die animiert stehen, als aktive Ragdolls fallen und wieder aufstehen, alles in der Bibliothek,
+siehe Figuren im README. Die Branches `ragdoll-*` sind nicht fortgesetzt, sie dienten als Fundus. Eine Figur steht mit
+kinematischen Knochen, die ihrem Clip folgen. Ein harter Treffer, eine Explosion, Trümmer, eine Last von oben oder
+Boden, der wegbricht, machen sie zum aktiven Ragdoll, mit den Geschwindigkeiten ihrer Knochen und dem Treffer genau
+einmal, verteilt auf die Knochen wie in Overgrowth. Die Gelenke ziehen als Federn mit begrenztem Drehmoment, einer
+Ergänzung in Box3D, zur Haltung zum Fallen, so stark, wie die Figur schnell ist. Liegt sie still, steht sie mit einem
+Clip vom Bauch oder vom Rücken auf, sobald sie Boden, Platz und nichts auf sich hat. Die Clips eines Menschen baut die
+Bibliothek selbst. Zehn Tests prüfen die Grenze der Federn, die Clips, Stand, Zucken, Sturz von vorn und hinten mit
+Aufstehen, das Warten auf Platz und den Abbruch, den Boden, Trümmer, Last und Explosion, eigene Clips und die Bits mit
+einem und vier Threads. Welche Wege dabei verworfen wurden, steht unter „Figuren nach Overgrowth“ und den Zeilen danach
+in [Optimierungen.md](Optimierungen.md).
+
+Gemessen mit `nebenan_benchmark figures` auf der VM, nach Kapitel 26.8 der Roadmap des Spiels mit 1, 10 und 50 Figuren:
+Stehend kosten 50 Figuren mit einem Thread 0,14 ms im Box3D-Schritt und 0,075 ms im Update, 1,5 µs pro Figur. Fallen
+alle 50 zugleich, kostet der Schritt 1,9 bis 2,4 ms, mit vier Threads 1,4 ms. Das liegt am Löser: Solange ein Gelenk in
+den Farben liegt, rechnet er ohne ganze Inseln pro Thread und ohne Gebiete, Farbe für Farbe mit einer Sperre nach jeder
+Stufe, auch für die Trümmer der Stadt. Das zu ändern ist die nächste Runde, Schritt F8. Die Demo zeigt die Figuren in
+der Szene „Figuren“, dort misst der Nutzer auf dem Ryzen.
+
+| Nr. | Schritt | Gewinn | Voraussetzung | Stand |
+| ---: | --- | --- | --- | --- |
+| F1 | **Federn mit Grenze in Box3D**: Dreh- und Kugelgelenke ziehen mit begrenztem Drehmoment, nach 27.15 P2 der Roadmap des Spiels, bitgleich ohne Grenze | Voraussetzung der aktiven Ragdolls | – | ✅ auf `active-ragdoll-1`: `maxSpringTorque`, siehe „Federn mit Grenze“ in [`extern/README.md`](../extern/README.md) |
+| F2 | **Physikskelett eines Menschen**: 18 Knochen mit Formen, Massen und Gelenken in ihren Grenzen, nach 27.15 P3 | – | F1 | ✅ auf `active-ragdoll-1`: `nbMakeHumanoidBones` |
+| F3 | **Stand und Zucken**: Die Knochen folgen kinematisch dem Clip, ein schwacher Treffer lässt den Rumpf zucken, nach 26.7 M2a und 28.2 | – | F2 | ✅ auf `active-ragdoll-1` |
+| F4 | **Aktiver Ragdoll**: Sturz durch Treffer, Explosion, Trümmer, Last und Boden, der wegbricht, mit den Geschwindigkeiten der Knochen und dem Treffer einmal, Kraft nach Geschwindigkeit, Abstützen und Einrollen, nach 26.7 M2b, 26.13, 28.1 und 28.4 | – | F3 | ✅ auf `active-ragdoll-1` |
+| F5 | **Aufstehen**: Boden, Last und Platz prüfen, Clip vom Bauch oder vom Rücken aus der Haltung, in der die Figur lag, Abbruch bei Treffern, nach 26.7 M2c und 26.15 | – | F4 | ✅ auf `active-ragdoll-1` |
+| F6 | **Demo und Benchmark**: Szene „Figuren“ mit „Zustand“ und „Zielhaltung“, `nebenan_benchmark figures` mit 1, 10 und 50 Figuren, nach 26.8 und 27.14 | Werkzeug | F5 | ✅ auf `active-ragdoll-1` |
+| F7 | **In der Demo ansehen**: auf dem Ryzen die Szene „Figuren“ mit Gewehr, Granate und Kanone, mit „Zustand“ und „Zielhaltung“ | entscheidet, was an Haltungen und Clips nachzubessern ist | F6 | 🔜 beim Nutzer |
+| F8 | **Pakete trotz Gelenken**: Gelenke in die Pakete und Gebiete des Lösers legen, wie es `ragdoll-7` für die Pakete tat, bitgleich für Szenen ohne Gelenke | mit wachen Ragdolls wieder ganze Inseln pro Thread und Gebiete, für Figuren und Trümmer | F6 | 🔜 hoch, die nächste Runde |
+| F9 | **Ausgleichsschritt**: Ein mittlerer Treffer lässt die Figur einen Schritt machen, statt sie nur zucken zu lassen, nach 26.14 und 28.3 | – | F5 | 🔜 mittel |
+| F10 | **Füße im Stand auf dem Boden**: IK für die Füße auf unebenem Boden und auf Schutt, nach 26.5 und 28.3 | – | F5 | 🔜 mittel |
+| F11 | **Platz zum Aufstehen suchen**: Eine Figur ohne Platz rückt zur Seite oder dreht sich, statt zu warten, etwa mit dem Kopf an einer Wand | – | F5 | 🔜 niedrig |
 
 ## Kleinere Punkte
 

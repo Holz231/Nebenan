@@ -472,10 +472,11 @@ NB_API void nbFigure_Move( nbFigureId figureId, b3Pos position, float heading );
 /// second. The clip is copied. Null goes back to the idle clip. A clip that does not loop holds its last pose.
 NB_API void nbFigure_PlayClip( nbFigureId figureId, const nbClipDef* clip, float speed );
 
-/// Apply a hit: an impulse on a bone, once per hit id, see nbHitDef. A standing figure hit with at least
-/// nbFigureDef::knockdownImpulse falls as a ragdoll with the velocities its bones had and the impulse on the bone, slack
-/// at first, see nbFigureMotors::stunTime, a weaker hit makes its trunk flinch. A figure that gets up falls again. On a
-/// ragdoll the impulse acts as it is.
+/// Apply a hit: an impulse at a point of a bone, once per hit id, see nbHitDef. A standing figure hit with at least
+/// nbFigureDef::knockdownImpulse falls as a ragdoll with the velocities its bones had, slack at first, see
+/// nbFigureMotors::stunTime, and the impulse spreads over its bones as Overgrowth spreads a hit: every bone takes a part
+/// as large as its mass over the square of its distance to the point. A weaker hit makes its trunk flinch. A figure that
+/// gets up falls from a quarter of the knockdown impulse. A ragdoll takes the impulse the same way and is slack again.
 /// @return true if the hit landed, false if a hit with this id landed before or the bone does not exist
 NB_API bool nbFigure_ApplyHit( nbFigureId figureId, const nbHitDef* hit );
 

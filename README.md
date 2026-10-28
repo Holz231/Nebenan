@@ -33,6 +33,12 @@ gelöscht. Kein Staub, keine Schatten: Jede Millisekunde geht in die Zerstörung
   der man den Fuß wegschießt, gibt nach und kommt herunter, und ihre großen Teile brechen, wo sie hart aufschlagen
 - Kollisionsschaden: Kanonenkugeln und herabfallende Trümmer beschädigen, was sie treffen. Was ein Einsturz
   herunterbringt, beschädigt nichts
+- Figuren nach dem Vorbild von Overgrowth: Eine Figur steht animiert, ihre Knochen sind kinematische Box3D-Körper, die
+  ihrem Clip folgen. Ein harter Treffer, eine Explosion, schwere Trümmer, eine Last auf ihr oder Boden, der wegbricht,
+  machen sie zum aktiven Ragdoll, mit den Geschwindigkeiten, die ihre Knochen hatten, und dem Treffer genau einmal.
+  Ihre Gelenke ziehen mit begrenzter Kraft zu einer Haltung, sie fängt sich mit den Armen ab oder rollt sich ein. Liegt
+  sie still, steht sie mit einem Clip vom Bauch oder vom Rücken wieder auf, sobald sie Boden, Platz und nichts auf sich
+  hat. Die Knochen und Clips eines Menschen baut die Bibliothek selbst
 - Für ganze Städte gebaut, ohne etwas zu löschen: Trümmer, die zur Ruhe kommen und auf festem Grund liegen,
   werden zu statischem Schutt und kosten Box3D nichts mehr. Box3D bewegt nur eine begrenzte Zahl Trümmer
   gleichzeitig, verdeckte Flächen werden nicht gezeichnet
@@ -212,8 +218,14 @@ Grafik begrenzt das Zeichnen die Bildzeit.
   Unberührte Häuser weiter weg gehen wieder, beschädigte gehen samt Schutt in den Speicher der Demo, sobald alles an
   ihnen ruht, und kommen von dort zurück. Das Menü zeigt, wie viele Häuser geladen und wie viele gespeichert sind, was
   das Streaming pro Bild kostet und wie viel Speicher Nebenan und Box3D belegen
+- **Figuren**: acht Figuren, fünf vor einer Ziegelmauer, zwei auf einem Betonblock und eine auf der Mauer. Das Gewehr
+  wirft sie um oder lässt sie zurückzucken, Granate und Kanone werfen sie mit ihrer eigenen Wucht um, und wer den Block
+  oder die Mauer unter ihnen wegschießt, nimmt ihnen den Boden. Das Menü zählt, wie viele stehen, liegen und aufstehen.
+  **Gewehr auf Figuren** stellt den Stoß eines Gewehrtreffers ein (Standard 80 N s, ab 50 N s fällt eine Figur),
+  **Alle umwerfen** wirft alle auf einmal um, **Zustand** schreibt über jede Figur, was sie tut und worauf sie wartet,
+  und **Zielhaltung** zeichnet als Linien die Haltung, zu der sie ihre Knochen bringen will
 
-**Aufrufoptionen**: `--scene 0..3` startet eine Szene, `--fragment-scale 3` setzt die Bruchstückgröße, `--vsync`
+**Aufrufoptionen**: `--scene 0..4` startet eine Szene, `--fragment-scale 3` setzt die Bruchstückgröße, `--vsync`
 schaltet VSync ein, `--msaa 4` schaltet Kantenglättung ein (Standard aus), `--highdpi` rendert auf hochauflösenden
 Bildschirmen in voller Auflösung (Standard aus, kostet Füllrate). `--serial-physics` schaltet die parallele Physik ab,
 `--threads N` setzt die Zahl der Threads, `--step-rate 30` den Takt der Physik. `--compare` misst parallel gegen
@@ -498,6 +510,67 @@ eingeschaltet, misst Nebenan die Flächen dieser Bauwerke einmal an den Formen i
   davon, etwa ein Stockwerk, das auf kleinen Trümmern liegt.
 - Was unter `killDepth` fällt, hat die Welt verlassen und wird entfernt. Splitter unter `minFragmentVolume` werden gar
   nicht erst erzeugt.
+
+**Figuren.** Eine Figur ist ein Satz Knochen, jeder ein Box3D-Körper mit einer Form, Kapsel, Quader oder abgerundeter
+Quader, verbunden durch Gelenke: Kugelgelenke mit Kegel und Drehgrenze, Scharniere an Knien und Ellbogen (`nbRigDef`,
+`nbBoneDef`). `nbMakeHumanoidBones` legt einen Menschen aus 18 Knochen an, wie eine Gliederpuppe. Eine Figur ist zu
+jeder Zeit in genau einem Zustand, wie es Kapitel 28.1 der Roadmap des Spiels verlangt: Sie steht animiert, liegt als
+Ragdoll oder steht auf. Stehend sind ihre Knochen kinematisch, und das Update nach jedem Schritt gibt jedem Knochen mit
+`b3Body_SetTargetTransform` die Geschwindigkeit, mit der er im nächsten Schritt die nächste Haltung seines Clips
+erreicht. Nichts wird teleportiert, Trümmer prallen an der Figur ab, und Box3D löst keines ihrer Gelenke, denn zwischen
+kinematischen Körpern liegen sie in der statischen Menge. Ein schwacher Treffer lässt den Rumpf zurückzucken, eine
+kritisch gedämpfte Feder um das Becken, die die Bibliothek exakt löst, 0,008 rad pro N s bis höchstens 0,5 rad.
+
+**Aktiver Ragdoll.** Ein Treffer ab `knockdownImpulse` (Standard 50 N s), eine Explosion, die stark genug ist,
+Trümmer, die die Figur mit so viel Impuls treffen, eine Last von oben ab `crushForce` (600 N) oder Boden, der
+wegbricht oder sich schneller als 1,5 m/s bewegt, machen die Knochen dynamisch, mit den Geschwindigkeiten, die sie
+hatten. Ein Treffer wirkt danach genau einmal und verteilt sich wie in Overgrowth (`RiggedObject::ApplyForceToRagdoll`)
+auf die Knochen: Jeder bekommt an seinem Schwerpunkt einen Anteil nach seiner Masse durch das Quadrat seines Abstands
+zum Treffpunkt plus 0,01 m². Nähme ein Knochen alles, peitschte er um seine Gelenke, und ein harter Treffer auf die Brust
+klappte den Rumpf an der Hüfte ein. Einen Treffer mit einer Nummer, die die Figur unter ihren letzten 16 schon hatte,
+nimmt sie nicht noch einmal (`nbHitDef::id`). Die Gelenke sind Federn mit begrenztem Drehmoment, eine Ergänzung in Box3D,
+siehe [`extern/README.md`](extern/README.md): Sie ziehen die Knochen zu einer Haltung und geben nach, wenn mehr gegen
+sie drückt. Wie in Overgrowth sind sie so stark, wie die Figur schnell ist, 0,1 pro m/s bis 0,8, und nach einem harten
+Treffer 0,4 s lang schlaff. Die Steifigkeit gibt die Bibliothek in N m pro Radiant an und rechnet sie für jedes Gelenk
+aus der Trägheit seiner beiden Knochen in die Frequenz um, die Box3D erwartet, so halten ein schwerer Oberschenkel und
+ein leichter Fuß gleich.
+
+**Abstützen und Einrollen.** Eine schnelle Figur rudert mit den Armen (`nb_clipFall`), eine langsame entspannt sich in
+ihre Grundhaltung, so weit, wie ihr die Kraft fehlt: Ruderte sie am Boden weiter, kröche sie mit eigener Kraft über ihn.
+Wie die Gefahrensuche von Overgrowth schaut eine fliegende Figur mit einer Kugel 0,35 s ihrer Geschwindigkeit voraus.
+Je näher, was sie dort trifft, desto mehr schützt sie sich: Liegt es vor ihrer Brust, stützt sie sich mit gestreckten
+Armen und geradem Rücken ab (`nb_clipBrace`), sonst rollt sie sich ein, die Knie zur Brust und die Unterarme vor dem
+Gesicht (`nb_clipCurl`). Eingerollt nach vorn fallend überschlüge sie sich über den Kopf, mit hohlem Rücken höben sich
+ihr die Beine über den Kopf, sobald die Brust aufliegt. Liegt sie still, wird sie gedämpft und schläft ein.
+
+**Aufstehen.** Liegt eine Figur nach `getUpDelay` (1 s) eine Viertelsekunde still, prüft sie in jedem achten Update, ob
+sie aufstehen kann: tragender Boden unter dem Becken, nichts, was von oben auf ihr liegt, und Platz, um sich aufzurichten
+und vor sich zu knien. Sonst wartet sie und sagt, worauf (`nbFigureInfo::wait`). Dann werden ihre Knochen wieder
+kinematisch und folgen einem Clip vom Bauch oder vom Rücken, je nachdem, wie sie liegt, gedreht nach ihrer Wirbelsäule.
+Der Clip blendet in seinen ersten 0,8 s aus der Haltung ein, in der sie lag, Knochen für Knochen im Rahmen seines
+Elternknochens, wie Overgrowth vom Ragdoll zur Animation überblendet. Am Ende steht sie, wo der Clip sie hingebracht
+hat, und geht in den Stand über. Ein Treffer mit einem Viertel des Impulses, der sie sonst umwirft, oder eine Last von
+einem Viertel bricht das Aufstehen ab. Was ihre Knochen dabei selbst beiseiteschieben, zählt nicht, nur was auf sie
+zukommt oder auf ihr lastet.
+
+**Clips.** Ein Clip ist eine Folge von Schlüsselhaltungen: die Drehung jedes Knochens gegen seine Ruhelage und die
+Wurzel im Rahmen der Figur (`nbClipDef`). Die Clips eines Menschen jeder Größe baut die Bibliothek selbst
+(`nbMakeHumanoidClip`): Stand, Rudern, Abstützen, Einrollen und das Aufstehen vom Bauch und vom Rücken, einmal pro
+Größe und Welt, geteilt von allen Figuren. Die Aufsteh-Clips entstehen aus Schlüsselposen, in denen eine
+Zwei-Knochen-IK Hände, Knie und Füße auf dem Boden hält, abgetastet mit 15 Hz. Ein Spiel kann jeden Clip ersetzen
+(`nbFigureDef::clips`) und im Stand eigene abspielen (`nbFigure_PlayClip`).
+
+**Gelenke und Pakete.** Eine stehende Figur kostet den Löser nichts, ihre Gelenke liegen in der statischen Menge. Als
+wacher Ragdoll liegen ihre Gelenke in den Farben des Lösers, und solange dort ein Gelenk liegt, rechnet Box3D keine
+ganzen Inseln pro Thread, sondern Farbe für Farbe mit einer Sperre nach jeder Stufe, siehe „Ganze Inseln pro Thread“ in
+[`extern/README.md`](extern/README.md), auch für die Trümmer. Im Benchmark kostet ein Schritt, in dem 50 Figuren
+zugleich fallen, auf der VM mit einem Thread 1,9 bis 2,4 ms und mit vier 1,4 ms, siehe Leistung. Das ist die nächste Runde,
+siehe „Figuren“ in der [Roadmap](docs/Roadmap.md). `nbFigureStats::awakeRagdollCount` zählt die wachen Ragdolls.
+
+**Determinismus der Figuren.** Alles läuft im Update nach einem Schritt, Figur für Figur in ihrer Reihenfolge, mit Box3Ds
+eigenen Funktionen für Winkel, Sinus und Kosinus und einer eigenen Exponentialfunktion statt der des Systems. Bei
+Gleichstand in einer Abfrage entscheidet der Index der Form. Die Figuren rechnen mit jeder Zahl von Threads bitgleich,
+das prüfen die Tests und der Benchmark.
 
 **Box3D-Anbindung.** Jedes statische Bruchstück hat einen eigenen statischen Körper, denn das Entfernen
 einer Form in Box3D kostet so viel, wie der Körper Kontakte hat. Jede lose Insel ist ein dynamischer
@@ -835,6 +908,47 @@ char* text = malloc( (size_t)length + 1 );
 nbFormatScalingReport( profiles, countCount, text, length + 1 );   // alles als Tabellen für ein Log
 ```
 
+Figuren leben in derselben Box3D-Welt wie die Trümmer, das Update nach jedem Schritt bewegt sie, wirft sie um und
+stellt sie wieder auf. Ein Spiel legt sie an, zeichnet ihre Knochen und meldet Treffer:
+
+```c
+// Ein Mensch von 1,80 m und 74 kg, die Clips baut die Bibliothek
+nbBoneDef bones[nb_humanoidBoneCount];
+nbRigDef rig = nbDefaultRigDef();
+rig.bones = bones;
+rig.boneCount = nb_humanoidBoneCount;
+nbFigureDef figureDef = nbDefaultFigureDef();
+figureDef.rig = &rig;
+figureDef.standHeight = nbMakeHumanoidBones( 1.8f, 74.0f, bones, nb_humanoidBoneCount );
+figureDef.position = b3ToPos( (b3Vec3){ 2.0f, 0.0f, 0.0f } );
+figureDef.heading = 0.5f * B3_PI;   // schaut nach +x
+nbFigureId figure = nbCreateFigure( world, &figureDef );
+
+// Jeder Knochen ist ein Körper, gezeichnet mit den Lagen aus nbWorld_GetDrawPoses wie die Trümmer. Seine Form steht in
+// bones[i], die Hülle eines Quaders gibt nbCreateBoneHull.
+b3BodyId head = nbFigure_GetBody( figure, nb_humanoidHead );
+
+// Ein Schuss trifft eine Figur: Die Bibliothek entscheidet, ob sie zuckt oder fällt, und verteilt den Stoß
+b3RayResult ray = b3World_CastRayClosest( physics, b3ToPos( eye ), b3MulSV( 100.0f, aim ), b3DefaultQueryFilter() );
+if ( ray.hit )
+{
+	int bone;
+	nbFigureId target = nbWorld_GetFigureFromBody( world, b3Shape_GetBody( ray.shapeId ), &bone );
+	if ( nbFigure_IsValid( target ) )
+	{
+		// Dieselbe Nummer landet nur einmal, auch wenn mehrere Ereignisse den Treffer melden
+		nbHitDef hit = { shotNumber, bone, b3MulSV( 80.0f, aim ), ray.point };
+		nbFigure_ApplyHit( target, &hit );
+	}
+}
+
+// Granaten mit explosionImpulse, Trümmer, Lasten und Boden, der wegbricht, werfen Figuren von selbst um. Im Stand lässt
+// sich eine Figur bewegen und spielt eigene Clips.
+nbFigure_Move( figure, b3ToPos( (b3Vec3){ 2.5f, 0.0f, 0.0f } ), 0.5f * B3_PI );
+nbFigure_PlayClip( figure, &winken, 1.0f );
+nbFigureInfo info = nbFigure_GetInfo( figure );   // steht, liegt oder steht auf, und worauf sie wartet
+```
+
 Die komplette API steht in [include/nebenan/nebenan.h](include/nebenan/nebenan.h).
 
 Einbinden in ein eigenes CMake-Projekt:
@@ -899,6 +1013,31 @@ beim Einbinden nicht gebaut.
 | `loadDelay` | 1 | Updates vom Start im Hintergrund bis zum Einbauen. Eins passt für ein Spiel, mehr für Updates, die direkt aufeinander folgen |
 | `prepareFcn`, `releaseFcn` | – | Was auf einem Platz steht, und die Rückgabe der Teile. `prepareFcn` ist Pflicht |
 | `storeFcn`, `fetchFcn` | leer | Wohin beschädigte Plätze samt Schutt gehen, etwa in eine Datei. Ohne sie bleiben sie im Speicher |
+
+| Figur (`nbFigureDef`) | Standard | Wirkung |
+| --- | --- | --- |
+| `standHeight` | 0,98 m | Höhe der Wurzel über dem Boden im Stand, `nbMakeHumanoidBones` gibt sie für ihren Menschen zurück |
+| `knockdownImpulse` | 50 N s | Ab diesem Treffer fällt eine Figur, darunter zuckt sie zurück. Beim Aufstehen fällt sie schon ab einem Viertel |
+| `flinchScale`, `flinchLimit`, `flinchHertz` | 0,008 rad pro N s, 0,5 rad, 2 Hz | Wie weit der Rumpf bei einem schwachen Treffer zurückzuckt und wie schnell er sich wieder aufrichtet |
+| `crushForce` | 600 N | Eine Last von oben ab dieser Kraft wirft eine stehende Figur um, beim Aufstehen ab einem Viertel. Was ihre Knochen beiseiteschieben, zählt nicht |
+| `restSpeed` | 0,4 m/s | Bewegen sich die Knochen eines Ragdolls im Mittel langsamer, liegt er still |
+| `getUpDelay`, `getUpSpeed`, `canGetUp` | 1 s, 1,4, an | Frühestens so lange nach dem Sturz und nach einer Viertelsekunde Stille steht sie auf, mit den Clips so viel schneller als geschrieben. Ohne `canGetUp` bleibt sie liegen |
+| `startAsRagdoll` | aus | Die Figur fällt von Anfang an als Ragdoll |
+| `clips` | die der Bibliothek | Eigene Clips für Stand, Rudern, Abstützen, Einrollen und das Aufstehen vom Bauch und vom Rücken, kopiert |
+
+| Gelenke (`nbFigureMotors`) | Standard | Wirkung |
+| --- | --- | --- |
+| `stiffness` | 600 N m pro rad | Steifigkeit der Gelenke bei voller Kraft, mal der des Knochens, für jedes Gelenk aus der Trägheit seiner Knochen in Hertz umgerechnet |
+| `dampingRatio` | 1 | Dämpfung der Gelenke, 1 ist kritisch |
+| `maxTorque` | 120 N m | Größtes Drehmoment eines Gelenks bei voller Kraft, mal der Kraft des Knochens, darüber gibt es nach |
+| `strengthPerSpeed`, `fallStrength` | 0,1 pro m/s, 0,8 | Die Kraft wächst mit der mittleren Geschwindigkeit der Knochen bis `fallStrength`, wie in Overgrowth |
+| `stunTime` | 0,4 s | So viel schwächer ist eine Figur nach einem harten Treffer, die Kraft kommt mit eins pro Sekunde zurück. Overgrowth nimmt 0,9 s, dort fiele eine Figur aus dem Stand, ohne sich abzustützen |
+
+| Rig (`nbRigDef`) | Standard | Wirkung |
+| --- | --- | --- |
+| `friction` | 0,6 | Reibung aller Formen der Knochen |
+| `selfCollision` | an | Knochen derselben Figur, die nicht verbunden sind, kollidieren miteinander |
+| `enableCollisionDamage` | an | Die Knochen eines Ragdolls beschädigen, was sie treffen, wie Kanonenkugeln |
 
 Die Demo nimmt für Ziegel Dichte 1900, Festigkeit 6·10⁵ und Splitter 0,1 m, für Beton Dichte 2400,
 Festigkeit 1,1·10⁶ und Splitter 0,13 m, beides mit Bruchstückgröße ×2.
@@ -1480,6 +1619,28 @@ rechnen ohne Biegemomente, wie ohne Lastprüfung:
 | 128 | 1,2 ms | 0,20 ms | 0,99 ms |
 | 256 | 3,1 ms | 0,43 ms | 2,2 ms |
 
+**Figuren.** `nebenan_benchmark figures` misst nach Kapitel 26.8 der Roadmap des Spiels 1, 10 und 50 Figuren in Reihen
+zu zehn, 2,5 m auseinander, jede Reihe 1,5 m hinter einer Ziegelmauer. Sie stehen 2 s, zucken 2 s lang alle 1/6 s unter
+einem Treffer von 30 N s, fallen alle zugleich durch 120 N s, liegen und stehen in 10 s wieder auf, dann zerschlagen
+Granaten jenseits der Mauern die Deckung, und deren Trümmer treffen sie, wieder 10 s. Pro Schritt, mit 1 / 4 Threads,
+der Median aus drei Läufen:
+
+| 50 Figuren | Box3D-Schritt Ø | 99 % der Schritte | Update Ø | davon Figuren |
+| --- | ---: | ---: | ---: | ---: |
+| Stehen | 0,14 / 0,14 ms | 0,36 / 0,45 ms | 0,074 / 0,072 ms | 0,072 / 0,070 ms |
+| Zucken | 0,22 / 0,23 ms | 0,30 / 0,53 ms | 0,094 / 0,094 ms | 0,092 / 0,092 ms |
+| Alle fallen zugleich | 1,9 / 1,4 ms | 3,3 / 4,4 ms | 0,25 / 0,33 ms | 0,24 / 0,32 ms |
+| Liegen und aufstehen | 0,35 / 0,40 ms | 0,63 / 0,90 ms | 0,12 / 0,12 ms | 0,11 / 0,12 ms |
+| Die Deckung bricht | 0,38 / 0,31 ms | 2,6 / 1,9 ms | 0,11 / 0,12 ms | 0,10 / 0,11 ms |
+
+Eine stehende Figur kostet so 1,5 µs im Update. Den Sturz bestimmt der Löser: Solange Ragdolls wach sind, rechnet er
+ohne ganze Inseln pro Thread, siehe Gelenke und Pakete, und streut auf der VM stark, mit einem Thread in einer zweiten
+Messung 2,4 ms. 45 der 50 Figuren stehen in den 10 s wieder auf, die übrigen fünf liegen mit dem Kopf an einer Mauer und
+warten auf Platz, bis die Granaten die Mauer wegschießen. Mit 10 Figuren kostet ein Schritt im Stand 0,03 ms und beim
+gemeinsamen Sturz 0,35 ms. Die Figuren enden in jedem Lauf mit 1 und 4 Threads mit demselben Hash. Gepaart gegen
+`kollaps-36`, je drei Läufe im Wechsel, enden alle übrigen Szenen des Benchmarks gleich, und die Städte kosten so viel
+wie vorher.
+
 Grafik der Demo, die ersten acht Sekunden der Stadt im Skript (480 Bilder, Bruchstückgröße ×2): 12 Draw Calls,
 höchstens 213 000 Dreiecke, im Mittel 0,5 MB und höchstens 1,7 MB Upload pro Bild, 0,1 ms CPU für Uploads.
 
@@ -1543,10 +1704,11 @@ lange die Threads im Löser rechnen und worauf sie sonst warten.
 ## Tests und Benchmark
 
 ```sh
-build/bin/nebenan_test            # 73 Tests: Geometrie, Voronoi, Hüllen, Öffnungen, Stöße, Stützgraph, Etagen, Lastprüfung, Mauern, Schutt, Ruhe, Durchschlagen, Threads, Knoten, große Blöcke, Suchbaum, Kontaktlisten, Streaming, Stream, Laden im Hintergrund, Speichern und Zurückholen, gemeinsamer Thread-Pool, Ruhe-Prüfung auf den Workern, Schritt auf eigenem Thread, Schritte pro Bild, Takt der Physik, Wahl der Threads, Profil und Skalierung, Determinismus …
+build/bin/nebenan_test            # 83 Tests: Geometrie, Voronoi, Hüllen, Öffnungen, Stöße, Stützgraph, Etagen, Lastprüfung, Mauern, Schutt, Ruhe, Durchschlagen, Threads, Knoten, große Blöcke, Suchbaum, Kontaktlisten, Streaming, Stream, Laden im Hintergrund, Speichern und Zurückholen, gemeinsamer Thread-Pool, Ruhe-Prüfung auf den Workern, Schritt auf eigenem Thread, Schritte pro Bild, Takt der Physik, Wahl der Threads, Profil und Skalierung, Figuren, Determinismus …
 build/bin/nebenan_benchmark 4     # Zahl = Threads für Bruch und Physik, 0 = so viele, wie ein Spiel nähme
 build/bin/nebenan_benchmark scaling   # die Städte unter Beschuss mit 1, 2, 4 … Threads und die Tabelle der Skalierung
 build/bin/nebenan_benchmark rates     # die Städte unter Beschuss mit 30, 60 und 120 Hz, was eine simulierte Sekunde kostet
+build/bin/nebenan_benchmark figures 4 3   # 1, 10 und 50 Figuren mit 4 Threads, dreimal, siehe Leistung
 ```
 
 Unter Windows liegen die Programme in `build\bin\Release\`. Die CI baut und testet unter Windows, Linux und macOS, unter
@@ -1564,6 +1726,8 @@ src/
   hull_builder.c    Box3D-Hüllen direkt aus der Polyeder-Topologie
   world.c           Welt, Bruchstücke, Verbindungen, Stützgraph, Etagen, Lastprüfung, Trümmer, Ruhe und Schutt, Events
   destructible.c    zerstörbare Objekte und Vorzerlegung
+  figure.c          Figuren: Knochen, Gelenke, Stand, aktiver Ragdoll, Treffer, Aufstehen
+  figure_clips.c    die Clips eines Menschen, aus Schlüsselposen mit Zwei-Knochen-IK
   impact.c          Einschläge und Auswurf der Splitter
   stream.c          Städte größer als der Speicher: Laden und Entladen um Kamera und bewegte Körper
   system.c          Kerne und die passende Zahl von Threads
@@ -1624,6 +1788,14 @@ Nach Änderungen an `demo/shaders/scene.glsl` die Shader neu erzeugen, im Ordner
   den vorsichtigeren Box3D-Standard.
 - Nur konvexe Teile, aus denen sich Quader ausschneiden lassen. Andere konkave Formen müssen als mehrere konvexe
   Teile angegeben werden.
+- Figuren haben noch keinen Ausgleichsschritt nach Kapitel 26.14 der Roadmap des Spiels und keine IK für die Füße im
+  Stand: Ein mittlerer Treffer lässt sie nur zucken, ein harter wirft sie um. Gehen und Laufen spielt das Spiel selbst,
+  mit `nbFigure_Move` und eigenen Clips, die Bibliothek hat dafür keinen.
+- Stehende und aufstehende Figuren sind kinematisch und kollidieren wie alle kinematischen Körper in Box3D nicht mit
+  statischen, also nicht mit Schutt und stehenden Wänden. Eine Figur, die das Spiel durch eine Wand bewegt, geht
+  hindurch. Ob genug Platz zum Aufstehen ist, prüft sie vorher. Liegt sie mit dem Kopf an einer Wand, findet sie vor
+  sich keinen Platz zum Knien und wartet, bis die Wand weg ist, statt zur Seite zu rücken.
+- Solange ein Ragdoll wach ist, rechnet der Löser ohne ganze Inseln pro Thread, siehe Gelenke und Pakete.
 - Render- und Physikgeometrie sind dieselben flachen Polygone.
 - Box3D ist noch jung (0.x) und kann seine API ändern. Deshalb liegt ein fester Stand bei.
 

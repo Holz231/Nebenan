@@ -54,8 +54,10 @@
 #define NB_DANGER_RADIUS 0.3f
 #define NB_PROTECT_RATE 6.0f
 
-// Seconds the get-up clip blends in from the pose the ragdoll lay in, and the stand clip after it
-#define NB_GET_UP_BLEND 0.6f
+// Seconds of the get-up clip in which it blends in from the pose the ragdoll lay in. Over 24 knockdowns the bones move
+// at most 12.7 cm a step meanwhile, 14.9 cm with 0.6 s and 34 cm with 1 s: the clip moves on while the pose still holds
+// much of the old one. Then the seconds in which the stand clip blends in after it, and a clip of the program.
+#define NB_GET_UP_BLEND 0.8f
 #define NB_STAND_FADE 0.25f
 #define NB_CLIP_FADE 0.2f
 
@@ -1303,7 +1305,8 @@ void nbBlastFigures( nbWorld* world, const nbImpactDef* def )
 }
 
 // The strongest hit of debris on every standing figure and every figure that gets up in the last step, from the hit
-// events of Box3D: a kinematic bone is as heavy as the world, so the debris bounced off it with about its momentum
+// events of Box3D: a kinematic bone is as heavy as the world, so the debris bounced off it with about its momentum toward
+// the bone
 static void nbCollectDebrisHits( nbWorld* world )
 {
 	for ( int index = 0; index < world->figures.count; ++index )
@@ -1339,8 +1342,12 @@ static void nbCollectDebrisHits( nbWorld* world )
 				continue;
 			}
 
-			// The normal points from A to B, the other body pushes the bone away from it
-			float impulse = b3Body_GetMass( other ) * event->approachSpeed;
+			// The normal points from A to B, the other body pushes the bone away from it. What the bone moved toward it
+			// itself does not count: a figure that gets up next to a ragdoll or walks into rubble at rest pushes it aside.
+			b3Vec3 toOther = side == 0 ? event->normal : b3Neg( event->normal );
+			b3Vec3 boneVelocity = b3Body_GetWorldPointVelocity( side == 0 ? bodyA : bodyB, event->point );
+			float approach = event->approachSpeed - b3Dot( boneVelocity, toOther );
+			float impulse = b3Body_GetMass( other ) * approach;
 			if ( impulse > f->debrisImpulse )
 			{
 				f->debrisImpulse = impulse;
@@ -1352,9 +1359,9 @@ static void nbCollectDebrisHits( nbWorld* world )
 	}
 }
 
-// How hard dynamic bodies of others press on the bones of a figure, in newtons: the normal impulses of their contacts in
-// the last step over its time. Only what pushes down on it, if asked, for debris that lies on a lying figure.
-static float nbPressingForce( const nbWorld* world, int index, const nbFigure* f, float timeStep, b3Vec3 up, bool fromAbove )
+// How hard dynamic bodies of others press down on the bones of a figure, in newtons: the normal impulses of their contacts
+// in the last step over its time, of those that push down. The load on the figure, not what its bones push aside.
+static float nbPressingForce( const nbWorld* world, int index, const nbFigure* f, float timeStep, b3Vec3 up )
 {
 	b3ContactData contacts[NB_CONTACT_CAPACITY];
 	float force = 0.0f;
@@ -1379,7 +1386,7 @@ static float nbPressingForce( const nbWorld* world, int index, const nbFigure* f
 
 				// The normal points from A to B: the push on the bone
 				b3Vec3 push = boneIsA ? b3Neg( manifold->normal ) : manifold->normal;
-				if ( fromAbove && b3Dot( push, up ) > -0.3f )
+				if ( b3Dot( push, up ) > -0.3f )
 				{
 					continue;
 				}
@@ -1478,9 +1485,10 @@ static void nbUpdateAnimated( nbWorld* world, int index, nbFigure* f, float time
 		}
 	}
 
-	// What presses on it, in turn with the other figures
+	// What presses on it from above, in turn with the other figures. What its bones push aside presses back on them, but
+	// does not weigh on it.
 	if ( ( world->figureUpdates + index ) % NB_CRUSH_PERIOD == 0 &&
-		 nbPressingForce( world, index, f, timeStep, up, false ) >= f->def.crushForce )
+		 nbPressingForce( world, index, f, timeStep, up ) >= f->def.crushForce )
 	{
 		nbFall( world, f, false );
 		return;
@@ -1568,7 +1576,7 @@ static nbFigureWait nbCheckGetUp( const nbWorld* world, int index, const nbFigur
 	}
 	*ground = floor.point;
 
-	if ( nbPressingForce( world, index, f, timeStep, up, true ) > 0.0f )
+	if ( nbPressingForce( world, index, f, timeStep, up ) > 0.0f )
 	{
 		return nb_waitDebris;
 	}
@@ -1710,7 +1718,7 @@ static void nbUpdateGettingUp( nbWorld* world, int index, nbFigure* f, float tim
 	}
 
 	if ( ( world->figureUpdates + index ) % NB_CRUSH_PERIOD == 0 &&
-		 nbPressingForce( world, index, f, timeStep, up, false ) >= NB_ABORT_PART * f->def.crushForce )
+		 nbPressingForce( world, index, f, timeStep, up ) >= NB_ABORT_PART * f->def.crushForce )
 	{
 		nbFall( world, f, false );
 		return;
