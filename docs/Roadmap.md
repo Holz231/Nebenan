@@ -1543,10 +1543,20 @@ in [Optimierungen.md](Optimierungen.md).
 
 Gemessen mit `nebenan_benchmark figures` auf der VM, nach Kapitel 26.8 der Roadmap des Spiels mit 1, 10 und 50 Figuren:
 Stehend kosten 50 Figuren mit einem Thread 0,14 ms im Box3D-Schritt und 0,075 ms im Update, 1,5 µs pro Figur. Fallen
-alle 50 zugleich, kostet der Schritt 1,9 bis 2,4 ms, mit vier Threads 1,4 ms. Das liegt am Löser: Solange ein Gelenk in
-den Farben liegt, rechnet er ohne ganze Inseln pro Thread und ohne Gebiete, Farbe für Farbe mit einer Sperre nach jeder
-Stufe, auch für die Trümmer der Stadt. Das zu ändern ist die nächste Runde, Schritt F8. Die Demo zeigt die Figuren in
-der Szene „Figuren“, dort misst der Nutzer auf dem Ryzen.
+alle 50 zugleich, kostete der Schritt auf `active-ragdoll-1` 1,9 bis 2,4 ms, mit vier Threads 1,4 ms. Das lag am Löser:
+Solange ein Gelenk in den Farben lag, rechnete er ohne ganze Inseln pro Thread und ohne Gebiete, Farbe für Farbe mit einer
+Sperre nach jeder Stufe, auch für die Trümmer der Stadt. Auf `active-ragdoll-2` rechnet jedes Paket seine Gelenke selbst,
+bis aufs Bit wie über die Farben, und große Inseln behalten ihre Gebiete, auch mit einem Ragdoll darin, Schritt F8. Im
+Median aus fünf Läufen im Wechsel gegen `active-ragdoll-1` kostet der gemeinsame Sturz von 50 Figuren mit vier Threads
+jetzt 1,17 statt 1,30 ms pro Schritt, der Löser darin 0,80 statt 0,99 ms. Der Benchmark misst jetzt auch die Stadt aus
+16 Häusern unter Beschuss mit zwei Figuren an jedem Haus, 32 auf den Straßen, die Granaten, Trümmer und einstürzende
+Stockwerke umwerfen. Dort liegt in 1 059 der 1 200 Schritte ein Ragdoll wach. Mit vier Threads rechnet der Löser in
+1 199 Schritten mit Paketen und in 784 mit Gebieten, vorher in keinem, und braucht 2,61 statt 3,09 ms, 15,5 % weniger,
+der ganze Box3D-Schritt 6,00 statt 6,27 ms. Mit einem Thread kostet der Schritt so viel wie vorher. Die Ergebnisse der
+Stadt mit Figuren ändern sich, weil ihre Trümmer jetzt in Gebieten rechnen, mit jeder Zahl von Threads gleich. Alle
+übrigen Szenen des Benchmarks enden gleich wie auf `active-ragdoll-1`, und die Städte ohne Figuren kosten so viel wie
+vorher, im Median zwischen 4,2 % weniger und 5,2 % mehr pro Box3D-Schritt, in beide Richtungen. Die Demo zeigt die
+Figuren in der Szene „Figuren“, dort misst der Nutzer auf dem Ryzen.
 
 | Nr. | Schritt | Gewinn | Voraussetzung | Stand |
 | ---: | --- | --- | --- | --- |
@@ -1557,10 +1567,11 @@ der Szene „Figuren“, dort misst der Nutzer auf dem Ryzen.
 | F5 | **Aufstehen**: Boden, Last und Platz prüfen, Clip vom Bauch oder vom Rücken aus der Haltung, in der die Figur lag, Abbruch bei Treffern, nach 26.7 M2c und 26.15 | – | F4 | ✅ auf `active-ragdoll-1` |
 | F6 | **Demo und Benchmark**: Szene „Figuren“ mit „Zustand“ und „Zielhaltung“, `nebenan_benchmark figures` mit 1, 10 und 50 Figuren, nach 26.8 und 27.14 | Werkzeug | F5 | ✅ auf `active-ragdoll-1` |
 | F7 | **In der Demo ansehen**: auf dem Ryzen die Szene „Figuren“ mit Gewehr, Granate und Kanone, mit „Zustand“ und „Zielhaltung“ | entscheidet, was an Haltungen und Clips nachzubessern ist | F6 | 🔜 beim Nutzer |
-| F8 | **Pakete trotz Gelenken**: Gelenke in die Pakete und Gebiete des Lösers legen, wie es `ragdoll-7` für die Pakete tat, bitgleich für Szenen ohne Gelenke | mit wachen Ragdolls wieder ganze Inseln pro Thread und Gebiete, für Figuren und Trümmer | F6 | 🔜 hoch, die nächste Runde |
+| F8 | **Pakete trotz Gelenken**: Gelenke in die Pakete und Gebiete des Lösers legen, wie es `ragdoll-7` für die Pakete tat, bitgleich für Szenen ohne Gelenke | mit wachen Ragdolls wieder ganze Inseln pro Thread und Gebiete, für Figuren und Trümmer | F6 | ✅ auf `active-ragdoll-2`: Pakete rechnen ihre Gelenke selbst, bitgleich mit den Farben, und große Inseln behalten ihre Gebiete, die Gelenke eines Ragdolls im Schutt rechnet der aufrufende Thread vor jedem Durchgang, siehe „Gelenke in Paketen und Gebieten“ in [`extern/README.md`](../extern/README.md). In der Stadt mit Figuren 15,5 % weniger Zeit im Löser mit vier Threads |
 | F9 | **Ausgleichsschritt**: Ein mittlerer Treffer lässt die Figur einen Schritt machen, statt sie nur zucken zu lassen, nach 26.14 und 28.3 | – | F5 | 🔜 mittel |
 | F10 | **Füße im Stand auf dem Boden**: IK für die Füße auf unebenem Boden und auf Schutt, nach 26.5 und 28.3 | – | F5 | 🔜 mittel |
 | F11 | **Platz zum Aufstehen suchen**: Eine Figur ohne Platz rückt zur Seite oder dreht sich, statt zu warten, etwa mit dem Kopf an einer Wand | – | F5 | 🔜 niedrig |
+| F12 | **Gelenke in den Gebieten**: Die Gelenke eines Ragdolls im Schutt in das Gebiet eines seiner Körper legen und gegen dessen Kopien mit einem Anteil der Masse rechnen wie die Kontakte, statt sie vor jedem Durchgang auf dem aufrufenden Thread allein zu rechnen. Dafür müssen die neun Arten von Gelenken beim Vorbereiten die Masse ihrer Körper skalieren und auf Kopien zeigen können, bitgleich mit dem Faktor 1 | bis 0,024 ms pro Ragdoll im Schutt und Schritt auf der VM mit vier Threads, 0,48 ms mit 20 in einem Haufen, siehe „Gelenke in Paketen und Gebieten“ in [`extern/README.md`](../extern/README.md) | F8 | 🔜 niedrig, erst wenn viele Ragdolls zugleich im Schutt liegen |
 
 ## Kleinere Punkte
 

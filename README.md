@@ -561,11 +561,14 @@ Zwei-Knochen-IK Hände, Knie und Füße auf dem Boden hält, abgetastet mit 15 H
 (`nbFigureDef::clips`) und im Stand eigene abspielen (`nbFigure_PlayClip`).
 
 **Gelenke und Pakete.** Eine stehende Figur kostet den Löser nichts, ihre Gelenke liegen in der statischen Menge. Als
-wacher Ragdoll liegen ihre Gelenke in den Farben des Lösers, und solange dort ein Gelenk liegt, rechnet Box3D keine
-ganzen Inseln pro Thread, sondern Farbe für Farbe mit einer Sperre nach jeder Stufe, siehe „Ganze Inseln pro Thread“ in
-[`extern/README.md`](extern/README.md), auch für die Trümmer. Im Benchmark kostet ein Schritt, in dem 50 Figuren
-zugleich fallen, auf der VM mit einem Thread 1,9 bis 2,4 ms und mit vier 1,4 ms, siehe Leistung. Das ist die nächste Runde,
-siehe „Figuren“ in der [Roadmap](docs/Roadmap.md). `nbFigureStats::awakeRagdollCount` zählt die wachen Ragdolls.
+wacher Ragdoll liegen ihre Gelenke in den Farben des Lösers. Bis `active-ragdoll-1` rechnete Box3D dann keine ganzen
+Inseln pro Thread mehr, sondern Farbe für Farbe mit einer Sperre nach jeder Stufe, und große Inseln verloren ihre
+Gebiete, auch die Trümmer weit weg. Jetzt rechnet jedes Paket die Gelenke seiner Inseln selbst, bis aufs Bit wie über
+die Farben, und große Inseln behalten ihre Gebiete, auch mit einem Ragdoll im Schutt: Dessen Gelenke rechnet der
+aufrufende Thread vor jedem Durchgang über die Gebiete allein, siehe „Gelenke in Paketen und Gebieten“ in
+[`extern/README.md`](extern/README.md). Ein Spiel ruft dafür nichts auf. `nbProfile::packStepCount` und
+`domainStepCount` zählen die Schritte mit Paketen und mit Gebieten, `nbFigureStats::awakeRagdollCount` die wachen
+Ragdolls.
 
 **Determinismus der Figuren.** Alles läuft im Update nach einem Schritt, Figur für Figur in ihrer Reihenfolge, mit Box3Ds
 eigenen Funktionen für Winkel, Sinus und Kosinus und einer eigenen Exponentialfunktion statt der des Systems. Bei
@@ -1623,23 +1626,36 @@ rechnen ohne Biegemomente, wie ohne Lastprüfung:
 zu zehn, 2,5 m auseinander, jede Reihe 1,5 m hinter einer Ziegelmauer. Sie stehen 2 s, zucken 2 s lang alle 1/6 s unter
 einem Treffer von 30 N s, fallen alle zugleich durch 120 N s, liegen und stehen in 10 s wieder auf, dann zerschlagen
 Granaten jenseits der Mauern die Deckung, und deren Trümmer treffen sie, wieder 10 s. Pro Schritt, mit 1 / 4 Threads,
-der Median aus drei Läufen:
+der Median aus fünf Läufen:
 
 | 50 Figuren | Box3D-Schritt Ø | 99 % der Schritte | Update Ø | davon Figuren |
 | --- | ---: | ---: | ---: | ---: |
-| Stehen | 0,14 / 0,14 ms | 0,36 / 0,45 ms | 0,074 / 0,072 ms | 0,072 / 0,070 ms |
-| Zucken | 0,22 / 0,23 ms | 0,30 / 0,53 ms | 0,094 / 0,094 ms | 0,092 / 0,092 ms |
-| Alle fallen zugleich | 1,9 / 1,4 ms | 3,3 / 4,4 ms | 0,25 / 0,33 ms | 0,24 / 0,32 ms |
-| Liegen und aufstehen | 0,35 / 0,40 ms | 0,63 / 0,90 ms | 0,12 / 0,12 ms | 0,11 / 0,12 ms |
-| Die Deckung bricht | 0,38 / 0,31 ms | 2,6 / 1,9 ms | 0,11 / 0,12 ms | 0,10 / 0,11 ms |
+| Stehen | 0,14 / 0,15 ms | 0,39 / 0,50 ms | 0,074 / 0,077 ms | 0,073 / 0,075 ms |
+| Zucken | 0,21 / 0,22 ms | 0,28 / 0,35 ms | 0,086 / 0,093 ms | 0,085 / 0,091 ms |
+| Alle fallen zugleich | 1,9 / 1,2 ms | 3,8 / 7,5 ms | 0,24 / 0,33 ms | 0,23 / 0,32 ms |
+| Liegen und aufstehen | 0,34 / 0,42 ms | 0,66 / 0,83 ms | 0,10 / 0,12 ms | 0,099 / 0,12 ms |
+| Die Deckung bricht | 0,41 / 0,33 ms | 3,0 / 1,7 ms | 0,13 / 0,14 ms | 0,11 / 0,12 ms |
 
-Eine stehende Figur kostet so 1,5 µs im Update. Den Sturz bestimmt der Löser: Solange Ragdolls wach sind, rechnet er
-ohne ganze Inseln pro Thread, siehe Gelenke und Pakete, und streut auf der VM stark, mit einem Thread in einer zweiten
-Messung 2,4 ms. 45 der 50 Figuren stehen in den 10 s wieder auf, die übrigen fünf liegen mit dem Kopf an einer Mauer und
-warten auf Platz, bis die Granaten die Mauer wegschießen. Mit 10 Figuren kostet ein Schritt im Stand 0,03 ms und beim
-gemeinsamen Sturz 0,35 ms. Die Figuren enden in jedem Lauf mit 1 und 4 Threads mit demselben Hash. Gepaart gegen
-`kollaps-36`, je drei Läufe im Wechsel, enden alle übrigen Szenen des Benchmarks gleich, und die Städte kosten so viel
-wie vorher.
+Eine stehende Figur kostet so 1,5 µs im Update. Den Sturz bestimmt der Löser: Mit vier Threads rechnet er die 50
+Ragdolls in 80 der 90 Schritte in ganzen Inseln pro Thread, siehe Gelenke und Pakete, und braucht 0,80 ms statt 0,99 ms
+auf `active-ragdoll-1`, im Wechsel gemessen. Die 99 % mit vier Threads sind dort ein einzelner Schritt pro Lauf, in dem
+die VM einem Thread den Kern nimmt. Solche Schritte bis 10 ms kommen auf beiden Branches vor. 45 der 50 Figuren stehen
+in den 10 s wieder auf, die übrigen fünf liegen mit dem Kopf an einer Mauer und warten auf Platz, bis die Granaten die
+Mauer wegschießen. Mit 10 Figuren kostet ein Schritt im Stand 0,03 ms und beim gemeinsamen Sturz 0,4 ms. So wenig
+Arbeit rechnet Box3D auf dem aufrufenden Thread allein, siehe `B3_CONTACTS_PER_WORKER` in
+[`extern/README.md`](extern/README.md). Die Figuren enden in jedem Lauf mit 1 und 4 Threads mit demselben Hash, und
+gleich wie auf `active-ragdoll-1`.
+
+**Stadt mit Figuren.** Dann misst `nebenan_benchmark figures` die erste Stadt aus 16 Häusern unter Beschuss mit zwei
+Figuren an jedem Haus, 1 m vor seiner Ost- und vor seiner Südwand, wo Granaten, Trümmer und einstürzende Stockwerke sie
+umwerfen und begraben. In 1 059 der 1 200 Schritte liegt ein Ragdoll wach, bis zu fünf zugleich. Mit vier Threads
+rechnet der Löser in 1 199 Schritten mit ganzen Inseln pro Thread und in 784 mit Gebieten, auf `active-ragdoll-1` in
+keinem, und braucht 2,61 statt 3,09 ms pro Schritt, der Box3D-Schritt 6,00 statt 6,27 ms, im Median aus fünf Läufen
+im Wechsel. Mit einem Thread kostet der Schritt so viel wie vorher, 15,3 ms. Wie die Stadt endet, ist mit jeder Zahl
+von Threads gleich, aber anders als auf `active-ragdoll-1`, weil ihre Trümmer jetzt in Gebieten rechnen. Gepaart gegen
+`active-ragdoll-1`, je drei Läufe im Wechsel mit einem und vier Threads, enden alle übrigen Szenen des Benchmarks
+gleich, und die Städte ohne Figuren kosten so viel wie vorher: Die Läufe überlappen sich, im Median zwischen 4,2 %
+weniger und 5,2 % mehr pro Box3D-Schritt, in beide Richtungen.
 
 Grafik der Demo, die ersten acht Sekunden der Stadt im Skript (480 Bilder, Bruchstückgröße ×2): 12 Draw Calls,
 höchstens 213 000 Dreiecke, im Mittel 0,5 MB und höchstens 1,7 MB Upload pro Bild, 0,1 ms CPU für Uploads.
@@ -1704,11 +1720,11 @@ lange die Threads im Löser rechnen und worauf sie sonst warten.
 ## Tests und Benchmark
 
 ```sh
-build/bin/nebenan_test            # 83 Tests: Geometrie, Voronoi, Hüllen, Öffnungen, Stöße, Stützgraph, Etagen, Lastprüfung, Mauern, Schutt, Ruhe, Durchschlagen, Threads, Knoten, große Blöcke, Suchbaum, Kontaktlisten, Streaming, Stream, Laden im Hintergrund, Speichern und Zurückholen, gemeinsamer Thread-Pool, Ruhe-Prüfung auf den Workern, Schritt auf eigenem Thread, Schritte pro Bild, Takt der Physik, Wahl der Threads, Profil und Skalierung, Figuren, Determinismus …
+build/bin/nebenan_test            # 85 Tests: Geometrie, Voronoi, Hüllen, Öffnungen, Stöße, Stützgraph, Etagen, Lastprüfung, Mauern, Schutt, Ruhe, Durchschlagen, Threads, Knoten, große Blöcke, Gelenke in Paketen und Gebieten, Suchbaum, Kontaktlisten, Streaming, Stream, Laden im Hintergrund, Speichern und Zurückholen, gemeinsamer Thread-Pool, Ruhe-Prüfung auf den Workern, Schritt auf eigenem Thread, Schritte pro Bild, Takt der Physik, Wahl der Threads, Profil und Skalierung, Figuren, Determinismus …
 build/bin/nebenan_benchmark 4     # Zahl = Threads für Bruch und Physik, 0 = so viele, wie ein Spiel nähme
 build/bin/nebenan_benchmark scaling   # die Städte unter Beschuss mit 1, 2, 4 … Threads und die Tabelle der Skalierung
 build/bin/nebenan_benchmark rates     # die Städte unter Beschuss mit 30, 60 und 120 Hz, was eine simulierte Sekunde kostet
-build/bin/nebenan_benchmark figures 4 3   # 1, 10 und 50 Figuren mit 4 Threads, dreimal, siehe Leistung
+build/bin/nebenan_benchmark figures 4 3   # 1, 10 und 50 Figuren und eine Stadt mit Figuren, mit 4 Threads, dreimal, siehe Leistung
 ```
 
 Unter Windows liegen die Programme in `build\bin\Release\`. Die CI baut und testet unter Windows, Linux und macOS, unter
@@ -1795,7 +1811,10 @@ Nach Änderungen an `demo/shaders/scene.glsl` die Shader neu erzeugen, im Ordner
   statischen, also nicht mit Schutt und stehenden Wänden. Eine Figur, die das Spiel durch eine Wand bewegt, geht
   hindurch. Ob genug Platz zum Aufstehen ist, prüft sie vorher. Liegt sie mit dem Kopf an einer Wand, findet sie vor
   sich keinen Platz zum Knien und wartet, bis die Wand weg ist, statt zur Seite zu rücken.
-- Solange ein Ragdoll wach ist, rechnet der Löser ohne ganze Inseln pro Thread, siehe Gelenke und Pakete.
+- Die Gelenke von Ragdolls in einem großen Schutthaufen mit Gebieten rechnet der aufrufende Thread vor jedem Durchgang
+  allein, siehe Gelenke und Pakete, auf der VM mit vier Threads 0,024 ms pro Ragdoll und Schritt, 0,48 ms mit 20
+  Ragdolls in einem Haufen. Ein solcher Haufen kostet damit so viel wie auf `active-ragdoll-1`, wo er seine Gebiete
+  verlor. Gelenke in den Gebieten selbst stehen als Schritt F12 in der [Roadmap](docs/Roadmap.md).
 - Render- und Physikgeometrie sind dieselben flachen Polygone.
 - Box3D ist noch jung (0.x) und kann seine API ändern. Deshalb liegt ein fester Stand bei.
 

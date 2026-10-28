@@ -226,9 +226,9 @@ Overflow-Kontakte gehen ebenso Paket für Paket, und die Körper jedes Pakets st
 anläuft. Jeder Körper durchläuft seine Schritte in derselben Reihenfolge wie mit Sperren. Den Rückprall rechnet ein
 Paket, sobald einer seiner Kontakte welchen hat. Rechnet es ihn nur, weil ein anderes Paket das Zeichen dafür gesetzt
 hat, ändert das nichts, weil Box3D Kontakte ohne Rückprall überspringt. Mit Sperren wie bisher rechnet der Löser, wenn
-nur ein Thread rechnet, ein Gelenk oder ein Kontakt mit einem Netz in den Farben liegt, Box3D den Rückprall fortpflanzt
-oder eine Insel mehr als die Hälfte der Arbeit hält und die Worker für ein Team zu wenige sind, siehe „Ein Team für das
-größte Paket“.
+nur ein Thread rechnet, ein Kontakt mit einem Netz in den Farben liegt, Box3D den Rückprall fortpflanzt oder eine Insel
+mehr als die Hälfte der Arbeit hält und die Worker für ein Team zu wenige sind, siehe „Ein Team für das größte Paket“.
+Bis zu „Gelenke in Paketen und Gebieten“ tat er das auch, solange ein Gelenk in den Farben lag.
 
 **Sperren, solange andere Programme die Kerne belegen.** Verliert ein Thread mitten in einem Paket seinen Kern an ein
 anderes Programm, warten am Ende alle auf dieses Paket, während mit Sperren die anderen die Blöcke übernehmen, die er
@@ -652,9 +652,9 @@ berühren beginnt, in seiner Farbe im Array seines Gebiets (`b3GraphColor::domai
 `b3ConstraintGraph::domainOverflow`), im Gebiet seines Körpers mit weniger Kontakten, die Kontakte eines Knotens also in
 den Gebieten seiner Partner. Wie viele Kontakte jeder Körper in jedem Gebiet hat, zählt der Graph mit
 (`b3World::bodyDomainCounts`). Ein Körper, der dazukommt, nimmt das Gebiet des Körpers, den er berührt (`b3LinkContact`
-in `src/island.c`). Inseln, die sich teilen, schlafen oder aufwachen, behalten ihre Gebiete, und ein Gelenk, ein Kontakt
-mit einem Netz oder eine Insel, die unter die Hälfte einer der beiden Grenzen fällt, gibt sie an die Farben zurück
-(`b3RemoveIslandDomains`). Geschnitten werden sie, wenn eine Insel sie bekommt, und neu nur, wenn das größte ein Viertel
+in `src/island.c`). Inseln, die sich teilen, schlafen oder aufwachen, behalten ihre Gebiete, und ein Kontakt mit einem
+Netz oder eine Insel, die unter die Hälfte einer der beiden Grenzen fällt, gibt sie an die Farben zurück
+(`b3RemoveIslandDomains`), bis zu „Gelenke in Paketen und Gebieten“ auch ein Gelenk. Geschnitten werden sie, wenn eine Insel sie bekommt, und neu nur, wenn das größte ein Viertel
 mehr Kontakte hält als ihr Mittel, höchstens alle 32 Schritte (`b3UpdateDomains`, `b3CutIslandDomains`). Dann teilt
 `b3CutDomains` ein Raster über die zwei längeren Seiten der Box der Körper, jeweils quer zur längeren Seite dort, wo
 sich die Kontakte am gleichmäßigsten teilen. Ein Thread rechnet in jedem Durchgang des Lösers ein Gebiet ganz, seine
@@ -670,7 +670,8 @@ offen lässt, füllen die nächsten Farben, solange keiner ihrer Kontakte einen 
 früheren Farbe darin teilt (`b3FillDomainLanes`). So sieht jeder Körper seine Kontakte in der Reihenfolge der Farben,
 und kaum eine Spur bleibt leer, obwohl die meisten Farben eines Gebiets nur wenige Kontakte haben. Beides rechnet ein
 Worker, während der aufrufende Thread die Knoten baut (`b3FillDomainBodies`, `b3SetupTask`). Große Inseln brauchen
-Pakete, also keine Gelenke, keine Kontakte mit Netzen in den Farben und keine Weitergabe der Restitution. Dann sind sie
+Pakete, also keine Kontakte mit Netzen in den Farben und keine Weitergabe der Restitution, bis zu „Gelenke in Paketen und
+Gebieten“ auch keine Gelenke. Dann sind sie
 immer das erste Paket, mit jeder Zahl von Workern, auch mit einem und während andere Programme die Kerne nehmen, und die
 übrigen Inseln rechnet je ein Thread ganz, mit einem einzigen Worker alle in einem Paket. Alles folgt aus den Inseln,
 ihren Kontakten und der Lage ihrer Körper, wenn sie ihre Gebiete bekommen, und hängt nicht an den Workern, die
@@ -697,10 +698,49 @@ eigenen Operation (`0x8E` und `0x8F` in `src/recording_ops.inl`), ihr Format hat
 (`src/recording.h`). Gebaut für die Figuren von `active-ragdoll-1`, siehe „Figuren“ in der
 [Roadmap](../docs/Roadmap.md).
 
+**Gelenke in Paketen und Gebieten.** Ein einziges waches Gelenk in den Farben nahm allen Inseln die Pakete aus „Ganze
+Inseln pro Thread“ und den großen Inseln ihre Gebiete aus „Gebiete großer Inseln“. Solange ein Ragdoll lag, rechnete
+Box3D die ganze Welt Farbe für Farbe mit einer Sperre nach jeder Stufe, auch die Trümmer weit weg. Jetzt rechnet ein
+Paket die Gelenke seiner Inseln selbst. Jedes wache Gelenk gehört zur Insel seiner Körper, und der Setup-Task legt die
+Gelenke jeder Farbe und des Überlaufs Paket für Paket ab (`b3OrderPackJoints`, `b3StepContext::packJoints` und
+`packJointStarts` in `src/solver.h`). In jeder Stufe rechnet ein Paket zuerst seine Gelenke im Überlauf, dann seine
+Knoten und übrigen Kontakte im Überlauf, dann Farbe für Farbe seine Gelenke und seine konvexen Kontakte
+(`b3ExecutePackConstraints`), die Reihenfolge der Stufen mit Sperren. Jeder Körper durchläuft seine Schritte in
+derselben Reihenfolge, die Ergebnisse bleiben bis aufs Bit dieselben, die Ereignisse der Gelenke eingeschlossen
+(`b3SolveColorJoint`). Mit einem Team halten die Stufen die Gelenke seiner Pakete in Blöcken vom Typ
+`b3_packJointBlock`, und der aufrufende Thread rechnet nur deren Gelenke im Überlauf (`b3ExecuteOverflowJoints`). Ein
+Paket ohne Gelenke überspringt sie. Die Pakete wiegen ein Gelenk wie acht Körper (`B3_PACK_JOINT_WORK`,
+`b3GetIslandWeight`), denn Box3D rechnet Gelenke einzeln und Kontakte in breiten Bedingungen. Die Arbeit einer Insel und
+`b3Counters::islandWork` bleiben ohne Gelenke, denn nach ihr bekommen große Inseln ihre Gebiete und ihre Knoten Gruppen,
+was Ergebnisse ändert. Die Listen teilen sich einen Block mit den Anfängen der breiten Bedingungen, so nimmt ein Schritt
+nicht mehr Einträge des Stapels als vorher. Das hat zuerst der Branch `ragdoll-7` gebaut, vor den Gebieten und den
+Gruppen der Knoten.
+
+Ein Gelenk gibt die Gebiete auch nicht mehr zurück, und Gelenke anderswo halten sie nicht mehr auf. Eine Insel mit
+Gebieten behält ihre Gelenke in den Farben, etwa ein Ragdoll im Schutt. Der aufrufende Thread rechnet sie vor jedem
+Durchgang über die Gebiete allein, erst die im Überlauf, dann Farbe für Farbe, an den Körpern selbst, die nach dem
+Durchgang davor das Mittel ihrer Kopien halten (`b3ExecuteDomainJoints` in `src/solver.c`). Die Gebiete starten ihre
+Kopien aus dem, was die Gelenke ließen, und ihre Stöße gehen über das Mittel an die Gelenke im nächsten Durchgang. Diese
+Zeit zählt `b3Profile::overflow` mit, auf der VM mit vier Threads 0,024 ms pro Ragdoll und Schritt. Mit 20 Ragdolls auf
+einer Platte über 4 513 Würfeln kostet der Löser so 3,98 ms, auf `active-ragdoll-1` ohne Gebiete 3,89 ms, im Median aus
+fünf Läufen im Wechsel, gleich im Rahmen der Streuung. Die Gelenke in die Gebiete selbst zu legen, gegen Kopien mit
+einem Anteil der Masse wie die Kontakte, steht als Schritt F12 in der [Roadmap](../docs/Roadmap.md). Ein Körper, der
+über ein Gelenk zu einer Insel mit Gebieten kommt, nimmt das Gebiet des Körpers, an dem er hängt, wie einer über einen
+Kontakt, die Kontakte eines schlafenden erst beim Aufwachen (`b3AbsorbIntoDomains` in `src/island.c`).
+`b3Counters::packCount` zählt die Pakete des letzten Schritts, null ohne Pakete. In Welten ohne Gelenke ändert sich
+nichts. Mit Gelenken rechnen die großen Inseln jetzt in Gebieten statt in den Farben, auch mit einem Ragdoll darin, und
+das ändert ihre Ergebnisse wie die sechzigste. Ein Test löst zwei Naben mit je 30 Armen an Motoren, 10 und 11 davon im
+Überlauf, vier Ketten, die Ereignisse melden, und den Haufen aus dem Test der Teams als Team mit 1, 2, 4 und 8 Workern
+und in beiden Breiten, bitgleich und gleich wie der Löser ohne Pakete. Ein zweiter legt zwei Ketten mit Federn und
+Grenzen und ein Pendel an einem Scharnier im Überlauf auf eine Platte mit Gebieten, während ein Pendel am Boden
+schwingt: Gebiete in allen Schritten, bitgleich mit jeder Zahl von Workern. Gebaut für Schritt F8, siehe „Figuren“ in
+der [Roadmap](../docs/Roadmap.md).
+
 Die erste, die zweite, die vierte bis achte, die zehnte, die dreizehnte bis einunddreißigste, die dreiunddreißigste bis
 fünfunddreißigste, die neununddreißigste bis dreiundvierzigste, die fünfundvierzigste bis siebenundvierzigste, die
 neunundvierzigste bis neunundfünfzigste ändern an den Ergebnissen nichts, die einundsechzigste nur an Federn mit einer
-Grenze, die nur die Figuren setzen. Die dritte und die neunte ändern sie in den letzten Bits, dafür hängen sie nicht
+Grenze, die nur die Figuren setzen, die zweiundsechzigste nur in Welten mit wachen Gelenken, wo große Inseln jetzt in
+Gebieten rechnen. Die dritte und die neunte ändern sie in den letzten Bits, dafür hängen sie nicht
 mehr davon ab, in welcher Reihenfolge Formen in die Bäume kommen. Die elfte ändert sie, weil Kontakte zu anderen
 Zeitpunkten entstehen, die zwölfte, weil sie weniger Punkte bekommen, die zweiunddreißigste, weil die Kontakte eines
 Knotens gebündelt gegen Kopien rechnen statt nacheinander, die sechsunddreißigste, weil die Kerne dieselbe Rechnung
