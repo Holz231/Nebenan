@@ -5729,6 +5729,7 @@ static int TaskSystemTest( void )
 		int timedSteps = 0;
 		int sampledSteps = 0;
 		int packSampleSteps = 0;
+		int heldSteps = 0;
 		for ( int i = 0; i < 180; ++i )
 		{
 			Step( &scene, 1 );
@@ -5746,6 +5747,7 @@ static int TaskSystemTest( void )
 			ENSURE( ( counters.packSolveWork > 0 ) == ( stepProfile.packSolveTime > 0.0f ) );
 			ENSURE( pass > 0 || counters.packSolveWork == 0 );
 			packSampleSteps += counters.packSolveWork > 0 ? 1 : 0;
+			heldSteps += counters.packHoldSteps > 0 ? 1 : 0;
 			maxAwake = b3MaxInt( maxAwake, counters.awakeContactCount );
 			maxTasks = b3MaxInt( maxTasks, counters.taskCount );
 			teamSteps += counters.teamWork > 0 ? 1 : 0;
@@ -5793,7 +5795,11 @@ static int TaskSystemTest( void )
 		ENSURE( profile.teamJoinStepCount == joinSteps && joinSteps <= teamSteps );
 		ENSURE( profile.solverSampleCount == sampledSteps && 0 < sampledSteps && sampledSteps <= ( 180 + 7 ) / 8 + 1 );
 		ENSURE( profile.solverWork > 0.0f && profile.solverConstraints > 0.0f && profile.packSolveWork <= profile.solverWork );
-		ENSURE( ( profile.packSolveWork > 0.0f ) == ( packSampleSteps > 0 ) && ( pass == 0 || packSampleSteps > 0 ) );
+
+		// Whole packs come in the sampled steps of the first 90, unless the threads wait long for the last packs again and
+		// again, as on a busy machine, and the solver keeps the barriers for a while, see b3Counters::packHoldSteps
+		ENSURE( ( profile.packSolveWork > 0.0f ) == ( packSampleSteps > 0 ) &&
+				( pass == 0 || packSampleSteps > 0 || heldSteps > 0 ) );
 		ENSURE( ( profile.teamSampleWork > 0.0f ) == ( timedSteps > 0 ) );
 		if ( pass == 1 )
 		{

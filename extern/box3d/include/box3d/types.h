@@ -739,6 +739,11 @@ typedef struct b3Counters
 	int solverSample;
 	int packSolveWork;
 
+	/// Added for Nebenan: the steps left in which the solver keeps a barrier per stage instead of whole packs, because its
+	/// threads waited long for the last packs again and again, as when other programs take the cores. Zero while it may
+	/// solve in packs.
+	int packHoldSteps;
+
 	/// Added for Nebenan: the contacts of the last step that needed the narrowphase, the others parted, kept their
 	/// manifolds or stayed provably apart
 	int narrowphaseCount;

@@ -237,7 +237,10 @@ wartet. Ein Warten ab 1 ms, das mindestens die Hälfte der Zeit der Pakete ausma
 eines zieht eins ab, und ab neun rechnet der Löser 120 Schritte lang mit Sperren, kommt es innerhalb der doppelten Länge
 danach wieder, doppelt so lange, bis zu 960 Schritte (`b3UpdatePackHold` in `src/solver.c`, `b3World::packHoldSteps` in
 `src/physics_world.h`). Ein einzelnes langes Warten, wie es ohne Last ab und zu vorkommt, zählt so nicht. Die Ergebnisse
-sind mit und ohne Sperren dieselben.
+sind mit und ohne Sperren dieselben. `b3Counters::packHoldSteps` sagt, wie viele Schritte der Löser noch mit Sperren
+rechnet. Der Test mit dem Thread-Pool verlangt ganze Pakete nur, wenn keine solche Strecke lief: Auf einem macOS-Runner
+rechnete keiner der gemessenen Schritte ein ganzes Paket, und die gibt es dort nur in den ersten 90 Schritten nach den
+Granaten, die eine solche Strecke von 120 Schritten ganz abdecken kann.
 
 **CCD-Vortest gegen die Flächen der statischen Hülle.** Box3Ds CCD rechnete für jede statische Form, die die Bahn eines
 schnellen Körpers berührt, die Zeit bis zum Treffer aus. Bei kleinen Bruchstücken unter Beschuss sind das Hunderte pro

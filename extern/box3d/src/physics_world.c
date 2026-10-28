@@ -2798,6 +2798,7 @@ b3Counters b3World_GetCounters( b3WorldId worldId )
 	s.teamPackCount = world->teamPackCount;
 	s.solverSample = world->solverSample;
 	s.packSolveWork = world->packSolveWork;
+	s.packHoldSteps = world->packHoldSteps;
 	s.narrowphaseCount = world->narrowphaseCount;
 	s.collideSample = world->collideSample;
 	s.collideTaskCount = world->collideTaskCount;
