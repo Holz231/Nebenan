@@ -1540,7 +1540,8 @@ static std::string BuildReport( const App& app )
 	AppendRange( text, collapse[1].damageMin, collapse[1].damageMax );
 	Appendf( text, ", es bleiben " );
 	AppendRange( text, collapse[1].residueMin, collapse[1].residueMax );
-	Appendf( text, "; Statik ohne Decken x%.2f, %d Verbindungen gebrochen\n", app.supportScale, stats.overloadedBondCount );
+	Appendf( text, "; Statik ohne Decken x%.2f, %d Verbindungen gebrochen, %d Teile beim Aufprall zerbrochen\n", app.supportScale,
+			 stats.overloadedBondCount, stats.landingSplitCount );
 	Appendf( text, "Grafik: %dk Dreiecke, %d Draw Calls, %d kB Upload\n", rs.triangleCount / 1000, rs.drawCalls, rs.uploadedBytes / 1024 );
 	if ( app.scene == SceneCity )
 	{
@@ -1723,7 +1724,7 @@ static void DrawUi( App& app )
 	}
 	if ( ImGui::IsItemHovered() )
 	{
-		ImGui::SetTooltip( "Lastprüfung für Bauwerke ohne Decken, wie die Mauern: Druck und\nBiegung, was nicht trägt, bricht ein. Häuser prüft sie nie.\n0 schaltet sie ab, so ist es voreingestellt." );
+		ImGui::SetTooltip( "Lastprüfung für Bauwerke ohne Decken, wie die Mauern: Druck und\nBiegung, was nicht trägt, bricht ein. Häuser prüft sie nie.\nVoreingestellt ist 1, 0 schaltet sie ab." );
 	}
 	if ( ImGui::SliderInt( "Bewegte Trümmer", &app.maxDebrisBodies, 100, 5000 ) )
 	{

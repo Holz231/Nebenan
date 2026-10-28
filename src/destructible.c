@@ -292,13 +292,12 @@ static int nbAddMaterial( nbMaterial* materials, int* materialCount, const nbMat
 #define NB_STOREY_STREAM 0x53544f524559ull
 
 // Floors are the flat pieces of a building, at most a quarter as high along local Y as they are wide along X and Z, and
-// floors that overlap in height form one level. A storey is the room under a level, from the level below or the foot of
-// the building, and remembers the volume of the chunks in it, see nbCheckStoreys. Storeys without chunks are dropped.
-static void nbFindStoreys( nbWorld* world, int destructibleIndex, int actorIndex, const b3AABB* pieceBounds, const bool* valid,
-						   int pieceCount )
+// floors that overlap in height form one level. The rooms under the levels, from the level below or the foot of the
+// building, by the bounds of the pieces in the frame of the building. Returns their number, rooms may be NULL.
+static int nbFindRooms( nbArena* arena, const b3AABB* pieceBounds, const bool* valid, int pieceCount, nbStorey* rooms )
 {
-	float* lows = nbArena_AllocArray( &world->arena, float, pieceCount );
-	float* highs = nbArena_AllocArray( &world->arena, float, pieceCount );
+	float* lows = nbArena_AllocArray( arena, float, pieceCount );
+	float* highs = nbArena_AllocArray( arena, float, pieceCount );
 	int floorCount = 0;
 	float foot = FLT_MAX;
 	for ( int i = 0; i < pieceCount; ++i )
@@ -327,17 +326,30 @@ static void nbFindStoreys( nbWorld* world, int destructibleIndex, int actorIndex
 		highs[k] = box.upperBound.y;
 	}
 
-	nbDestructible* destructible = world->destructibles.data + destructibleIndex;
-	destructible->storeyCount = 0;
+	int roomCount = 0;
 	float low = foot;
 	for ( int k = 0; k < floorCount; ++k )
 	{
-		if ( lows[k] > low && destructible->storeyCount < NB_MAX_STOREYS )
+		if ( lows[k] > low && roomCount < NB_MAX_STOREYS )
 		{
-			destructible->storeys[destructible->storeyCount++] = (nbStorey){ .low = low, .high = lows[k] };
+			if ( rooms != NULL )
+			{
+				rooms[roomCount] = (nbStorey){ .low = low, .high = lows[k] };
+			}
+			roomCount += 1;
 		}
 		low = b3MaxFloat( low, highs[k] );
 	}
+	return roomCount;
+}
+
+// A storey is a room under a level and remembers the volume of the chunks in it, see nbCheckStoreys. Storeys without
+// chunks are dropped.
+static void nbFindStoreys( nbWorld* world, int destructibleIndex, int actorIndex, const b3AABB* pieceBounds, const bool* valid,
+						   int pieceCount )
+{
+	nbDestructible* destructible = world->destructibles.data + destructibleIndex;
+	destructible->storeyCount = nbFindRooms( &world->arena, pieceBounds, valid, pieceCount, destructible->storeys );
 
 	b3AABB bounds[NB_MAX_STOREYS];
 	for ( int s = 0; s < destructible->storeyCount; ++s )
@@ -452,6 +464,10 @@ typedef struct nbLoad
 	int materialCount;
 	nbAnchorPlane anchors[NB_MAX_ANCHORS];
 	int anchorCount;
+
+	// Whether the load check was on when the load started, and whether the bonds get their moments for it: only those of a
+	// static structure without floors, see nbPrepareLoad
+	bool supportCheck;
 	bool bondMoments;
 
 	// The pieces and their pre-fracture, one job per pre-fractured piece
@@ -493,7 +509,7 @@ enum
 #define NB_CONTACT_TOLERANCE 1.0e-3f
 
 // Materials, anchors and pieces of a destructible, and the sites of its pre-fracture. Draws the sites of all pieces in
-// order, so the result does not depend on the number of workers. Whether the bonds get their moments is set before.
+// order, so the result does not depend on the number of workers. Whether the load check is on is set before.
 static void nbPrepareLoad( nbLoad* load )
 {
 	const nbDestructibleDef* def = load->def;
@@ -553,6 +569,7 @@ static void nbPrepareLoad( nbLoad* load )
 	load->pieceJobs = nbArena_AllocArray( arena, int, pieceCount );
 	load->pieceCellSizes = nbArena_AllocArray( arena, float, pieceCount );
 	load->jobs = nbArena_AllocArray( arena, nbFractureJob, pieceCount );
+	bool* pieceValid = nbArena_AllocArray( arena, bool, pieceCount );
 	b3Vec3** jobSites = nbArena_AllocArray( arena, b3Vec3*, pieceCount );
 	int* jobPieces = nbArena_AllocArray( arena, int, pieceCount );
 	nbFractureJob* jobs = load->jobs;
@@ -577,6 +594,7 @@ static void nbPrepareLoad( nbLoad* load )
 		}
 
 		// The bounds in the frame of the destructible, before the fracture moves the piece to its center of mass
+		pieceValid[i] = valid;
 		load->pieceJobs[i] = valid ? nb_pieceSingle : nb_pieceInvalid;
 		load->pieceBounds[i] = valid ? nbPoly_ComputeBounds( piecePoly ) : (b3AABB){ b3Vec3_zero, b3Vec3_zero };
 		load->pieceCellSizes[i] = piece->cellSize != 0.0f ? piece->cellSize : def->cellSize;
@@ -584,7 +602,6 @@ static void nbPrepareLoad( nbLoad* load )
 		b3Vec3* sites = nbArena_AllocArray( arena, b3Vec3, NB_PIECE_SITES );
 		if ( valid && nbPreparePiece( arena, pieceMaterial, piece, piecePoly, load->pieceCellSizes[i], &rng, sites, jobs + jobCount ) )
 		{
-			jobs[jobCount].bondMoments = load->bondMoments;
 			load->pieceJobs[i] = jobCount;
 			jobSites[jobCount] = sites;
 			jobPieces[jobCount] = i;
@@ -592,6 +609,15 @@ static void nbPrepareLoad( nbLoad* load )
 		}
 	}
 	load->jobCount = jobCount;
+
+	// Only a static structure without floors takes the load check, a building gives way storey by storey, see
+	// nbCheckSupports. The bonds of all others need no moments.
+	load->bondMoments =
+		load->supportCheck && def->isStatic && nbFindRooms( arena, load->pieceBounds, pieceValid, pieceCount, NULL ) == 0;
+	for ( int j = 0; j < jobCount; ++j )
+	{
+		jobs[j].bondMoments = load->bondMoments;
+	}
 
 	// Pieces with cells of the same material and size crack as one mass: the first such piece, or -1
 	const int* pieceJobs = load->pieceJobs;
@@ -1015,9 +1041,14 @@ static nbDestructibleId nbCommitLoad( nbWorld* world, nbLoad* load )
 		nbFindStoreys( world, index, actorIndex, load->pieceBounds, valid, pieceCount );
 	}
 
-	// The load check never takes a building with storeys, its bonds need no moments from now on
+	// The load check never takes a building with storeys. A structure whose floors have no chunks under them, and so no
+	// storeys, takes it after all, its bonds get their moments now like when the check comes on.
 	nbDestructible* built = world->destructibles.data + index;
-	built->bondMoments = built->bondMoments && built->storeyCount == 0;
+	NB_ASSERT( built->bondMoments == false || built->storeyCount == 0 );
+	if ( load->supportCheck && def->isStatic && built->storeyCount == 0 && built->bondMoments == false )
+	{
+		nbComputeBondMoments( world );
+	}
 
 	nbCommitPhysics( world );
 	world->touchedActors.count = 0;
@@ -1042,7 +1073,7 @@ nbDestructibleId nbCreateDestructible( nbWorldId worldId, const nbDestructibleDe
 		.pieceCount = pieceCount,
 		.arena = &world->arena,
 		.workerArenas = world->workerArenas,
-		.bondMoments = world->def.supportScale > 0.0f,
+		.supportCheck = world->def.supportScale > 0.0f,
 	};
 	nbPrepareLoad( &load );
 	nbStartFractureJobs( world, &load.fracture, load.jobs, load.jobCount, NULL, NULL, load.arena, load.workerArenas );
@@ -1077,7 +1108,7 @@ void nbCreateDestructibles( nbWorldId worldId, const nbDestructibleDef* defs, co
 
 	nbLoad loads[2];
 	nbBeginOperation( world );
-	bool bondMoments = world->def.supportScale > 0.0f;
+	bool supportCheck = world->def.supportScale > 0.0f;
 	int current = 0;
 	while ( current < count && ( pieceLists[current] == NULL || pieceCounts[current] <= 0 ) )
 	{
@@ -1089,7 +1120,7 @@ void nbCreateDestructibles( nbWorldId worldId, const nbDestructibleDef* defs, co
 	{
 		NB_ASSERT( defs[current].internalValue == NB_SECRET_COOKIE );
 		loads[0] = (nbLoad){ .def = defs + current, .pieces = pieceLists[current], .pieceCount = pieceCounts[current],
-							 .arena = &world->arena, .workerArenas = world->workerArenas, .bondMoments = bondMoments };
+							 .arena = &world->arena, .workerArenas = world->workerArenas, .supportCheck = supportCheck };
 		nbPrepareLoad( loads + 0 );
 		nbStartFractureJobs( world, &loads[0].fracture, loads[0].jobs, loads[0].jobCount, NULL, NULL, loads[0].arena,
 							 loads[0].workerArenas );
@@ -1120,7 +1151,7 @@ void nbCreateDestructibles( nbWorldId worldId, const nbDestructibleDef* defs, co
 			}
 
 			*other = (nbLoad){ .def = defs + next, .pieces = pieceLists[next], .pieceCount = pieceCounts[next],
-							   .arena = otherArena, .workerArenas = otherWorkerArenas, .bondMoments = bondMoments };
+							   .arena = otherArena, .workerArenas = otherWorkerArenas, .supportCheck = supportCheck };
 			nbPrepareLoad( other );
 			nbStartFractureJobs( world, &other->fracture, other->jobs, other->jobCount, NULL, NULL, other->arena,
 								 other->workerArenas );
@@ -1248,7 +1279,7 @@ nbCreationId nbStartCreating( nbWorldId worldId, const nbDestructibleDef* defs, 
 	creation->inUse = true;
 
 	// The tasks run on the threads of the world in the background, or in the task system of the application, or here
-	bool bondMoments = world->def.supportScale > 0.0f;
+	bool supportCheck = world->def.supportScale > 0.0f;
 	for ( int i = 0; i < count; ++i )
 	{
 		nbBackgroundLoad* item = creation->loads + i;
@@ -1261,7 +1292,7 @@ nbCreationId nbStartCreating( nbWorldId worldId, const nbDestructibleDef* defs, 
 		NB_ASSERT( defs[i].internalValue == NB_SECRET_COOKIE );
 		nbArena_Create( &item->arena, 256 * 1024 );
 		item->load = (nbLoad){ .def = defs + i, .pieces = pieceLists[i], .pieceCount = pieceCounts[i], .arena = &item->arena,
-							   .bondMoments = bondMoments };
+							   .supportCheck = supportCheck };
 		item->active = true;
 		if ( world->scheduler != NULL )
 		{
@@ -1313,7 +1344,7 @@ void nbFinishCreating( nbCreationId creationId, nbDestructibleId* ids )
 	// start, the bonds get their moments as if it had been on or off all along: measured afterwards like those of the
 	// destructibles that existed before, or not kept.
 	nbBeginOperation( world );
-	bool bondMoments = world->def.supportScale > 0.0f;
+	bool supportCheck = world->def.supportScale > 0.0f;
 	bool measure = false;
 	for ( int i = 0; i < creation->count; ++i )
 	{
@@ -1325,9 +1356,10 @@ void nbFinishCreating( nbCreationId creationId, nbDestructibleId* ids )
 		}
 
 		nbWaitForLoad( world, item );
-		if ( item->load.bondMoments != bondMoments )
+		if ( item->load.supportCheck != supportCheck )
 		{
-			measure = measure || bondMoments;
+			measure = measure || supportCheck;
+			item->load.supportCheck = false;
 			item->load.bondMoments = false;
 		}
 		ids[i] = nbCommitLoad( world, &item->load );

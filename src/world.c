@@ -4118,6 +4118,24 @@ static void nbCheckSupports( nbWorld* world )
 			nbThawRubbleInBoxes( world, &zone, 1, b3Vec3_zero, 0.0f, &filter );
 		}
 
+		// A wall that gives way under its load comes down through the rubble at its foot, all of it comes back to life, as
+		// around the remains of a storey. The shots that took its foot knocked out pieces that froze in the holes, and the
+		// parts that break off would stand on them.
+		if ( storey == false )
+		{
+			const nbChunk* head = world->chunks.data + actor->headChunk;
+			b3AABB zone = b3Shape_GetAABB( head->shapeId );
+			for ( int c = head->nextChunk; c != NB_NULL_INDEX; c = world->chunks.data[c].nextChunk )
+			{
+				zone = b3AABB_Union( zone, b3Shape_GetAABB( world->chunks.data[c].shapeId ) );
+			}
+			b3Vec3 clearance = b3MulAdd( (b3Vec3){ NB_CLEARANCE, NB_CLEARANCE, NB_CLEARANCE }, -NB_CLEARANCE, b3Abs( up ) );
+			zone.lowerBound = b3Sub( zone.lowerBound, clearance );
+			zone.upperBound = b3Add( zone.upperBound, clearance );
+			nbThawContext filter = { .skipActor = NB_NULL_INDEX, .holder = NB_NULL_INDEX, .collapse = true };
+			nbThawRubbleInBoxes( world, &zone, 1, b3Vec3_zero, 0.0f, &filter );
+		}
+
 		// Everything above a storey that gives way comes down onto what stays of it, also what came down there before and
 		// froze, up to the top of the building. Frozen, that weighs nothing: when nothing flies out of the storey, what is
 		// left of it would carry the rest above until the last of it is shot away, while the storey above, which gave way
@@ -4269,7 +4287,8 @@ void nbComputeBondMoments( nbWorld* world )
 	for ( int i = 0; i < destructibleCount; ++i )
 	{
 		const nbDestructible* destructible = world->destructibles.data + i;
-		pending[i] = destructible->isFree == false && destructible->bondMoments == false && destructible->storeyCount == 0;
+		pending[i] = destructible->isFree == false && destructible->isStatic && destructible->bondMoments == false &&
+					 destructible->storeyCount == 0;
 		any = any || pending[i];
 	}
 
@@ -4367,7 +4386,7 @@ nbWorldDef nbDefaultWorldDef( void )
 	def.debrisRestTime = 0.1f;
 	def.debrisSweepDistance = 0.2f;
 	def.killDepth = -100.0f;
-	def.supportScale = 0.0f;
+	def.supportScale = 1.0f;
 	def.storeyCollapse = (nbStoreyCollapse){ 0.17f, 0.31f, 1.0f, 1.0f };
 	def.topStoreyCollapse = (nbStoreyCollapse){ 0.18f, 0.25f, 1.0f, 1.0f };
 	def.collisionSpeedThreshold = 4.0f;
@@ -4928,6 +4947,7 @@ void nbDestroyWorld( nbWorldId worldId )
 	nbArray_Free( world->actorList );
 	nbArray_Free( world->supportChecks );
 	nbArray_Free( world->supportQueue );
+	nbArray_Free( world->landings );
 	for ( int i = 0; i < 2; ++i )
 	{
 		nbArray_Free( world->createdEvents[i] );
@@ -5141,6 +5161,160 @@ static void nbCollectCollisionImpacts( nbWorld* world )
 		}
 		world->collisionImpacts.data[j + 1] = key;
 	}
+}
+
+// A part of a wall breaks in two when it lands at least this fast, in meters per second, and holds at least this volume,
+// in cubic meters, see nbCollectLandings
+#define NB_SPLIT_SPEED 7.0f
+#define NB_SPLIT_VOLUME 0.5f
+
+// Parts of walls that landed hard during the last step, read before anything changes the world. They break after the
+// collision damage, see nbSplitLandings. A wall is a static structure without floors. What comes down from a building
+// stays whole, see nbCheckStoreys, and so does a dynamic destructible.
+static void nbCollectLandings( nbWorld* world )
+{
+	world->landings.count = 0;
+	b3ContactEvents contactEvents = b3World_GetContactEvents( world->physicsWorld );
+	for ( int i = 0; i < contactEvents.hitCount; ++i )
+	{
+		const b3ContactHitEvent* event = contactEvents.hitEvents + i;
+		if ( event->approachSpeed < NB_SPLIT_SPEED )
+		{
+			continue;
+		}
+
+		for ( int side = 0; side < 2; ++side )
+		{
+			b3ShapeId shapeId = side == 0 ? event->shapeIdA : event->shapeIdB;
+			b3ShapeId otherShapeId = side == 0 ? event->shapeIdB : event->shapeIdA;
+			if ( b3Shape_IsValid( shapeId ) == false || b3Shape_IsValid( otherShapeId ) == false )
+			{
+				continue;
+			}
+
+			int chunkIndex = nbFindChunkFromShape( world, shapeId );
+			if ( chunkIndex == NB_NULL_INDEX )
+			{
+				continue;
+			}
+
+			int actorIndex = world->chunks.data[chunkIndex].actorIndex;
+			const nbActor* actor = world->actors.data + actorIndex;
+			const nbDestructible* destructible = world->destructibles.data + actor->destructibleIndex;
+			if ( actor->isStatic || actor->isRubble || actor->isBuildingPart || actor->chunkCount < 2 ||
+				 actor->volume < NB_SPLIT_VOLUME || destructible->isStatic == false || destructible->storeyCount > 0 ||
+				 destructible->enableCollisionDamage == false )
+			{
+				continue;
+			}
+
+			// Against a moving body the speed squared has to reach NB_SPLIT_SPEED squared times one plus the mass ratio
+			b3BodyId otherBodyId = b3Shape_GetBody( otherShapeId );
+			float ratio = 0.0f;
+			if ( b3Body_GetType( otherBodyId ) == b3_dynamicBody )
+			{
+				ratio = b3Body_GetMass( actor->bodyId ) / b3MaxFloat( b3Body_GetMass( otherBodyId ), FLT_MIN );
+			}
+			if ( event->approachSpeed * event->approachSpeed < NB_SPLIT_SPEED * NB_SPLIT_SPEED * ( 1.0f + ratio ) )
+			{
+				continue;
+			}
+
+			bool known = false;
+			for ( int k = 0; k < world->landings.count && known == false; k += 2 )
+			{
+				known = world->landings.data[k] == actorIndex;
+			}
+			if ( known == false )
+			{
+				nbArray_Push( world->landings, actorIndex );
+				nbArray_Push( world->landings, actor->generation );
+			}
+		}
+	}
+}
+
+// Break a part in two across the middle of its longest side. The plane lies halfway across the chunk centroids, not
+// through the median chunk, so a row of equal chunks is not cut in two places. The halves keep the motion the part had
+// after the hit, Box3D already resolved it.
+static void nbSplitInHalves( nbWorld* world, int actorIndex )
+{
+	const nbActor* actor = world->actors.data + actorIndex;
+	b3Vec3 low = { FLT_MAX, FLT_MAX, FLT_MAX };
+	b3Vec3 high = { -FLT_MAX, -FLT_MAX, -FLT_MAX };
+	for ( int c = actor->headChunk; c != NB_NULL_INDEX; c = world->chunks.data[c].nextChunk )
+	{
+		b3Vec3 centroid = world->chunks.data[c].shape->centroid;
+		low = b3Min( low, centroid );
+		high = b3Max( high, centroid );
+	}
+
+	b3Vec3 span = b3Sub( high, low );
+	b3Vec3 axis = span.x >= span.y && span.x >= span.z ? b3Vec3_axisX : ( span.y >= span.z ? b3Vec3_axisY : b3Vec3_axisZ );
+	if ( b3Dot( axis, span ) <= 0.0f )
+	{
+		return;
+	}
+
+	nbBeginOperation( world );
+	float plane = 0.5f * b3Dot( axis, b3Add( low, high ) );
+	for ( int c = actor->headChunk; c != NB_NULL_INDEX; c = world->chunks.data[c].nextChunk )
+	{
+		const nbChunk* chunk = world->chunks.data + c;
+		if ( b3Dot( axis, chunk->shape->centroid ) > plane )
+		{
+			continue;
+		}
+
+		for ( int key = chunk->headBondKey; key != NB_NULL_INDEX; )
+		{
+			int bondIndex = key >> 1;
+			const nbBond* bond = world->bonds.data + bondIndex;
+			int side = key & 1;
+			key = bond->nextKey[side];
+			if ( b3Dot( axis, world->chunks.data[bond->chunk[side ^ 1]].shape->centroid ) > plane )
+			{
+				nbDestroyBond( world, bondIndex );
+			}
+		}
+	}
+
+	nbImpactResult result = { 0 };
+	nbSplitActors( world, &result );
+	nbCommitPhysics( world );
+	world->stats.landingSplitCount += result.createdBodyCount > 0 ? 1 : 0;
+	for ( int i = 0; i < world->touchedActors.count; ++i )
+	{
+		nbActor* half = world->actors.data + world->touchedActors.data[i];
+		if ( half->isFree || half->isStatic || half->isNew == false )
+		{
+			continue;
+		}
+
+		half->isNew = false;
+		b3Vec3 offset = b3SubPos( b3Body_GetWorldCenter( half->bodyId ), half->sourceCenter );
+		b3Vec3 velocity = b3Add( half->sourceLinearVelocity, b3Cross( half->sourceAngularVelocity, offset ) );
+		b3Body_SetLinearVelocity( half->bodyId, velocity );
+		b3Body_SetAngularVelocity( half->bodyId, half->sourceAngularVelocity );
+	}
+	world->touchedActors.count = 0;
+}
+
+// Parts of walls that landed hard break in two, one level per update like the prepared bodies of the reference engine,
+// so a wall that comes down breaks up where it lands
+static void nbSplitLandings( nbWorld* world )
+{
+	for ( int k = 0; k < world->landings.count; k += 2 )
+	{
+		int actorIndex = world->landings.data[k];
+		const nbActor* actor = world->actors.data + actorIndex;
+		if ( actor->isFree == false && actor->generation == (uint16_t)world->landings.data[k + 1] && actor->isStatic == false &&
+			 actor->isRubble == false && actor->chunkCount > 1 )
+		{
+			nbSplitInHalves( world, actorIndex );
+		}
+	}
+	world->landings.count = 0;
 }
 
 // Rubble that a body other than debris hits comes back to life, a thrown boulder or a player. Debris landing on rubble
@@ -7064,6 +7238,7 @@ static void nbUpdate( nbWorld* world, float timeStep )
 
 	// Read the Box3D events of the last step before anything changes the world
 	nbCollectCollisionImpacts( world );
+	nbCollectLandings( world );
 
 	// Debris below the kill depth has left the world. Only bodies that moved can have crossed the depth.
 	b3Vec3 gravity = b3World_GetGravity( world->physicsWorld );
@@ -7150,6 +7325,9 @@ static void nbUpdate( nbWorld* world, float timeStep )
 			b3Body_SetLinearVelocity( impact.otherBodyId, velocity );
 		}
 	}
+
+	// Parts of walls that landed hard break in two
+	nbSplitLandings( world );
 	nbProfileLap( world, nb_profileCollisionDamage, &lap );
 	NB_ZONE_END( damage_zone );
 

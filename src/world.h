@@ -529,6 +529,9 @@ typedef struct nbWorld
 	nbIntArray supportChecks;
 	nbIntArray supportQueue;
 
+	// Parts of walls that landed hard in the last step, as pairs of actor index and generation, see nbCollectLandings
+	nbIntArray landings;
+
 	// Event buffers. The write buffers collect events, nbWorld_GetEvents swaps them with the read buffers.
 	nbChunkIdArray createdEvents[2];
 	nbChunkIdArray destroyedEvents[2];

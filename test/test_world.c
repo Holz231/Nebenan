@@ -469,7 +469,7 @@ static uint32_t RunDeterminismScenario( void )
 
 // Fracture and physics are bit for bit identical with MSVC, GCC and Clang on x64 and ARM. This is the result
 // with the pinned Box3D commit. Update it when the results change on purpose, never to make one platform pass.
-#define NB_EXPECTED_DETERMINISM_HASH 0x53bcaa34u
+#define NB_EXPECTED_DETERMINISM_HASH 0xdd0ef4c0u
 
 static int DeterminismTest( void )
 {
@@ -4023,6 +4023,9 @@ static int StoreyTest( void )
 		ENSURE( LargestPiece( &scene, &low, &high ) > 40.0f );
 		ENSURE( high < top - 0.3f );
 		ENSURE( FloatingVolume( &scene ) == 0.0f );
+
+		// Nothing of a building breaks in two where it lands, only parts of walls do
+		ENSURE( nbWorld_GetStats( scene.world ).landingSplitCount == 0 );
 		DestroyScene( &scene );
 	}
 
@@ -4649,9 +4652,10 @@ static int StoreyPickTest( void )
 // Structures without floors take the load check when it is on, see nbWorldDef::supportScale
 static int SupportTest( void )
 {
-	// A wall under a concrete block stands while the check is off, as it is by default, and gives way when it comes on
+	// A wall under a concrete block stands while the check is off and gives way when it comes on
 	{
 		TestScene scene = CreateScene();
+		nbWorld_SetSupportScale( scene.world, 0.0f );
 		CreateLoadedWall( &scene );
 		Step( &scene, 60 );
 		ENSURE( nbWorld_GetStats( scene.world ).dynamicBodyCount == 0 );
@@ -4719,13 +4723,115 @@ static int SupportTest( void )
 	return 0;
 }
 
+// A cannon ball of 0.25 m and 7.8 t per cubic meter at 45 m/s from one point at another, as the demo fires it
+static void ShootBall( TestScene* scene, b3Vec3 from, b3Vec3 to )
+{
+	b3BodyDef bodyDef = b3DefaultBodyDef();
+	bodyDef.type = b3_dynamicBody;
+	bodyDef.position = from;
+	bodyDef.linearVelocity = b3MulSV( 45.0f, b3Normalize( b3Sub( to, from ) ) );
+	bodyDef.isBullet = true;
+	b3BodyId ball = b3CreateBody( scene->physicsWorld, &bodyDef );
+
+	b3ShapeDef shapeDef = b3DefaultShapeDef();
+	shapeDef.density = 7800.0f;
+	shapeDef.enableHitEvents = true;
+	b3Sphere sphere = { { 0.0f, 0.0f, 0.0f }, 0.25f };
+	b3CreateSphereShape( ball, &shapeDef, &sphere );
+}
+
+// Volume of the chunks of a destructible with their centroid above a height
+static float VolumeAbove( nbDestructibleId destructible, float height )
+{
+	int count = nbDestructible_GetChunkCount( destructible );
+	nbChunkId* chunks = malloc( sizeof( nbChunkId ) * (size_t)( count + 1 ) );
+	int written = nbDestructible_GetChunks( destructible, chunks, count );
+	float volume = 0.0f;
+	for ( int i = 0; i < written; ++i )
+	{
+		b3WorldTransform transform = b3Body_GetTransform( nbChunk_GetBody( chunks[i] ) );
+		b3Pos centroid = b3TransformWorldPoint( transform, nbChunk_GetCentroid( chunks[i] ) );
+		volume += (float)centroid.y > height ? nbChunk_GetVolume( chunks[i] ) : 0.0f;
+	}
+	free( chunks );
+	return volume;
+}
+
+// The brick wall of the demo's wall scene, 9 m wide and 3.2 m high, with the demo's world: fragments twice the size,
+// the damage of collisions, the friction of the ground. Eight cannon balls from where the demo's camera stands knock
+// holes along its foot. With the load check on, as by default, it gives way under its weight: the pieces the balls
+// knocked into the holes come back to life, the wall comes down to the last of it, and its parts break in two where
+// they land hard. Without the check it stays up on what is left of its foot.
+static int WallCollapseTest( void )
+{
+	for ( int pass = 0; pass < 2; ++pass )
+	{
+		TestScene scene;
+		b3WorldDef worldDef = b3DefaultWorldDef();
+		scene.physicsWorld = b3CreateWorld( &worldDef );
+		b3BodyDef groundDef = b3DefaultBodyDef();
+		groundDef.position = (b3Vec3){ 0.0f, -1.0f, 0.0f };
+		scene.groundId = b3CreateBody( scene.physicsWorld, &groundDef );
+		b3BoxHull box = b3MakeBoxHull( 50.0f, 1.0f, 50.0f );
+		b3ShapeDef groundShape = b3DefaultShapeDef();
+		groundShape.baseMaterial.friction = 0.8f;
+		b3CreateHullShape( scene.groundId, &groundShape, &box.base );
+
+		nbWorldDef def = nbDefaultWorldDef();
+		ENSURE( def.supportScale == 1.0f );
+		def.physicsWorld = scene.physicsWorld;
+		def.collisionRadiusScale = 0.02f;
+		def.fragmentScale = 2.0f;
+		def.supportScale = pass == 0 ? def.supportScale : 0.0f;
+		scene.world = nbCreateWorld( &def );
+
+		nbDestructibleDef wallDef = nbDefaultDestructibleDef();
+		wallDef.position = b3ToPos( (b3Vec3){ 0.0f, 1.6f, 0.0f } );
+		wallDef.seed = 1;
+		wallDef.material.density = 1900.0f;
+		wallDef.material.strength = 6.0e5f;
+		wallDef.material.fragmentSize = 0.1f;
+		wallDef.material.friction = 0.8f;
+		nbDestructibleId wall = nbCreateBox( scene.world, &wallDef, (b3Vec3){ 4.5f, 1.6f, 0.15f } );
+		ENSURE( VolumeAbove( wall, 1.5f ) > 4.7f );
+
+		for ( int k = 0; k < 8; ++k )
+		{
+			ShootBall( &scene, (b3Vec3){ 0.0f, 1.8f, 9.0f }, (b3Vec3){ -3.5f + (float)k, 0.5f, 0.0f } );
+			Step( &scene, 6 );
+		}
+		Step( &scene, 180 );
+
+		nbStats stats = nbWorld_GetStats( scene.world );
+		float high = VolumeAbove( wall, 1.5f );
+		printf( "  %s: %.2f cubic meters above 1.5 m, %d bonds overloaded, %d parts broke where they landed\n",
+				pass == 0 ? "with the load check" : "without", high, stats.overloadedBondCount, stats.landingSplitCount );
+		if ( pass == 0 )
+		{
+			ENSURE( stats.overloadedBondCount > 0 );
+			ENSURE( high < 0.1f );
+			ENSURE( stats.landingSplitCount > 0 );
+		}
+		else
+		{
+			ENSURE( stats.overloadedBondCount == 0 );
+			ENSURE( high > 4.0f );
+			ENSURE( stats.landingSplitCount == 0 );
+		}
+		DestroyScene( &scene );
+	}
+	return 0;
+}
+
 // Only the load check reads the second moments of the bonds, see nbBondMoments. Without it nothing computes or keeps
 // them. With it on from the start the bonds keep the moments of the faces they were made from, and when it comes on
-// later, they get them from the shapes of their chunks, close to the same. Buildings with storeys never need them.
+// later, they get them from the shapes of their chunks, close to the same. Buildings with storeys and dynamic
+// destructibles never need them, only static structures without floors.
 static int BondMomentsTest( void )
 {
 	{
 		TestScene scene = CreateScene();
+		nbWorld_SetSupportScale( scene.world, 0.0f );
 		CreateLoadedWall( &scene );
 		Grenade( &scene, (b3Vec3){ 0.0f, 0.75f, 0.15f } );
 		const nbWorld* world = nbGetWorldFromId( scene.world );
@@ -4784,17 +4890,46 @@ static int BondMomentsTest( void )
 	printf( "  worst relative difference of recomputed bond moments %g\n", (double)worst );
 	ENSURE( worst < 1.0e-3f );
 
+	// A building and a dynamic destructible get none, also when they break
 	{
 		TestScene scene = CreateScene();
 		nbWorld_SetSupportScale( scene.world, 0.03f );
 		nbDestructibleId house = CreateCelledHouse( &scene, 2, 3 );
+		nbDestructibleDef rockDef = nbDefaultDestructibleDef();
+		rockDef.position = b3ToPos( (b3Vec3){ 20.0f, 0.5f, 0.0f } );
+		rockDef.isStatic = false;
+		rockDef.cellSize = 0.3f;
+		nbDestructibleId rock = nbCreateBox( scene.world, &rockDef, (b3Vec3){ 1.0f, 0.5f, 0.5f } );
 		const nbWorld* world = nbGetWorldFromId( scene.world );
 		ENSURE( world->destructibles.data[house.index1 - 1].storeyCount > 0 );
 		ENSURE( world->destructibles.data[house.index1 - 1].bondMoments == false );
-		int keptAfterLoading = world->bondMoments.count;
+		ENSURE( world->destructibles.data[rock.index1 - 1].bondMoments == false );
+		ENSURE( world->bondCount > 100 && world->bondMoments.count == 0 );
 		Grenade( &scene, (b3Vec3){ 0.0f, 1.2f, 3.4f } );
+		Grenade( &scene, (b3Vec3){ 20.0f, 0.5f, 0.6f } );
 		world = nbGetWorldFromId( scene.world );
-		ENSURE( world->bondMoments.count == keptAfterLoading );
+		ENSURE( world->bondMoments.count == 0 );
+		DestroyScene( &scene );
+	}
+
+	// A pillar with a slab on its side has a floor but no storey, the room under the slab holds no chunk. It takes the
+	// load check like a wall, its bonds get their moments once its storeys are found, and the slab breaks off.
+	{
+		TestScene scene = CreateScene();
+		nbPieceDef pieces[2] = { nbDefaultPieceDef(), nbDefaultPieceDef() };
+		pieces[0].halfExtents = (b3Vec3){ 0.3f, 3.0f, 0.3f };
+		pieces[0].transform.p = (b3Vec3){ 0.0f, 3.0f, 0.0f };
+		pieces[1].halfExtents = (b3Vec3){ 2.0f, 0.1f, 2.0f };
+		pieces[1].transform.p = (b3Vec3){ 2.3f, 2.0f, 0.0f };
+		nbDestructibleDef def = nbDefaultDestructibleDef();
+		nbDestructibleId stand = nbCreateDestructible( scene.world, &def, pieces, 2 );
+		const nbWorld* world = nbGetWorldFromId( scene.world );
+		ENSURE( world->destructibles.data[stand.index1 - 1].storeyCount == 0 );
+		ENSURE( world->destructibles.data[stand.index1 - 1].bondMoments );
+		ENSURE( world->bondCount == 1 && world->bondMoments.count == world->bonds.count );
+		Step( &scene, 30 );
+		nbStats stats = nbWorld_GetStats( scene.world );
+		ENSURE( stats.overloadedBondCount > 0 && stats.dynamicBodyCount > 0 );
 		DestroyScene( &scene );
 	}
 
@@ -4904,10 +5039,7 @@ static int BatchCreateTest( void )
 	{
 		TestScene scene = pass == 3 ? CreateSceneWithWorkers( 4, InlineEnqueue, InlineFinish, &system )
 									: CreateSceneWithWorkers( pass == 2 ? 1 : 4, NULL, NULL, NULL );
-		if ( pass >= 4 )
-		{
-			nbWorld_SetSupportScale( scene.world, 0.03f );
-		}
+		nbWorld_SetSupportScale( scene.world, pass >= 4 ? 0.03f : 0.0f );
 
 		nbDestructibleId ids[entryCount];
 		if ( pass == 0 || pass == 4 )
@@ -6049,8 +6181,8 @@ static uint32_t RunScenarioAtRate( TestScene scene, float stepRate, int settleFr
 
 // The results of the determinism scenario at 30 and 120 Hz with ten seconds to settle, the same on every platform like
 // NB_EXPECTED_DETERMINISM_HASH
-#define NB_EXPECTED_HASH_30HZ 0xdbc3ee87u
-#define NB_EXPECTED_HASH_120HZ 0x54b385feu
+#define NB_EXPECTED_HASH_30HZ 0xca0268d0u
+#define NB_EXPECTED_HASH_120HZ 0xc3d1c91au
 
 // The steps per second of nbWorld_Advance. At 60 Hz it takes the steps of the determinism scenario to the bit. At 30 and
 // 120 Hz every frame of 1/60 s takes half a step and two, whatever the steps cost, the world ends the same with one and
@@ -6697,6 +6829,7 @@ int WorldTest( void )
 	RUN_TEST( ShotStoreysTest );
 	RUN_TEST( StoreyPickTest );
 	RUN_TEST( SupportTest );
+	RUN_TEST( WallCollapseTest );
 	RUN_TEST( BondMomentsTest );
 	RUN_TEST( BatchCreateTest );
 	RUN_TEST( StreamTest );

@@ -365,9 +365,10 @@ typedef struct nbWorldDef
 	/// they only give way storey by storey, see storeyCollapse. The load of every chunk flows along its bonds to the
 	/// anchors, and a bond fails when the force through it exceeds its area times the strength of the weaker material,
 	/// or the bending of an overhang exceeds what the shape of the bond carries. The part that loses its way to the
-	/// anchors falls as one piece, and a chunk crushed under too much weight bursts into fragments. Lower values let
-	/// structures give way sooner. Zero, the default, turns the check off: a structure then only loses what is cut off
-	/// from its anchors. Change it at run time with nbWorld_SetSupportScale.
+	/// anchors falls as one piece, and a chunk crushed under too much weight bursts into fragments. A part of such a
+	/// structure that lands hard breaks in two, with or without the check. Lower values let structures give way
+	/// sooner, one is the default. Zero turns the check off: a structure then only loses what is cut off from its
+	/// anchors. Change it at run time with nbWorld_SetSupportScale.
 	float supportScale;
 
 	/// How the storeys of a static building give way, on any floor and whatever the walls could still carry: once the
@@ -520,6 +521,10 @@ typedef struct nbStats
 
 	/// Storeys that gave way, see nbWorldDef::storeyCollapse. Total since the world was created.
 	int collapsedStoreyCount;
+
+	/// Parts of structures without floors that broke in two where they landed hard, see nbWorldDef::supportScale. Total
+	/// since the world was created.
+	int landingSplitCount;
 
 	/// Chunks whose physics hull needed the quickhull fallback instead of the direct build.
 	int hullFallbackCount;
