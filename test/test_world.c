@@ -1845,6 +1845,192 @@ static int TeamPacksTest( void )
 	return 0;
 }
 
+// Joints solve in the packs of islands as well, see b3OrderPackJoints: a pack solves the overflow joints of its islands
+// before their knots and the joints of every color with its contacts, as the stages do. Two hubs swing on ball joints
+// with 30 arms each that spin on hinges with motors, and with one color per arm 10 or 11 of them lie in the overflow.
+// Four chains of four links swing on hinges and report when they pull hard, see b3JointEvent. Without the heap both
+// hubs hang from the ground beside a field of cubes that stay awake, each an island of its own, so that the step wakes
+// the workers, see b3GetStepWorkerCount, and they solve all of it in packs. With the heap of TeamPacksTest one hub
+// hangs from the plate, and a team solves that island with its joints in its stages and its overflow joints on the
+// calling thread, while the workers solve the others whole. Every number of workers and either width must end the same
+// in every bit, the joint events included.
+static int JointPacksTest( void )
+{
+	const int workers[5] = { 1, 2, 4, 8, 8 };
+	nbTaskSystem* pool = nbCreateTaskSystem( 3 );
+	for ( int heap = 0; heap < 2; ++heap )
+	{
+		uint32_t hashes[5];
+		for ( int pass = 0; pass < 5; ++pass )
+		{
+			b3SetSIMDWidth( pass == 4 ? 4 : 0 );
+			TestScene scene = pass == 0 ? CreateScene() : CreateSceneWithPool( pool, workers[pass] );
+			b3Vec3 groundOrigin = { 0.0f, -1.0f, 0.0f };
+
+			b3BodyDef bodyDef = b3DefaultBodyDef();
+			bodyDef.type = b3_dynamicBody;
+			b3ShapeDef shapeDef = b3DefaultShapeDef();
+			b3BodyId bodies[1024];
+			int bodyCount = 0;
+
+			// The heap of TeamPacksTest or the field of cubes
+			b3BodyId plate = scene.groundId;
+			b3Vec3 plateOrigin = groundOrigin;
+			b3BoxHull cube = b3MakeBoxHull( 0.05f, 0.05f, 0.05f );
+			if ( heap == 0 )
+			{
+				bodyDef.enableSleep = false;
+				for ( int i = 0; i < 900; ++i )
+				{
+					bodyDef.position = (b3Vec3){ -12.0f + 0.3f * (float)( i % 30 ), 0.05f, -4.5f + 0.3f * (float)( i / 30 ) };
+					bodies[bodyCount] = b3CreateBody( scene.physicsWorld, &bodyDef );
+					b3CreateHullShape( bodies[bodyCount++], &shapeDef, &cube.base );
+				}
+				bodyDef.enableSleep = true;
+			}
+			else
+			{
+				const int side = 20;
+				float offset = 0.06f * (float)( side - 1 );
+				for ( int i = 0; i < side * side; ++i )
+				{
+					bodyDef.position =
+						(b3Vec3){ -1.6f + 0.12f * (float)( i % side ) - offset, 0.05f, 0.12f * (float)( i / side ) - offset };
+					bodies[bodyCount] = b3CreateBody( scene.physicsWorld, &bodyDef );
+					b3CreateHullShape( bodies[bodyCount++], &shapeDef, &cube.base );
+				}
+
+				plateOrigin = (b3Vec3){ -1.6f, 0.151f, 0.0f };
+				bodyDef.position = plateOrigin;
+				plate = b3CreateBody( scene.physicsWorld, &bodyDef );
+				b3BoxHull slab = b3MakeBoxHull( 0.06f * (float)side, 0.05f, 0.06f * (float)side );
+				shapeDef.density = 20000.0f;
+				b3CreateHullShape( plate, &shapeDef, &slab.base );
+				bodies[bodyCount++] = plate;
+			}
+
+			// The hubs, their arms and the chains collide with nothing. A hub weighs 540 kg, 35 times as much as its arms.
+			b3ShapeDef ballDef = b3DefaultShapeDef();
+			ballDef.filter.maskBits = 0;
+			b3Sphere ball = { b3Vec3_zero, 0.05f };
+			b3ShapeDef hubDef = ballDef;
+			hubDef.density = 20000.0f;
+			b3BoxHull block = b3MakeBoxHull( 0.15f, 0.15f, 0.15f );
+			for ( int h = 0; h < 2; ++h )
+			{
+				b3Vec3 center = { h == 0 ? -1.6f : 2.0f, 1.3f, 0.0f };
+				bodyDef.position = center;
+				b3BodyId hub = b3CreateBody( scene.physicsWorld, &bodyDef );
+				b3CreateHullShape( hub, &hubDef, &block.base );
+				bodies[bodyCount++] = hub;
+
+				b3SphericalJointDef pivot = b3DefaultSphericalJointDef();
+				pivot.base.bodyIdA = h == 0 ? plate : scene.groundId;
+				pivot.base.bodyIdB = hub;
+				pivot.base.localFrameA.p = b3Sub( center, h == 0 ? plateOrigin : groundOrigin );
+				b3CreateSphericalJoint( scene.physicsWorld, &pivot );
+
+				// The arms below the hub and to one side, so that it swings
+				for ( int a = 0; a < 30; ++a )
+				{
+					b3Vec3 offset = { 0.15f * (float)( a % 6 ) - 0.3f, -0.2f, 0.15f * (float)( a / 6 ) - 0.3f };
+					bodyDef.position = b3Add( center, offset );
+					b3BodyId arm = b3CreateBody( scene.physicsWorld, &bodyDef );
+					b3CreateSphereShape( arm, &ballDef, &ball );
+					bodies[bodyCount++] = arm;
+
+					b3RevoluteJointDef hinge = b3DefaultRevoluteJointDef();
+					hinge.base.bodyIdA = hub;
+					hinge.base.bodyIdB = arm;
+					hinge.base.localFrameA.p = offset;
+					hinge.enableMotor = true;
+					hinge.motorSpeed = a % 2 == 0 ? 3.0f : -2.0f;
+					hinge.maxMotorTorque = 0.05f;
+					b3CreateRevoluteJoint( scene.physicsWorld, &hinge );
+				}
+			}
+
+			// The chains start level
+			for ( int c = 0; c < 4; ++c )
+			{
+				b3Vec3 anchor = { 4.0f + 0.6f * (float)c, 1.5f, 0.0f };
+				b3BodyId previous = scene.groundId;
+				for ( int k = 0; k < 4; ++k )
+				{
+					bodyDef.position = (b3Vec3){ anchor.x + 0.2f * (float)( k + 1 ), anchor.y, anchor.z };
+					b3BodyId link = b3CreateBody( scene.physicsWorld, &bodyDef );
+					b3CreateSphereShape( link, &ballDef, &ball );
+					bodies[bodyCount++] = link;
+
+					b3RevoluteJointDef hinge = b3DefaultRevoluteJointDef();
+					hinge.base.bodyIdA = previous;
+					hinge.base.bodyIdB = link;
+					hinge.base.localFrameA.p = k == 0 ? b3Sub( anchor, groundOrigin ) : b3Vec3_zero;
+					hinge.base.localFrameB.p = (b3Vec3){ -0.2f, 0.0f, 0.0f };
+					hinge.base.forceThreshold = 30.0f;
+					b3CreateRevoluteJoint( scene.physicsWorld, &hinge );
+					previous = link;
+				}
+			}
+
+			uint32_t hash = 2166136261u;
+			int packSteps = 0, teamSteps = 0, joinSteps = 0, events = 0;
+			for ( int step = 0; step < 240; ++step )
+			{
+				nbWorld_Step( scene.world, 1.0f / 60.0f, 4 );
+				b3Counters counters = b3World_GetCounters( scene.physicsWorld );
+				packSteps += counters.packCount > 0 ? 1 : 0;
+				teamSteps += counters.teamWork > 0 ? 1 : 0;
+				joinSteps += counters.teamPackCount > 1 ? 1 : 0;
+
+				b3JointEvents jointEvents = b3World_GetJointEvents( scene.physicsWorld );
+				events += jointEvents.count;
+				for ( int e = 0; e < jointEvents.count; ++e )
+				{
+					hash = ( hash ^ (uint32_t)jointEvents.jointEvents[e].jointId.index1 ) * 16777619u;
+				}
+				hash = ( hash ^ (uint32_t)step ) * 16777619u;
+			}
+
+			for ( int i = 0; i < bodyCount; ++i )
+			{
+				b3WorldTransform transform = b3Body_GetTransform( bodies[i] );
+				b3Vec3 p = b3ToVec3( transform.p );
+				b3Quat q = transform.q;
+				b3Vec3 v = b3Body_GetLinearVelocity( bodies[i] );
+				b3Vec3 w = b3Body_GetAngularVelocity( bodies[i] );
+				float values[13] = { p.x, p.y, p.z, q.v.x, q.v.y, q.v.z, q.s, v.x, v.y, v.z, w.x, w.y, w.z };
+				const uint8_t* bytes = (const uint8_t*)values;
+				for ( size_t k = 0; k < sizeof( values ); ++k )
+				{
+					hash = ( hash ^ bytes[k] ) * 16777619u;
+				}
+			}
+			hashes[pass] = hash;
+
+			if ( pass < 4 )
+			{
+				printf( "  %s, %d worker%s: packs in %d of 240 steps, a team in %d, with two packs in %d, %d joint events, hash "
+						"0x%08x\n",
+						heap == 0 ? "hubs on the ground" : "a hub on the heap", workers[pass], workers[pass] == 1 ? "" : "s",
+						packSteps, teamSteps, joinSteps, events, hash );
+			}
+			ENSURE( ( pass == 0 ) == ( packSteps == 0 ) );
+			ENSURE( heap == 0 || pass == 0 || teamSteps > 0 );
+			ENSURE( events > 0 );
+			DestroyScene( &scene );
+		}
+		b3SetSIMDWidth( 0 );
+
+		for ( int pass = 1; pass < 5; ++pass )
+		{
+			ENSURE( hashes[pass] == hashes[0] );
+		}
+	}
+	nbDestroyTaskSystem( pool );
+	return 0;
+}
+
 // A heavy plate on two layers of small cubes, 32 by 32 below and 31 by 31 above, each upper cube on the corners of four
 // lower ones, makes one island with about 5 800 contacts, a large island that splits into eight domains, see b3Domains.
 // Each domain solves its passes alone, and a body with contacts in several domains has a copy in each with its share of
@@ -1950,11 +2136,212 @@ static int DomainTest( void )
 	return 0;
 }
 
+// Joints no longer take the domains away, see b3ExecuteDomainJoints. The plate of DomainLifeTest stays awake on its cubes,
+// a large island with domains, while a pendulum swings from the ground far away, an island with a joint in the colors.
+// Two chains of five boxes on ball joints with springs and limits, as the limbs of a ragdoll, fall on the plate, report
+// when their joints pull hard and join its island through their contacts, see b3AbsorbIntoDomains, and at step 100 a
+// pendulum on a hinge joins it through its joint. The plate has no color left for the hinge, which goes to the overflow.
+// The island keeps its domains in every step, the calling thread solves the joints of the chains and of the pendulum
+// before each pass, and the domains start from what the joints left. The chains come to rest on the plate, the pendulum
+// hangs from it, and every number of workers and either width must end the same in every bit, the joint events included.
+static int DomainJointsTest( void )
+{
+	enum
+	{
+		side = 24,
+		cubeCount = side * side + ( side - 1 ) * ( side - 1 ),
+		linkCount = 5,
+		bodyCapacity = cubeCount + 1 + 2 * linkCount + 2,
+	};
+	const int workers[5] = { 1, 2, 4, 8, 8 };
+	nbTaskSystem* pool = nbCreateTaskSystem( 7 );
+	uint32_t hashes[5];
+	for ( int pass = 0; pass < 5; ++pass )
+	{
+		b3SetSIMDWidth( pass == 4 ? 4 : 0 );
+		TestScene scene = pass == 0 ? CreateScene() : CreateSceneWithPool( pool, workers[pass] );
+		b3Vec3 groundOrigin = { 0.0f, -1.0f, 0.0f };
+
+		b3BodyDef bodyDef = b3DefaultBodyDef();
+		bodyDef.type = b3_dynamicBody;
+		b3ShapeDef shapeDef = b3DefaultShapeDef();
+		b3BoxHull cube = b3MakeBoxHull( 0.05f, 0.05f, 0.05f );
+		b3BodyId bodies[bodyCapacity];
+		int count = 0;
+		for ( int layer = 0; layer < 2; ++layer )
+		{
+			int cubes = side - layer;
+			float offset = 0.06f * (float)( cubes - 1 );
+			for ( int i = 0; i < cubes * cubes; ++i )
+			{
+				bodyDef.position = (b3Vec3){ 0.12f * (float)( i % cubes ) - offset, 0.05f + 0.1f * (float)layer,
+											 0.12f * (float)( i / cubes ) - offset };
+				bodies[count] = b3CreateBody( scene.physicsWorld, &bodyDef );
+				b3CreateHullShape( bodies[count], &shapeDef, &cube.base );
+				count += 1;
+			}
+		}
+
+		// The plate never sleeps, so its island stays awake
+		b3Vec3 plateOrigin = { 0.0f, 0.251f, 0.0f };
+		bodyDef.position = plateOrigin;
+		bodyDef.enableSleep = false;
+		b3BodyId plate = b3CreateBody( scene.physicsWorld, &bodyDef );
+		bodies[count++] = plate;
+		bodyDef.enableSleep = true;
+		b3BoxHull slab = b3MakeBoxHull( 0.06f * (float)side, 0.05f, 0.06f * (float)side );
+		b3ShapeDef plateDef = shapeDef;
+		plateDef.density = 20000.0f;
+		b3CreateHullShape( plate, &plateDef, &slab.base );
+
+		// The pendulum on the ground starts level and collides with nothing
+		b3ShapeDef ballDef = b3DefaultShapeDef();
+		ballDef.filter.maskBits = 0;
+		b3Sphere ball = { b3Vec3_zero, 0.05f };
+		b3Vec3 pivot = { 5.0f, 1.5f, 0.0f };
+		bodyDef.position = b3Add( pivot, (b3Vec3){ 0.5f, 0.0f, 0.0f } );
+		b3BodyId bob = b3CreateBody( scene.physicsWorld, &bodyDef );
+		b3CreateSphereShape( bob, &ballDef, &ball );
+		bodies[count++] = bob;
+		{
+			b3RevoluteJointDef hinge = b3DefaultRevoluteJointDef();
+			hinge.base.bodyIdA = scene.groundId;
+			hinge.base.bodyIdB = bob;
+			hinge.base.localFrameA.p = b3Sub( pivot, groundOrigin );
+			hinge.base.localFrameB.p = (b3Vec3){ -0.5f, 0.0f, 0.0f };
+			b3CreateRevoluteJoint( scene.physicsWorld, &hinge );
+		}
+
+		// The chains fall on the plate, each link on a ball joint with a spring and limits to the one before
+		b3BoxHull box = b3MakeBoxHull( 0.08f, 0.03f, 0.03f );
+		for ( int c = 0; c < 2; ++c )
+		{
+			b3BodyId previous = b3_nullBodyId;
+			for ( int k = 0; k < linkCount; ++k )
+			{
+				bodyDef.position = (b3Vec3){ -0.4f + 0.16f * (float)k, 0.45f, -0.3f + 0.6f * (float)c };
+				b3BodyId link = b3CreateBody( scene.physicsWorld, &bodyDef );
+				b3CreateHullShape( link, &shapeDef, &box.base );
+				bodies[count++] = link;
+				if ( k > 0 )
+				{
+					b3SphericalJointDef joint = b3DefaultSphericalJointDef();
+					joint.base.bodyIdA = previous;
+					joint.base.bodyIdB = link;
+					joint.base.localFrameA.p = (b3Vec3){ 0.08f, 0.0f, 0.0f };
+					joint.base.localFrameB.p = (b3Vec3){ -0.08f, 0.0f, 0.0f };
+					joint.base.localFrameA.q = b3MakeQuatFromAxisAngle( b3Vec3_axisY, 0.5f * B3_PI );
+					joint.base.localFrameB.q = joint.base.localFrameA.q;
+					joint.enableSpring = true;
+					joint.hertz = 2.0f;
+					joint.dampingRatio = 0.5f;
+					joint.enableConeLimit = true;
+					joint.coneAngle = 0.6f;
+					joint.enableTwistLimit = true;
+					joint.lowerTwistAngle = -0.3f;
+					joint.upperTwistAngle = 0.3f;
+					joint.base.forceThreshold = 3.0f;
+					b3CreateSphericalJoint( scene.physicsWorld, &joint );
+				}
+				previous = link;
+			}
+		}
+
+		uint32_t hash = 2166136261u;
+		int domainSteps = 0, events = 0, packSteps = 0;
+		b3Counters counters = { 0 };
+		b3BodyId hanger = b3_nullBodyId;
+		for ( int step = 0; step < 240; ++step )
+		{
+			if ( step == 100 )
+			{
+				// A pendulum on a hinge at the edge of the plate joins its island through the joint
+				b3Vec3 edge = { 0.06f * (float)side + 0.1f, plateOrigin.y, 0.0f };
+				bodyDef.position = b3Add( edge, (b3Vec3){ 0.0f, -0.3f, 0.3f } );
+				hanger = b3CreateBody( scene.physicsWorld, &bodyDef );
+				b3CreateSphereShape( hanger, &ballDef, &ball );
+				bodies[count++] = hanger;
+
+				b3RevoluteJointDef hinge = b3DefaultRevoluteJointDef();
+				hinge.base.bodyIdA = plate;
+				hinge.base.bodyIdB = hanger;
+				hinge.base.localFrameA.p = b3Sub( edge, plateOrigin );
+				hinge.base.localFrameB.p = (b3Vec3){ 0.0f, 0.3f, -0.3f };
+				b3CreateRevoluteJoint( scene.physicsWorld, &hinge );
+			}
+
+			nbWorld_Step( scene.world, 1.0f / 60.0f, 4 );
+			counters = b3World_GetCounters( scene.physicsWorld );
+			domainSteps += counters.domainCount > 0 ? 1 : 0;
+			packSteps += counters.packCount > 0 ? 1 : 0;
+
+			b3JointEvents jointEvents = b3World_GetJointEvents( scene.physicsWorld );
+			events += jointEvents.count;
+			for ( int e = 0; e < jointEvents.count; ++e )
+			{
+				hash = ( hash ^ (uint32_t)jointEvents.jointEvents[e].jointId.index1 ) * 16777619u;
+			}
+			hash = ( hash ^ (uint32_t)step ) * 16777619u;
+		}
+
+		// The links rest on the plate, the pendulum hangs below the edge
+		float lowest = FLT_MAX, highest = -FLT_MAX, fastest = 0.0f;
+		for ( int i = cubeCount + 2; i < cubeCount + 2 + 2 * linkCount; ++i )
+		{
+			float y = (float)b3Body_GetPosition( bodies[i] ).y;
+			lowest = b3MinFloat( lowest, y );
+			highest = b3MaxFloat( highest, y );
+			fastest = b3MaxFloat( fastest, b3Length( b3Body_GetLinearVelocity( bodies[i] ) ) );
+		}
+		float hangerY = (float)b3Body_GetPosition( hanger ).y;
+
+		for ( int i = 0; i < count; ++i )
+		{
+			b3WorldTransform transform = b3Body_GetTransform( bodies[i] );
+			b3Vec3 p = b3ToVec3( transform.p );
+			b3Quat q = transform.q;
+			b3Vec3 v = b3Body_GetLinearVelocity( bodies[i] );
+			b3Vec3 w = b3Body_GetAngularVelocity( bodies[i] );
+			float values[13] = { p.x, p.y, p.z, q.v.x, q.v.y, q.v.z, q.s, v.x, v.y, v.z, w.x, w.y, w.z };
+			const uint8_t* bytes = (const uint8_t*)values;
+			for ( size_t k = 0; k < sizeof( values ); ++k )
+			{
+				hash = ( hash ^ bytes[k] ) * 16777619u;
+			}
+		}
+		hashes[pass] = hash;
+
+		if ( pass < 4 )
+		{
+			printf( "  %d worker%s: domains in %d of 240 steps, packs in %d, %d islands at the end, links at %.4f to %.4f m "
+					"moving up to %.4f m/s, pendulum at %.3f m, %d joint events, hash 0x%08x\n",
+					workers[pass], workers[pass] == 1 ? "" : "s", domainSteps, packSteps, counters.islandCount, lowest, highest,
+					fastest, hangerY, events, hash );
+		}
+
+		// The heap, the chains and the pendulum on the plate in one island beside the pendulum on the ground
+		ENSURE( domainSteps == 240 && counters.domainCount == 8 && counters.islandCount == 2 );
+		ENSURE( 0.31f < lowest && highest < 0.36f && fastest < 0.05f );
+		ENSURE( hangerY < (float)plateOrigin.y - 0.2f );
+		ENSURE( events > 0 );
+		DestroyScene( &scene );
+	}
+	b3SetSIMDWidth( 0 );
+	nbDestroyTaskSystem( pool );
+
+	for ( int pass = 1; pass < 5; ++pass )
+	{
+		ENSURE( hashes[pass] == hashes[0] );
+	}
+	return 0;
+}
+
 // The domains of a large island last from step to step and follow what happens to it, see b3Island::domains. A stack that
-// falls on the plate of DomainTest joins its domains. A joint or a mesh contact in the world takes them back to the colors,
-// and they come back once it is gone. Without the plate and a row of upper cubes the island splits into two halves that
-// keep the domains, fall asleep with them and have them again when one wakes. Every body must end the same in every bit
-// with one and four workers and in four lanes.
+// falls on the plate of DomainTest joins its domains. A joint between two of its cubes keeps them, the calling thread
+// solves it before each pass, see b3ExecuteDomainJoints, until the island rests and falls asleep. A mesh contact in the
+// world takes them back to the colors, and they come back once it is gone. Without the plate and a row of upper cubes the
+// island splits into two halves that keep the domains, fall asleep with them and have them again when one wakes. Every
+// body must end the same in every bit with one and four workers and in four lanes.
 static int DomainLifeTest( void )
 {
 	enum
@@ -2099,15 +2486,15 @@ static int DomainLifeTest( void )
 
 		if ( pass == 0 )
 		{
-			printf( "  domains at steps 19, 49, 59, 79, 89, 109, 140, 229 and 249: %d %d %d %d %d %d %d %d %d, %d islands at 140\n",
-					domainCounts[19], domainCounts[49], domainCounts[59], domainCounts[79], domainCounts[89], domainCounts[109],
+			printf( "  domains at steps 19, 49, 57, 79, 89, 109, 140, 229 and 249: %d %d %d %d %d %d %d %d %d, %d islands at 140\n",
+					domainCounts[19], domainCounts[49], domainCounts[57], domainCounts[79], domainCounts[89], domainCounts[109],
 					domainCounts[140], domainCounts[229], domainCounts[249], islandCounts[140] );
 		}
 
-		// With the domains from the start, with the stack, without them while the joint and the mesh are there, again
+		// With the domains from the start, with the stack and with the joint, without them while the mesh is there, again
 		// after, in the halves and asleep, and in the half that woke
 		ENSURE( domainCounts[19] == 8 && domainCounts[49] == 8 );
-		ENSURE( domainCounts[50] == 0 && domainCounts[59] == 0 && domainCounts[61] == 8 && domainCounts[79] == 8 );
+		ENSURE( domainCounts[50] == 8 && domainCounts[57] == 8 && domainCounts[61] == 8 && domainCounts[79] == 8 );
 		ENSURE( domainCounts[81] == 0 && domainCounts[89] == 0 && domainCounts[91] == 8 && domainCounts[109] == 8 );
 		ENSURE( islandCounts[140] == 2 && domainCounts[140] == 8 );
 		ENSURE( domainCounts[229] == 0 && domainCounts[230] == 8 && domainCounts[249] == 8 );
@@ -6592,6 +6979,13 @@ static int ScalingFitTest( void )
 		profiles[i].teamSampleWork = i < 2 ? 0.0f : 50000.0f;
 	}
 
+	// And how many steps solved whole islands per thread and in domains, see nbProfile::packStepCount
+	for ( int i = 0; i < 4; ++i )
+	{
+		profiles[i].packStepCount = i == 0 ? 0 : 75;
+		profiles[i].domainStepCount = 20;
+	}
+
 	// The report counts its whole length like snprintf, also into a buffer too small
 	int length = nbFormatScalingReport( profiles, 4, NULL, 0 );
 	ENSURE( length > 200 );
@@ -6619,6 +7013,9 @@ static int ScalingFitTest( void )
 	ENSURE( strstr( text, "The solver in every eighth step" ) != NULL && strstr( text, solverRow ) != NULL );
 	ENSURE( strstr( text, packRow ) != NULL && strstr( text, packShareRow ) != NULL );
 	ENSURE( strstr( text, teamBlockRow ) != NULL && strstr( text, teamTimeRow ) != NULL );
+	const char* packStepRow =
+		"Whole islands per thread in 75.0 % of the steps with workers, domains of large islands in 20.0 % of all steps";
+	ENSURE( strstr( text, packStepRow ) != NULL );
 	char small[16];
 	ENSURE( nbFormatScalingReport( profiles, 4, small, sizeof( small ) ) == length );
 	ENSURE( strlen( small ) == sizeof( small ) - 1 );
@@ -6821,8 +7218,10 @@ int WorldTest( void )
 	RUN_TEST( KnotTest );
 	RUN_TEST( KnotGroupTest );
 	RUN_TEST( TeamPacksTest );
+	RUN_TEST( JointPacksTest );
 	RUN_TEST( DomainTest );
 	RUN_TEST( DomainLifeTest );
+	RUN_TEST( DomainJointsTest );
 	RUN_TEST( UniqueHullTest );
 	RUN_TEST( ExternalHullTest );
 	RUN_TEST( ShapeBatchTest );

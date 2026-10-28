@@ -255,6 +255,40 @@ static void b3AddContactToIsland( b3World* world, int islandId, b3Contact* conta
 	b3ValidateIsland( world, islandId );
 }
 
+// Added for Nebenan: the bodies of an island without domains that joined one with domains, from absorbBody on, take the
+// domain of the one of bodyA and bodyB that was there already, the body of the contact or joint that linked them, and their
+// contacts from absorbContact on go to their domains, see b3Island::domains. Those of a sleeping island lie in its set and
+// take their domains once it wakes, see b3AddContactToGraph.
+static void b3AbsorbIntoDomains( b3World* world, int islandId, const b3Body* bodyA, const b3Body* bodyB, int absorbBody,
+								 int absorbContact )
+{
+	if ( absorbBody == B3_NULL_INDEX )
+	{
+		return;
+	}
+
+	b3Island* island = b3Array_Get( world->islands, islandId );
+	const b3Body* inside = bodyA->islandIndex < absorbBody ? bodyA : bodyB;
+	B3_ASSERT( inside->islandId == islandId && inside->islandIndex < absorbBody && 0 <= inside->domain );
+	for ( int i = absorbBody; i < island->bodies.count; ++i )
+	{
+		b3Array_Get( world->bodies, island->bodies.data[i] )->domain = inside->domain;
+	}
+
+	for ( int i = absorbContact; i < island->contacts.count; ++i )
+	{
+		const b3ContactLink* link = island->contacts.data + i;
+		b3Contact* other = b3Array_Get( world->contacts, link->contactId );
+		if ( other->colorIndex != B3_NULL_INDEX && ( other->flags & b3_simMeshContact ) == 0 )
+		{
+			B3_ASSERT( other->setIndex == b3_awakeSet );
+			const b3Body* otherA = b3Array_Get( world->bodies, link->bodyIdA );
+			const b3Body* otherB = b3Array_Get( world->bodies, link->bodyIdB );
+			b3SetContactDomain( world, other, b3GetAnchorDomain( otherA, otherB ) );
+		}
+	}
+}
+
 // Link a contact into an island.
 void b3LinkContact( b3World* world, b3Contact* contact )
 {
@@ -293,31 +327,8 @@ void b3LinkContact( b3World* world, b3Contact* contact )
 	int absorbBody, absorbContact;
 	int finalIslandId = b3MergeIslands( world, islandIdA, islandIdB, &absorbBody, &absorbContact );
 
-	// Added for Nebenan: the bodies of an island without domains that joins one with domains take the domain of the body of
-	// this contact that was there already, and their contacts go to their domains, see b3Island::domains
-	if ( absorbBody != B3_NULL_INDEX )
-	{
-		b3Island* island = b3Array_Get( world->islands, finalIslandId );
-		const b3Body* inside = bodyA->islandIndex < absorbBody ? bodyA : bodyB;
-		B3_ASSERT( inside->islandIndex < absorbBody && 0 <= inside->domain );
-		for ( int i = absorbBody; i < island->bodies.count; ++i )
-		{
-			b3Array_Get( world->bodies, island->bodies.data[i] )->domain = inside->domain;
-		}
-
-		for ( int i = absorbContact; i < island->contacts.count; ++i )
-		{
-			const b3ContactLink* link = island->contacts.data + i;
-			b3Contact* other = b3Array_Get( world->contacts, link->contactId );
-			B3_ASSERT( other->setIndex == b3_awakeSet && other->colorIndex != B3_NULL_INDEX );
-			if ( ( other->flags & b3_simMeshContact ) == 0 )
-			{
-				const b3Body* otherA = b3Array_Get( world->bodies, link->bodyIdA );
-				const b3Body* otherB = b3Array_Get( world->bodies, link->bodyIdB );
-				b3SetContactDomain( world, other, b3GetAnchorDomain( otherA, otherB ) );
-			}
-		}
-	}
+	// Added for Nebenan: see b3AbsorbIntoDomains
+	b3AbsorbIntoDomains( world, finalIslandId, bodyA, bodyB, absorbBody, absorbContact );
 
 	// Add contact to the island that survived
 	b3AddContactToIsland( world, finalIslandId, contact );
@@ -397,8 +408,9 @@ void b3LinkJoint( b3World* world, b3Joint* joint )
 	int absorbBody, absorbContact;
 	int finalIslandId = b3MergeIslands( world, islandIdA, islandIdB, &absorbBody, &absorbContact );
 
-	// Added for Nebenan: an island with joints solves in the colors, see b3Island::domains
-	b3RemoveIslandDomains( world, b3Array_Get( world->islands, finalIslandId ) );
+	// Added for Nebenan: an island with joints keeps its domains, the calling thread solves its joints between the passes,
+	// see b3ExecuteDomainJoints, and the bodies that join it take their domains, see b3AbsorbIntoDomains
+	b3AbsorbIntoDomains( world, finalIslandId, bodyA, bodyB, absorbBody, absorbContact );
 
 	// Add joint the island that survived
 	b3AddJointToIsland( world, finalIslandId, joint );

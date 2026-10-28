@@ -122,6 +122,10 @@ typedef enum b3SolverBlockType
 
 	// Added for Nebenan: block for the bodies of the large islands with copies, see b3DomainMerge
 	b3_mergeBlock,
+
+	// Added for Nebenan: block for iterating across the joints of packs of islands in one graph color or the overflow, by
+	// their place in b3StepContext::packJoints, see b3PackJointsTask
+	b3_packJointBlock,
 } b3SolverBlockType;
 
 // Solver block describes a multithreaded unit of work.
@@ -463,6 +467,16 @@ typedef struct b3StepContext
 	// Added for Nebenan: this step samples its solver, see b3Counters::solverSample. At the end, where it keeps the other
 	// fields where they were.
 	bool sampleSolver;
+
+	// Added for Nebenan: with packs the joints of every active color and then those of the overflow, each such row pack by
+	// pack, as their indices in the joints of their color, and per row of packCount + 1 where those of each pack start in
+	// packJoints, the overflow last, see b3OrderPackJoints. At the end, where they keep the other fields where they were.
+	const int* packJoints;
+	const int* packJointStarts;
+
+	// Added for Nebenan: the islands with domains have joints, which the calling thread solves before each pass over the
+	// domains, see b3ExecuteDomainJoints
+	bool domainJoints;
 } b3StepContext;
 
 void b3Solve( b3World* world, b3StepContext* stepContext );

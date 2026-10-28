@@ -76,8 +76,9 @@ typedef struct b3Island
 	b3Array( b3JointLink ) joints;
 
 	// Added for Nebenan: the island solves in domains, each of its bodies has one and its touching contacts lie in the
-	// domains of the graph, see b3Domains in src/solver.c. How many contacts lie in each domain while the island is awake,
-	// and the step the domains were cut last.
+	// domains of the graph, see b3Domains in src/solver.c. Its joints stay in the colors, and the calling thread solves them
+	// between the passes over the domains. How many contacts lie in each domain while the island is awake, and the step the
+	// domains were cut last.
 	bool domains;
 	int domainContacts[B3_DOMAINS];
 	int domainCutStep;

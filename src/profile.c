@@ -66,6 +66,8 @@ void nbProfileStep( nbWorld* world )
 	b3Counters counters = b3World_GetCounters( world->physicsWorld );
 	sums->overflowCount += counters.colorCounts[B3_GRAPH_COLOR_COUNT - 1];
 	sums->packWait += step.packWait;
+	sums->packStepCount += counters.packCount > 0 ? 1 : 0;
+	sums->domainStepCount += counters.domainCount > 0 ? 1 : 0;
 	if ( counters.solverSample != 0 )
 	{
 		sums->solverSampleCount += 1;
@@ -191,6 +193,8 @@ nbProfile nbWorld_GetProfile( nbWorldId worldId )
 	}
 	profile.teamStepCount = sums->teamStepCount;
 	profile.teamJoinStepCount = sums->teamJoinStepCount;
+	profile.packStepCount = sums->packStepCount;
+	profile.domainStepCount = sums->domainStepCount;
 
 	if ( sums->wakeCount > 0 )
 	{
@@ -580,9 +584,11 @@ int nbFormatScalingReport( const nbProfile* profiles, int count, char* text, int
 	double wake = 0.0, wakes = 0.0;
 	float longestWake = 0.0f;
 	double workerSteps = 0.0, settleSplits = 0.0, settleShare = 0.0, settleWake = 0.0, settleTasks = 0.0;
+	double packSteps = 0.0, domainSteps = 0.0;
 	for ( int i = 0; i < count; ++i )
 	{
 		const nbProfile* p = profiles + i;
+		domainSteps += (double)p->domainStepCount;
 		freezes += p->freezeCount * (double)p->stepCount;
 		thaws += p->thawCount * (double)p->stepCount;
 		overflow += p->overflowCount * (double)p->stepCount;
@@ -610,6 +616,7 @@ int nbFormatScalingReport( const nbProfile* profiles, int count, char* text, int
 		{
 			double tasks = (double)p->settleSplitCount * (double)( p->workerCount - 1 );
 			workerSteps += (double)p->stepCount;
+			packSteps += (double)p->packStepCount;
 			settleSplits += (double)p->settleSplitCount;
 			settleShare += p->settleWorkerShare * (double)p->settleSplitCount;
 			settleWake += p->settleWakeTime * tasks;
@@ -640,13 +647,13 @@ int nbFormatScalingReport( const nbProfile* profiles, int count, char* text, int
 		{
 			nbAppend( &out, "No step had a team for the largest pack\n" );
 		}
-		double packSteps = islandSteps - colorSteps;
-		if ( packSteps > 0.0 )
+		double sharedSteps = islandSteps - colorSteps;
+		if ( sharedSteps > 0.0 )
 		{
 			nbAppend( &out, "In the steps with at most half in one island, the packs without a team take at least" );
 			for ( int f = 0; f < 4; ++f )
 			{
-				nbAppend( &out, "%s %.1f %% of the work with %d workers", f == 0 ? "" : ",", 100.0 * floors[f] / packSteps,
+				nbAppend( &out, "%s %.1f %% of the work with %d workers", f == 0 ? "" : ",", 100.0 * floors[f] / sharedSteps,
 						  nb_islandFloorThreads[f] );
 			}
 			nbAppend( &out, "\n" );
@@ -655,6 +662,13 @@ int nbFormatScalingReport( const nbProfile* profiles, int count, char* text, int
 	else
 	{
 		nbAppend( &out, "Largest island not measured, it needs a profile with more than one worker\n" );
+	}
+	// The packs need workers, the domains come with any number of them, see nbProfile::packStepCount
+	if ( workerSteps > 0.0 )
+	{
+		nbAppend( &out, "Whole islands per thread in %.1f %% of the steps with workers, domains of large islands in %.1f %% of "
+						"all steps\n",
+				  100.0 * packSteps / workerSteps, steps > 0.0 ? 100.0 * domainSteps / steps : 0.0 );
 	}
 	if ( wakes > 0.0 )
 	{

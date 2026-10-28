@@ -767,6 +767,13 @@ typedef struct nbProfile
 	/// longer than three times that time. Where workers start slowly they stay at 32 and 512.
 	int fractureWorkerItems;
 	int settleWorkerPieces;
+
+	/// The steps whose solver took the awake islands in packs, each pack whole on one thread or by the team, joints
+	/// included, see b3Counters::packCount, and the steps with domains of large islands, see b3Counters::domainCount. The
+	/// others solved color by color with a barrier after each stage: without workers, with mesh contacts or while other
+	/// programs take the cores.
+	int packStepCount;
+	int domainStepCount;
 } nbProfile;
 
 /// The stages of profiles measured with different numbers of workers, fitted to T(n) = serial + parallel / n

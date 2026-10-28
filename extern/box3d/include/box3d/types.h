@@ -601,7 +601,8 @@ typedef struct b3Profile
 	/// Added for Nebenan: the part of constraints the calling thread spends on the overflow of the constraint graph,
 	/// the knots and the other overflow constraints, in a step that solves by colors. It solves them alone but for the
 	/// groups of knots, which the threads solve at once while it waits for them, see b3Counters::knotGroupBatchCount.
-	/// With packs every pack solves its own overflow.
+	/// With packs every pack solves its own overflow. With domains, see b3Counters::domainCount, the time the calling
+	/// thread solves the joints of the islands with domains alone before each pass, as those of a ragdoll in the rubble.
 	float overflow;
 
 	/// Added for Nebenan: where the constraints of a step with a team go, timed in every eighth such step, see
@@ -754,6 +755,10 @@ typedef struct b3Counters
 	int collideTaskCount;
 	int collideBlockCount;
 	int collideMissedCount;
+
+	/// Added for Nebenan: the packs of islands of the last step, each solved whole by one thread or by the team, see
+	/// teamWork, with their joints. Zero if the step solved color by color with a barrier after each stage.
+	int packCount;
 } b3Counters;
 
 /// Added for Nebenan: the rows of b3TeamStages, the stages of a team by what they solve. The stages that prepare the

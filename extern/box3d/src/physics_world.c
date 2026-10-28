@@ -2804,6 +2804,7 @@ b3Counters b3World_GetCounters( b3WorldId worldId )
 	s.collideTaskCount = world->collideTaskCount;
 	s.collideBlockCount = world->collideBlockCount;
 	s.collideMissedCount = world->collideMissedCount;
+	s.packCount = world->packCount;
 	memcpy( s.manifoldCounts, world->manifoldCounts, B3_CONTACT_MANIFOLD_COUNT_BUCKETS * sizeof( int ) );
 	s.stackUsed = world->stack.maxAllocation;
 	s.byteCount = b3GetByteCount();

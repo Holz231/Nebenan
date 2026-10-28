@@ -464,6 +464,8 @@ typedef struct nbProfileSums
 	double packSolveTime;
 	double packSolveWork;
 	double teamSampleWork;
+	int packStepCount;
+	int domainStepCount;
 } nbProfileSums;
 
 typedef struct nbWorld

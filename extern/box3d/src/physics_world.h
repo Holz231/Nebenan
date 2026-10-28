@@ -417,6 +417,9 @@ typedef struct b3World
 	// Added for Nebenan: see b3Counters::solverSample
 	int solverSample;
 	int packSolveWork;
+
+	// Added for Nebenan: the packs of islands of the last step, see b3Counters::packCount
+	int packCount;
 } b3World;
 
 b3World* b3GetUnlockedWorldFromId( b3WorldId id );
