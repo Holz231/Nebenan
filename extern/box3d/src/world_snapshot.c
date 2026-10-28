@@ -1166,7 +1166,6 @@ int b3SerializeWorld( b3World* world, b3RecBuffer* buf, b3Recording* rec )
 				b3SnapW_I32( buf, island->domainContacts[d] );
 			}
 			b3SnapW_I32( buf, island->domainCutStep );
-			b3SnapW_Bytes( buf, &island->domainCut, (int)sizeof( island->domainCut ) );
 
 			b3SerPodArray( buf, island->bodies );
 			b3SerPodArray( buf, island->contacts );
@@ -1411,7 +1410,6 @@ bool b3DeserializeIntoShell( const uint8_t* data, int size, b3World* world, b3Re
 				island->domainContacts[d] = b3SnapR_I32( r );
 			}
 			island->domainCutStep = b3SnapR_I32( r );
-			b3SnapR_Bytes( r, &island->domainCut, (int)sizeof( island->domainCut ) );
 
 			b3Array_Create( island->bodies );
 			b3Array_Create( island->contacts );

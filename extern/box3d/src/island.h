@@ -5,8 +5,6 @@
 
 #include "container.h"
 
-#include "box3d/math_functions.h"
-
 #include <stdint.h>
 
 typedef struct b3Contact b3Contact;
@@ -15,31 +13,6 @@ typedef struct b3World b3World;
 
 // Added for Nebenan: the domains a large island solves in, see b3Domains in src/solver.c
 #define B3_DOMAINS 8
-
-// Added for Nebenan: the cells per side of the grid in which an island is cut into its domains, see b3CutIslandDomains
-#define B3_DOMAIN_GRID 64
-
-// Added for Nebenan: a node of a cut that does not cut, all its cells go to its first domain, see b3DomainCut
-#define B3_DOMAIN_UNCUT 255
-
-// Added for Nebenan: where the last cut of an island put its domains, so that the bodies of an island that joins take the
-// domain where they lie, see b3PlaceInDomain. The corner of the grid of the cut and the inverse size of its cells along its
-// two axes, then per node of the cut, the whole island first and then the halves of every node, the axis of the grid it
-// cuts across and the cell its second half starts at, or B3_DOMAIN_UNCUT.
-typedef struct b3DomainCut
-{
-	float lower[2];
-	float invSize[2];
-	uint8_t axes[2];
-	uint8_t sides[B3_DOMAINS - 1];
-	uint8_t starts[B3_DOMAINS - 1];
-} b3DomainCut;
-
-// Snapshots write a cut as its bytes, see world_snapshot.c, a cell fits in a byte, and the nodes that cut fill the first
-// B3_DOMAINS - 1 places of the heap only when every node halves its domains evenly
-_Static_assert( sizeof( b3DomainCut ) == 4 * sizeof( float ) + 2 + 2 * ( B3_DOMAINS - 1 ), "a cut has no padding" );
-_Static_assert( B3_DOMAIN_GRID < B3_DOMAIN_UNCUT, "a cell fits in a byte" );
-_Static_assert( ( B3_DOMAINS & ( B3_DOMAINS - 1 ) ) == 0, "the domains are a power of two" );
 
 // Cached contact data stored in the island for fast contiguous iteration.
 // Avoids touching b3Contact during union-find in b3SplitIsland.
@@ -108,7 +81,6 @@ typedef struct b3Island
 	bool domains;
 	int domainContacts[B3_DOMAINS];
 	int domainCutStep;
-	b3DomainCut domainCut;
 } b3Island;
 
 // This is used to move islands across solver sets
@@ -118,9 +90,6 @@ typedef struct b3IslandSim
 } b3IslandSim;
 
 b3Island* b3CreateIsland( b3World* world, int setIndex );
-
-// Added for Nebenan: the domain where a cut puts a body with this center of mass, see b3DomainCut
-int b3PlaceInDomain( const b3DomainCut* cut, b3Pos center );
 void b3DestroyIsland( b3World* world, int islandId );
 
 // Link contacts into the island graph when it starts having contact points

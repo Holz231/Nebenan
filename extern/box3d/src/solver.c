@@ -3071,12 +3071,13 @@ static void* b3TakeKnotMemory( char** cursor, int byteCount )
 #define B3_DOMAIN_MIN_CONTACTS 1024
 
 // Added for Nebenan: an island cuts its domains anew once the largest holds a quarter more contacts than their mean, at
-// most every B3_DOMAIN_RECUT_STEPS steps, see b3UpdateDomains. A cut costs about 150 ns per contact on the calling thread,
-// most of it to move contacts to their new domains. Every 4 steps the threads waited less for the largest domain in a
-// demolition, but one thread paid 5 % more for the solver.
+// most every B3_DOMAIN_RECUT_STEPS steps, see b3UpdateDomains
 #define B3_DOMAIN_RECUT_NUM 5
 #define B3_DOMAIN_RECUT_DEN 4
 #define B3_DOMAIN_RECUT_STEPS 32
+
+// Added for Nebenan: the cells per side of the grid in which an island is cut into its domains, see b3CutDomains
+#define B3_DOMAIN_GRID 64
 
 _Static_assert( B3_DOMAINS <= 8, "the domains of a body need to fit in a byte" );
 
@@ -3095,11 +3096,10 @@ _Static_assert( B3_DOMAINS <= 8, "the domains of a body need to fit in a byte" )
 // the bodies lie when the island takes its domains, see b3CutIslandDomains, and every touching contact lies in its domain
 // in the graph, in the array of its domain in its color, see b3AddContactToGraph. So a step needs neither to cut nor to
 // sort: the contacts of a domain go color by color into wide constraints, as in the colors, see b3FillDomainLanes, and
-// only the copies come from the counts of the domains of every body. A body that joins takes the domain where the last cut
-// puts it, see b3PlaceInDomain. All of it happens on the calling thread in the order of the contacts and islands, and what
-// a step derives from it comes out the same on whichever thread computes it, see b3SetupTask, so the domains and the
-// results are the same with every number of workers and in either width. The copies lie past the awake states, see
-// b3GetDomainSlot.
+// only the copies come from the counts of the domains of every body. A body that joins takes the domain of the body it touches, see
+// b3LinkContact. All of it happens on the calling thread in the order of the contacts and islands, and what a step derives
+// from it comes out the same on whichever thread computes it, see b3SetupTask, so the domains and the results are the same
+// with every number of workers and in either width. The copies lie past the awake states, see b3GetDomainSlot.
 struct b3Domains
 {
 	// B3_DOMAINS while an awake island has domains, else zero, and how many awake islands have them, which ones and for how
@@ -3185,16 +3185,10 @@ static inline float b3GetDomainScale( const b3Domains* domains, int body )
 }
 
 // Added for Nebenan: cuts the cells [u0, u1) x [v0, v1) of the grid of an island into count domains from first on, each time
-// across its longer side where the weight of the cells splits most evenly, see b3CutIslandDomains. Its node of the cut
-// keeps where, see b3DomainCut.
+// across its longer side where the weight of the cells splits most evenly, see b3CutIslandDomains
 static void b3CutDomains( const int* cellWeights, uint8_t* cellDomains, int u0, int u1, int v0, int v1, float sizeU, float sizeV,
-						  int first, int count, b3DomainCut* domainCut, int node )
+						  int first, int count )
 {
-	if ( count > 1 )
-	{
-		domainCut->sides[node] = B3_DOMAIN_UNCUT;
-	}
-
 	if ( count == 1 || ( u1 - u0 < 2 && v1 - v0 < 2 ) )
 	{
 		for ( int v = v0; v < v1; ++v )
@@ -3253,19 +3247,15 @@ static void b3CutDomains( const int* cellWeights, uint8_t* cellDomains, int u0, 
 	}
 
 	int half = count / 2;
-	domainCut->sides[node] = alongU ? 0 : 1;
-	domainCut->starts[node] = (uint8_t)cut;
 	if ( alongU )
 	{
-		b3CutDomains( cellWeights, cellDomains, u0, cut, v0, v1, sizeU, sizeV, first, half, domainCut, 2 * node + 1 );
-		b3CutDomains( cellWeights, cellDomains, cut, u1, v0, v1, sizeU, sizeV, first + half, count - half, domainCut,
-					  2 * node + 2 );
+		b3CutDomains( cellWeights, cellDomains, u0, cut, v0, v1, sizeU, sizeV, first, half );
+		b3CutDomains( cellWeights, cellDomains, cut, u1, v0, v1, sizeU, sizeV, first + half, count - half );
 	}
 	else
 	{
-		b3CutDomains( cellWeights, cellDomains, u0, u1, v0, cut, sizeU, sizeV, first, half, domainCut, 2 * node + 1 );
-		b3CutDomains( cellWeights, cellDomains, u0, u1, cut, v1, sizeU, sizeV, first + half, count - half, domainCut,
-					  2 * node + 2 );
+		b3CutDomains( cellWeights, cellDomains, u0, u1, v0, cut, sizeU, sizeV, first, half );
+		b3CutDomains( cellWeights, cellDomains, u0, u1, cut, v1, sizeU, sizeV, first + half, count - half );
 	}
 }
 
@@ -3373,15 +3363,7 @@ static void b3CutIslandDomains( b3World* world, const b3SolverSet* awakeSet, b3I
 		weights[l] = cell;
 	}
 
-	// The cut stays with the island, for the bodies that join it, see b3PlaceInDomain
-	b3DomainCut* domainCut = &island->domainCut;
-	domainCut->lower[0] = lower[axisU];
-	domainCut->lower[1] = lower[axisV];
-	domainCut->invSize[0] = invSizeU;
-	domainCut->invSize[1] = invSizeV;
-	domainCut->axes[0] = (uint8_t)axisU;
-	domainCut->axes[1] = (uint8_t)axisV;
-	b3CutDomains( cellWeights, cellDomains, 0, B3_DOMAIN_GRID, 0, B3_DOMAIN_GRID, sizeU, sizeV, 0, B3_DOMAINS, domainCut, 0 );
+	b3CutDomains( cellWeights, cellDomains, 0, B3_DOMAIN_GRID, 0, B3_DOMAIN_GRID, sizeU, sizeV, 0, B3_DOMAINS );
 
 	for ( int l = 0; l < bodyCount; ++l )
 	{
