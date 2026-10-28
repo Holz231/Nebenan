@@ -60,9 +60,8 @@ int nbInternalAssert( const char* condition, const char* fileName, int lineNumbe
 #define NB_THREAD_NAME( name )
 #endif
 
-// Every allocation starts on this many bytes and is padded to a multiple of them. A cache line, so the actors of an array
-// lie on lines of their own, see nbActor::restPose.
-#define NB_ALIGNMENT 64
+// Every allocation starts on this many bytes and is padded to a multiple of them
+#define NB_ALIGNMENT 32
 
 void* nbAlloc( size_t size );
 void nbFree( void* mem, size_t size );
@@ -111,16 +110,6 @@ static inline void nbAtomicStoreInt( int* value, int desired )
 	(void)_InterlockedExchange( (volatile long*)value, desired );
 #else
 	__atomic_store_n( value, desired, __ATOMIC_SEQ_CST );
-#endif
-}
-
-// Atomic compare and swap: writes desired if the value is expected and returns whether it did
-static inline bool nbAtomicCompareExchangeInt( int* value, int expected, int desired )
-{
-#if defined( _MSC_VER ) && !defined( __clang__ )
-	return _InterlockedCompareExchange( (volatile long*)value, desired, expected ) == expected;
-#else
-	return __atomic_compare_exchange_n( value, &expected, desired, false, __ATOMIC_SEQ_CST, __ATOMIC_SEQ_CST );
 #endif
 }
 
@@ -225,9 +214,7 @@ typedef struct nbArenaBlock nbArenaBlock;
 
 typedef struct nbArena
 {
-	// Every arena on a cache line of its own. The workers allocate from theirs at the same time, and three of them shared a
-	// line, which went from core to core with every allocation, see nbSettleDebris.
-	_Alignas( 64 ) nbArenaBlock* head;
+	nbArenaBlock* head;
 	size_t used;
 	size_t peak;
 } nbArena;

@@ -596,6 +596,7 @@ size_t nbSaveDestructibles( const nbDestructibleId* ids, int count, void* buffer
 	};
 
 	nbSavedDestructible* destructibles = (nbSavedDestructible*)( bytes + parts.destructibles );
+	nbSavedActor* actors = (nbSavedActor*)( bytes + parts.actors );
 	nbSavedChunk* chunks = (nbSavedChunk*)( bytes + parts.chunks );
 	nbSavedBond* bonds = (nbSavedBond*)( bytes + parts.bonds );
 	int32_t* orders = (int32_t*)( bytes + parts.orders );
@@ -633,12 +634,8 @@ size_t nbSaveDestructibles( const nbDestructibleId* ids, int count, void* buffer
 		for ( int a = source->headActor; a != NB_NULL_INDEX; a = world->actors.data[a].nextActor )
 		{
 			const nbActor* actor = world->actors.data + a;
-
-			// Copied into the buffer once written, an actor starts on a cache line and the parts of the buffer only on
-			// NB_SAVE_ALIGNMENT bytes, see nbActor::restPose
-			nbSavedActor savedActor;
-			memset( &savedActor, 0, sizeof( savedActor ) );
-			nbActor* copy = &savedActor.actor;
+			nbSavedActor* savedActor = actors + actorPlace++;
+			nbActor* copy = &savedActor->actor;
 			*copy = *actor;
 			copy->bodyId = b3_nullBodyId;
 			copy->destructibleIndex = NB_NULL_INDEX;
@@ -665,17 +662,16 @@ size_t nbSaveDestructibles( const nbDestructibleId* ids, int count, void* buffer
 				carrier->generation = 0;
 			}
 
-			savedActor.transform = nbActor_GetTransform( world, actor );
-			savedActor.safetyFactor = B3_IS_NON_NULL( actor->bodyId ) ? b3Body_GetSafetyFactor( actor->bodyId ) : 0.0f;
-			savedActor.firstChunk = chunkPlace;
-			savedActor.chunkCount = actor->chunkCount;
-			savedActor.firstOrder = orderPlace;
+			savedActor->transform = nbActor_GetTransform( world, actor );
+			savedActor->safetyFactor = B3_IS_NON_NULL( actor->bodyId ) ? b3Body_GetSafetyFactor( actor->bodyId ) : 0.0f;
+			savedActor->firstChunk = chunkPlace;
+			savedActor->chunkCount = actor->chunkCount;
+			savedActor->firstOrder = orderPlace;
 			if ( B3_IS_NON_NULL( actor->bodyId ) )
 			{
 				orderPlace += nbWriteOrder( world, &plan, actor->bodyId, orders + orderPlace );
 			}
-			savedActor.orderCount = orderPlace - savedActor.firstOrder;
-			memcpy( bytes + parts.actors + sizeof( nbSavedActor ) * (size_t)actorPlace++, &savedActor, sizeof( savedActor ) );
+			savedActor->orderCount = orderPlace - savedActor->firstOrder;
 
 			for ( int c = actor->headChunk; c != NB_NULL_INDEX; c = world->chunks.data[c].nextChunk )
 			{

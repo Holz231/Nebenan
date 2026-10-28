@@ -50,8 +50,7 @@ if(NEBENAN_WARNINGS_AS_ERRORS)
 endif()
 
 if(MSVC)
-	# 4324: Structures on cache lines of their own are padded on purpose, see nbActor::restPose
-	target_compile_options(nebenan PRIVATE /W4 /wd4201 /wd4324)
+	target_compile_options(nebenan PRIVATE /W4 /wd4201)
 	# Fracture patterns must not depend on floating point contraction.
 	target_compile_options(nebenan PRIVATE /fp:precise)
 else()

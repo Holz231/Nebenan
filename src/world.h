@@ -22,10 +22,6 @@
 // Chunks rubble remembers it lay on when it froze
 #define NB_MAX_CARRIERS 4
 
-// Threads that keep their blocks of the checks of nbSettleDebris, the workers and a calling thread or two, see
-// nbWorld::settleThreads. A thread beyond only helps the others.
-#define NB_MAX_SETTLE_THREADS ( NB_MAX_WORKERS + 4 )
-
 // A chunk a piece lay on when it froze, and the point in world space where it touched
 typedef struct nbCarrier
 {
@@ -194,8 +190,32 @@ typedef struct nbActor
 	// Debris at rest, carried by a static body until something disturbs it
 	bool isRubble;
 
+	// Asleep in Box3D at the last look of nbSettleDebris, which found that it cannot freeze yet. While it sleeps the
+	// contacts it lies on stay as they are, so it waits for Box3D to wake it before the next look.
+	bool checkedAsleep;
+
 	// A static actor that changed since its last load check, see nbWorldDef::supportScale
 	bool supportDirty;
+
+	// Rest detection after the rubble rest of the reference engine (src/rubble_rest.h on the Referenz branch). The pose
+	// when the quiet time began, and how long the actor stayed within reach of it.
+	b3WorldTransform restPose;
+	float restTime;
+
+	// A body the solver keeps rocking in place is at rest too, once its mean position holds still. The origin of the
+	// current half second window, the sum of the offsets from it, the mean of the last window and how many windows in a
+	// row matched their predecessor.
+	b3WorldTransform jitterPose;
+	b3Vec3 jitterSum;
+	b3Vec3 jitterMean;
+	float jitterTime;
+	int jitterMatches;
+	bool jitterSampled;
+
+	// Came back to life from rubble and has not moved since. It freezes again after a short probe instead of the whole
+	// rest time, see nbIsQuiet.
+	bool probing;
+	float probeTime;
 
 	// The rubble resting on this actor comes back to life once it moves away from this pose. The bounds are the ones it
 	// had there.
@@ -220,38 +240,7 @@ typedef struct nbActor
 
 	// A collapse is breaking a structure apart, the parts it drops come from it
 	bool collapsing;
-
-	// From here on what the checks of nbSettleDebris write of every moving piece, on cache lines of their own. The look at
-	// what carries a quiet piece reads isFree, isStatic and isRubble of every piece it touches. While the rest lay on their
-	// line, a thread that checked a piece took that line from the threads that looked at its neighbors.
-	//
-	// Rest detection after the rubble rest of the reference engine (src/rubble_rest.h on the Referenz branch). The pose
-	// when the quiet time began, and how long the actor stayed within reach of it.
-	_Alignas( 64 ) b3WorldTransform restPose;
-	float restTime;
-
-	// A body the solver keeps rocking in place is at rest too, once its mean position holds still. The origin of the
-	// current half second window, the sum of the offsets from it, the mean of the last window and how many windows in a
-	// row matched their predecessor.
-	b3WorldTransform jitterPose;
-	b3Vec3 jitterSum;
-	b3Vec3 jitterMean;
-	float jitterTime;
-	int jitterMatches;
-	bool jitterSampled;
-
-	// Came back to life from rubble and has not moved since. It freezes again after a short probe instead of the whole
-	// rest time, see nbIsQuiet.
-	bool probing;
-	float probeTime;
-
-	// Asleep in Box3D at the last look of nbSettleDebris, which found that it cannot freeze yet. While it sleeps the
-	// contacts it lies on stay as they are, so it waits for Box3D to wake it before the next look.
-	bool checkedAsleep;
 } nbActor;
-
-// The arrays of actors come from nbAlloc, which starts every allocation on NB_ALIGNMENT bytes
-_Static_assert( _Alignof( nbActor ) <= NB_ALIGNMENT, "an allocation holds actors" );
 
 // The room under a floor of a building, along the local Y axis of its destructible, see nbCheckStoreys. It runs from
 // the top of the floor below, or the foot of the building, to the bottom of the floor above.
@@ -560,11 +549,6 @@ typedef struct nbWorld
 	struct nbScheduler* scheduler;
 	bool ownsScheduler;
 	nbArena workerArenas[NB_MAX_WORKERS];
-
-	// The threads that checked debris in nbSettleDebris, by their number, see nbGetThreadToken. A thread keeps its slot
-	// and with it its blocks of the checks from update to update. Cleared when the workers start anew.
-	int settleThreads[NB_MAX_SETTLE_THREADS];
-	int settleThreadCount;
 
 	int chunkCount;
 	int bondCount;
