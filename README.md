@@ -1098,6 +1098,9 @@ Anteil ihrer Masse. Statt rund 230 Sperren pro Schritt bleiben 36. Ein Spiel ruf
 jeder Zahl von Threads und auf jeder Plattform gleich. Beim Abriss in der Demo auf der VM bei ×2 kostet der Löser mit 4
 Threads 12 % weniger und mit einem 0,2 % mehr. Im Benchmark unter Trommelfeuer, wo die größte Insel kleiner ist, kostet
 er mit 1 bis 4 Workern bis zu 9 % mehr, siehe „Dauerhafte Gebiete“ in [docs/Optimierungen.md](docs/Optimierungen.md).
+Auf dem Ryzen 7 7800X3D kostet der Löser beim Abriss bei ×2 mit 8 Threads damit 0,107 ms pro Schritt weniger, 11 %, bei
+×4 gleich viel und mit einem Thread 6 bis 11 % mehr, siehe „Skalierung auf dem Ryzen mit `kollaps-30` bis
+`kollaps-32`“.
 Gebaut sind sie für 8 Threads, ob sie bleiben, entscheidet die Messung auf dem Ryzen, siehe
 [docs/Roadmap.md](docs/Roadmap.md).
 
@@ -1150,14 +1153,14 @@ Ein Spiel ruft dafür nichts Neues auf, und die Ergebnisse bleiben bitgleich. Be
 damit 20 bis 24 % weniger, und ein Schritt mit 1, 2 und 4 Threads spart 0,27, 0,12 und 0,04 ms, die Pflege der Listen
 eingerechnet, siehe „Nur berührende Kontakte ablaufen“ in [docs/Optimierungen.md](docs/Optimierungen.md). Auf dem
 Ryzen 7 7800X3D kosten die Prüfungen damit mit 1 bis 8 Threads 8 bis 12 % weniger, aber mit 8 Threads kostet die Pflege
-der Listen so viel, wie das Update spart, siehe „Skalierung auf dem Ryzen mit `kollaps-15`“. Seit `kollaps-31` liegt,
-was die Prüfungen von jedem bewegten Stück schreiben, auf eigenen Cache-Zeilen am Ende des Akteurs, und mit Workern
-behält jeder Thread einen festen Abschnitt der Blöcke von Update zu Update, darin die mit großen Stücken zuerst. Ein
-Spiel ruft dafür nichts Neues auf, ein eigener Allokator, siehe `nbSetAllocator`, bekommt 64 statt 32 Bytes als
-Ausrichtung, und die Ergebnisse bleiben bitgleich. Beim Abriss auf der VM bei ×4 kosten die Prüfungen mit 4 Threads 6 %
-weniger und mit einem Thread 2 % mehr, im Benchmark unter Trommelfeuer 1 bis 3 % mehr, siehe „Die Prüfungen des Updates
-auf eigenen Zeilen“ in [docs/Optimierungen.md](docs/Optimierungen.md). Wie es weitergeht, steht in
-[docs/Roadmap.md](docs/Roadmap.md).
+der Listen so viel, wie das Update spart, siehe „Skalierung auf dem Ryzen mit `kollaps-15`“. Auf `kollaps-31` lag, was
+die Prüfungen von jedem bewegten Stück schreiben, auf eigenen Cache-Zeilen am Ende des Akteurs, und mit Workern behielt
+jeder Thread einen festen Abschnitt der Blöcke von Update zu Update, darin die mit großen Stücken zuerst. Beim Abriss
+auf der VM bei ×4 kosteten die Prüfungen damit mit 4 Threads 6 % weniger, siehe „Die Prüfungen des Updates auf eigenen
+Zeilen“, auf dem Ryzen 7 7800X3D mit 8 Threads aber 14 % mehr, weil die Threads am Ende länger aufeinander warteten.
+Seit `kollaps-33` ist das wieder heraus, ein eigener Allokator, siehe `nbSetAllocator`, bekommt wieder 32 Bytes als
+Ausrichtung, und die Ergebnisse bleiben bitgleich, siehe „Skalierung auf dem Ryzen mit `kollaps-30` bis `kollaps-32`“
+in [docs/Optimierungen.md](docs/Optimierungen.md). Wie es weitergeht, steht in [docs/Roadmap.md](docs/Roadmap.md).
 
 Die teuersten Frames folgen auf einen Einsturz: Der Schutt um die Reste der Etage taut auf, und Box3D legt im nächsten
 Schritt Tausende neuer Kontakte an. Das ist echte Arbeit, das meiste davon fällt danach wirklich, siehe
