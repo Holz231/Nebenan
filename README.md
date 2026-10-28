@@ -28,8 +28,9 @@ gelöscht. Kein Staub, keine Schatten: Jede Millisekunde geht in die Zerstörung
   Sonst stürzt an einem Haus nichts ein, keine Wand über einem Loch und keine Decke, nur was ganz abgetrennt ist, fällt
 - Die Wände sind beim Laden in Zellen zerlegt, die auch um die Hausecken laufen, Fenster und Türen sind
   ausgeschnitten. Der Riss unter dem Teil, das herunterkommt, folgt den Zellen und ist überall polygonal
-- Für Bauwerke ohne Decken gibt es wahlweise eine Lastprüfung nach dem Lastlöser der Referenz-Engine: Last und
-  Schwerpunkt fließen über die Verbindungen zu den Ankern, Verbindungen brechen unter Druck und Biegung
+- Mauern und andere Bauwerke ohne Decken prüft eine Lastprüfung nach dem Lastlöser der Referenz-Engine: Last und
+  Schwerpunkt fließen über die Verbindungen zu den Ankern, Verbindungen brechen unter Druck und Biegung. Eine Mauer,
+  der man den Fuß wegschießt, gibt nach und kommt ganz herunter, und ihre großen Teile brechen, wo sie hart aufschlagen
 - Kollisionsschaden: Kanonenkugeln und herabfallende Trümmer beschädigen, was sie treffen. Was ein Einsturz
   herunterbringt, beschädigt nichts
 - Für ganze Städte gebaut, ohne etwas zu löschen: Trümmer, die zur Ruhe kommen und auf festem Grund liegen,
@@ -159,7 +160,8 @@ Daneben stellt **Etage gibt nach** ein, wie viel ihrer Wände zerstört sein mus
 Bereiche der Bibliothek, aus denen jede Etage beim Laden des Hauses ihre Werte zieht, 17 bis 31 % und 100 %, für die
 oberste 18 bis 25 % und 100 %. Die Regler zeigen sie dann nur und sind aus. Ohne sind die Regler an, und alle Etagen
 nehmen ihre Werte, Standard 24 % und 100 %, für die oberste 22 % und 100 %. Änderungen gelten sofort, jede Etage behält
-ihren Platz in den Bereichen. **Statik ohne Decken** schaltet die Lastprüfung für die Mauern ein (Standard aus).
+ihren Platz in den Bereichen. **Statik ohne Decken** stellt die Lastprüfung für die Mauern ein (Standard 1, 0 schaltet
+sie ab).
 
 Die Threads wählt die Bibliothek (`nbGetRecommendedWorkerCount`): einen pro Performance-Kern, höchstens 8. Box3D läuft
 am schnellsten ohne Hyper-Threads und Effizienzkerne, und mehr Threads als Kerne bremsen. Mit paralleler Physik bleibt
@@ -392,10 +394,10 @@ Teuerste an einem Einsturz. Die Prüfung ist ein Durchlauf über die Bruchstück
 sich geändert hat. Ein paar Granaten an einer Ecke bringen ein Haus der Demo nicht herunter, ein Ring um eine Etage
 schon.
 
-**Lastprüfung ohne Decken.** Für Bauwerke ohne Decken, etwa eine einzelne Mauer oder einen Klotz auf einer Wand, gibt
-es wahlweise die Lastprüfung nach dem Lastlöser der Referenz-Engine (`src/structure/structural_loads.cpp` auf dem
-Branch `Referenz`). Sie ist aus, `supportScale` 0, und Häuser prüft sie nie. Eingeschaltet prüft das nächste Update
-ein Bauwerk ganz, wenn es sich ändert:
+**Lastprüfung ohne Decken.** Bauwerke ohne Decken, etwa eine einzelne Mauer oder einen Klotz auf einer Wand, prüft die
+Lastprüfung nach dem Lastlöser der Referenz-Engine (`src/structure/structural_loads.cpp` auf dem Branch `Referenz`).
+Sie ist an, `supportScale` 1, 0 schaltet sie ab, und Häuser prüft sie nie. Das nächste Update prüft ein Bauwerk ganz,
+wenn es sich ändert:
 
 1. Eine Kürzeste-Wege-Suche von den verankerten Bruchstücken aus legt fest, wer wen trägt. Auf etwas Tieferem
    aufliegen ist billig, seitlich tragen kostet die Entfernung, beschädigte Verbindungen kosten mehr. Kleine
@@ -410,16 +412,30 @@ ein Bauwerk ganz, wenn es sich ändert:
 4. Alle überlasteten Verbindungen reißen zugleich. Was dadurch den Weg zum Anker verliert, fällt als ein Stück.
    Versagt eine unbeschädigte Verbindung unter dem Gewicht darauf, wird das kleinere ihrer beiden Stücke in sechs
    Splitter zerdrückt, die mit 4 m/s quer aus der Wand fliegen.
+5. Gibt das Bauwerk nach, kommt aller Schutt bis einen Meter daneben wieder in Bewegung, wie um die Reste einer
+   Etage, die nachgibt. Sonst blieben die Teile, die abbrechen, auf den Stücken stehen, die Schüsse vorher in die
+   Löcher geschlagen haben und die dort erstarrt sind, und die Mauer hinge auf halber Höhe.
 
 Die unbeschädigten Zellen eines vorzerlegten Teils tragen dabei zusammen als ein Block, wie das Teil vor der
 Zerlegung. Gibt ein Block nach, kommt er mit allem, was an ihm hängt, in einem Stück herunter. Er reißt unter dem
 untersten heilen Teil eines anderen Materials ab, das an ihm hängt, etwa einem Betonklotz, sonst über seinem Fuß, und
 die Zellen darunter fliegen mit 6 m/s heraus.
 
+**Mauern zerbrechen beim Aufprall.** Ein Teil eines Bauwerks ohne Decken, das mindestens 0,5 m³ hält und mit
+mindestens 7 m/s aufschlägt, bricht quer über die Mitte seiner längsten Seite in zwei Hälften, die seine Bewegung
+behalten, eine Stufe pro Update, wie die vorbereiteten Körper der Referenz-Engine (`nbSplitLandings`). Gegen einen
+bewegten Körper braucht es dafür mehr Wucht, im Verhältnis der Massen. Das gilt auch ohne Lastprüfung. Was von einem
+Haus herunterkommt, bricht nicht, ebenso wenig ein bewegliches Zerstörbares. `nbStats::landingSplitCount` zählt die
+Brüche. So zerfielen Mauern auf dem Branch `house-buckling-(incomplete)-+-wall-collapse`, Stand 27. September 2026,
+wo dieselbe Lastprüfung auch die Häuser einknicken ließ. Beim Abriss in der Demo enden die Häuser damit bitgleich wie
+vorher.
+
 Die Biegung braucht die zweiten Momente jeder Kontaktfläche. Nebenan rechnet und speichert sie nur für Bauwerke, die
 die Lastprüfung prüft: Sie ist an, und das Bauwerk hat keine Decken. Sonst ist eine Verbindung 64 statt 88 Byte groß.
-Wird die Prüfung erst zur Laufzeit eingeschaltet, misst Nebenan die Flächen dieser Bauwerke einmal an den Formen ihrer
-Bruchstücke nach.
+Ob ein Bauwerk Decken hat, sieht Nebenan schon an seinen Teilen, bevor es sie zerlegt, Häuser laden darum so schnell
+und brauchen so viel Speicher wie ohne Prüfung. Liegt unter den Decken eines Bauwerks kein Bruchstück, hat es keine
+Etage, und Nebenan misst seine Flächen gleich nach dem Laden nach. Wird die Prüfung erst zur Laufzeit wieder
+eingeschaltet, misst Nebenan die Flächen dieser Bauwerke einmal an den Formen ihrer Bruchstücke nach.
 
 **Trümmer und Schutt.** Ruhe und Einschlafen folgen ebenfalls der Referenz-Engine (`rubble_rest.h` und
 `BuildingScene::settle`). Nichts wird gelöscht.
@@ -849,7 +865,7 @@ beim Einbinden nicht gebaut.
 | `fragmentScale` | 1 | Multipliziert die Bruchstückgröße aller Materialien. Der wichtigste Regler für die Leistung: doppelte Größe halbiert die Zeit bei Massenzerstörung. Zur Laufzeit mit `nbWorld_SetFragmentScale` |
 | `storeyCollapse` | 0,17 bis 0,31 und 1 | Wie die Etagen eines Hauses nachgeben, in zwei Bereichen: `damageMin` bis `damageMax` ist der Anteil ihrer Wände, den eine Etage verlieren kann, bevor sie nachgibt, `residueMin` bis `residueMax` der Anteil der übrigen Wände, der dann ohne Stoß stehen bleibt, in seine Zellen zerbrochen: bei Schaden auf einer Seite als Anker auf der stärksten, über den alles darüber kippt, bei Schaden ringsum an zufälligen Stellen. Jede Etage zieht beim Laden aus dem `seed` des Hauses, wo sie in den Bereichen liegt. Der Rest fliegt heraus, und alles darüber kommt in einem Stück herunter und kippt über das, was blieb. Ein Schaden von 0 schaltet es ab. Zur Laufzeit mit `nbWorld_SetStoreyCollapse`, jede Etage behält ihren Platz in den Bereichen |
 | `topStoreyCollapse` | 0,18 bis 0,25 und 1 | Dasselbe für die oberste Etage eines Hauses, die unter dem Dach. Zur Laufzeit mit `nbWorld_SetStoreyCollapse` |
-| `supportScale` | 0 | Lastprüfung für Bauwerke ohne Decken, Tragfähigkeit der Verbindungen. Kleiner: sie geben früher nach, 0 schaltet sie ab. Häuser prüft sie nie. Zur Laufzeit mit `nbWorld_SetSupportScale` |
+| `supportScale` | 1 | Lastprüfung für Bauwerke ohne Decken wie Mauern, Tragfähigkeit der Verbindungen. Kleiner: sie geben früher nach, 0 schaltet sie ab. Häuser prüft sie nie. Zur Laufzeit mit `nbWorld_SetSupportScale` |
 | `maxDebrisBodies` | 1500 | Obergrenze für bewegte Trümmerkörper, darüber erstarren die langsamsten zu Schutt. Gelöscht wird nichts. Zur Laufzeit mit `nbWorld_SetDebrisBudget` |
 | `enableRubble` | an | Trümmer, die zur Ruhe kommen und auf festem Grund liegen, werden zu statischem Schutt |
 | `debrisSleepThreshold` | 0,12 m/s | Viermal so schnell gilt ein Trümmer höchstens als ruhig. Box3D schläfert Inseln ein, die langsamer sind |
@@ -1524,7 +1540,7 @@ lange die Threads im Löser rechnen und worauf sie sonst warten.
 ## Tests und Benchmark
 
 ```sh
-build/bin/nebenan_test            # 65 Tests: Geometrie, Voronoi, Hüllen, Öffnungen, Stöße, Stützgraph, Etagen, Lastprüfung, Schutt, Ruhe, Durchschlagen, Threads, Knoten, große Blöcke, Suchbaum, Kontaktlisten, Streaming, Stream, Laden im Hintergrund, Speichern und Zurückholen, gemeinsamer Thread-Pool, Ruhe-Prüfung auf den Workern, Schritt auf eigenem Thread, Schritte pro Bild, Takt der Physik, Wahl der Threads, Profil und Skalierung, Determinismus …
+build/bin/nebenan_test            # 73 Tests: Geometrie, Voronoi, Hüllen, Öffnungen, Stöße, Stützgraph, Etagen, Lastprüfung, Mauern, Schutt, Ruhe, Durchschlagen, Threads, Knoten, große Blöcke, Suchbaum, Kontaktlisten, Streaming, Stream, Laden im Hintergrund, Speichern und Zurückholen, gemeinsamer Thread-Pool, Ruhe-Prüfung auf den Workern, Schritt auf eigenem Thread, Schritte pro Bild, Takt der Physik, Wahl der Threads, Profil und Skalierung, Determinismus …
 build/bin/nebenan_benchmark 4     # Zahl = Threads für Bruch und Physik, 0 = so viele, wie ein Spiel nähme
 build/bin/nebenan_benchmark scaling   # die Städte unter Beschuss mit 1, 2, 4 … Threads und die Tabelle der Skalierung
 build/bin/nebenan_benchmark rates     # die Städte unter Beschuss mit 30, 60 und 120 Hz, was eine simulierte Sekunde kostet

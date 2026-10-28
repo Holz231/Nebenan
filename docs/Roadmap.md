@@ -33,8 +33,9 @@ Kontakt-Schleife auf `kollaps-28` und den Teilen eines Einschlags auf `kollaps-2
 `kollaps-30`, alle drei gemessen und verworfen, und den Prüfungen des Updates auf eigenen Cache-Zeilen auf `kollaps-31`,
 auf Wunsch des Nutzers gebaut, auf dem Ryzen nachgemessen und auf `kollaps-33` zurückgenommen, und den dauerhaften
 Gebieten auf `kollaps-32`, gebaut, auf dem Ryzen nachgemessen und übernommen, und dem Ausgleich der Gebiete auf
-`kollaps-34`, gebaut, auf dem Ryzen nachgemessen und auf `kollaps-35` zurückgenommen. Begründungen und Messwerte stehen
-in [`Optimierungen.md`](Optimierungen.md), hier nur das Fazit und die Reihenfolge. Nach jeder Runde wird der Stand hier
+`kollaps-34`, gebaut, auf dem Ryzen nachgemessen und auf `kollaps-35` zurückgenommen, und den Mauern wie auf dem alten
+Branch auf `kollaps-36`, auf Wunsch des Nutzers. Begründungen und Messwerte stehen in
+[`Optimierungen.md`](Optimierungen.md), hier nur das Fazit und die Reihenfolge. Nach jeder Runde wird der Stand hier
 nachgetragen.
 
 `kollaps-1` ist keine Runde der Physik, sie baut den Einsturz nach Kapitel 17 der Roadmap des Spiels, siehe
@@ -82,7 +83,11 @@ Abriss in der Demo fallen in 4 000 Bildern 6 statt 4 Häuser, und wer eine Runde
 vergleicht dort verschiedene Szenen. Im Benchmark enden die Städte fast gleich, unter dem Trommelfeuer bei ×4 stürzen
 114 statt 116 Etagen ein. Auch `kollaps-32` ändert die Ergebnisse, siehe Schritt 68: Beim Abriss in der Demo fallen bei
 ×2 in 4 000 Bildern 829 statt 711 Granaten und 7 statt 6 Häuser, und bei ×4 sind alle Häuser nach 1 161 statt 1 273
-Bildern unten.
+Bildern unten. `kollaps-36` ist wieder keine Runde der Physik: Mauern geben unter ihrer Last nach und zerbrechen beim
+Aufprall, wie auf dem Branch `house-buckling-(incomplete)-+-wall-collapse`, ohne dass Häuser einknicken, siehe „Mauern
+geben nach wie auf dem alten Branch“ in [Optimierungen.md](Optimierungen.md). Häuser enden bitgleich, der Abriss in der
+Demo und der Benchmark messen dieselben Städte wie vorher. Anders enden die Szenen „Mauern“ und „Stresstest“ der Demo,
+im Benchmark „rifle“ und „explosions“, die auf Mauern schießen, und in den Tests die Szene mit Mauer und Tor.
 
 ## Fazit
 
