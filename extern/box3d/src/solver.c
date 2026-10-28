@@ -2882,14 +2882,21 @@ static int b3GetPackEntryCapacity( const b3World* world, const b3GraphColor* col
 // runs the tasks itself right away.
 #define B3_SETUP_TASK_OVERFLOW 256
 
+// Added for Nebenan: see b3Domains
+typedef struct b3Domains b3Domains;
+static void b3FillDomainBodies( const b3World* world, b3Domains* domains );
+static void b3FillDomainLanes( const b3World* world, b3Domains* domains );
+
 // Added for Nebenan: what the solver setup gives to the workers while the calling thread builds the knots, see
 // b3BuildKnots, in two tasks. The first gives every contact its pack, see b3FillContactPacks, and puts the convex contacts
 // of the colors in order pack by pack, see b3OrderPackContacts, or without packs in buckets, see b3OrderColorContacts. The
 // knots need the packs of the contacts only at the end and wait for it there, see b3FinishSetupTask, or run it themselves
 // if no worker took it yet. The second gives every body its pack, see b3FillPackBodies, which only the stages need. The
 // calling thread waits for it at the end of the setup, before the split of an island changes the islands of the bodies,
-// and with a single worker it runs the second task while it waits for the first. Only the calling thread takes from the
-// stack, the tasks fill what it took before. Every result is the same whichever thread computes it.
+// and with a single worker it runs the second task while it waits for the first. With domains a third task gives their
+// bodies their copies and fills their lanes, see b3FillDomainBodies and b3FillDomainLanes, which the knots wait for
+// along with the first. Only the calling thread takes from the stack, the tasks fill what it took before. Every result is
+// the same whichever thread computes it.
 typedef struct b3SetupTask
 {
 	const b3World* world;
@@ -2917,6 +2924,9 @@ typedef struct b3SetupTask
 	bool bodies;
 	bool workers;
 
+	// The domains whose bodies and lanes the third task fills, null for the others
+	b3Domains* domains;
+
 	// The task in the task system, null if the task system ran it right away, whether it started and was waited for, and
 	// how long it ran
 	void* userTask;
@@ -2931,7 +2941,12 @@ static void b3SetupTaskCallback( void* context )
 
 	b3SetupTask* task = context;
 	uint64_t ticks = b3GetTicks();
-	if ( task->bodies )
+	if ( task->domains != NULL )
+	{
+		b3FillDomainBodies( task->world, task->domains );
+		b3FillDomainLanes( task->world, task->domains );
+	}
+	else if ( task->bodies )
 	{
 		b3FillPackBodies( task->world, task->awakeSet, task->islandPacks, task->packBodyStarts, task->packCount,
 						  task->packBodies );
@@ -2956,7 +2971,7 @@ static void b3SetupTaskCallback( void* context )
 // Added for Nebenan: hands a setup task to a worker, see b3SetupTask. The second task only comes with packs.
 static void b3StartSetupTask( b3World* world, b3SetupTask* task )
 {
-	if ( task->orderedContacts == NULL || ( task->bodies && task->packCount == 0 ) )
+	if ( task->domains == NULL && ( task->orderedContacts == NULL || ( task->bodies && task->packCount == 0 ) ) )
 	{
 		return;
 	}
@@ -3082,14 +3097,17 @@ _Static_assert( B3_DOMAINS <= 8, "the domains of a body need to fit in a byte" )
 // in the graph, in the array of its domain in its color, see b3AddContactToGraph. So a step needs neither to cut nor to
 // sort: the contacts of a domain go color by color into wide constraints, as in the colors, see b3FillDomainLanes, and
 // only the copies come from the counts of the domains of every body. A body that joins takes the domain of the body it touches, see
-// b3LinkContact. All of it happens on the calling thread in the order of the contacts and islands, so the domains and
-// the results are the same with every number of workers and in either width. The copies lie past the awake states, see
-// b3GetDomainSlot.
-typedef struct b3Domains
+// b3LinkContact. All of it happens on the calling thread in the order of the contacts and islands, and what a step derives
+// from it comes out the same on whichever thread computes it, see b3SetupTask, so the domains and the results are the same
+// with every number of workers and in either width. The copies lie past the awake states, see b3GetDomainSlot.
+struct b3Domains
 {
-	// B3_DOMAINS while an awake island has domains, else zero, and how many awake islands have them
+	// B3_DOMAINS while an awake island has domains, else zero, and how many awake islands have them, which ones and for how
+	// many workers
 	int domainCount;
 	int islandCount;
+	const int* islandIds;
+	int workerCount;
 
 	// Per awake body the domains that hold its contacts as bits, and for a body in several the first of its copies. Only
 	// the bodies of the islands with domains have them.
@@ -3098,6 +3116,7 @@ typedef struct b3Domains
 	int awakeBodyCount;
 
 	// The copies each domain starts, domain by domain, and the bodies with copies
+	int copyCapacity;
 	b3DomainCopy* copies;
 	int copyStarts[B3_DOMAINS + 1];
 	int copyCount;
@@ -3108,6 +3127,7 @@ typedef struct b3Domains
 	// domain, see b3FillDomainLanes, and where the lanes and the wide constraints of every domain start, the wide
 	// constraints counted from the first of the domains
 	int* lanes;
+	int laneCapacity;
 	int laneStarts[B3_DOMAINS + 1];
 	int wideStarts[B3_DOMAINS + 1];
 	int wideCount;
@@ -3123,6 +3143,7 @@ typedef struct b3Domains
 	// The blocks of the stages: a domain each, and the bodies with copies
 	b3SyncBlock domainBlocks[B3_DOMAINS];
 	b3SyncBlock* mergeBlocks;
+	int mergeBlockCapacity;
 	int mergeBlockCount;
 
 	// Room for the spans of the prepare and store stages, those of the colors and of the knots, then one for every domain
@@ -3131,7 +3152,7 @@ typedef struct b3Domains
 
 	// All of the above in one block
 	void* memory;
-} b3Domains;
+};
 
 // Added for Nebenan: the state a body solves on in a domain plus one, as b3ContactConstraintWide::indexA: its copy in the
 // domain if its contacts lie in several, past the awake states, else its own, and zero for a static body
@@ -3570,6 +3591,21 @@ static void b3FillDomainLanes( const b3World* world, b3Domains* domains )
 		domains->laneStarts[d] = laneCount;
 		domains->wideStarts[d] = laneCount / width;
 
+		// The contacts that may need their bodies, at both ends of every color, which lie scattered in memory, all at once
+		for ( int c = 0; c < B3_OVERFLOW_INDEX; ++c )
+		{
+			const int* ids = colors[c].domainContacts[d].data;
+			int count = colors[c].domainContacts[d].count;
+			for ( int k = 0; k < count && k < width - 1; ++k )
+			{
+				b3Prefetch( &contacts[ids[k]].encodedBodySimA );
+			}
+			for ( int k = b3MaxInt( count - width + 1, width - 1 ); k < count; ++k )
+			{
+				b3Prefetch( &contacts[ids[k]].encodedBodySimA );
+			}
+		}
+
 		// The lanes taken in the open wide constraint and how many of them hold contacts of earlier colors, with the moving
 		// bodies of those
 		int used = 0;
@@ -3646,14 +3682,14 @@ static void b3FillDomainLanes( const b3World* world, b3Domains* domains )
 		}
 	}
 
+	B3_ASSERT( laneCount <= domains->laneCapacity );
 	domains->laneStarts[B3_DOMAINS] = laneCount;
 	domains->wideStarts[B3_DOMAINS] = laneCount / width;
 	domains->wideCount = laneCount / width;
 }
 
-// Added for Nebenan: the domains of a step, see b3Domains: the domains of the contacts of every body of the islands with
-// domains from the counts the graph keeps, the copies of the bodies in several domains and the spans of the wide
-// constraints of every domain and color. Only the calling thread takes from the stack.
+// Added for Nebenan: the domains of a step, see b3Domains, with room for all a setup task fills in, see b3FillDomainBodies
+// and b3FillDomainLanes. Only the calling thread takes from the stack.
 static void b3AssembleDomains( b3World* world, const b3SolverSet* awakeSet, const int* islandIds, int islandCount,
 							   int workerCount, b3Domains* domains )
 {
@@ -3711,14 +3747,34 @@ static void b3AssembleDomains( b3World* world, const b3SolverSet* awakeSet, cons
 	domains->prepareSpans =
 		(b3WidePrepareSpan*)b3TakeKnotMemory( &cursor, prepareSpanCapacity * (int)sizeof( b3WidePrepareSpan ) );
 	domains->lanes = (int*)b3TakeKnotMemory( &cursor, laneCapacity * (int)sizeof( int ) );
+	domains->laneCapacity = laneCapacity;
 	B3_ASSERT( cursor <= (char*)domains->memory + byteCount );
-
-	b3FillDomainLanes( world, domains );
-	B3_ASSERT( domains->laneStarts[B3_DOMAINS] <= laneCapacity );
 
 	domains->domainCount = B3_DOMAINS;
 	domains->islandCount = islandCount;
+	domains->islandIds = islandIds;
+	domains->workerCount = workerCount;
 	domains->awakeBodyCount = awakeBodyCount;
+	domains->copyCapacity = copyCapacity;
+	domains->mergeBlockCapacity = mergeBlockCapacity;
+
+	// A block per domain
+	for ( int d = 0; d < B3_DOMAINS; ++d )
+	{
+		b3SyncBlock* block = domains->domainBlocks + d;
+		block->block = (b3SolverBlock){ d, 1, b3_domainBlock, UINT8_MAX };
+		b3AtomicStoreInt( &block->syncIndex, 0 );
+	}
+}
+
+// Added for Nebenan: the domains of the contacts of every body of the islands with domains as bits, from the counts the
+// graph keeps, and the bodies in several with their copies and the blocks that merge them, see b3Domains. A setup task
+// fills them, see b3SetupTask.
+static void b3FillDomainBodies( const b3World* world, b3Domains* domains )
+{
+	const int* islandIds = domains->islandIds;
+	int islandCount = domains->islandCount;
+	int awakeBodyCount = domains->awakeBodyCount;
 
 	// The domains of every body as bits, and the bodies in several with their copies, island by island and body by body
 	const b3Body* bodies = world->bodies.data;
@@ -3769,7 +3825,7 @@ static void b3AssembleDomains( b3World* world, const b3SolverSet* awakeSet, cons
 			}
 		}
 	}
-	B3_ASSERT( copyCount <= copyCapacity );
+	B3_ASSERT( copyCount <= domains->copyCapacity );
 
 	domains->copyStarts[0] = 0;
 	for ( int d = 0; d < B3_DOMAINS; ++d )
@@ -3796,16 +3852,9 @@ static void b3AssembleDomains( b3World* world, const b3SolverSet* awakeSet, cons
 	domains->copyCount = copyCount;
 	domains->mergeCount = mergeCount;
 
-	// A block per domain and the bodies with copies in blocks
-	for ( int d = 0; d < B3_DOMAINS; ++d )
-	{
-		b3SyncBlock* block = domains->domainBlocks + d;
-		block->block = (b3SolverBlock){ d, 1, b3_domainBlock, UINT8_MAX };
-		b3AtomicStoreInt( &block->syncIndex, 0 );
-	}
-
-	b3BlockDim mergeDim = b3ComputeBlockCount( mergeCount, 16, 4 * workerCount );
-	B3_ASSERT( mergeDim.count <= mergeBlockCapacity );
+	// The bodies with copies in blocks
+	b3BlockDim mergeDim = b3ComputeBlockCount( mergeCount, 16, 4 * domains->workerCount );
+	B3_ASSERT( mergeDim.count <= domains->mergeBlockCapacity );
 	b3InitBlocks( domains->mergeBlocks, mergeDim, mergeCount, b3_mergeBlock, UINT8_MAX );
 	domains->mergeBlockCount = mergeDim.count;
 }
@@ -3871,8 +3920,8 @@ static inline int b3GetKnotPack( const uint8_t* contactPacks, int packCount, con
 // number of workers and in either width. With packs the batches go pack by pack, in the same order within each pack. The
 // packs of the contacts come from the setup task, the knots wait for it before they need them.
 static void b3BuildKnots( b3World* world, const b3SolverSet* awakeSet, const b3ContactSpec* specs, int n,
-						  const uint8_t* contactPacks, int packCount, b3SetupTask* setupTask, const b3Domains* domains,
-						  b3Knots* knots )
+						  const uint8_t* contactPacks, int packCount, b3SetupTask* setupTask, b3SetupTask* domainTask,
+						  const b3Domains* domains, b3Knots* knots )
 {
 	const b3Contact* contacts = world->contacts.data;
 	int awakeBodyCount = awakeSet->bodySims.count;
@@ -4302,8 +4351,9 @@ static void b3BuildKnots( b3World* world, const b3SolverSet* awakeSet, const b3C
 	groupSlotStarts[groupCount] = slotCount;
 	B3_ASSERT( slotCount == batchCount );
 
-	// From here on the packs of the contacts
+	// From here on the packs of the contacts, and with domains the copies of their bodies
 	b3FinishSetupTask( world, setupTask );
+	b3FinishSetupTask( world, domainTask );
 
 	// The groups of every knot as bits, and the knots in more than one, pack by pack in the order of the knots
 	int* packSplitStarts = knots->packSplitStarts;
@@ -4522,13 +4572,14 @@ void b3Solve( b3World* world, b3StepContext* stepContext )
 		// no mesh contacts or joints in the colors and no propagation of restitution, see b3SolvePacks.
 		int domainIslandCount = 0;
 		float domainTime = 0.0f;
+		int overflowTotal = 0;
 		int* domainIslandIds =
 			(int*)b3StackAlloc( &world->stack, b3MaxInt( awakeSet->islandSims.count, 1 ) * (int)sizeof( int ), "domain islands" );
 		{
 			uint64_t domainTicks = b3GetTicks();
 			int meshCount = 0;
 			int jointTotal = colors[B3_OVERFLOW_INDEX].jointSims.count;
-			int overflowTotal = colors[B3_OVERFLOW_INDEX].contacts.count;
+			overflowTotal = colors[B3_OVERFLOW_INDEX].contacts.count;
 			for ( int i = 0; i < B3_OVERFLOW_INDEX; ++i )
 			{
 				meshCount += colors[i].contacts.count;
@@ -4663,7 +4714,10 @@ void b3Solve( b3World* world, b3StepContext* stepContext )
 		// Added for Nebenan: the parts of the setup, see b3Profile::setupPacks
 		uint64_t partTicks = b3GetTicks();
 
-		// Added for Nebenan: the work of the islands of this step, from b3BuildPacks or b3MeasureIslandWork
+		// Added for Nebenan: the work of the islands of this step, from b3BuildPacks or b3MeasureIslandWork, with domains as
+		// b3UpdateDomains found it
+		int domainIslandWork = world->islandWork;
+		int domainLargestWork = world->largestIslandWork;
 		world->islandWork = 0;
 		world->largestIslandWork = 0;
 		uint8_t* contactPacks = NULL;
@@ -4697,6 +4751,11 @@ void b3Solve( b3World* world, b3StepContext* stepContext )
 				packCount = b3BuildDomainPacks( world, awakeSet, domainIslandIds, domainIslandCount, packLimit, islandPacks,
 												packBodyStarts, &teamWork );
 				teamPackCount = 1;
+				if ( world->workerCount > 1 || sampleSolver )
+				{
+					world->islandWork = domainIslandWork;
+					world->largestIslandWork = domainLargestWork;
+				}
 			}
 			else
 			{
@@ -4749,8 +4808,21 @@ void b3Solve( b3World* world, b3StepContext* stepContext )
 			}
 		}
 
+		// Added for Nebenan: the knots of the overflow in batches, whose wide constraints follow those of the colors, see
+		// b3BuildKnots
+		partTicks = b3GetTicks();
+
+		// Added for Nebenan: the domains of the islands with domains, before the knots, which lie in them, see b3Domains.
+		// Their copies follow the awake states.
+		b3Domains domains;
+		b3TracyCZoneNC( build_domains, "Build Domains", b3_colorKhaki, true );
+		b3AssembleDomains( world, awakeSet, domainIslandIds, domainIslandCount, workerCount, &domains );
+		b3TracyCZoneEnd( build_domains );
+		bool domainMode = domains.domainCount > 0;
+
 		// Added for Nebenan: the workers fill the packs and put the contacts in order while the calling thread builds the
-		// knots, see b3SetupTask. The task the knots wait for goes first.
+		// knots, see b3SetupTask, and with domains they give the bodies of the domains their copies and fill their lanes.
+		// The tasks the knots wait for go first.
 		b3SetupTask setupTask = {
 			.world = world,
 			.awakeSet = awakeSet,
@@ -4767,11 +4839,20 @@ void b3Solve( b3World* world, b3StepContext* stepContext )
 			.packWideStarts = packWideStarts,
 			.packEntryCounts = packEntryCounts,
 			.orderedContacts = orderedContacts,
-			.workers = overflowCount >= B3_SETUP_TASK_OVERFLOW,
+			.workers = overflowTotal >= B3_SETUP_TASK_OVERFLOW, // Added for Nebenan: with the overflow of the domains
 		};
 		b3SetupTask bodyTask = setupTask;
 		bodyTask.bodies = true;
+		b3SetupTask domainTask = {
+			.world = world,
+			.workers = setupTask.workers,
+			.domains = &domains,
+		};
 		b3StartSetupTask( world, &setupTask );
+		if ( domainMode )
+		{
+			b3StartSetupTask( world, &domainTask );
+		}
 		b3StartSetupTask( world, &bodyTask );
 
 		// Added for Nebenan: see b3Counters::teamWork
@@ -4782,29 +4863,6 @@ void b3Solve( b3World* world, b3StepContext* stepContext )
 		// Added for Nebenan: the packs whose bodies and constraints the stages hold, the first ones, with a team those it
 		// solves, see b3SolveOtherPack. Without packs the knots lie in one, see b3BuildKnots.
 		int stagePackCount = team ? teamPackCount : 1;
-
-		// Added for Nebenan: the knots of the overflow in batches, whose wide constraints follow those of the colors, see
-		// b3BuildKnots
-		partTicks = b3GetTicks();
-
-		// Added for Nebenan: the domains of the islands with domains, before the knots, which lie in them, see b3Domains.
-		// Their copies follow the awake states.
-		b3Domains domains;
-		b3TracyCZoneNC( build_domains, "Build Domains", b3_colorKhaki, true );
-		b3AssembleDomains( world, awakeSet, domainIslandIds, domainIslandCount, workerCount, &domains );
-		b3TracyCZoneEnd( build_domains );
-		bool domainMode = domains.domainCount > 0;
-		world->domainCount = domains.domainCount;
-		world->domainCopyCount = domains.copyCount;
-		if ( domains.copyCount > 0 )
-		{
-			int stateCount = awakeBodyCount + domains.copyCount;
-			if ( awakeSet->bodyStates.capacity < stateCount )
-			{
-				b3Array_Reserve( awakeSet->bodyStates, stateCount + stateCount / 2 );
-			}
-			stepContext->states = awakeSet->bodyStates.data;
-		}
 
 		// Added for Nebenan: the knots take the overflow of the colors and then that of every domain, see b3Domains
 		const b3ContactSpec* overflowSpecs = overflow->contacts.data;
@@ -4841,9 +4899,24 @@ void b3Solve( b3World* world, b3StepContext* stepContext )
 
 		b3Knots knots;
 		b3TracyCZoneNC( build_knots, "Build Knots", b3_colorKhaki, true );
-		b3BuildKnots( world, awakeSet, overflowSpecs, overflowSpecCount, contactPacks, packCount, &setupTask, &domains, &knots );
+		b3BuildKnots( world, awakeSet, overflowSpecs, overflowSpecCount, contactPacks, packCount, &setupTask, &domainTask,
+					  &domains, &knots );
 		b3TracyCZoneEnd( build_knots );
 		b3FinishSetupTask( world, &setupTask );
+		b3FinishSetupTask( world, &domainTask );
+
+		// Added for Nebenan: the copies of the domains follow the awake states
+		world->domainCount = domains.domainCount;
+		world->domainCopyCount = domains.copyCount;
+		if ( domains.copyCount > 0 )
+		{
+			int stateCount = awakeBodyCount + domains.copyCount;
+			if ( awakeSet->bodyStates.capacity < stateCount )
+			{
+				b3Array_Reserve( awakeSet->bodyStates, stateCount + stateCount / 2 );
+			}
+			stepContext->states = awakeSet->bodyStates.data;
+		}
 		world->knotContactCount = knots.contactCount;
 		world->knotBatchCount = knots.batchCount;
 		world->knotGroupBatchCount = knots.largestGroup;
