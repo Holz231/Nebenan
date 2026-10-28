@@ -4,13 +4,14 @@
 
 int PolyTest( void );
 int WorldTest( void );
+int FigureTest( void );
 
 int main( void )
 {
 	printf( "Starting Nebenan unit tests\n" );
 	printf( "======================================\n" );
 
-	if ( PolyTest() != 0 || WorldTest() != 0 )
+	if ( PolyTest() != 0 || WorldTest() != 0 || FigureTest() != 0 )
 	{
 		printf( "======================================\n" );
 		printf( "Unit tests failed\n" );

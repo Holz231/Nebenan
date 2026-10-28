@@ -181,6 +181,10 @@ typedef struct b3RevoluteJoint
 	float upperImpulse;
 	float hertz;
 	float dampingRatio;
+
+	// Added for Nebenan: the most torque of the spring, see b3RevoluteJointDef::maxSpringTorque
+	float maxSpringTorque;
+
 	float maxMotorTorque;
 	float motorSpeed;
 	float targetAngle;
@@ -214,6 +218,10 @@ typedef struct b3SphericalJoint
 	float swingImpulse;
 	float hertz;
 	float dampingRatio;
+
+	// Added for Nebenan: the most torque of the spring, see b3SphericalJointDef::maxSpringTorque
+	float maxSpringTorque;
+
 	float maxMotorTorque;
 	b3Vec3 motorVelocity;
 	float lowerTwistAngle;

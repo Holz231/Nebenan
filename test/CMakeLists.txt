@@ -1,6 +1,7 @@
 set(NEBENAN_TEST_FILES
 	main.c
 	test_macros.h
+	test_figure.c
 	test_poly.c
 	test_world.c
 )

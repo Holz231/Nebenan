@@ -383,3 +383,120 @@ NB_API nbDestructibleId nbStream_GetDestructible( nbStreamId streamId, int site 
 NB_API nbStreamStats nbStream_GetStats( nbStreamId streamId );
 
 /** @} */
+
+/**
+ * @defgroup figure Figure
+ * Figures after the hybrid of Overgrowth, see the types. The same Box3D world simulates them with the debris. Every
+ * update after a step moves the bones of the animated figures toward the next pose of their clip, turns the figures that
+ * were hit hard into active ragdolls, sets the joints of the ragdolls and gets those up that lie still.
+ * @{
+ */
+
+/// Default bone: a capsule of 1 kg along y with a ball joint to its parent.
+NB_API nbBoneDef nbDefaultBoneDef( void );
+
+/// Default rig definition.
+NB_API nbRigDef nbDefaultRigDef( void );
+
+/// Write the bones of a humanoid of this height in meters and mass in kilograms, nb_humanoidBoneCount of them in the
+/// order of nbHumanoidBone, built like a mannequin: a round pelvis as the root, a trunk of belly, ribs and a broad chest
+/// as rounded blocks on ball joints that let the back round, arch, lean and turn, a neck and an egg of a head on ball
+/// joints, arms and legs as capsules that hang down with ball joints at the shoulders, hips, wrists and ankles and hinges
+/// at the elbows and knees, simple capsules as hands and boxes as feet. It stands with its y axis up and faces +z.
+/// Returns the height of the pelvis origin over the soles, the stand height of nbFigureDef. The names of the bones are
+/// static strings.
+NB_API float nbMakeHumanoidBones( float height, float mass, nbBoneDef* bones, int capacity );
+
+/// The convex hull of a bone that is a box or a rounded box, in the frame of the bone, as the physics has it: to draw it.
+/// Null for a capsule. Destroy it with b3DestroyHull.
+NB_API b3HullData* nbCreateBoneHull( const nbBoneDef* bone );
+
+/// Write a clip of the library for the humanoid of nbMakeHumanoidBones of this height: up to capacity keyframes and their
+/// rotations, the bones of each keyframe one after the other, and the clip that points at them. Returns the number of
+/// keyframes, at most NB_HUMANOID_CLIP_KEYFRAMES, zero if the arrays are too small. To look at a clip, change it, or give
+/// a figure a changed one, see nbFigureDef::clips.
+NB_API int nbMakeHumanoidClip( nbFigureClip which, float height, nbKeyframe* keyframes, b3Quat* rotations, int capacity,
+							   nbClipDef* clip );
+
+/// Sample a clip at a time: the rotations of its bones and the root, interpolated between the two keyframes around the
+/// time, up to capacity. Past the end the last pose, or around again for a clip that loops. Root may be null.
+NB_API void nbSampleClip( const nbClipDef* clip, float time, b3Quat* rotations, b3Transform* root, int capacity );
+
+/// Motors of an active ragdoll after Overgrowth: 600 N m per radian and 120 N m at full strength, a tenth of it per meter
+/// per second the figure flies, 0.8 at most, and 0.4 s of slack after a hard hit. Overgrowth keeps its figures slack for
+/// 0.9 s after a hit, a figure falls from standing in about 0.6 s and would land without bracing.
+NB_API nbFigureMotors nbDefaultFigureMotors( void );
+
+/// Default figure definition: knocked down by 50 N s, crushed by 600 N, up again a second after it lies still, with the
+/// get-up clips at 1.4 times their speed.
+NB_API nbFigureDef nbDefaultFigureDef( void );
+
+/// Create a figure standing at its position in the pose of its idle clip, or falling from it as a ragdoll, see
+/// nbFigureDef::startAsRagdoll. The bones are Box3D bodies in the world of the destruction world, the joints are Box3D
+/// joints. Null for a rig that does not fit: the root first, every parent before its children.
+NB_API nbFigureId nbCreateFigure( nbWorldId worldId, const nbFigureDef* def );
+
+/// Destroy a figure with its bodies and joints.
+NB_API void nbDestroyFigure( nbFigureId figureId );
+
+/// Is this figure id valid?
+NB_API bool nbFigure_IsValid( nbFigureId figureId );
+
+/// The bones of the figure.
+NB_API int nbFigure_GetBoneCount( nbFigureId figureId );
+
+/// The Box3D body of a bone.
+NB_API b3BodyId nbFigure_GetBody( nbFigureId figureId, int bone );
+
+/// The Box3D joint of a bone to its parent, null for the root.
+NB_API b3JointId nbFigure_GetJoint( nbFigureId figureId, int bone );
+
+/// What the figure does.
+NB_API nbFigureState nbFigure_GetState( nbFigureId figureId );
+
+/// The state of the figure as the last update left it.
+NB_API nbFigureInfo nbFigure_GetInfo( nbFigureId figureId );
+
+/// The user data of the definition.
+NB_API void* nbFigure_GetUserData( nbFigureId figureId );
+
+/// Where the figure stands: the point on the ground and its heading as a rotation about up. While it is a ragdoll, where
+/// it stood last; once it gets up, where it gets up.
+NB_API b3WorldTransform nbFigure_GetFrame( nbFigureId figureId );
+
+/// Move a standing figure: the point on the ground it stands on and its heading. The next steps move its bones there
+/// with velocities, a jump of more than a meter teleports them. Nothing for a ragdoll or a figure that gets up.
+NB_API void nbFigure_Move( nbFigureId figureId, b3Pos position, float heading );
+
+/// Play a clip while the figure stands, from its start, at this speed, 1 for real time, blended in over a fifth of a
+/// second. The clip is copied. Null goes back to the idle clip. A clip that does not loop holds its last pose.
+NB_API void nbFigure_PlayClip( nbFigureId figureId, const nbClipDef* clip, float speed );
+
+/// Apply a hit: an impulse on a bone, once per hit id, see nbHitDef. A standing figure hit with at least
+/// nbFigureDef::knockdownImpulse falls as a ragdoll with the velocities its bones had and the impulse on the bone, slack
+/// at first, see nbFigureMotors::stunTime, a weaker hit makes its trunk flinch. A figure that gets up falls again. On a
+/// ragdoll the impulse acts as it is.
+/// @return true if the hit landed, false if a hit with this id landed before or the bone does not exist
+NB_API bool nbFigure_ApplyHit( nbFigureId figureId, const nbHitDef* hit );
+
+/// Knock a standing figure or one that gets up down at once, as a ragdoll with the velocities its bones have, for a hit
+/// the game wants to win, see the roadmap 26.4.
+NB_API void nbFigure_Knockdown( nbFigureId figureId );
+
+/// The pose of the figure as the physics has it: the world transform of every bone, up to capacity.
+/// @return the number of transforms written
+NB_API int nbFigure_GetBoneTransforms( nbFigureId figureId, b3WorldTransform* transforms, int capacity );
+
+/// The pose the figure goes for: for a standing figure and one that gets up, where its bones move in the next step, for a
+/// ragdoll the pose its joints pull toward within their limits, placed on its root as the physics has it. Drawn over the
+/// bones it shows how far a ragdoll is from its pose.
+/// @return the number of transforms written
+NB_API int nbFigure_GetTargetTransforms( nbFigureId figureId, b3WorldTransform* transforms, int capacity );
+
+/// The figure a Box3D body belongs to and which bone it is, for example the body a ray hit. Null for a body of no figure.
+NB_API nbFigureId nbWorld_GetFigureFromBody( nbWorldId worldId, b3BodyId bodyId, int* bone );
+
+/// What the figures of a world do.
+NB_API nbFigureStats nbWorld_GetFigureStats( nbWorldId worldId );
+
+/** @} */

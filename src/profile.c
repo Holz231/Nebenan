@@ -11,17 +11,17 @@ static const char* nb_profileNames[] = {
 	"total",		 "step",		  "pairs",		   "createContacts", "collide",	   "gatherContacts",  "updateContacts",
 	"mergeContacts", "contactStates", "solve",		   "solverSetup",	 "setupPacks", "setupTasks",	  "setupKnots",
 	"setupWait",	 "constraints",	  "overflow",	   "transforms",	 "update",	   "collisionDamage", "settle",
-	"gatherMoving",	 "checkMoving",	  "searchSupport", "freezeRubble",	 "budget",	   "release",		  "typeChanges",
-	"impacts",		 "cells",		  "cellsAlone",
+	"gatherMoving",	 "checkMoving",	  "searchSupport", "freezeRubble",	 "budget",	   "release",		  "figures",
+	"typeChanges",	 "impacts",		  "cells",		   "cellsAlone",
 };
 _Static_assert( sizeof( nb_profileNames ) / sizeof( nb_profileNames[0] ) == nb_profileStageCount, "a name per stage" );
 
 // How deep a stage sits in the table under the stage that holds it, and whether it runs on the calling thread alone
 static const int nb_profileDepths[] = { 0, 1, 2, 3, 2, 3, 3, 3, 3, 2, 3, 4, 4, 4, 4, 3,
-										4, 2, 1, 2, 2, 3, 3, 3, 3, 2, 2, 1, 1, 1, 2 };
+										4, 2, 1, 2, 2, 3, 3, 3, 3, 2, 2, 2, 1, 1, 1, 2 };
 static const bool nb_profileAlone[] = { false, false, false, true, false, true,	 false, true,  true,  false, true,
 										true,  false, true,	 true, false, false, false, false, false, false, true,
-										false, true,  true,	 true, true,  true,	 false, false, true };
+										false, true,  true,	 true, true,  true,	 true,  false, false, true };
 _Static_assert( sizeof( nb_profileDepths ) / sizeof( nb_profileDepths[0] ) == nb_profileStageCount, "a depth per stage" );
 _Static_assert( sizeof( nb_profileAlone ) / sizeof( nb_profileAlone[0] ) == nb_profileStageCount, "a flag per stage" );
 

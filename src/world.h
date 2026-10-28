@@ -3,6 +3,7 @@
 #pragma once
 
 #include "core.h"
+#include "figure.h"
 #include "poly.h"
 
 #include "nebenan/nebenan.h"
@@ -493,6 +494,15 @@ typedef struct nbWorld
 
 	// Box3D body index to dynamic actor index
 	nbIntArray bodyToActor;
+
+	// The figures, see figure.h, by Box3D body index the bone of one, and how many updates moved them
+	nbFigureArray figures;
+	nbIntArray freeFigures;
+	nbBoneRefArray bodyToBone;
+	int figureUpdates;
+
+	// The clips of the library for the humanoids of the figures, one set per height
+	nbClipSetArray humanoidClips;
 
 	// Free dynamic actors that are subject to lifetime and budget rules
 	nbIntArray debris;

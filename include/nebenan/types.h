@@ -53,11 +53,21 @@ typedef struct nbStreamId
 	uint16_t generation;
 } nbStreamId;
 
+/// A figure of bones on joints that an animation moves and that falls as an active ragdoll when hit hard, see
+/// nbCreateFigure.
+typedef struct nbFigureId
+{
+	int32_t index1;
+	uint16_t world0;
+	uint16_t generation;
+} nbFigureId;
+
 static const nbWorldId nb_nullWorldId = NB_ZERO_INIT;
 static const nbDestructibleId nb_nullDestructibleId = NB_ZERO_INIT;
 static const nbChunkId nb_nullChunkId = NB_ZERO_INIT;
 static const nbCreationId nb_nullCreationId = NB_ZERO_INIT;
 static const nbStreamId nb_nullStreamId = NB_ZERO_INIT;
+static const nbFigureId nb_nullFigureId = NB_ZERO_INIT;
 
 /// Use these to test for null. Example: `if ( NB_IS_NULL( chunkId ) ) { ... }`
 #define NB_IS_NULL( id ) ( ( id ).index1 == 0 )
@@ -600,6 +610,10 @@ typedef enum nbProfileStage
 	nb_profileBudget,
 	nb_profileRelease,
 
+	/// The figures in the update: their clips, the targets of their bones and joints, their hits and whether they get up,
+	/// see nbCreateFigure. Their bodies, contacts and joints cost in the step.
+	nb_profileFigures,
+
 	/// Debris that freezes into rubble and rubble that comes back to life, in the update and the impacts
 	nb_profileTypeChanges,
 
@@ -907,5 +921,404 @@ typedef struct nbGeometry
 	int faceCount;
 	int indexCount;
 } nbGeometry;
+
+/** @} */
+
+/**
+ * @defgroup figure Figure
+ * Figures after the hybrid of Overgrowth, see the roadmap of the game, chapters 26 to 28 and 31 to 33. A rig describes
+ * the bones at rest, a figure is one made from it in the world. Normally a figure is animated: its bones are kinematic
+ * Box3D bodies that follow its clip, debris bounces off them, and Box3D solves none of its joints. A hard hit, a blast,
+ * heavy debris or ground that gives way turn it into an active ragdoll: the bones become dynamic with the velocities they
+ * had, the hit acts once, spread over the bones near it, and the joints are springs with a torque limit that pull toward
+ * a pose to fall with, as strong as the figure is fast: flailing while it flies fast, relaxed while it is slow, curled up
+ * before it hits something and with the arms out ahead before it lands on its front. Lying still, it
+ * gets up with a clip from its front or its back once it finds ground, room and nothing on it, blended from the pose it
+ * lies in, and stands animated again. Nothing is teleported: a ragdoll moves by the physics alone, an animated figure
+ * moves its bodies with velocities.
+ * @{
+ */
+
+/// How a bone is joined to its parent
+typedef enum nbJointType
+{
+	/// No motion against the parent, the bone is welded on
+	nb_fixedJoint,
+
+	/// One rotation about the z axis of the joint frame, within limits: a knee, an elbow
+	nb_hingeJoint,
+
+	/// Rotation about the pivot: a swing of the z axis of the joint frame within a cone, and a twist about that axis within
+	/// limits: a hip, a shoulder, the neck
+	nb_ballJoint,
+} nbJointType;
+
+/// The collision shape of a bone
+typedef enum nbBoneShape
+{
+	/// A capsule between two points with a radius
+	nb_capsuleBone,
+
+	/// A box around a center, for a foot that needs a flat sole
+	nb_boxBone,
+
+	/// A box around a center with its edges and corners rounded by the radius, like the trunk of a mannequin: a convex
+	/// hull of 48 points, two faces on every edge, see nbCreateBoneHull
+	nb_roundedBoxBone,
+} nbBoneShape;
+
+/// A bone of a rig: one rigid body with one shape, joined to its parent at the origin of the bone. Initialize with
+/// nbDefaultBoneDef.
+typedef struct nbBoneDef
+{
+	/// Optional name, for debugging
+	const char* name;
+
+	/// Index of the parent bone in the rig, -1 for the root. Parents come before their children.
+	int parent;
+
+	/// The pose of the bone in the frame of its parent at rest. Its position is the pivot of the joint. The root takes the
+	/// pose of the figure instead.
+	b3Transform restTransform;
+
+	/// The collision shape, in the frame of the bone
+	nbBoneShape shape;
+
+	/// Capsule: the centers of its two ends and its radius. Rounded box: the radius of its edges.
+	b3Vec3 start;
+	b3Vec3 end;
+	float radius;
+
+	/// Box: its center and half extents
+	b3Vec3 center;
+	b3Vec3 halfExtents;
+
+	/// Mass in kilograms. The density follows from it and the shape.
+	float mass;
+
+	/// How the bone is joined to its parent, nothing for the root
+	nbJointType joint;
+
+	/// The joint frame in the frame of the bone: its z axis is the hinge axis, or the axis of the cone, which is the rest
+	/// direction of the bone. Identity puts the axis along z.
+	b3Quat jointFrame;
+
+	/// Hinge: the range of the angle in radians, within -0.99 pi and 0.99 pi. Ball: the range of the twist.
+	float lowerAngle;
+	float upperAngle;
+
+	/// Ball: how far the bone swings out of its rest direction, in radians, up to 0.5 pi
+	float coneAngle;
+
+	/// Scales the torque limit of the motors for this joint, 1 by default: strong legs, a weak neck
+	float strength;
+
+	/// Scales the stiffness of the motors for this joint, 1 by default. Joints in a row bend like one joint of a third of
+	/// their stiffness, so the three joints of a spine take three times it to hold the trunk like one. A light bone between
+	/// two springs, like a neck, takes less: they turn it the faster the lighter it is, and from about half the substeps
+	/// per second on it shakes.
+	float stiffness;
+
+	/// Scales the damping ratio of the motors for this joint, 1 by default
+	float damping;
+} nbBoneDef;
+
+/// A rig: the bones of a figure at rest, standing with its y axis up and facing +z, shared by all figures made from it.
+/// Initialize with nbDefaultRigDef.
+typedef struct nbRigDef
+{
+	/// The bones, the root first and every parent before its children
+	const nbBoneDef* bones;
+	int boneCount;
+
+	/// Friction of all shapes
+	float friction;
+
+	/// Bones that are not joined to each other collide. Off, no bone of a figure collides with another of the same
+	/// figure. Joined bones never collide with each other.
+	bool selfCollision;
+
+	/// The bones of a ragdoll damage the destructibles they hit, like cannonballs, see nbWorldDef::collisionDamageScale
+	bool enableCollisionDamage;
+
+	/// Used internally to detect a valid definition. DO NOT SET.
+	int internalValue;
+} nbRigDef;
+
+/// A pose at a time, see nbClipDef
+typedef struct nbKeyframe
+{
+	/// Seconds from the start of the clip
+	float time;
+
+	/// The rotation of every bone against its rest pose, in the frame of the bone, one per bone of the rig. The root's
+	/// goes unused, its pose is root.
+	const b3Quat* rotations;
+
+	/// The root bone in the frame of the figure, see nbClipDef::moveRoot: its position over the point on the ground the
+	/// figure stands on, x to its left, y up, z ahead, and its rotation
+	b3Transform root;
+} nbKeyframe;
+
+/// A clip of keyframes, sorted by time. Between two keyframes the rotations and the root are interpolated.
+typedef struct nbClipDef
+{
+	const nbKeyframe* keyframes;
+	int keyframeCount;
+
+	/// Bones per keyframe, the bones of the rig
+	int boneCount;
+
+	/// Start over at the end, else the clip ends on its last pose
+	bool loop;
+
+	/// The clip moves the root, as getting up does. Without, the root stands upright at the standing height of the
+	/// figure, see nbFigureDef::standHeight, and the root of the keyframes goes unused.
+	bool moveRoot;
+} nbClipDef;
+
+/// The clips of a figure, see nbFigureDef::clips and nbMakeHumanoidClip
+typedef enum nbFigureClip
+{
+	/// While the figure stands, in a loop: it breathes and sways a little
+	nb_clipIdle,
+
+	/// The pose an active ragdoll falls with, in a loop, like the flailing of Overgrowth: the arms up and out, the knees
+	/// bent. As far as the ragdoll is weak it relaxes toward its rest pose instead, see nbFigureInfo::strength.
+	nb_clipFall,
+
+	/// Mixed in while the figure flies at something it does not face: knees to the chest, the forearms before the face,
+	/// see nbFigureInfo::protect
+	nb_clipCurl,
+
+	/// Mixed in instead of the curl while the figure flies at something with its front: the arms out ahead to catch it,
+	/// the back straight, see nbFigureInfo::brace
+	nb_clipBrace,
+
+	/// Getting up from the front and from the back: from lying with the head ahead, that is along +z of the figure, to
+	/// standing at the height of the idle clip, moving the root
+	nb_clipGetUpFront,
+	nb_clipGetUpBack,
+
+	nb_figureClipCount
+} nbFigureClip;
+
+/// How hard the joints of an active ragdoll pull toward the pose it falls with, after the ragdoll strength of
+/// Overgrowth. At strength 1 a joint has the full stiffness and torque limit, at 0 the ragdoll hangs slack.
+typedef struct nbFigureMotors
+{
+	/// Stiffness at strength 1 in newton meters per radian of error, before the scale of the bone. Box3D sets a joint
+	/// spring in cycles per second against the inertia of its two bodies, the library turns this into them for every
+	/// joint, so a heavy thigh and a light foot hold alike.
+	float stiffness;
+
+	/// Damping ratio of the joints, 1 is critical
+	float dampingRatio;
+
+	/// The most torque of a joint at strength 1 in newton meters, times the strength of its bone. Beyond it the joint gives
+	/// way.
+	float maxTorque;
+
+	/// Strength per meter per second of the average speed of the bones, up to fallStrength: a figure that flies holds
+	/// its pose, one that slows down goes slack and lies as it fell
+	float strengthPerSpeed;
+	float fallStrength;
+
+	/// Seconds of slack after a hit that knocked the figure down or met it as a ragdoll: the strength starts that much
+	/// lower and comes back at one per second, so the hit throws a slack body
+	float stunTime;
+} nbFigureMotors;
+
+/// A figure, see nbCreateFigure. Initialize with nbDefaultFigureDef.
+typedef struct nbFigureDef
+{
+	/// The bones. The figure keeps what it needs, the rig can go afterwards.
+	const nbRigDef* rig;
+
+	/// The point on the ground the figure stands on, and where it faces: radians about up, zero facing +z
+	b3Pos position;
+	float heading;
+
+	/// The height of the root bone over the ground while the figure stands, see nbMakeHumanoidBones
+	float standHeight;
+
+	/// The clips, copied. Null takes the clip of the library for the humanoid of nbMakeHumanoidBones, see
+	/// nbMakeHumanoidClip. A rig of other bones without a clip holds its rest pose there.
+	const nbClipDef* clips[nb_figureClipCount];
+
+	/// The motors of the ragdoll
+	nbFigureMotors motors;
+
+	/// A hit of at least this many newton seconds knocks the figure down. A weaker one makes it flinch.
+	float knockdownImpulse;
+
+	/// How far the trunk of a standing figure flinches from a hit, in radians per newton second, up to flinchLimit, and
+	/// how fast it straightens again, in cycles per second
+	float flinchScale;
+	float flinchLimit;
+	float flinchHertz;
+
+	/// A body that presses on a standing figure with at least this many newtons knocks it down, so what falls on it never
+	/// comes to rest on it
+	float crushForce;
+
+	/// A ragdoll counts as lying still while its bones move slower than this on average, in meters per second
+	float restSpeed;
+
+	/// Getting up: not before this many seconds as a ragdoll and a quarter second lying still, at this speed of the
+	/// get-up clips, 1 as authored. Without canGetUp a ragdoll stays down.
+	float getUpDelay;
+	float getUpSpeed;
+	bool canGetUp;
+
+	/// Start as an active ragdoll, falling from the pose it is placed in
+	bool startAsRagdoll;
+
+	/// Free for the program, see nbFigure_GetUserData
+	void* userData;
+
+	/// Used internally to detect a valid definition. DO NOT SET.
+	int internalValue;
+} nbFigureDef;
+
+/// What a figure does, see nbFigure_GetState
+typedef enum nbFigureState
+{
+	/// The bones follow the clip, kinematic
+	nb_figureAnimated,
+
+	/// The bones are dynamic, the joints pull toward the pose to fall with
+	nb_figureRagdoll,
+
+	/// The bones are kinematic again and follow a get-up clip, blended from the pose the ragdoll lay in
+	nb_figureGettingUp,
+} nbFigureState;
+
+/// Why a lying figure does not get up yet, see nbFigureInfo::wait
+typedef enum nbFigureWait
+{
+	nb_waitNone,
+
+	/// Not long enough a ragdoll, or it still moves
+	nb_waitMoving,
+
+	/// No ground that carries it under its pelvis
+	nb_waitGround,
+
+	/// Something stands where it would get up
+	nb_waitRoom,
+
+	/// Something lies on it
+	nb_waitDebris,
+
+	/// It may not, see nbFigureDef::canGetUp
+	nb_waitStaysDown,
+} nbFigureWait;
+
+/// The state of a figure as the last update left it, see nbFigure_GetInfo
+typedef struct nbFigureInfo
+{
+	nbFigureState state;
+
+	/// Seconds in this state
+	float stateTime;
+
+	/// The strength of the joints of the ragdoll, from 0 to 1, see nbFigureMotors
+	float strength;
+
+	/// How far the ragdoll protects itself from what it flies at, from 0 to 1, and how much of that it braces with its
+	/// arms ahead. The rest of it, protect minus brace, it curls up. See nb_clipCurl and nb_clipBrace.
+	float protect;
+	float brace;
+
+	/// The average speed of the bones, weighted by their mass, in meters per second
+	float speed;
+
+	/// Seconds the ragdoll has been lying still, see nbFigureDef::restSpeed
+	float restTime;
+
+	/// A lying figure lies on its back and gets up with nb_clipGetUpBack
+	bool onBack;
+
+	/// Why a lying figure does not get up yet
+	nbFigureWait wait;
+
+	/// Seconds into the get-up clip, and how far it blended from the pose the ragdoll lay in, from 0 to 1
+	float getUpTime;
+	float getUpBlend;
+
+	/// The flinch of the trunk of a standing figure, as a rotation vector in radians
+	b3Vec3 flinch;
+
+	/// Hits that landed, how often the figure was knocked down, got up and broke off getting up
+	int hitCount;
+	int knockdownCount;
+	int getUpCount;
+	int abortCount;
+} nbFigureInfo;
+
+/// A hit on a bone, see nbFigure_ApplyHit
+typedef struct nbHitDef
+{
+	/// Number of the hit event. A hit with the number of one of the last 16 hits the figure took is ignored, so a hit that
+	/// several events report lands once. A hit with zero always lands.
+	uint32_t id;
+
+	/// The bone that is hit
+	int bone;
+
+	/// Impulse in newton seconds, in world space
+	b3Vec3 impulse;
+
+	/// Where it hits, in world space
+	b3Pos point;
+} nbHitDef;
+
+/// What the figures of a world do, see nbWorld_GetFigureStats
+typedef struct nbFigureStats
+{
+	int figureCount;
+	int animatedCount;
+	int ragdollCount;
+	int gettingUpCount;
+
+	/// Ragdolls whose bones are awake in Box3D. Their joints keep Box3D from solving whole islands per thread, see
+	/// "Gelenke und Pakete" in the README.
+	int awakeRagdollCount;
+
+	/// Since the figures were made: hits that landed, knockdowns, get-ups and get-ups broken off
+	int hitCount;
+	int knockdownCount;
+	int getUpCount;
+	int abortCount;
+} nbFigureStats;
+
+/// The bones of the humanoid that nbMakeHumanoidBones builds, in the order of its array. The trunk runs from the pelvis
+/// through belly and ribs to the chest, which carries the arms and on the neck the head.
+typedef enum nbHumanoidBone
+{
+	nb_humanoidPelvis,
+	nb_humanoidBelly,
+	nb_humanoidRibs,
+	nb_humanoidChest,
+	nb_humanoidNeck,
+	nb_humanoidHead,
+	nb_humanoidUpperArmLeft,
+	nb_humanoidForearmLeft,
+	nb_humanoidHandLeft,
+	nb_humanoidUpperArmRight,
+	nb_humanoidForearmRight,
+	nb_humanoidHandRight,
+	nb_humanoidThighLeft,
+	nb_humanoidShinLeft,
+	nb_humanoidFootLeft,
+	nb_humanoidThighRight,
+	nb_humanoidShinRight,
+	nb_humanoidFootRight,
+	nb_humanoidBoneCount
+} nbHumanoidBone;
+
+/// The most keyframes of a clip of the library, see nbMakeHumanoidClip
+#define NB_HUMANOID_CLIP_KEYFRAMES 96
 
 /** @} */

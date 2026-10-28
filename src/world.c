@@ -4929,6 +4929,8 @@ void nbDestroyWorld( nbWorldId worldId )
 		}
 	}
 
+	nbDestroyFigures( world );
+
 	for ( int i = 0; i < world->chunks.count; ++i )
 	{
 		nbChunk* chunk = world->chunks.data + i;
@@ -5105,6 +5107,18 @@ static void nbCollectCollisionImpacts( nbWorld* world )
 		// Reduced mass of the pair. Static bodies have zero mass and act as infinitely heavy.
 		b3BodyId bodyA = b3Shape_GetBody( event->shapeIdA );
 		b3BodyId bodyB = b3Shape_GetBody( event->shapeIdB );
+
+		// The bones of a figure report every hit, see nbCreateFigure, but break only what the rig lets them
+		if ( world->figures.count > 0 )
+		{
+			int figureA = nbFigureOfBody( world, bodyA, NULL );
+			int figureB = nbFigureOfBody( world, bodyB, NULL );
+			if ( ( figureA != NB_NULL_INDEX && world->figures.data[figureA].collisionDamage == false ) ||
+				 ( figureB != NB_NULL_INDEX && world->figures.data[figureB].collisionDamage == false ) )
+			{
+				continue;
+			}
+		}
 		float massA = b3Body_GetType( bodyA ) == b3_dynamicBody ? b3Body_GetMass( bodyA ) : 0.0f;
 		float massB = b3Body_GetType( bodyB ) == b3_dynamicBody ? b3Body_GetMass( bodyB ) : 0.0f;
 		float mass;
@@ -7370,6 +7384,12 @@ static void nbUpdate( nbWorld* world, float timeStep )
 	nbEnforceDebrisBudget( world, hasGravity ? up : b3Vec3_zero );
 	NB_ZONE_END( budget_zone );
 	nbProfileLap( world, nb_profileBudget, &lap );
+
+	// The figures move toward their next pose, fall, lie and get up
+	NB_ZONE( figures_zone, "Figures" );
+	nbUpdateFigures( world, timeStep );
+	NB_ZONE_END( figures_zone );
+	nbProfileLap( world, nb_profileFigures, &lap );
 
 	world->stats.updateTime = b3GetMilliseconds( ticks );
 	world->profile.stages[nb_profileUpdate] += world->stats.updateTime;

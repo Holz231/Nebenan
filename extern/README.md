@@ -683,34 +683,51 @@ Schnitt geteilt hat, und Körper, die dazukamen, nahmen ihr Gebiet nach ihrer La
 Threads zu wenig und ist auf `kollaps-35` wieder heraus, siehe „Die Durchgänge der Gebiete zerlegt“ und „Skalierung auf
 dem Ryzen mit `kollaps-33` und `kollaps-34`“.
 
+**Federn mit Grenze.** Die Feder eines Dreh- oder Kugelgelenks zog in Box3D mit jedem Drehmoment, das sie für ihr Ziel
+brauchte. Die Figuren nach Overgrowth halten mit ihren Gelenken eine Haltung nur so fest, wie sie gerade Kraft haben,
+und geben nach, wenn mehr gegen sie drückt. `b3RevoluteJointDef::maxSpringTorque` und
+`b3SphericalJointDef::maxSpringTorque` begrenzen die Feder wie den Motor, `b3RevoluteJoint_SetMaxSpringTorque` und
+`b3SphericalJoint_SetMaxSpringTorque` auch später: Der Impuls, den die Feder in einem Teilschritt aufsummiert, bleibt
+beim Drehgelenk zwischen minus und plus Grenze mal Teilschritt, beim Kugelgelenk wird der Vektor auf diese Länge gekürzt
+(`b3SolveRevoluteJoint` in `src/revolute_joint.c`, `b3SolveSphericalJoint` in `src/spherical_joint.c`).
+`b3RevoluteJoint_GetSpringTorque` und `b3SphericalJoint_GetSpringTorque` geben das Drehmoment der Feder im letzten
+Teilschritt zurück, so sieht man, wie nah eine Feder an ihrer Grenze arbeitet. Ohne Angabe ist die Grenze `FLT_MAX`, und
+die Federn rechnen wie zuvor, bis aufs Bit. Aufnahmen speichern die Grenze mit dem Gelenk und jede Änderung in einer
+eigenen Operation (`0x8E` und `0x8F` in `src/recording_ops.inl`), ihr Format hat deshalb die Version 7
+(`src/recording.h`). Gebaut für die Figuren von `active-ragdoll-1`, siehe „Figuren“ in der
+[Roadmap](../docs/Roadmap.md).
+
 Die erste, die zweite, die vierte bis achte, die zehnte, die dreizehnte bis einunddreißigste, die dreiunddreißigste bis
 fünfunddreißigste, die neununddreißigste bis dreiundvierzigste, die fünfundvierzigste bis siebenundvierzigste, die
-neunundvierzigste bis neunundfünfzigste ändern an den Ergebnissen nichts. Die dritte und die neunte ändern sie in den
-letzten Bits, dafür hängen sie nicht mehr davon ab, in welcher Reihenfolge Formen in die Bäume kommen. Die elfte ändert
-sie, weil Kontakte zu anderen Zeitpunkten entstehen, die zwölfte, weil sie weniger Punkte bekommen, die
-zweiunddreißigste, weil die Kontakte eines Knotens gebündelt gegen Kopien rechnen statt nacheinander, die
-sechsunddreißigste, weil die Kerne dieselbe Rechnung anders zusammenfassen und deshalb anders runden, die
-siebenunddreißigste, weil die Suche andere Kantenpaare aussiebt und getrennte Hüllen erkennt, die die alte übersah, und
-die achtundvierzigste, weil die Bündel der Knoten dichter liegen und die Knoten großer Inseln in Gruppen gegen eigene
-Kopien rechnen, und die sechzigste, weil große Inseln in Gebieten rechnen und ihre Körper an den Grenzen gegen Kopien
-mit einem Anteil ihrer Masse. Die achtunddreißigste ändert sie nur, wo Kugeln Kugeln oder Kapseln berühren, Kontakte
-ohne vorausschauende Punkte rechnen oder der PreSolve-Callback Kontakte abschaltet, in Nebenans Szenen nicht. Die
-vierundvierzigste ändert sie nur, wo die volle zweite Suche einen Kontakt zwischen Hüllen ergab, die eine Fläche trennt.
-Die Ergänzungen stehen in `CMakeLists.txt`, `src/CMakeLists.txt`, `include/box3d/base.h`, `include/box3d/box3d.h`,
-`include/box3d/types.h`, `include/box3d/constants.h`, `src/core.h`, `src/core.c`, `src/shape.h`, `src/shape.c`,
-`src/body.h`, `src/body.c`, `src/contact.h`, `src/contact.c`, `src/contact_solver.h`, `src/contact_solver.c`,
-`src/contact_solver_wide.inl`, `src/wide8.c`, `src/simd.c`, `src/simd_avx2.h`, `src/constraint_graph.h`,
-`src/constraint_graph.c`, `src/island.h`, `src/island.c`, `src/manifold.h`, `src/convex_manifold.c`,
-`src/convex_manifold_avx2.c`, `src/world_snapshot.c`, `src/recording.c`, `src/solver.h`, `src/solver.c`,
-`src/solver_set.c`, `src/arena_allocator.h`, `src/broad_phase.h`, `src/broad_phase.c`, `src/dynamic_tree.h`,
-`src/dynamic_tree.c`, `src/parallel_for.h`, `src/parallel_for.c`, `src/platform.h`, `src/scheduler.h`,
-`src/scheduler.c`, `src/timer.c`, `src/physics_world.h`, `src/physics_world.c` und `src/tracy_hide_user.cmake`, jeweils
-mit „Added for Nebenan“ markiert. `B3_HAS_UNIQUE_HULLS`, `B3_HAS_SHAPE_BATCH`, `B3_HAS_SHAPE_CONTACT_LISTS`,
-`B3_HAS_EXTERNAL_HULLS`, `B3_HAS_BODY_PREFETCH`, `B3_HAS_STEP_GUARD`, `B3_HAS_PREVIOUS_TRANSFORM`,
-`B3_HAS_STATIC_OVERLAP` und `B3_HAS_CONTACT_DATA_OF_BODIES` zeigen die zweite, die vierte, die fünfte, die sechste, die
-neunzehnte, die dreißigste, die fünfunddreißigste, die zweiundvierzigste und die vierundfünfzigste an. Fehlen sie, etwa
-mit einem eigenen Box3D, läuft Nebenan wie zuvor, nur wachsen Box3Ds Arrays dann durch Umkopieren, die Hüllen gehen
-durch die Tabelle, jede Form geht einzeln in den Baum, jedes stehende Bruchstück bekommt einen eigenen Körper, Box3D
-hält eine Kopie jeder Hülle, Nebenan holt die Körper der Trümmer nicht voraus, `nbWorld_Step` rechnet auf dem
-aufrufenden Thread, `nbWorld_GetDrawPoses` gibt die Lagen nach dem Schritt, Schutt wird in allen Bäumen gesucht, und die
-Ruhe-Prüfung holt die Kontakte jedes ruhigen Stücks für sich.
+neunundvierzigste bis neunundfünfzigste ändern an den Ergebnissen nichts, die einundsechzigste nur an Federn mit einer
+Grenze, die nur die Figuren setzen. Die dritte und die neunte ändern sie in den letzten Bits, dafür hängen sie nicht
+mehr davon ab, in welcher Reihenfolge Formen in die Bäume kommen. Die elfte ändert sie, weil Kontakte zu anderen
+Zeitpunkten entstehen, die zwölfte, weil sie weniger Punkte bekommen, die zweiunddreißigste, weil die Kontakte eines
+Knotens gebündelt gegen Kopien rechnen statt nacheinander, die sechsunddreißigste, weil die Kerne dieselbe Rechnung
+anders zusammenfassen und deshalb anders runden, die siebenunddreißigste, weil die Suche andere Kantenpaare aussiebt und
+getrennte Hüllen erkennt, die die alte übersah, und die achtundvierzigste, weil die Bündel der Knoten dichter liegen und
+die Knoten großer Inseln in Gruppen gegen eigene Kopien rechnen, und die sechzigste, weil große Inseln in Gebieten
+rechnen und ihre Körper an den Grenzen gegen Kopien mit einem Anteil ihrer Masse. Die achtunddreißigste ändert sie nur,
+wo Kugeln Kugeln oder Kapseln berühren, Kontakte ohne vorausschauende Punkte rechnen oder der PreSolve-Callback Kontakte
+abschaltet, in Nebenans Szenen nicht. Die vierundvierzigste ändert sie nur, wo die volle zweite Suche einen Kontakt
+zwischen Hüllen ergab, die eine Fläche trennt. Die Ergänzungen stehen in `CMakeLists.txt`, `src/CMakeLists.txt`,
+`include/box3d/base.h`, `include/box3d/box3d.h`, `include/box3d/types.h`, `include/box3d/constants.h`, `src/core.h`,
+`src/core.c`, `src/shape.h`, `src/shape.c`, `src/body.h`, `src/body.c`, `src/joint.h`, `src/joint.c`,
+`src/revolute_joint.c`, `src/spherical_joint.c`, `src/contact.h`, `src/contact.c`, `src/contact_solver.h`,
+`src/contact_solver.c`, `src/contact_solver_wide.inl`, `src/wide8.c`, `src/simd.c`, `src/simd_avx2.h`,
+`src/constraint_graph.h`, `src/constraint_graph.c`, `src/island.h`, `src/island.c`, `src/manifold.h`,
+`src/convex_manifold.c`, `src/convex_manifold_avx2.c`, `src/world_snapshot.c`, `src/recording.h`, `src/recording.c`,
+`src/recording_ops.inl`, `src/recording_replay.c`, `src/solver.h`, `src/solver.c`, `src/solver_set.c`,
+`src/arena_allocator.h`, `src/broad_phase.h`, `src/broad_phase.c`, `src/dynamic_tree.h`, `src/dynamic_tree.c`,
+`src/parallel_for.h`, `src/parallel_for.c`, `src/platform.h`, `src/scheduler.h`, `src/scheduler.c`, `src/timer.c`,
+`src/physics_world.h`, `src/physics_world.c` und `src/tracy_hide_user.cmake`, jeweils mit „Added for Nebenan“ markiert.
+`B3_HAS_UNIQUE_HULLS`, `B3_HAS_SHAPE_BATCH`, `B3_HAS_SHAPE_CONTACT_LISTS`, `B3_HAS_EXTERNAL_HULLS`,
+`B3_HAS_BODY_PREFETCH`, `B3_HAS_STEP_GUARD`, `B3_HAS_PREVIOUS_TRANSFORM`, `B3_HAS_STATIC_OVERLAP`,
+`B3_HAS_CONTACT_DATA_OF_BODIES` und `B3_HAS_SPRING_TORQUE_LIMITS` zeigen die zweite, die vierte, die fünfte, die
+sechste, die neunzehnte, die dreißigste, die fünfunddreißigste, die zweiundvierzigste, die vierundfünfzigste und die
+einundsechzigste an. Fehlen sie, etwa mit einem eigenen Box3D, läuft Nebenan wie zuvor, nur wachsen Box3Ds Arrays dann
+durch Umkopieren, die Hüllen gehen durch die Tabelle, jede Form geht einzeln in den Baum, jedes stehende Bruchstück
+bekommt einen eigenen Körper, Box3D hält eine Kopie jeder Hülle, Nebenan holt die Körper der Trümmer nicht voraus,
+`nbWorld_Step` rechnet auf dem aufrufenden Thread, `nbWorld_GetDrawPoses` gibt die Lagen nach dem Schritt, Schutt wird
+in allen Bäumen gesucht, die Ruhe-Prüfung holt die Kontakte jedes ruhigen Stücks für sich, und die Federn der Figuren
+halten ihre Haltung ohne Grenze.

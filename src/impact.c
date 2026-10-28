@@ -809,9 +809,11 @@ nbImpactResult nbWorld_ApplyImpact( nbWorldId worldId, const nbImpactDef* def )
 	uint64_t ticks = b3GetTicks();
 	nbImpactResult result = nbApplyImpact( world, def, NB_NULL_INDEX );
 
-	// After the fracture, so it pushes the fresh fragments as well
+	// After the fracture, so it pushes the fresh fragments as well. Standing figures that it hits hard enough fall first,
+	// so it throws their bones too.
 	if ( def->explosionImpulse > 0.0f )
 	{
+		nbBlastFigures( world, def );
 		b3ExplosionDef explosion = b3DefaultExplosionDef();
 		explosion.position = def->point;
 		explosion.radius = def->radius;

@@ -196,6 +196,31 @@ float b3SphericalJoint_GetSpringDampingRatio( b3JointId jointId )
 	return base->sphericalJoint.dampingRatio;
 }
 
+// Added for Nebenan
+void b3SphericalJoint_SetMaxSpringTorque( b3JointId jointId, float torque )
+{
+	B3_ASSERT( b3IsValidFloat( torque ) && torque >= 0.0f );
+	b3World* world = b3GetWorld( jointId.world0 );
+	B3_REC( world, SphericalJointSetMaxSpringTorque, jointId, torque );
+	b3JointSim* base = b3GetJointSimCheckType( jointId, b3_sphericalJoint );
+	base->sphericalJoint.maxSpringTorque = torque;
+}
+
+// Added for Nebenan
+float b3SphericalJoint_GetMaxSpringTorque( b3JointId jointId )
+{
+	b3JointSim* base = b3GetJointSimCheckType( jointId, b3_sphericalJoint );
+	return base->sphericalJoint.maxSpringTorque;
+}
+
+// Added for Nebenan
+b3Vec3 b3SphericalJoint_GetSpringTorque( b3JointId jointId )
+{
+	b3World* world = b3GetWorld( jointId.world0 );
+	b3JointSim* base = b3GetJointSimCheckType( jointId, b3_sphericalJoint );
+	return b3MulSV( world->inv_h, base->sphericalJoint.springImpulse );
+}
+
 void b3SphericalJoint_EnableMotor( b3JointId jointId, bool enableMotor )
 {
 	b3World* world = b3GetWorld( jointId.world0 );
@@ -468,7 +493,21 @@ void b3SolveSphericalJoint( b3JointSim* base, b3StepContext* context, bool useBi
 
 		b3Vec3 impulse = b3MulSub( b3MulSV( -massScale, b3MulMV( joint->rotationMass, b3Add( cdot, bias ) ) ),
 								   impulseScale, joint->springImpulse );
-		joint->springImpulse = b3Add( joint->springImpulse, impulse );
+
+		// Bounded like the motor, so a joint that drives a pose cannot hold it against anything. Without a limit the
+		// impulses add up as before, to the bit. Added for Nebenan.
+		b3Vec3 newImpulse = b3Add( joint->springImpulse, impulse );
+		if ( joint->maxSpringTorque < FLT_MAX )
+		{
+			float maxImpulse = joint->maxSpringTorque * context->h;
+			float length = b3Length( newImpulse );
+			if ( length > maxImpulse )
+			{
+				newImpulse = b3MulSV( maxImpulse / length, newImpulse );
+			}
+			impulse = b3Sub( newImpulse, joint->springImpulse );
+		}
+		joint->springImpulse = newImpulse;
 
 		wA = b3Sub( wA, b3MulMV( iA, impulse ) );
 		wB = b3Add( wB, b3MulMV( iB, impulse ) );

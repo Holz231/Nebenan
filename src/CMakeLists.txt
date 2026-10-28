@@ -1,6 +1,9 @@
 set(NEBENAN_SOURCE_FILES
 	core.c
 	core.h
+	figure.c
+	figure.h
+	figure_clips.c
 	fracture.c
 	fracture.h
 	hull_builder.c
