@@ -4093,12 +4093,42 @@ static void nbCheckSupports( nbWorld* world )
 			crushGenerations[crushCount] = world->chunks.data[crushes[crushCount]].generation;
 		}
 
+		// Where a wall breaks, the chunks of the bonds that tear and those that crush or fly out, taken before the bonds go
+		b3AABB breakZone = { { FLT_MAX, FLT_MAX, FLT_MAX }, { -FLT_MAX, -FLT_MAX, -FLT_MAX } };
+		for ( int k = 0; k < overloadCount && storey == false; ++k )
+		{
+			const nbOverload* overload = overloads + k;
+			if ( overload->bondIndex != NB_NULL_INDEX && world->bonds.data[overload->bondIndex].chunk[0] != NB_NULL_INDEX )
+			{
+				const nbBond* bond = world->bonds.data + overload->bondIndex;
+				breakZone = b3AABB_Union( breakZone, b3Shape_GetAABB( world->chunks.data[bond->chunk[0]].shapeId ) );
+				breakZone = b3AABB_Union( breakZone, b3Shape_GetAABB( world->chunks.data[bond->chunk[1]].shapeId ) );
+			}
+			if ( overload->crushChunk != NB_NULL_INDEX )
+			{
+				breakZone = b3AABB_Union( breakZone, b3Shape_GetAABB( world->chunks.data[overload->crushChunk].shapeId ) );
+			}
+		}
+
 		for ( int k = 0; k < overloadCount; ++k )
 		{
 			if ( overloads[k].bondIndex != NB_NULL_INDEX && world->bonds.data[overloads[k].bondIndex].chunk[0] != NB_NULL_INDEX )
 			{
 				nbDestroyBond( world, overloads[k].bondIndex );
 			}
+		}
+
+		// A wall that gives way under its load breaks through the rubble beside and under where it breaks, all of it comes
+		// back to life, as around the remains of a storey. The shots that took the foot of the wall knocked out pieces that
+		// froze in the holes, the next shots would stop on them and the parts that break off would stand on them. The
+		// rubble along the rest of the wall stays as it is.
+		if ( storey == false && breakZone.lowerBound.x <= breakZone.upperBound.x )
+		{
+			b3Vec3 clearance = b3MulAdd( (b3Vec3){ NB_CLEARANCE, NB_CLEARANCE, NB_CLEARANCE }, -NB_CLEARANCE, b3Abs( up ) );
+			breakZone.lowerBound = b3MulSub( b3Sub( breakZone.lowerBound, clearance ), NB_CLEARANCE, b3Max( up, b3Vec3_zero ) );
+			breakZone.upperBound = b3MulSub( b3Add( breakZone.upperBound, clearance ), NB_CLEARANCE, b3Min( up, b3Vec3_zero ) );
+			nbThawContext filter = { .skipActor = NB_NULL_INDEX, .holder = NB_NULL_INDEX, .collapse = true };
+			nbThawRubbleInBoxes( world, &breakZone, 1, b3Vec3_zero, 0.0f, &filter );
 		}
 
 		// The remains of a storey fly out through the rubble lying around it, all of it comes back to life. Otherwise they
@@ -4110,24 +4140,6 @@ static void nbCheckSupports( nbWorld* world )
 			for ( int e = 1; e < ejectCount; ++e )
 			{
 				zone = b3AABB_Union( zone, b3Shape_GetAABB( world->chunks.data[ejects[e]].shapeId ) );
-			}
-			b3Vec3 clearance = b3MulAdd( (b3Vec3){ NB_CLEARANCE, NB_CLEARANCE, NB_CLEARANCE }, -NB_CLEARANCE, b3Abs( up ) );
-			zone.lowerBound = b3Sub( zone.lowerBound, clearance );
-			zone.upperBound = b3Add( zone.upperBound, clearance );
-			nbThawContext filter = { .skipActor = NB_NULL_INDEX, .holder = NB_NULL_INDEX, .collapse = true };
-			nbThawRubbleInBoxes( world, &zone, 1, b3Vec3_zero, 0.0f, &filter );
-		}
-
-		// A wall that gives way under its load comes down through the rubble at its foot, all of it comes back to life, as
-		// around the remains of a storey. The shots that took its foot knocked out pieces that froze in the holes, and the
-		// parts that break off would stand on them.
-		if ( storey == false )
-		{
-			const nbChunk* head = world->chunks.data + actor->headChunk;
-			b3AABB zone = b3Shape_GetAABB( head->shapeId );
-			for ( int c = head->nextChunk; c != NB_NULL_INDEX; c = world->chunks.data[c].nextChunk )
-			{
-				zone = b3AABB_Union( zone, b3Shape_GetAABB( world->chunks.data[c].shapeId ) );
 			}
 			b3Vec3 clearance = b3MulAdd( (b3Vec3){ NB_CLEARANCE, NB_CLEARANCE, NB_CLEARANCE }, -NB_CLEARANCE, b3Abs( up ) );
 			zone.lowerBound = b3Sub( zone.lowerBound, clearance );

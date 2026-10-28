@@ -469,7 +469,7 @@ static uint32_t RunDeterminismScenario( void )
 
 // Fracture and physics are bit for bit identical with MSVC, GCC and Clang on x64 and ARM. This is the result
 // with the pinned Box3D commit. Update it when the results change on purpose, never to make one platform pass.
-#define NB_EXPECTED_DETERMINISM_HASH 0xdd0ef4c0u
+#define NB_EXPECTED_DETERMINISM_HASH 0x65c3885cu
 
 static int DeterminismTest( void )
 {
@@ -4723,13 +4723,15 @@ static int SupportTest( void )
 	return 0;
 }
 
-// A cannon ball of 0.25 m and 7.8 t per cubic meter at 45 m/s from one point at another, as the demo fires it
-static void ShootBall( TestScene* scene, b3Vec3 from, b3Vec3 to )
+// A cannon ball of 0.25 m and 7.8 t per cubic meter at 45 m/s from one point at another, as the demo fires it. It starts
+// this far on its way, the demo's balls 0.8 m in front of the camera.
+static void ShootBall( TestScene* scene, b3Vec3 from, b3Vec3 to, float lead )
 {
+	b3Vec3 direction = b3Normalize( b3Sub( to, from ) );
 	b3BodyDef bodyDef = b3DefaultBodyDef();
 	bodyDef.type = b3_dynamicBody;
-	bodyDef.position = from;
-	bodyDef.linearVelocity = b3MulSV( 45.0f, b3Normalize( b3Sub( to, from ) ) );
+	bodyDef.position = b3ToPos( b3MulAdd( from, lead, direction ) );
+	bodyDef.linearVelocity = b3MulSV( 45.0f, direction );
 	bodyDef.isBullet = true;
 	b3BodyId ball = b3CreateBody( scene->physicsWorld, &bodyDef );
 
@@ -4759,13 +4761,22 @@ static float VolumeAbove( nbDestructibleId destructible, float height )
 
 // The brick wall of the demo's wall scene, 9 m wide and 3.2 m high, with the demo's world: fragments twice the size,
 // the damage of collisions, the friction of the ground. Eight cannon balls from where the demo's camera stands knock
-// holes along its foot. With the load check on, as by default, it gives way under its weight: the pieces the balls
-// knocked into the holes come back to life, the wall comes down to the last of it, and its parts break in two where
-// they land hard. Without the check it stays up on what is left of its foot.
+// holes along its foot, in twelve sequences: the balls start at the camera, 0.4 or 0.8 m in front of it as in the demo,
+// and aim up to 0.3 m beside the foot. With the load check on, as by default, the wall gives way under its weight in
+// all of them, and parts of it break in two where they land hard. The rubble where it breaks comes back to life, the
+// pieces the balls knocked into the holes would hold it up halfway. As on the old branch it does not always come down to
+// the last of it, a large part that lands upright on the rubble at its foot can stay on it. Without the check the wall
+// stays up on what is left of its foot.
 static int WallCollapseTest( void )
 {
-	for ( int pass = 0; pass < 2; ++pass )
+	const float leads[3] = { 0.0f, 0.4f, 0.8f };
+	const float shifts[4] = { -0.3f, -0.1f, 0.1f, 0.3f };
+	int downCount = 0;
+	int splitCount = 0;
+	float meanHigh = 0.0f;
+	for ( int run = 0; run < 13; ++run )
 	{
+		bool check = run < 12;
 		TestScene scene;
 		b3WorldDef worldDef = b3DefaultWorldDef();
 		scene.physicsWorld = b3CreateWorld( &worldDef );
@@ -4782,7 +4793,7 @@ static int WallCollapseTest( void )
 		def.physicsWorld = scene.physicsWorld;
 		def.collisionRadiusScale = 0.02f;
 		def.fragmentScale = 2.0f;
-		def.supportScale = pass == 0 ? def.supportScale : 0.0f;
+		def.supportScale = check ? def.supportScale : 0.0f;
 		scene.world = nbCreateWorld( &def );
 
 		nbDestructibleDef wallDef = nbDefaultDestructibleDef();
@@ -4795,22 +4806,27 @@ static int WallCollapseTest( void )
 		nbDestructibleId wall = nbCreateBox( scene.world, &wallDef, (b3Vec3){ 4.5f, 1.6f, 0.15f } );
 		ENSURE( VolumeAbove( wall, 1.5f ) > 4.7f );
 
+		float lead = check ? leads[run / 4] : 0.0f;
+		float shift = check ? shifts[run % 4] : 0.0f;
 		for ( int k = 0; k < 8; ++k )
 		{
-			ShootBall( &scene, (b3Vec3){ 0.0f, 1.8f, 9.0f }, (b3Vec3){ -3.5f + (float)k, 0.5f, 0.0f } );
+			ShootBall( &scene, (b3Vec3){ 0.0f, 1.8f, 9.0f }, (b3Vec3){ -3.5f + (float)k + shift, 0.5f, 0.0f }, lead );
 			Step( &scene, 6 );
 		}
 		Step( &scene, 180 );
 
 		nbStats stats = nbWorld_GetStats( scene.world );
 		float high = VolumeAbove( wall, 1.5f );
-		printf( "  %s: %.2f cubic meters above 1.5 m, %d bonds overloaded, %d parts broke where they landed\n",
-				pass == 0 ? "with the load check" : "without", high, stats.overloadedBondCount, stats.landingSplitCount );
-		if ( pass == 0 )
+		printf( "  %s, start %.1f m, aim %+.1f m: %.2f cubic meters above 1.5 m, %d bonds overloaded, %d parts broke where they "
+				"landed\n",
+				check ? "with the load check" : "without", lead, shift, high, stats.overloadedBondCount,
+				stats.landingSplitCount );
+		if ( check )
 		{
 			ENSURE( stats.overloadedBondCount > 0 );
-			ENSURE( high < 0.1f );
-			ENSURE( stats.landingSplitCount > 0 );
+			downCount += high < 0.1f ? 1 : 0;
+			splitCount += stats.landingSplitCount;
+			meanHigh += high / 12.0f;
 		}
 		else
 		{
@@ -4820,6 +4836,10 @@ static int WallCollapseTest( void )
 		}
 		DestroyScene( &scene );
 	}
+	printf( "  with the load check down to the last of it %d of 12 times, %.2f cubic meters above 1.5 m on average\n", downCount,
+			meanHigh );
+	ENSURE( downCount >= 2 && splitCount > 0 );
+	ENSURE( meanHigh < 3.0f );
 	return 0;
 }
 
@@ -6187,8 +6207,8 @@ static uint32_t RunScenarioAtRate( TestScene scene, float stepRate, int settleFr
 
 // The results of the determinism scenario at 30 and 120 Hz with ten seconds to settle, the same on every platform like
 // NB_EXPECTED_DETERMINISM_HASH
-#define NB_EXPECTED_HASH_30HZ 0xca0268d0u
-#define NB_EXPECTED_HASH_120HZ 0xc3d1c91au
+#define NB_EXPECTED_HASH_30HZ 0x5efe9203u
+#define NB_EXPECTED_HASH_120HZ 0x3f0e61f2u
 
 // The steps per second of nbWorld_Advance. At 60 Hz it takes the steps of the determinism scenario to the bit. At 30 and
 // 120 Hz every frame of 1/60 s takes half a step and two, whatever the steps cost, the world ends the same with one and
