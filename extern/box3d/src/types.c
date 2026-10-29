@@ -27,6 +27,7 @@ b3WorldDef b3DefaultWorldDef( void )
 
 	def.enableSleep = true;
 	def.enableContinuous = true;
+	def.enableJointPacks = true;
 	def.internalValue = B3_SECRET_COOKIE;
 	return def;
 }

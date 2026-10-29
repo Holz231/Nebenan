@@ -736,6 +736,15 @@ Grenzen und ein Pendel an einem Scharnier im Überlauf auf eine Platte mit Gebie
 schwingt: Gebiete in allen Schritten, bitgleich mit jeder Zahl von Workern. Gebaut für Schritt F8, siehe „Figuren“ in
 der [Roadmap](../docs/Roadmap.md).
 
+Zum Messen schaltet `b3WorldDef::enableJointPacks` das ab, standardmäßig ist es an. Aus nimmt jedes wache Gelenk dem
+ganzen Schritt die Pakete und allen großen Inseln die Gebiete, und eine Insel, die ein Gelenk bekommt, gibt ihre Gebiete
+zurück (`b3LinkJoint`), wie bis `active-ragdoll-1`. Die Ergebnisse sind dann bis aufs Bit die von `active-ragdoll-1`,
+mit jeder Zahl von Workern, so misst ein Programm den Gewinn in einem Lauf ohne zweiten Build. Der Snapshot einer
+Aufnahme behält den Schalter: Das Bit `0x20` der Schalter der Welt steht für aus, so lesen ältere Snapshots ihn an
+(`b3SerWorldConfig` in `src/world_snapshot.c`). Ein Test rechnet die Platte mit Gebieten und ein Pendel an ihrem Rand
+mit und ohne den Schalter: mit Gebieten in allen Schritten, ohne in keinem und ohne Pakete, mit einem und vier Workern
+bitgleich, und eine Aufnahme ohne den Schalter spielt gleich ab.
+
 Die erste, die zweite, die vierte bis achte, die zehnte, die dreizehnte bis einunddreißigste, die dreiunddreißigste bis
 fünfunddreißigste, die neununddreißigste bis dreiundvierzigste, die fünfundvierzigste bis siebenundvierzigste, die
 neunundvierzigste bis neunundfünfzigste ändern an den Ergebnissen nichts, die einundsechzigste nur an Federn mit einer

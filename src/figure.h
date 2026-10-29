@@ -176,6 +176,9 @@ void nbBlastFigures( nbWorld* world, const nbImpactDef* def );
 // The index of the figure whose bone this Box3D body is and the bone, NB_NULL_INDEX for a body of no figure
 int nbFigureOfBody( const nbWorld* world, b3BodyId bodyId, int* bone );
 
+// The ragdolls whose bones are awake in Box3D, see nbFigureStats::awakeRagdollCount
+int nbCountAwakeRagdolls( const nbWorld* world );
+
 // Destroy every figure of the world with its bodies and free the arrays, for nbDestroyWorld
 void nbDestroyFigures( nbWorld* world );
 

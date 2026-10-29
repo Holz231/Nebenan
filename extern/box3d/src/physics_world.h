@@ -420,6 +420,9 @@ typedef struct b3World
 
 	// Added for Nebenan: the packs of islands of the last step, see b3Counters::packCount
 	int packCount;
+
+	// Added for Nebenan: see b3WorldDef::enableJointPacks
+	bool enableJointPacks;
 } b3World;
 
 b3World* b3GetUnlockedWorldFromId( b3WorldId id );

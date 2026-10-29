@@ -2306,6 +2306,22 @@ nbFigureId nbWorld_GetFigureFromBody( nbWorldId worldId, b3BodyId bodyId, int* b
 	return index != NB_NULL_INDEX ? nbMakeFigureId( world, index ) : nb_nullFigureId;
 }
 
+// A ragdoll whose bones are awake in Box3D, see nbFigureStats::awakeRagdollCount
+static bool nbIsAwakeRagdoll( const nbFigure* f )
+{
+	return f->isFree == false && f->state == nb_figureRagdoll && b3Body_IsAwake( f->bones[0].bodyId );
+}
+
+int nbCountAwakeRagdolls( const nbWorld* world )
+{
+	int count = 0;
+	for ( int i = 0; i < world->figures.count; ++i )
+	{
+		count += nbIsAwakeRagdoll( world->figures.data + i ) ? 1 : 0;
+	}
+	return count;
+}
+
 nbFigureStats nbWorld_GetFigureStats( nbWorldId worldId )
 {
 	nbFigureStats stats = { 0 };
@@ -2327,7 +2343,7 @@ nbFigureStats nbWorld_GetFigureStats( nbWorldId worldId )
 		stats.animatedCount += f->state == nb_figureAnimated ? 1 : 0;
 		stats.ragdollCount += f->state == nb_figureRagdoll ? 1 : 0;
 		stats.gettingUpCount += f->state == nb_figureGettingUp ? 1 : 0;
-		stats.awakeRagdollCount += f->state == nb_figureRagdoll && b3Body_IsAwake( f->bones[0].bodyId ) ? 1 : 0;
+		stats.awakeRagdollCount += nbIsAwakeRagdoll( f ) ? 1 : 0;
 		stats.hitCount += f->hitCount;
 		stats.knockdownCount += f->knockdownCount;
 		stats.getUpCount += f->getUpCount;

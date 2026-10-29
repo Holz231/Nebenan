@@ -4,8 +4,8 @@
 // Usage: nebenan_benchmark [workerCount], the worker count applies to the fracture and to Box3D
 //        nebenan_benchmark scaling [rounds], the towns under fire with 1, 2, 4 and so on workers, see
 //        nbGetScalingWorkerCounts, and the scaling report of the library for each town
-//        nebenan_benchmark figures [workerCount] [rounds], the figures alone, see BenchmarkFigures, and in a town under
-//        fire, see BenchmarkTown
+//        nebenan_benchmark figures [workerCount] [rounds] [off], the figures alone, see BenchmarkFigures, and in a town
+//        under fire, see BenchmarkTown, with off the joints keep the barrier per stage, see b3WorldDef::enableJointPacks
 
 #include "fracture.h"
 #include "hull_builder.h"
@@ -23,11 +23,15 @@ typedef struct Scene
 	nbWorldId world;
 } Scene;
 
+// Whether the worlds of the benchmark solve joints in the packs of islands, see b3WorldDef::enableJointPacks
+static bool s_jointPacks = true;
+
 static Scene CreateScene( int workerCount )
 {
 	Scene scene;
 	b3WorldDef worldDef = b3DefaultWorldDef();
 	worldDef.workerCount = (uint32_t)workerCount;
+	worldDef.enableJointPacks = s_jointPacks;
 	scene.physicsWorld = b3CreateWorld( &worldDef );
 
 	b3BodyDef bodyDef = b3DefaultBodyDef();
@@ -517,7 +521,7 @@ static void BenchmarkTown( int workerCount, float fragmentScale, int side, int g
 	impact.damage = 3.0e5f;
 	impact.ejectSpeed = 12.0f;
 	impact.explosionImpulse = 40.0f * impact.ejectSpeed;
-	int maxBodies = 0, maxAwake = 0, maxContacts = 0, grenades = 0, ragdollFrames = 0, maxRagdolls = 0;
+	int maxBodies = 0, maxAwake = 0, maxContacts = 0, grenades = 0;
 	float physicsProfile[8] = { 0 };
 	nbWorld_ResetProfile( scene.world );
 
@@ -567,12 +571,6 @@ static void BenchmarkTown( int workerCount, float fragmentScale, int side, int g
 		maxBodies = b3MaxInt( maxBodies, counters.bodyCount );
 		maxAwake = b3MaxInt( maxAwake, b3World_GetAwakeBodyCount( scene.physicsWorld ) );
 		maxContacts = b3MaxInt( maxContacts, counters.contactCount );
-		if ( figureCount > 0 )
-		{
-			nbFigureStats figureStats = nbWorld_GetFigureStats( scene.world );
-			ragdollFrames += figureStats.awakeRagdollCount > 0 ? 1 : 0;
-			maxRagdolls = b3MaxInt( maxRagdolls, figureStats.awakeRagdollCount );
-		}
 	}
 
 	int slowFrames = 0;
@@ -608,11 +606,11 @@ static void BenchmarkTown( int workerCount, float fragmentScale, int side, int g
 	if ( figureCount > 0 )
 	{
 		nbFigureStats figureStats = nbWorld_GetFigureStats( scene.world );
-		printf( "  %d figures: ragdolls awake in %d frames, at most %d at once, %d knockdowns, %d get-ups, %d aborts, at the end "
-				"%d standing, %d lying, %d getting up, figures hash 0x%08x\n",
-				figureCount, ragdollFrames, maxRagdolls, figureStats.knockdownCount, figureStats.getUpCount,
-				figureStats.abortCount, figureStats.animatedCount, figureStats.ragdollCount, figureStats.gettingUpCount,
-				HashFigures( figureIds, figureCount ) );
+		printf( "  %d figures: ragdolls awake after %d steps, at most %d at once, %d knockdowns, %d get-ups, %d aborts, at the "
+				"end %d standing, %d lying, %d getting up, figures hash 0x%08x\n",
+				figureCount, townProfile.ragdollStepCount, townProfile.maxRagdollCount, figureStats.knockdownCount,
+				figureStats.getUpCount, figureStats.abortCount, figureStats.animatedCount, figureStats.ragdollCount,
+				figureStats.gettingUpCount, HashFigures( figureIds, figureCount ) );
 	}
 	if ( profile != NULL )
 	{
@@ -1122,7 +1120,9 @@ int main( int argc, char** argv )
 		int workerCount = argc > 2 ? atoi( argv[2] ) : 0;
 		workerCount = workerCount <= 0 ? nbGetRecommendedWorkerCount( false ) : workerCount;
 		int rounds = argc > 3 ? atoi( argv[3] ) : 1;
-		printf( "Figures after Overgrowth, %d workers, %d round%s\n", workerCount, rounds, rounds == 1 ? "" : "s" );
+		s_jointPacks = argc <= 4 || strcmp( argv[4], "off" ) != 0;
+		printf( "Figures after Overgrowth, %d workers, %d round%s%s\n", workerCount, rounds, rounds == 1 ? "" : "s",
+				s_jointPacks ? "" : ", joints outside the packs" );
 		for ( int r = 0; r < b3MaxInt( rounds, 1 ); ++r )
 		{
 			BenchmarkFigures( workerCount, 1 );

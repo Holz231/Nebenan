@@ -2336,6 +2336,140 @@ static int DomainJointsTest( void )
 	return 0;
 }
 
+// The joints of awake islands go into the packs and the domains only while the world lets them, see
+// b3WorldDef::enableJointPacks. The plate of DomainJointsTest on its cubes with a pendulum on a hinge at its edge, and a
+// pendulum on the ground far away. With the switch the island keeps its domains with its joint in every step. Without it
+// any awake joint keeps the whole step color by color and the island without domains, as before step F8, with one and
+// four workers alike in every bit. A recording of the world without the switch replays to the same states, the snapshot
+// it starts from keeps the switch off, see b3DesWorldConfig.
+static int JointPacksSwitchTest( void )
+{
+	enum
+	{
+		side = 24,
+		cubeCount = side * side + ( side - 1 ) * ( side - 1 ),
+		bodyCapacity = cubeCount + 3,
+		stepCount = 120,
+	};
+	const bool jointPacks[3] = { true, false, false };
+	const int workers[3] = { 4, 1, 4 };
+	nbTaskSystem* pool = nbCreateTaskSystem( 3 );
+	uint32_t hashes[3];
+	for ( int pass = 0; pass < 3; ++pass )
+	{
+		b3WorldDef worldDef = b3DefaultWorldDef();
+		worldDef.enableJointPacks = jointPacks[pass];
+		if ( workers[pass] > 1 )
+		{
+			worldDef.workerCount = (uint32_t)workers[pass];
+			worldDef.enqueueTask = nbEnqueueTask;
+			worldDef.finishTask = nbFinishTask;
+			worldDef.userTaskContext = pool;
+		}
+		b3WorldId worldId = b3CreateWorld( &worldDef );
+
+		b3Vec3 groundOrigin = { 0.0f, -1.0f, 0.0f };
+		b3BodyDef bodyDef = b3DefaultBodyDef();
+		bodyDef.position = groundOrigin;
+		b3BodyId groundId = b3CreateBody( worldId, &bodyDef );
+		b3BoxHull floor = b3MakeBoxHull( 50.0f, 1.0f, 50.0f );
+		b3ShapeDef shapeDef = b3DefaultShapeDef();
+		b3CreateHullShape( groundId, &shapeDef, &floor.base );
+
+		bodyDef.type = b3_dynamicBody;
+		b3BoxHull cube = b3MakeBoxHull( 0.05f, 0.05f, 0.05f );
+		b3BodyId bodies[bodyCapacity];
+		int count = 0;
+		for ( int layer = 0; layer < 2; ++layer )
+		{
+			int cubes = side - layer;
+			float offset = 0.06f * (float)( cubes - 1 );
+			for ( int i = 0; i < cubes * cubes; ++i )
+			{
+				bodyDef.position = (b3Vec3){ 0.12f * (float)( i % cubes ) - offset, 0.05f + 0.1f * (float)layer,
+											 0.12f * (float)( i / cubes ) - offset };
+				bodies[count] = b3CreateBody( worldId, &bodyDef );
+				b3CreateHullShape( bodies[count++], &shapeDef, &cube.base );
+			}
+		}
+
+		// The plate never sleeps, so its island stays awake
+		b3Vec3 plateOrigin = { 0.0f, 0.251f, 0.0f };
+		bodyDef.position = plateOrigin;
+		bodyDef.enableSleep = false;
+		b3BodyId plate = b3CreateBody( worldId, &bodyDef );
+		bodies[count++] = plate;
+		bodyDef.enableSleep = true;
+		b3BoxHull slab = b3MakeBoxHull( 0.06f * (float)side, 0.05f, 0.06f * (float)side );
+		b3ShapeDef plateDef = shapeDef;
+		plateDef.density = 20000.0f;
+		b3CreateHullShape( plate, &plateDef, &slab.base );
+
+		// The pendulums start level and collide with nothing, one on the edge of the plate and one on the ground
+		b3ShapeDef ballDef = b3DefaultShapeDef();
+		ballDef.filter.maskBits = 0;
+		b3Sphere ball = { b3Vec3_zero, 0.05f };
+		for ( int p = 0; p < 2; ++p )
+		{
+			b3Vec3 pivot = p == 0 ? (b3Vec3){ 0.06f * (float)side + 0.1f, plateOrigin.y, 0.0f } : (b3Vec3){ 5.0f, 1.5f, 0.0f };
+			bodyDef.position = b3Add( pivot, (b3Vec3){ 0.0f, 0.0f, 0.4f } );
+			b3BodyId bob = b3CreateBody( worldId, &bodyDef );
+			b3CreateSphereShape( bob, &ballDef, &ball );
+			bodies[count++] = bob;
+
+			b3RevoluteJointDef hinge = b3DefaultRevoluteJointDef();
+			hinge.base.bodyIdA = p == 0 ? plate : groundId;
+			hinge.base.bodyIdB = bob;
+			hinge.base.localFrameA.p = b3Sub( pivot, p == 0 ? plateOrigin : groundOrigin );
+			hinge.base.localFrameB.p = (b3Vec3){ 0.0f, 0.0f, -0.4f };
+			b3CreateRevoluteJoint( worldId, &hinge );
+		}
+
+		// The second half of the steps of the last pass goes into a recording
+		b3Recording* recording = pass == 2 ? b3CreateRecording( 0 ) : NULL;
+		int domainSteps = 0, packSteps = 0;
+		for ( int step = 0; step < stepCount; ++step )
+		{
+			if ( recording != NULL && step == stepCount / 2 )
+			{
+				b3World_StartRecording( worldId, recording );
+			}
+			b3World_Step( worldId, 1.0f / 60.0f, 4 );
+			b3Counters counters = b3World_GetCounters( worldId );
+			domainSteps += counters.domainCount > 0 ? 1 : 0;
+			packSteps += counters.packCount > 0 ? 1 : 0;
+		}
+
+		uint32_t hash = 2166136261u;
+		for ( int i = 0; i < count; ++i )
+		{
+			b3WorldTransform transform = b3Body_GetTransform( bodies[i] );
+			const unsigned char* bytes = (const unsigned char*)&transform;
+			for ( int k = 0; k < (int)sizeof( transform ); ++k )
+			{
+				hash = ( hash ^ bytes[k] ) * 16777619u;
+			}
+		}
+		hashes[pass] = hash;
+		printf( "  joint packs %s, %d worker%s: domains in %d of %d steps, packs in %d, hash 0x%08x\n",
+				jointPacks[pass] ? "on" : "off", workers[pass], workers[pass] == 1 ? "" : "s", domainSteps, stepCount, packSteps,
+				hash );
+
+		ENSURE( jointPacks[pass] ? domainSteps > stepCount / 2 && packSteps >= domainSteps : domainSteps == 0 && packSteps == 0 );
+		if ( recording != NULL )
+		{
+			b3World_StopRecording( worldId );
+			ENSURE( b3ValidateReplay( b3Recording_GetData( recording ), b3Recording_GetSize( recording ), 1 ) );
+			b3DestroyRecording( recording );
+		}
+		b3DestroyWorld( worldId );
+	}
+	nbDestroyTaskSystem( pool );
+
+	ENSURE( hashes[2] == hashes[1] );
+	return 0;
+}
+
 // The domains of a large island last from step to step and follow what happens to it, see b3Island::domains. A stack that
 // falls on the plate of DomainTest joins its domains. A joint between two of its cubes keeps them, the calling thread
 // solves it before each pass, see b3ExecuteDomainJoints, until the island rests and falls asleep. A mesh contact in the
@@ -7222,6 +7356,7 @@ int WorldTest( void )
 	RUN_TEST( DomainTest );
 	RUN_TEST( DomainLifeTest );
 	RUN_TEST( DomainJointsTest );
+	RUN_TEST( JointPacksSwitchTest );
 	RUN_TEST( UniqueHullTest );
 	RUN_TEST( ExternalHullTest );
 	RUN_TEST( ShapeBatchTest );

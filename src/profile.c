@@ -68,6 +68,9 @@ void nbProfileStep( nbWorld* world )
 	sums->packWait += step.packWait;
 	sums->packStepCount += counters.packCount > 0 ? 1 : 0;
 	sums->domainStepCount += counters.domainCount > 0 ? 1 : 0;
+	int ragdolls = nbCountAwakeRagdolls( world );
+	sums->ragdollStepCount += ragdolls > 0 ? 1 : 0;
+	sums->maxRagdollCount = b3MaxInt( sums->maxRagdollCount, ragdolls );
 	if ( counters.solverSample != 0 )
 	{
 		sums->solverSampleCount += 1;
@@ -195,6 +198,8 @@ nbProfile nbWorld_GetProfile( nbWorldId worldId )
 	profile.teamJoinStepCount = sums->teamJoinStepCount;
 	profile.packStepCount = sums->packStepCount;
 	profile.domainStepCount = sums->domainStepCount;
+	profile.ragdollStepCount = sums->ragdollStepCount;
+	profile.maxRagdollCount = sums->maxRagdollCount;
 
 	if ( sums->wakeCount > 0 )
 	{

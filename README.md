@@ -195,8 +195,15 @@ ein Thread mehr oder weniger in jeder Art ändert und was die Wahl der Bibliothe
 den Threads, die sie für jede Art nimmt. „Skalierung messen“ reißt die Stadt genauso ab, nach dem Aufwärmen mit 1, 2, 4
 und so weiter bis zur empfohlenen Zahl von Threads, alle mit der Physik nacheinander. Die Bibliothek misst dabei jede
 Stufe von Box3D und Nebenan und rechnet aus, was mit mehr Threads auf einem Thread übrig bleibt. Die Tabelle dazu kommt
-in die Zwischenablage, siehe `nbWorld_GetProfile`. Jeder Bericht nennt CPU und Grafikkarte, denn auf einer schwachen
-Grafik begrenzt das Zeichnen die Bildzeit.
+in die Zwischenablage, siehe `nbWorld_GetProfile`. Aus der Stadt mit Figuren reißen diese drei Messungen die Stadt mit
+Figuren ab. „Mit und ohne F8 messen“ lädt immer die Stadt mit Figuren und reißt sie genauso ab, nach dem Aufwärmen mit
+F8, ohne, ohne und mit, die Physik parallel zum Zeichnen und mit den Threads, die die Bibliothek dafür nimmt. Ohne F8
+rechnet Box3D die Gelenke wacher Ragdolls wie bis `active-ragdoll-1`, Farbe für Farbe, siehe Gelenke und Pakete. Der
+Bericht nennt für beide Arten Bildzeit, Simulation, Box3D-Schritt und Löser pro Schritt und in wie vielen Schritten der
+Löser ganze Inseln pro Thread und Gebiete nahm und Ragdolls wach waren, dazu jeden Lauf mit seinen Granaten. Mit und
+ohne F8 endet die Stadt verschieden, weil ihre großen Schutthaufen ohne F8 keine Gebiete nehmen, solange ein Ragdoll
+wach ist, die Läufe jeder Art enden gleich. Jeder Bericht nennt CPU und Grafikkarte, denn auf einer schwachen Grafik
+begrenzt das Zeichnen die Bildzeit.
 
 **Werkzeuge**
 
@@ -224,16 +231,20 @@ Grafik begrenzt das Zeichnen die Bildzeit.
   **Gewehr auf Figuren** stellt den Stoß eines Gewehrtreffers ein (Standard 80 N s, ab 50 N s fällt eine Figur),
   **Alle umwerfen** wirft alle auf einmal um, **Zustand** schreibt über jede Figur, was sie tut und worauf sie wartet,
   und **Zielhaltung** zeichnet als Linien die Haltung, zu der sie ihre Knochen bringen will
+- **Stadt mit Figuren**: die Stadt mit zwei Figuren an jedem Haus, 40 auf den Straßen, je eine gut 1 m vor einer
+  Stirnwand und vor einer Längswand wie im Benchmark. Granaten, Trümmer und einstürzende Stockwerke werfen sie um und
+  begraben sie. Das Menü zählt sie wie in „Figuren“
 
-**Aufrufoptionen**: `--scene 0..4` startet eine Szene, `--fragment-scale 3` setzt die Bruchstückgröße, `--vsync`
+**Aufrufoptionen**: `--scene 0..5` startet eine Szene, `--fragment-scale 3` setzt die Bruchstückgröße, `--vsync`
 schaltet VSync ein, `--msaa 4` schaltet Kantenglättung ein (Standard aus), `--highdpi` rendert auf hochauflösenden
 Bildschirmen in voller Auflösung (Standard aus, kostet Füllrate). `--serial-physics` schaltet die parallele Physik ab,
 `--threads N` setzt die Zahl der Threads, `--step-rate 30` den Takt der Physik. `--compare` misst parallel gegen
 nacheinander wie der Knopf im Menü, gibt das Ergebnis aus und beendet sich, `--compare-threads` ebenso wie „7 gegen 8
-Threads messen“ und `--scaling` wie „Skalierung messen“. Diese Messungen reißen die Stadt selbst ab, Lauf für Lauf, auch
-mit `--demolition`. Ohne sie reißt `--demolition` die Stadt ab wie dabei. `--script` feuert eine vorgegebene Schussfolge
-ab, `--frames N` beendet nach N Bildern und meldet Bildzeiten, CPU-Zeiten, Uploads und Dreiecke pro Bild und einen Hash
-der Lagen aller Bruchstücke, `--screenshot datei.ppm` speichert das letzte Bild (nur OpenGL).
+Threads messen“, `--scaling` wie „Skalierung messen“ und `--compare-joints` wie „Mit und ohne F8 messen“. Diese
+Messungen reißen die Stadt selbst ab, Lauf für Lauf, auch mit `--demolition`, mit `--scene 5` die Stadt mit Figuren.
+Ohne sie reißt `--demolition` die Stadt ab wie dabei. `--script` feuert eine vorgegebene Schussfolge ab, `--frames N`
+beendet nach N Bildern und meldet Bildzeiten, CPU-Zeiten, Uploads und Dreiecke pro Bild und einen Hash der Lagen aller
+Bruchstücke und der Knochen der Figuren, `--screenshot datei.ppm` speichert das letzte Bild (nur OpenGL).
 
 Hinkt die Physik hinterher, lässt `nbWorld_Advance` die Zeit langsamer laufen, statt Schritte nachzuholen: Mehr als
 1/60 s Physik im selben Bild kommt nur, solange der letzte Schritt weniger als 4 ms pro 1/60 s kostete, bei 60 Hz
@@ -567,8 +578,10 @@ Gebiete, auch die Trümmer weit weg. Jetzt rechnet jedes Paket die Gelenke seine
 die Farben, und große Inseln behalten ihre Gebiete, auch mit einem Ragdoll im Schutt: Dessen Gelenke rechnet der
 aufrufende Thread vor jedem Durchgang über die Gebiete allein, siehe „Gelenke in Paketen und Gebieten“ in
 [`extern/README.md`](extern/README.md). Ein Spiel ruft dafür nichts auf. `nbProfile::packStepCount` und
-`domainStepCount` zählen die Schritte mit Paketen und mit Gebieten, `nbFigureStats::awakeRagdollCount` die wachen
-Ragdolls.
+`domainStepCount` zählen die Schritte mit Paketen und mit Gebieten, `ragdollStepCount` die mit wachen Ragdolls und
+`maxRagdollCount` die meisten zugleich, `nbFigureStats::awakeRagdollCount` die wachen Ragdolls gerade. Zum Messen
+schaltet `b3WorldDef::enableJointPacks = false` das ab, dann rechnet Box3D bis aufs Bit wie `active-ragdoll-1`, und die
+Demo misst so beides in einem Lauf, siehe „Mit und ohne F8 messen“.
 
 **Determinismus der Figuren.** Alles läuft im Update nach einem Schritt, Figur für Figur in ihrer Reihenfolge, mit Box3Ds
 eigenen Funktionen für Winkel, Sinus und Kosinus und einer eigenen Exponentialfunktion statt der des Systems. Bei
@@ -1720,11 +1733,12 @@ lange die Threads im Löser rechnen und worauf sie sonst warten.
 ## Tests und Benchmark
 
 ```sh
-build/bin/nebenan_test            # 85 Tests: Geometrie, Voronoi, Hüllen, Öffnungen, Stöße, Stützgraph, Etagen, Lastprüfung, Mauern, Schutt, Ruhe, Durchschlagen, Threads, Knoten, große Blöcke, Gelenke in Paketen und Gebieten, Suchbaum, Kontaktlisten, Streaming, Stream, Laden im Hintergrund, Speichern und Zurückholen, gemeinsamer Thread-Pool, Ruhe-Prüfung auf den Workern, Schritt auf eigenem Thread, Schritte pro Bild, Takt der Physik, Wahl der Threads, Profil und Skalierung, Figuren, Determinismus …
+build/bin/nebenan_test            # 86 Tests: Geometrie, Voronoi, Hüllen, Öffnungen, Stöße, Stützgraph, Etagen, Lastprüfung, Mauern, Schutt, Ruhe, Durchschlagen, Threads, Knoten, große Blöcke, Gelenke in Paketen und Gebieten, Suchbaum, Kontaktlisten, Streaming, Stream, Laden im Hintergrund, Speichern und Zurückholen, gemeinsamer Thread-Pool, Ruhe-Prüfung auf den Workern, Schritt auf eigenem Thread, Schritte pro Bild, Takt der Physik, Wahl der Threads, Profil und Skalierung, Figuren, Determinismus …
 build/bin/nebenan_benchmark 4     # Zahl = Threads für Bruch und Physik, 0 = so viele, wie ein Spiel nähme
 build/bin/nebenan_benchmark scaling   # die Städte unter Beschuss mit 1, 2, 4 … Threads und die Tabelle der Skalierung
 build/bin/nebenan_benchmark rates     # die Städte unter Beschuss mit 30, 60 und 120 Hz, was eine simulierte Sekunde kostet
 build/bin/nebenan_benchmark figures 4 3   # 1, 10 und 50 Figuren und eine Stadt mit Figuren, mit 4 Threads, dreimal, siehe Leistung
+build/bin/nebenan_benchmark figures 4 3 off   # dasselbe mit den Gelenken außerhalb der Pakete wie vor F8, siehe Gelenke und Pakete
 ```
 
 Unter Windows liegen die Programme in `build\bin\Release\`. Die CI baut und testet unter Windows, Linux und macOS, unter

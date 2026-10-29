@@ -502,6 +502,9 @@ static void b3SerWorldConfig( b3RecBuffer* buf, const b3World* world )
 	flags |= world->enableContinuous ? 0x04u : 0u;
 	flags |= world->enableSpeculative ? 0x08u : 0u;
 	flags |= world->enableRestitutionPropagation ? 0x10u : 0u;
+	// Added for Nebenan: set when the switch is off, so a snapshot without it reads with the default, see
+	// b3WorldDef::enableJointPacks
+	flags |= world->enableJointPacks ? 0u : 0x20u;
 	b3RecBufAppend( buf, &flags, 1 );
 }
 
@@ -530,6 +533,7 @@ static void b3DesWorldConfig( b3SnapReader* r, b3World* world )
 	world->enableContinuous = ( flags & 0x04u ) != 0;
 	world->enableSpeculative = ( flags & 0x08u ) != 0;
 	world->enableRestitutionPropagation = ( flags & 0x10u ) != 0;
+	world->enableJointPacks = ( flags & 0x20u ) == 0;
 }
 
 // Shapes carry pointer fields: materials, userData, userShape, and the geometry union.

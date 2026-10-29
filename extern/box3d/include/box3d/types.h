@@ -188,6 +188,12 @@ typedef struct b3WorldDef
 	/// Enable continuous collision
 	bool enableContinuous;
 
+	/// Added for Nebenan: solve the joints of awake islands in the packs of islands and in the domains of large islands,
+	/// see b3Counters::packCount and b3Counters::domainCount. Off, any awake joint keeps the whole step color by color with
+	/// a barrier after each stage and without domains, and an island that gains a joint gives its domains back. On by
+	/// default, off only to measure what the packs gain with ragdolls.
+	bool enableJointPacks;
+
 	/// Number of workers to use with the provided task system. Box3D performs best when using only
 	/// performance cores and accessing a single L2 cache. Efficiency cores and hyper-threading provide
 	/// little benefit and may even harm performance.

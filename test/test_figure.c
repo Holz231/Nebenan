@@ -363,6 +363,7 @@ static int FigureKnockdownTest( void )
 		CreateFigureScene( &scene, 1 );
 		nbFigureId figure = AddFigure( &scene, b3Vec3_zero, 0.0f );
 		StepFigures( &scene, 30 );
+		nbWorld_ResetProfile( scene.world );
 
 		// From the front pushes back, along -z, from behind forward
 		float direction = pass == 0 ? -1.0f : 1.0f;
@@ -391,6 +392,7 @@ static int FigureKnockdownTest( void )
 		// Up with the clip of the side it lies on, the bones moving at most 15 cm a step, about 9 m/s for a hand
 		int steps = StepUntil( &scene, figure, nb_figureGettingUp, 300 );
 		ENSURE( steps >= 0 );
+		int lying = steps;
 		nbFigureInfo info = nbFigure_GetInfo( figure );
 		ENSURE( info.onBack == ( pass == 0 ) );
 		b3WorldTransform before[nb_humanoidBoneCount];
@@ -423,6 +425,11 @@ static int FigureKnockdownTest( void )
 		}
 		nbFigureStats stats = nbWorld_GetFigureStats( scene.world );
 		ENSURE( stats.knockdownCount == 1 && stats.getUpCount == 1 && stats.animatedCount == 1 );
+
+		// The profile counts the steps after which the ragdoll was awake, all of its fall and at most those it lay
+		nbProfile profile = nbWorld_GetProfile( scene.world );
+		ENSURE( fall <= profile.ragdollStepCount && profile.ragdollStepCount <= fall + lying );
+		ENSURE( profile.maxRagdollCount == 1 );
 		DestroyFigureScene( &scene );
 	}
 	return 0;

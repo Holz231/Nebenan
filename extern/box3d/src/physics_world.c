@@ -384,6 +384,7 @@ b3WorldId b3CreateWorld( const b3WorldDef* def )
 	world->enableWarmStarting = true;
 	world->enableContinuous = def->enableContinuous;
 	world->enableSpeculative = true;
+	world->enableJointPacks = def->enableJointPacks;
 	world->userTreeTask = NULL;
 	world->userData = def->userData;
 

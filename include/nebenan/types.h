@@ -771,9 +771,15 @@ typedef struct nbProfile
 	/// The steps whose solver took the awake islands in packs, each pack whole on one thread or by the team, joints
 	/// included, see b3Counters::packCount, and the steps with domains of large islands, see b3Counters::domainCount. The
 	/// others solved color by color with a barrier after each stage: without workers, with mesh contacts or while other
-	/// programs take the cores.
+	/// programs take the cores, and with awake joints in a world that keeps them out of the packs, see
+	/// b3WorldDef::enableJointPacks.
 	int packStepCount;
 	int domainStepCount;
+
+	/// The steps after which ragdolls were awake, see nbFigureStats::awakeRagdollCount, and the most at once. Box3D solves
+	/// their joints in the packs, see packStepCount.
+	int ragdollStepCount;
+	int maxRagdollCount;
 } nbProfile;
 
 /// The stages of profiles measured with different numbers of workers, fitted to T(n) = serial + parallel / n

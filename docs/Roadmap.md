@@ -1556,7 +1556,10 @@ der ganze Box3D-Schritt 6,00 statt 6,27 ms. Mit einem Thread kostet der Schritt 
 Stadt mit Figuren ändern sich, weil ihre Trümmer jetzt in Gebieten rechnen, mit jeder Zahl von Threads gleich. Alle
 übrigen Szenen des Benchmarks enden gleich wie auf `active-ragdoll-1`, und die Städte ohne Figuren kosten so viel wie
 vorher, im Median zwischen 4,2 % weniger und 5,2 % mehr pro Box3D-Schritt, in beide Richtungen. Die Demo zeigt die
-Figuren in der Szene „Figuren“, dort misst der Nutzer auf dem Ryzen.
+Figuren in der Szene „Figuren“, dort misst der Nutzer auf dem Ryzen. Seit `active-ragdoll-3` hat sie dazu die Szene
+„Stadt mit Figuren“, die Stadt aus 20 Häusern mit 40 Figuren, und den Knopf „Mit und ohne F8 messen“, der sie mit und
+ohne Gelenke in den Paketen abreißt, Schritt F13. Den Schalter dafür hat Box3D, `b3WorldDef::enableJointPacks`, aus
+rechnet der Löser bis aufs Bit wie auf `active-ragdoll-1`.
 
 | Nr. | Schritt | Gewinn | Voraussetzung | Stand |
 | ---: | --- | --- | --- | --- |
@@ -1572,6 +1575,7 @@ Figuren in der Szene „Figuren“, dort misst der Nutzer auf dem Ryzen.
 | F10 | **Füße im Stand auf dem Boden**: IK für die Füße auf unebenem Boden und auf Schutt, nach 26.5 und 28.3 | – | F5 | 🔜 mittel |
 | F11 | **Platz zum Aufstehen suchen**: Eine Figur ohne Platz rückt zur Seite oder dreht sich, statt zu warten, etwa mit dem Kopf an einer Wand | – | F5 | 🔜 niedrig |
 | F12 | **Gelenke in den Gebieten**: Die Gelenke eines Ragdolls im Schutt in das Gebiet eines seiner Körper legen und gegen dessen Kopien mit einem Anteil der Masse rechnen wie die Kontakte, statt sie vor jedem Durchgang auf dem aufrufenden Thread allein zu rechnen. Dafür müssen die neun Arten von Gelenken beim Vorbereiten die Masse ihrer Körper skalieren und auf Kopien zeigen können, bitgleich mit dem Faktor 1 | bis 0,024 ms pro Ragdoll im Schutt und Schritt auf der VM mit vier Threads, 0,48 ms mit 20 in einem Haufen, siehe „Gelenke in Paketen und Gebieten“ in [`extern/README.md`](../extern/README.md) | F8 | 🔜 niedrig, erst wenn viele Ragdolls zugleich im Schutt liegen |
+| F13 | **F8 auf dem Ryzen messen**: die Stadt mit Figuren in der Demo mit und ohne Gelenke in den Paketen abreißen, im Wechsel in einer Sitzung, mit dem fertigen Paket der CI | zeigt, was F8 mit 8 Threads und einer echten Grafikkarte bringt, auf der VM 15,5 % weniger Zeit im Löser mit vier Threads | F8 | ✅ gebaut auf `active-ragdoll-3`: Szene „Stadt mit Figuren“ und „Mit und ohne F8 messen“, `--compare-joints`, mit dem Schalter `b3WorldDef::enableJointPacks`, siehe „Gelenke in Paketen und Gebieten“ in [`extern/README.md`](../extern/README.md). 🔜 Messung beim Nutzer |
 
 ## Kleinere Punkte
 

@@ -466,6 +466,8 @@ typedef struct nbProfileSums
 	double teamSampleWork;
 	int packStepCount;
 	int domainStepCount;
+	int ragdollStepCount;
+	int maxRagdollCount;
 } nbProfileSums;
 
 typedef struct nbWorld

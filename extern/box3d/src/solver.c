@@ -4807,7 +4807,7 @@ void b3Solve( b3World* world, b3StepContext* stepContext )
 		// Added for Nebenan: the islands with domains, kept from step to step, before the colors are counted, as an island
 		// that takes or gives back its domains moves its contacts, see b3UpdateDomains. Domains need what packs need:
 		// no mesh contacts in the colors and no propagation of restitution, see b3SolvePacks. Joints may be anywhere, see
-		// b3ExecuteDomainJoints.
+		// b3ExecuteDomainJoints, unless the world keeps them out, see b3WorldDef::enableJointPacks.
 		int domainIslandCount = 0;
 		float domainTime = 0.0f;
 		int overflowTotal = 0;
@@ -4816,17 +4816,20 @@ void b3Solve( b3World* world, b3StepContext* stepContext )
 		{
 			uint64_t domainTicks = b3GetTicks();
 			int meshCount = 0;
+			int jointTotal = colors[B3_OVERFLOW_INDEX].jointSims.count;
 			overflowTotal = colors[B3_OVERFLOW_INDEX].contacts.count;
 			for ( int i = 0; i < B3_OVERFLOW_INDEX; ++i )
 			{
 				meshCount += colors[i].contacts.count;
+				jointTotal += colors[i].jointSims.count;
 			}
 			for ( int d = 0; d < B3_DOMAINS; ++d )
 			{
 				overflowTotal += graph->domainOverflow[d].count;
 			}
 
-			bool allowed = meshCount == 0 && overflowTotal <= UINT16_MAX && world->enableRestitutionPropagation == false;
+			bool allowed = meshCount == 0 && ( world->enableJointPacks || jointTotal == 0 ) && overflowTotal <= UINT16_MAX &&
+						   world->enableRestitutionPropagation == false;
 			b3TracyCZoneNC( update_domains, "Update Domains", b3_colorKhaki, true );
 			domainIslandCount = b3UpdateDomains( world, awakeSet, allowed, domainIslandIds );
 			b3TracyCZoneEnd( update_domains );
@@ -4927,7 +4930,7 @@ void b3Solve( b3World* world, b3StepContext* stepContext )
 		// of restitution, which needs to know whether any constraint of the step has restitution before the first pack
 		// starts, keep the barrier per stage, and so does a step while other programs take the cores, see b3UpdatePackHold.
 		// With packs the convex contacts of every color go pack by pack, which can take more wide constraints, and so do the
-		// joints, see b3OrderPackJoints.
+		// joints, see b3OrderPackJoints, unless the world keeps them out, see b3WorldDef::enableJointPacks.
 		// Added for Nebenan: see b3Counters::solverSample
 		bool sampleSolver = world->stepIndex % B3_SOLVER_SAMPLE == 0;
 
@@ -4964,7 +4967,8 @@ void b3Solve( b3World* world, b3StepContext* stepContext )
 		int* packJointStarts = NULL;
 		int* packJoints = NULL;
 		int packEntryCounts[B3_GRAPH_COLOR_COUNT];
-		bool packable = contactCount == 0 && overflowCount <= UINT16_MAX && world->enableRestitutionPropagation == false;
+		bool packable = contactCount == 0 && ( world->enableJointPacks || jointCount + overflow->jointSims.count == 0 ) &&
+						overflowCount <= UINT16_MAX && world->enableRestitutionPropagation == false;
 
 		// Added for Nebenan: the islands with domains go into the first pack, whose domains the stages solve, with any number
 		// of workers and also while other programs take the cores, so the results stay the same, see b3Domains
