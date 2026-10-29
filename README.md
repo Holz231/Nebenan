@@ -585,7 +585,9 @@ aufrufende Thread vor jedem Durchgang über die Gebiete allein, siehe „Gelenke
 `domainStepCount` zählen die Schritte mit Paketen und mit Gebieten, `ragdollStepCount` die mit wachen Ragdolls und
 `maxRagdollCount` die meisten zugleich, `nbFigureStats::awakeRagdollCount` die wachen Ragdolls gerade. Zum Messen
 schaltet `b3WorldDef::enableJointPacks = false` das ab, dann rechnet Box3D bis aufs Bit wie `active-ragdoll-1`, und die
-Demo misst so beides in einem Lauf, siehe „Mit und ohne F8 messen“.
+Demo misst so beides in einem Lauf, siehe „Mit und ohne F8 messen“. Auf einem Ryzen 7 7800X3D mit 8 Threads rechnet der
+Löser in der Stadt mit Figuren damit 9,9 % schneller, 0,73 statt 0,81 ms pro Schritt, und ein Bild ist 4,8 % schneller.
+Nur die langsamsten 1 % der Bilder werden langsamer, siehe die Grenzen unten.
 
 **Determinismus der Figuren.** Alles läuft im Update nach einem Schritt, Figur für Figur in ihrer Reihenfolge, mit Box3Ds
 eigenen Funktionen für Winkel, Sinus und Kosinus und einer eigenen Exponentialfunktion statt der des Systems. Bei
@@ -1835,6 +1837,9 @@ Nach Änderungen an `demo/shaders/scene.glsl` die Shader neu erzeugen, im Ordner
   allein, siehe Gelenke und Pakete, auf der VM mit vier Threads 0,024 ms pro Ragdoll und Schritt, 0,48 ms mit 20
   Ragdolls in einem Haufen. Ein solcher Haufen kostet damit so viel wie auf `active-ragdoll-1`, wo er seine Gebiete
   verlor. Gelenke in den Gebieten selbst stehen als Schritt F12 in der [Roadmap](docs/Roadmap.md).
+- Mit Gelenken in den Paketen und Gebieten sind die Schritte im Mittel schneller, die langsamsten 1 % aber langsamer:
+  auf dem Ryzen in der Stadt mit Figuren 1 % Low 219 statt 243 FPS, im Benchmark auf der VM 99 % der Frames bis 40,2
+  statt 35,1 ms. Woran das liegt, ist Schritt F14 der [Roadmap](docs/Roadmap.md).
 - Render- und Physikgeometrie sind dieselben flachen Polygone.
 - Box3D ist noch jung (0.x) und kann seine API ändern. Deshalb liegt ein fester Stand bei.
 

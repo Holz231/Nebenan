@@ -1559,7 +1559,8 @@ vorher, im Median zwischen 4,2 % weniger und 5,2 % mehr pro Box3D-Schritt, in be
 Figuren in der Szene „Figuren“, dort misst der Nutzer auf dem Ryzen. Seit `active-ragdoll-3` hat sie dazu die Szene
 „Stadt mit Figuren“, die Stadt aus 20 Häusern mit 40 Figuren, und den Knopf „Mit und ohne F8 messen“, der sie mit und
 ohne Gelenke in den Paketen beschießt, Schritt F13. Den Schalter dafür hat Box3D, `b3WorldDef::enableJointPacks`, aus
-rechnet der Löser bis aufs Bit wie auf `active-ragdoll-1`.
+rechnet der Löser bis aufs Bit wie auf `active-ragdoll-1`. Auf dem Ryzen sind damit in der Stadt mit Figuren der Löser
+9,9 % und ein Bild 4,8 % schneller, nur die langsamsten Bilder werden langsamer, Schritt F14.
 
 | Nr. | Schritt | Gewinn | Voraussetzung | Stand |
 | ---: | --- | --- | --- | --- |
@@ -1575,7 +1576,8 @@ rechnet der Löser bis aufs Bit wie auf `active-ragdoll-1`.
 | F10 | **Füße im Stand auf dem Boden**: IK für die Füße auf unebenem Boden und auf Schutt, nach 26.5 und 28.3 | – | F5 | 🔜 mittel |
 | F11 | **Platz zum Aufstehen suchen**: Eine Figur ohne Platz rückt zur Seite oder dreht sich, statt zu warten, etwa mit dem Kopf an einer Wand | – | F5 | 🔜 niedrig |
 | F12 | **Gelenke in den Gebieten**: Die Gelenke eines Ragdolls im Schutt in das Gebiet eines seiner Körper legen und gegen dessen Kopien mit einem Anteil der Masse rechnen wie die Kontakte, statt sie vor jedem Durchgang auf dem aufrufenden Thread allein zu rechnen. Dafür müssen die neun Arten von Gelenken beim Vorbereiten die Masse ihrer Körper skalieren und auf Kopien zeigen können, bitgleich mit dem Faktor 1 | bis 0,024 ms pro Ragdoll im Schutt und Schritt auf der VM mit vier Threads, 0,48 ms mit 20 in einem Haufen, siehe „Gelenke in Paketen und Gebieten“ in [`extern/README.md`](../extern/README.md) | F8 | 🔜 niedrig, erst wenn viele Ragdolls zugleich im Schutt liegen |
-| F13 | **F8 auf dem Ryzen messen**: die Stadt mit Figuren in der Demo mit und ohne Gelenke in den Paketen unter denselben Beschuss nehmen, im Wechsel in einer Sitzung, mit dem fertigen Paket der CI | zeigt, was F8 mit 8 Threads und einer echten Grafikkarte bringt, auf der VM 15,5 % weniger Zeit im Löser mit vier Threads | F8 | ✅ gebaut auf `active-ragdoll-3`: Szene „Stadt mit Figuren“ und „Mit und ohne F8 messen“, `--compare-joints`, mit dem Schalter `b3WorldDef::enableJointPacks`, siehe „Gelenke in Paketen und Gebieten“ in [`extern/README.md`](../extern/README.md). 🔜 Messung beim Nutzer |
+| F13 | **F8 auf dem Ryzen messen**: die Stadt mit Figuren in der Demo mit und ohne Gelenke in den Paketen unter denselben Beschuss nehmen, im Wechsel in einer Sitzung, mit dem fertigen Paket der CI | zeigt, was F8 mit 8 Threads und einer echten Grafikkarte bringt, auf der VM 15,5 % weniger Zeit im Löser mit vier Threads | F8 | ✅ gebaut auf `active-ragdoll-3`: Szene „Stadt mit Figuren“ und „Mit und ohne F8 messen“, `--compare-joints`, mit dem Schalter `b3WorldDef::enableJointPacks`, siehe „Gelenke in Paketen und Gebieten“ in [`extern/README.md`](../extern/README.md). Auf dem Ryzen mit 8 Threads sind mit F8 der Löser 9,9 %, der Box3D-Schritt 5,8 % und ein Bild 4,8 % schneller, die langsamsten 1 % der Bilder aber langsamer, 1 % Low 219 statt 243 FPS, siehe F14 |
+| F14 | **Die langsamsten Schritte mit F8**: herausfinden, was die langsamsten 1 % der Schritte mit Gelenken in den Paketen und Gebieten langsamer macht als ohne, und es beheben, bitgleich | auf dem Ryzen in der Stadt mit Figuren 1 % Low 219 statt 243 FPS mit F8, das längste Bild 6,3 statt 5,8 ms; im Benchmark auf der VM mit vier Threads 99 % der Frames bis 40,2 statt 35,1 ms, bei 95 % gleich | F13 | 🔜 als Nächstes |
 
 ## Kleinere Punkte
 
