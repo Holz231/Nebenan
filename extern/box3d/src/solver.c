@@ -3495,17 +3495,87 @@ static void b3CutDomains( const int* cellWeights, uint8_t* cellDomains, int u0, 
 	}
 }
 
+// Added for Nebenan: what the cut reads of a body, see b3CutIslandDomains. A body is larger than two cache lines, so its
+// count of contacts, its island, its id and its domain lie on up to three.
+static inline void b3PrefetchCutBody( const b3Body* body )
+{
+	b3Prefetch( &body->contactCount );
+	b3Prefetch( &body->islandId );
+	b3Prefetch( &body->islandIndex );
+	b3Prefetch( &body->id );
+	b3Prefetch( &body->domain );
+}
+
+// Added for Nebenan: what moving a touching contact into its domain writes besides the contact, see b3SetContactDomain:
+// its slot in the array of its color or its domain, the contact that the swap moves into that slot, if no other contact
+// of the array goes first, and the counts of the domains of its bodies. The contact itself has to be in the cache.
+static inline void b3PrefetchDomainMove( const b3World* world, const b3ContactLink* link )
+{
+	const b3Contact* contact = world->contacts.data + link->contactId;
+	int colorIndex = contact->colorIndex;
+	int localIndex = contact->localIndex;
+	if ( 0 <= colorIndex && 0 <= localIndex && ( contact->flags & b3_simMeshContact ) == 0 )
+	{
+		const b3ConstraintGraph* graph = &world->constraintGraph;
+		const b3GraphColor* color = graph->colors + colorIndex;
+		int domain = b3GetContactDomain( contact );
+		if ( domain >= 0 && colorIndex == B3_OVERFLOW_INDEX )
+		{
+			if ( localIndex < graph->domainOverflow[domain].count )
+			{
+				b3PrefetchWrite( graph->domainOverflow[domain].data + localIndex );
+			}
+		}
+		else if ( domain >= 0 )
+		{
+			if ( localIndex < color->domainContacts[domain].count )
+			{
+				b3PrefetchWrite( color->domainContacts[domain].data + localIndex );
+			}
+		}
+		else if ( colorIndex == B3_OVERFLOW_INDEX )
+		{
+			if ( localIndex < color->contacts.count )
+			{
+				b3PrefetchWrite( color->contacts.data + localIndex );
+			}
+		}
+		else if ( localIndex < color->convexContacts.count )
+		{
+			b3PrefetchWrite( color->convexContacts.data + localIndex );
+			b3PrefetchWrite( &world->contacts.data[color->convexContacts.data[color->convexContacts.count - 1]].localIndex );
+		}
+	}
+
+	if ( link->bodyIdA < world->bodyDomainCounts.count )
+	{
+		b3PrefetchWrite( world->bodyDomainCounts.data + link->bodyIdA );
+	}
+	if ( link->bodyIdB < world->bodyDomainCounts.count )
+	{
+		b3PrefetchWrite( world->bodyDomainCounts.data + link->bodyIdB );
+	}
+}
+
 // Added for Nebenan: an awake island takes domains or cuts them anew, see b3Domains. Its bodies go into a grid over the
 // two longer sides of the box of those that hold contacts, each weighted with the contacts it holds, those of which it
 // has fewer contacts than the other body, and b3CutDomains cuts the grid into the domains. Every body takes the domain of
 // its cell and every touching contact goes to the domain of the body that holds it. Only the calling thread takes from
 // the stack.
+//
+// An island takes its domains in the steps that are slow anyway, when much of a house came down at once, and the cut
+// then took 1 to 4 ms for 6 000 to 11 000 contacts on the VM. Most of it waited for the bodies and contacts, which lie
+// scattered in memory, one after the other. So each loop prefetches what it reads 8 or 16 bodies or contacts ahead, and
+// what moving a contact into its domain writes 8 ahead, once the contact is there, see b3PrefetchDomainMove. A large cut
+// takes a third less with it. Prefetching changes nothing, the bodies and contacts go in the same order.
 static void b3CutIslandDomains( b3World* world, const b3SolverSet* awakeSet, b3Island* island )
 {
 	int bodyCount = island->bodies.count;
 	int linkCount = island->contacts.count;
 	b3Body* bodies = world->bodies.data;
 	const b3BodySim* sims = awakeSet->bodySims.data;
+	const int* islandBodies = island->bodies.data;
+	const b3ContactLink* links = island->contacts.data;
 
 	// Per body its weight and position, and the cells of the grid with their weight and domain
 	int cellCount = B3_DOMAIN_GRID * B3_DOMAIN_GRID;
@@ -3517,6 +3587,15 @@ static void b3CutIslandDomains( b3World* world, const b3SolverSet* awakeSet, b3I
 
 	for ( int l = 0; l < bodyCount; ++l )
 	{
+		if ( l + 16 < bodyCount )
+		{
+			b3Prefetch( &bodies[islandBodies[l + 16]].localIndex );
+		}
+		if ( l + 8 < bodyCount )
+		{
+			b3Prefetch( &sims[bodies[islandBodies[l + 8]].localIndex].center );
+		}
+
 		const b3Body* body = bodies + island->bodies.data[l];
 		B3_ASSERT( body->setIndex == b3_awakeSet && body->islandIndex == l );
 		b3Pos center = sims[body->localIndex].center;
@@ -3529,6 +3608,12 @@ static void b3CutIslandDomains( b3World* world, const b3SolverSet* awakeSet, b3I
 	// The body of fewer contacts holds a contact, see b3GetAnchorDomain
 	for ( int k = 0; k < linkCount; ++k )
 	{
+		if ( k + 8 < linkCount )
+		{
+			b3PrefetchCutBody( bodies + links[k + 8].bodyIdA );
+			b3PrefetchCutBody( bodies + links[k + 8].bodyIdB );
+		}
+
 		const b3ContactLink* link = island->contacts.data + k;
 		const b3Body* bodyA = bodies + link->bodyIdA;
 		const b3Body* bodyB = bodies + link->bodyIdB;
@@ -3603,6 +3688,10 @@ static void b3CutIslandDomains( b3World* world, const b3SolverSet* awakeSet, b3I
 
 	for ( int l = 0; l < bodyCount; ++l )
 	{
+		if ( l + 16 < bodyCount )
+		{
+			b3PrefetchWrite( &bodies[islandBodies[l + 16]].domain );
+		}
 		bodies[island->bodies.data[l]].domain = (int8_t)cellDomains[weights[l]];
 	}
 
@@ -3611,6 +3700,20 @@ static void b3CutIslandDomains( b3World* world, const b3SolverSet* awakeSet, b3I
 	island->domainCutStep = world->stepIndex;
 	for ( int k = 0; k < linkCount; ++k )
 	{
+		if ( k + 16 < linkCount )
+		{
+			const b3ContactLink* ahead = links + k + 16;
+			b3Contact* aheadContact = world->contacts.data + ahead->contactId;
+			b3PrefetchWrite( &aheadContact->localIndex );
+			b3PrefetchWrite( &aheadContact->flags );
+			b3PrefetchCutBody( bodies + ahead->bodyIdA );
+			b3PrefetchCutBody( bodies + ahead->bodyIdB );
+		}
+		if ( k + 8 < linkCount )
+		{
+			b3PrefetchDomainMove( world, links + k + 8 );
+		}
+
 		const b3ContactLink* link = island->contacts.data + k;
 		b3Contact* contact = b3Array_Get( world->contacts, link->contactId );
 		B3_ASSERT( contact->setIndex == b3_awakeSet && contact->colorIndex != B3_NULL_INDEX );

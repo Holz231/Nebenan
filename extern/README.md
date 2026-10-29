@@ -657,7 +657,13 @@ Netz oder eine Insel, die unter die Hälfte einer der beiden Grenzen fällt, gib
 (`b3RemoveIslandDomains`), bis zu „Gelenke in Paketen und Gebieten“ auch ein Gelenk. Geschnitten werden sie, wenn eine Insel sie bekommt, und neu nur, wenn das größte ein Viertel
 mehr Kontakte hält als ihr Mittel, höchstens alle 32 Schritte (`b3UpdateDomains`, `b3CutIslandDomains`). Dann teilt
 `b3CutDomains` ein Raster über die zwei längeren Seiten der Box der Körper, jeweils quer zur längeren Seite dort, wo
-sich die Kontakte am gleichmäßigsten teilen. Ein Thread rechnet in jedem Durchgang des Lösers ein Gebiet ganz, seine
+sich die Kontakte am gleichmäßigsten teilen. Ihre Gebiete bekommt eine Insel meist in Schritten, die ohnehin langsam
+sind, wenn viel von einem Haus auf einmal herunterkam, und der Schnitt wartete fast nur auf die Körper und Kontakte, die
+verstreut im Speicher liegen, einen nach dem anderen. Seit `active-ragdoll-4` lädt er sie 8 und 16 voraus, und was das
+Verschieben eines Kontakts in sein Gebiet schreibt (`b3PrefetchCutBody`, `b3PrefetchDomainMove`). Körper und Kontakte
+kommen in derselben Reihenfolge dran, die Ergebnisse bleiben bis aufs Bit gleich, und ein großer Schnitt kostet auf der
+VM ein Drittel weniger, siehe „Die langsamsten Schritte mit F8“ in [`docs/Optimierungen.md`](../docs/Optimierungen.md).
+Ein Thread rechnet in jedem Durchgang des Lösers ein Gebiet ganz, seine
 Knoten, seine übrigen Kontakte im Überlauf und seine konvexen Kontakte in der Reihenfolge der Farben, ohne Sperre
 dazwischen, und die Gruppen der Knoten einer großen Insel sind ihre Gebiete. Ein Körper mit Kontakten in mehreren
 Gebieten hat in jedem eine Kopie mit einem Anteil seiner Masse, die das Gebiet vor jedem Durchgang aus dem Körper

@@ -1839,7 +1839,13 @@ Nach Änderungen an `demo/shaders/scene.glsl` die Shader neu erzeugen, im Ordner
   verlor. Gelenke in den Gebieten selbst stehen als Schritt F12 in der [Roadmap](docs/Roadmap.md).
 - Mit Gelenken in den Paketen und Gebieten sind die Schritte im Mittel schneller, die langsamsten 1 % aber langsamer:
   auf dem Ryzen in der Stadt mit Figuren 1 % Low 219 statt 243 FPS, im Benchmark auf der VM 99 % der Frames bis 40,2
-  statt 35,1 ms. Woran das liegt, ist Schritt F14 der [Roadmap](docs/Roadmap.md).
+  statt 35,1 ms. Zum größten Teil liegt das an der Welt, die mit F8 anders endet, siehe Schritt F14 der
+  [Roadmap](docs/Roadmap.md). Sicher mehr kostet nur, dass die Schutthaufen auch mit wachen Ragdolls Gebiete bekommen,
+  gerade in den langsamen Schritten, auf der VM 0,45 ms pro Schritt in den langsamsten 1 %. Seit `active-ragdoll-4`
+  kostet ein großer Schnitt ein Drittel weniger, bitgleich. Den Rest auf mehrere Threads zu legen, ist Schritt F15.
+- Ein großes Teil aus Schutt kann ständig zwischen statisch und dynamisch wechseln, in der Stadt mit Figuren eines mit
+  1 354 Formen alle ein bis drei Schritte. Ein Wechsel eines Teils mit mindestens 100 Formen kostet das Update im
+  Mittel 1,4 ms, mit und ohne Gelenke in den Paketen. Das zu beheben ist Schritt F17 der [Roadmap](docs/Roadmap.md).
 - Render- und Physikgeometrie sind dieselben flachen Polygone.
 - Box3D ist noch jung (0.x) und kann seine API ändern. Deshalb liegt ein fester Stand bei.
 
