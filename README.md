@@ -1661,14 +1661,16 @@ gleich wie auf `active-ragdoll-1`.
 
 **Stadt mit Figuren.** Dann misst `nebenan_benchmark figures` die erste Stadt aus 16 Häusern unter Beschuss mit zwei
 Figuren an jedem Haus, 1 m vor seiner Ost- und vor seiner Südwand, wo Granaten, Trümmer und einstürzende Stockwerke sie
-umwerfen und begraben. In 1 059 der 1 200 Schritte liegt ein Ragdoll wach, bis zu fünf zugleich. Mit vier Threads
+umwerfen und begraben. Nach 1 062 der 1 200 Schritte ist ein Ragdoll wach, bis zu sechs zugleich. Mit vier Threads
 rechnet der Löser in 1 199 Schritten mit ganzen Inseln pro Thread und in 784 mit Gebieten, auf `active-ragdoll-1` in
 keinem, und braucht 2,61 statt 3,09 ms pro Schritt, der Box3D-Schritt 6,00 statt 6,27 ms, im Median aus fünf Läufen
 im Wechsel. Mit einem Thread kostet der Schritt so viel wie vorher, 15,3 ms. Wie die Stadt endet, ist mit jeder Zahl
 von Threads gleich, aber anders als auf `active-ragdoll-1`, weil ihre Trümmer jetzt in Gebieten rechnen. Gepaart gegen
 `active-ragdoll-1`, je drei Läufe im Wechsel mit einem und vier Threads, enden alle übrigen Szenen des Benchmarks
 gleich, und die Städte ohne Figuren kosten so viel wie vorher: Die Läufe überlappen sich, im Median zwischen 4,2 %
-weniger und 5,2 % mehr pro Box3D-Schritt, in beide Richtungen.
+weniger und 5,2 % mehr pro Box3D-Schritt, in beide Richtungen. Mit `off` als drittem Wert rechnet derselbe Benchmark die
+Gelenke wie vor F8 und endet mit denselben Hashes wie `active-ragdoll-1`, so misst er beides in einem Lauf, siehe
+Gelenke und Pakete.
 
 Grafik der Demo, die ersten acht Sekunden der Stadt im Skript (480 Bilder, Bruchstückgröße ×2): 12 Draw Calls,
 höchstens 213 000 Dreiecke, im Mittel 0,5 MB und höchstens 1,7 MB Upload pro Bild, 0,1 ms CPU für Uploads.
