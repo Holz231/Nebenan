@@ -1544,6 +1544,17 @@ static bool nbThawCallback( b3ShapeId shapeId, void* context )
 		return true;
 	}
 
+	// A large part of a building comes back to life through a moving piece only if it froze on that piece. Such a part
+	// freezes once Box3D puts its island to sleep or the budget finds what carries it, see nbIsQuiet, and the moving
+	// pieces it froze on hold it for its balance, see nbFreezeOnCarriers. The box of a moving piece beside it or under one
+	// of its edges reaches into it nonetheless: a part of 1 354 shapes woke every one to three steps while a small piece
+	// slid along it, moved a millimeter and froze again.
+	if ( thawContext->holder != NB_NULL_INDEX && actor->isBuildingPart && actor->volume >= NB_CHECKED_VOLUME &&
+		 nbRestsOn( world, actor, thawContext->holder ) == false )
+	{
+		return true;
+	}
+
 	if ( thawContext->impact && nbImpactMoves( world, actor, thawContext->ejectSpeed ) == false )
 	{
 		return true;

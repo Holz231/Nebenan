@@ -3318,6 +3318,71 @@ static int RestTest( void )
 	return 0;
 }
 
+// The actor of the first chunk of a destructible
+static int ActorOfDestructible( TestScene* scene, nbDestructibleId destructible )
+{
+	nbWorld* world = nbGetWorldFromId( scene->world );
+	nbChunkId chunk;
+	nbDestructible_GetChunks( destructible, &chunk, 1 );
+	return world->chunks.data[chunk.index1 - 1].actorIndex;
+}
+
+// A large part of a building that froze on rubble comes back to life through a moving piece only if it froze on that
+// piece. A piece under it that slides away leaves it alone, even though its box reaches up into the part, and a piece it
+// lies on brings it back to life to come down.
+static int PartHolderTest( void )
+{
+	// The part lies on two blocks, a piece stands 4 cm under its middle, comes back to life and slides away
+	{
+		TestScene scene = CreateScene();
+		CreateLooseBox( &scene, (b3Vec3){ -1.5f, 0.4f, 0.0f }, (b3Vec3){ 0.4f, 0.4f, 0.4f }, 61 );
+		CreateLooseBox( &scene, (b3Vec3){ 1.5f, 0.4f, 0.0f }, (b3Vec3){ 0.4f, 0.4f, 0.4f }, 62 );
+		nbDestructibleId part = CreateLooseBox( &scene, (b3Vec3){ 0.0f, 0.9f, 0.0f }, (b3Vec3){ 2.0f, 0.1f, 0.5f }, 63 );
+		nbDestructibleId piece = CreateLooseBox( &scene, (b3Vec3){ 0.0f, 0.38f, 0.0f }, (b3Vec3){ 0.2f, 0.38f, 0.2f }, 64 );
+		Step( &scene, 60 );
+		ENSURE( nbWorld_GetStats( scene.world ).rubbleCount == 4 );
+
+		nbWorld* world = nbGetWorldFromId( scene.world );
+		int partActor = ActorOfDestructible( &scene, part );
+		world->actors.data[partActor].isBuildingPart = true;
+		ENSURE( world->actors.data[partActor].volume >= 0.1f );
+		b3Vec3 start = CenterOfChunks( part );
+
+		int pieceActor = ActorOfDestructible( &scene, piece );
+		b3Vec3 pieceStart = CenterOfChunks( piece );
+		nbThawActor( world, pieceActor );
+		b3Body_SetLinearVelocity( world->actors.data[pieceActor].bodyId, (b3Vec3){ 0.0f, 0.0f, 4.0f } );
+		Step( &scene, 6 );
+		ENSURE( b3Distance( CenterOfChunks( piece ), pieceStart ) > 0.1f );
+		ENSURE( world->actors.data[ActorOfDestructible( &scene, part )].isRubble );
+		ENSURE( b3Distance( CenterOfChunks( part ), start ) < 1.0e-4f );
+		DestroyScene( &scene );
+	}
+
+	// The part lies on a block at one end and on the piece at the other, the piece slides away and the part comes down
+	{
+		TestScene scene = CreateScene();
+		CreateLooseBox( &scene, (b3Vec3){ -1.5f, 0.4f, 0.0f }, (b3Vec3){ 0.4f, 0.4f, 0.4f }, 65 );
+		nbDestructibleId piece = CreateLooseBox( &scene, (b3Vec3){ 1.5f, 0.4f, 0.0f }, (b3Vec3){ 0.4f, 0.4f, 0.4f }, 66 );
+		nbDestructibleId part = CreateLooseBox( &scene, (b3Vec3){ 0.0f, 0.9f, 0.0f }, (b3Vec3){ 2.0f, 0.1f, 0.5f }, 67 );
+		Step( &scene, 60 );
+		ENSURE( nbWorld_GetStats( scene.world ).rubbleCount == 3 );
+
+		nbWorld* world = nbGetWorldFromId( scene.world );
+		world->actors.data[ActorOfDestructible( &scene, part )].isBuildingPart = true;
+		b3Vec3 start = CenterOfChunks( part );
+
+		int pieceActor = ActorOfDestructible( &scene, piece );
+		nbThawActor( world, pieceActor );
+		b3Body_SetLinearVelocity( world->actors.data[pieceActor].bodyId, (b3Vec3){ 8.0f, 0.0f, 0.0f } );
+		Step( &scene, 90 );
+		ENSURE( CenterOfChunks( part ).y < start.y - 0.1f );
+		DestroyScene( &scene );
+	}
+
+	return 0;
+}
+
 // A strong slab of eight pieces in a row, dropped from a height
 static nbDestructibleId CreateFallingSlab( TestScene* scene, float height, float halfDepth )
 {
@@ -7407,6 +7472,7 @@ int WorldTest( void )
 	RUN_TEST( WorkerCountTest );
 	RUN_TEST( StreamSiteTest );
 	RUN_TEST( RestTest );
+	RUN_TEST( PartHolderTest );
 	RUN_TEST( LandingTest );
 	return 0;
 }

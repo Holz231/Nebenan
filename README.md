@@ -503,7 +503,10 @@ eingeschaltet, misst Nebenan die Flächen dieser Bauwerke einmal an den Formen i
   als sein Schwerpunkt und was auf ihm erstarrt ist. Teile, die aus einem Bauwerk, aus Schutt oder aus einem Teil
   brechen, das noch Schutt trägt, nehmen ihren Schutt genauso mit, den Schutt, aus dem sie kommen, nur, wenn er
   inzwischen auf ihnen erstarrt ist. Liegt mehr Schutt darauf, als eine Freigabe auf einmal weckt, 512 Stücke, holt das
-  nächste Update den Rest. So bleibt kein Schutt in der Luft hängen.
+  nächste Update den Rest. So bleibt kein Schutt in der Luft hängen. Ein großes Teil eines Gebäudes wacht so nur auf,
+  wenn es auf dem Stück erstarrt ist, die bewegten Stücke unter ihm halten es dann für sein Gleichgewicht. Ein kleines
+  Stück, das unter seiner Kante entlangrutscht, weckte sonst alle 5 cm ein Teil von über tausend Formen, das sich einen
+  Millimeter bewegte und gleich wieder erstarrte.
 - Wacht Schutt auf und bleibt 0,05 s lang langsamer als 5 cm/s, liegt er noch auf und erstarrt gleich wieder, statt
   die ganze Ruhezeit abzuwarten. Was seine Auflage verloren hat, ist nach einem Schritt freiem Fall schon schneller.
 - Teile eines Gebäudes ruhen erst, wenn Box3D ihre Insel schlafen legt, wenn also auch alles ruht, was sie berühren,
@@ -1741,7 +1744,7 @@ lange die Threads im Löser rechnen und worauf sie sonst warten.
 ## Tests und Benchmark
 
 ```sh
-build/bin/nebenan_test            # 86 Tests: Geometrie, Voronoi, Hüllen, Öffnungen, Stöße, Stützgraph, Etagen, Lastprüfung, Mauern, Schutt, Ruhe, Durchschlagen, Threads, Knoten, große Blöcke, Gelenke in Paketen und Gebieten, Suchbaum, Kontaktlisten, Streaming, Stream, Laden im Hintergrund, Speichern und Zurückholen, gemeinsamer Thread-Pool, Ruhe-Prüfung auf den Workern, Schritt auf eigenem Thread, Schritte pro Bild, Takt der Physik, Wahl der Threads, Profil und Skalierung, Figuren, Determinismus …
+build/bin/nebenan_test            # 87 Tests: Geometrie, Voronoi, Hüllen, Öffnungen, Stöße, Stützgraph, Etagen, Lastprüfung, Mauern, Schutt, Ruhe, Durchschlagen, Threads, Knoten, große Blöcke, Gelenke in Paketen und Gebieten, Suchbaum, Kontaktlisten, Streaming, Stream, Laden im Hintergrund, Speichern und Zurückholen, gemeinsamer Thread-Pool, Ruhe-Prüfung auf den Workern, Schritt auf eigenem Thread, Schritte pro Bild, Takt der Physik, Wahl der Threads, Profil und Skalierung, Figuren, Determinismus …
 build/bin/nebenan_benchmark 4     # Zahl = Threads für Bruch und Physik, 0 = so viele, wie ein Spiel nähme
 build/bin/nebenan_benchmark scaling   # die Städte unter Beschuss mit 1, 2, 4 … Threads und die Tabelle der Skalierung
 build/bin/nebenan_benchmark rates     # die Städte unter Beschuss mit 30, 60 und 120 Hz, was eine simulierte Sekunde kostet
@@ -1843,9 +1846,11 @@ Nach Änderungen an `demo/shaders/scene.glsl` die Shader neu erzeugen, im Ordner
   [Roadmap](docs/Roadmap.md). Sicher mehr kostet nur, dass die Schutthaufen auch mit wachen Ragdolls Gebiete bekommen,
   gerade in den langsamen Schritten, auf der VM 0,45 ms pro Schritt in den langsamsten 1 %. Seit `active-ragdoll-4`
   kostet ein großer Schnitt ein Drittel weniger, bitgleich. Den Rest auf mehrere Threads zu legen, ist Schritt F15.
-- Ein großes Teil aus Schutt kann ständig zwischen statisch und dynamisch wechseln, in der Stadt mit Figuren eines mit
-  1 354 Formen alle ein bis drei Schritte. Ein Wechsel eines Teils mit mindestens 100 Formen kostet das Update im
-  Mittel 1,4 ms, mit und ohne Gelenke in den Paketen. Das zu beheben ist Schritt F17 der [Roadmap](docs/Roadmap.md).
+- In den langsamsten Bildern einer Stadt über dem Budget kostet das Update ein Vielfaches des Mittels, in der Stadt mit
+  Figuren 9,5 bis 10,6 statt 2,4 bis 2,7 ms, vor allem durch das Budget, das Hunderte Stücke auf einmal erstarren
+  lässt: 3,3 bis 4,9 ms, darin die Zustandswechsel 3,1 bis 3,8 ms. Das ist Schritt F18 der [Roadmap](docs/Roadmap.md).
+  Dass ein großes Teil eines Gebäudes dabei alle ein bis drei Schritte aufwachte und erstarrte, ist seit
+  `active-ragdoll-5` behoben, siehe oben.
 - Render- und Physikgeometrie sind dieselben flachen Polygone.
 - Box3D ist noch jung (0.x) und kann seine API ändern. Deshalb liegt ein fester Stand bei.
 
