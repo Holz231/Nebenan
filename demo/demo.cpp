@@ -152,9 +152,11 @@ struct Demolition
 // threads the library takes against one fewer, with and without parallel physics, see nbGetRecommendedWorkerCount, and
 // how the physics scales with the threads: the town taken down with 1, 2, 4 and so on threads, see
 // nbGetScalingWorkerCounts, all with serial physics, and the profile of the library fitted over them, see
-// nbFormatScalingReport. From the town with figures they take that down. The town with figures also goes down with and
-// without the joints of its ragdolls in the packs of islands, see b3WorldDef::enableJointPacks, what step F8 of the
-// roadmap gains.
+// nbFormatScalingReport. From the town with figures they take that down. The town with figures also comes under the fire of
+// the script with and without the joints of its ragdolls in the packs of islands, see b3WorldDef::enableJointPacks, what
+// step F8 of the roadmap gains. Without them the debris comes to rest differently, so the demolition, which fires while
+// little of it flies, would fire more grenades one way than the other, and the fire of the script is the same in every
+// run, see RunBarrage.
 struct Comparison
 {
 	enum Kind
@@ -168,13 +170,14 @@ struct Comparison
 	// A first, shorter run warms up and does not count. Then come two runs with and two without parallel physics, with
 	// first and last, so a slow drift of the machine falls on both alike, and the same with and without the joints in the
 	// packs. The thread counts take both ways with both counts, and then the same runs the other way round. A counted run
-	// ends when the debris had time to settle after the last house came down. The scaling warms up with the most threads
-	// and then counts a run for each number of threads.
+	// ends when the debris had time to settle after the last house came down, under the fire of the script after 30 s.
+	// The scaling warms up with the most threads and then counts a run for each number of threads.
 	static const int RunCount = 5;
 	static const int MaxRuns = 9;
 	static const int WarmupFrames = 300;
 	static const int SettleFrames = 300;
 	static const int MaxRunFrames = 4000;
+	static const int BarrageFrames = 1800;
 
 	Kind kind = ParallelAgainstSerial;
 	int runCount = RunCount;
@@ -205,12 +208,11 @@ struct Comparison
 	bool paused = false;
 	bool slowMotion = false;
 
-	// Per run: its threads, frames and grenades, the frame times, the CPU time of the simulation, the graphics and the wait
-	// for the physics, the longest simulation and wait in a frame, where the chunks and the figures ended up and what the
-	// figures did
+	// Per run: its threads and frames, the frame times, the CPU time of the simulation, the graphics and the wait for the
+	// physics, the longest simulation and wait in a frame, where the chunks and the figures ended up and what the figures
+	// did. Its grenades the profile counts, see nbProfile::impactCount.
 	int threads[MaxRuns] = {};
 	int frames[MaxRuns] = {};
-	int shots[MaxRuns] = {};
 	std::vector<float> frameTimes[MaxRuns];
 	double simulationTime[MaxRuns] = {};
 	double graphicsTime[MaxRuns] = {};
@@ -2210,8 +2212,16 @@ static void DrawUi( App& app )
 		char label[64];
 		DescribeComparisonRun( comparison, label, sizeof( label ) );
 		int houseCount = TownRows * TownColumns;
-		ImGui::Text( "%s, Haus %d von %d, Bild %d", label, b3MinInt( app.demolition.house + 1, houseCount ), houseCount,
-					 comparison.frame );
+		if ( comparison.kind == Comparison::JointPacks )
+		{
+			ImGui::Text( "%s, Bild %d von %d", label, comparison.frame,
+						 comparison.run == 0 ? Comparison::WarmupFrames : Comparison::BarrageFrames );
+		}
+		else
+		{
+			ImGui::Text( "%s, Haus %d von %d, Bild %d", label, b3MinInt( app.demolition.house + 1, houseCount ), houseCount,
+						 comparison.frame );
+		}
 		if ( ImGui::Button( "Messung abbrechen" ) )
 		{
 			StopComparison( app );
@@ -2284,11 +2294,11 @@ static void DrawUi( App& app )
 		if ( ImGui::IsItemHovered() )
 		{
 			ImGui::SetTooltip(
-				"Lädt die Stadt mit Figuren und reißt sie wie beim Vergleich Haus für Haus ab, einmal\nkurz zum "
-				"Aufwärmen, dann mit F8, ohne, ohne und mit, die Physik parallel zum Zeichnen.\nMit F8 rechnet "
-				"Box3D die Gelenke wacher Ragdolls in den Paketen ganzer Inseln und\nin den Gebieten großer Inseln, "
-				"ohne wie vorher: Farbe für Farbe, solange ein Ragdoll\nwach ist. Das Ergebnis kommt in die "
-				"Zwischenablage, danach lädt die Szene von vorher neu." );
+				"Lädt die Stadt mit Figuren und beschießt sie wie das Skript mit zwölf Granaten pro\nSekunde, 30 s "
+				"lang, in jedem Lauf dieselben: einmal kurz zum Aufwärmen, dann mit F8,\nohne, ohne und mit, die "
+				"Physik parallel zum Zeichnen. Mit F8 rechnet Box3D die Gelenke\nwacher Ragdolls in den Paketen ganzer "
+				"Inseln und in den Gebieten großer Inseln, ohne\nwie vorher: Farbe für Farbe, solange ein Ragdoll wach "
+				"ist. Das Ergebnis kommt in die\nZwischenablage, danach lädt die Szene von vorher neu." );
 		}
 		if ( comparison.summary.empty() == false )
 		{
@@ -2736,6 +2746,15 @@ static void RunDemolition( App& app, int frame )
 	FireDemolition( app, frame );
 
 	// The debris moving right after the shots, before the next update freezes what is over budget
+	nbStats stats = nbWorld_GetStats( app.destruction );
+	app.demolition.maxMoving = b3MaxInt( app.demolition.maxMoving, stats.debrisCount - stats.rubbleCount );
+}
+
+// The town under the fire of the script, twelve grenades a second on the walls of the houses, see RunScript, at the same
+// frames in every run whatever the debris does
+static void RunBarrage( App& app, int frame )
+{
+	RunScript( app, frame );
 	nbStats stats = nbWorld_GetStats( app.destruction );
 	app.demolition.maxMoving = b3MaxInt( app.demolition.maxMoving, stats.debrisCount - stats.rubbleCount );
 }
@@ -3209,6 +3228,32 @@ static void FinishThreadCounts( App& app )
 	PublishComparison( app, text, summary );
 }
 
+// The fire of the script on the town with figures, the same in every run, see RunBarrage, and what is left of the town and
+// its figures after the last run
+static void AppendBarrage( std::string& text, const App& app )
+{
+	const Comparison& comparison = app.comparison;
+	int storeys = 0;
+	for ( int house = 0; house < TownRows * TownColumns; ++house )
+	{
+		storeys += TownHouseFloors( house );
+	}
+	Appendf( text,
+			 "Beschuss der %s wie im Skript, zwölf Granaten pro Sekunde auf die Hauswände, %d in %d Bildern pro Lauf, in jedem "
+			 "Lauf dieselben, Bruchstückgröße x%.2f, Budget %d, höchstens %d Trümmer zugleich unterwegs, Physiktakt ",
+			 s_sceneNames[comparison.town], comparison.profiles[comparison.runCount - 1].impactCount, Comparison::BarrageFrames,
+			 app.fragmentScale, DemolitionBudget, comparison.demolition.maxMoving );
+	AppendStepRate( text, app );
+	Appendf( text, ", 1/60 s pro Bild, erst ein Lauf mit %d Bildern zum Aufwärmen, der nicht zählt\n", Comparison::WarmupFrames );
+	const nbStats& stats = comparison.stats;
+	const nbFigureStats& figures = comparison.figures[comparison.runCount - 1];
+	Appendf( text, "Am Ende: %d von %d Etagen eingestürzt, %d Bruchstücke, %d davon als Trümmer, %d Schutt\n",
+			 stats.collapsedStoreyCount, storeys, stats.chunkCount, stats.dynamicBodyCount, stats.rubbleCount );
+	Appendf( text, "Figuren: %d, am Ende stehen %d, liegen %d, stehen auf %d; umgeworfen %d, aufgestanden %d, abgebrochen %d\n",
+			 figures.figureCount, figures.animatedCount, figures.ragdollCount, figures.gettingUpCount, figures.knockdownCount,
+			 figures.getUpCount, figures.abortCount );
+}
+
 // The profile of the library over the counted runs with or without the joints in the packs, its stages per step over all
 // their steps
 static nbProfile SumJointProfiles( const Comparison& comparison, bool jointPacks )
@@ -3266,7 +3311,8 @@ static void AppendJointResult( std::string& text, const ComparisonResult& result
 
 // With and without the joints of the ragdolls in the packs of islands, see b3WorldDef::enableJointPacks: what step F8 gains
 // while figures lie in the rubble. Without it any awake ragdoll keeps the solver color by color and the large islands out
-// of their domains, so the runs of each way end alike and those with and without in different worlds.
+// of their domains, so the runs of each way end alike and those with and without in different worlds, under the same
+// grenades, see RunBarrage.
 static void FinishJointPacks( App& app )
 {
 	Comparison& comparison = app.comparison;
@@ -3282,7 +3328,7 @@ static void FinishJointPacks( App& app )
 			 "%d.%d.%d\n",
 			 s_sceneNames[comparison.town], s_buildType, version.major, version.minor, version.revision );
 	AppendMachine( text, app );
-	AppendDemolition( text, app );
+	AppendBarrage( text, app );
 	AppendJointResult( text, with, withProfile, true );
 	AppendJointResult( text, without, withoutProfile, false );
 
@@ -3326,15 +3372,15 @@ static void FinishJointPacks( App& app )
 			Appendf( name, "Lauf %d", run );
 		}
 		double frames = b3MaxFloat( (float)comparison.frames[run], 1.0f );
-		Appendf( text,
-				 "  %s, %s F8: %d Bilder, %d Granaten, %.2f ms pro Bild, Simulation %.2f ms, längstes Bild %.1f ms; Box3D %.3f ms, "
-				 "Löser %.3f ms pro Schritt, ganze Inseln in %.0f %%, Gebiete in %.0f %% der Schritte; %d umgeworfen, %d "
-				 "aufgestanden\n",
-				 name.c_str(), comparison.runJointPacks[run] ? "mit" : "ohne", comparison.frames[run], comparison.shots[run],
-				 stats.average,
-				 (float)( comparison.simulationTime[run] / frames ), stats.longest, profile.stages[nb_profileStep],
-				 profile.stages[nb_profileSolve], StepShare( profile, profile.packStepCount ),
-				 StepShare( profile, profile.domainStepCount ), figures.knockdownCount, figures.getUpCount );
+		Appendf(
+			text,
+			"  %s, %s F8: %d Bilder, %d Granaten, %.2f ms pro Bild, Simulation %.2f ms, längstes Bild %.1f ms; Box3D %.3f ms, "
+			"Löser %.3f ms pro Schritt, ganze Inseln in %.0f %%, Gebiete in %.0f %% der Schritte; %d umgeworfen, %d "
+			"aufgestanden\n",
+			name.c_str(), comparison.runJointPacks[run] ? "mit" : "ohne", comparison.frames[run], profile.impactCount,
+			stats.average, (float)( comparison.simulationTime[run] / frames ), stats.longest, profile.stages[nb_profileStep],
+			profile.stages[nb_profileSolve], StepShare( profile, profile.packStepCount ),
+			StepShare( profile, profile.domainStepCount ), figures.knockdownCount, figures.getUpCount );
 	}
 
 	char summary[160];
@@ -3405,6 +3451,10 @@ static void AdvanceComparison( App& app, float frameTime, float graphicsTime )
 	comparison.frame += 1;
 	const Demolition& demolition = app.demolition;
 	bool settled = demolition.doneFrame >= 0 && comparison.frame >= demolition.doneFrame + Comparison::SettleFrames;
+	if ( comparison.kind == Comparison::JointPacks )
+	{
+		settled = comparison.frame >= Comparison::BarrageFrames;
+	}
 	if ( run == 0 ? comparison.frame < Comparison::WarmupFrames : settled == false && comparison.frame < Comparison::MaxRunFrames )
 	{
 		return;
@@ -3416,7 +3466,6 @@ static void AdvanceComparison( App& app, float frameTime, float graphicsTime )
 	SyncChunks( app );
 	comparison.hashes[run] = HashWorld( app );
 	comparison.frames[run] = comparison.frame;
-	comparison.shots[run] = demolition.shots;
 	comparison.stats = nbWorld_GetStats( app.destruction );
 	comparison.profiles[run] = nbWorld_GetProfile( app.destruction );
 	comparison.figures[run] = nbWorld_GetFigureStats( app.destruction );
@@ -3591,10 +3640,15 @@ static void OnFrame()
 	}
 
 	// A comparison takes the town down by the frames of each of its runs, also with --demolition, else its runs would end
-	// at different frames in different worlds
+	// at different frames in different worlds. The one with and without the joints in the packs fires the script, see
+	// RunBarrage.
 	if ( app.automation.script )
 	{
 		RunScript( app, app.frame );
+	}
+	else if ( app.comparison.active && app.comparison.kind == Comparison::JointPacks )
+	{
+		RunBarrage( app, app.comparison.frame );
 	}
 	else if ( app.comparison.active )
 	{

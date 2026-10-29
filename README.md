@@ -196,14 +196,16 @@ den Threads, die sie für jede Art nimmt. „Skalierung messen“ reißt die Sta
 und so weiter bis zur empfohlenen Zahl von Threads, alle mit der Physik nacheinander. Die Bibliothek misst dabei jede
 Stufe von Box3D und Nebenan und rechnet aus, was mit mehr Threads auf einem Thread übrig bleibt. Die Tabelle dazu kommt
 in die Zwischenablage, siehe `nbWorld_GetProfile`. Aus der Stadt mit Figuren reißen diese drei Messungen die Stadt mit
-Figuren ab. „Mit und ohne F8 messen“ lädt immer die Stadt mit Figuren und reißt sie genauso ab, nach dem Aufwärmen mit
-F8, ohne, ohne und mit, die Physik parallel zum Zeichnen und mit den Threads, die die Bibliothek dafür nimmt. Ohne F8
-rechnet Box3D die Gelenke wacher Ragdolls wie bis `active-ragdoll-1`, Farbe für Farbe, siehe Gelenke und Pakete. Der
-Bericht nennt für beide Arten Bildzeit, Simulation, Box3D-Schritt und Löser pro Schritt und in wie vielen Schritten der
-Löser ganze Inseln pro Thread und Gebiete nahm und Ragdolls wach waren, dazu jeden Lauf mit seinen Granaten. Mit und
-ohne F8 endet die Stadt verschieden, weil ihre großen Schutthaufen ohne F8 keine Gebiete nehmen, solange ein Ragdoll
-wach ist, die Läufe jeder Art enden gleich. Jeder Bericht nennt CPU und Grafikkarte, denn auf einer schwachen Grafik
-begrenzt das Zeichnen die Bildzeit.
+Figuren ab. „Mit und ohne F8 messen“ lädt immer die Stadt mit Figuren und beschießt sie wie das Skript mit zwölf
+Granaten pro Sekunde auf die Hauswände, 30 s lang, nach dem Aufwärmen mit F8, ohne, ohne und mit, die Physik parallel
+zum Zeichnen und mit den Threads, die die Bibliothek dafür nimmt. Ohne F8 rechnet Box3D die Gelenke wacher Ragdolls wie
+bis `active-ragdoll-1`, Farbe für Farbe, siehe Gelenke und Pakete. Mit und ohne F8 endet die Stadt verschieden, weil
+ihre großen Schutthaufen ohne F8 keine Gebiete nehmen, solange ein Ragdoll wach ist, die Läufe jeder Art enden gleich.
+Darum schießt dieser Knopf nach festem Plan statt wie beim Abriss nur, solange wenige Trümmer fliegen: Die kommen mit
+und ohne F8 verschieden schnell zur Ruhe, und eine Art bekäme mehr Granaten als die andere. Der Bericht nennt für beide
+Arten Bildzeit, Simulation, Box3D-Schritt und Löser pro Schritt und in wie vielen Schritten der Löser ganze Inseln pro
+Thread und Gebiete nahm und Ragdolls wach waren, dazu jeden Lauf mit seinen Granaten. Jeder Bericht nennt CPU und
+Grafikkarte, denn auf einer schwachen Grafik begrenzt das Zeichnen die Bildzeit.
 
 **Werkzeuge**
 
@@ -241,10 +243,11 @@ Bildschirmen in voller Auflösung (Standard aus, kostet Füllrate). `--serial-ph
 `--threads N` setzt die Zahl der Threads, `--step-rate 30` den Takt der Physik. `--compare` misst parallel gegen
 nacheinander wie der Knopf im Menü, gibt das Ergebnis aus und beendet sich, `--compare-threads` ebenso wie „7 gegen 8
 Threads messen“, `--scaling` wie „Skalierung messen“ und `--compare-joints` wie „Mit und ohne F8 messen“. Diese
-Messungen reißen die Stadt selbst ab, Lauf für Lauf, auch mit `--demolition`, mit `--scene 5` die Stadt mit Figuren.
-Ohne sie reißt `--demolition` die Stadt ab wie dabei. `--script` feuert eine vorgegebene Schussfolge ab, `--frames N`
-beendet nach N Bildern und meldet Bildzeiten, CPU-Zeiten, Uploads und Dreiecke pro Bild und einen Hash der Lagen aller
-Bruchstücke und der Knochen der Figuren, `--screenshot datei.ppm` speichert das letzte Bild (nur OpenGL).
+Messungen reißen die Stadt selbst ab, Lauf für Lauf, auch mit `--demolition`, mit `--scene 5` die Stadt mit Figuren,
+`--compare-joints` beschießt sie. Ohne sie reißt `--demolition` die Stadt ab wie dabei. `--script` feuert eine
+vorgegebene Schussfolge ab, `--frames N` beendet nach N Bildern und meldet Bildzeiten, CPU-Zeiten, Uploads und Dreiecke
+pro Bild und einen Hash der Lagen aller Bruchstücke und der Knochen der Figuren, `--screenshot datei.ppm` speichert das
+letzte Bild (nur OpenGL).
 
 Hinkt die Physik hinterher, lässt `nbWorld_Advance` die Zeit langsamer laufen, statt Schritte nachzuholen: Mehr als
 1/60 s Physik im selben Bild kommt nur, solange der letzte Schritt weniger als 4 ms pro 1/60 s kostete, bei 60 Hz
