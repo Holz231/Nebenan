@@ -152,11 +152,11 @@ struct Demolition
 // threads the library takes against one fewer, with and without parallel physics, see nbGetRecommendedWorkerCount, and
 // how the physics scales with the threads: the town taken down with 1, 2, 4 and so on threads, see
 // nbGetScalingWorkerCounts, all with serial physics, and the profile of the library fitted over them, see
-// nbFormatScalingReport. From the town with figures they take that down. The town with figures also comes under the fire of
-// the script with and without the joints of its ragdolls in the packs of islands, see b3WorldDef::enableJointPacks, what
-// step F8 of the roadmap gains. Without them the debris comes to rest differently, so the demolition, which fires while
-// little of it flies, would fire more grenades one way than the other, and the fire of the script is the same in every
-// run, see RunBarrage.
+// nbFormatScalingReport. From the town with figures they take that down. The town with figures also comes under fire with
+// and without the joints of its ragdolls in the packs of islands, see b3WorldDef::enableJointPacks, what step F8 of the
+// roadmap gains. Without them the debris comes to rest differently, so the demolition, which fires while little of it
+// flies, would fire more grenades one way than the other. That fire takes its shots at a fixed pace instead, the same in
+// every run, see RunBarrage.
 struct Comparison
 {
 	enum Kind
@@ -170,14 +170,14 @@ struct Comparison
 	// A first, shorter run warms up and does not count. Then come two runs with and two without parallel physics, with
 	// first and last, so a slow drift of the machine falls on both alike, and the same with and without the joints in the
 	// packs. The thread counts take both ways with both counts, and then the same runs the other way round. A counted run
-	// ends when the debris had time to settle after the last house came down, under the fire of the script after 30 s.
+	// ends when the debris had time to settle after the last house came down, under the fixed fire after 40 s.
 	// The scaling warms up with the most threads and then counts a run for each number of threads.
 	static const int RunCount = 5;
 	static const int MaxRuns = 9;
 	static const int WarmupFrames = 300;
 	static const int SettleFrames = 300;
 	static const int MaxRunFrames = 4000;
-	static const int BarrageFrames = 1800;
+	static const int BarrageFrames = 2400;
 
 	Kind kind = ParallelAgainstSerial;
 	int runCount = RunCount;
@@ -2294,11 +2294,12 @@ static void DrawUi( App& app )
 		if ( ImGui::IsItemHovered() )
 		{
 			ImGui::SetTooltip(
-				"Lädt die Stadt mit Figuren und beschießt sie wie das Skript mit zwölf Granaten pro\nSekunde, 30 s "
-				"lang, in jedem Lauf dieselben: einmal kurz zum Aufwärmen, dann mit F8,\nohne, ohne und mit, die "
-				"Physik parallel zum Zeichnen. Mit F8 rechnet Box3D die Gelenke\nwacher Ragdolls in den Paketen ganzer "
-				"Inseln und in den Gebieten großer Inseln, ohne\nwie vorher: Farbe für Farbe, solange ein Ragdoll wach "
-				"ist. Das Ergebnis kommt in die\nZwischenablage, danach lädt die Szene von vorher neu." );
+				"Lädt die Stadt mit Figuren und beschießt sie Haus für Haus wie beim Abriss, aber nach\nfestem Plan "
+				"mit zwölf Granaten pro Sekunde, 40 s lang, in jedem Lauf dieselben: einmal\nkurz zum Aufwärmen, dann "
+				"mit F8, ohne, ohne und mit, die Physik parallel zum Zeichnen.\nMit F8 rechnet Box3D die Gelenke wacher "
+				"Ragdolls in den Paketen ganzer Inseln und in\nden Gebieten großer Inseln, ohne wie vorher: Farbe für "
+				"Farbe, solange ein Ragdoll wach\nist. Das Ergebnis kommt in die Zwischenablage, danach lädt die Szene "
+				"von vorher neu." );
 		}
 		if ( comparison.summary.empty() == false )
 		{
@@ -2750,11 +2751,28 @@ static void RunDemolition( App& app, int frame )
 	app.demolition.maxMoving = b3MaxInt( app.demolition.maxMoving, stats.debrisCount - stats.rubbleCount );
 }
 
-// The town under the fire of the script, twelve grenades a second on the walls of the houses, see RunScript, at the same
-// frames in every run whatever the debris does
+// The town under fire for the comparison with and without the joints in the packs: the shots of the first pass of the
+// demolition, house by house and wall by wall from the top down, see DemolitionTarget, but at a fixed pace, a grenade every
+// fifth frame, twelve a second, so every run gets the same ones at the same frames whatever the debris does
+static const int BarrageInterval = 5;
+
 static void RunBarrage( App& app, int frame )
 {
-	RunScript( app, frame );
+	if ( frame >= DemolitionStart && ( frame - DemolitionStart ) % BarrageInterval == 0 )
+	{
+		int shot = ( frame - DemolitionStart ) / BarrageInterval;
+		for ( int house = 0; house < (int)app.townHouses.size(); ++house )
+		{
+			int passShots = 2 * TownHouseFloors( house ) * DemolitionShotsPerRow;
+			if ( shot < passShots )
+			{
+				FireAt( app, ToolGrenade, DemolitionTarget( house, shot ) );
+				break;
+			}
+			shot -= passShots;
+		}
+	}
+
 	nbStats stats = nbWorld_GetStats( app.destruction );
 	app.demolition.maxMoving = b3MaxInt( app.demolition.maxMoving, stats.debrisCount - stats.rubbleCount );
 }
@@ -3228,8 +3246,8 @@ static void FinishThreadCounts( App& app )
 	PublishComparison( app, text, summary );
 }
 
-// The fire of the script on the town with figures, the same in every run, see RunBarrage, and what is left of the town and
-// its figures after the last run
+// The fixed fire on the town with figures, the same in every run, see RunBarrage, the houses it reached, and what is left
+// of the town and its figures after the last run
 static void AppendBarrage( std::string& text, const App& app )
 {
 	const Comparison& comparison = app.comparison;
@@ -3238,11 +3256,18 @@ static void AppendBarrage( std::string& text, const App& app )
 	{
 		storeys += TownHouseFloors( house );
 	}
+	int grenades = comparison.profiles[comparison.runCount - 1].impactCount;
+	int houses = 0;
+	for ( int shots = grenades; shots > 0 && houses < TownRows * TownColumns; ++houses )
+	{
+		shots -= 2 * TownHouseFloors( houses ) * DemolitionShotsPerRow;
+	}
 	Appendf( text,
-			 "Beschuss der %s wie im Skript, zwölf Granaten pro Sekunde auf die Hauswände, %d in %d Bildern pro Lauf, in jedem "
-			 "Lauf dieselben, Bruchstückgröße x%.2f, Budget %d, höchstens %d Trümmer zugleich unterwegs, Physiktakt ",
-			 s_sceneNames[comparison.town], comparison.profiles[comparison.runCount - 1].impactCount, Comparison::BarrageFrames,
-			 app.fragmentScale, DemolitionBudget, comparison.demolition.maxMoving );
+			 "Beschuss der %s Haus für Haus wie beim Abriss, Wand für Wand von oben nach unten, aber nach festem Plan, zwölf "
+			 "Granaten pro Sekunde, %d in %d Bildern pro Lauf auf %d Häuser, in jedem Lauf dieselben, Bruchstückgröße x%.2f, "
+			 "Budget %d, höchstens %d Trümmer zugleich unterwegs, Physiktakt ",
+			 s_sceneNames[comparison.town], grenades, Comparison::BarrageFrames, houses, app.fragmentScale, DemolitionBudget,
+			 comparison.demolition.maxMoving );
 	AppendStepRate( text, app );
 	Appendf( text, ", 1/60 s pro Bild, erst ein Lauf mit %d Bildern zum Aufwärmen, der nicht zählt\n", Comparison::WarmupFrames );
 	const nbStats& stats = comparison.stats;
@@ -3640,7 +3665,7 @@ static void OnFrame()
 	}
 
 	// A comparison takes the town down by the frames of each of its runs, also with --demolition, else its runs would end
-	// at different frames in different worlds. The one with and without the joints in the packs fires the script, see
+	// at different frames in different worlds. The one with and without the joints in the packs fires at a fixed pace, see
 	// RunBarrage.
 	if ( app.automation.script )
 	{
