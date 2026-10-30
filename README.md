@@ -1648,6 +1648,17 @@ Stadt mit Figuren stürzt ein sechstes Stockwerk ein, mit bis zu 6 400 statt 3 6
 Bilder dauern dort 45 bis 48 statt 36 ms. Ein Spiel ruft dafür nichts Neues auf. Die Städte über dem Budget enden
 anders, mit einem und mit vier Threads gleich.
 
+Seit `active-ragdoll-9` behält ein Stück, das erstarrt, seine Kontakte mit bewegten Stücken, mit den Stößen ihrer Punkte
+und den Trennachsen ihrer Hüllen. Box3D löschte sie bisher mit dem Typwechsel und legte sie im nächsten Schritt neu an,
+im Mittel 7,3 von 19,6 Kontakten eines Stücks, siehe „Kontakte beim Erstarren behalten“ in
+[extern/README.md](extern/README.md) und [docs/Optimierungen.md](docs/Optimierungen.md). Über acht Folgen im Wechsel mit
+`active-ragdoll-8` kostet ein Bild 1,9 % und der Schritt von Box3D 2,2 % weniger. Im gepaarten Benchmark kostet ein Bild
+bis zu 6 % weniger, das Update außer unter dem Trommelfeuer 3 bis 7 % mehr. In der Stadt mit Figuren stürzen weiter 6
+Stockwerke ein, aber mit höchstens 4 879 statt 6 400 wachen Körpern, und die 99 % der Bilder dauern dort 37 bis 39 statt
+48 ms. Kommt am Ende eines Laufs jedes große Stück Schutt allein wieder zum Leben, fallen auf 48 neuen Folgen von
+Granaten 17 statt 20 mehr als 5 cm, auf die 16 Folgen oben waren F17 bis F21 abgestimmt. Ein Spiel ruft dafür nichts
+Neues auf. Die Städte über dem Budget enden anders, mit einem und mit vier Threads gleich.
+
 Seit `physik-44` wählt ein Spiel den Takt der Physik, siehe Der Takt der Physik und „Physik mit 30 Hz und 8
 Teilschritten“ in [docs/Optimierungen.md](docs/Optimierungen.md). Was eine simulierte Sekunde der Städte unter Beschuss
 auf der VM mit 4 Threads kostet, Box3D-Schritt, Update und Einschläge zusammen, mit den Granaten bei jedem Takt zu
@@ -1786,7 +1797,7 @@ lange die Threads im Löser rechnen und worauf sie sonst warten.
 ## Tests und Benchmark
 
 ```sh
-build/bin/nebenan_test            # 89 Tests: Geometrie, Voronoi, Hüllen, Öffnungen, Stöße, Stützgraph, Etagen, Lastprüfung, Mauern, Schutt, Ruhe, Durchschlagen, Threads, Knoten, große Blöcke, Gelenke in Paketen und Gebieten, Suchbaum, Kontaktlisten, Streaming, Stream, Laden im Hintergrund, Speichern und Zurückholen, gemeinsamer Thread-Pool, Ruhe-Prüfung auf den Workern, Schritt auf eigenem Thread, Schritte pro Bild, Takt der Physik, Wahl der Threads, Profil und Skalierung, Figuren, Determinismus …
+build/bin/nebenan_test            # 90 Tests: Geometrie, Voronoi, Hüllen, Öffnungen, Stöße, Stützgraph, Etagen, Lastprüfung, Mauern, Schutt, Ruhe, Durchschlagen, Threads, Knoten, große Blöcke, Gelenke in Paketen und Gebieten, Suchbaum, Kontaktlisten, Streaming, Stream, Laden im Hintergrund, Speichern und Zurückholen, gemeinsamer Thread-Pool, Ruhe-Prüfung auf den Workern, Schritt auf eigenem Thread, Schritte pro Bild, Takt der Physik, Wahl der Threads, Profil und Skalierung, Figuren, Determinismus …
 build/bin/nebenan_benchmark 4     # Zahl = Threads für Bruch und Physik, 0 = so viele, wie ein Spiel nähme
 build/bin/nebenan_benchmark scaling   # die Städte unter Beschuss mit 1, 2, 4 … Threads und die Tabelle der Skalierung
 build/bin/nebenan_benchmark rates     # die Städte unter Beschuss mit 30, 60 und 120 Hz, was eine simulierte Sekunde kostet
@@ -1892,13 +1903,17 @@ Nach Änderungen an `demo/shaders/scene.glsl` die Shader neu erzeugen, im Ordner
   Figuren rund 10 statt 2,4 ms, vor allem durch das Budget. Es lässt dort rund 190 Stücke auf einmal erstarren und liegt
   trotzdem im Mittel 1 300 Trümmer über seiner Grenze, denn frische und fliegende Trümmer dürfen nicht erstarren. Seit
   `active-ragdoll-6` kostet ein Typwechsel dort rund ein Fünftel weniger, bitgleich, und seit `active-ragdoll-7` sieht
-  der aufrufende Thread kein Stück mehr ein zweites Mal an, siehe oben. Dass erstarrende Stücke ihre Kontakte zu
-  bewegten verlieren, ist Schritt F20 der [Roadmap](docs/Roadmap.md). Dass ein großes Teil eines Gebäudes dabei alle
-  ein bis drei Schritte aufwachte und erstarrte, ist seit `active-ragdoll-5` behoben, siehe oben.
-- Am Ende eines Laufs der Stadt mit Figuren fällt etwa jedes 900. große Stück Schutt mehr als 5 cm, wenn es allein
-  wieder zum Leben kommt: Es lehnte an einem großen Teil eines Gebäudes oder lag auf sehr kleinen Stücken. Seit
-  `active-ragdoll-8` merkt sich ein großes Stück den Schutt an seiner Seite, den es für sein Gleichgewicht braucht, aber
-  höchstens vier Bruchstücke insgesamt, siehe Schritt F21 der [Roadmap](docs/Roadmap.md).
+  der aufrufende Thread kein Stück mehr ein zweites Mal an, siehe oben. Seit `active-ragdoll-9` behalten erstarrende
+  Stücke ihre Kontakte zu bewegten, Schritt F20 der [Roadmap](docs/Roadmap.md), der Schritt danach kostet dort 1,1 bis
+  1,7 ms weniger, das Update aber 0,6 ms mehr. Dass ein großes Teil eines Gebäudes dabei alle ein bis drei Schritte
+  aufwachte und erstarrte, ist seit `active-ragdoll-5` behoben, siehe oben.
+- Am Ende eines Laufs der Stadt mit Figuren fällt etwa jedes 330. große Stück Schutt mehr als 5 cm, wenn es allein
+  wieder zum Leben kommt, auf 48 Folgen von Granaten, an denen nichts abgestimmt wurde. Auf den 16 Folgen, an denen F17
+  bis F21 gemessen wurden, fiel auf `active-ragdoll-8` nur jedes 900.: Es lehnte an einem großen Teil eines Gebäudes
+  oder lag auf sehr kleinen Stücken. Seit `active-ragdoll-8` merkt sich ein großes Stück den Schutt an seiner Seite, den
+  es für sein Gleichgewicht braucht, aber höchstens vier Bruchstücke insgesamt, siehe Schritt F21 der
+  [Roadmap](docs/Roadmap.md). Schutt, der auf Festem und einem bewegten Stück liegt, verliert seinen Halt, wenn das
+  Feste wegbricht, Schritt F22.
 - Render- und Physikgeometrie sind dieselben flachen Polygone.
 - Box3D ist noch jung (0.x) und kann seine API ändern. Deshalb liegt ein fester Stand bei.
 

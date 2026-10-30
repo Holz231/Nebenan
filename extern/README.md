@@ -786,8 +786,8 @@ Stöße hielten den anderen Körper gegen diesen, und das tut ein statischer gen
 wird, löscht weiter alle Kontakte: Kämen die Stöße mit, die einen Haufen auf einem statischen Körper hielten, stießen
 sie ihn auf einmal an. Pro Erstarren behält ein Stück in der Stadt mit Figuren 1,9 berührende und 5,4 weitere Kontakte
 und löscht 12,4 mit statischen Körpern. In acht Folgen im Wechsel mit `active-ragdoll-8` kostet dort ein Bild 1,9 % und
-der Schritt von Box3D 2,2 % weniger, ein Typwechsel 3 % mehr, denn die berührenden Kontakte, die bleiben, wechseln
-Insel, Farbe und Listen ohne Vorausladen, siehe „Kontakte beim Erstarren behalten“ in
+der Schritt von Box3D 2,2 % weniger, ein Typwechsel 3 % mehr: Er löscht weniger Kontakte, aber die berührenden, die
+bleiben, wechseln Insel, Farbe und Listen ohne Vorausladen, siehe „Kontakte beim Erstarren behalten“ in
 [`docs/Optimierungen.md`](../docs/Optimierungen.md). Die Validierung von Box3D prüft die Listen, Inseln, Farben und
 Gebiete nach jedem Typwechsel, `B3_HAS_KEPT_CONTACTS` zeigt das Behalten an. Gebaut für Schritt F20 der
 [Roadmap](../docs/Roadmap.md).
