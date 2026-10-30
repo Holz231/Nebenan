@@ -6000,8 +6000,8 @@ typedef struct nbSupport
 	float lyingFlatness;
 
 	// For a piece smaller than NB_CHECKED_VOLUME that moves: its center of mass lies over the points where it lies on
-	// something, fixed or moving, or something lies close below it, see NB_CENTER_RADIUS. Always true for a piece at rest
-	// and for larger ones, which are balanced or braced.
+	// something, fixed or moving, see NB_CENTER_RADIUS. Always true for a piece at rest and for larger ones, which are
+	// balanced or braced.
 	bool centered;
 } nbSupport;
 
@@ -6034,8 +6034,9 @@ static float nbDropRayFcn( b3ShapeId shapeId, b3Pos point, b3Vec3 normal, float 
 	return 0.0f;
 }
 
-// Whether something lies below the center of mass of a piece within its radius and NB_DROP_HEIGHT. The world does not
-// change while the workers look, so they cast the ray too.
+// Whether something lies below the center of mass of a piece within its radius and NB_DROP_HEIGHT. Only the calling thread
+// queries Box3D, which can record its queries, so the budget casts the ray once a piece would freeze, see
+// nbEnforceDebrisBudget.
 static bool nbHasSomethingBelow( const nbWorld* world, const nbActor* actor, b3Vec3 up )
 {
 	nbDropQuery query = { actor->bodyId, false };
@@ -6220,8 +6221,7 @@ static void nbFindSupport( const nbWorld* world, int actorIndex, const nbTouch* 
 
 	support->balanced = large == false || nbIsBalanced( &fan, NB_BALANCE_RADIUS );
 	support->braced = large && nbIsBalanced( &fixedFan, NB_BALANCE_RADIUS );
-	support->centered =
-		centering == false || nbIsBalanced( &carryFan, NB_CENTER_RADIUS ) || nbHasSomethingBelow( world, actor, up );
+	support->centered = centering == false || nbIsBalanced( &carryFan, NB_CENTER_RADIUS );
 
 	// Balanced only with fixed chunks at its side, it would hang once those moved away: they did not bring it back to life,
 	// it neither lay on them nor higher than their center of mass, see nbReleaseHeldRubble. It keeps them with its
@@ -7497,7 +7497,8 @@ static void nbEnforceDebrisBudget( nbWorld* world, b3Vec3 up )
 			// others.
 			float flatness = pass == 0 ? support.groundFlatness : support.lyingFlatness;
 			if ( large == false && hasGravity && ranks[i].speed >= NB_SLIDE_SPEED &&
-				 ( flatness < NB_SLIDE_SLOPE || support.centered == false ) )
+				 ( flatness < NB_SLIDE_SLOPE ||
+				   ( support.centered == false && nbHasSomethingBelow( world, actor, up ) == false ) ) )
 			{
 				continue;
 			}
