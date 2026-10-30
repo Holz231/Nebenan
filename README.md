@@ -1641,8 +1641,12 @@ Gleichgewicht braucht. Rückt dieser weg, wacht das Stück auf, wie wenn es dara
 eine Seite hält“ in [docs/Optimierungen.md](docs/Optimierungen.md). Und ein großes Stück, das nur dazwischen verkeilt
 ist und auf nichts Festem liegt, erstarrt nicht mehr, es bleibt beweglich und schläft in Box3D. Kommt am Ende eines
 Laufs jedes große Stück Schutt allein wieder zum Leben, fallen so über 16 Folgen von Granaten 2 statt 9 mehr als 5 cm,
-zusammen 0,20 statt 1,40 m, und keins mehr, weil eine Stütze wegrückte. Ein Spiel ruft dafür nichts Neues auf. Die
-Städte über dem Budget enden anders, mit einem und mit vier Threads gleich.
+zusammen 0,20 statt 1,40 m, und keins mehr, weil eine Stütze wegrückte. Über acht Folgen im Wechsel mit
+`active-ragdoll-7` kostet ein Bild 10,33 statt 10,51 ms, und die 99 % der Bilder dauern 29,25 statt 29,77 ms. Im
+gepaarten Benchmark kostet in den Städten ohne Figuren ein Bild bis zu 9 % und das Update bis zu 7 % weniger. In seiner
+Stadt mit Figuren stürzt ein sechstes Stockwerk ein, mit bis zu 6 400 statt 3 656 wachen Körpern, und die 99 % der
+Bilder dauern dort 45 bis 48 statt 36 ms. Ein Spiel ruft dafür nichts Neues auf. Die Städte über dem Budget enden
+anders, mit einem und mit vier Threads gleich.
 
 Seit `physik-44` wählt ein Spiel den Takt der Physik, siehe Der Takt der Physik und „Physik mit 30 Hz und 8
 Teilschritten“ in [docs/Optimierungen.md](docs/Optimierungen.md). Was eine simulierte Sekunde der Städte unter Beschuss
