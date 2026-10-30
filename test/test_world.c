@@ -4581,6 +4581,66 @@ static int DebrisBudgetSlopeTest( void )
 	return 0;
 }
 
+// Move a body by an offset, turned as it is
+static void MoveBody( b3BodyId bodyId, b3Vec3 offset )
+{
+	b3WorldTransform transform = b3Body_GetTransform( bodyId );
+	b3Body_SetTransform( bodyId, b3ToPos( b3Add( b3ToVec3( transform.p ), offset ) ), transform.q );
+}
+
+// A stone that freezes on a moving slab, which still holds rubble from where it lay, comes back to life once the slab
+// slides away, see nbReleaseMovedCarriers. The turn of the slab to release comes an update later: another slab moved
+// away from 36 stones, and they came back to life, the limit of an update. The slab held on to the box of where it lay,
+// and the stone stayed in the air.
+static int MovedCarrierTest( void )
+{
+	TestScene scene = CreateScene();
+	nbDestructibleId holder = CreateLooseBox( &scene, (b3Vec3){ -3.0f, 0.1f, 0.0f }, (b3Vec3){ 1.0f, 0.1f, 1.0f }, 101 );
+	for ( int i = 0; i < 36; ++i )
+	{
+		b3Vec3 position = { -3.625f + 0.25f * (float)( i % 6 ), 0.25f, -0.625f + 0.25f * (float)( i / 6 ) };
+		CreateLooseBox( &scene, position, (b3Vec3){ 0.05f, 0.05f, 0.05f }, 102 + (uint32_t)i );
+	}
+	nbDestructibleId slab = CreateLooseBox( &scene, (b3Vec3){ 3.0f, 0.25f, 0.0f }, (b3Vec3){ 1.0f, 0.25f, 1.0f }, 140 );
+	nbDestructibleId stone = CreateLooseBox( &scene, (b3Vec3){ 3.0f, 0.55f, 0.0f }, (b3Vec3){ 0.05f, 0.05f, 0.05f }, 141 );
+	Step( &scene, 120 );
+	ENSURE( nbWorld_GetStats( scene.world ).rubbleCount == 39 );
+
+	// The slab with the 36 stones moves 3 m away from under them. The other slab comes back to life where it lies and
+	// holds the rubble there, then moves 1.5 m with its stone and slides on.
+	nbWorld* world = nbGetWorldFromId( scene.world );
+	int holderActor = ActorOfDestructible( &scene, holder );
+	int slabActor = ActorOfDestructible( &scene, slab );
+	int stoneActor = ActorOfDestructible( &scene, stone );
+	nbThawActor( world, holderActor );
+	nbThawActor( world, slabActor );
+	nbThawActor( world, stoneActor );
+	ENSURE( world->actors.data[slabActor].holdsRubble );
+	MoveBody( world->actors.data[holderActor].bodyId, (b3Vec3){ -3.0f, 0.0f, 0.0f } );
+	MoveBody( world->actors.data[slabActor].bodyId, (b3Vec3){ 0.0f, 0.0f, 1.5f } );
+	MoveBody( world->actors.data[stoneActor].bodyId, (b3Vec3){ 0.0f, 0.0f, 1.5f } );
+	b3Body_SetLinearVelocity( world->actors.data[slabActor].bodyId, (b3Vec3){ 0.0f, 0.0f, 0.5f } );
+	b3Body_SetLinearVelocity( world->actors.data[stoneActor].bodyId, (b3Vec3){ 0.0f, 0.0f, 0.5f } );
+	nbWorld_SetDebrisBudget( scene.world, 0 );
+
+	// Over the budget the stone freezes on the slab in the update in which the 36 stones come back to life
+	Step( &scene, 1 );
+	ENSURE( nbWorld_GetStats( scene.world ).rubbleCount <= 3 );
+	ENSURE( world->actors.data[stoneActor].isRubble && world->actors.data[slabActor].isRubble == false );
+
+	// The slab slides 3 m from under the stone, and the stone falls to the ground
+	for ( int i = 0; i < 60; ++i )
+	{
+		b3Body_SetLinearVelocity( world->actors.data[slabActor].bodyId, (b3Vec3){ 0.0f, 0.0f, 3.0f } );
+		Step( &scene, 1 );
+	}
+	Step( &scene, 60 );
+	ENSURE( CenterOfChunks( stone ).y < 0.1f );
+	ENSURE( RubbleInTheAir( &scene ) == 0 );
+	DestroyScene( &scene );
+	return 0;
+}
+
 // A brick wall 3 m wide and 0.3 m thick, pre-fractured into one layer of cells, under a concrete block. Without collision
 // damage every fragment comes from a chunk crushed under the load.
 static void CreateLoadedWall( TestScene* scene )
@@ -7762,6 +7822,7 @@ int WorldTest( void )
 	RUN_TEST( PartHolderTest );
 	RUN_TEST( SideSupportTest );
 	RUN_TEST( PassCarrierTest );
+	RUN_TEST( MovedCarrierTest );
 	RUN_TEST( LandingTest );
 	return 0;
 }

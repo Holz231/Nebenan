@@ -5525,6 +5525,21 @@ static void nbReleaseIfMoved( nbWorld* world, int actorIndex, b3Vec3 up, bool fr
 	}
 }
 
+// The moving pieces a piece freezes on hold it from where they lie now, see nbFreezeOnCarriers. One that moved away from
+// the rubble it holds releases that first, its turn in nbReleaseHeldRubble may come updates later. Holding on, it kept the
+// box of where it lay: over 48 runs of the town with figures three pieces froze on a moving piece that held rubble from
+// 0.07 to 0.13 s before, outside of its box, and stayed in the air once it moved on.
+static void nbReleaseMovedCarriers( nbWorld* world, const nbCarrier* carriers, int count, b3Vec3 up )
+{
+	for ( int k = 0; k < count; ++k )
+	{
+		if ( carriers[k].chunkIndex != NB_NULL_INDEX )
+		{
+			nbReleaseIfMoved( world, world->chunks.data[carriers[k].chunkIndex].actorIndex, up, false );
+		}
+	}
+}
+
 // Pieces that moved away from where they lay release the rubble resting on them, up to the limit of an update, and the
 // next update goes on where this one stopped. Each started at the front: in a collapse the first pieces of the list
 // reached the limit in every update, and a part that broke off a house late never had its turn before it froze 0.8 m
@@ -6819,6 +6834,12 @@ static void nbSettleDebris( nbWorld* world, b3Vec3 up, float timeStep )
 		nbReleaseIfMoved( world, quiet[queue[k]], up, true );
 	}
 
+	// The moving pieces they lie on hold them from where they lie now. A piece that freezes too released above.
+	for ( int k = 0; k < queueCount; ++k )
+	{
+		nbReleaseMovedCarriers( world, pieces[queue[k]]->carriers, pieces[queue[k]]->carrierCount, up );
+	}
+
 #if defined( B3_HAS_SHAPE_BATCH )
 	// Box3D sorts every piece that freezes or comes back to life into its tree with a search from the root. The pieces of a
 	// pile go in together with one search, see b3World_BeginShapeBatch. Nothing queries the trees before they are in.
@@ -7425,6 +7446,12 @@ static void nbEnforceDebrisBudget( nbWorld* world, b3Vec3 up )
 	for ( int k = 0; hasGravity && k < chosen; ++k )
 	{
 		nbReleaseIfMoved( world, choices[k].actorIndex, up, true );
+	}
+
+	// The moving pieces they lie on hold them from where they lie now, see nbSettleDebris
+	for ( int k = 0; hasGravity && k < chosen; ++k )
+	{
+		nbReleaseMovedCarriers( world, choices[k].carriers, choices[k].carrierCount, up );
 	}
 
 #if defined( B3_HAS_SHAPE_BATCH )
