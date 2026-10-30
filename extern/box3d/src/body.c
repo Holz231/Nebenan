@@ -4,6 +4,7 @@
 #include "body.h"
 
 #include "aabb.h"
+#include "constraint_graph.h"
 #include "contact.h"
 #include "core.h"
 #include "id_pool.h"
@@ -303,6 +304,103 @@ static void b3DestroyBodyContacts( b3World* world, b3Body* body, bool wakeBodies
 
 	B3_ASSERT( body->headTouchKey == B3_NULL_INDEX ); // Added for Nebenan
 	b3ValidateSolverSets( world );
+}
+
+// Added for Nebenan: a body that changes between dynamic and static keeps its contacts with awake dynamic bodies, see
+// b3Body_SetType. Debris that freezes into rubble had 18 contacts, 7.7 of them with moving pieces, and Box3D destroyed them
+// with the type change and created them again in the next step, without the impulses of their points and the separating
+// axes of their hulls. A touching contact that stays leaves the lists of the touching contacts, its island and its color
+// here as if it stopped touching, while the body still has its type, so a domain counts it out at both bodies, and keeps
+// its manifolds, see b3RestoreBodyContacts. The others are destroyed as before, without waking anything: those with static
+// or kinematic bodies, which cannot touch a static body, and those with sleeping bodies, which the pair search creates
+// again.
+static void b3KeepBodyContacts( b3World* world, b3Body* body )
+{
+	const b3Body* bodies = world->bodies.data;
+	int edgeKey = body->headContactKey;
+	while ( edgeKey != B3_NULL_INDEX )
+	{
+		int contactId = edgeKey >> 1;
+		int edgeIndex = edgeKey & 1;
+
+		b3Contact* contact = b3Array_Get( world->contacts, contactId );
+		edgeKey = contact->edges[edgeIndex].nextKey;
+
+		const b3Body* other = bodies + contact->edges[edgeIndex ^ 1].bodyId;
+		if ( other->type != b3_dynamicBody || other->setIndex != b3_awakeSet )
+		{
+			b3DestroyContact( world, contact, false );
+			continue;
+		}
+
+		if ( ( contact->flags & b3_contactTouchingFlag ) == 0 )
+		{
+			continue;
+		}
+
+		B3_ASSERT( contact->setIndex == b3_awakeSet && contact->colorIndex != B3_NULL_INDEX );
+		B3_ASSERT( contact->islandId != B3_NULL_INDEX );
+		int colorIndex = contact->colorIndex;
+		int localIndex = contact->localIndex;
+		b3UnlinkTouchingContact( world, contact );
+		b3UnlinkContact( world, contact );
+		contact->colorIndex = B3_NULL_INDEX;
+		contact->localIndex = B3_NULL_INDEX;
+		bool meshContact = ( contact->flags & b3_simMeshContact ) != 0;
+		b3RemoveContactFromGraph( world, contact, contact->edges[0].bodyId, contact->edges[1].bodyId, colorIndex, localIndex,
+								  meshContact );
+	}
+
+	B3_ASSERT( body->headTouchKey == B3_NULL_INDEX );
+}
+
+// Added for Nebenan: the contacts a body kept through its type change, see b3KeepBodyContacts, once it has its new type and
+// set. All of them take its new sim index and the flag of a contact with a static body, or lose it. A touching one goes
+// back into the lists of the touching contacts, an island and the graph as when it starts touching, a contact with a static
+// body into the colors kept for those, in the order of the contact list of the body. The center of mass of the body moved,
+// so each computes its manifolds anew in the next step, see b3UpdateBodyMassData, with its separating axis, and its points
+// find their impulses by their ids.
+static void b3RestoreBodyContacts( b3World* world, b3Body* body )
+{
+	int encodedBodySimIndex = b3EncodeBodySimIndex( body );
+	bool isStatic = body->type == b3_staticBody;
+	int edgeKey = body->headContactKey;
+	while ( edgeKey != B3_NULL_INDEX )
+	{
+		int contactId = edgeKey >> 1;
+		int edgeIndex = edgeKey & 1;
+
+		b3Contact* contact = b3Array_Get( world->contacts, contactId );
+		edgeKey = contact->edges[edgeIndex].nextKey;
+
+		if ( edgeIndex == 0 )
+		{
+			contact->encodedBodySimA = encodedBodySimIndex;
+		}
+		else
+		{
+			contact->encodedBodySimB = encodedBodySimIndex;
+		}
+
+		if ( isStatic )
+		{
+			contact->flags |= b3_contactStaticFlag;
+		}
+		else
+		{
+			contact->flags &= ~b3_contactStaticFlag;
+		}
+
+		contact->flags &= ~b3_relativeTransformValid;
+
+		if ( contact->flags & b3_contactTouchingFlag )
+		{
+			B3_ASSERT( contact->colorIndex == B3_NULL_INDEX && contact->islandId == B3_NULL_INDEX );
+			b3LinkTouchingContact( world, contact );
+			b3LinkContact( world, contact );
+			b3AddContactToGraph( world, contact );
+		}
+	}
 }
 
 b3BodyId b3CreateBody( b3WorldId worldId, const b3BodyDef* def )
@@ -1954,11 +2052,14 @@ b3BodyType b3Body_GetType( b3BodyId bodyId )
 
 // This should follow similar steps as you would get destroying and recreating the body, shapes, and joints.
 // Contacts are difficult to preserve because the broad-phase pairs change, so I just destroy them.
+// Changed for Nebenan: between dynamic and static the pairs with dynamic bodies stay, and the contacts with awake ones
+// stay with them, see b3KeepBodyContacts.
 // todo with a bit more effort I could support an option to let the body sleep
 //
 // Revised steps:
 // 1 Skip disabled bodies
-// 2 Destroy all contacts on the body
+// 2 Destroy all contacts on the body (between dynamic and static: wake the body first, then destroy the contacts it
+//   cannot keep and take the touching ones it keeps out of their lists, island and color)
 // 3 Wake the body
 // 4 For all joints attached to the body
 //  - wake attached bodies
@@ -1976,6 +2077,7 @@ b3BodyType b3Body_GetType( b3BodyId bodyId )
 // 8 For all shapes
 //  - Destroy proxy in old tree
 //  - Create proxy in new tree
+// 9 Between dynamic and static: put the kept touching contacts back, see b3RestoreBodyContacts
 // Notes:
 // - the implementation below tries to minimize the number of predicates, so some
 //   operations may have no effect, such as transferring a joint to the same set
@@ -2038,13 +2140,25 @@ void b3Body_SetType( b3BodyId bodyId, b3BodyType type )
 		return;
 	}
 
-	// Stage 2: destroy all contacts but don't wake bodies (because we don't need to)
-	bool wakeBodies = false;
-	b3DestroyBodyContacts( world, body, wakeBodies );
+	// Added for Nebenan: a body that changes between dynamic and static keeps its contacts with awake dynamic bodies, see
+	// b3KeepBodyContacts. It wakes first, so a sleeping one has the contacts of its island awake too.
+	bool keepContacts = ( originalType == b3_dynamicBody && type == b3_staticBody ) ||
+						( originalType == b3_staticBody && type == b3_dynamicBody );
+	if ( keepContacts )
+	{
+		b3WakeBody( world, body );
+		b3KeepBodyContacts( world, body );
+	}
+	else
+	{
+		// Stage 2: destroy all contacts but don't wake bodies (because we don't need to)
+		bool wakeBodies = false;
+		b3DestroyBodyContacts( world, body, wakeBodies );
 
-	// Stage 3: wake this body (does nothing if body is static), otherwise it will also wake
-	// all bodies in the same sleeping solver set.
-	b3WakeBody( world, body );
+		// Stage 3: wake this body (does nothing if body is static), otherwise it will also wake
+		// all bodies in the same sleeping solver set.
+		b3WakeBody( world, body );
+	}
 
 	// Stage 4: move joints to temporary storage
 	b3SolverSet* staticSet = b3Array_Get( world->solverSets, b3_staticSet );
@@ -2184,6 +2298,12 @@ void b3Body_SetType( b3BodyId bodyId, b3BodyType type )
 		}
 
 		b3LinkJoint( world, joint );
+	}
+
+	// Added for Nebenan: see b3RestoreBodyContacts
+	if ( keepContacts )
+	{
+		b3RestoreBodyContacts( world, body );
 	}
 
 	b3SyncBodyFlags( world, body );

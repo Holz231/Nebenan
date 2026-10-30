@@ -469,7 +469,7 @@ static uint32_t RunDeterminismScenario( void )
 
 // Fracture and physics are bit for bit identical with MSVC, GCC and Clang on x64 and ARM. This is the result
 // with the pinned Box3D commit. Update it when the results change on purpose, never to make one platform pass.
-#define NB_EXPECTED_DETERMINISM_HASH 0x65c3885cu
+#define NB_EXPECTED_DETERMINISM_HASH 0xa503e1aeu
 
 static int DeterminismTest( void )
 {
@@ -860,6 +860,119 @@ static int ShapeContactListTest( void )
 	ENSURE( fabsf( (float)b3Body_GetPosition( boxes[1] ).y - restY ) < 0.01f );
 
 	b3DestroyWorld( worldId );
+	ENSURE( b3GetByteCount() == baseBytes );
+#endif
+	return 0;
+}
+
+#if defined( B3_HAS_KEPT_CONTACTS )
+// The touching contact of a body with another body, false if it has none
+static bool FindTouchingContact( b3BodyId bodyId, b3BodyId otherId, b3ContactData* found )
+{
+	b3ContactData contacts[8];
+	int count = b3Body_GetContactData( bodyId, contacts, 8 );
+	for ( int i = 0; i < count; ++i )
+	{
+		b3BodyId bodyA = b3Shape_GetBody( contacts[i].shapeIdA );
+		b3BodyId bodyB = b3Shape_GetBody( contacts[i].shapeIdB );
+		if ( ( B3_ID_EQUALS( bodyA, otherId ) || B3_ID_EQUALS( bodyB, otherId ) ) && contacts[i].manifoldCount > 0 &&
+			 contacts[i].manifolds[0].pointCount > 0 )
+		{
+			*found = contacts[i];
+			return true;
+		}
+	}
+	return false;
+}
+
+// The normal impulses of the points of a contact added up
+static float ContactImpulse( const b3ContactData* contact )
+{
+	float impulse = 0.0f;
+	for ( int i = 0; i < contact->manifolds[0].pointCount; ++i )
+	{
+		impulse += contact->manifolds[0].points[i].normalImpulse;
+	}
+	return impulse;
+}
+#endif
+
+// A body that changes between dynamic and static keeps its contacts with awake dynamic bodies. A box that freezes under
+// another keeps the contact the upper box rests on, with its impulse, and loses the one with the floor, which a static
+// body cannot touch. The upper box stays where it rests, also when the lower one comes back to life, and the contact stays
+// through both changes. A box that sleeps with the one on it wakes before it freezes and keeps the contact as well. Once
+// the upper box sleeps on the frozen one, the contact goes when that comes back to life, and the next step brings a new
+// one.
+static int KeptContactTest( void )
+{
+#if defined( B3_HAS_KEPT_CONTACTS )
+	int64_t baseBytes = b3GetByteCount();
+	for ( int sleep = 0; sleep < 2; ++sleep )
+	{
+		b3WorldDef worldDef = b3DefaultWorldDef();
+		b3WorldId worldId = b3CreateWorld( &worldDef );
+		b3BodyDef bodyDef = b3DefaultBodyDef();
+		b3BodyId floorId = b3CreateBody( worldId, &bodyDef );
+		b3ShapeDef shapeDef = b3DefaultShapeDef();
+		b3BoxHull floor = b3MakeBoxHull( 5.0f, 0.5f, 5.0f );
+		b3CreateHullShape( floorId, &shapeDef, &floor.base );
+
+		b3BoxHull box = b3MakeBoxHull( 0.5f, 0.25f, 0.5f );
+		b3BodyId boxes[2];
+		for ( int i = 0; i < 2; ++i )
+		{
+			bodyDef = b3DefaultBodyDef();
+			bodyDef.type = b3_dynamicBody;
+			bodyDef.position = (b3Pos){ 0.0f, 0.76f + 0.51f * (float)i, 0.0f };
+			bodyDef.enableSleep = sleep == 1;
+			boxes[i] = b3CreateBody( worldId, &bodyDef );
+			b3CreateHullShape( boxes[i], &shapeDef, &box.base );
+		}
+
+		for ( int i = 0; i < 120; ++i )
+		{
+			b3World_Step( worldId, 1.0f / 60.0f, 4 );
+		}
+		ENSURE( b3Body_IsAwake( boxes[0] ) == ( sleep == 0 ) );
+
+		b3ContactData rest;
+		ENSURE( FindTouchingContact( boxes[1], boxes[0], &rest ) );
+		float restImpulse = ContactImpulse( &rest );
+		ENSURE( restImpulse > 0.0f );
+		float restY = (float)b3Body_GetPosition( boxes[1] ).y;
+		ENSURE( b3Body_GetContactCapacity( floorId ) == 1 );
+
+		b3Body_SetType( boxes[0], b3_staticBody );
+		b3ContactData kept;
+		ENSURE( FindTouchingContact( boxes[1], boxes[0], &kept ) );
+		ENSURE( B3_ID_EQUALS( kept.contactId, rest.contactId ) );
+		ENSURE( ContactImpulse( &kept ) == restImpulse );
+		ENSURE( b3Body_GetContactCapacity( floorId ) == 0 );
+		ENSURE( b3Body_IsAwake( boxes[1] ) );
+
+		for ( int i = 0; i < 60; ++i )
+		{
+			b3World_Step( worldId, 1.0f / 60.0f, 4 );
+			ENSURE( FindTouchingContact( boxes[1], boxes[0], &kept ) );
+			ENSURE( B3_ID_EQUALS( kept.contactId, rest.contactId ) );
+			ENSURE( fabsf( (float)b3Body_GetPosition( boxes[1] ).y - restY ) < 0.002f );
+		}
+		ENSURE( b3Body_IsAwake( boxes[1] ) == ( sleep == 0 ) );
+
+		b3Body_SetType( boxes[0], b3_dynamicBody );
+		ENSURE( FindTouchingContact( boxes[1], boxes[0], &kept ) == ( sleep == 0 ) );
+		ENSURE( sleep == 1 || B3_ID_EQUALS( kept.contactId, rest.contactId ) );
+		for ( int i = 0; i < 60; ++i )
+		{
+			b3World_Step( worldId, 1.0f / 60.0f, 4 );
+		}
+		ENSURE( FindTouchingContact( boxes[1], boxes[0], &kept ) );
+		ENSURE( B3_ID_EQUALS( kept.contactId, rest.contactId ) == ( sleep == 0 ) );
+		ENSURE( fabsf( (float)b3Body_GetPosition( boxes[1] ).y - restY ) < 0.005f );
+		ENSURE( b3Body_GetContactCapacity( floorId ) == 1 );
+
+		b3DestroyWorld( worldId );
+	}
 	ENSURE( b3GetByteCount() == baseBytes );
 #endif
 	return 0;
@@ -6887,8 +7000,8 @@ static uint32_t RunScenarioAtRate( TestScene scene, float stepRate, int settleFr
 
 // The results of the determinism scenario at 30 and 120 Hz with ten seconds to settle, the same on every platform like
 // NB_EXPECTED_DETERMINISM_HASH
-#define NB_EXPECTED_HASH_30HZ 0x5efe9203u
-#define NB_EXPECTED_HASH_120HZ 0x3f0e61f2u
+#define NB_EXPECTED_HASH_30HZ 0xa6c8316cu
+#define NB_EXPECTED_HASH_120HZ 0xcb994b06u
 
 // The steps per second of nbWorld_Advance. At 60 Hz it takes the steps of the determinism scenario to the bit. At 30 and
 // 120 Hz every frame of 1/60 s takes half a step and two, whatever the steps cost, the world ends the same with one and
@@ -7520,6 +7633,7 @@ int WorldTest( void )
 	RUN_TEST( ExternalHullTest );
 	RUN_TEST( ShapeBatchTest );
 	RUN_TEST( ShapeContactListTest );
+	RUN_TEST( KeptContactTest );
 	RUN_TEST( ContactDataOfBodiesTest );
 	RUN_TEST( ContactDataOfLargeBodyTest );
 	RUN_TEST( TouchingContactsTest );

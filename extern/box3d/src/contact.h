@@ -101,8 +101,9 @@ typedef struct b3ContactEdge
 // highest creation to the lowest. The shapes are those of the contact, kept here as well, so a walk through the lists
 // reads of a contact only this record and its manifolds. 32 bytes, so a record never straddles two cache lines. Static
 // bodies keep no list, the queries walk their contact lists: theirs would be the longest, the ground touches almost
-// everything, and half the upkeep would go into lists nothing walks in a hurry. A body changes type only after losing all
-// its contacts, so a contact keeps the links it got.
+// everything, and half the upkeep would go into lists nothing walks in a hurry. A body changes type only after its touching
+// contacts left these lists, those it keeps come back once it has its new type, see b3KeepBodyContacts, so a contact
+// takes out the links it got.
 typedef struct b3ContactTouch
 {
 	int prevKey[2];
