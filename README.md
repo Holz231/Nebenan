@@ -484,11 +484,14 @@ eingeschaltet, misst Nebenan die Flächen dieser Bauwerke einmal an den Formen i
   sich gegenseitig in der Luft. Bevor ein großes Teil ab 0,1 m³ erstarrt, folgt Nebenan deshalb für jedes Stück Schutt,
   das es berührt, den gemerkten Auflagen bis zum Boden oder zu einem Bauwerk. Führt kein Weg dorthin, sondern nur zum
   Teil selbst, zu Bruchstücken, die zerbrochen oder mehr als 5 cm weggerückt sind, oder zu Schutt, der im Flug
-  erstarrt ist, trägt das Stück nicht. Das Teil erstarrt nur, wenn sein Schwerpunkt über dem liegt, was es wirklich
-  trägt, oder es dazwischen verkeilt ist. Sonst wacht der Schutt auf, der nur durch das Teil hält, zuerst der, auf dem
-  es liegt, höchstens 32 pro Update, und das Teil kippt oder fällt. Das gilt auch, wenn kleine bewegte Stücke an seinen
+  erstarrt ist, trägt das Stück nicht. Das Teil erstarrt nur, wenn es auf etwas liegt, das es wirklich trägt, und sein
+  Schwerpunkt über dem liegt, was es trägt oder an seinen Seiten hält. Nur dazwischen verkeilt, bleibt es beweglich und
+  schläft in Box3D, statt zu erstarren. Sonst wacht der Schutt auf, der nur durch das Teil hält, zuerst der, auf dem es
+  liegt, höchstens 32 pro Update, und das Teil kippt oder fällt. Das gilt auch, wenn kleine bewegte Stücke an seinen
   Seiten es im Gleichgewicht halten: Sonst schläferte Box3D das Teil ein, und beide hielten sich für immer in der Luft.
-  Kleine Trümmer unter einem großen Teil tragen es nur, wenn sie selbst ohne das Teil liegen.
+  Kleine Trümmer unter einem großen Teil tragen es nur, wenn sie selbst ohne das Teil liegen. Braucht das Teil für sein
+  Gleichgewicht Schutt, den es nur an der Seite berührt, merkt es sich den mit seinen Auflagen, und rückt dieser weg,
+  wacht das Teil auf, siehe unten.
 - Einschläge wecken den Schutt in ihrer Reichweite, den sie bewegen: Stücke, die der Stoß mit mindestens 1 m/s
   anschieben würde. Schwerer Schutt bleibt statisch und verliert nur die Stücke, die der Einschlag herausbricht.
   Sonst käme ein Haus, das ohne Anker auf seinen Stümpfen steht, bei jeder Granate mit Hunderten Kontakten wieder
@@ -500,13 +503,14 @@ eingeschaltet, misst Nebenan die Flächen dieser Bauwerke einmal an den Formen i
   abprallen lassen. Trümmer, die auf Schutt fallen, lassen ihn in Ruhe: Stücke mitten im Haufen zu wecken gibt jedem
   Dutzende Kontakte und kostete in der Stadt mehr als alles andere.
 - Bewegt sich ein Stück 5 cm von dort, wo es lag, wird der Schutt darauf wach, höchstens 32 pro Update: was höher liegt
-  als sein Schwerpunkt und was auf ihm erstarrt ist. Teile, die aus einem Bauwerk, aus Schutt oder aus einem Teil
-  brechen, das noch Schutt trägt, nehmen ihren Schutt genauso mit, den Schutt, aus dem sie kommen, nur, wenn er
-  inzwischen auf ihnen erstarrt ist. Liegt mehr Schutt darauf, als eine Freigabe auf einmal weckt, 512 Stücke, holt das
-  nächste Update den Rest. So bleibt kein Schutt in der Luft hängen. Ein großes Teil eines Gebäudes wacht so nur auf,
-  wenn es auf dem Stück erstarrt ist, die bewegten Stücke unter ihm halten es dann für sein Gleichgewicht. Ein kleines
-  Stück, das unter seiner Kante entlangrutscht, weckte sonst alle 5 cm ein Teil von über tausend Formen, das sich einen
-  Millimeter bewegte und gleich wieder erstarrte.
+  als sein Schwerpunkt, was auf ihm erstarrt ist und große Stücke, die es an ihrer Seite für ihr Gleichgewicht
+  brauchten. Ein Stück merkt sich bis zu vier Bruchstücke, darunter solche Stützen. Teile, die aus einem Bauwerk, aus
+  Schutt oder aus einem Teil brechen, das noch Schutt trägt, nehmen ihren Schutt genauso mit, den Schutt, aus dem sie
+  kommen, nur, wenn er inzwischen auf ihnen erstarrt ist. Liegt mehr Schutt darauf, als eine Freigabe auf einmal weckt,
+  512 Stücke, holt das nächste Update den Rest. So bleibt kein Schutt in der Luft hängen. Ein großes Teil eines Gebäudes
+  wacht so nur auf, wenn es auf dem Stück erstarrt ist oder es an seiner Seite brauchte, die bewegten Stücke unter ihm
+  halten es dann für sein Gleichgewicht. Ein kleines Stück, das unter seiner Kante entlangrutscht, weckte sonst alle
+  5 cm ein Teil von über tausend Formen, das sich einen Millimeter bewegte und gleich wieder erstarrte.
 - Wacht Schutt auf und bleibt 0,05 s lang langsamer als 5 cm/s, liegt er noch auf und erstarrt gleich wieder, statt
   die ganze Ruhezeit abzuwarten. Was seine Auflage verloren hat, ist nach einem Schritt freiem Fall schon schneller.
 - Teile eines Gebäudes ruhen erst, wenn Box3D ihre Insel schlafen legt, wenn also auch alles ruht, was sie berühren,
@@ -1632,6 +1636,14 @@ Laufs jedes große Stück Schutt allein wieder zum Leben, fallen so über 16 Fol
 siehe „Blicke, die bis zum Ende gelten“ in [docs/Optimierungen.md](docs/Optimierungen.md). Ein Spiel ruft dafür nichts
 Neues auf. Die Städte über dem Budget enden anders, mit einem und mit vier Threads gleich.
 
+Seit `active-ragdoll-8` merkt sich ein großes Stück den Schutt, den es nur an der Seite berührt, wenn es ihn für sein
+Gleichgewicht braucht. Rückt dieser weg, wacht das Stück auf, wie wenn es darauf gelegen hätte, siehe „Große Stücke, die
+eine Seite hält“ in [docs/Optimierungen.md](docs/Optimierungen.md). Und ein großes Stück, das nur dazwischen verkeilt
+ist und auf nichts Festem liegt, erstarrt nicht mehr, es bleibt beweglich und schläft in Box3D. Kommt am Ende eines
+Laufs jedes große Stück Schutt allein wieder zum Leben, fallen so über 16 Folgen von Granaten 2 statt 9 mehr als 5 cm,
+zusammen 0,20 statt 1,40 m, und keins mehr, weil eine Stütze wegrückte. Ein Spiel ruft dafür nichts Neues auf. Die
+Städte über dem Budget enden anders, mit einem und mit vier Threads gleich.
+
 Seit `physik-44` wählt ein Spiel den Takt der Physik, siehe Der Takt der Physik und „Physik mit 30 Hz und 8
 Teilschritten“ in [docs/Optimierungen.md](docs/Optimierungen.md). Was eine simulierte Sekunde der Städte unter Beschuss
 auf der VM mit 4 Threads kostet, Box3D-Schritt, Update und Einschläge zusammen, mit den Granaten bei jedem Takt zu
@@ -1770,7 +1782,7 @@ lange die Threads im Löser rechnen und worauf sie sonst warten.
 ## Tests und Benchmark
 
 ```sh
-build/bin/nebenan_test            # 88 Tests: Geometrie, Voronoi, Hüllen, Öffnungen, Stöße, Stützgraph, Etagen, Lastprüfung, Mauern, Schutt, Ruhe, Durchschlagen, Threads, Knoten, große Blöcke, Gelenke in Paketen und Gebieten, Suchbaum, Kontaktlisten, Streaming, Stream, Laden im Hintergrund, Speichern und Zurückholen, gemeinsamer Thread-Pool, Ruhe-Prüfung auf den Workern, Schritt auf eigenem Thread, Schritte pro Bild, Takt der Physik, Wahl der Threads, Profil und Skalierung, Figuren, Determinismus …
+build/bin/nebenan_test            # 89 Tests: Geometrie, Voronoi, Hüllen, Öffnungen, Stöße, Stützgraph, Etagen, Lastprüfung, Mauern, Schutt, Ruhe, Durchschlagen, Threads, Knoten, große Blöcke, Gelenke in Paketen und Gebieten, Suchbaum, Kontaktlisten, Streaming, Stream, Laden im Hintergrund, Speichern und Zurückholen, gemeinsamer Thread-Pool, Ruhe-Prüfung auf den Workern, Schritt auf eigenem Thread, Schritte pro Bild, Takt der Physik, Wahl der Threads, Profil und Skalierung, Figuren, Determinismus …
 build/bin/nebenan_benchmark 4     # Zahl = Threads für Bruch und Physik, 0 = so viele, wie ein Spiel nähme
 build/bin/nebenan_benchmark scaling   # die Städte unter Beschuss mit 1, 2, 4 … Threads und die Tabelle der Skalierung
 build/bin/nebenan_benchmark rates     # die Städte unter Beschuss mit 30, 60 und 120 Hz, was eine simulierte Sekunde kostet
@@ -1879,9 +1891,10 @@ Nach Änderungen an `demo/shaders/scene.glsl` die Shader neu erzeugen, im Ordner
   der aufrufende Thread kein Stück mehr ein zweites Mal an, siehe oben. Dass erstarrende Stücke ihre Kontakte zu
   bewegten verlieren, ist Schritt F20 der [Roadmap](docs/Roadmap.md). Dass ein großes Teil eines Gebäudes dabei alle
   ein bis drei Schritte aufwachte und erstarrte, ist seit `active-ragdoll-5` behoben, siehe oben.
-- Am Ende eines Laufs der Stadt mit Figuren fällt etwa jedes 200. große Stück Schutt mehr als 5 cm, wenn es allein
-  wieder zum Leben kommt. Meist erstarrte es im Gleichgewicht über Schutt, den es zum Teil nur an der Seite berührte,
-  der später aufwachte und weggleitete, ohne es zu wecken. Das ist Schritt F21 der [Roadmap](docs/Roadmap.md).
+- Am Ende eines Laufs der Stadt mit Figuren fällt etwa jedes 900. große Stück Schutt mehr als 5 cm, wenn es allein
+  wieder zum Leben kommt: Es lehnte an einem großen Teil eines Gebäudes oder lag auf sehr kleinen Stücken. Seit
+  `active-ragdoll-8` merkt sich ein großes Stück den Schutt an seiner Seite, den es für sein Gleichgewicht braucht, aber
+  höchstens vier Bruchstücke insgesamt, siehe Schritt F21 der [Roadmap](docs/Roadmap.md).
 - Render- und Physikgeometrie sind dieselben flachen Polygone.
 - Box3D ist noch jung (0.x) und kann seine API ändern. Deshalb liegt ein fester Stand bei.
 

@@ -29,6 +29,11 @@ typedef struct nbCarrier
 	b3Vec3 point;
 	int chunkIndex;
 	uint16_t generation;
+
+	// A fixed chunk at the side of a large piece that it needed for its balance, see nbSupport::carriers. It brings the
+	// piece back to life when it moves away like the chunks the piece lay on, but carries nothing in the search for
+	// support, see nbIsSupportedWithout.
+	bool side;
 } nbCarrier;
 
 enum nbChunkFlags
@@ -229,9 +234,9 @@ typedef struct nbActor
 	int holdSource;
 	uint16_t holdSourceGeneration;
 
-	// The chunks this rubble lay on when it froze, or was wedged between if it lay on none. NB_NULL_INDEX stands for a body
-	// that is no chunk such as the ground. None for a piece frozen in flight to keep within the budget. See
-	// nbIsSupportedWithout.
+	// The chunks this rubble lay on when it froze, or was wedged between if it lay on none, and for a large piece the fixed
+	// chunks at its side it needed for its balance, see nbCarrier::side. NB_NULL_INDEX stands for a body that is no chunk
+	// such as the ground. None for a piece frozen in flight to keep within the budget. See nbIsSupportedWithout.
 	nbCarrier carriers[NB_MAX_CARRIERS];
 	int carrierCount;
 

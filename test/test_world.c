@@ -3383,6 +3383,36 @@ static int PartHolderTest( void )
 	return 0;
 }
 
+// A large plank that leans against a block is balanced only with the block at its side. Once the block comes back to
+// life and slides away, the plank comes down instead of hanging in the air, though it neither lay on the block nor lies
+// higher than its center of mass, see nbSupport::carriers.
+static int SideSupportTest( void )
+{
+	TestScene scene = CreateScene();
+	nbDestructibleId block = CreateLooseBox( &scene, (b3Vec3){ 0.5f, 0.6f, 0.0f }, (b3Vec3){ 0.2f, 0.6f, 0.5f }, 81 );
+
+	// Tilted by 25 degrees, the upper edge against the block and the lower edge on the ground
+	nbDestructibleDef def = nbDefaultDestructibleDef();
+	def.isStatic = false;
+	def.position = (b3Pos){ -0.03f, 0.585f, 0.0f };
+	def.rotation = b3MakeQuatFromAxisAngle( b3Vec3_axisZ, -25.0f * B3_PI / 180.0f );
+	def.seed = 82;
+	nbDestructibleId plank = nbCreateBox( scene.world, &def, (b3Vec3){ 0.08f, 0.6f, 0.4f } );
+	Step( &scene, 120 );
+	ENSURE( nbWorld_GetStats( scene.world ).rubbleCount == 2 );
+
+	nbWorld* world = nbGetWorldFromId( scene.world );
+	ENSURE( world->actors.data[ActorOfDestructible( &scene, plank )].volume >= 0.1f );
+	b3Vec3 start = CenterOfChunks( plank );
+	int blockActor = ActorOfDestructible( &scene, block );
+	nbThawActor( world, blockActor );
+	b3Body_SetLinearVelocity( world->actors.data[blockActor].bodyId, (b3Vec3){ 2.0f, 0.0f, 0.0f } );
+	Step( &scene, 90 );
+	ENSURE( CenterOfChunks( plank ).y < start.y - 0.1f );
+	DestroyScene( &scene );
+	return 0;
+}
+
 // A strong slab of eight pieces in a row, dropped from a height
 static nbDestructibleId CreateFallingSlab( TestScene* scene, float height, float halfDepth )
 {
@@ -7538,6 +7568,7 @@ int WorldTest( void )
 	RUN_TEST( StreamSiteTest );
 	RUN_TEST( RestTest );
 	RUN_TEST( PartHolderTest );
+	RUN_TEST( SideSupportTest );
 	RUN_TEST( LandingTest );
 	return 0;
 }

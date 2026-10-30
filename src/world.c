@@ -1454,6 +1454,11 @@ static bool nbIsSupportedWithout( const nbWorld* world, int rubbleIndex, int act
 		for ( int k = 0; k < rubble->carrierCount; ++k )
 		{
 			const nbCarrier* record = rubble->carriers + k;
+			if ( record->side )
+			{
+				continue;
+			}
+
 			if ( record->chunkIndex == NB_NULL_INDEX )
 			{
 				return true;
@@ -5587,6 +5592,7 @@ static void nbAddCarrier( const nbWorld* world, nbCarrier* carriers, int* count,
 		carrier->point = point;
 		carrier->chunkIndex = chunkIndex;
 		carrier->generation = chunkIndex != NB_NULL_INDEX ? world->chunks.data[chunkIndex].generation : 0;
+		carrier->side = false;
 		*count += 1;
 	}
 }
@@ -5814,10 +5820,15 @@ typedef struct nbSupport
 	// lying on it or wedged in between
 	bool braced;
 
-	// The chunks it lies on, see nbActor::carriers
+	// The chunks it lies on, see nbActor::carriers. A braced piece of at least NB_CHECKED_VOLUME that is balanced only
+	// with what it touches at the side also keeps the chunks of that as far as it needs them and has room, see
+	// nbCarrier::side.
 	nbCarrier carriers[NB_MAX_CARRIERS];
 	int carrierCount;
 } nbSupport;
+
+// Contacts with fixed chunks at its side a large piece looks at for its balance at most, see nbFindSupport
+#define NB_MAX_SIDES 16
 
 // What carries a piece. A piece of at least NB_CHECKED_VOLUME rests on rubble only if something else holds that rubble,
 // see nbIsSupportedWithout. Otherwise the two would hold each other up in the air: rubble that froze on a floor while it
@@ -5842,6 +5853,11 @@ static void nbFindSupport( const nbWorld* world, int actorIndex, const nbTouch* 
 	nbSupportFan fixedFan = *baseFan;
 	nbCarrierAnswers answers;
 	answers.count = 0;
+
+	// What is fixed and carries a large piece, and the contacts with fixed chunks at its side, in the order of its contacts
+	nbSupportFan lyingFan = *baseFan;
+	int sides[NB_MAX_SIDES];
+	int sideCount = 0;
 
 	// Moving bodies that rest on a large piece carry nothing, in a set to look them up
 	nbRestingSet restingSet = { resting, nbRestingBits( touchCount ), 0 };
@@ -5921,6 +5937,14 @@ static void nbFindSupport( const nbWorld* world, int actorIndex, const nbTouch* 
 			if ( large )
 			{
 				nbAddSupportPoints( &fixedFan, &touch->data, isA );
+				if ( carries )
+				{
+					nbAddSupportPoints( &lyingFan, &touch->data, isA );
+				}
+				else if ( chunkIndex != NB_NULL_INDEX && sideCount < NB_MAX_SIDES )
+				{
+					sides[sideCount++] = c;
+				}
 			}
 		}
 		else if ( otherIndex == NB_NULL_INDEX )
@@ -5964,6 +5988,35 @@ static void nbFindSupport( const nbWorld* world, int actorIndex, const nbTouch* 
 
 	support->balanced = large == false || nbIsBalanced( &fan );
 	support->braced = large && nbIsBalanced( &fixedFan );
+
+	// Balanced only with fixed chunks at its side, it would hang once those moved away: they did not bring it back to life,
+	// it neither lay on them nor higher than their center of mass, see nbReleaseHeldRubble. It keeps them with its
+	// carriers, in the order of its contacts until it is balanced, see nbCarrier::side.
+	if ( support->braced && support->carrierCount < NB_MAX_CARRIERS && nbIsBalanced( &lyingFan ) == false )
+	{
+		for ( int s = 0; s < sideCount && support->carrierCount < NB_MAX_CARRIERS; ++s )
+		{
+			const nbTouch* touch = touches + sides[s];
+			b3Vec3 point;
+			if ( nbTouchPoint( &touch->data, touch->isA, center, NB_TOUCH_GAP, &point ) == false )
+			{
+				continue;
+			}
+
+			int count = support->carrierCount;
+			nbAddCarrier( world, support->carriers, &support->carrierCount, touch->otherChunk, point );
+			if ( support->carrierCount > count )
+			{
+				support->carriers[count].side = true;
+			}
+
+			nbAddSupportPoints( &lyingFan, &touch->data, touch->isA );
+			if ( nbIsBalanced( &lyingFan ) )
+			{
+				break;
+			}
+		}
+	}
 }
 
 // Whether a piece lies on something fixed that holds without a large piece resting on it: the ground, a structure or
@@ -5974,6 +6027,11 @@ static bool nbCarriesWithout( const nbWorld* world, const nbCarrier* carriers, i
 	for ( int k = 0; k < count; ++k )
 	{
 		const nbCarrier* record = carriers + k;
+		if ( record->side )
+		{
+			continue;
+		}
+
 		if ( record->chunkIndex == NB_NULL_INDEX )
 		{
 			return true;
@@ -6149,8 +6207,9 @@ static void nbInspectQuietPiece( const nbSettleTask* task, nbQuietPiece* piece, 
 		}
 	}
 
-	// A large piece must be held by what holds without it, balanced over it or wedged in
-	piece->held = large ? support.braced : support.grounded;
+	// A piece must lie on what holds without it, a large one also balanced over it. Only wedged in from the side, large
+	// pieces fell up to 0.3 m at the end of a run of the town once they came back to life alone, see nbSupport::braced.
+	piece->held = support.grounded && ( large == false || support.braced );
 }
 
 // The piece up to the pose it holds rubble at, see nbSettleDebris
