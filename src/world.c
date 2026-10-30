@@ -1331,6 +1331,90 @@ static bool nbRestsOn( const nbWorld* world, const nbActor* rubble, int actorInd
 	return false;
 }
 
+typedef struct nbPassContext
+{
+	nbWorld* world;
+	int chunkIndex;
+	uint16_t generation;
+	const int* children;
+	int childCount;
+	b3WorldTransform transform;
+} nbPassContext;
+
+static bool nbPassCallback( b3ShapeId shapeId, void* context )
+{
+	nbPassContext* pass = context;
+	nbWorld* world = pass->world;
+	int chunkIndex = nbFindChunkFromShape( world, shapeId );
+	if ( chunkIndex == NB_NULL_INDEX )
+	{
+		return true;
+	}
+
+	nbActor* actor = world->actors.data + world->chunks.data[chunkIndex].actorIndex;
+	for ( int k = 0; actor->isRubble && k < actor->carrierCount; ++k )
+	{
+		nbCarrier* record = actor->carriers + k;
+		if ( record->chunkIndex != pass->chunkIndex || record->generation != pass->generation )
+		{
+			continue;
+		}
+
+		// The child the point lies in, or nearest to it. The point lies on the surface of the chunk that broke, often
+		// between children, and the first of them in the order of the fracture takes it. A shape of the rubble passes a
+		// record once: the child has a generation of its own, even in the slot of the chunk.
+		b3Vec3 point = b3InvTransformWorldPoint( pass->transform, b3ToPos( record->point ) );
+		int nearest = pass->children[0];
+		float nearestDistance = nbShape_Distance( world->chunks.data[nearest].shape, point );
+		for ( int c = 1; c < pass->childCount; ++c )
+		{
+			float distance = nbShape_Distance( world->chunks.data[pass->children[c]].shape, point );
+			if ( distance < nearestDistance )
+			{
+				nearest = pass->children[c];
+				nearestDistance = distance;
+			}
+		}
+
+		record->chunkIndex = nearest;
+		record->generation = world->chunks.data[nearest].generation;
+	}
+	return true;
+}
+
+// The record of rubble that froze on a chunk would point at a chunk that is gone once an impact broke it. The rubble
+// came back to life neither when the part of the chunk under it fell away with a large part of the building, which
+// wakes only the rubble higher than its center of mass or frozen on it, nor through the budget: over 48 sequences of
+// grenades in the town with figures rubble stayed twice with nothing 2.3 m below it. Now the record passes to the child
+// of the chunk at the point.
+void nbPassCarriers( nbWorld* world, int chunkIndex, uint16_t generation, b3AABB bounds, const int* children,
+					 int childCount )
+{
+	if ( world->rubbleCount == 0 || childCount == 0 )
+	{
+		return;
+	}
+
+	// Rubble that lay on the chunk touched it, within the slack of a record
+	b3Vec3 slack = { NB_CARRIER_SLACK, NB_CARRIER_SLACK, NB_CARRIER_SLACK };
+	bounds.lowerBound = b3Sub( bounds.lowerBound, slack );
+	bounds.upperBound = b3Add( bounds.upperBound, slack );
+	const nbChunk* child = world->chunks.data + children[0];
+	nbPassContext context = {
+		.world = world,
+		.chunkIndex = chunkIndex,
+		.generation = generation,
+		.children = children,
+		.childCount = childCount,
+		.transform = nbActor_GetTransform( world, world->actors.data + child->actorIndex ),
+	};
+#if defined( B3_HAS_STATIC_OVERLAP )
+	b3World_OverlapStaticAABB( world->physicsWorld, bounds, b3DefaultQueryFilter(), nbPassCallback, &context );
+#else
+	b3World_OverlapAABB( world->physicsWorld, bounds, b3DefaultQueryFilter(), nbPassCallback, &context );
+#endif
+}
+
 // Whether a chunk is still where rubble lay on it, within NB_CARRIER_SLACK of the point. A chunk that moved away since, a
 // piece that broke off below and fell, carries nothing.
 static bool nbStillCarries( const nbChunk* chunk, b3Vec3 point )
@@ -5398,52 +5482,71 @@ static void nbWakeHitRubble( nbWorld* world )
 	}
 }
 
-// Pieces that moved away from where they lay release the rubble resting on them
+// A piece that moved away from where it lay releases the rubble resting on it there
+static void nbReleaseIfMoved( nbWorld* world, int actorIndex, b3Vec3 up )
+{
+	nbActor* actor = world->actors.data + actorIndex;
+	if ( actor->holdsRubble == false )
+	{
+		return;
+	}
+
+	b3WorldTransform transform = b3Body_GetTransform( actor->bodyId );
+	if ( nbPoseDistance( actor->holdPose, transform, actor->radius ) <= NB_HOLD_DISTANCE )
+	{
+		return;
+	}
+
+	actor->holdsRubble = false;
+	if ( world->rubbleCount > 0 )
+	{
+		// The rubble that rested on it lies higher than its center of mass did, or froze on it. Past the limit of a thaw
+		// it holds on, and the next update brings back the rest.
+		b3Pos center = b3TransformWorldPoint( actor->holdPose, actor->localCenter );
+		nbThawContext filter = {
+			.skipActor = actor->holdSource,
+			.skipGeneration = actor->holdSourceGeneration,
+			.holder = actorIndex,
+			.grace = actor->isBuildingPart || world->time - actor->budgetTime < NB_FREEZE_GRACE,
+		};
+		actor->holdsRubble =
+			nbThawRubbleInBoxes( world, &actor->holdBounds, 1, up, b3Dot( up, b3ToVec3( center ) ), &filter ) > 0;
+	}
+}
+
+// Pieces that moved away from where they lay release the rubble resting on them, up to the limit of an update, and the
+// next update goes on where this one stopped. Each started at the front: in a collapse the first pieces of the list
+// reached the limit in every update, and a part that broke off a house late never had its turn before it froze 0.8 m
+// lower, with the rubble that lay on it in the air.
 static void nbReleaseHeldRubble( nbWorld* world, b3Vec3 up )
 {
 	int rubbleCount = world->rubbleCount;
+	int maxReleases = nbLimitForStep( world, NB_MAX_RELEASES );
+	int start = world->releaseCursor < world->debris.count ? world->releaseCursor : 0;
+	world->releaseCursor = 0;
 
 	// Most pieces hold no rubble, and the loop waited most for that flag of each, from scattered memory. It prefetches
-	// the flag eight pieces ahead.
-	int first = nbNextMoving( world, 0 );
-	int ahead = nbMovingAhead( world, first, 8 );
-	int maxReleases = nbLimitForStep( world, NB_MAX_RELEASES );
-	for ( int i = first; i < world->debris.count && rubbleCount - world->rubbleCount < maxReleases;
-		  i = nbNextMoving( world, i + 1 ) )
+	// the flag eight pieces ahead. It runs from the cursor to the end, then from the front to the cursor.
+	for ( int lap = 0; lap < 2; ++lap )
 	{
-		if ( ahead < world->debris.count )
+		int end = lap == 0 ? world->debris.count : start;
+		int first = nbNextMoving( world, lap == 0 ? start : 0 );
+		int ahead = nbMovingAhead( world, first, 8 );
+		for ( int i = first; i < end; i = nbNextMoving( world, i + 1 ) )
 		{
-			NB_PREFETCH( &world->actors.data[world->debris.data[ahead]].holdsRubble );
-			ahead = nbNextMoving( world, ahead + 1 );
-		}
+			if ( rubbleCount - world->rubbleCount >= maxReleases )
+			{
+				world->releaseCursor = i;
+				return;
+			}
 
-		int actorIndex = world->debris.data[i];
-		nbActor* actor = world->actors.data + actorIndex;
-		if ( actor->holdsRubble == false )
-		{
-			continue;
-		}
+			if ( ahead < world->debris.count )
+			{
+				NB_PREFETCH( &world->actors.data[world->debris.data[ahead]].holdsRubble );
+				ahead = nbNextMoving( world, ahead + 1 );
+			}
 
-		b3WorldTransform transform = b3Body_GetTransform( actor->bodyId );
-		if ( nbPoseDistance( actor->holdPose, transform, actor->radius ) <= NB_HOLD_DISTANCE )
-		{
-			continue;
-		}
-
-		actor->holdsRubble = false;
-		if ( world->rubbleCount > 0 )
-		{
-			// The rubble that rested on it lies higher than its center of mass did, or froze on it. Past the limit of a
-			// thaw it holds on, and the next update brings back the rest.
-			b3Pos center = b3TransformWorldPoint( actor->holdPose, actor->localCenter );
-			nbThawContext filter = {
-				.skipActor = actor->holdSource,
-				.skipGeneration = actor->holdSourceGeneration,
-				.holder = actorIndex,
-				.grace = actor->isBuildingPart || world->time - actor->budgetTime < NB_FREEZE_GRACE,
-			};
-			actor->holdsRubble =
-				nbThawRubbleInBoxes( world, &actor->holdBounds, 1, up, b3Dot( up, b3ToVec3( center ) ), &filter ) > 0;
+			nbReleaseIfMoved( world, world->debris.data[i], up );
 		}
 	}
 }
@@ -5668,15 +5771,32 @@ static void nbFreezeOnCarriers( nbWorld* world, int actorIndex, const nbCarrier*
 
 	// Moving pieces it lies on bring it back to life once they move away, otherwise it would hang in the air. A small
 	// piece that also lies on something fixed needs none of them, but a large one counts them for its balance. A piece
-	// of a pile that freezes with it lets go of that again.
+	// of a pile that freezes with it lets go of that again. A moving piece that already holds rubble from where it lay
+	// before adds this piece to its box: rubble that froze on it after it had moved on lay outside the box and stayed in
+	// the air when the piece moved away.
+	b3AABB bounds = { 0 };
+	bool bounded = false;
 	for ( int k = 0; k < count && ( fixed == false || actor->volume >= NB_CHECKED_VOLUME ); ++k )
 	{
 		int chunkIndex = carriers[k].chunkIndex;
 		nbActor* carrier = chunkIndex != NB_NULL_INDEX ? world->actors.data + world->chunks.data[chunkIndex].actorIndex : NULL;
-		if ( carrier != NULL && carrier->isStatic == false && carrier->isRubble == false && carrier->holdsRubble == false )
+		if ( carrier == NULL || carrier->isStatic || carrier->isRubble )
+		{
+			continue;
+		}
+
+		if ( carrier->holdsRubble == false )
 		{
 			nbHoldRubble( world, carrier );
+			continue;
 		}
+
+		if ( bounded == false )
+		{
+			bounds = nbGetActorBounds( world, actor );
+			bounded = true;
+		}
+		carrier->holdBounds = b3AABB_Union( carrier->holdBounds, bounds );
 	}
 }
 
@@ -6660,6 +6780,13 @@ static void nbSettleDebris( nbWorld* world, b3Vec3 up, float timeStep )
 	}
 	nbProfileLap( world, nb_profileSearchSupport, &lap );
 
+	// A piece that moved away from the rubble it holds releases it before it freezes, frozen it forgets what it held. A
+	// part that broke off a house froze 0.8 m lower before its turn to release came, see nbReleaseHeldRubble.
+	for ( int k = 0; k < queueCount; ++k )
+	{
+		nbReleaseIfMoved( world, quiet[queue[k]], up );
+	}
+
 #if defined( B3_HAS_SHAPE_BATCH )
 	// Box3D sorts every piece that freezes or comes back to life into its tree with a search from the root. The pieces of a
 	// pile go in together with one search, see b3World_BeginShapeBatch. Nothing queries the trees before they are in.
@@ -7253,6 +7380,12 @@ static void nbEnforceDebrisBudget( nbWorld* world, b3Vec3 up )
 
 	// How far the next budget looks ahead, all of the ranking if this one went through all of it
 	world->lookSpeedLimit = reach + 1 < rankCount ? NB_LOOK_REACH * ranks[reach].speed + NB_LOOK_REACH_SPEED : 0.0f;
+
+	// A piece that moved away from the rubble it holds releases it before it freezes, see nbSettleDebris
+	for ( int k = 0; hasGravity && k < chosen; ++k )
+	{
+		nbReleaseIfMoved( world, choices[k].actorIndex, up );
+	}
 
 #if defined( B3_HAS_SHAPE_BATCH )
 	// The pieces that freeze or come back to life go into Box3D's trees together, see nbSettleDebris

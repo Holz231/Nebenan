@@ -23,7 +23,8 @@
 // Chunks rubble remembers it lay on when it froze
 #define NB_MAX_CARRIERS 4
 
-// A chunk a piece lay on when it froze, and the point in world space where it touched
+// A chunk a piece lay on when it froze, and the point in world space where it touched. When an impact breaks the chunk
+// into smaller ones, the record passes to the one at the point, see nbPassCarriers.
 typedef struct nbCarrier
 {
 	b3Vec3 point;
@@ -596,6 +597,10 @@ typedef struct nbWorld
 	// room, see NB_LOOK_REACH. Zero for all of it.
 	float lookSpeedLimit;
 
+	// The debris where the release of held rubble goes on in the next update once an update reached its limit, see
+	// nbReleaseHeldRubble. Zero when the last one got through.
+	int releaseCursor;
+
 	// A collapse is breaking a structure apart, the parts it drops come from it
 	bool collapsing;
 
@@ -843,6 +848,11 @@ void nbThawRubble( nbWorld* world, b3AABB box, float ejectSpeed );
 
 // Bring one rubble actor back to life. The rubble resting on it follows once it moves.
 void nbThawActor( nbWorld* world, int actorIndex );
+
+// Rubble that froze on a chunk an impact broke into the given children now lies on the child at the point where it
+// touched, see nbCarrier. The bounds are the ones of the chunk before it broke.
+void nbPassCarriers( nbWorld* world, int chunkIndex, uint16_t generation, b3AABB bounds, const int* children,
+					 int childCount );
 
 // Apply an impact, optionally limited to one actor
 nbImpactResult nbApplyImpact( nbWorld* world, const nbImpactDef* def, int actorFilter );

@@ -308,11 +308,19 @@ static int nbFinishRefine( nbWorld* world, int chunkIndex, const nbFractureJob* 
 		}
 	}
 
+	// The rubble that froze on the parent lies within its reach
+	uint16_t generation = chunk->generation;
+	b3Vec3 center = b3ToVec3( b3TransformWorldPoint( nbActor_GetTransform( world, world->actors.data + actorIndex ),
+													 parentShape->centroid ) );
+	b3Vec3 reach = { parentRadius, parentRadius, parentRadius };
+	b3AABB bounds = { b3Sub( center, reach ), b3Add( center, reach ) };
+
 	// Remove the parent first so the children can take over its place in the actor
 	nbDestroyChunk( world, chunkIndex );
 	result->fracturedChunkCount += 1;
 
 	int* childIndices = nbArena_AllocArray( &world->arena, int, job->siteCount );
+	int* children = nbArena_AllocArray( &world->arena, int, job->siteCount );
 	int childCount = 0;
 	for ( int i = 0; i < job->siteCount; ++i )
 	{
@@ -325,9 +333,13 @@ static int nbFinishRefine( nbWorld* world, int chunkIndex, const nbFractureJob* 
 
 		childIndices[i] =
 			nbCreateChunkWithHull( world, destructibleIndex, actorIndex, cell->shape, depth, interiorMaterial, materialIndex );
-		childCount += childIndices[i] != NB_NULL_INDEX ? 1 : 0;
+		if ( childIndices[i] != NB_NULL_INDEX )
+		{
+			children[childCount++] = childIndices[i];
+		}
 	}
 	result->createdChunkCount += childCount;
+	nbPassCarriers( world, chunkIndex, generation, bounds, children, childCount );
 
 	// Glue the children along their shared Voronoi faces
 	float minBondArea = 0.01f * fragmentSize * fragmentSize;

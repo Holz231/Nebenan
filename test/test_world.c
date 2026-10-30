@@ -3524,6 +3524,46 @@ static int SideSupportTest( void )
 	return 0;
 }
 
+// Rubble that froze on a chunk lies on the child of the chunk at the same point once an impact breaks the chunk, see
+// nbPassCarriers. Its record pointed at a chunk that was gone, and it stayed in the air when the child fell away under
+// a part of a building whose center of mass lay higher.
+static int PassCarrierTest( void )
+{
+	TestScene scene = CreateScene();
+	nbDestructibleId wall = CreateWall( &scene, (b3Vec3){ 1.0f, 1.0f, 0.3f }, 91 );
+	nbDestructibleId stone = CreateLooseBox( &scene, (b3Vec3){ 0.0f, 2.1f, 0.0f }, (b3Vec3){ 0.1f, 0.1f, 0.1f }, 92 );
+	Step( &scene, 120 );
+	nbWorld* world = nbGetWorldFromId( scene.world );
+	int stoneActor = ActorOfDestructible( &scene, stone );
+	int wallActor = ActorOfDestructible( &scene, wall );
+	const nbActor* rubble = world->actors.data + stoneActor;
+	ENSURE( rubble->isRubble && rubble->carrierCount == 1 );
+	nbCarrier before = rubble->carriers[0];
+	ENSURE( before.chunkIndex != NB_NULL_INDEX && world->chunks.data[before.chunkIndex].generation == before.generation );
+	ENSURE( world->chunks.data[before.chunkIndex].actorIndex == wallActor );
+
+	// An impact on the top of the wall breaks the chunk under the stone into smaller ones, without damage and push
+	nbImpactDef impact = { 0 };
+	impact.point = (b3Vec3){ 0.0f, 1.9f, 0.3f };
+	impact.direction = (b3Vec3){ 0.0f, 0.0f, -1.0f };
+	impact.radius = 0.5f;
+	impact.destructibleId = wall;
+	nbWorld_ApplyImpact( scene.world, &impact );
+	ENSURE( nbDestructible_GetChunkCount( wall ) > 1 );
+
+	// The stone stays rubble, on the child of the wall that holds the point where it touched
+	rubble = world->actors.data + stoneActor;
+	ENSURE( rubble->isRubble && rubble->carrierCount == 1 );
+	const nbCarrier* after = rubble->carriers;
+	const nbChunk* child = world->chunks.data + after->chunkIndex;
+	ENSURE( after->chunkIndex != before.chunkIndex || after->generation != before.generation );
+	ENSURE( child->shape != NULL && child->generation == after->generation && child->actorIndex == wallActor );
+	b3WorldTransform transform = nbActor_GetTransform( world, world->actors.data + wallActor );
+	ENSURE( nbShape_Distance( child->shape, b3InvTransformWorldPoint( transform, b3ToPos( after->point ) ) ) < 0.01f );
+	DestroyScene( &scene );
+	return 0;
+}
+
 // A strong slab of eight pieces in a row, dropped from a height
 static nbDestructibleId CreateFallingSlab( TestScene* scene, float height, float halfDepth )
 {
@@ -7681,6 +7721,7 @@ int WorldTest( void )
 	RUN_TEST( RestTest );
 	RUN_TEST( PartHolderTest );
 	RUN_TEST( SideSupportTest );
+	RUN_TEST( PassCarrierTest );
 	RUN_TEST( LandingTest );
 	return 0;
 }
