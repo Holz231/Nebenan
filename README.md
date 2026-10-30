@@ -1669,6 +1669,17 @@ fehlte: Fast alles fror das Budget an einer steilen Fläche oder in der Bewegung
 es tauen 2,7 % mehr Stücke auf. Ein Spiel ruft dafür nichts Neues auf. Die Städte über dem Budget enden anders, mit
 einem und mit vier Threads gleich.
 
+Seit `active-ragdoll-11` erstarrt ein kleines Stück, das sich mit 0,05 m/s oder schneller bewegt, über dem Budget nur
+noch auf einer Fläche flacher als 60°, siehe „Schutt rutscht an steilen Flächen weiter“ in
+[docs/Optimierungen.md](docs/Optimierungen.md). An einer steileren rutscht oder fällt es weiter, bis es liegt. Und ein
+bewegtes Stück, das noch Schutt von früher hält und sich davon wegbewegt hat, gibt ihn frei, bevor etwas auf ihm
+erstarrt. Am Ende eines Laufs liegt so auf 96 Folgen von Granaten 219 statt 523 Mal Schutt mit nichts 30 cm darunter,
+keiner ohne Halt, und kommt er allein wieder zum Leben, fallen 115 statt 397 kleine Stücke mehr als 5 cm. Was bleibt,
+hat das Budget zur Hälfte in der Bewegung neben seiner Auflage eingefroren, Schritt F24 der [Roadmap](docs/Roadmap.md).
+Über acht Folgen im Wechsel mit `active-ragdoll-10` kostet ein Bild 9,37 statt 9,04 ms, dort stürzen aber 40 statt 37
+Stockwerke ein. In den Folgen, in denen gleich viele einstürzen, kostet ein Bild 0,5 % mehr. Ein Spiel ruft dafür
+nichts Neues auf. Die Städte über dem Budget enden anders, mit einem und mit vier Threads gleich.
+
 Seit `physik-44` wählt ein Spiel den Takt der Physik, siehe Der Takt der Physik und „Physik mit 30 Hz und 8
 Teilschritten“ in [docs/Optimierungen.md](docs/Optimierungen.md). Was eine simulierte Sekunde der Städte unter Beschuss
 auf der VM mit 4 Threads kostet, Box3D-Schritt, Update und Einschläge zusammen, mit den Granaten bei jedem Takt zu
@@ -1807,7 +1818,7 @@ lange die Threads im Löser rechnen und worauf sie sonst warten.
 ## Tests und Benchmark
 
 ```sh
-build/bin/nebenan_test            # 91 Tests: Geometrie, Voronoi, Hüllen, Öffnungen, Stöße, Stützgraph, Etagen, Lastprüfung, Mauern, Schutt, Ruhe, Durchschlagen, Threads, Knoten, große Blöcke, Gelenke in Paketen und Gebieten, Suchbaum, Kontaktlisten, Streaming, Stream, Laden im Hintergrund, Speichern und Zurückholen, gemeinsamer Thread-Pool, Ruhe-Prüfung auf den Workern, Schritt auf eigenem Thread, Schritte pro Bild, Takt der Physik, Wahl der Threads, Profil und Skalierung, Figuren, Determinismus …
+build/bin/nebenan_test            # 93 Tests: Geometrie, Voronoi, Hüllen, Öffnungen, Stöße, Stützgraph, Etagen, Lastprüfung, Mauern, Schutt, Ruhe, Durchschlagen, Threads, Knoten, große Blöcke, Gelenke in Paketen und Gebieten, Suchbaum, Kontaktlisten, Streaming, Stream, Laden im Hintergrund, Speichern und Zurückholen, gemeinsamer Thread-Pool, Ruhe-Prüfung auf den Workern, Schritt auf eigenem Thread, Schritte pro Bild, Takt der Physik, Wahl der Threads, Profil und Skalierung, Figuren, Determinismus …
 build/bin/nebenan_benchmark 4     # Zahl = Threads für Bruch und Physik, 0 = so viele, wie ein Spiel nähme
 build/bin/nebenan_benchmark scaling   # die Städte unter Beschuss mit 1, 2, 4 … Threads und die Tabelle der Skalierung
 build/bin/nebenan_benchmark rates     # die Städte unter Beschuss mit 30, 60 und 120 Hz, was eine simulierte Sekunde kostet
@@ -1925,6 +1936,8 @@ Nach Änderungen an `demo/shaders/scene.glsl` die Shader neu erzeugen, im Ordner
   [Roadmap](docs/Roadmap.md). Seit `active-ragdoll-10` folgt Schutt dem, worauf er liegt, auch wenn das zerbricht,
   Schritt F22. Was noch in der Luft liegt, hat das Budget fast immer an einer steilen Fläche oder in der Bewegung
   eingefroren, Schritt F23.
+  Seit `active-ragdoll-11` rutscht ein kleines Stück an einer steilen Fläche weiter, statt dort zu erstarren, F23. Was
+  danach in der Luft liegt, hat das Budget zur Hälfte in der Bewegung neben seiner Auflage eingefroren, Schritt F24.
 - Render- und Physikgeometrie sind dieselben flachen Polygone.
 - Box3D ist noch jung (0.x) und kann seine API ändern. Deshalb liegt ein fester Stand bei.
 
