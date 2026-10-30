@@ -368,20 +368,32 @@ void b3CreateContact( b3World* world, b3Shape* shapeA, b3Shape* shapeB, int chil
 	}
 }
 
-// Added for Nebenan: what b3DestroyContact touches besides the contact itself, the slot of the pair in the pair set, the
-// manifolds, both bodies, the neighbours in the contact lists of the bodies and of the shapes, the island and the slot in
-// the array of the color or the set the contact leaves. All of it lies scattered over the world. Not inline, so GCC cannot
-// drop the call as one without effect, see b3PrefetchContactData. All but the manifolds get written, so they are loaded
-// for writing, see b3PrefetchWrite.
+// Added for Nebenan: what b3DestroyContact touches besides the contact itself, the slot of the pair in the pair set and the
+// line after it, into which the items after the pair may shift, the manifolds, which take the link of the free list, both
+// bodies, the neighbours in the contact lists of the bodies and of the shapes, the island, the entry in the lists of the
+// touching contacts and the slot in the array of the color or the set the contact leaves, with the last entry of that
+// array, which moves into the slot. All of it lies scattered over the world. Not inline, so GCC cannot drop the call as
+// one without effect, see b3PrefetchContactData. All of it gets written, so it is loaded for writing, see b3PrefetchWrite,
+// but the last entries, see b3PrefetchContactMoves.
 void b3PrefetchContactDestroy( const b3World* world, const b3Contact* contact )
 {
 	const b3HashSet* pairSet = &world->broadPhase.pairSet;
 	uint64_t pairKey = b3ShapePairKey( contact->shapeIdA, contact->shapeIdB, contact->childIndex );
-	b3PrefetchWrite( pairSet->items + ( b3KeyHash( pairKey ) & ( pairSet->capacity - 1 ) ) );
+	uint32_t slot = b3KeyHash( pairKey ) & ( pairSet->capacity - 1 );
+	b3PrefetchWrite( pairSet->items + slot );
+	if ( slot + 4 < pairSet->capacity )
+	{
+		b3PrefetchWrite( pairSet->items + slot + 4 );
+	}
 
 	if ( contact->manifolds != NULL )
 	{
-		b3Prefetch( contact->manifolds );
+		b3PrefetchWrite( contact->manifolds );
+	}
+
+	if ( contact->flags & b3_contactTouchingFlag )
+	{
+		b3PrefetchWrite( world->contactTouches.data + contact->contactId );
 	}
 
 	const b3Contact* contacts = world->contacts.data;
@@ -425,20 +437,26 @@ void b3PrefetchContactDestroy( const b3World* world, const b3Contact* contact )
 		{
 			if ( contact->colorIndex == B3_OVERFLOW_INDEX )
 			{
-				b3PrefetchWrite( world->constraintGraph.domainOverflow[domain].data + contact->localIndex );
+				const b3Array( b3ContactSpec )* specs = world->constraintGraph.domainOverflow + domain;
+				b3PrefetchWrite( specs->data + contact->localIndex );
+				b3Prefetch( specs->data + specs->count - 1 );
 			}
 			else
 			{
-				b3PrefetchWrite( color->domainContacts[domain].data + contact->localIndex );
+				const b3Array( int )* ids = color->domainContacts + domain;
+				b3PrefetchWrite( ids->data + contact->localIndex );
+				b3Prefetch( ids->data + ids->count - 1 );
 			}
 		}
 		else if ( ( contact->flags & b3_simMeshContact ) || contact->colorIndex == B3_OVERFLOW_INDEX )
 		{
 			b3PrefetchWrite( color->contacts.data + contact->localIndex );
+			b3Prefetch( color->contacts.data + color->contacts.count - 1 );
 		}
 		else
 		{
 			b3PrefetchWrite( color->convexContacts.data + contact->localIndex );
+			b3Prefetch( color->convexContacts.data + color->convexContacts.count - 1 );
 		}
 
 		for ( int i = 0; i < 2 && contact->colorIndex != B3_OVERFLOW_INDEX; ++i )
@@ -454,6 +472,88 @@ void b3PrefetchContactDestroy( const b3World* world, const b3Contact* contact )
 	{
 		const b3SolverSet* set = world->solverSets.data + contact->setIndex;
 		b3PrefetchWrite( set->contactIndices.data + contact->localIndex );
+		b3Prefetch( set->contactIndices.data + set->contactIndices.count - 1 );
+	}
+}
+
+// Added for Nebenan: the contacts at the last two places of an array of contact ids, which take their new place when a
+// contact leaves the array, see b3PrefetchContactMoves
+static void b3PrefetchLastContacts( const b3Contact* contacts, const int* ids, int count )
+{
+	for ( int k = b3MaxInt( count - 2, 0 ); k < count; ++k )
+	{
+		b3PrefetchWrite( &contacts[ids[k]].localIndex );
+	}
+}
+
+static void b3PrefetchLastSpecs( const b3Contact* contacts, const b3ContactSpec* specs, int count )
+{
+	for ( int k = b3MaxInt( count - 2, 0 ); k < count; ++k )
+	{
+		b3PrefetchWrite( &contacts[specs[k].contactId].localIndex );
+	}
+}
+
+// Added for Nebenan: what destroying a contact touches through what b3PrefetchContactDestroy loaded for it a contact
+// before: the contacts that move into its places in the arrays of its island and of its color or set, and its neighbours
+// in the lists of the touching contacts of its bodies. The contact destroyed in between may leave the same array first,
+// then the second to last moves instead of the last, so both are loaded.
+void b3PrefetchContactMoves( const b3World* world, const b3Contact* contact )
+{
+	const b3Contact* contacts = world->contacts.data;
+	if ( contact->islandId != B3_NULL_INDEX )
+	{
+		const b3Island* island = world->islands.data + contact->islandId;
+		for ( int k = b3MaxInt( island->contacts.count - 2, 0 ); k < island->contacts.count; ++k )
+		{
+			b3PrefetchWrite( &contacts[island->contacts.data[k].contactId].islandIndex );
+		}
+	}
+
+	if ( contact->colorIndex != B3_NULL_INDEX )
+	{
+		const b3ConstraintGraph* graph = &world->constraintGraph;
+		const b3GraphColor* color = graph->colors + contact->colorIndex;
+		int domain = b3GetContactDomain( contact );
+		if ( domain >= 0 && contact->colorIndex == B3_OVERFLOW_INDEX )
+		{
+			b3PrefetchLastSpecs( contacts, graph->domainOverflow[domain].data, graph->domainOverflow[domain].count );
+		}
+		else if ( domain >= 0 )
+		{
+			b3PrefetchLastContacts( contacts, color->domainContacts[domain].data, color->domainContacts[domain].count );
+		}
+		else if ( ( contact->flags & b3_simMeshContact ) || contact->colorIndex == B3_OVERFLOW_INDEX )
+		{
+			b3PrefetchLastSpecs( contacts, color->contacts.data, color->contacts.count );
+		}
+		else
+		{
+			b3PrefetchLastContacts( contacts, color->convexContacts.data, color->convexContacts.count );
+		}
+	}
+	else if ( contact->setIndex != B3_NULL_INDEX )
+	{
+		const b3SolverSet* set = world->solverSets.data + contact->setIndex;
+		b3PrefetchLastContacts( contacts, set->contactIndices.data, set->contactIndices.count );
+	}
+
+	if ( contact->flags & b3_contactTouchingFlag )
+	{
+		const b3ContactTouch* touches = world->contactTouches.data;
+		const b3ContactTouch* touch = touches + contact->contactId;
+		for ( int i = 0; i < 2; ++i )
+		{
+			if ( touch->prevKey[i] != B3_NULL_INDEX )
+			{
+				b3PrefetchWrite( touches + ( touch->prevKey[i] >> 1 ) );
+			}
+
+			if ( touch->nextKey[i] != B3_NULL_INDEX )
+			{
+				b3PrefetchWrite( touches + ( touch->nextKey[i] >> 1 ) );
+			}
+		}
 	}
 }
 

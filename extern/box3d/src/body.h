@@ -257,6 +257,7 @@ bool b3WakeBodyWithLock( b3World* world, b3Body* body );
 void b3UpdateBodyMassData( b3World* world, b3Body* body );
 void b3SyncBodyFlags( b3World* world, b3Body* body );
 void b3RefreshBodyContactIndices( b3World* world, b3Body* body );
+void b3RefreshMovedBodies( b3World* world ); // Added for Nebenan
 
 // Encode the body sim index for storage in the contact.
 static inline int b3EncodeBodySimIndex( const b3Body* body )

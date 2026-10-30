@@ -259,7 +259,8 @@ B3_API b3Capacity b3World_GetMaxCapacity( b3WorldId worldId );
 /// one, which simulates the same. Added for Nebenan.
 B3_API void b3World_BeginShapeBatch( b3WorldId worldId );
 
-/// Put the shapes created since the matching b3World_BeginShapeBatch into the trees. Added for Nebenan.
+/// Put the shapes created since the matching b3World_BeginShapeBatch into the trees. The contacts of the bodies whose sims
+/// moved while the batch was open, when other bodies changed type, learn where those sims are now. Added for Nebenan.
 B3_API void b3World_EndShapeBatch( b3WorldId worldId );
 
 /// This Box3D has b3World_BeginShapeBatch and b3World_EndShapeBatch

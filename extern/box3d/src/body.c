@@ -94,6 +94,96 @@ void b3RefreshBodyContactIndices( b3World* world, b3Body* body )
 	}
 }
 
+// Added for Nebenan: the lists of contacts this refresh walks at once, see b3RefreshMovedBodies
+#define B3_REFRESH_LANES 8
+
+// Added for Nebenan: the contacts of the bodies whose sims moved in a shape batch get their new sim indices, see
+// b3World::movedBodies. When rubble freezes in a burst, each type change moves the last awake body into the place of the
+// one that leaves, and refreshing it right away waited for its contacts one after the other, 16 on average. Here eight
+// lists are walked at once, so eight contacts are on their way. A body that moved twice is refreshed twice, with the
+// index it has now. The indices come out as with the refresh on every move.
+void b3RefreshMovedBodies( b3World* world )
+{
+	int count = world->movedBodies.count;
+	const int* movedIds = world->movedBodies.data;
+	b3Body* bodies = world->bodies.data;
+	b3Contact* contacts = world->contacts.data;
+
+	int keys[B3_REFRESH_LANES];
+	int indices[B3_REFRESH_LANES];
+	int next = 0;
+	int busy = 0;
+	for ( int lane = 0; lane < B3_REFRESH_LANES; ++lane )
+	{
+		keys[lane] = B3_NULL_INDEX;
+		indices[lane] = B3_NULL_INDEX;
+	}
+
+	for ( int k = 0; k < B3_REFRESH_LANES && k < count; ++k )
+	{
+		b3Prefetch( bodies + movedIds[k] );
+	}
+
+	while ( next < count || busy > 0 )
+	{
+		for ( int lane = 0; lane < B3_REFRESH_LANES; ++lane )
+		{
+			int key = keys[lane];
+			if ( key == B3_NULL_INDEX )
+			{
+				// A lane takes the next body, which a lane ahead prefetched
+				if ( next == count )
+				{
+					continue;
+				}
+
+				const b3Body* body = bodies + movedIds[next];
+				if ( next + B3_REFRESH_LANES < count )
+				{
+					b3Prefetch( bodies + movedIds[next + B3_REFRESH_LANES] );
+				}
+
+				next += 1;
+				key = body->headContactKey;
+				if ( key == B3_NULL_INDEX )
+				{
+					continue;
+				}
+
+				indices[lane] = b3EncodeBodySimIndex( body );
+				busy += 1;
+			}
+			else
+			{
+				b3Contact* contact = contacts + ( key >> 1 );
+				if ( ( key & 1 ) == 0 )
+				{
+					contact->encodedBodySimA = indices[lane];
+				}
+				else
+				{
+					contact->encodedBodySimB = indices[lane];
+				}
+
+				key = contact->edges[key & 1].nextKey;
+				if ( key == B3_NULL_INDEX )
+				{
+					keys[lane] = B3_NULL_INDEX;
+					busy -= 1;
+					continue;
+				}
+			}
+
+			const b3Contact* ahead = contacts + ( key >> 1 );
+			b3PrefetchWrite( ahead->edges );
+			b3PrefetchWrite( &ahead->encodedBodySimA );
+			keys[lane] = key;
+		}
+	}
+
+	b3Array_Clear( world->movedBodies );
+}
+
 void b3SyncBodyFlags( b3World* world, b3Body* body )
 {
 	b3BodySim* bodySim = b3GetBodySim( world, body );
@@ -162,10 +252,14 @@ static void b3RemoveBodyFromIsland( b3World* world, b3Body* body )
 static void b3DestroyBodyContacts( b3World* world, b3Body* body, bool wakeBodies )
 {
 	// Destroy the attached contacts. Added for Nebenan: a piece of debris that freezes into rubble loses 7 to 17 contacts
-	// at once, and the loop waited most for what destroying each touches. While it destroys one contact it prefetches what
-	// destroying the next touches, see b3PrefetchContactDestroy, and the contact after that, for writing. Prefetching
-	// changes nothing, the contacts go in the same order.
+	// at once, and the loop waited most for what destroying each touches. While it destroys one contact it prefetches the
+	// third after it, for writing, what destroying the second after it touches, see b3PrefetchContactDestroy, and what
+	// destroying the next one reaches through that, see b3PrefetchContactMoves. When rubble freezes in a burst, the
+	// contacts that move into the places of the destroyed ones and the neighbours in the lists of touching contacts cost
+	// as much again. Prefetching changes nothing, the contacts go in the same order.
+	const b3Contact* contacts = world->contacts.data;
 	int edgeKey = body->headContactKey;
+	bool first = true;
 	while ( edgeKey != B3_NULL_INDEX )
 	{
 		int contactId = edgeKey >> 1;
@@ -176,18 +270,34 @@ static void b3DestroyBodyContacts( b3World* world, b3Body* body, bool wakeBodies
 
 		if ( edgeKey != B3_NULL_INDEX )
 		{
-			const b3Contact* next = world->contacts.data + ( edgeKey >> 1 );
+			const b3Contact* next = contacts + ( edgeKey >> 1 );
 			int aheadKey = next->edges[edgeKey & 1].nextKey;
 			if ( aheadKey != B3_NULL_INDEX )
 			{
-				const char* ahead = (const char*)( world->contacts.data + ( aheadKey >> 1 ) );
-				b3PrefetchWrite( ahead );
-				b3PrefetchWrite( ahead + offsetof( b3Contact, manifoldCount ) );
+				const b3Contact* ahead = contacts + ( aheadKey >> 1 );
+				int farKey = ahead->edges[aheadKey & 1].nextKey;
+				if ( farKey != B3_NULL_INDEX )
+				{
+					const char* far = (const char*)( contacts + ( farKey >> 1 ) );
+					b3PrefetchWrite( far );
+					b3PrefetchWrite( far + offsetof( b3Contact, manifoldCount ) );
+				}
+
+				b3PrefetchContactDestroy( world, ahead );
 			}
 
-			b3PrefetchContactDestroy( world, next );
+			// No contact before the first one prefetched for the next one
+			if ( first )
+			{
+				b3PrefetchContactDestroy( world, next );
+			}
+			else
+			{
+				b3PrefetchContactMoves( world, next );
+			}
 		}
 
+		first = false;
 		b3DestroyContact( world, contact, wakeBodies );
 	}
 

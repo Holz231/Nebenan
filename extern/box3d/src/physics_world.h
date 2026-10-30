@@ -226,6 +226,10 @@ typedef struct b3World
 	int* contactSortKeys;
 	int contactSortKeyCapacity;
 
+	// Added for Nebenan: the bodies whose sims moved within their set while a shape batch was open. Their contacts get the
+	// new sim indices when the batch ends, see b3RefreshMovedBodies.
+	b3Array( int ) movedBodies;
+
 	// Used to create stable ids for islands
 	b3IdPool islandIdPool;
 

@@ -518,6 +518,7 @@ void b3DestroyWorld( b3WorldId worldId )
 	b3Array_Destroy( world->fatAABBs );
 	b3Array_Destroy( world->contacts );
 	b3Array_Destroy( world->contactTouches ); // Added for Nebenan
+	b3Array_Destroy( world->movedBodies );	  // Added for Nebenan
 	if ( world->contactSortKeys != NULL )
 	{
 		b3Free( world->contactSortKeys, world->contactSortKeyCapacity * (int)sizeof( int ) );
@@ -1532,8 +1533,10 @@ void b3World_Step( b3WorldId worldId, float timeStep, int subStepCount )
 
 	B3_REC( world, Step, worldId, timeStep, subStepCount );
 
-	// Added for Nebenan: the shapes of a batch are not in the trees yet
+	// Added for Nebenan: the shapes of a batch are not in the trees yet, nor do the contacts of the bodies that moved in it
+	// know where their sims are
 	B3_ASSERT( world->broadPhase.batchDepth == 0 );
+	B3_ASSERT( world->movedBodies.count == 0 );
 
 	world->locked = true;
 
@@ -2876,6 +2879,10 @@ void b3World_EndShapeBatch( b3WorldId worldId )
 	}
 
 	b3BroadPhase_EndShapeBatch( &world->broadPhase );
+	if ( world->broadPhase.batchDepth == 0 )
+	{
+		b3RefreshMovedBodies( world );
+	}
 }
 
 b3Capacity b3World_GetMaxCapacity( b3WorldId worldId )
@@ -4292,8 +4299,9 @@ void b3ValidateSolverSets( b3World* world )
 	B3_ASSERT( b3GetIdCapacity( &world->islandIdPool ) == world->islands.count );
 	B3_ASSERT( b3GetIdCapacity( &world->solverSetIdPool ) == world->solverSets.count );
 
-	// Ensure the encoded body sim indices are correct.
-	for ( int contactIndex = 0; contactIndex < world->contacts.count; ++contactIndex )
+	// Ensure the encoded body sim indices are correct. Added for Nebenan: within a shape batch they may wait for its end, see
+	// b3World::movedBodies.
+	for ( int contactIndex = 0; contactIndex < world->contacts.count && world->movedBodies.count == 0; ++contactIndex )
 	{
 		b3Contact* contact = world->contacts.data + contactIndex;
 		if ( contact->contactId == B3_NULL_INDEX )

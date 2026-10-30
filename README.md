@@ -1606,6 +1606,17 @@ Seit `physik-43` sortiert Box3D die neuen Paare ab 64 mit einem Radix-Sort, sieh
 sortieren“ in [`extern/README.md`](extern/README.md). Die Reihenfolge bleibt dieselbe, das Sortieren braucht bei ×1 rund
 60 % weniger Takte, und das Anlegen der Kontakte kostet dort 15 % weniger.
 
+Seit `active-ragdoll-6` kosten die Typwechsel weniger, mit denen Schutt erstarrt und auftaut, siehe „Formen gesammelt
+einfügen“ und „Abbau der Kontakte vorausladen“ in [`extern/README.md`](extern/README.md). Verlässt ein Körper den Satz
+der wachen, rückt der letzte an seinen Platz, und dessen Kontakte lernen den neuen Platz jetzt erst am Ende der Klammer
+der Formen, acht Listen zugleich. Beim Löschen der Kontakte lädt Box3D drei Kontakte voraus, auch die Kontakte, die in
+die frei gewordenen Plätze rücken. In der Stadt mit Figuren des Benchmarks kostet in denselben Welten auf der VM ein
+Typwechsel durch das Budget 7,3 statt 9,0 µs und ein Auftauen 3,8 statt 4,7 µs, die Zustandswechsel kosten in den 12
+langsamsten Bildern eines Laufs 3,44 statt 3,82 ms und im Mittel aller Bilder 0,59 statt 0,66 ms, siehe „Typwechsel im
+Schub“ in [docs/Optimierungen.md](docs/Optimierungen.md). Gepaart gegen `active-ragdoll-5` kostet das Update in den
+Städten des Benchmarks 3 bis 9 % weniger. Ein Spiel ruft dafür nichts Neues auf, Nebenan klammert jedes Erstarren und
+Auftauen schon. Die Ergebnisse bleiben bitgleich.
+
 Seit `physik-44` wählt ein Spiel den Takt der Physik, siehe Der Takt der Physik und „Physik mit 30 Hz und 8
 Teilschritten“ in [docs/Optimierungen.md](docs/Optimierungen.md). Was eine simulierte Sekunde der Städte unter Beschuss
 auf der VM mit 4 Threads kostet, Box3D-Schritt, Update und Einschläge zusammen, mit den Granaten bei jedem Takt zu
@@ -1847,10 +1858,12 @@ Nach Änderungen an `demo/shaders/scene.glsl` die Shader neu erzeugen, im Ordner
   gerade in den langsamen Schritten, auf der VM 0,45 ms pro Schritt in den langsamsten 1 %. Seit `active-ragdoll-4`
   kostet ein großer Schnitt ein Drittel weniger, bitgleich. Den Rest auf mehrere Threads zu legen, ist Schritt F15.
 - In den langsamsten Bildern einer Stadt über dem Budget kostet das Update ein Vielfaches des Mittels, in der Stadt mit
-  Figuren 9,5 bis 10,6 statt 2,4 bis 2,7 ms, vor allem durch das Budget, das Hunderte Stücke auf einmal erstarren
-  lässt: 3,3 bis 4,9 ms, darin die Zustandswechsel 3,1 bis 3,8 ms. Das ist Schritt F18 der [Roadmap](docs/Roadmap.md).
-  Dass ein großes Teil eines Gebäudes dabei alle ein bis drei Schritte aufwachte und erstarrte, ist seit
-  `active-ragdoll-5` behoben, siehe oben.
+  Figuren rund 10 statt 2,4 ms, vor allem durch das Budget. Es lässt dort rund 190 Stücke auf einmal erstarren und liegt
+  trotzdem im Mittel 1 300 Trümmer über seiner Grenze, denn frische und fliegende Trümmer dürfen nicht erstarren. Seit
+  `active-ragdoll-6` kostet ein Typwechsel dort rund ein Fünftel weniger, bitgleich, siehe oben. Dass der aufrufende
+  Thread viele Stücke ein zweites Mal ansieht und dass erstarrende Stücke ihre Kontakte zu bewegten verlieren, sind die
+  Schritte F19 und F20 der [Roadmap](docs/Roadmap.md). Dass ein großes Teil eines Gebäudes dabei alle ein bis drei
+  Schritte aufwachte und erstarrte, ist seit `active-ragdoll-5` behoben, siehe oben.
 - Render- und Physikgeometrie sind dieselben flachen Polygone.
 - Box3D ist noch jung (0.x) und kann seine API ändern. Deshalb liegt ein fester Stand bei.
 

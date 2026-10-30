@@ -51,7 +51,14 @@ hineingehen, bei einem Einschlag seine Bruchstücke, und den Schutt, der in eine
 den beiden Aufrufen darf die Welt nicht rechnen, nicht abgefragt werden, ihren statischen Baum nicht neu bauen und keine
 Aufnahme beginnen. Bis auf die Abfragen prüft Box3D das mit Asserts. Aufnahmen merken sich die Klammern nicht, die
 Wiedergabe fügt einzeln ein. Das simuliert dasselbe, seit die Ergebnisse nicht mehr von der Reihenfolge in den Bäumen
-abhängen.
+abhängen. Seit `active-ragdoll-6` wartet in der Klammer auch, was ein Typwechsel an anderen Körpern nachführt: Verlässt
+ein Körper seinen Satz, rückt der letzte des Satzes an seinen Platz, und dessen Kontakte merken sich, wo sein Sim liegt
+(`encodedBodySimA` und `B`). Box3D ging dafür sofort alle Kontakte des gerückten Körpers durch, einen nach dem anderen,
+und wartete auf jeden. Erstarrt Schutt in einem Schub, rückte so mit jedem Stück ein anderer Körper mit rund 16
+Kontakten. Jetzt merkt sich die Welt in der Klammer nur die gerückten Körper (`b3World::movedBodies`), und am Ende der
+äußersten Klammer geht `b3RefreshMovedBodies` (`src/body.c`) die Listen von acht Körpern zugleich durch, so sind acht
+Kontakte zugleich unterwegs. Die Indizes kommen genauso heraus wie vorher, auch für einen Körper, der zweimal rückte. In
+den 12 langsamsten Bildern eines Laufs der Stadt mit Figuren kostet das Nachführen auf der VM 0,14 statt 0,5 bis 0,7 ms.
 
 **Kontakte pro Form.** Box3D führt die Kontakte jedes Körpers in einer Liste. Um eine Form zu löschen, ging es bisher
 alle Kontakte ihres Körpers durch und suchte die der Form heraus. Jetzt führt jede Form zusätzlich ihre eigene Liste
@@ -395,7 +402,15 @@ Körper, die Nachbarn in den Kontaktlisten der Körper und der Formen, die Insel
 Satzes (`b3PrefetchContactDestroy` in `src/contact.c`). Das gilt für die Kontakte eines Körpers, der den Typ wechselt,
 abgeschaltet oder gelöscht wird (`b3DestroyBodyContacts` in `src/body.c`), dort mit dem Kontakt danach in der Liste des
 Körpers, und für die Paare, deren Boxen sich nicht mehr überlappen, in der Schleife der Zustandswechsel (`b3Collide` in
-`src/physics_world.c`). Die Reihenfolge bleibt dieselbe.
+`src/physics_world.c`). Die Reihenfolge bleibt dieselbe. Seit `active-ragdoll-6` läuft `b3DestroyBodyContacts` drei
+Kontakte voraus. Während es einen Kontakt löscht, holt es den dritten danach, für den zweiten danach, was
+`b3PrefetchContactDestroy` holt, und für den nächsten, was dessen Löschen über das Geholte erreicht
+(`b3PrefetchContactMoves` in `src/contact.c`): die Kontakte, die aus den letzten beiden Plätzen der Arrays seiner Insel
+und seiner Farbe oder seines Satzes an seine Stelle rücken, und seine Nachbarn in den Listen der berührenden Kontakte.
+Dazu kommen die Zeile hinter dem Platz des Paars, in die die Paare dahinter rücken können, der Eintrag in den Listen der
+berührenden Kontakte und die Manifolds, die das Glied der freien Liste aufnehmen, jetzt zum Schreiben. In den 12
+langsamsten Bildern eines Laufs der Stadt mit Figuren kostet so ein Kontakt, den das Budget beim Erstarren löscht, auf
+der VM 241 statt 293 ns und der ganze Typwechsel 6,3 statt 7,6 µs, in denselben Welten, bitgleich.
 
 **Abfrage nur der statischen Formen.** `b3World_OverlapStaticAABB` findet wie `b3World_OverlapAABB` die Formen in einer
 Box, durchsucht aber nur den Baum der statischen Körper. Nebenan sucht damit den Schutt, den ein wegrückendes Stück oder

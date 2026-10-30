@@ -565,7 +565,17 @@ void b3TransferBody( b3World* world, b3SolverSet* targetSet, b3SolverSet* source
 		b3Body* movedBody = b3Array_Get( world->bodies, movedId );
 		B3_ASSERT( movedBody->localIndex == movedIndex );
 		movedBody->localIndex = sourceIndex;
-		b3RefreshBodyContactIndices( world, movedBody );
+
+		// Added for Nebenan: in a shape batch its contacts learn the new index when the batch ends, see
+		// b3World::movedBodies
+		if ( world->broadPhase.batchDepth > 0 )
+		{
+			b3Array_Push( world->movedBodies, movedId );
+		}
+		else
+		{
+			b3RefreshBodyContactIndices( world, movedBody );
+		}
 	}
 
 	if ( sourceSet->setIndex == b3_awakeSet )

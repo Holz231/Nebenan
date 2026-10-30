@@ -223,8 +223,9 @@ void b3CreateContact( b3World* world, b3Shape* shapeA, b3Shape* shapeB, int chil
 void b3DestroyContact( b3World* world, b3Contact* contact, bool wakeBodies );
 
 // Added for Nebenan: prefetch what b3DestroyContact touches besides the contact itself, for a contact that a loop destroys
-// soon
+// soon, and a contact later what it reaches through that, see b3PrefetchContactMoves
 void b3PrefetchContactDestroy( const b3World* world, const b3Contact* contact );
+void b3PrefetchContactMoves( const b3World* world, const b3Contact* contact );
 
 // Added for Nebenan: put a contact that starts touching at the front of the lists of the touching contacts of its bodies,
 // and take one that stops touching or is destroyed out of them, see b3ContactTouch
