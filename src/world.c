@@ -1077,6 +1077,22 @@ static int nbLimitForStep( const nbWorld* world, int limit )
 // The cosine of the steepest face a small piece that moves freezes on, 60 degrees, see NB_SLIDE_SPEED
 #define NB_SLIDE_SLOPE 0.5f
 
+// A small piece that moves at least NB_SLIDE_SPEED with its center of mass beside the points it lies on, seen from above,
+// more than this outside their convex hull, freezes to keep within the budget only over something close, see
+// nbSupport::centered. Otherwise it tips over an edge or falls past it, and frozen it would hang in the air. Of the small
+// pieces of rubble with nothing 30 cm below them at the end of 96 runs of the town with figures, 108 had frozen in the
+// first pass of the budget on faces flatter than 60 degrees at 0.05 m/s and more, 98 of them with the center of mass
+// beside the points, and 81 of those fell once they came back to life alone. Beside the points alone is no reason to
+// wait: over 48 runs the budget froze 21 300 small pieces a run that moved so, and about one a run stayed in the air.
+// Refusing them all brought a third more pieces back to life.
+#define NB_CENTER_RADIUS 0.01f
+
+// How far below its radius a small piece that moves beside the points it lies on finds something to freeze over, see
+// NB_CENTER_RADIUS. Over 48 runs the budget froze 1 320 of those 21 300 pieces a run with nothing that close below their
+// center of mass, and among them 36 of the 56 small pieces it froze that stayed in the air and fell once they came back
+// to life alone.
+#define NB_DROP_HEIGHT 0.3f
+
 // A larger moving body that presses this deep into a piece keeps it from freezing, unless the body freezes with it.
 // Frozen alone, the piece would push that body out of it at once and throw it: a part of a building that came down onto
 // the small pieces it squeezes.
@@ -5917,13 +5933,12 @@ static void nbAddSupportPoints( nbSupportFan* fan, const b3ContactData* contact,
 	}
 }
 
-// The center of mass lies over the support points, within NB_BALANCE_RADIUS of their convex hull seen from above
-static bool nbIsBalanced( const nbSupportFan* fan )
+// The center of mass lies over the support points, within the radius of their convex hull seen from above
+static bool nbIsBalanced( const nbSupportFan* fan, float radius )
 {
 	b3Vec2 points[NB_FAN_POINTS];
 	memcpy( points, fan->points, sizeof( b3Vec2 ) * (size_t)fan->count );
 	int count = nbConvexHull2( points, fan->count );
-	float radius = NB_BALANCE_RADIUS;
 	if ( count == 0 )
 	{
 		return false;
@@ -5983,19 +5998,61 @@ typedef struct nbSupport
 	// such face is, larger ones look at all their faces.
 	float groundFlatness;
 	float lyingFlatness;
+
+	// For a piece smaller than NB_CHECKED_VOLUME that moves: its center of mass lies over the points where it lies on
+	// something, fixed or moving, or something lies close below it, see NB_CENTER_RADIUS. Always true for a piece at rest
+	// and for larger ones, which are balanced or braced.
+	bool centered;
 } nbSupport;
 
 // Contacts with fixed chunks at its side a large piece looks at for its balance at most, see nbFindSupport
 #define NB_MAX_SIDES 16
+
+typedef struct nbDropQuery
+{
+	b3BodyId self;
+	bool hit;
+} nbDropQuery;
+
+static float nbDropRayFcn( b3ShapeId shapeId, b3Pos point, b3Vec3 normal, float fraction, uint64_t userMaterialId,
+						   int triangleIndex, int childIndex, void* context )
+{
+	NB_UNUSED( point );
+	NB_UNUSED( normal );
+	NB_UNUSED( fraction );
+	NB_UNUSED( userMaterialId );
+	NB_UNUSED( triangleIndex );
+	NB_UNUSED( childIndex );
+	nbDropQuery* query = context;
+	if ( b3Shape_IsSensor( shapeId ) || B3_ID_EQUALS( b3Shape_GetBody( shapeId ), query->self ) )
+	{
+		return -1.0f;
+	}
+
+	// Any of them will do, the ray stops
+	query->hit = true;
+	return 0.0f;
+}
+
+// Whether something lies below the center of mass of a piece within its radius and NB_DROP_HEIGHT. The world does not
+// change while the workers look, so they cast the ray too.
+static bool nbHasSomethingBelow( const nbWorld* world, const nbActor* actor, b3Vec3 up )
+{
+	nbDropQuery query = { actor->bodyId, false };
+	b3Pos center = b3Body_GetWorldCenter( actor->bodyId );
+	b3World_CastRay( world->physicsWorld, center, b3MulSV( -( actor->radius + NB_DROP_HEIGHT ), up ), b3DefaultQueryFilter(),
+					 nbDropRayFcn, &query );
+	return query.hit;
+}
 
 // What carries a piece. A piece of at least NB_CHECKED_VOLUME rests on rubble only if something else holds that rubble,
 // see nbIsSupportedWithout. Otherwise the two would hold each other up in the air: rubble that froze on a floor while it
 // was part of the structure, and wedged between the floor and its lintels once the floor came down. Such rubble goes to
 // the list, and the piece must stay balanced without it: a piece wedged under the floor that rests on the floor itself
 // carries nothing either, however it touches. Smaller pieces lie on whatever they touch. The room for the resting set has
-// 1 << nbRestingBits( touchCount ) places. The search only reads the world, so the workers look at many pieces at once, see
-// nbSettleDebris.
-static void nbFindSupport( const nbWorld* world, int actorIndex, const nbTouch* touches, int touchCount, b3Vec3 up,
+// 1 << nbRestingBits( touchCount ) places. A small piece that moves also gathers the points it lies on, see
+// nbSupport::centered. The search only reads the world, so the workers look at many pieces at once, see nbSettleDebris.
+static void nbFindSupport( const nbWorld* world, int actorIndex, const nbTouch* touches, int touchCount, b3Vec3 up, bool moves,
 						   const nbSupportFan* baseFan, int* resting, nbSupport* support, int* unsupported, int* unsupportedCount,
 						   int unsupportedCapacity )
 {
@@ -6013,6 +6070,10 @@ static void nbFindSupport( const nbWorld* world, int actorIndex, const nbTouch* 
 	nbSupportFan fixedFan = *baseFan;
 	nbCarrierAnswers answers;
 	answers.count = 0;
+
+	// The points a small piece that moves lies on, fixed or moving
+	bool centering = large == false && moves;
+	nbSupportFan carryFan = *baseFan;
 
 	// What is fixed and carries a large piece, and the contacts with fixed chunks at its side, in the order of its contacts
 	nbSupportFan lyingFan = *baseFan;
@@ -6037,8 +6098,9 @@ static void nbFindSupport( const nbWorld* world, int actorIndex, const nbTouch* 
 
 	for ( int c = 0; c < touchCount; ++c )
 	{
-		// A small piece is done once it lies on something flat enough to freeze while it moves and knows enough of what
-		if ( large == false && support->grounded && support->carrierCount == NB_MAX_CARRIERS &&
+		// A small piece at rest is done once it lies on something flat enough to freeze while it moves and knows enough of
+		// what. One that moves looks at all it lies on.
+		if ( large == false && centering == false && support->grounded && support->carrierCount == NB_MAX_CARRIERS &&
 			 support->groundFlatness >= NB_SLIDE_SLOPE )
 		{
 			break;
@@ -6132,6 +6194,11 @@ static void nbFindSupport( const nbWorld* world, int actorIndex, const nbTouch* 
 			support->lying = true;
 			support->lyingFlatness = b3MaxFloat( support->lyingFlatness, flatness );
 		}
+
+		if ( centering && carries )
+		{
+			nbAddSupportPoints( &carryFan, &touch->data, isA );
+		}
 	}
 
 	// A piece that lies on nothing but is wedged in, or about to touch something, remembers what it is closest to, apart
@@ -6151,13 +6218,15 @@ static void nbFindSupport( const nbWorld* world, int actorIndex, const nbTouch* 
 		}
 	}
 
-	support->balanced = large == false || nbIsBalanced( &fan );
-	support->braced = large && nbIsBalanced( &fixedFan );
+	support->balanced = large == false || nbIsBalanced( &fan, NB_BALANCE_RADIUS );
+	support->braced = large && nbIsBalanced( &fixedFan, NB_BALANCE_RADIUS );
+	support->centered =
+		centering == false || nbIsBalanced( &carryFan, NB_CENTER_RADIUS ) || nbHasSomethingBelow( world, actor, up );
 
 	// Balanced only with fixed chunks at its side, it would hang once those moved away: they did not bring it back to life,
 	// it neither lay on them nor higher than their center of mass, see nbReleaseHeldRubble. It keeps them with its
 	// carriers, in the order of its contacts until it is balanced, see nbCarrier::side.
-	if ( support->braced && support->carrierCount < NB_MAX_CARRIERS && nbIsBalanced( &lyingFan ) == false )
+	if ( support->braced && support->carrierCount < NB_MAX_CARRIERS && nbIsBalanced( &lyingFan, NB_BALANCE_RADIUS ) == false )
 	{
 		for ( int s = 0; s < sideCount && support->carrierCount < NB_MAX_CARRIERS; ++s )
 		{
@@ -6176,7 +6245,7 @@ static void nbFindSupport( const nbWorld* world, int actorIndex, const nbTouch* 
 			}
 
 			nbAddSupportPoints( &lyingFan, &touch->data, touch->isA );
-			if ( nbIsBalanced( &lyingFan ) )
+			if ( nbIsBalanced( &lyingFan, NB_BALANCE_RADIUS ) )
 			{
 				break;
 			}
@@ -6331,8 +6400,8 @@ static void nbInspectQuietPiece( const nbSettleTask* task, nbQuietPiece* piece, 
 	int unsupported[NB_MAX_RELEASES];
 	int unsupportedCount = 0;
 	nbSupport support;
-	nbFindSupport( world, actorIndex, touches, touchCount, task->up, task->fan, room, &support, unsupported, &unsupportedCount,
-				   NB_MAX_RELEASES );
+	nbFindSupport( world, actorIndex, touches, touchCount, task->up, false, task->fan, room, &support, unsupported,
+				   &unsupportedCount, NB_MAX_RELEASES );
 	piece->carrierCount = support.carrierCount;
 	for ( int k = 0; k < support.carrierCount; ++k )
 	{
@@ -7025,7 +7094,7 @@ typedef struct nbBudgetLook
 	int unsupportedCount;
 } nbBudgetLook;
 
-// A look at a piece of debris with contacts, see nbBudgetLook. It only reads the world.
+// A look at a piece of debris with contacts and its speed, see nbBudgetLook. It only reads the world.
 static void nbLookAtDebris( const nbWorld* world, nbArena* arena, int actorIndex, b3Vec3 up, const nbSupportFan* fan,
 							nbBudgetLook* look )
 {
@@ -7047,8 +7116,8 @@ static void nbLookAtDebris( const nbWorld* world, nbArena* arena, int actorIndex
 		int unsupportedCount = 0;
 		int* resting = nbArena_AllocArray( arena, int, 1 << nbRestingBits( contactCount ) );
 		look->touchesStatic = nbTouchesStatic( touches, contactCount );
-		nbFindSupport( world, actorIndex, touches, contactCount, up, fan, resting, &look->support, unsupported, &unsupportedCount,
-					   NB_MAX_RELEASES + 1 );
+		nbFindSupport( world, actorIndex, touches, contactCount, up, look->speed >= NB_SLIDE_SPEED, fan, resting, &look->support,
+					   unsupported, &unsupportedCount, NB_MAX_RELEASES + 1 );
 		if ( unsupportedCount > 0 )
 		{
 			look->unsupported = nbArena_AllocArray( arena, int, unsupportedCount );
@@ -7348,7 +7417,7 @@ static void nbEnforceDebrisBudget( nbWorld* world, b3Vec3 up )
 				continue;
 			}
 
-			nbSupport support = { .grounded = true, .lying = true, .balanced = true, .braced = true };
+			nbSupport support = { .grounded = true, .lying = true, .balanced = true, .braced = true, .centered = true };
 			int capacity = hasGravity ? b3Body_GetContactCapacity( actor->bodyId ) : 0;
 			const nbBudgetLook* look =
 				looks != NULL && capacity > 0 && looks[ranks[i].look].unsure == false ? looks + ranks[i].look : NULL;
@@ -7397,8 +7466,8 @@ static void nbEnforceDebrisBudget( nbWorld* world, b3Vec3 up )
 
 				int firstUnsupported = unsupportedCount;
 				int* resting = nbArena_AllocArray( &world->arena, int, 1 << nbRestingBits( contactCount ) );
-				nbFindSupport( world, actorIndex, touches, contactCount, up, &fan, resting, &support, unsupported,
-							   &unsupportedCount, NB_MAX_RELEASES );
+				nbFindSupport( world, actorIndex, touches, contactCount, up, ranks[i].speed >= NB_SLIDE_SPEED, &fan, resting,
+							   &support, unsupported, &unsupportedCount, NB_MAX_RELEASES );
 				if ( pass > 0 || actor->volume < NB_CHECKED_VOLUME || support.balanced )
 				{
 					unsupportedCount = firstUnsupported;
@@ -7423,9 +7492,12 @@ static void nbEnforceDebrisBudget( nbWorld* world, b3Vec3 up )
 			}
 
 			// A small piece that moves freezes only on a face flatter than NB_SLIDE_SLOPE: on a steeper one it slides, and
-			// frozen it would hang where it slid. Once it lands it freezes like the others.
+			// frozen it would hang where it slid. And with its center of mass beside what it lies on only over something
+			// close, see NB_CENTER_RADIUS: otherwise it tips over an edge or falls past it. Once it lands it freezes like the
+			// others.
 			float flatness = pass == 0 ? support.groundFlatness : support.lyingFlatness;
-			if ( large == false && hasGravity && ranks[i].speed >= NB_SLIDE_SPEED && flatness < NB_SLIDE_SLOPE )
+			if ( large == false && hasGravity && ranks[i].speed >= NB_SLIDE_SPEED &&
+				 ( flatness < NB_SLIDE_SLOPE || support.centered == false ) )
 			{
 				continue;
 			}

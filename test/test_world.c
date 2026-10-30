@@ -4581,6 +4581,42 @@ static int DebrisBudgetSlopeTest( void )
 	return 0;
 }
 
+// Over the budget a small piece that moves freezes only with its center of mass over what it lies on, see
+// NB_CENTER_RADIUS. A stone that slides over the edge of a block does not freeze hanging over the edge, it falls and
+// freezes on the ground.
+static int DebrisBudgetEdgeTest( void )
+{
+	TestScene scene = CreateScene();
+	nbDestructibleDef def = nbDefaultDestructibleDef();
+	def.position = (b3Pos){ 0.0f, 0.25f, 0.0f };
+	def.seed = 95;
+	nbCreateBox( scene.world, &def, (b3Vec3){ 0.5f, 0.25f, 0.5f } );
+
+	// A stone of 1 liter slides over the block toward its edge at x = 0.5
+	nbDestructibleId stone = CreateLooseBox( &scene, (b3Vec3){ 0.0f, 0.55f, 0.0f }, (b3Vec3){ 0.05f, 0.05f, 0.05f }, 96 );
+	nbWorld* world = nbGetWorldFromId( scene.world );
+	int actorIndex = ActorOfDestructible( &scene, stone );
+	b3Body_SetLinearVelocity( world->actors.data[actorIndex].bodyId, (b3Vec3){ 3.0f, 0.0f, 0.0f } );
+
+	// Once its center of mass is 2 cm past the edge, the budget drops to zero
+	int step = 0;
+	for ( ; step < 120 && CenterOfChunks( stone ).x < 0.52f; ++step )
+	{
+		Step( &scene, 1 );
+	}
+	ENSURE( step < 120 && world->actors.data[actorIndex].isRubble == false && CenterOfChunks( stone ).y > 0.5f );
+	nbWorld_SetDebrisBudget( scene.world, 0 );
+
+	for ( int i = 0; i < 120; ++i )
+	{
+		Step( &scene, 1 );
+		ENSURE( world->actors.data[actorIndex].isRubble == false || CenterOfChunks( stone ).y < 0.1f );
+	}
+	ENSURE( world->actors.data[actorIndex].isRubble );
+	DestroyScene( &scene );
+	return 0;
+}
+
 // Move a body by an offset, turned as it is
 static void MoveBody( b3BodyId bodyId, b3Vec3 offset )
 {
@@ -7794,6 +7830,7 @@ int WorldTest( void )
 	RUN_TEST( DebrisBudgetFlightTest );
 	RUN_TEST( DebrisBudgetLargeTest );
 	RUN_TEST( DebrisBudgetSlopeTest );
+	RUN_TEST( DebrisBudgetEdgeTest );
 	RUN_TEST( RestTimeTest );
 	RUN_TEST( FragmentScaleTest );
 	RUN_TEST( StoreyTest );
