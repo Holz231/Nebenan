@@ -1623,11 +1623,14 @@ Auftauen schon. Die Ergebnisse bleiben bitgleich.
 Seit `active-ragdoll-7` wählt das Budget alle Stücke, die über seiner Grenze erstarren, in der Welt vor dem ersten
 Erstarren, mit den Blicken der Worker, und lässt sie erst danach erstarren. Der aufrufende Thread sieht kein Stück mehr
 ein zweites Mal an, weil ein Nachbar inzwischen erstarrt ist, und mit einem und mit vier Threads wählt das Budget
-dieselben. Große Stücke erstarren dort nur noch, wo sie auch in der Ruhe erstarren würden, im Gleichgewicht über
-dem, was ohne sie hält, und langsamer als 0,25 m/s. Kommt am Ende eines Laufs jedes große Stück Schutt allein wieder zum
-Leben, fallen so über 16 Folgen von Granaten 9 statt 24 mehr als 5 cm, siehe „Blicke, die bis zum Ende gelten“ in
-[docs/Optimierungen.md](docs/Optimierungen.md). Ein Spiel ruft dafür nichts Neues auf. Die Städte über dem Budget enden
-anders, mit einem und mit vier Threads gleich.
+dieselben. In den 12 langsamsten Bildern eines Laufs der Stadt mit Figuren sieht er so 60 bis 71 statt 211 bis 229
+Stücke selbst an, und das Budget kostet dort 0,2 bis 0,5 ms weniger. Gepaart gegen `active-ragdoll-6` kostet in der
+Stadt mit Figuren des Figuren-Benchmarks das Update 2,56 statt 2,77 ms und die 99 % der Bilder 35,0 statt 38,5 ms, in
+den Städten des Benchmarks das Update bis zu 3 % weniger. Große Stücke erstarren im Budget nur noch, wo sie auch in der
+Ruhe erstarren würden, im Gleichgewicht über dem, was ohne sie hält, und langsamer als 0,25 m/s. Kommt am Ende eines
+Laufs jedes große Stück Schutt allein wieder zum Leben, fallen so über 16 Folgen von Granaten 9 statt 24 mehr als 5 cm,
+siehe „Blicke, die bis zum Ende gelten“ in [docs/Optimierungen.md](docs/Optimierungen.md). Ein Spiel ruft dafür nichts
+Neues auf. Die Städte über dem Budget enden anders, mit einem und mit vier Threads gleich.
 
 Seit `physik-44` wählt ein Spiel den Takt der Physik, siehe Der Takt der Physik und „Physik mit 30 Hz und 8
 Teilschritten“ in [docs/Optimierungen.md](docs/Optimierungen.md). Was eine simulierte Sekunde der Städte unter Beschuss
