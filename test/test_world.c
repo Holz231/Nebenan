@@ -4542,6 +4542,45 @@ static int DebrisBudgetLargeTest( void )
 	return 0;
 }
 
+// Over the budget a small piece that moves freezes only on a face flatter than 60 degrees, see NB_SLIDE_SPEED. A stone
+// that slides down a face 70 degrees steep does not freeze on it, it freezes on the ground below.
+static int DebrisBudgetSlopeTest( void )
+{
+	TestScene scene = CreateScene();
+
+	// A fixed slab tilted 20 degrees from upright, its face 70 degrees steep
+	b3Quat tilt = b3MakeQuatFromAxisAngle( b3Vec3_axisZ, 20.0f * B3_PI / 180.0f );
+	nbDestructibleDef def = nbDefaultDestructibleDef();
+	def.position = (b3Pos){ 0.0f, 1.5f, 0.0f };
+	def.rotation = tilt;
+	def.seed = 93;
+	nbCreateBox( scene.world, &def, (b3Vec3){ 0.1f, 1.5f, 0.5f } );
+
+	// A stone of 1 liter against the face, 2 m up
+	b3Vec3 normal = b3RotateVector( tilt, b3Vec3_axisX );
+	b3Vec3 face = b3Add( (b3Vec3){ 0.0f, 1.5f, 0.0f }, b3RotateVector( tilt, (b3Vec3){ 0.1f, 0.6f, 0.0f } ) );
+	def = nbDefaultDestructibleDef();
+	def.isStatic = false;
+	def.position = b3ToPos( b3MulAdd( face, 0.055f, normal ) );
+	def.rotation = tilt;
+	def.seed = 94;
+	nbDestructibleId stone = nbCreateBox( scene.world, &def, (b3Vec3){ 0.05f, 0.05f, 0.05f } );
+	nbWorld_SetDebrisBudget( scene.world, 0 );
+	nbWorld* world = nbGetWorldFromId( scene.world );
+	int actorIndex = ActorOfDestructible( &scene, stone );
+	ENSURE( CenterOfChunks( stone ).y > 1.9f );
+
+	for ( int i = 0; i < 180; ++i )
+	{
+		Step( &scene, 1 );
+		ENSURE( world->actors.data[actorIndex].isRubble == false || CenterOfChunks( stone ).y < 0.2f );
+	}
+	ENSURE( world->actors.data[actorIndex].isRubble );
+	ENSURE( RubbleInTheAir( &scene ) == 0 );
+	DestroyScene( &scene );
+	return 0;
+}
+
 // A brick wall 3 m wide and 0.3 m thick, pre-fractured into one layer of cells, under a concrete block. Without collision
 // damage every fragment comes from a chunk crushed under the load.
 static void CreateLoadedWall( TestScene* scene )
@@ -7694,6 +7733,7 @@ int WorldTest( void )
 	RUN_TEST( DebrisBudgetTest );
 	RUN_TEST( DebrisBudgetFlightTest );
 	RUN_TEST( DebrisBudgetLargeTest );
+	RUN_TEST( DebrisBudgetSlopeTest );
 	RUN_TEST( RestTimeTest );
 	RUN_TEST( FragmentScaleTest );
 	RUN_TEST( StoreyTest );

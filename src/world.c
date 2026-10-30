@@ -1067,6 +1067,16 @@ static int nbLimitForStep( const nbWorld* world, int limit )
 // up to 0.25 m once they came back to life alone at the end.
 #define NB_LARGE_FREEZE_SPEED 0.25f
 
+// A small piece that moves at least this fast freezes to keep within the budget only on a face flatter than
+// NB_SLIDE_SLOPE, see nbSupport::groundFlatness. On a steeper face it slides or falls past. Of the small pieces of rubble
+// with nothing 30 cm below them at the end of 48 runs of the town with figures, 144 had frozen on faces of 60 to 84
+// degrees at 0.05 m/s and more, and 138 of them fell once they came back to life alone. Slower, such a piece is wedged
+// in: 4 of 17 fell.
+#define NB_SLIDE_SPEED 0.05f
+
+// The cosine of the steepest face a small piece that moves freezes on, 60 degrees, see NB_SLIDE_SPEED
+#define NB_SLIDE_SLOPE 0.5f
+
 // A larger moving body that presses this deep into a piece keeps it from freezing, unless the body freezes with it.
 // Frozen alone, the piece would push that body out of it at once and throw it: a part of a building that came down onto
 // the small pieces it squeezes.
@@ -5643,6 +5653,29 @@ static bool nbCarries( const b3ContactData* contact, bool isA, b3Vec3 up )
 	return false;
 }
 
+// How flat the faces are on which a contact carries a body: the cosine of the slope of the flattest manifold that
+// touches, with the normal pointing down out of the body, see nbCarries
+static float nbCarryFlatness( const b3ContactData* contact, bool isA, b3Vec3 up )
+{
+	float flatness = 0.0f;
+	for ( int m = 0; m < contact->manifoldCount; ++m )
+	{
+		const b3Manifold* manifold = contact->manifolds + m;
+		b3Vec3 down = isA ? manifold->normal : b3Neg( manifold->normal );
+		bool touching = false;
+		for ( int p = 0; p < manifold->pointCount; ++p )
+		{
+			touching = touching || manifold->points[p].separation <= NB_TOUCH_GAP;
+		}
+
+		if ( touching )
+		{
+			flatness = b3MaxFloat( flatness, -b3Dot( down, up ) );
+		}
+	}
+	return flatness;
+}
+
 // The answers of nbIsSupportedWithout for the rubble one large piece lies on, see nbFindSupport. A piece lies on few, the
 // answers past the room are searched again and come out the same.
 #define NB_CARRIER_ANSWERS 16
@@ -5929,6 +5962,12 @@ typedef struct nbSupport
 	// nbCarrier::side.
 	nbCarrier carriers[NB_MAX_CARRIERS];
 	int carrierCount;
+
+	// The cosine of the slope of the flattest face that makes it grounded, and of the flattest face it lies on, zero for
+	// none, see nbCarryFlatness. For a piece smaller than NB_CHECKED_VOLUME they are at least NB_SLIDE_SLOPE once one
+	// such face is, larger ones look at all their faces.
+	float groundFlatness;
+	float lyingFlatness;
 } nbSupport;
 
 // Contacts with fixed chunks at its side a large piece looks at for its balance at most, see nbFindSupport
@@ -5951,6 +5990,8 @@ static void nbFindSupport( const nbWorld* world, int actorIndex, const nbTouch* 
 	support->grounded = false;
 	support->lying = false;
 	support->carrierCount = 0;
+	support->groundFlatness = 0.0f;
+	support->lyingFlatness = 0.0f;
 	int firstUnsupported = *unsupportedCount;
 	int carrying = 0;
 	nbSupportFan fan = *baseFan;
@@ -5981,8 +6022,9 @@ static void nbFindSupport( const nbWorld* world, int actorIndex, const nbTouch* 
 
 	for ( int c = 0; c < touchCount; ++c )
 	{
-		// A small piece is done once it lies on something and knows enough of what
-		if ( large == false && support->grounded && support->carrierCount == NB_MAX_CARRIERS )
+		// A small piece is done once it lies on something flat enough to freeze while it moves and knows enough of what
+		if ( large == false && support->grounded && support->carrierCount == NB_MAX_CARRIERS &&
+			 support->groundFlatness >= NB_SLIDE_SLOPE )
 		{
 			break;
 		}
@@ -5994,6 +6036,8 @@ static void nbFindSupport( const nbWorld* world, int actorIndex, const nbTouch* 
 		{
 			continue;
 		}
+
+		float flatness = carries ? nbCarryFlatness( &touch->data, isA, up ) : 0.0f;
 
 		int chunkIndex = touch->otherChunk;
 		int otherIndex = chunkIndex != NB_NULL_INDEX ? world->chunks.data[chunkIndex].actorIndex : NB_NULL_INDEX;
@@ -6038,6 +6082,7 @@ static void nbFindSupport( const nbWorld* world, int actorIndex, const nbTouch* 
 			}
 
 			support->grounded = support->grounded || carries;
+			support->groundFlatness = b3MaxFloat( support->groundFlatness, flatness );
 			if ( large )
 			{
 				nbAddSupportPoints( &fixedFan, &touch->data, isA );
@@ -6070,6 +6115,7 @@ static void nbFindSupport( const nbWorld* world, int actorIndex, const nbTouch* 
 		{
 			nbAddCarrier( world, support->carriers, &support->carrierCount, chunkIndex, point );
 			support->lying = true;
+			support->lyingFlatness = b3MaxFloat( support->lyingFlatness, flatness );
 		}
 	}
 
@@ -7351,6 +7397,14 @@ static void nbEnforceDebrisBudget( nbWorld* world, b3Vec3 up )
 			bool large = actor->volume >= NB_CHECKED_VOLUME;
 			if ( ( large && ( support.braced == false || ( hasGravity && ranks[i].speed >= NB_LARGE_FREEZE_SPEED ) ) ) ||
 				 ( pass == 0 && support.grounded == false ) || ( pass > 0 && support.lying == false ) )
+			{
+				continue;
+			}
+
+			// A small piece that moves freezes only on a face flatter than NB_SLIDE_SLOPE: on a steeper one it slides, and
+			// frozen it would hang where it slid. Once it lands it freezes like the others.
+			float flatness = pass == 0 ? support.groundFlatness : support.lyingFlatness;
+			if ( large == false && hasGravity && ranks[i].speed >= NB_SLIDE_SPEED && flatness < NB_SLIDE_SLOPE )
 			{
 				continue;
 			}
