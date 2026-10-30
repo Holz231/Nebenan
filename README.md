@@ -518,11 +518,14 @@ eingeschaltet, misst Nebenan die Flächen dieser Bauwerke einmal an den Formen i
   Stücken liegen. Diese Stücke wecken sie wieder, sobald sie sich 5 cm bewegen. Teile von Gebäuden kommen erst dran,
   wenn alle anderen Trümmer nicht reichen. Trümmer im Flug erstarren nie, auch keine, die nur eingeklemmt sind oder
   gleich etwas berühren, sie hingen in der Luft: Das Budget wartet, bis sie landen. Große Teile erstarren so nur, wenn
-  sie wie oben im Gleichgewicht liegen, und nie allein auf Schutt, der nur durch sie hält. Ausgenommen sind Trümmer, die
-  jünger als 0,25 s sind, und ebenso lange die Trümmer um eine Etage, die nachgibt, und der Schutt, den ein Hausteil
-  oder ein solches frisches Stück beim Wegrücken freigibt oder ein großes Teil, das nicht erstarrt. Sonst erstarrten sie
-  gleich wieder dort, wo die Etage oder das Teil sie hielt. Höchstens 256 erstarren so in einem Update, nach einer
-  großen Explosion übernehmen die nächsten Updates den Rest, jedes mit einer neuen Rangliste.
+  sie wie oben im Gleichgewicht über dem liegen, was ohne sie hält, nie allein auf Schutt, der nur durch sie hält, und
+  nur langsamer als 0,25 m/s. Bewegte Stücke, die ein großes Teil nur an der Seite halten, wecken es nicht, wenn sie
+  weggleiten, und ein großes Teil, das noch rutscht oder kippt, hinge dort, wo es erstarrte. Ausgenommen sind Trümmer,
+  die jünger als 0,25 s sind, und ebenso lange die Trümmer um eine Etage, die nachgibt, und der Schutt, den ein
+  Hausteil oder ein solches frisches Stück beim Wegrücken freigibt oder ein großes Teil, das nicht erstarrt. Sonst
+  erstarrten sie gleich wieder dort, wo die Etage oder das Teil sie hielt. Höchstens 256 erstarren so in einem Update,
+  nach einer großen Explosion übernehmen die nächsten Updates den Rest, jedes mit einer neuen Rangliste. Das Budget
+  wählt sie alle in der Welt, wie sie vor dem ersten Erstarren war, und lässt sie erst danach erstarren.
 - Ein Stück, in das ein größeres bewegtes Stück mehr als 2 cm tief eindringt, erstarrt nur zusammen mit diesem, das
   Budget lässt es ganz aus. Allein als statischer Körper drückte es das große Stück auf einmal hinaus und würfe es
   davon, etwa ein Stockwerk, das auf kleinen Trümmern liegt.
@@ -1617,6 +1620,15 @@ Schub“ in [docs/Optimierungen.md](docs/Optimierungen.md). Gepaart gegen `activ
 Städten des Benchmarks 3 bis 9 % weniger. Ein Spiel ruft dafür nichts Neues auf, Nebenan klammert jedes Erstarren und
 Auftauen schon. Die Ergebnisse bleiben bitgleich.
 
+Seit `active-ragdoll-7` wählt das Budget alle Stücke, die über seiner Grenze erstarren, in der Welt vor dem ersten
+Erstarren, mit den Blicken der Worker, und lässt sie erst danach erstarren. Der aufrufende Thread sieht kein Stück mehr
+ein zweites Mal an, weil ein Nachbar inzwischen erstarrt ist, und mit einem und mit vier Threads wählt das Budget
+dieselben. Große Stücke erstarren dort nur noch, wo sie auch in der Ruhe erstarren würden, im Gleichgewicht über
+dem, was ohne sie hält, und langsamer als 0,25 m/s. Kommt am Ende eines Laufs jedes große Stück Schutt allein wieder zum
+Leben, fallen so über 16 Folgen von Granaten 9 statt 24 mehr als 5 cm, siehe „Blicke, die bis zum Ende gelten“ in
+[docs/Optimierungen.md](docs/Optimierungen.md). Ein Spiel ruft dafür nichts Neues auf. Die Städte über dem Budget enden
+anders, mit einem und mit vier Threads gleich.
+
 Seit `physik-44` wählt ein Spiel den Takt der Physik, siehe Der Takt der Physik und „Physik mit 30 Hz und 8
 Teilschritten“ in [docs/Optimierungen.md](docs/Optimierungen.md). Was eine simulierte Sekunde der Städte unter Beschuss
 auf der VM mit 4 Threads kostet, Box3D-Schritt, Update und Einschläge zusammen, mit den Granaten bei jedem Takt zu
@@ -1755,7 +1767,7 @@ lange die Threads im Löser rechnen und worauf sie sonst warten.
 ## Tests und Benchmark
 
 ```sh
-build/bin/nebenan_test            # 87 Tests: Geometrie, Voronoi, Hüllen, Öffnungen, Stöße, Stützgraph, Etagen, Lastprüfung, Mauern, Schutt, Ruhe, Durchschlagen, Threads, Knoten, große Blöcke, Gelenke in Paketen und Gebieten, Suchbaum, Kontaktlisten, Streaming, Stream, Laden im Hintergrund, Speichern und Zurückholen, gemeinsamer Thread-Pool, Ruhe-Prüfung auf den Workern, Schritt auf eigenem Thread, Schritte pro Bild, Takt der Physik, Wahl der Threads, Profil und Skalierung, Figuren, Determinismus …
+build/bin/nebenan_test            # 88 Tests: Geometrie, Voronoi, Hüllen, Öffnungen, Stöße, Stützgraph, Etagen, Lastprüfung, Mauern, Schutt, Ruhe, Durchschlagen, Threads, Knoten, große Blöcke, Gelenke in Paketen und Gebieten, Suchbaum, Kontaktlisten, Streaming, Stream, Laden im Hintergrund, Speichern und Zurückholen, gemeinsamer Thread-Pool, Ruhe-Prüfung auf den Workern, Schritt auf eigenem Thread, Schritte pro Bild, Takt der Physik, Wahl der Threads, Profil und Skalierung, Figuren, Determinismus …
 build/bin/nebenan_benchmark 4     # Zahl = Threads für Bruch und Physik, 0 = so viele, wie ein Spiel nähme
 build/bin/nebenan_benchmark scaling   # die Städte unter Beschuss mit 1, 2, 4 … Threads und die Tabelle der Skalierung
 build/bin/nebenan_benchmark rates     # die Städte unter Beschuss mit 30, 60 und 120 Hz, was eine simulierte Sekunde kostet
@@ -1860,10 +1872,13 @@ Nach Änderungen an `demo/shaders/scene.glsl` die Shader neu erzeugen, im Ordner
 - In den langsamsten Bildern einer Stadt über dem Budget kostet das Update ein Vielfaches des Mittels, in der Stadt mit
   Figuren rund 10 statt 2,4 ms, vor allem durch das Budget. Es lässt dort rund 190 Stücke auf einmal erstarren und liegt
   trotzdem im Mittel 1 300 Trümmer über seiner Grenze, denn frische und fliegende Trümmer dürfen nicht erstarren. Seit
-  `active-ragdoll-6` kostet ein Typwechsel dort rund ein Fünftel weniger, bitgleich, siehe oben. Dass der aufrufende
-  Thread viele Stücke ein zweites Mal ansieht und dass erstarrende Stücke ihre Kontakte zu bewegten verlieren, sind die
-  Schritte F19 und F20 der [Roadmap](docs/Roadmap.md). Dass ein großes Teil eines Gebäudes dabei alle ein bis drei
-  Schritte aufwachte und erstarrte, ist seit `active-ragdoll-5` behoben, siehe oben.
+  `active-ragdoll-6` kostet ein Typwechsel dort rund ein Fünftel weniger, bitgleich, und seit `active-ragdoll-7` sieht
+  der aufrufende Thread kein Stück mehr ein zweites Mal an, siehe oben. Dass erstarrende Stücke ihre Kontakte zu
+  bewegten verlieren, ist Schritt F20 der [Roadmap](docs/Roadmap.md). Dass ein großes Teil eines Gebäudes dabei alle
+  ein bis drei Schritte aufwachte und erstarrte, ist seit `active-ragdoll-5` behoben, siehe oben.
+- Am Ende eines Laufs der Stadt mit Figuren fällt etwa jedes 200. große Stück Schutt mehr als 5 cm, wenn es allein
+  wieder zum Leben kommt. Meist erstarrte es im Gleichgewicht über Schutt, den es zum Teil nur an der Seite berührte,
+  der später aufwachte und weggleitete, ohne es zu wecken. Das ist Schritt F21 der [Roadmap](docs/Roadmap.md).
 - Render- und Physikgeometrie sind dieselben flachen Polygone.
 - Box3D ist noch jung (0.x) und kann seine API ändern. Deshalb liegt ein fester Stand bei.
 

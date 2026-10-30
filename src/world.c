@@ -1061,6 +1061,12 @@ static int nbLimitForStep( const nbWorld* world, int limit )
 // nbEnforceDebrisBudget
 #define NB_FLIGHT_SPEED 1.0f
 
+// A large piece freezes to keep within the budget only when it is slower than this, see nbEnforceDebrisBudget. Faster, it
+// still slides or tips: it touches rubble on faces that are almost upright, which count as faces it lies on, and frozen
+// it would hang where it slid. In eight runs of the town under fire, large pieces the budget froze at 0.5 to 0.9 m/s fell
+// up to 0.25 m once they came back to life alone at the end.
+#define NB_LARGE_FREEZE_SPEED 0.25f
+
 // A larger moving body that presses this deep into a piece keeps it from freezing, unless the body freezes with it.
 // Frozen alone, the piece would push that body out of it at once and throw it: a part of a building that came down onto
 // the small pieces it squeezes.
@@ -1424,37 +1430,11 @@ static bool nbSee( int* places, int actorIndex )
 	return true;
 }
 
-// The moving actors a search read. While the budget freezes debris, only they can change what the search finds: rubble
-// and structures stay as they are until it is done, see nbBudgetLook.
-typedef struct nbMoverLog
-{
-	int* actors;
-	int count;
-	int capacity;
-
-	// It read more than it has room for
-	bool full;
-} nbMoverLog;
-
-static void nbLogMover( nbMoverLog* log, int actorIndex )
-{
-	if ( log->count < log->capacity )
-	{
-		log->actors[log->count++] = actorIndex;
-	}
-	else
-	{
-		log->full = true;
-	}
-}
-
 // Whether rubble lies on something that holds without an actor, following the chunks each rubble body froze on. Chunks
 // that are gone, moved away or part of the actor carry nothing, and so do moving bodies that rest on the actor, the set
 // from nbFindSupport, and rubble frozen in flight without a record. Everything else counts as carried: the ground, a
-// structure, other moving bodies, and rubble whose search runs past the limit. It only reads the world, and the moving
-// bodies it reads go to the log if there is one.
-static bool nbIsSupportedWithout( const nbWorld* world, int rubbleIndex, int actorIndex, const nbRestingSet* resting,
-								  nbMoverLog* log )
+// structure, other moving bodies, and rubble whose search runs past the limit. It only reads the world.
+static bool nbIsSupportedWithout( const nbWorld* world, int rubbleIndex, int actorIndex, const nbRestingSet* resting )
 {
 	int stack[NB_SUPPORT_SEARCH];
 	int count = 0;
@@ -1485,13 +1465,7 @@ static bool nbIsSupportedWithout( const nbWorld* world, int rubbleIndex, int act
 				continue;
 			}
 
-			// A moving carrier that freezes is rubble to the search from then on
 			const nbActor* carrier = world->actors.data + chunk->actorIndex;
-			if ( log != NULL && carrier->isRubble == false && carrier->isStatic == false )
-			{
-				nbLogMover( log, chunk->actorIndex );
-			}
-
 			if ( nbStillCarries( chunk, record->point ) == false )
 			{
 				continue;
@@ -5573,7 +5547,7 @@ typedef struct nbCarrierAnswers
 
 // nbIsSupportedWithout for the carriers of one piece, each carrier searched once
 static bool nbIsCarrierSupported( const nbWorld* world, nbCarrierAnswers* answers, int carrierIndex, int actorIndex,
-								  const nbRestingSet* resting, nbMoverLog* log )
+								  const nbRestingSet* resting )
 {
 	for ( int k = 0; k < answers->count; ++k )
 	{
@@ -5583,7 +5557,7 @@ static bool nbIsCarrierSupported( const nbWorld* world, nbCarrierAnswers* answer
 		}
 	}
 
-	bool supported = nbIsSupportedWithout( world, carrierIndex, actorIndex, resting, log );
+	bool supported = nbIsSupportedWithout( world, carrierIndex, actorIndex, resting );
 	if ( answers->count < NB_CARRIER_ANSWERS )
 	{
 		answers->carriers[answers->count] = carrierIndex;
@@ -5851,10 +5825,10 @@ typedef struct nbSupport
 // the list, and the piece must stay balanced without it: a piece wedged under the floor that rests on the floor itself
 // carries nothing either, however it touches. Smaller pieces lie on whatever they touch. The room for the resting set has
 // 1 << nbRestingBits( touchCount ) places. The search only reads the world, so the workers look at many pieces at once, see
-// nbSettleDebris. The moving bodies the searches through rubble read go to the log if there is one.
+// nbSettleDebris.
 static void nbFindSupport( const nbWorld* world, int actorIndex, const nbTouch* touches, int touchCount, b3Vec3 up,
 						   const nbSupportFan* baseFan, int* resting, nbSupport* support, int* unsupported, int* unsupportedCount,
-						   int unsupportedCapacity, nbMoverLog* log )
+						   int unsupportedCapacity )
 {
 	const nbActor* actor = world->actors.data + actorIndex;
 	bool large = actor->volume >= NB_CHECKED_VOLUME;
@@ -5906,7 +5880,7 @@ static void nbFindSupport( const nbWorld* world, int actorIndex, const nbTouch* 
 		if ( touch->otherType == b3_staticBody )
 		{
 			if ( large && otherIndex != NB_NULL_INDEX && world->actors.data[otherIndex].isRubble &&
-				 nbIsCarrierSupported( world, &answers, otherIndex, actorIndex, &restingSet, log ) == false )
+				 nbIsCarrierSupported( world, &answers, otherIndex, actorIndex, &restingSet ) == false )
 			{
 				// Listed once, the rubble that carries the piece first. A full list makes room for it, the rest comes back
 				// to life later, the piece is still there.
@@ -6008,8 +5982,7 @@ static bool nbCarriesWithout( const nbWorld* world, const nbCarrier* carriers, i
 		int carrierIndex = world->chunks.data[record->chunkIndex].actorIndex;
 		const nbActor* carrier = world->actors.data + carrierIndex;
 		if ( carrierIndex != actorIndex &&
-			 ( carrier->isStatic ||
-			   ( carrier->isRubble && nbIsSupportedWithout( world, carrierIndex, actorIndex, NULL, NULL ) ) ) )
+			 ( carrier->isStatic || ( carrier->isRubble && nbIsSupportedWithout( world, carrierIndex, actorIndex, NULL ) ) ) )
 		{
 			return true;
 		}
@@ -6136,7 +6109,7 @@ static void nbInspectQuietPiece( const nbSettleTask* task, nbQuietPiece* piece, 
 	int unsupportedCount = 0;
 	nbSupport support;
 	nbFindSupport( world, actorIndex, touches, touchCount, task->up, task->fan, room, &support, unsupported, &unsupportedCount,
-				   NB_MAX_RELEASES, NULL );
+				   NB_MAX_RELEASES );
 	piece->carrierCount = support.carrierCount;
 	for ( int k = 0; k < support.carrierCount; ++k )
 	{
@@ -6791,11 +6764,9 @@ static void nbSortRanks( nbArena* arena, nbDebrisRank* ranks, int count )
 // its own, so one update does not pay for all of it.
 #define NB_MAX_BUDGET_FREEZES 256
 
-// What the budget finds for a piece of debris before anything froze in its update. Freezing a piece destroys its contacts
-// and makes it rubble, nothing else changes until the budget is done: rubble and structures stay as they are, and only
-// the moving pieces the look read can change what it found. The workers look at the ranked pieces at once, then the
-// calling thread freezes in the order of the ranking and looks again where one of those froze before, so it freezes the
-// same pieces as it would alone.
+// What the budget finds for a piece of debris in the world before anything froze in its update. The budget chooses all
+// the pieces it freezes in that world and freezes them after, see nbEnforceDebrisBudget, so a look holds until the end,
+// and the workers look at the ranked pieces at once. The calling thread looks itself only where a worker did not.
 typedef struct nbBudgetLook
 {
 	nbSupport support;
@@ -6807,21 +6778,13 @@ typedef struct nbBudgetLook
 	bool squeezed;
 	bool touchesStatic;
 
-	// Not looked at, or it read more than it has room for: the calling thread looks again
+	// Not looked at, or its list of rubble below is longer than the budget keeps: the calling thread looks again
 	bool unsure;
 
 	// The rubble a large piece found to rest on itself, see nbFindSupport
 	int* unsupported;
 	int unsupportedCount;
-
-	// The moving pieces it read: the ones it touches and the carriers the searches through rubble came across
-	int* movers;
-	int moverCount;
 } nbBudgetLook;
-
-// Carriers the searches through rubble of a look keep at most besides the pieces it touches, see nbBudgetLook. A search
-// ends at the first moving carrier that does not rest on the piece.
-#define NB_LOOK_CARRIERS 16
 
 // A look at a piece of debris with contacts, see nbBudgetLook. It only reads the world.
 static void nbLookAtDebris( const nbWorld* world, nbArena* arena, int actorIndex, b3Vec3 up, const nbSupportFan* fan,
@@ -6833,17 +6796,6 @@ static void nbLookAtDebris( const nbWorld* world, nbArena* arena, int actorIndex
 	int contactCount = b3Body_GetContactData( actor->bodyId, contacts, capacity );
 	nbTouch* touches = nbArena_AllocArray( arena, nbTouch, contactCount );
 	nbDescribeTouches( world, actor->bodyId, contacts, contactCount, touches );
-	nbMoverLog log = { nbArena_AllocArray( arena, int, contactCount + NB_LOOK_CARRIERS ), 0, contactCount + NB_LOOK_CARRIERS,
-					   false };
-	for ( int c = 0; c < contactCount; ++c )
-	{
-		int other = touches[c].otherType == b3_dynamicBody ? touches[c].otherActor : NB_NULL_INDEX;
-		if ( other != NB_NULL_INDEX )
-		{
-			nbLogMover( &log, other );
-		}
-	}
-
 	look->support = ( nbSupport ){ 0 };
 	look->squeezed = B3_IS_NULL( nbFindSqueezer( world, actor, touches, contactCount ) ) == false;
 	look->touchesStatic = false;
@@ -6857,7 +6809,7 @@ static void nbLookAtDebris( const nbWorld* world, nbArena* arena, int actorIndex
 		int* resting = nbArena_AllocArray( arena, int, 1 << nbRestingBits( contactCount ) );
 		look->touchesStatic = nbTouchesStatic( touches, contactCount );
 		nbFindSupport( world, actorIndex, touches, contactCount, up, fan, resting, &look->support, unsupported, &unsupportedCount,
-					   NB_MAX_RELEASES + 1, &log );
+					   NB_MAX_RELEASES + 1 );
 		if ( unsupportedCount > 0 )
 		{
 			look->unsupported = nbArena_AllocArray( arena, int, unsupportedCount );
@@ -6866,28 +6818,7 @@ static void nbLookAtDebris( const nbWorld* world, nbArena* arena, int actorIndex
 		}
 	}
 
-	look->movers = log.actors;
-	look->moverCount = log.count;
-	look->unsure = log.full || look->unsupportedCount > NB_MAX_RELEASES;
-}
-
-// Whether a look still holds: none of the moving pieces it read froze since
-static bool nbLookHolds( const nbBudgetLook* look, const uint64_t* frozen )
-{
-	if ( look->unsure )
-	{
-		return false;
-	}
-
-	for ( int k = 0; k < look->moverCount; ++k )
-	{
-		int mover = look->movers[k];
-		if ( ( frozen[mover >> 6] >> ( mover & 63 ) ) & 1 )
-		{
-			return false;
-		}
-	}
-	return true;
+	look->unsure = look->unsupportedCount > NB_MAX_RELEASES;
 }
 
 // Moving debris per block of the ranking with looks
@@ -7106,12 +7037,25 @@ static int nbRankDebris( nbWorld* world, nbDebrisRank* ranks, bool hasGravity, b
 	return rankCount;
 }
 
+// A piece the budget chose to freeze, with the chunks it lies on, see nbEnforceDebrisBudget
+typedef struct nbBudgetChoice
+{
+	int actorIndex;
+	int carrierCount;
+	nbCarrier carriers[NB_MAX_CARRIERS];
+} nbBudgetChoice;
+
 // Freeze the slowest debris over budget into rubble. Nothing is removed. Once over budget a tenth more freezes, so the
 // ranking only runs every so often. What lies on something fixed freezes first: the ground, a structure or rubble. Only
 // when that is not enough, slow debris that lies on moving pieces freezes too, and those pieces bring it back to life
 // once they move away, see nbFreezeOnCarriers. Debris in flight or only wedged in never freezes here, it would hang in
-// the air: the budget waits until it lands. Each piece remembers the chunks it lies on, and a large piece only freezes
-// where it would in nbSettleDebris. A squeezed piece never freezes here, see NB_SQUEEZE_DEPTH.
+// the air: the budget waits until it lands. Each piece remembers the chunks it lies on. A large piece only freezes
+// where it would in nbSettleDebris, and only slowly, see NB_LARGE_FREEZE_SPEED. A squeezed piece never freezes here,
+// see NB_SQUEEZE_DEPTH. The budget chooses all the pieces in the world as it was before the first of them froze, then
+// freezes them in the order it chose them. Freezing a piece destroys its contacts until the next step, and a piece that
+// lies on it would no longer find it: in a burst the calling thread looked again at many pieces whose neighbours had
+// frozen, and the ones that lay on them could not freeze. So the looks of the workers hold until the end, and the
+// budget chooses the same pieces with any number of threads.
 static void nbEnforceDebrisBudget( nbWorld* world, b3Vec3 up )
 {
 	int budget = world->def.maxDebrisBodies;
@@ -7135,32 +7079,32 @@ static void nbEnforceDebrisBudget( nbWorld* world, b3Vec3 up )
 	int unsupported[NB_MAX_RELEASES];
 	int unsupportedCount = 0;
 	int excess = b3MinInt( count - budget + budget / 10, nbLimitForStep( world, NB_MAX_BUDGET_FREEZES ) );
-	int frozen = 0;
-
-	// The pieces that froze in this update, for the looks
+	nbBudgetChoice* choices = nbArena_AllocArray( &world->arena, nbBudgetChoice, b3MaxInt( excess, 1 ) );
+	int chosen = 0;
 	int wordCount = ( world->actors.count + 63 ) / 64;
-	uint64_t* frozenSince = nbArena_AllocArray( &world->arena, uint64_t, wordCount );
-	memset( frozenSince, 0, sizeof( uint64_t ) * (size_t)wordCount );
-
-#if defined( B3_HAS_SHAPE_BATCH )
-	// The pieces that freeze or come back to life go into Box3D's trees together, see nbSettleDebris
-	b3World_BeginShapeBatch( world->physicsWorld );
-#endif
+	uint64_t* isChosen = nbArena_AllocArray( &world->arena, uint64_t, wordCount );
+	memset( isChosen, 0, sizeof( uint64_t ) * (size_t)wordCount );
 
 	// Parts of buildings freeze only when the rest of the debris is not enough. One that sinks onto the loose cells of a
 	// storey that gave way is slow enough to come first, and frozen there it would stand on them, see nbIsQuiet. In a
 	// single house the other debris is mostly enough, under a barrage on a town less often.
 	int reach = 0;
-	for ( int round = 0; round < 4 && frozen < excess; ++round )
+	for ( int round = 0; round < 4 && chosen < excess; ++round )
 	{
 		int pass = round & 1;
 		bool parts = round >= 2;
-		for ( int i = 0; i < rankCount && frozen < excess; ++i )
+		for ( int i = 0; i < rankCount && chosen < excess; ++i )
 		{
 			reach = b3MaxInt( reach, i );
 			int actorIndex = ranks[i].actorIndex;
 			const nbActor* actor = world->actors.data + actorIndex;
-			if ( actor->isRubble || actor->isBuildingPart != parts )
+			if ( ( ( isChosen[actorIndex >> 6] >> ( actorIndex & 63 ) ) & 1 ) || actor->isBuildingPart != parts )
+			{
+				continue;
+			}
+
+			// On moving pieces only debris slower than NB_FLIGHT_SPEED freezes
+			if ( pass > 0 && ranks[i].speed >= NB_FLIGHT_SPEED )
 			{
 				continue;
 			}
@@ -7168,7 +7112,7 @@ static void nbEnforceDebrisBudget( nbWorld* world, b3Vec3 up )
 			nbSupport support = { .grounded = true, .lying = true, .balanced = true, .braced = true };
 			int capacity = hasGravity ? b3Body_GetContactCapacity( actor->bodyId ) : 0;
 			const nbBudgetLook* look =
-				looks != NULL && capacity > 0 && nbLookHolds( looks + ranks[i].look, frozenSince ) ? looks + ranks[i].look : NULL;
+				looks != NULL && capacity > 0 && looks[ranks[i].look].unsure == false ? looks + ranks[i].look : NULL;
 
 			// A large piece that is not balanced keeps the rubble it rests on on the list, the search would put it there as
 			// long as there is room for all of it
@@ -7215,7 +7159,7 @@ static void nbEnforceDebrisBudget( nbWorld* world, b3Vec3 up )
 				int firstUnsupported = unsupportedCount;
 				int* resting = nbArena_AllocArray( &world->arena, int, 1 << nbRestingBits( contactCount ) );
 				nbFindSupport( world, actorIndex, touches, contactCount, up, &fan, resting, &support, unsupported,
-							   &unsupportedCount, NB_MAX_RELEASES, NULL );
+							   &unsupportedCount, NB_MAX_RELEASES );
 				if ( pass > 0 || actor->volume < NB_CHECKED_VOLUME || support.balanced )
 				{
 					unsupportedCount = firstUnsupported;
@@ -7229,21 +7173,38 @@ static void nbEnforceDebrisBudget( nbWorld* world, b3Vec3 up )
 				continue;
 			}
 
-			// A piece on moving pieces only freezes while it lies on them and they are slow, as it is
-			if ( support.balanced == false || ( pass == 0 && support.grounded == false ) ||
-				 ( pass > 0 && ( support.lying == false || ranks[i].speed >= NB_FLIGHT_SPEED ) ) )
+			// A piece on moving pieces only freezes while it lies on them. A large piece freezes only braced, balanced over what
+			// holds without it as in nbSettleDebris, and slowly, see NB_LARGE_FREEZE_SPEED: balanced on moving pieces that only
+			// touch it, it would hang once they moved away, they do not bring it back to life.
+			bool large = actor->volume >= NB_CHECKED_VOLUME;
+			if ( ( large && ( support.braced == false || ( hasGravity && ranks[i].speed >= NB_LARGE_FREEZE_SPEED ) ) ) ||
+				 ( pass == 0 && support.grounded == false ) || ( pass > 0 && support.lying == false ) )
 			{
 				continue;
 			}
 
-			nbFreezeOnCarriers( world, actorIndex, support.carriers, support.carrierCount );
-			frozenSince[actorIndex >> 6] |= (uint64_t)1 << ( actorIndex & 63 );
-			frozen += 1;
+			nbBudgetChoice* choice = choices + chosen;
+			choice->actorIndex = actorIndex;
+			choice->carrierCount = support.carrierCount;
+			memcpy( choice->carriers, support.carriers, sizeof( nbCarrier ) * (size_t)support.carrierCount );
+			isChosen[actorIndex >> 6] |= (uint64_t)1 << ( actorIndex & 63 );
+			chosen += 1;
 		}
 	}
 
 	// How far the next budget looks ahead, all of the ranking if this one went through all of it
 	world->lookSpeedLimit = reach + 1 < rankCount ? NB_LOOK_REACH * ranks[reach].speed + NB_LOOK_REACH_SPEED : 0.0f;
+
+#if defined( B3_HAS_SHAPE_BATCH )
+	// The pieces that freeze or come back to life go into Box3D's trees together, see nbSettleDebris
+	b3World_BeginShapeBatch( world->physicsWorld );
+#endif
+
+	// A piece frozen on a carrier chosen before it finds that carrier rubble, as when it froze right after it
+	for ( int k = 0; k < chosen; ++k )
+	{
+		nbFreezeOnCarriers( world, choices[k].actorIndex, choices[k].carriers, choices[k].carrierCount );
+	}
 
 	for ( int i = 0; i < unsupportedCount; ++i )
 	{

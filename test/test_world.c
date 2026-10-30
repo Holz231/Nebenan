@@ -4297,6 +4297,70 @@ static int DebrisBudgetFlightTest( void )
 	return 0;
 }
 
+// Over the budget a large piece freezes only braced and slowly, see NB_LARGE_FREEZE_SPEED. A large box that slides over
+// the ground freezes once it is slow, and a slab on two boxes that ride a slow platform does not freeze on them: the boxes
+// never freeze, see RestTest, and balanced over them alone the slab would hang once they slid out from under it.
+static int DebrisBudgetLargeTest( void )
+{
+	// A box of 0.22 m3 slides over the ground at 4 m/s. Past the grace of new debris it slides on, then freezes.
+	{
+		TestScene scene = CreateScene();
+		nbDestructibleId box = CreateLooseBox( &scene, (b3Vec3){ 0.0f, 0.3f, 0.0f }, (b3Vec3){ 0.3f, 0.3f, 0.3f }, 71 );
+		nbWorld_SetDebrisBudget( scene.world, 0 );
+		nbWorld* world = nbGetWorldFromId( scene.world );
+		int actorIndex = ActorOfDestructible( &scene, box );
+		ENSURE( world->actors.data[actorIndex].volume >= 0.1f );
+		b3Body_SetLinearVelocity( world->actors.data[actorIndex].bodyId, (b3Vec3){ 4.0f, 0.0f, 0.0f } );
+
+		int fastSteps = 0;
+		float speed = 4.0f;
+		int step = 0;
+		for ( ; step < 120; ++step )
+		{
+			Step( &scene, 1 );
+			const nbActor* actor = world->actors.data + actorIndex;
+			if ( actor->isRubble )
+			{
+				break;
+			}
+
+			speed = b3Length( b3Body_GetLinearVelocity( actor->bodyId ) );
+			fastSteps += step >= 15 && speed > 0.4f ? 1 : 0;
+		}
+		ENSURE( step < 120 && fastSteps > 5 && speed < 0.4f );
+		ENSURE( fabsf( CenterOfChunks( box ).y - 0.3f ) < 0.01f );
+		DestroyScene( &scene );
+	}
+
+	// A slab of 0.48 m3 lies on two small boxes on a platform that moves at 0.2 m/s
+	{
+		TestScene scene = CreateScene();
+		b3BodyDef bodyDef = b3DefaultBodyDef();
+		bodyDef.type = b3_kinematicBody;
+		bodyDef.position = (b3Vec3){ 0.0f, 1.0f, 0.0f };
+		b3BodyId platform = b3CreateBody( scene.physicsWorld, &bodyDef );
+		b3BoxHull hull = b3MakeBoxHull( 3.0f, 0.1f, 2.0f );
+		b3ShapeDef shapeDef = b3DefaultShapeDef();
+		b3CreateHullShape( platform, &shapeDef, &hull.base );
+		CreateLooseBox( &scene, (b3Vec3){ -0.8f, 1.25f, 0.0f }, (b3Vec3){ 0.15f, 0.15f, 0.15f }, 72 );
+		CreateLooseBox( &scene, (b3Vec3){ 0.8f, 1.25f, 0.0f }, (b3Vec3){ 0.15f, 0.15f, 0.15f }, 73 );
+		nbDestructibleId slab = CreateLooseBox( &scene, (b3Vec3){ 0.0f, 1.5f, 0.0f }, (b3Vec3){ 1.2f, 0.1f, 0.5f }, 74 );
+		nbWorld_SetDebrisBudget( scene.world, 0 );
+		b3Body_SetLinearVelocity( platform, (b3Vec3){ 0.2f, 0.0f, 0.0f } );
+		for ( int i = 0; i < 120; ++i )
+		{
+			Step( &scene, 1 );
+			ENSURE( nbWorld_GetStats( scene.world ).rubbleCount == 0 );
+		}
+
+		// It rode along on the boxes
+		ENSURE( CenterOfChunks( slab ).x > 0.3f && CenterOfChunks( slab ).y > 1.45f );
+		DestroyScene( &scene );
+	}
+
+	return 0;
+}
+
 // A brick wall 3 m wide and 0.3 m thick, pre-fractured into one layer of cells, under a concrete block. Without collision
 // damage every fragment comes from a chunk crushed under the load.
 static void CreateLoadedWall( TestScene* scene )
@@ -6501,8 +6565,8 @@ static int SettleWorkersTest( void )
 	return 0;
 }
 
-// Over the budget the workers look at the ranked debris before anything freezes, see nbBudgetLook. The calling thread
-// freezes the same pieces as alone, also where a look no longer holds because something it read froze.
+// Over the budget the workers look at the ranked debris before anything freezes, see nbBudgetLook. The budget chooses the
+// same pieces as with the looks of the calling thread alone, in the world before the first of them froze.
 static int BudgetWorkersTest( void )
 {
 	enum
@@ -7447,6 +7511,7 @@ int WorldTest( void )
 	RUN_TEST( VisibleFaceTest );
 	RUN_TEST( DebrisBudgetTest );
 	RUN_TEST( DebrisBudgetFlightTest );
+	RUN_TEST( DebrisBudgetLargeTest );
 	RUN_TEST( RestTimeTest );
 	RUN_TEST( FragmentScaleTest );
 	RUN_TEST( StoreyTest );
