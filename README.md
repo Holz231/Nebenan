@@ -1659,6 +1659,16 @@ Stockwerke ein, aber mit höchstens 4 879 statt 6 400 wachen Körpern, und die 9
 Granaten 17 statt 20 mehr als 5 cm, auf die 16 Folgen oben waren F17 bis F21 abgestimmt. Ein Spiel ruft dafür nichts
 Neues auf. Die Städte über dem Budget enden anders, mit einem und mit vier Threads gleich.
 
+Seit `active-ragdoll-10` folgt Schutt dem, worauf er liegt, auch wenn das zerbricht oder in einem Einsturz spät an die
+Reihe kommt, siehe „Schutt folgt seinem Träger“ in [docs/Optimierungen.md](docs/Optimierungen.md). Die Freigabe von
+gehaltenem Schutt geht über die Updates reihum, ein Stück weckt vor dem Erstarren, was auf ihm erstarrt ist, und
+zerbricht ein Einschlag ein Bruchstück, liegt der Schutt darauf auf dem kleineren an seinem Punkt. Am Ende eines Laufs
+liegt so auf 48 Folgen von Granaten 244 statt 268 Mal Schutt mit nichts 30 cm darunter, und keiner mehr, weil das Halten
+fehlte: Fast alles fror das Budget an einer steilen Fläche oder in der Bewegung ein, Schritt F23 der
+[Roadmap](docs/Roadmap.md). Über acht Folgen im Wechsel mit `active-ragdoll-9` kostet ein Bild 10,25 statt 10,28 ms, und
+es tauen 2,7 % mehr Stücke auf. Ein Spiel ruft dafür nichts Neues auf. Die Städte über dem Budget enden anders, mit
+einem und mit vier Threads gleich.
+
 Seit `physik-44` wählt ein Spiel den Takt der Physik, siehe Der Takt der Physik und „Physik mit 30 Hz und 8
 Teilschritten“ in [docs/Optimierungen.md](docs/Optimierungen.md). Was eine simulierte Sekunde der Städte unter Beschuss
 auf der VM mit 4 Threads kostet, Box3D-Schritt, Update und Einschläge zusammen, mit den Granaten bei jedem Takt zu
@@ -1797,7 +1807,7 @@ lange die Threads im Löser rechnen und worauf sie sonst warten.
 ## Tests und Benchmark
 
 ```sh
-build/bin/nebenan_test            # 90 Tests: Geometrie, Voronoi, Hüllen, Öffnungen, Stöße, Stützgraph, Etagen, Lastprüfung, Mauern, Schutt, Ruhe, Durchschlagen, Threads, Knoten, große Blöcke, Gelenke in Paketen und Gebieten, Suchbaum, Kontaktlisten, Streaming, Stream, Laden im Hintergrund, Speichern und Zurückholen, gemeinsamer Thread-Pool, Ruhe-Prüfung auf den Workern, Schritt auf eigenem Thread, Schritte pro Bild, Takt der Physik, Wahl der Threads, Profil und Skalierung, Figuren, Determinismus …
+build/bin/nebenan_test            # 91 Tests: Geometrie, Voronoi, Hüllen, Öffnungen, Stöße, Stützgraph, Etagen, Lastprüfung, Mauern, Schutt, Ruhe, Durchschlagen, Threads, Knoten, große Blöcke, Gelenke in Paketen und Gebieten, Suchbaum, Kontaktlisten, Streaming, Stream, Laden im Hintergrund, Speichern und Zurückholen, gemeinsamer Thread-Pool, Ruhe-Prüfung auf den Workern, Schritt auf eigenem Thread, Schritte pro Bild, Takt der Physik, Wahl der Threads, Profil und Skalierung, Figuren, Determinismus …
 build/bin/nebenan_benchmark 4     # Zahl = Threads für Bruch und Physik, 0 = so viele, wie ein Spiel nähme
 build/bin/nebenan_benchmark scaling   # die Städte unter Beschuss mit 1, 2, 4 … Threads und die Tabelle der Skalierung
 build/bin/nebenan_benchmark rates     # die Städte unter Beschuss mit 30, 60 und 120 Hz, was eine simulierte Sekunde kostet
@@ -1907,13 +1917,14 @@ Nach Änderungen an `demo/shaders/scene.glsl` die Shader neu erzeugen, im Ordner
   Stücke ihre Kontakte zu bewegten, Schritt F20 der [Roadmap](docs/Roadmap.md), der Schritt danach kostet dort 1,1 bis
   1,7 ms weniger, das Update aber 0,6 ms mehr. Dass ein großes Teil eines Gebäudes dabei alle ein bis drei Schritte
   aufwachte und erstarrte, ist seit `active-ragdoll-5` behoben, siehe oben.
-- Am Ende eines Laufs der Stadt mit Figuren fällt etwa jedes 330. große Stück Schutt mehr als 5 cm, wenn es allein
+- Am Ende eines Laufs der Stadt mit Figuren fällt etwa jedes 290. große Stück Schutt mehr als 5 cm, wenn es allein
   wieder zum Leben kommt, auf 48 Folgen von Granaten, an denen nichts abgestimmt wurde. Auf den 16 Folgen, an denen F17
   bis F21 gemessen wurden, fiel auf `active-ragdoll-8` nur jedes 900.: Es lehnte an einem großen Teil eines Gebäudes
   oder lag auf sehr kleinen Stücken. Seit `active-ragdoll-8` merkt sich ein großes Stück den Schutt an seiner Seite, den
   es für sein Gleichgewicht braucht, aber höchstens vier Bruchstücke insgesamt, siehe Schritt F21 der
-  [Roadmap](docs/Roadmap.md). Schutt, der auf Festem und einem bewegten Stück liegt, verliert seinen Halt, wenn das
-  Feste wegbricht, Schritt F22.
+  [Roadmap](docs/Roadmap.md). Seit `active-ragdoll-10` folgt Schutt dem, worauf er liegt, auch wenn das zerbricht,
+  Schritt F22. Was noch in der Luft liegt, hat das Budget fast immer an einer steilen Fläche oder in der Bewegung
+  eingefroren, Schritt F23.
 - Render- und Physikgeometrie sind dieselben flachen Polygone.
 - Box3D ist noch jung (0.x) und kann seine API ändern. Deshalb liegt ein fester Stand bei.
 
