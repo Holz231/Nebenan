@@ -469,7 +469,7 @@ static uint32_t RunDeterminismScenario( void )
 
 // Fracture and physics are bit for bit identical with MSVC, GCC and Clang on x64 and ARM. This is the result
 // with the pinned Box3D commit. Update it when the results change on purpose, never to make one platform pass.
-#define NB_EXPECTED_DETERMINISM_HASH 0xa503e1aeu
+#define NB_EXPECTED_DETERMINISM_HASH 0x9119ed8au
 
 static int DeterminismTest( void )
 {
@@ -897,12 +897,11 @@ static float ContactImpulse( const b3ContactData* contact )
 }
 #endif
 
-// A body that changes between dynamic and static keeps its contacts with awake dynamic bodies. A box that freezes under
-// another keeps the contact the upper box rests on, with its impulse, and loses the one with the floor, which a static
-// body cannot touch. The upper box stays where it rests, also when the lower one comes back to life, and the contact stays
-// through both changes. A box that sleeps with the one on it wakes before it freezes and keeps the contact as well. Once
-// the upper box sleeps on the frozen one, the contact goes when that comes back to life, and the next step brings a new
-// one.
+// A dynamic body that becomes static keeps its contacts with awake dynamic bodies. A box that freezes under another keeps
+// the contact the upper box rests on, with its impulse, and loses the one with the floor, which a static body cannot
+// touch. The upper box stays where it rests. A box that sleeps with the one on it wakes before it freezes and keeps the
+// contact as well. Coming back to life the lower box keeps no contact, the next step brings a new one, and the upper box
+// still rests where it did.
 static int KeptContactTest( void )
 {
 #if defined( B3_HAS_KEPT_CONTACTS )
@@ -960,14 +959,13 @@ static int KeptContactTest( void )
 		ENSURE( b3Body_IsAwake( boxes[1] ) == ( sleep == 0 ) );
 
 		b3Body_SetType( boxes[0], b3_dynamicBody );
-		ENSURE( FindTouchingContact( boxes[1], boxes[0], &kept ) == ( sleep == 0 ) );
-		ENSURE( sleep == 1 || B3_ID_EQUALS( kept.contactId, rest.contactId ) );
+		ENSURE( FindTouchingContact( boxes[1], boxes[0], &kept ) == false );
 		for ( int i = 0; i < 60; ++i )
 		{
 			b3World_Step( worldId, 1.0f / 60.0f, 4 );
 		}
 		ENSURE( FindTouchingContact( boxes[1], boxes[0], &kept ) );
-		ENSURE( B3_ID_EQUALS( kept.contactId, rest.contactId ) == ( sleep == 0 ) );
+		ENSURE( B3_ID_EQUALS( kept.contactId, rest.contactId ) == false );
 		ENSURE( fabsf( (float)b3Body_GetPosition( boxes[1] ).y - restY ) < 0.005f );
 		ENSURE( b3Body_GetContactCapacity( floorId ) == 1 );
 
@@ -7000,8 +6998,8 @@ static uint32_t RunScenarioAtRate( TestScene scene, float stepRate, int settleFr
 
 // The results of the determinism scenario at 30 and 120 Hz with ten seconds to settle, the same on every platform like
 // NB_EXPECTED_DETERMINISM_HASH
-#define NB_EXPECTED_HASH_30HZ 0xa6c8316cu
-#define NB_EXPECTED_HASH_120HZ 0xcb994b06u
+#define NB_EXPECTED_HASH_30HZ 0x5b8955fau
+#define NB_EXPECTED_HASH_120HZ 0x2a2eb360u
 
 // The steps per second of nbWorld_Advance. At 60 Hz it takes the steps of the determinism scenario to the bit. At 30 and
 // 120 Hz every frame of 1/60 s takes half a step and two, whatever the steps cost, the world ends the same with one and

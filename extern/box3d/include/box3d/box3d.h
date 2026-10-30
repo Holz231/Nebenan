@@ -551,12 +551,12 @@ B3_API b3BodyType b3Body_GetType( b3BodyId bodyId );
 
 /// Change the body type. This is an expensive operation. This automatically updates the mass
 /// properties regardless of the automatic mass setting.
-/// Changed for Nebenan: between dynamic and static the body keeps its contacts with awake dynamic bodies, with their
-/// impulses and caches, and destroys the others.
+/// Changed for Nebenan: from dynamic to static the body keeps its contacts with awake dynamic bodies, with their impulses
+/// and caches, and destroys the others.
 B3_API void b3Body_SetType( b3BodyId bodyId, b3BodyType type );
 
-/// This Box3D keeps the contacts with awake dynamic bodies when a body changes between dynamic and static, see
-/// b3Body_SetType. Added for Nebenan.
+/// This Box3D keeps the contacts with awake dynamic bodies when a dynamic body becomes static, see b3Body_SetType. Added
+/// for Nebenan.
 #define B3_HAS_KEPT_CONTACTS 1
 
 /// Set the body name.
