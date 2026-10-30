@@ -598,8 +598,10 @@ sondern daneben in einem Array nach Kontakt-Id, zusammen mit den Formen des Kont
 abläuft, liest von einem Kontakt nur diesen Eintrag und seine Manifolds. Ein Kontakt kommt an den Anfang der Listen
 seiner Körper, wenn er zu berühren beginnt, und geht wieder hinaus, wenn er aufhört oder gelöscht wird
 (`b3LinkTouchingContact` und `b3UnlinkTouchingContact` in `src/contact.c`). Statische Körper führen keine Liste, ihre
-wäre die längste, und nichts fragt sie oft ab. Ein Körper wechselt seinen Typ erst, wenn er alle Kontakte verloren hat,
-also nimmt jeder Kontakt dieselben Verweise heraus, die er bekommen hat. `b3Body_GetContactData` und
+wäre die längste, und nichts fragt sie oft ab. Ein Körper wechselt seinen Typ erst, wenn seine berührenden Kontakte
+seine Liste verlassen haben, also nimmt jeder Kontakt dieselben Verweise heraus, die er bekommen hat. Seit
+`active-ragdoll-9` behält ein Körper, der erstarrt, seine Kontakte mit wachen beweglichen Körpern, siehe „Kontakte beim
+Erstarren behalten“, und die bleiben in deren Listen. `b3Body_GetContactData` und
 `b3Body_GetContactDataOfBodies` laufen für die anderen Körper nur noch diese Listen ab. In einem Haufen Trümmer berühren
 vier von fünf Kontakten nicht: Beim Abriss in der Demo hat ein ruhiges Stück im Mittel 31 Einträge für 6 berührende
 Kontakte, der Rest einer Etage 4 610 für 1 094. Die Reihenfolge bleibt die der Liste aller Kontakte. Dort setzt ein
@@ -766,11 +768,36 @@ Aufnahme behält den Schalter: Das Bit `0x20` der Schalter der Welt steht für a
 mit und ohne den Schalter: mit Gebieten in allen Schritten, ohne in keinem und ohne Pakete, mit einem und vier Workern
 bitgleich, und eine Aufnahme ohne den Schalter spielt gleich ab.
 
+**Kontakte beim Erstarren behalten.** Wechselte ein Körper seinen Typ, löschte Box3D alle seine Kontakte, und die
+Paarsuche legte im nächsten Schritt wieder an, was bleiben konnte. Ein Stück, das zu Schutt erstarrt, hatte so 18
+Kontakte, 7,7 davon mit bewegten Stücken, und die verloren die Stöße ihrer Punkte und die Trennachsen ihrer Hüllen.
+Jetzt behält ein beweglicher Körper, der statisch wird, seine Kontakte mit wachen beweglichen Körpern
+(`b3KeepBodyContacts` in `src/body.c`). Die mit statischen und kinematischen Körpern löscht `b3DestroyBodyContacts`
+zuerst, mit seinem Vorausladen, und bei einem schlafenden Körper aus seinem Satz, bevor er aufwacht. Dann wacht er auf,
+mit den Kontakten seiner Insel, und die Kontakte mit Körpern, die weiter schlafen, gehen auch, die legt die Paarsuche
+wieder an. Ein berührender Kontakt, der bleibt, verlässt die Listen der berührenden Kontakte, seine Insel und seine
+Farbe, als hörte er auf zu berühren, solange der Körper noch seinen Typ hat, so zählt ein Gebiet ihn bei beiden Körpern
+aus. Ist der Körper im statischen Satz, bekommen die behaltenen Kontakte seinen neuen Index und das Zeichen eines
+Kontakts mit einem statischen Körper, und die berührenden kommen wieder in die Listen, eine Insel und den Graphen wie
+beim Beginn einer Berührung, in die Farben für Kontakte mit statischen Körpern, die der Löser zuletzt rechnet
+(`b3RestoreBodyContacts`). Der Schwerpunkt des Körpers liegt jetzt in seinem Ursprung, also rechnet jeder Kontakt seine
+Manifolds im nächsten Schritt neu, mit seiner Trennachse, und seine Punkte finden ihre Stöße über ihre Ids wieder. Diese
+Stöße hielten den anderen Körper gegen diesen, und das tut ein statischer genauso. Ein Körper, der wieder beweglich
+wird, löscht weiter alle Kontakte: Kämen die Stöße mit, die einen Haufen auf einem statischen Körper hielten, stießen
+sie ihn auf einmal an. Pro Erstarren behält ein Stück in der Stadt mit Figuren 1,9 berührende und 5,4 weitere Kontakte
+und löscht 12,4 mit statischen Körpern. In acht Folgen im Wechsel mit `active-ragdoll-8` kostet dort ein Bild 1,9 % und
+der Schritt von Box3D 2,2 % weniger, ein Typwechsel 3 % mehr, denn die berührenden Kontakte, die bleiben, wechseln
+Insel, Farbe und Listen ohne Vorausladen, siehe „Kontakte beim Erstarren behalten“ in
+[`docs/Optimierungen.md`](../docs/Optimierungen.md). Die Validierung von Box3D prüft die Listen, Inseln, Farben und
+Gebiete nach jedem Typwechsel, `B3_HAS_KEPT_CONTACTS` zeigt das Behalten an. Gebaut für Schritt F20 der
+[Roadmap](../docs/Roadmap.md).
+
 Die erste, die zweite, die vierte bis achte, die zehnte, die dreizehnte bis einunddreißigste, die dreiunddreißigste bis
 fünfunddreißigste, die neununddreißigste bis dreiundvierzigste, die fünfundvierzigste bis siebenundvierzigste, die
 neunundvierzigste bis neunundfünfzigste ändern an den Ergebnissen nichts, die einundsechzigste nur an Federn mit einer
 Grenze, die nur die Figuren setzen, die zweiundsechzigste nur in Welten mit wachen Gelenken, wo große Inseln jetzt in
-Gebieten rechnen. Die dritte und die neunte ändern sie in den letzten Bits, dafür hängen sie nicht
+Gebieten rechnen, die dreiundsechzigste, weil Kontakte durch das Erstarren eines Körpers ihre Stöße und Trennachsen
+behalten. Die dritte und die neunte ändern sie in den letzten Bits, dafür hängen sie nicht
 mehr davon ab, in welcher Reihenfolge Formen in die Bäume kommen. Die elfte ändert sie, weil Kontakte zu anderen
 Zeitpunkten entstehen, die zwölfte, weil sie weniger Punkte bekommen, die zweiunddreißigste, weil die Kontakte eines
 Knotens gebündelt gegen Kopien rechnen statt nacheinander, die sechsunddreißigste, weil die Kerne dieselbe Rechnung
@@ -793,11 +820,12 @@ zwischen Hüllen ergab, die eine Fläche trennt. Die Ergänzungen stehen in `CMa
 `src/physics_world.h`, `src/physics_world.c` und `src/tracy_hide_user.cmake`, jeweils mit „Added for Nebenan“ markiert.
 `B3_HAS_UNIQUE_HULLS`, `B3_HAS_SHAPE_BATCH`, `B3_HAS_SHAPE_CONTACT_LISTS`, `B3_HAS_EXTERNAL_HULLS`,
 `B3_HAS_BODY_PREFETCH`, `B3_HAS_STEP_GUARD`, `B3_HAS_PREVIOUS_TRANSFORM`, `B3_HAS_STATIC_OVERLAP`,
-`B3_HAS_CONTACT_DATA_OF_BODIES` und `B3_HAS_SPRING_TORQUE_LIMITS` zeigen die zweite, die vierte, die fünfte, die
-sechste, die neunzehnte, die dreißigste, die fünfunddreißigste, die zweiundvierzigste, die vierundfünfzigste und die
-einundsechzigste an. Fehlen sie, etwa mit einem eigenen Box3D, läuft Nebenan wie zuvor, nur wachsen Box3Ds Arrays dann
-durch Umkopieren, die Hüllen gehen durch die Tabelle, jede Form geht einzeln in den Baum, jedes stehende Bruchstück
-bekommt einen eigenen Körper, Box3D hält eine Kopie jeder Hülle, Nebenan holt die Körper der Trümmer nicht voraus,
-`nbWorld_Step` rechnet auf dem aufrufenden Thread, `nbWorld_GetDrawPoses` gibt die Lagen nach dem Schritt, Schutt wird
-in allen Bäumen gesucht, die Ruhe-Prüfung holt die Kontakte jedes ruhigen Stücks für sich, und die Federn der Figuren
-halten ihre Haltung ohne Grenze.
+`B3_HAS_CONTACT_DATA_OF_BODIES`, `B3_HAS_SPRING_TORQUE_LIMITS` und `B3_HAS_KEPT_CONTACTS` zeigen die zweite, die vierte,
+die fünfte, die sechste, die neunzehnte, die dreißigste, die fünfunddreißigste, die zweiundvierzigste, die
+vierundfünfzigste, die einundsechzigste und die dreiundsechzigste an. Fehlen sie, etwa mit einem eigenen Box3D, läuft
+Nebenan wie zuvor, nur wachsen Box3Ds Arrays dann durch Umkopieren, die Hüllen gehen durch die Tabelle, jede Form geht
+einzeln in den Baum, jedes stehende Bruchstück bekommt einen eigenen Körper, Box3D hält eine Kopie jeder Hülle, Nebenan
+holt die Körper der Trümmer nicht voraus, `nbWorld_Step` rechnet auf dem aufrufenden Thread, `nbWorld_GetDrawPoses` gibt
+die Lagen nach dem Schritt, Schutt wird in allen Bäumen gesucht, die Ruhe-Prüfung holt die Kontakte jedes ruhigen Stücks
+für sich, die Federn der Figuren halten ihre Haltung ohne Grenze, und erstarrende Trümmer verlieren ihre Kontakte mit
+bewegten Stücken.
