@@ -35,7 +35,8 @@ auf Wunsch des Nutzers gebaut, auf dem Ryzen nachgemessen und auf `kollaps-33` z
 Gebieten auf `kollaps-32`, gebaut, auf dem Ryzen nachgemessen und übernommen, und dem Ausgleich der Gebiete auf
 `kollaps-34`, gebaut, auf dem Ryzen nachgemessen und auf `kollaps-35` zurückgenommen, und den Mauern wie auf dem alten
 Branch auf `kollaps-36`, auf Wunsch des Nutzers, und den Figuren nach Overgrowth auf `active-ragdoll-1`, ebenso auf
-Wunsch des Nutzers. Begründungen und Messwerte stehen in
+Wunsch des Nutzers, und den Treffern wie auf `ragdoll-11` auf `active-ragdoll-20`, ebenso auf Wunsch des Nutzers.
+Begründungen und Messwerte stehen in
 [`Optimierungen.md`](Optimierungen.md), hier nur das Fazit und die Reihenfolge. Nach jeder Runde wird der Stand hier
 nachgetragen.
 
@@ -1589,7 +1590,9 @@ auf einer Stufe, an einem Hang und auf Schutt, F10. Auf `active-ragdoll-17` rüc
 Aufstehen zurück oder zur Seite oder dreht sich, statt zu warten, F11. Auf `active-ragdoll-18` liegen die Gelenke eines
 Ragdolls im Schutt in den Gebieten der großen Insel, und der aufrufende Thread rechnet sie nicht mehr allein, F12.
 Auf `active-ragdoll-19` bricht ein Ragdoll, der gegen eine zerstörbare Wand fliegt, nach Energie und Material durch
-oder prallt ab, mit genau einem Einschlag pro Teil der Wand und Schritt, F28.
+oder prallt ab, mit genau einem Einschlag pro Teil der Wand und Schritt, F28. Auf `active-ragdoll-20` fängt sich eine
+Figur nach einem harten Treffer mit dynamischen Knochen und echten Schritten wie auf `ragdoll-11`, statt schlaff
+umzufallen, und fällt nur, wo kein Schritt reicht, F29.
 
 | Nr. | Schritt | Gewinn | Voraussetzung | Stand |
 | ---: | --- | --- | --- | --- |

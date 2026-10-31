@@ -607,12 +607,13 @@ static void BenchmarkTown( int workerCount, float fragmentScale, int side, int g
 	if ( figureCount > 0 )
 	{
 		nbFigureStats figureStats = nbWorld_GetFigureStats( scene.world );
-		printf( "  %d figures: ragdolls awake after %d steps, at most %d at once, %d balance steps, %d knockdowns, %d get-ups, "
-				"%d moves to get up, %d aborts, at the end %d standing, %d lying, %d getting up, figures hash 0x%08x\n",
+		printf( "  %d figures: ragdolls awake after %d steps, at most %d at once, %d balance steps, %d caught, %d knockdowns, "
+				"%d get-ups, %d moves to get up, %d aborts, at the end %d standing, %d catching themselves, %d lying, "
+				"%d getting up, figures hash 0x%08x\n",
 				figureCount, townProfile.ragdollStepCount, townProfile.maxRagdollCount, figureStats.stepCount,
-				figureStats.knockdownCount, figureStats.getUpCount, figureStats.shiftCount, figureStats.abortCount,
-				figureStats.animatedCount, figureStats.ragdollCount, figureStats.gettingUpCount,
-				HashFigures( figureIds, figureCount ) );
+				figureStats.catchCount, figureStats.knockdownCount, figureStats.getUpCount, figureStats.shiftCount,
+				figureStats.abortCount, figureStats.animatedCount, figureStats.balancingCount, figureStats.ragdollCount,
+				figureStats.gettingUpCount, HashFigures( figureIds, figureCount ) );
 	}
 	if ( profile != NULL )
 	{
@@ -786,7 +787,7 @@ static void BenchmarkFigures( int workerCount, int figureCount )
 	printf( "  %d figure%s in %d row%s, a wall before each\n", figureCount, figureCount == 1 ? "" : "s", rows,
 			rows == 1 ? "" : "s" );
 	printf( "    phase        steps | step avg    p95    p99    max | update avg    p95    p99    max | figures  solve collide | "
-			"packs domains | awake ragdolls, balance steps, knockdowns, get-ups, moves to get up, aborts\n" );
+			"packs domains | awake ragdolls, balance steps, caught, knockdowns, get-ups, moves to get up, aborts\n" );
 	uint32_t hitId = 1;
 	for ( int p = 0; p < 5; ++p )
 	{
@@ -863,19 +864,19 @@ static void BenchmarkFigures( int workerCount, int figureCount )
 		nbProfile profile = nbWorld_GetProfile( scene.world );
 		nbFigureStats after = nbWorld_GetFigureStats( scene.world );
 		printf( "    %-12s %5d | %8.3f %6.3f %6.3f %6.3f | %10.3f %6.3f %6.3f %6.3f | %7.3f %6.3f %7.3f | %5d %7d | %d, %d, %d, "
-				"%d, %d, %d\n",
+				"%d, %d, %d, %d\n",
 				phases[p].name, steps, values[0][0], values[0][1], values[0][2], values[0][3], values[1][0], values[1][1],
 				values[1][2], values[1][3], profile.stages[nb_profileFigures], profile.stages[nb_profileSolve],
 				profile.stages[nb_profileCollide], profile.packStepCount, profile.domainStepCount, awake,
-				after.stepCount - before.stepCount, after.knockdownCount - before.knockdownCount,
-				after.getUpCount - before.getUpCount, after.shiftCount - before.shiftCount,
-				after.abortCount - before.abortCount );
+				after.stepCount - before.stepCount, after.catchCount - before.catchCount,
+				after.knockdownCount - before.knockdownCount, after.getUpCount - before.getUpCount,
+				after.shiftCount - before.shiftCount, after.abortCount - before.abortCount );
 	}
 
 	nbFigureStats stats = nbWorld_GetFigureStats( scene.world );
-	printf( "    at the end %d standing, %d lying, %d getting up, memory %.1f MB, figures hash 0x%08x\n", stats.animatedCount,
-			stats.ragdollCount, stats.gettingUpCount, (double)( nbGetByteCount() + b3GetByteCount() ) / 1048576.0,
-			HashFigures( figures, figureCount ) );
+	printf( "    at the end %d standing, %d catching themselves, %d lying, %d getting up, memory %.1f MB, figures hash 0x%08x\n",
+			stats.animatedCount, stats.balancingCount, stats.ragdollCount, stats.gettingUpCount,
+			(double)( nbGetByteCount() + b3GetByteCount() ) / 1048576.0, HashFigures( figures, figureCount ) );
 	DestroyScene( &scene );
 }
 

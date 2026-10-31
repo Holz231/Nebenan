@@ -469,7 +469,7 @@ struct App
 	// what the overlay shows of them: what each does, and the pose each goes for
 	std::vector<FigureVisual> figures;
 	nbBoneDef figureBones[nb_humanoidBoneCount] = {};
-	float figureHitImpulse = 80.0f;
+	float figureHitImpulse = 60.0f;
 	bool showFigureStates = true;
 	bool showFigureTargets = false;
 
@@ -1881,10 +1881,12 @@ static std::string BuildReport( const App& app )
 	if ( HasFigures( app.scene ) )
 	{
 		const nbFigureStats& figures = view.figures;
-		Appendf( text, "Figuren: %d, stehen %d, liegen %d (%d wach), stehen auf %d; Treffer %d, Schritte %d, umgeworfen %d, aufgestanden %d, gerückt %d, abgebrochen %d\n",
-				 figures.figureCount, figures.animatedCount, figures.ragdollCount, figures.awakeRagdollCount, figures.gettingUpCount,
-				 figures.hitCount, figures.stepCount, figures.knockdownCount, figures.getUpCount, figures.shiftCount,
-				 figures.abortCount );
+		Appendf( text,
+				 "Figuren: %d, stehen %d, fangen sich %d, liegen %d (%d wach), stehen auf %d; Treffer %d, Schritte %d, "
+				 "gefangen %d, umgeworfen %d, aufgestanden %d, gerückt %d, abgebrochen %d\n",
+				 figures.figureCount, figures.animatedCount, figures.balancingCount, figures.ragdollCount,
+				 figures.awakeRagdollCount, figures.gettingUpCount, figures.hitCount, figures.stepCount, figures.catchCount,
+				 figures.knockdownCount, figures.getUpCount, figures.shiftCount, figures.abortCount );
 	}
 	if ( app.scene == SceneCity )
 	{
@@ -1950,19 +1952,23 @@ static void DrawUi( App& app )
 	if ( HasFigures( app.scene ) )
 	{
 		const nbFigureStats& figures = app.view.figures;
-		ImGui::Text( "Figuren %d: stehen %d, liegen %d (%d wach), stehen auf %d", figures.figureCount, figures.animatedCount,
-					 figures.ragdollCount, figures.awakeRagdollCount, figures.gettingUpCount );
-		ImGui::Text( "Treffer %d, Schritte %d, umgeworfen %d, aufgestanden %d, gerückt %d, abgebrochen %d", figures.hitCount,
-					 figures.stepCount, figures.knockdownCount, figures.getUpCount, figures.shiftCount, figures.abortCount );
+		ImGui::Text( "Figuren %d: stehen %d, fangen sich %d, liegen %d (%d wach), stehen auf %d", figures.figureCount,
+					 figures.animatedCount, figures.balancingCount, figures.ragdollCount, figures.awakeRagdollCount,
+					 figures.gettingUpCount );
+		ImGui::Text( "Treffer %d, Schritte %d, gefangen %d, umgeworfen %d, aufgestanden %d, gerückt %d, abgebrochen %d",
+					 figures.hitCount, figures.stepCount, figures.catchCount, figures.knockdownCount, figures.getUpCount,
+					 figures.shiftCount, figures.abortCount );
 		ImGui::SliderFloat( "Gewehr auf Figuren", &app.figureHitImpulse, 10.0f, 1500.0f, "%.0f N s",
 							ImGuiSliderFlags_Logarithmic );
 		if ( ImGui::IsItemHovered() )
 		{
-			ImGui::SetTooltip( "So stark stößt ein Treffer des Gewehrs eine Figur. Ab 50 N s fällt sie als\naktiver Ragdoll um und steht "
-							   "wieder auf, darunter zuckt sie zurück und fängt sich\nmit einem Schritt, wo sie über ihren Füßen nicht "
-							   "stehen bleiben kann, von vorn\neher als von hinten. Granate und Kanone werfen Figuren mit ihrer eigenen "
-							   "Wucht um.\nUm 1000 N s fliegt eine Figur der Szene Figuren durch die dünne "
-							   "Bretterwand\nhinter ihr, an der Ziegelwand bleibt sie liegen." );
+			ImGui::SetTooltip( "So stark stößt ein Treffer des Gewehrs eine Figur. Ab 50 N s werden ihre "
+							   "Knochen\ndynamisch, und sie fängt sich mit Schritten wie auf ragdoll-11 oder fällt, "
+							   "wo kein\nSchritt reicht: auf die Brust von vorn ab etwa 80 N s, von der Seite ab "
+							   "70 N s.\nDarunter zuckt sie zurück und tritt nach, wo sie über ihren Füßen nicht "
+							   "stehen\nbleiben kann. Granate und Kanone treffen Figuren mit ihrer eigenen Wucht.\nUm "
+							   "1000 N s fliegt eine Figur der Szene Figuren durch die dünne Bretterwand\nhinter ihr, "
+							   "an der Ziegelwand bleibt sie liegen." );
 		}
 		ImGui::Text( "Aufpralle auf Wände %d, durchgebrochen %d", app.figureCollisions, app.figureBreakThroughs );
 		if ( app.figureCollisions > 0 )
@@ -1971,6 +1977,24 @@ static void DrawUi( App& app )
 			ImGui::Text( "Zuletzt %.0f J bei %.1f m/s, %d Stücke heraus, behielt %.0f %% des Schwungs", last.energy,
 						 last.approachSpeed, last.detachedChunkCount, 100.0f * last.passThrough );
 		}
+		// Every figure hit on its chest with the impulse of the rifle, from the front or from its right, to see it catch
+		// itself or fall
+		bool chest = ImGui::Button( "Brusttreffer" );
+		ImGui::SameLine();
+		bool side = ImGui::Button( "Seitenstoß" );
+		if ( chest || side )
+		{
+			for ( const FigureVisual& visual : app.figures )
+			{
+				b3WorldTransform frame = nbFigure_GetFrame( visual.id );
+				b3Vec3 direction = b3RotateVector( frame.q, chest ? b3Vec3{ 0.0f, 0.0f, -1.0f } : b3Vec3{ 1.0f, 0.0f, 0.0f } );
+				b3BodyId body = nbFigure_GetBody( visual.id, nb_humanoidChest );
+				nbHitDef hit = { 0, nb_humanoidChest, b3MulSV( app.figureHitImpulse, direction ),
+								 b3Body_GetWorldPoint( body, { 0.0f, 0.2f, 0.1f } ) };
+				nbFigure_ApplyHit( visual.id, &hit );
+			}
+		}
+		ImGui::SameLine();
 		if ( ImGui::Button( "Alle umwerfen" ) )
 		{
 			for ( const FigureVisual& visual : app.figures )
@@ -2393,7 +2417,11 @@ static const char* FigureStateName( const nbFigureInfo& info )
 {
 	if ( info.state == nb_figureAnimated )
 	{
-		return info.stepping ? "fängt sich" : "steht";
+		return info.stepping ? "tritt nach" : "steht";
+	}
+	if ( info.state == nb_figureBalancing )
+	{
+		return info.stepping ? "fängt sich, tritt" : "fängt sich";
 	}
 	if ( info.state == nb_figureGettingUp )
 	{
@@ -2432,9 +2460,21 @@ static void DrawFigureOverlay( App& app )
 	for ( const FigureVisual& visual : app.figures )
 	{
 		const nbFigureInfo& info = visual.info;
-		ImU32 color = info.state == nb_figureAnimated
-						  ? IM_COL32( 150, 230, 150, 255 )
-						  : ( info.state == nb_figureRagdoll ? IM_COL32( 250, 170, 80, 255 ) : IM_COL32( 120, 200, 250, 255 ) );
+		ImU32 color = IM_COL32( 120, 200, 250, 255 );
+		switch ( info.state )
+		{
+			case nb_figureAnimated:
+				color = IM_COL32( 150, 230, 150, 255 );
+				break;
+			case nb_figureRagdoll:
+				color = IM_COL32( 250, 170, 80, 255 );
+				break;
+			case nb_figureBalancing:
+				color = IM_COL32( 240, 230, 110, 255 );
+				break;
+			default:
+				break;
+		}
 
 		if ( app.showFigureTargets )
 		{
@@ -2469,7 +2509,7 @@ static void DrawFigureOverlay( App& app )
 			 ProjectToScreen( app, b3Add( b3ToVec3( head->pose.p ), b3Vec3{ 0.0f, 0.3f, 0.0f } ), &point ) )
 		{
 			char label[64];
-			if ( info.state == nb_figureRagdoll )
+			if ( info.state == nb_figureRagdoll || info.state == nb_figureBalancing )
 			{
 				snprintf( label, sizeof( label ), "%s, Kraft %.2f", FigureStateName( info ), info.strength );
 			}

@@ -1239,13 +1239,14 @@ typedef struct nbFigureDef
 	/// pendulum as long as the stand height ahead of its center of mass. Where that point lies outside the soles of its
 	/// feet seen from above, shrunk to the part stepZone of them about its center of mass, the body moves there and the
 	/// feet step after it, one at a time. A hit that would carry the body farther than stepReach in meters, or a step
-	/// without ground or into a wall, knocks it down instead. A reach of zero lets the figure only flinch.
+	/// without ground or into a wall, makes the bones of the humanoid dynamic instead, and it catches itself with steps or
+	/// falls, see nb_figureBalancing. A reach of zero lets the figure only flinch.
 	float stepReach;
 	float stepZone;
 
 	/// Bodies that press on a standing figure from above with at least this many newtons knock it down, so what falls on
-	/// it never comes to rest on it. A figure that gets up falls from a quarter of it. What its bones push aside does not
-	/// count.
+	/// it never comes to rest on it. A figure that gets up or catches itself falls from a quarter of it. What its bones
+	/// push aside does not count.
 	float crushForce;
 
 	/// A ragdoll counts as lying still while its bones move slower than this on average, in meters per second

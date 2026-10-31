@@ -38,11 +38,14 @@ gelöscht. Kein Staub, keine Schatten: Jede Millisekunde geht in die Zerstörung
 - Figuren nach dem Vorbild von Overgrowth: Eine Figur steht animiert, ihre Knochen sind kinematische Box3D-Körper, die
   ihrem Clip folgen, ihre Füße auf dem Boden unter ihnen, auch an Hängen und auf Schutt. Einen Treffer, den sie über
   ihren Füßen nicht abfangen kann, fängt sie mit Schritten ab, der Standfuß bleibt dabei stehen. Ein harter Treffer,
-  eine Explosion, schwere Trümmer, eine Last auf ihr oder Boden, der wegbricht, machen sie zum aktiven Ragdoll, mit den
-  Geschwindigkeiten, die ihre Knochen hatten, und dem Treffer genau einmal. Ihre Gelenke ziehen mit begrenzter Kraft zu
-  einer Haltung, sie fängt sich mit den Armen ab oder rollt sich ein. Liegt sie still, steht sie mit einem Clip vom
-  Bauch oder vom Rücken wieder auf, sobald sie Boden, Platz und nichts auf sich hat, und fehlt ihr nur der Platz, rückt
-  sie dorthin, wo sie ihn hat. Die Knochen und Clips eines Menschen baut die Bibliothek selbst
+  eine Explosion oder schwere Trümmer machen ihre Knochen dynamisch, mit den Geschwindigkeiten, die sie hatten, und dem
+  Treffer genau einmal, und sie fängt sich mit echten Schritten wie auf dem Branch `ragdoll-11`: Ihre Gelenke behalten
+  ihre Kraft, ein begrenztes Drehmoment hält ihr Becken aufrecht, und ruhig auf den Füßen steht sie wieder animiert. Wo
+  kein Schritt reicht, eine Last auf ihr liegt oder der Boden wegbricht, fällt sie als aktiver Ragdoll. Ihre Gelenke
+  ziehen mit begrenzter Kraft zu einer Haltung, sie fängt sich mit den Armen ab oder rollt sich ein. Liegt sie still,
+  steht sie mit einem Clip vom Bauch oder vom Rücken wieder auf, sobald sie Boden, Platz und nichts auf sich hat, und
+  fehlt ihr nur der Platz, rückt sie dorthin, wo sie ihn hat. Die Knochen und Clips eines Menschen baut die Bibliothek
+  selbst
 - Für ganze Städte gebaut, ohne etwas zu löschen: Trümmer, die zur Ruhe kommen und auf festem Grund liegen,
   werden zu statischem Schutt und kosten Box3D nichts mehr. Box3D bewegt nur eine begrenzte Zahl Trümmer
   gleichzeitig, verdeckte Flächen werden nicht gezeichnet
@@ -233,15 +236,16 @@ Bildzeit.
   ihnen ruht, und kommen von dort zurück. Das Menü zeigt, wie viele Häuser geladen und wie viele gespeichert sind, was
   das Streaming pro Bild kostet und wie viel Speicher Nebenan und Box3D belegen
 - **Figuren**: acht Figuren, fünf vor einer Ziegelmauer, zwei auf einem Betonblock und eine auf der Mauer. Hinter den
-  mittleren drei steht eine Wand aus Brettern von 3 cm. Das Gewehr
-  wirft sie um, lässt sie zurückzucken oder sich mit einem Schritt fangen, Granate und Kanone werfen sie mit ihrer
-  eigenen Wucht um, und wer den Block oder die Mauer unter ihnen wegschießt, nimmt ihnen den Boden. Das Menü zählt, wie
-  viele stehen, liegen und aufstehen und wie viele Schritte sie gemacht haben, wie oft Figuren auf Wände prallten und
+  mittleren drei steht eine Wand aus Brettern von 3 cm. Das Gewehr lässt sie zurückzucken und nachtreten, sich mit
+  Schritten fangen oder umfallen, Granate und Kanone treffen sie mit ihrer eigenen Wucht, und wer den Block oder die
+  Mauer unter ihnen wegschießt, nimmt ihnen den Boden. Das Menü zählt, wie viele stehen, sich fangen, liegen und
+  aufstehen, wie viele Schritte sie gemacht und wie oft sie sich gefangen haben, wie oft Figuren auf Wände prallten und
   durchbrachen und was der letzte Aufprall tat.
-  **Gewehr auf Figuren** stellt den Stoß eines Gewehrtreffers ein (Standard 80 N s, ab 50 N s fällt eine Figur, um
-  1 000 N s fliegt sie durch die Bretter),
-  **Alle umwerfen** wirft alle auf einmal um, **Zustand** schreibt über jede Figur, was sie tut und worauf sie wartet,
-  und **Zielhaltung** zeichnet als Linien die Haltung, zu der sie ihre Knochen bringen will
+  **Gewehr auf Figuren** stellt den Stoß eines Gewehrtreffers ein (Standard 60 N s, ab 50 N s werden die Knochen einer
+  Figur dynamisch, und sie fängt sich oder fällt, um 1 000 N s fliegt sie durch die Bretter), **Brusttreffer** und
+  **Seitenstoß** treffen jede Figur mit diesem Stoß oben auf die Brust, von vorn oder von rechts, **Alle umwerfen** wirft
+  alle auf einmal um, **Zustand** schreibt über jede Figur, was sie tut und worauf sie wartet, gelb, solange sie sich
+  fängt, und **Zielhaltung** zeichnet als Linien die Haltung, zu der sie ihre Knochen bringen will
 - **Stadt mit Figuren**: die Stadt mit zwei Figuren an jedem Haus, 40 auf den Straßen, je eine gut 1 m vor einer
   Stirnwand und vor einer Längswand wie im Benchmark. Granaten, Trümmer und einstürzende Stockwerke werfen sie um und
   begraben sie. Das Menü zählt sie wie in „Figuren“
@@ -564,10 +568,36 @@ gleichmäßig langsamer, und ihre Füße treten nach, einer nach dem anderen, zu
 Beine, und das Becken geht so weit hinunter, wie die Beine es brauchen. Der Mensch der Bibliothek steht über seinen
 Knöcheln, 3 cm vor den Fersen und 23 cm hinter den Zehen, darum tritt er nach hinten ab 15 N s, zur Seite ab 21 N s und
 nach vorn ab 31 N s. Ohne Boden am Ziel eines Schritts, mit etwas Festem im Weg oder für einen Stoß, der den Körper
-weiter als `stepReach` (45 cm) trüge, fällt die Figur statt zu treten. Entschieden wird nur, wenn ein Stoß kommt und
+weiter als `stepReach` (45 cm) trüge, fängt sie sich stattdessen mit dynamischen Knochen, siehe Abfangen nach einem
+harten Treffer. Entschieden wird nur, wenn ein Stoß kommt und
 wenn ein Fuß aufsetzt, so flattert nichts. Während eines Schritts gehen die Beine vor dem Clip, `nbFigure_Move` beendet
 ihn. `nbFigureInfo::stepping` sagt, ob eine Figur gerade tritt, `stepCount` und `nbFigureStats::stepCount` zählen die
 Schritte. Ein Spiel ruft dafür nichts auf, mit `stepReach = 0` zuckt eine Figur nur.
+
+**Abfangen nach einem harten Treffer.** Ein Treffer ab `knockdownImpulse` (Standard 50 N s), eine Explosion, die stark
+genug ist, Trümmer, die die Figur mit so viel Impuls treffen, oder ein Stoß, den die Schritte des Ausgleichs nicht
+abfangen, machen die Knochen eines Menschen der Bibliothek dynamisch, mit den Geschwindigkeiten, die sie hatten, im
+Zustand `nb_figureBalancing`, nach Kapitel 26.13 bis 26.15 und 28.3 der Roadmap des Spiels und der Balance des Branches
+`ragdoll-11`. Der Treffer verteilt sich wie beim aktiven Ragdoll auf die Knochen. Die Gelenke ziehen mit voller Kraft zu
+der Haltung des Clips, 800 N m pro rad bis 150 N m, und ein Gelenk von Box3D gegen einen statischen Anker der Welt hält
+das Becken aufrecht, mit höchstens 250 N m (`nbFigureMotors::uprightTorque`). In jedem Update misst die Figur ihren
+Schwerpunkt und seine Geschwindigkeit, welche Füße auf Boden stehen, die Fläche ihrer Sohlen und den Capture Point, den
+Schwerpunkt um seine Geschwindigkeit durch die Frequenz eines Pendels seiner Höhe weiter. Im Stand halten die Beine ihre
+Füße, wo sie stehen, und schieben das Becken über die Mitte der Sohlen. Liegt der Capture Point zwei Updates lang mehr
+als 3 cm außerhalb, tritt ein Fuß dorthin, wo der Capture Point bei seiner Landung sein wird, 5 cm darüber hinaus, in
+Reichweite der Hüfte, auf Boden, der trägt und höchstens 25 cm höher oder tiefer liegt, mit Platz für den Fuß und freiem
+Weg dorthin, 0,3 s lang und 8 cm hoch. Die ersten 60 % des Schritts folgt sein Ziel dem Capture Point. Fängt sie auch
+der dritte Schritt in Folge nicht, findet sie keinen Schritt, neigt sie sich mehr als 0,6 rad, sinkt ihr Schwerpunkt
+unter drei Viertel seiner Höhe oder berührt 0,3 s kein Fuß den Boden, fällt sie als aktiver Ragdoll, ohne das Gelenk am
+Becken. Eine Last von oben wirft sie ab einem Viertel von `crushForce` um, wie beim Aufstehen. Ruhig auf beiden Füßen,
+die Knochen im Mittel nach ihrer Masse langsamer als 0,15 m/s, den Capture Point zwischen den Füßen und das Becken
+aufrecht, steht sie nach einer halben Sekunde wieder animiert, wo sie steht, ihr Clip blendet in 0,25 s ein, und ihre
+Füße treten mit den Schritten des Ausgleichs unter ihren Körper zurück. Auf die obere Brust fängt der Mensch der
+Bibliothek so von vorn 60 und 70 N s mit 3 bis 7 Schritten, von hinten 80 N s und von der Seite 60 N s, und steht nach
+1,9 bis 4,3 s wieder. Von vorn 100 N s und von der Seite 80 N s werfen ihn um, kein Schritt reicht so weit.
+`nbFigureInfo::catchCount` und `nbFigureStats::catchCount` zählen, wie oft eine Figur sich fing,
+`nbFigureStats::balancingCount`, wie viele es gerade tun. Ein Spiel ruft dafür nichts auf. Andere Rigs als der Mensch
+der Bibliothek fallen gleich, bei ihnen kennt die Bibliothek die Beine nicht.
 
 **Füße auf dem Boden.** Die Füße eines stehenden Menschen der Bibliothek stehen auf dem Boden unter ihnen, nach Kapitel
 26.5 und 28.3 der Roadmap des Spiels, auf einer Stufe, an einem Hang und auf Schutt. Unter der Mitte jeder Sohle sucht
@@ -581,27 +611,30 @@ allmählich los und ab 10 cm ganz, so tritt ein Tritt aus einem eigenen Clip, wi
 keinen Boden, steht er, wo der Clip ihn hinstellt. Auch die Schritte des Ausgleichs setzen ihre Füße so auf den Boden
 an ihrem Ziel. Ein Spiel ruft dafür nichts auf.
 
-**Aktiver Ragdoll.** Ein Treffer ab `knockdownImpulse` (Standard 50 N s), eine Explosion, die stark genug ist,
-Trümmer, die die Figur mit so viel Impuls treffen, eine Last von oben ab `crushForce` (600 N) oder Boden, der
-wegbricht oder sich schneller als 1,5 m/s bewegt, machen die Knochen dynamisch, mit den Geschwindigkeiten, die sie
-hatten. Ein Treffer wirkt danach genau einmal und verteilt sich wie in Overgrowth (`RiggedObject::ApplyForceToRagdoll`)
-auf die Knochen: Jeder bekommt an seinem Schwerpunkt einen Anteil nach seiner Masse durch das Quadrat seines Abstands
-zum Treffpunkt plus 0,01 m². Nähme ein Knochen alles, peitschte er um seine Gelenke, und ein harter Treffer auf die Brust
-klappte den Rumpf an der Hüfte ein. Einen Treffer mit einer Nummer, die die Figur unter ihren letzten 16 schon hatte,
-nimmt sie nicht noch einmal (`nbHitDef::id`). Die Gelenke sind Federn mit begrenztem Drehmoment, eine Ergänzung in Box3D,
-siehe [`extern/README.md`](extern/README.md): Sie ziehen die Knochen zu einer Haltung und geben nach, wenn mehr gegen
-sie drückt. Wie in Overgrowth sind sie so stark, wie die Figur schnell ist, 0,1 pro m/s bis 0,8, und nach einem harten
-Treffer 0,4 s lang schlaff. Die Steifigkeit gibt die Bibliothek in N m pro Radiant an und rechnet sie für jedes Gelenk
-aus der Trägheit seiner beiden Knochen in die Frequenz um, die Box3D erwartet, so halten ein schwerer Oberschenkel und
-ein leichter Fuß gleich.
+**Aktiver Ragdoll.** Eine Figur, die sich nicht fangen kann, eine Last von oben ab `crushForce` (600 N), Boden, der
+wegbricht oder sich schneller als 1,5 m/s bewegt, und `nbFigure_Knockdown` machen eine Figur zum aktiven Ragdoll, mit
+den Geschwindigkeiten, die ihre Knochen hatten. Ein Treffer wirkt genau einmal und verteilt sich wie in Overgrowth
+(`RiggedObject::ApplyForceToRagdoll`) auf die Knochen: Jeder bekommt an seinem Schwerpunkt einen Anteil nach seiner
+Masse durch das Quadrat seines Abstands zum Treffpunkt plus 0,01 m². Nähme ein Knochen alles, peitschte er um seine
+Gelenke, und ein harter Treffer auf die Brust klappte den Rumpf an der Hüfte ein. Einen Treffer mit einer Nummer, die
+die Figur unter ihren letzten 16 schon hatte, nimmt sie nicht noch einmal (`nbHitDef::id`). Die Gelenke sind Federn mit
+begrenztem Drehmoment, eine Ergänzung in Box3D, siehe [`extern/README.md`](extern/README.md): Sie ziehen die Knochen zu
+einer Haltung und geben nach, wenn mehr gegen sie drückt. Wie in Overgrowth sind sie so stark, wie die Figur schnell
+ist, 0,1 pro m/s bis 0,8. Bis `active-ragdoll-19` waren sie nach einem harten Treffer 0,4 s lang schlaff, und eine
+getroffene Figur klappte an der Hüfte zusammen, jetzt behält sie ihre Kraft wie auf `ragdoll-11`,
+`nbFigureMotors::stunTime` macht sie für ein Spiel wieder schlaff. Die Steifigkeit gibt die Bibliothek in N m pro
+Radiant an und rechnet sie für jedes Gelenk aus der Trägheit seiner beiden Knochen in die Frequenz um, die Box3D
+erwartet, so halten ein schwerer Oberschenkel und ein leichter Fuß gleich.
 
 **Abstützen und Einrollen.** Eine schnelle Figur rudert mit den Armen (`nb_clipFall`), eine langsame entspannt sich in
 ihre Grundhaltung, so weit, wie ihr die Kraft fehlt: Ruderte sie am Boden weiter, kröche sie mit eigener Kraft über ihn.
 Wie die Gefahrensuche von Overgrowth schaut eine fliegende Figur mit einer Kugel 0,35 s ihrer Geschwindigkeit voraus.
 Je näher, was sie dort trifft, desto mehr schützt sie sich: Liegt es vor ihrer Brust, stützt sie sich mit gestreckten
-Armen und geradem Rücken ab (`nb_clipBrace`), sonst rollt sie sich ein, die Knie zur Brust und die Unterarme vor dem
-Gesicht (`nb_clipCurl`). Eingerollt nach vorn fallend überschlüge sie sich über den Kopf, mit hohlem Rücken höben sich
-ihr die Beine über den Kopf, sobald die Brust aufliegt. Liegt sie still, wird sie gedämpft und schläft ein.
+Armen und geradem Rücken ab (`nb_clipBrace`), sonst rollt sie sich ein, die Knie angezogen, das Kinn unten und die
+Unterarme vor dem Gesicht (`nb_clipCurl`), so mild wie auf `ragdoll-11`: Mit den Knien an der Brust warf eine Figur,
+die auf dem Rücken landete, ihre Beine über die Hüfte hoch. Eingerollt nach vorn fallend überschlüge sie sich über den
+Kopf, mit hohlem Rücken höben sich ihr die Beine über den Kopf, sobald die Brust aufliegt. Liegt sie still, wird sie
+gedämpft und schläft ein.
 
 **Aufstehen.** Liegt eine Figur nach `getUpDelay` (1 s) eine Viertelsekunde still, prüft sie in jedem achten Update, ob
 sie aufstehen kann: tragender Boden unter dem Becken, nichts, was von oben auf ihr liegt, und Platz, um sich aufzurichten
@@ -1036,7 +1069,8 @@ nbFigureId figure = nbCreateFigure( world, &figureDef );
 // bones[i], die Hülle eines Quaders gibt nbCreateBoneHull.
 b3BodyId head = nbFigure_GetBody( figure, nb_humanoidHead );
 
-// Ein Schuss trifft eine Figur: Die Bibliothek entscheidet, ob sie zuckt oder fällt, und verteilt den Stoß
+// Ein Schuss trifft eine Figur: Die Bibliothek entscheidet, ob sie zuckt, nachtritt, sich fängt oder fällt, und verteilt
+// den Stoß
 b3RayResult ray = b3World_CastRayClosest( physics, b3ToPos( eye ), b3MulSV( 100.0f, aim ), b3DefaultQueryFilter() );
 if ( ray.hit )
 {
@@ -1050,11 +1084,11 @@ if ( ray.hit )
 	}
 }
 
-// Granaten mit explosionImpulse, Trümmer, Lasten und Boden, der wegbricht, werfen Figuren von selbst um. Im Stand lässt
-// sich eine Figur bewegen und spielt eigene Clips.
+// Granaten mit explosionImpulse und Trümmer stoßen Figuren von selbst, Lasten und Boden, der wegbricht, werfen sie um. Im
+// Stand lässt sich eine Figur bewegen und spielt eigene Clips.
 nbFigure_Move( figure, b3ToPos( (b3Vec3){ 2.5f, 0.0f, 0.0f } ), 0.5f * B3_PI );
 nbFigure_PlayClip( figure, &winken, 1.0f );
-nbFigureInfo info = nbFigure_GetInfo( figure );   // steht, liegt oder steht auf, und worauf sie wartet
+nbFigureInfo info = nbFigure_GetInfo( figure );   // steht, fängt sich, liegt oder steht auf, und worauf sie wartet
 ```
 
 Die komplette API steht in [include/nebenan/nebenan.h](include/nebenan/nebenan.h).
@@ -1125,9 +1159,9 @@ beim Einbinden nicht gebaut.
 | Figur (`nbFigureDef`) | Standard | Wirkung |
 | --- | --- | --- |
 | `standHeight` | 0,98 m | Höhe der Wurzel über dem Boden im Stand, `nbMakeHumanoidBones` gibt sie für ihren Menschen zurück |
-| `knockdownImpulse` | 50 N s | Ab diesem Treffer fällt eine Figur, darunter zuckt sie zurück. Beim Aufstehen fällt sie schon ab einem Viertel |
+| `knockdownImpulse` | 50 N s | Ab diesem Treffer werden die Knochen einer stehenden Figur dynamisch, und sie fängt sich mit Schritten oder fällt, darunter zuckt sie zurück und tritt nach. Beim Aufstehen fällt sie schon ab einem Viertel |
 | `flinchScale`, `flinchLimit`, `flinchHertz` | 0,008 rad pro N s, 0,5 rad, 2 Hz | Wie weit der Rumpf bei einem schwachen Treffer zurückzuckt und wie schnell er sich wieder aufrichtet |
-| `crushForce` | 600 N | Eine Last von oben ab dieser Kraft wirft eine stehende Figur um, beim Aufstehen ab einem Viertel. Was ihre Knochen beiseiteschieben, zählt nicht |
+| `crushForce` | 600 N | Eine Last von oben ab dieser Kraft wirft eine stehende Figur um, beim Aufstehen und Abfangen ab einem Viertel. Was ihre Knochen beiseiteschieben, zählt nicht |
 | `restSpeed` | 0,4 m/s | Bewegen sich die Knochen eines Ragdolls im Mittel langsamer, liegt er still |
 | `getUpDelay`, `getUpSpeed`, `canGetUp` | 1 s, 1,4, an | Frühestens so lange nach dem Sturz und nach einer Viertelsekunde Stille steht sie auf, mit den Clips so viel schneller als geschrieben. Ohne `canGetUp` bleibt sie liegen |
 | `startAsRagdoll` | aus | Die Figur fällt von Anfang an als Ragdoll |
@@ -1135,11 +1169,12 @@ beim Einbinden nicht gebaut.
 
 | Gelenke (`nbFigureMotors`) | Standard | Wirkung |
 | --- | --- | --- |
-| `stiffness` | 600 N m pro rad | Steifigkeit der Gelenke bei voller Kraft, mal der des Knochens, für jedes Gelenk aus der Trägheit seiner Knochen in Hertz umgerechnet |
+| `stiffness` | 800 N m pro rad | Steifigkeit der Gelenke bei voller Kraft, mal der des Knochens, für jedes Gelenk aus der Trägheit seiner Knochen in Hertz umgerechnet. Eine Figur, die sich fängt, zieht mit voller Kraft, wie auf `ragdoll-11` |
 | `dampingRatio` | 1 | Dämpfung der Gelenke, 1 ist kritisch |
-| `maxTorque` | 120 N m | Größtes Drehmoment eines Gelenks bei voller Kraft, mal der Kraft des Knochens, darüber gibt es nach |
+| `maxTorque` | 150 N m | Größtes Drehmoment eines Gelenks bei voller Kraft, mal der Kraft des Knochens, darüber gibt es nach |
 | `strengthPerSpeed`, `fallStrength` | 0,1 pro m/s, 0,8 | Die Kraft wächst mit der mittleren Geschwindigkeit der Knochen bis `fallStrength`, wie in Overgrowth |
-| `stunTime` | 0,4 s | So viel schwächer ist eine Figur nach einem harten Treffer, die Kraft kommt mit eins pro Sekunde zurück. Overgrowth nimmt 0,9 s, dort fiele eine Figur aus dem Stand, ohne sich abzustützen |
+| `stunTime` | 0 s | So viel schwächer ist ein Ragdoll nach einem Treffer oder einer Explosion, die Kraft kommt mit eins pro Sekunde zurück. Null behält die Kraft wie auf `ragdoll-11`. Bis `active-ragdoll-19` waren es 0,4 s, Overgrowth nimmt 0,9 s, dort fiele eine Figur aus dem Stand, ohne sich abzustützen |
+| `uprightTorque`, `uprightStiffness`, `uprightDampingRatio` | 250 N m, 1 500 N m pro rad, 1 | Hält das Becken einer Figur, die sich fängt, aufrecht gegen einen statischen Anker der Welt, mit höchstens diesem Drehmoment. Fällt sie, lässt es sofort los, null nimmt es weg |
 
 | Rig (`nbRigDef`) | Standard | Wirkung |
 | --- | --- | --- |
@@ -1924,7 +1959,7 @@ lange die Threads im Löser rechnen und worauf sie sonst warten.
 ## Tests und Benchmark
 
 ```sh
-build/bin/nebenan_test            # 104 Tests: Geometrie, Voronoi, Hüllen, Öffnungen, Stöße, Stützgraph, Etagen, Lastprüfung, Mauern, Schutt, Ruhe, Durchschlagen, Threads, Knoten, große Blöcke, Gelenke in Paketen und Gebieten, Suchbaum, Kontaktlisten, Streaming, Stream, Laden im Hintergrund, Speichern und Zurückholen, gemeinsamer Thread-Pool, Ruhe-Prüfung auf den Workern, Schritt auf eigenem Thread, Schritte pro Bild, Takt der Physik, Wahl der Threads, Profil und Skalierung, Figuren, Ausgleichsschritt, Füße auf dem Boden, Platz zum Aufstehen, Ragdoll durch die Wand, dünne Bretter, Determinismus …
+build/bin/nebenan_test            # 105 Tests: Geometrie, Voronoi, Hüllen, Öffnungen, Stöße, Stützgraph, Etagen, Lastprüfung, Mauern, Schutt, Ruhe, Durchschlagen, Threads, Knoten, große Blöcke, Gelenke in Paketen und Gebieten, Suchbaum, Kontaktlisten, Streaming, Stream, Laden im Hintergrund, Speichern und Zurückholen, gemeinsamer Thread-Pool, Ruhe-Prüfung auf den Workern, Schritt auf eigenem Thread, Schritte pro Bild, Takt der Physik, Wahl der Threads, Profil und Skalierung, Figuren, Ausgleichsschritt, Abfangen, Füße auf dem Boden, Platz zum Aufstehen, Ragdoll durch die Wand, dünne Bretter, Determinismus …
 build/bin/nebenan_benchmark 4     # Zahl = Threads für Bruch und Physik, 0 = so viele, wie ein Spiel nähme
 build/bin/nebenan_benchmark scaling   # die Städte unter Beschuss mit 1, 2, 4 … Threads und die Tabelle der Skalierung
 build/bin/nebenan_benchmark rates     # die Städte unter Beschuss mit 30, 60 und 120 Hz, was eine simulierte Sekunde kostet
@@ -1949,6 +1984,7 @@ src/
   destructible.c    zerstörbare Objekte und Vorzerlegung
   figure.c          Figuren: Knochen, Gelenke, Stand, aktiver Ragdoll, Treffer, Aufstehen
   figure_clips.c    die Clips eines Menschen, aus Schlüsselposen mit Zwei-Knochen-IK
+  figure_balance.c  Abfangen nach einem harten Treffer: Schwerpunkt, Capture Point und Schritte wie auf ragdoll-11
   impact.c          Einschläge und Auswurf der Splitter
   stream.c          Städte größer als der Speicher: Laden und Entladen um Kamera und bewegte Körper
   system.c          Kerne und die passende Zahl von Threads
@@ -2009,10 +2045,14 @@ Nach Änderungen an `demo/shaders/scene.glsl` die Shader neu erzeugen, im Ordner
   den vorsichtigeren Box3D-Standard.
 - Nur konvexe Teile, aus denen sich Quader ausschneiden lassen. Andere konkave Formen müssen als mehrere konvexe
   Teile angegeben werden.
-- Nur der Mensch der Bibliothek tritt und stellt seine Füße auf den Boden, die Bibliothek kennt nur seine Beine. Gehen
-  und Laufen spielt das Spiel selbst, mit `nbFigure_Move` und eigenen Clips, die Bibliothek hat dafür keinen. Ein Fuß
-  steht auf dem, was eine Kugel unter der Mitte seiner Sohle trifft: Ragt Schutt nur unter Ferse oder Zehen auf, taucht
-  der Fuß dort ein, wie jeder kinematische Körper.
+- Nur der Mensch der Bibliothek tritt, fängt sich nach einem harten Treffer und stellt seine Füße auf den Boden, die
+  Bibliothek kennt nur seine Beine. Andere Rigs fallen bei einem harten Treffer gleich. Gehen und Laufen spielt das
+  Spiel selbst, mit `nbFigure_Move` und eigenen Clips, die Bibliothek hat dafür keinen. Ein Fuß steht auf dem, was eine
+  Kugel unter der Mitte seiner Sohle trifft: Ragt Schutt nur unter Ferse oder Zehen auf, taucht der Fuß dort ein, wie
+  jeder kinematische Körper.
+- Eine Figur, die sich fängt, hält ihr Becken wie auf `ragdoll-11` mit einem begrenzten Drehmoment gegen die Welt
+  aufrecht, nicht nur mit ihren Beinen. Ein Mensch, der stolpert, tut das mit seinem Gleichgewichtssinn, hier tut es ein
+  Gelenk von Box3D. Ein Spiel, das es rein physikalisch will, setzt `uprightTorque` auf null.
 - Stehende und aufstehende Figuren sind kinematisch und kollidieren wie alle kinematischen Körper in Box3D nicht mit
   statischen, also nicht mit Schutt und stehenden Wänden. Eine Figur, die das Spiel durch eine Wand bewegt, geht
   hindurch. Ob genug Platz zum Aufstehen ist, prüft sie vorher, und fehlt er, rückt sie bis 60 cm oder dreht sich auf
