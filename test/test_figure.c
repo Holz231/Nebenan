@@ -354,6 +354,118 @@ static int FigureFlinchTest( void )
 	return 0;
 }
 
+// The rotation of a bone in the frame of another
+static b3Quat RelativeRotation( nbFigureId figure, int parent, int bone )
+{
+	return b3InvMulQuat( b3Body_GetRotation( nbFigure_GetBody( figure, parent ) ),
+						 b3Body_GetRotation( nbFigure_GetBody( figure, bone ) ) );
+}
+
+// How far a bone of a figure lies turned in the frame of another against the same bones of a twin, in radians
+static float TurnAgainstTwin( nbFigureId figure, nbFigureId twin, int parent, int bone )
+{
+	b3Quat change = b3InvMulQuat( RelativeRotation( twin, parent, bone ), RelativeRotation( figure, parent, bone ) );
+	return 2.0f * acosf( b3MinFloat( 1.0f, fabsf( change.s ) ) );
+}
+
+// Where a bone of a figure lies from its pelvis in the frame of the figure
+static b3Vec3 FromPelvis( nbFigureId figure, int bone )
+{
+	b3Vec3 offset = b3Sub( BonePosition( figure, bone ), BonePosition( figure, nb_humanoidPelvis ) );
+	return b3InvRotateVector( nbFigure_GetFrame( figure ).q, offset );
+}
+
+// A light hit swings the head and the arms of the humanoid by where it lands, after the roadmap of the game, 26.4 and
+// 26.5, measured against a twin that plays the same clip unhit. On the face it throws the head back against the chest,
+// much farther than the trunk turns. On the right forearm from behind it swings that arm forward, not the other, and
+// turns the trunk less than a hit on the chest. From outside it does not swing the arm into the body, the body takes it.
+// On the chest it turns the trunk as before, the head stays behind and swings after it, and the arms hang on as
+// pendulums, close to the trunk and never into it. All of it comes back to the clip, and the figure stands animated
+// throughout.
+static int FigureSwingTest( void )
+{
+	typedef struct SwingHit
+	{
+		const char* name;
+		int bone;
+		b3Vec3 impulse;
+		b3Vec3 local;
+	} SwingHit;
+	const SwingHit hits[4] = {
+		{ "face, from the front", nb_humanoidHead, { 0.0f, 0.0f, -20.0f }, { 0.0f, 0.08f, 0.09f } },
+		{ "right forearm, from behind", nb_humanoidForearmRight, { 0.0f, 0.0f, 20.0f }, { 0.0f, 0.12f, -0.04f } },
+		{ "right forearm, from outside", nb_humanoidForearmRight, { 20.0f, 0.0f, 0.0f }, { 0.0f, 0.12f, 0.0f } },
+		{ "chest, from the front", nb_humanoidChest, { 0.0f, 0.0f, -30.0f }, { 0.0f, 0.2f, 0.1f } },
+	};
+
+	for ( int k = 0; k < 4; ++k )
+	{
+		const SwingHit* h = hits + k;
+		FigureScene scene;
+		CreateFigureScene( &scene, 1 );
+		nbFigureId figure = AddFigure( &scene, b3Vec3_zero, 0.0f );
+		nbFigureId twin = AddFigure( &scene, (b3Vec3){ 3.0f, 0.0f, 0.0f }, 0.0f );
+		StepFigures( &scene, 10 );
+
+		b3BodyId body = nbFigure_GetBody( figure, h->bone );
+		nbHitDef hit = { 1, h->bone, h->impulse, b3Body_GetWorldPoint( body, h->local ) };
+		ENSURE( nbFigure_ApplyHit( figure, &hit ) );
+
+		float head = 0.0f;
+		float right = 0.0f;
+		float left = 0.0f;
+		float trunk = 0.0f;
+		float ahead = 0.0f;
+		float inward = 0.0f;
+		for ( int i = 0; i < 30; ++i )
+		{
+			StepFigures( &scene, 1 );
+			ENSURE( nbFigure_GetState( figure ) == nb_figureAnimated );
+			head = b3MaxFloat( head, TurnAgainstTwin( figure, twin, nb_humanoidChest, nb_humanoidHead ) );
+			right = b3MaxFloat( right, TurnAgainstTwin( figure, twin, nb_humanoidChest, nb_humanoidUpperArmRight ) );
+			left = b3MaxFloat( left, TurnAgainstTwin( figure, twin, nb_humanoidChest, nb_humanoidUpperArmLeft ) );
+			trunk = b3MaxFloat( trunk, b3Length( nbFigure_GetInfo( figure ).flinch ) );
+			b3Vec3 hand = FromPelvis( figure, nb_humanoidHandRight );
+			b3Vec3 twinHand = FromPelvis( twin, nb_humanoidHandRight );
+			ahead = b3MaxFloat( ahead, hand.z - twinHand.z );
+			inward = b3MaxFloat( inward, fabsf( twinHand.x ) - fabsf( hand.x ) );
+		}
+		printf( "  %s, %.0f N s: head %.3f rad, right arm %.3f, left arm %.3f against the chest, trunk %.3f, right hand "
+				"%.3f m ahead and %.3f m in\n",
+				h->name, b3Length( h->impulse ), head, right, left, trunk, ahead, inward );
+
+		if ( k == 0 )
+		{
+			ENSURE( head > 0.25f && head > 2.0f * trunk );
+		}
+		else if ( k == 1 )
+		{
+			ENSURE( right > 0.2f && left < 0.1f && ahead > 0.1f && trunk < 0.12f );
+		}
+		else if ( k == 2 )
+		{
+			ENSURE( inward < 0.02f && trunk > 0.12f );
+		}
+		else
+		{
+			ENSURE_SMALL( trunk - 0.24f, 0.01f );
+			ENSURE( head > 0.08f && right < 0.1f && left < 0.1f && inward < 0.02f );
+		}
+
+		// Back in the clip
+		StepFigures( &scene, 120 );
+		nbFigureInfo info = nbFigure_GetInfo( figure );
+		ENSURE( TurnAgainstTwin( figure, twin, nb_humanoidChest, nb_humanoidHead ) < 0.01f );
+		ENSURE( TurnAgainstTwin( figure, twin, nb_humanoidChest, nb_humanoidUpperArmRight ) < 0.01f );
+		ENSURE( TurnAgainstTwin( figure, twin, nb_humanoidChest, nb_humanoidUpperArmLeft ) < 0.01f );
+		ENSURE( b3Length( info.flinch ) < 0.01f );
+		ENSURE( info.hitCount == 1 && info.knockdownCount == 0 );
+		ENSURE( nbFigure_GetState( figure ) == nb_figureAnimated && StandsUpright( &scene, figure ) );
+		DestroyFigureScene( &scene );
+	}
+	return 0;
+}
+
 // A hard hit that steps can catch, after the roadmap of the game, 26.14 and 28.3, and the balance of the branch
 // ragdoll-11: the bones of the figure become dynamic, its joints hold the pose of its clip with the full strength of its
 // motors, a hold keeps its pelvis upright, and it catches itself with steps. On its feet all the time, it stands animated
@@ -1641,7 +1753,7 @@ static int ThinBoardTest( void )
 }
 
 // The hash of the figure scenario on every platform, see RunFigureScenario
-#define NB_EXPECTED_FIGURE_HASH 0x3f52c5f9u
+#define NB_EXPECTED_FIGURE_HASH 0x29fd32e1u
 
 static int FigureDeterminismTest( void )
 {
@@ -1663,6 +1775,7 @@ int FigureTest( void )
 	RUN_TEST( HumanoidClipTest );
 	RUN_TEST( FigureStandTest );
 	RUN_TEST( FigureFlinchTest );
+	RUN_TEST( FigureSwingTest );
 	RUN_TEST( FigureCatchTest );
 	RUN_TEST( FigureKnockdownTest );
 	RUN_TEST( FigureGetUpRoomTest );

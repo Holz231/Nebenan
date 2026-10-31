@@ -479,9 +479,11 @@ NB_API void nbFigure_PlayClip( nbFigureId figureId, const nbClipDef* clip, float
 /// Overgrowth spreads a hit: every bone takes a part as large as its mass over the square of its distance to the point.
 /// The humanoid of the library then catches itself with steps, with the full strength of its joints and its pelvis held
 /// upright, and stands animated again, or falls as a ragdoll where no step catches it, see nb_figureBalancing. Other rigs
-/// fall at once. A weaker hit makes the trunk flinch, and a humanoid steps to catch it where it cannot over its feet, see
-/// nbFigureDef::stepReach. A figure that catches itself takes any hit the same way, a figure that gets up falls from a
-/// quarter of the knockdown impulse, and a ragdoll takes the impulse the same way, slack for nbFigureMotors::stunTime.
+/// fall at once. A weaker hit makes the figure flinch, its trunk and the bones with a spring of their own by where it
+/// lands, the head and the arms of the humanoid, see nbBoneDef::flinch, and a humanoid steps to catch it where it cannot
+/// over its feet, see nbFigureDef::stepReach. A figure that catches itself takes any hit the same way, a figure that gets
+/// up falls from a quarter of the knockdown impulse, and a ragdoll takes the impulse the same way, slack for
+/// nbFigureMotors::stunTime.
 /// @return true if the hit landed, false if a hit with this id landed before or the bone does not exist
 NB_API bool nbFigure_ApplyHit( nbFigureId figureId, const nbHitDef* hit );
 

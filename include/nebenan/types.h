@@ -1082,6 +1082,19 @@ typedef struct nbBoneDef
 
 	/// Scales the damping ratio of the motors for this joint, 1 by default
 	float damping;
+
+	/// How the bone swings from a hit while the figure stands, after the roadmap of the game, 26.4 and 26.5: a spring of
+	/// its own turns it about its joint, at flinchHertz cycles per second with the damping ratio flinchDamping, from 0.05
+	/// to 1, below 1 it swings past its pose and back. A hit on the bone or on a bone it carries turns it flinch times as
+	/// fast as the hit would turn all it carries as one body about its joint, while the joint held. The trunk turns only
+	/// from what the joint at the top of such bones takes, a hit on the face throws the head back, one on a hand the arm.
+	/// While the bone above it turns, the bone lags behind and swings after it. What hangs beside the body at rest, an arm,
+	/// hangs on as a pendulum and never swings into the body, which takes what pushes it there. Zero cycles per second, the
+	/// default, hold the bone in its pose against its parent, as the root does and the spine of the humanoid, which the
+	/// trunk turns. The humanoid of the library swings its neck, head and arms so, its legs stand.
+	float flinch;
+	float flinchHertz;
+	float flinchDamping;
 } nbBoneDef;
 
 /// A rig: the bones of a figure at rest, standing with its y axis up and facing +z, shared by all figures made from it.
@@ -1229,7 +1242,9 @@ typedef struct nbFigureDef
 	float knockdownImpulse;
 
 	/// How far the trunk of a standing figure flinches from a hit, in radians per newton second, up to flinchLimit, and
-	/// how fast it straightens again, in cycles per second
+	/// how fast it straightens again, in cycles per second. Bones with a spring of their own swing too, see
+	/// nbBoneDef::flinch: from a hit on them the trunk turns only by what their joint passes on, the head of the humanoid
+	/// takes most of a hit on its face. The limit holds for the swing of every bone.
 	float flinchScale;
 	float flinchLimit;
 	float flinchHertz;

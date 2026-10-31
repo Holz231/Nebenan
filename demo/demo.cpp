@@ -1965,10 +1965,10 @@ static void DrawUi( App& app )
 			ImGui::SetTooltip( "So stark stößt ein Treffer des Gewehrs eine Figur. Ab 50 N s werden ihre "
 							   "Knochen\ndynamisch, und sie fängt sich mit Schritten wie auf ragdoll-11 oder fällt, "
 							   "wo kein\nSchritt reicht: auf die Brust von vorn ab etwa 80 N s, von der Seite ab "
-							   "70 N s.\nDarunter zuckt sie zurück und tritt nach, wo sie über ihren Füßen nicht "
-							   "stehen\nbleiben kann. Granate und Kanone treffen Figuren mit ihrer eigenen Wucht.\nUm "
-							   "1000 N s fliegt eine Figur der Szene Figuren durch die dünne Bretterwand\nhinter ihr, "
-							   "an der Ziegelwand bleibt sie liegen." );
+							   "70 N s.\nDarunter zuckt sie zurück, Kopf und Arme schwingen nach, wo der Treffer sie "
+							   "trifft,\nund sie tritt nach, wo sie über ihren Füßen nicht stehen bleiben kann. Granate "
+							   "und\nKanone treffen Figuren mit ihrer eigenen Wucht. Um 1000 N s fliegt eine Figur der "
+							   "Szene\nFiguren durch die dünne Bretterwand hinter ihr, an der Ziegelwand bleibt sie liegen." );
 		}
 		ImGui::Text( "Aufpralle auf Wände %d, durchgebrochen %d", app.figureCollisions, app.figureBreakThroughs );
 		if ( app.figureCollisions > 0 )
@@ -1977,20 +1977,44 @@ static void DrawUi( App& app )
 			ImGui::Text( "Zuletzt %.0f J bei %.1f m/s, %d Stücke heraus, behielt %.0f %% des Schwungs", last.energy,
 						 last.approachSpeed, last.detachedChunkCount, 100.0f * last.passThrough );
 		}
-		// Every figure hit on its chest with the impulse of the rifle, from the front or from its right, to see it catch
-		// itself or fall
+		// Every figure hit with the impulse of the rifle: on its chest from the front or from its right, to see it catch
+		// itself or fall, or below the knockdown impulse on its face from the front or on its right forearm from behind, to
+		// see the head and the arm swing, see nbBoneDef::flinch
 		bool chest = ImGui::Button( "Brusttreffer" );
 		ImGui::SameLine();
 		bool side = ImGui::Button( "Seitenstoß" );
-		if ( chest || side )
+		ImGui::SameLine();
+		bool face = ImGui::Button( "Kopftreffer" );
+		ImGui::SameLine();
+		bool arm = ImGui::Button( "Armtreffer" );
+		if ( ImGui::IsItemHovered() )
+		{
+			ImGui::SetTooltip( "Kopftreffer und Armtreffer zeigen unter 50 N s, wie Kopf und Arme einzeln\nschwingen: der Kopf "
+							   "schnellt zurück, der rechte Arm schwingt nach vorn,\nder Rumpf dreht nur mit dem, was Hals "
+							   "und Schulter weitergeben.\nGewehr auf Figuren dafür auf etwa 20 N s stellen." );
+		}
+		if ( chest || side || face || arm )
 		{
 			for ( const FigureVisual& visual : app.figures )
 			{
 				b3WorldTransform frame = nbFigure_GetFrame( visual.id );
-				b3Vec3 direction = b3RotateVector( frame.q, chest ? b3Vec3{ 0.0f, 0.0f, -1.0f } : b3Vec3{ 1.0f, 0.0f, 0.0f } );
-				b3BodyId body = nbFigure_GetBody( visual.id, nb_humanoidChest );
-				nbHitDef hit = { 0, nb_humanoidChest, b3MulSV( app.figureHitImpulse, direction ),
-								 b3Body_GetWorldPoint( body, { 0.0f, 0.2f, 0.1f } ) };
+				int bone = nb_humanoidChest;
+				b3Vec3 local = { 0.0f, 0.2f, 0.1f };
+				b3Vec3 toward = side ? b3Vec3{ 1.0f, 0.0f, 0.0f } : b3Vec3{ 0.0f, 0.0f, -1.0f };
+				if ( face )
+				{
+					bone = nb_humanoidHead;
+					local = { 0.0f, 0.08f, 0.09f };
+				}
+				else if ( arm )
+				{
+					bone = nb_humanoidForearmRight;
+					local = { 0.0f, 0.12f, -0.04f };
+					toward = { 0.0f, 0.0f, 1.0f };
+				}
+				b3Vec3 direction = b3RotateVector( frame.q, toward );
+				b3BodyId body = nbFigure_GetBody( visual.id, bone );
+				nbHitDef hit = { 0, bone, b3MulSV( app.figureHitImpulse, direction ), b3Body_GetWorldPoint( body, local ) };
 				nbFigure_ApplyHit( visual.id, &hit );
 			}
 		}

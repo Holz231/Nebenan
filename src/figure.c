@@ -91,6 +91,11 @@
 #define NB_WAKE_FADE 0.6f
 #define NB_WAKE_SKIN 0.01f
 
+// What a bone with a spring carries hangs beside the body when its center of mass at rest lies this part of the stand
+// height or more beside the axis up through the root, an arm: a hit does not swing it into the body, and it hangs on as
+// a pendulum when the trunk turns, see nbFlinch and nbLagCarried
+#define NB_SWING_BESIDE 0.1f
+
 // Room elsewhere, see nbFindRoom, for the humanoid of 1.8 m and scaled with its height: a figure without room looks this
 // near and this far back along its spine and to its sides, on ground at most this much higher or lower, and moves its body
 // there at this speed, or turns it about its pelvis at this rate, in this time at least. The body that moves is a capsule
@@ -169,6 +174,9 @@ nbBoneDef nbDefaultBoneDef( void )
 	def.strength = 1.0f;
 	def.stiffness = 1.0f;
 	def.damping = 1.0f;
+	def.flinch = 0.0f;
+	def.flinchHertz = 0.0f;
+	def.flinchDamping = 1.0f;
 	return def;
 }
 
@@ -341,6 +349,15 @@ float nbMakeHumanoidBones( float height, float mass, nbBoneDef* bones, int capac
 	// faster than half the substeps per second and it shakes the head. At 0.3 they still hold the head.
 	neck.stiffness = 0.3f;
 	head.stiffness = 0.3f;
+
+	// A light hit swings the neck and the head after the roadmap of the game, 26.4 and 26.5, the head the farthest and
+	// the fastest and a little past its pose, see nbBoneDef::flinch
+	neck.flinch = 0.3f;
+	neck.flinchHertz = 2.5f;
+	neck.flinchDamping = 0.7f;
+	head.flinch = 0.3f;
+	head.flinchHertz = 3.5f;
+	head.flinchDamping = 0.5f;
 	bones[nb_humanoidNeck] = neck;
 	bones[nb_humanoidHead] = head;
 
@@ -363,6 +380,17 @@ float nbMakeHumanoidBones( float height, float mass, nbBoneDef* bones, int capac
 								 identity, 0.24f * s, 0.045f * s, 1.2f * m, nb_hingeJoint, zToX, -0.05f, 2.4f, 0.0f, 0.4f );
 		bones[hand] = nbLimb( side == 0 ? "hand left" : "hand right", forearm, (b3Vec3){ 0.0f, 0.24f * s, 0.0f }, identity,
 							  0.16f * s, 0.035f * s, 0.8f * m, nb_ballJoint, zToY, -0.3f, 0.3f, 0.6f, 0.15f );
+
+		// The arms swing loose from a light hit and after the trunk, slower than the head, see nbBoneDef::flinch
+		bones[upperArm].flinch = 0.6f;
+		bones[upperArm].flinchHertz = 2.5f;
+		bones[upperArm].flinchDamping = 0.5f;
+		bones[forearm].flinch = 0.6f;
+		bones[forearm].flinchHertz = 3.0f;
+		bones[forearm].flinchDamping = 0.5f;
+		bones[hand].flinch = 0.5f;
+		bones[hand].flinchHertz = 4.0f;
+		bones[hand].flinchDamping = 0.6f;
 
 		// The legs carry the body: their joints see far more than their two bones and take three times the damping
 		bones[thigh] =
@@ -491,6 +519,59 @@ static b3Quat nbQuatFromVector( b3Vec3 vector )
 		return b3Quat_identity;
 	}
 	return b3MakeQuatFromAxisAngle( b3MulSV( 1.0f / angle, vector ), angle );
+}
+
+// A damped spring at rest at zero, a rotation vector and its rate, stepped by its exact solution, so it swings the same at
+// any step rate: angular frequency omega and damping ratio zeta up to 1. The decay and the turn over a step from functions
+// that give the same bits everywhere.
+static void nbStepSpring( b3Vec3* x, b3Vec3* v, float omega, float zeta, float timeStep )
+{
+	if ( zeta >= 1.0f )
+	{
+		float decay = nbDecay( omega * timeStep );
+		b3Vec3 sum = b3MulAdd( *v, omega, *x );
+		*x = b3MulSV( decay, b3MulAdd( *x, timeStep, sum ) );
+		*v = b3MulSV( decay, b3MulSub( *v, omega * timeStep, sum ) );
+		return;
+	}
+
+	// With a = zeta omega and w the damped frequency, x = e^-at (x0 cos wt + (v0 + a x0) / w sin wt) and
+	// v = e^-at (v0 cos wt - (a v0 + omega^2 x0) / w sin wt)
+	float a = zeta * omega;
+	float w = omega * sqrtf( 1.0f - zeta * zeta );
+	float decay = nbDecay( a * timeStep );
+	b3CosSin cs = b3ComputeCosSin( w * timeStep );
+	float s = cs.sine / w;
+	b3Vec3 x0 = *x;
+	b3Vec3 v0 = *v;
+	*x = b3MulSV( decay, b3MulAdd( b3MulSV( cs.cosine, x0 ), s, b3MulAdd( v0, a, x0 ) ) );
+	*v = b3MulSV( decay, b3MulSub( b3MulSV( cs.cosine, v0 ), s, b3MulAdd( b3MulSV( a, v0 ), omega * omega, x0 ) ) );
+}
+
+// The transform of a bone of a figure at rest in the frame of its root
+static b3Transform nbRestTransform( const nbFigure* f, int i )
+{
+	if ( i <= 0 )
+	{
+		return b3Transform_identity;
+	}
+	return b3MulTransforms( nbRestTransform( f, f->bones[i].parent ), f->bones[i].rest );
+}
+
+// The swing of the bones of a standing figure stops: a figure that falls, catches itself or stands again
+static void nbStopSwings( nbFigure* f )
+{
+	for ( int i = 0; i < f->boneCount; ++i )
+	{
+		nbBone* bone = f->bones + i;
+		bone->swing = b3Vec3_zero;
+		bone->swingRate = b3Vec3_zero;
+		bone->turnRate = b3Vec3_zero;
+		bone->pivotVelocity = b3Vec3_zero;
+		bone->carried = b3Vec3_zero;
+		bone->carriedVelocity = b3Vec3_zero;
+	}
+	f->swinging = false;
 }
 
 // The rotation about up by an angle, up being y in the frame of the figure
@@ -1145,6 +1226,7 @@ static void nbFall( nbWorld* world, nbFigure* f, bool stunned )
 		f->wait = nb_waitMoving;
 		f->flinch = b3Vec3_zero;
 		f->flinchRate = b3Vec3_zero;
+		nbStopSwings( f );
 		f->balancing = false;
 		f->swingFoot = -1;
 		f->footWeight = 0.0f;
@@ -1291,6 +1373,7 @@ static void nbBeginBalancing( nbWorld* world, nbFigure* f )
 	f->stateTime = 0.0f;
 	f->flinch = b3Vec3_zero;
 	f->flinchRate = b3Vec3_zero;
+	nbStopSwings( f );
 	f->balancing = false;
 	f->swingFoot = -1;
 	f->footWeight = 0.0f;
@@ -1992,23 +2075,170 @@ static bool nbTakeHitId( nbFigure* f, uint32_t id )
 	return true;
 }
 
-// The trunk of a standing figure flinches from an impulse at a point: it turns about its root away from the hit
-static void nbFlinch( nbFigure* f, b3Vec3 impulse, b3Pos point )
+// Whether a bone carries another: it is that bone or one of its parents
+static bool nbCarries( const nbFigure* f, int carrier, int i )
 {
-	b3Vec3 arm = b3SubPos( point, f->targets[0].p );
-	b3Vec3 turn = b3Cross( arm, impulse );
+	while ( i > carrier )
+	{
+		i = f->bones[i].parent;
+	}
+	return i == carrier;
+}
+
+// Whether a bone of the humanoid is one of the spine, which share the flinch of the trunk
+static bool nbIsSpine( const nbFigure* f, int i )
+{
+	return f->boneCount == nb_humanoidBoneCount &&
+		   ( i == nb_humanoidBelly || i == nb_humanoidRibs || i == nb_humanoidChest );
+}
+
+// The bones a bone carries as one rigid body about its joint, in the frame of the figure: their mass, their center of
+// mass from the joint and their rotational inertia about it, from their masses at their centers with a radius of
+// gyration of 5 cm each
+static float nbCarriedBody( const nbFigure* f, int b, float* mass, b3Vec3* center )
+{
+	b3Pos pivot = f->targets[b].p;
+	float sum = 0.0f;
+	float inertia = 0.0f;
+	b3Vec3 moment = b3Vec3_zero;
+	for ( int i = b; i < f->boneCount; ++i )
+	{
+		if ( nbCarries( f, b, i ) )
+		{
+			const nbBone* bone = f->bones + i;
+			b3Vec3 local = bone->shape == nb_capsuleBone ? b3MulSV( 0.5f, b3Add( bone->start, bone->end ) ) : bone->center;
+			b3Vec3 offset = b3InvRotateVector( f->frame.q, b3SubPos( b3TransformWorldPoint( f->targets[i], local ), pivot ) );
+			sum += bone->mass;
+			moment = b3MulAdd( moment, bone->mass, offset );
+			inertia += bone->mass * ( b3LengthSquared( offset ) + 0.0025f );
+		}
+	}
+	*mass = sum;
+	*center = b3MulSV( 1.0f / sum, moment );
+	return inertia;
+}
+
+// How fast an impulse at a point turns the bones a bone carries about its joint while the joint holds, and the momentum
+// they gain for that, which the joint does not pass on, in the frame of the figure
+static b3Vec3 nbSpinCarried( const nbFigure* f, int b, b3Vec3 impulse, b3Pos point, b3Vec3* momentum )
+{
+	float mass;
+	b3Vec3 center;
+	float inertia = nbCarriedBody( f, b, &mass, &center );
+	b3Vec3 lever = b3InvRotateVector( f->frame.q, b3SubPos( point, f->targets[b].p ) );
+	b3Vec3 spin = b3MulSV( 1.0f / inertia, b3Cross( lever, b3InvRotateVector( f->frame.q, impulse ) ) );
+	*momentum = b3MulSV( mass, b3Cross( spin, center ) );
+	return spin;
+}
+
+// How the bones a bone carries turn in the frame of the figure when its joint starts to move. What hangs beside the body,
+// an arm, hangs free on its joint as a pendulum, its center of mass stays behind and it does not slide into the body as
+// the trunk tilts under it. Above or below the root, the head keeps its turn, the neck holds it against its joint.
+static b3Vec3 nbLagCarried( const nbFigure* f, int b, b3Vec3 pivotVelocity )
+{
+	if ( f->bones[b].hangs == false )
+	{
+		return b3Vec3_zero;
+	}
+	float mass;
+	b3Vec3 center;
+	float inertia = nbCarriedBody( f, b, &mass, &center );
+	return b3MulSV( -mass / inertia, b3Cross( center, pivotVelocity ) );
+}
+
+// A standing figure flinches from an impulse at a point of a bone, after the roadmap of the game, 26.4 and 26.5. The
+// trunk turns about its root away from the hit. A hit on a bone with a spring of its own, see nbBoneDef::flinch, or on a
+// bone such a bone carries turns the bones of that chain about their joints, each flinch times as fast as the hit would
+// turn what it carries while its joint held, the head of the humanoid from a hit on its face, an arm from one on its
+// hand, and the trunk turns from the impulse the joint at the top of the chain passes on, what the chain does not take.
+// The other bones with a spring stay where they were while the trunk and the chain turn, and swing after them.
+static void nbFlinch( nbFigure* f, int hitBone, b3Vec3 impulse, b3Pos point )
+{
+	// The top of the chain of bones with a spring that carry the hit bone, or the trunk
+	int top = 0;
+	for ( int i = f->hasSwings ? hitBone : 0; i > 0; i = f->bones[i].parent )
+	{
+		top = f->bones[i].flinchOmega > 0.0f ? i : top;
+	}
+	b3Vec3 chainImpulse = impulse;
+	b3Vec3 trunkImpulse = impulse;
+	b3Pos trunkPoint = point;
+	if ( top > 0 )
+	{
+		// A chain beside the body, an arm that hangs, does not swing into it: the part of the hit that pushes it toward the
+		// axis up through the root, along the ground, the body behind it takes. The head above the root swings freely.
+		if ( f->bones[top].hangs )
+		{
+			float mass;
+			b3Vec3 center;
+			nbCarriedBody( f, top, &mass, &center );
+			b3Vec3 aside = b3Add( b3InvRotateVector( f->frame.q, b3SubPos( f->targets[top].p, f->targets[0].p ) ), center );
+			aside.y = 0.0f;
+			aside = b3RotateVector( f->frame.q, b3Normalize( aside ) );
+			float inward = -b3Dot( impulse, aside );
+			chainImpulse = inward > 0.0f ? b3MulAdd( impulse, inward, aside ) : impulse;
+		}
+
+		// The joint at the top passes on the impulse less the momentum the chain gains as loose as it swings, at most the
+		// impulse itself
+		b3Vec3 momentum;
+		nbSpinCarried( f, top, chainImpulse, point, &momentum );
+		trunkImpulse = b3MulSub( impulse, f->bones[top].flinch, b3RotateVector( f->frame.q, momentum ) );
+		float passed = b3Length( trunkImpulse );
+		float limit = b3Length( impulse );
+		trunkImpulse = passed > limit ? b3MulSV( limit / passed, trunkImpulse ) : trunkImpulse;
+		trunkPoint = f->targets[top].p;
+	}
+
+	// A critically damped spring kicked with a rate swings out the farthest after one over its angular frequency, by the
+	// rate over e times that frequency: the kick that turns the trunk by the flinch scale times the impulse it takes
+	b3Vec3 trunkKick = b3Vec3_zero;
+	b3Vec3 turn = b3Cross( b3SubPos( trunkPoint, f->targets[0].p ), trunkImpulse );
 	float length = b3Length( turn );
-	if ( length < 1.0e-6f )
+	if ( length >= 1.0e-6f )
+	{
+		float angle = b3MinFloat( f->def.flinchScale * b3Length( trunkImpulse ), f->def.flinchLimit );
+		float omega = 2.0f * B3_PI * b3MaxFloat( f->def.flinchHertz, 0.1f );
+		b3Vec3 axis = b3InvRotateVector( f->frame.q, b3MulSV( 1.0f / length, turn ) );
+		trunkKick = b3MulSV( 2.7182818f * omega * angle, axis );
+		f->flinchRate = b3Add( f->flinchRate, trunkKick );
+	}
+	if ( f->hasSwings == false )
 	{
 		return;
 	}
 
-	// A critically damped spring kicked with a rate swings out the farthest after one over its angular frequency, by the
-	// rate over e times that frequency: the kick that turns the trunk by the flinch scale times the impulse
-	float angle = b3MinFloat( f->def.flinchScale * b3Length( impulse ), f->def.flinchLimit );
-	float omega = 2.0f * B3_PI * b3MaxFloat( f->def.flinchHertz, 0.1f );
-	b3Vec3 axis = b3InvRotateVector( f->frame.q, b3MulSV( 1.0f / length, turn ) );
-	f->flinchRate = b3MulAdd( f->flinchRate, 2.7182818f * omega * angle, axis );
+	// How fast every bone turns from the hit in the frame of the figure and how fast its joint moves, parents first: a bone
+	// without a spring with its parent, the spine of the humanoid by its share of the trunk. A bone with a spring keeps
+	// its center of mass where it was while its joint moves, see nbLagCarried, and a bone of the chain turns as the hit
+	// turns what it carries besides. Its spring takes the difference to its parent, and what its parent gained in turning
+	// and its joint in moving counts as carried, see nbSwingBones.
+	f->bones[0].turnRate = f->boneCount == nb_humanoidBoneCount ? b3Vec3_zero : trunkKick;
+	f->bones[0].pivotVelocity = b3Vec3_zero;
+	for ( int b = 1; b < f->boneCount; ++b )
+	{
+		nbBone* bone = f->bones + b;
+		const nbBone* parent = f->bones + bone->parent;
+		b3Vec3 lever = b3InvRotateVector( f->frame.q, b3SubPos( f->targets[b].p, f->targets[bone->parent].p ) );
+		bone->pivotVelocity = b3Add( parent->pivotVelocity, b3Cross( parent->turnRate, lever ) );
+		if ( bone->flinchOmega <= 0.0f )
+		{
+			bone->turnRate = nbIsSpine( f, b ) ? b3MulAdd( parent->turnRate, 1.0f / 3.0f, trunkKick ) : parent->turnRate;
+			continue;
+		}
+
+		b3Vec3 kick = nbLagCarried( f, b, bone->pivotVelocity );
+		if ( top > 0 && nbCarries( f, b, hitBone ) )
+		{
+			b3Vec3 momentum;
+			kick = b3MulAdd( kick, bone->flinch, nbSpinCarried( f, b, chainImpulse, point, &momentum ) );
+		}
+		bone->swingRate = b3Add( bone->swingRate, b3Sub( kick, parent->turnRate ) );
+		bone->carried = b3Add( bone->carried, parent->turnRate );
+		bone->carriedVelocity = b3Add( bone->carriedVelocity, bone->pivotVelocity );
+		bone->turnRate = kick;
+	}
+	f->swinging = true;
 }
 
 // A hit spread over the bones of a ragdoll, as Overgrowth's RiggedObject::ApplyForceToRagdoll spreads it: every bone takes a
@@ -2078,7 +2308,7 @@ static void nbTakeHit( nbWorld* world, nbFigure* f, int bone, b3Vec3 impulse, b3
 	{
 		if ( f->state == nb_figureAnimated )
 		{
-			nbFlinch( f, impulse, point );
+			nbFlinch( f, bone, impulse, point );
 
 			// A push it cannot catch over its feet makes it catch itself after all
 			if ( nbPush( world, f, impulse ) == false )
@@ -2179,7 +2409,7 @@ void nbBlastFigures( nbWorld* world, const nbImpactDef* def )
 			// The blast does not reach kinematic bones, the figure flinches from it at its strongest bone and steps to catch
 			// it, see nbPush
 			b3Pos point = b3Body_GetWorldCenter( f->bones[strongest].bodyId );
-			nbFlinch( f, total, point );
+			nbFlinch( f, strongest, total, point );
 			if ( nbPush( world, f, total ) )
 			{
 				continue;
@@ -2361,6 +2591,86 @@ static float nbPressingForce( const nbWorld* world, int index, const nbFigure* f
 
 static void nbUpdateGettingUpPose( nbFigure* f, float advance, float timeStep );
 
+// The bones with a spring of their own swing after a hit, see nbBoneDef::flinch and nbFlinch, parents first. A bone lags
+// behind what carries it: what its parent gained in turning over a step it turns back against it, and as its joint
+// moves it turns so that its center of mass stays behind, see nbLagCarried. Its spring pulls it after, stepped by its
+// exact solution. A bone of the spine turns by its share of the trunk, any other with its parent. When the trunk and
+// every swing have come to rest, the swings stop.
+static void nbSwingBones( nbFigure* f, float timeStep )
+{
+	bool moving = b3LengthSquared( f->flinch ) > 1.0e-8f || b3LengthSquared( f->flinchRate ) > 1.0e-6f;
+	f->bones[0].turnRate = f->boneCount == nb_humanoidBoneCount ? b3Vec3_zero : f->flinchRate;
+	f->bones[0].pivotVelocity = b3Vec3_zero;
+	for ( int i = 1; i < f->boneCount; ++i )
+	{
+		nbBone* bone = f->bones + i;
+		const nbBone* parent = f->bones + bone->parent;
+		b3Vec3 lever = b3InvRotateVector( f->frame.q, b3SubPos( f->targets[i].p, f->targets[bone->parent].p ) );
+		bone->pivotVelocity = b3Add( parent->pivotVelocity, b3Cross( parent->turnRate, lever ) );
+		if ( bone->flinchOmega <= 0.0f )
+		{
+			bone->turnRate = nbIsSpine( f, i ) ? b3MulAdd( parent->turnRate, 1.0f / 3.0f, f->flinchRate ) : parent->turnRate;
+			continue;
+		}
+
+		b3Vec3 lag = nbLagCarried( f, i, b3Sub( bone->pivotVelocity, bone->carriedVelocity ) );
+		bone->swingRate = b3Add( bone->swingRate, b3Sub( lag, b3Sub( parent->turnRate, bone->carried ) ) );
+		bone->carried = parent->turnRate;
+		bone->carriedVelocity = bone->pivotVelocity;
+		nbStepSpring( &bone->swing, &bone->swingRate, bone->flinchOmega, bone->flinchDamping, timeStep );
+		float angle = b3Length( bone->swing );
+		if ( angle > f->def.flinchLimit )
+		{
+			bone->swing = b3MulSV( f->def.flinchLimit / angle, bone->swing );
+		}
+		bone->turnRate = b3Add( parent->turnRate, bone->swingRate );
+		moving = moving || b3LengthSquared( bone->swing ) > 1.0e-8f || b3LengthSquared( bone->swingRate ) > 1.0e-6f;
+	}
+
+	if ( moving == false )
+	{
+		nbStopSwings( f );
+	}
+}
+
+// Turns the bones of a standing figure by the flinch of the trunk and the swings of the bones with a spring of their own,
+// each about its joint in the frame of the figure, parents first: the trunk of the humanoid shared by its spine, the root
+// for other rigs. A bone that swings stays within the limits of its joint.
+static void nbTurnBones( nbFigure* f )
+{
+	bool trunk = b3LengthSquared( f->flinch ) > 1.0e-8f;
+	b3Quat turn = trunk ? nbQuatFromVector( f->flinch ) : b3Quat_identity;
+	b3Quat share = b3Quat_identity;
+	if ( trunk && f->boneCount == nb_humanoidBoneCount )
+	{
+		share = nbPartOf( turn, 1.0f / 3.0f );
+	}
+	else if ( trunk )
+	{
+		f->root.q = b3NormalizeQuat( b3MulQuat( turn, f->root.q ) );
+	}
+
+	f->bones[0].turned = f->root.q;
+	for ( int i = 1; i < f->boneCount; ++i )
+	{
+		nbBone* bone = f->bones + i;
+		b3Quat frameQ = b3MulQuat( f->bones[bone->parent].turned, bone->rest.q );
+		bool spine = trunk && nbIsSpine( f, i );
+		bool swings = bone->flinchOmega > 0.0f && b3LengthSquared( bone->swing ) > 1.0e-10f;
+		if ( spine || swings )
+		{
+			b3Quat rotation = swings ? nbQuatFromVector( bone->swing ) : share;
+			b3Quat local = b3NormalizeQuat( b3InvMulQuat( frameQ, b3MulQuat( rotation, frameQ ) ) );
+			f->pose[i] = b3NormalizeQuat( b3MulQuat( local, f->pose[i] ) );
+			if ( swings )
+			{
+				f->pose[i] = nbLimitBoneRotation( bone, f->pose[i] );
+			}
+		}
+		bone->turned = b3MulQuat( frameQ, f->pose[i] );
+	}
+}
+
 // The pose of a standing figure from its clip, the flinch of its trunk and what it blends from
 static void nbAnimate( nbWorld* world, int index, nbFigure* f, float timeStep )
 {
@@ -2392,14 +2702,19 @@ static void nbAnimate( nbWorld* world, int index, nbFigure* f, float timeStep )
 	// The flinch: a critically damped spring that straightens the trunk, stepped by its exact solution, so the swing of a
 	// hit is what nbFlinch gives it at any step rate. The decay over a step from a series of the same bits everywhere.
 	float omega = 2.0f * B3_PI * b3MaxFloat( f->def.flinchHertz, 0.1f );
-	float decay = nbDecay( omega * timeStep );
-	b3Vec3 sum = b3MulAdd( f->flinchRate, omega, f->flinch );
-	f->flinch = b3MulSV( decay, b3MulAdd( f->flinch, timeStep, sum ) );
-	f->flinchRate = b3MulSV( decay, b3MulSub( f->flinchRate, omega * timeStep, sum ) );
+	nbStepSpring( &f->flinch, &f->flinchRate, omega, 1.0f, timeStep );
 	float angle = b3Length( f->flinch );
 	if ( angle > f->def.flinchLimit && angle > 0.0f )
 	{
 		f->flinch = b3MulSV( f->def.flinchLimit / angle, f->flinch );
+	}
+
+	// The bones with a spring of their own swing after a hit and turn with the trunk
+	if ( f->swinging )
+	{
+		nbSwingBones( f, timeStep );
+		nbTurnBones( f );
+		return;
 	}
 
 	// The flinch turns the trunk about the root: shared by the bones of the spine of the humanoid, the root alone for
@@ -2746,7 +3061,8 @@ static bool nbCheckWakeStanding( const nbWorld* world, int index, const nbFigure
 	b3Vec3 pelvis = b3ToVec3( b3Body_GetWorldCenter( f->bones[0].bodyId ) );
 	b3Vec3 chest = b3ToVec3( b3Body_GetWorldCenter( f->bones[nb_humanoidChest].bodyId ) );
 	b3Vec3 spine = b3Normalize( b3Sub( chest, pelvis ) );
-	if ( b3Dot( pelvis, up ) - height < NB_WAKE_HEIGHT * f->def.standHeight || b3Dot( spine, up ) < cosf( NB_WAKE_TILT ) )
+	float upright = b3ComputeCosSin( NB_WAKE_TILT ).cosine;
+	if ( b3Dot( pelvis, up ) - height < NB_WAKE_HEIGHT * f->def.standHeight || b3Dot( spine, up ) < upright )
 	{
 		return false;
 	}
@@ -3163,6 +3479,46 @@ nbFigureId nbCreateFigure( nbWorldId worldId, const nbFigureDef* def )
 		bone->start = boneDef->start;
 		bone->end = boneDef->end;
 		bone->radius = boneDef->radius;
+
+		// The spring that swings it from a hit, none for the root and the spine of the humanoid, which the flinch of the
+		// trunk turns
+		bool trunk = i == 0 || ( boneCount == nb_humanoidBoneCount && ( i == nb_humanoidBelly || i == nb_humanoidRibs ||
+																	  i == nb_humanoidChest ) );
+		bone->flinch = b3MaxFloat( 0.0f, boneDef->flinch );
+		bone->flinchOmega = trunk == false && boneDef->flinchHertz > 0.0f ? 2.0f * B3_PI * boneDef->flinchHertz : 0.0f;
+		bone->flinchDamping = b3ClampFloat( boneDef->flinchDamping, 0.05f, 1.0f );
+		bone->hangs = false;
+		bone->swing = b3Vec3_zero;
+		bone->swingRate = b3Vec3_zero;
+		bone->turnRate = b3Vec3_zero;
+		bone->pivotVelocity = b3Vec3_zero;
+		bone->carried = b3Vec3_zero;
+		bone->carriedVelocity = b3Vec3_zero;
+		bone->turned = b3Quat_identity;
+		f->hasSwings = f->hasSwings || bone->flinchOmega > 0.0f;
+	}
+
+	// What a bone with a spring carries hangs beside the body when its center of mass at rest lies a tenth of the stand
+	// height or more beside the axis up through the root, an arm, see nbLagCarried
+	for ( int b = 1; b < boneCount && f->hasSwings; ++b )
+	{
+		nbBone* bone = f->bones + b;
+		b3Vec3 moment = b3Vec3_zero;
+		float mass = 0.0f;
+		for ( int i = b; i < boneCount; ++i )
+		{
+			if ( nbCarries( f, b, i ) )
+			{
+				const nbBone* other = f->bones + i;
+				b3Vec3 local = other->shape == nb_capsuleBone ? b3MulSV( 0.5f, b3Add( other->start, other->end ) )
+															  : other->center;
+				moment = b3MulAdd( moment, other->mass, b3TransformPoint( nbRestTransform( f, i ), local ) );
+				mass += other->mass;
+			}
+		}
+		b3Vec3 center = b3MulSV( 1.0f / mass, moment );
+		float reach = NB_SWING_BESIDE * def->standHeight;
+		bone->hangs = bone->flinchOmega > 0.0f && center.x * center.x + center.z * center.z >= reach * reach;
 	}
 
 	// The first pose of the idle clip where the figure stands, the feet where the clip puts them

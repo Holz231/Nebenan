@@ -64,6 +64,25 @@ typedef struct nbBone
 	// The velocity of a bone of a ragdoll when the next step begins: read at the end of every update and after every hit,
 	// fall and blast, zero while the ragdoll sleeps, see nbPassFigureThrough
 	b3Vec3 stepVelocity;
+
+	// The spring that swings the bone from a hit while the figure stands, see nbBoneDef::flinch: how fast a hit turns it
+	// against how fast it would turn what the bone carries, the angular frequency of the spring, zero for none, and its
+	// damping ratio, and whether what it carries hangs beside the body at rest, see nbLagCarried. Its swing about its joint
+	// as a rotation vector in the frame of the figure and the rate of that, how fast the bone turns and its joint moves in
+	// all from hits, and how fast its parent turned and its joint moved when the update before ended, see nbSwingBones.
+	float flinch;
+	float flinchOmega;
+	float flinchDamping;
+	bool hangs;
+	b3Vec3 swing;
+	b3Vec3 swingRate;
+	b3Vec3 turnRate;
+	b3Vec3 pivotVelocity;
+	b3Vec3 carried;
+	b3Vec3 carriedVelocity;
+
+	// The rotation of the bone in the frame of the figure while the update turns the bones, see nbTurnBones
+	b3Quat turned;
 } nbBone;
 
 // A foot of a humanoid: where its ankle stands while it is down and how the ground there tilts its sole, where a step to
@@ -195,9 +214,12 @@ typedef struct nbFigure
 	// The world transforms of the bones in that pose, where an animated figure moves them in the next step
 	b3WorldTransform* targets;
 
-	// The flinch of the trunk as a rotation vector and its rate, a damped spring
+	// The flinch of the trunk as a rotation vector and its rate, a damped spring. Whether a bone has a spring of its own,
+	// see nbBone::flinchOmega, and whether one swings or the trunk flinches.
 	b3Vec3 flinch;
 	b3Vec3 flinchRate;
+	bool hasSwings;
+	bool swinging;
 
 	// The feet on the ground and the steps to catch a hit, see nbPush: the feet, the foot in the air or -1 and how far
 	// into its step, how far the body moves on the ground in all, how long it takes and how far along it is, and how far
