@@ -659,6 +659,21 @@ dorthin, langsam an und aus, und steht von dort auf wie sonst. Was sich bewegt, 
 Stelle, wartet er (`nb_waitRoom`). `nbFigureInfo::shifting` sagt, ob eine Figur gerade rückt, `shiftCount` und
 `nbFigureStats::shiftCount` zählen, wie oft. Ein Spiel ruft dafür nichts auf.
 
+**Aufwachen im Stand.** Ein Ragdoll, der auf seinen Füßen zur Ruhe kommt, wacht stehend auf, nach Kapitel 26.15 der
+Roadmap des Spiels, wie WakeUp in Overgrowth das Stehen vom Fallen, Überschlagen und Rollen unterscheidet. So hängt eine
+Figur, deren Arm in einem Riss ihrer Mauer stecken blieb, auf ihren Füßen, das Becken zu hoch über dem Boden, um von ihm
+aufzustehen, und wartete bis `active-ragdoll-20` für immer auf Boden (`nb_waitGround`). Bevor ein Mensch der Bibliothek
+prüft, ob er aufstehen kann, prüft er, ob er steht: beide Füße auf Boden, auf dem er stehen könnte, wie die Balance ihn
+misst, das Becken mindestens 60 % der Standhöhe darüber, die Wirbelsäule vom Becken zur Brust höchstens 1 rad gegen die
+Senkrechte geneigt, nichts, was von oben auf ihm lastet, und Platz für Rumpf und Kopf in der ersten Haltung des
+Stand-Clips auf dem Boden zwischen seinen Knöcheln. Die Beine stehen dort schon, und ein Arm darf die Wand streifen, an
+der er lehnt. Dann werden seine Knochen kinematisch, sein Rahmen steht zwischen den Knöcheln, nach vorn, wohin das
+Becken schaut, der Stand-Clip blendet in 0,6 s aus der Haltung ein, in der er stand, die Beine mit, und die Füße treten
+mit den Schritten des Ausgleichs unter den Körper, wie nach dem Abfangen. Ohne die Beine einzublenden sprang ein Knie,
+das der schlaffe Ragdoll nach innen geknickt hatte, in einem Schritt 11 cm, mit ihnen bewegt sich kein Knochen mehr als
+3 cm pro Schritt. Nichts wird teleportiert, und `getUpCount` zählt das Aufwachen im Stand mit. Ein Spiel ruft dafür
+nichts auf.
+
 **Clips.** Ein Clip ist eine Folge von Schlüsselhaltungen: die Drehung jedes Knochens gegen seine Ruhelage und die
 Wurzel im Rahmen der Figur (`nbClipDef`). Die Clips eines Menschen jeder Größe baut die Bibliothek selbst
 (`nbMakeHumanoidClip`): Stand, Rudern, Abstützen, Einrollen und das Aufstehen vom Bauch und vom Rücken, einmal pro
@@ -2069,10 +2084,10 @@ Nach Änderungen an `demo/shaders/scene.glsl` die Shader neu erzeugen, im Ordner
   Gelenk von Box3D. Ein Spiel, das es rein physikalisch will, setzt `uprightTorque` auf null. Dann fängt sich der
   Mensch der Bibliothek kaum noch: Auf die Brust getroffen fällt er von vorn, von hinten und von rechts schon bei
   50 N s, nach ein bis drei Schritten, nur von links fängt er sich dann noch.
-- Eine Figur, die als Ragdoll mit dem Becken höher als 60 cm über dem Boden an einer Wand lehnt, findet keinen Boden
-  unter dem Becken und steht nicht auf, solange sie so lehnt (`nb_waitGround`). Im Benchmark mit 50 Figuren lehnt seit
-  `active-ragdoll-20` am Ende eine so an ihrer Mauer, das Becken 94 cm hoch. Aufstehen aus dem Anlehnen steht als
-  Schritt F30 in der [Roadmap](docs/Roadmap.md).
+- Ein Ragdoll, der mit dem Becken höher als 60 cm über dem Boden ruht, ohne mit beiden Füßen auf Boden zu stehen, etwa
+  quer über einem Balken, findet keinen Boden unter dem Becken und steht nicht auf (`nb_waitGround`). Steht er auf
+  seinen Füßen, wacht er seit `active-ragdoll-21` stehend auf, siehe Aufwachen im Stand, aber nur, wenn Rumpf und Kopf
+  dort Platz haben.
 - Stehende und aufstehende Figuren sind kinematisch und kollidieren wie alle kinematischen Körper in Box3D nicht mit
   statischen, also nicht mit Schutt und stehenden Wänden. Eine Figur, die das Spiel durch eine Wand bewegt, geht
   hindurch. Ob genug Platz zum Aufstehen ist, prüft sie vorher, und fehlt er, rückt sie bis 60 cm oder dreht sich auf
