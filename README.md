@@ -243,9 +243,9 @@ Bildzeit.
   durchbrachen und was der letzte Aufprall tat.
   **Gewehr auf Figuren** stellt den Stoß eines Gewehrtreffers ein (Standard 60 N s, ab 50 N s werden die Knochen einer
   Figur dynamisch, und sie fängt sich oder fällt, um 1 000 N s fliegt sie durch die Bretter), **Brusttreffer** und
-  **Seitenstoß** treffen jede Figur mit diesem Stoß oben auf die Brust, von vorn oder von rechts, **Alle umwerfen** wirft
-  alle auf einmal um, **Zustand** schreibt über jede Figur, was sie tut und worauf sie wartet, gelb, solange sie sich
-  fängt, und **Zielhaltung** zeichnet als Linien die Haltung, zu der sie ihre Knochen bringen will
+  **Seitenstoß** treffen jede Figur mit diesem Stoß oben auf die Brust, von vorn oder von rechts, **Alle umwerfen**
+  wirft alle auf einmal um, **Zustand** schreibt über jede Figur, was sie tut und worauf sie wartet, gelb, solange sie
+  sich fängt, und **Zielhaltung** zeichnet als Linien die Haltung, zu der sie ihre Knochen bringen will
 - **Stadt mit Figuren**: die Stadt mit zwei Figuren an jedem Haus, 40 auf den Straßen, je eine gut 1 m vor einer
   Stirnwand und vor einer Längswand wie im Benchmark. Granaten, Trümmer und einstürzende Stockwerke werfen sie um und
   begraben sie. Das Menü zählt sie wie in „Figuren“
@@ -592,12 +592,14 @@ unter drei Viertel seiner Höhe oder berührt 0,3 s kein Fuß den Boden, fällt 
 Becken. Eine Last von oben wirft sie ab einem Viertel von `crushForce` um, wie beim Aufstehen. Ruhig auf beiden Füßen,
 die Knochen im Mittel nach ihrer Masse langsamer als 0,15 m/s, den Capture Point zwischen den Füßen und das Becken
 aufrecht, steht sie nach einer halben Sekunde wieder animiert, wo sie steht, ihr Clip blendet in 0,25 s ein, und ihre
-Füße treten mit den Schritten des Ausgleichs unter ihren Körper zurück. Auf die obere Brust fängt der Mensch der
-Bibliothek so von vorn 60 und 70 N s mit 3 bis 7 Schritten, von hinten 80 N s und von der Seite 60 N s, und steht nach
-1,9 bis 4,3 s wieder. Von vorn 100 N s und von der Seite 80 N s werfen ihn um, kein Schritt reicht so weit.
-`nbFigureInfo::catchCount` und `nbFigureStats::catchCount` zählen, wie oft eine Figur sich fing,
-`nbFigureStats::balancingCount`, wie viele es gerade tun. Ein Spiel ruft dafür nichts auf. Andere Rigs als der Mensch
-der Bibliothek fallen gleich, bei ihnen kennt die Bibliothek die Beine nicht.
+Füße treten mit den Schritten des Ausgleichs unter ihren Körper zurück. Auf die obere Brust getroffen fängt sich der
+Mensch der Bibliothek so von vorn bis 70 N s, von hinten bis 100 N s und von beiden Seiten bis 60 N s, auf 10 N s genau
+abgetastet, mit bis zu acht Schritten, und steht nach 1 bis 4,3 s wieder animiert. Darüber reicht kein Schritt, und er
+fällt nach zwei Updates, ohne zu treten. Eine Figur, die sich fängt, kostet im Update rund 4,4 statt 2 µs, und Box3D
+rechnet ihre dynamischen Knochen mit einem Thread in rund 0,06 statt 0,006 ms pro Schritt. `nbFigureInfo::catchCount`
+und `nbFigureStats::catchCount` zählen, wie oft eine Figur sich fing, `nbFigureStats::balancingCount`, wie viele es
+gerade tun. Ein Spiel ruft dafür nichts auf. Andere Rigs als der Mensch der Bibliothek fallen gleich, bei ihnen kennt
+die Bibliothek die Beine nicht.
 
 **Füße auf dem Boden.** Die Füße eines stehenden Menschen der Bibliothek stehen auf dem Boden unter ihnen, nach Kapitel
 26.5 und 28.3 der Roadmap des Spiels, auf einer Stufe, an einem Hang und auf Schutt. Unter der Mitte jeder Sohle sucht
@@ -709,11 +711,11 @@ Wo die Stücke unter den Kontakten weggebrochen sind, fliegt die Figur weiter: J
 Anteil des Schwungs der Figur, so gewinnt sie nichts. Wo die Wand hält, prallt sie ab. Ob eine Wand bricht, entscheiden
 nur Energie und Material, ein Skript gibt es nicht: Mit 1 000 N s geworfen bricht ein Mensch der Bibliothek in der
 Hälfte der Würfe durch Bretter von 5 cm und in drei Vierteln seitlich durch Bretter von 3 cm, nie durch Bretter von 20
-cm oder Beton, die nur Stücke verlieren. Ein Gewehrtreffer von 80 N s wirft ihn um, bricht aber keine Wand. Damit dünne
-Bretter überhaupt brechen, halten die Bruchpunkte in einem Stück, das dünner ist als ihr doppelter Rand, nur ein Viertel
-seiner Dicke von seinen Flächen fern, und trifft keine der Proben, mit denen ein Kontakt den getroffenen Teil seiner
-Kugel schätzt, das Brett, legt Nebenan sie dorthin, wo sich Brett und Kugel überschneiden. Ohne Figuren und außer an so
-dünnen Stücken rechnet alles wie vorher, siehe „Ragdoll durch die Wand“ in
+cm oder Beton, die nur Stücke verlieren. Ein Gewehrtreffer von 80 N s auf die Brust wirft ihn von vorn um, bricht aber
+keine Wand. Damit dünne Bretter überhaupt brechen, halten die Bruchpunkte in einem Stück, das dünner ist als ihr
+doppelter Rand, nur ein Viertel seiner Dicke von seinen Flächen fern, und trifft keine der Proben, mit denen ein Kontakt
+den getroffenen Teil seiner Kugel schätzt, das Brett, legt Nebenan sie dorthin, wo sich Brett und Kugel überschneiden.
+Ohne Figuren und außer an so dünnen Stücken rechnet alles wie vorher, siehe „Ragdoll durch die Wand“ in
 [`docs/Optimierungen.md`](docs/Optimierungen.md).
 
 **Verdeckte Flächen.** In einem Bauwerk liegen die meisten Flächen der Bruchstücke innen, zwischen verklebten
@@ -1069,8 +1071,8 @@ nbFigureId figure = nbCreateFigure( world, &figureDef );
 // bones[i], die Hülle eines Quaders gibt nbCreateBoneHull.
 b3BodyId head = nbFigure_GetBody( figure, nb_humanoidHead );
 
-// Ein Schuss trifft eine Figur: Die Bibliothek entscheidet, ob sie zuckt, nachtritt, sich fängt oder fällt, und verteilt
-// den Stoß
+// Ein Schuss trifft eine Figur: Die Bibliothek entscheidet, ob sie zuckt, nachtritt, sich fängt oder fällt, und
+// verteilt den Stoß
 b3RayResult ray = b3World_CastRayClosest( physics, b3ToPos( eye ), b3MulSV( 100.0f, aim ), b3DefaultQueryFilter() );
 if ( ray.hit )
 {
@@ -1084,8 +1086,8 @@ if ( ray.hit )
 	}
 }
 
-// Granaten mit explosionImpulse und Trümmer stoßen Figuren von selbst, Lasten und Boden, der wegbricht, werfen sie um. Im
-// Stand lässt sich eine Figur bewegen und spielt eigene Clips.
+// Granaten mit explosionImpulse und Trümmer stoßen Figuren von selbst, Lasten und Boden, der wegbricht, werfen sie
+// um. Im Stand lässt sich eine Figur bewegen und spielt eigene Clips.
 nbFigure_Move( figure, b3ToPos( (b3Vec3){ 2.5f, 0.0f, 0.0f } ), 0.5f * B3_PI );
 nbFigure_PlayClip( figure, &winken, 1.0f );
 nbFigureInfo info = nbFigure_GetInfo( figure );   // steht, fängt sich, liegt oder steht auf, und worauf sie wartet
@@ -1867,12 +1869,19 @@ Ragdolls in 80 der 90 Schritte in ganzen Inseln pro Thread, siehe Gelenke und Pa
 auf `active-ragdoll-1`, im Wechsel gemessen. Die 99 % mit vier Threads sind dort ein einzelner Schritt pro Lauf, in dem
 die VM einem Thread den Kern nimmt. Solche Schritte bis 10 ms kommen auf beiden Branches vor. 45 der 50 Figuren stehen
 in den 10 s wieder auf, die übrigen fünf liegen mit dem Kopf an einer Mauer und warten auf Platz, bis die Granaten die
-Mauer wegschießen. Mit 10 Figuren kostet ein Schritt im Stand 0,03 ms und beim gemeinsamen Sturz 0,4 ms. So wenig
-Arbeit rechnet Box3D auf dem aufrufenden Thread allein, siehe `B3_CONTACTS_PER_WORKER` in
+Mauer wegschießen. Mit 10 Figuren kostet ein Schritt im Stand 0,03 ms und beim gemeinsamen Sturz 0,4 ms. So wenig Arbeit
+rechnet Box3D auf dem aufrufenden Thread allein, siehe `B3_CONTACTS_PER_WORKER` in
 [`extern/README.md`](extern/README.md). Die Figuren enden in jedem Lauf mit 1 und 4 Threads mit demselben Hash, und
 gleich wie auf `active-ragdoll-1`. Seit `active-ragdoll-19` treffen Figuren, die gegen ihre Mauern fallen, diese mit
-einem Einschlag pro Figur und Schritt, siehe Ragdoll durch die Wand, und 10 und 50 Figuren enden anders, am Ende
-stehen alle 50.
+einem Einschlag pro Figur und Schritt, siehe Ragdoll durch die Wand, und 10 und 50 Figuren enden anders, am Ende stehen
+alle 50. Seit `active-ragdoll-20` fangen sich getroffene Figuren erst mit dynamischen Knochen, siehe Abfangen nach einem
+harten Treffer. Die 120 N s werfen trotzdem alle nach zwei Updates um, sie fallen gestreckter, und 10 statt 5 rücken, um
+aufzustehen. Alle stehen nach 261 statt 208 Schritten. Wenn die Deckung bricht, fangen sich 3 Figuren, im Mittel sind
+pro Schritt 6,5 statt 4,1 Figuren dynamisch, und am Ende liegen 2: eine wartet im Schutt an ihrer Mauer auf Platz, eine
+lehnt an ihr, siehe Grenzen. Das Update kostet in dieser Phase 0,19 statt 0,16 ms pro Schritt mit vier Threads, 0,22
+statt 0,14 ms mit einem, der Box3D-Schritt 0,47 statt 0,33 ms, im Median aus sechs Läufen im Wechsel mit
+`active-ragdoll-19`. Im Stand, beim Zucken, beim Sturz und mit 10 Figuren kostet alles so viel wie vorher, im Rahmen der
+Streuung. Die Figuren enden weiter mit 1 und 4 Threads mit demselben Hash.
 
 **Ragdolls im Schutt.** Danach stellt `nebenan_benchmark figures` 20 Figuren auf eine Platte über zwei Lagen aus 4 513
 Würfeln, wirft sie um und lässt sie liegen (`nbFigureDef::canGetUp` aus). Platte, Würfel und Ragdolls sind eine große
@@ -1887,14 +1896,19 @@ kosten die Bedingungen mit vier Threads 0,28 ms weniger, siehe „Gelenke in den
 Figuren an jedem Haus, 1 m vor seiner Ost- und vor seiner Südwand, wo Granaten, Trümmer und einstürzende Stockwerke sie
 umwerfen und begraben. Nach 1 062 der 1 200 Schritte ist ein Ragdoll wach, bis zu sechs zugleich. Mit vier Threads
 rechnet der Löser in 1 199 Schritten mit ganzen Inseln pro Thread und in 784 mit Gebieten, auf `active-ragdoll-1` in
-keinem, und braucht 2,61 statt 3,09 ms pro Schritt, der Box3D-Schritt 6,00 statt 6,27 ms, im Median aus fünf Läufen
-im Wechsel. Mit einem Thread kostet der Schritt so viel wie vorher, 15,3 ms. Wie die Stadt endet, ist mit jeder Zahl
-von Threads gleich, aber anders als auf `active-ragdoll-1`, weil ihre Trümmer jetzt in Gebieten rechnen. Gepaart gegen
+keinem, und braucht 2,61 statt 3,09 ms pro Schritt, der Box3D-Schritt 6,00 statt 6,27 ms, im Median aus fünf Läufen im
+Wechsel. Mit einem Thread kostet der Schritt so viel wie vorher, 15,3 ms. Wie die Stadt endet, ist mit jeder Zahl von
+Threads gleich, aber anders als auf `active-ragdoll-1`, weil ihre Trümmer jetzt in Gebieten rechnen. Gepaart gegen
 `active-ragdoll-1`, je drei Läufe im Wechsel mit einem und vier Threads, enden alle übrigen Szenen des Benchmarks
 gleich, und die Städte ohne Figuren kosten so viel wie vorher: Die Läufe überlappen sich, im Median zwischen 4,2 %
-weniger und 5,2 % mehr pro Box3D-Schritt, in beide Richtungen. Mit `off` als drittem Wert rechnet derselbe Benchmark die
-Gelenke wie vor F8 und endet mit denselben Hashes wie `active-ragdoll-1`, so misst er beides in einem Lauf, siehe
-Gelenke und Pakete.
+weniger und 5,2 % mehr pro Box3D-Schritt, in beide Richtungen. Seit `active-ragdoll-20` fangen sich dort 4 Figuren nach
+einem Treffer, und die Stadt endet anders, mit 6 statt 5 eingestürzten Stockwerken und bis zu 69 486 statt 42 458
+Kontakten. Das Update der Figuren kostet dort 0,20 statt 0,19 ms pro Schritt, gleich viel. In dieser anderen Welt kostet
+ein Bild mit vier Threads 8,37 statt 7,64 ms und die 99 % der Bilder 28,9 statt 22,8 ms, im Median aus sechs Läufen im
+Wechsel, vor allem durch Box3D, das Budget und die Typwechsel des Schutts. Die Städte ohne Figuren enden bitgleich wie
+auf `active-ragdoll-19` und kosten so viel wie vorher, die Mediane liegen zwischen 7,6 % darunter und 8,4 % darüber, in
+beide Richtungen. Mit `off` als drittem Wert rechnet derselbe Benchmark die Gelenke wie vor F8 und endet mit denselben
+Hashes wie `active-ragdoll-1`, so misst er beides in einem Lauf, siehe Gelenke und Pakete.
 
 Grafik der Demo, die ersten acht Sekunden der Stadt im Skript (480 Bilder, Bruchstückgröße ×2): 12 Draw Calls,
 höchstens 213 000 Dreiecke, im Mittel 0,5 MB und höchstens 1,7 MB Upload pro Bild, 0,1 ms CPU für Uploads.
@@ -2052,7 +2066,13 @@ Nach Änderungen an `demo/shaders/scene.glsl` die Shader neu erzeugen, im Ordner
   jeder kinematische Körper.
 - Eine Figur, die sich fängt, hält ihr Becken wie auf `ragdoll-11` mit einem begrenzten Drehmoment gegen die Welt
   aufrecht, nicht nur mit ihren Beinen. Ein Mensch, der stolpert, tut das mit seinem Gleichgewichtssinn, hier tut es ein
-  Gelenk von Box3D. Ein Spiel, das es rein physikalisch will, setzt `uprightTorque` auf null.
+  Gelenk von Box3D. Ein Spiel, das es rein physikalisch will, setzt `uprightTorque` auf null. Dann fängt sich der
+  Mensch der Bibliothek kaum noch: Auf die Brust getroffen fällt er von vorn, von hinten und von rechts schon bei
+  50 N s, nach ein bis drei Schritten, nur von links fängt er sich dann noch.
+- Eine Figur, die als Ragdoll mit dem Becken höher als 60 cm über dem Boden an einer Wand lehnt, findet keinen Boden
+  unter dem Becken und steht nicht auf, solange sie so lehnt (`nb_waitGround`). Im Benchmark mit 50 Figuren lehnt seit
+  `active-ragdoll-20` am Ende eine so an ihrer Mauer, das Becken 94 cm hoch. Aufstehen aus dem Anlehnen steht als
+  Schritt F30 in der [Roadmap](docs/Roadmap.md).
 - Stehende und aufstehende Figuren sind kinematisch und kollidieren wie alle kinematischen Körper in Box3D nicht mit
   statischen, also nicht mit Schutt und stehenden Wänden. Eine Figur, die das Spiel durch eine Wand bewegt, geht
   hindurch. Ob genug Platz zum Aufstehen ist, prüft sie vorher, und fehlt er, rückt sie bis 60 cm oder dreht sich auf
