@@ -243,9 +243,11 @@ Bildzeit.
   durchbrachen und was der letzte Aufprall tat.
   **Gewehr auf Figuren** stellt den Stoß eines Gewehrtreffers ein (Standard 60 N s, ab 50 N s werden die Knochen einer
   Figur dynamisch, und sie fängt sich oder fällt, um 1 000 N s fliegt sie durch die Bretter), **Brusttreffer** und
-  **Seitenstoß** treffen jede Figur mit diesem Stoß oben auf die Brust, von vorn oder von rechts, **Alle umwerfen**
-  wirft alle auf einmal um, **Zustand** schreibt über jede Figur, was sie tut und worauf sie wartet, gelb, solange sie
-  sich fängt, und **Zielhaltung** zeichnet als Linien die Haltung, zu der sie ihre Knochen bringen will
+  **Seitenstoß** treffen jede Figur mit diesem Stoß oben auf die Brust, von vorn oder von rechts, **Kopftreffer** ins
+  Gesicht von vorn und **Armtreffer** von hinten auf den rechten Unterarm, mit etwa 20 N s, um Kopf und Arm einzeln
+  schwingen zu sehen, siehe Treffer je Körperpartie, **Alle umwerfen** wirft alle auf einmal um, **Zustand** schreibt
+  über jede Figur, was sie tut und worauf sie wartet, gelb, solange sie sich fängt, und **Zielhaltung** zeichnet als
+  Linien die Haltung, zu der sie ihre Knochen bringen will
 - **Stadt mit Figuren**: die Stadt mit zwei Figuren an jedem Haus, 40 auf den Straßen, je eine gut 1 m vor einer
   Stirnwand und vor einer Längswand wie im Benchmark. Granaten, Trümmer und einstürzende Stockwerke werfen sie um und
   begraben sie. Das Menü zählt sie wie in „Figuren“
@@ -557,6 +559,22 @@ Ragdoll oder steht auf. Stehend sind ihre Knochen kinematisch, und das Update na
 erreicht. Nichts wird teleportiert, Trümmer prallen an der Figur ab, und Box3D löst keines ihrer Gelenke, denn zwischen
 kinematischen Körpern liegen sie in der statischen Menge. Ein schwacher Treffer lässt den Rumpf zurückzucken, eine
 kritisch gedämpfte Feder um das Becken, die die Bibliothek exakt löst, 0,008 rad pro N s bis höchstens 0,5 rad.
+
+**Treffer je Körperpartie.** Hals, Kopf und Arme eines Menschen der Bibliothek schwingen bei einem leichten Treffer
+einzeln, nach Kapitel 26.4 und 26.5 der Roadmap des Spiels: Jeder dieser Knochen hat eine eigene gedämpfte Feder um
+sein Gelenk (`nbBoneDef::flinch`, `flinchHertz`, `flinchDamping`). Trifft ein Stoß einen von ihnen, drehen sich er und
+die Knochen über ihm bis zu Hals oder Schulter so schnell, wie der Stoß alles, was jeder trägt, als einen Körper um sein
+festgehaltenes Gelenk drehen würde, mal `flinch`. Der Rumpf dreht sich nur mit dem Stoß, den das oberste Gelenk
+weitergibt, also mit dem, was die Kette nicht selbst aufnimmt. Ein Gesichtstreffer von 20 N s reißt den Kopf so 0,40 rad
+gegen die Brust zurück, und der Rumpf dreht sich 0,12 statt 0,16 rad. Ein Treffer von 20 N s von hinten auf den rechten
+Unterarm schwingt diesen Arm 0,32 rad und die Hand 23 cm nach vorn, den linken Arm kaum, und den Rumpf 0,07 rad. Was
+einen hängenden Arm gegen den Körper drückt, nimmt der Körper: Von außen auf den Unterarm dreht ein Treffer den Rumpf wie
+bisher, und der Arm schwingt nicht ins Becken. Trifft ein Stoß den Rumpf, schwingen die Glieder mit Federn hinterher.
+Der Kopf behält dabei seine Drehung, ein Brusttreffer von 30 N s lässt ihn 0,14 rad gegen die Brust nachschwingen. Die
+Arme hängen als Pendel an der Schulter, ihr Schwerpunkt bleibt zurück, und sie rutschen nicht in den Körper, wenn er
+sich neigt. Die Federn löst die Bibliothek exakt und auf jeder Plattform bitgleich, mit Sinus und Kosinus von Box3D.
+Die Beine haben keine Federn, die Füße bleiben stehen. Ein Spiel ruft dafür nichts auf, eigene Rigs geben ihren
+Knochen Federn in `nbBoneDef`, ohne sie zuckt nur der Rumpf wie bisher.
 
 **Ausgleichsschritt.** Ein Treffer unter `knockdownImpulse` gibt dem Körper eines Menschen der Bibliothek eine
 Geschwindigkeit über dem Boden, den Impuls durch seine Masse, nach Kapitel 26.14 und 28.3 der Roadmap des Spiels. Wie ein
@@ -1177,7 +1195,7 @@ beim Einbinden nicht gebaut.
 | --- | --- | --- |
 | `standHeight` | 0,98 m | Höhe der Wurzel über dem Boden im Stand, `nbMakeHumanoidBones` gibt sie für ihren Menschen zurück |
 | `knockdownImpulse` | 50 N s | Ab diesem Treffer werden die Knochen einer stehenden Figur dynamisch, und sie fängt sich mit Schritten oder fällt, darunter zuckt sie zurück und tritt nach. Beim Aufstehen fällt sie schon ab einem Viertel |
-| `flinchScale`, `flinchLimit`, `flinchHertz` | 0,008 rad pro N s, 0,5 rad, 2 Hz | Wie weit der Rumpf bei einem schwachen Treffer zurückzuckt und wie schnell er sich wieder aufrichtet |
+| `flinchScale`, `flinchLimit`, `flinchHertz` | 0,008 rad pro N s, 0,5 rad, 2 Hz | Wie weit der Rumpf bei einem schwachen Treffer zurückzuckt und wie schnell er sich wieder aufrichtet. Trifft der Stoß Knochen mit eigener Feder, nur mit dem, was ihr Gelenk weitergibt. Die Grenze gilt auch für jede Feder eines Knochens |
 | `crushForce` | 600 N | Eine Last von oben ab dieser Kraft wirft eine stehende Figur um, beim Aufstehen und Abfangen ab einem Viertel. Was ihre Knochen beiseiteschieben, zählt nicht |
 | `restSpeed` | 0,4 m/s | Bewegen sich die Knochen eines Ragdolls im Mittel langsamer, liegt er still |
 | `getUpDelay`, `getUpSpeed`, `canGetUp` | 1 s, 1,4, an | Frühestens so lange nach dem Sturz und nach einer Viertelsekunde Stille steht sie auf, mit den Clips so viel schneller als geschrieben. Ohne `canGetUp` bleibt sie liegen |
@@ -1192,6 +1210,10 @@ beim Einbinden nicht gebaut.
 | `strengthPerSpeed`, `fallStrength` | 0,1 pro m/s, 0,8 | Die Kraft wächst mit der mittleren Geschwindigkeit der Knochen bis `fallStrength`, wie in Overgrowth |
 | `stunTime` | 0 s | So viel schwächer ist ein Ragdoll nach einem Treffer oder einer Explosion, die Kraft kommt mit eins pro Sekunde zurück. Null behält die Kraft wie auf `ragdoll-11`. Bis `active-ragdoll-19` waren es 0,4 s, Overgrowth nimmt 0,9 s, dort fiele eine Figur aus dem Stand, ohne sich abzustützen |
 | `uprightTorque`, `uprightStiffness`, `uprightDampingRatio` | 250 N m, 1 500 N m pro rad, 1 | Hält das Becken einer Figur, die sich fängt, aufrecht gegen einen statischen Anker der Welt, mit höchstens diesem Drehmoment. Fällt sie, lässt es sofort los, null nimmt es weg |
+
+| Knochen (`nbBoneDef`) | Standard | Wirkung |
+| --- | --- | --- |
+| `flinch`, `flinchHertz`, `flinchDamping` | 0, 0 Hz, 1 | Eine eigene Feder, die den Knochen bei einem leichten Treffer um sein Gelenk schwingt, siehe Treffer je Körperpartie: `flinch` mal so schnell, wie der Stoß alles dreht, was er trägt, mit dieser Frequenz und Dämpfung, unter 1 schwingt er über und zurück. Null Hertz halten ihn an seinem Elternknochen. Der Mensch der Bibliothek: Hals 0,3, 2,5 Hz, 0,7, Kopf 0,3, 3,5 Hz, 0,5, Oberarm 0,6, 2,5 Hz, 0,5, Unterarm 0,6, 3 Hz, 0,5, Hand 0,5, 4 Hz, 0,6 |
 
 | Rig (`nbRigDef`) | Standard | Wirkung |
 | --- | --- | --- |
@@ -1898,7 +1920,13 @@ statt 0,14 ms mit einem, der Box3D-Schritt 0,47 statt 0,33 ms, im Median aus sec
 `active-ragdoll-19`. Im Stand, beim Zucken, beim Sturz und mit 10 Figuren kostet alles so viel wie vorher, im Rahmen der
 Streuung. Die Figuren enden weiter mit 1 und 4 Threads mit demselben Hash. Seit `active-ragdoll-21` wacht die Figur, die
 an ihrer Mauer hängt, stehend auf, siehe Aufwachen im Stand, und am Ende stehen 49, alle übrigen Szenen enden bitgleich
-wie auf `active-ragdoll-20`.
+wie auf `active-ragdoll-20`. Seit `active-ragdoll-22` schwingen Kopf und Arme der Figuren beim Zucken nach, siehe
+Treffer je Körperpartie. Das Update kostet beim Zucken der 50 Figuren 0,23 statt 0,12 ms pro Schritt mit vier Threads
+und 0,24 statt 0,14 ms mit einem, gut 2 µs pro Figur, die schwingt, im Mittel aus drei und zwei Läufen im Wechsel mit
+`active-ragdoll-21`. Der Box3D-Schritt kostet so viel wie vorher. Weil Trümmer die Figuren danach in anderen Haltungen
+treffen, enden die Szenen, in denen Figuren zucken, anders: Von den 50 stehen am Ende alle, von den 10 wartet eine im
+Schutt vor ihrer Mauer auf Platz, und in der Stadt mit Figuren stürzen 5 statt 6 Stockwerke ein. Alle übrigen Szenen,
+auch die Ragdolls im Schutt, enden bitgleich wie auf `active-ragdoll-21`.
 
 **Ragdolls im Schutt.** Danach stellt `nebenan_benchmark figures` 20 Figuren auf eine Platte über zwei Lagen aus 4 513
 Würfeln, wirft sie um und lässt sie liegen (`nbFigureDef::canGetUp` aus). Platte, Würfel und Ragdolls sind eine große
