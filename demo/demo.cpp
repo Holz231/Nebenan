@@ -1954,14 +1954,15 @@ static void DrawUi( App& app )
 					 figures.ragdollCount, figures.awakeRagdollCount, figures.gettingUpCount );
 		ImGui::Text( "Treffer %d, Schritte %d, umgeworfen %d, aufgestanden %d, gerückt %d, abgebrochen %d", figures.hitCount,
 					 figures.stepCount, figures.knockdownCount, figures.getUpCount, figures.shiftCount, figures.abortCount );
-		ImGui::SliderFloat( "Gewehr auf Figuren", &app.figureHitImpulse, 10.0f, 1500.0f, "%.0f N s", ImGuiSliderFlags_Logarithmic );
+		ImGui::SliderFloat( "Gewehr auf Figuren", &app.figureHitImpulse, 10.0f, 1500.0f, "%.0f N s",
+							ImGuiSliderFlags_Logarithmic );
 		if ( ImGui::IsItemHovered() )
 		{
 			ImGui::SetTooltip( "So stark stößt ein Treffer des Gewehrs eine Figur. Ab 50 N s fällt sie als\naktiver Ragdoll um und steht "
 							   "wieder auf, darunter zuckt sie zurück und fängt sich\nmit einem Schritt, wo sie über ihren Füßen nicht "
 							   "stehen bleiben kann, von vorn\neher als von hinten. Granate und Kanone werfen Figuren mit ihrer eigenen "
-							   "Wucht um.\nUm 1000 N s fliegt eine Figur der Szene Figuren durch die dünne Bretterwand\nhinter ihr, an der "
-							   "Ziegelwand bleibt sie liegen." );
+							   "Wucht um.\nUm 1000 N s fliegt eine Figur der Szene Figuren durch die dünne "
+							   "Bretterwand\nhinter ihr, an der Ziegelwand bleibt sie liegen." );
 		}
 		ImGui::Text( "Aufpralle auf Wände %d, durchgebrochen %d", app.figureCollisions, app.figureBreakThroughs );
 		if ( app.figureCollisions > 0 )
