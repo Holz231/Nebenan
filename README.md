@@ -45,7 +45,9 @@ gelöscht. Kein Staub, keine Schatten: Jede Millisekunde geht in die Zerstörung
   reicht, eine Last auf ihr liegt oder der Boden wegbricht, fällt sie als aktiver Ragdoll. Ihre Gelenke ziehen mit
   begrenzter Kraft zu einer Haltung, sie fängt sich mit den Armen ab oder rollt sich ein. Liegt sie still, steht sie mit
   einem Clip vom Bauch oder vom Rücken wieder auf, sobald sie Boden, Platz und nichts auf sich hat, und fehlt ihr nur
-  der Platz, rückt sie dorthin, wo sie ihn hat. Die Knochen und Clips eines Menschen baut die Bibliothek selbst
+  der Platz, rückt sie dorthin, wo sie ihn hat. Auf Wunsch ziehen ihre Gelenke mit genäherten Muskeln, die sich mit
+  Verzögerung spannen und schnell gedreht schwächer ziehen. Die Knochen und Clips eines Menschen baut die Bibliothek
+  selbst
 - Für ganze Städte gebaut, ohne etwas zu löschen: Trümmer, die zur Ruhe kommen und auf festem Grund liegen,
   werden zu statischem Schutt und kosten Box3D nichts mehr. Box3D bewegt nur eine begrenzte Zahl Trümmer
   gleichzeitig, verdeckte Flächen werden nicht gezeichnet
@@ -246,8 +248,9 @@ Bildzeit.
   **Seitenstoß** treffen jede Figur mit diesem Stoß oben auf die Brust, von vorn oder von rechts, **Kopftreffer** ins
   Gesicht von vorn und **Armtreffer** von hinten auf den rechten Unterarm, mit etwa 20 N s, um Kopf und Arm einzeln
   schwingen zu sehen, siehe Treffer je Körperpartie, **Alle umwerfen** wirft alle auf einmal um, **Zustand** schreibt
-  über jede Figur, was sie tut und worauf sie wartet, gelb, solange sie sich fängt, und **Zielhaltung** zeichnet als
-  Linien die Haltung, zu der sie ihre Knochen bringen will
+  über jede Figur, was sie tut und worauf sie wartet, gelb, solange sie sich fängt, **Zielhaltung** zeichnet als
+  Linien die Haltung, zu der sie ihre Knochen bringen will, und **Muskeln** lädt die Szene neu, und ihre Figuren ziehen
+  mit Muskeln, siehe Muskeln
 - **Stadt mit Figuren**: die Stadt mit zwei Figuren an jedem Haus, 40 auf den Straßen, je eine gut 1 m vor einer
   Stirnwand und vor einer Längswand wie im Benchmark. Granaten, Trümmer und einstürzende Stockwerke werfen sie um und
   begraben sie. Das Menü zählt sie wie in „Figuren“
@@ -646,6 +649,33 @@ Bauch aus acht Richtungen mit 40 bis 132 N s fängt sich die Figur 1 211-mal, au
 Arme auf `active-ragdoll-22` 736-mal. Alle 736 fängt sie weiter, auf `active-ragdoll-23` fehlten 10, und bei ihnen steht
 sie gleich schnell ruhig. Von den 672 Treffern bis 80 N s fällt keiner, auf `active-ragdoll-23` fielen 11. Ein Update
 kostet für eine Figur, die sich fängt, so viel wie vorher. Ein Spiel ruft dafür nichts auf.
+
+**Muskeln.** Mit `nbFigureMotors::muscles` ziehen die Gelenke einer Figur, die sich fängt oder als Ragdoll fällt, mit
+genäherten Muskeln, nach dem Modell von Hill (1938), auf der Ebene der Gelenke statt einzelner Muskeln. Ein Muskel
+erreicht die Kraft, die die Figur von ihm will, mit einer Verzögerung erster Ordnung: hinauf in etwa 30 ms
+(`tenseTime`), hinab in 80 ms (`relaxTime`), implizit gerechnet, so schießt er nie über. Seine Kraft wirkt über die
+Feder des Gelenks, ihre Steifigkeit und ihr größtes Drehmoment wachsen mit ihm. Ein Gelenk mit Höchstgeschwindigkeit
+(`nbBoneDef::maxSpeed`) zieht nach der Kurve von Hill umso schwächer, je schneller es sich dorthin dreht, wohin es
+zieht, bei einem Anteil v seiner Höchstgeschwindigkeit mit (1 − v)/(1 + 4v) seiner Kraft und bei voller mit keiner, und
+gegen seine Richtung gedreht hält es mehr, bis 1,5-mal so viel (`brakeStrength`). Seine Geschwindigkeit nimmt es aus dem
+Schritt davor, gegen das Drehmoment, das seine Feder dort ausübte. Der Mensch der Bibliothek hat 25 rad/s an Rumpf, Hals
+und Kopf und keine an Armen und Beinen: Die Drehmomentgrenze der Feder begrenzt auch ihre Dämpfung und ihren Halt an der
+Haltung. Mit der Kurve hingen die lockeren Arme der Brust hinterher und drehten gegen sie im Median 8,8 statt 6,0 rad/s,
+und das Schwungbein kam später an, sodass die Figur bei 60 N s von vorn fiel. Eine Figur, die sich fängt, hält sofort
+mit der Kraft, die die Balance verlangt, eine, die fällt, wird sofort schlaff, und Box3D bekommt nur, was sich ändert.
+Ein Spiel setzt dafür `muscles` in den Motoren seiner Figur, die Demo hat den Schalter **Muskeln**.
+
+Standardmäßig sind die Muskeln aus, und die Gelenke tun bitgleich, was sie auf `active-ragdoll-24` taten. Gemessen an
+4 464 Treffern auf Brust und Bauch aus acht Richtungen mit 40 bis 132 N s, in drei Sätzen zu 1 488: Mit Muskeln fängt
+sich die Figur 3 644-mal, ohne 3 627-mal, und etwa jeder 30. Treffer geht anders aus, in beide Richtungen. Von 168
+leichten Treffern auf die Brust mit 40 bis 80 N s fällt einer statt zwei, bei 80 N s von vorn, die sie ohne Muskeln
+fängt, statt bei 66 N s von hinten und 80 N s von vorn rechts, und 100 N s von rechts lassen sie zwei Schritte statt
+einen versuchen, bevor sie fällt. Paarweise verglichen, jeder Treffer mit und ohne Muskeln, ruckt der Rumpf im Median
+gleich, bei Treffern ab 100 N s auf den Bauch um ein Fünftel weniger, auf die Brust um ein Sechstel mehr: Dort hält ihn
+die Bremskraft der gedehnten Muskeln härter auf. Die Gelenke der Arme rucken um 4 % mehr, Beine, Schritte und die Zeit
+bis zur Ruhe bleiben gleich. Weil weder das Fangen noch das Rucken eindeutig besser wird, bleibt der Schalter aus, bis
+das Auge in der Demo entschieden hat. Ein Update kostet für eine Figur, die sich fängt, mit Muskeln 4,7 µs pro Schritt,
+ohne 4,6 µs und auf `active-ragdoll-24` 4,7 µs, im Median aus fünf Läufen im Wechsel.
 
 **Füße auf dem Boden.** Die Füße eines stehenden Menschen der Bibliothek stehen auf dem Boden unter ihnen, nach Kapitel
 26.5 und 28.3 der Roadmap des Spiels, auf einer Stufe, an einem Hang und auf Schutt. Unter der Mitte jeder Sohle sucht
@@ -1238,9 +1268,13 @@ beim Einbinden nicht gebaut.
 | `strengthPerSpeed`, `fallStrength` | 0,1 pro m/s, 0,8 | Die Kraft wächst mit der mittleren Geschwindigkeit der Knochen bis `fallStrength`, wie in Overgrowth |
 | `stunTime` | 0 s | So viel schwächer ist ein Ragdoll nach einem Treffer oder einer Explosion, die Kraft kommt mit eins pro Sekunde zurück. Null behält die Kraft wie auf `ragdoll-11`. Bis `active-ragdoll-19` waren es 0,4 s, Overgrowth nimmt 0,9 s, dort fiele eine Figur aus dem Stand, ohne sich abzustützen |
 | `uprightTorque`, `uprightStiffness`, `uprightDampingRatio` | 250 N m, 1 500 N m pro rad, 1 | Hält das Becken einer Figur, die sich fängt, aufrecht gegen einen statischen Anker der Welt, mit höchstens diesem Drehmoment. Fällt sie, lässt es sofort los, null nimmt es weg |
+| `muscles` | aus | Die Gelenke ziehen mit genäherten Muskeln, siehe Muskeln. Aus nehmen sie die verlangte Kraft sofort und ziehen bei jeder Geschwindigkeit gleich stark |
+| `tenseTime`, `relaxTime` | 0,03 s, 0,08 s | Mit Muskeln: Zeitkonstanten, in denen ein Muskel die verlangte Kraft hinauf und hinab erreicht. Null folgt sofort |
+| `brakeStrength` | 1,5 | Mit Muskeln: So viel mehr hält ein Gelenk, das gegen seine Richtung gedreht wird, siehe `nbBoneDef::maxSpeed` |
 
 | Knochen (`nbBoneDef`) | Standard | Wirkung |
 | --- | --- | --- |
+| `maxSpeed` | 0 | Mit Muskeln: Höchstgeschwindigkeit des Gelenks in rad/s, je schneller es sich in seine Zugrichtung dreht, desto schwächer zieht es, nach der Kurve von Hill. Null zieht bei jeder Geschwindigkeit gleich. Der Mensch der Bibliothek: Rumpf 25 rad/s, Arme und Beine keine |
 | `flinch`, `flinchHertz`, `flinchDamping` | 0, 0 Hz, 1 | Eine eigene Feder, die den Knochen bei einem leichten Treffer um sein Gelenk schwingt, siehe Treffer je Körperpartie: `flinch` mal so schnell, wie der Stoß alles dreht, was er trägt, mit dieser Frequenz und Dämpfung, unter 1 schwingt er über und zurück. Null Hertz halten ihn an seinem Elternknochen. Der Mensch der Bibliothek: Hals 0,3, 2,5 Hz, 0,7, Kopf 0,3, 3,5 Hz, 0,5, Oberarm 0,6, 2,5 Hz, 0,5, Unterarm 0,6, 3 Hz, 0,5, Hand 0,5, 4 Hz, 0,6 |
 
 | Rig (`nbRigDef`) | Standard | Wirkung |
@@ -1969,7 +2003,10 @@ liegt wieder eine quer auf dem Schutt ihrer Mauer, das Becken 88 cm hoch, und wa
 Figuren liegt am Ende ebenso eine auf dem Schutt, das Becken 96 cm hoch, und die Phase, in der dort die Deckung bricht,
 kostet 0,13 statt 0,07 ms pro Schritt. In der Stadt mit Figuren stürzen 28 statt 33 Figuren, am Ende stehen 29 statt 27,
 und ein Bild kostet 7,7 statt 7,5 ms mit vier Threads und 16,0 statt 15,9 ms mit einem, im Mittel aus fünf und zwei
-Läufen im Wechsel. Alle Szenen ohne Figuren und die Ragdolls im Schutt enden bitgleich wie auf `active-ragdoll-23`.
+Läufen im Wechsel. Alle Szenen ohne Figuren und die Ragdolls im Schutt enden bitgleich wie auf `active-ragdoll-23`. Seit
+`active-ragdoll-25` können die Gelenke mit Muskeln ziehen, siehe Muskeln, standardmäßig aus: Alle Szenen enden bitgleich
+wie auf `active-ragdoll-24`, auch die mit Figuren, und Update und Box3D-Schritt kosten so viel wie vorher, in drei und
+zwei Läufen im Wechsel, mit Ausschlägen der VM in beide Richtungen.
 
 **Ragdolls im Schutt.** Danach stellt `nebenan_benchmark figures` 20 Figuren auf eine Platte über zwei Lagen aus 4 513
 Würfeln, wirft sie um und lässt sie liegen (`nbFigureDef::canGetUp` aus). Platte, Würfel und Ragdolls sind eine große
@@ -2061,7 +2098,7 @@ lange die Threads im Löser rechnen und worauf sie sonst warten.
 ## Tests und Benchmark
 
 ```sh
-build/bin/nebenan_test            # 109 Tests: Geometrie, Voronoi, Hüllen, Öffnungen, Stöße, Stützgraph, Etagen, Lastprüfung, Mauern, Schutt, Ruhe, Durchschlagen, Threads, Knoten, große Blöcke, Gelenke in Paketen und Gebieten, Suchbaum, Kontaktlisten, Streaming, Stream, Laden im Hintergrund, Speichern und Zurückholen, gemeinsamer Thread-Pool, Ruhe-Prüfung auf den Workern, Schritt auf eigenem Thread, Schritte pro Bild, Takt der Physik, Wahl der Threads, Profil und Skalierung, Figuren, Ausgleichsschritt, Abfangen, rudernde Arme, Füße auf dem Boden, Platz zum Aufstehen, Ragdoll durch die Wand, dünne Bretter, Determinismus …
+build/bin/nebenan_test            # 110 Tests: Geometrie, Voronoi, Hüllen, Öffnungen, Stöße, Stützgraph, Etagen, Lastprüfung, Mauern, Schutt, Ruhe, Durchschlagen, Threads, Knoten, große Blöcke, Gelenke in Paketen und Gebieten, Suchbaum, Kontaktlisten, Streaming, Stream, Laden im Hintergrund, Speichern und Zurückholen, gemeinsamer Thread-Pool, Ruhe-Prüfung auf den Workern, Schritt auf eigenem Thread, Schritte pro Bild, Takt der Physik, Wahl der Threads, Profil und Skalierung, Figuren, Ausgleichsschritt, Abfangen, rudernde Arme, Muskeln, Füße auf dem Boden, Platz zum Aufstehen, Ragdoll durch die Wand, dünne Bretter, Determinismus …
 build/bin/nebenan_benchmark 4     # Zahl = Threads für Bruch und Physik, 0 = so viele, wie ein Spiel nähme
 build/bin/nebenan_benchmark scaling   # die Städte unter Beschuss mit 1, 2, 4 … Threads und die Tabelle der Skalierung
 build/bin/nebenan_benchmark rates     # die Städte unter Beschuss mit 30, 60 und 120 Hz, was eine simulierte Sekunde kostet
@@ -2084,7 +2121,7 @@ src/
   hull_builder.c    Box3D-Hüllen direkt aus der Polyeder-Topologie
   world.c           Welt, Bruchstücke, Verbindungen, Stützgraph, Etagen, Lastprüfung, Trümmer, Ruhe und Schutt, Events
   destructible.c    zerstörbare Objekte und Vorzerlegung
-  figure.c          Figuren: Knochen, Gelenke, Stand, aktiver Ragdoll, Treffer, Aufstehen
+  figure.c          Figuren: Knochen, Gelenke, Muskeln, Stand, aktiver Ragdoll, Treffer, Aufstehen
   figure_clips.c    die Clips eines Menschen, aus Schlüsselposen mit Zwei-Knochen-IK
   figure_balance.c  Abfangen nach einem harten Treffer: Schwerpunkt, Capture Point und Schritte wie auf ragdoll-11, rudernde Arme
   impact.c          Einschläge und Auswurf der Splitter
@@ -2157,6 +2194,10 @@ Nach Änderungen an `demo/shaders/scene.glsl` die Shader neu erzeugen, im Ordner
   Gelenk von Box3D. Ein Spiel, das es rein physikalisch will, setzt `uprightTorque` auf null. Dann fängt sich der Mensch
   der Bibliothek kaum noch: Auf die Brust getroffen fällt er aus allen vier Richtungen schon bei 50 N s, auch mit
   schwingenden Armen.
+- Die Muskeln (`nbFigureMotors::muscles`) sind eine Näherung auf der Ebene der Gelenke und standardmäßig aus. Ihre
+  Kraft wirkt über die Feder eines Gelenks, deren Drehmomentgrenze auch ihre Dämpfung begrenzt, so nimmt die Kurve von
+  Hill einem schnell gedrehten Gelenk auch Dämpfung. Kraft nach Winkel, Bänder, Sehnen und eine Reaktionszeit fehlen
+  noch, siehe F45 der Roadmap.
 - Ein Ragdoll, der mit dem Becken höher als 60 cm über dem Boden ruht, ohne mit beiden Füßen auf Boden zu stehen, etwa
   quer über einem Balken, findet keinen Boden unter dem Becken und steht nicht auf (`nb_waitGround`). Steht er auf
   seinen Füßen, wacht er seit `active-ragdoll-21` stehend auf, siehe Aufwachen im Stand, aber nur, wenn Rumpf und Kopf
