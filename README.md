@@ -1896,7 +1896,9 @@ pro Schritt 6,5 statt 4,1 Figuren dynamisch, und am Ende liegen 2: eine wartet i
 lehnt an ihr, siehe Grenzen. Das Update kostet in dieser Phase 0,19 statt 0,16 ms pro Schritt mit vier Threads, 0,22
 statt 0,14 ms mit einem, der Box3D-Schritt 0,47 statt 0,33 ms, im Median aus sechs Läufen im Wechsel mit
 `active-ragdoll-19`. Im Stand, beim Zucken, beim Sturz und mit 10 Figuren kostet alles so viel wie vorher, im Rahmen der
-Streuung. Die Figuren enden weiter mit 1 und 4 Threads mit demselben Hash.
+Streuung. Die Figuren enden weiter mit 1 und 4 Threads mit demselben Hash. Seit `active-ragdoll-21` wacht die Figur, die
+an ihrer Mauer hängt, stehend auf, siehe Aufwachen im Stand, und am Ende stehen 49, alle übrigen Szenen enden bitgleich
+wie auf `active-ragdoll-20`.
 
 **Ragdolls im Schutt.** Danach stellt `nebenan_benchmark figures` 20 Figuren auf eine Platte über zwei Lagen aus 4 513
 Würfeln, wirft sie um und lässt sie liegen (`nbFigureDef::canGetUp` aus). Platte, Würfel und Ragdolls sind eine große
