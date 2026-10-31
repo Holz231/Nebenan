@@ -1083,6 +1083,13 @@ typedef struct nbBoneDef
 	/// Scales the damping ratio of the motors for this joint, 1 by default
 	float damping;
 
+	/// With nbFigureMotors::muscles, how fast the muscles of this joint can turn it, in radians per second, after the
+	/// muscle model of Hill (1938): the faster the joint turns the way they pull, the less they pull, nothing at this
+	/// speed, and turned against them they hold up to nbFigureMotors::brakeStrength times as much. Zero, the default, puts
+	/// no limit on the speed. The humanoid of the library has 25 rad/s on the joints of its trunk, neck and head and none on
+	/// its limbs.
+	float maxSpeed;
+
 	/// How the bone swings from a hit while the figure stands, after the roadmap of the game, 26.4 and 26.5: a spring of
 	/// its own turns it about its joint, at flinchHertz cycles per second with the damping ratio flinchDamping, from 0.05
 	/// to 1, below 1 it swings past its pose and back. A hit on the bone or on a bone it carries turns it flinch times as
@@ -1198,6 +1205,22 @@ typedef struct nbFigureMotors
 	/// The most torque of a joint at strength 1 in newton meters, times the strength of its bone. Beyond it the joint gives
 	/// way.
 	float maxTorque;
+
+	/// The joints pull with muscles, after the model of Hill (1938): the strength asked of them tenses and relaxes with a
+	/// delay, see tenseTime, and a joint with a top speed pulls the less the faster it turns, see nbBoneDef::maxSpeed. Off
+	/// by default: the joints then take the strength asked of them at once and pull as hard at any speed. Measured on 4 464
+	/// hits on the chest and the belly of the humanoid of the library, with muscles it caught as many, its trunk jolted a
+	/// fifth less from hard hits on the belly and a sixth more from hard hits on the chest, see the README.
+	bool muscles;
+
+	/// With muscles, the strength asked of the joints is reached as real muscles tense and relax, toward more within about
+	/// tenseTime seconds and toward less within about relaxTime, the time constants of a first order lag. Zero follows at
+	/// once. A figure that catches itself and one that falls take the strength the balance asks at once.
+	float tenseTime;
+	float relaxTime;
+
+	/// With muscles, how much more a muscle holds while its joint turns against it than at rest, see nbBoneDef::maxSpeed
+	float brakeStrength;
 
 	/// Strength per meter per second of the average speed of the bones, up to fallStrength: a figure that flies holds
 	/// its pose, one that slows down goes slack and lies as it fell

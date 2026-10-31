@@ -679,6 +679,175 @@ static int FigureCatchScanTest( void )
 	return 0;
 }
 
+// The torque limit of the spring of the joint of a bone, and whether the spring is on. False for a joint without a spring.
+static bool MuscleTorque( nbFigureId figure, int bone, float* limit, bool* on )
+{
+	b3JointId joint = nbFigure_GetJoint( figure, bone );
+	if ( B3_IS_NULL( joint ) )
+	{
+		return false;
+	}
+	switch ( b3Joint_GetType( joint ) )
+	{
+		case b3_revoluteJoint:
+			*limit = b3RevoluteJoint_GetMaxSpringTorque( joint );
+			*on = b3RevoluteJoint_IsSpringEnabled( joint );
+			return true;
+		case b3_sphericalJoint:
+			*limit = b3SphericalJoint_GetMaxSpringTorque( joint );
+			*on = b3SphericalJoint_IsSpringEnabled( joint );
+			return true;
+		default:
+			return false;
+	}
+}
+
+// A figure with muscles, see nbFigureMotors::muscles, hit on its chest from the front while it stands, and the hash of
+// the transforms of its bones after four seconds
+static uint32_t MuscleCatch( int threadCount, float impulse )
+{
+	FigureScene scene;
+	CreateFigureScene( &scene, threadCount );
+	nbFigureDef def = nbDefaultFigureDef();
+	def.rig = &scene.rig;
+	def.standHeight = scene.standHeight;
+	def.motors.muscles = true;
+	nbFigureId figure = nbCreateFigure( scene.world, &def );
+	StepFigures( &scene, 30 );
+	HitChest( figure, 1, (b3Vec3){ 0.0f, 0.0f, -impulse } );
+	StepFigures( &scene, 240 );
+
+	uint32_t hash = 2166136261u;
+	b3WorldTransform transforms[nb_humanoidBoneCount];
+	int count = nbFigure_GetBoneTransforms( figure, transforms, nb_humanoidBoneCount );
+	for ( int i = 0; i < count; ++i )
+	{
+		const uint8_t* bytes = (const uint8_t*)( transforms + i );
+		for ( size_t b = 0; b < sizeof( b3WorldTransform ); ++b )
+		{
+			hash = ( hash ^ bytes[b] ) * 16777619u;
+		}
+	}
+	DestroyFigureScene( &scene );
+	return hash;
+}
+
+// The throw of 90 N s on a figure with muscles ends in the same bits with one thread and with four, on every platform
+#define NB_EXPECTED_MUSCLE_HASH 0x5eed85f0u
+
+// The muscles, see nbFigureMotors::muscles and nbUpdateMuscles. A figure with muscles hit while it stands catches itself
+// with the strength the balance asks for at once: every joint of its trunk and its legs at the full torque of the motors,
+// its arms loose with a part of it. While it catches itself the joints of its trunk pull less while they turn the way
+// they pull and more while they are turned against it, up to the braking strength, its legs keep the full torque, which
+// they have no top speed for. Knocked down it goes slack at once, and as a ragdoll its muscles follow the strength of its
+// flight as a lag, without overshooting it. It gives the same bits with any number of threads.
+static int FigureMuscleTest( void )
+{
+	const nbFigureMotors motors = nbDefaultFigureMotors();
+	ENSURE( motors.muscles == false );
+
+	FigureScene scene;
+	CreateFigureScene( &scene, 1 );
+	nbFigureDef def = nbDefaultFigureDef();
+	def.rig = &scene.rig;
+	def.standHeight = scene.standHeight;
+	def.motors.muscles = true;
+	nbFigureId figure = nbCreateFigure( scene.world, &def );
+	StepFigures( &scene, 30 );
+	ENSURE( HitChest( figure, 1, (b3Vec3){ 0.0f, 0.0f, -70.0f } ) );
+	for ( int i = 1; i < nb_humanoidBoneCount; ++i )
+	{
+		float limit = 0.0f;
+		bool on = false;
+		if ( MuscleTorque( figure, i, &limit, &on ) )
+		{
+			float full = motors.maxTorque * scene.bones[i].strength;
+			bool arm = nb_humanoidUpperArmLeft <= i && i < nb_humanoidThighLeft;
+			ENSURE( on );
+			ENSURE( arm ? 0.0f < limit && limit < full : limit == full );
+		}
+	}
+
+	bool slower = false;
+	bool harder = false;
+	int steps = 0;
+	while ( nbFigure_GetState( figure ) == nb_figureBalancing && steps < 600 )
+	{
+		StepFigures( &scene, 1 );
+		steps += 1;
+		for ( int i = 1; i < nb_humanoidBoneCount; ++i )
+		{
+			float limit = 0.0f;
+			bool on = false;
+			if ( MuscleTorque( figure, i, &limit, &on ) )
+			{
+				float full = motors.maxTorque * scene.bones[i].strength;
+				ENSURE( on );
+				if ( i < nb_humanoidUpperArmLeft )
+				{
+					slower = slower || limit < full;
+					harder = harder || limit > full;
+					ENSURE( 0.0f <= limit && limit <= motors.brakeStrength * full );
+				}
+				else
+				{
+					ENSURE( i < nb_humanoidThighLeft ? limit <= full : limit == full );
+				}
+			}
+		}
+	}
+	printf( "  70 N s from the front: caught after %.2f s, the trunk pulled with less and with more than its torque at rest\n",
+			(float)steps / 60.0f );
+	ENSURE( nbFigure_GetState( figure ) == nb_figureAnimated );
+	ENSURE( slower && harder );
+
+	// Knocked down it goes slack at once, then the muscles of a forearm follow the strength of the ragdoll
+	nbFigure_Knockdown( figure );
+	for ( int i = 1; i < nb_humanoidBoneCount; ++i )
+	{
+		float limit = 0.0f;
+		bool on = true;
+		if ( MuscleTorque( figure, i, &limit, &on ) )
+		{
+			ENSURE( on == false );
+		}
+	}
+	float full = motors.maxTorque * scene.bones[nb_humanoidForearmLeft].strength;
+	float previous = 0.0f;
+	int lagged = 0;
+	for ( int step = 0; step < 300 && nbFigure_GetState( figure ) == nb_figureRagdoll; ++step )
+	{
+		StepFigures( &scene, 1 );
+		nbFigureInfo info = nbFigure_GetInfo( figure );
+		if ( info.state != nb_figureRagdoll )
+		{
+			break;
+		}
+		float limit = 0.0f;
+		bool on = false;
+		ENSURE( MuscleTorque( figure, nb_humanoidForearmLeft, &limit, &on ) );
+		float asked = info.strength >= 0.01f ? info.strength : 0.0f;
+		float activation = on ? limit / full : 0.0f;
+		if ( on && previous > 0.0f )
+		{
+			ENSURE( ( previous - asked ) * ( activation - asked ) >= 0.0f );
+			ENSURE( fabsf( activation - asked ) <= fabsf( previous - asked ) + 1.0e-6f );
+			lagged += fabsf( activation - asked ) > 0.01f ? 1 : 0;
+		}
+		previous = activation;
+	}
+	printf( "  knocked down: the forearm behind the strength of the ragdoll by more than 0.01 in %d updates\n", lagged );
+	ENSURE( lagged > 0 );
+	DestroyFigureScene( &scene );
+
+	uint32_t one = MuscleCatch( 1, 90.0f );
+	uint32_t four = MuscleCatch( 4, 90.0f );
+	printf( "  muscle hash: 0x%08x\n", one );
+	ENSURE( one == four );
+	ENSURE( one == NB_EXPECTED_MUSCLE_HASH );
+	return 0;
+}
+
 // A hard hit knocks the figure down: its bones become dynamic with the velocities they had and the hit acts once, so their
 // momentum is the impulse. It falls, lies still, gets up with the clip of the side it lies on and stands animated again,
 // without a jump of any bone. Hit from the front it lies on its back, from behind on its front.
@@ -1911,6 +2080,7 @@ int FigureTest( void )
 	RUN_TEST( FigureCatchTest );
 	RUN_TEST( FigureRowTest );
 	RUN_TEST( FigureCatchScanTest );
+	RUN_TEST( FigureMuscleTest );
 	RUN_TEST( FigureKnockdownTest );
 	RUN_TEST( FigureGetUpRoomTest );
 	RUN_TEST( FigureRoomTest );

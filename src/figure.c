@@ -36,8 +36,30 @@
 #define NB_SPRING_TORQUE_LIMITS 0
 #endif
 
-// Below this strength the springs of a ragdoll are off
+// Below this strength or activation of the muscles the springs of the joints are off
 #define NB_MIN_STRENGTH 0.01f
+
+// The muscles, see nbFigureMotors::muscles and nbUpdateMuscles: their time constants to tense and to relax, in seconds,
+// and how much more they hold while their joint turns against them. Measured on 4 464 hits on the chest and the belly of
+// the humanoid from eight directions, see "Muskeln" in docs/Optimierungen.md.
+#define NB_TENSE_TIME 0.03f
+#define NB_RELAX_TIME 0.08f
+#define NB_BRAKE_STRENGTH 1.5f
+
+// Closer than this the activation of a muscle takes the strength asked of it, it would only creep on in the last bits
+#define NB_ACTIVATION_SNAP 1.0e-4f
+
+// The curve of Hill (1938): a muscle that shortens at a part v of its top speed pulls (1 - v) / (1 + 4 v) of its
+// strength, and one stretched at a part x pulls more, x / (x + 0.05) of the way to its braking strength
+#define NB_HILL_CURVE 4.0f
+#define NB_HILL_BRAKE_RISE 0.05f
+
+// How fast the muscles of the humanoid turn a joint of its trunk, neck or head, in radians per second, see
+// nbBoneDef::maxSpeed. The limbs have no top speed: their muscles act through the spring of the joint, whose torque limit
+// bounds its damping and its hold on the pose as well. With the curve of Hill the loose arms fell behind the chest and
+// swung faster against it, and the swinging leg reached its foothold later, and the figure fell from 60 N s on its chest
+// from the front.
+#define NB_TRUNK_SPEED 25.0f
 
 // The damping of the bones of a ragdoll that lies still, in 1/s, reached after two seconds, like the damping of
 // Overgrowth that rises by half per second of rest: Box3D lets it fall asleep sooner, and it lies without shivering
@@ -174,6 +196,7 @@ nbBoneDef nbDefaultBoneDef( void )
 	def.strength = 1.0f;
 	def.stiffness = 1.0f;
 	def.damping = 1.0f;
+	def.maxSpeed = 0.0f;
 	def.flinch = 0.0f;
 	def.flinchHertz = 0.0f;
 	def.flinchDamping = 1.0f;
@@ -196,6 +219,10 @@ nbFigureMotors nbDefaultFigureMotors( void )
 	motors.stiffness = 800.0f;
 	motors.dampingRatio = 1.0f;
 	motors.maxTorque = 150.0f;
+	motors.muscles = false;
+	motors.tenseTime = NB_TENSE_TIME;
+	motors.relaxTime = NB_RELAX_TIME;
+	motors.brakeStrength = NB_BRAKE_STRENGTH;
 	motors.strengthPerSpeed = 0.1f;
 	motors.fallStrength = 0.8f;
 	motors.stunTime = 0.0f;
@@ -419,6 +446,12 @@ float nbMakeHumanoidBones( float height, float mass, nbBoneDef* bones, int capac
 		footDef.strength = 0.8f;
 		footDef.damping = 3.0f;
 		bones[foot] = footDef;
+	}
+
+	// The muscles of the trunk pull the less the faster it turns, those of the limbs do not, see NB_TRUNK_SPEED
+	for ( int i = 1; i < nb_humanoidUpperArmLeft; ++i )
+	{
+		bones[i].maxSpeed = NB_TRUNK_SPEED;
 	}
 
 	// Hip 3 cm under the pelvis origin, thigh, shin and the sole 6 cm under the ankle
@@ -1087,44 +1120,164 @@ static bool nbCapsuleBlocked( const nbWorld* world, int index, b3Pos origin, b3V
 //----------------------------------------------------------------------------------------------------------------------
 // States
 
-// The spring of the joint of a bone at a strength, see nbSetStrength
+// Ask the muscles of the joint of a bone for a strength, see nbSetStrength and nbUpdateMuscles
 void nbSetBoneSpring( nbFigure* f, int index, float strength, bool enable )
 {
-	const nbBone* bone = f->bones + index;
-	float hertz = sqrtf( b3MaxFloat( strength, 0.0f ) ) * bone->hertz;
-	float dampingRatio = b3MaxFloat( 0.0f, f->def.motors.dampingRatio ) * bone->damping;
-	float maxTorque = b3MaxFloat( 0.0f, strength * f->def.motors.maxTorque * bone->strength );
-	NB_UNUSED( maxTorque );
-	switch ( bone->joint )
+	f->bones[index].drive = enable ? b3MaxFloat( strength, 0.0f ) : 0.0f;
+}
+
+// The spring of the joint of a bone at the activation of its muscles, its torque limit times a factor, or off. Box3D only
+// hears what changed: a muscle that holds still asks nothing of it.
+static void nbApplyMuscles( nbFigure* f, int index, bool on, float factor )
+{
+	nbBone* bone = f->bones + index;
+	NB_ASSERT( bone->joint == nb_hingeJoint || bone->joint == nb_ballJoint );
+	bool hinge = bone->joint == nb_hingeJoint;
+	if ( on != bone->springOn )
 	{
-		case nb_hingeJoint:
-			b3RevoluteJoint_EnableSpring( bone->jointId, enable );
-			if ( enable )
-			{
-				b3RevoluteJoint_SetSpringHertz( bone->jointId, hertz );
-				b3RevoluteJoint_SetSpringDampingRatio( bone->jointId, dampingRatio );
+		if ( hinge )
+		{
+			b3RevoluteJoint_EnableSpring( bone->jointId, on );
+		}
+		else
+		{
+			b3SphericalJoint_EnableSpring( bone->jointId, on );
+		}
+		bone->springOn = on;
+	}
+	if ( on == false )
+	{
+		return;
+	}
+
+	float hertz = sqrtf( b3MaxFloat( bone->activation, 0.0f ) ) * bone->hertz;
+	if ( hertz != bone->springHertz )
+	{
+		if ( hinge )
+		{
+			b3RevoluteJoint_SetSpringHertz( bone->jointId, hertz );
+		}
+		else
+		{
+			b3SphericalJoint_SetSpringHertz( bone->jointId, hertz );
+		}
+		bone->springHertz = hertz;
+	}
+
+	float dampingRatio = b3MaxFloat( 0.0f, f->def.motors.dampingRatio ) * bone->damping;
+	if ( dampingRatio != bone->springDamping )
+	{
+		if ( hinge )
+		{
+			b3RevoluteJoint_SetSpringDampingRatio( bone->jointId, dampingRatio );
+		}
+		else
+		{
+			b3SphericalJoint_SetSpringDampingRatio( bone->jointId, dampingRatio );
+		}
+		bone->springDamping = dampingRatio;
+	}
+
 #if NB_SPRING_TORQUE_LIMITS
-				b3RevoluteJoint_SetMaxSpringTorque( bone->jointId, maxTorque );
+	float maxTorque = b3MaxFloat( 0.0f, factor * bone->activation * f->def.motors.maxTorque * bone->strength );
+	if ( maxTorque != bone->springTorque )
+	{
+		if ( hinge )
+		{
+			b3RevoluteJoint_SetMaxSpringTorque( bone->jointId, maxTorque );
+		}
+		else
+		{
+			b3SphericalJoint_SetMaxSpringTorque( bone->jointId, maxTorque );
+		}
+		bone->springTorque = maxTorque;
+	}
+#else
+	NB_UNUSED( factor );
 #endif
-			}
-			break;
-		case nb_ballJoint:
-			b3SphericalJoint_EnableSpring( bone->jointId, enable );
-			if ( enable )
-			{
-				b3SphericalJoint_SetSpringHertz( bone->jointId, hertz );
-				b3SphericalJoint_SetSpringDampingRatio( bone->jointId, dampingRatio );
+}
+
+// How strong the muscles of a joint pull for the speed it turns at, after the curve of Hill (1938): the speed of the
+// joint the way its spring pulled in the step before, positive while the muscles shorten. They pull the less the faster
+// they shorten, nothing at the top speed of the joint, and more while they are stretched, up to the braking strength.
+static float nbMuscleSpeedFactor( nbFigure* f, nbBone* bone, float timeStep )
+{
 #if NB_SPRING_TORQUE_LIMITS
-				b3SphericalJoint_SetMaxSpringTorque( bone->jointId, maxTorque );
+	if ( f->def.motors.muscles == false || bone->maxSpeed <= 0.0f )
+	{
+		return 1.0f;
+	}
+
+	float along = 0.0f;
+	if ( bone->joint == nb_hingeJoint )
+	{
+		float angle = b3RevoluteJoint_GetAngle( bone->jointId );
+		float speed = timeStep > 0.0f ? ( angle - bone->hingeAngle ) / timeStep : 0.0f;
+		bone->hingeAngle = angle;
+		float torque = b3RevoluteJoint_GetSpringTorque( bone->jointId );
+		along = torque > 0.0f ? speed : ( torque < 0.0f ? -speed : 0.0f );
+	}
+	else
+	{
+		b3Vec3 relative =
+			b3Sub( b3Body_GetAngularVelocity( bone->bodyId ), b3Body_GetAngularVelocity( f->bones[bone->parent].bodyId ) );
+		b3Vec3 torque = b3SphericalJoint_GetSpringTorque( bone->jointId );
+		float length = b3Length( torque );
+		along = length > 1.0e-6f ? b3Dot( relative, torque ) / length : 0.0f;
+	}
+
+	float v = along / bone->maxSpeed;
+	if ( v >= 0.0f )
+	{
+		return b3MaxFloat( 0.0f, ( 1.0f - v ) / ( 1.0f + NB_HILL_CURVE * v ) );
+	}
+	float x = -v;
+	return 1.0f + ( b3MaxFloat( f->def.motors.brakeStrength, 1.0f ) - 1.0f ) * x / ( x + NB_HILL_BRAKE_RISE );
+#else
+	NB_UNUSED( f );
+	NB_UNUSED( bone );
+	NB_UNUSED( timeStep );
+	return 1.0f;
 #endif
-			}
-			break;
-		default:
-			break;
+}
+
+// The muscles of every joint of a figure with dynamic bones, in every update: their activation follows the strength
+// asked of them as a first order lag, with a time to tense and one to relax, implicit so it never overshoots, the spring
+// of the joint stays on while they are active, its stiffness and torque limit rise with the activation, and the torque
+// limit follows the speed of the joint, see nbMuscleSpeedFactor. Without nbFigureMotors::muscles the activation is the
+// strength asked and the torque limit holds at any speed.
+static void nbUpdateMuscles( nbFigure* f, float timeStep )
+{
+	const nbFigureMotors* motors = &f->def.motors;
+	bool motorsOn = motors->stiffness > 0.0f && motors->maxTorque > 0.0f;
+	float tense = motors->muscles ? b3MaxFloat( motors->tenseTime, 0.0f ) : 0.0f;
+	float relax = motors->muscles ? b3MaxFloat( motors->relaxTime, 0.0f ) : 0.0f;
+	for ( int i = 1; i < f->boneCount; ++i )
+	{
+		nbBone* bone = f->bones + i;
+		if ( bone->joint == nb_fixedJoint )
+		{
+			continue;
+		}
+
+		float time = bone->drive > bone->activation ? tense : relax;
+		if ( time > 0.0f && timeStep > 0.0f )
+		{
+			float rate = timeStep / time;
+			bone->activation = ( bone->activation + rate * bone->drive ) / ( 1.0f + rate );
+		}
+		if ( fabsf( bone->activation - bone->drive ) < NB_ACTIVATION_SNAP || time <= 0.0f || timeStep <= 0.0f )
+		{
+			bone->activation = bone->drive;
+		}
+
+		float factor = nbMuscleSpeedFactor( f, bone, timeStep );
+		nbApplyMuscles( f, i, motorsOn && bone->activation >= NB_MIN_STRENGTH, factor );
 	}
 }
 
-// Set the springs of a ragdoll to a strength
+// Ask the muscles of a figure with dynamic bones for a strength, or let them relax. They follow in the update, see
+// nbUpdateMuscles, or at once, see nbActivateAtOnce.
 static void nbSetStrength( nbFigure* f, float strength )
 {
 	bool enable = strength >= NB_MIN_STRENGTH && f->def.motors.stiffness > 0.0f && f->def.motors.maxTorque > 0.0f;
@@ -1138,6 +1291,28 @@ static void nbSetStrength( nbFigure* f, float strength )
 		nbSetBoneSpring( f, i, strength, enable );
 	}
 	f->springs = enable;
+}
+
+// The muscles of a figure take the strength asked of them at once: one that catches itself holds with the strength the
+// balance asks for, and one that falls goes slack, see nbBeginBalancing and nbFall
+static void nbActivateAtOnce( nbFigure* f )
+{
+	bool motorsOn = f->def.motors.stiffness > 0.0f && f->def.motors.maxTorque > 0.0f;
+	for ( int i = 1; i < f->boneCount; ++i )
+	{
+		nbBone* bone = f->bones + i;
+		if ( bone->joint == nb_fixedJoint )
+		{
+			continue;
+		}
+
+		bone->activation = bone->drive;
+		if ( bone->joint == nb_hingeJoint )
+		{
+			bone->hingeAngle = b3RevoluteJoint_GetAngle( bone->jointId );
+		}
+		nbApplyMuscles( f, i, motorsOn && bone->activation >= NB_MIN_STRENGTH, 1.0f );
+	}
 }
 
 // Drive the joints of a ragdoll to a pose, within their limits
@@ -1238,6 +1413,7 @@ static void nbFall( nbWorld* world, nbFigure* f, bool stunned )
 		f->shiftLeft = 0.0f;
 		f->springs = true;
 		nbSetStrength( f, 0.0f );
+		nbActivateAtOnce( f );
 		f->damping = -1.0f;
 		nbSetDamping( f, 0.0f );
 	}
@@ -1389,6 +1565,7 @@ static void nbBeginBalancing( nbWorld* world, nbFigure* f )
 	f->damping = -1.0f;
 	nbSetDamping( f, 0.0f );
 	nbBeginBalance( world, index, f );
+	nbActivateAtOnce( f );
 	nbSetJointTargets( f, pose );
 	b3Body_SetAwake( f->bones[0].bodyId, true );
 	nbReadVelocities( f );
@@ -3148,6 +3325,7 @@ static void nbUpdateBalancing( nbWorld* world, int index, nbFigure* f, float tim
 	}
 
 	nbSetJointTargets( f, f->pose );
+	nbUpdateMuscles( f, timeStep );
 	f->speed = b3Length( nbAverageVelocity( f ) );
 }
 
@@ -3199,6 +3377,7 @@ static void nbUpdateRagdoll( nbWorld* world, int index, nbFigure* f, float timeS
 		}
 		nbSetJointTargets( f, pose );
 		nbSetStrength( f, f->strength );
+		nbUpdateMuscles( f, timeStep );
 
 		// Lying still it slows down and falls asleep
 		f->restTime = f->speed < f->def.restSpeed ? f->restTime + timeStep : 0.0f;
@@ -3477,6 +3656,14 @@ nbFigureId nbCreateFigure( nbWorldId worldId, const nbFigureDef* def )
 		bone->strength = boneDef->strength;
 		bone->stiffness = b3MaxFloat( 0.0f, boneDef->stiffness );
 		bone->damping = b3MaxFloat( 0.0f, boneDef->damping );
+		bone->maxSpeed = b3MaxFloat( 0.0f, boneDef->maxSpeed );
+		bone->drive = 0.0f;
+		bone->activation = 0.0f;
+		bone->springOn = false;
+		bone->springHertz = -1.0f;
+		bone->springDamping = -1.0f;
+		bone->springTorque = -1.0f;
+		bone->hingeAngle = 0.0f;
 		bone->mass = b3MaxFloat( boneDef->mass, 1.0e-3f );
 		bone->shape = boneDef->shape;
 		bone->center = boneDef->center;

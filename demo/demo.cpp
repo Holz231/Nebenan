@@ -465,13 +465,15 @@ struct App
 	// The houses of the town in the order of TownHousePosition, for the demolition
 	std::vector<nbDestructibleId> townHouses;
 
-	// The figures of the scene with figures and the bones of their rig, to draw them, how hard the rifle hits a figure, and
-	// what the overlay shows of them: what each does, and the pose each goes for
+	// The figures of the scene with figures and the bones of their rig, to draw them, how hard the rifle hits a figure,
+	// what the overlay shows of them: what each does, and the pose each goes for, and whether they pull with muscles, see
+	// nbFigureMotors::muscles, from the next load of the scene
 	std::vector<FigureVisual> figures;
 	nbBoneDef figureBones[nb_humanoidBoneCount] = {};
 	float figureHitImpulse = 60.0f;
 	bool showFigureStates = true;
 	bool showFigureTargets = false;
+	bool figureMuscles = false;
 
 	// The collisions of figures with walls the library reported, see nbEvents::collisions, and the last of them
 	int figureCollisions = 0;
@@ -1266,6 +1268,7 @@ static nbFigureDef MakeFigureDef( App& app, nbRigDef* rig )
 	nbFigureDef def = nbDefaultFigureDef();
 	def.rig = rig;
 	def.standHeight = standHeight;
+	def.motors.muscles = app.figureMuscles;
 	return def;
 }
 
@@ -2037,6 +2040,18 @@ static void DrawUi( App& app )
 		{
 			ImGui::SetTooltip( "Zeigt als Linien, wohin jede Figur ihre Knochen bringen will: stehend und beim\nAufstehen die nächste "
 							   "Haltung ihres Clips, als Ragdoll die Haltung, zu der\nihre Gelenke ziehen, auf ihrem Becken." );
+		}
+		ImGui::SameLine();
+		if ( ImGui::Checkbox( "Muskeln", &app.figureMuscles ) )
+		{
+			LoadScene( app, app.scene );
+		}
+		if ( ImGui::IsItemHovered() )
+		{
+			ImGui::SetTooltip( "Die Gelenke ziehen mit Muskeln: Sie spannen sich in etwa 30 ms an und in 80 ms ab,\nund der Rumpf "
+							   "zieht umso schwächer, je schneller er sich dreht, gegen seine Richtung\ngedreht bis 1,5-mal so stark. "
+							   "Lädt die Szene neu. Gemessen fängt sich die Figur\ndamit gleich oft, ihr Rumpf ruckt bei harten "
+							   "Treffern auf den Bauch weniger, auf die\nBrust mehr. Zum Vergleich mit dem Auge an- und ausschalten." );
 		}
 	}
 

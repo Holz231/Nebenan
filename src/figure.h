@@ -53,6 +53,18 @@ typedef struct nbBone
 	// The spring of the joint at strength 1 in cycles per second, from the inertia of the two bones when the figure fell
 	float hertz;
 
+	// The muscles of the joint, see nbUpdateMuscles: how fast they can turn it, the strength the figure asks of them, how
+	// far they are activated, whether the spring of the joint is on, the stiffness, damping ratio and torque limit it was
+	// last given, none at first, and the angle of a hinge in the update before
+	float maxSpeed;
+	float drive;
+	float activation;
+	bool springOn;
+	float springHertz;
+	float springDamping;
+	float springTorque;
+	float hingeAngle;
+
 	// The collision shape in the frame of the bone, see nbBoneDef
 	nbBoneShape shape;
 	b3Vec3 center;
@@ -379,7 +391,8 @@ b3Quat nbRotationFromAxes( b3Vec3 x, b3Vec3 y );
 // two bodies about the softest axis of the joint frame of body B, its z axis alone for a hinge
 float nbJointSpringHertz( b3BodyId bodyA, b3BodyId bodyB, b3Quat frameB, bool hingeOnly, float stiffness );
 
-// Set the spring of the joint of a bone to a strength of the motors, see nbFigureMotors, or switch it off
+// Ask the muscles of the joint of a bone for a strength of the motors, see nbFigureMotors, or let them relax. They follow
+// in the update, see nbUpdateMuscles.
 void nbSetBoneSpring( nbFigure* f, int index, float strength, bool enable );
 
 // Balance, see figure_balance.c. Can the figure catch itself, the humanoid of the library? The legs at rest, at creation.
