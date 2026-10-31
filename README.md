@@ -32,7 +32,9 @@ gelöscht. Kein Staub, keine Schatten: Jede Millisekunde geht in die Zerstörung
   Schwerpunkt fließen über die Verbindungen zu den Ankern, Verbindungen brechen unter Druck und Biegung. Eine Mauer,
   der man den Fuß wegschießt, gibt nach und kommt herunter, und ihre großen Teile brechen, wo sie hart aufschlagen
 - Kollisionsschaden: Kanonenkugeln und herabfallende Trümmer beschädigen, was sie treffen. Was ein Einsturz
-  herunterbringt, beschädigt nichts
+  herunterbringt, beschädigt nichts. Ein Ragdoll, der gegen eine Wand fliegt, bricht nach seiner Energie und dem
+  Material durch oder prallt ab, mit einem Einschlag pro Teil der Wand und Schritt. Jeder Aufprall meldet sich als
+  Ereignis, mit dem, was er traf und was brach
 - Figuren nach dem Vorbild von Overgrowth: Eine Figur steht animiert, ihre Knochen sind kinematische Box3D-Körper, die
   ihrem Clip folgen, ihre Füße auf dem Boden unter ihnen, auch an Hängen und auf Schutt. Einen Treffer, den sie über
   ihren Füßen nicht abfangen kann, fängt sie mit Schritten ab, der Standfuß bleibt dabei stehen. Ein harter Treffer,
@@ -230,11 +232,14 @@ Bildzeit.
   Unberührte Häuser weiter weg gehen wieder, beschädigte gehen samt Schutt in den Speicher der Demo, sobald alles an
   ihnen ruht, und kommen von dort zurück. Das Menü zeigt, wie viele Häuser geladen und wie viele gespeichert sind, was
   das Streaming pro Bild kostet und wie viel Speicher Nebenan und Box3D belegen
-- **Figuren**: acht Figuren, fünf vor einer Ziegelmauer, zwei auf einem Betonblock und eine auf der Mauer. Das Gewehr
+- **Figuren**: acht Figuren, fünf vor einer Ziegelmauer, zwei auf einem Betonblock und eine auf der Mauer. Hinter den
+  mittleren drei steht eine Wand aus Brettern von 3 cm. Das Gewehr
   wirft sie um, lässt sie zurückzucken oder sich mit einem Schritt fangen, Granate und Kanone werfen sie mit ihrer
   eigenen Wucht um, und wer den Block oder die Mauer unter ihnen wegschießt, nimmt ihnen den Boden. Das Menü zählt, wie
-  viele stehen, liegen und aufstehen und wie viele Schritte sie gemacht haben.
-  **Gewehr auf Figuren** stellt den Stoß eines Gewehrtreffers ein (Standard 80 N s, ab 50 N s fällt eine Figur),
+  viele stehen, liegen und aufstehen und wie viele Schritte sie gemacht haben, wie oft Figuren auf Wände prallten und
+  durchbrachen und was der letzte Aufprall tat.
+  **Gewehr auf Figuren** stellt den Stoß eines Gewehrtreffers ein (Standard 80 N s, ab 50 N s fällt eine Figur, um
+  1 000 N s fliegt sie durch die Bretter),
   **Alle umwerfen** wirft alle auf einmal um, **Zustand** schreibt über jede Figur, was sie tut und worauf sie wartet,
   und **Zielhaltung** zeichnet als Linien die Haltung, zu der sie ihre Knochen bringen will
 - **Stadt mit Figuren**: die Stadt mit zwei Figuren an jedem Haus, 40 auf den Straßen, je eine gut 1 m vor einer
@@ -655,7 +660,28 @@ Kontakte in einem Zug statt einmal pro Form, und Box3D findet sie im nächsten S
 des Polyeders, 4- bis 6-mal schneller als Quickhull (`b3CreateHull` bleibt der Fallback). Treffer-Events von
 Box3D werden zu Kollisionsschaden: Energie aus reduzierter Masse und Aufprallgeschwindigkeit, Radius aus
 der Kubikwurzel der Energie. Weil Box3D den Kontakt schon aufgelöst hat, bevor die Wand bricht, bekommt ein
-durchschlagendes Geschoss einen Teil seiner Geschwindigkeit zurück (`collisionPassThrough`).
+durchschlagendes Geschoss einen Teil seiner Geschwindigkeit zurück (`collisionPassThrough`). Jeder Einschlag eines
+Körpers meldet sich in `nbEvents::collisions` (`nbCollisionEvent`): in welchem Update, welches Zerstörbare und welcher
+Teil davon, welcher Körper und welche Figur, Punkt, Normale, Geschwindigkeit, Stoß und Energie, wie viele Verbindungen
+brachen und Stücke herauskamen und wie viel seines Schwungs der Körper behielt.
+
+**Ragdoll durch die Wand.** Fliegt ein Ragdoll gegen ein Zerstörbares, nach Kapitel 26.16 der Roadmap des Spiels,
+treffen meist mehrere Knochen zugleich, und die Gelenke geben weiter, was der Körper hinter ihnen an Schwung hat. Alle
+Kontakte seiner Knochen mit einem Teil des Zerstörbaren in einem Schritt, dem stehenden Teil oder einem Stück Schutt,
+sind darum ein Einschlag und ein Ereignis, nie zwei. Seine Energie ist die Arbeit ihrer Stöße, je Kontakt der halbe
+Normalstoß mal die Geschwindigkeit, mit der der Knochen kam, sein Schaden reicht über alle Kontakte hinaus, auf diese
+Fläche verteilt, und jeder Kontakt drückt das Stück unter sich heraus, wenn dessen Verbindungen zusammen weniger halten.
+Wo die Stücke unter den Kontakten weggebrochen sind, fliegt die Figur weiter: Jeder Knochen bekommt bis zu
+`collisionPassThrough` seiner Geschwindigkeit zur Wand von vor dem Schritt zurück, alle zusammen nie mehr als diesen
+Anteil des Schwungs der Figur, so gewinnt sie nichts. Wo die Wand hält, prallt sie ab. Ob eine Wand bricht, entscheiden
+nur Energie und Material, ein Skript gibt es nicht: Mit 1 000 N s geworfen bricht ein Mensch der Bibliothek in der
+Hälfte der Würfe durch Bretter von 5 cm und in drei Vierteln seitlich durch Bretter von 3 cm, nie durch Bretter von 20
+cm oder Beton, die nur Stücke verlieren. Ein Gewehrtreffer von 80 N s wirft ihn um, bricht aber keine Wand. Damit dünne
+Bretter überhaupt brechen, halten die Bruchpunkte in einem Stück, das dünner ist als ihr doppelter Rand, nur ein Viertel
+seiner Dicke von seinen Flächen fern, und trifft keine der Proben, mit denen ein Kontakt den getroffenen Teil seiner
+Kugel schätzt, das Brett, legt Nebenan sie dorthin, wo sich Brett und Kugel überschneiden. Ohne Figuren und außer an so
+dünnen Stücken rechnet alles wie vorher, siehe „Ragdoll durch die Wand“ in
+[`docs/Optimierungen.md`](docs/Optimierungen.md).
 
 **Verdeckte Flächen.** In einem Bauwerk liegen die meisten Flächen der Bruchstücke innen, zwischen verklebten
 Nachbarn. `nbChunk_GetVisibleFaces` sagt, welche Flächen man sehen kann: Eine Fläche, die die Verbindungen zu
@@ -747,6 +773,13 @@ for ( int i = 0; i < events.createdCount; ++i )
 // events.destroyedChunks: Meshes entfernen
 // events.movedChunks: Bruchstück hängt jetzt an einem anderen Körper
 // events.exposedChunks: Mesh neu bauen, verdeckte Flächen können frei geworden sein
+for ( int i = 0; i < events.collisionCount; ++i )
+{
+	// Ein Körper oder eine Figur hat ein Zerstörbares beschädigt: Geräusch und Staub am Punkt, nach der Energie
+	const nbCollisionEvent* hit = events.collisions + i;
+	bool figure = NB_IS_NON_NULL( hit->figureId );
+	bool through = hit->passThrough > 0.0f;   // die Wand gab nach, der Körper fliegt weiter
+}
 
 // Einschläge und alles andere, was die Welten ändert, dann die Schritte, die dieses Bild braucht, im Takt der Welt
 nbWorld_Advance( world, frameTime );
@@ -1067,9 +1100,9 @@ beim Einbinden nicht gebaut.
 | `collisionSpeedThreshold` | 4 m/s | Ab dieser Aufprallgeschwindigkeit entsteht Schaden |
 | `collisionDamageScale` | 12 | Umrechnung von Aufprallenergie (J) in Schaden |
 | `collisionRadiusScale` | 0,035 | Schadensradius pro Kubikwurzel der Energie |
-| `maxCollisionImpactsPerUpdate` | 4 | Begrenzt die Kollisionseinschläge pro Update von 1/60 s, bei anderem Takt anteilig, siehe `stepRate` |
+| `maxCollisionImpactsPerUpdate` | 4 | Begrenzt die Kollisionseinschläge pro Update von 1/60 s, bei anderem Takt anteilig, siehe `stepRate`. Die von Figuren zuerst, dann die stärksten |
 | `maxFragmentsPerImpact` | 160 | Begrenzt die Kosten großer Explosionen |
-| `collisionPassThrough` | 0,6 | Anteil der Geschwindigkeit, den ein durchschlagendes Geschoss behält |
+| `collisionPassThrough` | 0,6 | Anteil der Geschwindigkeit, den ein durchschlagendes Geschoss behält. Eine Figur behält ihn je Knochen, zusammen höchstens diesen Anteil ihres Schwungs, so weit die Stücke unter ihren Kontakten wegbrachen |
 | `workerCount` | 1 | Threads für Einschläge: Schaden, Bruchpunkte, Voronoi-Zellen und Hüllen, der aufrufende Thread zählt mit |
 | `enqueueTask`, `finishTask`, `userTaskContext` | leer | Task-System der Anwendung, sonst startet Nebenan eigene Threads |
 | `asyncStep` | an | `nbWorld_Step` rechnet auf einem eigenen Thread, während das Programm zeichnet. Die Welt rechnet bitgleich wie ohne. Die Allokatoren müssen threadsicher sein, und die Worker eines Schritts lassen dem zeichnenden Thread am besten einen Hardware-Thread frei, wie `nbGetRecommendedWorkerCount` sie wählt. Lohnt, wenn das Programm in der Zeit genug zu tun hat, siehe Der Schritt auf einem eigenen Thread. Zur Laufzeit mit `nbWorld_SetAsyncStep` |
@@ -1112,7 +1145,7 @@ beim Einbinden nicht gebaut.
 | --- | --- | --- |
 | `friction` | 0,6 | Reibung aller Formen der Knochen |
 | `selfCollision` | an | Knochen derselben Figur, die nicht verbunden sind, kollidieren miteinander |
-| `enableCollisionDamage` | an | Die Knochen eines Ragdolls beschädigen, was sie treffen, wie Kanonenkugeln |
+| `enableCollisionDamage` | an | Die Knochen eines Ragdolls beschädigen, was sie treffen: alle Kontakte mit einem Teil eines Zerstörbaren in einem Schritt als ein Einschlag, siehe Ragdoll durch die Wand |
 
 Die Demo nimmt für Ziegel Dichte 1900, Festigkeit 6·10⁵ und Splitter 0,1 m, für Beton Dichte 2400,
 Festigkeit 1,1·10⁶ und Splitter 0,13 m, beides mit Bruchstückgröße ×2.
@@ -1802,7 +1835,9 @@ in den 10 s wieder auf, die übrigen fünf liegen mit dem Kopf an einer Mauer un
 Mauer wegschießen. Mit 10 Figuren kostet ein Schritt im Stand 0,03 ms und beim gemeinsamen Sturz 0,4 ms. So wenig
 Arbeit rechnet Box3D auf dem aufrufenden Thread allein, siehe `B3_CONTACTS_PER_WORKER` in
 [`extern/README.md`](extern/README.md). Die Figuren enden in jedem Lauf mit 1 und 4 Threads mit demselben Hash, und
-gleich wie auf `active-ragdoll-1`.
+gleich wie auf `active-ragdoll-1`. Seit `active-ragdoll-19` treffen Figuren, die gegen ihre Mauern fallen, diese mit
+einem Einschlag pro Figur und Schritt, siehe Ragdoll durch die Wand, und 10 und 50 Figuren enden anders, am Ende
+stehen alle 50.
 
 **Ragdolls im Schutt.** Danach stellt `nebenan_benchmark figures` 20 Figuren auf eine Platte über zwei Lagen aus 4 513
 Würfeln, wirft sie um und lässt sie liegen (`nbFigureDef::canGetUp` aus). Platte, Würfel und Ragdolls sind eine große
@@ -1889,7 +1924,7 @@ lange die Threads im Löser rechnen und worauf sie sonst warten.
 ## Tests und Benchmark
 
 ```sh
-build/bin/nebenan_test            # 100 Tests: Geometrie, Voronoi, Hüllen, Öffnungen, Stöße, Stützgraph, Etagen, Lastprüfung, Mauern, Schutt, Ruhe, Durchschlagen, Threads, Knoten, große Blöcke, Gelenke in Paketen und Gebieten, Suchbaum, Kontaktlisten, Streaming, Stream, Laden im Hintergrund, Speichern und Zurückholen, gemeinsamer Thread-Pool, Ruhe-Prüfung auf den Workern, Schritt auf eigenem Thread, Schritte pro Bild, Takt der Physik, Wahl der Threads, Profil und Skalierung, Figuren, Ausgleichsschritt, Füße auf dem Boden, Platz zum Aufstehen, Determinismus …
+build/bin/nebenan_test            # 104 Tests: Geometrie, Voronoi, Hüllen, Öffnungen, Stöße, Stützgraph, Etagen, Lastprüfung, Mauern, Schutt, Ruhe, Durchschlagen, Threads, Knoten, große Blöcke, Gelenke in Paketen und Gebieten, Suchbaum, Kontaktlisten, Streaming, Stream, Laden im Hintergrund, Speichern und Zurückholen, gemeinsamer Thread-Pool, Ruhe-Prüfung auf den Workern, Schritt auf eigenem Thread, Schritte pro Bild, Takt der Physik, Wahl der Threads, Profil und Skalierung, Figuren, Ausgleichsschritt, Füße auf dem Boden, Platz zum Aufstehen, Ragdoll durch die Wand, dünne Bretter, Determinismus …
 build/bin/nebenan_benchmark 4     # Zahl = Threads für Bruch und Physik, 0 = so viele, wie ein Spiel nähme
 build/bin/nebenan_benchmark scaling   # die Städte unter Beschuss mit 1, 2, 4 … Threads und die Tabelle der Skalierung
 build/bin/nebenan_benchmark rates     # die Städte unter Beschuss mit 30, 60 und 120 Hz, was eine simulierte Sekunde kostet

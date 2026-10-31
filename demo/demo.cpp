@@ -473,6 +473,11 @@ struct App
 	bool showFigureStates = true;
 	bool showFigureTargets = false;
 
+	// The collisions of figures with walls the library reported, see nbEvents::collisions, and the last of them
+	int figureCollisions = 0;
+	int figureBreakThroughs = 0;
+	nbCollisionEvent lastFigureCollision = {};
+
 	// Vertical sync is off, so the frame rate shows what the machine can do. Metal always syncs.
 	bool vsync = false;
 	bool vsyncAvailable = true;
@@ -708,6 +713,18 @@ static void SyncChunks( App& app )
 			}
 		}
 	}
+
+	// What the figures hit, for the menu
+	for ( int i = 0; i < events.collisionCount; ++i )
+	{
+		const nbCollisionEvent& collision = events.collisions[i];
+		if ( NB_IS_NON_NULL( collision.figureId ) )
+		{
+			app.figureCollisions += 1;
+			app.figureBreakThroughs += collision.passThrough > 0.0f ? 1 : 0;
+			app.lastFigureCollision = collision;
+		}
+	}
 }
 
 
@@ -922,6 +939,20 @@ static MaterialPreset BrickPreset()
 	preset.material.friction = 0.8f;
 	preset.surface = MaterialBrick;
 	preset.interior = MaterialBrickInterior;
+	return preset;
+}
+
+// Boards of wood: light, and a tenth as strong as concrete. Drawn plain like plaster.
+static MaterialPreset BoardPreset()
+{
+	MaterialPreset preset;
+	preset.material = nbDefaultMaterial();
+	preset.material.density = 600.0f;
+	preset.material.strength = 1.0e5f;
+	preset.material.fragmentSize = 0.15f;
+	preset.material.friction = 0.6f;
+	preset.surface = MaterialPlaster;
+	preset.interior = MaterialPlaster;
 	return preset;
 }
 
@@ -1245,6 +1276,10 @@ static void BuildFigureScene( App& app )
 	AddWall( app, { 6.0f, 0.0f, -3.0f }, 0.0f, { 14.0f, 2.6f, 0.3f }, brick, 11 );
 	AddWall( app, { 11.5f, 0.0f, -0.5f }, 0.0f, { 3.2f, 1.2f, 1.6f }, concrete, 12 );
 
+	// A thin wall of boards behind the middle three, 3 cm, that a hard shot sends them through, see the roadmap of the
+	// game, 26.16. The brick wall behind it holds them.
+	AddWall( app, { 6.0f, 0.0f, -1.6f }, 0.0f, { 6.4f, 2.4f, 0.03f }, BoardPreset(), 13 );
+
 	nbRigDef rig;
 	nbFigureDef def = MakeFigureDef( app, &rig );
 	for ( int k = 0; k < FigureRow + 3; ++k )
@@ -1345,6 +1380,9 @@ static void DestroyScene( App& app )
 	app.figures.clear();
 	app.bodySlots.clear();
 	app.lastImpact = {};
+	app.figureCollisions = 0;
+	app.figureBreakThroughs = 0;
+	app.lastFigureCollision = {};
 	app.city = City();
 	app.townHouses.clear();
 }
@@ -1916,13 +1954,21 @@ static void DrawUi( App& app )
 					 figures.ragdollCount, figures.awakeRagdollCount, figures.gettingUpCount );
 		ImGui::Text( "Treffer %d, Schritte %d, umgeworfen %d, aufgestanden %d, gerückt %d, abgebrochen %d", figures.hitCount,
 					 figures.stepCount, figures.knockdownCount, figures.getUpCount, figures.shiftCount, figures.abortCount );
-		ImGui::SliderFloat( "Gewehr auf Figuren", &app.figureHitImpulse, 10.0f, 300.0f, "%.0f N s" );
+		ImGui::SliderFloat( "Gewehr auf Figuren", &app.figureHitImpulse, 10.0f, 1500.0f, "%.0f N s", ImGuiSliderFlags_Logarithmic );
 		if ( ImGui::IsItemHovered() )
 		{
 			ImGui::SetTooltip( "So stark stößt ein Treffer des Gewehrs eine Figur. Ab 50 N s fällt sie als\naktiver Ragdoll um und steht "
 							   "wieder auf, darunter zuckt sie zurück und fängt sich\nmit einem Schritt, wo sie über ihren Füßen nicht "
 							   "stehen bleiben kann, von vorn\neher als von hinten. Granate und Kanone werfen Figuren mit ihrer eigenen "
-							   "Wucht um." );
+							   "Wucht um.\nUm 1000 N s fliegt eine Figur der Szene Figuren durch die dünne Bretterwand\nhinter ihr, an der "
+							   "Ziegelwand bleibt sie liegen." );
+		}
+		ImGui::Text( "Aufpralle auf Wände %d, durchgebrochen %d", app.figureCollisions, app.figureBreakThroughs );
+		if ( app.figureCollisions > 0 )
+		{
+			const nbCollisionEvent& last = app.lastFigureCollision;
+			ImGui::Text( "Zuletzt %.0f J bei %.1f m/s, %d Stücke heraus, behielt %.0f %% des Schwungs", last.energy,
+						 last.approachSpeed, last.detachedChunkCount, 100.0f * last.passThrough );
 		}
 		if ( ImGui::Button( "Alle umwerfen" ) )
 		{
@@ -2519,12 +2565,15 @@ static void RunScript( App& app, int frame )
 			break;
 
 		case SceneFigures:
-			// The rifle on the chests of the row, one from the side, a grenade between two of them, the cannon at the block
-			// under the two on it
+			// The rifle on the chests of the row, the fourth so hard it flies through the boards behind it, a grenade between
+			// two of them, the cannon at the block under the two on it
 			if ( f >= 30 && f < 70 && f % 10 == 0 )
 			{
 				int k = ( f - 30 ) / 10;
+				float impulse = app.figureHitImpulse;
+				app.figureHitImpulse = k == 3 ? 1200.0f : impulse;
 				FireAt( app, ToolRifle, { 2.0f * (float)k, 1.3f, 0.05f } );
+				app.figureHitImpulse = impulse;
 			}
 			else if ( f == 80 )
 			{
