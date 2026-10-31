@@ -80,6 +80,17 @@
 #define NB_ROOM_FLOOR 0.2f
 #define NB_ROOM_AHEAD 0.45f
 
+// A ragdoll at rest that stands on its feet wakes up standing, as WakeUp of Overgrowth tells standing from falling,
+// flipping and rolling, see the roadmap of the game 26.15: both feet on ground they could stand on, the pelvis at least
+// this part of the stand height over it, and the spine from the pelvis to the chest within this many radians of up. A
+// hand caught in a crack of a wall holds a ragdoll so, and the pelvis is too high for the ground to get up from. The
+// stand clip blends in over this many seconds, and the bones in its first pose need room where the feet stand, their
+// shapes this much smaller, so what they touch does not count.
+#define NB_WAKE_HEIGHT 0.6f
+#define NB_WAKE_TILT 1.0f
+#define NB_WAKE_FADE 0.6f
+#define NB_WAKE_SKIN 0.01f
+
 // Room elsewhere, see nbFindRoom, for the humanoid of 1.8 m and scaled with its height: a figure without room looks this
 // near and this far back along its spine and to its sides, on ground at most this much higher or lower, and moves its body
 // there at this speed, or turns it about its pelvis at this rate, in this time at least. The body that moves is a capsule
@@ -1215,6 +1226,7 @@ static void nbStartFade( nbFigure* f, float duration )
 	f->fadeRoot = f->root;
 	f->fadeTime = 0.0f;
 	f->fadeDuration = duration;
+	f->fadeLegs = false;
 }
 
 // The feet where the clip puts them, on the ground of the frame
@@ -1294,9 +1306,11 @@ static void nbBeginBalancing( nbWorld* world, nbFigure* f )
 	nbReadVelocities( f );
 }
 
-// A figure that caught itself stands animated again where it stands: the frame on the ground under the middle of its
-// ankles, facing where its pelvis faces, and its clip blends in from the pose it stands in, as after getting up
-static void nbSettle( nbWorld* world, nbFigure* f )
+// A humanoid with dynamic bones stands animated again where it stands: the frame on the ground under the middle of its
+// ankles, at the height of the ground under its feet, facing along a direction over the ground, and its clip blends in
+// from the pose it stands in over a time, as after getting up, if asked its legs too. A figure that catches itself lets
+// go of its upright hold.
+static void nbStandWhereItIs( nbWorld* world, nbFigure* f, float groundHeight, b3Vec3 forward, float fade, bool fadeLegs )
 {
 	b3Vec3 up = nbUpOf( world );
 	b3WorldTransform pelvis;
@@ -1304,9 +1318,9 @@ static void nbSettle( nbWorld* world, nbFigure* f )
 
 	b3Vec3 ankles = b3MulSV( 0.5f, b3Add( b3ToVec3( b3Body_GetPosition( f->bones[nb_humanoidFootLeft].bodyId ) ),
 										   b3ToVec3( b3Body_GetPosition( f->bones[nb_humanoidFootRight].bodyId ) ) ) );
-	b3Vec3 ground = b3MulAdd( ankles, nbBalanceGround( f ) - b3Dot( ankles, up ), up );
+	b3Vec3 ground = b3MulAdd( ankles, groundHeight - b3Dot( ankles, up ), up );
 	b3WorldTransform level = nbMakeFrame( world, b3ToPos( ground ), 0.0f );
-	b3Vec3 ahead = b3InvRotateVector( level.q, nbBalanceForward( f ) );
+	b3Vec3 ahead = b3InvRotateVector( level.q, forward );
 	f->heading = b3Atan2( ahead.x, ahead.z );
 	f->frame = nbMakeFrame( world, b3ToPos( ground ), f->heading );
 	f->root = b3InvMulWorldTransforms( f->frame, pelvis );
@@ -1319,11 +1333,11 @@ static void nbSettle( nbWorld* world, nbFigure* f )
 	nbSetDamping( f, 0.0f );
 	f->springs = false;
 	f->strength = 0.0f;
-	nbStartFade( f, NB_STAND_FADE );
+	nbStartFade( f, fade );
+	f->fadeLegs = fadeLegs;
 	nbResetFeet( f );
 	f->state = nb_figureAnimated;
 	f->stateTime = 0.0f;
-	f->catchCount += 1;
 
 	// The feet stay where they stand, and step under the body to where the clip puts them, one after the other, as after a
 	// push it caught over its feet, see nbPush
@@ -1335,6 +1349,13 @@ static void nbSettle( nbWorld* world, nbFigure* f )
 	f->swayOffset = b3Vec3_zero;
 	f->swayTime = 0.0f;
 	f->swayDuration = 0.0f;
+}
+
+// A figure that caught itself stands animated again where it stands, facing where its pelvis faces
+static void nbSettle( nbWorld* world, nbFigure* f )
+{
+	nbStandWhereItIs( world, f, nbBalanceGround( f ), nbBalanceForward( f ), NB_STAND_FADE, false );
+	f->catchCount += 1;
 }
 
 //----------------------------------------------------------------------------------------------------------------------
@@ -2478,6 +2499,19 @@ static void nbUpdateAnimated( nbWorld* world, int index, nbFigure* f, float time
 		{
 			f->footWeight = b3MaxFloat( 0.0f, f->footWeight - timeStep / NB_FOOT_FADE );
 		}
+
+		// Woken up standing, the legs go from how they lay to where the feet need them over the fade, as the rest of the
+		// body: a knee that the slack ragdoll bent in would jump at once
+		if ( f->fadeLegs )
+		{
+			float alpha = b3ClampFloat( f->fadeTime / f->fadeDuration, 0.0f, 1.0f );
+			alpha = alpha * alpha * ( 3.0f - 2.0f * alpha );
+			for ( int i = nb_humanoidThighLeft; i <= nb_humanoidFootRight; ++i )
+			{
+				f->pose[i] = b3NLerp( f->fadePose[i], f->pose[i], alpha );
+			}
+			f->fadeLegs = alpha < 1.0f;
+		}
 	}
 
 	nbComputePose( f, b3MulWorldTransforms( f->frame, f->root ), f->pose, f->targets );
@@ -2657,7 +2691,109 @@ static nbFigureWait nbCheckGetUp( const nbWorld* world, int index, const nbFigur
 	return nb_waitRoom;
 }
 
-// A ragdoll: its strength, its curl and brace, the targets of its joints, its rest and whether it gets up
+// Does anything but the figure overlap the shape of a bone at a transform in the frame of the figure, a little smaller?
+static bool nbBoneBlocked( const nbWorld* world, int index, const nbBone* bone, b3WorldTransform frame, b3Transform transform )
+{
+	b3WorldTransform at = b3MulWorldTransforms( frame, transform );
+	b3Vec3 points[8];
+	int count;
+	float radius;
+	if ( bone->shape == nb_capsuleBone )
+	{
+		points[0] = b3RotateVector( at.q, bone->start );
+		points[1] = b3RotateVector( at.q, bone->end );
+		count = 2;
+		radius = b3MaxFloat( bone->radius - NB_WAKE_SKIN, 0.0f );
+	}
+	else
+	{
+		b3Vec3 h = { b3MaxFloat( bone->halfExtents.x - NB_WAKE_SKIN, 0.0f ), b3MaxFloat( bone->halfExtents.y - NB_WAKE_SKIN, 0.0f ),
+					 b3MaxFloat( bone->halfExtents.z - NB_WAKE_SKIN, 0.0f ) };
+		for ( int k = 0; k < 8; ++k )
+		{
+			b3Vec3 corner = { k & 1 ? h.x : -h.x, k & 2 ? h.y : -h.y, k & 4 ? h.z : -h.z };
+			points[k] = b3RotateVector( at.q, b3Add( bone->center, corner ) );
+		}
+		count = 8;
+		radius = 0.0f;
+	}
+	b3ShapeProxy proxy = { points, count, radius };
+	nbFigureQuery query = { world, index, false, false, 1.0f, b3Vec3_zero, at.p, b3_nullShapeId, false, false };
+	b3World_OverlapShape( world->physicsWorld, at.p, &proxy, b3DefaultQueryFilter(), nbAnyOverlapFcn, &query );
+	return query.hit;
+}
+
+// Does a ragdoll at rest stand on its feet with room to stand there, see NB_WAKE_HEIGHT? Then the height of the ground
+// under its feet and where it faces over the ground, its pelvis or else its chest.
+static bool nbCheckWakeStanding( const nbWorld* world, int index, const nbFigure* f, b3Vec3 up, float timeStep,
+								 float* groundHeight, b3Vec3* forward )
+{
+	if ( f->boneCount != nb_humanoidBoneCount )
+	{
+		return false;
+	}
+
+	float heights[2];
+	for ( int foot = 0; foot < 2; ++foot )
+	{
+		if ( nbFootOnGround( world, index, f, foot, up, heights + foot ) == false )
+		{
+			return false;
+		}
+	}
+	float height = 0.5f * ( heights[0] + heights[1] );
+
+	b3Vec3 pelvis = b3ToVec3( b3Body_GetWorldCenter( f->bones[0].bodyId ) );
+	b3Vec3 chest = b3ToVec3( b3Body_GetWorldCenter( f->bones[nb_humanoidChest].bodyId ) );
+	b3Vec3 spine = b3Normalize( b3Sub( chest, pelvis ) );
+	if ( b3Dot( pelvis, up ) - height < NB_WAKE_HEIGHT * f->def.standHeight || b3Dot( spine, up ) < cosf( NB_WAKE_TILT ) )
+	{
+		return false;
+	}
+	if ( nbPressingForce( world, index, f, timeStep, up ) > 0.0f )
+	{
+		return false;
+	}
+
+	b3Vec3 facing = b3RotateVector( b3Body_GetRotation( f->bones[0].bodyId ), b3Vec3_axisZ );
+	facing = b3MulSub( facing, b3Dot( facing, up ), up );
+	if ( b3LengthSquared( facing ) < 0.01f )
+	{
+		facing = b3RotateVector( b3Body_GetRotation( f->bones[nb_humanoidChest].bodyId ), b3Vec3_axisZ );
+		facing = b3MulSub( facing, b3Dot( facing, up ), up );
+	}
+	if ( b3LengthSquared( facing ) < 1.0e-6f )
+	{
+		return false;
+	}
+	facing = b3Normalize( facing );
+
+	// Room for the trunk and the head in the first pose of the stand clip, on the ground between the ankles: the legs
+	// stand there already, and an arm may brush the wall the figure leans on
+	b3Vec3 ankles = b3MulSV( 0.5f, b3Add( b3ToVec3( b3Body_GetPosition( f->bones[nb_humanoidFootLeft].bodyId ) ),
+										   b3ToVec3( b3Body_GetPosition( f->bones[nb_humanoidFootRight].bodyId ) ) ) );
+	b3Pos ground = b3ToPos( b3MulAdd( ankles, height - b3Dot( ankles, up ), up ) );
+	b3WorldTransform level = nbMakeFrame( world, ground, 0.0f );
+	b3Vec3 ahead = b3InvRotateVector( level.q, facing );
+	b3WorldTransform frame = nbMakeFrame( world, ground, b3Atan2( ahead.x, ahead.z ) );
+	b3Quat pose[nb_humanoidBoneCount];
+	b3Transform root;
+	nbSampleFigureClip( f, f->clips[nb_clipIdle], 0.0f, pose, &root );
+	b3Transform transforms[nb_humanoidBoneCount];
+	nbFramePose( f, root, pose, transforms );
+	for ( int i = nb_humanoidPelvis; i <= nb_humanoidHead; ++i )
+	{
+		if ( nbBoneBlocked( world, index, f->bones + i, frame, transforms[i] ) )
+		{
+			return false;
+		}
+	}
+
+	*groundHeight = height;
+	*forward = facing;
+	return true;
+}
+
 // A figure that catches itself: the pose of its clip goes on, balance sets its legs, and it falls or stands again. What
 // presses on it from above knocks it down from a quarter of the crush force, as a figure that gets up: catching itself it
 // does not carry debris.
@@ -2694,6 +2830,8 @@ static void nbUpdateBalancing( nbWorld* world, int index, nbFigure* f, float tim
 	f->speed = b3Length( nbAverageVelocity( f ) );
 }
 
+// A ragdoll: its strength, its curl and brace, the targets of its joints, its rest and whether it wakes up standing or
+// gets up
 static void nbUpdateRagdoll( nbWorld* world, int index, nbFigure* f, float timeStep, b3Vec3 up )
 {
 	f->stun = b3MaxFloat( 0.0f, f->stun - timeStep );
@@ -2768,6 +2906,17 @@ static void nbUpdateRagdoll( nbWorld* world, int index, nbFigure* f, float timeS
 	}
 	if ( ( world->figureUpdates + index ) % 8 != 0 && f->wait != nb_waitMoving )
 	{
+		return;
+	}
+
+	// Standing on its feet it wakes up standing
+	float standGround;
+	b3Vec3 forward;
+	if ( nbCheckWakeStanding( world, index, f, up, timeStep, &standGround, &forward ) )
+	{
+		nbStandWhereItIs( world, f, standGround, forward, NB_WAKE_FADE, true );
+		f->wait = nb_waitNone;
+		f->getUpCount += 1;
 		return;
 	}
 

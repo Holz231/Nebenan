@@ -976,6 +976,102 @@ static int FigureRoomTest( void )
 	return 0;
 }
 
+// A ragdoll that comes to rest standing on its feet wakes up standing, as WakeUp of Overgrowth tells standing from falling,
+// see the roadmap of the game 26.15. Its right arm reaches ahead into a tight tunnel of four fixed blocks, as the arm of
+// figure 8 of the benchmark caught in a crack of its wall: it hangs on the arm with its feet on the ground and its pelvis
+// too high over the ground to get up from it. It wakes up where its feet stand, straight to the stand clip without a
+// get-up clip, without a jump of a bone, and stands. A figure that lies is no figure that stands: knocked down it gets
+// up with its clip, see FigureKnockdownTest.
+static int FigureWakeStandingTest( void )
+{
+	FigureScene scene;
+	CreateFigureScene( &scene, 1 );
+
+	// The stand clip with the right arm ahead, so the figure starts as a ragdoll in that pose
+	b3Quat rotations[nb_humanoidBoneCount];
+	for ( int i = 0; i < nb_humanoidBoneCount; ++i )
+	{
+		rotations[i] = b3Quat_identity;
+	}
+	rotations[nb_humanoidUpperArmRight] = b3MakeQuatFromAxisAngle( b3Vec3_axisX, 1.5f );
+	nbKeyframe key = { 0.0f, rotations, b3Transform_identity };
+	nbClipDef idle = { &key, 1, nb_humanoidBoneCount, true, false };
+	nbFigureDef def = nbDefaultFigureDef();
+	def.rig = &scene.rig;
+	def.standHeight = scene.standHeight;
+	def.position = b3ToPos( b3Vec3_zero );
+	def.startAsRagdoll = true;
+	def.clips[nb_clipIdle] = &idle;
+	nbFigureId figure = nbCreateFigure( scene.world, &def );
+	ENSURE( nbFigure_GetState( figure ) == nb_figureRagdoll );
+
+	// The tunnel along the forearm: a block over it, under it and at each side, each 5 mm into it
+	b3AABB arm = b3Body_ComputeAABB( nbFigure_GetBody( figure, nb_humanoidForearmRight ) );
+	b3Vec3 center = b3MulSV( 0.5f, b3Add( arm.lowerBound, arm.upperBound ) );
+	float half = 0.5f * ( arm.upperBound.z - arm.lowerBound.z );
+	float thick = 0.1f;
+	float press = 0.005f;
+	b3Vec3 positions[4] = {
+		{ center.x, arm.upperBound.y + thick - press, center.z },
+		{ center.x, arm.lowerBound.y - thick + press, center.z },
+		{ arm.upperBound.x + thick - press, center.y, center.z },
+		{ arm.lowerBound.x - thick + press, center.y, center.z },
+	};
+	b3Vec3 halves[4] = { { 0.3f, thick, half }, { 0.3f, thick, half }, { thick, 0.3f, half }, { thick, 0.3f, half } };
+	for ( int k = 0; k < 4; ++k )
+	{
+		b3BodyDef bodyDef = b3DefaultBodyDef();
+		bodyDef.position = b3ToPos( positions[k] );
+		b3BodyId block = b3CreateBody( scene.physicsWorld, &bodyDef );
+		b3BoxHull box = b3MakeBoxHull( halves[k].x, halves[k].y, halves[k].z );
+		b3ShapeDef shapeDef = b3DefaultShapeDef();
+		b3CreateHullShape( block, &shapeDef, &box.base );
+	}
+
+	// It sags onto the arm and comes to rest with its pelvis high, then wakes up standing
+	int steps = 0;
+	float lowest = FLT_MAX;
+	while ( nbFigure_GetState( figure ) == nb_figureRagdoll && steps < 600 )
+	{
+		StepFigures( &scene, 1 );
+		steps += 1;
+		lowest = b3MinFloat( lowest, BonePosition( figure, nb_humanoidPelvis ).y );
+	}
+	nbFigureInfo info = nbFigure_GetInfo( figure );
+	printf( "  hung on its arm, the pelvis at least %.2f m high, woke up standing after %.2f s\n", lowest, (float)steps / 60.0f );
+	ENSURE( info.state == nb_figureAnimated );
+	ENSURE( info.getUpCount == 1 && info.knockdownCount == 0 && info.wait == nb_waitNone );
+	ENSURE( lowest > 0.6f );
+	ENSURE( steps < 180 );
+
+	// Kinematic at once, the stand clip blends in, the legs too, and the feet step under the body, no bone faster than
+	// 3 m/s: without the legs blending in a knee the slack ragdoll bent in jumped 11 cm in a step
+	for ( int i = 0; i < nb_humanoidBoneCount; ++i )
+	{
+		ENSURE( b3Body_GetType( nbFigure_GetBody( figure, i ) ) == b3_kinematicBody );
+	}
+	b3WorldTransform before[nb_humanoidBoneCount];
+	nbFigure_GetBoneTransforms( figure, before, nb_humanoidBoneCount );
+	float largest = 0.0f;
+	for ( int step = 0; step < 90; ++step )
+	{
+		StepFigures( &scene, 1 );
+		ENSURE( nbFigure_GetState( figure ) == nb_figureAnimated );
+		b3WorldTransform after[nb_humanoidBoneCount];
+		nbFigure_GetBoneTransforms( figure, after, nb_humanoidBoneCount );
+		for ( int i = 0; i < nb_humanoidBoneCount; ++i )
+		{
+			largest = b3MaxFloat( largest, b3Length( b3SubPos( after[i].p, before[i].p ) ) );
+			before[i] = after[i];
+		}
+	}
+	printf( "  stood up, the largest move of a bone %.3f m a step\n", largest );
+	ENSURE( largest < 0.05f );
+	ENSURE( StandsUpright( &scene, figure ) );
+	DestroyFigureScene( &scene );
+	return 0;
+}
+
 // A figure on a box falls when the box goes, and does not hang in the air
 static int FigureGroundTest( void )
 {
@@ -1571,6 +1667,7 @@ int FigureTest( void )
 	RUN_TEST( FigureKnockdownTest );
 	RUN_TEST( FigureGetUpRoomTest );
 	RUN_TEST( FigureRoomTest );
+	RUN_TEST( FigureWakeStandingTest );
 	RUN_TEST( FigureStepTest );
 	RUN_TEST( FigureStepBlockedTest );
 	RUN_TEST( FigureFeetTest );

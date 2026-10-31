@@ -1143,6 +1143,11 @@ nbBalanceResult nbUpdateBalance( nbWorld* world, int index, nbFigure* f, float t
 	return nb_balanceGoesOn;
 }
 
+bool nbFootOnGround( const nbWorld* world, int index, const nbFigure* f, int foot, b3Vec3 up, float* height )
+{
+	return nbFootContact( world, index, f->bones[nb_feet[foot]].bodyId, up, height );
+}
+
 bool nbBalanceStepping( const nbFigure* f )
 {
 	return f->state == nb_figureBalancing && f->balancer.stepping;

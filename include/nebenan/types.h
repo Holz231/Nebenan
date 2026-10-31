@@ -1253,7 +1253,9 @@ typedef struct nbFigureDef
 	float restSpeed;
 
 	/// Getting up: not before this many seconds as a ragdoll and a quarter second lying still, at this speed of the
-	/// get-up clips, 1 as authored. Without canGetUp a ragdoll stays down.
+	/// get-up clips, 1 as authored. Without canGetUp a ragdoll stays down. A humanoid that rests on its feet, its pelvis
+	/// high and its spine upright, wakes up standing instead, without a get-up clip, as Overgrowth tells standing from
+	/// falling, see the roadmap of the game 26.15: a ragdoll caught by its arm in a crack of a wall stands so.
 	float getUpDelay;
 	float getUpSpeed;
 	bool canGetUp;
@@ -1295,7 +1297,8 @@ typedef enum nbFigureWait
 	/// Not long enough a ragdoll, or it still moves
 	nb_waitMoving,
 
-	/// No ground that carries it under its pelvis
+	/// No ground that carries it under its pelvis. A humanoid that rests on its feet wakes up standing instead, see
+	/// nbFigureDef::getUpDelay.
 	nb_waitGround,
 
 	/// Something stands where it would get up, and near it as well, see nbFigureInfo::shifting

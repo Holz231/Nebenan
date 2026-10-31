@@ -188,6 +188,10 @@ typedef struct nbFigure
 	float fadeTime;
 	float fadeDuration;
 
+	// The legs blend in from the fade pose too, after the feet set them: a ragdoll that wakes up standing has its knees
+	// where they lay, see nbStandWhereItIs
+	bool fadeLegs;
+
 	// The world transforms of the bones in that pose, where an animated figure moves them in the next step
 	b3WorldTransform* targets;
 
@@ -347,6 +351,10 @@ nbBalanceResult nbUpdateBalance( nbWorld* world, int index, nbFigure* f, float t
 bool nbBalanceStepping( const nbFigure* f );
 b3Vec3 nbBalanceForward( const nbFigure* f );
 float nbBalanceGround( const nbFigure* f );
+
+// Does a foot of the humanoid, 0 left or 1 right, touch ground it could stand on, as balance measures it: contacts of the
+// foot with faces no steeper than walkable ground that carry it, and their mean height
+bool nbFootOnGround( const nbWorld* world, int index, const nbFigure* f, int foot, b3Vec3 up, float* height );
 
 // The most points of the shape of a bone, see nbBonePoints
 #define NB_BONE_POINTS 48
