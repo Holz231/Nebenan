@@ -941,7 +941,8 @@ typedef struct nbGeometry
  * @defgroup figure Figure
  * Figures after the hybrid of Overgrowth, see the roadmap of the game, chapters 26 to 28 and 31 to 33. A rig describes
  * the bones at rest, a figure is one made from it in the world. Normally a figure is animated: its bones are kinematic
- * Box3D bodies that follow its clip, debris bounces off them, and Box3D solves none of its joints. A hard hit, a blast,
+ * Box3D bodies that follow its clip, debris bounces off them, and Box3D solves none of its joints. The feet of the
+ * humanoid stand on the ground under them, on slopes and rubble, and it steps to catch a hit it cannot catch over them. A hard hit, a blast,
  * heavy debris or ground that gives way turn it into an active ragdoll: the bones become dynamic with the velocities they
  * had, the hit acts once, spread over the bones near it, and the joints are springs with a torque limit that pull toward
  * a pose to fall with, as strong as the figure is fast: flailing while it flies fast, relaxed while it is slow, curled up

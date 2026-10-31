@@ -34,12 +34,13 @@ gelöscht. Kein Staub, keine Schatten: Jede Millisekunde geht in die Zerstörung
 - Kollisionsschaden: Kanonenkugeln und herabfallende Trümmer beschädigen, was sie treffen. Was ein Einsturz
   herunterbringt, beschädigt nichts
 - Figuren nach dem Vorbild von Overgrowth: Eine Figur steht animiert, ihre Knochen sind kinematische Box3D-Körper, die
-  ihrem Clip folgen. Einen Treffer, den sie über ihren Füßen nicht abfangen kann, fängt sie mit Schritten ab, der
-  Standfuß bleibt dabei stehen. Ein harter Treffer, eine Explosion, schwere Trümmer, eine Last auf ihr oder Boden, der
-  wegbricht, machen sie zum aktiven Ragdoll, mit den Geschwindigkeiten, die ihre Knochen hatten, und dem Treffer genau
-  einmal. Ihre Gelenke ziehen mit begrenzter Kraft zu einer Haltung, sie fängt sich mit den Armen ab oder rollt sich
-  ein. Liegt sie still, steht sie mit einem Clip vom Bauch oder vom Rücken wieder auf, sobald sie Boden, Platz und
-  nichts auf sich hat. Die Knochen und Clips eines Menschen baut die Bibliothek selbst
+  ihrem Clip folgen, ihre Füße auf dem Boden unter ihnen, auch an Hängen und auf Schutt. Einen Treffer, den sie über
+  ihren Füßen nicht abfangen kann, fängt sie mit Schritten ab, der Standfuß bleibt dabei stehen. Ein harter Treffer,
+  eine Explosion, schwere Trümmer, eine Last auf ihr oder Boden, der wegbricht, machen sie zum aktiven Ragdoll, mit den
+  Geschwindigkeiten, die ihre Knochen hatten, und dem Treffer genau einmal. Ihre Gelenke ziehen mit begrenzter Kraft zu
+  einer Haltung, sie fängt sich mit den Armen ab oder rollt sich ein. Liegt sie still, steht sie mit einem Clip vom
+  Bauch oder vom Rücken wieder auf, sobald sie Boden, Platz und nichts auf sich hat. Die Knochen und Clips eines
+  Menschen baut die Bibliothek selbst
 - Für ganze Städte gebaut, ohne etwas zu löschen: Trümmer, die zur Ruhe kommen und auf festem Grund liegen,
   werden zu statischem Schutt und kosten Box3D nichts mehr. Box3D bewegt nur eine begrenzte Zahl Trümmer
   gleichzeitig, verdeckte Flächen werden nicht gezeichnet
@@ -562,6 +563,18 @@ weiter als `stepReach` (45 cm) trüge, fällt die Figur statt zu treten. Entschi
 wenn ein Fuß aufsetzt, so flattert nichts. Während eines Schritts gehen die Beine vor dem Clip, `nbFigure_Move` beendet
 ihn. `nbFigureInfo::stepping` sagt, ob eine Figur gerade tritt, `stepCount` und `nbFigureStats::stepCount` zählen die
 Schritte. Ein Spiel ruft dafür nichts auf, mit `stepReach = 0` zuckt eine Figur nur.
+
+**Füße auf dem Boden.** Die Füße eines stehenden Menschen der Bibliothek stehen auf dem Boden unter ihnen, nach Kapitel
+26.5 und 28.3 der Roadmap des Spiels, auf einer Stufe, an einem Hang und auf Schutt. Unter der Mitte jeder Sohle sucht
+eine Kugel von 4 cm Radius den Boden, von 40 cm darüber bis 35 cm darunter, nicht steiler als 45° und nicht schneller
+als 1,5 m/s, jedes achte Update im Wechsel mit den anderen Figuren und sobald sich die Sohle 2 cm bewegt hat. Der Fuß
+folgt seiner Höhe und kippt mit seiner Neigung, bis 0,4 rad, um die Mitte der Sohle, glatt mit 12 pro Sekunde, und die
+Zwei-Knochen-IK setzt das Bein. Auf ebenem Boden behält der Clip die Beine, so kosten 50 stehende Figuren auf der VM im
+Update 0,091 statt 0,067 ms. Das Becken geht mit dem tieferen Fuß hinauf oder hinunter, und so
+weit hinunter, wie die Beine es brauchen. Einen Fuß, den der Clip hebt, lässt die Bibliothek ab 3 cm über dem Boden
+allmählich los und ab 10 cm ganz, so tritt ein Tritt aus einem eigenen Clip, wie der Clip es will. Findet ein Fuß
+keinen Boden, steht er, wo der Clip ihn hinstellt. Auch die Schritte des Ausgleichs setzen ihre Füße so auf den Boden
+an ihrem Ziel. Ein Spiel ruft dafür nichts auf.
 
 **Aktiver Ragdoll.** Ein Treffer ab `knockdownImpulse` (Standard 50 N s), eine Explosion, die stark genug ist,
 Trümmer, die die Figur mit so viel Impuls treffen, eine Last von oben ab `crushForce` (600 N) oder Boden, der
@@ -1854,7 +1867,7 @@ lange die Threads im Löser rechnen und worauf sie sonst warten.
 ## Tests und Benchmark
 
 ```sh
-build/bin/nebenan_test            # 98 Tests: Geometrie, Voronoi, Hüllen, Öffnungen, Stöße, Stützgraph, Etagen, Lastprüfung, Mauern, Schutt, Ruhe, Durchschlagen, Threads, Knoten, große Blöcke, Gelenke in Paketen und Gebieten, Suchbaum, Kontaktlisten, Streaming, Stream, Laden im Hintergrund, Speichern und Zurückholen, gemeinsamer Thread-Pool, Ruhe-Prüfung auf den Workern, Schritt auf eigenem Thread, Schritte pro Bild, Takt der Physik, Wahl der Threads, Profil und Skalierung, Figuren, Ausgleichsschritt, Determinismus …
+build/bin/nebenan_test            # 99 Tests: Geometrie, Voronoi, Hüllen, Öffnungen, Stöße, Stützgraph, Etagen, Lastprüfung, Mauern, Schutt, Ruhe, Durchschlagen, Threads, Knoten, große Blöcke, Gelenke in Paketen und Gebieten, Suchbaum, Kontaktlisten, Streaming, Stream, Laden im Hintergrund, Speichern und Zurückholen, gemeinsamer Thread-Pool, Ruhe-Prüfung auf den Workern, Schritt auf eigenem Thread, Schritte pro Bild, Takt der Physik, Wahl der Threads, Profil und Skalierung, Figuren, Ausgleichsschritt, Füße auf dem Boden, Determinismus …
 build/bin/nebenan_benchmark 4     # Zahl = Threads für Bruch und Physik, 0 = so viele, wie ein Spiel nähme
 build/bin/nebenan_benchmark scaling   # die Städte unter Beschuss mit 1, 2, 4 … Threads und die Tabelle der Skalierung
 build/bin/nebenan_benchmark rates     # die Städte unter Beschuss mit 30, 60 und 120 Hz, was eine simulierte Sekunde kostet
@@ -1939,10 +1952,10 @@ Nach Änderungen an `demo/shaders/scene.glsl` die Shader neu erzeugen, im Ordner
   den vorsichtigeren Box3D-Standard.
 - Nur konvexe Teile, aus denen sich Quader ausschneiden lassen. Andere konkave Formen müssen als mehrere konvexe
   Teile angegeben werden.
-- Figuren haben noch keine IK für die Füße im Stand: Auf unebenem Boden und auf Schutt stehen ihre Füße, wo der Clip
-  sie hinstellt, nur der Ausgleichsschritt setzt sie auf den Boden an seinem Ziel, Schritt F10. Nur der Mensch der
-  Bibliothek tritt, die Bibliothek kennt nur seine Beine. Gehen und Laufen spielt das Spiel selbst, mit `nbFigure_Move`
-  und eigenen Clips, die Bibliothek hat dafür keinen.
+- Nur der Mensch der Bibliothek tritt und stellt seine Füße auf den Boden, die Bibliothek kennt nur seine Beine. Gehen
+  und Laufen spielt das Spiel selbst, mit `nbFigure_Move` und eigenen Clips, die Bibliothek hat dafür keinen. Ein Fuß
+  steht auf dem, was eine Kugel unter der Mitte seiner Sohle trifft: Ragt Schutt nur unter Ferse oder Zehen auf, taucht
+  der Fuß dort ein, wie jeder kinematische Körper.
 - Stehende und aufstehende Figuren sind kinematisch und kollidieren wie alle kinematischen Körper in Box3D nicht mit
   statischen, also nicht mit Schutt und stehenden Wänden. Eine Figur, die das Spiel durch eine Wand bewegt, geht
   hindurch. Ob genug Platz zum Aufstehen ist, prüft sie vorher. Liegt sie mit dem Kopf an einer Wand, findet sie vor

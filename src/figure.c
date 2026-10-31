@@ -92,10 +92,22 @@
 #define NB_STEP_SLACK 0.03f
 #define NB_FOOT_FADE 0.2f
 
-// A step needs ground this flat under its foot, the cosine of its slope, and a foot stands while its sole is this close to
-// the ground
+// A step needs ground this flat under its foot, the cosine of its slope, and a foot stands while the clip holds its sole
+// this close to the ground and lets it go from this high
 #define NB_STEP_FLATNESS 0.7f
 #define NB_SOLE_GAP 0.03f
+#define NB_SOLE_LIFTED 0.1f
+
+// Feet on the ground: a sphere of this radius under the middle of a sole finds the ground, every eighth update in turn
+// with the other figures or once the sole moved this far, the ground tilts the sole by this many radians at most, and the
+// foot follows it at this rate per second. On ground this close to where the clip puts it the clip keeps the legs, and
+// between those updates the figure does not look at its feet.
+#define NB_FOOT_RADIUS 0.04f
+#define NB_FOOT_PERIOD 8
+#define NB_FOOT_RECAST 0.02f
+#define NB_FOOT_TILT 0.4f
+#define NB_FOOT_FOLLOW 12.0f
+#define NB_FOOT_FLAT 0.002f
 
 // A leg stretches to this part of its length at most, so the knee stays a little soft, or as far as the clip stretches
 // it, and the root goes down at most this far for the legs to reach their feet
@@ -864,7 +876,8 @@ static b3WorldTransform nbMakeFrame( const nbWorld* world, b3Pos position, float
 //----------------------------------------------------------------------------------------------------------------------
 // Queries
 
-// What a query of a figure leaves out: its own bones, the other figures if asked, and if asked all but fixed bodies
+// What a query of a figure leaves out: its own bones, the other figures if asked, if asked all but fixed bodies, and if
+// asked what a cast starts in
 typedef struct nbFigureQuery
 {
 	const nbWorld* world;
@@ -876,6 +889,7 @@ typedef struct nbFigureQuery
 	b3Pos point;
 	b3ShapeId shapeId;
 	bool staticOnly;
+	bool skipOverlaps;
 } nbFigureQuery;
 
 static bool nbSkipShape( const nbFigureQuery* query, b3ShapeId shapeId )
@@ -892,7 +906,8 @@ static float nbClosestHitFcn( b3ShapeId shapeId, b3Pos point, b3Vec3 normal, flo
 	NB_UNUSED( childIndex );
 	nbFigureQuery* query = context;
 	if ( b3Shape_IsSensor( shapeId ) || nbSkipShape( query, shapeId ) ||
-		 ( query->staticOnly && b3Body_GetType( b3Shape_GetBody( shapeId ) ) != b3_staticBody ) )
+		 ( query->staticOnly && b3Body_GetType( b3Shape_GetBody( shapeId ) ) != b3_staticBody ) ||
+		 ( query->skipOverlaps && fraction == 0.0f && b3LengthSquared( normal ) < 0.25f ) )
 	{
 		return -1.0f;
 	}
@@ -924,7 +939,7 @@ static bool nbAnyOverlapFcn( b3ShapeId shapeId, void* context )
 // The ground under a point: cast down from above it, leaving out the figure and, if asked, every other figure
 static nbFigureQuery nbFindGround( const nbWorld* world, int index, b3Pos point, b3Vec3 up, float above, float below )
 {
-	nbFigureQuery query = { world, index, true, false, 1.0f, b3Vec3_zero, point, b3_nullShapeId, false };
+	nbFigureQuery query = { world, index, true, false, 1.0f, b3Vec3_zero, point, b3_nullShapeId, false, false };
 	b3Pos origin = b3OffsetPos( point, b3MulSV( above, up ) );
 	b3World_CastRay( world->physicsWorld, origin, b3MulSV( -( above + below ), up ), b3DefaultQueryFilter(), nbClosestHitFcn,
 					 &query );
@@ -936,7 +951,7 @@ static bool nbCapsuleBlocked( const nbWorld* world, int index, b3Pos origin, b3V
 {
 	b3Vec3 points[2] = { a, b };
 	b3ShapeProxy proxy = { points, 2, radius };
-	nbFigureQuery query = { world, index, false, false, 1.0f, b3Vec3_zero, origin, b3_nullShapeId, false };
+	nbFigureQuery query = { world, index, false, false, 1.0f, b3Vec3_zero, origin, b3_nullShapeId, false, false };
 	b3World_OverlapShape( world->physicsWorld, origin, &proxy, b3DefaultQueryFilter(), nbAnyOverlapFcn, &query );
 	return query.hit;
 }
@@ -1130,6 +1145,27 @@ static void nbStartFade( nbFigure* f, float duration )
 	f->fadeDuration = duration;
 }
 
+// The feet where the clip puts them, on the ground of the frame
+static void nbResetFeet( nbFigure* f )
+{
+	for ( int k = 0; k < 2; ++k )
+	{
+		nbFoot* foot = f->feet + k;
+		foot->tilt = b3Quat_identity;
+		foot->fromTilt = b3Quat_identity;
+		foot->targetTilt = b3Quat_identity;
+		foot->lift = 0.0f;
+		foot->lean = b3Quat_identity;
+		foot->down = 1.0f;
+		foot->hasGround = false;
+		foot->cast = false;
+	}
+	f->feetFlat = false;
+	f->balancing = false;
+	f->swingFoot = -1;
+	f->footWeight = 0.0f;
+}
+
 // A figure that got up stands: the frame moves to where the clip left the root, the stand clip blends in
 static void nbStand( nbWorld* world, nbFigure* f )
 {
@@ -1143,6 +1179,7 @@ static void nbStand( nbWorld* world, nbFigure* f )
 	f->root = (b3Transform){ { 0.0f, last.p.y, 0.0f }, b3NormalizeQuat( b3MulQuat( nbHeadingQuat( -turn ), last.q ) ) };
 
 	nbStartFade( f, NB_STAND_FADE );
+	nbResetFeet( f );
 	f->state = nb_figureAnimated;
 	f->stateTime = 0.0f;
 	f->playing = false;
@@ -1190,6 +1227,18 @@ static void nbFramePose( const nbFigure* f, b3Transform root, const b3Quat* pose
 	}
 }
 
+// The transforms of the root and the legs of a pose of the humanoid in the frame of the figure, from the root there
+static void nbFrameLegs( const nbFigure* f, b3Transform root, const b3Quat* pose, b3Transform* transforms )
+{
+	transforms[0] = root;
+	for ( int i = nb_humanoidThighLeft; i <= nb_humanoidFootRight; ++i )
+	{
+		const nbBone* bone = f->bones + i;
+		b3Transform local = { bone->rest.p, b3NormalizeQuat( b3MulQuat( bone->rest.q, pose[i] ) ) };
+		transforms[i] = b3MulTransforms( transforms[bone->parent], local );
+	}
+}
+
 // The center of mass of a pose in the frame, from the centers of its bones
 static b3Vec3 nbFrameCenter( const nbFigure* f, const b3Transform* transforms )
 {
@@ -1212,8 +1261,8 @@ static float nbCrossOnGround( const b3Vec3* o, const b3Vec3* a, const b3Vec3* b 
 }
 
 // How far a point of the ground of the frame lies inside the soles of the feet that stand on it, seen from above,
-// negative outside: the corners of the feet near the ground and their convex hull, by Andrew's monotone chain
-static float nbInsideSoles( const nbFigure* f, const b3Transform* transforms, float x, float z, float scale )
+// negative outside: the corners of the feet the clip holds down and their convex hull, by Andrew's monotone chain
+static float nbInsideSoles( const nbFigure* f, const b3Transform* transforms, float x, float z )
 {
 	b3Vec3 points[2 * NB_BONE_POINTS];
 	int count = 0;
@@ -1235,15 +1284,13 @@ static float nbInsideSoles( const nbFigure* f, const b3Transform* transforms, fl
 			cornerCount = 2;
 		}
 
-		float lowest = FLT_MAX;
+		if ( f->feet[k].down < 0.5f )
+		{
+			continue;
+		}
 		for ( int c = 0; c < cornerCount; ++c )
 		{
 			corners[c] = b3TransformPoint( transforms[feet[k]], corners[c] );
-			lowest = b3MinFloat( lowest, corners[c].y );
-		}
-		if ( lowest > NB_SOLE_GAP * scale )
-		{
-			continue;
 		}
 		for ( int c = 0; c < cornerCount; ++c )
 		{
@@ -1338,28 +1385,160 @@ static bool nbBodyBlocked( const nbWorld* world, int index, const nbFigure* f, b
 	b3Vec3 points[2] = { b3MulSV( NB_BODY_LOW * scale, up ), b3MulSV( NB_BODY_HIGH * scale, up ) };
 	b3ShapeProxy proxy = { points, 2, NB_BODY_RADIUS * scale };
 	b3Vec3 translation = b3MulSV( ( length + NB_BODY_MARGIN * scale ) / length, offset );
-	nbFigureQuery query = { world, index, true, false, 1.0f, b3Vec3_zero, origin, b3_nullShapeId, true };
+	nbFigureQuery query = { world, index, true, false, 1.0f, b3Vec3_zero, origin, b3_nullShapeId, true, false };
 	b3World_CastShape( world->physicsWorld, origin, &proxy, translation, b3DefaultQueryFilter(), nbClosestHitFcn, &query );
 	return query.hit;
 }
 
-// Ground for a foot whose ankle goes to a point, as high over the ground as the clip holds it: flat enough and not moving
-// fast. The ankle over that ground.
-static bool nbFindFooting( const nbWorld* world, int index, b3Pos ankle, float height, b3Vec3 up, b3Pos* target )
+// Where the clip puts a foot of the humanoid in the frame: its ankle, the middle of its sole, its rotation, and how far it
+// holds the foot down, 1 while the sole is near the ground of the frame and 0 once it lifts it 10 cm
+typedef struct nbClipFoot
 {
-	b3Pos sole = b3OffsetPos( ankle, b3MulSV( -height, up ) );
-	nbFigureQuery ground = nbFindGround( world, index, sole, up, NB_GROUND_ABOVE, NB_GROUND_BELOW );
-	if ( ground.hit == false || b3Dot( ground.normal, up ) < NB_STEP_FLATNESS )
+	b3Vec3 ankle;
+	b3Vec3 sole;
+	b3Quat rotation;
+	float weight;
+} nbClipFoot;
+
+static nbClipFoot nbGetClipFoot( const nbFigure* f, const b3Transform* transforms, int foot, float scale )
+{
+	// The lowest point of the shape, along the axes of the bone, for a box with its edges rounded by its radius
+	const nbBone* bone = f->bones + foot;
+	b3Transform transform = transforms[foot];
+	float lowest;
+	b3Vec3 center;
+	if ( bone->shape == nb_capsuleBone )
+	{
+		b3Vec3 start = b3TransformPoint( transform, bone->start );
+		b3Vec3 end = b3TransformPoint( transform, bone->end );
+		lowest = b3MinFloat( start.y, end.y ) - bone->radius;
+		center = b3MulSV( 0.5f, b3Add( start, end ) );
+	}
+	else
+	{
+		b3Vec3 h = bone->halfExtents;
+		float round = bone->shape == nb_roundedBoxBone ? b3ClampFloat( bone->radius, 0.0f, 0.95f * b3MinFloat( h.x, b3MinFloat( h.y, h.z ) ) ) : 0.0f;
+		b3Vec3 x = b3RotateVector( transform.q, b3Vec3_axisX );
+		b3Vec3 y = b3RotateVector( transform.q, b3Vec3_axisY );
+		b3Vec3 z = b3RotateVector( transform.q, b3Vec3_axisZ );
+		center = b3TransformPoint( transform, bone->center );
+		lowest = center.y - fabsf( x.y ) * ( h.x - round ) - fabsf( y.y ) * ( h.y - round ) - fabsf( z.y ) * ( h.z - round ) - round;
+	}
+
+	nbClipFoot clip;
+	clip.ankle = transform.p;
+	clip.sole = (b3Vec3){ center.x, lowest, center.z };
+	clip.rotation = transform.q;
+	clip.weight = b3ClampFloat( ( NB_SOLE_LIFTED * scale - lowest ) / ( ( NB_SOLE_LIFTED - NB_SOLE_GAP ) * scale ), 0.0f, 1.0f );
+	return clip;
+}
+
+// The ankle of a foot whose sole the ground lifts and tilts, turned about the middle of the sole
+static b3Vec3 nbTiltedAnkle( const nbClipFoot* clip, float lift, b3Quat tilt )
+{
+	b3Vec3 sole = { clip->sole.x, clip->sole.y + lift, clip->sole.z };
+	return b3Add( sole, b3RotateVector( tilt, b3Sub( clip->ankle, clip->sole ) ) );
+}
+
+// A rotation of at most an angle, about the same axis
+static b3Quat nbLimitRotation( b3Quat rotation, float limit )
+{
+	float angle;
+	b3Vec3 axis = b3GetAxisAngle( &angle, b3NormalizeQuat( rotation ) );
+	if ( angle <= limit || b3LengthSquared( axis ) == 0.0f )
+	{
+		return rotation;
+	}
+	return b3MakeQuatFromAxisAngle( axis, limit );
+}
+
+// The ground under the middle of a sole in the world: a sphere cast down from above it finds it, flat enough and not
+// moving fast, with nothing that the cast starts in. A point of it and its normal, false where there is none.
+static bool nbCastFootGround( const nbWorld* world, int index, b3Pos sole, b3Vec3 up, float scale, b3Pos* point,
+							  b3Vec3* normal )
+{
+	float radius = NB_FOOT_RADIUS * scale;
+	b3Pos origin = b3OffsetPos( sole, b3MulSV( NB_GROUND_ABOVE + radius, up ) );
+	b3Vec3 center = b3Vec3_zero;
+	b3ShapeProxy proxy = { &center, 1, radius };
+	nbFigureQuery query = { world, index, true, false, 1.0f, b3Vec3_zero, origin, b3_nullShapeId, false, true };
+	b3World_CastShape( world->physicsWorld, origin, &proxy, b3MulSV( -( NB_GROUND_ABOVE + NB_GROUND_BELOW ), up ),
+					   b3DefaultQueryFilter(), nbClosestHitFcn, &query );
+	if ( query.hit == false || b3Dot( query.normal, up ) < NB_STEP_FLATNESS )
 	{
 		return false;
 	}
-	b3BodyId body = b3Shape_GetBody( ground.shapeId );
+	b3BodyId body = b3Shape_GetBody( query.shapeId );
 	if ( b3Body_GetType( body ) != b3_staticBody && b3Length( b3Body_GetLinearVelocity( body ) ) > NB_GROUND_SPEED )
 	{
 		return false;
 	}
-	*target = b3OffsetPos( ground.point, b3MulSV( height, up ) );
+	*point = query.point;
+	*normal = query.normal;
 	return true;
+}
+
+// How far a plane of the ground lifts the sole of a foot that the clip puts in a frame, at the middle of the sole, and
+// how it tilts it: the turn from the up of the frame to its normal, in the frame
+static void nbGroundUnderSole( b3WorldTransform frame, const nbClipFoot* clip, b3Pos point, b3Vec3 worldNormal, float* lift,
+							   b3Quat* tilt )
+{
+	b3Vec3 normal = b3InvRotateVector( frame.q, worldNormal );
+	b3Vec3 contact = b3InvTransformWorldPoint( frame, point );
+	float height = contact.y - ( normal.x * ( clip->sole.x - contact.x ) + normal.z * ( clip->sole.z - contact.z ) ) / normal.y;
+	*lift = height - clip->sole.y;
+	*tilt = normal.x == 0.0f && normal.z == 0.0f ? b3Quat_identity
+												 : nbLimitRotation( b3ComputeQuatBetweenUnitVectors( b3Vec3_axisY, normal ), NB_FOOT_TILT );
+}
+
+// The ground under the sole of a foot that the clip puts in a frame, see nbCastFootGround and nbGroundUnderSole
+static bool nbFindFootGround( const nbWorld* world, int index, b3WorldTransform frame, const nbClipFoot* clip, float scale,
+							  float* lift, b3Quat* tilt )
+{
+	b3Pos point;
+	b3Vec3 normal;
+	b3Vec3 up = b3RotateVector( frame.q, b3Vec3_axisY );
+	if ( nbCastFootGround( world, index, b3TransformWorldPoint( frame, clip->sole ), up, scale, &point, &normal ) == false )
+	{
+		return false;
+	}
+	nbGroundUnderSole( frame, clip, point, normal, lift, tilt );
+	return true;
+}
+
+// The feet of a standing humanoid follow the ground under the clip: each takes the height and the slope of the ground
+// under its sole, smoothly, or the ground of the frame where it finds none. The ground is found again when it is due,
+// every eighth update in turn with the other figures, and once the sole moved, not while the figure steps.
+static void nbFollowGround( const nbWorld* world, int index, nbFigure* f, const nbClipFoot* clips, bool due, float timeStep,
+							float scale )
+{
+	float follow = b3MinFloat( 1.0f, NB_FOOT_FOLLOW * timeStep );
+	b3Vec3 up = b3RotateVector( f->frame.q, b3Vec3_axisY );
+	for ( int k = 0; k < 2; ++k )
+	{
+		nbFoot* foot = f->feet + k;
+		const nbClipFoot* clip = clips + k;
+		b3Pos sole = b3TransformWorldPoint( f->frame, clip->sole );
+		b3Vec3 moved = b3SubPos( sole, foot->castAt );
+		moved = b3MulSub( moved, b3Dot( moved, up ), up );
+		if ( f->balancing == false &&
+			 ( due || foot->cast == false || b3LengthSquared( moved ) > NB_FOOT_RECAST * NB_FOOT_RECAST * scale * scale ) )
+		{
+			foot->hasGround = nbCastFootGround( world, index, sole, up, scale, &foot->groundPoint, &foot->groundNormal );
+			foot->castAt = sole;
+			foot->cast = true;
+		}
+
+		float lift = 0.0f;
+		b3Quat tilt = b3Quat_identity;
+		if ( foot->hasGround )
+		{
+			nbGroundUnderSole( f->frame, clip, foot->groundPoint, foot->groundNormal, &lift, &tilt );
+		}
+		foot->lift += follow * ( lift - foot->lift );
+		foot->lean = b3NLerp( foot->lean, tilt, follow );
+		foot->down = clip->weight;
+	}
 }
 
 // A hit that does not knock a standing figure down pushes it, see the top of this section. Returns false where it cannot
@@ -1400,7 +1579,7 @@ static bool nbPush( nbWorld* world, nbFigure* f, b3Vec3 impulse )
 		// Inside the soles shrunk about the center of mass, where the point that far out from it lies inside the soles
 		float zone = b3ClampFloat( f->def.stepZone, 0.05f, 1.0f );
 		b3Vec3 local = b3InvRotateVector( f->frame.q, offset );
-		if ( nbInsideSoles( f, transforms, center.x + local.x / zone, center.z + local.z / zone, scale ) >= 0.0f )
+		if ( nbInsideSoles( f, transforms, center.x + local.x / zone, center.z + local.z / zone ) >= 0.0f )
 		{
 			return true;
 		}
@@ -1411,11 +1590,15 @@ static bool nbPush( nbWorld* world, nbFigure* f, b3Vec3 impulse )
 		return false;
 	}
 
-	// From where the feet stand, if they followed the clip
-	if ( f->footWeight == 0.0f )
+	// From where the feet stand, as the ground tilts them
+	if ( f->balancing == false )
 	{
 		f->feet[0].plant = f->targets[nb_humanoidFootLeft].p;
 		f->feet[1].plant = f->targets[nb_humanoidFootRight].p;
+		for ( int k = 0; k < 2; ++k )
+		{
+			f->feet[k].tilt = nbPartOf( f->feet[k].lean, f->feet[k].down );
+		}
 		f->swingFoot = -1;
 	}
 	f->balancing = true;
@@ -1441,10 +1624,10 @@ static void nbSway( nbFigure* f, float timeStep )
 }
 
 // The feet of a figure that catches a push: the foot in the air goes on and lands, then the foot that stands farthest from
-// where the clip puts it under the body at the end of the push steps there, until both stand there. The first step goes
-// with the foot toward the push. Returns false where a step finds no ground and the figure falls.
-static bool nbStepFeet( const nbWorld* world, int index, nbFigure* f, const b3Transform* transforms, b3Vec3 up,
-						float timeStep )
+// where the clip puts it under the body at the end of the push steps there, on the ground there, until both stand there.
+// The first step goes with the foot toward the push. Returns false where a step finds no ground and the figure falls.
+static bool nbStepFeet( const nbWorld* world, int index, nbFigure* f, const b3Transform* transforms, const nbClipFoot* clips,
+						b3Vec3 up, float timeStep )
 {
 	if ( f->swingFoot >= 0 )
 	{
@@ -1455,6 +1638,7 @@ static bool nbStepFeet( const nbWorld* world, int index, nbFigure* f, const b3Tr
 		}
 		nbFoot* foot = f->feet + f->swingFoot;
 		foot->plant = foot->target;
+		foot->tilt = foot->targetTilt;
 		f->swingFoot = -1;
 		f->stepCount += 1;
 	}
@@ -1487,13 +1671,17 @@ static bool nbStepFeet( const nbWorld* world, int index, nbFigure* f, const b3Tr
 		return true;
 	}
 
-	b3Pos target;
-	if ( nbFindFooting( world, index, places[next], transforms[feet[next]].p.y, up, &target ) == false )
+	float lift;
+	b3Quat tilt;
+	if ( nbFindFootGround( world, index, end, clips + next, scale, &lift, &tilt ) == false )
 	{
 		return false;
 	}
-	f->feet[next].from = f->feet[next].plant;
-	f->feet[next].target = target;
+	nbFoot* foot = f->feet + next;
+	foot->from = foot->plant;
+	foot->fromTilt = foot->tilt;
+	foot->target = b3TransformWorldPoint( end, nbTiltedAnkle( clips + next, lift, tilt ) );
+	foot->targetTilt = tilt;
 	f->swingFoot = next;
 	f->swingTime = 0.0f;
 	return true;
@@ -1517,31 +1705,76 @@ static void nbReachAnkle( const nbFigure* f, int thigh, b3Transform pelvis, b3Ve
 	pose[thigh + 2] = b3NormalizeQuat( b3InvMulQuat( b3MulQuat( shinRotation, footBone->rest.q ), footRotation ) );
 }
 
-// The legs of a figure that steps reach for its feet as far as they follow them instead of the clip: the ankles on where
-// they stand or on the way of a step, which starts and ends slowly and lifts the foot as high as the lift over the
-// higher end, the feet turned as the clip turns them, and the root down as far as the legs need to reach
-static void nbPlaceFeet( nbFigure* f, const b3Transform* transforms, b3Vec3 up )
+// The legs of the humanoid reach for its feet. Standing, a foot that the clip holds down takes the height and the slope of
+// the ground under its sole, turned about the middle of the sole, and a foot that the clip lifts keeps its pose. As far as
+// the figure steps, a foot stands where it planted, or goes on the way of its step, which starts and ends slowly and
+// lifts the foot as high as the lift over the higher end. The feet turn as the clip turns them and the ground tilts
+// them. The root goes up or down with the lower foot, and down as far as the legs need to reach, never farther than the
+// clip stretches them.
+static void nbPlaceFeet( nbFigure* f, const b3Transform* transforms, const nbClipFoot* clips, b3Vec3 up )
 {
 	float scale = nbFigureScale( f );
 	const int thighs[2] = { nb_humanoidThighLeft, nb_humanoidThighRight };
 	b3Vec3 ankles[2];
-	for ( int k = 0; k < 2; ++k )
+	b3Quat rotations[2];
+	bool placed[2];
+	float rise = FLT_MAX;
+	float planted = b3ClampFloat( f->footWeight, 0.0f, 1.0f );
+
+	// On ground as flat and high as the clip has it, the clip keeps the legs
+	bool flat = planted == 0.0f;
+	for ( int k = 0; k < 2 && flat; ++k )
 	{
 		const nbFoot* foot = f->feet + k;
-		b3Pos ankle = foot->plant;
-		if ( k == f->swingFoot )
-		{
-			float u = b3ClampFloat( f->swingTime / NB_STEP_TIME, 0.0f, 1.0f );
-			float bump = 4.0f * u * ( 1.0f - u );
-			float rise = b3MaxFloat( b3Dot( b3SubPos( foot->target, foot->from ), up ), 0.0f );
-			float lift = bump * bump * ( NB_STEP_LIFT * scale + rise );
-			ankle = b3OffsetPos( b3LerpPosition( foot->from, foot->target, u * u * ( 3.0f - 2.0f * u ) ), b3MulSV( lift, up ) );
-		}
-		ankles[k] = b3InvTransformWorldPoint( f->frame, ankle );
+		flat = clips[k].weight == 0.0f || ( fabsf( foot->lift ) < NB_FOOT_FLAT * scale && 1.0f - fabsf( foot->lean.s ) < 1.0e-6f );
+	}
+	f->feetFlat = flat;
+	if ( flat )
+	{
+		return;
 	}
 
-	// Down as far as the farther leg needs, the ankles below the hips
+	for ( int k = 0; k < 2; ++k )
+	{
+		const nbClipFoot* clip = clips + k;
+		const nbFoot* foot = f->feet + k;
+		b3Quat tilt = clip->weight >= 1.0f ? foot->lean : nbPartOf( foot->lean, clip->weight );
+		b3Vec3 ankle = nbTiltedAnkle( clip, clip->weight * foot->lift, tilt );
+		if ( planted > 0.0f )
+		{
+			b3Pos stand = foot->plant;
+			b3Quat standTilt = foot->tilt;
+			if ( k == f->swingFoot )
+			{
+				float u = b3ClampFloat( f->swingTime / NB_STEP_TIME, 0.0f, 1.0f );
+				float smooth = u * u * ( 3.0f - 2.0f * u );
+				float bump = 4.0f * u * ( 1.0f - u );
+				float higher = b3MaxFloat( b3Dot( b3SubPos( foot->target, foot->from ), up ), 0.0f );
+				float lift = bump * bump * ( NB_STEP_LIFT * scale + higher );
+				stand = b3OffsetPos( b3LerpPosition( foot->from, foot->target, smooth ), b3MulSV( lift, up ) );
+				standTilt = b3NLerp( foot->fromTilt, foot->targetTilt, smooth );
+			}
+			ankle = b3Lerp( ankle, b3InvTransformWorldPoint( f->frame, stand ), planted );
+			tilt = b3NLerp( tilt, standTilt, planted );
+		}
+		ankles[k] = ankle;
+		rotations[k] = b3NormalizeQuat( b3MulQuat( tilt, clip->rotation ) );
+		placed[k] = planted > 0.0f || clip->weight > 0.0f;
+		if ( placed[k] )
+		{
+			// A foot that the clip lifts moves the root less, as if it went down further
+			float down = b3MaxFloat( clip->weight, planted );
+			rise = b3MinFloat( rise, ankle.y - clip->ankle.y + ( 1.0f - down ) * NB_MAX_DROP * scale );
+		}
+	}
+	if ( placed[0] == false && placed[1] == false )
+	{
+		return;
+	}
+
+	// Up or down with the lower foot, then down as far as the farther leg needs
 	b3Transform root = f->root;
+	root.p.y += b3ClampFloat( rise, -NB_MAX_DROP * scale, NB_GROUND_ABOVE * scale );
 	float drop = 0.0f;
 	for ( int k = 0; k < 2; ++k )
 	{
@@ -1554,22 +1787,14 @@ static void nbPlaceFeet( nbFigure* f, const b3Transform* transforms, b3Vec3 up )
 		float below = across < reach * reach ? sqrtf( reach * reach - across ) : 0.0f;
 		drop = b3MaxFloat( drop, -offset.y - below );
 	}
-	drop = b3ClampFloat( drop, 0.0f, NB_MAX_DROP * scale );
-	root.p.y -= drop;
+	root.p.y -= b3ClampFloat( drop, 0.0f, NB_MAX_DROP * scale );
+	f->root = root;
 
-	b3Quat legs[nb_humanoidBoneCount];
 	for ( int k = 0; k < 2; ++k )
 	{
-		nbReachAnkle( f, thighs[k], root, ankles[k], transforms[thighs[k] + 2].q, legs );
-	}
-
-	float weight = b3ClampFloat( f->footWeight, 0.0f, 1.0f );
-	f->root.p.y -= weight * drop;
-	for ( int k = 0; k < 2; ++k )
-	{
-		for ( int i = thighs[k]; i < thighs[k] + 3; ++i )
+		if ( placed[k] )
 		{
-			f->pose[i] = weight < 1.0f ? b3NLerp( f->pose[i], legs[i], weight ) : legs[i];
+			nbReachAnkle( f, thighs[k], root, ankles[k], rotations[k], f->pose );
 		}
 	}
 }
@@ -1988,17 +2213,23 @@ static void nbUpdateAnimated( nbWorld* world, int index, nbFigure* f, float time
 
 	nbAnimate( world, index, f, timeStep );
 
-	// The feet of a figure that steps, held where they stand, and after its last step back to the clip
-	if ( f->footWeight > 0.0f )
+	// The feet of the humanoid on the ground, held where they stand while it steps, and after its last step back where the
+	// clip puts them. On flat ground it looks at them only when the ground under them is due.
+	bool due = ( world->figureUpdates + index ) % NB_FOOT_PERIOD == 0;
+	if ( f->boneCount == nb_humanoidBoneCount && ( due || f->feetFlat == false || f->footWeight > 0.0f ) )
 	{
+		float scale = nbFigureScale( f );
 		b3Transform transforms[nb_humanoidBoneCount];
-		nbFramePose( f, f->root, f->pose, transforms );
-		if ( nbStepFeet( world, index, f, transforms, up, timeStep ) == false )
+		nbFrameLegs( f, f->root, f->pose, transforms );
+		nbClipFoot clips[2] = { nbGetClipFoot( f, transforms, nb_humanoidFootLeft, scale ),
+								nbGetClipFoot( f, transforms, nb_humanoidFootRight, scale ) };
+		nbFollowGround( world, index, f, clips, due, timeStep, scale );
+		if ( f->footWeight > 0.0f && nbStepFeet( world, index, f, transforms, clips, up, timeStep ) == false )
 		{
 			nbFall( world, f, false );
 			return;
 		}
-		nbPlaceFeet( f, transforms, up );
+		nbPlaceFeet( f, transforms, clips, up );
 		if ( f->balancing == false )
 		{
 			f->footWeight = b3MaxFloat( 0.0f, f->footWeight - timeStep / NB_FOOT_FADE );
@@ -2022,7 +2253,7 @@ static void nbSenseDanger( nbWorld* world, int index, nbFigure* f, b3Vec3 veloci
 		b3Pos origin = b3Body_GetWorldCenter( f->bones[0].bodyId );
 		b3Vec3 point = b3Vec3_zero;
 		b3ShapeProxy proxy = { &point, 1, NB_DANGER_RADIUS };
-		nbFigureQuery query = { world, index, false, false, 1.0f, b3Vec3_zero, origin, b3_nullShapeId, false };
+		nbFigureQuery query = { world, index, false, false, 1.0f, b3Vec3_zero, origin, b3_nullShapeId, false, false };
 		b3World_CastShape( world->physicsWorld, origin, &proxy, b3MulSV( NB_DANGER_TIME, velocity ), b3DefaultQueryFilter(),
 						   nbClosestHitFcn, &query );
 		if ( query.hit )
@@ -2384,7 +2615,7 @@ nbFigureId nbCreateFigure( nbWorldId worldId, const nbFigureDef* def )
 	}
 
 	// The first pose of the idle clip where the figure stands, the feet where the clip puts them
-	f->swingFoot = -1;
+	nbResetFeet( f );
 	f->heading = def->heading;
 	f->frame = nbMakeFrame( world, def->position, def->heading );
 	f->clipSpeed = 1.0f;
@@ -2670,13 +2901,17 @@ void nbFigure_Move( nbFigureId figureId, b3Pos position, float heading )
 		return;
 	}
 
-	// The program takes over where the figure stands, a step to catch a hit ends and the legs follow the clip
+	// The program takes over where the figure stands, a step to catch a hit ends and the feet go where the clip puts them
 	bool far = b3Length( b3SubPos( position, f->frame.p ) ) > 1.0f;
 	f->heading = heading;
 	f->frame = nbMakeFrame( world, position, heading );
 	f->balancing = false;
 	f->swingFoot = -1;
 	f->footWeight = 0.0f;
+	if ( far )
+	{
+		nbResetFeet( f );
+	}
 	if ( far )
 	{
 		// A jump: the bones go there at once, without the velocity of a jump

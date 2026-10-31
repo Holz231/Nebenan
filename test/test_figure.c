@@ -675,6 +675,131 @@ static int FigureStepBlockedTest( void )
 	return 0;
 }
 
+// A box, turned
+static void AddTurnedBlock( FigureScene* scene, b3Vec3 center, b3Quat rotation, b3Vec3 halfExtents )
+{
+	b3BodyDef bodyDef = b3DefaultBodyDef();
+	bodyDef.position = center;
+	bodyDef.rotation = rotation;
+	b3BodyId body = b3CreateBody( scene->physicsWorld, &bodyDef );
+	b3BoxHull box = b3MakeBoxHull( halfExtents.x, halfExtents.y, halfExtents.z );
+	b3ShapeDef shapeDef = b3DefaultShapeDef();
+	b3CreateHullShape( body, &shapeDef, &box.base );
+}
+
+// How far the corners of the sole of a foot of the humanoid lie from a plane, the most and the least
+static void SoleGaps( nbFigureId figure, int foot, b3Vec3 point, b3Vec3 normal, float* lowest, float* highest )
+{
+	b3BodyId body = nbFigure_GetBody( figure, foot );
+	*lowest = FLT_MAX;
+	*highest = -FLT_MAX;
+	for ( int k = 0; k < 4; ++k )
+	{
+		b3Vec3 corner = { k & 1 ? 0.045f : -0.045f, k & 2 ? 0.22f : -0.04f, -0.06f };
+		float gap = b3Dot( b3Sub( b3ToVec3( b3Body_GetWorldPoint( body, corner ) ), point ), normal );
+		*lowest = b3MinFloat( *lowest, gap );
+		*highest = b3MaxFloat( *highest, gap );
+	}
+}
+
+// The feet of a standing figure stand on the ground under them, after the roadmap of the game, 26.5 and 28.3: with its
+// left foot on a slab 10 cm high the left knee bends, on a slope across and along it both soles lie on the slope and the
+// root goes down with the lower foot, a foot that a clip lifts stays where the clip puts it, and a step to catch a hit
+// goes up onto a slab.
+static int FigureFeetTest( void )
+{
+	for ( int pass = 0; pass < 5; ++pass )
+	{
+		FigureScene scene;
+		CreateFigureScene( &scene, 1 );
+		b3Vec3 ground = b3Vec3_zero;
+		b3Vec3 normal = b3Vec3_axisY;
+		if ( pass == 0 )
+		{
+			// Under the left foot alone
+			AddBlock( &scene, (b3Vec3){ 0.16f, 0.05f, 0.1f }, (b3Vec3){ 0.14f, 0.05f, 0.3f } );
+		}
+		else if ( pass == 1 || pass == 2 )
+		{
+			// A slope 30 cm over the ground where the figure stands, rising 0.2 rad toward the left, or ahead
+			b3Quat slope = pass == 1 ? b3MakeQuatFromAxisAngle( b3Vec3_axisZ, 0.2f ) : b3MakeQuatFromAxisAngle( b3Vec3_axisX, -0.2f );
+			ground = (b3Vec3){ 0.0f, 0.3f, 0.0f };
+			AddTurnedBlock( &scene, b3Add( ground, b3RotateVector( slope, (b3Vec3){ 0.0f, -1.0f, 0.0f } ) ), slope,
+							(b3Vec3){ 5.0f, 1.0f, 5.0f } );
+			normal = b3RotateVector( slope, b3Vec3_axisY );
+		}
+		else if ( pass == 4 )
+		{
+			// Left of the figure, where a push to the left takes its left foot
+			AddBlock( &scene, (b3Vec3){ 0.6f, 0.04f, 0.1f }, (b3Vec3){ 0.45f, 0.04f, 0.4f } );
+		}
+		nbFigureId figure = AddFigure( &scene, ground, 0.0f );
+
+		if ( pass == 3 )
+		{
+			// The left knee up, the foot 22 cm over the ground
+			b3Quat poses[2 * nb_humanoidBoneCount];
+			nbKeyframe keys[2];
+			for ( int k = 0; k < 2; ++k )
+			{
+				for ( int i = 0; i < nb_humanoidBoneCount; ++i )
+				{
+					poses[k * nb_humanoidBoneCount + i] = b3Quat_identity;
+				}
+				poses[k * nb_humanoidBoneCount + nb_humanoidThighLeft] = b3MakeQuatFromAxisAngle( b3Vec3_axisX, 0.8f );
+				poses[k * nb_humanoidBoneCount + nb_humanoidShinLeft] = b3MakeQuatFromAxisAngle( b3Vec3_axisX, -1.2f );
+				keys[k] = (nbKeyframe){ (float)k, poses + k * nb_humanoidBoneCount, b3Transform_identity };
+			}
+			nbClipDef clip = { keys, 2, nb_humanoidBoneCount, true, false };
+			nbFigure_PlayClip( figure, &clip, 1.0f );
+		}
+		StepFigures( &scene, 60 );
+		if ( pass == 4 )
+		{
+			ENSURE( HitChest( figure, 1, (b3Vec3){ 35.0f, 0.0f, 0.0f } ) );
+			StepFigures( &scene, 60 );
+			ENSURE( nbFigure_GetInfo( figure ).stepCount == 2 );
+		}
+		ENSURE( nbFigure_GetState( figure ) == nb_figureAnimated );
+
+		b3Vec3 left = BonePosition( figure, nb_humanoidFootLeft );
+		b3Vec3 right = BonePosition( figure, nb_humanoidFootRight );
+		b3Vec3 pelvis = BonePosition( figure, nb_humanoidPelvis );
+		float lowLeft, highLeft, lowRight, highRight;
+		SoleGaps( figure, nb_humanoidFootLeft, ground, normal, &lowLeft, &highLeft );
+		SoleGaps( figure, nb_humanoidFootRight, ground, normal, &lowRight, &highRight );
+		printf( "  pass %d: ankles at %.3f and %.3f m, the pelvis at %.3f m, the soles %.3f to %.3f and %.3f to %.3f m over the "
+				"ground\n",
+				pass, left.y, right.y, pelvis.y, lowLeft, highLeft, lowRight, highRight );
+		if ( pass == 0 )
+		{
+			ENSURE_SMALL( left.y - right.y - 0.1f, 3.0e-3f );
+			ENSURE_SMALL( pelvis.y - scene.standHeight, 3.0e-3f );
+			ENSURE( BonePosition( figure, nb_humanoidShinLeft ).z > BonePosition( figure, nb_humanoidShinRight ).z + 0.05f );
+		}
+		else if ( pass == 1 || pass == 2 )
+		{
+			// Both soles flat on the slope, and across it the root down as far as the lower foot goes down
+			ENSURE( lowLeft > -3.0e-3f && highLeft < 3.0e-3f && lowRight > -3.0e-3f && highRight < 3.0e-3f );
+			ENSURE( pass == 2 || pelvis.y < ground.y + scene.standHeight - 0.015f );
+			ENSURE( pass == 1 || fabsf( pelvis.y - ground.y - scene.standHeight ) < 3.0e-3f );
+		}
+		else if ( pass == 3 )
+		{
+			ENSURE( left.y > 0.2f );
+			ENSURE_SMALL( pelvis.y - scene.standHeight, 3.0e-3f );
+			ENSURE( lowRight > -3.0e-3f && highRight < 3.0e-3f );
+		}
+		else
+		{
+			ENSURE_SMALL( left.y - right.y - 0.08f, 3.0e-3f );
+			ENSURE( lowRight > -3.0e-3f && highRight < 3.0e-3f );
+		}
+		DestroyFigureScene( &scene );
+	}
+	return 0;
+}
+
 // A figure on a box falls when the box goes, and does not hang in the air
 static int FigureGroundTest( void )
 {
@@ -861,7 +986,7 @@ static uint32_t RunFigureScenario( int threadCount )
 }
 
 // The hash of the figure scenario on every platform, see RunFigureScenario
-#define NB_EXPECTED_FIGURE_HASH 0x4c6dcfb1u
+#define NB_EXPECTED_FIGURE_HASH 0xf6ef494fu
 
 static int FigureDeterminismTest( void )
 {
@@ -887,6 +1012,7 @@ int FigureTest( void )
 	RUN_TEST( FigureGetUpRoomTest );
 	RUN_TEST( FigureStepTest );
 	RUN_TEST( FigureStepBlockedTest );
+	RUN_TEST( FigureFeetTest );
 	RUN_TEST( FigureGroundTest );
 	RUN_TEST( FigureWorldTest );
 	RUN_TEST( FigureClipTest );

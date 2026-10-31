@@ -62,12 +62,26 @@ typedef struct nbBone
 	float radius;
 } nbBone;
 
-// A foot of a humanoid that steps to catch a hit: where its ankle stands while it is down, and where its step goes
+// A foot of a humanoid: where its ankle stands while it is down and how the ground there tilts its sole, where a step to
+// catch a hit takes it, and while the figure stands how far the ground under its sole lifts it over where the clip
+// puts it, how the ground tilts it, and how far the clip holds it down, see nbPlaceFeet. The tilts are rotations in the
+// frame of the figure. The ground it found last is a plane in the world, found under its sole where it stood then.
 typedef struct nbFoot
 {
 	b3Pos plant;
+	b3Quat tilt;
 	b3Pos from;
+	b3Quat fromTilt;
 	b3Pos target;
+	b3Quat targetTilt;
+	float lift;
+	b3Quat lean;
+	float down;
+	b3Pos groundPoint;
+	b3Vec3 groundNormal;
+	b3Pos castAt;
+	bool hasGround;
+	bool cast;
 } nbFoot;
 
 // A figure, see nbCreateFigure
@@ -111,9 +125,9 @@ typedef struct nbFigure
 	b3Vec3 flinch;
 	b3Vec3 flinchRate;
 
-	// Steps to catch a hit, see nbPush: the feet, the foot in the air or -1 and how far into its step, how far the body
-	// moves on the ground in all, how long it takes and how far along it is, and how far the legs follow the feet instead
-	// of the clip
+	// The feet on the ground and the steps to catch a hit, see nbPush: the feet, the foot in the air or -1 and how far
+	// into its step, how far the body moves on the ground in all, how long it takes and how far along it is, and how far
+	// the feet stand where they planted instead of where the clip puts them
 	nbFoot feet[2];
 	int swingFoot;
 	float swingTime;
@@ -123,6 +137,9 @@ typedef struct nbFigure
 	float swayDuration;
 	float footWeight;
 	int stepCount;
+
+	// The feet stood on ground as flat and high as the clip has it in the last update that looked at them
+	bool feetFlat;
 
 	// Ragdoll: the strength of the joints, the slack after a hard hit, how far the figure curls up and braces, the
 	// average speed of its bones, how long it lies still, the damping of its bones and whether the springs are on
