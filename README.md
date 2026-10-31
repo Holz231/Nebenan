@@ -554,14 +554,15 @@ eingeschaltet, misst Nebenan die Flächen dieser Bauwerke einmal an den Formen i
   nicht erst erzeugt.
 
 **Figuren.** Eine Figur ist ein Satz Knochen, jeder ein Box3D-Körper mit einer Form, Kapsel, Quader oder abgerundeter
-Quader, verbunden durch Gelenke: Kugelgelenke mit Kegel und Drehgrenze, Scharniere an Knien und Ellbogen (`nbRigDef`,
-`nbBoneDef`). `nbMakeHumanoidBones` legt einen Menschen aus 18 Knochen an, wie eine Gliederpuppe. Eine Figur ist zu
-jeder Zeit in genau einem Zustand, wie es Kapitel 28.1 der Roadmap des Spiels verlangt: Sie steht animiert, liegt als
-Ragdoll oder steht auf. Stehend sind ihre Knochen kinematisch, und das Update nach jedem Schritt gibt jedem Knochen mit
-`b3Body_SetTargetTransform` die Geschwindigkeit, mit der er im nächsten Schritt die nächste Haltung seines Clips
-erreicht. Nichts wird teleportiert, Trümmer prallen an der Figur ab, und Box3D löst keines ihrer Gelenke, denn zwischen
-kinematischen Körpern liegen sie in der statischen Menge. Ein schwacher Treffer lässt den Rumpf zurückzucken, eine
-kritisch gedämpfte Feder um das Becken, die die Bibliothek exakt löst, 0,008 rad pro N s bis höchstens 0,5 rad.
+Quader, verbunden durch Gelenke: Kugelgelenke mit einer Grenze in jede Richtung und einer Drehgrenze, Scharniere an
+Knien und Ellbogen (`nbRigDef`, `nbBoneDef`), siehe Gelenke wie beim Menschen. `nbMakeHumanoidBones` legt einen Menschen
+aus 18 Knochen an, wie eine Gliederpuppe. Eine Figur ist zu jeder Zeit in genau einem Zustand, wie es Kapitel 28.1 der
+Roadmap des Spiels verlangt: Sie steht animiert, liegt als Ragdoll oder steht auf. Stehend sind ihre Knochen
+kinematisch, und das Update nach jedem Schritt gibt jedem Knochen mit `b3Body_SetTargetTransform` die Geschwindigkeit,
+mit der er im nächsten Schritt die nächste Haltung seines Clips erreicht. Nichts wird teleportiert, Trümmer prallen an
+der Figur ab, und Box3D löst keines ihrer Gelenke, denn zwischen kinematischen Körpern liegen sie in der statischen
+Menge. Ein schwacher Treffer lässt den Rumpf zurückzucken, eine kritisch gedämpfte Feder um das Becken, die die
+Bibliothek exakt löst, 0,008 rad pro N s bis höchstens 0,5 rad.
 
 **Treffer je Körperpartie.** Hals, Kopf und Arme eines Menschen der Bibliothek schwingen bei einem leichten Treffer
 einzeln, nach Kapitel 26.4 und 26.5 der Roadmap des Spiels: Jeder dieser Knochen hat eine eigene gedämpfte Feder um
@@ -620,35 +621,38 @@ ihre Füße treten mit den Schritten des Ausgleichs unter ihren Körper zurück.
 der Mensch der Bibliothek so von vorn bis 110 N s, von hinten bis 120 N s und von beiden Seiten bis 80 N s, auf 10 N s
 genau abgetastet, und steht nach 0,9 bis 4,2 s wieder animiert. Auf `active-ragdoll-23` waren es von hinten 140 N s, bis
 `active-ragdoll-22` 70, 100 und 60 N s. Darüber fällt er nach höchstens zwei Schritten. Auch darunter endet ab und zu
-ein Treffer in langem Stolpern: In der Szene der Tests fällt seit `active-ragdoll-26` keiner von 168 Treffern mit 40 bis
-80 N s, vorher zwei, aber 80 N s von vorn rechts fängt die Figur erst nach 17 Schritten und 7,8 s. Eine Figur, die sich
-fängt, kostet im Update rund 4,4 statt 2 µs, und Box3D rechnet ihre dynamischen Knochen mit einem Thread in rund 0,06
-statt 0,006 ms pro Schritt. `nbFigureInfo::catchCount` und `nbFigureStats::catchCount` zählen, wie oft eine Figur sich
-fing, `nbFigureStats::balancingCount`, wie viele es gerade tun. Ein Spiel ruft dafür nichts auf. Andere Rigs als der
-Mensch der Bibliothek fallen gleich, bei ihnen kennt die Bibliothek die Beine nicht.
+ein Treffer in langem Stolpern: In der Szene der Tests fällt seit `active-ragdoll-27` einer von 168 Treffern mit 40 bis
+80 N s, 74 N s von rechts, auf `active-ragdoll-26` keiner und davor zwei, und der längste Fang dauert 3,9 s, auf
+`active-ragdoll-26` fing die Figur 80 N s von vorn rechts erst nach 17 Schritten und 7,8 s. Eine Figur, die sich fängt,
+kostet im Update rund 4,4 statt 2 µs, und Box3D rechnet ihre dynamischen Knochen mit einem Thread in rund 0,06 statt
+0,006 ms pro Schritt. `nbFigureInfo::catchCount` und `nbFigureStats::catchCount` zählen, wie oft eine Figur sich fing,
+`nbFigureStats::balancingCount`, wie viele es gerade tun. Ein Spiel ruft dafür nichts auf. Andere Rigs als der Mensch
+der Bibliothek fallen gleich, bei ihnen kennt die Bibliothek die Beine nicht.
 
 **Rudernde Arme.** Kommt ein Schritt zu kurz, helfen die Arme, nach der Idee von Hof (2007): Außer mit dem Druckpunkt
 unter den Füßen und mit Schritten hält ein Körper sein Gleichgewicht, indem er Teile von sich um seinen Schwerpunkt
 dreht. Ließe der geplante Schritt den Capture Point bei der Landung mehr als 10 cm außerhalb der Sohlen und liegt er
 gerade draußen, schwingt jeder Oberarm in Fallrichtung aus, um die Achse quer zur Richtung des Sturzes, umso weiter, je
-kürzer der Schritt kommt: 6,5 rad je Meter über die 10 cm hinaus, höchstens 1,3 rad, nie näher als 0,3 rad an den Kegel
-seiner Schulter und unter 0,1 rad gar nicht. Ein Treffer von 60 N s von vorn hebt die Arme so um 0,7 rad, einer von
-100 N s um 1,3 rad. Der Schwung ist geplant, wenn er beginnt, so bewegt sich der Arm wie ein Arm und nicht wie ein
-Motor, der zu seiner Grenze springt: hinaus in 0,2 s auf einer Rampe, die an beiden Enden flach ist, mit der vollen
-Kraft des Motors der Schulter, und der Ellbogen beugt sich dabei um bis zu 0,6 rad. Draußen hängt der Arm wieder locker
-und hält, solange die Figur tritt, sinkt dabei in einer Sekunde um ein Fünftel zurück und rudert langsam nach, 0,2 rad
-1,2-mal pro Sekunde, die Arme gegeneinander. Steht die Figur, schwingt er in 0,6 s auf einer flachen Rampe zur Haltung
-des Clips zurück, und der Ellbogen streckt sich. Das Gegenmoment des Schwungs dreht den Körper zurück, und über die Füße
-am Boden bremst es den Schwerpunkt. Ein Arm, der in den Körper schwänge, wie der innere bei einem Stoß zur Seite,
-schwingt nicht, und ein Arm schwingt erst wieder, wenn er zurück ist. Zwischen den Schwüngen hängen die Arme mit 60 %
-der Kraft der Motoren. Damit die Arme helfen können, gibt die Balance nicht mehr nach zwei Updates auf, weil ein Schritt
-allein nicht reicht, und sie tritt bis zu fünfmal in Folge. Bis `active-ragdoll-23` zog der Motor den Oberarm mit voller
-Kraft zu einem Ziel 1 rad vor ihm, solange der Schritt zu kurz kam, und die Arme ruckten: Gegen die Brust drehten sie im
-Median 17,7 rad/s und bremsten mit 555 rad/s², jetzt sind es 6,0 rad/s und 171 rad/s². Bei 1 488 Treffern auf Brust und
-Bauch aus acht Richtungen mit 40 bis 132 N s fängt sich die Figur 1 211-mal, auf `active-ragdoll-23` 1 206-mal und ohne
-Arme auf `active-ragdoll-22` 736-mal. Alle 736 fängt sie weiter, auf `active-ragdoll-23` fehlten 10, und bei ihnen steht
-sie gleich schnell ruhig. Von den 672 Treffern bis 80 N s fällt keiner, auf `active-ragdoll-23` fielen 11. Ein Update
-kostet für eine Figur, die sich fängt, so viel wie vorher. Ein Spiel ruft dafür nichts auf.
+kürzer der Schritt kommt: 6,5 rad je Meter über die 10 cm hinaus, höchstens 1,3 rad, nie näher als 0,3 rad an die Grenze
+seiner Schulter in diese Richtung und unter 0,1 rad gar nicht. Ein Treffer von 60 N s von vorn hebt die Arme so um 0,6
+bis 0,7 rad, einer von 100 N s um 1,4 bis 1,5 rad. Fällt die Figur nach vorn, schwingen die Arme zurück, so weit die 40°
+der Schulter es lassen, bei 110 N s von hinten 0,7 rad. Der Schwung ist geplant, wenn er beginnt, so bewegt sich der Arm
+wie ein Arm und nicht wie ein Motor, der zu seiner Grenze springt: hinaus in 0,2 s auf einer Rampe, die an beiden Enden
+flach ist, mit der vollen Kraft des Motors der Schulter, und der Ellbogen beugt sich dabei um bis zu 0,6 rad. Draußen
+hängt der Arm wieder locker und hält, solange die Figur tritt, sinkt dabei in einer Sekunde um ein Fünftel zurück und
+rudert langsam nach, 0,2 rad 1,2-mal pro Sekunde, die Arme gegeneinander. Steht die Figur, schwingt er in 0,6 s auf
+einer flachen Rampe zur Haltung des Clips zurück, und der Ellbogen streckt sich. Das Gegenmoment des Schwungs dreht den
+Körper zurück, und über die Füße am Boden bremst es den Schwerpunkt. Ein Arm, der in den Körper schwänge, wie der innere
+bei einem Stoß zur Seite, schwingt nicht, und ein Arm schwingt erst wieder, wenn er zurück ist. Zwischen den Schwüngen
+hängen die Arme mit 60 % der Kraft der Motoren. Damit die Arme helfen können, gibt die Balance nicht mehr nach zwei
+Updates auf, weil ein Schritt allein nicht reicht, und sie tritt bis zu fünfmal in Folge. Bis `active-ragdoll-23` zog
+der Motor den Oberarm mit voller Kraft zu einem Ziel 1 rad vor ihm, solange der Schritt zu kurz kam, und die Arme
+ruckten: Gegen die Brust drehten sie im Median 17,7 rad/s und bremsten mit 555 rad/s², jetzt sind es 6,0 rad/s und
+171 rad/s². Bei 1 488 Treffern auf Brust und Bauch aus acht Richtungen mit 40 bis 132 N s fängt sich die Figur
+1 211-mal, auf `active-ragdoll-23` 1 206-mal und ohne Arme auf `active-ragdoll-22` 736-mal. Alle 736 fängt sie weiter,
+auf `active-ragdoll-23` fehlten 10, und bei ihnen steht sie gleich schnell ruhig. Von den 672 Treffern bis 80 N s fällt
+keiner, auf `active-ragdoll-23` fielen 11. Ein Update kostet für eine Figur, die sich fängt, so viel wie vorher. Ein
+Spiel ruft dafür nichts auf.
 
 **Muskeln.** Mit `nbFigureMotors::muscles` ziehen die Gelenke einer Figur, die sich fängt oder als Ragdoll fällt, mit
 genäherten Muskeln, nach dem Modell von Hill (1938), auf der Ebene der Gelenke statt einzelner Muskeln. Ein Muskel
@@ -726,6 +730,35 @@ die der Arme wie vorher. Die Figur stolpert öfter lange, 128-mal statt 97-mal �
 Knochens wirkt an seinem Schwerpunkt, nicht am Treffpunkt: Mit dem Drehmoment des Treffpunkts verdrehte ein Treffer
 neben dem Schwerpunkt der Brust den Rumpf, paarweise um 49 % schneller als bis `active-ragdoll-25`, und die Figur fing
 sich nur noch 3 388-mal. Ein Treffer kostet so einmal 1,4 bis 2,6 statt 0,4 bis 0,8 µs. Ein Spiel ruft dafür nichts auf.
+
+**Gelenke wie beim Menschen.** Bis `active-ragdoll-26` begrenzte ein Kugelgelenk den Schwung seines Knochens mit einem
+runden Kegel, in jede Richtung gleich weit: Die Schulter ließ den Arm 86° nach vorn schwingen und ebenso weit zurück,
+und die Hüfte beugte das Bein mit ihrer Drehgrenze wie ein Scharnier, 132° nach vorn und 23° zurück, und ein Kegel von
+40° begrenzte, wie weit es hinaus schwang. Jetzt hat ein Kugelgelenk in jeder der vier Richtungen quer zum Knochen eine
+eigene Grenze und dazwischen eine Ellipse (`nbBoneDef::lowerSwingX`, `upperSwingX`, `lowerSwingY` und `upperSwingY`),
+eine Ergänzung in Box3D, siehe [`extern/README.md`](extern/README.md). Der Mensch der Bibliothek bewegt sich so weit wie
+ein Mensch nach den Normalwerten der Neutral-Null-Methode: Die Schulter hebt den Arm 160° nach vorn und zur Seite, 40°
+zurück und vor den Körper und dreht ihn 90° nach innen und 60° nach außen, der Ellbogen beugt sich 145°. Die Hüfte hebt
+das Bein 135° nach vorn, 20° zurück, 45° hinaus und 25° hinein und dreht es 40° nach innen und 45° nach außen, das Knie
+beugt sich 140°. Die drei Gelenke der Wirbelsäule beugen sie zusammen 75° nach vorn, 30° zurück und 34° zur Seite und
+drehen sie 40°, Hals und Kopf neigen sich zusammen 45° in jede Richtung und drehen sich 70°. Das Handgelenk beugt die
+Hand 60° zur Handfläche und 55° zurück, 25° zum Daumen und 35° zum kleinen Finger. Nur das Sprunggelenk geht weiter als
+nach dem Lehrbuch, 40° hinauf und 50° hinab, so weit, wie ein Mensch die Zehen unter seinem Gewicht im Ausfallschritt
+hebt: Mit den 25° der Neutral-Null-Methode, ohne Gewicht gemessen, fing sich die Figur nach einem Siebtel weniger
+Treffern. Ein Treffer von 90 N s von hinten auf den rechten Unterarm schwingt den Arm so 162° hoch, über den Kopf, statt
+89°, einer von vorn 51° zurück statt 90°. Box3D hält die Grenzen weich: Gleich nach dem Treffer schwingt die Hand, die
+6 N s davon auf 0,8 kg nimmt, bis 35° über ihre Grenzen, vom fünften Schritt an liegt kein Gelenk mehr als 7,7° darüber.
+An 4 464 Treffern auf Brust und Bauch fängt sich die Figur 3 617-mal statt 3 623-mal, 114 Treffer gehen verloren und 108
+kommen dazu, mit denselben Grenzen von 110, 120 und 80 N s. Paarweise steht sie im Mittel 0,1 s früher ruhig, mit 0,4
+Schritten weniger, und stolpert nur 88-mal statt 128-mal länger als 4 s. Ihre Arme drehen gegen die Brust 2 % schneller,
+alle anderen Gelenke so schnell wie vorher. Von 168 leichten Treffern fällt einer, vorher keiner. Sehr harte Treffer ab
+106 N s auf den Unterarm werfen sie 60-mal statt 22-mal von 80 um: Der Arm schwingt über den Kopf und reißt sie mit.
+Darunter fällt sie 7-mal statt 5-mal von 176, von einem Treffer auf den Oberarm 76-mal statt 66-mal von 256, von einem
+Tritt gegen das Schienbein 65-mal statt 61-mal, von einem Treffer auf den Kopf 166-mal statt 165-mal und von einem auf
+den Oberschenkel nie mehr statt 2-mal. Mit dem Rücken voran bricht sie 2-mal statt 5-mal von 8 durch eine Wand aus
+Brettern von 5 cm. Die Bibliothek begrenzt die Haltungen ihrer Clips und das Rudern der Arme mit denselben Grenzen wie
+Box3D. Ein Schritt kostet so viel wie vorher, siehe Leistung. Ein Spiel ruft dafür nichts auf, ein eigenes Rig setzt die
+vier Grenzen in `nbBoneDef`, alle null nehmen den runden Kegel `coneAngle` wie bisher.
 
 **Abstützen und Einrollen.** Eine schnelle Figur rudert mit den Armen (`nb_clipFall`), eine langsame entspannt sich in
 ihre Grundhaltung, so weit, wie ihr die Kraft fehlt: Ruderte sie am Boden weiter, kröche sie mit eigener Kraft über ihn.
@@ -1298,6 +1331,7 @@ beim Einbinden nicht gebaut.
 | Knochen (`nbBoneDef`) | Standard | Wirkung |
 | --- | --- | --- |
 | `maxSpeed` | 0 | Mit Muskeln: Höchstgeschwindigkeit des Gelenks in rad/s, je schneller es sich in seine Zugrichtung dreht, desto schwächer zieht es, nach der Kurve von Hill. Null zieht bei jeder Geschwindigkeit gleich. Der Mensch der Bibliothek: Rumpf 25 rad/s, Arme und Beine keine |
+| `lowerSwingX`, `upperSwingX`, `lowerSwingY`, `upperSwingY` | 0 | Kugelgelenk: wie weit der Knochen in jede der vier Richtungen um die x- und die y-Achse seines Gelenkrahmens schwingen darf, in Radiant, dazwischen eine Ellipse, bis 0,95 π, siehe Gelenke wie beim Menschen. Alle null nehmen `coneAngle` in jede Richtung, bis 0,5 π. Der Mensch der Bibliothek: Schulter 160° nach vorn und zur Seite, 40° zurück und hinein, Hüfte 135° nach vorn, 20° zurück, 45° hinaus und 25° hinein |
 | `flinch`, `flinchHertz`, `flinchDamping` | 0, 0 Hz, 1 | Eine eigene Feder, die den Knochen bei einem leichten Treffer um sein Gelenk schwingt, siehe Treffer je Körperpartie: `flinch` mal so schnell, wie der Stoß alles dreht, was er trägt, mit dieser Frequenz und Dämpfung, unter 1 schwingt er über und zurück. Null Hertz halten ihn an seinem Elternknochen. Der Mensch der Bibliothek: Hals 0,3, 2,5 Hz, 0,7, Kopf 0,3, 3,5 Hz, 0,5, Oberarm 0,6, 2,5 Hz, 0,5, Unterarm 0,6, 3 Hz, 0,5, Hand 0,5, 4 Hz, 0,6 |
 
 | Rig (`nbRigDef`) | Standard | Wirkung |
@@ -2034,6 +2068,14 @@ entlang des Skeletts, siehe dort. Die Szenen mit getroffenen Figuren enden ander
 den 10 und den 50 Figuren liegt je eine. In der Stadt mit Figuren stürzen 29 statt 28, am Ende stehen 28 statt 29, und
 ein Bild kostet 6,5 statt 6,7 ms mit vier Threads. Alle Szenen ohne Figuren und die Ragdolls im Schutt enden bitgleich
 wie auf `active-ragdoll-25`, und Update und Box3D-Schritt kosten so viel wie vorher, in drei und zwei Läufen im Wechsel.
+Seit `active-ragdoll-27` bewegen sich die Gelenke so weit wie die eines Menschen, siehe Gelenke wie beim Menschen. Alle
+Szenen mit Figuren enden anders, auch die Ragdolls im Schutt, mit 1 und 4 Threads weiter mit demselben Hash: Von den 10
+Figuren stehen am Ende alle, von den 50 liegen zwei. In der Stadt mit Figuren stürzen 27 statt 29 Figuren, am Ende
+stehen wieder 28, die Häuser brechen in 77 747 statt 77 895 Stücke, und ein Bild kostet 7,3 statt 7,0 ms mit vier
+Threads und 14,8 statt 14,4 ms mit einem. Update und Box3D-Schritt kosten so viel wie vorher, im Median aus drei Läufen
+im Wechsel mit `active-ragdoll-26`, bei Ausschlägen der VM bis 30 % in beide Richtungen, beim Sturz der 50 Figuren
+paarweise 3 % mehr mit vier Threads und 1 % weniger mit einem. Alle Szenen ohne Figuren enden wie auf
+`active-ragdoll-26`.
 
 **Ragdolls im Schutt.** Danach stellt `nebenan_benchmark figures` 20 Figuren auf eine Platte über zwei Lagen aus 4 513
 Würfeln, wirft sie um und lässt sie liegen (`nbFigureDef::canGetUp` aus). Platte, Würfel und Ragdolls sind eine große
@@ -2125,7 +2167,7 @@ lange die Threads im Löser rechnen und worauf sie sonst warten.
 ## Tests und Benchmark
 
 ```sh
-build/bin/nebenan_test            # 111 Tests: Geometrie, Voronoi, Hüllen, Öffnungen, Stöße, Stützgraph, Etagen, Lastprüfung, Mauern, Schutt, Ruhe, Durchschlagen, Threads, Knoten, große Blöcke, Gelenke in Paketen und Gebieten, Suchbaum, Kontaktlisten, Streaming, Stream, Laden im Hintergrund, Speichern und Zurückholen, gemeinsamer Thread-Pool, Ruhe-Prüfung auf den Workern, Schritt auf eigenem Thread, Schritte pro Bild, Takt der Physik, Wahl der Threads, Profil und Skalierung, Figuren, Ausgleichsschritt, Abfangen, rudernde Arme, Muskeln, Treffer entlang des Skeletts, Füße auf dem Boden, Platz zum Aufstehen, Ragdoll durch die Wand, dünne Bretter, Determinismus …
+build/bin/nebenan_test            # 113 Tests: Geometrie, Voronoi, Hüllen, Öffnungen, Stöße, Stützgraph, Etagen, Lastprüfung, Mauern, Schutt, Ruhe, Durchschlagen, Threads, Knoten, große Blöcke, Gelenke in Paketen und Gebieten, Suchbaum, Kontaktlisten, Streaming, Stream, Laden im Hintergrund, Speichern und Zurückholen, gemeinsamer Thread-Pool, Ruhe-Prüfung auf den Workern, Schritt auf eigenem Thread, Schritte pro Bild, Takt der Physik, Wahl der Threads, Profil und Skalierung, Figuren, Ausgleichsschritt, Abfangen, rudernde Arme, Muskeln, Treffer entlang des Skeletts, Kegel je Richtung, Gelenke wie beim Menschen, Füße auf dem Boden, Platz zum Aufstehen, Ragdoll durch die Wand, dünne Bretter, Determinismus …
 build/bin/nebenan_benchmark 4     # Zahl = Threads für Bruch und Physik, 0 = so viele, wie ein Spiel nähme
 build/bin/nebenan_benchmark scaling   # die Städte unter Beschuss mit 1, 2, 4 … Threads und die Tabelle der Skalierung
 build/bin/nebenan_benchmark rates     # die Städte unter Beschuss mit 30, 60 und 120 Hz, was eine simulierte Sekunde kostet
@@ -2229,6 +2271,11 @@ Nach Änderungen an `demo/shaders/scene.glsl` die Shader neu erzeugen, im Ordner
   quer über einem Balken, findet keinen Boden unter dem Becken und steht nicht auf (`nb_waitGround`). Steht er auf
   seinen Füßen, wacht er seit `active-ragdoll-21` stehend auf, siehe Aufwachen im Stand, aber nur, wenn Rumpf und Kopf
   dort Platz haben.
+- Lastet Schutt auf einem Ragdoll, wartet er, bis er fort ist (`nb_waitDebris`), wie Kapitel 26.15 der Roadmap des
+  Spiels es will, notfalls für immer: Er zieht kein Glied heraus und schiebt nichts von sich. In der Szene der Tests
+  bleibt ein Block von 154 kg, der auf eine Figur fällt, die hinter einer Wand aus Brettern aufsteht, in 4 der 11 von 32
+  Bruchmustern, in denen sie durchbricht, auf ihr liegen, dreimal halb auf dem Boden auf einem Arm oder Bein, einmal
+  ganz auf dem Bauch, auf `active-ragdoll-26` in 6 von 13, siehe F51 der Roadmap.
 - Stehende und aufstehende Figuren sind kinematisch und kollidieren wie alle kinematischen Körper in Box3D nicht mit
   statischen, also nicht mit Schutt und stehenden Wänden. Eine Figur, die das Spiel durch eine Wand bewegt, geht
   hindurch. Ob genug Platz zum Aufstehen ist, prüft sie vorher, und fehlt er, rückt sie bis 60 cm oder dreht sich auf
