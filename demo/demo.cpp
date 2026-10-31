@@ -1963,10 +1963,11 @@ static void DrawUi( App& app )
 		if ( ImGui::IsItemHovered() )
 		{
 			ImGui::SetTooltip( "So stark stößt ein Treffer des Gewehrs eine Figur. Ab 50 N s werden ihre "
-							   "Knochen\ndynamisch, und sie fängt sich mit Schritten wie auf ragdoll-11 oder fällt, "
-							   "wo kein\nSchritt reicht: auf die Brust von vorn ab etwa 80 N s, von der Seite ab "
-							   "70 N s.\nDarunter zuckt sie zurück, Kopf und Arme schwingen nach, wo der Treffer sie "
-							   "trifft,\nund sie tritt nach, wo sie über ihren Füßen nicht stehen bleiben kann. Granate "
+							   "Knochen\ndynamisch, und sie fängt sich mit Schritten wie auf ragdoll-11, wo ein "
+							   "Schritt\nzu kurz kommt, rudern ihre Arme in Fallrichtung mit. Sie fällt, wo auch das "
+							   "nicht\nreicht: auf die Brust von vorn ab etwa 120 N s, von hinten ab 150 N s, von der "
+							   "Seite\nab 90 N s. Darunter zuckt sie zurück, Kopf und Arme schwingen nach, wo der Treffer "
+							   "sie\ntrifft, und sie tritt nach, wo sie über ihren Füßen nicht stehen bleiben kann. Granate "
 							   "und\nKanone treffen Figuren mit ihrer eigenen Wucht. Um 1000 N s fliegt eine Figur der "
 							   "Szene\nFiguren durch die dünne Bretterwand hinter ihr, an der Ziegelwand bleibt sie liegen." );
 		}

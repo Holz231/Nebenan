@@ -799,7 +799,7 @@ static void BenchmarkFigures( int workerCount, int figureCount )
 		{
 			for ( int k = 0; k < figureCount; ++k )
 			{
-				// Flinch from 30 N s every tenth step, all knocked down by 120 N s at once, each from its own side
+				// Flinch from 30 N s every tenth step, all knocked down by 120 N s, each from its own side
 				float angle = 2.0f * B3_PI * (float)k / (float)figureCount + 0.7f * (float)( step / 10 );
 				float strength = p == 1 && step % 10 == 0 ? 30.0f : ( p == 2 && step == 0 ? 120.0f : 0.0f );
 				if ( strength > 0.0f )

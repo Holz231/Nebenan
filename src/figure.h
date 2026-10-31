@@ -147,8 +147,10 @@ typedef struct nbBalancer
 	b3Vec3 supportMiddle;
 
 	// A step: whether one swings, how long since it began or the figure stood, the foot, the steps in a row and the foot
-	// that stepped last, where the ankles are planted, where the swinging one started and where it lands. Updates in a
-	// row with the capture point outside, seconds without a foot on the ground and seconds calm.
+	// that stepped last, where the ankles are planted, where the swinging one started and where it lands, and how far the
+	// capture point at its landing lies outside the support of both soles, negative inside. Updates in a row with the
+	// capture point outside, seconds without a foot on the ground, seconds with one foot alone on the ground and seconds
+	// calm.
 	bool stepping;
 	float stateTime;
 	int stepFoot;
@@ -157,9 +159,17 @@ typedef struct nbBalancer
 	b3Vec3 plant[2];
 	b3Vec3 swingStart;
 	b3Vec3 stepAnkle;
+	float stepResidual;
 	int dangerUpdates;
 	float airborneTime;
+	float oneFootTime;
 	float calmTime;
+
+	// The arms row against a fall, see nbRowArms: whether each upper arm rows, whether it returns to the pose of the clip
+	// and the rotation against its rest pose it has come back to
+	bool rowing[2];
+	bool returning[2];
+	b3Quat armPose[2];
 
 	// The hold that keeps the pelvis upright, see nbFigureMotors::uprightTorque
 	b3JointId upright;
@@ -357,6 +367,9 @@ b3Quat nbRotationFromAxes( b3Vec3 x, b3Vec3 y );
 // two bodies about the softest axis of the joint frame of body B, its z axis alone for a hinge
 float nbJointSpringHertz( b3BodyId bodyA, b3BodyId bodyB, b3Quat frameB, bool hingeOnly, float stiffness );
 
+// Set the spring of the joint of a bone to a strength of the motors, see nbFigureMotors, or switch it off
+void nbSetBoneSpring( nbFigure* f, int index, float strength, bool enable );
+
 // Balance, see figure_balance.c. Can the figure catch itself, the humanoid of the library? The legs at rest, at creation.
 bool nbCanBalance( const nbFigure* f );
 void nbInitBalancer( nbFigure* f );
@@ -365,8 +378,8 @@ void nbInitBalancer( nbFigure* f );
 void nbBeginBalance( nbWorld* world, int index, nbFigure* f );
 void nbEndBalance( nbFigure* f );
 
-// Measure, decide and give the targets of the joints: the pose of the clip comes in, the legs of balance go out. Fell
-// when no step catches the figure, settled when it stands calm.
+// Measure, decide and give the targets of the joints: the pose of the clip comes in, the legs and the arms of balance go
+// out. Fell when the steps do not catch the figure, settled when it stands calm.
 nbBalanceResult nbUpdateBalance( nbWorld* world, int index, nbFigure* f, float timeStep, b3Quat* pose );
 
 // A figure that catches itself swings a foot, where it faces and the height of the ground under its feet

@@ -1087,6 +1087,43 @@ static bool nbCapsuleBlocked( const nbWorld* world, int index, b3Pos origin, b3V
 //----------------------------------------------------------------------------------------------------------------------
 // States
 
+// The spring of the joint of a bone at a strength, see nbSetStrength
+void nbSetBoneSpring( nbFigure* f, int index, float strength, bool enable )
+{
+	const nbBone* bone = f->bones + index;
+	float hertz = sqrtf( b3MaxFloat( strength, 0.0f ) ) * bone->hertz;
+	float dampingRatio = b3MaxFloat( 0.0f, f->def.motors.dampingRatio ) * bone->damping;
+	float maxTorque = b3MaxFloat( 0.0f, strength * f->def.motors.maxTorque * bone->strength );
+	NB_UNUSED( maxTorque );
+	switch ( bone->joint )
+	{
+		case nb_hingeJoint:
+			b3RevoluteJoint_EnableSpring( bone->jointId, enable );
+			if ( enable )
+			{
+				b3RevoluteJoint_SetSpringHertz( bone->jointId, hertz );
+				b3RevoluteJoint_SetSpringDampingRatio( bone->jointId, dampingRatio );
+#if NB_SPRING_TORQUE_LIMITS
+				b3RevoluteJoint_SetMaxSpringTorque( bone->jointId, maxTorque );
+#endif
+			}
+			break;
+		case nb_ballJoint:
+			b3SphericalJoint_EnableSpring( bone->jointId, enable );
+			if ( enable )
+			{
+				b3SphericalJoint_SetSpringHertz( bone->jointId, hertz );
+				b3SphericalJoint_SetSpringDampingRatio( bone->jointId, dampingRatio );
+#if NB_SPRING_TORQUE_LIMITS
+				b3SphericalJoint_SetMaxSpringTorque( bone->jointId, maxTorque );
+#endif
+			}
+			break;
+		default:
+			break;
+	}
+}
+
 // Set the springs of a ragdoll to a strength
 static void nbSetStrength( nbFigure* f, float strength )
 {
@@ -1096,41 +1133,9 @@ static void nbSetStrength( nbFigure* f, float strength )
 		return;
 	}
 
-	float scale = sqrtf( b3MaxFloat( strength, 0.0f ) );
 	for ( int i = 1; i < f->boneCount; ++i )
 	{
-		const nbBone* bone = f->bones + i;
-		float hertz = scale * bone->hertz;
-		float dampingRatio = b3MaxFloat( 0.0f, f->def.motors.dampingRatio ) * bone->damping;
-		float maxTorque = b3MaxFloat( 0.0f, strength * f->def.motors.maxTorque * bone->strength );
-		NB_UNUSED( maxTorque );
-		switch ( bone->joint )
-		{
-			case nb_hingeJoint:
-				b3RevoluteJoint_EnableSpring( bone->jointId, enable );
-				if ( enable )
-				{
-					b3RevoluteJoint_SetSpringHertz( bone->jointId, hertz );
-					b3RevoluteJoint_SetSpringDampingRatio( bone->jointId, dampingRatio );
-#if NB_SPRING_TORQUE_LIMITS
-					b3RevoluteJoint_SetMaxSpringTorque( bone->jointId, maxTorque );
-#endif
-				}
-				break;
-			case nb_ballJoint:
-				b3SphericalJoint_EnableSpring( bone->jointId, enable );
-				if ( enable )
-				{
-					b3SphericalJoint_SetSpringHertz( bone->jointId, hertz );
-					b3SphericalJoint_SetSpringDampingRatio( bone->jointId, dampingRatio );
-#if NB_SPRING_TORQUE_LIMITS
-					b3SphericalJoint_SetMaxSpringTorque( bone->jointId, maxTorque );
-#endif
-				}
-				break;
-			default:
-				break;
-		}
+		nbSetBoneSpring( f, i, strength, enable );
 	}
 	f->springs = enable;
 }
