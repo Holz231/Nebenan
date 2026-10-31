@@ -83,6 +83,32 @@
 // The most contacts of a bone a check reads
 #define NB_CONTACT_CAPACITY 16
 
+// Balance steps, see nbPush, for the humanoid of 1.8 m and scaled with its height: a push that would move the body less
+// than this does not make it step, a foot is this long in the air and lifts this high, it steps when it stands this far
+// from its place under the body, and after the last step the clip takes the legs back over this time
+#define NB_STEP_MIN 0.06f
+#define NB_STEP_TIME 0.3f
+#define NB_STEP_LIFT 0.08f
+#define NB_STEP_SLACK 0.03f
+#define NB_FOOT_FADE 0.2f
+
+// A step needs ground this flat under its foot, the cosine of its slope, and a foot stands while its sole is this close to
+// the ground
+#define NB_STEP_FLATNESS 0.7f
+#define NB_SOLE_GAP 0.03f
+
+// A leg stretches to this part of its length at most, so the knee stays a little soft, or as far as the clip stretches
+// it, and the root goes down at most this far for the legs to reach their feet
+#define NB_LEG_REACH 0.98f
+#define NB_MAX_DROP 0.3f
+
+// The body a push carries along: a capsule of this radius from this high over the ground to this high, which fixed
+// bodies stop, cast this far beyond where the push carries it, for the toes ahead of it
+#define NB_BODY_RADIUS 0.1f
+#define NB_BODY_LOW 0.35f
+#define NB_BODY_HIGH 1.4f
+#define NB_BODY_MARGIN 0.12f
+
 //----------------------------------------------------------------------------------------------------------------------
 // Definitions
 
@@ -140,6 +166,8 @@ nbFigureDef nbDefaultFigureDef( void )
 	def.flinchScale = 0.008f;
 	def.flinchLimit = 0.5f;
 	def.flinchHertz = 2.0f;
+	def.stepReach = 0.45f;
+	def.stepZone = 0.6f;
 	def.crushForce = 600.0f;
 	def.restSpeed = 0.4f;
 	def.getUpDelay = 1.0f;
@@ -836,7 +864,7 @@ static b3WorldTransform nbMakeFrame( const nbWorld* world, b3Pos position, float
 //----------------------------------------------------------------------------------------------------------------------
 // Queries
 
-// What a query of a figure leaves out: its own bones
+// What a query of a figure leaves out: its own bones, the other figures if asked, and if asked all but fixed bodies
 typedef struct nbFigureQuery
 {
 	const nbWorld* world;
@@ -847,6 +875,7 @@ typedef struct nbFigureQuery
 	b3Vec3 normal;
 	b3Pos point;
 	b3ShapeId shapeId;
+	bool staticOnly;
 } nbFigureQuery;
 
 static bool nbSkipShape( const nbFigureQuery* query, b3ShapeId shapeId )
@@ -862,7 +891,8 @@ static float nbClosestHitFcn( b3ShapeId shapeId, b3Pos point, b3Vec3 normal, flo
 	NB_UNUSED( triangleIndex );
 	NB_UNUSED( childIndex );
 	nbFigureQuery* query = context;
-	if ( b3Shape_IsSensor( shapeId ) || nbSkipShape( query, shapeId ) )
+	if ( b3Shape_IsSensor( shapeId ) || nbSkipShape( query, shapeId ) ||
+		 ( query->staticOnly && b3Body_GetType( b3Shape_GetBody( shapeId ) ) != b3_staticBody ) )
 	{
 		return -1.0f;
 	}
@@ -894,7 +924,7 @@ static bool nbAnyOverlapFcn( b3ShapeId shapeId, void* context )
 // The ground under a point: cast down from above it, leaving out the figure and, if asked, every other figure
 static nbFigureQuery nbFindGround( const nbWorld* world, int index, b3Pos point, b3Vec3 up, float above, float below )
 {
-	nbFigureQuery query = { world, index, true, false, 1.0f, b3Vec3_zero, point, b3_nullShapeId };
+	nbFigureQuery query = { world, index, true, false, 1.0f, b3Vec3_zero, point, b3_nullShapeId, false };
 	b3Pos origin = b3OffsetPos( point, b3MulSV( above, up ) );
 	b3World_CastRay( world->physicsWorld, origin, b3MulSV( -( above + below ), up ), b3DefaultQueryFilter(), nbClosestHitFcn,
 					 &query );
@@ -906,7 +936,7 @@ static bool nbCapsuleBlocked( const nbWorld* world, int index, b3Pos origin, b3V
 {
 	b3Vec3 points[2] = { a, b };
 	b3ShapeProxy proxy = { points, 2, radius };
-	nbFigureQuery query = { world, index, false, false, 1.0f, b3Vec3_zero, origin, b3_nullShapeId };
+	nbFigureQuery query = { world, index, false, false, 1.0f, b3Vec3_zero, origin, b3_nullShapeId, false };
 	b3World_OverlapShape( world->physicsWorld, origin, &proxy, b3DefaultQueryFilter(), nbAnyOverlapFcn, &query );
 	return query.hit;
 }
@@ -1040,6 +1070,9 @@ static void nbFall( nbWorld* world, nbFigure* f, bool stunned )
 		f->wait = nb_waitMoving;
 		f->flinch = b3Vec3_zero;
 		f->flinchRate = b3Vec3_zero;
+		f->balancing = false;
+		f->swingFoot = -1;
+		f->footWeight = 0.0f;
 		f->springs = true;
 		nbSetStrength( f, 0.0f );
 		f->damping = -1.0f;
@@ -1116,6 +1149,429 @@ static void nbStand( nbWorld* world, nbFigure* f )
 	f->clipTime = 0.0f;
 	f->clipSpeed = 1.0f;
 	f->getUpCount += 1;
+}
+
+//----------------------------------------------------------------------------------------------------------------------
+// Balance
+
+// Steps to catch a push after the roadmap of the game, 26.14 and 28.3. A hit that does not knock a standing humanoid down
+// gives its body a velocity over the ground. As a pendulum as long as its stand height it would come to rest over the
+// capture point, the velocity over the frequency of the pendulum ahead of its center of mass. Where that point lies
+// within the soles of its feet, shrunk about the center of mass to the part it trusts, it stands and only flinches. The
+// humanoid stands over its ankles, 3 cm before its heels and 23 cm behind its toes, so it steps back from less than to
+// its side, and to its side from less than forward. Else its body moves to the capture point,
+// slowing down evenly in two over that frequency, and its feet step one after the other to where the clip puts them under
+// the body there: the one toward the push first, each held where it stands while the other is in the air, so it does not
+// slide. A step needs ground under its end, flat enough and not moving fast, and the body no wall in its way. Without, or
+// for a push beyond the reach, the figure falls instead. It decides when a push comes and when a foot lands, never in
+// between, so it does not flutter.
+
+// The scale of a humanoid against the one of 1.8 m
+static float nbFigureScale( const nbFigure* f )
+{
+	return f->def.standHeight / NB_HUMANOID_STAND;
+}
+
+// Only the humanoid steps, its legs and feet are known
+static bool nbCanStep( const nbFigure* f )
+{
+	return f->boneCount == nb_humanoidBoneCount && f->def.stepReach > 0.0f;
+}
+
+// The transforms of the bones of a pose in the frame of the figure, from the root there
+static void nbFramePose( const nbFigure* f, b3Transform root, const b3Quat* pose, b3Transform* transforms )
+{
+	transforms[0] = root;
+	for ( int i = 1; i < f->boneCount; ++i )
+	{
+		const nbBone* bone = f->bones + i;
+		b3Transform local = { bone->rest.p, b3NormalizeQuat( b3MulQuat( bone->rest.q, pose[i] ) ) };
+		transforms[i] = b3MulTransforms( transforms[bone->parent], local );
+	}
+}
+
+// The center of mass of a pose in the frame, from the centers of its bones
+static b3Vec3 nbFrameCenter( const nbFigure* f, const b3Transform* transforms )
+{
+	b3Vec3 sum = b3Vec3_zero;
+	float mass = 0.0f;
+	for ( int i = 0; i < f->boneCount; ++i )
+	{
+		const nbBone* bone = f->bones + i;
+		b3Vec3 center = bone->shape == nb_capsuleBone ? b3MulSV( 0.5f, b3Add( bone->start, bone->end ) ) : bone->center;
+		sum = b3MulAdd( sum, bone->mass, b3TransformPoint( transforms[i], center ) );
+		mass += bone->mass;
+	}
+	return b3MulSV( 1.0f / mass, sum );
+}
+
+// Twice the area of the triangle o, a, b on the ground of the frame, positive where b lies left of o to a
+static float nbCrossOnGround( const b3Vec3* o, const b3Vec3* a, const b3Vec3* b )
+{
+	return ( a->x - o->x ) * ( b->z - o->z ) - ( a->z - o->z ) * ( b->x - o->x );
+}
+
+// How far a point of the ground of the frame lies inside the soles of the feet that stand on it, seen from above,
+// negative outside: the corners of the feet near the ground and their convex hull, by Andrew's monotone chain
+static float nbInsideSoles( const nbFigure* f, const b3Transform* transforms, float x, float z, float scale )
+{
+	b3Vec3 points[2 * NB_BONE_POINTS];
+	int count = 0;
+	const int feet[2] = { nb_humanoidFootLeft, nb_humanoidFootRight };
+	for ( int k = 0; k < 2; ++k )
+	{
+		const nbBone* bone = f->bones + feet[k];
+		nbBoneDef def = nbDefaultBoneDef();
+		def.shape = bone->shape;
+		def.center = bone->center;
+		def.halfExtents = bone->halfExtents;
+		def.radius = bone->radius;
+		b3Vec3 corners[NB_BONE_POINTS];
+		int cornerCount = nbBonePoints( &def, corners );
+		if ( cornerCount == 0 )
+		{
+			corners[0] = bone->start;
+			corners[1] = bone->end;
+			cornerCount = 2;
+		}
+
+		float lowest = FLT_MAX;
+		for ( int c = 0; c < cornerCount; ++c )
+		{
+			corners[c] = b3TransformPoint( transforms[feet[k]], corners[c] );
+			lowest = b3MinFloat( lowest, corners[c].y );
+		}
+		if ( lowest > NB_SOLE_GAP * scale )
+		{
+			continue;
+		}
+		for ( int c = 0; c < cornerCount; ++c )
+		{
+			points[count++] = (b3Vec3){ corners[c].x, 0.0f, corners[c].z };
+		}
+	}
+
+	// By x, then by z
+	for ( int i = 1; i < count; ++i )
+	{
+		b3Vec3 p = points[i];
+		int j = i - 1;
+		while ( j >= 0 && ( points[j].x > p.x || ( points[j].x == p.x && points[j].z > p.z ) ) )
+		{
+			points[j + 1] = points[j];
+			j -= 1;
+		}
+		points[j + 1] = p;
+	}
+
+	// The lower and the upper chain, counterclockwise on the ground
+	b3Vec3 hull[4 * NB_BONE_POINTS];
+	int size = 0;
+	for ( int i = 0; i < count; ++i )
+	{
+		while ( size >= 2 && nbCrossOnGround( hull + size - 2, hull + size - 1, points + i ) <= 0.0f )
+		{
+			size -= 1;
+		}
+		hull[size++] = points[i];
+	}
+	int lower = size + 1;
+	for ( int i = count - 2; i >= 0; --i )
+	{
+		while ( size >= lower && nbCrossOnGround( hull + size - 2, hull + size - 1, points + i ) <= 0.0f )
+		{
+			size -= 1;
+		}
+		hull[size++] = points[i];
+	}
+	size -= 1;
+	if ( size < 3 )
+	{
+		return -1.0f;
+	}
+
+	b3Vec3 point = { x, 0.0f, z };
+	float inside = FLT_MAX;
+	for ( int i = 0; i < size; ++i )
+	{
+		const b3Vec3* a = hull + i;
+		const b3Vec3* b = hull + ( i + 1 ) % size;
+		float length = sqrtf( ( b->x - a->x ) * ( b->x - a->x ) + ( b->z - a->z ) * ( b->z - a->z ) );
+		if ( length > 0.0f )
+		{
+			inside = b3MinFloat( inside, nbCrossOnGround( a, b, &point ) / length );
+		}
+	}
+	return inside;
+}
+
+// The velocity the body of a figure that catches a push still moves with, slowing down evenly
+static b3Vec3 nbSwayVelocity( const nbFigure* f )
+{
+	if ( f->balancing == false || f->swayTime >= f->swayDuration )
+	{
+		return b3Vec3_zero;
+	}
+	float u = f->swayTime / f->swayDuration;
+	return b3MulSV( 2.0f * ( 1.0f - u ) / f->swayDuration, f->swayOffset );
+}
+
+// How far the push still carries the body
+static b3Vec3 nbSwayLeft( const nbFigure* f )
+{
+	float u = f->swayDuration > 0.0f ? b3MinFloat( f->swayTime / f->swayDuration, 1.0f ) : 1.0f;
+	return b3MulSV( ( 1.0f - u ) * ( 1.0f - u ), f->swayOffset );
+}
+
+// Does a fixed body stand in the way of the body of a figure that a push carries along an offset from a point of its
+// frame? What moves, the figure pushes aside.
+static bool nbBodyBlocked( const nbWorld* world, int index, const nbFigure* f, b3Vec3 center, b3Vec3 offset, b3Vec3 up,
+						   float scale )
+{
+	float length = b3Length( offset );
+	if ( length < 1.0e-6f )
+	{
+		return false;
+	}
+
+	b3Pos origin = b3TransformWorldPoint( f->frame, (b3Vec3){ center.x, 0.0f, center.z } );
+	b3Vec3 points[2] = { b3MulSV( NB_BODY_LOW * scale, up ), b3MulSV( NB_BODY_HIGH * scale, up ) };
+	b3ShapeProxy proxy = { points, 2, NB_BODY_RADIUS * scale };
+	b3Vec3 translation = b3MulSV( ( length + NB_BODY_MARGIN * scale ) / length, offset );
+	nbFigureQuery query = { world, index, true, false, 1.0f, b3Vec3_zero, origin, b3_nullShapeId, true };
+	b3World_CastShape( world->physicsWorld, origin, &proxy, translation, b3DefaultQueryFilter(), nbClosestHitFcn, &query );
+	return query.hit;
+}
+
+// Ground for a foot whose ankle goes to a point, as high over the ground as the clip holds it: flat enough and not moving
+// fast. The ankle over that ground.
+static bool nbFindFooting( const nbWorld* world, int index, b3Pos ankle, float height, b3Vec3 up, b3Pos* target )
+{
+	b3Pos sole = b3OffsetPos( ankle, b3MulSV( -height, up ) );
+	nbFigureQuery ground = nbFindGround( world, index, sole, up, NB_GROUND_ABOVE, NB_GROUND_BELOW );
+	if ( ground.hit == false || b3Dot( ground.normal, up ) < NB_STEP_FLATNESS )
+	{
+		return false;
+	}
+	b3BodyId body = b3Shape_GetBody( ground.shapeId );
+	if ( b3Body_GetType( body ) != b3_staticBody && b3Length( b3Body_GetLinearVelocity( body ) ) > NB_GROUND_SPEED )
+	{
+		return false;
+	}
+	*target = b3OffsetPos( ground.point, b3MulSV( height, up ) );
+	return true;
+}
+
+// A hit that does not knock a standing figure down pushes it, see the top of this section. Returns false where it cannot
+// catch the push and falls.
+static bool nbPush( nbWorld* world, nbFigure* f, b3Vec3 impulse )
+{
+	if ( nbCanStep( f ) == false || f->state != nb_figureAnimated )
+	{
+		return true;
+	}
+
+	int index = (int)( f - world->figures.data );
+	b3Vec3 up = nbUpOf( world );
+	float scale = nbFigureScale( f );
+	float gravity = b3Length( b3World_GetGravity( world->physicsWorld ) );
+	float omega = sqrtf( b3MaxFloat( gravity, 0.1f ) / b3MaxFloat( f->def.standHeight, 0.1f ) );
+
+	// The velocity the hit gives the body over the ground, on what it moves with, and where it comes to rest
+	float mass = 0.0f;
+	for ( int i = 0; i < f->boneCount; ++i )
+	{
+		mass += f->bones[i].mass;
+	}
+	b3Vec3 across = b3MulSub( impulse, b3Dot( impulse, up ), up );
+	b3Vec3 velocity = b3MulAdd( nbSwayVelocity( f ), 1.0f / mass, across );
+	b3Vec3 offset = b3MulSV( 1.0f / omega, velocity );
+	float distance = b3Length( offset );
+
+	b3Transform transforms[nb_humanoidBoneCount];
+	nbFramePose( f, f->root, f->pose, transforms );
+	b3Vec3 center = nbFrameCenter( f, transforms );
+	if ( f->balancing == false )
+	{
+		if ( distance < NB_STEP_MIN * scale )
+		{
+			return true;
+		}
+		// Inside the soles shrunk about the center of mass, where the point that far out from it lies inside the soles
+		float zone = b3ClampFloat( f->def.stepZone, 0.05f, 1.0f );
+		b3Vec3 local = b3InvRotateVector( f->frame.q, offset );
+		if ( nbInsideSoles( f, transforms, center.x + local.x / zone, center.z + local.z / zone, scale ) >= 0.0f )
+		{
+			return true;
+		}
+	}
+
+	if ( distance > f->def.stepReach || nbBodyBlocked( world, index, f, center, offset, up, scale ) )
+	{
+		return false;
+	}
+
+	// From where the feet stand, if they followed the clip
+	if ( f->footWeight == 0.0f )
+	{
+		f->feet[0].plant = f->targets[nb_humanoidFootLeft].p;
+		f->feet[1].plant = f->targets[nb_humanoidFootRight].p;
+		f->swingFoot = -1;
+	}
+	f->balancing = true;
+	f->footWeight = 1.0f;
+	f->swayOffset = offset;
+	f->swayTime = 0.0f;
+	f->swayDuration = 2.0f / omega;
+	return true;
+}
+
+// The body of a figure that catches a push moves on over the ground
+static void nbSway( nbFigure* f, float timeStep )
+{
+	if ( f->balancing == false || f->swayTime >= f->swayDuration )
+	{
+		return;
+	}
+	float before = f->swayTime / f->swayDuration;
+	f->swayTime = b3MinFloat( f->swayTime + timeStep, f->swayDuration );
+	float after = f->swayTime / f->swayDuration;
+	float along = after * ( 2.0f - after ) - before * ( 2.0f - before );
+	f->frame.p = b3OffsetPos( f->frame.p, b3MulSV( along, f->swayOffset ) );
+}
+
+// The feet of a figure that catches a push: the foot in the air goes on and lands, then the foot that stands farthest from
+// where the clip puts it under the body at the end of the push steps there, until both stand there. The first step goes
+// with the foot toward the push. Returns false where a step finds no ground and the figure falls.
+static bool nbStepFeet( const nbWorld* world, int index, nbFigure* f, const b3Transform* transforms, b3Vec3 up,
+						float timeStep )
+{
+	if ( f->swingFoot >= 0 )
+	{
+		f->swingTime += timeStep;
+		if ( f->swingTime < NB_STEP_TIME )
+		{
+			return true;
+		}
+		nbFoot* foot = f->feet + f->swingFoot;
+		foot->plant = foot->target;
+		f->swingFoot = -1;
+		f->stepCount += 1;
+	}
+	if ( f->balancing == false )
+	{
+		return true;
+	}
+
+	float scale = nbFigureScale( f );
+	b3WorldTransform end = { b3OffsetPos( f->frame.p, nbSwayLeft( f ) ), f->frame.q };
+	const int feet[2] = { nb_humanoidFootLeft, nb_humanoidFootRight };
+	b3Pos places[2];
+	float gaps[2];
+	for ( int k = 0; k < 2; ++k )
+	{
+		places[k] = b3TransformWorldPoint( end, transforms[feet[k]].p );
+		b3Vec3 gap = b3SubPos( places[k], f->feet[k].plant );
+		gaps[k] = b3Length( b3MulSub( gap, b3Dot( gap, up ), up ) );
+	}
+
+	int next = gaps[1] > gaps[0] ? 1 : 0;
+	if ( fabsf( gaps[1] - gaps[0] ) < NB_STEP_SLACK * scale )
+	{
+		b3Vec3 local = b3InvRotateVector( f->frame.q, f->swayOffset );
+		next = local.x >= 0.0f ? 0 : 1;
+	}
+	if ( gaps[next] < NB_STEP_SLACK * scale )
+	{
+		f->balancing = f->swayTime < f->swayDuration;
+		return true;
+	}
+
+	b3Pos target;
+	if ( nbFindFooting( world, index, places[next], transforms[feet[next]].p.y, up, &target ) == false )
+	{
+		return false;
+	}
+	f->feet[next].from = f->feet[next].plant;
+	f->feet[next].target = target;
+	f->swingFoot = next;
+	f->swingTime = 0.0f;
+	return true;
+}
+
+// A leg of the humanoid reaches for an ankle point in the frame, the knee ahead, the foot at a rotation in the frame: the
+// rotations of thigh, shin and foot against their rest, from the pelvis where it is
+static void nbReachAnkle( const nbFigure* f, int thigh, b3Transform pelvis, b3Vec3 ankle, b3Quat footRotation, b3Quat* pose )
+{
+	const nbBone* thighBone = f->bones + thigh;
+	const nbBone* shinBone = f->bones + thigh + 1;
+	const nbBone* footBone = f->bones + thigh + 2;
+	b3Vec3 hip = b3TransformPoint( pelvis, thighBone->rest.p );
+	b3Vec3 knee, end;
+	b3Vec3 axis = nbSolveTwoBones( hip, ankle, b3Length( shinBone->rest.p ), b3Length( footBone->rest.p ), b3Vec3_axisZ,
+								   &knee, &end );
+	b3Quat thighRotation = nbRotationFromAxes( axis, b3Sub( knee, hip ) );
+	b3Quat shinRotation = nbRotationFromAxes( axis, b3Sub( end, knee ) );
+	pose[thigh] = b3NormalizeQuat( b3InvMulQuat( b3MulQuat( pelvis.q, thighBone->rest.q ), thighRotation ) );
+	pose[thigh + 1] = b3NormalizeQuat( b3InvMulQuat( b3MulQuat( thighRotation, shinBone->rest.q ), shinRotation ) );
+	pose[thigh + 2] = b3NormalizeQuat( b3InvMulQuat( b3MulQuat( shinRotation, footBone->rest.q ), footRotation ) );
+}
+
+// The legs of a figure that steps reach for its feet as far as they follow them instead of the clip: the ankles on where
+// they stand or on the way of a step, which starts and ends slowly and lifts the foot as high as the lift over the
+// higher end, the feet turned as the clip turns them, and the root down as far as the legs need to reach
+static void nbPlaceFeet( nbFigure* f, const b3Transform* transforms, b3Vec3 up )
+{
+	float scale = nbFigureScale( f );
+	const int thighs[2] = { nb_humanoidThighLeft, nb_humanoidThighRight };
+	b3Vec3 ankles[2];
+	for ( int k = 0; k < 2; ++k )
+	{
+		const nbFoot* foot = f->feet + k;
+		b3Pos ankle = foot->plant;
+		if ( k == f->swingFoot )
+		{
+			float u = b3ClampFloat( f->swingTime / NB_STEP_TIME, 0.0f, 1.0f );
+			float bump = 4.0f * u * ( 1.0f - u );
+			float rise = b3MaxFloat( b3Dot( b3SubPos( foot->target, foot->from ), up ), 0.0f );
+			float lift = bump * bump * ( NB_STEP_LIFT * scale + rise );
+			ankle = b3OffsetPos( b3LerpPosition( foot->from, foot->target, u * u * ( 3.0f - 2.0f * u ) ), b3MulSV( lift, up ) );
+		}
+		ankles[k] = b3InvTransformWorldPoint( f->frame, ankle );
+	}
+
+	// Down as far as the farther leg needs, the ankles below the hips
+	b3Transform root = f->root;
+	float drop = 0.0f;
+	for ( int k = 0; k < 2; ++k )
+	{
+		const nbBone* thigh = f->bones + thighs[k];
+		float length = b3Length( f->bones[thighs[k] + 1].rest.p ) + b3Length( f->bones[thighs[k] + 2].rest.p );
+		float stretch = b3Length( b3Sub( transforms[thighs[k] + 2].p, transforms[thighs[k]].p ) );
+		float reach = b3MaxFloat( NB_LEG_REACH * length, stretch );
+		b3Vec3 offset = b3Sub( ankles[k], b3TransformPoint( root, thigh->rest.p ) );
+		float across = offset.x * offset.x + offset.z * offset.z;
+		float below = across < reach * reach ? sqrtf( reach * reach - across ) : 0.0f;
+		drop = b3MaxFloat( drop, -offset.y - below );
+	}
+	drop = b3ClampFloat( drop, 0.0f, NB_MAX_DROP * scale );
+	root.p.y -= drop;
+
+	b3Quat legs[nb_humanoidBoneCount];
+	for ( int k = 0; k < 2; ++k )
+	{
+		nbReachAnkle( f, thighs[k], root, ankles[k], transforms[thighs[k] + 2].q, legs );
+	}
+
+	float weight = b3ClampFloat( f->footWeight, 0.0f, 1.0f );
+	f->root.p.y -= weight * drop;
+	for ( int k = 0; k < 2; ++k )
+	{
+		for ( int i = thighs[k]; i < thighs[k] + 3; ++i )
+		{
+			f->pose[i] = weight < 1.0f ? b3NLerp( f->pose[i], legs[i], weight ) : legs[i];
+		}
+	}
 }
 
 //----------------------------------------------------------------------------------------------------------------------
@@ -1204,6 +1660,13 @@ static void nbTakeHit( nbWorld* world, nbFigure* f, int bone, b3Vec3 impulse, b3
 		if ( f->state == nb_figureAnimated )
 		{
 			nbFlinch( f, impulse, point );
+
+			// A push it cannot catch with steps knocks it down after all
+			if ( nbPush( world, f, impulse ) == false )
+			{
+				nbFall( world, f, true );
+				nbSpreadHit( f, impulse, point );
+			}
 		}
 		return;
 	}
@@ -1293,10 +1756,14 @@ void nbBlastFigures( nbWorld* world, const nbImpactDef* def )
 		f->hitCount += 1;
 		if ( magnitude < f->def.knockdownImpulse )
 		{
-			// The blast does not reach kinematic bones, the figure flinches from it at its strongest bone
+			// The blast does not reach kinematic bones, the figure flinches from it at its strongest bone and steps to catch
+			// it, see nbPush
 			b3Pos point = b3Body_GetWorldCenter( f->bones[strongest].bodyId );
 			nbFlinch( f, total, point );
-			continue;
+			if ( nbPush( world, f, total ) )
+			{
+				continue;
+			}
 		}
 
 		// Dynamic before the blast, so it throws the bones itself, once
@@ -1494,6 +1961,9 @@ static void nbUpdateAnimated( nbWorld* world, int index, nbFigure* f, float time
 		return;
 	}
 
+	// A push it catches carries it over the ground
+	nbSway( f, timeStep );
+
 	// The ground: a figure follows it up and down a little, and falls where it is gone or gives way
 	nbFigureQuery ground = nbFindGround( world, index, f->frame.p, up, NB_GROUND_ABOVE, NB_GROUND_BELOW );
 	bool falls = ground.hit == false;
@@ -1517,6 +1987,24 @@ static void nbUpdateAnimated( nbWorld* world, int index, nbFigure* f, float time
 	f->frame.p = b3OffsetPos( f->frame.p, b3MulSV( b3ClampFloat( height, -step, step ), up ) );
 
 	nbAnimate( world, index, f, timeStep );
+
+	// The feet of a figure that steps, held where they stand, and after its last step back to the clip
+	if ( f->footWeight > 0.0f )
+	{
+		b3Transform transforms[nb_humanoidBoneCount];
+		nbFramePose( f, f->root, f->pose, transforms );
+		if ( nbStepFeet( world, index, f, transforms, up, timeStep ) == false )
+		{
+			nbFall( world, f, false );
+			return;
+		}
+		nbPlaceFeet( f, transforms, up );
+		if ( f->balancing == false )
+		{
+			f->footWeight = b3MaxFloat( 0.0f, f->footWeight - timeStep / NB_FOOT_FADE );
+		}
+	}
+
 	nbComputePose( f, b3MulWorldTransforms( f->frame, f->root ), f->pose, f->targets );
 	nbDriveBodies( f, timeStep );
 }
@@ -1534,7 +2022,7 @@ static void nbSenseDanger( nbWorld* world, int index, nbFigure* f, b3Vec3 veloci
 		b3Pos origin = b3Body_GetWorldCenter( f->bones[0].bodyId );
 		b3Vec3 point = b3Vec3_zero;
 		b3ShapeProxy proxy = { &point, 1, NB_DANGER_RADIUS };
-		nbFigureQuery query = { world, index, false, false, 1.0f, b3Vec3_zero, origin, b3_nullShapeId };
+		nbFigureQuery query = { world, index, false, false, 1.0f, b3Vec3_zero, origin, b3_nullShapeId, false };
 		b3World_CastShape( world->physicsWorld, origin, &proxy, b3MulSV( NB_DANGER_TIME, velocity ), b3DefaultQueryFilter(),
 						   nbClosestHitFcn, &query );
 		if ( query.hit )
@@ -1895,7 +2383,8 @@ nbFigureId nbCreateFigure( nbWorldId worldId, const nbFigureDef* def )
 		bone->radius = boneDef->radius;
 	}
 
-	// The first pose of the idle clip where the figure stands
+	// The first pose of the idle clip where the figure stands, the feet where the clip puts them
+	f->swingFoot = -1;
 	f->heading = def->heading;
 	f->frame = nbMakeFrame( world, def->position, def->heading );
 	f->clipSpeed = 1.0f;
@@ -2151,10 +2640,12 @@ nbFigureInfo nbFigure_GetInfo( nbFigureId figureId )
 	info.getUpTime = f->state == nb_figureGettingUp ? f->getUpTime : 0.0f;
 	info.getUpBlend = f->state == nb_figureGettingUp ? b3ClampFloat( f->getUpTime / NB_GET_UP_BLEND, 0.0f, 1.0f ) : 0.0f;
 	info.flinch = b3RotateVector( f->frame.q, f->flinch );
+	info.stepping = f->state == nb_figureAnimated && f->balancing;
 	info.hitCount = f->hitCount;
 	info.knockdownCount = f->knockdownCount;
 	info.getUpCount = f->getUpCount;
 	info.abortCount = f->abortCount;
+	info.stepCount = f->stepCount;
 	return info;
 }
 
@@ -2179,9 +2670,13 @@ void nbFigure_Move( nbFigureId figureId, b3Pos position, float heading )
 		return;
 	}
 
+	// The program takes over where the figure stands, a step to catch a hit ends and the legs follow the clip
 	bool far = b3Length( b3SubPos( position, f->frame.p ) ) > 1.0f;
 	f->heading = heading;
 	f->frame = nbMakeFrame( world, position, heading );
+	f->balancing = false;
+	f->swingFoot = -1;
+	f->footWeight = 0.0f;
 	if ( far )
 	{
 		// A jump: the bones go there at once, without the velocity of a jump
@@ -2348,6 +2843,7 @@ nbFigureStats nbWorld_GetFigureStats( nbWorldId worldId )
 		stats.knockdownCount += f->knockdownCount;
 		stats.getUpCount += f->getUpCount;
 		stats.abortCount += f->abortCount;
+		stats.stepCount += f->stepCount;
 	}
 	return stats;
 }

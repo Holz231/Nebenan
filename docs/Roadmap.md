@@ -1583,7 +1583,8 @@ halten bewegte Stücke ein kleines Stück in Bewegung, das sie braucht, auch wen
 unter einem Stück zählt nur noch Festes, F25. Was danach noch fällt, erstarrte meist langsam oder in der Ruhe neben
 seiner Auflage an einer steilen Fläche, F26. Auf `active-ragdoll-14` zeigte sich, dass diese Stücke klemmen, meist von
 bewegten Nachbarn gedrückt. Sie von den Nachbarn halten zu lassen kostete viel mehr Auftauen, als es Stücke rettete:
-verworfen.
+verworfen. Auf `active-ragdoll-15` fängt sich eine stehende Figur mit Schritten, wenn ein Treffer sie nicht umwirft, sie
+ihn über ihren Füßen aber nicht abfangen kann, F9.
 
 | Nr. | Schritt | Gewinn | Voraussetzung | Stand |
 | ---: | --- | --- | --- | --- |
@@ -1595,7 +1596,7 @@ verworfen.
 | F6 | **Demo und Benchmark**: Szene „Figuren“ mit „Zustand“ und „Zielhaltung“, `nebenan_benchmark figures` mit 1, 10 und 50 Figuren, nach 26.8 und 27.14 | Werkzeug | F5 | ✅ auf `active-ragdoll-1` |
 | F7 | **In der Demo ansehen**: auf dem Ryzen die Szene „Figuren“ mit Gewehr, Granate und Kanone, mit „Zustand“ und „Zielhaltung“ | entscheidet, was an Haltungen und Clips nachzubessern ist | F6 | 🔜 beim Nutzer |
 | F8 | **Pakete trotz Gelenken**: Gelenke in die Pakete und Gebiete des Lösers legen, wie es `ragdoll-7` für die Pakete tat, bitgleich für Szenen ohne Gelenke | mit wachen Ragdolls wieder ganze Inseln pro Thread und Gebiete, für Figuren und Trümmer | F6 | ✅ auf `active-ragdoll-2`: Pakete rechnen ihre Gelenke selbst, bitgleich mit den Farben, und große Inseln behalten ihre Gebiete, die Gelenke eines Ragdolls im Schutt rechnet der aufrufende Thread vor jedem Durchgang, siehe „Gelenke in Paketen und Gebieten“ in [`extern/README.md`](../extern/README.md). In der Stadt mit Figuren 15,5 % weniger Zeit im Löser mit vier Threads |
-| F9 | **Ausgleichsschritt**: Ein mittlerer Treffer lässt die Figur einen Schritt machen, statt sie nur zucken zu lassen, nach 26.14 und 28.3 | – | F5 | 🔜 mittel |
+| F9 | **Ausgleichsschritt**: Ein mittlerer Treffer lässt die Figur einen Schritt machen, statt sie nur zucken zu lassen, nach 26.14 und 28.3 | – | F5 | ✅ auf `active-ragdoll-15`: Ein Treffer unter `knockdownImpulse` gibt dem Körper den Impuls durch seine Masse als Geschwindigkeit. Liegt der Punkt, über dem er wie ein Pendel von seiner Standhöhe zur Ruhe käme, außerhalb der Sohlen, um den Schwerpunkt auf 60 % verkleinert (`nbFigureDef::stepZone`), geht der Körper dorthin, und die Füße treten nach, einer nach dem anderen, der stehende hält, wo er steht. Ohne Boden am Ziel, mit etwas Festem im Weg oder für mehr als 45 cm (`stepReach`) fällt die Figur. Der Mensch der Bibliothek tritt nach hinten ab 15 N s, zur Seite ab 21 N s und nach vorn ab 31 N s, siehe „Ausgleichsschritt“ in [Optimierungen.md](Optimierungen.md) |
 | F10 | **Füße im Stand auf dem Boden**: IK für die Füße auf unebenem Boden und auf Schutt, nach 26.5 und 28.3 | – | F5 | 🔜 mittel |
 | F11 | **Platz zum Aufstehen suchen**: Eine Figur ohne Platz rückt zur Seite oder dreht sich, statt zu warten, etwa mit dem Kopf an einer Wand | – | F5 | 🔜 niedrig |
 | F12 | **Gelenke in den Gebieten**: Die Gelenke eines Ragdolls im Schutt in das Gebiet eines seiner Körper legen und gegen dessen Kopien mit einem Anteil der Masse rechnen wie die Kontakte, statt sie vor jedem Durchgang auf dem aufrufenden Thread allein zu rechnen. Dafür müssen die neun Arten von Gelenken beim Vorbereiten die Masse ihrer Körper skalieren und auf Kopien zeigen können, bitgleich mit dem Faktor 1 | bis 0,024 ms pro Ragdoll im Schutt und Schritt auf der VM mit vier Threads, 0,48 ms mit 20 in einem Haufen, siehe „Gelenke in Paketen und Gebieten“ in [`extern/README.md`](../extern/README.md) | F8 | 🔜 niedrig, erst wenn viele Ragdolls zugleich im Schutt liegen |

@@ -428,7 +428,8 @@ NB_API void nbSampleClip( const nbClipDef* clip, float time, b3Quat* rotations, 
 NB_API nbFigureMotors nbDefaultFigureMotors( void );
 
 /// Default figure definition: knocked down by 50 N s, crushed by 600 N, up again a second after it lies still, with the
-/// get-up clips at 1.4 times their speed.
+/// get-up clips at 1.4 times their speed. A weaker hit makes it step up to 45 cm where the capture point lies outside 60 %
+/// of its soles.
 NB_API nbFigureDef nbDefaultFigureDef( void );
 
 /// Create a figure standing at its position in the pose of its idle clip, or falling from it as a ragdoll, see
@@ -465,7 +466,8 @@ NB_API void* nbFigure_GetUserData( nbFigureId figureId );
 NB_API b3WorldTransform nbFigure_GetFrame( nbFigureId figureId );
 
 /// Move a standing figure: the point on the ground it stands on and its heading. The next steps move its bones there
-/// with velocities, a jump of more than a meter teleports them. Nothing for a ragdoll or a figure that gets up.
+/// with velocities, a jump of more than a meter teleports them. A step it takes to catch a hit ends, the program moves it
+/// now. Nothing for a ragdoll or a figure that gets up.
 NB_API void nbFigure_Move( nbFigureId figureId, b3Pos position, float heading );
 
 /// Play a clip while the figure stands, from its start, at this speed, 1 for real time, blended in over a fifth of a
@@ -475,8 +477,9 @@ NB_API void nbFigure_PlayClip( nbFigureId figureId, const nbClipDef* clip, float
 /// Apply a hit: an impulse at a point of a bone, once per hit id, see nbHitDef. A standing figure hit with at least
 /// nbFigureDef::knockdownImpulse falls as a ragdoll with the velocities its bones had, slack at first, see
 /// nbFigureMotors::stunTime, and the impulse spreads over its bones as Overgrowth spreads a hit: every bone takes a part
-/// as large as its mass over the square of its distance to the point. A weaker hit makes its trunk flinch. A figure that
-/// gets up falls from a quarter of the knockdown impulse. A ragdoll takes the impulse the same way and is slack again.
+/// as large as its mass over the square of its distance to the point. A weaker hit makes its trunk flinch, and a humanoid
+/// steps to catch it where it cannot over its feet, see nbFigureDef::stepReach. A figure that gets up falls from a
+/// quarter of the knockdown impulse. A ragdoll takes the impulse the same way and is slack again.
 /// @return true if the hit landed, false if a hit with this id landed before or the bone does not exist
 NB_API bool nbFigure_ApplyHit( nbFigureId figureId, const nbHitDef* hit );
 

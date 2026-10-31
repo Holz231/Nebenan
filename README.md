@@ -34,11 +34,12 @@ gelöscht. Kein Staub, keine Schatten: Jede Millisekunde geht in die Zerstörung
 - Kollisionsschaden: Kanonenkugeln und herabfallende Trümmer beschädigen, was sie treffen. Was ein Einsturz
   herunterbringt, beschädigt nichts
 - Figuren nach dem Vorbild von Overgrowth: Eine Figur steht animiert, ihre Knochen sind kinematische Box3D-Körper, die
-  ihrem Clip folgen. Ein harter Treffer, eine Explosion, schwere Trümmer, eine Last auf ihr oder Boden, der wegbricht,
-  machen sie zum aktiven Ragdoll, mit den Geschwindigkeiten, die ihre Knochen hatten, und dem Treffer genau einmal.
-  Ihre Gelenke ziehen mit begrenzter Kraft zu einer Haltung, sie fängt sich mit den Armen ab oder rollt sich ein. Liegt
-  sie still, steht sie mit einem Clip vom Bauch oder vom Rücken wieder auf, sobald sie Boden, Platz und nichts auf sich
-  hat. Die Knochen und Clips eines Menschen baut die Bibliothek selbst
+  ihrem Clip folgen. Einen Treffer, den sie über ihren Füßen nicht abfangen kann, fängt sie mit Schritten ab, der
+  Standfuß bleibt dabei stehen. Ein harter Treffer, eine Explosion, schwere Trümmer, eine Last auf ihr oder Boden, der
+  wegbricht, machen sie zum aktiven Ragdoll, mit den Geschwindigkeiten, die ihre Knochen hatten, und dem Treffer genau
+  einmal. Ihre Gelenke ziehen mit begrenzter Kraft zu einer Haltung, sie fängt sich mit den Armen ab oder rollt sich
+  ein. Liegt sie still, steht sie mit einem Clip vom Bauch oder vom Rücken wieder auf, sobald sie Boden, Platz und
+  nichts auf sich hat. Die Knochen und Clips eines Menschen baut die Bibliothek selbst
 - Für ganze Städte gebaut, ohne etwas zu löschen: Trümmer, die zur Ruhe kommen und auf festem Grund liegen,
   werden zu statischem Schutt und kosten Box3D nichts mehr. Box3D bewegt nur eine begrenzte Zahl Trümmer
   gleichzeitig, verdeckte Flächen werden nicht gezeichnet
@@ -229,8 +230,9 @@ Bildzeit.
   ihnen ruht, und kommen von dort zurück. Das Menü zeigt, wie viele Häuser geladen und wie viele gespeichert sind, was
   das Streaming pro Bild kostet und wie viel Speicher Nebenan und Box3D belegen
 - **Figuren**: acht Figuren, fünf vor einer Ziegelmauer, zwei auf einem Betonblock und eine auf der Mauer. Das Gewehr
-  wirft sie um oder lässt sie zurückzucken, Granate und Kanone werfen sie mit ihrer eigenen Wucht um, und wer den Block
-  oder die Mauer unter ihnen wegschießt, nimmt ihnen den Boden. Das Menü zählt, wie viele stehen, liegen und aufstehen.
+  wirft sie um, lässt sie zurückzucken oder sich mit einem Schritt fangen, Granate und Kanone werfen sie mit ihrer
+  eigenen Wucht um, und wer den Block oder die Mauer unter ihnen wegschießt, nimmt ihnen den Boden. Das Menü zählt, wie
+  viele stehen, liegen und aufstehen und wie viele Schritte sie gemacht haben.
   **Gewehr auf Figuren** stellt den Stoß eines Gewehrtreffers ein (Standard 80 N s, ab 50 N s fällt eine Figur),
   **Alle umwerfen** wirft alle auf einmal um, **Zustand** schreibt über jede Figur, was sie tut und worauf sie wartet,
   und **Zielhaltung** zeichnet als Linien die Haltung, zu der sie ihre Knochen bringen will
@@ -545,6 +547,21 @@ Ragdoll oder steht auf. Stehend sind ihre Knochen kinematisch, und das Update na
 erreicht. Nichts wird teleportiert, Trümmer prallen an der Figur ab, und Box3D löst keines ihrer Gelenke, denn zwischen
 kinematischen Körpern liegen sie in der statischen Menge. Ein schwacher Treffer lässt den Rumpf zurückzucken, eine
 kritisch gedämpfte Feder um das Becken, die die Bibliothek exakt löst, 0,008 rad pro N s bis höchstens 0,5 rad.
+
+**Ausgleichsschritt.** Ein Treffer unter `knockdownImpulse` gibt dem Körper eines Menschen der Bibliothek eine
+Geschwindigkeit über dem Boden, den Impuls durch seine Masse, nach Kapitel 26.14 und 28.3 der Roadmap des Spiels. Wie ein
+Pendel so lang wie seine Standhöhe käme er über dem Capture Point zur Ruhe, die Geschwindigkeit durch die Frequenz des
+Pendels vor seinem Schwerpunkt. Liegt dieser Punkt innerhalb der Sohlen, um den Schwerpunkt auf 60 % verkleinert
+(`nbFigureDef::stepZone`), bleibt die Figur stehen und zuckt nur. Sonst geht ihr Körper dorthin und wird dabei
+gleichmäßig langsamer, und ihre Füße treten nach, einer nach dem anderen, zuerst der zur Seite des Stoßes, jeder
+0,3 s in der Luft. Der Fuß, der steht, bleibt stehen, wo er steht, und rutscht nicht. Eine Zwei-Knochen-IK setzt die
+Beine, und das Becken geht so weit hinunter, wie die Beine es brauchen. Der Mensch der Bibliothek steht über seinen
+Knöcheln, 3 cm vor den Fersen und 23 cm hinter den Zehen, darum tritt er nach hinten ab 15 N s, zur Seite ab 21 N s und
+nach vorn ab 31 N s. Ohne Boden am Ziel eines Schritts, mit etwas Festem im Weg oder für einen Stoß, der den Körper
+weiter als `stepReach` (45 cm) trüge, fällt die Figur statt zu treten. Entschieden wird nur, wenn ein Stoß kommt und
+wenn ein Fuß aufsetzt, so flattert nichts. Während eines Schritts gehen die Beine vor dem Clip, `nbFigure_Move` beendet
+ihn. `nbFigureInfo::stepping` sagt, ob eine Figur gerade tritt, `stepCount` und `nbFigureStats::stepCount` zählen die
+Schritte. Ein Spiel ruft dafür nichts auf, mit `stepReach = 0` zuckt eine Figur nur.
 
 **Aktiver Ragdoll.** Ein Treffer ab `knockdownImpulse` (Standard 50 N s), eine Explosion, die stark genug ist,
 Trümmer, die die Figur mit so viel Impuls treffen, eine Last von oben ab `crushForce` (600 N) oder Boden, der
@@ -1837,7 +1854,7 @@ lange die Threads im Löser rechnen und worauf sie sonst warten.
 ## Tests und Benchmark
 
 ```sh
-build/bin/nebenan_test            # 96 Tests: Geometrie, Voronoi, Hüllen, Öffnungen, Stöße, Stützgraph, Etagen, Lastprüfung, Mauern, Schutt, Ruhe, Durchschlagen, Threads, Knoten, große Blöcke, Gelenke in Paketen und Gebieten, Suchbaum, Kontaktlisten, Streaming, Stream, Laden im Hintergrund, Speichern und Zurückholen, gemeinsamer Thread-Pool, Ruhe-Prüfung auf den Workern, Schritt auf eigenem Thread, Schritte pro Bild, Takt der Physik, Wahl der Threads, Profil und Skalierung, Figuren, Determinismus …
+build/bin/nebenan_test            # 98 Tests: Geometrie, Voronoi, Hüllen, Öffnungen, Stöße, Stützgraph, Etagen, Lastprüfung, Mauern, Schutt, Ruhe, Durchschlagen, Threads, Knoten, große Blöcke, Gelenke in Paketen und Gebieten, Suchbaum, Kontaktlisten, Streaming, Stream, Laden im Hintergrund, Speichern und Zurückholen, gemeinsamer Thread-Pool, Ruhe-Prüfung auf den Workern, Schritt auf eigenem Thread, Schritte pro Bild, Takt der Physik, Wahl der Threads, Profil und Skalierung, Figuren, Ausgleichsschritt, Determinismus …
 build/bin/nebenan_benchmark 4     # Zahl = Threads für Bruch und Physik, 0 = so viele, wie ein Spiel nähme
 build/bin/nebenan_benchmark scaling   # die Städte unter Beschuss mit 1, 2, 4 … Threads und die Tabelle der Skalierung
 build/bin/nebenan_benchmark rates     # die Städte unter Beschuss mit 30, 60 und 120 Hz, was eine simulierte Sekunde kostet
@@ -1922,9 +1939,10 @@ Nach Änderungen an `demo/shaders/scene.glsl` die Shader neu erzeugen, im Ordner
   den vorsichtigeren Box3D-Standard.
 - Nur konvexe Teile, aus denen sich Quader ausschneiden lassen. Andere konkave Formen müssen als mehrere konvexe
   Teile angegeben werden.
-- Figuren haben noch keinen Ausgleichsschritt nach Kapitel 26.14 der Roadmap des Spiels und keine IK für die Füße im
-  Stand: Ein mittlerer Treffer lässt sie nur zucken, ein harter wirft sie um. Gehen und Laufen spielt das Spiel selbst,
-  mit `nbFigure_Move` und eigenen Clips, die Bibliothek hat dafür keinen.
+- Figuren haben noch keine IK für die Füße im Stand: Auf unebenem Boden und auf Schutt stehen ihre Füße, wo der Clip
+  sie hinstellt, nur der Ausgleichsschritt setzt sie auf den Boden an seinem Ziel, Schritt F10. Nur der Mensch der
+  Bibliothek tritt, die Bibliothek kennt nur seine Beine. Gehen und Laufen spielt das Spiel selbst, mit `nbFigure_Move`
+  und eigenen Clips, die Bibliothek hat dafür keinen.
 - Stehende und aufstehende Figuren sind kinematisch und kollidieren wie alle kinematischen Körper in Box3D nicht mit
   statischen, also nicht mit Schutt und stehenden Wänden. Eine Figur, die das Spiel durch eine Wand bewegt, geht
   hindurch. Ob genug Platz zum Aufstehen ist, prüft sie vorher. Liegt sie mit dem Kopf an einer Wand, findet sie vor

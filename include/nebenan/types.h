@@ -1171,6 +1171,15 @@ typedef struct nbFigureDef
 	float flinchLimit;
 	float flinchHertz;
 
+	/// A weaker hit that the humanoid cannot catch over its feet makes it step, see the roadmap 26.14 and 28.3: the hit
+	/// gives its body a velocity, and it would come to rest over the capture point, the velocity over the frequency of a
+	/// pendulum as long as the stand height ahead of its center of mass. Where that point lies outside the soles of its
+	/// feet seen from above, shrunk to the part stepZone of them about its center of mass, the body moves there and the
+	/// feet step after it, one at a time. A hit that would carry the body farther than stepReach in meters, or a step
+	/// without ground or into a wall, knocks it down instead. A reach of zero lets the figure only flinch.
+	float stepReach;
+	float stepZone;
+
 	/// Bodies that press on a standing figure from above with at least this many newtons knock it down, so what falls on
 	/// it never comes to rest on it. A figure that gets up falls from a quarter of it. What its bones push aside does not
 	/// count.
@@ -1264,11 +1273,16 @@ typedef struct nbFigureInfo
 	/// The flinch of the trunk of a standing figure, as a rotation vector in radians
 	b3Vec3 flinch;
 
-	/// Hits that landed, how often the figure was knocked down, got up and broke off getting up
+	/// A standing figure steps to catch a hit, see nbFigureDef::stepReach
+	bool stepping;
+
+	/// Hits that landed, how often the figure was knocked down, got up and broke off getting up, and the steps it took to
+	/// catch hits
 	int hitCount;
 	int knockdownCount;
 	int getUpCount;
 	int abortCount;
+	int stepCount;
 } nbFigureInfo;
 
 /// A hit on a bone, see nbFigure_ApplyHit
@@ -1301,11 +1315,12 @@ typedef struct nbFigureStats
 	/// "Gelenke und Pakete" in the README.
 	int awakeRagdollCount;
 
-	/// Since the figures were made: hits that landed, knockdowns, get-ups and get-ups broken off
+	/// Since the figures were made: hits that landed, knockdowns, get-ups, get-ups broken off and steps to catch hits
 	int hitCount;
 	int knockdownCount;
 	int getUpCount;
 	int abortCount;
+	int stepCount;
 } nbFigureStats;
 
 /// The bones of the humanoid that nbMakeHumanoidBones builds, in the order of its array. The trunk runs from the pelvis

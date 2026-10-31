@@ -62,6 +62,14 @@ typedef struct nbBone
 	float radius;
 } nbBone;
 
+// A foot of a humanoid that steps to catch a hit: where its ankle stands while it is down, and where its step goes
+typedef struct nbFoot
+{
+	b3Pos plant;
+	b3Pos from;
+	b3Pos target;
+} nbFoot;
+
 // A figure, see nbCreateFigure
 typedef struct nbFigure
 {
@@ -102,6 +110,19 @@ typedef struct nbFigure
 	// The flinch of the trunk as a rotation vector and its rate, a damped spring
 	b3Vec3 flinch;
 	b3Vec3 flinchRate;
+
+	// Steps to catch a hit, see nbPush: the feet, the foot in the air or -1 and how far into its step, how far the body
+	// moves on the ground in all, how long it takes and how far along it is, and how far the legs follow the feet instead
+	// of the clip
+	nbFoot feet[2];
+	int swingFoot;
+	float swingTime;
+	bool balancing;
+	b3Vec3 swayOffset;
+	float swayTime;
+	float swayDuration;
+	float footWeight;
+	int stepCount;
 
 	// Ragdoll: the strength of the joints, the slack after a hard hit, how far the figure curls up and braces, the
 	// average speed of its bones, how long it lies still, the damping of its bones and whether the springs are on
@@ -188,6 +209,13 @@ int nbBuildHumanoidClip( nbFigureClip which, float height, nbKeyframe* keyframes
 
 // The part of a rotation, from none to all of it: the same axis, that part of the angle, the short way round
 b3Quat nbPartOf( b3Quat rotation, float weight );
+
+// Two bones from a pivot to a target, the middle joint toward a side, see figure_clips.c: the pivots of the middle and
+// the end bone and the axis of the middle joint
+b3Vec3 nbSolveTwoBones( b3Vec3 pivot, b3Vec3 target, float upper, float lower, b3Vec3 side, b3Vec3* middle, b3Vec3* end );
+
+// The rotation whose x and y axes are these, made orthonormal around y
+b3Quat nbRotationFromAxes( b3Vec3 x, b3Vec3 y );
 
 // The most points of the shape of a bone, see nbBonePoints
 #define NB_BONE_POINTS 48

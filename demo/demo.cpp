@@ -1843,9 +1843,9 @@ static std::string BuildReport( const App& app )
 	if ( HasFigures( app.scene ) )
 	{
 		const nbFigureStats& figures = view.figures;
-		Appendf( text, "Figuren: %d, stehen %d, liegen %d (%d wach), stehen auf %d; Treffer %d, umgeworfen %d, aufgestanden %d, abgebrochen %d\n",
+		Appendf( text, "Figuren: %d, stehen %d, liegen %d (%d wach), stehen auf %d; Treffer %d, Schritte %d, umgeworfen %d, aufgestanden %d, abgebrochen %d\n",
 				 figures.figureCount, figures.animatedCount, figures.ragdollCount, figures.awakeRagdollCount, figures.gettingUpCount,
-				 figures.hitCount, figures.knockdownCount, figures.getUpCount, figures.abortCount );
+				 figures.hitCount, figures.stepCount, figures.knockdownCount, figures.getUpCount, figures.abortCount );
 	}
 	if ( app.scene == SceneCity )
 	{
@@ -1913,13 +1913,15 @@ static void DrawUi( App& app )
 		const nbFigureStats& figures = app.view.figures;
 		ImGui::Text( "Figuren %d: stehen %d, liegen %d (%d wach), stehen auf %d", figures.figureCount, figures.animatedCount,
 					 figures.ragdollCount, figures.awakeRagdollCount, figures.gettingUpCount );
-		ImGui::Text( "Treffer %d, umgeworfen %d, aufgestanden %d, abgebrochen %d", figures.hitCount, figures.knockdownCount,
-					 figures.getUpCount, figures.abortCount );
+		ImGui::Text( "Treffer %d, Schritte %d, umgeworfen %d, aufgestanden %d, abgebrochen %d", figures.hitCount,
+					 figures.stepCount, figures.knockdownCount, figures.getUpCount, figures.abortCount );
 		ImGui::SliderFloat( "Gewehr auf Figuren", &app.figureHitImpulse, 10.0f, 300.0f, "%.0f N s" );
 		if ( ImGui::IsItemHovered() )
 		{
 			ImGui::SetTooltip( "So stark stößt ein Treffer des Gewehrs eine Figur. Ab 50 N s fällt sie als\naktiver Ragdoll um und steht "
-							   "wieder auf, darunter zuckt sie nur zurück. Granate\nund Kanone werfen Figuren mit ihrer eigenen Wucht um." );
+							   "wieder auf, darunter zuckt sie zurück und fängt sich\nmit einem Schritt, wo sie über ihren Füßen nicht "
+							   "stehen bleiben kann, von vorn\neher als von hinten. Granate und Kanone werfen Figuren mit ihrer eigenen "
+							   "Wucht um." );
 		}
 		if ( ImGui::Button( "Alle umwerfen" ) )
 		{
@@ -2343,7 +2345,7 @@ static const char* FigureStateName( const nbFigureInfo& info )
 {
 	if ( info.state == nb_figureAnimated )
 	{
-		return "steht";
+		return info.stepping ? "fängt sich" : "steht";
 	}
 	if ( info.state == nb_figureGettingUp )
 	{

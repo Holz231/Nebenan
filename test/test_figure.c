@@ -490,6 +490,191 @@ static int FigureGetUpRoomTest( void )
 	return 0;
 }
 
+// A static box, for walls and ledges
+static void AddBlock( FigureScene* scene, b3Vec3 center, b3Vec3 halfExtents )
+{
+	b3BodyDef bodyDef = b3DefaultBodyDef();
+	bodyDef.position = center;
+	b3BodyId body = b3CreateBody( scene->physicsWorld, &bodyDef );
+	b3BoxHull box = b3MakeBoxHull( halfExtents.x, halfExtents.y, halfExtents.z );
+	b3ShapeDef shapeDef = b3DefaultShapeDef();
+	b3CreateHullShape( body, &shapeDef, &box.base );
+}
+
+// A hit that a standing figure cannot catch over its feet makes it step, after the roadmap of the game, 26.14 and 28.3. Hit
+// on its right side it steps left with the left foot, the right one held where it stands, then the right one after it,
+// and stands where the push carried it. A kick from the front makes it step back, from less than a push to its side, and
+// from behind the same push does not make it step at all.
+static int FigureStepTest( void )
+{
+	// The impulse, the direction it pushes in, along x or z, and how far the body goes there
+	const float impulses[4] = { 35.0f, 30.0f, 30.0f, 20.0f };
+	const b3Vec3 pushes[4] = { { 1.0f, 0.0f, 0.0f }, { 0.0f, 0.0f, -1.0f }, { 0.0f, 0.0f, 1.0f }, { 1.0f, 0.0f, 0.0f } };
+	const bool steps[4] = { true, true, false, false };
+	for ( int pass = 0; pass < 4; ++pass )
+	{
+		FigureScene scene;
+		CreateFigureScene( &scene, 1 );
+		nbFigureId figure = AddFigure( &scene, b3Vec3_zero, 0.0f );
+		StepFigures( &scene, 10 );
+		b3Vec3 pelvis = BonePosition( figure, nb_humanoidPelvis );
+		b3Vec3 left = BonePosition( figure, nb_humanoidFootLeft );
+		b3Vec3 right = BonePosition( figure, nb_humanoidFootRight );
+
+		ENSURE( HitChest( figure, 1, b3MulSV( impulses[pass], pushes[pass] ) ) );
+		ENSURE( nbFigure_GetState( figure ) == nb_figureAnimated );
+		ENSURE( nbFigure_GetInfo( figure ).stepping == steps[pass] );
+
+		// The body moves as far as the capture point lies out, the impulse over the mass and the frequency of a pendulum as
+		// long as the stand height. The foot that stands does not slide while the other one is in the air.
+		float distance = impulses[pass] / 74.0f / sqrtf( 9.8f / scene.standHeight );
+		float slide = 0.0f;
+		float largest = 0.0f;
+		b3WorldTransform before[nb_humanoidBoneCount];
+		nbFigure_GetBoneTransforms( figure, before, nb_humanoidBoneCount );
+		for ( int i = 0; i < 90; ++i )
+		{
+			StepFigures( &scene, 1 );
+			nbFigureInfo info = nbFigure_GetInfo( figure );
+			ENSURE( info.state == nb_figureAnimated );
+			if ( pass == 0 && info.stepCount == 0 )
+			{
+				slide = b3MaxFloat( slide, b3Length( b3Sub( BonePosition( figure, nb_humanoidFootRight ), right ) ) );
+			}
+			b3WorldTransform after[nb_humanoidBoneCount];
+			nbFigure_GetBoneTransforms( figure, after, nb_humanoidBoneCount );
+			for ( int b = nb_humanoidThighLeft; b < nb_humanoidBoneCount; ++b )
+			{
+				largest = b3MaxFloat( largest, b3Length( b3SubPos( after[b].p, before[b].p ) ) );
+				before[b] = after[b];
+			}
+		}
+
+		nbFigureInfo info = nbFigure_GetInfo( figure );
+		b3Vec3 moved = b3Sub( BonePosition( figure, nb_humanoidPelvis ), pelvis );
+		printf( "  pushed by %.0f N s along (%.0f, %.0f): %d steps, the body %.3f m on, the legs %.3f m a step at most\n",
+				impulses[pass], pushes[pass].x, pushes[pass].z, info.stepCount, b3Length( moved ), largest );
+		ENSURE( info.stepping == false && info.knockdownCount == 0 && info.hitCount == 1 );
+		if ( steps[pass] )
+		{
+			ENSURE( info.stepCount == 2 );
+			ENSURE_SMALL( b3Dot( moved, pushes[pass] ) - distance, 0.01f );
+			ENSURE( b3Length( b3MulSub( moved, b3Dot( moved, pushes[pass] ), pushes[pass] ) ) < 1.0e-3f );
+
+			// Both feet where they stood, carried along, at the same height. A knee swings ahead as its foot lifts, at about
+			// 2.3 m/s.
+			ENSURE( b3Length( b3Sub( b3Sub( BonePosition( figure, nb_humanoidFootLeft ), left ), moved ) ) < 2.0e-3f );
+			ENSURE( b3Length( b3Sub( b3Sub( BonePosition( figure, nb_humanoidFootRight ), right ), moved ) ) < 2.0e-3f );
+			ENSURE( largest < 0.05f );
+		}
+		else
+		{
+			ENSURE( info.stepCount == 0 );
+			ENSURE( b3Length( moved ) < 1.0e-3f );
+		}
+		if ( pass == 0 )
+		{
+			ENSURE( slide < 1.0e-4f );
+		}
+		ENSURE( StandsUpright( &scene, figure ) );
+		ENSURE( nbWorld_GetFigureStats( scene.world ).stepCount == info.stepCount );
+		DestroyFigureScene( &scene );
+	}
+	return 0;
+}
+
+// A step needs room and ground, see 26.14 and 28.5 (B): a figure kicked toward a wall close behind it falls against the
+// wall instead of stepping into it, and pushed away from the wall it steps. A figure on a ledge pushed over its edge falls, a
+// figure pushed again and again while it steps falls once the push would carry it beyond its reach, and a figure that
+// does not step only flinches.
+static int FigureStepBlockedTest( void )
+{
+	for ( int pass = 0; pass < 5; ++pass )
+	{
+		FigureScene scene;
+		CreateFigureScene( &scene, 1 );
+		nbFigureId figure;
+		if ( pass < 2 )
+		{
+			// A wall 16 cm behind the heels, along x, closer than a step back would go
+			AddBlock( &scene, (b3Vec3){ 0.0f, 1.5f, -0.25f }, (b3Vec3){ 2.0f, 1.5f, 0.05f } );
+			figure = AddFigure( &scene, b3Vec3_zero, 0.0f );
+		}
+		else if ( pass == 2 )
+		{
+			// On a block 1 m high, its left foot 5 cm from the edge
+			AddBlock( &scene, (b3Vec3){ -1.0f, 0.5f, 0.0f }, (b3Vec3){ 1.2f, 0.5f, 1.2f } );
+			figure = AddFigure( &scene, (b3Vec3){ 0.05f, 1.0f, 0.0f }, 0.0f );
+		}
+		else if ( pass == 3 )
+		{
+			figure = AddFigure( &scene, b3Vec3_zero, 0.0f );
+		}
+		else
+		{
+			nbFigureDef def = nbDefaultFigureDef();
+			def.rig = &scene.rig;
+			def.standHeight = scene.standHeight;
+			def.stepReach = 0.0f;
+			figure = nbCreateFigure( scene.world, &def );
+		}
+		StepFigures( &scene, 10 );
+
+		if ( pass == 0 )
+		{
+			// Kicked toward the wall it falls, with the hit, and lies before the wall
+			ENSURE( HitChest( figure, 1, (b3Vec3){ 0.0f, 0.0f, -30.0f } ) );
+			ENSURE( nbFigure_GetState( figure ) == nb_figureRagdoll );
+			StepFigures( &scene, 120 );
+			for ( int i = 0; i < nb_humanoidBoneCount; ++i )
+			{
+				ENSURE( BonePosition( figure, i ).z > -0.2f );
+			}
+		}
+		else if ( pass == 1 )
+		{
+			// Pushed away from it, it steps
+			ENSURE( HitChest( figure, 1, (b3Vec3){ 0.0f, 0.0f, 40.0f } ) );
+			StepFigures( &scene, 60 );
+			ENSURE( nbFigure_GetState( figure ) == nb_figureAnimated );
+			ENSURE( nbFigure_GetInfo( figure ).stepCount == 2 );
+		}
+		else if ( pass == 2 )
+		{
+			// Over the edge the step finds no ground, and the figure falls before its foot leaves the block
+			ENSURE( HitChest( figure, 1, (b3Vec3){ 35.0f, 0.0f, 0.0f } ) );
+			ENSURE( nbFigure_GetState( figure ) == nb_figureAnimated );
+			StepFigures( &scene, 2 );
+			ENSURE( nbFigure_GetState( figure ) == nb_figureRagdoll );
+			ENSURE( nbFigure_GetInfo( figure ).stepCount == 0 );
+			ENSURE( BonePosition( figure, nb_humanoidFootLeft ).y > 1.0f );
+		}
+		else if ( pass == 3 )
+		{
+			// Three pushes the same way, a twentieth of a second apart: the third would carry it beyond its reach
+			ENSURE( HitChest( figure, 1, (b3Vec3){ 45.0f, 0.0f, 0.0f } ) );
+			StepFigures( &scene, 3 );
+			ENSURE( HitChest( figure, 2, (b3Vec3){ 45.0f, 0.0f, 0.0f } ) );
+			ENSURE( nbFigure_GetState( figure ) == nb_figureAnimated );
+			StepFigures( &scene, 3 );
+			ENSURE( HitChest( figure, 3, (b3Vec3){ 45.0f, 0.0f, 0.0f } ) );
+			ENSURE( nbFigure_GetState( figure ) == nb_figureRagdoll );
+		}
+		else
+		{
+			// Without a reach it flinches and stands where it stood
+			b3Vec3 pelvis = BonePosition( figure, nb_humanoidPelvis );
+			ENSURE( HitChest( figure, 1, (b3Vec3){ 45.0f, 0.0f, 0.0f } ) );
+			StepFigures( &scene, 60 );
+			ENSURE( nbFigure_GetState( figure ) == nb_figureAnimated );
+			ENSURE( nbFigure_GetInfo( figure ).stepCount == 0 );
+			ENSURE( b3Length( b3Sub( BonePosition( figure, nb_humanoidPelvis ), pelvis ) ) < 1.0e-3f );
+		}
+		DestroyFigureScene( &scene );
+	}
+	return 0;
+}
+
 // A figure on a box falls when the box goes, and does not hang in the air
 static int FigureGroundTest( void )
 {
@@ -603,7 +788,8 @@ static int FigureClipTest( void )
 	return 0;
 }
 
-// Two figures knocked down and hit while they fly, debris on a third and a blast: the same bits with 1 and 4 threads
+// Two figures knocked down and hit while they fly, one of them while it steps, a third that steps aside, debris on it and
+// a blast: the same bits with 1 and 4 threads
 static uint32_t RunFigureScenario( int threadCount )
 {
 	FigureScene scene;
@@ -625,6 +811,15 @@ static uint32_t RunFigureScenario( int threadCount )
 	uint32_t hash = 2166136261u;
 	for ( int step = 0; step < 600; ++step )
 	{
+		// The second steps back from a kick and is knocked down while it steps, the third steps aside
+		if ( step == 5 )
+		{
+			HitChest( figures[1], 4, b3RotateVector( b3MakeQuatFromAxisAngle( b3Vec3_axisY, 0.3f ), (b3Vec3){ 0.0f, 0.0f, -30.0f } ) );
+		}
+		if ( step == 8 )
+		{
+			HitChest( figures[2], 5, b3RotateVector( b3MakeQuatFromAxisAngle( b3Vec3_axisY, 0.6f ), (b3Vec3){ 35.0f, 0.0f, 0.0f } ) );
+		}
 		if ( step == 20 )
 		{
 			HitChest( figures[0], 1, (b3Vec3){ 0.0f, 0.0f, -90.0f } );
@@ -658,14 +853,15 @@ static uint32_t RunFigureScenario( int threadCount )
 			}
 		}
 		nbFigureInfo info = nbFigure_GetInfo( figures[k] );
-		hash = ( hash ^ (uint32_t)( info.state + 4 * info.knockdownCount + 64 * info.getUpCount ) ) * 16777619u;
+		hash = ( hash ^ (uint32_t)( info.state + 4 * info.knockdownCount + 64 * info.getUpCount + 1024 * info.stepCount ) ) *
+			   16777619u;
 	}
 	DestroyFigureScene( &scene );
 	return hash;
 }
 
 // The hash of the figure scenario on every platform, see RunFigureScenario
-#define NB_EXPECTED_FIGURE_HASH 0x04ed47eeu
+#define NB_EXPECTED_FIGURE_HASH 0x4c6dcfb1u
 
 static int FigureDeterminismTest( void )
 {
@@ -689,6 +885,8 @@ int FigureTest( void )
 	RUN_TEST( FigureFlinchTest );
 	RUN_TEST( FigureKnockdownTest );
 	RUN_TEST( FigureGetUpRoomTest );
+	RUN_TEST( FigureStepTest );
+	RUN_TEST( FigureStepBlockedTest );
 	RUN_TEST( FigureGroundTest );
 	RUN_TEST( FigureWorldTest );
 	RUN_TEST( FigureClipTest );

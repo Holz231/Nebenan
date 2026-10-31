@@ -136,7 +136,7 @@ static void nbSetFrameRotation( nbPoseMaker* m, int bone, b3Quat rotation )
 }
 
 // The rotation whose x and y axes are these, made orthonormal around y
-static b3Quat nbRotationFromAxes( b3Vec3 x, b3Vec3 y )
+b3Quat nbRotationFromAxes( b3Vec3 x, b3Vec3 y )
 {
 	y = b3Normalize( y );
 	x = b3Normalize( b3MulSub( x, b3Dot( x, y ), y ) );
@@ -155,8 +155,7 @@ static b3Vec3 nbAcross( b3Vec3 v, b3Vec3 direction, b3Vec3 fallback )
 // Two bones from a pivot to a target, the middle joint toward a side: the pivot of the middle bone and of the end bone,
 // the target pulled into reach, and the normal of the plane of the two bones, which is the axis of the middle joint. It
 // holds when a bone points along the side, where the side alone would leave the turn about the bone open.
-static b3Vec3 nbSolveTwoBones( b3Vec3 pivot, b3Vec3 target, float upper, float lower, b3Vec3 side, b3Vec3* middle,
-							   b3Vec3* end )
+b3Vec3 nbSolveTwoBones( b3Vec3 pivot, b3Vec3 target, float upper, float lower, b3Vec3 side, b3Vec3* middle, b3Vec3* end )
 {
 	b3Vec3 offset = b3Sub( target, pivot );
 	float distance = b3Length( offset );
