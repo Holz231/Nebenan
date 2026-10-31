@@ -4677,6 +4677,96 @@ static int MovedCarrierTest( void )
 	return 0;
 }
 
+// Over the budget a small piece that moves beside what it lies on freezes only over something fixed close below, see
+// NB_DROP_HEIGHT. A slab that slides below the edge of a block does not count: a stone that slides over the edge above it
+// does not freeze hanging over the edge, it falls onto the slab.
+static int DebrisBudgetMovingBelowTest( void )
+{
+	TestScene scene = CreateScene();
+	nbDestructibleDef def = nbDefaultDestructibleDef();
+	def.position = (b3Pos){ 0.0f, 0.25f, 0.0f };
+	def.seed = 142;
+	nbCreateBox( scene.world, &def, (b3Vec3){ 0.5f, 0.25f, 0.5f } );
+
+	// The slab lies 20 cm lower beside the edge of the block at x = 0.5 and slides along it, too fast to freeze, see
+	// NB_LARGE_FREEZE_SPEED. A stone of 1 liter slides over the block toward the edge.
+	nbDestructibleId slab = CreateLooseBox( &scene, (b3Vec3){ 1.505f, 0.15f, 0.0f }, (b3Vec3){ 1.0f, 0.15f, 1.0f }, 143 );
+	nbDestructibleId stone = CreateLooseBox( &scene, (b3Vec3){ 0.0f, 0.55f, 0.0f }, (b3Vec3){ 0.05f, 0.05f, 0.05f }, 144 );
+	nbWorld* world = nbGetWorldFromId( scene.world );
+	int slabActor = ActorOfDestructible( &scene, slab );
+	int stoneActor = ActorOfDestructible( &scene, stone );
+	b3Body_SetLinearVelocity( world->actors.data[stoneActor].bodyId, (b3Vec3){ 3.0f, 0.0f, 0.0f } );
+
+	// Once the center of mass of the stone is 2 cm past the edge, the budget drops to zero
+	int step = 0;
+	for ( ; step < 120 && CenterOfChunks( stone ).x < 0.52f; ++step )
+	{
+		b3Body_SetLinearVelocity( world->actors.data[slabActor].bodyId, (b3Vec3){ 0.0f, 0.0f, 0.6f } );
+		Step( &scene, 1 );
+	}
+	ENSURE( step < 120 && world->actors.data[stoneActor].isRubble == false && CenterOfChunks( stone ).y > 0.5f );
+	nbWorld_SetDebrisBudget( scene.world, 0 );
+
+	for ( int i = 0; i < 30; ++i )
+	{
+		b3Body_SetLinearVelocity( world->actors.data[slabActor].bodyId, (b3Vec3){ 0.0f, 0.0f, 0.6f } );
+		Step( &scene, 1 );
+		ENSURE( world->actors.data[stoneActor].isRubble == false || CenterOfChunks( stone ).y < 0.4f );
+	}
+	ENSURE( CenterOfChunks( stone ).y < 0.4f );
+	ENSURE( RubbleInTheAir( &scene ) == 0 );
+	DestroyScene( &scene );
+	return 0;
+}
+
+// A small piece that moves and lies on something fixed and on a moving piece, with its center of mass beside where it lies
+// on the fixed one and nothing fixed close below, needs the moving piece, see nbNeedsMovingCarriers. A stone that slides
+// along the edge of a block, across the edge and a slab beside it, does not stay hanging over the edge once the slab
+// moved on.
+static int LeaningStoneTest( void )
+{
+	TestScene scene = CreateScene();
+	nbDestructibleDef def = nbDefaultDestructibleDef();
+	def.position = (b3Pos){ 0.0f, 0.25f, 0.0f };
+	def.seed = 145;
+	nbCreateBox( scene.world, &def, (b3Vec3){ 0.5f, 0.25f, 0.5f } );
+
+	// The slab is as high as the block, beside its edge at x = 0.5. The stone of 1 liter lies across the edge, its center
+	// of mass 3 cm past it.
+	nbDestructibleId slab = CreateLooseBox( &scene, (b3Vec3){ 1.505f, 0.25f, 0.0f }, (b3Vec3){ 1.0f, 0.25f, 1.0f }, 146 );
+	nbDestructibleId stone = CreateLooseBox( &scene, (b3Vec3){ 0.53f, 0.55f, 0.0f }, (b3Vec3){ 0.05f, 0.05f, 0.05f }, 147 );
+	nbWorld* world = nbGetWorldFromId( scene.world );
+	int slabActor = ActorOfDestructible( &scene, slab );
+	int stoneActor = ActorOfDestructible( &scene, stone );
+
+	// Over the budget the slab slides along the edge, too fast to freeze, see NB_LARGE_FREEZE_SPEED, and the stone slides
+	// along the edge too. It freezes only held by the slab.
+	nbWorld_SetDebrisBudget( scene.world, 0 );
+	int frozen = 0;
+	for ( int i = 0; i < 30; ++i )
+	{
+		b3Body_SetLinearVelocity( world->actors.data[slabActor].bodyId, (b3Vec3){ 0.0f, 0.0f, 0.6f } );
+		if ( world->actors.data[stoneActor].isRubble == false )
+		{
+			b3Body_SetLinearVelocity( world->actors.data[stoneActor].bodyId, (b3Vec3){ 0.0f, 0.0f, 0.3f } );
+		}
+
+		Step( &scene, 1 );
+		const nbActor* stoneState = world->actors.data + stoneActor;
+		ENSURE( stoneState->isRubble == false || world->actors.data[slabActor].holdsRubble );
+		frozen += stoneState->isRubble ? 1 : 0;
+	}
+	ENSURE( frozen > 0 && world->actors.data[slabActor].isRubble == false && CenterOfChunks( stone ).y > 0.5f );
+
+	// The slab moves 3 m away, and the stone tips over the edge to the ground
+	MoveBody( world->actors.data[slabActor].bodyId, (b3Vec3){ 3.0f, 0.0f, 0.0f } );
+	Step( &scene, 60 );
+	ENSURE( CenterOfChunks( stone ).y < 0.1f );
+	ENSURE( RubbleInTheAir( &scene ) == 0 );
+	DestroyScene( &scene );
+	return 0;
+}
+
 // A brick wall 3 m wide and 0.3 m thick, pre-fractured into one layer of cells, under a concrete block. Without collision
 // damage every fragment comes from a chunk crushed under the load.
 static void CreateLoadedWall( TestScene* scene )
@@ -7860,6 +7950,8 @@ int WorldTest( void )
 	RUN_TEST( SideSupportTest );
 	RUN_TEST( PassCarrierTest );
 	RUN_TEST( MovedCarrierTest );
+	RUN_TEST( DebrisBudgetMovingBelowTest );
+	RUN_TEST( LeaningStoneTest );
 	RUN_TEST( LandingTest );
 	return 0;
 }

@@ -1078,7 +1078,7 @@ static int nbLimitForStep( const nbWorld* world, int limit )
 #define NB_SLIDE_SLOPE 0.5f
 
 // A small piece that moves at least NB_SLIDE_SPEED with its center of mass beside the points it lies on, seen from above,
-// more than this outside their convex hull, freezes to keep within the budget only over something close, see
+// more than this outside their convex hull, freezes to keep within the budget only over something fixed close below, see
 // nbSupport::centered. Otherwise it tips over an edge or falls past it, and frozen it would hang in the air. Of the small
 // pieces of rubble with nothing 30 cm below them at the end of 96 runs of the town with figures, 108 had frozen in the
 // first pass of the budget on faces flatter than 60 degrees at 0.05 m/s and more, 98 of them with the center of mass
@@ -1087,10 +1087,12 @@ static int nbLimitForStep( const nbWorld* world, int limit )
 // Refusing them all brought a third more pieces back to life.
 #define NB_CENTER_RADIUS 0.01f
 
-// How far below its radius a small piece that moves beside the points it lies on finds something to freeze over, see
+// How far below its radius a small piece that moves beside the points it lies on finds something fixed to freeze over, see
 // NB_CENTER_RADIUS. Over 48 runs the budget froze 1 320 of those 21 300 pieces a run with nothing that close below their
 // center of mass, and among them 36 of the 56 small pieces it froze that stayed in the air and fell once they came back
-// to life alone.
+// to life alone. A moving piece below does not count, it moves on: with the moving pieces holding what needs them, see
+// nbNeedsMovingCarriers, the budget froze pieces spinning at the edge of a pile over pieces that slid on, and over 96 runs
+// 32 instead of 16 small pieces it froze in motion fell.
 #define NB_DROP_HEIGHT 0.3f
 
 // A larger moving body that presses this deep into a piece keeps it from freezing, unless the body freezes with it.
@@ -5818,8 +5820,9 @@ static b3BodyId nbFindSqueezer( const nbWorld* world, const nbActor* actor, cons
 	return b3_nullBodyId;
 }
 
-// Freeze a piece with the chunks it lies on
-static void nbFreezeOnCarriers( nbWorld* world, int actorIndex, const nbCarrier* carriers, int count )
+// Freeze a piece with the chunks it lies on. A small piece that lies on something fixed may need the moving pieces it lies
+// on too, see nbNeedsMovingCarriers.
+static void nbFreezeOnCarriers( nbWorld* world, int actorIndex, const nbCarrier* carriers, int count, bool needsMoving )
 {
 	nbFreezeActor( world, actorIndex );
 	nbActor* actor = world->actors.data + actorIndex;
@@ -5835,9 +5838,9 @@ static void nbFreezeOnCarriers( nbWorld* world, int actorIndex, const nbCarrier*
 	}
 
 	// Moving pieces it lies on bring it back to life once they move away, otherwise it would hang in the air. A small
-	// piece that also lies on something fixed needs none of them, but a large one counts them for its balance. A piece
-	// of a pile that freezes with it lets go of that again.
-	for ( int k = 0; k < count && ( fixed == false || actor->volume >= NB_CHECKED_VOLUME ); ++k )
+	// piece that also lies on something fixed usually needs none of them, but a large one counts them for its balance. A
+	// piece of a pile that freezes with it lets go of that again.
+	for ( int k = 0; k < count && ( fixed == false || actor->volume >= NB_CHECKED_VOLUME || needsMoving ); ++k )
 	{
 		int chunkIndex = carriers[k].chunkIndex;
 		nbActor* carrier = chunkIndex != NB_NULL_INDEX ? world->actors.data + world->chunks.data[chunkIndex].actorIndex : NULL;
@@ -6003,16 +6006,15 @@ typedef struct nbSupport
 	// something, fixed or moving, see NB_CENTER_RADIUS. Always true for a piece at rest and for larger ones, which are
 	// balanced or braced.
 	bool centered;
+
+	// For a piece smaller than NB_CHECKED_VOLUME that moves and lies on something fixed and on moving pieces: its center
+	// of mass lies over the points where it lies on something fixed, see NB_CENTER_RADIUS. Otherwise it may need the moving
+	// pieces, see nbNeedsMovingCarriers. Always true for a piece at rest and for larger ones.
+	bool fixedCentered;
 } nbSupport;
 
 // Contacts with fixed chunks at its side a large piece looks at for its balance at most, see nbFindSupport
 #define NB_MAX_SIDES 16
-
-typedef struct nbDropQuery
-{
-	b3BodyId self;
-	bool hit;
-} nbDropQuery;
 
 static float nbDropRayFcn( b3ShapeId shapeId, b3Pos point, b3Vec3 normal, float fraction, uint64_t userMaterialId,
 						   int triangleIndex, int childIndex, void* context )
@@ -6023,27 +6025,39 @@ static float nbDropRayFcn( b3ShapeId shapeId, b3Pos point, b3Vec3 normal, float 
 	NB_UNUSED( userMaterialId );
 	NB_UNUSED( triangleIndex );
 	NB_UNUSED( childIndex );
-	nbDropQuery* query = context;
-	if ( b3Shape_IsSensor( shapeId ) || B3_ID_EQUALS( b3Shape_GetBody( shapeId ), query->self ) )
+	if ( b3Shape_IsSensor( shapeId ) || b3Body_GetType( b3Shape_GetBody( shapeId ) ) != b3_staticBody )
 	{
 		return -1.0f;
 	}
 
 	// Any of them will do, the ray stops
-	query->hit = true;
+	*(bool*)context = true;
 	return 0.0f;
 }
 
-// Whether something lies below the center of mass of a piece within its radius and NB_DROP_HEIGHT. Only the calling thread
-// queries Box3D, which can record its queries, so the budget casts the ray once a piece would freeze, see
-// nbEnforceDebrisBudget.
-static bool nbHasSomethingBelow( const nbWorld* world, const nbActor* actor, b3Vec3 up )
+// Whether something fixed lies below the center of mass of a piece within its radius and NB_DROP_HEIGHT. A moving piece
+// there does not count, it moves on, see NB_DROP_HEIGHT. Only the calling thread queries Box3D, which can record its
+// queries, so the budget casts the ray once a piece would freeze, see nbEnforceDebrisBudget.
+static bool nbHasFixedBelow( const nbWorld* world, const nbActor* actor, b3Vec3 up )
 {
-	nbDropQuery query = { actor->bodyId, false };
+	bool hit = false;
 	b3Pos center = b3Body_GetWorldCenter( actor->bodyId );
 	b3World_CastRay( world->physicsWorld, center, b3MulSV( -( actor->radius + NB_DROP_HEIGHT ), up ), b3DefaultQueryFilter(),
-					 nbDropRayFcn, &query );
-	return query.hit;
+					 nbDropRayFcn, &hit );
+	return hit;
+}
+
+// Whether a small piece that moves and lies on something fixed and on moving pieces needs the moving ones: its center of
+// mass lies beside the points where it lies on something fixed, and nothing fixed lies below it within its radius and
+// NB_DROP_HEIGHT. Without them it would fall that far once they moved on, as 18 of the 56 small pieces in the air that
+// fell over 96 runs of the town with figures, 16 of them faster than 0.2 m/s when they froze. The moving pieces move on
+// all the time and bring back to life what they hold, which then freezes again at once: holding every small piece on
+// something fixed and on moving pieces brought back half as many pieces again, holding those that need them at rest as
+// well a tenth, for no fewer in the air. A piece that waits for its moving pieces instead freezes as soon as they moved
+// on, without the grace a released piece gets, see NB_FREEZE_GRACE.
+static bool nbNeedsMovingCarriers( const nbWorld* world, int actorIndex, bool fixedCentered, b3Vec3 up )
+{
+	return fixedCentered == false && nbHasFixedBelow( world, world->actors.data + actorIndex, up ) == false;
 }
 
 // What carries a piece. A piece of at least NB_CHECKED_VOLUME rests on rubble only if something else holds that rubble,
@@ -6072,9 +6086,12 @@ static void nbFindSupport( const nbWorld* world, int actorIndex, const nbTouch* 
 	nbCarrierAnswers answers;
 	answers.count = 0;
 
-	// The points a small piece that moves lies on, fixed or moving
+	// The points a small piece that moves lies on, fixed or moving, and those that are fixed, and whether it lies on a
+	// moving piece too
 	bool centering = large == false && moves;
 	nbSupportFan carryFan = *baseFan;
+	nbSupportFan groundFan = *baseFan;
+	bool onMoving = false;
 
 	// What is fixed and carries a large piece, and the contacts with fixed chunks at its side, in the order of its contacts
 	nbSupportFan lyingFan = *baseFan;
@@ -6161,6 +6178,11 @@ static void nbFindSupport( const nbWorld* world, int actorIndex, const nbTouch* 
 
 			support->grounded = support->grounded || carries;
 			support->groundFlatness = b3MaxFloat( support->groundFlatness, flatness );
+			if ( centering && carries )
+			{
+				nbAddSupportPoints( &groundFan, &touch->data, isA );
+			}
+
 			if ( large )
 			{
 				nbAddSupportPoints( &fixedFan, &touch->data, isA );
@@ -6200,6 +6222,8 @@ static void nbFindSupport( const nbWorld* world, int actorIndex, const nbTouch* 
 		{
 			nbAddSupportPoints( &carryFan, &touch->data, isA );
 		}
+
+		onMoving = onMoving || ( carries && touch->otherType != b3_staticBody );
 	}
 
 	// A piece that lies on nothing but is wedged in, or about to touch something, remembers what it is closest to, apart
@@ -6222,6 +6246,8 @@ static void nbFindSupport( const nbWorld* world, int actorIndex, const nbTouch* 
 	support->balanced = large == false || nbIsBalanced( &fan, NB_BALANCE_RADIUS );
 	support->braced = large && nbIsBalanced( &fixedFan, NB_BALANCE_RADIUS );
 	support->centered = centering == false || nbIsBalanced( &carryFan, NB_CENTER_RADIUS );
+	support->fixedCentered =
+		centering == false || onMoving == false || support->grounded == false || nbIsBalanced( &groundFan, NB_CENTER_RADIUS );
 
 	// Balanced only with fixed chunks at its side, it would hang once those moved away: they did not bring it back to life,
 	// it neither lay on them nor higher than their center of mass, see nbReleaseHeldRubble. It keeps them with its
@@ -6918,7 +6944,7 @@ static void nbSettleDebris( nbWorld* world, b3Vec3 up, float timeStep )
 	for ( int k = 0; k < queueCount; ++k )
 	{
 		slot = queue[k];
-		nbFreezeOnCarriers( world, quiet[slot], pieces[slot]->carriers, pieces[slot]->carrierCount );
+		nbFreezeOnCarriers( world, quiet[slot], pieces[slot]->carriers, pieces[slot]->carrierCount, false );
 	}
 
 	// A large piece that did not freeze lets go of the rubble that only it holds. Frozen, that rubble would hold it up in
@@ -7351,6 +7377,10 @@ typedef struct nbBudgetChoice
 	int actorIndex;
 	int carrierCount;
 	nbCarrier carriers[NB_MAX_CARRIERS];
+
+	// See nbSupport::fixedCentered and nbNeedsMovingCarriers
+	bool fixedCentered;
+	bool needsMoving;
 } nbBudgetChoice;
 
 // Freeze the slowest debris over budget into rubble. Nothing is removed. Once over budget a tenth more freezes, so the
@@ -7417,7 +7447,8 @@ static void nbEnforceDebrisBudget( nbWorld* world, b3Vec3 up )
 				continue;
 			}
 
-			nbSupport support = { .grounded = true, .lying = true, .balanced = true, .braced = true, .centered = true };
+			nbSupport support = {
+				.grounded = true, .lying = true, .balanced = true, .braced = true, .centered = true, .fixedCentered = true };
 			int capacity = hasGravity ? b3Body_GetContactCapacity( actor->bodyId ) : 0;
 			const nbBudgetLook* look =
 				looks != NULL && capacity > 0 && looks[ranks[i].look].unsure == false ? looks + ranks[i].look : NULL;
@@ -7493,18 +7524,19 @@ static void nbEnforceDebrisBudget( nbWorld* world, b3Vec3 up )
 
 			// A small piece that moves freezes only on a face flatter than NB_SLIDE_SLOPE: on a steeper one it slides, and
 			// frozen it would hang where it slid. And with its center of mass beside what it lies on only over something
-			// close, see NB_CENTER_RADIUS: otherwise it tips over an edge or falls past it. Once it lands it freezes like the
-			// others.
+			// fixed close below, see NB_CENTER_RADIUS: otherwise it tips over an edge or falls past it. Once it lands it
+			// freezes like the others.
 			float flatness = pass == 0 ? support.groundFlatness : support.lyingFlatness;
 			if ( large == false && hasGravity && ranks[i].speed >= NB_SLIDE_SPEED &&
-				 ( flatness < NB_SLIDE_SLOPE ||
-				   ( support.centered == false && nbHasSomethingBelow( world, actor, up ) == false ) ) )
+				 ( flatness < NB_SLIDE_SLOPE || ( support.centered == false && nbHasFixedBelow( world, actor, up ) == false ) ) )
 			{
 				continue;
 			}
 
 			nbBudgetChoice* choice = choices + chosen;
 			choice->actorIndex = actorIndex;
+			choice->fixedCentered = support.fixedCentered;
+			choice->needsMoving = false;
 			choice->carrierCount = support.carrierCount;
 			memcpy( choice->carriers, support.carriers, sizeof( nbCarrier ) * (size_t)support.carrierCount );
 			isChosen[actorIndex >> 6] |= (uint64_t)1 << ( actorIndex & 63 );
@@ -7525,6 +7557,7 @@ static void nbEnforceDebrisBudget( nbWorld* world, b3Vec3 up )
 	for ( int k = 0; hasGravity && k < chosen; ++k )
 	{
 		nbReleaseMovedCarriers( world, choices[k].carriers, choices[k].carrierCount, up );
+		choices[k].needsMoving = nbNeedsMovingCarriers( world, choices[k].actorIndex, choices[k].fixedCentered, up );
 	}
 
 #if defined( B3_HAS_SHAPE_BATCH )
@@ -7535,7 +7568,7 @@ static void nbEnforceDebrisBudget( nbWorld* world, b3Vec3 up )
 	// A piece frozen on a carrier chosen before it finds that carrier rubble, as when it froze right after it
 	for ( int k = 0; k < chosen; ++k )
 	{
-		nbFreezeOnCarriers( world, choices[k].actorIndex, choices[k].carriers, choices[k].carrierCount );
+		nbFreezeOnCarriers( world, choices[k].actorIndex, choices[k].carriers, choices[k].carrierCount, choices[k].needsMoving );
 	}
 
 	for ( int i = 0; i < unsupportedCount; ++i )
