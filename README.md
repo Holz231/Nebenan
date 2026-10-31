@@ -1960,8 +1960,9 @@ Nach Änderungen an `demo/shaders/scene.glsl` die Shader neu erzeugen, im Ordner
   Seit `active-ragdoll-12` kippt ein solches Stück über die Kante, wenn darunter 30 cm weit nichts liegt, statt dort
   zu erstarren. Was danach noch fällt, ist Schritt F25.
   Seit `active-ragdoll-13` hält ein bewegtes Stück auch Schutt, der sich mit ihm bewegt und neben seiner festen Auflage
-  auf ihm liegt, und lässt ihn fallen, wenn es weiterrückt. Was danach noch fällt, erstarrte meist langsam neben seiner
-  Auflage, Schritt F26.
+  auf ihm liegt, und lässt ihn fallen, wenn es weiterrückt. Was danach noch fällt, rund 0,3 kleine Stücke pro Lauf,
+  klemmt an einer steilen Fläche, meist von einem bewegten Nachbarn gedrückt, siehe Schritt F26: Solche Stücke von ihren
+  Nachbarn halten zu lassen kostete viel mehr Auftauen, als es Stücke rettete.
 - Render- und Physikgeometrie sind dieselben flachen Polygone.
 - Box3D ist noch jung (0.x) und kann seine API ändern. Deshalb liegt ein fester Stand bei.
 

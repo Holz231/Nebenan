@@ -6054,7 +6054,8 @@ static bool nbHasFixedBelow( const nbWorld* world, const nbActor* actor, b3Vec3 
 // all the time and bring back to life what they hold, which then freezes again at once: holding every small piece on
 // something fixed and on moving pieces brought back half as many pieces again, holding those that need them at rest as
 // well a tenth, for no fewer in the air. A piece that waits for its moving pieces instead freezes as soon as they moved
-// on, without the grace a released piece gets, see NB_FREEZE_GRACE.
+// on, while it still lies still. A released piece loses its contacts with the type change, Box3D makes them again in the
+// next step, and the budget passes it by until then, so it already tips.
 static bool nbNeedsMovingCarriers( const nbWorld* world, int actorIndex, bool fixedCentered, b3Vec3 up )
 {
 	return fixedCentered == false && nbHasFixedBelow( world, world->actors.data + actorIndex, up ) == false;
