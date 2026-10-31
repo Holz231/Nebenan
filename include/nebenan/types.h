@@ -1229,7 +1229,7 @@ typedef enum nbFigureWait
 	/// No ground that carries it under its pelvis
 	nb_waitGround,
 
-	/// Something stands where it would get up
+	/// Something stands where it would get up, and near it as well, see nbFigureInfo::shifting
 	nb_waitRoom,
 
 	/// Something lies on it
@@ -1277,13 +1277,18 @@ typedef struct nbFigureInfo
 	/// A standing figure steps to catch a hit, see nbFigureDef::stepReach
 	bool stepping;
 
-	/// Hits that landed, how often the figure was knocked down, got up and broke off getting up, and the steps it took to
-	/// catch hits
+	/// A figure that gets up first moves where it has room: without room where it lies, the humanoid looks back along its
+	/// spine, to its sides and turned about its pelvis, see the roadmap of the game, 26.15
+	bool shifting;
+
+	/// Hits that landed, how often the figure was knocked down, got up and broke off getting up, the steps it took to
+	/// catch hits, and how often it moved to get up
 	int hitCount;
 	int knockdownCount;
 	int getUpCount;
 	int abortCount;
 	int stepCount;
+	int shiftCount;
 } nbFigureInfo;
 
 /// A hit on a bone, see nbFigure_ApplyHit
@@ -1316,12 +1321,14 @@ typedef struct nbFigureStats
 	/// "Gelenke und Pakete" in the README.
 	int awakeRagdollCount;
 
-	/// Since the figures were made: hits that landed, knockdowns, get-ups, get-ups broken off and steps to catch hits
+	/// Since the figures were made: hits that landed, knockdowns, get-ups, get-ups broken off, steps to catch hits and moves
+	/// to get up where there was room
 	int hitCount;
 	int knockdownCount;
 	int getUpCount;
 	int abortCount;
 	int stepCount;
+	int shiftCount;
 } nbFigureStats;
 
 /// The bones of the humanoid that nbMakeHumanoidBones builds, in the order of its array. The trunk runs from the pelvis

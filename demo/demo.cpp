@@ -1843,9 +1843,10 @@ static std::string BuildReport( const App& app )
 	if ( HasFigures( app.scene ) )
 	{
 		const nbFigureStats& figures = view.figures;
-		Appendf( text, "Figuren: %d, stehen %d, liegen %d (%d wach), stehen auf %d; Treffer %d, Schritte %d, umgeworfen %d, aufgestanden %d, abgebrochen %d\n",
+		Appendf( text, "Figuren: %d, stehen %d, liegen %d (%d wach), stehen auf %d; Treffer %d, Schritte %d, umgeworfen %d, aufgestanden %d, gerückt %d, abgebrochen %d\n",
 				 figures.figureCount, figures.animatedCount, figures.ragdollCount, figures.awakeRagdollCount, figures.gettingUpCount,
-				 figures.hitCount, figures.stepCount, figures.knockdownCount, figures.getUpCount, figures.abortCount );
+				 figures.hitCount, figures.stepCount, figures.knockdownCount, figures.getUpCount, figures.shiftCount,
+				 figures.abortCount );
 	}
 	if ( app.scene == SceneCity )
 	{
@@ -1913,8 +1914,8 @@ static void DrawUi( App& app )
 		const nbFigureStats& figures = app.view.figures;
 		ImGui::Text( "Figuren %d: stehen %d, liegen %d (%d wach), stehen auf %d", figures.figureCount, figures.animatedCount,
 					 figures.ragdollCount, figures.awakeRagdollCount, figures.gettingUpCount );
-		ImGui::Text( "Treffer %d, Schritte %d, umgeworfen %d, aufgestanden %d, abgebrochen %d", figures.hitCount,
-					 figures.stepCount, figures.knockdownCount, figures.getUpCount, figures.abortCount );
+		ImGui::Text( "Treffer %d, Schritte %d, umgeworfen %d, aufgestanden %d, gerückt %d, abgebrochen %d", figures.hitCount,
+					 figures.stepCount, figures.knockdownCount, figures.getUpCount, figures.shiftCount, figures.abortCount );
 		ImGui::SliderFloat( "Gewehr auf Figuren", &app.figureHitImpulse, 10.0f, 300.0f, "%.0f N s" );
 		if ( ImGui::IsItemHovered() )
 		{
@@ -2349,6 +2350,10 @@ static const char* FigureStateName( const nbFigureInfo& info )
 	}
 	if ( info.state == nb_figureGettingUp )
 	{
+		if ( info.shifting )
+		{
+			return "rückt, um aufzustehen";
+		}
 		return info.onBack ? "steht auf, vom Rücken" : "steht auf, vom Bauch";
 	}
 	switch ( info.wait )

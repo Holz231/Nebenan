@@ -80,6 +80,21 @@
 #define NB_ROOM_FLOOR 0.2f
 #define NB_ROOM_AHEAD 0.45f
 
+// Room elsewhere, see nbFindRoom, for the humanoid of 1.8 m and scaled with its height: a figure without room looks this
+// near and this far back along its spine and to its sides, on ground at most this much higher or lower, and moves its body
+// there at this speed, or turns it about its pelvis at this rate, in this time at least. The body that moves is a capsule
+// along the spine this far ahead of the pelvis and behind it, of this radius, this high over the ground.
+#define NB_SHIFT_NEAR 0.3f
+#define NB_SHIFT_FAR 0.6f
+#define NB_SHIFT_RISE 0.2f
+#define NB_SHIFT_SPEED 0.5f
+#define NB_TURN_SPEED 2.0f
+#define NB_SHIFT_TIME 0.3f
+#define NB_LYING_AHEAD 0.6f
+#define NB_LYING_BEHIND 0.8f
+#define NB_LYING_RADIUS 0.1f
+#define NB_LYING_HEIGHT 0.22f
+
 // The most contacts of a bone a check reads
 #define NB_CONTACT_CAPACITY 16
 
@@ -928,7 +943,8 @@ static float nbClosestHitFcn( b3ShapeId shapeId, b3Pos point, b3Vec3 normal, flo
 static bool nbAnyOverlapFcn( b3ShapeId shapeId, void* context )
 {
 	nbFigureQuery* query = context;
-	if ( b3Shape_IsSensor( shapeId ) || nbSkipShape( query, shapeId ) )
+	if ( b3Shape_IsSensor( shapeId ) || nbSkipShape( query, shapeId ) ||
+		 ( query->staticOnly && b3Body_GetType( b3Shape_GetBody( shapeId ) ) != b3_staticBody ) )
 	{
 		return true;
 	}
@@ -946,12 +962,12 @@ static nbFigureQuery nbFindGround( const nbWorld* world, int index, b3Pos point,
 	return query;
 }
 
-// Does anything but the figure overlap a capsule?
-static bool nbCapsuleBlocked( const nbWorld* world, int index, b3Pos origin, b3Vec3 a, b3Vec3 b, float radius )
+// Does anything but the figure overlap a capsule, or if asked anything fixed?
+static bool nbCapsuleBlocked( const nbWorld* world, int index, b3Pos origin, b3Vec3 a, b3Vec3 b, float radius, bool staticOnly )
 {
 	b3Vec3 points[2] = { a, b };
 	b3ShapeProxy proxy = { points, 2, radius };
-	nbFigureQuery query = { world, index, false, false, 1.0f, b3Vec3_zero, origin, b3_nullShapeId, false, false };
+	nbFigureQuery query = { world, index, false, false, 1.0f, b3Vec3_zero, origin, b3_nullShapeId, staticOnly, false };
 	b3World_OverlapShape( world->physicsWorld, origin, &proxy, b3DefaultQueryFilter(), nbAnyOverlapFcn, &query );
 	return query.hit;
 }
@@ -1088,6 +1104,7 @@ static void nbFall( nbWorld* world, nbFigure* f, bool stunned )
 		f->balancing = false;
 		f->swingFoot = -1;
 		f->footWeight = 0.0f;
+		f->shiftLeft = 0.0f;
 		f->springs = true;
 		nbSetStrength( f, 0.0f );
 		f->damping = -1.0f;
@@ -1101,11 +1118,32 @@ static void nbFall( nbWorld* world, nbFigure* f, bool stunned )
 	b3Body_SetAwake( f->bones[0].bodyId, true );
 }
 
-// A lying figure starts to get up: the pose it lies in, the frame it gets up in and the clip, and its bones kinematic
-static void nbStartGetUp( nbWorld* world, int index, nbFigure* f, b3Pos ground, b3Vec3 up )
+// Where a figure without room moves to get up, see nbFindRoom: how far its body moves over the ground and how far it turns
+// about its pelvis, in radians about up
+typedef struct nbShift
+{
+	b3Vec3 offset;
+	float turn;
+} nbShift;
+
+// A lying figure starts to get up: the pose it lies in, the frame it gets up in and the clip, and its bones kinematic. A
+// figure that moves to get up holds the pose it lies in while its root moves and turns there, see nbUpdateGettingUp.
+static void nbStartGetUp( nbWorld* world, int index, nbFigure* f, b3Pos ground, b3Vec3 up, nbShift shift )
 {
 	NB_UNUSED( index );
 	nbReadPose( f, f->lyingPose, &f->lyingRoot );
+	f->shiftFrom = f->lyingRoot;
+	f->shiftTurn = shift.turn;
+	f->shiftLeft = 0.0f;
+	if ( b3LengthSquared( shift.offset ) > 0.0f || shift.turn != 0.0f )
+	{
+		f->lyingRoot.p = b3OffsetPos( f->lyingRoot.p, shift.offset );
+		f->lyingRoot.q = b3NormalizeQuat( b3MulQuat( b3MakeQuatFromAxisAngle( up, shift.turn ), f->lyingRoot.q ) );
+		f->shiftTime = b3MaxFloat( NB_SHIFT_TIME, b3MaxFloat( b3Length( shift.offset ) / NB_SHIFT_SPEED,
+															  fabsf( shift.turn ) / NB_TURN_SPEED ) );
+		f->shiftLeft = f->shiftTime;
+		f->shiftCount += 1;
+	}
 
 	// The heading along the spine, from the pelvis toward the head, as the clips lie with the head ahead
 	b3Vec3 spine = b3RotateVector( f->lyingRoot.q, b3Vec3_axisY );
@@ -2284,9 +2322,106 @@ static void nbMixPose( b3Quat* pose, const b3Quat* layer, float weight, int coun
 	}
 }
 
-// Can a lying figure get up where it lies? Ground under its pelvis, room to rise and kneel, nothing on it.
-static nbFigureWait nbCheckGetUp( const nbWorld* world, int index, const nbFigure* f, b3Vec3 up, float timeStep, b3Pos* ground )
+// Is there room to get up over a point of the ground: to rise over it and to kneel ahead of it along a direction?
+static bool nbHasRoom( const nbWorld* world, int index, const nbFigure* f, b3Pos ground, b3Vec3 ahead, b3Vec3 up )
 {
+	float height = 1.75f * f->def.standHeight;
+	b3Vec3 low = b3MulSV( NB_ROOM_FLOOR + NB_ROOM_RADIUS, up );
+	b3Vec3 high = b3MulSV( height - NB_ROOM_RADIUS, up );
+	if ( nbCapsuleBlocked( world, index, ground, low, high, NB_ROOM_RADIUS, false ) )
+	{
+		return false;
+	}
+	b3Vec3 kneel = b3MulSV( NB_ROOM_AHEAD, ahead );
+	return nbCapsuleBlocked( world, index, ground, b3Add( low, kneel ), b3Add( b3MulSV( 0.6f * height, up ), kneel ),
+							 NB_ROOM_RADIUS, false ) == false;
+}
+
+// Room to get up near where a figure lies, after the roadmap of the game, 26.15 and 28.4: a figure with its head at a wall
+// or under the edge of a slab moves aside or turns instead of waiting. It looks back along its spine, 30 and 60 cm, to its
+// sides, 30 and 60 cm, and turned about its pelvis by a quarter turn either way and by half a turn, in that order. A place
+// needs ground under the pelvis there, flat enough and at most 20 cm higher or lower, room to get up there, and a way for
+// the body lying on the ground: moved, nothing fixed along the way, turned, nothing fixed where it lies halfway and at the
+// end. What moves, the body pushes aside. Returns false where there is none.
+static bool nbFindRoom( const nbWorld* world, int index, const nbFigure* f, b3Pos floor, b3Vec3 ahead, b3Vec3 up,
+						nbShift* shift, b3Pos* ground )
+{
+	if ( b3LengthSquared( ahead ) == 0.0f )
+	{
+		return false;
+	}
+
+	float scale = f->def.standHeight / NB_HUMANOID_STAND;
+	b3Vec3 side = b3Cross( up, ahead );
+	const float candidates[9][3] = {
+		{ NB_SHIFT_NEAR, 0.0f, 0.0f }, { NB_SHIFT_FAR, 0.0f, 0.0f },   { 0.0f, NB_SHIFT_NEAR, 0.0f },
+		{ 0.0f, -NB_SHIFT_NEAR, 0.0f }, { 0.0f, NB_SHIFT_FAR, 0.0f }, { 0.0f, -NB_SHIFT_FAR, 0.0f },
+		{ 0.0f, 0.0f, 0.5f * B3_PI },   { 0.0f, 0.0f, -0.5f * B3_PI }, { 0.0f, 0.0f, B3_PI },
+	};
+
+	// The body lying on the ground, along the spine through the pelvis
+	b3Pos pelvis = b3Body_GetPosition( f->bones[0].bodyId );
+	b3Vec3 lift = b3MulSV( b3Dot( b3SubPos( floor, pelvis ), up ) + NB_LYING_HEIGHT * scale, up );
+	float radius = NB_LYING_RADIUS * scale;
+	for ( int k = 0; k < 9; ++k )
+	{
+		b3Vec3 offset = b3MulSV( scale, b3Add( b3MulSV( -candidates[k][0], ahead ), b3MulSV( candidates[k][1], side ) ) );
+		float turn = candidates[k][2];
+		b3Quat rotation = b3MakeQuatFromAxisAngle( up, turn );
+		b3Vec3 turned = b3RotateVector( rotation, ahead );
+
+		// Ground under the pelvis there, about as high as here
+		nbFigureQuery there = nbFindGround( world, index, b3OffsetPos( pelvis, offset ), up, 0.1f + NB_SHIFT_RISE * scale,
+											0.6f );
+		if ( there.hit == false || b3Dot( there.normal, up ) < NB_STEP_FLATNESS ||
+			 fabsf( b3Dot( b3SubPos( there.point, floor ), up ) ) > NB_SHIFT_RISE * scale )
+		{
+			continue;
+		}
+		if ( nbHasRoom( world, index, f, there.point, turned, up ) == false )
+		{
+			continue;
+		}
+
+		// The way of the body, moved over the ground or turned on it
+		b3Vec3 head = b3Add( lift, b3MulSV( NB_LYING_AHEAD * scale, ahead ) );
+		b3Vec3 feet = b3Add( lift, b3MulSV( -NB_LYING_BEHIND * scale, ahead ) );
+		bool blocked;
+		if ( turn == 0.0f )
+		{
+			b3Vec3 points[2] = { head, feet };
+			b3ShapeProxy proxy = { points, 2, radius };
+			nbFigureQuery query = { world, index, true, false, 1.0f, b3Vec3_zero, pelvis, b3_nullShapeId, true, true };
+			b3World_CastShape( world->physicsWorld, pelvis, &proxy, offset, b3DefaultQueryFilter(), nbClosestHitFcn, &query );
+			blocked = query.hit;
+		}
+		else
+		{
+			b3Quat half = b3MakeQuatFromAxisAngle( up, 0.5f * turn );
+			blocked = nbCapsuleBlocked( world, index, pelvis, b3RotateVector( half, head ), b3RotateVector( half, feet ), radius,
+										true ) ||
+					  nbCapsuleBlocked( world, index, pelvis, b3RotateVector( rotation, head ), b3RotateVector( rotation, feet ),
+										radius, true );
+		}
+		if ( blocked )
+		{
+			continue;
+		}
+
+		shift->offset = b3MulAdd( offset, b3Dot( b3SubPos( there.point, floor ), up ), up );
+		shift->turn = turn;
+		*ground = there.point;
+		return true;
+	}
+	return false;
+}
+
+// Can a lying figure get up where it lies? Ground under its pelvis, room to rise and kneel, nothing on it. Without room
+// the humanoid looks for room near where it lies and moves there, see nbFindRoom.
+static nbFigureWait nbCheckGetUp( const nbWorld* world, int index, const nbFigure* f, b3Vec3 up, float timeStep, b3Pos* ground,
+								  nbShift* shift )
+{
+	*shift = (nbShift){ b3Vec3_zero, 0.0f };
 	b3Pos pelvis = b3Body_GetWorldCenter( f->bones[0].bodyId );
 	nbFigureQuery floor = nbFindGround( world, index, pelvis, up, 0.1f, 0.6f );
 	if ( floor.hit == false || b3Dot( floor.normal, up ) < 0.7f )
@@ -2305,20 +2440,15 @@ static nbFigureWait nbCheckGetUp( const nbWorld* world, int index, const nbFigur
 	b3Vec3 flat = b3MulSub( spine, b3Dot( spine, up ), up );
 	float flatLength = b3Length( flat );
 	flat = flatLength > 1.0e-3f ? b3MulSV( 1.0f / flatLength, flat ) : b3Vec3_zero;
-	float height = 1.75f * f->def.standHeight;
-	b3Vec3 low = b3MulSV( NB_ROOM_FLOOR + NB_ROOM_RADIUS, up );
-	b3Vec3 high = b3MulSV( height - NB_ROOM_RADIUS, up );
-	if ( nbCapsuleBlocked( world, index, floor.point, low, high, NB_ROOM_RADIUS ) )
+	if ( nbHasRoom( world, index, f, floor.point, flat, up ) )
 	{
-		return nb_waitRoom;
+		return nb_waitNone;
 	}
-	b3Vec3 ahead = b3MulSV( NB_ROOM_AHEAD, flat );
-	if ( nbCapsuleBlocked( world, index, floor.point, b3Add( low, ahead ), b3Add( b3MulSV( 0.6f * height, up ), ahead ),
-						   NB_ROOM_RADIUS ) )
+	if ( f->boneCount == nb_humanoidBoneCount && nbFindRoom( world, index, f, floor.point, flat, up, shift, ground ) )
 	{
-		return nb_waitRoom;
+		return nb_waitNone;
 	}
-	return nb_waitNone;
+	return nb_waitRoom;
 }
 
 // A ragdoll: its strength, its curl and brace, the targets of its joints, its rest and whether it gets up
@@ -2396,11 +2526,20 @@ static void nbUpdateRagdoll( nbWorld* world, int index, nbFigure* f, float timeS
 	}
 
 	b3Pos ground;
-	f->wait = nbCheckGetUp( world, index, f, up, timeStep, &ground );
+	nbShift shift;
+	f->wait = nbCheckGetUp( world, index, f, up, timeStep, &ground, &shift );
 	if ( f->wait == nb_waitNone )
 	{
-		nbStartGetUp( world, index, f, ground, up );
-		nbUpdateGettingUpPose( f, 0.0f, timeStep );
+		nbStartGetUp( world, index, f, ground, up, shift );
+		if ( f->shiftLeft > 0.0f )
+		{
+			nbComputePose( f, f->shiftFrom, f->lyingPose, f->targets );
+			nbDriveBodies( f, timeStep );
+		}
+		else
+		{
+			nbUpdateGettingUpPose( f, 0.0f, timeStep );
+		}
 	}
 }
 
@@ -2440,6 +2579,20 @@ static void nbUpdateGettingUp( nbWorld* world, int index, nbFigure* f, float tim
 		 nbPressingForce( world, index, f, timeStep, up ) >= NB_ABORT_PART * f->def.crushForce )
 	{
 		nbFall( world, f, false );
+		return;
+	}
+
+	// Moving where it has room: the pose it lies in, the root moved and turned about up over the shift time
+	if ( f->shiftLeft > 0.0f )
+	{
+		f->shiftLeft = b3MaxFloat( 0.0f, f->shiftLeft - timeStep );
+		float u = 1.0f - f->shiftLeft / f->shiftTime;
+		float smooth = u * u * ( 3.0f - 2.0f * u );
+		b3Quat turn = b3MakeQuatFromAxisAngle( up, ( smooth - 1.0f ) * f->shiftTurn );
+		b3WorldTransform root = { b3LerpPosition( f->shiftFrom.p, f->lyingRoot.p, smooth ),
+								  b3NormalizeQuat( b3MulQuat( turn, f->lyingRoot.q ) ) };
+		nbComputePose( f, root, f->lyingPose, f->targets );
+		nbDriveBodies( f, timeStep );
 		return;
 	}
 
@@ -2872,11 +3025,13 @@ nbFigureInfo nbFigure_GetInfo( nbFigureId figureId )
 	info.getUpBlend = f->state == nb_figureGettingUp ? b3ClampFloat( f->getUpTime / NB_GET_UP_BLEND, 0.0f, 1.0f ) : 0.0f;
 	info.flinch = b3RotateVector( f->frame.q, f->flinch );
 	info.stepping = f->state == nb_figureAnimated && f->balancing;
+	info.shifting = f->state == nb_figureGettingUp && f->shiftLeft > 0.0f;
 	info.hitCount = f->hitCount;
 	info.knockdownCount = f->knockdownCount;
 	info.getUpCount = f->getUpCount;
 	info.abortCount = f->abortCount;
 	info.stepCount = f->stepCount;
+	info.shiftCount = f->shiftCount;
 	return info;
 }
 
@@ -3079,6 +3234,7 @@ nbFigureStats nbWorld_GetFigureStats( nbWorldId worldId )
 		stats.getUpCount += f->getUpCount;
 		stats.abortCount += f->abortCount;
 		stats.stepCount += f->stepCount;
+		stats.shiftCount += f->shiftCount;
 	}
 	return stats;
 }

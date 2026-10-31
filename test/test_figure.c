@@ -800,6 +800,82 @@ static int FigureFeetTest( void )
 	return 0;
 }
 
+// Without room to get up where it lies, a figure moves aside or turns, after the roadmap of the game, 26.15: knocked down,
+// a table comes over its head, and it moves back along its spine and gets up. With a wall behind its feet it turns on
+// the ground, and with walls at its sides as well it waits.
+static int FigureRoomTest( void )
+{
+	for ( int pass = 0; pass < 3; ++pass )
+	{
+		FigureScene scene;
+		CreateFigureScene( &scene, 1 );
+		nbFigureDef def = nbDefaultFigureDef();
+		def.rig = &scene.rig;
+		def.standHeight = scene.standHeight;
+		def.getUpDelay = 2.5f;
+		nbFigureId figure = nbCreateFigure( scene.world, &def );
+		StepFigures( &scene, 10 );
+		nbFigure_Knockdown( figure );
+		StepFigures( &scene, 100 );
+		ENSURE( nbFigure_GetState( figure ) == nb_figureRagdoll );
+
+		// A table 40 to 50 cm high from 30 cm ahead of the pelvis along the spine, where the figure would kneel
+		b3Vec3 pelvis = BonePosition( figure, nb_humanoidPelvis );
+		b3Vec3 spine = b3RotateVector( b3Body_GetRotation( nbFigure_GetBody( figure, nb_humanoidPelvis ) ), b3Vec3_axisY );
+		b3Vec3 ahead = b3Normalize( (b3Vec3){ spine.x, 0.0f, spine.z } );
+		b3Vec3 side = b3Cross( b3Vec3_axisY, ahead );
+		b3Quat turn = b3MakeQuatFromAxisAngle( b3Vec3_axisY, b3Atan2( ahead.x, ahead.z ) );
+		b3Vec3 floor = { pelvis.x, 0.0f, pelvis.z };
+		AddTurnedBlock( &scene, b3Add( b3Add( floor, (b3Vec3){ 0.0f, 0.45f, 0.0f } ), b3MulSV( 1.3f, ahead ) ), turn,
+						(b3Vec3){ 1.5f, 0.05f, 1.0f } );
+		if ( pass >= 1 )
+		{
+			// A wall 25 cm behind the feet
+			AddTurnedBlock( &scene, b3Add( b3Add( floor, (b3Vec3){ 0.0f, 0.5f, 0.0f } ), b3MulSV( -1.25f, ahead ) ), turn,
+							(b3Vec3){ 2.0f, 0.5f, 0.05f } );
+		}
+		if ( pass == 2 )
+		{
+			// And walls 45 cm to both sides
+			for ( int k = -1; k <= 1; k += 2 )
+			{
+				AddTurnedBlock( &scene, b3Add( b3Add( floor, (b3Vec3){ 0.0f, 0.5f, 0.0f } ), b3MulSV( 0.45f * (float)k, side ) ),
+								turn, (b3Vec3){ 0.05f, 0.5f, 1.2f } );
+			}
+		}
+
+		int shifting = 0;
+		for ( int i = 0; i < 900; ++i )
+		{
+			StepFigures( &scene, 1 );
+			shifting += nbFigure_GetInfo( figure ).shifting ? 1 : 0;
+		}
+		nbFigureInfo info = nbFigure_GetInfo( figure );
+		b3Vec3 moved = b3Sub( BonePosition( figure, nb_humanoidPelvis ), pelvis );
+		printf( "  pass %d: %d moves in %.2f s, %d get-ups, the pelvis %.2f m along the spine and %.2f m across\n", pass,
+				info.shiftCount, (float)shifting / 60.0f, info.getUpCount, b3Dot( moved, ahead ), b3Dot( moved, side ) );
+		if ( pass == 0 )
+		{
+			// Back 60 cm along its spine, at 0.5 m/s
+			ENSURE( info.state == nb_figureAnimated && info.getUpCount == 1 && info.shiftCount == 1 );
+			ENSURE( shifting >= 70 && shifting <= 74 );
+		}
+		else if ( pass == 1 )
+		{
+			// A quarter turn in 0.79 s
+			ENSURE( info.state == nb_figureAnimated && info.getUpCount == 1 && info.shiftCount == 1 );
+			ENSURE( shifting >= 46 && shifting <= 49 );
+		}
+		else
+		{
+			ENSURE( info.state == nb_figureRagdoll && info.wait == nb_waitRoom && info.shiftCount == 0 );
+		}
+		ENSURE( nbWorld_GetFigureStats( scene.world ).shiftCount == info.shiftCount );
+		DestroyFigureScene( &scene );
+	}
+	return 0;
+}
+
 // A figure on a box falls when the box goes, and does not hang in the air
 static int FigureGroundTest( void )
 {
@@ -913,8 +989,8 @@ static int FigureClipTest( void )
 	return 0;
 }
 
-// Two figures knocked down and hit while they fly, one of them while it steps, a third that steps aside, debris on it and
-// a blast: the same bits with 1 and 4 threads
+// Two figures knocked down and hit while they fly, one of them while it steps and later without room to get up beside the
+// other, a third that steps aside, debris on it and a blast: the same bits with 1 and 4 threads
 static uint32_t RunFigureScenario( int threadCount )
 {
 	FigureScene scene;
@@ -986,7 +1062,7 @@ static uint32_t RunFigureScenario( int threadCount )
 }
 
 // The hash of the figure scenario on every platform, see RunFigureScenario
-#define NB_EXPECTED_FIGURE_HASH 0xf6ef494fu
+#define NB_EXPECTED_FIGURE_HASH 0xc4bf6f23u
 
 static int FigureDeterminismTest( void )
 {
@@ -1010,6 +1086,7 @@ int FigureTest( void )
 	RUN_TEST( FigureFlinchTest );
 	RUN_TEST( FigureKnockdownTest );
 	RUN_TEST( FigureGetUpRoomTest );
+	RUN_TEST( FigureRoomTest );
 	RUN_TEST( FigureStepTest );
 	RUN_TEST( FigureStepBlockedTest );
 	RUN_TEST( FigureFeetTest );

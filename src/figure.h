@@ -153,13 +153,20 @@ typedef struct nbFigure
 	bool springs;
 	float fallTime;
 
-	// Getting up: the pose and the root the ragdoll lay in, the clip and how far into it, and why it waits
+	// Getting up: the pose and the root the ragdoll lay in, the clip and how far into it, and why it waits. A figure that
+	// moves where it has room to get up, see nbFindRoom, moves its root from where it lay and turns it about up, over a
+	// time, and lies where it gets up at the end.
 	b3Quat* lyingPose;
 	b3WorldTransform lyingRoot;
 	int getUpClip;
 	float getUpTime;
 	bool onBack;
 	nbFigureWait wait;
+	b3WorldTransform shiftFrom;
+	float shiftTurn;
+	float shiftTime;
+	float shiftLeft;
+	int shiftCount;
 
 	// The bones of a ragdoll damage the destructibles they hit, see nbRigDef::enableCollisionDamage
 	bool collisionDamage;

@@ -39,8 +39,8 @@ gelöscht. Kein Staub, keine Schatten: Jede Millisekunde geht in die Zerstörung
   eine Explosion, schwere Trümmer, eine Last auf ihr oder Boden, der wegbricht, machen sie zum aktiven Ragdoll, mit den
   Geschwindigkeiten, die ihre Knochen hatten, und dem Treffer genau einmal. Ihre Gelenke ziehen mit begrenzter Kraft zu
   einer Haltung, sie fängt sich mit den Armen ab oder rollt sich ein. Liegt sie still, steht sie mit einem Clip vom
-  Bauch oder vom Rücken wieder auf, sobald sie Boden, Platz und nichts auf sich hat. Die Knochen und Clips eines
-  Menschen baut die Bibliothek selbst
+  Bauch oder vom Rücken wieder auf, sobald sie Boden, Platz und nichts auf sich hat, und fehlt ihr nur der Platz, rückt
+  sie dorthin, wo sie ihn hat. Die Knochen und Clips eines Menschen baut die Bibliothek selbst
 - Für ganze Städte gebaut, ohne etwas zu löschen: Trümmer, die zur Ruhe kommen und auf festem Grund liegen,
   werden zu statischem Schutt und kosten Box3D nichts mehr. Box3D bewegt nur eine begrenzte Zahl Trümmer
   gleichzeitig, verdeckte Flächen werden nicht gezeichnet
@@ -607,6 +607,17 @@ Elternknochens, wie Overgrowth vom Ragdoll zur Animation überblendet. Am Ende s
 hat, und geht in den Stand über. Ein Treffer mit einem Viertel des Impulses, der sie sonst umwirft, oder eine Last von
 einem Viertel bricht das Aufstehen ab. Was ihre Knochen dabei selbst beiseiteschieben, zählt nicht, nur was auf sie
 zukommt oder auf ihr lastet.
+
+**Platz zum Aufstehen suchen.** Fehlt einem Menschen der Bibliothek nur der Platz, etwa mit dem Kopf unter einem Tisch
+oder an der Kante einer Platte über ihm, rückt er, statt zu warten, nach Kapitel 26.15 der Roadmap des Spiels. Er sucht
+in fester Reihenfolge: 30 und 60 cm zurück entlang seiner Wirbelsäule, 30 und 60 cm zu jeder Seite, dann um eine
+Vierteldrehung in jede Richtung und um eine halbe um sein Becken gedreht. Eine Stelle braucht Boden unter dem Becken,
+höchstens 20 cm höher oder tiefer, Platz zum Aufstehen dort, und einen Weg für den liegenden Körper, eine Kapsel entlang
+der Wirbelsäule knapp über dem Boden: verschoben nichts Festes auf dem Weg, gedreht nichts Festes auf halbem Weg und am
+Ende. Dann bleiben seine Knochen in der Haltung, in der er lag, und er rückt mit 0,5 m/s oder dreht sich mit 2 rad/s
+dorthin, langsam an und aus, und steht von dort auf wie sonst. Was sich bewegt, schiebt er beiseite. Findet er keine
+Stelle, wartet er (`nb_waitRoom`). `nbFigureInfo::shifting` sagt, ob eine Figur gerade rückt, `shiftCount` und
+`nbFigureStats::shiftCount` zählen, wie oft. Ein Spiel ruft dafür nichts auf.
 
 **Clips.** Ein Clip ist eine Folge von Schlüsselhaltungen: die Drehung jedes Knochens gegen seine Ruhelage und die
 Wurzel im Rahmen der Figur (`nbClipDef`). Die Clips eines Menschen jeder Größe baut die Bibliothek selbst
@@ -1867,7 +1878,7 @@ lange die Threads im Löser rechnen und worauf sie sonst warten.
 ## Tests und Benchmark
 
 ```sh
-build/bin/nebenan_test            # 99 Tests: Geometrie, Voronoi, Hüllen, Öffnungen, Stöße, Stützgraph, Etagen, Lastprüfung, Mauern, Schutt, Ruhe, Durchschlagen, Threads, Knoten, große Blöcke, Gelenke in Paketen und Gebieten, Suchbaum, Kontaktlisten, Streaming, Stream, Laden im Hintergrund, Speichern und Zurückholen, gemeinsamer Thread-Pool, Ruhe-Prüfung auf den Workern, Schritt auf eigenem Thread, Schritte pro Bild, Takt der Physik, Wahl der Threads, Profil und Skalierung, Figuren, Ausgleichsschritt, Füße auf dem Boden, Determinismus …
+build/bin/nebenan_test            # 100 Tests: Geometrie, Voronoi, Hüllen, Öffnungen, Stöße, Stützgraph, Etagen, Lastprüfung, Mauern, Schutt, Ruhe, Durchschlagen, Threads, Knoten, große Blöcke, Gelenke in Paketen und Gebieten, Suchbaum, Kontaktlisten, Streaming, Stream, Laden im Hintergrund, Speichern und Zurückholen, gemeinsamer Thread-Pool, Ruhe-Prüfung auf den Workern, Schritt auf eigenem Thread, Schritte pro Bild, Takt der Physik, Wahl der Threads, Profil und Skalierung, Figuren, Ausgleichsschritt, Füße auf dem Boden, Platz zum Aufstehen, Determinismus …
 build/bin/nebenan_benchmark 4     # Zahl = Threads für Bruch und Physik, 0 = so viele, wie ein Spiel nähme
 build/bin/nebenan_benchmark scaling   # die Städte unter Beschuss mit 1, 2, 4 … Threads und die Tabelle der Skalierung
 build/bin/nebenan_benchmark rates     # die Städte unter Beschuss mit 30, 60 und 120 Hz, was eine simulierte Sekunde kostet
@@ -1958,8 +1969,9 @@ Nach Änderungen an `demo/shaders/scene.glsl` die Shader neu erzeugen, im Ordner
   der Fuß dort ein, wie jeder kinematische Körper.
 - Stehende und aufstehende Figuren sind kinematisch und kollidieren wie alle kinematischen Körper in Box3D nicht mit
   statischen, also nicht mit Schutt und stehenden Wänden. Eine Figur, die das Spiel durch eine Wand bewegt, geht
-  hindurch. Ob genug Platz zum Aufstehen ist, prüft sie vorher. Liegt sie mit dem Kopf an einer Wand, findet sie vor
-  sich keinen Platz zum Knien und wartet, bis die Wand weg ist, statt zur Seite zu rücken.
+  hindurch. Ob genug Platz zum Aufstehen ist, prüft sie vorher, und fehlt er, rückt sie bis 60 cm oder dreht sich auf
+  dem Boden, nur mit einer Kapsel für ihren liegenden Körper geprüft. Findet sie auch so keinen Platz, wartet sie, bis
+  er frei wird.
 - Die Gelenke von Ragdolls in einem großen Schutthaufen mit Gebieten rechnet der aufrufende Thread vor jedem Durchgang
   allein, siehe Gelenke und Pakete, auf der VM mit vier Threads 0,024 ms pro Ragdoll und Schritt, 0,48 ms mit 20
   Ragdolls in einem Haufen. Ein solcher Haufen kostet damit so viel wie auf `active-ragdoll-1`, wo er seine Gebiete
