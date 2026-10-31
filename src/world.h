@@ -558,6 +558,9 @@ typedef struct nbWorld
 	nbBoneRefArray bodyToBone;
 	int figureUpdates;
 
+	// The static body the upright holds of figures that catch themselves hold against, made when the first needs it
+	b3BodyId figureAnchor;
+
 	// The clips of the library for the humanoids of the figures, one set per height
 	nbClipSetArray humanoidClips;
 

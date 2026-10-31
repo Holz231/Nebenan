@@ -529,17 +529,16 @@ static void nbMakeFall( nbPoseMaker* m, float standHeight )
 
 static void nbMakeCurl( nbPoseMaker* m, float standHeight )
 {
-	// Knees to the chest, the back round, the chin down and the forearms in front of the face
+	// The knees up, the back a little round, the chin down and the forearms in front of the face, as the protective pose
+	// of the branch ragdoll-11 falls backward. With the knees at the chest, 1.7 rad, a figure that landed on its back threw
+	// its legs up over its hips.
 	nbResetPose( m, standHeight );
-	nbTurnPair( m, nb_humanoidThighLeft, nb_humanoidThighRight, nb_x, 1.7f );
-	nbTurnPair( m, nb_humanoidShinLeft, nb_humanoidShinRight, nb_x, -2.1f );
-	nbTurnPair( m, nb_humanoidFootLeft, nb_humanoidFootRight, nb_x, -0.3f );
-	nbTurnSpine( m, nb_x, 1.2f );
-	nbTurn( m, nb_humanoidNeck, nb_x, 0.2f );
-	nbTurn( m, nb_humanoidHead, nb_x, 0.25f );
-	nbTurnPair( m, nb_humanoidUpperArmLeft, nb_humanoidUpperArmRight, nb_x, 1.3f );
-	nbTurnPair( m, nb_humanoidUpperArmLeft, nb_humanoidUpperArmRight, nb_z, -0.35f );
-	nbTurnPair( m, nb_humanoidForearmLeft, nb_humanoidForearmRight, nb_x, 2.2f );
+	nbTurnPair( m, nb_humanoidThighLeft, nb_humanoidThighRight, nb_x, 0.7f );
+	nbTurnPair( m, nb_humanoidShinLeft, nb_humanoidShinRight, nb_x, -1.1f );
+	nbTurnSpine( m, nb_x, 0.3f );
+	nbTurn( m, nb_humanoidHead, nb_x, 0.5f );
+	nbTurnPair( m, nb_humanoidUpperArmLeft, nb_humanoidUpperArmRight, nb_x, 0.9f );
+	nbTurnPair( m, nb_humanoidForearmLeft, nb_humanoidForearmRight, nb_x, 1.3f );
 	nbAddPose( m, 0.0f );
 }
 

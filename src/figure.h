@@ -88,6 +88,72 @@ typedef struct nbFoot
 	bool cast;
 } nbFoot;
 
+// A figure that catches itself after a hard hit, see figure_balance.c: the legs at rest, what it measures in every update,
+// its steps and its upright hold
+typedef struct nbBalancer
+{
+	// The legs at rest: hip pivots in the frame of the pelvis, lengths of thigh and shin, the rotation of the foot in the
+	// frame of the pelvis, the corners and the middle of the sole in the frame of the foot, and how far the ankle lies
+	// above the sole. Standing: the pelvis origin and the center of mass above the soles, the least gap between the
+	// ankles sideways, and the size of the figure against the humanoid of 1.8 m.
+	b3Vec3 hip[2];
+	float thighLength[2];
+	float shinLength[2];
+	b3Quat footRest[2];
+	b3Vec3 sole[2][4];
+	b3Vec3 soleCenter[2];
+	float soleHeight[2];
+	float standHeight;
+	float standCenter;
+	float footGap;
+	float scale;
+
+	// Measured in every update: up, gravity, the height of the ground under the feet along up and under each foot on the
+	// ground, which feet stand, where the figure faces, how far the pelvis tilts, the speed of the bones on average by
+	// their mass, the center of mass and its velocity, the capture point, how far it lies outside the support and the
+	// middle of the support
+	b3Vec3 up;
+	float gravity;
+	float groundHeight;
+	float footGround[2];
+	bool footContact[2];
+	b3Vec3 forward;
+	float tilt;
+	float meanSpeed;
+	b3Vec3 center;
+	b3Vec3 velocity;
+	b3Vec3 capture;
+	float captureMargin;
+	int supportCount;
+	b3Vec3 supportMiddle;
+
+	// A step: whether one swings, how long since it began or the figure stood, the foot, the steps in a row and the foot
+	// that stepped last, where the ankles are planted, where the swinging one started and where it lands. Updates in a
+	// row with the capture point outside, seconds without a foot on the ground and seconds calm.
+	bool stepping;
+	float stateTime;
+	int stepFoot;
+	int stepCount;
+	int lastFoot;
+	b3Vec3 plant[2];
+	b3Vec3 swingStart;
+	b3Vec3 stepAnkle;
+	int dangerUpdates;
+	float airborneTime;
+	float calmTime;
+
+	// The hold that keeps the pelvis upright, see nbFigureMotors::uprightTorque
+	b3JointId upright;
+} nbBalancer;
+
+// What balance found in an update, see nbUpdateBalance
+typedef enum nbBalanceResult
+{
+	nb_balanceGoesOn,
+	nb_balanceFell,
+	nb_balanceSettled,
+} nbBalanceResult;
+
 // A figure, see nbCreateFigure
 typedef struct nbFigure
 {
@@ -175,6 +241,11 @@ typedef struct nbFigure
 	// The bones of a ragdoll damage the destructibles they hit, see nbRigDef::enableCollisionDamage
 	bool collisionDamage;
 
+	// Catching itself after a hard hit, see figure_balance.c, for the humanoid. How often it caught itself and stood again.
+	bool canBalance;
+	nbBalancer balancer;
+	int catchCount;
+
 	// The ids of the last hits, see NB_HIT_MEMORY, and what the figure went through
 	uint32_t hitIds[NB_HIT_MEMORY];
 	int hitNext;
@@ -255,6 +326,27 @@ b3Vec3 nbSolveTwoBones( b3Vec3 pivot, b3Vec3 target, float upper, float lower, b
 
 // The rotation whose x and y axes are these, made orthonormal around y
 b3Quat nbRotationFromAxes( b3Vec3 x, b3Vec3 y );
+
+// A spring in cycles per second for Box3D from a stiffness in newton meters per radian, against the rotational mass of the
+// two bodies about the softest axis of the joint frame of body B, its z axis alone for a hinge
+float nbJointSpringHertz( b3BodyId bodyA, b3BodyId bodyB, b3Quat frameB, bool hingeOnly, float stiffness );
+
+// Balance, see figure_balance.c. Can the figure catch itself, the humanoid of the library? The legs at rest, at creation.
+bool nbCanBalance( const nbFigure* f );
+void nbInitBalancer( nbFigure* f );
+
+// Begin to catch itself, the bones already dynamic: the upright hold and what balance measures. End it, without the hold.
+void nbBeginBalance( nbWorld* world, int index, nbFigure* f );
+void nbEndBalance( nbFigure* f );
+
+// Measure, decide and give the targets of the joints: the pose of the clip comes in, the legs of balance go out. Fell
+// when no step catches the figure, settled when it stands calm.
+nbBalanceResult nbUpdateBalance( nbWorld* world, int index, nbFigure* f, float timeStep, b3Quat* pose );
+
+// A figure that catches itself swings a foot, where it faces and the height of the ground under its feet
+bool nbBalanceStepping( const nbFigure* f );
+b3Vec3 nbBalanceForward( const nbFigure* f );
+float nbBalanceGround( const nbFigure* f );
 
 // The most points of the shape of a bone, see nbBonePoints
 #define NB_BONE_POINTS 48

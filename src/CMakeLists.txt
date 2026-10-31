@@ -2,6 +2,7 @@ set(NEBENAN_SOURCE_FILES
 	core.c
 	core.h
 	figure.c
+	figure_balance.c
 	figure.h
 	figure_clips.c
 	fracture.c

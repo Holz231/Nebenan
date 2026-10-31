@@ -354,6 +354,87 @@ static int FigureFlinchTest( void )
 	return 0;
 }
 
+// A hard hit that steps can catch, after the roadmap of the game, 26.14 and 28.3, and the balance of the branch
+// ragdoll-11: the bones of the figure become dynamic, its joints hold the pose of its clip with the full strength of its
+// motors, a hold keeps its pelvis upright, and it catches itself with steps. On its feet all the time, it stands animated
+// again where it caught itself and steps its feet back under its body. On the upper chest it catches 60 and 70 N s from
+// the front, 80 N s from behind and 60 N s from either side. 100 N s from the front and 80 N s from the side knock it
+// down at once, as no step reaches far enough.
+static int FigureCatchTest( void )
+{
+	typedef struct CatchCase
+	{
+		const char* name;
+		b3Vec3 impulse;
+		bool falls;
+	} CatchCase;
+	CatchCase cases[] = {
+		{ "60 N s from the front", { 0.0f, 0.0f, -60.0f }, false }, { "70 N s from the front", { 0.0f, 0.0f, -70.0f }, false },
+		{ "80 N s from behind", { 0.0f, 0.0f, 80.0f }, false },		{ "60 N s from its right", { 60.0f, 0.0f, 0.0f }, false },
+		{ "60 N s from its left", { -60.0f, 0.0f, 0.0f }, false },	{ "100 N s from the front", { 0.0f, 0.0f, -100.0f }, true },
+		{ "80 N s from its right", { 80.0f, 0.0f, 0.0f }, true },
+	};
+	for ( size_t c = 0; c < sizeof( cases ) / sizeof( cases[0] ); ++c )
+	{
+		FigureScene scene;
+		CreateFigureScene( &scene, 1 );
+		nbFigureId figure = AddFigure( &scene, b3Vec3_zero, 0.0f );
+		StepFigures( &scene, 30 );
+		b3Vec3 start = BonePosition( figure, nb_humanoidPelvis );
+
+		ENSURE( HitChest( figure, 1, cases[c].impulse ) );
+		ENSURE( nbFigure_GetState( figure ) == nb_figureBalancing );
+		ENSURE( nbWorld_GetFigureStats( scene.world ).balancingCount == 1 );
+		for ( int i = 0; i < nb_humanoidBoneCount; ++i )
+		{
+			ENSURE( b3Body_GetType( nbFigure_GetBody( figure, i ) ) == b3_dynamicBody );
+		}
+
+		if ( cases[c].falls )
+		{
+			int steps = StepUntil( &scene, figure, nb_figureRagdoll, 10 );
+			nbFigureInfo info = nbFigure_GetInfo( figure );
+			printf( "  %s: falls after %d updates without a step\n", cases[c].name, steps );
+			ENSURE( 0 < steps && steps <= 3 );
+			ENSURE( info.stepCount == 0 && info.knockdownCount == 1 && info.catchCount == 0 );
+			DestroyFigureScene( &scene );
+			continue;
+		}
+
+		// On its feet all the time: the head stays high and the figure never lies
+		int steps = 0;
+		bool stepped = false;
+		float lowestHead = FLT_MAX;
+		while ( nbFigure_GetState( figure ) == nb_figureBalancing && steps < 360 )
+		{
+			StepFigures( &scene, 1 );
+			steps += 1;
+			stepped = stepped || nbFigure_GetInfo( figure ).stepping;
+			lowestHead = b3MinFloat( lowestHead, BonePosition( figure, nb_humanoidHead ).y );
+		}
+		nbFigureInfo info = nbFigure_GetInfo( figure );
+		b3Vec3 pelvis = BonePosition( figure, nb_humanoidPelvis );
+		float moved = b3Length( b3Sub( (b3Vec3){ pelvis.x, 0.0f, pelvis.z }, (b3Vec3){ start.x, 0.0f, start.z } ) );
+		printf( "  %s: caught with %d steps in %.2f s, %.2f m from where it stood, the head at least %.2f m high\n",
+				cases[c].name, info.stepCount, (float)steps / 60.0f, moved, lowestHead );
+		ENSURE( info.state == nb_figureAnimated );
+		ENSURE( info.knockdownCount == 0 && info.catchCount == 1 && info.stepCount >= 1 && stepped );
+		ENSURE( lowestHead > 1.3f );
+		ENSURE( moved > 0.1f );
+		ENSURE( nbWorld_GetFigureStats( scene.world ).catchCount == 1 );
+
+		// Standing animated, kinematic, where it caught itself
+		StepFigures( &scene, 60 );
+		ENSURE( StandsUpright( &scene, figure ) );
+		for ( int i = 0; i < nb_humanoidBoneCount; ++i )
+		{
+			ENSURE( b3Body_GetType( nbFigure_GetBody( figure, i ) ) == b3_kinematicBody );
+		}
+		DestroyFigureScene( &scene );
+	}
+	return 0;
+}
+
 // A hard hit knocks the figure down: its bones become dynamic with the velocities they had and the hit acts once, so their
 // momentum is the impulse. It falls, lies still, gets up with the clip of the side it lies on and stands animated again,
 // without a jump of any bone. Hit from the front it lies on its back, from behind on its front.
@@ -367,11 +448,12 @@ static int FigureKnockdownTest( void )
 		StepFigures( &scene, 30 );
 		nbWorld_ResetProfile( scene.world );
 
-		// From the front pushes back, along -z, from behind forward
+		// From the front pushes back, along -z, from behind forward. The bones become dynamic, the figure tries to catch
+		// itself, but no step catches 120 N s and it falls at once.
 		float direction = pass == 0 ? -1.0f : 1.0f;
 		b3Vec3 impulse = { 0.0f, 0.0f, 120.0f * direction };
 		ENSURE( HitChest( figure, 1, impulse ) );
-		ENSURE( nbFigure_GetState( figure ) == nb_figureRagdoll );
+		ENSURE( nbFigure_GetState( figure ) == nb_figureBalancing );
 		b3Vec3 momentum = FigureMomentum( figure );
 		ENSURE_SMALL( momentum.z - impulse.z, 1.0f );
 		ENSURE_SMALL( momentum.y, 1.0f );
@@ -379,6 +461,9 @@ static int FigureKnockdownTest( void )
 		{
 			ENSURE( b3Body_GetType( nbFigure_GetBody( figure, i ) ) == b3_dynamicBody );
 		}
+		int catching = StepUntil( &scene, figure, nb_figureRagdoll, 10 );
+		ENSURE( 0 < catching && catching <= 3 );
+		ENSURE( nbFigure_GetInfo( figure ).stepCount == 0 );
 
 		// It falls and lies, its pelvis and its head on the ground within a second
 		int fall = 0;
@@ -428,9 +513,10 @@ static int FigureKnockdownTest( void )
 		nbFigureStats stats = nbWorld_GetFigureStats( scene.world );
 		ENSURE( stats.knockdownCount == 1 && stats.getUpCount == 1 && stats.animatedCount == 1 );
 
-		// The profile counts the steps after which the ragdoll was awake, all of its fall and at most those it lay
+		// The profile counts the steps after which the ragdoll was awake, all of its fall and at most those it tried to catch
+		// itself and lay
 		nbProfile profile = nbWorld_GetProfile( scene.world );
-		ENSURE( fall <= profile.ragdollStepCount && profile.ragdollStepCount <= fall + lying );
+		ENSURE( fall <= profile.ragdollStepCount && profile.ragdollStepCount <= catching + fall + lying );
 		ENSURE( profile.maxRagdollCount == 1 );
 		DestroyFigureScene( &scene );
 	}
@@ -624,9 +710,12 @@ static int FigureStepBlockedTest( void )
 
 		if ( pass == 0 )
 		{
-			// Kicked toward the wall it falls, with the hit, and lies before the wall
+			// Kicked toward the wall it cannot step back, it tries to catch itself with the hit, falls against the wall
+			// without a step and lies before it
 			ENSURE( HitChest( figure, 1, (b3Vec3){ 0.0f, 0.0f, -30.0f } ) );
-			ENSURE( nbFigure_GetState( figure ) == nb_figureRagdoll );
+			ENSURE( nbFigure_GetState( figure ) == nb_figureBalancing );
+			ENSURE( StepUntil( &scene, figure, nb_figureRagdoll, 60 ) > 0 );
+			ENSURE( nbFigure_GetInfo( figure ).stepCount == 0 );
 			StepFigures( &scene, 120 );
 			for ( int i = 0; i < nb_humanoidBoneCount; ++i )
 			{
@@ -643,24 +732,33 @@ static int FigureStepBlockedTest( void )
 		}
 		else if ( pass == 2 )
 		{
-			// Over the edge the step finds no ground, and the figure falls before its foot leaves the block
+			// Over the edge the step finds no ground: the figure catches itself with dynamic bones instead, without a step,
+			// its foot stays on the block, and it stands animated again
 			ENSURE( HitChest( figure, 1, (b3Vec3){ 35.0f, 0.0f, 0.0f } ) );
 			ENSURE( nbFigure_GetState( figure ) == nb_figureAnimated );
-			StepFigures( &scene, 2 );
-			ENSURE( nbFigure_GetState( figure ) == nb_figureRagdoll );
-			ENSURE( nbFigure_GetInfo( figure ).stepCount == 0 );
+			StepFigures( &scene, 1 );
+			ENSURE( nbFigure_GetState( figure ) == nb_figureBalancing );
+			ENSURE( StepUntil( &scene, figure, nb_figureAnimated, 120 ) > 0 );
+			nbFigureInfo info = nbFigure_GetInfo( figure );
+			ENSURE( info.stepCount == 0 && info.catchCount == 1 && info.knockdownCount == 0 );
 			ENSURE( BonePosition( figure, nb_humanoidFootLeft ).y > 1.0f );
 		}
 		else if ( pass == 3 )
 		{
-			// Three pushes the same way, a twentieth of a second apart: the third would carry it beyond its reach
+			// Three pushes the same way, a twentieth of a second apart: the third would carry it beyond the reach of its
+			// steps, and it catches itself with dynamic bones or falls
 			ENSURE( HitChest( figure, 1, (b3Vec3){ 45.0f, 0.0f, 0.0f } ) );
 			StepFigures( &scene, 3 );
 			ENSURE( HitChest( figure, 2, (b3Vec3){ 45.0f, 0.0f, 0.0f } ) );
 			ENSURE( nbFigure_GetState( figure ) == nb_figureAnimated );
 			StepFigures( &scene, 3 );
 			ENSURE( HitChest( figure, 3, (b3Vec3){ 45.0f, 0.0f, 0.0f } ) );
-			ENSURE( nbFigure_GetState( figure ) == nb_figureRagdoll );
+			ENSURE( nbFigure_GetState( figure ) == nb_figureBalancing );
+			StepFigures( &scene, 240 );
+			nbFigureInfo info = nbFigure_GetInfo( figure );
+			printf( "  three pushes of 45 N s: %s, %d steps\n", info.knockdownCount > 0 ? "falls" : "catches itself",
+					info.stepCount );
+			ENSURE( info.knockdownCount + info.catchCount == 1 );
 		}
 		else
 		{
@@ -939,11 +1037,15 @@ static int FigureWorldTest( void )
 	blast.radius = 1.3f;
 	blast.explosionImpulse = 480.0f;
 	nbWorld_ApplyImpact( scene.world, &blast );
-	ENSURE( nbFigure_GetState( blasted ) == nb_figureRagdoll );
+	ENSURE( nbFigure_GetState( blasted ) == nb_figureBalancing );
 	ENSURE( nbFigure_GetState( far ) == nb_figureAnimated );
 	ENSURE( b3Length( FigureMomentum( blasted ) ) > 50.0f );
 
 	StepFigures( &scene, 90 );
+	printf( "  blasted: %d knockdowns, heavy %d (state %d), pressed %d (state %d)\n", nbFigure_GetInfo( blasted ).knockdownCount,
+			nbFigure_GetInfo( heavy ).knockdownCount, (int)nbFigure_GetState( heavy ), nbFigure_GetInfo( pressed ).knockdownCount,
+			(int)nbFigure_GetState( pressed ) );
+	ENSURE( nbFigure_GetInfo( blasted ).knockdownCount == 1 );
 	ENSURE( nbFigure_GetState( light ) == nb_figureAnimated );
 	ENSURE( nbFigure_GetInfo( light ).hitCount >= 1 );
 	ENSURE( nbFigure_GetInfo( light ).knockdownCount == 0 );
@@ -1056,7 +1158,8 @@ static uint32_t RunFigureScenario( int threadCount )
 			}
 		}
 		nbFigureInfo info = nbFigure_GetInfo( figures[k] );
-		hash = ( hash ^ (uint32_t)( info.state + 4 * info.knockdownCount + 64 * info.getUpCount + 1024 * info.stepCount ) ) *
+		hash = ( hash ^ (uint32_t)( info.state + 4 * info.knockdownCount + 64 * info.getUpCount + 1024 * info.stepCount +
+									65536 * info.catchCount ) ) *
 			   16777619u;
 	}
 	DestroyFigureScene( &scene );
@@ -1214,7 +1317,10 @@ static WallThrow ThrowAtWall( int threadCount, bool wood, float thickness, uint3
 			// The momentum toward the wall, against the normal out of it
 			float towardBefore = -b3Dot( before, event->normal );
 			float towardAfter = -b3Dot( FigureMomentum( figure ), event->normal );
-			result.gained = result.gained || ( event->passThrough > 0.0f && towardAfter > 1.001f * towardBefore + 0.5f );
+			// Gravity adds its impulse of the step toward a wall the figure falls onto from above
+			float gravity = 74.0f * 10.0f / 60.0f * b3MaxFloat( event->normal.y, 0.0f );
+			result.gained = result.gained ||
+							( event->passThrough > 0.0f && towardAfter > 1.001f * ( towardBefore + gravity ) + 0.5f );
 		}
 		result.collisionCount += collisions;
 		result.mostCollisionsInAStep = collisions > result.mostCollisionsInAStep ? collisions : result.mostCollisionsInAStep;
@@ -1322,9 +1428,10 @@ static int FigureWallDebrisTest( void )
 	StepFigures( &scene, 10 );
 	HitChest( figure, 1, (b3Vec3){ 0.0f, 300.0f, -1000.0f } );
 
-	// Through the wall, and back among the pieces of it that lie behind it
+	// No step catches it, through the wall, and back among the pieces of it that lie behind it
 	int touches = 0;
-	int steps = 0;
+	int steps = StepUntil( &scene, figure, nb_figureRagdoll, 10 );
+	ENSURE( 0 < steps && steps <= 3 );
 	while ( nbFigure_GetState( figure ) == nb_figureRagdoll && steps < 900 )
 	{
 		StepFigures( &scene, 1 );
@@ -1378,7 +1485,7 @@ static int FigureWallDebrisTest( void )
 }
 
 // The throw through the wall of boards ends in the same bits with one thread and with four, on every platform
-#define NB_EXPECTED_WALL_HASH 0x63fd4e6fu
+#define NB_EXPECTED_WALL_HASH 0xa9825adcu
 
 static int FigureWallDeterminismTest( void )
 {
@@ -1438,7 +1545,7 @@ static int ThinBoardTest( void )
 }
 
 // The hash of the figure scenario on every platform, see RunFigureScenario
-#define NB_EXPECTED_FIGURE_HASH 0xc4bf6f23u
+#define NB_EXPECTED_FIGURE_HASH 0x3f52c5f9u
 
 static int FigureDeterminismTest( void )
 {
@@ -1460,6 +1567,7 @@ int FigureTest( void )
 	RUN_TEST( HumanoidClipTest );
 	RUN_TEST( FigureStandTest );
 	RUN_TEST( FigureFlinchTest );
+	RUN_TEST( FigureCatchTest );
 	RUN_TEST( FigureKnockdownTest );
 	RUN_TEST( FigureGetUpRoomTest );
 	RUN_TEST( FigureRoomTest );

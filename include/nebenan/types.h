@@ -1168,8 +1168,10 @@ typedef enum nbFigureClip
 	nb_figureClipCount
 } nbFigureClip;
 
-/// How hard the joints of an active ragdoll pull toward the pose it falls with, after the ragdoll strength of
-/// Overgrowth. At strength 1 a joint has the full stiffness and torque limit, at 0 the ragdoll hangs slack.
+/// How hard the joints of a figure with dynamic bones pull toward their pose. A figure that catches itself after a hard
+/// hit pulls at strength 1, see nb_figureBalancing. A ragdoll pulls toward the pose it falls with as strong as it is
+/// fast, after the ragdoll strength of Overgrowth. At strength 1 a joint has the full stiffness and torque limit, at 0
+/// the ragdoll hangs slack.
 typedef struct nbFigureMotors
 {
 	/// Stiffness at strength 1 in newton meters per radian of error, before the scale of the bone. Box3D sets a joint
@@ -1189,9 +1191,17 @@ typedef struct nbFigureMotors
 	float strengthPerSpeed;
 	float fallStrength;
 
-	/// Seconds of slack after a hit that knocked the figure down or met it as a ragdoll: the strength starts that much
-	/// lower and comes back at one per second, so the hit throws a slack body
+	/// Seconds of slack after a hit that met the figure as a ragdoll or a blast that threw it: the strength starts that
+	/// much lower and comes back at one per second, so the hit throws a slack body. Zero by default, the figure keeps its
+	/// strength as on the branch ragdoll-11.
 	float stunTime;
+
+	/// While the figure catches itself, see nb_figureBalancing, a hold keeps its pelvis upright against the world: a spring
+	/// of this stiffness in newton meters per radian and this damping ratio, with at most this torque in newton meters.
+	/// It lets go at once when the figure falls. Zero torque takes it away.
+	float uprightTorque;
+	float uprightStiffness;
+	float uprightDampingRatio;
 } nbFigureMotors;
 
 /// A figure, see nbCreateFigure. Initialize with nbDefaultFigureDef.
@@ -1214,7 +1224,8 @@ typedef struct nbFigureDef
 	/// The motors of the ragdoll
 	nbFigureMotors motors;
 
-	/// A hit of at least this many newton seconds knocks the figure down. A weaker one makes it flinch.
+	/// A hit of at least this many newton seconds makes the bones of a standing figure dynamic, and it catches itself with
+	/// steps or falls, see nb_figureBalancing. A weaker one makes it flinch.
 	float knockdownImpulse;
 
 	/// How far the trunk of a standing figure flinches from a hit, in radians per newton second, up to flinchLimit, and
@@ -1267,6 +1278,12 @@ typedef enum nbFigureState
 
 	/// The bones are kinematic again and follow a get-up clip, blended from the pose the ragdoll lay in
 	nb_figureGettingUp,
+
+	/// After a hard hit, a blast or debris the bones are dynamic, the joints pull toward the pose of the clip with the full
+	/// strength of the motors, a hold keeps the pelvis upright, and the humanoid catches itself with steps, after the
+	/// balance of the branch ragdoll-11 and the roadmap of the game, 26.13 to 26.15 and 28.3. Calm on its feet it stands
+	/// animated again, where no step catches it it falls as a ragdoll. See nbFigureMotors::uprightTorque.
+	nb_figureBalancing,
 } nbFigureState;
 
 /// Why a lying figure does not get up yet, see nbFigureInfo::wait
@@ -1325,7 +1342,8 @@ typedef struct nbFigureInfo
 	/// The flinch of the trunk of a standing figure, as a rotation vector in radians
 	b3Vec3 flinch;
 
-	/// A standing figure steps to catch a hit, see nbFigureDef::stepReach
+	/// A standing figure steps to catch a hit, see nbFigureDef::stepReach, or a figure that catches itself swings a foot,
+	/// see nb_figureBalancing
 	bool stepping;
 
 	/// A figure that gets up first moves where it has room: without room where it lies, the humanoid looks back along its
@@ -1333,13 +1351,14 @@ typedef struct nbFigureInfo
 	bool shifting;
 
 	/// Hits that landed, how often the figure was knocked down, got up and broke off getting up, the steps it took to
-	/// catch hits, and how often it moved to get up
+	/// catch hits, how often it moved to get up, and how often it caught itself and stood again, see nb_figureBalancing
 	int hitCount;
 	int knockdownCount;
 	int getUpCount;
 	int abortCount;
 	int stepCount;
 	int shiftCount;
+	int catchCount;
 } nbFigureInfo;
 
 /// A hit on a bone, see nbFigure_ApplyHit
@@ -1367,19 +1386,21 @@ typedef struct nbFigureStats
 	int animatedCount;
 	int ragdollCount;
 	int gettingUpCount;
+	int balancingCount;
 
-	/// Ragdolls whose bones are awake in Box3D. Their joints keep Box3D from solving whole islands per thread, see
-	/// "Gelenke und Pakete" in the README.
+	/// Ragdolls and figures that catch themselves whose bones are awake in Box3D. Their joints keep Box3D from solving
+	/// whole islands per thread, see "Gelenke und Pakete" in the README.
 	int awakeRagdollCount;
 
-	/// Since the figures were made: hits that landed, knockdowns, get-ups, get-ups broken off, steps to catch hits and moves
-	/// to get up where there was room
+	/// Since the figures were made: hits that landed, knockdowns, get-ups, get-ups broken off, steps to catch hits, moves
+	/// to get up where there was room, and how often a figure caught itself and stood again
 	int hitCount;
 	int knockdownCount;
 	int getUpCount;
 	int abortCount;
 	int stepCount;
 	int shiftCount;
+	int catchCount;
 } nbFigureStats;
 
 /// The bones of the humanoid that nbMakeHumanoidBones builds, in the order of its array. The trunk runs from the pelvis

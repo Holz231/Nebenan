@@ -174,12 +174,15 @@ nbRigDef nbDefaultRigDef( void )
 nbFigureMotors nbDefaultFigureMotors( void )
 {
 	nbFigureMotors motors = { 0 };
-	motors.stiffness = 600.0f;
+	motors.stiffness = 800.0f;
 	motors.dampingRatio = 1.0f;
-	motors.maxTorque = 120.0f;
+	motors.maxTorque = 150.0f;
 	motors.strengthPerSpeed = 0.1f;
 	motors.fallStrength = 0.8f;
-	motors.stunTime = 0.4f;
+	motors.stunTime = 0.0f;
+	motors.uprightTorque = 250.0f;
+	motors.uprightStiffness = 1500.0f;
+	motors.uprightDampingRatio = 1.0f;
 	return motors;
 }
 
@@ -549,7 +552,7 @@ static b3Quat nbLimitBoneRotation( const nbBone* bone, b3Quat rotation )
 // spring: the same cycles make a weak spring on a light foot and a strong one on a heavy thigh. A stiffness in newton
 // meters per radian is the same on every joint, this turns it into the cycles per second of one joint, from ragdoll-1. The
 // rotational mass is taken about the softest of the axes, so a ball joint is at least this stiff about every axis.
-static float nbSpringHertz( b3BodyId bodyA, b3BodyId bodyB, b3Quat frameB, bool hingeOnly, float stiffness )
+float nbJointSpringHertz( b3BodyId bodyA, b3BodyId bodyB, b3Quat frameB, bool hingeOnly, float stiffness )
 {
 	if ( stiffness <= 0.0f )
 	{
@@ -1079,28 +1082,41 @@ static void nbSetDamping( nbFigure* f, float damping )
 	f->damping = damping;
 }
 
+// The bones become dynamic with the velocities they have, the springs at strength 1 from the inertia they have now
+static void nbMakeDynamic( nbFigure* f )
+{
+	for ( int i = 0; i < f->boneCount; ++i )
+	{
+		b3Body_SetType( f->bones[i].bodyId, b3_dynamicBody );
+	}
+
+	for ( int i = 1; i < f->boneCount; ++i )
+	{
+		nbBone* bone = f->bones + i;
+		float stiffness = b3MaxFloat( 0.0f, f->def.motors.stiffness ) * bone->stiffness;
+		b3Quat frameB = b3MulQuat( b3Body_GetRotation( bone->bodyId ), bone->jointFrame );
+		bone->hertz = bone->joint == nb_fixedJoint ? 0.0f
+												   : nbJointSpringHertz( f->bones[bone->parent].bodyId, bone->bodyId, frameB,
+																		 bone->joint == nb_hingeJoint, stiffness );
+	}
+}
+
 // The figure falls as an active ragdoll: its bones become dynamic with the velocities they have, slack for the stun
-// time if a hit knocked it down
+// time if a hit met it as a ragdoll or a blast threw it
 static void nbFall( nbWorld* world, nbFigure* f, bool stunned )
 {
 	NB_UNUSED( world );
 	bool wasRagdoll = f->state == nb_figureRagdoll;
 	if ( wasRagdoll == false )
 	{
-		for ( int i = 0; i < f->boneCount; ++i )
+		// A figure that caught itself has its bones dynamic already, it lets go of the upright hold
+		if ( f->state == nb_figureBalancing )
 		{
-			b3Body_SetType( f->bones[i].bodyId, b3_dynamicBody );
+			nbEndBalance( f );
 		}
-
-		// The springs at strength 1, from the inertia the bones have now that they are dynamic
-		for ( int i = 1; i < f->boneCount; ++i )
+		else
 		{
-			nbBone* bone = f->bones + i;
-			float stiffness = b3MaxFloat( 0.0f, f->def.motors.stiffness ) * bone->stiffness;
-			b3Quat frameB = b3MulQuat( b3Body_GetRotation( bone->bodyId ), bone->jointFrame );
-			bone->hertz = bone->joint == nb_fixedJoint ? 0.0f
-													   : nbSpringHertz( f->bones[bone->parent].bodyId, bone->bodyId, frameB,
-																		bone->joint == nb_hingeJoint, stiffness );
+			nbMakeDynamic( f );
 		}
 
 		if ( f->state == nb_figureGettingUp )
@@ -1242,6 +1258,83 @@ static void nbStand( nbWorld* world, nbFigure* f )
 	f->clipTime = 0.0f;
 	f->clipSpeed = 1.0f;
 	f->getUpCount += 1;
+}
+
+// A standing humanoid catches itself after a hard hit, see figure_balance.c: its bones dynamic with the velocities they
+// have, the joints at full strength toward the pose it stands in, the upright hold on. Any other figure falls.
+static void nbBeginBalancing( nbWorld* world, nbFigure* f )
+{
+	if ( f->canBalance == false )
+	{
+		nbFall( world, f, false );
+		return;
+	}
+
+	int index = (int)( f - world->figures.data );
+	b3Quat pose[nb_humanoidBoneCount];
+	b3WorldTransform root;
+	nbReadPose( f, pose, &root );
+	nbMakeDynamic( f );
+	f->state = nb_figureBalancing;
+	f->stateTime = 0.0f;
+	f->flinch = b3Vec3_zero;
+	f->flinchRate = b3Vec3_zero;
+	f->balancing = false;
+	f->swingFoot = -1;
+	f->footWeight = 0.0f;
+	f->stun = 0.0f;
+	f->strength = 1.0f;
+	f->springs = true;
+	nbSetStrength( f, 1.0f );
+	f->damping = -1.0f;
+	nbSetDamping( f, 0.0f );
+	nbBeginBalance( world, index, f );
+	nbSetJointTargets( f, pose );
+	b3Body_SetAwake( f->bones[0].bodyId, true );
+	nbReadVelocities( f );
+}
+
+// A figure that caught itself stands animated again where it stands: the frame on the ground under the middle of its
+// ankles, facing where its pelvis faces, and its clip blends in from the pose it stands in, as after getting up
+static void nbSettle( nbWorld* world, nbFigure* f )
+{
+	b3Vec3 up = nbUpOf( world );
+	b3WorldTransform pelvis;
+	nbReadPose( f, f->pose, &pelvis );
+
+	b3Vec3 ankles = b3MulSV( 0.5f, b3Add( b3ToVec3( b3Body_GetPosition( f->bones[nb_humanoidFootLeft].bodyId ) ),
+										   b3ToVec3( b3Body_GetPosition( f->bones[nb_humanoidFootRight].bodyId ) ) ) );
+	b3Vec3 ground = b3MulAdd( ankles, nbBalanceGround( f ) - b3Dot( ankles, up ), up );
+	b3WorldTransform level = nbMakeFrame( world, b3ToPos( ground ), 0.0f );
+	b3Vec3 ahead = b3InvRotateVector( level.q, nbBalanceForward( f ) );
+	f->heading = b3Atan2( ahead.x, ahead.z );
+	f->frame = nbMakeFrame( world, b3ToPos( ground ), f->heading );
+	f->root = b3InvMulWorldTransforms( f->frame, pelvis );
+
+	nbEndBalance( f );
+	for ( int i = 0; i < f->boneCount; ++i )
+	{
+		b3Body_SetType( f->bones[i].bodyId, b3_kinematicBody );
+	}
+	nbSetDamping( f, 0.0f );
+	f->springs = false;
+	f->strength = 0.0f;
+	nbStartFade( f, NB_STAND_FADE );
+	nbResetFeet( f );
+	f->state = nb_figureAnimated;
+	f->stateTime = 0.0f;
+	f->catchCount += 1;
+
+	// The feet stay where they stand, and step under the body to where the clip puts them, one after the other, as after a
+	// push it caught over its feet, see nbPush
+	f->feet[0].plant = b3Body_GetPosition( f->bones[nb_humanoidFootLeft].bodyId );
+	f->feet[1].plant = b3Body_GetPosition( f->bones[nb_humanoidFootRight].bodyId );
+	f->balancing = true;
+	f->footWeight = 1.0f;
+	f->swingFoot = -1;
+	f->swayOffset = b3Vec3_zero;
+	f->swayTime = 0.0f;
+	f->swayDuration = 0.0f;
 }
 
 //----------------------------------------------------------------------------------------------------------------------
@@ -1924,11 +2017,34 @@ static void nbSpreadHit( nbFigure* f, b3Vec3 impulse, b3Pos point )
 	nbReadVelocities( f );
 }
 
+// A hit on the dynamic bones of a figure, spread over them, see nbSpreadHit. The whole impulse on the bone it hit, as on
+// the branch ragdoll-11, threw the trunk of a figure that had stood animated a moment before so far that it fell from 80
+// N s on its chest and 60 N s on its back, which ragdoll-11 caught with steps.
+static void nbHitBones( nbFigure* f, int bone, b3Vec3 impulse, b3Pos point )
+{
+	NB_UNUSED( bone );
+	nbSpreadHit( f, impulse, point );
+}
+
 // A hit on a figure, from the program, a blast or debris
 static void nbTakeHit( nbWorld* world, nbFigure* f, int bone, b3Vec3 impulse, b3Pos point, bool fromDebris )
 {
 	f->hitCount += 1;
 	float magnitude = b3Length( impulse );
+
+	// Debris that hits dynamic bones pushed them in the step already
+	bool dynamic = f->state == nb_figureRagdoll || f->state == nb_figureBalancing;
+	if ( dynamic && fromDebris )
+	{
+		return;
+	}
+
+	// A figure that catches itself takes the hit as it is and catches that too, if it can
+	if ( f->state == nb_figureBalancing )
+	{
+		nbHitBones( f, bone, impulse, point );
+		return;
+	}
 
 	// A figure that gets up breaks off from much less, see the roadmap 26.15
 	float threshold = f->def.knockdownImpulse;
@@ -1943,25 +2059,26 @@ static void nbTakeHit( nbWorld* world, nbFigure* f, int bone, b3Vec3 impulse, b3
 		{
 			nbFlinch( f, impulse, point );
 
-			// A push it cannot catch with steps knocks it down after all
+			// A push it cannot catch over its feet makes it catch itself after all
 			if ( nbPush( world, f, impulse ) == false )
 			{
-				nbFall( world, f, true );
-				nbSpreadHit( f, impulse, point );
+				nbBeginBalancing( world, f );
+				nbHitBones( f, bone, impulse, point );
 			}
 		}
 		return;
 	}
 
-	// Debris that hits a ragdoll pushed it in the step already
-	if ( f->state == nb_figureRagdoll && fromDebris )
+	// A standing figure catches itself, if it can, one that gets up falls, a ragdoll is slack a moment
+	if ( f->state == nb_figureAnimated )
 	{
-		return;
+		nbBeginBalancing( world, f );
 	}
-
-	NB_UNUSED( bone );
-	nbFall( world, f, true );
-	nbSpreadHit( f, impulse, point );
+	else
+	{
+		nbFall( world, f, f->state == nb_figureRagdoll );
+	}
+	nbHitBones( f, bone, impulse, point );
 }
 
 // The impulse a blast gives a bone, as b3World_Explode gives it: the impulse per area times the area the bone turns to the
@@ -2008,7 +2125,7 @@ void nbBlastFigures( nbWorld* world, const nbImpactDef* def )
 	for ( int index = 0; index < world->figures.count; ++index )
 	{
 		nbFigure* f = world->figures.data + index;
-		if ( f->isFree || f->state == nb_figureRagdoll )
+		if ( f->isFree || f->state == nb_figureRagdoll || f->state == nb_figureBalancing )
 		{
 			continue;
 		}
@@ -2048,8 +2165,16 @@ void nbBlastFigures( nbWorld* world, const nbImpactDef* def )
 			}
 		}
 
-		// Dynamic before the blast, so it throws the bones itself, once
-		nbFall( world, f, true );
+		// Dynamic before the blast, so it throws the bones itself, once. A standing figure catches itself if it can, one
+		// that gets up falls.
+		if ( f->state == nb_figureAnimated )
+		{
+			nbBeginBalancing( world, f );
+		}
+		else
+		{
+			nbFall( world, f, true );
+		}
 	}
 }
 
@@ -2058,7 +2183,7 @@ void nbReadFigureVelocities( nbWorld* world )
 	for ( int index = 0; index < world->figures.count; ++index )
 	{
 		nbFigure* f = world->figures.data + index;
-		if ( f->isFree == false && f->state == nb_figureRagdoll )
+		if ( f->isFree == false && ( f->state == nb_figureRagdoll || f->state == nb_figureBalancing ) )
 		{
 			nbReadVelocities( f );
 		}
@@ -2069,8 +2194,8 @@ void nbReadFigureVelocities( nbWorld* world )
 // Where the chunks broke away, the wall gave way under the figure: every bone gets back up to the share of its own speed
 // toward the wall from before the step, so the figure goes on through the hole in the pose it flew in. The joints may
 // have passed momentum from one bone to another in the step, a head that whips ahead of the chest the wall stopped, so
-// all bones together get back no more than the share of the momentum of the whole figure toward the wall. It never
-// gains momentum or energy.
+// all bones together get back no more than the share of the momentum of the whole figure toward the wall, bones that
+// moved away from it counted against it. It never gains momentum or energy.
 float nbPassFigureThrough( nbWorld* world, int index, b3Vec3 normal, float keep )
 {
 	nbFigure* f = world->figures.data + index;
@@ -2082,7 +2207,7 @@ float nbPassFigureThrough( nbWorld* world, int index, b3Vec3 normal, float keep 
 		const nbBone* bone = f->bones + i;
 		float approach = -b3Dot( bone->stepVelocity, normal );
 		float toward = -b3Dot( b3Body_GetLinearVelocity( bone->bodyId ), normal );
-		before += bone->mass * b3MaxFloat( approach, 0.0f );
+		before += bone->mass * approach;
 		now += bone->mass * toward;
 		if ( approach > 0.0f && toward < keep * approach )
 		{
@@ -2146,7 +2271,7 @@ static void nbCollectDebrisHits( nbWorld* world )
 
 			nbFigure* f = world->figures.data + index;
 			b3BodyId other = side == 0 ? bodyB : bodyA;
-			if ( f->state == nb_figureRagdoll || b3Body_GetType( other ) != b3_dynamicBody ||
+			if ( f->state == nb_figureRagdoll || f->state == nb_figureBalancing || b3Body_GetType( other ) != b3_dynamicBody ||
 				 nbFigureOfBody( world, other, NULL ) == index )
 			{
 				continue;
@@ -2289,7 +2414,7 @@ static void nbUpdateAnimated( nbWorld* world, int index, nbFigure* f, float time
 	if ( f->debrisImpulse > 0.0f )
 	{
 		nbTakeHit( world, f, f->debrisBone, b3MulSV( f->debrisImpulse, f->debrisDirection ), f->debrisPoint, true );
-		if ( f->state == nb_figureRagdoll )
+		if ( f->state == nb_figureRagdoll || f->state == nb_figureBalancing )
 		{
 			return;
 		}
@@ -2344,7 +2469,8 @@ static void nbUpdateAnimated( nbWorld* world, int index, nbFigure* f, float time
 		nbFollowGround( world, index, f, clips, due, timeStep, scale );
 		if ( f->footWeight > 0.0f && nbStepFeet( world, index, f, transforms, clips, up, timeStep ) == false )
 		{
-			nbFall( world, f, false );
+			// A step without ground: the figure catches itself with dynamic bones, if it can
+			nbBeginBalancing( world, f );
 			return;
 		}
 		nbPlaceFeet( f, transforms, clips, up );
@@ -2532,6 +2658,42 @@ static nbFigureWait nbCheckGetUp( const nbWorld* world, int index, const nbFigur
 }
 
 // A ragdoll: its strength, its curl and brace, the targets of its joints, its rest and whether it gets up
+// A figure that catches itself: the pose of its clip goes on, balance sets its legs, and it falls or stands again. What
+// presses on it from above knocks it down from a quarter of the crush force, as a figure that gets up: catching itself it
+// does not carry debris.
+static void nbUpdateBalancing( nbWorld* world, int index, nbFigure* f, float timeStep, b3Vec3 up )
+{
+	if ( ( world->figureUpdates + index ) % NB_CRUSH_PERIOD == 0 &&
+		 nbPressingForce( world, index, f, timeStep, up ) >= NB_ABORT_PART * f->def.crushForce )
+	{
+		nbFall( world, f, false );
+		return;
+	}
+
+	const nbClip* clip = f->playing ? &f->playClip : f->clips[nb_clipIdle];
+	f->clipTime += f->clipSpeed * timeStep;
+	if ( clip->loop == false )
+	{
+		f->clipTime = b3MinFloat( f->clipTime, nbClipDuration( clip ) );
+	}
+	nbSampleFigureClip( f, clip, f->clipTime, f->pose, &f->root );
+
+	nbBalanceResult result = nbUpdateBalance( world, index, f, timeStep, f->pose );
+	if ( result == nb_balanceFell )
+	{
+		nbFall( world, f, false );
+		return;
+	}
+	if ( result == nb_balanceSettled )
+	{
+		nbSettle( world, f );
+		return;
+	}
+
+	nbSetJointTargets( f, f->pose );
+	f->speed = b3Length( nbAverageVelocity( f ) );
+}
+
 static void nbUpdateRagdoll( nbWorld* world, int index, nbFigure* f, float timeStep, b3Vec3 up )
 {
 	f->stun = b3MaxFloat( 0.0f, f->stun - timeStep );
@@ -2653,7 +2815,7 @@ static void nbUpdateGettingUp( nbWorld* world, int index, nbFigure* f, float tim
 	if ( f->debrisImpulse > 0.0f )
 	{
 		nbTakeHit( world, f, f->debrisBone, b3MulSV( f->debrisImpulse, f->debrisDirection ), f->debrisPoint, true );
-		if ( f->state == nb_figureRagdoll )
+		if ( f->state == nb_figureRagdoll || f->state == nb_figureBalancing )
 		{
 			return;
 		}
@@ -2713,6 +2875,9 @@ void nbUpdateFigures( nbWorld* world, float timeStep )
 				break;
 			case nb_figureRagdoll:
 				nbUpdateRagdoll( world, index, f, timeStep, up );
+				break;
+			case nb_figureBalancing:
+				nbUpdateBalancing( world, index, f, timeStep, up );
 				break;
 			default:
 				nbUpdateGettingUp( world, index, f, timeStep, up );
@@ -2969,6 +3134,13 @@ nbFigureId nbCreateFigure( nbWorldId worldId, const nbFigureDef* def )
 		}
 	}
 
+	// The humanoid catches itself after a hard hit, see figure_balance.c
+	f->canBalance = nbCanBalance( f );
+	if ( f->canBalance )
+	{
+		nbInitBalancer( f );
+	}
+
 	if ( def->startAsRagdoll )
 	{
 		nbFall( world, f, false );
@@ -3034,6 +3206,11 @@ void nbDestroyFigures( nbWorld* world )
 	nbArray_Free( world->figures );
 	nbArray_Free( world->freeFigures );
 	nbArray_Free( world->bodyToBone );
+	if ( b3World_IsValid( world->physicsWorld ) && b3Body_IsValid( world->figureAnchor ) )
+	{
+		b3DestroyBody( world->figureAnchor );
+	}
+	world->figureAnchor = b3_nullBodyId;
 
 	for ( int i = 0; i < world->humanoidClips.count; ++i )
 	{
@@ -3098,7 +3275,7 @@ nbFigureInfo nbFigure_GetInfo( nbFigureId figureId )
 
 	info.state = f->state;
 	info.stateTime = f->stateTime;
-	info.strength = f->state == nb_figureRagdoll ? f->strength : 0.0f;
+	info.strength = f->state == nb_figureRagdoll || f->state == nb_figureBalancing ? f->strength : 0.0f;
 	info.protect = f->state == nb_figureRagdoll ? f->protect : 0.0f;
 	info.brace = f->state == nb_figureRagdoll ? f->brace : 0.0f;
 	info.speed = f->speed;
@@ -3108,7 +3285,7 @@ nbFigureInfo nbFigure_GetInfo( nbFigureId figureId )
 	info.getUpTime = f->state == nb_figureGettingUp ? f->getUpTime : 0.0f;
 	info.getUpBlend = f->state == nb_figureGettingUp ? b3ClampFloat( f->getUpTime / NB_GET_UP_BLEND, 0.0f, 1.0f ) : 0.0f;
 	info.flinch = b3RotateVector( f->frame.q, f->flinch );
-	info.stepping = f->state == nb_figureAnimated && f->balancing;
+	info.stepping = ( f->state == nb_figureAnimated && f->balancing ) || nbBalanceStepping( f );
 	info.shifting = f->state == nb_figureGettingUp && f->shiftLeft > 0.0f;
 	info.hitCount = f->hitCount;
 	info.knockdownCount = f->knockdownCount;
@@ -3116,6 +3293,7 @@ nbFigureInfo nbFigure_GetInfo( nbFigureId figureId )
 	info.abortCount = f->abortCount;
 	info.stepCount = f->stepCount;
 	info.shiftCount = f->shiftCount;
+	info.catchCount = f->catchCount;
 	return info;
 }
 
@@ -3197,10 +3375,11 @@ bool nbFigure_ApplyHit( nbFigureId figureId, const nbHitDef* hit )
 
 	if ( f->state == nb_figureRagdoll )
 	{
-		// A hit that meets a ragdoll acts as it is and leaves it slack a moment, as Overgrowth's limp stun
+		// A hit that meets a ragdoll acts as it is and leaves it slack a moment, as Overgrowth's limp stun, see
+		// nbFigureMotors::stunTime
 		f->hitCount += 1;
 		f->stun = b3MaxFloat( f->stun, f->def.motors.stunTime );
-		nbSpreadHit( f, hit->impulse, hit->point );
+		nbHitBones( f, hit->bone, hit->impulse, hit->point );
 		return true;
 	}
 
@@ -3214,6 +3393,7 @@ void nbFigure_Knockdown( nbFigureId figureId )
 	nbFigure* f = nbGetFigureFromId( figureId, &world );
 	if ( f != NULL && f->state != nb_figureRagdoll )
 	{
+		// A figure that catches itself lets go of its upright hold, see nbFall
 		nbFall( world, f, false );
 	}
 }
@@ -3243,7 +3423,7 @@ int nbFigure_GetTargetTransforms( nbFigureId figureId, b3WorldTransform* transfo
 	}
 
 	int count = b3MinInt( capacity, f->boneCount );
-	if ( f->state == nb_figureRagdoll )
+	if ( f->state == nb_figureRagdoll || f->state == nb_figureBalancing )
 	{
 		// The pose the joints pull toward, on the root as it is
 		b3WorldTransform* pose = nbAlloc( sizeof( b3WorldTransform ) * (size_t)f->boneCount );
@@ -3278,7 +3458,8 @@ nbFigureId nbWorld_GetFigureFromBody( nbWorldId worldId, b3BodyId bodyId, int* b
 // A ragdoll whose bones are awake in Box3D, see nbFigureStats::awakeRagdollCount
 static bool nbIsAwakeRagdoll( const nbFigure* f )
 {
-	return f->isFree == false && f->state == nb_figureRagdoll && b3Body_IsAwake( f->bones[0].bodyId );
+	return f->isFree == false && ( f->state == nb_figureRagdoll || f->state == nb_figureBalancing ) &&
+		   b3Body_IsAwake( f->bones[0].bodyId );
 }
 
 int nbCountAwakeRagdolls( const nbWorld* world )
@@ -3312,6 +3493,7 @@ nbFigureStats nbWorld_GetFigureStats( nbWorldId worldId )
 		stats.animatedCount += f->state == nb_figureAnimated ? 1 : 0;
 		stats.ragdollCount += f->state == nb_figureRagdoll ? 1 : 0;
 		stats.gettingUpCount += f->state == nb_figureGettingUp ? 1 : 0;
+		stats.balancingCount += f->state == nb_figureBalancing ? 1 : 0;
 		stats.awakeRagdollCount += nbIsAwakeRagdoll( f ) ? 1 : 0;
 		stats.hitCount += f->hitCount;
 		stats.knockdownCount += f->knockdownCount;
@@ -3319,6 +3501,7 @@ nbFigureStats nbWorld_GetFigureStats( nbWorldId worldId )
 		stats.abortCount += f->abortCount;
 		stats.stepCount += f->stepCount;
 		stats.shiftCount += f->shiftCount;
+		stats.catchCount += f->catchCount;
 	}
 	return stats;
 }

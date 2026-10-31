@@ -467,24 +467,26 @@ NB_API b3WorldTransform nbFigure_GetFrame( nbFigureId figureId );
 
 /// Move a standing figure: the point on the ground it stands on and its heading. The next steps move its bones there
 /// with velocities, a jump of more than a meter teleports them. A step it takes to catch a hit ends, the program moves it
-/// now. Nothing for a ragdoll or a figure that gets up.
+/// now. Nothing for a ragdoll, a figure that catches itself or one that gets up.
 NB_API void nbFigure_Move( nbFigureId figureId, b3Pos position, float heading );
 
 /// Play a clip while the figure stands, from its start, at this speed, 1 for real time, blended in over a fifth of a
 /// second. The clip is copied. Null goes back to the idle clip. A clip that does not loop holds its last pose.
 NB_API void nbFigure_PlayClip( nbFigureId figureId, const nbClipDef* clip, float speed );
 
-/// Apply a hit: an impulse at a point of a bone, once per hit id, see nbHitDef. A standing figure hit with at least
-/// nbFigureDef::knockdownImpulse falls as a ragdoll with the velocities its bones had, slack at first, see
-/// nbFigureMotors::stunTime, and the impulse spreads over its bones as Overgrowth spreads a hit: every bone takes a part
-/// as large as its mass over the square of its distance to the point. A weaker hit makes its trunk flinch, and a humanoid
-/// steps to catch it where it cannot over its feet, see nbFigureDef::stepReach. A figure that gets up falls from a
-/// quarter of the knockdown impulse. A ragdoll takes the impulse the same way and is slack again.
+/// Apply a hit: an impulse at a point of a bone, once per hit id, see nbHitDef. The bones of a standing figure hit with at
+/// least nbFigureDef::knockdownImpulse become dynamic with the velocities they had, and the impulse spreads over them as
+/// Overgrowth spreads a hit: every bone takes a part as large as its mass over the square of its distance to the point.
+/// The humanoid of the library then catches itself with steps, with the full strength of its joints and its pelvis held
+/// upright, and stands animated again, or falls as a ragdoll where no step catches it, see nb_figureBalancing. Other rigs
+/// fall at once. A weaker hit makes the trunk flinch, and a humanoid steps to catch it where it cannot over its feet, see
+/// nbFigureDef::stepReach. A figure that catches itself takes any hit the same way, a figure that gets up falls from a
+/// quarter of the knockdown impulse, and a ragdoll takes the impulse the same way, slack for nbFigureMotors::stunTime.
 /// @return true if the hit landed, false if a hit with this id landed before or the bone does not exist
 NB_API bool nbFigure_ApplyHit( nbFigureId figureId, const nbHitDef* hit );
 
-/// Knock a standing figure or one that gets up down at once, as a ragdoll with the velocities its bones have, for a hit
-/// the game wants to win, see the roadmap 26.4.
+/// Knock a standing figure, one that catches itself or one that gets up down at once, as a ragdoll with the velocities
+/// its bones have, for a hit the game wants to win, see the roadmap 26.4.
 NB_API void nbFigure_Knockdown( nbFigureId figureId );
 
 /// The pose of the figure as the physics has it: the world transform of every bone, up to capacity.
