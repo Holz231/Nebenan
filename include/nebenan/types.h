@@ -1413,7 +1413,7 @@ typedef struct nbHitDef
 	/// The bone that is hit
 	int bone;
 
-	/// Impulse in newton seconds, in world space. It spreads from the point over the bones near it, see
+	/// Impulse in newton seconds, in world space. It spreads from the point over the bones near it along the skeleton, see
 	/// nbFigure_ApplyHit.
 	b3Vec3 impulse;
 

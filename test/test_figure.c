@@ -635,7 +635,9 @@ static int FigureRowTest( void )
 // animated again or falls, none stays catching itself for good, also not on one foot after a long lunge, see
 // NB_ONE_FOOT_TIME. Of the 32 hits up to 80 N s at most one falls, and it catches half of all of them. About one light
 // hit in a hundred ends in a long stumble and a fall: of 168 hits from 40 to 80 N s in steps of 2 in this scene, round 23
-// fell at 64 and 66 N s from behind, round 24 at 66 N s from behind and at 80 N s from its front right.
+// fell at 64 and 66 N s from behind, round 24 at 66 N s from behind and at 80 N s from its front right. Since the hit
+// spreads along the skeleton, see nbSpreadHit, the figure catches those 80 N s after 17 steps and 7.8 s, it fell after 14
+// steps and 5.6 s.
 static int FigureCatchScanTest( void )
 {
 	int caught = 0;
@@ -675,7 +677,7 @@ static int FigureCatchScanTest( void )
 			caughtTo80, hitsTo80, fell, longest );
 	ENSURE( caughtTo80 >= hitsTo80 - 1 );
 	ENSURE( caught >= 40 );
-	ENSURE( longest < 6.0f );
+	ENSURE( longest < 8.0f );
 	return 0;
 }
 
@@ -733,7 +735,7 @@ static uint32_t MuscleCatch( int threadCount, float impulse )
 }
 
 // The throw of 90 N s on a figure with muscles ends in the same bits with one thread and with four, on every platform
-#define NB_EXPECTED_MUSCLE_HASH 0x5eed85f0u
+#define NB_EXPECTED_MUSCLE_HASH 0x9ae7bd9du
 
 // The muscles, see nbFigureMotors::muscles and nbUpdateMuscles. A figure with muscles hit while it stands catches itself
 // with the strength the balance asks for at once: every joint of its trunk and its legs at the full torque of the motors,
@@ -845,6 +847,69 @@ static int FigureMuscleTest( void )
 	printf( "  muscle hash: 0x%08x\n", one );
 	ENSURE( one == four );
 	ENSURE( one == NB_EXPECTED_MUSCLE_HASH );
+	return 0;
+}
+
+// The parts of a hit of 10 N s on the center of a bone of a ragdoll that every bone takes, read back from the change of
+// its momentum
+static void SpreadParts( int bone, float* parts )
+{
+	FigureScene scene;
+	CreateFigureScene( &scene, 1 );
+	nbFigureId figure = AddFigure( &scene, b3Vec3_zero, 0.0f );
+	StepFigures( &scene, 30 );
+	nbFigure_Knockdown( figure );
+	b3Vec3 before[nb_humanoidBoneCount];
+	for ( int i = 0; i < nb_humanoidBoneCount; ++i )
+	{
+		before[i] = b3Body_GetLinearVelocity( nbFigure_GetBody( figure, i ) );
+	}
+	nbHitDef hit = { 7, bone, (b3Vec3){ 0.0f, 0.0f, -10.0f }, b3Body_GetWorldCenter( nbFigure_GetBody( figure, bone ) ) };
+	nbFigure_ApplyHit( figure, &hit );
+	for ( int i = 0; i < nb_humanoidBoneCount; ++i )
+	{
+		b3BodyId body = nbFigure_GetBody( figure, i );
+		b3Vec3 change = b3Sub( b3Body_GetLinearVelocity( body ), before[i] );
+		parts[i] = -b3Body_GetMass( body ) * change.z / 10.0f;
+	}
+	DestroyFigureScene( &scene );
+}
+
+// A hit on the dynamic bones of a figure spreads along its skeleton, see nbSpreadHit. On the right forearm the forearm
+// takes half of it and the pelvis beside it little, measured straight the forearm took a fifth and the pelvis as much. On
+// the left shin the shin takes three quarters and the right leg 2 %, measured straight the right leg took a fifth. On the
+// chest the chest takes three quarters as before. All the parts add up to the hit.
+static int FigureSpreadTest( void )
+{
+	float forearm[nb_humanoidBoneCount];
+	float shin[nb_humanoidBoneCount];
+	float chest[nb_humanoidBoneCount];
+	SpreadParts( nb_humanoidForearmRight, forearm );
+	SpreadParts( nb_humanoidShinLeft, shin );
+	SpreadParts( nb_humanoidChest, chest );
+	float sums[3] = { 0.0f, 0.0f, 0.0f };
+	float rightLeg = 0.0f;
+	for ( int i = 0; i < nb_humanoidBoneCount; ++i )
+	{
+		sums[0] += forearm[i];
+		sums[1] += shin[i];
+		sums[2] += chest[i];
+		ENSURE( forearm[i] <= forearm[nb_humanoidForearmRight] );
+		ENSURE( shin[i] <= shin[nb_humanoidShinLeft] );
+		ENSURE( chest[i] <= chest[nb_humanoidChest] );
+		rightLeg += i >= nb_humanoidThighRight ? shin[i] : 0.0f;
+	}
+	printf( "  10 N s on the right forearm: %.0f %% on it, %.0f %% on the pelvis, on the left shin: %.0f %% on it, %.1f %% on "
+			"the right leg, on the chest: %.0f %% on it\n",
+			100.0f * forearm[nb_humanoidForearmRight], 100.0f * forearm[nb_humanoidPelvis], 100.0f * shin[nb_humanoidShinLeft],
+			100.0f * rightLeg, 100.0f * chest[nb_humanoidChest] );
+	for ( int k = 0; k < 3; ++k )
+	{
+		ENSURE_SMALL( sums[k] - 1.0f, 1.0e-3 );
+	}
+	ENSURE( forearm[nb_humanoidForearmRight] > 0.4f && forearm[nb_humanoidPelvis] < 0.1f );
+	ENSURE( shin[nb_humanoidShinLeft] > 0.7f && rightLeg < 0.03f );
+	ENSURE( chest[nb_humanoidChest] > 0.7f );
 	return 0;
 }
 
@@ -1864,10 +1929,11 @@ static WallThrow ThrowAtWall( int threadCount, bool wood, float thickness, uint3
 // A figure kicked very hard, 1000 N s, into a wall of boards of wood, 5 cm with its back or 3 cm with its side, flies on
 // through the hole it breaks in four or five of eight fracture patterns, in the others the edge of the hole stops it. A
 // wall of concrete of 20 cm and boards of 20 cm hold it, though the concrete loses pieces where the trunk slams into it at
-// 20 m/s, and the thin wall holds against a kick that only knocks the figure down. In every
-// throw the bones that hit the wall in one step make one collision of the figure with the wall, steps with several bones
-// in it come up, the momentum of the figure toward the wall never grows in a step it goes through, and no bone ends up
-// inside the wall that stands. See the roadmap of the game, 26.16 and 26.19 C.
+// 20 m/s, and the boards up to 86 since the hit spreads along the skeleton, see nbSpreadHit, before up to 56. The thin
+// wall holds against a kick that only knocks the figure down. In every throw the bones that hit the wall in one step
+// make one collision of the figure with the wall, steps with several bones in it come up, the momentum of the figure
+// toward the wall never grows in a step it goes through, and no bone ends up inside the wall that stands. See the
+// roadmap of the game, 26.16 and 26.19 C.
 static int FigureWallTest( void )
 {
 	typedef struct WallCase
@@ -1884,7 +1950,7 @@ static int FigureWallTest( void )
 	const WallCase cases[] = {
 		{ "boards of 5 cm, back first", true, 0.05f, 1000.0f, false, 3, 8, 40 },
 		{ "boards of 3 cm, side first", true, 0.03f, 1000.0f, true, 4, 8, 90 },
-		{ "boards of 20 cm, back first", true, 0.2f, 1000.0f, false, 0, 0, 80 },
+		{ "boards of 20 cm, back first", true, 0.2f, 1000.0f, false, 0, 0, 100 },
 		{ "concrete of 20 cm, back first", false, 0.2f, 1000.0f, false, 0, 0, 60 },
 		{ "concrete of 20 cm, side first", false, 0.2f, 1000.0f, true, 0, 0, 15 },
 		{ "boards of 5 cm, a weak kick", true, 0.05f, 150.0f, false, 0, 0, 2 },
@@ -1994,7 +2060,7 @@ static int FigureWallDebrisTest( void )
 }
 
 // The throw through the wall of boards ends in the same bits with one thread and with four, on every platform
-#define NB_EXPECTED_WALL_HASH 0x0831337au
+#define NB_EXPECTED_WALL_HASH 0x9087b805u
 
 static int FigureWallDeterminismTest( void )
 {
@@ -2054,7 +2120,7 @@ static int ThinBoardTest( void )
 }
 
 // The hash of the figure scenario on every platform, see RunFigureScenario
-#define NB_EXPECTED_FIGURE_HASH 0x2cba67a3u
+#define NB_EXPECTED_FIGURE_HASH 0x13e97526u
 
 static int FigureDeterminismTest( void )
 {
@@ -2081,6 +2147,7 @@ int FigureTest( void )
 	RUN_TEST( FigureRowTest );
 	RUN_TEST( FigureCatchScanTest );
 	RUN_TEST( FigureMuscleTest );
+	RUN_TEST( FigureSpreadTest );
 	RUN_TEST( FigureKnockdownTest );
 	RUN_TEST( FigureGetUpRoomTest );
 	RUN_TEST( FigureRoomTest );

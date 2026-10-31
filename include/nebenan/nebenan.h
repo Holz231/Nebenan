@@ -476,7 +476,8 @@ NB_API void nbFigure_PlayClip( nbFigureId figureId, const nbClipDef* clip, float
 
 /// Apply a hit: an impulse at a point of a bone, once per hit id, see nbHitDef. The bones of a standing figure hit with at
 /// least nbFigureDef::knockdownImpulse become dynamic with the velocities they had, and the impulse spreads over them as
-/// Overgrowth spreads a hit: every bone takes a part as large as its mass over the square of its distance to the point.
+/// Overgrowth spreads a hit, but along the skeleton: every bone takes a part as large as its mass over the square of its
+/// way from the point through the joints, so a hit on a limb moves the limb most.
 /// The humanoid of the library then catches itself with steps, with the full strength of its joints and its pelvis held
 /// upright, and stands animated again, or falls as a ragdoll where no step catches it, see nb_figureBalancing. Other rigs
 /// fall at once. A weaker hit makes the figure flinch, its trunk and the bones with a spring of their own by where it

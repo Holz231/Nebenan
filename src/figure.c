@@ -2423,17 +2423,83 @@ static void nbFlinch( nbFigure* f, int hitBone, b3Vec3 impulse, b3Pos point )
 	f->swinging = true;
 }
 
-// A hit spread over the bones of a ragdoll, as Overgrowth's RiggedObject::ApplyForceToRagdoll spreads it: every bone takes a
-// part as large as its mass over the square of its distance to the point plus 0.01 square meters, at its center of mass.
-// A bone that took all of it would whip about its joints, a hard hit on the chest folds the trunk at the hips.
-static void nbSpreadHit( nbFigure* f, b3Vec3 impulse, b3Pos point )
+// The way from a point on a bone through the joints of the skeleton to the center of mass of another bone: up from the bone
+// it starts on to the bone both hang from, and down to the other, from joint to joint. The joint of a bone with its parent
+// is the origin of its body. On the bone it starts on, the way goes straight to its center.
+static float nbSkeletonDistance( const nbFigure* f, int from, b3Pos point, int to )
+{
+	b3Pos center = b3Body_GetWorldCenter( f->bones[to].bodyId );
+	if ( from == to )
+	{
+		return b3Length( b3SubPos( center, point ) );
+	}
+
+	// The bone both hang from
+	int fromDepth = 0;
+	for ( int b = from; b > 0; b = f->bones[b].parent )
+	{
+		fromDepth += 1;
+	}
+	int toDepth = 0;
+	for ( int b = to; b > 0; b = f->bones[b].parent )
+	{
+		toDepth += 1;
+	}
+	int a = from;
+	int b = to;
+	for ( ; fromDepth > toDepth; fromDepth -= 1 )
+	{
+		a = f->bones[a].parent;
+	}
+	for ( ; toDepth > fromDepth; toDepth -= 1 )
+	{
+		b = f->bones[b].parent;
+	}
+	while ( a != b )
+	{
+		a = f->bones[a].parent;
+		b = f->bones[b].parent;
+	}
+	int common = a;
+
+	// Up from the point to the joint below the common bone
+	float length = 0.0f;
+	b3Pos at = point;
+	for ( int k = from; k != common; k = f->bones[k].parent )
+	{
+		b3Pos joint = b3Body_GetPosition( f->bones[k].bodyId );
+		length += b3Length( b3SubPos( joint, at ) );
+		at = joint;
+	}
+	if ( to == common )
+	{
+		return length + b3Length( b3SubPos( center, at ) );
+	}
+
+	// Down to the bone, gathered from it upward
+	b3Pos below = b3Body_GetPosition( f->bones[to].bodyId );
+	float down = b3Length( b3SubPos( center, below ) );
+	for ( int k = f->bones[to].parent; k != common; k = f->bones[k].parent )
+	{
+		b3Pos joint = b3Body_GetPosition( f->bones[k].bodyId );
+		down += b3Length( b3SubPos( below, joint ) );
+		below = joint;
+	}
+	return length + b3Length( b3SubPos( below, at ) ) + down;
+}
+
+// A hit spread over the dynamic bones of a figure, as Overgrowth's RiggedObject::ApplyForceToRagdoll spreads it, but along
+// the skeleton: every bone takes a part as large as its mass over the square of its way from the point through the joints
+// plus 0.01 square meters, see nbSkeletonDistance, at its center of mass. A bone that took all of it would whip about its
+// joints, a hard hit on the chest folds the trunk at the hips. Measured straight, as in Overgrowth, a forearm that hangs
+// beside the hip took a fifth of a hit on it and the pelvis as much, and a kick on one shin pushed the other one too.
+static void nbSpreadHit( nbFigure* f, int hitBone, b3Vec3 impulse, b3Pos point )
 {
 	float total = 0.0f;
 	for ( int i = 0; i < f->boneCount; ++i )
 	{
-		b3BodyId bodyId = f->bones[i].bodyId;
-		float distanceSquared = b3LengthSquared( b3SubPos( point, b3Body_GetWorldCenter( bodyId ) ) );
-		total += b3Body_GetMass( bodyId ) / ( distanceSquared + 0.01f );
+		float distance = nbSkeletonDistance( f, hitBone, point, i );
+		total += b3Body_GetMass( f->bones[i].bodyId ) / ( distance * distance + 0.01f );
 	}
 	if ( total <= 0.0f )
 	{
@@ -2443,20 +2509,19 @@ static void nbSpreadHit( nbFigure* f, b3Vec3 impulse, b3Pos point )
 	for ( int i = 0; i < f->boneCount; ++i )
 	{
 		b3BodyId bodyId = f->bones[i].bodyId;
-		float distanceSquared = b3LengthSquared( b3SubPos( point, b3Body_GetWorldCenter( bodyId ) ) );
-		float part = b3Body_GetMass( bodyId ) / ( distanceSquared + 0.01f ) / total;
+		float distance = nbSkeletonDistance( f, hitBone, point, i );
+		float part = b3Body_GetMass( bodyId ) / ( distance * distance + 0.01f ) / total;
 		b3Body_ApplyLinearImpulseToCenter( bodyId, b3MulSV( part, impulse ), true );
 	}
 	nbReadVelocities( f );
 }
 
-// A hit on the dynamic bones of a figure, spread over them, see nbSpreadHit. The whole impulse on the bone it hit, as on
-// the branch ragdoll-11, threw the trunk of a figure that had stood animated a moment before so far that it fell from 80
-// N s on its chest and 60 N s on its back, which ragdoll-11 caught with steps.
+// A hit on the dynamic bones of a figure, spread over them from the bone it hit, see nbSpreadHit. The whole impulse on the
+// bone it hit, as on the branch ragdoll-11, threw the trunk of a figure that had stood animated a moment before so far that
+// it fell from 80 N s on its chest and 60 N s on its back, which ragdoll-11 caught with steps.
 static void nbHitBones( nbFigure* f, int bone, b3Vec3 impulse, b3Pos point )
 {
-	NB_UNUSED( bone );
-	nbSpreadHit( f, impulse, point );
+	nbSpreadHit( f, bone, impulse, point );
 }
 
 // A hit on a figure, from the program, a blast or debris
