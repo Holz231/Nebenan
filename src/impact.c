@@ -17,6 +17,13 @@
 // 3 us, waking the workers costs more for fewer.
 #define NB_PARALLEL_OVERLAPS 32
 
+// A contact lies on the surface of the chunk it pushes, within this distance in meters
+#define NB_PUSH_REACH 0.05f
+
+// The sites of a fracture keep this much of a fragment from each other, and a quarter of it from the faces of the chunk,
+// see nbGenerateSites
+#define NB_SITE_SPACING 0.45f
+
 typedef struct nbImpactFrame
 {
 	int actorIndex;
@@ -147,7 +154,7 @@ static void nbPrepareRefine( nbWorld* world, int chunkIndex, nbPoly* parent, b3V
 			.innerCount = innerCount,
 			.ringCount = ringCount,
 			.outerCount = outerCount,
-			.minSpacing = 0.45f * fragmentSize,
+			.minSpacing = NB_SITE_SPACING * fragmentSize,
 		},
 		.rng = nbMakeRandom( destructible->seed, stream ),
 		.sites = nbArena_AllocArray( &world->arena, b3Vec3, capacity ),
@@ -219,6 +226,9 @@ typedef struct nbOverlapTask
 	const b3Vec3* points;
 	float radius;
 	float* overlaps;
+
+	// A contact lies on the surface of the piece it hit, a thin board there must not escape the samples
+	bool contact;
 } nbOverlapTask;
 
 static void nbEstimateOverlap( void* context, int item )
@@ -229,7 +239,13 @@ static void nbEstimateOverlap( void* context, int item )
 	const nbDestructible* destructible = task->world->destructibles.data + chunk->destructibleIndex;
 	nbShape_ToPoly( chunk->shape, task->polys[i] );
 	nbRandom sampler = nbMakeRandom( destructible->seed, nbHashSeed( task->candidates[i], chunk->generation ) );
-	task->overlaps[i] = nbEstimateSphereOverlap( task->polys[i], task->points[i], task->radius, &sampler, 64 );
+	float thinMargin = 0.0f;
+	if ( task->contact )
+	{
+		const nbMaterial* material = destructible->materials + chunk->materialIndex;
+		thinMargin = 0.25f * NB_SITE_SPACING * nbGetFragmentSize( task->world, material );
+	}
+	task->overlaps[i] = nbEstimateSphereOverlap( task->polys[i], task->points[i], task->radius, &sampler, 64, thinMargin );
 }
 
 // Replace a chunk by the cells of its fracture job. The children take the place of the chunk in its
@@ -512,7 +528,8 @@ static void nbApplyVelocities( nbWorld* world, const nbImpactDef* def, nbRandom*
 	}
 }
 
-nbImpactResult nbApplyImpact( nbWorld* world, const nbImpactDef* def, int actorFilter )
+nbImpactResult nbApplyImpact( nbWorld* world, const nbImpactDef* def, int actorFilter, bool contact, const nbImpactPush* pushes,
+							 int pushCount )
 {
 	nbImpactResult result = { 0 };
 	if ( def->radius <= 0.0f )
@@ -634,7 +651,7 @@ nbImpactResult nbApplyImpact( nbWorld* world, const nbImpactDef* def, int actorF
 		}
 	}
 
-	nbOverlapTask overlapTask = { world, candidates, overlapItems, polys, points, radius, overlaps };
+	nbOverlapTask overlapTask = { world, candidates, overlapItems, polys, points, radius, overlaps, contact };
 	nbParallelFor( world, overlapCount, NB_PARALLEL_OVERLAPS, nbEstimateOverlap, &overlapTask );
 
 	int refineCount = 0;
@@ -778,10 +795,64 @@ nbImpactResult nbApplyImpact( nbWorld* world, const nbImpactDef* def, int actorF
 		}
 	}
 
-	// 4. Islands
+	// 4. A body that hit with contacts pushes the static chunk under each of them with the damage of that contact. The
+	// chunk passes the push on to its bonds, and a chunk whose bonds together cannot take it breaks out, like a piece of a
+	// board that hangs on by one bond after the hit before. A chunk glued to the world holds.
+	for ( int k = 0; k < pushCount; ++k )
+	{
+		int pushed = NB_NULL_INDEX;
+		float nearest = NB_PUSH_REACH;
+		for ( int i = 0; i < damageChunkCount; ++i )
+		{
+			const nbChunk* chunk = world->chunks.data + damageChunks[i];
+			if ( chunk->shape == NULL || world->actors.data[chunk->actorIndex].isStatic == false )
+			{
+				continue;
+			}
+
+			b3WorldTransform transform = nbActor_GetTransform( world, world->actors.data + chunk->actorIndex );
+			float distance = nbShape_Distance( chunk->shape, b3InvTransformWorldPoint( transform, pushes[k].point ) );
+			if ( distance < nearest )
+			{
+				nearest = distance;
+				pushed = damageChunks[i];
+			}
+		}
+
+		if ( pushed == NB_NULL_INDEX )
+		{
+			continue;
+		}
+
+		nbChunk* chunk = world->chunks.data + pushed;
+		if ( ( chunk->flags & nb_chunkAnchored ) != 0 || chunk->bondCount == 0 )
+		{
+			continue;
+		}
+
+		float health = 0.0f;
+		for ( int key = chunk->headBondKey; key != NB_NULL_INDEX; )
+		{
+			const nbBond* bond = world->bonds.data + ( key >> 1 );
+			health += b3MaxFloat( bond->health, 0.0f );
+			key = bond->nextKey[key & 1];
+		}
+		if ( pushes[k].damage <= health )
+		{
+			continue;
+		}
+
+		while ( chunk->headBondKey != NB_NULL_INDEX )
+		{
+			nbDestroyBond( world, chunk->headBondKey >> 1 );
+			result.brokenBondCount += 1;
+		}
+	}
+
+	// 5. Islands
 	nbSplitActors( world, &result );
 
-	// 5. Physics
+	// 6. Physics
 	nbCommitPhysics( world );
 
 	nbRandom rng = nbMakeRandom( world->destructibles.data[seedDestructible].seed, nbHashSeed( world->stats.impactCount, 0xe7ec7 ) );
@@ -819,7 +890,7 @@ nbImpactResult nbWorld_ApplyImpact( nbWorldId worldId, const nbImpactDef* def )
 
 	NB_ZONE( impact_zone, "Impact" );
 	uint64_t ticks = b3GetTicks();
-	nbImpactResult result = nbApplyImpact( world, def, NB_NULL_INDEX );
+	nbImpactResult result = nbApplyImpact( world, def, NB_NULL_INDEX, false, NULL, 0 );
 
 	// After the fracture, so it pushes the fresh fragments as well. Standing figures that it hits hard enough fall first,
 	// so it throws their bones too.
@@ -832,6 +903,12 @@ nbImpactResult nbWorld_ApplyImpact( nbWorldId worldId, const nbImpactDef* def )
 		explosion.falloff = def->radius;
 		explosion.impulsePerArea = def->explosionImpulse;
 		b3World_Explode( world->physicsWorld, &explosion );
+
+		// The ragdolls begin the next step as the blast threw them
+		if ( world->figures.count > 0 )
+		{
+			nbReadFigureVelocities( world );
+		}
 	}
 
 	NB_ZONE_END( impact_zone );

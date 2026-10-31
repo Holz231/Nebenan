@@ -19,6 +19,7 @@
 typedef struct FigureScene
 {
 	b3WorldId physicsWorld;
+	b3BodyId groundBody;
 	nbWorldId world;
 	nbTaskSystem* pool;
 	nbBoneDef bones[nb_humanoidBoneCount];
@@ -47,6 +48,7 @@ static void CreateFigureScene( FigureScene* scene, int threadCount )
 	b3BoxHull box = b3MakeBoxHull( 50.0f, 1.0f, 50.0f );
 	b3ShapeDef shapeDef = b3DefaultShapeDef();
 	b3CreateHullShape( groundId, &shapeDef, &box.base );
+	scene->groundBody = groundId;
 
 	nbWorldDef def = nbDefaultWorldDef();
 	def.physicsWorld = scene->physicsWorld;
@@ -1061,6 +1063,380 @@ static uint32_t RunFigureScenario( int threadCount )
 	return hash;
 }
 
+//----------------------------------------------------------------------------------------------------------------------
+// Ragdolls against destructible walls, see the roadmap of the game, 26.16, 26.19 C and 30.9
+
+// A wall 6 m wide and 3.5 m high along x on the ground, its face toward the figure at z = 0: boards of wood, light and
+// weak, or concrete as in the demo. Without a pre-fracture, it breaks where it is hit.
+static nbDestructibleId AddWall( FigureScene* scene, bool wood, float thickness, uint32_t seed )
+{
+	nbDestructibleDef def = nbDefaultDestructibleDef();
+	def.position = b3ToPos( (b3Vec3){ 0.0f, 1.75f, -0.5f * thickness } );
+	def.seed = seed;
+	if ( wood )
+	{
+		def.material.density = 600.0f;
+		def.material.strength = 1.0e5f;
+		def.material.fragmentSize = 0.15f;
+	}
+	else
+	{
+		def.material.density = 2400.0f;
+		def.material.strength = 1.1e6f;
+		def.material.fragmentSize = 0.13f;
+	}
+	return nbCreateBox( scene->world, &def, (b3Vec3){ 3.0f, 1.75f, 0.5f * thickness } );
+}
+
+// How a figure that flew at a wall ended up
+typedef struct WallThrow
+{
+	// Where its chest and its pelvis ended along z, the wall has its face at z = 0, and whether the chest went through the
+	// wall, not around or over it
+	float chestZ;
+	float pelvisZ;
+	bool through;
+	int debrisCount;
+
+	// Its collisions with the wall, the most in one step, the steps in which several of its bones hit the wall, and the
+	// most of those that made more than one collision
+	int collisionCount;
+	int mostCollisionsInAStep;
+	int sharedSteps;
+	int splitSteps;
+
+	// The largest share of its speed it kept going through, and whether its momentum toward the wall ever grew in a step it
+	// went through
+	float passThrough;
+	bool gained;
+
+	// The most bones that lay inside a part of the wall that stands, in any step
+	int bonesInWall;
+
+	uint32_t hash;
+} WallThrow;
+
+// The bones of a figure that lie inside a static chunk of the wall: the closest point of the chunk is the center itself
+static int BonesInWall( nbFigureId figure, nbDestructibleId wall )
+{
+	nbChunkId chunks[1024];
+	int chunkCount = nbDestructible_GetChunks( wall, chunks, 1024 );
+	int count = 0;
+	for ( int i = 0; i < nb_humanoidBoneCount; ++i )
+	{
+		b3Vec3 center = b3ToVec3( b3Body_GetWorldCenter( nbFigure_GetBody( figure, i ) ) );
+		for ( int c = 0; c < chunkCount; ++c )
+		{
+			if ( nbChunk_IsDynamic( chunks[c] ) )
+			{
+				continue;
+			}
+			b3Vec3 closest = b3Shape_GetClosestPoint( nbChunk_GetShape( chunks[c] ), center );
+			if ( b3Length( b3Sub( closest, center ) ) < 1.0e-4f )
+			{
+				count += 1;
+				break;
+			}
+		}
+	}
+	return count;
+}
+
+// A figure 2 m in front of the wall, facing it with its back or its side, is kicked at the chest toward the wall and a
+// little up, and flies into it. Three seconds later, with the figure left lying.
+static WallThrow ThrowAtWall( int threadCount, bool wood, float thickness, uint32_t seed, float impulse, bool side )
+{
+	FigureScene scene;
+	CreateFigureScene( &scene, threadCount );
+	nbDestructibleId wall = AddWall( &scene, wood, thickness, seed );
+	nbFigureDef def = nbDefaultFigureDef();
+	def.rig = &scene.rig;
+	def.standHeight = scene.standHeight;
+	def.position = b3ToPos( (b3Vec3){ 0.0f, 0.0f, 2.0f } );
+	def.heading = side ? 0.5f * B3_PI : 0.0f;
+	def.canGetUp = false;
+	nbFigureId figure = nbCreateFigure( scene.world, &def );
+	StepFigures( &scene, 10 );
+	HitChest( figure, 1, (b3Vec3){ 0.0f, 0.3f * impulse, -impulse } );
+
+	WallThrow result = { 0 };
+	float threshold = nbDefaultWorldDef().collisionSpeedThreshold;
+	for ( int step = 0; step < 180; ++step )
+	{
+		b3Vec3 before = FigureMomentum( figure );
+		StepFigures( &scene, 1 );
+
+		// The bones that hit the wall hard enough to damage it
+		b3ContactEvents contactEvents = b3World_GetContactEvents( scene.physicsWorld );
+		int hitBones[nb_humanoidBoneCount] = { 0 };
+		for ( int i = 0; i < contactEvents.hitCount; ++i )
+		{
+			const b3ContactHitEvent* hit = contactEvents.hitEvents + i;
+			if ( hit->approachSpeed < threshold || b3Shape_IsValid( hit->shapeIdA ) == false ||
+				 b3Shape_IsValid( hit->shapeIdB ) == false )
+			{
+				continue;
+			}
+			for ( int k = 0; k < 2; ++k )
+			{
+				int bone = 0;
+				b3BodyId body = b3Shape_GetBody( k == 0 ? hit->shapeIdA : hit->shapeIdB );
+				b3BodyId other = b3Shape_GetBody( k == 0 ? hit->shapeIdB : hit->shapeIdA );
+				nbFigureId owner = nbWorld_GetFigureFromBody( scene.world, body, &bone );
+				nbFigureId otherOwner = nbWorld_GetFigureFromBody( scene.world, other, NULL );
+				if ( B3_ID_EQUALS( owner, figure ) && NB_IS_NULL( otherOwner ) && b3Body_GetType( other ) == b3_staticBody &&
+					 B3_ID_EQUALS( other, scene.groundBody ) == false )
+				{
+					hitBones[bone] = 1;
+				}
+			}
+		}
+		int boneCount = 0;
+		for ( int i = 0; i < nb_humanoidBoneCount; ++i )
+		{
+			boneCount += hitBones[i];
+		}
+
+		// The collisions of the figure with the part of the wall that stands, its pieces are parts of their own
+		nbEvents events = nbWorld_GetEvents( scene.world );
+		int collisions = 0;
+		for ( int i = 0; i < events.collisionCount; ++i )
+		{
+			const nbCollisionEvent* event = events.collisions + i;
+			if ( B3_ID_EQUALS( event->figureId, figure ) == false || B3_ID_EQUALS( event->destructibleId, wall ) == false ||
+				 b3Body_GetType( event->partBodyId ) != b3_staticBody )
+			{
+				continue;
+			}
+			collisions += 1;
+			result.passThrough = b3MaxFloat( result.passThrough, event->passThrough );
+
+			// The momentum toward the wall, against the normal out of it
+			float towardBefore = -b3Dot( before, event->normal );
+			float towardAfter = -b3Dot( FigureMomentum( figure ), event->normal );
+			result.gained = result.gained || ( event->passThrough > 0.0f && towardAfter > 1.001f * towardBefore + 0.5f );
+		}
+		result.collisionCount += collisions;
+		result.mostCollisionsInAStep = collisions > result.mostCollisionsInAStep ? collisions : result.mostCollisionsInAStep;
+		result.sharedSteps += boneCount > 1 && collisions == 1 ? 1 : 0;
+		result.splitSteps += boneCount > 1 && collisions > 1 ? 1 : 0;
+		int inWall = BonesInWall( figure, wall );
+		result.bonesInWall = inWall > result.bonesInWall ? inWall : result.bonesInWall;
+	}
+
+	b3Vec3 chest = BonePosition( figure, nb_humanoidChest );
+	result.chestZ = chest.z;
+	result.pelvisZ = BonePosition( figure, nb_humanoidPelvis ).z;
+	result.through = chest.z < -thickness && fabsf( chest.x ) < 2.8f && chest.y < 3.3f;
+	result.debrisCount = nbWorld_GetStats( scene.world ).debrisCount;
+
+	uint32_t hash = 2166136261u;
+	b3WorldTransform transforms[nb_humanoidBoneCount];
+	int count = nbFigure_GetBoneTransforms( figure, transforms, nb_humanoidBoneCount );
+	for ( int i = 0; i < count; ++i )
+	{
+		const uint8_t* bytes = (const uint8_t*)( transforms + i );
+		for ( size_t b = 0; b < sizeof( b3WorldTransform ); ++b )
+		{
+			hash = ( hash ^ bytes[b] ) * 16777619u;
+		}
+	}
+	result.hash = ( hash ^ (uint32_t)( nbDestructible_GetChunkCount( wall ) + 4096 * result.debrisCount ) ) * 16777619u;
+	DestroyFigureScene( &scene );
+	return result;
+}
+
+// A figure kicked very hard, 1000 N s, into a wall of boards of wood, 5 cm with its back or 3 cm with its side, flies on
+// through the hole it breaks in three or four of eight fracture patterns, in the others the edge of the hole stops it. A
+// wall of concrete of 20 cm and boards of 20 cm hold it, though the concrete loses pieces where the trunk slams into it at
+// 20 m/s, and the thin wall holds against a kick that only knocks the figure down. In every
+// throw the bones that hit the wall in one step make one collision of the figure with the wall, steps with several bones
+// in it come up, the momentum of the figure toward the wall never grows in a step it goes through, and no bone ends up
+// inside the wall that stands. See the roadmap of the game, 26.16 and 26.19 C.
+static int FigureWallTest( void )
+{
+	typedef struct WallCase
+	{
+		const char* name;
+		bool wood;
+		float thickness;
+		float impulse;
+		bool side;
+		int minThrough;
+		int maxThrough;
+		int maxDebris;
+	} WallCase;
+	const WallCase cases[] = {
+		{ "boards of 5 cm, back first", true, 0.05f, 1000.0f, false, 3, 8, 40 },
+		{ "boards of 3 cm, side first", true, 0.03f, 1000.0f, true, 4, 8, 90 },
+		{ "boards of 20 cm, back first", true, 0.2f, 1000.0f, false, 0, 0, 80 },
+		{ "concrete of 20 cm, back first", false, 0.2f, 1000.0f, false, 0, 0, 60 },
+		{ "concrete of 20 cm, side first", false, 0.2f, 1000.0f, true, 0, 0, 10 },
+		{ "boards of 5 cm, a weak kick", true, 0.05f, 150.0f, false, 0, 0, 2 },
+	};
+	int sharedSteps = 0;
+	for ( size_t c = 0; c < sizeof( cases ) / sizeof( cases[0] ); ++c )
+	{
+		const WallCase* wallCase = cases + c;
+		int through = 0;
+		int shared = 0;
+		int mostDebris = 0;
+		for ( uint32_t seed = 1; seed <= 8; ++seed )
+		{
+			WallThrow result =
+				ThrowAtWall( 1, wallCase->wood, wallCase->thickness, seed, wallCase->impulse, wallCase->side );
+			through += result.through ? 1 : 0;
+			shared += result.sharedSteps;
+			mostDebris = result.debrisCount > mostDebris ? result.debrisCount : mostDebris;
+			ENSURE( result.mostCollisionsInAStep <= 1 );
+			ENSURE( result.splitSteps == 0 );
+			ENSURE( result.gained == false );
+			ENSURE( result.passThrough <= 1.0f );
+			ENSURE( result.bonesInWall == 0 );
+			ENSURE( wallCase->maxThrough > 0 || result.passThrough == 0.0f || result.through == false );
+			ENSURE( wallCase->impulse < 500.0f || result.collisionCount >= 1 );
+		}
+		printf( "  %s, %.0f N s: through %d of 8 times, %d steps with several bones in one collision, up to %d pieces\n",
+				wallCase->name, wallCase->impulse, through, shared, mostDebris );
+		ENSURE( wallCase->minThrough <= through && through <= wallCase->maxThrough );
+		ENSURE( mostDebris <= wallCase->maxDebris );
+		sharedSteps += shared;
+	}
+	ENSURE( sharedSteps > 0 );
+	return 0;
+}
+
+// A figure that broke through a wall of boards lies behind it among the pieces, its bones touch them again, and no bone
+// ends up inside the wall that stands. It gets up there once nothing lies on it. A block that falls on it while it gets
+// up breaks that off, and it gets up again later, see the roadmap of the game, 26.15, 26.19 C and 28.5 (E).
+static int FigureWallDebrisTest( void )
+{
+	FigureScene scene;
+	CreateFigureScene( &scene, 1 );
+	nbDestructibleId wall = AddWall( &scene, true, 0.05f, 1 );
+	nbFigureDef def = nbDefaultFigureDef();
+	def.rig = &scene.rig;
+	def.standHeight = scene.standHeight;
+	def.position = b3ToPos( (b3Vec3){ 0.0f, 0.0f, 2.0f } );
+	nbFigureId figure = nbCreateFigure( scene.world, &def );
+	StepFigures( &scene, 10 );
+	HitChest( figure, 1, (b3Vec3){ 0.0f, 300.0f, -1000.0f } );
+
+	// Through the wall, and back among the pieces of it that lie behind it
+	int touches = 0;
+	int steps = 0;
+	while ( nbFigure_GetState( figure ) == nb_figureRagdoll && steps < 900 )
+	{
+		StepFigures( &scene, 1 );
+		steps += 1;
+		ENSURE( BonesInWall( figure, wall ) == 0 );
+		for ( int i = 0; i < nb_humanoidBoneCount; ++i )
+		{
+			b3ContactData contacts[16];
+			int count = b3Body_GetContactData( nbFigure_GetBody( figure, i ), contacts, 16 );
+			for ( int c = 0; c < count; ++c )
+			{
+				b3BodyId a = b3Shape_GetBody( contacts[c].shapeIdA );
+				b3BodyId b = b3Shape_GetBody( contacts[c].shapeIdB );
+				b3BodyId other = B3_ID_EQUALS( a, nbFigure_GetBody( figure, i ) ) ? b : a;
+				touches += steps > 60 && b3Body_GetType( other ) == b3_dynamicBody &&
+								   NB_IS_NULL( nbWorld_GetFigureFromBody( scene.world, other, NULL ) )
+							   ? 1
+							   : 0;
+			}
+		}
+	}
+	ENSURE( nbFigure_GetState( figure ) == nb_figureGettingUp );
+	b3Vec3 pelvis = BonePosition( figure, nb_humanoidPelvis );
+	printf( "  through the wall to %.2f m behind it, touching pieces of it in %d bone steps, up after %.1f s\n", -pelvis.z,
+			touches, (float)steps / 60.0f );
+	ENSURE( pelvis.z < -0.5f );
+	ENSURE( touches > 0 );
+
+	// A block falls on it while it gets up
+	b3BodyDef bodyDef = b3DefaultBodyDef();
+	bodyDef.type = b3_dynamicBody;
+	b3Vec3 chest = BonePosition( figure, nb_humanoidChest );
+	bodyDef.position = (b3Vec3){ chest.x, chest.y + 1.0f, chest.z };
+	bodyDef.linearVelocity = (b3Vec3){ 0.0f, -4.0f, 0.0f };
+	b3BodyId block = b3CreateBody( scene.physicsWorld, &bodyDef );
+	b3BoxHull box = b3MakeBoxHull( 0.2f, 0.2f, 0.2f );
+	b3ShapeDef shapeDef = b3DefaultShapeDef();
+	shapeDef.density = 2400.0f;
+	b3CreateHullShape( block, &shapeDef, &box.base );
+	ENSURE( StepUntil( &scene, figure, nb_figureRagdoll, 60 ) >= 0 );
+	ENSURE( nbFigure_GetInfo( figure ).abortCount == 1 );
+
+	// And up again where it lies, standing behind the wall
+	ENSURE( StepUntil( &scene, figure, nb_figureAnimated, 1200 ) >= 0 );
+	StepFigures( &scene, 60 );
+	ENSURE( StandsUpright( &scene, figure ) );
+	ENSURE( BonePosition( figure, nb_humanoidPelvis ).z < -0.3f );
+	ENSURE( BonesInWall( figure, wall ) == 0 );
+	DestroyFigureScene( &scene );
+	return 0;
+}
+
+// The throw through the wall of boards ends in the same bits with one thread and with four, on every platform
+#define NB_EXPECTED_WALL_HASH 0x63fd4e6fu
+
+static int FigureWallDeterminismTest( void )
+{
+	WallThrow one = ThrowAtWall( 1, true, 0.05f, 1, 1000.0f, false );
+	WallThrow four = ThrowAtWall( 4, true, 0.05f, 1, 1000.0f, false );
+	printf( "  wall hash: 0x%08x\n", one.hash );
+	ENSURE( one.through );
+	ENSURE( one.hash == four.hash );
+	ENSURE( one.hash == NB_EXPECTED_WALL_HASH );
+	return 0;
+}
+
+// A board of 3 cm without pre-fracture cracks under a ball of 20 kg at 10 m/s, and at 20 m/s the ball knocks a piece out
+// and goes on through. The sites of the fracture kept a margin from its faces larger than half of it, it got none and
+// stayed one piece, and the samples of the damage sphere could all miss it.
+static int ThinBoardTest( void )
+{
+	for ( int pass = 0; pass < 2; ++pass )
+	{
+		FigureScene scene;
+		CreateFigureScene( &scene, 1 );
+		float thickness = 0.03f;
+		nbDestructibleId board = AddWall( &scene, true, thickness, 3 );
+		b3BodyDef bodyDef = b3DefaultBodyDef();
+		bodyDef.type = b3_dynamicBody;
+		bodyDef.position = (b3Vec3){ 0.0f, 1.5f, 1.0f };
+		bodyDef.linearVelocity = (b3Vec3){ 0.0f, 0.0f, pass == 0 ? -10.0f : -20.0f };
+		b3BodyId ball = b3CreateBody( scene.physicsWorld, &bodyDef );
+		b3Sphere sphere = { b3Vec3_zero, 0.15f };
+		b3ShapeDef shapeDef = b3DefaultShapeDef();
+		shapeDef.density = 1400.0f;
+		shapeDef.enableHitEvents = true;
+		b3CreateSphereShape( ball, &shapeDef, &sphere );
+
+		int collisions = 0;
+		for ( int step = 0; step < 60; ++step )
+		{
+			StepFigures( &scene, 1 );
+			nbEvents events = nbWorld_GetEvents( scene.world );
+			for ( int i = 0; i < events.collisionCount; ++i )
+			{
+				const nbCollisionEvent* event = events.collisions + i;
+				ENSURE( NB_IS_NULL( event->figureId ) );
+				collisions += B3_ID_EQUALS( event->bodyId, ball ) && B3_ID_EQUALS( event->destructibleId, board ) ? 1 : 0;
+			}
+		}
+		int chunks = nbDestructible_GetChunkCount( board );
+		int debris = nbWorld_GetStats( scene.world ).debrisCount;
+		printf( "  a ball of %.0f kg at %.0f m/s into a board of %.0f cm: %d collisions, %d chunks, %d pieces off\n",
+				b3Body_GetMass( ball ), pass == 0 ? 10.0f : 20.0f, 100.0f * thickness, collisions, chunks, debris );
+		ENSURE( collisions >= 1 );
+		ENSURE( chunks > 1 );
+		ENSURE( pass == 0 || debris >= 1 );
+		DestroyFigureScene( &scene );
+	}
+	return 0;
+}
+
 // The hash of the figure scenario on every platform, see RunFigureScenario
 #define NB_EXPECTED_FIGURE_HASH 0xc4bf6f23u
 
@@ -1093,6 +1469,10 @@ int FigureTest( void )
 	RUN_TEST( FigureGroundTest );
 	RUN_TEST( FigureWorldTest );
 	RUN_TEST( FigureClipTest );
+	RUN_TEST( FigureWallTest );
+	RUN_TEST( FigureWallDebrisTest );
+	RUN_TEST( ThinBoardTest );
+	RUN_TEST( FigureWallDeterminismTest );
 	RUN_TEST( FigureDeterminismTest );
 	return 0;
 }

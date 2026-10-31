@@ -60,6 +60,10 @@ typedef struct nbBone
 	b3Vec3 start;
 	b3Vec3 end;
 	float radius;
+
+	// The velocity of a bone of a ragdoll when the next step begins: read at the end of every update and after every hit,
+	// fall and blast, zero while the ragdoll sleeps, see nbPassFigureThrough
+	b3Vec3 stepVelocity;
 } nbBone;
 
 // A foot of a humanoid: where its ankle stands while it is down and how the ground there tilts its sole, where a step to
@@ -220,6 +224,17 @@ void nbBlastFigures( nbWorld* world, const nbImpactDef* def );
 
 // The index of the figure whose bone this Box3D body is and the bone, NB_NULL_INDEX for a body of no figure
 int nbFigureOfBody( const nbWorld* world, b3BodyId bodyId, int* bone );
+
+// The id of the figure at an index
+nbFigureId nbFigureIdOf( const nbWorld* world, int index );
+
+// Read the velocities of the bones of the ragdolls as the next step begins with them, after a blast threw them
+void nbReadFigureVelocities( nbWorld* world );
+
+// A ragdoll broke through what it hit: every bone gets back up to this share of its speed toward it from before the step,
+// along the normal out of what it hit, all together no more than this share of the momentum of the figure. Returns the
+// share of its momentum toward it the figure kept.
+float nbPassFigureThrough( nbWorld* world, int index, b3Vec3 normal, float keep );
 
 // The ragdolls whose bones are awake in Box3D, see nbFigureStats::awakeRagdollCount
 int nbCountAwakeRagdolls( const nbWorld* world );

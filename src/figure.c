@@ -825,6 +825,11 @@ int nbFigureOfBody( const nbWorld* world, b3BodyId bodyId, int* bone )
 // Poses
 
 // The world transforms of the bones of a pose with the root at a world transform
+nbFigureId nbFigureIdOf( const nbWorld* world, int index )
+{
+	return nbMakeFigureId( world, index );
+}
+
 static void nbComputePose( const nbFigure* f, b3WorldTransform root, const b3Quat* pose, b3WorldTransform* transforms )
 {
 	transforms[0] = root;
@@ -859,17 +864,29 @@ static void nbDriveBodies( nbFigure* f, float timeStep )
 	}
 }
 
-// Mass weighted average velocity of the bones
-static b3Vec3 nbAverageVelocity( const nbFigure* f )
+// Mass weighted average velocity of the bones. Every bone keeps its own as the velocity the next step begins with, see
+// nbPassFigureThrough.
+static b3Vec3 nbAverageVelocity( nbFigure* f )
 {
 	b3Vec3 sum = b3Vec3_zero;
 	float mass = 0.0f;
 	for ( int i = 0; i < f->boneCount; ++i )
 	{
-		sum = b3MulAdd( sum, f->bones[i].mass, b3Body_GetLinearVelocity( f->bones[i].bodyId ) );
+		b3Vec3 velocity = b3Body_GetLinearVelocity( f->bones[i].bodyId );
+		f->bones[i].stepVelocity = velocity;
+		sum = b3MulAdd( sum, f->bones[i].mass, velocity );
 		mass += f->bones[i].mass;
 	}
 	return mass > 0.0f ? b3MulSV( 1.0f / mass, sum ) : b3Vec3_zero;
+}
+
+// The velocities of the bones as the next step begins with them
+static void nbReadVelocities( nbFigure* f )
+{
+	for ( int i = 0; i < f->boneCount; ++i )
+	{
+		f->bones[i].stepVelocity = b3Body_GetLinearVelocity( f->bones[i].bodyId );
+	}
 }
 
 // The up of the world
@@ -1116,6 +1133,7 @@ static void nbFall( nbWorld* world, nbFigure* f, bool stunned )
 		f->stun = b3MaxFloat( f->stun, f->def.motors.stunTime );
 	}
 	b3Body_SetAwake( f->bones[0].bodyId, true );
+	nbReadVelocities( f );
 }
 
 // Where a figure without room moves to get up, see nbFindRoom: how far its body moves over the ground and how far it turns
@@ -1903,6 +1921,7 @@ static void nbSpreadHit( nbFigure* f, b3Vec3 impulse, b3Pos point )
 		float part = b3Body_GetMass( bodyId ) / ( distanceSquared + 0.01f ) / total;
 		b3Body_ApplyLinearImpulseToCenter( bodyId, b3MulSV( part, impulse ), true );
 	}
+	nbReadVelocities( f );
 }
 
 // A hit on a figure, from the program, a blast or debris
@@ -2032,6 +2051,67 @@ void nbBlastFigures( nbWorld* world, const nbImpactDef* def )
 		// Dynamic before the blast, so it throws the bones itself, once
 		nbFall( world, f, true );
 	}
+}
+
+void nbReadFigureVelocities( nbWorld* world )
+{
+	for ( int index = 0; index < world->figures.count; ++index )
+	{
+		nbFigure* f = world->figures.data + index;
+		if ( f->isFree == false && f->state == nb_figureRagdoll )
+		{
+			nbReadVelocities( f );
+		}
+	}
+}
+
+// Box3D stopped the bones against the chunks as if they were the world, and the joints passed it on to the whole body.
+// Where the chunks broke away, the wall gave way under the figure: every bone gets back up to the share of its own speed
+// toward the wall from before the step, so the figure goes on through the hole in the pose it flew in. The joints may
+// have passed momentum from one bone to another in the step, a head that whips ahead of the chest the wall stopped, so
+// all bones together get back no more than the share of the momentum of the whole figure toward the wall. It never
+// gains momentum or energy.
+float nbPassFigureThrough( nbWorld* world, int index, b3Vec3 normal, float keep )
+{
+	nbFigure* f = world->figures.data + index;
+	float before = 0.0f;
+	float now = 0.0f;
+	float added = 0.0f;
+	for ( int i = 0; i < f->boneCount; ++i )
+	{
+		const nbBone* bone = f->bones + i;
+		float approach = -b3Dot( bone->stepVelocity, normal );
+		float toward = -b3Dot( b3Body_GetLinearVelocity( bone->bodyId ), normal );
+		before += bone->mass * b3MaxFloat( approach, 0.0f );
+		now += bone->mass * toward;
+		if ( approach > 0.0f && toward < keep * approach )
+		{
+			added += bone->mass * ( keep * approach - toward );
+		}
+	}
+	if ( before <= 0.0f )
+	{
+		return 0.0f;
+	}
+
+	float room = keep * before - now;
+	float scale = added > 0.0f ? b3ClampFloat( room / added, 0.0f, 1.0f ) : 0.0f;
+	if ( scale > 0.0f )
+	{
+		for ( int i = 0; i < f->boneCount; ++i )
+		{
+			const nbBone* bone = f->bones + i;
+			b3Vec3 velocity = b3Body_GetLinearVelocity( bone->bodyId );
+			float approach = -b3Dot( bone->stepVelocity, normal );
+			float toward = -b3Dot( velocity, normal );
+			if ( approach > 0.0f && toward < keep * approach )
+			{
+				float gain = scale * ( keep * approach - toward );
+				b3Body_SetLinearVelocity( bone->bodyId, b3MulSub( velocity, gain, normal ) );
+			}
+		}
+	}
+	return b3ClampFloat( ( now + scale * added ) / before, 0.0f, 1.0f );
 }
 
 // The strongest hit of debris on every standing figure and every figure that gets up in the last step, from the hit
@@ -2507,6 +2587,10 @@ static void nbUpdateRagdoll( nbWorld* world, int index, nbFigure* f, float timeS
 	{
 		f->restTime += timeStep;
 		f->strength = 0.0f;
+		for ( int i = 0; i < f->boneCount; ++i )
+		{
+			f->bones[i].stepVelocity = b3Vec3_zero;
+		}
 	}
 
 	// Getting up, checked every eighth update in turn with the other figures

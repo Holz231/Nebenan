@@ -4038,7 +4038,7 @@ static void nbCrushChunk( nbWorld* world, int chunkIndex, b3Vec3 up, float push 
 	}
 
 	uint16_t generation = chunk->generation;
-	nbApplyImpact( world, &def, chunk->actorIndex );
+	nbApplyImpact( world, &def, chunk->actorIndex, false, NULL, 0 );
 
 	// A chunk too small to burst leaves the wall whole
 	chunk = world->chunks.data + chunkIndex;
@@ -5070,8 +5070,12 @@ void nbDestroyWorld( nbWorldId worldId )
 		nbArray_Free( world->destroyedEvents[i] );
 		nbArray_Free( world->movedEvents[i] );
 		nbArray_Free( world->exposedEvents[i] );
+		nbArray_Free( world->collisionEvents[i] );
 	}
 	nbArray_Free( world->collisionImpacts );
+	nbArray_Free( world->figureContacts );
+	nbArray_Free( world->figureContactOrder );
+	nbArray_Free( world->impactPushes );
 	nbArray_Free( world->moves[0] );
 	nbArray_Free( world->moves[1] );
 	nbArray_Free( world->moveSlots );
@@ -5111,6 +5115,7 @@ nbEvents nbWorld_GetEvents( nbWorldId worldId )
 	world->destroyedEvents[writeBuffer].count = 0;
 	world->movedEvents[writeBuffer].count = 0;
 	world->exposedEvents[writeBuffer].count = 0;
+	world->collisionEvents[writeBuffer].count = 0;
 	world->eventBuffer = writeBuffer;
 
 	// The exposed chunks handed out now are reported again when they lose another bond
@@ -5131,6 +5136,8 @@ nbEvents nbWorld_GetEvents( nbWorldId worldId )
 	events.movedCount = world->movedEvents[readBuffer].count;
 	events.exposedChunks = world->exposedEvents[readBuffer].data;
 	events.exposedCount = world->exposedEvents[readBuffer].count;
+	events.collisions = world->collisionEvents[readBuffer].data;
+	events.collisionCount = world->collisionEvents[readBuffer].count;
 	return events;
 }
 
@@ -5185,10 +5192,139 @@ void nbWorld_ClearDebris( nbWorldId worldId )
 	}
 }
 
-// Collect Box3D hit events on chunks as collision impacts
+// Contacts weigh at least this impulse in newton seconds, so a contact Box3D reports without one still counts
+#define NB_MIN_CONTACT_IMPULSE 1.0e-3f
+
+// The normal impulse of a contact in the last step in newton seconds, of all of its points
+static float nbContactImpulse( b3ContactId contactId )
+{
+	if ( b3Contact_IsValid( contactId ) == false )
+	{
+		return 0.0f;
+	}
+
+	b3ContactData data = b3Contact_GetData( contactId );
+	float impulse = 0.0f;
+	for ( int m = 0; m < data.manifoldCount; ++m )
+	{
+		for ( int p = 0; p < data.manifolds[m].pointCount; ++p )
+		{
+			impulse += data.manifolds[m].points[p].totalNormalImpulse;
+		}
+	}
+	return impulse;
+}
+
+// One impact of all contacts of a figure with an actor in the step, the contacts are order[0, count) from firstContact
+// on in figureContactOrder.
+//
+// Every contact loads the actor with the work of its impulse, half its normal impulse times the speed it came in with:
+// for a body of one piece that is its kinetic energy toward the chunk, as in the energy of the other bodies. A bone does
+// not hit alone, the joints pass on the momentum of the body behind it in the step, more along a straight arm that
+// braces than through a bent knee. The impact lies in the middle of the contacts by their impulses and reaches a
+// fragment past the farthest, so it breaks where the body pressed, not only around one point of it.
+static void nbAddFigureImpact( nbWorld* world, nbFigureContact* order, int count, int firstContact )
+{
+	float energy = 0.0f;
+	float impulse = 0.0f;
+	float speed = 0.0f;
+	b3Pos origin = order[0].point;
+	b3Vec3 offset = b3Vec3_zero;
+	b3Vec3 normal = b3Vec3_zero;
+	int hardest = 0;
+	for ( int i = 0; i < count; ++i )
+	{
+		float j = b3MaxFloat( order[i].impulse, NB_MIN_CONTACT_IMPULSE );
+		order[i].energy = 0.5f * j * order[i].approachSpeed;
+		energy += order[i].energy;
+		impulse += j;
+		speed += j * order[i].approachSpeed;
+		offset = b3MulAdd( offset, j, b3SubPos( order[i].point, origin ) );
+		normal = b3MulAdd( normal, j, order[i].normal );
+		hardest = order[i].impulse > order[hardest].impulse ? i : hardest;
+	}
+
+	// Light knocks do nothing. The damage radius has to reach at least one fragment.
+	const nbChunk* chunk = world->chunks.data + order[0].chunkIndex;
+	float fragmentSize = nbGetFragmentSize( world, nbGetChunkMaterial( world, chunk ) );
+	if ( world->def.collisionRadiusScale * nbCbrt( energy ) < fragmentSize )
+	{
+		return;
+	}
+
+	b3Pos point = b3OffsetPos( origin, b3MulSV( 1.0f / impulse, offset ) );
+	float reach = 0.0f;
+	for ( int i = 0; i < count; ++i )
+	{
+		reach = b3MaxFloat( reach, b3Length( b3SubPos( order[i].point, point ) ) );
+	}
+
+	float normalLength = b3Length( normal );
+	nbCollisionImpact impact = {
+		.point = point,
+		.normal = normalLength > 1.0e-3f * impulse ? b3MulSV( 1.0f / normalLength, normal ) : order[hardest].normal,
+		.energy = energy,
+		.approachSpeed = speed / impulse,
+		.impulse = impulse,
+		.otherBodyId = order[hardest].boneId,
+		.actorIndex = order[0].actorIndex,
+		.actorGeneration = order[0].actorGeneration,
+		.onStatic = order[0].onStatic,
+		.figure = order[0].figure,
+		.firstContact = firstContact,
+		.contactCount = count,
+		.reach = reach + fragmentSize,
+	};
+	nbArray_Push( world->collisionImpacts, impact );
+}
+
+// The contacts of a figure with an actor in the step make one impact, in the order of the first of them
+static void nbMergeFigureContacts( nbWorld* world )
+{
+	int count = world->figureContacts.count;
+	nbArray_Reserve( world->figureContactOrder, count );
+	nbFigureContact* contacts = world->figureContacts.data;
+	nbFigureContact* order = world->figureContactOrder.data;
+	int orderCount = 0;
+	for ( int first = 0; first < count; ++first )
+	{
+		int figure = contacts[first].figure;
+		int actorIndex = contacts[first].actorIndex;
+		if ( figure == NB_NULL_INDEX )
+		{
+			continue;
+		}
+
+		int start = orderCount;
+		for ( int i = first; i < count; ++i )
+		{
+			if ( contacts[i].figure == figure && contacts[i].actorIndex == actorIndex )
+			{
+				order[orderCount++] = contacts[i];
+				contacts[i].figure = NB_NULL_INDEX;
+			}
+		}
+		nbAddFigureImpact( world, order + start, orderCount - start, start );
+	}
+	world->figureContactOrder.count = orderCount;
+}
+
+// Impacts of figures go first, they are part of the game, then the strongest
+static bool nbImpactGoesFirst( const nbCollisionImpact* a, const nbCollisionImpact* b )
+{
+	bool figureA = a->figure != NB_NULL_INDEX;
+	bool figureB = b->figure != NB_NULL_INDEX;
+	return figureA != figureB ? figureA : a->energy > b->energy;
+}
+
+// Collect Box3D hit events on chunks as collision impacts. A hit of a bone of a figure becomes a contact of the figure,
+// and the contacts of a figure with an actor make one impact, see nbAddFigureImpact. No contact of the step is left out
+// and none counts twice.
 static void nbCollectCollisionImpacts( nbWorld* world )
 {
 	world->collisionImpacts.count = 0;
+	world->figureContacts.count = 0;
+	world->figureContactOrder.count = 0;
 
 	b3ContactEvents contactEvents = b3World_GetContactEvents( world->physicsWorld );
 	for ( int i = 0; i < contactEvents.hitCount; ++i )
@@ -5211,10 +5347,12 @@ static void nbCollectCollisionImpacts( nbWorld* world )
 		b3BodyId bodyB = b3Shape_GetBody( event->shapeIdB );
 
 		// The bones of a figure report every hit, see nbCreateFigure, but break only what the rig lets them
+		int figureA = NB_NULL_INDEX;
+		int figureB = NB_NULL_INDEX;
 		if ( world->figures.count > 0 )
 		{
-			int figureA = nbFigureOfBody( world, bodyA, NULL );
-			int figureB = nbFigureOfBody( world, bodyB, NULL );
+			figureA = nbFigureOfBody( world, bodyA, NULL );
+			figureB = nbFigureOfBody( world, bodyB, NULL );
 			if ( ( figureA != NB_NULL_INDEX && world->figures.data[figureA].collisionDamage == false ) ||
 				 ( figureB != NB_NULL_INDEX && world->figures.data[figureB].collisionDamage == false ) )
 			{
@@ -5234,6 +5372,7 @@ static void nbCollectCollisionImpacts( nbWorld* world )
 		}
 
 		float energy = 0.5f * mass * event->approachSpeed * event->approachSpeed;
+		float impulse = -1.0f;
 
 		for ( int side = 0; side < 2; ++side )
 		{
@@ -5255,6 +5394,36 @@ static void nbCollectCollisionImpacts( nbWorld* world )
 				continue;
 			}
 
+			if ( impulse < 0.0f )
+			{
+				impulse = nbContactImpulse( event->contactId );
+			}
+
+			// The hit normal points from shape A to shape B
+			const nbActor* actor = world->actors.data + chunk->actorIndex;
+			b3BodyId otherBodyId = side == 0 ? bodyB : bodyA;
+			b3Vec3 normal = side == 0 ? event->normal : b3Neg( event->normal );
+
+			// A bone of a ragdoll makes a contact of its figure, see nbMergeFigureContacts
+			int figure = side == 0 ? figureB : figureA;
+			if ( figure != NB_NULL_INDEX && b3Body_GetType( otherBodyId ) == b3_dynamicBody )
+			{
+				nbFigureContact contact = {
+					.point = event->point,
+					.normal = normal,
+					.boneId = otherBodyId,
+					.figure = figure,
+					.actorIndex = chunk->actorIndex,
+					.chunkIndex = chunkIndex,
+					.actorGeneration = actor->generation,
+					.onStatic = actor->isStatic,
+					.impulse = impulse,
+					.approachSpeed = event->approachSpeed,
+				};
+				nbArray_Push( world->figureContacts, contact );
+				continue;
+			}
+
 			// Light knocks do nothing. The damage radius has to reach at least one fragment.
 			float radius = world->def.collisionRadiusScale * nbCbrt( energy );
 			if ( radius < nbGetFragmentSize( world, nbGetChunkMaterial( world, chunk ) ) )
@@ -5262,27 +5431,33 @@ static void nbCollectCollisionImpacts( nbWorld* world )
 				continue;
 			}
 
-			// The hit normal points from shape A to shape B
-			const nbActor* actor = world->actors.data + chunk->actorIndex;
 			nbCollisionImpact impact = {
 				.point = event->point,
-				.normal = side == 0 ? event->normal : b3Neg( event->normal ),
+				.normal = normal,
 				.energy = energy,
 				.approachSpeed = event->approachSpeed,
-				.otherBodyId = side == 0 ? bodyB : bodyA,
+				.impulse = impulse,
+				.otherBodyId = otherBodyId,
 				.actorIndex = chunk->actorIndex,
 				.actorGeneration = actor->generation,
+				.onStatic = actor->isStatic,
+				.figure = NB_NULL_INDEX,
 			};
 			nbArray_Push( world->collisionImpacts, impact );
 		}
 	}
 
-	// Strongest impacts first, stable for determinism
+	if ( world->figureContacts.count > 0 )
+	{
+		nbMergeFigureContacts( world );
+	}
+
+	// Stable for determinism
 	for ( int i = 1; i < world->collisionImpacts.count; ++i )
 	{
 		nbCollisionImpact key = world->collisionImpacts.data[i];
 		int j = i - 1;
-		while ( j >= 0 && world->collisionImpacts.data[j].energy < key.energy )
+		while ( j >= 0 && nbImpactGoesFirst( &key, world->collisionImpacts.data + j ) )
 		{
 			world->collisionImpacts.data[j + 1] = world->collisionImpacts.data[j];
 			j -= 1;
@@ -7585,10 +7760,71 @@ static void nbEnforceDebrisBudget( nbWorld* world, b3Vec3 up )
 #endif
 }
 
+// A static chunk of the destructible holds a contact that lies on it within this distance in meters
+#define NB_HELD_REACH 0.03f
+
+typedef struct nbHeldQuery
+{
+	nbWorld* world;
+	int destructibleIndex;
+	b3Pos point;
+	bool held;
+} nbHeldQuery;
+
+static bool nbHeldQueryFcn( b3ShapeId shapeId, void* context )
+{
+	nbHeldQuery* query = context;
+	nbWorld* world = query->world;
+	int chunkIndex = nbFindChunkFromShape( world, shapeId );
+	if ( chunkIndex == NB_NULL_INDEX )
+	{
+		return true;
+	}
+
+	const nbChunk* chunk = world->chunks.data + chunkIndex;
+	const nbActor* actor = world->actors.data + chunk->actorIndex;
+	if ( chunk->destructibleIndex != query->destructibleIndex || actor->isStatic == false || chunk->shape == NULL )
+	{
+		return true;
+	}
+
+	b3WorldTransform transform = nbActor_GetTransform( world, actor );
+	if ( nbShape_Distance( chunk->shape, b3InvTransformWorldPoint( transform, query->point ) ) < NB_HELD_REACH )
+	{
+		query->held = true;
+		return false;
+	}
+	return true;
+}
+
+// The share of the impulse of the contacts whose chunk broke away after an impact: no static chunk of the destructible is
+// left where they touched. The other contacts the wall still holds.
+static float nbFreedShare( nbWorld* world, int destructibleIndex, const nbFigureContact* contacts, int count )
+{
+	float total = 0.0f;
+	float freed = 0.0f;
+	for ( int k = 0; k < count; ++k )
+	{
+		nbHeldQuery query = { world, destructibleIndex, contacts[k].point, false };
+		b3Vec3 p = b3ToVec3( contacts[k].point );
+		b3AABB box = {
+			{ p.x - NB_HELD_REACH, p.y - NB_HELD_REACH, p.z - NB_HELD_REACH },
+			{ p.x + NB_HELD_REACH, p.y + NB_HELD_REACH, p.z + NB_HELD_REACH },
+		};
+		b3World_OverlapAABB( world->physicsWorld, box, b3DefaultQueryFilter(), nbHeldQueryFcn, &query );
+
+		float impulse = b3MaxFloat( contacts[k].impulse, NB_MIN_CONTACT_IMPULSE );
+		total += impulse;
+		freed += query.held ? 0.0f : impulse;
+	}
+	return total > 0.0f ? freed / total : 0.0f;
+}
+
 // The update of nbWorld_Update and nbWorld_Step
 static void nbUpdate( nbWorld* world, float timeStep )
 {
 	uint64_t ticks = b3GetTicks();
+	world->updateCount += 1;
 	world->stepScale = b3ClampFloat( 60.0f * timeStep, 0.0f, 60.0f );
 
 	// The stages of the step before, see nbWorld_GetProfile
@@ -7668,6 +7904,8 @@ static void nbUpdate( nbWorld* world, float timeStep )
 		{
 			continue;
 		}
+		int destructibleIndex = actor->destructibleIndex;
+		b3BodyId partBodyId = world->chunks.data[actor->headChunk].bodyId;
 
 		nbImpactDef def = { 0 };
 		def.point = impact.point;
@@ -7675,19 +7913,75 @@ static void nbUpdate( nbWorld* world, float timeStep )
 		def.radius = world->def.collisionRadiusScale * nbCbrt( impact.energy );
 		def.damage = world->def.collisionDamageScale * impact.energy;
 		def.ejectSpeed = 0.4f * impact.approachSpeed;
-		nbImpactResult result = nbApplyImpact( world, &def, impact.actorIndex );
+
+		// A figure pushes the chunks under its contacts, see nbApplyImpact. Its damage reaches past all of them, spread over
+		// the wall: the same damage over the larger area, as the same energy pressed over a larger area of the body.
+		world->impactPushes.count = 0;
+		const nbFigureContact* contacts = NULL;
+		if ( impact.figure != NB_NULL_INDEX )
+		{
+			contacts = world->figureContactOrder.data + impact.firstContact;
+			if ( impact.reach > def.radius )
+			{
+				float ratio = def.radius / impact.reach;
+				def.damage *= ratio * ratio;
+				def.radius = impact.reach;
+			}
+			nbArray_Reserve( world->impactPushes, impact.contactCount );
+			for ( int k = 0; k < impact.contactCount; ++k )
+			{
+				nbImpactPush push = { contacts[k].point, world->def.collisionDamageScale * contacts[k].energy };
+				world->impactPushes.data[world->impactPushes.count++] = push;
+			}
+		}
+		nbImpactResult result =
+			nbApplyImpact( world, &def, impact.actorIndex, true, world->impactPushes.data, world->impactPushes.count );
 
 		// Box3D resolved the contact as if the chunk were rigid, so the body that hit it bounced.
 		// When material broke away, give the body back most of its speed so it punches through.
-		if ( result.detachedChunkCount > 0 && b3Body_IsValid( impact.otherBodyId ) &&
-			 b3Body_GetType( impact.otherBodyId ) == b3_dynamicBody )
+		float passThrough = 0.0f;
+		if ( impact.figure != NB_NULL_INDEX )
+		{
+			// A figure: as far as the chunks under its contacts broke away, by their impulses, see nbPassFigureThrough. Where
+			// the wall held around the hole, it held the figure.
+			if ( impact.onStatic && result.detachedChunkCount > 0 )
+			{
+				float share = nbFreedShare( world, destructibleIndex, contacts, impact.contactCount );
+				if ( share > 0.0f )
+				{
+					float keep = share * world->def.collisionPassThrough;
+					passThrough = nbPassFigureThrough( world, impact.figure, impact.normal, keep );
+				}
+			}
+		}
+		else if ( result.detachedChunkCount > 0 && b3Body_IsValid( impact.otherBodyId ) &&
+				  b3Body_GetType( impact.otherBodyId ) == b3_dynamicBody )
 		{
 			b3Vec3 velocity = b3Body_GetLinearVelocity( impact.otherBodyId );
 			float normalSpeed = b3Dot( velocity, impact.normal );
 			float restored = world->def.collisionPassThrough * impact.approachSpeed;
 			velocity = b3MulAdd( velocity, -normalSpeed - restored, impact.normal );
 			b3Body_SetLinearVelocity( impact.otherBodyId, velocity );
+			passThrough = world->def.collisionPassThrough;
 		}
+
+		const nbDestructible* destructible = world->destructibles.data + destructibleIndex;
+		nbCollisionEvent event = {
+			.step = world->updateCount,
+			.destructibleId = { destructibleIndex + 1, world->worldIndex, destructible->generation },
+			.partBodyId = partBodyId,
+			.bodyId = impact.otherBodyId,
+			.figureId = impact.figure != NB_NULL_INDEX ? nbFigureIdOf( world, impact.figure ) : nb_nullFigureId,
+			.point = impact.point,
+			.normal = impact.normal,
+			.approachSpeed = impact.approachSpeed,
+			.impulse = impact.impulse,
+			.energy = impact.energy,
+			.brokenBondCount = result.brokenBondCount,
+			.detachedChunkCount = result.detachedChunkCount,
+			.passThrough = passThrough,
+		};
+		nbArray_Push( world->collisionEvents[world->eventBuffer], event );
 	}
 
 	// Parts of walls that landed hard break in two

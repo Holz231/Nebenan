@@ -330,7 +330,8 @@ typedef struct nbDestructible
 	void* userData;
 } nbDestructible;
 
-// A queued collision impact from a Box3D hit event. It only damages the actor that was hit.
+// A queued collision impact from a Box3D hit event. It only damages the actor that was hit. A figure makes one impact
+// of all contacts of its bones with the actor in the step, see nbCollectCollisionImpacts.
 typedef struct nbCollisionImpact
 {
 	b3Pos point;
@@ -340,12 +341,55 @@ typedef struct nbCollisionImpact
 	float energy;
 	float approachSpeed;
 
-	// The body that hit the chunk
+	// The normal impulse of the contact in the step in newton seconds, of all contacts for a figure
+	float impulse;
+
+	// The body that hit the chunk, of a figure the bone that pushed hardest
 	b3BodyId otherBodyId;
 
 	int actorIndex;
 	uint16_t actorGeneration;
+
+	// The actor was static when it was hit: Box3D stopped the body as if it were the world
+	bool onStatic;
+
+	// The figure whose bones hit, NB_NULL_INDEX for any other body. Its contacts with the actor are
+	// figureContacts[firstContact, firstContact + contactCount), and the damage reaches at least this far from the point,
+	// a fragment past the farthest of them.
+	int figure;
+	int firstContact;
+	int contactCount;
+	float reach;
 } nbCollisionImpact;
+
+// A contact of a bone of a figure with a chunk in the last step, see nbCollectCollisionImpacts. The contacts of a figure
+// with an actor go into one impact. Each contact pushes the chunk under it with its share of the energy, see nbImpactPush.
+typedef struct nbFigureContact
+{
+	b3Pos point;
+
+	// Out of the chunk toward the bone
+	b3Vec3 normal;
+	b3BodyId boneId;
+	int figure;
+	int actorIndex;
+	int chunkIndex;
+	uint16_t actorGeneration;
+	bool onStatic;
+
+	// The normal impulse of the contact in the step in newton seconds, the speed it came in with and its share of the
+	// energy of the impact
+	float impulse;
+	float approachSpeed;
+	float energy;
+} nbFigureContact;
+
+// A contact pushes the static chunk under it with this damage, see nbApplyImpact
+typedef struct nbImpactPush
+{
+	b3Pos point;
+	float damage;
+} nbImpactPush;
 
 // Destructibles the workers prepare in the background, one load each, see nbStartCreating
 struct nbBackgroundLoad;
@@ -364,6 +408,9 @@ NB_ARRAY_DECLARE( nbActor, nbActorArray );
 NB_ARRAY_DECLARE( nbDestructible, nbDestructibleArray );
 NB_ARRAY_DECLARE( nbChunkId, nbChunkIdArray );
 NB_ARRAY_DECLARE( nbCollisionImpact, nbCollisionImpactArray );
+NB_ARRAY_DECLARE( nbFigureContact, nbFigureContactArray );
+NB_ARRAY_DECLARE( nbImpactPush, nbImpactPushArray );
+NB_ARRAY_DECLARE( nbCollisionEvent, nbCollisionEventArray );
 NB_ARRAY_DECLARE( nbCreation, nbCreationArray );
 NB_ARRAY_DECLARE( b3BodyMoveEvent, nbBodyMoveArray );
 NB_ARRAY_DECLARE( b3Vec3, nbVec3Array );
@@ -557,9 +604,18 @@ typedef struct nbWorld
 	nbChunkIdArray destroyedEvents[2];
 	nbChunkIdArray movedEvents[2];
 	nbChunkIdArray exposedEvents[2];
+	nbCollisionEventArray collisionEvents[2];
 	int eventBuffer;
 
+	// The updates since the world was created, the step of a collision event
+	uint64_t updateCount;
+
 	nbCollisionImpactArray collisionImpacts;
+
+	// The contacts of the bones of figures with chunks in the last step: collected, then in the order of their impacts
+	nbFigureContactArray figureContacts;
+	nbFigureContactArray figureContactOrder;
+	nbImpactPushArray impactPushes;
 
 	nbArena arena;
 
@@ -855,4 +911,9 @@ void nbPassCarriers( nbWorld* world, int chunkIndex, uint16_t generation, b3AABB
 					 int childCount );
 
 // Apply an impact, optionally limited to one actor
-nbImpactResult nbApplyImpact( nbWorld* world, const nbImpactDef* def, int actorFilter );
+// Apply an impact. A collision damages only the actor it hit, actorFilter, NB_NULL_INDEX for any. The point of a contact
+// lies on the surface of what it hit, a thin board there breaks even when the damage sphere is much larger, see
+// nbEstimateSphereOverlap. A body that hit with contacts pushes the static chunks under them, see nbImpactPush: a chunk
+// that its bonds together cannot hold against the push breaks out.
+nbImpactResult nbApplyImpact( nbWorld* world, const nbImpactDef* def, int actorFilter, bool contact, const nbImpactPush* pushes,
+							 int pushCount );

@@ -150,8 +150,11 @@ typedef struct nbSiteParams
 // Generate fracture sites inside a convex parent. Deterministic for a given random state.
 int nbGenerateSites( const nbPoly* parent, const nbSiteParams* params, nbRandom* rng, b3Vec3* sites, int capacity );
 
-// Estimate the volume of the intersection of the parent and a sphere by sampling.
-float nbEstimateSphereOverlap( const nbPoly* parent, b3Vec3 center, float radius, nbRandom* rng, int sampleCount );
+// Estimate the volume of the intersection of the parent and a sphere by sampling. A contact on a board thinner than twice
+// the margin of its sites, see nbGenerateSites, passes that margin: when the samples all miss the board, they go again to
+// the part of the sphere its bounds take up. Zero for any other impact.
+float nbEstimateSphereOverlap( const nbPoly* parent, b3Vec3 center, float radius, nbRandom* rng, int sampleCount,
+							   float thinMargin );
 
 // Uniformly distributed random unit vector without trigonometry, for determinism.
 b3Vec3 nbRandomUnitVector( nbRandom* rng );

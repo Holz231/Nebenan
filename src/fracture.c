@@ -723,6 +723,23 @@ static bool nbIsEmptyBox( b3AABB box )
 	return box.lowerBound.x > box.upperBound.x || box.lowerBound.y > box.upperBound.y || box.lowerBound.z > box.upperBound.z;
 }
 
+// The smallest width of a convex polyhedron across one of its faces: the thickness of a board
+static float nbPolyMinWidth( const nbPoly* poly )
+{
+	float width = FLT_MAX;
+	for ( int f = 0; f < poly->faceCount; ++f )
+	{
+		const b3Plane* plane = &poly->faces[f].plane;
+		float lowest = plane->offset;
+		for ( int v = 0; v < poly->vertexCount; ++v )
+		{
+			lowest = b3MinFloat( lowest, b3Dot( plane->normal, poly->vertices[v] ) );
+		}
+		width = b3MinFloat( width, plane->offset - lowest );
+	}
+	return width;
+}
+
 int nbGenerateSites( const nbPoly* parent, const nbSiteParams* params, nbRandom* rng, b3Vec3* sites, int capacity )
 {
 	capacity = capacity < NB_SITE_CAPACITY ? capacity : NB_SITE_CAPACITY;
@@ -739,6 +756,14 @@ int nbGenerateSites( const nbPoly* parent, const nbSiteParams* params, nbRandom*
 	b3AABB bounds = nbPoly_ComputeBounds( parent );
 	b3Vec3 focus = b3Clamp( params->center, bounds.lowerBound, bounds.upperBound );
 	float minRadius = b3MaxFloat( 0.12f * radius, spacing );
+
+	// No point of a board thinner than twice the margin lies that far inside it, it would get no site and never break, a
+	// board of wood under 3.4 cm. Its sites keep a quarter of its thickness from its faces.
+	float width = nbPolyMinWidth( parent );
+	if ( width < 2.0f * margin )
+	{
+		margin = 0.25f * width;
+	}
 
 	nbSiteGrid grid;
 	memset( grid.keys, 0, sizeof( grid.keys ) );
@@ -847,7 +872,8 @@ int nbGenerateSites( const nbPoly* parent, const nbSiteParams* params, nbRandom*
 	return count;
 }
 
-float nbEstimateSphereOverlap( const nbPoly* parent, b3Vec3 center, float radius, nbRandom* rng, int sampleCount )
+float nbEstimateSphereOverlap( const nbPoly* parent, b3Vec3 center, float radius, nbRandom* rng, int sampleCount,
+							   float thinMargin )
 {
 	int inside = 0;
 	int total = 0;
@@ -868,5 +894,48 @@ float nbEstimateSphereOverlap( const nbPoly* parent, b3Vec3 center, float radius
 	}
 
 	float sphereVolume = ( 4.0f / 3.0f ) * B3_PI * radius * radius * radius;
-	return sphereVolume * (float)inside / (float)total;
+	if ( inside > 0 || thinMargin <= 0.0f )
+	{
+		return sphereVolume * (float)inside / (float)total;
+	}
+
+	// A board takes up so little of the sphere that the samples can all miss it, a board of 3 cm about every third time in
+	// a sphere of 0.6 m, and the board a body hit would not break. When the board is thinner than the margin of the sites
+	// takes twice, see nbGenerateSites, and the contact lies on it, the samples go to the part of the sphere its bounds
+	// take up. Every other piece keeps the estimate.
+	float width = nbPolyMinWidth( parent );
+	float outside = -FLT_MAX;
+	for ( int f = 0; f < parent->faceCount; ++f )
+	{
+		outside = b3MaxFloat( outside, b3Dot( parent->faces[f].plane.normal, center ) - parent->faces[f].plane.offset );
+	}
+	if ( width >= 2.0f * thinMargin || outside > 0.5f * width )
+	{
+		return 0.0f;
+	}
+
+	b3AABB bounds = nbPoly_ComputeBounds( parent );
+	b3Vec3 reach = { radius, radius, radius };
+	b3Vec3 lower = b3Max( bounds.lowerBound, b3Sub( center, reach ) );
+	b3Vec3 upper = b3Min( bounds.upperBound, b3Add( center, reach ) );
+	if ( lower.x >= upper.x || lower.y >= upper.y || lower.z >= upper.z )
+	{
+		return 0.0f;
+	}
+
+	b3Vec3 extent = b3Sub( upper, lower );
+	float radiusSquared = radius * radius;
+	for ( int i = 0; i < sampleCount; ++i )
+	{
+		b3Vec3 p = {
+			lower.x + extent.x * nbRandomFloat( rng ),
+			lower.y + extent.y * nbRandomFloat( rng ),
+			lower.z + extent.z * nbRandomFloat( rng ),
+		};
+		if ( b3DistanceSquared( p, center ) <= radiusSquared && nbPoly_ContainsPoint( parent, p, 0.0f ) )
+		{
+			inside += 1;
+		}
+	}
+	return extent.x * extent.y * extent.z * (float)inside / (float)sampleCount;
 }

@@ -408,7 +408,8 @@ typedef struct nbWorldDef
 	float collisionRadiusScale;
 
 	/// Maximum number of collision impacts processed per update of 1/60 s, in proportion for other steps, see stepRate.
-	/// Limits worst case frame time.
+	/// Limits worst case frame time. Impacts of figures go first, then the strongest. A figure makes one impact of all the
+	/// contacts of its bones with a part of a destructible in a step, see nbRigDef::enableCollisionDamage.
 	int maxCollisionImpactsPerUpdate;
 
 	/// Upper bound for the fragments one impact creates. Bounds the cost of large explosions.
@@ -420,7 +421,10 @@ typedef struct nbWorldDef
 	float fragmentScale;
 
 	/// Fraction of the approach speed a body keeps when it breaks through a chunk. Box3D resolves the
-	/// contact before the fracture happens, so without this a cannonball would bounce off the debris.
+	/// contact before the fracture happens, so without this a cannonball would bounce off the debris. A figure keeps it
+	/// as far as the chunks under its contacts broke away, by their impulses: every bone gets back up to this share of
+	/// its own speed toward the wall from before the step, all together no more than this share of the momentum of the
+	/// figure, so it goes on through the hole in the pose it flew in and gains nothing.
 	float collisionPassThrough;
 
 	/// Number of threads that work on an impact, including the calling thread. They estimate how much of each
@@ -471,6 +475,45 @@ typedef struct nbWorldDef
 /// A function of the program that nbWorld_RunAfterStep runs after the steps of nbWorld_Step
 typedef void nbAfterStepFcn( void* context );
 
+/// A body that hit a destructible hard enough to damage it, see nbWorldDef::collisionSpeedThreshold. A figure that hits
+/// a part of a destructible with several of its bones in one step makes one collision of all their contacts with it.
+/// For sounds, effects and the game: who hit what, in which step, how hard and what broke.
+typedef struct nbCollisionEvent
+{
+	/// The update of the world it happened in, counted from one since the world was created
+	uint64_t step;
+
+	/// The destructible that was hit, and the body of the part that was hit: the static body of the destructible for the
+	/// part that stands, the body of a piece of debris. A figure makes one collision per part it hits in a step.
+	nbDestructibleId destructibleId;
+	b3BodyId partBodyId;
+
+	/// The body that hit it, of a figure the bone that pushed hardest
+	b3BodyId bodyId;
+
+	/// The figure whose bones hit, null for every other body
+	nbFigureId figureId;
+
+	/// Where it hit, for a figure the middle of its contacts by their impulses, and the normal out of the destructible
+	/// toward the body
+	b3Pos point;
+	b3Vec3 normal;
+
+	/// How fast the body came in, in meters per second, the normal impulse of its contacts in the step in newton seconds
+	/// and the energy that went into the damage in joules
+	float approachSpeed;
+	float impulse;
+	float energy;
+
+	/// What broke
+	int brokenBondCount;
+	int detachedChunkCount;
+
+	/// The share of its speed toward the destructible the body kept to go on through it, see
+	/// nbWorldDef::collisionPassThrough, of a figure by the mass of its bones. Zero where the destructible held.
+	float passThrough;
+} nbCollisionEvent;
+
 /// Destruction events collected since the last call to nbWorld_GetEvents. Use them to keep a
 /// renderer in sync: build meshes for created chunks, drop destroyed chunks, re-parent moved chunks and
 /// rebuild the meshes of exposed chunks.
@@ -493,6 +536,10 @@ typedef struct nbEvents
 	int destroyedCount;
 	int movedCount;
 	int exposedCount;
+
+	/// Collisions that damaged a destructible since the last call, in the order they did
+	const nbCollisionEvent* collisions;
+	int collisionCount;
 } nbEvents;
 
 /// A body and where to draw it, see nbWorld_GetDrawPoses
@@ -1052,7 +1099,11 @@ typedef struct nbRigDef
 	/// figure. Joined bones never collide with each other.
 	bool selfCollision;
 
-	/// The bones of a ragdoll damage the destructibles they hit, like cannonballs, see nbWorldDef::collisionDamageScale
+	/// The bones of a ragdoll damage the destructibles they hit, see nbWorldDef::collisionDamageScale. All contacts of its
+	/// bones with a part of a destructible in a step make one impact and one nbCollisionEvent: its energy is the work of
+	/// their impulses, half the normal impulse times the speed each came in with, its damage reaches past all of them,
+	/// spread over that area, and each contact pushes out a chunk its bonds cannot hold. Where the chunks under the
+	/// contacts broke away, the figure flies on through, see nbWorldDef::collisionPassThrough.
 	bool enableCollisionDamage;
 
 	/// Used internally to detect a valid definition. DO NOT SET.
