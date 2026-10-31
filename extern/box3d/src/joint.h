@@ -244,10 +244,16 @@ typedef struct b3SphericalJoint
 	float twistMass;
 	b3Softness springSoftness;
 
+	// Added for Nebenan: the cone limit with its own angle in each direction, see b3SphericalJointDef::enableSwingLimit.
+	// The angles lowerX, upperX, lowerY, upperY and the tangents of a quarter of upperX, -lowerX, upperY and -lowerY.
+	float swingAngles[4];
+	float swingTans[4];
+
 	bool enableSpring;
 	bool enableMotor;
 	bool enableConeLimit;
 	bool enableTwistLimit;
+	bool enableSwingLimit;
 } b3SphericalJoint;
 
 typedef struct b3WeldJoint

@@ -44,6 +44,13 @@ typedef struct nbBone
 	b3CosSin upperHalf;
 	b3CosSin coneHalf;
 
+	// A ball joint with a limit in each of four directions in place of the cone, see nbBoneDef::lowerSwingX: one over the
+	// tangent of a quarter of the limits about +x, -x, +y and -y of the joint frame as Box3D keeps them, and the square of
+	// the sine of half the least of them, within which every swing lies inside
+	bool swingLimits;
+	float swingInverseTans[4];
+	float swingInside;
+
 	// Scales the torque limit, the stiffness and the damping ratio of the motors for this joint
 	float strength;
 	float stiffness;
@@ -390,6 +397,11 @@ b3Quat nbRotationFromAxes( b3Vec3 x, b3Vec3 y );
 // A spring in cycles per second for Box3D from a stiffness in newton meters per radian, against the rotational mass of the
 // two bodies about the softest axis of the joint frame of body B, its z axis alone for a hinge
 float nbJointSpringHertz( b3BodyId bodyA, b3BodyId bodyB, b3Quat frameB, bool hingeOnly, float stiffness );
+
+// How far the ball joint of a bone lets it swing out of its rest direction toward one side, in radians: the swing about an
+// axis in the xy plane of the joint frame, (axisX, axisY) of length 1, within the limit in each of four directions, or the
+// cone in every direction, see nbBoneDef::lowerSwingX
+float nbSwingLimit( const nbBone* bone, float axisX, float axisY );
 
 // Ask the muscles of the joint of a bone for a strength of the motors, see nbFigureMotors, or let them relax. They follow
 // in the update, see nbUpdateMuscles.

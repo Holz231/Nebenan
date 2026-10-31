@@ -1165,6 +1165,18 @@ typedef struct b3SphericalJointDef
 	/// The angle for the upper twist limit in radians. Maximum of 0.99*pi radians.
 	float upperTwistAngle;
 
+	/// Added for Nebenan: a cone limit with its own angle in each of four directions, for a joint like a shoulder that
+	/// swings far forward and out but little back. The swing that turns the frameA z-axis into the frameB z-axis turns
+	/// about an axis in the xy plane of frameA: about the x-axis it reaches from lowerSwingX to upperSwingX, about the
+	/// y-axis from lowerSwingY to upperSwingY, and between them the cone is a quarter of an ellipse in the tangent of a
+	/// quarter of the swing angle, which holds up to a swing of nearly pi. It takes the place of the cone limit. Radians,
+	/// the lower angles from -0.95 pi to -0.01, the upper ones from 0.01 to 0.95 pi.
+	bool enableSwingLimit;
+	float lowerSwingX;
+	float upperSwingX;
+	float lowerSwingY;
+	float upperSwingY;
+
 	/// A flag to enable the joint motor
 	bool enableMotor;
 

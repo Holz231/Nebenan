@@ -67,6 +67,91 @@ float b3SphericalJoint_GetConeAngle( b3JointId jointId )
 	return b3GetSwingAngle( relQ );
 }
 
+// Added for Nebenan: the cone limit with its own angle in each direction, see b3SphericalJointDef::enableSwingLimit
+
+bool b3SphericalJoint_IsSwingLimitEnabled( b3JointId jointId )
+{
+	b3JointSim* base = b3GetJointSimCheckType( jointId, b3_sphericalJoint );
+	return base->sphericalJoint.enableSwingLimit;
+}
+
+void b3SphericalJoint_GetSwingLimits( b3JointId jointId, float* lowerX, float* upperX, float* lowerY, float* upperY )
+{
+	b3JointSim* base = b3GetJointSimCheckType( jointId, b3_sphericalJoint );
+	const float* angles = base->sphericalJoint.swingAngles;
+	*lowerX = angles[0];
+	*upperX = angles[1];
+	*lowerY = angles[2];
+	*upperY = angles[3];
+}
+
+float b3TanQuarter( float radians )
+{
+	b3CosSin cs = b3ComputeCosSin( 0.25f * radians );
+	return cs.sine / cs.cosine;
+}
+
+// The swing of a relative rotation, which is a swing times a twist about z, keeps the length of (z, s) of it as its
+// scalar part and its x and y parts turned back by the twist. Divided by one plus that scalar they are t, the tangent of
+// a quarter of the swing angle along the swing axis a, which grows smoothly up to a swing of pi. In each quadrant of t
+// the cone is a quarter of an ellipse through the limits on the axes, and the swing lies on the edge when the scale
+// (tx / limitX, ty / limitY) has length 1.
+//
+// The limit pushes about the axis along which the scale grows the fastest. A turn of frame B about a in frame A swings
+// it farther, t grows by (1 + |t|^2) / 4 along a. A turn about p = z x a or about z moves the bone around the cone axis,
+// t turns toward p by |t| cot(swing) for p and by |t| for z: past a swing of pi / 2 a turn about p moves it the other
+// way round. The gradient of the scale in t, taken back through these, is that axis, and the scale less 1 over its
+// length is how far the swing lies from the edge, in radians. The sign of the rotation does not matter.
+float b3GetSwingLimitSeparation( b3Quat relQ, const float limits[4], b3Vec3* normal )
+{
+	if ( normal != NULL )
+	{
+		*normal = b3Vec3_zero;
+	}
+
+	float w = sqrtf( relQ.v.z * relQ.v.z + relQ.s * relQ.s );
+	if ( w < FLT_EPSILON )
+	{
+		// a swing of pi, past every limit, about no axis
+		return -0.05f * B3_PI;
+	}
+
+	float invScalar = 1.0f / ( w * ( 1.0f + w ) );
+	float tx = ( relQ.s * relQ.v.x - relQ.v.z * relQ.v.y ) * invScalar;
+	float ty = ( relQ.v.z * relQ.v.x + relQ.s * relQ.v.y ) * invScalar;
+	float u2 = tx * tx + ty * ty;
+	if ( u2 < 1.0e-12f )
+	{
+		// no swing, inside by the least of the limits
+		float least = b3MinFloat( b3MinFloat( limits[0], limits[1] ), b3MinFloat( limits[2], limits[3] ) );
+		return 4.0f * b3Atan2( least, 1.0f );
+	}
+
+	float invX = 1.0f / ( tx >= 0.0f ? limits[0] : limits[1] );
+	float invY = 1.0f / ( ty >= 0.0f ? limits[2] : limits[3] );
+	float ex = tx * invX;
+	float ey = ty * invY;
+	float scale = sqrtf( ex * ex + ey * ey );
+
+	// The gradient of the scale in t times the scale, split along t and across it, each times |t|
+	float gx = ex * invX;
+	float gy = ey * invY;
+	float alongA = gx * tx + gy * ty;
+	float alongP = gy * tx - gx * ty;
+
+	// How fast the scale grows with a turn about a, p and z, here times the scale and |t|^2. With w the cosine of half
+	// the swing, |t| cot(swing) is (2 w^2 - 1) / (2 w (1 + w)), finite up to the guard above.
+	float radial = 0.25f * ( 1.0f + u2 );
+	float aside = ( w * w - 0.5f ) * invScalar;
+	b3Vec3 axis = { alongA * radial * tx - alongP * aside * ty, alongA * radial * ty + alongP * aside * tx, alongP * u2 };
+	float invLength = 1.0f / b3Length( axis );
+	if ( normal != NULL )
+	{
+		*normal = b3MulSV( invLength, axis );
+	}
+	return ( 1.0f - scale ) * scale * u2 * invLength;
+}
+
 void b3SphericalJoint_EnableTwistLimit( b3JointId jointId, bool enableLimit )
 {
 	b3World* world = b3GetWorld( jointId.world0 );
@@ -295,6 +380,13 @@ b3Vec3 b3GetSphericalJointTorque( b3World* world, b3JointSim* base )
 	b3Vec3 swingAxis = b3Normalize( b3Cross( coneAxis, twistAxis ) );
 
 	b3SphericalJoint* joint = &base->sphericalJoint;
+	if ( joint->enableSwingLimit )
+	{
+		// Added for Nebenan: the cone with its own angle in each direction pushes about its normal
+		b3Vec3 normal;
+		b3GetSwingLimitSeparation( b3InvMulQuat( qA, qB ), joint->swingTans, &normal );
+		swingAxis = b3RotateVector( qA, normal );
+	}
 	b3Vec3 impulse = b3Add( joint->springImpulse, joint->motorImpulse );
 	impulse = b3MulAdd( impulse, joint->lowerTwistImpulse - joint->upperTwistImpulse, twistAxis );
 	impulse = b3MulAdd( impulse, joint->swingImpulse, swingAxis );
@@ -356,7 +448,17 @@ void b3PrepareSphericalJoint( b3JointSim* base, b3StepContext* context, int doma
 	// Twist axis is the z-axis of body B.
 	b3Vec3 twistAxis = b3RotateVector( joint->frameB.q, b3Vec3_axisZ );
 
-	if ( joint->enableConeLimit )
+	if ( joint->enableSwingLimit )
+	{
+		// Added for Nebenan: the cone with its own angle in each direction pushes about its outward normal at the swing
+		b3Vec3 normal;
+		b3GetSwingLimitSeparation( b3InvMulQuat( joint->frameA.q, joint->frameB.q ), joint->swingTans, &normal );
+		b3Vec3 swingAxis = b3RotateVector( joint->frameA.q, normal );
+		float k = b3Dot( swingAxis, b3MulMV( invInertiaSum, swingAxis ) );
+		joint->swingMass = k > 0.0f ? 1.0f / k : 0.0f;
+		joint->swingAxis = swingAxis;
+	}
+	else if ( joint->enableConeLimit )
 	{
 		// Swing axis may be zero
 		b3Vec3 swingAxis = b3Normalize( b3Cross( coneAxis, twistAxis ) );
@@ -596,9 +698,12 @@ void b3SolveSphericalJoint( b3JointSim* base, b3StepContext* context, bool useBi
 		}
 	}
 
-	if ( joint->enableConeLimit && fixedRotation == false )
+	if ( ( joint->enableConeLimit || joint->enableSwingLimit ) && fixedRotation == false )
 	{
-		float swingAngle = b3GetSwingAngle( relQ );
+		// Added for Nebenan: the cone with its own angle in each direction measures how far inside the swing lies
+		float swingAngle = joint->enableSwingLimit ? -b3GetSwingLimitSeparation( relQ, joint->swingTans, NULL )
+												   : b3GetSwingAngle( relQ );
+		float coneAngle = joint->enableSwingLimit ? 0.0f : joint->coneAngle;
 
 		// todo does an updated swing axis help?
 		// b3Vec3 axisA = b3RotateVector( quatA, b3Vec3_axisZ );
@@ -608,7 +713,7 @@ void b3SolveSphericalJoint( b3JointSim* base, b3StepContext* context, bool useBi
 
 		b3Vec3 swingAxis = joint->swingAxis;
 
-		float c = joint->coneAngle - swingAngle;
+		float c = coneAngle - swingAngle;
 		float bias = 0.0f;
 		float massScale = 1.0f;
 		float impulseScale = 0.0f;
@@ -757,8 +862,35 @@ void b3DrawSphericalJoint( b3DebugDraw* draw, b3JointSim* base, b3WorldTransform
 		draw->DrawSegmentFcn( frameA.p, b3TransformWorldPoint( frameA, p2 ), b3_colorYellow, draw->context );
 	}
 
-	// Swing limit
-	if ( joint->enableConeLimit )
+	// Swing limit with its own angle in each direction, added for Nebenan: the z-axis turned to the edge of the cone about
+	// every axis in the xy plane, (ay sin, -ax sin, cos) for the axis (ax, ay)
+	if ( joint->enableSwingLimit )
+	{
+		const float radius = 0.1f * scale;
+		b3Vec3 previous = b3Vec3_zero;
+		for ( int index = 0; index <= 4 * kSliceCount; ++index )
+		{
+			float phi = 0.5f * index / kSliceCount * B3_PI;
+			float ax = b3Cos( phi );
+			float ay = b3Sin( phi );
+			float ex = ax / ( ax >= 0.0f ? joint->swingTans[0] : joint->swingTans[1] );
+			float ey = ay / ( ay >= 0.0f ? joint->swingTans[2] : joint->swingTans[3] );
+			float angle = 4.0f * b3Atan2( 1.0f, sqrtf( ex * ex + ey * ey ) );
+			float sine = b3Sin( angle );
+			b3Vec3 vertex = { radius * ay * sine, -radius * ax * sine, radius * b3Cos( angle ) };
+			if ( index > 0 )
+			{
+				draw->DrawSegmentFcn( b3TransformWorldPoint( frameA, previous ), b3TransformWorldPoint( frameA, vertex ),
+									  b3_colorCyan, draw->context );
+			}
+			if ( index % kSliceCount == 0 )
+			{
+				draw->DrawSegmentFcn( frameA.p, b3TransformWorldPoint( frameA, vertex ), b3_colorCyan, draw->context );
+			}
+			previous = vertex;
+		}
+	}
+	else if ( joint->enableConeLimit )
 	{
 		const float radius = 0.1f * scale;
 		float coneRadius = radius * b3Sin( joint->coneAngle );

@@ -666,6 +666,27 @@ b3JointId b3CreateSphericalJoint( b3WorldId worldId, const b3SphericalJointDef* 
 	joint->sphericalJoint.enableTwistLimit = def->enableTwistLimit;
 	joint->sphericalJoint.enableMotor = def->enableMotor;
 
+	// Added for Nebenan: the cone limit with its own angle in each direction
+	joint->sphericalJoint.enableSwingLimit = def->enableSwingLimit;
+	{
+		const float most = 0.95f * B3_PI;
+		const float least = 0.01f;
+		float lowerX = b3ClampFloat( b3MinFloat( def->lowerSwingX, def->upperSwingX ), -most, -least );
+		float upperX = b3ClampFloat( b3MaxFloat( def->lowerSwingX, def->upperSwingX ), least, most );
+		float lowerY = b3ClampFloat( b3MinFloat( def->lowerSwingY, def->upperSwingY ), -most, -least );
+		float upperY = b3ClampFloat( b3MaxFloat( def->lowerSwingY, def->upperSwingY ), least, most );
+		float* angles = joint->sphericalJoint.swingAngles;
+		float* tans = joint->sphericalJoint.swingTans;
+		angles[0] = lowerX;
+		angles[1] = upperX;
+		angles[2] = lowerY;
+		angles[3] = upperY;
+		tans[0] = b3TanQuarter( upperX );
+		tans[1] = b3TanQuarter( -lowerX );
+		tans[2] = b3TanQuarter( upperY );
+		tans[3] = b3TanQuarter( -lowerY );
+	}
+
 	b3JointId jointId = { joint->jointId + 1, world->worldId, pair.joint->generation };
 	B3_REC_CREATE( world, CreateSphericalJoint, jointId, worldId, *def );
 	return jointId;
@@ -1411,7 +1432,13 @@ float b3Joint_GetAngularSeparation( b3JointId jointId )
 		{
 			b3SphericalJoint* sphericalJoint = &base->sphericalJoint;
 			float sum = 0.0f;
-			if ( sphericalJoint->enableConeLimit )
+			if ( sphericalJoint->enableSwingLimit )
+			{
+				// Added for Nebenan
+				float separation = b3GetSwingLimitSeparation( relQ, sphericalJoint->swingTans, NULL );
+				sum += b3MaxFloat( 0.0f, -separation );
+			}
+			else if ( sphericalJoint->enableConeLimit )
 			{
 				float swingAngle = b3GetSwingAngle( relQ );
 				sum += b3MaxFloat( 0.0f, swingAngle - sphericalJoint->coneAngle );

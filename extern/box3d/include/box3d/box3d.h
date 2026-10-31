@@ -1625,6 +1625,27 @@ B3_API void b3SphericalJoint_SetConeLimit( b3JointId jointId, float angleRadians
 /// Get the spherical joint current cone angle in radians.
 B3_API float b3SphericalJoint_GetConeAngle( b3JointId jointId );
 
+/// Is the cone limit with its own angle in each direction enabled? See b3SphericalJointDef::enableSwingLimit. Added for
+/// Nebenan.
+B3_API bool b3SphericalJoint_IsSwingLimitEnabled( b3JointId jointId );
+
+/// The angles of the cone limit with its own angle in each direction, as clamped, see b3SphericalJointDef::enableSwingLimit.
+/// Added for Nebenan.
+B3_API void b3SphericalJoint_GetSwingLimits( b3JointId jointId, float* lowerX, float* upperX, float* lowerY, float* upperY );
+
+/// How far a relative rotation of frameB against frameA lies inside the cone limit with its own angle in each direction:
+/// the turn in radians about the axis along which the swing leaves the cone the fastest that brings it onto the edge, to
+/// first order, negative beyond it. Limits are the tangents of a quarter of upperSwingX, -lowerSwingX, upperSwingY and
+/// -lowerSwingY. That axis, in frameA, goes to normal when it is not null. Added for Nebenan.
+B3_API float b3GetSwingLimitSeparation( b3Quat relQ, const float limits[4], b3Vec3* normal );
+
+/// The tangent of a quarter of an angle in radians from -0.95 pi to 0.95 pi, as the cone limit with its own angle in each
+/// direction uses it, the same on every platform. Added for Nebenan.
+B3_API float b3TanQuarter( float radians );
+
+/// Added for Nebenan: the cone limit with its own angle in each direction, see b3SphericalJointDef::enableSwingLimit
+#define B3_HAS_SWING_LIMITS 1
+
 /// Enable/disable the spherical joint limit
 B3_API void b3SphericalJoint_EnableTwistLimit( b3JointId jointId, bool enableLimit );
 

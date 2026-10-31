@@ -49,7 +49,9 @@ typedef struct b3World b3World;
 // Major recording version is bumped when writers change.
 // Major version 6 widened the body def with the safety factor.
 // Major version 7 widened the revolute and spherical joint defs with the spring torque limit, added for Nebenan.
-#define B3_REC_VERSION_MAJOR 7
+// Major version 8 widened the spherical joint def with the cone limit with its own angle in each direction, added for
+// Nebenan.
+#define B3_REC_VERSION_MAJOR 8
 
 // Minor tracks op-stream additions that keep the 48 byte header shape.
 // Minor version 7 made the contact body sim locators persistent

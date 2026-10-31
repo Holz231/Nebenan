@@ -201,6 +201,72 @@ static int SpringTorqueLimitTest( void )
 	return 0;
 }
 
+// A cone with its own limit in each of four directions, see b3SphericalJointDef::enableSwingLimit: a rod on a spherical
+// joint that swings 160 degrees about +x, 40 about -x, 149 about +y and 29 about -y, spun hard about 16 axes in the xy
+// plane, never swings more than a degree past the edge of the cone, and along the four axes it reaches it
+static int SwingLimitTest( void )
+{
+#if defined( B3_HAS_SWING_LIMITS )
+	const float lowerX = -0.7f, upperX = 2.8f, lowerY = -0.5f, upperY = 2.6f;
+	// The edge along +x, +y, -x and -y, the axes of every fourth spin
+	const float edges[4] = { upperX, upperY, -lowerX, -lowerY };
+	float limits[4] = { b3TanQuarter( upperX ), b3TanQuarter( -lowerX ), b3TanQuarter( upperY ), b3TanQuarter( -lowerY ) };
+	float worst = 0.0f;
+	for ( int k = 0; k < 16; ++k )
+	{
+		b3WorldDef worldDef = b3DefaultWorldDef();
+		worldDef.gravity = b3Vec3_zero;
+		b3WorldId worldId = b3CreateWorld( &worldDef );
+		b3BodyDef anchorDef = b3DefaultBodyDef();
+		b3BodyId anchor = b3CreateBody( worldId, &anchorDef );
+		b3BodyDef bodyDef = b3DefaultBodyDef();
+		bodyDef.type = b3_dynamicBody;
+		b3BodyId rod = b3CreateBody( worldId, &bodyDef );
+		b3ShapeDef shapeDef = b3DefaultShapeDef();
+		b3Capsule capsule = { { 0.0f, 0.0f, 0.05f }, { 0.0f, 0.0f, 0.3f }, 0.05f };
+		b3CreateCapsuleShape( rod, &shapeDef, &capsule );
+
+		b3SphericalJointDef jointDef = b3DefaultSphericalJointDef();
+		jointDef.base.bodyIdA = anchor;
+		jointDef.base.bodyIdB = rod;
+		jointDef.enableSwingLimit = true;
+		jointDef.lowerSwingX = lowerX;
+		jointDef.upperSwingX = upperX;
+		jointDef.lowerSwingY = lowerY;
+		jointDef.upperSwingY = upperY;
+		jointDef.enableTwistLimit = true;
+		jointDef.lowerTwistAngle = -0.5f;
+		jointDef.upperTwistAngle = 0.5f;
+		b3JointId joint = b3CreateSphericalJoint( worldId, &jointDef );
+		float kept[4];
+		b3SphericalJoint_GetSwingLimits( joint, kept, kept + 1, kept + 2, kept + 3 );
+		ENSURE( b3SphericalJoint_IsSwingLimitEnabled( joint ) );
+		ENSURE( kept[0] == lowerX && kept[1] == upperX && kept[2] == lowerY && kept[3] == upperY );
+
+		float phi = 2.0f * B3_PI * (float)k / 16.0f;
+		b3Body_SetAngularVelocity( rod, (b3Vec3){ 8.0f * cosf( phi ), 8.0f * sinf( phi ), 0.0f } );
+		float beyond = 0.0f;
+		float reach = 0.0f;
+		for ( int i = 0; i < 240; ++i )
+		{
+			b3World_Step( worldId, 1.0f / 60.0f, 4 );
+			b3Quat q = b3Body_GetRotation( rod );
+			beyond = b3MaxFloat( beyond, -b3GetSwingLimitSeparation( q, limits, NULL ) );
+			reach = b3MaxFloat( reach, b3GetSwingAngle( q ) );
+		}
+		ENSURE( beyond < 1.0f * B3_PI / 180.0f );
+		if ( k % 4 == 0 )
+		{
+			ENSURE( reach > edges[k / 4] - 2.0f * B3_PI / 180.0f );
+		}
+		worst = b3MaxFloat( worst, beyond );
+		b3DestroyWorld( worldId );
+	}
+	printf( "  spun about 16 axes: at most %.2f degrees past the edge of the cone\n", worst * 180.0f / B3_PI );
+#endif
+	return 0;
+}
+
 // The clips of the library: the get-up clips lie with the head ahead at first and stand at the height of the idle clip at
 // the end, no keyframe sinks into the ground, and the baked keyframes lie at most a fifteenth of a second apart
 static int HumanoidClipTest( void )
@@ -471,7 +537,8 @@ static int FigureSwingTest( void )
 // motors, a hold keeps its pelvis upright, and it catches itself with steps, its arms rowing where a step comes short.
 // On its feet all the time, it stands animated again where it caught itself and steps its feet back under its body. On
 // the upper chest it catches 60, 70 and 100 N s from the front, 80 N s from behind and 60 and 80 N s from either side.
-// 150 N s from the front and 100 N s from its right are too much: it tries a step and falls.
+// 150 N s from the front and 100 N s from its right are too much: it tries a step or two and falls, since the joints
+// move as far as a person's within 0.7 s, its arm on the far side raised above its head.
 static int FigureCatchTest( void )
 {
 	typedef struct CatchCase
@@ -508,8 +575,8 @@ static int FigureCatchTest( void )
 			int steps = StepUntil( &scene, figure, nb_figureRagdoll, 60 );
 			nbFigureInfo info = nbFigure_GetInfo( figure );
 			printf( "  %s: falls after %d updates and %d steps\n", cases[c].name, steps, info.stepCount );
-			ENSURE( 0 < steps && steps <= 30 );
-			ENSURE( info.stepCount <= 1 && info.knockdownCount == 1 && info.catchCount == 0 );
+			ENSURE( 0 < steps && steps <= 42 );
+			ENSURE( info.stepCount <= 2 && info.knockdownCount == 1 && info.catchCount == 0 );
 			DestroyFigureScene( &scene );
 			continue;
 		}
@@ -550,8 +617,10 @@ static int FigureCatchTest( void )
 
 // The arms row where a step comes short, see nbRowArms: an upper arm that does not swing into the body swings out in the
 // sense of the fall, the farther the shorter the step comes, and its motor turns the body back. Hit on the upper chest
-// with 100 N s from the front and 120 N s from behind, both arms swing up from where they hang by more than 1.2 rad, with
-// 60 N s from the front by less than 1 rad, and the figure catches itself. Pushed to its left with 80 N s only the right
+// with 100 N s from the front, both arms swing up from where they hang by more than 1.2 rad, with 60 N s from the front
+// by less than 1 rad, and the figure catches itself. Falling forward from 110 N s from behind they swing back to the
+// 40 degrees a shoulder allows, from more than 0.5 rad to 0.8, see nbMakeHumanoidBones: with a cone of 86 degrees all
+// round they swung back 1.3 rad, and the figure caught 120 N s. Pushed to its left with 80 N s only the right
 // arm rows, the left one would swing into the body. A swinging arm bends its elbow, and the arms turn against the chest
 // at most 15 rad/s and brake at most 450 rad/s2: they swing, they do not jolt. Pulled toward a target far ahead, as in
 // round 23, they turned up to 21 rad/s and braked up to 684 rad/s2. Standing animated again, the arms hang in the pose
@@ -567,7 +636,7 @@ static int FigureRowTest( void )
 	} RowCase;
 	const RowCase cases[] = {
 		{ "100 N s from the front", { 0.0f, 0.0f, -100.0f }, { 1.2f, 1.2f }, { 1.6f, 1.6f } },
-		{ "120 N s from behind", { 0.0f, 0.0f, 120.0f }, { 1.2f, 1.2f }, { 1.6f, 1.6f } },
+		{ "110 N s from behind", { 0.0f, 0.0f, 110.0f }, { 0.5f, 0.5f }, { 0.8f, 0.8f } },
 		{ "80 N s to its left", { 80.0f, 0.0f, 0.0f }, { 0.0f, 1.2f }, { 0.4f, 1.6f } },
 		{ "60 N s from the front", { 0.0f, 0.0f, -60.0f }, { 0.4f, 0.4f }, { 1.0f, 1.0f } },
 	};
@@ -634,10 +703,10 @@ static int FigureRowTest( void )
 // Hits on the upper chest from eight directions, 50 to 150 N s in steps of 10: every figure catches itself and stands
 // animated again or falls, none stays catching itself for good, also not on one foot after a long lunge, see
 // NB_ONE_FOOT_TIME. Of the 32 hits up to 80 N s at most one falls, and it catches half of all of them. About one light
-// hit in a hundred ends in a long stumble and a fall: of 168 hits from 40 to 80 N s in steps of 2 in this scene, round 23
-// fell at 64 and 66 N s from behind, round 24 at 66 N s from behind and at 80 N s from its front right. Since the hit
-// spreads along the skeleton, see nbSpreadHit, the figure catches those 80 N s after 17 steps and 7.8 s, it fell after 14
-// steps and 5.6 s.
+// hit in a hundred ends in a long stumble and a fall: of 168 hits from 40 to 80 N s in steps of 2 in this scene, round
+// 23 fell at 64 and 66 N s from behind, round 24 at 66 N s from behind and at 80 N s from its front right, and since
+// the joints move as far as a person's, see nbMakeHumanoidBones, it falls at 74 N s from its right. Round 26 caught
+// those 80 N s after 17 steps and 7.8 s, now the longest catch or fall takes 3.9 s.
 static int FigureCatchScanTest( void )
 {
 	int caught = 0;
@@ -677,7 +746,7 @@ static int FigureCatchScanTest( void )
 			caughtTo80, hitsTo80, fell, longest );
 	ENSURE( caughtTo80 >= hitsTo80 - 1 );
 	ENSURE( caught >= 40 );
-	ENSURE( longest < 8.0f );
+	ENSURE( longest < 6.0f );
 	return 0;
 }
 
@@ -735,7 +804,7 @@ static uint32_t MuscleCatch( int threadCount, float impulse )
 }
 
 // The throw of 90 N s on a figure with muscles ends in the same bits with one thread and with four, on every platform
-#define NB_EXPECTED_MUSCLE_HASH 0x9ae7bd9du
+#define NB_EXPECTED_MUSCLE_HASH 0x8a640a11u
 
 // The muscles, see nbFigureMotors::muscles and nbUpdateMuscles. A figure with muscles hit while it stands catches itself
 // with the strength the balance asks for at once: every joint of its trunk and its legs at the full torque of the motors,
@@ -832,7 +901,9 @@ static int FigureMuscleTest( void )
 		float activation = on ? limit / full : 0.0f;
 		if ( on && previous > 0.0f )
 		{
-			ENSURE( ( previous - asked ) * ( activation - asked ) >= 0.0f );
+			// Read back from the torque limit of the spring, an activation on its target lies within a few bits of it
+			float off = fabsf( activation - asked ) > 1.0e-6f ? activation - asked : 0.0f;
+			ENSURE( ( previous - asked ) * off >= 0.0f );
 			ENSURE( fabsf( activation - asked ) <= fabsf( previous - asked ) + 1.0e-6f );
 			lagged += fabsf( activation - asked ) > 0.01f ? 1 : 0;
 		}
@@ -849,6 +920,88 @@ static int FigureMuscleTest( void )
 	ENSURE( one == NB_EXPECTED_MUSCLE_HASH );
 	return 0;
 }
+
+#if defined( B3_HAS_SWING_LIMITS )
+// How far past its limits a joint of a figure lies, in radians: the swing of a ball joint past the edge of its cone and
+// its twist past its range, the angle of a hinge past its range
+static float JointPastLimits( nbFigureId figure, int bone )
+{
+	b3JointId joint = nbFigure_GetJoint( figure, bone );
+	if ( b3Joint_GetType( joint ) == b3_revoluteJoint )
+	{
+		float angle = b3RevoluteJoint_GetAngle( joint );
+		return b3MaxFloat( b3RevoluteJoint_GetLowerLimit( joint ) - angle, angle - b3RevoluteJoint_GetUpperLimit( joint ) );
+	}
+	if ( b3Joint_GetType( joint ) != b3_sphericalJoint )
+	{
+		return 0.0f;
+	}
+	float twist = b3SphericalJoint_GetTwistAngle( joint );
+	float past = b3MaxFloat( b3SphericalJoint_GetLowerTwistLimit( joint ) - twist,
+							 twist - b3SphericalJoint_GetUpperTwistLimit( joint ) );
+	if ( b3SphericalJoint_IsSwingLimitEnabled( joint ) )
+	{
+		float lowerX, upperX, lowerY, upperY;
+		b3SphericalJoint_GetSwingLimits( joint, &lowerX, &upperX, &lowerY, &upperY );
+		float limits[4] = { b3TanQuarter( upperX ), b3TanQuarter( -lowerX ), b3TanQuarter( upperY ), b3TanQuarter( -lowerY ) };
+		b3Quat frameA = b3MulQuat( b3Body_GetRotation( b3Joint_GetBodyA( joint ) ), b3Joint_GetLocalFrameA( joint ).q );
+		b3Quat frameB = b3MulQuat( b3Body_GetRotation( b3Joint_GetBodyB( joint ) ), b3Joint_GetLocalFrameB( joint ).q );
+		past = b3MaxFloat( past, -b3GetSwingLimitSeparation( b3InvMulQuat( frameA, frameB ), limits, NULL ) );
+	}
+	return past;
+}
+
+// The joints of the humanoid move as far as a person's, see nbMakeHumanoidBones. A hit of 90 N s from behind on the
+// right forearm swings the arm up past the head, 162 degrees, a hit from the front swings it back 51 degrees in the
+// plane of the trunk, a little out, as far as the 40 degrees of a shoulder and the ellipse toward its 160 out let it.
+// With a cone of 86 degrees all round it swung up to 89 and back to 90. Box3D holds the limits softly: right after the
+// hit the hand, which takes 6 N s of it on 0.8 kg, swings up to 35 degrees past its limits, from the fifth step on no
+// joint lies more than a few degrees past them.
+static int FigureJointRangeTest( void )
+{
+	float most[2] = { 0.0f, 0.0f };
+	float worst = 0.0f;
+	for ( int pass = 0; pass < 2; ++pass )
+	{
+		FigureScene scene;
+		CreateFigureScene( &scene, 1 );
+		nbFigureId figure = AddFigure( &scene, b3Vec3_zero, 0.0f );
+		StepFigures( &scene, 30 );
+		b3BodyId forearm = nbFigure_GetBody( figure, nb_humanoidForearmRight );
+		b3Vec3 local = b3Lerp( scene.bones[nb_humanoidForearmRight].start, scene.bones[nb_humanoidForearmRight].end, 0.75f );
+		nbHitDef hit = { 1, nb_humanoidForearmRight, (b3Vec3){ 0.0f, 0.0f, pass == 0 ? 90.0f : -90.0f },
+						 b3Body_GetWorldPoint( forearm, local ) };
+		ENSURE( nbFigure_ApplyHit( figure, &hit ) );
+		for ( int step = 0; step < 120; ++step )
+		{
+			StepFigures( &scene, 1 );
+			b3Quat chest = b3Body_GetRotation( nbFigure_GetBody( figure, nb_humanoidChest ) );
+			b3Vec3 arm = b3RotateVector( b3Body_GetRotation( nbFigure_GetBody( figure, nb_humanoidUpperArmRight ) ), b3Vec3_axisY );
+			b3Vec3 down = b3RotateVector( chest, (b3Vec3){ 0.0f, -1.0f, 0.0f } );
+			b3Vec3 forward = b3RotateVector( chest, b3Vec3_axisZ );
+			float ahead = b3Dot( arm, forward );
+			float swing = pass == 0 ? acosf( b3ClampFloat( b3Dot( arm, down ), -1.0f, 1.0f ) )
+									: atan2f( -ahead, b3Dot( arm, down ) );
+			if ( ( pass == 0 ) == ( ahead > 0.0f ) )
+			{
+				most[pass] = b3MaxFloat( most[pass], swing );
+			}
+			for ( int i = 1; step >= 4 && i < nb_humanoidBoneCount; ++i )
+			{
+				worst = b3MaxFloat( worst, JointPastLimits( figure, i ) );
+			}
+		}
+		DestroyFigureScene( &scene );
+	}
+	printf( "  90 N s on the right forearm: the arm swings up to %.0f degrees forward, %.0f back, from the fifth step on no "
+			"joint more than %.1f degrees past its limits\n",
+			most[0] * 180.0f / B3_PI, most[1] * 180.0f / B3_PI, worst * 180.0f / B3_PI );
+	ENSURE( most[0] > 2.4f );
+	ENSURE( 0.5f < most[1] && most[1] < 1.0f );
+	ENSURE( worst < 0.15f );
+	return 0;
+}
+#endif
 
 // The parts of a hit of 10 N s on the center of a bone of a ragdoll that every bone takes, read back from the change of
 // its momentum
@@ -1926,14 +2079,16 @@ static WallThrow ThrowAtWall( int threadCount, bool wood, float thickness, uint3
 	return result;
 }
 
-// A figure kicked very hard, 1000 N s, into a wall of boards of wood, 5 cm with its back or 3 cm with its side, flies on
-// through the hole it breaks in four or five of eight fracture patterns, in the others the edge of the hole stops it. A
-// wall of concrete of 20 cm and boards of 20 cm hold it, though the concrete loses pieces where the trunk slams into it at
-// 20 m/s, and the boards up to 86 since the hit spreads along the skeleton, see nbSpreadHit, before up to 56. The thin
-// wall holds against a kick that only knocks the figure down. In every throw the bones that hit the wall in one step
-// make one collision of the figure with the wall, steps with several bones in it come up, the momentum of the figure
-// toward the wall never grows in a step it goes through, and no bone ends up inside the wall that stands. See the
-// roadmap of the game, 26.16 and 26.19 C.
+// A figure kicked very hard, 1000 N s, into a wall of boards of wood, 5 cm with its back or 3 cm with its side, flies
+// on through the hole it breaks in two or four of eight fracture patterns, in the others the edge of the hole stops it.
+// Since the joints move as far as a person's, see nbMakeHumanoidBones, its back breaks through 5 cm in two, before in
+// five: the trunk and the head give way and do not strike the boards at once. A wall of concrete of 20 cm and boards of
+// 20 cm hold it, though the concrete loses pieces where the trunk slams into it at 20 m/s, and the boards up to 86
+// since the hit spreads along the skeleton, see nbSpreadHit, before up to 56. The thin wall holds against a kick that
+// only knocks the figure down. In every throw the bones that hit the wall in one step make one collision of the figure
+// with the wall, steps with several bones in it come up, the momentum of the figure toward the wall never grows in a
+// step it goes through, and no bone ends up inside the wall that stands. See the roadmap of the game, 26.16 and 26.19
+// C.
 static int FigureWallTest( void )
 {
 	typedef struct WallCase
@@ -1948,7 +2103,7 @@ static int FigureWallTest( void )
 		int maxDebris;
 	} WallCase;
 	const WallCase cases[] = {
-		{ "boards of 5 cm, back first", true, 0.05f, 1000.0f, false, 3, 8, 40 },
+		{ "boards of 5 cm, back first", true, 0.05f, 1000.0f, false, 2, 8, 40 },
 		{ "boards of 3 cm, side first", true, 0.03f, 1000.0f, true, 4, 8, 90 },
 		{ "boards of 20 cm, back first", true, 0.2f, 1000.0f, false, 0, 0, 100 },
 		{ "concrete of 20 cm, back first", false, 0.2f, 1000.0f, false, 0, 0, 60 },
@@ -1989,12 +2144,15 @@ static int FigureWallTest( void )
 
 // A figure that broke through a wall of boards lies behind it among the pieces, its bones touch them again, and no bone
 // ends up inside the wall that stands. It gets up there once nothing lies on it. A block that falls on it while it gets
-// up breaks that off, and it gets up again later, see the roadmap of the game, 26.15, 26.19 C and 28.5 (E).
+// up breaks that off, and it gets up again later, see the roadmap of the game, 26.15, 26.19 C and 28.5 (E). Both turns
+// are chaotic: in 32 fracture patterns the figure breaks through 11 times, and in 4 of them the block of 154 kg stays
+// on it, three times half on the ground on an arm or a leg, once on its belly, and the figure waits under it, as 26.15
+// asks, on active-ragdoll-26 13 and 6 times. The test takes the sixteenth pattern, where it gets up again.
 static int FigureWallDebrisTest( void )
 {
 	FigureScene scene;
 	CreateFigureScene( &scene, 1 );
-	nbDestructibleId wall = AddWall( &scene, true, 0.05f, 2 );
+	nbDestructibleId wall = AddWall( &scene, true, 0.05f, 15 );
 	nbFigureDef def = nbDefaultFigureDef();
 	def.rig = &scene.rig;
 	def.standHeight = scene.standHeight;
@@ -2059,13 +2217,14 @@ static int FigureWallDebrisTest( void )
 	return 0;
 }
 
-// The throw through the wall of boards ends in the same bits with one thread and with four, on every platform
-#define NB_EXPECTED_WALL_HASH 0x9087b805u
+// The throw through the wall of boards ends in the same bits with one thread and with four, on every platform, in the
+// fifth fracture pattern, which the figure breaks through
+#define NB_EXPECTED_WALL_HASH 0x3146fc76u
 
 static int FigureWallDeterminismTest( void )
 {
-	WallThrow one = ThrowAtWall( 1, true, 0.05f, 2, 1000.0f, false );
-	WallThrow four = ThrowAtWall( 4, true, 0.05f, 2, 1000.0f, false );
+	WallThrow one = ThrowAtWall( 1, true, 0.05f, 4, 1000.0f, false );
+	WallThrow four = ThrowAtWall( 4, true, 0.05f, 4, 1000.0f, false );
 	printf( "  wall hash: 0x%08x\n", one.hash );
 	ENSURE( one.through );
 	ENSURE( one.hash == four.hash );
@@ -2120,7 +2279,7 @@ static int ThinBoardTest( void )
 }
 
 // The hash of the figure scenario on every platform, see RunFigureScenario
-#define NB_EXPECTED_FIGURE_HASH 0x13e97526u
+#define NB_EXPECTED_FIGURE_HASH 0x8147b53du
 
 static int FigureDeterminismTest( void )
 {
@@ -2139,6 +2298,7 @@ int FigureTest( void );
 int FigureTest( void )
 {
 	RUN_TEST( SpringTorqueLimitTest );
+	RUN_TEST( SwingLimitTest );
 	RUN_TEST( HumanoidClipTest );
 	RUN_TEST( FigureStandTest );
 	RUN_TEST( FigureFlinchTest );
@@ -2148,6 +2308,9 @@ int FigureTest( void )
 	RUN_TEST( FigureCatchScanTest );
 	RUN_TEST( FigureMuscleTest );
 	RUN_TEST( FigureSpreadTest );
+#if defined( B3_HAS_SWING_LIMITS )
+	RUN_TEST( FigureJointRangeTest );
+#endif
 	RUN_TEST( FigureKnockdownTest );
 	RUN_TEST( FigureGetUpRoomTest );
 	RUN_TEST( FigureRoomTest );

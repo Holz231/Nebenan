@@ -1068,8 +1068,19 @@ typedef struct nbBoneDef
 	float lowerAngle;
 	float upperAngle;
 
-	/// Ball: how far the bone swings out of its rest direction, in radians, up to 0.5 pi
+	/// Ball: how far the bone swings out of its rest direction, in radians, up to 0.5 pi, the same in every direction
 	float coneAngle;
+
+	/// Ball: how far the bone swings in each of four directions, in place of coneAngle, like a shoulder that swings far
+	/// forward and out but little back. Its swing out of the rest direction turns about an axis in the xy plane of the
+	/// joint frame: about the x axis it reaches from lowerSwingX to upperSwingX, about the y axis from lowerSwingY to
+	/// upperSwingY, and between them the limit is a quarter of an ellipse, see b3SphericalJointDef::enableSwingLimit. In
+	/// radians, the lower ones from -0.95 pi to 0, the upper ones from 0 to 0.95 pi. All zero, the default, takes
+	/// coneAngle in every direction.
+	float lowerSwingX;
+	float upperSwingX;
+	float lowerSwingY;
+	float upperSwingY;
 
 	/// Scales the torque limit of the motors for this joint, 1 by default: strong legs, a weak neck
 	float strength;

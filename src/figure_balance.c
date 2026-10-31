@@ -1114,8 +1114,14 @@ static void nbRowArms( nbFigure* f, nbBalancer* b, float timeStep, b3Quat* pose 
 				angle = b3MinFloat( NB_SWING_ANGLE, angle );
 				if ( b3Dot( motion, restAlong ) < 0.0f )
 				{
+					// The limit of the shoulder toward where the arm moves, the swing about the axis from its rest
+					// direction to there in the joint frame
 					float swung = nbAcos( b3Dot( along, restAlong ) );
-					float cone = 2.0f * b3Atan2( bone->coneHalf.sine, bone->coneHalf.cosine );
+					b3Vec3 toward = b3Normalize( b3Cross( restAlong, b3Add( along, motion ) ) );
+					b3Vec3 local = b3InvRotateVector( b3MulQuat( frame, bone->jointFrame ), toward );
+					float flat = sqrtf( local.x * local.x + local.y * local.y );
+					float cone = flat > 0.0f ? nbSwingLimit( bone, local.x / flat, local.y / flat )
+											 : nbSwingLimit( bone, 1.0f, 0.0f );
 					angle = b3MinFloat( angle, cone - NB_ROW_SPARE - swung );
 				}
 				if ( angle > NB_SWING_LEAST )

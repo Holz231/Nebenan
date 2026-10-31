@@ -610,6 +610,11 @@ b3SphericalJointDef b3RecR_SPHERICALJOINTDEF( b3RecReader* rdr )
 	def.enableTwistLimit = b3RecR_BOOL( rdr );
 	def.lowerTwistAngle = b3RecR_F32( rdr );
 	def.upperTwistAngle = b3RecR_F32( rdr );
+	def.enableSwingLimit = b3RecR_BOOL( rdr ); // Added for Nebenan
+	def.lowerSwingX = b3RecR_F32( rdr );
+	def.upperSwingX = b3RecR_F32( rdr );
+	def.lowerSwingY = b3RecR_F32( rdr );
+	def.upperSwingY = b3RecR_F32( rdr );
 	def.enableMotor = b3RecR_BOOL( rdr );
 	def.maxMotorTorque = b3RecR_F32( rdr );
 	def.motorVelocity = b3RecR_VEC3( rdr );
