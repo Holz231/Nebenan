@@ -40,8 +40,9 @@ gelöscht. Kein Staub, keine Schatten: Jede Millisekunde geht in die Zerstörung
   ihren Füßen nicht abfangen kann, fängt sie mit Schritten ab, der Standfuß bleibt dabei stehen. Ein harter Treffer,
   eine Explosion oder schwere Trümmer machen ihre Knochen dynamisch, mit den Geschwindigkeiten, die sie hatten, und dem
   Treffer genau einmal, und sie fängt sich mit echten Schritten wie auf dem Branch `ragdoll-11`: Ihre Gelenke behalten
-  ihre Kraft, ein begrenztes Drehmoment hält ihr Becken aufrecht, und ruhig auf den Füßen steht sie wieder animiert. Wo
-  kein Schritt reicht, eine Last auf ihr liegt oder der Boden wegbricht, fällt sie als aktiver Ragdoll. Ihre Gelenke
+  ihre Kraft, ein begrenztes Drehmoment hält ihr Becken aufrecht, wo ein Schritt zu kurz kommt, rudern ihre Arme in
+  Fallrichtung und drehen den Körper zurück, und ruhig auf den Füßen steht sie wieder animiert. Wo auch das nicht
+  reicht, eine Last auf ihr liegt oder der Boden wegbricht, fällt sie als aktiver Ragdoll. Ihre Gelenke
   ziehen mit begrenzter Kraft zu einer Haltung, sie fängt sich mit den Armen ab oder rollt sich ein. Liegt sie still,
   steht sie mit einem Clip vom Bauch oder vom Rücken wieder auf, sobald sie Boden, Platz und nichts auf sich hat, und
   fehlt ihr nur der Platz, rückt sie dorthin, wo sie ihn hat. Die Knochen und Clips eines Menschen baut die Bibliothek
@@ -597,27 +598,47 @@ genug ist, Trümmer, die die Figur mit so viel Impuls treffen, oder ein Stoß, d
 abfangen, machen die Knochen eines Menschen der Bibliothek dynamisch, mit den Geschwindigkeiten, die sie hatten, im
 Zustand `nb_figureBalancing`, nach Kapitel 26.13 bis 26.15 und 28.3 der Roadmap des Spiels und der Balance des Branches
 `ragdoll-11`. Der Treffer verteilt sich wie beim aktiven Ragdoll auf die Knochen. Die Gelenke ziehen mit voller Kraft zu
-der Haltung des Clips, 800 N m pro rad bis 150 N m, und ein Gelenk von Box3D gegen einen statischen Anker der Welt hält
-das Becken aufrecht, mit höchstens 250 N m (`nbFigureMotors::uprightTorque`). In jedem Update misst die Figur ihren
-Schwerpunkt und seine Geschwindigkeit, welche Füße auf Boden stehen, die Fläche ihrer Sohlen und den Capture Point, den
-Schwerpunkt um seine Geschwindigkeit durch die Frequenz eines Pendels seiner Höhe weiter. Im Stand halten die Beine ihre
-Füße, wo sie stehen, und schieben das Becken über die Mitte der Sohlen. Liegt der Capture Point zwei Updates lang mehr
-als 3 cm außerhalb, tritt ein Fuß dorthin, wo der Capture Point bei seiner Landung sein wird, 5 cm darüber hinaus, in
-Reichweite der Hüfte, auf Boden, der trägt und höchstens 25 cm höher oder tiefer liegt, mit Platz für den Fuß und freiem
-Weg dorthin, 0,3 s lang und 8 cm hoch. Die ersten 60 % des Schritts folgt sein Ziel dem Capture Point. Fängt sie auch
-der dritte Schritt in Folge nicht, findet sie keinen Schritt, neigt sie sich mehr als 0,6 rad, sinkt ihr Schwerpunkt
-unter drei Viertel seiner Höhe oder berührt 0,3 s kein Fuß den Boden, fällt sie als aktiver Ragdoll, ohne das Gelenk am
-Becken. Eine Last von oben wirft sie ab einem Viertel von `crushForce` um, wie beim Aufstehen. Ruhig auf beiden Füßen,
-die Knochen im Mittel nach ihrer Masse langsamer als 0,15 m/s, den Capture Point zwischen den Füßen und das Becken
-aufrecht, steht sie nach einer halben Sekunde wieder animiert, wo sie steht, ihr Clip blendet in 0,25 s ein, und ihre
-Füße treten mit den Schritten des Ausgleichs unter ihren Körper zurück. Auf die obere Brust getroffen fängt sich der
-Mensch der Bibliothek so von vorn bis 70 N s, von hinten bis 100 N s und von beiden Seiten bis 60 N s, auf 10 N s genau
-abgetastet, mit bis zu acht Schritten, und steht nach 1 bis 4,3 s wieder animiert. Darüber reicht kein Schritt, und er
-fällt nach zwei Updates, ohne zu treten. Eine Figur, die sich fängt, kostet im Update rund 4,4 statt 2 µs, und Box3D
-rechnet ihre dynamischen Knochen mit einem Thread in rund 0,06 statt 0,006 ms pro Schritt. `nbFigureInfo::catchCount`
-und `nbFigureStats::catchCount` zählen, wie oft eine Figur sich fing, `nbFigureStats::balancingCount`, wie viele es
-gerade tun. Ein Spiel ruft dafür nichts auf. Andere Rigs als der Mensch der Bibliothek fallen gleich, bei ihnen kennt
-die Bibliothek die Beine nicht.
+der Haltung des Clips, 800 N m pro rad bis 150 N m, die Arme mit 60 % davon, so schwingen sie mit dem Körper, und ein
+Gelenk von Box3D gegen einen statischen Anker der Welt hält das Becken aufrecht, mit höchstens 250 N m
+(`nbFigureMotors::uprightTorque`). In jedem Update misst die Figur ihren Schwerpunkt und seine Geschwindigkeit, welche
+Füße auf Boden stehen, die Fläche ihrer Sohlen und den Capture Point, den Schwerpunkt um seine Geschwindigkeit durch die
+Frequenz eines Pendels seiner Höhe weiter. Im Stand halten die Beine ihre Füße, wo sie stehen, und schieben das Becken
+über die Mitte der Sohlen. Liegt der Capture Point zwei Updates lang mehr als 3 cm außerhalb, tritt ein Fuß dorthin, wo
+der Capture Point bei seiner Landung sein wird, 5 cm darüber hinaus, in Reichweite der Hüfte, auf Boden, der trägt und
+höchstens 25 cm höher oder tiefer liegt, mit Platz für den Fuß und freiem Weg dorthin, 0,3 s lang und 8 cm hoch. Die
+ersten 60 % des Schritts folgt sein Ziel dem Capture Point. Kommt der Schritt zu kurz, rudern die Arme, siehe unten.
+Fängt sie auch der vierte Schritt in Folge nicht, kann kein Fuß treten, ließe der beste Schritt den Capture Point bei
+der Landung mehr als 1,1 m draußen, neigt sie sich mehr als 0,6 rad, sinkt ihr Schwerpunkt unter drei Viertel seiner
+Höhe oder berührt 0,3 s kein Fuß den Boden, fällt sie als aktiver Ragdoll, ohne das Gelenk am Becken. Steht sie nach
+einem langen Ausfallschritt 0,3 s auf einem Fuß, während der andere in der Luft hängt, tritt sie mit ihm, sonst stünde
+sie nie ruhig. Eine Last von oben wirft sie ab einem Viertel von `crushForce` um, wie beim Aufstehen. Ruhig auf beiden
+Füßen, die Knochen im Mittel nach ihrer Masse langsamer als 0,15 m/s, den Capture Point zwischen den Füßen und das
+Becken aufrecht, steht sie nach einer halben Sekunde wieder animiert, wo sie steht, ihr Clip blendet in 0,25 s ein, und
+ihre Füße treten mit den Schritten des Ausgleichs unter ihren Körper zurück. Auf die obere Brust getroffen fängt sich
+der Mensch der Bibliothek so von vorn bis 110 N s, von hinten bis 140 N s und von beiden Seiten bis 80 N s, auf 10 N s
+genau abgetastet, und steht nach 0,9 bis 3,2 s wieder animiert. Bis `active-ragdoll-22` waren es 70, 100 und 60 N s.
+Darüber fällt er nach höchstens einem Schritt. Eine Figur, die sich fängt, kostet im Update rund 4,4 statt 2 µs, und
+Box3D rechnet ihre dynamischen Knochen mit einem Thread in rund 0,06 statt 0,006 ms pro Schritt.
+`nbFigureInfo::catchCount` und `nbFigureStats::catchCount` zählen, wie oft eine Figur sich fing,
+`nbFigureStats::balancingCount`, wie viele es gerade tun. Ein Spiel ruft dafür nichts auf. Andere Rigs als der Mensch
+der Bibliothek fallen gleich, bei ihnen kennt die Bibliothek die Beine nicht.
+
+**Rudernde Arme.** Kommt ein Schritt zu kurz, helfen die Arme, nach der Idee von Hof (2007): Außer mit dem Druckpunkt
+unter den Füßen und mit Schritten hält ein Körper sein Gleichgewicht, indem er Teile von sich um seinen Schwerpunkt
+dreht. Ließe der geplante Schritt den Capture Point bei der Landung mehr als 10 cm außerhalb der Sohlen und liegt er
+gerade draußen, dreht der Motor jeder Schulter ihren Oberarm in Fallrichtung, um die Achse quer zur Richtung des Sturzes,
+das Ziel 1 rad vor dem Arm, so zieht der Motor mit seiner vollen Kraft. Das Gegenmoment dreht den Körper zurück, und
+über die Füße am Boden bremst es den Schwerpunkt: Ohne Schritt gemessen, liegt der Capture Point 0,3 s nach einem
+Treffer von 80 N s von vorn 10 cm, von hinten 11 cm und von der Seite 3 bis 4 cm näher an den Füßen als mit hängenden
+Armen. Ein Arm, der in den Körper schwänge, wie der innere bei einem Stoß zur Seite, rudert nicht, und keiner zieht
+weiter, wenn er 0,3 rad vor dem Kegel seiner Schulter ist. Danach kehrt er mit 4 rad/s zur Haltung des Clips zurück. Wo
+ein Arm anhält, geht sein Drehimpuls in den Körper zurück, ein schnelles Zurückschwingen stieße die Figur wieder an.
+Zwischen dem Rudern hängen die Arme mit 60 % der Kraft der Motoren. Damit die Arme helfen können, gibt die Balance nicht
+mehr nach zwei Updates auf, weil ein Schritt allein nicht reicht, und sie tritt bis zu viermal in Folge. Bei 1 488
+Treffern auf Brust und Bauch aus acht Richtungen mit 40 bis 132 N s fängt sich die Figur 1 206-mal statt 736-mal, ohne
+zu rudern wären es 1 085. Von den 736 Treffern, die sie vorher fing, fängt sie 10 nicht mehr, und bei denen, die beide
+fangen, steht sie gleich schnell wieder. Das Rudern kostet im Update rund 0,4 µs pro Schritt und Figur, die sich fängt.
+Ein Spiel ruft dafür nichts auf.
 
 **Füße auf dem Boden.** Die Füße eines stehenden Menschen der Bibliothek stehen auf dem Boden unter ihnen, nach Kapitel
 26.5 und 28.3 der Roadmap des Spiels, auf einer Stufe, an einem Hang und auf Schutt. Unter der Mitte jeder Sohle sucht
@@ -1926,7 +1947,14 @@ und 0,24 statt 0,14 ms mit einem, gut 2 µs pro Figur, die schwingt, im Mittel a
 `active-ragdoll-21`. Der Box3D-Schritt kostet so viel wie vorher. Weil Trümmer die Figuren danach in anderen Haltungen
 treffen, enden die Szenen, in denen Figuren zucken, anders: Von den 50 stehen am Ende alle, von den 10 wartet eine im
 Schutt vor ihrer Mauer auf Platz, und in der Stadt mit Figuren stürzen 5 statt 6 Stockwerke ein. Alle übrigen Szenen,
-auch die Ragdolls im Schutt, enden bitgleich wie auf `active-ragdoll-21`.
+auch die Ragdolls im Schutt, enden bitgleich wie auf `active-ragdoll-21`. Seit `active-ragdoll-23` rudern die Arme, wo
+ein Schritt zu kurz kommt, siehe Rudernde Arme. Die 120 N s werfen weiter alle 50 Figuren um, 17 treten vorher noch
+einmal, und das Update dieser Phase kostet 0,31 statt 0,27 ms pro Schritt mit vier Threads und 0,26 statt 0,24 ms mit
+einem, im Median aus drei und zwei Läufen im Wechsel mit `active-ragdoll-22`. Unter den Granaten fangen sich 7 statt 2
+der 50, und am Ende liegt eine quer auf dem Schutt ihrer Mauer, das Becken 66 cm hoch, und wartet auf Boden darunter,
+siehe Grenzen. Von den 10 Figuren stehen am Ende alle. In der Stadt mit Figuren stürzen 33 statt 29 Figuren, und ein
+Bild kostet dort 7,1 statt 6,7 ms mit vier Threads. Alle Szenen ohne Figuren und die Ragdolls im Schutt enden bitgleich
+wie auf `active-ragdoll-22`.
 
 **Ragdolls im Schutt.** Danach stellt `nebenan_benchmark figures` 20 Figuren auf eine Platte über zwei Lagen aus 4 513
 Würfeln, wirft sie um und lässt sie liegen (`nbFigureDef::canGetUp` aus). Platte, Würfel und Ragdolls sind eine große
@@ -2018,7 +2046,7 @@ lange die Threads im Löser rechnen und worauf sie sonst warten.
 ## Tests und Benchmark
 
 ```sh
-build/bin/nebenan_test            # 105 Tests: Geometrie, Voronoi, Hüllen, Öffnungen, Stöße, Stützgraph, Etagen, Lastprüfung, Mauern, Schutt, Ruhe, Durchschlagen, Threads, Knoten, große Blöcke, Gelenke in Paketen und Gebieten, Suchbaum, Kontaktlisten, Streaming, Stream, Laden im Hintergrund, Speichern und Zurückholen, gemeinsamer Thread-Pool, Ruhe-Prüfung auf den Workern, Schritt auf eigenem Thread, Schritte pro Bild, Takt der Physik, Wahl der Threads, Profil und Skalierung, Figuren, Ausgleichsschritt, Abfangen, Füße auf dem Boden, Platz zum Aufstehen, Ragdoll durch die Wand, dünne Bretter, Determinismus …
+build/bin/nebenan_test            # 107 Tests: Geometrie, Voronoi, Hüllen, Öffnungen, Stöße, Stützgraph, Etagen, Lastprüfung, Mauern, Schutt, Ruhe, Durchschlagen, Threads, Knoten, große Blöcke, Gelenke in Paketen und Gebieten, Suchbaum, Kontaktlisten, Streaming, Stream, Laden im Hintergrund, Speichern und Zurückholen, gemeinsamer Thread-Pool, Ruhe-Prüfung auf den Workern, Schritt auf eigenem Thread, Schritte pro Bild, Takt der Physik, Wahl der Threads, Profil und Skalierung, Figuren, Ausgleichsschritt, Abfangen, rudernde Arme, Füße auf dem Boden, Platz zum Aufstehen, Ragdoll durch die Wand, dünne Bretter, Determinismus …
 build/bin/nebenan_benchmark 4     # Zahl = Threads für Bruch und Physik, 0 = so viele, wie ein Spiel nähme
 build/bin/nebenan_benchmark scaling   # die Städte unter Beschuss mit 1, 2, 4 … Threads und die Tabelle der Skalierung
 build/bin/nebenan_benchmark rates     # die Städte unter Beschuss mit 30, 60 und 120 Hz, was eine simulierte Sekunde kostet
@@ -2043,7 +2071,7 @@ src/
   destructible.c    zerstörbare Objekte und Vorzerlegung
   figure.c          Figuren: Knochen, Gelenke, Stand, aktiver Ragdoll, Treffer, Aufstehen
   figure_clips.c    die Clips eines Menschen, aus Schlüsselposen mit Zwei-Knochen-IK
-  figure_balance.c  Abfangen nach einem harten Treffer: Schwerpunkt, Capture Point und Schritte wie auf ragdoll-11
+  figure_balance.c  Abfangen nach einem harten Treffer: Schwerpunkt, Capture Point und Schritte wie auf ragdoll-11, rudernde Arme
   impact.c          Einschläge und Auswurf der Splitter
   stream.c          Städte größer als der Speicher: Laden und Entladen um Kamera und bewegte Körper
   system.c          Kerne und die passende Zahl von Threads
@@ -2112,8 +2140,8 @@ Nach Änderungen an `demo/shaders/scene.glsl` die Shader neu erzeugen, im Ordner
 - Eine Figur, die sich fängt, hält ihr Becken wie auf `ragdoll-11` mit einem begrenzten Drehmoment gegen die Welt
   aufrecht, nicht nur mit ihren Beinen. Ein Mensch, der stolpert, tut das mit seinem Gleichgewichtssinn, hier tut es ein
   Gelenk von Box3D. Ein Spiel, das es rein physikalisch will, setzt `uprightTorque` auf null. Dann fängt sich der
-  Mensch der Bibliothek kaum noch: Auf die Brust getroffen fällt er von vorn, von hinten und von rechts schon bei
-  50 N s, nach ein bis drei Schritten, nur von links fängt er sich dann noch.
+  Mensch der Bibliothek kaum noch: Auf die Brust getroffen fällt er aus allen vier Richtungen schon bei 50 N s, auch mit
+  rudernden Armen.
 - Ein Ragdoll, der mit dem Becken höher als 60 cm über dem Boden ruht, ohne mit beiden Füßen auf Boden zu stehen, etwa
   quer über einem Balken, findet keinen Boden unter dem Becken und steht nicht auf (`nb_waitGround`). Steht er auf
   seinen Füßen, wacht er seit `active-ragdoll-21` stehend auf, siehe Aufwachen im Stand, aber nur, wenn Rumpf und Kopf
