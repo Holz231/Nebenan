@@ -8,8 +8,9 @@
 // is. There it would come to rest if it stopped it. Standing, the legs hold the feet where they are and move the pelvis
 // over the middle of the support. When the capture point lies outside, a foot steps where the capture point will be when
 // it lands, on ground that carries it and with room for the foot, as far as it reaches. When that step comes short, the
-// arms row in the sense of the fall, and their motors turn the body back against it. Four steps in a row that do not
-// catch it, a tilt, a sinking, a step that no foot can take or one that comes hopelessly short, and it falls. Calm on its feet it stands animated again.
+// arms swing out in the sense of the fall, and their motors turn the body back against it. Five steps in a row that do
+// not catch it, a tilt, a sinking, a step that no foot can take or one that comes hopelessly short, and it falls. Calm
+// on its feet it stands animated again.
 // Balance only sets targets of joints, the strength of the arms and the bounded hold, the motors and Box3D decide where
 // the bodies go. The decisions take fixed thresholds in the update after every step in the order of the figures, so the
 // same inputs give the same figure on every machine and with any number of threads.
@@ -31,12 +32,13 @@
 #define NB_DANGER_UPDATES 2
 
 // A step: the farthest the ankle lands from the hip over the ground, in meters, its time in seconds, how high the foot
-// lifts, in meters, and the most steps in a row before the figure gives up and falls. Four, as rowing arms give a fourth
-// step the time to catch a figure that three did not.
+// lifts, in meters, and the most steps in a row before the figure gives up and falls. Five: rowing arms give a fourth
+// step the time to catch a figure that three did not, and arms that swing out and hold instead of pulling hard leave
+// some light hits a fifth step short. With five, none of 672 hits up to 80 N s fell.
 #define NB_MAX_STEP_LENGTH 0.55f
 #define NB_STEP_DURATION 0.3f
 #define NB_STEP_HEIGHT 0.08f
-#define NB_MAX_STEPS 4
+#define NB_MAX_STEPS 5
 
 // No step starts that would leave the capture point at its landing more than this far outside the support, in meters
 // for the humanoid of 1.8 m. That far neither the arms nor the steps after it catch the figure, and it falls at once
@@ -64,14 +66,27 @@
 
 // The arms row against a fall, see nbRowArms: while a step swings that leaves the capture point at its landing more than
 // this far outside the support, in meters for the humanoid of 1.8 m, and the capture point lies outside now, an upper arm
-// that does not swing into the body turns in the sense of the fall, its target this far ahead of where it is, in
-// radians, so its motor pulls with its full torque, and never closer to the cone of the shoulder than this many radians.
-// Then it returns to the pose of the clip at this rate, in radians per second. Between, the arms hang at this part of the
-// strength of the motors and swing with the body.
+// that does not swing into the body swings out in the sense of the fall. By this many radians for each meter the step
+// comes shorter than that, up to this many, never closer to the cone of the shoulder than this many and not at all if
+// less than this many are left, in this many seconds with the full strength of its motor, eased at both ends.
 #define NB_ROW_SHORT 0.1f
-#define NB_ROW_LEAD 1.0f
+#define NB_SWING_GAIN 6.5f
+#define NB_SWING_ANGLE 1.3f
 #define NB_ROW_SPARE 0.3f
-#define NB_ROW_RETURN 4.0f
+#define NB_SWING_LEAST 0.1f
+#define NB_SWING_TIME 0.2f
+
+// Out, the arm holds while the figure steps, and swings back to the pose of the clip in this many seconds, eased. While
+// it holds it sinks back by up to this part of the way over a second, and it strokes about where it holds by this many
+// radians this many times a second, the two arms against each other, faded in over this many seconds and out with the
+// way back. Its elbow bends by up to this many radians with the swing. Between swings the arms hang at this part of the
+// strength of the motors and swing with the body.
+#define NB_SWING_BACK 0.6f
+#define NB_SWING_DROOP 0.2f
+#define NB_STROKE_ANGLE 0.2f
+#define NB_STROKE_RATE 1.2f
+#define NB_STROKE_FADE 0.3f
+#define NB_SWING_ELBOW 0.6f
 #define NB_LOOSE_ARMS 0.6f
 
 // Standing, the pelvis stays this far below straight legs, a soft knee, in meters
@@ -1000,9 +1015,12 @@ void nbBeginBalance( nbWorld* world, int index, nbFigure* f )
 	// the motors pull at all
 	for ( int k = 0; k < 2; ++k )
 	{
-		b->rowing[k] = false;
-		b->returning[k] = false;
-		b->armPose[k] = b3Quat_identity;
+		b->armSwing[k] = nb_armHangs;
+		b->armTime[k] = 0.0f;
+		b->armHold[k] = 0.0f;
+		b->armFrom[k] = b3Quat_identity;
+		b->armAxis[k] = b3Vec3_zero;
+		b->armAngle[k] = 0.0f;
 		for ( int i = nb_upperArms[k]; i <= nb_upperArms[k] + 2; ++i )
 		{
 			nbSetBoneSpring( f, i, NB_LOOSE_ARMS, f->springs );
@@ -1048,9 +1066,22 @@ void nbEndBalance( nbFigure* f )
 // center of mass. An upper arm that the motor of its shoulder turns in the sense of the fall, about up across the
 // direction of the fall, turns the body back the other way. Through the feet on the ground that pushes the center of
 // mass back, and the capture point runs away more slowly, as if the support reached farther. An arm can only turn as far
-// as its shoulder lets it, and when it stops the turn goes back into the body. So the arms row only while a step comes
-// clearly short, and then return slowly. The arm on the side of a fall to the side would swing into the body and stays.
-// Rowing, an arm pulls with the full strength of its motors, between it hangs loose.
+// as its shoulder lets it, and when it stops the turn goes back into the body. So the arms swing only while a step comes
+// clearly short, the farther the shorter it comes, and hold out while the figure steps. The arm on the side of a fall to
+// the side would swing into the body and stays.
+// A swing is planned when it starts, so the arm moves like an arm and not like a motor that jumps to its limit: out along
+// an eased ramp with the full strength of its motor, the elbow bending with it, then loose again, held out while the
+// figure steps, sinking a little and stroking slowly, the two arms against each other, and back along an eased ramp to
+// the pose of the clip, the elbow straightening. Pulled toward a target far ahead, as before, an arm turned more than
+// twice as fast and braked three times as hard.
+
+// From 0 to 1 and level at both ends
+static float nbEase( float x )
+{
+	x = b3ClampFloat( x, 0.0f, 1.0f );
+	return x * x * ( 3.0f - 2.0f * x );
+}
+
 static void nbRowArms( nbFigure* f, nbBalancer* b, float timeStep, b3Quat* pose )
 {
 	// The sense of the fall: up turned toward where the capture point lies from the middle of the support
@@ -1066,62 +1097,76 @@ static void nbRowArms( nbFigure* f, nbBalancer* b, float timeStep, b3Quat* pose 
 		int arm = nb_upperArms[k];
 		const nbBone* bone = f->bones + arm;
 		b3Quat frame = b3MulQuat( chest, bone->rest.q );
-		b3Quat current = b3Body_GetRotation( bone->bodyId );
-		bool rowing = false;
-		if ( row )
+
+		// A hanging arm swings from where it is, not where its motion would point into the body, and not closer to the
+		// cone of the shoulder than the spare when the swing takes it farther from its rest
+		if ( row && b->armSwing[k] == nb_armHangs )
 		{
-			// Where the arm points and where it would move, not toward the middle of the body
+			b3Quat current = b3Body_GetRotation( bone->bodyId );
 			b3Vec3 along = b3RotateVector( current, b3Vec3_axisY );
 			b3Vec3 motion = b3Cross( axis, along );
 			b3Vec3 shoulder = b3ToVec3( b3Body_GetPosition( bone->bodyId ) );
 			b3Vec3 outward = b3Normalize( nbFlat( b3Sub( shoulder, chestPoint ), b->up ) );
-			rowing = b3Dot( motion, outward ) >= -0.5f * b3Length( motion );
-			if ( rowing )
+			if ( b3Dot( motion, outward ) >= -0.5f * b3Length( motion ) )
 			{
-				// Ahead of where it is, unless that takes it farther from its rest and near the cone of the shoulder
 				b3Vec3 restAlong = b3RotateVector( frame, b3Vec3_axisY );
-				float swung = nbAcos( b3Dot( along, restAlong ) );
-				float cone = 2.0f * b3Atan2( bone->coneHalf.sine, bone->coneHalf.cosine );
-				b3Quat target = current;
-				if ( b3Dot( motion, restAlong ) >= 0.0f || swung < cone - NB_ROW_SPARE )
+				float angle = NB_SWING_GAIN * ( b->stepResidual - NB_ROW_SHORT * b->scale ) / b->scale;
+				angle = b3MinFloat( NB_SWING_ANGLE, angle );
+				if ( b3Dot( motion, restAlong ) < 0.0f )
 				{
-					target = b3MulQuat( b3MakeQuatFromAxisAngle( axis, NB_ROW_LEAD ), current );
+					float swung = nbAcos( b3Dot( along, restAlong ) );
+					float cone = 2.0f * b3Atan2( bone->coneHalf.sine, bone->coneHalf.cosine );
+					angle = b3MinFloat( angle, cone - NB_ROW_SPARE - swung );
 				}
-				pose[arm] = b3NormalizeQuat( b3InvMulQuat( frame, target ) );
-				b->returning[k] = false;
+				if ( angle > NB_SWING_LEAST )
+				{
+					b->armSwing[k] = nb_armSwingsOut;
+					b->armTime[k] = 0.0f;
+					b->armHold[k] = 0.0f;
+					b->armFrom[k] = b3NormalizeQuat( b3InvMulQuat( frame, current ) );
+					b->armAxis[k] = b3InvRotateVector( frame, axis );
+					b->armAngle[k] = angle;
+					nbSetBoneSpring( f, arm, 1.0f, f->springs );
+				}
 			}
 		}
 
-		// Back to the pose of the clip at a bounded rate, from where it stopped rowing
-		if ( rowing == false && ( b->rowing[k] || b->returning[k] ) )
+		if ( b->armSwing[k] == nb_armSwingsOut )
 		{
-			if ( b->rowing[k] )
+			// Out along the ramp, the elbow bending with it, the forearm and the hand loose
+			b->armTime[k] += timeStep;
+			float out = b->armTime[k] / NB_SWING_TIME;
+			float eased = nbEase( out );
+			b3Quat turn = b3MakeQuatFromAxisAngle( b->armAxis[k], b->armAngle[k] * eased );
+			pose[arm] = b3NormalizeQuat( b3MulQuat( turn, b->armFrom[k] ) );
+			pose[arm + 1] = b3MulQuat( b3MakeQuatFromAxisAngle( b3Vec3_axisX, NB_SWING_ELBOW * eased ), pose[arm + 1] );
+			if ( out >= 1.0f )
 			{
-				b->armPose[k] = b3NormalizeQuat( b3InvMulQuat( frame, current ) );
-				b->returning[k] = true;
-			}
-			b3Quat left = b3InvMulQuat( b->armPose[k], pose[arm] );
-			float angle = 2.0f * b3Atan2( b3Length( left.v ), b3AbsFloat( left.s ) );
-			float turn = NB_ROW_RETURN * timeStep;
-			if ( angle <= turn )
-			{
-				b->returning[k] = false;
-			}
-			else
-			{
-				b->armPose[k] = nbHalfwayAt( b->armPose[k], pose[arm], turn / angle );
-				pose[arm] = b->armPose[k];
+				b->armSwing[k] = nb_armSwingsBack;
+				b->armTime[k] = 0.0f;
+				b->armFrom[k] = pose[arm];
+				nbSetBoneSpring( f, arm, NB_LOOSE_ARMS, f->springs );
 			}
 		}
-
-		// Full strength to row, loose between, the forearm and the hand with the upper arm
-		if ( rowing != b->rowing[k] )
+		else if ( b->armSwing[k] == nb_armSwingsBack )
 		{
-			for ( int i = arm; i <= arm + 2; ++i )
+			// Back along the ramp toward the clip once the figure stands, sinking toward it while it holds
+			b->armTime[k] += b->stepping ? 0.0f : timeStep;
+			b->armHold[k] += timeStep;
+			float way = b->armTime[k] / NB_SWING_BACK;
+			float back = b3MaxFloat( nbEase( way ), NB_SWING_DROOP * b3MinFloat( b->armHold[k], 1.0f ) );
+			b3Quat target = nbHalfwayAt( b->armFrom[k], pose[arm], back );
+			pose[arm + 1] = b3MulQuat( b3MakeQuatFromAxisAngle( b3Vec3_axisX, NB_SWING_ELBOW * ( 1.0f - back ) ), pose[arm + 1] );
+
+			// Strokes about where it holds, the right arm against the left, faded in and faded out with the way back
+			float fade = b3MinFloat( b->armHold[k] / NB_STROKE_FADE, 1.0f ) * ( 1.0f - back );
+			float stroke = NB_STROKE_ANGLE * fade * b3ComputeCosSin( 2.0f * B3_PI * NB_STROKE_RATE * b->armHold[k] ).sine;
+			stroke = k == 0 ? stroke : -stroke;
+			pose[arm] = b3MulQuat( b3MakeQuatFromAxisAngle( b->armAxis[k], stroke ), target );
+			if ( way >= 1.0f )
 			{
-				nbSetBoneSpring( f, i, rowing ? 1.0f : NB_LOOSE_ARMS, f->springs );
+				b->armSwing[k] = nb_armHangs;
 			}
-			b->rowing[k] = rowing;
 		}
 	}
 }

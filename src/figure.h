@@ -107,6 +107,14 @@ typedef struct nbFoot
 	bool cast;
 } nbFoot;
 
+// Where an upper arm is in its swing against a fall, see nbRowArms
+typedef enum nbArmSwing
+{
+	nb_armHangs,
+	nb_armSwingsOut,
+	nb_armSwingsBack,
+} nbArmSwing;
+
 // A figure that catches itself after a hard hit, see figure_balance.c: the legs at rest, what it measures in every update,
 // its steps and its upright hold
 typedef struct nbBalancer
@@ -165,11 +173,15 @@ typedef struct nbBalancer
 	float oneFootTime;
 	float calmTime;
 
-	// The arms row against a fall, see nbRowArms: whether each upper arm rows, whether it returns to the pose of the clip
-	// and the rotation against its rest pose it has come back to
-	bool rowing[2];
-	bool returning[2];
-	b3Quat armPose[2];
+	// The arms row against a fall, see nbRowArms: where each upper arm is in its swing, the seconds into the swing out or
+	// the way back, the seconds since it came out, the rotation against its rest pose it swings from, out from where it
+	// started or back from where it came out, the axis of the swing in the frame of the shoulder and its angle
+	nbArmSwing armSwing[2];
+	float armTime[2];
+	float armHold[2];
+	b3Quat armFrom[2];
+	b3Vec3 armAxis[2];
+	float armAngle[2];
 
 	// The hold that keeps the pelvis upright, see nbFigureMotors::uprightTorque
 	b3JointId upright;

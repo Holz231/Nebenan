@@ -1962,14 +1962,16 @@ static void DrawUi( App& app )
 							ImGuiSliderFlags_Logarithmic );
 		if ( ImGui::IsItemHovered() )
 		{
-			ImGui::SetTooltip( "So stark stößt ein Treffer des Gewehrs eine Figur. Ab 50 N s werden ihre "
-							   "Knochen\ndynamisch, und sie fängt sich mit Schritten wie auf ragdoll-11, wo ein "
-							   "Schritt\nzu kurz kommt, rudern ihre Arme in Fallrichtung mit. Sie fällt, wo auch das "
-							   "nicht\nreicht: auf die Brust von vorn ab etwa 120 N s, von hinten ab 150 N s, von der "
-							   "Seite\nab 90 N s. Darunter zuckt sie zurück, Kopf und Arme schwingen nach, wo der Treffer "
-							   "sie\ntrifft, und sie tritt nach, wo sie über ihren Füßen nicht stehen bleiben kann. Granate "
-							   "und\nKanone treffen Figuren mit ihrer eigenen Wucht. Um 1000 N s fliegt eine Figur der "
-							   "Szene\nFiguren durch die dünne Bretterwand hinter ihr, an der Ziegelwand bleibt sie liegen." );
+			ImGui::SetTooltip( "So stark stößt ein Treffer des Gewehrs eine Figur. Ab 50 N s werden ihre Knochen\n"
+							   "dynamisch, und sie fängt sich mit Schritten wie auf ragdoll-11, wo ein Schritt\n"
+							   "zu kurz kommt, schwingen ihre Arme in Fallrichtung aus, je weiter, je kürzer er\n"
+							   "kommt, und halten, solange sie tritt. Sie fällt, wo auch das nicht reicht: auf die\n"
+							   "Brust von vorn ab etwa 120 N s, von hinten ab 130 N s, von der Seite ab 90 N s.\n"
+							   "Darunter zuckt sie zurück, Kopf und Arme schwingen nach, wo der Treffer sie\n"
+							   "trifft, und sie tritt nach, wo sie über ihren Füßen nicht stehen bleiben kann.\n"
+							   "Granate und Kanone treffen Figuren mit ihrer eigenen Wucht. Um 1000 N s fliegt\n"
+							   "eine Figur der Szene Figuren durch die dünne Bretterwand hinter ihr, an der\n"
+							   "Ziegelwand bleibt sie liegen." );
 		}
 		ImGui::Text( "Aufpralle auf Wände %d, durchgebrochen %d", app.figureCollisions, app.figureBreakThroughs );
 		if ( app.figureCollisions > 0 )
