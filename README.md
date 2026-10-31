@@ -619,13 +619,13 @@ Becken aufrecht, steht sie nach einer halben Sekunde wieder animiert, wo sie ste
 ihre Füße treten mit den Schritten des Ausgleichs unter ihren Körper zurück. Auf die obere Brust getroffen fängt sich
 der Mensch der Bibliothek so von vorn bis 110 N s, von hinten bis 120 N s und von beiden Seiten bis 80 N s, auf 10 N s
 genau abgetastet, und steht nach 0,9 bis 4,2 s wieder animiert. Auf `active-ragdoll-23` waren es von hinten 140 N s, bis
-`active-ragdoll-22` 70, 100 und 60 N s. Darüber fällt er nach höchstens zwei Schritten. Auch darunter endet etwa einer
-von hundert Treffern in langem Stolpern und einem Sturz, in der Szene der Tests 2 von 168 Treffern mit 40 bis 80 N s,
-wie auf `active-ragdoll-23`. Eine Figur, die sich fängt, kostet im Update rund 4,4 statt 2 µs, und Box3D rechnet ihre
-dynamischen Knochen mit einem Thread in rund 0,06 statt 0,006 ms pro Schritt. `nbFigureInfo::catchCount` und
-`nbFigureStats::catchCount` zählen, wie oft eine Figur sich fing, `nbFigureStats::balancingCount`, wie viele es gerade
-tun. Ein Spiel ruft dafür nichts auf. Andere Rigs als der Mensch der Bibliothek fallen gleich, bei ihnen kennt die
-Bibliothek die Beine nicht.
+`active-ragdoll-22` 70, 100 und 60 N s. Darüber fällt er nach höchstens zwei Schritten. Auch darunter endet ab und zu
+ein Treffer in langem Stolpern: In der Szene der Tests fällt seit `active-ragdoll-26` keiner von 168 Treffern mit 40 bis
+80 N s, vorher zwei, aber 80 N s von vorn rechts fängt die Figur erst nach 17 Schritten und 7,8 s. Eine Figur, die sich
+fängt, kostet im Update rund 4,4 statt 2 µs, und Box3D rechnet ihre dynamischen Knochen mit einem Thread in rund 0,06
+statt 0,006 ms pro Schritt. `nbFigureInfo::catchCount` und `nbFigureStats::catchCount` zählen, wie oft eine Figur sich
+fing, `nbFigureStats::balancingCount`, wie viele es gerade tun. Ein Spiel ruft dafür nichts auf. Andere Rigs als der
+Mensch der Bibliothek fallen gleich, bei ihnen kennt die Bibliothek die Beine nicht.
 
 **Rudernde Arme.** Kommt ein Schritt zu kurz, helfen die Arme, nach der Idee von Hof (2007): Außer mit dem Druckpunkt
 unter den Füßen und mit Schritten hält ein Körper sein Gleichgewicht, indem er Teile von sich um seinen Schwerpunkt
@@ -692,17 +692,40 @@ an ihrem Ziel. Ein Spiel ruft dafür nichts auf.
 **Aktiver Ragdoll.** Eine Figur, die sich nicht fangen kann, eine Last von oben ab `crushForce` (600 N), Boden, der
 wegbricht oder sich schneller als 1,5 m/s bewegt, und `nbFigure_Knockdown` machen eine Figur zum aktiven Ragdoll, mit
 den Geschwindigkeiten, die ihre Knochen hatten. Ein Treffer wirkt genau einmal und verteilt sich wie in Overgrowth
-(`RiggedObject::ApplyForceToRagdoll`) auf die Knochen: Jeder bekommt an seinem Schwerpunkt einen Anteil nach seiner
-Masse durch das Quadrat seines Abstands zum Treffpunkt plus 0,01 m². Nähme ein Knochen alles, peitschte er um seine
-Gelenke, und ein harter Treffer auf die Brust klappte den Rumpf an der Hüfte ein. Einen Treffer mit einer Nummer, die
-die Figur unter ihren letzten 16 schon hatte, nimmt sie nicht noch einmal (`nbHitDef::id`). Die Gelenke sind Federn mit
-begrenztem Drehmoment, eine Ergänzung in Box3D, siehe [`extern/README.md`](extern/README.md): Sie ziehen die Knochen zu
-einer Haltung und geben nach, wenn mehr gegen sie drückt. Wie in Overgrowth sind sie so stark, wie die Figur schnell
-ist, 0,1 pro m/s bis 0,8. Bis `active-ragdoll-19` waren sie nach einem harten Treffer 0,4 s lang schlaff, und eine
-getroffene Figur klappte an der Hüfte zusammen, jetzt behält sie ihre Kraft wie auf `ragdoll-11`,
-`nbFigureMotors::stunTime` macht sie für ein Spiel wieder schlaff. Die Steifigkeit gibt die Bibliothek in N m pro
-Radiant an und rechnet sie für jedes Gelenk aus der Trägheit seiner beiden Knochen in die Frequenz um, die Box3D
-erwartet, so halten ein schwerer Oberschenkel und ein leichter Fuß gleich.
+(`RiggedObject::ApplyForceToRagdoll`) auf die Knochen, aber entlang des Skeletts: Jeder bekommt an seinem Schwerpunkt
+einen Anteil nach seiner Masse durch das Quadrat seines Wegs vom Treffpunkt durch die Gelenke plus 0,01 m², siehe
+Treffer entlang des Skeletts. Nähme ein Knochen alles, peitschte er um seine Gelenke, und ein harter Treffer auf die
+Brust klappte den Rumpf an der Hüfte ein. Einen Treffer mit einer Nummer, die die Figur unter ihren letzten 16 schon
+hatte, nimmt sie nicht noch einmal (`nbHitDef::id`). Die Gelenke sind Federn mit begrenztem Drehmoment, eine Ergänzung
+in Box3D, siehe [`extern/README.md`](extern/README.md): Sie ziehen die Knochen zu einer Haltung und geben nach, wenn
+mehr gegen sie drückt. Wie in Overgrowth sind sie so stark, wie die Figur schnell ist, 0,1 pro m/s bis 0,8. Bis
+`active-ragdoll-19` waren sie nach einem harten Treffer 0,4 s lang schlaff, und eine getroffene Figur klappte an der
+Hüfte zusammen, jetzt behält sie ihre Kraft wie auf `ragdoll-11`, `nbFigureMotors::stunTime` macht sie für ein Spiel
+wieder schlaff. Die Steifigkeit gibt die Bibliothek in N m pro Radiant an und rechnet sie für jedes Gelenk aus der
+Trägheit seiner beiden Knochen in die Frequenz um, die Box3D erwartet, so halten ein schwerer Oberschenkel und ein
+leichter Fuß gleich.
+
+**Treffer entlang des Skeletts.** Bis `active-ragdoll-25` zählte für den Anteil eines Knochens die gerade Linie vom
+Treffpunkt zu seinem Schwerpunkt, wie in Overgrowth. Ein Unterarm, der neben der Hüfte hängt, bekam so von einem harten
+Treffer auf ihn nur ein Fünftel und das Becken daneben fast ebenso viel, und ein Tritt gegen ein Schienbein schob das
+andere Bein mit, ein Fünftel des Stoßes. Jetzt zählt der Weg vom Treffpunkt durch die Gelenke: über den getroffenen
+Knochen zu seinem Gelenk, von Gelenk zu Gelenk bis zum Knochen, an dem beide hängen, und wieder hinunter zum Schwerpunkt
+des anderen. Von 10 N s auf den rechten Unterarm nimmt er die Hälfte und das Becken 4 %, von einem Tritt gegen das linke
+Schienbein nimmt es drei Viertel und das rechte Bein 2 %, und ein Treffer auf die Brust oder den Kopf verteilt sich fast
+wie vorher, die Brust nimmt 77 statt 75 %. Gemessen an je 256 Treffern mit 40 bis 130 N s aus acht Richtungen dreht ein
+Treffer auf den Unterarm die Schulter in der ersten Sekunde im Median um 1,59 statt 0,69 rad, einer auf den Oberarm um
+0,81 statt 0,55 rad, und die Brust neigt sich kaum mehr als vorher. Ein Tritt gegen das Schienbein wirft die Figur
+61-mal statt 106-mal um, weil das andere Bein stehen bleibt. Sehr harte Treffer auf den Arm reißen sie öfter mit, ab
+88 N s auf den Unterarm 25-mal statt 6-mal, auf den Oberarm 65- statt 45-mal, darunter zusammen 3- statt 2-mal. Ein
+Treffer auf den Kopf wirft sie 165-mal statt 154-mal um, einer auf den Oberschenkel 2-mal statt nie. An 4 464 Treffern
+auf Brust und Bauch fängt sie sich 3 623-mal statt 3 627-mal, mit denselben Grenzen von 110, 120 und 80 N s, und von 168
+leichten Treffern fällt keiner mehr, vorher zwei. Weil alle anderen Knochen weniger abbekommen, nimmt der getroffene
+mehr: Paarweise verglichen drehen sich die Gelenke des Rumpfs bei einem Treffer auf die Brust um 19 % schneller und
+rucken um 11 % mehr, die der Arme rucken um 24 % mehr, bei einem Treffer auf den Bauch die des Rumpfs um 4 bis 5 % und
+die der Arme wie vorher. Die Figur stolpert öfter lange, 128-mal statt 97-mal über 4 s. Der Anteil des getroffenen
+Knochens wirkt an seinem Schwerpunkt, nicht am Treffpunkt: Mit dem Drehmoment des Treffpunkts verdrehte ein Treffer
+neben dem Schwerpunkt der Brust den Rumpf, paarweise um 49 % schneller als bis `active-ragdoll-25`, und die Figur fing
+sich nur noch 3 388-mal. Ein Treffer kostet so einmal 1,4 bis 2,6 statt 0,4 bis 0,8 µs. Ein Spiel ruft dafür nichts auf.
 
 **Abstützen und Einrollen.** Eine schnelle Figur rudert mit den Armen (`nb_clipFall`), eine langsame entspannt sich in
 ihre Grundhaltung, so weit, wie ihr die Kraft fehlt: Ruderte sie am Boden weiter, kröche sie mit eigener Kraft über ihn.
@@ -2006,7 +2029,11 @@ und ein Bild kostet 7,7 statt 7,5 ms mit vier Threads und 16,0 statt 15,9 ms mit
 Läufen im Wechsel. Alle Szenen ohne Figuren und die Ragdolls im Schutt enden bitgleich wie auf `active-ragdoll-23`. Seit
 `active-ragdoll-25` können die Gelenke mit Muskeln ziehen, siehe Muskeln, standardmäßig aus: Alle Szenen enden bitgleich
 wie auf `active-ragdoll-24`, auch die mit Figuren, und Update und Box3D-Schritt kosten so viel wie vorher, in drei und
-zwei Läufen im Wechsel, mit Ausschlägen der VM in beide Richtungen.
+zwei Läufen im Wechsel, mit Ausschlägen der VM in beide Richtungen. Seit `active-ragdoll-26` verteilt sich ein Treffer
+entlang des Skeletts, siehe dort. Die Szenen mit getroffenen Figuren enden anders, mit denselben Zuständen am Ende: Von
+den 10 und den 50 Figuren liegt je eine. In der Stadt mit Figuren stürzen 29 statt 28, am Ende stehen 28 statt 29, und
+ein Bild kostet 6,5 statt 6,7 ms mit vier Threads. Alle Szenen ohne Figuren und die Ragdolls im Schutt enden bitgleich
+wie auf `active-ragdoll-25`, und Update und Box3D-Schritt kosten so viel wie vorher, in drei und zwei Läufen im Wechsel.
 
 **Ragdolls im Schutt.** Danach stellt `nebenan_benchmark figures` 20 Figuren auf eine Platte über zwei Lagen aus 4 513
 Würfeln, wirft sie um und lässt sie liegen (`nbFigureDef::canGetUp` aus). Platte, Würfel und Ragdolls sind eine große
@@ -2098,7 +2125,7 @@ lange die Threads im Löser rechnen und worauf sie sonst warten.
 ## Tests und Benchmark
 
 ```sh
-build/bin/nebenan_test            # 110 Tests: Geometrie, Voronoi, Hüllen, Öffnungen, Stöße, Stützgraph, Etagen, Lastprüfung, Mauern, Schutt, Ruhe, Durchschlagen, Threads, Knoten, große Blöcke, Gelenke in Paketen und Gebieten, Suchbaum, Kontaktlisten, Streaming, Stream, Laden im Hintergrund, Speichern und Zurückholen, gemeinsamer Thread-Pool, Ruhe-Prüfung auf den Workern, Schritt auf eigenem Thread, Schritte pro Bild, Takt der Physik, Wahl der Threads, Profil und Skalierung, Figuren, Ausgleichsschritt, Abfangen, rudernde Arme, Muskeln, Füße auf dem Boden, Platz zum Aufstehen, Ragdoll durch die Wand, dünne Bretter, Determinismus …
+build/bin/nebenan_test            # 111 Tests: Geometrie, Voronoi, Hüllen, Öffnungen, Stöße, Stützgraph, Etagen, Lastprüfung, Mauern, Schutt, Ruhe, Durchschlagen, Threads, Knoten, große Blöcke, Gelenke in Paketen und Gebieten, Suchbaum, Kontaktlisten, Streaming, Stream, Laden im Hintergrund, Speichern und Zurückholen, gemeinsamer Thread-Pool, Ruhe-Prüfung auf den Workern, Schritt auf eigenem Thread, Schritte pro Bild, Takt der Physik, Wahl der Threads, Profil und Skalierung, Figuren, Ausgleichsschritt, Abfangen, rudernde Arme, Muskeln, Treffer entlang des Skeletts, Füße auf dem Boden, Platz zum Aufstehen, Ragdoll durch die Wand, dünne Bretter, Determinismus …
 build/bin/nebenan_benchmark 4     # Zahl = Threads für Bruch und Physik, 0 = so viele, wie ein Spiel nähme
 build/bin/nebenan_benchmark scaling   # die Städte unter Beschuss mit 1, 2, 4 … Threads und die Tabelle der Skalierung
 build/bin/nebenan_benchmark rates     # die Städte unter Beschuss mit 30, 60 und 120 Hz, was eine simulierte Sekunde kostet
