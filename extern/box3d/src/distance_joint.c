@@ -242,7 +242,7 @@ b3Vec3 b3GetDistanceJointForce( b3World* world, b3JointSim* base )
 // K = J * invM * JT
 //   = invMass1 + invI1 * cross(r1, u)^2 + invMass2 + invI2 * cross(r2, u)^2
 
-void b3PrepareDistanceJoint( b3JointSim* base, b3StepContext* context )
+void b3PrepareDistanceJoint( b3JointSim* base, b3StepContext* context, int domain )
 {
 	B3_ASSERT( base->type == b3_distanceJoint );
 
@@ -265,20 +265,14 @@ void b3PrepareDistanceJoint( b3JointSim* base, b3StepContext* context )
 	b3BodySim* bodySimA = b3Array_Get( setA->bodySims, localIndexA  );
 	b3BodySim* bodySimB = b3Array_Get( setB->bodySims, localIndexB  );
 
-	float mA = bodySimA->invMass;
-	b3Matrix3 iA = bodySimA->invInertiaWorld;
-	float mB = bodySimB->invMass;
-	b3Matrix3 iB = bodySimB->invInertiaWorld;
-
-	base->invMassA = mA;
-	base->invMassB = mB;
-	base->invIA = iA;
-	base->invIB = iB;
-
+	// Added for Nebenan: in a domain the joint may solve on copies of its bodies with their share of the mass
 	b3DistanceJoint* joint = &base->distanceJoint;
+	b3PrepareJointBodies( base, context, domain, bodyA, bodyB, bodySimA, bodySimB, &joint->indexA, &joint->indexB );
 
-	joint->indexA = bodyA->setIndex == b3_awakeSet ? localIndexA : B3_NULL_INDEX;
-	joint->indexB = bodyB->setIndex == b3_awakeSet ? localIndexB : B3_NULL_INDEX;
+	float mA = base->invMassA;
+	b3Matrix3 iA = base->invIA;
+	float mB = base->invMassB;
+	b3Matrix3 iB = base->invIB;
 
 	// initial anchors in world space
 	joint->anchorA = b3RotateVector( bodySimA->transform.q, b3Sub( base->localFrameA.p, bodySimA->localCenter ) );

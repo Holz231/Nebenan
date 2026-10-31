@@ -402,7 +402,7 @@ b3Vec3 b3GetWheelJointTorque( b3World* world, b3JointSim* base )
 
 // See constraints.pdf
 
-void b3PrepareWheelJoint( b3JointSim* base, b3StepContext* context )
+void b3PrepareWheelJoint( b3JointSim* base, b3StepContext* context, int domain )
 {
 	B3_ASSERT( base->type == b3_wheelJoint );
 
@@ -425,18 +425,12 @@ void b3PrepareWheelJoint( b3JointSim* base, b3StepContext* context )
 	b3BodySim* bodySimA = b3Array_Get( setA->bodySims, localIndexA  );
 	b3BodySim* bodySimB = b3Array_Get( setB->bodySims, localIndexB  );
 
-	base->invMassA = bodySimA->invMass;
-	base->invMassB = bodySimB->invMass;
-	base->invIA = bodySimA->invInertiaWorld;
-	base->invIB = bodySimB->invInertiaWorld;
+	// Added for Nebenan: in a domain the joint may solve on copies of its bodies with their share of the mass
+	b3WheelJoint* joint = &base->wheelJoint;
+	b3PrepareJointBodies( base, context, domain, bodyA, bodyB, bodySimA, bodySimB, &joint->indexA, &joint->indexB );
 
 	b3Matrix3 invInertiaSum = b3AddMM( base->invIA, base->invIB );
 	base->fixedRotation = b3Det( invInertiaSum ) < 1000.0f * FLT_MIN;
-
-	b3WheelJoint* joint = &base->wheelJoint;
-
-	joint->indexA = bodyA->setIndex == b3_awakeSet ? localIndexA : B3_NULL_INDEX;
-	joint->indexB = bodyB->setIndex == b3_awakeSet ? localIndexB : B3_NULL_INDEX;
 
 	// Compute joint anchor frames with world space rotation, relative to center of mass
 	joint->frameA.q = b3MulQuat( bodySimA->transform.q, base->localFrameA.q );

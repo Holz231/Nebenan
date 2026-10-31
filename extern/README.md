@@ -740,24 +740,48 @@ nicht mehr Einträge des Stapels als vorher. Das hat zuerst der Branch `ragdoll-
 Gruppen der Knoten.
 
 Ein Gelenk gibt die Gebiete auch nicht mehr zurück, und Gelenke anderswo halten sie nicht mehr auf. Eine Insel mit
-Gebieten behält ihre Gelenke in den Farben, etwa ein Ragdoll im Schutt. Der aufrufende Thread rechnet sie vor jedem
-Durchgang über die Gebiete allein, erst die im Überlauf, dann Farbe für Farbe, an den Körpern selbst, die nach dem
-Durchgang davor das Mittel ihrer Kopien halten (`b3ExecuteDomainJoints` in `src/solver.c`). Die Gebiete starten ihre
-Kopien aus dem, was die Gelenke ließen, und ihre Stöße gehen über das Mittel an die Gelenke im nächsten Durchgang. Diese
-Zeit zählt `b3Profile::overflow` mit, auf der VM mit vier Threads 0,024 ms pro Ragdoll und Schritt. Mit 20 Ragdolls auf
-einer Platte über 4 513 Würfeln kostet der Löser so 3,98 ms, auf `active-ragdoll-1` ohne Gebiete 3,89 ms, im Median aus
-fünf Läufen im Wechsel, gleich im Rahmen der Streuung. Die Gelenke in die Gebiete selbst zu legen, gegen Kopien mit
-einem Anteil der Masse wie die Kontakte, steht als Schritt F12 in der [Roadmap](../docs/Roadmap.md). Ein Körper, der
-über ein Gelenk zu einer Insel mit Gebieten kommt, nimmt das Gebiet des Körpers, an dem er hängt, wie einer über einen
-Kontakt, die Kontakte eines schlafenden erst beim Aufwachen (`b3AbsorbIntoDomains` in `src/island.c`).
+Gebieten behält ihre Gelenke in den Farben, etwa ein Ragdoll im Schutt. Bis `active-ragdoll-17` rechnete der aufrufende
+Thread sie vor jedem Durchgang über die Gebiete allein, erst die im Überlauf, dann Farbe für Farbe, an den Körpern
+selbst, die nach dem Durchgang davor das Mittel ihrer Kopien hielten, und die Gebiete starteten ihre Kopien aus dem, was
+die Gelenke ließen. Diese Zeit zählte `b3Profile::overflow` mit, auf der VM mit vier Threads 0,024 ms pro Ragdoll und
+Schritt. Mit 20 Ragdolls auf einer Platte über 4 513 Würfeln kostete der Löser so 3,98 ms, auf `active-ragdoll-1` ohne
+Gebiete 3,89 ms, im Median aus fünf Läufen im Wechsel, gleich im Rahmen der Streuung. Ein Körper, der über ein Gelenk zu
+einer Insel mit Gebieten kommt, nimmt das Gebiet des Körpers, an dem er hängt, wie einer über einen Kontakt, die
+Kontakte eines schlafenden erst beim Aufwachen (`b3AbsorbIntoDomains` in `src/island.c`).
+
+Seit `active-ragdoll-18` liegen die Gelenke in den Gebieten selbst, Schritt F12 der [Roadmap](../docs/Roadmap.md). Der
+Setup-Task der Gebiete legt in jedem Schritt jedes Gelenk einer Insel mit Gebieten in das Gebiet seines ersten Körpers in
+der Insel, meist das Gebiet seiner Kontakte, und gibt beiden Körpern dieses Gebiet in ihre Bits (`b3FillDomainJoints` in
+`src/solver.c`), in der Reihenfolge der Gelenke der Inseln, mit jeder Zahl von Workern gleich. Hat ein Körper auch in
+einem anderen Gebiet Kontakte oder Gelenke, bekommt er in jedem eine Kopie mit seinem Anteil der Masse, wie für einen
+Kontakt. Jedes Gebiet bereitet seine Gelenke in einem Block vom Typ `b3_domainJointBlock` der Stufe vor, die auch die
+Kontakte vorbereitet, und rechnet sie in jedem Durchgang vor seinen Knoten und Kontakten auf den Kopien seiner Körper,
+erst die im Überlauf, dann die der Farben, die allein Ereignisse melden wie in den Stufen der Farben
+(`b3ExecuteDomainJoints`). Dafür bekommen die neun Arten von Gelenken beim Vorbereiten das Gebiet und holen Massen und
+Zustände über `b3PrepareJointBodies` in `src/joint.c`: In einem Gebiet zeigt ein Körper mit Kopien auf seine Kopie dort
+und rechnet mit der Anzahl seiner Kopien mal seiner inversen Masse und Trägheit. Außerhalb der Gebiete und für einen
+Körper, der nur in einem Gebiet liegt, bleiben die Werte bis aufs Bit wie vorher. Der aufrufende Thread rechnet keine
+Gelenke mehr allein. `b3Counters::domainJointCount` zählt die Gelenke in den Gebieten des letzten Schritts. Die Gelenke
+eines Gebiets laufen in der Reihenfolge der Farben, wie der aufrufende Thread sie zuvor ablief und wie die Pakete es
+tun, im Speicher am Stück. Mit 20 Ragdolls auf der Platte über 4 513 Würfeln, der Szene „Ragdolls im Schutt“ von
+`nebenan_benchmark figures`, liegen ihre 340 Gelenke in vier der acht Gebiete, im vollsten 102, denn die Figuren standen
+schon, als die Insel ihre Gebiete bekam. Mit vier Threads kosten die Bedingungen 2,82 statt 3,14 ms, im Median aus zehn
+Läufen im Wechsel gegen `active-ragdoll-17`, die Paare im Median 0,28 ms weniger, in acht von zehn schneller, Lösen und
+Entspannen in allen zehn. Der Box3D-Schritt kostet 4,34 statt 4,65 ms. Gewonnen sind 0,28 der 0,47 ms, die der
+aufrufende Thread allein rechnete, denn die Gebiete mit den Gelenken brauchen jetzt länger, und die anderen warten auf
+sie. Mit zwei Threads sind die Paare im Median 0,11 ms schneller, in sechs von zehn. Mit einem Thread zählt cachegrind
+gleich viele Befehle und gleich viele Fehlgriffe in den Daten, aber im Befehlscache 4,5 statt 2,7 Millionen auf 300
+Schritte, denn jedes Gebiet wechselt jetzt zwischen dem Code der Gelenke und dem der Kontakte. Gemessen kostet ein
+Schritt mit einem Thread je nach Sitzung der VM 0,02 bis 0,28 ms mehr. Die Szenen des Benchmarks ohne Gelenke in
+Gebieten, auch die Stadt mit Figuren, enden bitgleich wie auf `active-ragdoll-17`.
 `b3Counters::packCount` zählt die Pakete des letzten Schritts, null ohne Pakete. In Welten ohne Gelenke ändert sich
 nichts. Mit Gelenken rechnen die großen Inseln jetzt in Gebieten statt in den Farben, auch mit einem Ragdoll darin, und
 das ändert ihre Ergebnisse wie die sechzigste. Ein Test löst zwei Naben mit je 30 Armen an Motoren, 10 und 11 davon im
 Überlauf, vier Ketten, die Ereignisse melden, und den Haufen aus dem Test der Teams als Team mit 1, 2, 4 und 8 Workern
 und in beiden Breiten, bitgleich und gleich wie der Löser ohne Pakete. Ein zweiter legt zwei Ketten mit Federn und
 Grenzen und ein Pendel an einem Scharnier im Überlauf auf eine Platte mit Gebieten, während ein Pendel am Boden
-schwingt: Gebiete in allen Schritten, bitgleich mit jeder Zahl von Workern. Gebaut für Schritt F8, siehe „Figuren“ in
-der [Roadmap](../docs/Roadmap.md).
+schwingt: Gebiete in allen Schritten, bitgleich mit jeder Zahl von Workern, seit F12 mit den neun Gelenken der Platte in
+ihren Gebieten. Gebaut für Schritt F8, siehe „Figuren“ in der [Roadmap](../docs/Roadmap.md).
 
 Zum Messen schaltet `b3WorldDef::enableJointPacks` das ab, standardmäßig ist es an. Aus nimmt jedes wache Gelenk dem
 ganzen Schritt die Pakete und allen großen Inseln die Gebiete, und eine Insel, die ein Gelenk bekommt, gibt ihre Gebiete

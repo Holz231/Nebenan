@@ -4,8 +4,9 @@
 // Usage: nebenan_benchmark [workerCount], the worker count applies to the fracture and to Box3D
 //        nebenan_benchmark scaling [rounds], the towns under fire with 1, 2, 4 and so on workers, see
 //        nbGetScalingWorkerCounts, and the scaling report of the library for each town
-//        nebenan_benchmark figures [workerCount] [rounds] [off], the figures alone, see BenchmarkFigures, and in a town
-//        under fire, see BenchmarkTown, with off the joints keep the barrier per stage, see b3WorldDef::enableJointPacks
+//        nebenan_benchmark figures [workerCount] [rounds] [off], the figures alone, see BenchmarkFigures, as ragdolls in
+//        a heap of debris, see BenchmarkFigurePile, and in a town under fire, see BenchmarkTown, with off the joints keep
+//        the barrier per stage, see b3WorldDef::enableJointPacks
 
 #include "fracture.h"
 #include "hull_builder.h"
@@ -878,6 +879,112 @@ static void BenchmarkFigures( int workerCount, int figureCount )
 	DestroyScene( &scene );
 }
 
+// Ragdolls in a heap of debris: 20 humanoids knocked down on a plate over two layers of 4 513 cubes, one large island
+// whose domains solve the joints of the ragdolls, see b3Counters::domainJointCount. The plate never sleeps and the figures
+// stay down, so every measured step solves the same heap, after the figures fell and came to rest on the plate.
+#define PILE_FIGURES 20
+#define PILE_SIDE 48
+#define PILE_SETTLE_STEPS 180
+#define PILE_STEPS 420
+
+static void BenchmarkFigurePile( int workerCount )
+{
+	Scene scene = CreateScene( workerCount );
+	b3BodyDef bodyDef = b3DefaultBodyDef();
+	bodyDef.type = b3_dynamicBody;
+	b3ShapeDef shapeDef = b3DefaultShapeDef();
+	b3BoxHull cube = b3MakeBoxHull( 0.05f, 0.05f, 0.05f );
+	int cubeCount = 0;
+	for ( int layer = 0; layer < 2; ++layer )
+	{
+		int cubes = PILE_SIDE - layer;
+		float offset = 0.06f * (float)( cubes - 1 );
+		for ( int i = 0; i < cubes * cubes; ++i )
+		{
+			bodyDef.position = (b3Vec3){ 0.12f * (float)( i % cubes ) - offset, 0.05f + 0.1f * (float)layer,
+										 0.12f * (float)( i / cubes ) - offset };
+			b3BodyId body = b3CreateBody( scene.physicsWorld, &bodyDef );
+			b3CreateHullShape( body, &shapeDef, &cube.base );
+			cubeCount += 1;
+		}
+	}
+
+	bodyDef.position = (b3Vec3){ 0.0f, 0.251f, 0.0f };
+	bodyDef.enableSleep = false;
+	b3BodyId plate = b3CreateBody( scene.physicsWorld, &bodyDef );
+	b3BoxHull slab = b3MakeBoxHull( 0.06f * (float)PILE_SIDE, 0.05f, 0.06f * (float)PILE_SIDE );
+	shapeDef.density = 20000.0f;
+	b3CreateHullShape( plate, &shapeDef, &slab.base );
+
+	nbBoneDef bones[nb_humanoidBoneCount];
+	nbRigDef rig = nbDefaultRigDef();
+	rig.bones = bones;
+	rig.boneCount = nb_humanoidBoneCount;
+	nbFigureDef def = nbDefaultFigureDef();
+	def.rig = &rig;
+	def.standHeight = nbMakeHumanoidBones( 1.8f, 74.0f, bones, nb_humanoidBoneCount );
+	def.canGetUp = false;
+	nbFigureId figures[PILE_FIGURES];
+	for ( int k = 0; k < PILE_FIGURES; ++k )
+	{
+		def.position = b3ToPos( (b3Vec3){ -1.2f + 0.6f * (float)( k % 5 ), 0.301f, -0.9f + 0.6f * (float)( k / 5 ) } );
+		def.heading = 0.7f * (float)k;
+		figures[k] = nbCreateFigure( scene.world, &def );
+	}
+
+	static float stepTimes[PILE_STEPS];
+	for ( int step = 0; step < PILE_SETTLE_STEPS + PILE_STEPS; ++step )
+	{
+		if ( step == 10 )
+		{
+			for ( int k = 0; k < PILE_FIGURES; ++k )
+			{
+				nbFigure_Knockdown( figures[k] );
+			}
+		}
+		if ( step == PILE_SETTLE_STEPS )
+		{
+			nbWorld_ResetProfile( scene.world );
+		}
+
+		uint64_t ticks = b3GetTicks();
+		b3World_Step( scene.physicsWorld, 1.0f / 60.0f, 4 );
+		float stepTime = b3GetMilliseconds( ticks );
+		nbWorld_Update( scene.world, 1.0f / 60.0f );
+		if ( step >= PILE_SETTLE_STEPS )
+		{
+			stepTimes[step - PILE_SETTLE_STEPS] = stepTime;
+		}
+	}
+
+	float total = 0.0f;
+	for ( int i = 0; i < PILE_STEPS; ++i )
+	{
+		total += stepTimes[i];
+	}
+	qsort( stepTimes, PILE_STEPS, sizeof( float ), CompareFloats );
+	nbProfile profile = nbWorld_GetProfile( scene.world );
+	b3Counters counters = b3World_GetCounters( scene.physicsWorld );
+	nbFigureStats stats = nbWorld_GetFigureStats( scene.world );
+	int onPlate = 0;
+	for ( int k = 0; k < PILE_FIGURES; ++k )
+	{
+		onPlate += b3Body_GetPosition( nbFigure_GetBody( figures[k], nb_humanoidPelvis ) ).y > 0.3 ? 1 : 0;
+	}
+
+	printf( "  %d ragdolls knocked down on a plate over %d cubes, staying down\n", PILE_FIGURES, cubeCount );
+	printf( "    steps | step avg    p95    p99    max | solve constraints overflow | domains copies joints | awake "
+			"ragdolls, on the plate\n" );
+	printf( "    %5d | %8.3f %6.3f %6.3f %6.3f | %5.3f %11.3f %8.3f | %7d %6d %6d | %d, %d\n", PILE_STEPS,
+			total / (float)PILE_STEPS, stepTimes[PILE_STEPS * 95 / 100], stepTimes[PILE_STEPS * 99 / 100],
+			stepTimes[PILE_STEPS - 1], profile.stages[nb_profileSolve], profile.stages[nb_profileConstraints],
+			profile.stages[nb_profileOverflow], counters.domainCount, counters.domainCopyCount, counters.domainJointCount,
+			stats.awakeRagdollCount, onPlate );
+	printf( "    at the end memory %.1f MB, figures hash 0x%08x\n",
+			(double)( nbGetByteCount() + b3GetByteCount() ) / 1048576.0, HashFigures( figures, PILE_FIGURES ) );
+	DestroyScene( &scene );
+}
+
 // The streamed city of BenchmarkCity. The stream of the library decides which houses are loaded, the city says what
 // stands where and keeps the damaged houses that go with their rubble in a file.
 typedef struct City
@@ -1130,6 +1237,7 @@ int main( int argc, char** argv )
 			BenchmarkFigures( workerCount, 1 );
 			BenchmarkFigures( workerCount, 10 );
 			BenchmarkFigures( workerCount, 50 );
+			BenchmarkFigurePile( workerCount );
 			BenchmarkTown( workerCount, 1.0f, 4, 1, 5, NULL, 60, NULL, true );
 		}
 		return 0;

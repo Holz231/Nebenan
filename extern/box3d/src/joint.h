@@ -8,6 +8,8 @@
 
 #include "box3d/types.h"
 
+typedef struct b3Body b3Body;
+typedef struct b3BodySim b3BodySim;
 typedef struct b3DebugDraw b3DebugDraw;
 typedef struct b3StepContext b3StepContext;
 typedef struct b3World b3World;
@@ -359,7 +361,8 @@ b3Joint* b3GetJointFullId( b3World* world, b3JointId jointId );
 b3JointSim* b3GetJointSim( b3World* world, b3Joint* joint );
 b3JointSim* b3GetJointSimCheckType( b3JointId jointId, b3JointType type );
 
-void b3PrepareJoint( b3JointSim* joint, b3StepContext* context );
+// Added for Nebenan: domain is the domain of a joint in an island with domains, else -1, see b3PrepareJointBodies
+void b3PrepareJoint( b3JointSim* joint, b3StepContext* context, int domain );
 void b3WarmStartJoint( b3JointSim* joint, b3StepContext* context );
 void b3SolveJoint( b3JointSim* joint, b3StepContext* context, bool useBias );
 
@@ -387,14 +390,19 @@ b3Vec3 b3GetSphericalJointTorque( b3World* world, b3JointSim* base );
 b3Vec3 b3GetWeldJointTorque( b3World* world, b3JointSim* base );
 b3Vec3 b3GetWheelJointTorque( b3World* world, b3JointSim* base );
 
-void b3PrepareDistanceJoint( b3JointSim* base, b3StepContext* context );
-void b3PrepareMotorJoint( b3JointSim* base, b3StepContext* context );
-void b3PrepareParallelJoint( b3JointSim* base, b3StepContext* context );
-void b3PreparePrismaticJoint( b3JointSim* base, b3StepContext* context );
-void b3PrepareRevoluteJoint( b3JointSim* base, b3StepContext* context );
-void b3PrepareSphericalJoint( b3JointSim* base, b3StepContext* context );
-void b3PrepareWeldJoint( b3JointSim* base, b3StepContext* context );
-void b3PrepareWheelJoint( b3JointSim* base, b3StepContext* context );
+// Added for Nebenan: the inverse masses and inertias of the bodies of a joint for its prepare and the states it solves on
+// in the step, see joint.c
+void b3PrepareJointBodies( b3JointSim* base, const b3StepContext* context, int domain, const b3Body* bodyA, const b3Body* bodyB,
+						   const b3BodySim* bodySimA, const b3BodySim* bodySimB, int* indexA, int* indexB );
+
+void b3PrepareDistanceJoint( b3JointSim* base, b3StepContext* context, int domain );
+void b3PrepareMotorJoint( b3JointSim* base, b3StepContext* context, int domain );
+void b3PrepareParallelJoint( b3JointSim* base, b3StepContext* context, int domain );
+void b3PreparePrismaticJoint( b3JointSim* base, b3StepContext* context, int domain );
+void b3PrepareRevoluteJoint( b3JointSim* base, b3StepContext* context, int domain );
+void b3PrepareSphericalJoint( b3JointSim* base, b3StepContext* context, int domain );
+void b3PrepareWeldJoint( b3JointSim* base, b3StepContext* context, int domain );
+void b3PrepareWheelJoint( b3JointSim* base, b3StepContext* context, int domain );
 
 void b3WarmStartDistanceJoint( b3JointSim* base, b3StepContext* context );
 void b3WarmStartMotorJoint( b3JointSim* base, b3StepContext* context );

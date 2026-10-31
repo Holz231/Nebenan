@@ -408,9 +408,9 @@ void b3LinkJoint( b3World* world, b3Joint* joint )
 	int absorbBody, absorbContact;
 	int finalIslandId = b3MergeIslands( world, islandIdA, islandIdB, &absorbBody, &absorbContact );
 
-	// Added for Nebenan: an island with joints keeps its domains, the calling thread solves its joints between the passes,
-	// see b3ExecuteDomainJoints, and the bodies that join it take their domains, see b3AbsorbIntoDomains. A world that keeps
-	// joints out of the domains solves the island in the colors, see b3WorldDef::enableJointPacks.
+	// Added for Nebenan: an island with joints keeps its domains, which solve its joints, see b3ExecuteDomainJoints, and the
+	// bodies that join it take their domains, see b3AbsorbIntoDomains. A world that keeps joints out of the domains solves
+	// the island in the colors, see b3WorldDef::enableJointPacks.
 	if ( world->enableJointPacks )
 	{
 		b3AbsorbIntoDomains( world, finalIslandId, bodyA, bodyB, absorbBody, absorbContact );

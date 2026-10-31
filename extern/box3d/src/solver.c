@@ -260,7 +260,7 @@ static void b3PrepareJointsTask( b3SolverBlock block, b3StepContext* context )
 		{
 			B3_ASSERT( 0 <= index - colorStart && index - colorStart < spans[colorIndex].count );
 			b3JointSim* joint = joints + ( index - colorStart );
-			b3PrepareJoint( joint, context );
+			b3PrepareJoint( joint, context, -1 );
 		}
 
 		// Advance to next color
@@ -340,7 +340,7 @@ static void b3PackJointsTask( b3SolverStageType type, b3SolverBlock block, b3Ste
 		case b3_stagePrepareJoints:
 			for ( int i = 0; i < count; ++i )
 			{
-				b3PrepareJoint( joints + indices[i], context );
+				b3PrepareJoint( joints + indices[i], context, -1 );
 			}
 			break;
 
@@ -1250,6 +1250,7 @@ static void b3MergeDomains( b3StepContext* context, int start, int end )
 }
 
 static void b3ExecuteDomain( b3SolverStageType type, b3StepContext* context, int domain, int workerIndex );
+static void b3ExecuteDomainJoints( b3SolverStageType type, b3StepContext* context, int domain, int workerIndex );
 
 static void b3ExecuteBlock( b3SolverStage* stage, b3StepContext* context, b3SolverBlock block, int workerIndex )
 {
@@ -1274,6 +1275,13 @@ static void b3ExecuteBlock( b3SolverStage* stage, b3StepContext* context, b3Solv
 	if ( blockType == b3_mergeBlock )
 	{
 		b3MergeDomains( context, block.startIndex, block.startIndex + block.count );
+		return;
+	}
+
+	// Added for Nebenan: the joints of one domain in the prepare stage, see b3ExecuteDomainJoints
+	if ( blockType == b3_domainJointBlock )
+	{
+		b3ExecuteDomainJoints( b3_stagePrepareJoints, context, block.startIndex, workerIndex );
 		return;
 	}
 
@@ -1425,6 +1433,8 @@ static const struct ___tracy_source_location_data b3BlockZones[] = {
 static const struct ___tracy_source_location_data b3KnotBlockZone = B3_BLOCK_ZONE( "Knots", b3_colorFireBrick );
 static const struct ___tracy_source_location_data b3DomainBlockZone = B3_BLOCK_ZONE( "Domain", b3_colorSlateBlue );
 static const struct ___tracy_source_location_data b3MergeBlockZone = B3_BLOCK_ZONE( "Merge Domains", b3_colorSalmon );
+static const struct ___tracy_source_location_data b3DomainJointBlockZone =
+	B3_BLOCK_ZONE( "Prepare Domain Joints", b3_colorOldLace );
 
 static const struct ___tracy_source_location_data* b3GetBlockZone( const b3SolverStage* stage, b3SolverBlock block )
 {
@@ -1437,6 +1447,8 @@ static const struct ___tracy_source_location_data* b3GetBlockZone( const b3Solve
 			return &b3DomainBlockZone;
 		case b3_mergeBlock:
 			return &b3MergeBlockZone;
+		case b3_domainJointBlock:
+			return &b3DomainJointBlockZone;
 		default:
 			return b3BlockZones + stage->type;
 	}
@@ -1596,9 +1608,58 @@ static void b3ExecutePackRange( b3SolverStageType type, b3StepContext* context, 
 	}
 }
 
+// Added for Nebenan: the joints of a domain in a stage, on the copies of their bodies there, see b3Domains: those of the
+// overflow first and then those of the colors, which alone report their events, as in the stages of the colors, see
+// b3SolveJoints_Overflow. Each domain prepares its joints in a block of the prepare stage. Joints take no part in
+// restitution.
+static void b3ExecuteDomainJoints( b3SolverStageType type, b3StepContext* context, int domain, int workerIndex )
+{
+	b3JointSim* const* joints = context->domainJoints;
+	int start = context->domainJointStarts[domain];
+	int colorStart = context->domainJointColorStarts[domain];
+	int end = context->domainJointStarts[domain + 1];
+
+	switch ( type )
+	{
+		case b3_stagePrepareJoints:
+			for ( int i = start; i < end; ++i )
+			{
+				b3PrepareJoint( joints[i], context, domain );
+			}
+			break;
+
+		case b3_stageWarmStart:
+			for ( int i = start; i < end; ++i )
+			{
+				b3WarmStartJoint( joints[i], context );
+			}
+			break;
+
+		case b3_stageSolve:
+		case b3_stageRelax:
+		{
+			bool useBias = type == b3_stageSolve;
+			for ( int i = start; i < colorStart; ++i )
+			{
+				b3SolveJoint( joints[i], context, useBias );
+			}
+
+			b3BitSet* jointStateBitSet = &context->world->taskContexts.data[workerIndex].jointStateBitSet;
+			for ( int i = colorStart; i < end; ++i )
+			{
+				b3SolveColorJoint( joints[i], context, useBias, jointStateBitSet );
+			}
+		}
+		break;
+
+		default:
+			break;
+	}
+}
+
 // Added for Nebenan: one pass of the solver over a domain: its copies start from their bodies, which hold the mean of the
-// pass before, then come its knots, its other overflow contacts and its wide constraints, in the order the stages of the
-// colors take them, see b3Domains
+// pass before, then come its joints, its knots, its other overflow contacts and its wide constraints, in the order the
+// stages of the colors take them, see b3Domains
 static void b3ExecuteDomain( b3SolverStageType type, b3StepContext* context, int domain, int workerIndex )
 {
 	b3BodyState* states = context->states;
@@ -1607,6 +1668,8 @@ static void b3ExecuteDomain( b3SolverStageType type, b3StepContext* context, int
 	{
 		states[copies[i].slot] = states[copies[i].body];
 	}
+
+	b3ExecuteDomainJoints( type, context, domain, workerIndex );
 
 	const int* groupStarts = context->knotGroupStarts;
 	b3ExecuteKnots( type, context, groupStarts[domain], groupStarts[domain + 1] );
@@ -1883,37 +1946,11 @@ enum b3DomainStage
 	b3_domainStageCount,
 };
 
-// Added for Nebenan: one stage of the joints of the islands with domains, the first pack, see b3Domains. The calling
-// thread solves them alone before each pass over the domains, the overflow first and then color by color as a pack does,
-// on the bodies themselves, which hold the mean of their copies after the pass before. The domains start their copies
-// from what the joints left. A step without such joints, as every step of a world without joints, skips them. Joints
-// take no part in restitution. Their time counts as overflow, see b3Profile::overflow.
-static void b3ExecuteDomainJoints( b3SolverStageType type, b3StepContext* context )
-{
-	if ( context->domainJoints == false || type == b3_stageRestitution )
-	{
-		return;
-	}
-
-	uint64_t ticks = b3GetTicks();
-	b3TracyCZoneNC( domain_joints, "Domain Joints", b3_colorRed, true );
-	int activeColorCount = context->activeColorCount;
-	b3ExecutePackJoints( type, context, activeColorCount, 0, 0 );
-	for ( int i = 0; i < activeColorCount; ++i )
-	{
-		b3ExecutePackJoints( type, context, i, 0, 0 );
-	}
-	b3TracyCZoneEnd( domain_joints );
-	context->world->profile.overflow += b3GetMilliseconds( ticks );
-}
-
-// Added for Nebenan: one pass of the solver over the domains and the merge after it, see b3DomainStage, after the joints
-// of the islands with domains, see b3ExecuteDomainJoints
+// Added for Nebenan: one pass of the solver over the domains and the merge after it, see b3DomainStage
 static void b3ExecuteDomainPass( b3StepContext* context, int stageIndex, uint32_t* domainSyncIndex, uint32_t* mergeSyncIndex )
 {
 	b3SolverStage* stages = context->stages;
 	B3_ASSERT( stages[stageIndex].type == stages[stageIndex + 1].type );
-	b3ExecuteDomainJoints( stages[stageIndex].type, context );
 	b3ExecuteMainStage( stages + stageIndex, context, ( *domainSyncIndex << 16 ) | (uint32_t)stageIndex );
 	*domainSyncIndex += 1;
 	b3ExecuteMainStage( stages + stageIndex + 1, context, ( *mergeSyncIndex << 16 ) | (uint32_t)( stageIndex + 1 ) );
@@ -1938,7 +1975,6 @@ static void b3SolveDomainStages( b3StepContext* context )
 	uint32_t mergeSyncIndex = 1;
 
 	B3_ASSERT( stages[b3_domainStagePrepare].type == b3_stagePrepareWideContacts );
-	b3ExecuteDomainJoints( b3_stagePrepareJoints, context );
 	b3ExecuteMainStage( stages + b3_domainStagePrepare, context, ( convexSyncIndex << 16 ) | b3_domainStagePrepare );
 	convexSyncIndex += 1;
 	profile->prepareConstraints += b3GetMillisecondsAndReset( &ticks );
@@ -3122,10 +3158,10 @@ static void b3FillDomainLanes( const b3World* world, b3Domains* domains );
 // knots need the packs of the contacts only at the end and wait for it there, see b3FinishSetupTask, or run it themselves
 // if no worker took it yet. The second gives every body its pack, see b3FillPackBodies, which only the stages need. The
 // calling thread waits for it at the end of the setup, before the split of an island changes the islands of the bodies,
-// and with a single worker it runs the second task while it waits for the first. With domains a third task gives their
-// bodies their copies and fills their lanes, see b3FillDomainBodies and b3FillDomainLanes, which the knots wait for
-// along with the first. Only the calling thread takes from the stack, the tasks fill what it took before. Every result is
-// the same whichever thread computes it.
+// and with a single worker it runs the second task while it waits for the first. With domains a third task puts their
+// joints in them, gives their bodies their copies and fills their lanes, see b3FillDomainBodies and b3FillDomainLanes,
+// which the knots wait for along with the first. Only the calling thread takes from the stack, the tasks fill what it
+// took before. Every result is the same whichever thread computes it.
 typedef struct b3SetupTask
 {
 	const b3World* world;
@@ -3323,9 +3359,9 @@ _Static_assert( B3_DOMAINS <= 8, "the domains of a body need to fit in a byte" )
 // carries its share of the mass and which the domain starts from the body before each pass. After each pass the body
 // takes the mean velocity of its copies, see b3MergeDomains. That is mass splitting after Tonge, Benevolenski and
 // Voroshilov, Mass Splitting for Jitter-Free Parallel Rigid Body Simulation, 2012, as with the knots, see b3KnotBatch. The
-// barriers stay between the passes, about 30 per step. The joints of such an island, as of a ragdoll in the rubble, act
-// on the bodies themselves: the calling thread solves them alone before each pass, after the merge of the pass before,
-// see b3ExecuteDomainJoints, and the domains start their copies from what the joints left.
+// barriers stay between the passes, about 30 per step. A joint of such an island, as of a ragdoll in the rubble, lies in
+// the domain of its first body in the island, and its bodies have their copies there as for a contact: each domain
+// prepares its joints in the prepare stage and solves them in every pass before its contacts, see b3ExecuteDomainJoints.
 //
 // The domains last from step to step, see b3Island::domains. Every body of such an island has its domain, cut by where
 // the bodies lie when the island takes its domains, see b3CutIslandDomains, and every touching contact lies in its domain
@@ -3335,7 +3371,8 @@ _Static_assert( B3_DOMAINS <= 8, "the domains of a body need to fit in a byte" )
 // touches or is jointed to, see b3AbsorbIntoDomains. All of it happens on the calling thread in the order of the contacts
 // and islands, and what a step derives from it comes out the same on whichever thread computes it, see b3SetupTask, so
 // the domains and the results are the same with every number of workers and in either width. The copies lie past the
-// awake states, see b3GetDomainSlot.
+// awake states, see b3GetDomainSlot. The joints go to their domains in every step, color by color, see
+// b3FillDomainJoints.
 struct b3Domains
 {
 	// B3_DOMAINS while an awake island has domains, else zero, and how many awake islands have them, which ones and for how
@@ -3345,8 +3382,8 @@ struct b3Domains
 	const int* islandIds;
 	int workerCount;
 
-	// Per awake body the domains that hold its contacts as bits, and for a body in several the first of its copies. Only
-	// the bodies of the islands with domains have them.
+	// Per awake body the domains that hold its contacts and joints as bits, and for a body in several the first of its
+	// copies. Only the bodies of the islands with domains have them.
 	uint8_t* bodyMasks;
 	int* bodyCopies;
 	int awakeBodyCount;
@@ -3375,6 +3412,16 @@ struct b3Domains
 	int* overflowSlotB;
 	float* overflowScaleA;
 	float* overflowScaleB;
+
+	// The joints of every domain, those of the overflow first, where those of every domain start and where its joints of
+	// the colors start, see b3ExecuteDomainJoints. Room for all joints of the islands with domains, and for each joint its
+	// sim and its key, twice its domain plus one for a joint of a color, see b3FillDomainJoints.
+	b3JointSim** joints;
+	int jointStarts[B3_DOMAINS + 1];
+	int jointColorStarts[B3_DOMAINS];
+	int jointCapacity;
+	b3JointSim** jointSims;
+	uint8_t* jointKeys;
 
 	// The blocks of the stages: a domain each, and the bodies with copies
 	b3SyncBlock domainBlocks[B3_DOMAINS];
@@ -4040,9 +4087,12 @@ static void b3AssembleDomains( b3World* world, const b3SolverSet* awakeSet, cons
 
 	int awakeBodyCount = awakeSet->bodySims.count;
 	int bodyTotal = 0;
+	int jointTotal = 0;
 	for ( int s = 0; s < islandCount; ++s )
 	{
-		bodyTotal += b3Array_Get( world->islands, islandIds[s] )->bodies.count;
+		const b3Island* island = b3Array_Get( world->islands, islandIds[s] );
+		bodyTotal += island->bodies.count;
+		jointTotal += island->joints.count;
 	}
 
 	// The lanes of the wide constraints of the domains: every contact, and at most a wide constraint left open for every
@@ -4068,10 +4118,11 @@ static void b3AssembleDomains( b3World* world, const b3SolverSet* awakeSet, cons
 	}
 	int prepareSpanCapacity = B3_GRAPH_COLOR_COUNT + 2 + B3_DOMAINS;
 
-	int byteCount = 64 * 12 + awakeBodyCount + awakeBodyCount * (int)sizeof( int ) +
+	int byteCount = 64 * 15 + awakeBodyCount + awakeBodyCount * (int)sizeof( int ) +
 					copyCapacity * (int)sizeof( b3DomainCopy ) + bodyTotal * (int)sizeof( b3DomainMerge ) +
 					mergeBlockCapacity * (int)sizeof( b3SyncBlock ) + 4 * overflowCapacity * (int)sizeof( int ) +
-					prepareSpanCapacity * (int)sizeof( b3WidePrepareSpan ) + laneCapacity * (int)sizeof( int );
+					prepareSpanCapacity * (int)sizeof( b3WidePrepareSpan ) + laneCapacity * (int)sizeof( int ) +
+					2 * jointTotal * (int)sizeof( b3JointSim* ) + jointTotal;
 	domains->memory = b3StackAlloc( &world->stack, byteCount, "domains" );
 	char* cursor = (char*)domains->memory;
 	domains->bodyMasks = (uint8_t*)b3TakeKnotMemory( &cursor, awakeBodyCount );
@@ -4087,6 +4138,10 @@ static void b3AssembleDomains( b3World* world, const b3SolverSet* awakeSet, cons
 		(b3WidePrepareSpan*)b3TakeKnotMemory( &cursor, prepareSpanCapacity * (int)sizeof( b3WidePrepareSpan ) );
 	domains->lanes = (int*)b3TakeKnotMemory( &cursor, laneCapacity * (int)sizeof( int ) );
 	domains->laneCapacity = laneCapacity;
+	domains->joints = (b3JointSim**)b3TakeKnotMemory( &cursor, jointTotal * (int)sizeof( b3JointSim* ) );
+	domains->jointSims = (b3JointSim**)b3TakeKnotMemory( &cursor, jointTotal * (int)sizeof( b3JointSim* ) );
+	domains->jointKeys = (uint8_t*)b3TakeKnotMemory( &cursor, jointTotal );
+	domains->jointCapacity = jointTotal;
 	B3_ASSERT( cursor <= (char*)domains->memory + byteCount );
 
 	domains->domainCount = B3_DOMAINS;
@@ -4106,14 +4161,94 @@ static void b3AssembleDomains( b3World* world, const b3SolverSet* awakeSet, cons
 	}
 }
 
-// Added for Nebenan: the domains of the contacts of every body of the islands with domains as bits, from the counts the
-// graph keeps, and the bodies in several with their copies and the blocks that merge them, see b3Domains. A setup task
-// fills them, see b3SetupTask.
+// Added for Nebenan: the joints of the islands with domains in their domains, and the domains of their bodies as bits, see
+// b3Domains. A joint lies in the domain of its first body in the island, the domain of its contacts unless the island
+// was cut since it joined, see b3AbsorbIntoDomains. A domain takes its joints of the overflow first and then color by
+// color, each in the order of its color, as a pack does, so it runs through the arrays of the joints in turn. Returns
+// whether there are joints, then the bits of all other bodies are zero.
+static bool b3FillDomainJoints( const b3World* world, b3Domains* domains )
+{
+	// Without joints the starts stay zero, see b3AssembleDomains
+	if ( domains->jointCapacity == 0 )
+	{
+		return false;
+	}
+
+	memset( domains->bodyMasks, 0, (size_t)domains->awakeBodyCount );
+
+	const b3Body* bodies = world->bodies.data;
+	const b3Joint* joints = world->joints.data;
+	const b3Island* islands = world->islands.data;
+	const b3GraphColor* colors = world->constraintGraph.colors;
+	int keyCounts[2 * B3_DOMAINS + 1] = { 0 };
+	int jointCount = 0;
+	for ( int c = 0; c < B3_GRAPH_COLOR_COUNT; ++c )
+	{
+		b3JointSim* sims = colors[c].jointSims.data;
+		for ( int k = 0; k < colors[c].jointSims.count; ++k )
+		{
+			const b3Joint* joint = joints + sims[k].jointId;
+			B3_ASSERT( joint->islandId != B3_NULL_INDEX );
+			if ( joint->islandId == B3_NULL_INDEX || islands[joint->islandId].domains == false )
+			{
+				continue;
+			}
+
+			// A static body is in no island
+			const b3Body* bodyA = bodies + sims[k].bodyIdA;
+			const b3Body* bodyB = bodies + sims[k].bodyIdB;
+			const b3Body* inside = bodyA->islandId != B3_NULL_INDEX ? bodyA : bodyB;
+			int domain = inside->domain;
+			B3_ASSERT( inside->islandId == joint->islandId && 0 <= domain && domain < B3_DOMAINS );
+			if ( bodyA->setIndex == b3_awakeSet )
+			{
+				domains->bodyMasks[bodyA->localIndex] |= (uint8_t)( 1u << domain );
+			}
+			if ( bodyB->setIndex == b3_awakeSet )
+			{
+				domains->bodyMasks[bodyB->localIndex] |= (uint8_t)( 1u << domain );
+			}
+
+			int key = 2 * domain + ( c == B3_OVERFLOW_INDEX ? 0 : 1 );
+			domains->jointSims[jointCount] = sims + k;
+			domains->jointKeys[jointCount] = (uint8_t)key;
+			keyCounts[key + 1] += 1;
+			jointCount += 1;
+		}
+	}
+	B3_ASSERT( jointCount <= domains->jointCapacity );
+
+	for ( int k = 0; k < 2 * B3_DOMAINS; ++k )
+	{
+		keyCounts[k + 1] += keyCounts[k];
+	}
+
+	for ( int d = 0; d < B3_DOMAINS; ++d )
+	{
+		domains->jointStarts[d] = keyCounts[2 * d];
+		domains->jointColorStarts[d] = keyCounts[2 * d + 1];
+	}
+	domains->jointStarts[B3_DOMAINS] = keyCounts[2 * B3_DOMAINS];
+
+	for ( int i = 0; i < jointCount; ++i )
+	{
+		domains->joints[keyCounts[domains->jointKeys[i]]++] = domains->jointSims[i];
+	}
+
+	return jointCount > 0;
+}
+
+// Added for Nebenan: the domains of the contacts and joints of every body of the islands with domains as bits, from the
+// counts the graph keeps and the joints, and the bodies in several with their copies and the blocks that merge them, see
+// b3Domains. A setup task fills them, see b3SetupTask.
 static void b3FillDomainBodies( const b3World* world, b3Domains* domains )
 {
 	const int* islandIds = domains->islandIds;
 	int islandCount = domains->islandCount;
 	int awakeBodyCount = domains->awakeBodyCount;
+
+	// The joints in their domains, and the domains of their bodies
+	bool hasJoints = b3FillDomainJoints( world, domains );
 
 	// The domains of every body as bits, and the bodies in several with their copies, island by island and body by body
 	const b3Body* bodies = world->bodies.data;
@@ -4136,7 +4271,8 @@ static void b3FillDomainBodies( const b3World* world, b3Domains* domains )
 			int bodyId = bodyIds[l];
 			const b3Body* body = bodies + bodyId;
 			B3_ASSERT( body->setIndex == b3_awakeSet && 0 <= body->domain );
-			uint32_t mask = 0;
+			int awake = body->localIndex;
+			uint32_t mask = hasJoints ? domains->bodyMasks[awake] : 0u;
 			if ( bodyId < countLimit )
 			{
 				const uint16_t* bodyCounts = counts[bodyId].counts;
@@ -4146,7 +4282,6 @@ static void b3FillDomainBodies( const b3World* world, b3Domains* domains )
 				}
 			}
 
-			int awake = body->localIndex;
 			domains->bodyMasks[awake] = (uint8_t)mask;
 			if ( ( mask & ( mask - 1 ) ) == 0 )
 			{
@@ -4877,6 +5012,7 @@ void b3Solve( b3World* world, b3StepContext* stepContext )
 	world->knotCopyCount = 0;
 	world->domainCount = 0;
 	world->domainCopyCount = 0;
+	world->domainJointCount = 0;
 	world->teamWork = 0;
 	world->teamSample = 0;
 	world->teamWorkerCount = 0;
@@ -4909,8 +5045,9 @@ void b3Solve( b3World* world, b3StepContext* stepContext )
 
 		// Added for Nebenan: the islands with domains, kept from step to step, before the colors are counted, as an island
 		// that takes or gives back its domains moves its contacts, see b3UpdateDomains. Domains need what packs need:
-		// no mesh contacts in the colors and no propagation of restitution, see b3SolvePacks. Joints may be anywhere, see
-		// b3ExecuteDomainJoints, unless the world keeps them out, see b3WorldDef::enableJointPacks.
+		// no mesh contacts in the colors and no propagation of restitution, see b3SolvePacks. Joints may be anywhere, the
+		// domains solve those of their islands, see b3ExecuteDomainJoints, unless the world keeps them out, see
+		// b3WorldDef::enableJointPacks.
 		int domainIslandCount = 0;
 		float domainTime = 0.0f;
 		int overflowTotal = 0;
@@ -5261,6 +5398,7 @@ void b3Solve( b3World* world, b3StepContext* stepContext )
 		// Added for Nebenan: the copies of the domains follow the awake states
 		world->domainCount = domains.domainCount;
 		world->domainCopyCount = domains.copyCount;
+		world->domainJointCount = domains.jointStarts[B3_DOMAINS];
 		if ( domains.copyCount > 0 )
 		{
 			int stateCount = awakeBodyCount + domains.copyCount;
@@ -5574,7 +5712,8 @@ void b3Solve( b3World* world, b3StepContext* stepContext )
 			teamWideCount += domains.wideCount;
 			b3BlockDim teamWideDim = b3ComputeBlockCount( teamWideCount, minContactsPerBlock, maxBlockCount );
 			teamWideSize = teamWideDim.size;
-			convexPrepareDim.count = teamWideDim.count + activeColorCount + 2 + domainOverflowDim.count;
+			convexPrepareDim.count =
+				teamWideDim.count + activeColorCount + 2 + domainOverflowDim.count + ( domainMode ? B3_DOMAINS : 0 );
 
 			b3BlockDim teamJointDim = b3ComputeBlockCount( teamJointCount, minJointsPerBlock, maxBlockCount );
 			teamJointSize = teamJointDim.size;
@@ -5727,6 +5866,21 @@ void b3Solve( b3World* world, b3StepContext* stepContext )
 		}
 		b3InitBlocks( meshBlocks, meshPrepareDim, contactCount, b3_contactBlock, UINT8_MAX );
 
+		// Added for Nebenan: after them in the prepare stage a block for every domain with joints, which prepares them, see
+		// b3ExecuteDomainJoints. Storing the impulses takes only the blocks of the contacts.
+		int prepareBlockCount = convexBlockCount;
+		for ( int d = 0; d < domains.domainCount; ++d )
+		{
+			if ( domains.jointStarts[d] < domains.jointStarts[d + 1] )
+			{
+				b3SyncBlock* block = convexBlocks + prepareBlockCount;
+				block->block = (b3SolverBlock){ d, 1, b3_domainJointBlock, UINT8_MAX };
+				b3AtomicStoreInt( &block->syncIndex, 0 );
+				prepareBlockCount += 1;
+			}
+		}
+		B3_ASSERT( prepareBlockCount <= convexPrepareDim.count );
+
 		// Added for Nebenan: with a team over the ranges of its packs, see above
 		int jointBlockCount = jointPrepareDim.count;
 		if ( team )
@@ -5799,7 +5953,7 @@ void b3Solve( b3World* world, b3StepContext* stepContext )
 			b3SyncBlock* mergeBlocks = domains.mergeBlocks;
 			int domainCount = domains.domainCount;
 			int mergeBlockCount = domains.mergeBlockCount;
-			stage = b3InitStage( stage, b3_stagePrepareWideContacts, convexBlocks, convexBlockCount, UINT8_MAX );
+			stage = b3InitStage( stage, b3_stagePrepareWideContacts, convexBlocks, prepareBlockCount, UINT8_MAX );
 			stage = b3InitStage( stage, b3_stageIntegrateVelocities, bodyBlocks, bodyDim.count, UINT8_MAX );
 			stage = b3InitStage( stage, b3_stageWarmStart, domainBlocks, domainCount, UINT8_MAX );
 			stage = b3InitStage( stage, b3_stageWarmStart, mergeBlocks, mergeBlockCount, UINT8_MAX );
@@ -5909,7 +6063,9 @@ void b3Solve( b3World* world, b3StepContext* stepContext )
 		stepContext->domainBodyMasks = domains.bodyMasks;
 		stepContext->domainBodyCopies = domains.bodyCopies;
 		stepContext->domainAwakeBodyCount = domains.awakeBodyCount;
-		stepContext->domainJoints = domainMode && b3PackHasJoints( stepContext, 0 );
+		stepContext->domainJoints = domains.joints;
+		stepContext->domainJointStarts = domains.jointStarts;
+		stepContext->domainJointColorStarts = domains.jointColorStarts;
 		if ( domainMode )
 		{
 			stepContext->overflowContactCount = 0;

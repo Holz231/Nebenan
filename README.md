@@ -630,9 +630,11 @@ Zwei-Knochen-IK Hände, Knie und Füße auf dem Boden hält, abgetastet mit 15 H
 wacher Ragdoll liegen ihre Gelenke in den Farben des Lösers. Bis `active-ragdoll-1` rechnete Box3D dann keine ganzen
 Inseln pro Thread mehr, sondern Farbe für Farbe mit einer Sperre nach jeder Stufe, und große Inseln verloren ihre
 Gebiete, auch die Trümmer weit weg. Jetzt rechnet jedes Paket die Gelenke seiner Inseln selbst, bis aufs Bit wie über
-die Farben, und große Inseln behalten ihre Gebiete, auch mit einem Ragdoll im Schutt: Dessen Gelenke rechnet der
-aufrufende Thread vor jedem Durchgang über die Gebiete allein, siehe „Gelenke in Paketen und Gebieten“ in
-[`extern/README.md`](extern/README.md). Ein Spiel ruft dafür nichts auf. `nbProfile::packStepCount` und
+die Farben, und große Inseln behalten ihre Gebiete, auch mit einem Ragdoll im Schutt: Seit `active-ragdoll-18` liegen
+dessen Gelenke in den Gebieten selbst, jedes im Gebiet eines seiner Körper, und jedes Gebiet rechnet seine Gelenke in
+jedem Durchgang auf den Kopien seiner Körper wie seine Kontakte. Bis dahin rechnete sie der aufrufende Thread vor jedem
+Durchgang allein, siehe „Gelenke in Paketen und Gebieten“ in [`extern/README.md`](extern/README.md). Ein Spiel ruft
+dafür nichts auf, `b3Counters::domainJointCount` zählt die Gelenke in den Gebieten. `nbProfile::packStepCount` und
 `domainStepCount` zählen die Schritte mit Paketen und mit Gebieten, `ragdollStepCount` die mit wachen Ragdolls und
 `maxRagdollCount` die meisten zugleich, `nbFigureStats::awakeRagdollCount` die wachen Ragdolls gerade. Zum Messen
 schaltet `b3WorldDef::enableJointPacks = false` das ab, dann rechnet Box3D bis aufs Bit wie `active-ragdoll-1`, und die
@@ -1802,6 +1804,15 @@ Arbeit rechnet Box3D auf dem aufrufenden Thread allein, siehe `B3_CONTACTS_PER_W
 [`extern/README.md`](extern/README.md). Die Figuren enden in jedem Lauf mit 1 und 4 Threads mit demselben Hash, und
 gleich wie auf `active-ragdoll-1`.
 
+**Ragdolls im Schutt.** Danach stellt `nebenan_benchmark figures` 20 Figuren auf eine Platte über zwei Lagen aus 4 513
+Würfeln, wirft sie um und lässt sie liegen (`nbFigureDef::canGetUp` aus). Platte, Würfel und Ragdolls sind eine große
+Insel mit Gebieten, die Platte schläft nie, und die 340 Gelenke der Ragdolls liegen in den Gebieten, siehe Gelenke und
+Pakete. Gemessen werden die 420 Schritte, nachdem sie zur Ruhe kamen. Mit vier Threads kostet ein Box3D-Schritt
+4,37 ms, der Löser 3,48 ms, darin die Bedingungen 2,97 ms, mit einem Thread 11,0, 8,5 und 7,8 ms. Gepaart gegen
+`active-ragdoll-17`, wo der aufrufende Thread die Gelenke vor jedem Durchgang allein rechnete, 0,47 ms pro Schritt,
+kosten die Bedingungen mit vier Threads 0,28 ms weniger, siehe „Gelenke in den Gebieten“ in
+[`docs/Optimierungen.md`](docs/Optimierungen.md). Die Ragdolls enden mit 1 und 4 Threads mit demselben Hash.
+
 **Stadt mit Figuren.** Dann misst `nebenan_benchmark figures` die erste Stadt aus 16 Häusern unter Beschuss mit zwei
 Figuren an jedem Haus, 1 m vor seiner Ost- und vor seiner Südwand, wo Granaten, Trümmer und einstürzende Stockwerke sie
 umwerfen und begraben. Nach 1 062 der 1 200 Schritte ist ein Ragdoll wach, bis zu sechs zugleich. Mit vier Threads
@@ -1882,7 +1893,7 @@ build/bin/nebenan_test            # 100 Tests: Geometrie, Voronoi, Hüllen, Öff
 build/bin/nebenan_benchmark 4     # Zahl = Threads für Bruch und Physik, 0 = so viele, wie ein Spiel nähme
 build/bin/nebenan_benchmark scaling   # die Städte unter Beschuss mit 1, 2, 4 … Threads und die Tabelle der Skalierung
 build/bin/nebenan_benchmark rates     # die Städte unter Beschuss mit 30, 60 und 120 Hz, was eine simulierte Sekunde kostet
-build/bin/nebenan_benchmark figures 4 3   # 1, 10 und 50 Figuren und eine Stadt mit Figuren, mit 4 Threads, dreimal, siehe Leistung
+build/bin/nebenan_benchmark figures 4 3   # 1, 10 und 50 Figuren, 20 Ragdolls im Schutt und eine Stadt mit Figuren, mit 4 Threads, dreimal, siehe Leistung
 build/bin/nebenan_benchmark figures 4 3 off   # dasselbe mit den Gelenken außerhalb der Pakete wie vor F8, siehe Gelenke und Pakete
 ```
 
@@ -1972,10 +1983,12 @@ Nach Änderungen an `demo/shaders/scene.glsl` die Shader neu erzeugen, im Ordner
   hindurch. Ob genug Platz zum Aufstehen ist, prüft sie vorher, und fehlt er, rückt sie bis 60 cm oder dreht sich auf
   dem Boden, nur mit einer Kapsel für ihren liegenden Körper geprüft. Findet sie auch so keinen Platz, wartet sie, bis
   er frei wird.
-- Die Gelenke von Ragdolls in einem großen Schutthaufen mit Gebieten rechnet der aufrufende Thread vor jedem Durchgang
-  allein, siehe Gelenke und Pakete, auf der VM mit vier Threads 0,024 ms pro Ragdoll und Schritt, 0,48 ms mit 20
-  Ragdolls in einem Haufen. Ein solcher Haufen kostet damit so viel wie auf `active-ragdoll-1`, wo er seine Gebiete
-  verlor. Gelenke in den Gebieten selbst stehen als Schritt F12 in der [Roadmap](docs/Roadmap.md).
+- Die Gelenke von Ragdolls in einem großen Schutthaufen mit Gebieten rechnet jedes Gebiet selbst, siehe Gelenke und
+  Pakete. Wo die Gebiete liegen, entscheiden aber nur die Kontakte. Liegen viele Ragdolls in wenigen Gebieten, brauchen
+  diese länger, und die anderen Threads warten in jedem Durchgang auf sie: Mit 20 Ragdolls im Schutt und vier Threads
+  sind so 0,28 der 0,47 ms gewonnen, die der aufrufende Thread zuvor allein rechnete. Die Gelenke beim Schnitt der
+  Gebiete mitzuwiegen, steht als Schritt F27 in der [Roadmap](docs/Roadmap.md). Mit einem Thread kostet ein Schritt
+  dort je nach Messung 0,02 bis 0,28 ms mehr, bei gleich vielen Befehlen.
 - Mit Gelenken in den Paketen und Gebieten sind die Schritte im Mittel schneller, die langsamsten 1 % aber langsamer:
   auf dem Ryzen in der Stadt mit Figuren 1 % Low 219 statt 243 FPS, im Benchmark auf der VM 99 % der Frames bis 40,2
   statt 35,1 ms. Zum größten Teil liegt das an der Welt, die mit F8 anders endet, siehe Schritt F14 der

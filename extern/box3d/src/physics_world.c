@@ -2794,6 +2794,7 @@ b3Counters b3World_GetCounters( b3WorldId worldId )
 	s.knotCopyCount = world->knotCopyCount;
 	s.domainCount = world->domainCount;
 	s.domainCopyCount = world->domainCopyCount;
+	s.domainJointCount = world->domainJointCount;
 	s.teamWork = world->teamWork;
 	s.teamSample = world->teamSample;
 	s.teamWorkerCount = world->teamWorkerCount;

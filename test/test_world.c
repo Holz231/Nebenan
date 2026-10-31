@@ -2252,9 +2252,10 @@ static int DomainTest( void )
 // Two chains of five boxes on ball joints with springs and limits, as the limbs of a ragdoll, fall on the plate, report
 // when their joints pull hard and join its island through their contacts, see b3AbsorbIntoDomains, and at step 100 a
 // pendulum on a hinge joins it through its joint. The plate has no color left for the hinge, which goes to the overflow.
-// The island keeps its domains in every step, the calling thread solves the joints of the chains and of the pendulum
-// before each pass, and the domains start from what the joints left. The chains come to rest on the plate, the pendulum
-// hangs from it, and every number of workers and either width must end the same in every bit, the joint events included.
+// The island keeps its domains in every step, and the joints of the chains and of the pendulum lie in the domains of
+// their first bodies, which prepare and solve them on the copies of their bodies there. The chains come to rest on the
+// plate, the pendulum hangs from it, and every number of workers and either width must end the same in every bit, the
+// joint events included.
 static int DomainJointsTest( void )
 {
 	enum
@@ -2424,14 +2425,17 @@ static int DomainJointsTest( void )
 
 		if ( pass < 4 )
 		{
-			printf( "  %d worker%s: domains in %d of 240 steps, packs in %d, %d islands at the end, links at %.4f to %.4f m "
-					"moving up to %.4f m/s, pendulum at %.3f m, %d joint events, hash 0x%08x\n",
-					workers[pass], workers[pass] == 1 ? "" : "s", domainSteps, packSteps, counters.islandCount, lowest, highest,
-					fastest, hangerY, events, hash );
+			printf( "  %d worker%s: domains in %d of 240 steps, packs in %d, %d islands at the end, %d joints and %d copies in "
+					"the domains, links at %.4f to %.4f m moving up to %.4f m/s, pendulum at %.3f m, %d joint events, hash "
+					"0x%08x\n",
+					workers[pass], workers[pass] == 1 ? "" : "s", domainSteps, packSteps, counters.islandCount,
+					counters.domainJointCount, counters.domainCopyCount, lowest, highest, fastest, hangerY, events, hash );
 		}
 
-		// The heap, the chains and the pendulum on the plate in one island beside the pendulum on the ground
+		// The heap, the chains and the pendulum on the plate in one island beside the pendulum on the ground, the joints of
+		// the chains and the hinge in its domains
 		ENSURE( domainSteps == 240 && counters.domainCount == 8 && counters.islandCount == 2 );
+		ENSURE( counters.domainJointCount == 2 * ( linkCount - 1 ) + 1 );
 		ENSURE( 0.31f < lowest && highest < 0.36f && fastest < 0.05f );
 		ENSURE( hangerY < (float)plateOrigin.y - 0.2f );
 		ENSURE( events > 0 );
@@ -2582,8 +2586,8 @@ static int JointPacksSwitchTest( void )
 }
 
 // The domains of a large island last from step to step and follow what happens to it, see b3Island::domains. A stack that
-// falls on the plate of DomainTest joins its domains. A joint between two of its cubes keeps them, the calling thread
-// solves it before each pass, see b3ExecuteDomainJoints, until the island rests and falls asleep. A mesh contact in the
+// falls on the plate of DomainTest joins its domains. A joint between two of its cubes keeps them, a domain solves it,
+// see b3ExecuteDomainJoints, until the island rests and falls asleep. A mesh contact in the
 // world takes them back to the colors, and they come back once it is gone. Without the plate and a row of upper cubes the
 // island splits into two halves that keep the domains, fall asleep with them and have them again when one wakes. Every
 // body must end the same in every bit with one and four workers and in four lanes.

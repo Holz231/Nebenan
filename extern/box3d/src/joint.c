@@ -6,6 +6,7 @@
 #include "body.h"
 #include "contact.h"
 #include "core.h"
+#include "ctz.h"
 #include "island.h"
 #include "physics_world.h"
 #include "recording.h"
@@ -1487,7 +1488,53 @@ void b3Joint_SetSpringRotationTarget( b3JointId jointId, b3Quat relativeBodyRota
 }
 #endif
 
-void b3PrepareJoint( b3JointSim* joint, b3StepContext* context )
+// Added for Nebenan: the inverse masses and inertias of the bodies of a joint and the states it solves on, the awake
+// indices of its bodies or null for a body that is not awake. A joint in a domain of an island with domains solves on the
+// copy of a body that has constraints in several domains, past the awake states, and the copy carries its share of the
+// mass, as for a contact there, see b3Domains in solver.c. A body in that domain alone solves on itself with its whole
+// mass, and with domain -1 so do both, with the values as before.
+void b3PrepareJointBodies( b3JointSim* base, const b3StepContext* context, int domain, const b3Body* bodyA, const b3Body* bodyB,
+						   const b3BodySim* bodySimA, const b3BodySim* bodySimB, int* indexA, int* indexB )
+{
+	base->invMassA = bodySimA->invMass;
+	base->invMassB = bodySimB->invMass;
+	base->invIA = bodySimA->invInertiaWorld;
+	base->invIB = bodySimB->invInertiaWorld;
+	*indexA = bodyA->setIndex == b3_awakeSet ? bodyA->localIndex : B3_NULL_INDEX;
+	*indexB = bodyB->setIndex == b3_awakeSet ? bodyB->localIndex : B3_NULL_INDEX;
+	if ( domain < 0 )
+	{
+		return;
+	}
+
+	B3_ASSERT( domain < context->domainCount );
+	int* indices[2] = { indexA, indexB };
+	float* invMasses[2] = { &base->invMassA, &base->invMassB };
+	b3Matrix3* invInertias[2] = { &base->invIA, &base->invIB };
+	uint32_t before = ( 1u << domain ) - 1u;
+	for ( int e = 0; e < 2; ++e )
+	{
+		int body = *indices[e];
+		if ( body == B3_NULL_INDEX )
+		{
+			continue;
+		}
+
+		uint32_t mask = context->domainBodyMasks[body];
+		B3_ASSERT( ( mask >> domain ) & 1u );
+		if ( ( mask & ( mask - 1 ) ) == 0 )
+		{
+			continue;
+		}
+
+		float scale = (float)b3PopCount64( mask );
+		*indices[e] = context->domainAwakeBodyCount + context->domainBodyCopies[body] + b3PopCount64( mask & before );
+		*invMasses[e] *= scale;
+		*invInertias[e] = b3MulSM( scale, *invInertias[e] );
+	}
+}
+
+void b3PrepareJoint( b3JointSim* joint, b3StepContext* context, int domain )
 {
 	// Clamp joint hertz based on the time step to reduce jitter.
 	float hertz = b3MinFloat( joint->constraintHertz, 0.25f * context->inv_h );
@@ -1496,38 +1543,38 @@ void b3PrepareJoint( b3JointSim* joint, b3StepContext* context )
 	switch ( joint->type )
 	{
 		case b3_parallelJoint:
-			b3PrepareParallelJoint( joint, context );
+			b3PrepareParallelJoint( joint, context, domain );
 			break;
 
 		case b3_distanceJoint:
-			b3PrepareDistanceJoint( joint, context );
+			b3PrepareDistanceJoint( joint, context, domain );
 			break;
 
 		case b3_filterJoint:
 			break;
 
 		case b3_motorJoint:
-			b3PrepareMotorJoint( joint, context );
+			b3PrepareMotorJoint( joint, context, domain );
 			break;
 
 		case b3_prismaticJoint:
-			b3PreparePrismaticJoint( joint, context );
+			b3PreparePrismaticJoint( joint, context, domain );
 			break;
 
 		case b3_revoluteJoint:
-			b3PrepareRevoluteJoint( joint, context );
+			b3PrepareRevoluteJoint( joint, context, domain );
 			break;
 
 		case b3_sphericalJoint:
-			b3PrepareSphericalJoint( joint, context );
+			b3PrepareSphericalJoint( joint, context, domain );
 			break;
 
 		case b3_weldJoint:
-			b3PrepareWeldJoint( joint, context );
+			b3PrepareWeldJoint( joint, context, domain );
 			break;
 
 		case b3_wheelJoint:
-			b3PrepareWheelJoint( joint, context );
+			b3PrepareWheelJoint( joint, context, domain );
 			break;
 
 		default:
@@ -1636,7 +1683,7 @@ void b3PrepareJoints_Overflow( b3StepContext* context )
 	for ( int i = 0; i < jointCount; ++i )
 	{
 		b3JointSim* joint = joints + i;
-		b3PrepareJoint( joint, context );
+		b3PrepareJoint( joint, context, -1 );
 	}
 
 	b3TracyCZoneEnd( prepare_joints );
