@@ -210,6 +210,11 @@ typedef struct nbBalancer
 	b3Vec3 armAxis[2];
 	float armAngle[2];
 
+	// An arm that something holds or pushes goes slack, see nbHoldArms: the seconds it stays held after the last check
+	// that found the push, and how slack it is, from 0 to 1
+	float armHeld[2];
+	float armSlack[2];
+
 	// The hold that keeps the pelvis upright, see nbFigureMotors::uprightTorque
 	b3JointId upright;
 } nbBalancer;
@@ -344,8 +349,10 @@ typedef struct nbFigure
 	b3Pos debrisPoint;
 	int debrisBone;
 
-	// Whether bodies of others pushed a bone of the figure sideways at the last check, see nbFigureDef::pushForce
+	// Whether bodies of others pushed a bone of the figure sideways at the last check, see nbFigureDef::pushForce, and
+	// the strongest push on a bone of each arm of a humanoid then, in newtons
 	bool pushed;
+	float armPush[2];
 
 	uint16_t generation;
 	bool isFree;

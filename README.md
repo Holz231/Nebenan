@@ -170,16 +170,15 @@ abrutscht oder sie fällt, nach 0,67 s und 0,07 s fiel sie. Ein Stock von 5 kg t
 in den Händen mit 12 m/s und 49 N s, und beide werfen sie um.
 
 **Figuren wie Gliederpuppen.** Die Demo zeichnet jede Figur wie eine Gliederpuppe, jeden Körperteil in seiner eigenen
-Farbe und Form: den Kopf als Ei auf einem kräftigen Hals, oben die Brust als Block mit flacher Oberseite und runden
-Schultern, darunter Brustkorb und Bauch als Polster, die sich ein wenig überlappen, das Becken als rundes Polster wie
-ein U, aus dem die Oberschenkel kommen, Arme und Beine als Blöcke mit flachen Seiten und runden Kanten statt als Röhren,
-fast gerade und so breit wie in der Vorlage, die Oberschenkel 18 cm, die Schienbeine 14 cm, die Oberarme 12,5 cm und die
-Unterarme 10 cm, die Oberarme mit einer Kappe an der Schulter, und Füße wie Schuhe. Gezeichnet sind die Glieder 1,15-
-bis 1,28-mal so dick wie ihre Kapseln in der Physik, die Formen der Physik bleiben, wie sie sind. Ohne **Teile farbig**
-im Menü ist jede Figur ganz in einer Farbe, wie die Gliederpuppen eines Spiels. Damit die runden Teile rund aussehen,
-verläuft die Farbe über jedes Dreieck, siehe Demo-Renderer. Eine Figur hat so rund 8 400 Dreiecke mehr: Die Szene mit
-acht Figuren zeichnet 94 000 statt 27 000 Dreiecke in 5 statt 2 Draw Calls, die Stadt mit 40 Figuren 517 000 statt
-180 000 in 25 statt 9. Wie sie steht, kommt aus der Bibliothek, siehe In den Knien.
+Farbe und Form: den Kopf als Ei auf einem kräftigen Hals, den Rumpf wie in der Vorlage aus runden Ringen wie gestapelte
+Reifen, ohne flache Seiten, oben die Brust als zwei, der obere der breiteste Teil des Rumpfs und vor dem Bauch, darunter
+Brustkorb und Bauch, zur Taille schmaler, und das Becken als größter, so breit, wie die Oberschenkel reichen, deren
+Enden in ihm verschwinden. Arme und Beine sind runde Röhren, vom Körper weg ein wenig dünner, die Arme hängen an Kugeln
+um die Schultergelenke an den oberen Ecken der Brust, die Hände sind flach wie Fäustlinge und die Füße wie Schuhe.
+Gezeichnet sind die Glieder 1,05- bis 1,3-mal so dick wie ihre Kapseln in der Physik, die Formen der Physik bleiben, wie
+sie sind. Ohne **Teile farbig** im Menü ist jede Figur ganz in einer Farbe, wie die Gliederpuppen eines Spiels. Damit
+die runden Teile rund aussehen, verläuft die Farbe über jedes Dreieck, siehe Demo-Renderer. Wie lang die Glieder sind
+und wie die Figur steht, kommt aus der Bibliothek, siehe In den Knien.
 
 **FPS.** Oben rechts steht immer die echte Bildrate, gemessen über die letzten zwei Sekunden: Bilder pro Sekunde,
 die mittlere Bildzeit und das 1 % Low, also die Rate der langsamsten 1 % der Bilder. Daran sieht man Ruckler. VSync
@@ -629,18 +628,18 @@ Die Beine haben keine Federn, die Füße bleiben stehen. Ein Spiel ruft dafür n
 Knochen Federn in `nbBoneDef`, ohne sie zuckt nur der Rumpf wie bisher.
 
 **Ausgleichsschritt.** Ein Treffer unter `knockdownImpulse` gibt dem Körper eines Menschen der Bibliothek eine
-Geschwindigkeit über dem Boden, den Impuls durch seine Masse, nach Kapitel 26.14 und 28.3 der Roadmap des Spiels. Wie ein
-Pendel so lang wie seine Standhöhe käme er über dem Capture Point zur Ruhe, die Geschwindigkeit durch die Frequenz des
-Pendels vor seinem Schwerpunkt. Liegt dieser Punkt innerhalb der Sohlen, um den Schwerpunkt auf 60 % verkleinert
+Geschwindigkeit über dem Boden, den Impuls durch seine Masse, nach Kapitel 26.14 und 28.3 der Roadmap des Spiels. Wie
+ein Pendel so lang wie seine Standhöhe käme er über dem Capture Point zur Ruhe, die Geschwindigkeit durch die Frequenz
+des Pendels vor seinem Schwerpunkt. Liegt dieser Punkt innerhalb der Sohlen, um den Schwerpunkt auf 60 % verkleinert
 (`nbFigureDef::stepZone`), bleibt die Figur stehen und zuckt nur. Sonst geht ihr Körper dorthin und wird dabei
-gleichmäßig langsamer, und ihre Füße treten nach, einer nach dem anderen, zuerst der zur Seite des Stoßes, jeder
-0,3 s in der Luft. Der Fuß, der steht, bleibt stehen, wo er steht, und rutscht nicht. Eine Zwei-Knochen-IK setzt die
-Beine, und das Becken geht so weit hinunter, wie die Beine es brauchen. Beim Menschen der Bibliothek liegt der
-Schwerpunkt 3 cm vor den Knöcheln, 7 cm vor den Fersen und 19 cm hinter den Zehen, darum tritt er nach hinten ab 15 N s,
-zur Seite ab 24 N s und nach vorn ab 27 N s, siehe In den Knien. Ohne Boden am Ziel eines Schritts, mit etwas Festem im
-Weg oder für einen Stoß, der den Körper weiter als `stepReach` (45 cm) trüge, fängt sie sich stattdessen mit dynamischen
-Knochen, siehe Abfangen nach einem harten Treffer. Entschieden wird nur, wenn ein Stoß kommt und wenn ein Fuß aufsetzt,
-so flattert nichts. Während eines Schritts gehen die Beine vor dem Clip, `nbFigure_Move` beendet ihn.
+gleichmäßig langsamer, und ihre Füße treten nach, einer nach dem anderen, zuerst der zur Seite des Stoßes, jeder 0,3 s
+in der Luft. Der Fuß, der steht, bleibt stehen, wo er steht, und rutscht nicht. Eine Zwei-Knochen-IK setzt die Beine,
+und das Becken geht so weit hinunter, wie die Beine es brauchen. Beim Menschen der Bibliothek liegt der Schwerpunkt 5 cm
+vor den Knöcheln, 10 cm vor den Fersen und 18 cm hinter den Zehen, darum tritt er nach hinten ab 15 N s, zur Seite ab
+26 N s und nach vorn ab 23 N s, siehe In den Knien. Ohne Boden am Ziel eines Schritts, mit etwas Festem im Weg oder für
+einen Stoß, der den Körper weiter als `stepReach` (45 cm) trüge, fängt sie sich stattdessen mit dynamischen Knochen,
+siehe Abfangen nach einem harten Treffer. Entschieden wird nur, wenn ein Stoß kommt und wenn ein Fuß aufsetzt, so
+flattert nichts. Während eines Schritts gehen die Beine vor dem Clip, `nbFigure_Move` beendet ihn.
 `nbFigureInfo::stepping` sagt, ob eine Figur gerade tritt, `stepCount` und `nbFigureStats::stepCount` zählen die
 Schritte. Ein Spiel ruft dafür nichts auf, mit `stepReach = 0` zuckt eine Figur nur.
 
@@ -669,20 +668,20 @@ ab einem Viertel von `crushForce` um, wie beim Aufstehen. Ruhig auf beiden Füß
 langsamer als 0,15 m/s, den Capture Point zwischen den Füßen oder höchstens 3 cm daneben, wo sie noch nicht tritt, und
 das Becken aufrecht, steht sie nach einer halben Sekunde wieder animiert, wo sie steht, ihr Clip blendet in 0,25 s ein,
 und ihre Füße treten mit den Schritten des Ausgleichs unter ihren Körper zurück. Auf die obere Brust getroffen fängt
-sich der Mensch der Bibliothek so von vorn bis 115 N s, von hinten bis 127 N s und von beiden Seiten bis 94 N s, auf
-3 N s genau abgetastet, und steht nach 0,9 bis 4,0 s wieder animiert, siehe In den Knien. Auf 10 N s genau abgetastet
-waren es zuletzt 110, 120 und 80 N s, auf `active-ragdoll-23` von hinten 140 N s, bis `active-ragdoll-22` 70, 100 und
-60 N s. Darüber fällt er nach höchstens zwei Schritten. Darunter endete bis `active-ragdoll-33` ab und zu ein Treffer in
-langem Stolpern: In der Szene der Tests fielen von 168 Treffern mit 40 bis 80 N s auf `active-ragdoll-28` fünf und auf
-`active-ragdoll-33` vier, alle von der Seite quer über die Vorderseite der Brust, wo sie den Rumpf am weitesten um seine
-Längsachse drehen, siehe Drehung um die Längsachse. Auf `active-ragdoll-27` fiel einer, auf `active-ragdoll-26` keiner
-und davor zwei. Seit `active-ragdoll-34` fällt keiner, siehe Füße statt Becken. Der längste Fang dauert 3,1 s, auf
-`active-ragdoll-34` 3,2 s, auf `active-ragdoll-33` 4,0 s, auf `active-ragdoll-26` fing die Figur 80 N s von vorn rechts
-erst nach 17 Schritten und 7,8 s. Eine Figur, die sich fängt, kostet im Update rund 4,4 statt 2 µs, und Box3D rechnet
-ihre dynamischen Knochen mit einem Thread in rund 0,06 statt 0,006 ms pro Schritt. `nbFigureInfo::catchCount` und
-`nbFigureStats::catchCount` zählen, wie oft eine Figur sich fing, `nbFigureStats::balancingCount`, wie viele es gerade
-tun. Ein Spiel ruft dafür nichts auf. Andere Rigs als der Mensch der Bibliothek fallen gleich, bei ihnen kennt die
-Bibliothek die Beine nicht.
+sich der Mensch der Bibliothek so von vorn bis 118 N s, nur bei 100 N s fällt er, von hinten bis 103 N s und von beiden
+Seiten bis 88 N s, auf 3 N s genau abgetastet, und steht nach 1,1 bis 4,6 s wieder animiert, siehe In den Knien. Auf
+10 N s genau abgetastet waren es zuletzt 110, 120 und 80 N s, auf `active-ragdoll-23` von hinten 140 N s, bis
+`active-ragdoll-22` 70, 100 und 60 N s. Darüber fällt er nach höchstens zwei Schritten. Darunter endete bis
+`active-ragdoll-33` ab und zu ein Treffer in langem Stolpern: In der Szene der Tests fielen von 168 Treffern mit 40 bis
+80 N s auf `active-ragdoll-28` fünf und auf `active-ragdoll-33` vier, alle von der Seite quer über die Vorderseite der
+Brust, wo sie den Rumpf am weitesten um seine Längsachse drehen, siehe Drehung um die Längsachse. Auf
+`active-ragdoll-27` fiel einer, auf `active-ragdoll-26` keiner und davor zwei. Seit `active-ragdoll-34` fällt keiner,
+siehe Füße statt Becken. Der längste Fang dauert 3,7 s, auf `active-ragdoll-35` 3,1 s, auf `active-ragdoll-34` 3,2 s,
+auf `active-ragdoll-33` 4,0 s, auf `active-ragdoll-26` fing die Figur 80 N s von vorn rechts erst nach 17 Schritten und
+7,8 s. Eine Figur, die sich fängt, kostet im Update rund 4,4 statt 2 µs, und Box3D rechnet ihre dynamischen Knochen mit
+einem Thread in rund 0,06 statt 0,006 ms pro Schritt. `nbFigureInfo::catchCount` und `nbFigureStats::catchCount` zählen,
+wie oft eine Figur sich fing, `nbFigureStats::balancingCount`, wie viele es gerade tun. Ein Spiel ruft dafür nichts auf.
+Andere Rigs als der Mensch der Bibliothek fallen gleich, bei ihnen kennt die Bibliothek die Beine nicht.
 
 **Füße statt Becken.** Seit `active-ragdoll-28` dreht ein Treffer quer über die Vorderseite der Brust den Rumpf um seine
 Längsachse, und bis `active-ragdoll-33` drehte sich die ganze Figur auf ihren Füßen mit: Die Balance nahm ihre Richtung
@@ -719,25 +718,35 @@ von 50 bis 89 N s 299 statt 14. Mit einer Landung, die auf den Fuß wartet, fiel
 1,5 m/s für das Tempo des Fußes wählte die Balance die schnellen Schritte kaum noch, und von 90 bis 139 N s fielen 33
 mehr. Siehe „Schrittzeit nach dem Stoß“ in [Optimierungen.md](docs/Optimierungen.md).
 
-**In den Knien.** Der Mensch der Bibliothek steht wie ein Mensch, der bereit ist: ein wenig in den Knien, das Becken
-0,96 statt 0,98 m über den Sohlen, die Füße flach und je 2 cm weiter außen als die Hüften, die Beine wie ein A, der
-Rumpf ein wenig über die Füße geneigt, die Arme etwas vom Körper ab und in den Ellbogen um 17 statt 9° gebeugt. So bauen
-ihn der Clip `nb_clipIdle` mit der IK der Beine und das Ende des Aufstehens. `nbMakeHumanoidBones` gibt die Standhöhe
-von 0,96 m zurück, auf ihr stehen die Clips ohne Bewegung der Wurzel. Ein eigener Clip mit geraden Beinen steht trotzdem
-auf dem Boden, die Füße heben die Wurzel um die 2 cm, siehe Füße auf dem Boden. Der Schwerpunkt liegt so 3 statt 1 cm
-vor den Knöcheln, die Stütze verteilt sich gleichmäßiger über die Sohlen. An den 4 464 Treffern auf Brust und Bauch
-fallen von 50 bis 89 N s 11 statt 14, die Figur fängt sich mit 1,23 statt 1,24 Schritten in 1,63 statt 1,62 s. Von 90
-bis 139 N s fallen 677 statt 798, mit 2,39 statt 2,18 Schritten in 2,06 statt 1,95 s. Auf die obere Brust fängt sie sich
-in Schritten von 3 N s abgetastet von vorn bis 115 statt 112 N s, von rechts bis 94 statt 91, von hinten bis 127 statt
-121 und von links bis 94 statt 88 N s. Von 1 280 Treffern auf Arme, Beine und Kopf fallen 326 statt 362, von den 168
-leichten Treffern weiter keiner. Gemessen in vier Stufen: Die gebeugten Knie allein ließen von 50 bis 89 N s 3 fallen
-und von 90 bis 139 N s 666, mit dem Oberkörper dazu 0 und 645, mit den Füßen je 4 cm weiter außen 24 und 720, mit 2 cm
-11 und 677. Breitere Füße fangen Treffer auf Arme und Beine besser und Treffer auf den Rumpf schlechter. 2 cm stehen
-sichtbar wie ein A und fangen besser als `active-ragdoll-34`. Gepaart gegen `active-ragdoll-34`, sechs Paare mit 4
-Threads und vier mit einem, kostet ein Bild in der Stadt 2 und 4 % mehr, weil dort eine Etage mehr einstürzt: Die
-Figuren fallen anders und stoßen anders an die Trümmer. Die Szenen mit Figuren liegen zwischen 0,88 und 1,14 des
-Vorgängers, im Rauschen der VM, nur bei 10 Figuren hinter brechenden Mauern kostet ein Schritt 1,9-mal so viel, siehe
-Nicht ewig fangen. Ein Spiel ruft dafür nichts auf.
+**In den Knien.** Der Mensch der Bibliothek steht wie die Gliederpuppe der Vorlage, bereit: ein wenig in den Knien, das
+Becken 0,96 m über den Sohlen, die Füße flach unter den Hüften, 26 cm auseinander und 4 cm hinter dem Becken, die Brust
+steht vor, der Oberarm hängt aus der Schulter 0,1 rad nach hinten und ein wenig ab, der Unterarm ist 0,5 rad nach vorn
+gebeugt, und mit dem Atem neigen sich Brust und Kopf ein wenig. So bauen ihn der Clip `nb_clipIdle` mit der IK der Beine
+und das Ende des Aufstehens. Auch der Körper folgt seit `active-ragdoll-36` der Vorlage, `nbMakeHumanoidBones`: Oberarm,
+Unterarm und Hand sind 37, 27 und 17 cm lang statt 28, 24 und 16, die Schultern drehen 2,5 cm außerhalb der Brust auf
+1,45 m, die Hüften liegen 26 statt 20 cm auseinander, das Becken ist 40 cm breit, und die Brust steht 4 cm vor Rippen
+und Bauch. Die Massen bleiben. `nbMakeHumanoidBones` gibt die Standhöhe von 0,96 m zurück, auf ihr stehen die Clips ohne
+Bewegung der Wurzel. Ein eigener Clip mit geraden Beinen steht trotzdem auf dem Boden, die Füße heben die Wurzel um die
+2 cm, siehe Füße auf dem Boden. Der Schwerpunkt liegt so 5 cm vor den Knöcheln, 10 cm vor den Fersen und 18 cm hinter
+den Zehen. Auf `active-ragdoll-35` standen die Füße je 2 cm außerhalb der Hüften, die Beine wie ein A, und die Arme
+hingen etwas vor dem Körper, siehe „Stand in den Knien“ in [Optimierungen.md](docs/Optimierungen.md).
+
+Der neue Körper fängt Treffer auf den Rumpf schlechter und Treffer auf die Glieder besser als der von
+`active-ragdoll-35`: An den 4 464 Treffern auf Brust und Bauch fallen von 50 bis 89 N s 15 statt 11, die Figur fängt
+sich mit 1,35 statt 1,23 Schritten in 1,58 statt 1,63 s, von 90 bis 139 N s fallen 885 statt 676, mit 2,38 statt 2,39
+Schritten in 2,02 statt 2,06 s. Von 1 280 Treffern auf Arme, Beine und Kopf fallen 272 statt 326, von den 168 leichten
+Treffern weiter keiner. Auf die obere Brust fängt sie sich in Schritten von 3 N s abgetastet von vorn bis 118 statt
+115 N s, nur bei 100 fällt sie, von den Seiten bis 88 statt 94 und von hinten bis 103 statt 127 N s. Kein Teil des
+Körpers erklärt das allein, die Arme der Vorlage, die Hüften, die Brust, die Haltung der Arme und der Stand kosten jeder
+etwas. Gerade Oberarme oder die Arme von `active-ragdoll-35` fingen besser, sähen aber nicht aus wie die Vorlage, und
+Knie und Zehen nach außen gedreht wie bei der Puppe ließen von 50 bis 89 N s 65 statt 26 fallen. Die Balance auf den
+neuen Körper abzustimmen ist F68 der Roadmap, siehe „Körper wie die Vorlage“ und „Haltung wie die Vorlage“ in
+[Optimierungen.md](docs/Optimierungen.md). Der längere Arm schlug beim Rudern um seine eigene Achse, eine Armatur der
+Schulter beruhigt ihn wieder, siehe Rudernde Arme. Gepaart gegen `active-ragdoll-35`, sechs Paare mit 4 Threads und vier
+mit einem, kostet ein Bild in der Stadt mit Figuren 9 bis 10 % mehr, mit bis zu 90 176 statt 62 657 Kontakten, und die
+Szene mit 50 Figuren hinter brechender Deckung das 1,33-fache, weil dort mehr Trümmer in Bewegung kommen. Mit 10 Figuren
+kostet ein Schritt 0,81 des Vorgängers, am Ende stehen alle. Szenen ohne Figuren rechnen dasselbe. Ein Spiel ruft dafür
+nichts auf.
 
 **Nicht ewig fangen.** Mit dem neuen Stand zeigten sich zwei Lücken der Balance, die jede Haltung treffen können. Nach
 97 N s von vorn rechts auf die Brust stand eine Figur ganz still, ihr Capture Point aber 2,8 cm neben den Sohlen,
@@ -771,30 +780,49 @@ eine Figur sich fangen ließ. Andere Rigs als der Mensch bleiben eine Wand, mit 
 von oben auf seine Arme drückt, ist wieder eine Last. Zwei stehende Figuren drücken sich noch nicht, Box3D lässt ihre
 Knochen nicht kollidieren, siehe F64 der Roadmap. Ein Spiel ruft dafür nichts auf.
 
+**Gehaltener Arm.** Hebt man einer Figur einen Arm, mit einem Stock, einer Hand oder einem Block, gibt er locker nach,
+und die Figur hält dabei die Balance. Die Prüfung aus Drücken liest dazu, wie stark jeder Arm gedrückt wird. Drückt oder
+hält ein Körper einen Knochen eines Arms mit mindestens 10 N, wird der Arm sofort locker, seine Gelenke ziehen mit 15 %
+der Kraft der Motoren statt 60 %, bis 0,3 s nach dem letzten Drücken, dann spannen sie sich in 0,6 s wieder an. Steht
+die Figur, fängt sie sich wie bei jedem Drücken ab `pushForce`, und der Arm ist von Anfang an locker. Ein lockerer Arm
+rudert nicht, die Figur steht erst wieder animiert, wenn er sich angespannt hat, und solange ein Arm gehalten wird,
+fällt sie nicht nach 8 s ohne Ruhe, siehe Nicht ewig fangen. Ein Stock von 1,5 kg, den ein Motor mit 150 N auf einem
+Bogen um die Schulter unter den Unterarm führt, hebt den Oberarm so um 77° statt 13°, das Becken bewegt sich 8 cm, ohne
+Schritt und ohne Sturz, und die Figur steht danach wieder animiert. Mit 25 % der Kraft wären es 40°, mit 5 % knickt der
+Unterarm weg, und der Stock rutscht bei 46° vorbei. Hält nichts einen Arm, ändert sich nichts, alle 5 432 gemessenen
+Treffer enden bitgleich. Trümmer zählen wie jeder Körper: Im Benchmark mit 50 Figuren hinter brechender Deckung stehen
+so am Ende 49 statt 50. Wie das Drücken gilt es für den Menschen der Bibliothek mit `pushForce` über null. Ein Spiel
+ruft dafür nichts auf.
+
 **Rudernde Arme.** Kommt ein Schritt zu kurz, helfen die Arme, nach der Idee von Hof (2007): Außer mit dem Druckpunkt
 unter den Füßen und mit Schritten hält ein Körper sein Gleichgewicht, indem er Teile von sich um seinen Schwerpunkt
 dreht. Ließe der geplante Schritt den Capture Point bei der Landung mehr als 10 cm außerhalb der Sohlen und liegt er
 gerade draußen, schwingt jeder Oberarm in Fallrichtung aus, um die Achse quer zur Richtung des Sturzes, umso weiter, je
 kürzer der Schritt kommt: 6,5 rad je Meter über die 10 cm hinaus, höchstens 1,3 rad, nie näher als 0,3 rad an die Grenze
-seiner Schulter in diese Richtung und unter 0,1 rad gar nicht. Ein Treffer von 60 N s von vorn hebt die Arme so um 0,6
-bis 0,7 rad, einer von 100 N s um 1,4 bis 1,5 rad. Fällt die Figur nach vorn, schwingen die Arme zurück, so weit die 40°
-der Schulter es lassen, bei 110 N s von hinten 0,7 rad. Der Schwung ist geplant, wenn er beginnt, so bewegt sich der Arm
-wie ein Arm und nicht wie ein Motor, der zu seiner Grenze springt: hinaus in 0,2 s auf einer Rampe, die an beiden Enden
-flach ist, mit der vollen Kraft des Motors der Schulter, und der Ellbogen beugt sich dabei um bis zu 0,6 rad. Draußen
-hängt der Arm wieder locker und hält, solange die Figur tritt, sinkt dabei in einer Sekunde um ein Fünftel zurück und
-rudert langsam nach, 0,2 rad 1,2-mal pro Sekunde, die Arme gegeneinander. Steht die Figur, schwingt er in 0,6 s auf
-einer flachen Rampe zur Haltung des Clips zurück, und der Ellbogen streckt sich. Das Gegenmoment des Schwungs dreht den
-Körper zurück, und über die Füße am Boden bremst es den Schwerpunkt. Ein Arm, der in den Körper schwänge, wie der innere
-bei einem Stoß zur Seite, schwingt nicht, und ein Arm schwingt erst wieder, wenn er zurück ist. Zwischen den Schwüngen
-hängen die Arme mit 60 % der Kraft der Motoren. Damit die Arme helfen können, gibt die Balance nicht mehr nach zwei
-Updates auf, weil ein Schritt allein nicht reicht, und sie tritt bis zu fünfmal in Folge. Bis `active-ragdoll-23` zog
-der Motor den Oberarm mit voller Kraft zu einem Ziel 1 rad vor ihm, solange der Schritt zu kurz kam, und die Arme
-ruckten: Gegen die Brust drehten sie im Median 17,7 rad/s und bremsten mit 555 rad/s², jetzt sind es 6,0 rad/s und
-171 rad/s². Bei 1 488 Treffern auf Brust und Bauch aus acht Richtungen mit 40 bis 132 N s fängt sich die Figur
-1 211-mal, auf `active-ragdoll-23` 1 206-mal und ohne Arme auf `active-ragdoll-22` 736-mal. Alle 736 fängt sie weiter,
-auf `active-ragdoll-23` fehlten 10, und bei ihnen steht sie gleich schnell ruhig. Von den 672 Treffern bis 80 N s fällt
-keiner, auf `active-ragdoll-23` fielen 11. Ein Update kostet für eine Figur, die sich fängt, so viel wie vorher. Ein
-Spiel ruft dafür nichts auf.
+seiner Schulter in diese Richtung und unter 0,1 rad gar nicht. Ein Treffer von 80 N s von vorn hebt die Arme so um
+0,8 rad, einer von 94 N s um 1,5 rad. Fällt die Figur nach vorn, schwingen die Arme zurück, so weit die 40° der Schulter
+es lassen, bei 100 N s von hinten 0,6 rad. Der Schwung ist geplant, wenn er beginnt, so bewegt sich der Arm wie ein Arm
+und nicht wie ein Motor, der zu seiner Grenze springt: hinaus in 0,2 s auf einer Rampe, die an beiden Enden flach ist,
+mit der vollen Kraft des Motors der Schulter, und der Ellbogen beugt sich dabei um bis zu 0,6 rad. Draußen hängt der Arm
+wieder locker und hält, solange die Figur tritt, sinkt dabei in einer Sekunde um ein Fünftel zurück und rudert langsam
+nach, 0,2 rad 1,2-mal pro Sekunde, die Arme gegeneinander. Steht die Figur, schwingt er in 0,6 s auf einer flachen Rampe
+zur Haltung des Clips zurück, und der Ellbogen streckt sich. Das Gegenmoment des Schwungs dreht den Körper zurück, und
+über die Füße am Boden bremst es den Schwerpunkt. Ein Arm, der in den Körper schwänge, wie der innere bei einem Stoß zur
+Seite, schwingt nicht, und ein Arm schwingt erst wieder, wenn er zurück ist. Zwischen den Schwüngen hängen die Arme mit
+60 % der Kraft der Motoren, ein Arm, den etwas hält, mit 15 %, siehe Gehaltener Arm. Der Arm von 81 cm seit
+`active-ragdoll-36` drehte sich dabei um seine eigene Achse, die Feder der Schulter ist gegen den Oberarm allein
+gestellt und schwenkt doch den gebeugten Unterarm und die Hand mit: Von den gefangenen Treffern drehte der Oberarm
+schneller als 15 rad/s bei 19 % statt 0,2 %, bis 35 rad/s. Eine Armatur der Schulter von 0,05 kg m², etwa so groß wie
+die Trägheit von Unterarm und Hand um die Achse des Oberarms, beruhigt ihn wie die des Halses den Kopf, wieder bei
+0,2 %, siehe „Armatur der Schulter“ in [Optimierungen.md](docs/Optimierungen.md). Damit die Arme helfen können, gibt die
+Balance nicht mehr nach zwei Updates auf, weil ein Schritt allein nicht reicht, und sie tritt bis zu fünfmal in Folge.
+Bis `active-ragdoll-23` zog der Motor den Oberarm mit voller Kraft zu einem Ziel 1 rad vor ihm, solange der Schritt zu
+kurz kam, und die Arme ruckten: Gegen die Brust drehten sie im Median 17,7 rad/s und bremsten mit 555 rad/s², jetzt sind
+es 6,0 rad/s und 171 rad/s². Bei 1 488 Treffern auf Brust und Bauch aus acht Richtungen mit 40 bis 132 N s fängt sich
+die Figur 1 211-mal, auf `active-ragdoll-23` 1 206-mal und ohne Arme auf `active-ragdoll-22` 736-mal. Alle 736 fängt sie
+weiter, auf `active-ragdoll-23` fehlten 10, und bei ihnen steht sie gleich schnell ruhig. Von den 672 Treffern bis
+80 N s fällt keiner, auf `active-ragdoll-23` fielen 11. Ein Update kostet für eine Figur, die sich fängt, so viel wie
+vorher. Ein Spiel ruft dafür nichts auf.
 
 **Muskeln.** Mit `nbFigureMotors::muscles` ziehen die Gelenke einer Figur, die sich fängt oder als Ragdoll fällt, mit
 genäherten Muskeln, nach dem Modell von Hill (1938), auf der Ebene der Gelenke statt einzelner Muskeln. Ein Muskel

@@ -96,6 +96,17 @@
 #define NB_SWING_ELBOW 0.6f
 #define NB_LOOSE_ARMS 0.6f
 
+// An arm that a body of another pushes or holds with at least this many newtons at a check goes slack, see nbHoldArms:
+// its joints ask for this part of the strength of the motors, so a stick lifts it while the figure keeps its balance.
+// It stays slack for this many seconds after the last check that found the push and then tenses again over this many
+// seconds, eased. A stick of 150 N that swept on an arc about the shoulder under the forearm lifted the upper arm by
+// 13 degrees at the 0.6 of NB_LOOSE_ARMS, by 75 at 0.15, by 78 at 0.1, by 46 at 0.05, where the forearm folds away at the
+// elbow and the stick slips past it, and by 40 at 0.25.
+#define NB_HOLD_FORCE 10.0f
+#define NB_HOLD_TIME 0.3f
+#define NB_HELD_ARMS 0.15f
+#define NB_REGAIN_TIME 0.6f
+
 // Standing, the pelvis stays this far below straight legs, a soft knee, in meters
 #define NB_KNEE_BEND 0.05f
 
@@ -1090,7 +1101,7 @@ void nbBeginBalance( nbWorld* world, int index, nbFigure* f )
 	b->restlessTime = 0.0f;
 
 	// The arms hang loose until they row, with their forearms and hands, which follow the upper arm among the bones, if
-	// the motors pull at all
+	// the motors pull at all. An arm that the push which woke the figure pressed on goes slack at once, see nbHoldArms.
 	for ( int k = 0; k < 2; ++k )
 	{
 		b->armSwing[k] = nb_armHangs;
@@ -1099,9 +1110,12 @@ void nbBeginBalance( nbWorld* world, int index, nbFigure* f )
 		b->armFrom[k] = b3Quat_identity;
 		b->armAxis[k] = b3Vec3_zero;
 		b->armAngle[k] = 0.0f;
+		f->armPush[k] = f->pushed ? f->armPush[k] : 0.0f;
+		b->armHeld[k] = f->armPush[k] >= NB_HOLD_FORCE ? NB_HOLD_TIME : 0.0f;
+		b->armSlack[k] = b->armHeld[k] > 0.0f ? 1.0f : 0.0f;
 		for ( int i = nb_upperArms[k]; i <= nb_upperArms[k] + 2; ++i )
 		{
-			nbSetBoneSpring( f, i, NB_LOOSE_ARMS, f->springs );
+			nbSetBoneSpring( f, i, b->armSlack[k] > 0.0f ? NB_HELD_ARMS : NB_LOOSE_ARMS, f->springs );
 		}
 	}
 
@@ -1160,6 +1174,31 @@ static float nbEase( float x )
 	return x * x * ( 3.0f - 2.0f * x );
 }
 
+// An arm that a body of another pushes or holds goes slack at once, as long as the push lasts and a little after, and
+// then tenses again over the regain time, see NB_HOLD_FORCE. So a stick lifts the arm of a figure that catches itself
+// as a person lets someone lift their arm, and the push goes into the arm instead of the body, which keeps its balance.
+// The push is the strongest on a bone of the arm at the last check, see nbFigure::armPush.
+static void nbHoldArms( const nbFigure* f, nbBalancer* b, float timeStep )
+{
+	for ( int k = 0; k < 2; ++k )
+	{
+		b->armHeld[k] = f->armPush[k] >= NB_HOLD_FORCE ? NB_HOLD_TIME : b3MaxFloat( b->armHeld[k] - timeStep, 0.0f );
+		b->armSlack[k] = b->armHeld[k] > 0.0f ? 1.0f : b3MaxFloat( b->armSlack[k] - timeStep / NB_REGAIN_TIME, 0.0f );
+	}
+}
+
+// The strength the joints of an arm ask for: the upper arm the full strength of its motor while it swings out, the arm
+// the loose strength otherwise, less as far as it is slack, eased
+static void nbDriveArm( nbFigure* f, const nbBalancer* b, int k )
+{
+	float slack = nbEase( b->armSlack[k] );
+	for ( int i = nb_upperArms[k]; i <= nb_upperArms[k] + 2; ++i )
+	{
+		float strength = i == nb_upperArms[k] && b->armSwing[k] == nb_armSwingsOut ? 1.0f : NB_LOOSE_ARMS;
+		nbSetBoneSpring( f, i, strength + ( NB_HELD_ARMS - strength ) * slack, f->springs );
+	}
+}
+
 static void nbRowArms( nbFigure* f, nbBalancer* b, float timeStep, b3Quat* pose )
 {
 	// The sense of the fall: up turned toward where the capture point lies from the middle of the support
@@ -1177,8 +1216,9 @@ static void nbRowArms( nbFigure* f, nbBalancer* b, float timeStep, b3Quat* pose 
 		b3Quat frame = b3MulQuat( chest, bone->rest.q );
 
 		// A hanging arm swings from where it is, not where its motion would point into the body, and not closer to the
-		// cone of the shoulder than the spare when the swing takes it farther from its rest
-		if ( row && b->armSwing[k] == nb_armHangs )
+		// cone of the shoulder than the spare when the swing takes it farther from its rest. One that something holds
+		// stays where it is held.
+		if ( row && b->armSwing[k] == nb_armHangs && b->armSlack[k] == 0.0f )
 		{
 			b3Quat current = b3Body_GetRotation( bone->bodyId );
 			b3Vec3 along = b3RotateVector( current, b3Vec3_axisY );
@@ -1210,7 +1250,6 @@ static void nbRowArms( nbFigure* f, nbBalancer* b, float timeStep, b3Quat* pose 
 					b->armFrom[k] = b3NormalizeQuat( b3InvMulQuat( frame, current ) );
 					b->armAxis[k] = b3InvRotateVector( frame, axis );
 					b->armAngle[k] = angle;
-					nbSetBoneSpring( f, arm, 1.0f, f->springs );
 				}
 			}
 		}
@@ -1229,7 +1268,6 @@ static void nbRowArms( nbFigure* f, nbBalancer* b, float timeStep, b3Quat* pose 
 				b->armSwing[k] = nb_armSwingsBack;
 				b->armTime[k] = 0.0f;
 				b->armFrom[k] = pose[arm];
-				nbSetBoneSpring( f, arm, NB_LOOSE_ARMS, f->springs );
 			}
 		}
 		else if ( b->armSwing[k] == nb_armSwingsBack )
@@ -1252,6 +1290,7 @@ static void nbRowArms( nbFigure* f, nbBalancer* b, float timeStep, b3Quat* pose 
 				b->armSwing[k] = nb_armHangs;
 			}
 		}
+		nbDriveArm( f, b, k );
 	}
 }
 
@@ -1259,6 +1298,7 @@ nbBalanceResult nbUpdateBalance( nbWorld* world, int index, nbFigure* f, float t
 {
 	nbBalancer* b = &f->balancer;
 	nbMeasure( world, index, f, b );
+	nbHoldArms( f, b, timeStep );
 	b->stateTime += timeStep;
 
 	// Decide, see the roadmap 26.14, 26.15 and 28.3
@@ -1268,8 +1308,10 @@ nbBalanceResult nbUpdateBalance( nbWorld* world, int index, nbFigure* f, float t
 		return nb_balanceFell;
 	}
 
-	// No rest in sight, see NB_RESTLESS_TIME. Something that pushes the figure keeps it up as long as it pushes.
-	b->restlessTime = f->pushed ? 0.0f : b->restlessTime + timeStep;
+	// No rest in sight, see NB_RESTLESS_TIME. Something that pushes the figure or holds an arm keeps it up as long as it
+	// pushes.
+	bool held = b->armHeld[0] > 0.0f || b->armHeld[1] > 0.0f;
+	b->restlessTime = f->pushed || held ? 0.0f : b->restlessTime + timeStep;
 	if ( b->restlessTime > NB_RESTLESS_TIME )
 	{
 		return nb_balanceFell;
@@ -1343,9 +1385,10 @@ nbBalanceResult nbUpdateBalance( nbWorld* world, int index, nbFigure* f, float t
 		}
 	}
 
-	// Calm on its feet it stands animated again
+	// Calm on its feet it stands animated again, once its arms hold again
 	bool calm = b->stepping == false && b->footContact[0] && b->footContact[1] && b->captureMargin <= NB_STEP_MARGIN * b->scale &&
-				b->meanSpeed < NB_CALM_SPEED && b->tilt < NB_CALM_TILT && f->pushed == false;
+				b->meanSpeed < NB_CALM_SPEED && b->tilt < NB_CALM_TILT && f->pushed == false && b->armSlack[0] == 0.0f &&
+				b->armSlack[1] == 0.0f;
 	b->calmTime = calm ? b->calmTime + timeStep : 0.0f;
 	if ( b->calmTime >= NB_CALM_TIME )
 	{

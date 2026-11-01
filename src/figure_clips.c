@@ -485,12 +485,21 @@ static b3Quat nbFlatHand( float side )
 //----------------------------------------------------------------------------------------------------------------------
 // Standing and falling
 
-// How much farther out than the hips the feet of the humanoid stand, in meters for the humanoid of 1.8 m: the legs
-// spread a little, like an A. The wider the stance, the less it catches hits on the trunk: with the feet under the hips,
-// 0 of 1 920 hits on chest and belly of 50 to 89 N s threw it down, with 2 cm 11 and with 4 cm 24, see the roadmap.
-#define NB_STANCE_SPREAD 0.02f
+// How much farther out than the hips the feet of the humanoid stand, in meters for the humanoid of 1.8 m. The wider the
+// stance, the less it catches hits on the trunk: with the feet under the hips, 0 of 1 920 hits on chest and belly of 50
+// to 89 N s threw it down, with 2 cm 11 and with 4 cm 24, see the roadmap. Since round 36 the hips lie 6 cm wider apart,
+// and the feet stand under them, 26 cm apart instead of 24.
+#define NB_STANCE_SPREAD 0.0f
 
-// The legs of the humanoid standing, its feet flat on the ground a little wider apart than its hips
+// How far the feet stand behind the pelvis, in meters for the humanoid of 1.8 m, so the center of mass stands over the
+// middle of the soles and not over the heels. With the feet under the pelvis it stood 7 cm in front of the heels, at
+// 28 percent of the length of the soles, as if the figure was about to sit down.
+#define NB_STANCE_BACK 0.04f
+
+// The legs of the humanoid standing about its root: its feet flat on the ground under its hips and a little behind them,
+// the knees bent forward over the toes, see NB_STANCE_BACK. With the knees turned out by 17 degrees and the toes by 6,
+// wider apart than the hips like on the mannequin of the reference picture, it caught fewer hits: of 1 920 on chest and
+// belly of 50 to 89 N s 65 threw it down instead of 26.
 static void nbStandingLegs( nbPoseMaker* m )
 {
 	float s = m->s;
@@ -498,22 +507,26 @@ static void nbStandingLegs( nbPoseMaker* m )
 	{
 		int thigh = side == 0 ? nb_humanoidThighLeft : nb_humanoidThighRight;
 		b3Vec3 hip = m->bones[thigh].restTransform.p;
-		float out = hip.x > 0.0f ? NB_STANCE_SPREAD * s : -NB_STANCE_SPREAD * s;
-		nbReachLeg( m, side, (b3Vec3){ hip.x + out, 0.06f * s, 0.0f }, nb_z, nbFlatFoot() );
+		float x = hip.x > 0.0f ? 1.0f : -1.0f;
+		b3Vec3 ankle = { m->root.p.x + hip.x + x * NB_STANCE_SPREAD * s, 0.06f * s, m->root.p.z - NB_STANCE_BACK * s };
+		nbReachLeg( m, side, ankle, nb_z, nbFlatFoot() );
 	}
 }
 
-// The upper body of the humanoid standing: the trunk leaning a little forward over the feet, the arms hanging a little
-// away from the body and bent at the elbows, and a breath that lifts the chest and the arms
+// The upper body of the humanoid standing, like the mannequin of the reference pictures of the game: the trunk upright,
+// the chest lifted and out, the upper arms close along the body, 5 degrees out and 4 back from the shoulders, the elbows
+// bent so the forearms point 24 degrees forward, and a breath that lifts the chest and the arms. With the trunk leaning 3
+// degrees forward the chest sank in. The farther back the upper arms hang, the fewer hard hits the figure catches: of
+// 2 064 on chest and belly of 90 to 139 N s 812 threw it down with them hanging straight, 857 at 4 degrees back and 896
+// at 9.
 static void nbStandingUpperBody( nbPoseMaker* m, float breath )
 {
-	nbTurnPair( m, nb_humanoidUpperArmLeft, nb_humanoidUpperArmRight, nb_x, 0.1f );
-	nbTurnPair( m, nb_humanoidUpperArmLeft, nb_humanoidUpperArmRight, nb_z, 0.08f + 0.02f * breath );
-	nbTurnPair( m, nb_humanoidForearmLeft, nb_humanoidForearmRight, nb_x, 0.3f + 0.04f * breath );
+	nbTurnPair( m, nb_humanoidUpperArmLeft, nb_humanoidUpperArmRight, nb_x, -0.1f );
+	nbTurnPair( m, nb_humanoidUpperArmLeft, nb_humanoidUpperArmRight, nb_z, 0.035f + 0.015f * breath );
+	nbTurnPair( m, nb_humanoidForearmLeft, nb_humanoidForearmRight, nb_x, 0.5f + 0.04f * breath );
 	nbTurn( m, nb_humanoidBelly, nb_x, 0.04f );
-	nbTurn( m, nb_humanoidRibs, nb_x, 0.02f );
-	nbTurn( m, nb_humanoidChest, nb_x, -0.01f - 0.03f * breath );
-	nbTurn( m, nb_humanoidHead, nb_x, -0.02f + 0.02f * breath );
+	nbTurn( m, nb_humanoidChest, nb_x, -0.04f - 0.03f * breath );
+	nbTurn( m, nb_humanoidHead, nb_x, 0.03f + 0.02f * breath );
 }
 
 static void nbMakeIdle( nbPoseMaker* m, float standHeight )
@@ -788,13 +801,11 @@ static void nbMakeGetUpFront( nbPoseMaker* m, b3Vec3 offset, float start, float 
 	nbTurnPair( m, nb_humanoidForearmLeft, nb_humanoidForearmRight, nb_x, 0.25f );
 	nbAddPose( m, start + 3.65f );
 
-	// Standing: the right foot beside the left, the root at the height of the idle clip
+	// Standing: the right foot beside the left, the root at the height of the idle clip and over the feet as it stands
 	nbResetPose( m, standHeight );
 	m->root.p.x = offset.x;
-	m->root.p.z = leftFoot.z;
-	nbForward( m );
-	nbReachLeg( m, 0, leftFoot, ahead, nbFlatFoot() );
-	nbReachLeg( m, 1, rightFoot, ahead, nbFlatFoot() );
+	m->root.p.z = leftFoot.z + NB_STANCE_BACK * s;
+	nbStandingLegs( m );
 	nbStandingUpperBody( m, 0.0f );
 	nbAddPose( m, start + 3.95f );
 }

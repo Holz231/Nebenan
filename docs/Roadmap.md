@@ -1545,36 +1545,36 @@ in [Optimierungen.md](Optimierungen.md).
 Gemessen mit `nebenan_benchmark figures` auf der VM, nach Kapitel 26.8 der Roadmap des Spiels mit 1, 10 und 50 Figuren:
 Stehend kosten 50 Figuren mit einem Thread 0,14 ms im Box3D-Schritt und 0,075 ms im Update, 1,5 µs pro Figur. Fallen
 alle 50 zugleich, kostete der Schritt auf `active-ragdoll-1` 1,9 bis 2,4 ms, mit vier Threads 1,4 ms. Das lag am Löser:
-Solange ein Gelenk in den Farben lag, rechnete er ohne ganze Inseln pro Thread und ohne Gebiete, Farbe für Farbe mit einer
-Sperre nach jeder Stufe, auch für die Trümmer der Stadt. Auf `active-ragdoll-2` rechnet jedes Paket seine Gelenke selbst,
-bis aufs Bit wie über die Farben, und große Inseln behalten ihre Gebiete, auch mit einem Ragdoll darin, Schritt F8. Im
-Median aus fünf Läufen im Wechsel gegen `active-ragdoll-1` kostet der gemeinsame Sturz von 50 Figuren mit vier Threads
-jetzt 1,17 statt 1,30 ms pro Schritt, der Löser darin 0,80 statt 0,99 ms. Der Benchmark misst jetzt auch die Stadt aus
-16 Häusern unter Beschuss mit zwei Figuren an jedem Haus, 32 auf den Straßen, die Granaten, Trümmer und einstürzende
-Stockwerke umwerfen. Dort liegt in 1 059 der 1 200 Schritte ein Ragdoll wach. Mit vier Threads rechnet der Löser in
-1 199 Schritten mit Paketen und in 784 mit Gebieten, vorher in keinem, und braucht 2,61 statt 3,09 ms, 15,5 % weniger,
-der ganze Box3D-Schritt 6,00 statt 6,27 ms. Mit einem Thread kostet der Schritt so viel wie vorher. Die Ergebnisse der
-Stadt mit Figuren ändern sich, weil ihre Trümmer jetzt in Gebieten rechnen, mit jeder Zahl von Threads gleich. Alle
-übrigen Szenen des Benchmarks enden gleich wie auf `active-ragdoll-1`, und die Städte ohne Figuren kosten so viel wie
-vorher, im Median zwischen 4,2 % weniger und 5,2 % mehr pro Box3D-Schritt, in beide Richtungen. Die Demo zeigt die
-Figuren in der Szene „Figuren“, dort misst der Nutzer auf dem Ryzen. Seit `active-ragdoll-3` hat sie dazu die Szene
-„Stadt mit Figuren“, die Stadt aus 20 Häusern mit 40 Figuren, und den Knopf „Mit und ohne F8 messen“, der sie mit und
-ohne Gelenke in den Paketen beschießt, Schritt F13. Den Schalter dafür hat Box3D, `b3WorldDef::enableJointPacks`, aus
-rechnet der Löser bis aufs Bit wie auf `active-ragdoll-1`. Auf dem Ryzen sind damit in der Stadt mit Figuren der Löser
-9,9 % und ein Bild 4,8 % schneller, nur die langsamsten Bilder werden langsamer, Schritt F14. Auf `active-ragdoll-4`
-zeigt sich, dass das zum größten Teil an der Welt liegt, die mit F8 anders endet. Sicher mehr kosten nur die ersten
-Schnitte der Gebiete in den langsamen Schritten, und die kosten jetzt bitgleich ein Drittel weniger. Was in diesen
-Schritten außerdem auffiel, steht als F15 bis F17 in der Tabelle. Auf `active-ragdoll-5` wacht ein großes Teil eines
-Gebäudes durch ein bewegtes Stück nur noch auf, wenn es auf ihm erstarrt ist, F17. Was das Update in den langsamsten
-Bildern kostet, ist vor allem das Budget, F18. Auf `active-ragdoll-6` kostet ein Typwechsel dort rund ein Fünftel
-weniger, bitgleich. Was das Budget dort sonst kostet, steht als F19 und F20 in der Tabelle. Auf `active-ragdoll-7` wählt
-das Budget alle Stücke, bevor eines erstarrt, F19, und große Stücke erstarren dort nur noch, wo sie auch in der Ruhe
-erstarren würden. Auf `active-ragdoll-8` merken sich große Stücke den Schutt an ihrer Seite, den sie für ihr
-Gleichgewicht brauchen, und nur verkeilt erstarren sie nicht mehr, F21. Auf `active-ragdoll-9` behalten erstarrende
-Stücke ihre Kontakte mit bewegten, F20, und die Probe am Ende zählt auf 48 neuen Folgen von Granaten, denn auf die 16
-alten waren F17 bis F21 abgestimmt. Was sie dabei fand, steht als F22 in der Tabelle. Auf `active-ragdoll-10` folgt
-Schutt dem, worauf er liegt, auch wenn das zerbricht oder in einem Einsturz spät an die Reihe kommt, F22. Was danach
-noch in der Luft liegt, hat das Budget fast immer an einer steilen Fläche oder in der Bewegung eingefroren, F23.
+Solange ein Gelenk in den Farben lag, rechnete er ohne ganze Inseln pro Thread und ohne Gebiete, Farbe für Farbe mit
+einer Sperre nach jeder Stufe, auch für die Trümmer der Stadt. Auf `active-ragdoll-2` rechnet jedes Paket seine Gelenke
+selbst, bis aufs Bit wie über die Farben, und große Inseln behalten ihre Gebiete, auch mit einem Ragdoll darin, Schritt
+F8. Im Median aus fünf Läufen im Wechsel gegen `active-ragdoll-1` kostet der gemeinsame Sturz von 50 Figuren mit vier
+Threads jetzt 1,17 statt 1,30 ms pro Schritt, der Löser darin 0,80 statt 0,99 ms. Der Benchmark misst jetzt auch die
+Stadt aus 16 Häusern unter Beschuss mit zwei Figuren an jedem Haus, 32 auf den Straßen, die Granaten, Trümmer und
+einstürzende Stockwerke umwerfen. Dort liegt in 1 059 der 1 200 Schritte ein Ragdoll wach. Mit vier Threads rechnet der
+Löser in 1 199 Schritten mit Paketen und in 784 mit Gebieten, vorher in keinem, und braucht 2,61 statt 3,09 ms, 15,5 %
+weniger, der ganze Box3D-Schritt 6,00 statt 6,27 ms. Mit einem Thread kostet der Schritt so viel wie vorher. Die
+Ergebnisse der Stadt mit Figuren ändern sich, weil ihre Trümmer jetzt in Gebieten rechnen, mit jeder Zahl von Threads
+gleich. Alle übrigen Szenen des Benchmarks enden gleich wie auf `active-ragdoll-1`, und die Städte ohne Figuren kosten
+so viel wie vorher, im Median zwischen 4,2 % weniger und 5,2 % mehr pro Box3D-Schritt, in beide Richtungen. Die Demo
+zeigt die Figuren in der Szene „Figuren“, dort misst der Nutzer auf dem Ryzen. Seit `active-ragdoll-3` hat sie dazu die
+Szene „Stadt mit Figuren“, die Stadt aus 20 Häusern mit 40 Figuren, und den Knopf „Mit und ohne F8 messen“, der sie mit
+und ohne Gelenke in den Paketen beschießt, Schritt F13. Den Schalter dafür hat Box3D, `b3WorldDef::enableJointPacks`,
+aus rechnet der Löser bis aufs Bit wie auf `active-ragdoll-1`. Auf dem Ryzen sind damit in der Stadt mit Figuren der
+Löser 9,9 % und ein Bild 4,8 % schneller, nur die langsamsten Bilder werden langsamer, Schritt F14. Auf
+`active-ragdoll-4` zeigt sich, dass das zum größten Teil an der Welt liegt, die mit F8 anders endet. Sicher mehr kosten
+nur die ersten Schnitte der Gebiete in den langsamen Schritten, und die kosten jetzt bitgleich ein Drittel weniger. Was
+in diesen Schritten außerdem auffiel, steht als F15 bis F17 in der Tabelle. Auf `active-ragdoll-5` wacht ein großes Teil
+eines Gebäudes durch ein bewegtes Stück nur noch auf, wenn es auf ihm erstarrt ist, F17. Was das Update in den
+langsamsten Bildern kostet, ist vor allem das Budget, F18. Auf `active-ragdoll-6` kostet ein Typwechsel dort rund ein
+Fünftel weniger, bitgleich. Was das Budget dort sonst kostet, steht als F19 und F20 in der Tabelle. Auf
+`active-ragdoll-7` wählt das Budget alle Stücke, bevor eines erstarrt, F19, und große Stücke erstarren dort nur noch, wo
+sie auch in der Ruhe erstarren würden. Auf `active-ragdoll-8` merken sich große Stücke den Schutt an ihrer Seite, den
+sie für ihr Gleichgewicht brauchen, und nur verkeilt erstarren sie nicht mehr, F21. Auf `active-ragdoll-9` behalten
+erstarrende Stücke ihre Kontakte mit bewegten, F20, und die Probe am Ende zählt auf 48 neuen Folgen von Granaten, denn
+auf die 16 alten waren F17 bis F21 abgestimmt. Was sie dabei fand, steht als F22 in der Tabelle. Auf `active-ragdoll-10`
+folgt Schutt dem, worauf er liegt, auch wenn das zerbricht oder in einem Einsturz spät an die Reihe kommt, F22. Was
+danach noch in der Luft liegt, hat das Budget fast immer an einer steilen Fläche oder in der Bewegung eingefroren, F23.
 Auf `active-ragdoll-11` erstarrt ein kleines Stück, das sich bewegt, nur noch auf Flächen flacher als 60°, und ein
 bewegtes Stück hält, was auf ihm erstarrt, von dort, wo es liegt, F23. Von dem, was dann noch in der Luft liegt, hat das
 Budget die Hälfte in der Bewegung eingefroren, meist mit dem Schwerpunkt neben den Punkten, auf denen es auflag, F24.
@@ -1588,18 +1588,18 @@ verworfen. Auf `active-ragdoll-15` fängt sich eine stehende Figur mit Schritten
 ihn über ihren Füßen aber nicht abfangen kann, F9. Auf `active-ragdoll-16` stehen ihre Füße auf dem Boden unter ihnen,
 auf einer Stufe, an einem Hang und auf Schutt, F10. Auf `active-ragdoll-17` rückt eine liegende Figur ohne Platz zum
 Aufstehen zurück oder zur Seite oder dreht sich, statt zu warten, F11. Auf `active-ragdoll-18` liegen die Gelenke eines
-Ragdolls im Schutt in den Gebieten der großen Insel, und der aufrufende Thread rechnet sie nicht mehr allein, F12.
-Auf `active-ragdoll-19` bricht ein Ragdoll, der gegen eine zerstörbare Wand fliegt, nach Energie und Material durch
-oder prallt ab, mit genau einem Einschlag pro Teil der Wand und Schritt, F28. Auf `active-ragdoll-20` fängt sich eine
-Figur nach einem harten Treffer mit dynamischen Knochen und echten Schritten wie auf `ragdoll-11`, statt schlaff
-umzufallen, und fällt nur, wo kein Schritt reicht, F29. Auf `active-ragdoll-21` wacht ein Ragdoll, der auf seinen Füßen
-ruht, stehend auf, statt für immer auf Boden unter dem Becken zu warten, F30. Auf `active-ragdoll-22` schwingen Hals,
-Kopf und Arme bei einem leichten Treffer einzeln, nach der Trefferlage, F31. Auf `active-ragdoll-23` rudern die Arme
-einer Figur, die sich fängt, in Fallrichtung, wo ein Schritt zu kurz kommt, und hängen sonst locker, und die Balance gibt
-nicht mehr auf, bevor Schritte und Arme es versucht haben, F35. Auf `active-ragdoll-24` schwingen die Arme geplant aus,
-halten, solange die Figur tritt, und schwingen zurück, statt zu rucken, F35. Auf `active-ragdoll-25` können die Gelenke
-mit genäherten Muskeln ziehen, als Schalter, der aus bleibt: Gemessen fängt die Figur mit ihnen nicht besser, und ihr
-Rumpf ruckt nur bei manchen Treffern weniger, F45. Auf `active-ragdoll-26` verteilt sich ein harter Treffer entlang des
+Ragdolls im Schutt in den Gebieten der großen Insel, und der aufrufende Thread rechnet sie nicht mehr allein, F12. Auf
+`active-ragdoll-19` bricht ein Ragdoll, der gegen eine zerstörbare Wand fliegt, nach Energie und Material durch oder
+prallt ab, mit genau einem Einschlag pro Teil der Wand und Schritt, F28. Auf `active-ragdoll-20` fängt sich eine Figur
+nach einem harten Treffer mit dynamischen Knochen und echten Schritten wie auf `ragdoll-11`, statt schlaff umzufallen,
+und fällt nur, wo kein Schritt reicht, F29. Auf `active-ragdoll-21` wacht ein Ragdoll, der auf seinen Füßen ruht,
+stehend auf, statt für immer auf Boden unter dem Becken zu warten, F30. Auf `active-ragdoll-22` schwingen Hals, Kopf und
+Arme bei einem leichten Treffer einzeln, nach der Trefferlage, F31. Auf `active-ragdoll-23` rudern die Arme einer Figur,
+die sich fängt, in Fallrichtung, wo ein Schritt zu kurz kommt, und hängen sonst locker, und die Balance gibt nicht mehr
+auf, bevor Schritte und Arme es versucht haben, F35. Auf `active-ragdoll-24` schwingen die Arme geplant aus, halten,
+solange die Figur tritt, und schwingen zurück, statt zu rucken, F35. Auf `active-ragdoll-25` können die Gelenke mit
+genäherten Muskeln ziehen, als Schalter, der aus bleibt: Gemessen fängt die Figur mit ihnen nicht besser, und ihr Rumpf
+ruckt nur bei manchen Treffern weniger, F45. Auf `active-ragdoll-26` verteilt sich ein harter Treffer entlang des
 Skeletts: Ein Treffer auf einen Arm oder ein Bein bewegt das Glied, nicht den Rumpf daneben, und ein Tritt gegen ein
 Schienbein lässt das andere Bein stehen, F46. Auf `active-ragdoll-27` bewegen sich die Gelenke so weit wie die eines
 Menschen, mit einer eigenen Grenze in jede Richtung: Die Schulter hebt den Arm über den Kopf und nur 40° zurück, F47.
@@ -1615,7 +1615,9 @@ hängt straff am Blick. Auf `active-ragdoll-34` richtet sich die Balance nach de
 Fuß knapp über dem Boden zählt als Stütze, und von 168 leichten Treffern fällt keiner mehr. Schnellere Schritte nach
 härteren Stößen, F60, halfen nicht. Auf `active-ragdoll-35` zeichnet die Demo die Figuren wie Gliederpuppen, jeden
 Körperteil in eigener Farbe und Form, und der Mensch der Bibliothek steht ein wenig in den Knien, die Beine wie ein A,
-und fängt Treffer auf Brust und Bauch besser.
+und fängt Treffer auf Brust und Bauch besser. Auf `active-ragdoll-36` hat er Körper und Haltung der Vorlage, Arme von
+81 cm mit einer Armatur an der Schulter, und ein Arm, den etwas hält oder hebt, gibt locker nach, während die Figur die
+Balance hält. Die Demo zeichnet Arme und Beine als Röhren und den Rumpf aus Ringen.
 
 Weg zur besten aktiven Ragdoll für das Spiel, besprochen mit dem Nutzer am 1. November 2026: Gemessen an den Kapiteln 3
 und 26 bis 30 der Roadmap des Spiels fehlen am meisten Griffe und Würfe, die Wand, Übergänge aus der Bewegung, die
@@ -1710,6 +1712,20 @@ zwei Lücken der Balance: Eine Figur stand still mit dem Capture Point knapp neb
 mit dem Fuß unter einem Brocken trat ohne Ende. Jetzt ist eine Figur bis 3 cm daneben ruhig, und wer 8 s lang nicht zur
 Ruhe kommt, fällt, siehe „Nicht ewig fangen“. Damit rücken F63 auf Runde 36 und F61 auf Runde 37.
 
+Figuren wie die Vorlage, Teil 2, gewünscht vom Nutzer am 1. November 2026, Runde 36: Arme und Beine sind in der Vorlage
+runde Röhren, die Arme länger, die Beine kommen aus einer breiten Hüfte, die Schultern sind größere Kugeln, die Brust
+steht vor, der Rumpf ist aus runden Ringen gestapelt statt aus Blöcken, und die Figur steht wie die blaue Gliederpuppe
+von der Seite, der Oberarm aus der Schulter nach hinten gewinkelt und der Unterarm nach vorn. Hebt man einen Arm, soll
+er locker nachgeben, und die Figur soll die Balance halten. Die Formen zeichnet die Demo, Maße, Haltung und der lockere
+Arm gehören in die Bibliothek. Der neue Körper fängt Treffer auf den Rumpf schlechter: Von 90 bis 139 N s fallen 885
+statt 676 der 2 064 Treffer, von 50 bis 89 N s 15 statt 11, auf die Glieder 272 statt 326. Gerade Oberarme oder die Arme
+von Runde 35 fingen besser, sehen aber nicht aus wie die Vorlage. Dabei fiel auf, dass der längere Arm beim Rudern um
+seine eigene Achse schlug, bis 35 rad/s, eine Armatur der Schulter beruhigt ihn. Siehe „Arme und Beine als Röhren“,
+„Körper wie die Vorlage“, „Haltung wie die Vorlage“, „Armatur der Schulter“ und „Ein gehaltener Arm wird locker“ in
+[Optimierungen](Optimierungen.md). Zwei grüne Bilder einer kräftigeren Figur sind nach dem Nutzer für später, F67, das
+dritte, eine schlanke Figur im Gehen, für jetzt. Vorgeschlagen ist F68, die Balance auf den neuen Körper abzustimmen.
+Damit rücken F63 auf Runde 37 und F61 auf Runde 38.
+
 Durchsicht fremder aktiver Ragdolls am 31. Oktober 2026, auf Wunsch des Nutzers: BIMOS-Active-Ragdolls (Unity, VR),
 Kickback (Godot, nach Euphoria), Active-Ragdoll-Character, Unity.Humanoid.ActiveRagdoll, ActiveRagdoll von ashleve und
 seine Rust-Portierung active-ragdoll-rs sowie active-ragdolls von sergioabreu-g. Übernommen werden sollen nur Ideen,
@@ -1789,12 +1805,14 @@ seiner NPCs treffen, das ist Sache des Kampfsystems, die Angriffe einer Figur de
 | F58 | **Figuren speichern und zurückholen**: Heute geht das nur für Häuser, `nbSaveDestructibles`. Für Replays und Divergenztests im PvP über das Netz, 30.8, muss jede Figur mit Balance, Muskeln und Federn bitgleich zurückkommen | Replays, Divergenztests und Netzcode | F53 | 🔜 mittel, vor PvP über das Netz |
 | F59 | **Balance einer gedrehten Figur**: Seit F50 dreht ein Treffer quer über die Vorderseite der Brust die ganze Figur auf ihren Füßen weg, bei 62 N s von rechts um 22 bis 28°. Die Balance richtet sich nach der Richtung des Beckens, so setzt die Figur den zweiten Fuß zurück statt zur Seite und steht zu breit: Von 168 leichten Treffern in der Szene der Tests fallen 5 statt 1. Plan, Stufe 1 der besseren Balance: Ausrichtung und Seitenabstand des Fußes nimmt die Balance vom Standfuß und von der Richtung, in die der Stoß die Figur schiebt, nicht vom Becken, und das Becken dreht sich zu den Füßen zurück | weniger Stürze nach leichten Treffern von der Seite | F9, F50 | ✅ auf `active-ragdoll-34`, auf Wunsch des Nutzers: Jeder Fuß zeigt, wohin die Figur auf ihm stünde, die Figur zeigt nach ihrem Standfuß, solange der andere schwingt, sonst nach ihren Füßen zusammen. Ein Schritt landet gedreht wie der Standfuß und hält seinen Abstand zur Seite von ihm, ein Fuß, der steht, bleibt gedreht, wie er steht, und die Beine drehen das Becken über die Füße zurück. Nach 168 leichten Treffern sind die Füße im Mittel um 7,9 statt 13,3° gedreht, höchstens um 36 statt 67°, nach 62 N s von rechts um 16 statt 25°. Die Stürze hatten einen anderen Grund: Nach einem langen ersten Schritt schwebt der hintere Fuß knapp über dem Boden und verlor seine Kontakte, die Balance ließ ihn dann nach außen treten. Jetzt steht ein Fuß, der nicht schwingt, auch bis 3 cm über dem Boden. Von 168 leichten Treffern fällt keiner statt vier, von 50 bis 89 N s auf Brust und Bauch 14 statt 42, mit 1,24 statt 2,38 Schritten. Die Balance nach den Füßen allein ließ dort 62 fallen. Siehe „Balance nach den Füßen“ und „Fuß knapp über dem Boden steht“ in [Optimierungen](Optimierungen.md) |
 | F60 | **Dauer jedes Schritts nach dem Stoß**: Stufe 2 der besseren Balance. Heute dauert jeder Schritt 0,3 s, ein harter Stoß bekommt denselben langsamen Schritt wie ein leichter, und solange der Fuß schwingt, läuft der Capture Point mit dem Exponential der Pendelfrequenz mal der Dauer davon. Die Balance probiert für jeden Schritt einige Dauern zwischen etwa 0,2 und 0,4 s und nimmt die, nach der der Capture Point bei der Landung am nächsten an der Stütze liegt, wie es die Anpassung der Schrittzeit von Khadiv 2016 und 2020 und Griffin 2017 am Atlas tut, deterministisch und mit festen Kandidaten. Messen an den 4 464 Treffern auf Brust und Bauch, den Grenzen und den leichten Treffern | härtere Treffer gefangen, weniger Stolperschritte, kürzere Fänge | F9, F59 | ⛔ auf `active-ragdoll-34` gemessen: Die Balance probierte für jeden Schritt 0,3, 0,25 und 0,2 s und nahm einen schnelleren, wenn er den Capture Point bei der Landung um mehr als 1 cm näher an die Stütze brachte. Das Schwungbein folgt seinem Ziel aber etwa 0,1 s zu spät, ein Schritt von 0,2 s nach hinten brachte den Fuß 15 statt 57 cm weit. Von 168 leichten Treffern fielen 22 statt keinem, von 50 bis 89 N s 299 statt 14. Mit einer Landung, die auf den Fuß wartet, fielen mehr, mit einer Grenze von 1,5 m/s für das Tempo des Fußes von 90 bis 139 N s 33 mehr. Siehe „Schrittzeit nach dem Stoß“ in [Optimierungen](Optimierungen.md). 🔜 erst mit einem Schwungbein, das seinem Ziel schneller folgt |
-| F61 | **Balance aus eigener Kraft**: Stufe 3 der besseren Balance. Heute hält eine begrenzte Kraft gegen die Welt das Becken aufrecht, `uprightTorque`, und ohne sie fällt der Mensch der Bibliothek schon bei 50 N s. Stattdessen hält die Figur Rumpf und Schwerpunkt mit Drehmomenten in ihren eigenen Gelenken: Die Hüfte des Standbeins richtet den Oberkörper auf und stemmt sich dabei gegen den Boden, das Standbein trägt den Schwerpunkt über virtuelle Kräfte durch seine Gelenke, die Arme helfen wie heute, nach SIMBICON, Yin 2007, und Coros 2010. Die Kraft von außen bleibt als Option. Größerer Umbau, eigene Branch | eine Balance, die physikalisch stimmt und den Körper sichtbar arbeiten lässt, für ein Spiel, das es rein physikalisch will | F59, F60 | 🔜 auf Wunsch des Nutzers, eigene Branch, vorgeschlagen als Runde 37, nach F63 |
+| F61 | **Balance aus eigener Kraft**: Stufe 3 der besseren Balance. Heute hält eine begrenzte Kraft gegen die Welt das Becken aufrecht, `uprightTorque`, und ohne sie fällt der Mensch der Bibliothek schon bei 50 N s. Stattdessen hält die Figur Rumpf und Schwerpunkt mit Drehmomenten in ihren eigenen Gelenken: Die Hüfte des Standbeins richtet den Oberkörper auf und stemmt sich dabei gegen den Boden, das Standbein trägt den Schwerpunkt über virtuelle Kräfte durch seine Gelenke, die Arme helfen wie heute, nach SIMBICON, Yin 2007, und Coros 2010. Die Kraft von außen bleibt als Option. Größerer Umbau, eigene Branch | eine Balance, die physikalisch stimmt und den Körper sichtbar arbeiten lässt, für ein Spiel, das es rein physikalisch will | F59, F60 | 🔜 auf Wunsch des Nutzers, eigene Branch, vorgeschlagen als Runde 38, nach F63 |
 | F62 | **Mehrere Schritte planen**: Stufe 4 der besseren Balance. Die Balance wählt heute nur den nächsten Schritt. Sie plant den ersten so, dass der zweite fangen kann, nach der Capturability von Koolen 2012, oder mit einer kleinen modellprädiktiven Regelung auf dem Pendelmodell nach Wieber 2006, mit festen Iterationen bitgleich | weniger lange Stolperfolgen nach sehr harten Treffern | F60 | 🔜 später, optional |
-| F63 | **Mehr Stücke im Rumpf**: Über dem Becken hat der Mensch der Bibliothek drei Stücke, Bauch und Rippen mit je 5 kg und die Brust mit 12 kg, jedes Gelenk beugt bis 25° nach vorn, zusammen 75° vor, 30° zurück, 34° zur Seite und 40° gedreht, wie die Rigs von Mixamo. Ein Mensch beugt sich vor allem in der Lendenwirbelsäule und dreht sich in der Brustwirbelsäule. Fünf Stücke, zwei für die Lende und drei für die Brust, wie die fünf Wirbel des Mannequins von Unreal 5, biegen den Rücken runder, lassen einen Treffer am Bauch dort einknicken und legen die Beugung in den Bauch. Leichtere Stücke zwischen steifen Federn zittern wie der Hals, dafür ist die Armature aus F48 die Voraussetzung. Zwei Knochen mehr kosten etwa ein Zehntel mehr je Figur. Clips, Balance, Zucken, die Drehung aus F50, die Tests und die Nummern der Knochen hängen heute an drei Wirbeln: Die Zahl der Stücke wird in der Bibliothek variabel, der erste Teil von F53, und gemessen gegen drei Stücke an Biegung, Treffern, Fangen und Kosten. Eigene Branch | ein Rumpf, der sich biegt wie ein Mensch, und Rigs mit bis zu fünf Wirbeln | F48, F50 | 🔜 als Nächstes, Runde 36, vor F61 |
+| F63 | **Mehr Stücke im Rumpf**: Über dem Becken hat der Mensch der Bibliothek drei Stücke, Bauch und Rippen mit je 5 kg und die Brust mit 12 kg, jedes Gelenk beugt bis 25° nach vorn, zusammen 75° vor, 30° zurück, 34° zur Seite und 40° gedreht, wie die Rigs von Mixamo. Ein Mensch beugt sich vor allem in der Lendenwirbelsäule und dreht sich in der Brustwirbelsäule. Fünf Stücke, zwei für die Lende und drei für die Brust, wie die fünf Wirbel des Mannequins von Unreal 5, biegen den Rücken runder, lassen einen Treffer am Bauch dort einknicken und legen die Beugung in den Bauch. Leichtere Stücke zwischen steifen Federn zittern wie der Hals, dafür ist die Armature aus F48 die Voraussetzung. Zwei Knochen mehr kosten etwa ein Zehntel mehr je Figur. Clips, Balance, Zucken, die Drehung aus F50, die Tests und die Nummern der Knochen hängen heute an drei Wirbeln: Die Zahl der Stücke wird in der Bibliothek variabel, der erste Teil von F53, und gemessen gegen drei Stücke an Biegung, Treffern, Fangen und Kosten. Eigene Branch | ein Rumpf, der sich biegt wie ein Mensch, und Rigs mit bis zu fünf Wirbeln | F48, F50 | 🔜 als Nächstes, Runde 37, vor F61 |
 | F64 | **Aktiv-dynamisch bei Kontakt**: Berühren sich zwei Kämpfer oder trifft ein Glied während einer Aktion etwas Festes, werden die Beteiligten dynamisch, solange der Kontakt dauert: Ihre Motoren folgen der Zielpose aus den Kampfclips mit begrenzter Kraft und so genau, dass ein Schlag präzise bleibt, ihre Balance hält sie, und die Kräfte gehen in beide Richtungen. Ein geblockter Schlag gibt in Schulter und Ellbogen nach, statt durch die Deckung zu gehen. Ohne Kontakt und ruhig werden sie wieder kinematisch. Heute wird eine Figur nur nach einem harten Treffer dynamisch, und zwei stehende Figuren berühren sich nicht, weil Box3D kinematische Körper nicht miteinander kollidieren lässt. Der Zustand, in dem sich eine Figur fängt, ist schon dieser Baustein, er beginnt nur nach harten Treffern und endet, sobald sie ruhig ist | Kampf mit echtem Widerstand, Blocken, Drücken und Schieben ohne Skript, nach 30.5 und 30.7 der Roadmap des Spiels | F61 | ✅ Stufe 1 auf `active-ragdoll-30`, auf Wunsch des Nutzers: Drückt ein Körper einen Knochen eines stehenden Menschen ein paar Schritte lang mit mindestens `pushForce` (40 N) seitlich, fängt er sich, statt eine Wand zu bleiben, und bleibt dynamisch, solange es mit der Hälfte drückt. Mit 80 N gegen die Brust lehnt er sich 8 cm zurück, mit 300 N tritt er 3 Schritte weg, mit 150 N gegen die Stirn dreht sich sein Kopf um 34°. Die Demo hat dazu den Stock. Siehe „Drücken weckt die Figur“ in [Optimierungen](Optimierungen.md). Seit `active-ragdoll-31` gibt ein Arm einem Drücken aus jeder Richtung nach: Ein Stock, der mit 80 N langsam in den Ellbogen drückt, schiebt die runden Enden von Ober- und Unterarm schräg nach oben und unten, und bis `active-ragdoll-30` blieb die Figur dafür eine Wand, jetzt lehnt sie sich 12 cm zur Seite. Siehe „Ein Arm gibt nach“ in [Optimierungen](Optimierungen.md). 🔜 nach F61 der Rest: Kämpfer, die sich berühren, schon vor dem Kontakt dynamisch, und Kampfclips, denen die Motoren genau genug folgen |
 | F65 | **Glieder steuern**: Das Spiel setzt ein Ziel für Hand oder Fuß, aus einem Kampfclip oder in der Entwicklung aus der Eingabe, die Bibliothek rechnet die Gelenkwinkel der Kette, und die Motoren ziehen mit begrenzter Kraft dorthin. Ein Kontakt hält das Glied auf: Drückt ein Fuß langsam gegen einen Kopf, dreht sich der Kopf, der Hals gibt die Kraft an den Rumpf weiter, der Körper wird weggeschoben oder fängt sich mit Schritten, und das eigene Bein spürt die Gegenkraft. Ein Tritt wirkt dann nach Geschwindigkeit und Masse hinter dem Fuß, Trefferpunkt, Steifigkeit und Balance, ein harter anders als ein leichter, mit fließenden Übergängen statt der Schwellen zwischen Zucken, Abfangen und Fallen. Die Demo bekommt dazu ein Werkzeug der Entwicklung, ein Glied mit der Maus zu führen, nur über diese Schnittstelle | Drücken, Treten und Schieben nach der wirkenden Kraft, Grundlage für Griffe F54 und die Wand F55 | F64 | 🔜 vorgeschlagen mit F64 |
 | F66 | **Anspannung und Entspannung**: Ein Mensch spannt die Muskeln um ein Gelenk gegeneinander an, Beuger und Strecker zugleich, und macht es steif, ohne es zu bewegen. Wer einen Stoß kommen sieht und den Hals vorher anspannt, dessen Kopf wird weniger beschleunigt, gemessen von Eckner u. a. (2014) an Sportlern. Heute zieht jedes Gelenk einer Figur mit derselben Steifigkeit und Grenze, ob sie gewappnet ist oder überrascht. Das Spiel soll die Spannung je Bereich setzen können, Hals, Rumpf, Arme und Beine, aus Deckung, Block, Angriff oder Überraschung, und die Bibliothek hebt oder senkt damit Steifigkeit, Dämpfung und Drehmomentgrenze der Gelenke. Mit den Muskeln aus F45 braucht das Anspannen Zeit: Wer zu spät reagiert, ist nicht gewappnet. Eine bewusstlose Figur ist ganz locker. Das Stemmen gegen eine Richtung aus F42 wird ein Fall davon, und mit F41 kann Spannung Ausdauer kosten | Derselbe Treffer wirkt nach der Haltung des Getroffenen: Ein gewappneter Hals hält, ein überraschter gibt nach, eine angespannte Deckung hält einen leichten Schlag und weicht einem harten | F45, F64 | 🔜 vorgeschlagen mit F64 |
+| F67 | **Kräftigere Figur**: Der Nutzer schickte am 1. November 2026 zwei Bilder einer kräftigeren grünen Gliederpuppe, mit breiteren Schultern, dickeren Armen und Beinen und mehr Brust, für später. Die Bibliothek bekäme dazu Maße für die Breite von Gliedern und Rumpf, die Massen danach und Gelenke, die stark genug sind, und die Demo zeichnet sie. Zu prüfen ist, wie sie sich fängt, wie bei „Körper wie die Vorlage“ | Kämpfer verschiedener Statur, wie das Spiel sie braucht | F53 | 🔜 später, auf Wunsch des Nutzers |
+| F68 | **Balance für den Körper der Vorlage**: Seit `active-ragdoll-36` hat der Mensch der Bibliothek längere Arme und breitere Hüften und steht wie die Vorlage. Er fängt Treffer auf den Rumpf schlechter: Von 90 bis 139 N s fallen 885 statt 676 von 2 064, von hinten fängt er sich nur bis 103 statt 127 N s, von der Seite bis 88 statt 94, und nach leichten Treffern stehen die Füße bis 43 statt 32° gedreht. Kein Teil des Körpers erklärt das allein. Idee: Reichweite und Dauer der Schritte, die Kraft der Arme zwischen den Schwüngen und ihren Schwung auf den neuen Körper abstimmen, gemessen an den 5 432 Treffern. Arme mit 0,8 statt 0,6 der Kraft zwischen den Schwüngen ließen von 90 bis 139 N s nur 819 fallen | wieder so viele Treffer gefangen wie mit dem alten Körper, im Aussehen der Vorlage | F59 | 🔜 vorgeschlagen, vor oder nach F63 nach Wunsch des Nutzers |
 
 ## Kleinere Punkte
 

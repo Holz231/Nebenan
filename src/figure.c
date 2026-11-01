@@ -362,8 +362,10 @@ float nbMakeHumanoidBones( float height, float mass, nbBoneDef* bones, int capac
 	float m = mass / NB_HUMANOID_MASS;
 
 	// Built after a mannequin, measured in its picture from behind: the pelvis origin stands 98 cm above the soles, the
-	// shoulders 1.50 m, the head reaches from 1.60 to 1.80 m on a short neck, and the hands hang to 82 cm, a little out
-	// from the hips. A limb that hangs down has its local y along world -y. The foot points forward, along +z.
+	// head reaches from 1.60 to 1.80 m on a short neck. The shoulders turn at 1.45 m, inside balls just below the top
+	// corners of the chest, and the arms hang from them to 64 cm, past the middle of the thighs, a little out from the
+	// hips, as on the mannequin of the reference picture of the game. A limb that hangs down has its local y along world
+	// -y. The foot points forward, along +z.
 	//
 	// The joints move as far as a person's, after the normal ranges of the neutral zero method, the ankle as under the
 	// weight of the body. A hinge turns about the axis across the bone, local x. A ball joint has its z axis along the
@@ -378,15 +380,16 @@ float nbMakeHumanoidBones( float height, float mass, nbBoneDef* bones, int capac
 	b3Quat footRest = b3MakeQuatFromAxisAngle( b3Vec3_axisX, 0.5f * B3_PI );
 	b3Quat identity = b3Quat_identity;
 
-	// The trunk in four rounded blocks like the mannequin: a round pelvis from 83 cm to 1.05 m, belly and ribs as two
-	// flatter rolls above it, and a broad chest up to the shoulders at 1.56 m. Neighbours overlap, the next but one lies
-	// more than 10 cm away.
+	// The trunk in four rounded blocks like the mannequin: a round pelvis from 83 cm to 1.05 m, a little wider than the
+	// chest, with the legs at its outer corners, belly and ribs as two flatter rolls above it, and a broad chest up to its
+	// top at 1.56 m that stands out in front of them by 4 cm, as on the mannequin seen from the side. Neighbours overlap,
+	// the next but one lies more than 10 cm away.
 	nbBoneDef pelvis = nbDefaultBoneDef();
 	pelvis.name = "pelvis";
 	pelvis.parent = -1;
 	pelvis.shape = nb_roundedBoxBone;
 	pelvis.center = (b3Vec3){ 0.0f, -0.04f * s, 0.0f };
-	pelvis.halfExtents = (b3Vec3){ 0.178f * s, 0.11f * s, 0.11f * s };
+	pelvis.halfExtents = (b3Vec3){ 0.2f * s, 0.11f * s, 0.11f * s };
 	pelvis.radius = 0.08f * s;
 	pelvis.mass = 11.0f * m;
 	pelvis.joint = nb_fixedJoint;
@@ -399,8 +402,8 @@ float nbMakeHumanoidBones( float height, float mass, nbBoneDef* bones, int capac
 		nbSegment( "ribs", nb_humanoidBelly, (b3Vec3){ 0.0f, 0.12f * s, 0.0f }, (b3Vec3){ 0.0f, 0.06f * s, 0.0f },
 				   (b3Vec3){ 0.165f * s, 0.055f * s, 0.105f * s }, 0.05f * s, 5.0f * m );
 	bones[nb_humanoidChest] =
-		nbSegment( "chest", nb_humanoidRibs, (b3Vec3){ 0.0f, 0.11f * s, 0.0f }, (b3Vec3){ 0.0f, 0.14f * s, 0.0f },
-				   (b3Vec3){ 0.19f * s, 0.135f * s, 0.12f * s }, 0.07f * s, 12.0f * m );
+		nbSegment( "chest", nb_humanoidRibs, (b3Vec3){ 0.0f, 0.11f * s, 0.0f }, (b3Vec3){ 0.0f, 0.14f * s, 0.015f * s },
+				   (b3Vec3){ 0.19f * s, 0.135f * s, 0.125f * s }, 0.07f * s, 12.0f * m );
 
 	// The spine bends 75 degrees forward, 30 back and 34 to either side and turns 40 either way, most of the turn in the
 	// chest, the most of the bend back low down
@@ -453,15 +456,18 @@ float nbMakeHumanoidBones( float height, float mass, nbBoneDef* bones, int capac
 		int shin = side == 0 ? nb_humanoidShinLeft : nb_humanoidShinRight;
 		int foot = side == 0 ? nb_humanoidFootLeft : nb_humanoidFootRight;
 
-		// The arms hang 3 degrees out from the body, past the trunk by 3 cm and more, the fingertips 30 cm from the middle
+		// The shoulders turn 2.5 cm outside the chest, and the arms hang 3 degrees out from the body, past the trunk by
+		// 1.5 cm and more, the fingertips 26 cm from the middle. Upper arm, forearm and hand are 37, 27 and 17 cm long, as
+		// their joints lie in the reference picture, longer than on a person by a tenth: the elbow at the belly, the wrist
+		// at the crotch.
 		b3Quat armRest = b3MakeQuatFromAxisAngle( b3Vec3_axisZ, B3_PI + 0.05f * x );
 		bones[upperArm] = nbLimb( side == 0 ? "upper arm left" : "upper arm right", nb_humanoidChest,
-								  (b3Vec3){ 0.23f * s * x, 0.22f * s, 0.0f }, armRest, 0.28f * s, 0.05f * s, 2.0f * m,
+								  (b3Vec3){ 0.215f * s * x, 0.17f * s, 0.0f }, armRest, 0.37f * s, 0.05f * s, 2.0f * m,
 								  nb_ballJoint, zToY, 0.0f, 0.0f, 0.0f, 0.6f );
-		bones[forearm] = nbLimb( side == 0 ? "forearm left" : "forearm right", upperArm, (b3Vec3){ 0.0f, 0.28f * s, 0.0f },
-								 identity, 0.24f * s, 0.045f * s, 1.2f * m, nb_hingeJoint, zToX, -0.087f, 2.53f, 0.0f, 0.4f );
-		bones[hand] = nbLimb( side == 0 ? "hand left" : "hand right", forearm, (b3Vec3){ 0.0f, 0.24f * s, 0.0f }, identity,
-							  0.16f * s, 0.035f * s, 0.8f * m, nb_ballJoint, zToY, 0.0f, 0.0f, 0.0f, 0.15f );
+		bones[forearm] = nbLimb( side == 0 ? "forearm left" : "forearm right", upperArm, (b3Vec3){ 0.0f, 0.37f * s, 0.0f },
+								 identity, 0.27f * s, 0.045f * s, 1.2f * m, nb_hingeJoint, zToX, -0.087f, 2.53f, 0.0f, 0.4f );
+		bones[hand] = nbLimb( side == 0 ? "hand left" : "hand right", forearm, (b3Vec3){ 0.0f, 0.27f * s, 0.0f }, identity,
+							  0.17f * s, 0.035f * s, 0.8f * m, nb_ballJoint, zToY, 0.0f, 0.0f, 0.0f, 0.15f );
 
 		// The shoulder lifts the arm 160 degrees forward and out, 40 back and in, and turns it 90 in and 60 out. The elbow
 		// bends 145 degrees and stretches 5 past straight. The hand, its palm toward the thigh, bends 60 toward it and
@@ -480,9 +486,19 @@ float nbMakeHumanoidBones( float height, float mass, nbBoneDef* bones, int capac
 		bones[hand].flinchHertz = 4.0f;
 		bones[hand].flinchDamping = 0.6f;
 
-		// The legs carry the body: their joints see far more than their two bones and take three times the damping
+		// The upper arm turns about its own long axis against the weakest spring of the shoulder, which is set against the
+		// upper arm alone, see nbJointSpringHertz, but the turn swings the bent forearm and the hand around with it. With
+		// the arm of 81 cm the arm then turned so up to 35 rad/s while it rowed: of the hits a figure caught, the upper arm
+		// turned faster than 15 rad/s against the chest in 19 %, with the arm of 68 cm before round 36 in 0.2 %. An
+		// armature about as large as the rotational inertia of forearm and hand about that axis, 0.03 kg m^2 in the stand
+		// and 0.1 with the elbow bent as it rows, calms it, in 0.2 % of the hits again, see nbBoneDef::armature.
+		bones[upperArm].armature = 0.05f * m * s * s;
+
+		// The legs carry the body: their joints see far more than their two bones and take three times the damping. The
+		// hips lie 26 cm apart, so the thighs come out of the pelvis under its outer corners with a gap between them, as on
+		// the mannequin of the reference picture.
 		bones[thigh] =
-			nbLimb( side == 0 ? "thigh left" : "thigh right", nb_humanoidPelvis, (b3Vec3){ 0.10f * s * x, -0.03f * s, 0.0f },
+			nbLimb( side == 0 ? "thigh left" : "thigh right", nb_humanoidPelvis, (b3Vec3){ 0.13f * s * x, -0.03f * s, 0.0f },
 					down, 0.45f * s, 0.07f * s, 7.5f * m, nb_ballJoint, zToY, 0.0f, 0.0f, 0.0f, 2.0f );
 		bones[thigh].damping = 3.0f;
 		bones[shin] = nbLimb( side == 0 ? "shin left" : "shin right", thigh, (b3Vec3){ 0.0f, 0.45f * s, 0.0f }, identity,
@@ -1500,6 +1516,8 @@ static void nbFall( nbWorld* world, nbFigure* f, bool stunned )
 {
 	NB_UNUSED( world );
 	f->pushed = false;
+	f->armPush[0] = 0.0f;
+	f->armPush[1] = 0.0f;
 	bool wasRagdoll = f->state == nb_figureRagdoll;
 	if ( wasRagdoll == false )
 	{
@@ -3101,8 +3119,9 @@ static void nbCollectDebrisHits( nbWorld* world )
 // push, for a figure that stands or catches itself, it also gives the strongest push on one bone: sideways, of the
 // contacts that push within 45 degrees of level, and on an arm of a humanoid that can be pushed from any side. Trunk,
 // head and legs carry a load to the ground, an arm gives way: a stick pressed into the elbow pushes the round ends of
-// upper arm and forearm up and down, and is no load.
-static float nbPressingForce( const nbWorld* world, int index, const nbFigure* f, float timeStep, b3Vec3 up, float* push )
+// upper arm and forearm up and down, and is no load. With arms, the strongest push on a bone of each arm.
+static float nbPressingForce( const nbWorld* world, int index, const nbFigure* f, float timeStep, b3Vec3 up, float* push,
+							  float* arms )
 {
 	b3ContactData contacts[NB_CONTACT_CAPACITY];
 	float force = 0.0f;
@@ -3159,7 +3178,13 @@ static float nbPressingForce( const nbWorld* world, int index, const nbFigure* f
 				}
 			}
 		}
-		strongest = b3MaxFloat( strongest, b3Length( bonePush ) / timeStep );
+		float boneForce = b3Length( bonePush ) / timeStep;
+		strongest = b3MaxFloat( strongest, boneForce );
+		if ( arm && arms != NULL )
+		{
+			int k = i <= nb_humanoidHandLeft ? 0 : 1;
+			arms[k] = b3MaxFloat( arms[k], boneForce );
+		}
 	}
 	if ( push != NULL )
 	{
@@ -3343,12 +3368,15 @@ static void nbUpdateAnimated( nbWorld* world, int index, nbFigure* f, float time
 	if ( ( world->figureUpdates + index ) % NB_CRUSH_PERIOD == 0 )
 	{
 		float push = 0.0f;
-		if ( nbPressingForce( world, index, f, timeStep, up, &push ) >= f->def.crushForce )
+		float arms[2] = { 0.0f, 0.0f };
+		if ( nbPressingForce( world, index, f, timeStep, up, &push, arms ) >= f->def.crushForce )
 		{
 			nbFall( world, f, false );
 			return;
 		}
 
+		f->armPush[0] = arms[0];
+		f->armPush[1] = arms[1];
 		bool pushed = f->def.pushForce > 0.0f && push >= f->def.pushForce && f->canBalance;
 		if ( pushed && f->pushed )
 		{
@@ -3579,7 +3607,7 @@ static nbFigureWait nbCheckGetUp( const nbWorld* world, int index, const nbFigur
 	}
 	*ground = floor.point;
 
-	if ( nbPressingForce( world, index, f, timeStep, up, NULL ) > 0.0f )
+	if ( nbPressingForce( world, index, f, timeStep, up, NULL, NULL ) > 0.0f )
 	{
 		return nb_waitDebris;
 	}
@@ -3660,7 +3688,7 @@ static bool nbCheckWakeStanding( const nbWorld* world, int index, const nbFigure
 	{
 		return false;
 	}
-	if ( nbPressingForce( world, index, f, timeStep, up, NULL ) > 0.0f )
+	if ( nbPressingForce( world, index, f, timeStep, up, NULL, NULL ) > 0.0f )
 	{
 		return false;
 	}
@@ -3709,16 +3737,20 @@ static bool nbCheckWakeStanding( const nbWorld* world, int index, const nbFigure
 // does not carry debris.
 static void nbUpdateBalancing( nbWorld* world, int index, nbFigure* f, float timeStep, b3Vec3 up )
 {
-	// What still pushes it keeps it dynamic, see nbFigureDef::pushForce
+	// What still pushes it keeps it dynamic, see nbFigureDef::pushForce, and an arm that something holds goes slack, see
+	// nbHoldArms
 	if ( ( world->figureUpdates + index ) % NB_CRUSH_PERIOD == 0 )
 	{
 		float push = 0.0f;
-		if ( nbPressingForce( world, index, f, timeStep, up, &push ) >= NB_ABORT_PART * f->def.crushForce )
+		float arms[2] = { 0.0f, 0.0f };
+		if ( nbPressingForce( world, index, f, timeStep, up, &push, arms ) >= NB_ABORT_PART * f->def.crushForce )
 		{
 			nbFall( world, f, false );
 			return;
 		}
 		f->pushed = f->def.pushForce > 0.0f && push >= 0.5f * f->def.pushForce;
+		f->armPush[0] = arms[0];
+		f->armPush[1] = arms[1];
 	}
 
 	const nbClip* clip = f->playing ? &f->playClip : f->clips[nb_clipIdle];
@@ -3888,7 +3920,7 @@ static void nbUpdateGettingUp( nbWorld* world, int index, nbFigure* f, float tim
 	}
 
 	if ( ( world->figureUpdates + index ) % NB_CRUSH_PERIOD == 0 &&
-		 nbPressingForce( world, index, f, timeStep, up, NULL ) >= NB_ABORT_PART * f->def.crushForce )
+		 nbPressingForce( world, index, f, timeStep, up, NULL, NULL ) >= NB_ABORT_PART * f->def.crushForce )
 	{
 		nbFall( world, f, false );
 		return;

@@ -893,6 +893,121 @@ static void AppendCapsule( App& app, b3Vec3 start, b3Vec3 end, float radius, int
 	}
 }
 
+// A tube from one point to the other with smooth normals: round across, its ends flat with rims rounded by a radius, its
+// radius going from one at the start to one at the end. Sides around and rings over each rim.
+static void AppendTube( App& app, b3Vec3 start, b3Vec3 end, float startRadius, float endRadius, float rim, int material, int slot,
+						int sides = 20, int rings = 3 )
+{
+	b3Vec3 axis = b3Sub( end, start );
+	float length = b3Length( axis );
+	b3Vec3 y = length > 1.0e-6f ? b3MulSV( 1.0f / length, axis ) : b3Vec3_axisY;
+	b3Vec3 x = b3Normalize( b3Cross( fabsf( y.y ) < 0.9f ? b3Vec3_axisY : b3Vec3_axisX, y ) );
+	b3Vec3 z = b3Cross( x, y );
+	rim = b3ClampFloat( rim, 1.0e-4f, 0.95f * b3MinFloat( 0.5f * length, b3MinFloat( startRadius, endRadius ) ) );
+
+	// Rows from the middle of the flat end at the start over its rim, up the side and over the rim at the end to the middle
+	// of the flat end there: along the axis, out from it, and the normal in both
+	uint16_t first = (uint16_t)app.vertexScratch.size();
+	int rows = 2 * ( rings + 1 ) + 2;
+	for ( int row = 0; row < rows; ++row )
+	{
+		bool top = row >= rows / 2;
+		float along, out, normalOut, normalAlong;
+		if ( row == 0 || row == rows - 1 )
+		{
+			along = top ? length : 0.0f;
+			out = 0.0f;
+			normalOut = 0.0f;
+			normalAlong = top ? 1.0f : -1.0f;
+		}
+		else
+		{
+			// Over the rim from the flat end to the side at the start, from the side to the flat end at the end
+			int k = top ? row - rows / 2 : row - 1;
+			float angle = 0.5f * B3_PI * (float)k / (float)rings;
+			angle = top ? angle : angle - 0.5f * B3_PI;
+			float radius = top ? endRadius : startRadius;
+			normalOut = cosf( angle );
+			normalAlong = sinf( angle );
+			out = radius - rim + rim * normalOut;
+			along = ( top ? length - rim : rim ) + rim * normalAlong;
+		}
+		for ( int side = 0; side <= sides; ++side )
+		{
+			float phi = 2.0f * B3_PI * (float)side / (float)sides;
+			b3Vec3 radial = b3Add( b3MulSV( cosf( phi ), x ), b3MulSV( sinf( phi ), z ) );
+			b3Vec3 normal = b3Add( b3MulSV( normalOut, radial ), b3MulSV( normalAlong, y ) );
+			b3Vec3 position = b3Add( b3MulAdd( start, along, y ), b3MulSV( out, radial ) );
+			app.vertexScratch.push_back( Renderer::MakeVertex( position, normal, material, slot ) );
+		}
+	}
+	for ( int row = 0; row + 1 < rows; ++row )
+	{
+		for ( int side = 0; side < sides; ++side )
+		{
+			uint16_t a = (uint16_t)( first + row * ( sides + 1 ) + side );
+			uint16_t b = (uint16_t)( a + sides + 1 );
+			uint16_t triangles[6] = { a, b, (uint16_t)( a + 1 ), (uint16_t)( a + 1 ), b, (uint16_t)( b + 1 ) };
+			app.indexScratch.insert( app.indexScratch.end(), triangles, triangles + 6 );
+		}
+	}
+}
+
+// A part of the trunk like a tire, as on the mannequin of the reference pictures: around an ellipse of half widths a along
+// x and b along z, twice hy high, its edges rounded all the way round by the radius r and its side straight between the
+// roundings. The surface is the ellipse of half widths a - r and b - r swept by a circle of radius r, so the rounding is
+// even all round and the part has no flat sides. Its widths scale from low at the bottom to high at the top.
+static void AppendTire( App& app, b3Vec3 center, float a, float hy, float b, float r, int material, int slot, float low = 1.0f,
+						float high = 1.0f, int sides = 32, int rings = 4 )
+{
+	r = b3ClampFloat( r, 1.0e-4f, 0.98f * b3MinFloat( hy, b3MinFloat( a, b ) ) );
+	float coreA = a - r;
+	float coreB = b - r;
+
+	// Rows from the middle of the flat bottom over the rounding at the bottom, up the side and over the rounding at the top
+	// to the middle of the flat top, as AppendTube has them
+	uint16_t first = (uint16_t)app.vertexScratch.size();
+	int rows = 2 * ( rings + 1 ) + 2;
+	for ( int row = 0; row < rows; ++row )
+	{
+		bool top = row >= rows / 2;
+		bool middle = row == 0 || row == rows - 1;
+		float angle = top ? 0.5f * B3_PI : -0.5f * B3_PI;
+		if ( middle == false )
+		{
+			int k = top ? row - rows / 2 : row - 1;
+			angle = 0.5f * B3_PI * (float)k / (float)rings + ( top ? 0.0f : -0.5f * B3_PI );
+		}
+		float normalOut = middle ? 0.0f : cosf( angle );
+		float normalUp = sinf( angle );
+		float y = ( top ? hy - r : r - hy ) + r * normalUp;
+		float scale = low + ( high - low ) * ( 0.5f + 0.5f * y / hy );
+		float ring = middle ? 0.0f : 1.0f;
+		for ( int side = 0; side <= sides; ++side )
+		{
+			float phi = 2.0f * B3_PI * (float)side / (float)sides;
+			float cosine = cosf( phi );
+			float sine = sinf( phi );
+			b3Vec3 out =
+				b3Normalize( (b3Vec3){ b3MaxFloat( coreB, 1.0e-3f ) * cosine, 0.0f, b3MaxFloat( coreA, 1.0e-3f ) * sine } );
+			b3Vec3 position = { center.x + scale * ( ring * coreA * cosine + r * normalOut * out.x ), center.y + y,
+								center.z + scale * ( ring * coreB * sine + r * normalOut * out.z ) };
+			b3Vec3 normal = { normalOut * out.x, normalUp, normalOut * out.z };
+			app.vertexScratch.push_back( Renderer::MakeVertex( position, normal, material, slot ) );
+		}
+	}
+	for ( int row = 0; row + 1 < rows; ++row )
+	{
+		for ( int side = 0; side < sides; ++side )
+		{
+			uint16_t i = (uint16_t)( first + row * ( sides + 1 ) + side );
+			uint16_t j = (uint16_t)( i + sides + 1 );
+			uint16_t triangles[6] = { i, j, (uint16_t)( i + 1 ), (uint16_t)( i + 1 ), j, (uint16_t)( j + 1 ) };
+			app.indexScratch.insert( app.indexScratch.end(), triangles, triangles + 6 );
+		}
+	}
+}
+
 // How a rounded box changes along its y axis, see AppendRoundedBox: the scale of its width across x and of its depth
 // across z at its lowest and at its highest y, and in its middle, where a negative scale means halfway between. The
 // scale runs as a curve of the second degree through the three.
@@ -1028,16 +1143,27 @@ static void AppendLimb( App& app, const nbBoneDef& bone, float radius, float bef
 	AppendRoundedBox( app, center, half, round * b3MinFloat( half.x, half.z ), material, slot, radius > 0.05f ? 3 : 2, taper );
 }
 
-// A bone of the humanoid of the library like the mannequin of a game: rounded boxes, chunkier than the shapes the
-// physics has, as a game draws a body over its ragdoll. The limbs are blocks with flat sides and rounded edges, not
-// tubes, 1.15 to 1.28 times as thick as their capsules and as wide as those of the reference, so a limb that lies on a
-// side sinks one to two centimeters into the ground, the head up to two. The trunk is five parts of their own shape,
-// the chest drawn as two with a crease between them: on top a block as wide as the shoulders with a flat top, below it
-// the ribs and the belly as cushions that overlap a little, narrower down to the waist, and the pelvis as a large
-// cushion, wider again at the hips and round like a U below. The limbs narrow only a little from the body out, nearly
-// straight as in the reference. The shoulders have round caps, the hands are flat like mittens, the feet are shoes
-// wider than the shins, and the head is a large egg on a short, thick neck, with two small round eyes that show where
-// the figure looks.
+// A limb of the humanoid as a tube along its local y axis, from one joint to the next and reaching on past a joint by a
+// share of its radius into the wider bone it meets there, so a bent joint shows no gap. Its radius at the joint near the
+// body and at the far one, and the rims of its flat ends rounded by a share of the smaller.
+static void AppendLimbTube( App& app, const nbBoneDef& bone, float nearRadius, float farRadius, float before, float after,
+							float rim, int material, int slot )
+{
+	float low = bone.start.y - bone.radius - before * nearRadius;
+	float high = bone.end.y + bone.radius + after * farRadius;
+	AppendTube( app, { bone.start.x, low, bone.start.z }, { bone.start.x, high, bone.start.z }, nearRadius, farRadius,
+				rim * b3MinFloat( nearRadius, farRadius ), material, slot );
+}
+
+// A bone of the humanoid of the library like the mannequin of a game, chunkier than the shapes the physics has, as a game
+// draws a body over its ragdoll. The limbs are round tubes with rounded rims, 1.05 to 1.3 times as thick as their
+// capsules and narrowing a little from the body out, so a limb that lies on a side sinks one to two centimeters into
+// the ground, the head up to two. The trunk is stacked like tires, round all round without flat sides, as on the
+// mannequin of the reference pictures: the chest as two with a crease between them, the upper one the broadest part
+// of the trunk and standing out in front, below it the ribs and the belly, narrower down to the waist, and the pelvis
+// as the largest, as wide as the thighs reach, with their tops inside it. The arms hang from balls around the shoulder
+// joints at the upper corners of the chest, the hands are flat like mittens, the feet are shoes wider than the shins,
+// and the head is a large egg on a short, thick neck, with two small round eyes that show where the figure looks.
 static void AppendFigurePart( App& app, int index, const nbBoneDef& bone, int material, int slot )
 {
 	const float limb = 1.2f;
@@ -1060,39 +1186,42 @@ static void AppendFigurePart( App& app, int index, const nbBoneDef& bone, int ma
 		{
 			case nb_humanoidChest:
 			{
-				// Two parts with a crease between them. The upper one is the broadest block of the trunk, taller and deeper
-				// than the cushions below it: its top flat and as wide as the shoulders, the neck coming out of its middle and
-				// the caps of the shoulders at its upper corners, its front bulging like the muscles of the chest.
+				// Two parts with a crease between them, round like the cushions below them. The upper one is the broadest
+				// part of the trunk, taller and deeper than the cushions and standing out in front of them: its top as
+				// wide as the shoulders, the neck coming out of its middle and the balls of the shoulders at its upper
+				// corners.
 				float split = c.y - 0.2f * h.y;
 				float top = c.y + h.y;
 				float bottom = c.y - h.y;
-				AppendRoundedBox( app, { c.x, 0.5f * ( split + top ), c.z + 0.05f * d },
-								  { 1.02f * w, 0.5f * ( top - split ), 1.05f * d }, 0.75f * bone.radius, material, slot, 3,
-								  { 0.95f, 0.97f, 0.92f, 0.9f, 1.0f, 1.02f } );
-				AppendRoundedBox( app, { c.x, 0.5f * ( bottom + split + 0.06f * h.y ) - 0.1f * h.y, c.z },
-								  { 0.95f * w, 0.5f * ( split + 0.06f * h.y - bottom ) + 0.1f * h.y, 0.95f * d },
-								  0.75f * bone.radius, material, slot, 3, { 0.94f, 1.0f, 0.96f, 1.0f } );
+				float upper = 0.5f * ( top - split );
+				float lower = 0.5f * ( split + 0.06f * h.y - bottom ) + 0.1f * h.y;
+				AppendTire( app, { c.x, 0.5f * ( split + top ), c.z + 0.05f * d }, 1.02f * w, upper, 1.05f * d, 0.85f * upper,
+							material, slot, 0.95f, 1.0f );
+				AppendTire( app, { c.x, 0.5f * ( bottom + split + 0.06f * h.y ) - 0.1f * h.y, c.z }, 0.95f * w, lower, 0.95f * d,
+							0.9f * lower, material, slot, 0.94f, 1.0f );
 				return;
 			}
 
 			case nb_humanoidRibs:
-				// Round like cushions and taller than the physics has them, so they overlap a little and meet in a crease
-				// with no gap
-				AppendRoundedBox( app, c, { 0.895f * w, 1.3f * h.y, 0.9f * d }, 0.85f * bone.radius, material, slot, 3,
-								  { 0.95f, 1.0f, 0.96f, 1.0f } );
+				// Round like tires stacked on each other, with no flat sides, and taller than the physics has them, so they
+				// overlap a little and meet in a deep crease with no gap
+				AppendTire( app, c, 0.93f * w, 1.3f * h.y, 0.9f * d, 1.17f * h.y, material, slot, 0.95f, 1.0f );
 				return;
 
 			case nb_humanoidBelly:
-				AppendRoundedBox( app, c, { 0.85f * w, 1.3f * h.y, 0.86f * d }, 0.85f * bone.radius, material, slot, 3,
-								  { 0.97f, 1.0f, 0.97f, 1.0f } );
+				AppendTire( app, c, 0.91f * w, 1.3f * h.y, 0.86f * d, 1.17f * h.y, material, slot, 0.97f, 1.0f );
 				return;
 
 			case nb_humanoidPelvis:
-				// A large cushion under the belly, as wide as it at the top and a little wider in the middle, its bottom
-				// round like a U, the thighs coming out from under it, its back round over the seat
-				AppendRoundedBox( app, { c.x, c.y - 0.12f * h.y, c.z }, { 0.9f * w, 1.12f * h.y, 0.94f * d }, 0.95f * h.y,
-								  material, slot, 3, { 0.9f, 0.96f, 0.92f, 0.95f, 1.0f, 1.0f } );
+			{
+				// The largest tire under the belly, wider than it, as wide as the thighs reach out in its middle, so they
+				// come out from under it with their tops hidden in it, as wide at the top as at the bottom so the tops stay
+				// inside. Its bottom round like a U between the thighs, its back round over the seat.
+				const nbBoneDef& thigh = app.figureBones[nb_humanoidThighLeft];
+				float hips = fabsf( thigh.restTransform.p.x ) + 1.3f * thigh.radius + 0.005f;
+				AppendTire( app, { c.x, c.y - 0.12f * h.y, c.z }, hips, 1.12f * h.y, 0.94f * d, 1.0f * h.y, material, slot );
 				return;
+			}
 
 			default:
 				AppendRoundedBox( app, c, h, bone.radius, material, slot );
@@ -1140,34 +1269,36 @@ static void AppendFigurePart( App& app, int index, const nbBoneDef& bone, int ma
 
 		case nb_humanoidUpperArmLeft:
 		case nb_humanoidUpperArmRight:
-			AppendLimb( app, bone, 1.25f * bone.radius, -0.2f, 0.4f, 1.0f, 0.32f, { 1.0f, 0.95f, 1.0f, 0.95f }, material, slot );
+			AppendLimbTube( app, bone, 1.25f * bone.radius, 1.2f * bone.radius, -0.2f, 0.4f, 0.3f, material, slot );
 			{
-				// The cap of the shoulder, a little taller than wide, its top as high as the joint is over the arm
+				// The ball of the shoulder around the joint, so it stays where it is as the arm turns, 1.7 times as thick
+				// as the arm, partly in the chest below its upper corner, the arm coming out of it wherever it points
 				float arm = 1.25f * bone.radius;
-				b3Vec3 cap = { 1.1f * arm, 1.25f * arm, 1.1f * arm };
-				AppendRoundedBox( app, { bone.start.x, bone.start.y - bone.radius + 0.25f * arm, bone.start.z }, cap,
-								  0.9f * cap.x, material, slot, 3 );
+				b3Vec3 ball = { 1.7f * arm, 1.7f * arm, 1.6f * arm };
+				AppendRoundedBox( app, { bone.start.x, bone.start.y - bone.radius, bone.start.z }, ball, 0.95f * ball.z, material,
+								  slot, 3 );
 			}
 			return;
 
 		case nb_humanoidForearmLeft:
 		case nb_humanoidForearmRight:
-			AppendLimb( app, bone, 1.15f * bone.radius, 0.4f, 0.1f, 1.0f, 0.32f, { 1.0f, 0.92f, 1.0f, 0.92f }, material, slot );
+			AppendLimbTube( app, bone, 1.12f * bone.radius, 1.05f * bone.radius, 0.4f, 0.1f, 0.3f, material, slot );
 			return;
 
 		case nb_humanoidHandLeft:
 		case nb_humanoidHandRight:
-			AppendLimb( app, bone, r, 0.3f, 0.0f, 0.7f, 0.4f, { 0.95f, 1.0f, 0.95f, 0.95f }, material, slot );
+			AppendLimb( app, bone, r, 0.3f, 0.0f, 0.7f, 0.6f, { 0.95f, 1.0f, 0.95f, 0.95f }, material, slot );
 			return;
 
 		case nb_humanoidThighLeft:
 		case nb_humanoidThighRight:
-			AppendLimb( app, bone, 1.28f * bone.radius, 0.4f, 0.4f, 1.0f, 0.3f, { 1.03f, 0.94f, 1.03f, 0.94f }, material, slot );
+			// From a little below the hip, so the top of the thigh stays inside the pelvis where it is widest
+			AppendLimbTube( app, bone, 1.3f * bone.radius, 1.2f * bone.radius, -0.3f, 0.4f, 0.3f, material, slot );
 			return;
 
 		case nb_humanoidShinLeft:
 		case nb_humanoidShinRight:
-			AppendLimb( app, bone, r, 0.4f, 0.0f, 1.0f, 0.3f, { 1.0f, 0.95f, 1.02f, 0.97f }, material, slot );
+			AppendLimbTube( app, bone, 1.2f * bone.radius, 1.17f * bone.radius, 0.4f, 0.0f, 0.3f, material, slot );
 			return;
 
 		default:
