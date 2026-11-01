@@ -702,11 +702,13 @@ static int FigureRowTest( void )
 
 // Hits on the upper chest from eight directions, 50 to 150 N s in steps of 10: every figure catches itself and stands
 // animated again or falls, none stays catching itself for good, also not on one foot after a long lunge, see
-// NB_ONE_FOOT_TIME. Of the 32 hits up to 80 N s at most one falls, and it catches half of all of them. About one light
-// hit in a hundred ends in a long stumble and a fall: of 168 hits from 40 to 80 N s in steps of 2 in this scene, round
-// 23 fell at 64 and 66 N s from behind, round 24 at 66 N s from behind and at 80 N s from its front right, and since
-// the joints move as far as a person's, see nbMakeHumanoidBones, it falls at 74 N s from its right. Round 26 caught
-// those 80 N s after 17 steps and 7.8 s, now the longest catch or fall takes 3.9 s.
+// NB_ONE_FOOT_TIME. Of the 32 hits up to 80 N s at most one falls, and it catches half of all of them. Now and then a
+// light hit ends in a long stumble and a fall: of 168 hits from 40 to 80 N s in steps of 2 in this scene, round 23
+// fell at 64 and 66 N s from behind, round 24 at 66 N s from behind and at 80 N s from its front right, and round 27,
+// with joints that move as far as a person's, at 74 N s from its right. Since a hit across the front of the chest turns
+// the trunk about its long axis, see nbTwistTrunk, it falls at 58, 62, 66 and 72 N s from its right and 66 from its
+// left. Round 26 caught those 80 N s from its front right after 17 steps and 7.8 s, now the longest catch or fall takes
+// 3.7 s.
 static int FigureCatchScanTest( void )
 {
 	int caught = 0;
@@ -804,7 +806,7 @@ static uint32_t MuscleCatch( int threadCount, float impulse )
 }
 
 // The throw of 90 N s on a figure with muscles ends in the same bits with one thread and with four, on every platform
-#define NB_EXPECTED_MUSCLE_HASH 0x8a640a11u
+#define NB_EXPECTED_MUSCLE_HASH 0x710dadfeu
 
 // The muscles, see nbFigureMotors::muscles and nbUpdateMuscles. A figure with muscles hit while it stands catches itself
 // with the strength the balance asks for at once: every joint of its trunk and its legs at the full torque of the motors,
@@ -1063,6 +1065,74 @@ static int FigureSpreadTest( void )
 	ENSURE( forearm[nb_humanoidForearmRight] > 0.4f && forearm[nb_humanoidPelvis] < 0.1f );
 	ENSURE( shin[nb_humanoidShinLeft] > 0.7f && rightLeg < 0.03f );
 	ENSURE( chest[nb_humanoidChest] > 0.7f );
+	return 0;
+}
+
+// The heading of the line from the left to the right upper arm about the vertical, in radians
+static float ShoulderHeading( nbFigureId figure )
+{
+	b3Vec3 line =
+		b3Sub( BonePosition( figure, nb_humanoidUpperArmRight ), BonePosition( figure, nb_humanoidUpperArmLeft ) );
+	return atan2f( line.x, line.z );
+}
+
+// A hit in front of the right shoulder turns the trunk about its long axis, one on the middle of the chest does not, see
+// nbComputeTwist and nbTwistTrunk. The upper body of the humanoid turns about the axis up its spine 2.5 times as far as
+// it tilts, the square root of the ratio of its rotational inertia about the two, and as much faster back: 30 N s at
+// the shoulder turn the line between the shoulders by 12 degrees, 5 before, and it straightens again within a second. A
+// hit of 60 N s there turns it by 43 degrees in a tenth of a second, 3 before, and the figure catches itself.
+static int FigureTwistTest( void )
+{
+	const float impulses[3] = { 30.0f, 30.0f, 60.0f };
+	for ( int pass = 0; pass < 3; ++pass )
+	{
+		FigureScene scene;
+		CreateFigureScene( &scene, 1 );
+		nbFigureId figure = AddFigure( &scene, b3Vec3_zero, 0.0f );
+		StepFigures( &scene, 30 );
+		b3BodyId chest = nbFigure_GetBody( figure, nb_humanoidChest );
+		b3Vec3 point = b3ToVec3( b3Body_GetWorldPoint( chest, (b3Vec3){ 0.0f, 0.2f, 0.1f } ) );
+		if ( pass > 0 )
+		{
+			point.x += 0.8f * ( BonePosition( figure, nb_humanoidUpperArmRight ).x - point.x );
+		}
+		float before = ShoulderHeading( figure );
+		nbHitDef hit = { 1, nb_humanoidChest, (b3Vec3){ 0.0f, 0.0f, -impulses[pass] }, b3ToPos( point ) };
+		ENSURE( nbFigure_ApplyHit( figure, &hit ) );
+		float most = 0.0f;
+		for ( int i = 0; i < 6; ++i )
+		{
+			StepFigures( &scene, 1 );
+			float turn = ShoulderHeading( figure ) - before;
+			turn = turn > B3_PI ? turn - 2.0f * B3_PI : ( turn < -B3_PI ? turn + 2.0f * B3_PI : turn );
+			most = fabsf( turn ) > fabsf( most ) ? turn : most;
+		}
+		int steps = StepUntil( &scene, figure, nb_figureAnimated, 600 );
+		StepFigures( &scene, 60 );
+		float after = ShoulderHeading( figure ) - before;
+		printf( "  %.0f N s %s: the line between the shoulders turns %.1f degrees in a tenth of a second, standing %.2f s "
+				"later\n",
+				impulses[pass], pass == 0 ? "on the middle of the chest" : "in front of the right shoulder",
+				most * 180.0f / B3_PI, (float)( steps + 6 ) / 60.0f );
+		ENSURE( steps >= 0 );
+		ENSURE( StandsUpright( &scene, figure ) );
+		if ( pass == 0 )
+		{
+			ENSURE( fabsf( most ) < 0.01f );
+		}
+		else if ( pass == 1 )
+		{
+			ENSURE( 0.15f < fabsf( most ) && fabsf( most ) < 0.3f );
+			ENSURE( fabsf( after ) < 0.01f );
+			ENSURE( nbFigure_GetInfo( figure ).catchCount == 0 );
+		}
+		else
+		{
+			ENSURE( fabsf( most ) > 0.5f );
+			ENSURE( nbFigure_GetInfo( figure ).catchCount == 1 );
+		}
+		DestroyFigureScene( &scene );
+	}
 	return 0;
 }
 
@@ -2219,7 +2289,7 @@ static int FigureWallDebrisTest( void )
 
 // The throw through the wall of boards ends in the same bits with one thread and with four, on every platform, in the
 // fifth fracture pattern, which the figure breaks through
-#define NB_EXPECTED_WALL_HASH 0x3146fc76u
+#define NB_EXPECTED_WALL_HASH 0xfbccda1eu
 
 static int FigureWallDeterminismTest( void )
 {
@@ -2279,7 +2349,7 @@ static int ThinBoardTest( void )
 }
 
 // The hash of the figure scenario on every platform, see RunFigureScenario
-#define NB_EXPECTED_FIGURE_HASH 0x8147b53du
+#define NB_EXPECTED_FIGURE_HASH 0xb61c750fu
 
 static int FigureDeterminismTest( void )
 {
@@ -2308,6 +2378,7 @@ int FigureTest( void )
 	RUN_TEST( FigureCatchScanTest );
 	RUN_TEST( FigureMuscleTest );
 	RUN_TEST( FigureSpreadTest );
+	RUN_TEST( FigureTwistTest );
 #if defined( B3_HAS_SWING_LIMITS )
 	RUN_TEST( FigureJointRangeTest );
 #endif

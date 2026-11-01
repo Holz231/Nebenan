@@ -260,6 +260,13 @@ typedef struct nbFigure
 	b3Vec3 flinch;
 	b3Vec3 flinchRate;
 	bool hasSwings;
+
+	// The upper body of the humanoid turns about the axis up its spine more easily than it tilts: a flinch turns it
+	// twistGain times as far about that axis and as much faster back, up to twistLimit, the twist its spine allows, and
+	// its three joints share the twist after their twist ranges, spineTwist, see nbComputeTwist
+	float twistGain;
+	float twistLimit;
+	float spineTwist[3];
 	bool swinging;
 
 	// The feet on the ground and the steps to catch a hit, see nbPush: the feet, the foot in the air or -1 and how far

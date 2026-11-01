@@ -1276,9 +1276,11 @@ typedef struct nbFigureDef
 	float knockdownImpulse;
 
 	/// How far the trunk of a standing figure flinches from a hit, in radians per newton second, up to flinchLimit, and
-	/// how fast it straightens again, in cycles per second. Bones with a spring of their own swing too, see
-	/// nbBoneDef::flinch: from a hit on them the trunk turns only by what their joint passes on, the head of the humanoid
-	/// takes most of a hit on its face. The limit holds for the swing of every bone.
+	/// how fast it straightens again, in cycles per second. The upper body of the humanoid turns about the axis up its
+	/// spine farther and faster back, by the square root of how much more easily it turns about it than it tilts, up to
+	/// the twist its spine allows. Bones with a spring of their own swing too, see nbBoneDef::flinch: from a hit on them
+	/// the trunk turns only by what their joint passes on, the head of the humanoid takes most of a hit on its face. The
+	/// limit holds for the swing of every bone.
 	float flinchScale;
 	float flinchLimit;
 	float flinchHertz;
