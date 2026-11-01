@@ -3100,7 +3100,10 @@ static void nbCollectDebrisHits( nbWorld* world )
 
 // How hard dynamic bodies of others press down on the bones of a figure, in newtons: the normal impulses of their contacts
 // in the last step over its time, of those that push down. The load on the figure, not what its bones push aside. With
-// push it also gives the strongest sideways push on one bone, of the contacts that push within 45 degrees of level.
+// push, for a figure that stands or catches itself, it also gives the strongest push on one bone: sideways, of the
+// contacts that push within 45 degrees of level, and on an arm of a humanoid that can be pushed from any side. Trunk,
+// head and legs carry a load to the ground, an arm gives way: a stick pressed into the elbow pushes the round ends of
+// upper arm and forearm up and down, and is no load.
 static float nbPressingForce( const nbWorld* world, int index, const nbFigure* f, float timeStep, b3Vec3 up, float* push )
 {
 	b3ContactData contacts[NB_CONTACT_CAPACITY];
@@ -3108,7 +3111,9 @@ static float nbPressingForce( const nbWorld* world, int index, const nbFigure* f
 	float strongest = 0.0f;
 	for ( int i = 0; i < f->boneCount; ++i )
 	{
-		b3Vec3 sideways = b3Vec3_zero;
+		b3Vec3 bonePush = b3Vec3_zero;
+		bool arm =
+			push != NULL && f->def.pushForce > 0.0f && f->canBalance && i >= nb_humanoidUpperArmLeft && i <= nb_humanoidHandRight;
 		b3BodyId bodyId = f->bones[i].bodyId;
 		int count = b3Body_GetContactData( bodyId, contacts, NB_CONTACT_CAPACITY );
 		for ( int c = 0; c < count; ++c )
@@ -3128,6 +3133,15 @@ static float nbPressingForce( const nbWorld* world, int index, const nbFigure* f
 
 				// The normal points from A to B: the push on the bone
 				b3Vec3 direction = boneIsA ? b3Neg( manifold->normal ) : manifold->normal;
+				if ( arm )
+				{
+					for ( int p = 0; p < manifold->pointCount; ++p )
+					{
+						bonePush = b3MulAdd( bonePush, manifold->points[p].totalNormalImpulse, direction );
+					}
+					continue;
+				}
+
 				float along = b3Dot( direction, up );
 				if ( along > -0.3f )
 				{
@@ -3136,7 +3150,7 @@ static float nbPressingForce( const nbWorld* world, int index, const nbFigure* f
 						b3Vec3 level = b3MulSub( direction, along, up );
 						for ( int p = 0; p < manifold->pointCount; ++p )
 						{
-							sideways = b3MulAdd( sideways, manifold->points[p].totalNormalImpulse, level );
+							bonePush = b3MulAdd( bonePush, manifold->points[p].totalNormalImpulse, level );
 						}
 					}
 					continue;
@@ -3147,7 +3161,7 @@ static float nbPressingForce( const nbWorld* world, int index, const nbFigure* f
 				}
 			}
 		}
-		strongest = b3MaxFloat( strongest, b3Length( sideways ) / timeStep );
+		strongest = b3MaxFloat( strongest, b3Length( bonePush ) / timeStep );
 	}
 	if ( push != NULL )
 	{

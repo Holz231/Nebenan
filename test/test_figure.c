@@ -1206,29 +1206,40 @@ static int FigureNeckTest( void )
 	return 0;
 }
 
-// A pusher for FigurePushTest: a cube of 20 cm and 5 kg without gravity, led toward the figure at the height through a
-// motor joint whose springs pull it with up to the force after a kinematic hand, as a stick or a hand pushes
+// A pusher for FigurePushTest, without gravity, led toward the figure at the height through a motor joint whose springs
+// pull it with up to the force after a kinematic hand, as a stick or a hand pushes: a cube of 20 cm and 5 kg from the
+// front, or a stick from its left side, 80 cm long from front to back, 5 cm thick and 1.5 kg
 typedef struct Pusher
 {
 	b3BodyId hand;
 	b3BodyId body;
 } Pusher;
 
-static Pusher AddPusher( FigureScene* scene, float height, float force )
+static Pusher AddPusher( FigureScene* scene, float height, float force, bool stick )
 {
 	Pusher pusher;
 	b3BodyDef bodyDef = b3DefaultBodyDef();
 	bodyDef.type = b3_kinematicBody;
-	bodyDef.position = b3ToPos( (b3Vec3){ 0.0f, height, 0.45f } );
+	bodyDef.position = b3ToPos( stick ? (b3Vec3){ 0.5f, height, 0.0f } : (b3Vec3){ 0.0f, height, 0.45f } );
 	pusher.hand = b3CreateBody( scene->physicsWorld, &bodyDef );
 	bodyDef.type = b3_dynamicBody;
 	bodyDef.gravityScale = 0.0f;
 	bodyDef.enableSleep = false;
 	pusher.body = b3CreateBody( scene->physicsWorld, &bodyDef );
-	b3BoxHull cube = b3MakeBoxHull( 0.1f, 0.1f, 0.1f );
 	b3ShapeDef shapeDef = b3DefaultShapeDef();
-	shapeDef.density = 5.0f / 0.008f;
-	b3CreateHullShape( pusher.body, &shapeDef, &cube.base );
+	if ( stick )
+	{
+		b3Capsule capsule = { { 0.0f, 0.0f, -0.4f }, { 0.0f, 0.0f, 0.4f }, 0.025f };
+		float volume = B3_PI * 0.025f * 0.025f * 0.8f + 4.0f / 3.0f * B3_PI * 0.025f * 0.025f * 0.025f;
+		shapeDef.density = 1.5f / volume;
+		b3CreateCapsuleShape( pusher.body, &shapeDef, &capsule );
+	}
+	else
+	{
+		b3BoxHull cube = b3MakeBoxHull( 0.1f, 0.1f, 0.1f );
+		shapeDef.density = 5.0f / 0.008f;
+		b3CreateHullShape( pusher.body, &shapeDef, &cube.base );
+	}
 	b3MotorJointDef motor = b3DefaultMotorJointDef();
 	motor.base.bodyIdA = pusher.hand;
 	motor.base.bodyIdB = pusher.body;
@@ -1254,8 +1265,8 @@ typedef struct PushResult
 	nbFigureState end;
 } PushResult;
 
-// A figure pushed from the front, the hand 0.3 m/s toward it for 2.5 s, then away
-static PushResult Push( float height, float force, float pushForce, int threadCount, uint32_t* hash )
+// A figure pushed from the front, or with the stick from its left, the hand 0.3 m/s toward it for 2.5 s, then away
+static PushResult Push( float height, float force, float pushForce, bool stick, int threadCount, uint32_t* hash )
 {
 	FigureScene scene;
 	CreateFigureScene( &scene, threadCount );
@@ -1266,7 +1277,7 @@ static PushResult Push( float height, float force, float pushForce, int threadCo
 	nbFigureId figure = nbCreateFigure( scene.world, &def );
 	StepFigures( &scene, 30 );
 
-	Pusher pusher = AddPusher( &scene, height, force );
+	Pusher pusher = AddPusher( &scene, height, force, stick );
 	PushResult result = { -1, 0, 0, 0, -1, 0.0f, 0.0f, nb_figureAnimated };
 	b3Vec3 pelvis0 = BonePosition( figure, nb_humanoidPelvis );
 	b3Quat head0 = b3Body_GetRotation( nbFigure_GetBody( figure, nb_humanoidHead ) );
@@ -1275,7 +1286,7 @@ static PushResult Push( float height, float force, float pushForce, int threadCo
 	for ( int i = 0; i < 600; ++i )
 	{
 		float speed = i < 150 ? -0.3f : ( i < 210 ? 1.5f : 0.0f );
-		b3Body_SetLinearVelocity( pusher.hand, (b3Vec3){ 0.0f, 0.0f, speed } );
+		b3Body_SetLinearVelocity( pusher.hand, stick ? (b3Vec3){ speed, 0.0f, 0.0f } : (b3Vec3){ 0.0f, 0.0f, speed } );
 		StepFigures( &scene, 1 );
 		nbFigureState state = nbFigure_GetState( figure );
 		result.changes += state != last ? 1 : 0;
@@ -1318,18 +1329,26 @@ static PushResult Push( float height, float force, float pushForce, int threadCo
 // A body that pushes a standing figure slowly, harder than nbFigureDef::pushForce, makes it catch itself instead of
 // meeting a wall: it leans against a moderate push, steps away from a hard one and a push on the forehead turns its head.
 // It stays dynamic while the push lasts and stands animated again after it. A push below the force, or with the force
-// zero, meets a wall as before. The same with one and four threads.
+// zero, meets a wall as before. A stick pressed into the left elbow from the side pushes the round ends of upper arm and
+// forearm up and down, and the arm gives way to it all the same: a stick swept slowly across the figure in the demo
+// rested on its arm before. The same with one and four threads.
 static int FigurePushTest( void )
 {
-	const char* names[5] = { "20 N on the chest", "80 N on the chest", "300 N on the chest", "150 N on the forehead",
-							 "300 N on the chest without pushForce" };
-	float heights[5] = { 1.3f, 1.3f, 1.3f, 1.65f, 1.3f };
-	float forces[5] = { 20.0f, 80.0f, 300.0f, 150.0f, 300.0f };
-	float pushForces[5] = { 40.0f, 40.0f, 40.0f, 40.0f, 0.0f };
-	PushResult results[5];
-	for ( int k = 0; k < 5; ++k )
+	const char* names[7] = { "20 N on the chest",
+							 "80 N on the chest",
+							 "300 N on the chest",
+							 "150 N on the forehead",
+							 "300 N on the chest without pushForce",
+							 "80 N with a stick into the elbow",
+							 "80 N with a stick into the elbow without pushForce" };
+	float heights[7] = { 1.3f, 1.3f, 1.3f, 1.65f, 1.3f, 1.22f, 1.22f };
+	float forces[7] = { 20.0f, 80.0f, 300.0f, 150.0f, 300.0f, 80.0f, 80.0f };
+	float pushForces[7] = { 40.0f, 40.0f, 40.0f, 40.0f, 0.0f, 40.0f, 0.0f };
+	bool sticks[7] = { false, false, false, false, false, true, true };
+	PushResult results[7];
+	for ( int k = 0; k < 7; ++k )
 	{
-		PushResult r = Push( heights[k], forces[k], pushForces[k], 1, NULL );
+		PushResult r = Push( heights[k], forces[k], pushForces[k], sticks[k], 1, NULL );
 		results[k] = r;
 		printf( "  %s: catches itself after %d steps, %d changes of state, %d balance steps, %d knockdowns, the pelvis moves "
 				"%.2f m, the head turns %.0f deg, stands again %d steps after the push\n",
@@ -1340,6 +1359,7 @@ static int FigurePushTest( void )
 	// Below the force and without it the figure stays a wall
 	ENSURE( results[0].wakeStep < 0 && results[0].pelvisMove < 0.02f );
 	ENSURE( results[4].wakeStep < 0 && results[4].pelvisMove < 0.02f );
+	ENSURE( results[6].wakeStep < 0 && results[6].pelvisMove < 0.02f );
 
 	// A moderate push: it leans and holds without a step, dynamic for the whole push
 	ENSURE( results[1].wakeStep > 0 && results[1].wakeStep < 90 && results[1].changes == 2 && results[1].balanceSteps == 0 );
@@ -1351,18 +1371,31 @@ static int FigurePushTest( void )
 	// On the forehead the head gives way
 	ENSURE( results[3].wakeStep > 0 && results[3].headTurn > 0.35f && results[3].knockdowns == 0 );
 
+	// The arm gives way to the stick in the elbow, and the figure leans against it as against the push on the chest
+	ENSURE( results[5].wakeStep > 0 && results[5].wakeStep < 90 && results[5].changes == 2 && results[5].knockdowns == 0 );
+	ENSURE( results[5].pelvisMove > 0.03f && results[5].pelvisMove < 0.3f );
+
 	// It stands animated again after the push
-	for ( int k = 1; k < 4; ++k )
+	for ( int k = 1; k < 6; ++k )
 	{
+		if ( k == 4 )
+		{
+			continue;
+		}
 		ENSURE( results[k].end == nb_figureAnimated && results[k].standStep >= 0 && results[k].standStep < 240 );
 	}
 
 	uint32_t one = 0;
 	uint32_t four = 0;
-	Push( 1.3f, 300.0f, 40.0f, 1, &one );
-	Push( 1.3f, 300.0f, 40.0f, 4, &four );
-	printf( "  push hash: 0x%08x with one thread, 0x%08x with four\n", one, four );
-	ENSURE( one == four );
+	uint32_t stickOne = 0;
+	uint32_t stickFour = 0;
+	Push( 1.3f, 300.0f, 40.0f, false, 1, &one );
+	Push( 1.3f, 300.0f, 40.0f, false, 4, &four );
+	Push( 1.22f, 80.0f, 40.0f, true, 1, &stickOne );
+	Push( 1.22f, 80.0f, 40.0f, true, 4, &stickFour );
+	printf( "  push hash: 0x%08x with one thread, 0x%08x with four, with the stick 0x%08x and 0x%08x\n", one, four, stickOne,
+			stickFour );
+	ENSURE( one == four && stickOne == stickFour );
 	return 0;
 }
 

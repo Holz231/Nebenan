@@ -1304,14 +1304,16 @@ typedef struct nbFigureDef
 
 	/// Bodies that press on a standing figure from above with at least this many newtons knock it down, so what falls on
 	/// it never comes to rest on it. A figure that gets up or catches itself falls from a quarter of it. What its bones
-	/// push aside does not count.
+	/// push aside does not count, nor what presses on an arm of a humanoid that pushForce lets give way.
 	float crushForce;
 
-	/// Bodies that push a bone of a standing humanoid sideways with at least this many newtons for a few steps make it
-	/// catch itself, so a slow push moves it instead of meeting a wall: its bones dynamic, its joints at full strength
-	/// toward its pose and its steps after its balance, see nb_figureBalancing. It stands animated again once nothing
-	/// pushes it with half of it and it stands calm. A short blow is a hit instead, see nbFigure_ApplyHit. Zero turns it
-	/// off.
+	/// Bodies that push a bone of a standing humanoid sideways, or an arm from any side, with at least this many newtons
+	/// for a few steps make it catch itself, so a slow push moves it instead of meeting a wall: its bones dynamic, its
+	/// joints at full strength toward its pose and its steps after its balance, see nb_figureBalancing. An arm carries no
+	/// load to the ground, it gives way, so a stick pressed into the elbow pushes it although the round ends of upper arm
+	/// and forearm turn the push up and down. It stands animated again once nothing pushes it with half of it and it
+	/// stands calm. A short blow is a hit instead, see nbFigure_ApplyHit. Zero turns it off, and what presses on an arm
+	/// from above weighs on the figure again.
 	float pushForce;
 
 	/// A ragdoll counts as lying still while its bones move slower than this on average, in meters per second
