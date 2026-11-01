@@ -262,6 +262,7 @@ nbFigureDef nbDefaultFigureDef( void )
 	def.stepReach = 0.45f;
 	def.stepZone = 0.6f;
 	def.crushForce = 600.0f;
+	def.pushForce = 40.0f;
 	def.restSpeed = 0.4f;
 	def.getUpDelay = 1.0f;
 	def.getUpSpeed = 1.4f;
@@ -1500,6 +1501,7 @@ static void nbMakeDynamic( nbFigure* f )
 static void nbFall( nbWorld* world, nbFigure* f, bool stunned )
 {
 	NB_UNUSED( world );
+	f->pushed = false;
 	bool wasRagdoll = f->state == nb_figureRagdoll;
 	if ( wasRagdoll == false )
 	{
@@ -1743,6 +1745,7 @@ static void nbSettle( nbWorld* world, nbFigure* f )
 {
 	nbStandWhereItIs( world, f, nbBalanceGround( f ), nbBalanceForward( f ), NB_STAND_FADE, false );
 	f->catchCount += 1;
+	f->pushed = false;
 }
 
 //----------------------------------------------------------------------------------------------------------------------
@@ -3096,13 +3099,16 @@ static void nbCollectDebrisHits( nbWorld* world )
 }
 
 // How hard dynamic bodies of others press down on the bones of a figure, in newtons: the normal impulses of their contacts
-// in the last step over its time, of those that push down. The load on the figure, not what its bones push aside.
-static float nbPressingForce( const nbWorld* world, int index, const nbFigure* f, float timeStep, b3Vec3 up )
+// in the last step over its time, of those that push down. The load on the figure, not what its bones push aside. With
+// push it also gives the strongest sideways push on one bone, of the contacts that push within 45 degrees of level.
+static float nbPressingForce( const nbWorld* world, int index, const nbFigure* f, float timeStep, b3Vec3 up, float* push )
 {
 	b3ContactData contacts[NB_CONTACT_CAPACITY];
 	float force = 0.0f;
+	float strongest = 0.0f;
 	for ( int i = 0; i < f->boneCount; ++i )
 	{
+		b3Vec3 sideways = b3Vec3_zero;
 		b3BodyId bodyId = f->bones[i].bodyId;
 		int count = b3Body_GetContactData( bodyId, contacts, NB_CONTACT_CAPACITY );
 		for ( int c = 0; c < count; ++c )
@@ -3121,9 +3127,18 @@ static float nbPressingForce( const nbWorld* world, int index, const nbFigure* f
 				const b3Manifold* manifold = contact->manifolds + m;
 
 				// The normal points from A to B: the push on the bone
-				b3Vec3 push = boneIsA ? b3Neg( manifold->normal ) : manifold->normal;
-				if ( b3Dot( push, up ) > -0.3f )
+				b3Vec3 direction = boneIsA ? b3Neg( manifold->normal ) : manifold->normal;
+				float along = b3Dot( direction, up );
+				if ( along > -0.3f )
 				{
+					if ( push != NULL && along > -0.7f && along < 0.7f )
+					{
+						b3Vec3 level = b3MulSub( direction, along, up );
+						for ( int p = 0; p < manifold->pointCount; ++p )
+						{
+							sideways = b3MulAdd( sideways, manifold->points[p].totalNormalImpulse, level );
+						}
+					}
 					continue;
 				}
 				for ( int p = 0; p < manifold->pointCount; ++p )
@@ -3132,6 +3147,11 @@ static float nbPressingForce( const nbWorld* world, int index, const nbFigure* f
 				}
 			}
 		}
+		strongest = b3MaxFloat( strongest, b3Length( sideways ) / timeStep );
+	}
+	if ( push != NULL )
+	{
+		*push = strongest;
 	}
 	return force;
 }
@@ -3306,12 +3326,25 @@ static void nbUpdateAnimated( nbWorld* world, int index, nbFigure* f, float time
 	}
 
 	// What presses on it from above, in turn with the other figures. What its bones push aside presses back on them, but
-	// does not weigh on it.
-	if ( ( world->figureUpdates + index ) % NB_CRUSH_PERIOD == 0 &&
-		 nbPressingForce( world, index, f, timeStep, up ) >= f->def.crushForce )
+	// does not weigh on it. A sideways push at two checks in a row, a few steps, makes a humanoid catch itself: a blow
+	// lasts a step or two and is a hit.
+	if ( ( world->figureUpdates + index ) % NB_CRUSH_PERIOD == 0 )
 	{
-		nbFall( world, f, false );
-		return;
+		float push = 0.0f;
+		if ( nbPressingForce( world, index, f, timeStep, up, &push ) >= f->def.crushForce )
+		{
+			nbFall( world, f, false );
+			return;
+		}
+
+		bool pushed = f->def.pushForce > 0.0f && push >= f->def.pushForce && f->canBalance;
+		if ( pushed && f->pushed )
+		{
+			f->pushCount += 1;
+			nbBeginBalancing( world, f );
+			return;
+		}
+		f->pushed = pushed;
 	}
 
 	// A push it catches carries it over the ground
@@ -3534,7 +3567,7 @@ static nbFigureWait nbCheckGetUp( const nbWorld* world, int index, const nbFigur
 	}
 	*ground = floor.point;
 
-	if ( nbPressingForce( world, index, f, timeStep, up ) > 0.0f )
+	if ( nbPressingForce( world, index, f, timeStep, up, NULL ) > 0.0f )
 	{
 		return nb_waitDebris;
 	}
@@ -3615,7 +3648,7 @@ static bool nbCheckWakeStanding( const nbWorld* world, int index, const nbFigure
 	{
 		return false;
 	}
-	if ( nbPressingForce( world, index, f, timeStep, up ) > 0.0f )
+	if ( nbPressingForce( world, index, f, timeStep, up, NULL ) > 0.0f )
 	{
 		return false;
 	}
@@ -3664,11 +3697,16 @@ static bool nbCheckWakeStanding( const nbWorld* world, int index, const nbFigure
 // does not carry debris.
 static void nbUpdateBalancing( nbWorld* world, int index, nbFigure* f, float timeStep, b3Vec3 up )
 {
-	if ( ( world->figureUpdates + index ) % NB_CRUSH_PERIOD == 0 &&
-		 nbPressingForce( world, index, f, timeStep, up ) >= NB_ABORT_PART * f->def.crushForce )
+	// What still pushes it keeps it dynamic, see nbFigureDef::pushForce
+	if ( ( world->figureUpdates + index ) % NB_CRUSH_PERIOD == 0 )
 	{
-		nbFall( world, f, false );
-		return;
+		float push = 0.0f;
+		if ( nbPressingForce( world, index, f, timeStep, up, &push ) >= NB_ABORT_PART * f->def.crushForce )
+		{
+			nbFall( world, f, false );
+			return;
+		}
+		f->pushed = f->def.pushForce > 0.0f && push >= 0.5f * f->def.pushForce;
 	}
 
 	const nbClip* clip = f->playing ? &f->playClip : f->clips[nb_clipIdle];
@@ -3838,7 +3876,7 @@ static void nbUpdateGettingUp( nbWorld* world, int index, nbFigure* f, float tim
 	}
 
 	if ( ( world->figureUpdates + index ) % NB_CRUSH_PERIOD == 0 &&
-		 nbPressingForce( world, index, f, timeStep, up ) >= NB_ABORT_PART * f->def.crushForce )
+		 nbPressingForce( world, index, f, timeStep, up, NULL ) >= NB_ABORT_PART * f->def.crushForce )
 	{
 		nbFall( world, f, false );
 		return;
@@ -4411,6 +4449,7 @@ nbFigureInfo nbFigure_GetInfo( nbFigureId figureId )
 	info.stepCount = f->stepCount;
 	info.shiftCount = f->shiftCount;
 	info.catchCount = f->catchCount;
+	info.pushCount = f->pushCount;
 	return info;
 }
 
@@ -4619,6 +4658,7 @@ nbFigureStats nbWorld_GetFigureStats( nbWorldId worldId )
 		stats.stepCount += f->stepCount;
 		stats.shiftCount += f->shiftCount;
 		stats.catchCount += f->catchCount;
+		stats.pushCount += f->pushCount;
 	}
 	return stats;
 }

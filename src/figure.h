@@ -321,6 +321,7 @@ typedef struct nbFigure
 	bool canBalance;
 	nbBalancer balancer;
 	int catchCount;
+	int pushCount;
 
 	// The ids of the last hits, see NB_HIT_MEMORY, and what the figure went through
 	uint32_t hitIds[NB_HIT_MEMORY];
@@ -336,6 +337,9 @@ typedef struct nbFigure
 	b3Vec3 debrisDirection;
 	b3Pos debrisPoint;
 	int debrisBone;
+
+	// Whether bodies of others pushed a bone of the figure sideways at the last check, see nbFigureDef::pushForce
+	bool pushed;
 
 	uint16_t generation;
 	bool isFree;

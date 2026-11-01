@@ -608,12 +608,12 @@ static void BenchmarkTown( int workerCount, float fragmentScale, int side, int g
 	{
 		nbFigureStats figureStats = nbWorld_GetFigureStats( scene.world );
 		printf( "  %d figures: ragdolls awake after %d steps, at most %d at once, %d balance steps, %d caught, %d knockdowns, "
-				"%d get-ups, %d moves to get up, %d aborts, at the end %d standing, %d catching themselves, %d lying, "
-				"%d getting up, figures hash 0x%08x\n",
+				"%d get-ups, %d moves to get up, %d aborts, %d pushed, at the end %d standing, %d catching themselves, "
+				"%d lying, %d getting up, figures hash 0x%08x\n",
 				figureCount, townProfile.ragdollStepCount, townProfile.maxRagdollCount, figureStats.stepCount,
 				figureStats.catchCount, figureStats.knockdownCount, figureStats.getUpCount, figureStats.shiftCount,
-				figureStats.abortCount, figureStats.animatedCount, figureStats.balancingCount, figureStats.ragdollCount,
-				figureStats.gettingUpCount, HashFigures( figureIds, figureCount ) );
+				figureStats.abortCount, figureStats.pushCount, figureStats.animatedCount, figureStats.balancingCount,
+				figureStats.ragdollCount, figureStats.gettingUpCount, HashFigures( figureIds, figureCount ) );
 	}
 	if ( profile != NULL )
 	{

@@ -1307,6 +1307,13 @@ typedef struct nbFigureDef
 	/// push aside does not count.
 	float crushForce;
 
+	/// Bodies that push a bone of a standing humanoid sideways with at least this many newtons for a few steps make it
+	/// catch itself, so a slow push moves it instead of meeting a wall: its bones dynamic, its joints at full strength
+	/// toward its pose and its steps after its balance, see nb_figureBalancing. It stands animated again once nothing
+	/// pushes it with half of it and it stands calm. A short blow is a hit instead, see nbFigure_ApplyHit. Zero turns it
+	/// off.
+	float pushForce;
+
 	/// A ragdoll counts as lying still while its bones move slower than this on average, in meters per second
 	float restSpeed;
 
@@ -1413,7 +1420,8 @@ typedef struct nbFigureInfo
 	bool shifting;
 
 	/// Hits that landed, how often the figure was knocked down, got up and broke off getting up, the steps it took to
-	/// catch hits, how often it moved to get up, and how often it caught itself and stood again, see nb_figureBalancing
+	/// catch hits, how often it moved to get up, how often it caught itself and stood again, see nb_figureBalancing, and
+	/// how often a push made it catch itself, see nbFigureDef::pushForce
 	int hitCount;
 	int knockdownCount;
 	int getUpCount;
@@ -1421,6 +1429,7 @@ typedef struct nbFigureInfo
 	int stepCount;
 	int shiftCount;
 	int catchCount;
+	int pushCount;
 } nbFigureInfo;
 
 /// A hit on a bone, see nbFigure_ApplyHit
@@ -1455,7 +1464,8 @@ typedef struct nbFigureStats
 	int awakeRagdollCount;
 
 	/// Since the figures were made: hits that landed, knockdowns, get-ups, get-ups broken off, steps to catch hits, moves
-	/// to get up where there was room, and how often a figure caught itself and stood again
+	/// to get up where there was room, how often a figure caught itself and stood again, and how often a push made a
+	/// standing figure catch itself
 	int hitCount;
 	int knockdownCount;
 	int getUpCount;
@@ -1463,6 +1473,7 @@ typedef struct nbFigureStats
 	int stepCount;
 	int shiftCount;
 	int catchCount;
+	int pushCount;
 } nbFigureStats;
 
 /// The bones of the humanoid that nbMakeHumanoidBones builds, in the order of its array. The trunk runs from the pelvis

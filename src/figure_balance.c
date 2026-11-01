@@ -1260,7 +1260,7 @@ nbBalanceResult nbUpdateBalance( nbWorld* world, int index, nbFigure* f, float t
 
 	// Calm on its feet it stands animated again
 	bool calm = b->stepping == false && b->footContact[0] && b->footContact[1] && b->captureMargin <= 0.0f &&
-				b->meanSpeed < NB_CALM_SPEED && b->tilt < NB_CALM_TILT;
+				b->meanSpeed < NB_CALM_SPEED && b->tilt < NB_CALM_TILT && f->pushed == false;
 	b->calmTime = calm ? b->calmTime + timeStep : 0.0f;
 	if ( b->calmTime >= NB_CALM_TIME )
 	{

@@ -36,6 +36,7 @@ enum Tool
 	ToolRifle,
 	ToolGrenade,
 	ToolCannon,
+	ToolStick,
 	ToolCount
 };
 
@@ -51,7 +52,7 @@ enum SceneKind
 };
 
 static const char* s_sceneNames[SceneCount] = { "Mauern", "Stresstest", "Stadt", "Große Stadt", "Figuren", "Stadt mit Figuren" };
-static const char* s_toolNames[ToolCount] = { "Gewehr", "Granate", "Kanone" };
+static const char* s_toolNames[ToolCount] = { "Gewehr", "Granate", "Kanone", "Stock" };
 
 // The scenes whose figures the menu, the overlay and the reports show
 static bool HasFigures( SceneKind scene )
@@ -87,6 +88,31 @@ struct Ball
 	int slot;
 	int mesh;
 	float age;
+};
+
+// The stick of the tool Stock, to try pushes and blows on the figures by hand: a dynamic capsule held at its grip by a
+// motor joint, whose springs pull it with a bounded force to where the mouse points, see UpdateStick. Moved slowly it
+// pushes, swung fast it strikes, and what it does to a figure comes from the physics and the library alone.
+struct Stick
+{
+	b3BodyId body = {};
+	b3BodyId anchor = {};
+	b3JointId joint = {};
+	int slot = -1;
+	int mesh = -1;
+
+	// What the menu sets, and what the body was built with
+	float length = 1.6f;
+	float radius = 0.025f;
+	float mass = 1.5f;
+	float force = 300.0f;
+	float builtLength = 0.0f;
+	float builtRadius = 0.0f;
+	float builtMass = 0.0f;
+
+	// How far from the eye the tip goes, and how much farther a thrust takes it
+	float reach = 2.5f;
+	float thrust = 0.0f;
 };
 
 // A figure of the library and the meshes of its bones, each on a slot of its own on the body of its bone, see nbCreateFigure.
@@ -276,6 +302,9 @@ struct Automation
 	bool script = false;
 	int scene = -1;
 
+	// The script leads the stick instead of the mouse, see RunStickScript
+	bool stick = false;
+
 	// Run the comparison, the one of the thread counts, the scaling or the one with and without the joints in the packs,
 	// print it and quit, or take the town down like the comparison does
 	bool compare = false;
@@ -381,6 +410,7 @@ struct App
 	std::vector<ChunkVisual> chunks;
 	std::vector<BodySlots> bodySlots;
 	std::vector<Ball> balls;
+	Stick stick;
 	std::vector<GpuVertex> ballVertices;
 	std::vector<uint16_t> ballIndices;
 	std::vector<GpuVertex> vertexScratch;
@@ -1371,6 +1401,18 @@ static void DestroyScene( App& app )
 	}
 	app.balls.clear();
 
+	// The stick went with the world, the next frame builds it again
+	if ( app.stick.slot >= 0 )
+	{
+		app.renderer.RemoveMesh( app.stick.mesh );
+		app.renderer.FreeSlot( app.stick.slot );
+	}
+	app.stick.body = {};
+	app.stick.anchor = {};
+	app.stick.joint = {};
+	app.stick.slot = -1;
+	app.stick.mesh = -1;
+
 	// The figures went with the world
 	for ( FigureVisual& visual : app.figures )
 	{
@@ -1589,6 +1631,12 @@ static void FireRay( App& app, b3Vec3 origin, b3Vec3 direction )
 
 static void Fire( App& app, float screenX, float screenY )
 {
+	// The stick follows the mouse instead, see UpdateStick
+	if ( app.tool == ToolStick )
+	{
+		return;
+	}
+
 	b3Vec3 origin, direction;
 	AimRay( app, screenX, screenY, &origin, &direction );
 	FireRay( app, origin, direction );
@@ -1625,6 +1673,133 @@ static void UpdateBalls( App& app, float dt )
 		}
 		++i;
 	}
+}
+
+// The rotation that turns +z into a unit direction
+static b3Quat QuatFromAxisZ( b3Vec3 direction )
+{
+	if ( direction.z < -0.9999f )
+	{
+		return b3MakeQuatFromAxisAngle( b3Vec3_axisX, B3_PI );
+	}
+	b3Quat q = { { -direction.y, direction.x, 0.0f }, 1.0f + direction.z };
+	return b3NormalizeQuat( q );
+}
+
+// Where the stick should be: its tip where the mouse points, as far from the eye as its reach and thrust, held from the
+// lower right as if by someone beside the eye, pointing into the picture, to the left and a little up, so it shows along
+// its length. Its grip is at its local origin, its tip along +z.
+static b3Transform StickTarget( const App& app )
+{
+	const Stick& stick = app.stick;
+	float x = app.mouseLook ? 0.5f * sapp_widthf() : app.mouseX;
+	float y = app.mouseLook ? 0.5f * sapp_heightf() : app.mouseY;
+	b3Vec3 origin, direction;
+	AimRay( app, x, y, &origin, &direction );
+	b3Vec3 tip = b3MulAdd( origin, stick.reach + stick.thrust, direction );
+	b3Vec3 axis = b3MulSub( app.camera.Forward(), 0.9f, app.camera.Right() );
+	axis = b3Normalize( b3MulAdd( axis, 0.35f, app.camera.Up() ) );
+	return { b3MulSub( tip, stick.length, axis ), QuatFromAxisZ( axis ) };
+}
+
+// The stick goes with its joint and the anchor it hangs from
+static void DestroyStick( App& app )
+{
+	Stick& stick = app.stick;
+	if ( stick.slot < 0 )
+	{
+		return;
+	}
+	if ( b3Body_IsValid( stick.body ) )
+	{
+		DetachSlot( app, stick.body, stick.slot );
+		b3DestroyBody( stick.body );
+	}
+	if ( b3Body_IsValid( stick.anchor ) )
+	{
+		b3DestroyBody( stick.anchor );
+	}
+	app.renderer.RemoveMesh( stick.mesh );
+	app.renderer.FreeSlot( stick.slot );
+	stick.body = {};
+	stick.anchor = {};
+	stick.joint = {};
+	stick.slot = -1;
+	stick.mesh = -1;
+}
+
+// A capsule of the length, radius and mass of the menu, a bullet so a fast swing does not pass through a thin arm, held
+// by a motor joint to an anchor without shapes at the origin. Its springs pull with up to the force of the menu, its
+// torque turns the stick about its grip with the same force at a quarter of its length.
+static void BuildStick( App& app )
+{
+	DestroyStick( app );
+	Stick& stick = app.stick;
+	b3Transform target = StickTarget( app );
+
+	b3BodyDef bodyDef = b3DefaultBodyDef();
+	stick.anchor = b3CreateBody( app.physics, &bodyDef );
+
+	bodyDef.type = b3_dynamicBody;
+	bodyDef.position = b3ToPos( target.p );
+	bodyDef.rotation = target.q;
+	bodyDef.enableSleep = false;
+	bodyDef.isBullet = true;
+	stick.body = b3CreateBody( app.physics, &bodyDef );
+
+	b3ShapeDef shapeDef = b3DefaultShapeDef();
+	float r = stick.radius;
+	float volume = B3_PI * r * r * stick.length + 4.0f / 3.0f * B3_PI * r * r * r;
+	shapeDef.density = stick.mass / volume;
+	shapeDef.enableHitEvents = true;
+	shapeDef.baseMaterial.friction = 0.6f;
+	b3Capsule capsule = { b3Vec3_zero, { 0.0f, 0.0f, stick.length }, r };
+	b3CreateCapsuleShape( stick.body, &shapeDef, &capsule );
+
+	b3MotorJointDef motor = b3DefaultMotorJointDef();
+	motor.base.bodyIdA = stick.anchor;
+	motor.base.bodyIdB = stick.body;
+	motor.base.localFrameA = target;
+	motor.linearHertz = 6.0f;
+	motor.linearDampingRatio = 1.0f;
+	motor.maxSpringForce = stick.force;
+	motor.angularHertz = 6.0f;
+	motor.angularDampingRatio = 1.0f;
+	motor.maxSpringTorque = 0.25f * stick.force * stick.length;
+	stick.joint = b3CreateMotorJoint( app.physics, &motor );
+
+	stick.slot = app.renderer.AllocSlot();
+	app.vertexScratch.clear();
+	app.indexScratch.clear();
+	AppendCapsule( app, b3Vec3_zero, { 0.0f, 0.0f, stick.length }, r, MaterialSteel, stick.slot );
+	stick.mesh = app.renderer.AddMesh( app.vertexScratch.data(), (int)app.vertexScratch.size(), app.indexScratch.data(),
+									   (int)app.indexScratch.size(), stick.slot );
+	AttachSlot( app, stick.body, stick.slot );
+	stick.builtLength = stick.length;
+	stick.builtRadius = stick.radius;
+	stick.builtMass = stick.mass;
+}
+
+// With the tool Stock the stick follows the mouse: the frame of its joint goes where the stick should be, and its
+// springs pull it there with the force of the menu. A held button thrusts it forward. Any other tool puts it away.
+static void UpdateStick( App& app, float dt, bool uiWantsMouse )
+{
+	Stick& stick = app.stick;
+	if ( app.tool != ToolStick || app.comparison.active )
+	{
+		DestroyStick( app );
+		return;
+	}
+	if ( stick.slot < 0 || stick.builtLength != stick.length || stick.builtRadius != stick.radius || stick.builtMass != stick.mass )
+	{
+		BuildStick( app );
+	}
+
+	float thrust = app.mouseDown && uiWantsMouse == false ? 0.6f : 0.0f;
+	stick.thrust = thrust > stick.thrust ? b3MinFloat( thrust, stick.thrust + 8.0f * dt ) : b3MaxFloat( thrust, stick.thrust - 3.0f * dt );
+	b3Joint_SetLocalFrameA( stick.joint, StickTarget( app ) );
+	b3MotorJoint_SetMaxSpringForce( stick.joint, stick.force );
+	b3MotorJoint_SetMaxSpringTorque( stick.joint, 0.25f * stick.force * stick.length );
 }
 
 //----------------------------------------------------------------------------------------------------------------------
@@ -1886,10 +2061,10 @@ static std::string BuildReport( const App& app )
 		const nbFigureStats& figures = view.figures;
 		Appendf( text,
 				 "Figuren: %d, stehen %d, fangen sich %d, liegen %d (%d wach), stehen auf %d; Treffer %d, Schritte %d, "
-				 "gefangen %d, umgeworfen %d, aufgestanden %d, gerückt %d, abgebrochen %d\n",
+				 "gefangen %d, umgeworfen %d, aufgestanden %d, gerückt %d, abgebrochen %d, gedrückt %d\n",
 				 figures.figureCount, figures.animatedCount, figures.balancingCount, figures.ragdollCount,
 				 figures.awakeRagdollCount, figures.gettingUpCount, figures.hitCount, figures.stepCount, figures.catchCount,
-				 figures.knockdownCount, figures.getUpCount, figures.shiftCount, figures.abortCount );
+				 figures.knockdownCount, figures.getUpCount, figures.shiftCount, figures.abortCount, figures.pushCount );
 	}
 	if ( app.scene == SceneCity )
 	{
@@ -1958,9 +2133,10 @@ static void DrawUi( App& app )
 		ImGui::Text( "Figuren %d: stehen %d, fangen sich %d, liegen %d (%d wach), stehen auf %d", figures.figureCount,
 					 figures.animatedCount, figures.balancingCount, figures.ragdollCount, figures.awakeRagdollCount,
 					 figures.gettingUpCount );
-		ImGui::Text( "Treffer %d, Schritte %d, gefangen %d, umgeworfen %d, aufgestanden %d, gerückt %d, abgebrochen %d",
+		ImGui::Text( "Treffer %d, Schritte %d, gefangen %d, umgeworfen %d, aufgestanden %d, gerückt %d, abgebrochen %d, "
+					 "gedrückt %d",
 					 figures.hitCount, figures.stepCount, figures.catchCount, figures.knockdownCount, figures.getUpCount,
-					 figures.shiftCount, figures.abortCount );
+					 figures.shiftCount, figures.abortCount, figures.pushCount );
 		ImGui::SliderFloat( "Gewehr auf Figuren", &app.figureHitImpulse, 10.0f, 1500.0f, "%.0f N s",
 							ImGuiSliderFlags_Logarithmic );
 		if ( ImGui::IsItemHovered() )
@@ -2071,7 +2247,22 @@ static void DrawUi( App& app )
 	}
 
 	ToolSettings& settings = app.tools[app.tool];
-	if ( app.tool == ToolCannon )
+	if ( app.tool == ToolStick )
+	{
+		Stick& stick = app.stick;
+		ImGui::SliderFloat( "Kraft der Hand (N)", &stick.force, 20.0f, 2000.0f, "%.0f", ImGuiSliderFlags_Logarithmic );
+		if ( ImGui::IsItemHovered() )
+		{
+			ImGui::SetTooltip( "So stark ziehen die Federn den Stock zur Maus. Mit wenig Kraft drückt er sanft,\nmit viel schwingt er schnell und schiebt fester." );
+		}
+		ImGui::SliderFloat( "Masse (kg)", &stick.mass, 0.3f, 20.0f, "%.1f", ImGuiSliderFlags_Logarithmic );
+		ImGui::SliderFloat( "Länge (m)", &stick.length, 0.8f, 3.0f, "%.1f" );
+		ImGui::SliderFloat( "Dicke (m)", &stick.radius, 0.01f, 0.1f, "%.3f" );
+		ImGui::SliderFloat( "Reichweite (m)", &stick.reach, 0.8f, 6.0f, "%.1f" );
+		ImGui::TextWrapped( "Die Spitze folgt der Maus. Langsam bewegt drückt der Stock, schnell geschwungen schlägt er. "
+							"Mausrad: Reichweite, linke Taste: zustoßen." );
+	}
+	else if ( app.tool == ToolCannon )
 	{
 		ImGui::SliderFloat( "Kugelradius (m)", &settings.radius, 0.1f, 0.6f, "%.2f" );
 		ImGui::SliderFloat( "Geschwindigkeit (m/s)", &settings.ejectSpeed, 10.0f, 120.0f, "%.0f" );
@@ -2452,6 +2643,36 @@ static bool ProjectToScreen( const App& app, b3Vec3 point, ImVec2* screen )
 	float dpi = sapp_dpi_scale();
 	*screen = ImVec2( 0.5f * ( ndcX + 1.0f ) * width / dpi, 0.5f * ( 1.0f - ndcY ) * height / dpi );
 	return true;
+}
+
+// With --stick in the scene with figures the script leads the stick instead of the mouse, through the same path: from
+// frame 40 slowly against the side of the head of the fourth figure of the row, 0.3 m/s for three seconds, then from frame
+// 260 in a fifth of a second across the chest of the fifth
+static void RunStickScript( App& app, int frame )
+{
+	if ( app.scene != SceneFigures )
+	{
+		return;
+	}
+	app.tool = ToolStick;
+	b3Vec3 tip;
+	if ( frame < 260 )
+	{
+		float t = b3ClampFloat( (float)( frame - 40 ) / 180.0f, 0.0f, 1.0f );
+		tip = { 6.6f - 0.9f * t, 1.62f, 0.05f };
+	}
+	else
+	{
+		float t = b3ClampFloat( (float)( frame - 260 ) / 12.0f, 0.0f, 1.0f );
+		tip = { 8.9f - 1.8f * t, 1.3f, 0.05f };
+	}
+	ImVec2 screen;
+	if ( ProjectToScreen( app, tip, &screen ) )
+	{
+		app.mouseX = screen.x * sapp_dpi_scale();
+		app.mouseY = screen.y * sapp_dpi_scale();
+		app.stick.reach = b3Length( b3Sub( tip, app.camera.position ) );
+	}
 }
 
 // What a figure does, for the label over its head
@@ -3688,6 +3909,7 @@ static void OnInit()
 	app.tools[ToolRifle] = { 0.35f, 1.2e5f, 9.0f, 0, 8.0f };
 	app.tools[ToolGrenade] = { 1.3f, 3.0e5f, 12.0f, 0, 2.0f };
 	app.tools[ToolCannon] = { 0.25f, 0.0f, 45.0f, 0, 3.0f };
+	app.tools[ToolStick] = { 0.0f, 0.0f, 0.0f, 0, 1.0f };
 
 	int scene = app.automation.scene >= 0 && app.automation.scene < SceneCount ? app.automation.scene : SceneWall;
 	LoadScene( app, (SceneKind)scene );
@@ -3795,13 +4017,19 @@ static void OnFrame()
 	uint64_t impactTicks = b3GetTicks();
 	app.fireCooldown -= dt;
 	bool uiWantsMouse = ImGui::GetIO().WantCaptureMouse && app.mouseLook == false;
-	if ( app.mouseDown && uiWantsMouse == false && app.fireCooldown <= 0.0f && app.comparison.active == false )
+	if ( app.mouseDown && uiWantsMouse == false && app.fireCooldown <= 0.0f && app.comparison.active == false &&
+		 app.tool != ToolStick )
 	{
 		float x = app.mouseLook ? 0.5f * sapp_widthf() : app.mouseX;
 		float y = app.mouseLook ? 0.5f * sapp_heightf() : app.mouseY;
 		Fire( app, x, y );
 		app.fireCooldown = 1.0f / app.tools[app.tool].rate;
 	}
+	if ( app.automation.stick )
+	{
+		RunStickScript( app, app.frame );
+	}
+	UpdateStick( app, dt, uiWantsMouse );
 
 	// A comparison takes the town down by the frames of each of its runs, also with --demolition, else its runs would end
 	// at different frames in different worlds. The one with and without the joints in the packs fires at a fixed pace, see
@@ -3937,7 +4165,8 @@ static void OnEvent( const sapp_event* event )
 			{
 				break;
 			}
-			if ( event->key_code == SAPP_KEYCODE_1 || event->key_code == SAPP_KEYCODE_2 || event->key_code == SAPP_KEYCODE_3 )
+			if ( event->key_code == SAPP_KEYCODE_1 || event->key_code == SAPP_KEYCODE_2 || event->key_code == SAPP_KEYCODE_3 ||
+				 event->key_code == SAPP_KEYCODE_4 )
 			{
 				app.tool = (Tool)( event->key_code - SAPP_KEYCODE_1 );
 			}
@@ -4021,7 +4250,11 @@ static void OnEvent( const sapp_event* event )
 			break;
 
 		case SAPP_EVENTTYPE_MOUSE_SCROLL:
-			if ( io.WantCaptureMouse == false && app.comparison.active == false )
+			if ( io.WantCaptureMouse == false && app.comparison.active == false && app.tool == ToolStick )
+			{
+				app.stick.reach = b3ClampFloat( app.stick.reach + 0.25f * event->scroll_y, 0.8f, 6.0f );
+			}
+			else if ( io.WantCaptureMouse == false && app.comparison.active == false )
 			{
 				app.camera.position = b3MulAdd( app.camera.position, 0.5f * event->scroll_y, app.camera.Forward() );
 			}
@@ -4071,6 +4304,10 @@ int main( int argc, char** argv )
 		else if ( strcmp( argv[i], "--screenshot" ) == 0 && i + 1 < argc )
 		{
 			app.automation.screenshotPath = argv[++i];
+		}
+		else if ( strcmp( argv[i], "--stick" ) == 0 )
+		{
+			app.automation.stick = true;
 		}
 		else if ( strcmp( argv[i], "--script" ) == 0 )
 		{
