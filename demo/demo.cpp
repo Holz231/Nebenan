@@ -988,8 +988,8 @@ static void AppendTire( App& app, b3Vec3 center, float a, float hy, float b, flo
 			float phi = 2.0f * B3_PI * (float)side / (float)sides;
 			float cosine = cosf( phi );
 			float sine = sinf( phi );
-			b3Vec3 out =
-				b3Normalize( (b3Vec3){ b3MaxFloat( coreB, 1.0e-3f ) * cosine, 0.0f, b3MaxFloat( coreA, 1.0e-3f ) * sine } );
+			b3Vec3 across = { b3MaxFloat( coreB, 1.0e-3f ) * cosine, 0.0f, b3MaxFloat( coreA, 1.0e-3f ) * sine };
+			b3Vec3 out = b3Normalize( across );
 			b3Vec3 position = { center.x + scale * ( ring * coreA * cosine + r * normalOut * out.x ), center.y + y,
 								center.z + scale * ( ring * coreB * sine + r * normalOut * out.z ) };
 			b3Vec3 normal = { normalOut * out.x, normalUp, normalOut * out.z };
