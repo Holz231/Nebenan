@@ -640,10 +640,13 @@ Zustand `nb_figureBalancing`, nach Kapitel 26.13 bis 26.15 und 28.3 der Roadmap 
 der Haltung des Clips, 800 N m pro rad bis 150 N m, die Arme mit 60 % davon, so schwingen sie mit dem Körper, und ein
 Gelenk von Box3D gegen einen statischen Anker der Welt hält das Becken aufrecht, mit höchstens 250 N m
 (`nbFigureMotors::uprightTorque`). In jedem Update misst die Figur ihren Schwerpunkt und seine Geschwindigkeit, welche
-Füße auf Boden stehen, die Fläche ihrer Sohlen und den Capture Point, den Schwerpunkt um seine Geschwindigkeit durch die
-Frequenz eines Pendels seiner Höhe weiter. Im Stand halten die Beine ihre Füße, wo sie stehen, und schieben das Becken
-über die Mitte der Sohlen. Liegt der Capture Point zwei Updates lang mehr als 3 cm außerhalb, tritt ein Fuß dorthin, wo
-der Capture Point bei seiner Landung sein wird, 5 cm darüber hinaus, in Reichweite der Hüfte, auf Boden, der trägt und
+Füße auf Boden stehen, auch einer, dessen Sohle bis 3 cm darüber schwebt, wohin die Füße zeigen, die Fläche ihrer Sohlen
+und den Capture Point, den Schwerpunkt um seine Geschwindigkeit durch die
+Frequenz eines Pendels seiner Höhe weiter. Sie richtet sich nach ihren Füßen, nicht nach dem Becken, siehe Füße statt
+Becken: Im Stand halten die Beine ihre Füße, wo und wie sie stehen, schieben das Becken über die Mitte der Sohlen und
+drehen es über die Füße zurück. Liegt der Capture Point zwei Updates lang mehr als 3 cm außerhalb, tritt ein Fuß
+dorthin, wo der Capture Point bei seiner Landung sein wird, 5 cm darüber hinaus, gedreht wie der Standfuß, in Reichweite
+der Hüfte, auf Boden, der trägt und
 höchstens 25 cm höher oder tiefer liegt, mit Platz für den Fuß und freiem Weg dorthin, 0,3 s lang und 8 cm hoch. Die
 ersten 60 % des Schritts folgt sein Ziel dem Capture Point. Kommt der Schritt zu kurz, schwingen die Arme aus, siehe
 unten. Fängt sie auch der fünfte Schritt in Folge nicht, kann kein Fuß treten, ließe der beste Schritt den Capture Point
@@ -656,16 +659,53 @@ Becken aufrecht, steht sie nach einer halben Sekunde wieder animiert, wo sie ste
 ihre Füße treten mit den Schritten des Ausgleichs unter ihren Körper zurück. Auf die obere Brust getroffen fängt sich
 der Mensch der Bibliothek so von vorn bis 110 N s, von hinten bis 120 N s und von beiden Seiten bis 80 N s, auf 10 N s
 genau abgetastet, und steht nach 0,9 bis 4,2 s wieder animiert. Auf `active-ragdoll-23` waren es von hinten 140 N s, bis
-`active-ragdoll-22` 70, 100 und 60 N s. Darüber fällt er nach höchstens zwei Schritten. Auch darunter endet ab und zu
-ein Treffer in langem Stolpern: In der Szene der Tests fallen seit `active-ragdoll-28` fünf von 168 Treffern mit 40 bis
-80 N s, alle von der Seite quer über die Vorderseite der Brust, wo sie den Rumpf am weitesten um seine Längsachse
-drehen, siehe Drehung um die Längsachse. Auf `active-ragdoll-27` fiel einer, auf `active-ragdoll-26` keiner und davor
-zwei. Der längste Fang dauert 3,7 s, auf `active-ragdoll-26` fing die Figur 80 N s von vorn rechts erst nach 17
+`active-ragdoll-22` 70, 100 und 60 N s. Darüber fällt er nach höchstens zwei Schritten. Darunter endete bis
+`active-ragdoll-33` ab und zu ein Treffer in langem Stolpern: In der Szene der Tests fielen von 168 Treffern mit 40 bis
+80 N s auf `active-ragdoll-28` fünf und auf `active-ragdoll-33` vier, alle von der Seite quer über die Vorderseite der
+Brust, wo sie den Rumpf am weitesten um seine Längsachse drehen, siehe Drehung um die Längsachse. Auf
+`active-ragdoll-27` fiel einer, auf `active-ragdoll-26` keiner und davor zwei. Seit `active-ragdoll-34` fällt keiner,
+siehe Füße statt Becken. Der längste Fang dauert 3,2 s, auf `active-ragdoll-33` 4,0 s, auf `active-ragdoll-26` fing die
+Figur 80 N s von vorn rechts erst nach 17
 Schritten und 7,8 s. Eine Figur, die sich fängt, kostet im Update rund 4,4 statt 2 µs, und Box3D rechnet ihre
 dynamischen Knochen mit einem Thread in rund 0,06 statt 0,006 ms pro Schritt. `nbFigureInfo::catchCount` und
 `nbFigureStats::catchCount` zählen, wie oft eine Figur sich fing, `nbFigureStats::balancingCount`, wie viele es gerade
 tun. Ein Spiel ruft dafür nichts auf. Andere Rigs als der Mensch der Bibliothek fallen gleich, bei ihnen kennt die
 Bibliothek die Beine nicht.
+
+**Füße statt Becken.** Seit `active-ragdoll-28` dreht ein Treffer quer über die Vorderseite der Brust den Rumpf um seine
+Längsachse, und bis `active-ragdoll-33` drehte sich die ganze Figur auf ihren Füßen mit: Die Balance nahm ihre Richtung
+aus dem Becken, und die Beine drehten die Füße hinterher. Jetzt richtet sie sich nach den Füßen, F59 der Roadmap. Jeder
+Fuß zeigt dorthin, wohin die Figur auf ihm stünde. Die Figur zeigt, wohin ihr Standfuß zeigt, solange der andere
+schwingt, sonst, wohin ihre Füße zusammen zeigen, und nur ohne Fuß auf dem Boden nach ihrem Becken. Ein Schritt landet
+gedreht wie der Standfuß und hält seinen Abstand zur Seite von ihm, ein Fuß, der steht, bleibt gedreht, wie er steht,
+das Knie beugt sich über seinen Fuß, und die Beine drehen das Becken über die Füße zurück. Nach 168 leichten Treffern
+von 40 bis 80 N s aus acht Richtungen sind die Füße im Mittel um 7,9 statt 13,3° gedreht, wenn die Figur wieder steht,
+höchstens um 36 statt 67°, nach 62 N s von rechts um 16 statt 25°.
+
+Beim Nachverfolgen der Stürze zeigte sich der eigentliche Grund: Nach einem langen ersten Schritt steht die Figur oft
+über einen Meter breit, und der hintere Fuß trägt nichts. Er schwebt 0 bis 2,5 cm über dem Boden und verliert dabei
+immer wieder seine Kontakte. Die Balance zählte ihn dann als in der Luft, die Stütze schrumpfte auf den vorderen Fuß,
+der Capture Point lag weit außerhalb, und der hintere Fuß trat nach außen, statt zu stehen. Die Figur schaukelte
+zwischen ihren Füßen hin und her und fiel nach drei bis sieben Schritten. Jetzt steht ein Fuß, der nicht schwingt, auch,
+wenn seine Sohle bis 3 cm über dem Boden schwebt, gemessen mit einem Strahl nach unten: Er setzt auf, sobald der Körper
+über ihn kommt. Von den 168 leichten Treffern der Tests fällt so keiner mehr statt vier. An 4 464 Treffern auf Brust und
+Bauch fallen von 50 bis 89 N s 14 statt 42, und die Figur fängt sich mit 1,24 statt 2,38 Schritten in 1,62 statt 2,00 s.
+Von 90 bis 139 N s fallen 798 statt 799, mit 2,18 statt 3,34 Schritten in 1,95 statt 2,36 s. Auf die obere Brust fängt
+sie sich in Schritten von 3 N s abgetastet von rechts bis 91 statt 55 N s und von vorn bis 112 statt 106 N s, von hinten
+und links wie vorher bis 121 und 88 N s. Von 1 280 Treffern auf Arme, Beine und Kopf fallen 362 statt 358. Mit 1, 2 oder
+5 cm statt 3 cm fallen fast gleich viele, mit weniger macht die Figur mehr Schritte. Die Balance nach den Füßen allein,
+ohne diese Regel, ließ von 50 bis 89 N s 62 statt 42 fallen, die Regel allein 23. Gepaart gegen `active-ragdoll-33`,
+sechs Paare mit 4 Threads und vier mit einem, kostet ein Bild in der Stadt 5 % und 2 % weniger. Die Szenen mit Figuren
+liegen zwischen 0,72 und 1,31 des Vorgängers, bei Paaren zwischen 0,5 und 2,4, im Rauschen der VM, umgeworfen werden
+dort gleich viele. Ein Spiel ruft dafür nichts auf.
+
+Schnellere Schritte nach einem härteren Stoß, F60, halfen dagegen nicht. Die Balance probierte für jeden Schritt 0,3,
+0,25 und 0,2 s und nahm einen schnelleren, wenn er den Capture Point bei der Landung um mehr als 1 cm näher an die
+Stütze brachte. Das Schwungbein folgt seinem Ziel aber etwa 0,1 s zu spät: Ein Schritt von 0,2 s nach hinten nach 64 N s
+brachte den Fuß 15 statt 57 cm weit, bevor er als gelandet galt. Von den leichten Treffern fielen so 22 statt keinem,
+von 50 bis 89 N s 299 statt 14. Mit einer Landung, die auf den Fuß wartet, fielen noch mehr, mit einer Grenze von
+1,5 m/s für das Tempo des Fußes wählte die Balance die schnellen Schritte kaum noch, und von 90 bis 139 N s fielen 33
+mehr. Siehe „Schrittzeit nach dem Stoß“ in [Optimierungen.md](docs/Optimierungen.md).
 
 **Drücken.** Drückt ein Körper eine stehende Figur langsam, ein Stock, eine Hand oder ein Block, und schiebt er dabei
 einen ihrer Knochen mit mindestens `pushForce` (Standard 40 N) seitlich, bei zwei Prüfungen hintereinander, also ein
@@ -846,7 +886,8 @@ Treffer auf Arme und Kopf drehen den Rumpf wie bisher über ihr Gelenk, mit dem 
 statt 88-mal länger als 4 s. Mit dem halben Moment fing sie sich 3 612-mal und stand nur 0,01 bis 0,09 s früher ruhig.
 Von 168 leichten Treffern fallen 5 statt 1, alle von der Seite quer über die Vorderseite der Brust. Dort dreht sich die
 ganze Figur weg, und ihre Balance richtet sich nach der Richtung des Beckens: Bei 62 N s von rechts dreht sie sich um 22
-bis 28°, setzt den zweiten Fuß zurück statt zur Seite und steht zu breit. Treffer auf Arme, Beine und Kopf gehen aus wie
+bis 28°, setzt den zweiten Fuß zurück statt zur Seite und steht zu breit. Seit `active-ragdoll-34` fällt keiner von
+ihnen, siehe Füße statt Becken. Treffer auf Arme, Beine und Kopf gehen aus wie
 vorher. Ein Spiel ruft dafür nichts auf.
 
 **Zusatzträgheit in den Gelenken.** Armature heißt hier, wie bei MuJoCo, eine zusätzliche Drehträgheit im Gelenk, nicht
@@ -2410,9 +2451,11 @@ Nach Änderungen an `demo/shaders/scene.glsl` die Shader neu erzeugen, im Ordner
   Gelenk von Box3D. Ein Spiel, das es rein physikalisch will, setzt `uprightTorque` auf null. Dann fängt sich der Mensch
   der Bibliothek kaum noch: Auf die Brust getroffen fällt er aus allen vier Richtungen schon bei 50 N s, auch mit
   schwingenden Armen.
-- Dreht ein Treffer quer über die Vorderseite der Brust die ganze Figur auf ihren Füßen weg, plant sie ihre Schritte
-  weiter nach der Richtung ihres Beckens, setzt den zweiten Fuß zurück statt zur Seite und steht zu breit. Von 168
-  leichten Treffern in der Szene der Tests fallen so 5, siehe F59 der Roadmap.
+- Nach einem harten Stoß tritt eine Figur so lange wie nach einem leichten, 0,3 s, und ihr Schwungbein folgt seinem Ziel
+  etwa 0,1 s zu spät. Ihr erster Schritt landet so oft über sein Ziel hinaus, und sie steht danach breit. Schnellere
+  Schritte ließen in Runde 34 mehr Treffer fallen, nicht weniger, siehe F60 der Roadmap. Bis `active-ragdoll-33` plante
+  sie ihre Schritte nach der Richtung ihres Beckens und fiel nach 4 von 168 leichten Treffern in der Szene der Tests,
+  siehe Füße statt Becken.
 - Die Muskeln (`nbFigureMotors::muscles`) sind eine Näherung auf der Ebene der Gelenke und standardmäßig aus. Ihre
   Kraft wirkt über die Feder eines Gelenks, deren Drehmomentgrenze auch ihre Dämpfung begrenzt, so nimmt die Kurve von
   Hill einem schnell gedrehten Gelenk auch Dämpfung. Kraft nach Winkel, Bänder, Sehnen und eine Reaktionszeit fehlen
