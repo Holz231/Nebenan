@@ -92,9 +92,9 @@ struct Ball
 
 // The stick of the tool Stock, to try pushes and blows on the figures by hand: a dynamic capsule held at one end by a motor
 // joint, whose springs pull that end with a bounded force to a hand to the lower right of the eye and turn the stick with
-// a bounded torque to where the player aims it, see UpdateStick. The mouse swings the free end about the hand, slowly to
-// push and fast to strike, and past the room of the arm the eye turns along, see SwingStick. What it does to a figure
-// comes from the physics and the library alone.
+// a bounded torque to point ahead, see UpdateStick. Like a weapon in a game it goes with the eye: turning the view swings
+// it about the hand, slowly to push and fast to strike, and it trails behind as far as its springs let it, see
+// SwingStick. What it does to a figure comes from the physics and the library alone.
 struct Stick
 {
 	b3BodyId body = {};
@@ -114,16 +114,15 @@ struct Stick
 	float builtMass = 0.0f;
 
 	// Where it points, turned from the view to the right and raised, in radians, how far ahead of the eye the hand holds
-	// it, how much farther a thrust takes it, and how many radians it turns for a pixel of the mouse
+	// it, and how much farther a thrust takes it
 	float aimYaw = -0.3f;
 	float aimPitch = 0.05f;
 	float handDistance = 0.5f;
 	float thrust = 0.0f;
-	float sensitivity = 0.005f;
 
-	// How far the arm swings it from where it rests before the eye turns along, in radians to each side, a little less up
-	// and down. Zero holds it fixed to the view, so every turn of the eye swings it.
-	float room = 0.7f;
+	// How far the mouse may swing it from where it rests before the eye turns along, in radians to each side, a little less
+	// up and down. Zero, as for a weapon in a game, holds it fixed to the view, so every turn of the eye swings it.
+	float room = 0.0f;
 };
 
 // A figure of the library and the meshes of its bones, each on a slot of its own on the body of its bone, see nbCreateFigure.
@@ -313,8 +312,9 @@ struct Automation
 	bool script = false;
 	int scene = -1;
 
-	// The script leads the stick instead of the mouse, see RunStickScript
+	// The script leads the stick instead of the mouse, by the seconds since the start, see RunStickScript
 	bool stick = false;
+	float stickTime = 0.0f;
 
 	// Run the comparison, the one of the thread counts, the scaling or the one with and without the joints in the packs,
 	// print it and quit, or take the town down like the comparison does
@@ -1719,14 +1719,17 @@ static b3Transform StickTarget( const App& app )
 static const float StickRestYaw = -0.3f;
 static const float StickRestPitch = 0.05f;
 
-// The mouse swings the stick about its hand, to the right with the mouse to the right and up with it up, as fast as the
-// mouse moves. Past the room of the arm the eye turns along by what is left, so a swing can go all the way around and the
-// player looks around while swinging: in the world the stick turns on as fast, as the eye takes it along.
+// How far the eye turns for a pixel of the mouse, in radians
+static const float LookPerPixel = 0.0025f;
+
+// Looking around with the stick in the hand: the mouse turns the eye, and the stick swings along about the hand, as fast as
+// the mouse moves, the way a game swings a weapon, see StickTarget. With room for the arm the mouse first swings the stick
+// within it, to the right with the mouse to the right and up with it up, and turns the eye by what is left.
 static void SwingStick( App& app, float dx, float dy )
 {
 	Stick& stick = app.stick;
-	float yaw = stick.aimYaw + stick.sensitivity * dx;
-	float pitch = stick.aimPitch - stick.sensitivity * dy;
+	float yaw = stick.aimYaw + LookPerPixel * dx;
+	float pitch = stick.aimPitch - LookPerPixel * dy;
 	float room = b3MaxFloat( stick.room, 0.0f );
 	stick.aimYaw = b3ClampFloat( yaw, StickRestYaw - room, StickRestYaw + room );
 	stick.aimPitch = b3ClampFloat( pitch, StickRestPitch - 0.8f * room, StickRestPitch + 0.8f * room );
@@ -1803,6 +1806,14 @@ static void BuildStick( App& app )
 	shapeDef.baseMaterial.friction = 0.6f;
 	b3Capsule capsule = { b3Vec3_zero, { 0.0f, 0.0f, stick.length }, r };
 	b3CreateCapsuleShape( stick.body, &shapeDef, &capsule );
+
+	// A stick 5 cm thick turns 700 times more easily about its length than across it. The motor joint springs all three
+	// turns, and with that ratio a stick that circles its aim on a cone gains energy and circles on: in a probe 20 rad/s
+	// became 22 in 10 s, and in the demo it spun about the hand for good after it lost the figure it pressed. A quarter of
+	// the inertia across it about its length stops it within a second, and it strikes as before.
+	b3MassData massData = b3Body_GetMassData( stick.body );
+	massData.inertia.cz.z = b3MaxFloat( massData.inertia.cz.z, 0.25f * massData.inertia.cx.x );
+	b3Body_SetMassData( stick.body, massData );
 
 	b3MotorJointDef motor = b3DefaultMotorJointDef();
 	motor.base.bodyIdA = stick.anchor;
@@ -2309,15 +2320,15 @@ static void DrawUi( App& app )
 		ImGui::SliderFloat( "Länge (m)", &stick.length, 0.8f, 3.0f, "%.1f" );
 		ImGui::SliderFloat( "Dicke (m)", &stick.radius, 0.01f, 0.1f, "%.3f" );
 		ImGui::SliderFloat( "Hand vor dem Auge (m)", &stick.handDistance, 0.3f, 3.0f, "%.1f" );
-		ImGui::SliderFloat( "Schwung pro Pixel (rad)", &stick.sensitivity, 0.002f, 0.02f, "%.3f", ImGuiSliderFlags_Logarithmic );
 		ImGui::SliderFloat( "Spielraum des Arms (rad)", &stick.room, 0.0f, 1.5f, "%.2f" );
 		if ( ImGui::IsItemHovered() )
 		{
-			ImGui::SetTooltip( "So weit schwingt der Stock vor dem Auge, bevor sich der Blick mitdreht. Bei 0\n"
-							   "hängt er fest am Blick, und jede Drehung des Kopfs ist ein Schwung." );
+			ImGui::SetTooltip( "Bei 0 hängt der Stock fest am Blick wie eine Waffe in einem Spiel, und jede Drehung\n"
+							   "des Blicks schwingt ihn. Darüber schwingt die Maus ihn erst so weit vor dem Auge,\n"
+							   "bevor sich der Blick mitdreht." );
 		}
-		ImGui::TextWrapped( "Ein Ende liegt fest in der Hand, die Maus schwingt das andere: langsam drückt der Stock, "
-							"schnell schlägt er, und über den Spielraum hinaus dreht sich der Blick mit. Linke Taste: "
+		ImGui::TextWrapped( "Ein Ende liegt fest in der Hand, und der Stock geht mit dem Blick wie eine Waffe in einem "
+							"Spiel: Dreh dich langsam, und er drückt, dreh dich schnell, und er schlägt. Linke Taste: "
 							"zustoßen. Mausrad: Hand vor und zurück. Rechte Taste: Umsehen an und aus, die Taste 4 "
 							"schaltet es gleich ein." );
 	}
@@ -2704,50 +2715,52 @@ static bool ProjectToScreen( const App& app, b3Vec3 point, ImVec2* screen )
 	return true;
 }
 
-// With --stick in the scene with figures the script swings the stick instead of the mouse, through the same aim: in front
-// of the fourth figure of the row, from frame 40 slowly against the right side of its head for three seconds and on into
-// it, from frame 260 back to the right in half a second, from frame 400 in an eighth of a second across its chest, and
-// from frame 450 back to rest
-static void RunStickScript( App& app, int frame )
+// With --stick in the scene with figures the script turns the eye instead of the mouse, and the stick swings along, by the
+// seconds since the start: in front of the fourth figure of the row, from 0.7 s for three seconds slowly to the left, so
+// the stick presses against the right side of its head and on into it, from 4.3 s back to the right and down in half a
+// second, from 6.7 s in 0.13 s to the left across its chest, as fast as a quick flick of the mouse, and from 7.5 s up,
+// so the stick lets go of it
+static void RunStickScript( App& app, float time )
 {
 	if ( app.scene != SceneFigures )
 	{
 		return;
 	}
 
-	// The eye looks a quarter radian left of the figure, so it stands right of the menu, and the stick aims that much more
-	// to the right
-	const float turn = 0.25f;
 	app.tool = ToolStick;
 	app.camera.position = { 6.3f, 1.75f, 1.7f };
-	app.camera.yaw = -0.17f - turn;
-	app.camera.pitch = -0.05f;
 	Stick& stick = app.stick;
 	stick.handDistance = 0.5f;
-	if ( frame < 260 )
+	stick.aimYaw = StickRestYaw;
+	stick.aimPitch = StickRestPitch;
+	float yaw;
+	float pitch;
+	if ( time < 4.3f )
 	{
-		float t = b3ClampFloat( (float)( frame - 40 ) / 180.0f, 0.0f, 1.0f );
-		stick.aimYaw = turn + 0.55f - 0.85f * t;
-		stick.aimPitch = 0.2f;
+		float t = b3ClampFloat( ( time - 0.7f ) / 3.0f, 0.0f, 1.0f );
+		yaw = 0.68f - 0.85f * t;
+		pitch = 0.1f;
 	}
-	else if ( frame < 400 )
+	else if ( time < 6.7f )
 	{
-		float t = b3ClampFloat( (float)( frame - 260 ) / 30.0f, 0.0f, 1.0f );
-		stick.aimYaw = turn - 0.3f + 1.2f * t;
-		stick.aimPitch = 0.2f - 0.3f * t;
+		float t = b3ClampFloat( ( time - 4.3f ) / 0.5f, 0.0f, 1.0f );
+		yaw = -0.17f + 1.2f * t;
+		pitch = 0.1f - 0.3f * t;
 	}
-	else if ( frame < 450 )
+	else if ( time < 7.5f )
 	{
-		float t = b3ClampFloat( (float)( frame - 400 ) / 8.0f, 0.0f, 1.0f );
-		stick.aimYaw = turn + 0.9f - 1.8f * t;
-		stick.aimPitch = -0.1f;
+		float t = b3ClampFloat( ( time - 6.7f ) / 0.13f, 0.0f, 1.0f );
+		yaw = 1.03f - 1.8f * t;
+		pitch = -0.2f;
 	}
 	else
 	{
-		float t = b3ClampFloat( (float)( frame - 450 ) / 40.0f, 0.0f, 1.0f );
-		stick.aimYaw = turn - 0.9f + ( StickRestYaw - turn + 0.9f ) * t;
-		stick.aimPitch = -0.1f + ( StickRestPitch + 0.1f ) * t;
+		float t = b3ClampFloat( ( time - 7.5f ) / 0.5f, 0.0f, 1.0f );
+		yaw = -0.77f;
+		pitch = -0.2f + 0.7f * t;
 	}
+	app.camera.yaw = yaw;
+	app.camera.pitch = pitch;
 }
 
 // What a figure does, for the label over its head
@@ -4102,7 +4115,8 @@ static void OnFrame()
 	}
 	if ( app.automation.stick )
 	{
-		RunStickScript( app, app.frame );
+		app.automation.stickTime += dt;
+		RunStickScript( app, app.automation.stickTime );
 	}
 	UpdateStick( app, dt, uiWantsMouse );
 
@@ -4308,7 +4322,7 @@ static void OnEvent( const sapp_event* event )
 			break;
 
 		case SAPP_EVENTTYPE_MOUSE_MOVE:
-			// Looking around, the mouse swings the stick and turns the eye along past its room, see SwingStick
+			// Looking around, the mouse turns the eye, and the stick swings along, see SwingStick
 			if ( app.mouseLook )
 			{
 				if ( app.comparison.active == false && app.tool == ToolStick )
@@ -4317,8 +4331,8 @@ static void OnEvent( const sapp_event* event )
 				}
 				else if ( app.comparison.active == false )
 				{
-					app.camera.yaw += 0.0025f * event->mouse_dx;
-					app.camera.pitch = b3ClampFloat( app.camera.pitch - 0.0025f * event->mouse_dy, -1.5f, 1.5f );
+					app.camera.yaw += LookPerPixel * event->mouse_dx;
+					app.camera.pitch = b3ClampFloat( app.camera.pitch - LookPerPixel * event->mouse_dy, -1.5f, 1.5f );
 				}
 			}
 			else
@@ -4386,7 +4400,9 @@ int main( int argc, char** argv )
 		}
 		else if ( strcmp( argv[i], "--stick" ) == 0 )
 		{
+			// The stick swings left of the middle, where the menu would hide it; F1 shows the menu
 			app.automation.stick = true;
+			app.showUi = false;
 		}
 		else if ( strcmp( argv[i], "--script" ) == 0 )
 		{
