@@ -641,36 +641,34 @@ der Haltung des Clips, 800 N m pro rad bis 150 N m, die Arme mit 60 % davon, so 
 Gelenk von Box3D gegen einen statischen Anker der Welt hält das Becken aufrecht, mit höchstens 250 N m
 (`nbFigureMotors::uprightTorque`). In jedem Update misst die Figur ihren Schwerpunkt und seine Geschwindigkeit, welche
 Füße auf Boden stehen, auch einer, dessen Sohle bis 3 cm darüber schwebt, wohin die Füße zeigen, die Fläche ihrer Sohlen
-und den Capture Point, den Schwerpunkt um seine Geschwindigkeit durch die
-Frequenz eines Pendels seiner Höhe weiter. Sie richtet sich nach ihren Füßen, nicht nach dem Becken, siehe Füße statt
-Becken: Im Stand halten die Beine ihre Füße, wo und wie sie stehen, schieben das Becken über die Mitte der Sohlen und
-drehen es über die Füße zurück. Liegt der Capture Point zwei Updates lang mehr als 3 cm außerhalb, tritt ein Fuß
-dorthin, wo der Capture Point bei seiner Landung sein wird, 5 cm darüber hinaus, gedreht wie der Standfuß, in Reichweite
-der Hüfte, auf Boden, der trägt und
-höchstens 25 cm höher oder tiefer liegt, mit Platz für den Fuß und freiem Weg dorthin, 0,3 s lang und 8 cm hoch. Die
-ersten 60 % des Schritts folgt sein Ziel dem Capture Point. Kommt der Schritt zu kurz, schwingen die Arme aus, siehe
-unten. Fängt sie auch der fünfte Schritt in Folge nicht, kann kein Fuß treten, ließe der beste Schritt den Capture Point
-bei der Landung mehr als 1,1 m draußen, neigt sie sich mehr als 0,6 rad, sinkt ihr Schwerpunkt unter drei Viertel seiner
-Höhe oder berührt 0,3 s kein Fuß den Boden, fällt sie als aktiver Ragdoll, ohne das Gelenk am Becken. Steht sie nach
-einem langen Ausfallschritt 0,3 s auf einem Fuß, während der andere in der Luft hängt, tritt sie mit ihm, sonst stünde
-sie nie ruhig. Eine Last von oben wirft sie ab einem Viertel von `crushForce` um, wie beim Aufstehen. Ruhig auf beiden
-Füßen, die Knochen im Mittel nach ihrer Masse langsamer als 0,15 m/s, den Capture Point zwischen den Füßen und das
-Becken aufrecht, steht sie nach einer halben Sekunde wieder animiert, wo sie steht, ihr Clip blendet in 0,25 s ein, und
-ihre Füße treten mit den Schritten des Ausgleichs unter ihren Körper zurück. Auf die obere Brust getroffen fängt sich
-der Mensch der Bibliothek so von vorn bis 110 N s, von hinten bis 120 N s und von beiden Seiten bis 80 N s, auf 10 N s
-genau abgetastet, und steht nach 0,9 bis 4,2 s wieder animiert. Auf `active-ragdoll-23` waren es von hinten 140 N s, bis
+und den Capture Point, den Schwerpunkt um seine Geschwindigkeit durch die Frequenz eines Pendels seiner Höhe weiter. Sie
+richtet sich nach ihren Füßen, nicht nach dem Becken, siehe Füße statt Becken: Im Stand halten die Beine ihre Füße, wo
+und wie sie stehen, schieben das Becken über die Mitte der Sohlen und drehen es über die Füße zurück. Liegt der Capture
+Point zwei Updates lang mehr als 3 cm außerhalb, tritt ein Fuß dorthin, wo der Capture Point bei seiner Landung sein
+wird, 5 cm darüber hinaus, gedreht wie der Standfuß, in Reichweite der Hüfte, auf Boden, der trägt und höchstens 25 cm
+höher oder tiefer liegt, mit Platz für den Fuß und freiem Weg dorthin, 0,3 s lang und 8 cm hoch. Die ersten 60 % des
+Schritts folgt sein Ziel dem Capture Point. Kommt der Schritt zu kurz, schwingen die Arme aus, siehe unten. Fängt sie
+auch der fünfte Schritt in Folge nicht, kann kein Fuß treten, ließe der beste Schritt den Capture Point bei der Landung
+mehr als 1,1 m draußen, neigt sie sich mehr als 0,6 rad, sinkt ihr Schwerpunkt unter drei Viertel seiner Höhe oder
+berührt 0,3 s kein Fuß den Boden, fällt sie als aktiver Ragdoll, ohne das Gelenk am Becken. Steht sie nach einem langen
+Ausfallschritt 0,3 s auf einem Fuß, während der andere in der Luft hängt, tritt sie mit ihm, sonst stünde sie nie ruhig.
+Eine Last von oben wirft sie ab einem Viertel von `crushForce` um, wie beim Aufstehen. Ruhig auf beiden Füßen, die
+Knochen im Mittel nach ihrer Masse langsamer als 0,15 m/s, den Capture Point zwischen den Füßen und das Becken aufrecht,
+steht sie nach einer halben Sekunde wieder animiert, wo sie steht, ihr Clip blendet in 0,25 s ein, und ihre Füße treten
+mit den Schritten des Ausgleichs unter ihren Körper zurück. Auf die obere Brust getroffen fängt sich der Mensch der
+Bibliothek so von vorn bis 110 N s, von hinten bis 120 N s und von beiden Seiten bis 80 N s, auf 10 N s genau
+abgetastet, und steht nach 0,9 bis 4,2 s wieder animiert. Auf `active-ragdoll-23` waren es von hinten 140 N s, bis
 `active-ragdoll-22` 70, 100 und 60 N s. Darüber fällt er nach höchstens zwei Schritten. Darunter endete bis
 `active-ragdoll-33` ab und zu ein Treffer in langem Stolpern: In der Szene der Tests fielen von 168 Treffern mit 40 bis
 80 N s auf `active-ragdoll-28` fünf und auf `active-ragdoll-33` vier, alle von der Seite quer über die Vorderseite der
 Brust, wo sie den Rumpf am weitesten um seine Längsachse drehen, siehe Drehung um die Längsachse. Auf
 `active-ragdoll-27` fiel einer, auf `active-ragdoll-26` keiner und davor zwei. Seit `active-ragdoll-34` fällt keiner,
 siehe Füße statt Becken. Der längste Fang dauert 3,2 s, auf `active-ragdoll-33` 4,0 s, auf `active-ragdoll-26` fing die
-Figur 80 N s von vorn rechts erst nach 17
-Schritten und 7,8 s. Eine Figur, die sich fängt, kostet im Update rund 4,4 statt 2 µs, und Box3D rechnet ihre
-dynamischen Knochen mit einem Thread in rund 0,06 statt 0,006 ms pro Schritt. `nbFigureInfo::catchCount` und
-`nbFigureStats::catchCount` zählen, wie oft eine Figur sich fing, `nbFigureStats::balancingCount`, wie viele es gerade
-tun. Ein Spiel ruft dafür nichts auf. Andere Rigs als der Mensch der Bibliothek fallen gleich, bei ihnen kennt die
-Bibliothek die Beine nicht.
+Figur 80 N s von vorn rechts erst nach 17 Schritten und 7,8 s. Eine Figur, die sich fängt, kostet im Update rund 4,4
+statt 2 µs, und Box3D rechnet ihre dynamischen Knochen mit einem Thread in rund 0,06 statt 0,006 ms pro Schritt.
+`nbFigureInfo::catchCount` und `nbFigureStats::catchCount` zählen, wie oft eine Figur sich fing,
+`nbFigureStats::balancingCount`, wie viele es gerade tun. Ein Spiel ruft dafür nichts auf. Andere Rigs als der Mensch
+der Bibliothek fallen gleich, bei ihnen kennt die Bibliothek die Beine nicht.
 
 **Füße statt Becken.** Seit `active-ragdoll-28` dreht ein Treffer quer über die Vorderseite der Brust den Rumpf um seine
 Längsachse, und bis `active-ragdoll-33` drehte sich die ganze Figur auf ihren Füßen mit: Die Balance nahm ihre Richtung
@@ -887,8 +885,7 @@ statt 88-mal länger als 4 s. Mit dem halben Moment fing sie sich 3 612-mal und 
 Von 168 leichten Treffern fallen 5 statt 1, alle von der Seite quer über die Vorderseite der Brust. Dort dreht sich die
 ganze Figur weg, und ihre Balance richtet sich nach der Richtung des Beckens: Bei 62 N s von rechts dreht sie sich um 22
 bis 28°, setzt den zweiten Fuß zurück statt zur Seite und steht zu breit. Seit `active-ragdoll-34` fällt keiner von
-ihnen, siehe Füße statt Becken. Treffer auf Arme, Beine und Kopf gehen aus wie
-vorher. Ein Spiel ruft dafür nichts auf.
+ihnen, siehe Füße statt Becken. Treffer auf Arme, Beine und Kopf gehen aus wie vorher. Ein Spiel ruft dafür nichts auf.
 
 **Zusatzträgheit in den Gelenken.** Armature heißt hier, wie bei MuJoCo, eine zusätzliche Drehträgheit im Gelenk, nicht
 das Skelett wie in Blender. Der Hals des Menschen der Bibliothek wiegt ein Kilogramm zwischen Brust und Kopf. Mit der
