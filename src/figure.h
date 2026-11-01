@@ -156,15 +156,16 @@ typedef struct nbBalancer
 	float footGap;
 	float scale;
 
-	// Measured in every update: up, gravity, the height of the ground under the feet along up and under each foot on the
-	// ground, which feet stand, where the figure faces, how far the pelvis tilts, the speed of the bones on average by
-	// their mass, the center of mass and its velocity, the capture point, how far it lies outside the support and the
-	// middle of the support
+	// Measured in every update: up, gravity, the height of the ground under the feet along up and under each foot on
+	// the ground, which feet stand, where each foot faces and where the figure faces after its feet, how far the pelvis
+	// tilts, the speed of the bones on average by their mass, the center of mass and its velocity, the capture point,
+	// how far it lies outside the support and the middle of the support
 	b3Vec3 up;
 	float gravity;
 	float groundHeight;
 	float footGround[2];
 	bool footContact[2];
+	b3Vec3 footFacing[2];
 	b3Vec3 forward;
 	float tilt;
 	float meanSpeed;

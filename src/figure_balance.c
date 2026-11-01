@@ -1,16 +1,17 @@
 // SPDX-License-Identifier: MIT
 
-// A figure that catches itself after a hard hit, after the balance of the branch ragdoll-11 and the roadmap of the game,
-// chapters 26.13 to 26.15 and 28.3 to 28.5. Its bones are dynamic, its joints pull toward the pose of its clip with the
-// full strength of the motors, and a hold keeps its pelvis upright with a bounded torque, see nbFigureMotors. In every
-// update after a step it measures its center of mass and its velocity, which feet stand on ground, the support of their
-// soles and the capture point: the center of mass ahead by its velocity over the frequency of a pendulum as high as it
-// is. There it would come to rest if it stopped it. Standing, the legs hold the feet where they are and move the pelvis
-// over the middle of the support. When the capture point lies outside, a foot steps where the capture point will be when
-// it lands, on ground that carries it and with room for the foot, as far as it reaches. When that step comes short, the
-// arms swing out in the sense of the fall, and their motors turn the body back against it. Five steps in a row that do
-// not catch it, a tilt, a sinking, a step that no foot can take or one that comes hopelessly short, and it falls. Calm
-// on its feet it stands animated again.
+// A figure that catches itself after a hard hit, after the balance of the branch ragdoll-11 and the roadmap of the
+// game, chapters 26.13 to 26.15 and 28.3 to 28.5. Its bones are dynamic, its joints pull toward the pose of its clip
+// with the full strength of the motors, and a hold keeps its pelvis upright with a bounded torque, see nbFigureMotors.
+// In every update after a step it measures its center of mass and its velocity, which feet stand on ground and where
+// they face, the support of their soles and the capture point: the center of mass ahead by its velocity over the
+// frequency of a pendulum as high as it is. There it would come to rest if it stopped it. It faces after its feet, not
+// its pelvis. Standing, the legs hold the feet where and as they are, move the pelvis over the middle of the support
+// and turn it back over the feet. When the capture point lies outside, a foot steps where the capture point will be
+// when it lands, turned as the stance foot, on ground that carries it and with room for the foot, as far as it reaches.
+// When that step comes short, the arms swing out in the sense of the fall, and their motors turn the body back against
+// it. Five steps in a row that do not catch it, a tilt, a sinking, a step that no foot can take or one that comes
+// hopelessly short, and it falls. Calm on its feet it stands animated again.
 // Balance only sets targets of joints, the strength of the arms and the bounded hold, the motors and Box3D decide where
 // the bodies go. The decisions take fixed thresholds in the update after every step in the order of the figures, so the
 // same inputs give the same figure on every machine and with any number of threads.
@@ -34,7 +35,9 @@
 // A step: the farthest the ankle lands from the hip over the ground, in meters, its time in seconds, how high the foot
 // lifts, in meters, and the most steps in a row before the figure gives up and falls. Five: rowing arms give a fourth
 // step the time to catch a figure that three did not, and arms that swing out and hold instead of pulling hard leave
-// some light hits a fifth step short. With five, none of 672 hits up to 80 N s fell.
+// some light hits a fifth step short. With five, none of 672 hits up to 80 N s fell. A quicker step after a harder push
+// does not catch more: the swinging foot follows its target about 0.1 s late, so a step of 0.2 s back from a push of
+// 64 N s took the foot 15 instead of 57 cm, see the roadmap, F60.
 #define NB_MAX_STEP_LENGTH 0.55f
 #define NB_STEP_DURATION 0.3f
 #define NB_STEP_HEIGHT 0.08f
@@ -53,6 +56,10 @@
 
 // Ground a foot stands on: the cosine of its steepest slope, 45 degrees
 #define NB_WALKABLE 0.7f
+
+// A foot that does not swing stands on the ground also when its sole hovers this little above it, in meters for the
+// humanoid of 1.8 m, see nbMeasure
+#define NB_NEAR_GROUND 0.03f
 
 // A step reaches ground this much higher or lower than where the figure stands, in meters
 #define NB_MAX_RISE 0.25f
@@ -640,15 +647,10 @@ static void nbMeasure( const nbWorld* world, int index, const nbFigure* f, nbBal
 	b->velocity = velocity;
 	b->meanSpeed = speed / mass;
 
-	// How far the pelvis tilts and where the figure faces
+	// How far the pelvis tilts
 	b3WorldTransform pelvis = b3Body_GetTransform( f->bones[0].bodyId );
 	float upright = b3Dot( b3RotateVector( pelvis.q, b3Vec3_axisY ), up );
 	b->tilt = nbAcos( upright );
-	b3Vec3 facing = nbFlat( b3RotateVector( pelvis.q, b3Vec3_axisZ ), up );
-	if ( b3Length( facing ) > 0.5f )
-	{
-		b->forward = b3Normalize( facing );
-	}
 
 	// The feet on the ground and its height
 	float heightSum = 0.0f;
@@ -667,6 +669,69 @@ static void nbMeasure( const nbWorld* world, int index, const nbFigure* f, nbBal
 	if ( heightCount > 0 )
 	{
 		b->groundHeight = heightSum / (float)heightCount;
+	}
+
+	// A foot that does not swing stands also when its sole hovers just above the ground: after a long step the trailing
+	// foot of the wide stance often carries nothing and loses its contacts now and then, and it would touch down as
+	// soon as the body moved over it. Counted as off the ground, the support shrank to the other foot, the capture
+	// point lay far outside it, and the trailing foot stepped away to the outside instead of standing.
+	for ( int foot = 0; foot < 2; ++foot )
+	{
+		if ( b->footContact[foot] || ( b->stepping && foot == b->stepFoot ) )
+		{
+			continue;
+		}
+		b3WorldTransform transform = b3Body_GetTransform( f->bones[nb_feet[foot]].bodyId );
+		float ground;
+		if ( nbGroundBelow( world, index, b3MulAdd( b3ToVec3( transform.p ), 0.1f * b->scale, up ), up, 0.3f * b->scale,
+							&ground ) == false )
+		{
+			continue;
+		}
+		float lowest = FLT_MAX;
+		for ( int k = 0; k < 4; ++k )
+		{
+			lowest = b3MinFloat( lowest, b3Dot( b3ToVec3( b3TransformWorldPoint( transform, b->sole[foot][k] ) ), up ) );
+		}
+		if ( lowest - ground < NB_NEAR_GROUND * b->scale )
+		{
+			b->footContact[foot] = true;
+			b->footGround[foot] = ground;
+		}
+	}
+
+	// Where each foot faces: where the figure would face standing on it as at rest. The figure faces after its feet,
+	// the stance foot while the other swings, else the feet on the ground together, and its pelvis only without a foot
+	// on the ground or with feet that face nearly opposite ways. A hit that turns the pelvis so neither turns the steps
+	// nor the planted feet with it, and the legs turn the pelvis back over the feet.
+	for ( int foot = 0; foot < 2; ++foot )
+	{
+		b3Quat rotation = b3Body_GetRotation( f->bones[nb_feet[foot]].bodyId );
+		b3Vec3 facing = nbFlat( b3RotateVector( b3MulQuat( rotation, b3Conjugate( b->footRest[foot] ) ), b3Vec3_axisZ ), up );
+		if ( b3Length( facing ) > 0.5f )
+		{
+			b->footFacing[foot] = b3Normalize( facing );
+		}
+	}
+	b3Vec3 facing = b3Vec3_zero;
+	if ( b->stepping && b->footContact[1 - b->stepFoot] )
+	{
+		facing = b->footFacing[1 - b->stepFoot];
+	}
+	else
+	{
+		for ( int foot = 0; foot < 2; ++foot )
+		{
+			facing = b->footContact[foot] ? b3Add( facing, b->footFacing[foot] ) : facing;
+		}
+	}
+	if ( b3Length( facing ) < 0.5f )
+	{
+		facing = nbFlat( b3RotateVector( pelvis.q, b3Vec3_axisZ ), up );
+	}
+	if ( b3Length( facing ) > 0.5f )
+	{
+		b->forward = b3Normalize( facing );
 	}
 
 	// The support: the soles of the feet on the ground
@@ -712,8 +777,10 @@ static float nbCenterHeight( const nbBalancer* b )
 // Inverse kinematics of a leg
 
 // The rotations of thigh, shin and foot against their rest pose that put the ankle at a point with the pelvis at a
-// transform, the knee bending forward and the sole flat on the ground. IK places, it does not decide, see the roadmap 28.3.
-static void nbLegIK( const nbFigure* f, const nbBalancer* b, int leg, b3WorldTransform pelvis, b3Vec3 ankle, b3Quat* pose )
+// transform, the sole flat on the ground facing a direction and the knee bending toward it. IK places, it does not
+// decide, see the roadmap 28.3.
+static void nbLegIK( const nbFigure* f, const nbBalancer* b, int leg, b3WorldTransform pelvis, b3Vec3 ankle, b3Vec3 facing,
+					 b3Quat* pose )
 {
 	const nbBone* thigh = f->bones + nb_thighs[leg];
 	const nbBone* shin = f->bones + nb_shins[leg];
@@ -728,8 +795,8 @@ static void nbLegIK( const nbFigure* f, const nbBalancer* b, int leg, b3WorldTra
 	b3Vec3 along = distance > 1.0e-4f ? b3MulSV( 1.0f / distance, delta ) : b3Neg( up );
 	distance = b3ClampFloat( distance, 0.25f * ( l1 + l2 ), 0.995f * ( l1 + l2 ) );
 
-	// The knee bends toward the front of the figure, across the line from hip to ankle
-	b3Vec3 front = b3MulSub( b->forward, b3Dot( b->forward, along ), along );
+	// The knee bends toward where the foot faces, across the line from hip to ankle
+	b3Vec3 front = b3MulSub( facing, b3Dot( facing, along ), along );
 	if ( b3Length( front ) < 1.0e-3f )
 	{
 		front = b3MulSub( up, b3Dot( up, along ), along );
@@ -753,8 +820,8 @@ static void nbLegIK( const nbFigure* f, const nbBalancer* b, int leg, b3WorldTra
 	pose[nb_shins[leg]] = knee;
 	b3Quat shinWorld = b3MulQuat( b3MulQuat( thighWorld, shin->rest.q ), knee );
 
-	// The sole flat, the foot facing forward
-	b3Quat footWorld = b3MulQuat( nbYaw( up, b->forward ), b->footRest[leg] );
+	// The sole flat, the foot facing its way
+	b3Quat footWorld = b3MulQuat( nbYaw( up, facing ), b->footRest[leg] );
 	pose[nb_feet[leg]] = b3NormalizeQuat( b3InvMulQuat( b3MulQuat( shinWorld, foot->rest.q ), footWorld ) );
 }
 
@@ -815,7 +882,8 @@ static bool nbPlanFoot( const nbWorld* world, int index, const nbFigure* f, cons
 {
 	int stance = 1 - foot;
 	b3Vec3 up = b->up;
-	b3Vec3 left = b3Cross( up, b->forward );
+	b3Vec3 facing = b->footFacing[stance];
+	b3Vec3 left = b3Cross( up, facing );
 	b3Vec3 e1, e2;
 	nbGroundBasis( up, &e1, &e2 );
 
@@ -835,14 +903,14 @@ static bool nbPlanFoot( const nbWorld* world, int index, const nbFigure* f, cons
 
 	// The middle of the sole lands beyond it, away from the stance foot
 	b3Vec3 away = nbFlat( b3Sub( landing, b3MulAdd( b3MulAdd( base, pressure.x, e1 ), pressure.y, e2 ) ), up );
-	away = b3Length( away ) > 1.0e-3f ? b3Normalize( away ) : b->forward;
+	away = b3Length( away ) > 1.0e-3f ? b3Normalize( away ) : facing;
 	b3Vec3 soleTarget = b3MulAdd( landing, NB_STEP_OVERSHOOT * b->scale, away );
 
-	// The ankle above the middle of its sole, with the foot facing forward
-	b3Quat footWorld = b3MulQuat( nbYaw( up, b->forward ), b->footRest[foot] );
+	// The ankle above the middle of its sole, the foot facing the way the stance foot faces
+	b3Quat footWorld = b3MulQuat( nbYaw( up, facing ), b->footRest[foot] );
 	b3Vec3 ankle = b3Sub( soleTarget, nbFlat( b3RotateVector( footWorld, b->soleCenter[foot] ), up ) );
 
-	// The feet stay apart sideways, the left one left of the other, no crossed legs
+	// The feet stay apart sideways to the stance foot, the left one left of the other, no crossed legs
 	float side = foot == 0 ? 1.0f : -1.0f;
 	b3Vec3 stanceAnkle = nbAnkle( f, stance );
 	float lateral = side * b3Dot( nbFlat( b3Sub( ankle, stanceAnkle ), up ), left );
@@ -995,15 +1063,17 @@ void nbBeginBalance( nbWorld* world, int index, nbFigure* f )
 	b3Quat pelvis = b3Body_GetRotation( f->bones[0].bodyId );
 	b3Vec3 facing = nbFlat( b3RotateVector( pelvis, b3Vec3_axisZ ), b->up );
 	b->forward = b3Length( facing ) > 0.1f ? b3Normalize( facing ) : b3RotateVector( f->frame.q, b3Vec3_axisZ );
+	b->footFacing[0] = b->forward;
+	b->footFacing[1] = b->forward;
+	b->stepping = false;
+	b->stepFoot = -1;
 
 	nbMeasure( world, index, f, b );
 	for ( int leg = 0; leg < 2; ++leg )
 	{
 		b->plant[leg] = nbPlant( f, b, leg );
 	}
-	b->stepping = false;
 	b->stateTime = 0.0f;
-	b->stepFoot = -1;
 	b->stepCount = 0;
 	b->stepResidual = 0.0f;
 	b->dangerUpdates = 0;
@@ -1297,7 +1367,7 @@ nbBalanceResult nbUpdateBalance( nbWorld* world, int index, nbFigure* f, float t
 		b3WorldTransform wanted = nbWantedPelvis( b, nbAtHeight( point, up, height ) );
 		for ( int leg = 0; leg < 2; ++leg )
 		{
-			nbLegIK( f, b, leg, wanted, b->plant[leg], pose );
+			nbLegIK( f, b, leg, wanted, b->plant[leg], b->footFacing[leg], pose );
 		}
 	}
 	else
@@ -1320,8 +1390,8 @@ nbBalanceResult nbUpdateBalance( nbWorld* world, int index, nbFigure* f, float t
 		// pelvis, from the pelvis as it is the swing feeds back on itself through the roll it gives the pelvis.
 		b3WorldTransform wanted = nbWantedPelvis( b, nbAtHeight( pelvisPoint, up, nbHoldHeight( f, b, standing ) ) );
 		b3WorldTransform swingPelvis = { pelvis.p, nbHalfwayAt( pelvis.q, wanted.q, 0.5f ) };
-		nbLegIK( f, b, foot, swingPelvis, swing, pose );
-		nbLegIK( f, b, stance, wanted, b->plant[stance], pose );
+		nbLegIK( f, b, foot, swingPelvis, swing, b->footFacing[stance], pose );
+		nbLegIK( f, b, stance, wanted, b->plant[stance], b->footFacing[stance], pose );
 	}
 
 	nbRowArms( f, b, timeStep, pose );

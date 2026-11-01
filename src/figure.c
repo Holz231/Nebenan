@@ -1740,7 +1740,7 @@ static void nbStandWhereItIs( nbWorld* world, nbFigure* f, float groundHeight, b
 	f->swayDuration = 0.0f;
 }
 
-// A figure that caught itself stands animated again where it stands, facing where its pelvis faces
+// A figure that caught itself stands animated again where it stands, facing where its feet face
 static void nbSettle( nbWorld* world, nbFigure* f )
 {
 	nbStandWhereItIs( world, f, nbBalanceGround( f ), nbBalanceForward( f ), NB_STAND_FADE, false );
