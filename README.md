@@ -125,18 +125,28 @@ CMake-Optionen: `NEBENAN_DEMO`, `NEBENAN_TESTS`, `NEBENAN_BENCHMARK` (bei eigens
 
 | Eingabe | Aktion |
 | --- | --- |
-| Linke Maustaste | schießen, gedrückt halten für Dauerfeuer |
+| Linke Maustaste | schießen, gedrückt halten für Dauerfeuer, mit dem Stock zustoßen |
 | Rechte Maustaste halten | umsehen |
 | W A S D | bewegen |
 | Q / E | runter / hoch |
 | Shift | schneller bewegen |
-| Mausrad | vor und zurück |
-| 1 / 2 / 3 | Gewehr / Granate / Kanone |
+| Mausrad | vor und zurück, mit dem Stock seine Reichweite |
+| 1 / 2 / 3 / 4 | Gewehr / Granate / Kanone / Stock |
 | R | Szene neu laden |
 | P | Pause |
 | C | lose Trümmer entfernen |
 | V | VSync ein und aus |
 | F1 | Menü ein- und ausblenden |
+
+**Stock.** Mit **4** hält die Demo einen Stock, um die Figuren von Hand zu drücken und zu schlagen. Seine Spitze folgt
+der Maus, so weit vom Auge, wie das Mausrad die Reichweite stellt, und die linke Taste stößt ihn 0,6 m vor. Er kommt von
+rechts unten ins Bild, als hielte ihn jemand neben der Kamera. Langsam bewegt drückt er, schnell geschwungen schlägt er.
+Im Menü stehen die Kraft der Hand, mit der seine Federn ihn zur Maus ziehen (Standard 300 N), seine Masse (1,5 kg),
+Länge (1,6 m) und Dicke. Die Demo baut ihn nur aus einem Körper von Box3D und einem Motorgelenk mit Kraftgrenze, wie ein
+Spiel eine Waffe in der Hand. Was er mit einer Figur tut, kommt allein aus der Physik und der Bibliothek: Ein Schlag
+trifft eine stehende Figur wie Schutt, mit seiner Masse mal seinem Tempo, und ein langsames Drücken lässt sie sich
+fangen, siehe Drücken. Ein Stock von 1,5 kg, mit 8,5 m/s gegen die Brust geschwungen, lässt sie nur um 5° zucken, so
+wenig Schwung hat er. Härter schlägt er mit mehr Masse.
 
 **FPS.** Oben rechts steht immer die echte Bildrate, gemessen über die letzten zwei Sekunden: Bilder pro Sekunde,
 die mittlere Bildzeit und das 1 % Low, also die Rate der langsamsten 1 % der Bilder. Daran sieht man Ruckler. VSync
@@ -224,6 +234,7 @@ Bildzeit.
 - **Granate**: Explosion mit Radius 1,3 m, reißt große Löcher und schleudert Bruchstücke radial weg.
 - **Kanone**: eine echte Box3D-Kugel mit 45 m/s. Der Schaden entsteht allein aus der Aufprallenergie, die
   Kugel schlägt durch und nimmt Trümmer mit.
+- **Stock**: ein Stock, um Figuren von Hand zu drücken und zu schlagen, siehe Stock.
 
 **Szenen**
 
@@ -240,9 +251,10 @@ Bildzeit.
 - **Figuren**: acht Figuren, fünf vor einer Ziegelmauer, zwei auf einem Betonblock und eine auf der Mauer. Hinter den
   mittleren drei steht eine Wand aus Brettern von 3 cm. Das Gewehr lässt sie zurückzucken und nachtreten, sich mit
   Schritten fangen oder umfallen, Granate und Kanone treffen sie mit ihrer eigenen Wucht, und wer den Block oder die
-  Mauer unter ihnen wegschießt, nimmt ihnen den Boden. Das Menü zählt, wie viele stehen, sich fangen, liegen und
-  aufstehen, wie viele Schritte sie gemacht und wie oft sie sich gefangen haben, wie oft Figuren auf Wände prallten und
-  durchbrachen und was der letzte Aufprall tat.
+  Mauer unter ihnen wegschießt, nimmt ihnen den Boden. Mit dem Stock lassen sie sich drücken und schlagen. Das Menü
+  zählt, wie viele stehen, sich fangen, liegen und aufstehen, wie viele Schritte sie gemacht und wie oft sie sich
+  gefangen haben, wie oft ein Drücken sie sich fangen ließ, wie oft Figuren auf Wände prallten und durchbrachen und was
+  der letzte Aufprall tat.
   **Gewehr auf Figuren** stellt den Stoß eines Gewehrtreffers ein (Standard 60 N s, ab 50 N s werden die Knochen einer
   Figur dynamisch, und sie fängt sich oder fällt, um 1 000 N s fliegt sie durch die Bretter), **Brusttreffer** und
   **Seitenstoß** treffen jede Figur mit diesem Stoß oben auf die Brust, von vorn oder von rechts, **Kopftreffer** ins
@@ -263,7 +275,8 @@ nacheinander wie der Knopf im Menü, gibt das Ergebnis aus und beendet sich, `--
 Threads messen“, `--scaling` wie „Skalierung messen“ und `--compare-joints` wie „Mit und ohne F8 messen“. Diese
 Messungen reißen die Stadt selbst ab, Lauf für Lauf, auch mit `--demolition`, mit `--scene 5` die Stadt mit Figuren,
 `--compare-joints` beschießt sie. Ohne sie reißt `--demolition` die Stadt ab wie dabei. `--script` feuert eine
-vorgegebene Schussfolge ab, `--frames N` beendet nach N Bildern und meldet Bildzeiten, CPU-Zeiten, Uploads und Dreiecke
+vorgegebene Schussfolge ab, `--stick` führt in der Szene mit Figuren den Stock nach einem Skript langsam gegen einen Kopf
+und schnell über eine Brust, `--frames N` beendet nach N Bildern und meldet Bildzeiten, CPU-Zeiten, Uploads und Dreiecke
 pro Bild und einen Hash der Lagen aller Bruchstücke und der Knochen der Figuren, `--screenshot datei.ppm` speichert das
 letzte Bild (nur OpenGL).
 
@@ -632,6 +645,23 @@ dynamischen Knochen mit einem Thread in rund 0,06 statt 0,006 ms pro Schritt. `n
 `nbFigureStats::catchCount` zählen, wie oft eine Figur sich fing, `nbFigureStats::balancingCount`, wie viele es gerade
 tun. Ein Spiel ruft dafür nichts auf. Andere Rigs als der Mensch der Bibliothek fallen gleich, bei ihnen kennt die
 Bibliothek die Beine nicht.
+
+**Drücken.** Drückt ein Körper eine stehende Figur langsam, ein Stock, eine Hand oder ein Block, und schiebt er dabei
+einen ihrer Knochen mit mindestens `pushForce` (Standard 40 N) seitlich, bei zwei Prüfungen hintereinander, also ein
+paar Schritte lang, fängt sich ein Mensch der Bibliothek, statt eine Wand zu bleiben: Seine Knochen werden dynamisch,
+seine Gelenke ziehen mit voller Kraft zu seiner Haltung, und seine Balance hält ihn mit Schritten, wie nach einem harten
+Treffer. So gibt er der Kraft nach, die wirkt, nicht einem Stoß, den das Spiel meldet. Solange ihn etwas mit mindestens
+der Hälfte drückt, bleibt er dynamisch, danach steht er ruhig wieder animiert. Ein Schlag dauert ein, zwei Schritte und
+bleibt ein Treffer, siehe Ausgleichsschritt. Gemessen an einem Block von 5 kg, den ein Motorgelenk mit begrenzter Kraft
+mit 0,3 m/s gegen die Brust führt: 20 N hält die Figur wie eine Wand, 80 N lassen sie sich 8 cm zurücklehnen, ohne
+Schritt, 300 N schieben sie mit 3 Schritten 0,54 m weg, ohne dass sie fällt, und 150 N gegen die Stirn drehen ihren Kopf
+um 34° und lassen sie 5 Schritte machen. 4 bis 7 Schritte nach dem ersten Kontakt, in 0,07 bis 0,12 s, fängt sie sich,
+und 1 bis 3,2 s nach dem Drücken steht sie wieder animiert. Die Prüfung läuft mit der auf eine Last von oben, alle vier
+Schritte im Wechsel der Figuren, und kostet nichts dazu. Sie zählt Kontakte, die bis 45° von der Waagerechten drücken:
+Was von unten trägt, weckt sie nicht, was von oben drückt, ist eine Last, siehe `crushForce`. `nbFigureInfo::pushCount`
+und `nbFigureStats::pushCount` zählen, wie oft ein Drücken eine Figur sich fangen ließ. Andere Rigs als der Mensch
+bleiben eine Wand, mit `pushForce` null auch er. Zwei stehende Figuren drücken sich noch nicht, Box3D lässt ihre Knochen
+nicht kollidieren, siehe F64 der Roadmap. Ein Spiel ruft dafür nichts auf.
 
 **Rudernde Arme.** Kommt ein Schritt zu kurz, helfen die Arme, nach der Idee von Hof (2007): Außer mit dem Druckpunkt
 unter den Füßen und mit Schritten hält ein Körper sein Gleichgewicht, indem er Teile von sich um seinen Schwerpunkt
@@ -1366,6 +1396,7 @@ beim Einbinden nicht gebaut.
 | `knockdownImpulse` | 50 N s | Ab diesem Treffer werden die Knochen einer stehenden Figur dynamisch, und sie fängt sich mit Schritten oder fällt, darunter zuckt sie zurück und tritt nach. Beim Aufstehen fällt sie schon ab einem Viertel |
 | `flinchScale`, `flinchLimit`, `flinchHertz` | 0,008 rad pro N s, 0,5 rad, 2 Hz | Wie weit der Rumpf bei einem schwachen Treffer zurückzuckt und wie schnell er sich wieder aufrichtet. Trifft der Stoß Knochen mit eigener Feder, nur mit dem, was ihr Gelenk weitergibt. Die Grenze gilt auch für jede Feder eines Knochens. Um die Achse die Wirbelsäule hinauf dreht sich der Oberkörper des Menschen der Bibliothek 2,5-mal so weit und so viel schneller zurück, bis zu der Drehung, die seine Wirbelsäule erlaubt, siehe Drehung um die Längsachse |
 | `crushForce` | 600 N | Eine Last von oben ab dieser Kraft wirft eine stehende Figur um, beim Aufstehen und Abfangen ab einem Viertel. Was ihre Knochen beiseiteschieben, zählt nicht |
+| `pushForce` | 40 N | Drückt ein Körper einen Knochen eines stehenden Menschen ein paar Schritte lang mit dieser Kraft seitlich, fängt er sich, statt eine Wand zu bleiben, und bleibt dynamisch, solange es mit der Hälfte drückt, siehe Drücken. Null schaltet es ab |
 | `restSpeed` | 0,4 m/s | Bewegen sich die Knochen eines Ragdolls im Mittel langsamer, liegt er still |
 | `getUpDelay`, `getUpSpeed`, `canGetUp` | 1 s, 1,4, an | Frühestens so lange nach dem Sturz und nach einer Viertelsekunde Stille steht sie auf, mit den Clips so viel schneller als geschrieben. Ohne `canGetUp` bleibt sie liegen |
 | `startAsRagdoll` | aus | Die Figur fällt von Anfang an als Ragdoll |
@@ -2150,7 +2181,17 @@ Box3D-Schritt der übrigen Szenen mit Figuren kosten so viel wie vorher, im Medi
 Ausschlägen der VM von 26 % weniger bis 37 % mehr auch in Phasen, in denen sich nichts geändert hat: beim Sturz der 50
 Figuren paarweise 10 % mehr mit vier Threads und 5 % weniger mit einem, ein Schritt der Ragdolls im Schutt 4,42 statt
 4,32 ms mit vier Threads und 11,1 statt 11,4 ms mit einem. Alle Szenen ohne Figuren enden bitgleich wie auf
-`active-ragdoll-28`.
+`active-ragdoll-28`. Seit `active-ragdoll-30` lässt ein langsames Drücken eine stehende Figur sich fangen, siehe
+Drücken. Die Szenen mit 1, 10 und 50 Figuren und die Ragdolls im Schutt enden bitgleich wie auf `active-ragdoll-29`,
+dort drückt nichts lange genug. In der Stadt mit Figuren lässt Schutt einmal eine Figur sich fangen, und die Stadt endet
+mit 1 und 4 Threads gleich, aber anders: Es stürzen 27 statt 24 Figuren, am Ende stehen wieder 28, und die Häuser
+brechen in 77 309 statt 76 834 Stücke, mit bis zu 76 438 statt 75 752 Kontakten. Ein Bild kostet dort 7,6 statt 7,3 ms
+mit vier Threads und 15,6 statt 15,2 ms mit einem, im Mittel aus sechs und drei Läufen im Wechsel. Update und
+Box3D-Schritt der übrigen Szenen mit Figuren kosten so viel wie vorher. In sechs Läufen im Wechsel mit vier Threads, je
+drei mit `active-ragdoll-29` und mit `active-ragdoll-30` zuerst, war auf der VM der zweite Lauf eines Paars in beiden
+Reihenfolgen meist langsamer, bis 40 %. Im geometrischen Mittel über beide Reihenfolgen liegt das Update der 50 Figuren
+bei 1,04 bis 1,10 der Zeit davor, im Stand, wo der neue Code nichts tut, bei 1,04, und der Box3D-Schritt beim Sturz bei
+1,02. Alle Szenen ohne Figuren enden bitgleich wie auf `active-ragdoll-29`.
 
 **Ragdolls im Schutt.** Danach stellt `nebenan_benchmark figures` 20 Figuren auf eine Platte über zwei Lagen aus 4 513
 Würfeln, wirft sie um und lässt sie liegen (`nbFigureDef::canGetUp` aus). Platte, Würfel und Ragdolls sind eine große
@@ -2242,7 +2283,7 @@ lange die Threads im Löser rechnen und worauf sie sonst warten.
 ## Tests und Benchmark
 
 ```sh
-build/bin/nebenan_test            # 116 Tests: Geometrie, Voronoi, Hüllen, Öffnungen, Stöße, Stützgraph, Etagen, Lastprüfung, Mauern, Schutt, Ruhe, Durchschlagen, Threads, Knoten, große Blöcke, Gelenke in Paketen und Gebieten, Suchbaum, Kontaktlisten, Streaming, Stream, Laden im Hintergrund, Speichern und Zurückholen, gemeinsamer Thread-Pool, Ruhe-Prüfung auf den Workern, Schritt auf eigenem Thread, Schritte pro Bild, Takt der Physik, Wahl der Threads, Profil und Skalierung, Figuren, Ausgleichsschritt, Abfangen, rudernde Arme, Muskeln, Treffer entlang des Skeletts, Kegel je Richtung, Gelenke wie beim Menschen, Drehung um die Längsachse, Armature, ruhiger Kopf, Füße auf dem Boden, Platz zum Aufstehen, Ragdoll durch die Wand, dünne Bretter, Determinismus …
+build/bin/nebenan_test            # 117 Tests: Geometrie, Voronoi, Hüllen, Öffnungen, Stöße, Stützgraph, Etagen, Lastprüfung, Mauern, Schutt, Ruhe, Durchschlagen, Threads, Knoten, große Blöcke, Gelenke in Paketen und Gebieten, Suchbaum, Kontaktlisten, Streaming, Stream, Laden im Hintergrund, Speichern und Zurückholen, gemeinsamer Thread-Pool, Ruhe-Prüfung auf den Workern, Schritt auf eigenem Thread, Schritte pro Bild, Takt der Physik, Wahl der Threads, Profil und Skalierung, Figuren, Ausgleichsschritt, Abfangen, rudernde Arme, Muskeln, Treffer entlang des Skeletts, Kegel je Richtung, Gelenke wie beim Menschen, Drehung um die Längsachse, Armature, ruhiger Kopf, Drücken, Füße auf dem Boden, Platz zum Aufstehen, Ragdoll durch die Wand, dünne Bretter, Determinismus …
 build/bin/nebenan_benchmark 4     # Zahl = Threads für Bruch und Physik, 0 = so viele, wie ein Spiel nähme
 build/bin/nebenan_benchmark scaling   # die Städte unter Beschuss mit 1, 2, 4 … Threads und die Tabelle der Skalierung
 build/bin/nebenan_benchmark rates     # die Städte unter Beschuss mit 30, 60 und 120 Hz, was eine simulierte Sekunde kostet
@@ -2362,6 +2403,11 @@ Nach Änderungen an `demo/shaders/scene.glsl` die Shader neu erzeugen, im Ordner
   hindurch. Ob genug Platz zum Aufstehen ist, prüft sie vorher, und fehlt er, rückt sie bis 60 cm oder dreht sich auf
   dem Boden, nur mit einer Kapsel für ihren liegenden Körper geprüft. Findet sie auch so keinen Platz, wartet sie, bis
   er frei wird.
+- Ein langsames Drücken weckt eine stehende Figur erst, wenn es zwei Prüfungen hintereinander findet, vier bis sieben
+  Schritte nach dem ersten Kontakt, bis dahin hält sie wie eine Wand. Zwei stehende Figuren drücken sich gar nicht, ihre
+  Knochen sind beide kinematisch, siehe F64 der Roadmap. Was von oben auf eine Figur drückt, ist eine Last und kein
+  Drücken: Ein Stock, der nach einem Schlag quer auf ihrer Schulter liegt, bleibt dort liegen, solange er weniger als
+  `crushForce` auf sie drückt.
 - Die Gelenke von Ragdolls in einem großen Schutthaufen mit Gebieten rechnet jedes Gebiet selbst, siehe Gelenke und
   Pakete. Wo die Gebiete liegen, entscheiden aber nur die Kontakte. Liegen viele Ragdolls in wenigen Gebieten, brauchen
   diese länger, und die anderen Threads warten in jedem Durchgang auf sie: Mit 20 Ragdolls im Schutt und vier Threads
