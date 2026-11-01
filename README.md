@@ -172,13 +172,14 @@ in den Händen mit 12 m/s und 49 N s, und beide werfen sie um.
 **Figuren wie Gliederpuppen.** Die Demo zeichnet jede Figur wie eine Gliederpuppe, jeden Körperteil in seiner eigenen
 Farbe und Form: den Kopf als Ei auf einem kräftigen Hals, oben die Brust als Block mit flacher Oberseite und runden
 Schultern, darunter Brustkorb und Bauch als Polster, die sich ein wenig überlappen, das Becken als rundes Polster wie
-ein U, aus dem die Oberschenkel kommen, Arme und Beine als Kapseln, die Oberarme mit einer Kappe an der Schulter, und
-Füße wie Schuhe. Arme und Beine sind gezeichnet 1,2-mal so dick wie ihre Kapseln in der Physik, die Formen der Physik
-bleiben, wie sie sind. Ohne **Teile farbig** im Menü ist jede Figur ganz in einer Farbe, wie die Gliederpuppen eines
-Spiels. Damit die runden Teile rund aussehen, verläuft die Farbe über jedes Dreieck, siehe Demo-Renderer. Eine Figur
-hat so rund 8 400 Dreiecke mehr: Die Szene mit acht Figuren zeichnet 94 000 statt 27 000 Dreiecke in 5 statt 2 Draw
-Calls, die Stadt mit 40 Figuren 517 000 statt 180 000 in 25 statt 9. Wie sie steht, kommt aus der Bibliothek, siehe In
-den Knien.
+ein U, aus dem die Oberschenkel kommen, Arme und Beine als Blöcke mit flachen Seiten und runden Kanten statt als Röhren,
+fast gerade und so breit wie in der Vorlage, die Oberschenkel 18 cm, die Schienbeine 14 cm, die Oberarme 12,5 cm und die
+Unterarme 10 cm, die Oberarme mit einer Kappe an der Schulter, und Füße wie Schuhe. Gezeichnet sind die Glieder 1,15-
+bis 1,28-mal so dick wie ihre Kapseln in der Physik, die Formen der Physik bleiben, wie sie sind. Ohne **Teile farbig**
+im Menü ist jede Figur ganz in einer Farbe, wie die Gliederpuppen eines Spiels. Damit die runden Teile rund aussehen,
+verläuft die Farbe über jedes Dreieck, siehe Demo-Renderer. Eine Figur hat so rund 8 400 Dreiecke mehr: Die Szene mit
+acht Figuren zeichnet 94 000 statt 27 000 Dreiecke in 5 statt 2 Draw Calls, die Stadt mit 40 Figuren 517 000 statt
+180 000 in 25 statt 9. Wie sie steht, kommt aus der Bibliothek, siehe In den Knien.
 
 **FPS.** Oben rechts steht immer die echte Bildrate, gemessen über die letzten zwei Sekunden: Bilder pro Sekunde,
 die mittlere Bildzeit und das 1 % Low, also die Rate der langsamsten 1 % der Bilder. Daran sieht man Ruckler. VSync

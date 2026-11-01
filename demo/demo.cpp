@@ -1029,13 +1029,15 @@ static void AppendLimb( App& app, const nbBoneDef& bone, float radius, float bef
 }
 
 // A bone of the humanoid of the library like the mannequin of a game: rounded boxes, chunkier than the shapes the
-// physics has, as a game draws a body over its ragdoll. The limbs are a fifth thicker than their capsules, so a limb
-// on the ground sinks about a centimeter into it, the head up to two. The trunk is five parts of their own shape, the
-// chest drawn as two with a crease between them: on top a block as wide as the shoulders with a flat top, below it the
-// ribs and the belly as cushions that overlap a little, narrower down to the waist, and the pelvis as a large cushion,
-// wider again at the hips and round like a U below. The limbs narrow from the body out, thighs and calves the most. The
-// shoulders have round caps, the hands are flat like mittens, the feet are shoes wider than the shins, and the head is
-// a large egg on a short, thick neck, with two small round eyes that show where the figure looks.
+// physics has, as a game draws a body over its ragdoll. The limbs are blocks with flat sides and rounded edges, not
+// tubes, 1.15 to 1.28 times as thick as their capsules and as wide as those of the reference, so a limb that lies on a
+// side sinks one to two centimeters into the ground, the head up to two. The trunk is five parts of their own shape,
+// the chest drawn as two with a crease between them: on top a block as wide as the shoulders with a flat top, below it
+// the ribs and the belly as cushions that overlap a little, narrower down to the waist, and the pelvis as a large
+// cushion, wider again at the hips and round like a U below. The limbs narrow only a little from the body out, nearly
+// straight as in the reference. The shoulders have round caps, the hands are flat like mittens, the feet are shoes
+// wider than the shins, and the head is a large egg on a short, thick neck, with two small round eyes that show where
+// the figure looks.
 static void AppendFigurePart( App& app, int index, const nbBoneDef& bone, int material, int slot )
 {
 	const float limb = 1.2f;
@@ -1138,33 +1140,34 @@ static void AppendFigurePart( App& app, int index, const nbBoneDef& bone, int ma
 
 		case nb_humanoidUpperArmLeft:
 		case nb_humanoidUpperArmRight:
-			AppendLimb( app, bone, r, -0.2f, 0.4f, 1.0f, 0.55f, { 1.0f, 0.94f, 1.0f, 0.92f }, material, slot );
+			AppendLimb( app, bone, 1.25f * bone.radius, -0.2f, 0.4f, 1.0f, 0.32f, { 1.0f, 0.95f, 1.0f, 0.95f }, material, slot );
 			{
 				// The cap of the shoulder, a little taller than wide, its top as high as the joint is over the arm
-				b3Vec3 cap = { 1.15f * r, 1.3f * r, 1.15f * r };
-				AppendRoundedBox( app, { bone.start.x, bone.start.y - bone.radius + 0.25f * r, bone.start.z }, cap, 0.95f * cap.x,
-								  material, slot, 3 );
+				float arm = 1.25f * bone.radius;
+				b3Vec3 cap = { 1.1f * arm, 1.25f * arm, 1.1f * arm };
+				AppendRoundedBox( app, { bone.start.x, bone.start.y - bone.radius + 0.25f * arm, bone.start.z }, cap,
+								  0.9f * cap.x, material, slot, 3 );
 			}
 			return;
 
 		case nb_humanoidForearmLeft:
 		case nb_humanoidForearmRight:
-			AppendLimb( app, bone, r, 0.4f, 0.1f, 1.0f, 0.55f, { 0.98f, 0.78f, 0.98f, 0.8f }, material, slot );
+			AppendLimb( app, bone, 1.15f * bone.radius, 0.4f, 0.1f, 1.0f, 0.32f, { 1.0f, 0.92f, 1.0f, 0.92f }, material, slot );
 			return;
 
 		case nb_humanoidHandLeft:
 		case nb_humanoidHandRight:
-			AppendLimb( app, bone, r, 0.3f, 0.0f, 0.65f, 0.6f, { 0.85f, 1.05f, 0.9f, 0.95f }, material, slot );
+			AppendLimb( app, bone, r, 0.3f, 0.0f, 0.7f, 0.4f, { 0.95f, 1.0f, 0.95f, 0.95f }, material, slot );
 			return;
 
 		case nb_humanoidThighLeft:
 		case nb_humanoidThighRight:
-			AppendLimb( app, bone, r, 0.4f, 0.4f, 1.0f, 0.5f, { 1.08f, 0.9f, 1.06f, 0.9f }, material, slot );
+			AppendLimb( app, bone, 1.28f * bone.radius, 0.4f, 0.4f, 1.0f, 0.3f, { 1.03f, 0.94f, 1.03f, 0.94f }, material, slot );
 			return;
 
 		case nb_humanoidShinLeft:
 		case nb_humanoidShinRight:
-			AppendLimb( app, bone, r, 0.4f, 0.0f, 1.0f, 0.5f, { 1.0f, 0.84f, 1.04f, 0.86f }, material, slot );
+			AppendLimb( app, bone, r, 0.4f, 0.0f, 1.0f, 0.3f, { 1.0f, 0.95f, 1.02f, 0.97f }, material, slot );
 			return;
 
 		default:
