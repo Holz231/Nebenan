@@ -126,27 +126,37 @@ CMake-Optionen: `NEBENAN_DEMO`, `NEBENAN_TESTS`, `NEBENAN_BENCHMARK` (bei eigens
 | Eingabe | Aktion |
 | --- | --- |
 | Linke Maustaste | schießen, gedrückt halten für Dauerfeuer, mit dem Stock zustoßen |
-| Rechte Maustaste halten | umsehen |
+| Rechte Maustaste | Umsehen ein und aus: Die Maus dreht den Blick, mit dem Stock schwingt sie ihn |
+| Esc | Umsehen aus |
 | W A S D | bewegen |
 | Q / E | runter / hoch |
 | Shift | schneller bewegen |
-| Mausrad | vor und zurück, mit dem Stock seine Reichweite |
-| 1 / 2 / 3 / 4 | Gewehr / Granate / Kanone / Stock |
+| Mausrad | vor und zurück, mit dem Stock die Hand vor und zurück |
+| 1 / 2 / 3 / 4 | Gewehr / Granate / Kanone / Stock, mit dem Stock ist das Umsehen gleich an |
 | R | Szene neu laden |
 | P | Pause |
 | C | lose Trümmer entfernen |
 | V | VSync ein und aus |
 | F1 | Menü ein- und ausblenden |
 
-**Stock.** Mit **4** hält die Demo einen Stock, um die Figuren von Hand zu drücken und zu schlagen. Seine Spitze folgt
-der Maus, so weit vom Auge, wie das Mausrad die Reichweite stellt, und die linke Taste stößt ihn 0,6 m vor. Er kommt von
-rechts unten ins Bild, als hielte ihn jemand neben der Kamera. Langsam bewegt drückt er, schnell geschwungen schlägt er.
-Im Menü stehen die Kraft der Hand, mit der seine Federn ihn zur Maus ziehen (Standard 300 N), seine Masse (1,5 kg),
-Länge (1,6 m) und Dicke. Die Demo baut ihn nur aus einem Körper von Box3D und einem Motorgelenk mit Kraftgrenze, wie ein
-Spiel eine Waffe in der Hand. Was er mit einer Figur tut, kommt allein aus der Physik und der Bibliothek: Ein Schlag
-trifft eine stehende Figur wie Schutt, mit seiner Masse mal seinem Tempo, und ein langsames Drücken lässt sie sich
-fangen, siehe Drücken. Ein Stock von 1,5 kg, mit 8,5 m/s gegen die Brust geschwungen, lässt sie nur um 5° zucken, so
-wenig Schwung hat er. Härter schlägt er mit mehr Masse.
+**Stock.** Mit **4** hält die Demo einen Stock, um die Figuren von Hand zu drücken und zu schlagen. Ein Ende liegt fest
+in einer Hand rechts unter dem Auge, die Maus schwingt das andere, so schnell, wie sie sich bewegt: Sehr langsam drückt
+er, schnell schlägt er. Die **4** schaltet dazu das Umsehen ein, keine Taste muss gehalten werden. Schwingt der Stock
+weiter als der Spielraum des Arms, 0,7 rad zu jeder Seite und etwas weniger nach oben und unten, dreht sich der Blick um
+den Rest mit: So geht ein Schwung ganz herum, und man sieht sich beim Schwingen um. Die rechte Taste schaltet das
+Umsehen aus und wieder ein, aus ist der Mauszeiger für das Menü frei. Die linke Taste stößt die Hand 0,6 m vor, das
+Mausrad rückt sie vor und zurück. Im Menü stehen die Kraft der Hand, mit der seine Federn den Griff halten und den Stock
+vorstoßen (Standard 600 N), mit einem Viertel davon mal seiner Länge drehen sie ihn, dazu seine Masse (1,5 kg), Länge
+(1,6 m) und Dicke, wie weit die Hand vor dem Auge ist, wie weit ein Pixel der Maus ihn schwingt, und der Spielraum. Bei
+null hängt der Stock fest am Blick, und jede Drehung des Kopfs ist ein Schwung. Die Demo baut ihn nur aus einem Körper
+von Box3D und einem Motorgelenk mit Kraftgrenze, wie ein Spiel eine Waffe in der Hand. Was er mit einer Figur tut, kommt
+allein aus der Physik und der Bibliothek: Ein Schlag trifft eine stehende Figur wie Schutt, mit seiner Masse mal seinem
+Tempo, und ein langsames Drücken lässt sie sich fangen, siehe Drücken. Wie hart er trifft, hängt so am Tempo des
+Schwungs. Gemessen mit einem Stock von 1,5 kg und 600 N in der Hand, quer über eine Figur geschwungen: In 2 s drückt er
+sie zur Seite, und sie fängt sich mit Schritten. In 0,67 s trifft er mit 4,4 m/s, 6,5 N s, und sie zuckt um 2°, in
+0,27 s mit 14 m/s, 21 N s, um 6°, in 0,13 s mit 25 m/s, 37 N s, um 12°, und in 0,07 s mit 30 m/s, 45 N s, um 15°. Viel
+schneller dreht die Hand ihn nicht. Ein Stock von 5 kg trifft mit höchstens 17 m/s, 85 N s, und sie fängt sich mit
+Schritten, mit 1 500 N in der Hand mit bis zu 27 m/s, 135 N s, und das wirft sie um.
 
 **FPS.** Oben rechts steht immer die echte Bildrate, gemessen über die letzten zwei Sekunden: Bilder pro Sekunde,
 die mittlere Bildzeit und das 1 % Low, also die Rate der langsamsten 1 % der Bilder. Daran sieht man Ruckler. VSync
@@ -275,10 +285,10 @@ nacheinander wie der Knopf im Menü, gibt das Ergebnis aus und beendet sich, `--
 Threads messen“, `--scaling` wie „Skalierung messen“ und `--compare-joints` wie „Mit und ohne F8 messen“. Diese
 Messungen reißen die Stadt selbst ab, Lauf für Lauf, auch mit `--demolition`, mit `--scene 5` die Stadt mit Figuren,
 `--compare-joints` beschießt sie. Ohne sie reißt `--demolition` die Stadt ab wie dabei. `--script` feuert eine
-vorgegebene Schussfolge ab, `--stick` führt in der Szene mit Figuren den Stock nach einem Skript langsam gegen einen Kopf
-und schnell über eine Brust, `--frames N` beendet nach N Bildern und meldet Bildzeiten, CPU-Zeiten, Uploads und Dreiecke
-pro Bild und einen Hash der Lagen aller Bruchstücke und der Knochen der Figuren, `--screenshot datei.ppm` speichert das
-letzte Bild (nur OpenGL).
+vorgegebene Schussfolge ab, `--stick` schwingt in der Szene mit Figuren den Stock nach einem Skript langsam gegen einen
+Kopf und schnell über eine Brust, `--frames N` beendet nach N Bildern und meldet Bildzeiten, CPU-Zeiten, Uploads und
+Dreiecke pro Bild und einen Hash der Lagen aller Bruchstücke und der Knochen der Figuren, `--screenshot datei.ppm`
+speichert das letzte Bild (nur OpenGL).
 
 Hinkt die Physik hinterher, lässt `nbWorld_Advance` die Zeit langsamer laufen, statt Schritte nachzuholen: Mehr als
 1/60 s Physik im selben Bild kommt nur, solange der letzte Schritt weniger als 4 ms pro 1/60 s kostete, bei 60 Hz
@@ -658,10 +668,15 @@ Schritt, 300 N schieben sie mit 3 Schritten 0,54 m weg, ohne dass sie fällt, un
 um 34° und lassen sie 5 Schritte machen. 4 bis 7 Schritte nach dem ersten Kontakt, in 0,07 bis 0,12 s, fängt sie sich,
 und 1 bis 3,2 s nach dem Drücken steht sie wieder animiert. Die Prüfung läuft mit der auf eine Last von oben, alle vier
 Schritte im Wechsel der Figuren, und kostet nichts dazu. Sie zählt Kontakte, die bis 45° von der Waagerechten drücken:
-Was von unten trägt, weckt sie nicht, was von oben drückt, ist eine Last, siehe `crushForce`. `nbFigureInfo::pushCount`
-und `nbFigureStats::pushCount` zählen, wie oft ein Drücken eine Figur sich fangen ließ. Andere Rigs als der Mensch
-bleiben eine Wand, mit `pushForce` null auch er. Zwei stehende Figuren drücken sich noch nicht, Box3D lässt ihre Knochen
-nicht kollidieren, siehe F64 der Roadmap. Ein Spiel ruft dafür nichts auf.
+Was von unten trägt, weckt sie nicht, was von oben drückt, ist eine Last, siehe `crushForce`. An den Armen zählt jeder
+Kontakt, von welcher Seite er auch drückt, seit `active-ragdoll-31`: Ein Arm trägt nichts zum Boden, er gibt nach. Ein
+Stock, der langsam in den Ellbogen drückt, schiebt die runden Enden von Ober- und Unterarm schräg nach oben und unten,
+und bis `active-ragdoll-30` zählte das am Unterarm als Last: Die Figur blieb eine Wand, und ein langsamer Wisch mit dem
+Stock blieb an ihrem Arm hängen. Jetzt lehnt sie sich bei 80 N in den Ellbogen ohne Schritt 12 cm zur Seite, wie bei
+80 N auf der Brust 8 cm zurück. `nbFigureInfo::pushCount` und `nbFigureStats::pushCount` zählen, wie oft ein Drücken
+eine Figur sich fangen ließ. Andere Rigs als der Mensch bleiben eine Wand, mit `pushForce` null auch er, und was dann
+von oben auf seine Arme drückt, ist wieder eine Last. Zwei stehende Figuren drücken sich noch nicht, Box3D lässt ihre
+Knochen nicht kollidieren, siehe F64 der Roadmap. Ein Spiel ruft dafür nichts auf.
 
 **Rudernde Arme.** Kommt ein Schritt zu kurz, helfen die Arme, nach der Idee von Hof (2007): Außer mit dem Druckpunkt
 unter den Füßen und mit Schritten hält ein Körper sein Gleichgewicht, indem er Teile von sich um seinen Schwerpunkt
@@ -2191,7 +2206,12 @@ Box3D-Schritt der übrigen Szenen mit Figuren kosten so viel wie vorher. In sech
 drei mit `active-ragdoll-29` und mit `active-ragdoll-30` zuerst, war auf der VM der zweite Lauf eines Paars in beiden
 Reihenfolgen meist langsamer, bis 40 %. Im geometrischen Mittel über beide Reihenfolgen liegt das Update der 50 Figuren
 bei 1,04 bis 1,10 der Zeit davor, im Stand, wo der neue Code nichts tut, bei 1,04, und der Box3D-Schritt beim Sturz bei
-1,02. Alle Szenen ohne Figuren enden bitgleich wie auf `active-ragdoll-29`.
+1,02. Alle Szenen ohne Figuren enden bitgleich wie auf `active-ragdoll-29`. Seit `active-ragdoll-31` gibt ein Arm einem
+Drücken aus jeder Richtung nach, siehe Drücken. Alle Szenen enden bitgleich wie auf `active-ragdoll-30`, auch die Stadt
+mit Figuren, nur bei 50 Figuren hinter brechender Deckung fängt sich eine mehr, und es stürzen 29 statt 30, am Ende
+stehen wie vorher 49, mit 1 und 4 Threads gleich. In der Stadt mit Figuren kostet ein Bild im geometrischen Mittel aus
+sechs Paaren mit vier Threads 0,98 der Zeit davor und aus acht Paaren mit einem 1,04, mit Ausschlägen von 0,88 bis 1,19
+in beide Richtungen, ebenso im Box3D-Schritt, der dort bitgleich dasselbe rechnet wie vorher: So weit schwankt die VM.
 
 **Ragdolls im Schutt.** Danach stellt `nebenan_benchmark figures` 20 Figuren auf eine Platte über zwei Lagen aus 4 513
 Würfeln, wirft sie um und lässt sie liegen (`nbFigureDef::canGetUp` aus). Platte, Würfel und Ragdolls sind eine große
@@ -2405,9 +2425,10 @@ Nach Änderungen an `demo/shaders/scene.glsl` die Shader neu erzeugen, im Ordner
   er frei wird.
 - Ein langsames Drücken weckt eine stehende Figur erst, wenn es zwei Prüfungen hintereinander findet, vier bis sieben
   Schritte nach dem ersten Kontakt, bis dahin hält sie wie eine Wand. Zwei stehende Figuren drücken sich gar nicht, ihre
-  Knochen sind beide kinematisch, siehe F64 der Roadmap. Was von oben auf eine Figur drückt, ist eine Last und kein
-  Drücken: Ein Stock, der nach einem Schlag quer auf ihrer Schulter liegt, bleibt dort liegen, solange er weniger als
-  `crushForce` auf sie drückt.
+  Knochen sind beide kinematisch, siehe F64 der Roadmap. Was von oben auf Rumpf, Kopf oder Beine drückt, ist eine Last
+  und kein Drücken: Ein Stock, der nach einem Schlag quer auf ihrer Schulter liegt, bleibt dort liegen, solange er
+  weniger als `crushForce` auf sie drückt. Was von unten gegen Kopf oder Rumpf drückt, weckt sie nicht, ein Stock unter
+  dem Kinn hebt sie also nicht an. Nur an den Armen zählt jede Richtung.
 - Die Gelenke von Ragdolls in einem großen Schutthaufen mit Gebieten rechnet jedes Gebiet selbst, siehe Gelenke und
   Pakete. Wo die Gebiete liegen, entscheiden aber nur die Kontakte. Liegen viele Ragdolls in wenigen Gebieten, brauchen
   diese länger, und die anderen Threads warten in jedem Durchgang auf sie: Mit 20 Ragdolls im Schutt und vier Threads
