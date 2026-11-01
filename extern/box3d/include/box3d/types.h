@@ -1101,6 +1101,13 @@ typedef struct b3RevoluteJointDef
 	/// Added for Nebenan.
 	float maxSpringTorque;
 
+	/// A rotational inertia added to the turn of bodyB against bodyA about the hinge axis, typically in kilogram square
+	/// meters, as by a flywheel geared to that turn. The spring, the motor, the limits and whatever else turns the two
+	/// bodies against each other turn them as if they were that much heavier about the axis, while they turn together as
+	/// before. It keeps a stiff spring on a light body from shaking it. Zero by default. Added for Nebenan, after the
+	/// armature of MuJoCo.
+	float armature;
+
 	/// A flag to enable joint limits.
 	bool enableLimit;
 
@@ -1146,6 +1153,13 @@ typedef struct b3SphericalJointDef
 	/// it needs to be. A joint that drives a figure to a pose needs a limit, else it holds the pose against anything.
 	/// Added for Nebenan.
 	float maxSpringTorque;
+
+	/// A rotational inertia added to the turn of bodyB against bodyA about every axis, typically in kilogram square
+	/// meters, as by a flywheel geared to that turn. The spring, the motor, the limits and whatever else turns the two
+	/// bodies against each other turn them as if they were that much heavier, while they turn together as before. It
+	/// keeps a stiff spring on a light body from shaking it. Zero by default. Added for Nebenan, after the armature of
+	/// MuJoCo.
+	float armature;
 
 	/// Target spring rotation, joint frame B relative to joint frame A.
 	b3Quat targetRotation;

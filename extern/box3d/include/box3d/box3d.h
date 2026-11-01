@@ -1546,6 +1546,13 @@ B3_API void b3RevoluteJoint_SetMaxSpringTorque( b3JointId jointId, float torque 
 /// Get the most torque the revolute joint spring applies, usually in newton-meters. Added for Nebenan.
 B3_API float b3RevoluteJoint_GetMaxSpringTorque( b3JointId jointId );
 
+/// Set the rotational inertia added to the turn of bodyB against bodyA about the hinge axis, usually in kilogram square
+/// meters, see b3RevoluteJointDef::armature. Added for Nebenan.
+B3_API void b3RevoluteJoint_SetArmature( b3JointId jointId, float armature );
+
+/// Get the rotational inertia added to the turn of bodyB against bodyA about the hinge axis. Added for Nebenan.
+B3_API float b3RevoluteJoint_GetArmature( b3JointId jointId );
+
 /// Get the torque the revolute joint spring applied in the last step, usually in newton-meters. Against the maximum it
 /// tells how hard the spring works. Added for Nebenan.
 B3_API float b3RevoluteJoint_GetSpringTorque( b3JointId jointId );
@@ -1687,6 +1694,17 @@ B3_API void b3SphericalJoint_SetMaxSpringTorque( b3JointId jointId, float torque
 
 /// Get the most torque the spherical joint spring applies, usually in newton-meters. Added for Nebenan.
 B3_API float b3SphericalJoint_GetMaxSpringTorque( b3JointId jointId );
+
+/// Set the rotational inertia added to the turn of bodyB against bodyA, usually in kilogram square meters, see
+/// b3SphericalJointDef::armature. Added for Nebenan.
+B3_API void b3SphericalJoint_SetArmature( b3JointId jointId, float armature );
+
+/// Get the rotational inertia added to the turn of bodyB against bodyA. Added for Nebenan.
+B3_API float b3SphericalJoint_GetArmature( b3JointId jointId );
+
+/// This Box3D gives revolute and spherical joints an armature, see b3RevoluteJointDef::armature and
+/// b3SphericalJointDef::armature
+#define B3_HAS_JOINT_ARMATURE 1
 
 /// Get the torque the spherical joint spring applied in the last step, in world space, usually in newton-meters. Its
 /// length against the maximum tells how hard the spring works. Added for Nebenan.

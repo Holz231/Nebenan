@@ -1087,9 +1087,16 @@ typedef struct nbBoneDef
 
 	/// Scales the stiffness of the motors for this joint, 1 by default. Joints in a row bend like one joint of a third of
 	/// their stiffness, so the three joints of a spine take three times it to hold the trunk like one. A light bone between
-	/// two springs, like a neck, takes less: they turn it the faster the lighter it is, and from about half the substeps
-	/// per second on it shakes.
+	/// two springs, like a neck, needs an armature: they turn it the faster the lighter it is, and from about half the
+	/// substeps per second on it shakes.
 	float stiffness;
+
+	/// Rotational inertia added to the turn of this bone against its parent at its joint, in kilogram square meters, as by
+	/// a flywheel geared to that turn, after the armature of MuJoCo, see b3SphericalJointDef::armature. The joint turns
+	/// the two bones against each other as if they were that much heavier, the library sets the spring for that heavier
+	/// turn so it holds as stiff as before, and the spring of a light bone no longer turns it fast enough to shake. Zero
+	/// by default. Without the armature in Box3D a light bone needs a lower stiffness instead.
+	float armature;
 
 	/// Scales the damping ratio of the motors for this joint, 1 by default
 	float damping;

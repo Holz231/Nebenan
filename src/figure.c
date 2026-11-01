@@ -44,6 +44,14 @@
 #define NB_SWING_LIMITS 0
 #endif
 
+// The armature of joints is an addition to Box3D, see extern/README.md. Without it the joints have none, and a light bone
+// between two stiff springs shakes.
+#if defined( B3_HAS_JOINT_ARMATURE )
+#define NB_JOINT_ARMATURE 1
+#else
+#define NB_JOINT_ARMATURE 0
+#endif
+
 // Below this strength or activation of the muscles the springs of the joints are off
 #define NB_MIN_STRENGTH 0.01f
 
@@ -204,6 +212,7 @@ nbBoneDef nbDefaultBoneDef( void )
 	def.strength = 1.0f;
 	def.stiffness = 1.0f;
 	def.damping = 1.0f;
+	def.armature = 0.0f;
 	def.maxSpeed = 0.0f;
 	def.flinch = 0.0f;
 	def.flinchHertz = 0.0f;
@@ -415,9 +424,15 @@ float nbMakeHumanoidBones( float height, float mass, nbBoneDef* bones, int capac
 	nbSetLimits( &head, -20.0f, 20.0f, -20.0f, 20.0f, -40.0f, 40.0f );
 
 	// The neck weighs a kilogram between the chest and the head. At the stiffness of the motors its two springs turn it
-	// faster than half the substeps per second and it shakes the head. At 0.3 they still hold the head.
+	// faster than half the substeps per second and it shakes the head. At 0.3 they hold the head about a degree and a half
+	// off its pose while the figure catches itself, and a stiffer neck lets it catch itself less often. An armature on
+	// both joints as large as the rotational inertia of the neck about its long axis, about 1 g m^2, makes the turn of
+	// the neck about twice as heavy and calms it between its springs, see nbBoneDef::armature. With it the neck would
+	// even hold the head at the full stiffness, on one of the joints alone or at half of it the head would still shake.
 	neck.stiffness = 0.3f;
 	head.stiffness = 0.3f;
+	neck.armature = 0.001f * m * s * s;
+	head.armature = 0.001f * m * s * s;
 
 	// A light hit swings the neck and the head after the roadmap of the game, 26.4 and 26.5, the head the farthest and
 	// the fastest and a little past its pose, see nbBoneDef::flinch
@@ -778,8 +793,9 @@ static b3Quat nbLimitBoneRotation( const nbBone* bone, b3Quat rotation )
 // Box3D sets a joint spring in cycles per second against the rotational mass of its two bodies about the axis of the
 // spring: the same cycles make a weak spring on a light foot and a strong one on a heavy thigh. A stiffness in newton
 // meters per radian is the same on every joint, this turns it into the cycles per second of one joint, from ragdoll-1. The
-// rotational mass is taken about the softest of the axes, so a ball joint is at least this stiff about every axis.
-float nbJointSpringHertz( b3BodyId bodyA, b3BodyId bodyB, b3Quat frameB, bool hingeOnly, float stiffness )
+// rotational mass is taken about the softest of the axes, so a ball joint is at least this stiff about every axis. The
+// armature of the joint adds to it, Box3D sets the spring against both.
+float nbJointSpringHertz( b3BodyId bodyA, b3BodyId bodyB, b3Quat frameB, bool hingeOnly, float stiffness, float armature )
 {
 	if ( stiffness <= 0.0f )
 	{
@@ -798,6 +814,10 @@ float nbJointSpringHertz( b3BodyId bodyA, b3BodyId bodyB, b3Quat frameB, bool hi
 	if ( invMass <= 0.0f )
 	{
 		return 0.0f;
+	}
+	if ( armature > 0.0f )
+	{
+		invMass = 1.0f / ( 1.0f / invMass + armature );
 	}
 
 	return sqrtf( stiffness * invMass ) / ( 2.0f * B3_PI );
@@ -1471,7 +1491,7 @@ static void nbMakeDynamic( nbFigure* f )
 		b3Quat frameB = b3MulQuat( b3Body_GetRotation( bone->bodyId ), bone->jointFrame );
 		bone->hertz = bone->joint == nb_fixedJoint ? 0.0f
 												   : nbJointSpringHertz( f->bones[bone->parent].bodyId, bone->bodyId, frameB,
-																		 bone->joint == nb_hingeJoint, stiffness );
+																		 bone->joint == nb_hingeJoint, stiffness, bone->armature );
 	}
 }
 
@@ -4009,6 +4029,7 @@ nbFigureId nbCreateFigure( nbWorldId worldId, const nbFigureDef* def )
 		bone->strength = boneDef->strength;
 		bone->stiffness = b3MaxFloat( 0.0f, boneDef->stiffness );
 		bone->damping = b3MaxFloat( 0.0f, boneDef->damping );
+		bone->armature = NB_JOINT_ARMATURE ? b3MaxFloat( 0.0f, boneDef->armature ) : 0.0f;
 		bone->maxSpeed = b3MaxFloat( 0.0f, boneDef->maxSpeed );
 		bone->drive = 0.0f;
 		bone->activation = 0.0f;
@@ -4144,6 +4165,9 @@ nbFigureId nbCreateFigure( nbWorldId worldId, const nbFigureDef* def )
 				jointDef.enableLimit = true;
 				jointDef.lowerAngle = boneDef->lowerAngle;
 				jointDef.upperAngle = boneDef->upperAngle;
+#if NB_JOINT_ARMATURE
+				jointDef.armature = bone->armature;
+#endif
 				bone->jointId = b3CreateRevoluteJoint( world->physicsWorld, &jointDef );
 				bone->lowerHalf = b3ComputeCosSin( 0.5f * b3RevoluteJoint_GetLowerLimit( bone->jointId ) );
 				bone->upperHalf = b3ComputeCosSin( 0.5f * b3RevoluteJoint_GetUpperLimit( bone->jointId ) );
@@ -4180,6 +4204,9 @@ nbFigureId nbCreateFigure( nbWorldId worldId, const nbFigureDef* def )
 				jointDef.enableTwistLimit = true;
 				jointDef.lowerTwistAngle = boneDef->lowerAngle;
 				jointDef.upperTwistAngle = boneDef->upperAngle;
+#if NB_JOINT_ARMATURE
+				jointDef.armature = bone->armature;
+#endif
 				bone->jointId = b3CreateSphericalJoint( world->physicsWorld, &jointDef );
 				bone->lowerHalf = b3ComputeCosSin( 0.5f * b3SphericalJoint_GetLowerTwistLimit( bone->jointId ) );
 				bone->upperHalf = b3ComputeCosSin( 0.5f * b3SphericalJoint_GetUpperTwistLimit( bone->jointId ) );

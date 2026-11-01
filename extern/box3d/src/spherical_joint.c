@@ -299,6 +299,34 @@ float b3SphericalJoint_GetMaxSpringTorque( b3JointId jointId )
 }
 
 // Added for Nebenan
+void b3SphericalJoint_SetArmature( b3JointId jointId, float armature )
+{
+	B3_ASSERT( b3IsValidFloat( armature ) && armature >= 0.0f );
+	b3World* world = b3GetWorld( jointId.world0 );
+	B3_REC( world, SphericalJointSetArmature, jointId, armature );
+	b3JointSim* base = b3GetJointSimCheckType( jointId, b3_sphericalJoint );
+	base->sphericalJoint.armature = b3MaxFloat( 0.0f, armature );
+}
+
+// Added for Nebenan
+float b3SphericalJoint_GetArmature( b3JointId jointId )
+{
+	b3JointSim* base = b3GetJointSimCheckType( jointId, b3_sphericalJoint );
+	return base->sphericalJoint.armature;
+}
+
+// Added for Nebenan: the flywheel of the armature and the turn of body B against body A take the same rate, sharing the
+// difference by their masses, so whatever turned the bodies against each other since turns the flywheel too
+static void b3SyncSphericalArmature( b3SphericalJoint* joint, b3Matrix3 iA, b3Matrix3 iB, b3Vec3* wA, b3Vec3* wB )
+{
+	b3Vec3 cdot = b3Sub( b3Sub( *wB, *wA ), joint->armatureRate );
+	b3Vec3 impulse = b3Neg( b3MulMV( joint->armatureMass, cdot ) );
+	*wA = b3Sub( *wA, b3MulMV( iA, impulse ) );
+	*wB = b3Add( *wB, b3MulMV( iB, impulse ) );
+	joint->armatureRate = b3MulSub( joint->armatureRate, 1.0f / joint->armature, impulse );
+}
+
+// Added for Nebenan
 b3Vec3 b3SphericalJoint_GetSpringTorque( b3JointId jointId )
 {
 	b3World* world = b3GetWorld( jointId.world0 );
@@ -490,6 +518,42 @@ void b3PrepareSphericalJoint( b3JointSim* base, b3StepContext* context, int doma
 		joint->rotationMass = b3Mat3_zero;
 	}
 
+	// Added for Nebenan: with the armature the turn of body B against body A is as heavy as the bodies make it plus the
+	// armature about every axis. The spring, the motor and the limits push against that, and the flywheel takes its share
+	// of what they push, see b3SyncSphericalArmature.
+	if ( joint->armature > 0.0f && base->fixedRotation == false )
+	{
+		b3Matrix3 heavier = joint->rotationMass;
+		heavier.cx.x += joint->armature;
+		heavier.cy.y += joint->armature;
+		heavier.cz.z += joint->armature;
+		b3Matrix3 invHeavier = b3InvertMatrix( heavier );
+		joint->rotationMass = heavier;
+
+		if ( joint->enableSwingLimit || joint->enableConeLimit )
+		{
+			float k = b3Dot( joint->swingAxis, b3MulMV( invHeavier, joint->swingAxis ) );
+			joint->swingMass = k > 0.0f ? 1.0f / k : 0.0f;
+		}
+		if ( joint->enableTwistLimit )
+		{
+			float k = b3Dot( joint->twistJacobian, b3MulMV( invHeavier, joint->twistJacobian ) );
+			joint->twistMass = k > 0.0f ? 1.0f / k : 0.0f;
+		}
+
+		b3Matrix3 sync = invInertiaSum;
+		sync.cx.x += 1.0f / joint->armature;
+		sync.cy.y += 1.0f / joint->armature;
+		sync.cz.z += 1.0f / joint->armature;
+		joint->armatureMass = b3InvertMatrix( sync );
+
+		// The flywheel keeps turning from the step before. A joint that did not solve then, new, asleep or between two
+		// bodies that did not move freely, starts it at the rate of its bodies.
+		joint->armatureReset = joint->armatureLive == false || joint->armatureStep + 1 != world->stepIndex;
+		joint->armatureLive = true;
+		joint->armatureStep = world->stepIndex;
+	}
+
 	joint->springSoftness = b3MakeSoft( joint->hertz, joint->dampingRatio, context->h );
 
 	if ( context->enableWarmStarting == false )
@@ -528,6 +592,14 @@ void b3WarmStartSphericalJoint( b3JointSim* base, b3StepContext* context )
 	b3Vec3 rA = b3RotateVector( stateA->deltaRotation, joint->frameA.p );
 	b3Vec3 rB = b3RotateVector( stateB->deltaRotation, joint->frameB.p );
 
+	// Added for Nebenan: the flywheel of the armature starts at the rate of the bodies when it did not turn the step before
+	bool armature = joint->armature > 0.0f && base->fixedRotation == false;
+	if ( armature && joint->armatureReset )
+	{
+		joint->armatureRate = b3Sub( wB, wA );
+		joint->armatureReset = false;
+	}
+
 	b3Vec3 angularImpulse = b3Add( joint->springImpulse, joint->motorImpulse );
 	angularImpulse = b3MulSub( angularImpulse, joint->swingImpulse, joint->swingAxis );
 	angularImpulse = b3MulAdd( angularImpulse, joint->lowerTwistImpulse - joint->upperTwistImpulse, joint->twistJacobian );
@@ -537,6 +609,11 @@ void b3WarmStartSphericalJoint( b3JointSim* base, b3StepContext* context )
 
 	vB = b3MulAdd( vB, mB, joint->linearImpulse );
 	wB = b3Add( wB, b3MulMV( iB, b3Add( b3Cross( rB, joint->linearImpulse ), angularImpulse ) ) );
+
+	if ( armature )
+	{
+		b3SyncSphericalArmature( joint, iA, iB, &wA, &wB );
+	}
 
 	if ( stateA->flags & b3_dynamicFlag )
 	{
@@ -576,6 +653,14 @@ void b3SolveSphericalJoint( b3JointSim* base, b3StepContext* context, bool useBi
 
 	b3Quat relQ = b3InvMulQuat( quatA, quatB );
 
+	// Added for Nebenan: the flywheel of the armature takes its share of what turned the bodies against each other since
+	// the joint last solved, and of every push of the spring, the motor and the limits below
+	bool armature = joint->armature > 0.0f && fixedRotation == false;
+	if ( armature )
+	{
+		b3SyncSphericalArmature( joint, iA, iB, &wA, &wB );
+	}
+
 	// Solve spring
 	if ( joint->enableSpring && fixedRotation == false )
 	{
@@ -608,6 +693,10 @@ void b3SolveSphericalJoint( b3JointSim* base, b3StepContext* context, bool useBi
 
 		wA = b3Sub( wA, b3MulMV( iA, impulse ) );
 		wB = b3Add( wB, b3MulMV( iB, impulse ) );
+		if ( armature )
+		{
+			b3SyncSphericalArmature( joint, iA, iB, &wA, &wB );
+		}
 	}
 
 	if ( joint->enableMotor && fixedRotation == false )
@@ -629,6 +718,10 @@ void b3SolveSphericalJoint( b3JointSim* base, b3StepContext* context, bool useBi
 
 		wA = b3Sub( wA, b3MulMV( iA, lambda ) );
 		wB = b3Add( wB, b3MulMV( iB, lambda ) );
+		if ( armature )
+		{
+			b3SyncSphericalArmature( joint, iA, iB, &wA, &wB );
+		}
 	}
 
 	if ( joint->enableTwistLimit && fixedRotation == false )
@@ -665,6 +758,10 @@ void b3SolveSphericalJoint( b3JointSim* base, b3StepContext* context, bool useBi
 
 			wA = b3MulSub( wA, deltaImpulse, b3MulMV( iA, twistJacobian ) );
 			wB = b3MulAdd( wB, deltaImpulse, b3MulMV( iB, twistJacobian ) );
+			if ( armature )
+			{
+				b3SyncSphericalArmature( joint, iA, iB, &wA, &wB );
+			}
 		}
 
 		// Upper limit
@@ -695,6 +792,10 @@ void b3SolveSphericalJoint( b3JointSim* base, b3StepContext* context, bool useBi
 			// sign flipped on applied impulse
 			wA = b3MulAdd( wA, deltaImpulse, b3MulMV( iA, twistJacobian ) );
 			wB = b3MulSub( wB, deltaImpulse, b3MulMV( iB, twistJacobian ) );
+			if ( armature )
+			{
+				b3SyncSphericalArmature( joint, iA, iB, &wA, &wB );
+			}
 		}
 	}
 
@@ -739,6 +840,10 @@ void b3SolveSphericalJoint( b3JointSim* base, b3StepContext* context, bool useBi
 		// sign flipped on applied impulse
 		wA = b3MulAdd( wA, deltaImpulse, b3MulMV( iA, swingAxis ) );
 		wB = b3MulSub( wB, deltaImpulse, b3MulMV( iB, swingAxis ) );
+		if ( armature )
+		{
+			b3SyncSphericalArmature( joint, iA, iB, &wA, &wB );
+		}
 	}
 
 	// Solve point-to-point constraint

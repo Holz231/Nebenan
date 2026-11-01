@@ -334,10 +334,11 @@ _Static_assert( sizeof( void* ) != 8 || sizeof( b3MotorJointDef ) == 168,
 				"b3MotorJointDef changed: update b3RecW_MOTORJOINTDEF and its reader together" );
 _Static_assert( sizeof( void* ) != 8 || sizeof( b3PrismaticJointDef ) == 152,
 				"b3PrismaticJointDef changed: update b3RecW_PRISMATICJOINTDEF and its reader together" );
-// Added for Nebenan: 160 with the spring torque limit, 152 before
+// Added for Nebenan: 160 with the spring torque limit, 152 before. The armature fits in the padding.
 _Static_assert( sizeof( void* ) != 8 || sizeof( b3RevoluteJointDef ) == 160,
 				"b3RevoluteJointDef changed: update b3RecW_REVOLUTEJOINTDEF and its reader together" );
-// Added for Nebenan: 208 with the cone limit with its own angle in each direction, 184 before
+// Added for Nebenan: 208 with the cone limit with its own angle in each direction, 184 before. The armature fits in the
+// padding.
 _Static_assert( sizeof( void* ) != 8 || sizeof( b3SphericalJointDef ) == 208,
 				"b3SphericalJointDef changed: update b3RecW_SPHERICALJOINTDEF and its reader together" );
 _Static_assert( sizeof( void* ) != 8 || sizeof( b3WeldJointDef ) == 128,
@@ -496,6 +497,7 @@ void b3RecW_REVOLUTEJOINTDEF( b3RecBuffer* buf, b3RevoluteJointDef v )
 	b3RecW_F32( buf, v.hertz );
 	b3RecW_F32( buf, v.dampingRatio );
 	b3RecW_F32( buf, v.maxSpringTorque ); // Added for Nebenan
+	b3RecW_F32( buf, v.armature );		  // Added for Nebenan
 	b3RecW_BOOL( buf, v.enableLimit );
 	b3RecW_F32( buf, v.lowerAngle );
 	b3RecW_F32( buf, v.upperAngle );
@@ -511,6 +513,7 @@ void b3RecW_SPHERICALJOINTDEF( b3RecBuffer* buf, b3SphericalJointDef v )
 	b3RecW_F32( buf, v.hertz );
 	b3RecW_F32( buf, v.dampingRatio );
 	b3RecW_F32( buf, v.maxSpringTorque ); // Added for Nebenan
+	b3RecW_F32( buf, v.armature );		  // Added for Nebenan
 	b3RecW_QUAT( buf, v.targetRotation );
 	b3RecW_BOOL( buf, v.enableConeLimit );
 	b3RecW_F32( buf, v.coneAngle );

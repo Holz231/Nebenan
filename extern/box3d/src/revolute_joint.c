@@ -187,6 +187,36 @@ float b3RevoluteJoint_GetMaxSpringTorque( b3JointId jointId )
 }
 
 // Added for Nebenan
+void b3RevoluteJoint_SetArmature( b3JointId jointId, float armature )
+{
+	B3_ASSERT( b3IsValidFloat( armature ) && armature >= 0.0f );
+	b3World* world = b3GetWorld( jointId.world0 );
+	B3_REC( world, RevoluteJointSetArmature, jointId, armature );
+	b3JointSim* base = b3GetJointSimCheckType( jointId, b3_revoluteJoint );
+	base->revoluteJoint.armature = b3MaxFloat( 0.0f, armature );
+}
+
+// Added for Nebenan
+float b3RevoluteJoint_GetArmature( b3JointId jointId )
+{
+	b3JointSim* base = b3GetJointSimCheckType( jointId, b3_revoluteJoint );
+	return base->revoluteJoint.armature;
+}
+
+// Added for Nebenan: the flywheel of the armature and the turn of body B against body A about the axis take the same
+// rate, sharing the difference by their masses, so whatever turned the bodies against each other since turns the flywheel
+// too
+static void b3SyncRevoluteArmature( b3RevoluteJoint* joint, b3Matrix3 iA, b3Matrix3 iB, b3Vec3* wA, b3Vec3* wB )
+{
+	b3Vec3 axis = joint->rotationAxisZ;
+	float cdot = b3Dot( b3Sub( *wB, *wA ), axis ) - joint->armatureRate;
+	float impulse = -joint->armatureMass * cdot;
+	*wA = b3MulSub( *wA, impulse, b3MulMV( iA, axis ) );
+	*wB = b3MulAdd( *wB, impulse, b3MulMV( iB, axis ) );
+	joint->armatureRate -= impulse / joint->armature;
+}
+
+// Added for Nebenan
 float b3RevoluteJoint_GetSpringTorque( b3JointId jointId )
 {
 	b3World* world = b3GetWorld( jointId.world0 );
@@ -326,6 +356,21 @@ void b3PrepareRevoluteJoint( b3JointSim* base, b3StepContext* context, int domai
 		float k = b3Dot( rotationAxisZ, b3MulMV( invInertiaSum, rotationAxisZ ) );
 		joint->axialMass = k > 0.0f ? 1.0f / k : 0.0f;
 		joint->rotationAxisZ = rotationAxisZ;
+
+		// Added for Nebenan: with the armature the turn of body B against body A about the axis is as heavy as the
+		// bodies make it plus the armature. The spring, the motor and the limits push against that, and the flywheel
+		// takes its share of what they push, see b3SyncRevoluteArmature.
+		if ( joint->armature > 0.0f && base->fixedRotation == false && k > 0.0f )
+		{
+			joint->axialMass += joint->armature;
+			joint->armatureMass = 1.0f / ( k + 1.0f / joint->armature );
+
+			// The flywheel keeps turning from the step before. A joint that did not solve then, new, asleep or between
+			// two bodies that did not move freely, starts it at the rate of its bodies.
+			joint->armatureReset = joint->armatureLive == false || joint->armatureStep + 1 != world->stepIndex;
+			joint->armatureLive = true;
+			joint->armatureStep = world->stepIndex;
+		}
 	}
 
 	b3Quat relQ = b3InvMulQuat( joint->frameA.q, joint->frameB.q );
@@ -376,6 +421,15 @@ void b3WarmStartRevoluteJoint( b3JointSim* base, b3StepContext* context )
 	b3Vec3 rA = b3RotateVector( stateA->deltaRotation, joint->frameA.p );
 	b3Vec3 rB = b3RotateVector( stateB->deltaRotation, joint->frameB.p );
 
+	// Added for Nebenan: the flywheel of the armature starts at the rate of the bodies about the axis when it did not turn
+	// the step before
+	bool armature = joint->armature > 0.0f && joint->armatureMass > 0.0f && base->fixedRotation == false;
+	if ( armature && joint->armatureReset )
+	{
+		joint->armatureRate = b3Dot( b3Sub( wB, wA ), joint->rotationAxisZ );
+		joint->armatureReset = false;
+	}
+
 	float axialImpulse = joint->springImpulse + joint->motorImpulse + joint->lowerImpulse - joint->upperImpulse;
 	b3Vec3 angularImpulse =
 		b3Add( b3MulSV( joint->perpImpulse.x, joint->perpAxisX ), b3MulSV( joint->perpImpulse.y, joint->perpAxisY ) );
@@ -386,6 +440,11 @@ void b3WarmStartRevoluteJoint( b3JointSim* base, b3StepContext* context )
 
 	vB = b3MulAdd( vB, mB, joint->linearImpulse );
 	wB = b3Add( wB, b3MulMV( iB, b3Add( b3Cross( rB, joint->linearImpulse ), angularImpulse ) ) );
+
+	if ( armature )
+	{
+		b3SyncRevoluteArmature( joint, iA, iB, &wA, &wB );
+	}
 
 	if ( stateA->flags & b3_dynamicFlag )
 	{
@@ -431,6 +490,14 @@ void b3SolveRevoluteJoint( b3JointSim* base, b3StepContext* context, bool useBia
 
 	b3Quat relQ = b3InvMulQuat( quatA, quatB );
 
+	// Added for Nebenan: the flywheel of the armature takes its share of what turned the bodies against each other about
+	// the axis since the joint last solved, and of every push of the spring, the motor and the limits below
+	bool armature = joint->armature > 0.0f && joint->armatureMass > 0.0f && fixedRotation == false;
+	if ( armature )
+	{
+		b3SyncRevoluteArmature( joint, iA, iB, &wA, &wB );
+	}
+
 	// Solve spring
 	if ( joint->enableSpring && fixedRotation == false )
 	{
@@ -462,6 +529,10 @@ void b3SolveRevoluteJoint( b3JointSim* base, b3StepContext* context, bool useBia
 
 		wA = b3MulSub( wA, deltaImpulse, b3MulMV( iA, joint->rotationAxisZ ) );
 		wB = b3MulAdd( wB, deltaImpulse, b3MulMV( iB, joint->rotationAxisZ ) );
+		if ( armature )
+		{
+			b3SyncRevoluteArmature( joint, iA, iB, &wA, &wB );
+		}
 	}
 
 	if ( joint->enableMotor && fixedRotation == false )
@@ -477,6 +548,10 @@ void b3SolveRevoluteJoint( b3JointSim* base, b3StepContext* context, bool useBia
 
 		wA = b3MulSub( wA, deltaImpulse, b3MulMV( iA, joint->rotationAxisZ ) );
 		wB = b3MulAdd( wB, deltaImpulse, b3MulMV( iB, joint->rotationAxisZ ) );
+		if ( armature )
+		{
+			b3SyncRevoluteArmature( joint, iA, iB, &wA, &wB );
+		}
 	}
 
 	if ( joint->enableLimit && fixedRotation == false )
@@ -513,6 +588,10 @@ void b3SolveRevoluteJoint( b3JointSim* base, b3StepContext* context, bool useBia
 
 			wA = b3MulSub( wA, deltaImpulse, b3MulMV( iA, axis ) );
 			wB = b3MulAdd( wB, deltaImpulse, b3MulMV( iB, axis ) );
+			if ( armature )
+			{
+				b3SyncRevoluteArmature( joint, iA, iB, &wA, &wB );
+			}
 		}
 
 		// Upper limit
@@ -543,6 +622,10 @@ void b3SolveRevoluteJoint( b3JointSim* base, b3StepContext* context, bool useBia
 			// sign flipped on applied impulse
 			wA = b3MulAdd( wA, deltaImpulse, b3MulMV( iA, axis ) );
 			wB = b3MulSub( wB, deltaImpulse, b3MulMV( iB, axis ) );
+			if ( armature )
+			{
+				b3SyncRevoluteArmature( joint, iA, iB, &wA, &wB );
+			}
 		}
 	}
 

@@ -1042,7 +1042,7 @@ void nbBeginBalance( nbWorld* world, int index, nbFigure* f )
 		def.base.localFrameB = (b3Transform){ b3Vec3_zero, nbQuatZTo( b3Vec3_axisY ) };
 		def.base.collideConnected = false;
 		b3Quat frameB = b3MulQuat( pelvis, def.base.localFrameB.q );
-		def.hertz = nbJointSpringHertz( anchor, root, frameB, false, motors->uprightStiffness );
+		def.hertz = nbJointSpringHertz( anchor, root, frameB, false, motors->uprightStiffness, 0.0f );
 		def.dampingRatio = b3MaxFloat( 0.0f, motors->uprightDampingRatio );
 		def.maxTorque = motors->uprightTorque;
 		b->upright = b3CreateParallelJoint( world->physicsWorld, &def );

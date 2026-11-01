@@ -267,6 +267,79 @@ static int SwingLimitTest( void )
 	return 0;
 }
 
+// The armature of a joint, see b3SphericalJointDef::armature: a rod on a joint at a fixed anchor, spun by an angular
+// impulse, turns as if its rotational inertia about the joint were the armature larger, on a spherical joint and on a
+// revolute joint about its axis. An armature as large as that inertia halves the turn, and none leaves it as it was.
+static int ArmatureTest( void )
+{
+#if defined( B3_HAS_JOINT_ARMATURE )
+	for ( int hinge = 0; hinge < 2; ++hinge )
+	{
+		float rates[2] = { 0.0f, 0.0f };
+		float inertia = 0.0f;
+		for ( int pass = 0; pass < 2; ++pass )
+		{
+			b3WorldDef worldDef = b3DefaultWorldDef();
+			worldDef.gravity = b3Vec3_zero;
+			b3WorldId worldId = b3CreateWorld( &worldDef );
+			b3BodyDef anchorDef = b3DefaultBodyDef();
+			b3BodyId anchor = b3CreateBody( worldId, &anchorDef );
+			// Turning slower than the threshold of sleep, the rod stays awake
+			b3BodyDef bodyDef = b3DefaultBodyDef();
+			bodyDef.type = b3_dynamicBody;
+			bodyDef.enableSleep = false;
+			b3BodyId rod = b3CreateBody( worldId, &bodyDef );
+			b3ShapeDef shapeDef = b3DefaultShapeDef();
+			b3Capsule capsule = { { 0.0f, 0.0f, 0.05f }, { 0.0f, 0.0f, 0.3f }, 0.05f };
+			b3CreateCapsuleShape( rod, &shapeDef, &capsule );
+
+			// The rotational inertia of the rod about the x-axis through the joint
+			float d = b3Body_GetLocalCenter( rod ).z;
+			inertia = b3Body_GetLocalRotationalInertia( rod ).cx.x + b3Body_GetMass( rod ) * d * d;
+			float armature = pass == 0 ? 0.0f : inertia;
+
+			b3JointId joint;
+			if ( hinge )
+			{
+				// The hinge turns about the z-axis of its frames, here the x-axis of the bodies
+				b3RevoluteJointDef jointDef = b3DefaultRevoluteJointDef();
+				jointDef.base.bodyIdA = anchor;
+				jointDef.base.bodyIdB = rod;
+				jointDef.base.localFrameA.q = b3MakeQuatFromAxisAngle( b3Vec3_axisY, 0.5f * B3_PI );
+				jointDef.base.localFrameB.q = jointDef.base.localFrameA.q;
+				jointDef.armature = armature;
+				joint = b3CreateRevoluteJoint( worldId, &jointDef );
+				ENSURE( b3RevoluteJoint_GetArmature( joint ) == armature );
+			}
+			else
+			{
+				b3SphericalJointDef jointDef = b3DefaultSphericalJointDef();
+				jointDef.base.bodyIdA = anchor;
+				jointDef.base.bodyIdB = rod;
+				jointDef.armature = armature;
+				joint = b3CreateSphericalJoint( worldId, &jointDef );
+				ENSURE( b3SphericalJoint_GetArmature( joint ) == armature );
+			}
+
+			// A step first, so the flywheel turns with the rod when the impulse comes
+			b3World_Step( worldId, 1.0f / 60.0f, 4 );
+			b3Body_ApplyAngularImpulse( rod, (b3Vec3){ 0.01f, 0.0f, 0.0f }, true );
+			for ( int i = 0; i < 30; ++i )
+			{
+				b3World_Step( worldId, 1.0f / 60.0f, 4 );
+			}
+			rates[pass] = b3Body_GetAngularVelocity( rod ).x;
+			b3DestroyWorld( worldId );
+		}
+		printf( "  %s joint: 0.01 N m s turn the rod at %.4f rad/s, %.4f with the armature, %.4f and %.4f by its inertia\n",
+				hinge ? "revolute" : "spherical", rates[0], rates[1], 0.01f / inertia, 0.005f / inertia );
+		ENSURE( fabsf( rates[0] * inertia / 0.01f - 1.0f ) < 0.02f );
+		ENSURE( fabsf( rates[1] * inertia / 0.005f - 1.0f ) < 0.02f );
+	}
+#endif
+	return 0;
+}
+
 // The clips of the library: the get-up clips lie with the head ahead at first and stand at the height of the idle clip at
 // the end, no keyframe sinks into the ground, and the baked keyframes lie at most a fifteenth of a second apart
 static int HumanoidClipTest( void )
@@ -617,8 +690,9 @@ static int FigureCatchTest( void )
 
 // The arms row where a step comes short, see nbRowArms: an upper arm that does not swing into the body swings out in the
 // sense of the fall, the farther the shorter the step comes, and its motor turns the body back. Hit on the upper chest
-// with 100 N s from the front, both arms swing up from where they hang by more than 1.2 rad, with 60 N s from the front
-// by less than 1 rad, and the figure catches itself. Falling forward from 110 N s from behind they swing back to the
+// with 100 N s from the front, both arms swing up from where they hang by more than 1.2 rad, with 72 N s from the front
+// by less than 1 rad, and the figure catches itself. Below about 66 N s from the front its steps catch it without the
+// arms, round 28 rowed at 60 N s but not at 56 or 64. Falling forward from 110 N s from behind they swing back to the
 // 40 degrees a shoulder allows, from more than 0.5 rad to 0.8, see nbMakeHumanoidBones: with a cone of 86 degrees all
 // round they swung back 1.3 rad, and the figure caught 120 N s. Pushed to its left with 80 N s only the right
 // arm rows, the left one would swing into the body. A swinging arm bends its elbow, and the arms turn against the chest
@@ -638,7 +712,7 @@ static int FigureRowTest( void )
 		{ "100 N s from the front", { 0.0f, 0.0f, -100.0f }, { 1.2f, 1.2f }, { 1.6f, 1.6f } },
 		{ "110 N s from behind", { 0.0f, 0.0f, 110.0f }, { 0.5f, 0.5f }, { 0.8f, 0.8f } },
 		{ "80 N s to its left", { 80.0f, 0.0f, 0.0f }, { 0.0f, 1.2f }, { 0.4f, 1.6f } },
-		{ "60 N s from the front", { 0.0f, 0.0f, -60.0f }, { 0.4f, 0.4f }, { 1.0f, 1.0f } },
+		{ "72 N s from the front", { 0.0f, 0.0f, -72.0f }, { 0.4f, 0.4f }, { 1.0f, 1.0f } },
 	};
 	const int arms[2] = { nb_humanoidUpperArmLeft, nb_humanoidUpperArmRight };
 	for ( size_t c = 0; c < sizeof( cases ) / sizeof( cases[0] ); ++c )
@@ -705,10 +779,10 @@ static int FigureRowTest( void )
 // NB_ONE_FOOT_TIME. Of the 32 hits up to 80 N s at most one falls, and it catches half of all of them. Now and then a
 // light hit ends in a long stumble and a fall: of 168 hits from 40 to 80 N s in steps of 2 in this scene, round 23
 // fell at 64 and 66 N s from behind, round 24 at 66 N s from behind and at 80 N s from its front right, and round 27,
-// with joints that move as far as a person's, at 74 N s from its right. Since a hit across the front of the chest turns
-// the trunk about its long axis, see nbTwistTrunk, it falls at 58, 62, 66 and 72 N s from its right and 66 from its
-// left. Round 26 caught those 80 N s from its front right after 17 steps and 7.8 s, now the longest catch or fall takes
-// 3.7 s.
+// with joints that move as far as a person's, at 74 N s from its right. Round 28, where a hit across the front of the
+// chest turns the trunk about its long axis, see nbTwistTrunk, fell at 58, 62, 66 and 72 N s from its right and 66 from
+// its left, and with the armature of the neck it falls at 58, 64 and 76 N s from its right and 66 from its left. Round
+// 26 caught those 80 N s from its front right after 17 steps and 7.8 s, now the longest catch or fall takes 4.0 s.
 static int FigureCatchScanTest( void )
 {
 	int caught = 0;
@@ -806,7 +880,7 @@ static uint32_t MuscleCatch( int threadCount, float impulse )
 }
 
 // The throw of 90 N s on a figure with muscles ends in the same bits with one thread and with four, on every platform
-#define NB_EXPECTED_MUSCLE_HASH 0x710dadfeu
+#define NB_EXPECTED_MUSCLE_HASH 0x20072f9du
 
 // The muscles, see nbFigureMotors::muscles and nbUpdateMuscles. A figure with muscles hit while it stands catches itself
 // with the strength the balance asks for at once: every joint of its trunk and its legs at the full torque of the motors,
@@ -1065,6 +1139,70 @@ static int FigureSpreadTest( void )
 	ENSURE( forearm[nb_humanoidForearmRight] > 0.4f && forearm[nb_humanoidPelvis] < 0.1f );
 	ENSURE( shin[nb_humanoidShinLeft] > 0.7f && rightLeg < 0.03f );
 	ENSURE( chest[nb_humanoidChest] > 0.7f );
+	return 0;
+}
+
+// The neck weighs a kilogram between the chest and the head, and at the full stiffness of the motors its two springs
+// turn it so fast that they shake the head, which is why the humanoid pulls its neck at 0.3 of it, see
+// nbMakeHumanoidBones. With the armature of the humanoid on both joints, see nbBoneDef::armature, a figure with its neck
+// at the full stiffness that catches hits of 60 N s from four sides keeps its head calm: its turn against the neck
+// changes by about a radian per second from one step to the next and reverses in a fifth of the steps, and it stands
+// again after every catch. Without the armature the turn changes by over ten times that and reverses in every other
+// step.
+static int FigureNeckTest( void )
+{
+	float jitter[2] = { 0.0f, 0.0f };
+	float flips[2] = { 0.0f, 0.0f };
+	int standing[2] = { 0, 0 };
+	for ( int pass = 0; pass < 2; ++pass )
+	{
+		int steps = 0;
+		for ( int d = 0; d < 4; ++d )
+		{
+			FigureScene scene;
+			CreateFigureScene( &scene, 1 );
+			scene.bones[nb_humanoidNeck].stiffness = 1.0f;
+			scene.bones[nb_humanoidHead].stiffness = 1.0f;
+			if ( pass == 1 )
+			{
+				scene.bones[nb_humanoidNeck].armature = 0.0f;
+				scene.bones[nb_humanoidHead].armature = 0.0f;
+			}
+			nbFigureId figure = AddFigure( &scene, b3Vec3_zero, 0.0f );
+			StepFigures( &scene, 30 );
+			b3Vec3 direction = b3RotateVector( b3MakeQuatFromAxisAngle( b3Vec3_axisY, 0.5f * B3_PI * (float)d ),
+											   (b3Vec3){ 0.0f, 0.0f, -1.0f } );
+			ENSURE( HitChest( figure, 1, b3MulSV( 60.0f, direction ) ) );
+			b3BodyId head = nbFigure_GetBody( figure, nb_humanoidHead );
+			b3BodyId neck = nbFigure_GetBody( figure, nb_humanoidNeck );
+			b3Vec3 last = b3Vec3_zero;
+			for ( int i = 0; i < 600; ++i )
+			{
+				StepFigures( &scene, 1 );
+				if ( nbFigure_GetState( figure ) != nb_figureBalancing )
+				{
+					break;
+				}
+				b3Vec3 turn = b3Sub( b3Body_GetAngularVelocity( head ), b3Body_GetAngularVelocity( neck ) );
+				if ( i > 0 )
+				{
+					jitter[pass] += b3Length( b3Sub( turn, last ) );
+					flips[pass] += b3Dot( turn, last ) < 0.0f && b3Length( turn ) > 0.5f ? 1.0f : 0.0f;
+					steps += 1;
+				}
+				last = turn;
+			}
+			standing[pass] += nbFigure_GetState( figure ) == nb_figureAnimated ? 1 : 0;
+			DestroyFigureScene( &scene );
+		}
+		jitter[pass] /= (float)b3MaxInt( steps, 1 );
+		flips[pass] /= (float)b3MaxInt( steps, 1 );
+	}
+	printf( "  catching 60 N s: the head turns against the neck by %.2f rad/s more or less from one step to the next and "
+			"reverses in %.0f %% of the steps, standing after %d of 4, without the armature %.2f rad/s, %.0f %% and %d of 4\n",
+			jitter[0], 100.0f * flips[0], standing[0], jitter[1], 100.0f * flips[1], standing[1] );
+	ENSURE( jitter[0] < 2.0f && flips[0] < 0.25f && standing[0] == 4 );
+	ENSURE( jitter[1] > 5.0f * jitter[0] && flips[1] > 0.4f );
 	return 0;
 }
 
@@ -2010,20 +2148,23 @@ typedef struct WallThrow
 	float passThrough;
 	bool gained;
 
-	// The most bones that lay inside a part of the wall that stands, in any step
+	// The most bones that lay inside a part of the wall that stands two steps in a row, and the bone steps in which a bone
+	// lay inside it for one step only
 	int bonesInWall;
+	int bonesPressedIn;
 
 	uint32_t hash;
 } WallThrow;
 
 // The bones of a figure that lie inside a static chunk of the wall: the closest point of the chunk is the center itself
-static int BonesInWall( nbFigureId figure, nbDestructibleId wall )
+static int BonesInWall( nbFigureId figure, nbDestructibleId wall, bool* inside )
 {
 	nbChunkId chunks[1024];
 	int chunkCount = nbDestructible_GetChunks( wall, chunks, 1024 );
 	int count = 0;
 	for ( int i = 0; i < nb_humanoidBoneCount; ++i )
 	{
+		inside[i] = false;
 		b3Vec3 center = b3ToVec3( b3Body_GetWorldCenter( nbFigure_GetBody( figure, i ) ) );
 		for ( int c = 0; c < chunkCount; ++c )
 		{
@@ -2034,6 +2175,7 @@ static int BonesInWall( nbFigureId figure, nbDestructibleId wall )
 			b3Vec3 closest = b3Shape_GetClosestPoint( nbChunk_GetShape( chunks[c] ), center );
 			if ( b3Length( b3Sub( closest, center ) ) < 1.0e-4f )
 			{
+				inside[i] = true;
 				count += 1;
 				break;
 			}
@@ -2061,6 +2203,7 @@ static WallThrow ThrowAtWall( int threadCount, bool wood, float thickness, uint3
 
 	WallThrow result = { 0 };
 	float threshold = nbDefaultWorldDef().collisionSpeedThreshold;
+	bool wasInside[nb_humanoidBoneCount] = { false };
 	for ( int step = 0; step < 180; ++step )
 	{
 		b3Vec3 before = FigureMomentum( figure );
@@ -2123,8 +2266,16 @@ static WallThrow ThrowAtWall( int threadCount, bool wood, float thickness, uint3
 		result.mostCollisionsInAStep = collisions > result.mostCollisionsInAStep ? collisions : result.mostCollisionsInAStep;
 		result.sharedSteps += boneCount > 1 && collisions == 1 ? 1 : 0;
 		result.splitSteps += boneCount > 1 && collisions > 1 ? 1 : 0;
-		int inWall = BonesInWall( figure, wall );
-		result.bonesInWall = inWall > result.bonesInWall ? inWall : result.bonesInWall;
+		bool inside[nb_humanoidBoneCount];
+		BonesInWall( figure, wall, inside );
+		int stuck = 0;
+		for ( int i = 0; i < nb_humanoidBoneCount; ++i )
+		{
+			stuck += inside[i] && wasInside[i] ? 1 : 0;
+			result.bonesPressedIn += inside[i] && wasInside[i] == false ? 1 : 0;
+			wasInside[i] = inside[i];
+		}
+		result.bonesInWall = stuck > result.bonesInWall ? stuck : result.bonesInWall;
 	}
 
 	b3Vec3 chest = BonePosition( figure, nb_humanoidChest );
@@ -2157,8 +2308,10 @@ static WallThrow ThrowAtWall( int threadCount, bool wood, float thickness, uint3
 // since the hit spreads along the skeleton, see nbSpreadHit, before up to 56. The thin wall holds against a kick that
 // only knocks the figure down. In every throw the bones that hit the wall in one step make one collision of the figure
 // with the wall, steps with several bones in it come up, the momentum of the figure toward the wall never grows in a
-// step it goes through, and no bone ends up inside the wall that stands. See the roadmap of the game, 26.16 and 26.19
-// C.
+// step it goes through, and no bone stays inside the wall that stands. A bone pressed hard against it may lie with its
+// center past the face for a step before its contact pushes it out: in one throw at concrete side first a hand crushed
+// between the body and the wall at 13 m/s lies 5 mm inside it for a step, since the neck has its armature, see
+// nbMakeHumanoidBones. See the roadmap of the game, 26.16 and 26.19 C.
 static int FigureWallTest( void )
 {
 	typedef struct WallCase
@@ -2186,6 +2339,7 @@ static int FigureWallTest( void )
 		const WallCase* wallCase = cases + c;
 		int through = 0;
 		int shared = 0;
+		int pressed = 0;
 		int mostDebris = 0;
 		for ( uint32_t seed = 1; seed <= 8; ++seed )
 		{
@@ -2193,6 +2347,7 @@ static int FigureWallTest( void )
 				ThrowAtWall( 1, wallCase->wood, wallCase->thickness, seed, wallCase->impulse, wallCase->side );
 			through += result.through ? 1 : 0;
 			shared += result.sharedSteps;
+			pressed += result.bonesPressedIn;
 			mostDebris = result.debrisCount > mostDebris ? result.debrisCount : mostDebris;
 			ENSURE( result.mostCollisionsInAStep <= 1 );
 			ENSURE( result.splitSteps == 0 );
@@ -2202,8 +2357,9 @@ static int FigureWallTest( void )
 			ENSURE( wallCase->maxThrough > 0 || result.passThrough == 0.0f || result.through == false );
 			ENSURE( wallCase->impulse < 500.0f || result.collisionCount >= 1 );
 		}
-		printf( "  %s, %.0f N s: through %d of 8 times, %d steps with several bones in one collision, up to %d pieces\n",
-				wallCase->name, wallCase->impulse, through, shared, mostDebris );
+		printf( "  %s, %.0f N s: through %d of 8 times, %d steps with several bones in one collision, up to %d pieces, %d bones "
+				"pressed into it for a step\n",
+				wallCase->name, wallCase->impulse, through, shared, mostDebris, pressed );
 		ENSURE( wallCase->minThrough <= through && through <= wallCase->maxThrough );
 		ENSURE( mostDebris <= wallCase->maxDebris );
 		sharedSteps += shared;
@@ -2239,7 +2395,8 @@ static int FigureWallDebrisTest( void )
 	{
 		StepFigures( &scene, 1 );
 		steps += 1;
-		ENSURE( BonesInWall( figure, wall ) == 0 );
+		bool inside[nb_humanoidBoneCount];
+		ENSURE( BonesInWall( figure, wall, inside ) == 0 );
 		for ( int i = 0; i < nb_humanoidBoneCount; ++i )
 		{
 			b3ContactData contacts[16];
@@ -2282,14 +2439,15 @@ static int FigureWallDebrisTest( void )
 	StepFigures( &scene, 60 );
 	ENSURE( StandsUpright( &scene, figure ) );
 	ENSURE( BonePosition( figure, nb_humanoidPelvis ).z < -0.3f );
-	ENSURE( BonesInWall( figure, wall ) == 0 );
+	bool inside[nb_humanoidBoneCount];
+	ENSURE( BonesInWall( figure, wall, inside ) == 0 );
 	DestroyFigureScene( &scene );
 	return 0;
 }
 
 // The throw through the wall of boards ends in the same bits with one thread and with four, on every platform, in the
 // fifth fracture pattern, which the figure breaks through
-#define NB_EXPECTED_WALL_HASH 0xfbccda1eu
+#define NB_EXPECTED_WALL_HASH 0x5ecb9dfau
 
 static int FigureWallDeterminismTest( void )
 {
@@ -2349,7 +2507,7 @@ static int ThinBoardTest( void )
 }
 
 // The hash of the figure scenario on every platform, see RunFigureScenario
-#define NB_EXPECTED_FIGURE_HASH 0xb61c750fu
+#define NB_EXPECTED_FIGURE_HASH 0xb87fd5e3u
 
 static int FigureDeterminismTest( void )
 {
@@ -2369,6 +2527,7 @@ int FigureTest( void )
 {
 	RUN_TEST( SpringTorqueLimitTest );
 	RUN_TEST( SwingLimitTest );
+	RUN_TEST( ArmatureTest );
 	RUN_TEST( HumanoidClipTest );
 	RUN_TEST( FigureStandTest );
 	RUN_TEST( FigureFlinchTest );
@@ -2379,6 +2538,7 @@ int FigureTest( void )
 	RUN_TEST( FigureMuscleTest );
 	RUN_TEST( FigureSpreadTest );
 	RUN_TEST( FigureTwistTest );
+	RUN_TEST( FigureNeckTest );
 #if defined( B3_HAS_SWING_LIMITS )
 	RUN_TEST( FigureJointRangeTest );
 #endif

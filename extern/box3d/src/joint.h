@@ -187,6 +187,17 @@ typedef struct b3RevoluteJoint
 	// Added for Nebenan: the most torque of the spring, see b3RevoluteJointDef::maxSpringTorque
 	float maxSpringTorque;
 
+	// Added for Nebenan: the armature, see b3RevoluteJointDef::armature, as a flywheel geared to the turn of body B
+	// against body A about the axis: its rate, the mass that brings that turn to the rate of the flywheel, the last step
+	// it turned in, and whether it takes the rate of the bodies at the next warm start because it did not turn in the
+	// step before
+	float armature;
+	float armatureRate;
+	float armatureMass;
+	uint64_t armatureStep;
+	bool armatureLive;
+	bool armatureReset;
+
 	float maxMotorTorque;
 	float motorSpeed;
 	float targetAngle;
@@ -223,6 +234,17 @@ typedef struct b3SphericalJoint
 
 	// Added for Nebenan: the most torque of the spring, see b3SphericalJointDef::maxSpringTorque
 	float maxSpringTorque;
+
+	// Added for Nebenan: the armature, see b3SphericalJointDef::armature, as a flywheel geared to the turn of body B
+	// against body A: its angular velocity, the mass that brings that turn to the rate of the flywheel, the last step it
+	// turned in, and whether it takes the rate of the bodies at the next warm start because it did not turn in the step
+	// before
+	float armature;
+	b3Vec3 armatureRate;
+	b3Matrix3 armatureMass;
+	uint64_t armatureStep;
+	bool armatureLive;
+	bool armatureReset;
 
 	float maxMotorTorque;
 	b3Vec3 motorVelocity;

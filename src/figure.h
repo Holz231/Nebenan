@@ -51,10 +51,12 @@ typedef struct nbBone
 	float swingInverseTans[4];
 	float swingInside;
 
-	// Scales the torque limit, the stiffness and the damping ratio of the motors for this joint
+	// Scales the torque limit, the stiffness and the damping ratio of the motors for this joint, and the rotational
+	// inertia added to the turn of its bone against its parent, see nbBoneDef::armature
 	float strength;
 	float stiffness;
 	float damping;
+	float armature;
 	float mass;
 
 	// The spring of the joint at strength 1 in cycles per second, from the inertia of the two bones when the figure fell
@@ -403,7 +405,7 @@ b3Quat nbRotationFromAxes( b3Vec3 x, b3Vec3 y );
 
 // A spring in cycles per second for Box3D from a stiffness in newton meters per radian, against the rotational mass of the
 // two bodies about the softest axis of the joint frame of body B, its z axis alone for a hinge
-float nbJointSpringHertz( b3BodyId bodyA, b3BodyId bodyB, b3Quat frameB, bool hingeOnly, float stiffness );
+float nbJointSpringHertz( b3BodyId bodyA, b3BodyId bodyB, b3Quat frameB, bool hingeOnly, float stiffness, float armature );
 
 // How far the ball joint of a bone lets it swing out of its rest direction toward one side, in radians: the swing about an
 // axis in the xy plane of the joint frame, (axisX, axisY) of length 1, within the limit in each of four directions, or the
