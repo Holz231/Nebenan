@@ -169,6 +169,17 @@ der Blick hinter der Figur stehen, hier 0,75 rad, schieben die Hände den Stock 
 abrutscht oder sie fällt, nach 0,67 s und 0,07 s fiel sie. Ein Stock von 5 kg trifft bei 0,07 s mit 5,7 m/s, mit 1 500 N
 in den Händen mit 12 m/s und 49 N s, und beide werfen sie um.
 
+**Figuren wie Gliederpuppen.** Die Demo zeichnet jede Figur wie eine Gliederpuppe, jeden Körperteil in seiner eigenen
+Farbe und Form: den Kopf als Ei auf einem kräftigen Hals, oben die Brust als Block mit flacher Oberseite und runden
+Schultern, darunter Brustkorb und Bauch als Polster, die sich ein wenig überlappen, das Becken als rundes Polster wie
+ein U, aus dem die Oberschenkel kommen, Arme und Beine als Kapseln, die Oberarme mit einer Kappe an der Schulter, und
+Füße wie Schuhe. Arme und Beine sind gezeichnet 1,2-mal so dick wie ihre Kapseln in der Physik, die Formen der Physik
+bleiben, wie sie sind. Ohne **Teile farbig** im Menü ist jede Figur ganz in einer Farbe, wie die Gliederpuppen eines
+Spiels. Damit die runden Teile rund aussehen, verläuft die Farbe über jedes Dreieck, siehe Demo-Renderer. Eine Figur
+hat so rund 8 400 Dreiecke mehr: Die Szene mit acht Figuren zeichnet 94 000 statt 27 000 Dreiecke in 5 statt 2 Draw
+Calls, die Stadt mit 40 Figuren 517 000 statt 180 000 in 25 statt 9. Wie sie steht, kommt aus der Bibliothek, siehe In
+den Knien.
+
 **FPS.** Oben rechts steht immer die echte Bildrate, gemessen über die letzten zwei Sekunden: Bilder pro Sekunde,
 die mittlere Bildzeit und das 1 % Low, also die Rate der langsamsten 1 % der Bilder. Daran sieht man Ruckler. VSync
 ist aus, die Demo zeichnet so viele Bilder, wie der PC schafft. Mit **V** oder `--vsync` bindet sie sich an die
@@ -623,13 +634,13 @@ Pendels vor seinem Schwerpunkt. Liegt dieser Punkt innerhalb der Sohlen, um den 
 (`nbFigureDef::stepZone`), bleibt die Figur stehen und zuckt nur. Sonst geht ihr Körper dorthin und wird dabei
 gleichmäßig langsamer, und ihre Füße treten nach, einer nach dem anderen, zuerst der zur Seite des Stoßes, jeder
 0,3 s in der Luft. Der Fuß, der steht, bleibt stehen, wo er steht, und rutscht nicht. Eine Zwei-Knochen-IK setzt die
-Beine, und das Becken geht so weit hinunter, wie die Beine es brauchen. Der Mensch der Bibliothek steht über seinen
-Knöcheln, 3 cm vor den Fersen und 23 cm hinter den Zehen, darum tritt er nach hinten ab 15 N s, zur Seite ab 21 N s und
-nach vorn ab 31 N s. Ohne Boden am Ziel eines Schritts, mit etwas Festem im Weg oder für einen Stoß, der den Körper
-weiter als `stepReach` (45 cm) trüge, fängt sie sich stattdessen mit dynamischen Knochen, siehe Abfangen nach einem
-harten Treffer. Entschieden wird nur, wenn ein Stoß kommt und
-wenn ein Fuß aufsetzt, so flattert nichts. Während eines Schritts gehen die Beine vor dem Clip, `nbFigure_Move` beendet
-ihn. `nbFigureInfo::stepping` sagt, ob eine Figur gerade tritt, `stepCount` und `nbFigureStats::stepCount` zählen die
+Beine, und das Becken geht so weit hinunter, wie die Beine es brauchen. Beim Menschen der Bibliothek liegt der
+Schwerpunkt 3 cm vor den Knöcheln, 7 cm vor den Fersen und 19 cm hinter den Zehen, darum tritt er nach hinten ab 15 N s,
+zur Seite ab 24 N s und nach vorn ab 27 N s, siehe In den Knien. Ohne Boden am Ziel eines Schritts, mit etwas Festem im
+Weg oder für einen Stoß, der den Körper weiter als `stepReach` (45 cm) trüge, fängt sie sich stattdessen mit dynamischen
+Knochen, siehe Abfangen nach einem harten Treffer. Entschieden wird nur, wenn ein Stoß kommt und wenn ein Fuß aufsetzt,
+so flattert nichts. Während eines Schritts gehen die Beine vor dem Clip, `nbFigure_Move` beendet ihn.
+`nbFigureInfo::stepping` sagt, ob eine Figur gerade tritt, `stepCount` und `nbFigureStats::stepCount` zählen die
 Schritte. Ein Spiel ruft dafür nichts auf, mit `stepReach = 0` zuckt eine Figur nur.
 
 **Abfangen nach einem harten Treffer.** Ein Treffer ab `knockdownImpulse` (Standard 50 N s), eine Explosion, die stark
@@ -649,26 +660,28 @@ wird, 5 cm darüber hinaus, gedreht wie der Standfuß, in Reichweite der Hüfte,
 höher oder tiefer liegt, mit Platz für den Fuß und freiem Weg dorthin, 0,3 s lang und 8 cm hoch. Die ersten 60 % des
 Schritts folgt sein Ziel dem Capture Point. Kommt der Schritt zu kurz, schwingen die Arme aus, siehe unten. Fängt sie
 auch der fünfte Schritt in Folge nicht, kann kein Fuß treten, ließe der beste Schritt den Capture Point bei der Landung
-mehr als 1,1 m draußen, neigt sie sich mehr als 0,6 rad, sinkt ihr Schwerpunkt unter drei Viertel seiner Höhe oder
-berührt 0,3 s kein Fuß den Boden, fällt sie als aktiver Ragdoll, ohne das Gelenk am Becken. Steht sie nach einem langen
-Ausfallschritt 0,3 s auf einem Fuß, während der andere in der Luft hängt, tritt sie mit ihm, sonst stünde sie nie ruhig.
-Eine Last von oben wirft sie ab einem Viertel von `crushForce` um, wie beim Aufstehen. Ruhig auf beiden Füßen, die
-Knochen im Mittel nach ihrer Masse langsamer als 0,15 m/s, den Capture Point zwischen den Füßen und das Becken aufrecht,
-steht sie nach einer halben Sekunde wieder animiert, wo sie steht, ihr Clip blendet in 0,25 s ein, und ihre Füße treten
-mit den Schritten des Ausgleichs unter ihren Körper zurück. Auf die obere Brust getroffen fängt sich der Mensch der
-Bibliothek so von vorn bis 110 N s, von hinten bis 120 N s und von beiden Seiten bis 80 N s, auf 10 N s genau
-abgetastet, und steht nach 0,9 bis 4,2 s wieder animiert. Auf `active-ragdoll-23` waren es von hinten 140 N s, bis
-`active-ragdoll-22` 70, 100 und 60 N s. Darüber fällt er nach höchstens zwei Schritten. Darunter endete bis
-`active-ragdoll-33` ab und zu ein Treffer in langem Stolpern: In der Szene der Tests fielen von 168 Treffern mit 40 bis
-80 N s auf `active-ragdoll-28` fünf und auf `active-ragdoll-33` vier, alle von der Seite quer über die Vorderseite der
-Brust, wo sie den Rumpf am weitesten um seine Längsachse drehen, siehe Drehung um die Längsachse. Auf
-`active-ragdoll-27` fiel einer, auf `active-ragdoll-26` keiner und davor zwei. Seit `active-ragdoll-34` fällt keiner,
-siehe Füße statt Becken. Der längste Fang dauert 3,2 s, auf `active-ragdoll-33` 4,0 s, auf `active-ragdoll-26` fing die
-Figur 80 N s von vorn rechts erst nach 17 Schritten und 7,8 s. Eine Figur, die sich fängt, kostet im Update rund 4,4
-statt 2 µs, und Box3D rechnet ihre dynamischen Knochen mit einem Thread in rund 0,06 statt 0,006 ms pro Schritt.
-`nbFigureInfo::catchCount` und `nbFigureStats::catchCount` zählen, wie oft eine Figur sich fing,
-`nbFigureStats::balancingCount`, wie viele es gerade tun. Ein Spiel ruft dafür nichts auf. Andere Rigs als der Mensch
-der Bibliothek fallen gleich, bei ihnen kennt die Bibliothek die Beine nicht.
+mehr als 1,1 m draußen, neigt sie sich mehr als 0,6 rad, sinkt ihr Schwerpunkt unter drei Viertel seiner Höhe, berührt
+0,3 s kein Fuß den Boden oder kommt sie 8 s lang nicht zur Ruhe, ohne dass etwas sie drückt, fällt sie als aktiver
+Ragdoll, ohne das Gelenk am Becken, siehe Nicht ewig fangen. Steht sie nach einem langen Ausfallschritt 0,3 s auf einem
+Fuß, während der andere in der Luft hängt, tritt sie mit ihm, sonst stünde sie nie ruhig. Eine Last von oben wirft sie
+ab einem Viertel von `crushForce` um, wie beim Aufstehen. Ruhig auf beiden Füßen, die Knochen im Mittel nach ihrer Masse
+langsamer als 0,15 m/s, den Capture Point zwischen den Füßen oder höchstens 3 cm daneben, wo sie noch nicht tritt, und
+das Becken aufrecht, steht sie nach einer halben Sekunde wieder animiert, wo sie steht, ihr Clip blendet in 0,25 s ein,
+und ihre Füße treten mit den Schritten des Ausgleichs unter ihren Körper zurück. Auf die obere Brust getroffen fängt
+sich der Mensch der Bibliothek so von vorn bis 115 N s, von hinten bis 127 N s und von beiden Seiten bis 94 N s, auf
+3 N s genau abgetastet, und steht nach 0,9 bis 4,0 s wieder animiert, siehe In den Knien. Auf 10 N s genau abgetastet
+waren es zuletzt 110, 120 und 80 N s, auf `active-ragdoll-23` von hinten 140 N s, bis `active-ragdoll-22` 70, 100 und
+60 N s. Darüber fällt er nach höchstens zwei Schritten. Darunter endete bis `active-ragdoll-33` ab und zu ein Treffer in
+langem Stolpern: In der Szene der Tests fielen von 168 Treffern mit 40 bis 80 N s auf `active-ragdoll-28` fünf und auf
+`active-ragdoll-33` vier, alle von der Seite quer über die Vorderseite der Brust, wo sie den Rumpf am weitesten um seine
+Längsachse drehen, siehe Drehung um die Längsachse. Auf `active-ragdoll-27` fiel einer, auf `active-ragdoll-26` keiner
+und davor zwei. Seit `active-ragdoll-34` fällt keiner, siehe Füße statt Becken. Der längste Fang dauert 3,1 s, auf
+`active-ragdoll-34` 3,2 s, auf `active-ragdoll-33` 4,0 s, auf `active-ragdoll-26` fing die Figur 80 N s von vorn rechts
+erst nach 17 Schritten und 7,8 s. Eine Figur, die sich fängt, kostet im Update rund 4,4 statt 2 µs, und Box3D rechnet
+ihre dynamischen Knochen mit einem Thread in rund 0,06 statt 0,006 ms pro Schritt. `nbFigureInfo::catchCount` und
+`nbFigureStats::catchCount` zählen, wie oft eine Figur sich fing, `nbFigureStats::balancingCount`, wie viele es gerade
+tun. Ein Spiel ruft dafür nichts auf. Andere Rigs als der Mensch der Bibliothek fallen gleich, bei ihnen kennt die
+Bibliothek die Beine nicht.
 
 **Füße statt Becken.** Seit `active-ragdoll-28` dreht ein Treffer quer über die Vorderseite der Brust den Rumpf um seine
 Längsachse, und bis `active-ragdoll-33` drehte sich die ganze Figur auf ihren Füßen mit: Die Balance nahm ihre Richtung
@@ -704,6 +717,36 @@ brachte den Fuß 15 statt 57 cm weit, bevor er als gelandet galt. Von den leicht
 von 50 bis 89 N s 299 statt 14. Mit einer Landung, die auf den Fuß wartet, fielen noch mehr, mit einer Grenze von
 1,5 m/s für das Tempo des Fußes wählte die Balance die schnellen Schritte kaum noch, und von 90 bis 139 N s fielen 33
 mehr. Siehe „Schrittzeit nach dem Stoß“ in [Optimierungen.md](docs/Optimierungen.md).
+
+**In den Knien.** Der Mensch der Bibliothek steht wie ein Mensch, der bereit ist: ein wenig in den Knien, das Becken
+0,96 statt 0,98 m über den Sohlen, die Füße flach und je 2 cm weiter außen als die Hüften, die Beine wie ein A, der
+Rumpf ein wenig über die Füße geneigt, die Arme etwas vom Körper ab und in den Ellbogen um 17 statt 9° gebeugt. So bauen
+ihn der Clip `nb_clipIdle` mit der IK der Beine und das Ende des Aufstehens. `nbMakeHumanoidBones` gibt die Standhöhe
+von 0,96 m zurück, auf ihr stehen die Clips ohne Bewegung der Wurzel. Ein eigener Clip mit geraden Beinen steht trotzdem
+auf dem Boden, die Füße heben die Wurzel um die 2 cm, siehe Füße auf dem Boden. Der Schwerpunkt liegt so 3 statt 1 cm
+vor den Knöcheln, die Stütze verteilt sich gleichmäßiger über die Sohlen. An den 4 464 Treffern auf Brust und Bauch
+fallen von 50 bis 89 N s 11 statt 14, die Figur fängt sich mit 1,23 statt 1,24 Schritten in 1,63 statt 1,62 s. Von 90
+bis 139 N s fallen 677 statt 798, mit 2,39 statt 2,18 Schritten in 2,06 statt 1,95 s. Auf die obere Brust fängt sie sich
+in Schritten von 3 N s abgetastet von vorn bis 115 statt 112 N s, von rechts bis 94 statt 91, von hinten bis 127 statt
+121 und von links bis 94 statt 88 N s. Von 1 280 Treffern auf Arme, Beine und Kopf fallen 326 statt 362, von den 168
+leichten Treffern weiter keiner. Gemessen in vier Stufen: Die gebeugten Knie allein ließen von 50 bis 89 N s 3 fallen
+und von 90 bis 139 N s 666, mit dem Oberkörper dazu 0 und 645, mit den Füßen je 4 cm weiter außen 24 und 720, mit 2 cm
+11 und 677. Breitere Füße fangen Treffer auf Arme und Beine besser und Treffer auf den Rumpf schlechter. 2 cm stehen
+sichtbar wie ein A und fangen besser als `active-ragdoll-34`. Gepaart gegen `active-ragdoll-34`, sechs Paare mit 4
+Threads und vier mit einem, kostet ein Bild in der Stadt 2 und 4 % mehr, weil dort eine Etage mehr einstürzt: Die
+Figuren fallen anders und stoßen anders an die Trümmer. Die Szenen mit Figuren liegen zwischen 0,88 und 1,14 des
+Vorgängers, im Rauschen der VM, nur bei 10 Figuren hinter brechenden Mauern kostet ein Schritt 1,9-mal so viel, siehe
+Nicht ewig fangen. Ein Spiel ruft dafür nichts auf.
+
+**Nicht ewig fangen.** Mit dem neuen Stand zeigten sich zwei Lücken der Balance, die jede Haltung treffen können. Nach
+97 N s von vorn rechts auf die Brust stand eine Figur ganz still, ihr Capture Point aber 2,8 cm neben den Sohlen,
+gehalten vom Gelenk am Becken: zu wenig für einen Schritt, der erst ab 3 cm kommt, und zu viel, um ruhig zu sein. So
+stand sie, bis die Messung nach 10 s abbrach. Jetzt ist sie bis 3 cm daneben ruhig. Im Benchmark steckte der Fuß einer
+Figur unter einem Brocken der Mauer, und sie trat mit dem anderen alle 0,7 s, solange der Brocken lag: Jeder Schritt
+fing sie, dann drehte sich der freie Fuß unter dem verdrehten Körper weg und verlor den Boden, und sie trat wieder.
+Jetzt fällt eine Figur, die 8 s lang nicht zur Ruhe kommt, ohne dass etwas sie drückt, und steht auf, sobald sie Platz
+dazu hat. Von den 5 744 gemessenen Treffern ändert das nur den einen von 97 N s, von 90 bis 139 N s fallen so 676 statt
+677, der längste Fang dauert 6,3 s. Ein Spiel ruft dafür nichts auf.
 
 **Drücken.** Drückt ein Körper eine stehende Figur langsam, ein Stock, eine Hand oder ein Block, und schiebt er dabei
 einen ihrer Knochen mit mindestens `pushForce` (Standard 40 N) seitlich, bei zwei Prüfungen hintereinander, also ein
@@ -1040,8 +1083,10 @@ wird. Eigene Allokatoren lassen sich mit `nbSetAllocator` einhängen, `nbGetByte
 - Eine volle Seite liegt in einem unveränderlichen Puffer im Grafikspeicher. Entfernte Bruchstücke bleiben darin
   liegen, versteckt über ihren freigegebenen Slot, bis ein Drittel der Seite tot ist. Dann ziehen die übrigen
   Meshes in die offene Seite um. Zerstörung kostet so kaum Uploads.
-- Flache Beleuchtung im Vertex-Shader, der Pixel-Shader schreibt nur die Farbe. Keine Schatten, keine Texturen,
-  keine Partikel, keine Kantenglättung und keine volle Retina-Auflösung, solange man sie nicht einschaltet.
+- Beleuchtung im Vertex-Shader, die Farbe verläuft über das Dreieck, der Pixel-Shader schreibt nur die Farbe.
+  Bruchstücke, deren Flächen eigene Vertices haben, bleiben flach, runde Meshes wie die Figuren sehen rund aus. Keine
+  Schatten, keine Texturen, keine Partikel, keine Kantenglättung und keine volle Retina-Auflösung, solange man sie
+  nicht einschaltet.
 
 ## Benutzung
 
@@ -1456,7 +1501,7 @@ beim Einbinden nicht gebaut.
 
 | Figur (`nbFigureDef`) | Standard | Wirkung |
 | --- | --- | --- |
-| `standHeight` | 0,98 m | Höhe der Wurzel über dem Boden im Stand, `nbMakeHumanoidBones` gibt sie für ihren Menschen zurück |
+| `standHeight` | 0,96 m | Höhe der Wurzel über dem Boden im Stand, ein wenig in den Knien. `nbMakeHumanoidBones` gibt sie für ihren Menschen zurück, Clips ohne Bewegung der Wurzel stehen auf ihr |
 | `knockdownImpulse` | 50 N s | Ab diesem Treffer werden die Knochen einer stehenden Figur dynamisch, und sie fängt sich mit Schritten oder fällt, darunter zuckt sie zurück und tritt nach. Beim Aufstehen fällt sie schon ab einem Viertel |
 | `flinchScale`, `flinchLimit`, `flinchHertz` | 0,008 rad pro N s, 0,5 rad, 2 Hz | Wie weit der Rumpf bei einem schwachen Treffer zurückzuckt und wie schnell er sich wieder aufrichtet. Trifft der Stoß Knochen mit eigener Feder, nur mit dem, was ihr Gelenk weitergibt. Die Grenze gilt auch für jede Feder eines Knochens. Um die Achse die Wirbelsäule hinauf dreht sich der Oberkörper des Menschen der Bibliothek 2,5-mal so weit und so viel schneller zurück, bis zu der Drehung, die seine Wirbelsäule erlaubt, siehe Drehung um die Längsachse |
 | `crushForce` | 600 N | Eine Last von oben ab dieser Kraft wirft eine stehende Figur um, beim Aufstehen und Abfangen ab einem Viertel. Was ihre Knochen beiseiteschieben, zählt nicht |
@@ -2394,7 +2439,9 @@ extern/             Box3D (mit sokol, ergänzt für große Szenen) und Dear ImGu
 ```
 
 Nach Änderungen an `demo/shaders/scene.glsl` die Shader neu erzeugen, im Ordner `demo/shaders`:
-`sokol-shdc --input scene.glsl --output generated/scene.glsl.h --slang hlsl5:metal_macos:glsl430`.
+`sokol-shdc --input scene.glsl --output generated/scene.glsl.h --slang hlsl5:metal_macos:glsl430`. In
+`active-ragdoll-35` ließ sich sokol-shdc auf der VM nicht laden, der Header ist dort von Hand nachgezogen und mit
+glslang und SPIRV-Cross geprüft. Ein Lauf von sokol-shdc schreibt ihn neu.
 
 ## Grenzen
 

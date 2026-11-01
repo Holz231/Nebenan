@@ -485,22 +485,45 @@ static b3Quat nbFlatHand( float side )
 //----------------------------------------------------------------------------------------------------------------------
 // Standing and falling
 
+// How much farther out than the hips the feet of the humanoid stand, in meters for the humanoid of 1.8 m: the legs
+// spread a little, like an A. The wider the stance, the less it catches hits on the trunk: with the feet under the hips,
+// 0 of 1 920 hits on chest and belly of 50 to 89 N s threw it down, with 2 cm 11 and with 4 cm 24, see the roadmap.
+#define NB_STANCE_SPREAD 0.02f
+
+// The legs of the humanoid standing, its feet flat on the ground a little wider apart than its hips
+static void nbStandingLegs( nbPoseMaker* m )
+{
+	float s = m->s;
+	for ( int side = 0; side < 2; ++side )
+	{
+		int thigh = side == 0 ? nb_humanoidThighLeft : nb_humanoidThighRight;
+		b3Vec3 hip = m->bones[thigh].restTransform.p;
+		float out = hip.x > 0.0f ? NB_STANCE_SPREAD * s : -NB_STANCE_SPREAD * s;
+		nbReachLeg( m, side, (b3Vec3){ hip.x + out, 0.06f * s, 0.0f }, nb_z, nbFlatFoot() );
+	}
+}
+
+// The upper body of the humanoid standing: the trunk leaning a little forward over the feet, the arms hanging a little
+// away from the body and bent at the elbows, and a breath that lifts the chest and the arms
+static void nbStandingUpperBody( nbPoseMaker* m, float breath )
+{
+	nbTurnPair( m, nb_humanoidUpperArmLeft, nb_humanoidUpperArmRight, nb_x, 0.1f );
+	nbTurnPair( m, nb_humanoidUpperArmLeft, nb_humanoidUpperArmRight, nb_z, 0.08f + 0.02f * breath );
+	nbTurnPair( m, nb_humanoidForearmLeft, nb_humanoidForearmRight, nb_x, 0.3f + 0.04f * breath );
+	nbTurn( m, nb_humanoidBelly, nb_x, 0.04f );
+	nbTurn( m, nb_humanoidRibs, nb_x, 0.02f );
+	nbTurn( m, nb_humanoidChest, nb_x, -0.01f - 0.03f * breath );
+	nbTurn( m, nb_humanoidHead, nb_x, -0.02f + 0.02f * breath );
+}
+
 static void nbMakeIdle( nbPoseMaker* m, float standHeight )
 {
-	// Soft knees, the arms hanging a little bent, and a breath that lifts the chest and the arms
+	// Ready and at ease, like a person who stands: a little in the knees, as low as the stand height has it
 	for ( int k = 0; k < 3; ++k )
 	{
 		nbResetPose( m, standHeight );
-		float breath = k == 1 ? 1.0f : 0.0f;
-		nbTurnPair( m, nb_humanoidThighLeft, nb_humanoidThighRight, nb_x, 0.06f );
-		nbTurnPair( m, nb_humanoidShinLeft, nb_humanoidShinRight, nb_x, -0.1f );
-		nbTurnPair( m, nb_humanoidFootLeft, nb_humanoidFootRight, nb_x, 0.04f );
-		nbTurnPair( m, nb_humanoidUpperArmLeft, nb_humanoidUpperArmRight, nb_x, 0.06f );
-		nbTurnPair( m, nb_humanoidUpperArmLeft, nb_humanoidUpperArmRight, nb_z, 0.02f * breath );
-		nbTurnPair( m, nb_humanoidForearmLeft, nb_humanoidForearmRight, nb_x, 0.15f + 0.04f * breath );
-		nbTurn( m, nb_humanoidBelly, nb_x, 0.02f );
-		nbTurn( m, nb_humanoidChest, nb_x, -0.01f - 0.03f * breath );
-		nbTurn( m, nb_humanoidHead, nb_x, 0.03f + 0.02f * breath );
+		nbStandingLegs( m );
+		nbStandingUpperBody( m, k == 1 ? 1.0f : 0.0f );
 		nbAddPose( m, 2.0f * (float)k );
 	}
 }
@@ -695,11 +718,11 @@ static void nbMakeGetUpFront( nbPoseMaker* m, b3Vec3 offset, float start, float 
 	nbTurnPair( m, nb_humanoidForearmLeft, nb_humanoidForearmRight, nb_x, 0.6f );
 	nbAddPose( m, start + 2.0f );
 
-	// The left foot over the point ahead where it goes down, flat
+	// The left foot over the point ahead where it goes down, flat, as far out as it stands
 	nbForward( m );
 	b3Vec3 leftHip = m->world[nb_humanoidThighLeft].p;
 	float footHeight = 0.06f * s;
-	b3Vec3 leftFoot = { leftHip.x, footHeight, leftHip.z + 0.42f * s };
+	b3Vec3 leftFoot = { leftHip.x + NB_STANCE_SPREAD * s, footHeight, leftHip.z + 0.42f * s };
 	nbResetPose( m, 0.0f );
 	nbPlaceHips( m, hips, nbLying( 0.05f, 0.0f ) );
 	nbTurnSpine( m, nb_z, 0.06f );
@@ -772,8 +795,7 @@ static void nbMakeGetUpFront( nbPoseMaker* m, b3Vec3 offset, float start, float 
 	nbForward( m );
 	nbReachLeg( m, 0, leftFoot, ahead, nbFlatFoot() );
 	nbReachLeg( m, 1, rightFoot, ahead, nbFlatFoot() );
-	nbTurnPair( m, nb_humanoidUpperArmLeft, nb_humanoidUpperArmRight, nb_x, 0.06f );
-	nbTurnPair( m, nb_humanoidForearmLeft, nb_humanoidForearmRight, nb_x, 0.15f );
+	nbStandingUpperBody( m, 0.0f );
 	nbAddPose( m, start + 3.95f );
 }
 

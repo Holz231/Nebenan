@@ -19,6 +19,20 @@ enum RenderMaterial
 	MaterialPlaster = 4,
 	MaterialGround = 8,
 	MaterialSteel = 9,
+
+	// The colors of the figures
+	MaterialFigureSkin = 10,
+	MaterialFigureBrown = 11,
+	MaterialFigureRed = 12,
+	MaterialFigureOrange = 13,
+	MaterialFigureYellow = 14,
+	MaterialFigurePink = 15,
+	MaterialFigureGreen = 16,
+	MaterialFigureTeal = 17,
+	MaterialFigureLime = 18,
+	MaterialFigureBlue = 19,
+	MaterialFigureViolet = 20,
+	MaterialFigureDark = 21,
 };
 
 // 20 byte vertex: position, normal with the material in w, transform slot

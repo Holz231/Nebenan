@@ -518,6 +518,11 @@ struct App
 	bool showFigureTargets = false;
 	bool figureMuscles = false;
 
+	// Every part of the body of a figure in its own color, or each figure in one. The menu asks for the figures to be
+	// drawn again, and the next frame does it before the steps start.
+	bool figurePartColors = true;
+	bool rebuildFigures = false;
+
 	// The collisions of figures with walls the library reported, see nbEvents::collisions, and the last of them
 	int figureCollisions = 0;
 	int figureBreakThroughs = 0;
@@ -847,11 +852,11 @@ static void BuildBallMesh( App& app, float radius )
 //----------------------------------------------------------------------------------------------------------------------
 // Figures
 
-// A capsule from one point to the other with smooth normals: a half sphere at each end and the tube between them
-static void AppendCapsule( App& app, b3Vec3 start, b3Vec3 end, float radius, int material, int slot )
+// A capsule from one point to the other with smooth normals: a half sphere at each end and the tube between them, a
+// sphere when both ends meet. Sides around and rings over each half sphere.
+static void AppendCapsule( App& app, b3Vec3 start, b3Vec3 end, float radius, int material, int slot, int sides = 16,
+						   int rings = 5 )
 {
-	const int sides = 14;
-	const int rings = 4;
 	b3Vec3 axis = b3Sub( end, start );
 	float length = b3Length( axis );
 	b3Vec3 y = length > 1.0e-6f ? b3MulSV( 1.0f / length, axis ) : b3Vec3_axisY;
@@ -888,80 +893,344 @@ static void AppendCapsule( App& app, b3Vec3 start, b3Vec3 end, float radius, int
 	}
 }
 
-// The faces of a convex hull, flat, each as a fan
-static void AppendHull( App& app, const b3HullData* hull, int material, int slot )
+// How a rounded box changes along its y axis, see AppendRoundedBox: the scale of its width across x and of its depth
+// across z at its lowest and at its highest y, and in its middle, where a negative scale means halfway between. The
+// scale runs as a curve of the second degree through the three.
+struct Taper
 {
-	const b3Vec3* points = b3GetHullPoints( hull );
-	const b3HullHalfEdge* edges = b3GetHullEdges( hull );
-	const b3HullFace* faces = b3GetHullFaces( hull );
-	const b3Plane* planes = b3GetHullPlanes( hull );
-	for ( int f = 0; f < hull->faceCount; ++f )
-	{
-		uint16_t first = (uint16_t)app.vertexScratch.size();
-		int edge = faces[f].edge;
-		int count = 0;
-		do
-		{
-			app.vertexScratch.push_back( Renderer::MakeVertex( points[edges[edge].origin], planes[f].normal, material, slot ) );
-			edge = edges[edge].next;
-			count += 1;
-		} while ( edge != faces[f].edge && count < B3_MAX_HULL_VERTICES );
+	float lowX = 1.0f;
+	float highX = 1.0f;
+	float lowZ = 1.0f;
+	float highZ = 1.0f;
+	float midX = -1.0f;
+	float midZ = -1.0f;
+};
 
-		for ( int k = 1; k + 1 < count; ++k )
+// A scale of a taper at a share of the height and how fast it changes per share
+static float TaperScale( float low, float mid, float high, float t, float* slope )
+{
+	// The control point of the curve that passes through the scale in the middle
+	float control = mid < 0.0f ? 0.5f * ( low + high ) : 2.0f * mid - 0.5f * ( low + high );
+	*slope = 2.0f * ( control - low ) * ( 1.0f - t ) + 2.0f * ( high - control ) * t;
+	return low * ( 1.0f - t ) * ( 1.0f - t ) + 2.0f * control * t * ( 1.0f - t ) + high * t * t;
+}
+
+// A box around a center with its edges and corners rounded by the radius, smooth, as nb_roundedBoxBone has it: the
+// faces of a box smaller by the radius on every side pushed out by the radius, cylinders along its edges and spheres at
+// its corners. Each of the six faces is a grid that reaches halfway round its edges and corners, where it meets the
+// grid of the next face, in steps of even angles, so the normals turn smoothly from one face to the next. A taper
+// narrows the box along y, like a limb toward its end.
+static void AppendRoundedBox( App& app, b3Vec3 center, b3Vec3 halfExtents, float radius, int material, int slot, int steps = 3,
+							  Taper taper = Taper() )
+{
+	const int maxSteps = 4;
+	steps = steps < 1 ? 1 : ( steps > maxSteps ? maxSteps : steps );
+	const int count = 2 * ( steps + 1 );
+	float h[3] = { halfExtents.x, halfExtents.y, halfExtents.z };
+	float r = b3ClampFloat( radius, 1.0e-4f, 0.95f * b3MinFloat( h[0], b3MinFloat( h[1], h[2] ) ) );
+	float core[3] = { h[0] - r, h[1] - r, h[2] - r };
+	float c[3] = { center.x, center.y, center.z };
+
+	// Along each axis: the flat part of the face and on either side of it the round out to 45 degrees, at the reach
+	// over the radius that turns the normal by each step
+	float grid[3][2 * ( maxSteps + 1 )];
+	for ( int a = 0; a < 3; ++a )
+	{
+		for ( int k = 0; k <= steps; ++k )
 		{
-			uint16_t triangle[3] = { first, (uint16_t)( first + k ), (uint16_t)( first + k + 1 ) };
-			app.indexScratch.insert( app.indexScratch.end(), triangle, triangle + 3 );
+			float reach = core[a] + r * tanf( 0.25f * B3_PI * (float)k / (float)steps );
+			grid[a][steps - k] = -reach;
+			grid[a][steps + 1 + k] = reach;
+		}
+	}
+
+	for ( int a = 0; a < 3; ++a )
+	{
+		int u = ( a + 1 ) % 3;
+		int v = ( a + 2 ) % 3;
+		for ( int side = 0; side < 2; ++side )
+		{
+			// A point on the box grown by the radius goes to the nearest point of the inner box and out from it by the
+			// radius. Both faces at an edge compute the points they share the same way.
+			uint16_t first = (uint16_t)app.vertexScratch.size();
+			for ( int i = 0; i < count; ++i )
+			{
+				for ( int j = 0; j < count; ++j )
+				{
+					float g[3];
+					g[a] = side == 0 ? grid[a][0] : grid[a][count - 1];
+					g[u] = grid[u][i];
+					g[v] = grid[v][j];
+					float inner[3];
+					for ( int k = 0; k < 3; ++k )
+					{
+						inner[k] = b3ClampFloat( g[k], -core[k], core[k] );
+					}
+					b3Vec3 normal = b3Normalize( { g[0] - inner[0], g[1] - inner[1], g[2] - inner[2] } );
+					b3Vec3 p = b3MulAdd( { inner[0], inner[1], inner[2] }, r, normal );
+
+					// Shaped by the taper, the normal turned by the inverse transpose of the shaping
+					float t = ( p.y + h[1] ) / ( 2.0f * h[1] );
+					float dx, dz;
+					float sx = TaperScale( taper.lowX, taper.midX, taper.highX, t, &dx );
+					float sz = TaperScale( taper.lowZ, taper.midZ, taper.highZ, t, &dz );
+					dx /= 2.0f * h[1];
+					dz /= 2.0f * h[1];
+					b3Vec3 turned = { normal.x / sx, normal.y - dx * p.x / sx * normal.x - dz * p.z / sz * normal.z,
+									  normal.z / sz };
+					b3Vec3 position = { c[0] + sx * p.x, c[1] + p.y, c[2] + sz * p.z };
+					app.vertexScratch.push_back( Renderer::MakeVertex( position, b3Normalize( turned ), material, slot ) );
+				}
+			}
+
+			// Counterclockwise seen from outside: u, v and the outward axis turn like x, y and z
+			for ( int i = 0; i + 1 < count; ++i )
+			{
+				for ( int j = 0; j + 1 < count; ++j )
+				{
+					uint16_t q00 = (uint16_t)( first + i * count + j );
+					uint16_t q10 = (uint16_t)( q00 + count );
+					uint16_t q01 = (uint16_t)( q00 + 1 );
+					uint16_t q11 = (uint16_t)( q10 + 1 );
+					uint16_t outward[6] = { q00, q10, q11, q00, q11, q01 };
+					uint16_t inward[6] = { q00, q11, q10, q00, q01, q11 };
+					const uint16_t* triangles = side == 1 ? outward : inward;
+					app.indexScratch.insert( app.indexScratch.end(), triangles, triangles + 6 );
+				}
+			}
 		}
 	}
 }
 
-// Every bone of a figure as the physics has it, capsules round and boxes as their hulls, on a slot on the body of the bone,
-// so the poses of the frames move it. The head gets a dark band across the face, so it shows where the figure looks.
+// The color of every bone of the humanoid of the library, each part of the body in its own, see scene.glsl
+static const int s_boneMaterials[nb_humanoidBoneCount] = {
+	MaterialFigurePink, MaterialFigureYellow, MaterialFigureOrange, MaterialFigureRed,	  MaterialFigureBrown,
+	MaterialFigureSkin, MaterialFigureGreen,  MaterialFigureTeal,	MaterialFigureLime,	  MaterialFigureGreen,
+	MaterialFigureTeal, MaterialFigureLime,	  MaterialFigureBlue,	MaterialFigureViolet, MaterialFigureDark,
+	MaterialFigureBlue, MaterialFigureViolet, MaterialFigureDark,
+};
+
+// The colors of whole figures, one after the other, when a figure has one color like a mannequin of a game
+static const int s_figureMaterials[] = { MaterialFigureRed,	 MaterialFigureTeal, MaterialFigureYellow, MaterialFigureLime,
+										 MaterialFigureBlue, MaterialFigurePink, MaterialFigureOrange, MaterialFigureViolet };
+
+// A limb of the humanoid as a box with rounded edges along its local y axis, from one joint to the next and reaching on
+// past a joint by a share of its radius into the wider bone it meets there, so a bent joint shows no gap. The radius is
+// that of the box, its thickness across its x axis and the round of its edges are shares of it. The taper narrows it from
+// the joint near the body, at its lowest y, to the far one.
+static void AppendLimb( App& app, const nbBoneDef& bone, float radius, float before, float after, float thickness, float round,
+						Taper taper, int material, int slot )
+{
+	float low = bone.start.y - bone.radius - before * radius;
+	float high = bone.end.y + bone.radius + after * radius;
+	b3Vec3 center = { bone.start.x, 0.5f * ( low + high ), bone.start.z };
+	b3Vec3 half = { thickness * radius, 0.5f * ( high - low ), radius };
+	AppendRoundedBox( app, center, half, round * b3MinFloat( half.x, half.z ), material, slot, radius > 0.05f ? 3 : 2, taper );
+}
+
+// A bone of the humanoid of the library like the mannequin of a game: rounded boxes, chunkier than the shapes the
+// physics has, as a game draws a body over its ragdoll. The limbs are a fifth thicker than their capsules, so a limb
+// on the ground sinks about a centimeter into it, the head up to two. The trunk is five parts of their own shape, the
+// chest drawn as two with a crease between them: on top a block as wide as the shoulders with a flat top, below it the
+// ribs and the belly as cushions that overlap a little, narrower down to the waist, and the pelvis as a large cushion,
+// wider again at the hips and round like a U below. The limbs narrow from the body out, thighs and calves the most. The
+// shoulders have round caps, the hands are flat like mittens, the feet are shoes wider than the shins, and the head is
+// a large egg on a short, thick neck, with two small round eyes that show where the figure looks.
+static void AppendFigurePart( App& app, int index, const nbBoneDef& bone, int material, int slot )
+{
+	const float limb = 1.2f;
+	if ( bone.shape == nb_boxBone )
+	{
+		// A shoe, wider than the shin above it, its toes a little rounder
+		b3Vec3 h = { 1.5f * bone.halfExtents.x, bone.halfExtents.y, bone.halfExtents.z };
+		AppendRoundedBox( app, bone.center, h, 0.5f * b3MinFloat( h.x, b3MinFloat( h.y, h.z ) ), material, slot, 2 );
+		return;
+	}
+	if ( bone.shape == nb_roundedBoxBone )
+	{
+		// Widths and depths after those of the chest, each part narrower toward the waist from above and below
+		const nbBoneDef& chest = app.figureBones[nb_humanoidChest];
+		float w = chest.halfExtents.x;
+		float d = chest.halfExtents.z;
+		b3Vec3 c = bone.center;
+		b3Vec3 h = bone.halfExtents;
+		switch ( index )
+		{
+			case nb_humanoidChest:
+			{
+				// Two parts with a crease between them. The upper one is the broadest block of the trunk, taller and deeper
+				// than the cushions below it: its top flat and as wide as the shoulders, the neck coming out of its middle and
+				// the caps of the shoulders at its upper corners, its front bulging like the muscles of the chest.
+				float split = c.y - 0.2f * h.y;
+				float top = c.y + h.y;
+				float bottom = c.y - h.y;
+				AppendRoundedBox( app, { c.x, 0.5f * ( split + top ), c.z + 0.05f * d },
+								  { 1.02f * w, 0.5f * ( top - split ), 1.05f * d }, 0.75f * bone.radius, material, slot, 3,
+								  { 0.95f, 0.97f, 0.92f, 0.9f, 1.0f, 1.02f } );
+				AppendRoundedBox( app, { c.x, 0.5f * ( bottom + split + 0.06f * h.y ) - 0.1f * h.y, c.z },
+								  { 0.95f * w, 0.5f * ( split + 0.06f * h.y - bottom ) + 0.1f * h.y, 0.95f * d },
+								  0.75f * bone.radius, material, slot, 3, { 0.94f, 1.0f, 0.96f, 1.0f } );
+				return;
+			}
+
+			case nb_humanoidRibs:
+				// Round like cushions and taller than the physics has them, so they overlap a little and meet in a crease
+				// with no gap
+				AppendRoundedBox( app, c, { 0.895f * w, 1.3f * h.y, 0.9f * d }, 0.85f * bone.radius, material, slot, 3,
+								  { 0.95f, 1.0f, 0.96f, 1.0f } );
+				return;
+
+			case nb_humanoidBelly:
+				AppendRoundedBox( app, c, { 0.85f * w, 1.3f * h.y, 0.86f * d }, 0.85f * bone.radius, material, slot, 3,
+								  { 0.97f, 1.0f, 0.97f, 1.0f } );
+				return;
+
+			case nb_humanoidPelvis:
+				// A large cushion under the belly, as wide as it at the top and a little wider in the middle, its bottom
+				// round like a U, the thighs coming out from under it, its back round over the seat
+				AppendRoundedBox( app, { c.x, c.y - 0.12f * h.y, c.z }, { 0.9f * w, 1.12f * h.y, 0.94f * d }, 0.95f * h.y,
+								  material, slot, 3, { 0.9f, 0.96f, 0.92f, 0.95f, 1.0f, 1.0f } );
+				return;
+
+			default:
+				AppendRoundedBox( app, c, h, bone.radius, material, slot );
+				return;
+		}
+	}
+
+	float r = limb * bone.radius;
+	switch ( index )
+	{
+		case nb_humanoidHead:
+		{
+			// Large, taller than wide and deep like an egg, its sides and face flat, its crown round and its chin
+			// narrower, about half as wide as the shoulders, a little ahead of the neck so the neck shows under the back
+			// of the head
+			float capsule = bone.radius;
+			b3Vec3 c = { bone.start.x, 0.5f * ( bone.start.y + bone.end.y ) + 0.15f * capsule, bone.start.z + 0.12f * capsule };
+			b3Vec3 h = { 1.2f * capsule, 1.5f * capsule, 1.3f * capsule };
+			float round = 0.9f * h.x;
+			Taper egg = { 0.84f, 0.97f, 0.9f, 0.97f, 1.0f, 1.0f };
+			AppendRoundedBox( app, c, h, round, material, slot, 4, egg );
+
+			// Two small round eyes standing out of the face, in its color
+			b3Vec3 core = { h.x - round, h.y - round, h.z - round };
+			for ( int side = -1; side <= 1; side += 2 )
+			{
+				float x = 0.3f * h.x * (float)side;
+				float y = 0.12f * h.y;
+				float dx = b3MaxFloat( fabsf( x ) - core.x, 0.0f );
+				float dy = b3MaxFloat( fabsf( y ) - core.y, 0.0f );
+				float z = core.z + sqrtf( b3MaxFloat( round * round - dx * dx - dy * dy, 0.0f ) ) - 0.03f * capsule;
+				float t = ( y + h.y ) / ( 2.0f * h.y );
+				float slope;
+				float sx = TaperScale( egg.lowX, egg.midX, egg.highX, t, &slope );
+				float sz = TaperScale( egg.lowZ, egg.midZ, egg.highZ, t, &slope );
+				b3Vec3 eye = { c.x + sx * x, c.y + y, c.z + sz * z };
+				AppendCapsule( app, eye, eye, 0.14f * capsule, material, slot, 10, 3 );
+			}
+			return;
+		}
+
+		case nb_humanoidNeck:
+			AppendLimb( app, bone, 1.1f * bone.radius, 0.4f, 0.2f, 1.0f, 0.6f, { 1.08f, 1.0f, 1.0f, 1.0f }, material, slot );
+			return;
+
+		case nb_humanoidUpperArmLeft:
+		case nb_humanoidUpperArmRight:
+			AppendLimb( app, bone, r, -0.2f, 0.4f, 1.0f, 0.55f, { 1.0f, 0.94f, 1.0f, 0.92f }, material, slot );
+			{
+				// The cap of the shoulder, a little taller than wide, its top as high as the joint is over the arm
+				b3Vec3 cap = { 1.15f * r, 1.3f * r, 1.15f * r };
+				AppendRoundedBox( app, { bone.start.x, bone.start.y - bone.radius + 0.25f * r, bone.start.z }, cap, 0.95f * cap.x,
+								  material, slot, 3 );
+			}
+			return;
+
+		case nb_humanoidForearmLeft:
+		case nb_humanoidForearmRight:
+			AppendLimb( app, bone, r, 0.4f, 0.1f, 1.0f, 0.55f, { 0.98f, 0.78f, 0.98f, 0.8f }, material, slot );
+			return;
+
+		case nb_humanoidHandLeft:
+		case nb_humanoidHandRight:
+			AppendLimb( app, bone, r, 0.3f, 0.0f, 0.65f, 0.6f, { 0.85f, 1.05f, 0.9f, 0.95f }, material, slot );
+			return;
+
+		case nb_humanoidThighLeft:
+		case nb_humanoidThighRight:
+			AppendLimb( app, bone, r, 0.4f, 0.4f, 1.0f, 0.5f, { 1.08f, 0.9f, 1.06f, 0.9f }, material, slot );
+			return;
+
+		case nb_humanoidShinLeft:
+		case nb_humanoidShinRight:
+			AppendLimb( app, bone, r, 0.4f, 0.0f, 1.0f, 0.5f, { 1.0f, 0.84f, 1.04f, 0.86f }, material, slot );
+			return;
+
+		default:
+			AppendCapsule( app, bone.start, bone.end, bone.radius, material, slot );
+			return;
+	}
+}
+
+// The meshes of the bones of a figure, each on a new slot on the body of its bone, so the poses of the frames move it.
+// Each part of the body in its own color, or the whole figure in one after its place in the list of figures.
+static void BuildFigureMeshes( App& app, FigureVisual& visual, int figure )
+{
+	int count = (int)sizeof( s_figureMaterials ) / (int)sizeof( s_figureMaterials[0] );
+	for ( size_t i = 0; i < visual.bodies.size(); ++i )
+	{
+		int bone = (int)i;
+		int material = MaterialPlaster;
+		if ( app.figurePartColors == false )
+		{
+			material = s_figureMaterials[figure % count];
+		}
+		else if ( bone < nb_humanoidBoneCount )
+		{
+			material = s_boneMaterials[bone];
+		}
+		int slot = app.renderer.AllocSlot();
+		app.vertexScratch.clear();
+		app.indexScratch.clear();
+		AppendFigurePart( app, bone, app.figureBones[bone], material, slot );
+		visual.slots[i] = slot;
+		visual.meshes[i] = app.renderer.AddMesh( app.vertexScratch.data(), (int)app.vertexScratch.size(), app.indexScratch.data(),
+												 (int)app.indexScratch.size(), slot );
+		AttachSlot( app, visual.bodies[i], slot );
+	}
+}
+
 static void AddFigureVisual( App& app, nbFigureId id )
 {
 	FigureVisual visual;
 	visual.id = id;
-	for ( int i = 0; i < nbFigure_GetBoneCount( id ); ++i )
+	int boneCount = nbFigure_GetBoneCount( id );
+	for ( int i = 0; i < boneCount; ++i )
 	{
-		const nbBoneDef& bone = app.figureBones[i];
-		int slot = app.renderer.AllocSlot();
-		app.vertexScratch.clear();
-		app.indexScratch.clear();
-		if ( bone.shape == nb_capsuleBone )
-		{
-			AppendCapsule( app, bone.start, bone.end, bone.radius, MaterialPlaster, slot );
-		}
-		else if ( bone.shape == nb_boxBone )
-		{
-			b3BoxHull box = b3MakeOffsetBoxHull( bone.halfExtents.x, bone.halfExtents.y, bone.halfExtents.z, bone.center );
-			AppendHull( app, &box.base, MaterialPlaster, slot );
-		}
-		else
-		{
-			b3HullData* hull = nbCreateBoneHull( &bone );
-			if ( hull != nullptr )
-			{
-				AppendHull( app, hull, MaterialPlaster, slot );
-				b3DestroyHull( hull );
-			}
-		}
-		if ( i == nb_humanoidHead )
-		{
-			b3Vec3 eyes = b3MulAdd( bone.end, 0.85f * bone.radius, b3Vec3_axisZ );
-			b3BoxHull band = b3MakeOffsetBoxHull( 0.6f * bone.radius, 0.16f * bone.radius, 0.2f * bone.radius, eyes );
-			AppendHull( app, &band.base, MaterialSteel, slot );
-		}
-
-		int mesh = app.renderer.AddMesh( app.vertexScratch.data(), (int)app.vertexScratch.size(), app.indexScratch.data(),
-										 (int)app.indexScratch.size(), slot );
-		b3BodyId body = nbFigure_GetBody( id, i );
-		visual.bodies.push_back( body );
-		visual.slots.push_back( slot );
-		visual.meshes.push_back( mesh );
-		AttachSlot( app, body, slot );
+		visual.bodies.push_back( nbFigure_GetBody( id, i ) );
 	}
+	visual.slots.resize( visual.bodies.size(), -1 );
+	visual.meshes.resize( visual.bodies.size(), -1 );
 	visual.targets.resize( visual.bodies.size() );
+	BuildFigureMeshes( app, visual, (int)app.figures.size() );
 	app.figures.push_back( visual );
+}
+
+// The figures drawn again in the colors the menu chose, where they are now
+static void RebuildFigureVisuals( App& app )
+{
+	for ( size_t f = 0; f < app.figures.size(); ++f )
+	{
+		FigureVisual& visual = app.figures[f];
+		for ( size_t i = 0; i < visual.bodies.size(); ++i )
+		{
+			DetachSlot( app, visual.bodies[i], visual.slots[i] );
+			app.renderer.RemoveMesh( visual.meshes[i] );
+			app.renderer.FreeSlot( visual.slots[i] );
+		}
+		BuildFigureMeshes( app, visual, (int)f );
+	}
 }
 
 //----------------------------------------------------------------------------------------------------------------------
@@ -2340,6 +2609,16 @@ static void DrawUi( App& app )
 							   "zieht umso schwächer, je schneller er sich dreht, gegen seine Richtung\ngedreht bis 1,5-mal so stark. "
 							   "Lädt die Szene neu. Gemessen fängt sich die Figur\ndamit gleich oft, ihr Rumpf ruckt bei harten "
 							   "Treffern auf den Bauch weniger, auf die\nBrust mehr. Zum Vergleich mit dem Auge an- und ausschalten." );
+		}
+		if ( ImGui::Checkbox( "Teile farbig", &app.figurePartColors ) )
+		{
+			app.rebuildFigures = true;
+		}
+		if ( ImGui::IsItemHovered() )
+		{
+			ImGui::SetTooltip(
+				"An: jeder Körperteil einer Figur in seiner eigenen Farbe. Aus: jede Figur ganz in einer\nFarbe, wie die "
+				"Gliederpuppen eines Spiels." );
 		}
 	}
 
@@ -4139,6 +4418,13 @@ static void OnFrame()
 		graphicsTicks = b3GetTicks();
 		ApplyPhysics( app );
 		graphicsTime = b3GetMilliseconds( graphicsTicks );
+	}
+
+	// New colors for the figures from the menu, here where no step runs that could move their bodies
+	if ( app.rebuildFigures )
+	{
+		app.rebuildFigures = false;
+		RebuildFigureVisuals( app );
 	}
 
 	// During the comparison the camera stays, it decides what is drawn

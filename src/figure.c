@@ -253,7 +253,7 @@ nbFigureDef nbDefaultFigureDef( void )
 {
 	nbFigureDef def = { 0 };
 	def.position = b3ToPos( b3Vec3_zero );
-	def.standHeight = 0.98f;
+	def.standHeight = NB_HUMANOID_STAND;
 	def.motors = nbDefaultFigureMotors();
 	def.knockdownImpulse = 50.0f;
 	def.flinchScale = 0.008f;
@@ -350,9 +350,6 @@ static void nbMirrorLimits( nbBoneDef* def )
 // less than half of that. The solver likes mass ratios below 30 to 1 between joined bodies.
 #define NB_HUMANOID_MASS 74.0f
 #define NB_HUMANOID_HEIGHT 1.8f
-
-// The height of the pelvis origin over the soles of the humanoid of 1.8 m, see nbMakeHumanoidBones
-#define NB_HUMANOID_STAND 0.98f
 
 float nbMakeHumanoidBones( float height, float mass, nbBoneDef* bones, int capacity )
 {
@@ -531,7 +528,8 @@ float nbMakeHumanoidBones( float height, float mass, nbBoneDef* bones, int capac
 		bones[i].maxSpeed = NB_TRUNK_SPEED;
 	}
 
-	// Hip 3 cm under the pelvis origin, thigh, shin and the sole 6 cm under the ankle
+	// Hip 3 cm under the pelvis origin, thigh, shin and the sole 6 cm under the ankle make 98 cm with straight legs, and
+	// it stands in the knees, see nbMakeIdle
 	return NB_HUMANOID_STAND * s;
 }
 

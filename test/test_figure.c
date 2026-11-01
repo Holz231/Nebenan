@@ -346,7 +346,7 @@ static int HumanoidClipTest( void )
 {
 	nbBoneDef bones[nb_humanoidBoneCount];
 	float stand = nbMakeHumanoidBones( 1.8f, 74.0f, bones, nb_humanoidBoneCount );
-	ENSURE_SMALL( stand - 0.98f, 1.0e-6f );
+	ENSURE_SMALL( stand - 0.96f, 1.0e-6f );
 	static nbKeyframe keyframes[NB_HUMANOID_CLIP_KEYFRAMES];
 	static b3Quat rotations[NB_HUMANOID_CLIP_KEYFRAMES * nb_humanoidBoneCount];
 	for ( int which = 0; which < nb_figureClipCount; ++which )
@@ -960,7 +960,7 @@ static uint32_t MuscleCatch( int threadCount, float impulse )
 }
 
 // The throw of 90 N s on a figure with muscles ends in the same bits with one thread and with four, on every platform
-#define NB_EXPECTED_MUSCLE_HASH 0xf4d59ebdu
+#define NB_EXPECTED_MUSCLE_HASH 0x145e069eu
 
 // The muscles, see nbFigureMotors::muscles and nbUpdateMuscles. A figure with muscles hit while it stands catches itself
 // with the strength the balance asks for at once: every joint of its trunk and its legs at the full torque of the motors,
@@ -1108,11 +1108,13 @@ static float JointPastLimits( nbFigureId figure, int bone )
 }
 
 // The joints of the humanoid move as far as a person's, see nbMakeHumanoidBones. A hit of 90 N s from behind on the
-// right forearm swings the arm up past the head, 162 degrees, a hit from the front swings it back 51 degrees in the
+// right forearm swings the arm up past the head, 162 degrees, a hit from the front swings it back 48 degrees in the
 // plane of the trunk, a little out, as far as the 40 degrees of a shoulder and the ellipse toward its 160 out let it.
 // With a cone of 86 degrees all round it swung up to 89 and back to 90. Box3D holds the limits softly: right after the
 // hit the hand, which takes 6 N s of it on 0.8 kg, swings up to 35 degrees past its limits, from the fifth step on no
-// joint lies more than a few degrees past them.
+// joint lies more than 10 degrees past them: the elbow, which the hit from the front straightens out of its bend of
+// 17 degrees in the stand, 10 past its limit in the fifth step and 3 in the sixth. With the bend of 9 degrees of
+// active-ragdoll-34 it went 8 past it.
 static int FigureJointRangeTest( void )
 {
 	float most[2] = { 0.0f, 0.0f };
@@ -1154,7 +1156,7 @@ static int FigureJointRangeTest( void )
 			most[0] * 180.0f / B3_PI, most[1] * 180.0f / B3_PI, worst * 180.0f / B3_PI );
 	ENSURE( most[0] > 2.4f );
 	ENSURE( 0.5f < most[1] && most[1] < 1.0f );
-	ENSURE( worst < 0.15f );
+	ENSURE( worst < 0.18f );
 	return 0;
 }
 #endif
@@ -1704,11 +1706,12 @@ static void AddBlock( FigureScene* scene, b3Vec3 center, b3Vec3 halfExtents )
 // A hit that a standing figure cannot catch over its feet makes it step, after the roadmap of the game, 26.14 and 28.3. Hit
 // on its right side it steps left with the left foot, the right one held where it stands, then the right one after it,
 // and stands where the push carried it. A kick from the front makes it step back, from less than a push to its side, and
-// from behind the same push does not make it step at all.
+// from behind a push of 25 N s does not make it step at all. Standing a little in the knees its center of mass lies 3 cm
+// ahead of the ankles, 7 cm ahead of the heels and 19 behind the toes, so from behind one of 30 N s just makes it step.
 static int FigureStepTest( void )
 {
 	// The impulse, the direction it pushes in, along x or z, and how far the body goes there
-	const float impulses[4] = { 35.0f, 30.0f, 30.0f, 20.0f };
+	const float impulses[4] = { 35.0f, 30.0f, 25.0f, 20.0f };
 	const b3Vec3 pushes[4] = { { 1.0f, 0.0f, 0.0f }, { 0.0f, 0.0f, -1.0f }, { 0.0f, 0.0f, 1.0f }, { 1.0f, 0.0f, 0.0f } };
 	const bool steps[4] = { true, true, false, false };
 	for ( int pass = 0; pass < 4; ++pass )
@@ -1949,20 +1952,18 @@ static int FigureFeetTest( void )
 
 		if ( pass == 3 )
 		{
-			// The left knee up, the foot 22 cm over the ground
-			b3Quat poses[2 * nb_humanoidBoneCount];
-			nbKeyframe keys[2];
-			for ( int k = 0; k < 2; ++k )
+			// The idle of the library with the left knee up, the ankle 21 cm over the ground. On straight legs the root
+			// of a clip would stand 2 cm over the stand height, which is a little in the knees.
+			static nbKeyframe keys[NB_HUMANOID_CLIP_KEYFRAMES];
+			static b3Quat poses[NB_HUMANOID_CLIP_KEYFRAMES * nb_humanoidBoneCount];
+			nbClipDef clip;
+			int count = nbMakeHumanoidClip( nb_clipIdle, 1.8f, keys, poses, NB_HUMANOID_CLIP_KEYFRAMES, &clip );
+			ENSURE( count > 0 );
+			for ( int k = 0; k < count; ++k )
 			{
-				for ( int i = 0; i < nb_humanoidBoneCount; ++i )
-				{
-					poses[k * nb_humanoidBoneCount + i] = b3Quat_identity;
-				}
 				poses[k * nb_humanoidBoneCount + nb_humanoidThighLeft] = b3MakeQuatFromAxisAngle( b3Vec3_axisX, 0.8f );
 				poses[k * nb_humanoidBoneCount + nb_humanoidShinLeft] = b3MakeQuatFromAxisAngle( b3Vec3_axisX, -1.2f );
-				keys[k] = (nbKeyframe){ (float)k, poses + k * nb_humanoidBoneCount, b3Transform_identity };
 			}
-			nbClipDef clip = { keys, 2, nb_humanoidBoneCount, true, false };
 			nbFigure_PlayClip( figure, &clip, 1.0f );
 		}
 		StepFigures( &scene, 60 );
@@ -2652,12 +2653,13 @@ static int FigureWallTest( void )
 // up breaks that off, and it gets up again later, see the roadmap of the game, 26.15, 26.19 C and 28.5 (E). Both turns
 // are chaotic: in 32 fracture patterns the figure breaks through 11 times, and in 4 of them the block of 154 kg stays
 // on it, three times half on the ground on an arm or a leg, once on its belly, and the figure waits under it, as 26.15
-// asks, on active-ragdoll-26 13 and 6 times. The test takes the sixteenth pattern, where it gets up again.
+// asks, on active-ragdoll-26 13 and 6 times, on active-ragdoll-34 14 and 7, and standing in the knees on
+// active-ragdoll-35 13 and 3. The test takes the third pattern, where it gets up again.
 static int FigureWallDebrisTest( void )
 {
 	FigureScene scene;
 	CreateFigureScene( &scene, 1 );
-	nbDestructibleId wall = AddWall( &scene, true, 0.05f, 15 );
+	nbDestructibleId wall = AddWall( &scene, true, 0.05f, 2 );
 	nbFigureDef def = nbDefaultFigureDef();
 	def.rig = &scene.rig;
 	def.standHeight = scene.standHeight;
@@ -2726,7 +2728,7 @@ static int FigureWallDebrisTest( void )
 
 // The throw through the wall of boards ends in the same bits with one thread and with four, on every platform, in the
 // fifth fracture pattern, which the figure breaks through
-#define NB_EXPECTED_WALL_HASH 0x3bab8389u
+#define NB_EXPECTED_WALL_HASH 0x1615e745u
 
 static int FigureWallDeterminismTest( void )
 {
@@ -2786,7 +2788,7 @@ static int ThinBoardTest( void )
 }
 
 // The hash of the figure scenario on every platform, see RunFigureScenario
-#define NB_EXPECTED_FIGURE_HASH 0x50d8175bu
+#define NB_EXPECTED_FIGURE_HASH 0x63944a92u
 
 static int FigureDeterminismTest( void )
 {

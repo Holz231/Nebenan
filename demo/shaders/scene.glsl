@@ -2,10 +2,12 @@
 // Scene shader of the Nebenan demo. Compile with sokol-shdc:
 //   sokol-shdc --input scene.glsl --output generated/scene.glsl.h --slang hlsl5:metal_macos:glsl430
 //
-// Every chunk, ball and the ground are drawn from shared vertex pages. Each vertex carries the index of a
-// transform slot. The slot transforms of all bodies live in one storage buffer that is uploaded once per
-// frame, so the whole scene takes one draw call per vertex page. A face is lit once in the vertex shader
-// with a flat color, the pixel shader only writes it out: the least work per pixel there is.
+// Every chunk, ball, figure and the ground are drawn from shared vertex pages. Each vertex carries the index of
+// a transform slot. The slot transforms of all bodies live in one storage buffer that is uploaded once per
+// frame, so the whole scene takes one draw call per vertex page. Every vertex is lit in the vertex shader, and
+// its color runs across the triangle: a flat face has its own vertices with its normal and stays one color, a
+// round body with smooth normals shades round. The pixel shader only writes the color out, the least work per
+// pixel there is.
 
 #pragma sokol @module scene
 
@@ -37,7 +39,7 @@ in vec3 in_position;
 in vec4 in_normal; // .xyz = local normal, .w = material / 127
 in float in_slot;
 
-flat out vec3 v_color;
+out vec3 v_color;
 
 vec3 rotate_vector( vec4 q, vec3 v )
 {
@@ -75,6 +77,55 @@ vec3 material_color( int material )
 	{
 		return vec3( 0.2, 0.2, 0.22 ); // steel ball
 	}
+	// The colors of the figures, see AppendFigurePart in demo.cpp
+	if ( material == 10 )
+	{
+		return vec3( 0.97, 0.85, 0.62 ); // skin
+	}
+	if ( material == 11 )
+	{
+		return vec3( 0.6, 0.48, 0.4 ); // brown
+	}
+	if ( material == 12 )
+	{
+		return vec3( 0.84, 0.2, 0.17 ); // red
+	}
+	if ( material == 13 )
+	{
+		return vec3( 0.93, 0.44, 0.16 ); // orange
+	}
+	if ( material == 14 )
+	{
+		return vec3( 0.96, 0.76, 0.2 ); // yellow
+	}
+	if ( material == 15 )
+	{
+		return vec3( 0.85, 0.3, 0.55 ); // pink
+	}
+	if ( material == 16 )
+	{
+		return vec3( 0.2, 0.6, 0.3 ); // green
+	}
+	if ( material == 17 )
+	{
+		return vec3( 0.16, 0.62, 0.62 ); // teal
+	}
+	if ( material == 18 )
+	{
+		return vec3( 0.62, 0.82, 0.32 ); // lime
+	}
+	if ( material == 19 )
+	{
+		return vec3( 0.22, 0.47, 0.84 ); // blue
+	}
+	if ( material == 20 )
+	{
+		return vec3( 0.54, 0.32, 0.78 ); // violet
+	}
+	if ( material == 21 )
+	{
+		return vec3( 0.3, 0.27, 0.33 ); // dark
+	}
 	return vec3( 0.7 );
 }
 
@@ -95,7 +146,7 @@ void main()
 
 #pragma sokol @fs fs
 
-flat in vec3 v_color;
+in vec3 v_color;
 out vec4 frag_color;
 
 void main()

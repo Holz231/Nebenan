@@ -11,6 +11,10 @@ typedef struct nbWorld nbWorld;
 // The last hits a figure remembers, so a hit that several events report lands once, see nbHitDef::id
 #define NB_HIT_MEMORY 16
 
+// The height of the pelvis origin over the soles of the humanoid of 1.8 m as it stands, a little in the knees, see
+// nbMakeHumanoidBones. With straight legs it would stand 2 cm higher.
+#define NB_HUMANOID_STAND 0.96f
+
 // A clip as a figure keeps it, copied: the time of every keyframe, the rotations keyframe by keyframe, bone by bone, and
 // the root of every keyframe in the frame of the figure
 typedef struct nbClip
@@ -179,8 +183,8 @@ typedef struct nbBalancer
 	// A step: whether one swings, how long since it began or the figure stood, the foot, the steps in a row and the foot
 	// that stepped last, where the ankles are planted, where the swinging one started and where it lands, and how far the
 	// capture point at its landing lies outside the support of both soles, negative inside. Updates in a row with the
-	// capture point outside, seconds without a foot on the ground, seconds with one foot alone on the ground and seconds
-	// calm.
+	// capture point outside, seconds without a foot on the ground, seconds with one foot alone on the ground, seconds
+	// calm and seconds without rest and without a push.
 	bool stepping;
 	float stateTime;
 	int stepFoot;
@@ -194,6 +198,7 @@ typedef struct nbBalancer
 	float airborneTime;
 	float oneFootTime;
 	float calmTime;
+	float restlessTime;
 
 	// The arms row against a fall, see nbRowArms: where each upper arm is in its swing, the seconds into the swing out or
 	// the way back, the seconds since it came out, the rotation against its rest pose it swings from, out from where it

@@ -122,12 +122,19 @@
 #define NB_LAND_SPEED 2.0f
 
 // Calm: the bones slower than this on average by their mass, in meters per second, both feet on the ground, the capture
-// point between them and the pelvis upright within this many radians, for this many seconds. Then the figure stands
-// animated again. The fastest bone would not do: a hand that rests against a thigh in a wide stance jitters with 0.3 m/s
-// for good.
+// point between them or no farther out than a step needs, and the pelvis upright within this many radians, for this
+// many seconds. Then the figure stands animated again. The fastest bone would not do: a hand that rests against a thigh
+// in a wide stance jitters with 0.3 m/s for good. With the capture point only between the feet, a figure that the hold
+// of its pelvis kept up stood still with it up to NB_STEP_MARGIN out, neither stepping nor calm, for good: after 97 N s
+// from the front right on the chest 2.8 cm.
 #define NB_CALM_SPEED 0.15f
 #define NB_CALM_TILT 0.3f
 #define NB_CALM_TIME 0.5f
+
+// A figure that has caught itself for this long without coming to rest, and without anything pushing it, falls, in
+// seconds. With a foot under a block of rubble a figure stepped with the other one again and again, every 0.7 s for as
+// long as the block lay there. Of the 5 744 hits measured on active-ragdoll-35 the longest catch took 6.3 s.
+#define NB_RESTLESS_TIME 8.0f
 
 //----------------------------------------------------------------------------------------------------------------------
 // Small geometry
@@ -491,7 +498,7 @@ void nbInitBalancer( nbFigure* f )
 	memset( b, 0, sizeof( nbBalancer ) );
 	b->upright = b3_nullJointId;
 	b->stepFoot = -1;
-	b->scale = f->def.standHeight / 0.98f;
+	b->scale = f->def.standHeight / NB_HUMANOID_STAND;
 	b3Vec3 up = b3Vec3_axisY;
 
 	// The legs at rest, in the frame of the pelvis
@@ -1080,6 +1087,7 @@ void nbBeginBalance( nbWorld* world, int index, nbFigure* f )
 	b->airborneTime = 0.0f;
 	b->oneFootTime = 0.0f;
 	b->calmTime = 0.0f;
+	b->restlessTime = 0.0f;
 
 	// The arms hang loose until they row, with their forearms and hands, which follow the upper arm among the bones, if
 	// the motors pull at all
@@ -1260,6 +1268,13 @@ nbBalanceResult nbUpdateBalance( nbWorld* world, int index, nbFigure* f, float t
 		return nb_balanceFell;
 	}
 
+	// No rest in sight, see NB_RESTLESS_TIME. Something that pushes the figure keeps it up as long as it pushes.
+	b->restlessTime = f->pushed ? 0.0f : b->restlessTime + timeStep;
+	if ( b->restlessTime > NB_RESTLESS_TIME )
+	{
+		return nb_balanceFell;
+	}
+
 	if ( b->stepping == false )
 	{
 		bool grounded = b->footContact[0] || b->footContact[1];
@@ -1329,7 +1344,7 @@ nbBalanceResult nbUpdateBalance( nbWorld* world, int index, nbFigure* f, float t
 	}
 
 	// Calm on its feet it stands animated again
-	bool calm = b->stepping == false && b->footContact[0] && b->footContact[1] && b->captureMargin <= 0.0f &&
+	bool calm = b->stepping == false && b->footContact[0] && b->footContact[1] && b->captureMargin <= NB_STEP_MARGIN * b->scale &&
 				b->meanSpeed < NB_CALM_SPEED && b->tilt < NB_CALM_TILT && f->pushed == false;
 	b->calmTime = calm ? b->calmTime + timeStep : 0.0f;
 	if ( b->calmTime >= NB_CALM_TIME )
