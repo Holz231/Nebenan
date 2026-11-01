@@ -125,13 +125,13 @@ CMake-Optionen: `NEBENAN_DEMO`, `NEBENAN_TESTS`, `NEBENAN_BENCHMARK` (bei eigens
 
 | Eingabe | Aktion |
 | --- | --- |
-| Linke Maustaste | schießen, gedrückt halten für Dauerfeuer, mit dem Stock zustoßen |
+| Linke Maustaste | schießen, gedrückt halten für Dauerfeuer, mit dem Stock die Hände vorschieben, solange man sie hält |
 | Rechte Maustaste | Umsehen ein und aus: Die Maus dreht den Blick, und der Stock schwingt mit |
 | Esc | Umsehen aus |
 | W A S D | bewegen |
 | Q / E | runter / hoch |
 | Shift | schneller bewegen |
-| Mausrad | vor und zurück, mit dem Stock die Hand vor und zurück |
+| Mausrad | vor und zurück, mit dem Stock die Hände vor und zurück |
 | 1 / 2 / 3 / 4 | Gewehr / Granate / Kanone / Stock, mit dem Stock ist das Umsehen gleich an |
 | R | Szene neu laden |
 | P | Pause |
@@ -139,25 +139,35 @@ CMake-Optionen: `NEBENAN_DEMO`, `NEBENAN_TESTS`, `NEBENAN_BENCHMARK` (bei eigens
 | V | VSync ein und aus |
 | F1 | Menü ein- und ausblenden |
 
-**Stock.** Mit **4** hält die Demo einen Stock, um die Figuren von Hand zu drücken und zu schlagen. Ein Ende liegt fest
-in einer Hand rechts unter dem Auge, und der Stock geht mit dem Blick wie eine Waffe in einem Spiel: Wer sich langsam
-dreht, drückt mit ihm, wer sich schnell dreht, schlägt, und er schwingt mit seiner Trägheit hinterher, so weit seine
-Federn ihn lassen. Die **4** schaltet dazu das Umsehen ein, keine Taste muss gehalten werden. Die rechte Taste schaltet
-das Umsehen aus und wieder ein, aus ist der Mauszeiger für das Menü frei. Die linke Taste stößt die Hand 0,6 m vor, das
-Mausrad rückt sie vor und zurück. Im Menü stehen die Kraft der Hand, mit der seine Federn den Griff halten und den Stock
-vorstoßen (Standard 600 N), mit einem Viertel davon mal seiner Länge drehen sie ihn, dazu seine Masse (1,5 kg), Länge
-(1,6 m) und Dicke, wie weit die Hand vor dem Auge ist, und der Spielraum des Arms. Bei null, wie zu Beginn, hängt der
-Stock fest am Blick. Mit mehr schwingt die Maus ihn erst so weit vor dem Auge, bevor sich der Blick mitdreht. Die Demo
-baut ihn nur aus einem Körper von Box3D und einem Motorgelenk mit Kraftgrenze, wie ein Spiel eine Waffe in der Hand. Um
-seine Länge bekommt er ein Viertel seiner Trägheit quer dazu, sonst kreiste er nach einem harten Schwung, der eine Figur
-verlor, endlos um die Hand. Was er mit einer Figur tut, kommt allein aus der Physik und der Bibliothek: Ein Schlag
-trifft eine stehende Figur wie Schutt, mit seiner Masse mal seinem Tempo, und ein langsames Drücken lässt sie sich
-fangen, siehe Drücken. Wie hart er trifft, hängt so am Tempo des Schwungs. Gemessen mit einem Stock von 1,5 kg und 600 N
-in der Hand, quer über eine Figur geschwungen: In 2 s drückt er sie zur Seite, und sie fängt sich mit Schritten. In
-0,67 s trifft er mit 4,3 m/s, 6,4 N s, und sie zuckt um 2°, in 0,27 s mit 13 m/s, 20 N s, um 5°, in 0,13 s mit 24 m/s,
-37 N s, um 12°, und in 0,07 s mit 29 m/s, 44 N s, um 15°. Viel schneller dreht die Hand ihn nicht. Ein Stock von 5 kg
-trifft mit höchstens 17 m/s, 83 N s, und sie fängt sich mit Schritten, mit 1 500 N in der Hand mit bis zu 26 m/s,
-129 N s, und das wirft sie um.
+**Stock.** Mit **4** hält die Demo einen Stock, um die Figuren von Hand zu drücken und zu schlagen. Man hält ihn wie
+einen Stab mit beiden Händen rechts unter dem Auge, ein Drittel seiner Länge vom hinteren Ende: Dieses Drittel reicht am
+Kopf vorbei nach hinten, zwei Drittel zeigen nach vorn auf die Mitte des Blicks. Er geht mit dem Blick wie eine Waffe in
+einem Spiel: Wer sich langsam dreht, drückt mit ihm, wer sich schnell dreht, schlägt. Einen animierten Hieb gibt es
+nicht, jeder Schwung kommt aus der Maus. Die **4** schaltet dazu das Umsehen ein, keine Taste muss gehalten werden. Die
+rechte Taste schaltet das Umsehen aus und wieder ein, aus ist der Mauszeiger für das Menü frei. Die linke Taste schiebt
+die Hände, solange man sie hält, mit 2 m/s bis 0,6 m weiter vor, das Mausrad rückt sie vor und zurück. Im Menü stehen
+die Kraft der Hände, mit der seine Federn den Stock halten und vorschieben (Standard 600 N), mit ihr mal 0,4 m drehen
+sie ihn, dazu seine Masse (1,5 kg), Länge (2 m) und Dicke und wie weit die Hände vor dem Auge sind.
+
+Die Demo baut ihn nur aus einem Körper von Box3D und einem Motorgelenk mit Kraftgrenze, wie ein Spiel eine Waffe in der
+Hand. Straff am Blick hängt er durch drei Dinge: Das Gelenk läuft den Händen um die Hälfte des Wegs voraus, den seine
+Dämpfung einen bewegten Stock zurückhält, die Federn sind kritisch gedämpft, 30 Hz an den Händen und 20 Hz in der
+Drehung, und gezeichnet wird er an den Händen von jetzt, um so weit daneben, wie ihn die letzten Schritte neben ihren
+Händen ließen, denn beim parallelen Rechnen liegen diese Schritte ein Bild zurück. Um seine Länge bekommt er ein Viertel
+seiner Trägheit quer dazu, sonst kreiste er nach einem harten Schwung, der eine Figur verlor, endlos um die Hände.
+Gemessen ohne Figur: Dreht sich der Blick mit 4 rad/s, liegt der Stock 0,9° neben ihm, bei einem Ruck um 1,5 rad in
+0,15 s bis 6°, und hält der Blick an, schwingt er 1,5° darüber hinaus. Der Stock von `active-ragdoll-32`, am Ende in
+einer Hand gehalten, lag dabei 14°, 47° und 44° daneben.
+
+Was er mit einer Figur tut, kommt allein aus der Physik und der Bibliothek: Ein Schlag trifft eine stehende Figur wie
+Schutt, und ein langsames Drücken lässt sie sich fangen, siehe Drücken. Wie hart er trifft, hängt so am Tempo des
+Schwungs. Gemessen mit 1,5 kg und 600 N, den Blick um 1,6 rad quer über eine Figur gedreht: In 2 s drückt der Stock sie
+mit 0,9 m/s zur Seite, und sie fängt sich mit Schritten. In 0,67 s, 0,27 s, 0,13 s und 0,07 s trifft die Spitze mit 2,7,
+6,7, 21 und 30 m/s, in den ersten 50 ms gehen 13, 16, 24 und 30 N s in die Figur, und sie zuckt um 1°, 3,5°, 11° und
+14°. Bei 0,13 s bleibt der Stock bis 13° hinter dem Blick, bei 0,07 s bis 58°, so schnell kommen 600 N nicht mit. Bleibt
+der Blick hinter der Figur stehen, hier 0,75 rad, schieben die Hände den Stock mit gut 200 N weiter gegen sie, bis er
+abrutscht oder sie fällt, nach 0,67 s und 0,07 s fiel sie. Ein Stock von 5 kg trifft bei 0,07 s mit 5,7 m/s, mit 1 500 N
+in den Händen mit 12 m/s und 49 N s, und beide werfen sie um.
 
 **FPS.** Oben rechts steht immer die echte Bildrate, gemessen über die letzten zwei Sekunden: Bilder pro Sekunde,
 die mittlere Bildzeit und das 1 % Low, also die Rate der langsamsten 1 % der Bilder. Daran sieht man Ruckler. VSync
