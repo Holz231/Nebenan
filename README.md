@@ -793,6 +793,28 @@ ganze Figur weg, und ihre Balance richtet sich nach der Richtung des Beckens: Be
 bis 28°, setzt den zweiten Fuß zurück statt zur Seite und steht zu breit. Treffer auf Arme, Beine und Kopf gehen aus wie
 vorher. Ein Spiel ruft dafür nichts auf.
 
+**Zusatzträgheit in den Gelenken.** Armature heißt hier, wie bei MuJoCo, eine zusätzliche Drehträgheit im Gelenk, nicht
+das Skelett wie in Blender. Der Hals des Menschen der Bibliothek wiegt ein Kilogramm zwischen Brust und Kopf. Mit der
+vollen Steifigkeit der Motoren drehen ihn seine zwei Federn schneller, als die Teilschritte folgen, und schütteln den
+Kopf: Beim Abfangen von 60 N s ändert sich die Drehung des Kopfs gegen den Hals von Schritt zu Schritt um 17 rad/s und
+kehrt in jedem zweiten Schritt um. Deshalb zieht der Hals nur mit 0,3 der Steifigkeit. `nbBoneDef::armature` gibt dem
+Gelenk eines Knochens eine Drehträgheit in kg m², als drehte sich mit der Drehung des Knochens gegen seinen Elternknochen
+ein Schwungrad, siehe „Gelenke mit Armature“ in [`extern/README.md`](extern/README.md). Feder, Grenzen und alles andere,
+was die beiden Knochen gegeneinander dreht, drehen sie so, als wären sie um so viel schwerer, und die Bibliothek setzt
+die Feder für diese schwerere Drehung, so hält sie so steif wie vorher. Drehen sich beide gemeinsam, merkt das Schwungrad
+nichts. Der Mensch der Bibliothek hat an Hals und Kopf je 1 g m², so viel, wie der Hals selbst um seine Längsachse hat.
+Mit voller Steifigkeit ändert sich die Drehung des Kopfs dann nur noch um 1,0 rad/s und kehrt in einem Fünftel der
+Schritte um. An nur einem der Gelenke oder mit der Hälfte schüttelt er weiter. Die volle Steifigkeit nimmt die
+Bibliothek trotzdem nicht: Mit ihr fing sich die Figur an 4 464 Treffern auf Brust und Bauch 3 574-mal statt 3 620-mal,
+mit 0,6 der Steifigkeit 3 591-mal. Schon mit 0,3 hält der Hals den Kopf beim Abfangen bis auf gut ein Grad. So bleibt er
+bei 0,3, mit der Armature: Der Kopf kehrt beim Abfangen nur in 8 statt 11 % der Schritte um, Hals und Kopf rucken im
+Median 17 % weniger, und die Figur fängt sich 3 623-mal statt 3 620-mal, braucht aber 71-mal statt 61-mal länger als 4 s.
+Von je 256 Treffern auf Unterarm, Oberarm, Schienbein und Kopf fängt sie sich 17-mal öfter, auf den Oberschenkel
+einmal weniger, von links und von rechts bis 90 statt 80 N s, und von 168 leichten Treffern fallen 4 statt 5. Der Kopf liegt beim Abfangen 1,5 statt 1° neben seiner
+Haltung. Die Hand, die bei breitem Stand am Oberschenkel zittert, beruhigt eine Armature am Handgelenk nicht, siehe F33
+der Roadmap. Ein Spiel ruft dafür nichts auf, ein eigenes Rig setzt `armature` an leichten Knochen zwischen steifen
+Federn.
+
 **Abstützen und Einrollen.** Eine schnelle Figur rudert mit den Armen (`nb_clipFall`), eine langsame entspannt sich in
 ihre Grundhaltung, so weit, wie ihr die Kraft fehlt: Ruderte sie am Boden weiter, kröche sie mit eigener Kraft über ihn.
 Wie die Gefahrensuche von Overgrowth schaut eine fliegende Figur mit einer Kugel 0,35 s ihrer Geschwindigkeit voraus.
@@ -1363,6 +1385,7 @@ beim Einbinden nicht gebaut.
 
 | Knochen (`nbBoneDef`) | Standard | Wirkung |
 | --- | --- | --- |
+| `armature` | 0 | Drehträgheit in kg m², die das Gelenk der Drehung des Knochens gegen seinen Elternknochen hinzufügt, siehe Zusatzträgheit in den Gelenken. Hält einen leichten Knochen zwischen steifen Federn ruhig. Der Mensch der Bibliothek: Hals und Kopf je 1 g m² |
 | `maxSpeed` | 0 | Mit Muskeln: Höchstgeschwindigkeit des Gelenks in rad/s, je schneller es sich in seine Zugrichtung dreht, desto schwächer zieht es, nach der Kurve von Hill. Null zieht bei jeder Geschwindigkeit gleich. Der Mensch der Bibliothek: Rumpf 25 rad/s, Arme und Beine keine |
 | `lowerSwingX`, `upperSwingX`, `lowerSwingY`, `upperSwingY` | 0 | Kugelgelenk: wie weit der Knochen in jede der vier Richtungen um die x- und die y-Achse seines Gelenkrahmens schwingen darf, in Radiant, dazwischen eine Ellipse, bis 0,95 π, siehe Gelenke wie beim Menschen. Alle null nehmen `coneAngle` in jede Richtung, bis 0,5 π. Der Mensch der Bibliothek: Schulter 160° nach vorn und zur Seite, 40° zurück und hinein, Hüfte 135° nach vorn, 20° zurück, 45° hinaus und 25° hinein |
 | `flinch`, `flinchHertz`, `flinchDamping` | 0, 0 Hz, 1 | Eine eigene Feder, die den Knochen bei einem leichten Treffer um sein Gelenk schwingt, siehe Treffer je Körperpartie: `flinch` mal so schnell, wie der Stoß alles dreht, was er trägt, mit dieser Frequenz und Dämpfung, unter 1 schwingt er über und zurück. Null Hertz halten ihn an seinem Elternknochen. Der Mensch der Bibliothek: Hals 0,3, 2,5 Hz, 0,7, Kopf 0,3, 3,5 Hz, 0,5, Oberarm 0,6, 2,5 Hz, 0,5, Unterarm 0,6, 3 Hz, 0,5, Hand 0,5, 4 Hz, 0,6 |
@@ -2116,7 +2139,18 @@ bis zu 43 215 statt 38 833 Kontakten, und ein Bild kostet 7,3 statt 7,1 ms mit v
 einem. Update und Box3D-Schritt der Szenen mit Figuren kosten so viel wie vorher, im Median aus drei Läufen im Wechsel
 mit `active-ragdoll-27`, bei Ausschlägen der VM bis 45 % in beide Richtungen, beim Sturz der 50 Figuren, die jetzt
 anders fallen, paarweise 12 % mehr mit vier Threads und 2 % weniger mit einem. Die Ragdolls im Schutt und alle Szenen
-ohne Figuren enden bitgleich wie auf `active-ragdoll-27`.
+ohne Figuren enden bitgleich wie auf `active-ragdoll-27`. Seit `active-ragdoll-29` halten Hals und Kopf mit einer
+Armature, siehe Zusatzträgheit in den Gelenken. Alle Szenen mit Figuren enden anders, auch die Ragdolls im Schutt, mit 1
+und 4 Threads weiter mit demselben Hash: Von den 10 Figuren stehen am Ende wieder alle, von den 50 liegt eine auf dem
+Rücken quer auf Schutt, das Becken 65 cm hoch, und wartet auf Boden darunter. In der Stadt mit Figuren stürzen 24 statt
+26 Figuren, am Ende stehen wieder 28, und die Stadt endet anders, mit 6 statt 5 eingestürzten Stockwerken, 76 834 statt
+78 294 Stücken und bis zu 75 752 statt 43 215 Kontakten. In dieser anderen Welt kostet ein Bild 7,5 statt 7,4 ms mit
+vier Threads und 15,5 statt 14,9 ms mit einem, im Mittel aus drei Läufen im Wechsel mit `active-ragdoll-28`. Update und
+Box3D-Schritt der übrigen Szenen mit Figuren kosten so viel wie vorher, im Median aus drei Läufen im Wechsel, bei
+Ausschlägen der VM von 26 % weniger bis 37 % mehr auch in Phasen, in denen sich nichts geändert hat: beim Sturz der 50
+Figuren paarweise 10 % mehr mit vier Threads und 5 % weniger mit einem, ein Schritt der Ragdolls im Schutt 4,42 statt
+4,32 ms mit vier Threads und 11,1 statt 11,4 ms mit einem. Alle Szenen ohne Figuren enden bitgleich wie auf
+`active-ragdoll-28`.
 
 **Ragdolls im Schutt.** Danach stellt `nebenan_benchmark figures` 20 Figuren auf eine Platte über zwei Lagen aus 4 513
 Würfeln, wirft sie um und lässt sie liegen (`nbFigureDef::canGetUp` aus). Platte, Würfel und Ragdolls sind eine große
@@ -2208,7 +2242,7 @@ lange die Threads im Löser rechnen und worauf sie sonst warten.
 ## Tests und Benchmark
 
 ```sh
-build/bin/nebenan_test            # 114 Tests: Geometrie, Voronoi, Hüllen, Öffnungen, Stöße, Stützgraph, Etagen, Lastprüfung, Mauern, Schutt, Ruhe, Durchschlagen, Threads, Knoten, große Blöcke, Gelenke in Paketen und Gebieten, Suchbaum, Kontaktlisten, Streaming, Stream, Laden im Hintergrund, Speichern und Zurückholen, gemeinsamer Thread-Pool, Ruhe-Prüfung auf den Workern, Schritt auf eigenem Thread, Schritte pro Bild, Takt der Physik, Wahl der Threads, Profil und Skalierung, Figuren, Ausgleichsschritt, Abfangen, rudernde Arme, Muskeln, Treffer entlang des Skeletts, Kegel je Richtung, Gelenke wie beim Menschen, Drehung um die Längsachse, Füße auf dem Boden, Platz zum Aufstehen, Ragdoll durch die Wand, dünne Bretter, Determinismus …
+build/bin/nebenan_test            # 116 Tests: Geometrie, Voronoi, Hüllen, Öffnungen, Stöße, Stützgraph, Etagen, Lastprüfung, Mauern, Schutt, Ruhe, Durchschlagen, Threads, Knoten, große Blöcke, Gelenke in Paketen und Gebieten, Suchbaum, Kontaktlisten, Streaming, Stream, Laden im Hintergrund, Speichern und Zurückholen, gemeinsamer Thread-Pool, Ruhe-Prüfung auf den Workern, Schritt auf eigenem Thread, Schritte pro Bild, Takt der Physik, Wahl der Threads, Profil und Skalierung, Figuren, Ausgleichsschritt, Abfangen, rudernde Arme, Muskeln, Treffer entlang des Skeletts, Kegel je Richtung, Gelenke wie beim Menschen, Drehung um die Längsachse, Armature, ruhiger Kopf, Füße auf dem Boden, Platz zum Aufstehen, Ragdoll durch die Wand, dünne Bretter, Determinismus …
 build/bin/nebenan_benchmark 4     # Zahl = Threads für Bruch und Physik, 0 = so viele, wie ein Spiel nähme
 build/bin/nebenan_benchmark scaling   # die Städte unter Beschuss mit 1, 2, 4 … Threads und die Tabelle der Skalierung
 build/bin/nebenan_benchmark rates     # die Städte unter Beschuss mit 30, 60 und 120 Hz, was eine simulierte Sekunde kostet
@@ -2320,6 +2354,9 @@ Nach Änderungen an `demo/shaders/scene.glsl` die Shader neu erzeugen, im Ordner
   bleibt ein Block von 154 kg, der auf eine Figur fällt, die hinter einer Wand aus Brettern aufsteht, in 4 der 11 von 32
   Bruchmustern, in denen sie durchbricht, auf ihr liegen, dreimal halb auf dem Boden auf einem Arm oder Bein, einmal
   ganz auf dem Bauch, auf `active-ragdoll-26` in 6 von 13, siehe F51 der Roadmap.
+- Box3D hält Kontakte weich. Presst ein Ragdoll, der mit 1 000 N s gegen Beton fliegt, eine Hand mit 13 m/s an die
+  Wand, kann sie für einen Schritt mit ihrem Mittelpunkt 5 mm in ihr liegen, bevor ihr Kontakt sie herausdrückt. Im Test
+  der Wand bleibt kein Knochen zwei Schritte in Folge in ihr.
 - Stehende und aufstehende Figuren sind kinematisch und kollidieren wie alle kinematischen Körper in Box3D nicht mit
   statischen, also nicht mit Schutt und stehenden Wänden. Eine Figur, die das Spiel durch eine Wand bewegt, geht
   hindurch. Ob genug Platz zum Aufstehen ist, prüft sie vorher, und fehlt er, rückt sie bis 60 cm oder dreht sich auf

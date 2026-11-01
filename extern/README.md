@@ -835,12 +835,31 @@ Kegels haben auch PhysX, Jolt und der Fork VPhysics-Box3D von DMS-in-Gmod, dort 
 Schritt F47 der [Roadmap](../docs/Roadmap.md), siehe „Gelenke wie beim Menschen“ in
 [`docs/Optimierungen.md`](../docs/Optimierungen.md).
 
+**Gelenke mit Armature.** Eine steife Feder auf einem leichten Körper zwischen zwei schweren dreht ihn schneller, als die
+Teilschritte folgen: Der Hals des Menschen der Bibliothek, ein Kilogramm zwischen Brust und Kopf, schüttelte den Kopf,
+sobald seine zwei Federn mit der vollen Steifigkeit zogen. Mit `b3RevoluteJointDef::armature` und
+`b3SphericalJointDef::armature` bekommt ein Gelenk eine zusätzliche Drehträgheit auf die Drehung von Körper B gegen
+Körper A, nach der Idee der Armature von MuJoCo, als Schwungrad, das an diese Drehung gekoppelt ist. Feder, Motor und
+Grenzen rechnen mit der Masse dieser schwereren Drehung, und nach jedem ihrer Stöße und am Anfang jedes Lösens gleichen
+Schwungrad und Körper ihre Drehrate an und teilen den Unterschied nach ihren Massen (`b3SyncSphericalArmature` in
+`src/spherical_joint.c`, `b3SyncRevoluteArmature` in `src/revolute_joint.c`). So nimmt das Schwungrad auch seinen Teil
+von allem anderen, was die Körper gegeneinander dreht, Kontakte und Stöße zwischen den Schritten eingeschlossen, und
+drehen sich beide gemeinsam, merkt es nichts. Das Schwungrad dreht von Schritt zu Schritt weiter, nur ein Gelenk, das im
+Schritt davor nicht gelöst wurde, startet es mit der Drehrate seiner Körper. Ein Drehstoß dreht einen Stab mit einer
+Armature so groß wie seine Trägheit um das Gelenk genau halb so schnell, am Kugel- wie am Drehgelenk.
+`b3RevoluteJoint_SetArmature` und `b3SphericalJoint_SetArmature` ändern sie, die Getter lesen sie. Aufnahmen speichern
+sie mit dem Gelenk, ihr Format hat deshalb die Version 9. Ohne Armature rechnen Gelenke bis aufs Bit wie zuvor. Die Idee
+setzt auch der Fork VPhysics-Box3D von DMS-in-Gmod für Box3D um, er steht unter GPL-3, übernommen ist nur die Idee.
+Gebaut für Schritt F48 der [Roadmap](../docs/Roadmap.md), siehe „Gelenke mit Armature“ in
+[`docs/Optimierungen.md`](../docs/Optimierungen.md).
+
 Die erste, die zweite, die vierte bis achte, die zehnte, die dreizehnte bis einunddreißigste, die dreiunddreißigste bis
 fünfunddreißigste, die neununddreißigste bis dreiundvierzigste, die fünfundvierzigste bis siebenundvierzigste, die
 neunundvierzigste bis neunundfünfzigste ändern an den Ergebnissen nichts, die einundsechzigste nur an Federn mit einer
 Grenze, die nur die Figuren setzen, die zweiundsechzigste nur in Welten mit wachen Gelenken, wo große Inseln jetzt in
 Gebieten rechnen, die dreiundsechzigste, weil Kontakte durch das Erstarren eines Körpers ihre Stöße und Trennachsen
-behalten, die vierundsechzigste nur an Kugelgelenken mit einer Grenze je Richtung, die nur die Figuren setzen. Die
+behalten, die vierundsechzigste nur an Kugelgelenken mit einer Grenze je Richtung, die nur die Figuren setzen, die
+fünfundsechzigste nur an Gelenken mit Armature, die nur die Figuren setzen. Die
 dritte und die neunte ändern sie in den letzten Bits, dafür hängen sie nicht mehr davon ab, in welcher Reihenfolge
 Formen in die Bäume kommen. Die elfte ändert sie, weil Kontakte zu anderen Zeitpunkten entstehen, die zwölfte, weil sie
 weniger Punkte bekommen, die zweiunddreißigste, weil die Kontakte eines Knotens gebündelt gegen Kopien rechnen statt
@@ -864,13 +883,14 @@ trennt. Die Ergänzungen stehen in `CMakeLists.txt`, `src/CMakeLists.txt`, `incl
 `src/physics_world.c` und `src/tracy_hide_user.cmake`, jeweils mit „Added for Nebenan“ markiert. `B3_HAS_UNIQUE_HULLS`,
 `B3_HAS_SHAPE_BATCH`, `B3_HAS_SHAPE_CONTACT_LISTS`, `B3_HAS_EXTERNAL_HULLS`, `B3_HAS_BODY_PREFETCH`,
 `B3_HAS_STEP_GUARD`, `B3_HAS_PREVIOUS_TRANSFORM`, `B3_HAS_STATIC_OVERLAP`, `B3_HAS_CONTACT_DATA_OF_BODIES`,
-`B3_HAS_SPRING_TORQUE_LIMITS`, `B3_HAS_KEPT_CONTACTS` und `B3_HAS_SWING_LIMITS` zeigen die zweite, die vierte, die
-fünfte, die sechste, die neunzehnte, die dreißigste, die fünfunddreißigste, die zweiundvierzigste, die
-vierundfünfzigste, die einundsechzigste, die dreiundsechzigste und die vierundsechzigste an. Fehlen sie, etwa mit einem
+`B3_HAS_SPRING_TORQUE_LIMITS`, `B3_HAS_KEPT_CONTACTS`, `B3_HAS_SWING_LIMITS` und `B3_HAS_JOINT_ARMATURE` zeigen die
+zweite, die vierte, die fünfte, die sechste, die neunzehnte, die dreißigste, die fünfunddreißigste, die
+zweiundvierzigste, die vierundfünfzigste, die einundsechzigste, die dreiundsechzigste, die vierundsechzigste und die
+fünfundsechzigste an. Fehlen sie, etwa mit einem
 eigenen Box3D, läuft Nebenan wie zuvor, nur wachsen Box3Ds Arrays dann durch Umkopieren, die Hüllen gehen durch die
 Tabelle, jede Form geht einzeln in den Baum, jedes stehende Bruchstück bekommt einen eigenen Körper, Box3D hält eine
 Kopie jeder Hülle, Nebenan holt die Körper der Trümmer nicht voraus, `nbWorld_Step` rechnet auf dem aufrufenden Thread,
 `nbWorld_GetDrawPoses` gibt die Lagen nach dem Schritt, Schutt wird in allen Bäumen gesucht, die Ruhe-Prüfung holt die
 Kontakte jedes ruhigen Stücks für sich, die Federn der Figuren halten ihre Haltung ohne Grenze, erstarrende Trümmer
-verlieren ihre Kontakte mit bewegten Stücken, und die Gelenke des Menschen haben statt einer Grenze je Richtung einen
-runden Kegel bis 90°.
+verlieren ihre Kontakte mit bewegten Stücken, die Gelenke des Menschen haben statt einer Grenze je Richtung einen
+runden Kegel bis 90°, und sie haben keine Armature.
