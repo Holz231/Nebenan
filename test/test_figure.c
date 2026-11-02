@@ -672,7 +672,10 @@ static int FigureSwingTest( void )
 // catches 60 N s with one step again and 100 N s with three. From the front it catches up to 118 N s and gives up from
 // 120, from behind it catches all up to 130 with three steps. From its right it catches up to 108 N s, where round 40
 // fell at 100, the head sinking to 1.13 m in a deep lunge, falls at 110 after two steps and gives up from 112. From its
-// left it catches up to 102 and 106 to 110 and falls at 104.
+// left it catches up to 102 and 106 to 110 and falls at 104. Round 45, whose soles grip like rubber, see
+// NB_SOLE_FRICTION, catches up to 120 N s from the front and gives up from 122, and from either side it catches every
+// hit up to 110 N s and gives up from 112, where round 44 fell at 110 from its right and at 102 and 110 from its left,
+// each time after two steps. The test gives 112 from its right.
 static int FigureCatchTest( void )
 {
 	typedef struct CatchCase
@@ -686,7 +689,7 @@ static int FigureCatchTest( void )
 		{ "80 N s from behind", { 0.0f, 0.0f, 80.0f }, false },		 { "60 N s from its right", { 60.0f, 0.0f, 0.0f }, false },
 		{ "60 N s from its left", { -60.0f, 0.0f, 0.0f }, false },	 { "100 N s from the front", { 0.0f, 0.0f, -100.0f }, false },
 		{ "80 N s from its right", { 80.0f, 0.0f, 0.0f }, false },	 { "80 N s from its left", { -80.0f, 0.0f, 0.0f }, false },
-		{ "150 N s from the front", { 0.0f, 0.0f, -150.0f }, true }, { "110 N s from its right", { 110.0f, 0.0f, 0.0f }, true },
+		{ "150 N s from the front", { 0.0f, 0.0f, -150.0f }, true }, { "112 N s from its right", { 112.0f, 0.0f, 0.0f }, true },
 	};
 	for ( size_t c = 0; c < sizeof( cases ) / sizeof( cases[0] ); ++c )
 	{
@@ -1115,7 +1118,7 @@ static uint32_t MuscleCatch( int threadCount, float impulse )
 }
 
 // The throw of 90 N s on a figure with muscles ends in the same bits with one thread and with four, on every platform
-#define NB_EXPECTED_MUSCLE_HASH 0xfb867269u
+#define NB_EXPECTED_MUSCLE_HASH 0x943677e7u
 
 // The muscles, see nbFigureMotors::muscles and nbUpdateMuscles. A figure with muscles hit while it stands catches itself
 // with the strength the balance asks for at once: every joint of its trunk and its legs at the full torque of the motors,
@@ -3334,7 +3337,7 @@ static int FigureWallDebrisTest( void )
 
 // The throw through the wall of boards ends in the same bits with one thread and with four, on every platform, in the
 // second fracture pattern, which the figure breaks through
-#define NB_EXPECTED_WALL_HASH 0xef4ecdd9u
+#define NB_EXPECTED_WALL_HASH 0x159a10d4u
 
 static int FigureWallDeterminismTest( void )
 {
@@ -3394,10 +3397,10 @@ static int ThinBoardTest( void )
 }
 
 // The hash of the figure scenario on every platform, see RunFigureScenario
-#define NB_EXPECTED_FIGURE_HASH 0x33437598u
+#define NB_EXPECTED_FIGURE_HASH 0x60875171u
 
 // See RunFollowScenario
-#define NB_EXPECTED_FOLLOW_HASH 0xf5c3f16bu
+#define NB_EXPECTED_FOLLOW_HASH 0xe0be7f81u
 
 static int FigureFollowDeterminismTest( void )
 {

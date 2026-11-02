@@ -157,6 +157,13 @@
 // none keeps the impulse it last had and pushes with it in every substep
 #define NB_MIN_HOLD 0.5e-3f
 
+// A foot that slides over the ground eases the hold through its leg from this speed on, in meters per second, and frees
+// it this much faster, see nbHoldUpright. From 0.3 m/s on and free at 0.8 m/s, of the 1 920 hits on chest and belly from
+// 50 to 89 N s 240 instead of 298 fell, from 0.2 and 0.4 m/s on 253 and 254, free 0.3 m/s faster or 0.7 m/s faster 246
+// and 263.
+#define NB_SLIDE_SPEED 0.3f
+#define NB_SLIDE_RANGE 0.5f
+
 // The spine bends the upper body on with the tilt of the pelvis by this many times the tilt, and at most this far, in
 // radians, see nbBendTrunk. With the hold through the legs, of the 168 light hits on the upper chest 36 fell at half
 // the gain, 31 at 1, 17 at 2 and 13 at 3, without the bend 43, but at 3 more of the hits from 90 to 139 N s fell than
@@ -1084,6 +1091,10 @@ static b3Quat nbQuatZTo( b3Vec3 direction )
 // The hold through the legs: the legs that carry the figure share it, the stance leg alone while the other swings, both
 // on the ground alike, none without ground under them. Each joint holds the up of the world as it lies in the frame of
 // its thigh in this update, so the pelvis turns upright against the thigh, and the thigh pushes against the ground.
+// Where the ground cannot hold the foot, the thigh pushes it away under the body: after 74 N s from the front and left
+// the stance foot slid 36 cm forward in a tenth of a second while the figure fell back. A person whose foot slides eases
+// off the hip, so the hold through a leg eases while its foot slides faster than NB_SLIDE_SPEED and lets go once it
+// slides NB_SLIDE_RANGE faster still.
 static void nbHoldUpright( const nbFigure* f, const nbBalancer* b )
 {
 	if ( b3Joint_IsValid( b->uprightLegs[0] ) == false )
@@ -1104,6 +1115,15 @@ static void nbHoldUpright( const nbFigure* f, const nbBalancer* b )
 		for ( int leg = 0; leg < 2 && count > 0; ++leg )
 		{
 			share[leg] = b->footContact[leg] ? 1.0f / (float)count : 0.0f;
+		}
+	}
+
+	for ( int leg = 0; leg < 2; ++leg )
+	{
+		if ( share[leg] > 0.0f )
+		{
+			float slide = b3Length( nbFlat( b3Body_GetLinearVelocity( f->bones[nb_feet[leg]].bodyId ), b->up ) );
+			share[leg] *= b3ClampFloat( 1.0f - ( slide - NB_SLIDE_SPEED ) / NB_SLIDE_RANGE, 0.0f, 1.0f );
 		}
 	}
 

@@ -77,6 +77,14 @@
 // from the front.
 #define NB_TRUNK_SPEED 25.0f
 
+// The friction of the soles of the humanoid, see nbBoneDef::friction: rubber on dry concrete sticks with about 1 and
+// slides with about 0.8, and Box3D knows one friction for both. With the 0.6 of the rig on its soles, until round 44, a
+// foot that carried the figure alone slid away under it: with the hold through the legs, after 80 N s from the side the
+// stance foot slid 28 cm while the other stepped 70 cm out, and the figure sank. With 0.8, 0.9 and 1.0, 14, 13 and 13 of
+// the 168 light hits on the upper chest fell instead of 25, and with the hold against the world 365, 362 and 354 of the
+// 2 064 hits on chest and belly from 90 to 139 N s instead of 385.
+#define NB_SOLE_FRICTION 0.9f
+
 // The damping of the bones of a ragdoll that lies still, in 1/s, reached after two seconds, like the damping of
 // Overgrowth that rises by half per second of rest: Box3D lets it fall asleep sooner, and it lies without shivering
 #define NB_REST_DAMPING 4.0f
@@ -234,6 +242,7 @@ nbBoneDef nbDefaultBoneDef( void )
 	def.radius = 0.05f;
 	def.halfExtents = (b3Vec3){ 0.05f, 0.05f, 0.05f };
 	def.mass = 1.0f;
+	def.friction = 0.0f;
 	def.joint = nb_ballJoint;
 	def.jointFrame = b3Quat_identity;
 	def.lowerAngle = -0.5f;
@@ -557,6 +566,7 @@ float nbMakeHumanoidBones( float height, float mass, nbBoneDef* bones, int capac
 		footDef.center = (b3Vec3){ 0.0f, 0.09f * s, -0.03f * s };
 		footDef.halfExtents = (b3Vec3){ 0.045f * s, 0.13f * s, 0.03f * s };
 		footDef.mass = 2.5f * m;
+		footDef.friction = NB_SOLE_FRICTION;
 		footDef.joint = nb_ballJoint;
 		footDef.jointFrame = zToY;
 		footDef.strength = 0.8f;
@@ -4727,7 +4737,7 @@ nbFigureId nbCreateFigure( nbWorldId worldId, const nbFigureDef* def )
 
 		b3ShapeDef shapeDef = b3DefaultShapeDef();
 		shapeDef.name = boneDef->name;
-		shapeDef.baseMaterial.friction = rig->friction;
+		shapeDef.baseMaterial.friction = boneDef->friction > 0.0f ? boneDef->friction : rig->friction;
 		shapeDef.enableHitEvents = true;
 		shapeDef.filter.groupIndex = groupIndex;
 		float volume = b3MaxFloat( nbBoneVolume( boneDef ), 1.0e-6f );

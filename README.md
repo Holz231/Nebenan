@@ -935,6 +935,35 @@ Deckung liegt am Ende eine unter Trümmern der Mauer und wartet, bis sie frei is
 wieder. In der Stadt mit Figuren stürzen 4 statt 6 Etagen ein, und ein Bild kostet dort das 0,83- und 0,86-fache. Ein
 Spiel ruft dafür nichts auf, `nbMakeHumanoidBones` baut die Arme so.
 
+**Sohlen, die greifen.** Seit `active-ragdoll-45` haben die Füße des Menschen der Bibliothek die Reibung einer
+Gummisohle, 0,9 statt der 0,6 des Rigs, ein Baustein von Stufe 4 von F61 der Roadmap. Gummi haftet auf trockenem Beton
+mit etwa 1 und gleitet mit etwa 0,8, Box3D kennt für beides eine Zahl. Zwei Formen, die sich berühren, reiben mit der
+Wurzel aus dem Produkt ihrer Reibungen, auf einem Boden mit 0,6 greift die Sohle so mit 0,73 statt 0,6. Jeder Knochen
+kann dafür eine eigene Reibung haben, `nbBoneDef::friction`, null nimmt die des Rigs. Dazu lässt die Stütze durch die
+Beine nach, solange der Fuß eines Beins über den Boden rutscht, ab 0,3 m/s, und ab 0,8 m/s ist sie weg. Sie richtet das
+Becken gegen den Oberschenkel auf, und wo der Boden den Fuß nicht hält, schiebt der Oberschenkel ihn unter dem Körper
+weg: Nach 74 N s von vorn links rutschte der Standfuß so in einer Zehntelsekunde 36 cm nach vorn, und die Figur fiel
+nach hinten. Wem der Fuß wegrutscht, der nimmt die Kraft aus der Hüfte. Mit der Stütze durch die Beine fallen von den
+168 leichten Treffern 9 statt 25, an den 4 464 Treffern auf Brust und Bauch von 50 bis 89 N s 240 statt 389 und von 90
+bis 139 N s 1 453 statt 1 449 und von 1 280 Treffern auf Arme, Beine und Kopf 405 statt 479. Die Sohlen allein brachten
+13, 298, 1 472 und 436, die nachlassende Hüfte allein 14, 324, 1 450 und 460. Am meisten gewinnen Treffer von der Seite,
+von 50 bis 89 N s fallen von links 26 statt 52 und von rechts 18 statt 52. Auf die obere Brust, in Schritten von 2 N s
+abgetastet, hält die Stütze durch die Beine die Figur von vorn bei jedem Treffer bis 64 statt bis 50 N s, von hinten bis
+92 statt 80, von rechts bis 84 statt 68 und von links bis 84 außer bei 72 statt bis 72 N s. Mit der Stütze gegen die
+Welt, dem Standard, für die die nachlassende Hüfte nicht gilt, fallen weiter keine leichten Treffer und keine von 50 bis
+89 N s, von 90 bis 139 N s 362 statt 385 und an den Gliedern 122 statt 135. Auf die obere Brust fängt sie sich von
+beiden Seiten jetzt jeden Treffer bis 110 N s, wo sie bei 110 von rechts und bei 102 und 110 von links nach zwei
+Schritten fiel, und von vorn bis 120 statt 118 N s. Ohne Stütze fallen 17 statt 24, 364 statt 432, 1 574 statt 1 550 und
+451 statt 500. Siehe „Sohlen, die greifen“ und „Die Hüfte lässt nach, wenn der Fuß rutscht“ in
+[Optimierungen.md](docs/Optimierungen.md). Gepaart gegen `active-ragdoll-44`, vier Läufe im Wechsel mit vier Threads und
+zwei mit einem, rechnen alle Szenen ohne Figuren dasselbe, und die mit Figuren enden mit einem und mit vier Threads
+gleich. Bei 10 Figuren hinter brechender Deckung stehen am Ende alle 10 statt 9, dafür kostet ein Schritt, während die
+Deckung bricht, das 1,6- und 2,6-fache, denn eine Figur mehr fällt dort und steht wieder auf. Bei 50 liegt am Ende eine
+über der Kante ihrer Mauer und wartet auf Boden unter dem Becken, siehe F69 der Roadmap, auf `active-ragdoll-44` stand
+die letzte 15 s später wieder. In der Stadt mit Figuren stürzen 6 statt 4 Etagen ein, und ein Bild kostet dort das 1,14-
+und 1,13-fache. Ein Spiel ruft dafür nichts auf, `nbMakeHumanoidBones` gibt den Füßen ihre Reibung, ein eigenes Rig
+setzt `nbBoneDef::friction`.
+
 **Drücken.** Drückt ein Körper eine stehende Figur langsam, ein Stock, eine Hand oder ein Block, und schiebt er dabei
 einen ihrer Knochen mit mindestens `pushForce` (Standard 40 N) seitlich, bei zwei Prüfungen hintereinander, also ein
 paar Schritte lang, fängt sich ein Mensch der Bibliothek, statt eine Wand zu bleiben: Seine Knochen werden dynamisch,
@@ -1732,7 +1761,7 @@ beim Einbinden nicht gebaut.
 | `strengthPerSpeed`, `fallStrength` | 0,1 pro m/s, 0,8 | Die Kraft wächst mit der mittleren Geschwindigkeit der Knochen bis `fallStrength`, wie in Overgrowth |
 | `stunTime` | 0 s | So viel schwächer ist ein Ragdoll nach einem Treffer oder einer Explosion, die Kraft kommt mit eins pro Sekunde zurück. Null behält die Kraft wie auf `ragdoll-11`. Bis `active-ragdoll-19` waren es 0,4 s, Overgrowth nimmt 0,9 s, dort fiele eine Figur aus dem Stand, ohne sich abzustützen |
 | `uprightTorque`, `uprightStiffness`, `uprightDampingRatio` | 125 N m, 1 500 N m pro rad, 1 | Hält das Becken einer Figur, die sich fängt, aufrecht, mit höchstens diesem Drehmoment. Fällt sie, lässt es sofort los, null nimmt es weg |
-| `uprightAgainstWorld` | an | Das Becken wird gegen einen statischen Anker der Welt aufrecht gehalten. Aus hält es sich gegen die Oberschenkel der Beine, die die Figur tragen, aus eigener Kraft, und fängt weniger, siehe Balance aus eigener Kraft |
+| `uprightAgainstWorld` | an | Das Becken wird gegen einen statischen Anker der Welt aufrecht gehalten. Aus hält es sich gegen die Oberschenkel der Beine, die die Figur tragen, aus eigener Kraft, lässt nach, solange ein Fuß rutscht, und fängt weniger, siehe Balance aus eigener Kraft und Sohlen, die greifen |
 | `muscles` | aus | Die Gelenke ziehen mit genäherten Muskeln, siehe Muskeln. Aus nehmen sie die verlangte Kraft sofort und ziehen bei jeder Geschwindigkeit gleich stark |
 | `tenseTime`, `relaxTime` | 0,03 s, 0,08 s | Mit Muskeln: Zeitkonstanten, in denen ein Muskel die verlangte Kraft hinauf und hinab erreicht. Null folgt sofort |
 | `brakeStrength` | 1,5 | Mit Muskeln: So viel mehr hält ein Gelenk, das gegen seine Richtung gedreht wird, siehe `nbBoneDef::maxSpeed` |
@@ -1743,11 +1772,12 @@ beim Einbinden nicht gebaut.
 | `armature` | 0 | Drehträgheit in kg m², die das Gelenk der Drehung des Knochens gegen seinen Elternknochen hinzufügt, siehe Zusatzträgheit in den Gelenken. Hält einen leichten Knochen zwischen steifen Federn ruhig. Der Mensch der Bibliothek: Hals und Kopf je 1 g m² |
 | `maxSpeed` | 0 | Mit Muskeln: Höchstgeschwindigkeit des Gelenks in rad/s, je schneller es sich in seine Zugrichtung dreht, desto schwächer zieht es, nach der Kurve von Hill. Null zieht bei jeder Geschwindigkeit gleich. Der Mensch der Bibliothek: Rumpf 25 rad/s, Arme und Beine keine |
 | `lowerSwingX`, `upperSwingX`, `lowerSwingY`, `upperSwingY` | 0 | Kugelgelenk: wie weit der Knochen in jede der vier Richtungen um die x- und die y-Achse seines Gelenkrahmens schwingen darf, in Radiant, dazwischen eine Ellipse, bis 0,95 π, siehe Gelenke wie beim Menschen. Alle null nehmen `coneAngle` in jede Richtung, bis 0,5 π. Der Mensch der Bibliothek: Schulter 160° nach vorn und zur Seite, 40° zurück und hinein, Hüfte 135° nach vorn, 20° zurück, 45° hinaus und 25° hinein |
+| `friction` | 0 | Reibung der Form des Knochens, null nimmt die des Rigs. Zwei Formen, die sich berühren, reiben mit der Wurzel aus dem Produkt ihrer Reibungen. Der Mensch der Bibliothek: Füße 0,9 wie eine Gummisohle auf trockenem Beton, sonst die 0,6 des Rigs |
 | `flinch`, `flinchHertz`, `flinchDamping` | 0, 0 Hz, 1 | Eine eigene Feder, die den Knochen bei einem leichten Treffer um sein Gelenk schwingt, siehe Treffer je Körperpartie: `flinch` mal so schnell, wie der Stoß alles dreht, was er trägt, mit dieser Frequenz und Dämpfung, unter 1 schwingt er über und zurück. Null Hertz halten ihn an seinem Elternknochen. Der Mensch der Bibliothek: Hals 0,3, 2,5 Hz, 0,7, Kopf 0,3, 3,5 Hz, 0,5, Oberarm 0,6, 2,5 Hz, 0,5, Unterarm 0,6, 3 Hz, 0,5, Hand 0,5, 4 Hz, 0,6 |
 
 | Rig (`nbRigDef`) | Standard | Wirkung |
 | --- | --- | --- |
-| `friction` | 0,6 | Reibung aller Formen der Knochen |
+| `friction` | 0,6 | Reibung der Formen der Knochen ohne eigene, siehe `nbBoneDef::friction` |
 | `selfCollision` | an | Knochen derselben Figur, die nicht verbunden sind, kollidieren miteinander |
 | `enableCollisionDamage` | an | Die Knochen eines Ragdolls beschädigen, was sie treffen: alle Kontakte mit einem Teil eines Zerstörbaren in einem Schritt als ein Einschlag, siehe Ragdoll durch die Wand |
 
@@ -2726,13 +2756,14 @@ glslang und SPIRV-Cross geprüft. Ein Lauf von sokol-shdc schreibt ihn neu.
 - Eine Figur, die sich fängt, hält ihr Becken wie auf `ragdoll-11` mit einem begrenzten Drehmoment gegen die Welt
   aufrecht, nicht nur mit ihren Beinen. Ein Mensch, der stolpert, tut das mit seinem Gleichgewichtssinn, hier tut es ein
   Gelenk von Box3D. Ein Spiel, das es rein physikalisch will, setzt `uprightAgainstWorld` auf aus, dann hält das Gelenk
-  das Becken gegen die Oberschenkel, oder `uprightTorque` auf null. Dann fängt sich der Mensch der Bibliothek viel
-  schlechter: Von 168 leichten Treffern fallen 43 und ohne Gelenk 56, mit dem Gelenk gegen die Welt keiner, mit dem
-  Gelenk gegen die Oberschenkel auf die Brust getroffen aus den vier Richtungen schon ab 58 bis 78 N s. Die eigene
-  Balance wächst Stufe für Stufe, siehe F61 der Roadmap.
+  das Becken gegen die Oberschenkel, oder `uprightTorque` auf null. Dann fängt sich der Mensch der Bibliothek
+  schlechter: Von 168 leichten Treffern fallen 9 und ohne Gelenk 17, mit dem Gelenk gegen die Welt keiner, mit dem
+  Gelenk gegen die Oberschenkel auf die Brust getroffen von vorn schon ab 66 N s, von links ab 72, von rechts ab 86 und
+  von hinten ab 94 N s. Die eigene Balance wächst Stufe für Stufe, siehe F61 der Roadmap.
 - Nach einem harten Stoß tritt eine Figur so lange wie nach einem leichten, 0,3 s, und ihr Schwungbein folgt seinem Ziel
   etwa 0,1 s zu spät. Ihr erster Schritt landet so oft über sein Ziel hinaus, und sie steht danach breit. Schnellere
-  Schritte ließen in Runde 34 mehr Treffer fallen, nicht weniger, siehe F60 der Roadmap. Bis `active-ragdoll-33` plante
+  Schritte ließen in Runde 34 mehr Treffer fallen, nicht weniger, siehe F60 der Roadmap, und ein Schwungbein, dessen
+  Gelenke ihrem Ziel mit dessen Geschwindigkeit folgen, in Runde 45 auch. Bis `active-ragdoll-33` plante
   sie ihre Schritte nach der Richtung ihres Beckens und fiel nach 4 von 168 leichten Treffern in der Szene der Tests,
   siehe Füße statt Becken.
 - Die Muskeln (`nbFigureMotors::muscles`) sind eine Näherung auf der Ebene der Gelenke und standardmäßig aus. Ihre

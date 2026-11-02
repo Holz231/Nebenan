@@ -1057,6 +1057,11 @@ typedef struct nbBoneDef
 	/// Mass in kilograms. The density follows from it and the shape.
 	float mass;
 
+	/// Friction of the shape, zero for the friction of the rig, see nbRigDef::friction. Box3D takes the square root of
+	/// the product of the frictions of two shapes that touch. The humanoid of the library has 0.9 on its feet, the grip
+	/// of a rubber sole on dry concrete between sticking and sliding, and the 0.6 of the rig elsewhere. Zero by default.
+	float friction;
+
 	/// How the bone is joined to its parent, nothing for the root
 	nbJointType joint;
 
@@ -1130,7 +1135,7 @@ typedef struct nbRigDef
 	const nbBoneDef* bones;
 	int boneCount;
 
-	/// Friction of all shapes
+	/// Friction of the shapes of the bones without one of their own, see nbBoneDef::friction
 	float friction;
 
 	/// Bones that are not joined to each other collide. Off, no bone of a figure collides with another of the same
