@@ -1836,7 +1836,7 @@ static void BuildFightScene( App& app )
 		def.position = b3ToPos( { 0.0f, 0.0f, z } );
 		def.heading = 0.0f;
 		nbFigureId puncher = nbCreateFigure( app.destruction, &def );
-		def.position = b3ToPos( { -0.2f, 0.0f, z + ( pair == 0 ? 0.8f : 0.75f ) } );
+		def.position = b3ToPos( { -0.2f, 0.0f, z + ( pair == 0 ? 0.77f : 0.72f ) } );
 		def.heading = B3_PI;
 		nbFigureId other = nbCreateFigure( app.destruction, &def );
 		if ( nbFigure_IsValid( puncher ) && nbFigure_IsValid( other ) )

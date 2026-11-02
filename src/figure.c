@@ -496,16 +496,16 @@ float nbMakeHumanoidBones( float height, float mass, nbBoneDef* bones, int capac
 		int foot = side == 0 ? nb_humanoidFootLeft : nb_humanoidFootRight;
 
 		// The shoulders turn 2.5 cm outside the chest, and the arms hang 3 degrees out from the body, past the trunk by
-		// 1.5 cm and more, the fingertips 26 cm from the middle. Upper arm, forearm and hand are 37, 27 and 17 cm long, as
-		// their joints lie in the reference picture, longer than on a person by a tenth: the elbow at the belly, the wrist
-		// at the crotch.
+		// 1.5 cm and more, the fingertips 26 cm from the middle. Upper arm, forearm and hand are 35, 26 and 17 cm long, a
+		// little shorter than in the reference picture as the user asked, 37, 27 and 17 cm until round 43, there longer than
+		// on a person by a tenth.
 		b3Quat armRest = b3MakeQuatFromAxisAngle( b3Vec3_axisZ, B3_PI + 0.05f * x );
 		bones[upperArm] = nbLimb( side == 0 ? "upper arm left" : "upper arm right", nb_humanoidChest,
-								  (b3Vec3){ 0.215f * s * x, 0.05f * s, 0.0f }, armRest, 0.37f * s, 0.05f * s, 2.0f * m,
+								  (b3Vec3){ 0.215f * s * x, 0.05f * s, 0.0f }, armRest, 0.35f * s, 0.05f * s, 2.0f * m,
 								  nb_ballJoint, zToY, 0.0f, 0.0f, 0.0f, 0.6f );
-		bones[forearm] = nbLimb( side == 0 ? "forearm left" : "forearm right", upperArm, (b3Vec3){ 0.0f, 0.37f * s, 0.0f },
-								 identity, 0.27f * s, 0.045f * s, 1.2f * m, nb_hingeJoint, zToX, -0.087f, 2.53f, 0.0f, 0.4f );
-		bones[hand] = nbLimb( side == 0 ? "hand left" : "hand right", forearm, (b3Vec3){ 0.0f, 0.27f * s, 0.0f }, identity,
+		bones[forearm] = nbLimb( side == 0 ? "forearm left" : "forearm right", upperArm, (b3Vec3){ 0.0f, 0.35f * s, 0.0f },
+								 identity, 0.26f * s, 0.045f * s, 1.2f * m, nb_hingeJoint, zToX, -0.087f, 2.53f, 0.0f, 0.4f );
+		bones[hand] = nbLimb( side == 0 ? "hand left" : "hand right", forearm, (b3Vec3){ 0.0f, 0.26f * s, 0.0f }, identity,
 							  0.17f * s, 0.035f * s, 0.8f * m, nb_ballJoint, zToY, 0.0f, 0.0f, 0.0f, 0.15f );
 
 		// The shoulder lifts the arm 160 degrees forward and out, 40 back and in, and turns it 90 in and 60 out. The elbow

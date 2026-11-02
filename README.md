@@ -734,13 +734,14 @@ Becken 0,96 m über den Sohlen, die Füße flach unter den Hüften, 26 cm ausein
 steht vor, der Oberarm hängt aus der Schulter 0,1 rad nach hinten und ein wenig ab, der Unterarm ist 0,5 rad nach vorn
 gebeugt, und mit dem Atem neigen sich Brust und Kopf ein wenig. So bauen ihn der Clip `nb_clipIdle` mit der IK der Beine
 und das Ende des Aufstehens. Auch der Körper folgt seit `active-ragdoll-36` der Vorlage, `nbMakeHumanoidBones`: Oberarm,
-Unterarm und Hand sind 37, 27 und 17 cm lang statt 28, 24 und 16, die Schultern drehen 2,5 cm außerhalb der Brust auf
-1,45 m, die Hüften liegen 26 statt 20 cm auseinander, das Becken ist 40 cm breit, und die Brust steht 4 cm vor Rippen
-und Bauch. Die Massen bleiben. `nbMakeHumanoidBones` gibt die Standhöhe von 0,96 m zurück, auf ihr stehen die Clips ohne
-Bewegung der Wurzel. Ein eigener Clip mit geraden Beinen steht trotzdem auf dem Boden, die Füße heben die Wurzel um die
-2 cm, siehe Füße auf dem Boden. Der Schwerpunkt liegt so 5 cm vor den Knöcheln, 10 cm vor den Fersen und 18 cm hinter
-den Zehen. Auf `active-ragdoll-35` standen die Füße je 2 cm außerhalb der Hüften, die Beine wie ein A, und die Arme
-hingen etwas vor dem Körper, siehe „Stand in den Knien“ in [Optimierungen.md](docs/Optimierungen.md).
+Unterarm und Hand sind 37, 27 und 17 cm lang statt 28, 24 und 16, seit `active-ragdoll-44` etwas kürzer, 35, 26 und 17
+cm, siehe Etwas kürzere Arme, die Schultern drehen 2,5 cm außerhalb der Brust auf 1,45 m, die Hüften liegen 26 statt 20
+cm auseinander, das Becken ist 40 cm breit, und die Brust steht 4 cm vor Rippen und Bauch. Die Massen bleiben.
+`nbMakeHumanoidBones` gibt die Standhöhe von 0,96 m zurück, auf ihr stehen die Clips ohne Bewegung der Wurzel. Ein
+eigener Clip mit geraden Beinen steht trotzdem auf dem Boden, die Füße heben die Wurzel um die 2 cm, siehe Füße auf dem
+Boden. Der Schwerpunkt liegt so 5 cm vor den Knöcheln, 10 cm vor den Fersen und 18 cm hinter den Zehen. Auf
+`active-ragdoll-35` standen die Füße je 2 cm außerhalb der Hüften, die Beine wie ein A, und die Arme hingen etwas vor
+dem Körper, siehe „Stand in den Knien“ in [Optimierungen.md](docs/Optimierungen.md).
 
 Der neue Körper fängt Treffer auf den Rumpf schlechter und Treffer auf die Glieder besser als der von
 `active-ragdoll-35`: An den 4 464 Treffern auf Brust und Bauch fallen von 50 bis 89 N s 15 statt 11, die Figur fängt
@@ -902,22 +903,37 @@ zu seiner Lage zurück, mit höchstens der Kraft, mit der der Clip ihn beschleun
 `nbFigureMotors::followStrength` (Standard 1) mehr. Becken und Beine halten so auch ihre Drehung. Im Idle bleibt jeder
 Knochen 2,6 mm am Clip, die Faust eines Schlags, der in 0,12 s ausfährt, 4,1 cm. Ein Schlag trifft die Deckung oder den
 Körper: Durch eine kinematische Figur ginge die Faust 65 cm weit, in eine folgende geht sie 58 cm und drückt sie 8 cm
-zurück. Der Kontakt zählt mit seinem Impuls als Treffer, nach den Regeln jeder stehenden Figur, sie zuckt, tritt nach
-oder fängt sich. Wird ihr Becken 20 cm oder 0,5 rad aus dem Clip gedrückt, bleibt ein Knochen eine halbe Sekunde 25 cm
-daneben oder drücken andere Figuren sie mit mehr als ihrem halben Gewicht waagerecht, lässt sie los und fängt sich mit
-ihrer Balance, danach folgt sie wieder. Läuft eine Figur mit 1 m/s in eine andere, lassen beide los, und keine fällt.
-Sonst ist, was andere Figuren auf einen Kämpfer drücken, kein Drücken nach `pushForce` und keine Last, außer ein Ragdoll
-liegt auf ihm. Eine Sekunde nachdem die letzte Figur gegangen und sie wieder auf ihrem Clip ist, steht sie kinematisch,
-und ein Sprung mit `nbFigure_Move` um mehr als 1 m macht sie sofort kinematisch. `nbFigureInfo::following` sagt, ob sie
-folgt, `nbFigureInfo::letGoCount`, wie oft sie losließ, `nbFigureStats::followingCount` und `letGoCount` zählen für die
-Welt. Eine folgende Figur kostet auf der Cloud-VM mit einem Thread rund 0,065 ms pro Schritt statt 0,005 ms kinematisch,
-neun Zehntel davon im Löser von Box3D, 100 Kämpfer in 50 Paaren 6,8 ms mit einem Thread und 3,4 ms mit vier. Wer allein
-steht, bleibt kinematisch und kostet nichts dazu. Ohne `engageRadius` rechnet alles bitgleich wie vorher: Gepaart gegen
-`active-ragdoll-42` enden alle Szenen des Benchmarks mit denselben Prüfsummen, mit einem und mit vier Threads, die Stadt
-mit Figuren kostet 0,98 und 0,97 der Zeit davor, und Valgrind zählt für 50 Figuren, die stehen, zucken und fallen, 0,03
-% mehr Instruktionen. Wie viel 50 Kämpfer kosten, misst der Benchmark, siehe Kämpfer unter Leistung. Siehe „Kämpfer
-machen die Bewegung selbst“ in [Optimierungen.md](docs/Optimierungen.md). Ein Spiel setzt `engageRadius`, zum Beispiel 2
-m, und spielt seine Clips mit `nbFigure_PlayClip`.
+zurück, so mit den Armen von 81 cm bis `active-ragdoll-43`, siehe Etwas kürzere Arme. Der Kontakt zählt mit seinem
+Impuls als Treffer, nach den Regeln jeder stehenden Figur, sie zuckt, tritt nach oder fängt sich. Wird ihr Becken 20 cm
+oder 0,5 rad aus dem Clip gedrückt, bleibt ein Knochen eine halbe Sekunde 25 cm daneben oder drücken andere Figuren sie
+mit mehr als ihrem halben Gewicht waagerecht, lässt sie los und fängt sich mit ihrer Balance, danach folgt sie wieder.
+Läuft eine Figur mit 1 m/s in eine andere, lassen beide los, und keine fällt. Sonst ist, was andere Figuren auf einen
+Kämpfer drücken, kein Drücken nach `pushForce` und keine Last, außer ein Ragdoll liegt auf ihm. Eine Sekunde nachdem die
+letzte Figur gegangen und sie wieder auf ihrem Clip ist, steht sie kinematisch, und ein Sprung mit `nbFigure_Move` um
+mehr als 1 m macht sie sofort kinematisch. `nbFigureInfo::following` sagt, ob sie folgt, `nbFigureInfo::letGoCount`, wie
+oft sie losließ, `nbFigureStats::followingCount` und `letGoCount` zählen für die Welt. Eine folgende Figur kostet auf
+der Cloud-VM mit einem Thread rund 0,065 ms pro Schritt statt 0,005 ms kinematisch, neun Zehntel davon im Löser von
+Box3D, 100 Kämpfer in 50 Paaren 6,8 ms mit einem Thread und 3,4 ms mit vier. Wer allein steht, bleibt kinematisch und
+kostet nichts dazu. Ohne `engageRadius` rechnet alles bitgleich wie vorher: Gepaart gegen `active-ragdoll-42` enden alle
+Szenen des Benchmarks mit denselben Prüfsummen, mit einem und mit vier Threads, die Stadt mit Figuren kostet 0,98 und
+0,97 der Zeit davor, und Valgrind zählt für 50 Figuren, die stehen, zucken und fallen, 0,03 % mehr Instruktionen. Wie
+viel 50 Kämpfer kosten, misst der Benchmark, siehe Kämpfer unter Leistung. Siehe „Kämpfer machen die Bewegung selbst“ in
+[Optimierungen.md](docs/Optimierungen.md). Ein Spiel setzt `engageRadius`, zum Beispiel 2 m, und spielt seine Clips mit
+`nbFigure_PlayClip`.
+
+**Etwas kürzere Arme.** Seit `active-ragdoll-44` sind Oberarm und Unterarm des Menschen der Bibliothek auf Wunsch des
+Nutzers ein wenig kürzer, 35 und 26 statt 37 und 27 cm, die Hand bleibt 17 cm, zusammen 78 statt 81 cm, die Massen
+bleiben. Die hängende Hand endet so 3 cm höher. Mit der Stütze gegen die Welt, dem Standard, fängt eine Figur fast genau
+wie vorher: Von den 5 912 gemessenen Treffern fallen von den leichten und von 50 bis 89 N s weiter keine, von 90 bis 139
+N s weiter 385 und an den Gliedern 135 statt 133. Mit der Stütze durch die Beine fallen von den leichten Treffern 25
+statt 17, der kürzere Arm hilft beim Rudern etwas weniger, siehe F61 der Roadmap. Ein Kämpfer reicht mit dem geraden
+Schlag des Tests 62 statt 65 cm weit, und wen die Faust trifft, der zuckt, statt zwei Schritte zurückzutreten: Ihr Stoß
+lag knapp über der Schwelle für einen Schritt und liegt jetzt knapp darunter. In der Szene „Kampf“ stehen die Paare 3 cm
+näher. Gepaart gegen `active-ragdoll-43`, vier Läufe im Wechsel mit vier Threads und zwei mit einem, rechnen alle Szenen
+ohne Figuren dasselbe, und die mit Figuren enden mit einem und mit vier Threads gleich. Bei 10 Figuren hinter brechender
+Deckung liegt am Ende eine unter Trümmern der Mauer und wartet, bis sie frei ist, bei 50 steht die letzte 15 s später
+wieder. In der Stadt mit Figuren stürzen 4 statt 6 Etagen ein, und ein Bild kostet dort das 0,83- und 0,86-fache. Ein
+Spiel ruft dafür nichts auf, `nbMakeHumanoidBones` baut die Arme so.
 
 **Drücken.** Drückt ein Körper eine stehende Figur langsam, ein Stock, eine Hand oder ein Block, und schiebt er dabei
 einen ihrer Knochen mit mindestens `pushForce` (Standard 40 N) seitlich, bei zwei Prüfungen hintereinander, also ein
