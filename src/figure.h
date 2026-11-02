@@ -167,8 +167,8 @@ typedef struct nbBalancer
 
 	// Measured in every update: up, gravity, the height of the ground under the feet along up and under each foot on
 	// the ground, which feet stand, where each foot faces and where the figure faces after its feet, how far the pelvis
-	// tilts, the speed of the bones on average by their mass, the center of mass and its velocity, the capture point,
-	// how far it lies outside the support and the middle of the support
+	// tilts, the speed of the bones on average by their mass, the center of mass, its velocity and the angular momentum
+	// of the figure about it, the capture point, how far it lies outside the support and the middle of the support
 	b3Vec3 up;
 	float gravity;
 	float groundHeight;
@@ -180,6 +180,7 @@ typedef struct nbBalancer
 	float meanSpeed;
 	b3Vec3 center;
 	b3Vec3 velocity;
+	b3Vec3 spin;
 	b3Vec3 capture;
 	float captureMargin;
 	int supportCount;
@@ -220,8 +221,10 @@ typedef struct nbBalancer
 	float armHeld[2];
 	float armSlack[2];
 
-	// The hold that keeps the pelvis upright, see nbFigureMotors::uprightTorque
+	// The hold that keeps the pelvis upright, see nbFigureMotors::uprightTorque: against the world, or between the pelvis
+	// and each thigh, shared by the legs that carry the figure
 	b3JointId upright;
+	b3JointId uprightLegs[2];
 } nbBalancer;
 
 // What balance found in an update, see nbUpdateBalance

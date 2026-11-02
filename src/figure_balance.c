@@ -3,15 +3,15 @@
 // A figure that catches itself after a hard hit, after the balance of the branch ragdoll-11 and the roadmap of the
 // game, chapters 26.13 to 26.15 and 28.3 to 28.5. Its bones are dynamic, its joints pull toward the pose of its clip
 // with the full strength of the motors, and a hold keeps its pelvis upright with a bounded torque, see nbFigureMotors.
-// In every update after a step it measures its center of mass and its velocity, which feet stand on ground and where
-// they face, the support of their soles and the capture point: the center of mass ahead by its velocity over the
-// frequency of a pendulum as high as it is. There it would come to rest if it stopped it. It faces after its feet, not
-// its pelvis. Standing, the legs hold the feet where and as they are, move the pelvis over the middle of the support
-// and turn it back over the feet. When the capture point lies outside, a foot steps where the capture point will be
-// when it lands, turned as the stance foot, on ground that carries it and with room for the foot, as far as it reaches.
-// When that step comes short, the arms swing out in the sense of the fall, and their motors turn the body back against
-// it. Five steps in a row that do not catch it, a tilt, a sinking, a step that no foot can take or one that comes
-// hopelessly short, and it falls. Calm on its feet it stands animated again.
+// In every update after a step it measures its center of mass, its velocity and how it turns, which feet stand on
+// ground and where they face, the support of their soles and the capture point: the center of mass ahead by its
+// velocity and its turn over the frequency of a pendulum as high as it is. There it would come to rest if it stopped
+// it. It faces after its feet, not its pelvis. Standing, the legs hold the feet where and as they are, move the pelvis
+// over the middle of the support and turn it back over the feet. When the capture point lies outside, a foot steps
+// where the capture point will be when it lands, turned as the stance foot, on ground that carries it and with room for
+// the foot, as far as it reaches. When that step comes short, the arms swing out in the sense of the fall, and their
+// motors turn the body back against it. Five steps in a row that do not catch it, a tilt, a sinking, a step that no
+// foot can take or one that comes hopelessly short, and it falls. Calm on its feet it stands animated again.
 // Balance only sets targets of joints, the strength of the arms and the bounded hold, the motors and Box3D decide where
 // the bodies go. The decisions take fixed thresholds in the update after every step in the order of the figures, so the
 // same inputs give the same figure on every machine and with any number of threads.
@@ -48,8 +48,9 @@
 // No step starts that would leave the capture point at its landing more than this far outside the support, in meters
 // for the humanoid of 1.8 m. That far neither the arms nor the steps after it catch the figure, and it falls at once
 // instead of flying stiff and upright. Of the hits it caught on the upper chest from eight directions up to 132 N s, the
-// first step left the capture point at most 0.93 m outside.
-#define NB_GIVE_UP 1.1f
+// first step left the capture point at most 0.93 m outside up to active-ragdoll-38 and 1.16 m since the capture point
+// counts the turn of the body, see nbMeasure. With 1.1 m it gave up on 8 of them.
+#define NB_GIVE_UP 1.2f
 
 // The figure falls when its pelvis tilts farther than this from upright, in radians, or its center of mass sinks below
 // this part of its height standing, in the first pose of its idle clip, see nbInitBalancer
@@ -150,6 +151,10 @@
 // seconds. With a foot under a block of rubble a figure stepped with the other one again and again, every 0.7 s for as
 // long as the block lay there. Of the 5 744 hits measured on active-ragdoll-35 the longest catch took 6.3 s.
 #define NB_RESTLESS_TIME 8.0f
+
+// A hold through a leg that does not carry the figure keeps this little torque, in newton meters: a joint of Box3D with
+// none keeps the impulse it last had and pushes with it in every substep
+#define NB_MIN_HOLD 1.0e-3f
 
 //----------------------------------------------------------------------------------------------------------------------
 // Small geometry
@@ -512,6 +517,8 @@ void nbInitBalancer( nbFigure* f, float standCenter )
 	nbBalancer* b = &f->balancer;
 	memset( b, 0, sizeof( nbBalancer ) );
 	b->upright = b3_nullJointId;
+	b->uprightLegs[0] = b3_nullJointId;
+	b->uprightLegs[1] = b3_nullJointId;
 	b->stepFoot = -1;
 	b->scale = f->def.standHeight / NB_HUMANOID_STAND;
 	b3Vec3 up = b3Vec3_axisY;
@@ -657,6 +664,21 @@ static void nbMeasure( const nbWorld* world, int index, const nbFigure* f, nbBal
 	b->velocity = velocity;
 	b->meanSpeed = speed / mass;
 
+	// The angular momentum of the figure about its center of mass: each bone turning about its own center and moving
+	// about the center of the figure
+	b3Vec3 spin = b3Vec3_zero;
+	for ( int i = 0; i < f->boneCount; ++i )
+	{
+		b3BodyId body = f->bones[i].bodyId;
+		b3Quat q = b3Body_GetRotation( body );
+		b3Matrix3 inertia = b3Body_GetLocalRotationalInertia( body );
+		b3Vec3 turn = b3RotateVector( q, b3MulMV( inertia, b3InvRotateVector( q, b3Body_GetAngularVelocity( body ) ) ) );
+		b3Vec3 arm = b3Sub( b3ToVec3( b3Body_GetWorldCenter( body ) ), center );
+		b3Vec3 relative = b3Sub( b3Body_GetLinearVelocity( body ), velocity );
+		spin = b3Add( spin, b3MulAdd( turn, f->bones[i].mass, b3Cross( arm, relative ) ) );
+	}
+	b->spin = spin;
+
 	// How far the pelvis tilts
 	b3WorldTransform pelvis = b3Body_GetTransform( f->bones[0].bodyId );
 	float upright = b3Dot( b3RotateVector( pelvis.q, b3Vec3_axisY ), up );
@@ -768,10 +790,17 @@ static void nbMeasure( const nbWorld* world, int index, const nbFigure* f, nbBal
 	}
 	b->supportMiddle = hullCount > 0 ? b3MulSV( 1.0f / (float)hullCount, middle ) : b3Vec3_zero;
 
-	// The capture point: the center of mass ahead by its velocity over the frequency of a pendulum as long as its height
+	// The capture point: the center of mass ahead by its velocity over the frequency of a pendulum as long as its
+	// height. A figure that turns has to stop turning as well, and the ground under its feet takes the turn out with a
+	// force along the ground below the center of mass, which pushes the center of mass the way the turn goes: a turn of
+	// angular momentum L takes a push of L over the height, so it counts as a velocity of L x up over mass and height.
+	// 60 N s from the front on the upper chest turn the humanoid back with 25 N m s, which count as 0.35 m/s on top of
+	// the 0.81 m/s of its center of mass. The hold against the world takes out part of the turn as the figure goes, and
+	// the capture point follows. Without the turn the figure stepped shorter, see the roadmap, F61.
 	float height = b3MaxFloat( b3Dot( center, up ) - b->groundHeight, 0.05f );
 	float omega = sqrtf( b3MaxFloat( b->gravity, 0.01f ) / height );
-	b3Vec3 capture = nbAtHeight( b3MulAdd( center, 1.0f / omega, nbFlat( velocity, up ) ), up, b->groundHeight );
+	b3Vec3 drift = b3MulAdd( nbFlat( velocity, up ), 1.0f / ( mass * height ), b3Cross( spin, up ) );
+	b3Vec3 capture = nbAtHeight( b3MulAdd( center, 1.0f / omega, drift ), up, b->groundHeight );
 	b->capture = capture;
 	b3Vec2 q = { b3Dot( capture, e1 ), b3Dot( capture, e2 ) };
 	b->captureMargin = nbPolygonMargin( hull, hullCount, q );
@@ -1056,6 +1085,46 @@ static b3Quat nbQuatZTo( b3Vec3 direction )
 	return b3ComputeQuatBetweenUnitVectors( b3Vec3_axisZ, b3MulSV( 1.0f / length, direction ) );
 }
 
+// The hold through the legs: the legs that carry the figure share it, the stance leg alone while the other swings, both
+// on the ground alike, none without ground under them. Each joint holds the up of the world as it lies in the frame of
+// its thigh in this update, so the pelvis turns upright against the thigh, and the thigh pushes against the ground.
+static void nbHoldUpright( const nbFigure* f, const nbBalancer* b )
+{
+	if ( b3Joint_IsValid( b->uprightLegs[0] ) == false )
+	{
+		return;
+	}
+
+	const nbFigureMotors* motors = &f->def.motors;
+	float share[2] = { 0.0f, 0.0f };
+	if ( b->stepping )
+	{
+		int stance = 1 - b->stepFoot;
+		share[stance] = b->footContact[stance] ? 1.0f : 0.0f;
+	}
+	else
+	{
+		int count = ( b->footContact[0] ? 1 : 0 ) + ( b->footContact[1] ? 1 : 0 );
+		for ( int leg = 0; leg < 2 && count > 0; ++leg )
+		{
+			share[leg] = b->footContact[leg] ? 1.0f / (float)count : 0.0f;
+		}
+	}
+
+	b3BodyId root = f->bones[0].bodyId;
+	b3Quat frameB = b3MulQuat( b3Body_GetRotation( root ), nbQuatZTo( b3Vec3_axisY ) );
+	for ( int leg = 0; leg < 2; ++leg )
+	{
+		b3JointId joint = b->uprightLegs[leg];
+		b3BodyId thigh = f->bones[nb_thighs[leg]].bodyId;
+		b3Quat upInThigh = b3InvMulQuat( b3Body_GetRotation( thigh ), nbQuatZTo( b->up ) );
+		b3Joint_SetLocalFrameA( joint, (b3Transform){ b3Vec3_zero, upInThigh } );
+		float stiffness = b3MaxFloat( share[leg] * motors->uprightStiffness, 1.0f );
+		b3ParallelJoint_SetSpringHertz( joint, nbJointSpringHertz( thigh, root, frameB, false, stiffness, 0.0f ) );
+		b3ParallelJoint_SetMaxTorque( joint, b3MaxFloat( share[leg] * motors->uprightTorque, NB_MIN_HOLD ) );
+	}
+}
+
 void nbBeginBalance( nbWorld* world, int index, nbFigure* f )
 {
 	nbBalancer* b = &f->balancer;
@@ -1111,10 +1180,31 @@ void nbBeginBalance( nbWorld* world, int index, nbFigure* f )
 		}
 	}
 
-	// The upright hold: a parallel joint keeps the up axis of the pelvis along the up of the world, against the static
-	// anchor of the world, with a bounded torque
+	// The upright hold: parallel joints keep the up axis of the pelvis along the up of the world with a bounded torque,
+	// against the thighs of the legs that carry the figure or against the static anchor of the world, see
+	// nbFigureMotors::uprightAgainstWorld
 	const nbFigureMotors* motors = &f->def.motors;
-	if ( motors->uprightTorque > 0.0f && motors->uprightStiffness > 0.0f )
+	if ( motors->uprightTorque > 0.0f && motors->uprightStiffness > 0.0f && motors->uprightAgainstWorld == false )
+	{
+		// Between the pelvis and each thigh, the up of the world held in the frame of the thigh, see nbHoldUpright
+		b3BodyId root = f->bones[0].bodyId;
+		for ( int leg = 0; leg < 2; ++leg )
+		{
+			b3BodyId thigh = f->bones[nb_thighs[leg]].bodyId;
+			b3Quat upInThigh = b3InvMulQuat( b3Body_GetRotation( thigh ), nbQuatZTo( b->up ) );
+			b3ParallelJointDef def = b3DefaultParallelJointDef();
+			def.base.bodyIdA = thigh;
+			def.base.bodyIdB = root;
+			def.base.localFrameA = (b3Transform){ b3Vec3_zero, upInThigh };
+			def.base.localFrameB = (b3Transform){ b3Vec3_zero, nbQuatZTo( b3Vec3_axisY ) };
+			def.base.collideConnected = false;
+			def.dampingRatio = b3MaxFloat( 0.0f, motors->uprightDampingRatio );
+			def.maxTorque = NB_MIN_HOLD;
+			b->uprightLegs[leg] = b3CreateParallelJoint( world->physicsWorld, &def );
+		}
+		nbHoldUpright( f, b );
+	}
+	else if ( motors->uprightTorque > 0.0f && motors->uprightStiffness > 0.0f )
 	{
 		b3BodyId anchor = nbUprightAnchor( world );
 		b3BodyId root = f->bones[0].bodyId;
@@ -1141,6 +1231,14 @@ void nbEndBalance( nbFigure* f )
 		b3DestroyJoint( b->upright, true );
 	}
 	b->upright = b3_nullJointId;
+	for ( int leg = 0; leg < 2; ++leg )
+	{
+		if ( b3Joint_IsValid( b->uprightLegs[leg] ) )
+		{
+			b3DestroyJoint( b->uprightLegs[leg], true );
+		}
+		b->uprightLegs[leg] = b3_nullJointId;
+	}
 	b->stepping = false;
 	b->stepFoot = -1;
 }
@@ -1444,6 +1542,7 @@ nbBalanceResult nbUpdateBalance( nbWorld* world, int index, nbFigure* f, float t
 		nbLegIK( f, b, stance, wanted, b->plant[stance], b->footFacing[stance], pose );
 	}
 
+	nbHoldUpright( f, b );
 	nbRowArms( f, b, timeStep, pose );
 	return nb_balanceGoesOn;
 }

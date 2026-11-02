@@ -510,13 +510,15 @@ struct App
 
 	// The figures of the scene with figures and the bones of their rig, to draw them, how hard the rifle hits a figure,
 	// what the overlay shows of them: what each does, and the pose each goes for, and whether they pull with muscles, see
-	// nbFigureMotors::muscles, from the next load of the scene
+	// nbFigureMotors::muscles, and hold their pelvis against their legs instead of the world while they catch themselves,
+	// see nbFigureMotors::uprightAgainstWorld, from the next load of the scene
 	std::vector<FigureVisual> figures;
 	nbBoneDef figureBones[nb_humanoidBoneCount] = {};
 	float figureHitImpulse = 60.0f;
 	bool showFigureStates = true;
 	bool showFigureTargets = false;
 	bool figureMuscles = false;
+	bool figureLegHold = false;
 
 	// Every part of the body of a figure in its own color, or each figure in one. The menu asks for the figures to be
 	// drawn again, and the next frame does it before the steps start.
@@ -1716,6 +1718,7 @@ static nbFigureDef MakeFigureDef( App& app, nbRigDef* rig )
 	def.rig = rig;
 	def.standHeight = standHeight;
 	def.motors.muscles = app.figureMuscles;
+	def.motors.uprightAgainstWorld = app.figureLegHold == false;
 	return def;
 }
 
@@ -2744,6 +2747,17 @@ static void DrawUi( App& app )
 							   "zieht umso schwächer, je schneller er sich dreht, gegen seine Richtung\ngedreht bis 1,5-mal so stark. "
 							   "Lädt die Szene neu. Gemessen fängt sich die Figur\ndamit gleich oft, ihr Rumpf ruckt bei harten "
 							   "Treffern auf den Bauch weniger, auf die\nBrust mehr. Zum Vergleich mit dem Auge an- und ausschalten." );
+		}
+		ImGui::SameLine();
+		if ( ImGui::Checkbox( "Stütze durch die Beine", &app.figureLegHold ) )
+		{
+			LoadScene( app, app.scene );
+		}
+		if ( ImGui::IsItemHovered() )
+		{
+			ImGui::SetTooltip( "Eine Figur, die sich fängt, hält ihr Becken gegen die Oberschenkel ihrer Beine aufrecht,\nnicht "
+							   "gegen die Welt: aus eigener Kraft, Stufe 1 der Roadmap, F61. Lädt die Szene neu.\nGemessen fällt "
+							   "sie so nach 87 von 168 leichten Treffern, mit der Stütze gegen die\nWelt nach keinem." );
 		}
 		if ( ImGui::Checkbox( "Teile farbig", &app.figurePartColors ) )
 		{

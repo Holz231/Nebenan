@@ -650,9 +650,11 @@ Zustand `nb_figureBalancing`, nach Kapitel 26.13 bis 26.15 und 28.3 der Roadmap 
 `ragdoll-11`. Der Treffer verteilt sich wie beim aktiven Ragdoll auf die Knochen. Die Gelenke ziehen mit voller Kraft zu
 der Haltung des Clips, 800 N m pro rad bis 150 N m, die Arme mit 60 % davon, so schwingen sie mit dem Körper, und ein
 Gelenk von Box3D gegen einen statischen Anker der Welt hält das Becken aufrecht, mit höchstens 250 N m
-(`nbFigureMotors::uprightTorque`). In jedem Update misst die Figur ihren Schwerpunkt und seine Geschwindigkeit, welche
-Füße auf Boden stehen, auch einer, dessen Sohle bis 3 cm darüber schwebt, wohin die Füße zeigen, die Fläche ihrer Sohlen
-und den Capture Point, den Schwerpunkt um seine Geschwindigkeit durch die Frequenz eines Pendels seiner Höhe weiter. Sie
+(`nbFigureMotors::uprightTorque`), mit `uprightAgainstWorld = false` gegen die Oberschenkel der Beine, die sie tragen,
+siehe Balance aus eigener Kraft. In jedem Update misst die Figur ihren Schwerpunkt, seine Geschwindigkeit und ihre
+Drehung um ihn, welche Füße auf Boden stehen, auch einer, dessen Sohle bis 3 cm darüber schwebt, wohin die Füße zeigen,
+die Fläche ihrer Sohlen und den Capture Point, den Schwerpunkt um seine Geschwindigkeit und ihre Drehung durch die
+Frequenz eines Pendels seiner Höhe weiter. Sie
 richtet sich nach ihren Füßen, nicht nach dem Becken, siehe Füße statt Becken: Im Stand halten die Beine ihre Füße, wo
 und wie sie stehen, schieben das Becken über die Mitte der Sohlen und drehen es über die Füße zurück. Liegt der Capture
 Point zwei Updates lang mehr als 3 cm außerhalb, tritt ein Fuß dorthin, wo der Capture Point bei seiner Landung sein
@@ -660,7 +662,7 @@ wird, 5 cm darüber hinaus, gedreht wie der Standfuß, in Reichweite der Hüfte,
 höher oder tiefer liegt, mit Platz für den Fuß und freiem Weg dorthin, 0,3 s lang und 12 cm hoch. Die ersten 60 % des
 Schritts folgt sein Ziel dem Capture Point. Kommt der Schritt zu kurz, schwingen die Arme aus, siehe unten. Fängt sie
 auch der fünfte Schritt in Folge nicht, kann kein Fuß treten, ließe der beste Schritt den Capture Point bei der Landung
-mehr als 1,1 m draußen, neigt sie sich mehr als 0,6 rad, sinkt ihr Schwerpunkt unter drei Viertel seiner Höhe im Stand,
+mehr als 1,2 m draußen, neigt sie sich mehr als 0,6 rad, sinkt ihr Schwerpunkt unter drei Viertel seiner Höhe im Stand,
 berührt 0,3 s kein Fuß den Boden oder kommt sie 8 s lang nicht zur Ruhe, ohne dass etwas sie drückt, fällt sie als
 aktiver Ragdoll, ohne das Gelenk am Becken, siehe Nicht ewig fangen. Steht sie nach einem langen Ausfallschritt 0,3 s
 auf einem Fuß, während der andere in der Luft hängt, tritt sie mit ihm, sonst stünde sie nie ruhig. Eine Last von oben
@@ -797,6 +799,29 @@ Szene mit einer Figur endet bitgleich. Mit 10 Figuren kostet ein Schritt 0,79 un
 hinter brechender Deckung 0,89 und 0,88 und die 20 Ragdolls auf der Platte 0,96 und 0,97. In der Stadt mit Figuren
 kostet ein Bild 0,91 und 0,95 des Vorgängers: Dort stürzen vier statt fünf Etagen ein, mit höchstens 29 436 statt 52 424
 Kontakten, und am Ende stehen 26 statt 29 Figuren. Ein Spiel ruft dafür nichts auf.
+
+**Balance aus eigener Kraft.** Seit `active-ragdoll-39` geht die Balance den ersten Schritt dahin, sich aus eigener
+Kraft zu fangen, Stufe 1 von F61 der Roadmap. Ohne das Gelenk gegen die Welt fiel der Mensch der Bibliothek schon nach
+114 von 168 leichten Treffern, mit ihm nach keinem: Ein Treffer hoch auf der Brust dreht den Körper, 60 N s von vorn mit
+25 N m s um seinen Schwerpunkt, und das Gelenk nimmt diese Drehung von außen heraus. Aus eigener Kraft kann das nur der
+Boden, und er schiebt dabei den Schwerpunkt in Richtung der Drehung. Darum zählt die Drehung jetzt im Capture Point mit,
+für jede Figur, wie eine Geschwindigkeit des Schwerpunkts: der Drehimpuls um ihn, kreuz oben, durch Masse und Höhe, nach
+60 N s von vorn 0,35 m/s zu seinen 0,81 m/s. An den 4 464 Treffern auf Brust und Bauch fallen von 50 bis 89 N s weiter 2
+und von 90 bis 139 N s 628 statt 665, mit 2,0 statt 2,3 Schritten in 1,86 statt 1,99 s, von 1 280 Treffern auf Arme,
+Beine und Kopf 175 statt 214 und von den 168 leichten Treffern weiter keiner. Von vorn auf die Brust fängt ein Schritt
+statt drei von 58 bis 70 N s, und die Arme rudern schon ab 60 statt 76 N s. Die Grenze fürs Aufgeben steigt dafür von
+1,1 auf 1,2 m. Mit `nbFigureMotors::uprightAgainstWorld = false` hält das Gelenk das Becken gegen die Oberschenkel der
+Beine, die die Figur tragen, wie bei SIMBICON die Hüfte des Standbeins den Oberkörper, und das Bein stemmt sich gegen
+den Boden. Dann fallen von den leichten Treffern 87, vor dem neuen Capture Point 110, die meisten durch Sinken und
+Kippen, mit dem Gelenk gegen die Welt keiner, darum bleibt es Standard, bis die eigene Balance gleich gut fängt. Siehe
+„Balance aus eigener Kraft, Stufe 1“ in [Optimierungen.md](docs/Optimierungen.md). Gepaart gegen `active-ragdoll-38`,
+sechs Paare mit 4 Threads und vier mit einem, rechnen die Szenen ohne Figuren dasselbe, und die Szene mit einer Figur
+und die 20 Ragdolls auf der Platte enden bitgleich. Mit 10 Figuren kostet ein Schritt, während die Deckung bricht, das
+3,7- und 4,4-fache: Eine Figur liegt am Ende über der Kante ihrer Mauer und wartet auf Boden unter dem Becken, siehe F69
+der Roadmap. Mit 50 Figuren kostet derselbe Abschnitt 0,72 und 0,94 des Vorgängers, und alle 50 stehen am Ende. In der
+Stadt mit Figuren kostet ein Bild das 1,19- und 1,26-fache, dort stürzen sechs statt vier Etagen ein, mit höchstens
+83 876 statt 29 436 Kontakten, und am Ende stehen 29 statt 26 Figuren. Für den Capture Point ruft ein Spiel nichts auf,
+die Stütze durch die Beine wählt es mit `motors.uprightAgainstWorld = false`.
 
 **Nicht ewig fangen.** Mit dem neuen Stand zeigten sich zwei Lücken der Balance, die jede Haltung treffen können. Nach
 97 N s von vorn rechts auf die Brust stand eine Figur ganz still, ihr Capture Point aber 2,8 cm neben den Sohlen,
@@ -1602,7 +1627,8 @@ beim Einbinden nicht gebaut.
 | `maxTorque` | 150 N m | Größtes Drehmoment eines Gelenks bei voller Kraft, mal der Kraft des Knochens, darüber gibt es nach |
 | `strengthPerSpeed`, `fallStrength` | 0,1 pro m/s, 0,8 | Die Kraft wächst mit der mittleren Geschwindigkeit der Knochen bis `fallStrength`, wie in Overgrowth |
 | `stunTime` | 0 s | So viel schwächer ist ein Ragdoll nach einem Treffer oder einer Explosion, die Kraft kommt mit eins pro Sekunde zurück. Null behält die Kraft wie auf `ragdoll-11`. Bis `active-ragdoll-19` waren es 0,4 s, Overgrowth nimmt 0,9 s, dort fiele eine Figur aus dem Stand, ohne sich abzustützen |
-| `uprightTorque`, `uprightStiffness`, `uprightDampingRatio` | 250 N m, 1 500 N m pro rad, 1 | Hält das Becken einer Figur, die sich fängt, aufrecht gegen einen statischen Anker der Welt, mit höchstens diesem Drehmoment. Fällt sie, lässt es sofort los, null nimmt es weg |
+| `uprightTorque`, `uprightStiffness`, `uprightDampingRatio` | 250 N m, 1 500 N m pro rad, 1 | Hält das Becken einer Figur, die sich fängt, aufrecht, mit höchstens diesem Drehmoment. Fällt sie, lässt es sofort los, null nimmt es weg |
+| `uprightAgainstWorld` | an | Das Becken wird gegen einen statischen Anker der Welt aufrecht gehalten. Aus hält es sich gegen die Oberschenkel der Beine, die die Figur tragen, aus eigener Kraft, und fängt weniger, siehe Balance aus eigener Kraft |
 | `muscles` | aus | Die Gelenke ziehen mit genäherten Muskeln, siehe Muskeln. Aus nehmen sie die verlangte Kraft sofort und ziehen bei jeder Geschwindigkeit gleich stark |
 | `tenseTime`, `relaxTime` | 0,03 s, 0,08 s | Mit Muskeln: Zeitkonstanten, in denen ein Muskel die verlangte Kraft hinauf und hinab erreicht. Null folgt sofort |
 | `brakeStrength` | 1,5 | Mit Muskeln: So viel mehr hält ein Gelenk, das gegen seine Richtung gedreht wird, siehe `nbBoneDef::maxSpeed` |
@@ -2576,9 +2602,11 @@ glslang und SPIRV-Cross geprüft. Ein Lauf von sokol-shdc schreibt ihn neu.
   jeder kinematische Körper.
 - Eine Figur, die sich fängt, hält ihr Becken wie auf `ragdoll-11` mit einem begrenzten Drehmoment gegen die Welt
   aufrecht, nicht nur mit ihren Beinen. Ein Mensch, der stolpert, tut das mit seinem Gleichgewichtssinn, hier tut es ein
-  Gelenk von Box3D. Ein Spiel, das es rein physikalisch will, setzt `uprightTorque` auf null. Dann fängt sich der Mensch
-  der Bibliothek kaum noch: Auf die Brust getroffen fällt er aus allen vier Richtungen schon bei 50 N s, auch mit
-  schwingenden Armen.
+  Gelenk von Box3D. Ein Spiel, das es rein physikalisch will, setzt `uprightAgainstWorld` auf aus, dann hält das Gelenk
+  das Becken gegen die Oberschenkel, oder `uprightTorque` auf null. Dann fängt sich der Mensch der Bibliothek viel
+  schlechter: Von 168 leichten Treffern fallen 87 und ohne Gelenk 101, mit dem Gelenk gegen die Welt keiner, auf die
+  Brust getroffen fällt er aus allen vier Richtungen schon ab 52 bis 64 N s. Die eigene Balance wächst Stufe für Stufe,
+  siehe F61 der Roadmap.
 - Nach einem harten Stoß tritt eine Figur so lange wie nach einem leichten, 0,3 s, und ihr Schwungbein folgt seinem Ziel
   etwa 0,1 s zu spät. Ihr erster Schritt landet so oft über sein Ziel hinaus, und sie steht danach breit. Schnellere
   Schritte ließen in Runde 34 mehr Treffer fallen, nicht weniger, siehe F60 der Roadmap. Bis `active-ragdoll-33` plante

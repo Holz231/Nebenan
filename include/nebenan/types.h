@@ -1250,12 +1250,18 @@ typedef struct nbFigureMotors
 	/// strength as on the branch ragdoll-11.
 	float stunTime;
 
-	/// While the figure catches itself, see nb_figureBalancing, a hold keeps its pelvis upright against the world: a spring
-	/// of this stiffness in newton meters per radian and this damping ratio, with at most this torque in newton meters.
-	/// It lets go at once when the figure falls. Zero torque takes it away.
+	/// While the figure catches itself, see nb_figureBalancing, a hold keeps its pelvis upright: a spring of this stiffness
+	/// in newton meters per radian and this damping ratio, with at most this torque in newton meters. It lets go at once
+	/// when the figure falls. Zero torque takes it away.
 	float uprightTorque;
 	float uprightStiffness;
 	float uprightDampingRatio;
+
+	/// The hold pulls the pelvis upright against a static anchor of the world. False pulls it against the thighs of the
+	/// legs that carry the figure instead, which push against the ground as a person's do: the first stage of a balance
+	/// from the figure's own strength, which catches far fewer hits than the hold against the world, see the roadmap,
+	/// F61
+	bool uprightAgainstWorld;
 } nbFigureMotors;
 
 /// A figure, see nbCreateFigure. Initialize with nbDefaultFigureDef.

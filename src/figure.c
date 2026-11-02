@@ -246,6 +246,7 @@ nbFigureMotors nbDefaultFigureMotors( void )
 	motors.uprightTorque = 250.0f;
 	motors.uprightStiffness = 1500.0f;
 	motors.uprightDampingRatio = 1.0f;
+	motors.uprightAgainstWorld = true;
 	return motors;
 }
 

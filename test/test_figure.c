@@ -615,6 +615,8 @@ static int FigureSwingTest( void )
 // stance of the reference picture, round 36 fell at 100 N s from the front and caught 90 to 98, 102 and 104, round 37
 // fell at 98 and 100 and caught 94, 96 and 102 to 106: hard hits from the front lie where a little more or less tips the
 // balance. Round 38, which lifts its feet higher and sinks farther before it falls, catches 94 to 104 and falls at 106.
+// Round 39, whose capture point counts the turn of the body, see nbMeasure, catches 100 N s from the front with 2 steps
+// in 1.9 s where round 38 took 3 steps and 2.5 s, and still falls at 106.
 static int FigureCatchTest( void )
 {
 	typedef struct CatchCase
@@ -691,16 +693,18 @@ static int FigureCatchTest( void )
 	return 0;
 }
 
-// The arms row where a step comes short, see nbRowArms: an upper arm that does not swing into the body swings out in the
-// sense of the fall, the farther the shorter the step comes, and its motor turns the body back. Hit on the upper chest
-// with 100 N s from the front, both arms swing up from where they hang by more than 1.2 rad, with 80 N s from the front
-// by less than 1 rad, and the figure catches itself. Below about 74 N s from the front its steps catch it without the
-// arms, round 28 rowed at 60 N s but not at 56 or 64, round 35 at 72. Falling forward from 110 N s from behind they
-// swing back to the 40 degrees a shoulder allows, from more than 0.5 rad to 0.8, see nbMakeHumanoidBones: with a cone of
-// 86 degrees all round they swung back 1.3 rad, and the figure caught 120 N s. Round 35 caught 110 N s from behind.
-// Rounds 36 and 37, which stand with the center of mass farther ahead over the soles, see FigureStepTest, and kept the
-// arms 0.3 rad short of the cone, fell from 104 and 110 N s on. Round 38 swings them to the cone, lifts its feet higher
-// and catches up to 120 N s.
+// The arms row where a step comes short, see nbRowArms: an upper arm that does not swing into the body swings out in
+// the sense of the fall, the farther the shorter the step comes, and its motor turns the body back. Hit on the upper
+// chest with 100 N s from the front, both arms swing up from where they hang by more than 1.2 rad, with 62 N s from the
+// front by less than 1 rad, and the figure catches itself. Below about 58 N s from the front its steps catch it without
+// the arms, round 28 rowed at 60 N s but not at 56 or 64, round 35 at 72 and round 38 from 76 on. Since round 39 the
+// capture point counts the turn of the body, see nbMeasure: from 58 N s on one step catches the figure where round 38
+// took three up to 70 N s, and the arms row from 60 on, at 80 N s up to 1.57 rad where round 38 rowed up to 0.83.
+// Falling forward from 110 N s from behind they swing back to the 40 degrees a shoulder allows, from more than 0.5 rad
+// to 0.8, see nbMakeHumanoidBones: with a cone of 86 degrees all round they swung back 1.3 rad, and the figure caught
+// 120 N s. Round 35 caught 110 N s from behind. Rounds 36 and 37, which stand with the center of mass farther ahead
+// over the soles, see FigureStepTest, and kept the arms 0.3 rad short of the cone, fell from 104 and 110 N s on. Round
+// 38 swings them to the cone, lifts its feet higher and catches up to 120 N s.
 // Pushed to its left with 80 N s only the right arm rows, the left one would swing into the body, the right one up to
 // 1.62 rad with the chest of two parts of round 37. A swinging arm bends
 // its elbow, and the arms turn against the chest at most 15 rad/s and brake at most 450 rad/s2: they swing, they do not
@@ -720,7 +724,7 @@ static int FigureRowTest( void )
 		{ "100 N s from the front", { 0.0f, 0.0f, -100.0f }, { 1.2f, 1.2f }, { 1.6f, 1.6f } },
 		{ "110 N s from behind", { 0.0f, 0.0f, 110.0f }, { 0.5f, 0.5f }, { 0.8f, 0.8f } },
 		{ "80 N s to its left", { 80.0f, 0.0f, 0.0f }, { 0.0f, 1.2f }, { 0.4f, 1.7f } },
-		{ "80 N s from the front", { 0.0f, 0.0f, -80.0f }, { 0.4f, 0.4f }, { 1.0f, 1.0f } },
+		{ "62 N s from the front", { 0.0f, 0.0f, -62.0f }, { 0.4f, 0.4f }, { 1.0f, 1.0f } },
 	};
 	const int arms[2] = { nb_humanoidUpperArmLeft, nb_humanoidUpperArmRight };
 	for ( size_t c = 0; c < sizeof( cases ) / sizeof( cases[0] ); ++c )
@@ -779,6 +783,79 @@ static int FigureRowTest( void )
 		ENSURE( TurnAgainstTwin( figure, twin, nb_humanoidChest, nb_humanoidUpperArmRight ) < 0.05f );
 		DestroyFigureScene( &scene );
 	}
+	return 0;
+}
+
+// The hold through the legs, see nbFigureMotors::uprightAgainstWorld: while the figure catches itself, its pelvis is held
+// upright against the thighs of the legs that carry it, which push against the ground as a person's do, and not against
+// the world, whose anchor is never made. It is the first stage of the balance from the figure's own strength, F61 of the
+// roadmap, and catches far less than the hold against the world: of the 168 light hits from 40 to 80 N s on the upper
+// chest it lets 87 fall, the hold against the world none. 52 N s from its right it catches with one step, the same
+// with one thread and with four.
+static int FigureLegHoldTest( void )
+{
+	uint32_t hashes[2] = { 0u, 0u };
+	for ( int pass = 0; pass < 2; ++pass )
+	{
+		FigureScene scene;
+		CreateFigureScene( &scene, pass == 0 ? 1 : 4 );
+		nbFigureDef def = nbDefaultFigureDef();
+		def.rig = &scene.rig;
+		def.standHeight = scene.standHeight;
+		def.motors.uprightAgainstWorld = false;
+		nbFigureId figure = nbCreateFigure( scene.world, &def );
+		StepFigures( &scene, 30 );
+
+		// Two joints more on the pelvis while it catches itself, each to a thigh, and none to the world
+		b3BodyId pelvis = nbFigure_GetBody( figure, nb_humanoidPelvis );
+		int standing = b3Body_GetJointCount( pelvis );
+		ENSURE( HitChest( figure, 1, (b3Vec3){ 52.0f, 0.0f, 0.0f } ) );
+		ENSURE( nbFigure_GetState( figure ) == nb_figureBalancing );
+		b3JointId joints[8];
+		int count = b3Body_GetJoints( pelvis, joints, 8 );
+		int thighs = 0;
+		for ( int j = 0; j < count; ++j )
+		{
+			b3BodyId other = b3Joint_GetBodyA( joints[j] );
+			bool thigh = B3_ID_EQUALS( other, nbFigure_GetBody( figure, nb_humanoidThighLeft ) ) ||
+						 B3_ID_EQUALS( other, nbFigure_GetBody( figure, nb_humanoidThighRight ) );
+			thighs += b3Joint_GetType( joints[j] ) == b3_parallelJoint && thigh ? 1 : 0;
+		}
+		ENSURE( count == standing + 2 && thighs == 2 );
+		ENSURE( b3Body_IsValid( nbGetWorldFromId( scene.world )->figureAnchor ) == false );
+
+		// On its feet all the time, and standing animated again with the joints of its skeleton alone
+		int steps = 0;
+		float lowestHead = FLT_MAX;
+		while ( nbFigure_GetState( figure ) == nb_figureBalancing && steps < 360 )
+		{
+			StepFigures( &scene, 1 );
+			steps += 1;
+			lowestHead = b3MinFloat( lowestHead, BonePosition( figure, nb_humanoidHead ).y );
+		}
+		nbFigureInfo info = nbFigure_GetInfo( figure );
+		printf( "  52 N s from its right with %s: caught with %d steps in %.2f s, the head at least %.2f m high\n",
+				pass == 0 ? "one thread" : "four", info.stepCount, (float)steps / 60.0f, lowestHead );
+		ENSURE( info.state == nb_figureAnimated && info.knockdownCount == 0 && info.catchCount == 1 && info.stepCount >= 1 );
+		ENSURE( lowestHead > 1.3f );
+		ENSURE( b3Body_GetJointCount( pelvis ) == standing );
+
+		uint32_t hash = 2166136261u;
+		b3WorldTransform transforms[nb_humanoidBoneCount];
+		int boneCount = nbFigure_GetBoneTransforms( figure, transforms, nb_humanoidBoneCount );
+		for ( int i = 0; i < boneCount; ++i )
+		{
+			const uint8_t* bytes = (const uint8_t*)( transforms + i );
+			for ( size_t b = 0; b < sizeof( b3WorldTransform ); ++b )
+			{
+				hash = ( hash ^ bytes[b] ) * 16777619u;
+			}
+		}
+		hashes[pass] = ( hash ^ (uint32_t)( steps + 1024 * info.stepCount ) ) * 16777619u;
+		DestroyFigureScene( &scene );
+	}
+	printf( "  hash 0x%08x with one thread, 0x%08x with four\n", hashes[0], hashes[1] );
+	ENSURE( hashes[0] == hashes[1] );
 	return 0;
 }
 
@@ -971,7 +1048,7 @@ static uint32_t MuscleCatch( int threadCount, float impulse )
 }
 
 // The throw of 90 N s on a figure with muscles ends in the same bits with one thread and with four, on every platform
-#define NB_EXPECTED_MUSCLE_HASH 0x3c607ddeu
+#define NB_EXPECTED_MUSCLE_HASH 0xbe77ecbeu
 
 // The muscles, see nbFigureMotors::muscles and nbUpdateMuscles. A figure with muscles hit while it stands catches itself
 // with the strength the balance asks for at once: every joint of its trunk and its legs at the full torque of the motors,
@@ -2952,7 +3029,7 @@ static int ThinBoardTest( void )
 }
 
 // The hash of the figure scenario on every platform, see RunFigureScenario
-#define NB_EXPECTED_FIGURE_HASH 0x1cbf00c7u
+#define NB_EXPECTED_FIGURE_HASH 0xb0fabf92u
 
 static int FigureDeterminismTest( void )
 {
@@ -2979,6 +3056,7 @@ int FigureTest( void )
 	RUN_TEST( FigureSwingTest );
 	RUN_TEST( FigureCatchTest );
 	RUN_TEST( FigureRowTest );
+	RUN_TEST( FigureLegHoldTest );
 	RUN_TEST( FigureCatchScanTest );
 	RUN_TEST( FigureFacingTest );
 	RUN_TEST( FigureMuscleTest );
