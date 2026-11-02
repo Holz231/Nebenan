@@ -243,7 +243,7 @@ nbFigureMotors nbDefaultFigureMotors( void )
 	motors.strengthPerSpeed = 0.1f;
 	motors.fallStrength = 0.8f;
 	motors.stunTime = 0.0f;
-	motors.uprightTorque = 250.0f;
+	motors.uprightTorque = 125.0f;
 	motors.uprightStiffness = 1500.0f;
 	motors.uprightDampingRatio = 1.0f;
 	motors.uprightAgainstWorld = true;

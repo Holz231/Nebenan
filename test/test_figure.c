@@ -201,6 +201,55 @@ static int SpringTorqueLimitTest( void )
 	return 0;
 }
 
+// A parallel joint applies the torque its limit says, see b3ParallelJointDef::maxTorque: a rod tilted 0.3 rad from its
+// target, with a spring stiff enough to want hundreds of times more, turns back in one step as fast as its limit turns
+// it, the cosine of half the angle short of the full limit, and the joint reports that torque. Up to active-ragdoll-41
+// the joint turned it by half: its axes are half the derivative of the turn and the bound held their impulse, so the
+// 250 N m of nbFigureMotors::uprightTorque held 125.
+static int ParallelJointTorqueTest( void )
+{
+	b3WorldDef worldDef = b3DefaultWorldDef();
+	worldDef.gravity = b3Vec3_zero;
+	b3WorldId worldId = b3CreateWorld( &worldDef );
+	b3BodyDef anchorDef = b3DefaultBodyDef();
+	b3BodyId anchor = b3CreateBody( worldId, &anchorDef );
+
+	// A rod of about 10 kg, a meter long along z, tilted about x
+	const float tilt = 0.3f;
+	b3BodyDef bodyDef = b3DefaultBodyDef();
+	bodyDef.type = b3_dynamicBody;
+	bodyDef.rotation = b3MakeQuatFromAxisAngle( b3Vec3_axisX, tilt );
+	b3BodyId rod = b3CreateBody( worldId, &bodyDef );
+	b3ShapeDef shapeDef = b3DefaultShapeDef();
+	b3Capsule capsule = { { 0.0f, 0.0f, -0.45f }, { 0.0f, 0.0f, 0.45f }, 0.05f };
+	shapeDef.density = 10.0f / ( B3_PI * 0.05f * 0.05f * 0.9f + 4.0f / 3.0f * B3_PI * 0.05f * 0.05f * 0.05f );
+	b3CreateCapsuleShape( rod, &shapeDef, &capsule );
+
+	const float maxTorque = 20.0f;
+	b3ParallelJointDef jointDef = b3DefaultParallelJointDef();
+	jointDef.base.bodyIdA = anchor;
+	jointDef.base.bodyIdB = rod;
+	jointDef.hertz = 30.0f;
+	jointDef.dampingRatio = 1.0f;
+	jointDef.maxTorque = maxTorque;
+	b3JointId joint = b3CreateParallelJoint( worldId, &jointDef );
+
+	const float timeStep = 1.0f / 60.0f;
+	b3World_Step( worldId, timeStep, 4 );
+
+	// The torque that turned the rod over the step, by its rotational inertia about x
+	b3Matrix3 inertia = b3Body_GetLocalRotationalInertia( rod );
+	float turned = inertia.cx.x * fabsf( b3Body_GetAngularVelocity( rod ).x ) / timeStep;
+	float reported = b3Length( b3Joint_GetConstraintTorque( joint ) );
+	float expected = maxTorque * cosf( 0.5f * tilt );
+	printf( "  a limit of %.0f N m turns the rod with %.2f N m and reports %.2f, %.2f expected\n", maxTorque, turned, reported,
+			expected );
+	ENSURE_SMALL( turned - expected, 0.02f * maxTorque );
+	ENSURE_SMALL( reported - expected, 0.02f * maxTorque );
+	b3DestroyWorld( worldId );
+	return 0;
+}
+
 // A cone with its own limit in each of four directions, see b3SphericalJointDef::enableSwingLimit: a rod on a spherical
 // joint that swings 160 degrees about +x, 40 about -x, 149 about +y and 29 about -y, spun hard about 16 axes in the xy
 // plane, never swings more than a degree past the edge of the cone, and along the four axes it reaches it
@@ -3074,6 +3123,7 @@ int FigureTest( void );
 int FigureTest( void )
 {
 	RUN_TEST( SpringTorqueLimitTest );
+	RUN_TEST( ParallelJointTorqueTest );
 	RUN_TEST( SwingLimitTest );
 	RUN_TEST( ArmatureTest );
 	RUN_TEST( HumanoidClipTest );

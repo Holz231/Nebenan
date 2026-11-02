@@ -201,7 +201,11 @@ void b3SolveParallelJoint( b3JointSim* base, b3StepContext* context )
 		b3Vec3 wRel = b3Sub( wB, wA );
 		b3Vec2 cdot = { b3Dot( wRel, perpAxisX ), b3Dot( wRel, perpAxisY ) };
 
-		float maxImpulse = context->h * joint->maxTorque;
+		// The axes are half the derivative of the turn, so the joint turns the bodies with half its impulse: the
+		// bound on the impulse is twice the torque over the step. So the joint applies at most maxTorque, all of it
+		// near its target and the cosine of half the angle away from it, 0.96 of it at 0.6 rad. Before, it applied
+		// half. Added for Nebenan.
+		float maxImpulse = 2.0f * context->h * joint->maxTorque;
 		b3Vec2 oldImpulse = joint->perpImpulse;
 		b3Vec2 cdotPlusBias = { cdot.x + bias.x, cdot.y + bias.y };
 		b3Vec2 sol = b3Solve2( k, cdotPlusBias );

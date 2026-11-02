@@ -649,7 +649,7 @@ abfangen, machen die Knochen eines Menschen der Bibliothek dynamisch, mit den Ge
 Zustand `nb_figureBalancing`, nach Kapitel 26.13 bis 26.15 und 28.3 der Roadmap des Spiels und der Balance des Branches
 `ragdoll-11`. Der Treffer verteilt sich wie beim aktiven Ragdoll auf die Knochen. Die Gelenke ziehen mit voller Kraft zu
 der Haltung des Clips, 800 N m pro rad bis 150 N m, die Arme mit 60 % davon, so schwingen sie mit dem Körper, und ein
-Gelenk von Box3D gegen einen statischen Anker der Welt hält das Becken aufrecht, mit höchstens 250 N m
+Gelenk von Box3D gegen einen statischen Anker der Welt hält das Becken aufrecht, mit höchstens 125 N m
 (`nbFigureMotors::uprightTorque`), mit `uprightAgainstWorld = false` gegen die Oberschenkel der Beine, die sie tragen,
 siehe Balance aus eigener Kraft. In jedem Update misst die Figur ihren Schwerpunkt, seine Geschwindigkeit und ihre
 Drehung um ihn, welche Füße auf Boden stehen, auch einer, dessen Sohle bis 3 cm darüber schwebt, wohin die Füße zeigen,
@@ -862,6 +862,18 @@ Figuren stehen am Ende alle, auf `active-ragdoll-40` lag eine über der Kante ih
 Deckung bricht, kostet das 0,85- und 0,90-fache. In der Stadt mit Figuren fangen sich 10 statt 4 Figuren, sechs statt
 fünf Etagen stürzen ein, und ein Bild kostet mit vier und mit einem Thread das 1,06-fache. Ein Spiel ruft dafür nichts
 auf.
+
+**Die Stütze hält, was ihre Zahl sagt.** Seit `active-ragdoll-42` wendet das Parallelgelenk von Box3D, das das Becken
+einer Figur aufrecht hält, gegen die Welt oder gegen die Oberschenkel, höchstens das Drehmoment an, das seine Grenze
+sagt, F70 der Roadmap. Vorher hielt es die Hälfte: Seine Achsen sind die halbe Ableitung der Drehung, und die Grenze
+galt ihrem Impuls. So wirkten die 250 N m von `nbFigureMotors::uprightTorque` als 125. Jetzt ist die Grenze in Box3D
+doppelt so hoch und der Standard 125 N m, und alles rechnet bitgleich wie vorher: alle Tests, die 5 912 gemessenen
+Treffer mit beiden Stützen und ohne Stütze und jede Szene des Benchmarks. Ein Spiel, das `uprightTorque` selbst gesetzt
+hat, bekommt jetzt die doppelte Stütze und halbiert seinen Wert, wenn sie bleiben soll, wie sie war. Wirklich 250 N m
+fangen mit der Stütze gegen die Welt mehr: Von den Treffern von 90 bis 139 N s fallen 252 statt 385 und an den Gliedern
+80 statt 133. Mit der Stütze durch die Beine fallen aber von den leichten Treffern 29 statt 17. Kugelgelenk, Scharnier
+und Motorgelenk, die die Bibliothek sonst mit Grenzen nutzt, halten ihre Grenzen genau. Siehe „Die Stütze hält, was ihre
+Zahl sagt“ in [Optimierungen.md](docs/Optimierungen.md). Ein Spiel ruft dafür nichts auf.
 
 **Nicht ewig fangen.** Mit dem neuen Stand zeigten sich zwei Lücken der Balance, die jede Haltung treffen können. Nach
 97 N s von vorn rechts auf die Brust stand eine Figur ganz still, ihr Capture Point aber 2,8 cm neben den Sohlen,
@@ -1667,7 +1679,7 @@ beim Einbinden nicht gebaut.
 | `maxTorque` | 150 N m | Größtes Drehmoment eines Gelenks bei voller Kraft, mal der Kraft des Knochens, darüber gibt es nach |
 | `strengthPerSpeed`, `fallStrength` | 0,1 pro m/s, 0,8 | Die Kraft wächst mit der mittleren Geschwindigkeit der Knochen bis `fallStrength`, wie in Overgrowth |
 | `stunTime` | 0 s | So viel schwächer ist ein Ragdoll nach einem Treffer oder einer Explosion, die Kraft kommt mit eins pro Sekunde zurück. Null behält die Kraft wie auf `ragdoll-11`. Bis `active-ragdoll-19` waren es 0,4 s, Overgrowth nimmt 0,9 s, dort fiele eine Figur aus dem Stand, ohne sich abzustützen |
-| `uprightTorque`, `uprightStiffness`, `uprightDampingRatio` | 250 N m, 1 500 N m pro rad, 1 | Hält das Becken einer Figur, die sich fängt, aufrecht, mit höchstens diesem Drehmoment. Fällt sie, lässt es sofort los, null nimmt es weg |
+| `uprightTorque`, `uprightStiffness`, `uprightDampingRatio` | 125 N m, 1 500 N m pro rad, 1 | Hält das Becken einer Figur, die sich fängt, aufrecht, mit höchstens diesem Drehmoment. Fällt sie, lässt es sofort los, null nimmt es weg |
 | `uprightAgainstWorld` | an | Das Becken wird gegen einen statischen Anker der Welt aufrecht gehalten. Aus hält es sich gegen die Oberschenkel der Beine, die die Figur tragen, aus eigener Kraft, und fängt weniger, siehe Balance aus eigener Kraft |
 | `muscles` | aus | Die Gelenke ziehen mit genäherten Muskeln, siehe Muskeln. Aus nehmen sie die verlangte Kraft sofort und ziehen bei jeder Geschwindigkeit gleich stark |
 | `tenseTime`, `relaxTime` | 0,03 s, 0,08 s | Mit Muskeln: Zeitkonstanten, in denen ein Muskel die verlangte Kraft hinauf und hinab erreicht. Null folgt sofort |

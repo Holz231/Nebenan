@@ -155,7 +155,7 @@
 
 // A hold through a leg that does not carry the figure keeps this little torque, in newton meters: a joint of Box3D with
 // none keeps the impulse it last had and pushes with it in every substep
-#define NB_MIN_HOLD 1.0e-3f
+#define NB_MIN_HOLD 0.5e-3f
 
 // The spine bends the upper body on with the tilt of the pelvis by this many times the tilt, and at most this far, in
 // radians, see nbBendTrunk. With the hold through the legs, of the 168 light hits on the upper chest 36 fell at half

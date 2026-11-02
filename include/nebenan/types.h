@@ -1252,7 +1252,8 @@ typedef struct nbFigureMotors
 
 	/// While the figure catches itself, see nb_figureBalancing, a hold keeps its pelvis upright: a spring of this stiffness
 	/// in newton meters per radian and this damping ratio, with at most this torque in newton meters. It lets go at once
-	/// when the figure falls. Zero torque takes it away.
+	/// when the figure falls. Zero torque takes it away. Up to active-ragdoll-41 the parallel joint of Box3D applied
+	/// half of its limit, and the 250 N m that were the default held 125, the default since.
 	float uprightTorque;
 	float uprightStiffness;
 	float uprightDampingRatio;
