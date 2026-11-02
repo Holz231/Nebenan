@@ -37,10 +37,12 @@
 // step the time to catch a figure that three did not, and arms that swing out and hold instead of pulling hard leave
 // some light hits a fifth step short. With five, none of 672 hits up to 80 N s fell. A quicker step after a harder push
 // does not catch more: the swinging foot follows its target about 0.1 s late, so a step of 0.2 s back from a push of
-// 64 N s took the foot 15 instead of 57 cm, see the roadmap, F60.
+// 64 N s took the foot 15 instead of 57 cm, see the roadmap, F60. The humanoid stands in its knees with its feet behind
+// the pelvis and sinks while it steps after a hard push, so a foot that lifted 8 cm touched the ground early and landed
+// short, after 120 N s from behind 37 cm before its target. Lifted 12 cm it lands farther.
 #define NB_MAX_STEP_LENGTH 0.55f
 #define NB_STEP_DURATION 0.3f
-#define NB_STEP_HEIGHT 0.08f
+#define NB_STEP_HEIGHT 0.12f
 #define NB_MAX_STEPS 5
 
 // No step starts that would leave the capture point at its landing more than this far outside the support, in meters
@@ -50,7 +52,7 @@
 #define NB_GIVE_UP 1.1f
 
 // The figure falls when its pelvis tilts farther than this from upright, in radians, or its center of mass sinks below
-// this part of its height standing
+// this part of its height standing, in the first pose of its idle clip, see nbInitBalancer
 #define NB_FALL_ANGLE 0.6f
 #define NB_FALL_HEIGHT 0.75f
 
@@ -74,12 +76,14 @@
 // The arms row against a fall, see nbRowArms: while a step swings that leaves the capture point at its landing more than
 // this far outside the support, in meters for the humanoid of 1.8 m, and the capture point lies outside now, an upper arm
 // that does not swing into the body swings out in the sense of the fall. By this many radians for each meter the step
-// comes shorter than that, up to this many, never closer to the cone of the shoulder than this many and not at all if
-// less than this many are left, in this many seconds with the full strength of its motor, eased at both ends.
+// comes shorter than that, up to this many, never past the cone of the shoulder and not at all if less than this many
+// are left, in this many seconds with the full strength of its motor, eased at both ends. The arms of the humanoid hang
+// back from their rest, and the cone lets them swing back only 40 degrees: kept 0.3 rad short of it up to
+// active-ragdoll-37, an arm swung back only 0.3 rad when the figure fell forward. Eased to the cone, the arm does not
+// jolt, the armature of the shoulder calms it, see nbMakeHumanoidBones.
 #define NB_ROW_SHORT 0.1f
 #define NB_SWING_GAIN 6.5f
 #define NB_SWING_ANGLE 1.3f
-#define NB_ROW_SPARE 0.3f
 #define NB_SWING_LEAST 0.1f
 #define NB_SWING_TIME 0.2f
 
@@ -503,7 +507,7 @@ bool nbCanBalance( const nbFigure* f )
 	return true;
 }
 
-void nbInitBalancer( nbFigure* f )
+void nbInitBalancer( nbFigure* f, float standCenter )
 {
 	nbBalancer* b = &f->balancer;
 	memset( b, 0, sizeof( nbBalancer ) );
@@ -557,19 +561,7 @@ void nbInitBalancer( nbFigure* f )
 	}
 	b->standHeight = standHeight;
 	b->footGap = 0.6f * b3Length( nbFlat( b3Sub( b->hip[0], b->hip[1] ), up ) );
-
-	// The center of mass standing, from the bones at rest
-	b3Transform rest[nb_humanoidBoneCount];
-	b3Vec3 center = b3Vec3_zero;
-	float mass = 0.0f;
-	for ( int i = 0; i < f->boneCount; ++i )
-	{
-		const nbBone* bone = f->bones + i;
-		rest[i] = i == 0 ? b3Transform_identity : b3MulTransforms( rest[bone->parent], bone->rest );
-		center = b3MulAdd( center, bone->mass, b3TransformPoint( rest[i], b3Body_GetLocalCenter( bone->bodyId ) ) );
-		mass += bone->mass;
-	}
-	b->standCenter = b3Dot( b3MulSV( 1.0f / mass, center ), up ) + standHeight;
+	b->standCenter = standCenter;
 }
 
 //----------------------------------------------------------------------------------------------------------------------
@@ -1215,9 +1207,9 @@ static void nbRowArms( nbFigure* f, nbBalancer* b, float timeStep, b3Quat* pose 
 		const nbBone* bone = f->bones + arm;
 		b3Quat frame = b3MulQuat( chest, bone->rest.q );
 
-		// A hanging arm swings from where it is, not where its motion would point into the body, and not closer to the
-		// cone of the shoulder than the spare when the swing takes it farther from its rest. One that something holds
-		// stays where it is held.
+		// A hanging arm swings from where it is, not where its motion would point into the body, and not past the cone
+		// of the shoulder when the swing takes it farther from its rest. One that something holds stays where it is
+		// held.
 		if ( row && b->armSwing[k] == nb_armHangs && b->armSlack[k] == 0.0f )
 		{
 			b3Quat current = b3Body_GetRotation( bone->bodyId );
@@ -1240,7 +1232,7 @@ static void nbRowArms( nbFigure* f, nbBalancer* b, float timeStep, b3Quat* pose 
 					float flat = sqrtf( local.x * local.x + local.y * local.y );
 					float cone = flat > 0.0f ? nbSwingLimit( bone, local.x / flat, local.y / flat )
 											 : nbSwingLimit( bone, 1.0f, 0.0f );
-					angle = b3MinFloat( angle, cone - NB_ROW_SPARE - swung );
+					angle = b3MinFloat( angle, cone - swung );
 				}
 				if ( angle > NB_SWING_LEAST )
 				{

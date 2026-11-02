@@ -150,8 +150,9 @@ typedef struct nbBalancer
 {
 	// The legs at rest: hip pivots in the frame of the pelvis, lengths of thigh and shin, the rotation of the foot in the
 	// frame of the pelvis, the corners and the middle of the sole in the frame of the foot, and how far the ankle lies
-	// above the sole. Standing: the pelvis origin and the center of mass above the soles, the least gap between the
-	// ankles sideways, and the size of the figure against the humanoid of 1.8 m.
+	// above the sole. Standing: the pelvis origin above the soles with straight legs, the center of mass above them in
+	// the first pose of the idle clip, the least gap between the ankles sideways, and the size of the figure against the
+	// humanoid of 1.8 m.
 	b3Vec3 hip[2];
 	float thighLength[2];
 	float shinLength[2];
@@ -440,9 +441,10 @@ float nbSwingLimit( const nbBone* bone, float axisX, float axisY );
 // in the update, see nbUpdateMuscles.
 void nbSetBoneSpring( nbFigure* f, int index, float strength, bool enable );
 
-// Balance, see figure_balance.c. Can the figure catch itself, the humanoid of the library? The legs at rest, at creation.
+// Balance, see figure_balance.c. Can the figure catch itself, the humanoid of the library? The legs at rest and the
+// height of the center of mass standing, at creation.
 bool nbCanBalance( const nbFigure* f );
-void nbInitBalancer( nbFigure* f );
+void nbInitBalancer( nbFigure* f, float standCenter );
 
 // Begin to catch itself, the bones already dynamic: the upright hold and what balance measures. End it, without the hold.
 void nbBeginBalance( nbWorld* world, int index, nbFigure* f );

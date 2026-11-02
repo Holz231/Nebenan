@@ -609,11 +609,12 @@ static int FigureSwingTest( void )
 // ragdoll-11: the bones of the figure become dynamic, its joints hold the pose of its clip with the full strength of its
 // motors, a hold keeps its pelvis upright, and it catches itself with steps, its arms rowing where a step comes short.
 // On its feet all the time, it stands animated again where it caught itself and steps its feet back under its body. On
-// the upper chest it catches 60, 70 and 94 N s from the front, 80 N s from behind and 60 and 80 N s from either side.
+// the upper chest it catches 60, 70 and 100 N s from the front, 80 N s from behind and 60 and 80 N s from either side.
 // 150 N s from the front and 100 N s from its right are too much: it tries a step or two and falls, since the joints
-// move as far as a person's within 0.7 s, its arm on the far side raised above its head. Before round 36 it caught
-// 100 N s from the front. With the arms of 81 cm and the stance of the reference picture it falls there after four
-// steps and catches 90 to 98 and 102 and 104: hard hits from the front lie where a little more or less tips the balance.
+// move as far as a person's within 0.7 s, its arm on the far side raised above its head. With the arms of 81 cm and the
+// stance of the reference picture, round 36 fell at 100 N s from the front and caught 90 to 98, 102 and 104, round 37
+// fell at 98 and 100 and caught 94, 96 and 102 to 106: hard hits from the front lie where a little more or less tips the
+// balance. Round 38, which lifts its feet higher and sinks farther before it falls, catches 94 to 104 and falls at 106.
 static int FigureCatchTest( void )
 {
 	typedef struct CatchCase
@@ -625,7 +626,7 @@ static int FigureCatchTest( void )
 	CatchCase cases[] = {
 		{ "60 N s from the front", { 0.0f, 0.0f, -60.0f }, false },	 { "70 N s from the front", { 0.0f, 0.0f, -70.0f }, false },
 		{ "80 N s from behind", { 0.0f, 0.0f, 80.0f }, false },		 { "60 N s from its right", { 60.0f, 0.0f, 0.0f }, false },
-		{ "60 N s from its left", { -60.0f, 0.0f, 0.0f }, false },	 { "94 N s from the front", { 0.0f, 0.0f, -94.0f }, false },
+		{ "60 N s from its left", { -60.0f, 0.0f, 0.0f }, false },	 { "100 N s from the front", { 0.0f, 0.0f, -100.0f }, false },
 		{ "80 N s from its right", { 80.0f, 0.0f, 0.0f }, false },	 { "80 N s from its left", { -80.0f, 0.0f, 0.0f }, false },
 		{ "150 N s from the front", { 0.0f, 0.0f, -150.0f }, true }, { "100 N s from its right", { 100.0f, 0.0f, 0.0f }, true },
 	};
@@ -692,12 +693,14 @@ static int FigureCatchTest( void )
 
 // The arms row where a step comes short, see nbRowArms: an upper arm that does not swing into the body swings out in the
 // sense of the fall, the farther the shorter the step comes, and its motor turns the body back. Hit on the upper chest
-// with 94 N s from the front, both arms swing up from where they hang by more than 1.2 rad, with 80 N s from the front
+// with 100 N s from the front, both arms swing up from where they hang by more than 1.2 rad, with 80 N s from the front
 // by less than 1 rad, and the figure catches itself. Below about 74 N s from the front its steps catch it without the
-// arms, round 28 rowed at 60 N s but not at 56 or 64, round 35 at 72. Falling forward from 100 N s from behind they swing
-// back to the 40 degrees a shoulder allows, from more than 0.5 rad to 0.8, see nbMakeHumanoidBones: with a cone of 86
-// degrees all round they swung back 1.3 rad, and the figure caught 120 N s. Round 35 caught 110 N s from behind, round
-// 36, which stands with its center of mass farther ahead over its soles, falls from 104 N s on, see FigureStepTest.
+// arms, round 28 rowed at 60 N s but not at 56 or 64, round 35 at 72. Falling forward from 110 N s from behind they
+// swing back to the 40 degrees a shoulder allows, from more than 0.5 rad to 0.8, see nbMakeHumanoidBones: with a cone of
+// 86 degrees all round they swung back 1.3 rad, and the figure caught 120 N s. Round 35 caught 110 N s from behind.
+// Rounds 36 and 37, which stand with the center of mass farther ahead over the soles, see FigureStepTest, and kept the
+// arms 0.3 rad short of the cone, fell from 104 and 110 N s on. Round 38 swings them to the cone, lifts its feet higher
+// and catches up to 120 N s.
 // Pushed to its left with 80 N s only the right arm rows, the left one would swing into the body, the right one up to
 // 1.62 rad with the chest of two parts of round 37. A swinging arm bends
 // its elbow, and the arms turn against the chest at most 15 rad/s and brake at most 450 rad/s2: they swing, they do not
@@ -714,8 +717,8 @@ static int FigureRowTest( void )
 		float most[2];
 	} RowCase;
 	const RowCase cases[] = {
-		{ "94 N s from the front", { 0.0f, 0.0f, -94.0f }, { 1.2f, 1.2f }, { 1.6f, 1.6f } },
-		{ "100 N s from behind", { 0.0f, 0.0f, 100.0f }, { 0.5f, 0.5f }, { 0.8f, 0.8f } },
+		{ "100 N s from the front", { 0.0f, 0.0f, -100.0f }, { 1.2f, 1.2f }, { 1.6f, 1.6f } },
+		{ "110 N s from behind", { 0.0f, 0.0f, 110.0f }, { 0.5f, 0.5f }, { 0.8f, 0.8f } },
 		{ "80 N s to its left", { 80.0f, 0.0f, 0.0f }, { 0.0f, 1.2f }, { 0.4f, 1.7f } },
 		{ "80 N s from the front", { 0.0f, 0.0f, -80.0f }, { 0.4f, 0.4f }, { 1.0f, 1.0f } },
 	};
@@ -862,10 +865,11 @@ static float FeetTurn( nbFigureId figure, const float* before )
 // A hit that turns the trunk about its long axis turns the whole figure on its feet only a little, see nbMeasure: the
 // balance faces after its feet, plans each step from the stance foot and turns the pelvis back over the feet. Light
 // hits on the upper chest from eight directions, 40 to 80 N s in steps of 8: none falls, and the feet of a figure that
-// stands again face on average less than 10 degrees and at most 45 degrees away from where they faced. Round 33, which
+// stands again face on average less than 10 degrees and at most 40 degrees away from where they faced. Round 33, which
 // faced after its pelvis, turned them by 12.4 degrees on average and up to 67, and one of the 48 fell. Round 35 turned
 // them by 4.7 degrees on average and up to 32. Round 36, with the arms of 81 cm and the stance of the reference picture,
-// turns them by 6.2 on average and up to 43, both times by 80 N s from behind on a side, which it catches in two steps.
+// turned them by 6.2 on average and up to 43, both times by 80 N s from behind on a side, which it caught in two steps.
+// Round 38, which lifts its feet 12 cm, turns them by 5.2 degrees on average and up to 28.
 static int FigureFacingTest( void )
 {
 	float sum = 0.0f;
@@ -909,7 +913,7 @@ static int FigureFacingTest( void )
 			caught, hits, mean * 180.0f / B3_PI, largest * 180.0f / B3_PI, (float)steps / (float)b3MaxInt( caught, 1 ) );
 	ENSURE( caught == hits );
 	ENSURE( mean < 10.0f * B3_PI / 180.0f );
-	ENSURE( largest < 45.0f * B3_PI / 180.0f );
+	ENSURE( largest < 40.0f * B3_PI / 180.0f );
 	return 0;
 }
 
@@ -967,7 +971,7 @@ static uint32_t MuscleCatch( int threadCount, float impulse )
 }
 
 // The throw of 90 N s on a figure with muscles ends in the same bits with one thread and with four, on every platform
-#define NB_EXPECTED_MUSCLE_HASH 0x093ab1afu
+#define NB_EXPECTED_MUSCLE_HASH 0x3c607ddeu
 
 // The muscles, see nbFigureMotors::muscles and nbUpdateMuscles. A figure with muscles hit while it stands catches itself
 // with the strength the balance asks for at once: every joint of its trunk and its legs at the full torque of the motors,
@@ -2948,7 +2952,7 @@ static int ThinBoardTest( void )
 }
 
 // The hash of the figure scenario on every platform, see RunFigureScenario
-#define NB_EXPECTED_FIGURE_HASH 0xe9c2650du
+#define NB_EXPECTED_FIGURE_HASH 0x1cbf00c7u
 
 static int FigureDeterminismTest( void )
 {

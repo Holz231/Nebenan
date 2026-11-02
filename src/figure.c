@@ -4412,11 +4412,16 @@ nbFigureId nbCreateFigure( nbWorldId worldId, const nbFigureDef* def )
 	// How the upper body of the humanoid turns about its long axis against how it tilts, from the shapes of its bones
 	nbComputeTwist( f );
 
-	// The humanoid catches itself after a hard hit, see figure_balance.c
+	// The humanoid catches itself after a hard hit, see figure_balance.c, and falls when its center of mass sinks too far
+	// below where it stands, in the first pose of its idle clip. Up to active-ragdoll-37 the height came from the bones
+	// at rest, with straight legs, and from their pivots, as Box3D gives kinematic bodies no center of mass: 1.02 m for
+	// the humanoid, whose center of mass stands at 0.94 m.
 	f->canBalance = nbCanBalance( f );
 	if ( f->canBalance )
 	{
-		nbInitBalancer( f );
+		b3Transform standing[nb_humanoidBoneCount];
+		nbFramePose( f, f->root, f->pose, standing );
+		nbInitBalancer( f, nbFrameCenter( f, standing ).y );
 	}
 
 	if ( def->startAsRagdoll )

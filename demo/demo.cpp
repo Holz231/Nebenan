@@ -2661,7 +2661,7 @@ static void DrawUi( App& app )
 							   "dynamisch, und sie fängt sich mit Schritten wie auf ragdoll-11, wo ein Schritt\n"
 							   "zu kurz kommt, schwingen ihre Arme in Fallrichtung aus, je weiter, je kürzer er\n"
 							   "kommt, und halten, solange sie tritt. Sie fällt, wo auch das nicht reicht: auf die\n"
-							   "Brust von vorn ab etwa 120 N s, von hinten ab 130 N s, von der Seite ab 90 N s.\n"
+							   "Brust von vorn ab etwa 120 N s, von hinten ab 130 N s, von der Seite ab 95 N s.\n"
 							   "Darunter zuckt sie zurück, Kopf und Arme schwingen nach, wo der Treffer sie\n"
 							   "trifft, und sie tritt nach, wo sie über ihren Füßen nicht stehen bleiben kann.\n"
 							   "Granate und Kanone treffen Figuren mit ihrer eigenen Wucht. Um 1000 N s fliegt\n"
