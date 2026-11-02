@@ -2757,7 +2757,7 @@ static void DrawUi( App& app )
 		{
 			ImGui::SetTooltip( "Eine Figur, die sich fängt, hält ihr Becken gegen die Oberschenkel ihrer Beine aufrecht,\nnicht "
 							   "gegen die Welt: aus eigener Kraft, Stufe 1 der Roadmap, F61. Lädt die Szene neu.\nGemessen fällt "
-							   "sie so nach 43 von 168 leichten Treffern, mit der Stütze gegen die\nWelt nach keinem." );
+							   "sie so nach 17 von 168 leichten Treffern, mit der Stütze gegen die\nWelt nach keinem." );
 		}
 		if ( ImGui::Checkbox( "Teile farbig", &app.figurePartColors ) )
 		{

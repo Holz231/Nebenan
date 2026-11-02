@@ -844,6 +844,25 @@ Figuren liegt jetzt dort eine über der Kante ihrer Mauer, siehe F69 der Roadmap
 und 1,24-fache. In der Stadt mit Figuren stürzen fünf statt sechs Etagen ein, ein Bild kostet 0,92 und 0,86 des
 Vorgängers, und am Ende stehen 30 statt 29 Figuren. Ein Spiel ruft dafür nichts auf.
 
+**Der Oberkörper nimmt die Drehung auf.** Seit `active-ragdoll-41` beugt die Wirbelsäule einer Figur, die sich fängt,
+den Oberkörper mit der Neigung des Beckens weiter, Stufe 3 von F61 der Roadmap, nach der Hüftstrategie von Horak und
+Nashner 1986: Wer stärker gestoßen wird, als die Knöchel halten, beugt sich und dreht den Oberkörper mit dem Sturz
+weiter, und Beine und Becken drehen sich dafür zurück. Die Beugung ist das Doppelte der Neigung, höchstens 0,5 rad,
+verteilt auf die vier Gelenke der Wirbelsäule, und richtet sich das Becken auf, streckt sich der Oberkörper mit. Mit der
+Stütze durch die Beine fallen von den 168 leichten Treffern 17 statt 43, an den 4 464 Treffern auf Brust und Bauch von
+50 bis 89 N s 385 statt 683 und von 90 bis 139 N s 1 456 statt 1 550 und von 1 280 Treffern auf Arme, Beine und Kopf 465
+statt 571. Mit dem Gelenk gegen die Welt, dem Standard, fallen weiter keine leichten Treffer, keiner statt 3, 385 statt
+577 und 133 statt 171. Auf die obere Brust fängt sich die Figur von den Seiten bis 103 und 109 N s statt bis 85 und
+schräg bis 112 bis 118 statt 100 bis 103 N s. Einen Treffer nimmt sie dabei sichtbar mit dem Oberkörper auf: Bei 50 N s
+neigt sich die Brust bis 0,40 statt 0,23 rad, und der Kopf bleibt bis 90 N s mindestens 1,36 statt 1,26 m hoch. Den
+Oberkörper gegen die Neigung aufrecht zu halten ließ fast doppelt so viele fallen. Siehe „Balance aus eigener Kraft,
+Stufe 3“ und „Oberkörper nimmt die Drehung auf“ in [Optimierungen.md](docs/Optimierungen.md). Gepaart gegen
+`active-ragdoll-40` rechnen die Szenen ohne Figuren dasselbe, und die 20 Ragdolls auf der Platte enden bitgleich. Mit 50
+Figuren stehen am Ende alle, auf `active-ragdoll-40` lag eine über der Kante ihrer Mauer, und ein Schritt, während die
+Deckung bricht, kostet das 0,85- und 0,90-fache. In der Stadt mit Figuren fangen sich 10 statt 4 Figuren, sechs statt
+fünf Etagen stürzen ein, und ein Bild kostet mit vier und mit einem Thread das 1,06-fache. Ein Spiel ruft dafür nichts
+auf.
+
 **Nicht ewig fangen.** Mit dem neuen Stand zeigten sich zwei Lücken der Balance, die jede Haltung treffen können. Nach
 97 N s von vorn rechts auf die Brust stand eine Figur ganz still, ihr Capture Point aber 2,8 cm neben den Sohlen,
 gehalten vom Gelenk am Becken: zu wenig für einen Schritt, der erst ab 3 cm kommt, und zu viel, um ruhig zu sein. So

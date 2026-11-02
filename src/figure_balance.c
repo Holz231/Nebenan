@@ -7,7 +7,8 @@
 // ground and where they face, the support of their soles and the capture point: the center of mass ahead by its
 // velocity and its turn over the frequency of a pendulum as high as it is. There it would come to rest if it stopped
 // it. It faces after its feet, not its pelvis. Standing, the legs hold the feet where and as they are, move the pelvis
-// over the middle of the support and turn it back over the feet. When the capture point lies outside, a foot steps
+// over the middle of the support and turn it back over the feet. The spine bends the upper body on as the pelvis tilts,
+// which turns the pelvis back. When the capture point lies outside, a foot steps
 // where the capture point will be when it lands, turned as the stance foot, on ground that carries it and with room for
 // the foot, as far as it reaches. When that step comes short, the arms swing out in the sense of the fall, and their
 // motors turn the body back against it. Five steps in a row that do not catch it, a tilt, a sinking, a step that no
@@ -155,6 +156,13 @@
 // A hold through a leg that does not carry the figure keeps this little torque, in newton meters: a joint of Box3D with
 // none keeps the impulse it last had and pushes with it in every substep
 #define NB_MIN_HOLD 1.0e-3f
+
+// The spine bends the upper body on with the tilt of the pelvis by this many times the tilt, and at most this far, in
+// radians, see nbBendTrunk. With the hold through the legs, of the 168 light hits on the upper chest 36 fell at half
+// the gain, 31 at 1, 17 at 2 and 13 at 3, without the bend 43, but at 3 more of the hits from 90 to 139 N s fell than
+// at 2, 1 481 of 2 064 against 1 456, and the catches took longer. Beyond 0.5 rad the bend changed little.
+#define NB_TRUNK_GAIN 2.0f
+#define NB_TRUNK_BEND 0.5f
 
 //----------------------------------------------------------------------------------------------------------------------
 // Small geometry
@@ -1382,6 +1390,41 @@ static void nbCarryBody( const nbFigure* f, const nbBalancer* b, b3Quat* pose )
 	}
 }
 
+// The upper body takes up the turn of a fall, stage 3 of the balance from the figure's own strength, see the roadmap,
+// F61, after the hip strategy of Horak and Nashner (1986): pushed harder than the ankles hold, a person bends at the
+// hips and turns the upper body on with the fall, and the legs and the pelvis turn back the other way. The spine bends
+// the upper body on in the sense in which the pelvis tilts, by NB_TRUNK_GAIN times the tilt and at most NB_TRUNK_BEND,
+// spread evenly over its joints. The torque that turns the upper body on turns the pelvis back, so the pelvis stays
+// more upright, the stance leg stands straighter under it, and the figure tips less over the edge of its stance foot.
+// As the pelvis rights itself the upper body straightens with it. Held upright against the tilt instead, the upper
+// body pushed the pelvis farther over: with the hold through the legs 82 of the 168 light hits fell instead of 43.
+static void nbBendTrunk( const nbFigure* f, const nbBalancer* b, b3Quat* pose )
+{
+	// The axis about which the pelvis tilts away from up
+	b3Vec3 axis = b3Cross( b->up, b3RotateVector( b3Body_GetRotation( f->bones[0].bodyId ), b3Vec3_axisY ) );
+	float s = b3Length( axis );
+	if ( s < 1.0e-4f )
+	{
+		return;
+	}
+
+	// Every joint of the spine turns its bone by its share of the bend about that axis, in the frame of its parent as
+	// the parent stands
+	float bend = b3MinFloat( NB_TRUNK_GAIN * b->tilt, NB_TRUNK_BEND );
+	b3Vec3 turn = b3MulSV( bend / ( (float)NB_SPINE_COUNT * s ), axis );
+	for ( int i = nb_humanoidBelly; i <= nb_humanoidChest; ++i )
+	{
+		const nbBone* bone = f->bones + i;
+		b3Quat frame = b3MulQuat( b3Body_GetRotation( f->bones[bone->parent].bodyId ), bone->rest.q );
+		b3Vec3 local = b3InvRotateVector( frame, turn );
+		float angle = b3Length( local );
+		if ( angle > 1.0e-6f )
+		{
+			pose[i] = b3NormalizeQuat( b3MulQuat( b3MakeQuatFromAxisAngle( b3MulSV( 1.0f / angle, local ), angle ), pose[i] ) );
+		}
+	}
+}
+
 // The arms row against a fall, after the idea of Hof (2007), the equations of motion for a standing human: besides moving
 // the center of pressure under the feet and stepping, a body keeps its balance by turning parts of itself about its
 // center of mass. An upper arm that the motor of its shoulder turns in the sense of the fall, about up across the
@@ -1682,6 +1725,7 @@ nbBalanceResult nbUpdateBalance( nbWorld* world, int index, nbFigure* f, float t
 	}
 
 	nbCarryBody( f, b, pose );
+	nbBendTrunk( f, b, pose );
 	nbHoldUpright( f, b );
 	nbRowArms( f, b, timeStep, pose );
 	return nb_balanceGoesOn;
