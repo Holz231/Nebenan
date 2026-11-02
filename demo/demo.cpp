@@ -1117,12 +1117,13 @@ static void AppendRoundedBox( App& app, b3Vec3 center, b3Vec3 halfExtents, float
 	}
 }
 
-// The color of every bone of the humanoid of the library, each part of the body in its own, see scene.glsl
+// The color of every bone of the humanoid of the library, each part of the body in its own, the two parts of the chest in
+// one, see scene.glsl
 static const int s_boneMaterials[nb_humanoidBoneCount] = {
-	MaterialFigurePink, MaterialFigureYellow, MaterialFigureOrange, MaterialFigureRed,	  MaterialFigureBrown,
-	MaterialFigureSkin, MaterialFigureGreen,  MaterialFigureTeal,	MaterialFigureLime,	  MaterialFigureGreen,
-	MaterialFigureTeal, MaterialFigureLime,	  MaterialFigureBlue,	MaterialFigureViolet, MaterialFigureDark,
-	MaterialFigureBlue, MaterialFigureViolet, MaterialFigureDark,
+	MaterialFigurePink,	 MaterialFigureYellow, MaterialFigureOrange, MaterialFigureRed,	 MaterialFigureRed,
+	MaterialFigureBrown, MaterialFigureSkin,   MaterialFigureGreen,	 MaterialFigureTeal, MaterialFigureLime,
+	MaterialFigureGreen, MaterialFigureTeal,   MaterialFigureLime,	 MaterialFigureBlue, MaterialFigureViolet,
+	MaterialFigureDark,	 MaterialFigureBlue,   MaterialFigureViolet, MaterialFigureDark,
 };
 
 // The colors of whole figures, one after the other, when a figure has one color like a mannequin of a game
@@ -1155,15 +1156,16 @@ static void AppendLimbTube( App& app, const nbBoneDef& bone, float nearRadius, f
 				rim * b3MinFloat( nearRadius, farRadius ), material, slot );
 }
 
-// A bone of the humanoid of the library like the mannequin of a game, chunkier than the shapes the physics has, as a game
-// draws a body over its ragdoll. The limbs are round tubes with rounded rims, 1.05 to 1.3 times as thick as their
+// A bone of the humanoid of the library like the mannequin of a game, chunkier than the shapes the physics has, as a
+// game draws a body over its ragdoll. The limbs are round tubes with rounded rims, 1.05 to 1.3 times as thick as their
 // capsules and narrowing a little from the body out, so a limb that lies on a side sinks one to two centimeters into
-// the ground, the head up to two. The trunk is stacked like tires, round all round without flat sides, as on the
-// mannequin of the reference pictures: the chest as two with a crease between them, the upper one the broadest part
-// of the trunk and standing out in front, below it the ribs and the belly, narrower down to the waist, and the pelvis
-// as the largest, as wide as the thighs reach, with their tops inside it. The arms hang from balls around the shoulder
-// joints at the upper corners of the chest, the hands are flat like mittens, the feet are shoes wider than the shins,
-// and the head is a large egg on a short, thick neck, with two small round eyes that show where the figure looks.
+// the ground, the head up to two. The trunk is stacked like tires, one for each of its bones, round all round without
+// flat sides, as on the mannequin of the reference pictures: the chest in its two parts with a crease between them, the
+// upper one the broadest part of the trunk and standing out in front, below it the ribs and the belly, narrower down to
+// the waist, and the pelvis as the largest, as wide as the thighs reach, with their tops inside it. The arms hang from
+// balls around the shoulder joints at the upper corners of the chest, the hands are flat like mittens, the feet are
+// shoes wider than the shins, and the head is a large egg on a short, thick neck, with two small round eyes that show
+// where the figure looks.
 static void AppendFigurePart( App& app, int index, const nbBoneDef& bone, int material, int slot )
 {
 	const float limb = 1.2f;
@@ -1185,20 +1187,19 @@ static void AppendFigurePart( App& app, int index, const nbBoneDef& bone, int ma
 		switch ( index )
 		{
 			case nb_humanoidChest:
+				// The upper part of the chest, round like the cushions below it, the broadest part of the trunk, taller and
+				// deeper than the cushions and standing out in front of them: its top as wide as the shoulders, the neck
+				// coming out of its middle and the balls of the shoulders at its upper corners
+				AppendTire( app, { c.x, c.y, c.z + 0.05f * d }, 1.02f * w, h.y, 1.05f * d, 0.85f * h.y, material, slot, 0.95f,
+							1.0f );
+				return;
+
+			case nb_humanoidLowerChest:
 			{
-				// Two parts with a crease between them, round like the cushions below them. The upper one is the broadest
-				// part of the trunk, taller and deeper than the cushions and standing out in front of them: its top as
-				// wide as the shoulders, the neck coming out of its middle and the balls of the shoulders at its upper
-				// corners.
-				float split = c.y - 0.2f * h.y;
-				float top = c.y + h.y;
-				float bottom = c.y - h.y;
-				float upper = 0.5f * ( top - split );
-				float lower = 0.5f * ( split + 0.06f * h.y - bottom ) + 0.1f * h.y;
-				AppendTire( app, { c.x, 0.5f * ( split + top ), c.z + 0.05f * d }, 1.02f * w, upper, 1.05f * d, 0.85f * upper,
-							material, slot, 0.95f, 1.0f );
-				AppendTire( app, { c.x, 0.5f * ( bottom + split + 0.06f * h.y ) - 0.1f * h.y, c.z }, 0.95f * w, lower, 0.95f * d,
-							0.9f * lower, material, slot, 0.94f, 1.0f );
+				// The lower part of the chest under a crease, reaching a little down into the ribs
+				float half = 1.2f * h.y;
+				AppendTire( app, { c.x, c.y - 0.25f * h.y, c.z }, 0.95f * w, half, 0.95f * d, 0.9f * half, material, slot, 0.94f,
+							1.0f );
 				return;
 			}
 
@@ -2696,7 +2697,7 @@ static void DrawUi( App& app )
 			{
 				b3WorldTransform frame = nbFigure_GetFrame( visual.id );
 				int bone = nb_humanoidChest;
-				b3Vec3 local = { 0.0f, 0.2f, 0.1f };
+				b3Vec3 local = { 0.0f, 0.08f, 0.1f };
 				b3Vec3 toward = side ? b3Vec3{ 1.0f, 0.0f, 0.0f } : b3Vec3{ 0.0f, 0.0f, -1.0f };
 				if ( face )
 				{

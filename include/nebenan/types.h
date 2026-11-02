@@ -1085,10 +1085,10 @@ typedef struct nbBoneDef
 	/// Scales the torque limit of the motors for this joint, 1 by default: strong legs, a weak neck
 	float strength;
 
-	/// Scales the stiffness of the motors for this joint, 1 by default. Joints in a row bend like one joint of a third of
-	/// their stiffness, so the three joints of a spine take three times it to hold the trunk like one. A light bone between
-	/// two springs, like a neck, needs an armature: they turn it the faster the lighter it is, and from about half the
-	/// substeps per second on it shakes.
+	/// Scales the stiffness of the motors for this joint, 1 by default. Joints in a row bend like one joint of their
+	/// stiffness over their number, so the four joints of the spine of the humanoid take four times it to hold the trunk
+	/// like one. A light bone between two springs, like a neck, needs an armature: they turn it the faster the lighter
+	/// it is, and from about half the substeps per second on it shakes.
 	float stiffness;
 
 	/// Rotational inertia added to the turn of this bone against its parent at its joint, in kilogram square meters, as by
@@ -1479,12 +1479,14 @@ typedef struct nbFigureStats
 } nbFigureStats;
 
 /// The bones of the humanoid that nbMakeHumanoidBones builds, in the order of its array. The trunk runs from the pelvis
-/// through belly and ribs to the chest, which carries the arms and on the neck the head.
+/// through belly, ribs and the lower chest to the chest, which carries the arms and on the neck the head. The four from
+/// the belly up are its spine.
 typedef enum nbHumanoidBone
 {
 	nb_humanoidPelvis,
 	nb_humanoidBelly,
 	nb_humanoidRibs,
+	nb_humanoidLowerChest,
 	nb_humanoidChest,
 	nb_humanoidNeck,
 	nb_humanoidHead,

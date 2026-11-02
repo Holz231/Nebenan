@@ -298,7 +298,7 @@ static nbBoneDef nbLimb( const char* name, int parent, b3Vec3 pivot, b3Quat rest
 }
 
 // A segment of the trunk: a rounded block around a center, on a ball joint at its pivot with its z axis up the spine,
-// its limits set by the caller. Three of them make the spine, a strong joint each, three times as stiff as the others, so
+// its limits set by the caller. Four of them make the spine, a strong joint each, four times as stiff as the others, so
 // the trunk holds like one joint of the motors.
 static nbBoneDef nbSegment( const char* name, int parent, b3Vec3 pivot, b3Vec3 center, b3Vec3 halfExtents, float rounding,
 							float mass )
@@ -316,7 +316,7 @@ static nbBoneDef nbSegment( const char* name, int parent, b3Vec3 pivot, b3Vec3 c
 	def.joint = nb_ballJoint;
 	def.jointFrame = b3MakeQuatFromAxisAngle( b3Vec3_axisX, -0.5f * B3_PI );
 	def.strength = 1.6f;
-	def.stiffness = 3.0f;
+	def.stiffness = (float)NB_SPINE_COUNT;
 	return def;
 }
 
@@ -380,10 +380,12 @@ float nbMakeHumanoidBones( float height, float mass, nbBoneDef* bones, int capac
 	b3Quat footRest = b3MakeQuatFromAxisAngle( b3Vec3_axisX, 0.5f * B3_PI );
 	b3Quat identity = b3Quat_identity;
 
-	// The trunk in four rounded blocks like the mannequin: a round pelvis from 83 cm to 1.05 m, a little wider than the
-	// chest, with the legs at its outer corners, belly and ribs as two flatter rolls above it, and a broad chest up to its
-	// top at 1.56 m that stands out in front of them by 4 cm, as on the mannequin seen from the side. Neighbours overlap,
-	// the next but one lies more than 10 cm away.
+	// The trunk in five rounded blocks like the mannequin of the reference pictures, stacked like tires: a round pelvis
+	// from 83 cm to 1.05 m, a little wider than the chest, with the legs at its outer corners, belly and ribs as two
+	// flatter rolls above it, and a broad chest up to its top at 1.56 m that stands out in front of them by 4 cm, as on
+	// the mannequin seen from the side. The chest is two parts, as the mannequin has it, the lower one of 5 kg and the
+	// upper one of 7 that carries the arms and the neck, together as heavy as the chest of one part before round 37 with
+	// its center of mass where it was. Neighbours overlap, the next but one lies more than 10 cm away.
 	nbBoneDef pelvis = nbDefaultBoneDef();
 	pelvis.name = "pelvis";
 	pelvis.parent = -1;
@@ -401,19 +403,24 @@ float nbMakeHumanoidBones( float height, float mass, nbBoneDef* bones, int capac
 	bones[nb_humanoidRibs] =
 		nbSegment( "ribs", nb_humanoidBelly, (b3Vec3){ 0.0f, 0.12f * s, 0.0f }, (b3Vec3){ 0.0f, 0.06f * s, 0.0f },
 				   (b3Vec3){ 0.165f * s, 0.055f * s, 0.105f * s }, 0.05f * s, 5.0f * m );
-	bones[nb_humanoidChest] =
-		nbSegment( "chest", nb_humanoidRibs, (b3Vec3){ 0.0f, 0.11f * s, 0.0f }, (b3Vec3){ 0.0f, 0.14f * s, 0.015f * s },
-				   (b3Vec3){ 0.19f * s, 0.135f * s, 0.125f * s }, 0.07f * s, 12.0f * m );
+	bones[nb_humanoidLowerChest] = nbSegment( "lower chest", nb_humanoidRibs, (b3Vec3){ 0.0f, 0.11f * s, 0.0f },
+											  (b3Vec3){ 0.0f, 0.065f * s, 0.015f * s },
+											  (b3Vec3){ 0.18f * s, 0.06f * s, 0.12f * s }, 0.05f * s, 5.0f * m );
+	bones[nb_humanoidChest] = nbSegment( "chest", nb_humanoidLowerChest, (b3Vec3){ 0.0f, 0.12f * s, 0.0f },
+										 (b3Vec3){ 0.0f, 0.075f * s, 0.015f * s },
+										 (b3Vec3){ 0.19f * s, 0.08f * s, 0.125f * s }, 0.07f * s, 7.0f * m );
 
-	// The spine bends 75 degrees forward, 30 back and 34 to either side and turns 40 either way, most of the turn in the
-	// chest, the most of the bend back low down
+	// The spine bends 75 degrees forward, 30 back and 34 to either side and turns 40 either way, as a person bends it
+	// most in the lumbar spine and turns it most in the thoracic: belly and ribs bend 50 of the 75 degrees forward and 22
+	// of the 30 back, the two parts of the chest turn 25 of the 40
 	nbSetLimits( bones + nb_humanoidBelly, -12.0f, 25.0f, -10.0f, 10.0f, -5.0f, 5.0f );
 	nbSetLimits( bones + nb_humanoidRibs, -10.0f, 25.0f, -12.0f, 12.0f, -10.0f, 10.0f );
-	nbSetLimits( bones + nb_humanoidChest, -8.0f, 25.0f, -12.0f, 12.0f, -25.0f, 25.0f );
+	nbSetLimits( bones + nb_humanoidLowerChest, -5.0f, 15.0f, -6.0f, 6.0f, -10.0f, 10.0f );
+	nbSetLimits( bones + nb_humanoidChest, -3.0f, 10.0f, -6.0f, 6.0f, -15.0f, 15.0f );
 
 	// The neck from the top of the chest, and the head on it like an egg. Together they bend 45 degrees forward, back and
 	// to either side and turn 70 either way, the head the most of the turn.
-	nbBoneDef neck = nbLimb( "neck", nb_humanoidChest, (b3Vec3){ 0.0f, 0.26f * s, 0.0f }, identity, 0.08f * s, 0.05f * s,
+	nbBoneDef neck = nbLimb( "neck", nb_humanoidChest, (b3Vec3){ 0.0f, 0.14f * s, 0.0f }, identity, 0.08f * s, 0.05f * s,
 							 1.0f * m, nb_ballJoint, zToY, 0.0f, 0.0f, 0.0f, 0.3f );
 	neck.start = (b3Vec3){ 0.0f, 0.0f, 0.0f };
 	neck.end = (b3Vec3){ 0.0f, 0.07f * s, 0.0f };
@@ -462,7 +469,7 @@ float nbMakeHumanoidBones( float height, float mass, nbBoneDef* bones, int capac
 		// at the crotch.
 		b3Quat armRest = b3MakeQuatFromAxisAngle( b3Vec3_axisZ, B3_PI + 0.05f * x );
 		bones[upperArm] = nbLimb( side == 0 ? "upper arm left" : "upper arm right", nb_humanoidChest,
-								  (b3Vec3){ 0.215f * s * x, 0.17f * s, 0.0f }, armRest, 0.37f * s, 0.05f * s, 2.0f * m,
+								  (b3Vec3){ 0.215f * s * x, 0.05f * s, 0.0f }, armRest, 0.37f * s, 0.05f * s, 2.0f * m,
 								  nb_ballJoint, zToY, 0.0f, 0.0f, 0.0f, 0.6f );
 		bones[forearm] = nbLimb( side == 0 ? "forearm left" : "forearm right", upperArm, (b3Vec3){ 0.0f, 0.37f * s, 0.0f },
 								 identity, 0.27f * s, 0.045f * s, 1.2f * m, nb_hingeJoint, zToX, -0.087f, 2.53f, 0.0f, 0.4f );
@@ -1611,6 +1618,18 @@ static void nbStartGetUp( nbWorld* world, int index, nbFigure* f, b3Pos ground, 
 	f->getUpClip = f->onBack ? nb_clipGetUpBack : nb_clipGetUpFront;
 	f->getUpTime = 0.0f;
 
+	// Every bone turns from how it lies toward the clip the way that is shorter now, see nbUpdateGettingUpPose: the pose
+	// it lies in on the side of the start of the clip, which the fade pose keeps
+	b3Transform clipRoot;
+	nbSampleFigureClip( f, f->clips[f->getUpClip], 0.0f, f->fadePose, &clipRoot );
+	for ( int i = 0; i < f->boneCount; ++i )
+	{
+		if ( b3DotQuat( f->lyingPose[i], f->fadePose[i] ) < 0.0f )
+		{
+			f->lyingPose[i] = b3NegateQuat( f->lyingPose[i] );
+		}
+	}
+
 	for ( int i = 0; i < f->boneCount; ++i )
 	{
 		b3Body_SetType( f->bones[i].bodyId, b3_kinematicBody );
@@ -2408,19 +2427,19 @@ static bool nbCarries( const nbFigure* f, int carrier, int i )
 	return i == carrier;
 }
 
-// Whether a bone of the humanoid is one of the spine, which share the flinch of the trunk
+// Whether a bone of the humanoid is one of the spine, which share the flinch of the trunk, see NB_SPINE_COUNT
 static bool nbIsSpine( const nbFigure* f, int i )
 {
-	return f->boneCount == nb_humanoidBoneCount &&
-		   ( i == nb_humanoidBelly || i == nb_humanoidRibs || i == nb_humanoidChest );
+	return f->boneCount == nb_humanoidBoneCount && i >= nb_humanoidBelly && i < nb_humanoidBelly + NB_SPINE_COUNT;
 }
 
 // The part of a turn of the trunk, a rotation vector in the frame of the figure, that a bone of the spine of the humanoid
-// takes: a third of the tilt, and its share of the turn about the axis up the spine, see nbComputeTwist
+// takes: its shares of the tilt forward and back, of the tilt to the side and of the turn about the axis up the spine,
+// see nbComputeTwist
 static b3Vec3 nbSpinePart( const nbFigure* f, int i, b3Vec3 rotation )
 {
-	const float third = 1.0f / 3.0f;
-	return (b3Vec3){ third * rotation.x, f->spineTwist[i - nb_humanoidBelly] * rotation.y, third * rotation.z };
+	int k = i - nb_humanoidBelly;
+	return (b3Vec3){ f->spineBend[k] * rotation.x, f->spineTwist[k] * rotation.y, f->spineSide[k] * rotation.z };
 }
 
 // A flinch of the trunk within its limits: the tilt up to flinchLimit and the turn about the axis up the spine of the
@@ -2450,19 +2469,45 @@ static b3Vec3 nbClampFlinch( const nbFigure* f, b3Vec3 rotation )
 // turns it that much faster about the axis up the spine, against muscles as stiff about every axis it swings out the
 // square root of that farther and back as much faster, see nbFlinch. The joints of the spine share a twist after their
 // twist ranges, the lumbar spine the least, and together they allow the twist that brings the first of them to its
-// limit. Other rigs turn about their root with the twist as far as the tilt.
+// limit. Other rigs turn about their root with the twist as far as the tilt. They share a tilt forward and back and one
+// to the side after their swing ranges the same way, so a light hit bends the humanoid most in its belly, as a person
+// bends most in the lumbar spine, see nbMakeHumanoidBones.
 static void nbComputeTwist( nbFigure* f )
 {
 	f->twistGain = 1.0f;
 	f->twistLimit = f->def.flinchLimit;
-	for ( int k = 0; k < 3; ++k )
+	for ( int k = 0; k < NB_SPINE_COUNT; ++k )
 	{
-		f->spineTwist[k] = 1.0f / 3.0f;
+		f->spineTwist[k] = 1.0f / (float)NB_SPINE_COUNT;
+		f->spineBend[k] = 1.0f / (float)NB_SPINE_COUNT;
+		f->spineSide[k] = 1.0f / (float)NB_SPINE_COUNT;
 	}
 	if ( f->boneCount != nb_humanoidBoneCount )
 	{
 		return;
 	}
+
+#if NB_SWING_LIMITS
+	float bend[NB_SPINE_COUNT];
+	float side[NB_SPINE_COUNT];
+	float bendSum = 0.0f;
+	float sideSum = 0.0f;
+	for ( int k = 0; k < NB_SPINE_COUNT; ++k )
+	{
+		b3JointId jointId = f->bones[nb_humanoidBelly + k].jointId;
+		float lowerX, upperX, lowerY, upperY;
+		b3SphericalJoint_GetSwingLimits( jointId, &lowerX, &upperX, &lowerY, &upperY );
+		bend[k] = b3MaxFloat( upperX - lowerX, 0.0f );
+		side[k] = b3MaxFloat( upperY - lowerY, 0.0f );
+		bendSum += bend[k];
+		sideSum += side[k];
+	}
+	for ( int k = 0; k < NB_SPINE_COUNT && bendSum > 0.0f && sideSum > 0.0f; ++k )
+	{
+		f->spineBend[k] = bend[k] / bendSum;
+		f->spineSide[k] = side[k] / sideSum;
+	}
+#endif
 
 	b3Pos pivot = f->targets[nb_humanoidBelly].p;
 	b3Matrix3 inertia = { b3Vec3_zero, b3Vec3_zero, b3Vec3_zero };
@@ -2484,10 +2529,10 @@ static void nbComputeTwist( nbFigure* f )
 	float tilt = 0.5f * ( inertia.cx.x + inertia.cz.z );
 	f->twistGain = twist > 0.0f ? sqrtf( b3MaxFloat( 1.0f, tilt / twist ) ) : 1.0f;
 
-	float lower[3];
-	float upper[3];
+	float lower[NB_SPINE_COUNT];
+	float upper[NB_SPINE_COUNT];
 	float sum = 0.0f;
-	for ( int k = 0; k < 3; ++k )
+	for ( int k = 0; k < NB_SPINE_COUNT; ++k )
 	{
 		const nbBone* bone = f->bones + nb_humanoidBelly + k;
 		lower[k] = 2.0f * b3Atan2( bone->lowerHalf.sine, bone->lowerHalf.cosine );
@@ -2499,7 +2544,7 @@ static void nbComputeTwist( nbFigure* f )
 		return;
 	}
 	f->twistLimit = B3_HUGE;
-	for ( int k = 0; k < 3; ++k )
+	for ( int k = 0; k < NB_SPINE_COUNT; ++k )
 	{
 		f->spineTwist[k] = b3MaxFloat( upper[k] - lower[k], 0.0f ) / sum;
 		if ( f->spineTwist[k] > 0.0f )
@@ -2824,12 +2869,31 @@ static void nbSpreadHit( nbFigure* f, int hitBone, b3Vec3 impulse, b3Pos point )
 		return;
 	}
 
+	// The two parts of the chest of the humanoid are one rib cage, which the ribs and the breastbone hold together: they
+	// take their parts of the hit together, shared by their masses, so they move off as one, as the chest of one part did
+	// before round 37. Each at its own center, the upper one, at the height of a hit on the breastbone, moved off a third
+	// faster than the chest of one part had, the trunk tipped about the pelvis, and the figure caught itself less often.
+	bool cage = f->boneCount == nb_humanoidBoneCount;
+	float cagePart = 0.0f;
+	float cageMass = 0.0f;
+	for ( int i = nb_humanoidLowerChest; cage && i <= nb_humanoidChest; ++i )
+	{
+		float distance = nbSkeletonDistance( f, hitBone, point, i );
+		float mass = b3Body_GetMass( f->bones[i].bodyId );
+		cagePart += mass / ( distance * distance + 0.01f ) / total;
+		cageMass += mass;
+	}
+
 	b3Vec3 spread = b3Vec3_zero;
 	for ( int i = 0; i < f->boneCount; ++i )
 	{
 		b3BodyId bodyId = f->bones[i].bodyId;
 		float distance = nbSkeletonDistance( f, hitBone, point, i );
 		float part = b3Body_GetMass( bodyId ) / ( distance * distance + 0.01f ) / total;
+		if ( cage && ( i == nb_humanoidLowerChest || i == nb_humanoidChest ) )
+		{
+			part = cagePart * b3Body_GetMass( bodyId ) / cageMass;
+		}
 		b3Body_ApplyLinearImpulseToCenter( bodyId, b3MulSV( part, impulse ), true );
 		spread = b3MulAdd( spread, part, b3SubPos( b3Body_GetWorldCenter( bodyId ), point ) );
 	}
@@ -3331,15 +3395,14 @@ static void nbAnimate( nbWorld* world, int index, nbFigure* f, float timeStep )
 		if ( f->boneCount == nb_humanoidBoneCount )
 		{
 			b3Quat frameQ = f->root.q;
-			const int spine[3] = { nb_humanoidBelly, nb_humanoidRibs, nb_humanoidChest };
-			for ( int k3 = 0; k3 < 3; ++k3 )
+			for ( int i = nb_humanoidBelly; i < nb_humanoidBelly + NB_SPINE_COUNT; ++i )
 			{
-				const nbBone* bone = f->bones + spine[k3];
-				b3Quat share = nbQuatFromVector( nbSpinePart( f, spine[k3], f->flinch ) );
+				const nbBone* bone = f->bones + i;
+				b3Quat share = nbQuatFromVector( nbSpinePart( f, i, f->flinch ) );
 				frameQ = b3MulQuat( frameQ, bone->rest.q );
 				b3Quat local = b3NormalizeQuat( b3InvMulQuat( frameQ, b3MulQuat( share, frameQ ) ) );
-				f->pose[spine[k3]] = b3NormalizeQuat( b3MulQuat( local, f->pose[spine[k3]] ) );
-				frameQ = b3MulQuat( frameQ, f->pose[spine[k3]] );
+				f->pose[i] = b3NormalizeQuat( b3MulQuat( local, f->pose[i] ) );
+				frameQ = b3MulQuat( frameQ, f->pose[i] );
 			}
 		}
 		else
@@ -3887,8 +3950,22 @@ static void nbUpdateRagdoll( nbWorld* world, int index, nbFigure* f, float timeS
 	}
 }
 
+// A rotation a share of the way from one to another, along the side the signs of the two give, as b3NLerp takes it
+// after it chose the shorter side
+static b3Quat nbBlendQuats( b3Quat from, b3Quat to, float alpha )
+{
+	b3Quat q;
+	q.v = b3Lerp( from.v, to.v, alpha );
+	q.s = ( 1.0f - alpha ) * from.s + alpha * to.s;
+	return b3NormalizeQuat( q );
+}
+
 // The pose of a figure that gets up: its get-up clip, blended in from the pose the ragdoll lay in over the first part of
-// the clip, the root as well as the bones in the frames of their parents, as Overgrowth blends from the ragdoll
+// the clip, the root as well as the bones in the frames of their parents, as Overgrowth blends from the ragdoll. A bone
+// turns from how it lay toward the clip the way that was shorter as it began to get up, see nbStartGetUp, and stays on
+// it: one that lay about half a turn from the clip would otherwise flip to the other way whenever the clip moves it past
+// half a turn, and jump. The sign of the clip stays on the side of its sample the step before, which waits in the fade
+// pose, a figure that gets up does not fade.
 static void nbUpdateGettingUpPose( nbFigure* f, float advance, float timeStep )
 {
 	const nbClip* clip = f->clips[f->getUpClip];
@@ -3901,7 +3978,9 @@ static void nbUpdateGettingUpPose( nbFigure* f, float advance, float timeStep )
 	b3WorldTransform root = { b3LerpPosition( f->lyingRoot.p, clipRoot.p, blend ), b3NLerp( f->lyingRoot.q, clipRoot.q, blend ) };
 	for ( int i = 1; i < f->boneCount; ++i )
 	{
-		f->pose[i] = b3NLerp( f->lyingPose[i], f->pose[i], blend );
+		b3Quat sample = b3DotQuat( f->pose[i], f->fadePose[i] ) < 0.0f ? b3NegateQuat( f->pose[i] ) : f->pose[i];
+		f->fadePose[i] = sample;
+		f->pose[i] = nbBlendQuats( f->lyingPose[i], sample, blend );
 	}
 	nbComputePose( f, root, f->pose, f->targets );
 	nbDriveBodies( f, timeStep );
@@ -4130,8 +4209,8 @@ nbFigureId nbCreateFigure( nbWorldId worldId, const nbFigureDef* def )
 
 		// The spring that swings it from a hit, none for the root and the spine of the humanoid, which the flinch of the
 		// trunk turns
-		bool trunk = i == 0 || ( boneCount == nb_humanoidBoneCount && ( i == nb_humanoidBelly || i == nb_humanoidRibs ||
-																	  i == nb_humanoidChest ) );
+		bool trunk =
+			i == 0 || ( boneCount == nb_humanoidBoneCount && i >= nb_humanoidBelly && i < nb_humanoidBelly + NB_SPINE_COUNT );
 		bone->flinch = b3MaxFloat( 0.0f, boneDef->flinch );
 		bone->flinchOmega = trunk == false && boneDef->flinchHertz > 0.0f ? 2.0f * B3_PI * boneDef->flinchHertz : 0.0f;
 		bone->flinchDamping = b3ClampFloat( boneDef->flinchDamping, 0.05f, 1.0f );

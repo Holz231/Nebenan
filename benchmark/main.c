@@ -806,8 +806,10 @@ static void BenchmarkFigures( int workerCount, int figureCount )
 				{
 					b3BodyId chest = nbFigure_GetBody( figures[k], nb_humanoidChest );
 					b3CosSin cs = b3ComputeCosSin( angle );
-					nbHitDef hit = { hitId++, nb_humanoidChest, { strength * cs.cosine, 0.0f, strength * cs.sine },
-									 b3Body_GetWorldPoint( chest, (b3Vec3){ 0.0f, 0.2f, 0.0f } ) };
+					nbHitDef hit = { hitId++,
+									 nb_humanoidChest,
+									 { strength * cs.cosine, 0.0f, strength * cs.sine },
+									 b3Body_GetWorldPoint( chest, (b3Vec3){ 0.0f, 0.08f, 0.0f } ) };
 					nbFigure_ApplyHit( figures[k], &hit );
 				}
 			}

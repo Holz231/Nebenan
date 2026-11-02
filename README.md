@@ -171,14 +171,14 @@ in den Händen mit 12 m/s und 49 N s, und beide werfen sie um.
 
 **Figuren wie Gliederpuppen.** Die Demo zeichnet jede Figur wie eine Gliederpuppe, jeden Körperteil in seiner eigenen
 Farbe und Form: den Kopf als Ei auf einem kräftigen Hals, den Rumpf wie in der Vorlage aus runden Ringen wie gestapelte
-Reifen, ohne flache Seiten, oben die Brust als zwei, der obere der breiteste Teil des Rumpfs und vor dem Bauch, darunter
-Brustkorb und Bauch, zur Taille schmaler, und das Becken als größter, so breit, wie die Oberschenkel reichen, deren
-Enden in ihm verschwinden. Arme und Beine sind runde Röhren, vom Körper weg ein wenig dünner, die Arme hängen an Kugeln
-um die Schultergelenke an den oberen Ecken der Brust, die Hände sind flach wie Fäustlinge und die Füße wie Schuhe.
-Gezeichnet sind die Glieder 1,05- bis 1,3-mal so dick wie ihre Kapseln in der Physik, die Formen der Physik bleiben, wie
-sie sind. Ohne **Teile farbig** im Menü ist jede Figur ganz in einer Farbe, wie die Gliederpuppen eines Spiels. Damit
-die runden Teile rund aussehen, verläuft die Farbe über jedes Dreieck, siehe Demo-Renderer. Wie lang die Glieder sind
-und wie die Figur steht, kommt aus der Bibliothek, siehe In den Knien.
+Reifen, ohne flache Seiten, einen für jeden Knochen des Rumpfs: oben die Brust in ihren zwei Teilen, der obere der
+breiteste Teil des Rumpfs und vor dem Bauch, darunter Rippen und Bauch, zur Taille schmaler, und das Becken als größter,
+so breit, wie die Oberschenkel reichen, deren Enden in ihm verschwinden. Arme und Beine sind runde Röhren, vom Körper
+weg ein wenig dünner, die Arme hängen an Kugeln um die Schultergelenke an den oberen Ecken der Brust, die Hände sind
+flach wie Fäustlinge und die Füße wie Schuhe. Gezeichnet sind die Glieder 1,05- bis 1,3-mal so dick wie ihre Kapseln in
+der Physik, die Formen der Physik bleiben, wie sie sind. Ohne **Teile farbig** im Menü ist jede Figur ganz in einer
+Farbe, wie die Gliederpuppen eines Spiels. Damit die runden Teile rund aussehen, verläuft die Farbe über jedes Dreieck,
+siehe Demo-Renderer. Wie lang die Glieder sind und wie die Figur steht, kommt aus der Bibliothek, siehe In den Knien.
 
 **FPS.** Oben rechts steht immer die echte Bildrate, gemessen über die letzten zwei Sekunden: Bilder pro Sekunde,
 die mittlere Bildzeit und das 1 % Low, also die Rate der langsamsten 1 % der Bilder. Daran sieht man Ruckler. VSync
@@ -601,7 +601,7 @@ eingeschaltet, misst Nebenan die Flächen dieser Bauwerke einmal an den Formen i
 **Figuren.** Eine Figur ist ein Satz Knochen, jeder ein Box3D-Körper mit einer Form, Kapsel, Quader oder abgerundeter
 Quader, verbunden durch Gelenke: Kugelgelenke mit einer Grenze in jede Richtung und einer Drehgrenze, Scharniere an
 Knien und Ellbogen (`nbRigDef`, `nbBoneDef`), siehe Gelenke wie beim Menschen. `nbMakeHumanoidBones` legt einen Menschen
-aus 18 Knochen an, wie eine Gliederpuppe. Eine Figur ist zu jeder Zeit in genau einem Zustand, wie es Kapitel 28.1 der
+aus 19 Knochen an, wie eine Gliederpuppe. Eine Figur ist zu jeder Zeit in genau einem Zustand, wie es Kapitel 28.1 der
 Roadmap des Spiels verlangt: Sie steht animiert, liegt als Ragdoll oder steht auf. Stehend sind ihre Knochen
 kinematisch, und das Update nach jedem Schritt gibt jedem Knochen mit `b3Body_SetTargetTransform` die Geschwindigkeit,
 mit der er im nächsten Schritt die nächste Haltung seines Clips erreicht. Nichts wird teleportiert, Trümmer prallen an
@@ -747,6 +747,36 @@ mit einem, kostet ein Bild in der Stadt mit Figuren 9 bis 10 % mehr, mit bis zu 
 Szene mit 50 Figuren hinter brechender Deckung das 1,33-fache, weil dort mehr Trümmer in Bewegung kommen. Mit 10 Figuren
 kostet ein Schritt 0,81 des Vorgängers, am Ende stehen alle. Szenen ohne Figuren rechnen dasselbe. Ein Spiel ruft dafür
 nichts auf.
+
+**Rumpf aus vier Stücken.** Seit `active-ragdoll-37` hat der Mensch der Bibliothek über dem Becken vier Stücke statt
+drei, eins für jeden Ring der Vorlage: Bauch, Rippen, die untere und die obere Brust, `nb_humanoidLowerChest` und
+`nb_humanoidChest`. Die beiden Teile der Brust wiegen 5 und 7 kg, zusammen so viel wie die Brust aus einem Stück, mit
+dem Schwerpunkt, wo er war, und der obere trägt Arme und Hals. Hals, Kopf, Arme und Beine rücken in `nbHumanoidBone` um
+eins nach hinten, `nb_humanoidBoneCount` ist 19: Ein Spiel, das die Namen nutzt, übersetzt nur neu. Die vier Gelenke der
+Wirbelsäule sind je viermal so steif wie die anderen, so hält der Rumpf so steif wie vorher, und sie beugen ihn wie bei
+einem Menschen vor allem im Bauch und drehen ihn vor allem in der Brust: Bauch und Rippen beugen 50 der 75° nach vorn
+und 22 der 30° zurück, die beiden Teile der Brust drehen 25 der 40°. Nach diesen Bereichen teilen sich die Gelenke auch
+das Zucken eines leichten Treffers, wie die Drehung um die Längsachse: Nach 20 N s von hinten beugt sich die Wirbelsäule
+um 9,2°, davon 6,4 in Bauch und Rippen. Auf `active-ragdoll-36` beugte sich jedes der drei Gelenke um 3°.
+
+Die beiden Teile der Brust sind ein Brustkorb, den Rippen und Brustbein zusammenhalten. Ein Treffer schiebt sie
+zusammen, sie nehmen ihren Anteil gemeinsam nach ihren Massen, siehe Treffer entlang des Skeletts. Jeder an seinem
+eigenen Schwerpunkt fuhr der obere Teil, auf der Höhe eines Treffers auf das Brustbein, um ein Drittel schneller los als
+die Brust aus einem Stück, der Rumpf kippte über dem Becken, und an den 4 464 Treffern auf Brust und Bauch fiel die
+Figur von 50 bis 89 N s 42-mal statt 15-mal. Als ein Brustkorb fallen 19, von 90 bis 139 N s 910 statt 885 und von 1 280
+Treffern auf Arme, Beine und Kopf 290 statt 272, von den 168 leichten Treffern keiner. Steifer, weicher oder weiter
+begrenzt änderte die Wirbelsäule daran nichts. Die Balance auf den Körper der Vorlage abzustimmen bleibt F68 der
+Roadmap. In eine Wand aus Brettern von 5 cm geworfen, bricht die Figur in 13 von 32 Bruchmustern durch statt in 11, und
+in 4 bleibt sie über der unteren Kante des Lochs liegen, den Rumpf auf der einen Seite, die Beine auf der anderen, ohne
+Boden unter dem Becken, und wartet dort für immer. Das tat `active-ragdoll-36` in 4 von 64 weiteren Mustern auch, die
+Wirbelsäule aus vier Stücken legt sich nur öfter über eine Kante. Eine Figur, die so liegt, soll herunterrutschen, F69
+der Roadmap. Die Demo zeichnet jedes Stück als einen Ring, so sieht die Figur aus wie vorher. Siehe „Rumpf aus vier
+Stücken“ und „Brustkorb als Ganzes“ in [Optimierungen.md](docs/Optimierungen.md). Gepaart gegen `active-ragdoll-36`,
+sechs Paare mit 4 Threads und vier mit einem, rechnen die Szenen ohne Figuren dasselbe. Mit 50 Figuren hinter brechender
+Deckung kostet ein Schritt 0,96 und 0,91 des Vorgängers, die 20 Ragdolls auf der Platte 0,98 und 1,01, mit einer Figur
+1,06 und 1,08 und mit 10 Figuren 1,04 und 1,20, ein Knochen mehr je Figur, bei großer Streuung zwischen den Paaren. In
+der Stadt mit Figuren kostet ein Bild 0,88 und 0,92 des Vorgängers: Dort stürzen fünf statt sechs Etagen ein, mit
+höchstens 52 424 statt 90 176 Kontakten, und am Ende stehen 29 statt 26 Figuren. Ein Spiel ruft dafür nichts auf.
 
 **Nicht ewig fangen.** Mit dem neuen Stand zeigten sich zwei Lücken der Balance, die jede Haltung treffen können. Nach
 97 N s von vorn rechts auf die Brust stand eine Figur ganz still, ihr Capture Point aber 2,8 cm neben den Sohlen,
@@ -900,7 +930,9 @@ rucken um 11 % mehr, die der Arme rucken um 24 % mehr, bei einem Treffer auf den
 die der Arme wie vorher. Die Figur stolpert öfter lange, 128-mal statt 97-mal über 4 s. Der Anteil des getroffenen
 Knochens wirkt an seinem Schwerpunkt, nicht am Treffpunkt: Mit dem Drehmoment des Treffpunkts verdrehte ein Treffer
 neben dem Schwerpunkt der Brust den Rumpf, paarweise um 49 % schneller als bis `active-ragdoll-25`, und die Figur fing
-sich nur noch 3 388-mal. Ein Treffer kostet so einmal 1,4 bis 2,6 statt 0,4 bis 0,8 µs. Ein Spiel ruft dafür nichts auf.
+sich nur noch 3 388-mal. Ein Treffer kostet so einmal 1,4 bis 2,6 statt 0,4 bis 0,8 µs. Die beiden Teile der Brust
+nehmen ihren Anteil zusammen, nach ihren Massen, als ein Brustkorb, siehe Rumpf aus vier Stücken. Ein Spiel ruft dafür
+nichts auf.
 
 **Gelenke wie beim Menschen.** Bis `active-ragdoll-26` begrenzte ein Kugelgelenk den Schwung seines Knochens mit einem
 runden Kegel, in jede Richtung gleich weit: Die Schulter ließ den Arm 86° nach vorn schwingen und ebenso weit zurück,
@@ -911,25 +943,25 @@ eine Ergänzung in Box3D, siehe [`extern/README.md`](extern/README.md). Der Mens
 ein Mensch nach den Normalwerten der Neutral-Null-Methode: Die Schulter hebt den Arm 160° nach vorn und zur Seite, 40°
 zurück und vor den Körper und dreht ihn 90° nach innen und 60° nach außen, der Ellbogen beugt sich 145°. Die Hüfte hebt
 das Bein 135° nach vorn, 20° zurück, 45° hinaus und 25° hinein und dreht es 40° nach innen und 45° nach außen, das Knie
-beugt sich 140°. Die drei Gelenke der Wirbelsäule beugen sie zusammen 75° nach vorn, 30° zurück und 34° zur Seite und
-drehen sie 40°, Hals und Kopf neigen sich zusammen 45° in jede Richtung und drehen sich 70°. Das Handgelenk beugt die
-Hand 60° zur Handfläche und 55° zurück, 25° zum Daumen und 35° zum kleinen Finger. Nur das Sprunggelenk geht weiter als
-nach dem Lehrbuch, 40° hinauf und 50° hinab, so weit, wie ein Mensch die Zehen unter seinem Gewicht im Ausfallschritt
-hebt: Mit den 25° der Neutral-Null-Methode, ohne Gewicht gemessen, fing sich die Figur nach einem Siebtel weniger
-Treffern. Ein Treffer von 90 N s von hinten auf den rechten Unterarm schwingt den Arm so 162° hoch, über den Kopf, statt
-89°, einer von vorn 51° zurück statt 90°. Box3D hält die Grenzen weich: Gleich nach dem Treffer schwingt die Hand, die
-6 N s davon auf 0,8 kg nimmt, bis 35° über ihre Grenzen, vom fünften Schritt an liegt kein Gelenk mehr als 7,7° darüber.
-An 4 464 Treffern auf Brust und Bauch fängt sich die Figur 3 617-mal statt 3 623-mal, 114 Treffer gehen verloren und 108
-kommen dazu, mit denselben Grenzen von 110, 120 und 80 N s. Paarweise steht sie im Mittel 0,1 s früher ruhig, mit 0,4
-Schritten weniger, und stolpert nur 88-mal statt 128-mal länger als 4 s. Ihre Arme drehen gegen die Brust 2 % schneller,
-alle anderen Gelenke so schnell wie vorher. Von 168 leichten Treffern fällt einer, vorher keiner. Sehr harte Treffer ab
-106 N s auf den Unterarm werfen sie 60-mal statt 22-mal von 80 um: Der Arm schwingt über den Kopf und reißt sie mit.
-Darunter fällt sie 7-mal statt 5-mal von 176, von einem Treffer auf den Oberarm 76-mal statt 66-mal von 256, von einem
-Tritt gegen das Schienbein 65-mal statt 61-mal, von einem Treffer auf den Kopf 166-mal statt 165-mal und von einem auf
-den Oberschenkel nie mehr statt 2-mal. Mit dem Rücken voran bricht sie 2-mal statt 5-mal von 8 durch eine Wand aus
-Brettern von 5 cm. Die Bibliothek begrenzt die Haltungen ihrer Clips und das Rudern der Arme mit denselben Grenzen wie
-Box3D. Ein Schritt kostet so viel wie vorher, siehe Leistung. Ein Spiel ruft dafür nichts auf, ein eigenes Rig setzt die
-vier Grenzen in `nbBoneDef`, alle null nehmen den runden Kegel `coneAngle` wie bisher.
+beugt sich 140°. Die Gelenke der Wirbelsäule, seit `active-ragdoll-37` vier, beugen sie zusammen 75° nach vorn, 30°
+zurück und 34° zur Seite und drehen sie 40°, Hals und Kopf neigen sich zusammen 45° in jede Richtung und drehen sich
+70°. Das Handgelenk beugt die Hand 60° zur Handfläche und 55° zurück, 25° zum Daumen und 35° zum kleinen Finger. Nur das
+Sprunggelenk geht weiter als nach dem Lehrbuch, 40° hinauf und 50° hinab, so weit, wie ein Mensch die Zehen unter seinem
+Gewicht im Ausfallschritt hebt: Mit den 25° der Neutral-Null-Methode, ohne Gewicht gemessen, fing sich die Figur nach
+einem Siebtel weniger Treffern. Ein Treffer von 90 N s von hinten auf den rechten Unterarm schwingt den Arm so 162°
+hoch, über den Kopf, statt 89°, einer von vorn 51° zurück statt 90°. Box3D hält die Grenzen weich: Gleich nach dem
+Treffer schwingt die Hand, die 6 N s davon auf 0,8 kg nimmt, bis 35° über ihre Grenzen, vom fünften Schritt an liegt
+kein Gelenk mehr als 7,7° darüber. An 4 464 Treffern auf Brust und Bauch fängt sich die Figur 3 617-mal statt 3 623-mal,
+114 Treffer gehen verloren und 108 kommen dazu, mit denselben Grenzen von 110, 120 und 80 N s. Paarweise steht sie im
+Mittel 0,1 s früher ruhig, mit 0,4 Schritten weniger, und stolpert nur 88-mal statt 128-mal länger als 4 s. Ihre Arme
+drehen gegen die Brust 2 % schneller, alle anderen Gelenke so schnell wie vorher. Von 168 leichten Treffern fällt einer,
+vorher keiner. Sehr harte Treffer ab 106 N s auf den Unterarm werfen sie 60-mal statt 22-mal von 80 um: Der Arm schwingt
+über den Kopf und reißt sie mit. Darunter fällt sie 7-mal statt 5-mal von 176, von einem Treffer auf den Oberarm 76-mal
+statt 66-mal von 256, von einem Tritt gegen das Schienbein 65-mal statt 61-mal, von einem Treffer auf den Kopf 166-mal
+statt 165-mal und von einem auf den Oberschenkel nie mehr statt 2-mal. Mit dem Rücken voran bricht sie 2-mal statt 5-mal
+von 8 durch eine Wand aus Brettern von 5 cm. Die Bibliothek begrenzt die Haltungen ihrer Clips und das Rudern der Arme
+mit denselben Grenzen wie Box3D. Ein Schritt kostet so viel wie vorher, siehe Leistung. Ein Spiel ruft dafür nichts auf,
+ein eigenes Rig setzt die vier Grenzen in `nbBoneDef`, alle null nehmen den runden Kegel `coneAngle` wie bisher.
 
 **Drehung um die Längsachse.** Bis `active-ragdoll-27` drehte ein leichter Treffer den Rumpf um die Achse aus Hebel mal
 Stoß, mit gleichem Winkel in jede Richtung: 30 N s vorn an der rechten Schulter drehten die Linie zwischen den Schultern
@@ -992,14 +1024,17 @@ Kopf, mit hohlem Rücken höben sich ihr die Beine über den Kopf, sobald die Br
 gedämpft und schläft ein.
 
 **Aufstehen.** Liegt eine Figur nach `getUpDelay` (1 s) eine Viertelsekunde still, prüft sie in jedem achten Update, ob
-sie aufstehen kann: tragender Boden unter dem Becken, nichts, was von oben auf ihr liegt, und Platz, um sich aufzurichten
-und vor sich zu knien. Sonst wartet sie und sagt, worauf (`nbFigureInfo::wait`). Dann werden ihre Knochen wieder
-kinematisch und folgen einem Clip vom Bauch oder vom Rücken, je nachdem, wie sie liegt, gedreht nach ihrer Wirbelsäule.
-Der Clip blendet in seinen ersten 0,8 s aus der Haltung ein, in der sie lag, Knochen für Knochen im Rahmen seines
-Elternknochens, wie Overgrowth vom Ragdoll zur Animation überblendet. Am Ende steht sie, wo der Clip sie hingebracht
-hat, und geht in den Stand über. Ein Treffer mit einem Viertel des Impulses, der sie sonst umwirft, oder eine Last von
-einem Viertel bricht das Aufstehen ab. Was ihre Knochen dabei selbst beiseiteschieben, zählt nicht, nur was auf sie
-zukommt oder auf ihr lastet.
+sie aufstehen kann: tragender Boden unter dem Becken, nichts, was von oben auf ihr liegt, und Platz, um sich
+aufzurichten und vor sich zu knien. Sonst wartet sie und sagt, worauf (`nbFigureInfo::wait`). Dann werden ihre Knochen
+wieder kinematisch und folgen einem Clip vom Bauch oder vom Rücken, je nachdem, wie sie liegt, gedreht nach ihrer
+Wirbelsäule. Der Clip blendet in seinen ersten 0,8 s aus der Haltung ein, in der sie lag, Knochen für Knochen im Rahmen
+seines Elternknochens, wie Overgrowth vom Ragdoll zur Animation überblendet. Jeder Knochen dreht dabei den Weg, der zu
+Beginn der kürzere war, und bleibt auf ihm: Bis `active-ragdoll-36` nahm er in jedem Schritt den kürzeren, und lag er
+etwa eine halbe Drehung vom Clip entfernt, sprang er auf die andere Seite, sobald der Clip ihn über die halbe Drehung
+trug, ein Arm einen Meter in einem Schritt. Wo nichts springt, rechnet das Bit für Bit wie vorher. Am Ende steht sie, wo
+der Clip sie hingebracht hat, und geht in den Stand über. Ein Treffer mit einem Viertel des Impulses, der sie sonst
+umwirft, oder eine Last von einem Viertel bricht das Aufstehen ab. Was ihre Knochen dabei selbst beiseiteschieben, zählt
+nicht, nur was auf sie zukommt oder auf ihr lastet.
 
 **Platz zum Aufstehen suchen.** Fehlt einem Menschen der Bibliothek nur der Platz, etwa mit dem Kopf unter einem Tisch
 oder an der Kante einer Platte über ihm, rückt er, statt zu warten, nach Kapitel 26.15 der Roadmap des Spiels. Er sucht
@@ -2426,7 +2461,7 @@ lange die Threads im Löser rechnen und worauf sie sonst warten.
 ## Tests und Benchmark
 
 ```sh
-build/bin/nebenan_test            # 117 Tests: Geometrie, Voronoi, Hüllen, Öffnungen, Stöße, Stützgraph, Etagen, Lastprüfung, Mauern, Schutt, Ruhe, Durchschlagen, Threads, Knoten, große Blöcke, Gelenke in Paketen und Gebieten, Suchbaum, Kontaktlisten, Streaming, Stream, Laden im Hintergrund, Speichern und Zurückholen, gemeinsamer Thread-Pool, Ruhe-Prüfung auf den Workern, Schritt auf eigenem Thread, Schritte pro Bild, Takt der Physik, Wahl der Threads, Profil und Skalierung, Figuren, Ausgleichsschritt, Abfangen, rudernde Arme, Muskeln, Treffer entlang des Skeletts, Kegel je Richtung, Gelenke wie beim Menschen, Drehung um die Längsachse, Armature, ruhiger Kopf, Drücken, Füße auf dem Boden, Platz zum Aufstehen, Ragdoll durch die Wand, dünne Bretter, Determinismus …
+build/bin/nebenan_test            # 119 Tests: Geometrie, Voronoi, Hüllen, Öffnungen, Stöße, Stützgraph, Etagen, Lastprüfung, Mauern, Schutt, Ruhe, Durchschlagen, Threads, Knoten, große Blöcke, Gelenke in Paketen und Gebieten, Suchbaum, Kontaktlisten, Streaming, Stream, Laden im Hintergrund, Speichern und Zurückholen, gemeinsamer Thread-Pool, Ruhe-Prüfung auf den Workern, Schritt auf eigenem Thread, Schritte pro Bild, Takt der Physik, Wahl der Threads, Profil und Skalierung, Figuren, Ausgleichsschritt, Abfangen, rudernde Arme, Muskeln, Treffer entlang des Skeletts, Kegel je Richtung, Gelenke wie beim Menschen, Drehung um die Längsachse, Armature, ruhiger Kopf, Drücken, Füße auf dem Boden, Platz zum Aufstehen, Ragdoll durch die Wand, dünne Bretter, Determinismus …
 build/bin/nebenan_benchmark 4     # Zahl = Threads für Bruch und Physik, 0 = so viele, wie ein Spiel nähme
 build/bin/nebenan_benchmark scaling   # die Städte unter Beschuss mit 1, 2, 4 … Threads und die Tabelle der Skalierung
 build/bin/nebenan_benchmark rates     # die Städte unter Beschuss mit 30, 60 und 120 Hz, was eine simulierte Sekunde kostet

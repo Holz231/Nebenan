@@ -15,6 +15,10 @@ typedef struct nbWorld nbWorld;
 // nbMakeHumanoidBones. With straight legs it would stand 2 cm higher.
 #define NB_HUMANOID_STAND 0.96f
 
+// The spine of the humanoid: its bones from the belly up to the chest, one after the other in nbHumanoidBone, which
+// share the flinch of the trunk
+#define NB_SPINE_COUNT ( nb_humanoidChest - nb_humanoidBelly + 1 )
+
 // A clip as a figure keeps it, copied: the time of every keyframe, the rotations keyframe by keyframe, bone by bone, and
 // the root of every keyframe in the frame of the figure
 typedef struct nbClip
@@ -276,10 +280,13 @@ typedef struct nbFigure
 
 	// The upper body of the humanoid turns about the axis up its spine more easily than it tilts: a flinch turns it
 	// twistGain times as far about that axis and as much faster back, up to twistLimit, the twist its spine allows, and
-	// its three joints share the twist after their twist ranges, spineTwist, see nbComputeTwist
+	// the joints of its spine share the twist after their twist ranges, spineTwist, and the tilt forward and back and to
+	// the side after their swing ranges, spineBend and spineSide, see nbComputeTwist
 	float twistGain;
 	float twistLimit;
-	float spineTwist[3];
+	float spineTwist[NB_SPINE_COUNT];
+	float spineBend[NB_SPINE_COUNT];
+	float spineSide[NB_SPINE_COUNT];
 	bool swinging;
 
 	// The feet on the ground and the steps to catch a hit, see nbPush: the feet, the foot in the air or -1 and how far

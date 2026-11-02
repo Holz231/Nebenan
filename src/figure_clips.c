@@ -117,12 +117,20 @@ static void nbTurnPair( nbPoseMaker* m, int left, int right, b3Vec3 axis, float 
 	nbTurn( m, right, axis, mirror * angle );
 }
 
-// Turn the three bones of the trunk by a share each
+// Turn the bones of the spine by an even share each
 static void nbTurnSpine( nbPoseMaker* m, b3Vec3 axis, float angle )
 {
-	nbTurn( m, nb_humanoidBelly, axis, angle / 3.0f );
-	nbTurn( m, nb_humanoidRibs, axis, angle / 3.0f );
-	nbTurn( m, nb_humanoidChest, axis, angle / 3.0f );
+	for ( int i = nb_humanoidBelly; i < nb_humanoidBelly + NB_SPINE_COUNT; ++i )
+	{
+		nbTurn( m, i, axis, angle / (float)NB_SPINE_COUNT );
+	}
+}
+
+// Turn the chest, both its parts by half each
+static void nbTurnChest( nbPoseMaker* m, b3Vec3 axis, float angle )
+{
+	nbTurn( m, nb_humanoidLowerChest, axis, 0.5f * angle );
+	nbTurn( m, nb_humanoidChest, axis, 0.5f * angle );
 }
 
 // Give a bone a rotation in the frame of the figure, for its parent as it is
@@ -525,7 +533,7 @@ static void nbStandingUpperBody( nbPoseMaker* m, float breath )
 	nbTurnPair( m, nb_humanoidUpperArmLeft, nb_humanoidUpperArmRight, nb_z, 0.035f + 0.015f * breath );
 	nbTurnPair( m, nb_humanoidForearmLeft, nb_humanoidForearmRight, nb_x, 0.5f + 0.04f * breath );
 	nbTurn( m, nb_humanoidBelly, nb_x, 0.04f );
-	nbTurn( m, nb_humanoidChest, nb_x, -0.04f - 0.03f * breath );
+	nbTurnChest( m, nb_x, -0.04f - 0.03f * breath );
 	nbTurn( m, nb_humanoidHead, nb_x, 0.03f + 0.02f * breath );
 }
 
@@ -651,7 +659,7 @@ static void nbMakeGetUpFront( nbPoseMaker* m, b3Vec3 offset, float start, float 
 	// The hands placed, the head up, the knees a little bent
 	nbResetPose( m, 0.0f );
 	m->root = (b3Transform){ { offset.x, lyingHeight, offset.z }, nbLying( 0.5f * pi, 0.0f ) };
-	nbTurn( m, nb_humanoidChest, nb_x, -0.1f );
+	nbTurnChest( m, nb_x, -0.1f );
 	nbTurn( m, nb_humanoidHead, nb_x, -0.3f );
 	nbTurnPair( m, nb_humanoidShinLeft, nb_humanoidShinRight, nb_x, -0.6f );
 	nbTurnPair( m, nb_humanoidFootLeft, nb_humanoidFootRight, nb_x, -0.7f );

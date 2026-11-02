@@ -399,12 +399,12 @@ NB_API nbBoneDef nbDefaultBoneDef( void );
 NB_API nbRigDef nbDefaultRigDef( void );
 
 /// Write the bones of a humanoid of this height in meters and mass in kilograms, nb_humanoidBoneCount of them in the
-/// order of nbHumanoidBone, built like a mannequin: a round pelvis as the root, a trunk of belly, ribs and a broad chest
-/// as rounded blocks on ball joints that let the back round, arch, lean and turn, a neck and an egg of a head on ball
-/// joints, arms and legs as capsules that hang down with ball joints at the shoulders, hips, wrists and ankles and hinges
-/// at the elbows and knees, simple capsules as hands and boxes as feet. It stands with its y axis up and faces +z.
-/// Returns the height of the pelvis origin over the soles as it stands a little in the knees, the stand height of
-/// nbFigureDef. The names of the bones are static strings.
+/// order of nbHumanoidBone, built like a mannequin: a round pelvis as the root, a trunk of belly, ribs and a broad
+/// chest in two parts as rounded blocks on ball joints that let the back round, arch, lean and turn, a neck and an egg
+/// of a head on ball joints, arms and legs as capsules that hang down with ball joints at the shoulders, hips, wrists
+/// and ankles and hinges at the elbows and knees, simple capsules as hands and boxes as feet. It stands with its y axis
+/// up and faces +z. Returns the height of the pelvis origin over the soles as it stands a little in the knees, the
+/// stand height of nbFigureDef. The names of the bones are static strings.
 NB_API float nbMakeHumanoidBones( float height, float mass, nbBoneDef* bones, int capacity );
 
 /// The convex hull of a bone that is a box or a rounded box, in the frame of the bone, as the physics has it: to draw it.
