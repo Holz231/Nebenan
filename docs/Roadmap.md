@@ -1873,6 +1873,21 @@ laufenden Kampf Blade & Sorcery. F64 bringt beides zusammen.
 | Harter Treffer, Schub, Explosion | Destabilized: Die Drehfedern werden schwächer, der Gegner taumelt oder fällt. Dass er sich mit Schritten fängt, steht nirgends | Aktive Ragdoll mit eigener Balance: Die Gelenke ziehen mit begrenzter Kraft zur Haltung des Clips, die Figur fängt sich mit Schritten nach dem Capture Point, die Arme rudern, der Oberkörper nimmt die Drehung auf, und eine begrenzte Stütze hält nur das Becken | Wie bis Runde 42: Die Federn lassen los, und die Figur fängt sich mit Schritten |
 | Sturz | Ragdoll, danach Aufstehen nach einer Kurve, `standUpCurve` | Ragdoll mit Restspannung, danach Aufstehen mit einem Clip | Wie bis Runde 42 |
 
+Ein Tritt gegen einen Gegner, Schritt für Schritt, am 2. November 2026 auf Frage des Nutzers. Komplexe Kampfbewegungen
+gehen schon heute: Das Spiel spielt eigene Clips mit `nbFigure_PlayClip`, und die Figur ist dann die Animation, Knochen
+für Knochen. Was fehlt, ist der Kontakt zwischen zwei Kämpfern: Bis Runde 42 geht ein Fuß durch den Block, weil beide
+Figuren kinematisch sind. F64 und F65 schließen das.
+
+| Schritt | Bis Runde 42 | Mit F64 und F65 |
+| --- | --- | --- |
+| Die Kampfbewegung | Das Spiel spielt eigene Clips mit `nbFigure_PlayClip`, die Figur ist die Animation, Knochen für Knochen. Ein Tritt tritt, wie der Clip es will, die Fuß-IK lässt den Fuß los, sobald der Clip ihn hebt | Kommen sich zwei Kämpfer nahe, werden beide dynamisch und folgen ihren Clips mit begrenzten Federn, so genau, dass ein Schlag präzise bleibt |
+| Der Tritt trifft den Block | Beide Figuren sind kinematisch, und Box3D lässt kinematische Körper nicht miteinander kollidieren: Der Fuß geht durch den Block. Das Spiel erkennt den Treffer selbst und spielt etwa einen Clip für den Block | Der Fuß trifft den Block physikalisch. Ist der Tritt stärker als die Federn des Arms, geben Schulter und Ellbogen nach, sonst hält der Block den Fuß auf, und das eigene Bein spürt die Gegenkraft |
+| Der Tritt trifft ohne Block | Das Spiel ruft `nbFigure_ApplyHit` mit dem Impuls des Tritts an der Trefferstelle auf. Unter `knockdownImpulse` zuckt der Gegner, darüber wird er zur aktiven Ragdoll | Der Fuß trifft den Körper, und der Tritt wirkt nach Geschwindigkeit und Masse hinter dem Fuß |
+| Danach | Der Gegner folgt nicht mehr der Bewegung des Clips durch die Welt, sondern dem Stoß und seiner eigenen Balance: Schritte nach dem Capture Point, rudernde Arme, der Oberkörper nimmt die Drehung auf. Seine Gelenke ziehen weiter mit begrenzter Kraft zur Haltung des Clips, so behält er Körperspannung und fällt nicht schlaff um. Ruhig wird er wieder Animation | Bringt ihn der Tritt aus dem Gleichgewicht, lässt er die Federn zur Animation los und fängt sich mit Schritten wie bis Runde 42: derselbe Körper mit denselben Gelenkmotoren, nur ohne die Fäden zur Animation |
+
+Runde 43 baut davon den ersten Teil von F64: dynamisch und mit begrenzten Federn dem Clip folgen, solange ein Gegner nah
+ist. F65 lässt danach das Spiel Hand und Fuß führen, so dass ein Tritt nach der Kraft wirkt, die hinter ihm steckt.
+
 Balance aus eigener Kraft, Stufe 3, Runde 41, F61, wie mit dem Nutzer besprochen, gegen das Kippen: Mit der Stütze durch
 die Beine fielen nach Runde 40 von 168 leichten Treffern 43, 20 davon nach einem Treffer von der Seite, bei dem das
 Becken über dem Standbein kippte. Geplant war, dass die Hüfte den Oberkörper gegen die Drehung aufrecht hält und die
