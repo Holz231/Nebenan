@@ -201,6 +201,11 @@ typedef struct b3RevoluteJoint
 	float maxMotorTorque;
 	float motorSpeed;
 	float targetAngle;
+
+	// Added for Nebenan: the speed of body B against body A about the axis that the spring goes for along with the
+	// target angle, see b3RevoluteJoint_SetTargetSpeed
+	float targetSpeed;
+
 	float lowerAngle;
 	float upperAngle;
 
@@ -252,6 +257,12 @@ typedef struct b3SphericalJoint
 	float upperTwistAngle;
 	float coneAngle;
 	b3Quat targetRotation;
+
+	// Added for Nebenan: the angular velocity of body B against body A, in the joint frame of body A, that the spring
+	// goes for along with the target rotation, see b3SphericalJoint_SetTargetVelocity, and whether it is not zero, so a
+	// joint without one costs the solver a single test
+	b3Vec3 targetVelocity;
+	bool hasTargetVelocity;
 
 	int indexA;
 	int indexB;

@@ -139,6 +139,23 @@ float b3RevoluteJoint_GetTargetAngle( b3JointId jointId )
 	return base->revoluteJoint.targetAngle;
 }
 
+// Added for Nebenan
+void b3RevoluteJoint_SetTargetSpeed( b3JointId jointId, float speed )
+{
+	B3_ASSERT( b3IsValidFloat( speed ) );
+	b3World* world = b3GetWorld( jointId.world0 );
+	B3_REC( world, RevoluteJointSetTargetSpeed, jointId, speed );
+	b3JointSim* base = b3GetJointSimCheckType( jointId, b3_revoluteJoint );
+	base->revoluteJoint.targetSpeed = speed;
+}
+
+// Added for Nebenan
+float b3RevoluteJoint_GetTargetSpeed( b3JointId jointId )
+{
+	b3JointSim* base = b3GetJointSimCheckType( jointId, b3_revoluteJoint );
+	return base->revoluteJoint.targetSpeed;
+}
+
 void b3RevoluteJoint_SetSpringHertz( b3JointId jointId, float hertz )
 {
 	B3_ASSERT( b3IsValidFloat( hertz ) && hertz >= 0.0f );
@@ -510,6 +527,13 @@ void b3SolveRevoluteJoint( b3JointSim* base, b3StepContext* context, bool useBia
 		float massScale = joint->springSoftness.massScale;
 		float impulseScale = joint->springSoftness.impulseScale;
 		float cdot = b3Dot( b3Sub( wB, wA ), joint->rotationAxisZ );
+
+		// A target that turns: the spring damps the turn against its speed instead of against rest, so it follows
+		// without lagging behind. Added for Nebenan.
+		if ( joint->targetSpeed != 0.0f )
+		{
+			cdot -= joint->targetSpeed;
+		}
 
 		float deltaImpulse = -massScale * joint->axialMass * ( cdot + bias ) - impulseScale * joint->springImpulse;
 

@@ -365,6 +365,24 @@ typedef struct nbFigure
 	bool pushed;
 	float armPush[2];
 
+	// Following its clip with dynamic bones near another figure, see nbFigureDef::engageRadius and nbBeginFollowing:
+	// whether it follows, a motor joint per bone from the static anchor of the world that drives it, where the clip put
+	// the bones for the end of the last step, how fast it moved them in it and the rotations of their joints, see
+	// nbFollowClip and nbFollowJoints, whether another
+	// figure was near at the start of the update, how long none was, how long a bone was stuck far from the clip, see
+	// NB_FOLLOW_STUCK, whether other figures overpowered it at the last check, see NB_FOLLOW_OVERPOWER, and how often it
+	// was pushed off its clip
+	bool following;
+	b3JointId* followJoints;
+	b3WorldTransform* followTargets;
+	b3Vec3* followVelocities;
+	b3Quat* followRelative;
+	bool engaged;
+	float apartTime;
+	float stuckTime;
+	bool overpowered;
+	int letGoCount;
+
 	uint16_t generation;
 	bool isFree;
 } nbFigure;
@@ -416,6 +434,10 @@ int nbCountAwakeRagdolls( const nbWorld* world );
 
 // Destroy every figure of the world with its bodies and free the arrays, for nbDestroyWorld
 void nbDestroyFigures( nbWorld* world );
+
+// The static body that the upright holds of figures that catch themselves and the drives of figures that follow their
+// clips hold against, one for the world, made the first time a figure needs it
+b3BodyId nbFigureAnchor( nbWorld* world );
 
 // The clips of the library for the humanoid, see figure_clips.c and nbMakeHumanoidClip
 int nbBuildHumanoidClip( nbFigureClip which, float height, nbKeyframe* keyframes, b3Quat* rotations, int capacity,

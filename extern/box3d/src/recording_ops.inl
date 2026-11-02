@@ -15,6 +15,7 @@
 //   0x40-0x4F  shape create/destroy
 //   0x50-0x6F  shape mutators
 //   0x80       step
+//   0x8A-0x8B  target velocities of joint springs, added for Nebenan, the joint range is full
 //   0x8C-0x8D  armature of joints, added for Nebenan, the joint range is full
 //   0x8E-0x8F  spring torque limits of joints, added for Nebenan, the joint range is full
 //   0x90-0xE7  joints (create, generic, per-type)
@@ -25,6 +26,10 @@
 // end-of-session marker the viewer reads.
 B3_REC_OP( 0x01, DestroyWorld, RET_NONE, ARG( WORLDID, world ) )
 B3_REC_OP( 0x80, Step, RET_NONE, ARG( WORLDID, world ) ARG( F32, dt ) ARG( I32, subStepCount ) )
+
+// Target velocities of the springs of revolute and spherical joints, added for Nebenan
+B3_REC_OP( 0x8A, RevoluteJointSetTargetSpeed, RET_NONE, ARG( JOINTID, joint ) ARG( F32, speed ) )
+B3_REC_OP( 0x8B, SphericalJointSetTargetVelocity, RET_NONE, ARG( JOINTID, joint ) ARG( VEC3, velocity ) )
 
 // Armature of revolute and spherical joints, added for Nebenan
 B3_REC_OP( 0x8C, RevoluteJointSetArmature, RET_NONE, ARG( JOINTID, joint ) ARG( F32, armature ) )

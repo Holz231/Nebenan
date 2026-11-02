@@ -48,16 +48,18 @@ enum SceneKind
 	SceneCity,
 	SceneFigures,
 	SceneFigureTown,
+	SceneFight,
 	SceneCount
 };
 
-static const char* s_sceneNames[SceneCount] = { "Mauern", "Stresstest", "Stadt", "Große Stadt", "Figuren", "Stadt mit Figuren" };
+static const char* s_sceneNames[SceneCount] = { "Mauern",  "Stresstest",		"Stadt", "Große Stadt",
+												"Figuren", "Stadt mit Figuren", "Kampf" };
 static const char* s_toolNames[ToolCount] = { "Gewehr", "Granate", "Kanone", "Stock" };
 
 // The scenes whose figures the menu, the overlay and the reports show
 static bool HasFigures( SceneKind scene )
 {
-	return scene == SceneFigures || scene == SceneFigureTown;
+	return scene == SceneFigures || scene == SceneFigureTown || scene == SceneFight;
 }
 
 struct ToolSettings
@@ -1765,6 +1767,96 @@ static void BuildFigureScene( App& app )
 	app.camera.pitch = -0.14f;
 }
 
+// The clips of the fight: a straight punch of the right arm every two seconds, from the guard at the chin out in 0.12 s,
+// and a guard with the left forearm across the face, both on the first pose of the idle clip of the library. A game
+// brings its own clips, see nbFigure_PlayClip.
+struct FightClips
+{
+	nbKeyframe idleKeys[NB_HUMANOID_CLIP_KEYFRAMES];
+	b3Quat idlePoses[NB_HUMANOID_CLIP_KEYFRAMES * nb_humanoidBoneCount];
+	nbKeyframe punchKeys[6];
+	b3Quat punchPoses[6 * nb_humanoidBoneCount];
+	nbKeyframe guardKeys[2];
+	b3Quat guardPoses[2 * nb_humanoidBoneCount];
+	nbClipDef punch;
+	nbClipDef guard;
+};
+
+static void MakeFightClips( FightClips& clips )
+{
+	nbClipDef idle;
+	nbMakeHumanoidClip( nb_clipIdle, 1.8f, clips.idleKeys, clips.idlePoses, NB_HUMANOID_CLIP_KEYFRAMES, &idle );
+
+	// Rest, at the chin, out, held, at the chin, rest
+	const float times[6] = { 0.0f, 0.8f, 0.92f, 1.07f, 1.35f, 2.0f };
+	for ( int k = 0; k < 6; ++k )
+	{
+		b3Quat* pose = clips.punchPoses + k * nb_humanoidBoneCount;
+		memcpy( pose, clips.idlePoses, sizeof( b3Quat ) * nb_humanoidBoneCount );
+		if ( k == 1 || k == 4 )
+		{
+			pose[nb_humanoidUpperArmRight] = b3MakeQuatFromAxisAngle( b3Vec3_axisX, 1.0f );
+			pose[nb_humanoidForearmRight] = b3MakeQuatFromAxisAngle( b3Vec3_axisX, 2.3f );
+		}
+		else if ( k == 2 || k == 3 )
+		{
+			pose[nb_humanoidUpperArmRight] = b3MakeQuatFromAxisAngle( b3Vec3_axisX, 1.5f );
+			pose[nb_humanoidForearmRight] = b3Quat_identity;
+		}
+		clips.punchKeys[k] = { times[k], pose, b3Transform_identity };
+	}
+	clips.punch = { clips.punchKeys, 6, nb_humanoidBoneCount, true, false };
+
+	// The left upper arm ahead and turned in, the forearm bent across before the face
+	for ( int k = 0; k < 2; ++k )
+	{
+		b3Quat* pose = clips.guardPoses + k * nb_humanoidBoneCount;
+		memcpy( pose, clips.idlePoses, sizeof( b3Quat ) * nb_humanoidBoneCount );
+		pose[nb_humanoidUpperArmLeft] =
+			b3MulQuat( b3MakeQuatFromAxisAngle( b3Vec3_axisX, 1.5f ), b3MakeQuatFromAxisAngle( b3Vec3_axisY, 1.3f ) );
+		pose[nb_humanoidForearmLeft] = b3MakeQuatFromAxisAngle( b3Vec3_axisX, 1.6f );
+		clips.guardKeys[k] = { 0.5f * (float)k, pose, b3Transform_identity };
+	}
+	clips.guard = { clips.guardKeys, 2, nb_humanoidBoneCount, true, false };
+}
+
+// Two pairs of fighters, see nbFigureDef::engageRadius: near each other they follow their clips with dynamic bones, so
+// the punch of the left one in each pair meets the guard of the other on the left and its open chest on the right, with
+// the force the clip takes behind it. The stick meets them as any body does.
+static void BuildFightScene( App& app )
+{
+	static FightClips clips;
+	MakeFightClips( clips );
+	nbRigDef rig;
+	nbFigureDef def = MakeFigureDef( app, &rig );
+	def.engageRadius = 2.0f;
+	for ( int pair = 0; pair < 2; ++pair )
+	{
+		float z = -3.0f * (float)pair;
+		def.position = b3ToPos( { 0.0f, 0.0f, z } );
+		def.heading = 0.0f;
+		nbFigureId puncher = nbCreateFigure( app.destruction, &def );
+		def.position = b3ToPos( { -0.2f, 0.0f, z + ( pair == 0 ? 0.8f : 0.75f ) } );
+		def.heading = B3_PI;
+		nbFigureId other = nbCreateFigure( app.destruction, &def );
+		if ( nbFigure_IsValid( puncher ) && nbFigure_IsValid( other ) )
+		{
+			AddFigureVisual( app, puncher );
+			AddFigureVisual( app, other );
+			nbFigure_PlayClip( puncher, &clips.punch, 1.0f );
+			if ( pair == 0 )
+			{
+				nbFigure_PlayClip( other, &clips.guard, 1.0f );
+			}
+		}
+	}
+
+	// From the side of the punching arms
+	app.camera.position = { -3.4f, 1.5f, -1.1f };
+	app.camera.yaw = 0.5f * B3_PI;
+	app.camera.pitch = -0.08f;
+}
+
 // The town with two figures in the streets beside every house, like the town with figures of the benchmark: one a metre
 // before an end wall and one before a long wall, turned with the house, where the grenades, their debris and the storeys
 // that come down knock them over and bury them
@@ -1923,6 +2015,9 @@ static void LoadScene( App& app, SceneKind scene )
 		case SceneFigureTown:
 			BuildTownScene( app );
 			AddTownFigures( app );
+			break;
+		case SceneFight:
+			BuildFightScene( app );
 			break;
 		default:
 			BuildTownScene( app );
@@ -2579,11 +2674,13 @@ static std::string BuildReport( const App& app )
 	{
 		const nbFigureStats& figures = view.figures;
 		Appendf( text,
-				 "Figuren: %d, stehen %d, fangen sich %d, liegen %d (%d wach), stehen auf %d; Treffer %d, Schritte %d, "
-				 "gefangen %d, umgeworfen %d, aufgestanden %d, gerückt %d, abgebrochen %d, gedrückt %d\n",
-				 figures.figureCount, figures.animatedCount, figures.balancingCount, figures.ragdollCount,
+				 "Figuren: %d, stehen %d (%d folgen dem Clip), fangen sich %d, liegen %d (%d wach), stehen auf %d; Treffer %d, "
+				 "Schritte %d, gefangen %d, umgeworfen %d, aufgestanden %d, gerückt %d, abgebrochen %d, gedrückt %d, "
+				 "losgelassen %d\n",
+				 figures.figureCount, figures.animatedCount, figures.followingCount, figures.balancingCount, figures.ragdollCount,
 				 figures.awakeRagdollCount, figures.gettingUpCount, figures.hitCount, figures.stepCount, figures.catchCount,
-				 figures.knockdownCount, figures.getUpCount, figures.shiftCount, figures.abortCount, figures.pushCount );
+				 figures.knockdownCount, figures.getUpCount, figures.shiftCount, figures.abortCount, figures.pushCount,
+				 figures.letGoCount );
 	}
 	if ( app.scene == SceneCity )
 	{
@@ -2649,13 +2746,13 @@ static void DrawUi( App& app )
 	if ( HasFigures( app.scene ) )
 	{
 		const nbFigureStats& figures = app.view.figures;
-		ImGui::Text( "Figuren %d: stehen %d, fangen sich %d, liegen %d (%d wach), stehen auf %d", figures.figureCount,
-					 figures.animatedCount, figures.balancingCount, figures.ragdollCount, figures.awakeRagdollCount,
-					 figures.gettingUpCount );
+		ImGui::Text( "Figuren %d: stehen %d (%d folgen dem Clip), fangen sich %d, liegen %d (%d wach), stehen auf %d",
+					 figures.figureCount, figures.animatedCount, figures.followingCount, figures.balancingCount,
+					 figures.ragdollCount, figures.awakeRagdollCount, figures.gettingUpCount );
 		ImGui::Text( "Treffer %d, Schritte %d, gefangen %d, umgeworfen %d, aufgestanden %d, gerückt %d, abgebrochen %d, "
-					 "gedrückt %d",
+					 "gedrückt %d, losgelassen %d",
 					 figures.hitCount, figures.stepCount, figures.catchCount, figures.knockdownCount, figures.getUpCount,
-					 figures.shiftCount, figures.abortCount, figures.pushCount );
+					 figures.shiftCount, figures.abortCount, figures.pushCount, figures.letGoCount );
 		ImGui::SliderFloat( "Gewehr auf Figuren", &app.figureHitImpulse, 10.0f, 1500.0f, "%.0f N s",
 							ImGuiSliderFlags_Logarithmic );
 		if ( ImGui::IsItemHovered() )
@@ -3241,6 +3338,10 @@ static void RunStickScript( App& app, float time )
 // What a figure does, for the label over its head
 static const char* FigureStateName( const nbFigureInfo& info )
 {
+	if ( info.state == nb_figureAnimated && info.following )
+	{
+		return info.stepping ? "folgt dem Clip, tritt nach" : "folgt dem Clip";
+	}
 	if ( info.state == nb_figureAnimated )
 	{
 		return info.stepping ? "tritt nach" : "steht";

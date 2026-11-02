@@ -1616,6 +1616,16 @@ static void b3RecDispatch_SphericalJointSetMaxSpringTorque( const b3RecArgs_Sphe
 }
 
 // Added for Nebenan
+static void b3RecDispatch_RevoluteJointSetTargetSpeed( const b3RecArgs_RevoluteJointSetTargetSpeed* a, b3RecReader* rdr )
+{
+	b3RevoluteJoint_SetTargetSpeed( b3RecMakeJointId( rdr, a->joint ), a->speed );
+}
+
+static void b3RecDispatch_SphericalJointSetTargetVelocity( const b3RecArgs_SphericalJointSetTargetVelocity* a, b3RecReader* rdr )
+{
+	b3SphericalJoint_SetTargetVelocity( b3RecMakeJointId( rdr, a->joint ), a->velocity );
+}
+
 static void b3RecDispatch_RevoluteJointSetArmature( const b3RecArgs_RevoluteJointSetArmature* a, b3RecReader* rdr )
 {
 	b3RevoluteJoint_SetArmature( b3RecMakeJointId( rdr, a->joint ), a->armature );

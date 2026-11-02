@@ -251,6 +251,24 @@ b3Quat b3SphericalJoint_GetTargetRotation( b3JointId jointId )
 	return base->sphericalJoint.targetRotation;
 }
 
+// Added for Nebenan
+void b3SphericalJoint_SetTargetVelocity( b3JointId jointId, b3Vec3 velocity )
+{
+	B3_ASSERT( b3IsValidVec3( velocity ) );
+	b3World* world = b3GetWorld( jointId.world0 );
+	B3_REC( world, SphericalJointSetTargetVelocity, jointId, velocity );
+	b3JointSim* base = b3GetJointSimCheckType( jointId, b3_sphericalJoint );
+	base->sphericalJoint.targetVelocity = velocity;
+	base->sphericalJoint.hasTargetVelocity = velocity.x != 0.0f || velocity.y != 0.0f || velocity.z != 0.0f;
+}
+
+// Added for Nebenan
+b3Vec3 b3SphericalJoint_GetTargetVelocity( b3JointId jointId )
+{
+	b3JointSim* base = b3GetJointSimCheckType( jointId, b3_sphericalJoint );
+	return base->sphericalJoint.targetVelocity;
+}
+
 void b3SphericalJoint_SetSpringHertz( b3JointId jointId, float hertz )
 {
 	B3_ASSERT( b3IsValidFloat( hertz ) && hertz >= 0.0f );
@@ -672,6 +690,13 @@ void b3SolveSphericalJoint( b3JointSim* base, b3StepContext* context, bool useBi
 		float massScale = joint->springSoftness.massScale;
 		float impulseScale = joint->springSoftness.impulseScale;
 		b3Vec3 cdot = b3Sub( wB, wA );
+
+		// A target that turns: the spring damps the turn against its velocity instead of against rest, so it follows
+		// without lagging behind. Added for Nebenan.
+		if ( joint->hasTargetVelocity )
+		{
+			cdot = b3Sub( cdot, b3RotateVector( quatA, joint->targetVelocity ) );
+		}
 
 		b3Vec3 impulse = b3MulSub( b3MulSV( -massScale, b3MulMV( joint->rotationMass, b3Add( cdot, bias ) ) ),
 								   impulseScale, joint->springImpulse );

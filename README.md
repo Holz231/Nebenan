@@ -46,8 +46,10 @@ gelöscht. Kein Staub, keine Schatten: Jede Millisekunde geht in die Zerstörung
   begrenzter Kraft zu einer Haltung, sie fängt sich mit den Armen ab oder rollt sich ein. Liegt sie still, steht sie mit
   einem Clip vom Bauch oder vom Rücken wieder auf, sobald sie Boden, Platz und nichts auf sich hat, und fehlt ihr nur
   der Platz, rückt sie dorthin, wo sie ihn hat. Auf Wunsch ziehen ihre Gelenke mit genäherten Muskeln, die sich mit
-  Verzögerung spannen und schnell gedreht schwächer ziehen. Die Knochen und Clips eines Menschen baut die Bibliothek
-  selbst
+  Verzögerung spannen und schnell gedreht schwächer ziehen. Kämpfer nahe beieinander machen ihre Bewegung selbst: Der
+  Clip gibt nur die Haltung, Gelenke und Antriebe bewegen ihre dynamischen Knochen, ein Schlag trifft Deckung oder
+  Körper, und wer aus dem Gleichgewicht kommt, lässt los und fängt sich. Die Knochen und Clips eines Menschen baut die
+  Bibliothek selbst
 - Für ganze Städte gebaut, ohne etwas zu löschen: Trümmer, die zur Ruhe kommen und auf festem Grund liegen,
   werden zu statischem Schutt und kosten Box3D nichts mehr. Box3D bewegt nur eine begrenzte Zahl Trümmer
   gleichzeitig, verdeckte Flächen werden nicht gezeichnet
@@ -298,8 +300,12 @@ Bildzeit.
 - **Stadt mit Figuren**: die Stadt mit zwei Figuren an jedem Haus, 40 auf den Straßen, je eine gut 1 m vor einer
   Stirnwand und vor einer Längswand wie im Benchmark. Granaten, Trümmer und einstürzende Stockwerke werfen sie um und
   begraben sie. Das Menü zählt sie wie in „Figuren“
+- **Kampf**: zwei Paare von Kämpfern mit `engageRadius` 2 m, die ihre Bewegung selbst machen, siehe Kämpfer machen die
+  Bewegung selbst. In jedem Paar schlägt einer alle zwei Sekunden geradeaus, im einen hält der andere die Deckung, im
+  anderen steht er offen. **Zustand** schreibt „folgt dem Clip“ über jede, das Menü zählt außerdem, wie viele folgen
+  und wie oft eine losließ. Mit dem Stock lassen sie sich drücken und schlagen
 
-**Aufrufoptionen**: `--scene 0..5` startet eine Szene, `--fragment-scale 3` setzt die Bruchstückgröße, `--vsync`
+**Aufrufoptionen**: `--scene 0..6` startet eine Szene, `--fragment-scale 3` setzt die Bruchstückgröße, `--vsync`
 schaltet VSync ein, `--msaa 4` schaltet Kantenglättung ein (Standard aus), `--highdpi` rendert auf hochauflösenden
 Bildschirmen in voller Auflösung (Standard aus, kostet Füllrate). `--serial-physics` schaltet die parallele Physik ab,
 `--threads N` setzt die Zahl der Threads, `--step-rate 30` den Takt der Physik. `--compare` misst parallel gegen
@@ -885,6 +891,34 @@ Jetzt fällt eine Figur, die 8 s lang nicht zur Ruhe kommt, ohne dass etwas sie 
 dazu hat. Von den 5 744 gemessenen Treffern ändert das nur den einen von 97 N s, von 90 bis 139 N s fallen so 676 statt
 677, der längste Fang dauert 6,3 s. Ein Spiel ruft dafür nichts auf.
 
+**Kämpfer machen die Bewegung selbst.** Seit `active-ragdoll-43` folgt eine stehende Figur mit
+`nbFigureDef::engageRadius` ihrem Clip mit dynamischen Knochen, solange das Becken einer anderen Figur näher ist, F64
+Stufe 2 der Roadmap. Der Clip gibt nur die Haltung vor, die Bewegung machen Gelenke und Antriebe. Jedes Gelenk zieht mit
+voller Kraft zur Haltung des Clips und dreht mit ihm: Dafür hat Box3D eine Zielgeschwindigkeit der Gelenkfedern
+bekommen, `b3SphericalJoint_SetTargetVelocity` und `b3RevoluteJoint_SetTargetSpeed`, die Feder dämpft dann gegen diese
+Geschwindigkeit statt gegen den Stillstand, und bei null rechnet das Gelenk bitgleich wie vorher. Dazu zieht ein
+Motorgelenk von einem statischen Anker der Welt jeden Knochen mit seiner Geschwindigkeit im Clip und holt ihn in 0,1 s
+zu seiner Lage zurück, mit höchstens der Kraft, mit der der Clip ihn beschleunigt, und seinem Gewicht mal
+`nbFigureMotors::followStrength` (Standard 1) mehr. Becken und Beine halten so auch ihre Drehung. Im Idle bleibt jeder
+Knochen 2,6 mm am Clip, die Faust eines Schlags, der in 0,12 s ausfährt, 4,1 cm. Ein Schlag trifft die Deckung oder den
+Körper: Durch eine kinematische Figur ginge die Faust 65 cm weit, in eine folgende geht sie 58 cm und drückt sie 8 cm
+zurück. Der Kontakt zählt mit seinem Impuls als Treffer, nach den Regeln jeder stehenden Figur, sie zuckt, tritt nach
+oder fängt sich. Wird ihr Becken 20 cm oder 0,5 rad aus dem Clip gedrückt, bleibt ein Knochen eine halbe Sekunde 25 cm
+daneben oder drücken andere Figuren sie mit mehr als ihrem halben Gewicht waagerecht, lässt sie los und fängt sich mit
+ihrer Balance, danach folgt sie wieder. Läuft eine Figur mit 1 m/s in eine andere, lassen beide los, und keine fällt.
+Sonst ist, was andere Figuren auf einen Kämpfer drücken, kein Drücken nach `pushForce` und keine Last, außer ein Ragdoll
+liegt auf ihm. Eine Sekunde nachdem die letzte Figur gegangen und sie wieder auf ihrem Clip ist, steht sie kinematisch,
+und ein Sprung mit `nbFigure_Move` um mehr als 1 m macht sie sofort kinematisch. `nbFigureInfo::following` sagt, ob sie
+folgt, `nbFigureInfo::letGoCount`, wie oft sie losließ, `nbFigureStats::followingCount` und `letGoCount` zählen für die
+Welt. Eine folgende Figur kostet auf der Cloud-VM mit einem Thread rund 0,065 ms pro Schritt statt 0,005 ms kinematisch,
+neun Zehntel davon im Löser von Box3D, 100 Kämpfer in 50 Paaren 6,8 ms mit einem Thread und 3,4 ms mit vier. Wer allein
+steht, bleibt kinematisch und kostet nichts dazu. Ohne `engageRadius` rechnet alles bitgleich wie vorher: Gepaart gegen
+`active-ragdoll-42` enden alle Szenen des Benchmarks mit denselben Prüfsummen, mit einem und mit vier Threads, die Stadt
+mit Figuren kostet 0,98 und 0,97 der Zeit davor, und Valgrind zählt für 50 Figuren, die stehen, zucken und fallen, 0,03
+% mehr Instruktionen. Wie viel 50 Kämpfer kosten, misst der Benchmark, siehe Kämpfer unter Leistung. Siehe „Kämpfer
+machen die Bewegung selbst“ in [Optimierungen.md](docs/Optimierungen.md). Ein Spiel setzt `engageRadius`, zum Beispiel 2
+m, und spielt seine Clips mit `nbFigure_PlayClip`.
+
 **Drücken.** Drückt ein Körper eine stehende Figur langsam, ein Stock, eine Hand oder ein Block, und schiebt er dabei
 einen ihrer Knochen mit mindestens `pushForce` (Standard 40 N) seitlich, bei zwei Prüfungen hintereinander, also ein
 paar Schritte lang, fängt sich ein Mensch der Bibliothek, statt eine Wand zu bleiben: Seine Knochen werden dynamisch,
@@ -904,8 +938,9 @@ und bis `active-ragdoll-30` zählte das am Unterarm als Last: Die Figur blieb ei
 Stock blieb an ihrem Arm hängen. Jetzt lehnt sie sich bei 80 N in den Ellbogen ohne Schritt 12 cm zur Seite, wie bei
 80 N auf der Brust 8 cm zurück. `nbFigureInfo::pushCount` und `nbFigureStats::pushCount` zählen, wie oft ein Drücken
 eine Figur sich fangen ließ. Andere Rigs als der Mensch bleiben eine Wand, mit `pushForce` null auch er, und was dann
-von oben auf seine Arme drückt, ist wieder eine Last. Zwei stehende Figuren drücken sich noch nicht, Box3D lässt ihre
-Knochen nicht kollidieren, siehe F64 der Roadmap. Ein Spiel ruft dafür nichts auf.
+von oben auf seine Arme drückt, ist wieder eine Last. Zwei kinematische Figuren drücken sich nicht, Box3D lässt ihre
+Knochen nicht kollidieren. Kämpfer mit `engageRadius` folgen einander nah mit dynamischen Knochen und drücken sich,
+siehe Kämpfer machen die Bewegung selbst. Ein Spiel ruft dafür nichts auf.
 
 **Gehaltener Arm.** Hebt man einer Figur einen Arm, mit einem Stock, einer Hand oder einem Block, gibt er locker nach,
 und die Figur hält dabei die Balance. Die Prüfung aus Drücken liest dazu, wie stark jeder Arm gedrückt wird. Drückt oder
@@ -1667,6 +1702,7 @@ beim Einbinden nicht gebaut.
 | `flinchScale`, `flinchLimit`, `flinchHertz` | 0,008 rad pro N s, 0,5 rad, 2 Hz | Wie weit der Rumpf bei einem schwachen Treffer zurückzuckt und wie schnell er sich wieder aufrichtet. Trifft der Stoß Knochen mit eigener Feder, nur mit dem, was ihr Gelenk weitergibt. Die Grenze gilt auch für jede Feder eines Knochens. Um die Achse die Wirbelsäule hinauf dreht sich der Oberkörper des Menschen der Bibliothek 2,5-mal so weit und so viel schneller zurück, bis zu der Drehung, die seine Wirbelsäule erlaubt, siehe Drehung um die Längsachse |
 | `crushForce` | 600 N | Eine Last von oben ab dieser Kraft wirft eine stehende Figur um, beim Aufstehen und Abfangen ab einem Viertel. Was ihre Knochen beiseiteschieben, zählt nicht |
 | `pushForce` | 40 N | Drückt ein Körper einen Knochen eines stehenden Menschen ein paar Schritte lang mit dieser Kraft seitlich, fängt er sich, statt eine Wand zu bleiben, und bleibt dynamisch, solange es mit der Hälfte drückt, siehe Drücken. Null schaltet es ab |
+| `engageRadius` | 0 m | Steht das Becken einer anderen Figur näher, folgt eine stehende Figur ihrem Clip mit dynamischen Knochen: Der Clip gibt die Haltung, Gelenke und Antriebe machen die Bewegung, siehe Kämpfer machen die Bewegung selbst. Null lässt sie kinematisch |
 | `restSpeed` | 0,4 m/s | Bewegen sich die Knochen eines Ragdolls im Mittel langsamer, liegt er still |
 | `getUpDelay`, `getUpSpeed`, `canGetUp` | 1 s, 1,4, an | Frühestens so lange nach dem Sturz und nach einer Viertelsekunde Stille steht sie auf, mit den Clips so viel schneller als geschrieben. Ohne `canGetUp` bleibt sie liegen |
 | `startAsRagdoll` | aus | Die Figur fällt von Anfang an als Ragdoll |
@@ -1684,6 +1720,7 @@ beim Einbinden nicht gebaut.
 | `muscles` | aus | Die Gelenke ziehen mit genäherten Muskeln, siehe Muskeln. Aus nehmen sie die verlangte Kraft sofort und ziehen bei jeder Geschwindigkeit gleich stark |
 | `tenseTime`, `relaxTime` | 0,03 s, 0,08 s | Mit Muskeln: Zeitkonstanten, in denen ein Muskel die verlangte Kraft hinauf und hinab erreicht. Null folgt sofort |
 | `brakeStrength` | 1,5 | Mit Muskeln: So viel mehr hält ein Gelenk, das gegen seine Richtung gedreht wird, siehe `nbBoneDef::maxSpeed` |
+| `followStrength` | 1 | Mit `engageRadius`: Mit so viel mal dem Gewicht seines Knochens hält jeder Antrieb einer folgenden Figur gegen Störungen, zusätzlich zu der Kraft, mit der der Clip den Knochen beschleunigt. Darunter kleben die Füße am Boden, darüber drücken sich zwei Kämpfer stärker als ein Mensch auf seinen Füßen |
 
 | Knochen (`nbBoneDef`) | Standard | Wirkung |
 | --- | --- | --- |
@@ -2468,6 +2505,24 @@ mit Figuren, nur bei 50 Figuren hinter brechender Deckung fängt sich eine mehr,
 stehen wie vorher 49, mit 1 und 4 Threads gleich. In der Stadt mit Figuren kostet ein Bild im geometrischen Mittel aus
 sechs Paaren mit vier Threads 0,98 der Zeit davor und aus acht Paaren mit einem 1,04, mit Ausschlägen von 0,88 bis 1,19
 in beide Richtungen, ebenso im Box3D-Schritt, der dort bitgleich dasselbe rechnet wie vorher: So weit schwankt die VM.
+
+**Kämpfer.** Nach den Figuren stellt `nebenan_benchmark figures` seit `active-ragdoll-43` 25 Paare von Kämpfern auf, je
+zwei 1 m voneinander, Gesicht zu Gesicht, mit `engageRadius` 2 m, siehe Kämpfer machen die Bewegung selbst. Sie stehen
+5 s und folgen dabei ihrem Clip mit dynamischen Knochen. Dann trifft das Spiel 5 s lang jede Sekunde den ersten jedes
+Paars mit 30 N s auf die Brust, und er tritt zwei Schritte zurück, ohne loszulassen. Zuletzt springt der zweite mit
+`nbFigure_Move` 2 m zurück, und nach gut einer Sekunde stehen beide wieder kinematisch. Pro Schritt, mit 1 / 4 Threads,
+der Median aus drei und fünf Läufen:
+
+| 50 Kämpfer | Box3D-Schritt Ø | davon Löser | Update Ø |
+| --- | ---: | ---: | ---: |
+| Folgen | 3,1 / 1,2 ms | 3,1 / 1,1 ms | 0,30 / 0,43 ms |
+| Treffer | 2,6 / 1,3 ms | 2,5 / 1,1 ms | 0,32 / 0,46 ms |
+| Auseinander | 0,61 / 0,44 ms | 0,59 / 0,42 ms | 0,21 / 0,21 ms |
+
+Dieselben 50 Figuren ohne `engageRadius` kosten im Stand 0,16 / 0,13 ms im Box3D-Schritt und 0,11 / 0,085 ms im
+Update, siehe Figuren. Folgen kostet so im Box3D-Schritt das 20- und 9-fache, fast alles im Löser, der ihre Knochen,
+Gelenke und Antriebe rechnet, und im Update das 3- und 5-fache. Am Ende stehen alle 50 kinematisch, keiner hat
+losgelassen, und die Kämpfer enden mit 1 und 4 Threads mit derselben Prüfsumme.
 
 **Ragdolls im Schutt.** Danach stellt `nebenan_benchmark figures` 20 Figuren auf eine Platte über zwei Lagen aus 4 513
 Würfeln, wirft sie um und lässt sie liegen (`nbFigureDef::canGetUp` aus). Platte, Würfel und Ragdolls sind eine große

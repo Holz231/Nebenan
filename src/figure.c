@@ -190,6 +190,36 @@
 #define NB_BODY_HIGH 1.4f
 #define NB_BODY_MARGIN 0.12f
 
+// A figure that follows its clip near another figure, see nbBeginFollowing: the time in which its drives take a bone back
+// to the clip, in seconds; the gravity its weight is taken at for the caps of the drives, in meters per second squared;
+// the lever of the torque of a drive against its force, in meters, for a humanoid of 1.8 m; how far its pelvis may be
+// from the clip before it lets go and catches itself, in meters for a humanoid of 1.8 m and in radians; and how long no
+// other figure has to be near and how near the clip its pelvis has to be for its bones to be kinematic again
+#define NB_FOLLOW_TIME 0.1f
+#define NB_FOLLOW_GRAVITY 9.81f
+
+// A drive pulls with at most the mass of its bone times this acceleration of the clip, in meters per second squared, see
+// nbFollowClip: a fist that a punch in 0.12 s swings out and stops takes up to 540, and a clip that jumps does not throw
+// the bones
+#define NB_FOLLOW_MAX_ACCELERATION 981.0f
+#define NB_FOLLOW_LEVER 0.25f
+#define NB_FOLLOW_LET_GO 0.2f
+#define NB_FOLLOW_LET_GO_TURN 0.5f
+#define NB_FOLLOW_HOLD 1.0f
+#define NB_FOLLOW_SETTLED 0.03f
+#define NB_FOLLOW_SETTLED_TURN 0.1f
+
+// A bone of a figure that follows its clip that stays farther than this from where the clip puts it, in meters for a
+// humanoid of 1.8 m, for this many seconds is stuck: a fist that went under the arm of the other figure, which the joints
+// press down while the clip lowers it, holds by friction. The figure lets go and catches itself.
+#define NB_FOLLOW_STUCK 0.25f
+#define NB_FOLLOW_STUCK_TIME 0.5f
+
+// Other figures overpower a figure that follows its clip when they push it over the ground with this part of its weight,
+// see nbUpdateAnimated: a person on their feet pushes back with a fraction of their weight, the drives with up to all of
+// it and with what the clip moves on top
+#define NB_FOLLOW_OVERPOWER 0.5f
+
 //----------------------------------------------------------------------------------------------------------------------
 // Definitions
 
@@ -247,6 +277,7 @@ nbFigureMotors nbDefaultFigureMotors( void )
 	motors.uprightStiffness = 1500.0f;
 	motors.uprightDampingRatio = 1.0f;
 	motors.uprightAgainstWorld = true;
+	motors.followStrength = 1.0f;
 	return motors;
 }
 
@@ -1518,11 +1549,66 @@ static void nbMakeDynamic( nbFigure* f )
 	}
 }
 
+b3BodyId nbFigureAnchor( nbWorld* world )
+{
+	if ( b3Body_IsValid( world->figureAnchor ) == false )
+	{
+		b3BodyDef def = b3DefaultBodyDef();
+		def.type = b3_staticBody;
+		world->figureAnchor = b3CreateBody( world->physicsWorld, &def );
+	}
+	return world->figureAnchor;
+}
+
+// A figure stops following its clip, see nbBeginFollowing: the drives of its bones go and they may sleep again. They stay
+// dynamic for the figure to catch itself or fall, or become kinematic again where they are.
+static void nbEndFollowing( nbWorld* world, nbFigure* f, bool kinematic )
+{
+	if ( f->following == false )
+	{
+		return;
+	}
+
+	bool physicsAlive = b3World_IsValid( world->physicsWorld );
+	for ( int i = 0; i < f->boneCount; ++i )
+	{
+		if ( physicsAlive && b3Joint_IsValid( f->followJoints[i] ) )
+		{
+			b3DestroyJoint( f->followJoints[i], false );
+		}
+		f->followJoints[i] = b3_nullJointId;
+
+		// The springs of the joints go for still targets again, see nbFollowJoints
+		const nbBone* bone = f->bones + i;
+		if ( physicsAlive && i > 0 && bone->joint != nb_fixedJoint && b3Joint_IsValid( bone->jointId ) )
+		{
+			if ( bone->joint == nb_hingeJoint )
+			{
+				b3RevoluteJoint_SetTargetSpeed( bone->jointId, 0.0f );
+			}
+			else
+			{
+				b3SphericalJoint_SetTargetVelocity( bone->jointId, b3Vec3_zero );
+			}
+		}
+		b3Body_EnableSleep( f->bones[i].bodyId, true );
+		if ( kinematic )
+		{
+			b3Body_SetType( f->bones[i].bodyId, b3_kinematicBody );
+		}
+	}
+	f->following = false;
+	if ( kinematic )
+	{
+		f->springs = false;
+	}
+}
+
 // The figure falls as an active ragdoll: its bones become dynamic with the velocities they have, slack for the stun
 // time if a hit met it as a ragdoll or a blast threw it
 static void nbFall( nbWorld* world, nbFigure* f, bool stunned )
 {
-	NB_UNUSED( world );
+	nbEndFollowing( world, f, false );
 	f->pushed = false;
 	f->armPush[0] = 0.0f;
 	f->armPush[1] = 0.0f;
@@ -1699,6 +1785,7 @@ static void nbStand( nbWorld* world, nbFigure* f )
 // have, the joints at full strength toward the pose it stands in, the upright hold on. Any other figure falls.
 static void nbBeginBalancing( nbWorld* world, nbFigure* f )
 {
+	nbEndFollowing( world, f, false );
 	if ( f->canBalance == false )
 	{
 		nbFall( world, f, false );
@@ -3068,7 +3155,7 @@ void nbReadFigureVelocities( nbWorld* world )
 	for ( int index = 0; index < world->figures.count; ++index )
 	{
 		nbFigure* f = world->figures.data + index;
-		if ( f->isFree == false && ( f->state == nb_figureRagdoll || f->state == nb_figureBalancing ) )
+		if ( f->isFree == false && ( f->state == nb_figureRagdoll || f->state == nb_figureBalancing || f->following ) )
 		{
 			nbReadVelocities( f );
 		}
@@ -3127,6 +3214,35 @@ float nbPassFigureThrough( nbWorld* world, int index, b3Vec3 normal, float keep 
 // The strongest hit of debris on every standing figure and every figure that gets up in the last step, from the hit
 // events of Box3D: a kinematic bone is as heavy as the world, so the debris bounced off it with about its momentum toward
 // the bone
+// The normal impulse that the contact of two shapes gave a body in the last step
+static float nbContactImpulse( b3BodyId bodyId, b3ShapeId shapeA, b3ShapeId shapeB )
+{
+	b3ContactData contacts[NB_CONTACT_CAPACITY];
+	int count = b3Body_GetContactData( bodyId, contacts, NB_CONTACT_CAPACITY );
+	for ( int c = 0; c < count; ++c )
+	{
+		const b3ContactData* contact = contacts + c;
+		bool same = ( B3_ID_EQUALS( contact->shapeIdA, shapeA ) && B3_ID_EQUALS( contact->shapeIdB, shapeB ) ) ||
+					( B3_ID_EQUALS( contact->shapeIdA, shapeB ) && B3_ID_EQUALS( contact->shapeIdB, shapeA ) );
+		if ( same == false )
+		{
+			continue;
+		}
+
+		float impulse = 0.0f;
+		for ( int m = 0; m < contact->manifoldCount; ++m )
+		{
+			const b3Manifold* manifold = contact->manifolds + m;
+			for ( int p = 0; p < manifold->pointCount; ++p )
+			{
+				impulse += manifold->points[p].totalNormalImpulse;
+			}
+		}
+		return impulse;
+	}
+	return 0.0f;
+}
+
 static void nbCollectDebrisHits( nbWorld* world )
 {
 	for ( int index = 0; index < world->figures.count; ++index )
@@ -3155,8 +3271,11 @@ static void nbCollectDebrisHits( nbWorld* world )
 			}
 
 			nbFigure* f = world->figures.data + index;
+			b3BodyId boneBody = side == 0 ? bodyA : bodyB;
 			b3BodyId other = side == 0 ? bodyB : bodyA;
-			if ( f->state == nb_figureRagdoll || f->state == nb_figureBalancing || b3Body_GetType( other ) != b3_dynamicBody ||
+			b3BodyType otherType = b3Body_GetType( other );
+			if ( f->state == nb_figureRagdoll || f->state == nb_figureBalancing ||
+				 ( f->following ? otherType == b3_staticBody : otherType != b3_dynamicBody ) ||
 				 nbFigureOfBody( world, other, NULL ) == index )
 			{
 				continue;
@@ -3164,10 +3283,20 @@ static void nbCollectDebrisHits( nbWorld* world )
 
 			// The normal points from A to B, the other body pushes the bone away from it. What the bone moved toward it
 			// itself does not count: a figure that gets up next to a ragdoll or walks into rubble at rest pushes it aside.
-			b3Vec3 toOther = side == 0 ? event->normal : b3Neg( event->normal );
-			b3Vec3 boneVelocity = b3Body_GetWorldPointVelocity( side == 0 ? bodyA : bodyB, event->point );
-			float approach = event->approachSpeed - b3Dot( boneVelocity, toOther );
-			float impulse = b3Body_GetMass( other ) * approach;
+			// The dynamic bones of a figure that follows its clip took the hit: the impulse of the contact in the step,
+			// with the mass and the drive behind what hit them.
+			float impulse;
+			if ( f->following )
+			{
+				impulse = nbContactImpulse( boneBody, event->shapeIdA, event->shapeIdB );
+			}
+			else
+			{
+				b3Vec3 toOther = side == 0 ? event->normal : b3Neg( event->normal );
+				b3Vec3 boneVelocity = b3Body_GetWorldPointVelocity( boneBody, event->point );
+				float approach = event->approachSpeed - b3Dot( boneVelocity, toOther );
+				impulse = b3Body_GetMass( other ) * approach;
+			}
 			if ( impulse > f->debrisImpulse )
 			{
 				f->debrisImpulse = impulse;
@@ -3184,9 +3313,10 @@ static void nbCollectDebrisHits( nbWorld* world )
 // push, for a figure that stands or catches itself, it also gives the strongest push on one bone: sideways, of the
 // contacts that push within 45 degrees of level, and on an arm of a humanoid that can be pushed from any side. Trunk,
 // head and legs carry a load to the ground, an arm gives way: a stick pressed into the elbow pushes the round ends of
-// upper arm and forearm up and down, and is no load. With arms, the strongest push on a bone of each arm.
+// upper arm and forearm up and down, and is no load. With arms, the strongest push on a bone of each arm. With fighters,
+// for a figure that follows its clip near others, the level push of other figures on all its bones together, in newtons.
 static float nbPressingForce( const nbWorld* world, int index, const nbFigure* f, float timeStep, b3Vec3 up, float* push,
-							  float* arms )
+							  float* arms, b3Vec3* fighters )
 {
 	b3ContactData contacts[NB_CONTACT_CAPACITY];
 	float force = 0.0f;
@@ -3204,7 +3334,28 @@ static float nbPressingForce( const nbWorld* world, int index, const nbFigure* f
 			b3BodyId bodyA = b3Shape_GetBody( contact->shapeIdA );
 			bool boneIsA = bodyA.index1 == bodyId.index1;
 			b3BodyId other = boneIsA ? b3Shape_GetBody( contact->shapeIdB ) : bodyA;
-			if ( b3Body_GetType( other ) != b3_dynamicBody || nbFigureOfBody( world, other, NULL ) == index )
+			int otherFigure = b3Body_GetType( other ) == b3_dynamicBody ? nbFigureOfBody( world, other, NULL ) : index;
+			if ( otherFigure == index )
+			{
+				continue;
+			}
+
+			// Fighters press on each other in a block or a clinch: what a figure with an engage radius takes from another
+			// figure is no push that makes it catch itself or keeps it from standing again, see nbFigureDef::engageRadius,
+			// and no load either but from a ragdoll that lies on it. The fist of one that caught itself, still pressed
+			// into the other, would crush it.
+			bool fighter = otherFigure != NB_NULL_INDEX && f->def.engageRadius > 0.0f;
+			for ( int m = 0; fighter && fighters != NULL && m < contact->manifoldCount; ++m )
+			{
+				const b3Manifold* manifold = contact->manifolds + m;
+				b3Vec3 direction = boneIsA ? b3Neg( manifold->normal ) : manifold->normal;
+				b3Vec3 level = b3MulSub( direction, b3Dot( direction, up ), up );
+				for ( int p = 0; p < manifold->pointCount; ++p )
+				{
+					*fighters = b3MulAdd( *fighters, manifold->points[p].totalNormalImpulse / timeStep, level );
+				}
+			}
+			if ( fighter && world->figures.data[otherFigure].state != nb_figureRagdoll )
 			{
 				continue;
 			}
@@ -3215,6 +3366,10 @@ static float nbPressingForce( const nbWorld* world, int index, const nbFigure* f
 
 				// The normal points from A to B: the push on the bone
 				b3Vec3 direction = boneIsA ? b3Neg( manifold->normal ) : manifold->normal;
+				if ( arm && fighter )
+				{
+					continue;
+				}
 				if ( arm )
 				{
 					for ( int p = 0; p < manifold->pointCount; ++p )
@@ -3227,7 +3382,7 @@ static float nbPressingForce( const nbWorld* world, int index, const nbFigure* f
 				float along = b3Dot( direction, up );
 				if ( along > -0.3f )
 				{
-					if ( push != NULL && along > -0.7f && along < 0.7f )
+					if ( push != NULL && fighter == false && along > -0.7f && along < 0.7f )
 					{
 						b3Vec3 level = b3MulSub( direction, along, up );
 						for ( int p = 0; p < manifold->pointCount; ++p )
@@ -3256,6 +3411,264 @@ static float nbPressingForce( const nbWorld* world, int index, const nbFigure* f
 		*push = strongest;
 	}
 	return force;
+}
+
+//----------------------------------------------------------------------------------------------------------------------
+// Following the clip near another figure
+
+// Fighters near each other follow their clips with dynamic bones, as the fighters of Blade & Sorcery near the player, see
+// the roadmap, F64: a kick meets a block or a body, and what hits a fighter pushes its bones. Far from others a figure
+// stays kinematic, which costs Box3D nothing to solve. Every bone has a drive, a motor joint from the static anchor of
+// the world: its velocity motors take the bone where the clip puts it, with at most the force the clip needs to move it
+// and followStrength times its weight more, so what blocks a bone holds it and what pushes harder moves it. The joints
+// hold the pose of the clip at full strength, so a blocking arm stays stiff and gives way with the body behind it.
+
+// The rotation vector in world space that turns one rotation into another, the short way round
+static b3Vec3 nbTurnBetween( b3Quat from, b3Quat to )
+{
+	b3Quat q = b3MulQuat( to, b3Conjugate( from ) );
+	if ( q.s < 0.0f )
+	{
+		q = b3NegateQuat( q );
+	}
+	float sine = b3Length( q.v );
+	if ( sine < 1.0e-6f )
+	{
+		return b3MulSV( 2.0f, q.v );
+	}
+	return b3MulSV( 2.0f * b3Atan2( sine, q.s ) / sine, q.v );
+}
+
+// Which standing figures that follow their clips near others have another figure near at the start of an update: its
+// pelvis within their engage radius of theirs. The pelvises are read once.
+static void nbFindEngaged( nbWorld* world )
+{
+	bool any = false;
+	for ( int i = 0; i < world->figures.count && any == false; ++i )
+	{
+		const nbFigure* f = world->figures.data + i;
+		any = f->isFree == false && f->def.engageRadius > 0.0f && f->state == nb_figureAnimated;
+	}
+	if ( any == false )
+	{
+		return;
+	}
+
+	int count = world->figures.count;
+	nbArray_Reserve( world->figurePelvises, count );
+	world->figurePelvises.count = count;
+	b3Pos* pelvises = world->figurePelvises.data;
+	for ( int i = 0; i < count; ++i )
+	{
+		const nbFigure* f = world->figures.data + i;
+		pelvises[i] = f->isFree ? b3ToPos( b3Vec3_zero ) : b3Body_GetPosition( f->bones[0].bodyId );
+	}
+
+	for ( int i = 0; i < count; ++i )
+	{
+		nbFigure* f = world->figures.data + i;
+		if ( f->isFree || f->def.engageRadius <= 0.0f || f->state != nb_figureAnimated )
+		{
+			continue;
+		}
+
+		float reach = f->def.engageRadius * f->def.engageRadius;
+		f->engaged = false;
+		for ( int j = 0; j < count && f->engaged == false; ++j )
+		{
+			f->engaged = j != i && world->figures.data[j].isFree == false &&
+						 b3LengthSquared( b3SubPos( pelvises[j], pelvises[i] ) ) <= reach;
+		}
+	}
+}
+
+// The mass of all bones of a figure
+static float nbFigureMass( const nbFigure* f )
+{
+	float mass = 0.0f;
+	for ( int i = 0; i < f->boneCount; ++i )
+	{
+		mass += f->bones[i].mass;
+	}
+	return mass;
+}
+
+// Does the drive of a bone turn it too? Every drive takes its bone where the clip puts it, the root and the legs of the
+// humanoid also turn as the clip turns them: the legs carry the figure, and a leg whose bones were only held where they
+// are bent at the knee when the program slid the figure over the ground and the ground held the foot. Spine, neck, head
+// and arms turn by their joints and by where their neighbors are: drives on their turn as well held them stiffer than
+// their joints, and the two shook each other, the hands by up to 14 mm in the idle clip instead of 2 mm.
+static bool nbFollowTurns( const nbFigure* f, int bone )
+{
+	return bone == 0 || ( f->boneCount == nb_humanoidBoneCount && bone >= nb_humanoidThighLeft );
+}
+
+// A standing figure begins to follow its clip with dynamic bones, from where its bones are and with the velocities they
+// have: where the clip put them for the end of the last step, or where a figure that caught itself stood again.
+static void nbBeginFollowing( nbWorld* world, nbFigure* f )
+{
+	nbMakeDynamic( f );
+	b3BodyId anchor = nbFigureAnchor( world );
+	float strength = b3MaxFloat( 0.0f, f->def.motors.followStrength );
+	float lever = NB_FOLLOW_LEVER * nbFigureScale( f );
+	for ( int i = 0; i < f->boneCount; ++i )
+	{
+		const nbBone* bone = f->bones + i;
+		float force = strength * bone->mass * NB_FOLLOW_GRAVITY;
+		b3MotorJointDef def = b3DefaultMotorJointDef();
+		def.base.bodyIdA = anchor;
+		def.base.bodyIdB = bone->bodyId;
+		def.base.localFrameB.p = b3Body_GetLocalCenter( bone->bodyId );
+		def.base.collideConnected = false;
+		def.maxVelocityForce = force;
+		def.maxVelocityTorque = nbFollowTurns( f, i ) ? force * lever : 0.0f;
+		f->followJoints[i] = b3CreateMotorJoint( world->physicsWorld, &def );
+		f->followTargets[i] = b3Body_GetTransform( bone->bodyId );
+		f->followVelocities[i] = b3Body_GetLinearVelocity( bone->bodyId );
+		b3Body_EnableSleep( bone->bodyId, false );
+	}
+
+	for ( int i = 1; i < f->boneCount; ++i )
+	{
+		f->followRelative[i] = nbJointRotation( f->bones + i, f->pose[i] );
+		nbLimitJointRotation( f->bones + i, f->followRelative + i );
+	}
+
+	f->following = true;
+	f->apartTime = 0.0f;
+	f->stuckTime = 0.0f;
+	f->overpowered = false;
+	f->springs = true;
+	nbSetStrength( f, 1.0f );
+	f->damping = -1.0f;
+	nbSetDamping( f, 0.0f );
+	nbActivateAtOnce( f );
+	nbReadVelocities( f );
+}
+
+// The joints of a figure that follows its clip go for its pose and turn with it: every spring gets how fast the clip turns
+// its joint, and damps the turn against that instead of against rest, see b3SphericalJoint_SetTargetVelocity. Without it
+// the fist of a punch that swings out in 0.12 s lagged twice as far behind the clip.
+static void nbFollowJoints( nbFigure* f, float timeStep )
+{
+	float inverseStep = 1.0f / timeStep;
+	for ( int i = 1; i < f->boneCount; ++i )
+	{
+		const nbBone* bone = f->bones + i;
+		if ( bone->joint == nb_fixedJoint )
+		{
+			continue;
+		}
+
+		b3Quat relative = nbJointRotation( bone, f->pose[i] );
+		nbLimitJointRotation( bone, &relative );
+		b3Quat before = f->followRelative[i];
+		f->followRelative[i] = relative;
+		if ( bone->joint == nb_hingeJoint )
+		{
+			float angle = b3GetTwistAngle( relative );
+			b3RevoluteJoint_SetTargetAngle( bone->jointId, angle );
+			b3RevoluteJoint_SetTargetSpeed( bone->jointId, inverseStep * b3UnwindAngle( angle - b3GetTwistAngle( before ) ) );
+		}
+		else
+		{
+			b3SphericalJoint_SetTargetRotation( bone->jointId, relative );
+			b3SphericalJoint_SetTargetVelocity( bone->jointId, b3MulSV( inverseStep, nbTurnBetween( before, relative ) ) );
+		}
+	}
+}
+
+// The drives take every bone where the clip puts it at the end of the next step: at the velocity of the clip, and back to
+// the clip from where it is within NB_FOLLOW_TIME. A drive pulls as hard as the clip moves its bone, its mass times the
+// acceleration the clip gives it, and followStrength times its weight more against what pushes it: a clip at rest gives
+// way to a push, a fast one has the force it takes, and that force is behind the fist that lands. The joints go for the
+// pose of the clip.
+static void nbFollowClip( nbFigure* f, float timeStep )
+{
+	float inverseStep = 1.0f / timeStep;
+	float inverseTime = 1.0f / b3MaxFloat( NB_FOLLOW_TIME, timeStep );
+	float strength = b3MaxFloat( 0.0f, f->def.motors.followStrength ) * NB_FOLLOW_GRAVITY;
+	float lever = NB_FOLLOW_LEVER * nbFigureScale( f );
+	for ( int i = 0; i < f->boneCount; ++i )
+	{
+		const nbBone* bone = f->bones + i;
+		b3Vec3 center = b3Body_GetLocalCenter( bone->bodyId );
+		b3WorldTransform transform = b3Body_GetTransform( bone->bodyId );
+		b3WorldTransform from = f->followTargets[i];
+		b3WorldTransform to = f->targets[i];
+		b3Pos fromCenter = b3TransformWorldPoint( from, center );
+		b3Vec3 clipVelocity = b3MulSV( inverseStep, b3SubPos( b3TransformWorldPoint( to, center ), fromCenter ) );
+		float acceleration =
+			b3MinFloat( inverseStep * b3Length( b3Sub( clipVelocity, f->followVelocities[i] ) ), NB_FOLLOW_MAX_ACCELERATION );
+		f->followVelocities[i] = clipVelocity;
+		b3Vec3 velocity =
+			b3MulAdd( clipVelocity, inverseTime, b3SubPos( fromCenter, b3TransformWorldPoint( transform, center ) ) );
+
+		b3JointId jointId = f->followJoints[i];
+		float force = bone->mass * ( strength + acceleration );
+		b3MotorJoint_SetLinearVelocity( jointId, velocity );
+		b3MotorJoint_SetMaxVelocityForce( jointId, force );
+		if ( nbFollowTurns( f, i ) )
+		{
+			b3Vec3 omega = b3MulSV( inverseStep, nbTurnBetween( from.q, to.q ) );
+			omega = b3MulAdd( omega, inverseTime, nbTurnBetween( transform.q, from.q ) );
+			b3MotorJoint_SetAngularVelocity( jointId, omega );
+			b3MotorJoint_SetMaxVelocityTorque( jointId, force * lever );
+		}
+		f->followTargets[i] = to;
+	}
+	nbFollowJoints( f, timeStep );
+}
+
+// Near another figure a standing figure follows its clip with dynamic bones. Pushed or turned so far that its pelvis is off
+// the clip by more than the drives bring back, it lets go and catches itself, and false tells the update so. A while after
+// the last figure left and back on its clip, its bones are kinematic again and the clip blends in from where they stand.
+static bool nbUpdateFollowing( nbWorld* world, nbFigure* f, float timeStep )
+{
+	if ( f->following == false )
+	{
+		if ( f->engaged )
+		{
+			nbBeginFollowing( world, f );
+		}
+		return true;
+	}
+
+	f->apartTime = f->engaged ? 0.0f : f->apartTime + timeStep;
+	b3WorldTransform pelvis = b3Body_GetTransform( f->bones[0].bodyId );
+	b3WorldTransform target = f->followTargets[0];
+	float distance = b3Length( b3SubPos( pelvis.p, target.p ) );
+	float angle = b3Length( nbTurnBetween( target.q, pelvis.q ) );
+	float scale = nbFigureScale( f );
+
+	// The bone farthest from the clip
+	float farthest = 0.0f;
+	for ( int i = 1; i < f->boneCount; ++i )
+	{
+		b3BodyId bodyId = f->bones[i].bodyId;
+		b3Vec3 center = b3Body_GetLocalCenter( bodyId );
+		b3Vec3 offset = b3SubPos( b3TransformWorldPoint( b3Body_GetTransform( bodyId ), center ),
+								  b3TransformWorldPoint( f->followTargets[i], center ) );
+		farthest = b3MaxFloat( farthest, b3Length( offset ) );
+	}
+	f->stuckTime = farthest > NB_FOLLOW_STUCK * scale ? f->stuckTime + timeStep : 0.0f;
+
+	if ( distance > NB_FOLLOW_LET_GO * scale || angle > NB_FOLLOW_LET_GO_TURN || f->stuckTime >= NB_FOLLOW_STUCK_TIME )
+	{
+		f->letGoCount += 1;
+		nbBeginBalancing( world, f );
+		return false;
+	}
+
+	if ( f->apartTime >= NB_FOLLOW_HOLD && distance < NB_FOLLOW_SETTLED * scale && angle < NB_FOLLOW_SETTLED_TURN )
+	{
+		b3WorldTransform root;
+		nbReadPose( f, f->pose, &root );
+		f->root = b3InvMulWorldTransforms( f->frame, root );
+		nbEndFollowing( world, f, true );
+		nbStartFade( f, NB_STAND_FADE );
+	}
+	return true;
 }
 
 //----------------------------------------------------------------------------------------------------------------------
@@ -3433,10 +3846,27 @@ static void nbUpdateAnimated( nbWorld* world, int index, nbFigure* f, float time
 	{
 		float push = 0.0f;
 		float arms[2] = { 0.0f, 0.0f };
-		if ( nbPressingForce( world, index, f, timeStep, up, &push, arms ) >= f->def.crushForce )
+		b3Vec3 fighters = b3Vec3_zero;
+		if ( nbPressingForce( world, index, f, timeStep, up, &push, arms, f->following ? &fighters : NULL ) >= f->def.crushForce )
 		{
 			nbFall( world, f, false );
 			return;
+		}
+
+		// Other figures that push a fighter over the ground harder than it could push back from its feet, with more than
+		// half its weight at two checks in a row, overpower its drives: a fist with its elbow stretched, pressed into the
+		// body of the other after it landed, would else push both with all their drives. It lets go and catches itself.
+		if ( f->following )
+		{
+			bool overpowered = b3Length( fighters ) >=
+							   NB_FOLLOW_OVERPOWER * nbFigureMass( f ) * b3Length( b3World_GetGravity( world->physicsWorld ) );
+			if ( overpowered && f->overpowered )
+			{
+				f->letGoCount += 1;
+				nbBeginBalancing( world, f );
+				return;
+			}
+			f->overpowered = overpowered;
 		}
 
 		f->armPush[0] = arms[0];
@@ -3449,6 +3879,12 @@ static void nbUpdateAnimated( nbWorld* world, int index, nbFigure* f, float time
 			return;
 		}
 		f->pushed = pushed;
+	}
+
+	// Near another figure it follows its clip with dynamic bones, and what pushes them moves them
+	if ( f->def.engageRadius > 0.0f && nbUpdateFollowing( world, f, timeStep ) == false )
+	{
+		return;
 	}
 
 	// A push it catches carries it over the ground
@@ -3516,7 +3952,15 @@ static void nbUpdateAnimated( nbWorld* world, int index, nbFigure* f, float time
 	}
 
 	nbComputePose( f, b3MulWorldTransforms( f->frame, f->root ), f->pose, f->targets );
-	nbDriveBodies( f, timeStep );
+	if ( f->following )
+	{
+		nbFollowClip( f, timeStep );
+		f->speed = b3Length( nbAverageVelocity( f ) );
+	}
+	else
+	{
+		nbDriveBodies( f, timeStep );
+	}
 }
 
 // How far a flying ragdoll protects itself and how much of that it braces: a sphere cast along its velocity finds what it
@@ -3671,7 +4115,7 @@ static nbFigureWait nbCheckGetUp( const nbWorld* world, int index, const nbFigur
 	}
 	*ground = floor.point;
 
-	if ( nbPressingForce( world, index, f, timeStep, up, NULL, NULL ) > 0.0f )
+	if ( nbPressingForce( world, index, f, timeStep, up, NULL, NULL, NULL ) > 0.0f )
 	{
 		return nb_waitDebris;
 	}
@@ -3752,7 +4196,7 @@ static bool nbCheckWakeStanding( const nbWorld* world, int index, const nbFigure
 	{
 		return false;
 	}
-	if ( nbPressingForce( world, index, f, timeStep, up, NULL, NULL ) > 0.0f )
+	if ( nbPressingForce( world, index, f, timeStep, up, NULL, NULL, NULL ) > 0.0f )
 	{
 		return false;
 	}
@@ -3807,7 +4251,7 @@ static void nbUpdateBalancing( nbWorld* world, int index, nbFigure* f, float tim
 	{
 		float push = 0.0f;
 		float arms[2] = { 0.0f, 0.0f };
-		if ( nbPressingForce( world, index, f, timeStep, up, &push, arms ) >= NB_ABORT_PART * f->def.crushForce )
+		if ( nbPressingForce( world, index, f, timeStep, up, &push, arms, NULL ) >= NB_ABORT_PART * f->def.crushForce )
 		{
 			nbFall( world, f, false );
 			return;
@@ -4000,7 +4444,7 @@ static void nbUpdateGettingUp( nbWorld* world, int index, nbFigure* f, float tim
 	}
 
 	if ( ( world->figureUpdates + index ) % NB_CRUSH_PERIOD == 0 &&
-		 nbPressingForce( world, index, f, timeStep, up, NULL, NULL ) >= NB_ABORT_PART * f->def.crushForce )
+		 nbPressingForce( world, index, f, timeStep, up, NULL, NULL, NULL ) >= NB_ABORT_PART * f->def.crushForce )
 	{
 		nbFall( world, f, false );
 		return;
@@ -4037,6 +4481,7 @@ void nbUpdateFigures( nbWorld* world, float timeStep )
 	world->figureUpdates += 1;
 	b3Vec3 up = nbUpOf( world );
 	nbCollectDebrisHits( world );
+	nbFindEngaged( world );
 	for ( int index = 0; index < world->figures.count; ++index )
 	{
 		nbFigure* f = world->figures.data + index;
@@ -4149,6 +4594,13 @@ nbFigureId nbCreateFigure( nbWorldId worldId, const nbFigureDef* def )
 	f->fadePose = nbAlloc( sizeof( b3Quat ) * (size_t)boneCount );
 	f->lyingPose = nbAlloc( sizeof( b3Quat ) * (size_t)boneCount );
 	f->targets = nbAlloc( sizeof( b3WorldTransform ) * (size_t)boneCount );
+	if ( def->engageRadius > 0.0f )
+	{
+		f->followJoints = nbAlloc( sizeof( b3JointId ) * (size_t)boneCount );
+		f->followTargets = nbAlloc( sizeof( b3WorldTransform ) * (size_t)boneCount );
+		f->followVelocities = nbAlloc( sizeof( b3Vec3 ) * (size_t)boneCount );
+		f->followRelative = nbAlloc( sizeof( b3Quat ) * (size_t)boneCount );
+	}
 	f->collisionDamage = rig->enableCollisionDamage;
 
 	// The clips of the program copied, the library's for the humanoid shared, a rig of other bones without a clip at rest
@@ -4460,6 +4912,13 @@ static void nbDestroyFigureAt( nbWorld* world, int index )
 	nbFree( f->fadePose, sizeof( b3Quat ) * boneCount );
 	nbFree( f->lyingPose, sizeof( b3Quat ) * boneCount );
 	nbFree( f->targets, sizeof( b3WorldTransform ) * boneCount );
+	if ( f->followJoints != NULL )
+	{
+		nbFree( f->followJoints, sizeof( b3JointId ) * boneCount );
+		nbFree( f->followTargets, sizeof( b3WorldTransform ) * boneCount );
+		nbFree( f->followVelocities, sizeof( b3Vec3 ) * boneCount );
+		nbFree( f->followRelative, sizeof( b3Quat ) * boneCount );
+	}
 	uint16_t generation = f->generation;
 	memset( f, 0, sizeof( nbFigure ) );
 	f->generation = (uint16_t)( generation + 1 );
@@ -4490,6 +4949,7 @@ void nbDestroyFigures( nbWorld* world )
 	nbArray_Free( world->figures );
 	nbArray_Free( world->freeFigures );
 	nbArray_Free( world->bodyToBone );
+	nbArray_Free( world->figurePelvises );
 	if ( b3World_IsValid( world->physicsWorld ) && b3Body_IsValid( world->figureAnchor ) )
 	{
 		b3DestroyBody( world->figureAnchor );
@@ -4571,6 +5031,7 @@ nbFigureInfo nbFigure_GetInfo( nbFigureId figureId )
 	info.flinch = b3RotateVector( f->frame.q, f->flinch );
 	info.stepping = ( f->state == nb_figureAnimated && f->balancing ) || nbBalanceStepping( f );
 	info.shifting = f->state == nb_figureGettingUp && f->shiftLeft > 0.0f;
+	info.following = f->following;
 	info.hitCount = f->hitCount;
 	info.knockdownCount = f->knockdownCount;
 	info.getUpCount = f->getUpCount;
@@ -4579,6 +5040,7 @@ nbFigureInfo nbFigure_GetInfo( nbFigureId figureId )
 	info.shiftCount = f->shiftCount;
 	info.catchCount = f->catchCount;
 	info.pushCount = f->pushCount;
+	info.letGoCount = f->letGoCount;
 	return info;
 }
 
@@ -4616,7 +5078,8 @@ void nbFigure_Move( nbFigureId figureId, b3Pos position, float heading )
 	}
 	if ( far )
 	{
-		// A jump: the bones go there at once, without the velocity of a jump
+		// A jump: the bones go there at once, without the velocity of a jump, kinematic again
+		nbEndFollowing( world, f, true );
 		nbComputePose( f, b3MulWorldTransforms( f->frame, f->root ), f->pose, f->targets );
 		for ( int i = 0; i < f->boneCount; ++i )
 		{
@@ -4743,7 +5206,7 @@ nbFigureId nbWorld_GetFigureFromBody( nbWorldId worldId, b3BodyId bodyId, int* b
 // A ragdoll whose bones are awake in Box3D, see nbFigureStats::awakeRagdollCount
 static bool nbIsAwakeRagdoll( const nbFigure* f )
 {
-	return f->isFree == false && ( f->state == nb_figureRagdoll || f->state == nb_figureBalancing ) &&
+	return f->isFree == false && ( f->state == nb_figureRagdoll || f->state == nb_figureBalancing || f->following ) &&
 		   b3Body_IsAwake( f->bones[0].bodyId );
 }
 
@@ -4780,6 +5243,7 @@ nbFigureStats nbWorld_GetFigureStats( nbWorldId worldId )
 		stats.gettingUpCount += f->state == nb_figureGettingUp ? 1 : 0;
 		stats.balancingCount += f->state == nb_figureBalancing ? 1 : 0;
 		stats.awakeRagdollCount += nbIsAwakeRagdoll( f ) ? 1 : 0;
+		stats.followingCount += f->following ? 1 : 0;
 		stats.hitCount += f->hitCount;
 		stats.knockdownCount += f->knockdownCount;
 		stats.getUpCount += f->getUpCount;
@@ -4788,6 +5252,7 @@ nbFigureStats nbWorld_GetFigureStats( nbWorldId worldId )
 		stats.shiftCount += f->shiftCount;
 		stats.catchCount += f->catchCount;
 		stats.pushCount += f->pushCount;
+		stats.letGoCount += f->letGoCount;
 	}
 	return stats;
 }

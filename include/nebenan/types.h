@@ -1263,6 +1263,15 @@ typedef struct nbFigureMotors
 	/// from the figure's own strength, which catches far fewer hits than the hold against the world, see the roadmap,
 	/// F61
 	bool uprightAgainstWorld;
+
+	/// While a standing figure follows its clip with dynamic bones, see nbFigureDef::engageRadius, a drive pulls every bone
+	/// where the clip puts it, as hard as the clip moves it, its mass times the acceleration the clip gives it, and with
+	/// followStrength times its weight at 9.81 m/s² more against what pushes it. The drives of the root and of the legs of
+	/// the humanoid also turn their bones, with at most that force times a quarter meter for a humanoid of 1.8 m, in
+	/// proportion for others. At 1, the default, every bone of the idle clip stays within 3 mm of it, and the fist of a
+	/// punch that swings out in 0.12 s within 5 cm. Below it, the feet of a figure that the program slides over the
+	/// ground stick to it; above it, two fighters that press on each other push harder than a person on their feet.
+	float followStrength;
 } nbFigureMotors;
 
 /// A figure, see nbCreateFigure. Initialize with nbDefaultFigureDef.
@@ -1320,8 +1329,23 @@ typedef struct nbFigureDef
 	/// load to the ground, it gives way, so a stick pressed into the elbow pushes it although the round ends of upper arm
 	/// and forearm turn the push up and down. It stands animated again once nothing pushes it with half of it and it
 	/// stands calm. A short blow is a hit instead, see nbFigure_ApplyHit. Zero turns it off, and what presses on an arm
-	/// from above weighs on the figure again.
+	/// from above weighs on the figure again. For a figure with an engage radius, see engageRadius, other figures push
+	/// neither its body nor its arms.
 	float pushForce;
+
+	/// Within this many meters of the pelvis of another figure, a standing figure follows its clip with dynamic bones
+	/// instead of kinematic ones, as the fighters of Blade & Sorcery near the player, see the roadmap, F64: the clip only
+	/// gives the pose, the body moves into it itself. Its joints go for the pose of the clip at full strength and turn as
+	/// fast as the clip turns them, and drives pull its bones where the clip puts them, see motors.followStrength. Its fist
+	/// or foot meets a block or a body with the force the clip takes behind it, and what hits it meets its bones. A hit
+	/// counts with the impulse of its contact, see knockdownImpulse and stepReach. What other figures press on it is no
+	/// push, see pushForce, and no load but from a ragdoll that lies on it, see crushForce, so a block or a clinch does
+	/// not end it. Pushed or turned so far that its pelvis is 20 cm or half a radian off its clip, with a bone held 25 cm
+	/// off it for half a second, as a fist caught under the arm of the other, or pressed level by other figures with more
+	/// than half its weight at two checks in a row, it lets go and catches itself, see nb_figureBalancing. A second after
+	/// the last figure left the distance and back on its clip, its bones are kinematic again. It stays nb_figureAnimated,
+	/// see nbFigureInfo::following. Zero, the default, never follows, and two kinematic figures pass through each other.
+	float engageRadius;
 
 	/// A ragdoll counts as lying still while its bones move slower than this on average, in meters per second
 	float restSpeed;
@@ -1428,9 +1452,13 @@ typedef struct nbFigureInfo
 	/// spine, to its sides and turned about its pelvis, see the roadmap of the game, 26.15
 	bool shifting;
 
+	/// A standing figure follows its clip with dynamic bones near another figure, see nbFigureDef::engageRadius
+	bool following;
+
 	/// Hits that landed, how often the figure was knocked down, got up and broke off getting up, the steps it took to
 	/// catch hits, how often it moved to get up, how often it caught itself and stood again, see nb_figureBalancing, and
-	/// how often a push made it catch itself, see nbFigureDef::pushForce
+	/// how often a push made it catch itself, see nbFigureDef::pushForce, and how often it was pushed off its clip while
+	/// it followed it and caught itself, see nbFigureDef::engageRadius
 	int hitCount;
 	int knockdownCount;
 	int getUpCount;
@@ -1439,6 +1467,7 @@ typedef struct nbFigureInfo
 	int shiftCount;
 	int catchCount;
 	int pushCount;
+	int letGoCount;
 } nbFigureInfo;
 
 /// A hit on a bone, see nbFigure_ApplyHit
@@ -1468,13 +1497,17 @@ typedef struct nbFigureStats
 	int gettingUpCount;
 	int balancingCount;
 
-	/// Ragdolls and figures that catch themselves whose bones are awake in Box3D. Their joints keep Box3D from solving
-	/// whole islands per thread, see "Gelenke und Pakete" in the README.
+	/// Ragdolls, figures that catch themselves and figures that follow their clips whose bones are awake in Box3D. Their
+	/// joints keep Box3D from solving whole islands per thread, see "Gelenke und Pakete" in the README.
 	int awakeRagdollCount;
 
+	/// Standing figures that follow their clips with dynamic bones, see nbFigureDef::engageRadius, counted among the
+	/// animated ones
+	int followingCount;
+
 	/// Since the figures were made: hits that landed, knockdowns, get-ups, get-ups broken off, steps to catch hits, moves
-	/// to get up where there was room, how often a figure caught itself and stood again, and how often a push made a
-	/// standing figure catch itself
+	/// to get up where there was room, how often a figure caught itself and stood again, how often a push made a
+	/// standing figure catch itself, and how often a figure was pushed off the clip it followed
 	int hitCount;
 	int knockdownCount;
 	int getUpCount;
@@ -1483,6 +1516,7 @@ typedef struct nbFigureStats
 	int shiftCount;
 	int catchCount;
 	int pushCount;
+	int letGoCount;
 } nbFigureStats;
 
 /// The bones of the humanoid that nbMakeHumanoidBones builds, in the order of its array. The trunk runs from the pelvis

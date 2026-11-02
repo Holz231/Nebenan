@@ -414,6 +414,7 @@ NB_ARRAY_DECLARE( nbCollisionEvent, nbCollisionEventArray );
 NB_ARRAY_DECLARE( nbCreation, nbCreationArray );
 NB_ARRAY_DECLARE( b3BodyMoveEvent, nbBodyMoveArray );
 NB_ARRAY_DECLARE( b3Vec3, nbVec3Array );
+NB_ARRAY_DECLARE( b3Pos, nbPosArray );
 
 // A body that moved, with its poses and centers of mass before and after the latest step it moved in and the number of
 // that step, see nbWorld::drawStep and nbWorld_GetDrawPoses. The step thread works out the centers once per step, so a
@@ -558,8 +559,13 @@ typedef struct nbWorld
 	nbBoneRefArray bodyToBone;
 	int figureUpdates;
 
-	// The static body the upright holds of figures that catch themselves hold against, made when the first needs it
+	// The static body the upright holds of figures that catch themselves and the drives of figures that follow their
+	// clips hold against, made when the first needs it
 	b3BodyId figureAnchor;
+
+	// The pelvis of every figure at the start of an update, read once for the figures that follow their clips near
+	// others, see nbFigureDef::engageRadius
+	nbPosArray figurePelvises;
 
 	// The clips of the library for the humanoids of the figures, one set per height
 	nbClipSetArray humanoidClips;

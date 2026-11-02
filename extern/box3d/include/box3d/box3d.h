@@ -1563,6 +1563,14 @@ B3_API void b3RevoluteJoint_SetTargetAngle( b3JointId jointId, float targetRadia
 /// Get the revolute joint target angle in radians
 B3_API float b3RevoluteJoint_GetTargetAngle( b3JointId jointId );
 
+/// Set the speed in radians per second with which the target angle turns, body B against body A. The spring damps the
+/// turn against it instead of against rest, so it follows a turning target without lagging behind. Zero by default.
+/// Added for Nebenan.
+B3_API void b3RevoluteJoint_SetTargetSpeed( b3JointId jointId, float speed );
+
+/// Get the speed with which the target angle turns in radians per second. Added for Nebenan.
+B3_API float b3RevoluteJoint_GetTargetSpeed( b3JointId jointId );
+
 /// Get the revolute joint current angle in radians relative to the reference angle
 /// @see b3RevoluteJointDef::referenceAngle
 B3_API float b3RevoluteJoint_GetAngle( b3JointId jointId );
@@ -1719,6 +1727,18 @@ B3_API void b3SphericalJoint_SetTargetRotation( b3JointId jointId, b3Quat target
 
 /// Get the spherical joint spring target rotation
 B3_API b3Quat b3SphericalJoint_GetTargetRotation( b3JointId jointId );
+
+/// Set the angular velocity in radians per second with which the target rotation turns, body B against body A, in the
+/// joint frame of body A. The spring damps the turn against it instead of against rest, so it follows a turning target
+/// without lagging behind. Zero by default. Added for Nebenan.
+B3_API void b3SphericalJoint_SetTargetVelocity( b3JointId jointId, b3Vec3 velocity );
+
+/// Get the angular velocity with which the target rotation turns. Added for Nebenan.
+B3_API b3Vec3 b3SphericalJoint_GetTargetVelocity( b3JointId jointId );
+
+/// The springs of the revolute and spherical joints follow a turning target, see b3SphericalJoint_SetTargetVelocity.
+/// Added for Nebenan.
+#define B3_HAS_SPRING_TARGET_VELOCITY 1
 
 /// Enable/disable a spherical joint motor
 B3_API void b3SphericalJoint_EnableMotor( b3JointId jointId, bool enableMotor );

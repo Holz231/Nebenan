@@ -4,9 +4,10 @@
 // Usage: nebenan_benchmark [workerCount], the worker count applies to the fracture and to Box3D
 //        nebenan_benchmark scaling [rounds], the towns under fire with 1, 2, 4 and so on workers, see
 //        nbGetScalingWorkerCounts, and the scaling report of the library for each town
-//        nebenan_benchmark figures [workerCount] [rounds] [off], the figures alone, see BenchmarkFigures, as ragdolls in
-//        a heap of debris, see BenchmarkFigurePile, and in a town under fire, see BenchmarkTown, with off the joints keep
-//        the barrier per stage, see b3WorldDef::enableJointPacks
+//        nebenan_benchmark figures [workerCount] [rounds] [off], the figures alone, see BenchmarkFigures, fighters who
+//        follow their clips, see BenchmarkFighters, as ragdolls in a heap of debris, see BenchmarkFigurePile, and in a
+//        town under fire, see BenchmarkTown, with off the joints keep the barrier per stage, see
+//        b3WorldDef::enableJointPacks
 
 #include "fracture.h"
 #include "hull_builder.h"
@@ -746,6 +747,21 @@ typedef struct FigurePhase
 #define FIGURE_MAX 50
 #define FIGURE_PHASE_STEPS 600
 
+// Average, 95th and 99th percentile and maximum of the times of the steps of a phase, sorts the times
+static void SummarizeSteps( float* times, int steps, float values[4] )
+{
+	float total = 0.0f;
+	for ( int i = 0; i < steps; ++i )
+	{
+		total += times[i];
+	}
+	qsort( times, (size_t)steps, sizeof( float ), CompareFloats );
+	values[0] = total / (float)steps;
+	values[1] = times[steps * 95 / 100];
+	values[2] = times[steps * 99 / 100];
+	values[3] = times[steps - 1];
+}
+
 static void BenchmarkFigures( int workerCount, int figureCount )
 {
 	figureCount = b3ClampInt( figureCount, 1, FIGURE_MAX );
@@ -848,21 +864,9 @@ static void BenchmarkFigures( int workerCount, int figureCount )
 			}
 		}
 
-		float* series[2] = { stepTimes, updateTimes };
 		float values[2][4];
-		for ( int k = 0; k < 2; ++k )
-		{
-			float total = 0.0f;
-			for ( int i = 0; i < steps; ++i )
-			{
-				total += series[k][i];
-			}
-			qsort( series[k], (size_t)steps, sizeof( float ), CompareFloats );
-			values[k][0] = total / (float)steps;
-			values[k][1] = series[k][steps * 95 / 100];
-			values[k][2] = series[k][steps * 99 / 100];
-			values[k][3] = series[k][steps - 1];
-		}
+		SummarizeSteps( stepTimes, steps, values[0] );
+		SummarizeSteps( updateTimes, steps, values[1] );
 		nbProfile profile = nbWorld_GetProfile( scene.world );
 		nbFigureStats after = nbWorld_GetFigureStats( scene.world );
 		printf( "    %-12s %5d | %8.3f %6.3f %6.3f %6.3f | %10.3f %6.3f %6.3f %6.3f | %7.3f %6.3f %7.3f | %5d %7d | %d, %d, %d, "
@@ -879,6 +883,102 @@ static void BenchmarkFigures( int workerCount, int figureCount )
 	printf( "    at the end %d standing, %d catching themselves, %d lying, %d getting up, memory %.1f MB, figures hash 0x%08x\n",
 			stats.animatedCount, stats.balancingCount, stats.ragdollCount, stats.gettingUpCount,
 			(double)( nbGetByteCount() + b3GetByteCount() ) / 1048576.0, HashFigures( figures, figureCount ) );
+	DestroyScene( &scene );
+}
+
+// Fighters: pairs of humanoids a metre apart, face to face, each with an engage radius, so each follows its clip with
+// dynamic bones while the other is near, see nbFigureDef::engageRadius. They stand, then a game hit of 30 N s on the
+// chest every second makes the first of each pair step back, and at the end the second goes away and both stand
+// animated again.
+#define FIGHTER_PAIRS 25
+#define FIGHTER_PHASE_STEPS 300
+
+static void BenchmarkFighters( int workerCount )
+{
+	Scene scene = CreateScene( workerCount );
+	nbBoneDef bones[nb_humanoidBoneCount];
+	nbRigDef rig = nbDefaultRigDef();
+	rig.bones = bones;
+	rig.boneCount = nb_humanoidBoneCount;
+	nbFigureDef def = nbDefaultFigureDef();
+	def.rig = &rig;
+	def.standHeight = nbMakeHumanoidBones( 1.8f, 74.0f, bones, nb_humanoidBoneCount );
+	def.engageRadius = 2.0f;
+
+	// Five pairs to a row, the pairs 4 m apart and the rows 6 m, so the one who leaves goes where nobody stands
+	nbFigureId figures[2 * FIGHTER_PAIRS];
+	b3Vec3 positions[2 * FIGHTER_PAIRS];
+	for ( int k = 0; k < 2 * FIGHTER_PAIRS; ++k )
+	{
+		int pair = k / 2;
+		positions[k] = (b3Vec3){ 4.0f * (float)( pair % 5 ), 0.0f, -6.0f * (float)( pair / 5 ) + (float)( k % 2 ) };
+		def.position = b3ToPos( positions[k] );
+		def.heading = B3_PI * (float)( k % 2 );
+		figures[k] = nbCreateFigure( scene.world, &def );
+	}
+
+	const FigurePhase phases[3] = {
+		{ "follow", FIGHTER_PHASE_STEPS },
+		{ "hits", FIGHTER_PHASE_STEPS },
+		{ "apart", FIGHTER_PHASE_STEPS },
+	};
+	static float stepTimes[FIGHTER_PHASE_STEPS], updateTimes[FIGHTER_PHASE_STEPS];
+	printf( "  %d fighters in %d pairs, a metre apart, engage radius 2 m\n", 2 * FIGHTER_PAIRS, FIGHTER_PAIRS );
+	printf( "    phase        steps | step avg    p95    p99    max | update avg    p95    p99    max | figures  solve | "
+			"following at the end, let go, balance steps, caught, knockdowns\n" );
+	uint32_t hitId = 1;
+	for ( int p = 0; p < 3; ++p )
+	{
+		nbWorld_ResetProfile( scene.world );
+		nbFigureStats before = nbWorld_GetFigureStats( scene.world );
+		for ( int step = 0; step < phases[p].steps; ++step )
+		{
+			for ( int k = 0; k < 2 * FIGHTER_PAIRS; k += 2 )
+			{
+				// The first of each pair faces +z, the hit comes from the front
+				if ( p == 1 && step % 60 == 0 )
+				{
+					b3BodyId chest = nbFigure_GetBody( figures[k], nb_humanoidChest );
+					nbHitDef hit = { hitId++,
+									 nb_humanoidChest,
+									 { 0.0f, 0.0f, -30.0f },
+									 b3Body_GetWorldPoint( chest, (b3Vec3){ 0.0f, 0.08f, 0.0f } ) };
+					nbFigure_ApplyHit( figures[k], &hit );
+				}
+
+				// The second leaves, the first stands animated again a second after
+				if ( p == 2 && step == 0 )
+				{
+					b3Vec3 away = b3Add( positions[k + 1], (b3Vec3){ 0.0f, 0.0f, 2.0f } );
+					nbFigure_Move( figures[k + 1], b3ToPos( away ), B3_PI );
+				}
+			}
+
+			uint64_t ticks = b3GetTicks();
+			b3World_Step( scene.physicsWorld, 1.0f / 60.0f, 4 );
+			stepTimes[step] = b3GetMilliseconds( ticks );
+			ticks = b3GetTicks();
+			nbWorld_Update( scene.world, 1.0f / 60.0f );
+			updateTimes[step] = b3GetMilliseconds( ticks );
+		}
+
+		int steps = phases[p].steps;
+		float values[2][4];
+		SummarizeSteps( stepTimes, steps, values[0] );
+		SummarizeSteps( updateTimes, steps, values[1] );
+		nbProfile profile = nbWorld_GetProfile( scene.world );
+		nbFigureStats after = nbWorld_GetFigureStats( scene.world );
+		printf( "    %-12s %5d | %8.3f %6.3f %6.3f %6.3f | %10.3f %6.3f %6.3f %6.3f | %7.3f %6.3f | %d, %d, %d, %d, %d\n",
+				phases[p].name, steps, values[0][0], values[0][1], values[0][2], values[0][3], values[1][0], values[1][1],
+				values[1][2], values[1][3], profile.stages[nb_profileFigures], profile.stages[nb_profileSolve],
+				after.followingCount, after.letGoCount - before.letGoCount, after.stepCount - before.stepCount,
+				after.catchCount - before.catchCount, after.knockdownCount - before.knockdownCount );
+	}
+
+	nbFigureStats stats = nbWorld_GetFigureStats( scene.world );
+	printf( "    at the end %d standing, %d following, %d catching themselves, %d lying, figures hash 0x%08x\n",
+			stats.animatedCount, stats.followingCount, stats.balancingCount, stats.ragdollCount,
+			HashFigures( figures, 2 * FIGHTER_PAIRS ) );
 	DestroyScene( &scene );
 }
 
@@ -1240,6 +1340,7 @@ int main( int argc, char** argv )
 			BenchmarkFigures( workerCount, 1 );
 			BenchmarkFigures( workerCount, 10 );
 			BenchmarkFigures( workerCount, 50 );
+			BenchmarkFighters( workerCount );
 			BenchmarkFigurePile( workerCount );
 			BenchmarkTown( workerCount, 1.0f, 4, 1, 5, NULL, 60, NULL, true );
 		}
@@ -1290,6 +1391,7 @@ int main( int argc, char** argv )
 	BenchmarkFigures( workerCount, 1 );
 	BenchmarkFigures( workerCount, 10 );
 	BenchmarkFigures( workerCount, 50 );
+	BenchmarkFighters( workerCount );
 
 	// The figures in the streets of the first town, knocked over and buried by what comes down
 	printf( "\nTown of 16 houses under fire with two figures beside every house, fragment scale 1.0 (grenades, Box3D step, "

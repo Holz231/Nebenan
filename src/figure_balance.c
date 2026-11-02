@@ -1070,18 +1070,6 @@ static bool nbStartCatchStep( const nbWorld* world, int index, nbFigure* f, nbBa
 //----------------------------------------------------------------------------------------------------------------------
 // The figure catches itself
 
-// The static body every upright hold of a world holds against, made the first time a figure needs it
-static b3BodyId nbUprightAnchor( nbWorld* world )
-{
-	if ( b3Body_IsValid( world->figureAnchor ) == false )
-	{
-		b3BodyDef def = b3DefaultBodyDef();
-		def.type = b3_staticBody;
-		world->figureAnchor = b3CreateBody( world->physicsWorld, &def );
-	}
-	return world->figureAnchor;
-}
-
 // The rotation that turns z into a direction
 static b3Quat nbQuatZTo( b3Vec3 direction )
 {
@@ -1214,7 +1202,7 @@ void nbBeginBalance( nbWorld* world, int index, nbFigure* f )
 	}
 	else if ( motors->uprightTorque > 0.0f && motors->uprightStiffness > 0.0f )
 	{
-		b3BodyId anchor = nbUprightAnchor( world );
+		b3BodyId anchor = nbFigureAnchor( world );
 		b3BodyId root = f->bones[0].bodyId;
 		b3ParallelJointDef def = b3DefaultParallelJointDef();
 		def.base.bodyIdA = anchor;

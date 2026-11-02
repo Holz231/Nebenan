@@ -2616,6 +2616,292 @@ static int FigureClipTest( void )
 	return 0;
 }
 
+// A fighter, a figure that follows its clip with dynamic bones near another figure, see nbFigureDef::engageRadius
+static nbFigureId AddFighter( FigureScene* scene, b3Vec3 position, float heading, float engageRadius )
+{
+	nbFigureDef def = nbDefaultFigureDef();
+	def.rig = &scene->rig;
+	def.standHeight = scene->standHeight;
+	def.position = b3ToPos( position );
+	def.heading = heading;
+	def.engageRadius = engageRadius;
+	return nbCreateFigure( scene->world, &def );
+}
+
+// A punch of the right arm on the idle clip of the library: the upper arm swings ahead in 0.12 s, stays there 0.2 s and
+// comes back in 0.4 s
+typedef struct PunchClip
+{
+	nbKeyframe idleKeys[NB_HUMANOID_CLIP_KEYFRAMES];
+	b3Quat idlePoses[NB_HUMANOID_CLIP_KEYFRAMES * nb_humanoidBoneCount];
+	nbKeyframe keys[4];
+	b3Quat poses[4 * nb_humanoidBoneCount];
+	nbClipDef clip;
+} PunchClip;
+
+static void MakePunchClip( PunchClip* punch, float swing )
+{
+	nbClipDef idle;
+	nbMakeHumanoidClip( nb_clipIdle, 1.8f, punch->idleKeys, punch->idlePoses, NB_HUMANOID_CLIP_KEYFRAMES, &idle );
+	float times[4] = { 0.0f, 0.12f, 0.32f, 0.72f };
+	for ( int k = 0; k < 4; ++k )
+	{
+		b3Quat* pose = punch->poses + k * nb_humanoidBoneCount;
+		memcpy( pose, punch->idlePoses, sizeof( b3Quat ) * nb_humanoidBoneCount );
+		if ( k == 1 || k == 2 )
+		{
+			pose[nb_humanoidUpperArmRight] = b3MakeQuatFromAxisAngle( b3Vec3_axisX, swing );
+			pose[nb_humanoidForearmRight] = b3Quat_identity;
+		}
+		punch->keys[k] = (nbKeyframe){ times[k], pose, b3Transform_identity };
+	}
+	punch->clip = (nbClipDef){ punch->keys, 4, nb_humanoidBoneCount, false, false };
+}
+
+// Step once and return how far the bones of a figure ended from where its clip put them for the end of the step, the
+// farthest
+static float StepFromClip( FigureScene* scene, nbFigureId figure )
+{
+	b3WorldTransform targets[nb_humanoidBoneCount];
+	nbFigure_GetTargetTransforms( figure, targets, nb_humanoidBoneCount );
+	StepFigures( scene, 1 );
+	float farthest = 0.0f;
+	for ( int i = 0; i < nb_humanoidBoneCount; ++i )
+	{
+		farthest =
+			b3MaxFloat( farthest, b3Length( b3SubPos( b3Body_GetPosition( nbFigure_GetBody( figure, i ) ), targets[i].p ) ) );
+	}
+	return farthest;
+}
+
+// Fighters near each other follow their clips with dynamic bones, within a few millimeters, a figure alone stays
+// kinematic, and a fighter whose opponent left is kinematic again a second later
+static int FigureFollowTest( void )
+{
+	FigureScene scene;
+	CreateFigureScene( &scene, 1 );
+	nbFigureId a = AddFighter( &scene, b3Vec3_zero, 0.0f, 2.0f );
+	nbFigureId b = AddFighter( &scene, (b3Vec3){ 0.0f, 0.0f, 1.0f }, B3_PI, 2.0f );
+	nbFigureId alone = AddFighter( &scene, (b3Vec3){ 10.0f, 0.0f, 0.0f }, 0.0f, 2.0f );
+	StepFigures( &scene, 2 );
+	ENSURE( nbFigure_GetInfo( a ).following && nbFigure_GetInfo( b ).following );
+	ENSURE( nbFigure_GetInfo( alone ).following == false );
+	ENSURE( nbFigure_GetState( a ) == nb_figureAnimated );
+	ENSURE( b3Body_GetType( nbFigure_GetBody( a, nb_humanoidHandRight ) ) == b3_dynamicBody );
+	ENSURE( b3Body_GetType( nbFigure_GetBody( alone, nb_humanoidHandRight ) ) == b3_kinematicBody );
+	nbFigureStats stats = nbWorld_GetFigureStats( scene.world );
+	ENSURE( stats.followingCount == 2 && stats.animatedCount == 3 );
+
+	StepFigures( &scene, 60 );
+	float worst = 0.0f;
+	for ( int step = 0; step < 120; ++step )
+	{
+		worst = b3MaxFloat( worst, StepFromClip( &scene, a ) );
+	}
+	printf( "  the bones of a fighter in the idle clip at most %.1f mm off it\n", 1000.0f * worst );
+	ENSURE( worst < 4.0e-3f );
+
+	// The opponent jumps away and is kinematic at once, the fighter left behind a second later
+	nbFigure_Move( b, b3ToPos( (b3Vec3){ 20.0f, 0.0f, 20.0f } ), 0.0f );
+	ENSURE( nbFigure_GetInfo( b ).following == false );
+	ENSURE( b3Body_GetType( nbFigure_GetBody( b, nb_humanoidHandRight ) ) == b3_kinematicBody );
+	int steps = 0;
+	while ( nbFigure_GetInfo( a ).following && steps < 180 )
+	{
+		StepFigures( &scene, 1 );
+		steps += 1;
+	}
+	printf( "  kinematic again %d steps after the opponent left\n", steps );
+	ENSURE( steps >= 59 && steps < 90 );
+	ENSURE( b3Body_GetType( nbFigure_GetBody( a, nb_humanoidHandRight ) ) == b3_kinematicBody );
+	ENSURE( nbFigure_GetState( a ) == nb_figureAnimated );
+	StepFigures( &scene, 30 );
+	ENSURE( StandsUpright( &scene, a ) );
+	ENSURE( nbWorld_GetFigureStats( scene.world ).followingCount == 0 );
+	DestroyFigureScene( &scene );
+	return 0;
+}
+
+// A punch passes through a kinematic figure and meets the body of a fighter. The fist follows the clip within a few
+// centimeters until it lands, with the force the clip takes behind it: it pushes the fighter that it meets back, and lands
+// as a hit on both with the impulse of its contact, so the one that it meets flinches and the one that punches feels it.
+// Neither falls.
+static int FigurePunchTest( void )
+{
+	static PunchClip punch;
+	MakePunchClip( &punch, 1.6f );
+	float reach[2];
+	for ( int pass = 0; pass < 2; ++pass )
+	{
+		FigureScene scene;
+		CreateFigureScene( &scene, 1 );
+		float radius = pass == 0 ? 0.0f : 2.0f;
+		nbFigureId a = AddFighter( &scene, b3Vec3_zero, 0.0f, radius );
+		nbFigureId b = AddFighter( &scene, (b3Vec3){ -0.2f, 0.0f, 0.65f }, B3_PI, radius );
+		StepFigures( &scene, 60 );
+		b3Vec3 start = BonePosition( b, nb_humanoidPelvis );
+		nbFigure_PlayClip( a, &punch.clip, 1.0f );
+		reach[pass] = -1.0f;
+		float swingError = 0.0f;
+		float flinch = 0.0f;
+		float pushed = 0.0f;
+		for ( int step = 0; step < 60; ++step )
+		{
+			bool landed = nbFigure_GetInfo( b ).hitCount > 0;
+			float fromClip = StepFromClip( &scene, a );
+			swingError = landed || nbFigure_GetInfo( b ).hitCount > 0 ? swingError : b3MaxFloat( swingError, fromClip );
+			reach[pass] = b3MaxFloat( reach[pass], BonePosition( a, nb_humanoidHandRight ).z );
+			flinch = b3MaxFloat( flinch, b3Length( nbFigure_GetInfo( b ).flinch ) );
+			pushed = b3MaxFloat( pushed, BonePosition( b, nb_humanoidPelvis ).z - start.z );
+		}
+		nbFigureInfo ia = nbFigure_GetInfo( a );
+		nbFigureInfo ib = nbFigure_GetInfo( b );
+		printf( "  pass %d: the fist reaches %.3f m, until it lands at most %.1f cm off the clip, hits %d and %d, the other "
+				"pushed back %.1f cm, flinch %.3f rad\n",
+				pass, reach[pass], 100.0f * swingError, ia.hitCount, ib.hitCount, 100.0f * pushed, flinch );
+		if ( pass == 0 )
+		{
+			ENSURE( ia.hitCount == 0 && ib.hitCount == 0 );
+			ENSURE( pushed < 1.0e-3f );
+		}
+		else
+		{
+			ENSURE( ia.hitCount >= 1 && ib.hitCount >= 1 );
+			ENSURE( flinch > 0.1f );
+			ENSURE( swingError < 0.06f );
+			ENSURE( pushed > 0.03f && pushed < 0.2f );
+		}
+		ENSURE( ia.knockdownCount == 0 && ib.knockdownCount == 0 );
+
+		StepFigures( &scene, 180 );
+		ENSURE( nbFigure_GetState( a ) == nb_figureAnimated && nbFigure_GetState( b ) == nb_figureAnimated );
+		ENSURE( nbFigure_GetInfo( a ).following == ( pass == 1 ) && nbFigure_GetInfo( b ).following == ( pass == 1 ) );
+		ENSURE( StandsUpright( &scene, a ) && StandsUpright( &scene, b ) );
+		DestroyFigureScene( &scene );
+	}
+	ENSURE( reach[1] < reach[0] - 0.04f );
+	return 0;
+}
+
+// A hit of the program on a fighter: as on a kinematic figure, a weaker one makes it step and a hard one makes it catch
+// itself, and then it follows its clip again
+static int FigureFollowHitTest( void )
+{
+	for ( int pass = 0; pass < 2; ++pass )
+	{
+		FigureScene scene;
+		CreateFigureScene( &scene, 1 );
+		nbFigureId a = AddFighter( &scene, b3Vec3_zero, 0.0f, 2.0f );
+		nbFigureId b = AddFighter( &scene, (b3Vec3){ 0.0f, 0.0f, 1.0f }, B3_PI, 2.0f );
+		StepFigures( &scene, 30 );
+		ENSURE( nbFigure_GetInfo( b ).following );
+		float impulse = pass == 0 ? 30.0f : 60.0f;
+		ENSURE( HitChest( b, 1, (b3Vec3){ 0.0f, 0.0f, impulse } ) );
+		bool caught = false;
+		for ( int step = 0; step < 240; ++step )
+		{
+			StepFigures( &scene, 1 );
+			caught = caught || nbFigure_GetState( b ) == nb_figureBalancing;
+		}
+		nbFigureInfo info = nbFigure_GetInfo( b );
+		printf( "  %.0f N s: %d steps, caught itself %d, knocked down %d, following %d\n", impulse, info.stepCount,
+				info.catchCount, info.knockdownCount, info.following );
+		ENSURE( info.knockdownCount == 0 );
+		ENSURE( info.stepCount >= 1 );
+		ENSURE( caught == ( pass == 1 ) && info.catchCount == pass );
+		ENSURE( nbFigure_GetState( b ) == nb_figureAnimated && info.following );
+		ENSURE( nbFigure_GetInfo( a ).following );
+		DestroyFigureScene( &scene );
+	}
+	return 0;
+}
+
+// The program walks a fighter into another one: the other takes the bump as a hit and steps back, the one that walks
+// lets go of its clip where the other is in its way and catches itself, and neither falls
+static int FigureFollowBumpTest( void )
+{
+	FigureScene scene;
+	CreateFigureScene( &scene, 1 );
+	nbFigureId a = AddFighter( &scene, b3Vec3_zero, 0.0f, 2.0f );
+	nbFigureId b = AddFighter( &scene, (b3Vec3){ 0.0f, 0.0f, 1.2f }, B3_PI, 2.0f );
+	StepFigures( &scene, 30 );
+	for ( int step = 0; step < 90; ++step )
+	{
+		if ( nbFigure_GetState( a ) == nb_figureAnimated )
+		{
+			b3Vec3 p = b3ToVec3( nbFigure_GetFrame( a ).p );
+			p.z += 1.0f / 60.0f;
+			nbFigure_Move( a, b3ToPos( p ), 0.0f );
+		}
+		StepFigures( &scene, 1 );
+	}
+	StepFigures( &scene, 180 );
+	nbFigureInfo ia = nbFigure_GetInfo( a );
+	nbFigureInfo ib = nbFigure_GetInfo( b );
+	printf( "  the one that walks let go %d times and caught itself %d times, the other was hit %d times, let go %d times "
+			"and caught itself %d times, states %d and %d, knocked down %d and %d\n",
+			ia.letGoCount, ia.catchCount, ib.hitCount, ib.letGoCount, ib.catchCount, (int)nbFigure_GetState( a ),
+			(int)nbFigure_GetState( b ), ia.knockdownCount, ib.knockdownCount );
+	ENSURE( ia.letGoCount >= 1 && ia.catchCount >= 1 );
+	ENSURE( ib.hitCount >= 1 && ib.stepCount >= 1 );
+	ENSURE( ia.knockdownCount == 0 && ib.knockdownCount == 0 );
+	ENSURE( nbFigure_GetState( a ) == nb_figureAnimated && nbFigure_GetState( b ) == nb_figureAnimated );
+	ENSURE( ia.following && ib.following );
+	ENSURE( nbWorld_GetFigureStats( scene.world ).letGoCount == ia.letGoCount + ib.letGoCount );
+	DestroyFigureScene( &scene );
+	return 0;
+}
+
+// Two fighters: a punch that lands, a hard hit of the program, a bump, the opponent leaving: the same bits with 1 and 4
+// threads
+static uint32_t RunFollowScenario( int threadCount )
+{
+	static PunchClip punch;
+	MakePunchClip( &punch, 1.6f );
+	FigureScene scene;
+	CreateFigureScene( &scene, threadCount );
+	nbFigureId a = AddFighter( &scene, b3Vec3_zero, 0.0f, 2.0f );
+	nbFigureId b = AddFighter( &scene, (b3Vec3){ -0.2f, 0.0f, 0.65f }, B3_PI, 2.0f );
+	StepFigures( &scene, 30 );
+	nbFigure_PlayClip( a, &punch.clip, 1.0f );
+	StepFigures( &scene, 60 );
+	HitChest( b, 1, (b3Vec3){ 0.0f, 0.0f, 60.0f } );
+	StepFigures( &scene, 120 );
+	for ( int step = 0; step < 60; ++step )
+	{
+		if ( nbFigure_GetState( a ) == nb_figureAnimated )
+		{
+			b3Vec3 p = b3ToVec3( nbFigure_GetFrame( a ).p );
+			p.z += 1.0f / 60.0f;
+			nbFigure_Move( a, b3ToPos( p ), 0.0f );
+		}
+		StepFigures( &scene, 1 );
+	}
+	StepFigures( &scene, 60 );
+	nbFigure_Move( b, b3ToPos( (b3Vec3){ 20.0f, 0.0f, 20.0f } ), 0.0f );
+	StepFigures( &scene, 120 );
+
+	uint32_t hash = 2166136261u;
+	nbFigureId figures[2] = { a, b };
+	for ( int k = 0; k < 2; ++k )
+	{
+		b3WorldTransform transforms[nb_humanoidBoneCount];
+		int count = nbFigure_GetBoneTransforms( figures[k], transforms, nb_humanoidBoneCount );
+		for ( int i = 0; i < count; ++i )
+		{
+			const uint8_t* bytes = (const uint8_t*)( transforms + i );
+			for ( size_t n = 0; n < sizeof( b3WorldTransform ); ++n )
+			{
+				hash = ( hash ^ bytes[n] ) * 16777619u;
+			}
+		}
+		nbFigureInfo info = nbFigure_GetInfo( figures[k] );
+		hash = ( hash ^ (uint32_t)( info.hitCount + 16 * info.letGoCount + 256 * info.catchCount ) ) * 16777619u;
+	}
+	DestroyFigureScene( &scene );
+	return hash;
+}
+
 // Two figures knocked down and hit while they fly, one of them while it steps and later without room to get up beside the
 // other, a third that steps aside, debris on it and a blast: the same bits with 1 and 4 threads
 static uint32_t RunFigureScenario( int threadCount )
@@ -3106,6 +3392,21 @@ static int ThinBoardTest( void )
 // The hash of the figure scenario on every platform, see RunFigureScenario
 #define NB_EXPECTED_FIGURE_HASH 0xf6087758u
 
+// See RunFollowScenario
+#define NB_EXPECTED_FOLLOW_HASH 0x12157d0cu
+
+static int FigureFollowDeterminismTest( void )
+{
+	uint32_t one = RunFollowScenario( 1 );
+	uint32_t again = RunFollowScenario( 1 );
+	uint32_t four = RunFollowScenario( 4 );
+	printf( "  follow hash: 0x%08x\n", one );
+	ENSURE( one == again );
+	ENSURE( one == four );
+	ENSURE( one == NB_EXPECTED_FOLLOW_HASH );
+	return 0;
+}
+
 static int FigureDeterminismTest( void )
 {
 	uint32_t one = RunFigureScenario( 1 );
@@ -3154,10 +3455,15 @@ int FigureTest( void )
 	RUN_TEST( FigureGroundTest );
 	RUN_TEST( FigureWorldTest );
 	RUN_TEST( FigureClipTest );
+	RUN_TEST( FigureFollowTest );
+	RUN_TEST( FigurePunchTest );
+	RUN_TEST( FigureFollowHitTest );
+	RUN_TEST( FigureFollowBumpTest );
 	RUN_TEST( FigureWallTest );
 	RUN_TEST( FigureWallDebrisTest );
 	RUN_TEST( ThinBoardTest );
 	RUN_TEST( FigureWallDeterminismTest );
+	RUN_TEST( FigureFollowDeterminismTest );
 	RUN_TEST( FigureDeterminismTest );
 	return 0;
 }

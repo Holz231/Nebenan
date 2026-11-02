@@ -615,6 +615,7 @@ b3JointId b3CreateRevoluteJoint( b3WorldId worldId, const b3RevoluteJointDef* de
 	joint->revoluteJoint.maxSpringTorque = b3MaxFloat( 0.0f, def->maxSpringTorque ); // Added for Nebenan
 	joint->revoluteJoint.armature = b3MaxFloat( 0.0f, def->armature );				  // Added for Nebenan
 	joint->revoluteJoint.targetAngle = b3ClampFloat( def->targetAngle, -B3_PI, B3_PI );
+	joint->revoluteJoint.targetSpeed = 0.0f;
 
 	float lowerAngle = b3MinFloat( def->lowerAngle, def->upperAngle );
 	float upperAngle = b3MaxFloat( def->lowerAngle, def->upperAngle );
@@ -654,6 +655,8 @@ b3JointId b3CreateSphericalJoint( b3WorldId worldId, const b3SphericalJointDef* 
 	joint->sphericalJoint.maxSpringTorque = b3MaxFloat( 0.0f, def->maxSpringTorque ); // Added for Nebenan
 	joint->sphericalJoint.armature = b3MaxFloat( 0.0f, def->armature );				   // Added for Nebenan
 	joint->sphericalJoint.targetRotation = def->targetRotation;
+	joint->sphericalJoint.targetVelocity = b3Vec3_zero;
+	joint->sphericalJoint.hasTargetVelocity = false;
 	joint->sphericalJoint.coneAngle = b3ClampFloat( def->coneAngle, 0.0f, 0.5f * B3_PI );
 
 	float lowerAngle = b3MinFloat( def->lowerTwistAngle, def->upperTwistAngle );
