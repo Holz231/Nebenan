@@ -616,7 +616,10 @@ static int FigureSwingTest( void )
 // fell at 98 and 100 and caught 94, 96 and 102 to 106: hard hits from the front lie where a little more or less tips the
 // balance. Round 38, which lifts its feet higher and sinks farther before it falls, catches 94 to 104 and falls at 106.
 // Round 39, whose capture point counts the turn of the body, see nbMeasure, catches 100 N s from the front with 2 steps
-// in 1.9 s where round 38 took 3 steps and 2.5 s, and still falls at 106.
+// in 1.9 s where round 38 took 3 steps and 2.5 s, and still falls at 106. Round 40, whose legs carry the body, see
+// nbCarryBody, catches 106 N s too and 64 to 88 with one step each, but takes 3 or 4 steps at 58 to 62 N s where round 39
+// took one: at 60 round 39 caught itself after one step back with its center of mass 9 cm low, round 40 rises again and
+// steps on until it stands 4 cm low.
 static int FigureCatchTest( void )
 {
 	typedef struct CatchCase
@@ -700,6 +703,9 @@ static int FigureCatchTest( void )
 // the arms, round 28 rowed at 60 N s but not at 56 or 64, round 35 at 72 and round 38 from 76 on. Since round 39 the
 // capture point counts the turn of the body, see nbMeasure: from 58 N s on one step catches the figure where round 38
 // took three up to 70 N s, and the arms row from 60 on, at 80 N s up to 1.57 rad where round 38 rowed up to 0.83.
+// Round 40, whose legs carry the body, see nbCarryBody, catches itself with one step from 64 N s on and rows at 80 N s up
+// to 1.49 rad. At 50 N s its second step back comes 32 cm short, where round 39's came 18 cm short, and one arm rows up
+// to 2.1 rad, as at 52 and 54.
 // Falling forward from 110 N s from behind they swing back to the 40 degrees a shoulder allows, from more than 0.5 rad
 // to 0.8, see nbMakeHumanoidBones: with a cone of 86 degrees all round they swung back 1.3 rad, and the figure caught
 // 120 N s. Round 35 caught 110 N s from behind. Rounds 36 and 37, which stand with the center of mass farther ahead
@@ -790,8 +796,8 @@ static int FigureRowTest( void )
 // upright against the thighs of the legs that carry it, which push against the ground as a person's do, and not against
 // the world, whose anchor is never made. It is the first stage of the balance from the figure's own strength, F61 of the
 // roadmap, and catches far less than the hold against the world: of the 168 light hits from 40 to 80 N s on the upper
-// chest it lets 87 fall, the hold against the world none. 52 N s from its right it catches with one step, the same
-// with one thread and with four.
+// chest it lets 43 fall, 87 before the legs carried the body in round 40, see nbCarryBody, the hold against the world
+// none. 52 N s from its right it catches with two steps, the same with one thread and with four.
 static int FigureLegHoldTest( void )
 {
 	uint32_t hashes[2] = { 0u, 0u };
@@ -1048,7 +1054,7 @@ static uint32_t MuscleCatch( int threadCount, float impulse )
 }
 
 // The throw of 90 N s on a figure with muscles ends in the same bits with one thread and with four, on every platform
-#define NB_EXPECTED_MUSCLE_HASH 0xbe77ecbeu
+#define NB_EXPECTED_MUSCLE_HASH 0xabfe67acu
 
 // The muscles, see nbFigureMotors::muscles and nbUpdateMuscles. A figure with muscles hit while it stands catches itself
 // with the strength the balance asks for at once: every joint of its trunk and its legs at the full torque of the motors,
@@ -1575,10 +1581,12 @@ static int FigurePushTest( void )
 }
 
 // A stick of 150 N under the left forearm that sweeps up on an arc about the shoulder for 2.5 s, holds 2 s, sweeps down
-// and goes away, see NB_HELD_ARMS. The push wakes the figure, the arm goes slack and the stick lifts it: the upper arm
-// rises by more than a radian, the figure keeps its feet without a fall and stands animated again within six seconds of
-// the stick leaving it. Before round 36 the arm hung at the strength of its motors and the stick swept past it, the
-// upper arm rose by 13 degrees. The same with one and four threads.
+// and slides out to the side along its length, see NB_HELD_ARMS. The push wakes the figure, the arm goes slack and the
+// stick lifts it: the upper arm rises by more than a radian, the figure keeps its feet without a fall and stands animated
+// again within six seconds of the stick leaving it. Before round 36 the arm hung at the strength of its motors and the
+// stick swept past it, the upper arm rose by 13 degrees. Until round 40 the stick went away backwards. The slack forearm
+// lay over it and was dragged along, and it slipped off only because the figure swayed: a version of round 40 whose legs
+// stood stiller kept the arm on the stick for good. The same with one and four threads.
 typedef struct LiftResult
 {
 	float arm;
@@ -1633,10 +1641,11 @@ static LiftResult LiftArm( int threadCount, uint32_t* hash )
 	const int away = 60;
 	for ( int i = 0; i < 2 * sweep + hold + away + 360; ++i )
 	{
-		// Where the stick goes in the next step: up the arc, held, down the arc, then back away from the arm
+		// Where the stick goes in the next step: up the arc, held, down the arc, then out to the side along its length,
+		// which leaves the arm whichever side of the stick the forearm lies on
 		int k = i + 1;
 		float angle = angles[0];
-		float back = 0.0f;
+		float out = 0.0f;
 		if ( k <= sweep )
 		{
 			angle = angles[0] + ( angles[1] - angles[0] ) * (float)k / (float)sweep;
@@ -1651,10 +1660,10 @@ static LiftResult LiftArm( int threadCount, uint32_t* hash )
 		}
 		else
 		{
-			back = 0.3f * b3MinFloat( (float)( k - 2 * sweep - hold ) / (float)away, 1.0f );
+			out = 0.3f * b3MinFloat( (float)( k - 2 * sweep - hold ) / (float)away, 1.0f );
 		}
-		b3Vec3 next = { shoulder.x + 0.125f, shoulder.y + radius * sinf( angle ) - offset * cosf( angle ),
-						shoulder.z + radius * cosf( angle ) + offset * sinf( angle ) - back };
+		b3Vec3 next = { shoulder.x + 0.125f + out, shoulder.y + radius * sinf( angle ) - offset * cosf( angle ),
+						shoulder.z + radius * cosf( angle ) + offset * sinf( angle ) };
 		b3Body_SetLinearVelocity( hand, b3MulSV( 60.0f, b3Sub( next, b3ToVec3( b3Body_GetPosition( hand ) ) ) ) );
 		StepFigures( &scene, 1 );
 
@@ -2969,7 +2978,7 @@ static int FigureWallDebrisTest( void )
 
 // The throw through the wall of boards ends in the same bits with one thread and with four, on every platform, in the
 // second fracture pattern, which the figure breaks through
-#define NB_EXPECTED_WALL_HASH 0x9bf13b12u
+#define NB_EXPECTED_WALL_HASH 0x4623fce1u
 
 static int FigureWallDeterminismTest( void )
 {
@@ -3029,7 +3038,7 @@ static int ThinBoardTest( void )
 }
 
 // The hash of the figure scenario on every platform, see RunFigureScenario
-#define NB_EXPECTED_FIGURE_HASH 0xb0fabf92u
+#define NB_EXPECTED_FIGURE_HASH 0xc47804ecu
 
 static int FigureDeterminismTest( void )
 {

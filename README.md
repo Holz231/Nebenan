@@ -656,8 +656,9 @@ Drehung um ihn, welche Füße auf Boden stehen, auch einer, dessen Sohle bis 3 c
 die Fläche ihrer Sohlen und den Capture Point, den Schwerpunkt um seine Geschwindigkeit und ihre Drehung durch die
 Frequenz eines Pendels seiner Höhe weiter. Sie
 richtet sich nach ihren Füßen, nicht nach dem Becken, siehe Füße statt Becken: Im Stand halten die Beine ihre Füße, wo
-und wie sie stehen, schieben das Becken über die Mitte der Sohlen und drehen es über die Füße zurück. Liegt der Capture
-Point zwei Updates lang mehr als 3 cm außerhalb, tritt ein Fuß dorthin, wo der Capture Point bei seiner Landung sein
+und wie sie stehen, schieben das Becken über die Mitte der Sohlen und drehen es über die Füße zurück, und die Beine am
+Boden tragen den Körper über ihnen, siehe Die Beine tragen den Körper. Liegt der Capture Point zwei Updates lang mehr
+als 3 cm außerhalb, tritt ein Fuß dorthin, wo der Capture Point bei seiner Landung sein
 wird, 5 cm darüber hinaus, gedreht wie der Standfuß, in Reichweite der Hüfte, auf Boden, der trägt und höchstens 25 cm
 höher oder tiefer liegt, mit Platz für den Fuß und freiem Weg dorthin, 0,3 s lang und 12 cm hoch. Die ersten 60 % des
 Schritts folgt sein Ziel dem Capture Point. Kommt der Schritt zu kurz, schwingen die Arme aus, siehe unten. Fängt sie
@@ -670,9 +671,10 @@ wirft sie ab einem Viertel von `crushForce` um, wie beim Aufstehen. Ruhig auf be
 ihrer Masse langsamer als 0,15 m/s, den Capture Point zwischen den Füßen oder höchstens 3 cm daneben, wo sie noch nicht
 tritt, und das Becken aufrecht, steht sie nach einer halben Sekunde wieder animiert, wo sie steht, ihr Clip blendet in
 0,25 s ein, und ihre Füße treten mit den Schritten des Ausgleichs unter ihren Körper zurück. Auf die obere Brust
-getroffen fängt sich der Mensch der Bibliothek so von vorn bis 115 N s, nur bei 106 N s fällt er, von hinten bis 130 N s
-und von beiden Seiten bis 94 N s, auf 3 N s genau abgetastet, und steht nach 1,2 bis 3,4 s wieder animiert, siehe In den
-Knien und Balance für den Körper der Vorlage. Auf 10 N s genau abgetastet waren es zuletzt 110, 120 und 80 N s, auf
+getroffen fängt sich der Mensch der Bibliothek so von vorn bis 118 N s, von hinten bis 130 N s und von beiden Seiten bis
+85 N s und bei 91 N s, auf 3 N s genau abgetastet, und steht nach 1,3 bis 3,2 s wieder animiert, siehe In den Knien,
+Balance für den Körper der Vorlage und Die Beine tragen den Körper. Auf 10 N s genau abgetastet waren es zuletzt 110,
+120 und 80 N s, auf
 `active-ragdoll-23` von hinten 140 N s, bis `active-ragdoll-22` 70, 100 und 60 N s. Darüber fällt er nach höchstens zwei
 Schritten. Darunter endete bis `active-ragdoll-33` ab und zu ein Treffer in langem Stolpern: In der Szene der Tests
 fielen von 168 Treffern mit 40 bis 80 N s auf `active-ragdoll-28` fünf und auf `active-ragdoll-33` vier, alle von der
@@ -822,6 +824,25 @@ der Roadmap. Mit 50 Figuren kostet derselbe Abschnitt 0,72 und 0,94 des Vorgäng
 Stadt mit Figuren kostet ein Bild das 1,19- und 1,26-fache, dort stürzen sechs statt vier Etagen ein, mit höchstens
 83 876 statt 29 436 Kontakten, und am Ende stehen 29 statt 26 Figuren. Für den Capture Point ruft ein Spiel nichts auf,
 die Stütze durch die Beine wählt es mit `motors.uprightAgainstWorld = false`.
+
+**Die Beine tragen den Körper.** Seit `active-ragdoll-40` tragen die Beine am Boden den Körper über ihnen, Stufe 2 von
+F61 der Roadmap. Vorher zogen ihre Gelenke nur zur Haltung der IK, und ihre weichen Federn ließen ein Bein einsacken,
+bevor es den Körper trug: Ein Knie hält die 200 N m eines gebeugten Beins erst 0,25 rad neben seinem Ziel. Jetzt schiebt
+ein Bein mit Boden unter dem Fuß den Körper darüber zu dessen Schwerpunkt, so stark, wie es sein Gewicht trägt, nach den
+virtuellen Kräften von Coros 2010. Der Schub setzt dort an, wo der Boden den Fuß drückt: unter dem Schwerpunkt, solange
+der über der Sohle liegt, sonst an ihrem Rand, so hält das Sprunggelenk nie mehr, als die Sohle trägt. Hüfte, Knie und
+Knöchel ziehen dafür um so viel weiter, wie ihre Federn brauchen, und keins stärker als seine Muskeln. Beim Schritt
+trägt das Standbein alles, auf zwei Füßen teilen sie sich den Körper. Mit der Stütze durch die Beine fallen von den 168
+leichten Treffern 43 statt 87, an den 4 464 Treffern auf Brust und Bauch von 50 bis 89 N s 683 statt 1 204 und von 90
+bis 139 N s 1 550 statt 1 801 und von 1 280 Treffern auf Arme, Beine und Kopf 571 statt 818. Mit dem Gelenk gegen die
+Welt, dem Standard, fallen weiter keine leichten Treffer, 3 statt 2, 577 statt 628 und 171 statt 175, und nach 60 N s
+von vorn steht ihr Schwerpunkt danach 4 statt 9 cm unter seiner Höhe im Stand, nach vier statt einem Schritt. Siehe
+„Balance aus eigener Kraft, Stufe 2“ und „Beine tragen den Körper“ in [Optimierungen.md](docs/Optimierungen.md). Gepaart
+gegen `active-ragdoll-39` rechnen die Szenen ohne Figuren dasselbe, und die 20 Ragdolls auf der Platte enden bitgleich.
+Mit 10 Figuren stehen am Ende alle, und ein Schritt, während die Deckung bricht, kostet das 0,30- und 0,28-fache, mit 50
+Figuren liegt jetzt dort eine über der Kante ihrer Mauer, siehe F69 der Roadmap, und derselbe Abschnitt kostet das 1,35-
+und 1,24-fache. In der Stadt mit Figuren stürzen fünf statt sechs Etagen ein, ein Bild kostet 0,92 und 0,86 des
+Vorgängers, und am Ende stehen 30 statt 29 Figuren. Ein Spiel ruft dafür nichts auf.
 
 **Nicht ewig fangen.** Mit dem neuen Stand zeigten sich zwei Lücken der Balance, die jede Haltung treffen können. Nach
 97 N s von vorn rechts auf die Brust stand eine Figur ganz still, ihr Capture Point aber 2,8 cm neben den Sohlen,
@@ -2604,9 +2625,9 @@ glslang und SPIRV-Cross geprüft. Ein Lauf von sokol-shdc schreibt ihn neu.
   aufrecht, nicht nur mit ihren Beinen. Ein Mensch, der stolpert, tut das mit seinem Gleichgewichtssinn, hier tut es ein
   Gelenk von Box3D. Ein Spiel, das es rein physikalisch will, setzt `uprightAgainstWorld` auf aus, dann hält das Gelenk
   das Becken gegen die Oberschenkel, oder `uprightTorque` auf null. Dann fängt sich der Mensch der Bibliothek viel
-  schlechter: Von 168 leichten Treffern fallen 87 und ohne Gelenk 101, mit dem Gelenk gegen die Welt keiner, auf die
-  Brust getroffen fällt er aus allen vier Richtungen schon ab 52 bis 64 N s. Die eigene Balance wächst Stufe für Stufe,
-  siehe F61 der Roadmap.
+  schlechter: Von 168 leichten Treffern fallen 43 und ohne Gelenk 56, mit dem Gelenk gegen die Welt keiner, mit dem
+  Gelenk gegen die Oberschenkel auf die Brust getroffen aus den vier Richtungen schon ab 58 bis 78 N s. Die eigene
+  Balance wächst Stufe für Stufe, siehe F61 der Roadmap.
 - Nach einem harten Stoß tritt eine Figur so lange wie nach einem leichten, 0,3 s, und ihr Schwungbein folgt seinem Ziel
   etwa 0,1 s zu spät. Ihr erster Schritt landet so oft über sein Ziel hinaus, und sie steht danach breit. Schnellere
   Schritte ließen in Runde 34 mehr Treffer fallen, nicht weniger, siehe F60 der Roadmap. Bis `active-ragdoll-33` plante

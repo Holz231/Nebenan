@@ -1243,6 +1243,145 @@ void nbEndBalance( nbFigure* f )
 	b->stepFoot = -1;
 }
 
+// The legs on the ground carry the body above them, stage 2 of the balance from the figure's own strength, see the
+// roadmap, F61, after the virtual forces of Coros (2010). The springs of the legs are soft, 800 N m per radian on their
+// softest axis: a knee holds the 200 N m of a bent leg only 0.25 rad away from its target, so a leg sank that far before
+// it carried the body. A leg on the ground now pushes the body above the legs toward the center of that body, as hard as
+// it carries its weight, from where the ground pushes its foot: the point of the sole under that center, straight up
+// while the center lies above the sole, and from the edge of the sole once it lies beyond, so the ankle holds no more
+// than the sole lets it. Its joints, hip, knee and ankle, pull toward the pose of the IK turned by as much as their
+// springs need to push with the torques of that push and of the weight of the bones of the leg above them. The stance
+// leg carries all of the body while the other swings. Two legs on the ground share it by where its center lies between
+// their ankles. A spring pushes with its rotational mass, see nbJointSpringHertz, times the square of its frequency, and
+// it keeps its limit, so no joint pulls harder than its muscles.
+static void nbCarryBody( const nbFigure* f, const nbBalancer* b, b3Quat* pose )
+{
+	float share[2] = { 0.0f, 0.0f };
+	b3Vec3 ankles[2] = { nbAnkle( f, 0 ), nbAnkle( f, 1 ) };
+	if ( b->stepping )
+	{
+		int stance = 1 - b->stepFoot;
+		share[stance] = b->footContact[stance] ? 1.0f : 0.0f;
+	}
+	else if ( b->footContact[0] && b->footContact[1] )
+	{
+		b3Vec3 across = nbFlat( b3Sub( ankles[1], ankles[0] ), b->up );
+		float length2 = b3Dot( across, across );
+		float right = 0.5f;
+		if ( length2 > 1.0e-6f )
+		{
+			right = b3ClampFloat( b3Dot( nbFlat( b3Sub( b->center, ankles[0] ), b->up ), across ) / length2, 0.0f, 1.0f );
+		}
+		share[0] = 1.0f - right;
+		share[1] = right;
+	}
+	else
+	{
+		share[0] = b->footContact[0] ? 1.0f : 0.0f;
+		share[1] = b->footContact[1] ? 1.0f : 0.0f;
+	}
+
+	// The body above the legs on the ground: the pelvis, the trunk, the arms, the head and a leg that swings
+	float mass = 0.0f;
+	b3Vec3 moment = b3Vec3_zero;
+	for ( int i = 0; i < f->boneCount; ++i )
+	{
+		bool carrying = false;
+		for ( int leg = 0; leg < 2; ++leg )
+		{
+			bool inLeg = i == nb_thighs[leg] || i == nb_shins[leg] || i == nb_feet[leg];
+			carrying = carrying || ( share[leg] > 0.0f && inLeg );
+		}
+		if ( carrying == false )
+		{
+			mass += f->bones[i].mass;
+			moment = b3MulAdd( moment, f->bones[i].mass, b3ToVec3( b3Body_GetWorldCenter( f->bones[i].bodyId ) ) );
+		}
+	}
+	if ( mass <= 0.0f )
+	{
+		return;
+	}
+	b3Vec3 body = b3MulSV( 1.0f / mass, moment );
+
+	for ( int leg = 0; leg < 2; ++leg )
+	{
+		if ( share[leg] <= 0.0f )
+		{
+			continue;
+		}
+
+		// Where the ground pushes the foot: the point of the sole under the center of the body, at most the edge of the
+		// sole, whose corners lie in the frame of the foot
+		b3BodyId foot = f->bones[nb_feet[leg]].bodyId;
+		b3Vec3 low = b->sole[leg][0];
+		b3Vec3 high = b->sole[leg][0];
+		for ( int k = 1; k < 4; ++k )
+		{
+			low = b3Min( low, b->sole[leg][k] );
+			high = b3Max( high, b->sole[leg][k] );
+		}
+		b3Vec3 local = b3Max( low, b3Min( high, b3Body_GetLocalPoint( foot, b3ToPos( body ) ) ) );
+		b3Vec3 pressure = b3ToVec3( b3Body_GetWorldPoint( foot, local ) );
+
+		// The push of the leg from there toward the center of the body, as high as its share of the weight
+		b3Vec3 along = b3Sub( body, pressure );
+		float height = b3Dot( along, b->up );
+		if ( height < 0.1f * b->scale )
+		{
+			continue;
+		}
+		b3Vec3 push = b3MulSV( share[leg] * mass * b->gravity / height, along );
+
+		const int chain[3] = { nb_thighs[leg], nb_shins[leg], nb_feet[leg] };
+		for ( int k = 0; k < 3; ++k )
+		{
+			const nbBone* bone = f->bones + chain[k];
+			const nbBone* parent = f->bones + bone->parent;
+			float omega = 2.0f * B3_PI * bone->springHertz;
+			if ( omega <= 0.0f )
+			{
+				continue;
+			}
+
+			// The torque on the bone above the joint: the push on the body and the weight of the bones of the leg above
+			// the joint, the thigh above the knee, the thigh and the shin above the ankle
+			b3Vec3 pivot = b3ToVec3( b3Body_GetPosition( bone->bodyId ) );
+			b3Vec3 torque = b3Cross( b3Sub( body, pivot ), push );
+			for ( int j = 0; j < k; ++j )
+			{
+				const nbBone* above = f->bones + chain[j];
+				b3Vec3 weight = b3MulSV( above->mass * b->gravity, b->up );
+				torque = b3Add( torque, b3Cross( b3Sub( b3ToVec3( b3Body_GetWorldCenter( above->bodyId ) ), pivot ), weight ) );
+			}
+
+			// The turn of the target against the bone above as it is now that makes the spring push with that torque
+			b3Matrix3 invI = b3AddMM( b3Body_GetWorldInverseRotationalInertia( parent->bodyId ),
+									  b3Body_GetWorldInverseRotationalInertia( bone->bodyId ) );
+			b3Vec3 turn;
+			if ( bone->joint == nb_hingeJoint )
+			{
+				b3Vec3 axis =
+					b3RotateVector( b3Body_GetRotation( bone->bodyId ), b3RotateVector( bone->jointFrame, b3Vec3_axisZ ) );
+				turn = b3MulSV( -b3Dot( torque, axis ) * b3Dot( axis, b3MulMV( invI, axis ) ) / ( omega * omega ), axis );
+			}
+			else
+			{
+				turn = b3MulSV( -1.0f / ( omega * omega ), b3MulMV( invI, torque ) );
+			}
+
+			b3Quat frame = b3MulQuat( b3Body_GetRotation( parent->bodyId ), bone->rest.q );
+			b3Vec3 local = b3InvRotateVector( frame, turn );
+			float angle = b3Length( local );
+			if ( angle > 1.0e-6f )
+			{
+				b3Quat shift = b3MakeQuatFromAxisAngle( b3MulSV( 1.0f / angle, local ), angle );
+				pose[chain[k]] = b3NormalizeQuat( b3MulQuat( shift, pose[chain[k]] ) );
+			}
+		}
+	}
+}
+
 // The arms row against a fall, after the idea of Hof (2007), the equations of motion for a standing human: besides moving
 // the center of pressure under the feet and stepping, a body keeps its balance by turning parts of itself about its
 // center of mass. An upper arm that the motor of its shoulder turns in the sense of the fall, about up across the
@@ -1542,6 +1681,7 @@ nbBalanceResult nbUpdateBalance( nbWorld* world, int index, nbFigure* f, float t
 		nbLegIK( f, b, stance, wanted, b->plant[stance], b->footFacing[stance], pose );
 	}
 
+	nbCarryBody( f, b, pose );
 	nbHoldUpright( f, b );
 	nbRowArms( f, b, timeStep, pose );
 	return nb_balanceGoesOn;
