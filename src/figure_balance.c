@@ -49,6 +49,16 @@
 #define NB_MAX_STEP_LENGTH 0.55f
 #define NB_STEP_DURATION 0.3f
 #define NB_STEP_HEIGHT 0.12f
+
+// A figure that catches itself with its own strength pulls the toes of its swinging foot up by this many radians in the
+// middle of the step and lands the foot flat, as the shin muscles of a person lift the toes in the swing so they clear
+// the ground, see nbLiftToes. The swing leg follows its target late, and the foot, whose target holds against the bones
+// above it as the IK wants them, pitched toes down by 0.2 to 0.4 rad in the second half of the step: after pushes from
+// behind its toes struck the ground halfway through the step, it landed 25 to 50 cm short of its target, and the next
+// stance leg pushed that foot back as it straightened. With the brake of nbHoldUpright none of the 168 light hits fell,
+// and over four positions of the hit point 5 028 of the 4 times 5 264 hits on chest, belly and limbs, 5 138 before
+// round 52, with 0.25 rad 5 217 and with 0.4 rad 5 371, see the roadmap, F61, round 52.
+#define NB_SWING_TOES 0.15f
 #define NB_MAX_STEPS 5
 
 // A figure that catches itself with its own strength, without the hold against the world, see nbFigureMotors::
@@ -906,6 +916,27 @@ static void nbLegIK( const nbFigure* f, const nbBalancer* b, int leg, b3WorldTra
 	pose[nb_feet[leg]] = b3NormalizeQuat( b3InvMulQuat( b3MulQuat( shinWorld, foot->rest.q ), footWorld ) );
 }
 
+// Turn the target of a foot that nbLegIK put flat so its toes point up by an angle, about the axis across the way the
+// feet face, against the bones above it as the IK wants them with the pelvis at a rotation
+static void nbLiftToes( const nbFigure* f, const nbBalancer* b, int leg, b3Quat pelvis, b3Vec3 facing, float angle, b3Quat* pose )
+{
+	b3Vec3 side = b3Cross( facing, b->up );
+	float sideLength = b3Length( side );
+	if ( sideLength <= 1.0e-3f )
+	{
+		return;
+	}
+
+	const nbBone* thigh = f->bones + nb_thighs[leg];
+	const nbBone* shin = f->bones + nb_shins[leg];
+	const nbBone* foot = f->bones + nb_feet[leg];
+	b3Quat above = b3MulQuat( pelvis, thigh->rest.q );
+	above = b3MulQuat( b3MulQuat( above, pose[nb_thighs[leg]] ), shin->rest.q );
+	above = b3MulQuat( b3MulQuat( above, pose[nb_shins[leg]] ), foot->rest.q );
+	b3Quat toes = b3MakeQuatFromAxisAngle( b3MulSV( 1.0f / sideLength, side ), angle );
+	pose[nb_feet[leg]] = b3NormalizeQuat( b3MulQuat( b3InvMulQuat( above, b3MulQuat( toes, above ) ), pose[nb_feet[leg]] ) );
+}
+
 // The ankle of a leg as it is now
 static b3Vec3 nbAnkle( const nbFigure* f, int leg )
 {
@@ -1168,6 +1199,12 @@ static float nbFootGrip( const nbWorld* world, int index, const nbFigure* f, int
 // the ground with about that torque over the length of the leg. At its limit it pushed the stance foot after a push
 // from behind as hard along the ground as friction held, with 73 % of the load the foot carried, where the pendulum of
 // the body asked for 13 to 25 %, and the foot crept back while the body ran on.
+// The joint damps only how fast the pelvis turns against its thigh, and a stance thigh tips with the pelvis when the
+// figure tips over its stance foot, so its damping had nothing to brake. A figure that catches itself with its own
+// strength brakes the tipping of the pelvis in the world as well, as the hold against the world damps it: a torque
+// against the turn of the pelvis about the axes across up, with the damping ratio of the hold, uprightDampingRatio, on
+// the pelvis and back on the thigh like a muscle of the hip, within the limit of the hold, which the joint then has that
+// much less of. The idea came from the user, see the roadmap, F61, round 52.
 static void nbHoldUpright( const nbWorld* world, int index, const nbFigure* f, const nbBalancer* b, float timeStep )
 {
 	if ( b3Joint_IsValid( b->uprightLegs[0] ) == false )
@@ -1209,7 +1246,8 @@ static void nbHoldUpright( const nbWorld* world, int index, const nbFigure* f, c
 		b3Quat upInThigh = b3InvMulQuat( b3Body_GetRotation( thigh ), nbQuatZTo( b->up ) );
 		b3Joint_SetLocalFrameA( joint, (b3Transform){ b3Vec3_zero, upInThigh } );
 		float stiffness = b3MaxFloat( share[leg] * motors->uprightStiffness, 1.0f );
-		b3ParallelJoint_SetSpringHertz( joint, nbJointSpringHertz( thigh, root, frameB, false, stiffness, 0.0f ) );
+		float hertz = nbJointSpringHertz( thigh, root, frameB, false, stiffness, 0.0f );
+		b3ParallelJoint_SetSpringHertz( joint, hertz );
 		const nbBone* hip = f->bones + nb_thighs[leg];
 		float hipTorque = hip->activation * motors->maxTorque * hip->strength;
 		float limit = share[leg] * hipTorque;
@@ -1217,6 +1255,24 @@ static void nbHoldUpright( const nbWorld* world, int index, const nbFigure* f, c
 		{
 			float length = b->thighLength[leg] + b->shinLength[leg];
 			limit = b3MinFloat( limit, nbFootGrip( world, index, f, leg, timeStep ) * length );
+		}
+
+		// The brake against the tipping of the pelvis in the world, on the pelvis and back on the thigh, within the limit
+		if ( b->ownStrength && limit > 0.0f && timeStep > 0.0f && hertz > 0.0f )
+		{
+			b3Vec3 spin = b3Body_GetAngularVelocity( root );
+			b3Vec3 tipping = b3MulSub( spin, b3Dot( spin, b->up ), b->up );
+			float damping = 2.0f * b3MaxFloat( 0.0f, motors->uprightDampingRatio ) * stiffness / ( 2.0f * B3_PI * hertz );
+			b3Vec3 brake = b3MulSV( -damping, tipping );
+			float size = b3Length( brake );
+			if ( size > limit )
+			{
+				brake = b3MulSV( limit / size, brake );
+				size = limit;
+			}
+			b3Body_ApplyTorque( root, brake, true );
+			b3Body_ApplyTorque( thigh, b3Neg( brake ), true );
+			limit -= size;
 		}
 		b3ParallelJoint_SetMaxTorque( joint, b3MaxFloat( limit, NB_MIN_HOLD ) );
 	}
@@ -1839,6 +1895,11 @@ nbBalanceResult nbUpdateBalance( nbWorld* world, int index, nbFigure* f, float t
 		b3WorldTransform wanted = nbWantedPelvis( b, nbAtHeight( pelvisPoint, up, nbHoldHeight( f, b, standing ) ) );
 		b3WorldTransform swingPelvis = { pelvis.p, nbHalfwayAt( pelvis.q, wanted.q, 0.5f ) };
 		nbLegIK( f, b, foot, swingPelvis, swing, b->footFacing[stance], pose );
+		if ( b->ownStrength )
+		{
+			nbLiftToes( f, b, foot, swingPelvis.q, b->footFacing[stance], NB_SWING_TOES * b3ComputeCosSin( B3_PI * phase ).sine,
+						pose );
+		}
 		nbLegIK( f, b, stance, wanted, b->plant[stance], b->footFacing[stance], pose );
 	}
 

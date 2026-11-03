@@ -657,23 +657,24 @@ Zustand `nb_figureBalancing`, nach Kapitel 26.13 bis 26.15 und 28.3 der Roadmap 
 der Haltung des Clips, 800 N m pro rad bis 150 N m, die Arme mit 60 % davon, so schwingen sie mit dem Körper, und ein
 Gelenk von Box3D gegen einen statischen Anker der Welt hält das Becken aufrecht, mit höchstens 125 N m
 (`nbFigureMotors::uprightTorque`), mit `uprightAgainstWorld = false` gegen die Oberschenkel der Beine, die sie tragen,
-so stark, wie die Hüfte kann, und nicht stärker, als ihr Fuß auf dem Boden hält, siehe Balance aus eigener Kraft, Mit
-eigener Kraft fangen und Nicht stärker, als der Fuß hält. In jedem Update misst die Figur ihren Schwerpunkt, seine
-Geschwindigkeit und ihre Drehung um ihn, welche Füße auf Boden stehen, auch einer, dessen Sohle bis 3 cm darüber
-schwebt, wohin die Füße zeigen, die Fläche ihrer Sohlen und den Capture Point, den Schwerpunkt um seine Geschwindigkeit
-und ihre Drehung durch die Frequenz eines Pendels seiner Höhe weiter. Sie richtet sich nach ihren Füßen, nicht nach dem
-Becken, siehe Füße statt Becken: Im Stand halten die Beine ihre Füße, wo und wie sie stehen, schieben das Becken über
-die Mitte der Sohlen und drehen es über die Füße zurück, und die Beine am Boden tragen den Körper über ihnen, siehe Die
-Beine tragen den Körper. Liegt der Capture Point zwei Updates lang mehr als 3 cm außerhalb, mit eigener Kraft ein Update
-lang mehr als 10 cm, tritt ein Fuß dorthin, wo der Capture Point bei seiner Landung sein wird, 5 cm darüber hinaus,
-gedreht wie der Standfuß, in Reichweite der Hüfte, auf Boden, der trägt und höchstens 25 cm höher oder tiefer liegt, mit
-Platz für den Fuß und freiem Weg dorthin, 0,3 s lang und 12 cm hoch, mit eigener Kraft mit dem Tempo, das der Fuß schon
-hat, siehe Der Fuß schwingt mit seinem Tempo. Die ersten 60 % des Schritts folgt sein Ziel dem Capture Point. Kommt der
-Schritt zu kurz, schwingen die Arme aus, siehe unten. Fängt sie auch der fünfte Schritt in Folge nicht, mit eigener
-Kraft der zehnte, kann kein Fuß treten, ließe der beste Schritt den Capture Point bei der Landung mehr als 1,5 m
-draußen, siehe Taumeln vor dem Sturz, neigt sie sich mehr als 0,6 rad, sinkt ihr Schwerpunkt unter drei Viertel seiner
-Höhe im Stand, berührt 0,3 s kein Fuß den Boden oder kommt sie 8 s lang nicht zur Ruhe, ohne dass etwas sie drückt,
-fällt sie als aktiver Ragdoll, ohne das Gelenk am Becken, siehe Nicht ewig fangen. Steht sie nach einem langen
+so stark, wie die Hüfte kann, und nicht stärker, als ihr Fuß auf dem Boden hält, und gegen das Kippen des Beckens
+gebremst, siehe Balance aus eigener Kraft, Mit eigener Kraft fangen, Nicht stärker, als der Fuß hält, und Die Hüfte
+bremst das Kippen. In jedem Update misst die Figur ihren Schwerpunkt, seine Geschwindigkeit und ihre Drehung um ihn,
+welche Füße auf Boden stehen, auch einer, dessen Sohle bis 3 cm darüber schwebt, wohin die Füße zeigen, die Fläche ihrer
+Sohlen und den Capture Point, den Schwerpunkt um seine Geschwindigkeit und ihre Drehung durch die Frequenz eines Pendels
+seiner Höhe weiter. Sie richtet sich nach ihren Füßen, nicht nach dem Becken, siehe Füße statt Becken: Im Stand halten
+die Beine ihre Füße, wo und wie sie stehen, schieben das Becken über die Mitte der Sohlen und drehen es über die Füße
+zurück, und die Beine am Boden tragen den Körper über ihnen, siehe Die Beine tragen den Körper. Liegt der Capture Point
+zwei Updates lang mehr als 3 cm außerhalb, mit eigener Kraft ein Update lang mehr als 10 cm, tritt ein Fuß dorthin, wo
+der Capture Point bei seiner Landung sein wird, 5 cm darüber hinaus, gedreht wie der Standfuß, in Reichweite der Hüfte,
+auf Boden, der trägt und höchstens 25 cm höher oder tiefer liegt, mit Platz für den Fuß und freiem Weg dorthin, 0,3 s
+lang und 12 cm hoch, mit eigener Kraft mit dem Tempo, das der Fuß schon hat, und mit angezogenen Zehen, siehe Der Fuß
+schwingt mit seinem Tempo und Die Hüfte bremst das Kippen. Die ersten 60 % des Schritts folgt sein Ziel dem Capture
+Point. Kommt der Schritt zu kurz, schwingen die Arme aus, siehe unten. Fängt sie auch der fünfte Schritt in Folge nicht,
+mit eigener Kraft der zehnte, kann kein Fuß treten, ließe der beste Schritt den Capture Point bei der Landung mehr als
+1,5 m draußen, siehe Taumeln vor dem Sturz, neigt sie sich mehr als 0,6 rad, sinkt ihr Schwerpunkt unter drei Viertel
+seiner Höhe im Stand, berührt 0,3 s kein Fuß den Boden oder kommt sie 8 s lang nicht zur Ruhe, ohne dass etwas sie
+drückt, fällt sie als aktiver Ragdoll, ohne das Gelenk am Becken, siehe Nicht ewig fangen. Steht sie nach einem langen
 Ausfallschritt 0,3 s auf einem Fuß, während der andere in der Luft hängt, tritt sie mit ihm, sonst stünde sie nie ruhig.
 Eine Last von oben wirft sie ab einem Viertel von `crushForce` um, wie beim Aufstehen. Ruhig auf beiden Füßen, die
 Knochen im Mittel nach ihrer Masse langsamer als 0,15 m/s, den Capture Point zwischen den Füßen oder höchstens 3 cm
@@ -1063,6 +1064,38 @@ und nach statt sofort aufrichtet, auch, siehe „Nicht stärker, als der Fuß h�
 [Optimierungen.md](docs/Optimierungen.md). Gepaart gegen `active-ragdoll-50`, zwei Läufe im Wechsel mit vier Threads und
 einer mit einem, rechnen alle Szenen des Benchmarks dasselbe, ihre Figuren stehen mit der Stütze gegen die Welt, und ein
 Bild der Stadt mit Figuren kostet das 0,99-, 1,03- und 0,96-fache, bei gleicher Arbeit. Ein Spiel ruft dafür nichts auf.
+
+**Die Hüfte bremst das Kippen.** Seit `active-ragdoll-52` bremst die Stütze durch ein Bein bei einem Menschen der
+Bibliothek, der sich mit eigener Kraft fängt, auch das Kippen seines Beckens, auf Anregung des Nutzers, und sein
+schwingender Fuß zieht die Zehen an. Das Gelenk der Stütze dämpft nur, wie schnell sich das Becken gegen den
+Oberschenkel dreht. Kippt die Figur über ihren Standfuß, kippt der Oberschenkel mit, und die Dämpfung hatte nichts zu
+bremsen. Jetzt wirkt ein Drehmoment gegen das Kippen des Beckens in der Welt, mit der Dämpfung der Stütze,
+`uprightDampingRatio`, wie bei der Stütze gegen die Welt, auf das Becken und zurück auf den Oberschenkel wie ein Muskel
+der Hüfte, innerhalb der Grenze der Stütze aus Hüfte und Reibung. Nachgemessen an den Stürzen nach Stößen von hinten:
+Das Schwungbein folgt seinem Ziel spät, und der Fuß, dessen Ziel sich an den Knochen darüber hält, wie die IK sie will,
+kippte in der zweiten Hälfte des Schritts um 0,2 bis 0,4 rad mit den Zehen nach unten. Die Zehen trafen zur Hälfte des
+Schritts den Boden, der Fuß landete 25 bis 50 cm vor dem Ziel, und das nächste Standbein schob ihn beim Strecken nach
+hinten weg. Jetzt zieht der Fuß in der Mitte des Schritts die Zehen um 0,15 rad an, so weit wie ein Mensch im Schwung,
+und landet flach. Mit eigener Kraft fallen von den 168 leichten Treffern weiter keiner und zusammen über vier Lagen des
+Treffpunkts, wie er ist und um 1, −1 und 2 mm verschoben, von den 4 × 1 920 auf Brust und Bauch von 50 bis 89 N s 73
+statt 119, von den 4 × 2 064 von 90 bis 139 N s 3 919 statt 3 999 und von den 4 × 1 280 auf Arme, Beine und Kopf 1 036
+statt 1 020, in der Mitte und bei den harten Treffern in jeder der vier Lagen weniger. Wie der Treffpunkt liegt, fallen
+23 statt 28, 976 statt 1 000 und 259 statt 257, und von den 23 kippen 4 statt 13. Etwas mehr hängt vom Zufall ab:
+Wandert der Treffpunkt 1, −1 und 2 mm, kippen 81, 87 und 104 statt 84, 68 und 88 von 5 264 Ergebnissen, und in den vier
+Lagen enden 66 statt 34 Treffer, weil die Figur sich fängt, aber 8 s lang nicht zur Ruhe kommt. Auf die obere Brust
+fängt sie sich von vorn bis 110 N s und von hinten bis 105 wie vorher, von rechts und links jetzt bis 95 ohne Lücke,
+bisher fiel sie von rechts schon bei 85 und von links bei 90. Ohne Stütze, `uprightTorque` null, ziehen die Füße ihre
+Zehen ebenso an, gebremst wird ohne Stütze nichts: Dort fallen 11 statt 8, 134 statt 150, 1 377 statt 1 438 und 347
+statt 356. Mit der Stütze gegen die Welt, dem Standard, endet jeder Treffer bitgleich wie vorher. Die Zehen allein
+fingen von allen 4 × 5 264 Treffern 5 102 nicht, die Bremse allein 5 104, beide zusammen 5 028 statt 5 138. Dreimal so
+stark gebremst fielen 5 003, aber 1 071 an den Gliedern, zehnmal so stark fiel ein leichter Treffer. Weiter angezogene
+Zehen, Zehen, die erst spät oder bis zur Landung angezogen sind, ein Fuß, der flach gegen das Schienbein gehalten wird,
+wie es gerade steht, ein höherer Fuß und ein Knie, das nur beim Nachgeben gestemmt ist, fingen weniger. Ein Druckpunkt
+unter den Sohlen, der mit dem Capture Point wandert, auch eine Anregung des Nutzers, fing nicht mehr. Siehe „Die Hüfte
+bremst das Kippen“ und die Zeilen danach in [Optimierungen.md](docs/Optimierungen.md). Gepaart gegen
+`active-ragdoll-51`, zwei Läufe im Wechsel mit vier Threads und einer mit einem, rechnen alle Szenen des Benchmarks
+dasselbe, ihre Figuren stehen mit der Stütze gegen die Welt, und ein Bild der Stadt mit Figuren kostet das 0,92-, 1,02-
+und 1,02-fache, bei gleicher Arbeit. Ein Spiel ruft dafür nichts auf.
 
 **Drücken.** Drückt ein Körper eine stehende Figur langsam, ein Stock, eine Hand oder ein Block, und schiebt er dabei
 einen ihrer Knochen mit mindestens `pushForce` (Standard 40 N) seitlich, bei zwei Prüfungen hintereinander, also ein
@@ -1860,8 +1893,8 @@ beim Einbinden nicht gebaut.
 | `maxTorque` | 150 N m | Größtes Drehmoment eines Gelenks bei voller Kraft, mal der Kraft des Knochens, darüber gibt es nach |
 | `strengthPerSpeed`, `fallStrength` | 0,1 pro m/s, 0,8 | Die Kraft wächst mit der mittleren Geschwindigkeit der Knochen bis `fallStrength`, wie in Overgrowth |
 | `stunTime` | 0 s | So viel schwächer ist ein Ragdoll nach einem Treffer oder einer Explosion, die Kraft kommt mit eins pro Sekunde zurück. Null behält die Kraft wie auf `ragdoll-11`. Bis `active-ragdoll-19` waren es 0,4 s, Overgrowth nimmt 0,9 s, dort fiele eine Figur aus dem Stand, ohne sich abzustützen |
-| `uprightTorque`, `uprightStiffness`, `uprightDampingRatio` | 125 N m, 1 500 N m pro rad, 1 | Hält das Becken einer Figur, die sich fängt, aufrecht, mit höchstens diesem Drehmoment gegen die Welt. Fällt sie, lässt es sofort los, null nimmt es weg. Die Stütze durch die Beine hält so stark, wie die Hüfte kann, und nicht stärker, als der Fuß auf dem Boden hält |
-| `uprightAgainstWorld` | an | Das Becken wird gegen einen statischen Anker der Welt aufrecht gehalten. Aus hält es sich gegen die Oberschenkel der Beine, die die Figur tragen, aus eigener Kraft, so stark, wie die Hüfte kann, und nicht stärker, als der Fuß auf dem Boden hält, lässt nach, solange ein Fuß rutscht, und fängt weniger. Ohne die Stütze gegen die Welt stemmt die Figur ihre Knie, tritt nach einem deutlichen Stoß sofort, macht bis zu zehn Schritte und schwingt jeden Fuß mit seinem Tempo weiter, siehe Balance aus eigener Kraft, Sohlen, die greifen, Mit eigener Kraft fangen, Der Fuß schwingt mit seinem Tempo und Nicht stärker, als der Fuß hält |
+| `uprightTorque`, `uprightStiffness`, `uprightDampingRatio` | 125 N m, 1 500 N m pro rad, 1 | Hält das Becken einer Figur, die sich fängt, aufrecht, mit höchstens diesem Drehmoment gegen die Welt. Fällt sie, lässt es sofort los, null nimmt es weg. Die Stütze durch die Beine hält so stark, wie die Hüfte kann, und nicht stärker, als der Fuß auf dem Boden hält, und bremst mit `uprightDampingRatio` das Kippen des Beckens |
+| `uprightAgainstWorld` | an | Das Becken wird gegen einen statischen Anker der Welt aufrecht gehalten. Aus hält es sich gegen die Oberschenkel der Beine, die die Figur tragen, aus eigener Kraft, so stark, wie die Hüfte kann, und nicht stärker, als der Fuß auf dem Boden hält, bremst das Kippen des Beckens, lässt nach, solange ein Fuß rutscht, und fängt weniger. Ohne die Stütze gegen die Welt stemmt die Figur ihre Knie, tritt nach einem deutlichen Stoß sofort, macht bis zu zehn Schritte, schwingt jeden Fuß mit seinem Tempo weiter und zieht dabei die Zehen an, siehe Balance aus eigener Kraft, Sohlen, die greifen, Mit eigener Kraft fangen, Der Fuß schwingt mit seinem Tempo, Nicht stärker, als der Fuß hält, und Die Hüfte bremst das Kippen |
 | `muscles` | aus | Die Gelenke ziehen mit genäherten Muskeln, siehe Muskeln. Aus nehmen sie die verlangte Kraft sofort und ziehen bei jeder Geschwindigkeit gleich stark |
 | `tenseTime`, `relaxTime` | 0,03 s, 0,08 s | Mit Muskeln: Zeitkonstanten, in denen ein Muskel die verlangte Kraft hinauf und hinab erreicht. Null folgt sofort |
 | `brakeStrength` | 1,5 | Mit Muskeln: So viel mehr hält ein Gelenk, das gegen seine Richtung gedreht wird, siehe `nbBoneDef::maxSpeed` |
@@ -2857,25 +2890,27 @@ glslang und SPIRV-Cross geprüft. Ein Lauf von sokol-shdc schreibt ihn neu.
   aufrecht, nicht nur mit ihren Beinen. Ein Mensch, der stolpert, tut das mit seinem Gleichgewichtssinn, hier tut es ein
   Gelenk von Box3D. Ein Spiel, das es rein physikalisch will, setzt `uprightAgainstWorld` auf aus, dann hält das Gelenk
   das Becken gegen die Oberschenkel, oder `uprightTorque` auf null. Dann fängt sich der Mensch der Bibliothek
-  schlechter: Von 168 leichten Treffern fällt keiner und ohne Gelenk 8, von 1 920 auf Brust und Bauch von 50 bis 89 N s
-  fallen 28 und ohne Gelenk 150, mit dem Gelenk gegen die Welt keiner, und auf die obere Brust getroffen fällt er mit
-  dem Gelenk gegen die Oberschenkel von rechts schon ab 85 N s, von links ab 90, von hinten ab 110 und von vorn ab
-  115 N s. Sein Ergebnis hängt öfter vom Zufall ab: Wandert der Treffpunkt 1 mm, kippen 84 von 5 264 Ergebnissen, mit
-  dem Gelenk gegen die Welt 14. Bis Runde 50 rutschte bei den meisten Stürzen mit eigener Kraft der Standfuß nach hinten
-  weg, wenn das gerade aufgesetzte Bein das Becken aufrichtete. Seit Runde 51 zieht die Stütze durch ein Bein nicht
-  stärker, als der Fuß hält, und von den 28 Stürzen sinken 8 statt 17, 13 kippen, siehe Nicht stärker, als der Fuß hält.
-  Die eigene Balance wächst Stufe für Stufe, siehe F61 der Roadmap. Im Vergleich aller Ansätze, Runde 48 der Roadmap,
-  fängt die Stütze gegen die Welt am meisten und hängt am wenigsten vom Zufall ab. Sie hilft aber gleich stark, ob die
-  Figur ruhig steht oder schon taumelt: Nach 60 N s auf die Brust wirft sie ein zweiter Treffer aus derselben Richtung
-  0,1 bis 0,3 s später bis 70 N s fast nie um, siehe F75 der Roadmap.
+  schlechter: Von 168 leichten Treffern fällt keiner und ohne Gelenk 11, von 1 920 auf Brust und Bauch von 50 bis 89 N s
+  fallen 23 und ohne Gelenk 134, mit dem Gelenk gegen die Welt keiner, und auf die obere Brust getroffen fällt er mit
+  dem Gelenk gegen die Oberschenkel von rechts und links ab 100 N s, von hinten ab 110 und von vorn ab 115 N s. Sein
+  Ergebnis hängt öfter vom Zufall ab: Wandert der Treffpunkt 1 mm, kippen 81 von 5 264 Ergebnissen, mit dem Gelenk gegen
+  die Welt 14. Bis Runde 50 rutschte bei den meisten Stürzen mit eigener Kraft der Standfuß nach hinten weg, wenn das
+  gerade aufgesetzte Bein das Becken aufrichtete, bis Runde 51 kippten die meisten, weil die Zehen des schwingenden
+  Fußes früh den Boden trafen. Seit Runde 52 kippen von den 23 Stürzen 4, 9 sinken, und 8 enden, weil die Figur 8 s lang
+  nicht zur Ruhe kommt, siehe Die Hüfte bremst das Kippen. Die eigene Balance wächst Stufe für Stufe, siehe F61 der
+  Roadmap. Im Vergleich aller Ansätze, Runde 48 der Roadmap, fängt die Stütze gegen die Welt am meisten und hängt am
+  wenigsten vom Zufall ab. Sie hilft aber gleich stark, ob die Figur ruhig steht oder schon taumelt: Nach 60 N s auf die
+  Brust wirft sie ein zweiter Treffer aus derselben Richtung 0,1 bis 0,3 s später bis 70 N s fast nie um, siehe F75 der
+  Roadmap.
 - Nach einem harten Stoß tritt eine Figur so lange wie nach einem leichten, 0,3 s, und ihr Schwungbein folgt seinem Ziel
   etwa 0,1 s zu spät. Mit eigener Kraft schwingt der Fuß seit Runde 50 wenigstens mit dem Tempo weiter, das er schon
-  hat. Ihr erster Schritt landet so oft über sein Ziel hinaus, und sie steht danach breit. Schnellere Schritte ließen in
-  Runde 34 mehr Treffer fallen, nicht weniger, siehe F60 der Roadmap, und ein Schwungbein, dessen Gelenke ihrem Ziel mit
-  dessen Geschwindigkeit folgen, in Runde 45 auch. Sie plant nur den nächsten Schritt: Ab dem zweiten Schritt sagt ihr
-  Pendel den Capture Point bei der Landung im Mittel 13 bis 18 cm falsch voraus, und zwei Schritte im Voraus geplant
-  fingen in Runde 46 weniger, siehe F62 der Roadmap. Bis `active-ragdoll-33` plante sie ihre Schritte nach der Richtung
-  ihres Beckens und fiel nach 4 von 168 leichten Treffern in der Szene der Tests, siehe Füße statt Becken.
+  hat, und zieht seit Runde 52 die Zehen an, damit sie nicht früh den Boden treffen. Ihr erster Schritt landet so oft
+  über sein Ziel hinaus, und sie steht danach breit. Schnellere Schritte ließen in Runde 34 mehr Treffer fallen, nicht
+  weniger, siehe F60 der Roadmap, und ein Schwungbein, dessen Gelenke ihrem Ziel mit dessen Geschwindigkeit folgen, in
+  Runde 45 auch. Sie plant nur den nächsten Schritt: Ab dem zweiten Schritt sagt ihr Pendel den Capture Point bei der
+  Landung im Mittel 13 bis 18 cm falsch voraus, und zwei Schritte im Voraus geplant fingen in Runde 46 weniger, siehe
+  F62 der Roadmap. Bis `active-ragdoll-33` plante sie ihre Schritte nach der Richtung ihres Beckens und fiel nach 4 von
+  168 leichten Treffern in der Szene der Tests, siehe Füße statt Becken.
 - Die Muskeln (`nbFigureMotors::muscles`) sind eine Näherung auf der Ebene der Gelenke und standardmäßig aus. Ihre
   Kraft wirkt über die Feder eines Gelenks, deren Drehmomentgrenze auch ihre Dämpfung begrenzt, so nimmt die Kurve von
   Hill einem schnell gedrehten Gelenk auch Dämpfung. Kraft nach Winkel, Bänder, Sehnen und eine Reaktionszeit fehlen

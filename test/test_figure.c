@@ -866,8 +866,9 @@ static int FigureRowTest( void )
 // in round 45, 17 in round 41, 43 before the upper body bent on with the tilt of the pelvis, see nbBendTrunk, and 87
 // before the legs carried the body in round 40, see nbCarryBody. Since round 50 it swings each foot on with the speed
 // the foot already has, since round 51 the hold through a leg pulls no harder than its foot holds on the ground, see
-// nbFootGrip. 52 N s from its right it catches with steps, the same with one thread and with four, and its knees hold
-// 375 N m while it catches itself, those of a figure with the hold against the world 225. From eight directions it
+// nbFootGrip, since round 52 the hold brakes the tipping of the pelvis and the swinging foot pulls its toes up, see
+// NB_SWING_TOES. 52 N s from its right it catches with steps, the same with one thread and with four, and its knees
+// hold 375 N m while it catches itself, those of a figure with the hold against the world 225. From eight directions it
 // catches 50 and 70 N s on the upper chest.
 static float KneeLimit( nbFigureId figure )
 {
