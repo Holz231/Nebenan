@@ -95,6 +95,14 @@ b3ContactData b3Contact_GetData( b3ContactId contactId )
 	return data;
 }
 
+// Added for Nebenan: the mixed friction the solver uses for a contact
+float b3Contact_GetFriction( b3ContactId contactId )
+{
+	b3World* world = b3GetWorld( contactId.world0 );
+	b3Contact* contact = b3GetContactFullId( world, contactId );
+	return contact->friction;
+}
+
 struct b3ContactRegister
 {
 	// b3ManifoldFcn* fcn;

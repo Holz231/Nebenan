@@ -1944,4 +1944,12 @@ B3_API bool b3Contact_IsValid( b3ContactId id );
 /// Get the manifolds for a contact. The manifold may have no points if the contact is not touching.
 B3_API b3ContactData b3Contact_GetData( b3ContactId contactId );
 
+/// The friction the solver uses for a contact: the frictions of its two shapes mixed by the friction callback of the
+/// world, see b3WorldDef::frictionCallback, on a mesh with several materials the mean over the triangles it touches.
+/// Added for Nebenan.
+B3_API float b3Contact_GetFriction( b3ContactId contactId );
+
+/// This Box3D has b3Contact_GetFriction
+#define B3_HAS_CONTACT_FRICTION 1
+
 /**@}*/ // contact

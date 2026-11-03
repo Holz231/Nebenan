@@ -187,6 +187,10 @@
 #define NB_SLIDE_SPEED 0.3f
 #define NB_SLIDE_RANGE 0.5f
 
+// The most touching contacts of a foot the hold through its leg reads to know how firmly the foot stands, see
+// nbFootGrip. A foot on the ground touches one or two bodies, in rubble a few more.
+#define NB_FOOT_CONTACTS 16
+
 // The spine bends the upper body on with the tilt of the pelvis by this many times the tilt, and at most this far, in
 // radians, see nbBendTrunk. With the hold through the legs, of the 168 light hits on the upper chest 36 fell at half
 // the gain, 31 at 1, 17 at 2 and 13 at 3, without the bend 43, but at 3 more of the hits from 90 to 139 N s fell than
@@ -1113,6 +1117,44 @@ static b3Quat nbQuatZTo( b3Vec3 direction )
 	return b3ComputeQuatBetweenUnitVectors( b3Vec3_axisZ, b3MulSV( 1.0f / length, direction ) );
 }
 
+// How hard the ground can push a foot along itself: for every contact of the foot with a body that is not the figure,
+// the force it carried over the last step, its total normal impulse over the time step, times the friction Box3D solves
+// it with. Zero for a foot that touches nothing, as a foot that only hovers near the ground.
+static float nbFootGrip( const nbWorld* world, int index, const nbFigure* f, int leg, float timeStep )
+{
+	b3BodyId foot = f->bones[nb_feet[leg]].bodyId;
+	b3ContactData contacts[NB_FOOT_CONTACTS];
+	int count = b3Body_GetContactData( foot, contacts, NB_FOOT_CONTACTS );
+	float grip = 0.0f;
+	for ( int c = 0; c < count; ++c )
+	{
+		b3BodyId bodyA = b3Shape_GetBody( contacts[c].shapeIdA );
+		b3BodyId other = B3_ID_EQUALS( bodyA, foot ) ? b3Shape_GetBody( contacts[c].shapeIdB ) : bodyA;
+		if ( nbIsOwnBody( world, index, other ) )
+		{
+			continue;
+		}
+
+#if defined( B3_HAS_CONTACT_FRICTION )
+		float friction = b3Contact_GetFriction( contacts[c].contactId );
+#else
+		// The mixing of Box3D without a friction callback of the world
+		float friction = sqrtf( b3Shape_GetFriction( contacts[c].shapeIdA ) * b3Shape_GetFriction( contacts[c].shapeIdB ) );
+#endif
+		float impulse = 0.0f;
+		for ( int m = 0; m < contacts[c].manifoldCount; ++m )
+		{
+			const b3Manifold* manifold = contacts[c].manifolds + m;
+			for ( int k = 0; k < manifold->pointCount; ++k )
+			{
+				impulse += manifold->points[k].totalNormalImpulse;
+			}
+		}
+		grip += friction * impulse / timeStep;
+	}
+	return grip;
+}
+
 // The hold through the legs: the legs that carry the figure share it, the stance leg alone while the other swings, both
 // on the ground alike, none without ground under them. Each joint holds the up of the world as it lies in the frame of
 // its thigh in this update, so the pelvis turns upright against the thigh, and the thigh pushes against the ground.
@@ -1122,7 +1164,11 @@ static b3Quat nbQuatZTo( b3Vec3 direction )
 // slides NB_SLIDE_RANGE faster still. The hold through a leg is the stance hip of a person, so it pulls as hard as the
 // joint of the thigh may, its torque limit, 300 N m for the humanoid of the library: with 125 N m, uprightTorque, which
 // bounded it up to active-ragdoll-48, 74 of the 1 920 hits on chest and belly from 50 to 89 N s fell, with 300 N m 50.
-static void nbHoldUpright( const nbFigure* f, const nbBalancer* b )
+// And it pulls no harder than the foot holds on the ground, see nbFootGrip: the torque of the hip pushes the foot along
+// the ground with about that torque over the length of the leg. At its limit it pushed the stance foot after a push
+// from behind as hard along the ground as friction held, with 73 % of the load the foot carried, where the pendulum of
+// the body asked for 13 to 25 %, and the foot crept back while the body ran on.
+static void nbHoldUpright( const nbWorld* world, int index, const nbFigure* f, const nbBalancer* b, float timeStep )
 {
 	if ( b3Joint_IsValid( b->uprightLegs[0] ) == false )
 	{
@@ -1166,7 +1212,13 @@ static void nbHoldUpright( const nbFigure* f, const nbBalancer* b )
 		b3ParallelJoint_SetSpringHertz( joint, nbJointSpringHertz( thigh, root, frameB, false, stiffness, 0.0f ) );
 		const nbBone* hip = f->bones + nb_thighs[leg];
 		float hipTorque = hip->activation * motors->maxTorque * hip->strength;
-		b3ParallelJoint_SetMaxTorque( joint, b3MaxFloat( share[leg] * hipTorque, NB_MIN_HOLD ) );
+		float limit = share[leg] * hipTorque;
+		if ( b->ownStrength && limit > 0.0f && timeStep > 0.0f )
+		{
+			float length = b->thighLength[leg] + b->shinLength[leg];
+			limit = b3MinFloat( limit, nbFootGrip( world, index, f, leg, timeStep ) * length );
+		}
+		b3ParallelJoint_SetMaxTorque( joint, b3MaxFloat( limit, NB_MIN_HOLD ) );
 	}
 }
 
@@ -1253,7 +1305,7 @@ void nbBeginBalance( nbWorld* world, int index, nbFigure* f )
 			def.maxTorque = NB_MIN_HOLD;
 			b->uprightLegs[leg] = b3CreateParallelJoint( world->physicsWorld, &def );
 		}
-		nbHoldUpright( f, b );
+		nbHoldUpright( world, index, f, b, 0.0f );
 	}
 	else if ( motors->uprightTorque > 0.0f && motors->uprightStiffness > 0.0f )
 	{
@@ -1792,7 +1844,7 @@ nbBalanceResult nbUpdateBalance( nbWorld* world, int index, nbFigure* f, float t
 
 	nbCarryBody( f, b, pose );
 	nbBendTrunk( f, b, pose );
-	nbHoldUpright( f, b );
+	nbHoldUpright( world, index, f, b, timeStep );
 	nbRowArms( f, b, timeStep, pose );
 	return nb_balanceGoesOn;
 }

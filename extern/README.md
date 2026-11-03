@@ -853,14 +853,23 @@ setzt auch der Fork VPhysics-Box3D von DMS-in-Gmod für Box3D um, er steht unter
 Gebaut für Schritt F48 der [Roadmap](../docs/Roadmap.md), siehe „Gelenke mit Armature“ in
 [`docs/Optimierungen.md`](../docs/Optimierungen.md).
 
+**Reibung eines Kontakts.** `b3Contact_GetFriction` gibt die Reibung, mit der der Löser einen Kontakt rechnet: die
+Reibungen seiner beiden Formen, gemischt nach der Regel der Welt, `b3WorldDef::frictionCallback`, ohne eigene Regel die
+Wurzel ihres Produkts, auf einem Netz mit mehreren Materialien im Mittel über die Dreiecke, die er berührt
+(`src/contact.c`). Bisher stand sie nur im Kontakt selbst. Nebenan liest damit, wie fest ein Fuß auf dem Boden steht:
+Die Stütze durch ein Bein zieht nicht stärker, als die Kontakte seines Fußes halten, ihre Last mal ihrer Reibung über
+die Länge des Beins. So stimmt das auch in einem Spiel mit eigener Regel für die Reibung. Gebaut für Runde 51 der
+[Roadmap](../docs/Roadmap.md), siehe „Nicht stärker, als der Fuß hält“ in
+[`docs/Optimierungen.md`](../docs/Optimierungen.md).
+
 Die erste, die zweite, die vierte bis achte, die zehnte, die dreizehnte bis einunddreißigste, die dreiunddreißigste bis
 fünfunddreißigste, die neununddreißigste bis dreiundvierzigste, die fünfundvierzigste bis siebenundvierzigste, die
-neunundvierzigste bis neunundfünfzigste ändern an den Ergebnissen nichts, die einundsechzigste nur an Federn mit einer
-Grenze, die nur die Figuren setzen, die zweiundsechzigste nur in Welten mit wachen Gelenken, wo große Inseln jetzt in
-Gebieten rechnen, die dreiundsechzigste, weil Kontakte durch das Erstarren eines Körpers ihre Stöße und Trennachsen
-behalten, die vierundsechzigste nur an Kugelgelenken mit einer Grenze je Richtung, die nur die Figuren setzen, die
-fünfundsechzigste nur an Gelenken mit Armature, die nur die Figuren setzen. Die
-dritte und die neunte ändern sie in den letzten Bits, dafür hängen sie nicht mehr davon ab, in welcher Reihenfolge
+neunundvierzigste bis neunundfünfzigste und die sechsundsechzigste ändern an den Ergebnissen nichts, die
+einundsechzigste nur an Federn mit einer Grenze, die nur die Figuren setzen, die zweiundsechzigste nur in Welten mit
+wachen Gelenken, wo große Inseln jetzt in Gebieten rechnen, die dreiundsechzigste, weil Kontakte durch das Erstarren
+eines Körpers ihre Stöße und Trennachsen behalten, die vierundsechzigste nur an Kugelgelenken mit einer Grenze je
+Richtung, die nur die Figuren setzen, die fünfundsechzigste nur an Gelenken mit Armature, die nur die Figuren setzen.
+Die dritte und die neunte ändern sie in den letzten Bits, dafür hängen sie nicht mehr davon ab, in welcher Reihenfolge
 Formen in die Bäume kommen. Die elfte ändert sie, weil Kontakte zu anderen Zeitpunkten entstehen, die zwölfte, weil sie
 weniger Punkte bekommen, die zweiunddreißigste, weil die Kontakte eines Knotens gebündelt gegen Kopien rechnen statt
 nacheinander, die sechsunddreißigste, weil die Kerne dieselbe Rechnung anders zusammenfassen und deshalb anders runden,
@@ -883,14 +892,15 @@ trennt. Die Ergänzungen stehen in `CMakeLists.txt`, `src/CMakeLists.txt`, `incl
 `src/physics_world.c` und `src/tracy_hide_user.cmake`, jeweils mit „Added for Nebenan“ markiert. `B3_HAS_UNIQUE_HULLS`,
 `B3_HAS_SHAPE_BATCH`, `B3_HAS_SHAPE_CONTACT_LISTS`, `B3_HAS_EXTERNAL_HULLS`, `B3_HAS_BODY_PREFETCH`,
 `B3_HAS_STEP_GUARD`, `B3_HAS_PREVIOUS_TRANSFORM`, `B3_HAS_STATIC_OVERLAP`, `B3_HAS_CONTACT_DATA_OF_BODIES`,
-`B3_HAS_SPRING_TORQUE_LIMITS`, `B3_HAS_KEPT_CONTACTS`, `B3_HAS_SWING_LIMITS` und `B3_HAS_JOINT_ARMATURE` zeigen die
-zweite, die vierte, die fünfte, die sechste, die neunzehnte, die dreißigste, die fünfunddreißigste, die
-zweiundvierzigste, die vierundfünfzigste, die einundsechzigste, die dreiundsechzigste, die vierundsechzigste und die
-fünfundsechzigste an. Fehlen sie, etwa mit einem
-eigenen Box3D, läuft Nebenan wie zuvor, nur wachsen Box3Ds Arrays dann durch Umkopieren, die Hüllen gehen durch die
-Tabelle, jede Form geht einzeln in den Baum, jedes stehende Bruchstück bekommt einen eigenen Körper, Box3D hält eine
-Kopie jeder Hülle, Nebenan holt die Körper der Trümmer nicht voraus, `nbWorld_Step` rechnet auf dem aufrufenden Thread,
-`nbWorld_GetDrawPoses` gibt die Lagen nach dem Schritt, Schutt wird in allen Bäumen gesucht, die Ruhe-Prüfung holt die
-Kontakte jedes ruhigen Stücks für sich, die Federn der Figuren halten ihre Haltung ohne Grenze, erstarrende Trümmer
-verlieren ihre Kontakte mit bewegten Stücken, die Gelenke des Menschen haben statt einer Grenze je Richtung einen
-runden Kegel bis 90°, und sie haben keine Armature.
+`B3_HAS_SPRING_TORQUE_LIMITS`, `B3_HAS_KEPT_CONTACTS`, `B3_HAS_SWING_LIMITS`, `B3_HAS_JOINT_ARMATURE` und
+`B3_HAS_CONTACT_FRICTION` zeigen die zweite, die vierte, die fünfte, die sechste, die neunzehnte, die dreißigste, die
+fünfunddreißigste, die zweiundvierzigste, die vierundfünfzigste, die einundsechzigste, die dreiundsechzigste, die
+vierundsechzigste, die fünfundsechzigste und die sechsundsechzigste an. Fehlen sie, etwa mit einem eigenen Box3D, läuft
+Nebenan wie zuvor, nur wachsen Box3Ds Arrays dann durch Umkopieren, die Hüllen gehen durch die Tabelle, jede Form geht
+einzeln in den Baum, jedes stehende Bruchstück bekommt einen eigenen Körper, Box3D hält eine Kopie jeder Hülle, Nebenan
+holt die Körper der Trümmer nicht voraus, `nbWorld_Step` rechnet auf dem aufrufenden Thread, `nbWorld_GetDrawPoses` gibt
+die Lagen nach dem Schritt, Schutt wird in allen Bäumen gesucht, die Ruhe-Prüfung holt die Kontakte jedes ruhigen Stücks
+für sich, die Federn der Figuren halten ihre Haltung ohne Grenze, erstarrende Trümmer verlieren ihre Kontakte mit
+bewegten Stücken, die Gelenke des Menschen haben statt einer Grenze je Richtung einen runden Kegel bis 90°, sie haben
+keine Armature, und die Stütze durch ein Bein rechnet mit der Reibung, die Box3D ohne eigene Regel der Welt aus dem
+ersten Material jeder Form mischt.

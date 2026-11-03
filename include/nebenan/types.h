@@ -1266,10 +1266,12 @@ typedef struct nbFigureMotors
 
 	/// The hold pulls the pelvis upright against a static anchor of the world. False pulls it against the thighs of the
 	/// legs that carry the figure instead, which push against the ground as a person's do, each with at most the torque
-	/// limit of the joint of its thigh, as the stance hip of a person: the balance from the figure's own strength,
-	/// which catches fewer hits than the hold against the world, see the roadmap, F61. Without the hold against the
-	/// world, also with uprightTorque at zero, a humanoid that catches itself braces its knees, steps at once after a
-	/// clear push, takes up to ten steps in a row instead of five and swings each foot on with the speed it already has.
+	/// limit of the joint of its thigh, as the stance hip of a person, and no harder than its foot holds on the ground,
+	/// the load of its contacts times their friction over the length of the leg: the balance from the figure's own
+	/// strength, which catches fewer hits than the hold against the world, see the roadmap, F61. Without the hold
+	/// against the world, also with uprightTorque at zero, a humanoid that catches itself braces its knees, steps at
+	/// once after a clear push, takes up to ten steps in a row instead of five and swings each foot on with the speed
+	/// it already has.
 	bool uprightAgainstWorld;
 
 	/// While a standing figure follows its clip with dynamic bones, see nbFigureDef::engageRadius, a drive pulls every bone
