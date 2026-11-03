@@ -29,9 +29,14 @@
 #define NB_STEP_OVERSHOOT 0.05f
 
 // The capture point has to lie outside the support by this much, in meters, in this many updates in a row before a step
-// starts
+// starts. A figure that catches itself with its own strength steps after one update when it lies outside by
+// NB_STEP_URGENT, in meters for the humanoid of 1.8 m: two updates keep a figure that only sways from stepping, a hit
+// throws the capture point far out at once, and without the hold against the world a figure that waits an update for it
+// falls on. Of the 1 920 hits on chest and belly from 50 to 89 N s 50 fell instead of 110, see the roadmap, F61, round
+// 49.
 #define NB_STEP_MARGIN 0.03f
 #define NB_DANGER_UPDATES 2
+#define NB_STEP_URGENT 0.1f
 
 // A step: the farthest the ankle lands from the hip over the ground, in meters, its time in seconds, how high the foot
 // lifts, in meters, and the most steps in a row before the figure gives up and falls. Five: rowing arms give a fourth
@@ -45,6 +50,19 @@
 #define NB_STEP_DURATION 0.3f
 #define NB_STEP_HEIGHT 0.12f
 #define NB_MAX_STEPS 5
+
+// A figure that catches itself with its own strength, without the hold against the world, see nbFigureMotors::
+// uprightAgainstWorld, needs more steps to bring its body to rest: the hold against the world held the body upright
+// while the steps stopped it. Of the 1 920 hits on chest and belly from 50 to 89 N s, see the roadmap, F61, round 49,
+// it caught 35 more with ten steps than with five.
+#define NB_OWN_MAX_STEPS 10
+
+// A figure that catches itself with its own strength braces its knees: their torque limit times this, 375 N m for the
+// humanoid of the library at the default limit of the motors, about what the muscles of a strong man's knee hold while
+// they brake a knee that bends under the weight, up to half again as much as they push. At 225 N m the knee of the
+// stance leg gave way: of the 1 920 hits on chest and belly from 50 to 89 N s 144 fell instead of 50. The figure braces
+// them only while it catches itself, so it falls as limp as before.
+#define NB_KNEE_BRACE ( 2.5f / 1.5f )
 
 // No step starts that would leave the capture point at its landing more than this far outside the support, in meters
 // for the humanoid of 1.8 m: that far no step catches the figure, and it falls at once, as the roadmap of the game, 26.4,
@@ -1099,7 +1117,9 @@ static b3Quat nbQuatZTo( b3Vec3 direction )
 // Where the ground cannot hold the foot, the thigh pushes it away under the body: after 74 N s from the front and left
 // the stance foot slid 36 cm forward in a tenth of a second while the figure fell back. A person whose foot slides eases
 // off the hip, so the hold through a leg eases while its foot slides faster than NB_SLIDE_SPEED and lets go once it
-// slides NB_SLIDE_RANGE faster still.
+// slides NB_SLIDE_RANGE faster still. The hold through a leg is the stance hip of a person, so it pulls as hard as the
+// joint of the thigh may, its torque limit, 300 N m for the humanoid of the library: with 125 N m, uprightTorque, which
+// bounded it up to active-ragdoll-48, 74 of the 1 920 hits on chest and belly from 50 to 89 N s fell, with 300 N m 50.
 static void nbHoldUpright( const nbFigure* f, const nbBalancer* b )
 {
 	if ( b3Joint_IsValid( b->uprightLegs[0] ) == false )
@@ -1142,7 +1162,9 @@ static void nbHoldUpright( const nbFigure* f, const nbBalancer* b )
 		b3Joint_SetLocalFrameA( joint, (b3Transform){ b3Vec3_zero, upInThigh } );
 		float stiffness = b3MaxFloat( share[leg] * motors->uprightStiffness, 1.0f );
 		b3ParallelJoint_SetSpringHertz( joint, nbJointSpringHertz( thigh, root, frameB, false, stiffness, 0.0f ) );
-		b3ParallelJoint_SetMaxTorque( joint, b3MaxFloat( share[leg] * motors->uprightTorque, NB_MIN_HOLD ) );
+		const nbBone* hip = f->bones + nb_thighs[leg];
+		float hipTorque = hip->activation * motors->maxTorque * hip->strength;
+		b3ParallelJoint_SetMaxTorque( joint, b3MaxFloat( share[leg] * hipTorque, NB_MIN_HOLD ) );
 	}
 }
 
@@ -1203,8 +1225,14 @@ void nbBeginBalance( nbWorld* world, int index, nbFigure* f )
 
 	// The upright hold: parallel joints keep the up axis of the pelvis along the up of the world with a bounded torque,
 	// against the thighs of the legs that carry the figure or against the static anchor of the world, see
-	// nbFigureMotors::uprightAgainstWorld
+	// nbFigureMotors::uprightAgainstWorld. Without the one against the world the figure catches itself with its own
+	// strength and braces its knees, see NB_KNEE_BRACE.
 	const nbFigureMotors* motors = &f->def.motors;
+	b->ownStrength = ( motors->uprightTorque > 0.0f && motors->uprightStiffness > 0.0f && motors->uprightAgainstWorld ) == false;
+	for ( int leg = 0; leg < 2; ++leg )
+	{
+		f->bones[nb_shins[leg]].brace = b->ownStrength ? NB_KNEE_BRACE : 1.0f;
+	}
 	if ( motors->uprightTorque > 0.0f && motors->uprightStiffness > 0.0f && motors->uprightAgainstWorld == false )
 	{
 		// Between the pelvis and each thigh, the up of the world held in the frame of the thigh, see nbHoldUpright
@@ -1262,6 +1290,10 @@ void nbEndBalance( nbFigure* f )
 	}
 	b->stepping = false;
 	b->stepFoot = -1;
+	for ( int leg = 0; leg < 2; ++leg )
+	{
+		f->bones[nb_shins[leg]].brace = 1.0f;
+	}
 }
 
 // The legs on the ground carry the body above them, stage 2 of the balance from the figure's own strength, see the
@@ -1618,7 +1650,8 @@ nbBalanceResult nbUpdateBalance( nbWorld* world, int index, nbFigure* f, float t
 		{
 			b->dangerUpdates = NB_DANGER_UPDATES;
 		}
-		if ( b->dangerUpdates >= NB_DANGER_UPDATES && nbStartCatchStep( world, index, f, b ) == false )
+		bool urgent = b->ownStrength && b->dangerUpdates >= 1 && b->captureMargin > NB_STEP_URGENT * b->scale;
+		if ( ( b->dangerUpdates >= NB_DANGER_UPDATES || urgent ) && nbStartCatchStep( world, index, f, b ) == false )
 		{
 			return nb_balanceFell;
 		}
@@ -1663,7 +1696,8 @@ nbBalanceResult nbUpdateBalance( nbWorld* world, int index, nbFigure* f, float t
 					b->plant[leg] = nbPlant( f, b, leg );
 				}
 			}
-			else if ( b->stepCount >= NB_MAX_STEPS || nbStartCatchStep( world, index, f, b ) == false )
+			else if ( b->stepCount >= ( b->ownStrength ? NB_OWN_MAX_STEPS : NB_MAX_STEPS ) ||
+					  nbStartCatchStep( world, index, f, b ) == false )
 			{
 				return nb_balanceFell;
 			}

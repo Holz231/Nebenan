@@ -1365,7 +1365,7 @@ static void nbApplyMuscles( nbFigure* f, int index, bool on, float factor )
 	}
 
 #if NB_SPRING_TORQUE_LIMITS
-	float maxTorque = b3MaxFloat( 0.0f, factor * bone->activation * f->def.motors.maxTorque * bone->strength );
+	float maxTorque = b3MaxFloat( 0.0f, factor * bone->brace * bone->activation * f->def.motors.maxTorque * bone->strength );
 	if ( maxTorque != bone->springTorque )
 	{
 		if ( hinge )
@@ -4651,6 +4651,7 @@ nbFigureId nbCreateFigure( nbWorldId worldId, const nbFigureDef* def )
 		}
 		bone->swingInside = 0.0f;
 		bone->strength = boneDef->strength;
+		bone->brace = 1.0f;
 		bone->stiffness = b3MaxFloat( 0.0f, boneDef->stiffness );
 		bone->damping = b3MaxFloat( 0.0f, boneDef->damping );
 		bone->armature = NB_JOINT_ARMATURE ? b3MaxFloat( 0.0f, boneDef->armature ) : 0.0f;

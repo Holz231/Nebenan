@@ -67,6 +67,10 @@ typedef struct nbBone
 	float armature;
 	float mass;
 
+	// Scales the torque limit of the joint on top of its strength while the figure braces it, one otherwise, see
+	// NB_KNEE_BRACE
+	float brace;
+
 	// The spring of the joint at strength 1 in cycles per second, from the inertia of the two bones when the figure fell
 	float hertz;
 
@@ -222,9 +226,11 @@ typedef struct nbBalancer
 	float armSlack[2];
 
 	// The hold that keeps the pelvis upright, see nbFigureMotors::uprightTorque: against the world, or between the pelvis
-	// and each thigh, shared by the legs that carry the figure
+	// and each thigh, shared by the legs that carry the figure. Without the hold against the world the figure catches
+	// itself with its own strength, see NB_OWN_MAX_STEPS.
 	b3JointId upright;
 	b3JointId uprightLegs[2];
+	bool ownStrength;
 } nbBalancer;
 
 // What balance found in an update, see nbUpdateBalance

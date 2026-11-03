@@ -1258,15 +1258,18 @@ typedef struct nbFigureMotors
 	/// While the figure catches itself, see nb_figureBalancing, a hold keeps its pelvis upright: a spring of this stiffness
 	/// in newton meters per radian and this damping ratio, with at most this torque in newton meters. It lets go at once
 	/// when the figure falls. Zero torque takes it away. Up to active-ragdoll-41 the parallel joint of Box3D applied
-	/// half of its limit, and the 250 N m that were the default held 125, the default since.
+	/// half of its limit, and the 250 N m that were the default held 125, the default since. The torque bounds the hold
+	/// against the world only: through the legs, see uprightAgainstWorld, the hold pulls as hard as the hip may.
 	float uprightTorque;
 	float uprightStiffness;
 	float uprightDampingRatio;
 
 	/// The hold pulls the pelvis upright against a static anchor of the world. False pulls it against the thighs of the
-	/// legs that carry the figure instead, which push against the ground as a person's do: the first stage of a balance
-	/// from the figure's own strength, which catches far fewer hits than the hold against the world, see the roadmap,
-	/// F61
+	/// legs that carry the figure instead, which push against the ground as a person's do, each with at most the torque
+	/// limit of the joint of its thigh, as the stance hip of a person: the balance from the figure's own strength,
+	/// which catches fewer hits than the hold against the world, see the roadmap, F61. Without the hold against the
+	/// world, also with uprightTorque at zero, a humanoid that catches itself braces its knees, steps at once after a
+	/// clear push and takes up to ten steps in a row instead of five.
 	bool uprightAgainstWorld;
 
 	/// While a standing figure follows its clip with dynamic bones, see nbFigureDef::engageRadius, a drive pulls every bone

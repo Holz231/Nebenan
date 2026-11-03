@@ -858,15 +858,71 @@ static int FigureRowTest( void )
 	return 0;
 }
 
-// The hold through the legs, see nbFigureMotors::uprightAgainstWorld: while the figure catches itself, its pelvis is held
-// upright against the thighs of the legs that carry it, which push against the ground as a person's do, and not against
-// the world, whose anchor is never made. It is the first stage of the balance from the figure's own strength, F61 of the
-// roadmap, and catches far less than the hold against the world: of the 168 light hits from 40 to 80 N s on the upper
-// chest it lets 17 fall, 43 before the upper body bent on with the tilt of the pelvis in round 41, see nbBendTrunk, and
-// 87 before the legs carried the body in round 40, see nbCarryBody, the hold against the world none. 52 N s from its
-// right it catches with three steps, the same with one thread and with four.
+// The hold through the legs, see nbFigureMotors::uprightAgainstWorld: while the figure catches itself, its pelvis is
+// held upright against the thighs of the legs that carry it, which push against the ground as a person's do, and not
+// against the world, whose anchor is never made. It is the balance from the figure's own strength, F61 of the roadmap:
+// of the 168 light hits from 40 to 80 N s on the upper chest it lets none fall since round 49, where the hold pulls
+// with the strength of the hip, the figure braces its knees and steps at once after a clear push, see NB_KNEE_BRACE, 9
+// in round 45, 17 in round 41, 43 before the upper body bent on with the tilt of the pelvis, see nbBendTrunk, and 87
+// before the legs carried the body in round 40, see nbCarryBody. 52 N s from its right it catches with steps, the same
+// with one thread and with four, and its knees hold 375 N m while it catches itself, those of a figure with the hold
+// against the world 225. From eight directions it catches 50 and 70 N s on the upper chest.
+static float KneeLimit( nbFigureId figure )
+{
+	b3BodyId shin = nbFigure_GetBody( figure, nb_humanoidShinLeft );
+	b3JointId joints[8];
+	int count = b3Body_GetJoints( shin, joints, 8 );
+	for ( int j = 0; j < count; ++j )
+	{
+		if ( b3Joint_GetType( joints[j] ) == b3_revoluteJoint )
+		{
+			return b3RevoluteJoint_GetMaxSpringTorque( joints[j] );
+		}
+	}
+	return 0.0f;
+}
+
 static int FigureLegHoldTest( void )
 {
+	// The knees of a figure that catches itself with the hold against the world are not braced
+	{
+		FigureScene scene;
+		CreateFigureScene( &scene, 1 );
+		nbFigureId figure = AddFigure( &scene, b3Vec3_zero, 0.0f );
+		StepFigures( &scene, 30 );
+		ENSURE( HitChest( figure, 1, (b3Vec3){ 52.0f, 0.0f, 0.0f } ) );
+		StepFigures( &scene, 2 );
+		ENSURE( nbFigure_GetState( figure ) == nb_figureBalancing );
+		ENSURE_SMALL( KneeLimit( figure ) - 225.0f, 0.01f );
+		DestroyFigureScene( &scene );
+	}
+
+	// With its own strength it catches every one of these hits, after one with fewer steps or more than five
+	int mostSteps = 0;
+	for ( int d = 0; d < 8; ++d )
+	{
+		for ( int impulse = 50; impulse <= 70; impulse += 20 )
+		{
+			FigureScene scene;
+			CreateFigureScene( &scene, 1 );
+			nbFigureDef def = nbDefaultFigureDef();
+			def.rig = &scene.rig;
+			def.standHeight = scene.standHeight;
+			def.motors.uprightAgainstWorld = false;
+			nbFigureId figure = nbCreateFigure( scene.world, &def );
+			StepFigures( &scene, 30 );
+			b3Vec3 direction = b3RotateVector( b3MakeQuatFromAxisAngle( b3Vec3_axisY, 0.25f * B3_PI * (float)d ),
+											   (b3Vec3){ 0.0f, 0.0f, -1.0f } );
+			ENSURE( HitChest( figure, 1, b3MulSV( (float)impulse, direction ) ) );
+			ENSURE( StepUntil( &scene, figure, nb_figureAnimated, 600 ) >= 0 );
+			nbFigureInfo info = nbFigure_GetInfo( figure );
+			ENSURE( info.knockdownCount == 0 );
+			mostSteps = b3MaxInt( mostSteps, info.stepCount );
+			DestroyFigureScene( &scene );
+		}
+	}
+	printf( "  50 and 70 N s from eight directions with its own strength: all caught, at most %d steps\n", mostSteps );
+
 	uint32_t hashes[2] = { 0u, 0u };
 	for ( int pass = 0; pass < 2; ++pass )
 	{
@@ -896,6 +952,8 @@ static int FigureLegHoldTest( void )
 		}
 		ENSURE( count == standing + 2 && thighs == 2 );
 		ENSURE( b3Body_IsValid( nbGetWorldFromId( scene.world )->figureAnchor ) == false );
+		StepFigures( &scene, 2 );
+		ENSURE_SMALL( KneeLimit( figure ) - 375.0f, 0.01f );
 
 		// On its feet all the time, and standing animated again with the joints of its skeleton alone
 		int steps = 0;
