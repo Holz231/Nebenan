@@ -47,11 +47,16 @@
 #define NB_MAX_STEPS 5
 
 // No step starts that would leave the capture point at its landing more than this far outside the support, in meters
-// for the humanoid of 1.8 m. That far neither the arms nor the steps after it catch the figure, and it falls at once
-// instead of flying stiff and upright. Of the hits it caught on the upper chest from eight directions up to 132 N s, the
-// first step left the capture point at most 0.93 m outside up to active-ragdoll-38 and 1.16 m since the capture point
-// counts the turn of the body, see nbMeasure. With 1.1 m it gave up on 8 of them.
-#define NB_GIVE_UP 1.2f
+// for the humanoid of 1.8 m: that far no step catches the figure, and it falls at once, as the roadmap of the game, 26.4,
+// wants it after an extreme hit. Below it a strong hit makes the figure stumble a step or two and fall when they do not
+// catch it, the stumble before the full ragdoll of 26.4 and 28.3. The prediction of nbPlanFoot runs about twice as far
+// as the capture point really goes in the first step, see the roadmap, F62, so the limit lies well beyond one step. Up
+// to active-ragdoll-46 it was 1.2 m, and above what it caught the figure fell at once: on the upper chest from 115 N s
+// from the sides, from 125 from the front and from 135 from behind. With 1.5 m it catches up to 130 instead of 120 N s
+// from the front and up to 135 instead of 130 from behind, stumbles and falls at 115 to 125 N s from the sides, 135 from
+// the front and 140 to 150 from behind, and falls at once from 130, 140 and 155 N s. Of the 2 064 hits on chest and
+// belly from 90 to 139 N s 345, 341, 340 and 340 fell with 1.3, 1.4, 1.5 and 2 m instead of 362.
+#define NB_GIVE_UP 1.5f
 
 // The figure falls when its pelvis tilts farther than this from upright, in radians, or its center of mass sinks below
 // this part of its height standing, in the first pose of its idle clip, see nbInitBalancer

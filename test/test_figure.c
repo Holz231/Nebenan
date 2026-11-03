@@ -675,7 +675,10 @@ static int FigureSwingTest( void )
 // left it catches up to 102 and 106 to 110 and falls at 104. Round 45, whose soles grip like rubber, see
 // NB_SOLE_FRICTION, catches up to 120 N s from the front and gives up from 122, and from either side it catches every
 // hit up to 110 N s and gives up from 112, where round 44 fell at 110 from its right and at 102 and 110 from its left,
-// each time after two steps. The test gives 112 from its right.
+// each time after two steps. The test gives 112 from its right. Round 47, which gives up only where the first step would
+// leave the capture point 1.5 m out, see NB_GIVE_UP, stumbles two steps after 112 N s from its right and falls after 23
+// updates, as the roadmap of the game wants after a strong hit, and still falls at once after 150 N s from the front,
+// an extreme hit.
 static int FigureCatchTest( void )
 {
 	typedef struct CatchCase
@@ -683,13 +686,14 @@ static int FigureCatchTest( void )
 		const char* name;
 		b3Vec3 impulse;
 		bool falls;
+		bool stumbles;
 	} CatchCase;
 	CatchCase cases[] = {
 		{ "60 N s from the front", { 0.0f, 0.0f, -60.0f }, false },	 { "70 N s from the front", { 0.0f, 0.0f, -70.0f }, false },
 		{ "80 N s from behind", { 0.0f, 0.0f, 80.0f }, false },		 { "60 N s from its right", { 60.0f, 0.0f, 0.0f }, false },
 		{ "60 N s from its left", { -60.0f, 0.0f, 0.0f }, false },	 { "100 N s from the front", { 0.0f, 0.0f, -100.0f }, false },
 		{ "80 N s from its right", { 80.0f, 0.0f, 0.0f }, false },	 { "80 N s from its left", { -80.0f, 0.0f, 0.0f }, false },
-		{ "150 N s from the front", { 0.0f, 0.0f, -150.0f }, true }, { "112 N s from its right", { 112.0f, 0.0f, 0.0f }, true },
+		{ "150 N s from the front", { 0.0f, 0.0f, -150.0f }, true }, { "112 N s from its right", { 112.0f, 0.0f, 0.0f }, true, true },
 	};
 	for ( size_t c = 0; c < sizeof( cases ) / sizeof( cases[0] ); ++c )
 	{
@@ -714,6 +718,7 @@ static int FigureCatchTest( void )
 			printf( "  %s: falls after %d updates and %d steps\n", cases[c].name, steps, info.stepCount );
 			ENSURE( 0 < steps && steps <= 42 );
 			ENSURE( info.stepCount <= 2 && info.knockdownCount == 1 && info.catchCount == 0 );
+			ENSURE( cases[c].stumbles ? info.stepCount >= 1 : info.stepCount == 0 );
 			DestroyFigureScene( &scene );
 			continue;
 		}
