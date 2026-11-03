@@ -2763,9 +2763,11 @@ glslang und SPIRV-Cross geprüft. Ein Lauf von sokol-shdc schreibt ihn neu.
 - Nach einem harten Stoß tritt eine Figur so lange wie nach einem leichten, 0,3 s, und ihr Schwungbein folgt seinem Ziel
   etwa 0,1 s zu spät. Ihr erster Schritt landet so oft über sein Ziel hinaus, und sie steht danach breit. Schnellere
   Schritte ließen in Runde 34 mehr Treffer fallen, nicht weniger, siehe F60 der Roadmap, und ein Schwungbein, dessen
-  Gelenke ihrem Ziel mit dessen Geschwindigkeit folgen, in Runde 45 auch. Bis `active-ragdoll-33` plante
-  sie ihre Schritte nach der Richtung ihres Beckens und fiel nach 4 von 168 leichten Treffern in der Szene der Tests,
-  siehe Füße statt Becken.
+  Gelenke ihrem Ziel mit dessen Geschwindigkeit folgen, in Runde 45 auch. Sie plant nur den nächsten Schritt: Ab dem
+  zweiten Schritt sagt ihr Pendel den Capture Point bei der Landung im Mittel 13 bis 18 cm falsch voraus, und zwei
+  Schritte im Voraus geplant fingen in Runde 46 weniger, siehe F62 der Roadmap. Bis `active-ragdoll-33` plante sie ihre
+  Schritte nach der Richtung ihres Beckens und fiel nach 4 von 168 leichten Treffern in der Szene der Tests, siehe Füße
+  statt Becken.
 - Die Muskeln (`nbFigureMotors::muscles`) sind eine Näherung auf der Ebene der Gelenke und standardmäßig aus. Ihre
   Kraft wirkt über die Feder eines Gelenks, deren Drehmomentgrenze auch ihre Dämpfung begrenzt, so nimmt die Kurve von
   Hill einem schnell gedrehten Gelenk auch Dämpfung. Kraft nach Winkel, Bänder, Sehnen und eine Reaktionszeit fehlen
