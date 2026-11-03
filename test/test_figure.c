@@ -864,9 +864,10 @@ static int FigureRowTest( void )
 // of the 168 light hits from 40 to 80 N s on the upper chest it lets none fall since round 49, where the hold pulls
 // with the strength of the hip, the figure braces its knees and steps at once after a clear push, see NB_KNEE_BRACE, 9
 // in round 45, 17 in round 41, 43 before the upper body bent on with the tilt of the pelvis, see nbBendTrunk, and 87
-// before the legs carried the body in round 40, see nbCarryBody. 52 N s from its right it catches with steps, the same
-// with one thread and with four, and its knees hold 375 N m while it catches itself, those of a figure with the hold
-// against the world 225. From eight directions it catches 50 and 70 N s on the upper chest.
+// before the legs carried the body in round 40, see nbCarryBody. Since round 50 it swings each foot on with the speed
+// the foot already has. 52 N s from its right it catches with steps, the same with one thread and with four, and its
+// knees hold 375 N m while it catches itself, those of a figure with the hold against the world 225. From eight
+// directions it catches 50 and 70 N s on the upper chest.
 static float KneeLimit( nbFigureId figure )
 {
 	b3BodyId shin = nbFigure_GetBody( figure, nb_humanoidShinLeft );

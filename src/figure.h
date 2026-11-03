@@ -191,10 +191,10 @@ typedef struct nbBalancer
 	b3Vec3 supportMiddle;
 
 	// A step: whether one swings, how long since it began or the figure stood, the foot, the steps in a row and the foot
-	// that stepped last, where the ankles are planted, where the swinging one started and where it lands, and how far the
-	// capture point at its landing lies outside the support of both soles, negative inside. Updates in a row with the
-	// capture point outside, seconds without a foot on the ground, seconds with one foot alone on the ground, seconds
-	// calm and seconds without rest and without a push.
+	// that stepped last, where the ankles are planted, where the swinging one started, how fast it moved over the ground
+	// then and where it lands, and how far the capture point at its landing lies outside the support of both soles,
+	// negative inside. Updates in a row with the capture point outside, seconds without a foot on the ground, seconds
+	// with one foot alone on the ground, seconds calm and seconds without rest and without a push.
 	bool stepping;
 	float stateTime;
 	int stepFoot;
@@ -202,6 +202,7 @@ typedef struct nbBalancer
 	int lastFoot;
 	b3Vec3 plant[2];
 	b3Vec3 swingStart;
+	b3Vec3 swingVelocity;
 	b3Vec3 stepAnkle;
 	float stepResidual;
 	int dangerUpdates;

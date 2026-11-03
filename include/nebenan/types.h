@@ -1269,7 +1269,7 @@ typedef struct nbFigureMotors
 	/// limit of the joint of its thigh, as the stance hip of a person: the balance from the figure's own strength,
 	/// which catches fewer hits than the hold against the world, see the roadmap, F61. Without the hold against the
 	/// world, also with uprightTorque at zero, a humanoid that catches itself braces its knees, steps at once after a
-	/// clear push and takes up to ten steps in a row instead of five.
+	/// clear push, takes up to ten steps in a row instead of five and swings each foot on with the speed it already has.
 	bool uprightAgainstWorld;
 
 	/// While a standing figure follows its clip with dynamic bones, see nbFigureDef::engageRadius, a drive pulls every bone

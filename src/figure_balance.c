@@ -1091,6 +1091,8 @@ static bool nbStartCatchStep( const nbWorld* world, int index, nbFigure* f, nbBa
 	b->stepAnkle = bestTarget;
 	b->stepResidual = bestResidual;
 	b->swingStart = nbAnkle( f, bestFoot );
+	b3BodyId swingBody = f->bones[nb_feet[bestFoot]].bodyId;
+	b->swingVelocity = nbFlat( b3Body_GetWorldPointVelocity( swingBody, b3Body_GetPosition( swingBody ) ), b->up );
 	b->dangerUpdates = 0;
 	b->oneFootTime = 0.0f;
 	f->stepCount += 1;
@@ -1760,6 +1762,23 @@ nbBalanceResult nbUpdateBalance( nbWorld* world, int index, nbFigure* f, float t
 		float phase = b3ClampFloat( b->stateTime / NB_STEP_DURATION, 0.0f, 1.0f );
 		float progress = nbSmooth( phase );
 		b3Vec3 swing = b3Add( b3MulSV( 1.0f - progress, b->swingStart ), b3MulSV( progress, b->stepAnkle ) );
+		if ( b->ownStrength )
+		{
+			// A figure that catches itself with its own strength swings the foot on with the speed it had along its way
+			// when the step began, on a cubic from that speed to rest at the target, instead of easing it out of rest.
+			// The smooth start braked a foot that already moved, and the swing leg, whose springs damp against
+			// standstill, fell behind its target for the rest of the step and came down short. At most three times the
+			// way over the time of the step, the most such a cubic takes without passing the target, and never back.
+			b3Vec3 way = nbFlat( b3Sub( b->stepAnkle, b->swingStart ), up );
+			float length = b3Length( way );
+			if ( length > 1.0e-3f )
+			{
+				b3Vec3 direction = b3MulSV( 1.0f / length, way );
+				float start = b3ClampFloat( b3Dot( b->swingVelocity, direction ), 0.0f, 3.0f * length / NB_STEP_DURATION );
+				float shape = phase * ( 1.0f - phase ) * ( 1.0f - phase );
+				swing = b3MulAdd( swing, NB_STEP_DURATION * start * shape, direction );
+			}
+		}
 		swing = b3MulAdd( swing, NB_STEP_HEIGHT * b->scale * b3ComputeCosSin( B3_PI * phase ).sine, up );
 
 		// The stance leg holds the pelvis upright at standing height. The swinging leg reaches from the pelvis turned
