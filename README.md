@@ -2783,7 +2783,10 @@ glslang und SPIRV-Cross geprüft. Ein Lauf von sokol-shdc schreibt ihn neu.
   das Becken gegen die Oberschenkel, oder `uprightTorque` auf null. Dann fängt sich der Mensch der Bibliothek
   schlechter: Von 168 leichten Treffern fallen 9 und ohne Gelenk 17, mit dem Gelenk gegen die Welt keiner, mit dem
   Gelenk gegen die Oberschenkel auf die Brust getroffen von vorn schon ab 66 N s, von links ab 72, von rechts ab 86 und
-  von hinten ab 94 N s. Die eigene Balance wächst Stufe für Stufe, siehe F61 der Roadmap.
+  von hinten ab 94 N s. Die eigene Balance wächst Stufe für Stufe, siehe F61 der Roadmap. Im Vergleich aller Ansätze,
+  Runde 48 der Roadmap, fängt die Stütze gegen die Welt am meisten und hängt am wenigsten vom Zufall ab. Sie hilft aber
+  gleich stark, ob die Figur ruhig steht oder schon taumelt: Nach 60 N s auf die Brust wirft sie ein zweiter Treffer aus
+  derselben Richtung 0,1 bis 0,3 s später bis 70 N s fast nie um, siehe F75 der Roadmap.
 - Nach einem harten Stoß tritt eine Figur so lange wie nach einem leichten, 0,3 s, und ihr Schwungbein folgt seinem Ziel
   etwa 0,1 s zu spät. Ihr erster Schritt landet so oft über sein Ziel hinaus, und sie steht danach breit. Schnellere
   Schritte ließen in Runde 34 mehr Treffer fallen, nicht weniger, siehe F60 der Roadmap, und ein Schwungbein, dessen
