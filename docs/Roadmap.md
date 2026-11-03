@@ -2205,6 +2205,34 @@ fangen“ und die Zeilen danach in [Optimierungen](Optimierungen.md). Von den 50
 24, 14 davon nach Treffern von hinten, und 14 kippen. Vorgeschlagen ist als Runde 50 weiter die eigene Kraft: warum die
 Figur nach einem Stoß von hinten im Treten nach vorn einsinkt.
 
+Clip als Absicht, Physik als Ausführung, am 3. November 2026 mit dem Nutzer besprochen, nach einer Recherche des Nutzers
+zu aktiven Ragdolls mit eigener Balance. Einen Salto kann eine Figur auf drei Arten ausführen. Kinematisch setzt der
+Clip Lage und Drehung jedes Knochens, und ein Treffer bringt den Körper nicht aus der Bahn. Bei der physikalischen
+Clip-Verfolgung gibt der Clip die Ziele der Gelenke, Muskeln ziehen mit begrenzter Kraft dorthin, und ein Treffer stört
+die Bewegung. Und ein Controller rechnet die Ziele der Gelenke aus dem Zustand des Körpers. Nebenan nutzt heute alle
+drei: Im Stand, in Kampfclips und beim Aufstehen ist eine Figur kinematisch, und ein harter Treffer macht sie im selben
+Moment dynamisch, mit dem Schwung, den der Clip ihren Knochen gerade gibt. Nah am Gegner folgt sie mit `engageRadius`
+ihrem Clip physikalisch. Nach einem harten Treffer ziehen ihre Gelenke zur Haltung des Clips, und die Balance verändert
+Beine, Arme und Rumpf nach dem Zustand. Das Zielbild des Nutzers ist das für jede Bewegung: Die Gelenke folgen den
+Drehungen des Clips, Lage und Drehung des Beckens erreicht der Körper selbst, Balance und Flug verändern die Ziele nach
+dem Zustand, und Treffer wirken auf die dynamischen Knochen. Ein Clip, der einen Salto zeigt, garantiert dann keinen
+Salto: Springen die Beine zu schwach ab, kommt die Figur nicht hoch genug, und reicht der Drehimpuls nicht, dreht sie
+nicht ganz herum. Die Falle dabei steckt in `nbBeginFollowing`: Es hängt jeden Knochen eines folgenden Kämpfers über ein
+Motorgelenk an einen festen Anker der Welt, das so stark ziehen darf, wie der Clip den Knochen beschleunigt, bis 981
+m/s², und dazu sein Gewicht trägt. Einen Salto machten diese Fäden, nicht die Beine. Sie waren in Runde 43 der
+Kompromiss, damit Kämpfer überhaupt schon physikalisch folgen. Ohne sie und ohne die Stütze gegen die Welt fängt sich
+die Figur noch nicht gut genug, von 1 920 Treffern mit 50 bis 89 N s fallen 50 statt keinem. Der Weg zum Zielbild ist
+F76, in dieser Reihenfolge: zuerst die eigene Kraft so gut wie die Stütze gegen die Welt, F61, dann Folgen ohne Fäden
+als Option, dann Laufen aus eigener Kraft, wenn das Spiel die Figur bewegt, und zuletzt Absprung, Flug und Landung. Zwei
+Grenzen bleiben. Die Akrobatik des Spielers bleibt nach Kapitel 2 der Roadmap des Spiels kinematisch, bis ein harter
+Treffer sie physikalisch macht: Ein Salto, der auf Knopfdruck misslingt, weil der Absprung nicht genau genug gesteuert
+ist, wirkt wie ein Fehler. Und eine physikalische Figur kostet rund 13-mal so viel wie eine kinematische, 0,065 statt
+0,005 ms pro Schritt, siehe Runde 43, fern vom Geschehen bleibt eine Figur darum kinematisch, wie 26.17 es will. Die
+Recherche empfiehlt dieselben Bausteine, die die Bibliothek hat: Clip, Muskeln mit Grenze, Balance mit Capture Point und
+Schritten, und kein versteckter Halt am Becken, also die eigene Kraft. Nicht übernommen und warum: Figuren, die immer
+physikalisch sind, für alle, siehe oben. Gelernte Steuerungen wie DeepMimic oder Isaac Lab, die für Box3D neu trainiert
+werden und auf jeder Plattform bitgleich rechnen müssten. Und Assets für Unity, die nur dort laufen.
+
 | Nr. | Schritt | Gewinn | Voraussetzung | Stand |
 | ---: | --- | --- | --- | --- |
 | F1 | **Federn mit Grenze in Box3D**: Dreh- und Kugelgelenke ziehen mit begrenztem Drehmoment, nach 27.15 P2 der Roadmap des Spiels, bitgleich ohne Grenze | Voraussetzung der aktiven Ragdolls | – | ✅ auf `active-ragdoll-1`: `maxSpringTorque`, siehe „Federn mit Grenze“ in [`extern/README.md`](../extern/README.md) |
@@ -2282,6 +2310,7 @@ Figur nach einem Stoß von hinten im Treten nach vorn einsinkt.
 | F73 | **Vorsteuerung aus inverser Dynamik**: Die Gelenke folgender Kämpfer ziehen mit voller Kraft und kennen seit Runde 43 die Drehgeschwindigkeit des Clips, die Antriebe ziehen so stark, wie der Clip den Knochen beschleunigt. Nach der inversen Dynamik, wie Simbody und OpenSim sie rechnen, ergibt sich aus dem Clip für jedes Gelenk das Drehmoment, das seine Bewegung samt allem, was es trägt, braucht, rekursiv von Händen und Füßen zum Becken. Bekommen die Gelenke dieses Drehmoment vorab mit, können Federn und Antriebe weicher sein, ohne dass ein Schlag nachläuft: Ein Arm, der etwas trifft, gibt nach, und zwei Kämpfer stemmen sich nicht mit voller Kraft gegeneinander | Weiche, natürliche Reaktionen bei genauer Bewegung, kleinere Kräfte im Clinch | F64 Stufe 2 | 🔜 vorgeschlagen am 2. November 2026, mittel bis groß: Box3D bräuchte ein vorgegebenes Drehmoment im Kugelgelenk und im Scharnier, bei null bitgleich |
 | F74 | **Zahlen der Balance mit einem Optimierer abstimmen**: Die Zahlen der Balance sind von Hand gemessen und gewählt, Variante für Variante an den Tabellen der Treffer. Mit einem Optimierer wie CMA-ES, den Simbody mitbringt und den Arbeiten zu SIMBICON nutzen, ließen sich mehrere Zahlen zugleich gegen dieselben Tabellen abstimmen, deterministisch auf der VM, mit einem zurückgehaltenen Teil der Treffer zum Prüfen, damit sie nicht nur auf die gemessenen passen | Mehr gefangene Treffer, ohne jede Zahl einzeln zu suchen | F61 | 🔜 vorgeschlagen am 2. November 2026, niedrig, nach Wunsch des Nutzers |
 | F75 | **Folgetreffer werfen eine taumelnde Figur um**: Die Stütze gegen die Welt hilft gleich stark, ob die Figur ruhig steht oder schon taumelt. Nach 60 N s auf die obere Brust und einem zweiten Treffer aus derselben Richtung 0,1 bis 0,3 s später fällt sie von je 72 nach 20 bis 70 N s zusammen einmal, nach 80 N s 7-mal, durch die Beine nach 50 N s schon 46-mal. Ein Treffer auf eine Figur, die sich schon fängt, soll ihre Stütze schwächen, nach seiner Stärke, so dass Folgetreffer sie umwerfen, wie 30.9 der Roadmap des Spiels es verlangt, „Kick bei gutem Stand führt zu Stabilisierung, bei schlechter Stütze zu Sturz“, und wie die Struktur in 30.5. Als Variante gemessen: Halbiert jeder solche Treffer die Stütze, fallen nach zweiten Treffern von 60, 70 und 80 N s 8, 12 und 28 von 72, und Treffer auf eine stehende Figur enden bitgleich wie vorher. Dazu eine Zahl in `nbFigureMotors` und ein Test mit zwei Treffern | Kombos wirken, ein Spieler sieht, warum die Figur fällt, Treffer auf eine stehende Figur bleiben, wie sie sind | F29, Runde 47 | 🔜 vorgeschlagen als Runde 49, nach dem Vergleich der Ansätze in Runde 48, ⏸ am 3. November 2026 zurückgestellt: Dem Nutzer ist die eigene Kraft wichtiger, siehe Runde 49 |
+| F76 | **Clip als Absicht, Physik als Ausführung**: Jede Bewegung einer Figur kommt aus ihrer eigenen Kraft. Die Gelenke folgen den Drehungen des Clips mit begrenzter Kraft, Lage und Drehung des Beckens erreicht der Körper selbst über Füße und Gelenke, Balance und Flug verändern die Ziele nach dem Zustand des Körpers, und Treffer wirken auf die dynamischen Knochen. Kein Faden zum Clip und keine Stütze gegen die Welt. In vier Schritten, in dieser Reihenfolge: 1. Die eigene Kraft fängt so gut wie die Stütze gegen die Welt, F61. 2. Folgen ohne Fäden als Option, gemessen an Stehen, Schlagen, Blocken und Treffern, gegen eine Faust, die dem Clip nachläuft, hilft F73. 3. Laufen aus eigener Kraft, wenn das Spiel die Figur bewegt. 4. Absprung, Flug und Landung: Im Flug stellt die Figur Arme und Beine nach ihrem Drehimpuls und passt die Zeit des Clips an. Größerer Umbau über mehrere Runden, jede auf ihrer Branch | Treffer stören jede Bewegung, auch einen Schlag oder einen Sprung, wie die Physik es will, und der Körper arbeitet sichtbar, nach dem Wunsch des Nutzers aus Runde 43, dass die Animation nur die Keyframes gibt | F61, F64, F65, F73 | 🔜 Zielbild vom 3. November 2026, siehe „Clip als Absicht, Physik als Ausführung“ nach Runde 49. Runde 50 arbeitet an Schritt 1. Die Akrobatik des Spielers bleibt nach Kapitel 2 der Roadmap des Spiels kinematisch, bis ein harter Treffer sie physikalisch macht, und fern vom Geschehen bleibt eine Figur kinematisch, nach 26.17 |
 
 ## Kleinere Punkte
 
