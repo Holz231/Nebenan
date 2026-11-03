@@ -1137,6 +1137,21 @@ vorher, 4 statt 2 liegen und 1 statt 3 stehen auf. Wo die Figuren dasselbe tun, 
 und ein Bild der Stadt mit Figuren kostet das 0,91-, 0,97- und 0,99-fache, bei anderer Arbeit, mit 5 statt 6
 eingestürzten Stockwerken. Ein Spiel ruft dafür nichts auf.
 
+**Mittlere Treffer mit der Drehung.** Seit `active-ragdoll-54` dreht die Wirbelsäule den Oberkörper um das Dreifache der
+Drehung des Beckens zurück statt um das 2,5-fache, auf Wunsch des Nutzers. Mit der Drehung fielen mit eigener Kraft von
+den mittleren Treffern, 50 bis 89 N s, 126 statt 73, die meisten im dritten Schritt, in dem der Standfuß öfter rutschte.
+Das 2,5-fache hält den Drehimpuls des Körpers um die Senkrechte, gemessen, aber das Dreifache fängt mehr: Über vier
+Lagen des Treffpunkts fallen mit eigener Kraft von den leichten Treffern weiter keiner, von den mittleren 104 statt 126,
+von den harten 3 416 statt 3 505 und an den Gliedern 941 statt 942. Mit der Stütze gegen die Welt, dem Standard, fallen
+1 486 statt 1 503 der 4 × 5 264 Treffer, ohne Stütze 5 767 statt 5 973, mit einem leichten Treffer mehr. Schultern und
+Hüften drehen im Schritt im Mittel bis 28 statt 24° gegeneinander, mit eigener Kraft bis 33 statt 29°. Die 73 mittleren
+von `active-ragdoll-52` erreicht das nicht. Mehr als das Dreifache, eine Drehung um die Achse der Wirbelsäule statt um
+die Senkrechte und ein Schwungbein ohne die Drehung des Beckens fingen weniger. Siehe „Mehr Gegendrehung für die
+mittleren Treffer“ und die Zeilen danach in [Optimierungen.md](docs/Optimierungen.md). Gepaart gegen `active-ragdoll-53`
+rechnen die Szenen ohne getroffene Figuren dasselbe, hinter ihren Mauern stehen am Ende alle 50 Figuren statt 48, in der
+Stadt mit Figuren 28 statt 27, und ein Bild der Stadt mit Figuren kostet das 1,00- bis 1,03-fache, bei anderer Arbeit.
+Ein Spiel ruft dafür nichts auf.
+
 **Drücken.** Drückt ein Körper eine stehende Figur langsam, ein Stock, eine Hand oder ein Block, und schiebt er dabei
 einen ihrer Knochen mit mindestens `pushForce` (Standard 40 N) seitlich, bei zwei Prüfungen hintereinander, also ein
 paar Schritte lang, fängt sich ein Mensch der Bibliothek, statt eine Wand zu bleiben: Seine Knochen werden dynamisch,

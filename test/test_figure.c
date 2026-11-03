@@ -1189,7 +1189,7 @@ static uint32_t MuscleCatch( int threadCount, float impulse )
 }
 
 // The throw of 90 N s on a figure with muscles ends in the same bits with one thread and with four, on every platform
-#define NB_EXPECTED_MUSCLE_HASH 0x2a09aa54u
+#define NB_EXPECTED_MUSCLE_HASH 0xff257c84u
 
 // The muscles, see nbFigureMotors::muscles and nbUpdateMuscles. A figure with muscles hit while it stands catches itself
 // with the strength the balance asks for at once: every joint of its trunk and its legs at the full torque of the motors,
@@ -3419,7 +3419,7 @@ static int FigureWallDebrisTest( void )
 
 // The throw through the wall of boards ends in the same bits with one thread and with four, on every platform, in the
 // second fracture pattern, which the figure breaks through
-#define NB_EXPECTED_WALL_HASH 0x729f0ec5u
+#define NB_EXPECTED_WALL_HASH 0x1a820867u
 
 static int FigureWallDeterminismTest( void )
 {
@@ -3479,10 +3479,10 @@ static int ThinBoardTest( void )
 }
 
 // The hash of the figure scenario on every platform, see RunFigureScenario
-#define NB_EXPECTED_FIGURE_HASH 0x04ba1e23u
+#define NB_EXPECTED_FIGURE_HASH 0xf75b55b9u
 
 // See RunFollowScenario
-#define NB_EXPECTED_FOLLOW_HASH 0x8d4465a7u
+#define NB_EXPECTED_FOLLOW_HASH 0xc683b92cu
 
 static int FigureFollowDeterminismTest( void )
 {
