@@ -211,6 +211,10 @@ typedef struct nbBalancer
 	float calmTime;
 	float restlessTime;
 
+	// How much of its turn after the feet the pelvis takes and the upper body against it, see nbPelvisTurn: all of it
+	// while a foot swings, falling off while the figure stands
+	float turnScale;
+
 	// The arms row against a fall, see nbRowArms: where each upper arm is in its swing, the seconds into the swing out or
 	// the way back, the seconds since it came out, the rotation against its rest pose it swings from, out from where it
 	// started or back from where it came out, the axis of the swing in the frame of the shoulder and its angle

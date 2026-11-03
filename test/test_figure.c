@@ -678,7 +678,12 @@ static int FigureSwingTest( void )
 // each time after two steps. The test gives 112 from its right. Round 47, which gives up only where the first step would
 // leave the capture point 1.5 m out, see NB_GIVE_UP, stumbles two steps after 112 N s from its right and falls after 23
 // updates, as the roadmap of the game wants after a strong hit, and still falls at once after 150 N s from the front,
-// an extreme hit.
+// an extreme hit. Round 53, whose pelvis turns with the leg that steps and whose upper body turns back against it, see
+// nbPelvisTurn, catches 130 and 134 N s from the front, where round 52 fell at 134, and gives up from 138 as before.
+// From either side it catches up to 104 N s and 110 and 112, falls at 106 after two steps, from its right at 108 too,
+// and stumbles from 114 into the fall, where round 52 caught every hit up to 110 and fell from 112. At 110 from its
+// right the head of round 52 sank to 1.12 m before it caught itself, that of round 53 to 1.21 m. The test gives 114
+// from its right.
 static int FigureCatchTest( void )
 {
 	typedef struct CatchCase
@@ -693,7 +698,7 @@ static int FigureCatchTest( void )
 		{ "80 N s from behind", { 0.0f, 0.0f, 80.0f }, false },		 { "60 N s from its right", { 60.0f, 0.0f, 0.0f }, false },
 		{ "60 N s from its left", { -60.0f, 0.0f, 0.0f }, false },	 { "100 N s from the front", { 0.0f, 0.0f, -100.0f }, false },
 		{ "80 N s from its right", { 80.0f, 0.0f, 0.0f }, false },	 { "80 N s from its left", { -80.0f, 0.0f, 0.0f }, false },
-		{ "150 N s from the front", { 0.0f, 0.0f, -150.0f }, true }, { "112 N s from its right", { 112.0f, 0.0f, 0.0f }, true, true },
+		{ "150 N s from the front", { 0.0f, 0.0f, -150.0f }, true }, { "114 N s from its right", { 114.0f, 0.0f, 0.0f }, true, true },
 	};
 	for ( size_t c = 0; c < sizeof( cases ) / sizeof( cases[0] ); ++c )
 	{
@@ -1184,7 +1189,7 @@ static uint32_t MuscleCatch( int threadCount, float impulse )
 }
 
 // The throw of 90 N s on a figure with muscles ends in the same bits with one thread and with four, on every platform
-#define NB_EXPECTED_MUSCLE_HASH 0x943677e7u
+#define NB_EXPECTED_MUSCLE_HASH 0x2a09aa54u
 
 // The muscles, see nbFigureMotors::muscles and nbUpdateMuscles. A figure with muscles hit while it stands catches itself
 // with the strength the balance asks for at once: every joint of its trunk and its legs at the full torque of the motors,
@@ -1857,7 +1862,9 @@ static float ShoulderHeading( nbFigureId figure )
 // nbComputeTwist and nbTwistTrunk. The upper body of the humanoid turns about the axis up its spine 2.5 times as far as
 // it tilts, the square root of the ratio of its rotational inertia about the two, and as much faster back: 30 N s at
 // the shoulder turn the line between the shoulders by 12 degrees, 5 before, and it straightens again within a second. A
-// hit of 60 N s there turns it by 43 degrees in a tenth of a second, 3 before, and the figure catches itself.
+// hit of 60 N s there turns it by 43 degrees in a tenth of a second, 3 before, and the figure catches itself. Round 52
+// turned it there by 30 degrees, and round 53, whose upper body turns back against the pelvis while a foot swings, see
+// nbPelvisTurn, by 32.
 static int FigureTwistTest( void )
 {
 	const float impulses[3] = { 30.0f, 30.0f, 60.0f };
@@ -2632,7 +2639,10 @@ static int FigureWorldTest( void )
 	ENSURE( nbFigure_GetInfo( blasted ).knockdownCount == 1 );
 
 	// The blasted figure lands beside the block of 80 kg. Since round 34 it starts to get up a little earlier there,
-	// the block presses it, and it falls again, see NB_ABORT_PART.
+	// the block presses it, and it falls again, see NB_ABORT_PART. Since round 53 the figure under the block starts to
+	// get up after 1.4 s, while the block still slides off it 12 cm over the ground, round 52 after 1.8 s, the block 6 cm
+	// over it. The block breaks that off, comes to rest on its legs and a hand, and the figure waits under it, as the
+	// roadmap of the game asks in 26.15: each fall after the first is a getting up broken off.
 	StepFigures( &scene, 88 );
 	printf( "  blasted: %d knockdowns, heavy %d (state %d), pressed %d (state %d)\n", nbFigure_GetInfo( blasted ).knockdownCount,
 			nbFigure_GetInfo( heavy ).knockdownCount, (int)nbFigure_GetState( heavy ), nbFigure_GetInfo( pressed ).knockdownCount,
@@ -2642,7 +2652,8 @@ static int FigureWorldTest( void )
 	ENSURE( nbFigure_GetInfo( light ).hitCount >= 1 );
 	ENSURE( nbFigure_GetInfo( light ).knockdownCount == 0 );
 	ENSURE( nbFigure_GetInfo( heavy ).knockdownCount == 1 );
-	ENSURE( nbFigure_GetInfo( pressed ).knockdownCount == 1 );
+	ENSURE( nbFigure_GetInfo( pressed ).knockdownCount == 1 + nbFigure_GetInfo( pressed ).abortCount );
+	ENSURE( nbFigure_GetInfo( pressed ).abortCount <= 1 );
 	ENSURE( nbFigure_GetState( far ) == nb_figureAnimated );
 	DestroyFigureScene( &scene );
 	return 0;
@@ -3246,9 +3257,12 @@ static WallThrow ThrowAtWall( int threadCount, bool wood, float thickness, uint3
 }
 
 // A figure kicked very hard, 1000 N s, into a wall of boards of wood, 5 cm with its back or 3 cm with its side, flies
-// on through the hole it breaks in two to four of eight fracture patterns, in the others the edge of the hole stops it.
+// on through the hole it breaks in one to four of eight fracture patterns, in the others the edge of the hole stops it.
 // Which patterns let it through is chance: of 32 round 41 flies through 15 at 5 cm with its back and 11 at 3 cm with its
-// side, three of the first eight each, round 40 17 and 10, four of the first eight each.
+// side, three of the first eight each, round 40 17 and 10, four of the first eight each, round 52 15 and 10, three of
+// the first eight each, and round 53 13 and 8, three and one of the first eight: the turn of the pelvis after the
+// feet, see nbPelvisTurn, changes the last bits of the few updates the figure balances before it falls, and with them
+// the patterns it gets through.
 // Since the joints move as far as a person's, see nbMakeHumanoidBones, its back breaks through 5 cm in two, before in
 // five: the trunk and the head give way and do not strike the boards at once. A wall of concrete of 20 cm and boards of
 // 20 cm hold it, though the concrete loses pieces where the trunk slams into it at 20 m/s, and the boards up to 86
@@ -3274,7 +3288,7 @@ static int FigureWallTest( void )
 	} WallCase;
 	const WallCase cases[] = {
 		{ "boards of 5 cm, back first", true, 0.05f, 1000.0f, false, 2, 8, 40 },
-		{ "boards of 3 cm, side first", true, 0.03f, 1000.0f, true, 3, 8, 90 },
+		{ "boards of 3 cm, side first", true, 0.03f, 1000.0f, true, 1, 8, 90 },
 		{ "boards of 20 cm, back first", true, 0.2f, 1000.0f, false, 0, 0, 100 },
 		{ "concrete of 20 cm, back first", false, 0.2f, 1000.0f, false, 0, 0, 60 },
 		{ "concrete of 20 cm, side first", false, 0.2f, 1000.0f, true, 0, 0, 15 },
@@ -3327,14 +3341,16 @@ static int FigureWallTest( void )
 // patterns, see F69 of the roadmap. Round 40 broke through 15 times and the block stayed on it 3 times. Round 41, whose
 // upper body bends on with the tilt of the pelvis in the update before it falls, see nbBendTrunk, breaks through 12
 // times, the block stays on it twice and pieces of the wall hold it down 3 more times. With the arms of 78 cm of round 44
-// it gets up behind the wall in 13 of the 32 and again after the block in 8, the eleventh no longer breaks through. Until
-// round 40 the test took the second pattern, from round 41 the eleventh, and since round 44 the second again, where it
-// gets up in both.
+// it gets up behind the wall in 13 of the 32 and again after the block in 8, the eleventh no longer breaks through.
+// Round 52 gets up behind the wall in 12 and again after the block in 7, and round 53, whose pelvis turns after the
+// feet, see nbPelvisTurn, in 10 and 8, once of them standing on a board of the wall, 5 cm over the ground, and the
+// second pattern no longer among them. Until round 40 the test took the second pattern, from round 41 the eleventh,
+// from round 44 the second again, and since round 53 the third, where it gets up in both.
 static int FigureWallDebrisTest( void )
 {
 	FigureScene scene;
 	CreateFigureScene( &scene, 1 );
-	nbDestructibleId wall = AddWall( &scene, true, 0.05f, 1 );
+	nbDestructibleId wall = AddWall( &scene, true, 0.05f, 2 );
 	nbFigureDef def = nbDefaultFigureDef();
 	def.rig = &scene.rig;
 	def.standHeight = scene.standHeight;
@@ -3403,7 +3419,7 @@ static int FigureWallDebrisTest( void )
 
 // The throw through the wall of boards ends in the same bits with one thread and with four, on every platform, in the
 // second fracture pattern, which the figure breaks through
-#define NB_EXPECTED_WALL_HASH 0x159a10d4u
+#define NB_EXPECTED_WALL_HASH 0x729f0ec5u
 
 static int FigureWallDeterminismTest( void )
 {
@@ -3463,10 +3479,10 @@ static int ThinBoardTest( void )
 }
 
 // The hash of the figure scenario on every platform, see RunFigureScenario
-#define NB_EXPECTED_FIGURE_HASH 0x60875171u
+#define NB_EXPECTED_FIGURE_HASH 0x04ba1e23u
 
 // See RunFollowScenario
-#define NB_EXPECTED_FOLLOW_HASH 0xe0be7f81u
+#define NB_EXPECTED_FOLLOW_HASH 0x8d4465a7u
 
 static int FigureFollowDeterminismTest( void )
 {

@@ -664,7 +664,9 @@ welche Füße auf Boden stehen, auch einer, dessen Sohle bis 3 cm darüber schwe
 Sohlen und den Capture Point, den Schwerpunkt um seine Geschwindigkeit und ihre Drehung durch die Frequenz eines Pendels
 seiner Höhe weiter. Sie richtet sich nach ihren Füßen, nicht nach dem Becken, siehe Füße statt Becken: Im Stand halten
 die Beine ihre Füße, wo und wie sie stehen, schieben das Becken über die Mitte der Sohlen und drehen es über die Füße
-zurück, und die Beine am Boden tragen den Körper über ihnen, siehe Die Beine tragen den Körper. Liegt der Capture Point
+zurück, und die Beine am Boden tragen den Körper über ihnen, siehe Die Beine tragen den Körper. Das Becken dreht dabei
+zum vorderen Fuß, im Schritt mit dem Schwungbein, und die Wirbelsäule dreht den Oberkörper dagegen, siehe Drehung im
+Körper. Liegt der Capture Point
 zwei Updates lang mehr als 3 cm außerhalb, mit eigener Kraft ein Update lang mehr als 10 cm, tritt ein Fuß dorthin, wo
 der Capture Point bei seiner Landung sein wird, 5 cm darüber hinaus, gedreht wie der Standfuß, in Reichweite der Hüfte,
 auf Boden, der trägt und höchstens 25 cm höher oder tiefer liegt, mit Platz für den Fuß und freiem Weg dorthin, 0,3 s
@@ -1096,6 +1098,44 @@ bremst das Kippen“ und die Zeilen danach in [Optimierungen.md](docs/Optimierun
 `active-ragdoll-51`, zwei Läufe im Wechsel mit vier Threads und einer mit einem, rechnen alle Szenen des Benchmarks
 dasselbe, ihre Figuren stehen mit der Stütze gegen die Welt, und ein Bild der Stadt mit Figuren kostet das 0,92-, 1,02-
 und 1,02-fache, bei gleicher Arbeit. Ein Spiel ruft dafür nichts auf.
+
+**Drehung im Körper.** Seit `active-ragdoll-53` drehen Becken und Oberkörper eines Menschen der Bibliothek, der sich
+fängt, gegeneinander, F79 der Roadmap, auf Wunsch des Nutzers. Bis dahin drehte sich der Körper als ein Block: Die
+Balance hielt das Becken in der Richtung der Füße, siehe Füße statt Becken, und die Wirbelsäule beugte sich nur nach
+vorn und zur Seite. Jetzt dreht das Becken zum vorderen Fuß, um ein Viertel des Winkels, um den die Linie zwischen den
+Knöcheln aus der Querrichtung der Figur gedreht ist, höchstens um 0,25 rad. Während ein Fuß schwingt, läuft diese Linie
+zu dem Punkt seines Bogens, an dem die Balance ihn gerade will: Das Becken dreht mit dem Schwungbein. Die Wirbelsäule
+dreht den Oberkörper um das 2,5-fache dieser Drehung gegen das Becken zurück, verteilt auf ihre Gelenke wie die Drehung
+aus einem Treffer, siehe Drehung um die Längsachse, in der Welt also anderthalbmal so weit in die Gegenrichtung. So
+bleibt die Drehung des ganzen Körpers um die Senkrechte, wie sie war: Becken und Schwungbein haben um die Hüfte des
+Standbeins das 1,6-fache der Drehträgheit des Oberkörpers um seine Wirbelsäule, 1,31 gegen 0,81 kg m². Steht die Figur,
+klingt die Drehung in 0,3 s ab. Gemessen an 192 Treffern je Stütze, auf die Mitte der oberen Brust, vor die rechte
+Schulter und auf den Bauch, aus acht Richtungen mit 30 bis 100 N s: Nach den Treffern, bei denen die Figur tritt, drehen
+Schultern und Hüften im Schritt im Mittel bis 24° gegeneinander statt 3°, mit eigener Kraft bis 29 statt 5°, höchstens
+42 und 47° statt 11 und 18°. Steht die Figur wieder, sind Brust und Becken wie vorher im Mittel um 3° gegeneinander
+gedreht, ohne das Abklingen blieben es 13 bis 16°. Der Standfuß dreht sich auf dem Boden etwa so weit wie vorher, im
+Mittel um 9 statt 10°, mit eigener Kraft um 18 statt 19°. Über vier Lagen des Treffpunkts, wie er ist und um 1, −1 und 2
+mm verschoben, fallen mit der Stütze gegen die Welt, dem Standard, von den 168 leichten Treffern weiter keiner, von den
+4 × 1 920 auf Brust und Bauch von 50 bis 89 N s einer statt keinem, von den 4 × 2 064 von 90 bis 139 N s 1 060 statt 1
+350 und von den 4 × 1 280 auf Arme, Beine und Kopf 442 statt 464. Mit eigener Kraft fallen keiner, 126 statt 73, 3 505
+statt 3 919 und 942 statt 1 036, von allen 4 × 5 264 Treffern 4 573 statt 5 028: Die harten Treffer und die an den
+Gliedern fängt die Figur öfter, die mittleren seltener. Ohne Stütze, `uprightTorque` null, fallen 4 statt 11, 417 statt
+542, 4 363 statt 5 500 und 1 193 statt 1 415. Auf die obere Brust fängt sie sich mit eigener Kraft von hinten bis 110
+statt 105 N s, von vorn bis 95 und von 105 bis 115, wo sie bisher bis 110 fing, und von rechts und links bis 90 statt
+95. Mit der Stütze gegen die Welt fängt sie sich von vorn bis 134 N s statt 130 und von den Seiten bis 104 und bei 110
+und 112, bisher bis 110, in Schritten von 2 und 4 N s abgetastet. Der Abfang-Test gibt jetzt 114 statt 112 N s von
+rechts, wo die Figur zwei Schritte taumelt und fällt. Der Oberkörper einmal oder zweimal so weit zurückgedreht wie das
+Becken fing weniger, dreimal so weit fing etwas mehr und ließ einen leichten Treffer fallen. Ein weiter gedrehtes
+Becken, Arme, die gegen die Beine schwingen, nur ein Oberkörper, der gegen den Schritt dreht, und Füße, die sich mit dem
+Körper drehen, ließen einen bis drei leichte Treffer fallen. Siehe „Drehung im Körper“ und die Zeilen danach in
+[Optimierungen.md](docs/Optimierungen.md). Gepaart gegen `active-ragdoll-52`, zwei Läufe im Wechsel mit vier Threads und
+einer mit einem, rechnen alle Szenen ohne Figuren, die Kämpfer und die Ragdolls im Schutt dasselbe wie vorher, und die
+Szenen mit getroffenen Figuren enden anders, mit einem und mit vier Threads gleich. Von den 50 Figuren hinter ihren
+Mauern stehen am Ende 48 statt 50: Eine steht gerade auf, und auf einer liegt ein Stück ihrer Mauer von 22 kg, unter dem
+sie wartet, auch eine Minute später noch. In der Stadt mit Figuren fangen sich 8 statt 5, und am Ende stehen 27 wie
+vorher, 4 statt 2 liegen und 1 statt 3 stehen auf. Wo die Figuren dasselbe tun, kostet ihr Update so viel wie vorher,
+und ein Bild der Stadt mit Figuren kostet das 0,91-, 0,97- und 0,99-fache, bei anderer Arbeit, mit 5 statt 6
+eingestürzten Stockwerken. Ein Spiel ruft dafür nichts auf.
 
 **Drücken.** Drückt ein Körper eine stehende Figur langsam, ein Stock, eine Hand oder ein Block, und schiebt er dabei
 einen ihrer Knochen mit mindestens `pushForce` (Standard 40 N) seitlich, bei zwei Prüfungen hintereinander, also ein

@@ -208,6 +208,26 @@
 #define NB_TRUNK_GAIN 2.0f
 #define NB_TRUNK_BEND 0.5f
 
+// The pelvis turns toward the foot ahead and the upper body back against it, as the pelvis of a person turns in a stride
+// and the shoulders turn against the hips, see nbPelvisTurn and the roadmap, F79, round 53. The pelvis turns by
+// NB_PELVIS_TURN times the angle of the line between the ankles from across the way the figure faces, at most
+// NB_PELVIS_TURN_MAX radians, the hip of the foot ahead forward, and while a foot swings the line runs to where the
+// swinging ankle is wanted on its arc, so the pelvis turns with the swing leg. The spine twists the upper body back by
+// NB_TRUNK_COUNTER times that turn against the pelvis, so it turns one and a half times as far the other way in the world:
+// the pelvis and the leg that steps, turning about the stance hip, have 1.6 times the rotational inertia about up of the
+// upper body about its spine, 1.31 against 0.81 kg m^2 for the humanoid of the library, and the turn of the whole body
+// about up stays as it was. Standing, the turn falls off with the time NB_TURN_RELAX. Before, the body turned as one
+// block: while it stepped, its shoulders turned against its hips by up to 3 degrees in the mean over a table of hits,
+// now by up to 24. Over four positions of the hit point, of the 4 times 5 264 hits on chest, belly and limbs 4 573
+// instead of 5 028 fell with the figure's own strength, 1 503 instead of 1 814 with the hold against the world and
+// 5 973 instead of 7 457 without a hold, of the 168 light hits none, none and 4 instead of 11. Turned back once, twice
+// and three times as far as the pelvis, with the turn kept while standing, 5 150, 4 661 and 4 486 fell with its own
+// strength, and three times as far one of the light hits.
+#define NB_PELVIS_TURN 0.25f
+#define NB_PELVIS_TURN_MAX 0.25f
+#define NB_TRUNK_COUNTER 2.5f
+#define NB_TURN_RELAX 0.3f
+
 //----------------------------------------------------------------------------------------------------------------------
 // Small geometry
 
@@ -961,10 +981,23 @@ static float nbHoldHeight( const nbFigure* f, const nbBalancer* b, float target 
 	return b3MaxFloat( height, b3Dot( pelvis, b->up ) - NB_MAX_DROP * b->scale );
 }
 
-// The pelvis wanted upright at a point
-static b3WorldTransform nbWantedPelvis( const nbBalancer* b, b3Vec3 point )
+// The pelvis wanted upright at a point, turned about up by an angle from where the figure faces
+static b3WorldTransform nbWantedPelvis( const nbBalancer* b, b3Vec3 point, float turn )
 {
-	return (b3WorldTransform){ b3ToPos( point ), nbYaw( b->up, b->forward ) };
+	b3Vec3 facing = b3RotateVector( b3MakeQuatFromAxisAngle( b->up, turn ), b->forward );
+	return (b3WorldTransform){ b3ToPos( point ), nbYaw( b->up, facing ) };
+}
+
+// How far the pelvis turns about up toward the foot ahead, see NB_PELVIS_TURN, with the left ankle at one point and the
+// right one at another
+static float nbPelvisTurn( const nbBalancer* b, b3Vec3 leftAnkle, b3Vec3 rightAnkle )
+{
+	b3Vec3 left = b3Cross( b->up, b->forward );
+	b3Vec3 line = nbFlat( b3Sub( leftAnkle, rightAnkle ), b->up );
+	float ahead = b3Dot( line, b->forward );
+	float across = b3MaxFloat( b3Dot( line, left ), b->footGap );
+	float turn = -NB_PELVIS_TURN * b3Atan2( ahead, across );
+	return b->turnScale * b3ClampFloat( turn, -NB_PELVIS_TURN_MAX, NB_PELVIS_TURN_MAX );
 }
 
 // How high along up the pelvis can stand upright over a point with both ankles at their targets, at most a height. In a
@@ -1299,6 +1332,7 @@ void nbBeginBalance( nbWorld* world, int index, nbFigure* f )
 	b->footFacing[1] = b->forward;
 	b->stepping = false;
 	b->stepFoot = -1;
+	b->turnScale = 1.0f;
 
 	nbMeasure( world, index, f, b );
 	for ( int leg = 0; leg < 2; ++leg )
@@ -1580,6 +1614,29 @@ static void nbBendTrunk( const nbFigure* f, const nbBalancer* b, b3Quat* pose )
 	}
 }
 
+// The spine twists the upper body back about up against a turn of the pelvis, see NB_TRUNK_COUNTER, each joint by its
+// share after the twist ranges, see nbComputeTwist, in the frame of its parent as the parent stands
+static void nbTurnTrunkBack( const nbFigure* f, const nbBalancer* b, float turn, b3Quat* pose )
+{
+	float twist = b3ClampFloat( -NB_TRUNK_COUNTER * turn, -f->twistLimit, f->twistLimit );
+	if ( fabsf( twist ) < 1.0e-5f )
+	{
+		return;
+	}
+
+	for ( int i = nb_humanoidBelly; i <= nb_humanoidChest; ++i )
+	{
+		const nbBone* bone = f->bones + i;
+		b3Quat frame = b3MulQuat( b3Body_GetRotation( f->bones[bone->parent].bodyId ), bone->rest.q );
+		b3Vec3 local = b3InvRotateVector( frame, b3MulSV( f->spineTwist[i - nb_humanoidBelly] * twist, b->up ) );
+		float angle = b3Length( local );
+		if ( angle > 1.0e-6f )
+		{
+			pose[i] = b3NormalizeQuat( b3MulQuat( b3MakeQuatFromAxisAngle( b3MulSV( 1.0f / angle, local ), angle ), pose[i] ) );
+		}
+	}
+}
+
 // The arms row against a fall, after the idea of Hof (2007), the equations of motion for a standing human: besides moving
 // the center of pressure under the feet and stepping, a body keeps its balance by turning parts of itself about its
 // center of mass. An upper arm that the motor of its shoulder turns in the sense of the fall, about up across the
@@ -1826,6 +1883,7 @@ nbBalanceResult nbUpdateBalance( nbWorld* world, int index, nbFigure* f, float t
 
 	// The pose of the clip with the legs of balance
 	b3Vec3 up = b->up;
+	float turn;
 	b3WorldTransform pelvis = b3Body_GetTransform( f->bones[0].bodyId );
 	b3Vec3 pelvisPoint = b3ToVec3( pelvis.p );
 	float standing = b->groundHeight + b->standHeight - NB_KNEE_BEND * b->scale;
@@ -1851,7 +1909,9 @@ nbBalanceResult nbUpdateBalance( nbWorld* world, int index, nbFigure* f, float t
 		}
 		b3Vec3 point = b3Add( pelvisPoint, shift );
 		float height = nbHoldHeight( f, b, nbReachableHeight( b, point, b->plant, standing ) );
-		b3WorldTransform wanted = nbWantedPelvis( b, nbAtHeight( point, up, height ) );
+		b->turnScale *= nbExp( -timeStep / NB_TURN_RELAX );
+		turn = nbPelvisTurn( b, b->plant[0], b->plant[1] );
+		b3WorldTransform wanted = nbWantedPelvis( b, nbAtHeight( point, up, height ), turn );
 		for ( int leg = 0; leg < 2; ++leg )
 		{
 			nbLegIK( f, b, leg, wanted, b->plant[leg], b->footFacing[leg], pose );
@@ -1889,10 +1949,16 @@ nbBalanceResult nbUpdateBalance( nbWorld* world, int index, nbFigure* f, float t
 		}
 		swing = b3MulAdd( swing, NB_STEP_HEIGHT * b->scale * b3ComputeCosSin( B3_PI * phase ).sine, up );
 
-		// The stance leg holds the pelvis upright at standing height. The swinging leg reaches from the pelvis turned
-		// halfway between upright and as it is: from upright alone the foot misses its target when a push pitches the
-		// pelvis, from the pelvis as it is the swing feeds back on itself through the roll it gives the pelvis.
-		b3WorldTransform wanted = nbWantedPelvis( b, nbAtHeight( pelvisPoint, up, nbHoldHeight( f, b, standing ) ) );
+		// The stance leg holds the pelvis upright at standing height, turned toward the foot ahead. The swinging leg
+		// reaches from the pelvis turned halfway between upright and as it is: from upright alone the foot misses its
+		// target when a push pitches the pelvis, from the pelvis as it is the swing feeds back on itself through the roll
+		// it gives the pelvis.
+		b3Vec3 ankles[2];
+		ankles[foot] = swing;
+		ankles[stance] = b->plant[stance];
+		b->turnScale = 1.0f;
+		turn = nbPelvisTurn( b, ankles[0], ankles[1] );
+		b3WorldTransform wanted = nbWantedPelvis( b, nbAtHeight( pelvisPoint, up, nbHoldHeight( f, b, standing ) ), turn );
 		b3WorldTransform swingPelvis = { pelvis.p, nbHalfwayAt( pelvis.q, wanted.q, 0.5f ) };
 		nbLegIK( f, b, foot, swingPelvis, swing, b->footFacing[stance], pose );
 		if ( b->ownStrength )
@@ -1905,6 +1971,7 @@ nbBalanceResult nbUpdateBalance( nbWorld* world, int index, nbFigure* f, float t
 
 	nbCarryBody( f, b, pose );
 	nbBendTrunk( f, b, pose );
+	nbTurnTrunkBack( f, b, turn, pose );
 	nbHoldUpright( world, index, f, b, timeStep );
 	nbRowArms( f, b, timeStep, pose );
 	return nb_balanceGoesOn;
