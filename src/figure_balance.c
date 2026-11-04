@@ -255,6 +255,23 @@
 #define NB_TRUNK_COUNTER 3.0f
 #define NB_TURN_RELAX 0.3f
 
+// How much of the twist back the upper body keeps in a step straight back, where the pelvis takes no turn: 0.85, and in
+// other steps more after the share of the turn the pelvis takes, all of it with the whole turn, see nbTurnTrunkBack and
+// nbStepShare. Round 56 left the whole twist there with nothing turning against it but the stance foot, whose sole the
+// rebound of the landing unloads in the middle of the step: in the third steps backward the ground had to hold the
+// stance foot about up with 33 instead of 24 N m in the mean, round 52, its foot flat with all four corners of the sole
+// on the ground, and it slipped at the limit of its twist friction in 47 instead of 28 % of those updates. Less twist
+// back lets the stance foot slide less but catches fewer hard hits, which the soles that grip more, see
+// NB_SOLE_FRICTION, catch again. Of all 4 times 5 264 hits 3 946 instead of 4 156 fall with the figure's own strength,
+// 1 487 instead of 1 502 with the hold against the world and 5 389 instead of 5 446 without a hold, none of the light
+// ones. In steps backward the stance foot slides more than 5 cm in the second step in 42 instead of 58 % of the steps,
+// in the third in 29 instead of 49 %. With 0.75, 0.8 and 0.9 it slides about as little, and by chance this close to it
+// one or two light hits fall without a hold or with the figure's own strength; with the whole twist and the soles that
+// grip more 3 945, 1 484 and 5 366 fall, but in the third steps backward the stance foot slides in 47 %. With a twist
+// back that follows its target only as fast as the stance foot holds it, 866 instead of 789 of the 2 064 hard hits on
+// chest and belly fell, round 57.
+#define NB_BACK_TWIST 0.85f
+
 //----------------------------------------------------------------------------------------------------------------------
 // Small geometry
 
@@ -1673,10 +1690,12 @@ static void nbBendTrunk( const nbFigure* f, const nbBalancer* b, b3Quat* pose )
 // share after the twist ranges, see nbComputeTwist, in the frame of its parent as the parent stands. About the up of
 // the world and not about the axis up the spine: an upper body that leans and turns about its spine tips about the axes
 // across up as well, and of the 4 times 1 920 hits from 50 to 89 N s over four positions of the hit point 201 instead
-// of 126 fell with the figure's own strength, round 54.
+// of 126 fell with the figure's own strength, round 54. In a step back the upper body keeps only a part of the twist,
+// see NB_BACK_TWIST, after the share of the turn the pelvis has, so it does not jump when the step ends.
 static void nbTurnTrunkBack( const nbFigure* f, const nbBalancer* b, float turn, b3Quat* pose )
 {
-	float twist = b3ClampFloat( -NB_TRUNK_COUNTER * turn, -f->twistLimit, f->twistLimit );
+	float keep = NB_BACK_TWIST + ( 1.0f - NB_BACK_TWIST ) * b->pelvisShare;
+	float twist = b3ClampFloat( -NB_TRUNK_COUNTER * keep * turn, -f->twistLimit, f->twistLimit );
 	if ( fabsf( twist ) < 1.0e-5f )
 	{
 		return;

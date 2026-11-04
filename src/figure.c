@@ -82,8 +82,12 @@
 // foot that carried the figure alone slid away under it: with the hold through the legs, after 80 N s from the side the
 // stance foot slid 28 cm while the other stepped 70 cm out, and the figure sank. With 0.8, 0.9 and 1.0, 14, 13 and 13 of
 // the 168 light hits on the upper chest fell instead of 25, and with the hold against the world 365, 362 and 354 of the
-// 2 064 hits on chest and belly from 90 to 139 N s instead of 385.
-#define NB_SOLE_FRICTION 0.9f
+// 2 064 hits on chest and belly from 90 to 139 N s instead of 385. Since round 57 1.1, on ground of 0.6 mixed by Box3D
+// to 0.81 instead of 0.73: the stance foot holds the figure about up so much better, and the twist back of the upper
+// body in steps back can stay larger, see NB_BACK_TWIST. With 1.0 and the same twist of all 4 times 5 264 hits 4 053
+// fell with the figure's own strength instead of 3 946, 1 510 with the hold against the world instead of 1 487 and
+// 5 467 without a hold instead of 5 389, and one light hit with the figure's own strength and two without a hold.
+#define NB_SOLE_FRICTION 1.1f
 
 // The damping of the bones of a ragdoll that lies still, in 1/s, reached after two seconds, like the damping of
 // Overgrowth that rises by half per second of rest: Box3D lets it fall asleep sooner, and it lies without shivering

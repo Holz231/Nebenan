@@ -1189,7 +1189,7 @@ static uint32_t MuscleCatch( int threadCount, float impulse )
 }
 
 // The throw of 90 N s on a figure with muscles ends in the same bits with one thread and with four, on every platform
-#define NB_EXPECTED_MUSCLE_HASH 0xee01be28u
+#define NB_EXPECTED_MUSCLE_HASH 0xf4f61ccfu
 
 // The muscles, see nbFigureMotors::muscles and nbUpdateMuscles. A figure with muscles hit while it stands catches itself
 // with the strength the balance asks for at once: every joint of its trunk and its legs at the full torque of the motors,
@@ -3344,13 +3344,16 @@ static int FigureWallTest( void )
 // it gets up behind the wall in 13 of the 32 and again after the block in 8, the eleventh no longer breaks through.
 // Round 52 gets up behind the wall in 12 and again after the block in 7, and round 53, whose pelvis turns after the
 // feet, see nbPelvisTurn, in 10 and 8, once of them standing on a board of the wall, 5 cm over the ground, and the
-// second pattern no longer among them. Until round 40 the test took the second pattern, from round 41 the eleventh,
-// from round 44 the second again, and since round 53 the third, where it gets up in both.
+// second pattern no longer among them. Round 56 gets up behind the wall in 11 and again after the block in 9, and round
+// 57, whose soles grip more, see NB_SOLE_FRICTION, in 9 and 8, the second pattern among them again, and in the third it
+// lies 1.15 m behind the wall, past the pieces. Until round 40 the test took the second pattern, from round 41 the
+// eleventh, from round 44 the second again, from round 53 the third, and since round 57 the second again, where it gets
+// up in both.
 static int FigureWallDebrisTest( void )
 {
 	FigureScene scene;
 	CreateFigureScene( &scene, 1 );
-	nbDestructibleId wall = AddWall( &scene, true, 0.05f, 2 );
+	nbDestructibleId wall = AddWall( &scene, true, 0.05f, 1 );
 	nbFigureDef def = nbDefaultFigureDef();
 	def.rig = &scene.rig;
 	def.standHeight = scene.standHeight;
@@ -3419,7 +3422,7 @@ static int FigureWallDebrisTest( void )
 
 // The throw through the wall of boards ends in the same bits with one thread and with four, on every platform, in the
 // second fracture pattern, which the figure breaks through
-#define NB_EXPECTED_WALL_HASH 0x1a820867u
+#define NB_EXPECTED_WALL_HASH 0xf62402d5u
 
 static int FigureWallDeterminismTest( void )
 {
@@ -3479,10 +3482,10 @@ static int ThinBoardTest( void )
 }
 
 // The hash of the figure scenario on every platform, see RunFigureScenario
-#define NB_EXPECTED_FIGURE_HASH 0xd43cdb11u
+#define NB_EXPECTED_FIGURE_HASH 0xa33a2bbeu
 
 // See RunFollowScenario
-#define NB_EXPECTED_FOLLOW_HASH 0x62b933c8u
+#define NB_EXPECTED_FOLLOW_HASH 0xebc06576u
 
 static int FigureFollowDeterminismTest( void )
 {

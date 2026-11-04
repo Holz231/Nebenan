@@ -1190,6 +1190,29 @@ im Schutt dasselbe, hinter ihren Mauern stehen am Ende wie vorher 8 der 10 und a
 wie vorher 29, und nur eine liegt statt drei. Ein Bild der Stadt mit Figuren kostet das 1,00- bis 1,02-fache, mit einem
 Thread das 0,96-fache, bei anderer Arbeit und im Rauschen der VM.
 
+**Der Standfuß bei Schritten rückwärts.** Seit `active-ragdoll-57` dreht der Oberkörper bei einem Schritt gerade zurück,
+bei dem das Becken nicht mitdreht, nur noch um 0,85 der Drehung zurück, bei den anderen Schritten mehr, nach dem Anteil,
+den das Becken nimmt, und die Sohlen greifen mit 1,1 statt 0,9, auf einem Boden mit 0,6 also mit 0,81 statt 0,73. In
+Runde 56 drehte bei Schritten rückwärts nur der Oberkörper, und gegen seine Gegendrehung hielt nur der Standfuß: In der
+Mitte des dritten Schritts rückwärts, wo das Hochfedern nach dem Aufsetzen die Sohle entlastet, musste der Boden ihn im
+Mittel mit 33 statt 24 N m um die Hochachse halten, in Runde 52, flach auf allen vier Ecken der Sohle, und er war in 47
+statt 28 % der Updates an der Grenze seiner Reibung gegen Drehen. Weniger Gegendrehung allein lässt ihn weniger
+rutschen, fängt aber weniger harte Treffer, griffigere Sohlen allein fangen mehr, lassen ihn aber weiter rutschen,
+beides zusammen hilft bei beidem. Über vier Lagen des Treffpunkts fallen mit eigener Kraft von den 4 × 5 264 Treffern
+3 946 statt 4 156, von den mittleren 48 statt 81, mit der Stütze gegen die Welt, dem Standard, 1 487 statt 1 502 und
+ohne Stütze 5 389 statt 5 446, von den leichten mit allen drei Stützen keiner. Bei Schritten rückwärts rutscht der
+Standfuß mit eigener Kraft im zweiten Schritt bei 42 statt 58 % der Schritte mehr als 5 cm, im dritten bei 29 statt
+49 %, über alle Schritte im dritten bei 29 statt 34 %, ab dem vierten aber bei 53 statt 45 %. Schultern und Hüften
+drehen im Schritt mit eigener Kraft bis 31,5 statt 32,6° gegeneinander. Ob ein leichter Treffer fällt, ist hier Zufall:
+Mit 0,75, 0,8 und 0,9 der Gegendrehung fallen ohne Stütze oder mit eigener Kraft einer oder zwei. Ein Spiel ruft dafür
+nichts Neues auf. Siehe „Weniger Gegendrehung bei Schritten zurück und griffigere Sohlen“ und die Zeilen danach in
+[Optimierungen.md](docs/Optimierungen.md). Gepaart gegen `active-ragdoll-56` rechnen die Szenen ohne Figuren dasselbe
+und die mit Figuren mit den neuen Sohlen anders, mit einem und mit vier Threads gleich: Hinter ihren Mauern stehen am
+Ende alle 10 statt 8 Figuren, von den 50 aber 49, eine liegt noch, die Kämpfer und die Ragdolls im Schutt enden wie
+vorher, und in der Stadt mit Figuren stehen wie vorher 29, und keine liegt statt einer. Ein Bild der Stadt mit Figuren
+kostet das 0,95- und 0,94-fache, mit einem Thread das 1,10-fache, bei bis zu 63 780 statt 55 919 Kontakten, im Rauschen
+der VM.
+
 **Drücken.** Drückt ein Körper eine stehende Figur langsam, ein Stock, eine Hand oder ein Block, und schiebt er dabei
 einen ihrer Knochen mit mindestens `pushForce` (Standard 40 N) seitlich, bei zwei Prüfungen hintereinander, also ein
 paar Schritte lang, fängt sich ein Mensch der Bibliothek, statt eine Wand zu bleiben: Seine Knochen werden dynamisch,
