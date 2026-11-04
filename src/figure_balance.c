@@ -209,26 +209,36 @@
 #define NB_TRUNK_BEND 0.5f
 
 // The pelvis turns toward the foot ahead and the upper body back against it, as the pelvis of a person turns in a
-// stride and the shoulders turn against the hips, see nbPelvisTurn and the roadmap, F79, rounds 53 and 54. The pelvis
-// turns by NB_PELVIS_TURN times the angle of the line between the ankles from across the way the figure faces, at most
-// NB_PELVIS_TURN_MAX radians, the hip of the foot ahead forward, and while a foot swings the line runs to where the
-// swinging ankle is wanted on its arc, so the pelvis turns with the swing leg. The spine twists the upper body back by
-// NB_TRUNK_COUNTER times that turn against the pelvis, at most as far as its joints allow, see nbTurnTrunkBack.
-// Standing, the turn falls off with the time NB_TURN_RELAX. Before round 53 the body turned as one block: while it
-// stepped, its shoulders turned against its hips by up to 5 degrees in the mean over a table of hits with its own
-// strength, now by up to 33. While a foot swings the pelvis follows 0.7 of its turn and the chest turns 2.2 times as
-// far the other way.
-// Round 53 twisted the upper body back by 2.5 times: the pelvis and the leg that steps, turning about the stance hip,
-// have 1.6 times the rotational inertia about up of the upper body about its spine, 1.31 against 0.81 kg m^2 for the
-// humanoid of the library, and the ground turned the figure about up while it stepped after hits from 50 to 89 N s with
-// 32.1 N m in the mean, about as before the turn with 31.7, without the twist back with 36.3. But of those hits, 4
-// times 1 920 over four positions of the hit point, 126 instead of 73 fell with the figure's own strength, 56 of them
-// in the third step, where the stance foot slid more than 5 cm in 39 instead of 25 % of the steps. Three times, round
-// 54, turns the figure a little harder about up, with 32.6 N m, but catches more: of those hits 104 fell, of the 4
-// times 5 264 on chest, belly and limbs 4 461 instead of 4 573 with its own strength, 1 486 instead of 1 503 with the
-// hold against the world and 5 767 instead of 5 973 without a hold, of the 168 light hits none, none and 5 instead of
-// 4. 2.6, 2.7, 3.5 and 4 times let 119, 111, 166 and 217 of the middle ones fall: from 3.5 times the twist the spine
-// allows runs out before the pelvis turns its farthest.
+// stride and the shoulders turn against the hips, see nbPelvisTurn, nbStepTurn and the roadmap, F79, rounds 53 to 55.
+// The pelvis turns by NB_PELVIS_TURN times the angle of the line between the ankles from across the way the figure
+// faces, at most NB_PELVIS_TURN_MAX radians, the hip of the foot ahead forward, and while a foot swings the turn goes
+// from the line to where the swinging foot started to the line to its target, smoothly over the time of the step, see
+// nbStepTurn. The spine twists the upper body back by NB_TRUNK_COUNTER times that turn against the pelvis, at most as
+// far as its joints allow, see nbTurnTrunkBack. Standing, the turn falls off with the time NB_TURN_RELAX. Before round
+// 53 the body turned as one block: while it stepped, its shoulders turned against its hips by up to 5 degrees in the
+// mean over a table of hits with its own strength, now by up to 33. While a foot swings the pelvis follows 0.7 of its
+// turn and the chest turns 2.2 times as far the other way. Round 53 twisted the upper body back by 2.5 times: the
+// pelvis and the leg that steps, turning about the stance hip, have 1.6 times the rotational inertia about up of the
+// upper body about its spine, 1.31 against 0.81 kg m^2 for the humanoid of the library, and the ground turned the
+// figure about up while it stepped after hits from 50 to 89 N s with 32.1 N m in the mean, about as before the turn
+// with 31.7, without the twist back with 36.3. But of those hits, 4 times 1 920 over four positions of the hit point,
+// 126 instead of 73 fell with the figure's own strength, 56 of them in the third step, where the stance foot slid more
+// than 5 cm in 39 instead of 25 % of the steps. Three times, round 54, turns the figure a little harder about up, with
+// 32.6 N m, but catches more: of those hits 104 fell, of the 4 times 5 264 on chest, belly and limbs 4 461 instead of
+// 4 573 with its own strength, 1 486 instead of 1 503 with the hold against the world and 5 767 instead of 5 973
+// without a hold, of the 168 light hits none, none and 5 instead of 4. 2.6, 2.7, 3.5 and 4 times let 119, 111, 166 and
+// 217 of the middle ones fall: from 3.5 times the twist the spine allows runs out before the pelvis turns its farthest.
+// Round 55: The turn followed the line to the swinging ankle on its arc. That line turns fastest as the swinging foot
+// passes the stance foot, and in the later steps the turn reversed there within a twelfth of a second and the upper
+// body twisted back by 90 degrees within a ninth, just when the rebound of the landing had unloaded the stance foot:
+// the stance hip pushed with its full 300 N m against a foot that held almost nothing. After 89 N s on the chest that
+// foot slid 59 cm in the third step, with round 52 4 cm, and over the 329 hits on chest and belly from 50 to 89 N s
+// with a third step before and since round 53 it slid 6.6 instead of 3.9 cm in it. Over the time of the step the turn
+// reverses no faster than its step allows: of those hits, 4 times 1 920 over four positions of the hit point, 72
+// instead of 104 fell with the figure's own strength, as before round 53 with 73, of all 4 times 5 264 on chest, belly
+// and limbs 4 353 instead of 4 461, without a hold 5 611 instead of 5 767 and none of the 168 light hits instead of 5,
+// with the hold against the world 1 532 instead of 1 486. From the fourth step on the stance foot slid more than 5 cm
+// in 45 instead of 55 % of the steps, in the third still in 41 %.
 #define NB_PELVIS_TURN 0.25f
 #define NB_PELVIS_TURN_MAX 0.25f
 #define NB_TRUNK_COUNTER 3.0f
@@ -1004,6 +1014,21 @@ static float nbPelvisTurn( const nbBalancer* b, b3Vec3 leftAnkle, b3Vec3 rightAn
 	float across = b3MaxFloat( b3Dot( line, left ), b->footGap );
 	float turn = -NB_PELVIS_TURN * b3Atan2( ahead, across );
 	return b->turnScale * b3ClampFloat( turn, -NB_PELVIS_TURN_MAX, NB_PELVIS_TURN_MAX );
+}
+
+// How far the pelvis turns about up while a foot swings, see NB_PELVIS_TURN: from the turn with the swinging ankle where
+// it started to the turn with it at its target, smoothly over the time of the step
+static float nbStepTurn( const nbBalancer* b, int foot, float phase )
+{
+	int stance = 1 - foot;
+	b3Vec3 from[2], to[2];
+	from[foot] = b->swingStart;
+	from[stance] = b->plant[stance];
+	to[foot] = b->stepAnkle;
+	to[stance] = b->plant[stance];
+	float start = nbPelvisTurn( b, from[0], from[1] );
+	float end = nbPelvisTurn( b, to[0], to[1] );
+	return start + ( end - start ) * nbSmooth( phase );
 }
 
 // How high along up the pelvis can stand upright over a point with both ankles at their targets, at most a height. In a
@@ -1962,11 +1987,8 @@ nbBalanceResult nbUpdateBalance( nbWorld* world, int index, nbFigure* f, float t
 		// reaches from the pelvis turned halfway between upright and as it is: from upright alone the foot misses its
 		// target when a push pitches the pelvis, from the pelvis as it is the swing feeds back on itself through the roll
 		// it gives the pelvis.
-		b3Vec3 ankles[2];
-		ankles[foot] = swing;
-		ankles[stance] = b->plant[stance];
 		b->turnScale = 1.0f;
-		turn = nbPelvisTurn( b, ankles[0], ankles[1] );
+		turn = nbStepTurn( b, foot, phase );
 		b3WorldTransform wanted = nbWantedPelvis( b, nbAtHeight( pelvisPoint, up, nbHoldHeight( f, b, standing ) ), turn );
 		b3WorldTransform swingPelvis = { pelvis.p, nbHalfwayAt( pelvis.q, wanted.q, 0.5f ) };
 		nbLegIK( f, b, foot, swingPelvis, swing, b->footFacing[stance], pose );

@@ -1152,6 +1152,23 @@ rechnen die Szenen ohne getroffene Figuren dasselbe, hinter ihren Mauern stehen 
 Stadt mit Figuren 28 statt 27, und ein Bild der Stadt mit Figuren kostet das 1,00- bis 1,03-fache, bei anderer Arbeit.
 Ein Spiel ruft dafür nichts auf.
 
+**Der Standfuß in späteren Schritten.** Seit `active-ragdoll-55` dreht das Becken, während ein Fuß schwingt, glatt über
+die Zeit des Schritts, von der Drehung, mit der der Schwungfuß losgeht, zu der an seinem Ziel, auf Wunsch des Nutzers.
+Bisher folgte die Drehung der Linie zum schwingenden Knöchel und kehrte in der Mitte späterer Schritte in einem Zwölftel
+einer Sekunde um, gerade wenn das Standbein den Körper nach dem Aufsetzen hochgefedert hatte und der Standfuß kaum noch
+trug. Die Hüfte des Standbeins trat ihn dann weg, mit eigener Kraft rutschte er im dritten Schritt bei 40 statt 25 % der
+Schritte mehr als 5 cm, ab dem vierten bei 55 statt 44 %. Über vier Lagen des Treffpunkts fallen mit eigener Kraft von
+den leichten Treffern weiter keiner, von den mittleren, 50 bis 89 N s, 72 statt 104, so wenige wie vor der Drehung im
+Körper, von den harten 3 333 statt 3 416 und an den Gliedern 948 statt 941. Ohne Stütze fallen 5 611 statt 5 767 der 4 ×
+5 264 Treffer und kein leichter mehr, mit der Stütze gegen die Welt, dem Standard, 1 532 statt 1 486, 43 harte mehr. Ab
+dem vierten Schritt rutscht der Standfuß mit eigener Kraft wieder so selten wie vor der Drehung, bei 45 % der Schritte,
+im dritten im Mittel 5,0 statt 6,0 cm, aber weiter bei 41 % mehr als 5 cm. Schultern und Hüften drehen sich im Schritt
+wie vorher gegeneinander. Ein Spiel ruft dafür nichts Neues auf. Siehe „Drehung über die Zeit des Schritts“ und die
+Zeilen danach in [Optimierungen.md](docs/Optimierungen.md). Gepaart gegen `active-ragdoll-54` rechnen die Szenen ohne
+getroffene Figuren dasselbe, hinter ihren Mauern liegen am Ende 2 der 10 Figuren statt keiner, in der Stadt mit Figuren
+stehen am Ende 29 statt 28, und ein Bild der Stadt mit Figuren kostet das 0,92- bis 0,97-fache, bei anderer Arbeit und
+im Rauschen der VM.
+
 **Drücken.** Drückt ein Körper eine stehende Figur langsam, ein Stock, eine Hand oder ein Block, und schiebt er dabei
 einen ihrer Knochen mit mindestens `pushForce` (Standard 40 N) seitlich, bei zwei Prüfungen hintereinander, also ein
 paar Schritte lang, fängt sich ein Mensch der Bibliothek, statt eine Wand zu bleiben: Seine Knochen werden dynamisch,
