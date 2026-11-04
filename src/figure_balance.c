@@ -239,6 +239,17 @@
 // and limbs 4 353 instead of 4 461, without a hold 5 611 instead of 5 767 and none of the 168 light hits instead of 5,
 // with the hold against the world 1 532 instead of 1 486. From the fourth step on the stance foot slid more than 5 cm
 // in 45 instead of 55 % of the steps, in the third still in 41 %.
+// Round 56: In the third step the stance foot slid most in steps backward, in the middle of the step, where the twist
+// back of the upper body turns round fastest and the rebound of the landing unloads the stance foot: its sole slid
+// faster than 0.3 m/s in 48 instead of 27 % of those updates at the same load. Without the turn in steps backward it
+// slid there as before round 53, but of all 4 times 5 264 hits 4 705 instead of 4 353 fell with the figure's own
+// strength: the twist back of the upper body catches hard hits. The pelvis now takes only its share of the turn, none
+// in a step straight back, see nbStepShare, and the upper body twists back by the whole turn as before. Turned with the
+// swinging leg in a step backward, the pelvis moved the body farther back over the stance foot, in the sense in which it
+// already fell. Of all 4 times 5 264 hits 4 156 instead of 4 353 fall with the figure's own strength, 1 502 instead of
+// 1 532 with the hold against the world and 5 446 instead of 5 611 without a hold, none of the light ones, but 81
+// instead of 72 of the middle ones with its own strength. In the third step the stance foot slides more than 5 cm in
+// 34 instead of 41 % of the steps, in steps backward still in about half of them.
 #define NB_PELVIS_TURN 0.25f
 #define NB_PELVIS_TURN_MAX 0.25f
 #define NB_TRUNK_COUNTER 3.0f
@@ -1031,6 +1042,16 @@ static float nbStepTurn( const nbBalancer* b, int foot, float phase )
 	return start + ( end - start ) * nbSmooth( phase );
 }
 
+// The share of that turn the pelvis itself takes in a step, see NB_PELVIS_TURN: all of it while the swinging foot goes
+// forward or to the side of where the stance foot faces, none while it goes straight back, one plus the cosine of the
+// angle between its way and forward in between
+static float nbStepShare( const nbBalancer* b )
+{
+	b3Vec3 way = nbFlat( b3Sub( b->stepAnkle, b->swingStart ), b->up );
+	float length = b3Length( way );
+	return length > 1.0e-3f ? b3ClampFloat( 1.0f + b3Dot( way, b->forward ) / length, 0.0f, 1.0f ) : 1.0f;
+}
+
 // How high along up the pelvis can stand upright over a point with both ankles at their targets, at most a height. In a
 // wide stance it stands lower, as straight legs would hold the feet above the ground.
 static float nbReachableHeight( const nbBalancer* b, b3Vec3 point, const b3Vec3* ankles, float height )
@@ -1184,6 +1205,7 @@ static bool nbStartCatchStep( const nbWorld* world, int index, nbFigure* f, nbBa
 
 	b->lastFoot = bestFoot;
 	b->stepping = true;
+	b->pelvisShareFrom = b->pelvisShare;
 	b->stateTime = 0.0f;
 	b->stepFoot = bestFoot;
 	b->stepCount += 1;
@@ -1364,6 +1386,8 @@ void nbBeginBalance( nbWorld* world, int index, nbFigure* f )
 	b->stepping = false;
 	b->stepFoot = -1;
 	b->turnScale = 1.0f;
+	b->pelvisShare = 1.0f;
+	b->pelvisShareFrom = 1.0f;
 
 	nbMeasure( world, index, f, b );
 	for ( int leg = 0; leg < 2; ++leg )
@@ -1945,7 +1969,7 @@ nbBalanceResult nbUpdateBalance( nbWorld* world, int index, nbFigure* f, float t
 		float height = nbHoldHeight( f, b, nbReachableHeight( b, point, b->plant, standing ) );
 		b->turnScale *= nbExp( -timeStep / NB_TURN_RELAX );
 		turn = nbPelvisTurn( b, b->plant[0], b->plant[1] );
-		b3WorldTransform wanted = nbWantedPelvis( b, nbAtHeight( point, up, height ), turn );
+		b3WorldTransform wanted = nbWantedPelvis( b, nbAtHeight( point, up, height ), b->pelvisShare * turn );
 		for ( int leg = 0; leg < 2; ++leg )
 		{
 			nbLegIK( f, b, leg, wanted, b->plant[leg], b->footFacing[leg], pose );
@@ -1983,13 +2007,15 @@ nbBalanceResult nbUpdateBalance( nbWorld* world, int index, nbFigure* f, float t
 		}
 		swing = b3MulAdd( swing, NB_STEP_HEIGHT * b->scale * b3ComputeCosSin( B3_PI * phase ).sine, up );
 
-		// The stance leg holds the pelvis upright at standing height, turned toward the foot ahead. The swinging leg
-		// reaches from the pelvis turned halfway between upright and as it is: from upright alone the foot misses its
-		// target when a push pitches the pelvis, from the pelvis as it is the swing feeds back on itself through the roll
-		// it gives the pelvis.
+		// The stance leg holds the pelvis upright at standing height, turned toward the foot ahead by its share of the turn,
+		// none in a step back, see nbStepShare. The swinging leg reaches from the pelvis turned halfway between upright
+		// and as it is: from upright alone the foot misses its target when a push pitches the pelvis, from the pelvis as
+		// it is the swing feeds back on itself through the roll it gives the pelvis.
 		b->turnScale = 1.0f;
 		turn = nbStepTurn( b, foot, phase );
-		b3WorldTransform wanted = nbWantedPelvis( b, nbAtHeight( pelvisPoint, up, nbHoldHeight( f, b, standing ) ), turn );
+		b->pelvisShare = b->pelvisShareFrom + ( nbStepShare( b ) - b->pelvisShareFrom ) * progress;
+		b3WorldTransform wanted =
+			nbWantedPelvis( b, nbAtHeight( pelvisPoint, up, nbHoldHeight( f, b, standing ) ), b->pelvisShare * turn );
 		b3WorldTransform swingPelvis = { pelvis.p, nbHalfwayAt( pelvis.q, wanted.q, 0.5f ) };
 		nbLegIK( f, b, foot, swingPelvis, swing, b->footFacing[stance], pose );
 		if ( b->ownStrength )

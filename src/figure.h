@@ -215,6 +215,11 @@ typedef struct nbBalancer
 	// while a foot swings, falling off while the figure stands
 	float turnScale;
 
+	// How much of that turn the pelvis itself takes, see nbStepShare: going over each step from the share it had when
+	// the step began to the share of the step, kept while the figure stands
+	float pelvisShare;
+	float pelvisShareFrom;
+
 	// The arms row against a fall, see nbRowArms: where each upper arm is in its swing, the seconds into the swing out or
 	// the way back, the seconds since it came out, the rotation against its rest pose it swings from, out from where it
 	// started or back from where it came out, the axis of the swing in the frame of the shoulder and its angle

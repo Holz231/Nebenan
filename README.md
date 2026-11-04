@@ -1169,6 +1169,27 @@ getroffene Figuren dasselbe, hinter ihren Mauern liegen am Ende 2 der 10 Figuren
 stehen am Ende 29 statt 28, und ein Bild der Stadt mit Figuren kostet das 0,92- bis 0,97-fache, bei anderer Arbeit und
 im Rauschen der VM.
 
+**Der Standfuß im dritten Schritt.** Seit `active-ragdoll-56` nimmt das Becken bei einem Schritt nur seinen Anteil an
+der Drehung, auf Wunsch des Nutzers: die ganze, wenn der Schwungfuß nach vorn oder zur Seite geht, keine bei einem
+Schritt gerade zurück und dazwischen eins plus den Kosinus des Winkels zwischen seinem Weg und vorn. Der Anteil geht
+glatt über die Zeit jedes Schritts von dem, den das Becken hatte, zu dem des Schritts und bleibt, solange die Figur
+steht. Der Oberkörper dreht wie bisher um die ganze Drehung zurück. Mit eigener Kraft rutschte der Standfuß im dritten
+Schritt weiter bei 41 statt 25 % der Schritte mehr als 5 cm, vor allem bei Schritten rückwärts und zur Seite weg, in der
+Mitte des Schritts, wo die Gegendrehung am schnellsten umkehrt und das Hochfedern nach dem Aufsetzen den Standfuß
+entlastet. Bei Schritten rückwärts glitt seine Sohle dort in 48 statt 27 % der Updates schneller als 0,3 m/s, bei
+gleicher Last. Ganz ohne Drehung bei Schritten rückwärts rutscht er wie vor der Drehung im Körper, aber es fallen mehr,
+denn die Gegendrehung des Oberkörpers fängt harte Treffer. Über vier Lagen des Treffpunkts fallen mit eigener Kraft von
+den 4 × 5 264 Treffern 4 156 statt 4 353, mit der Stütze gegen die Welt, dem Standard, 1 502 statt 1 532 und ohne
+Stütze 5 446 statt 5 611, von den leichten keiner, mit eigener Kraft von den mittleren, 50 bis 89 N s, aber 81 statt 72.
+Im dritten Schritt rutscht der Standfuß mit eigener Kraft bei 34 statt 41 % der Schritte mehr als 5 cm, zur Seite weg
+bei 31 statt 47 %, rückwärts aber weiter bei der Hälfte, und im zweiten Schritt bei 48 statt 43 %. Schultern und Hüften
+drehen sich im Schritt wie vorher gegeneinander. Ein Spiel ruft dafür nichts Neues auf. Siehe „Das Becken mit seinem
+Anteil an der Drehung“ und die Zeilen danach in [Optimierungen.md](docs/Optimierungen.md). Gepaart gegen
+`active-ragdoll-55` rechnen die Szenen ohne Figuren, die einzelne Figur hinter ihrer Mauer, die Kämpfer und die Ragdolls
+im Schutt dasselbe, hinter ihren Mauern stehen am Ende wie vorher 8 der 10 und alle 50 Figuren, in der Stadt mit Figuren
+wie vorher 29, und nur eine liegt statt drei. Ein Bild der Stadt mit Figuren kostet das 1,00- bis 1,02-fache, mit einem
+Thread das 0,96-fache, bei anderer Arbeit und im Rauschen der VM.
+
 **Drücken.** Drückt ein Körper eine stehende Figur langsam, ein Stock, eine Hand oder ein Block, und schiebt er dabei
 einen ihrer Knochen mit mindestens `pushForce` (Standard 40 N) seitlich, bei zwei Prüfungen hintereinander, also ein
 paar Schritte lang, fängt sich ein Mensch der Bibliothek, statt eine Wand zu bleiben: Seine Knochen werden dynamisch,
