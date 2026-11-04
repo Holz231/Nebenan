@@ -209,7 +209,14 @@ typedef struct nbBalancer
 	float airborneTime;
 	float oneFootTime;
 	float calmTime;
+	float calmSpeed; // Speed averaged for the calm check while balance works through the legs
 	float restlessTime;
+
+	// Step-driven pelvis and opposing spinal yaw: its decay in stance, the pelvis's share for the current step and
+	// the share at its start. Backward steps reduce the pelvis's share, see nbStepShare.
+	float turnScale;
+	float pelvisShare;
+	float pelvisShareFrom;
 
 	// The arms row against a fall, see nbRowArms: where each upper arm is in its swing, the seconds into the swing out or
 	// the way back, the seconds since it came out, the rotation against its rest pose it swings from, out from where it
@@ -232,6 +239,7 @@ typedef struct nbBalancer
 	b3JointId upright;
 	b3JointId uprightLegs[2];
 	bool ownStrength;
+	b3Vec3 hipVelocity; // Pelvis tilt velocity, smoothed while standing for the hold through the legs
 } nbBalancer;
 
 // What balance found in an update, see nbUpdateBalance
@@ -328,6 +336,9 @@ typedef struct nbFigure
 	bool springs;
 	float fallTime;
 
+	// Time left in the yielding response of the spinal motors to a trunk hit, see nbFigureMotors::responsiveTrunk
+	float trunkYieldLeft;
+
 	// Getting up: the pose and the root the ragdoll lay in, the clip and how far into it, and why it waits. A figure that
 	// moves where it has room to get up, see nbFindRoom, moves its root from where it lay and turns it about up, over a
 	// time, and lies where it gets up at the end.
@@ -351,6 +362,7 @@ typedef struct nbFigure
 	nbBalancer balancer;
 	int catchCount;
 	int pushCount;
+	int collisionCount;
 
 	// The ids of the last hits, see NB_HIT_MEMORY, and what the figure went through
 	uint32_t hitIds[NB_HIT_MEMORY];

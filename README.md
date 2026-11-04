@@ -305,7 +305,12 @@ Bildzeit.
   anderen steht er offen. **Zustand** schreibt „folgt dem Clip“ über jede, das Menü zählt außerdem, wie viele folgen
   und wie oft eine losließ. Mit dem Stock lassen sie sich drücken und schlagen
 
-**Aufrufoptionen**: `--scene 0..6` startet eine Szene, `--fragment-scale 3` setzt die Bruchstückgröße, `--vsync`
+- **Hindernisse**: Zwei Figuren führen denselben Schlag aus, eine gegen eine Betonwand, die andere im Freien.
+  Am Hindernis werden die Knochen vor dem Kontakt dynamisch, die Gelenke ziehen weiter zum Clip, und die Figur
+  fängt sich. Der Schlag wiederholt sich alle fünf Sekunden. Das Menü zählt die Übergänge durch Hinderniskontakt.
+  **F1** blendet das Menü aus, **R** startet den Versuch neu.
+
+**Aufrufoptionen**: `--scene 0..7` startet eine Szene, `--fragment-scale 3` setzt die Bruchstückgröße, `--vsync`
 schaltet VSync ein, `--msaa 4` schaltet Kantenglättung ein (Standard aus), `--highdpi` rendert auf hochauflösenden
 Bildschirmen in voller Auflösung (Standard aus, kostet Füllrate). `--serial-physics` schaltet die parallele Physik ab,
 `--threads N` setzt die Zahl der Threads, `--step-rate 30` den Takt der Physik. `--compare` misst parallel gegen
@@ -1063,6 +1068,120 @@ und nach statt sofort aufrichtet, auch, siehe „Nicht stärker, als der Fuß h�
 [Optimierungen.md](docs/Optimierungen.md). Gepaart gegen `active-ragdoll-50`, zwei Läufe im Wechsel mit vier Threads und
 einer mit einem, rechnen alle Szenen des Benchmarks dasselbe, ihre Figuren stehen mit der Stütze gegen die Welt, und ein
 Bild der Stadt mit Figuren kostet das 0,99-, 1,03- und 0,96-fache, bei gleicher Arbeit. Ein Spiel ruft dafür nichts auf.
+
+**Die Hüfte bremst das Kippen.** Bei Balance durch die Beine berücksichtigt die Stütze jetzt auch, wie schnell das
+Becken kippt. Die Dämpfung des Parallelgelenks sieht nur die Drehung zwischen Oberschenkel und Becken; dreht sich der
+Oberschenkel mit, bremste sie zu wenig. Die Hüfte zielt deshalb ein Stück gegen die Kippgeschwindigkeit des Beckens,
+mit 80 ms als Dämpfungszeit. Das Gegenmoment geht weiter in das Standbein, mit denselben Grenzen der Gelenke und der
+Bodenhaftung. In 1.920 mittleren Treffern auf die Mitte von Bauch und Brust, 50 bis 89 N s aus zwölf Richtungen,
+fallen mit Hüftdämpfung und Standbremse 3 statt ursprünglich 17 Figuren; mit um ±1 mm verschobenen Treffpunkten
+zusammen 14 statt ursprünglich 58 von 5.760. Bei 1.200 stärkeren Treffern von 90 bis 138 N s fallen 509 statt 576.
+Die Stütze gegen die Welt und die Variante ohne Stütze bleiben in
+den Vergleichsversuchen bitgleich. In der Demo ist **Stütze durch die Beine** jetzt standardmäßig eingeschaltet;
+der Bibliotheksstandard bleibt die Stütze gegen die Welt.
+
+**Die Füße bremsen das Nachtaumeln.** Sobald die Figur nicht mehr tritt, legt sie den gewünschten Druckpunkt um ihre
+Restgeschwindigkeit mal 0,12 s voraus. Die Beine teilen die Last nach diesem Punkt, und jeder Druckpunkt bleibt in
+seiner Sohle. So bremst die Bodenreaktion die Bewegung ab, bevor sie einen neuen Schritt nötig macht. Nach einem
+69-N-s-Stoß auf die obere Brust kommt die Figur mit vier Schritten in 3,13 s zur Ruhe, statt nach 14 Schritten die
+Zeitgrenze von acht Sekunden zu erreichen und zu fallen. In den mittleren Treffern mit drei Treffpunktlagen sinken
+die Stürze durch diese Fortsetzung von 22 auf 14. Die Ruheprüfung zählt eine bereits niedrige Geschwindigkeit sofort
+und toleriert kurze Spitzen, wenn auch der geglättete Wert mit 0,1 s Zeitkonstante niedrig bleibt. Bewegung über 0,3 m/s im
+Massenmittel verhindert die Übergabe an Animation sofort; Boden, Standfläche und Haltung müssen weiter passen.
+Mit der ursprünglichen Rumpfreaktion fallen in Stichproben mit je 480 Treffern bei 30 und 120 Hz 111 statt 141
+beziehungsweise 170 Figuren. Diese Takte bleiben für diese Variante schwieriger als 60 Hz.
+
+**Rumpf gibt nach.** In der Demo ist diese Option standardmäßig an. Nach einem Treffer gibt die Wirbelsäule kurz
+nach: Ihre Motoren ziehen 0,15 s lang mit 40 % ihrer Stärke und kehren über 0,35 s weich zur vollen Kraft zurück.
+Die Beine behalten ihre Stützkraft, die Gelenkgrenzen gelten weiter. Bei Treffern auf Bauch oder Brust wird auch das
+beim Verteilen fehlende Kippmoment übertragen, nicht nur die Drehung um die Längsachse. Dafür wird der vollständige
+Trägheitstensor des Oberkörpers verwendet, ohne zusätzlichen linearen Stoß. So können Brust und Schultern sich
+gegenüber dem Becken drehen und der Rumpf kann sichtbar beugen und wieder aufrichten.
+
+In der Messung mit Balance durch die Beine und 60 N s nimmt das Beugen nach einem Brusttreffer von 16,9° auf 24,2°
+zu, bei einem Stoß nach vorn von 23,8° auf 37,6° und die relative Drehung nach einem Schultertreffer von 4,7° auf
+18,3°. Alle drei Fälle fangen sich und stehen wieder. Die beweglichere Reaktion fordert die Balance stärker:
+Anfangs fielen damit 21 von 1.920 mittleren Treffern auf die Körpermitte, mit der unten beschriebenen Schritt- und
+Standregelung noch 2. Die bisherigen F61-Zahlen oben beziehen sich auf die
+ursprüngliche Rumpfreaktion. Ein Spiel aktiviert die neue Reaktion mit
+`nbFigureMotors::responsiveTrunk`; der Bibliotheksstandard bleibt für bestehende Anwendungen aus. In **Figuren**
+zeigen **Schultertreffer** die Verdrehung und **Rückenstoß** das Beugen. **Rumpf gibt nach** schaltet zum Vergleich um
+und lädt die Szene neu; **Zeitlupe** macht den kurzen Ablauf deutlicher. Ein erneuter Treffer von mindestens der
+Hälfte von `knockdownImpulse` startet das Nachgeben wieder.
+
+**Der erste Schritt geht in die Fallrichtung.** Mit beweglichem Rumpf und eigener Balance bevorzugt die Figur
+beim ersten Schritt den Fuß auf der Seite, zu der sie seitlich fällt. Der andere Fuß darf die Beine nicht kreuzen
+und konnte deshalb oft nicht weit genug nach außen treten, obwohl das Pendelmodell ihn zunächst günstiger bewertete.
+Ein deutlich besser erreichbarer Schritt kann weiter gewinnen; Boden, Hindernisse und Reichweite werden wie bisher
+geprüft. Die weiteren Schritte folgen der bisherigen Planung. Die Rumpfbewegung und alle Kraftgrenzen bleiben
+erhalten. Durch die Fußwahl sank die Zahl der Stürze bei 60 Hz von 21 auf 5 bei 1.920 mittleren Treffern; mit um
+±1 mm versetzten Treffpunkten zusammen von 63 auf 13 bei 5.760. **Stütze durch die Beine** und **Rumpf gibt nach**
+sind in der Demo beide eingeschaltet.
+
+**Die Hüfte beruhigt den Stand.** Mit beweglichem Rumpf glättet die Hüfte ihre gemessene Kippgeschwindigkeit im
+Stand über 40 ms. So verstärkt die Regelung das schnelle Zittern aus Kontakten und Gelenken nicht weiter. Sobald
+ein Fuß schwingt, verwendet die Hüfte wieder die unmittelbare Geschwindigkeit. Die Ruheprüfung verwendet weiter
+dieselben Grenzen; ein neuer Treffer verhindert die Übergabe an Animation sofort. Beugen und Verdrehen bleiben
+sichtbar; die bisherigen Rumpf- und Weltstützmodi behalten ihre Reaktion.
+
+**Die Standbremse fängt die Restbewegung.** Mit beweglichem Rumpf liegt der gewünschte Druckpunkt jetzt um die
+Geschwindigkeit mal 0,18 s voraus, statt um 0,12 s. Jeder Druckpunkt bleibt innerhalb seiner Sohle, die Beine teilen
+weiter dieselbe Last. So bremst die Figur die Seitwärtsbewegung früher ab, bevor sie wieder losstolpert. Nach einem
+85-N-s-Stoß nach vorn auf die untere Brust fängt sie sich mit vier Schritten in 3,12 s, statt nach 16 Schritten
+aufzugeben. Bei 60 Hz sinken die Fehlschläge über drei Treffpunktlagen von 15 auf 11 bei 5.760 mittleren Treffern.
+Bei 120 Hz werden alle 1.920 mittleren Treffer abgefangen.
+Stärkere Treffer profitieren bisher kaum, und einzelne leichte Treffer bleiben empfindlich. Messreihen und
+Varianten stehen in [Optimierungen.md](docs/Optimierungen.md).
+
+**Bei langsamem Physiktakt früher treten.** Mit beweglichem Rumpf und eigener Balance genügt eine Messung
+außerhalb der Standfläche, wenn der Physikschritt mindestens 1/30 s dauert. Zuvor wartete die Figur auch bei
+30 Hz zwei Messungen und reagierte dadurch später. Bei kürzeren Schritten bleiben es zwei Messungen; eine
+deutliche Abweichung löst weiterhin sofort einen Schritt aus. In der vollständigen 30-Hz-Reihe sinken die
+Fehlschläge von 282 auf 227 bei 1.920 mittleren Treffern. Die Vergleichsreihen bei 60 und 120 Hz bleiben gleich.
+Einzelne leichte Stolperfälle bleiben offen; der unten beschriebene Zehenhub behebt den 72-N-s-Fall.
+
+**Zehenführung und Schrittdrehung aus Stand 57.** Bei Vorwärtsschritten hebt die neue Beinbalance die Zehen im
+Schwung an und landet wieder flach. Der Hub nimmt mit dem Vorwärtsanteil des Schritts ab; seitliche und rückwärtige
+Schritte bekommen ihn nicht pauschal. Damit fängt sich der bisher offene 72-N-s-Treffer wieder, auch um ±1 mm
+versetzt. Diese Fußführung ist mit **Rumpf gibt nach** oder **Mit Schritten drehen** aktiv.
+
+**Mit Schritten drehen** lässt das Becken zum vorausgehenden Fuß und Brust und Schultern dagegen drehen. Die
+Vorgabe folgt dem geplanten Schritt glatt, nimmt bei Schritten rückwärts ab und klingt im Stand aus. Die Drehung
+wirkt über die Gelenke in die Physik. Zusammen mit der nachgebenden Trefferreaktion drehen Brust und Becken nach
+zentralen 60-N-s-Treffern in der ersten Sekunde um etwa 24–26° statt 4–8° gegeneinander. Beugen bleibt erhalten.
+In der Demo sind beide Schalter standardmäßig an. Ein Spiel aktiviert die Schrittdrehung getrennt mit
+`nbFigureMotors::turnWithSteps`; der Bibliotheksstandard ist aus, benötigt wird die Balance durch die Beine.
+Die zusätzliche Bewegung fängt mehr starke Treffer, erschwert aber einzelne mittlere Grenzfälle. Der Vergleich
+mit Stand 57 und die Messreihen stehen in [Vergleich_Stand57.md](docs/Vergleich_Stand57.md) und
+[Optimierungen.md](docs/Optimierungen.md).
+
+Bei aktivierter Schrittdrehung verwendet die eigene Balance den Flächenschwerpunkt der Stützfläche. Zuvor sprang
+ihr Mittelpunkt bei einer winzigen Fußdrehung um rund 3 cm, sobald ein fast gerader Rand einen zusätzlichen
+Eckpunkt bekam. Das ist behoben, ohne die Körperdrehung abzuschwächen. Nach einem Fangschritt bremst die Figur
+außerdem die Restbewegung stärker über den gewünschten Bodendruck innerhalb ihrer Sohlen. So lösen kleine
+Restbewegungen seltener weitere Fangschritte aus. Die vorhandenen Kraft- und Reibungsgrenzen bleiben erhalten.
+
+Bei weiten Fangschritten hält die Planung außerdem Fußabstand und Beinreichweite gleichzeitig ein. Das Begrenzen
+der Reichweite konnte zuvor einen bereits eingehaltenen Seitenabstand wieder verkleinern. Mit Schrittdrehung
+wird das Ziel nun im gemeinsam erreichbaren Bereich gewählt; ein unmögliches neues Ziel wird verworfen.
+
+**Ruhigerer Kopf nach Treffern.** Mit **Rumpf gibt nach** oder **Mit Schritten drehen** werden während der dynamischen
+Erholung die beiden Hals-/Kopfgelenke stärker gedämpft. Nach den drei Rumpftreffer-Proben bei 60 Hz ändern sich ihre
+relativen Drehgeschwindigkeiten im Mittel um etwa 60 % weniger pro Bild. Der Kopf gibt bei direkten Treffern weiter
+nach, die Wirbelsäule beugt und dreht weiter. Masse, Gelenksteifigkeit und Kraftgrenzen bleiben gleich. Die zusätzliche
+Dämpfung verändert einzelne Balance-Grenzfälle: bei mittleren 60-Hz-Treffern 14 statt 8 Fehlschläge von 5 760,
+bei 120 Hz keiner statt eines von 1 920. Die vollständigen Reihen stehen in [Optimierungen.md](docs/Optimierungen.md).
+
+**Animierte Knochen treffen Hindernisse.** Vor dem nächsten Schritt prüft die Bibliothek den Weg bewegter Knochen
+gegen feste Geometrie. Trägt ein Knochen nach seiner Masse und seiner Geschwindigkeit in die getroffene Fläche
+mindestens `nbFigureDef::collisionImpulse` (Standard 3 N s), werden alle Knochen der Figur dynamisch, mit ihren
+Geschwindigkeiten. Es kommt kein zusätzlicher Trefferimpuls dazu. Ein Mensch fängt sich mit der vorhandenen Balance,
+seine Gelenke folgen weiter den Winkeln des Clips; ein anderes Rig fällt. Die Prüfung erfasst auch dünne Wände, die
+zwischen Ausgangs- und Zielpose liegen. Drehungen werden in begrenzten Teilstücken angenähert, Sensoren und
+Kollisionsmasken werden berücksichtigt. `collisionImpulse` null schaltet die Prüfung ab. `collisionCount` in
+`nbFigureInfo` und `nbFigureStats` zählt die Übergänge. Die Szene **Hindernisse** zeigt den Unterschied zwischen einem
+freien und einem blockierten Schlag. Noch offen sind der eigene Stoß gegen bewegliche Gegenstände, Kontakte, die
+bereits mit Überlappung beginnen, und das Weiterführen einer Aktion in der Luft, siehe F78 der Roadmap.
 
 **Drücken.** Drückt ein Körper eine stehende Figur langsam, ein Stock, eine Hand oder ein Block, und schiebt er dabei
 einen ihrer Knochen mit mindestens `pushForce` (Standard 40 N) seitlich, bei zwei Prüfungen hintereinander, also ein
@@ -1866,6 +1985,8 @@ beim Einbinden nicht gebaut.
 | `tenseTime`, `relaxTime` | 0,03 s, 0,08 s | Mit Muskeln: Zeitkonstanten, in denen ein Muskel die verlangte Kraft hinauf und hinab erreicht. Null folgt sofort |
 | `brakeStrength` | 1,5 | Mit Muskeln: So viel mehr hält ein Gelenk, das gegen seine Richtung gedreht wird, siehe `nbBoneDef::maxSpeed` |
 | `followStrength` | 1 | Mit `engageRadius`: Mit so viel mal dem Gewicht seines Knochens hält jeder Antrieb einer folgenden Figur gegen Störungen, zusätzlich zu der Kraft, mit der der Clip den Knochen beschleunigt. Darunter kleben die Füße am Boden, darüber drücken sich zwei Kämpfer stärker als ein Mensch auf seinen Füßen |
+| `responsiveTrunk` | aus | Vollständiges dreidimensionales Treffermoment und kurz nachgebende Wirbelsäule. Mit eigener Balance auch Hüftglättung, Standbremse und Zehenführung; in der Demo an |
+| `turnWithSteps` | aus | Mit eigener Balance dreht das Becken mit dem Schritt und die Wirbelsäule dagegen; mit Zehenführung im Vorwärtsschritt. Unabhängig von `responsiveTrunk`, in der Demo an |
 
 | Knochen (`nbBoneDef`) | Standard | Wirkung |
 | --- | --- | --- |

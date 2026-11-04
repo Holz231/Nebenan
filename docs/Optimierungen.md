@@ -2503,3 +2503,850 @@ Seit der Liste ist dazugekommen oder gemessen worden:
 | Last aus dem letzten Teilschritt | ⛔ | Für „Nicht stärker, als der Fuß hält“: Die Last aus den Stößen des letzten der vier Teilschritte statt aus dem ganzen Schritt, mit der Reibung des Bodens der Tests, 0,73, fest und dem 1-, 0,7- und 0,5-fachen dessen, was der Fuß hält, gefallen wie oben: 1, 27, 999 und 255, 1, 29, 1 007 und 251 und 0, 27, 1 021 und 257, mit der gemischten Reibung und dem 0,5-fachen 2, 26, 1 021 und 255. So viel wie aus dem ganzen Schritt, aber leichte Treffer fallen. Der letzte Teilschritt ist eine einzelne Probe, der ganze Schritt mittelt über vier. |
 | Stütze mit dem Rest der Reibung | ⛔ | Für „Nicht stärker, als der Fuß hält“: Vom Halt des Fußes geht ab, was die Beine schon brauchen, um den Körper über dem Fuß zu tragen, die Last mal dem Abstand des Schwerpunkts neben dem Fuß durch seine Höhe darüber. Gefallen wie oben: mit dem Rest 2, 33, 1 075 und 251, mit dem 1,5-fachen des Rests 1, 23, 1 071 und 263. Harte Treffer fängt sie so seltener als mit dem ganzen Halt. |
 | Standbein übernimmt nach und nach | ⛔ | Für „Standfuß rutscht beim Aufrichten“: Das Bein, das gerade zum Standbein wird, reicht in seiner IK zuerst vom Becken, wie es ist, und erst nach 0,05, 0,1 oder 0,15 s vom gewünschten, aufrechten Becken auf Standhöhe, statt es sofort zu verlangen. Gefallen wie oben, vor der gebauten Grenze der Reibung: 1, 50, 1 090 und 267, 3, 55, 1 083 und 286 und 1, 63, 1 097 und 290, statt 0, 34, 1 030 und 260. Wie die Varianten von Runde 50, die das Aufrichten bremsten, fängt sie weniger: Das sofortige Aufrichten ist nötig. |
+
+## Animierte Knochen treffen feste Hindernisse, F78, Stufe 1, 3. November 2026
+
+Lokal auf dem Ausgangsstand `active-ragdoll-51` weiterentwickelt. Der Ordner enthält keine Git-Metadaten; diese Runde
+wurde lokal gebaut und geprüft, ohne Branch, Commit, Push oder CI-Lauf.
+
+Eine kinematische Figur hatte keine Kontakte mit festen Körpern. Jetzt prüft die Bibliothek vor ihrem nächsten
+Schritt den Weg jedes genügend schnell bewegten Knochens. Die Schwelle `nbFigureDef::collisionImpulse` ist die Masse
+des Knochens mal seine Geschwindigkeit in die Fläche, Standard 3 N s, mit null abgeschaltet. Der volle Form-Cast
+prüft Verschiebungen einschließlich dünner Wände zwischen den Posen. Endpunkte von Kapseln und Hüllenecken prüfen
+zusätzlich Drehungen, aufgeteilt in höchstens 32 Teilstücke von ungefähr 0,1 rad. Es ist eine Näherung für Drehungen,
+kein exakter rotierender kontinuierlicher Kollisionslöser. Sensoren und ausgeschlossene Kollisionsmasken zählen nicht.
+
+Beim Kontakt übernimmt die vorhandene Balance mit dynamischen Knochen, ihren geplanten Geschwindigkeiten und
+Gelenkmotoren zum laufenden Clip. Es wird kein zusätzlicher Stoß angewendet. Andere Rigs fallen. `collisionCount` in
+`nbFigureInfo` und `nbFigureStats` zählt die Übergänge. Die neue Demo-Szene „Hindernisse“ stellt einen Schlag gegen
+Beton neben denselben freien Schlag, alle fünf Sekunden wiederholt. In einem automatisierten Lauf über 1 500 Bilder
+fing die Figur fünf Kontakte ab, ohne Sturz, und beide Figuren standen am Ende animiert.
+
+Prüfung: Release mit GCC 16.1 und Warnungen als Fehler, vollständige bestehende Tests sowie drei neue Kontakt-Tests.
+Ein Körper mit 10 kg, der in einem Schritt 0,8 m durch eine 2 cm dünne Wand laufen würde, wird vorher dynamisch und
+behält genau 48 m/s, also 480 N s; der nächste Kontakt hält ihn vor der Wand. Abschalten, höhere Schwelle, Sensor,
+Maske, eine Bewegung parallel zur Wand und derselbe Versuch 1 000 km vom Ursprung sind abgedeckt. Ein langer, um
+seinen ruhenden Mittelpunkt gedrehter Knochen trifft einen schmalen Pfosten auf seinem Bogen; der erste Ansatz mit
+nur einer geraden Strecke verfehlte ihn und wurde durch die Teilstücke ersetzt. Ein humanoider Schlag endet bei
+30, 60 und 120 Hz mit der Hand bei 0,404, 0,406 und 0,400 m vor einer Wand bei 0,435 m, fängt sich genau einmal und
+steht nach vier Sekunden ohne Sturz. Die gesamte Bewegung ist bei jedem Takt mit einem und vier Threads bitgleich.
+
+Gepaart mit der gesicherten Ausgangs-EXE, `nebenan_benchmark figures 4 1`, mehrfach in wechselnder Reihenfolge:
+Alle sechs Ergebnis-Hashes einschließlich Stadt, Kämpfern und Ragdolls im Schutt stimmen mit dem Ausgangsstand
+überein. Die Zeiten schwanken; die Stadt lag in den ersten zwei Paaren bei 2,89/2,90 statt 2,91/2,86 ms je Bild,
+in zwei weiteren bei 3,05/2,91 statt 3,46/2,85 ms. Daraus wird kein Geschwindigkeitsgewinn abgeleitet.
+
+Offen für F78: der eigene Kontakt mit beweglichen Gegenständen, vorhandene Überlappung und eine Aktion, die nach
+Kontakt in der Luft weiterläuft. Die vorhandene Balance durch die Beine wurde in dieser Runde nicht verändert.
+
+## Die Hüfte bremst das Kippen, F61, 3. November 2026
+
+Nach der Klarstellung des Nutzers weiter an der Balance durch die Beine, auf dem lokalen Stand mit F78 Stufe 1.
+Die Drehdämpfung des Parallelgelenks wirkte zwischen Oberschenkel und Becken. Dreht der Oberschenkel mit dem Becken,
+sieht sie wenig Bewegung, obwohl das Becken schnell kippt. Jetzt zielt die Stütze zusätzlich gegen die
+Kippgeschwindigkeit des Beckens: Die gewünschte Aufrichtung ist um diese Geschwindigkeit mal 0,08 s zurückgenommen,
+normalisiert als Richtung, ohne die Drehung um die Hochachse. Das bremst über dieselbe Hüfte und das Standbein.
+Maximales Drehmoment, Reibungsgrenze, Haftung, Schrittweite und Schwellen fürs Fallen bleiben unverändert.
+
+Die zusätzliche Dämpfung ist nur bei Balance durch die Beine aktiv. Eine Stütze gegen die Welt und die Variante
+ohne Stütze rechnen in je 480 mittleren Vergleichsversuchen mit denselben Ergebnis-Hashes wie davor. Die Demo nutzt
+weiter den bisherigen Standard; in „Figuren“ **Stütze durch die Beine** einschalten. Der zugehörige Tooltip beschreibt
+jetzt die aktuelle Regel, statt eine veraltete Zahl von Stürzen zu nennen.
+
+Eigene Messreihe auf diesem PC: 1,8 m, 74 kg, ebener Boden, 30 Schritte bis zum Treffer, zwölf Richtungen,
+Bauch, Rippen, untere und obere Brust, Treffer auf den jeweiligen Körperschwerpunkt. Nach dem Treffer bis zur
+Rückkehr in Animation oder zum Sturz, höchstens zehn Sekunden. Die Stichprobe ist anders als die älteren Tabellen
+der Runden 49–51; die absoluten Zahlen sind nicht zwischen diesen Tabellen zu vergleichen.
+
+| Versuch | Anzahl | Vorher gestürzt | Jetzt gestürzt |
+| --- | ---: | ---: | ---: |
+| 50–89 N s, jede ganze Stärke, Körpermitte | 1 920 | 17 | 5 |
+| Dasselbe, Treffpunkt +1 mm seitlich | 1 920 | 23 | 8 |
+| Dasselbe, Treffpunkt −1 mm seitlich | 1 920 | 18 | 9 |
+| Mittlere Treffer zusammen | 5 760 | 58 | 22 |
+| 90–138 N s in Zweierschritten, Körpermitte | 1 200 | 576 | 509 |
+| Stärkere Treffer, Treffpunkt +1 mm | 1 200 | 577 | 509 |
+| 40–80 N s in Zweierschritten, obere Brust, acht Richtungen | 168 | 0 | 0 |
+
+Bei den mittleren Treffern auf die Körpermitte sinken mit der Dämpfung keine Figuren mehr unter die Fallhöhe statt
+zuvor drei. Drei der fünf verbleibenden Stürze sind lange Unruhe. Die Zahl der Ausgleichsschritte über diese 1 920
+Treffer sinkt von 6 886 auf 6 113. Damit ist die eigene Balance weiter verbessert, sie ersetzt die Stütze gegen die
+Welt noch nicht vollständig; starke Treffer können sie weiterhin umwerfen.
+
+Abstimmung zunächst auf 480 Treffern, jede vierte Stärke: 0,04, 0,08 und 0,12 s ergaben zwei, null und drei Stürze.
+Danach die übrigen Stärken und die nicht zur Auswahl verwendeten Treffpunktverschiebungen geprüft. Ein verworfener
+Ansatz zog den Oberkörper nach der Kippgeschwindigkeit früher in Fallrichtung: Mit 0,08 s gerieten 182 von 480
+Treffern in Sturz oder lange Unruhe; dieser Ansatz blieb nur im Messordner und wurde nicht übernommen.
+
+Prüfung: vollständige Tests im Release-Build mit Warnungen als Fehler. `FigureHipBrakeTest` fängt fünf zuvor
+misslungene Treffer an unterschiedlichen Rumpfteilen ab, jeweils an drei Treffpunktlagen, und prüft die gesamte
+Bewegung mit einem und vier Threads auf gleiche Bits, ohne Anker zur Welt. Die bestehenden Tests für Balance,
+Aufstehen, Kollisionen und Clip-Verfolgung bestehen. Im gepaarten Benchmark `figures` mit vier und einem Thread
+stimmen alle sechs Ergebnis-Hashes mit dem vorher gesicherten Stand überein. Dort stehen die Figuren mit der Stütze
+gegen die Welt. Gemessene Stadt-Zeiten: vier Threads 3,78 statt 3,70 ms je Bild, ein Thread 7,74 statt 8,46 ms;
+Zeitmessungen während weiterer Prüfungen erlauben keine belastbare Aussage über einen Leistungsunterschied.
+
+## Die Füße bremsen das Nachtaumeln, F61, Fortsetzung am 3. November 2026
+
+Auf Wunsch des Nutzers weiter an der Balance aus eigener Kraft, nach der Hüftdämpfung. Nachverfolgt an den drei
+mittleren Treffern, die noch acht Sekunden lang taumelten: 69, 77 und 83 N s auf die obere Brust aus Richtung
+60°, 120° und 240°, jeweils von vorn aus gezählt. Die Figur stand zeitweise fast ruhig, driftete wieder aus ihrer
+Standfläche und begann eine weitere Folge von Schritten. Mit der Hüfte allein endeten diese Folgen nach 14, 16
+und 15 Schritten am Zeitlimit mit einem Sturz.
+
+Gebaut in `nbCarryBody`: Sobald die Figur mit der Stütze durch die Beine nicht mehr tritt, wandert der gewünschte
+Druckpunkt um ihre Restgeschwindigkeit mal 0,12 s voraus. Die Beine teilen die Last nach diesem Druckpunkt,
+und der Druck unter jedem Fuß bleibt auf seine Sohle begrenzt. Die Bodenreaktion bremst die Restbewegung. Es werden
+weiter nur Zielwinkel der vorhandenen Gelenkmotoren gesetzt; Kraftgrenzen, Reibung, Schrittweite, Fallhöhe und
+Fallwinkel bleiben gleich. Eine Figur mit der Stütze gegen die Welt oder ohne Stütze bekommt diese Änderung nicht.
+
+Die drei nachverfolgten Treffer kommen jetzt mit 4, 7 und 3 Schritten in 3,13, 4,22 und 2,27 s zur Ruhe. Von den
+1 920 mittleren Treffern auf die Körpermitte fällt noch eine Figur wegen langer Unruhe statt drei; bei einem zuvor
+gefangenen Treffer auf die untere Brust, 79 N s schräg von vorn, entsteht eine neue lange Unruhe. Der Gewinn ist im
+Gesamtergebnis und über versetzte Treffpunkte vorhanden, nicht bei jedem einzelnen Treffer.
+
+Zusätzlich die Ruheprüfung verbessert: Bei 120 Hz starten kurze Geschwindigkeitspeaks aus Kontakten und Gelenken die
+halbe Sekunde Ruhe immer wieder neu. Die eigene Balance glättet deshalb die massengewichtete Geschwindigkeit mit
+0,1 s Zeitkonstante. Ein bereits ruhiger Rohwert zählt weiterhin sofort; eine Spitze wird nur toleriert, solange
+auch der geglättete Wert unter den bisherigen 0,15 m/s liegt. Ein Rohwert ab 0,3 m/s sperrt die Übergabe sofort.
+Beide Füße, Capture Point, Haltung, äußeres Drücken und gehaltene Arme bleiben Teil der Freigabe. Das Zeitlimit fürs
+Taumeln bleibt acht Sekunden. Die Weltstütze und die Variante ohne Stütze behalten ihre bisherige Ruheprüfung.
+
+Dieselbe Messreihe wie zuvor, mit der direkt vorher gesicherten Fassung verglichen:
+
+| Versuch | Anzahl | Vorher gestürzt | Jetzt gestürzt |
+| --- | ---: | ---: | ---: |
+| 50–89 N s, Körpermitte, 60 Hz | 1 920 | 5 | 3 |
+| Dasselbe, Treffpunkt +1 mm | 1 920 | 8 | 5 |
+| Dasselbe, Treffpunkt −1 mm | 1 920 | 9 | 6 |
+| Mittlere Treffer zusammen | 5 760 | 22 | 14 |
+| 90–138 N s in Zweierschritten, Körpermitte, 60 Hz | 1 200 | 509 | 509 |
+| 40–80 N s, obere Brust, acht Richtungen, 60 Hz | 168 | 0 | 0 |
+| 50–86 N s in Viererschritten, Körpermitte, 30 Hz | 480 | 141 | 111 |
+| Dasselbe bei 120 Hz | 480 | 170 | 111 |
+
+Die Ausgleichsschritte über die 1 920 mittleren Treffer auf die Körpermitte sinken von 6 113 auf 6 029. Bei 30 und
+120 Hz bleibt die eigene Balance erheblich schlechter als bei 60 Hz. Die verbliebenen 111 Fälle bei 120 Hz enden
+mit langer Unruhe; das bleibt eine weitere Aufgabe.
+
+Geprüfte Varianten, nicht übernommen: Eine Standbremse mit 0,24 s fing die drei beobachteten Fälle ebenfalls,
+verursachte aber einen neuen Sturz durch Sinken. Bei 0,36 s fiel in der ersten Stichprobe einer von 480 Treffern,
+bei 0,12 s keiner. Eine zusätzliche Rückführung nach dem Abstand zur Mitte der Standfläche brachte keinen klaren
+Vorteil. Die reine symmetrische Geschwindigkeitsglättung verzögerte die Freigabe auch bei bereits ruhigem Rohwert;
+von den 1 920 mittleren Treffern fielen dann acht statt drei. Gebaut ist die Glättung ausschließlich als Toleranz für
+kurze Spitzen. Die Bremse ohne diese Toleranz verbesserte 60 Hz, ließ bei 120 Hz aber 176 statt 170 Figuren am
+Zeitlimit scheitern. Daher sind die Vergleichsläufe bei allen drei Takten Teil dieser Runde.
+
+Prüfung: Release mit Warnungen als Fehler, vollständige Tests grün. `FigureStandBrakeTest` prüft die drei zuvor
+scheiternden Treffer und um ±1 mm versetzte Punkte. `FigureCalmAt120Test` prüft drei zuvor am Zeitlimit scheiternde
+Verläufe bei 120 Hz. Beide prüfen die ganze Bewegung mit einem und vier Threads auf gleiche Bits.
+`FigureCalmHitTest` trifft die Figur nach 0,3 s Ruhe erneut: Trotz noch niedrigen Geschwindigkeitsmittels bleibt sie
+dynamisch und setzt die Ruhezeit sofort zurück. Die Regressionen der vorherigen Hüftdämpfung bleiben bestehen.
+In je 480 mittleren Vergleichsversuchen bleiben Weltstütze und keine Stütze bitgleich zum vorherigen Stand.
+Die gepaarten Benchmarks `figures` mit vier und einem Thread behalten die sechs Ergebnis-Hashes. Die Benchmark-
+Figuren nutzen weiter die Weltstütze; aus ihren schwankenden Zeiten wird kein Leistungsgewinn abgeleitet.
+
+## Der Rumpf gibt nach und dreht gegen das Becken, F79, 3. November 2026
+
+Rückmeldung des Nutzers: Der Körper wirkt vollständig steif; sowohl seitliches Verwringen als auch Beugen und
+Mitkippen fehlen. Die letzten Runden verbesserten vor allem die Zahl der gefangenen Treffer. Gefunden: Die
+Impulsverteilung setzte Trefferanteile an die Schwerpunkte der Knochen. Das dadurch ausgelassene Moment wurde nur
+um die Längsachse des Rumpfs zurückgegeben; Kippmomente blieben aus. Zusätzlich zogen die Wirbelsäulenmotoren
+während des gesamten Abfangens mit voller Stärke zur Haltung. Eine Drehung der Schultern in der Welt war dadurch
+zum großen Teil eine Drehung des Körpers als Ganzes, mit wenig Bewegung zwischen Brust und Becken.
+
+Neue Option `nbFigureMotors::responsiveTrunk`. Sie überträgt bei einem Rumpftreffer den vollständigen fehlenden
+Drehimpuls: Aus der Trägheitsmatrix des Oberkörpers einschließlich Arme und Kopf wird die entsprechende
+Winkelgeschwindigkeit bestimmt. Drehimpulse an den Knochen und passende Geschwindigkeiten um den Schwerpunkt
+geben dieses Moment zurück, ohne zusätzlichen linearen Impuls. Bauch bis Brust geben zugleich kurz nach: 0,15 s
+mit 40 % der normalen Motorstärke, danach über 0,35 s weich zurück zu voller Stärke. Die Standbeine behalten ihre
+Kraft und die Gelenkgrenzen bleiben aktiv. Ein erneuter Rumpftreffer ab der Hälfte von `knockdownImpulse` startet
+das Nachgeben wieder. Kleine Stupser erneuern den Reflex nicht.
+
+Der Bibliotheksstandard ist aus, damit bestehende Anwendungen ihre bisherige Reaktion behalten. Die Demo aktiviert
+die Option standardmäßig. In „Figuren“ sind „Rumpf gibt nach“, „Schultertreffer“ und „Rückenstoß“ ergänzt; das
+Umschalten lädt die Szene neu. „Zeitlupe“ hilft beim Betrachten des kurzen Nachgebens. Die Sichtprüfung hat die
+neuen Bedienelemente und die aktive Vorgabe bestätigt; danach hat der Nutzer die Demo selbst bedient.
+
+Messung bei 60 Hz, 1,8 m, 74 kg, Balance durch die Beine, 60 N s auf die obere Brust. Gemessen wird ausdrücklich die
+Änderung der Brustlage gegenüber dem Becken in der ersten Sekunde, nicht die Drehung der Figur als Ganzes. Der
+Treffpunkt liegt lokal bei (0; 0,08; 0,1) m, für den Schultertreffer seitlich bei −0,15 m.
+
+| Bewegung | Bisher | Neue Reaktion |
+| --- | ---: | ---: |
+| Beugen nach Stoß in −z | 16,9° | 24,2° |
+| Beugen nach Stoß in +z | 23,8° | 37,6° |
+| Verdrehung nach außermittigem Schultertreffer | 4,7° | 18,3° |
+
+Alle drei Fälle fangen sich ohne Sturz, nach 3,00, 3,05 und 2,92 s. Mit der Stütze gegen die Welt, der Vorgabe der
+Demo, sind die entsprechenden Werte 31,8°, 49,0° und 20,9°. Die stärkere Reaktion fordert die Balance: In derselben
+Messreihe aus 1 920 mittleren Treffern auf die Mitte von Bauch und Brust, 50 bis 89 N s aus zwölf Richtungen, fallen
+mit eigener Kraft 21 statt 3. Das ist ein bewusster Unterschied der Option. Die zuvor gemessenen 14 von 5 760
+beziehen sich auf die ursprüngliche Rumpfregel, nicht auf diese neue Option. Weitere Balancearbeit soll die neue
+Option eingeschaltet lassen und die körperliche Bewegung erhalten.
+
+Varianten: Nur das vollständige Kippmoment zu übertragen änderte die sichtbare Bewegung wenig, weil die Motoren
+sofort dagegenhielten. 25 % Motorstärke während des Nachgebens ergaben bei 60 N s bis zu 63° Beugen mit eigener Kraft
+und 76,5° mit der Weltstütze, stärker als für diesen Versuch gewünscht. Mit 50 % blieb die relative Verdrehung nach
+dem Schultertreffer bei 9,4°. Gebaut sind 40 %. Die neue Reaktion ohne Option global zu übernehmen ließ vorhandene
+Abfang-, Haltungs- und Wandtests scheitern; die ausdrückliche Option erlaubt einen ehrlichen Vergleich und erhält
+bestehende Anwendungen. Keine alten Testgrenzen oder Prüfsummen wurden passend gemacht.
+
+Prüfung: Release mit Warnungen als Fehler und vollständige Tests grün. `FigureTrunkMomentTest` misst den Zuwachs
+des linearen und des dreidimensionalen Drehimpulses unabhängig von der Verteilung, einschließlich schräger Stöße.
+`FigureResponsiveTrunkTest` misst die relative Brustbewegung, die anschließende Erholung und die gesamte Bewegung
+mit einem und vier Threads. `FigureTrunkYieldTest` prüft, dass nur die Wirbelsäule weicher wird, die Beine ihre
+Kraft behalten und ein Folgetreffer den Reflex erneut beginnt. Die bisherigen Tests einschließlich der festen
+Prüfsummen bleiben unverändert grün. Der gepaarte Benchmark nutzt weiter die ursprüngliche Rumpfregel; seine
+Ergebnis-Hashes werden gegen die gesicherte Ausgangs-EXE verglichen.
+
+## Der erste Fuß fängt die seitliche Bewegung, F61 und F79, 3. November 2026
+
+Fortsetzung der Balance mit eingeschaltetem `responsiveTrunk`. Die sichtbare Reaktion soll erhalten bleiben.
+Nachverfolgt an schrägen Rippentreffern: Das Pendelmodell bewertete den Fuß auf der Gegenseite der seitlichen
+Fallbewegung zunächst günstiger. Dieser Fuß darf die Beine nicht kreuzen und konnte deshalb nicht weit genug nach
+außen treten. Während der Rumpf nachgab, verlor die Figur später beide Bodenkontakte und fing sich nicht mehr.
+
+Gebaut in der Bibliothek: Beim ersten Schritt einer Abfangfolge mit eigener Kraft und beweglichem Rumpf bekommt
+der Fuß auf der Gegenseite einen Zuschlag auf seine Bewertung. Dieser beträgt die Hälfte des seitlichen Abstands
+des Capture Points von der Mitte der Standfläche, soweit er auf der Gegenseite und außerhalb des bisherigen
+Schrittrands von 3 cm liegt. Alle Abstände skalieren mit der Figur. Ein deutlich besser erreichbarer Plan kann
+weiter gewinnen. Ein Plan, der schon die Grenze fürs Aufgeben überschreitet, nimmt an dieser Wahl nicht teil.
+Der andere Fuß muss tragen können; Boden, Hindernisse und Reichweite werden wie bisher geprüft. Ab dem zweiten
+Schritt gelten die bisherige Restabweichung und die Bevorzugung wechselnder Füße.
+
+Keine Änderung an Rumpfimpuls, Motorstärke, Nachgebedauer, Hüftdämpfung oder Haftgrenzen. Nur die erste Fußwahl
+ändert sich. Die Demo startet jetzt mit „Stütze durch die Beine“ und „Rumpf gibt nach“ eingeschaltet, damit die
+weiterentwickelte eigene Balance unmittelbar sichtbar ist. Die Bibliotheksvorgaben bleiben unverändert.
+
+Messung wie in der vorigen Runde, 1,8 m und 74 kg, vier Rumpfknochen aus zwölf Richtungen, eigene Balance mit
+beweglichem Rumpf. Alle Zählungen schließen erfolgloses Abfangen am Zeitlimit ein.
+
+| Versuch | Anzahl | Vorher gestürzt | Jetzt gestürzt |
+| --- | ---: | ---: | ---: |
+| 50–89 N s, Körpermitte, 60 Hz | 1 920 | 21 | 5 |
+| Dasselbe, Treffpunkt +1 mm | 1 920 | 20 | 3 |
+| Dasselbe, Treffpunkt −1 mm | 1 920 | 22 | 5 |
+| Mittlere Treffer zusammen | 5 760 | 63 | 13 |
+| 90–138 N s in Zweierschritten, Körpermitte, 60 Hz | 1 200 | 724 | 684 |
+| Dasselbe, Treffpunkt +1 mm | 1 200 | 716 | 675 |
+| 40–80 N s in Zweierschritten, obere Brust, acht Richtungen, Oberflächenpunkt | 168 | 4 | 3 |
+| 50–86 N s in Viererschritten, Körpermitte, 30 Hz | 480 | 139 | 132 |
+| Dasselbe bei 120 Hz | 480 | 97 | 99 |
+
+Die Schritte der 1 920 mittleren Treffer auf die Körpermitte sinken von 6 098 auf 5 835. Der beobachtete schräge
+86-N-s-Rippentreffer fängt sich nun wieder. Die Bewegung bleibt erhalten: Nach 60 N s auf die Brust weiterhin
+24,2° Beugen in −z und 37,6° in +z, nach dem Schultertreffer 18,3° relative Verdrehung. Diese drei Fälle erholen
+sich nach 3,00, 3,05 und 2,83 s. Bei 120 Hz ist die Verbesserung nicht allgemein: Zwei zusätzliche Fälle erreichen
+die Zeitgrenze, insgesamt alle 99. Die eigene Balance bleibt bei 30 und 120 Hz erheblich schlechter als bei 60 Hz;
+die Ruheprüfung bei diesen Takten bleibt eine weitere Aufgabe.
+
+Geprüfte Varianten, nicht übernommen:
+
+- Die Beckenhöhe während des Schritts an die geometrisch erreichbare Beinstreckung anzupassen ließ 13 statt 4
+  Figuren aus 480 mittleren Stichproben fallen. Der beobachtete Rippentreffer sank früher ein.
+- Eine aus aufeinanderfolgenden Capture Points geschätzte Geschwindigkeit statt der reinen Pendelvorhersage,
+  mit 60 ms Glättung und zwei Mischgewichten, ließ 59 beziehungsweise 18 statt 4 fallen. Das Modell und die
+  Kontaktbewegung passten dafür noch nicht gut genug zusammen.
+- Die senkrechte Stützkraft zusätzlich nach der Schwerpunktsgeschwindigkeit zu dämpfen ergab je nach Gewicht
+  5, 4 oder 8 statt 4 Stürze. Last beim Schritt auf beide noch berührenden Füße zu verteilen ergab 8 statt 4.
+- Doppelte Hüftdämpfung fing in der kleinen Stichprobe alle 480 Treffer, in der vollständigen Reihe aber nur
+  netto vier weitere: 17 statt 21 Stürze. Bei stärkeren Treffern fing sie weniger: 732 statt 724 Stürze. Die Schrittwahl gewinnt
+  mehr, ohne den Körper steifer zu machen.
+- Ein doppelt so hoher Zuschlag auf die erste Fußwahl fing die kleine Stichprobe ebenfalls vollständig, mit
+  etwas mehr Schritten. Gebaut ist der kleinere Faktor 0,5 mit der Prüfung, dass der Plan noch erreichbar ist.
+
+Prüfung: Release mit Warnungen als Fehler und vollständige Tests grün. `FigureResponsiveCatchTest` prüft drei
+zuvor scheiternde Treffer, auch um ±1 mm versetzt, bis zur Erholung und mit bitgleicher Bewegung bei einem und vier
+Threads. `FigureFirstStepSideTest` prüft die erste Fußwahl nach spiegelbildlichen schrägen Stößen. Beide kommen
+ohne Anker zur Welt aus. Die bestehenden Tests der relativen Brustbewegung, des Treffermoments und der Rückkehr
+der Motorstärke bleiben grün, ebenso die bisherigen festen Prüfsummen.
+Gepaart gegen die gesicherte Ausgangs-EXE, zwei Läufe im Wechsel mit vier Threads und einer mit einem, behalten
+alle sechs Szenen des Benchmarks `figures` dieselben Ergebnis-Hashes. Seine Figuren nutzen weiterhin die
+ursprüngliche Rumpfreaktion und die Weltstütze. Die Bildzeit der Stadt mit Figuren liegt mit vier Threads bei
+3,77 statt 3,76 ms und 3,76 statt 3,75 ms, mit einem bei 7,96 statt 8,26 ms. Daraus wird kein Leistungsgewinn
+abgeleitet; diese Runde verbessert die Fußwahl der eigenen Balance mit beweglichem Rumpf.
+
+## Die Hüfte beruhigt den Stand, F61 und F79, 3. November 2026
+
+Fortsetzung nach der ersten Fußwahl, weiterhin mit eigener Balance und `responsiveTrunk`. Die 120-Hz-Spur nach
+54 N s schräg auf den Bauch zeigt die Ursache der langen Unruhe: Beide Füße tragen, der Capture Point liegt weit
+innerhalb der Standfläche und das Becken ist fast aufrecht. Trotzdem wechselt seine Kippgeschwindigkeit schnell,
+bis über 2 rad/s. Die Dämpfungsvorgabe der Hüfte übernimmt jede Geschwindigkeitsspitze in ihre nächste Zielrichtung
+und hält das Zittern damit aufrecht. Die massengewichtete Geschwindigkeit der Knochen bleibt um 0,15 bis 0,2 m/s;
+die halbe Sekunde Ruhe beginnt immer wieder neu, bis die Figur nach acht Sekunden aufgibt.
+
+Gebaut: Die Hüfte glättet ihre gemessene Kippgeschwindigkeit im Stand mit einer Zeitkonstante von 40 ms und dem
+impliziten Anteil `dt / (0,04 s + dt)`. Gefiltert wird nur der Geschwindigkeitsanteil ihrer Aufrichtregelung, nicht
+die gemessene Körperbewegung oder das Kippen selbst. Sobald ein Fuß schwingt, übernimmt die Regelung unmittelbar
+die aktuelle Geschwindigkeit und setzt die Glättung darauf zurück. Das geschieht nach der Schrittentscheidung,
+damit auch der erste Schritt sofort reagieren kann. Der Zustand liegt je Figur im Balancer und wird beim Beginn
+des Abfangens neu gesetzt. Die Änderung gilt für die Stütze durch die Beine mit beweglichem Rumpf. Der ursprüngliche
+Rumpfmodus und die Weltstütze behalten ihr bisheriges Verhalten.
+
+Rumpfmotoren, Impulsübertragung, Kraft- und Haftgrenzen bleiben gleich. Auch die Ruheprüfung bleibt gleich streng:
+Beide Füße müssen tragen, Capture Point und Haltung müssen passen, die Arme dürfen nicht gehalten werden, und ein
+frischer Treffer mit hoher Rohgeschwindigkeit unterbricht das Ruheintervall sofort. Weder die Geschwindigkeit für
+diese Prüfung noch die Ruhe- oder Aufgebedauer werden durch die neue Glättung verändert.
+
+Messung gegen den gesicherten Stand der vorigen Runde, 1,8 m und 74 kg, vier Rumpfknochen aus zwölf Richtungen,
+eigene Balance mit beweglichem Rumpf. Die Fehlschläge schließen erfolgloses Abfangen am Zeitlimit ein.
+
+| Versuch | Anzahl | Vorher gestürzt | Jetzt gestürzt |
+| --- | ---: | ---: | ---: |
+| 50–89 N s, Körpermitte, 120 Hz | 1 920 | 400 | 1 |
+| 50–86 N s in Viererschritten, Körpermitte, 120 Hz | 480 | 99 | 0 |
+| Dasselbe, Treffpunkt +1 mm | 480 | 77 | 0 |
+| Dasselbe, Treffpunkt −1 mm | 480 | 88 | 0 |
+| 50–86 N s in Viererschritten, Körpermitte, 30 Hz | 480 | 132 | 79 |
+| 50–89 N s, Körpermitte, 60 Hz | 1 920 | 5 | 3 |
+| Dasselbe, Treffpunkt +1 mm | 1 920 | 3 | 7 |
+| Dasselbe, Treffpunkt −1 mm | 1 920 | 5 | 5 |
+| Mittlere Treffer bei 60 Hz zusammen | 5 760 | 13 | 15 |
+| 90–138 N s in Zweierschritten, Körpermitte, 60 Hz | 1 200 | 684 | 683 |
+| 40–80 N s in Zweierschritten, obere Brust, acht Richtungen, Oberflächenpunkt | 168 | 3 | 3 |
+
+Die Verbesserung liegt vor allem bei 120 Hz: Die 399 Fälle langer Unruhe entfallen. Der verbleibende Fall sinkt
+nach 87 N s auf die obere Brust ein. Bei 30 Hz bleiben 48 Fälle langer Unruhe, außerdem physische Stürze. Bei 60 Hz
+ist die Änderung kein allgemeiner Gewinn: Auf die Körpermitte fängt sie zwei mehr, bei versetzten Treffern sind
+es insgesamt zwei weniger. Die Zahl der Schritte bei den 1 920 mittleren Treffern auf die Körpermitte sinkt bei
+60 Hz von 5 835 auf 5 786, bei 120 Hz von 5 224 auf 4 848.
+
+Die Körperreaktion bleibt deutlich: Bei 60 N s auf die obere Brust weiterhin 24,2° Beugen in −z, 37,6° in +z und
+18,3° relative Verdrehung nach dem Schultertreffer. Diese Fälle fangen sich nach 3,95, 3,05 und 2,92 s; der erste
+braucht damit länger als die vorherigen 3,00 s. Die neue Regelung wird für das ruhigere Verhalten bei hohem Takt
+übernommen, nicht als durchgängige Verbesserung jedes einzelnen Treffers bei 60 Hz.
+
+Geprüfte Varianten, nicht übernommen: Eine Glättung während der gesamten Abfangbewegung beseitigte die Unruhe
+ebenfalls, verzögerte aber die Reaktion während der Schritte. Bei 20 beziehungsweise 40 ms fielen in der vollständigen
+60-Hz-Reihe 6 beziehungsweise 10 statt 5 Figuren. Die begrenzte Glättung im Stand bewahrt diese unmittelbare Reaktion.
+Eine vor der Schrittentscheidung berechnete Standglättung erreichte ähnliche Ergebnisse, beeinflusste aber noch den
+ersten Regelschritt einer neu beginnenden Schrittfolge. Gebaut ist deshalb die Berechnung nach der Entscheidung.
+Auch eine Glättung nur bei höherem Takt wurde geprüft: Mit einem auf 1/60 s bezogenen Messfenster fallen in den
+480er-Reihen bei 120 und 240 Hz keine, bei 30 Hz hilft sie nicht. Die gebaute Standglättung verbessert auch 30 Hz.
+
+Prüfung: Release mit Warnungen als Fehler, vollständige Tests grün. `FigurePlantedHipTest` prüft drei zuvor bei
+120 Hz lange unruhige Treffer bis zur Erholung, auch um ±1 mm versetzt und bei 240 Hz. Jeder Verlauf wird mit
+einem und vier Threads Bild für Bild auf gleiche Bits geprüft, ohne Anker zur Welt. `FigurePlantedHipHitTest`
+trifft bei 120 Hz nach 0,3 s Ruhe erneut: Die Rohgeschwindigkeit sperrt die Übergabe sofort, obwohl ihr Mittel
+noch niedrig ist. Die ursprünglichen Abfang-, Ruhe-, Rumpf- und Prüfsummentests bleiben unverändert grün.
+
+Der gepaarte Benchmark `figures`, zwei Läufe im Wechsel mit vier Threads und einer mit einem, behält alle sechs
+Ergebnis-Hashes der Ausgangs-EXE. Er nutzt weiter den ursprünglichen Rumpfmodus und die Weltstütze. Die Bildzeit
+der Stadt mit Figuren liegt mit vier Threads bei 3,76 statt 3,73 ms und 3,77 statt 3,76 ms, mit einem bei 8,09
+statt 7,78 ms. Ein Leistungsgewinn wird daraus nicht abgeleitet. Die Demo ist mit der neuen Standregelung gebaut.
+
+## Die Standbremse fängt die Restbewegung, F61 und F79, 3. November 2026
+
+Fortsetzung an den Grenzfällen bei 60 Hz mit eigener Balance und beweglichem Rumpf. Eine Spur nach 85 N s nach
+vorn auf die untere Brust zeigt wiederholte Schrittfolgen: Nach drei Schritten liegt der Capture Point kurz
+innerhalb der Standfläche. Die Figur bewegt sich seitlich weiter, erreicht ihren Rand und startet wieder einen
+Schritt. Beim Wechsel auf ein Standbein wird sie erneut schneller. Dieser Verlauf wiederholt sich bis zum
+Zeitlimit nach 16 Schritten. Es fehlt nicht die halbe Sekunde Ruhe allein; der Körper gerät tatsächlich wieder
+in Bewegung.
+
+Gebaut in der Bibliothek: Bei `responsiveTrunk` verschiebt die Standbremse ihren gewünschten Druckpunkt um die
+Geschwindigkeit mal 0,18 s voraus, statt um 0,12 s. Das gilt weiter nur bei der Stütze durch die Beine und solange
+kein Fuß schwingt. Die Last wird nach diesem Punkt geteilt, und jeder Druckpunkt bleibt innerhalb seiner Sohle.
+Kraftgrenzen, Hüftglättung, Rumpfmotoren und Schrittplanung bleiben gleich. Die ursprüngliche Rumpfreaktion behält
+0,12 s, die Weltstütze und die Variante ohne Stütze bleiben unverändert. Ein Spiel ruft dafür nichts Neues auf.
+
+Der 85-N-s-Fall fängt sich jetzt nach vier Schritten in 3,12 s. In den zuvor scheiternden 15 Fällen dieser Runde
+fangen sich acht wieder; die vollständigen Reihen bleiben entscheidend, weil an anderen Grenzen neue Fälle
+scheitern können. Gemessen gegen die gesicherte Ausgangs-EXE, mit 1,8 m und 74 kg, vier Rumpfknochen aus zwölf
+Richtungen, eigene Balance mit beweglichem Rumpf. Fehlschläge schließen das Aufgeben am Zeitlimit ein.
+
+| Versuch | Anzahl | Vorher gestürzt | Jetzt gestürzt |
+| --- | ---: | ---: | ---: |
+| 50–89 N s, Körpermitte, 60 Hz | 1 920 | 3 | 2 |
+| Dasselbe, Treffpunkt +1 mm | 1 920 | 7 | 4 |
+| Dasselbe, Treffpunkt −1 mm | 1 920 | 5 | 5 |
+| Mittlere Treffer bei 60 Hz zusammen | 5 760 | 15 | 11 |
+| 50–89 N s, Körpermitte, 120 Hz | 1 920 | 1 | 0 |
+| 50–86 N s in Viererschritten, Treffpunkt +1 mm, 120 Hz | 480 | 0 | 0 |
+| Dasselbe, Treffpunkt −1 mm | 480 | 0 | 0 |
+| 50–86 N s in Viererschritten, Körpermitte, 30 Hz | 480 | 79 | 66 |
+| 90–138 N s in Zweierschritten, Körpermitte, 60 Hz | 1 200 | 683 | 684 |
+| 40–80 N s in Zweierschritten, obere Brust, acht Richtungen, Oberflächenpunkt | 168 | 3 | 4 |
+
+Die mittleren Treffer bei 60 Hz brauchen zusammen 17 328 statt 17 381 Schritte. Bei 30 Hz bleiben 39 statt 48
+Fehlschläge durch lange Unruhe. Stärkere Treffer gewinnen nichts Verlässliches. In der leichten Reihe kommt ein
+Fall mit langer Unruhe hinzu, 72 N s aus Richtung 4. Auch ein 71-N-s-Treffer auf die obere Brust bleibt bei −1 mm
+unruhig, obwohl sich die Figur bei +1 mm fängt. Die neue Bremse ist somit ein Gewinn über die Reihen und keine
+Garantie für jeden einzelnen Trefferpunkt.
+
+Die Rumpfbewegung bleibt erhalten: Weiterhin 24,2° Beugen in −z, 37,6° in +z und 18,3° relative Verdrehung nach
+dem Schultertreffer bei jeweils 60 N s. Die Erholung dauert 2,55 statt 3,95 s, weiter 3,05 s und 4,38 statt 2,92 s.
+Der Schultertreffer braucht länger; ein allgemeines schnelleres Abfangen wird nicht behauptet.
+
+Varianten, nicht übernommen: Die letzte Fußwahl über kurze Standphasen zu behalten, den seitlichen Zuschlag nur
+auf den allerersten Schritt anzuwenden oder beides zu kombinieren fing keinen der 15 untersuchten Fehlschläge.
+Diese Fußwahl bleibt deshalb unverändert. Eine Druckvorausschau von 0,24 s ergab über die drei 60-Hz-Treffpunktlagen
+12 statt 11 Fehlschläge, davon vier statt zwei auf die Körpermitte, und etwas weniger Schritte. Gebaut ist die
+kleinere Vorausschau von 0,18 s. Bei 0,36 s fing die kleine Reihe derselben 15 Fälle ebenfalls acht mehr, ohne
+zusätzlichen Gewinn in dieser Diagnose.
+
+Prüfung: Release mit Warnungen als Fehler und vollständige Tests grün. `FigureResponsiveBrakeTest` prüft vier
+zuvor lange stolpernde Treffer bis zur vollständigen Erholung, auch um ±1 mm versetzt. Jeder Verlauf wird mit einem
+und vier Threads Bild für Bild auf gleiche Bits geprüft, ohne Anker zur Welt. Die bestehenden Tests der ersten
+Fußwahl, der Hüftglättung bei 120/240 Hz, des erneuten Treffers kurz vor der Übergabe und der relativen Brustbewegung
+bleiben unverändert grün, ebenso die bisherigen festen Prüfsummen. Die Demo ist mit der neuen Standbremse gebaut.
+
+Gepaart gegen die gesicherte Ausgangs-EXE, zwei Läufe im Wechsel mit vier Threads und einer mit einem, behalten
+alle sechs Szenen des Benchmarks `figures` ihre Ergebnis-Hashes. Seine Figuren verwenden weiter die ursprüngliche
+Rumpfreaktion und die Weltstütze. Die Bildzeit der Stadt mit Figuren liegt mit vier Threads bei 2,88 statt 2,90 ms
+und 2,87 statt 2,88 ms, mit einem bei 7,59 statt 7,67 ms. Ein Leistungsgewinn wird daraus nicht abgeleitet.
+
+## Bei langsamem Physiktakt früher treten, F61 und F79, 3. November 2026
+
+Fortsetzung an der eigenen Balance mit beweglichem Rumpf, zunächst an den verbliebenen leichten Stolperfolgen
+und bei 30 Hz. Gefunden: Eine kleine Überschreitung der Standfläche braucht bisher zwei Messungen hintereinander,
+bevor die Figur tritt. Bei 30 Hz sind das längere Abstände als bei 60 Hz. Der Körper läuft inzwischen weiter,
+und nach einem spät begonnenen Schritt folgen oft weitere Schritte bis zum Aufgeben.
+
+Gebaut in der Bibliothek: Bei `responsiveTrunk` und eigener Balance darf eine solche Messung einen Schritt
+beginnen, wenn der Physikschritt mindestens `NB_DANGER_UPDATES / 60 s`, also 1/30 s, dauert. Bei kürzeren
+Physikschritten bleiben die bisherigen zwei Messungen erhalten. Große Abweichungen des Capture Points bleiben
+sofort dringend, und ein Fuß, der zu lange allein trägt, löst weiter seinen Schritt nach unten aus. Der Fuß muss
+sein Ziel erreichen können, dort Boden und auf dem Weg Platz finden. Es kommen keine neue Kraft, kein zusätzlicher
+Timerzustand und keine gelockerten Ruhe- oder Aufgebegrenzen hinzu. Der ursprüngliche Rumpfmodus und die Weltstütze
+behalten ihren Schrittauslöser.
+
+Messung gegen die gesicherte Ausgangs-EXE, mit 1,8 m und 74 kg, eigene Balance mit beweglichem Rumpf. Mittlere
+Treffer treffen vier Rumpfknochen aus zwölf Richtungen. Fehlschläge schließen das Aufgeben am Zeitlimit ein.
+
+| Versuch | Anzahl | Vorher gestürzt | Jetzt gestürzt |
+| --- | ---: | ---: | ---: |
+| 50–89 N s, Körpermitte, 30 Hz | 1 920 | 282 | 227 |
+| 50–86 N s in Viererschritten, Körpermitte, 30 Hz | 480 | 66 | 56 |
+| Dasselbe, Treffpunkt +1 mm | 480 | 59 | 47 |
+| Dasselbe, Treffpunkt −1 mm | 480 | 73 | 56 |
+| Kleinere 30-Hz-Reihe über drei Treffpunktlagen zusammen | 1 440 | 198 | 159 |
+| 50–89 N s, Körpermitte, 60 Hz | 1 920 | 2 | 2 |
+| 50–89 N s, Körpermitte, 120 Hz | 1 920 | 0 | 0 |
+| 40–80 N s in Zweierschritten, obere Brust, acht Richtungen, Oberflächenpunkt, 60 Hz | 168 | 4 | 4 |
+
+Die vollständige 30-Hz-Reihe braucht 10 104 statt 10 226 Schritte, die Fehlschläge durch lange Unruhe sinken von
+153 auf 108. Es fängt sich nicht jeder zuvor scheiternde Treffer: In der kleineren Reihe werden 31 alte Fälle
+gefangen und 21 andere scheitern neu. Der Gewinn über die Reihen und die versetzten Treffpunkte ist entscheidend.
+Die 60- und 120-Hz-Reihen behalten neben den Zählungen auch ihre Ereignis-Hashes, ebenso die leichten Treffer
+bei 60 Hz. Der dortige zusätzliche 72-N-s-Stolperfall bleibt offen. Rumpfbewegung und Standregelung bei diesen
+Takten ändern sich durch die neue Auslösung nicht.
+
+Varianten, nicht übernommen:
+
+- Eine gleich lange Wartezeit von 1/30 s bei allen Takten verbesserte 30 Hz ebenso, verzögerte die Auslösung bei
+  120 Hz jedoch von zwei auf vier Messungen. In der vollständigen Reihe kam damit ein Sturz durch Sinken hinzu.
+  Gebaut ist deshalb die frühere Auslösung beim langsamen Takt mit den bisherigen zwei Messungen beim schnellen.
+- Die Hüfte im Stand nach demselben gewünschten Druckpunkt zu belasten wie die tragenden Beine, statt die
+  Aufrichtregelung auf beide Füße gleich zu verteilen, half nicht. In der mittleren 60-Hz-Reihe fielen 25 statt
+  2 Figuren, bei 30 Hz 127 statt 66 von 480 und bei den leichten Treffern 6 statt 4 von 168. Diese Verteilung
+  würde eine andere Regelung brauchen und bleibt unverändert.
+
+Prüfung: Release mit Warnungen als Fehler und vollständige Tests grün. `FigureStepDelayTest` hält die gemessene
+Gefahr ohne weiteren Physikschritt fest und prüft so die Entscheidung getrennt von der anschließenden Bewegung:
+eine Messung bei 20/30 Hz, zwei bei 60/120/240 Hz, außerdem einen Wechsel des Zeitschritts und den sofortigen
+Schritt bei großer Abweichung. `FigureSlowStepTest` prüft drei zuvor bei 30 Hz scheiternde Treffer bis zur
+Erholung, auch um ±1 mm versetzt, mit bitgleicher Bewegung bei einem und vier Threads und ohne Anker zur Welt.
+Die bestehenden Abfang-, Rumpf-, Ruhe- und Prüfsummentests bleiben unverändert grün. Die Demo ist neu gebaut.
+
+Gepaart gegen die gesicherte Ausgangs-EXE, zwei Läufe im Wechsel mit vier Threads und einer mit einem, behalten
+alle sechs Szenen des Benchmarks `figures` ihre Ergebnis-Hashes. Er verwendet weiter die ursprüngliche Rumpfreaktion
+und die Weltstütze. Die Bildzeit der Stadt mit Figuren liegt mit vier Threads bei 3,66 statt 3,73 ms und weiter
+3,67 ms, mit einem bei 8,34 statt 8,29 ms. Daraus wird kein Leistungsgewinn abgeleitet.
+
+## Schrittdrehung und Zehenführung mit nachgebendem Rumpf, F61 und F79, 4. November 2026
+
+Auf Wunsch des Nutzers die Erkenntnisse des Parallelstands `Nebenan-active-ragdoll-57` übernehmen und weiterarbeiten.
+Der [Ausgangsvergleich](Vergleich_Stand57.md) zeigte dort aktive Becken-/Schulterdrehung beim Schritt und Zehenhub,
+aber eine andere Hüftregelung, griffigere Sohlen und keine nachgebende Trefferreaktion. Daher wurden die Bausteine
+einzeln und gemeinsam mit unserer Balance geprüft. Der Quellstand 57 bleibt als Referenz erhalten.
+
+Gebaut in der Bibliothek:
+
+- Zehenführung: Im Vorwärtsschwung hebt der Fuß seine Zehen um bis zu 0,15 rad, über den Sinus der Schrittphase,
+  und landet wieder flach. Der Hub wird mit dem positiven Kosinus des Wegs gegen die Fußrichtung gewichtet.
+  Seitliche und rückwärtige Schritte bekommen damit keinen pauschalen Hub. Aktiv mit eigener Balance und
+  `responsiveTrunk` oder der neuen Schrittdrehung.
+- Neue unabhängige Option `nbFigureMotors::turnWithSteps`, Bibliotheksstandard aus. Das Becken dreht zum Fuß
+  voraus, die Wirbelsäule dagegen. Verwendet wird die geglättete Drehung vom geplanten Start zum geplanten Ende
+  des Schritts, nicht die rasche Umkehr der tatsächlichen Knöchellinie beim Kreuzen. Die Drehung hat die halbe
+  Stärke des Referenzstands: Becken höchstens 0,125 rad, Wirbelsäule dreifach dagegen, verteilt nach den
+  Drehbereichen ihrer Gelenke. Rückwärts nimmt der Anteil des Beckens glatt bis auf null ab, der Oberkörper
+  behält dort 85 % seiner Gegendrehung. Im Stand klingt die Drehung mit 0,3 s ab.
+- Die drei Zustandswerte der Schrittdrehung liegen je Figur im Balancer. Treffer-Nachgeben, vollständiges
+  Treffermoment, Standbremse, Hüftglättung und frühere Auslösung bei langsamem Takt bleiben erhalten. Gelenk-
+  und Haftgrenzen gelten weiter; die Sohlenreibung wurde nicht geändert.
+
+Die Demo aktiviert die neue Option mit „Mit Schritten drehen“, getrennt von „Rumpf gibt nach“. Beide sind
+standardmäßig an, ebenso die eigene Balance. So lässt sich die aktive Schrittbewegung mit und ohne das kurze
+Nachgeben beim Aufprall vergleichen. Ein Spiel erhält dieselbe Bewegung über die Bibliothek.
+
+Messung mit 1,8 m und 74 kg, eigener Balance und nachgebendem Rumpf. Die bisherige Variante hatte noch keinen
+Zehenhub und keine aktive Schrittdrehung. Die Zehenführung allein ergibt:
+
+| Versuch | Anzahl | Vorher gestürzt | Zehenführung, Schrittdrehung aus |
+| --- | ---: | ---: | ---: |
+| 50–89 N s, Körpermitte, 60 Hz | 1 920 | 2 | 2 |
+| 40–80 N s, obere Brust, acht Richtungen, Oberflächenpunkt, 60 Hz | 168 | 4 | 3 |
+| 50–86 N s in Viererschritten, Körpermitte, 30 Hz | 480 | 56 | 48 |
+| Dasselbe bei 120 Hz | 480 | 0 | 0 |
+
+Der bisherige 72-N-s-Stolperfall nach vorn auf die Brust steht mit der Zehenführung nach etwa 2,8 s und fünf
+Schritten wieder. Vorher gab die Figur nach 15 Schritten am Zeitlimit auf. Auch mit um ±1 mm verschobenem
+Oberflächenpunkt fängt sich die Figur, mit und ohne Schrittdrehung.
+
+Mit beiden Bewegungsoptionen, der neuen Demo-Vorgabe, ergibt sich über die vollständigen Reihen:
+
+| Versuch | Anzahl | Vor dieser Runde | Zehenführung und Schrittdrehung an |
+| --- | ---: | ---: | ---: |
+| 50–89 N s, Körpermitte, 60 Hz | 1 920 | 2 | 4 |
+| Dasselbe, Treffpunkt +1 mm | 1 920 | 4 | 6 |
+| Dasselbe, Treffpunkt −1 mm | 1 920 | 5 | 4 |
+| Mittlere Treffer über drei Treffpunktlagen | 5 760 | 11 | 14 |
+| 90–138 N s in Zweierschritten, Körpermitte, 60 Hz | 1 200 | 684 | 653 |
+| 50–86 N s in Viererschritten, Körpermitte, 30 Hz | 480 | 56 | 44 |
+| 50–89 N s, Körpermitte, 120 Hz | 1 920 | 0 | 3 |
+| 40–80 N s, obere Brust, acht Richtungen, Oberflächenpunkt, 60 Hz | 168 | 4 | 4 |
+
+Die zusätzliche Schrittbewegung fängt mehr starke Treffer und verbessert die kleinere 30-Hz-Reihe. Sie kostet
+einige mittlere Grenzfälle und drei Fälle bei 120 Hz; sie wird deshalb als unabhängige Bewegungsoption übernommen.
+Die Zahl der Schritte über die drei mittleren 60-Hz-Reihen sinkt von 17 328 auf 16 433. Das ist kein isolierter
+Nachweis für schnelleres Abfangen, weil sich auch die Menge und der Zeitpunkt der Fehlschläge ändern.
+
+Bei zentralen 60-N-s-Oberflächentreffern drehen Brust und Becken in der ersten Sekunde nun bis zu 25,9° in −z
+und 24,0° in +z gegeneinander, statt 7,7° und 4,4° mit alleiniger Zehenführung. Beim außermittigen Schultertreffer
+sind es 23,0° statt 18,3°. Das Beugen bleibt deutlich, 22,5° und 38,7°. Alle fünf geprüften 60-N-s-Treffer fangen
+sich. Die drei Rumpfproben erholen sich nach 2,78, 3,08 und 2,65 s. Der vollständige lineare und dreidimensionale
+Drehimpuls der Trefferreaktion bleibt erhalten.
+
+Verworfene Varianten:
+
+- Den Zehenhub aus der Referenz unverändert in alle Schrittrichtungen zu übernehmen behebt den einzelnen
+  72-N-s-Fall, lässt in der mittleren 60-Hz-Reihe aber 11 statt 2 Figuren fallen und in der kleinen 120-Hz-Reihe
+  einen statt keinen. Die richtungsabhängige Fassung behält dort 2 beziehungsweise 0.
+- Die volle Schrittdrehung der Referenz zusammen mit pauschalem Zehenhub ergibt 6 Fehlschläge von 480 bei
+  mittleren Treffern, mit richtungsabhängigem Hub 4 von 480. Die halbe Drehung mit richtungsabhängigem Hub ergibt
+  4 von 1 920 in der vollständigen Reihe, bei weiterhin deutlicher relativer Bewegung. Eine größere Drehung wird
+  für diese Kombination vorerst nicht verwendet.
+
+Prüfung: Release mit Warnungen als Fehler, vollständiger Testsatz grün, bestehende Testgrenzen und feste Hashes
+unverändert. `FigureStepMotionTest` misst die relative Brustbewegung mit und ohne Schrittdrehung nach drei
+Rumpftreffern, prüft Erholung und anschließenden Stand, ohne Weltanker, und bitgleiche Bewegung mit einem und vier
+Threads über alle Frames. `FigureForwardToesTest` prüft den 72-N-s-Fall mit beiden Einstellungen, je drei
+Treffpunktlagen und einem/vier Threads, ebenfalls über die gesamte Bewegung. Auch die vorhandenen Rumpf-,
+Treffermoment-, Hüft-, Ruhe- und Hindernistests bleiben grün. Die Demo ist neu gebaut.
+
+Gepaart gegen die gesicherte Ausgangs-EXE, zwei Läufe im Wechsel mit vier Threads und einer mit einem, behalten
+alle sechs Szenen des Benchmarks `figures` ihre Ergebnis-Hashes. Dieser Benchmark nutzt die Bibliotheksvorgaben
+ohne neue Bewegungsoptionen und prüft damit die bisherigen Modi. Die Bildzeit der Stadt mit Figuren liegt mit
+vier Threads bei 3,71 statt 3,70 ms und 3,75 statt 3,70 ms, mit einem bei 7,73 statt 7,71 ms. Ein Leistungsgewinn
+wird daraus nicht abgeleitet; die neue Schrittbewegung wurde über die oben genannten Abfangreihen geprüft.
+
+## Stützflächenmitte ohne Sprung, F61 und F79, 4. November 2026
+
+Fortsetzung mit nachgebendem Rumpf und eingeschalteter Schrittdrehung. Die Grenzfallprüfung zeigt einen konkreten
+Geometriefehler: `nbMeasure` bildete die Mitte der Stützfläche als Mittelwert ihrer Hülleneckpunkte. Bei zwei
+nebeneinander stehenden Füßen hat die Hülle zunächst vier Ecken. Eine Drehung nur des rechten Fußes um
+0,000001 rad fügt eine fünfte hinzu. Die Fläche ändert sich kaum, ihr bisheriger Mittelpunkt springt aber um
+3,1 cm, bei umgekehrtem Vorzeichen zur anderen Seite. Dieser Mittelpunkt steuert die Beckenverschiebung im Stand,
+die Armstrategie und die Wahl des ersten Fangfußes.
+
+Mit `turnWithSteps` und eigener Balance berechnet die Bibliothek jetzt den tatsächlichen Flächenschwerpunkt der
+konvexen Stützfläche. Die Dreiecke werden relativ zur ersten Ecke gebildet, damit große absolute Produkte nicht
+voneinander abgezogen werden. Eine Linie oder ein Punkt hat einen endlichen Mittelpunkt aus seinen Endpunkten,
+eine leere Stützfläche bleibt leer. Bestehende Modi ohne Schrittdrehung behalten ihr bisheriges Verhalten.
+Die projizierte Stützfläche selbst, die Capture-Point-Grenzen, die Kraftgrenzen und die Sohlenreibung bleiben gleich.
+
+Der neue `FigureSupportMiddleTest` dreht den Fuß um ±0,0001 und ±0,001 rad, prüft das echte Balanceupdate und
+fordert unter 0,2 mm Verschiebung des Balanceziels. Er prüft dieselbe Geometrie am Ursprung und um (12, 0, −8) m
+versetzt, degenerierte Stützflächen und bitgleiche Mittelpunkte mit einem und vier Threads. Gegen den gesicherten
+vorherigen Bibliothekscode schlägt genau dieser neue Test fehl; mit der Korrektur besteht er.
+
+`FigureTurningRecoveryTest` prüft zusätzlich den schrägen 87-N-s-Treffer auf die untere Brust aus Richtung 11/12,
+der zuvor bei 120 Hz sank. Er muss sich mit beiden Bewegungsoptionen bei 60 und 120 Hz durch die Beine fangen,
+mit einem und vier Threads über sämtliche Frames bitgleich bleiben und nach der Übergabe an die Animation stehen.
+
+Die vollständigen Abfangreihen nutzen weiterhin eigene Balance, `responsiveTrunk` und `turnWithSteps`, dieselben
+Impulse, zwölf Richtungen, dieselbe Trefferanwendung und unveränderte Abbruchbedingungen wie die vorherige Runde.
+
+| Reihe | Fälle | Vorher | Flächenschwerpunkt |
+| --- | ---: | ---: | ---: |
+| 50–89 N s, vier Rumpfknochen, Zentrum, 60 Hz | 1 920 | 4 | 5 |
+| gleiche Reihe, Trefferpunkt +1 mm | 1 920 | 6 | 6 |
+| gleiche Reihe, Trefferpunkt −1 mm | 1 920 | 4 | 6 |
+| zusammen, 60 Hz | 5 760 | 14 | 17 |
+| 90–138 N s in Zweierschritten, 60 Hz | 1 200 | 653 | 652 |
+| 50–86 N s in Viererschritten, 30 Hz | 480 | 44 | 40 |
+| 50–89 N s, vollständige Reihe, 120 Hz | 1 920 | 3 | 2 |
+| 40–80 N s, obere Brust, acht Richtungen, Oberflächenpunkt, 60 Hz | 168 | 4 | 4 |
+
+Der geometrische Sprung ist damit behoben, ein allgemeiner Gewinn beim Abfangen ist noch nicht erreicht. Insbesondere
+die zusätzlichen mittleren 60-Hz-Grenzfälle bleiben offen. Die mittlere Reihe im Zentrum ergibt mit einem und vier
+Threads jeweils fünf Fehlschläge, 5 454 Schritte und Hash `821a59b2`. In den drei 60-Hz-Reihen sind es zusammen
+16 409 Schritte statt 16 433; wegen anderer Fehlschläge ist das kein Beleg für schnellere Erholung.
+
+Die sichtbare Bewegung wird nicht über kleinere Winkel beruhigt: In den drei 60-N-s-Rumpfproben bleiben relative
+Brust-/Beckendrehung 25,9°, 24,0° und 23,0°, das Beugen 22,5°, 38,7° und 20,6°. Erholung nach 2,78, 3,15 und
+2,63 s. Beide zusätzlichen Seitentreffer fangen sich ebenfalls. Bestehende Tests zur Schrittdrehung, zum Zehenhub,
+zur vollständigen Impulsübernahme und zu bitgleicher Bewegung bleiben unverändert grün. Release mit Warnungen als
+Fehler und vollständiger Testsatz bestehen; die Demo ist neu gebaut.
+
+Vor dieser Korrektur geprüfte, nicht übernommene Varianten, jeweils auf der gesicherten Ausgangsfassung dieser Runde:
+
+- **Drehziele insgesamt glätten:** Zeitkonstante 0,05 s ergibt über drei Treffpunktlagen weiter 14 von 5 760
+  Fehlschlägen, bei 120 Hz einen statt drei, bei starken Treffern aber 671 statt 653. 0,1 s fängt bei 120 Hz alle,
+  verschlechtert die mittlere Reihe im Zentrum von vier auf acht. 0,04 s ergibt dort vier. Die zusätzliche Verzögerung
+  wird nicht übernommen.
+- **Nur Stand, Schwung oder Rumpf glätten:** Bei 0,05 s sieben, vier beziehungsweise vier Fehlschläge von 1 920 im
+  Zentrum. Nur Rumpf ergibt über die drei Treffpunktlagen 18 von 5 760 und bei starken Treffern 666 von 1 200.
+  Glatte Zielwerte allein verbessern die Kombination nicht zuverlässig.
+- **Drehung am Schrittwechsel fortsetzen:** Den nächsten Schritt bei der letzten angeforderten Drehung beginnen
+  und im Stand diese Drehung abklingen lassen ergibt sechs statt vier Fehlschläge im Zentrum und fünf statt vier
+  in der leichten Reihe. Nur das Abklingen im Stand ändern ergibt über drei Treffpunktlagen 18 statt 14 und bei
+  120 Hz unverändert drei.
+- **Bei drehendem Standfuß weniger Schrittdrehung:** Rücknahme zwischen 2 und 4 rad/s Fußdrehgeschwindigkeit fängt
+  in der leichten Reihe zwei statt vier, verschlechtert die drei mittleren Reihen aber auf 34 statt 14. Auch
+  andere Schwellen wurden geprüft; die unmittelbare Rückkopplung wird nicht übernommen.
+- **Explizite Hüftbremse aus Stand 57:** Im verbleibenden Hüft-/Haftungsbudget mit gleich großem Gegenmoment am
+  Oberschenkel, statt unseres vorgehaltenen Aufrichtziels. Bei halber beziehungsweise voller kritischer Dämpfung
+  vier beziehungsweise drei Fehlschläge von 480 mittleren Treffern, zwei von 168 leichten. Ohne zusätzliche relative
+  Gelenkdämpfung und mit geglätteter Kippgeschwindigkeit sind es 19 beziehungsweise 18 von 1 920 mittleren Treffern.
+- **Nutzlast der Beine anders zählen:** Jedes Bein mit Bodenkontakt aus der Oberkörpernutzlast nehmen, auch bei
+  gewünschtem Lastanteil null, ergibt fünf von 1 920 und drei von 168. Kein ausreichend belegter Vorteil.
+- **Anheben der in Schrittrichtung führenden Fußkante:** Halbes beziehungsweise volles seitliches Anheben ergibt
+  vier beziehungsweise sieben von 1 920, aber jeweils fünf statt vier von 168. Zusätzlich die Ferse bei Schritten
+  rückwärts anzuheben ergibt acht von 1 920. Die bisherige Zehenführung bleibt.
+- **Stützfläche auf niedrige Sohlenpunkte beschränken:** Nur Ecken bis 1/2/3 cm über der niedrigsten Ecke zu zählen
+  ergibt 48/14/4 statt eines Fehlschlags von 480 mittleren Treffern. 5 cm ergibt dort null, aber weiter vier von
+  168 leichten. Diese unstetige Einschränkung der angenommenen Stützfläche wird nicht übernommen.
+- **Mitte der beiden Sohlen statt Flächenschwerpunkt:** Stetig, aber bei unterschiedlich gedrehten Füßen keine
+  Flächenmitte; sechs statt vier Fehlschläge von 1 920. Der geometrisch begründete Flächenschwerpunkt wird verwendet.
+
+Die Diagnoseprogramme und ihre Rohdaten liegen unter `build/turn_*`, `build/support-final-*` und den nach Varianten
+benannten CSV-Dateien. Die Produktkorrektur enthält keine Versuchsparameter und keinen globalen Reglerzustand.
+
+Gepaarter Benchmark gegen die gesicherte Ausgangs-EXE: zwei Läufe im Wechsel mit vier Threads, einer mit einem.
+Alle sechs `figures`-Szenen behalten in jeder Paarung ihre Ergebnis-Hashes. Die Stadt mit Figuren liegt bei
+3,72 → 2,91 ms und 2,90 → 2,92 ms mit vier Threads, 7,84 → 7,88 ms mit einem. Die erste Paarung streut deutlich;
+ein Leistungsgewinn wird nicht behauptet. Der Benchmark verwendet weiterhin die Bibliotheksvorgaben ohne
+Schrittdrehung und prüft die bisherigen Modi, die neue Kombination wird durch die Abfangreihen und Bewegungstests
+oben geprüft.
+
+## Restschwung nach dem Fangschritt abbremsen, F61 und F79, 4. November 2026
+
+Fortsetzung mit eigener Balance, nachgebendem Rumpf und Schrittdrehung. Nach einem leichten seitlich schrägen
+52-N-s-Treffer auf den Bauch kommt die Figur nach zwei Schritten beinahe zur Ruhe. Eine kleine Restbewegung
+schiebt den Capture Point erneut über den Rand, der nächste Schritt beschleunigt den Körper wieder, und weitere
+Schritte folgen. Bisher endet der Fall nach 13 Schritten am unveränderten Acht-Sekunden-Limit. Ein schräger
+77-N-s-Treffer auf die untere Brust endet nach zwölf Schritten auf dieselbe Weise. Das Problem liegt hier im
+Abbremsen zwischen den Schritten, nicht in fehlender Kraft während der ersten Trefferreaktion.
+
+Bei `turnWithSteps` bekommt die vorhandene Standbremse deshalb einen Druckvorhalt von 0,6 s statt 0,18 s:
+Der gewünschte Bodendruck wird um die flache Schwerpunktgeschwindigkeit mal diesen Vorhalt verschoben. Die
+gewünschten Lastanteile verteilen dasselbe Gewicht zwischen den tragenden Beinen, und der Druckpunkt jedes Fußes
+bleibt innerhalb seiner Sohle. Die vorhandenen Gelenke erzeugen die Bewegung; ihre Kraftgrenzen, die Sohlenreibung,
+die Capture-Point-Grenzen, die erlaubte Schrittzahl und das Zeitlimit bleiben gleich. Während eines Fangschritts
+bleibt diese zusätzliche Standbremsung aus. Ohne Schrittdrehung bleiben 0,18 s für den nachgebenden Rumpf und
+0,12 s für die bisherigen Modi erhalten. Kein neuer API-Schalter und kein globaler Reglerzustand.
+
+Die beiden diagnostizierten Fälle fangen sich nun nach zwei Schritten in 1,65 s beziehungsweise drei Schritten
+in 3,18 s, statt nach acht Sekunden zu fallen. Das ist auch in den vollständigen Reihen ein Gewinn:
+
+| Reihe mit beiden Bewegungsoptionen | Fälle | Vorher | Stärkere Standbremse |
+| --- | ---: | ---: | ---: |
+| 50–89 N s, vier Rumpfknochen, zwölf Richtungen, Zentrum, 60 Hz | 1 920 | 5 | 3 |
+| gleiche Reihe, Trefferpunkt +1 mm | 1 920 | 6 | 3 |
+| gleiche Reihe, Trefferpunkt −1 mm | 1 920 | 6 | 2 |
+| zusammen, 60 Hz | 5 760 | 17 | 8 |
+| 50–86 N s in Viererschritten, 30 Hz | 480 | 40 | 32 |
+| 50–89 N s, vollständige Reihe, 120 Hz | 1 920 | 2 | 1 |
+| 90–138 N s in Zweierschritten, 60 Hz | 1 200 | 652 | 650 |
+| 40–80 N s, obere Brust, acht Richtungen, Oberflächenpunkt, 60 Hz | 168 | 4 | 4 |
+
+In den drei mittleren 60-Hz-Reihen fällt keine Figur mehr am Acht-Sekunden-Limit. Sechs Fehlschläge sinken nach
+den seitlichen 87-/89-N-s-Treffern auf die Brust, zwei laufen während fortgesetzter Fangschritte in die erlaubte
+Schrittzahl; diese Fälle bleiben offen. Bei 30 Hz bleiben sechs statt 17 Zeitlimitfälle. Die Schrittzahl über die
+drei mittleren Reihen sinkt von 16 409 auf 15 077; wegen der veränderten Fehlschläge wird daraus keine allgemeine
+Erholungsdauer abgeleitet.
+
+Mit einem und vier Threads ergibt die vollständige mittlere Reihe im Zentrum dieselben drei Fehlschläge,
+5 023 Schritte und Hash `a1c3b428`. Alle übrigen Produktionsreihen stimmen mit den vorher getrennt kompilierten
+Versuchen überein. Rohdaten: `build/stance-final-*.csv`, Ausgangsfassung `build/stance-phase-baseline/`.
+
+Die neue Bremsung verkleinert die Körperdrehung nicht: Bei den beiden zentralen 60-N-s-Rumpftreffern bleiben in
+der ersten Sekunde 25,9° und 23,9° relative Brust-/Beckendrehung sowie 22,5° und 38,7° Beugen. Der Schultertreffer
+behält 23,0° Drehung und 20,6° Beugen. Alle fünf Rumpf-/Seitproben fangen sich. Der vollständige lineare und
+dreidimensionale Drehimpuls wird weiterhin übernommen.
+
+Prüfung: `FigureTurningBrakeTest` prüft vier bisherige Problemfälle bei 60 und 120 Hz, jeweils zentral sowie
+±1 mm versetzt, mit einem und vier Threads über sämtliche Bewegungsframes. Nach der Erholung muss die Figur
+weiter stehen, ohne Weltanker und ohne Knockdown. Gegen die gesicherte alte Bibliothek scheitert dieser Test,
+mit der neuen besteht er. Die bisherigen Prüfgrenzen und Ergebnis-Hashes sind unverändert. Auch die vorhandenen
+Schrittdrehungs-, Zehenhub-, Stützflächen-, Trefferimpuls-, Aufsteh- und Hindernistests bleiben grün. Release mit
+Warnungen als Fehler, vollständiger Testsatz bestanden; die Demo ist neu gebaut.
+
+Verworfene Varianten dieser Runde:
+
+- Standvorhalt 0,24/0,3/0,4 s ergibt 8/5/4 statt fünf Fehlschlägen von 1 920 im Zentrum. Bei 0,4 s bleiben in
+  der +1-mm-Reihe fünf statt sechs. Der Vorhalt 0,6 s fängt in allen drei Lagen und bei 30/120 Hz mehr und wurde
+  anschließend als Produktfassung erneut geprüft.
+- Den Druckvorhalt zusätzlich während des Fangschritts zu verwenden, mit 0,06/0,12/0,18/0,24 s und unveränderter
+  Standbremse, ergibt 8/5/3/7 Fehlschläge von 1 920. Bei 0,18 s bleiben zwei Zeitlimitfälle, und die zentrale
+  60-N-s-Frontprobe braucht sechs Schritte statt drei mit der gewählten Standbremse. Bei 0,12 s ist diese Probe
+  nach fünf Sekunden noch dynamisch. Die zusätzliche Schrittbremsung wird nicht übernommen.
+
+Gepaarte Prüfung gegen die gesicherte Ausgangs-EXE: zwei Läufe im Wechsel mit vier Threads, einer mit einem.
+Alle sechs Szenen des `figures`-Benchmarks behalten in jeder Paarung ihre Ergebnis-Hashes. Die Stadt mit Figuren
+liegt mit vier Threads bei 3,76 → 3,70 ms und 3,71 → 3,70 ms, mit einem bei 8,08 → 7,98 ms. Der Benchmark nutzt
+die Bibliotheksvorgaben ohne neue Bewegungsoptionen; daraus wird kein Leistungsgewinn der Standbremse abgeleitet.
+Die aktivierte Kombination ist durch die obigen Abfangreihen und Tests geprüft.
+
+## Schrittweite und Seitenabstand gemeinsam begrenzen, F61 und F79, 4. November 2026
+
+Fortsetzung an den noch laufenden Fangschritten. Ein Fehler in `nbPlanFoot` macht zwei geometrische Regeln
+widersprüchlich: Erst wird das Ziel seitlich vom Standfuß weg auf den Mindestabstand verschoben. Anschließend
+zieht die Begrenzung auf die horizontale Beinreichweite das Ziel wieder zur Hüfte zurück und kann dabei genau
+diesen Abstand unterschreiten. In der kontrollierten Lage mit um 25 cm zum Standbein versetztem Becken und
+Rückwärtsdrift bleiben nur 5,68 statt der vorgeschriebenen 15,6 cm Seitenabstand, bei bereits ausgeschöpften
+55 cm Reichweite. Beide Füße zeigen denselben Fehler spiegelbildlich.
+
+Mit eigener Balance und `turnWithSteps` projiziert die Planung das Ziel nun in den gemeinsamen Bereich von
+Reichweitenkreis und zulässiger Seite des Standfußes. Verletzt das radial gekürzte Ziel den Abstand, bleibt die
+erforderliche seitliche Entfernung erhalten, und die übrige Reichweite steht in Längsrichtung des Standfußes zur
+Verfügung. Ist die seitliche Entfernung allein bereits größer als die Reichweite, wird der Plan verworfen.
+Bei einer Nachplanung im laufenden Schritt bleibt dann das bisherige Ziel erhalten. Bodenprüfung, freier
+Schwungweg und Platz für den Fuß werden danach wie bisher geprüft. Ein Ziel bekommt weder mehr Reichweite noch
+kleinere Füße; Kraftgrenzen, Sohlenreibung, Zeitlimit und Schrittzahl bleiben gleich. Bisherige Modi ohne
+Schrittdrehung behalten ihre Berechnung.
+
+`FigureStepReachGapTest` isoliert die Nachplanung vom anschließenden Physikschritt. Er fordert zugleich den
+Mindestabstand und höchstens 55 cm Reichweite im Maßstab der Figur, für beide Füße, Körpergrößen 0,9/1,8/3,6 m,
+gedrehte und verschobene Ausgangslagen sowie mit einem und vier Threads. Unmögliche Nachplanungen müssen das
+vorige Ziel erhalten. Ziele und Gelenkposen sind zwischen den Threadzahlen bitgleich. Gegen die gesicherte alte
+Bibliothek scheitert die Abstandsforderung, mit der Korrektur besteht sie.
+
+Ein vollständiger 114-N-s-Treffer auf die untere Brust in −z, der zuvor sank, fängt sich nun ebenfalls. Dieser
+Fall ist zusätzlich im selben Test enthalten, mit bitgleicher Bewegung über alle Frames und anschließendem
+Stand, ohne Weltanker. Die großen Reihen mit nachgebendem Rumpf und Schrittdrehung ergeben:
+
+| Reihe | Fälle | Vorher | Gemeinsame Begrenzung |
+| --- | ---: | ---: | ---: |
+| 50–89 N s, vier Rumpfknochen, zwölf Richtungen, Zentrum, 60 Hz | 1 920 | 3 | 3 |
+| gleiche Reihe, Trefferpunkt +1 mm | 1 920 | 3 | 3 |
+| gleiche Reihe, Trefferpunkt −1 mm | 1 920 | 2 | 2 |
+| zusammen, 60 Hz | 5 760 | 8 | 8 |
+| 90–138 N s in Zweierschritten, 60 Hz | 1 200 | 650 | 649 |
+| 50–86 N s in Viererschritten, 30 Hz | 480 | 32 | 32 |
+| 50–89 N s, vollständige Reihe, 120 Hz | 1 920 | 1 | 1 |
+| 40–80 N s, obere Brust, acht Richtungen, Oberflächenpunkt, 60 Hz | 168 | 4 | 4 |
+
+Die zusätzliche Erholung bei starken Treffern ist genau der 114-N-s-Fall; dort kommt kein neuer Fehlschlag hinzu.
+Ein allgemeiner Gewinn bei den mittleren Treffern wird nicht behauptet. Bei 30 Hz erreichen sieben statt sechs
+Fälle das Zeitlimit, bei gleicher Gesamtzahl der Fehlschläge. Die verbleibenden acht mittleren 60-Hz-Fälle sind
+weiter offen. Die mittlere Reihe im Zentrum ergibt mit einem und vier Threads drei Fehlschläge, 5 023 Schritte
+und Hash `84291e28`. Alle Produktionsreihen stimmen mit den vorher getrennt kompilierten Versuchen überein.
+Rohdaten: `build/landing-final-*.csv`, Ausgangsfassung `build/landing-prediction-baseline/`.
+
+Die fünf 60-N-s-Körperproben behalten ihre gemessene Bewegung und Erholung: relative Drehung nach zentralen
+Treffern 25,9° und 23,9°, beim Schultertreffer 23,0°; Beugen 22,5°, 38,7° und 20,6°. Alle fangen sich weiterhin.
+Bestehende Prüfgrenzen und feste Ergebnis-Hashes wurden nicht verändert. Release mit Warnungen als Fehler,
+der vollständige Testsatz und die bisherigen Bewegungs-, Brems-, Trefferimpuls- und Hindernistests bestehen.
+Die Demo ist neu gebaut.
+
+Nicht übernommene Versuche dieser Runde:
+
+- Die Capture-Point-Vorhersage pauschal um 0,04/0,08/0,12 s später landen zu lassen, bei unveränderter Fußbahn,
+  ergibt 6/160/662 statt drei Fehlschlägen von 1 920 mittleren Treffern. Aus der beobachteten Verzögerung beim
+  Aufsetzen darf nicht einfach eine zusätzliche feste Vorhersagezeit werden.
+- Den Beckenanteil der Schrittdrehung mit null statt eins beginnen zu lassen, um den ersten Rückwärtsschritt
+  ohne vorübergehenden Beckenanteil zu starten, ergibt vier statt drei Fehlschläge von 1 920 und einen neuen
+  Zeitlimitfall. Die schnellere Rückwärts-Erholung der einzelnen 60-N-s-Probe reicht als Nachweis nicht aus.
+
+Gepaarter Benchmark gegen die gesicherte Ausgangs-EXE: zwei Läufe im Wechsel mit vier Threads, einer mit einem.
+Alle sechs `figures`-Szenen behalten in jeder Paarung ihre Ergebnis-Hashes. Die Stadt mit Figuren liegt mit vier
+Threads bei 3,72 → 3,79 ms und 3,71 → 3,74 ms, mit einem bei 7,69 → 7,77 ms. Der Benchmark verwendet weiterhin
+die Bibliotheksvorgaben ohne Schrittdrehung; ein Leistungsgewinn wird nicht behauptet. Die korrigierte Planung
+mit aktivierten Bewegungsoptionen ist durch die oben genannten Reihen und Tests geprüft.
+
+## Kopf nach Treffern beruhigen, F79, 4. November 2026
+
+Auf Rückmeldung des Nutzers: Der Kopf wackelt vor allem nach Treffern zu stark. Geprüft wurden die aktuelle
+Kombination aus eigener Balance, nachgebendem Rumpf und Schrittdrehung, dieselben fünf 60-N-s-Körperproben,
+ruhiger Stand sowie direkte Kopftreffer. Die beiden gekoppelten Gelenke zwischen Brust, leichtem Hals und
+schwererem Kopf reagieren auf die schnellen Brustbewegungen. Die vorhandene Armature verhindert bereits das
+starke numerische Zittern der alten steifen Halskette, beseitigt das Nachschwingen der neuen Reaktion aber nicht.
+
+Die Bibliothek erhöht nun die Gelenkdämpfung von Hals und Kopf während `nb_figureBalancing` um Faktor acht,
+wenn `responsiveTrunk` oder `turnWithSteps` aktiviert ist. Es werden nur die beiden passenden Gelenke mit den
+Eltern Brust beziehungsweise Hals berücksichtigt, bei einer Figur, die sich balancieren kann. Die Dämpfung
+multipliziert weiterhin die Werte der Motoren und des Rigs; null bleibt null. Keine zusätzliche Masse, größere
+Armature, stärkere Feder, höhere Drehmomentgrenze, Weltstütze oder nachträgliche Glättung der gezeichneten Knochen.
+Die Gegenmomente wirken in den vorhandenen Gelenken. Außerhalb der Balance wird wieder die Dämpfung des Rigs
+verwendet, sobald die Federn aktiv sind. Die bisherigen Modi ohne beide Bewegungsoptionen behalten ihr Verhalten.
+
+Gemessen wird die mittlere Änderung des relativen Drehgeschwindigkeitsvektors von Kopf gegen Hals pro Update,
+ab 0,2 s nach dem Treffer und solange die Figur sich dynamisch fängt. Die Werte sind keine direkte Messung des
+subjektiven Aussehens und hängen auch vom Abfangverlauf ab. Bei den drei 60-Hz-Rumpfproben verkleinern sie sich
+um 59–62 %, bei 120 Hz um 52–61 %, bei 30 Hz um 43–51 %:
+
+| 60-N-s-Probe, 60 Hz | Änderung vorher, rad/s | Neue Dämpfung, rad/s | Kopf gegen Brust, größter Winkel vorher → neu |
+| --- | ---: | ---: | ---: |
+| Brust in −z | 0,465 | 0,178 | 21,3° → 14,6° |
+| Brust in +z | 0,448 | 0,170 | 12,1° → 13,7° |
+| Außermittiger Schultertreffer | 0,481 | 0,196 | 12,8° → 11,6° |
+
+In der −z-Probe sinkt die höchste relative Drehgeschwindigkeit der ersten Sekunde von 5,35 auf 2,82 rad/s,
+beim Schultertreffer von 3,73 auf 1,80 rad/s. Ein direkter 60-N-s-Kopftreffer dreht Kopf und Brust weiterhin um
+36,5° statt 38,6° gegeneinander; der leichte 20-N-s-Kopftreffer bleibt bei 23,2°. Im ruhigen Stand wurde kein
+entsprechendes Nachschwingen gemessen. Die fünf 60-N-s-Körperproben fangen sich mit der gewählten Fassung bei
+30, 60 und 120 Hz. Nach den zentralen Treffern drehen Brust und Becken weiter um 25,6° beziehungsweise 23,9°,
+beim Schultertreffer um 22,8°. Das Beugen bleibt mit 21,8°, 38,0° und 20,2° deutlich. Der vollständige angewandte
+lineare und dreidimensionale Drehimpuls bleibt erhalten.
+
+Die neue Kopfreaktion verändert die gekoppelten Balanceverläufe. Sie ist kein allgemeiner Gewinn beim Abfangen:
+
+| Reihe mit nachgebendem Rumpf und Schrittdrehung | Fälle | Vorher | Mit Halsdämpfung |
+| --- | ---: | ---: | ---: |
+| 50–89 N s, vier Rumpfknochen, zwölf Richtungen, Zentrum, 60 Hz | 1 920 | 3 | 5 |
+| gleiche Reihe, Trefferpunkt +1 mm | 1 920 | 3 | 5 |
+| gleiche Reihe, Trefferpunkt −1 mm | 1 920 | 2 | 4 |
+| zusammen, 60 Hz | 5 760 | 8 | 14 |
+| 50–86 N s in Viererschritten, 30 Hz | 480 | 32 | 35 |
+| 50–89 N s, vollständige Reihe, 120 Hz | 1 920 | 1 | 0 |
+| 90–138 N s in Zweierschritten, 60 Hz | 1 200 | 649 | 650 |
+| 40–80 N s, obere Brust, acht Richtungen, Oberflächenpunkt, 60 Hz | 168 | 4 | 3 |
+
+Für diese Korrektur wird die ruhigere Kopfbewegung priorisiert; die zusätzlichen mittleren und 30-Hz-Grenzfälle
+bleiben offen. Die mittlere Reihe im Zentrum ergibt mit einem und vier Threads jeweils fünf Fehlschläge,
+4 925 Schritte und Hash `c559b92c`. Produktionsfassung und getrennt kompilierter Versuch stimmen in allen Reihen
+überein. Daten: `build/head-final-*`; gesicherte Ausgangsfassung: `build/head-baseline/`.
+
+`FigureHeadRecoveryTest` prüft zentrale und außermittige Brusttreffer bei 30/60/120 Hz und mit einem/vier Threads
+über die ganze Bewegung. Nach den ersten 0,2 s muss die mittlere Änderung der relativen Drehgeschwindigkeit
+unter 20 rad/s² bleiben, die vorhandene Drehmomentgrenze darf nicht steigen, die Figur muss sich ohne Knockdown
+oder Weltanker fangen und anschließend stehen. Ein direkter leichter Kopftreffer muss weiter sichtbar nachgeben
+und sich beruhigen. Gegen die alte Bibliothek scheitert der neue Test, mit der Korrektur besteht er. Die bisherigen
+Prüfgrenzen und festen Hashes wurden nicht verändert. Release mit Warnungen als Fehler und der vollständige
+Testsatz sind grün, einschließlich Rumpfbewegung, Trefferimpuls, Halsarmature, Schrittplanung und Hindernissen.
+Die Demo ist neu gebaut.
+
+Nicht übernommene Varianten:
+
+- Dämpfungsfaktor 1,5/2/3/5 wurde gegen die Körperproben geprüft. Drei ergibt acht, fünf sechs Fehlschläge von
+  1 920 mittleren Treffern im Zentrum; Faktor acht beruhigt stärker und ergibt dort fünf.
+- Größere Armature allein vergrößert die Kopf-Brust-Auslenkung der −z-Probe auf 28,5° statt 21,3°. Auch mit
+  höherer Federsteifigkeit bleibt mehr Auslenkung und die direkte Kopfprobe erholt sich langsamer. Steifere
+  Halsfedern ohne größere Armature beruhigen einzelne Drehgeschwindigkeiten, verzögern aber die Kopfprobe.
+- Nur das Halsgelenk stärker zu dämpfen beruhigt weniger und ergibt sieben Fehlschläge von 1 920 im Zentrum.
+  Nur das Kopfgelenk zu dämpfen ergibt dort vier und kleinere Kopf-Brust-Winkel, lässt aber die normale zentrale
+  +z-Körperprobe bei 30 Hz fallen. Beide Gelenke werden zusammen gedämpft.
+- Die zusätzliche Dämpfung erst nach 0,1 s über 0,15 s weich einzublenden bewahrt den ersten Rückstoß und
+  beruhigt das Nachschwingen, ergibt über drei mittlere Lagen aber 16 statt 14 Fehlschläge und lässt die zentrale
+  −z-Körperprobe bei 30 Hz fallen. Die direkte zusätzliche Gelenkdämpfung wird verwendet.
+
+Gepaarte Prüfung gegen die gesicherte Ausgangs-EXE: zwei Läufe im Wechsel mit vier Threads, einer mit einem.
+Alle sechs `figures`-Szenen behalten in jeder Paarung ihre Ergebnis-Hashes. Die Stadt mit Figuren liegt mit vier
+Threads bei 3,72 → 3,73 ms und 3,74 → 3,69 ms, mit einem bei 8,62 → 8,17 ms. Der Benchmark verwendet weiterhin
+die Bibliotheksvorgaben ohne beide Bewegungsoptionen; daraus wird kein Leistungsgewinn der Halsdämpfung abgeleitet.
+Die aktivierte neue Reaktion ist durch die Bewegungs- und Abfangreihen oben geprüft.

@@ -49,17 +49,18 @@ enum SceneKind
 	SceneFigures,
 	SceneFigureTown,
 	SceneFight,
+	SceneObstacles,
 	SceneCount
 };
 
 static const char* s_sceneNames[SceneCount] = { "Mauern",  "Stresstest",		"Stadt", "Große Stadt",
-												"Figuren", "Stadt mit Figuren", "Kampf" };
+												"Figuren", "Stadt mit Figuren", "Kampf", "Hindernisse" };
 static const char* s_toolNames[ToolCount] = { "Gewehr", "Granate", "Kanone", "Stock" };
 
 // The scenes whose figures the menu, the overlay and the reports show
 static bool HasFigures( SceneKind scene )
 {
-	return scene == SceneFigures || scene == SceneFigureTown || scene == SceneFight;
+	return scene == SceneFigures || scene == SceneFigureTown || scene == SceneFight || scene == SceneObstacles;
 }
 
 struct ToolSettings
@@ -520,7 +521,9 @@ struct App
 	bool showFigureStates = true;
 	bool showFigureTargets = false;
 	bool figureMuscles = false;
-	bool figureLegHold = false;
+	bool figureLegHold = true;
+	bool figureResponsiveTrunk = true;
+	bool figureTurnWithSteps = true;
 
 	// Every part of the body of a figure in its own color, or each figure in one. The menu asks for the figures to be
 	// drawn again, and the next frame does it before the steps start.
@@ -1721,6 +1724,8 @@ static nbFigureDef MakeFigureDef( App& app, nbRigDef* rig )
 	def.standHeight = standHeight;
 	def.motors.muscles = app.figureMuscles;
 	def.motors.uprightAgainstWorld = app.figureLegHold == false;
+	def.motors.responsiveTrunk = app.figureResponsiveTrunk;
+	def.motors.turnWithSteps = app.figureTurnWithSteps;
 	return def;
 }
 
@@ -1853,6 +1858,43 @@ static void BuildFightScene( App& app )
 
 	// From the side of the punching arms
 	app.camera.position = { -3.4f, 1.5f, -1.1f };
+	app.camera.yaw = 0.5f * B3_PI;
+	app.camera.pitch = -0.08f;
+}
+
+// The same punch in free space and against concrete. The figures start kinematic: the library detects the obstacle
+// before the arm reaches it, releases animation and takes the contact with dynamic bones and joint motors.
+static void BuildObstacleScene( App& app )
+{
+	static FightClips clips;
+	MakeFightClips( clips );
+	// A straight swing from rest, followed by enough rest to recover before the next attempt.
+	const float times[6] = { 0.0f, 0.8f, 0.92f, 1.12f, 1.52f, 5.0f };
+	for ( int k = 0; k < 6; ++k )
+	{
+		b3Quat* pose = clips.punchPoses + k * nb_humanoidBoneCount;
+		memcpy( pose, clips.idlePoses, sizeof( b3Quat ) * nb_humanoidBoneCount );
+		if ( k == 2 || k == 3 )
+		{
+			pose[nb_humanoidUpperArmRight] = b3MakeQuatFromAxisAngle( b3Vec3_axisX, 1.6f );
+			pose[nb_humanoidForearmRight] = b3Quat_identity;
+		}
+		clips.punchKeys[k] = { times[k], pose, b3Transform_identity };
+	}
+	nbRigDef rig;
+	nbFigureDef def = MakeFigureDef( app, &rig );
+	for ( int k = 0; k < 2; ++k )
+	{
+		def.position = b3ToPos( { 0.0f, 0.0f, -3.0f * (float)k } );
+		nbFigureId figure = nbCreateFigure( app.destruction, &def );
+		if ( nbFigure_IsValid( figure ) )
+		{
+			AddFigureVisual( app, figure );
+			nbFigure_PlayClip( figure, &clips.punch, 1.0f );
+		}
+	}
+	AddWall( app, { 0.0f, 0.0f, 0.55f }, 0.0f, { 1.2f, 1.9f, 0.15f }, ConcretePreset(), 52 );
+	app.camera.position = { -3.7f, 1.6f, -1.3f };
 	app.camera.yaw = 0.5f * B3_PI;
 	app.camera.pitch = -0.08f;
 }
@@ -2018,6 +2060,9 @@ static void LoadScene( App& app, SceneKind scene )
 			break;
 		case SceneFight:
 			BuildFightScene( app );
+			break;
+		case SceneObstacles:
+			BuildObstacleScene( app );
 			break;
 		default:
 			BuildTownScene( app );
@@ -2676,11 +2721,11 @@ static std::string BuildReport( const App& app )
 		Appendf( text,
 				 "Figuren: %d, stehen %d (%d folgen dem Clip), fangen sich %d, liegen %d (%d wach), stehen auf %d; Treffer %d, "
 				 "Schritte %d, gefangen %d, umgeworfen %d, aufgestanden %d, gerückt %d, abgebrochen %d, gedrückt %d, "
-				 "losgelassen %d\n",
+				 "losgelassen %d, Hinderniskontakte %d\n",
 				 figures.figureCount, figures.animatedCount, figures.followingCount, figures.balancingCount, figures.ragdollCount,
 				 figures.awakeRagdollCount, figures.gettingUpCount, figures.hitCount, figures.stepCount, figures.catchCount,
 				 figures.knockdownCount, figures.getUpCount, figures.shiftCount, figures.abortCount, figures.pushCount,
-				 figures.letGoCount );
+				 figures.letGoCount, figures.collisionCount );
 	}
 	if ( app.scene == SceneCity )
 	{
@@ -2753,6 +2798,12 @@ static void DrawUi( App& app )
 					 "gedrückt %d, losgelassen %d",
 					 figures.hitCount, figures.stepCount, figures.catchCount, figures.knockdownCount, figures.getUpCount,
 					 figures.shiftCount, figures.abortCount, figures.pushCount, figures.letGoCount );
+		ImGui::Text( "Durch Hinderniskontakt dynamisch geworden: %d", figures.collisionCount );
+		if ( app.scene == SceneObstacles )
+		{
+			ImGui::TextWrapped( "Vorne trifft der Schlag auf Beton, hinten läuft derselbe Clip im Freien. "
+							   "Die Figur gibt am Hindernis physikalisch nach. R startet neu, F1 blendet das Menü aus." );
+		}
 		ImGui::SliderFloat( "Gewehr auf Figuren", &app.figureHitImpulse, 10.0f, 1500.0f, "%.0f N s",
 							ImGuiSliderFlags_Logarithmic );
 		if ( ImGui::IsItemHovered() )
@@ -2791,7 +2842,10 @@ static void DrawUi( App& app )
 							   "schnellt zurück, der rechte Arm schwingt nach vorn,\nder Rumpf dreht nur mit dem, was Hals "
 							   "und Schulter weitergeben.\nGewehr auf Figuren dafür auf etwa 20 N s stellen." );
 		}
-		if ( chest || side || face || arm )
+		bool shoulder = ImGui::Button( "Schultertreffer" );
+		ImGui::SameLine();
+		bool back = ImGui::Button( "Rückenstoß" );
+		if ( chest || side || face || arm || shoulder || back )
 		{
 			for ( const FigureVisual& visual : app.figures )
 			{
@@ -2799,6 +2853,15 @@ static void DrawUi( App& app )
 				int bone = nb_humanoidChest;
 				b3Vec3 local = { 0.0f, 0.08f, 0.1f };
 				b3Vec3 toward = side ? b3Vec3{ 1.0f, 0.0f, 0.0f } : b3Vec3{ 0.0f, 0.0f, -1.0f };
+				if ( shoulder )
+				{
+					local.x = -0.15f;
+				}
+				if ( back )
+				{
+					local.z = -0.1f;
+					toward.z = 1.0f;
+				}
 				if ( face )
 				{
 					bone = nb_humanoidHead;
@@ -2852,10 +2915,32 @@ static void DrawUi( App& app )
 		}
 		if ( ImGui::IsItemHovered() )
 		{
-			ImGui::SetTooltip( "Eine Figur, die sich fängt, hält ihr Becken gegen die Oberschenkel ihrer Beine aufrecht,\nnicht "
-							   "gegen die Welt: aus eigener Kraft, Stufe 1 der Roadmap, F61. Lädt die Szene neu.\nGemessen fällt "
-							   "sie so nach 17 von 168 leichten Treffern, mit der Stütze gegen die\nWelt nach keinem." );
+			ImGui::SetTooltip( "Die Hüfte richtet das Becken über die Standbeine auf und bremst seine Kippbewegung.\n"
+							   "Die Füße bremsen das Nachtaumeln durch ihren Druck auf den Boden.\n"
+							   "Die Balancekräfte gehen durch die Beine in den Boden. Gelenkkraft und Bodenhaftung\n"
+							   "begrenzen, was die Figur abfangen kann. Lädt die Szene neu." );
 		}
+		if ( ImGui::Checkbox( "Mit Schritten drehen", &app.figureTurnWithSteps ) )
+		{
+			LoadScene( app, app.scene );
+		}
+		if ( ImGui::IsItemHovered() )
+		{
+			ImGui::SetTooltip( "Bei Balance durch die Beine drehen Becken und Schultern gegenläufig mit dem Schritt.\n"
+							   "Rückwärts wird die Drehung reduziert, im Stand klingt sie aus. Lädt die Szene neu." );
+		}
+		if ( ImGui::Checkbox( "Rumpf gibt nach", &app.figureResponsiveTrunk ) )
+		{
+			LoadScene( app, app.scene );
+		}
+		if ( ImGui::IsItemHovered() )
+		{
+			ImGui::SetTooltip( "Treffer lassen den Rumpf kippen und die Brust gegen das Becken drehen.\n"
+							   "Die Wirbelsäule gibt kurz nach und richtet sich wieder auf.\n"
+							   "Harte Treffer sind dadurch schwieriger abzufangen. Lädt die Szene neu.\n"
+							   "Mit Schultertreffer und Rückenstoß ansehen, etwa bei 60 N s." );
+		}
+		ImGui::SameLine();
 		if ( ImGui::Checkbox( "Teile farbig", &app.figurePartColors ) )
 		{
 			app.rebuildFigures = true;

@@ -992,6 +992,466 @@ static int FigureLegHoldTest( void )
 	return 0;
 }
 
+// Previously failing hits with balance through the legs must recover with the same strength and grip, also a
+// millimeter to either side, without an anchor to the world. Compare every recovery frame with one and four threads.
+static int CheckOwnBalanceHits( const int* bones, const int* directions, const float* impulses, int sampleCount, int rate,
+							   int offsetLimit, bool responsiveTrunk, bool turnWithSteps )
+{
+	for ( int sample = 0; sample < sampleCount; ++sample )
+	for ( int offset = -offsetLimit; offset <= offsetLimit; ++offset )
+	{
+		uint32_t hashes[2] = { 2166136261u, 2166136261u };
+		for ( int pass = 0; pass < 2; ++pass )
+		{
+			FigureScene scene;
+			CreateFigureScene( &scene, pass == 0 ? 1 : 4 );
+			nbFigureDef def = nbDefaultFigureDef();
+			def.rig = &scene.rig;
+			def.standHeight = scene.standHeight;
+			def.motors.uprightAgainstWorld = false;
+			def.motors.responsiveTrunk = responsiveTrunk;
+			def.motors.turnWithSteps = turnWithSteps;
+			nbFigureId figure = nbCreateFigure( scene.world, &def );
+			StepFigures( &scene, 30 );
+			b3Vec3 direction = b3RotateVector( b3MakeQuatFromAxisAngle( b3Vec3_axisY, B3_PI * (float)directions[sample] / 6.0f ),
+											  (b3Vec3){ 0.0f, 0.0f, -1.0f } );
+			b3BodyId body = nbFigure_GetBody( figure, bones[sample] );
+			nbHitDef hit = { 1, bones[sample], b3MulSV( impulses[sample], direction ),
+				b3OffsetPos( b3Body_GetWorldCenter( body ), (b3Vec3){ 0.001f * (float)offset, 0.0f, 0.0f } ) };
+			ENSURE( nbFigure_ApplyHit( figure, &hit ) );
+			int frames = 0;
+			while ( nbFigure_GetState( figure ) == nb_figureBalancing && frames < 10 * rate )
+			{
+				nbWorld_Step( scene.world, 1.0f / (float)rate, 240 / rate );
+				b3WorldTransform transforms[nb_humanoidBoneCount];
+				nbFigure_GetBoneTransforms( figure, transforms, nb_humanoidBoneCount );
+				const uint8_t* bytes = (const uint8_t*)transforms;
+				for ( size_t n = 0; n < sizeof( transforms ); ++n )
+				{
+					hashes[pass] = ( hashes[pass] ^ bytes[n] ) * 16777619u;
+				}
+				++frames;
+			}
+			nbFigureInfo info = nbFigure_GetInfo( figure );
+			ENSURE( info.state == nb_figureAnimated && info.knockdownCount == 0 && info.catchCount == 1 );
+			ENSURE( b3Body_IsValid( nbGetWorldFromId( scene.world )->figureAnchor ) == false );
+			hashes[pass] = ( hashes[pass] ^ (uint32_t)( frames + 1024 * info.stepCount ) ) * 16777619u;
+			if ( turnWithSteps )
+			{
+				StepFigures( &scene, 60 );
+				ENSURE( StandsUpright( &scene, figure ) );
+			}
+			DestroyFigureScene( &scene );
+		}
+		ENSURE( hashes[0] == hashes[1] );
+	}
+	return 0;
+}
+
+static int FigureHipBrakeTest( void )
+{
+	const int bones[5] = { nb_humanoidBelly, nb_humanoidRibs, nb_humanoidLowerChest, nb_humanoidChest, nb_humanoidChest };
+	const int directions[5] = { 1, 1, 1, 8, 11 };
+	const float impulses[5] = { 89.0f, 87.0f, 77.0f, 89.0f, 62.0f };
+	return CheckOwnBalanceHits( bones, directions, impulses, 5, 60, 1, false, false );
+}
+
+// These hits used to run into the eight-second restless timeout after 14 to 16 steps. Pressure under the planted
+// soles now brakes the remaining sway, so the figure settles instead of starting another series of steps.
+static int FigureStandBrakeTest( void )
+{
+	const int bones[3] = { nb_humanoidChest, nb_humanoidChest, nb_humanoidChest };
+	const int directions[3] = { 2, 4, 8 };
+	const float impulses[3] = { 69.0f, 77.0f, 83.0f };
+	return CheckOwnBalanceHits( bones, directions, impulses, 3, 60, 1, false, false );
+}
+
+// With the responsive trunk, residual drift in a planted stance used to restart catch steps until the restless
+// timeout. Brake through the sole pressure and recover, including hit points a millimeter to either side.
+static int FigureResponsiveBrakeTest( void )
+{
+	const int bones[4] = { nb_humanoidLowerChest, nb_humanoidLowerChest, nb_humanoidLowerChest, nb_humanoidChest };
+	const int directions[4] = { 6, 4, 8, 0 };
+	const float impulses[4] = { 85.0f, 84.0f, 56.0f, 81.0f };
+	return CheckOwnBalanceHits( bones, directions, impulses, 4, 60, 1, true, false );
+}
+
+// Step yaw used to restart catch steps after these hits until the eight-second timeout. Brake the remaining sway
+// through the planted soles, retain both movement options, recover off center too, and keep standing afterwards.
+static int FigureTurningBrakeTest( void )
+{
+	const int bones[4] = { nb_humanoidBelly, nb_humanoidLowerChest, nb_humanoidChest, nb_humanoidLowerChest };
+	const int directions[4] = { 2, 11, 1, 0 };
+	const float impulses[4] = { 52.0f, 77.0f, 54.0f, 71.0f };
+	ENSURE( CheckOwnBalanceHits( bones, directions, impulses, 4, 60, 1, true, true ) == 0 );
+	return CheckOwnBalanceHits( bones, directions, impulses, 4, 120, 1, true, true );
+}
+
+// Isolate the catch-step planner with the pelvis toward the stance foot and a fast backward drift. A reachable target
+// must retain the side separation; an impossible replan must leave the previous target alone. Check both feet,
+// different body sizes, headings and positions, with identical targets and joint poses across thread counts.
+static int FigureStepReachGapTest( void )
+{
+	const float sizes[3] = { 0.5f, 1.0f, 2.0f };
+	const float headings[3] = { 0.0f, 0.7f, -1.2f };
+	const b3Vec3 positions[3] = { { 0.0f, 0.0f, 0.0f }, { 12.0f, 0.0f, -8.0f }, { -9.0f, 0.0f, 15.0f } };
+	for ( int sample = 0; sample < 3; ++sample )
+	for ( int foot = 0; foot < 2; ++foot )
+	for ( int impossible = 0; impossible < 2; ++impossible )
+	{
+		uint32_t hashes[2] = { 2166136261u, 2166136261u };
+		for ( int pass = 0; pass < 2; ++pass )
+		{
+			FigureScene scene;
+			CreateFigureScene( &scene, pass == 0 ? 1 : 4 );
+			scene.standHeight = nbMakeHumanoidBones( 1.8f * sizes[sample], 74.0f, scene.bones, nb_humanoidBoneCount );
+			nbFigureDef def = nbDefaultFigureDef();
+			def.rig = &scene.rig;
+			def.standHeight = scene.standHeight;
+			def.position = b3ToPos( positions[sample] );
+			def.heading = headings[sample];
+			def.motors.uprightAgainstWorld = false;
+			def.motors.responsiveTrunk = true;
+			def.motors.turnWithSteps = true;
+			nbFigureId figure = nbCreateFigure( scene.world, &def );
+			StepFigures( &scene, 30 );
+			ENSURE( HitChest( figure, 1, (b3Vec3){ 0.0f, 0.0f, -60.0f } ) );
+			nbWorld* world = nbGetWorldFromId( scene.world );
+			nbFigure* f = world->figures.data;
+			ENSURE( f->state == nb_figureBalancing );
+			nbBalancer* b = &f->balancer;
+			int stance = 1 - foot;
+			float side = foot == 0 ? 1.0f : -1.0f;
+			b3Vec3 facing = b->footFacing[stance];
+			b3Vec3 left = b3Cross( b->up, facing );
+			b3BodyId root = f->bones[nb_humanoidPelvis].bodyId;
+			b3WorldTransform pelvis = b3Body_GetTransform( root );
+			float shift = ( impossible ? 0.7f : 0.25f ) * b->scale;
+			b3Body_SetTransform( root, b3OffsetPos( pelvis.p, b3MulSV( -side * shift, left ) ), pelvis.q );
+			b3Vec3 velocity = b3MulSV( -3.0f * b->scale, facing );
+			for ( int i = 0; i < f->boneCount; ++i )
+			{
+				b3Body_SetLinearVelocity( f->bones[i].bodyId, velocity );
+				b3Body_SetAngularVelocity( f->bones[i].bodyId, b3Vec3_zero );
+			}
+			b3BodyId swing = f->bones[foot == 0 ? nb_humanoidFootLeft : nb_humanoidFootRight].bodyId;
+			b->stepping = true;
+			b->stepFoot = foot;
+			b->lastFoot = foot;
+			b->stepCount = 1;
+			b->stateTime = 0.1f;
+			b->swingStart = b3ToVec3( b3Body_GetPosition( swing ) );
+			b->stepAnkle = b->swingStart;
+			b->swingVelocity = velocity;
+			b3Vec3 previous = b->stepAnkle;
+			ENSURE( nbUpdateBalance( world, 0, f, 1.0f / 60.0f, f->pose ) == nb_balanceGoesOn );
+			float tolerance = 0.00002f * b->scale;
+			if ( impossible )
+			{
+				ENSURE( b3Length( b3Sub( previous, b->stepAnkle ) ) < tolerance );
+			}
+			else
+			{
+				b3BodyId planted = f->bones[stance == 0 ? nb_humanoidFootLeft : nb_humanoidFootRight].bodyId;
+				b3Vec3 ankle = b3ToVec3( b3Body_GetPosition( planted ) );
+				float gap = side * b3Dot( b3Sub( b->stepAnkle, ankle ), left );
+				b3Vec3 hip = b3ToVec3( b3Body_GetWorldPoint( root, b->hip[foot] ) );
+				b3Vec3 reach = b3Sub( b->stepAnkle, hip );
+				reach = b3MulSub( reach, b3Dot( reach, b->up ), b->up );
+				ENSURE( gap >= b->footGap - tolerance );
+				ENSURE( b3Length( reach ) <= 0.55f * b->scale + tolerance );
+				ENSURE( b3Length( b3Sub( previous, b->stepAnkle ) ) > 0.1f * b->scale );
+			}
+			const uint8_t* bytes = (const uint8_t*)&b->stepAnkle;
+			for ( size_t n = 0; n < sizeof( b->stepAnkle ); ++n )
+			{
+				hashes[pass] = ( hashes[pass] ^ bytes[n] ) * 16777619u;
+			}
+			bytes = (const uint8_t*)f->pose;
+			for ( size_t n = 0; n < (size_t)f->boneCount * sizeof( b3Quat ); ++n )
+			{
+				hashes[pass] = ( hashes[pass] ^ bytes[n] ) * 16777619u;
+			}
+			DestroyFigureScene( &scene );
+		}
+		ENSURE( hashes[0] == hashes[1] );
+	}
+	// A full impact that previously sank after the reach clamp narrowed the step. Keep recovery and the following
+	// planted stance deterministic as well as the isolated geometry above.
+	const int bones[1] = { nb_humanoidLowerChest };
+	const int directions[1] = { 0 };
+	const float impulses[1] = { 114.0f };
+	return CheckOwnBalanceHits( bones, directions, impulses, 1, 60, 0, true, true );
+}
+
+// Keep the measured danger fixed to isolate the decision delay from the dynamics. A modest capture error needs
+// two observations at high rates, one after a slow frame; an urgent error must still start a step immediately.
+static int FigureStepDelayTest( void )
+{
+	const float steps[6][2] = { { 1.0f / 30.0f, 0.0f }, { 1.0f / 60.0f, 1.0f / 60.0f },
+		{ 1.0f / 120.0f, 1.0f / 120.0f }, { 1.0f / 240.0f, 1.0f / 240.0f },
+		{ 1.0f / 20.0f, 0.0f }, { 1.0f / 120.0f, 1.0f / 30.0f } };
+	const int counts[6] = { 1, 2, 2, 2, 1, 2 };
+	for ( int sample = 0; sample < 7; ++sample )
+	{
+		FigureScene scene;
+		CreateFigureScene( &scene, 1 );
+		nbFigureDef def = nbDefaultFigureDef();
+		def.rig = &scene.rig;
+		def.standHeight = scene.standHeight;
+		def.motors.uprightAgainstWorld = false;
+		def.motors.responsiveTrunk = true;
+		nbFigureId figure = nbCreateFigure( scene.world, &def );
+		StepFigures( &scene, 30 );
+		b3BodyId pelvis = nbFigure_GetBody( figure, nb_humanoidPelvis );
+		nbHitDef hit = { 1, nb_humanoidPelvis, { 0.0f, 0.0f, sample < 6 ? 52.0f : 80.0f },
+						 b3Body_GetWorldCenter( pelvis ) };
+		ENSURE( nbFigure_ApplyHit( figure, &hit ) );
+		nbWorld* world = nbGetWorldFromId( scene.world );
+		nbFigure* f = world->figures.data;
+		ENSURE( f->state == nb_figureBalancing );
+		int count = sample < 6 ? counts[sample] : 1;
+		for ( int i = 0; i < count; ++i )
+		{
+			float dt = sample < 6 ? steps[sample][i] : 1.0f / 240.0f;
+			ENSURE( nbUpdateBalance( world, 0, f, dt, f->pose ) == nb_balanceGoesOn );
+			ENSURE( f->balancer.footContact[0] && f->balancer.footContact[1] );
+			ENSURE( f->balancer.captureMargin > 0.03f );
+			ENSURE( sample < 6 ? f->balancer.captureMargin < 0.1f : f->balancer.captureMargin > 0.1f );
+			ENSURE( f->balancer.stepping == ( i == count - 1 ) );
+		}
+		ENSURE( b3Body_IsValid( world->figureAnchor ) == false );
+		DestroyFigureScene( &scene );
+	}
+	return 0;
+}
+
+// A nearly collinear corner entering the support hull must not move the stance target by centimeters. Measure the
+// actual balance update with tiny foot yaws, on either side of the hull change and away from the world origin too.
+static int FigureSupportMiddleTest( void )
+{
+	const float angles[5] = { 0.0f, 0.0001f, -0.0001f, 0.001f, -0.001f };
+	for ( int location = 0; location < 2; ++location )
+	{
+		uint32_t hashes[2] = { 2166136261u, 2166136261u };
+		for ( int pass = 0; pass < 2; ++pass )
+		{
+			FigureScene scene;
+			CreateFigureScene( &scene, pass == 0 ? 1 : 4 );
+			nbFigureDef def = nbDefaultFigureDef();
+			def.rig = &scene.rig;
+			def.standHeight = scene.standHeight;
+			def.position = b3ToPos( location == 0 ? b3Vec3_zero : (b3Vec3){ 12.0f, 0.0f, -8.0f } );
+			def.motors.uprightAgainstWorld = false;
+			def.motors.responsiveTrunk = true;
+			def.motors.turnWithSteps = true;
+			nbFigureId figure = nbCreateFigure( scene.world, &def );
+			StepFigures( &scene, 30 );
+			ENSURE( HitChest( figure, 1, (b3Vec3){ 0.0f, 0.0f, -60.0f } ) );
+			nbWorld* world = nbGetWorldFromId( scene.world );
+			nbFigure* f = world->figures.data;
+			ENSURE( f->state == nb_figureBalancing );
+			for ( int i = 0; i < f->boneCount; ++i )
+			{
+				b3Body_SetLinearVelocity( f->bones[i].bodyId, b3Vec3_zero );
+				b3Body_SetAngularVelocity( f->bones[i].bodyId, b3Vec3_zero );
+			}
+
+			b3BodyId right = f->bones[nb_humanoidFootRight].bodyId;
+			b3WorldTransform initial = b3Body_GetTransform( right );
+			b3Vec3 reference = b3Vec3_zero;
+			for ( int sample = 0; sample < 5; ++sample )
+			{
+				b3Quat yaw = b3MakeQuatFromAxisAngle( b3Vec3_axisY, angles[sample] );
+				b3Body_SetTransform( right, initial.p, b3MulQuat( yaw, initial.q ) );
+				ENSURE( nbUpdateBalance( world, 0, f, 1.0f / 60.0f, f->pose ) == nb_balanceGoesOn );
+				const nbBalancer* b = &f->balancer;
+				ENSURE( b->footContact[0] && b->footContact[1] && b->stepping == false );
+				if ( sample == 0 )
+				{
+					reference = b->supportMiddle;
+				}
+				ENSURE( b3Length( b3Sub( reference, b->supportMiddle ) ) < 0.0002f );
+				const uint8_t* bytes = (const uint8_t*)&b->supportMiddle;
+				for ( size_t n = 0; n < sizeof( b->supportMiddle ); ++n )
+				{
+					hashes[pass] = ( hashes[pass] ^ bytes[n] ) * 16777619u;
+				}
+			}
+
+			// A line or a single support point must remain finite too. Collapse the measured soles without stepping
+			// physics, isolating the geometry from whether a real figure could balance on this support for long.
+			for ( int point = 0; point < 2; ++point )
+			{
+				for ( int foot = 0; foot < 2; ++foot )
+				{
+					b3BodyId body = f->bones[foot == 0 ? nb_humanoidFootLeft : nb_humanoidFootRight].bodyId;
+					b3Vec3 target = reference;
+					target.x += point == 0 ? ( foot == 0 ? -0.1f : 0.1f ) : 0.0f;
+					b3Vec3 local = b3Body_GetLocalPoint( body, b3ToPos( target ) );
+					for ( int k = 0; k < 4; ++k )
+					{
+						f->balancer.sole[foot][k] = local;
+					}
+				}
+				f->balancer.dangerUpdates = 0;
+				ENSURE( nbUpdateBalance( world, 0, f, 1.0f / 60.0f, f->pose ) == nb_balanceGoesOn );
+				ENSURE( f->balancer.supportCount > 0 && f->balancer.supportCount <= 2 );
+				ENSURE( b3Length( b3Sub( reference, f->balancer.supportMiddle ) ) < 0.0002f );
+			}
+			DestroyFigureScene( &scene );
+		}
+		ENSURE( hashes[0] == hashes[1] );
+	}
+	return 0;
+}
+
+// These hits formerly waited another 30-Hz frame before stepping, then ran out of balance or kept stumbling.
+// Catch them through the legs with the responsive trunk, also off center, with identical motion on one/four threads.
+static int FigureSlowStepTest( void )
+{
+	const int bones[3] = { nb_humanoidRibs, nb_humanoidLowerChest, nb_humanoidChest };
+	const int directions[3] = { 1, 6, 10 };
+	const float impulses[3] = { 70.0f, 66.0f, 54.0f };
+	return CheckOwnBalanceHits( bones, directions, impulses, 3, 30, 1, true, false );
+}
+
+// Small velocity spikes from contacts used to restart the half-second calm check indefinitely at 120 Hz, even with
+// both feet planted and an upright pelvis. A quiet speed average tolerates these short spikes and permits recovery.
+static int FigureCalmAt120Test( void )
+{
+	const int bones[3] = { nb_humanoidBelly, nb_humanoidBelly, nb_humanoidBelly };
+	const int directions[3] = { 1, 2, 4 };
+	const float impulses[3] = { 66.0f, 66.0f, 58.0f };
+	return CheckOwnBalanceHits( bones, directions, impulses, 3, 120, 0, false, false );
+}
+
+// A secure planted stance used to keep jittering until the restless timeout at 120 Hz. Smooth the hip derivative
+// during stance, keep the normal calm criteria, and recover with a responsive trunk, also at 240 Hz and off center.
+static int FigurePlantedHipTest( void )
+{
+	const int bones[3] = { nb_humanoidBelly, nb_humanoidRibs, nb_humanoidChest };
+	const int directions[3] = { 2, 0, 11 };
+	const float impulses[3] = { 54.0f, 62.0f, 74.0f };
+	ENSURE( CheckOwnBalanceHits( bones, directions, impulses, 3, 120, 1, true, false ) == 0 );
+	return CheckOwnBalanceHits( bones, directions, impulses, 3, 240, 1, true, false );
+}
+
+// With the responsive trunk, these diagonal hits used to select the opposite foot first and lose balance after
+// several steps. Step into the lateral fall, then recover, also with the hit a millimeter to either side.
+static int FigureResponsiveCatchTest( void )
+{
+	const int bones[3] = { nb_humanoidRibs, nb_humanoidRibs, nb_humanoidLowerChest };
+	const int directions[3] = { 1, 11, 11 };
+	const float impulses[3] = { 87.0f, 86.0f, 82.0f };
+	return CheckOwnBalanceHits( bones, directions, impulses, 3, 60, 1, true, false );
+}
+
+// Mirrored diagonal pushes should start with the foot on the side of the lateral fall, without crossing the legs.
+static int FigureFirstStepSideTest( void )
+{
+	for ( int side = -1; side <= 1; side += 2 )
+	{
+		FigureScene scene;
+		CreateFigureScene( &scene, 1 );
+		nbFigureDef def = nbDefaultFigureDef();
+		def.rig = &scene.rig;
+		def.standHeight = scene.standHeight;
+		def.motors.uprightAgainstWorld = false;
+		def.motors.responsiveTrunk = true;
+		nbFigureId figure = nbCreateFigure( scene.world, &def );
+		StepFigures( &scene, 30 );
+		float angle = (float)side * B3_PI / 6.0f;
+		b3Vec3 direction = b3RotateVector( b3MakeQuatFromAxisAngle( b3Vec3_axisY, angle ), (b3Vec3){ 0.0f, 0.0f, -86.0f } );
+		b3BodyId ribs = nbFigure_GetBody( figure, nb_humanoidRibs );
+		nbHitDef hit = { 1, nb_humanoidRibs, direction, b3Body_GetWorldCenter( ribs ) };
+		ENSURE( nbFigure_ApplyHit( figure, &hit ) );
+		StepFigures( &scene, 1 );
+		const nbBalancer* b = &nbGetWorldFromId( scene.world )->figures.data[0].balancer;
+		ENSURE( b->stepping );
+		ENSURE( b->stepFoot == ( side < 0 ? 0 : 1 ) );
+		ENSURE( b3Body_IsValid( nbGetWorldFromId( scene.world )->figureAnchor ) == false );
+		DestroyFigureScene( &scene );
+	}
+	return 0;
+}
+
+// An impact near the end of a calm interval must prevent handoff immediately, even while its speed average is low.
+static int FigureCalmHitTest( void )
+{
+	FigureScene scene;
+	CreateFigureScene( &scene, 1 );
+	nbFigureDef def = nbDefaultFigureDef();
+	def.rig = &scene.rig;
+	def.standHeight = scene.standHeight;
+	def.motors.uprightAgainstWorld = false;
+	nbFigureId figure = nbCreateFigure( scene.world, &def );
+	StepFigures( &scene, 30 );
+	ENSURE( HitChest( figure, 1, (b3Vec3){ 52.0f, 0.0f, 0.0f } ) );
+	nbFigure* f = nbGetWorldFromId( scene.world )->figures.data;
+	int frames = 0;
+	while ( nbFigure_GetState( figure ) == nb_figureBalancing && f->balancer.calmTime < 0.3f && frames < 600 )
+	{
+		StepFigures( &scene, 1 );
+		++frames;
+	}
+	ENSURE( nbFigure_GetState( figure ) == nb_figureBalancing && f->balancer.calmTime >= 0.3f );
+	b3BodyId pelvis = nbFigure_GetBody( figure, nb_humanoidPelvis );
+	nbHitDef hit = { 2, nb_humanoidPelvis, { 0.0f, 0.0f, 40.0f }, b3Body_GetWorldCenter( pelvis ) };
+	ENSURE( nbFigure_ApplyHit( figure, &hit ) );
+	StepFigures( &scene, 1 );
+	ENSURE( nbFigure_GetState( figure ) != nb_figureAnimated );
+	ENSURE( f->balancer.meanSpeed > 0.3f );
+	ENSURE( f->balancer.calmSpeed < 0.15f );
+	ENSURE( f->balancer.calmTime == 0.0f );
+	DestroyFigureScene( &scene );
+	return 0;
+}
+
+// Smoothing the hip target must not hide a fresh hit near handoff. The raw body speed still stops the calm interval
+// immediately, even while both the calm-speed filter and the planted hip filter have been following a quiet stance.
+static int FigurePlantedHipHitTest( void )
+{
+	for ( int pass = 0; pass < 2; ++pass )
+	{
+		FigureScene scene;
+		CreateFigureScene( &scene, pass == 0 ? 1 : 4 );
+		nbFigureDef def = nbDefaultFigureDef();
+		def.rig = &scene.rig;
+		def.standHeight = scene.standHeight;
+		def.motors.uprightAgainstWorld = false;
+		def.motors.responsiveTrunk = true;
+		nbFigureId figure = nbCreateFigure( scene.world, &def );
+		StepFigures( &scene, 30 );
+		b3Vec3 direction = b3RotateVector( b3MakeQuatFromAxisAngle( b3Vec3_axisY, B3_PI / 3.0f ),
+										  (b3Vec3){ 0.0f, 0.0f, -54.0f } );
+		b3BodyId belly = nbFigure_GetBody( figure, nb_humanoidBelly );
+		nbHitDef hit = { 1, nb_humanoidBelly, direction, b3Body_GetWorldCenter( belly ) };
+		ENSURE( nbFigure_ApplyHit( figure, &hit ) );
+		nbFigure* f = nbGetWorldFromId( scene.world )->figures.data;
+		int frames = 0;
+		while ( nbFigure_GetState( figure ) == nb_figureBalancing && f->balancer.calmTime < 0.3f && frames < 960 )
+		{
+			nbWorld_Step( scene.world, 1.0f / 120.0f, 2 );
+			++frames;
+		}
+		printf( "  planted hip with %s: state %d after %d frames, calm %.3f s, speed %.3f, average %.3f\n",
+				pass == 0 ? "one thread" : "four", (int)f->state, frames, f->balancer.calmTime,
+				f->balancer.meanSpeed, f->balancer.calmSpeed );
+		ENSURE( f->state == nb_figureBalancing && f->balancer.calmTime >= 0.3f );
+		b3BodyId pelvis = nbFigure_GetBody( figure, nb_humanoidPelvis );
+		hit = (nbHitDef){ 2, nb_humanoidPelvis, { 0.0f, 0.0f, 40.0f }, b3Body_GetWorldCenter( pelvis ) };
+		ENSURE( nbFigure_ApplyHit( figure, &hit ) );
+		nbWorld_Step( scene.world, 1.0f / 120.0f, 2 );
+		ENSURE( nbFigure_GetState( figure ) == nb_figureBalancing );
+		ENSURE( f->balancer.meanSpeed > 0.3f && f->balancer.calmSpeed < 0.15f );
+		ENSURE( f->balancer.calmTime == 0.0f );
+		ENSURE( b3Body_IsValid( nbGetWorldFromId( scene.world )->figureAnchor ) == false );
+		DestroyFigureScene( &scene );
+	}
+	return 0;
+}
+
 // Hits on the upper chest from eight directions, 50 to 150 N s in steps of 10: every figure catches itself and stands
 // animated again or falls, none stays catching itself for good, also not on one foot after a long lunge, see
 // NB_ONE_FOOT_TIME. Of the 32 hits up to 80 N s at most one falls, and it catches at least 40 of all 88, round 35 47 and
@@ -1516,6 +1976,100 @@ static int FigureNeckTest( void )
 	return 0;
 }
 
+// With the enhanced trunk and step response, the head must stop wobbling after an impact. Check changes in its
+// angular speed against the neck at several update rates, the complete recovery on one/four threads, and a direct
+// head flinch too: damping the recovery must not pin the head or raise the neck's torque limit.
+static int FigureHeadRecoveryTest( void )
+{
+	for ( int rate = 30; rate <= 120; rate *= 2 )
+	for ( int sample = 0; sample < 4; ++sample )
+	{
+		uint32_t hashes[2] = { 2166136261u, 2166136261u };
+		for ( int pass = 0; pass < 2; ++pass )
+		{
+			FigureScene scene;
+			CreateFigureScene( &scene, pass == 0 ? 1 : 4 );
+			nbFigureDef def = nbDefaultFigureDef();
+			def.rig = &scene.rig;
+			def.standHeight = scene.standHeight;
+			def.motors.uprightAgainstWorld = false;
+			def.motors.responsiveTrunk = true;
+			def.motors.turnWithSteps = true;
+			nbFigureId figure = nbCreateFigure( scene.world, &def );
+			StepFigures( &scene, 30 );
+			b3BodyId chest = nbFigure_GetBody( figure, nb_humanoidChest );
+			b3BodyId neck = nbFigure_GetBody( figure, nb_humanoidNeck );
+			b3BodyId head = nbFigure_GetBody( figure, nb_humanoidHead );
+			b3JointId headJoint = nbFigure_GetJoint( figure, nb_humanoidHead );
+			b3Quat initial = b3InvMulQuat( b3Body_GetRotation( chest ), b3Body_GetRotation( head ) );
+			nbHitDef hit = { 1, nb_humanoidChest, { 0.0f, 0.0f, sample == 1 ? 60.0f : -60.0f },
+				b3Body_GetWorldPoint( chest, (b3Vec3){ sample == 2 ? -0.15f : 0.0f, 0.08f, 0.1f } ) };
+			if ( sample == 3 )
+			{
+				hit.bone = nb_humanoidHead;
+				hit.impulse.z = -20.0f;
+				hit.point = b3Body_GetWorldPoint( head, (b3Vec3){ 0.0f, 0.08f, 0.09f } );
+			}
+			ENSURE( nbFigure_ApplyHit( figure, &hit ) );
+			b3Vec3 previous = b3Vec3_zero;
+			float variation = 0.0f;
+			float maxAngle = 0.0f;
+			int observations = 0;
+			int frames = 0;
+			while ( frames < ( sample == 3 ? 2 * rate : 8 * rate ) )
+			{
+				nbWorld_Step( scene.world, 1.0f / (float)rate, 240 / rate );
+				b3WorldTransform transforms[nb_humanoidBoneCount];
+				nbFigure_GetBoneTransforms( figure, transforms, nb_humanoidBoneCount );
+				nbFigureState state = nbFigure_GetState( figure );
+				b3Vec3 relative = b3Sub( b3Body_GetAngularVelocity( head ), b3Body_GetAngularVelocity( neck ) );
+				if ( frames >= rate / 5 && state == nb_figureBalancing )
+				{
+					variation += b3Length( b3Sub( relative, previous ) );
+					++observations;
+					float torque = def.motors.maxTorque * scene.bones[nb_humanoidHead].strength;
+					ENSURE( b3SphericalJoint_GetMaxSpringTorque( headJoint ) <= torque + 0.001f );
+				}
+				previous = relative;
+				b3Quat change = b3MulQuat( b3InvMulQuat( transforms[nb_humanoidChest].q, transforms[nb_humanoidHead].q ),
+					b3Conjugate( initial ) );
+				float angle = 2.0f * acosf( b3MinFloat( 1.0f, fabsf( change.s ) ) );
+				maxAngle = b3MaxFloat( maxAngle, angle );
+				const uint8_t* bytes = (const uint8_t*)transforms;
+				for ( size_t n = 0; n < sizeof( transforms ); ++n )
+				{
+					hashes[pass] = ( hashes[pass] ^ bytes[n] ) * 16777619u;
+				}
+				++frames;
+				if ( sample != 3 && state != nb_figureBalancing )
+				{
+					break;
+				}
+			}
+			if ( sample == 3 )
+			{
+				ENSURE( maxAngle > 0.25f && maxAngle < 0.7f );
+			}
+			else
+			{
+				ENSURE( observations > rate / 2 );
+				float acceleration = variation * (float)rate / (float)observations;
+				ENSURE( acceleration < 20.0f );
+			}
+			nbFigureInfo info = nbFigure_GetInfo( figure );
+			ENSURE( info.state == nb_figureAnimated && info.knockdownCount == 0 );
+			ENSURE( sample == 3 || info.catchCount == 1 );
+			ENSURE( b3Body_IsValid( nbGetWorldFromId( scene.world )->figureAnchor ) == false );
+			hashes[pass] = ( hashes[pass] ^ (uint32_t)( frames + 1024 * info.stepCount ) ) * 16777619u;
+			StepFigures( &scene, 60 );
+			ENSURE( StandsUpright( &scene, figure ) );
+			DestroyFigureScene( &scene );
+		}
+		ENSURE( hashes[0] == hashes[1] );
+	}
+	return 0;
+}
+
 // A pusher for FigurePushTest, without gravity, led toward the figure at the height through a motor joint whose springs
 // pull it with up to the force after a kinematic hand, as a stick or a hand pushes: a cube of 20 cm and 5 kg from the
 // front, or a stick from its left side, 80 cm long from front to back, 5 cm thick and 1.5 kg
@@ -1909,6 +2463,332 @@ static int FigureTwistTest( void )
 		}
 		DestroyFigureScene( &scene );
 	}
+	return 0;
+}
+
+// Total momenta measured from the bodies, about the center of mass. This is independent of how the library spreads a
+// hit over the skeleton and includes both the spin of each bone and its motion about the figure's center.
+static void FigureMomenta( nbFigureId figure, b3Vec3* linear, b3Vec3* angular, b3Pos* center )
+{
+	float mass = 0.0f;
+	b3Vec3 weighted = b3Vec3_zero;
+	*linear = b3Vec3_zero;
+	*angular = b3Vec3_zero;
+	for ( int i = 0; i < nbFigure_GetBoneCount( figure ); ++i )
+	{
+		b3BodyId body = nbFigure_GetBody( figure, i );
+		float m = b3Body_GetMass( body );
+		mass += m;
+		weighted = b3MulAdd( weighted, m, b3ToVec3( b3Body_GetWorldCenter( body ) ) );
+		*linear = b3MulAdd( *linear, m, b3Body_GetLinearVelocity( body ) );
+	}
+	*center = b3ToPos( b3MulSV( 1.0f / mass, weighted ) );
+	for ( int i = 0; i < nbFigure_GetBoneCount( figure ); ++i )
+	{
+		b3BodyId body = nbFigure_GetBody( figure, i );
+		b3Quat q = b3Body_GetRotation( body );
+		b3Vec3 spin = b3RotateVector( q, b3MulMV( b3Body_GetLocalRotationalInertia( body ),
+												   b3InvRotateVector( q, b3Body_GetAngularVelocity( body ) ) ) );
+		b3Vec3 lever = b3SubPos( b3Body_GetWorldCenter( body ), *center );
+		b3Vec3 orbit = b3MulSV( b3Body_GetMass( body ), b3Cross( lever, b3Body_GetLinearVelocity( body ) ) );
+		*angular = b3Add( *angular, b3Add( spin, orbit ) );
+	}
+}
+
+// The responsive trunk preserves the linear impulse and its complete angular impulse, including pitch, roll and yaw.
+static int FigureTrunkMomentTest( void )
+{
+	const b3Vec3 impulses[3] = { { 0.0f, 0.0f, -60.0f }, { 60.0f, 0.0f, 0.0f }, { 0.0f, 30.0f, -50.0f } };
+	for ( int sample = 0; sample < 3; ++sample )
+	{
+		FigureScene scene;
+		CreateFigureScene( &scene, 1 );
+		nbFigureDef def = nbDefaultFigureDef();
+		def.rig = &scene.rig;
+		def.standHeight = scene.standHeight;
+		def.motors.responsiveTrunk = true;
+		nbFigureId figure = nbCreateFigure( scene.world, &def );
+		StepFigures( &scene, 30 );
+		nbFigure_Knockdown( figure );
+		b3Vec3 beforeLinear, beforeAngular, afterLinear, afterAngular;
+		b3Pos center, afterCenter;
+		FigureMomenta( figure, &beforeLinear, &beforeAngular, &center );
+		b3BodyId chest = nbFigure_GetBody( figure, nb_humanoidChest );
+		b3Pos point = b3Body_GetWorldPoint( chest, (b3Vec3){ -0.15f, 0.08f, 0.1f } );
+		nbHitDef hit = { 1, nb_humanoidChest, impulses[sample], point };
+		ENSURE( nbFigure_ApplyHit( figure, &hit ) );
+		FigureMomenta( figure, &afterLinear, &afterAngular, &afterCenter );
+		b3Vec3 expectedTurn = b3Cross( b3SubPos( point, center ), impulses[sample] );
+		ENSURE_SMALL( b3Length( b3Sub( b3Sub( afterLinear, beforeLinear ), impulses[sample] ) ), 2.0e-3f );
+		ENSURE_SMALL( b3Length( b3Sub( b3Sub( afterAngular, beforeAngular ), expectedTurn ) ), 2.0e-3f );
+		ENSURE_SMALL( b3Length( b3SubPos( afterCenter, center ) ), 1.0e-6f );
+		DestroyFigureScene( &scene );
+	}
+	return 0;
+}
+
+static float TrunkHeading( b3Quat rotation )
+{
+	b3Vec3 forward = b3RotateVector( rotation, b3Vec3_axisZ );
+	return atan2f( forward.x, forward.z );
+}
+
+// Measure real chest motion relative to the pelvis, not merely a rigid rotation of the whole figure. The responsive
+// trunk bends under a central hit and twists under a shoulder hit, then recovers. Both thread counts match throughout.
+static int FigureResponsiveTrunkTest( void )
+{
+	float bend[2][3] = { { 0.0f } };
+	float twist[2][3] = { { 0.0f } };
+	for ( int responsive = 0; responsive < 2; ++responsive )
+	for ( int sample = 0; sample < 3; ++sample )
+	{
+		uint32_t hashes[2] = { 2166136261u, 2166136261u };
+		for ( int pass = 0; pass < 2; ++pass )
+		{
+			FigureScene scene;
+			CreateFigureScene( &scene, pass == 0 ? 1 : 4 );
+			nbFigureDef def = nbDefaultFigureDef();
+			def.rig = &scene.rig;
+			def.standHeight = scene.standHeight;
+			def.motors.uprightAgainstWorld = false;
+			def.motors.responsiveTrunk = responsive != 0;
+			nbFigureId figure = nbCreateFigure( scene.world, &def );
+			StepFigures( &scene, 30 );
+			b3BodyId chest = nbFigure_GetBody( figure, nb_humanoidChest );
+			b3BodyId pelvis = nbFigure_GetBody( figure, nb_humanoidPelvis );
+			b3Quat initial = b3InvMulQuat( b3Body_GetRotation( pelvis ), b3Body_GetRotation( chest ) );
+			nbHitDef hit = { 1, nb_humanoidChest, { 0.0f, 0.0f, sample == 1 ? 60.0f : -60.0f },
+				b3Body_GetWorldPoint( chest, (b3Vec3){ sample == 2 ? -0.15f : 0.0f, 0.08f, 0.1f } ) };
+			ENSURE( nbFigure_ApplyHit( figure, &hit ) );
+			int frames = 0;
+			while ( nbFigure_GetState( figure ) == nb_figureBalancing && frames < 600 )
+			{
+				StepFigures( &scene, 1 );
+				b3Quat relative = b3InvMulQuat( b3Body_GetRotation( pelvis ), b3Body_GetRotation( chest ) );
+				b3Quat change = b3MulQuat( relative, b3Conjugate( initial ) );
+				if ( frames < 60 )
+				{
+					float angle = acosf( b3ClampFloat( b3RotateVector( change, b3Vec3_axisY ).y, -1.0f, 1.0f ) );
+					bend[responsive][sample] = b3MaxFloat( bend[responsive][sample], angle );
+					twist[responsive][sample] = b3MaxFloat( twist[responsive][sample], fabsf( TrunkHeading( change ) ) );
+				}
+				b3WorldTransform transforms[nb_humanoidBoneCount];
+				nbFigure_GetBoneTransforms( figure, transforms, nb_humanoidBoneCount );
+				const uint8_t* bytes = (const uint8_t*)transforms;
+				for ( size_t n = 0; n < sizeof( transforms ); ++n )
+				{
+					hashes[pass] = ( hashes[pass] ^ bytes[n] ) * 16777619u;
+				}
+				++frames;
+			}
+			ENSURE( nbFigure_GetState( figure ) == nb_figureAnimated );
+			ENSURE( nbFigure_GetInfo( figure ).knockdownCount == 0 );
+			hashes[pass] = ( hashes[pass] ^ (uint32_t)frames ) * 16777619u;
+			StepFigures( &scene, 60 );
+			ENSURE( StandsUpright( &scene, figure ) );
+			DestroyFigureScene( &scene );
+		}
+		ENSURE( hashes[0] == hashes[1] );
+	}
+	printf( "  responsive trunk: front bend %.1f instead of %.1f deg, back %.1f instead of %.1f, shoulder twist %.1f instead of %.1f\n",
+		bend[1][0] * 180.0f / B3_PI, bend[0][0] * 180.0f / B3_PI, bend[1][1] * 180.0f / B3_PI,
+		bend[0][1] * 180.0f / B3_PI, twist[1][2] * 180.0f / B3_PI, twist[0][2] * 180.0f / B3_PI );
+	ENSURE( bend[1][0] > 1.2f * bend[0][0] && bend[1][0] > 0.35f );
+	ENSURE( bend[1][1] > 1.3f * bend[0][1] && bend[1][1] < 1.0f );
+	ENSURE( twist[1][2] > 2.0f * twist[0][2] && twist[1][2] > 0.25f );
+	return 0;
+}
+
+// The step turn must be real relative chest/pelvis motion, coexist with trunk yielding, settle again, and match
+// throughout on one and four threads. Compare central impacts with the same responsive-trunk setup without step yaw.
+static int FigureStepMotionTest( void )
+{
+	float twist[2][3] = { { 0.0f } };
+	for ( int turning = 0; turning < 2; ++turning )
+	for ( int sample = 0; sample < 3; ++sample )
+	{
+		uint32_t hashes[2] = { 2166136261u, 2166136261u };
+		for ( int pass = 0; pass < 2; ++pass )
+		{
+			FigureScene scene;
+			CreateFigureScene( &scene, pass == 0 ? 1 : 4 );
+			nbFigureDef def = nbDefaultFigureDef();
+			def.rig = &scene.rig;
+			def.standHeight = scene.standHeight;
+			def.motors.uprightAgainstWorld = false;
+			def.motors.responsiveTrunk = true;
+			def.motors.turnWithSteps = turning != 0;
+			nbFigureId figure = nbCreateFigure( scene.world, &def );
+			StepFigures( &scene, 30 );
+			b3BodyId chest = nbFigure_GetBody( figure, nb_humanoidChest );
+			b3BodyId pelvis = nbFigure_GetBody( figure, nb_humanoidPelvis );
+			b3Quat initial = b3InvMulQuat( b3Body_GetRotation( pelvis ), b3Body_GetRotation( chest ) );
+			nbHitDef hit = { 1, nb_humanoidChest, { 0.0f, 0.0f, sample == 1 ? 60.0f : -60.0f },
+				b3Body_GetWorldPoint( chest, (b3Vec3){ sample == 2 ? -0.15f : 0.0f, 0.08f, 0.1f } ) };
+			ENSURE( nbFigure_ApplyHit( figure, &hit ) );
+			int frames = 0;
+			while ( nbFigure_GetState( figure ) == nb_figureBalancing && frames < 600 )
+			{
+				StepFigures( &scene, 1 );
+				b3WorldTransform transforms[nb_humanoidBoneCount];
+				nbFigure_GetBoneTransforms( figure, transforms, nb_humanoidBoneCount );
+				b3Quat relative = b3InvMulQuat( transforms[nb_humanoidPelvis].q, transforms[nb_humanoidChest].q );
+				b3Quat change = b3MulQuat( relative, b3Conjugate( initial ) );
+				if ( frames < 60 )
+				{
+					twist[turning][sample] = b3MaxFloat( twist[turning][sample], fabsf( TrunkHeading( change ) ) );
+				}
+				const uint8_t* bytes = (const uint8_t*)transforms;
+				for ( size_t n = 0; n < sizeof( transforms ); ++n )
+				{
+					hashes[pass] = ( hashes[pass] ^ bytes[n] ) * 16777619u;
+				}
+				++frames;
+			}
+			nbFigureInfo info = nbFigure_GetInfo( figure );
+			ENSURE( info.state == nb_figureAnimated && info.knockdownCount == 0 && info.catchCount == 1 );
+			ENSURE( b3Body_IsValid( nbGetWorldFromId( scene.world )->figureAnchor ) == false );
+			hashes[pass] = ( hashes[pass] ^ (uint32_t)( frames + 1024 * info.stepCount ) ) * 16777619u;
+			StepFigures( &scene, 60 );
+			ENSURE( StandsUpright( &scene, figure ) );
+			DestroyFigureScene( &scene );
+		}
+		ENSURE( hashes[0] == hashes[1] );
+	}
+	printf( "  step yaw after front/back hits: %.1f/%.1f instead of %.1f/%.1f deg, shoulder %.1f\n",
+		twist[1][0] * 180.0f / B3_PI, twist[1][1] * 180.0f / B3_PI, twist[0][0] * 180.0f / B3_PI,
+		twist[0][1] * 180.0f / B3_PI, twist[1][2] * 180.0f / B3_PI );
+	for ( int sample = 0; sample < 2; ++sample )
+	{
+		ENSURE( twist[1][sample] > 2.0f * twist[0][sample] && twist[1][sample] > 0.25f );
+		ENSURE( twist[1][sample] < 0.9f );
+	}
+	return 0;
+}
+
+// This 72 N s surface hit formerly ran out of time after fifteen steps. Forward toe clearance must let it recover,
+// both with and without the additional step yaw, off center as well, with bit-identical motion across thread counts.
+static int FigureForwardToesTest( void )
+{
+	for ( int turning = 0; turning < 2; ++turning )
+	for ( int offset = -1; offset <= 1; ++offset )
+	{
+		uint32_t hashes[2] = { 2166136261u, 2166136261u };
+		for ( int pass = 0; pass < 2; ++pass )
+		{
+			FigureScene scene;
+			CreateFigureScene( &scene, pass == 0 ? 1 : 4 );
+			nbFigureDef def = nbDefaultFigureDef();
+			def.rig = &scene.rig;
+			def.standHeight = scene.standHeight;
+			def.motors.uprightAgainstWorld = false;
+			def.motors.responsiveTrunk = true;
+			def.motors.turnWithSteps = turning != 0;
+			nbFigureId figure = nbCreateFigure( scene.world, &def );
+			StepFigures( &scene, 30 );
+			b3BodyId chest = nbFigure_GetBody( figure, nb_humanoidChest );
+			b3Vec3 direction = b3RotateVector( b3MakeQuatFromAxisAngle( b3Vec3_axisY, B3_PI ),
+											  (b3Vec3){ 0.0f, 0.0f, -1.0f } );
+			nbHitDef hit = { 1, nb_humanoidChest, b3MulSV( 72.0f, direction ),
+				b3Body_GetWorldPoint( chest, (b3Vec3){ 0.001f * (float)offset, 0.08f, 0.1f } ) };
+			ENSURE( nbFigure_ApplyHit( figure, &hit ) );
+			int frames = 0;
+			while ( nbFigure_GetState( figure ) == nb_figureBalancing && frames < 600 )
+			{
+				StepFigures( &scene, 1 );
+				b3WorldTransform transforms[nb_humanoidBoneCount];
+				nbFigure_GetBoneTransforms( figure, transforms, nb_humanoidBoneCount );
+				const uint8_t* bytes = (const uint8_t*)transforms;
+				for ( size_t n = 0; n < sizeof( transforms ); ++n )
+				{
+					hashes[pass] = ( hashes[pass] ^ bytes[n] ) * 16777619u;
+				}
+				++frames;
+			}
+			nbFigureInfo info = nbFigure_GetInfo( figure );
+			ENSURE( info.state == nb_figureAnimated && info.knockdownCount == 0 && info.catchCount == 1 );
+			hashes[pass] = ( hashes[pass] ^ (uint32_t)( frames + 1024 * info.stepCount ) ) * 16777619u;
+			DestroyFigureScene( &scene );
+		}
+		ENSURE( hashes[0] == hashes[1] );
+	}
+	return 0;
+}
+
+// This oblique lower-chest hit sank at 120 Hz with step yaw enabled. Keep the recovery physical and deterministic,
+// at both 60 and 120 Hz, and keep standing after the balance controller hands back to animation.
+static int FigureTurningRecoveryTest( void )
+{
+	for ( int rate = 60; rate <= 120; rate *= 2 )
+	{
+		uint32_t hashes[2] = { 2166136261u, 2166136261u };
+		for ( int pass = 0; pass < 2; ++pass )
+		{
+			FigureScene scene;
+			CreateFigureScene( &scene, pass == 0 ? 1 : 4 );
+			nbFigureDef def = nbDefaultFigureDef();
+			def.rig = &scene.rig;
+			def.standHeight = scene.standHeight;
+			def.motors.uprightAgainstWorld = false;
+			def.motors.responsiveTrunk = true;
+			def.motors.turnWithSteps = true;
+			nbFigureId figure = nbCreateFigure( scene.world, &def );
+			StepFigures( &scene, 30 );
+			b3BodyId chest = nbFigure_GetBody( figure, nb_humanoidLowerChest );
+			b3Vec3 direction = b3RotateVector( b3MakeQuatFromAxisAngle( b3Vec3_axisY, 2.0f * B3_PI * 11.0f / 12.0f ),
+				(b3Vec3){ 0.0f, 0.0f, -1.0f } );
+			nbHitDef hit = { 1, nb_humanoidLowerChest, b3MulSV( 87.0f, direction ), b3Body_GetWorldCenter( chest ) };
+			ENSURE( nbFigure_ApplyHit( figure, &hit ) );
+			int frames = 0;
+			while ( nbFigure_GetState( figure ) == nb_figureBalancing && frames < 10 * rate )
+			{
+				nbWorld_Step( scene.world, 1.0f / (float)rate, 240 / rate );
+				b3WorldTransform transforms[nb_humanoidBoneCount];
+				nbFigure_GetBoneTransforms( figure, transforms, nb_humanoidBoneCount );
+				const uint8_t* bytes = (const uint8_t*)transforms;
+				for ( size_t n = 0; n < sizeof( transforms ); ++n )
+				{
+					hashes[pass] = ( hashes[pass] ^ bytes[n] ) * 16777619u;
+				}
+				++frames;
+			}
+			nbFigureInfo info = nbFigure_GetInfo( figure );
+			ENSURE( info.state == nb_figureAnimated && info.knockdownCount == 0 && info.catchCount == 1 );
+			ENSURE( b3Body_IsValid( nbGetWorldFromId( scene.world )->figureAnchor ) == false );
+			hashes[pass] = ( hashes[pass] ^ (uint32_t)( frames + 1024 * info.stepCount ) ) * 16777619u;
+			StepFigures( &scene, 60 );
+			ENSURE( StandsUpright( &scene, figure ) );
+			DestroyFigureScene( &scene );
+		}
+		ENSURE( hashes[0] == hashes[1] );
+	}
+	return 0;
+}
+
+static int FigureTrunkYieldTest( void )
+{
+	FigureScene scene;
+	CreateFigureScene( &scene, 1 );
+	nbFigureDef def = nbDefaultFigureDef();
+	def.rig = &scene.rig;
+	def.standHeight = scene.standHeight;
+	def.motors.responsiveTrunk = true;
+	nbFigureId figure = nbCreateFigure( scene.world, &def );
+	StepFigures( &scene, 30 );
+	ENSURE( HitChest( figure, 1, (b3Vec3){ 60.0f, 0.0f, 0.0f } ) );
+	b3JointId chest = nbFigure_GetJoint( figure, nb_humanoidChest );
+	float full = def.motors.maxTorque * scene.bones[nb_humanoidChest].strength;
+	float yielding = b3SphericalJoint_GetMaxSpringTorque( chest );
+	ENSURE_SMALL( yielding - 0.4f * full, 0.01f );
+	float hip = b3SphericalJoint_GetMaxSpringTorque( nbFigure_GetJoint( figure, nb_humanoidThighLeft ) );
+	ENSURE_SMALL( hip - def.motors.maxTorque * scene.bones[nb_humanoidThighLeft].strength, 0.01f );
+	StepFigures( &scene, 24 );
+	ENSURE( b3SphericalJoint_GetMaxSpringTorque( chest ) > yielding );
+	ENSURE( HitChest( figure, 2, (b3Vec3){ -30.0f, 0.0f, 0.0f } ) );
+	ENSURE_SMALL( b3SphericalJoint_GetMaxSpringTorque( chest ) - yielding, 0.01f );
+	StepFigures( &scene, 36 );
+	ENSURE_SMALL( b3SphericalJoint_GetMaxSpringTorque( chest ) - full, 0.01f );
+	DestroyFigureScene( &scene );
 	return 0;
 }
 
@@ -2684,6 +3564,94 @@ static int FigureClipTest( void )
 	return 0;
 }
 
+// A fast animated bone meets a thin wall in its next step. It must become dynamic before passing through it, with
+// exactly its intended velocity and no second impulse. Sensors, filters, a disabled check and a high threshold let
+// it pass. A one-bone rig isolates this transfer from balance and the joint solver.
+static int FigureStaticCollisionTest( void )
+{
+	for ( int pass = 0; pass < 7; ++pass )
+	{
+		FigureScene scene;
+		CreateFigureScene( &scene, 1 );
+		float offset = pass == 6 ? 1.0e6f : 0.0f;
+		b3Body_SetTransform( scene.groundBody, b3ToPos( (b3Vec3){ offset, -1.0f, 0.0f } ), b3Quat_identity );
+		nbBoneDef bone = nbDefaultBoneDef();
+		bone.shape = nb_boxBone;
+		bone.halfExtents = (b3Vec3){ 0.1f, 0.1f, 0.1f };
+		bone.mass = 10.0f;
+		nbRigDef rig = nbDefaultRigDef();
+		rig.bones = &bone;
+		rig.boneCount = 1;
+		nbFigureDef def = nbDefaultFigureDef();
+		def.rig = &rig;
+		def.standHeight = 1.0f;
+		def.position = b3ToPos( (b3Vec3){ offset, 0.0f, 0.0f } );
+		def.collisionImpulse = pass == 1 ? 0.0f : pass == 4 ? 1000.0f : 3.0f;
+		nbFigureId figure = nbCreateFigure( scene.world, &def );
+		b3BodyId body = nbFigure_GetBody( figure, 0 );
+		b3Pos start = b3Body_GetPosition( body );
+
+		b3BodyDef wallDef = b3DefaultBodyDef();
+		wallDef.position = (b3Vec3){ offset, 1.0f, 0.5f };
+		b3BodyId wall = b3CreateBody( scene.physicsWorld, &wallDef );
+		b3BoxHull box = b3MakeBoxHull( 1.0f, 0.5f, 0.01f );
+		b3ShapeDef shapeDef = b3DefaultShapeDef();
+		shapeDef.isSensor = pass == 2;
+		shapeDef.filter.maskBits = pass == 3 ? 0 : UINT64_MAX;
+		b3CreateHullShape( wall, &shapeDef, &box.base );
+
+		// The end pose is beyond the wall: checking only its overlap there would miss the entire collision.
+		b3Vec3 move = pass == 5 ? (b3Vec3){ 0.8f, 0.0f, 0.0f } : (b3Vec3){ 0.0f, 0.0f, 0.8f };
+		nbFigure_Move( figure, b3ToPos( b3Add( (b3Vec3){ offset, 0.0f, 0.0f }, move ) ), 0.0f );
+		nbWorld_Update( scene.world, 1.0f / 60.0f );
+		bool collided = pass == 0 || pass == 6;
+		ENSURE( nbFigure_GetInfo( figure ).collisionCount == ( collided ? 1 : 0 ) );
+		ENSURE( nbWorld_GetFigureStats( scene.world ).collisionCount == ( collided ? 1 : 0 ) );
+		ENSURE( b3Body_GetType( body ) == ( collided ? b3_dynamicBody : b3_kinematicBody ) );
+		ENSURE_SMALL( b3Length( b3SubPos( b3Body_GetPosition( body ), start ) ), 1.0e-6f );
+		ENSURE_SMALL( b3Length( b3Sub( b3Body_GetLinearVelocity( body ), b3MulSV( 60.0f, move ) ) ), 1.0e-4f );
+		ENSURE( nbFigure_GetInfo( figure ).hitCount == 0 );
+		if ( collided )
+		{
+			ENSURE( nbFigure_GetState( figure ) == nb_figureRagdoll );
+			ENSURE_SMALL( FigureMomentum( figure ).z - 480.0f, 1.0e-3f );
+			StepFigures( &scene, 6 );
+			ENSURE( BonePosition( figure, 0 ).z < 0.5f );
+		}
+		DestroyFigureScene( &scene );
+	}
+	return 0;
+}
+
+// Rotation alone must also release animation. A long capsule turns about its stationary center through a small post
+// halfway along the arc: neither its end pose nor the straight chord between its tips meets the post.
+static int FigureRotatingCollisionTest( void )
+{
+	FigureScene scene;
+	CreateFigureScene( &scene, 1 );
+	nbBoneDef bone = nbDefaultBoneDef();
+	bone.shape = nb_capsuleBone;
+	bone.start = (b3Vec3){ -0.5f, 0.0f, 0.0f };
+	bone.end = (b3Vec3){ 0.5f, 0.0f, 0.0f };
+	bone.radius = 0.04f;
+	bone.mass = 10.0f;
+	nbRigDef rig = nbDefaultRigDef();
+	rig.bones = &bone;
+	rig.boneCount = 1;
+	nbFigureDef def = nbDefaultFigureDef();
+	def.rig = &rig;
+	def.standHeight = 1.0f;
+	nbFigureId figure = nbCreateFigure( scene.world, &def );
+	AddBlock( &scene, (b3Vec3){ 0.35f, 1.0f, -0.35f }, (b3Vec3){ 0.02f, 0.2f, 0.02f } );
+	nbFigure_Move( figure, b3ToPos( b3Vec3_zero ), 0.5f * B3_PI );
+	nbWorld_Update( scene.world, 1.0f / 60.0f );
+	ENSURE( nbFigure_GetInfo( figure ).collisionCount == 1 );
+	ENSURE( b3Body_GetType( nbFigure_GetBody( figure, 0 ) ) == b3_dynamicBody );
+	ENSURE_SMALL( b3Length( b3Body_GetLinearVelocity( nbFigure_GetBody( figure, 0 ) ) ), 1.0e-5f );
+	DestroyFigureScene( &scene );
+	return 0;
+}
+
 // A fighter, a figure that follows its clip with dynamic bones near another figure, see nbFigureDef::engageRadius
 static nbFigureId AddFighter( FigureScene* scene, b3Vec3 position, float heading, float engageRadius )
 {
@@ -2724,6 +3692,64 @@ static void MakePunchClip( PunchClip* punch, float swing )
 		punch->keys[k] = (nbKeyframe){ times[k], pose, b3Transform_identity };
 	}
 	punch->clip = (nbClipDef){ punch->keys, 4, nb_humanoidBoneCount, false, false };
+}
+
+// A kinematic humanoid punches a fixed obstacle. It releases animation before its arm passes through, keeps pulling
+// toward the clip with joint motors and recovers afterwards. The transition and the complete motion match with one
+// and four threads at each supported step rate.
+static int FigureObstacleClipTest( void )
+{
+	static PunchClip punch;
+	MakePunchClip( &punch, 1.6f );
+	const int rates[3] = { 30, 60, 120 };
+	for ( int rate = 0; rate < 3; ++rate )
+	{
+		uint32_t hashes[2] = { 2166136261u, 2166136261u };
+		for ( int pass = 0; pass < 2; ++pass )
+		{
+			FigureScene scene;
+			CreateFigureScene( &scene, pass == 0 ? 1 : 4 );
+			nbFigureId figure = AddFigure( &scene, b3Vec3_zero, 0.0f );
+			AddBlock( &scene, (b3Vec3){ 0.0f, 1.3f, 0.45f }, (b3Vec3){ 0.8f, 0.5f, 0.015f } );
+			StepFigures( &scene, 30 );
+			ENSURE( nbFigure_GetInfo( figure ).collisionCount == 0 );
+			nbFigure_PlayClip( figure, &punch.clip, 1.0f );
+			bool released = false;
+			float farthest = 0.0f;
+			for ( int step = 0; step < 4 * rates[rate]; ++step )
+			{
+				nbWorld_Step( scene.world, 1.0f / (float)rates[rate], 240 / rates[rate] );
+				nbFigureInfo info = nbFigure_GetInfo( figure );
+				if ( released == false && info.collisionCount > 0 )
+				{
+					ENSURE( info.state == nb_figureBalancing );
+					for ( int bone = 0; bone < nb_humanoidBoneCount; ++bone )
+					{
+						ENSURE( b3Body_GetType( nbFigure_GetBody( figure, bone ) ) == b3_dynamicBody );
+					}
+					released = true;
+				}
+				farthest = b3MaxFloat( farthest, BonePosition( figure, nb_humanoidHandRight ).z );
+				b3WorldTransform transforms[nb_humanoidBoneCount];
+				nbFigure_GetBoneTransforms( figure, transforms, nb_humanoidBoneCount );
+				const uint8_t* bytes = (const uint8_t*)transforms;
+				for ( size_t n = 0; n < sizeof( transforms ); ++n )
+				{
+					hashes[pass] = ( hashes[pass] ^ bytes[n] ) * 16777619u;
+				}
+				hashes[pass] = ( hashes[pass] ^ (uint32_t)( info.state + 16 * info.collisionCount ) ) * 16777619u;
+			}
+			nbFigureInfo info = nbFigure_GetInfo( figure );
+			printf( "  obstacle at %d Hz, %d threads: %d releases, fist reaches %.3f m, state %d, %d knockdowns\n",
+					rates[rate], pass == 0 ? 1 : 4, info.collisionCount, farthest, (int)info.state, info.knockdownCount );
+			ENSURE( released && info.collisionCount == 1 );
+			ENSURE( farthest < 0.55f );
+			ENSURE( info.state == nb_figureAnimated && info.knockdownCount == 0 );
+			DestroyFigureScene( &scene );
+		}
+		ENSURE( hashes[0] == hashes[1] );
+	}
+	return 0;
 }
 
 // Step once and return how far the bones of a figure ended from where its clip put them for the end of the step, the
@@ -3506,12 +4532,33 @@ int FigureTest( void )
 	RUN_TEST( FigureCatchTest );
 	RUN_TEST( FigureRowTest );
 	RUN_TEST( FigureLegHoldTest );
+	RUN_TEST( FigureHipBrakeTest );
+	RUN_TEST( FigureStandBrakeTest );
+	RUN_TEST( FigureResponsiveBrakeTest );
+	RUN_TEST( FigureTurningBrakeTest );
+	RUN_TEST( FigureStepReachGapTest );
+	RUN_TEST( FigureStepDelayTest );
+	RUN_TEST( FigureSupportMiddleTest );
+	RUN_TEST( FigureSlowStepTest );
+	RUN_TEST( FigureCalmAt120Test );
+	RUN_TEST( FigurePlantedHipTest );
+	RUN_TEST( FigureResponsiveCatchTest );
+	RUN_TEST( FigureFirstStepSideTest );
+	RUN_TEST( FigureCalmHitTest );
+	RUN_TEST( FigurePlantedHipHitTest );
 	RUN_TEST( FigureCatchScanTest );
 	RUN_TEST( FigureFacingTest );
 	RUN_TEST( FigureMuscleTest );
 	RUN_TEST( FigureSpreadTest );
 	RUN_TEST( FigureTwistTest );
+	RUN_TEST( FigureTrunkMomentTest );
+	RUN_TEST( FigureResponsiveTrunkTest );
+	RUN_TEST( FigureStepMotionTest );
+	RUN_TEST( FigureForwardToesTest );
+	RUN_TEST( FigureTurningRecoveryTest );
+	RUN_TEST( FigureTrunkYieldTest );
 	RUN_TEST( FigureNeckTest );
+	RUN_TEST( FigureHeadRecoveryTest );
 	RUN_TEST( FigurePushTest );
 	RUN_TEST( FigureHoldArmTest );
 #if defined( B3_HAS_SWING_LIMITS )
@@ -3527,6 +4574,9 @@ int FigureTest( void )
 	RUN_TEST( FigureGroundTest );
 	RUN_TEST( FigureWorldTest );
 	RUN_TEST( FigureClipTest );
+	RUN_TEST( FigureStaticCollisionTest );
+	RUN_TEST( FigureRotatingCollisionTest );
+	RUN_TEST( FigureObstacleClipTest );
 	RUN_TEST( FigureFollowTest );
 	RUN_TEST( FigurePunchTest );
 	RUN_TEST( FigureFollowHitTest );

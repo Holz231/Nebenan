@@ -2,7 +2,7 @@
 
 // A figure that catches itself after a hard hit, after the balance of the branch ragdoll-11 and the roadmap of the
 // game, chapters 26.13 to 26.15 and 28.3 to 28.5. Its bones are dynamic, its joints pull toward the pose of its clip
-// with the full strength of the motors, and a hold keeps its pelvis upright with a bounded torque, see nbFigureMotors.
+// with their motor strength, and a hold keeps its pelvis upright with a bounded torque, see nbFigureMotors.
 // In every update after a step it measures its center of mass, its velocity and how it turns, which feet stand on
 // ground and where they face, the support of their soles and the capture point: the center of mass ahead by its
 // velocity and its turn over the frequency of a pendulum as high as it is. There it would come to rest if it stopped
@@ -38,6 +38,16 @@
 #define NB_DANGER_UPDATES 2
 #define NB_STEP_URGENT 0.1f
 
+// Two observations reject a brief sway, but at slow update rates they delay a needed catch step. With a responsive
+// trunk and balance through the legs, one observation spanning at least this many seconds is enough. Faster updates
+// still use two observations, and a large capture error remains urgent immediately.
+#define NB_DANGER_MAX_WAIT ( (float)NB_DANGER_UPDATES / 60.0f )
+
+// For the first step with a responsive trunk, favor the foot on the side of the lateral fall. The pendulum residual
+// alone can choose the other foot, whose no-crossing constraint keeps it from stepping outward. Charge this part of
+// the lateral capture distance outside the step margin to that choice; a clearly better reachable plan can still win.
+#define NB_FIRST_STEP_SIDE_WEIGHT 0.5f
+
 // A step: the farthest the ankle lands from the hip over the ground, in meters, its time in seconds, how high the foot
 // lifts, in meters, and the most steps in a row before the figure gives up and falls. Five: rowing arms give a fourth
 // step the time to catch a figure that three did not, and arms that swing out and hold instead of pulling hard leave
@@ -49,6 +59,19 @@
 #define NB_MAX_STEP_LENGTH 0.55f
 #define NB_STEP_DURATION 0.3f
 #define NB_STEP_HEIGHT 0.12f
+
+// Raise the toes during a forward swing, smoothly back to flat at landing. Scale by the forward share of the path:
+// lifting them in lateral and backward steps disturbed catches with the yielding trunk.
+#define NB_SWING_TOES 0.15f
+
+// Planned step yaw, adapted from the parallel step controller: pelvis toward the foot ahead, spine against it.
+// Half the reference turn preserves a visible counterrotation with the yielding trunk and the original soles.
+#define NB_PELVIS_TURN 0.25f
+#define NB_PELVIS_TURN_MAX 0.25f
+#define NB_STEP_TURN_STRENGTH 0.5f
+#define NB_TRUNK_COUNTER 3.0f
+#define NB_TURN_RELAX 0.3f
+#define NB_BACK_TWIST 0.85f
 #define NB_MAX_STEPS 5
 
 // A figure that catches itself with its own strength, without the hold against the world, see nbFigureMotors::
@@ -171,6 +194,11 @@
 #define NB_CALM_TILT 0.3f
 #define NB_CALM_TIME 0.5f
 
+// Contact and joint jitter may briefly cross the calm speed, particularly at 120 Hz. Average the speed over this
+// time for balance through the legs. Count an already quiet raw speed immediately, and tolerate a brief spike only
+// while the average stays quiet. A raw speed above twice the calm limit still prevents handoff immediately.
+#define NB_CALM_SPEED_TIME 0.1f
+
 // A figure that has caught itself for this long without coming to rest, and without anything pushing it, falls, in
 // seconds. With a foot under a block of rubble a figure stepped with the other one again and again, every 0.7 s for as
 // long as the block lay there. Of the 5 744 hits measured on active-ragdoll-35 the longest catch took 6.3 s.
@@ -186,6 +214,31 @@
 // and 263.
 #define NB_SLIDE_SPEED 0.3f
 #define NB_SLIDE_RANGE 0.5f
+
+// The stance hip also brakes the pelvis's angular velocity against upright, not just its angle. The parallel joint
+// damps rotation relative to the thigh, which can turn with the pelvis. Lean its target against the pelvis's tilt
+// velocity by this many seconds. The reaction stays in the supporting thigh, with the same torque and grip limits.
+#define NB_HIP_DAMPING_TIME 0.08f
+
+// With a responsive trunk in a planted stance, feeding every contact-driven velocity spike back into the hip target
+// sustains a tilt jitter, especially at 120 Hz. Smooth only this derivative over this many seconds. While a foot
+// swings, follow the raw velocity and reset the filter, so the hip still reacts immediately during a catch step.
+#define NB_HIP_VELOCITY_TIME 0.04f
+
+// Once the figure stops stepping after a catch, move the desired pressure ahead of its motion by its velocity times
+// this many seconds. The ankle torques and the weight shared by the legs then brake the remaining sway. Each pressure
+// point stays within its sole; joint strength and grip remain bounded as before.
+#define NB_STAND_BRAKE_TIME 0.12f
+
+// With the responsive trunk, move the pressure farther ahead while standing. Otherwise residual sideways motion can
+// start another catch step which accelerates the body again, repeating until the restless timeout. Pressure stays
+// within each sole and the legs share the same bounded load; neither the spine nor the hip gets stronger.
+#define NB_RESPONSIVE_STAND_BRAKE_TIME 0.18f
+
+// Step-driven yaw leaves more residual sway after landing. Brake it while both feet are planted, before a small
+// capture error starts another step that accelerates the body again. The longer lookahead only moves the requested
+// pressure within the existing soles and redistributes the same weight; muscle and friction limits do not increase.
+#define NB_TURN_STAND_BRAKE_TIME 0.6f
 
 // The most touching contacts of a foot the hold through its leg reads to know how firmly the foot stands, see
 // nbFootGrip. A foot on the ground touches one or two bodies, in rubble a few more.
@@ -333,6 +386,37 @@ static int nbHull2( const b3Vec2* input, int count, b3Vec2* hull )
 	int hullCount = b3MinInt( k - 1, 8 );
 	memcpy( hull, chain, sizeof( b3Vec2 ) * (size_t)hullCount );
 	return hullCount;
+}
+
+// The area centroid of a counterclockwise support polygon. Averaging its vertices jumps when an almost collinear
+// corner enters or leaves the hull: a microradian of foot yaw moved the old support middle by three centimeters.
+// Triangulate relative to the first corner to avoid subtracting large absolute products far from the origin.
+static b3Vec2 nbSupportCentroid( const b3Vec2* hull, int count )
+{
+	b3Vec2 center = { 0.0f, 0.0f };
+	if ( count == 0 )
+	{
+		return center;
+	}
+
+	b3Vec2 origin = hull[0];
+	float area = 0.0f;
+	for ( int i = 1; i + 1 < count; ++i )
+	{
+		b3Vec2 a = { hull[i].x - origin.x, hull[i].y - origin.y };
+		b3Vec2 b = { hull[i + 1].x - origin.x, hull[i + 1].y - origin.y };
+		float weight = a.x * b.y - a.y * b.x;
+		area += weight;
+		center.x += weight * ( a.x + b.x );
+		center.y += weight * ( a.y + b.y );
+	}
+	if ( area > 0.0f )
+	{
+		return (b3Vec2){ origin.x + center.x / ( 3.0f * area ), origin.y + center.y / ( 3.0f * area ) };
+	}
+
+	// A point or line has no area. Its endpoints still give a finite middle for the support and the arm strategy.
+	return (b3Vec2){ 0.5f * ( origin.x + hull[count - 1].x ), 0.5f * ( origin.y + hull[count - 1].y ) };
 }
 
 // How far a point lies outside a convex polygon, counter clockwise, negative inside: minus its distance to the nearest
@@ -831,6 +915,11 @@ static void nbMeasure( const nbWorld* world, int index, const nbFigure* f, nbBal
 		middle = b3Add( middle, b3MulAdd( b3MulAdd( b3MulSV( b->groundHeight, up ), hull[k].x, e1 ), hull[k].y, e2 ) );
 	}
 	b->supportMiddle = hullCount > 0 ? b3MulSV( 1.0f / (float)hullCount, middle ) : b3Vec3_zero;
+	if ( f->def.motors.turnWithSteps && b->ownStrength && hullCount > 0 )
+	{
+		b3Vec2 centroid = nbSupportCentroid( hull, hullCount );
+		b->supportMiddle = b3MulAdd( b3MulAdd( b3MulSV( b->groundHeight, up ), centroid.x, e1 ), centroid.y, e2 );
+	}
 
 	// The capture point: the center of mass ahead by its velocity over the frequency of a pendulum as long as its
 	// height. A figure that turns has to stop turning as well, and the ground under its feet takes the turn out with a
@@ -906,6 +995,25 @@ static void nbLegIK( const nbFigure* f, const nbBalancer* b, int leg, b3WorldTra
 	pose[nb_feet[leg]] = b3NormalizeQuat( b3InvMulQuat( b3MulQuat( shinWorld, foot->rest.q ), footWorld ) );
 }
 
+// Raise the toes about the axis across the foot facing, in the frame of the shin as the leg IK wants it.
+static void nbLiftToes( const nbFigure* f, const nbBalancer* b, int leg, b3Quat pelvis, b3Vec3 facing, float angle, b3Quat* pose )
+{
+	b3Vec3 side = b3Cross( facing, b->up );
+	float sideLength = b3Length( side );
+	if ( sideLength <= 1.0e-3f )
+	{
+		return;
+	}
+	const nbBone* thigh = f->bones + nb_thighs[leg];
+	const nbBone* shin = f->bones + nb_shins[leg];
+	const nbBone* foot = f->bones + nb_feet[leg];
+	b3Quat above = b3MulQuat( pelvis, thigh->rest.q );
+	above = b3MulQuat( b3MulQuat( above, pose[nb_thighs[leg]] ), shin->rest.q );
+	above = b3MulQuat( b3MulQuat( above, pose[nb_shins[leg]] ), foot->rest.q );
+	b3Quat toes = b3MakeQuatFromAxisAngle( b3MulSV( 1.0f / sideLength, side ), angle );
+	pose[nb_feet[leg]] = b3NormalizeQuat( b3MulQuat( b3InvMulQuat( above, b3MulQuat( toes, above ) ), pose[nb_feet[leg]] ) );
+}
+
 // The ankle of a leg as it is now
 static b3Vec3 nbAnkle( const nbFigure* f, int leg )
 {
@@ -931,9 +1039,46 @@ static float nbHoldHeight( const nbFigure* f, const nbBalancer* b, float target 
 }
 
 // The pelvis wanted upright at a point
-static b3WorldTransform nbWantedPelvis( const nbBalancer* b, b3Vec3 point )
+static b3WorldTransform nbWantedPelvis( const nbBalancer* b, b3Vec3 point, float turn )
 {
-	return (b3WorldTransform){ b3ToPos( point ), nbYaw( b->up, b->forward ) };
+	b3Vec3 facing = b->forward;
+	if ( turn != 0.0f )
+	{
+		facing = b3RotateVector( b3MakeQuatFromAxisAngle( b->up, turn ), facing );
+	}
+	return (b3WorldTransform){ b3ToPos( point ), nbYaw( b->up, facing ) };
+}
+
+// The yaw implied by the line between the ankles, limited and faded while standing.
+static float nbPelvisTurn( const nbBalancer* b, b3Vec3 leftAnkle, b3Vec3 rightAnkle )
+{
+	b3Vec3 left = b3Cross( b->up, b->forward );
+	b3Vec3 line = nbFlat( b3Sub( leftAnkle, rightAnkle ), b->up );
+	float ahead = b3Dot( line, b->forward );
+	float across = b3MaxFloat( b3Dot( line, left ), b->footGap );
+	float turn = -NB_PELVIS_TURN * b3Atan2( ahead, across );
+	return b->turnScale * NB_STEP_TURN_STRENGTH * b3ClampFloat( turn, -NB_PELVIS_TURN_MAX, NB_PELVIS_TURN_MAX );
+}
+
+// Follow the planned turn over the step, rather than the rapid ankle crossing midway through its actual swing.
+static float nbStepTurn( const nbBalancer* b, int foot, float phase )
+{
+	int stance = 1 - foot;
+	b3Vec3 from[2], to[2];
+	from[foot] = b->swingStart;
+	from[stance] = b->plant[stance];
+	to[foot] = b->stepAnkle;
+	to[stance] = b->plant[stance];
+	float start = nbPelvisTurn( b, from[0], from[1] );
+	float end = nbPelvisTurn( b, to[0], to[1] );
+	return start + ( end - start ) * nbSmooth( phase );
+}
+
+static float nbStepShare( const nbBalancer* b )
+{
+	b3Vec3 way = nbFlat( b3Sub( b->stepAnkle, b->swingStart ), b->up );
+	float length = b3Length( way );
+	return length > 1.0e-3f ? b3ClampFloat( 1.0f + b3Dot( way, b->forward ) / length, 0.0f, 1.0f ) : 1.0f;
 }
 
 // How high along up the pelvis can stand upright over a point with both ankles at their targets, at most a height. In a
@@ -1009,6 +1154,24 @@ static bool nbPlanFoot( const nbWorld* world, int index, const nbFigure* f, cons
 	if ( length > maxLength )
 	{
 		ankle = b3MulAdd( ankle, maxLength / length - 1.0f, reach );
+		if ( f->def.motors.turnWithSteps && b->ownStrength )
+		{
+			// Clamping to the reach circle can undo the foot separation enforced above. Project onto the intersection
+			// with that half-plane: keep its side distance, and use the remaining reach along the stance foot's heading.
+			b3Vec3 outward = b3MulSV( side, left );
+			float gap = b3Dot( nbFlat( b3Sub( ankle, stanceAnkle ), up ), outward );
+			if ( gap < b->footGap )
+			{
+				float required = b->footGap - b3Dot( nbFlat( b3Sub( hip, stanceAnkle ), up ), outward );
+				if ( required > maxLength )
+				{
+					return false;
+				}
+				float forwardReach = sqrtf( b3MaxFloat( maxLength * maxLength - required * required, 0.0f ) );
+				float ahead = b3ClampFloat( b3Dot( reach, facing ), -forwardReach, forwardReach );
+				ankle = b3MulAdd( b3MulAdd( hip, required, outward ), ahead, facing );
+			}
+		}
 	}
 
 	// Ground there that carries the foot, not too far up or down
@@ -1073,6 +1236,18 @@ static bool nbStartCatchStep( const nbWorld* world, int index, nbFigure* f, nbBa
 
 		// Near ties go to the foot that did not step last, so the figure steps with both feet in turn
 		float score = residual + ( b->stepCount > 0 && foot == b->lastFoot ? 0.03f : 0.0f );
+		if ( f->def.motors.responsiveTrunk && b->ownStrength && b->stepCount == 0 )
+		{
+			// A directional preference must not replace a viable plan with one that would immediately give up.
+			if ( residual > NB_GIVE_UP * b->scale )
+			{
+				continue;
+			}
+			b3Vec3 left = b3Cross( b->up, b->forward );
+			float lateral = b3Dot( nbFlat( b3Sub( b->capture, b->supportMiddle ), b->up ), left );
+			float side = foot == 0 ? 1.0f : -1.0f;
+			score += NB_FIRST_STEP_SIDE_WEIGHT * b3MaxFloat( -side * lateral - NB_STEP_MARGIN * b->scale, 0.0f );
+		}
 		if ( score < bestScore - 1.0e-4f )
 		{
 			bestFoot = foot;
@@ -1088,6 +1263,7 @@ static bool nbStartCatchStep( const nbWorld* world, int index, nbFigure* f, nbBa
 	}
 
 	b->lastFoot = bestFoot;
+	b->pelvisShareFrom = b->pelvisShare;
 	b->stepping = true;
 	b->stateTime = 0.0f;
 	b->stepFoot = bestFoot;
@@ -1168,7 +1344,7 @@ static float nbFootGrip( const nbWorld* world, int index, const nbFigure* f, int
 // the ground with about that torque over the length of the leg. At its limit it pushed the stance foot after a push
 // from behind as hard along the ground as friction held, with 73 % of the load the foot carried, where the pendulum of
 // the body asked for 13 to 25 %, and the foot crept back while the body ran on.
-static void nbHoldUpright( const nbWorld* world, int index, const nbFigure* f, const nbBalancer* b, float timeStep )
+static void nbHoldUpright( const nbWorld* world, int index, const nbFigure* f, nbBalancer* b, float timeStep )
 {
 	if ( b3Joint_IsValid( b->uprightLegs[0] ) == false )
 	{
@@ -1202,11 +1378,26 @@ static void nbHoldUpright( const nbWorld* world, int index, const nbFigure* f, c
 
 	b3BodyId root = f->bones[0].bodyId;
 	b3Quat frameB = b3MulQuat( b3Body_GetRotation( root ), nbQuatZTo( b3Vec3_axisY ) );
+	b3Vec3 desiredUp = b->up;
+	if ( b->ownStrength )
+	{
+		b3Vec3 angular = nbFlat( b3Body_GetAngularVelocity( root ), b->up );
+		if ( f->def.motors.responsiveTrunk == false || b->stepping || timeStep <= 0.0f )
+		{
+			b->hipVelocity = angular;
+		}
+		else
+		{
+			float rate = timeStep / ( NB_HIP_VELOCITY_TIME + timeStep );
+			b->hipVelocity = b3Add( b->hipVelocity, b3MulSV( rate, b3Sub( angular, b->hipVelocity ) ) );
+		}
+		desiredUp = b3Normalize( b3MulSub( b->up, NB_HIP_DAMPING_TIME, b3Cross( b->hipVelocity, b->up ) ) );
+	}
 	for ( int leg = 0; leg < 2; ++leg )
 	{
 		b3JointId joint = b->uprightLegs[leg];
 		b3BodyId thigh = f->bones[nb_thighs[leg]].bodyId;
-		b3Quat upInThigh = b3InvMulQuat( b3Body_GetRotation( thigh ), nbQuatZTo( b->up ) );
+		b3Quat upInThigh = b3InvMulQuat( b3Body_GetRotation( thigh ), nbQuatZTo( desiredUp ) );
 		b3Joint_SetLocalFrameA( joint, (b3Transform){ b3Vec3_zero, upInThigh } );
 		float stiffness = b3MaxFloat( share[leg] * motors->uprightStiffness, 1.0f );
 		b3ParallelJoint_SetSpringHertz( joint, nbJointSpringHertz( thigh, root, frameB, false, stiffness, 0.0f ) );
@@ -1241,6 +1432,9 @@ void nbBeginBalance( nbWorld* world, int index, nbFigure* f )
 	b->forward = b3Length( facing ) > 0.1f ? b3Normalize( facing ) : b3RotateVector( f->frame.q, b3Vec3_axisZ );
 	b->footFacing[0] = b->forward;
 	b->footFacing[1] = b->forward;
+	b->turnScale = 1.0f;
+	b->pelvisShare = 1.0f;
+	b->pelvisShareFrom = 1.0f;
 	b->stepping = false;
 	b->stepFoot = -1;
 
@@ -1256,7 +1450,9 @@ void nbBeginBalance( nbWorld* world, int index, nbFigure* f )
 	b->airborneTime = 0.0f;
 	b->oneFootTime = 0.0f;
 	b->calmTime = 0.0f;
+	b->calmSpeed = b->meanSpeed;
 	b->restlessTime = 0.0f;
+	b->hipVelocity = nbFlat( b3Body_GetAngularVelocity( f->bones[0].bodyId ), b->up );
 
 	// The arms hang loose until they row, with their forearms and hands, which follow the upper arm among the bones, if
 	// the motors pull at all. An arm that the push which woke the figure pressed on goes slack at once, see nbHoldArms.
@@ -1358,12 +1554,19 @@ void nbEndBalance( nbFigure* f )
 // while the center lies above the sole, and from the edge of the sole once it lies beyond, so the ankle holds no more
 // than the sole lets it. Its joints, hip, knee and ankle, pull toward the pose of the IK turned by as much as their
 // springs need to push with the torques of that push and of the weight of the bones of the leg above them. The stance
-// leg carries all of the body while the other swings. Two legs on the ground share it by where its center lies between
-// their ankles. A spring pushes with its rotational mass, see nbJointSpringHertz, times the square of its frequency, and
+// leg carries all of the body while the other swings. Two legs on the ground share it by where the desired pressure
+// lies between their ankles, under the center of mass or ahead of its sway while braking. A spring pushes with its
+// rotational mass, see nbJointSpringHertz, times the square of its frequency, and
 // it keeps its limit, so no joint pulls harder than its muscles.
 static void nbCarryBody( const nbFigure* f, const nbBalancer* b, b3Quat* pose )
 {
 	float share[2] = { 0.0f, 0.0f };
+	bool brake = b->ownStrength && b3Joint_IsValid( b->uprightLegs[0] ) && b->stepping == false;
+	float brakeTime = f->def.motors.turnWithSteps
+						  ? NB_TURN_STAND_BRAKE_TIME
+						  : ( f->def.motors.responsiveTrunk ? NB_RESPONSIVE_STAND_BRAKE_TIME : NB_STAND_BRAKE_TIME );
+	b3Vec3 pressureShift = brake ? b3MulSV( brakeTime, nbFlat( b->velocity, b->up ) ) : b3Vec3_zero;
+	b3Vec3 pressureTarget = brake ? b3Add( b->center, pressureShift ) : b->center;
 	b3Vec3 ankles[2] = { nbAnkle( f, 0 ), nbAnkle( f, 1 ) };
 	if ( b->stepping )
 	{
@@ -1377,7 +1580,7 @@ static void nbCarryBody( const nbFigure* f, const nbBalancer* b, b3Quat* pose )
 		float right = 0.5f;
 		if ( length2 > 1.0e-6f )
 		{
-			right = b3ClampFloat( b3Dot( nbFlat( b3Sub( b->center, ankles[0] ), b->up ), across ) / length2, 0.0f, 1.0f );
+			right = b3ClampFloat( b3Dot( nbFlat( b3Sub( pressureTarget, ankles[0] ), b->up ), across ) / length2, 0.0f, 1.0f );
 		}
 		share[0] = 1.0f - right;
 		share[1] = right;
@@ -1418,8 +1621,8 @@ static void nbCarryBody( const nbFigure* f, const nbBalancer* b, b3Quat* pose )
 			continue;
 		}
 
-		// Where the ground pushes the foot: the point of the sole under the center of the body, at most the edge of the
-		// sole, whose corners lie in the frame of the foot
+		// Where the ground pushes the foot: under the body, ahead of its remaining sway when braking, at most the edge
+		// of the sole. Redistributing the load above moves the combined pressure even in a wide stance.
 		b3BodyId foot = f->bones[nb_feet[leg]].bodyId;
 		b3Vec3 low = b->sole[leg][0];
 		b3Vec3 high = b->sole[leg][0];
@@ -1428,7 +1631,8 @@ static void nbCarryBody( const nbFigure* f, const nbBalancer* b, b3Quat* pose )
 			low = b3Min( low, b->sole[leg][k] );
 			high = b3Max( high, b->sole[leg][k] );
 		}
-		b3Vec3 local = b3Max( low, b3Min( high, b3Body_GetLocalPoint( foot, b3ToPos( body ) ) ) );
+		b3Vec3 desiredPressure = brake ? b3Add( body, pressureShift ) : body;
+		b3Vec3 local = b3Max( low, b3Min( high, b3Body_GetLocalPoint( foot, b3ToPos( desiredPressure ) ) ) );
 		b3Vec3 pressure = b3ToVec3( b3Body_GetWorldPoint( foot, local ) );
 
 		// The push of the leg from there toward the center of the body, as high as its share of the weight
@@ -1516,6 +1720,28 @@ static void nbBendTrunk( const nbFigure* f, const nbBalancer* b, b3Quat* pose )
 		const nbBone* bone = f->bones + i;
 		b3Quat frame = b3MulQuat( b3Body_GetRotation( f->bones[bone->parent].bodyId ), bone->rest.q );
 		b3Vec3 local = b3InvRotateVector( frame, turn );
+		float angle = b3Length( local );
+		if ( angle > 1.0e-6f )
+		{
+			pose[i] = b3NormalizeQuat( b3MulQuat( b3MakeQuatFromAxisAngle( b3MulSV( 1.0f / angle, local ), angle ), pose[i] ) );
+		}
+	}
+}
+
+// Counterrotate about world up, distributed by each spinal joint's twist range, within the existing joint targets.
+static void nbTurnTrunkBack( const nbFigure* f, const nbBalancer* b, float turn, b3Quat* pose )
+{
+	float keep = NB_BACK_TWIST + ( 1.0f - NB_BACK_TWIST ) * b->pelvisShare;
+	float twist = b3ClampFloat( -NB_TRUNK_COUNTER * keep * turn, -f->twistLimit, f->twistLimit );
+	if ( fabsf( twist ) < 1.0e-5f )
+	{
+		return;
+	}
+	for ( int i = nb_humanoidBelly; i <= nb_humanoidChest; ++i )
+	{
+		const nbBone* bone = f->bones + i;
+		b3Quat frame = b3MulQuat( b3Body_GetRotation( f->bones[bone->parent].bodyId ), bone->rest.q );
+		b3Vec3 local = b3InvRotateVector( frame, b3MulSV( f->spineTwist[i - nb_humanoidBelly] * twist, b->up ) );
 		float angle = b3Length( local );
 		if ( angle > 1.0e-6f )
 		{
@@ -1669,6 +1895,13 @@ nbBalanceResult nbUpdateBalance( nbWorld* world, int index, nbFigure* f, float t
 {
 	nbBalancer* b = &f->balancer;
 	nbMeasure( world, index, f, b );
+	bool filterCalm = b->ownStrength && b3Joint_IsValid( b->uprightLegs[0] );
+	float calmSpeed = b->meanSpeed;
+	if ( filterCalm )
+	{
+		b->calmSpeed += timeStep / ( NB_CALM_SPEED_TIME + timeStep ) * ( b->meanSpeed - b->calmSpeed );
+		calmSpeed = b3MinFloat( b->meanSpeed, b->calmSpeed );
+	}
 	nbHoldArms( f, b, timeStep );
 	b->stateTime += timeStep;
 
@@ -1705,7 +1938,10 @@ nbBalanceResult nbUpdateBalance( nbWorld* world, int index, nbFigure* f, float t
 			b->dangerUpdates = NB_DANGER_UPDATES;
 		}
 		bool urgent = b->ownStrength && b->dangerUpdates >= 1 && b->captureMargin > NB_STEP_URGENT * b->scale;
-		if ( ( b->dangerUpdates >= NB_DANGER_UPDATES || urgent ) && nbStartCatchStep( world, index, f, b ) == false )
+		bool slowDanger = f->def.motors.responsiveTrunk && b->ownStrength && b->dangerUpdates >= 1 &&
+						  timeStep >= NB_DANGER_MAX_WAIT;
+		if ( ( b->dangerUpdates >= NB_DANGER_UPDATES || urgent || slowDanger ) &&
+			 nbStartCatchStep( world, index, f, b ) == false )
 		{
 			return nb_balanceFell;
 		}
@@ -1760,7 +1996,8 @@ nbBalanceResult nbUpdateBalance( nbWorld* world, int index, nbFigure* f, float t
 
 	// Calm on its feet it stands animated again, once its arms hold again
 	bool calm = b->stepping == false && b->footContact[0] && b->footContact[1] && b->captureMargin <= NB_STEP_MARGIN * b->scale &&
-				b->meanSpeed < NB_CALM_SPEED && b->tilt < NB_CALM_TILT && f->pushed == false && b->armSlack[0] == 0.0f &&
+				calmSpeed < NB_CALM_SPEED && ( filterCalm == false || b->meanSpeed < 2.0f * NB_CALM_SPEED ) &&
+				b->tilt < NB_CALM_TILT && f->pushed == false && b->armSlack[0] == 0.0f &&
 				b->armSlack[1] == 0.0f;
 	b->calmTime = calm ? b->calmTime + timeStep : 0.0f;
 	if ( b->calmTime >= NB_CALM_TIME )
@@ -1770,6 +2007,8 @@ nbBalanceResult nbUpdateBalance( nbWorld* world, int index, nbFigure* f, float t
 
 	// The pose of the clip with the legs of balance
 	b3Vec3 up = b->up;
+	float turn = 0.0f;
+	bool turnStep = f->def.motors.turnWithSteps && b->ownStrength;
 	b3WorldTransform pelvis = b3Body_GetTransform( f->bones[0].bodyId );
 	b3Vec3 pelvisPoint = b3ToVec3( pelvis.p );
 	float standing = b->groundHeight + b->standHeight - NB_KNEE_BEND * b->scale;
@@ -1795,7 +2034,12 @@ nbBalanceResult nbUpdateBalance( nbWorld* world, int index, nbFigure* f, float t
 		}
 		b3Vec3 point = b3Add( pelvisPoint, shift );
 		float height = nbHoldHeight( f, b, nbReachableHeight( b, point, b->plant, standing ) );
-		b3WorldTransform wanted = nbWantedPelvis( b, nbAtHeight( point, up, height ) );
+		if ( turnStep )
+		{
+			b->turnScale *= nbExp( -timeStep / NB_TURN_RELAX );
+			turn = nbPelvisTurn( b, b->plant[0], b->plant[1] );
+		}
+		b3WorldTransform wanted = nbWantedPelvis( b, nbAtHeight( point, up, height ), b->pelvisShare * turn );
 		for ( int leg = 0; leg < 2; ++leg )
 		{
 			nbLegIK( f, b, leg, wanted, b->plant[leg], b->footFacing[leg], pose );
@@ -1836,14 +2080,33 @@ nbBalanceResult nbUpdateBalance( nbWorld* world, int index, nbFigure* f, float t
 		// The stance leg holds the pelvis upright at standing height. The swinging leg reaches from the pelvis turned
 		// halfway between upright and as it is: from upright alone the foot misses its target when a push pitches the
 		// pelvis, from the pelvis as it is the swing feeds back on itself through the roll it gives the pelvis.
-		b3WorldTransform wanted = nbWantedPelvis( b, nbAtHeight( pelvisPoint, up, nbHoldHeight( f, b, standing ) ) );
+		if ( turnStep )
+		{
+			b->turnScale = 1.0f;
+			turn = nbStepTurn( b, foot, phase );
+			b->pelvisShare = b->pelvisShareFrom + ( nbStepShare( b ) - b->pelvisShareFrom ) * progress;
+		}
+		b3WorldTransform wanted = nbWantedPelvis( b, nbAtHeight( pelvisPoint, up, nbHoldHeight( f, b, standing ) ),
+											   b->pelvisShare * turn );
 		b3WorldTransform swingPelvis = { pelvis.p, nbHalfwayAt( pelvis.q, wanted.q, 0.5f ) };
 		nbLegIK( f, b, foot, swingPelvis, swing, b->footFacing[stance], pose );
+		if ( b->ownStrength && ( f->def.motors.responsiveTrunk || turnStep ) )
+		{
+			b3Vec3 way = nbFlat( b3Sub( b->stepAnkle, b->swingStart ), up );
+			float length = b3Length( way );
+			float forward = length > 1.0e-3f ? b3MaxFloat( 0.0f, b3Dot( way, b->footFacing[stance] ) / length ) : 0.0f;
+			nbLiftToes( f, b, foot, swingPelvis.q, b->footFacing[stance],
+						forward * NB_SWING_TOES * b3ComputeCosSin( B3_PI * phase ).sine, pose );
+		}
 		nbLegIK( f, b, stance, wanted, b->plant[stance], b->footFacing[stance], pose );
 	}
 
 	nbCarryBody( f, b, pose );
 	nbBendTrunk( f, b, pose );
+	if ( turnStep )
+	{
+		nbTurnTrunkBack( f, b, turn, pose );
+	}
 	nbHoldUpright( world, index, f, b, timeStep );
 	nbRowArms( f, b, timeStep, pose );
 	return nb_balanceGoesOn;

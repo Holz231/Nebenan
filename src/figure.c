@@ -28,6 +28,17 @@
 // overshoot their limits by 0.1 rad at most under the weight of the body, with Box3D's 2 by up to 0.37 rad.
 #define NB_JOINT_DAMPING_RATIO 5.0f
 
+// A responsive trunk gives way at first, then restores its motor strength smoothly. Only its spinal joints yield;
+// the supporting legs retain their strength. Existing joint limits continue to constrain the motion.
+#define NB_TRUNK_YIELD_STRENGTH 0.4f
+#define NB_TRUNK_YIELD_HOLD 0.15f
+#define NB_TRUNK_YIELD_RETURN 0.35f
+
+// The enhanced balance response moves the chest quickly under a light neck and a heavier head. Dampen both
+// connected joints while catching a hit, so the head does not keep wobbling between their springs. This changes
+// joint damping only: the rig's inertia, stiffness, torque limits and applied hit impulses remain unchanged.
+#define NB_BALANCE_NECK_DAMPING_SCALE 8.0f
+
 // The torque limit of the joint springs is an addition to Box3D, see extern/README.md. Without it the springs of a
 // ragdoll hold its pose against anything.
 #if defined( B3_HAS_SPRING_TORQUE_LIMITS )
@@ -304,6 +315,7 @@ nbFigureDef nbDefaultFigureDef( void )
 	def.stepZone = 0.6f;
 	def.crushForce = 600.0f;
 	def.pushForce = 40.0f;
+	def.collisionImpulse = 3.0f;
 	def.restSpeed = 0.4f;
 	def.getUpDelay = 1.0f;
 	def.getUpSpeed = 1.4f;
@@ -1351,6 +1363,13 @@ static void nbApplyMuscles( nbFigure* f, int index, bool on, float factor )
 	}
 
 	float dampingRatio = b3MaxFloat( 0.0f, f->def.motors.dampingRatio ) * bone->damping;
+	bool neckJoint = ( index == nb_humanoidNeck && bone->parent == nb_humanoidChest ) ||
+					 ( index == nb_humanoidHead && bone->parent == nb_humanoidNeck );
+	if ( neckJoint && f->canBalance && f->state == nb_figureBalancing &&
+		 ( f->def.motors.responsiveTrunk || f->def.motors.turnWithSteps ) )
+	{
+		dampingRatio *= NB_BALANCE_NECK_DAMPING_SCALE;
+	}
 	if ( dampingRatio != bone->springDamping )
 	{
 		if ( hinge )
@@ -1795,6 +1814,7 @@ static void nbStand( nbWorld* world, nbFigure* f )
 // have, the joints at full strength toward the pose it stands in, the upright hold on. Any other figure falls.
 static void nbBeginBalancing( nbWorld* world, nbFigure* f )
 {
+	f->trunkYieldLeft = 0.0f;
 	nbEndFollowing( world, f, false );
 	if ( f->canBalance == false )
 	{
@@ -2890,6 +2910,53 @@ static void nbTurnUpperBody( nbFigure* f, b3Vec3 axis, b3Pos center, float omega
 	}
 }
 
+// Transfer the angular impulse the linear spread omitted, through the inertia tensor of the upper body.
+static void nbTurnTrunkHit( nbFigure* f, int hitBone, b3Vec3 impulse, b3Vec3 spread )
+{
+	if ( nbIsSpine( f, hitBone ) == false )
+	{
+		return;
+	}
+	float mass = 0.0f;
+	b3Vec3 moment = b3Vec3_zero;
+	b3Pos low = b3Body_GetPosition( f->bones[nb_humanoidBelly].bodyId );
+	for ( int i = nb_humanoidBelly; i < f->boneCount; ++i )
+	{
+		if ( nbCarries( f, nb_humanoidBelly, i ) )
+		{
+			float m = b3Body_GetMass( f->bones[i].bodyId );
+			mass += m;
+			moment = b3MulAdd( moment, m, b3SubPos( b3Body_GetWorldCenter( f->bones[i].bodyId ), low ) );
+		}
+	}
+	if ( mass <= 0.0f )
+	{
+		return;
+	}
+	b3Pos center = b3OffsetPos( low, b3MulSV( 1.0f / mass, moment ) );
+	b3Matrix3 inertia = { b3Vec3_zero, b3Vec3_zero, b3Vec3_zero };
+	for ( int i = nb_humanoidBelly; i < f->boneCount; ++i )
+	{
+		if ( nbCarries( f, nb_humanoidBelly, i ) == false )
+		{
+			continue;
+		}
+		b3BodyId body = f->bones[i].bodyId;
+		b3Matrix3 rotation = b3MakeMatrixFromQuat( b3Body_GetRotation( body ) );
+		b3Matrix3 local = b3Body_GetLocalRotationalInertia( body );
+		b3Matrix3 rotated = b3MulMM( rotation, b3MulMM( local, b3Transpose( rotation ) ) );
+		b3Vec3 lever = b3SubPos( b3Body_GetWorldCenter( body ), center );
+		inertia = b3AddMM( inertia, b3AddMM( rotated, b3Steiner( b3Body_GetMass( body ), lever ) ) );
+	}
+	b3Vec3 missing = b3Neg( b3Cross( spread, impulse ) );
+	b3Vec3 velocity = b3Solve3( inertia, missing );
+	float speed = b3Length( velocity );
+	if ( speed > 1.0e-6f )
+	{
+		nbTurnUpperBody( f, b3MulSV( 1.0f / speed, velocity ), center, speed );
+	}
+}
+
 // A hit on the trunk of the humanoid off its middle turns it about its long axis, see F50 of the roadmap. The spread puts
 // every share of the hit at the center of mass of its bone, as if it came through them: the moment of the hit about the
 // axis up the spine that this misses, the moment about the point where the spread puts the hit, the upper body takes as
@@ -2901,6 +2968,11 @@ static void nbTwistTrunk( nbFigure* f, int hitBone, b3Vec3 impulse, b3Vec3 sprea
 {
 	if ( nbIsSpine( f, hitBone ) == false )
 	{
+		return;
+	}
+	if ( f->def.motors.responsiveTrunk )
+	{
+		nbTurnTrunkHit( f, hitBone, impulse, spread );
 		return;
 	}
 
@@ -3000,12 +3072,38 @@ static void nbSpreadHit( nbFigure* f, int hitBone, b3Vec3 impulse, b3Pos point )
 	nbReadVelocities( f );
 }
 
-// A hit on the dynamic bones of a figure, spread over them from the bone it hit, see nbSpreadHit. The whole impulse on the
-// bone it hit, as on the branch ragdoll-11, threw the trunk of a figure that had stood animated a moment before so far that
-// it fell from 80 N s on its chest and 60 N s on its back, which ragdoll-11 caught with steps.
+// The trunk yields to an impact and regains its motor strength, without changing the strength of the support legs.
+static void nbUpdateTrunkYield( nbFigure* f, float timeStep )
+{
+	if ( f->trunkYieldLeft <= 0.0f )
+	{
+		return;
+	}
+	f->trunkYieldLeft = b3MaxFloat( f->trunkYieldLeft - timeStep, 0.0f );
+	float phase = b3ClampFloat( 1.0f - f->trunkYieldLeft / NB_TRUNK_YIELD_RETURN, 0.0f, 1.0f );
+	float strength = NB_TRUNK_YIELD_STRENGTH + ( 1.0f - NB_TRUNK_YIELD_STRENGTH ) * phase * phase * ( 3.0f - 2.0f * phase );
+	for ( int i = nb_humanoidBelly; i <= nb_humanoidChest; ++i )
+	{
+		nbSetBoneSpring( f, i, strength, f->springs );
+		if ( timeStep <= 0.0f )
+		{
+			f->bones[i].activation = f->bones[i].drive;
+			nbApplyMuscles( f, i, f->springs && f->bones[i].activation >= NB_MIN_STRENGTH, 1.0f );
+		}
+	}
+}
+
+// Spread the hit over the dynamic bones, preserving the full moment when the responsive trunk is enabled. A small
+// nudge does not restart the yielding reflex; a hit of at least half the knockdown impulse does.
 static void nbHitBones( nbFigure* f, int bone, b3Vec3 impulse, b3Pos point )
 {
 	nbSpreadHit( f, bone, impulse, point );
+	if ( f->def.motors.responsiveTrunk && f->state == nb_figureBalancing && nbIsSpine( f, bone ) &&
+		 b3Length( impulse ) >= 0.5f * b3MaxFloat( f->def.knockdownImpulse, 0.0f ) )
+	{
+		f->trunkYieldLeft = NB_TRUNK_YIELD_HOLD + NB_TRUNK_YIELD_RETURN;
+		nbUpdateTrunkYield( f, 0.0f );
+	}
 }
 
 // A hit on a figure, from the program, a blast or debris
@@ -3836,6 +3934,121 @@ static void nbAnimate( nbWorld* world, int index, nbFigure* f, float timeStep )
 	}
 }
 
+// The predictive contact of one animated bone with static geometry
+typedef struct nbBoneMotionQuery
+{
+	b3BodyId body;
+	b3Filter filter;
+	float mass;
+	float threshold;
+	bool hit;
+} nbBoneMotionQuery;
+
+// A kinematic body has no contacts with static geometry. Check where it is going before Box3D advances it, and let
+// the dynamic solver take that contact with its real mass. A sweep only decides whether to release animation: it
+// neither pushes the obstacle nor adds a second copy of the momentum the bone already has.
+static float nbBoneMotionHitFcn( b3ShapeId shapeId, b3Pos point, b3Vec3 normal, float fraction, uint64_t userMaterialId,
+								int triangleIndex, int childIndex, void* context )
+{
+	NB_UNUSED( fraction );
+	NB_UNUSED( userMaterialId );
+	NB_UNUSED( triangleIndex );
+	NB_UNUSED( childIndex );
+	nbBoneMotionQuery* query = context;
+	if ( b3Shape_IsSensor( shapeId ) || b3Body_GetType( b3Shape_GetBody( shapeId ) ) != b3_staticBody )
+	{
+		return -1.0f;
+	}
+
+	b3Filter other = b3Shape_GetFilter( shapeId );
+	bool sameGroup = query->filter.groupIndex != 0 && query->filter.groupIndex == other.groupIndex;
+	bool collide = sameGroup ? query->filter.groupIndex > 0 :
+				   ( query->filter.maskBits & other.categoryBits ) != 0 && ( other.maskBits & query->filter.categoryBits ) != 0;
+	if ( collide == false )
+	{
+		return -1.0f;
+	}
+
+	float approach = -b3Dot( b3Body_GetWorldPointVelocity( query->body, point ), normal );
+	if ( query->mass * approach < query->threshold )
+	{
+		return -1.0f;
+	}
+	query->hit = true;
+	return 0.0f;
+}
+
+static bool nbHitsStaticGeometry( const nbWorld* world, const nbFigure* f, float timeStep )
+{
+	if ( f->def.collisionImpulse <= 0.0f )
+	{
+		return false;
+	}
+	for ( int i = 0; i < f->boneCount; ++i )
+	{
+		const nbBone* bone = f->bones + i;
+		b3WorldTransform from = b3Body_GetTransform( bone->bodyId );
+		b3WorldTransform to = f->targets[i];
+		b3Vec3 linear = b3Body_GetLinearVelocity( bone->bodyId );
+		float angular = b3Length( b3Body_GetAngularVelocity( bone->bodyId ) );
+		float reach = bone->shape == nb_capsuleBone ? b3MaxFloat( b3Length( bone->start ), b3Length( bone->end ) ) + bone->radius :
+					  b3Length( bone->center ) + b3Length( bone->halfExtents );
+		if ( bone->mass * ( b3Length( linear ) + angular * reach ) < f->def.collisionImpulse )
+		{
+			continue;
+		}
+
+		b3ShapeId shape;
+		if ( b3Body_GetShapes( bone->bodyId, &shape, 1 ) != 1 || b3Shape_IsSensor( shape ) )
+		{
+			continue;
+		}
+		b3Vec3 capsulePoints[2] = { bone->start, bone->end };
+		const b3HullData* hull = bone->shape == nb_capsuleBone ? NULL : b3Shape_GetHull( shape );
+		const b3Vec3* local = hull != NULL ? b3GetHullPoints( hull ) : capsulePoints;
+		int count = hull != NULL ? hull->vertexCount : 2;
+		float radius = hull != NULL ? 0.0f : bone->radius;
+		b3Vec3 center = b3Body_GetLocalCenter( bone->bodyId );
+		b3Vec3 points[B3_MAX_HULL_VERTICES];
+		nbBoneMotionQuery query = { bone->bodyId, b3Shape_GetFilter( shape ), bone->mass, f->def.collisionImpulse, false };
+		// Keep long turns on their arcs instead of cutting straight through them. The bounded subdivisions also cover
+		// a stationary center with rotating tips. Within each subdivision the full proxy covers faces and the shaft;
+		// endpoint sweeps cover the change in orientation. These are an approximation to rotation, not rotational CCD.
+		int segments = b3ClampInt( (int)ceilf( angular * timeStep / 0.1f ), 1, 32 );
+		b3WorldTransform a = from;
+		for ( int segment = 0; segment < segments && query.hit == false; ++segment )
+		{
+			float alpha = (float)( segment + 1 ) / (float)segments;
+			b3WorldTransform b = { b3OffsetPos( from.p, b3MulSV( alpha, b3SubPos( to.p, from.p ) ) ),
+								   b3NLerp( from.q, to.q, alpha ) };
+			b3Pos start = b3TransformWorldPoint( a, center );
+			b3Vec3 translation = b3SubPos( b3TransformWorldPoint( b, center ), start );
+			for ( int p = 0; p < count; ++p )
+			{
+				points[p] = b3RotateVector( a.q, b3Sub( local[p], center ) );
+			}
+			b3ShapeProxy proxy = { points, count, radius };
+			b3World_CastShape( world->physicsWorld, start, &proxy, translation, b3DefaultQueryFilter(), nbBoneMotionHitFcn,
+							   &query );
+			for ( int p = 0; p < count && query.hit == false && angular * timeStep > 1.0e-4f; ++p )
+			{
+				b3Pos tipStart = b3TransformWorldPoint( a, local[p] );
+				b3Vec3 delta = b3SubPos( b3TransformWorldPoint( b, local[p] ), tipStart );
+				b3Vec3 zero = b3Vec3_zero;
+				b3ShapeProxy tip = { &zero, 1, radius };
+				b3World_CastShape( world->physicsWorld, tipStart, &tip, delta, b3DefaultQueryFilter(), nbBoneMotionHitFcn,
+								   &query );
+			}
+			a = b;
+		}
+		if ( query.hit )
+		{
+			return true;
+		}
+	}
+	return false;
+}
+
 // A standing figure: its ground, what presses on it, its pose and its bones
 static void nbUpdateAnimated( nbWorld* world, int index, nbFigure* f, float timeStep, b3Vec3 up )
 {
@@ -3970,6 +4183,11 @@ static void nbUpdateAnimated( nbWorld* world, int index, nbFigure* f, float time
 	else
 	{
 		nbDriveBodies( f, timeStep );
+		if ( nbHitsStaticGeometry( world, f, timeStep ) )
+		{
+			f->collisionCount += 1;
+			nbBeginBalancing( world, f );
+		}
 	}
 }
 
@@ -4292,6 +4510,7 @@ static void nbUpdateBalancing( nbWorld* world, int index, nbFigure* f, float tim
 	}
 
 	nbSetJointTargets( f, f->pose );
+	nbUpdateTrunkYield( f, timeStep );
 	nbUpdateMuscles( f, timeStep );
 	f->speed = b3Length( nbAverageVelocity( f ) );
 }
@@ -5052,6 +5271,7 @@ nbFigureInfo nbFigure_GetInfo( nbFigureId figureId )
 	info.catchCount = f->catchCount;
 	info.pushCount = f->pushCount;
 	info.letGoCount = f->letGoCount;
+	info.collisionCount = f->collisionCount;
 	return info;
 }
 
@@ -5264,6 +5484,7 @@ nbFigureStats nbWorld_GetFigureStats( nbWorldId worldId )
 		stats.catchCount += f->catchCount;
 		stats.pushCount += f->pushCount;
 		stats.letGoCount += f->letGoCount;
+		stats.collisionCount += f->collisionCount;
 	}
 	return stats;
 }

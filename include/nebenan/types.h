@@ -1267,10 +1267,12 @@ typedef struct nbFigureMotors
 	/// The hold pulls the pelvis upright against a static anchor of the world. False pulls it against the thighs of the
 	/// legs that carry the figure instead, which push against the ground as a person's do, each with at most the torque
 	/// limit of the joint of its thigh, as the stance hip of a person, and no harder than its foot holds on the ground,
-	/// the load of its contacts times their friction over the length of the leg: the balance from the figure's own
-	/// strength, which catches fewer hits than the hold against the world, see the roadmap, F61. Without the hold
-	/// against the world, also with uprightTorque at zero, a humanoid that catches itself braces its knees, steps at
-	/// once after a clear push, takes up to ten steps in a row instead of five and swings each foot on with the speed
+	/// while also braking the pelvis's tilt velocity through the thigh. The grip limit is
+	/// the load of its contacts times their friction times the length of the leg: the balance from the figure's own
+	/// strength, which catches fewer hits than the hold against the world, see the roadmap, F61. With this hold through
+	/// the legs, planted soles also brake residual sway after a step by shifting their pressure and sharing the weight.
+	/// Without the hold against the world, also with uprightTorque at zero, a humanoid that catches itself braces its
+	/// knees, steps at once after a clear push, takes up to ten steps in a row instead of five and swings each foot on with the speed
 	/// it already has.
 	bool uprightAgainstWorld;
 
@@ -1282,6 +1284,20 @@ typedef struct nbFigureMotors
 	/// punch that swings out in 0.12 s within 5 cm. Below it, the feet of a figure that the program slides over the
 	/// ground stick to it; above it, two fighters that press on each other push harder than a person on their feet.
 	float followStrength;
+
+	/// A humanoid trunk hit transfers the complete missing angular impulse to the upper body, including pitch and
+	/// roll, and the spinal motors yield briefly before regaining their pose. This permits visible bending and twist
+	/// between chest and pelvis, at the cost of more difficult catches. The reflex needs at least half the knockdown
+	/// impulse. While balancing, this option or turnWithSteps also damps the humanoid neck/head joints more strongly
+	/// to reduce post-impact wobble, within their existing torque limits. False (the default) retains the original
+	/// response; the demo enables it for comparison.
+	bool responsiveTrunk;
+
+	/// While a humanoid balances through its legs, turn the pelvis with the step and the upper body against it.
+	/// The turn follows the planned step smoothly, eases out in stance, and is reduced while stepping backward.
+	/// The swinging foot also raises its toes in forward steps. Joint strength and grip still bound the response.
+	/// False by default; independent of the yielding trunk-hit response above. The demo enables both options.
+	bool turnWithSteps;
 } nbFigureMotors;
 
 /// A figure, see nbCreateFigure. Initialize with nbDefaultFigureDef.
@@ -1342,6 +1358,13 @@ typedef struct nbFigureDef
 	/// from above weighs on the figure again. For a figure with an engage radius, see engageRadius, other figures push
 	/// neither its body nor its arms.
 	float pushForce;
+
+	/// Before an animated bone moves into static geometry, make the figure dynamic if the bone's mass times its
+	/// speed into the surface reaches this many newton seconds. Its existing velocities carry it into the contact;
+	/// no extra impulse is applied. The humanoid catches itself or falls, other rigs fall. Sensors and collision
+	/// masks are respected. The default is 3 N s; zero disables these predictive checks. Rotation is approximated;
+	/// initial overlaps, moving obstacles and continuing an action in the air are not handled by this check.
+	float collisionImpulse;
 
 	/// Within this many meters of the pelvis of another figure, a standing figure follows its clip with dynamic bones
 	/// instead of kinematic ones, as the fighters of Blade & Sorcery near the player, see the roadmap, F64: the clip only
@@ -1478,6 +1501,9 @@ typedef struct nbFigureInfo
 	int catchCount;
 	int pushCount;
 	int letGoCount;
+
+	/// Transitions from animation to physics before hitting static geometry, see nbFigureDef::collisionImpulse.
+	int collisionCount;
 } nbFigureInfo;
 
 /// A hit on a bone, see nbFigure_ApplyHit
@@ -1527,6 +1553,9 @@ typedef struct nbFigureStats
 	int catchCount;
 	int pushCount;
 	int letGoCount;
+
+	/// Transitions to physics before hitting static geometry, summed over all figures.
+	int collisionCount;
 } nbFigureStats;
 
 /// The bones of the humanoid that nbMakeHumanoidBones builds, in the order of its array. The trunk runs from the pelvis
