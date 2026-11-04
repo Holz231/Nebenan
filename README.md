@@ -1213,6 +1213,34 @@ vorher, und in der Stadt mit Figuren stehen wie vorher 29, und keine liegt statt
 kostet das 0,95- und 0,94-fache, mit einem Thread das 1,10-fache, bei bis zu 63 780 statt 55 919 Kontakten, im Rauschen
 der VM.
 
+**Der Standfuß ab dem vierten Schritt.** Seit `active-ragdoll-58` senkt das Standbein das Becken spät im Schritt, ab 0,7
+der Schrittdauer und ganz am geplanten Ende, so tief, wie es mit beiden Füßen an ihren Zielen aufrecht stehen kann, der
+Standfuß, wo er steht, der schwingende, wo er landet, wie beide Beine im breiten Stand. Das gilt nach dem Anteil, den
+der Schritt nicht nach vorn geht, bei einem Schritt gerade nach vorn gar nicht und ab 60° zur Seite ganz, und nur,
+solange eine Stütze das Becken aufrecht hält. Bis Runde 57 hielt das Standbein das Becken auf Standhöhe, bis der Fuß
+landete, und das Schwungbein, das seinem Ziel etwa 0,1 s nachläuft, erreichte den Boden von dort nicht: Fast jeder
+Schritt landet nach seinem geplanten Ende, ab dem vierten Schritt bei 1,23 seiner Dauer, und in den Updates danach war
+der schwingende Knöchel im Mittel 3,9 cm über dem Boden und 11 cm vor seinem Ziel. Währenddessen hielt die Stütze das
+Becken aufrecht, das Standbein drückte es auf Standhöhe, und der Standfuß glitt mit eigener Kraft ab dem vierten Schritt
+in 40 % dieser Updates schneller als 0,3 m/s, jetzt in 31 %. Über vier Lagen des Treffpunkts braucht die Figur mit
+eigener Kraft nach den 4 × 1 920 mittleren Treffern auf Brust und Bauch, die sie fängt, ab dem vierten Schritt 410 statt
+853 Schritte, und der Standfuß rutscht bei 201 statt 439 davon mehr als 5 cm, bei 49 statt 51 %, bei Schritten zur Seite
+weg bei 87 statt 287, im ersten Schritt bei 9 statt 19 % der Schritte, mit der Stütze gegen die Welt, dem Standard, bei
+23 statt 43 %. Von den 4 × 5 264 Treffern fallen mit eigener Kraft 3 865 statt 3 946, mit der Stütze gegen die Welt
+1 505 statt 1 487, 18 mehr an den Gliedern, und ohne Stütze rechnet die Figur wie vorher, von den leichten Treffern
+fällt mit allen drei Stützen keiner. Ohne Stütze kippt das Becken mit dem Körper über den Standfuß und bringt die Hüfte
+des Schwungbeins von selbst herunter, abgesenkt rutschte der Standfuß dort im ersten Schritt bei 16 statt 10 % der
+Schritte. Bei einem Schritt nach vorn wird der Fuß, der landet, vor dem Körper zum Standfuß des nächsten Schritts, und
+sein Bein richtet das abgesenkte Becken wieder auf: Abgesenkt bei jedem Schritt fielen mit eigener Kraft von den
+mittleren 66 statt 48. Ein Spiel ruft dafür nichts Neues auf. Siehe „Becken spät im Schritt tiefer“ und die Zeilen
+danach in [Optimierungen.md](docs/Optimierungen.md). Gepaart gegen `active-ragdoll-57` rechnen die Szenen ohne Figuren,
+die einzelne Figur hinter ihrer Mauer, die Kämpfer und die Ragdolls im Schutt dasselbe, und die Szenen mit getroffenen
+Figuren enden anders, mit einem und mit vier Threads gleich: Hinter ihren Mauern stehen am Ende wie vorher alle 10
+Figuren, eine fängt sich, statt umgeworfen zu werden, von den 50 stehen 49, und die eine steht gerade auf, statt zu
+liegen. In der Stadt mit Figuren stürzen 5 statt 6 Stockwerke ein, bei bis zu 35 654 statt 63 780 Kontakten, und am Ende
+stehen 31 statt 29 Figuren. Ein Bild der Stadt mit Figuren kostet das 0,97- und 0,99-fache, mit einem Thread das
+0,92-fache, bei anderer Arbeit und im Rauschen der VM.
+
 **Drücken.** Drückt ein Körper eine stehende Figur langsam, ein Stock, eine Hand oder ein Block, und schiebt er dabei
 einen ihrer Knochen mit mindestens `pushForce` (Standard 40 N) seitlich, bei zwei Prüfungen hintereinander, also ein
 paar Schritte lang, fängt sich ein Mensch der Bibliothek, statt eine Wand zu bleiben: Seine Knochen werden dynamisch,

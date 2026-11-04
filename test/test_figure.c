@@ -784,10 +784,13 @@ static int FigureCatchTest( void )
 // 1.62 rad with the chest of two parts of round 37. In round 41, whose chest bends on to the side up to 0.36 rad where
 // round 40's tilted 0.15, the right one rows up to 1.77 rad against the chest, and the left one goes along with the
 // chest, 0.44 rad against it and 0.35 against the down of the world, round 40's 0.33 and 0.25. A swinging arm bends
-// its elbow, and the arms turn against the chest at most 15 rad/s and brake at most 450 rad/s2: they swing, they do not
+// its elbow, and the arms turn against the chest at most 16 rad/s and brake at most 450 rad/s2: they swing, they do not
 // jolt. Pulled toward a target far ahead, as in round 23, they turned up to 21 rad/s and braked up to 684 rad/s2. The
 // arm of 81 cm of round 36 turned up to 15.03 rad/s pushed to its left without the armature of its shoulder, see
-// nbMakeHumanoidBones, and 10.1 with it. Standing animated again, the arms hang in the pose of the clip.
+// nbMakeHumanoidBones, and 10.1 with it. Since round 58 the stance leg lowers the pelvis late in a step, see
+// NB_DROP_PHASE, in the step to the side the pelvis comes down to 0.785 instead of 0.793 m as the foot lands, and the
+// arm that rows swings on against the chest with up to 15.7 instead of 14.9 rad/s. Standing animated again, the arms
+// hang in the pose of the clip.
 static int FigureRowTest( void )
 {
 	typedef struct RowCase
@@ -850,7 +853,7 @@ static int FigureRowTest( void )
 			ENSURE( cases[c].least[k] < swing[k] && swing[k] < cases[c].most[k] );
 			ENSURE( cases[c].least[k] == 0.0f || bend[k] > 0.6f );
 		}
-		ENSURE( fastest < 15.0f );
+		ENSURE( fastest < 16.0f );
 		ENSURE( hardest < 450.0f );
 
 		// Standing animated, the arms hang as in the clip, like those of the figure that stood all along
@@ -1189,7 +1192,7 @@ static uint32_t MuscleCatch( int threadCount, float impulse )
 }
 
 // The throw of 90 N s on a figure with muscles ends in the same bits with one thread and with four, on every platform
-#define NB_EXPECTED_MUSCLE_HASH 0xf4f61ccfu
+#define NB_EXPECTED_MUSCLE_HASH 0x6a51e5e9u
 
 // The muscles, see nbFigureMotors::muscles and nbUpdateMuscles. A figure with muscles hit while it stands catches itself
 // with the strength the balance asks for at once: every joint of its trunk and its legs at the full torque of the motors,
@@ -3482,10 +3485,10 @@ static int ThinBoardTest( void )
 }
 
 // The hash of the figure scenario on every platform, see RunFigureScenario
-#define NB_EXPECTED_FIGURE_HASH 0xa33a2bbeu
+#define NB_EXPECTED_FIGURE_HASH 0xee25a571u
 
 // See RunFollowScenario
-#define NB_EXPECTED_FOLLOW_HASH 0xebc06576u
+#define NB_EXPECTED_FOLLOW_HASH 0x0ff9d3e6u
 
 static int FigureFollowDeterminismTest( void )
 {
