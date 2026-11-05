@@ -2432,6 +2432,12 @@ aktuellen Fußposition. Bei 30 Hz fallen 39 statt 69 von 1 920 mittleren Treffer
 561 statt 594 von 1 200 harten Treffern. Siehe „Das belastete Fußziel in der ersten Schritthälfte halten“
 in [Optimierungen](Optimierungen.md).
 
+**F61/F79, Landung:** Der Schwungfuß reicht gegen Ende tiefer. Bei seitlichen und rückwärtigen Schritten
+senkt das Standbein gleichzeitig das Becken in den Bereich, den beide Beine erreichen. Bei 30 Hz fallen
+22 statt 39 von 1 920 mittleren Treffern, bei 60 Hz fangen sich alle 5 760. Die zuletzt auffällige
+60-N-s-Seitenprobe steht nach 1,40 statt 2,85 s wieder, der Kopf schwingt weniger nach. Siehe „Am Ende des
+Fangschritts den Boden erreichen“ in [Optimierungen](Optimierungen.md).
+
 ## Kleinere Punkte
 
 Mit niedriger Priorität vorgemerkt, sie sparen vor allem Arbeit, die schon parallel läuft. Der Gewinn gilt mit einem

@@ -193,6 +193,12 @@
 #define NB_LAND_DISTANCE 0.06f
 #define NB_LAND_SPEED 2.0f
 
+// Finish the swing by reaching a little below the planned ground so the foot takes load as its motors catch up.
+// On wide side and backward steps, also let the stance leg lower the pelvis toward the height both legs can reach.
+#define NB_LAND_REACH_PHASE 0.7f
+#define NB_LAND_REACH_DEPTH 0.02f
+#define NB_LAND_PELVIS_DROP 0.75f
+
 // A modest capture error on landing can shrink as the new foot takes load. Let the planted stance check it again
 // when both feet are down and the body is still close to standing height.
 #define NB_LAND_CAPTURE_MARGIN ( 2.0f * NB_STEP_MARGIN )
@@ -2134,7 +2140,7 @@ nbBalanceResult nbUpdateBalance( nbWorld* world, int index, nbFigure* f, float t
 		}
 		swing = b3MulAdd( swing, NB_STEP_HEIGHT * b->scale * b3ComputeCosSin( B3_PI * liftPhase ).sine, up );
 
-		// The stance leg holds the pelvis upright at standing height. The swinging leg reaches from the pelvis turned
+		// The stance leg braces the pelvis. The swinging leg reaches from the pelvis turned
 		// halfway between upright and as it is: from upright alone the foot misses its target when a push pitches the
 		// pelvis, from the pelvis as it is the swing feeds back on itself through the roll it gives the pelvis.
 		if ( turnStep )
@@ -2143,7 +2149,22 @@ nbBalanceResult nbUpdateBalance( nbWorld* world, int index, nbFigure* f, float t
 			turn = nbStepTurn( b, foot, phase );
 			b->pelvisShare = b->pelvisShareFrom + ( nbStepShare( b ) - b->pelvisShareFrom ) * progress;
 		}
-		b3WorldTransform wanted = nbWantedPelvis( b, nbAtHeight( pelvisPoint, up, nbHoldHeight( f, b, standing ) ),
+		float pelvisHeight = standing;
+		if ( turnStep && phase > NB_LAND_REACH_PHASE && length > 1.0e-3f && b3Joint_IsValid( b->uprightLegs[0] ) )
+		{
+			float sinceReach = phase - NB_LAND_REACH_PHASE;
+			float reachDuration = 1.0f - NB_LAND_REACH_PHASE;
+			float ahead = b3Dot( way, b->footFacing[stance] ) / length;
+			float share = b3ClampFloat( 2.0f * ( 1.0f - ahead ), 0.0f, 1.0f );
+			b3Vec3 targets[2];
+			targets[foot] = b->stepAnkle;
+			targets[stance] = b->plant[stance];
+			float lowest = nbReachableHeight( b, pelvisPoint, targets, standing );
+			float drop = NB_LAND_PELVIS_DROP * b3MaxFloat( standing - lowest, 0.0f );
+			pelvisHeight -= share * sinceReach / reachDuration * drop;
+			swing = b3MulSub( swing, NB_LAND_REACH_DEPTH * b->scale * sinceReach / reachDuration, up );
+		}
+		b3WorldTransform wanted = nbWantedPelvis( b, nbAtHeight( pelvisPoint, up, nbHoldHeight( f, b, pelvisHeight ) ),
 											   b->pelvisShare * turn );
 		b3WorldTransform swingPelvis = { pelvis.p, nbHalfwayAt( pelvis.q, wanted.q, 0.5f ) };
 		nbLegIK( f, b, foot, swingPelvis, swing, b->footFacing[stance], pose );

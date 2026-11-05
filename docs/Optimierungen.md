@@ -3504,3 +3504,48 @@ In drei gepaarten Benchmarkläufen liefern alle sechs `figures`-Szenen dieselben
 Die Physikschritte der Stadt mit Figuren lagen mit vier Threads bei 2,98 → 2,88 ms und 2,89 → 2,90 ms,
 mit einem Thread bei 6,69 → 6,82 ms. Der Benchmark nutzt die Bibliotheksvorgaben. Die Abfangreihen oben
 prüfen das gehaltene Fußziel mit aktivierter Schrittdrehung.
+
+## Am Ende des Fangschritts den Boden erreichen, F61 und F79, 5. November 2026
+
+Die Fußbewegung aus Stand 64 und die erreichbare Beckenhöhe wurden auf `da059e2` getrennt und gemeinsam
+geprüft. Mit Beinabstützung und Schrittdrehung reicht der Schwungfuß jetzt in den letzten 30 % der geplanten
+Schrittdauer bis 2 cm tiefer in Richtung der Kontaktfläche. Der Kontaktlöser trägt den Fuß beim Aufsetzen.
+Bei seitlichen und rückwärtigen Schritten senkt das Standbein das Becken zusätzlich um bis zu drei Viertel
+des Höhenunterschieds zur Haltung, in der beide Beine ihre Ziele erreichen. Der Anteil wächst mit der
+Schrittrichtung und über die gleiche Zeitspanne. Bei einem Schritt geradeaus reicht der Fuß nach unten,
+während das Becken weiter seine Standhöhe anstrebt.
+
+Nach 71 N s von vorn auf die Brust setzt der erste Fuß bei 30 Hz nach 0,367 statt 0,400 s auf, der
+Schwerpunkt ist beim Aufsetzen 2,5 cm höher. Die Figur fängt sich mit drei Schritten. Nach 62 N s schräg
+auf den Bauch fängt sie sich mit einem Schritt und steht nach 1,80 s. Der neue `FigureLandingReachTest`
+prüft beide 30-Hz-Treffer sowie 96 N s seitlich auf den Bauch bei 60 Hz, mit ±1 mm Treffpunktabweichung,
+anschließendem Stand und bitgleichen Verläufen mit einem und vier Threads. Die vorige Fassung scheitert
+am neuen Test. Der vollständige lokale Testsatz besteht.
+
+| Reihe mit nachgebendem Rumpf und Schrittdrehung | Fälle | Vorher | Mit späterem Reichen |
+| --- | ---: | ---: | ---: |
+| 50–89 N s, 30 Hz | 1 920 | 39 | 22 |
+| 50–89 N s, 60 Hz, Mitte und ±1 mm | 5 760 | 1 | 0 |
+| 50–89 N s, 120 Hz | 1 920 | 0 | 0 |
+| 90–138 N s, 60 Hz | 1 200 | 561 | 548 |
+| 40–80 N s auf die obere Brust, 60 Hz | 168 | 0 | 0 |
+
+Bei 30 Hz fängt die Figur 21 bisher gescheiterte Fälle und fällt in vier zuvor gefangenen. Bei harten
+Treffern sind es 31 neu gefangene und 18 neu gescheiterte. Bei den mittleren Treffern im Zentrum sinkt
+die Schrittzahl bei 30/60/120 Hz von 6 536/4 710/4 809 auf 5 142/4 200/4 001. Die 60-Hz-Reihe im Zentrum
+liefert mit einem und vier Threads Hash `18cfaca5`.
+
+Die fünf 60-N-s-Körperproben kommen mit zwei Schritten wieder zum Stand. In der zuletzt auffälligen
+Seitenprobe sinkt die Zeit bis zum Stand von 2,85 auf 1,40 s. Ab einer Sekunde nach diesem Treffer sinkt
+die mittlere Änderung der relativen Drehgeschwindigkeit von Kopf gegen Hals von 0,125 auf 0,011 rad/s
+pro Update. Die Brust dreht in den zwei zentralen Proben um 24,4° und 23,7° gegen das Becken. Daten in
+`build/pelvis-final-*`.
+
+Das Absenken allein ergibt bei vollem Höhenunterschied 42 statt 39 Stürze bei 30 Hz. Das tiefere Fußziel
+allein ergibt 24 bei 30 Hz, bei harten Treffern aber 568 statt 561 und einen mittleren Sturz bei 120 Hz.
+Mit beiden Änderungen und drei Vierteln des Höhenunterschieds ergeben sich die Werte oben.
+
+Alle sechs `figures`-Szenen liefern in drei gepaarten Läufen dieselben Ergebnis-Hashes. Die Physikschritte
+der Stadt mit Figuren lagen mit vier Threads bei 2,12 → 2,11 ms und 2,17 → 2,13 ms, mit einem Thread bei
+6,58 → 6,53 ms. Der Benchmark nutzt die Bibliotheksvorgaben. Die Abfangreihen prüfen das spätere Reichen
+mit aktivierter Schrittdrehung.

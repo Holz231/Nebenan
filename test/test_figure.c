@@ -1123,6 +1123,19 @@ static int FigureEarlyPlantRecoveryTest( void )
 	return CheckOwnBalanceHits( hardBones, hardDirections, hardHits, 2, 60, 1, true, true );
 }
 
+// A foot that reaches the ground late used to start extra steps in these catches. Check the full recovery.
+static int FigureLandingReachTest( void )
+{
+	const int bones[] = { nb_humanoidBelly, nb_humanoidChest };
+	const int directions[] = { 1, 0 };
+	const float hits[] = { 62.0f, 71.0f };
+	const int hardBone = nb_humanoidBelly;
+	const int hardDirection = 3;
+	const float hardHit = 96.0f;
+	ENSURE( CheckOwnBalanceHits( bones, directions, hits, 2, 30, 1, true, true ) == 0 );
+	return CheckOwnBalanceHits( &hardBone, &hardDirection, &hardHit, 1, 60, 1, true, true );
+}
+
 // Isolate the catch-step planner with the pelvis toward the stance foot and a fast backward drift. A reachable target
 // must retain the side separation; an impossible replan must leave the previous target alone. Check both feet,
 // different body sizes, headings and positions, with identical targets and joint poses across thread counts.
@@ -4575,6 +4588,7 @@ int FigureTest( void )
 	RUN_TEST( FigureLateralSwingRecoveryTest );
 	RUN_TEST( FigureLandingSettleTest );
 	RUN_TEST( FigureEarlyPlantRecoveryTest );
+	RUN_TEST( FigureLandingReachTest );
 	RUN_TEST( FigureStepReachGapTest );
 	RUN_TEST( FigureStepDelayTest );
 	RUN_TEST( FigureSupportMiddleTest );
