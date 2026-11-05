@@ -1192,7 +1192,7 @@ static uint32_t MuscleCatch( int threadCount, float impulse )
 }
 
 // The throw of 90 N s on a figure with muscles ends in the same bits with one thread and with four, on every platform
-#define NB_EXPECTED_MUSCLE_HASH 0x6a51e5e9u
+#define NB_EXPECTED_MUSCLE_HASH 0x381078c2u
 
 // The muscles, see nbFigureMotors::muscles and nbUpdateMuscles. A figure with muscles hit while it stands catches itself
 // with the strength the balance asks for at once: every joint of its trunk and its legs at the full torque of the motors,
@@ -1467,7 +1467,7 @@ static int FigureSpreadTest( void )
 // at the full stiffness that catches hits of 60 N s from four sides keeps its head calm: its turn against the neck
 // changes by about a radian per second from one step to the next and reverses in a fifth of the steps, and it stands
 // again after every catch. Without the armature the turn changes by over ten times that and reverses in every other
-// step.
+// step. Both without the damping of neck and head while catching, see nbBoneDef::catchDamping, which calms them too.
 static int FigureNeckTest( void )
 {
 	float jitter[2] = { 0.0f, 0.0f };
@@ -1482,6 +1482,8 @@ static int FigureNeckTest( void )
 			CreateFigureScene( &scene, 1 );
 			scene.bones[nb_humanoidNeck].stiffness = 1.0f;
 			scene.bones[nb_humanoidHead].stiffness = 1.0f;
+			scene.bones[nb_humanoidNeck].catchDamping = 1.0f;
+			scene.bones[nb_humanoidHead].catchDamping = 1.0f;
 			if ( pass == 1 )
 			{
 				scene.bones[nb_humanoidNeck].armature = 0.0f;
@@ -1522,6 +1524,76 @@ static int FigureNeckTest( void )
 			jitter[0], 100.0f * flips[0], standing[0], jitter[1], 100.0f * flips[1], standing[1] );
 	ENSURE( jitter[0] < 2.0f && flips[0] < 0.25f && standing[0] == 4 );
 	ENSURE( jitter[1] > 5.0f * jitter[0] && flips[1] > 0.4f );
+	return 0;
+}
+
+// While the humanoid catches itself, its neck and head take eight times the damping, see nbBoneDef::catchDamping: after
+// hits of 60 N s on the upper chest from four sides the head turns against the neck less than half as fast at most,
+// changes that turn from one step to the next by less, and still goes along with the hit, and the figure stands again
+// after every catch.
+static int FigureCatchDampingTest( void )
+{
+	float peak[2] = { 0.0f, 0.0f };
+	float jitter[2] = { 0.0f, 0.0f };
+	float swing[2] = { 0.0f, 0.0f };
+	int standing[2] = { 0, 0 };
+	for ( int pass = 0; pass < 2; ++pass )
+	{
+		int steps = 0;
+		for ( int d = 0; d < 4; ++d )
+		{
+			FigureScene scene;
+			CreateFigureScene( &scene, 1 );
+			if ( pass == 1 )
+			{
+				scene.bones[nb_humanoidNeck].catchDamping = 1.0f;
+				scene.bones[nb_humanoidHead].catchDamping = 1.0f;
+			}
+			nbFigureId figure = AddFigure( &scene, b3Vec3_zero, 0.0f );
+			StepFigures( &scene, 30 );
+			b3Vec3 direction = b3RotateVector( b3MakeQuatFromAxisAngle( b3Vec3_axisY, 0.5f * B3_PI * (float)d ),
+											   (b3Vec3){ 0.0f, 0.0f, -1.0f } );
+			ENSURE( HitChest( figure, 1, b3MulSV( 60.0f, direction ) ) );
+			b3BodyId chest = nbFigure_GetBody( figure, nb_humanoidChest );
+			b3BodyId neck = nbFigure_GetBody( figure, nb_humanoidNeck );
+			b3BodyId head = nbFigure_GetBody( figure, nb_humanoidHead );
+			b3Quat rest = b3InvMulQuat( b3Body_GetRotation( chest ), b3Body_GetRotation( head ) );
+			b3Vec3 last = b3Vec3_zero;
+			for ( int i = 0; i < 600; ++i )
+			{
+				StepFigures( &scene, 1 );
+				if ( nbFigure_GetState( figure ) != nb_figureBalancing )
+				{
+					break;
+				}
+				b3Vec3 turn = b3Sub( b3Body_GetAngularVelocity( head ), b3Body_GetAngularVelocity( neck ) );
+				if ( i < 60 )
+				{
+					b3Quat move =
+						b3MulQuat( b3InvMulQuat( b3Body_GetRotation( chest ), b3Body_GetRotation( head ) ), b3Conjugate( rest ) );
+					peak[pass] = b3MaxFloat( peak[pass], b3Length( turn ) );
+					swing[pass] = b3MaxFloat( swing[pass], 2.0f * acosf( b3ClampFloat( fabsf( move.s ), 0.0f, 1.0f ) ) );
+				}
+				if ( i > 0 )
+				{
+					jitter[pass] += b3Length( b3Sub( turn, last ) );
+					steps += 1;
+				}
+				last = turn;
+			}
+			standing[pass] += nbFigure_GetState( figure ) == nb_figureAnimated ? 1 : 0;
+			DestroyFigureScene( &scene );
+		}
+		jitter[pass] /= (float)b3MaxInt( steps, 1 );
+	}
+	printf( "  catching 60 N s: the head turns against the neck by up to %.2f instead of %.2f rad/s, changes that by %.3f "
+			"instead of %.3f rad/s from one step to the next, swings up to %.1f instead of %.1f deg against the chest, standing "
+			"after %d and %d of 4\n",
+			peak[0], peak[1], jitter[0], jitter[1], swing[0] * 180.0f / B3_PI, swing[1] * 180.0f / B3_PI, standing[0],
+			standing[1] );
+	ENSURE( peak[0] < 0.6f * peak[1] && jitter[0] < 0.7f * jitter[1] );
+	ENSURE( swing[0] > 0.1f );
+	ENSURE( standing[0] == 4 );
 	return 0;
 }
 
@@ -3349,14 +3421,16 @@ static int FigureWallTest( void )
 // feet, see nbPelvisTurn, in 10 and 8, once of them standing on a board of the wall, 5 cm over the ground, and the
 // second pattern no longer among them. Round 56 gets up behind the wall in 11 and again after the block in 9, and round
 // 57, whose soles grip more, see NB_SOLE_FRICTION, in 9 and 8, the second pattern among them again, and in the third it
-// lies 1.15 m behind the wall, past the pieces. Until round 40 the test took the second pattern, from round 41 the
-// eleventh, from round 44 the second again, from round 53 the third, and since round 57 the second again, where it gets
-// up in both.
+// lies 1.15 m behind the wall, past the pieces. Round 59, whose neck and head take more damping while the figure
+// catches itself, see nbBoneDef::catchDamping, gets up behind the wall in 10 and again after the block in 7, the second
+// pattern no longer among them. Until round 40 the test took the second pattern, from round 41 the eleventh, from
+// round 44 the second again, from round 53 the third, from round 57 the second again, and since round 59 the fifth,
+// where it gets up in both.
 static int FigureWallDebrisTest( void )
 {
 	FigureScene scene;
 	CreateFigureScene( &scene, 1 );
-	nbDestructibleId wall = AddWall( &scene, true, 0.05f, 1 );
+	nbDestructibleId wall = AddWall( &scene, true, 0.05f, 4 );
 	nbFigureDef def = nbDefaultFigureDef();
 	def.rig = &scene.rig;
 	def.standHeight = scene.standHeight;
@@ -3425,7 +3499,7 @@ static int FigureWallDebrisTest( void )
 
 // The throw through the wall of boards ends in the same bits with one thread and with four, on every platform, in the
 // second fracture pattern, which the figure breaks through
-#define NB_EXPECTED_WALL_HASH 0xf62402d5u
+#define NB_EXPECTED_WALL_HASH 0xcf377c8cu
 
 static int FigureWallDeterminismTest( void )
 {
@@ -3485,10 +3559,10 @@ static int ThinBoardTest( void )
 }
 
 // The hash of the figure scenario on every platform, see RunFigureScenario
-#define NB_EXPECTED_FIGURE_HASH 0xee25a571u
+#define NB_EXPECTED_FIGURE_HASH 0x263ce4a4u
 
 // See RunFollowScenario
-#define NB_EXPECTED_FOLLOW_HASH 0x0ff9d3e6u
+#define NB_EXPECTED_FOLLOW_HASH 0x3342f91cu
 
 static int FigureFollowDeterminismTest( void )
 {
@@ -3535,6 +3609,7 @@ int FigureTest( void )
 	RUN_TEST( FigureSpreadTest );
 	RUN_TEST( FigureTwistTest );
 	RUN_TEST( FigureNeckTest );
+	RUN_TEST( FigureCatchDampingTest );
 	RUN_TEST( FigurePushTest );
 	RUN_TEST( FigureHoldArmTest );
 #if defined( B3_HAS_SWING_LIMITS )

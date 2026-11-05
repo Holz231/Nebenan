@@ -255,6 +255,7 @@ nbBoneDef nbDefaultBoneDef( void )
 	def.strength = 1.0f;
 	def.stiffness = 1.0f;
 	def.damping = 1.0f;
+	def.catchDamping = 1.0f;
 	def.armature = 0.0f;
 	def.maxSpeed = 0.0f;
 	def.flinch = 0.0f;
@@ -486,6 +487,13 @@ float nbMakeHumanoidBones( float height, float mass, nbBoneDef* bones, int capac
 	head.stiffness = 0.3f;
 	neck.armature = 0.001f * m * s * s;
 	head.armature = 0.001f * m * s * s;
+
+	// While the figure catches itself, a hit throws the chest about, and neck and head swung on between their springs,
+	// up to 5.3 rad/s against each other after 60 N s on the upper chest. Damped eight times as much there, they turn up
+	// to 2.8 rad/s and swing out less than half as much, and the head still goes along with the hit. The idea came from
+	// the branch ragdoll-sol, see the roadmap, F48, round 59.
+	neck.catchDamping = 8.0f;
+	head.catchDamping = 8.0f;
 
 	// A light hit swings the neck and the head after the roadmap of the game, 26.4 and 26.5, the head the farthest and
 	// the fastest and a little past its pose, see nbBoneDef::flinch
@@ -1355,6 +1363,10 @@ static void nbApplyMuscles( nbFigure* f, int index, bool on, float factor )
 	}
 
 	float dampingRatio = b3MaxFloat( 0.0f, f->def.motors.dampingRatio ) * bone->damping;
+	if ( f->state == nb_figureBalancing )
+	{
+		dampingRatio *= bone->catchDamping;
+	}
 	if ( dampingRatio != bone->springDamping )
 	{
 		if ( hinge )
@@ -4658,6 +4670,7 @@ nbFigureId nbCreateFigure( nbWorldId worldId, const nbFigureDef* def )
 		bone->brace = 1.0f;
 		bone->stiffness = b3MaxFloat( 0.0f, boneDef->stiffness );
 		bone->damping = b3MaxFloat( 0.0f, boneDef->damping );
+		bone->catchDamping = b3MaxFloat( 0.0f, boneDef->catchDamping );
 		bone->armature = NB_JOINT_ARMATURE ? b3MaxFloat( 0.0f, boneDef->armature ) : 0.0f;
 		bone->maxSpeed = b3MaxFloat( 0.0f, boneDef->maxSpeed );
 		bone->drive = 0.0f;

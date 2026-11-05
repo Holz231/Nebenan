@@ -59,11 +59,13 @@ typedef struct nbBone
 	float swingInverseTans[4];
 	float swingInside;
 
-	// Scales the torque limit, the stiffness and the damping ratio of the motors for this joint, and the rotational
-	// inertia added to the turn of its bone against its parent, see nbBoneDef::armature
+	// Scales the torque limit, the stiffness and the damping ratio of the motors for this joint, the damping ratio once
+	// more while the figure catches itself, see nbBoneDef::catchDamping, and the rotational inertia added to the turn of
+	// its bone against its parent, see nbBoneDef::armature
 	float strength;
 	float stiffness;
 	float damping;
+	float catchDamping;
 	float armature;
 	float mass;
 

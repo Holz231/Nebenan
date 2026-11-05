@@ -1241,6 +1241,35 @@ liegen. In der Stadt mit Figuren stürzen 5 statt 6 Stockwerke ein, bei bis zu 3
 stehen 31 statt 29 Figuren. Ein Bild der Stadt mit Figuren kostet das 0,97- und 0,99-fache, mit einem Thread das
 0,92-fache, bei anderer Arbeit und im Rauschen der VM.
 
+**Ideen von `ragdoll-sol`.** ChatGPT Sol hat auf der Branch `ragdoll-sol` von `active-ragdoll-51` aus weitergearbeitet.
+Seit `active-ragdoll-59` sind davon vier Ideen in der Bibliothek, jede auf `active-ragdoll-58` nachgebaut und über alle
+Tabellen gemessen. Solange eine Figur sich fängt, dämpfen die Gelenke von Hals und Kopf des Menschen der Bibliothek
+achtmal so stark, `nbBoneDef::catchDamping`: Nach 60 N s auf die Brust dreht sich der Kopf gegen den Hals mit höchstens
+2,8 statt 5,3 rad/s, schwingt weniger als halb so stark nach und geht mit dem Treffer weiter mit. Der erste Schritt mit
+eigener Kraft geht mit dem Fuß auf der Seite, zu der die Figur fällt: Der Fuß auf der anderen Seite darf die Beine nicht
+kreuzen und trat zu kurz zur Seite. Steht sie mit der Stütze durch die Beine nach dem Fangen, drücken die Beine den
+Boden um die Geschwindigkeit des Schwerpunkts mal 0,6 s vor ihm, und der Boden bremst die Restbewegung. Und bei 30 Hz
+oder langsamer tritt sie nach einem Update mit dem Capture Point außerhalb der Stützfläche statt nach zweien, bei 60 Hz
+rechnet sie dabei wie vorher. Von den 4 × 5 264 Treffern fallen mit eigener Kraft 3 752 statt 3 865, von den mittleren
+18 statt 40, mit der Stütze gegen die Welt, dem Standard, 1 532 statt 1 505, 28 harte mehr für den ruhigeren Kopf, und
+ohne Stütze 5 258 statt 5 389, von den mittleren aber 189 statt 149. Von den leichten fällt mit allen drei Stützen
+keiner. Nach den mittleren Treffern steht die Figur mit eigener Kraft nach 2,03 statt 2,24 s und 2,36 statt 2,65
+Schritten still. Mit `stepRate` 30 fällt sie etwa doppelt so oft wie mit 60, auf den neun Tabellen auf Brust und Bauch
+jetzt mit eigener Kraft 1 465 statt 1 739 von 4 464 Treffern und mit der Stütze gegen die Welt 409 statt 567, siehe F81
+der Roadmap. Den Rumpf, der nachgibt, so wie Sol ihn baut, übernimmt die Bibliothek nicht: Er beugt sich sichtbar
+weiter, bis 40 statt 17°, aber mit eigener Kraft fielen 5 991 statt 3 865 und leichte Treffer fielen, siehe F82. Ein
+Spiel ruft dafür nichts Neues auf, ein eigenes Rig setzt `catchDamping` an einem leichten Knochen mit einem schwereren
+darauf. Siehe „Ideen von ragdoll-sol zusammen“ und die Zeilen danach in [Optimierungen.md](docs/Optimierungen.md).
+Gepaart gegen `active-ragdoll-58`, zwei Läufe im Wechsel mit vier Threads und einer mit einem, rechnen alle Szenen ohne
+Figuren, die 50 Kämpfer und die 20 Ragdolls im Schutt dasselbe wie vorher, und die Szenen mit getroffenen Figuren enden
+anders, mit einem und mit vier Threads gleich. Die einzelne Figur hinter ihrer Mauer steht am Ende wie vorher, von den
+10 hinter ihren Mauern werden 4 statt 3 umgeworfen, als die Mauern brechen, keine statt einer fängt sich, und am Ende
+stehen wie vorher alle, von den 50 werden 28 statt 27 umgeworfen, 5 statt 7 fangen sich, und am Ende stehen wie vorher
+49, eine steht gerade auf. In der Stadt mit Figuren stürzen 6 statt 5 Stockwerke ein, mit bis zu 86 968 statt 35 654
+Kontakten, die Balance macht 27 statt 25 Schritte, fängt 9 statt 7, 22 werden wie vorher umgeworfen, und am Ende stehen
+29 statt 31, eine fängt sich noch, und zwei liegen. Ein Bild der Stadt mit Figuren kostet das 1,11- und 1,14-fache, mit
+einem Thread das 1,19-fache, bei mehr Arbeit mit dem sechsten Stockwerk.
+
 **Drücken.** Drückt ein Körper eine stehende Figur langsam, ein Stock, eine Hand oder ein Block, und schiebt er dabei
 einen ihrer Knochen mit mindestens `pushForce` (Standard 40 N) seitlich, bei zwei Prüfungen hintereinander, also ein
 paar Schritte lang, fängt sich ein Mensch der Bibliothek, statt eine Wand zu bleiben: Seine Knochen werden dynamisch,
@@ -2047,6 +2076,7 @@ beim Einbinden nicht gebaut.
 | Knochen (`nbBoneDef`) | Standard | Wirkung |
 | --- | --- | --- |
 | `armature` | 0 | Drehträgheit in kg m², die das Gelenk der Drehung des Knochens gegen seinen Elternknochen hinzufügt, siehe Zusatzträgheit in den Gelenken. Hält einen leichten Knochen zwischen steifen Federn ruhig. Der Mensch der Bibliothek: Hals und Kopf je 1 g m² |
+| `catchDamping` | 1 | So viel mal dämpft das Gelenk, solange die Figur sich fängt, siehe Ideen von `ragdoll-sol`. Beruhigt einen leichten Knochen mit einem schwereren darauf, die ein Treffer herumwirft. Der Mensch der Bibliothek: Hals und Kopf 8 |
 | `maxSpeed` | 0 | Mit Muskeln: Höchstgeschwindigkeit des Gelenks in rad/s, je schneller es sich in seine Zugrichtung dreht, desto schwächer zieht es, nach der Kurve von Hill. Null zieht bei jeder Geschwindigkeit gleich. Der Mensch der Bibliothek: Rumpf 25 rad/s, Arme und Beine keine |
 | `lowerSwingX`, `upperSwingX`, `lowerSwingY`, `upperSwingY` | 0 | Kugelgelenk: wie weit der Knochen in jede der vier Richtungen um die x- und die y-Achse seines Gelenkrahmens schwingen darf, in Radiant, dazwischen eine Ellipse, bis 0,95 π, siehe Gelenke wie beim Menschen. Alle null nehmen `coneAngle` in jede Richtung, bis 0,5 π. Der Mensch der Bibliothek: Schulter 160° nach vorn und zur Seite, 40° zurück und hinein, Hüfte 135° nach vorn, 20° zurück, 45° hinaus und 25° hinein |
 | `friction` | 0 | Reibung der Form des Knochens, null nimmt die des Rigs. Zwei Formen, die sich berühren, reiben mit der Wurzel aus dem Produkt ihrer Reibungen. Der Mensch der Bibliothek: Füße 0,9 wie eine Gummisohle auf trockenem Beton, sonst die 0,6 des Rigs |

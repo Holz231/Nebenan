@@ -1106,6 +1106,12 @@ typedef struct nbBoneDef
 	/// Scales the damping ratio of the motors for this joint, 1 by default
 	float damping;
 
+	/// Scales the damping ratio of the motors for this joint once more while the figure catches itself, see
+	/// nb_figureBalancing, 1 by default. A hit throws the chest of a figure that catches itself about, and a light bone on
+	/// it with a heavier one on top, like the neck with the head, swings on between their springs. The humanoid of the
+	/// library takes 8 at its neck and its head, see nbMakeHumanoidBones.
+	float catchDamping;
+
 	/// With nbFigureMotors::muscles, how fast the muscles of this joint can turn it, in radians per second, after the
 	/// muscle model of Hill (1938): the faster the joint turns the way they pull, the less they pull, nothing at this
 	/// speed, and turned against them they hold up to nbFigureMotors::brakeStrength times as much. Zero, the default, puts

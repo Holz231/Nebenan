@@ -33,10 +33,20 @@
 // NB_STEP_URGENT, in meters for the humanoid of 1.8 m: two updates keep a figure that only sways from stepping, a hit
 // throws the capture point far out at once, and without the hold against the world a figure that waits an update for it
 // falls on. Of the 1 920 hits on chest and belly from 50 to 89 N s 50 fell instead of 110, see the roadmap, F61, round
-// 49.
+// 49. An update that spans the time of NB_DANGER_UPDATES updates at 60 Hz or more, at a step rate of 30 Hz or less,
+// steps after one: at 30 Hz of the 9 x 496 hits on chest and belly with the hold against the world 418 instead of 567
+// fell, with the hold through the legs 1 716 instead of 1 739. The idea came from the branch ragdoll-sol, see round 59.
 #define NB_STEP_MARGIN 0.03f
 #define NB_DANGER_UPDATES 2
 #define NB_STEP_URGENT 0.1f
+
+// The first step of a catch with the figure's own strength goes with the foot on the side its capture point leaves the
+// support to: the foot on the other side adds this share of how far the capture point lies beyond the step margin on
+// the far side to its score, see nbStartCatchStep. The pendulum often found that foot best, but it must not cross the
+// legs and stepped too short to the side. With a quarter, of the 4 x 5 264 hits on chest, belly, head and limbs with
+// the hold through the legs 3 731 fell instead of 3 865, of those from 50 to 89 N s 14 instead of 40, with a half
+// 3 767 and with a whole 3 810. The idea came from the branch ragdoll-sol, see the roadmap, F61, round 59.
+#define NB_FIRST_STEP_SIDE 0.25f
 
 // A step: the farthest the ankle lands from the hip over the ground, in meters, its time in seconds, how high the foot
 // lifts, in meters, and the most steps in a row before the figure gives up and falls. Five: rowing arms give a fourth
@@ -200,6 +210,13 @@
 #define NB_CALM_SPEED 0.15f
 #define NB_CALM_TILT 0.3f
 #define NB_CALM_TIME 0.5f
+
+// Standing after a catch with the hold through the legs, the legs press the ground ahead of the center of mass by its
+// velocity times this time, in seconds, see nbCarryBody, so the ground brakes the sway that is left. After the hits of
+// 50 to 89 N s on chest and belly the figure stood calm after 2.10 instead of 2.24 s and 2.51 instead of 2.65 steps on
+// average, after harder hits after 2.84 instead of 2.96 s, with 0.3 s after 2.19 and 2.92 s and with 0.12 s as before.
+// The idea came from the branch ragdoll-sol, see the roadmap, F61, round 59.
+#define NB_STAND_BRAKE 0.6f
 
 // A figure that has caught itself for this long without coming to rest, and without anything pushing it, falls, in
 // seconds. With a foot under a block of rubble a figure stepped with the other one again and again, every 0.7 s for as
@@ -1260,6 +1277,20 @@ static bool nbStartCatchStep( const nbWorld* world, int index, nbFigure* f, nbBa
 
 		// Near ties go to the foot that did not step last, so the figure steps with both feet in turn
 		float score = residual + ( b->stepCount > 0 && foot == b->lastFoot ? 0.03f : 0.0f );
+
+		// The first step with the figure's own strength goes to the side it falls to, see NB_FIRST_STEP_SIDE, unless the
+		// other foot has the only step that does not give up
+		if ( b->ownStrength && b->stepCount == 0 )
+		{
+			if ( residual > NB_GIVE_UP * b->scale )
+			{
+				continue;
+			}
+			b3Vec3 left = b3Cross( b->up, b->forward );
+			float lateral = b3Dot( nbFlat( b3Sub( b->capture, b->supportMiddle ), b->up ), left );
+			float side = foot == 0 ? 1.0f : -1.0f;
+			score += NB_FIRST_STEP_SIDE * b3MaxFloat( -side * lateral - NB_STEP_MARGIN * b->scale, 0.0f );
+		}
 		if ( score < bestScore - 1.0e-4f )
 		{
 			bestFoot = foot;
@@ -1577,9 +1608,14 @@ void nbEndBalance( nbFigure* f )
 // leg carries all of the body while the other swings. Two legs on the ground share it by where its center lies between
 // their ankles. A spring pushes with its rotational mass, see nbJointSpringHertz, times the square of its frequency, and
 // it keeps its limit, so no joint pulls harder than its muscles.
+// Standing after a catch with the hold through the legs, the legs press the ground ahead of the center by its velocity
+// times NB_STAND_BRAKE instead, so the ground brakes what is left of its sway.
 static void nbCarryBody( const nbFigure* f, const nbBalancer* b, b3Quat* pose )
 {
 	float share[2] = { 0.0f, 0.0f };
+	bool brake = b->ownStrength && b3Joint_IsValid( b->uprightLegs[0] ) && b->stepping == false;
+	b3Vec3 ahead = brake ? b3MulSV( NB_STAND_BRAKE, nbFlat( b->velocity, b->up ) ) : b3Vec3_zero;
+	b3Vec3 pressed = b3Add( b->center, ahead );
 	b3Vec3 ankles[2] = { nbAnkle( f, 0 ), nbAnkle( f, 1 ) };
 	if ( b->stepping )
 	{
@@ -1593,7 +1629,7 @@ static void nbCarryBody( const nbFigure* f, const nbBalancer* b, b3Quat* pose )
 		float right = 0.5f;
 		if ( length2 > 1.0e-6f )
 		{
-			right = b3ClampFloat( b3Dot( nbFlat( b3Sub( b->center, ankles[0] ), b->up ), across ) / length2, 0.0f, 1.0f );
+			right = b3ClampFloat( b3Dot( nbFlat( b3Sub( pressed, ankles[0] ), b->up ), across ) / length2, 0.0f, 1.0f );
 		}
 		share[0] = 1.0f - right;
 		share[1] = right;
@@ -1634,8 +1670,8 @@ static void nbCarryBody( const nbFigure* f, const nbBalancer* b, b3Quat* pose )
 			continue;
 		}
 
-		// Where the ground pushes the foot: the point of the sole under the center of the body, at most the edge of the
-		// sole, whose corners lie in the frame of the foot
+		// Where the ground pushes the foot: the point of the sole under the center of the body, or ahead of it to brake,
+		// at most the edge of the sole, whose corners lie in the frame of the foot
 		b3BodyId foot = f->bones[nb_feet[leg]].bodyId;
 		b3Vec3 low = b->sole[leg][0];
 		b3Vec3 high = b->sole[leg][0];
@@ -1644,7 +1680,7 @@ static void nbCarryBody( const nbFigure* f, const nbBalancer* b, b3Quat* pose )
 			low = b3Min( low, b->sole[leg][k] );
 			high = b3Max( high, b->sole[leg][k] );
 		}
-		b3Vec3 local = b3Max( low, b3Min( high, b3Body_GetLocalPoint( foot, b3ToPos( body ) ) ) );
+		b3Vec3 local = b3Max( low, b3Min( high, b3Body_GetLocalPoint( foot, b3ToPos( b3Add( body, ahead ) ) ) ) );
 		b3Vec3 pressure = b3ToVec3( b3Body_GetWorldPoint( foot, local ) );
 
 		// The push of the leg from there toward the center of the body, as high as its share of the weight
@@ -1949,7 +1985,8 @@ nbBalanceResult nbUpdateBalance( nbWorld* world, int index, nbFigure* f, float t
 			b->dangerUpdates = NB_DANGER_UPDATES;
 		}
 		bool urgent = b->ownStrength && b->dangerUpdates >= 1 && b->captureMargin > NB_STEP_URGENT * b->scale;
-		if ( ( b->dangerUpdates >= NB_DANGER_UPDATES || urgent ) && nbStartCatchStep( world, index, f, b ) == false )
+		bool slow = b->dangerUpdates >= 1 && timeStep >= (float)NB_DANGER_UPDATES / 60.0f;
+		if ( ( b->dangerUpdates >= NB_DANGER_UPDATES || urgent || slow ) && nbStartCatchStep( world, index, f, b ) == false )
 		{
 			return nb_balanceFell;
 		}
