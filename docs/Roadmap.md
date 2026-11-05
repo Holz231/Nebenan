@@ -2426,6 +2426,12 @@ fällt 1 statt 8 von 5 760 mittleren Treffern. Der Vergleich mit Stand 64 zeigt 
 und harten Treffern. Siehe „Nach dem Aufsetzen kurz auf beiden Füßen bleiben“ und „Vergleich mit Stand 64“
 in [Optimierungen](Optimierungen.md).
 
+**F61/F79, belastetes Fußziel:** Nach der Idee aus Stand 64 behält der Standfuß beim Entlasten früh im
+Fangschritt seine letzte belastete Zielposition. Nach 55 % der Schrittdauer folgt das Ziel wieder der
+aktuellen Fußposition. Bei 30 Hz fallen 39 statt 69 von 1 920 mittleren Treffern. Bei 60 Hz fallen
+561 statt 594 von 1 200 harten Treffern. Siehe „Das belastete Fußziel in der ersten Schritthälfte halten“
+in [Optimierungen](Optimierungen.md).
+
 ## Kleinere Punkte
 
 Mit niedriger Priorität vorgemerkt, sie sparen vor allem Arbeit, die schon parallel läuft. Der Gewinn gilt mit einem

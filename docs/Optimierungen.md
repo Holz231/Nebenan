@@ -3462,3 +3462,45 @@ Fußzielpunkt am Ende des Schritts senkt die Schrittzahl bei 60 Hz von 4 744 auf
 bestehende Erholungsproben. Das Ziel des Standfußes an seiner letzten Position mit mindestens 70 % Last
 zu halten, senkt die harten Stürze von 594 auf 547, kostet aber zwei mittlere Treffer im Zentrum und
 scheitert an `FigureLandingSettleTest`. Beide Ideen bleiben vorerst Versuche im Vergleichsbuild.
+
+## Das belastete Fußziel in der ersten Schritthälfte halten, F61 und F79, 5. November 2026
+
+Der Versuch aus Stand 64, den Standfuß während des ganzen Schritts an seiner letzten belasteten Position
+zu halten, fing mehr harte Treffer, scheiterte aber am neuen Test für die Doppelstütze. Jetzt nutzt die
+Bibliothek das gespeicherte Fußziel nur bis 55 % der Schrittdauer, solange der Fuß weniger als 70 % des
+Körpergewichts trägt. Danach folgt das Ziel wieder dem Fuß, während das andere Bein aufsetzt. Die Regel
+gilt bei Schrittdrehung mit Beinabstützung. Für die Last zählt der nach oben gerichtete Anteil des
+Kontaktimpulses unter dem Fuß. Auf beweglichen Körpern folgt das Ziel der aktuellen Fußposition.
+
+Nach 92 N s von vorn auf den Bauch kippte die Figur vorher im dritten Schritt. Jetzt fängt sie sich
+mit vier Schritten in 2,37 s. Nach 54 N s schräg auf die Rippen sank sie bei 30 Hz unter die Fallhöhe;
+jetzt fängt sie sich mit drei Schritten in 2,80 s. `FigureEarlyPlantRecoveryTest` prüft zwei mittlere
+und zwei harte Treffer bei 30 beziehungsweise 60 Hz mit ±1 mm Treffpunktabweichung. Jede Probe muss
+sich fangen und stehen bleiben. Die Verläufe mit einem und vier Threads sind bitgleich. Die vorherige
+Bibliothek scheitert am neuen Test. Der vollständige lokale Testsatz mit der neuen Bibliothek besteht.
+
+| Reihe mit nachgebendem Rumpf und Schrittdrehung | Fälle | Kurze Doppelstütze | Mit gehaltenem Fußziel |
+| --- | ---: | ---: | ---: |
+| 50–89 N s, 30 Hz | 1 920 | 69 | 39 |
+| 50–89 N s, 60 Hz, Mitte und ±1 mm | 5 760 | 1 | 1 |
+| 50–89 N s, 120 Hz | 1 920 | 0 | 0 |
+| 90–138 N s, 60 Hz | 1 200 | 594 | 561 |
+| 40–80 N s auf die obere Brust, 60 Hz | 168 | 0 | 0 |
+
+Bei 30 Hz fängt die Figur 44 bisher gescheiterte Fälle und fällt in 14 zuvor gefangenen. Bei den harten
+Treffern sind es 49 neu gefangene und 16 neu gescheiterte. Bei den mittleren 60-Hz-Treffern wechselt
+der einzelne Fehlschlag. Im Zentrum liefert die Reihe mit einem und vier Threads Hash `0aa5fd45`.
+Die fünf 60-N-s-Körperproben erholen sich.
+Nach den beiden zentralen Treffern dreht die Brust um 25,6° und 23,5° gegen das Becken. Nach einem der
+seitlichen 60-N-s-Treffer dauert das Abfangen länger, 2,85 statt 1,62 s, und der Kopf schwingt in dieser
+Probe länger nach. Die bestehenden Kopfprüfungen bestehen.
+
+Geprüft wurden auch ein begrenzter Weg zum alten Fußziel, eine Mischung nach Last, Festhalten nur in
+späten Phasen oder späteren Schritten und ein gleitender Übergang. Sie fingen weniger gut oder
+scheiterten an bestehenden Proben. Festhalten bis 75 % der Schrittdauer lässt beispielsweise einen
+mittleren 60-Hz-Fall und eine Doppelstützenprobe fallen. Daten: `build/plant-adapt-*`, `build/plant-final-*`.
+
+In drei gepaarten Benchmarkläufen liefern alle sechs `figures`-Szenen dieselben Ergebnis-Hashes.
+Die Physikschritte der Stadt mit Figuren lagen mit vier Threads bei 2,98 → 2,88 ms und 2,89 → 2,90 ms,
+mit einem Thread bei 6,69 → 6,82 ms. Der Benchmark nutzt die Bibliotheksvorgaben. Die Abfangreihen oben
+prüfen das gehaltene Fußziel mit aktivierter Schrittdrehung.

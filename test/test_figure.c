@@ -1110,6 +1110,19 @@ static int FigureLandingSettleTest( void )
 	return CheckOwnBalanceHits( bones, directions, &slowHit, 1, 30, 1, true, true );
 }
 
+// Keeping the stance target as the foot unloads early in the swing prevents these catches from sinking or tipping.
+static int FigureEarlyPlantRecoveryTest( void )
+{
+	const int slowBones[] = { nb_humanoidBelly, nb_humanoidRibs };
+	const int slowDirections[] = { 1, 1 };
+	const float slowHits[] = { 60.0f, 54.0f };
+	const int hardBones[] = { nb_humanoidBelly, nb_humanoidLowerChest };
+	const int hardDirections[] = { 0, 2 };
+	const float hardHits[] = { 92.0f, 112.0f };
+	ENSURE( CheckOwnBalanceHits( slowBones, slowDirections, slowHits, 2, 30, 1, true, true ) == 0 );
+	return CheckOwnBalanceHits( hardBones, hardDirections, hardHits, 2, 60, 1, true, true );
+}
+
 // Isolate the catch-step planner with the pelvis toward the stance foot and a fast backward drift. A reachable target
 // must retain the side separation; an impossible replan must leave the previous target alone. Check both feet,
 // different body sizes, headings and positions, with identical targets and joint poses across thread counts.
@@ -4561,6 +4574,7 @@ int FigureTest( void )
 	RUN_TEST( FigureTurningBrakeTest );
 	RUN_TEST( FigureLateralSwingRecoveryTest );
 	RUN_TEST( FigureLandingSettleTest );
+	RUN_TEST( FigureEarlyPlantRecoveryTest );
 	RUN_TEST( FigureStepReachGapTest );
 	RUN_TEST( FigureStepDelayTest );
 	RUN_TEST( FigureSupportMiddleTest );

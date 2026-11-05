@@ -183,6 +183,11 @@
 // Until this part of the step the target of the swinging foot follows the capture point
 #define NB_REPLAN_PHASE 0.6f
 
+// Early in a catch step, keep the last loaded plant on static ground when the stance foot unloads. Once the other
+// foot reaches for landing, let the stance target follow the foot again so the leg can yield with the pelvis.
+#define NB_PLANT_HOLD_PHASE 0.55f
+#define NB_PLANT_LOAD 0.7f
+
 // A swinging foot that touches the ground lands once it is this close to its target, in meters, or the step is over,
 // and slower than this along the ground, in meters per second, so a foot that scuffs the ground on its way does not land
 #define NB_LAND_DISTANCE 0.06f
@@ -709,9 +714,15 @@ void nbInitBalancer( nbFigure* f, float standCenter )
 //----------------------------------------------------------------------------------------------------------------------
 // Measure
 
+typedef struct nbFootSupport
+{
+	float upImpulse;
+	bool movable;
+} nbFootSupport;
+
 // Does a foot stand on something that is not the figure, on ground flat enough? Its contact points give the height of
-// the ground.
-static bool nbFootContact( const nbWorld* world, int index, b3BodyId foot, b3Vec3 up, float* height )
+// the ground and, if requested, the impulse that carried the foot along up.
+static bool nbFootContact( const nbWorld* world, int index, b3BodyId foot, b3Vec3 up, float* height, nbFootSupport* support )
 {
 	b3ContactData contacts[8];
 	int count = b3Body_GetContactData( foot, contacts, 8 );
@@ -728,13 +739,15 @@ static bool nbFootContact( const nbWorld* world, int index, b3BodyId foot, b3Vec
 		{
 			continue;
 		}
+		bool movable = support != NULL && b3Body_GetType( other ) != b3_staticBody;
 
 		for ( int m = 0; m < contact->manifoldCount; ++m )
 		{
 			// The normal points from shape A to shape B, here from the ground to the foot
 			const b3Manifold* manifold = contact->manifolds + m;
 			b3Vec3 normal = footIsA ? b3Neg( manifold->normal ) : manifold->normal;
-			if ( b3Dot( normal, up ) < NB_WALKABLE )
+			float upright = b3Dot( normal, up );
+			if ( upright < NB_WALKABLE )
 			{
 				continue;
 			}
@@ -751,6 +764,11 @@ static bool nbFootContact( const nbWorld* world, int index, b3BodyId foot, b3Vec
 				b3Vec3 anchor = footIsA ? point->anchorA : point->anchorB;
 				sum += b3Dot( b3Add( center, anchor ), up );
 				points += 1;
+				if ( support != NULL )
+				{
+					support->upImpulse += upright * point->totalNormalImpulse;
+					support->movable |= movable;
+				}
 			}
 		}
 	}
@@ -774,7 +792,7 @@ static void nbSoleCorners( const nbBalancer* b, int foot, b3WorldTransform trans
 	}
 }
 
-static void nbMeasure( const nbWorld* world, int index, const nbFigure* f, nbBalancer* b )
+static void nbMeasure( const nbWorld* world, int index, const nbFigure* f, nbBalancer* b, float timeStep, bool* keepPlant )
 {
 	b3Vec3 up = b->up;
 
@@ -825,12 +843,19 @@ static void nbMeasure( const nbWorld* world, int index, const nbFigure* f, nbBal
 	for ( int foot = 0; foot < 2; ++foot )
 	{
 		float height;
-		b->footContact[foot] = nbFootContact( world, index, f->bones[nb_feet[foot]].bodyId, up, &height );
-		if ( b->footContact[foot] )
+		nbFootSupport support = { 0 };
+		bool contact = nbFootContact( world, index, f->bones[nb_feet[foot]].bodyId, up, &height, keepPlant != NULL ? &support : NULL );
+		b->footContact[foot] = contact;
+		if ( contact )
 		{
 			b->footGround[foot] = height;
 			heightSum += height;
 			heightCount += 1;
+		}
+		if ( keepPlant != NULL )
+		{
+			float load = support.upImpulse / timeStep / ( mass * b3MaxFloat( b->gravity, 0.01f ) );
+			keepPlant[foot] = support.movable == false && load < NB_PLANT_LOAD;
 		}
 	}
 	if ( heightCount > 0 )
@@ -1447,7 +1472,7 @@ void nbBeginBalance( nbWorld* world, int index, nbFigure* f )
 	b->stepping = false;
 	b->stepFoot = -1;
 
-	nbMeasure( world, index, f, b );
+	nbMeasure( world, index, f, b, 0.0f, NULL );
 	for ( int leg = 0; leg < 2; ++leg )
 	{
 		b->plant[leg] = nbPlant( f, b, leg );
@@ -1903,7 +1928,10 @@ static void nbRowArms( nbFigure* f, nbBalancer* b, float timeStep, b3Quat* pose 
 nbBalanceResult nbUpdateBalance( nbWorld* world, int index, nbFigure* f, float timeStep, b3Quat* pose )
 {
 	nbBalancer* b = &f->balancer;
-	nbMeasure( world, index, f, b );
+	bool turnStep = f->def.motors.turnWithSteps && b->ownStrength;
+	bool trackLoad = turnStep && timeStep > 0.0f && b3Joint_IsValid( b->uprightLegs[0] );
+	bool keepPlant[2] = { false, false };
+	nbMeasure( world, index, f, b, timeStep, trackLoad ? keepPlant : NULL );
 	bool filterCalm = b->ownStrength && b3Joint_IsValid( b->uprightLegs[0] );
 	float calmSpeed = b->meanSpeed;
 	if ( filterCalm )
@@ -2029,7 +2057,6 @@ nbBalanceResult nbUpdateBalance( nbWorld* world, int index, nbFigure* f, float t
 	// The pose of the clip with the legs of balance
 	b3Vec3 up = b->up;
 	float turn = 0.0f;
-	bool turnStep = f->def.motors.turnWithSteps && b->ownStrength;
 	b3WorldTransform pelvis = b3Body_GetTransform( f->bones[0].bodyId );
 	b3Vec3 pelvisPoint = b3ToVec3( pelvis.p );
 	float standing = b->groundHeight + b->standHeight - NB_KNEE_BEND * b->scale;
@@ -2071,7 +2098,7 @@ nbBalanceResult nbUpdateBalance( nbWorld* world, int index, nbFigure* f, float t
 		// The swinging ankle on an arc to its target, the stance foot planted
 		int foot = b->stepFoot;
 		int stance = 1 - foot;
-		if ( b->footContact[stance] )
+		if ( b->footContact[stance] && ( keepPlant[stance] == false || b->stateTime > NB_PLANT_HOLD_PHASE * NB_STEP_DURATION ) )
 		{
 			b->plant[stance] = nbPlant( f, b, stance );
 		}
@@ -2142,7 +2169,7 @@ nbBalanceResult nbUpdateBalance( nbWorld* world, int index, nbFigure* f, float t
 
 bool nbFootOnGround( const nbWorld* world, int index, const nbFigure* f, int foot, b3Vec3 up, float* height )
 {
-	return nbFootContact( world, index, f->bones[nb_feet[foot]].bodyId, up, height );
+	return nbFootContact( world, index, f->bones[nb_feet[foot]].bodyId, up, height, NULL );
 }
 
 bool nbBalanceStepping( const nbFigure* f )
