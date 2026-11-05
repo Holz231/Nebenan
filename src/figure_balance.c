@@ -189,6 +189,26 @@
 #define NB_HEIGHT_DAMPING 0.1f
 #define NB_MAX_DROP 0.02f
 
+// The balance is tuned at an update every this many seconds, 60 per second, see nbWorldDef::stepRate. At a slower rate
+// the targets of an update hold for longer, and two rules that act against a speed overshot from one update to the next
+// in the stand: the legs that damp the height of the pelvis, see NB_HEIGHT_DAMPING, and the pelvis that moves against
+// the motion of the body while the hold against the world keeps it upright. At 30 Hz the standing figure bobbed up and
+// down from one update to the next, its center of mass rising and sinking by 0.05 to 0.2 m/s in turn, and the half
+// second of calm it needs to stand again never came, see NB_CALM_TIME. Below 60 Hz both act by as much less as an
+// update is longer, so they act as much per update as at 60 Hz, see nbSlowness and nbShiftDamping, the damping of the
+// height only in the stand, as weaker in a step it let more hits fall without a hold. Without a hold the pelvis tips
+// with the body and the move against the motion is all that damps its sway in the stand: below 60 Hz that move acts by
+// as much more, as with less the figure swayed on and stepped again and again. At 60 Hz and faster nothing changes. On
+// the nine tables on chest and belly at four positions of the hit point, 17 856 hits per hold, at 30 Hz 3 781 instead
+// of 3 935 fall with the figure's own strength, 908 instead of 1 472 with the hold against the world and 5 672 instead
+// of 5 861 without a hold, from 50 to 89 N s 72, 11 and 561 instead of 165, 197 and 676, and 18, none and 45 instead of
+// 174, 512 and 268 because they found no rest, at 60 Hz 2 370, 727 and 3 837. Of the 168 light hits none, none and 4
+// instead of 2, 3 and 9 fall at 30 Hz, at 40 Hz none, none and 4 instead of 23, 24 and 10. Damping the height with the
+// mean speed of two updates let 1 487 to 2 938 of the 4 464 hits at the middle position find no rest, a damping held at
+// 0.07 s below 60 Hz let more fall at 20 and 40 Hz, and legs that reach from where the pelvis will be half an update
+// later let more fall. Round 65.
+#define NB_TUNED_STEP ( 1.0f / 60.0f )
+
 // The pelvis stands no higher than the legs reach at this part of their length, so planted feet stay on the ground in a
 // wide stance, and no lower than this part of its height standing
 #define NB_LEG_REACH 0.97f
@@ -1094,14 +1114,34 @@ static b3Vec3 nbPlant( const nbFigure* f, const nbBalancer* b, int leg )
 	return nbAtHeight( nbAnkle( f, leg ), b->up, ground + b->soleHeight[leg] );
 }
 
-// The height the legs hold the pelvis at: the target, lower while the pelvis rises and higher while it sinks, and never
-// so far below the pelvis that the legs would pull the feet off the ground
-static float nbHoldHeight( const nbFigure* f, const nbBalancer* b, float target )
+// The height the legs hold the pelvis at: the target, lower while the pelvis rises and higher while it sinks, by its
+// speed times the damping in seconds, see NB_HEIGHT_DAMPING, and never so far below the pelvis that the legs would pull
+// the feet off the ground
+static float nbHoldHeight( const nbFigure* f, const nbBalancer* b, float target, float damping )
 {
 	b3Vec3 pelvis = b3ToVec3( b3Body_GetPosition( f->bones[0].bodyId ) );
 	float speed = b3Dot( b3Body_GetLinearVelocity( f->bones[0].bodyId ), b->up );
-	float height = target - NB_HEIGHT_DAMPING * speed;
+	float height = target - damping * speed;
 	return b3MaxFloat( height, b3Dot( pelvis, b->up ) - NB_MAX_DROP * b->scale );
+}
+
+// How many times an update is longer than the one the balance is tuned at, at least once, see NB_TUNED_STEP
+static float nbSlowness( float timeStep )
+{
+	return b3MaxFloat( 1.0f, timeStep / NB_TUNED_STEP );
+}
+
+// How much the standing pelvis moves against the motion of the body, as a share of what it moves at 60 Hz, see
+// NB_TUNED_STEP: below 60 Hz by as much less as an update is longer while the hold against the world keeps the pelvis
+// upright, by as much more without a hold, as much with the hold through the legs
+static float nbShiftDamping( const nbBalancer* b, float timeStep )
+{
+	float slowness = nbSlowness( timeStep );
+	if ( b3Joint_IsValid( b->upright ) )
+	{
+		return 1.0f / slowness;
+	}
+	return b3Joint_IsValid( b->uprightLegs[0] ) ? 1.0f : slowness;
 }
 
 // The pelvis wanted upright at a point, turned about up by an angle from where the figure faces
@@ -2143,9 +2183,11 @@ nbBalanceResult nbUpdateBalance( nbWorld* world, int index, nbFigure* f, float t
 			}
 		}
 
-		// Toward the middle of the support and against the motion of the center of mass, like a damped spring
+		// Toward the middle of the support and against the motion of the center of mass, like a damped spring, below 60 Hz
+		// against the motion by less or more, see nbShiftDamping
 		b3Vec3 middle = b->supportCount > 0 ? b->supportMiddle : b3MulSV( 0.5f, b3Add( b->plant[0], b->plant[1] ) );
-		b3Vec3 shift = b3MulSub( b3MulSV( 0.6f, nbFlat( b3Sub( middle, b->center ), up ) ), 0.25f, nbFlat( b->velocity, up ) );
+		b3Vec3 shift = b3MulSub( b3MulSV( 0.6f, nbFlat( b3Sub( middle, b->center ), up ) ), 0.25f * nbShiftDamping( b, timeStep ),
+								 nbFlat( b->velocity, up ) );
 		float length = b3Length( shift );
 		float maxShift = NB_PELVIS_SHIFT * b->scale;
 		if ( length > maxShift )
@@ -2153,7 +2195,8 @@ nbBalanceResult nbUpdateBalance( nbWorld* world, int index, nbFigure* f, float t
 			shift = b3MulSV( maxShift / length, shift );
 		}
 		b3Vec3 point = b3Add( pelvisPoint, shift );
-		float height = nbHoldHeight( f, b, nbReachableHeight( b, point, b->plant, standing ) );
+		float height =
+			nbHoldHeight( f, b, nbReachableHeight( b, point, b->plant, standing ), NB_HEIGHT_DAMPING / nbSlowness( timeStep ) );
 		b->turnScale *= nbExp( -timeStep / NB_TURN_RELAX );
 		turn = nbPelvisTurn( b, b->plant[0], b->plant[1] );
 		b3WorldTransform wanted = nbWantedPelvis( b, nbAtHeight( point, up, height ), b->pelvisShare * turn );
@@ -2209,8 +2252,8 @@ nbBalanceResult nbUpdateBalance( nbWorld* world, int index, nbFigure* f, float t
 		turn = nbStepTurn( b, foot, phase );
 		b->pelvisShare = b->pelvisShareFrom + ( nbStepShare( b ) - b->pelvisShareFrom ) * progress;
 		float pelvisHeight = nbStepPelvisHeight( b, pelvisPoint, foot, phase, standing );
-		b3WorldTransform wanted =
-			nbWantedPelvis( b, nbAtHeight( pelvisPoint, up, nbHoldHeight( f, b, pelvisHeight ) ), b->pelvisShare * turn );
+		b3WorldTransform wanted = nbWantedPelvis(
+			b, nbAtHeight( pelvisPoint, up, nbHoldHeight( f, b, pelvisHeight, NB_HEIGHT_DAMPING ) ), b->pelvisShare * turn );
 		b3WorldTransform swingPelvis = { pelvis.p, nbHalfwayAt( pelvis.q, wanted.q, 0.5f ) };
 		nbLegIK( f, b, foot, swingPelvis, swing, b->footFacing[stance], pose );
 		if ( b->ownStrength )

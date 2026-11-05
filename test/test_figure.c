@@ -1612,6 +1612,43 @@ static int FigureCatchDampingTest( void )
 	return 0;
 }
 
+// A figure that catches itself at a slower rate than 60 Hz stands again, see NB_TUNED_STEP: light hits on the chest
+// after which the standing figure bobbed up and down from one update to the next before round 65 and found no rest for
+// eight seconds, 70 N s at 30 Hz and 56 N s from the side at 40 Hz, with the hold against the world.
+static int FigureSlowRateTest( void )
+{
+	const float rates[2] = { 30.0f, 40.0f };
+	const int directions[2] = { 5, 2 };
+	const float impulses[2] = { 70.0f, 56.0f };
+	for ( int c = 0; c < 2; ++c )
+	{
+		FigureScene scene;
+		CreateFigureScene( &scene, 1 );
+		nbFigureId figure = AddFigure( &scene, b3Vec3_zero, 0.0f );
+		float timeStep = 1.0f / rates[c];
+		int subSteps = nbGetSubStepCount( rates[c] );
+		for ( int i = 0; i < (int)( 0.5f * rates[c] + 0.5f ); ++i )
+		{
+			nbWorld_Step( scene.world, timeStep, subSteps );
+		}
+		b3Vec3 direction = b3RotateVector( b3MakeQuatFromAxisAngle( b3Vec3_axisY, 0.25f * B3_PI * (float)directions[c] ),
+										   (b3Vec3){ 0.0f, 0.0f, -1.0f } );
+		ENSURE( HitChest( figure, 1, b3MulSV( impulses[c], direction ) ) );
+		int steps = 0;
+		while ( nbFigure_GetState( figure ) == nb_figureBalancing && steps < (int)( 10.0f * rates[c] ) )
+		{
+			nbWorld_Step( scene.world, timeStep, subSteps );
+			steps += 1;
+		}
+		nbFigureInfo info = nbFigure_GetInfo( figure );
+		printf( "  %.0f N s at %.0f Hz: %s after %.2f s and %d steps\n", impulses[c], rates[c],
+				info.state == nb_figureAnimated ? "standing" : "fallen", (float)steps / rates[c], info.stepCount );
+		ENSURE( info.state == nb_figureAnimated && info.knockdownCount == 0 );
+		DestroyFigureScene( &scene );
+	}
+	return 0;
+}
+
 // The spring of the joint of a bone of a figure in cycles per second, zero without a spring
 static float SpringHertz( nbFigureId figure, int bone )
 {
@@ -3742,6 +3779,7 @@ int FigureTest( void )
 	RUN_TEST( FigureTwistTest );
 	RUN_TEST( FigureNeckTest );
 	RUN_TEST( FigureCatchDampingTest );
+	RUN_TEST( FigureSlowRateTest );
 	RUN_TEST( FigureSoftSpineTest );
 	RUN_TEST( FigurePushTest );
 	RUN_TEST( FigureHoldArmTest );

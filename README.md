@@ -1355,6 +1355,30 @@ Paaren das 1,13-, 0,98-, 1,06- und 1,00-fache, mit einem Thread das 1,11-fache: 
 38 369 Trümmerteilen und 16 744 statt 15 869 wachen Kontakten, und Box3D rechnet entsprechend mehr, das Update der
 Bibliothek kostet mit vier Threads gleich viel.
 
+**Ruhig stehen bei langsamem Takt.** Die Balance ist auf 60 Updates pro Sekunde abgestimmt. Mit `stepRate` 30 halten die
+Ziele eines Updates doppelt so lange, und zwei Regeln, die im Stand gegen eine Geschwindigkeit arbeiten, schossen von
+einem Update zum nächsten über: die Beine, die die Höhe des Beckens dämpfen, und das Becken, das sich gegen die Bewegung
+des Körpers schiebt, solange die Stütze gegen die Welt es aufrecht hält. Die stehende Figur wippte dann von Update zu
+Update auf und ab, ihr Schwerpunkt stieg und sank abwechselnd mit 0,05 bis 0,2 m/s, und die halbe Sekunde Ruhe, die sie
+braucht, um wieder zu stehen, kam acht Sekunden lang nicht, dann gab sie auf und fiel. Seit `active-ragdoll-65` wirken
+beide unter 60 Hz um so viel schwächer, wie ein Update länger dauert, und so pro Update so viel wie bei 60 Hz. Ohne
+Stütze kippt das Becken mit dem Körper, und das Schieben gegen die Bewegung ist alles, was sein Schwanken im Stand
+dämpft: Dort wirkt es unter 60 Hz um so viel stärker, mit weniger schwankte die Figur weiter und trat immer wieder neu.
+Bei 60 Hz und schneller rechnet die Balance bitgleich wie vorher. Auf den neun Tabellen auf Brust und Bauch über vier
+Lagen des Treffpunkts, 17 856 Treffer je Stütze, fallen bei 30 Hz mit eigener Kraft 3 781 statt 3 935, mit der Stütze
+gegen die Welt, dem Standard, 908 statt 1 472 und ohne Stütze 5 672 statt 5 861, von den mittleren 72, 11 und 561 statt
+165, 197 und 676, weil sie keine Ruhe fanden nur noch 18, keiner und 45 statt 174, 512 und 268. Bei 60 Hz fallen auf
+denselben Tabellen 2 370, 727 und 3 837. Von den 168 leichten Treffern fallen bei 30 Hz keiner, keiner und 4 statt 2, 3
+und 9, bei 40 Hz keiner, keiner und 4 statt 23, 24 und 10, bei 60 Hz wie vorher keiner. Am mittleren Treffpunkt fallen
+bei 40 Hz 645, 289 und 1 132 statt 1 071, 1 158 und 1 284 von 4 464 Treffern, bei 20 Hz 1 796, 427 und 2 676 statt 3
+127, 3 074 und 3 594. Harte Treffer fängt die Figur bei 30 Hz weiter seltener als bei 60 Hz: Am mittleren Treffpunkt
+fallen mit eigener Kraft 368 Treffer nur bei 30 Hz, fast alle mit 80 N s und mehr, nach im Mittel 3,9 Schritten, wo die
+Figur sie bei 60 Hz nach 5,3 Schritten fängt, siehe F81 der Roadmap. Ein Spiel ruft dafür nichts Neues auf, es wählt nur
+seinen Takt. Siehe „Ruhig stehen bei langsamem Takt“ und die Zeilen danach in [Optimierungen.md](docs/Optimierungen.md).
+Gepaart gegen `active-ragdoll-64`, drei Läufe im Wechsel mit vier Threads und einer mit einem, rechnet der Benchmark mit
+seinen 60 Hz alle Szenen bitgleich wie vorher, mit denselben Hashes und Zählern, und das Update der Bibliothek kostet in
+der Stadt mit Figuren gleich viel, mit vier Threads das 1,03-, 1,01- und 0,98-fache, mit einem das 0,98-fache.
+
 **Drücken.** Drückt ein Körper eine stehende Figur langsam, ein Stock, eine Hand oder ein Block, und schiebt er dabei
 einen ihrer Knochen mit mindestens `pushForce` (Standard 40 N) seitlich, bei zwei Prüfungen hintereinander, also ein
 paar Schritte lang, fängt sich ein Mensch der Bibliothek, statt eine Wand zu bleiben: Seine Knochen werden dynamisch,
@@ -1816,7 +1840,8 @@ pro Sekunde. Paarsuche, Kollision und Update laufen einmal pro Schritt: 30 Hz ko
 auf der VM 14 bis 29 %, aber Kontakte und Treffer kommen bis zu einen Schritt später, und schnelle Trümmer durchdringen
 einander leichter. 120 Hz ist genauer und kostet 28 bis 44 % mehr. Die Zerstörung verläuft bei jedem Takt etwas anders,
 aber bei jedem mit jeder Zahl von Threads bitgleich. Mit `nbWorld_GetDrawPoses` bewegen sich die Trümmer auch mit 30 Hz
-flüssig.
+flüssig. Die Balance der Figuren ist auf 60 Hz abgestimmt, bei 30 Hz fangen sie sich nach harten Treffern seltener,
+siehe „Ruhig stehen bei langsamem Takt“.
 
 **Zeichnen zwischen zwei Schritten.** Die Physik rechnet in festen Schritten, meist 60 pro Sekunde, gezeichnet wird oft
 öfter, auf einem Monitor mit 144 Hz zwei- bis dreimal pro Schritt. Mit der Lage nach dem letzten Schritt bleiben die
