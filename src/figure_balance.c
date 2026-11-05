@@ -209,6 +209,19 @@
 // later let more fall. Round 65.
 #define NB_TUNED_STEP ( 1.0f / 60.0f )
 
+// The targets of a step hold for a whole update, and below 60 Hz the step falls behind: at 30 Hz the swinging foot left
+// the ground about 30 ms later in the step than at 60 Hz, as it lifts only with the second update, and every step ended
+// 20 to 35 ms later. While a hold keeps the pelvis upright, below 60 Hz the targets of a step are taken ahead by this
+// many times the time an update is longer than 1/60 s, at 30 Hz by a whole update. On the nine tables on chest and
+// belly at four positions of the hit point at 30 Hz 2 993 instead of 3 781 fall with the figure's own strength and 699
+// instead of 908 with the hold against the world, at the middle position at 40 Hz 547 and 243 instead of 645 and 289,
+// at 20 Hz 1 310 and 217 instead of 1 796 and 427, and no light hit more. Once and one and a half times as far ahead
+// let 2 990 and 2 909 fall with the figure's own strength at 30 Hz and 819 with the hold against the world, one and a
+// half times 5 instead of 1 light hit with the hold against the world at 20 Hz. Without a hold the targets stay: taken
+// ahead there, 7 to 14 instead of 4 of the 168 light hits fell at 30 Hz. Landing, or planning the foot, by the step
+// ahead let more fall. At 60 Hz and faster nothing changes. Round 66.
+#define NB_STEP_LEAD 2.0f
+
 // The pelvis stands no higher than the legs reach at this part of their length, so planted feet stay on the ground in a
 // wide stance, and no lower than this part of its height standing
 #define NB_LEG_REACH 0.97f
@@ -1142,6 +1155,12 @@ static float nbShiftDamping( const nbBalancer* b, float timeStep )
 		return 1.0f / slowness;
 	}
 	return b3Joint_IsValid( b->uprightLegs[0] ) ? 1.0f : slowness;
+}
+
+// How far ahead below 60 Hz the targets of a step are taken while a hold keeps the pelvis upright, see NB_STEP_LEAD
+static float nbStepLead( float timeStep )
+{
+	return NB_STEP_LEAD * b3MaxFloat( 0.0f, timeStep - NB_TUNED_STEP );
 }
 
 // The pelvis wanted upright at a point, turned about up by an angle from where the figure faces
@@ -2216,7 +2235,9 @@ nbBalanceResult nbUpdateBalance( nbWorld* world, int index, nbFigure* f, float t
 			b->plant[stance] = nbPlant( f, b, stance );
 		}
 
-		float phase = b3ClampFloat( b->stateTime / NB_STEP_DURATION, 0.0f, 1.0f );
+		// Below 60 Hz the targets are taken ahead while a hold keeps the pelvis upright, see NB_STEP_LEAD
+		float lead = held ? nbStepLead( timeStep ) : 0.0f;
+		float phase = b3ClampFloat( ( b->stateTime + lead ) / NB_STEP_DURATION, 0.0f, 1.0f );
 		float progress = nbSmooth( phase );
 		b3Vec3 swing = b3Add( b3MulSV( 1.0f - progress, b->swingStart ), b3MulSV( progress, b->stepAnkle ) );
 		if ( b->ownStrength )

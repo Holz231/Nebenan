@@ -1649,6 +1649,45 @@ static int FigureSlowRateTest( void )
 	return 0;
 }
 
+// A figure that catches itself with its own strength at 30 Hz takes the targets of its steps ahead, see NB_STEP_LEAD:
+// hard hits on the chest it fell after before round 66, 100 N s diagonally from the front and 92 N s from the side
+static int FigureSlowStepTest( void )
+{
+	const int directions[2] = { 1, 2 };
+	const float impulses[2] = { 100.0f, 92.0f };
+	for ( int c = 0; c < 2; ++c )
+	{
+		FigureScene scene;
+		CreateFigureScene( &scene, 1 );
+		nbFigureDef def = nbDefaultFigureDef();
+		def.rig = &scene.rig;
+		def.standHeight = scene.standHeight;
+		def.motors.uprightAgainstWorld = false;
+		nbFigureId figure = nbCreateFigure( scene.world, &def );
+		float timeStep = 1.0f / 30.0f;
+		int subSteps = nbGetSubStepCount( 30.0f );
+		for ( int i = 0; i < 15; ++i )
+		{
+			nbWorld_Step( scene.world, timeStep, subSteps );
+		}
+		b3Vec3 direction = b3RotateVector( b3MakeQuatFromAxisAngle( b3Vec3_axisY, 0.25f * B3_PI * (float)directions[c] ),
+										   (b3Vec3){ 0.0f, 0.0f, -1.0f } );
+		ENSURE( HitChest( figure, 1, b3MulSV( impulses[c], direction ) ) );
+		int steps = 0;
+		while ( nbFigure_GetState( figure ) == nb_figureBalancing && steps < 300 )
+		{
+			nbWorld_Step( scene.world, timeStep, subSteps );
+			steps += 1;
+		}
+		nbFigureInfo info = nbFigure_GetInfo( figure );
+		printf( "  %.0f N s at 30 Hz with its own strength: %s after %.2f s and %d steps\n", impulses[c],
+				info.state == nb_figureAnimated ? "standing" : "fallen", (float)steps / 30.0f, info.stepCount );
+		ENSURE( info.state == nb_figureAnimated && info.knockdownCount == 0 );
+		DestroyFigureScene( &scene );
+	}
+	return 0;
+}
+
 // The spring of the joint of a bone of a figure in cycles per second, zero without a spring
 static float SpringHertz( nbFigureId figure, int bone )
 {
@@ -3780,6 +3819,7 @@ int FigureTest( void )
 	RUN_TEST( FigureNeckTest );
 	RUN_TEST( FigureCatchDampingTest );
 	RUN_TEST( FigureSlowRateTest );
+	RUN_TEST( FigureSlowStepTest );
 	RUN_TEST( FigureSoftSpineTest );
 	RUN_TEST( FigurePushTest );
 	RUN_TEST( FigureHoldArmTest );

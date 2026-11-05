@@ -1379,6 +1379,25 @@ Gepaart gegen `active-ragdoll-64`, drei Läufe im Wechsel mit vier Threads und e
 seinen 60 Hz alle Szenen bitgleich wie vorher, mit denselben Hashes und Zählern, und das Update der Bibliothek kostet in
 der Stadt mit Figuren gleich viel, mit vier Threads das 1,03-, 1,01- und 0,98-fache, mit einem das 0,98-fache.
 
+**Schritte bei langsamem Takt.** Auch die Ziele eines Fangschritts gelten ein ganzes Update. Mit `stepRate` 30 hebt der
+Schwungfuß erst mit dem zweiten Update ab, 33 statt 17 ms nach dem Beginn des Schritts, verlässt den Boden im Mittel
+etwa 30 ms später als bei 60 Hz, und jeder Schritt endet 20 bis 35 ms später. Der Fuß kommt dann zu kurz auf: Nach den
+Treffern am mittleren Treffpunkt, die die Figur mit eigener Kraft nur bei 30 Hz nicht fängt, landet er im dritten
+Schritt im Median 28 statt 9 cm neben seinem Ziel. Seit `active-ragdoll-66` nimmt die Balance unter 60 Hz die Ziele
+eines Schritts um das Doppelte der Zeit voraus, die ein Update länger als 1/60 s dauert, bei 30 Hz um ein ganzes Update,
+solange eine Stütze das Becken aufrecht hält. Bei 60 Hz und schneller rechnet sie bitgleich wie vorher. Auf den neun
+Tabellen auf Brust und Bauch über vier Lagen des Treffpunkts fallen bei 30 Hz mit eigener Kraft 2 993 statt 3 781 und
+mit der Stütze gegen die Welt, dem Standard, 699 statt 908, von den mittleren 28 und keiner statt 72 und 11. Am
+mittleren Treffpunkt fallen bei 40 Hz 547 und 243 statt 645 und 289, bei 20 Hz 1 310 und 217 statt 1 796 und 427, von
+den leichten Treffern bei 20 Hz 4 und keiner statt 15 und 1, bei 30 und 40 Hz wie vorher keiner. Ohne Stütze bleiben die
+Ziele, wo sie sind: Dort ließ jeder Vorlauf bei 30 Hz 7 bis 14 statt 4 der 168 leichten Treffer fallen. Ein Spiel ruft
+dafür nichts Neues auf. Siehe „Schrittziele bei langsamem Takt vorausnehmen“ und die Zeilen danach in
+[Optimierungen.md](docs/Optimierungen.md). Gepaart gegen `active-ragdoll-65`, drei Läufe im Wechsel mit vier Threads und
+zwei mit einem, rechnet der Benchmark mit seinen 60 Hz alle Szenen bitgleich wie vorher, mit denselben Hashes und
+Zählern, nur der höchste gezählte Speicher der gestreamten Stadt liegt bei 188 statt 189 MB. Ein Bild der Stadt mit
+Figuren kostet mit vier Threads das 1,01-, 1,02- und 1,02-fache, mit einem das 1,09- und 1,02-fache, bei gleicher
+Rechnung Rauschen der VM.
+
 **Drücken.** Drückt ein Körper eine stehende Figur langsam, ein Stock, eine Hand oder ein Block, und schiebt er dabei
 einen ihrer Knochen mit mindestens `pushForce` (Standard 40 N) seitlich, bei zwei Prüfungen hintereinander, also ein
 paar Schritte lang, fängt sich ein Mensch der Bibliothek, statt eine Wand zu bleiben: Seine Knochen werden dynamisch,
