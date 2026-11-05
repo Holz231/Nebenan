@@ -71,11 +71,24 @@
 #define NB_HILL_BRAKE_RISE 0.05f
 
 // A hit of at least this share of the knockdown impulse on a bone whose joint gives way, see nbBoneDef::hitStiffness,
-// softens the joints that give way while the figure catches itself: soft for NB_SOFT_HOLD seconds, then back to their
-// stiffness on a smooth step over NB_SOFT_BACK seconds, see nbSoftenJoints
+// softens the joints that give way while the figure catches itself: soft for NB_SOFT_HOLD seconds, after hard hits
+// without the hold against the world less, see NB_SOFT_HARD_CUT, then back to their stiffness on a smooth step over
+// NB_SOFT_BACK seconds, see nbSoftenJoints
 #define NB_SOFT_IMPULSE 0.5f
 #define NB_SOFT_HOLD 0.15f
 #define NB_SOFT_BACK 0.35f
+
+// Without the hold against the world the joints that gave way to a hard hit stay soft for less time, and the trunk
+// carries the figure through its steps sooner: from NB_SOFT_HARD_START times the knockdown impulse on NB_SOFT_HOLD gets
+// shorter, from NB_SOFT_HARD_FULL times on by NB_SOFT_HARD_CUT of it. An idea of the branch ragdoll-sol, which cut
+// three quarters. Over the 4 x 5 264 hits of the tables at 60 Hz 3 032 instead of 3 043 fell with the figure's own
+// strength and 4 868 instead of 4 954 without a hold, at 30 Hz over the chest and belly tables 2 958 instead of 2 993
+// and 5 585 instead of 5 672. Cut by three quarters 3 039 and 4 886 fell at 60 Hz, cut whole 3 012 and 4 927 with 27
+// instead of 12 falls from 50 to 89 N s without a hold, and shorter from once the knockdown impulse on 4 906 with 33 of
+// them. Shorter with the hold against the world too, by three quarters, 1 061 instead of 1 051 fell there. Round 67.
+#define NB_SOFT_HARD_START 1.5f
+#define NB_SOFT_HARD_FULL 2.0f
+#define NB_SOFT_HARD_CUT 0.5f
 
 // The share of their stiffness the four joints of the spine of the humanoid keep right after a hit, see
 // nbBoneDef::hitStiffness and "Rumpf gibt nach" in docs/Optimierungen.md
@@ -1549,7 +1562,7 @@ static void nbActivateAtOnce( nbFigure* f )
 	}
 }
 
-// The joints that gave way to a hit stiffen again: soft for NB_SOFT_HOLD seconds, then back to their stiffness on a
+// The joints that gave way to a hit stiffen again: soft for the time of nbSoftHold, then back to their stiffness on a
 // smooth step over NB_SOFT_BACK seconds, see nbSoftenJoints
 static void nbUpdateSoftness( nbFigure* f, float timeStep )
 {
@@ -1562,6 +1575,19 @@ static void nbUpdateSoftness( nbFigure* f, float timeStep )
 	f->softTime = b3MaxFloat( f->softTime - timeStep, 0.0f );
 	float phase = b3ClampFloat( 1.0f - f->softTime / NB_SOFT_BACK, 0.0f, 1.0f );
 	f->softness = 1.0f - phase * phase * ( 3.0f - 2.0f * phase );
+}
+
+// How long the joints that gave way to a hit stay soft before they stiffen again, see NB_SOFT_HARD_CUT
+static float nbSoftHold( const nbFigure* f, b3Vec3 impulse )
+{
+	float hold = NB_SOFT_HOLD;
+	if ( f->balancer.ownStrength && f->def.knockdownImpulse > 0.0f )
+	{
+		float hardness =
+			( b3Length( impulse ) / f->def.knockdownImpulse - NB_SOFT_HARD_START ) / ( NB_SOFT_HARD_FULL - NB_SOFT_HARD_START );
+		hold *= 1.0f - NB_SOFT_HARD_CUT * b3ClampFloat( hardness, 0.0f, 1.0f );
+	}
+	return hold;
 }
 
 // A hit of at least NB_SOFT_IMPULSE times the knockdown impulse on a bone whose joint gives way, see
@@ -1589,7 +1615,7 @@ static void nbSoftenJoints( nbFigure* f, int index, b3Vec3 impulse )
 	}
 
 	f->softShare = share;
-	f->softTime = NB_SOFT_HOLD + NB_SOFT_BACK;
+	f->softTime = nbSoftHold( f, impulse ) + NB_SOFT_BACK;
 	nbUpdateSoftness( f, 0.0f );
 	for ( int i = 1; i < f->boneCount; ++i )
 	{

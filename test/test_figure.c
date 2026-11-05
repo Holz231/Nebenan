@@ -1803,6 +1803,52 @@ static int FigureSoftSpineTest( void )
 	return 0;
 }
 
+// After a hard hit the spine of a figure that catches itself without the hold against the world stays soft for less
+// time, see NB_SOFT_HARD_CUT: with its own strength or without a hold its joints stiffen again from 0.075 s on after
+// 100 N s on the upper chest from ahead, twice the knockdown impulse, from 0.1125 s on after 87.5 N s and from 0.15 s
+// on after 60 N s, as with the hold against the world after 100 N s. The first update that finds the spine stiffer
+// comes within one update after that time.
+static int FigureSoftHoldTest( void )
+{
+	enum
+	{
+		caseCount = 5
+	};
+	const float impulses[caseCount] = { 100.0f, 87.5f, 60.0f, 100.0f, 100.0f };
+	const float torques[caseCount] = { 125.0f, 125.0f, 125.0f, 125.0f, 0.0f };
+	const bool againstWorld[caseCount] = { false, false, false, true, true };
+	const float holds[caseCount] = { 0.075f, 0.1125f, 0.15f, 0.15f, 0.075f };
+	for ( int c = 0; c < caseCount; ++c )
+	{
+		FigureScene scene;
+		CreateFigureScene( &scene, 1 );
+		nbFigureDef def = nbDefaultFigureDef();
+		def.rig = &scene.rig;
+		def.standHeight = scene.standHeight;
+		def.motors.uprightAgainstWorld = againstWorld[c];
+		def.motors.uprightTorque = torques[c];
+		nbFigureId figure = nbCreateFigure( scene.world, &def );
+		StepFigures( &scene, 30 );
+		ENSURE( HitChest( figure, 1, (b3Vec3){ 0.0f, 0.0f, -impulses[c] } ) );
+		ENSURE( nbFigure_GetState( figure ) == nb_figureBalancing );
+		float soft = SpringHertz( figure, nb_humanoidBelly );
+		int stiffer = 0;
+		for ( int i = 1; i <= 15 && stiffer == 0; ++i )
+		{
+			StepFigures( &scene, 1 );
+			ENSURE( nbFigure_GetState( figure ) == nb_figureBalancing );
+			stiffer = SpringHertz( figure, nb_humanoidBelly ) > soft ? i : 0;
+		}
+		printf( "  %.1f N s on the upper chest from ahead %s: the spine stiffens again after %.3f s\n", impulses[c],
+				torques[c] == 0.0f ? "without a hold"
+								   : ( againstWorld[c] ? "with the hold against the world" : "with its own strength" ),
+				(float)stiffer / 60.0f );
+		ENSURE( (float)stiffer > 60.0f * holds[c] && (float)stiffer < 60.0f * holds[c] + 1.01f );
+		DestroyFigureScene( &scene );
+	}
+	return 0;
+}
+
 // A pusher for FigurePushTest, without gravity, led toward the figure at the height through a motor joint whose springs
 // pull it with up to the force after a kinematic hand, as a stick or a hand pushes: a cube of 20 cm and 5 kg from the
 // front, or a stick from its left side, 80 cm long from front to back, 5 cm thick and 1.5 kg
@@ -3821,6 +3867,7 @@ int FigureTest( void )
 	RUN_TEST( FigureSlowRateTest );
 	RUN_TEST( FigureSlowStepTest );
 	RUN_TEST( FigureSoftSpineTest );
+	RUN_TEST( FigureSoftHoldTest );
 	RUN_TEST( FigurePushTest );
 	RUN_TEST( FigureHoldArmTest );
 #if defined( B3_HAS_SWING_LIMITS )

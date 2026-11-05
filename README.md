@@ -1273,7 +1273,8 @@ Arbeit mit dem sechsten Stockwerk.
 
 **Rumpf gibt nach.** Seit `active-ragdoll-60` geht der Rumpf eines Menschen der Bibliothek, der sich fängt, sichtbar mit
 dem Treffer, auf die Rückmeldung des Nutzers an Sol: Der Körper wirkte steif. Trifft ein Stoß ab der Hälfte von
-`knockdownImpulse` die Wirbelsäule, ziehen ihre vier Gelenke 0,15 s lang nur mit 0,3 ihrer Steifigkeit,
+`knockdownImpulse` die Wirbelsäule, ziehen ihre vier Gelenke 0,15 s lang, seit `active-ragdoll-67` ohne die Stütze gegen
+die Welt nach harten Treffern kürzer, siehe Rumpf nach harten Treffern, nur mit 0,3 ihrer Steifigkeit,
 `nbBoneDef::hitStiffness`, und nehmen sie in 0,35 s weich wieder auf. Ihre Kraft bleibt: Die Figur fängt sich mit allem,
 was sie hat, nur gibt der Rumpf zuerst nach. Das gilt so weit, wie der Treffer von vorn oder von hinten kommt, mit dem
 Quadrat des Kosinus zwischen dem Stoß über dem Boden und der Blickrichtung. Von der Seite bleibt die Wirbelsäule so
@@ -1397,6 +1398,22 @@ zwei mit einem, rechnet der Benchmark mit seinen 60 Hz alle Szenen bitgleich wie
 Zählern, nur der höchste gezählte Speicher der gestreamten Stadt liegt bei 188 statt 189 MB. Ein Bild der Stadt mit
 Figuren kostet mit vier Threads das 1,01-, 1,02- und 1,02-fache, mit einem das 1,09- und 1,02-fache, bei gleicher
 Rechnung Rauschen der VM.
+
+**Rumpf nach harten Treffern.** Seit `active-ragdoll-67` bleibt die Wirbelsäule eines Menschen der Bibliothek, der sich
+ohne die Stütze gegen die Welt fängt, mit eigener Kraft oder ohne Stütze, nach harten Treffern kürzer weich, eine Idee
+der Branch `ragdoll-sol` in halber Stärke: Vom 1,5-Fachen von `knockdownImpulse` an werden die 0,15 s kürzer, ab dem
+Doppelten um die Hälfte, und der Rumpf trägt die Figur früher durch ihre Schritte. Mit der Stütze gegen die Welt, dem
+Standard, rechnet die Figur bitgleich wie vorher. Von allen 4 × 5 264 Treffern fallen bei 60 Hz mit eigener Kraft 3 032
+statt 3 043 und ohne Stütze 4 868 statt 4 954, von den mittleren 3 und 15 statt 1 und 12, von den leichten mit allen
+drei Stützen keiner. Bei 30 Hz fallen auf den neun Tabellen auf Brust und Bauch über vier Lagen des Treffpunkts 2 958
+statt 2 993 und 5 585 statt 5 672, von den leichten wie vorher keiner und 4. Der Gewinn ist klein, über die drei Stützen
+zusammen 1,1 %. Um drei Viertel kürzer, wie bei Sol, fallen 0,8 % weniger, und auch mit der Stütze gegen die Welt kürzer
+fallen dort bei 30 Hz 724 statt 699. Ein Spiel ruft dafür nichts Neues auf. Siehe „Rumpf nach harten Treffern kürzer
+weich“ und die Zeilen danach in [Optimierungen.md](docs/Optimierungen.md). Gepaart gegen `active-ragdoll-66`, drei Läufe
+im Wechsel mit vier Threads und zwei mit einem, rechnet der Benchmark alle Szenen bitgleich wie vorher, mit denselben
+Hashes und Zählern, denn seine Figuren halten sich mit der Stütze gegen die Welt. Nur der höchste gezählte Speicher der
+gestreamten Stadt liegt bei 189 statt 188 MB. Ein Bild der Stadt mit Figuren kostet mit vier Threads das 0,98-, 0,94-
+und 1,07-fache, mit einem das 1,00- und 0,98-fache, bei gleicher Rechnung Rauschen der VM.
 
 **Drücken.** Drückt ein Körper eine stehende Figur langsam, ein Stock, eine Hand oder ein Block, und schiebt er dabei
 einen ihrer Knochen mit mindestens `pushForce` (Standard 40 N) seitlich, bei zwei Prüfungen hintereinander, also ein
@@ -2206,7 +2223,7 @@ beim Einbinden nicht gebaut.
 | --- | --- | --- |
 | `armature` | 0 | Drehträgheit in kg m², die das Gelenk der Drehung des Knochens gegen seinen Elternknochen hinzufügt, siehe Zusatzträgheit in den Gelenken. Hält einen leichten Knochen zwischen steifen Federn ruhig. Der Mensch der Bibliothek: Hals und Kopf je 1 g m² |
 | `catchDamping` | 1 | So viel mal dämpft das Gelenk, solange die Figur sich fängt, siehe Ideen von `ragdoll-sol`. Beruhigt einen leichten Knochen mit einem schwereren darauf, die ein Treffer herumwirft. Der Mensch der Bibliothek: Hals und Kopf 8 |
-| `hitStiffness` | 1 | So viel seiner Steifigkeit behält das Gelenk kurz nach einem Treffer, solange die Figur sich fängt, siehe Rumpf gibt nach. Ein Treffer ab der Hälfte von `knockdownImpulse` auf einen Knochen mit einem solchen Gelenk macht alle solchen Gelenke der Figur 0,15 s weich, in 0,35 s kommen sie weich zurück, mit derselben Kraft, so weit, wie der Treffer von vorn oder hinten kommt, von der Seite gar nicht. Der Mensch der Bibliothek: die vier Gelenke der Wirbelsäule 0,3 |
+| `hitStiffness` | 1 | So viel seiner Steifigkeit behält das Gelenk kurz nach einem Treffer, solange die Figur sich fängt, siehe Rumpf gibt nach. Ein Treffer ab der Hälfte von `knockdownImpulse` auf einen Knochen mit einem solchen Gelenk macht alle solchen Gelenke der Figur 0,15 s weich, ohne die Stütze gegen die Welt nach Treffern ab dem 1,5-Fachen von `knockdownImpulse` kürzer, ab dem Doppelten 0,075 s, in 0,35 s kommen sie weich zurück, mit derselben Kraft, so weit, wie der Treffer von vorn oder hinten kommt, von der Seite gar nicht. Der Mensch der Bibliothek: die vier Gelenke der Wirbelsäule 0,3 |
 | `maxSpeed` | 0 | Mit Muskeln: Höchstgeschwindigkeit des Gelenks in rad/s, je schneller es sich in seine Zugrichtung dreht, desto schwächer zieht es, nach der Kurve von Hill. Null zieht bei jeder Geschwindigkeit gleich. Der Mensch der Bibliothek: Rumpf 25 rad/s, Arme und Beine keine |
 | `lowerSwingX`, `upperSwingX`, `lowerSwingY`, `upperSwingY` | 0 | Kugelgelenk: wie weit der Knochen in jede der vier Richtungen um die x- und die y-Achse seines Gelenkrahmens schwingen darf, in Radiant, dazwischen eine Ellipse, bis 0,95 π, siehe Gelenke wie beim Menschen. Alle null nehmen `coneAngle` in jede Richtung, bis 0,5 π. Der Mensch der Bibliothek: Schulter 160° nach vorn und zur Seite, 40° zurück und hinein, Hüfte 135° nach vorn, 20° zurück, 45° hinaus und 25° hinein |
 | `friction` | 0 | Reibung der Form des Knochens, null nimmt die des Rigs. Zwei Formen, die sich berühren, reiben mit der Wurzel aus dem Produkt ihrer Reibungen. Der Mensch der Bibliothek: Füße 0,9 wie eine Gummisohle auf trockenem Beton, sonst die 0,6 des Rigs |

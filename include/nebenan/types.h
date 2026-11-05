@@ -1118,8 +1118,9 @@ typedef struct nbBoneDef
 	/// stiffness and their torque limit as before, so the body bends with the hit instead of standing stiff, and it keeps
 	/// all its strength to catch itself. A hit from ahead or behind softens them by all of that, one from the side not at
 	/// all, one between by the square of the cosine between the hit over the ground and the facing of the figure. They
-	/// stay soft 0.15 seconds and take their stiffness back smoothly over 0.35 more. The root and fixed joints ignore it.
-	/// The humanoid of the library takes 0.3 at the four joints of its spine, see nbMakeHumanoidBones.
+	/// stay soft 0.15 seconds, after hard hits on a figure without the hold against the world less, from twice the
+	/// knockdown impulse on half as long, and take their stiffness back smoothly over 0.35 more. The root and fixed joints
+	/// ignore it. The humanoid of the library takes 0.3 at the four joints of its spine, see nbMakeHumanoidBones.
 	float hitStiffness;
 
 	/// With nbFigureMotors::muscles, how fast the muscles of this joint can turn it, in radians per second, after the
