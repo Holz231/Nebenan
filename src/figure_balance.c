@@ -60,6 +60,10 @@
 #define NB_STEP_DURATION 0.3f
 #define NB_STEP_HEIGHT 0.12f
 
+// Shift the lift earlier on lateral steps so the foot clears the ground sooner and can carry weight earlier.
+// The arc keeps its height and duration. Small sideways corrections in forward and backward steps keep the usual arc.
+#define NB_LATERAL_SWING_LEAD 0.75f
+
 // Raise the toes during a forward swing, smoothly back to flat at landing. Scale by the forward share of the path:
 // lifting them in lateral and backward steps disturbed catches with the yielding trunk.
 #define NB_SWING_TOES 0.15f
@@ -2058,6 +2062,8 @@ nbBalanceResult nbUpdateBalance( nbWorld* world, int index, nbFigure* f, float t
 		float phase = b3ClampFloat( b->stateTime / NB_STEP_DURATION, 0.0f, 1.0f );
 		float progress = nbSmooth( phase );
 		b3Vec3 swing = b3Add( b3MulSV( 1.0f - progress, b->swingStart ), b3MulSV( progress, b->stepAnkle ) );
+		b3Vec3 way = b3Vec3_zero;
+		float length = 0.0f;
 		if ( b->ownStrength )
 		{
 			// A figure that catches itself with its own strength swings the foot on with the speed it had along its way
@@ -2065,8 +2071,8 @@ nbBalanceResult nbUpdateBalance( nbWorld* world, int index, nbFigure* f, float t
 			// The smooth start braked a foot that already moved, and the swing leg, whose springs damp against
 			// standstill, fell behind its target for the rest of the step and came down short. At most three times the
 			// way over the time of the step, the most such a cubic takes without passing the target, and never back.
-			b3Vec3 way = nbFlat( b3Sub( b->stepAnkle, b->swingStart ), up );
-			float length = b3Length( way );
+			way = nbFlat( b3Sub( b->stepAnkle, b->swingStart ), up );
+			length = b3Length( way );
 			if ( length > 1.0e-3f )
 			{
 				b3Vec3 direction = b3MulSV( 1.0f / length, way );
@@ -2075,7 +2081,14 @@ nbBalanceResult nbUpdateBalance( nbWorld* world, int index, nbFigure* f, float t
 				swing = b3MulAdd( swing, NB_STEP_DURATION * start * shape, direction );
 			}
 		}
-		swing = b3MulAdd( swing, NB_STEP_HEIGHT * b->scale * b3ComputeCosSin( B3_PI * phase ).sine, up );
+		float liftPhase = phase;
+		if ( turnStep && length > 1.0e-3f )
+		{
+			float side = fabsf( b3Dot( way, b3Cross( up, b->forward ) ) ) / length;
+			float lead = NB_LATERAL_SWING_LEAD * b3MaxFloat( 2.0f * side - 1.0f, 0.0f );
+			liftPhase += lead * phase * ( 1.0f - phase );
+		}
+		swing = b3MulAdd( swing, NB_STEP_HEIGHT * b->scale * b3ComputeCosSin( B3_PI * liftPhase ).sine, up );
 
 		// The stance leg holds the pelvis upright at standing height. The swinging leg reaches from the pelvis turned
 		// halfway between upright and as it is: from upright alone the foot misses its target when a push pitches the
@@ -2092,8 +2105,6 @@ nbBalanceResult nbUpdateBalance( nbWorld* world, int index, nbFigure* f, float t
 		nbLegIK( f, b, foot, swingPelvis, swing, b->footFacing[stance], pose );
 		if ( b->ownStrength && ( f->def.motors.responsiveTrunk || turnStep ) )
 		{
-			b3Vec3 way = nbFlat( b3Sub( b->stepAnkle, b->swingStart ), up );
-			float length = b3Length( way );
 			float forward = length > 1.0e-3f ? b3MaxFloat( 0.0f, b3Dot( way, b->footFacing[stance] ) / length ) : 0.0f;
 			nbLiftToes( f, b, foot, swingPelvis.q, b->footFacing[stance],
 						forward * NB_SWING_TOES * b3ComputeCosSin( B3_PI * phase ).sine, pose );

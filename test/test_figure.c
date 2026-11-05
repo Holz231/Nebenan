@@ -1087,6 +1087,17 @@ static int FigureTurningBrakeTest( void )
 	return CheckOwnBalanceHits( bones, directions, impulses, 4, 120, 1, true, true );
 }
 
+// The late lateral swing used to leave the body too low to recover after the first landing on either side.
+static int FigureLateralSwingRecoveryTest( void )
+{
+	const int bones[] = { nb_humanoidChest, nb_humanoidChest };
+	const int directions[] = { 3, 9 };
+	const float slowHits[] = { 78.0f, 78.0f };
+	const float fastHits[] = { 89.0f, 88.0f };
+	ENSURE( CheckOwnBalanceHits( bones, directions, slowHits, 2, 30, 1, true, true ) == 0 );
+	return CheckOwnBalanceHits( bones, directions, fastHits, 2, 60, 1, true, true );
+}
+
 // Isolate the catch-step planner with the pelvis toward the stance foot and a fast backward drift. A reachable target
 // must retain the side separation; an impossible replan must leave the previous target alone. Check both feet,
 // different body sizes, headings and positions, with identical targets and joint poses across thread counts.
@@ -4536,6 +4547,7 @@ int FigureTest( void )
 	RUN_TEST( FigureStandBrakeTest );
 	RUN_TEST( FigureResponsiveBrakeTest );
 	RUN_TEST( FigureTurningBrakeTest );
+	RUN_TEST( FigureLateralSwingRecoveryTest );
 	RUN_TEST( FigureStepReachGapTest );
 	RUN_TEST( FigureStepDelayTest );
 	RUN_TEST( FigureSupportMiddleTest );

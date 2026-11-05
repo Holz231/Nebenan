@@ -3350,3 +3350,47 @@ Alle sechs `figures`-Szenen behalten in jeder Paarung ihre Ergebnis-Hashes. Die 
 Threads bei 3,72 → 3,73 ms und 3,74 → 3,69 ms, mit einem bei 8,62 → 8,17 ms. Der Benchmark verwendet weiterhin
 die Bibliotheksvorgaben ohne beide Bewegungsoptionen; daraus wird kein Leistungsgewinn der Halsdämpfung abgeleitet.
 Die aktivierte neue Reaktion ist durch die Bewegungs- und Abfangreihen oben geprüft.
+
+## Seitliche Fangschritte früher absenken, F61 und F79, 5. November 2026
+
+Nach 88 N s seitlich auf die obere Brust kam der Schwungfuß erst bei 0,317 s wieder auf den Boden. Der
+Schwerpunkt war zu diesem Zeitpunkt auf 0,758 m gesunken und die Figur fiel beim nächsten Schritt. Mit
+eigener Balance und `turnWithSteps` erreicht die vertikale Fußbahn ihren höchsten Punkt bei einem seitlichen
+Schritt jetzt früher. Der Seitenanteil der geplanten Bahn bestimmt den Vorlauf. Ab einem Seitenanteil von
+50 % wächst der Vorlauf stetig bis zum rein seitlichen Schritt. Die Zeitverschiebung wirkt auf den Sinus
+der Hubbewegung.
+
+In derselben 88-N-s-Probe erreicht der Fuß bei 0,283 s wieder den Boden, der Schwerpunkt liegt dabei auf
+0,820 m. Die Figur fängt sich mit sechs Schritten. Beide seitlichen Richtungen fangen sich bei 30 und 60 Hz
+auch bei ±1 mm Abweichung des Trefferpunkts. `FigureLateralSwingRecoveryTest` prüft diese Fälle samt
+anschließendem Stand, ohne Weltanker und mit bitgleichen Knochenlagen bei einem und vier Threads. Die alte
+Fassung scheitert am neuen Test. Der bestehende 114-N-s-Rückwärtstest und die Kopfregressionen bestehen.
+
+| Reihe mit nachgebendem Rumpf und Schrittdrehung | Fälle | Vorher | Frühere seitliche Fußbahn |
+| --- | ---: | ---: | ---: |
+| 50–86 N s in Viererschritten, 30 Hz | 480 | 35 | 10 |
+| 50–89 N s bei 30 Hz, vollständige Reihe | 1 920 | 160 | 69 |
+| 50–89 N s bei 60 Hz, Trefferpunkt Mitte und ±1 mm | 5 760 | 14 | 8 |
+| 50–89 N s bei 120 Hz | 1 920 | 0 | 0 |
+| 90–138 N s bei 60 Hz | 1 200 | 650 | 598 |
+| 40–80 N s auf die obere Brust bei 60 Hz | 168 | 3 | 0 |
+
+In der vollständigen 30-Hz-Reihe fängt sich die Figur in 111 bisher gescheiterten Fällen und fällt in 20
+zuvor gefangenen Fällen. Bei den stärkeren Treffern sind es 71 neu gefangene und 19 neu gescheiterte Fälle.
+
+Die fünf 60-N-s-Körperproben erholen sich. Die Brust dreht nach den zentralen Treffern weiter um 25,6°
+beziehungsweise 23,9° gegen das Becken. Die Kopfreaktion bleibt innerhalb der bestehenden Prüfgrenzen;
+beim außermittigen Schultertreffer steigt die gemessene Änderung der relativen Kopfdrehgeschwindigkeit
+von 0,196 auf 0,224 rad/s pro Update. Die mittlere Reihe im Zentrum ergibt mit einem und vier Threads
+jeweils 4 Fehlschläge, 4 790 Schritte und Hash `565129d9`. Daten: `build/next-final-*` und
+`build/next-baseline-30-full.csv`. Ausgangsstand: `ed08090`.
+
+Eine Vorverlegung bereits bei kleinen Seitenanteilen verbesserte die Trefferreihen, ließ aber den bestehenden
+114-N-s-Rückwärtstest scheitern. Eine pauschal kürzere seitliche Reichweite oder eine kurze Standpause nach
+dem Landen verschlechterte die 30-Hz-Reihe. Auch mehr vertikale Stützkraft beim Sinken war über die geprüften
+Stärken keine verlässliche Verbesserung. Diese Varianten bleiben verworfen.
+
+Alle sechs `figures`-Szenen behalten in drei gepaarten Läufen ihre Ergebnis-Hashes. Die Physikschritte der
+Stadt mit Figuren lagen bei 2,86 → 2,85 ms und 2,85 → 2,82 ms mit vier Threads sowie 6,79 → 6,73 ms mit
+einem Thread. Der Benchmark läuft mit den Bibliotheksvorgaben. Die aktivierte Schrittdrehung wurde in den
+Abfangreihen geprüft. Release mit Warnungen als Fehler und der vollständige lokale Testsatz sind grün.
