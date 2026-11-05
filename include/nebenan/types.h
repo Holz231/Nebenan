@@ -1112,6 +1112,16 @@ typedef struct nbBoneDef
 	/// library takes 8 at its neck and its head, see nbMakeHumanoidBones.
 	float catchDamping;
 
+	/// The share of its stiffness the joint keeps for a moment after a hit while the figure catches itself, see
+	/// nb_figureBalancing, from 0 to 1, 1 by default. A hit of at least half the knockdown impulse on a bone whose joint
+	/// gives way so softens every joint of the figure that gives way, at once: their springs pull with this share of their
+	/// stiffness and their torque limit as before, so the body bends with the hit instead of standing stiff, and it keeps
+	/// all its strength to catch itself. A hit from ahead or behind softens them by all of that, one from the side not at
+	/// all, one between by the square of the cosine between the hit over the ground and the facing of the figure. They
+	/// stay soft 0.15 seconds and take their stiffness back smoothly over 0.35 more. The root and fixed joints ignore it.
+	/// The humanoid of the library takes 0.3 at the four joints of its spine, see nbMakeHumanoidBones.
+	float hitStiffness;
+
 	/// With nbFigureMotors::muscles, how fast the muscles of this joint can turn it, in radians per second, after the
 	/// muscle model of Hill (1938): the faster the joint turns the way they pull, the less they pull, nothing at this
 	/// speed, and turned against them they hold up to nbFigureMotors::brakeStrength times as much. Zero, the default, puts

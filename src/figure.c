@@ -70,6 +70,17 @@
 #define NB_HILL_CURVE 4.0f
 #define NB_HILL_BRAKE_RISE 0.05f
 
+// A hit of at least this share of the knockdown impulse on a bone whose joint gives way, see nbBoneDef::hitStiffness,
+// softens the joints that give way while the figure catches itself: soft for NB_SOFT_HOLD seconds, then back to their
+// stiffness on a smooth step over NB_SOFT_BACK seconds, see nbSoftenJoints
+#define NB_SOFT_IMPULSE 0.5f
+#define NB_SOFT_HOLD 0.15f
+#define NB_SOFT_BACK 0.35f
+
+// The share of their stiffness the four joints of the spine of the humanoid keep right after a hit, see
+// nbBoneDef::hitStiffness and "Rumpf gibt nach" in docs/Optimierungen.md
+#define NB_SPINE_HIT_STIFFNESS 0.3f
+
 // How fast the muscles of the humanoid turn a joint of its trunk, neck or head, in radians per second, see
 // nbBoneDef::maxSpeed. The limbs have no top speed: their muscles act through the spring of the joint, whose torque limit
 // bounds its damping and its hold on the pose as well. With the curve of Hill the loose arms fell behind the chest and
@@ -256,6 +267,7 @@ nbBoneDef nbDefaultBoneDef( void )
 	def.stiffness = 1.0f;
 	def.damping = 1.0f;
 	def.catchDamping = 1.0f;
+	def.hitStiffness = 1.0f;
 	def.armature = 0.0f;
 	def.maxSpeed = 0.0f;
 	def.flinch = 0.0f;
@@ -363,6 +375,7 @@ static nbBoneDef nbSegment( const char* name, int parent, b3Vec3 pivot, b3Vec3 c
 	def.jointFrame = b3MakeQuatFromAxisAngle( b3Vec3_axisX, -0.5f * B3_PI );
 	def.strength = 1.6f;
 	def.stiffness = (float)NB_SPINE_COUNT;
+	def.hitStiffness = NB_SPINE_HIT_STIFFNESS;
 	return def;
 }
 
@@ -1324,6 +1337,37 @@ void nbSetBoneSpring( nbFigure* f, int index, float strength, bool enable )
 	f->bones[index].drive = enable ? b3MaxFloat( strength, 0.0f ) : 0.0f;
 }
 
+// The stiffness of the spring of the joint of a bone in cycles per second: it rises with the root of the activation of
+// its muscles, and a joint that gives way after a hit keeps only a share of its stiffness while the figure catches
+// itself, see nbSoftenJoints
+static float nbSpringHertz( const nbFigure* f, const nbBone* bone )
+{
+	float hertz = sqrtf( b3MaxFloat( bone->activation, 0.0f ) ) * bone->hertz;
+	if ( f->state == nb_figureBalancing && f->softness > 0.0f && bone->hitStiffness < 1.0f )
+	{
+		hertz *= sqrtf( 1.0f - f->softShare * ( 1.0f - bone->hitStiffness ) * f->softness );
+	}
+	return hertz;
+}
+
+// Give the spring of the joint of a bone a stiffness, if it changed
+static void nbSetSpringHertz( nbBone* bone, float hertz )
+{
+	if ( hertz == bone->springHertz )
+	{
+		return;
+	}
+	if ( bone->joint == nb_hingeJoint )
+	{
+		b3RevoluteJoint_SetSpringHertz( bone->jointId, hertz );
+	}
+	else
+	{
+		b3SphericalJoint_SetSpringHertz( bone->jointId, hertz );
+	}
+	bone->springHertz = hertz;
+}
+
 // The spring of the joint of a bone at the activation of its muscles, its torque limit times a factor, or off. Box3D only
 // hears what changed: a muscle that holds still asks nothing of it.
 static void nbApplyMuscles( nbFigure* f, int index, bool on, float factor )
@@ -1348,19 +1392,7 @@ static void nbApplyMuscles( nbFigure* f, int index, bool on, float factor )
 		return;
 	}
 
-	float hertz = sqrtf( b3MaxFloat( bone->activation, 0.0f ) ) * bone->hertz;
-	if ( hertz != bone->springHertz )
-	{
-		if ( hinge )
-		{
-			b3RevoluteJoint_SetSpringHertz( bone->jointId, hertz );
-		}
-		else
-		{
-			b3SphericalJoint_SetSpringHertz( bone->jointId, hertz );
-		}
-		bone->springHertz = hertz;
-	}
+	nbSetSpringHertz( bone, nbSpringHertz( f, bone ) );
 
 	float dampingRatio = b3MaxFloat( 0.0f, f->def.motors.dampingRatio ) * bone->damping;
 	if ( f->state == nb_figureBalancing )
@@ -1514,6 +1546,58 @@ static void nbActivateAtOnce( nbFigure* f )
 			bone->hingeAngle = b3RevoluteJoint_GetAngle( bone->jointId );
 		}
 		nbApplyMuscles( f, i, motorsOn && bone->activation >= NB_MIN_STRENGTH, 1.0f );
+	}
+}
+
+// The joints that gave way to a hit stiffen again: soft for NB_SOFT_HOLD seconds, then back to their stiffness on a
+// smooth step over NB_SOFT_BACK seconds, see nbSoftenJoints
+static void nbUpdateSoftness( nbFigure* f, float timeStep )
+{
+	if ( f->softTime <= 0.0f )
+	{
+		f->softness = 0.0f;
+		return;
+	}
+
+	f->softTime = b3MaxFloat( f->softTime - timeStep, 0.0f );
+	float phase = b3ClampFloat( 1.0f - f->softTime / NB_SOFT_BACK, 0.0f, 1.0f );
+	f->softness = 1.0f - phase * phase * ( 3.0f - 2.0f * phase );
+}
+
+// A hit of at least NB_SOFT_IMPULSE times the knockdown impulse on a bone whose joint gives way, see
+// nbBoneDef::hitStiffness, softens all joints of a figure that catches itself that give way at once, by the share of the
+// hit that comes from ahead or behind: the square of the cosine between the hit over the ground and the facing of the
+// figure. The spine bends forward and back with the hit from the next step on. To the side its joints let it bend less
+// than half as far, and a softer spine there let the figure fall where it catches itself with steps to the side, see
+// "Rumpf gibt nach" in docs/Optimierungen.md. The torque limits stay, the figure catches itself with all its strength.
+static void nbSoftenJoints( nbFigure* f, int index, b3Vec3 impulse )
+{
+	if ( f->state != nb_figureBalancing || f->bones[index].hitStiffness >= 1.0f ||
+		 b3Length( impulse ) < NB_SOFT_IMPULSE * f->def.knockdownImpulse )
+	{
+		return;
+	}
+
+	const nbBalancer* b = &f->balancer;
+	b3Vec3 flat = b3Sub( impulse, b3MulSV( b3Dot( impulse, b->up ), b->up ) );
+	float ahead = b3Dot( flat, b->forward );
+	float across = b3LengthSquared( flat );
+	float share = across > 1.0e-12f ? ahead * ahead / across : 1.0f;
+	if ( share <= 0.0f )
+	{
+		return;
+	}
+
+	f->softShare = share;
+	f->softTime = NB_SOFT_HOLD + NB_SOFT_BACK;
+	nbUpdateSoftness( f, 0.0f );
+	for ( int i = 1; i < f->boneCount; ++i )
+	{
+		nbBone* bone = f->bones + i;
+		if ( bone->springOn && bone->hitStiffness < 1.0f )
+		{
+			nbSetSpringHertz( bone, nbSpringHertz( f, bone ) );
+		}
 	}
 }
 
@@ -1827,6 +1911,9 @@ static void nbBeginBalancing( nbWorld* world, nbFigure* f )
 	f->stateTime = 0.0f;
 	f->flinch = b3Vec3_zero;
 	f->flinchRate = b3Vec3_zero;
+	f->softShare = 0.0f;
+	f->softness = 0.0f;
+	f->softTime = 0.0f;
 	nbStopSwings( f );
 	f->balancing = false;
 	f->swingFoot = -1;
@@ -3018,10 +3105,12 @@ static void nbSpreadHit( nbFigure* f, int hitBone, b3Vec3 impulse, b3Pos point )
 
 // A hit on the dynamic bones of a figure, spread over them from the bone it hit, see nbSpreadHit. The whole impulse on the
 // bone it hit, as on the branch ragdoll-11, threw the trunk of a figure that had stood animated a moment before so far that
-// it fell from 80 N s on its chest and 60 N s on its back, which ragdoll-11 caught with steps.
+// it fell from 80 N s on its chest and 60 N s on its back, which ragdoll-11 caught with steps. A hard hit on a joint that
+// gives way softens it, see nbSoftenJoints.
 static void nbHitBones( nbFigure* f, int bone, b3Vec3 impulse, b3Pos point )
 {
 	nbSpreadHit( f, bone, impulse, point );
+	nbSoftenJoints( f, bone, impulse );
 }
 
 // A hit on a figure, from the program, a blast or debris
@@ -4308,6 +4397,7 @@ static void nbUpdateBalancing( nbWorld* world, int index, nbFigure* f, float tim
 	}
 
 	nbSetJointTargets( f, f->pose );
+	nbUpdateSoftness( f, timeStep );
 	nbUpdateMuscles( f, timeStep );
 	f->speed = b3Length( nbAverageVelocity( f ) );
 }
@@ -4671,6 +4761,7 @@ nbFigureId nbCreateFigure( nbWorldId worldId, const nbFigureDef* def )
 		bone->stiffness = b3MaxFloat( 0.0f, boneDef->stiffness );
 		bone->damping = b3MaxFloat( 0.0f, boneDef->damping );
 		bone->catchDamping = b3MaxFloat( 0.0f, boneDef->catchDamping );
+		bone->hitStiffness = boneDef->joint == nb_fixedJoint || i == 0 ? 1.0f : b3ClampFloat( boneDef->hitStiffness, 0.0f, 1.0f );
 		bone->armature = NB_JOINT_ARMATURE ? b3MaxFloat( 0.0f, boneDef->armature ) : 0.0f;
 		bone->maxSpeed = b3MaxFloat( 0.0f, boneDef->maxSpeed );
 		bone->drive = 0.0f;

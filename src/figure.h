@@ -60,12 +60,14 @@ typedef struct nbBone
 	float swingInside;
 
 	// Scales the torque limit, the stiffness and the damping ratio of the motors for this joint, the damping ratio once
-	// more while the figure catches itself, see nbBoneDef::catchDamping, and the rotational inertia added to the turn of
-	// its bone against its parent, see nbBoneDef::armature
+	// more while the figure catches itself, see nbBoneDef::catchDamping, the share of the stiffness the joint keeps after
+	// a hit, see nbBoneDef::hitStiffness, and the rotational inertia added to the turn of its bone against its parent, see
+	// nbBoneDef::armature
 	float strength;
 	float stiffness;
 	float damping;
 	float catchDamping;
+	float hitStiffness;
 	float armature;
 	float mass;
 
@@ -362,6 +364,12 @@ typedef struct nbFigure
 	nbBalancer balancer;
 	int catchCount;
 	int pushCount;
+
+	// The joints that give way after a hit, see nbSoftenJoints: the share of the hit that softens them, how soft they still
+	// are, from 1 right after it to 0, and how many seconds until they hold as stiff as before
+	float softShare;
+	float softness;
+	float softTime;
 
 	// The ids of the last hits, see NB_HIT_MEMORY, and what the figure went through
 	uint32_t hitIds[NB_HIT_MEMORY];

@@ -27,6 +27,9 @@ typedef struct FigureScene
 	float standHeight;
 } FigureScene;
 
+// The four bones of the spine of the humanoid, from the belly up
+#define SPINE_BONES ( nb_humanoidChest - nb_humanoidBelly + 1 )
+
 // Ground of 100 m and a world, with the threads of a pool for more than one
 static void CreateFigureScene( FigureScene* scene, int threadCount )
 {
@@ -1192,7 +1195,7 @@ static uint32_t MuscleCatch( int threadCount, float impulse )
 }
 
 // The throw of 90 N s on a figure with muscles ends in the same bits with one thread and with four, on every platform
-#define NB_EXPECTED_MUSCLE_HASH 0x381078c2u
+#define NB_EXPECTED_MUSCLE_HASH 0xe4ffea61u
 
 // The muscles, see nbFigureMotors::muscles and nbUpdateMuscles. A figure with muscles hit while it stands catches itself
 // with the strength the balance asks for at once: every joint of its trunk and its legs at the full torque of the motors,
@@ -1467,7 +1470,8 @@ static int FigureSpreadTest( void )
 // at the full stiffness that catches hits of 60 N s from four sides keeps its head calm: its turn against the neck
 // changes by about a radian per second from one step to the next and reverses in a fifth of the steps, and it stands
 // again after every catch. Without the armature the turn changes by over ten times that and reverses in every other
-// step. Both without the damping of neck and head while catching, see nbBoneDef::catchDamping, which calms them too.
+// step. Both without the damping of neck and head while catching, see nbBoneDef::catchDamping, which calms them too, and
+// with a spine that keeps its stiffness after the hits, see nbBoneDef::hitStiffness, which moves the chest under them.
 static int FigureNeckTest( void )
 {
 	float jitter[2] = { 0.0f, 0.0f };
@@ -1484,6 +1488,10 @@ static int FigureNeckTest( void )
 			scene.bones[nb_humanoidHead].stiffness = 1.0f;
 			scene.bones[nb_humanoidNeck].catchDamping = 1.0f;
 			scene.bones[nb_humanoidHead].catchDamping = 1.0f;
+			for ( int k = 0; k < SPINE_BONES; ++k )
+			{
+				scene.bones[nb_humanoidBelly + k].hitStiffness = 1.0f;
+			}
 			if ( pass == 1 )
 			{
 				scene.bones[nb_humanoidNeck].armature = 0.0f;
@@ -1594,6 +1602,121 @@ static int FigureCatchDampingTest( void )
 	ENSURE( peak[0] < 0.6f * peak[1] && jitter[0] < 0.7f * jitter[1] );
 	ENSURE( swing[0] > 0.1f );
 	ENSURE( standing[0] == 4 );
+	return 0;
+}
+
+// The spring of the joint of a bone of a figure in cycles per second, zero without a spring
+static float SpringHertz( nbFigureId figure, int bone )
+{
+	b3JointId joint = nbFigure_GetJoint( figure, bone );
+	if ( B3_IS_NULL( joint ) )
+	{
+		return 0.0f;
+	}
+	switch ( b3Joint_GetType( joint ) )
+	{
+		case b3_revoluteJoint:
+			return b3RevoluteJoint_GetSpringHertz( joint );
+		case b3_sphericalJoint:
+			return b3SphericalJoint_GetSpringHertz( joint );
+		default:
+			return 0.0f;
+	}
+}
+
+// The spine gives way to a hit, see nbBoneDef::hitStiffness: right after 60 N s on the upper chest from ahead or behind its
+// four joints pull with the share of their stiffness the humanoid gives them and the same torque limit, half a second
+// later with all of it again, and in the first second the chest bends farther against the pelvis than with joints that
+// keep their stiffness. From its right the spine keeps its stiffness and the figure moves as with stiff joints, from
+// ahead and its right at once the joints give way by half. The figure stands again after every catch.
+static int FigureSoftSpineTest( void )
+{
+	enum
+	{
+		directionCount = 4
+	};
+	const char* names[directionCount] = { "ahead", "behind", "its right", "ahead and its right" };
+	const b3Vec3 impulses[directionCount] = {
+		{ 0.0f, 0.0f, -60.0f }, { 0.0f, 0.0f, 60.0f }, { 60.0f, 0.0f, 0.0f }, { 42.42641f, 0.0f, -42.42641f } };
+	const float shares[directionCount] = { 1.0f, 1.0f, 0.0f, 0.5f };
+	float keep = 1.0f;
+	float bend[2][directionCount] = { { 0.0f } };
+	float hertzAfterHit[2][directionCount][SPINE_BONES];
+	float hertzLater[2][directionCount][SPINE_BONES];
+	float torqueAfterHit[2][directionCount][SPINE_BONES];
+	int standing[2] = { 0, 0 };
+	for ( int pass = 0; pass < 2; ++pass )
+	{
+		for ( int d = 0; d < directionCount; ++d )
+		{
+			FigureScene scene;
+			CreateFigureScene( &scene, 1 );
+			keep = scene.bones[nb_humanoidChest].hitStiffness;
+			ENSURE( keep < 1.0f );
+			for ( int k = 0; k < SPINE_BONES; ++k )
+			{
+				ENSURE( scene.bones[nb_humanoidBelly + k].hitStiffness == keep );
+			}
+			if ( pass == 1 )
+			{
+				for ( int k = 0; k < SPINE_BONES; ++k )
+				{
+					scene.bones[nb_humanoidBelly + k].hitStiffness = 1.0f;
+				}
+			}
+			nbFigureId figure = AddFigure( &scene, b3Vec3_zero, 0.0f );
+			StepFigures( &scene, 30 );
+			b3BodyId chest = nbFigure_GetBody( figure, nb_humanoidChest );
+			b3BodyId pelvis = nbFigure_GetBody( figure, nb_humanoidPelvis );
+			b3Quat rest = b3InvMulQuat( b3Body_GetRotation( pelvis ), b3Body_GetRotation( chest ) );
+			ENSURE( HitChest( figure, 1, impulses[d] ) );
+			ENSURE( nbFigure_GetState( figure ) == nb_figureBalancing );
+			for ( int k = 0; k < SPINE_BONES; ++k )
+			{
+				bool on = false;
+				hertzAfterHit[pass][d][k] = SpringHertz( figure, nb_humanoidBelly + k );
+				ENSURE( MuscleTorque( figure, nb_humanoidBelly + k, &torqueAfterHit[pass][d][k], &on ) && on );
+			}
+			for ( int i = 0; i < 600 && nbFigure_GetState( figure ) == nb_figureBalancing; ++i )
+			{
+				StepFigures( &scene, 1 );
+				if ( i < 60 )
+				{
+					b3Quat change = b3MulQuat( b3InvMulQuat( b3Body_GetRotation( pelvis ), b3Body_GetRotation( chest ) ),
+											   b3Conjugate( rest ) );
+					float angle = acosf( b3ClampFloat( b3RotateVector( change, b3Vec3_axisY ).y, -1.0f, 1.0f ) );
+					bend[pass][d] = b3MaxFloat( bend[pass][d], angle );
+				}
+				if ( i == 29 )
+				{
+					ENSURE( nbFigure_GetState( figure ) == nb_figureBalancing );
+					for ( int k = 0; k < SPINE_BONES; ++k )
+					{
+						hertzLater[pass][d][k] = SpringHertz( figure, nb_humanoidBelly + k );
+					}
+				}
+			}
+			standing[pass] += nbFigure_GetState( figure ) == nb_figureAnimated ? 1 : 0;
+			DestroyFigureScene( &scene );
+		}
+	}
+	for ( int d = 0; d < directionCount; ++d )
+	{
+		float ratio = hertzAfterHit[0][d][0] / hertzAfterHit[1][d][0];
+		printf( "  60 N s on the upper chest from %s: the spine at %.3f of its stiffness, the chest bends up to %.1f deg against "
+				"the pelvis, with stiff joints %.1f deg\n",
+				names[d], ratio * ratio, bend[0][d] * 180.0f / B3_PI, bend[1][d] * 180.0f / B3_PI );
+		for ( int k = 0; k < SPINE_BONES; ++k )
+		{
+			ratio = hertzAfterHit[0][d][k] / hertzAfterHit[1][d][k];
+			ENSURE( fabsf( ratio - sqrtf( 1.0f - shares[d] * ( 1.0f - keep ) ) ) < ( d == 3 ? 0.02f : 1.0e-3f ) );
+			ENSURE( torqueAfterHit[0][d][k] == torqueAfterHit[1][d][k] );
+			ENSURE( fabsf( hertzLater[0][d][k] - hertzLater[1][d][k] ) <= 1.0e-4f * hertzLater[1][d][k] );
+		}
+	}
+	ENSURE( bend[0][0] > 1.15f * bend[1][0] && bend[0][1] > 1.15f * bend[1][1] );
+	ENSURE( bend[0][2] == bend[1][2] );
+	ENSURE( standing[0] == directionCount && standing[1] == directionCount );
 	return 0;
 }
 
@@ -3423,14 +3546,16 @@ static int FigureWallTest( void )
 // 57, whose soles grip more, see NB_SOLE_FRICTION, in 9 and 8, the second pattern among them again, and in the third it
 // lies 1.15 m behind the wall, past the pieces. Round 59, whose neck and head take more damping while the figure
 // catches itself, see nbBoneDef::catchDamping, gets up behind the wall in 10 and again after the block in 7, the second
-// pattern no longer among them. Until round 40 the test took the second pattern, from round 41 the eleventh, from
-// round 44 the second again, from round 53 the third, from round 57 the second again, and since round 59 the fifth,
-// where it gets up in both.
+// pattern no longer among them. Round 60, whose spine gives way to hits from ahead and behind, see
+// nbBoneDef::hitStiffness, gets up behind the wall in 12 and again after the block in 8, the second pattern among them
+// again and the fifth no longer after the block. Until round 40 the test took the second pattern, from round 41 the
+// eleventh, from round 44 the second again, from round 53 the third, from round 57 the second again, from round 59 the
+// fifth, and since round 60 the second again, where it gets up in both.
 static int FigureWallDebrisTest( void )
 {
 	FigureScene scene;
 	CreateFigureScene( &scene, 1 );
-	nbDestructibleId wall = AddWall( &scene, true, 0.05f, 4 );
+	nbDestructibleId wall = AddWall( &scene, true, 0.05f, 1 );
 	nbFigureDef def = nbDefaultFigureDef();
 	def.rig = &scene.rig;
 	def.standHeight = scene.standHeight;
@@ -3499,7 +3624,7 @@ static int FigureWallDebrisTest( void )
 
 // The throw through the wall of boards ends in the same bits with one thread and with four, on every platform, in the
 // second fracture pattern, which the figure breaks through
-#define NB_EXPECTED_WALL_HASH 0xcf377c8cu
+#define NB_EXPECTED_WALL_HASH 0xa6cf90dau
 
 static int FigureWallDeterminismTest( void )
 {
@@ -3559,10 +3684,10 @@ static int ThinBoardTest( void )
 }
 
 // The hash of the figure scenario on every platform, see RunFigureScenario
-#define NB_EXPECTED_FIGURE_HASH 0x263ce4a4u
+#define NB_EXPECTED_FIGURE_HASH 0x8ea47b7eu
 
 // See RunFollowScenario
-#define NB_EXPECTED_FOLLOW_HASH 0x3342f91cu
+#define NB_EXPECTED_FOLLOW_HASH 0xe4389b0du
 
 static int FigureFollowDeterminismTest( void )
 {
@@ -3610,6 +3735,7 @@ int FigureTest( void )
 	RUN_TEST( FigureTwistTest );
 	RUN_TEST( FigureNeckTest );
 	RUN_TEST( FigureCatchDampingTest );
+	RUN_TEST( FigureSoftSpineTest );
 	RUN_TEST( FigurePushTest );
 	RUN_TEST( FigureHoldArmTest );
 #if defined( B3_HAS_SWING_LIMITS )

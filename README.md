@@ -1257,18 +1257,44 @@ keiner. Nach den mittleren Treffern steht die Figur mit eigener Kraft nach 2,03 
 Schritten still. Mit `stepRate` 30 fällt sie etwa doppelt so oft wie mit 60, auf den neun Tabellen auf Brust und Bauch
 jetzt mit eigener Kraft 1 465 statt 1 739 von 4 464 Treffern und mit der Stütze gegen die Welt 409 statt 567, siehe F81
 der Roadmap. Den Rumpf, der nachgibt, so wie Sol ihn baut, übernimmt die Bibliothek nicht: Er beugt sich sichtbar
-weiter, bis 40 statt 17°, aber mit eigener Kraft fielen 5 991 statt 3 865 und leichte Treffer fielen, siehe F82. Ein
-Spiel ruft dafür nichts Neues auf, ein eigenes Rig setzt `catchDamping` an einem leichten Knochen mit einem schwereren
-darauf. Siehe „Ideen von ragdoll-sol zusammen“ und die Zeilen danach in [Optimierungen.md](docs/Optimierungen.md).
-Gepaart gegen `active-ragdoll-58`, zwei Läufe im Wechsel mit vier Threads und einer mit einem, rechnen alle Szenen ohne
-Figuren, die 50 Kämpfer und die 20 Ragdolls im Schutt dasselbe wie vorher, und die Szenen mit getroffenen Figuren enden
-anders, mit einem und mit vier Threads gleich. Die einzelne Figur hinter ihrer Mauer steht am Ende wie vorher, von den
-10 hinter ihren Mauern werden 4 statt 3 umgeworfen, als die Mauern brechen, keine statt einer fängt sich, und am Ende
-stehen wie vorher alle, von den 50 werden 28 statt 27 umgeworfen, 5 statt 7 fangen sich, und am Ende stehen wie vorher
-49, eine steht gerade auf. In der Stadt mit Figuren stürzen 6 statt 5 Stockwerke ein, mit bis zu 86 968 statt 35 654
-Kontakten, die Balance macht 27 statt 25 Schritte, fängt 9 statt 7, 22 werden wie vorher umgeworfen, und am Ende stehen
-29 statt 31, eine fängt sich noch, und zwei liegen. Ein Bild der Stadt mit Figuren kostet das 1,11- und 1,14-fache, mit
-einem Thread das 1,19-fache, bei mehr Arbeit mit dem sechsten Stockwerk.
+weiter, bis 40 statt 17°, aber mit eigener Kraft fielen 5 991 statt 3 865 und leichte Treffer fielen, siehe F82. Eine
+sanftere Form gibt es seit `active-ragdoll-60`, siehe Rumpf gibt nach. Ein Spiel ruft dafür nichts Neues auf, ein
+eigenes Rig setzt `catchDamping` an einem leichten Knochen mit einem schwereren darauf. Siehe „Ideen von ragdoll-sol
+zusammen“ und die Zeilen danach in [Optimierungen.md](docs/Optimierungen.md). Gepaart gegen `active-ragdoll-58`, zwei
+Läufe im Wechsel mit vier Threads und einer mit einem, rechnen alle Szenen ohne Figuren, die 50 Kämpfer und die 20
+Ragdolls im Schutt dasselbe wie vorher, und die Szenen mit getroffenen Figuren enden anders, mit einem und mit vier
+Threads gleich. Die einzelne Figur hinter ihrer Mauer steht am Ende wie vorher, von den 10 hinter ihren Mauern werden 4
+statt 3 umgeworfen, als die Mauern brechen, keine statt einer fängt sich, und am Ende stehen wie vorher alle, von den 50
+werden 28 statt 27 umgeworfen, 5 statt 7 fangen sich, und am Ende stehen wie vorher 49, eine steht gerade auf. In der
+Stadt mit Figuren stürzen 6 statt 5 Stockwerke ein, mit bis zu 86 968 statt 35 654 Kontakten, die Balance macht 27 statt
+25 Schritte, fängt 9 statt 7, 22 werden wie vorher umgeworfen, und am Ende stehen 29 statt 31, eine fängt sich noch, und
+zwei liegen. Ein Bild der Stadt mit Figuren kostet das 1,11- und 1,14-fache, mit einem Thread das 1,19-fache, bei mehr
+Arbeit mit dem sechsten Stockwerk.
+
+**Rumpf gibt nach.** Seit `active-ragdoll-60` geht der Rumpf eines Menschen der Bibliothek, der sich fängt, sichtbar mit
+dem Treffer, auf die Rückmeldung des Nutzers an Sol: Der Körper wirkte steif. Trifft ein Stoß ab der Hälfte von
+`knockdownImpulse` die Wirbelsäule, ziehen ihre vier Gelenke 0,15 s lang nur mit 0,3 ihrer Steifigkeit,
+`nbBoneDef::hitStiffness`, und nehmen sie in 0,35 s weich wieder auf. Ihre Kraft bleibt: Die Figur fängt sich mit allem,
+was sie hat, nur gibt der Rumpf zuerst nach. Das gilt so weit, wie der Treffer von vorn oder von hinten kommt, mit dem
+Quadrat des Kosinus zwischen dem Stoß über dem Boden und der Blickrichtung. Von der Seite bleibt die Wirbelsäule so
+steif wie vorher, schräg gibt sie halb so weit nach: Zur Seite lassen ihre Gelenke nur 34° zu statt 75° nach vorn,
+weicher beugte sich der Rumpf dort nur bis 3° weiter, und ohne Stütze fielen dann leichte Treffer von der Seite. Nach
+60 N s auf die obere Brust beugt sich der Rumpf mit der Stütze gegen die Welt, dem Standard, von vorn bis 25,1 statt
+18,9° und von hinten bis 30,8 statt 18,5° gegen das Becken, nach 80 N s bis 23,1 statt 16,5 und 35,4 statt 21,1°, mit
+eigener Kraft nach 60 N s bis 20,1 statt 16,8 und 25,0 statt 16,5°. Verdreht hat er sich schon seit F79 bis 40°. Von den
+4 × 5 264 Treffern fallen mit eigener Kraft 3 733 statt 3 752, mit der Stütze gegen die Welt 1 523 statt 1 532 und ohne
+Stütze 5 165 statt 5 258, von den leichten mit allen drei Stützen keiner. Nach den mittleren Treffern steht die Figur
+mit eigener Kraft nach 2,09 statt 2,03 s still, der weichere Rumpf schwingt etwas nach. Mit 0,4 der Steifigkeit beugt er
+sich weniger und fängt gleich gut, mit 0,2 fallen mit eigener Kraft 3 813. Ein Spiel ruft dafür nichts Neues auf, ein
+eigenes Rig setzt `hitStiffness` an den Gelenken, die nachgeben sollen. Siehe „Rumpf gibt nach“ und die Zeilen danach in
+[Optimierungen.md](docs/Optimierungen.md). Gepaart gegen `active-ragdoll-59`, zwei Läufe im Wechsel mit vier Threads und
+einer mit einem, rechnen alle Szenen ohne Figuren, die 50 Kämpfer, die 20 Ragdolls im Schutt und die Stadt mit Figuren
+dasselbe wie vorher: Explosionen werfen alle Knochen zugleich und gehen nicht über die Treffer, auf die die Wirbelsäule
+nachgibt. Die Szenen mit Figuren hinter ihren Mauern enden anders, mit einem und mit vier Threads gleich. Am Ende stehen
+dort wie vorher die eine, alle 10 und 49 der 50, eine steht gerade auf. Die eine steht nach dem Umwerfen 0,2 s später
+auf, die 10 machen, als die Mauern brechen, 8 statt 5 Schritte, und von den 50 fangen sich dabei 4 statt 5, 29 statt 28
+werden umgeworfen. Ein Bild der Stadt mit Figuren kostet das 1,03- und 1,08-fache, mit einem Thread das 1,00-fache, bei
+derselben Arbeit im Rauschen der VM.
 
 **Drücken.** Drückt ein Körper eine stehende Figur langsam, ein Stock, eine Hand oder ein Block, und schiebt er dabei
 einen ihrer Knochen mit mindestens `pushForce` (Standard 40 N) seitlich, bei zwei Prüfungen hintereinander, also ein
@@ -2077,6 +2103,7 @@ beim Einbinden nicht gebaut.
 | --- | --- | --- |
 | `armature` | 0 | Drehträgheit in kg m², die das Gelenk der Drehung des Knochens gegen seinen Elternknochen hinzufügt, siehe Zusatzträgheit in den Gelenken. Hält einen leichten Knochen zwischen steifen Federn ruhig. Der Mensch der Bibliothek: Hals und Kopf je 1 g m² |
 | `catchDamping` | 1 | So viel mal dämpft das Gelenk, solange die Figur sich fängt, siehe Ideen von `ragdoll-sol`. Beruhigt einen leichten Knochen mit einem schwereren darauf, die ein Treffer herumwirft. Der Mensch der Bibliothek: Hals und Kopf 8 |
+| `hitStiffness` | 1 | So viel seiner Steifigkeit behält das Gelenk kurz nach einem Treffer, solange die Figur sich fängt, siehe Rumpf gibt nach. Ein Treffer ab der Hälfte von `knockdownImpulse` auf einen Knochen mit einem solchen Gelenk macht alle solchen Gelenke der Figur 0,15 s weich, in 0,35 s kommen sie weich zurück, mit derselben Kraft, so weit, wie der Treffer von vorn oder hinten kommt, von der Seite gar nicht. Der Mensch der Bibliothek: die vier Gelenke der Wirbelsäule 0,3 |
 | `maxSpeed` | 0 | Mit Muskeln: Höchstgeschwindigkeit des Gelenks in rad/s, je schneller es sich in seine Zugrichtung dreht, desto schwächer zieht es, nach der Kurve von Hill. Null zieht bei jeder Geschwindigkeit gleich. Der Mensch der Bibliothek: Rumpf 25 rad/s, Arme und Beine keine |
 | `lowerSwingX`, `upperSwingX`, `lowerSwingY`, `upperSwingY` | 0 | Kugelgelenk: wie weit der Knochen in jede der vier Richtungen um die x- und die y-Achse seines Gelenkrahmens schwingen darf, in Radiant, dazwischen eine Ellipse, bis 0,95 π, siehe Gelenke wie beim Menschen. Alle null nehmen `coneAngle` in jede Richtung, bis 0,5 π. Der Mensch der Bibliothek: Schulter 160° nach vorn und zur Seite, 40° zurück und hinein, Hüfte 135° nach vorn, 20° zurück, 45° hinaus und 25° hinein |
 | `friction` | 0 | Reibung der Form des Knochens, null nimmt die des Rigs. Zwei Formen, die sich berühren, reiben mit der Wurzel aus dem Produkt ihrer Reibungen. Der Mensch der Bibliothek: Füße 0,9 wie eine Gummisohle auf trockenem Beton, sonst die 0,6 des Rigs |
