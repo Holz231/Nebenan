@@ -3394,3 +3394,71 @@ Alle sechs `figures`-Szenen behalten in drei gepaarten Läufen ihre Ergebnis-Has
 Stadt mit Figuren lagen bei 2,86 → 2,85 ms und 2,85 → 2,82 ms mit vier Threads sowie 6,79 → 6,73 ms mit
 einem Thread. Der Benchmark läuft mit den Bibliotheksvorgaben. Die aktivierte Schrittdrehung wurde in den
 Abfangreihen geprüft. Release mit Warnungen als Fehler und der vollständige lokale Testsatz sind grün.
+
+## Nach dem Aufsetzen kurz auf beiden Füßen bleiben, F61 und F79, 5. November 2026
+
+Nach 76 N s von vorn auf die Brust wechselte die Figur nach dem Aufsetzen sofort zum nächsten Schritt.
+In einer späteren Wiederholung lag der Capture Point bei der Landung 6,0 cm außerhalb der Stützfläche.
+Zwei Updates später lag er bereits näher als 3 cm an ihr, während der hintere Fuß erneut abhob. Die
+Figur wiederholte das Muster bis zum Limit und fiel. Dasselbe Muster trat nach 77 N s schräg von vorn
+auf die Brust und nach 82 N s auf die Rippen auf.
+
+Mit Schrittdrehung und eigener Balance darf die Figur nach einer bestätigten Landung in die
+Standregelung wechseln, wenn der andere Fuß ebenfalls Bodenkontakt hat, der Capture Point höchstens
+6 cm außerhalb liegt und der Schwerpunkt noch mindestens 90 % seiner Standhöhe erreicht. Mit
+Beinabstützung bremst dann die Standregelung über den Druck unter den Sohlen. Liegt der Capture Point weiter
+außerhalb, entscheidet die normale Schrittauslösung. Die Folge zählt ihre Schritte bis zum Abfangen
+weiter, auch wenn die Figur dazwischen kurz auf beiden Füßen steht.
+
+Nach dem zentralen 76-N-s-Treffer fängt sich die Figur nun mit fünf Schritten in 3,98 s. Der neue
+`FigureLandingSettleTest` prüft die drei 60-Hz-Treffer und einen 78-N-s-Brusttreffer bei 30 Hz mit
+±1 mm Treffpunktabweichung, anschließendem Stand und bitgleichen Verläufen mit einem und vier Threads.
+Die Vorgängerfassung scheitert am Test. Der vollständige lokale Testsatz besteht.
+
+Bei 60 Hz fallen über Mitte und ±1 mm 1 statt 8 von 5 760 mittleren Treffern. Acht frühere Fehlschläge
+fangen sich, ein anderer Fall scheitert neu. Im Zentrum fängt die Figur alle 1 920 und braucht zusammen
+4 744 statt 4 790 Schritte. Bei 30 Hz bleiben es 69 Stürze von 1 920, je vier Fälle wechseln das Ergebnis;
+die Schrittzahl sinkt von 6 781 auf 6 606. Bei 120 Hz fangen sich alle 1 920 mittleren Fälle, bei stärkeren
+Treffern und 60 Hz fallen 594 statt 598 von 1 200. Alle 168 Oberflächenproben fangen sich.
+Die 60-Hz-Reihe im Zentrum liefert mit einem und vier Threads Hash `e56f60dd`. Ausgangsstand `f1f7ce4`,
+Messungen in `build/compare64-sol-*`.
+
+Alle sechs `figures`-Szenen liefern in drei gepaarten Läufen dieselben Ergebnis-Hashes. Die Physikschritte
+der Stadt mit Figuren lagen bei 2,94 → 2,93 ms und 2,93 → 2,90 ms mit vier Threads sowie 6,70 → 6,73 ms
+mit einem Thread. Die Abfangreihen prüfen die Doppelstütze mit aktivierter Schrittdrehung.
+
+## Vergleich mit Stand 64, 5. November 2026
+
+Stand 64 dokumentiert Versuche gegen das Rutschen späterer Schritte ohne Aufrichtstütze. Der Code
+entspricht Runde 62. Runde 61 hält das Ziel des Standfußes an seiner letzten belasteten Position,
+Runde 62 führt den Schwungfuß gegen Ende des Schritts tiefer. Runde 63 hat die Bremse gegen das
+Hochfedern verworfen und eine kurze Doppelstütze nach der Landung als nächsten Ansatz festgehalten.
+Runde 64 betrachtet Rutscher pro Treffer mit gemeinsamem Ausgang. Die Quote pro Schritt stieg von
+28,1 auf 34,0 %, die Anzahl pro gefangenem Treffer sank von 0,251 auf 0,221.
+
+Beide Stände lokal mit demselben Compiler und denselben Proben gebaut. Figur 1,8 m, 74 kg, vier
+Rumpfknochen, zwölf Richtungen, mittlere Treffer 50–89 N s. „Durch Beine“ verwendet kein Weltgelenk.
+„Ohne“ setzt auch das Drehmoment für die Aufrichtstütze durch die Beine auf null.
+
+| Stürze | Fälle | Stand 64 | Sol mit kurzer Doppelstütze |
+| --- | ---: | ---: | ---: |
+| Durch Beine, 30 Hz | 1 920 | 18 | 69 |
+| Durch Beine, 60 Hz, Mitte und ±1 mm | 5 760 | 0 | 1 |
+| Durch Beine, 120 Hz | 1 920 | 3 | 0 |
+| Durch Beine, 60 Hz, 90–138 N s | 1 200 | 328 | 594 |
+| Ohne, 60 Hz | 1 920 | 14 | 82 |
+| Ohne, 60 Hz, 90–138 N s | 1 200 | 634 | 878 |
+
+Bei mittleren Treffern im Zentrum und 60 Hz braucht Stand 64 3 997 Schritte, Sol 4 744. Nach 60 N s von
+vorn auf die obere Brust dreht der Rumpf gegen das Becken um 40,8° beziehungsweise 25,6°. Nach dem
+entsprechenden Treffer von hinten beugt er sich um 25,3° beziehungsweise 38,0°. Ab einer Sekunde nach
+dem Treffer von vorn ändert sich die Kopfdrehgeschwindigkeit relativ zum Hals pro Update um 0,018
+beziehungsweise 0,162 rad/s. Die Messwerte erfassen die jeweilige gesamte Balance, einschließlich
+der verschiedenen Abfangzeiten. Rohdaten in `build/compare64-*`.
+
+Zwei Teile von Stand 64 wurden einzeln auf Sol mit kurzer Doppelstütze ausprobiert. Der um 2 cm tiefere
+Fußzielpunkt am Ende des Schritts senkt die Schrittzahl bei 60 Hz von 4 744 auf 4 448 bei weiterhin
+0 Stürzen im Zentrum. Von den 1 200 harten Treffern fallen 604 statt 594. Mit 3,5 und 5 cm scheitern
+bestehende Erholungsproben. Das Ziel des Standfußes an seiner letzten Position mit mindestens 70 % Last
+zu halten, senkt die harten Stürze von 594 auf 547, kostet aber zwei mittlere Treffer im Zentrum und
+scheitert an `FigureLandingSettleTest`. Beide Ideen bleiben vorerst Versuche im Vergleichsbuild.

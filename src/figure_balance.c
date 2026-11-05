@@ -188,6 +188,11 @@
 #define NB_LAND_DISTANCE 0.06f
 #define NB_LAND_SPEED 2.0f
 
+// A modest capture error on landing can shrink as the new foot takes load. Let the planted stance check it again
+// when both feet are down and the body is still close to standing height.
+#define NB_LAND_CAPTURE_MARGIN ( 2.0f * NB_STEP_MARGIN )
+#define NB_LAND_CENTER_HEIGHT 0.9f
+
 // Calm: the bones slower than this on average by their mass, in meters per second, both feet on the ground, the capture
 // point between them or no farther out than a step needs, and the pelvis upright within this many radians, for this
 // many seconds. Then the figure stands animated again. The fastest bone would not do: a hand that rests against a thigh
@@ -1925,6 +1930,7 @@ nbBalanceResult nbUpdateBalance( nbWorld* world, int index, nbFigure* f, float t
 		return nb_balanceFell;
 	}
 
+	int maxSteps = b->ownStrength ? NB_OWN_MAX_STEPS : NB_MAX_STEPS;
 	if ( b->stepping == false )
 	{
 		bool grounded = b->footContact[0] || b->footContact[1];
@@ -1941,11 +1947,15 @@ nbBalanceResult nbUpdateBalance( nbWorld* world, int index, nbFigure* f, float t
 		{
 			b->dangerUpdates = NB_DANGER_UPDATES;
 		}
+		if ( b->footContact[0] && b->footContact[1] && b->captureMargin <= NB_STEP_MARGIN * b->scale )
+		{
+			b->stepCount = 0;
+		}
 		bool urgent = b->ownStrength && b->dangerUpdates >= 1 && b->captureMargin > NB_STEP_URGENT * b->scale;
 		bool slowDanger = f->def.motors.responsiveTrunk && b->ownStrength && b->dangerUpdates >= 1 &&
 						  timeStep >= NB_DANGER_MAX_WAIT;
 		if ( ( b->dangerUpdates >= NB_DANGER_UPDATES || urgent || slowDanger ) &&
-			 nbStartCatchStep( world, index, f, b ) == false )
+			 ( b->stepCount >= maxSteps || nbStartCatchStep( world, index, f, b ) == false ) )
 		{
 			return nb_balanceFell;
 		}
@@ -1977,12 +1987,20 @@ nbBalanceResult nbUpdateBalance( nbWorld* world, int index, nbFigure* f, float t
 		{
 			// Caught it stands, else the next step, up to the most steps in a row
 			b->plant[foot] = nbPlant( f, b, foot );
-			if ( b->captureMargin <= NB_STEP_MARGIN * b->scale )
+			bool captured = b->captureMargin <= NB_STEP_MARGIN * b->scale;
+			bool canSettle = f->def.motors.turnWithSteps && b->ownStrength && landed && b->footContact[1 - foot] &&
+							 b->captureMargin <= NB_LAND_CAPTURE_MARGIN * b->scale &&
+							 nbCenterHeight( b ) >= NB_LAND_CENTER_HEIGHT * b->standCenter;
+			if ( captured || canSettle )
 			{
 				b->stepping = false;
 				b->stateTime = 0.0f;
 				b->stepFoot = -1;
-				b->stepCount = 0;
+				// A chance to settle still counts as part of this catch until both feet capture the body.
+				if ( captured )
+				{
+					b->stepCount = 0;
+				}
 				b->dangerUpdates = 0;
 				b->airborneTime = 0.0f;
 				for ( int leg = 0; leg < 2; ++leg )
@@ -1990,8 +2008,7 @@ nbBalanceResult nbUpdateBalance( nbWorld* world, int index, nbFigure* f, float t
 					b->plant[leg] = nbPlant( f, b, leg );
 				}
 			}
-			else if ( b->stepCount >= ( b->ownStrength ? NB_OWN_MAX_STEPS : NB_MAX_STEPS ) ||
-					  nbStartCatchStep( world, index, f, b ) == false )
+			else if ( b->stepCount >= maxSteps || nbStartCatchStep( world, index, f, b ) == false )
 			{
 				return nb_balanceFell;
 			}

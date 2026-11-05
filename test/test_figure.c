@@ -1098,6 +1098,18 @@ static int FigureLateralSwingRecoveryTest( void )
 	return CheckOwnBalanceHits( bones, directions, fastHits, 2, 60, 1, true, true );
 }
 
+// These hits used to start another step immediately after landing, repeating until the step limit. A short
+// planted stance lets the landed foot take load and gives the balance controller another measurement.
+static int FigureLandingSettleTest( void )
+{
+	const int bones[] = { nb_humanoidChest, nb_humanoidChest, nb_humanoidRibs };
+	const int directions[] = { 0, 1, 0 };
+	const float hits[] = { 76.0f, 77.0f, 82.0f };
+	const float slowHit = 78.0f;
+	ENSURE( CheckOwnBalanceHits( bones, directions, hits, 3, 60, 1, true, true ) == 0 );
+	return CheckOwnBalanceHits( bones, directions, &slowHit, 1, 30, 1, true, true );
+}
+
 // Isolate the catch-step planner with the pelvis toward the stance foot and a fast backward drift. A reachable target
 // must retain the side separation; an impossible replan must leave the previous target alone. Check both feet,
 // different body sizes, headings and positions, with identical targets and joint poses across thread counts.
@@ -4548,6 +4560,7 @@ int FigureTest( void )
 	RUN_TEST( FigureResponsiveBrakeTest );
 	RUN_TEST( FigureTurningBrakeTest );
 	RUN_TEST( FigureLateralSwingRecoveryTest );
+	RUN_TEST( FigureLandingSettleTest );
 	RUN_TEST( FigureStepReachGapTest );
 	RUN_TEST( FigureStepDelayTest );
 	RUN_TEST( FigureSupportMiddleTest );

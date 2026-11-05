@@ -2420,6 +2420,12 @@ zwei Updates früher Bodenkontakt und fängt sich. Bei 30 Hz 69 statt 160 Fehlsc
 Trefferpunktlagen 8 statt 14 von 5 760. Kopf- und Rumpfregressionen bestehen. Siehe „Seitliche Fangschritte
 früher absenken“ in [Optimierungen](Optimierungen.md).
 
+**F61/F79, Doppelstütze nach dem Aufsetzen:** Mit Schrittdrehung kann die Figur einen kleinen Restfehler
+auf beiden Füßen prüfen, bevor sie den nächsten Schritt beginnt. Bei 60 Hz über drei Trefferpunktlagen
+fällt 1 statt 8 von 5 760 mittleren Treffern. Der Vergleich mit Stand 64 zeigt dessen Vorsprung bei 30 Hz
+und harten Treffern. Siehe „Nach dem Aufsetzen kurz auf beiden Füßen bleiben“ und „Vergleich mit Stand 64“
+in [Optimierungen](Optimierungen.md).
+
 ## Kleinere Punkte
 
 Mit niedriger Priorität vorgemerkt, sie sparen vor allem Arbeit, die schon parallel läuft. Der Gewinn gilt mit einem
