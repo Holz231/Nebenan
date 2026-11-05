@@ -1136,6 +1136,15 @@ static int FigureLandingReachTest( void )
 	return CheckOwnBalanceHits( &hardBone, &hardDirection, &hardHit, 1, 60, 1, true, true );
 }
 
+// The trunk yields after these hard hits, then starts carrying the body again before the stance foot slides away.
+static int FigureHardTrunkRecoveryTest( void )
+{
+	const int bones[] = { nb_humanoidBelly, nb_humanoidBelly };
+	const int directions[] = { 0, 0 };
+	const float hits[] = { 110.0f, 116.0f };
+	return CheckOwnBalanceHits( bones, directions, hits, 2, 60, 1, true, true );
+}
+
 // Isolate the catch-step planner with the pelvis toward the stance foot and a fast backward drift. A reachable target
 // must retain the side separation; an impossible replan must leave the previous target alone. Check both feet,
 // different body sizes, headings and positions, with identical targets and joint poses across thread counts.
@@ -4589,6 +4598,7 @@ int FigureTest( void )
 	RUN_TEST( FigureLandingSettleTest );
 	RUN_TEST( FigureEarlyPlantRecoveryTest );
 	RUN_TEST( FigureLandingReachTest );
+	RUN_TEST( FigureHardTrunkRecoveryTest );
 	RUN_TEST( FigureStepReachGapTest );
 	RUN_TEST( FigureStepDelayTest );
 	RUN_TEST( FigureSupportMiddleTest );

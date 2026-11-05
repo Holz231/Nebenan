@@ -3549,3 +3549,50 @@ Alle sechs `figures`-Szenen liefern in drei gepaarten Läufen dieselben Ergebnis
 der Stadt mit Figuren lagen mit vier Threads bei 2,12 → 2,11 ms und 2,17 → 2,13 ms, mit einem Thread bei
 6,58 → 6,53 ms. Der Benchmark nutzt die Bibliotheksvorgaben. Die Abfangreihen prüfen das spätere Reichen
 mit aktivierter Schrittdrehung.
+
+## Den Rumpf nach harten Treffern früher tragen lassen, F61 und F79, 5. November 2026
+
+Nach 110 N s von vorn auf den Bauch beginnt der zweite Fangschritt, während die Rumpfmotoren noch
+zurückkehren. Der rechte Standfuß bewegt sich zwischen 0,417 und 0,533 s um etwa 29 cm in der Bodenebene.
+Die Figur kippt danach. Stand 64 bewegt seinen Standfuß im selben Zeitfenster um rund 10 cm und fängt sich.
+Mehr Sohlenreibung, eine direkte Hüftbremse nach Stand 64, längeres Gegenhalten bei rutschender Sohle und
+eine frühere horizontale Fußbahn erklärten den Unterschied einzeln nicht. Die getesteten Änderungen
+verbesserten die harte Reihe wenig oder ließen mehr Treffer fallen.
+
+Wenn nachgebender Rumpf und Schrittdrehung aktiv sind und die Figur sich aus eigener Kraft fängt, beginnt
+die Rückkehr der Rumpfmotoren nach starken Treffern früher. Die anfängliche Stärke beträgt 40 % und steigt
+über 0,35 s weich an. Die Zeit auf 40 % verkürzt sich zwischen dem Anderthalbfachen und dem Doppelten von
+`knockdownImpulse` stetig von 0,15 auf 0,0375 s. Beim Standardmenschen entspricht das 75–100 N s.
+
+Im 110-N-s-Fall bewegt sich der rechte Standfuß im selben Zeitfenster rund 15 cm und die Figur fängt sich
+in fünf Schritten nach 2,87 s. Nach 116 N s fängt sie sich mit acht Schritten in 3,72 s. Der neue
+`FigureHardTrunkRecoveryTest` prüft beide Treffer bei 60 Hz und ±1 mm Abweichung des Trefferpunkts mit
+einem und vier Threads, einschließlich des anschließenden Stands. Die alte Fassung scheitert an der
+Prüfung. Der vollständige lokale Testsatz besteht.
+
+| Stürze mit Beinabstützung und beiden Bewegungsoptionen | Fälle | Vorher | Frühere Rückkehr |
+| --- | ---: | ---: | ---: |
+| 90–138 N s, 60 Hz | 1 200 | 548 | 464 |
+| 50–89 N s, 30 Hz | 1 920 | 22 | 22 |
+| 50–89 N s, 60 Hz, Mitte und ±1 mm | 5 760 | 0 | 0 |
+| 50–89 N s, 120 Hz | 1 920 | 0 | 0 |
+| 40–80 N s auf die obere Brust, 60 Hz | 168 | 0 | 0 |
+
+In der harten Reihe fängt die Figur 100 zuvor gescheiterte Treffer und fällt in 16 zuvor gefangenen Fällen.
+Bei 30 Hz wechseln jeweils zwei Fälle das Ergebnis. Die härtere Einstellung ohne Restpause ergibt 450
+harte Stürze, lässt aber einen mittleren Treffer bei 60 Hz und 1 mm Versatz fallen. Die Restpause von
+0,0375 s wurde deshalb gewählt.
+
+Ohne Aufrichtstütze fallen bei 60 Hz 812 statt 878 von 1 200 harten Treffern und 79 statt 82 von 1 920
+mittleren Treffern. Mit Beinabstützung liefert die mittlere 60-Hz-Reihe im Zentrum mit einem und vier
+Threads Hash `9a0ca2f5`.
+
+In zwei Proben mit 100 N s auf die obere Brust beugt sich der Rumpf von vorn und hinten um 35,3° und 66,6°
+statt 38,5° und 80,9°. Er dreht dabei um 27,1° und 34,1° gegen das Becken. Die Impuls- und Kopftests
+bestehen. Die 60-N-s-Proben laufen vor dem Bereich der verkürzten Haltezeit. Rohdaten in
+`build/trunk-hard-final-*` und `build/hip-hard-*`, Ausgangsstand `e276a8e`.
+
+In drei gepaarten Benchmarkläufen liefern alle sechs `figures`-Szenen dieselben Ergebnis-Hashes.
+Die Physikschritte der Stadt mit Figuren lagen mit vier Threads bei 2,14 → 2,85 ms und 2,85 → 2,84 ms,
+mit einem Thread bei 6,61 → 6,64 ms. Die Zeiten schwankten zwischen den Vier-Thread-Paaren. Der Benchmark
+nutzt die Bibliotheksvorgaben, die Abfangreihen oben prüfen die aktivierte Rumpfreaktion.

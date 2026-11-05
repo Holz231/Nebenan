@@ -2438,6 +2438,12 @@ senkt das Standbein gleichzeitig das Becken in den Bereich, den beide Beine erre
 60-N-s-Seitenprobe steht nach 1,40 statt 2,85 s wieder, der Kopf schwingt weniger nach. Siehe „Am Ende des
 Fangschritts den Boden erreichen“ in [Optimierungen](Optimierungen.md).
 
+**F61/F79, Rumpf nach harten Treffern:** Nach dem ersten Nachgeben beginnen die Rumpfmotoren bei starken
+Treffern früher wieder zu tragen. Bei 60 Hz fallen 464 statt 548 von 1 200 harten Treffern. Im verfolgten
+110-N-s-Fall bleibt der Standfuß näher an seiner Position und die Figur fängt sich. Die mittleren 60-Hz-
+Reihen fangen alle 5 760 Treffer. Siehe „Den Rumpf nach harten Treffern früher tragen lassen“ in
+[Optimierungen](Optimierungen.md).
+
 ## Kleinere Punkte
 
 Mit niedriger Priorität vorgemerkt, sie sparen vor allem Arbeit, die schon parallel läuft. Der Gewinn gilt mit einem

@@ -33,6 +33,9 @@
 #define NB_TRUNK_YIELD_STRENGTH 0.4f
 #define NB_TRUNK_YIELD_HOLD 0.15f
 #define NB_TRUNK_YIELD_RETURN 0.35f
+// With the stepping controller, strong impacts need the trunk to start carrying the body sooner. Fade the hold
+// reduction in from 1.5 to twice the configured knockdown impulse.
+#define NB_TRUNK_HARD_HOLD_REDUCTION 0.75f
 
 // The enhanced balance response moves the chest quickly under a light neck and a heavier head. Dampen both
 // connected joints while catching a hit, so the head does not keep wobbling between their springs. This changes
@@ -3098,10 +3101,22 @@ static void nbUpdateTrunkYield( nbFigure* f, float timeStep )
 static void nbHitBones( nbFigure* f, int bone, b3Vec3 impulse, b3Pos point )
 {
 	nbSpreadHit( f, bone, impulse, point );
-	if ( f->def.motors.responsiveTrunk && f->state == nb_figureBalancing && nbIsSpine( f, bone ) &&
-		 b3Length( impulse ) >= 0.5f * b3MaxFloat( f->def.knockdownImpulse, 0.0f ) )
+	if ( f->def.motors.responsiveTrunk == false || f->state != nb_figureBalancing || nbIsSpine( f, bone ) == false )
 	{
-		f->trunkYieldLeft = NB_TRUNK_YIELD_HOLD + NB_TRUNK_YIELD_RETURN;
+		return;
+	}
+
+	float magnitude = b3Length( impulse );
+	float threshold = b3MaxFloat( f->def.knockdownImpulse, 0.0f );
+	if ( magnitude >= 0.5f * threshold )
+	{
+		float hold = NB_TRUNK_YIELD_HOLD;
+		if ( f->def.motors.turnWithSteps && f->balancer.ownStrength && threshold > 0.0f )
+		{
+			float severity = b3ClampFloat( 2.0f * ( magnitude / threshold - 1.5f ), 0.0f, 1.0f );
+			hold *= 1.0f - NB_TRUNK_HARD_HOLD_REDUCTION * severity;
+		}
+		f->trunkYieldLeft = hold + NB_TRUNK_YIELD_RETURN;
 		nbUpdateTrunkYield( f, 0.0f );
 	}
 }
