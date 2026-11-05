@@ -60,6 +60,30 @@
 #define NB_STEP_DURATION 0.3f
 #define NB_STEP_HEIGHT 0.12f
 
+// Late in a step the swinging leg reaches below the ground, as a person reaches for the ground with the foot that ends
+// a step: from this part of the step on the target of its ankle sinks below the arc of the swing, at the planned end
+// this far below the ground, in meters, while a hold keeps the pelvis upright, and from the later part only this far
+// without one. The swinging leg follows its target about 0.1 s late, so the foot came down after the planned end in
+// almost every step, on average at 1.18 of its time with the figure's own strength and at 1.22 with the hold against
+// the world, and the body fell on past the stance foot meanwhile: in the first step to the side away from the stance
+// foot that foot carried nothing from 0.8 of the step on, and the stance leg, stretched and 40 degrees aslant, carried
+// it along with the body 3 to 4 cm above the ground. Reaching below the ground, the foot lands at 1.08 and 1.10 of the
+// step. After the hits on chest and belly from 50 to 89 N s that the figure caught, at the middle position of the hit
+// point, the stance foot moved more than 5 cm in the first step to the side away in 0.9 instead of 16.5 % of the steps
+// with the figure's own strength and in 6.4 instead of 26.2 % with the hold against the world, over all steps in 180
+// instead of 524 and in 160 instead of 435 steps, and the figure needed 2.08 instead of 2.36 and 1.11 instead of 1.18
+// steps. Of the 4 times 5 264 hits on chest, belly and limbs 3 043 instead of 3 484 fall with its own strength, 1
+// instead of 20 of them from 50 to 89 N s, 1 051 instead of 1 282 with the hold against the world and 4 954 instead of
+// 5 165 without a hold, 12 instead of 165 of those from 50 to 89 N s, none of the light ones. Reaching 8 cm from 0.7 of
+// the step on, 3 074 and 1 026 fell, 5 cm from 0.7 on 3 049 and 1 082. Without a hold the pelvis tips with the body
+// over the stance foot and brings the swinging hip down by itself: reaching 5 cm from 0.6 on there, 1 064 instead of
+// 964 of the 2 064 hits on chest and belly from 90 to 139 N s at the middle position fell, 2 cm from 0.9 on 4 961 of
+// all. Round 62.
+#define NB_REACH_PHASE 0.6f
+#define NB_REACH_DEPTH 0.05f
+#define NB_FREE_REACH_PHASE 0.9f
+#define NB_FREE_REACH_DEPTH 0.03f
+
 // A figure that catches itself with its own strength pulls the toes of its swinging foot up by this many radians in the
 // middle of the step and lands the foot flat, as the shin muscles of a person lift the toes in the swing so they clear
 // the ground, see nbLiftToes. The swing leg follows its target late, and the foot, whose target holds against the bones
@@ -2170,6 +2194,11 @@ nbBalanceResult nbUpdateBalance( nbWorld* world, int index, nbFigure* f, float t
 			}
 		}
 		swing = b3MulAdd( swing, NB_STEP_HEIGHT * b->scale * b3ComputeCosSin( B3_PI * phase ).sine, up );
+
+		// Late in the step the swinging foot reaches below the ground, see NB_REACH_PHASE
+		float reachPhase = held ? NB_REACH_PHASE : NB_FREE_REACH_PHASE;
+		float reach = b3ClampFloat( ( phase - reachPhase ) / ( 1.0f - reachPhase ), 0.0f, 1.0f );
+		swing = b3MulSub( swing, ( held ? NB_REACH_DEPTH : NB_FREE_REACH_DEPTH ) * b->scale * reach, up );
 
 		// The stance leg holds the pelvis upright at standing height, late in the step lower, see NB_DROP_PHASE, turned
 		// toward the foot ahead by its share of the turn, none in a step back, see nbStepShare. The swinging leg reaches

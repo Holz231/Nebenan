@@ -1322,6 +1322,39 @@ vorher 6 Stockwerke ein, bei bis zu 83 790 statt 86 968 Kontakten, die Balance m
 9, 25 statt 22 werden umgeworfen, und am Ende stehen 28 statt 29, zwei stehen gerade auf. Ein Bild der Stadt mit Figuren
 kostet das 0,99- und 0,95-fache, mit einem Thread das 0,96-fache, im Rauschen der VM.
 
+**Der Schwungfuß greift nach dem Boden.** Seit `active-ragdoll-62` greift das Schwungbein eines Menschen der Bibliothek,
+der sich fängt, am Ende des Schritts unter den Boden, wie ein Mensch mit dem Fuß nach dem Boden greift, der einen
+Schritt beendet: Solange eine Stütze das Becken aufrecht hält, sinkt das Ziel des Knöchels ab 0,6 der Schrittdauer unter
+den Bogen des Schritts, bis es am geplanten Ende 5 cm unter dem Boden liegt, ohne Stütze ab 0,9 und bis 3 cm. Das
+Schwungbein folgt seinem Ziel etwa 0,1 s spät, und so setzte der Fuß in fast jedem Schritt erst nach dem geplanten Ende
+auf, nach den mittleren Treffern mit eigener Kraft im Mittel bei 1,18 der Schrittdauer, mit der Stütze gegen die Welt
+bei 1,22. Der Körper fiel derweil weiter: Im ersten Schritt zur Seite weg trug der Standfuß ab 0,8 der Schrittdauer
+nichts mehr, und das gestreckte, 40° schräge Standbein trug ihn 3 bis 4 cm über dem Boden mit dem Körper mit. Seit Runde
+61 bewegte er sich dabei öfter mehr als 5 cm, nicht weil er über den Boden glitt, das tat er seltener, sondern weil der
+Schwungfuß in manchen Treffern ein Update später aufsetzte. Jetzt setzt der Schwungfuß bei 1,08 und 1,10 der
+Schrittdauer auf. Über vier Lagen des Treffpunkts bewegt sich der Standfuß nach den mittleren Treffern, die die Figur
+mit eigener Kraft fängt, im ersten Schritt zur Seite weg bei 0,9 statt 16,5 % der Schritte mehr als 5 cm und ab dem
+zweiten Schritt bei 514 statt 761 Schritten, mit der Stütze gegen die Welt im ersten Schritt zur Seite weg bei 6,4 statt
+26,1 %, und die Figur fängt sich mit 2,08 statt 2,36 und mit 1,11 statt 1,18 Schritten. Von den 4 × 5 264 Treffern
+fallen mit eigener Kraft 3 043 statt 3 484, von den mittleren 1 statt 20, mit der Stütze gegen die Welt, dem Standard,
+1 051 statt 1 282 und ohne Stütze 4 954 statt 5 165, von den mittleren 12 statt 165, von den leichten mit allen drei
+Stützen keiner. Ohne Stütze kippt das Becken mit dem Körper und bringt die Hüfte des Schwungbeins von selbst nach unten:
+Dort ließ ein tieferer Griff mehr harte Treffer fallen, und ab dem zweiten Schritt rutscht der Standfuß jetzt in weniger
+Schritten, aber in 34,0 statt 28,1 % von ihnen. Ein Becken, das spät im Schritt ungebremst sinkt, nahm das Rutschen
+auch, ließ aber mehr harte Treffer fallen. Ein Spiel ruft dafür nichts Neues auf. Siehe „Schwungfuß greift unter den
+Boden“ und die Zeilen danach in [Optimierungen.md](docs/Optimierungen.md). Gepaart gegen `active-ragdoll-61`, vier Läufe
+im Wechsel mit vier Threads und einer mit einem, rechnen alle Szenen ohne Figuren, die einzelne Figur hinter ihrer
+Mauer, die 50 Kämpfer und die 20 Ragdolls im Schutt dasselbe wie vorher, nur der höchste gezählte Speicher der
+gestreamten Stadt liegt bei 188 statt 189 MB. Die Szenen mit getroffenen Figuren enden anders, mit einem und mit vier
+Threads gleich: Hinter ihren Mauern stehen am Ende wie vorher alle 10 Figuren, die, als die Mauern brechen, wie vorher 5
+Schritte machen, sich einmal statt keinmal fangen und 1 statt 4 mal umgeworfen werden, und von den 50 stehen am Ende 49
+statt 50, einer steht gerade auf, als die Mauern brechen fangen sich 4 statt 5. In der Stadt mit Figuren stürzen wie
+vorher 6 Stockwerke ein, die Balance macht wie vorher 31 Schritte, fängt 9 statt 6, 24 statt 25 werden umgeworfen, und
+am Ende stehen 29 statt 28. Ein Bild der Stadt mit Figuren kostet mit vier Threads im Mittel das 1,04-fache, in den vier
+Paaren das 1,13-, 0,98-, 1,06- und 1,00-fache, mit einem Thread das 1,11-fache: Die Stadt endet anders, mit 38 899 statt
+38 369 Trümmerteilen und 16 744 statt 15 869 wachen Kontakten, und Box3D rechnet entsprechend mehr, das Update der
+Bibliothek kostet mit vier Threads gleich viel.
+
 **Drücken.** Drückt ein Körper eine stehende Figur langsam, ein Stock, eine Hand oder ein Block, und schiebt er dabei
 einen ihrer Knochen mit mindestens `pushForce` (Standard 40 N) seitlich, bei zwei Prüfungen hintereinander, also ein
 paar Schritte lang, fängt sich ein Mensch der Bibliothek, statt eine Wand zu bleiben: Seine Knochen werden dynamisch,
