@@ -1296,6 +1296,32 @@ auf, die 10 machen, als die Mauern brechen, 8 statt 5 Schritte, und von den 50 f
 werden umgeworfen. Ein Bild der Stadt mit Figuren kostet das 1,03- und 1,08-fache, mit einem Thread das 1,00-fache, bei
 derselben Arbeit im Rauschen der VM.
 
+**Der Standfuß bleibt stehen.** Seit `active-ragdoll-61` hält das Standbein eines Menschen der Bibliothek, der sich
+fängt, seinen Fuß dort, wo er zuletzt mindestens 0,7 des Gewichts der Figur trug, solange eine Stütze das Becken
+aufrecht hält. Das Ziel, zu dem das Standbein reicht, folgt dem Fuß nur, solange er so viel trägt, sonst zieht das Bein
+ihn dorthin zurück. Bis Runde 60 folgte es dem Fuß, solange er den Boden berührte, und nichts hielt einen Fuß, der wenig
+trug: Nach 85 N s von vorn auf die Brust fiel der Körper am Ende des ersten Schritts über das gestreckte Standbein mit
+bis zu 1,1 m/s zurück, das Bein, das landete, fing ihn mit bis zum 3,5-Fachen seines Gewichts, das Knie an der Grenze
+seiner Kraft, und warf ihn mit 0,9 m/s wieder hoch. Ab der Mitte des zweiten Schritts trug der Standfuß kaum noch etwas,
+Hüfte und Knie schoben ihn vom Körper weg, und er rutschte 44 cm, jetzt 14. Über vier Lagen des Treffpunkts rutscht der
+Standfuß nach den mittleren Treffern auf Brust und Bauch, die die Figur mit eigener Kraft fängt, ab dem zweiten Schritt
+bei 761 statt 1 032 Schritten mehr als 5 cm, bei 31,8 statt 38,7 %, im zweiten Schritt bei 32,6 statt 42,8 % und im
+Mittel 4,3 statt 7,0 cm, im ersten Schritt aber bei 8,6 statt 6,6 %. Von den 4 × 5 264 Treffern fallen mit eigener
+Kraft 3 484 statt 3 733, von den mittleren 20 statt 27, mit der Stütze gegen die Welt, dem Standard, 1 282 statt 1 523,
+und ohne Stütze rechnet die Figur wie vorher, von den leichten Treffern fällt mit allen drei Stützen keiner. Ohne Stütze
+kippt das Becken mit dem Körper über den Standfuß, und mit der Regel fielen dort leichte Treffer, meist von der Seite.
+Mit der Stütze gegen die Welt fängt die Figur nach Treffern von rechts auf die obere Brust jetzt alle bis 114 N s, wo
+sie bei 108 und 114 fiel. Das Becken nach dem Aufsetzen nur langsam anzuheben nahm das Rutschen auch, ließ aber mehr
+Treffer fallen. Ein Spiel ruft dafür nichts Neues auf. Siehe „Standfuß bleibt, wo er zuletzt trug“ und die Zeilen danach
+in [Optimierungen.md](docs/Optimierungen.md). Gepaart gegen `active-ragdoll-60`, zwei Läufe im Wechsel mit vier Threads
+und einer mit einem, rechnen alle Szenen ohne Figuren, die einzelne Figur hinter ihrer Mauer, die 50 Kämpfer und die 20
+Ragdolls im Schutt dasselbe wie vorher, und die Szenen mit getroffenen Figuren enden anders, mit einem und mit vier
+Threads gleich. Hinter ihren Mauern stehen am Ende wie vorher alle 10 Figuren, die, als die Mauern brechen, 5 statt 8
+Schritte machen, und alle 50 statt 49, von denen dabei 5 statt 4 sich fangen. In der Stadt mit Figuren stürzen wie
+vorher 6 Stockwerke ein, bei bis zu 83 790 statt 86 968 Kontakten, die Balance macht 31 statt 27 Schritte, fängt 6 statt
+9, 25 statt 22 werden umgeworfen, und am Ende stehen 28 statt 29, zwei stehen gerade auf. Ein Bild der Stadt mit Figuren
+kostet das 0,99- und 0,95-fache, mit einem Thread das 0,96-fache, im Rauschen der VM.
+
 **Drücken.** Drückt ein Körper eine stehende Figur langsam, ein Stock, eine Hand oder ein Block, und schiebt er dabei
 einen ihrer Knochen mit mindestens `pushForce` (Standard 40 N) seitlich, bei zwei Prüfungen hintereinander, also ein
 paar Schritte lang, fängt sich ein Mensch der Bibliothek, statt eine Wand zu bleiben: Seine Knochen werden dynamisch,

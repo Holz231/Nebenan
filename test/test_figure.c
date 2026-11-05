@@ -685,8 +685,11 @@ static int FigureSwingTest( void )
 // nbPelvisTurn, catches 130 and 134 N s from the front, where round 52 fell at 134, and gives up from 138 as before.
 // From either side it catches up to 104 N s and 110 and 112, falls at 106 after two steps, from its right at 108 too,
 // and stumbles from 114 into the fall, where round 52 caught every hit up to 110 and fell from 112. At 110 from its
-// right the head of round 52 sank to 1.12 m before it caught itself, that of round 53 to 1.21 m. The test gives 114
-// from its right.
+// right the head of round 52 sank to 1.12 m before it caught itself, that of round 53 to 1.21 m. Round 61, whose stance
+// foot stays planted where it last carried, see NB_PLANT_LOAD, catches every hit from its right up to 114 N s, where
+// round 60 fell at 108 and 114, falls at 116 after three steps, stumbles two steps from 118 to 122 and falls after 41 to
+// 47 updates, one step from 124 to 128 and falls after 20, and gives up from 130 as before. The test gives 124 from its
+// right.
 static int FigureCatchTest( void )
 {
 	typedef struct CatchCase
@@ -701,7 +704,7 @@ static int FigureCatchTest( void )
 		{ "80 N s from behind", { 0.0f, 0.0f, 80.0f }, false },		 { "60 N s from its right", { 60.0f, 0.0f, 0.0f }, false },
 		{ "60 N s from its left", { -60.0f, 0.0f, 0.0f }, false },	 { "100 N s from the front", { 0.0f, 0.0f, -100.0f }, false },
 		{ "80 N s from its right", { 80.0f, 0.0f, 0.0f }, false },	 { "80 N s from its left", { -80.0f, 0.0f, 0.0f }, false },
-		{ "150 N s from the front", { 0.0f, 0.0f, -150.0f }, true }, { "114 N s from its right", { 114.0f, 0.0f, 0.0f }, true, true },
+		{ "150 N s from the front", { 0.0f, 0.0f, -150.0f }, true }, { "124 N s from its right", { 124.0f, 0.0f, 0.0f }, true, true },
 	};
 	for ( size_t c = 0; c < sizeof( cases ) / sizeof( cases[0] ); ++c )
 	{
@@ -792,8 +795,9 @@ static int FigureCatchTest( void )
 // arm of 81 cm of round 36 turned up to 15.03 rad/s pushed to its left without the armature of its shoulder, see
 // nbMakeHumanoidBones, and 10.1 with it. Since round 58 the stance leg lowers the pelvis late in a step, see
 // NB_DROP_PHASE, in the step to the side the pelvis comes down to 0.785 instead of 0.793 m as the foot lands, and the
-// arm that rows swings on against the chest with up to 15.7 instead of 14.9 rad/s. Standing animated again, the arms
-// hang in the pose of the clip.
+// arm that rows swings on against the chest with up to 15.7 instead of 14.9 rad/s. Since round 61 the stance foot stays
+// planted where it last carried, see NB_PLANT_LOAD, and the right arm rows up to 1.90 instead of 1.83 rad, as the arms
+// swung in round 41 at 100 N s from the front. Standing animated again, the arms hang in the pose of the clip.
 static int FigureRowTest( void )
 {
 	typedef struct RowCase
@@ -806,7 +810,7 @@ static int FigureRowTest( void )
 	const RowCase cases[] = {
 		{ "100 N s from the front", { 0.0f, 0.0f, -100.0f }, { 1.2f, 1.2f }, { 2.2f, 2.2f } },
 		{ "110 N s from behind", { 0.0f, 0.0f, 110.0f }, { 0.5f, 0.5f }, { 0.8f, 0.8f } },
-		{ "80 N s to its left", { 80.0f, 0.0f, 0.0f }, { 0.0f, 1.2f }, { 0.5f, 1.9f } },
+		{ "80 N s to its left", { 80.0f, 0.0f, 0.0f }, { 0.0f, 1.2f }, { 0.5f, 2.0f } },
 		{ "62 N s from the front", { 0.0f, 0.0f, -62.0f }, { 0.4f, 0.4f }, { 1.0f, 1.0f } },
 	};
 	const int arms[2] = { nb_humanoidUpperArmLeft, nb_humanoidUpperArmRight };
@@ -1195,7 +1199,7 @@ static uint32_t MuscleCatch( int threadCount, float impulse )
 }
 
 // The throw of 90 N s on a figure with muscles ends in the same bits with one thread and with four, on every platform
-#define NB_EXPECTED_MUSCLE_HASH 0xe4ffea61u
+#define NB_EXPECTED_MUSCLE_HASH 0x73357a21u
 
 // The muscles, see nbFigureMotors::muscles and nbUpdateMuscles. A figure with muscles hit while it stands catches itself
 // with the strength the balance asks for at once: every joint of its trunk and its legs at the full torque of the motors,
@@ -1472,6 +1476,9 @@ static int FigureSpreadTest( void )
 // again after every catch. Without the armature the turn changes by over ten times that and reverses in every other
 // step. Both without the damping of neck and head while catching, see nbBoneDef::catchDamping, which calms them too, and
 // with a spine that keeps its stiffness after the hits, see nbBoneDef::hitStiffness, which moves the chest under them.
+// Since round 61, whose stance foot stays planted where it last carried, see NB_PLANT_LOAD, the whole catch is calmer:
+// the turn changes by 0.26 instead of 0.76 rad/s and reverses in 4 instead of 10 % of the steps, without the armature
+// by 2.05 instead of 15.58 rad/s and in 38 instead of 56 %, still eight times the change and nine times the reversals.
 static int FigureNeckTest( void )
 {
 	float jitter[2] = { 0.0f, 0.0f };
@@ -1531,7 +1538,7 @@ static int FigureNeckTest( void )
 			"reverses in %.0f %% of the steps, standing after %d of 4, without the armature %.2f rad/s, %.0f %% and %d of 4\n",
 			jitter[0], 100.0f * flips[0], standing[0], jitter[1], 100.0f * flips[1], standing[1] );
 	ENSURE( jitter[0] < 2.0f && flips[0] < 0.25f && standing[0] == 4 );
-	ENSURE( jitter[1] > 5.0f * jitter[0] && flips[1] > 0.4f );
+	ENSURE( jitter[1] > 5.0f * jitter[0] && flips[1] > 5.0f * flips[0] );
 	return 0;
 }
 
@@ -3684,10 +3691,10 @@ static int ThinBoardTest( void )
 }
 
 // The hash of the figure scenario on every platform, see RunFigureScenario
-#define NB_EXPECTED_FIGURE_HASH 0x8ea47b7eu
+#define NB_EXPECTED_FIGURE_HASH 0xeec70873u
 
 // See RunFollowScenario
-#define NB_EXPECTED_FOLLOW_HASH 0xe4389b0du
+#define NB_EXPECTED_FOLLOW_HASH 0xa46f0794u
 
 static int FigureFollowDeterminismTest( void )
 {

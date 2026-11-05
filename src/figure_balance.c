@@ -190,6 +190,24 @@
 // 16 instead of 10 % of the first steps. Round 58.
 #define NB_DROP_PHASE 0.7f
 
+// While a hold keeps the pelvis upright, the stance foot stays planted where it last carried this share of the weight of
+// the figure, see nbFootLoad: its plant, the point the stance leg reaches for, follows the foot only while it carries
+// that much. It followed the foot whenever the foot touched the ground, so nothing held a foot that carried little.
+// After 85 N s on the chest from the front the body fell back over the straight stance leg of the first step at up to
+// 1.1 m/s, the leg that landed caught it with up to 3.5 times its weight, the knee at the limit of its torque, and threw
+// it up again at 0.9 m/s. From the middle of the second step its foot carried almost nothing, the hip and the knee pushed
+// it away, and it slid 44 cm, now 14. After the hits on chest and belly from 50 to 89 N s that the figure caught with its
+// own strength, at four positions of the hit point, the stance foot slid more than 5 cm in 761 instead of 1 032 of the
+// steps from the second on, in the second step in 33 instead of 43 % and 4.3 instead of 7.0 cm on average, in the first
+// in 8.6 instead of 6.6 %. Of the 4 times 5 264 hits on chest, belly and limbs 3 484 instead of 3 733 fall with the
+// figure's own strength, 20 instead of 27 of those from 50 to 89 N s, and 1 282 instead of 1 523 with the hold against
+// the world, none of the light ones. Following the foot from half of the weight on, 3 635 and 1 321 fell, from all of
+// it 3 376 and 1 254 but 41 from 50 to 89 N s, kept for the whole step 3 338 and 1 260 and a light hit, and from half
+// of the weight on only from the second step on 3 741 and 1 538 and a light hit. Without a hold the pelvis tips with the
+// body over the stance foot, and with the rule one to six of the 168 light hits fell, most of them from the side.
+// Round 61.
+#define NB_PLANT_LOAD 0.7f
+
 // The most the standing pelvis is moved toward the middle of the support and against the motion, in meters
 #define NB_PELVIS_SHIFT 0.12f
 
@@ -1374,6 +1392,41 @@ static float nbFootGrip( const nbWorld* world, int index, const nbFigure* f, int
 	return grip;
 }
 
+// How much of the weight of the figure a foot carries: the total normal impulse of its contacts with bodies that are
+// not the figure over the last step, over the time step and the weight. Zero for a foot that touches nothing, all of it
+// without a time step.
+static float nbFootLoad( const nbWorld* world, int index, const nbFigure* f, const nbBalancer* b, int leg, float timeStep )
+{
+	b3BodyId foot = f->bones[nb_feet[leg]].bodyId;
+	b3ContactData contacts[NB_FOOT_CONTACTS];
+	int count = b3Body_GetContactData( foot, contacts, NB_FOOT_CONTACTS );
+	float impulse = 0.0f;
+	for ( int c = 0; c < count; ++c )
+	{
+		b3BodyId bodyA = b3Shape_GetBody( contacts[c].shapeIdA );
+		b3BodyId other = B3_ID_EQUALS( bodyA, foot ) ? b3Shape_GetBody( contacts[c].shapeIdB ) : bodyA;
+		if ( nbIsOwnBody( world, index, other ) )
+		{
+			continue;
+		}
+
+		for ( int m = 0; m < contacts[c].manifoldCount; ++m )
+		{
+			for ( int k = 0; k < contacts[c].manifolds[m].pointCount; ++k )
+			{
+				impulse += contacts[c].manifolds[m].points[k].totalNormalImpulse;
+			}
+		}
+	}
+
+	float mass = 0.0f;
+	for ( int i = 0; i < f->boneCount; ++i )
+	{
+		mass += f->bones[i].mass;
+	}
+	return timeStep > 0.0f && mass > 0.0f ? impulse / timeStep / ( mass * b3MaxFloat( b->gravity, 0.01f ) ) : 1.0f;
+}
+
 // The hold through the legs: the legs that carry the figure share it, the stance leg alone while the other swings, both
 // on the ground alike, none without ground under them. Each joint holds the up of the world as it lies in the frame of
 // its thigh in this update, so the pelvis turns upright against the thigh, and the thigh pushes against the ground.
@@ -2087,10 +2140,11 @@ nbBalanceResult nbUpdateBalance( nbWorld* world, int index, nbFigure* f, float t
 	}
 	else
 	{
-		// The swinging ankle on an arc to its target, the stance foot planted
+		// The swinging ankle on an arc to its target, the stance foot planted where it last carried, see NB_PLANT_LOAD
 		int foot = b->stepFoot;
 		int stance = 1 - foot;
-		if ( b->footContact[stance] )
+		bool held = b3Joint_IsValid( b->upright ) || b3Joint_IsValid( b->uprightLegs[0] );
+		if ( b->footContact[stance] && ( held == false || nbFootLoad( world, index, f, b, stance, timeStep ) >= NB_PLANT_LOAD ) )
 		{
 			b->plant[stance] = nbPlant( f, b, stance );
 		}
