@@ -1390,14 +1390,15 @@ solange eine Stütze das Becken aufrecht hält. Bei 60 Hz und schneller rechnet 
 Tabellen auf Brust und Bauch über vier Lagen des Treffpunkts fallen bei 30 Hz mit eigener Kraft 2 993 statt 3 781 und
 mit der Stütze gegen die Welt, dem Standard, 699 statt 908, von den mittleren 28 und keiner statt 72 und 11. Am
 mittleren Treffpunkt fallen bei 40 Hz 547 und 243 statt 645 und 289, bei 20 Hz 1 310 und 217 statt 1 796 und 427, von
-den leichten Treffern bei 20 Hz 4 und keiner statt 15 und 1, bei 30 und 40 Hz wie vorher keiner. Ohne Stütze bleiben die
-Ziele, wo sie sind: Dort ließ jeder Vorlauf bei 30 Hz 7 bis 14 statt 4 der 168 leichten Treffer fallen. Ein Spiel ruft
-dafür nichts Neues auf. Siehe „Schrittziele bei langsamem Takt vorausnehmen“ und die Zeilen danach in
-[Optimierungen.md](docs/Optimierungen.md). Gepaart gegen `active-ragdoll-65`, drei Läufe im Wechsel mit vier Threads und
-zwei mit einem, rechnet der Benchmark mit seinen 60 Hz alle Szenen bitgleich wie vorher, mit denselben Hashes und
-Zählern, nur der höchste gezählte Speicher der gestreamten Stadt liegt bei 188 statt 189 MB. Ein Bild der Stadt mit
-Figuren kostet mit vier Threads das 1,01-, 1,02- und 1,02-fache, mit einem das 1,09- und 1,02-fache, bei gleicher
-Rechnung Rauschen der VM.
+den leichten Treffern bei 20 Hz 4 und keiner statt 15 und 1, bei 30 und 40 Hz wie vorher keiner. Ohne Stütze nahm sie
+die Ziele bis `active-ragdoll-70` nicht voraus: Dort ließ jeder Vorlauf allein bei 30 Hz 7 bis 14 statt 4 der 168
+leichten Treffer fallen. Seit `active-ragdoll-71` nimmt sie sie auch ohne Stütze voraus, mit einem Schwungfuß, der dem
+Standfuß fernbleibt, siehe „Schritte ohne Stütze bei langsamem Takt“. Ein Spiel ruft dafür nichts Neues auf. Siehe
+„Schrittziele bei langsamem Takt vorausnehmen“ und die Zeilen danach in [Optimierungen.md](docs/Optimierungen.md).
+Gepaart gegen `active-ragdoll-65`, drei Läufe im Wechsel mit vier Threads und zwei mit einem, rechnet der Benchmark mit
+seinen 60 Hz alle Szenen bitgleich wie vorher, mit denselben Hashes und Zählern, nur der höchste gezählte Speicher der
+gestreamten Stadt liegt bei 188 statt 189 MB. Ein Bild der Stadt mit Figuren kostet mit vier Threads das 1,01-, 1,02-
+und 1,02-fache, mit einem das 1,09- und 1,02-fache, bei gleicher Rechnung Rauschen der VM.
 
 **Rumpf nach harten Treffern.** Seit `active-ragdoll-67` bleibt die Wirbelsäule eines Menschen der Bibliothek, der sich
 ohne die Stütze gegen die Welt fängt, mit eigener Kraft oder ohne Stütze, nach harten Treffern kürzer weich, eine Idee
@@ -1414,6 +1415,28 @@ im Wechsel mit vier Threads und zwei mit einem, rechnet der Benchmark alle Szene
 Hashes und Zählern, denn seine Figuren halten sich mit der Stütze gegen die Welt. Nur der höchste gezählte Speicher der
 gestreamten Stadt liegt bei 189 statt 188 MB. Ein Bild der Stadt mit Figuren kostet mit vier Threads das 0,98-, 0,94-
 und 1,07-fache, mit einem das 1,00- und 0,98-fache, bei gleicher Rechnung Rauschen der VM.
+
+**Schritte ohne Stütze bei langsamem Takt.** Ohne Stütze fängt sich eine Figur bei 30 Hz schlechter als bei 60 Hz, und
+der Vorlauf der Schrittziele allein ließ dort mehr leichte Treffer fallen. Den Grund zeigt der Nachziehschritt, in dem
+der ferne Fuß wieder neben den Standfuß kommt: Er hinkt seinem Ziel nach, erreicht über 5 m/s und schießt darüber
+hinaus, und weil die Knochen einer Figur aneinanderstoßen, landet er an oder auf dem Standfuß, und der nächste Schritt
+kann den Fuß darunter nicht heben. Seit `active-ragdoll-71` hält die Balance ohne Stütze den Schwungfuß vom Standfuß
+fern: Läuft er innerhalb einer Fußlänge vor oder hinter ihm auf ihn zu und käme er ihm seitlich in 1/15 s, oder in einem
+Update, wenn das länger dauert, näher als der geplante Abstand der Füße, schiebt sie sein Ziel um so viel hinaus. Dazu
+nimmt sie unter 60 Hz die Ziele eines Schritts voraus wie mit Stütze. Mit eigener Kraft und mit der Stütze gegen die
+Welt, dem Standard, rechnet die Figur bei jedem Takt bitgleich wie vorher. Ohne Stütze fallen auf den neun Tabellen auf
+Brust und Bauch über vier Lagen des Treffpunkts bei 30 Hz 4 551 statt 5 585, von den mittleren 256 statt 561, am
+mittleren Treffpunkt bei 20 Hz 1 803 statt 2 671 und bei 40 Hz 951 statt 1 135, von den 168 leichten Treffern bei 20, 30
+und 40 Hz 21, 3 und keiner statt 56, 4 und 4. Bei 60 Hz fallen von allen 4 × 5 264 Treffern 4 864 statt 4 868, von den
+mittleren 7 statt 15, von den leichten wie vorher keiner. Von der Seite fängt die Figur bei 30 Hz jetzt alle leichten
+Treffer, dafür fallen drei schräg von vorn, einer davon, weil sie acht Sekunden keine Ruhe findet, und weil sie keine
+Ruhe finden, fallen über vier Lagen 68 statt 56. Nur ein Update vorausgeschaut fielen bei 40 Hz 6 leichte Treffer, denn
+dort reichen 25 ms nicht, um den Fuß zu bremsen. Ein Spiel ruft dafür nichts Neues auf. Siehe „Schwungfuß ohne Stütze
+fernhalten, mit Vorlauf“ und die Zeilen danach in [Optimierungen.md](docs/Optimierungen.md). Gepaart gegen
+`active-ragdoll-70`, drei Läufe im Wechsel mit vier Threads und zwei mit einem, rechnet der Benchmark alle Szenen
+bitgleich wie vorher, mit denselben Hashes und Zählern, denn seine Figuren halten sich mit der Stütze gegen die Welt.
+Ein Bild der Stadt mit Figuren kostet mit vier Threads das 0,99-, 1,00- und 0,99-fache, mit einem das 1,01- und
+1,01-fache, bei gleicher Rechnung Rauschen der VM.
 
 **Drücken.** Drückt ein Körper eine stehende Figur langsam, ein Stock, eine Hand oder ein Block, und schiebt er dabei
 einen ihrer Knochen mit mindestens `pushForce` (Standard 40 N) seitlich, bei zwei Prüfungen hintereinander, also ein

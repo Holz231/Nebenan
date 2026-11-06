@@ -211,16 +211,32 @@
 
 // The targets of a step hold for a whole update, and below 60 Hz the step falls behind: at 30 Hz the swinging foot left
 // the ground about 30 ms later in the step than at 60 Hz, as it lifts only with the second update, and every step ended
-// 20 to 35 ms later. While a hold keeps the pelvis upright, below 60 Hz the targets of a step are taken ahead by this
-// many times the time an update is longer than 1/60 s, at 30 Hz by a whole update. On the nine tables on chest and
-// belly at four positions of the hit point at 30 Hz 2 993 instead of 3 781 fall with the figure's own strength and 699
-// instead of 908 with the hold against the world, at the middle position at 40 Hz 547 and 243 instead of 645 and 289,
-// at 20 Hz 1 310 and 217 instead of 1 796 and 427, and no light hit more. Once and one and a half times as far ahead
-// let 2 990 and 2 909 fall with the figure's own strength at 30 Hz and 819 with the hold against the world, one and a
-// half times 5 instead of 1 light hit with the hold against the world at 20 Hz. Without a hold the targets stay: taken
-// ahead there, 7 to 14 instead of 4 of the 168 light hits fell at 30 Hz. Landing, or planning the foot, by the step
-// ahead let more fall. At 60 Hz and faster nothing changes. Round 66.
+// 20 to 35 ms later. Below 60 Hz the targets of a step are taken ahead by this many times the time an update is longer
+// than 1/60 s, at 30 Hz by a whole update. On the nine tables on chest and belly at four positions of the hit point at
+// 30 Hz 2 993 instead of 3 781 fall with the figure's own strength and 699 instead of 908 with the hold against the
+// world, at the middle position at 40 Hz 547 and 243 instead of 645 and 289, at 20 Hz 1 310 and 217 instead of 1 796
+// and 427, and no light hit more. Once and one and a half times as far ahead let 2 990 and 2 909 fall with the figure's
+// own strength at 30 Hz and 819 with the hold against the world, one and a half times 5 instead of 1 light hit with the
+// hold against the world at 20 Hz. Landing, or planning the foot, by the step ahead let more fall. Round 66. Without a
+// hold the targets are taken ahead since round 71, with the swinging foot kept out of the stance foot, see
+// NB_KEEP_TIME: taken ahead without that, 7 to 14 instead of 4 of the 168 light hits fell at 30 Hz. At 60 Hz and
+// faster no target is taken ahead.
 #define NB_STEP_LEAD 2.0f
+
+// Without a hold the swinging foot keeps out of the stance foot: while it runs toward it within NB_KEEP_LENGTH ahead or
+// behind and would come closer than footGap beside its ankle within this many seconds, or within the update if that is
+// longer, its target moves out by as much, see nbKeepApart. The far foot of a closing step, coming back beside the
+// stance foot, ran at up to 5.6 m/s, lagged its target and overshot it, and the bones of a figure collide: it landed
+// against or on the stance foot, and the next step could not lift the foot under it. Without a hold one foot stood on
+// the other after 72 of the 4 464 hits at the middle position at 60 Hz and after 128 at 30 Hz, with the other holds
+// hardly ever. Kept out like this and with the targets taken ahead, see NB_STEP_LEAD, without a hold 4 551 instead of
+// 5 585 of the hits on the nine tables on chest and belly at four positions fall at 30 Hz, at the middle position
+// 1 803 instead of 2 671 at 20 Hz and 951 instead of 1 135 at 40 Hz, of the 168 light hits 3, 21 and none instead of
+// 4, 56 and 4, and at 60 Hz 4 864 instead of 4 868 of all 4 x 5 264 hits. Looking one update ahead let 6 light hits
+// fall at 40 Hz, at least 1/30 s and 1/20 s let 4 621 and 4 565 fall at 30 Hz, and at least 1/30 s without the targets
+// taken ahead 5 411 at 30 Hz and 57 light hits at 20 Hz. Round 71.
+#define NB_KEEP_TIME ( 1.0f / 15.0f )
+#define NB_KEEP_LENGTH 0.26f
 
 // The pelvis stands no higher than the legs reach at this part of their length, so planted feet stay on the ground in a
 // wide stance, and no lower than this part of its height standing
@@ -1157,10 +1173,32 @@ static float nbShiftDamping( const nbBalancer* b, float timeStep )
 	return b3Joint_IsValid( b->uprightLegs[0] ) ? 1.0f : slowness;
 }
 
-// How far ahead below 60 Hz the targets of a step are taken while a hold keeps the pelvis upright, see NB_STEP_LEAD
+// How far ahead below 60 Hz the targets of a step are taken, see NB_STEP_LEAD
 static float nbStepLead( float timeStep )
 {
 	return NB_STEP_LEAD * b3MaxFloat( 0.0f, timeStep - NB_TUNED_STEP );
+}
+
+// Without a hold the swinging foot keeps out of the stance foot, see NB_KEEP_TIME: the target of the swinging ankle
+// moves out as far as the foot would come closer than footGap beside the stance ankle
+static b3Vec3 nbKeepApart( const nbFigure* f, const nbBalancer* b, int foot, b3Vec3 target, float timeStep )
+{
+	b3Vec3 up = b->up;
+	b3Vec3 left = b3Cross( up, b->forward );
+	float side = foot == 0 ? 1.0f : -1.0f;
+	b3Vec3 offset = nbFlat( b3Sub( nbAnkle( f, foot ), nbAnkle( f, 1 - foot ) ), up );
+	float gap = side * b3Dot( offset, left );
+	float ahead = b3Dot( offset, b->forward );
+	float speed = side * b3Dot( b3Body_GetLinearVelocity( f->bones[nb_feet[foot]].bodyId ), left );
+	if ( speed < 0.0f && fabsf( ahead ) < NB_KEEP_LENGTH * b->scale )
+	{
+		float inside = b->footGap - ( gap + speed * b3MaxFloat( timeStep, NB_KEEP_TIME ) );
+		if ( inside > 0.0f )
+		{
+			target = b3MulAdd( target, side * inside, left );
+		}
+	}
+	return target;
 }
 
 // The pelvis wanted upright at a point, turned about up by an angle from where the figure faces
@@ -2235,8 +2273,8 @@ nbBalanceResult nbUpdateBalance( nbWorld* world, int index, nbFigure* f, float t
 			b->plant[stance] = nbPlant( f, b, stance );
 		}
 
-		// Below 60 Hz the targets are taken ahead while a hold keeps the pelvis upright, see NB_STEP_LEAD
-		float lead = held ? nbStepLead( timeStep ) : 0.0f;
+		// Below 60 Hz the targets are taken ahead, see NB_STEP_LEAD
+		float lead = nbStepLead( timeStep );
 		float phase = b3ClampFloat( ( b->stateTime + lead ) / NB_STEP_DURATION, 0.0f, 1.0f );
 		float progress = nbSmooth( phase );
 		b3Vec3 swing = b3Add( b3MulSV( 1.0f - progress, b->swingStart ), b3MulSV( progress, b->stepAnkle ) );
@@ -2263,6 +2301,12 @@ nbBalanceResult nbUpdateBalance( nbWorld* world, int index, nbFigure* f, float t
 		float reachPhase = held ? NB_REACH_PHASE : NB_FREE_REACH_PHASE;
 		float reach = b3ClampFloat( ( phase - reachPhase ) / ( 1.0f - reachPhase ), 0.0f, 1.0f );
 		swing = b3MulSub( swing, ( held ? NB_REACH_DEPTH : NB_FREE_REACH_DEPTH ) * b->scale * reach, up );
+
+		// Without a hold the swinging foot keeps out of the stance foot, see NB_KEEP_TIME
+		if ( held == false )
+		{
+			swing = nbKeepApart( f, b, foot, swing, timeStep );
+		}
 
 		// The stance leg holds the pelvis upright at standing height, late in the step lower, see NB_DROP_PHASE, turned
 		// toward the foot ahead by its share of the turn, none in a step back, see nbStepShare. The swinging leg reaches
