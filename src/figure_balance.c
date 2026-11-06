@@ -132,6 +132,17 @@
 // humanoid of 1.8 m, see nbMeasure
 #define NB_NEAR_GROUND 0.03f
 
+// With the hold against the world a foot that does not swing stands up to this high above the ground. After a wide step
+// the body swings over the landed leg, the pelvis rises with 0.3 to 0.6 m/s, and the trailing leg, already at its
+// reach, lifts its foot 3.8 cm within 0.1 s. Counted as off the ground, the support shrank to the other foot, and the
+// lifted foot stepped to the outside, each landing farther out, up to 1.35 m apart. The hold keeps the pelvis upright
+// and the foot comes down again. Without a hold a foot that hovers this high counted as support while the body fell
+// over it, at 30 Hz 5 022 instead of 4 551 fell, and with the figure's own strength 6 instead of 4 light hits at 20 Hz.
+// With the hold against the world 1 047, 696, 202 and 234 instead of 1 051, 699, 217 and 243 of the hits at 60, 30, 20
+// and 40 Hz fell, and of hits no round had seen before at 60, 30, 35 and 45 Hz 1 327 instead of 1 340. See the roadmap,
+// F83, rounds 78 to 81.
+#define NB_NEAR_GROUND_HELD 0.06f
+
 // A step reaches ground this much higher or lower than where the figure stands, in meters
 #define NB_MAX_RISE 0.25f
 
@@ -950,7 +961,9 @@ static void nbMeasure( const nbWorld* world, int index, const nbFigure* f, nbBal
 	// A foot that does not swing stands also when its sole hovers just above the ground: after a long step the trailing
 	// foot of the wide stance often carries nothing and loses its contacts now and then, and it would touch down as
 	// soon as the body moved over it. Counted as off the ground, the support shrank to the other foot, the capture
-	// point lay far outside it, and the trailing foot stepped away to the outside instead of standing.
+	// point lay far outside it, and the trailing foot stepped away to the outside instead of standing. With the hold
+	// against the world it stands higher above the ground, see NB_NEAR_GROUND_HELD.
+	float nearGround = ( b3Joint_IsValid( b->upright ) ? NB_NEAR_GROUND_HELD : NB_NEAR_GROUND ) * b->scale;
 	for ( int foot = 0; foot < 2; ++foot )
 	{
 		if ( b->footContact[foot] || ( b->stepping && foot == b->stepFoot ) )
@@ -969,7 +982,7 @@ static void nbMeasure( const nbWorld* world, int index, const nbFigure* f, nbBal
 		{
 			lowest = b3MinFloat( lowest, b3Dot( b3ToVec3( b3TransformWorldPoint( transform, b->sole[foot][k] ) ), up ) );
 		}
-		if ( lowest - ground < NB_NEAR_GROUND * b->scale )
+		if ( lowest - ground < nearGround )
 		{
 			b->footContact[foot] = true;
 			b->footGround[foot] = ground;

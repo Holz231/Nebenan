@@ -660,13 +660,13 @@ Gelenk von Box3D gegen einen statischen Anker der Welt hält das Becken aufrecht
 so stark, wie die Hüfte kann, und nicht stärker, als ihr Fuß auf dem Boden hält, und gegen das Kippen des Beckens
 gebremst, siehe Balance aus eigener Kraft, Mit eigener Kraft fangen, Nicht stärker, als der Fuß hält, und Die Hüfte
 bremst das Kippen. In jedem Update misst die Figur ihren Schwerpunkt, seine Geschwindigkeit und ihre Drehung um ihn,
-welche Füße auf Boden stehen, auch einer, dessen Sohle bis 3 cm darüber schwebt, wohin die Füße zeigen, die Fläche ihrer
-Sohlen und den Capture Point, den Schwerpunkt um seine Geschwindigkeit und ihre Drehung durch die Frequenz eines Pendels
-seiner Höhe weiter. Sie richtet sich nach ihren Füßen, nicht nach dem Becken, siehe Füße statt Becken: Im Stand halten
-die Beine ihre Füße, wo und wie sie stehen, schieben das Becken über die Mitte der Sohlen und drehen es über die Füße
-zurück, und die Beine am Boden tragen den Körper über ihnen, siehe Die Beine tragen den Körper. Das Becken dreht dabei
-zum vorderen Fuß, im Schritt mit dem Schwungbein, und die Wirbelsäule dreht den Oberkörper dagegen, siehe Drehung im
-Körper. Liegt der Capture Point
+welche Füße auf Boden stehen, auch einer, dessen Sohle bis 3 cm darüber schwebt, mit der Stütze gegen die Welt bis 6 cm,
+wohin die Füße zeigen, die Fläche ihrer Sohlen und den Capture Point, den Schwerpunkt um seine Geschwindigkeit und ihre
+Drehung durch die Frequenz eines Pendels seiner Höhe weiter. Sie richtet sich nach ihren Füßen, nicht nach dem Becken,
+siehe Füße statt Becken: Im Stand halten die Beine ihre Füße, wo und wie sie stehen, schieben das Becken über die Mitte
+der Sohlen und drehen es über die Füße zurück, und die Beine am Boden tragen den Körper über ihnen, siehe Die Beine
+tragen den Körper. Das Becken dreht dabei zum vorderen Fuß, im Schritt mit dem Schwungbein, und die Wirbelsäule dreht
+den Oberkörper dagegen, siehe Drehung im Körper. Liegt der Capture Point
 zwei Updates lang mehr als 3 cm außerhalb, mit eigener Kraft ein Update lang mehr als 10 cm, tritt ein Fuß dorthin, wo
 der Capture Point bei seiner Landung sein wird, 5 cm darüber hinaus, gedreht wie der Standfuß, in Reichweite der Hüfte,
 auf Boden, der trägt und höchstens 25 cm höher oder tiefer liegt, mit Platz für den Fuß und freiem Weg dorthin, 0,3 s
@@ -723,7 +723,8 @@ und links wie vorher bis 121 und 88 N s. Von 1 280 Treffern auf Arme, Beine und 
 ohne diese Regel, ließ von 50 bis 89 N s 62 statt 42 fallen, die Regel allein 23. Gepaart gegen `active-ragdoll-33`,
 sechs Paare mit 4 Threads und vier mit einem, kostet ein Bild in der Stadt 5 % und 2 % weniger. Die Szenen mit Figuren
 liegen zwischen 0,72 und 1,31 des Vorgängers, bei Paaren zwischen 0,5 und 2,4, im Rauschen der VM, umgeworfen werden
-dort gleich viele. Ein Spiel ruft dafür nichts auf.
+dort gleich viele. Ein Spiel ruft dafür nichts auf. Seit `active-ragdoll-81` steht ein solcher Fuß mit der Stütze gegen
+die Welt bis 6 cm, siehe Der hintere Fuß mit der Stütze.
 
 Schnellere Schritte nach einem härteren Stoß, F60, halfen dagegen nicht. Die Balance probierte für jeden Schritt 0,3,
 0,25 und 0,2 s und nahm einen schnelleren, wenn er den Capture Point bei der Landung um mehr als 1 cm näher an die
@@ -1437,6 +1438,35 @@ fernhalten, mit Vorlauf“ und die Zeilen danach in [Optimierungen.md](docs/Opti
 bitgleich wie vorher, mit denselben Hashes und Zählern, denn seine Figuren halten sich mit der Stütze gegen die Welt.
 Ein Bild der Stadt mit Figuren kostet mit vier Threads das 0,99-, 1,00- und 0,99-fache, mit einem das 1,01- und
 1,01-fache, bei gleicher Rechnung Rauschen der VM.
+
+**Der hintere Fuß mit der Stütze.** Seit `active-ragdoll-81` steht ein Fuß eines Menschen der Bibliothek, der sich mit
+der Stütze gegen die Welt fängt, dem Standard, auch, wenn seine Sohle bis 6 statt 3 cm über dem Boden schwebt. Ein Fang
+endet oft in einem breiten Stand: Nach einem weiten Schritt schwingt der Körper über das gelandete Bein, das Becken
+steigt mit 0,3 bis 0,6 m/s, und das hintere Bein, schon an seiner Reichweite, hebt seinen Fuß in 0,1 s um 3,8 cm. Als in
+der Luft gezählt, schrumpfte die Stütze auf den anderen Fuß, und der gehobene trat nach außen, mit jeder Landung weiter,
+bis 1,35 m auseinander. Die Stütze hält das Becken aufrecht, und der Fuß setzt wieder auf. Mit eigener Kraft und ohne
+Stütze bleibt es bei 3 cm: Ohne Stütze zählte ein Fuß, der so hoch schwebt, als Stütze, während der Körper über ihn
+fiel, mit 6 cm fielen dort bei 30 Hz 5 022 statt 4 551 Treffer, und mit eigener Kraft bei 20 Hz 6 statt 4 leichte.
+Vorher festgelegt und an Treffern geprüft, die noch keine Runde gesehen hatte, bei 35 und 45 Hz und mit dem Punkt des
+Treffers um −3 und +4 mm verschoben, fallen mit der Stütze gegen die Welt 1 327 statt 1 340 von 29 344 Treffern, wie
+vorher keiner der mittleren von 50 bis 89 N s und keiner der leichten. Auf den Tabellen fallen bei 60 Hz über vier Lagen
+des Treffpunkts 1 047 statt 1 051 von 22 976 Treffern auf Brust, Bauch, Arme, Beine und Kopf, bei 30 Hz 696 statt 699
+von 17 856 auf Brust und Bauch, am mittleren Treffpunkt bei 20 Hz 202 statt 217 und bei 40 Hz 234 statt 243 von je
+4 464, von den mittleren bei 20 Hz keiner statt 6 und bei 40 Hz 9 statt 20, von den leichten wie vorher keiner. Mit
+eigener Kraft und ohne Stütze rechnet die Figur bitgleich wie vorher. In den Tests fängt sie 70 N s bei 30 Hz mit einem
+statt zwei Schritten und steht nach 1,37 statt 1,80 s, und nach drei Stößen von 45 N s fängt sie sich mit drei
+Schritten, statt nach einem zu fallen. Ein Spiel ruft dafür nichts Neues auf. Siehe „Boden bis 6 cm mit der Stütze gegen
+die Welt“ in [Optimierungen.md](docs/Optimierungen.md). Gepaart gegen `active-ragdoll-80`, drei Läufe im Wechsel mit
+vier Threads und zwei mit einem, rechnen die einzelne Figur und die 10 hinter ihren Mauern, die 50 Kämpfer und die 20
+Ragdolls im Schutt dasselbe wie vorher, mit denselben Hashes und Zählern, und die Szenen mit getroffenen Figuren enden
+anders, mit einem und mit vier Threads gleich: Von den 50 hinter ihren Mauern stehen am Ende alle statt 49, eine stand
+gerade auf. In der Stadt mit Figuren stürzen wie vorher 6 Stockwerke ein, die Balance macht 32 statt 31 Schritte, fängt
+5 statt 9, 23 statt 24 werden umgeworfen, und am Ende stehen 28 statt 29, eine fängt sich noch, zwei liegen, eine steht
+gerade auf. Weil die Stadt mit jedem anderen Schritt einer Figur anders einstürzt, lief sie mit 48 weiteren Folgen von
+Granaten: Darin enden 1 001 statt 1 000 Fänge im Sturz und 319 statt 341 im Stand, in 22 Folgen weniger und in 11 mehr,
+knapp im Rauschen der Stadt, umgeworfen werden 1 307 statt 1 325, und am Ende stehen 1 236 statt 1 215 der 1 536
+Figuren. Ein Bild der Stadt mit Figuren kostet mit vier Threads das 0,96-, 0,99- und 0,97-fache, mit einem das 0,92- und
+0,96-fache, in einer Stadt, die anders einstürzt, mit bis zu 76 140 statt 83 684 Kontakten.
 
 **Drücken.** Drückt ein Körper eine stehende Figur langsam, ein Stock, eine Hand oder ein Block, und schiebt er dabei
 einen ihrer Knochen mit mindestens `pushForce` (Standard 40 N) seitlich, bei zwei Prüfungen hintereinander, also ein
