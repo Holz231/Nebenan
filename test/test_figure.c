@@ -391,20 +391,24 @@ static int ArmatureTest( void )
 
 // The clips of the library: the get-up clips lie with the head ahead at first and stand at the height of the idle clip at
 // the end, no keyframe sinks into the ground, and the baked keyframes lie at most a fifteenth of a second apart
-static int HumanoidClipTest( void )
+static int HumanoidProfileClipTest( bool balanced )
 {
 	nbBoneDef bones[nb_humanoidBoneCount];
-	float stand = nbMakeHumanoidBones( 1.8f, 74.0f, bones, nb_humanoidBoneCount );
-	ENSURE_SMALL( stand - 0.96f, 1.0e-6f );
+	nbRigDef rig;
+	float stand = balanced ? nbMakeBalancedHumanoidRig( &rig, 1.8f, 74.0f, bones, nb_humanoidBoneCount )
+						   : nbMakeHumanoidBones( 1.8f, 74.0f, bones, nb_humanoidBoneCount );
+	ENSURE_SMALL( stand - ( balanced ? 0.9956f : 0.96f ), 1.0e-6f );
+	int ( *makeClip )( nbFigureClip, float, nbKeyframe*, b3Quat*, int, nbClipDef* ) =
+		balanced ? nbMakeBalancedHumanoidClip : nbMakeHumanoidClip;
 	static nbKeyframe keyframes[NB_HUMANOID_CLIP_KEYFRAMES];
 	static b3Quat rotations[NB_HUMANOID_CLIP_KEYFRAMES * nb_humanoidBoneCount];
 	for ( int which = 0; which < nb_figureClipCount; ++which )
 	{
 		nbClipDef clip;
-		int count = nbMakeHumanoidClip( (nbFigureClip)which, 1.8f, keyframes, rotations, NB_HUMANOID_CLIP_KEYFRAMES, &clip );
+		int count = makeClip( (nbFigureClip)which, 1.8f, keyframes, rotations, NB_HUMANOID_CLIP_KEYFRAMES, &clip );
 		ENSURE( count > 0 && count == clip.keyframeCount && clip.boneCount == nb_humanoidBoneCount );
-		ENSURE( nbMakeHumanoidClip( (nbFigureClip)which, 1.8f, keyframes, rotations, 1, &clip ) == ( count == 1 ? 1 : 0 ) );
-		nbMakeHumanoidClip( (nbFigureClip)which, 1.8f, keyframes, rotations, NB_HUMANOID_CLIP_KEYFRAMES, &clip );
+		ENSURE( makeClip( (nbFigureClip)which, 1.8f, keyframes, rotations, 1, &clip ) == ( count == 1 ? 1 : 0 ) );
+		makeClip( (nbFigureClip)which, 1.8f, keyframes, rotations, NB_HUMANOID_CLIP_KEYFRAMES, &clip );
 		bool getUp = which == nb_clipGetUpFront || which == nb_clipGetUpBack;
 		ENSURE( clip.moveRoot == getUp );
 		ENSURE( clip.loop == ( which == nb_clipIdle || which == nb_clipFall ) );
@@ -456,6 +460,12 @@ static int HumanoidClipTest( void )
 		}
 	}
 	return 0;
+}
+
+static int HumanoidClipTest( void )
+{
+	ENSURE( HumanoidProfileClipTest( false ) == 0 );
+	return HumanoidProfileClipTest( true );
 }
 
 // A figure stands animated in its idle clip: kinematic bones where the clip puts them, no joint for the solver, upright
@@ -1143,6 +1153,47 @@ static int FigureHardTrunkRecoveryTest( void )
 	const int directions[] = { 0, 0 };
 	const float hits[] = { 110.0f, 116.0f };
 	return CheckOwnBalanceHits( bones, directions, hits, 2, 60, 1, true, true );
+}
+
+// At the same stand height two profiles need different clips. The balanced rig catches a hard hit to the ribs
+// that the original 1.8 m rig could not catch.
+static int FigureBalancedHumanoidTest( void )
+{
+	for ( int pass = 0; pass < 2; ++pass )
+	{
+		FigureScene scene;
+		CreateFigureScene( &scene, pass == 0 ? 1 : 4 );
+		nbRigDef rig;
+		nbBoneDef bones[nb_humanoidBoneCount];
+		float stand = nbMakeBalancedHumanoidRig( &rig, 1.8f, 74.0f, bones, nb_humanoidBoneCount );
+		const nbBoneDef* foot = bones + nb_humanoidFootLeft;
+		ENSURE_SMALL( foot->halfExtents.x - 0.06f, 1.0e-6f );
+		ENSURE_SMALL( foot->center.y - foot->halfExtents.y + 0.11f, 1.0e-6f );
+
+		scene.standHeight = stand;
+		nbMakeHumanoidBones( 1.8f * stand / NB_HUMANOID_STAND, 74.0f, scene.bones, nb_humanoidBoneCount );
+		AddFigure( &scene, (b3Vec3){ 8.0f, 0.0f, 0.0f }, 0.0f );
+		nbFigureDef def = nbDefaultFigureDef();
+		def.rig = &rig;
+		def.standHeight = stand;
+		def.motors.uprightAgainstWorld = false;
+		def.motors.responsiveTrunk = true;
+		def.motors.turnWithSteps = true;
+		nbFigureId figure = nbCreateFigure( scene.world, &def );
+		ENSURE( nbGetWorldFromId( scene.world )->humanoidClips.count == 2 );
+		StepFigures( &scene, 30 );
+		ENSURE( StandsUpright( &scene, figure ) );
+		b3BodyId ribs = nbFigure_GetBody( figure, nb_humanoidRibs );
+		nbHitDef hit = { 1, nb_humanoidRibs, { 0.0f, 0.0f, -128.0f }, b3Body_GetWorldCenter( ribs ) };
+		ENSURE( nbFigure_ApplyHit( figure, &hit ) );
+		ENSURE( StepUntil( &scene, figure, nb_figureAnimated, 240 ) > 0 );
+		nbFigureInfo info = nbFigure_GetInfo( figure );
+		ENSURE( info.knockdownCount == 0 && info.catchCount == 1 && info.stepCount > 0 );
+		StepFigures( &scene, 60 );
+		ENSURE( StandsUpright( &scene, figure ) );
+		DestroyFigureScene( &scene );
+	}
+	return 0;
 }
 
 // Isolate the catch-step planner with the pelvis toward the stance foot and a fast backward drift. A reachable target
@@ -4599,6 +4650,7 @@ int FigureTest( void )
 	RUN_TEST( FigureEarlyPlantRecoveryTest );
 	RUN_TEST( FigureLandingReachTest );
 	RUN_TEST( FigureHardTrunkRecoveryTest );
+	RUN_TEST( FigureBalancedHumanoidTest );
 	RUN_TEST( FigureStepReachGapTest );
 	RUN_TEST( FigureStepDelayTest );
 	RUN_TEST( FigureSupportMiddleTest );

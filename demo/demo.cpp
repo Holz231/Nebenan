@@ -1714,10 +1714,7 @@ static const int FigureRow = 5;
 // see AddFigureVisual. The definition points to the rig.
 static nbFigureDef MakeFigureDef( App& app, nbRigDef* rig )
 {
-	*rig = nbDefaultRigDef();
-	float standHeight = nbMakeHumanoidBones( 1.8f, 74.0f, app.figureBones, nb_humanoidBoneCount );
-	rig->bones = app.figureBones;
-	rig->boneCount = nb_humanoidBoneCount;
+	float standHeight = nbMakeBalancedHumanoidRig( rig, 1.8f, 74.0f, app.figureBones, nb_humanoidBoneCount );
 
 	nbFigureDef def = nbDefaultFigureDef();
 	def.rig = rig;
@@ -1790,7 +1787,7 @@ struct FightClips
 static void MakeFightClips( FightClips& clips )
 {
 	nbClipDef idle;
-	nbMakeHumanoidClip( nb_clipIdle, 1.8f, clips.idleKeys, clips.idlePoses, NB_HUMANOID_CLIP_KEYFRAMES, &idle );
+	nbMakeBalancedHumanoidClip( nb_clipIdle, 1.8f, clips.idleKeys, clips.idlePoses, NB_HUMANOID_CLIP_KEYFRAMES, &idle );
 
 	// Rest, at the chin, out, held, at the chin, rest
 	const float times[6] = { 0.0f, 0.8f, 0.92f, 1.07f, 1.35f, 2.0f };

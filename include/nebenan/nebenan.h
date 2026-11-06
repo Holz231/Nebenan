@@ -407,6 +407,11 @@ NB_API nbRigDef nbDefaultRigDef( void );
 /// stand height of nbFigureDef. The names of the bones are static strings.
 NB_API float nbMakeHumanoidBones( float height, float mass, nbBoneDef* bones, int capacity );
 
+/// Build a humanoid rig with longer legs, a shorter trunk and wider soles with more heel behind the ankle.
+/// The default library clips fit this rig. The rig points at the supplied bones and takes the options of
+/// nbDefaultRigDef. Returns the stand height for nbFigureDef, or zero for invalid arguments.
+NB_API float nbMakeBalancedHumanoidRig( nbRigDef* rig, float height, float mass, nbBoneDef* bones, int capacity );
+
 /// The convex hull of a bone that is a box or a rounded box, in the frame of the bone, as the physics has it: to draw it.
 /// Null for a capsule. Destroy it with b3DestroyHull.
 NB_API b3HullData* nbCreateBoneHull( const nbBoneDef* bone );
@@ -417,6 +422,10 @@ NB_API b3HullData* nbCreateBoneHull( const nbBoneDef* bone );
 /// a figure a changed one, see nbFigureDef::clips.
 NB_API int nbMakeHumanoidClip( nbFigureClip which, float height, nbKeyframe* keyframes, b3Quat* rotations, int capacity,
 							   nbClipDef* clip );
+
+/// Write a library clip for the profile of nbMakeBalancedHumanoidRig, see nbMakeHumanoidClip.
+NB_API int nbMakeBalancedHumanoidClip( nbFigureClip which, float height, nbKeyframe* keyframes, b3Quat* rotations,
+									   int capacity, nbClipDef* clip );
 
 /// Sample a clip at a time: the rotations of its bones and the root, interpolated between the two keyframes around the
 /// time, up to capacity. Past the end the last pose, or around again for a clip that loops. Root may be null.

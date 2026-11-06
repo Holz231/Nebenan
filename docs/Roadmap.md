@@ -2444,6 +2444,11 @@ Treffern früher wieder zu tragen. Bei 60 Hz fallen 464 statt 548 von 1 200 hart
 Reihen fangen alle 5 760 Treffer. Siehe „Den Rumpf nach harten Treffern früher tragen lassen“ in
 [Optimierungen](Optimierungen.md).
 
+**F61/F79, Körperform:** Die Figurendemos nutzen das Bibliotheksprofil mit längeren Beinen, kürzerem Rumpf und
+breiteren Sohlen mit mehr Ferse. Mit Beinabstützung und beiden Bewegungsoptionen scheitern 341 statt 464 von
+1 200 harten Treffern auf die Mitte. Spiele wählen das Profil über `nbMakeBalancedHumanoidRig`. Siehe „Körperform
+für den Fangschritt“ in [Optimierungen](Optimierungen.md).
+
 ## Kleinere Punkte
 
 Mit niedriger Priorität vorgemerkt, sie sparen vor allem Arbeit, die schon parallel läuft. Der Gewinn gilt mit einem

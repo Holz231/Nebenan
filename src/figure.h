@@ -11,8 +11,7 @@ typedef struct nbWorld nbWorld;
 // The last hits a figure remembers, so a hit that several events report lands once, see nbHitDef::id
 #define NB_HIT_MEMORY 16
 
-// The height of the pelvis origin over the soles of the humanoid of 1.8 m as it stands, a little in the knees, see
-// nbMakeHumanoidBones. With straight legs it would stand 2 cm higher.
+// Pelvis height of the 1.8 m classic humanoid with slightly bent knees and the controller's reference scale.
 #define NB_HUMANOID_STAND 0.96f
 
 // The spine of the humanoid: its bones from the belly up to the chest, one after the other in nbHumanoidBone, which
@@ -408,10 +407,11 @@ typedef struct nbFigure
 
 NB_ARRAY_DECLARE( nbFigure, nbFigureArray );
 
-// The clips of the library for the humanoid of one height, built once per world for the figures that take them
+// The library clips for one humanoid profile and stand height, built once per world.
 typedef struct nbClipSet
 {
 	float height;
+	bool balanced;
 	nbClip clips[nb_figureClipCount];
 } nbClipSet;
 
@@ -458,8 +458,9 @@ void nbDestroyFigures( nbWorld* world );
 // clips hold against, one for the world, made the first time a figure needs it
 b3BodyId nbFigureAnchor( nbWorld* world );
 
-// The clips of the library for the humanoid, see figure_clips.c and nbMakeHumanoidClip
-int nbBuildHumanoidClip( nbFigureClip which, float height, nbKeyframe* keyframes, b3Quat* rotations, int capacity,
+// Both built-in humanoid profiles share bone and clip generation.
+float nbBuildHumanoidBones( float height, float mass, nbBoneDef* bones, int capacity, bool balanced );
+int nbBuildHumanoidClip( nbFigureClip which, float height, bool balanced, nbKeyframe* keyframes, b3Quat* rotations, int capacity,
 						 nbClipDef* clip );
 
 // The part of a rotation, from none to all of it: the same axis, that part of the angle, the short way round

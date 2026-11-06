@@ -406,8 +406,11 @@ static void nbMirrorLimits( nbBoneDef* def )
 // less than half of that. The solver likes mass ratios below 30 to 1 between joined bodies.
 #define NB_HUMANOID_MASS 74.0f
 #define NB_HUMANOID_HEIGHT 1.8f
+#define NB_HUMANOID_LEG_SCALE 1.04f
+#define NB_HUMANOID_LEG_EXTENSION ( 0.89f * ( NB_HUMANOID_LEG_SCALE - 1.0f ) )
+#define NB_HUMANOID_BALANCED_STAND ( NB_HUMANOID_STAND + NB_HUMANOID_LEG_EXTENSION )
 
-float nbMakeHumanoidBones( float height, float mass, nbBoneDef* bones, int capacity )
+float nbBuildHumanoidBones( float height, float mass, nbBoneDef* bones, int capacity, bool balanced )
 {
 	if ( bones == NULL || capacity < nb_humanoidBoneCount || height <= 0.0f || mass <= 0.0f )
 	{
@@ -416,12 +419,15 @@ float nbMakeHumanoidBones( float height, float mass, nbBoneDef* bones, int capac
 
 	float s = height / NB_HUMANOID_HEIGHT;
 	float m = mass / NB_HUMANOID_MASS;
+	float legScale = balanced ? NB_HUMANOID_LEG_SCALE : 1.0f;
+	float thighLength = 0.45f * s * legScale;
+	float shinLength = 0.44f * s * legScale;
 
-	// Built after a mannequin, measured in its picture from behind: the pelvis origin stands 98 cm above the soles, the
-	// head reaches from 1.60 to 1.80 m on a short neck. The shoulders turn at 1.45 m, inside balls just below the top
-	// corners of the chest, and the arms hang from them to 64 cm, past the middle of the thighs, a little out from the
-	// hips, as on the mannequin of the reference picture of the game. A limb that hangs down has its local y along world
-	// -y. The foot points forward, along +z.
+	// Shorten the 56 cm from the pelvis to the neck by the added leg length.
+	float torsoScale = balanced ? 1.0f - NB_HUMANOID_LEG_EXTENSION / 0.56f : 1.0f;
+
+	// The mannequin of the reference picture of the game.
+	// A limb that hangs down has its local y along world -y. The foot points forward, along +z.
 	//
 	// The joints move as far as a person's, after the normal ranges of the neutral zero method, the ankle as under the
 	// weight of the body. A hinge turns about the axis across the bone, local x. A ball joint has its z axis along the
@@ -436,12 +442,8 @@ float nbMakeHumanoidBones( float height, float mass, nbBoneDef* bones, int capac
 	b3Quat footRest = b3MakeQuatFromAxisAngle( b3Vec3_axisX, 0.5f * B3_PI );
 	b3Quat identity = b3Quat_identity;
 
-	// The trunk in five rounded blocks like the mannequin of the reference pictures, stacked like tires: a round pelvis
-	// from 83 cm to 1.05 m, a little wider than the chest, with the legs at its outer corners, belly and ribs as two
-	// flatter rolls above it, and a broad chest up to its top at 1.56 m that stands out in front of them by 4 cm, as on
-	// the mannequin seen from the side. The chest is two parts, as the mannequin has it, the lower one of 5 kg and the
-	// upper one of 7 that carries the arms and the neck, together as heavy as the chest of one part before round 37 with
-	// its center of mass where it was. Neighbours overlap, the next but one lies more than 10 cm away.
+	// Five rounded trunk blocks: a pelvis a little wider than the chest, flatter belly and ribs, and a two-part chest.
+	// The 5 kg lower chest and the 7 kg upper chest preserve the mass of the former single chest. Neighbours overlap.
 	nbBoneDef pelvis = nbDefaultBoneDef();
 	pelvis.name = "pelvis";
 	pelvis.parent = -1;
@@ -465,6 +467,12 @@ float nbMakeHumanoidBones( float height, float mass, nbBoneDef* bones, int capac
 	bones[nb_humanoidChest] = nbSegment( "chest", nb_humanoidLowerChest, (b3Vec3){ 0.0f, 0.12f * s, 0.0f },
 										 (b3Vec3){ 0.0f, 0.075f * s, 0.015f * s },
 										 (b3Vec3){ 0.19f * s, 0.08f * s, 0.125f * s }, 0.07f * s, 7.0f * m );
+	for ( int i = nb_humanoidBelly; i <= nb_humanoidChest; ++i )
+	{
+		bones[i].restTransform.p.y *= torsoScale;
+		bones[i].center.y *= torsoScale;
+		bones[i].halfExtents.y *= torsoScale;
+	}
 
 	// The spine bends 75 degrees forward, 30 back and 34 to either side and turns 40 either way, as a person bends it
 	// most in the lumbar spine and turns it most in the thoracic: belly and ribs bend 50 of the 75 degrees forward and 22
@@ -476,8 +484,8 @@ float nbMakeHumanoidBones( float height, float mass, nbBoneDef* bones, int capac
 
 	// The neck from the top of the chest, and the head on it like an egg. Together they bend 45 degrees forward, back and
 	// to either side and turn 70 either way, the head the most of the turn.
-	nbBoneDef neck = nbLimb( "neck", nb_humanoidChest, (b3Vec3){ 0.0f, 0.14f * s, 0.0f }, identity, 0.08f * s, 0.05f * s,
-							 1.0f * m, nb_ballJoint, zToY, 0.0f, 0.0f, 0.0f, 0.3f );
+	nbBoneDef neck = nbLimb( "neck", nb_humanoidChest, (b3Vec3){ 0.0f, 0.14f * s * torsoScale, 0.0f }, identity, 0.08f * s,
+							 0.05f * s, 1.0f * m, nb_ballJoint, zToY, 0.0f, 0.0f, 0.0f, 0.3f );
 	neck.start = (b3Vec3){ 0.0f, 0.0f, 0.0f };
 	neck.end = (b3Vec3){ 0.0f, 0.07f * s, 0.0f };
 	nbBoneDef head = nbLimb( "head", nb_humanoidNeck, (b3Vec3){ 0.0f, 0.08f * s, 0.0f }, identity, 0.2f * s, 0.095f * s, 5.0f * m,
@@ -525,8 +533,8 @@ float nbMakeHumanoidBones( float height, float mass, nbBoneDef* bones, int capac
 		// on a person by a tenth.
 		b3Quat armRest = b3MakeQuatFromAxisAngle( b3Vec3_axisZ, B3_PI + 0.05f * x );
 		bones[upperArm] = nbLimb( side == 0 ? "upper arm left" : "upper arm right", nb_humanoidChest,
-								  (b3Vec3){ 0.215f * s * x, 0.05f * s, 0.0f }, armRest, 0.35f * s, 0.05f * s, 2.0f * m,
-								  nb_ballJoint, zToY, 0.0f, 0.0f, 0.0f, 0.6f );
+								  (b3Vec3){ 0.215f * s * x, 0.05f * s * torsoScale, 0.0f }, armRest, 0.35f * s, 0.05f * s,
+								  2.0f * m, nb_ballJoint, zToY, 0.0f, 0.0f, 0.0f, 0.6f );
 		bones[forearm] = nbLimb( side == 0 ? "forearm left" : "forearm right", upperArm, (b3Vec3){ 0.0f, 0.35f * s, 0.0f },
 								 identity, 0.26f * s, 0.045f * s, 1.2f * m, nb_hingeJoint, zToX, -0.087f, 2.53f, 0.0f, 0.4f );
 		bones[hand] = nbLimb( side == 0 ? "hand left" : "hand right", forearm, (b3Vec3){ 0.0f, 0.26f * s, 0.0f }, identity,
@@ -562,24 +570,24 @@ float nbMakeHumanoidBones( float height, float mass, nbBoneDef* bones, int capac
 		// the mannequin of the reference picture.
 		bones[thigh] =
 			nbLimb( side == 0 ? "thigh left" : "thigh right", nb_humanoidPelvis, (b3Vec3){ 0.13f * s * x, -0.03f * s, 0.0f },
-					down, 0.45f * s, 0.07f * s, 7.5f * m, nb_ballJoint, zToY, 0.0f, 0.0f, 0.0f, 2.0f );
+					down, thighLength, 0.07f * s, 7.5f * m, nb_ballJoint, zToY, 0.0f, 0.0f, 0.0f, 2.0f );
 		bones[thigh].damping = 3.0f;
-		bones[shin] = nbLimb( side == 0 ? "shin left" : "shin right", thigh, (b3Vec3){ 0.0f, 0.45f * s, 0.0f }, identity,
-							  0.44f * s, 0.06f * s, 3.5f * m, nb_hingeJoint, zToX, -2.44f, 0.087f, 0.0f, 1.5f );
+		bones[shin] = nbLimb( side == 0 ? "shin left" : "shin right", thigh, (b3Vec3){ 0.0f, thighLength, 0.0f }, identity,
+							  shinLength, 0.06f * s, 3.5f * m, nb_hingeJoint, zToX, -2.44f, 0.087f, 0.0f, 1.5f );
 		bones[shin].damping = 3.0f;
 
 		// The hip turns the leg 40 degrees in and 45 out, the knee bends 140 degrees and stretches 5 past straight
 		nbSetLimits( bones + thigh, -20.0f, 135.0f, -45.0f, 25.0f, -45.0f, 40.0f );
 
-		// A box with a flat sole, 6 cm under the ankle, reaching forward
+		// A 26 cm flat sole, 6 cm under the ankle. The balanced sole is 12 cm wide with 11 cm behind the ankle.
 		nbBoneDef footDef = nbDefaultBoneDef();
 		footDef.name = side == 0 ? "foot left" : "foot right";
 		footDef.parent = shin;
-		footDef.restTransform.p = (b3Vec3){ 0.0f, 0.44f * s, 0.0f };
+		footDef.restTransform.p = (b3Vec3){ 0.0f, shinLength, 0.0f };
 		footDef.restTransform.q = footRest;
 		footDef.shape = nb_boxBone;
-		footDef.center = (b3Vec3){ 0.0f, 0.09f * s, -0.03f * s };
-		footDef.halfExtents = (b3Vec3){ 0.045f * s, 0.13f * s, 0.03f * s };
+		footDef.center = (b3Vec3){ 0.0f, ( balanced ? 0.02f : 0.09f ) * s, -0.03f * s };
+		footDef.halfExtents = (b3Vec3){ ( balanced ? 0.06f : 0.045f ) * s, 0.13f * s, 0.03f * s };
 		footDef.mass = 2.5f * m;
 		footDef.friction = NB_SOLE_FRICTION;
 		footDef.joint = nb_ballJoint;
@@ -608,9 +616,31 @@ float nbMakeHumanoidBones( float height, float mass, nbBoneDef* bones, int capac
 		bones[i].maxSpeed = NB_TRUNK_SPEED;
 	}
 
-	// Hip 3 cm under the pelvis origin, thigh, shin and the sole 6 cm under the ankle make 98 cm with straight legs, and
-	// it stands in the knees, see nbMakeIdle
-	return NB_HUMANOID_STAND * s;
+	// The idle clip stands with the pelvis about 2 cm below its height with straight legs.
+	return ( balanced ? NB_HUMANOID_BALANCED_STAND : NB_HUMANOID_STAND ) * s;
+}
+
+float nbMakeHumanoidBones( float height, float mass, nbBoneDef* bones, int capacity )
+{
+	return nbBuildHumanoidBones( height, mass, bones, capacity, false );
+}
+
+float nbMakeBalancedHumanoidRig( nbRigDef* rig, float height, float mass, nbBoneDef* bones, int capacity )
+{
+	if ( rig == NULL )
+	{
+		return 0.0f;
+	}
+
+	float standHeight = nbBuildHumanoidBones( height, mass, bones, capacity, true );
+	if ( standHeight > 0.0f )
+	{
+		*rig = nbDefaultRigDef();
+		rig->bones = bones;
+		rig->boneCount = nb_humanoidBoneCount;
+		rig->balancedHumanoid = true;
+	}
+	return standHeight;
 }
 
 int nbBonePoints( const nbBoneDef* bone, b3Vec3* points )
@@ -1054,12 +1084,13 @@ void nbSampleClip( const nbClipDef* clip, float time, b3Quat* rotations, b3Trans
 int nbMakeHumanoidClip( nbFigureClip which, float height, nbKeyframe* keyframes, b3Quat* rotations, int capacity,
 						nbClipDef* clip )
 {
-	if ( keyframes == NULL || rotations == NULL || clip == NULL || (int)which < 0 || which >= nb_figureClipCount ||
-		 height <= 0.0f )
-	{
-		return 0;
-	}
-	return nbBuildHumanoidClip( which, height, keyframes, rotations, capacity, clip );
+	return nbBuildHumanoidClip( which, height, false, keyframes, rotations, capacity, clip );
+}
+
+int nbMakeBalancedHumanoidClip( nbFigureClip which, float height, nbKeyframe* keyframes, b3Quat* rotations, int capacity,
+								nbClipDef* clip )
+{
+	return nbBuildHumanoidClip( which, height, true, keyframes, rotations, capacity, clip );
 }
 
 //----------------------------------------------------------------------------------------------------------------------
@@ -4757,27 +4788,30 @@ void nbUpdateFigures( nbWorld* world, float timeStep )
 // Create and destroy
 
 // The clips of the library for a humanoid that stands this high, built the first time a figure asks for them
-static const nbClipSet* nbGetHumanoidClips( nbWorld* world, float standHeight )
+static const nbClipSet* nbGetHumanoidClips( nbWorld* world, float standHeight, bool balanced )
 {
 	for ( int i = 0; i < world->humanoidClips.count; ++i )
 	{
-		if ( world->humanoidClips.data[i]->height == standHeight )
+		const nbClipSet* set = world->humanoidClips.data[i];
+		if ( set->height == standHeight && set->balanced == balanced )
 		{
-			return world->humanoidClips.data[i];
+			return set;
 		}
 	}
 
 	nbClipSet* set = nbAlloc( sizeof( nbClipSet ) );
 	memset( set, 0, sizeof( nbClipSet ) );
 	set->height = standHeight;
+	set->balanced = balanced;
 	nbKeyframe* keyframes = nbAlloc( sizeof( nbKeyframe ) * NB_HUMANOID_CLIP_KEYFRAMES );
 	size_t rotationSize = sizeof( b3Quat ) * NB_HUMANOID_CLIP_KEYFRAMES * nb_humanoidBoneCount;
 	b3Quat* rotations = nbAlloc( rotationSize );
-	float height = standHeight * NB_HUMANOID_HEIGHT / NB_HUMANOID_STAND;
+	float height = standHeight * NB_HUMANOID_HEIGHT / ( balanced ? NB_HUMANOID_BALANCED_STAND : NB_HUMANOID_STAND );
 	for ( int k = 0; k < nb_figureClipCount; ++k )
 	{
 		nbClipDef clip;
-		if ( nbBuildHumanoidClip( (nbFigureClip)k, height, keyframes, rotations, NB_HUMANOID_CLIP_KEYFRAMES, &clip ) > 0 )
+		int count = nbBuildHumanoidClip( (nbFigureClip)k, height, balanced, keyframes, rotations, NB_HUMANOID_CLIP_KEYFRAMES, &clip );
+		if ( count > 0 )
 		{
 			nbCopyClip( set->clips + k, &clip, nb_humanoidBoneCount );
 		}
@@ -4859,7 +4893,7 @@ nbFigureId nbCreateFigure( nbWorldId worldId, const nbFigureDef* def )
 		}
 		if ( boneCount == nb_humanoidBoneCount )
 		{
-			library = library != NULL ? library : nbGetHumanoidClips( world, def->standHeight );
+			library = library != NULL ? library : nbGetHumanoidClips( world, def->standHeight, rig->balancedHumanoid );
 			f->clips[k] = library->clips + k;
 		}
 	}

@@ -3596,3 +3596,31 @@ In drei gepaarten Benchmarkläufen liefern alle sechs `figures`-Szenen dieselben
 Die Physikschritte der Stadt mit Figuren lagen mit vier Threads bei 2,14 → 2,85 ms und 2,85 → 2,84 ms,
 mit einem Thread bei 6,61 → 6,64 ms. Die Zeiten schwankten zwischen den Vier-Thread-Paaren. Der Benchmark
 nutzt die Bibliotheksvorgaben, die Abfangreihen oben prüfen die aktivierte Rumpfreaktion.
+
+## Körperform für den Fangschritt, F61 und F79, 6. November 2026
+
+Bei nominell 1,80 m und 74 kg verlängert das Profil Oberschenkel und Unterschenkel um 4 % auf 46,8 und 45,8 cm.
+Die Strecke vom Becken zum Hals wird um den Längenzuwachs kürzer. Die 26 cm langen Sohlen werden 12 statt 9 cm
+breit. Hinter dem Knöchel liegen 11 statt 4 cm Sohle. Die Masse eines Fußes bleibt bei 2,5 kg, der Abstand
+der Hüftgelenke bei 26 cm. Für mehr Ferse diente die Fußgeometrie des
+[MuJoCo-Humanoiden](https://github.com/google-deepmind/mujoco/blob/main/model/humanoid/humanoid.xml) als Vorlage.
+
+Die Figurendemos verwenden das Profil. `nbMakeBalancedHumanoidRig` liefert die passende Standhöhe und
+kennzeichnet das Rig für seine Bibliotheksclips. Eigene Clips können darauf aufbauen, etwa mit
+`nbMakeBalancedHumanoidClip`. Die Bibliothek teilt die Clips nur zwischen Figuren mit demselben Profil und
+derselben Standhöhe. `nbMakeHumanoidBones` und `nbMakeHumanoidClip` liefern weiterhin die klassische Figur.
+
+| Nicht abgefangene Treffer mit Beinabstützung und beiden Bewegungsoptionen | Fälle | Klassisch | Neue Körperform |
+| --- | ---: | ---: | ---: |
+| 90–138 N s, mittig, 60 Hz | 1 200 | 464 | 341 |
+| 90–138 N s, außermittig, 60 Hz | 624 | 336 | 311 |
+| 90–138 N s, außermittig, ca. 7° Querneigung, 60 Hz | 576 | 521 | 479 |
+| 50–89 N s, mittig, 30 Hz | 1 920 | 22 | 18 |
+| 50–89 N s, mittig, 60 Hz | 1 920 | 0 | 2 |
+| 50–89 N s, mittig, 120 Hz | 1 920 | 0 | 1 |
+| 40–80 N s auf die obere Brust, 60 Hz | 168 | 0 | 0 |
+
+Nach 24 Brusttreffern sinkt das Mittel der Spitzen der relativen Drehgeschwindigkeit von Kopf und Hals
+ab der ersten Sekunde von 0,54 auf 0,43 rad/s. In der mittigen harten Reihe liefern ein und vier Threads
+denselben Hash `e1df0282`. Der Testsatz prüft die Aufstehclips beider Profile, ihre getrennte Ablage bei
+gleicher Standhöhe und einen abgefangenen Treffer von 128 N s auf die Rippen mit einem und vier Threads.

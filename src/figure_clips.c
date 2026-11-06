@@ -861,12 +861,18 @@ static void nbMakeGetUpBack( nbPoseMaker* m, float standHeight )
 	nbMakeGetUpFront( m, (b3Vec3){ -0.24f * s, 0.0f, 0.0f }, 1.05f, standHeight );
 }
 
-int nbBuildHumanoidClip( nbFigureClip which, float height, nbKeyframe* keyframes, b3Quat* rotations, int capacity,
+int nbBuildHumanoidClip( nbFigureClip which, float height, bool balanced, nbKeyframe* keyframes, b3Quat* rotations, int capacity,
 						 nbClipDef* clip )
 {
+	if ( keyframes == NULL || rotations == NULL || clip == NULL || (int)which < 0 || which >= nb_figureClipCount ||
+		 height <= 0.0f )
+	{
+		return 0;
+	}
+
 	nbPoseMaker* m = nbAlloc( sizeof( nbPoseMaker ) );
 	memset( m, 0, sizeof( nbPoseMaker ) );
-	float standHeight = nbMakeHumanoidBones( height, 74.0f, m->bones, nb_humanoidBoneCount );
+	float standHeight = nbBuildHumanoidBones( height, 74.0f, m->bones, nb_humanoidBoneCount, balanced );
 	m->s = height / 1.8f;
 	m->keyframes = keyframes;
 	m->rotations = rotations;

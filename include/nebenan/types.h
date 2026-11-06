@@ -1149,6 +1149,9 @@ typedef struct nbRigDef
 	/// contacts broke away, the figure flies on through, see nbWorldDef::collisionPassThrough.
 	bool enableCollisionDamage;
 
+	/// Use the library clips for the longer-legged profile. Set by nbMakeBalancedHumanoidRig.
+	bool balancedHumanoid;
+
 	/// Used internally to detect a valid definition. DO NOT SET.
 	int internalValue;
 } nbRigDef;
@@ -1310,11 +1313,11 @@ typedef struct nbFigureDef
 	b3Pos position;
 	float heading;
 
-	/// The height of the root bone over the ground while the figure stands, see nbMakeHumanoidBones
+	/// The height of the root bone over the ground while the figure stands, returned by the humanoid rig builders.
 	float standHeight;
 
-	/// The clips, copied. Null takes the clip of the library for the humanoid of nbMakeHumanoidBones, see
-	/// nbMakeHumanoidClip. A rig of other bones without a clip holds its rest pose there.
+	/// The clips, copied. Null uses the library clip of the rig's humanoid profile. A rig of other bones without
+	/// a clip holds its rest pose there.
 	const nbClipDef* clips[nb_figureClipCount];
 
 	/// The motors of the ragdoll
