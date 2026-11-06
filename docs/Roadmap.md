@@ -2449,6 +2449,10 @@ breiteren Sohlen mit mehr Ferse. Mit Beinabstützung und beiden Bewegungsoptione
 1 200 harten Treffern auf die Mitte. Spiele wählen das Profil über `nbMakeBalancedHumanoidRig`. Siehe „Körperform
 für den Fangschritt“ in [Optimierungen](Optimierungen.md).
 
+**F61/F79, Fangschritte auf Rampen:** Stand- und Schwungsohle folgen der Neigung ihrer Auflage. Bei rund 7°
+scheitern auf der Quer- und Längsrampe zusammen 52 statt 623 von 896 mittleren Treffern. Auf 11° bleibt
+vor allem die Querbalance schwierig. Siehe „Sohlen an den Hang anlegen“ in [Optimierungen](Optimierungen.md).
+
 ## Kleinere Punkte
 
 Mit niedriger Priorität vorgemerkt, sie sparen vor allem Arbeit, die schon parallel läuft. Der Gewinn gilt mit einem

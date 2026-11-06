@@ -110,6 +110,8 @@
 
 // Ground a foot stands on: the cosine of its steepest slope, 45 degrees
 #define NB_WALKABLE 0.7f
+// Treat contacts within about two degrees of level as horizontal.
+#define NB_LEVEL_SOLE_COS 0.9995f
 
 // A foot that does not swing stands on the ground also when its sole hovers this little above it, in meters for the
 // humanoid of 1.8 m, see nbMeasure
@@ -549,9 +551,9 @@ static float nbBalanceRayFcn( b3ShapeId shapeId, b3Pos point, b3Vec3 normal, flo
 	return fraction;
 }
 
-// The ground straight below a point within a distance: its height along up. False without ground or on ground too steep
-// to stand on.
-static bool nbGroundBelow( const nbWorld* world, int index, b3Vec3 point, b3Vec3 up, float distance, float* height )
+// The ground straight below a point within a distance, if walkable.
+static bool nbGroundBelow( const nbWorld* world, int index, b3Vec3 point, b3Vec3 up, float distance, float* height,
+						   b3Vec3* normal )
 {
 	nbBalanceRay ray = { world, index, false, 1.0f, b3Vec3_zero, b3Vec3_zero };
 	b3World_CastRay( world->physicsWorld, b3ToPos( point ), b3MulSV( -distance, up ), b3DefaultQueryFilter(), nbBalanceRayFcn,
@@ -562,6 +564,7 @@ static bool nbGroundBelow( const nbWorld* world, int index, b3Vec3 point, b3Vec3
 	}
 
 	*height = b3Dot( ray.point, up );
+	*normal = ray.normal;
 	return true;
 }
 
@@ -724,10 +727,12 @@ typedef struct nbFootSupport
 {
 	float upImpulse;
 	bool movable;
+	b3Vec3 normal;
+	b3Vec3 point;
 } nbFootSupport;
 
-// Does a foot stand on something that is not the figure, on ground flat enough? Its contact points give the height of
-// the ground and, if requested, the impulse that carried the foot along up.
+// Do the foot's contacts carry it on walkable ground? Report their average height and, if requested, the plane they
+// describe and the upward impulse they carried.
 static bool nbFootContact( const nbWorld* world, int index, b3BodyId foot, b3Vec3 up, float* height, nbFootSupport* support )
 {
 	b3ContactData contacts[8];
@@ -768,12 +773,15 @@ static bool nbFootContact( const nbWorld* world, int index, b3BodyId foot, b3Vec
 				}
 
 				b3Vec3 anchor = footIsA ? point->anchorA : point->anchorB;
-				sum += b3Dot( b3Add( center, anchor ), up );
+				b3Vec3 location = b3Add( center, anchor );
+				sum += b3Dot( location, up );
 				points += 1;
 				if ( support != NULL )
 				{
 					support->upImpulse += upright * point->totalNormalImpulse;
 					support->movable |= movable;
+					support->normal = b3Add( support->normal, normal );
+					support->point = b3Add( support->point, location );
 				}
 			}
 		}
@@ -785,6 +793,11 @@ static bool nbFootContact( const nbWorld* world, int index, b3BodyId foot, b3Vec
 	}
 
 	*height = sum / (float)points;
+	if ( support != NULL )
+	{
+		support->normal = b3Normalize( support->normal );
+		support->point = b3MulSV( 1.0f / (float)points, support->point );
+	}
 	return true;
 }
 
@@ -850,10 +863,22 @@ static void nbMeasure( const nbWorld* world, int index, const nbFigure* f, nbBal
 	{
 		float height;
 		nbFootSupport support = { 0 };
-		bool contact = nbFootContact( world, index, f->bones[nb_feet[foot]].bodyId, up, &height, keepPlant != NULL ? &support : NULL );
+		b3BodyId body = f->bones[nb_feet[foot]].bodyId;
+		bool contact = nbFootContact( world, index, body, up, &height, &support );
 		b->footContact[foot] = contact;
+		b->footNormal[foot] = up;
 		if ( contact )
 		{
+			b3Vec3 normal = support.normal;
+			float upright = b3Dot( normal, up );
+			if ( upright < NB_LEVEL_SOLE_COS )
+			{
+				// The height of the same plane directly under the ankle, even if it only touches a sole edge.
+				b3Vec3 ankle = b3ToVec3( b3Body_GetPosition( body ) );
+				b3Vec3 offset = nbFlat( b3Sub( ankle, support.point ), up );
+				height -= b3Dot( offset, normal ) / upright;
+				b->footNormal[foot] = normal;
+			}
 			b->footGround[foot] = height;
 			heightSum += height;
 			heightCount += 1;
@@ -881,20 +906,26 @@ static void nbMeasure( const nbWorld* world, int index, const nbFigure* f, nbBal
 		}
 		b3WorldTransform transform = b3Body_GetTransform( f->bones[nb_feet[foot]].bodyId );
 		float ground;
+		b3Vec3 normal;
 		if ( nbGroundBelow( world, index, b3MulAdd( b3ToVec3( transform.p ), 0.1f * b->scale, up ), up, 0.3f * b->scale,
-							&ground ) == false )
+							&ground, &normal ) == false )
 		{
 			continue;
 		}
+		b3Vec3 floor = nbAtHeight( b3ToVec3( transform.p ), up, ground );
+		bool sloped = b3Dot( normal, up ) < NB_LEVEL_SOLE_COS;
 		float lowest = FLT_MAX;
 		for ( int k = 0; k < 4; ++k )
 		{
-			lowest = b3MinFloat( lowest, b3Dot( b3ToVec3( b3TransformWorldPoint( transform, b->sole[foot][k] ) ), up ) );
+			b3Vec3 corner = b3ToVec3( b3TransformWorldPoint( transform, b->sole[foot][k] ) );
+			float gap = sloped ? b3Dot( b3Sub( corner, floor ), normal ) : b3Dot( corner, up ) - ground;
+			lowest = b3MinFloat( lowest, gap );
 		}
-		if ( lowest - ground < NB_NEAR_GROUND * b->scale )
+		if ( lowest < NB_NEAR_GROUND * b->scale )
 		{
 			b->footContact[foot] = true;
 			b->footGround[foot] = ground;
+			b->footNormal[foot] = sloped ? normal : up;
 		}
 	}
 
@@ -990,7 +1021,7 @@ static float nbCenterHeight( const nbBalancer* b )
 // transform, the sole flat on the ground facing a direction and the knee bending toward it. IK places, it does not
 // decide, see the roadmap 28.3.
 static void nbLegIK( const nbFigure* f, const nbBalancer* b, int leg, b3WorldTransform pelvis, b3Vec3 ankle, b3Vec3 facing,
-					 b3Quat* pose )
+					 b3Vec3 soleNormal, b3Quat* pose )
 {
 	const nbBone* thigh = f->bones + nb_thighs[leg];
 	const nbBone* shin = f->bones + nb_shins[leg];
@@ -1031,7 +1062,7 @@ static void nbLegIK( const nbFigure* f, const nbBalancer* b, int leg, b3WorldTra
 	b3Quat shinWorld = b3MulQuat( b3MulQuat( thighWorld, shin->rest.q ), knee );
 
 	// The sole flat, the foot facing its way
-	b3Quat footWorld = b3MulQuat( nbYaw( up, facing ), b->footRest[leg] );
+	b3Quat footWorld = b3MulQuat( nbYaw( soleNormal, facing ), b->footRest[leg] );
 	pose[nb_feet[leg]] = b3NormalizeQuat( b3InvMulQuat( b3MulQuat( shinWorld, foot->rest.q ), footWorld ) );
 }
 
@@ -1065,7 +1096,9 @@ static b3Vec3 nbAnkle( const nbFigure* f, int leg )
 static b3Vec3 nbPlant( const nbFigure* f, const nbBalancer* b, int leg )
 {
 	float ground = b->footContact[leg] ? b->footGround[leg] : b->groundHeight;
-	return nbAtHeight( nbAnkle( f, leg ), b->up, ground + b->soleHeight[leg] );
+	float upright = b3Dot( b->footNormal[leg], b->up );
+	float height = upright < NB_LEVEL_SOLE_COS ? b->soleHeight[leg] / upright : b->soleHeight[leg];
+	return nbAtHeight( nbAnkle( f, leg ), b->up, ground + height );
 }
 
 // The height the legs hold the pelvis at: the target, lower while the pelvis rises and higher while it sinks, and never
@@ -1140,11 +1173,18 @@ static float nbReachableHeight( const nbBalancer* b, b3Vec3 point, const b3Vec3*
 //----------------------------------------------------------------------------------------------------------------------
 // Steps
 
+typedef struct nbStepTarget
+{
+	b3Vec3 ankle;
+	b3Vec3 normal;
+	float residual;
+} nbStepTarget;
+
 // Where the ankle of a foot lands so that the support of both feet catches the capture point, if the spot is free,
 // within reach and on ground that carries it, the foot landing after a time and swinging from a point. The residual is
 // how far the capture point would still lie outside.
 static bool nbPlanFoot( const nbWorld* world, int index, const nbFigure* f, const nbBalancer* b, int foot, float time,
-						b3Vec3 from, b3Vec3* target, float* residual )
+						b3Vec3 from, nbStepTarget* target )
 {
 	int stance = 1 - foot;
 	b3Vec3 up = b->up;
@@ -1216,13 +1256,22 @@ static bool nbPlanFoot( const nbWorld* world, int index, const nbFigure* f, cons
 
 	// Ground there that carries the foot, not too far up or down
 	float ground;
+	b3Vec3 normal;
 	b3Vec3 probe = nbAtHeight( ankle, up, b->groundHeight + 0.5f * b->scale );
-	if ( nbGroundBelow( world, index, probe, up, 1.0f * b->scale, &ground ) == false ||
+	if ( nbGroundBelow( world, index, probe, up, 1.0f * b->scale, &ground, &normal ) == false ||
 		 fabsf( ground - b->groundHeight ) > NB_MAX_RISE * b->scale )
 	{
 		return false;
 	}
-	ankle = nbAtHeight( ankle, up, ground + b->soleHeight[foot] );
+	float upright = b3Dot( normal, up );
+	bool sloped = upright < NB_LEVEL_SOLE_COS;
+	float soleHeight = b->soleHeight[foot];
+	if ( sloped )
+	{
+		footWorld = b3MulQuat( nbYaw( normal, facing ), b->footRest[foot] );
+		soleHeight /= upright;
+	}
+	ankle = nbAtHeight( ankle, up, ground + soleHeight );
 
 	// The foot fits there, a centimeter above the ground, and nothing lies on the way at the height of the ankle
 	const nbBone* footBone = f->bones + nb_feet[foot];
@@ -1250,8 +1299,7 @@ static bool nbPlanFoot( const nbWorld* world, int index, const nbFigure* f, cons
 	nbSoleCorners( b, foot, (b3WorldTransform){ b3ToPos( ankle ), footWorld }, e1, e2, points + 4 );
 	b3Vec2 hull[8];
 	int hullCount = nbHull2( points, 8, hull );
-	*residual = nbPolygonMargin( hull, hullCount, predicted );
-	*target = ankle;
+	*target = (nbStepTarget){ ankle, sloped ? normal : up, nbPolygonMargin( hull, hullCount, predicted ) };
 	return true;
 }
 
@@ -1261,18 +1309,17 @@ static bool nbStartCatchStep( const nbWorld* world, int index, nbFigure* f, nbBa
 {
 	int bestFoot = -1;
 	float bestScore = FLT_MAX;
-	float bestResidual = FLT_MAX;
-	b3Vec3 bestTarget = b3Vec3_zero;
+	nbStepTarget bestTarget = { 0 };
 	for ( int foot = 0; foot < 2; ++foot )
 	{
 		// The other foot carries the figure while this one swings
-		b3Vec3 target;
-		float residual;
+		nbStepTarget target;
 		if ( b->footContact[1 - foot] == false ||
-			 nbPlanFoot( world, index, f, b, foot, NB_STEP_DURATION, nbAnkle( f, foot ), &target, &residual ) == false )
+			 nbPlanFoot( world, index, f, b, foot, NB_STEP_DURATION, nbAnkle( f, foot ), &target ) == false )
 		{
 			continue;
 		}
+		float residual = target.residual;
 
 		// Near ties go to the foot that did not step last, so the figure steps with both feet in turn
 		float score = residual + ( b->stepCount > 0 && foot == b->lastFoot ? 0.03f : 0.0f );
@@ -1292,12 +1339,11 @@ static bool nbStartCatchStep( const nbWorld* world, int index, nbFigure* f, nbBa
 		{
 			bestFoot = foot;
 			bestScore = score;
-			bestResidual = residual;
 			bestTarget = target;
 		}
 	}
 
-	if ( bestFoot < 0 || bestResidual > NB_GIVE_UP * b->scale )
+	if ( bestFoot < 0 || bestTarget.residual > NB_GIVE_UP * b->scale )
 	{
 		return false;
 	}
@@ -1308,8 +1354,9 @@ static bool nbStartCatchStep( const nbWorld* world, int index, nbFigure* f, nbBa
 	b->stateTime = 0.0f;
 	b->stepFoot = bestFoot;
 	b->stepCount += 1;
-	b->stepAnkle = bestTarget;
-	b->stepResidual = bestResidual;
+	b->stepAnkle = bestTarget.ankle;
+	b->stepNormal = bestTarget.normal;
+	b->stepResidual = bestTarget.residual;
 	b->swingStart = nbAnkle( f, bestFoot );
 	b3BodyId swingBody = f->bones[nb_feet[bestFoot]].bodyId;
 	b->swingVelocity = nbFlat( b3Body_GetWorldPointVelocity( swingBody, b3Body_GetPosition( swingBody ) ), b->up );
@@ -1459,6 +1506,7 @@ void nbBeginBalance( nbWorld* world, int index, nbFigure* f )
 	b3Vec3 gravity = b3World_GetGravity( world->physicsWorld );
 	b->gravity = b3Length( gravity );
 	b->up = b->gravity > 0.0f ? b3MulSV( -1.0f / b->gravity, gravity ) : b3Vec3_axisY;
+	b->stepNormal = b->up;
 
 	// Where it stands: the ground under its soles, where it faces
 	b->groundHeight = FLT_MAX;
@@ -2002,12 +2050,12 @@ nbBalanceResult nbUpdateBalance( nbWorld* world, int index, nbFigure* f, float t
 		float phase = b->stateTime / NB_STEP_DURATION;
 		if ( phase < NB_REPLAN_PHASE )
 		{
-			b3Vec3 target;
-			float residual;
-			if ( nbPlanFoot( world, index, f, b, foot, NB_STEP_DURATION - b->stateTime, b->swingStart, &target, &residual ) )
+			nbStepTarget target;
+			if ( nbPlanFoot( world, index, f, b, foot, NB_STEP_DURATION - b->stateTime, b->swingStart, &target ) )
 			{
-				b->stepAnkle = target;
-				b->stepResidual = residual;
+				b->stepAnkle = target.ankle;
+				b->stepNormal = target.normal;
+				b->stepResidual = target.residual;
 			}
 		}
 
@@ -2096,7 +2144,7 @@ nbBalanceResult nbUpdateBalance( nbWorld* world, int index, nbFigure* f, float t
 		b3WorldTransform wanted = nbWantedPelvis( b, nbAtHeight( point, up, height ), b->pelvisShare * turn );
 		for ( int leg = 0; leg < 2; ++leg )
 		{
-			nbLegIK( f, b, leg, wanted, b->plant[leg], b->footFacing[leg], pose );
+			nbLegIK( f, b, leg, wanted, b->plant[leg], b->footFacing[leg], b->footNormal[leg], pose );
 		}
 	}
 	else
@@ -2167,14 +2215,14 @@ nbBalanceResult nbUpdateBalance( nbWorld* world, int index, nbFigure* f, float t
 		b3WorldTransform wanted = nbWantedPelvis( b, nbAtHeight( pelvisPoint, up, nbHoldHeight( f, b, pelvisHeight ) ),
 											   b->pelvisShare * turn );
 		b3WorldTransform swingPelvis = { pelvis.p, nbHalfwayAt( pelvis.q, wanted.q, 0.5f ) };
-		nbLegIK( f, b, foot, swingPelvis, swing, b->footFacing[stance], pose );
+		nbLegIK( f, b, foot, swingPelvis, swing, b->footFacing[stance], b->stepNormal, pose );
 		if ( b->ownStrength && ( f->def.motors.responsiveTrunk || turnStep ) )
 		{
 			float forward = length > 1.0e-3f ? b3MaxFloat( 0.0f, b3Dot( way, b->footFacing[stance] ) / length ) : 0.0f;
 			nbLiftToes( f, b, foot, swingPelvis.q, b->footFacing[stance],
 						forward * NB_SWING_TOES * b3ComputeCosSin( B3_PI * phase ).sine, pose );
 		}
-		nbLegIK( f, b, stance, wanted, b->plant[stance], b->footFacing[stance], pose );
+		nbLegIK( f, b, stance, wanted, b->plant[stance], b->footFacing[stance], b->footNormal[stance], pose );
 	}
 
 	nbCarryBody( f, b, pose );

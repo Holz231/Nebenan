@@ -3256,6 +3256,49 @@ static void AddTurnedBlock( FigureScene* scene, b3Vec3 center, b3Quat rotation, 
 	b3CreateHullShape( body, &shapeDef, &box.base );
 }
 
+// Catch on a ramp across and along the body. A level swing sole used to strike the rising ramp and lose the step.
+static int FigureSlopeRecoveryTest( void )
+{
+	for ( int axis = 0; axis < 2; ++axis )
+	{
+		int frames = 0;
+		for ( int pass = 0; pass < 2; ++pass )
+		{
+			FigureScene scene;
+			CreateFigureScene( &scene, pass == 0 ? 1 : 4 );
+			scene.standHeight = nbMakeBalancedHumanoidRig( &scene.rig, 1.8f, 74.0f, scene.bones, nb_humanoidBoneCount );
+			b3Vec3 ground = { 0.0f, 0.6f, 0.0f };
+			b3Quat slope = axis == 0 ? b3MakeQuatFromAxisAngle( b3Vec3_axisZ, 0.12f )
+									 : b3MakeQuatFromAxisAngle( b3Vec3_axisX, -0.12f );
+			b3Vec3 center = b3Add( ground, b3RotateVector( slope, (b3Vec3){ 0.0f, -1.0f, 0.0f } ) );
+			AddTurnedBlock( &scene, center, slope, (b3Vec3){ 4.0f, 1.0f, 4.0f } );
+
+			nbFigureDef def = nbDefaultFigureDef();
+			def.rig = &scene.rig;
+			def.standHeight = scene.standHeight;
+			def.position = b3ToPos( ground );
+			def.motors.uprightAgainstWorld = false;
+			def.motors.responsiveTrunk = true;
+			def.motors.turnWithSteps = true;
+			nbFigureId figure = nbCreateFigure( scene.world, &def );
+			StepFigures( &scene, 30 );
+			b3BodyId belly = nbFigure_GetBody( figure, nb_humanoidBelly );
+			b3Pos point = b3Body_GetWorldPoint( belly, (b3Vec3){ 0.025f, 0.08f, 0.1f } );
+			nbHitDef hit = { 1, nb_humanoidBelly, { 0.0f, 0.0f, -65.0f }, point };
+			ENSURE( nbFigure_ApplyHit( figure, &hit ) );
+			int caught = StepUntil( &scene, figure, nb_figureAnimated, 240 );
+			ENSURE( caught > 0 );
+			ENSURE( pass == 0 || caught == frames );
+			frames = caught;
+			nbFigureInfo info = nbFigure_GetInfo( figure );
+			ENSURE( info.catchCount == 1 && info.knockdownCount == 0 && info.stepCount > 0 );
+			ENSURE( b3Body_IsValid( nbGetWorldFromId( scene.world )->figureAnchor ) == false );
+			DestroyFigureScene( &scene );
+		}
+	}
+	return 0;
+}
+
 // How far the corners of the sole of a foot of the humanoid lie from a plane, the most and the least
 static void SoleGaps( nbFigureId figure, int foot, b3Vec3 point, b3Vec3 normal, float* lowest, float* highest )
 {
@@ -4686,6 +4729,7 @@ int FigureTest( void )
 	RUN_TEST( FigureStepTest );
 	RUN_TEST( FigureStepBlockedTest );
 	RUN_TEST( FigureFeetTest );
+	RUN_TEST( FigureSlopeRecoveryTest );
 	RUN_TEST( FigureGroundTest );
 	RUN_TEST( FigureWorldTest );
 	RUN_TEST( FigureClipTest );

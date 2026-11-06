@@ -168,14 +168,15 @@ typedef struct nbBalancer
 	float footGap;
 	float scale;
 
-	// Measured in every update: up, gravity, the height of the ground under the feet along up and under each foot on
-	// the ground, which feet stand, where each foot faces and where the figure faces after its feet, how far the pelvis
+	// Measured in every update: up, gravity, ground height and surface normals at the feet, which feet stand,
+	// where each foot faces and where the figure faces after its feet, how far the pelvis
 	// tilts, the speed of the bones on average by their mass, the center of mass, its velocity and the angular momentum
 	// of the figure about it, the capture point, how far it lies outside the support and the middle of the support
 	b3Vec3 up;
 	float gravity;
 	float groundHeight;
 	float footGround[2];
+	b3Vec3 footNormal[2];
 	bool footContact[2];
 	b3Vec3 footFacing[2];
 	b3Vec3 forward;
@@ -191,8 +192,8 @@ typedef struct nbBalancer
 
 	// A step: whether one swings, how long since it began or the figure stood, the foot, the steps in a row and the foot
 	// that stepped last, where the ankles are planted, where the swinging one started, how fast it moved over the ground
-	// then and where it lands, and how far the capture point at its landing lies outside the support of both soles,
-	// negative inside. Updates in a row with the capture point outside, seconds without a foot on the ground, seconds
+	// then and where it lands with the surface normal there. The residual is the capture point's distance outside the
+	// support at landing, negative inside. Updates with the capture point outside, seconds without a foot on the ground, seconds
 	// with one foot alone on the ground, seconds calm and seconds without rest and without a push.
 	bool stepping;
 	float stateTime;
@@ -203,6 +204,7 @@ typedef struct nbBalancer
 	b3Vec3 swingStart;
 	b3Vec3 swingVelocity;
 	b3Vec3 stepAnkle;
+	b3Vec3 stepNormal;
 	float stepResidual;
 	int dangerUpdates;
 	float airborneTime;

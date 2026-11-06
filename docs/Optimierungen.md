@@ -3624,3 +3624,29 @@ Nach 24 Brusttreffern sinkt das Mittel der Spitzen der relativen Drehgeschwindig
 ab der ersten Sekunde von 0,54 auf 0,43 rad/s. In der mittigen harten Reihe liefern ein und vier Threads
 denselben Hash `e1df0282`. Der Testsatz prüft die Aufstehclips beider Profile, ihre getrennte Ablage bei
 gleicher Standhöhe und einen abgefangenen Treffer von 128 N s auf die Rippen mit einem und vier Threads.
+
+## Sohlen an den Hang anlegen, F61 und F79, 6. November 2026
+
+Im animierten Stand folgten die Sohlen der Schräge. Beim Wechsel in die dynamische Balance zielten
+die Knöchel wieder auf waagerechte Sohlen. Die Standsohle stützte sich dadurch oft nur auf einer Kante.
+Auf einer in Blickrichtung ansteigenden Rampe verwarf die Platzprüfung den waagerechten Schwungfuß
+schon vor dem ersten Schritt.
+
+Die Standsohle richtet sich nach der Fläche, die ihre Kontakte tragen. Die Höhe unter dem Knöchel
+stammt aus dieser Fläche, auch wenn der Kontakt außen an der Sohle liegt. Für den Schwungfuß liefert
+die Bodenprobe am Ziel die Ausrichtung und Höhe, die auch der Platztest verwendet. Bei fast ebenem
+Boden innerhalb von knapp zwei Grad verwendet der Regler die bisherige Ausrichtung.
+
+| Nicht abgefangene Treffer, neues Körperprofil mit Beinabstützung und beiden Bewegungsoptionen | Fälle | Vorher | Mit geneigten Sohlen |
+| --- | ---: | ---: | ---: |
+| Querrampe, ±6,9°, 55–85 N s | 448 | 215 | 31 |
+| Längsrampe, ±6,9°, 55–85 N s | 448 | 408 | 21 |
+| Querrampe, ±6,9°, 90–138 N s | 576 | 479 | 323 |
+| Längsrampe, ±6,9°, 90–138 N s | 576 | 547 | 366 |
+| Querrampe, 11,5°, 55–85 N s | 224 | 216 | 132 |
+| Längsrampe, 11,5°, 55–85 N s | 224 | 224 | 70 |
+
+Die Rampenreihen nutzen 60 Hz und außermittige Treffer. Alle sechs mittleren Rampenreihen ergeben mit
+einem und vier Threads dieselben Ergebnis-Hashes. `FigureSlopeRecoveryTest` prüft je eine quer und
+längs geneigte Rampe mit einem und vier Threads. Ein Stoß von 65 N s auf den Bauch muss aus eigener
+Kraft abgefangen werden. Der vollständige Testsatz besteht.
