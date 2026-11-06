@@ -1465,8 +1465,11 @@ gerade auf. In der Stadt mit Figuren stürzen wie vorher 6 Stockwerke ein, die B
 gerade auf. Weil die Stadt mit jedem anderen Schritt einer Figur anders einstürzt, lief sie mit 48 weiteren Folgen von
 Granaten: Darin enden 1 001 statt 1 000 Fänge im Sturz und 319 statt 341 im Stand, in 22 Folgen weniger und in 11 mehr,
 knapp im Rauschen der Stadt, umgeworfen werden 1 307 statt 1 325, und am Ende stehen 1 236 statt 1 215 der 1 536
-Figuren. Ein Bild der Stadt mit Figuren kostet mit vier Threads das 0,96-, 0,99- und 0,97-fache, mit einem das 0,92- und
-0,96-fache, in einer Stadt, die anders einstürzt, mit bis zu 76 140 statt 83 684 Kontakten.
+Figuren. Gepaart wiederholt ab dem Update, in dem die Regel greift, fängt sich die Figur in der Stadt in 7 von 266
+Fängen nur mit ihr und in 3 nur ohne sie, die fehlenden Fänge im Stand sind Zufall der Stadt, siehe „Boden bis 6 cm in
+der Stadt“ in [Optimierungen.md](docs/Optimierungen.md). Ein Bild der Stadt mit Figuren kostet mit vier Threads das
+0,96-, 0,99- und 0,97-fache, mit einem das 0,92- und 0,96-fache, in einer Stadt, die anders einstürzt, mit bis zu 76 140
+statt 83 684 Kontakten.
 
 **Drücken.** Drückt ein Körper eine stehende Figur langsam, ein Stock, eine Hand oder ein Block, und schiebt er dabei
 einen ihrer Knochen mit mindestens `pushForce` (Standard 40 N) seitlich, bei zwei Prüfungen hintereinander, also ein
