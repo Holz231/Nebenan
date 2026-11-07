@@ -470,6 +470,7 @@ typedef struct nbFigure
 	float footOut[2];
 	bool outBehind[2];
 	float swingHurry[2];
+	float swingCalm[2];
 	b3Pos swingBase[2];
 	b3Vec3 swingVelocity[2];
 	float swingTurnRate[2];
@@ -477,6 +478,8 @@ typedef struct nbFigure
 	float gaitTurn;
 	float gaitSway;
 	float gaitCrouch;
+	float gaitBend;
+	float gaitBendRate;
 	float rootDrop;
 	float rootDropRate;
 	float rootCrouch;

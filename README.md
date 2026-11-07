@@ -1612,24 +1612,27 @@ der schwingende Fuß eilt, bis 2,5-mal so schnell, um vorher zu landen. Ihr Blic
 in jedem Update neu, von dort, wo er ist, so schnell, wie er sich bewegt, zu seinem Ziel: Ändert sich das Ziel in einer
 Wendung oder beim Bremsen, biegt sich sein Weg, statt dass er springt. Von zwei Füßen am Boden hebt der zuerst ab, den
 sein Bein zuerst verliert, ein schwingendes Bein streckt sich nie ganz, und hebt ein Fuß vor seiner Zeit ab, holt der
-Takt des Gangs das nach. So sinkt das Becken in einer Wendung, wo sie im Gang auch beginnt, höchstens 6,1 cm, auf
-`active-ragdoll-87` bis 12,8 cm, und nach jedem Übergang ist der Gang wieder im Takt. Am Hang und auf Treppen misst die
-Figur die Steigung ihres Wegs: Bergauf landet ein Fuß weiter vorn, bergab näher unter dem Körper, so reicht das vordere
-Bein so weit hinauf wie das hintere hinunter, und die Schritte werden kürzer, auf 20° um ein Fünftel. Die Feder unter
-der Kapsel folgt der Ebene, die der Fühler findet, statt am Hang hinterherzuhängen, und vor dem Aufsetzen geht die Hüfte
-so tief, wie das Bein den wirklichen Landepunkt braucht. Auf einer Rampe von 20° wippt die Hüfte so um 2 cm, und in
-einem Update bewegt sie sich gegen die Kapsel um höchstens 2 cm. Auf einer Treppe setzt die Figur ihre Füße Stufe für
-Stufe: Vor jedem Schwung sucht sie am Ziel mit Strahlen nach einer Kante, misst die Stufe aus und stellt die ganze Sohle
-darauf, und jeder Schritt nimmt gleich viele Stufen, so viele, wie ein Schritt auf einer Rampe gleicher Steigung lang
-wäre. Damit der Fuß dort landet, geht der Gang in einem Schwung bis 40 % schneller oder langsamer, und die Hüfte folgt
-dem Boden zwischen den Fußpunkten statt der Kapsel, die Stufe für Stufe steigt: Die Treppe hinauf wippt sie gegen die
-Linie der Treppe um höchstens 1 cm, hinunter um 3,0 bis 6,2 cm. Alle Abfragen einer Figur lassen ihre eigenen Knochen
-weg, bevor Box3D sie rechnet, `b3QueryFilter::excludeGroup`, siehe [`extern/README.md`](extern/README.md): Eine
-gesteuerte Figur kostet im Update der Figuren auf der VM 8,8 µs, eine stehende 1,6 µs. Treffer wirken wie auf jede
-stehende Figur, mit den Geschwindigkeiten, die ihre Knochen gerade haben: Nach einem Stoß von hinten mit 120 N s auf
-eine Figur, die mit 4,5 m/s rennt, fliegt ihr Becken mit 5,3 m/s nach vorn, und wenn sie aufgestanden ist, geht sie
-weiter, wohin das Spiel will. Ein leichter Stoß gibt der Kapsel Geschwindigkeit, statt die Figur schwanken zu lassen.
-Mit 1, 2 und 4 Threads bewegt sie sich bitgleich, Figuren ohne `steered` rechnen wie vorher.
+Takt des Gangs das nach. Bremst oder wendet die Kapsel, beugt die Figur die Knie, wie Menschen beim scharfen Wenden, und
+das Ziel eines schwingenden Fußes kommt am Ende des Schwungs weich zur Ruhe. So springt ein Knie in einer Wendung, wo
+sie im Gang auch beginnt, in einem Update höchstens 4,3 cm, auf `active-ragdoll-88` bis 6,3 cm, das Becken sinkt
+höchstens 6,6 cm, auf `active-ragdoll-87` bis 12,8 cm, und nach jedem Übergang ist der Gang wieder im Takt. Am Hang und
+auf Treppen misst die Figur die Steigung ihres Wegs: Bergauf landet ein Fuß weiter vorn, bergab näher unter dem Körper,
+so reicht das vordere Bein so weit hinauf wie das hintere hinunter, und die Schritte werden kürzer, auf 20° um ein
+Fünftel. Die Feder unter der Kapsel folgt der Ebene, die der Fühler findet, statt am Hang hinterherzuhängen, und vor dem
+Aufsetzen geht die Hüfte so tief, wie das Bein den wirklichen Landepunkt braucht. Auf einer Rampe von 20° wippt die
+Hüfte so um 2 cm, und in einem Update bewegt sie sich gegen die Kapsel um höchstens 2 cm. Auf einer Treppe setzt die
+Figur ihre Füße Stufe für Stufe: Vor jedem Schwung sucht sie am Ziel mit Strahlen nach einer Kante, misst die Stufe aus
+und stellt die ganze Sohle darauf, und jeder Schritt nimmt gleich viele Stufen, so viele, wie ein Schritt auf einer
+Rampe gleicher Steigung lang wäre. Damit der Fuß dort landet, geht der Gang in einem Schwung bis 40 % schneller oder
+langsamer, und die Hüfte folgt dem Boden zwischen den Fußpunkten statt der Kapsel, die Stufe für Stufe steigt: Die
+Treppe hinauf wippt sie gegen die Linie der Treppe um höchstens 1 cm, hinunter um 3,0 bis 6,2 cm. Alle Abfragen einer
+Figur lassen ihre eigenen Knochen weg, bevor Box3D sie rechnet, `b3QueryFilter::excludeGroup`, siehe
+[`extern/README.md`](extern/README.md): Eine gesteuerte Figur kostet im Update der Figuren auf der VM 8,8 µs, eine
+stehende 1,6 µs. Treffer wirken wie auf jede stehende Figur, mit den Geschwindigkeiten, die ihre Knochen gerade haben:
+Nach einem Stoß von hinten mit 120 N s auf eine Figur, die mit 4,5 m/s rennt, fliegt ihr Becken mit 5,3 m/s nach vorn,
+und wenn sie aufgestanden ist, geht sie weiter, wohin das Spiel will. Ein leichter Stoß gibt der Kapsel Geschwindigkeit,
+statt die Figur schwanken zu lassen. Mit 1, 2 und 4 Threads bewegt sie sich bitgleich, Figuren ohne `steered` rechnen
+wie vorher.
 
 **Aktiver Ragdoll.** Eine Figur, die sich nicht fangen kann, eine Last von oben ab `crushForce` (600 N), Boden, der
 wegbricht oder sich schneller als 1,5 m/s bewegt, und `nbFigure_Knockdown` machen eine Figur zum aktiven Ragdoll, mit

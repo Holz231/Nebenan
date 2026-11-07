@@ -4047,6 +4047,71 @@ static int SteerInStepTest( void )
 	return 0;
 }
 
+// A steered figure that turns round from walking straight on, at eight points of its gait an eighth of a cycle apart,
+// bends its knees as the capsule turns and does not walking straight on, see NB_GAIT_BEND_SPEED. From the turn on its
+// knees change their velocity from one update to the next by more than 3 cm in at most 20 updates of all eight turns
+// (39 before the knees bent), and by 5 cm at most (6.6), and its pelvis by 2 cm at most.
+static int SteerKneeTest( void )
+{
+	const int bones[3] = { nb_humanoidPelvis, nb_humanoidShinLeft, nb_humanoidShinRight };
+	float straightBend = 0.0f;
+	float turnBend = 0.0f;
+	float knee = 0.0f;
+	float pelvis = 0.0f;
+	int jumps = 0;
+	for ( int k = 0; k < 8; ++k )
+	{
+		FigureScene scene;
+		CreateFigureScene( &scene, 1 );
+		nbFigureId figure = AddSteeredFigure( &scene, b3Vec3_zero, 0.0f );
+		int turn = 240 + ( k * 111 ) / 16;
+		b3Vec3 last[3] = { b3Vec3_zero, b3Vec3_zero, b3Vec3_zero };
+		b3Vec3 before[3] = { b3Vec3_zero, b3Vec3_zero, b3Vec3_zero };
+		for ( int i = 0; i < turn + 150; ++i )
+		{
+			b3Vec3 wish = { 0.0f, 0.0f, i < turn ? 1.6f : -1.6f };
+			SteerVelocity( figure, wish );
+			StepFigures( &scene, 1 );
+			const nbFigure* f = GetSteered( &scene, figure );
+			if ( i >= 120 && i < turn )
+			{
+				straightBend = b3MaxFloat( straightBend, f->gaitBend );
+			}
+			for ( int j = 0; j < 3; ++j )
+			{
+				b3Vec3 now = BonePosition( figure, bones[j] );
+				if ( i >= turn )
+				{
+					turnBend = b3MaxFloat( turnBend, f->gaitBend );
+					float jump = b3Length( b3Add( b3Sub( now, last[j] ), b3Sub( before[j], last[j] ) ) );
+					if ( j == 0 )
+					{
+						pelvis = b3MaxFloat( pelvis, jump );
+					}
+					else
+					{
+						knee = b3MaxFloat( knee, jump );
+						jumps += jump > 0.03f ? 1 : 0;
+					}
+				}
+				before[j] = last[j];
+				last[j] = now;
+			}
+		}
+		ENSURE( nbFigure_GetState( figure ) == nb_figureAnimated );
+		DestroyFigureScene( &scene );
+	}
+	printf( "  turned round at eight points of its gait: bent %.2f, walking straight %.2f, knees jump in %d updates over 3 cm, "
+			"%.1f cm at most, the pelvis %.1f cm\n",
+			turnBend, straightBend, jumps, 100.0f * knee, 100.0f * pelvis );
+	ENSURE( straightBend < 0.01f );
+	ENSURE( turnBend > 0.8f );
+	ENSURE( jumps <= 20 );
+	ENSURE( knee <= 0.05f );
+	ENSURE( pelvis <= 0.02f );
+	return 0;
+}
+
 // A steered figure hit hard from behind while it runs: its pelvis leaves with the velocity of the run and that of the
 // hit, within 20 %, and once it stood up again it steers again and walks on
 static int SteerHitTest( void )
@@ -4594,7 +4659,7 @@ static int ThinBoardTest( void )
 #define NB_EXPECTED_FOLLOW_HASH 0x6f1d5739u
 
 // See RunSteerScenario
-#define NB_EXPECTED_STEER_HASH 0x7e1587e5u
+#define NB_EXPECTED_STEER_HASH 0x970da177u
 
 static int FigureFollowDeterminismTest( void )
 {
@@ -4688,6 +4753,7 @@ int FigureTest( void )
 	RUN_TEST( SteerStairsTest );
 	RUN_TEST( SteerTurnTest );
 	RUN_TEST( SteerInStepTest );
+	RUN_TEST( SteerKneeTest );
 	RUN_TEST( SteerHitTest );
 	RUN_TEST( FigureWallTest );
 	RUN_TEST( FigureWallDebrisTest );

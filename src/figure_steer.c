@@ -250,6 +250,8 @@ void nbResetSteering( nbFigure* f )
 	f->rootDrop = 0.0f;
 	f->rootDropRate = 0.0f;
 	f->rootCrouch = 0.0f;
+	f->gaitBend = 0.0f;
+	f->gaitBendRate = 0.0f;
 	f->stairWeight = 0.0f;
 	f->stairDepth = 0.0f;
 	f->stairRise = 0.0f;
@@ -282,6 +284,7 @@ void nbResetSteering( nbFigure* f )
 		f->footOut[k] = FLT_MAX;
 		f->outBehind[k] = false;
 		f->swingHurry[k] = 1.0f;
+		f->swingCalm[k] = 1.0f;
 		f->swingBase[k] = b3Pos_zero;
 		f->swingVelocity[k] = b3Vec3_zero;
 		f->swingTurnRate[k] = 0.0f;

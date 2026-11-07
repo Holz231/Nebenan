@@ -215,10 +215,12 @@
 
 // A leg stretches to this part of its length at most, so the knee stays a little soft, or as far as the clip stretches
 // it, and the root goes down at most this far for the legs to reach their feet. Walking, a steered leg stretches to
-// NB_LEG_REACH_WALK of its length, its knee nearly straight, and the root goes up as far, see nbSteerFeet. From
-// NB_GAIT_DESCEND of its swing on, the root goes down before a swinging foot lands, see nbSteerFeet and nbLowerSteered.
+// NB_LEG_REACH_WALK of its length, its knee nearly straight, and the root goes up as far, see nbSteerFeet, and as it
+// turns or slows down, to NB_LEG_REACH_BENT, see NB_GAIT_BEND_SPEED. From NB_GAIT_DESCEND of its swing on, the root goes
+// down before a swinging foot lands, see nbSteerFeet and nbLowerSteered.
 #define NB_LEG_REACH 0.98f
 #define NB_LEG_REACH_WALK 0.995f
+#define NB_LEG_REACH_BENT 0.96f
 #define NB_GAIT_DESCEND 0.4f
 #define NB_MAX_DROP 0.3f
 
@@ -249,6 +251,10 @@
 #define NB_FOOT_ROLL 0.7f
 #define NB_ROOT_SETTLE 0.05f
 #define NB_FOOT_ROLL_RATE 12.0f
+
+// A steered foot on the ground that rolled over its toes behind the hip and comes beside it again, as the figure turns
+// back over it, rolls back flat with a time of NB_FOOT_UNROLL seconds instead of at once, see nbLowerSteered
+#define NB_FOOT_UNROLL 0.06f
 
 // The body a push carries along: a capsule of this radius from this high over the ground to this high, which fixed
 // bodies stop, cast this far beyond where the push carries it, for the toes ahead of it
@@ -2828,6 +2834,7 @@ static float nbLowerSteered( nbFigure* f, b3Transform root, const int* thighs, b
 							 const float* reaches, float planted, float timeStep )
 {
 	float limit = NB_MAX_DROP * nbFigureScale( f );
+	float unroll = nbDecay( timeStep / NB_FOOT_UNROLL );
 	nbPath path = nbMakePath( f, true );
 	nbPath level = nbMakePath( f, false );
 	bool behind[2];
@@ -2859,6 +2866,11 @@ static float nbLowerSteered( nbFigure* f, b3Transform root, const int* thighs, b
 			{
 				b3Quat turned = rotations[k];
 				nbRollFoot( f->bones + thighs[k] + 2, f->footRoll[k], 0.0f, &heeled, &turned );
+			}
+			else if ( f->footRoll[k] > 0.0f )
+			{
+				b3Quat turned = rotations[k];
+				nbRollFoot( f->bones + thighs[k] + 2, unroll * f->footRoll[k], 0.0f, &heeled, &turned );
 			}
 			drop = b3MaxFloat( drop, nbDropToReach( heeled, hip, reaches[k] ) );
 
@@ -2910,7 +2922,11 @@ static float nbLowerSteered( nbFigure* f, b3Transform root, const int* thighs, b
 				b3Vec3 toes = b3RotateVector( rotations[k], b3Vec3_axisY );
 				f->footOut[k] = nbTimeToLose( &path, ankles[k], rolled, toes, hip, reaches[k], 0.0f );
 			}
-			roll = roll > 0.0f ? roll : b3MinFloat( f->footRoll[k], 0.0f );
+			if ( roll <= 0.0f )
+			{
+				// Beside the hip again, a foot rolled over its toes rolls back flat, see NB_FOOT_UNROLL
+				roll = f->footRoll[k] < 0.0f || behind[k] ? b3MinFloat( f->footRoll[k], 0.0f ) : unroll * f->footRoll[k];
+			}
 			if ( behind[k] && roll >= 0.0f )
 			{
 				// The push comes in as the hip passes over the foot, see NB_GAIT_PUSH_IN
@@ -3172,13 +3188,16 @@ static void nbPlaceFeet( nbFigure* f, const b3Transform* transforms, const nbCli
 
 // A swinging foot lifts this high over the higher end of its step, walking and running, in meters for the humanoid of
 // 1.8 m, a short step NB_GAIT_LIFT_LOW and half its length, and the foot goes for where it aims without following the
-// capsule in the last part of its swing. Running, the feet land closer under the body, the gap between them smaller by
-// NB_GAIT_NARROW, and walking by NB_GAIT_NARROW_WALK, as people walk. Height and gap stay as they were when the foot
+// capsule in the last part of its swing, from NB_GAIT_AIM of it on. It stops following smoothly over NB_GAIT_AIM_FADE of
+// its swing before and after that, keeping more and more of where it aimed, so where it lands goes on as it went and
+// comes to rest instead of stopping at once. Running, the feet land closer under the body, the gap between them smaller
+// by NB_GAIT_NARROW, and walking by NB_GAIT_NARROW_WALK, as people walk. Height and gap stay as they were when the foot
 // lifted.
 #define NB_GAIT_LIFT_WALK 0.06f
 #define NB_GAIT_LIFT_RUN 0.22f
 #define NB_GAIT_LIFT_LOW 0.02f
 #define NB_GAIT_AIM 0.8f
+#define NB_GAIT_AIM_FADE 0.1f
 #define NB_GAIT_NARROW 0.4f
 #define NB_GAIT_NARROW_WALK 0.45f
 
@@ -3188,6 +3207,16 @@ static void nbPlaceFeet( nbFigure* f, const b3Transform* transforms, const nbCli
 // Stopping, it aims without that lead: its target does not rush back as the capsule brakes, and the body comes to rest
 // over where it lands.
 #define NB_GAIT_AIM_LAG 0.04f
+
+// As the capsule turns or slows down, a walking figure bends its knees more, as people do, its legs stretching to
+// NB_LEG_REACH_BENT of their length at most: a leg near straight moves its knee far for a little change in its reach, and
+// a bent one does not snap as a hurried foot lifts and lands. It bends fully once the velocity the capsule wants differs
+// from the one the feet aim with by NB_GAIT_BEND_SPEED across it or against it, in meters per second for the humanoid of
+// 1.8 m, not as it speeds up, critically damped at a rate of one over NB_GAIT_BEND_IN seconds, and straightens again at
+// one over NB_GAIT_BEND_OUT seconds.
+#define NB_GAIT_BEND_SPEED 1.0f
+#define NB_GAIT_BEND_IN 0.08f
+#define NB_GAIT_BEND_OUT 0.3f
 
 // Once the root goes down for a swinging foot, see NB_GAIT_DESCEND, the foot does not aim lower any more: it follows the
 // capsule only where the ground lies no more than NB_GAIT_LEVEL below where it aims, in meters for the humanoid of 1.8 m,
@@ -3805,10 +3834,29 @@ static void nbSteerFeet( const nbWorld* world, int index, nbFigure* f, const nbC
 	}
 	f->stairBase = b3OffsetPos( f->frame.p, b3MulSV( lifted, up ) );
 
-	// Walking, the legs stretch farther and the root goes up as far, see NB_LEG_REACH_WALK
+	// Walking, the legs stretch farther and the root goes up as far, see NB_LEG_REACH_WALK, less as the capsule turns or slows
+	// down, see NB_GAIT_BEND_SPEED
 	const nbBone* thighs = f->bones + nb_humanoidThighLeft;
 	float legLength = b3Length( thighs[1].rest.p ) + b3Length( thighs[2].rest.p );
-	f->legReach = NB_LEG_REACH + ( 1.0f - run ) * ease * ( NB_LEG_REACH_WALK - NB_LEG_REACH );
+	b3Vec3 wish = b3MulSub( f->steer.velocity, b3Dot( f->steer.velocity, up ), up );
+	b3Vec3 change = b3Sub( wish, f->gaitVelocity );
+	float moving = b3Length( f->gaitVelocity );
+	float turnOrBrake = 0.0f;
+	if ( moving > 0.0f )
+	{
+		b3Vec3 along = b3MulSV( 1.0f / moving, f->gaitVelocity );
+		float onward = b3Dot( change, along );
+		turnOrBrake = b3Length( b3MulSub( change, onward, along ) ) + b3MaxFloat( -onward, 0.0f );
+	}
+	float bend = b3MinFloat( turnOrBrake / ( NB_GAIT_BEND_SPEED * scale ), 1.0f );
+	float bendOmega = bend > f->gaitBend ? 1.0f / NB_GAIT_BEND_IN : 1.0f / NB_GAIT_BEND_OUT;
+	float bendDecay = nbDecay( bendOmega * timeStep );
+	float bendOff = f->gaitBend - bend;
+	float bendSum = f->gaitBendRate + bendOmega * bendOff;
+	f->gaitBend = b3ClampFloat( bend + bendDecay * ( bendOff + timeStep * bendSum ), 0.0f, 1.0f );
+	f->gaitBendRate = bendDecay * ( f->gaitBendRate - bendOmega * timeStep * bendSum );
+	float stretch = NB_LEG_REACH_WALK - NB_LEG_REACH - f->gaitBend * ( NB_LEG_REACH_WALK - NB_LEG_REACH_BENT );
+	f->legReach = NB_LEG_REACH + ( 1.0f - run ) * ease * stretch;
 	f->root.p.y += ( f->legReach - NB_LEG_REACH ) * legLength;
 
 	// How low the root goes for the leg of each foot to reach where it lands, from the hip as the clip has it, the ground
@@ -3986,7 +4034,7 @@ static void nbSteerFeet( const nbWorld* world, int index, nbFigure* f, const nbC
 		if ( f->footSwings[k] )
 		{
 			float swing = f->swingAlong[k];
-			if ( swing < NB_GAIT_AIM )
+			if ( swing < NB_GAIT_AIM + NB_GAIT_AIM_FADE )
 			{
 				// Where the hip will pass over it as far into its stance as land, beside the body, on the ground there
 				float natural = ( 1.0f - swing ) * swingTime;
@@ -4043,9 +4091,13 @@ static void nbSteerFeet( const nbWorld* world, int index, nbFigure* f, const nbC
 				if ( swing <= f->swingStart[k] || swing < NB_GAIT_DESCEND ||
 					 b3Dot( b3SubPos( target, foot->target ), up ) > -NB_GAIT_LEVEL * scale )
 				{
-					foot->target = target;
-					foot->targetTilt = tilt;
-					f->landHeading[k] = f->heading;
+					// Late in the swing it keeps more and more of where it aimed, see NB_GAIT_AIM_FADE
+					float kept = 0.5f * ( swing - NB_GAIT_AIM + NB_GAIT_AIM_FADE ) / NB_GAIT_AIM_FADE;
+					kept = b3ClampFloat( kept, 0.0f, 1.0f );
+					kept = kept * kept * ( 3.0f - 2.0f * kept );
+					foot->target = b3OffsetPos( target, b3MulSV( kept, b3SubPos( foot->target, target ) ) );
+					foot->targetTilt = b3NLerp( tilt, foot->targetTilt, kept );
+					f->landHeading[k] = nbWrapAngle( f->heading + kept * nbWrapAngle( f->landHeading[k] - f->heading ) );
 					f->foothold[k] = b3TransformWorldPoint( end, (b3Vec3){ aim.sole.x, aim.sole.y + lift, aim.sole.z } );
 				}
 			}
@@ -4054,6 +4106,7 @@ static void nbSteerFeet( const nbWorld* world, int index, nbFigure* f, const nbC
 				// As it lifts, a late swing hurries no more than its foot may
 				f->swingHurry[k] = b3MinFloat( f->swingHurry[k], nbMostHurry( foot, up, 0.0f, swingTime, f->gaitRate ) );
 				f->swingStart[k] = -timeStep * f->gaitRate * f->swingHurry[k] / swingTime;
+				f->swingCalm[k] = 1.0f / ( f->swingHurry[k] * f->swingHurry[k] );
 			}
 			float along = b3ClampFloat( ( swing - f->swingStart[k] ) / ( 1.0f - f->swingStart[k] ), 0.0f, 1.0f );
 			float smooth = along * along * ( 3.0f - 2.0f * along );
@@ -4061,8 +4114,9 @@ static void nbSteerFeet( const nbWorld* world, int index, nbFigure* f, const nbC
 			float higher = b3MaxFloat( b3Dot( step, up ), 0.0f );
 			float across = b3Length( b3MulSub( step, b3Dot( step, up ), up ) );
 			float height = b3MinFloat( f->swingHeight[k], NB_GAIT_LIFT_LOW * scale + 0.5f * across );
-			// A swing that hurries lifts and turns its foot early as fast as the gait, less far, see NB_GAIT_HURRY
-			float calm = 1.0f / ( f->swingHurry[k] * f->swingHurry[k] );
+			// A swing that hurries lifts and turns its foot early as fast as the gait, less far, see NB_GAIT_HURRY, as far as it
+			// hurried as it lifted: hurrying more later, it does not lift the foot less at once
+			float calm = f->swingCalm[k];
 			float bump = nbSwingEarly( along );
 			float lift = 4.0f * along * ( 1.0f - along ) * ( run * height + higher ) +
 						 ( 1.0f - run ) * height *
