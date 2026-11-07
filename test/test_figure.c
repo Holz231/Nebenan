@@ -4318,6 +4318,89 @@ static int SteerRunTest( void )
 	return 0;
 }
 
+// Two steered figures start to run from standing at a speed and stop again after 3.25 s: the largest jump of a hand and
+// of the pelvis of the first from the start on, per update squared, and the hash of the bones of both at the end
+static uint32_t RunStartStop( int threadCount, float speed, float* handJump, float* pelvisJump )
+{
+	FigureScene scene;
+	CreateFigureScene( &scene, threadCount );
+	nbFigureId figures[2];
+	figures[0] = AddSteeredFigure( &scene, b3Vec3_zero, 0.0f );
+	figures[1] = AddSteeredFigure( &scene, (b3Vec3){ 3.0f, 0.0f, 0.0f }, 0.0f );
+	const int bones[3] = { nb_humanoidPelvis, nb_humanoidHandLeft, nb_humanoidHandRight };
+	b3Vec3 last[3] = { b3Vec3_zero, b3Vec3_zero, b3Vec3_zero };
+	b3Vec3 before[3] = { b3Vec3_zero, b3Vec3_zero, b3Vec3_zero };
+	*handJump = 0.0f;
+	*pelvisJump = 0.0f;
+	for ( int i = 0; i < 405; ++i )
+	{
+		for ( int k = 0; k < 2; ++k )
+		{
+			SteerVelocity( figures[k], (b3Vec3){ 0.0f, 0.0f, i >= 30 && i < 225 ? speed : 0.0f } );
+		}
+		StepFigures( &scene, 1 );
+		for ( int b = 0; b < 3; ++b )
+		{
+			b3Vec3 at = BonePosition( figures[0], bones[b] );
+			if ( i >= 29 )
+			{
+				float jump = b3Length( b3Add( b3Sub( at, b3MulSV( 2.0f, last[b] ) ), before[b] ) );
+				if ( b == 0 )
+				{
+					*pelvisJump = b3MaxFloat( *pelvisJump, jump );
+				}
+				else
+				{
+					*handJump = b3MaxFloat( *handJump, jump );
+				}
+			}
+			before[b] = last[b];
+			last[b] = at;
+		}
+	}
+	uint32_t hash = 2166136261u;
+	for ( int k = 0; k < 2; ++k )
+	{
+		b3WorldTransform transforms[nb_humanoidBoneCount];
+		int count = nbFigure_GetBoneTransforms( figures[k], transforms, nb_humanoidBoneCount );
+		for ( int i = 0; i < count; ++i )
+		{
+			const uint8_t* bytes = (const uint8_t*)( transforms + i );
+			for ( size_t b = 0; b < sizeof( b3WorldTransform ); ++b )
+			{
+				hash = ( hash ^ bytes[b] ) * 16777619u;
+			}
+		}
+	}
+	DestroyFigureScene( &scene );
+	return hash;
+}
+
+// A steered figure starts to run from standing and stops again without its elbows bending at once, see NB_RUN_TURN_LAG:
+// its hands jump at most 3.7 cm per update squared at 3.0 and 4.8 m/s (7.9 and 14.1 cm before), its pelvis at most 2 and
+// 3.5 cm (1.8 and 4.6 cm before), and with 1 and 4 threads it moves with the same bits
+static int SteerStartStopTest( void )
+{
+	const float speeds[2] = { 3.0f, 4.8f };
+	const float pelvisMost[2] = { 0.02f, 0.035f };
+	for ( int s = 0; s < 2; ++s )
+	{
+		float handJump, pelvisJump;
+		uint32_t one = RunStartStop( 1, speeds[s], &handJump, &pelvisJump );
+		printf( "  starting and stopping at %.1f m/s a hand jumps %.1f mm per update squared at most, the pelvis %.1f mm\n",
+				speeds[s], 1000.0f * handJump, 1000.0f * pelvisJump );
+		ENSURE( handJump <= 0.037f );
+		ENSURE( pelvisJump <= pelvisMost[s] );
+		if ( s == 1 )
+		{
+			float a, b;
+			uint32_t four = RunStartStop( 4, speeds[s], &a, &b );
+			ENSURE( one == four );
+		}
+	}
+	return 0;
+}
+
 // A steered figure hit hard from behind while it runs: its pelvis leaves with the velocity of the run and that of the
 // hit, within 20 %, and once it stood up again it steers again and walks on
 static int SteerHitTest( void )
@@ -4865,7 +4948,7 @@ static int ThinBoardTest( void )
 #define NB_EXPECTED_FOLLOW_HASH 0x6f1d5739u
 
 // See RunSteerScenario
-#define NB_EXPECTED_STEER_HASH 0x40b406c8u
+#define NB_EXPECTED_STEER_HASH 0x02483d1fu
 
 static int FigureFollowDeterminismTest( void )
 {
@@ -4962,6 +5045,7 @@ int FigureTest( void )
 	RUN_TEST( SteerKneeTest );
 	RUN_TEST( SteerLeanTest );
 	RUN_TEST( SteerRunTest );
+	RUN_TEST( SteerStartStopTest );
 	RUN_TEST( SteerHitTest );
 	RUN_TEST( FigureWallTest );
 	RUN_TEST( FigureWallDebrisTest );

@@ -1611,9 +1611,12 @@ seines Tempos weich auf, so springt das Becken rennend in einem Update höchsten
 cm. Die Arme schwingen gegen die Beine, der Rumpf neigt sich in die Geschwindigkeit und in das, was sie ändert, wie ein
 Körper, der in die Bewegung fällt: beim Losgehen vor, bevor das Tempo da ist, beim Bremsen zurück und in Wendungen nach
 innen, losrennend 15° weiter vor als im Lauf. Rennend dreht die Brust mit den Schultern 12° zu jeder Seite gegen das
-Becken, das 5° dreht. Die Figur sieht voraus, wie lange ihr Bein einen Fuß am Boden noch erreicht, wenn sie wendet,
-seitwärts geht, schneller wird oder anhält: Einen Fuß, den es bald nicht mehr erreicht, hebt sie vorher, oder der
-schwingende Fuß eilt, bis 2,5-mal so schnell, um vorher zu landen. Ihr Blick kommt mit
+Becken, das 5° dreht. Beim Losrennen und Anhalten gehen die Beugung der Ellbogen, das Wippen, wie tief die Hüfte rennend
+steht, und die Höhe des Hubs über eine Feder von 0,2 s in die neue Gangart, und ein schwingender Fuß behält die Form
+seines Hubs bis in die zweite Hälfte des Schwungs: Die Hände springen dabei in einem Update höchstens 3,1 cm, auf
+`active-ragdoll-91` bis 14,1 cm. Die Figur sieht voraus, wie lange ihr Bein einen Fuß am Boden noch erreicht, wenn sie
+wendet, seitwärts geht, schneller wird oder anhält: Einen Fuß, den es bald nicht mehr erreicht, hebt sie vorher, oder
+der schwingende Fuß eilt, bis 2,5-mal so schnell, um vorher zu landen. Ihr Blick kommt mit
 `nbFigureSteering::turnAcceleration` auf seine Drehrate und bremst vor dem Ziel. Ein schwingender Fuß plant seinen Weg
 in jedem Update neu, von dort, wo er ist, so schnell, wie er sich bewegt, zu seinem Ziel: Ändert sich das Ziel in einer
 Wendung oder beim Bremsen, biegt sich sein Weg, statt dass er springt. Von zwei Füßen am Boden hebt der zuerst ab, den
