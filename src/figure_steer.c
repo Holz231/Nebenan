@@ -282,6 +282,9 @@ void nbResetSteering( nbFigure* f )
 		f->footOut[k] = FLT_MAX;
 		f->outBehind[k] = false;
 		f->swingHurry[k] = 1.0f;
+		f->swingBase[k] = b3Pos_zero;
+		f->swingVelocity[k] = b3Vec3_zero;
+		f->swingTurnRate[k] = 0.0f;
 		f->stanceTime[k] = 0.0f;
 	}
 }
@@ -291,6 +294,8 @@ void nbInitSteering( nbFigure* f, const b3WorldTransform* transforms )
 	f->steered = f->def.steered;
 	f->steer = (nbSteer){ b3Vec3_zero, f->heading, false };
 	f->gaitPhase = 0.0f;
+	f->gaitLag = 0.0f;
+	f->gaitLagRate = 0.0f;
 	nbResetSteering( f );
 	if ( f->steered == false )
 	{

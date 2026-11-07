@@ -3995,6 +3995,58 @@ static int SteerTurnTest( void )
 	return 0;
 }
 
+// A steered figure that turns round from walking straight on keeps time with its feet again, wherever in its gait the
+// turn begins, at eight points a cycle apart by eighths: in the last 1.5 s each foot lifts within a twentieth of a cycle
+// of where it lifted walking straight on, after its push and not as its leg loses it, see NB_GAIT_KEEP
+static int SteerInStepTest( void )
+{
+	float worst = 0.0f;
+	for ( int k = 0; k < 8; ++k )
+	{
+		FigureScene scene;
+		CreateFigureScene( &scene, 1 );
+		nbFigureId figure = AddSteeredFigure( &scene, b3Vec3_zero, 0.0f );
+
+		// An eighth of the cycle of 0.925 s at 1.6 m/s is 6.9 updates
+		int turn = 240 + ( k * 111 ) / 16;
+		float straight[2] = { -1.0f, -1.0f };
+		bool swung[2] = { false, false };
+		for ( int i = 0; i < turn + 270; ++i )
+		{
+			b3Vec3 wish = { 0.0f, 0.0f, i < turn ? 1.6f : -1.6f };
+			SteerVelocity( figure, wish );
+			StepFigures( &scene, 1 );
+			const nbFigure* f = GetSteered( &scene, figure );
+			for ( int foot = 0; foot < 2; ++foot )
+			{
+				if ( f->footSwings[foot] && swung[foot] == false )
+				{
+					float phase = f->gaitPhase + ( foot == 1 ? 0.5f : 0.0f );
+					phase -= floorf( phase );
+					if ( i >= 120 && i < turn )
+					{
+						straight[foot] = phase;
+					}
+					else if ( i >= turn + 180 && straight[foot] >= 0.0f )
+					{
+						float off = phase - straight[foot];
+						off -= floorf( off + 0.5f );
+						worst = b3MaxFloat( worst, fabsf( off ) );
+					}
+				}
+				swung[foot] = f->footSwings[foot];
+			}
+		}
+		ENSURE( straight[0] >= 0.0f && straight[1] >= 0.0f );
+		ENSURE( nbFigure_GetState( figure ) == nb_figureAnimated );
+		DestroyFigureScene( &scene );
+	}
+	printf( "  turned round at eight points of its gait, its feet lift at most %.3f of a cycle off where they lifted before\n",
+			worst );
+	ENSURE( worst <= 0.05f );
+	return 0;
+}
+
 // A steered figure hit hard from behind while it runs: its pelvis leaves with the velocity of the run and that of the
 // hit, within 20 %, and once it stood up again it steers again and walks on
 static int SteerHitTest( void )
@@ -4542,7 +4594,7 @@ static int ThinBoardTest( void )
 #define NB_EXPECTED_FOLLOW_HASH 0x6f1d5739u
 
 // See RunSteerScenario
-#define NB_EXPECTED_STEER_HASH 0x61069695u
+#define NB_EXPECTED_STEER_HASH 0x7e1587e5u
 
 static int FigureFollowDeterminismTest( void )
 {
@@ -4635,6 +4687,7 @@ int FigureTest( void )
 	RUN_TEST( SteerSlopeTest );
 	RUN_TEST( SteerStairsTest );
 	RUN_TEST( SteerTurnTest );
+	RUN_TEST( SteerInStepTest );
 	RUN_TEST( SteerHitTest );
 	RUN_TEST( FigureWallTest );
 	RUN_TEST( FigureWallDebrisTest );

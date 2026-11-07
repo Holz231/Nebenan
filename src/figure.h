@@ -419,19 +419,21 @@ typedef struct nbFigure
 	bool overpowered;
 	int letGoCount;
 
-	// Steered by a program, see nbFigure_Steer and figure_steer.c: what it wants, the capsule it moves as over the point of
-	// its frame, its radius and the heights of its lower and upper center, the velocity it moves with, whether the probe
-	// under the capsule finds ground, the rate of the spring that holds it over the ground, how long it is in the air, the
-	// slope of its way and how fast its heading turns. The gait: whether the feet step after the capsule, how far into its
-	// cycle of two steps, the speed it steps for, the velocity its feet aim with and how fast that changes, whether each
-	// foot swings, may lift again, how far into its swing it is and from where it swung, how high it lifts and how close
-	// under the body it lands, the heading each foot has, lifted with and lands with, how far each rolls over its toes, or
-	// with its toes up over its heel, and lifted rolled, how far it landed rolled over its heel and how long it stands
-	// since, how far it rolls over its toes at least before it lifts and how fast it rolled over them in the last update,
-	// how long from the last update on its leg reaches it as the capsule goes on and whether it was behind the hip, see
-	// nbLowerSteered, and how many times as fast as its gait it swings. Then how far the legs stretch in parts of their
-	// length, how far the pelvis turns and sways over the feet, how far the gait lowers the root, and how far the root went
-	// down in all in the last update, how fast that changed and how far of it the gait lowered it.
+	// Steered by a program, see nbFigure_Steer and figure_steer.c: what it wants, the capsule it moves as over the point
+	// of its frame, its radius and the heights of its lower and upper center, the velocity it moves with, whether the
+	// probe under the capsule finds ground, the rate of the spring that holds it over the ground, how long it is in the
+	// air, the slope of its way and how fast its heading turns. The gait: whether the feet step after the capsule, how far
+	// into its cycle of two steps, how far the cycle is behind the feet and how fast it catches up, see NB_GAIT_KEEP, the
+	// speed it steps for, the velocity its feet aim with and how fast that changes, whether each foot swings, may lift
+	// again, how far into its swing it is and from where it swung, how high it lifts and how close under the body it
+	// lands, the heading each foot has, lifted with and lands with, how far each rolls over its toes, or with its toes up
+	// over its heel, and lifted rolled, how far it landed rolled over its heel and how long it stands since, how far it
+	// rolls over its toes at least before it lifts and how fast it rolled over them in the last update, how long from the
+	// last update on its leg reaches it as the capsule goes on and whether it was behind the hip, see nbLowerSteered, how
+	// many times as fast as its gait it swings, and where a swinging foot is on its way without its lift, how fast it
+	// moves there and how fast it turns, see nbSwingPath. Then how far the legs stretch in parts of their length, how far
+	// the pelvis turns and sways over the feet, how far the gait lowers the root, and how far the root went down in all in
+	// the last update, how fast that changed and how far of it the gait lowered it.
 	bool steered;
 	nbSteer steer;
 	float moverRadius;
@@ -445,6 +447,8 @@ typedef struct nbFigure
 	float headingRate;
 	bool gaitOn;
 	float gaitPhase;
+	float gaitLag;
+	float gaitLagRate;
 	float gaitSpeed;
 	b3Vec3 gaitVelocity;
 	b3Vec3 gaitAcceleration;
@@ -466,6 +470,9 @@ typedef struct nbFigure
 	float footOut[2];
 	bool outBehind[2];
 	float swingHurry[2];
+	b3Pos swingBase[2];
+	b3Vec3 swingVelocity[2];
+	float swingTurnRate[2];
 	float legReach;
 	float gaitTurn;
 	float gaitSway;
