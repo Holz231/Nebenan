@@ -1606,14 +1606,19 @@ Geschwindigkeit. Am Hang und auf Treppen misst die Figur die Steigung ihres Wegs
 bergab näher unter dem Körper, so reicht das vordere Bein so weit hinauf wie das hintere hinunter, und die Schritte
 werden kürzer, auf 20° um ein Fünftel. Die Feder unter der Kapsel folgt der Ebene, die der Fühler findet, statt am Hang
 hinterherzuhängen, und vor dem Aufsetzen geht die Hüfte so tief, wie das Bein den wirklichen Landepunkt braucht. Auf
-einer Rampe von 20° wippt die Hüfte so um 2 cm, eine Treppe hinunter um höchstens 13 cm, und in einem Update bewegt sie
-sich gegen die Kapsel um höchstens 2 cm. Alle Abfragen einer Figur lassen ihre eigenen Knochen weg, bevor Box3D sie
-rechnet, `b3QueryFilter::excludeGroup`, siehe [`extern/README.md`](extern/README.md): Eine gesteuerte Figur kostet im
-Update der Figuren auf der VM 7,7 µs, eine stehende 1,5 µs. Treffer wirken wie auf jede stehende Figur, mit den
-Geschwindigkeiten, die ihre Knochen gerade haben: Nach einem Stoß von hinten mit 120 N s auf eine Figur, die mit 4,5 m/s
-rennt, fliegt ihr Becken mit 5,3 m/s nach vorn, und wenn sie aufgestanden ist, geht sie weiter, wohin das Spiel will.
-Ein leichter Stoß gibt der Kapsel Geschwindigkeit, statt die Figur schwanken zu lassen. Mit 1, 2 und 4 Threads bewegt
-sie sich bitgleich, Figuren ohne `steered` rechnen wie vorher.
+einer Rampe von 20° wippt die Hüfte so um 2 cm, und in einem Update bewegt sie sich gegen die Kapsel um höchstens 2 cm.
+Auf einer Treppe setzt die Figur ihre Füße Stufe für Stufe: Vor jedem Schwung sucht sie am Ziel mit Strahlen nach einer
+Kante, misst die Stufe aus und stellt die ganze Sohle darauf, und jeder Schritt nimmt gleich viele Stufen, so viele, wie
+ein Schritt auf einer Rampe gleicher Steigung lang wäre. Damit der Fuß dort landet, geht der Gang in einem Schwung bis
+40 % schneller oder langsamer, und die Hüfte folgt dem Boden zwischen den Fußpunkten statt der Kapsel, die Stufe für
+Stufe steigt: Die Treppe hinauf wippt sie gegen die Linie der Treppe um höchstens 1 cm, hinunter um 3,5 bis 7,3 cm. Alle
+Abfragen einer Figur lassen ihre eigenen Knochen weg, bevor Box3D sie rechnet, `b3QueryFilter::excludeGroup`, siehe
+[`extern/README.md`](extern/README.md): Eine gesteuerte Figur kostet im Update der Figuren auf der VM 8,4 µs, eine
+stehende 1,5 µs. Treffer wirken wie auf jede stehende Figur, mit den Geschwindigkeiten, die ihre Knochen gerade haben:
+Nach einem Stoß von hinten mit 120 N s auf eine Figur, die mit 4,5 m/s rennt, fliegt ihr Becken mit 5,3 m/s nach vorn,
+und wenn sie aufgestanden ist, geht sie weiter, wohin das Spiel will. Ein leichter Stoß gibt der Kapsel Geschwindigkeit,
+statt die Figur schwanken zu lassen. Mit 1, 2 und 4 Threads bewegt sie sich bitgleich, Figuren ohne `steered` rechnen
+wie vorher.
 
 **Aktiver Ragdoll.** Eine Figur, die sich nicht fangen kann, eine Last von oben ab `crushForce` (600 N), Boden, der
 wegbricht oder sich schneller als 1,5 m/s bewegt, und `nbFigure_Knockdown` machen eine Figur zum aktiven Ragdoll, mit
@@ -3314,11 +3319,12 @@ glslang und SPIRV-Cross geprüft. Ein Lauf von sokol-shdc schreibt ihn neu.
 - Nur der Mensch der Bibliothek tritt, fängt sich nach einem harten Treffer und stellt seine Füße auf den Boden, die
   Bibliothek kennt nur seine Beine. Andere Rigs fallen bei einem harten Treffer gleich. Gehen und Rennen übernimmt die
   Bibliothek für eine Figur mit `steered`, siehe Gesteuerte Figur, Springen, Klettern, Ducken und Gehen im Kampf aber
-  nicht, die spielt das Spiel selbst mit `nbFigure_Move` und eigenen Clips. Auf einer Treppe setzt ein gesteuerter
-  Mensch seine Füße, wo sein Gang sie hinbringt, nicht Stufe für Stufe: Hinunter landet ein Fuß mal eine, mal zwei
-  Stufen tiefer, die Hüfte wippt dabei bis 13 cm, und eine Fußspitze kann über eine Kante ragen. Ein Fuß steht auf dem,
-  was eine Kugel unter der Mitte seiner Sohle trifft: Ragt Schutt nur unter Ferse oder Zehen auf, taucht der Fuß dort
-  ein, wie jeder kinematische Körper.
+  nicht, die spielt das Spiel selbst mit `nbFigure_Move` und eigenen Clips. Auf Stufen, die kürzer sind als die Sohle
+  von 26 cm, ragt beim gesteuerten Menschen eine Ferse oder Fußspitze über eine Kante, treppab wippt die Hüfte bis 7 cm,
+  auf Treppen, die keine Messung sah, mit 2,5 m/s bis 10 cm, und hält er auf einer Treppe an, landet ein Fuß beim
+  Anhalten oder Weitergehen auch einmal teils über einer Kante. Ein Fuß steht auf dem, was eine Kugel unter der Mitte
+  seiner Sohle trifft: Ragt Schutt nur unter Ferse oder Zehen auf, taucht der Fuß dort ein, wie jeder kinematische
+  Körper.
 - Eine Figur, die sich fängt, hält ihr Becken wie auf `ragdoll-11` mit einem begrenzten Drehmoment gegen die Welt
   aufrecht, nicht nur mit ihren Beinen. Ein Mensch, der stolpert, tut das mit seinem Gleichgewichtssinn, hier tut es ein
   Gelenk von Box3D. Ein Spiel, das es rein physikalisch will, setzt `uprightAgainstWorld` auf aus, dann hält das Gelenk

@@ -14,6 +14,7 @@
 
 #include <float.h>
 #include <math.h>
+#include <stdlib.h>
 #include <string.h>
 
 typedef struct FigureScene
@@ -3741,10 +3742,11 @@ static int SteerFootTest( void )
 	return 0;
 }
 
-// A steered figure walks up and down its courses at 1.5 m/s, the conditions of round 85 in docs/Roadmap.md: its pelvis
-// moves against its frame by 3 cm per update at most, and between two landings by 10 cm at most on the ramp of 20 degrees
-// and 14 cm at most on twenty stairs of 15 cm. On the ramp its steps are at most 0.85 as long as on flat ground and it
-// lands on its heel, up and down.
+// A steered figure walks up and down its courses at 1.5 m/s, the conditions of rounds 85 and 86 in docs/Roadmap.md: on
+// the ramp of 20 degrees its pelvis moves against its frame by 3 cm per update at most and by 10 cm at most between two
+// landings, its steps are at most 0.85 as long as on flat ground and it lands on its heel, up and down. On twenty stairs
+// of 15 by 30 cm its pelvis goes along the line of the stairs, up and down by 6 cm at most between two landings and by
+// 3 cm at most in an update, where its frame goes up and down tread by tread.
 static int SteerSlopeTest( void )
 {
 	const char* names[4] = { "up the ramp", "down the ramp", "up the stairs", "down the stairs" };
@@ -3778,7 +3780,8 @@ static int SteerSlopeTest( void )
 			const nbFigure* f = GetSteered( &scene, figure );
 			float z = b3ToVec3( f->frame.p ).z;
 			bool inside = z > from && z < to;
-			float h = b3ToVec3( f->targets[nb_humanoidPelvis].p ).y - b3ToVec3( f->frame.p ).y;
+			b3Vec3 pelvis = b3ToVec3( f->targets[nb_humanoidPelvis].p );
+			float h = stairs ? pelvis.y - 0.5f * ( pelvis.z - 3.0f ) : pelvis.y - b3ToVec3( f->frame.p ).y;
 			if ( inside && lastInside )
 			{
 				jump = b3MaxFloat( jump, fabsf( h - last ) );
@@ -3819,12 +3822,92 @@ static int SteerSlopeTest( void )
 		ENSURE( steps >= 3.0f );
 		ENSURE( nbFigure_GetState( figure ) == nb_figureAnimated );
 		ENSURE( jump <= 0.03f );
-		ENSURE( bob <= ( stairs ? 0.14f : 0.1f ) );
+		ENSURE( bob <= ( stairs ? 0.06f : 0.1f ) );
 		if ( stairs == false )
 		{
 			ENSURE( length <= 0.85f * 0.708f );
 			ENSURE( heel <= -0.15f );
 		}
+		DestroyFigureScene( &scene );
+	}
+	return 0;
+}
+
+// The tread of the twenty stairs of AddSteerCourse under a point, -1 before them and 19 on the landing at their top
+static int StairTread( float z )
+{
+	if ( z < 3.0f )
+	{
+		return -1;
+	}
+	int tread = (int)floorf( ( z - 3.0f ) / 0.3f );
+	return tread < 19 ? tread : 19;
+}
+
+// A steered figure walks up and down twenty stairs of 15 by 30 cm at 1.5 m/s, the conditions of round 86 in
+// docs/Roadmap.md: a foot that stands flat on the stairs stands with heel and toes on one tread, no more than 1.5 cm off
+// it, and from the third landing on the stairs to the one before the last every step goes the same number of treads, see
+// nbFindFoothold
+static int SteerStairsTest( void )
+{
+	const int feet[2] = { nb_humanoidFootLeft, nb_humanoidFootRight };
+	for ( int pass = 0; pass < 2; ++pass )
+	{
+		FigureScene scene;
+		CreateFigureScene( &scene, 1 );
+		bool down = pass == 1;
+		float top = AddSteerCourse( &scene, 4 );
+		b3Vec3 start = down ? (b3Vec3){ 0.0f, top, 11.0f } : b3Vec3_zero;
+		nbFigureId figure = AddSteeredFigure( &scene, start, down ? B3_PI : 0.0f );
+		SteerVelocity( figure, (b3Vec3){ 0.0f, 0.0f, down ? -1.5f : 1.5f } );
+		int treads[64];
+		int landings = 0;
+		int across = 0;
+		int flat = 0;
+		float off = 0.0f;
+		bool swings[2] = { false, false };
+		for ( int i = 0; i < 600; ++i )
+		{
+			StepFigures( &scene, 1 );
+			const nbFigure* f = GetSteered( &scene, figure );
+			for ( int k = 0; k < 2; ++k )
+			{
+				b3Vec3 heel = SoleEdge( &scene, f, feet[k], -1.0f );
+				b3Vec3 toe = SoleEdge( &scene, f, feet[k], 1.0f );
+				int heelTread = StairTread( heel.z );
+				int toeTread = StairTread( toe.z );
+				bool onStairs = heelTread >= 0 && toeTread >= 0 && heelTread < 19 && toeTread < 19;
+				if ( f->gaitOn && f->footSwings[k] == false && f->footRoll[k] == 0.0f && onStairs )
+				{
+					// It stands flat: heel and toes on its tread
+					float height = 0.15f * (float)( heelTread + 1 );
+					across += heelTread != toeTread ? 1 : 0;
+					off = b3MaxFloat( off, b3MaxFloat( fabsf( heel.y - height ), fabsf( toe.y - height ) ) );
+					flat += 1;
+				}
+				int middle = StairTread( 0.5f * ( heel.z + toe.z ) );
+				if ( swings[k] && f->footSwings[k] == false && middle >= 0 && middle < 19 && landings < 64 )
+				{
+					treads[landings] = middle;
+					landings += 1;
+				}
+				swings[k] = f->footSwings[k];
+			}
+		}
+		int each = landings >= 3 ? abs( treads[2] - treads[1] ) : 0;
+		bool same = true;
+		for ( int j = 3; j + 1 < landings; ++j )
+		{
+			same = same && abs( treads[j] - treads[j - 1] ) == each;
+		}
+		printf( "  %s: %d landings on the stairs, steps of %d treads from the third on%s, %d flat stances, %d across an edge, "
+				"a sole edge %.4f m off its tread at most\n",
+				down ? "down" : "up", landings, each, same ? "" : " and others", flat, across, off );
+		ENSURE( nbFigure_GetState( figure ) == nb_figureAnimated );
+		ENSURE( landings >= 6 );
+		ENSURE( each >= 1 && same );
+		ENSURE( flat > 0 && across == 0 );
+		ENSURE( off <= 0.015f );
 		DestroyFigureScene( &scene );
 	}
 	return 0;
@@ -4377,7 +4460,7 @@ static int ThinBoardTest( void )
 #define NB_EXPECTED_FOLLOW_HASH 0x6f1d5739u
 
 // See RunSteerScenario
-#define NB_EXPECTED_STEER_HASH 0x35bbb905u
+#define NB_EXPECTED_STEER_HASH 0x93081224u
 
 static int FigureFollowDeterminismTest( void )
 {
@@ -4468,6 +4551,7 @@ int FigureTest( void )
 	RUN_TEST( SteerGroundTest );
 	RUN_TEST( SteerFootTest );
 	RUN_TEST( SteerSlopeTest );
+	RUN_TEST( SteerStairsTest );
 	RUN_TEST( SteerHitTest );
 	RUN_TEST( FigureWallTest );
 	RUN_TEST( FigureWallDebrisTest );

@@ -246,8 +246,21 @@ void nbResetSteering( nbFigure* f )
 	f->gaitCrouch = 0.0f;
 	f->rootDrop = 0.0f;
 	f->rootDropRate = 0.0f;
+	f->stairWeight = 0.0f;
+	f->stairDepth = 0.0f;
+	f->stairRise = 0.0f;
+	f->stairStep = 0;
+	f->gaitRate = 1.0f;
+	f->stairCarry = 0.0f;
+	f->carryFrame = f->frame.p;
+	f->stairBase = f->frame.p;
+	f->carryRoot = 0.0f;
+	f->carryGait = false;
 	for ( int k = 0; k < 2; ++k )
 	{
+		f->foothold[k] = f->frame.p;
+		f->liftHold[k] = f->frame.p;
+		f->footholdChosen[k] = false;
 		f->footSwings[k] = false;
 		f->canLift[k] = true;
 		f->swingAlong[k] = 0.0f;
