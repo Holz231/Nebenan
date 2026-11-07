@@ -49,17 +49,18 @@ enum SceneKind
 	SceneFigures,
 	SceneFigureTown,
 	SceneFight,
+	ScenePlayer,
 	SceneCount
 };
 
 static const char* s_sceneNames[SceneCount] = { "Mauern",  "Stresstest",		"Stadt", "Große Stadt",
-												"Figuren", "Stadt mit Figuren", "Kampf" };
+												"Figuren", "Stadt mit Figuren", "Kampf", "Spielfigur" };
 static const char* s_toolNames[ToolCount] = { "Gewehr", "Granate", "Kanone", "Stock" };
 
 // The scenes whose figures the menu, the overlay and the reports show
 static bool HasFigures( SceneKind scene )
 {
-	return scene == SceneFigures || scene == SceneFigureTown || scene == SceneFight;
+	return scene == SceneFigures || scene == SceneFigureTown || scene == SceneFight || scene == ScenePlayer;
 }
 
 struct ToolSettings
@@ -320,6 +321,12 @@ struct Automation
 	bool stick = false;
 	float stickTime = 0.0f;
 
+	// The script steers the figure of the player over its course instead of the keys, see RunWalkScript, if asked seen
+	// from its right side
+	bool walk = false;
+	bool walkSide = false;
+	float walkTime = 0.0f;
+
 	// Run the comparison, the one of the thread counts, the scaling or the one with and without the joints in the packs,
 	// print it and quit, or take the town down like the comparison does
 	bool compare = false;
@@ -432,6 +439,13 @@ struct App
 	std::vector<uint16_t> indexScratch;
 	int groundSlot = -1;
 	int groundMesh = -1;
+
+	// The fixed blocks of a scene that are neither ground nor structure, as the course of the figure of the player, and
+	// that figure, steered by the keys, with the point the camera looks at, see ScenePlayer
+	std::vector<int> staticMeshes;
+	std::vector<int> staticSlots;
+	nbFigureId player = nb_nullFigureId;
+	b3Vec3 playerPivot = b3Vec3_zero;
 
 	SceneKind scene = SceneWall;
 	Tool tool = ToolRifle;
@@ -1880,6 +1894,118 @@ static void AddTownFigures( App& app )
 	}
 }
 
+// A fixed block of a course: a box in the physics and its mesh
+static void AddStaticBox( App& app, b3Vec3 center, b3Vec3 half, b3Quat rotation, int material )
+{
+	b3BodyDef bodyDef = b3DefaultBodyDef();
+	bodyDef.position = b3ToPos( center );
+	bodyDef.rotation = rotation;
+	b3BodyId body = b3CreateBody( app.physics, &bodyDef );
+	b3BoxHull box = b3MakeBoxHull( half.x, half.y, half.z );
+	b3ShapeDef shapeDef = b3DefaultShapeDef();
+	shapeDef.baseMaterial.friction = 0.8f;
+	b3CreateHullShape( body, &shapeDef, &box.base );
+
+	int slot = app.renderer.AllocSlot();
+	app.renderer.SetSlot( slot, center, rotation );
+	const b3Vec3 axes[3] = { b3Vec3_axisX, b3Vec3_axisY, b3Vec3_axisZ };
+	const float extents[3] = { half.x, half.y, half.z };
+	GpuVertex vertices[24];
+	uint16_t indices[36];
+	int count = 0;
+	for ( int a = 0; a < 3; ++a )
+	{
+		for ( int s = -1; s <= 1; s += 2 )
+		{
+			// The corners of a face, counterclockwise seen from outside
+			int u = ( a + 1 ) % 3;
+			int w = ( a + 2 ) % 3;
+			b3Vec3 normal = b3MulSV( (float)s, axes[a] );
+			int first = count;
+			for ( int c = 0; c < 4; ++c )
+			{
+				float cu = c == 1 || c == 2 ? 1.0f : -1.0f;
+				float cw = c >= 2 ? 1.0f : -1.0f;
+				b3Vec3 p = b3MulSV( (float)s * extents[a], axes[a] );
+				p = b3MulAdd( p, cu * extents[u], axes[u] );
+				p = b3MulAdd( p, cw * extents[w], axes[w] );
+				vertices[count++] = Renderer::MakeVertex( p, normal, material, slot );
+			}
+			const int order[2][6] = { { 0, 2, 1, 0, 3, 2 }, { 0, 1, 2, 0, 2, 3 } };
+			for ( int k = 0; k < 6; ++k )
+			{
+				indices[( first / 4 ) * 6 + k] = (uint16_t)( first + order[s > 0 ? 1 : 0][k] );
+			}
+		}
+	}
+	app.staticMeshes.push_back( app.renderer.AddMesh( vertices, 24, indices, 36, slot ) );
+	app.staticSlots.push_back( slot );
+}
+
+// A slab whose top rises at an angle toward -z, from a line across the ground at a z up to a height, between x0 and x1
+static void AddRamp( App& app, float x0, float x1, float z, float angle, float height )
+{
+	float length = height / sinf( angle );
+	float thickness = 0.3f;
+	b3Vec3 normal = { 0.0f, cosf( angle ), sinf( angle ) };
+	b3Vec3 top = { 0.5f * ( x0 + x1 ), 0.5f * height, z - 0.5f * length * cosf( angle ) };
+	b3Vec3 center = b3MulSub( top, 0.5f * thickness, normal );
+	AddStaticBox( app, center, { 0.5f * ( x1 - x0 ), 0.5f * thickness, 0.5f * length },
+				  b3MakeQuatFromAxisAngle( b3Vec3_axisX, angle ), MaterialConcrete );
+}
+
+// The course of the figure of the player: a ramp of 20 degrees and stairs of 15 cm up to a platform of 1.5 m, a slope of
+// 60 degrees it does not climb, a block of 30 cm it steps onto and one of 60 cm it does not, a brick wall and three
+// figures to run into. The figure of the player is a figure of the library made with nbFigureDef::steered: the keys give
+// it the velocity it wants and the library moves it on its own feet, see UpdatePlayer.
+static void BuildPlayerScene( App& app )
+{
+	const float platform = 1.5f;
+	const float rampAngle = 20.0f * B3_PI / 180.0f;
+	const float steepAngle = 60.0f * B3_PI / 180.0f;
+	const float edge = -4.2f;
+	AddStaticBox( app, { 0.0f, 0.5f * platform, edge - 2.9f }, { 6.0f, 0.5f * platform, 2.9f }, b3Quat_identity,
+				  MaterialConcrete );
+	AddRamp( app, -6.0f, -2.0f, edge + platform / tanf( rampAngle ), rampAngle, platform );
+	for ( int i = 0; i < 10; ++i )
+	{
+		float top = 0.15f * (float)( i + 1 );
+		float z = edge + 0.3f * (float)( 9 - i );
+		AddStaticBox( app, { 0.0f, 0.5f * top, z + 0.15f }, { 1.5f, 0.5f * top, 0.15f }, b3Quat_identity, MaterialConcrete );
+	}
+	AddRamp( app, 2.5f, 5.5f, edge + platform / tanf( steepAngle ), steepAngle, platform );
+	AddStaticBox( app, { 8.5f, 0.15f, -1.5f }, { 1.5f, 0.15f, 1.5f }, b3Quat_identity, MaterialConcrete );
+	AddStaticBox( app, { 8.5f, 0.3f, -5.0f }, { 1.5f, 0.3f, 1.5f }, b3Quat_identity, MaterialConcrete );
+	AddWall( app, { -10.0f, 0.0f, 0.0f }, 0.5f * B3_PI, { 8.0f, 2.2f, 0.3f }, BrickPreset(), 21 );
+
+	nbRigDef rig;
+	nbFigureDef def = MakeFigureDef( app, &rig );
+	const b3Vec3 others[3] = { { 4.0f, 0.0f, 2.0f }, { 6.5f, 0.0f, 3.5f }, { -4.0f, 0.0f, 3.0f } };
+	for ( int k = 0; k < 3; ++k )
+	{
+		def.position = b3ToPos( others[k] );
+		def.heading = 0.6f * (float)( k - 1 );
+		nbFigureId figure = nbCreateFigure( app.destruction, &def );
+		if ( nbFigure_IsValid( figure ) )
+		{
+			AddFigureVisual( app, figure );
+		}
+	}
+
+	def.position = b3ToPos( { 0.0f, 0.0f, 5.0f } );
+	def.heading = B3_PI;
+	def.steered = true;
+	app.player = nbCreateFigure( app.destruction, &def );
+	if ( nbFigure_IsValid( app.player ) )
+	{
+		AddFigureVisual( app, app.player );
+	}
+	app.playerPivot = { 0.0f, 1.56f, 5.0f };
+	app.camera.yaw = 0.0f;
+	app.camera.pitch = -0.25f;
+	app.camera.position = { 0.45f, 2.55f, 8.9f };
+}
+
 static void DestroyScene( App& app )
 {
 	// The worlds wait for their last steps by themselves, and their poses go with them
@@ -1936,6 +2062,14 @@ static void DestroyScene( App& app )
 	}
 	app.figures.clear();
 	app.bodySlots.clear();
+	app.player = nb_nullFigureId;
+	for ( size_t i = 0; i < app.staticMeshes.size(); ++i )
+	{
+		app.renderer.RemoveMesh( app.staticMeshes[i] );
+		app.renderer.FreeSlot( app.staticSlots[i] );
+	}
+	app.staticMeshes.clear();
+	app.staticSlots.clear();
 	app.lastImpact = {};
 	app.figureCollisions = 0;
 	app.figureBreakThroughs = 0;
@@ -2018,6 +2152,9 @@ static void LoadScene( App& app, SceneKind scene )
 			break;
 		case SceneFight:
 			BuildFightScene( app );
+			break;
+		case ScenePlayer:
+			BuildPlayerScene( app );
 			break;
 		default:
 			BuildTownScene( app );
@@ -2565,6 +2702,94 @@ static void UpdateCamera( App& app, float dt )
 	{
 		app.camera.position = b3MulAdd( app.camera.position, speed * dt, b3Normalize( move ) );
 		app.camera.position.y = b3MaxFloat( app.camera.position.y, 0.3f );
+	}
+}
+
+// How fast the figure of the player walks and runs, in meters per second, how far the camera stays behind it and right of
+// it, how high over its pelvis it looks, how fast it follows, and how fast Q and E turn it, in radians per second
+static const float PlayerWalkSpeed = 1.6f;
+static const float PlayerRunSpeed = 4.8f;
+static const float PlayerCameraDistance = 4.0f;
+static const float PlayerCameraShoulder = 0.45f;
+static const float PlayerCameraHeight = 0.6f;
+static const float PlayerCameraFollow = 12.0f;
+static const float PlayerCameraTurn = 2.0f;
+
+// The figure of the player: the keys give it the velocity it wants over the ground, relative to where the camera looks, and
+// the library moves it on its own feet, see nbFigure_Steer. The camera follows its pelvis from behind its right shoulder.
+// Called between the steps of the world.
+static void UpdatePlayer( App& app, float dt )
+{
+	if ( nbFigure_IsValid( app.player ) == false )
+	{
+		UpdateCamera( app, dt );
+		return;
+	}
+
+	b3Vec3 move = b3Vec3_zero;
+	float speed = PlayerWalkSpeed;
+	if ( ImGui::GetIO().WantCaptureKeyboard == false )
+	{
+		b3Vec3 forward = app.camera.Forward();
+		b3Vec3 flat = b3Normalize( b3Vec3{ forward.x, 0.0f, forward.z } );
+		b3Vec3 right = app.camera.Right();
+		if ( app.keys[SAPP_KEYCODE_W] )
+		{
+			move = b3Add( move, flat );
+		}
+		if ( app.keys[SAPP_KEYCODE_S] )
+		{
+			move = b3Sub( move, flat );
+		}
+		if ( app.keys[SAPP_KEYCODE_D] )
+		{
+			move = b3Add( move, right );
+		}
+		if ( app.keys[SAPP_KEYCODE_A] )
+		{
+			move = b3Sub( move, right );
+		}
+		if ( app.keys[SAPP_KEYCODE_Q] )
+		{
+			app.camera.yaw -= PlayerCameraTurn * dt;
+		}
+		if ( app.keys[SAPP_KEYCODE_E] )
+		{
+			app.camera.yaw += PlayerCameraTurn * dt;
+		}
+		speed = app.keys[SAPP_KEYCODE_LEFT_SHIFT] ? PlayerRunSpeed : PlayerWalkSpeed;
+	}
+	nbSteer steer = { b3Vec3_zero, 0.0f, true };
+	if ( b3LengthSquared( move ) > 0.0f )
+	{
+		steer.velocity = b3MulSV( speed, b3Normalize( move ) );
+	}
+	nbFigure_Steer( app.player, &steer );
+
+	b3Vec3 pelvis = b3ToVec3( b3Body_GetPosition( nbFigure_GetBody( app.player, nb_humanoidPelvis ) ) );
+	b3Vec3 pivot = { pelvis.x, pelvis.y + PlayerCameraHeight, pelvis.z };
+	app.playerPivot = b3Lerp( app.playerPivot, pivot, b3MinFloat( 1.0f, PlayerCameraFollow * dt ) );
+	b3Vec3 eye = b3MulSub( app.playerPivot, PlayerCameraDistance, app.camera.Forward() );
+	app.camera.position = b3MulAdd( eye, PlayerCameraShoulder, app.camera.Right() );
+	app.camera.position.y = b3MaxFloat( app.camera.position.y, 0.3f );
+}
+
+// The walk of --walk over the course of the figure of the player, by the seconds since the start: it stands, walks up the
+// stairs, runs over the platform and off its edge, and stops, as the keys would make it
+static void RunWalkScript( App& app, float time )
+{
+	bool go = time >= 1.5f && time < 11.0f;
+	app.keys[SAPP_KEYCODE_LEFT_SHIFT] = time >= 8.0f && time < 11.0f;
+	if ( app.automation.walkSide )
+	{
+		// Seen from the side, the camera looks toward -x and its right is the -z of the course
+		app.camera.yaw = -0.5f * B3_PI;
+		app.camera.pitch = -0.1f;
+		app.keys[SAPP_KEYCODE_D] = go;
+	}
+	else
+	{
+		app.keys[SAPP_KEYCODE_W] = go;
 	}
 }
 
@@ -3257,11 +3482,22 @@ static void DrawUi( App& app )
 	}
 
 	ImGui::SeparatorText( "Steuerung" );
-	ImGui::TextWrapped( "Linke Maustaste: schießen (halten = Dauerfeuer)\n"
-						"Rechte Maustaste halten: umsehen\n"
-						"WASD bewegen, Q/E runter/hoch, Shift schneller\n"
-						"1-3 Werkzeug, R neu laden, P Pause, C Trümmer weg,\n"
-						"V VSync, F1 Menü" );
+	if ( app.scene == ScenePlayer )
+	{
+		ImGui::TextWrapped( "Linke Maustaste: schießen (halten = Dauerfeuer)\n"
+							"Rechte Maustaste: Kamera mit der Maus drehen\n"
+							"WASD gehen, Shift laufen, Q/E Kamera drehen\n"
+							"1-3 Werkzeug, R neu laden, P Pause, C Trümmer weg,\n"
+							"V VSync, F1 Menü" );
+	}
+	else
+	{
+		ImGui::TextWrapped( "Linke Maustaste: schießen (halten = Dauerfeuer)\n"
+							"Rechte Maustaste halten: umsehen\n"
+							"WASD bewegen, Q/E runter/hoch, Shift schneller\n"
+							"1-3 Werkzeug, R neu laden, P Pause, C Trümmer weg,\n"
+							"V VSync, F1 Menü" );
+	}
 
 	ImGui::End();
 }
@@ -4677,8 +4913,17 @@ static void OnFrame()
 		RebuildFigureVisuals( app );
 	}
 
-	// During the comparison the camera stays, it decides what is drawn
-	if ( app.comparison.active == false )
+	// During the comparison the camera stays, it decides what is drawn. The figure of the player takes the keys.
+	if ( app.automation.walk && app.scene == ScenePlayer )
+	{
+		app.automation.walkTime += dt;
+		RunWalkScript( app, app.automation.walkTime );
+	}
+	if ( app.comparison.active == false && app.scene == ScenePlayer )
+	{
+		UpdatePlayer( app, dt );
+	}
+	else if ( app.comparison.active == false )
 	{
 		UpdateCamera( app, dt );
 	}
@@ -4910,8 +5155,11 @@ static void OnEvent( const sapp_event* event )
 			{
 				if ( app.comparison.active == false )
 				{
+					// Behind the figure of the player the camera stays above the ground
+					float low = app.scene == ScenePlayer ? -1.2f : -1.5f;
+					float high = app.scene == ScenePlayer ? 0.5f : 1.5f;
 					app.camera.yaw += LookPerPixel * event->mouse_dx;
-					app.camera.pitch = b3ClampFloat( app.camera.pitch - LookPerPixel * event->mouse_dy, -1.5f, 1.5f );
+					app.camera.pitch = b3ClampFloat( app.camera.pitch - LookPerPixel * event->mouse_dy, low, high );
 				}
 			}
 			else
@@ -4986,6 +5234,19 @@ int main( int argc, char** argv )
 		else if ( strcmp( argv[i], "--script" ) == 0 )
 		{
 			app.automation.script = true;
+		}
+		else if ( strcmp( argv[i], "--walk-side" ) == 0 )
+		{
+			// As --walk, seen from the right of the figure
+			app.automation.walk = true;
+			app.automation.walkSide = true;
+			app.showUi = false;
+		}
+		else if ( strcmp( argv[i], "--walk" ) == 0 )
+		{
+			// The figure of the player walks its course by itself, seen without the menu; F1 shows it
+			app.automation.walk = true;
+			app.showUi = false;
 		}
 		else if ( strcmp( argv[i], "--scene" ) == 0 && i + 1 < argc )
 		{

@@ -1302,6 +1302,34 @@ typedef struct nbFigureMotors
 	float followStrength;
 } nbFigureMotors;
 
+/// How a steered figure moves, see nbFigureDef::steered and nbFigure_Steer. A program steers it as a character controller
+/// after chapters 2 and 25.1 of the roadmap of the game: it moves as a capsule from stepHeight over the ground to the top
+/// of its head and slides along walls and what lies about. A probe under the capsule holds it over the ground like a
+/// spring, so it walks up steps and over rubble lower than stepHeight. Ground steeper than maxSlope does not carry it.
+/// Without ground it falls with gravity, and it falls as a ragdoll when it is in the air longer than a drop of about
+/// 1.8 m takes. Its feet step after the capsule, its legs reach them and its arms swing against them.
+typedef struct nbFigureSteering
+{
+	/// The radius of the capsule in meters. Zero takes the shoulders and the arms in the idle clip.
+	float radius;
+
+	/// How high a step the figure walks up, in meters: the capsule ends this high over the ground. Zero takes 0.4 of the
+	/// stand height.
+	float stepHeight;
+
+	/// The steepest ground the figure walks on, in radians from level. Steeper ground stops it as a wall.
+	float maxSlope;
+
+	/// How fast the figure gets to the velocity it wants and how fast it slows down to it, in meters per second squared,
+	/// and how much of that it has in the air, from 0 to 1
+	float acceleration;
+	float braking;
+	float airControl;
+
+	/// How fast the figure turns to the heading it wants, in radians per second
+	float turnRate;
+} nbFigureSteering;
+
 /// A figure, see nbCreateFigure. Initialize with nbDefaultFigureDef.
 typedef struct nbFigureDef
 {
@@ -1388,6 +1416,11 @@ typedef struct nbFigureDef
 
 	/// Start as an active ragdoll, falling from the pose it is placed in
 	bool startAsRagdoll;
+
+	/// A program steers the figure, see nbFigure_Steer: it moves through the world on its own feet, as the program wants,
+	/// see nbFigureSteering. nbFigure_Move places it.
+	bool steered;
+	nbFigureSteering steering;
 
 	/// Free for the program, see nbFigure_GetUserData
 	void* userData;
@@ -1483,6 +1516,11 @@ typedef struct nbFigureInfo
 	/// A standing figure follows its clip with dynamic bones near another figure, see nbFigureDef::engageRadius
 	bool following;
 
+	/// A steered figure, see nbFigure_Steer: the velocity it moves with, over the ground and along up, in meters per
+	/// second, and whether the probe under its capsule finds ground it can walk on. Zero and false while it is not standing.
+	b3Vec3 moveVelocity;
+	bool onGround;
+
 	/// Hits that landed, how often the figure was knocked down, got up and broke off getting up, the steps it took to
 	/// catch hits, how often it moved to get up, how often it caught itself and stood again, see nb_figureBalancing, and
 	/// how often a push made it catch itself, see nbFigureDef::pushForce, and how often it was pushed off its clip while
@@ -1497,6 +1535,19 @@ typedef struct nbFigureInfo
 	int pushCount;
 	int letGoCount;
 } nbFigureInfo;
+
+/// What a program wants of a steered figure, see nbFigure_Steer
+typedef struct nbSteer
+{
+	/// The velocity the figure wants over the ground, in meters per second. The part along up does not count.
+	b3Vec3 velocity;
+
+	/// The heading it wants to face, radians about up, zero facing +z, see nbFigureDef::heading
+	float heading;
+
+	/// Face where it moves instead, while it moves faster than 0.1 m/s, and keep that heading when it stops
+	bool faceVelocity;
+} nbSteer;
 
 /// A hit on a bone, see nbFigure_ApplyHit
 typedef struct nbHitDef

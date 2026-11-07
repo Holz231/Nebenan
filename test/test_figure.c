@@ -3425,6 +3425,401 @@ static uint32_t RunFigureScenario( int threadCount )
 }
 
 //----------------------------------------------------------------------------------------------------------------------
+// Figures a program steers, see figure_steer.c and the acceptance of round 84, F84 in docs/Roadmap.md
+
+// A figure the program steers by the velocity it wants
+static nbFigureId AddSteeredFigure( FigureScene* scene, b3Vec3 position, float heading )
+{
+	nbFigureDef def = nbDefaultFigureDef();
+	def.rig = &scene->rig;
+	def.standHeight = scene->standHeight;
+	def.position = b3ToPos( position );
+	def.heading = heading;
+	def.steered = true;
+	return nbCreateFigure( scene->world, &def );
+}
+
+// The figure as the library keeps it, for its capsule and its feet
+static const nbFigure* GetSteered( const FigureScene* scene, nbFigureId figure )
+{
+	return nbGetWorldFromId( scene->world )->figures.data + ( figure.index1 - 1 );
+}
+
+static void SteerVelocity( nbFigureId figure, b3Vec3 velocity )
+{
+	nbSteer steer = { velocity, 0.0f, true };
+	nbFigure_Steer( figure, &steer );
+}
+
+// The speed of the steering over the ground
+static float SteerSpeed( nbFigureId figure )
+{
+	b3Vec3 velocity = nbFigure_GetInfo( figure ).moveVelocity;
+	return sqrtf( velocity.x * velocity.x + velocity.z * velocity.z );
+}
+
+// A steered figure gets to the speed it wants, walking and running, within 10 % in the time its acceleration takes and a
+// tenth of a second, holds it, stops again as fast as it brakes, and turns on the spot to the heading it wants at its
+// turn rate
+static int SteerSpeedTest( void )
+{
+	nbFigureSteering steering = nbDefaultFigureDef().steering;
+	const float speeds[2] = { 1.5f, 4.5f };
+	for ( int pass = 0; pass < 2; ++pass )
+	{
+		FigureScene scene;
+		CreateFigureScene( &scene, 1 );
+		nbFigureId figure = AddSteeredFigure( &scene, b3Vec3_zero, 0.0f );
+		StepFigures( &scene, 10 );
+		float speed = speeds[pass];
+		SteerVelocity( figure, (b3Vec3){ 0.0f, 0.0f, speed } );
+		StepFigures( &scene, (int)ceilf( 60.0f * ( speed / steering.acceleration + 0.1f ) ) );
+		float reached = SteerSpeed( figure );
+		StepFigures( &scene, 120 );
+		float held = SteerSpeed( figure );
+		SteerVelocity( figure, b3Vec3_zero );
+		StepFigures( &scene, (int)ceilf( 60.0f * ( speed / steering.braking + 0.1f ) ) );
+		float stopped = SteerSpeed( figure );
+		printf( "  wished %.1f m/s: %.3f after accelerating, %.3f held, %.4f after braking\n", speed, reached, held, stopped );
+		ENSURE( fabsf( reached - speed ) <= 0.1f * speed );
+		ENSURE( fabsf( held - speed ) <= 0.1f * speed );
+		ENSURE( stopped < 0.01f );
+		ENSURE( nbFigure_GetState( figure ) == nb_figureAnimated );
+		DestroyFigureScene( &scene );
+	}
+
+	FigureScene scene;
+	CreateFigureScene( &scene, 1 );
+	nbFigureId figure = AddSteeredFigure( &scene, b3Vec3_zero, 0.0f );
+	StepFigures( &scene, 10 );
+	nbSteer steer = { b3Vec3_zero, 0.5f * B3_PI, false };
+	nbFigure_Steer( figure, &steer );
+
+	// The heading as the library keeps it: the frame turns by an approximate cosine and sine, see b3ComputeCosSin
+	float last = GetSteered( &scene, figure )->heading;
+	float fastest = 0.0f;
+	int steps = (int)ceilf( 60.0f * ( 0.5f * B3_PI / steering.turnRate + 0.1f ) );
+	for ( int i = 0; i < steps; ++i )
+	{
+		StepFigures( &scene, 1 );
+		float heading = GetSteered( &scene, figure )->heading;
+		fastest = b3MaxFloat( fastest, 60.0f * fabsf( heading - last ) );
+		last = heading;
+	}
+	printf( "  turned on the spot to %.4f rad, at most %.3f rad/s\n", last, fastest );
+	ENSURE( fabsf( last - 0.5f * B3_PI ) < 0.01f );
+	ENSURE( fastest <= 1.01f * steering.turnRate );
+	ENSURE( nbFigure_GetState( figure ) == nb_figureAnimated );
+	DestroyFigureScene( &scene );
+	return 0;
+}
+
+typedef struct FixedCount
+{
+	int count;
+} FixedCount;
+
+static bool CountFixedShape( b3ShapeId shapeId, void* context )
+{
+	if ( b3Body_GetType( b3Shape_GetBody( shapeId ) ) == b3_staticBody )
+	{
+		( (FixedCount*)context )->count += 1;
+	}
+	return true;
+}
+
+// Whether the capsule of a steered figure, shrunk by 1 cm, overlaps a fixed body
+static bool CapsuleOverlapsFixed( const FigureScene* scene, nbFigureId figure )
+{
+	const nbFigure* f = GetSteered( scene, figure );
+	b3Vec3 points[2] = { { 0.0f, f->moverLow, 0.0f }, { 0.0f, f->moverHigh, 0.0f } };
+	b3ShapeProxy proxy = { points, 2, f->moverRadius - 0.01f };
+	FixedCount fixed = { 0 };
+	b3World_OverlapShape( scene->physicsWorld, nbFigure_GetFrame( figure ).p, &proxy, b3DefaultQueryFilter(), CountFixedShape,
+						  &fixed );
+	return fixed.count > 0;
+}
+
+// A steered figure against a wall, head on and at 30 degrees: its capsule shrunk by 1 cm never overlaps the wall or the
+// ground, it stops at the wall, and at 30 degrees it slides along it with what the wall leaves of the velocity it wants
+static int SteerWallTest( void )
+{
+	for ( int pass = 0; pass < 2; ++pass )
+	{
+		FigureScene scene;
+		CreateFigureScene( &scene, 1 );
+		AddBlock( &scene, (b3Vec3){ 0.0f, 1.5f, 6.0f }, (b3Vec3){ 10.0f, 1.5f, 0.2f } );
+		nbFigureId figure = AddSteeredFigure( &scene, b3Vec3_zero, 0.0f );
+		b3CosSin turn = b3ComputeCosSin( pass == 0 ? 0.0f : B3_PI / 6.0f );
+		SteerVelocity( figure, (b3Vec3){ 1.5f * turn.sine, 0.0f, 1.5f * turn.cosine } );
+		int overlaps = 0;
+		for ( int i = 0; i < 360; ++i )
+		{
+			StepFigures( &scene, 1 );
+			overlaps += CapsuleOverlapsFixed( &scene, figure ) ? 1 : 0;
+		}
+		b3Vec3 position = b3ToVec3( nbFigure_GetFrame( figure ).p );
+		b3Vec3 velocity = nbFigure_GetInfo( figure ).moveVelocity;
+		float gap = 5.8f - position.z - GetSteered( &scene, figure )->moverRadius;
+		printf( "  %s: %d overlaps, %.4f m from the wall, velocity %.3f %.3f\n", pass == 0 ? "head on" : "at 30 degrees",
+				overlaps, gap, velocity.x, velocity.z );
+		ENSURE( overlaps == 0 );
+		ENSURE( nbFigure_GetState( figure ) == nb_figureAnimated );
+		ENSURE( gap > -0.01f && gap < 0.05f );
+		ENSURE( fabsf( velocity.z ) < 0.01f );
+		ENSURE( fabsf( velocity.x - 1.5f * turn.sine ) < 0.1f * 1.5f * turn.sine + 0.01f );
+		DestroyFigureScene( &scene );
+	}
+	return 0;
+}
+
+// The courses of round 84 along +z: a ramp of 20 or of 60 degrees from z = 3 with a platform on top, stairs of ten steps
+// of 15 cm from z = 3, or a ledge of 1 m that ends at z = 3. The height on top.
+static float AddSteerCourse( FigureScene* scene, int course )
+{
+	if ( course == 0 || course == 2 )
+	{
+		float angle = ( course == 0 ? 20.0f : 60.0f ) * B3_PI / 180.0f;
+		b3CosSin slope = b3ComputeCosSin( angle );
+		float length = 8.0f;
+		b3Vec3 center = { 0.0f, 0.5f * length * slope.sine - 0.2f * slope.cosine,
+						  3.0f + 0.5f * length * slope.cosine + 0.2f * slope.sine };
+		AddTurnedBlock( scene, center, b3MakeQuatFromAxisAngle( b3Vec3_axisX, -angle ), (b3Vec3){ 3.0f, 0.2f, 0.5f * length } );
+		float top = length * slope.sine;
+		float end = 3.0f + length * slope.cosine;
+		AddBlock( scene, (b3Vec3){ 0.0f, 0.5f * top, end + 9.95f }, (b3Vec3){ 3.0f, 0.5f * top, 10.0f } );
+		return top;
+	}
+	if ( course == 1 )
+	{
+		for ( int i = 0; i < 10; ++i )
+		{
+			float height = 0.15f * (float)( i + 1 );
+			AddBlock( scene, (b3Vec3){ 0.0f, 0.5f * height, 13.0f + 0.3f * (float)i }, (b3Vec3){ 2.0f, 0.5f * height, 10.0f } );
+		}
+		return 1.5f;
+	}
+	AddBlock( scene, (b3Vec3){ 0.0f, 0.5f, -2.0f }, (b3Vec3){ 3.0f, 0.5f, 5.0f } );
+	return 0.0f;
+}
+
+// A steered figure on its courses: up a ramp of 20 degrees and up stairs of 15 cm it keeps its ground in every update and
+// comes out on top, a ramp of 60 degrees stops it at its foot, and off a ledge of 1 m it falls, lands on its feet and
+// walks on, standing all the way
+static int SteerGroundTest( void )
+{
+	const char* names[4] = { "ramp of 20 degrees", "stairs of 15 cm", "ramp of 60 degrees", "ledge of 1 m" };
+	for ( int course = 0; course < 4; ++course )
+	{
+		FigureScene scene;
+		CreateFigureScene( &scene, 1 );
+		float top = AddSteerCourse( &scene, course );
+		nbFigureId figure = AddSteeredFigure( &scene, course == 3 ? (b3Vec3){ 0.0f, 1.0f, -5.0f } : b3Vec3_zero, 0.0f );
+		SteerVelocity( figure, (b3Vec3){ 0.0f, 0.0f, 1.5f } );
+		int lost = 0;
+		int falls = 0;
+		for ( int i = 0; i < 600; ++i )
+		{
+			StepFigures( &scene, 1 );
+			nbFigureInfo info = nbFigure_GetInfo( figure );
+			lost += info.onGround ? 0 : 1;
+			falls += info.state == nb_figureAnimated ? 0 : 1;
+		}
+		b3Vec3 position = b3ToVec3( nbFigure_GetFrame( figure ).p );
+		float speed = SteerSpeed( figure );
+		printf( "  %s: %d updates without ground, %d not standing, ends %.3f m high at z %.2f, %.3f m/s\n", names[course], lost,
+				falls, position.y, position.z, speed );
+		ENSURE( falls == 0 );
+		if ( course < 2 )
+		{
+			ENSURE( lost == 0 );
+			ENSURE( fabsf( position.y - top ) < 0.01f && position.z > 12.0f );
+			ENSURE( fabsf( speed - 1.5f ) < 0.15f );
+		}
+		else if ( course == 2 )
+		{
+			ENSURE( position.y < 0.05f && position.z < 3.5f && speed < 0.05f );
+		}
+		else
+		{
+			ENSURE( lost > 0 && fabsf( position.y ) < 0.01f && position.z > 6.0f );
+			ENSURE( fabsf( speed - 1.5f ) < 0.15f );
+		}
+		DestroyFigureScene( &scene );
+	}
+	return 0;
+}
+
+// The edge of the toes on the sole of a foot of the humanoid, where the figure puts the foot: it stays where it is while
+// the foot stands flat and while it rolls over its toes
+static b3Vec3 ToeEdge( const FigureScene* scene, const nbFigure* f, int foot )
+{
+	const nbBoneDef* bone = scene->bones + foot;
+	b3Vec3 local = { bone->center.x, bone->center.y + bone->halfExtents.y, bone->center.z - bone->halfExtents.z };
+	return b3ToVec3( b3TransformWorldPoint( f->targets[foot], local ) );
+}
+
+// A planted foot of a steered figure moves less than 1 cm between landing and lifting, walking and running on flat
+// ground. Its heel rises as the hip passes over it, so it is the edge of its toes that stays where it landed.
+static int SteerFootTest( void )
+{
+	const float speeds[2] = { 1.5f, 4.5f };
+	const int feet[2] = { nb_humanoidFootLeft, nb_humanoidFootRight };
+	for ( int pass = 0; pass < 2; ++pass )
+	{
+		FigureScene scene;
+		CreateFigureScene( &scene, 1 );
+		nbFigureId figure = AddSteeredFigure( &scene, b3Vec3_zero, 0.0f );
+		SteerVelocity( figure, (b3Vec3){ 0.0f, 0.0f, speeds[pass] } );
+		b3Vec3 landed[2] = { b3Vec3_zero, b3Vec3_zero };
+		bool standing[2] = { false, false };
+		float moved = 0.0f;
+		float rolled = 0.0f;
+		int stances = 0;
+		for ( int i = 0; i < 360; ++i )
+		{
+			StepFigures( &scene, 1 );
+			const nbFigure* f = GetSteered( &scene, figure );
+			for ( int k = 0; k < 2; ++k )
+			{
+				bool planted = f->gaitOn && f->footSwings[k] == false;
+				b3Vec3 toes = ToeEdge( &scene, f, feet[k] );
+				if ( planted && standing[k] == false )
+				{
+					landed[k] = toes;
+					stances += 1;
+				}
+				else if ( planted )
+				{
+					moved = b3MaxFloat( moved, b3Distance( toes, landed[k] ) );
+					rolled = b3MaxFloat( rolled, f->footRoll[k] );
+				}
+				standing[k] = planted;
+			}
+		}
+		printf( "  at %.1f m/s: %d stances, a planted foot moved %.5f m at most and rolled %.2f rad\n", speeds[pass], stances,
+				moved, rolled );
+		ENSURE( stances > 10 );
+		ENSURE( moved < 0.01f );
+		ENSURE( rolled > 0.1f );
+		DestroyFigureScene( &scene );
+	}
+	return 0;
+}
+
+// A steered figure hit hard from behind while it runs: its pelvis leaves with the velocity of the run and that of the
+// hit, within 20 %, and once it stood up again it steers again and walks on
+static int SteerHitTest( void )
+{
+	FigureScene scene;
+	CreateFigureScene( &scene, 1 );
+	nbFigureId figure = AddSteeredFigure( &scene, (b3Vec3){ 0.0f, 0.0f, -40.0f }, 0.0f );
+	SteerVelocity( figure, (b3Vec3){ 0.0f, 0.0f, 4.5f } );
+	StepFigures( &scene, 180 );
+	ENSURE( nbFigure_GetState( figure ) == nb_figureAnimated );
+
+	b3Pos back = b3Body_GetWorldPoint( nbFigure_GetBody( figure, nb_humanoidChest ), (b3Vec3){ 0.0f, 0.08f, -0.1f } );
+	nbHitDef hit = { 1, nb_humanoidChest, { 0.0f, 0.0f, 120.0f }, back };
+	ENSURE( nbFigure_ApplyHit( figure, &hit ) );
+	SteerVelocity( figure, (b3Vec3){ 0.0f, 0.0f, 1.5f } );
+	StepFigures( &scene, 1 );
+	float mass = 0.0f;
+	for ( int i = 0; i < nb_humanoidBoneCount; ++i )
+	{
+		mass += b3Body_GetMass( nbFigure_GetBody( figure, i ) );
+	}
+	float expected = 4.5f + 120.0f / mass;
+	float leaves = b3Body_GetLinearVelocity( nbFigure_GetBody( figure, nb_humanoidPelvis ) ).z;
+	nbFigureState hitState = nbFigure_GetState( figure );
+
+	int standsAfter = StepUntil( &scene, figure, nb_figureAnimated, 900 );
+	b3Vec3 before = b3ToVec3( nbFigure_GetFrame( figure ).p );
+	StepFigures( &scene, 120 );
+	b3Vec3 after = b3ToVec3( nbFigure_GetFrame( figure ).p );
+	float walks = 0.5f * ( after.z - before.z );
+	printf( "  the pelvis leaves at %.2f m/s for %.2f, it stands again after %.2f s and walks on at %.2f m/s\n", leaves, expected,
+			(float)standsAfter / 60.0f, walks );
+	ENSURE( hitState != nb_figureAnimated );
+	ENSURE( fabsf( leaves - expected ) <= 0.2f * expected );
+	ENSURE( standsAfter >= 0 );
+	ENSURE( nbFigure_GetState( figure ) == nb_figureAnimated );
+	ENSURE( fabsf( walks - 1.5f ) < 0.15f );
+	DestroyFigureScene( &scene );
+	return 0;
+}
+
+// A course of steered figures for the same bits with any number of threads: one walks, runs at a wall at an angle, slides
+// along it, stops and turns on the spot, one walks up stairs and is hit from the side, and one walks past a figure that
+// only stands
+static uint32_t RunSteerScenario( int threadCount )
+{
+	FigureScene scene;
+	CreateFigureScene( &scene, threadCount );
+	AddBlock( &scene, (b3Vec3){ -2.0f, 1.5f, 8.0f }, (b3Vec3){ 4.0f, 1.5f, 0.2f } );
+	for ( int i = 0; i < 6; ++i )
+	{
+		float height = 0.15f * (float)( i + 1 );
+		AddBlock( &scene, (b3Vec3){ 5.0f, 0.5f * height, 8.0f + 0.3f * (float)i }, (b3Vec3){ 1.0f, 0.5f * height, 5.0f } );
+	}
+	nbFigureId figures[4];
+	figures[0] = AddSteeredFigure( &scene, b3Vec3_zero, 0.0f );
+	figures[1] = AddSteeredFigure( &scene, (b3Vec3){ 5.0f, 0.0f, 0.0f }, 0.0f );
+	figures[2] = AddSteeredFigure( &scene, (b3Vec3){ -6.0f, 0.0f, 3.3f }, 0.5f * B3_PI );
+	figures[3] = AddFigure( &scene, (b3Vec3){ -3.0f, 0.0f, 3.0f }, -0.5f * B3_PI );
+
+	uint32_t hash = 2166136261u;
+	for ( int step = 0; step < 600; ++step )
+	{
+		if ( step == 0 )
+		{
+			SteerVelocity( figures[0], (b3Vec3){ 0.0f, 0.0f, 1.5f } );
+			SteerVelocity( figures[1], (b3Vec3){ 0.0f, 0.0f, 1.5f } );
+			SteerVelocity( figures[2], (b3Vec3){ 1.2f, 0.0f, 0.0f } );
+		}
+		if ( step == 120 )
+		{
+			SteerVelocity( figures[0], (b3Vec3){ -1.5f, 0.0f, 4.2f } );
+		}
+		if ( step == 200 )
+		{
+			b3BodyId chest = nbFigure_GetBody( figures[1], nb_humanoidChest );
+			b3Pos point = b3Body_GetWorldPoint( chest, (b3Vec3){ 0.1f, 0.08f, 0.0f } );
+			nbHitDef hit = { 7, nb_humanoidChest, { -100.0f, 0.0f, 0.0f }, point };
+			nbFigure_ApplyHit( figures[1], &hit );
+		}
+		if ( step == 300 )
+		{
+			nbSteer turn = { b3Vec3_zero, -2.0f, false };
+			nbFigure_Steer( figures[0], &turn );
+		}
+		nbWorld_Step( scene.world, 1.0f / 60.0f, 4 );
+	}
+
+	for ( int k = 0; k < 4; ++k )
+	{
+		b3WorldTransform transforms[nb_humanoidBoneCount];
+		int count = nbFigure_GetBoneTransforms( figures[k], transforms, nb_humanoidBoneCount );
+		for ( int i = 0; i < count; ++i )
+		{
+			const uint8_t* bytes = (const uint8_t*)( transforms + i );
+			for ( size_t b = 0; b < sizeof( b3WorldTransform ); ++b )
+			{
+				hash = ( hash ^ bytes[b] ) * 16777619u;
+			}
+		}
+		nbFigureInfo info = nbFigure_GetInfo( figures[k] );
+		const uint8_t* bytes = (const uint8_t*)&info.moveVelocity;
+		for ( size_t b = 0; b < sizeof( b3Vec3 ); ++b )
+		{
+			hash = ( hash ^ bytes[b] ) * 16777619u;
+		}
+		hash = ( hash ^ (uint32_t)( info.state + 4 * ( info.onGround ? 1 : 0 ) + 8 * info.knockdownCount ) ) * 16777619u;
+	}
+	DestroyFigureScene( &scene );
+	return hash;
+}
+
+//----------------------------------------------------------------------------------------------------------------------
 // Ragdolls against destructible walls, see the roadmap of the game, 26.16, 26.19 C and 30.9
 
 // A wall 6 m wide and 3.5 m high along x on the ground, its face toward the figure at z = 0: boards of wood, light and
@@ -3858,6 +4253,9 @@ static int ThinBoardTest( void )
 // See RunFollowScenario
 #define NB_EXPECTED_FOLLOW_HASH 0x6f1d5739u
 
+// See RunSteerScenario
+#define NB_EXPECTED_STEER_HASH 0x89ac34dau
+
 static int FigureFollowDeterminismTest( void )
 {
 	uint32_t one = RunFollowScenario( 1 );
@@ -3867,6 +4265,20 @@ static int FigureFollowDeterminismTest( void )
 	ENSURE( one == again );
 	ENSURE( one == four );
 	ENSURE( one == NB_EXPECTED_FOLLOW_HASH );
+	return 0;
+}
+
+static int SteerDeterminismTest( void )
+{
+	uint32_t one = RunSteerScenario( 1 );
+	uint32_t again = RunSteerScenario( 1 );
+	uint32_t two = RunSteerScenario( 2 );
+	uint32_t four = RunSteerScenario( 4 );
+	printf( "  steer hash: 0x%08x\n", one );
+	ENSURE( one == again );
+	ENSURE( one == two );
+	ENSURE( one == four );
+	ENSURE( one == NB_EXPECTED_STEER_HASH );
 	return 0;
 }
 
@@ -3928,11 +4340,17 @@ int FigureTest( void )
 	RUN_TEST( FigurePunchTest );
 	RUN_TEST( FigureFollowHitTest );
 	RUN_TEST( FigureFollowBumpTest );
+	RUN_TEST( SteerSpeedTest );
+	RUN_TEST( SteerWallTest );
+	RUN_TEST( SteerGroundTest );
+	RUN_TEST( SteerFootTest );
+	RUN_TEST( SteerHitTest );
 	RUN_TEST( FigureWallTest );
 	RUN_TEST( FigureWallDebrisTest );
 	RUN_TEST( ThinBoardTest );
 	RUN_TEST( FigureWallDeterminismTest );
 	RUN_TEST( FigureFollowDeterminismTest );
+	RUN_TEST( SteerDeterminismTest );
 	RUN_TEST( FigureDeterminismTest );
 	return 0;
 }

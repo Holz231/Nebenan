@@ -304,8 +304,15 @@ Bildzeit.
   Bewegung selbst. In jedem Paar schlägt einer alle zwei Sekunden geradeaus, im einen hält der andere die Deckung, im
   anderen steht er offen. **Zustand** schreibt „folgt dem Clip“ über jede, das Menü zählt außerdem, wie viele folgen
   und wie oft eine losließ. Mit dem Stock lassen sie sich drücken und schlagen
+- **Spielfigur**: eine Figur der Bibliothek, die man selbst steuert, auf einem Parcours: eine Rampe von 20° und eine
+  Treppe aus zehn Stufen von 15 cm zu einer Plattform von 1,5 m, ein Hang von 60°, an dem sie stehen bleibt, ein Block
+  von 30 cm, auf den sie steigt, einer von 60 cm, der sie aufhält, eine Ziegelwand und drei Figuren, in die man laufen
+  kann. **W A S D** gehen relativ zum Blick, mit **Shift** rennt sie, **Q / E** und die Maus mit der rechten Taste
+  drehen die Kamera, die ihr von hinten folgt. Die Tasten geben nur die Geschwindigkeit, die sie will, gehen, rennen,
+  steigen und fallen tut sie in der Bibliothek, siehe Gesteuerte Figur. Gewehr, Granate und Kanone treffen sie wie jede
+  Figur
 
-**Aufrufoptionen**: `--scene 0..6` startet eine Szene, `--fragment-scale 3` setzt die Bruchstückgröße, `--vsync`
+**Aufrufoptionen**: `--scene 0..7` startet eine Szene, `--fragment-scale 3` setzt die Bruchstückgröße, `--vsync`
 schaltet VSync ein, `--msaa 4` schaltet Kantenglättung ein (Standard aus), `--highdpi` rendert auf hochauflösenden
 Bildschirmen in voller Auflösung (Standard aus, kostet Füllrate). `--serial-physics` schaltet die parallele Physik ab,
 `--threads N` setzt die Zahl der Threads, `--step-rate 30` den Takt der Physik. `--compare` misst parallel gegen
@@ -314,9 +321,11 @@ Threads messen“, `--scaling` wie „Skalierung messen“ und `--compare-joints
 Messungen reißen die Stadt selbst ab, Lauf für Lauf, auch mit `--demolition`, mit `--scene 5` die Stadt mit Figuren,
 `--compare-joints` beschießt sie. Ohne sie reißt `--demolition` die Stadt ab wie dabei. `--script` feuert eine
 vorgegebene Schussfolge ab, `--stick` dreht in der Szene mit Figuren ohne Menü den Blick nach einem Skript, und der
-Stock schwingt mit, langsam gegen einen Kopf und schnell über eine Brust, `--frames N` beendet nach N Bildern und meldet
-Bildzeiten, CPU-Zeiten, Uploads und Dreiecke pro Bild und einen Hash der Lagen aller Bruchstücke und der Knochen der
-Figuren, `--screenshot datei.ppm` speichert das letzte Bild (nur OpenGL).
+Stock schwingt mit, langsam gegen einen Kopf und schnell über eine Brust, `--walk` lässt die Spielfigur ohne Menü den
+Parcours gehen, die Treppe hinauf, über die Plattform rennen und von ihrer Kante springen, `--walk-side` dasselbe von
+der Seite gesehen, `--frames N` beendet nach N Bildern und meldet Bildzeiten, CPU-Zeiten, Uploads und Dreiecke pro Bild
+und einen Hash der Lagen aller Bruchstücke und der Knochen der Figuren, `--screenshot datei.ppm` speichert das letzte
+Bild (nur OpenGL).
 
 Hinkt die Physik hinterher, lässt `nbWorld_Advance` die Zeit langsamer laufen, statt Schritte nachzuholen: Mehr als
 1/60 s Physik im selben Bild kommt nur, solange der letzte Schritt weniger als 4 ms pro 1/60 s kostete, bei 60 Hz
@@ -1577,6 +1586,27 @@ allmählich los und ab 10 cm ganz, so tritt ein Tritt aus einem eigenen Clip, wi
 keinen Boden, steht er, wo der Clip ihn hinstellt. Auch die Schritte des Ausgleichs setzen ihre Füße so auf den Boden
 an ihrem Ziel. Ein Spiel ruft dafür nichts auf.
 
+**Gesteuerte Figur.** Seit `active-ragdoll-84` bewegt die Bibliothek einen Menschen, den ein Spiel steuert, nach Kapitel
+2 und 25.1 der Roadmap des Spiels: Das Spiel sagt mit `nbFigure_Steer` nur, mit welcher Geschwindigkeit über den Boden
+er gehen will und wohin er schaut, gehen, rennen, steigen und fallen tut die Bibliothek. Er bewegt sich als Kapsel,
+unten so hoch wie eine Stufe, die er nimmt, oben bis an den Kopf, mit den Abfragen von Box3D für Figuren, die ein Spiel
+bewegt: Die Kapsel sammelt die Ebenen, die sie berührt, löst sie zu einer Verschiebung und wirft sich bis zum ersten
+Treffer, bis zu viermal pro Update, so gleitet sie an Wänden entlang. Die Idee kommt vom Mover der Beispiele von Box2D
+und von `move_and_slide` in Godot. Ein Fühler unter der Kapsel hält sie mit einer kritisch gedämpften Feder über dem
+Boden, Boden steiler als `maxSlope` ist eine Wand, und ohne Boden fällt sie mit der Schwerkraft. Ist sie länger in der
+Luft, als ein Fall von 1,8 m dauert, fällt sie als Ragdoll. Die Füße treten nach der Kapsel, in einem Takt aus der Länge
+der Beine: Je schneller, desto mehr Schritte pro Sekunde und desto kürzer steht ein Fuß, beim Gehen 0,6 seines Zyklus,
+beim Rennen 0,33, mit beiden Füßen in der Luft zwischen den Schritten. Ein Fuß landet, wo die Hüfte über ihn kommt, und
+ein stehender Fuß bleibt, wo er gelandet ist, bis zum Abheben: Seine Zehenkante bewegt sich um weniger als einen
+Millimeter. Ist die Hüfte über ihn hinweg, hebt er die Ferse und rollt über die Zehen, so weit sein Bein es braucht, bis
+0,7 rad. Beim Gehen schwingt die Hüfte über das Standbein, um knapp 5 cm, vor dem Aufsetzen tiefer, beim Rennen federt
+sie in der Standphase ein und steigt im Flug, um etwa 7 cm. Die Arme schwingen gegen die Beine, der Rumpf neigt sich in
+die Geschwindigkeit. Treffer wirken wie auf jede stehende Figur, mit den Geschwindigkeiten, die ihre Knochen gerade
+haben: Nach einem Stoß von hinten mit 120 N s auf eine Figur, die mit 4,5 m/s rennt, fliegt ihr Becken mit 5,3 m/s nach
+vorn, und wenn sie aufgestanden ist, geht sie weiter, wohin das Spiel will. Ein leichter Stoß gibt der Kapsel
+Geschwindigkeit, statt die Figur schwanken zu lassen. Mit 1, 2 und 4 Threads bewegt sie sich bitgleich, Figuren ohne
+`steered` rechnen wie vorher.
+
 **Aktiver Ragdoll.** Eine Figur, die sich nicht fangen kann, eine Last von oben ab `crushForce` (600 N), Boden, der
 wegbricht oder sich schneller als 1,5 m/s bewegt, und `nbFigure_Knockdown` machen eine Figur zum aktiven Ragdoll, mit
 den Geschwindigkeiten, die ihre Knochen hatten. Ein Treffer wirkt genau einmal und verteilt sich wie in Overgrowth
@@ -2181,6 +2211,21 @@ if ( ray.hit )
 nbFigure_Move( figure, b3ToPos( (b3Vec3){ 2.5f, 0.0f, 0.0f } ), 0.5f * B3_PI );
 nbFigure_PlayClip( figure, &winken, 1.0f );
 nbFigureInfo info = nbFigure_GetInfo( figure );   // steht, fängt sich, liegt oder steht auf, und worauf sie wartet
+```
+
+Eine Figur, die der Spieler steuert, geht auf ihren eigenen Füßen. Das Spiel gibt ihr, wenn sich die Eingabe ändert
+oder in jedem Bild, die Geschwindigkeit, die sie will, die Bibliothek lässt sie gehen, rennen, Stufen steigen, an Wänden
+entlanggleiten und fallen:
+
+```c
+figureDef.steered = true;   // Kapsel und Gang, siehe nbFigureSteering für Stufenhöhe, Hang und Beschleunigung
+nbFigureId player = nbCreateFigure( world, &figureDef );
+
+// W A S D relativ zum Blick, Shift rennt: 1,6 oder 4,8 m/s über den Boden, und sie schaut, wohin sie geht
+nbSteer steer = { b3MulSV( shift ? 4.8f : 1.6f, wish ), 0.0f, true };
+nbFigure_Steer( player, &steer );
+
+nbFigureInfo playerInfo = nbFigure_GetInfo( player );   // moveVelocity, onGround, und ob sie steht oder fällt
 ```
 
 Die komplette API steht in [include/nebenan/nebenan.h](include/nebenan/nebenan.h).
@@ -3259,10 +3304,12 @@ glslang und SPIRV-Cross geprüft. Ein Lauf von sokol-shdc schreibt ihn neu.
 - Nur konvexe Teile, aus denen sich Quader ausschneiden lassen. Andere konkave Formen müssen als mehrere konvexe
   Teile angegeben werden.
 - Nur der Mensch der Bibliothek tritt, fängt sich nach einem harten Treffer und stellt seine Füße auf den Boden, die
-  Bibliothek kennt nur seine Beine. Andere Rigs fallen bei einem harten Treffer gleich. Gehen und Laufen spielt das
-  Spiel selbst, mit `nbFigure_Move` und eigenen Clips, die Bibliothek hat dafür keinen. Ein Fuß steht auf dem, was eine
-  Kugel unter der Mitte seiner Sohle trifft: Ragt Schutt nur unter Ferse oder Zehen auf, taucht der Fuß dort ein, wie
-  jeder kinematische Körper.
+  Bibliothek kennt nur seine Beine. Andere Rigs fallen bei einem harten Treffer gleich. Gehen und Rennen übernimmt die
+  Bibliothek für eine Figur mit `steered`, siehe Gesteuerte Figur, Springen, Klettern, Ducken und Gehen im Kampf aber
+  nicht, die spielt das Spiel selbst mit `nbFigure_Move` und eigenen Clips. Ein gesteuerter Mensch macht am Hang gleich
+  lange Schritte wie in der Ebene, bergauf wippt seine Hüfte deshalb bis 14 cm statt knapp 5. Ein Fuß steht auf dem, was
+  eine Kugel unter der Mitte seiner Sohle trifft: Ragt Schutt nur unter Ferse oder Zehen auf, taucht der Fuß dort ein,
+  wie jeder kinematische Körper.
 - Eine Figur, die sich fängt, hält ihr Becken wie auf `ragdoll-11` mit einem begrenzten Drehmoment gegen die Welt
   aufrecht, nicht nur mit ihren Beinen. Ein Mensch, der stolpert, tut das mit seinem Gleichgewichtssinn, hier tut es ein
   Gelenk von Box3D. Ein Spiel, das es rein physikalisch will, setzt `uprightAgainstWorld` auf aus, dann hält das Gelenk

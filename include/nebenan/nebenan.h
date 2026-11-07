@@ -429,7 +429,8 @@ NB_API nbFigureMotors nbDefaultFigureMotors( void );
 
 /// Default figure definition: knocked down by 50 N s, crushed by 600 N, up again a second after it lies still, with the
 /// get-up clips at 1.4 times their speed. A weaker hit makes it step up to 45 cm where the capture point lies outside 60 %
-/// of its soles.
+/// of its soles. Steered, it gets to its velocity at 10 m/s^2 and slows down at 14 m/s^2, a fifth of that in the air,
+/// turns at 10 rad/s and walks on ground up to 0.75 rad steep.
 NB_API nbFigureDef nbDefaultFigureDef( void );
 
 /// Create a figure standing at its position in the pose of its idle clip, or falling from it as a ragdoll, see
@@ -469,6 +470,13 @@ NB_API b3WorldTransform nbFigure_GetFrame( nbFigureId figureId );
 /// with velocities, a jump of more than a meter teleports them. A step it takes to catch a hit ends, the program moves it
 /// now. Nothing for a ragdoll, a figure that catches itself or one that gets up.
 NB_API void nbFigure_Move( nbFigureId figureId, b3Pos position, float heading );
+
+/// Steer a figure made with nbFigureDef::steered: the velocity it wants over the ground and where it wants to face. It
+/// keeps the wish until the next call, so a program calls it when its input changes or every frame. While it stands it
+/// moves on its own feet, see nbFigureSteering, and a hit acts on it as on any standing figure, with the velocities its
+/// bones have. A push it can catch adds to its velocity. While it catches itself, lies or gets up it keeps the wish and
+/// goes on once it stands. Nothing for a figure that is not steered.
+NB_API void nbFigure_Steer( nbFigureId figureId, const nbSteer* steer );
 
 /// Play a clip while the figure stands, from its start, at this speed, 1 for real time, blended in over a fifth of a
 /// second. The clip is copied. Null goes back to the idle clip. A clip that does not loop holds its last pose.

@@ -15,6 +15,9 @@ typedef struct nbWorld nbWorld;
 // nbMakeHumanoidBones. With straight legs it would stand 2 cm higher.
 #define NB_HUMANOID_STAND 0.96f
 
+// A standing figure falls from ground that moves faster than this, in meters per second
+#define NB_GROUND_SPEED 1.5f
+
 // The spine of the humanoid: its bones from the belly up to the chest, one after the other in nbHumanoidBone, which
 // share the flinch of the trunk
 #define NB_SPINE_COUNT ( nb_humanoidChest - nb_humanoidBelly + 1 )
@@ -409,6 +412,41 @@ typedef struct nbFigure
 	bool overpowered;
 	int letGoCount;
 
+	// Steered by a program, see nbFigure_Steer and figure_steer.c: what it wants, the capsule it moves as over the point of
+	// its frame, its radius and the heights of its lower and upper center, the velocity it moves with, whether the probe
+	// under the capsule finds ground, the rate of the spring that holds it over the ground and how long it is in the air.
+	// The gait: whether the feet step after the capsule, how far into its cycle of two steps, the speed it steps for,
+	// whether each foot swings, may lift again, how far into its swing it is and from where it swung, how high it lifts and
+	// how close under the body it lands, the heading each foot has, lifted with and lands with, how far each rolls over its
+	// toes and lifted rolled, how far the gait lowers the root, and how far the root went down in all in the last update
+	// and how fast that changed.
+	bool steered;
+	nbSteer steer;
+	float moverRadius;
+	float moverLow;
+	float moverHigh;
+	b3Vec3 moveVelocity;
+	bool onGround;
+	float probeRate;
+	float airTime;
+	bool gaitOn;
+	float gaitPhase;
+	float gaitSpeed;
+	bool footSwings[2];
+	bool canLift[2];
+	float swingAlong[2];
+	float swingStart[2];
+	float swingHeight[2];
+	float swingNarrow[2];
+	float footHeading[2];
+	float liftHeading[2];
+	float landHeading[2];
+	float footRoll[2];
+	float swingRoll[2];
+	float gaitCrouch;
+	float rootDrop;
+	float rootDropRate;
+
 	uint16_t generation;
 	bool isFree;
 } nbFigure;
@@ -436,6 +474,23 @@ NB_ARRAY_DECLARE( nbBoneRef, nbBoneRefArray );
 
 // Move the animated figures, set the joints of the ragdolls and get up those that can, in every update after a step
 void nbUpdateFigures( nbWorld* world, float timeStep );
+
+// e to the minus x for x from 0 to a few, the same bits everywhere, see figure.c
+float nbDecay( float x );
+
+// The frame of a figure: the point on the ground and the heading about up, see figure.c
+b3WorldTransform nbMakeFrame( const nbWorld* world, b3Pos position, float heading );
+
+// Steering, see figure_steer.c: the capsule of a steered figure from its body when it is created, and its move in an
+// update while it stands, false where it falls
+void nbInitSteering( nbFigure* f, const b3WorldTransform* transforms );
+bool nbMoveSteered( nbWorld* world, int index, nbFigure* f, float timeStep, b3Vec3 up );
+
+// A steered figure stands again or is placed: still, on the ground, its feet where they stand
+void nbResetSteering( nbFigure* f );
+
+// An angle from minus pi to pi
+float nbWrapAngle( float angle );
 
 // A blast at a point, before Box3D pushes the dynamic bodies around it, see nbWorld_ApplyImpact: a standing figure that it
 // hits hard enough falls first, so the blast throws its bones, a weaker blast makes it flinch
