@@ -1606,6 +1606,11 @@ typedef struct b3QueryFilter
 	/// so the same id and name pair identifies the same query across frames. NULL means none. Ignored
 	/// when not recording.
 	const char* name;
+
+	/// The query leaves out the shapes of this collision group (@ref b3Filter::groupIndex), negative or positive, before
+	/// their geometry is computed. A query of a character takes the group of its ragdoll and does not see its own bones.
+	/// Zero has no effect.
+	int excludeGroup;
 } b3QueryFilter;
 
 /// Use this to initialize your query filter

@@ -52,7 +52,8 @@ typedef struct b3World b3World;
 // Major version 8 widened the spherical joint def with the cone limit with its own angle in each direction, added for
 // Nebenan.
 // Major version 9 widened the revolute and spherical joint defs with the armature, added for Nebenan.
-#define B3_REC_VERSION_MAJOR 9
+// Major version 10 widened the query filter with the collision group it leaves out, added for Nebenan.
+#define B3_REC_VERSION_MAJOR 10
 
 // Minor tracks op-stream additions that keep the 48 byte header shape.
 // Minor version 7 made the contact body sim locators persistent

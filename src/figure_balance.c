@@ -663,8 +663,8 @@ static float nbBalanceRayFcn( b3ShapeId shapeId, b3Pos point, b3Vec3 normal, flo
 static bool nbGroundBelow( const nbWorld* world, int index, b3Vec3 point, b3Vec3 up, float distance, float* height )
 {
 	nbBalanceRay ray = { world, index, false, 1.0f, b3Vec3_zero, b3Vec3_zero };
-	b3World_CastRay( world->physicsWorld, b3ToPos( point ), b3MulSV( -distance, up ), b3DefaultQueryFilter(), nbBalanceRayFcn,
-					 &ray );
+	b3World_CastRay( world->physicsWorld, b3ToPos( point ), b3MulSV( -distance, up ), nbFigureQueryFilter( world, index ),
+					 nbBalanceRayFcn, &ray );
 	if ( ray.hit == false || b3Dot( ray.normal, up ) < NB_WALKABLE )
 	{
 		return false;
@@ -698,8 +698,8 @@ static bool nbShapeBlocked( const nbWorld* world, int index, b3Vec3 origin, cons
 {
 	b3ShapeProxy proxy = { points, count, radius };
 	nbBalanceOverlap overlap = { world, index, false };
-	b3World_OverlapShape( world->physicsWorld, b3ToPos( origin ), &proxy, b3DefaultQueryFilter(), nbBalanceOverlapFcn,
-						  &overlap );
+	b3World_OverlapShape( world->physicsWorld, b3ToPos( origin ), &proxy, nbFigureQueryFilter( world, index ),
+						  nbBalanceOverlapFcn, &overlap );
 	return overlap.blocked;
 }
 
@@ -728,7 +728,7 @@ static bool nbSwingBlocked( const nbWorld* world, int index, b3Vec3 from, b3Vec3
 	b3Vec3 center = b3Vec3_zero;
 	b3ShapeProxy proxy = { &center, 1, radius };
 	nbBalanceOverlap cast = { world, index, false };
-	b3World_CastShape( world->physicsWorld, b3ToPos( from ), &proxy, b3Sub( to, from ), b3DefaultQueryFilter(),
+	b3World_CastShape( world->physicsWorld, b3ToPos( from ), &proxy, b3Sub( to, from ), nbFigureQueryFilter( world, index ),
 					   nbBalanceCastFcn, &cast );
 	return cast.blocked;
 }

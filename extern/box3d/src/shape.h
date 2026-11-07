@@ -165,6 +165,11 @@ static inline bool b3ShouldShapesCollide( b3Filter filterA, b3Filter filterB )
 
 static inline bool b3ShouldQueryCollide( const b3Filter* shapeFilter, const b3QueryFilter* queryFilter )
 {
+	if ( queryFilter->excludeGroup != 0 && shapeFilter->groupIndex == queryFilter->excludeGroup )
+	{
+		return false;
+	}
+
 	return ( shapeFilter->categoryBits & queryFilter->maskBits ) != 0 &&
 		   ( shapeFilter->maskBits & queryFilter->categoryBits ) != 0;
 }

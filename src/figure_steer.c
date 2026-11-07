@@ -187,11 +187,11 @@ static nbProbe nbCastProbe( const nbWorld* world, int index, b3Pos origin, b3Vec
 	{
 		b3Vec3 center = b3Vec3_zero;
 		b3ShapeProxy proxy = { &center, 1, radius };
-		b3World_CastShape( world->physicsWorld, origin, &proxy, down, b3DefaultQueryFilter(), nbProbeFcn, &probe );
+		b3World_CastShape( world->physicsWorld, origin, &proxy, down, nbFigureQueryFilter( world, index ), nbProbeFcn, &probe );
 	}
 	else
 	{
-		b3World_CastRay( world->physicsWorld, origin, down, b3DefaultQueryFilter(), nbProbeFcn, &probe );
+		b3World_CastRay( world->physicsWorld, origin, down, nbFigureQueryFilter( world, index ), nbProbeFcn, &probe );
 	}
 	return probe;
 }
@@ -391,6 +391,7 @@ bool nbMoveSteered( nbWorld* world, int index, nbFigure* f, float timeStep, b3Ve
 	query.flatEnough = flatEnough;
 	query.walls = ground;
 	query.count = 0;
+	b3QueryFilter filter = nbFigureQueryFilter( world, index );
 	b3CollisionPlane planes[NB_STEER_PLANES];
 	b3Capsule capsule = { b3MulSV( f->moverLow, up ), b3MulSV( f->moverHigh, up ), radius };
 	b3Pos position = f->frame.p;
@@ -400,7 +401,7 @@ bool nbMoveSteered( nbWorld* world, int index, nbFigure* f, float timeStep, b3Ve
 	for ( int sweep = 0; sweep < NB_STEER_SWEEPS; ++sweep )
 	{
 		query.count = 0;
-		b3World_CollideMover( world->physicsWorld, position, &capsule, b3DefaultQueryFilter(), nbMoverPlaneFcn, &query );
+		b3World_CollideMover( world->physicsWorld, position, &capsule, filter, nbMoverPlaneFcn, &query );
 		qsort( query.planes, (size_t)query.count, sizeof( nbMoverPlane ), nbComparePlanes );
 		count = query.count;
 		for ( int i = 0; i < count; ++i )
@@ -408,8 +409,8 @@ bool nbMoveSteered( nbWorld* world, int index, nbFigure* f, float timeStep, b3Ve
 			planes[i] = query.planes[i].plane;
 		}
 		b3PlaneSolverResult solved = b3SolvePlanes( b3Sub( target, moved ), planes, count );
-		float fraction = b3World_CastMover( world->physicsWorld, position, &capsule, solved.delta, b3DefaultQueryFilter(),
-											nbMoverFilterFcn, &query );
+		float fraction =
+			b3World_CastMover( world->physicsWorld, position, &capsule, solved.delta, filter, nbMoverFilterFcn, &query );
 		b3Vec3 delta = b3MulSV( fraction, solved.delta );
 		position = b3OffsetPos( position, delta );
 		moved = b3Add( moved, delta );

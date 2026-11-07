@@ -1286,6 +1286,13 @@ typedef struct nbFigureQuery
 	bool skipOverlaps;
 } nbFigureQuery;
 
+b3QueryFilter nbFigureQueryFilter( const nbWorld* world, int index )
+{
+	b3QueryFilter filter = b3DefaultQueryFilter();
+	filter.excludeGroup = world->figures.data[index].groupIndex;
+	return filter;
+}
+
 static bool nbSkipShape( const nbFigureQuery* query, b3ShapeId shapeId )
 {
 	int other = nbFigureOfBody( query->world, b3Shape_GetBody( shapeId ), NULL );
@@ -1336,8 +1343,8 @@ static nbFigureQuery nbFindGround( const nbWorld* world, int index, b3Pos point,
 {
 	nbFigureQuery query = { world, index, true, false, 1.0f, b3Vec3_zero, point, b3_nullShapeId, false, false };
 	b3Pos origin = b3OffsetPos( point, b3MulSV( above, up ) );
-	b3World_CastRay( world->physicsWorld, origin, b3MulSV( -( above + below ), up ), b3DefaultQueryFilter(), nbClosestHitFcn,
-					 &query );
+	b3World_CastRay( world->physicsWorld, origin, b3MulSV( -( above + below ), up ), nbFigureQueryFilter( world, index ),
+					 nbClosestHitFcn, &query );
 	return query;
 }
 
@@ -1347,7 +1354,7 @@ static bool nbCapsuleBlocked( const nbWorld* world, int index, b3Pos origin, b3V
 	b3Vec3 points[2] = { a, b };
 	b3ShapeProxy proxy = { points, 2, radius };
 	nbFigureQuery query = { world, index, false, false, 1.0f, b3Vec3_zero, origin, b3_nullShapeId, staticOnly, false };
-	b3World_OverlapShape( world->physicsWorld, origin, &proxy, b3DefaultQueryFilter(), nbAnyOverlapFcn, &query );
+	b3World_OverlapShape( world->physicsWorld, origin, &proxy, nbFigureQueryFilter( world, index ), nbAnyOverlapFcn, &query );
 	return query.hit;
 }
 
@@ -2220,7 +2227,8 @@ static bool nbBodyBlocked( const nbWorld* world, int index, const nbFigure* f, b
 	b3ShapeProxy proxy = { points, 2, NB_BODY_RADIUS * scale };
 	b3Vec3 translation = b3MulSV( ( length + NB_BODY_MARGIN * scale ) / length, offset );
 	nbFigureQuery query = { world, index, true, false, 1.0f, b3Vec3_zero, origin, b3_nullShapeId, true, false };
-	b3World_CastShape( world->physicsWorld, origin, &proxy, translation, b3DefaultQueryFilter(), nbClosestHitFcn, &query );
+	b3World_CastShape( world->physicsWorld, origin, &proxy, translation, nbFigureQueryFilter( world, index ), nbClosestHitFcn,
+					   &query );
 	return query.hit;
 }
 
@@ -2297,7 +2305,7 @@ static bool nbCastFootGround( const nbWorld* world, int index, b3Pos sole, b3Vec
 	b3ShapeProxy proxy = { &center, 1, radius };
 	nbFigureQuery query = { world, index, true, false, 1.0f, b3Vec3_zero, origin, b3_nullShapeId, false, true };
 	b3World_CastShape( world->physicsWorld, origin, &proxy, b3MulSV( -( NB_GROUND_ABOVE + NB_GROUND_BELOW ), up ),
-					   b3DefaultQueryFilter(), nbClosestHitFcn, &query );
+					   nbFigureQueryFilter( world, index ), nbClosestHitFcn, &query );
 	if ( query.hit == false || b3Dot( query.normal, up ) < NB_STEP_FLATNESS )
 	{
 		return false;
@@ -4645,8 +4653,8 @@ static void nbSenseDanger( nbWorld* world, int index, nbFigure* f, b3Vec3 veloci
 		b3Vec3 point = b3Vec3_zero;
 		b3ShapeProxy proxy = { &point, 1, NB_DANGER_RADIUS };
 		nbFigureQuery query = { world, index, false, false, 1.0f, b3Vec3_zero, origin, b3_nullShapeId, false, false };
-		b3World_CastShape( world->physicsWorld, origin, &proxy, b3MulSV( NB_DANGER_TIME, velocity ), b3DefaultQueryFilter(),
-						   nbClosestHitFcn, &query );
+		b3World_CastShape( world->physicsWorld, origin, &proxy, b3MulSV( NB_DANGER_TIME, velocity ),
+						   nbFigureQueryFilter( world, index ), nbClosestHitFcn, &query );
 		if ( query.hit )
 		{
 			// Into its surface, or along the velocity where the cast starts in it
@@ -4745,7 +4753,8 @@ static bool nbFindRoom( const nbWorld* world, int index, const nbFigure* f, b3Po
 			b3Vec3 points[2] = { head, feet };
 			b3ShapeProxy proxy = { points, 2, radius };
 			nbFigureQuery query = { world, index, true, false, 1.0f, b3Vec3_zero, pelvis, b3_nullShapeId, true, true };
-			b3World_CastShape( world->physicsWorld, pelvis, &proxy, offset, b3DefaultQueryFilter(), nbClosestHitFcn, &query );
+			b3World_CastShape( world->physicsWorld, pelvis, &proxy, offset, nbFigureQueryFilter( world, index ), nbClosestHitFcn,
+							   &query );
 			blocked = query.hit;
 		}
 		else
@@ -4832,7 +4841,7 @@ static bool nbBoneBlocked( const nbWorld* world, int index, const nbBone* bone, 
 	}
 	b3ShapeProxy proxy = { points, count, radius };
 	nbFigureQuery query = { world, index, false, false, 1.0f, b3Vec3_zero, at.p, b3_nullShapeId, false, false };
-	b3World_OverlapShape( world->physicsWorld, at.p, &proxy, b3DefaultQueryFilter(), nbAnyOverlapFcn, &query );
+	b3World_OverlapShape( world->physicsWorld, at.p, &proxy, nbFigureQueryFilter( world, index ), nbAnyOverlapFcn, &query );
 	return query.hit;
 }
 
@@ -5383,10 +5392,12 @@ nbFigureId nbCreateFigure( nbWorldId worldId, const nbFigureDef* def )
 	nbComputePose( f, b3MulWorldTransforms( f->frame, f->root ), f->pose, f->targets );
 	nbInitSteering( f, f->targets );
 
-	// Kinematic bodies in that pose. Without self collision every bone of the figure is in a collision group of its own,
-	// which Box3D keeps apart, negative and unique per figure. All shapes report hits, so debris that hits a standing
-	// figure shows in the events, see nbCollectDebrisHits.
-	int groupIndex = rig->selfCollision ? 0 : -( index + 1 );
+	// Kinematic bodies in that pose. The bones of the figure are in a collision group of their own: without self
+	// collision negative, which Box3D keeps apart, with it positive, which collides as without a group. Its queries leave
+	// the group out, see nbFigureQueryFilter. All shapes report hits, so debris that hits a standing figure shows in the
+	// events, see nbCollectDebrisHits.
+	int groupIndex = rig->selfCollision ? index + 1 : -( index + 1 );
+	f->groupIndex = groupIndex;
 	for ( int i = 0; i < boneCount; ++i )
 	{
 		const nbBoneDef* boneDef = rig->bones + i;

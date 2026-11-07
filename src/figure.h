@@ -264,6 +264,10 @@ typedef struct nbFigure
 	nbBone* bones;
 	int boneCount;
 
+	// The collision group of its bones, of this figure alone: negative without self collision, positive with it. The
+	// queries of the figure leave it out, so Box3D does not compute its own bones, see nbFigureQueryFilter.
+	int groupIndex;
+
 	// The definition without the rig and the clips, which the figure copied
 	nbFigureDef def;
 
@@ -498,6 +502,10 @@ void nbBlastFigures( nbWorld* world, const nbImpactDef* def );
 
 // The index of the figure whose bone this Box3D body is and the bone, NB_NULL_INDEX for a body of no figure
 int nbFigureOfBody( const nbWorld* world, b3BodyId bodyId, int* bone );
+
+// The filter of the queries of a figure: Box3D leaves out the shapes of its bones before it computes them. Their
+// callbacks still leave out the figure, which takes the same shapes away, so what the queries find stays the same.
+b3QueryFilter nbFigureQueryFilter( const nbWorld* world, int index );
 
 // The id of the figure at an index
 nbFigureId nbFigureIdOf( const nbWorld* world, int index );
