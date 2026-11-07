@@ -48,9 +48,6 @@
 #define NB_STEER_PLANES 32
 #define NB_STEER_SETTLED 1.0e-4f
 
-// A figure faces where it moves only while it moves faster than this, in meters per second
-#define NB_STEER_FACE_SPEED 0.1f
-
 // A plane whose normal points down more than this, its cosine to up, is a ceiling, not a wall
 #define NB_STEER_CEILING 0.1f
 
@@ -241,11 +238,18 @@ void nbResetSteering( nbFigure* f )
 	f->probeRate = 0.0f;
 	f->airTime = 0.0f;
 	f->slope = 0.0f;
+	f->headingRate = 0.0f;
 	f->gaitOn = false;
 	f->gaitSpeed = 0.0f;
+	f->gaitVelocity = b3Vec3_zero;
+	f->gaitAcceleration = b3Vec3_zero;
+	f->legReach = 0.98f;
+	f->gaitTurn = 0.0f;
+	f->gaitSway = 0.0f;
 	f->gaitCrouch = 0.0f;
 	f->rootDrop = 0.0f;
 	f->rootDropRate = 0.0f;
+	f->rootCrouch = 0.0f;
 	f->stairWeight = 0.0f;
 	f->stairDepth = 0.0f;
 	f->stairRise = 0.0f;
@@ -273,6 +277,11 @@ void nbResetSteering( nbFigure* f )
 		f->footRoll[k] = 0.0f;
 		f->swingRoll[k] = 0.0f;
 		f->landRoll[k] = 0.0f;
+		f->footPush[k] = 0.0f;
+		f->footRollRate[k] = 0.0f;
+		f->footOut[k] = FLT_MAX;
+		f->outBehind[k] = false;
+		f->swingHurry[k] = 1.0f;
 		f->stanceTime[k] = 0.0f;
 	}
 }
@@ -460,7 +469,8 @@ bool nbMoveSteered( nbWorld* world, int index, nbFigure* f, float timeStep, b3Ve
 		f->slope += share * ( slope - f->slope );
 	}
 
-	// The heading it wants, or where it moves, at its turn rate
+	// The heading it wants, or where it moves, at its turn rate, which it gets to and slows down from at its turn
+	// acceleration: as fast as it can still stop at the heading it wants, slowing down by as much in every update
 	float heading = f->heading;
 	float want = f->steer.heading;
 	if ( f->steer.faceVelocity )
@@ -471,8 +481,27 @@ bool nbMoveSteered( nbWorld* world, int index, nbFigure* f, float timeStep, b3Ve
 		want = moving ? b3Atan2( local.x, local.z ) : heading;
 	}
 	float turn = nbWrapAngle( want - heading );
-	float mostTurn = b3MaxFloat( def->turnRate, 0.0f ) * timeStep;
-	heading = nbWrapAngle( heading + b3ClampFloat( turn, -mostTurn, mostTurn ) );
+	float turnRate = b3MaxFloat( def->turnRate, 0.0f );
+	if ( def->turnAcceleration > 0.0f && timeStep > 0.0f )
+	{
+		float change = def->turnAcceleration * timeStep;
+		float stop = sqrtf( 2.0f * def->turnAcceleration * fabsf( turn ) + 0.25f * change * change ) - 0.5f * change;
+		float aim = b3MinFloat( stop, turnRate );
+		aim = turn < 0.0f ? -aim : aim;
+		f->headingRate += b3ClampFloat( aim - f->headingRate, -change, change );
+		if ( fabsf( turn ) <= change * timeStep && fabsf( f->headingRate ) <= change )
+		{
+			f->headingRate = turn / timeStep;
+		}
+		heading = nbWrapAngle( heading + f->headingRate * timeStep );
+	}
+	else
+	{
+		float mostTurn = turnRate * timeStep;
+		float step = b3ClampFloat( turn, -mostTurn, mostTurn );
+		f->headingRate = timeStep > 0.0f ? step / timeStep : 0.0f;
+		heading = nbWrapAngle( heading + step );
+	}
 	f->heading = heading;
 	f->frame = nbMakeFrame( world, position, heading );
 

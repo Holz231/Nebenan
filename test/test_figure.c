@@ -3913,6 +3913,88 @@ static int SteerStairsTest( void )
 	return 0;
 }
 
+// A steered figure walks at 1.6 m/s, turns back and then to the side, after the conditions of round 87 in
+// docs/Roadmap.md: walking straight its feet land 10 to 18 cm apart across its way, and from the turn on its pelvis
+// changes its velocity by no more than 2.5 cm in an update and goes no more than 8 cm lower than walking straight. Until
+// active-ragdoll-86 its feet landed 26 cm apart, and it sank by 24 cm in the turn, where a foot stood until its leg could
+// not reach it any more.
+static int SteerTurnTest( void )
+{
+	FigureScene scene;
+	CreateFigureScene( &scene, 1 );
+	nbFigureId figure = AddSteeredFigure( &scene, b3Vec3_zero, 0.0f );
+	const int bones[3] = { nb_humanoidPelvis, nb_humanoidFootLeft, nb_humanoidFootRight };
+	b3Vec3 last[3] = { b3Vec3_zero, b3Vec3_zero, b3Vec3_zero };
+	b3Vec3 before[3] = { b3Vec3_zero, b3Vec3_zero, b3Vec3_zero };
+	bool swung[2] = { false, false };
+	float narrowest = FLT_MAX;
+	float widest = 0.0f;
+	float walkLow = FLT_MAX;
+	float turnLow = FLT_MAX;
+	float jump = 0.0f;
+	int landings = 0;
+	for ( int i = 0; i < 600; ++i )
+	{
+		// Straight on for 4.5 s, back for 3 s and to the side for 2.5 s
+		b3Vec3 wish = { 0.0f, 0.0f, 1.6f };
+		if ( i >= 450 )
+		{
+			wish = (b3Vec3){ 1.6f, 0.0f, 0.0f };
+		}
+		else if ( i >= 270 )
+		{
+			wish = (b3Vec3){ 0.0f, 0.0f, -1.6f };
+		}
+		SteerVelocity( figure, wish );
+		StepFigures( &scene, 1 );
+		const nbFigure* f = GetSteered( &scene, figure );
+		b3Vec3 now[3];
+		for ( int j = 0; j < 3; ++j )
+		{
+			now[j] = BonePosition( figure, bones[j] );
+		}
+		if ( i >= 120 && i < 270 )
+		{
+			// Walking straight along z, how far apart across its way the feet are as one lands
+			walkLow = b3MinFloat( walkLow, now[0].y );
+			for ( int k = 0; k < 2; ++k )
+			{
+				if ( swung[k] && f->footSwings[k] == false )
+				{
+					float across = fabsf( now[1].x - now[2].x );
+					narrowest = b3MinFloat( narrowest, across );
+					widest = b3MaxFloat( widest, across );
+					landings += 1;
+				}
+			}
+		}
+		if ( i >= 272 )
+		{
+			turnLow = b3MinFloat( turnLow, now[0].y );
+			jump = b3MaxFloat( jump, b3Length( b3Add( b3Sub( now[0], last[0] ), b3Sub( before[0], last[0] ) ) ) );
+		}
+		for ( int k = 0; k < 2; ++k )
+		{
+			swung[k] = f->footSwings[k];
+		}
+		for ( int j = 0; j < 3; ++j )
+		{
+			before[j] = last[j];
+			last[j] = now[j];
+		}
+	}
+	printf( "  %d landings walking straight, feet %.3f to %.3f m apart, from the turn on the pelvis changes its velocity "
+			"by %.4f m in an update at most and sinks %.3f m below walking\n",
+			landings, narrowest, widest, jump, walkLow - turnLow );
+	ENSURE( landings >= 4 );
+	ENSURE( narrowest >= 0.1f && widest <= 0.18f );
+	ENSURE( jump <= 0.025f );
+	ENSURE( walkLow - turnLow <= 0.08f );
+	ENSURE( nbFigure_GetState( figure ) == nb_figureAnimated );
+	DestroyFigureScene( &scene );
+	return 0;
+}
+
 // A steered figure hit hard from behind while it runs: its pelvis leaves with the velocity of the run and that of the
 // hit, within 20 %, and once it stood up again it steers again and walks on
 static int SteerHitTest( void )
@@ -4460,7 +4542,7 @@ static int ThinBoardTest( void )
 #define NB_EXPECTED_FOLLOW_HASH 0x6f1d5739u
 
 // See RunSteerScenario
-#define NB_EXPECTED_STEER_HASH 0x93081224u
+#define NB_EXPECTED_STEER_HASH 0x61069695u
 
 static int FigureFollowDeterminismTest( void )
 {
@@ -4552,6 +4634,7 @@ int FigureTest( void )
 	RUN_TEST( SteerFootTest );
 	RUN_TEST( SteerSlopeTest );
 	RUN_TEST( SteerStairsTest );
+	RUN_TEST( SteerTurnTest );
 	RUN_TEST( SteerHitTest );
 	RUN_TEST( FigureWallTest );
 	RUN_TEST( FigureWallDebrisTest );

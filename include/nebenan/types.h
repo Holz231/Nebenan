@@ -1326,8 +1326,10 @@ typedef struct nbFigureSteering
 	float braking;
 	float airControl;
 
-	/// How fast the figure turns to the heading it wants, in radians per second
+	/// How fast the figure turns to the heading it wants, in radians per second, and how fast it gets to that and slows
+	/// down from it, in radians per second squared. A turn acceleration of zero turns at the turn rate at once.
 	float turnRate;
+	float turnAcceleration;
 } nbFigureSteering;
 
 /// A figure, see nbCreateFigure. Initialize with nbDefaultFigureDef.

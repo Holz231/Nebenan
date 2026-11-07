@@ -1599,26 +1599,33 @@ der Beine: Je schneller, desto mehr Schritte pro Sekunde und desto kürzer steht
 beim Rennen 0,33, mit beiden Füßen in der Luft zwischen den Schritten. Ein Fuß landet, wo die Hüfte über ihn kommt, beim
 Gehen auf der Ferse, die Zehen 0,25 rad oben, und rollt in einem Zehntel seines Zyklus auf die Sohle ab. Ein stehender
 Fuß bleibt, wo er gelandet ist, bis zum Abheben: Ferse und Zehenkante bewegen sich um weniger als einen Millimeter. Ist
-die Hüfte über ihn hinweg, hebt er die Ferse und rollt über die Zehen, so weit sein Bein es braucht, bis 0,7 rad. Beim
-Gehen schwingt die Hüfte über das Standbein, um knapp 5 cm, vor dem Aufsetzen tiefer, beim Rennen federt sie in der
-Standphase ein und steigt im Flug, um etwa 7 cm. Die Arme schwingen gegen die Beine, der Rumpf neigt sich in die
-Geschwindigkeit. Am Hang und auf Treppen misst die Figur die Steigung ihres Wegs: Bergauf landet ein Fuß weiter vorn,
-bergab näher unter dem Körper, so reicht das vordere Bein so weit hinauf wie das hintere hinunter, und die Schritte
-werden kürzer, auf 20° um ein Fünftel. Die Feder unter der Kapsel folgt der Ebene, die der Fühler findet, statt am Hang
-hinterherzuhängen, und vor dem Aufsetzen geht die Hüfte so tief, wie das Bein den wirklichen Landepunkt braucht. Auf
-einer Rampe von 20° wippt die Hüfte so um 2 cm, und in einem Update bewegt sie sich gegen die Kapsel um höchstens 2 cm.
-Auf einer Treppe setzt die Figur ihre Füße Stufe für Stufe: Vor jedem Schwung sucht sie am Ziel mit Strahlen nach einer
-Kante, misst die Stufe aus und stellt die ganze Sohle darauf, und jeder Schritt nimmt gleich viele Stufen, so viele, wie
-ein Schritt auf einer Rampe gleicher Steigung lang wäre. Damit der Fuß dort landet, geht der Gang in einem Schwung bis
-40 % schneller oder langsamer, und die Hüfte folgt dem Boden zwischen den Fußpunkten statt der Kapsel, die Stufe für
-Stufe steigt: Die Treppe hinauf wippt sie gegen die Linie der Treppe um höchstens 1 cm, hinunter um 3,5 bis 7,3 cm. Alle
-Abfragen einer Figur lassen ihre eigenen Knochen weg, bevor Box3D sie rechnet, `b3QueryFilter::excludeGroup`, siehe
-[`extern/README.md`](extern/README.md): Eine gesteuerte Figur kostet im Update der Figuren auf der VM 8,4 µs, eine
-stehende 1,5 µs. Treffer wirken wie auf jede stehende Figur, mit den Geschwindigkeiten, die ihre Knochen gerade haben:
-Nach einem Stoß von hinten mit 120 N s auf eine Figur, die mit 4,5 m/s rennt, fliegt ihr Becken mit 5,3 m/s nach vorn,
-und wenn sie aufgestanden ist, geht sie weiter, wohin das Spiel will. Ein leichter Stoß gibt der Kapsel Geschwindigkeit,
-statt die Figur schwanken zu lassen. Mit 1, 2 und 4 Threads bewegt sie sich bitgleich, Figuren ohne `steered` rechnen
-wie vorher.
+die Hüfte über ihn hinweg, hebt er die Ferse und rollt über die Zehen, so weit sein Bein es braucht, bis 0,7 rad, und
+gehend vor dem Abheben noch 0,35 rad weiter, das Knie gebeugt. Gehend sind die Knie fast gestreckt, die Füße setzen 14
+cm auseinander auf, und der schwingende Fuß geht in der Mitte seines Schwungs 2 cm über den Boden. Das Becken dreht sich
+um 4° zu jeder Seite und pendelt 3 cm über das Standbein, die Brust dreht sich gegenläufig, der Kopf schaut geradeaus,
+und die Ellbogen schwingen mit. Die Hüfte geht mit 1,6 m/s um 4 cm auf und ab, vor dem Aufsetzen tiefer, beim Rennen
+federt sie in der Standphase ein und steigt im Flug, um etwa 7 cm. Die Arme schwingen gegen die Beine, der Rumpf neigt
+sich in die Geschwindigkeit. Die Figur sieht voraus, wie lange ihr Bein einen Fuß am Boden noch erreicht, wenn sie
+wendet, seitwärts geht, schneller wird oder anhält: Einen Fuß, den es bald nicht mehr erreicht, hebt sie vorher, oder
+der schwingende Fuß eilt, bis 2,5-mal so schnell, um vorher zu landen. Ihr Blick kommt mit
+`nbFigureSteering::turnAcceleration` auf seine Drehrate und bremst vor dem Ziel. So sinkt das Becken in einer Wendung
+höchstens 4,7 cm, auf `active-ragdoll-86` bis 30,6 cm. Am Hang und auf Treppen misst die Figur die Steigung ihres Wegs:
+Bergauf landet ein Fuß weiter vorn, bergab näher unter dem Körper, so reicht das vordere Bein so weit hinauf wie das
+hintere hinunter, und die Schritte werden kürzer, auf 20° um ein Fünftel. Die Feder unter der Kapsel folgt der Ebene,
+die der Fühler findet, statt am Hang hinterherzuhängen, und vor dem Aufsetzen geht die Hüfte so tief, wie das Bein den
+wirklichen Landepunkt braucht. Auf einer Rampe von 20° wippt die Hüfte so um 2 cm, und in einem Update bewegt sie sich
+gegen die Kapsel um höchstens 2 cm. Auf einer Treppe setzt die Figur ihre Füße Stufe für Stufe: Vor jedem Schwung sucht
+sie am Ziel mit Strahlen nach einer Kante, misst die Stufe aus und stellt die ganze Sohle darauf, und jeder Schritt
+nimmt gleich viele Stufen, so viele, wie ein Schritt auf einer Rampe gleicher Steigung lang wäre. Damit der Fuß dort
+landet, geht der Gang in einem Schwung bis 40 % schneller oder langsamer, und die Hüfte folgt dem Boden zwischen den
+Fußpunkten statt der Kapsel, die Stufe für Stufe steigt: Die Treppe hinauf wippt sie gegen die Linie der Treppe um
+höchstens 1 cm, hinunter um 3,0 bis 6,2 cm. Alle Abfragen einer Figur lassen ihre eigenen Knochen weg, bevor Box3D sie
+rechnet, `b3QueryFilter::excludeGroup`, siehe [`extern/README.md`](extern/README.md): Eine gesteuerte Figur kostet im
+Update der Figuren auf der VM 8,8 µs, eine stehende 1,6 µs. Treffer wirken wie auf jede stehende Figur, mit den
+Geschwindigkeiten, die ihre Knochen gerade haben: Nach einem Stoß von hinten mit 120 N s auf eine Figur, die mit 4,5 m/s
+rennt, fliegt ihr Becken mit 5,3 m/s nach vorn, und wenn sie aufgestanden ist, geht sie weiter, wohin das Spiel will.
+Ein leichter Stoß gibt der Kapsel Geschwindigkeit, statt die Figur schwanken zu lassen. Mit 1, 2 und 4 Threads bewegt
+sie sich bitgleich, Figuren ohne `steered` rechnen wie vorher.
 
 **Aktiver Ragdoll.** Eine Figur, die sich nicht fangen kann, eine Last von oben ab `crushForce` (600 N), Boden, der
 wegbricht oder sich schneller als 1,5 m/s bewegt, und `nbFigure_Knockdown` machen eine Figur zum aktiven Ragdoll, mit
@@ -2231,7 +2238,7 @@ oder in jedem Bild, die Geschwindigkeit, die sie will, die Bibliothek lässt sie
 entlanggleiten und fallen:
 
 ```c
-figureDef.steered = true;   // Kapsel und Gang, siehe nbFigureSteering für Stufenhöhe, Hang und Beschleunigung
+figureDef.steered = true;   // Kapsel und Gang, siehe nbFigureSteering für Stufenhöhe, Hang, Beschleunigung und Drehung
 nbFigureId player = nbCreateFigure( world, &figureDef );
 
 // W A S D relativ zum Blick, Shift rennt: 1,6 oder 4,8 m/s über den Boden, und sie schaut, wohin sie geht
