@@ -1596,16 +1596,24 @@ und von `move_and_slide` in Godot. Ein Fühler unter der Kapsel hält sie mit ei
 Boden, Boden steiler als `maxSlope` ist eine Wand, und ohne Boden fällt sie mit der Schwerkraft. Ist sie länger in der
 Luft, als ein Fall von 1,8 m dauert, fällt sie als Ragdoll. Die Füße treten nach der Kapsel, in einem Takt aus der Länge
 der Beine: Je schneller, desto mehr Schritte pro Sekunde und desto kürzer steht ein Fuß, beim Gehen 0,6 seines Zyklus,
-beim Rennen 0,33, mit beiden Füßen in der Luft zwischen den Schritten. Ein Fuß landet, wo die Hüfte über ihn kommt, und
-ein stehender Fuß bleibt, wo er gelandet ist, bis zum Abheben: Seine Zehenkante bewegt sich um weniger als einen
-Millimeter. Ist die Hüfte über ihn hinweg, hebt er die Ferse und rollt über die Zehen, so weit sein Bein es braucht, bis
-0,7 rad. Beim Gehen schwingt die Hüfte über das Standbein, um knapp 5 cm, vor dem Aufsetzen tiefer, beim Rennen federt
-sie in der Standphase ein und steigt im Flug, um etwa 7 cm. Die Arme schwingen gegen die Beine, der Rumpf neigt sich in
-die Geschwindigkeit. Treffer wirken wie auf jede stehende Figur, mit den Geschwindigkeiten, die ihre Knochen gerade
-haben: Nach einem Stoß von hinten mit 120 N s auf eine Figur, die mit 4,5 m/s rennt, fliegt ihr Becken mit 5,3 m/s nach
-vorn, und wenn sie aufgestanden ist, geht sie weiter, wohin das Spiel will. Ein leichter Stoß gibt der Kapsel
-Geschwindigkeit, statt die Figur schwanken zu lassen. Mit 1, 2 und 4 Threads bewegt sie sich bitgleich, Figuren ohne
-`steered` rechnen wie vorher.
+beim Rennen 0,33, mit beiden Füßen in der Luft zwischen den Schritten. Ein Fuß landet, wo die Hüfte über ihn kommt, beim
+Gehen auf der Ferse, die Zehen 0,25 rad oben, und rollt in einem Zehntel seines Zyklus auf die Sohle ab. Ein stehender
+Fuß bleibt, wo er gelandet ist, bis zum Abheben: Ferse und Zehenkante bewegen sich um weniger als einen Millimeter. Ist
+die Hüfte über ihn hinweg, hebt er die Ferse und rollt über die Zehen, so weit sein Bein es braucht, bis 0,7 rad. Beim
+Gehen schwingt die Hüfte über das Standbein, um knapp 5 cm, vor dem Aufsetzen tiefer, beim Rennen federt sie in der
+Standphase ein und steigt im Flug, um etwa 7 cm. Die Arme schwingen gegen die Beine, der Rumpf neigt sich in die
+Geschwindigkeit. Am Hang und auf Treppen misst die Figur die Steigung ihres Wegs: Bergauf landet ein Fuß weiter vorn,
+bergab näher unter dem Körper, so reicht das vordere Bein so weit hinauf wie das hintere hinunter, und die Schritte
+werden kürzer, auf 20° um ein Fünftel. Die Feder unter der Kapsel folgt der Ebene, die der Fühler findet, statt am Hang
+hinterherzuhängen, und vor dem Aufsetzen geht die Hüfte so tief, wie das Bein den wirklichen Landepunkt braucht. Auf
+einer Rampe von 20° wippt die Hüfte so um 2 cm, eine Treppe hinunter um höchstens 13 cm, und in einem Update bewegt sie
+sich gegen die Kapsel um höchstens 2 cm. Alle Abfragen einer Figur lassen ihre eigenen Knochen weg, bevor Box3D sie
+rechnet, `b3QueryFilter::excludeGroup`, siehe [`extern/README.md`](extern/README.md): Eine gesteuerte Figur kostet im
+Update der Figuren auf der VM 7,7 µs, eine stehende 1,5 µs. Treffer wirken wie auf jede stehende Figur, mit den
+Geschwindigkeiten, die ihre Knochen gerade haben: Nach einem Stoß von hinten mit 120 N s auf eine Figur, die mit 4,5 m/s
+rennt, fliegt ihr Becken mit 5,3 m/s nach vorn, und wenn sie aufgestanden ist, geht sie weiter, wohin das Spiel will.
+Ein leichter Stoß gibt der Kapsel Geschwindigkeit, statt die Figur schwanken zu lassen. Mit 1, 2 und 4 Threads bewegt
+sie sich bitgleich, Figuren ohne `steered` rechnen wie vorher.
 
 **Aktiver Ragdoll.** Eine Figur, die sich nicht fangen kann, eine Last von oben ab `crushForce` (600 N), Boden, der
 wegbricht oder sich schneller als 1,5 m/s bewegt, und `nbFigure_Knockdown` machen eine Figur zum aktiven Ragdoll, mit
@@ -2333,7 +2341,7 @@ beim Einbinden nicht gebaut.
 | Rig (`nbRigDef`) | Standard | Wirkung |
 | --- | --- | --- |
 | `friction` | 0,6 | Reibung der Formen der Knochen ohne eigene, siehe `nbBoneDef::friction` |
-| `selfCollision` | an | Knochen derselben Figur, die nicht verbunden sind, kollidieren miteinander |
+| `selfCollision` | an | Knochen derselben Figur, die nicht verbunden sind, kollidieren miteinander. Die Knochen einer Figur liegen in der Kollisionsgruppe 2²⁰ plus ihr Index, ohne Selbstkollision negativ, und ihre Abfragen lassen diese Gruppe weg, siehe Gesteuerte Figur. Eigene Formen eines Spiels nehmen andere Gruppen |
 | `enableCollisionDamage` | an | Die Knochen eines Ragdolls beschädigen, was sie treffen: alle Kontakte mit einem Teil eines Zerstörbaren in einem Schritt als ein Einschlag, siehe Ragdoll durch die Wand |
 
 Die Demo nimmt für Ziegel Dichte 1900, Festigkeit 6·10⁵ und Splitter 0,1 m, für Beton Dichte 2400,
@@ -3306,10 +3314,11 @@ glslang und SPIRV-Cross geprüft. Ein Lauf von sokol-shdc schreibt ihn neu.
 - Nur der Mensch der Bibliothek tritt, fängt sich nach einem harten Treffer und stellt seine Füße auf den Boden, die
   Bibliothek kennt nur seine Beine. Andere Rigs fallen bei einem harten Treffer gleich. Gehen und Rennen übernimmt die
   Bibliothek für eine Figur mit `steered`, siehe Gesteuerte Figur, Springen, Klettern, Ducken und Gehen im Kampf aber
-  nicht, die spielt das Spiel selbst mit `nbFigure_Move` und eigenen Clips. Ein gesteuerter Mensch macht am Hang gleich
-  lange Schritte wie in der Ebene, bergauf wippt seine Hüfte deshalb bis 14 cm statt knapp 5. Ein Fuß steht auf dem, was
-  eine Kugel unter der Mitte seiner Sohle trifft: Ragt Schutt nur unter Ferse oder Zehen auf, taucht der Fuß dort ein,
-  wie jeder kinematische Körper.
+  nicht, die spielt das Spiel selbst mit `nbFigure_Move` und eigenen Clips. Auf einer Treppe setzt ein gesteuerter
+  Mensch seine Füße, wo sein Gang sie hinbringt, nicht Stufe für Stufe: Hinunter landet ein Fuß mal eine, mal zwei
+  Stufen tiefer, die Hüfte wippt dabei bis 13 cm, und eine Fußspitze kann über eine Kante ragen. Ein Fuß steht auf dem,
+  was eine Kugel unter der Mitte seiner Sohle trifft: Ragt Schutt nur unter Ferse oder Zehen auf, taucht der Fuß dort
+  ein, wie jeder kinematische Körper.
 - Eine Figur, die sich fängt, hält ihr Becken wie auf `ragdoll-11` mit einem begrenzten Drehmoment gegen die Welt
   aufrecht, nicht nur mit ihren Beinen. Ein Mensch, der stolpert, tut das mit seinem Gleichgewichtssinn, hier tut es ein
   Gelenk von Box3D. Ein Spiel, das es rein physikalisch will, setzt `uprightAgainstWorld` auf aus, dann hält das Gelenk

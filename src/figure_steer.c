@@ -54,6 +54,11 @@
 // A plane whose normal points down more than this, its cosine to up, is a ceiling, not a wall
 #define NB_STEER_CEILING 0.1f
 
+// The slope of its way, rise over run, follows the way over this many meters for the humanoid of 1.8 m, at most this
+// steep up or down
+#define NB_STEER_SLOPE_LENGTH 0.5f
+#define NB_STEER_SLOPE_MAX 1.0f
+
 // The planes the capsule touches, with what orders them
 typedef struct nbMoverPlane
 {
@@ -235,6 +240,7 @@ void nbResetSteering( nbFigure* f )
 	f->onGround = true;
 	f->probeRate = 0.0f;
 	f->airTime = 0.0f;
+	f->slope = 0.0f;
 	f->gaitOn = false;
 	f->gaitSpeed = 0.0f;
 	f->gaitCrouch = 0.0f;
@@ -253,6 +259,8 @@ void nbResetSteering( nbFigure* f )
 		f->landHeading[k] = f->heading;
 		f->footRoll[k] = 0.0f;
 		f->swingRoll[k] = 0.0f;
+		f->landRoll[k] = 0.0f;
+		f->stanceTime[k] = 0.0f;
 	}
 }
 
@@ -358,18 +366,20 @@ bool nbMoveSteered( nbWorld* world, int index, nbFigure* f, float timeStep, b3Ve
 	}
 
 	// On the ground a critically damped spring pulls the frame onto it, stepped by its exact solution, and a landing goes
-	// on into it with the speed it fell with. In the air it falls.
+	// on into it with the speed it fell with. The ground goes on as the plane the probe found, so on a slope the spring
+	// holds the frame over the ground where the capsule goes, without falling behind. In the air it falls.
 	float rise;
 	if ( ground )
 	{
-		float above = b3Dot( b3SubPos( f->frame.p, probe.point ), up );
+		float slant = -b3Dot( probe.normal, b3MulSV( timeStep, flat ) ) / b3Dot( probe.normal, up );
+		float above = b3Dot( b3SubPos( f->frame.p, probe.point ), up ) - slant;
 		float omega = 2.0f * B3_PI * NB_STEER_HERTZ;
 		float springRate = f->onGround ? f->probeRate : climb;
 		float decay = nbDecay( omega * timeStep );
 		float sum = springRate + omega * above;
 		float next = decay * ( above + timeStep * sum );
 		f->probeRate = decay * ( springRate - omega * timeStep * sum );
-		rise = next - above;
+		rise = next - above + slant;
 		climb = 0.0f;
 		f->airTime = 0.0f;
 	}
@@ -421,6 +431,21 @@ bool nbMoveSteered( nbWorld* world, int index, nbFigure* f, float timeStep, b3Ve
 	}
 	velocity = b3ClipVector( b3MulAdd( flat, climb, up ), planes, count );
 	f->moveVelocity = ground ? b3MulSub( velocity, b3Dot( velocity, up ), up ) : velocity;
+
+	// The slope of its way: how far the frame rose over how far it went across, over the last NB_STEER_SLOPE_LENGTH of
+	// the way on the ground, at most NB_STEER_SLOPE_MAX up or down. In the air its way has no slope.
+	float rose = b3Dot( moved, up );
+	float across = b3Length( b3MulSub( moved, rose, up ) );
+	if ( ground == false )
+	{
+		f->slope = 0.0f;
+	}
+	else if ( across > NB_STEER_SETTLED * scale )
+	{
+		float share = b3MinFloat( across / ( NB_STEER_SLOPE_LENGTH * scale ), 1.0f );
+		float slope = b3ClampFloat( rose / across, -NB_STEER_SLOPE_MAX, NB_STEER_SLOPE_MAX );
+		f->slope += share * ( slope - f->slope );
+	}
 
 	// The heading it wants, or where it moves, at its turn rate
 	float heading = f->heading;

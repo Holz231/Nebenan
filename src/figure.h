@@ -418,12 +418,13 @@ typedef struct nbFigure
 
 	// Steered by a program, see nbFigure_Steer and figure_steer.c: what it wants, the capsule it moves as over the point of
 	// its frame, its radius and the heights of its lower and upper center, the velocity it moves with, whether the probe
-	// under the capsule finds ground, the rate of the spring that holds it over the ground and how long it is in the air.
-	// The gait: whether the feet step after the capsule, how far into its cycle of two steps, the speed it steps for,
-	// whether each foot swings, may lift again, how far into its swing it is and from where it swung, how high it lifts and
-	// how close under the body it lands, the heading each foot has, lifted with and lands with, how far each rolls over its
-	// toes and lifted rolled, how far the gait lowers the root, and how far the root went down in all in the last update
-	// and how fast that changed.
+	// under the capsule finds ground, the rate of the spring that holds it over the ground, how long it is in the air and
+	// the slope of its way. The gait: whether the feet step after the capsule, how far into its cycle of two steps, the
+	// speed it steps for, whether each foot swings, may lift again, how far into its swing it is and from where it swung,
+	// how high it lifts and how close under the body it lands, the heading each foot has, lifted with and lands with, how
+	// far each rolls over its toes, or with its toes up over its heel, and lifted rolled, how far it landed rolled over its
+	// heel and how long it stands since, how far the gait lowers the root, and how far the root went down in all in the
+	// last update and how fast that changed.
 	bool steered;
 	nbSteer steer;
 	float moverRadius;
@@ -433,6 +434,7 @@ typedef struct nbFigure
 	bool onGround;
 	float probeRate;
 	float airTime;
+	float slope;
 	bool gaitOn;
 	float gaitPhase;
 	float gaitSpeed;
@@ -447,6 +449,8 @@ typedef struct nbFigure
 	float landHeading[2];
 	float footRoll[2];
 	float swingRoll[2];
+	float landRoll[2];
+	float stanceTime[2];
 	float gaitCrouch;
 	float rootDrop;
 	float rootDropRate;
