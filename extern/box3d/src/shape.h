@@ -165,6 +165,7 @@ static inline bool b3ShouldShapesCollide( b3Filter filterA, b3Filter filterB )
 
 static inline bool b3ShouldQueryCollide( const b3Filter* shapeFilter, const b3QueryFilter* queryFilter )
 {
+	// Added for Nebenan: the query leaves out the shapes of the group it excludes, see b3QueryFilter::excludeGroup
 	if ( queryFilter->excludeGroup != 0 && shapeFilter->groupIndex == queryFilter->excludeGroup )
 	{
 		return false;

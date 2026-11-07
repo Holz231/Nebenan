@@ -203,7 +203,7 @@ b3QueryFilter b3RecR_QUERYFILTER( b3RecReader* rdr )
 	b3QueryFilter f = b3DefaultQueryFilter();
 	f.categoryBits = b3RecR_U64( rdr );
 	f.maskBits = b3RecR_U64( rdr );
-	f.excludeGroup = b3RecR_I32( rdr );
+	f.excludeGroup = b3RecR_I32( rdr ); // Added for Nebenan
 	return f;
 }
 

@@ -56,6 +56,7 @@ b3Filter b3DefaultFilter( void )
 
 b3QueryFilter b3DefaultQueryFilter( void )
 {
+	// The group it leaves out added for Nebenan
 	b3QueryFilter filter = { B3_DEFAULT_CATEGORY_BITS, B3_DEFAULT_MASK_BITS, 0, NULL, 0 };
 	return filter;
 }

@@ -1609,9 +1609,12 @@ typedef struct b3QueryFilter
 
 	/// The query leaves out the shapes of this collision group (@ref b3Filter::groupIndex), negative or positive, before
 	/// their geometry is computed. A query of a character takes the group of its ragdoll and does not see its own bones.
-	/// Zero has no effect.
+	/// Zero has no effect. Added for Nebenan.
 	int excludeGroup;
 } b3QueryFilter;
+
+/// This Box3D has b3QueryFilter::excludeGroup
+#define B3_HAS_QUERY_EXCLUDE_GROUP 1
 
 /// Use this to initialize your query filter
 B3_API b3QueryFilter b3DefaultQueryFilter( void );

@@ -641,6 +641,62 @@ static bool CountCallback( b3ShapeId shapeId, void* context )
 	return true;
 }
 
+static bool CountPlanesCallback( b3ShapeId shapeId, const b3PlaneResult* planes, int planeCount, void* context )
+{
+	(void)shapeId;
+	(void)planes;
+	*(int*)context += planeCount > 0 ? 1 : 0;
+	return true;
+}
+
+// A query leaves out the shapes of the collision group its filter excludes, negative or positive, and sees all of them
+// without one, see b3QueryFilter::excludeGroup: three balls in a row along z in the groups -3, 0 and 3, an overlap over
+// all of them, a mover capsule around all of them and a ray along the row from in front of the first
+static int QueryExcludeGroupTest( void )
+{
+#if defined( B3_HAS_QUERY_EXCLUDE_GROUP )
+	b3WorldDef worldDef = b3DefaultWorldDef();
+	b3WorldId worldId = b3CreateWorld( &worldDef );
+	const int groups[3] = { -3, 0, 3 };
+	b3ShapeId shapes[3];
+	for ( int i = 0; i < 3; ++i )
+	{
+		b3BodyDef bodyDef = b3DefaultBodyDef();
+		bodyDef.position = b3ToPos( (b3Vec3){ 0.0f, 0.0f, 2.0f * (float)i } );
+		b3BodyId bodyId = b3CreateBody( worldId, &bodyDef );
+		b3ShapeDef shapeDef = b3DefaultShapeDef();
+		shapeDef.filter.groupIndex = groups[i];
+		b3Sphere sphere = { b3Vec3_zero, 0.5f };
+		shapes[i] = b3CreateSphereShape( bodyId, &shapeDef, &sphere );
+	}
+
+	// Leaving out the group -3, none and the group 3: the shapes seen and the first the ray hits
+	const int excluded[3] = { -3, 0, 3 };
+	const int seen[3] = { 2, 3, 2 };
+	const int first[3] = { 1, 0, 0 };
+	for ( int pass = 0; pass < 3; ++pass )
+	{
+		b3QueryFilter filter = b3DefaultQueryFilter();
+		filter.excludeGroup = excluded[pass];
+		CountQuery overlaps = { 0 };
+		b3AABB box = { { -1.0f, -1.0f, -1.0f }, { 1.0f, 1.0f, 5.0f } };
+		b3World_OverlapAABB( worldId, box, filter, CountCallback, &overlaps );
+		int planes = 0;
+		b3Capsule mover = { { 0.0f, 0.0f, -0.2f }, { 0.0f, 0.0f, 4.2f }, 0.6f };
+		b3World_CollideMover( worldId, b3Pos_zero, &mover, filter, CountPlanesCallback, &planes );
+		b3RayResult ray =
+			b3World_CastRayClosest( worldId, b3ToPos( (b3Vec3){ 0.0f, 0.0f, -2.0f } ), (b3Vec3){ 0.0f, 0.0f, 8.0f }, filter );
+		printf( "  leaving out the group %d: %d shapes overlap, %d give planes, the ray hits shape %d\n", excluded[pass],
+				overlaps.count, planes, ray.shapeId.index1 - shapes[0].index1 );
+		ENSURE( overlaps.count == seen[pass] );
+		ENSURE( planes == seen[pass] );
+		ENSURE( ray.hit && B3_ID_EQUALS( ray.shapeId, shapes[first[pass]] ) );
+	}
+	b3DestroyWorld( worldId );
+#endif
+	return 0;
+}
+
 // A pile of boxes over a floor that an explosion goes off in, built with or without a batch. Without, every shape goes
 // into its tree with a search of its own, so the trees take another shape.
 static b3WorldId CreateBatchPile( bool batch, b3BodyId* bodies, int bodyCount )
@@ -7896,6 +7952,7 @@ int WorldTest( void )
 	RUN_TEST( DomainLifeTest );
 	RUN_TEST( DomainJointsTest );
 	RUN_TEST( JointPacksSwitchTest );
+	RUN_TEST( QueryExcludeGroupTest );
 	RUN_TEST( UniqueHullTest );
 	RUN_TEST( ExternalHullTest );
 	RUN_TEST( ShapeBatchTest );

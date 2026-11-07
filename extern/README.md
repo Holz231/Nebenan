@@ -862,13 +862,24 @@ die Länge des Beins. So stimmt das auch in einem Spiel mit eigener Regel für d
 [Roadmap](../docs/Roadmap.md), siehe „Nicht stärker, als der Fuß hält“ in
 [`docs/Optimierungen.md`](../docs/Optimierungen.md).
 
+**Abfragen ohne eine Gruppe.** `b3QueryFilter::excludeGroup` nennt eine Kollisionsgruppe, `b3Filter::groupIndex`,
+negativ oder positiv, deren Formen eine Abfrage weglässt, bevor sie sie rechnet: der Strahl, die geworfene Form, die
+Überlappung, `b3World_CollideMover` und `b3World_CastMover`, auch über `b3Body_…` (`src/shape.h`). Null, der Standard,
+lässt nichts weg. Bisher bekam ein Rückruf die Formen erst, nachdem Box3D sie gerechnet hatte, und konnte sie nur noch
+verwerfen. Nebenan gibt jeder Figur eine eigene Gruppe, ohne Selbstkollision negativ wie bisher, mit ihr positiv, was
+kollidiert wie ohne Gruppe, und alle Abfragen einer Figur lassen sie weg. Die Kapsel einer gesteuerten Figur umschließt
+ihre Knochen, und `b3World_CollideMover` rechnete fast nur sie: Eine gesteuerte Figur kostet im Update der Figuren 7,7
+statt 22 µs, eine stehende 1,5 statt 1,7 µs. Was die Abfragen finden, bleibt gleich, denn die Rückrufe ließen dieselben
+Formen weg. Aufnahmen speichern die Gruppe, Hauptversion 10. Gebaut für Runde 85 der [Roadmap](../docs/Roadmap.md),
+siehe „Abfragen ohne die eigene Figur“ in [`docs/Optimierungen.md`](../docs/Optimierungen.md).
+
 Die erste, die zweite, die vierte bis achte, die zehnte, die dreizehnte bis einunddreißigste, die dreiunddreißigste bis
 fünfunddreißigste, die neununddreißigste bis dreiundvierzigste, die fünfundvierzigste bis siebenundvierzigste, die
-neunundvierzigste bis neunundfünfzigste und die sechsundsechzigste ändern an den Ergebnissen nichts, die
-einundsechzigste nur an Federn mit einer Grenze, die nur die Figuren setzen, die zweiundsechzigste nur in Welten mit
-wachen Gelenken, wo große Inseln jetzt in Gebieten rechnen, die dreiundsechzigste, weil Kontakte durch das Erstarren
-eines Körpers ihre Stöße und Trennachsen behalten, die vierundsechzigste nur an Kugelgelenken mit einer Grenze je
-Richtung, die nur die Figuren setzen, die fünfundsechzigste nur an Gelenken mit Armature, die nur die Figuren setzen.
+neunundvierzigste bis neunundfünfzigste, die sechsundsechzigste und die siebenundsechzigste ändern an den Ergebnissen
+nichts, die einundsechzigste nur an Federn mit einer Grenze, die nur die Figuren setzen, die zweiundsechzigste nur in
+Welten mit wachen Gelenken, wo große Inseln jetzt in Gebieten rechnen, die dreiundsechzigste, weil Kontakte durch das
+Erstarren eines Körpers ihre Stöße und Trennachsen behalten, die vierundsechzigste nur an Kugelgelenken mit einer Grenze
+je Richtung, die nur die Figuren setzen, die fünfundsechzigste nur an Gelenken mit Armature, die nur die Figuren setzen.
 Die dritte und die neunte ändern sie in den letzten Bits, dafür hängen sie nicht mehr davon ab, in welcher Reihenfolge
 Formen in die Bäume kommen. Die elfte ändert sie, weil Kontakte zu anderen Zeitpunkten entstehen, die zwölfte, weil sie
 weniger Punkte bekommen, die zweiunddreißigste, weil die Kontakte eines Knotens gebündelt gegen Kopien rechnen statt
@@ -881,26 +892,27 @@ Kontakte ohne vorausschauende Punkte rechnen oder der PreSolve-Callback Kontakte
 Die vierundvierzigste ändert sie nur, wo die volle zweite Suche einen Kontakt zwischen Hüllen ergab, die eine Fläche
 trennt. Die Ergänzungen stehen in `CMakeLists.txt`, `src/CMakeLists.txt`, `include/box3d/base.h`,
 `include/box3d/box3d.h`, `include/box3d/types.h`, `include/box3d/constants.h`, `src/core.h`, `src/core.c`,
-`src/shape.h`, `src/shape.c`, `src/body.h`, `src/body.c`, `src/joint.h`, `src/joint.c`, `src/revolute_joint.c`,
-`src/spherical_joint.c`, `src/contact.h`, `src/contact.c`, `src/contact_solver.h`, `src/contact_solver.c`,
-`src/contact_solver_wide.inl`, `src/wide8.c`, `src/simd.c`, `src/simd_avx2.h`, `src/constraint_graph.h`,
-`src/constraint_graph.c`, `src/island.h`, `src/island.c`, `src/manifold.h`, `src/convex_manifold.c`,
-`src/convex_manifold_avx2.c`, `src/world_snapshot.c`, `src/recording.h`, `src/recording.c`, `src/recording_ops.inl`,
-`src/recording_replay.c`, `src/solver.h`, `src/solver.c`, `src/solver_set.c`, `src/arena_allocator.h`,
-`src/broad_phase.h`, `src/broad_phase.c`, `src/dynamic_tree.h`, `src/dynamic_tree.c`, `src/parallel_for.h`,
-`src/parallel_for.c`, `src/platform.h`, `src/scheduler.h`, `src/scheduler.c`, `src/timer.c`, `src/physics_world.h`,
-`src/physics_world.c` und `src/tracy_hide_user.cmake`, jeweils mit „Added for Nebenan“ markiert. `B3_HAS_UNIQUE_HULLS`,
-`B3_HAS_SHAPE_BATCH`, `B3_HAS_SHAPE_CONTACT_LISTS`, `B3_HAS_EXTERNAL_HULLS`, `B3_HAS_BODY_PREFETCH`,
-`B3_HAS_STEP_GUARD`, `B3_HAS_PREVIOUS_TRANSFORM`, `B3_HAS_STATIC_OVERLAP`, `B3_HAS_CONTACT_DATA_OF_BODIES`,
-`B3_HAS_SPRING_TORQUE_LIMITS`, `B3_HAS_KEPT_CONTACTS`, `B3_HAS_SWING_LIMITS`, `B3_HAS_JOINT_ARMATURE` und
-`B3_HAS_CONTACT_FRICTION` zeigen die zweite, die vierte, die fünfte, die sechste, die neunzehnte, die dreißigste, die
-fünfunddreißigste, die zweiundvierzigste, die vierundfünfzigste, die einundsechzigste, die dreiundsechzigste, die
-vierundsechzigste, die fünfundsechzigste und die sechsundsechzigste an. Fehlen sie, etwa mit einem eigenen Box3D, läuft
-Nebenan wie zuvor, nur wachsen Box3Ds Arrays dann durch Umkopieren, die Hüllen gehen durch die Tabelle, jede Form geht
-einzeln in den Baum, jedes stehende Bruchstück bekommt einen eigenen Körper, Box3D hält eine Kopie jeder Hülle, Nebenan
-holt die Körper der Trümmer nicht voraus, `nbWorld_Step` rechnet auf dem aufrufenden Thread, `nbWorld_GetDrawPoses` gibt
-die Lagen nach dem Schritt, Schutt wird in allen Bäumen gesucht, die Ruhe-Prüfung holt die Kontakte jedes ruhigen Stücks
-für sich, die Federn der Figuren halten ihre Haltung ohne Grenze, erstarrende Trümmer verlieren ihre Kontakte mit
-bewegten Stücken, die Gelenke des Menschen haben statt einer Grenze je Richtung einen runden Kegel bis 90°, sie haben
-keine Armature, und die Stütze durch ein Bein rechnet mit der Reibung, die Box3D ohne eigene Regel der Welt aus dem
-ersten Material jeder Form mischt.
+`src/shape.h`, `src/shape.c`, `src/types.c`, `src/body.h`, `src/body.c`, `src/joint.h`, `src/joint.c`,
+`src/revolute_joint.c`, `src/spherical_joint.c`, `src/contact.h`, `src/contact.c`, `src/contact_solver.h`,
+`src/contact_solver.c`, `src/contact_solver_wide.inl`, `src/wide8.c`, `src/simd.c`, `src/simd_avx2.h`,
+`src/constraint_graph.h`, `src/constraint_graph.c`, `src/island.h`, `src/island.c`, `src/manifold.h`,
+`src/convex_manifold.c`, `src/convex_manifold_avx2.c`, `src/world_snapshot.c`, `src/recording.h`, `src/recording.c`,
+`src/recording_ops.inl`, `src/recording_replay.c`, `src/solver.h`, `src/solver.c`, `src/solver_set.c`,
+`src/arena_allocator.h`, `src/broad_phase.h`, `src/broad_phase.c`, `src/dynamic_tree.h`, `src/dynamic_tree.c`,
+`src/parallel_for.h`, `src/parallel_for.c`, `src/platform.h`, `src/scheduler.h`, `src/scheduler.c`, `src/timer.c`,
+`src/physics_world.h`, `src/physics_world.c` und `src/tracy_hide_user.cmake`, jeweils mit „Added for Nebenan“ markiert.
+`B3_HAS_UNIQUE_HULLS`, `B3_HAS_SHAPE_BATCH`, `B3_HAS_SHAPE_CONTACT_LISTS`, `B3_HAS_EXTERNAL_HULLS`,
+`B3_HAS_BODY_PREFETCH`, `B3_HAS_STEP_GUARD`, `B3_HAS_PREVIOUS_TRANSFORM`, `B3_HAS_STATIC_OVERLAP`,
+`B3_HAS_CONTACT_DATA_OF_BODIES`, `B3_HAS_SPRING_TORQUE_LIMITS`, `B3_HAS_KEPT_CONTACTS`, `B3_HAS_SWING_LIMITS`,
+`B3_HAS_JOINT_ARMATURE`, `B3_HAS_CONTACT_FRICTION` und `B3_HAS_QUERY_EXCLUDE_GROUP` zeigen die zweite, die vierte, die
+fünfte, die sechste, die neunzehnte, die dreißigste, die fünfunddreißigste, die zweiundvierzigste, die
+vierundfünfzigste, die einundsechzigste, die dreiundsechzigste, die vierundsechzigste, die fünfundsechzigste, die
+sechsundsechzigste und die siebenundsechzigste an. Fehlen sie, etwa mit einem eigenen Box3D, läuft Nebenan wie zuvor,
+nur wachsen Box3Ds Arrays dann durch Umkopieren, die Hüllen gehen durch die Tabelle, jede Form geht einzeln in den Baum,
+jedes stehende Bruchstück bekommt einen eigenen Körper, Box3D hält eine Kopie jeder Hülle, Nebenan holt die Körper der
+Trümmer nicht voraus, `nbWorld_Step` rechnet auf dem aufrufenden Thread, `nbWorld_GetDrawPoses` gibt die Lagen nach dem
+Schritt, Schutt wird in allen Bäumen gesucht, die Ruhe-Prüfung holt die Kontakte jedes ruhigen Stücks für sich, die
+Federn der Figuren halten ihre Haltung ohne Grenze, erstarrende Trümmer verlieren ihre Kontakte mit bewegten Stücken,
+die Gelenke des Menschen haben statt einer Grenze je Richtung einen runden Kegel bis 90°, sie haben keine Armature, die
+Stütze durch ein Bein rechnet mit der Reibung, die Box3D ohne eigene Regel der Welt aus dem ersten Material jeder Form
+mischt, und die Abfragen einer Figur rechnen ihre eigenen Knochen und verwerfen sie dann.
