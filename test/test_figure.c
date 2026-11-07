@@ -4112,6 +4112,104 @@ static int SteerKneeTest( void )
 	return 0;
 }
 
+// The lean of the trunk of a steered figure, the line from its pelvis to its neck, in degrees: forward along its heading
+// and to its left
+static void TrunkLean( nbFigureId figure, float* forward, float* left )
+{
+	b3WorldTransform frame = nbFigure_GetFrame( figure );
+	b3Vec3 ahead = b3RotateVector( frame.q, b3Vec3_axisZ );
+	b3Vec3 side = b3RotateVector( frame.q, b3Vec3_axisX );
+	b3Vec3 up = b3RotateVector( frame.q, b3Vec3_axisY );
+	b3Vec3 line = b3Sub( BonePosition( figure, nb_humanoidNeck ), BonePosition( figure, nb_humanoidPelvis ) );
+	*forward = 57.29578f * atan2f( b3Dot( line, ahead ), b3Dot( line, up ) );
+	*left = 57.29578f * atan2f( b3Dot( line, side ), b3Dot( line, up ) );
+}
+
+// A steered figure leans into what changes its velocity and turns its chest against its legs as it runs, see
+// NB_GAIT_LEAN_LAG and NB_RUN_CHEST_TURN. Starting to run from standing at 4.8 m/s its trunk leans forward at least 10
+// degrees more than in the run within 0.8 s (0.1 before) and is back within a degree 2 s after, braking from the run it
+// leans back at least 3 degrees behind how it stands, turning by 90 degrees walking at 1.6 m/s it leans at least 3
+// degrees to the inside (none before), running its chest turns at least 8 degrees to each side about up (none before),
+// and its trunk changes its lean by at most half a degree per update squared.
+static int SteerLeanTest( void )
+{
+	FigureScene scene;
+	CreateFigureScene( &scene, 1 );
+	nbFigureId figure = AddSteeredFigure( &scene, b3Vec3_zero, 0.0f );
+	float stand = 0.0f, run = 0.0f, startPeak = -90.0f, settled = 0.0f, braked = 90.0f, side = 0.0f;
+	float chestLow = 90.0f, chestHigh = -90.0f, jerk = 0.0f;
+	float last = 0.0f, before = 0.0f;
+	for ( int i = 0; i < 600; ++i )
+	{
+		SteerVelocity( figure, (b3Vec3){ 0.0f, 0.0f, i >= 60 && i < 360 ? 4.8f : 0.0f } );
+		StepFigures( &scene, 1 );
+		float forward, left;
+		TrunkLean( figure, &forward, &left );
+		if ( i >= 30 && i < 60 )
+		{
+			stand += forward / 30.0f;
+		}
+		else if ( i >= 60 && i < 108 )
+		{
+			startPeak = b3MaxFloat( startPeak, forward );
+		}
+		else if ( i >= 180 && i < 210 )
+		{
+			settled += forward / 30.0f;
+		}
+		else if ( i >= 300 && i < 360 )
+		{
+			run += forward / 60.0f;
+			b3WorldTransform frame = nbFigure_GetFrame( figure );
+			b3Vec3 chest = b3RotateVector( b3Body_GetRotation( nbFigure_GetBody( figure, nb_humanoidChest ) ), b3Vec3_axisZ );
+			b3Vec3 ahead = b3RotateVector( frame.q, b3Vec3_axisZ );
+			b3Vec3 across = b3RotateVector( frame.q, b3Vec3_axisX );
+			float yaw = 57.29578f * atan2f( b3Dot( chest, across ), b3Dot( chest, ahead ) );
+			chestLow = b3MinFloat( chestLow, yaw );
+			chestHigh = b3MaxFloat( chestHigh, yaw );
+		}
+		else if ( i >= 360 && i < 450 )
+		{
+			braked = b3MinFloat( braked, forward );
+		}
+		if ( i >= 62 )
+		{
+			jerk = b3MaxFloat( jerk, fabsf( forward - 2.0f * last + before ) );
+		}
+		before = last;
+		last = forward;
+	}
+	ENSURE( nbFigure_GetState( figure ) == nb_figureAnimated );
+	DestroyFigureScene( &scene );
+
+	CreateFigureScene( &scene, 1 );
+	figure = AddSteeredFigure( &scene, b3Vec3_zero, 0.0f );
+	for ( int i = 0; i < 360; ++i )
+	{
+		SteerVelocity( figure, i < 240 ? (b3Vec3){ 0.0f, 0.0f, 1.6f } : (b3Vec3){ 1.6f, 0.0f, 0.0f } );
+		StepFigures( &scene, 1 );
+		float forward, left;
+		TrunkLean( figure, &forward, &left );
+		if ( i >= 240 )
+		{
+			side = b3MaxFloat( side, left );
+		}
+	}
+	ENSURE( nbFigure_GetState( figure ) == nb_figureAnimated );
+	DestroyFigureScene( &scene );
+
+	printf( "  lean standing %.1f, running %.1f, starting to run %.1f, 2 s after %.1f, braking %.1f, to the inside of a turn "
+			"%.1f degrees, chest running %.1f to %.1f, lean changes %.2f per update squared at most\n",
+			stand, run, startPeak, settled, braked, side, chestLow, chestHigh, jerk );
+	ENSURE( startPeak - run >= 10.0f );
+	ENSURE( fabsf( settled - run ) <= 1.0f );
+	ENSURE( stand - braked >= 3.0f );
+	ENSURE( side >= 3.0f );
+	ENSURE( chestHigh >= 8.0f && chestLow <= -8.0f );
+	ENSURE( jerk <= 0.5f );
+	return 0;
+}
+
 // A steered figure hit hard from behind while it runs: its pelvis leaves with the velocity of the run and that of the
 // hit, within 20 %, and once it stood up again it steers again and walks on
 static int SteerHitTest( void )
@@ -4659,7 +4757,7 @@ static int ThinBoardTest( void )
 #define NB_EXPECTED_FOLLOW_HASH 0x6f1d5739u
 
 // See RunSteerScenario
-#define NB_EXPECTED_STEER_HASH 0x970da177u
+#define NB_EXPECTED_STEER_HASH 0x40b406c8u
 
 static int FigureFollowDeterminismTest( void )
 {
@@ -4754,6 +4852,7 @@ int FigureTest( void )
 	RUN_TEST( SteerTurnTest );
 	RUN_TEST( SteerInStepTest );
 	RUN_TEST( SteerKneeTest );
+	RUN_TEST( SteerLeanTest );
 	RUN_TEST( SteerHitTest );
 	RUN_TEST( FigureWallTest );
 	RUN_TEST( FigureWallDebrisTest );

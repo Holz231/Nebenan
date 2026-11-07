@@ -3494,6 +3494,13 @@ static bool nbFindFoothold( const nbWorld* world, int index, nbFigure* f, int k,
 #define NB_GAIT_BOB_RUN 0.035f
 #define NB_GAIT_EASE 0.2f
 
+// As the body speeds up, slows down or turns, the trunk leans into it, as a body that falls into what makes it faster:
+// the body follows the velocity of the capsule over the ground as a critically damped spring of NB_GAIT_LEAN_LAG seconds,
+// and the trunk leans along the acceleration of that spring by atan(a / g), at most NB_GAIT_LEAN_MAX radians, forward as
+// it speeds up, back as it brakes and to the inside of a turn, with the head level
+#define NB_GAIT_LEAN_LAG 0.3f
+#define NB_GAIT_LEAN_MAX 0.5f
+
 // Walking, the pelvis turns by NB_GAIT_PELVIS_TURN in radians to each side, most as a foot lands, the side of the leg in
 // front ahead, and sways over the leg it stands on by NB_GAIT_SWAY to each side, in meters for the humanoid of 1.8 m, most
 // NB_GAIT_SWAY_AT of the cycle after the foot landed. The chest turns the other way by NB_GAIT_CHEST_TURN with the arms,
@@ -3504,6 +3511,14 @@ static bool nbFindFoothold( const nbWorld* world, int index, nbFigure* f, int k,
 #define NB_GAIT_SWAY 0.015f
 #define NB_GAIT_SWAY_AT 0.3f
 #define NB_GAIT_ELBOW_SWING 0.12f
+
+// Running, the chest turns by NB_RUN_CHEST_TURN to each side, against the legs with the shoulders and the arms, and the
+// pelvis does not turn: a turn of the pelvis moves the hip of the leg about to land, and in the flight the root goes
+// down for it more abruptly. From walking to running the turns go over as a critically damped spring of NB_RUN_TURN_LAG
+// seconds follows how far the figure runs, so they do not jump when it speeds up or brakes through the speeds between in
+// a few updates.
+#define NB_RUN_CHEST_TURN 0.21f
+#define NB_RUN_TURN_LAG 0.2f
 
 // The slope of the way of a steered humanoid, rise over run: on stairs that of the stairs, along which its body goes, see
 // nbStairGround, and elsewhere what its frame went up or down, see figure_steer.c
@@ -3537,18 +3552,53 @@ static void nbTurnPoseBone( b3Quat* pose, int bone, b3Vec3 axis, float angle )
 	pose[bone] = b3NormalizeQuat( b3MulQuat( pose[bone], b3MakeQuatFromAxisAngle( axis, angle ) ) );
 }
 
-// The body of a steered humanoid in its gait, over the idle clip: the arms swing against the legs, the elbows bend, and
-// the trunk leans into the speed with the head level
-static void nbGaitPose( const nbWorld* world, nbFigure* f )
+// The body of a steered humanoid in its gait, over the idle clip: the arms swing against the legs, the elbows bend, the
+// trunk leans into the speed and into what changes the velocity of the body with the head level, and pelvis and chest turn
+// against each other
+static void nbGaitPose( const nbWorld* world, nbFigure* f, b3Vec3 up, float timeStep )
 {
 	f->gaitTurn = 0.0f;
 	f->gaitSway = 0.0f;
-	if ( f->boneCount != nb_humanoidBoneCount || f->gaitSpeed <= 0.0f )
+	if ( f->boneCount != nb_humanoidBoneCount )
 	{
 		return;
 	}
-	float run, stance, land;
-	float u = nbGaitSpeed( world, f, &run, &stance, &land );
+
+	// The trunk leans with the acceleration of the body, see NB_GAIT_LEAN_LAG
+	b3Vec3 ground = b3MulSub( f->moveVelocity, b3Dot( f->moveVelocity, up ), up );
+	b3Vec3 behind = b3Sub( f->leanVelocity, ground );
+	nbStepSpring( &behind, &f->leanAcceleration, 1.0f / NB_GAIT_LEAN_LAG, 1.0f, timeStep );
+	f->leanVelocity = b3Add( ground, behind );
+	b3Vec3 push = b3MulSub( f->leanAcceleration, b3Dot( f->leanAcceleration, up ), up );
+	float pushed = b3Length( push );
+	if ( pushed > 0.0f )
+	{
+		float gravity = b3MaxFloat( b3Length( b3World_GetGravity( world->physicsWorld ) ), 0.1f );
+		float tilt = b3MinFloat( b3Atan2( pushed, gravity ), NB_GAIT_LEAN_MAX ) / pushed;
+		b3Vec3 ahead = b3RotateVector( f->frame.q, b3Vec3_axisZ );
+		b3Vec3 left = b3RotateVector( f->frame.q, b3Vec3_axisX );
+		float forward = tilt * b3Dot( push, ahead );
+		float side = tilt * b3Dot( push, left );
+		for ( int i = nb_humanoidBelly; i < nb_humanoidBelly + NB_SPINE_COUNT; ++i )
+		{
+			nbTurnPoseBone( f->pose, i, b3Vec3_axisX, forward / (float)NB_SPINE_COUNT );
+			nbTurnPoseBone( f->pose, i, b3Vec3_axisZ, -side / (float)NB_SPINE_COUNT );
+		}
+		nbTurnPoseBone( f->pose, nb_humanoidHead, b3Vec3_axisZ, side );
+		nbTurnPoseBone( f->pose, nb_humanoidHead, b3Vec3_axisX, -forward );
+	}
+	float run = 0.0f, stance = 0.0f, land = 0.0f;
+	float u = f->gaitSpeed > 0.0f ? nbGaitSpeed( world, f, &run, &stance, &land ) : 0.0f;
+	float turnOmega = 1.0f / NB_RUN_TURN_LAG;
+	float turnDecay = nbDecay( turnOmega * timeStep );
+	float turnOff = f->runTurn - run;
+	float turnSum = f->runTurnRate + turnOmega * turnOff;
+	f->runTurn = b3ClampFloat( run + turnDecay * ( turnOff + timeStep * turnSum ), 0.0f, 1.0f );
+	f->runTurnRate = turnDecay * ( f->runTurnRate - turnOmega * timeStep * turnSum );
+	if ( f->gaitSpeed <= 0.0f )
+	{
+		return;
+	}
 	float ease = b3MinFloat( 1.0f, u / NB_GAIT_EASE );
 	b3CosSin cycle = b3ComputeCosSin( 2.0f * B3_PI * f->gaitPhase );
 	float swing = b3MinFloat( NB_GAIT_ARM * u, NB_GAIT_ARM_MAX ) * cycle.cosine;
@@ -3565,15 +3615,12 @@ static void nbGaitPose( const nbWorld* world, nbFigure* f )
 		nbTurnPoseBone( f->pose, i, b3Vec3_axisX, lean / (float)NB_SPINE_COUNT );
 	}
 	nbTurnPoseBone( f->pose, nb_humanoidHead, b3Vec3_axisX, -lean );
-	if ( walk <= 0.0f )
-	{
-		return;
-	}
 
 	// The pelvis turns and sways, see nbPlaceFeet, the spine turns the chest the other way, and the neck and the head turn
-	// back, each about up in the frame, see NB_GAIT_PELVIS_TURN
-	float turn = -walk * NB_GAIT_PELVIS_TURN * cycle.cosine;
-	float counter = walk * NB_GAIT_CHEST_TURN * cycle.cosine;
+	// back, each about up in the frame, see NB_GAIT_PELVIS_TURN and NB_RUN_CHEST_TURN
+	float running = f->runTurn;
+	float turn = -ease * ( 1.0f - running ) * NB_GAIT_PELVIS_TURN * cycle.cosine;
+	float counter = ease * ( NB_GAIT_CHEST_TURN + running * ( NB_RUN_CHEST_TURN - NB_GAIT_CHEST_TURN ) ) * cycle.cosine;
 	b3CosSin sway = b3ComputeCosSin( 2.0f * B3_PI * ( f->gaitPhase - NB_GAIT_SWAY_AT ) );
 	f->gaitTurn = turn;
 	f->gaitSway = walk * NB_GAIT_SWAY * nbFigureScale( f ) * sway.cosine;
@@ -5639,7 +5686,7 @@ static void nbUpdateAnimated( nbWorld* world, int index, nbFigure* f, float time
 	nbAnimate( world, index, f, timeStep );
 	if ( f->steered && f->swinging == false )
 	{
-		nbGaitPose( world, f );
+		nbGaitPose( world, f, up, timeStep );
 	}
 
 	// The feet of the humanoid on the ground, held where they stand while it steps, and after its last step back where the
