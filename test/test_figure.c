@@ -4210,6 +4210,114 @@ static int SteerLeanTest( void )
 	return 0;
 }
 
+// The turn of a bone about up against the heading of the frame of its figure, in degrees
+static float BoneYaw( nbFigureId figure, int bone )
+{
+	b3WorldTransform frame = nbFigure_GetFrame( figure );
+	b3Vec3 facing = b3RotateVector( b3Body_GetRotation( nbFigure_GetBody( figure, bone ) ), b3Vec3_axisZ );
+	b3Vec3 ahead = b3RotateVector( frame.q, b3Vec3_axisZ );
+	b3Vec3 across = b3RotateVector( frame.q, b3Vec3_axisX );
+	return 57.29578f * atan2f( b3Dot( facing, across ), b3Dot( facing, ahead ) );
+}
+
+// Two steered figures run side by side at a speed for 6.5 s, and from 3 s on the largest jump per update squared of the
+// pelvis and of any other bone of the first, in meters, the turn of its pelvis to each side and how much the turns of its
+// pelvis and chest go together, their mean product, in square degrees. Returns a hash of the bones of both at the end.
+static uint32_t RunStride( int threadCount, float speed, float* pelvisJump, float* boneJump, float* pelvisTurn, float* together )
+{
+	FigureScene scene;
+	CreateFigureScene( &scene, threadCount );
+	nbFigureId figures[2];
+	figures[0] = AddSteeredFigure( &scene, b3Vec3_zero, 0.0f );
+	figures[1] = AddSteeredFigure( &scene, (b3Vec3){ 3.0f, 0.0f, 0.0f }, 0.0f );
+	b3Vec3 last[nb_humanoidBoneCount], before[nb_humanoidBoneCount];
+	float low = 0.0f, high = 0.0f, product = 0.0f;
+	int products = 0;
+	*pelvisJump = 0.0f;
+	*boneJump = 0.0f;
+	for ( int i = 0; i < 390; ++i )
+	{
+		for ( int k = 0; k < 2; ++k )
+		{
+			SteerVelocity( figures[k], (b3Vec3){ 0.0f, 0.0f, i >= 30 ? speed : 0.0f } );
+		}
+		StepFigures( &scene, 1 );
+		for ( int b = 0; b < nb_humanoidBoneCount; ++b )
+		{
+			b3Vec3 at = BonePosition( figures[0], b );
+			if ( i >= 180 )
+			{
+				float jump = b3Length( b3Add( b3Sub( at, b3MulSV( 2.0f, last[b] ) ), before[b] ) );
+				if ( b == nb_humanoidPelvis )
+				{
+					*pelvisJump = b3MaxFloat( *pelvisJump, jump );
+				}
+				else
+				{
+					*boneJump = b3MaxFloat( *boneJump, jump );
+				}
+			}
+			before[b] = last[b];
+			last[b] = at;
+		}
+		if ( i >= 180 )
+		{
+			float pelvis = BoneYaw( figures[0], nb_humanoidPelvis );
+			float chest = BoneYaw( figures[0], nb_humanoidChest );
+			low = b3MinFloat( low, pelvis );
+			high = b3MaxFloat( high, pelvis );
+			product += pelvis * chest;
+			products += 1;
+		}
+	}
+	*pelvisTurn = b3MinFloat( high, -low );
+	*together = product / (float)products;
+	uint32_t hash = 2166136261u;
+	for ( int k = 0; k < 2; ++k )
+	{
+		b3WorldTransform transforms[nb_humanoidBoneCount];
+		int count = nbFigure_GetBoneTransforms( figures[k], transforms, nb_humanoidBoneCount );
+		for ( int i = 0; i < count; ++i )
+		{
+			const uint8_t* bytes = (const uint8_t*)( transforms + i );
+			for ( size_t b = 0; b < sizeof( b3WorldTransform ); ++b )
+			{
+				hash = ( hash ^ bytes[b] ) * 16777619u;
+			}
+		}
+	}
+	DestroyFigureScene( &scene );
+	return hash;
+}
+
+// A steered figure runs without a jolt in the flight and turns its pelvis against its chest, see NB_RUN_DESCEND,
+// NB_FOOT_ROLL_AHEAD and NB_RUN_PELVIS_TURN. Running at 3.0 and 4.8 m/s its pelvis jumps at most a centimeter per update
+// squared (1.2 and 1.8 before), no other bone more than 4.4 cm (4.4 and 4.6 before), its pelvis turns at least 3 degrees
+// to each side about up (none before), against its chest, and with 1 and 4 threads it runs with the same bits.
+static int SteerRunTest( void )
+{
+	const float speeds[2] = { 3.0f, 4.8f };
+	for ( int s = 0; s < 2; ++s )
+	{
+		float pelvisJump, boneJump, pelvisTurn, together;
+		uint32_t one = RunStride( 1, speeds[s], &pelvisJump, &boneJump, &pelvisTurn, &together );
+		printf( "  running at %.1f m/s the pelvis jumps %.1f mm per update squared at most, another bone %.1f mm, "
+				"the pelvis turns %.1f degrees to each side, against the chest %.1f square degrees\n",
+				speeds[s], 1000.0f * pelvisJump, 1000.0f * boneJump, pelvisTurn, together );
+		ENSURE( pelvisJump <= 0.01f );
+		ENSURE( boneJump <= 0.044f );
+		ENSURE( pelvisTurn >= 3.0f );
+		ENSURE( together < 0.0f );
+		if ( s == 1 )
+		{
+			float a, b, c, d;
+			uint32_t four = RunStride( 4, speeds[s], &a, &b, &c, &d );
+			ENSURE( one == four );
+		}
+	}
+	return 0;
+}
+
 // A steered figure hit hard from behind while it runs: its pelvis leaves with the velocity of the run and that of the
 // hit, within 20 %, and once it stood up again it steers again and walks on
 static int SteerHitTest( void )
@@ -4853,6 +4961,7 @@ int FigureTest( void )
 	RUN_TEST( SteerInStepTest );
 	RUN_TEST( SteerKneeTest );
 	RUN_TEST( SteerLeanTest );
+	RUN_TEST( SteerRunTest );
 	RUN_TEST( SteerHitTest );
 	RUN_TEST( FigureWallTest );
 	RUN_TEST( FigureWallDebrisTest );

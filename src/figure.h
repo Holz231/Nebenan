@@ -480,6 +480,7 @@ typedef struct nbFigure
 	float swingTurnRate[2];
 	float legReach;
 	float gaitTurn;
+	float gaitTurnSize;
 	float gaitSway;
 	float gaitCrouch;
 	float gaitBend;
@@ -487,6 +488,9 @@ typedef struct nbFigure
 	float rootDrop;
 	float rootDropRate;
 	float rootCrouch;
+	float gaitBob;
+	float gaitStance;
+	float gaitPhaseRate;
 
 	// On stairs, see nbFindFoothold: how sure the figure is that it walks stairs, from 0 to 1, how deep a tread is along its
 	// way and how much higher the next one lies, how many treads a step goes, where each foot stands or lands and where a

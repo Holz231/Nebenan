@@ -249,11 +249,15 @@ void nbResetSteering( nbFigure* f )
 	f->runTurnRate = 0.0f;
 	f->legReach = 0.98f;
 	f->gaitTurn = 0.0f;
+	f->gaitTurnSize = 0.0f;
 	f->gaitSway = 0.0f;
 	f->gaitCrouch = 0.0f;
 	f->rootDrop = 0.0f;
 	f->rootDropRate = 0.0f;
 	f->rootCrouch = 0.0f;
+	f->gaitBob = 0.0f;
+	f->gaitStance = 0.0f;
+	f->gaitPhaseRate = 0.0f;
 	f->gaitBend = 0.0f;
 	f->gaitBendRate = 0.0f;
 	f->stairWeight = 0.0f;
