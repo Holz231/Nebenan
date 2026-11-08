@@ -502,8 +502,9 @@ typedef struct nbFigure
 
 	// On stairs, see nbFindFoothold: how sure the figure is that it walks stairs, from 0 to 1, how deep a tread is along its
 	// way and how much higher the next one lies, how many treads a step goes, where each foot stands or lands and where a
-	// swinging foot lifted, the ground under the middle of its sole, whether a swinging foot chose where it lands, and how
-	// much faster than its cadence the gait goes so that the foot lands there as far into the stance as on level ground
+	// swinging foot lifted, the ground under the middle of its sole, whether a swinging foot chose where it lands and
+	// whether it found ground there, see NB_GAIT_LEVEL, and how much faster than its cadence the gait goes so that the foot
+	// lands there as far into the stance as on level ground
 	float stairWeight;
 	float stairDepth;
 	float stairRise;
@@ -511,6 +512,7 @@ typedef struct nbFigure
 	b3Pos foothold[2];
 	b3Pos liftHold[2];
 	bool footholdChosen[2];
+	bool targetGround[2];
 	float gaitRate;
 
 	// How far the root goes on from where it was as the gait starts or ends on stairs, see nbCarryRoot, the ground the body

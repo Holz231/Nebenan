@@ -426,6 +426,26 @@ bool nbMoveSteered( nbWorld* world, int index, nbFigure* f, float timeStep, b3Ve
 		}
 	}
 	bool ground = probe.hit && b3Dot( probe.normal, up ) >= flatEnough && ( f->onGround || climb <= 0.0f );
+	if ( ground == false && probe.hit && f->onGround && f->gaitOn )
+	{
+		// Under the capsule only sides too steep to stand on, as between pieces of rubble: the figure stands on the planted
+		// foot nearest to the frame, if that lies within its step of it. Over rubble it fell between the pieces in one of
+		// twenty updates, and the gait stopped and set it down into a crouch.
+		float nearest = FLT_MAX;
+		for ( int k = 0; k < 2; ++k )
+		{
+			b3Vec3 offset = b3SubPos( f->foothold[k], f->frame.p );
+			float height = b3Dot( offset, up );
+			float across = b3Length( b3MulSub( offset, height, up ) );
+			if ( f->footSwings[k] == false && fabsf( height ) <= step && across < nearest )
+			{
+				nearest = across;
+				probe.point = f->foothold[k];
+				probe.normal = up;
+				ground = true;
+			}
+		}
+	}
 
 	// Ground that moves fast does not carry it, as a standing figure falls from it
 	if ( ground )

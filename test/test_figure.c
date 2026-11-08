@@ -4598,6 +4598,185 @@ static int SteerHitTest( void )
 	return 0;
 }
 
+// The brick wall of the player scene of the demo, 8 m long, 2.2 m high and 0.3 m thick, with fragments twice as large as
+// its material says as the demo makes them, blown down by 24 grenades of the demo on one side in three rows of eight,
+// and 6 s for the rubble to settle. Most of it lies on the other side, up to 7 m from the wall.
+static void CreateRubbleScene( FigureScene* scene, int threadCount )
+{
+	memset( scene, 0, sizeof( FigureScene ) );
+	b3WorldDef worldDef = b3DefaultWorldDef();
+	worldDef.workerCount = 1;
+	if ( threadCount > 1 )
+	{
+		scene->pool = nbCreateTaskSystem( threadCount - 1 );
+		worldDef.workerCount = (uint32_t)threadCount;
+		worldDef.enqueueTask = nbEnqueueTask;
+		worldDef.finishTask = nbFinishTask;
+		worldDef.userTaskContext = scene->pool;
+	}
+	scene->physicsWorld = b3CreateWorld( &worldDef );
+	b3BodyDef bodyDef = b3DefaultBodyDef();
+	bodyDef.position = b3ToPos( (b3Vec3){ 0.0f, -1.0f, 0.0f } );
+	scene->groundBody = b3CreateBody( scene->physicsWorld, &bodyDef );
+	b3BoxHull box = b3MakeBoxHull( 150.0f, 1.0f, 150.0f );
+	b3ShapeDef shapeDef = b3DefaultShapeDef();
+	shapeDef.baseMaterial.friction = 0.8f;
+	b3CreateHullShape( scene->groundBody, &shapeDef, &box.base );
+
+	nbWorldDef def = nbDefaultWorldDef();
+	def.physicsWorld = scene->physicsWorld;
+	def.collisionRadiusScale = 0.02f;
+	def.workerCount = threadCount;
+	def.taskSystem = scene->pool;
+	def.fragmentScale = 2.0f;
+	scene->world = nbCreateWorld( &def );
+	scene->standHeight = nbMakeHumanoidBones( 1.8f, 74.0f, scene->bones, nb_humanoidBoneCount );
+	scene->rig = nbDefaultRigDef();
+	scene->rig.bones = scene->bones;
+	scene->rig.boneCount = nb_humanoidBoneCount;
+
+	nbDestructibleDef wall = nbDefaultDestructibleDef();
+	wall.position = b3ToPos( b3Vec3_zero );
+	wall.rotation = b3Quat_identity;
+	wall.material.density = 1900.0f;
+	wall.material.strength = 6.0e5f;
+	wall.material.fragmentSize = 0.1f;
+	wall.material.friction = 0.8f;
+	wall.seed = 21;
+	nbPieceDef piece = nbDefaultPieceDef();
+	piece.halfExtents = (b3Vec3){ 4.0f, 1.1f, 0.15f };
+	piece.transform.p = (b3Vec3){ 0.0f, 1.1f, 0.0f };
+	nbCreateDestructible( scene->world, &wall, &piece, 1 );
+	StepFigures( scene, 10 );
+	const float rows[3] = { 0.4f, 1.2f, 1.9f };
+	for ( int row = 0; row < 3; ++row )
+	{
+		for ( int column = 0; column < 8; ++column )
+		{
+			nbImpactDef grenade = { 0 };
+			grenade.point = b3ToPos( (b3Vec3){ -3.5f + (float)column, rows[row], -0.6f } );
+			grenade.radius = 1.3f;
+			grenade.damage = 3.0e5f;
+			grenade.ejectSpeed = 12.0f;
+			grenade.explosionImpulse = 40.0f * 12.0f;
+			nbWorld_ApplyImpact( scene->world, &grenade );
+			StepFigures( scene, 6 );
+		}
+	}
+	StepFigures( scene, 360 );
+}
+
+// What a steered figure crossing rubble does in a run, see SteerRubbleTest
+typedef struct RubbleCount
+{
+	int updates;
+	int stairs;
+	int offGround;
+	int bad;
+	int deepKnee;
+	uint32_t hash;
+} RubbleCount;
+
+// A steered figure starts on a lane through the rubble of CreateRubbleScene and goes along it at a velocity from 0.5 s on.
+// From 0.7 s on every update counts while it stands: whether its gait takes the rubble for stairs, whether its capsule
+// has no ground and whether its legs are in a bad pose, a stance knee bent over 100 degrees, a thigh raised over 90
+// degrees from straight down, a leg from hip to ankle over 75 degrees from straight down or both knees bent over 80
+// degrees, measured between the centers of thigh, shin and foot, and whether a stance knee is bent over 120 degrees.
+static RubbleCount CrossRubble( int threadCount, b3Vec3 start, b3Vec3 velocity, float heading, int steps )
+{
+	static const int legs[2][3] = { { nb_humanoidThighLeft, nb_humanoidShinLeft, nb_humanoidFootLeft },
+									{ nb_humanoidThighRight, nb_humanoidShinRight, nb_humanoidFootRight } };
+	// cos 100, cos 80, cos 75 and cos 120 degrees
+	const float bend100 = -0.173648f, bend80 = 0.173648f, reach75 = 0.258819f, bend120 = -0.5f;
+	RubbleCount count = { 0, 0, 0, 0, 0, 2166136261u };
+	FigureScene scene;
+	CreateRubbleScene( &scene, threadCount );
+	nbFigureId figure = AddSteeredFigure( &scene, start, heading );
+	for ( int i = 0; i < steps; ++i )
+	{
+		SteerVelocity( figure, i < 30 ? b3Vec3_zero : velocity );
+		StepFigures( &scene, 1 );
+		const nbFigure* f = GetSteered( &scene, figure );
+		b3WorldTransform transforms[nb_humanoidBoneCount];
+		int boneCount = nbFigure_GetBoneTransforms( figure, transforms, nb_humanoidBoneCount );
+		const uint8_t* bytes = (const uint8_t*)transforms;
+		for ( size_t b = 0; b < (size_t)boneCount * sizeof( b3WorldTransform ); ++b )
+		{
+			count.hash = ( count.hash ^ bytes[b] ) * 16777619u;
+		}
+		if ( i + 1 < 42 || nbFigure_GetState( figure ) != nb_figureAnimated )
+		{
+			continue;
+		}
+		count.updates += 1;
+		count.stairs += f->stairWeight > 0.0f ? 1 : 0;
+		count.offGround += f->onGround ? 0 : 1;
+		bool bad = false, deep = false;
+		int bent = 0;
+		for ( int k = 0; k < 2; ++k )
+		{
+			b3Vec3 hip = BonePosition( figure, legs[k][0] );
+			b3Vec3 knee = BonePosition( figure, legs[k][1] );
+			b3Vec3 ankle = BonePosition( figure, legs[k][2] );
+			b3Vec3 thigh = b3Sub( knee, hip ), shin = b3Sub( ankle, knee ), leg = b3Sub( ankle, hip );
+			float bend = b3Dot( thigh, shin ) / ( b3Length( thigh ) * b3Length( shin ) );
+			bool stance = f->footSwings[k] == false;
+			bad = bad || ( stance && bend < bend100 ) || thigh.y > 0.0f || -leg.y < reach75 * b3Length( leg );
+			deep = deep || ( stance && bend < bend120 );
+			bent += bend < bend80 ? 1 : 0;
+		}
+		count.bad += bad || bent == 2 ? 1 : 0;
+		count.deepKnee += deep ? 1 : 0;
+	}
+	DestroyFigureScene( &scene );
+	return count;
+}
+
+// Steered figures cross the rubble of a brick wall blown down by grenades, see CreateRubbleScene, walking at 1.6 m/s along
+// the rubble and across it in both directions and running at 4.8 m/s across it, see NB_GAIT_FOOT_BAND, NB_STAIR_MATCH and
+// the hold of the capsule in nbMoveSteered. The gait takes the rubble for stairs in at most 1 % of the updates, the
+// capsule has ground in at least 98 %, the legs are in a bad pose in at most 3 % (there is none on flat ground, see
+// CrossRubble) and a stance knee bends over 120 degrees in at most 0.5 %. The running figure goes the same to the bit with
+// 1, 2 and 4 threads. Before round 97 the gait took the rubble for stairs in 1016 of 1546 updates, the capsule had no
+// ground in 144, the legs were in a bad pose in 188 and a stance knee bent over 120 degrees in 16.
+static int SteerRubbleTest( void )
+{
+	const float walk = 1.6f, run = 4.8f;
+	const b3Vec3 starts[4] = { { 1.0f, 0.0f, -2.5f }, { -3.0f, 0.0f, -2.5f }, { -6.0f, 0.0f, 4.0f }, { 6.0f, 0.0f, 5.5f } };
+	const b3Vec3 velocities[4] = { { 0.0f, 0.0f, walk }, { 0.0f, 0.0f, run }, { walk, 0.0f, 0.0f }, { -walk, 0.0f, 0.0f } };
+	const float headings[4] = { 0.0f, 0.0f, 0.5f * B3_PI, -0.5f * B3_PI };
+	const int steps[4] = { 480, 210, 510, 510 };
+	RubbleCount total = { 0 };
+	uint32_t running = 0;
+	int standing = 0;
+	for ( int lane = 0; lane < 4; ++lane )
+	{
+		standing += steps[lane] - 41;
+		RubbleCount count = CrossRubble( 1, starts[lane], velocities[lane], headings[lane], steps[lane] );
+		total.updates += count.updates;
+		total.stairs += count.stairs;
+		total.offGround += count.offGround;
+		total.bad += count.bad;
+		total.deepKnee += count.deepKnee;
+		running = lane == 1 ? count.hash : running;
+	}
+	RubbleCount two = CrossRubble( 2, starts[1], velocities[1], headings[1], steps[1] );
+	RubbleCount four = CrossRubble( 4, starts[1], velocities[1], headings[1], steps[1] );
+	float share = 100.0f / (float)total.updates;
+	printf( "  over rubble in %d updates: taken for stairs in %d, the capsule without ground in %d (%.1f %%), legs in a bad pose "
+			"in %d (%.1f %%), a stance knee over 120 degrees in %d, running hash 0x%08x\n",
+			total.updates, total.stairs, total.offGround, share * (float)total.offGround, total.bad, share * (float)total.bad,
+			total.deepKnee, running );
+	ENSURE( total.updates == standing );
+	ENSURE( total.stairs * 100 <= total.updates );
+	ENSURE( total.offGround * 50 <= total.updates );
+	ENSURE( total.bad * 100 <= 3 * total.updates );
+	ENSURE( total.deepKnee * 200 <= total.updates );
+	ENSURE( two.hash == running );
+	ENSURE( four.hash == running );
+	return 0;
+}
+
 // A course of steered figures for the same bits with any number of threads: one walks, runs at a wall at an angle, slides
 // along it, stops and turns on the spot, one walks up stairs and is hit from the side, and one walks past a figure that
 // only stands
@@ -5103,8 +5282,9 @@ static int ThinBoardTest( void )
 // See RunFollowScenario
 #define NB_EXPECTED_FOLLOW_HASH 0x6f1d5739u
 
-// See RunSteerScenario
-#define NB_EXPECTED_STEER_HASH 0xc7f73219u
+// See RunSteerScenario. Since round 97 the figure that walks sideways sets its foot before the side of the stairs, 45 cm
+// high where it meets them, instead of on top of it.
+#define NB_EXPECTED_STEER_HASH 0xe0efacabu
 
 static int FigureFollowDeterminismTest( void )
 {
@@ -5205,6 +5385,7 @@ int FigureTest( void )
 	RUN_TEST( SteerEvenRunTest );
 	RUN_TEST( SteerStartStopTest );
 	RUN_TEST( SteerHitTest );
+	RUN_TEST( SteerRubbleTest );
 	RUN_TEST( FigureWallTest );
 	RUN_TEST( FigureWallDebrisTest );
 	RUN_TEST( ThinBoardTest );

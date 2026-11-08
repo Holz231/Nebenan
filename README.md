@@ -1656,8 +1656,17 @@ statt der Kapsel, die Stufe für Stufe steigt, und nicht viel schneller, als die
 Treppe hinauf wippt sie gegen die Linie der Treppe um höchstens 1 cm, hinunter um 3,0 bis 6,2 cm, rennend hinauf und
 hinunter bei 20 Starts über eine ganze Stufe um höchstens 7,2 und 8,3 cm, auf `active-ragdoll-94` bei acht Starts
 hinunter bis 18,1 cm. Spät im Schwung hält ein Fuß
-seine Stufe, so landet er nicht zwischen zwei Stufen, wenn sich die Stufe, die der Schritt will, spät ändert. Alle
-Abfragen einer Figur lassen ihre eigenen Knochen weg, bevor Box3D sie rechnet, `b3QueryFilter::excludeGroup`, siehe
+seine Stufe, so landet er nicht zwischen zwei Stufen, wenn sich die Stufe, die der Schritt will, spät ändert. Abseits
+von Treppen landet ein Fuß möglichst höchstens 25 cm höher oder tiefer als der andere: Liegt der Boden an seinem Ziel
+außerhalb, nimmt er die nächste Stelle in diesem Band in Schritten von 8 cm entlang seiner Zehen oder zur Seite, nie
+eine höher als eine Stufe über dem Weg der Kapsel. Auf Spitzen von Brocken, kürzer als die Sohle, stellt er sich nicht,
+und findet er am Ziel keinen Boden, zielt er auf den Weg der Kapsel statt in die Luft. Als Treppe zählt nur, wo die
+nächste Stufe passt, und findet der Fühler unter der Kapsel nur Seiten, die zu steil zum Stehen sind, hält sie sich am
+stehenden Fuß. Über die Trümmer einer gesprengten Ziegelwand gehend und rennend hat die Figur so in 2 % der Updates eine
+schlechte Pose, ein Standknie über 100°, einen Oberschenkel über 90° oder ein Bein über 75° vom Lot oder beide Knie
+über 80°, auf `active-ragdoll-96` in 9,8 %, und hält den Schutt nie für eine Treppe, vorher in einem Drittel der
+Updates. Alle Abfragen einer Figur lassen ihre eigenen Knochen weg, bevor Box3D sie rechnet,
+`b3QueryFilter::excludeGroup`, siehe
 [`extern/README.md`](extern/README.md): Eine gesteuerte Figur kostet im Update der Figuren auf der VM 8 bis 10 µs, je
 nachdem, wie schnell die VM gerade rechnet, eine stehende 1,2 bis 1,5 µs. Treffer wirken wie auf jede stehende Figur,
 mit den Geschwindigkeiten, die ihre Knochen gerade haben: Nach einem Stoß von hinten mit 120 N s auf eine Figur, die mit

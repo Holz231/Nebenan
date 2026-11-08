@@ -3294,8 +3294,22 @@ static void nbPlaceFeet( nbFigure* f, const b3Transform* transforms, const nbCli
 
 // Once the root goes down for a swinging foot, see NB_GAIT_DESCEND, the foot does not aim lower any more: it follows the
 // capsule only where the ground lies no more than NB_GAIT_LEVEL below where it aims, in meters for the humanoid of 1.8 m,
-// so down stairs it does not change to a lower step late in its swing, which the root could not go down for in time
+// so down stairs it does not change to a lower step late in its swing, which the root could not go down for in time. A
+// foot that aims where it found no ground goes on aiming lower.
 #define NB_GAIT_LEVEL 0.03f
+
+// Off stairs a swinging foot lands where it finds ground flat enough, no more than NB_GAIT_FOOT_BAND higher or lower than
+// the other foot and no higher over the way of the frame than the figure steps, in meters for the humanoid of 1.8 m: where
+// the gait puts it, or else the nearest such place NB_GAIT_FOOT_SHIFT apart along its toes, NB_GAIT_FOOT_SHIFTS times to
+// either side, or out to its side NB_GAIT_FOOT_OUT times. Where none is, it lands where it misses the band least, counting
+// NB_GAIT_FOOT_NEAR of a meter of the band for every meter from where the gait puts it, as long as it steps no higher than
+// the figure. Over rubble a foot took the top of a piece half a meter high while the other stood on the ground, and the
+// figure sat down between them or lifted its knee to the chest.
+#define NB_GAIT_FOOT_BAND 0.25f
+#define NB_GAIT_FOOT_SHIFT 0.08f
+#define NB_GAIT_FOOT_SHIFTS 3
+#define NB_GAIT_FOOT_OUT 2
+#define NB_GAIT_FOOT_NEAR 0.025f
 
 // A steered foot lands with its whole sole on one tread of stairs, see nbFindFoothold. Rays down at the middle of the sole
 // and NB_FOOTHOLD_MARGIN beyond both of its ends find an edge under it: ground more than NB_FOOTHOLD_TOLERANCE off the
@@ -3315,7 +3329,9 @@ static void nbPlaceFeet( nbFigure* f, const b3Transform* transforms, const nbCli
 // edges, the weight halving with every step. The gait goes up to NB_STAIR_RATE faster or slower in a swing, so that the
 // foot lands on its tread where the hip passes over it as far into the stance as the gait puts it. A foot goes to the
 // tread a step goes to from the other foot from up to NB_STAIR_SHIFT treads where the gait puts it, so the steps go as
-// many treads wherever the figure comes onto the stairs, see nbFindFoothold.
+// many treads wherever the figure comes onto the stairs, see nbFindFoothold. The first tread has one edge up and the other
+// down, and the tread beyond its front edge is as deep and steps as high, within one NB_STAIR_MATCH-th: rubble has tops
+// of pieces as deep as treads and as high above the ground, and the figure took it for stairs in a third of its steps.
 #define NB_STAIR_DEPTH_LOW 0.15f
 #define NB_STAIR_DEPTH_HIGH 0.5f
 #define NB_STAIR_RISE_LOW 0.04f
@@ -3324,6 +3340,7 @@ static void nbPlaceFeet( nbFigure* f, const b3Transform* transforms, const nbCli
 #define NB_STAIR_RATE 0.4f
 #define NB_STAIR_CLIMB 0.5f
 #define NB_STAIR_SHIFT 2
+#define NB_STAIR_MATCH 3.0f
 
 // The tread under the middle of a sole, along its toes: how far it reaches back and forward from the middle, whether an
 // edge ends it there, how much higher the ground lies beyond the edge, and how deep it is between its edges, the best guess
@@ -3494,7 +3511,9 @@ static float nbFitSole( const nbTread* tread, float need )
 // along its toes from where the gait puts the middle of the sole. Where no edge lies under the sole it stays, and false
 // is returned. Over an edge it goes onto the tread under the middle, and on stairs onto the tread as many treads beyond
 // the other foot as a step goes, see NB_STAIR_KEEP, if that is no more than NB_STAIR_SHIFT treads away. A whole tread
-// teaches the figure that it walks stairs and how deep their treads are.
+// teaches the figure that it walks stairs and how deep their treads are, see NB_STAIR_MATCH. A top shorter than the sole
+// with the ground lower beyond both of its ends, the peak of a piece of rubble, the foot does not stand on: it goes beyond
+// the nearer end, onto the lower ground.
 static bool nbFindFoothold( const nbWorld* world, int index, nbFigure* f, int k, b3Pos middle, b3Vec3 forward, b3Vec3 up,
 							float guess, float deeper, float scale, float* shift )
 {
@@ -3523,7 +3542,26 @@ static bool nbFindFoothold( const nbWorld* world, int index, nbFigure* f, int k,
 	float depth = tread.depth;
 	bool whole = tread.backEdge && tread.frontEdge;
 	float behind = b3Dot( b3SubPos( f->foothold[1 - k], middle ), forward );
-	if ( whole && depth >= NB_STAIR_DEPTH_LOW * scale && depth <= NB_STAIR_DEPTH_HIGH * scale )
+	if ( whole && tread.backRise < 0.0f && tread.frontRise < 0.0f && tread.back + tread.front < 2.0f * need )
+	{
+		*shift = tread.front <= tread.back ? tread.front + need : -( tread.back + need );
+		return true;
+	}
+
+	// Stairs go up at one edge of a tread and down at the other, and the first tread found has one beyond it as deep, whose
+	// edge is as high
+	bool steps = whole && tread.backRise * tread.frontRise < 0.0f;
+	if ( steps && f->stairWeight == 0.0f )
+	{
+		nbTread next;
+		b3Pos nextGround;
+		b3Pos nextMiddle = b3OffsetPos(
+			ground, b3MulAdd( b3MulSV( 0.5f * ( tread.front - tread.back ) + depth, forward ), tread.frontRise, up ) );
+		steps = nbMeasureTread( world, index, nextMiddle, forward, up, need, true, 0.0f, 0.0f, scale, &next, &nextGround ) &&
+				next.backEdge && next.frontEdge && fabsf( next.depth - depth ) < depth / NB_STAIR_MATCH &&
+				fabsf( next.frontRise - tread.frontRise ) < fabsf( tread.frontRise ) / NB_STAIR_MATCH;
+	}
+	if ( steps && depth >= NB_STAIR_DEPTH_LOW * scale && depth <= NB_STAIR_DEPTH_HIGH * scale )
 	{
 		f->stairDepth = f->stairDepth > 0.0f ? 0.5f * ( f->stairDepth + depth ) : depth;
 		f->stairRise = fabsf( tread.frontRise ) <= fabsf( tread.backRise ) ? tread.frontRise : -tread.backRise;
@@ -3908,6 +3946,67 @@ static float nbSwingTime( const nbFigure* f, int k, float swingTime, float cycle
 #define NB_FOOT_TWIST ( 35.0f * ( B3_PI / 180.0f ) )
 #define NB_GAIT_SIDE_GAP 0.1f
 #define NB_GAIT_FRESH 0.2f
+
+// Off stairs where a swinging foot lands, see NB_GAIT_FOOT_BAND: at the place end where the gait puts it, whose ground was
+// found as lift and tilt, or else at the nearest place along its toes or out to its side with ground within the band of
+// the other foot and no higher over the way of the frame than step, or else at the place with ground no higher than step
+// that misses the band least. The ground is cast as from the guess with deeper, see nbCastFootGround. False where all the
+// ground there is higher than step.
+static bool nbChooseFoothold( const nbWorld* world, int index, const nbFigure* f, int k, const nbClipFoot* aim, b3Vec3 forward,
+							  b3Vec3 up, float guess, float deeper, float step, float scale, b3WorldTransform* end, float* lift,
+							  b3Quat* tilt )
+{
+	int j = 1 - k;
+	b3Pos other = f->footSwings[j] ? f->feet[j].target : f->feet[j].plant;
+	b3Vec3 across = b3RotateVector( end->q, b3Vec3_axisX );
+	across = b3Normalize( b3MulSub( across, b3Dot( across, up ), up ) );
+	float out = k == 0 ? 1.0f : -1.0f;
+	float band = NB_GAIT_FOOT_BAND * scale;
+	b3WorldTransform start = *end;
+	float bestMiss = FLT_MAX;
+	bool found = false;
+	for ( int ring = 0; ring <= NB_GAIT_FOOT_SHIFTS; ++ring )
+	{
+		// The place itself, then at each distance back and forward along the toes, and out to the side
+		int places = ring == 0 ? 1 : ( ring <= NB_GAIT_FOOT_OUT ? 3 : 2 );
+		for ( int i = 0; i < places; ++i )
+		{
+			float distance = (float)ring * NB_GAIT_FOOT_SHIFT * scale;
+			b3WorldTransform place = start;
+			float placeLift = *lift;
+			b3Quat placeTilt = *tilt;
+			if ( ring > 0 )
+			{
+				b3Vec3 offset = i == 2 ? b3MulSV( out * distance, across ) : b3MulSV( i == 0 ? -distance : distance, forward );
+				place.p = b3OffsetPos( start.p, offset );
+				if ( nbFindFootGround( world, index, place, aim, scale, guess, deeper, &placeLift, &placeTilt ) == false )
+				{
+					continue;
+				}
+			}
+			if ( placeLift > step )
+			{
+				continue;
+			}
+			float rise =
+				b3Dot( b3SubPos( b3TransformWorldPoint( place, nbTiltedAnkle( aim, placeLift, placeTilt ) ), other ), up );
+			float miss = b3MaxFloat( fabsf( rise ) - band, 0.0f );
+			if ( miss + NB_GAIT_FOOT_NEAR * distance < bestMiss )
+			{
+				bestMiss = miss + NB_GAIT_FOOT_NEAR * distance;
+				*end = place;
+				*lift = placeLift;
+				*tilt = placeTilt;
+				found = true;
+			}
+			if ( miss == 0.0f )
+			{
+				return true;
+			}
+		}
+	}
+	return found;
+}
 
 static void nbSteerFeet( const nbWorld* world, int index, nbFigure* f, const nbClipFoot* clips, b3Vec3 up, float timeStep )
 {
@@ -4320,6 +4419,7 @@ static void nbSteerFeet( const nbWorld* world, int index, nbFigure* f, const nbC
 				f->pushPast[k] = 0.0f;
 				foot->target = foot->plant;
 				foot->targetTilt = foot->tilt;
+				f->targetGround[k] = true;
 			}
 		}
 
@@ -4398,16 +4498,29 @@ static void nbSteerFeet( const nbWorld* world, int index, nbFigure* f, const nbC
 				}
 				float lift = 0.0f;
 				b3Quat tilt = b3Quat_identity;
-				if ( nbFindFootGround( world, index, end, &aim, scale, guess, f->footholdChosen[k] ? deeper : 0.0f, &lift,
-									   &tilt ) == false )
+				bool ground =
+					nbFindFootGround( world, index, end, &aim, scale, guess, f->footholdChosen[k] ? deeper : 0.0f, &lift, &tilt );
+				if ( ground && f->stairWeight == 0.0f )
 				{
-					lift = 0.0f;
-					tilt = b3Quat_identity;
+					ground = nbChooseFoothold( world, index, f, k, &aim, forward, up, guess, f->footholdChosen[k] ? deeper : 0.0f,
+											   deeper, scale, &end, &lift, &tilt );
+				}
+				if ( ground == false )
+				{
+					// Without ground to stand on it aims down from the way of the frame, without the slope it guessed, as
+					// deep again as the figure steps, or else at that way, never where the slope put it up in the air
+					b3WorldTransform low = end;
+					low.p = b3OffsetPos( end.p, b3MulSV( -guess, up ) );
+					ground = nbFindFootGround( world, index, low, &aim, scale, 0.0f, deeper, &lift, &tilt ) &&
+							 ( f->stairWeight > 0.0f || lift <= deeper );
+					lift = ground ? lift - guess : -guess;
+					tilt = ground ? tilt : b3Quat_identity;
 				}
 				b3Pos target = b3TransformWorldPoint( end, nbTiltedAnkle( &aim, lift, tilt ) );
-				if ( swing <= f->swingStart[k] || swing < NB_GAIT_DESCEND ||
+				if ( swing <= f->swingStart[k] || swing < NB_GAIT_DESCEND || f->targetGround[k] == false ||
 					 b3Dot( b3SubPos( target, foot->target ), up ) > -NB_GAIT_LEVEL * scale )
 				{
+					f->targetGround[k] = ground;
 					// Late in the swing it keeps more and more of where it aimed, see NB_GAIT_AIM_FADE
 					float kept = 0.5f * ( swing - NB_GAIT_AIM + NB_GAIT_AIM_FADE ) / NB_GAIT_AIM_FADE;
 					kept = b3ClampFloat( kept, 0.0f, 1.0f );
