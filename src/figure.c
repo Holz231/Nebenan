@@ -3450,7 +3450,10 @@ static void nbPlaceFeet( nbFigure* f, const b3Transform* transforms, const nbCli
 // has the velocity the figure is steered to, and leads by no more than the gait would at the speed it aims with, see
 // nbGaitLead. They plan so once the gait runs more than NB_GAIT_PLAN_FROM of the way, or the figure is steered faster
 // than people change from walking to running, see NB_GAIT_RUN_TO, fully NB_GAIT_PLAN_SPAN above it, and not on stairs.
-// Walking they plan as before.
+// Walking they plan as before. Steered means as fast as the program asks, before the legs of a figure that does not
+// face where it moves cap the velocity it goes for, see nbMoveSteered: that cap lets go fast at the end of a turn of
+// the legs, the plan came in within one or two updates, a foot aimed 18 cm farther, and the pelvis sank 5.5 cm in an
+// update.
 #define NB_GAIT_PLAN_FROM 0.5f
 #define NB_GAIT_PLAN_SPAN 0.1f
 
@@ -3915,6 +3918,17 @@ static void nbTurnPoseBone( b3Quat* pose, int bone, b3Vec3 axis, float angle )
 #define NB_LEG_TURN_MOST ( 100.0f * ( B3_PI / 180.0f ) )
 #define NB_GAIT_BACK_CADENCE 0.11f
 
+// As the legs turn, each foot on the ground stays at least NB_LEG_KEEP across them on its own side of the middle, in
+// meters for the humanoid of 1.8 m: the legs turn no farther than that, so a foot on the ground does not come to stand
+// on the far side of the other one, and wait for the feet no longer than NB_LEG_HOLD in seconds in a row, then turn on.
+// A foot on the ground that holds them back by more than NB_LEG_BLOCK in radians lifts and steps, whatever its phase,
+// and a swinging foot lands turned as far as the legs turn until it lands, at the turn rate of the steering. Without
+// this, the feet crossed by up to 19 cm as the figure stopped going to the side and by up to 20 cm as it changed from
+// going left to going right.
+#define NB_LEG_KEEP 0.06f
+#define NB_LEG_HOLD 0.15f
+#define NB_LEG_BLOCK ( 10.0f * ( B3_PI / 180.0f ) )
+
 float nbLegTurnFor( const nbFigure* f, b3Vec3 local, bool* back, float* across )
 {
 	float speed = sqrtf( local.x * local.x + local.z * local.z );
@@ -4298,6 +4312,54 @@ static bool nbChooseFoothold( const nbWorld* world, int index, const nbFigure* f
 	return found;
 }
 
+// Where the legs may turn to on their way from where they face to where they turn to, both in the world, see
+// NB_LEG_KEEP: no farther than each foot on the ground stays on its own side of the middle across them, until they
+// waited for the feet longer than NB_LEG_HOLD. It marks the feet on the ground that hold them back by more than
+// NB_LEG_BLOCK.
+static float nbHoldLegs( nbFigure* f, float from, float to, float scale, float timeStep )
+{
+	f->legBlocks[0] = false;
+	f->legBlocks[1] = false;
+	float turn = nbWrapAngle( to - from );
+	float room = FLT_MAX;
+	if ( turn != 0.0f && f->gaitOn )
+	{
+		b3CosSin legs = b3ComputeCosSin( from );
+		float keep = NB_LEG_KEEP * scale;
+		for ( int k = 0; k < 2; ++k )
+		{
+			if ( f->footSwings[k] )
+			{
+				continue;
+			}
+			// Where the foot is across and along the legs from the frame, and how far they may turn until it is no more
+			// than keep across them on its own side, the left foot to the left: within the half turn about its side that
+			// keeps it that far across
+			b3Vec3 offset = b3SubPos( f->feet[k].plant, f->frame.p );
+			float across = offset.x * legs.cosine - offset.z * legs.sine;
+			float along = offset.x * legs.sine + offset.z * legs.cosine;
+			float apart = sqrtf( across * across + along * along );
+			float ratio = apart > keep ? keep / apart : 1.0f;
+			float half = 0.5f * B3_PI - b3Atan2( ratio, sqrtf( b3MaxFloat( 1.0f - ratio * ratio, 0.0f ) ) );
+			float off = nbWrapAngle( b3Atan2( across, along ) - ( k == 0 ? 0.5f * B3_PI : -0.5f * B3_PI ) );
+			float space = turn > 0.0f ? half + off : half - off;
+			room = b3MinFloat( room, b3MaxFloat( space, 0.0f ) );
+			f->legBlocks[k] = space + NB_LEG_BLOCK < fabsf( turn );
+		}
+	}
+	if ( fabsf( turn ) <= room )
+	{
+		f->legHeld = 0.0f;
+		return to;
+	}
+	f->legHeld += timeStep;
+	if ( f->legHeld > NB_LEG_HOLD )
+	{
+		return to;
+	}
+	return nbWrapAngle( from + ( turn > 0.0f ? room : -room ) );
+}
+
 static void nbSteerFeet( const nbWorld* world, int index, nbFigure* f, const nbClipFoot* clips, b3Vec3 up, float timeStep )
 {
 	float scale = nbFigureScale( f );
@@ -4397,9 +4459,11 @@ static void nbSteerFeet( const nbWorld* world, int index, nbFigure* f, const nbC
 	float springRun = f->runTurn;
 	f->gaitRun = run;
 
-	// Starting to run, the feet plan with the acceleration of the capsule, see NB_GAIT_PLAN_FROM
+	// Starting to run, the feet plan with the acceleration of the capsule, see NB_GAIT_PLAN_FROM, as fast as the program
+	// asks before the legs cap it
+	b3Vec3 asked = b3MulSub( f->askedVelocity, b3Dot( f->askedVelocity, up ), up );
 	float uAim =
-		b3MaxFloat( b3Length( aimVelocity ), b3Length( aimWish ) ) / sqrtf( gravity * b3MaxFloat( f->def.standHeight, 0.1f ) );
+		b3MaxFloat( b3Length( aimVelocity ), b3Length( asked ) ) / sqrtf( gravity * b3MaxFloat( f->def.standHeight, 0.1f ) );
 	float runs = b3ClampFloat( ( b3MaxFloat( run, springRun ) - NB_GAIT_PLAN_FROM ) / ( 1.0f - NB_GAIT_PLAN_FROM ), 0.0f, 1.0f );
 	float fast = b3ClampFloat( ( uAim - NB_GAIT_RUN_TO ) / NB_GAIT_PLAN_SPAN, 0.0f, 1.0f );
 	float plan =
@@ -4411,7 +4475,7 @@ static void nbSteerFeet( const nbWorld* world, int index, nbFigure* f, const nbC
 
 	// Not facing where it moves, its legs turn toward where its gait goes, see NB_LEG_TURN_WALK. Going, they keep where
 	// they face in the world as the heading turns, and stopping, where they turned to; still, they turn with the heading
-	// and back to it.
+	// and back to it. The feet on the ground hold them back for a moment, see NB_LEG_KEEP.
 	if ( f->steer.faceVelocity == false )
 	{
 		b3Vec3 local = b3InvRotateVector( f->frame.q, aimVelocity );
@@ -4427,7 +4491,8 @@ static void nbSteerFeet( const nbWorld* world, int index, nbFigure* f, const nbC
 			f->legAim = nbLegTurnFor( f, local, &f->legBack, &across );
 		}
 		float from = still ? nbWrapAngle( f->heading + f->legTurn ) : f->legHeading;
-		float legs = nbTurnToward( from, nbWrapAngle( f->heading + f->legAim ), &f->legHeadingRate, &f->def.steering, timeStep );
+		float to = nbHoldLegs( f, from, nbWrapAngle( f->heading + f->legAim ), scale, timeStep );
+		float legs = nbTurnToward( from, to, &f->legHeadingRate, &f->def.steering, timeStep );
 		f->legTurn = b3ClampFloat( nbWrapAngle( legs - f->heading ), -NB_LEG_TURN_MOST, NB_LEG_TURN_MOST );
 		f->legHeading = nbWrapAngle( f->heading + f->legTurn );
 	}
@@ -4438,6 +4503,9 @@ static void nbSteerFeet( const nbWorld* world, int index, nbFigure* f, const nbC
 		f->legHeadingRate = 0.0f;
 		f->legAim = 0.0f;
 		f->legBack = false;
+		f->legHeld = 0.0f;
+		f->legBlocks[0] = false;
+		f->legBlocks[1] = false;
 	}
 	float legHeading = f->legHeading;
 	b3Quat legQ = f->legTurn != 0.0f ? b3NormalizeQuat( b3MulQuat( f->frame.q, nbHeadingQuat( f->legTurn ) ) ) : f->frame.q;
@@ -4591,10 +4659,11 @@ static void nbSteerFeet( const nbWorld* world, int index, nbFigure* f, const nbC
 
 	float swingTime = ( 1.0f - stance ) * cycle;
 
-	// A foot on the ground gets lost soon where its leg would need the root lower than NB_GAIT_LOSE below where the gait has
-	// it before the other foot could swing to the ground, beside or ahead of the hip. A swinging foot hurries to land before
-	// the foot on the ground gets lost, and walking, before the leg of a foot behind the hip would need the root lower than
-	// it went, rolled over its toes as far as it can.
+	// A foot on the ground gets lost soon where its leg would need the root lower than NB_GAIT_LOSE below where the gait
+	// has it before the other foot could swing to the ground, beside or ahead of the hip, and where it holds back the legs
+	// as they turn, see NB_LEG_BLOCK. A swinging foot hurries to land before the foot on the ground gets lost, and
+	// walking, before the leg of a foot behind the hip would need the root lower than it went, rolled over its toes as far
+	// as it can.
 	float quickest = swingTime / ( NB_GAIT_HURRY * f->gaitRate );
 	bool runsBack = f->legBack && stance < 0.5f;
 	bool trails[2];
@@ -4606,7 +4675,7 @@ static void nbSteerFeet( const nbWorld* world, int index, nbFigure* f, const nbC
 		// gets lost, see nbLowerSteered, which lifts as a foot behind the hip does running forward
 		trails[k] = runsBack ? f->outBehind[k] == false && f->footOut[k] < FLT_MAX : f->outBehind[k];
 		out[k] = f->footSwings[k] ? FLT_MAX : b3MaxFloat( f->footOut[k] - timeStep, 0.0f );
-		lostSoon[k] = trails[k] == false && out[k] < quickest;
+		lostSoon[k] = ( trails[k] == false && out[k] < quickest ) || f->legBlocks[k];
 	}
 	for ( int k = 0; k < 2; ++k )
 	{
@@ -4793,6 +4862,16 @@ static void nbSteerFeet( const nbWorld* world, int index, nbFigure* f, const nbC
 				float guess = slope * b3Length( way );
 				float deeper = f->moverLow - f->moverRadius;
 				b3WorldTransform end = { b3OffsetPos( f->frame.p, b3MulAdd( way, guess, up ) ), legQ };
+				// Turned as far as the legs turn toward where they turn to until it lands, at the turn rate of the
+				// steering, see NB_LEG_KEEP
+				float landLegs = legHeading;
+				float most = b3MaxFloat( f->def.steering.turnRate, 0.0f ) * left;
+				float ahead = b3ClampFloat( nbWrapAngle( f->legAim - f->legTurn ), -most, most );
+				if ( ahead != 0.0f )
+				{
+					end.q = b3NormalizeQuat( b3MulQuat( f->frame.q, nbHeadingQuat( f->legTurn + ahead ) ) );
+					landLegs = nbWrapAngle( legHeading + ahead );
+				}
 				nbClipFoot aim = clips[k];
 				aim.ankle.x *= f->swingNarrow[k];
 				aim.sole.x *= f->swingNarrow[k];
@@ -4887,7 +4966,7 @@ static void nbSteerFeet( const nbWorld* world, int index, nbFigure* f, const nbC
 					kept = b3MaxFloat( kept, settle * settle * ( 3.0f - 2.0f * settle ) );
 					foot->target = b3OffsetPos( target, b3MulSV( kept, b3SubPos( foot->target, target ) ) );
 					foot->targetTilt = b3NLerp( tilt, foot->targetTilt, kept );
-					f->landHeading[k] = nbWrapAngle( legHeading + kept * nbWrapAngle( f->landHeading[k] - legHeading ) );
+					f->landHeading[k] = nbWrapAngle( landLegs + kept * nbWrapAngle( f->landHeading[k] - landLegs ) );
 					f->foothold[k] = b3TransformWorldPoint( end, (b3Vec3){ aim.sole.x, aim.sole.y + lift, aim.sole.z } );
 				}
 			}

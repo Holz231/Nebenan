@@ -4618,7 +4618,7 @@ static uint32_t RunStrafe( int threadCount, float* turns, bool* backward, float*
 // its feet stay at least 5 cm apart and the pelvis sinks no more than 15 cm. Before round 100 its legs faced ahead: to
 // the side at 1.6 m/s the pelvis sank 28 cm, at 3.0 m/s the feet crossed by 56 cm, and backward at 3.0 m/s the pelvis
 // sank 37 cm. With 1, 2 and 4 threads and on every platform the same bits.
-#define NB_EXPECTED_STRAFE_HASH 0x868c861du
+#define NB_EXPECTED_STRAFE_HASH 0xcff66116u
 static int SteerStrafeTest( void )
 {
 	float turns[3], closest[3], deepest[3];
@@ -4642,6 +4642,56 @@ static int SteerStrafeTest( void )
 	ENSURE( two == one );
 	ENSURE( four == one );
 	ENSURE( one == NB_EXPECTED_STRAFE_HASH );
+	return 0;
+}
+
+// A steered figure that does not face where it moves goes to the side at speed for 3 s and a part of its cycle more, then
+// at then: how close its feet come across the pelvis in the 3 s after, negative where they cross
+static float RunStrafeChange( float speed, float then, int later )
+{
+	FigureScene scene;
+	CreateFigureScene( &scene, 1 );
+	nbFigureId figure = AddSteeredFigure( &scene, b3Vec3_zero, 0.0f );
+	StepFigures( &scene, 30 );
+	nbSteer steer = { { speed, 0.0f, 0.0f }, 0.0f, false };
+	nbFigure_Steer( figure, &steer );
+	StepFigures( &scene, 180 + later );
+	steer.velocity = (b3Vec3){ then, 0.0f, 0.0f };
+	nbFigure_Steer( figure, &steer );
+	float closest = FLT_MAX;
+	for ( int i = 0; i < 180; ++i )
+	{
+		StepFigures( &scene, 1 );
+		b3Vec3 left = b3RotateVector( b3Body_GetRotation( nbFigure_GetBody( figure, nb_humanoidPelvis ) ), b3Vec3_axisX );
+		left.y = 0.0f;
+		left = b3Normalize( left );
+		b3Vec3 footLeft = b3ToVec3( b3Body_GetPosition( nbFigure_GetBody( figure, nb_humanoidFootLeft ) ) );
+		b3Vec3 footRight = b3ToVec3( b3Body_GetPosition( nbFigure_GetBody( figure, nb_humanoidFootRight ) ) );
+		closest = b3MinFloat( closest, b3Dot( b3Sub( footLeft, footRight ), left ) );
+	}
+	DestroyFigureScene( &scene );
+	return closest;
+}
+
+// A steered figure that does not face where it moves stops going to the side, walking at 1.6 m/s and running at 3.0 m/s,
+// and walking changes from going left to going right, each from 6 places in its cycle, see NB_LEG_KEEP: its feet do not
+// cross. Before round 101 its legs turned over the foot on the ground, and the feet crossed by up to 17, 19 and 14 cm.
+static int SteerStrafeChangeTest( void )
+{
+	const float speeds[3] = { 1.6f, 3.0f, 1.6f };
+	const float thens[3] = { 0.0f, 0.0f, -1.6f };
+	const char* names[3] = { "stopping from walking to the side", "stopping from running to the side",
+							 "walking from left to right" };
+	for ( int part = 0; part < 3; ++part )
+	{
+		float closest = FLT_MAX;
+		for ( int later = 0; later < 48; later += 8 )
+		{
+			closest = b3MinFloat( closest, RunStrafeChange( speeds[part], thens[part], later ) );
+		}
+		printf( "  %s: feet %.1f cm apart across the pelvis at least\n", names[part], 100.0f * closest );
+		ENSURE( closest > 0.0f );
+	}
 	return 0;
 }
 
@@ -5738,13 +5788,16 @@ static int ThinBoardTest( void )
 
 // See RunSteerScenario. Since round 97 the figure that walks sideways sets its foot before the side of the stairs, 45 cm
 // high where it meets them, instead of on top of it. Since round 99 a swing that hurries keeps its aim before it lands,
-// see NB_GAIT_AIM_SETTLE, and a walking figure that wants to run lifts a foot its leg no longer reaches.
-#define NB_EXPECTED_STEER_HASH 0x37afba91u
+// see NB_GAIT_AIM_SETTLE, and a walking figure that wants to run lifts a foot its leg no longer reaches. Since round 101
+// the figure that stops and turns on the spot, not facing where it moves, turns its legs no farther than its feet on the
+// ground stay on their own sides, see NB_LEG_KEEP.
+#define NB_EXPECTED_STEER_HASH 0x9b149238u
 
 // See RunGaitClipScenario. Since round 99 as for RunSteerScenario. Since round 100 the figure that is told to turn on
 // the spot while it still walks, not facing where it moves, keeps its legs where they face as its heading turns, and
-// they follow at its turn rate, see NB_LEG_TURN_WALK. In RunSteerScenario it ends standing as before.
-#define NB_EXPECTED_GAIT_CLIP_HASH 0x3b2d088bu
+// they follow at its turn rate, see NB_LEG_TURN_WALK. In RunSteerScenario it ends standing as before. Since round 101
+// as for RunSteerScenario.
+#define NB_EXPECTED_GAIT_CLIP_HASH 0x5d8137a2u
 
 static int FigureFollowDeterminismTest( void )
 {
@@ -5858,6 +5911,7 @@ int FigureTest( void )
 	RUN_TEST( SteerRunTest );
 	RUN_TEST( SteerEvenRunTest );
 	RUN_TEST( SteerStrafeTest );
+	RUN_TEST( SteerStrafeChangeTest );
 	RUN_TEST( SteerStartStopTest );
 	RUN_TEST( SteerHitTest );
 	RUN_TEST( SteerRubbleTest );

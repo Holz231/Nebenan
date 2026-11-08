@@ -276,6 +276,7 @@ void nbResetSteering( nbFigure* f )
 	f->legHeadingRate = 0.0f;
 	f->legAim = 0.0f;
 	f->legBack = false;
+	f->legHeld = 0.0f;
 	f->gaitOn = false;
 	f->gaitSpeed = 0.0f;
 	f->gaitVelocity = b3Vec3_zero;
@@ -320,6 +321,7 @@ void nbResetSteering( nbFigure* f )
 		f->swingHeight[k] = 0.0f;
 		f->swingRun[k] = 0.0f;
 		f->swingBack[k] = false;
+		f->legBlocks[k] = false;
 		f->swingShare[k] = 0.0f;
 		f->swingNarrow[k] = 1.0f;
 		f->footHeading[k] = f->heading;
@@ -393,6 +395,7 @@ bool nbMoveSteered( nbWorld* world, int index, nbFigure* f, float timeStep, b3Ve
 	float climb = b3Dot( velocity, up );
 	b3Vec3 flat = b3MulSub( velocity, climb, up );
 	b3Vec3 wish = b3MulSub( f->steer.velocity, b3Dot( f->steer.velocity, up ), up );
+	b3Vec3 asked = wish;
 	if ( f->steer.faceVelocity )
 	{
 		// Facing where it moves, it goes across its heading and backward no faster than a step to the side or back, see
@@ -413,6 +416,7 @@ bool nbMoveSteered( nbWorld* world, int index, nbFigure* f, float timeStep, b3Ve
 			along = b3MaxFloat( along, -back );
 			wish = b3MulAdd( across, along, forward );
 		}
+		asked = wish;
 	}
 	else if ( f->boneCount == nb_humanoidBoneCount )
 	{
@@ -442,8 +446,10 @@ bool nbMoveSteered( nbWorld* world, int index, nbFigure* f, float timeStep, b3Ve
 			wish = b3MulSV( most / speed, wish );
 		}
 	}
-	// The gait plans with the velocity the capsule goes for, see nbSteerFeet
+	// The gait plans with the velocity the capsule goes for, see nbSteerFeet, and with its acceleration as fast as it goes
+	// for before the legs cap it, see NB_GAIT_PLAN_FROM
 	f->wishVelocity = wish;
+	f->askedVelocity = asked;
 	b3Vec3 change = b3Sub( wish, flat );
 	float rate = b3LengthSquared( wish ) > b3LengthSquared( flat ) ? def->acceleration : def->braking;
 	rate = b3MaxFloat( rate, 0.0f ) * ( f->onGround ? 1.0f : b3ClampFloat( def->airControl, 0.0f, 1.0f ) );

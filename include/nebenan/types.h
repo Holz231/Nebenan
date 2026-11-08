@@ -1591,7 +1591,8 @@ typedef struct nbSteer
 	/// turns its pelvis and legs toward where it goes, walking up to 70 and running up to 90 degrees from its heading,
 	/// while its chest and head stay with the heading, and going more than 110 degrees from it, it walks or runs backward.
 	/// Its legs turn no faster than its heading may, and it goes across where they walk and against them no faster than
-	/// they carry it.
+	/// they carry it. They turn no farther than its feet on the ground stay on their own sides, waiting a moment for a
+	/// foot to step, so its feet do not cross as it stops or changes where it goes.
 	bool faceVelocity;
 } nbSteer;
 

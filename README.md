@@ -1651,7 +1651,11 @@ höherer Kadenz und rennend mit Flugphase. Dreht sich nur der Blick, halten die 
 schnell, wie sich die Figur drehen darf, und quer zu den Beinen und gegen sie geht die Kapsel nicht schneller, als die
 Beine sie tragen. Seitwärts mit 1,6 m/s geht das Becken so 8,3 cm tiefer als im Stand, auf `active-ragdoll-99` 29 cm,
 mit 3,0 m/s stehen die Füße 15 cm auseinander statt 56 cm gekreuzt, und rückwärts rennend geht das Becken 10 statt 37 cm
-tief. Ein schwingender Fuß plant seinen Weg in jedem Update neu, von dort, wo er ist, so
+tief. Hält sie an oder wechselt sie die Richtung, drehen die Beine nicht weiter, als ihre Füße am Boden quer zu ihnen
+auf ihrer Seite bleiben, und warten darauf höchstens 0,15 s, ein Fuß, der sie aufhält, tritt, und ein schwingender Fuß
+landet schon so gedreht, wie die Beine es bis dahin sind: Beim Anhalten aus dem Seitwärtsgehen und -rennen und beim
+Wechsel von links nach rechts gehend kreuzen sich die Füße nicht mehr, auf `active-ragdoll-100` bis 17, 19 und 14 cm.
+Ein schwingender Fuß plant seinen Weg in jedem Update neu, von dort, wo er ist, so
 schnell, wie er sich bewegt, zu seinem Ziel: Ändert sich das Ziel in einer Wendung oder beim Bremsen, biegt sich sein
 Weg, statt dass er springt. Von zwei Füßen am Boden hebt der zuerst ab, den sein Bein zuerst verliert, ein schwingendes
 Bein streckt sich nie ganz, und hebt ein Fuß gehend vor seiner Zeit ab, holt der Takt des Gangs das nach. Bremst oder

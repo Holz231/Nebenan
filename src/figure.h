@@ -456,7 +456,8 @@ typedef struct nbFigure
 
 	// Steered by a program, see nbFigure_Steer and figure_steer.c: what it wants, the capsule it moves as over the point
 	// of its frame, its radius and the heights of its lower and upper center, the velocity it moves with and the one it
-	// goes for, facing where it moves no faster across its heading than NB_STEER_SIDE_SPEED, whether the
+	// goes for, facing where it moves no faster across its heading than NB_STEER_SIDE_SPEED, and the one it goes for
+	// before the legs of a humanoid that does not face where it moves cap it, see nbMoveSteered, whether the
 	// probe under the capsule finds ground, the rate of the spring that holds it over the ground, how long it is in the
 	// air, the slope of its way and how fast its heading turns. The gait: whether the feet step after the capsule, how far
 	// into its cycle of two steps, how far the cycle is behind the feet and how fast it catches up, see NB_GAIT_KEEP, the
@@ -478,6 +479,7 @@ typedef struct nbFigure
 	float moverHigh;
 	b3Vec3 moveVelocity;
 	b3Vec3 wishVelocity;
+	b3Vec3 askedVelocity;
 	bool onGround;
 	float probeRate;
 	float airTime;
@@ -537,13 +539,16 @@ typedef struct nbFigure
 
 	// Not facing where it moves, see nbSteer::faceVelocity and NB_LEG_TURN_WALK: how far its legs turn from its heading,
 	// where they face in the world and how fast they turn there, how far from its heading they turn to, which they keep as
-	// it stops, whether they walk backward, and whether each foot lifted as they ran backward, see nbSwingLift
+	// it stops, whether they walk backward, whether each foot lifted as they ran backward, see nbSwingLift, how long in a
+	// row they waited for the feet on the ground and whether each of those holds them back, see NB_LEG_KEEP
 	float legTurn;
 	float legHeading;
 	float legHeadingRate;
 	float legAim;
 	bool legBack;
 	bool swingBack[2];
+	float legHeld;
+	bool legBlocks[2];
 
 	// On stairs, see nbFindFoothold: how sure the figure is that it walks stairs, from 0 to 1, how deep a tread is along its
 	// way and how much higher the next one lies, how many treads a step goes, where each foot stands or lands and where a
