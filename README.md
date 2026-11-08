@@ -310,7 +310,9 @@ Bildzeit.
   kann. **W A S D** gehen relativ zum Blick, mit **Shift** rennt sie, **Q / E** und die Maus mit der rechten Taste
   drehen die Kamera, die ihr von hinten folgt. Die Tasten geben nur die Geschwindigkeit, die sie will, gehen, rennen,
   steigen und fallen tut sie in der Bibliothek, siehe Gesteuerte Figur. Gewehr, Granate und Kanone treffen sie wie jede
-  Figur
+  Figur. **Gang nach Clips** lässt sie nach Clips ihres Gangs gehen und rennen, dem Gang der Bibliothek, aufgezeichnet
+  mit `nbMakeHumanoidGaitClip`, **Arme im Clip vorn** dreht in diesen Clips die Oberarme 60° nach vorn, so sieht man
+  sie den Clips folgen, siehe Gehen und Rennen nach Clips
 
 **Aufrufoptionen**: `--scene 0..7` startet eine Szene, `--fragment-scale 3` setzt die Bruchstückgröße, `--vsync`
 schaltet VSync ein, `--msaa 4` schaltet Kantenglättung ein (Standard aus), `--highdpi` rendert auf hochauflösenden
@@ -323,7 +325,8 @@ Messungen reißen die Stadt selbst ab, Lauf für Lauf, auch mit `--demolition`, 
 vorgegebene Schussfolge ab, `--stick` dreht in der Szene mit Figuren ohne Menü den Blick nach einem Skript, und der
 Stock schwingt mit, langsam gegen einen Kopf und schnell über eine Brust, `--walk` lässt die Spielfigur ohne Menü den
 Parcours gehen, die Treppe hinauf, über die Plattform rennen und von ihrer Kante springen, `--walk-side` dasselbe von
-der Seite gesehen, `--frames N` beendet nach N Bildern und meldet Bildzeiten, CPU-Zeiten, Uploads und Dreiecke pro Bild
+der Seite gesehen, `--gait-clips` und `--clip-arms` schalten „Gang nach Clips“ und „Arme im Clip vorn“ ein,
+`--frames N` beendet nach N Bildern und meldet Bildzeiten, CPU-Zeiten, Uploads und Dreiecke pro Bild
 und einen Hash der Lagen aller Bruchstücke und der Knochen der Figuren, `--screenshot datei.ppm` speichert das letzte
 Bild (nur OpenGL).
 
@@ -1674,6 +1677,22 @@ mit den Geschwindigkeiten, die ihre Knochen gerade haben: Nach einem Stoß von h
 will. Ein leichter Stoß gibt der Kapsel Geschwindigkeit, statt die Figur schwanken zu lassen. Mit 1, 2 und 4 Threads
 bewegt sie sich bitgleich, Figuren ohne `steered` rechnen wie vorher.
 
+**Gehen und Rennen nach Clips.** Seit `active-ragdoll-98` folgt eine gesteuerte Figur auf Wunsch den Clips des Spiels,
+nach 27.3 der Roadmap des Spiels: Im Gehen und Rennen bestimmen Animation und IK die Pose, bei einem Treffer übernimmt
+der Controller. Ein Spiel gibt ihr bis zu zwei Clips ihres Gangs, `nbFigureDef::gaitClips` oder `nbFigure_SetGaitClips`,
+einen zum Gehen und einen zum Rennen, je einen Zyklus aus zwei Schritten geradeaus mit dem Tempo, bei dem er entstand,
+und den Zeiten, zu denen jeder Fuß aufsetzt und abhebt, `nbGaitClipDef`. Die Figur spielt sie im Takt ihrer Schritte,
+beide Aufsetzer des Clips auf die ihrer Füße: Rumpf, Arme, Kopf und Becken kommen aus den Clips, zwischen Gehen und
+Rennen gemischt, und wie lange ein Fuß steht und wie oft sie tritt, aus den Marken. Die Füße setzt weiter die
+Bibliothek, auf Treppen, Schutt und am Hang, das Becken geht nur so viel tiefer als im Clip, wie die Beine es brauchen,
+und auf Treppen folgt es dem Boden in der mittleren Höhe des Clips. Treffer wirken auf den Körper, wie der Clip ihn
+bewegt, wie ohne Clips, und kommen oder gehen die Clips, blendet der Körper über. `nbMakeHumanoidGaitClip` zeichnet den
+Gang der Bibliothek als solchen Clip auf: Mit ihm geht und rennt die Figur wie ohne, die Knochen im Mittel höchstens
+0,24 cm daneben, und von 1 024 Treffern fangen sich und fallen dieselben. So kann ein Spiel seine Clips gegen den Gang
+der Bibliothek ausprobieren oder bei ihm beginnen. Ohne Clips rechnet alles bitgleich wie vorher. Die Beine schwingen
+noch nach dem Gang der Bibliothek, der Weg eines Fußes aus dem Clip ist Stufe 2 von F85 in der
+[Roadmap](docs/Roadmap.md).
+
 **Aktiver Ragdoll.** Eine Figur, die sich nicht fangen kann, eine Last von oben ab `crushForce` (600 N), Boden, der
 wegbricht oder sich schneller als 1,5 m/s bewegt, und `nbFigure_Knockdown` machen eine Figur zum aktiven Ragdoll, mit
 den Geschwindigkeiten, die ihre Knochen hatten. Ein Treffer wirkt genau einmal und verteilt sich wie in Overgrowth
@@ -1848,7 +1867,8 @@ Wurzel im Rahmen der Figur (`nbClipDef`). Die Clips eines Menschen jeder Größe
 (`nbMakeHumanoidClip`): Stand, Rudern, Abstützen, Einrollen und das Aufstehen vom Bauch und vom Rücken, einmal pro
 Größe und Welt, geteilt von allen Figuren. Die Aufsteh-Clips entstehen aus Schlüsselposen, in denen eine
 Zwei-Knochen-IK Hände, Knie und Füße auf dem Boden hält, abgetastet mit 15 Hz. Ein Spiel kann jeden Clip ersetzen
-(`nbFigureDef::clips`) und im Stand eigene abspielen (`nbFigure_PlayClip`).
+(`nbFigureDef::clips`), im Stand eigene abspielen (`nbFigure_PlayClip`) und eine gesteuerte Figur nach seinen Clips
+gehen und rennen lassen (`nbFigureDef::gaitClips`).
 
 **Gelenke und Pakete.** Eine stehende Figur kostet den Löser nichts, ihre Gelenke liegen in der statischen Menge. Als
 wacher Ragdoll liegen ihre Gelenke in den Farben des Lösers. Bis `active-ragdoll-1` rechnete Box3D dann keine ganzen
@@ -2293,6 +2313,26 @@ nbSteer steer = { b3MulSV( shift ? 4.8f : 1.6f, wish ), 0.0f, true };
 nbFigure_Steer( player, &steer );
 
 nbFigureInfo playerInfo = nbFigure_GetInfo( player );   // moveVelocity, onGround, und ob sie steht oder fällt
+```
+
+Geht und rennt sie nach den Clips des Spiels, gibt das Spiel ihr diese mit den Zeiten, zu denen ihre Füße aufsetzen und
+abheben, wie seine Animationspipeline sie markiert:
+
+```c
+// gehen und rennen sind Clips des Spiels, nbClipDef, je ein Zyklus aus zwei Schritten geradeaus. Dazu das Tempo, bei
+// dem er entstand, und wann der linke und der rechte Fuß aufsetzen und abheben, in Sekunden ab dem ersten
+// Schlüsselbild.
+nbGaitClipDef gang[2] = {
+	{ gehen, 1.6f, { 0.0f, 0.46f }, { 0.55f, 0.09f } },
+	{ rennen, 4.8f, { 0.0f, 0.33f }, { 0.22f, 0.54f } },
+};
+nbFigure_SetGaitClips( player, gang, 2 );   // kopiert, NULL und 0 gehen zurück zum Gang der Bibliothek
+
+// Der Gang der Bibliothek als solcher Clip, zum Vergleich oder als Anfang
+static nbKeyframe frames[128];
+static b3Quat rotations[128 * nb_humanoidBoneCount];
+nbGaitClipDef aufgezeichnet;
+nbMakeHumanoidGaitClip( 1.6f, 1.8f, frames, rotations, 128, &aufgezeichnet );
 ```
 
 Die komplette API steht in [include/nebenan/nebenan.h](include/nebenan/nebenan.h).

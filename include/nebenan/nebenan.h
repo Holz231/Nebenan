@@ -422,6 +422,16 @@ NB_API int nbMakeHumanoidClip( nbFigureClip which, float height, nbKeyframe* key
 /// time, up to capacity. Past the end the last pose, or around again for a clip that loops. Root may be null.
 NB_API void nbSampleClip( const nbClipDef* clip, float time, b3Quat* rotations, b3Transform* root, int capacity );
 
+/// The gait of the library for the humanoid of nbMakeHumanoidBones of this height at this speed straight ahead on level
+/// ground, recorded as a clip of its gait, see nbGaitClipDef: the pose its gait goes for in every update of one cycle,
+/// 60 keyframes a second up to capacity, and their rotations, the bones of each keyframe one after the other, with the
+/// touchdowns and lift-offs where its gait times them and the idle clip held, so the clip loops without a jump. Given
+/// back as the clip of the gait at that speed, it moves the body as the gait of the library does. It steps a world of
+/// its own for a few seconds, two worlds while it runs, so call it where worlds are made. Returns the number of
+/// keyframes, zero if the arrays are too small or no world was free.
+NB_API int nbMakeHumanoidGaitClip( float speed, float height, nbKeyframe* keyframes, b3Quat* rotations, int capacity,
+								   nbGaitClipDef* clip );
+
 /// Motors of an active ragdoll after Overgrowth: 600 N m per radian and 120 N m at full strength, a tenth of it per meter
 /// per second the figure flies, 0.8 at most, and 0.4 s of slack after a hard hit. Overgrowth keeps its figures slack for
 /// 0.9 s after a hit, a figure falls from standing in about 0.6 s and would land without bracing.
@@ -481,6 +491,10 @@ NB_API void nbFigure_Steer( nbFigureId figureId, const nbSteer* steer );
 /// Play a clip while the figure stands, from its start, at this speed, 1 for real time, blended in over a fifth of a
 /// second. The clip is copied. Null goes back to the idle clip. A clip that does not loop holds its last pose.
 NB_API void nbFigure_PlayClip( nbFigureId figureId, const nbClipDef* clip, float speed );
+
+/// Give a steered humanoid clips of its gait, copied, see nbFigureDef::gaitClips. Null or zero goes back to the gait of
+/// the library. Its body blends over from what it did as a new clip blends in, see nbFigure_PlayClip.
+NB_API void nbFigure_SetGaitClips( nbFigureId figureId, const nbGaitClipDef* clips, int count );
 
 /// Apply a hit: an impulse at a point of a bone, once per hit id, see nbHitDef. The bones of a standing figure hit with at
 /// least nbFigureDef::knockdownImpulse become dynamic with the velocities they had, and the impulse spreads over them as

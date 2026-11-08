@@ -536,6 +536,16 @@ struct App
 	bool figureMuscles = false;
 	bool figureLegHold = false;
 
+	// Whether the figure of the player walks and runs after clips of its gait, see nbFigure_SetGaitClips, and the clips:
+	// the gait of the library recorded at the speeds of the keys, see nbMakeHumanoidGaitClip, as they are and with the
+	// upper arms held forward, so a program sees the figure follow its clips. Recorded once, when first asked for.
+	bool playerGaitClips = false;
+	bool playerClipArms = false;
+	bool gaitClipsMade = false;
+	nbKeyframe gaitKeyframes[2][2][128];
+	b3Quat gaitRotations[2][2][128 * nb_humanoidBoneCount];
+	nbGaitClipDef gaitClips[2][2];
+
 	// Every part of the body of a figure in its own color, or each figure in one. The menu asks for the figures to be
 	// drawn again, and the next frame does it before the steps start.
 	bool figurePartColors = true;
@@ -1958,6 +1968,8 @@ static void AddRamp( App& app, float x0, float x1, float z, float angle, float h
 // 60 degrees it does not climb, a block of 30 cm it steps onto and one of 60 cm it does not, a brick wall and three
 // figures to run into. The figure of the player is a figure of the library made with nbFigureDef::steered: the keys give
 // it the velocity it wants and the library moves it on its own feet, see UpdatePlayer.
+static void ApplyPlayerGaitClips( App& app );
+
 static void BuildPlayerScene( App& app )
 {
 	const float platform = 1.5f;
@@ -1999,6 +2011,10 @@ static void BuildPlayerScene( App& app )
 	if ( nbFigure_IsValid( app.player ) )
 	{
 		AddFigureVisual( app, app.player );
+		if ( app.playerGaitClips )
+		{
+			ApplyPlayerGaitClips( app );
+		}
 	}
 	app.playerPivot = { 0.0f, 1.56f, 5.0f };
 	app.camera.yaw = 0.0f;
@@ -2715,6 +2731,59 @@ static const float PlayerCameraHeight = 0.6f;
 static const float PlayerCameraFollow = 12.0f;
 static const float PlayerCameraTurn = 2.0f;
 
+// How far the clips of the gait of the player hold the upper arms forward with "Arme im Clip vorn", in radians
+static const float PlayerClipArmRaise = 60.0f * B3_PI / 180.0f;
+
+// The clips of the gait of the figure of the player, see App::gaitClips: the gait of the library at the speeds of the
+// keys for the humanoid of MakeFigureDef, as it is and with the upper arms turned forward in every keyframe. Each clip
+// steps a world of its own for a few seconds of its time, so they are made once, when the menu first asks for them.
+static void MakePlayerGaitClips( App& app )
+{
+	if ( app.gaitClipsMade )
+	{
+		return;
+	}
+
+	const float speeds[2] = { PlayerWalkSpeed, PlayerRunSpeed };
+	b3Quat raise = b3MakeQuatFromAxisAngle( b3Vec3_axisX, -PlayerClipArmRaise );
+	for ( int c = 0; c < 2; ++c )
+	{
+		int count = nbMakeHumanoidGaitClip( speeds[c], 1.8f, app.gaitKeyframes[0][c], app.gaitRotations[0][c], 128,
+											app.gaitClips[0] + c );
+		app.gaitClips[1][c] = app.gaitClips[0][c];
+		app.gaitClips[1][c].clip.keyframes = app.gaitKeyframes[1][c];
+		memcpy( app.gaitRotations[1][c], app.gaitRotations[0][c], sizeof( app.gaitRotations[1][c] ) );
+		for ( int k = 0; k < count; ++k )
+		{
+			b3Quat* pose = app.gaitRotations[1][c] + k * nb_humanoidBoneCount;
+			pose[nb_humanoidUpperArmLeft] = b3MulQuat( pose[nb_humanoidUpperArmLeft], raise );
+			pose[nb_humanoidUpperArmRight] = b3MulQuat( pose[nb_humanoidUpperArmRight], raise );
+			app.gaitKeyframes[1][c][k] = app.gaitKeyframes[0][c][k];
+			app.gaitKeyframes[1][c][k].rotations = pose;
+		}
+	}
+	app.gaitClipsMade = true;
+}
+
+// Give the figure of the player the clips of its gait the menu chose, or none, see nbFigure_SetGaitClips. Its body
+// blends over from what it does.
+static void ApplyPlayerGaitClips( App& app )
+{
+	if ( nbFigure_IsValid( app.player ) == false )
+	{
+		return;
+	}
+
+	if ( app.playerGaitClips == false )
+	{
+		nbFigure_SetGaitClips( app.player, nullptr, 0 );
+		return;
+	}
+
+	MakePlayerGaitClips( app );
+	nbFigure_SetGaitClips( app.player, app.gaitClips[app.playerClipArms ? 1 : 0], 2 );
+}
+
 // The figure of the player: the keys give it the velocity it wants over the ground, relative to where the camera looks, and
 // the library moves it on its own feet, see nbFigure_Steer. The camera follows its pelvis from behind its right shoulder.
 // Called between the steps of the world.
@@ -3090,6 +3159,33 @@ static void DrawUi( App& app )
 			ImGui::SetTooltip(
 				"An: jeder Körperteil einer Figur in seiner eigenen Farbe. Aus: jede Figur ganz in einer\nFarbe, wie die "
 				"Gliederpuppen eines Spiels." );
+		}
+		if ( app.scene == ScenePlayer )
+		{
+			ImGui::SameLine();
+			if ( ImGui::Checkbox( "Gang nach Clips", &app.playerGaitClips ) )
+			{
+				ApplyPlayerGaitClips( app );
+			}
+			if ( ImGui::IsItemHovered() )
+			{
+				ImGui::SetTooltip( "Die Spielfigur geht und rennt nach Clips ihres Gangs, F85: Rumpf, Arme, Kopf und Becken\n"
+								   "aus den Clips, im Takt ihrer Schritte, die Füße setzt weiter die Bibliothek, Treffer wie\n"
+								   "immer. Die Clips sind der Gang der Bibliothek, aufgezeichnet mit nbMakeHumanoidGaitClip,\n"
+								   "so sieht sie damit aus wie ohne. Ein Spiel gibt hier seine eigenen Clips." );
+			}
+			ImGui::SameLine();
+			ImGui::BeginDisabled( app.playerGaitClips == false );
+			if ( ImGui::Checkbox( "Arme im Clip vorn", &app.playerClipArms ) )
+			{
+				ApplyPlayerGaitClips( app );
+			}
+			ImGui::EndDisabled();
+			if ( ImGui::IsItemHovered( ImGuiHoveredFlags_AllowWhenDisabled ) )
+			{
+				ImGui::SetTooltip( "Dieselben Clips mit den Oberarmen in jedem Schlüsselbild 60° nach vorn gedreht: Die\n"
+								   "Figur folgt ihren Clips, die Beine und Füße bleiben, wie die Bibliothek sie setzt." );
+			}
 		}
 	}
 
@@ -5247,6 +5343,13 @@ int main( int argc, char** argv )
 			// The figure of the player walks its course by itself, seen without the menu; F1 shows it
 			app.automation.walk = true;
 			app.showUi = false;
+		}
+		else if ( strcmp( argv[i], "--gait-clips" ) == 0 || strcmp( argv[i], "--clip-arms" ) == 0 )
+		{
+			// The figure of the player walks after clips of its gait, with --clip-arms the upper arms held forward in
+			// them, as the menu does with "Gang nach Clips" and "Arme im Clip vorn"
+			app.playerGaitClips = true;
+			app.playerClipArms = strcmp( argv[i], "--clip-arms" ) == 0;
 		}
 		else if ( strcmp( argv[i], "--scene" ) == 0 && i + 1 < argc )
 		{

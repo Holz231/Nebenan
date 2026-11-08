@@ -4849,6 +4849,372 @@ static uint32_t RunSteerScenario( int threadCount )
 }
 
 //----------------------------------------------------------------------------------------------------------------------
+// Steered figures that walk and run after clips of their gait, see nbGaitClipDef and F85 in docs/Roadmap.md
+
+// Clips of the gait of the library at 1.6 and 4.8 m/s for the humanoid of 1.8 m, as nbMakeHumanoidGaitClip records them
+typedef struct GaitClips
+{
+	nbKeyframe keyframes[2][128];
+	b3Quat rotations[2][128 * nb_humanoidBoneCount];
+	nbGaitClipDef clips[2];
+	int counts[2];
+} GaitClips;
+
+static const float s_gaitClipSpeeds[2] = { 1.6f, 4.8f };
+
+// Record the clips, and change the upper arms by a turn forward and the root by a lift in every keyframe
+static void MakeGaitClips( GaitClips* gait, float armRaise, float rootLift )
+{
+	b3Quat raise = b3MakeQuatFromAxisAngle( b3Vec3_axisX, -armRaise );
+	for ( int c = 0; c < 2; ++c )
+	{
+		gait->counts[c] = nbMakeHumanoidGaitClip( s_gaitClipSpeeds[c], 1.8f, gait->keyframes[c], gait->rotations[c], 128,
+												  gait->clips + c );
+		for ( int k = 0; k < gait->counts[c]; ++k )
+		{
+			b3Quat* pose = gait->rotations[c] + k * nb_humanoidBoneCount;
+			pose[nb_humanoidUpperArmLeft] = b3MulQuat( pose[nb_humanoidUpperArmLeft], raise );
+			pose[nb_humanoidUpperArmRight] = b3MulQuat( pose[nb_humanoidUpperArmRight], raise );
+			gait->keyframes[c][k].root.p.y += rootLift;
+		}
+	}
+}
+
+static GaitClips s_gaitClips;
+
+// The figure as the library keeps it, to hold its idle clip
+static nbFigure* GetFigure( const FigureScene* scene, nbFigureId figure )
+{
+	return nbGetWorldFromId( scene->world )->figures.data + ( figure.index1 - 1 );
+}
+
+// The gait of the library recorded as clips of its gait: a cycle as long as two steps of the gait at that speed, about
+// 0.92 s walking and 0.65 s running, the touchdowns half a cycle apart, the feet standing for as long a share of it as
+// the gait has them stand walking and running, the first pose again at the end, so the clip loops, and nothing where
+// the arrays are too small or the speed is not ahead
+static int GaitClipRecordTest( void )
+{
+	MakeGaitClips( &s_gaitClips, 0.0f, 0.0f );
+	const float cycles[2] = { 0.924f, 0.654f };
+	const float stances[2] = { 0.6f, 0.33f };
+	for ( int c = 0; c < 2; ++c )
+	{
+		const nbGaitClipDef* clip = s_gaitClips.clips + c;
+		int count = s_gaitClips.counts[c];
+		const nbKeyframe* keys = s_gaitClips.keyframes[c];
+		float cycle = keys[count - 1].time - keys[0].time;
+		float apart = fmodf( clip->footDown[1] - clip->footDown[0] + cycle, cycle );
+		float stance = 0.0f;
+		for ( int k = 0; k < 2; ++k )
+		{
+			stance += 0.5f * fmodf( clip->footUp[k] - clip->footDown[k] + cycle, cycle ) / cycle;
+		}
+		float jump = 0.0f;
+		for ( int i = 1; i < nb_humanoidBoneCount; ++i )
+		{
+			jump = b3MaxFloat( jump, b3GetQuatAngle( b3InvMulQuat( keys[0].rotations[i], keys[count - 1].rotations[i] ) ) );
+		}
+		printf( "  %.1f m/s: %d keyframes over %.3f s, touchdowns %.3f s apart, stance %.3f of the cycle\n",
+				s_gaitClipSpeeds[c], count, cycle, apart, stance );
+		ENSURE( count > 30 && clip->clip.keyframeCount == count && clip->clip.keyframes == keys );
+		ENSURE( clip->clip.loop && clip->clip.moveRoot && clip->clip.boneCount == nb_humanoidBoneCount );
+		ENSURE( clip->speed == s_gaitClipSpeeds[c] );
+		ENSURE( fabsf( cycle - cycles[c] ) < 0.02f * cycles[c] );
+		ENSURE( fabsf( apart - 0.5f * cycle ) < 0.01f * cycle );
+		ENSURE( fabsf( stance - stances[c] ) < 0.01f );
+		ENSURE( jump < 1.0e-5f && b3Length( b3Sub( keys[0].root.p, keys[count - 1].root.p ) ) < 1.0e-5f );
+	}
+
+	nbKeyframe few[8];
+	b3Quat rotations[8 * nb_humanoidBoneCount];
+	nbGaitClipDef clip;
+	ENSURE( nbMakeHumanoidGaitClip( 1.6f, 1.8f, few, rotations, 8, &clip ) == 0 );
+	ENSURE( nbMakeHumanoidGaitClip( 0.0f, 1.8f, few, rotations, 8, &clip ) == 0 );
+	return 0;
+}
+
+// Walk 4 s at 1.6 m/s and run 4 s at 4.8 m/s straight ahead, with the clips of the gait or without, the idle clip held,
+// and the targets of the bones over the frame in every update. False where it did not stay on its feet.
+static bool WalkAndRun( const GaitClips* gait, int clipCount, b3Vec3 ( *bones )[nb_humanoidBoneCount], b3Vec3* frames )
+{
+	FigureScene scene;
+	CreateFigureScene( &scene, 1 );
+	nbFigureId figure = AddSteeredFigure( &scene, (b3Vec3){ 0.0f, 0.0f, -45.0f }, 0.0f );
+	GetFigure( &scene, figure )->clipSpeed = 0.0f;
+	if ( clipCount > 0 )
+	{
+		nbFigure_SetGaitClips( figure, gait->clips, clipCount );
+	}
+	for ( int step = 0; step < 480; ++step )
+	{
+		SteerVelocity( figure, (b3Vec3){ 0.0f, 0.0f, step < 240 ? 1.6f : 4.8f } );
+		StepFigures( &scene, 1 );
+		b3WorldTransform targets[nb_humanoidBoneCount];
+		nbFigure_GetTargetTransforms( figure, targets, nb_humanoidBoneCount );
+		b3Pos frame = nbFigure_GetFrame( figure ).p;
+		frames[step] = b3ToVec3( frame );
+		for ( int i = 0; i < nb_humanoidBoneCount; ++i )
+		{
+			bones[step][i] = b3SubPos( targets[i].p, frame );
+		}
+	}
+	bool stands = nbFigure_GetState( figure ) == nb_figureAnimated;
+	DestroyFigureScene( &scene );
+	return stands;
+}
+
+static b3Vec3 s_bonesA[480][nb_humanoidBoneCount];
+static b3Vec3 s_bonesB[480][nb_humanoidBoneCount];
+static b3Vec3 s_framesA[480];
+static b3Vec3 s_framesB[480];
+
+// The gait of the library recorded as clips of its gait and given back to a figure moves it as the gait of the library
+// does: its frame goes the same way, and in the last second of walking and of running every bone lies within 1.5 cm of
+// where it lies without the clips, 0.5 cm on average
+static int GaitClipFollowTest( void )
+{
+	ENSURE( WalkAndRun( &s_gaitClips, 0, s_bonesA, s_framesA ) );
+	ENSURE( WalkAndRun( &s_gaitClips, 2, s_bonesB, s_framesB ) );
+	for ( int part = 0; part < 2; ++part )
+	{
+		float most = 0.0f;
+		float sum = 0.0f;
+		int count = 0;
+		float frame = 0.0f;
+		for ( int step = 180 + 240 * part; step < 240 + 240 * part; ++step )
+		{
+			frame = b3MaxFloat( frame, b3Length( b3Sub( s_framesA[step], s_framesB[step] ) ) );
+			for ( int i = 0; i < nb_humanoidBoneCount; ++i )
+			{
+				float gap = b3Length( b3Sub( s_bonesA[step][i], s_bonesB[step][i] ) );
+				most = b3MaxFloat( most, gap );
+				sum += gap;
+				count += 1;
+			}
+		}
+		printf( "  %s: the bones lie %.2f cm apart on average, %.2f cm at most, the frames %.4f cm\n",
+				part == 0 ? "walking" : "running", 100.0f * sum / (float)count, 100.0f * most, 100.0f * frame );
+		ENSURE( frame == 0.0f );
+		ENSURE( sum / (float)count < 0.005f && most < 0.015f );
+	}
+	return 0;
+}
+
+// A clip of the gait shows in the figure: with the upper arms 60 degrees forward in the clips the hands go at least 15
+// cm higher walking, with the root 3 cm higher the pelvis goes 1 to 3 cm higher on average, as far as the legs reach,
+// and a single clip that walks runs at 4.8 m/s with the pelvis never under 0.8 m, the steps timed for running by the
+// gait of the library
+static int GaitClipShowTest( void )
+{
+	static GaitClips changed;
+	MakeGaitClips( &changed, 60.0f * B3_PI / 180.0f, 0.0f );
+	ENSURE( WalkAndRun( &changed, 2, s_bonesB, s_framesB ) );
+	ENSURE( WalkAndRun( &s_gaitClips, 2, s_bonesA, s_framesA ) );
+	float hands = 0.0f;
+	for ( int step = 180; step < 240; ++step )
+	{
+		hands += 0.5f * ( s_bonesB[step][nb_humanoidHandLeft].y - s_bonesA[step][nb_humanoidHandLeft].y +
+						  s_bonesB[step][nb_humanoidHandRight].y - s_bonesA[step][nb_humanoidHandRight].y ) /
+				 60.0f;
+	}
+
+	MakeGaitClips( &changed, 0.0f, 0.03f );
+	ENSURE( WalkAndRun( &changed, 2, s_bonesB, s_framesB ) );
+	float lift = 0.0f;
+	for ( int step = 180; step < 240; ++step )
+	{
+		lift += ( s_bonesB[step][nb_humanoidPelvis].y - s_bonesA[step][nb_humanoidPelvis].y ) / 60.0f;
+	}
+
+	ENSURE( WalkAndRun( &s_gaitClips, 1, s_bonesB, s_framesB ) );
+	float lowest = FLT_MAX;
+	for ( int step = 240; step < 480; ++step )
+	{
+		lowest = b3MinFloat( lowest, s_bonesB[step][nb_humanoidPelvis].y );
+	}
+	printf( "  arms raised: the hands %.1f cm higher, root lifted: the pelvis %.2f cm higher, walking clip alone: the pelvis "
+			"running at least %.3f m high\n",
+			100.0f * hands, 100.0f * lift, lowest );
+	ENSURE( hands > 0.15f );
+	ENSURE( 0.01f < lift && lift < 0.03f );
+	ENSURE( lowest > 0.8f );
+	return 0;
+}
+
+// Hits act on a figure that walks or runs after clips of its gait as on one that does not: from 30 N s on the chest
+// from behind it flinches and goes on, from 70 N s it catches itself or falls as it does without the clips
+static int GaitClipHitTest( void )
+{
+	for ( int pass = 0; pass < 4; ++pass )
+	{
+		float speed = pass < 2 ? 1.6f : 4.8f;
+		float impulse = pass % 2 == 0 ? 30.0f : 70.0f;
+		nbFigureState states[2][4];
+		int changes[2] = { 0, 0 };
+		for ( int clips = 0; clips < 2; ++clips )
+		{
+			FigureScene scene;
+			CreateFigureScene( &scene, 1 );
+			nbFigureId figure = AddSteeredFigure( &scene, (b3Vec3){ 0.0f, 0.0f, -45.0f }, 0.0f );
+			if ( clips == 1 )
+			{
+				nbFigure_SetGaitClips( figure, s_gaitClips.clips, 2 );
+			}
+			SteerVelocity( figure, (b3Vec3){ 0.0f, 0.0f, speed } );
+			StepFigures( &scene, 180 );
+			b3BodyId chest = nbFigure_GetBody( figure, nb_humanoidChest );
+			nbHitDef hit = { 1, nb_humanoidChest, { 0.0f, 0.0f, impulse }, b3Body_GetPosition( chest ) };
+			ENSURE( nbFigure_ApplyHit( figure, &hit ) );
+			nbFigureState last = nbFigure_GetState( figure );
+			states[clips][changes[clips]++] = last;
+			for ( int step = 0; step < 180; ++step )
+			{
+				StepFigures( &scene, 1 );
+				nbFigureState state = nbFigure_GetState( figure );
+				if ( state != last && changes[clips] < 4 )
+				{
+					states[clips][changes[clips]++] = state;
+				}
+				last = state;
+			}
+			DestroyFigureScene( &scene );
+		}
+		printf( "  %.1f m/s, %.0f N s: %d states without the clips, %d with, first %d and %d, last %d and %d\n", speed, impulse,
+				changes[0], changes[1], (int)states[0][0], (int)states[1][0], (int)states[0][changes[0] - 1],
+				(int)states[1][changes[1] - 1] );
+		ENSURE( changes[0] == changes[1] );
+		for ( int k = 0; k < changes[0]; ++k )
+		{
+			ENSURE( states[0][k] == states[1][k] );
+		}
+		ENSURE( impulse > 50.0f || ( changes[0] == 1 && states[0][0] == nb_figureAnimated ) );
+	}
+	return 0;
+}
+
+// Clips of the gait given and taken while the figure walks blend in and out: the way a bone moves over the frame in an
+// update changes by less than 5 cm from the update before, as a fade from the pose the figure had starts, and taken
+// away, the arms do not swing twice, from the clips and from the gait of the library, which comes in as the body blends
+// from the clips. Walking on, it changes by less than 2 cm.
+static int GaitClipSwitchTest( void )
+{
+	FigureScene scene;
+	CreateFigureScene( &scene, 1 );
+	nbFigureId figure = AddSteeredFigure( &scene, (b3Vec3){ 0.0f, 0.0f, -45.0f }, 0.0f );
+	SteerVelocity( figure, (b3Vec3){ 0.0f, 0.0f, 1.6f } );
+	b3Vec3 before[nb_humanoidBoneCount];
+	b3Vec3 moved[nb_humanoidBoneCount];
+	float switching = 0.0f;
+	float walking = 0.0f;
+	for ( int step = 0; step < 360; ++step )
+	{
+		if ( step == 120 )
+		{
+			nbFigure_SetGaitClips( figure, s_gaitClips.clips, 2 );
+		}
+		if ( step == 240 )
+		{
+			nbFigure_SetGaitClips( figure, NULL, 0 );
+		}
+		StepFigures( &scene, 1 );
+		b3WorldTransform targets[nb_humanoidBoneCount];
+		nbFigure_GetTargetTransforms( figure, targets, nb_humanoidBoneCount );
+		b3Pos frame = nbFigure_GetFrame( figure ).p;
+		bool near = ( 118 <= step && step < 136 ) || ( 238 <= step && step < 256 );
+		for ( int i = 0; i < nb_humanoidBoneCount; ++i )
+		{
+			b3Vec3 bone = b3SubPos( targets[i].p, frame );
+			b3Vec3 move = b3Sub( bone, before[i] );
+			if ( step > 60 )
+			{
+				float change = b3Length( b3Sub( move, moved[i] ) );
+				switching = near ? b3MaxFloat( switching, change ) : switching;
+				walking = near ? walking : b3MaxFloat( walking, change );
+			}
+			moved[i] = move;
+			before[i] = bone;
+		}
+	}
+	printf( "  the move of a bone changes by %.2f cm at most from one update to the next as the clips come and go, %.2f cm "
+			"else\n",
+			100.0f * switching, 100.0f * walking );
+	ENSURE( switching < 0.05f );
+	ENSURE( walking < 0.02f );
+	ENSURE( nbFigure_GetState( figure ) == nb_figureAnimated );
+	DestroyFigureScene( &scene );
+	return 0;
+}
+
+// The course of RunSteerScenario with clips of the gait for the same bits with any number of threads: one walks and
+// runs at a wall, one walks up stairs and is hit, one walks sideways past a figure that stands
+static uint32_t RunGaitClipScenario( int threadCount )
+{
+	FigureScene scene;
+	CreateFigureScene( &scene, threadCount );
+	AddBlock( &scene, (b3Vec3){ -2.0f, 1.5f, 8.0f }, (b3Vec3){ 4.0f, 1.5f, 0.2f } );
+	for ( int i = 0; i < 6; ++i )
+	{
+		float height = 0.15f * (float)( i + 1 );
+		AddBlock( &scene, (b3Vec3){ 5.0f, 0.5f * height, 8.0f + 0.3f * (float)i }, (b3Vec3){ 1.0f, 0.5f * height, 5.0f } );
+	}
+	nbFigureId figures[4];
+	figures[0] = AddSteeredFigure( &scene, b3Vec3_zero, 0.0f );
+	figures[1] = AddSteeredFigure( &scene, (b3Vec3){ 5.0f, 0.0f, 0.0f }, 0.0f );
+	figures[2] = AddSteeredFigure( &scene, (b3Vec3){ -6.0f, 0.0f, 3.3f }, 0.5f * B3_PI );
+	figures[3] = AddFigure( &scene, (b3Vec3){ -3.0f, 0.0f, 3.0f }, -0.5f * B3_PI );
+	for ( int k = 0; k < 3; ++k )
+	{
+		nbFigure_SetGaitClips( figures[k], s_gaitClips.clips, 2 );
+	}
+
+	uint32_t hash = 2166136261u;
+	for ( int step = 0; step < 600; ++step )
+	{
+		if ( step == 0 )
+		{
+			SteerVelocity( figures[0], (b3Vec3){ 0.0f, 0.0f, 1.5f } );
+			SteerVelocity( figures[1], (b3Vec3){ 0.0f, 0.0f, 1.5f } );
+			SteerVelocity( figures[2], (b3Vec3){ 1.2f, 0.0f, 0.0f } );
+		}
+		if ( step == 120 )
+		{
+			SteerVelocity( figures[0], (b3Vec3){ -1.5f, 0.0f, 4.2f } );
+		}
+		if ( step == 200 )
+		{
+			b3BodyId chest = nbFigure_GetBody( figures[1], nb_humanoidChest );
+			b3Pos point = b3Body_GetWorldPoint( chest, (b3Vec3){ 0.1f, 0.08f, 0.0f } );
+			nbHitDef hit = { 7, nb_humanoidChest, { -100.0f, 0.0f, 0.0f }, point };
+			nbFigure_ApplyHit( figures[1], &hit );
+		}
+		if ( step == 300 )
+		{
+			nbSteer turn = { b3Vec3_zero, -2.0f, false };
+			nbFigure_Steer( figures[0], &turn );
+		}
+		nbWorld_Step( scene.world, 1.0f / 60.0f, 4 );
+	}
+
+	for ( int k = 0; k < 4; ++k )
+	{
+		b3WorldTransform transforms[nb_humanoidBoneCount];
+		int count = nbFigure_GetBoneTransforms( figures[k], transforms, nb_humanoidBoneCount );
+		for ( int i = 0; i < count; ++i )
+		{
+			const uint8_t* bytes = (const uint8_t*)( transforms + i );
+			for ( size_t b = 0; b < sizeof( b3WorldTransform ); ++b )
+			{
+				hash = ( hash ^ bytes[b] ) * 16777619u;
+			}
+		}
+		nbFigureInfo info = nbFigure_GetInfo( figures[k] );
+		hash = ( hash ^ (uint32_t)( info.state + 4 * ( info.onGround ? 1 : 0 ) + 8 * info.knockdownCount ) ) * 16777619u;
+	}
+	DestroyFigureScene( &scene );
+	return hash;
+}
+
+//----------------------------------------------------------------------------------------------------------------------
 // Ragdolls against destructible walls, see the roadmap of the game, 26.16, 26.19 C and 30.9
 
 // A wall 6 m wide and 3.5 m high along x on the ground, its face toward the figure at z = 0: boards of wood, light and
@@ -5286,6 +5652,9 @@ static int ThinBoardTest( void )
 // high where it meets them, instead of on top of it.
 #define NB_EXPECTED_STEER_HASH 0xe0efacabu
 
+// See RunGaitClipScenario
+#define NB_EXPECTED_GAIT_CLIP_HASH 0xa0ab2da2u
+
 static int FigureFollowDeterminismTest( void )
 {
 	uint32_t one = RunFollowScenario( 1 );
@@ -5309,6 +5678,20 @@ static int SteerDeterminismTest( void )
 	ENSURE( one == two );
 	ENSURE( one == four );
 	ENSURE( one == NB_EXPECTED_STEER_HASH );
+	return 0;
+}
+
+static int GaitClipDeterminismTest( void )
+{
+	uint32_t one = RunGaitClipScenario( 1 );
+	uint32_t again = RunGaitClipScenario( 1 );
+	uint32_t two = RunGaitClipScenario( 2 );
+	uint32_t four = RunGaitClipScenario( 4 );
+	printf( "  gait clip hash: 0x%08x\n", one );
+	ENSURE( one == again );
+	ENSURE( one == two );
+	ENSURE( one == four );
+	ENSURE( one == NB_EXPECTED_GAIT_CLIP_HASH );
 	return 0;
 }
 
@@ -5386,12 +5769,18 @@ int FigureTest( void )
 	RUN_TEST( SteerStartStopTest );
 	RUN_TEST( SteerHitTest );
 	RUN_TEST( SteerRubbleTest );
+	RUN_TEST( GaitClipRecordTest );
+	RUN_TEST( GaitClipFollowTest );
+	RUN_TEST( GaitClipShowTest );
+	RUN_TEST( GaitClipHitTest );
+	RUN_TEST( GaitClipSwitchTest );
 	RUN_TEST( FigureWallTest );
 	RUN_TEST( FigureWallDebrisTest );
 	RUN_TEST( ThinBoardTest );
 	RUN_TEST( FigureWallDeterminismTest );
 	RUN_TEST( FigureFollowDeterminismTest );
 	RUN_TEST( SteerDeterminismTest );
+	RUN_TEST( GaitClipDeterminismTest );
 	RUN_TEST( FigureDeterminismTest );
 	return 0;
 }

@@ -1026,8 +1026,9 @@ static float nbClipDuration( const nbClip* clip )
 	return clip->keyframeCount > 0 ? clip->times[clip->keyframeCount - 1] : 0.0f;
 }
 
-// Which two keyframes a time falls between, and how far along, from 0 to 1
-static int nbClipSegment( const float* times, size_t stride, int count, bool loop, float time, float* alpha )
+// Which two keyframes a time falls between, and how far along, from 0 to 1. Built into each of its callers: called out
+// of line, as GCC does for three callers, sampling the clip of a figure costs more than the call
+B3_FORCE_INLINE int nbClipSegment( const float* times, size_t stride, int count, bool loop, float time, float* alpha )
 {
 #define NB_KEY_TIME( k ) ( *(const float*)( (const char*)times + (size_t)( k ) * stride ) )
 	if ( count < 2 )
@@ -1097,6 +1098,145 @@ static void nbSampleFigureClip( const nbFigure* f, const nbClip* clip, float tim
 		pose[i] = b3NLerp( from[i], to[i], alpha );
 	}
 	*root = clip->moveRoot ? nbBlendRoots( clip->roots[segment], clip->roots[next], alpha ) : nbStandRoot( f );
+}
+
+// A clip of the gait plays a foot standing for no less and no more of its cycle than this, whatever its marks say, so
+// both feet swing and both stand
+#define NB_GAIT_CLIP_STANCE_LEAST 0.2f
+#define NB_GAIT_CLIP_STANCE_MOST 0.8f
+
+// A time wrapped into [0, length)
+static float nbWrapTime( float time, float length )
+{
+	float wrapped = fmodf( time, length );
+	return wrapped < 0.0f ? wrapped + length : wrapped;
+}
+
+static void nbFreeGaitClips( nbFigure* f )
+{
+	for ( int k = 0; k < f->gaitClipCount; ++k )
+	{
+		nbFreeClip( &f->gaitClips[k].clip );
+	}
+	memset( f->gaitClips, 0, sizeof( f->gaitClips ) );
+	f->gaitClipCount = 0;
+	f->gaitClipRoot = false;
+}
+
+// Copy the clips of the gait of the program for a humanoid, the slower first, see nbGaitClip. A clip that does not fit
+// the bones or has no cycle stays out. It loops, and a foot stands for as long a share of its cycle as both feet stand
+// in it on average, see NB_GAIT_CLIP_STANCE_LEAST.
+static void nbCopyGaitClips( nbFigure* f, const nbGaitClipDef* defs, int count )
+{
+	nbFreeGaitClips( f );
+	if ( defs == NULL || f->boneCount != nb_humanoidBoneCount )
+	{
+		return;
+	}
+
+	bool moveRoot = true;
+	for ( int i = 0; i < b3MinInt( count, NB_MAX_GAIT_CLIPS ); ++i )
+	{
+		const nbGaitClipDef* def = defs + i;
+		nbGaitClip* gait = f->gaitClips + f->gaitClipCount;
+		nbCopyClip( &gait->clip, &def->clip, f->boneCount );
+		int last = gait->clip.keyframeCount - 1;
+		float cycle = last > 0 ? gait->clip.times[last] - gait->clip.times[0] : 0.0f;
+		if ( cycle <= 0.0f || ( def->speed >= 0.0f ) == false )
+		{
+			nbFreeClip( &gait->clip );
+			continue;
+		}
+
+		gait->clip.loop = true;
+		gait->speed = def->speed;
+		gait->start = gait->clip.times[0];
+		gait->cycle = cycle;
+		float stance = 0.0f;
+		for ( int k = 0; k < 2; ++k )
+		{
+			gait->down[k] = nbWrapTime( def->footDown[k], cycle );
+			stance += nbWrapTime( def->footUp[k] - def->footDown[k], cycle ) / cycle;
+		}
+		gait->stance = b3ClampFloat( 0.5f * stance, NB_GAIT_CLIP_STANCE_LEAST, NB_GAIT_CLIP_STANCE_MOST );
+		gait->drift = b3Vec3_zero;
+		gait->level = f->def.standHeight;
+		if ( gait->clip.moveRoot )
+		{
+			b3Vec3 way = b3Sub( gait->clip.roots[last].p, gait->clip.roots[0].p );
+			gait->drift = (b3Vec3){ way.x / cycle, 0.0f, way.z / cycle };
+			float area = 0.0f;
+			for ( int k = 0; k < last; ++k )
+			{
+				float span = gait->clip.times[k + 1] - gait->clip.times[k];
+				area += 0.5f * span * ( gait->clip.roots[k].p.y + gait->clip.roots[k + 1].p.y );
+			}
+			gait->level = area / cycle;
+		}
+		moveRoot = moveRoot && gait->clip.moveRoot;
+		f->gaitClipCount += 1;
+	}
+
+	if ( f->gaitClipCount == 2 && f->gaitClips[1].speed < f->gaitClips[0].speed )
+	{
+		nbGaitClip slower = f->gaitClips[1];
+		f->gaitClips[1] = f->gaitClips[0];
+		f->gaitClips[0] = slower;
+	}
+	f->gaitClipRoot = f->gaitClipCount > 0 && moveRoot;
+}
+
+// The time in a clip of the gait at a phase of the gait of the figure, see nbGaitClip: the touchdown of the left foot
+// at phase 0, of the right foot at phase 0.5, and evenly between them
+static float nbGaitClipTime( const nbGaitClip* gait, float phase )
+{
+	float between = nbWrapTime( gait->down[1] - gait->down[0], gait->cycle );
+	float time = phase < 0.5f ? 2.0f * phase * between : between + ( 2.0f * phase - 1.0f ) * ( gait->cycle - between );
+	return gait->start + nbWrapTime( gait->down[0] + time, gait->cycle );
+}
+
+// Sample a clip of the gait at a phase of the gait into a pose and a root, the way of the root over the ground taken
+// out
+static void nbSampleGaitClip( const nbFigure* f, const nbGaitClip* gait, float phase, b3Quat* pose, b3Transform* root )
+{
+	float time = nbGaitClipTime( gait, phase );
+	nbSampleFigureClip( f, &gait->clip, time, pose, root );
+	root->p = b3MulSub( root->p, time - gait->start, gait->drift );
+}
+
+// Whether the clips of the gait of a figure move its body: it has some, and no clip of the program plays
+static bool nbGaitClipped( const nbFigure* f )
+{
+	return f->gaitClipCount > 0 && f->playing == false;
+}
+
+// Whether they move its root too: all of them move the root, see nbClipDef::moveRoot
+static bool nbGaitClipRooted( const nbFigure* f )
+{
+	return nbGaitClipped( f ) && f->gaitClipRoot;
+}
+
+// The root of a clip of the gait that moves the root at a phase of the gait, its way over the ground taken out
+static b3Transform nbSampleGaitRoot( const nbGaitClip* gait, float phase )
+{
+	float time = nbGaitClipTime( gait, phase );
+	float alpha;
+	int segment = nbClipSegment( gait->clip.times, sizeof( float ), gait->clip.keyframeCount, true, time, &alpha );
+	b3Transform root = nbBlendRoots( gait->clip.roots[segment], gait->clip.roots[segment + 1], alpha );
+	root.p = b3MulSub( root.p, time - gait->start, gait->drift );
+	return root;
+}
+
+// The root of the clips of the gait of a figure, all of which move the root, at a phase of the gait, the slower blended
+// to the faster as far as in this update, see nbGaitClipPose
+static b3Transform nbGaitClipRoot( const nbFigure* f, float phase )
+{
+	b3Transform root = nbSampleGaitRoot( f->gaitClips, phase );
+	if ( f->gaitClipFast > 0.0f )
+	{
+		root = nbBlendRoots( root, nbSampleGaitRoot( f->gaitClips + 1, phase ), f->gaitClipFast );
+	}
+	return root;
 }
 
 void nbSampleClip( const nbClipDef* clip, float time, b3Quat* rotations, b3Transform* root, int capacity )
@@ -2894,6 +3034,11 @@ static float nbLowerSteered( nbFigure* f, b3Transform root, const int* thighs, b
 			// Beside or ahead of the hip, how long until the leg needs the root lower than NB_GAIT_LOSE below where the gait
 			// has it before it goes down for a landing foot
 			float lose = NB_GAIT_LOSE * nbFigureScale( f ) - f->gaitCrouch;
+			if ( nbGaitClipRooted( f ) )
+			{
+				// With clips of the gait that move the root, as much less as they crouch, see nbSteerFeet
+				lose = NB_GAIT_LOSE * nbFigureScale( f ) - f->gaitClipCrouch;
+			}
 			f->footOut[k] = nbTimeToLose( &level, ankles[k], heeled, toes, hip, reaches[k], lose );
 		}
 	}
@@ -2932,6 +3077,8 @@ static float nbLowerSteered( nbFigure* f, b3Transform root, const int* thighs, b
 			// nbSteerFeet
 			float bobNow = f->gaitBob * b3ComputeCosSin( 4.0f * B3_PI * ( f->gaitPhase - 0.5f * f->gaitStance ) ).cosine;
 			b3Vec3 off = b3Sub( hip, low.p );
+			bool clipRoot = nbGaitClipRooted( f );
+			b3Transform clipNow = clipRoot ? nbGaitClipRoot( f, f->gaitPhase ) : b3Transform_identity;
 			float ahead = 0.0f;
 			for ( int m = 1;; ++m )
 			{
@@ -2941,12 +3088,25 @@ static float nbLowerSteered( nbFigure* f, b3Transform root, const int* thighs, b
 					break;
 				}
 				float phase = f->gaitPhase + time * f->gaitPhaseRate;
-				float turned =
-					-f->gaitTurnSize * b3ComputeCosSin( 2.0f * B3_PI * ( phase - timeStep * f->gaitPhaseRate ) ).cosine;
-				b3CosSin yaw = b3ComputeCosSin( turned - f->gaitTurn );
-				float bobThen = f->gaitBob * b3ComputeCosSin( 4.0f * B3_PI * ( phase - 0.5f * f->gaitStance ) ).cosine;
-				b3Vec3 then = { low.p.x + yaw.cosine * off.x + yaw.sine * off.z, hip.y - ( bobThen - bobNow ),
-								low.p.z + yaw.cosine * off.z - yaw.sine * off.x };
+				b3Vec3 then;
+				if ( clipRoot )
+				{
+					// With clips of the gait that move the root, the hip moves and turns as they move the root then
+					b3Transform clipThen = nbGaitClipRoot( f, phase - floorf( phase ) );
+					b3Quat turn = b3NLerp( b3Quat_identity, b3MulQuat( clipThen.q, b3Conjugate( clipNow.q ) ), f->gaitClipEase );
+					b3Vec3 move = b3MulSV( f->gaitClipEase, b3Sub( clipThen.p, clipNow.p ) );
+					move.y *= 1.0f - f->stairWeight;
+					then = b3Add( b3Add( low.p, move ), b3RotateVector( turn, off ) );
+				}
+				else
+				{
+					float turned =
+						-f->gaitTurnSize * b3ComputeCosSin( 2.0f * B3_PI * ( phase - timeStep * f->gaitPhaseRate ) ).cosine;
+					b3CosSin yaw = b3ComputeCosSin( turned - f->gaitTurn );
+					float bobThen = f->gaitBob * b3ComputeCosSin( 4.0f * B3_PI * ( phase - 0.5f * f->gaitStance ) ).cosine;
+					then = (b3Vec3){ low.p.x + yaw.cosine * off.x + yaw.sine * off.z, hip.y - ( bobThen - bobNow ),
+									 low.p.z + yaw.cosine * off.z - yaw.sine * off.x };
+				}
 				then = nbAlongPath( &path, then, time );
 				float soon = 1.0f - time / NB_FOOT_ROLL_AHEAD;
 				float need = nbRollToReach( footBone, ankles[k], rotations[k], then, reaches[k] );
@@ -3111,10 +3271,17 @@ static void nbPlaceFeet( nbFigure* f, const b3Transform* transforms, const nbCli
 	b3Transform root = f->root;
 	if ( f->steered && f->gaitOn )
 	{
-		// Walking, the pelvis turns and sways over the feet, see nbGaitPose
+		// Walking, the pelvis turns and sways over the feet, see nbGaitPose, or as the clips of its gait have it, see
+		// nbGaitClipPose
 		rise = 0.0f;
 		root.q = b3NormalizeQuat( b3MulQuat( nbHeadingQuat( f->gaitTurn ), root.q ) );
 		root.p.x += f->gaitSway;
+		if ( nbGaitClipRooted( f ) )
+		{
+			root.q = b3NormalizeQuat( b3MulQuat( f->gaitRoot.q, root.q ) );
+			root.p.x += f->gaitRoot.p.x;
+			root.p.z += f->gaitRoot.p.z;
+		}
 	}
 	root.p.y += b3ClampFloat( rise, -NB_MAX_DROP * scale, NB_GROUND_ABOVE * scale );
 	float reaches[2];
@@ -3651,6 +3818,55 @@ static float nbGaitSlope( const nbFigure* f )
 	return f->slope;
 }
 
+// The share of its cycle a foot of a steered humanoid stands as far as it runs, see NB_GAIT_STANCE_WALK, or with clips
+// of its gait as long as in them, blended from the slower to the faster as far as it runs. A single clip walks where
+// its feet stand for half the cycle or more and runs otherwise, and the gait of the library takes the other part.
+static float nbGaitStance( const nbFigure* f, float run )
+{
+	if ( f->gaitClipCount == 0 )
+	{
+		return NB_GAIT_STANCE_WALK + ( NB_GAIT_STANCE_RUN - NB_GAIT_STANCE_WALK ) * run;
+	}
+	float walking = NB_GAIT_STANCE_WALK;
+	float running = NB_GAIT_STANCE_RUN;
+	if ( f->gaitClipCount == 1 && f->gaitClips[0].stance < 0.5f )
+	{
+		running = f->gaitClips[0].stance;
+	}
+	else
+	{
+		walking = f->gaitClips[0].stance;
+		running = f->gaitClipCount > 1 ? f->gaitClips[1].stance : running;
+	}
+	return walking + ( running - walking ) * run;
+}
+
+// The steps per second of the gait at a speed in units of sqrt(g l), in units of sqrt(g / l), see NB_GAIT_CADENCE_MAX
+static float nbCadenceModel( float u )
+{
+	return b3MaxFloat( NB_GAIT_CADENCE_MAX - NB_GAIT_CADENCE_SPAN * nbDecay( u / NB_GAIT_CADENCE_SPEED ), NB_GAIT_CADENCE_MIN );
+}
+
+// The steps per second of a steered humanoid at a speed in units of sqrt(g l), omega being sqrt(g / l), see
+// NB_GAIT_CADENCE_MAX. With clips of its gait, as many more or fewer as the clips take at the speed they were made at,
+// blended from the slower to the faster as far as it runs, so it steps as often as the clip at its speed.
+static float nbGaitCadence( const nbFigure* f, float omega, float u, float run )
+{
+	float cadence = omega * nbCadenceModel( u );
+	if ( f->gaitClipCount > 0 )
+	{
+		float unit = omega * b3MaxFloat( f->def.standHeight, 0.1f );
+		float scale[NB_MAX_GAIT_CLIPS];
+		for ( int k = 0; k < f->gaitClipCount; ++k )
+		{
+			const nbGaitClip* gait = f->gaitClips + k;
+			scale[k] = 2.0f / ( gait->cycle * omega * nbCadenceModel( gait->speed / unit ) );
+		}
+		cadence *= f->gaitClipCount > 1 ? scale[0] + ( scale[1] - scale[0] ) * run : scale[0];
+	}
+	return cadence;
+}
+
 // The speed of a steered humanoid as its gait takes it, in units of sqrt(g l) with l its stand height, how far it runs
 // rather than walks, from 0 to 1, the share of its cycle a foot stands and the share of its stance where the hip passes
 // over it, which the slope moves, see NB_GAIT_LAND_SLOPE
@@ -3660,7 +3876,7 @@ static float nbGaitSpeed( const nbWorld* world, const nbFigure* f, float* run, f
 	float u = f->gaitSpeed / sqrtf( gravity * b3MaxFloat( f->def.standHeight, 0.1f ) );
 	float x = b3ClampFloat( ( u - NB_GAIT_RUN_FROM ) / ( NB_GAIT_RUN_TO - NB_GAIT_RUN_FROM ), 0.0f, 1.0f );
 	*run = x * x * ( 3.0f - 2.0f * x );
-	*stance = NB_GAIT_STANCE_WALK + ( NB_GAIT_STANCE_RUN - NB_GAIT_STANCE_WALK ) * *run;
+	*stance = nbGaitStance( f, *run );
 	*land = NB_GAIT_LAND_WALK + ( NB_GAIT_LAND_RUN - NB_GAIT_LAND_WALK ) * *run;
 	*land = b3ClampFloat( *land + NB_GAIT_LAND_SLOPE * nbGaitSlope( f ), NB_GAIT_LAND_LOW, NB_GAIT_LAND_HIGH );
 	return u;
@@ -3670,6 +3886,17 @@ static float nbGaitSpeed( const nbWorld* world, const nbFigure* f, float* run, f
 static void nbTurnPoseBone( b3Quat* pose, int bone, b3Vec3 axis, float angle )
 {
 	pose[bone] = b3NormalizeQuat( b3MulQuat( pose[bone], b3MakeQuatFromAxisAngle( axis, angle ) ) );
+}
+
+// How far a steered humanoid runs follows how far its gait runs as a critically damped spring, see NB_RUN_TURN_LAG
+static void nbStepRunTurn( nbFigure* f, float run, float timeStep )
+{
+	float turnOmega = 1.0f / NB_RUN_TURN_LAG;
+	float turnDecay = nbDecay( turnOmega * timeStep );
+	float turnOff = f->runTurn - run;
+	float turnSum = f->runTurnRate + turnOmega * turnOff;
+	f->runTurn = b3ClampFloat( run + turnDecay * ( turnOff + timeStep * turnSum ), 0.0f, 1.0f );
+	f->runTurnRate = turnDecay * ( f->runTurnRate - turnOmega * timeStep * turnSum );
 }
 
 // The body of a steered humanoid in its gait, over the idle clip: the arms swing against the legs, the elbows bend, the
@@ -3708,21 +3935,24 @@ static void nbGaitPose( const nbWorld* world, nbFigure* f, b3Vec3 up, float time
 		nbTurnPoseBone( f->pose, nb_humanoidHead, b3Vec3_axisZ, side );
 		nbTurnPoseBone( f->pose, nb_humanoidHead, b3Vec3_axisX, -forward );
 	}
+
+	// With clips of its gait, they move the rest of the body, see nbGaitClipPose
+	if ( nbGaitClipped( f ) )
+	{
+		return;
+	}
 	float run = 0.0f, stance = 0.0f, land = 0.0f;
 	float u = f->gaitSpeed > 0.0f ? nbGaitSpeed( world, f, &run, &stance, &land ) : 0.0f;
-	float turnOmega = 1.0f / NB_RUN_TURN_LAG;
-	float turnDecay = nbDecay( turnOmega * timeStep );
-	float turnOff = f->runTurn - run;
-	float turnSum = f->runTurnRate + turnOmega * turnOff;
-	f->runTurn = b3ClampFloat( run + turnDecay * ( turnOff + timeStep * turnSum ), 0.0f, 1.0f );
-	f->runTurnRate = turnDecay * ( f->runTurnRate - turnOmega * timeStep * turnSum );
+	nbStepRunTurn( f, run, timeStep );
 	if ( f->gaitSpeed <= 0.0f )
 	{
 		return;
 	}
 	float ease = b3MinFloat( 1.0f, u / NB_GAIT_EASE );
+	ease *= f->gaitBlend;
 	b3CosSin cycle = b3ComputeCosSin( 2.0f * B3_PI * f->gaitPhase );
 	float swing = b3MinFloat( NB_GAIT_ARM * u, NB_GAIT_ARM_MAX ) * cycle.cosine;
+	swing *= f->gaitBlend;
 	nbTurnPoseBone( f->pose, nb_humanoidUpperArmLeft, b3Vec3_axisX, -swing );
 	nbTurnPoseBone( f->pose, nb_humanoidUpperArmRight, b3Vec3_axisX, swing );
 	float running = f->runTurn;
@@ -3732,6 +3962,7 @@ static void nbGaitPose( const nbWorld* world, nbFigure* f, b3Vec3 up, float time
 	nbTurnPoseBone( f->pose, nb_humanoidForearmLeft, b3Vec3_axisX, elbow - elbowSwing );
 	nbTurnPoseBone( f->pose, nb_humanoidForearmRight, b3Vec3_axisX, elbow + elbowSwing );
 	float lean = NB_GAIT_LEAN * u;
+	lean *= f->gaitBlend;
 	for ( int i = nb_humanoidBelly; i < nb_humanoidBelly + NB_SPINE_COUNT; ++i )
 	{
 		nbTurnPoseBone( f->pose, i, b3Vec3_axisX, lean / (float)NB_SPINE_COUNT );
@@ -3906,11 +4137,10 @@ static float nbGaitLead( const nbWorld* world, const nbFigure* f, float speed )
 	float u = speed / sqrtf( gravity * b3MaxFloat( f->def.standHeight, 0.1f ) );
 	float x = b3ClampFloat( ( u - NB_GAIT_RUN_FROM ) / ( NB_GAIT_RUN_TO - NB_GAIT_RUN_FROM ), 0.0f, 1.0f );
 	float run = x * x * ( 3.0f - 2.0f * x );
-	float stance = NB_GAIT_STANCE_WALK + ( NB_GAIT_STANCE_RUN - NB_GAIT_STANCE_WALK ) * run;
+	float stance = nbGaitStance( f, run );
 	float land = NB_GAIT_LAND_WALK + ( NB_GAIT_LAND_RUN - NB_GAIT_LAND_WALK ) * run;
 	land = b3ClampFloat( land + NB_GAIT_LAND_SLOPE * nbGaitSlope( f ), NB_GAIT_LAND_LOW, NB_GAIT_LAND_HIGH );
-	float cadence = omega * b3MaxFloat( NB_GAIT_CADENCE_MAX - NB_GAIT_CADENCE_SPAN * nbDecay( u / NB_GAIT_CADENCE_SPEED ),
-										NB_GAIT_CADENCE_MIN );
+	float cadence = nbGaitCadence( f, omega, u, run );
 	cadence *= 1.0f + NB_GAIT_STEEP * fabsf( f->slope );
 	return land * stance * 2.0f / cadence;
 }
@@ -4113,8 +4343,7 @@ static void nbSteerFeet( const nbWorld* world, int index, nbFigure* f, const nbC
 	float plan =
 		b3MaxFloat( runs * runs * ( 3.0f - 2.0f * runs ), fast * fast * ( 3.0f - 2.0f * fast ) ) * ( 1.0f - f->stairWeight );
 	aimAcceleration = b3MulSV( plan, aimAcceleration );
-	float cadence = omega * b3MaxFloat( NB_GAIT_CADENCE_MAX - NB_GAIT_CADENCE_SPAN * nbDecay( u / NB_GAIT_CADENCE_SPEED ),
-										NB_GAIT_CADENCE_MIN );
+	float cadence = nbGaitCadence( f, omega, u, run );
 	cadence *= 1.0f + NB_GAIT_STEEP * fabsf( f->slope );
 
 	// On stairs a step goes a whole number of treads, see NB_STAIR_KEEP, and the cadence is as much faster or slower, and
@@ -4203,7 +4432,21 @@ static void nbSteerFeet( const nbWorld* world, int index, nbFigure* f, const nbC
 	f->gaitBendRate = bendDecay * ( f->gaitBendRate - bendOmega * timeStep * bendSum );
 	float stretch = NB_LEG_REACH_WALK - NB_LEG_REACH - f->gaitBend * ( NB_LEG_REACH_WALK - NB_LEG_REACH_BENT );
 	f->legReach = NB_LEG_REACH + ( 1.0f - run ) * ease * stretch;
-	f->root.p.y += ( f->legReach - NB_LEG_REACH ) * legLength;
+	bool clipRoot = nbGaitClipRooted( f );
+	if ( clipRoot )
+	{
+		// With clips of its gait that move the root, the root goes up and down as they have it instead, see nbGaitClipPose,
+		// on stairs at the height they have it on average, as the ground under it goes up and down, and it is as much lower
+		// than the gait of the library would have it as they crouch, see nbLowerSteered
+		float clipHigh = f->gaitRoot.p.y + f->stairWeight * ( f->gaitClipLevel - f->gaitRoot.p.y );
+		f->root.p.y += clipHigh;
+		f->gaitClipCrouch = b3MaxFloat( ( f->legReach - NB_LEG_REACH ) * legLength - clipHigh, 0.0f );
+	}
+	else
+	{
+		float lift = ( f->legReach - NB_LEG_REACH ) * legLength;
+		f->root.p.y += f->gaitBlend * lift;
+	}
 
 	// How low the root goes for the leg of each foot to reach where it lands, from the hip as the clip has it, the ground
 	// there as much higher as the slope rises that far ahead
@@ -4237,11 +4480,12 @@ static void nbSteerFeet( const nbWorld* world, int index, nbFigure* f, const nbC
 		reaches[k] = reach;
 	}
 	// Running, the root goes as low as the legs need to reach both feet where they land and bobs with the steps, see
-	// NB_RUN_TURN_LAG
-	float crouch = b3MinFloat( run, springRun ) * b3MaxFloat( f->root.p.y - b3MinFloat( needs[0], needs[1] ), 0.0f );
+	// NB_RUN_TURN_LAG. With clips of its gait that move the root, it runs as low and bobs as they have it.
+	float crouch =
+		clipRoot ? 0.0f : b3MinFloat( run, springRun ) * b3MaxFloat( f->root.p.y - b3MinFloat( needs[0], needs[1] ), 0.0f );
 	float steady = crouch;
-	float bob = ease * springRun * NB_GAIT_BOB_RUN * scale;
-	float bobStance = NB_GAIT_STANCE_WALK + ( NB_GAIT_STANCE_RUN - NB_GAIT_STANCE_WALK ) * springRun;
+	float bob = clipRoot ? 0.0f : ease * springRun * NB_GAIT_BOB_RUN * scale;
+	float bobStance = nbGaitStance( f, springRun );
 
 	float swingTime = ( 1.0f - stance ) * cycle;
 
@@ -4579,94 +4823,103 @@ static void nbSteerFeet( const nbWorld* world, int index, nbFigure* f, const nbC
 							 f->footRollRate[k] * rest * goOn + ( 1.0f - run ) * ease * NB_GAIT_SWING_PITCH * calm * bump -
 							 heel * toesUp * toesUp * ( 3.0f - 2.0f * toesUp );
 
-			// Walking, the root goes down before the foot lands, as far as the leg needs to reach where it lands from
-			// where the hip is then: the frame goes on along its velocity and up or down its slope until then. As far
-			// as level ground needs, from NB_GAIT_DESCEND of the swing on, and what the foot lands lower, over the
-			// whole swing. As the figure starts or stops running, this goes or comes with the spring of
-			// NB_RUN_TURN_LAG, as the running descent comes or goes.
-			float late = b3ClampFloat( ( along - NB_GAIT_DESCEND ) / ( 1.0f - NB_GAIT_DESCEND ), 0.0f, 1.0f );
-			float walking = 1.0f - springRun;
-			float descend = walking * late * late * ( 3.0f - 2.0f * late );
-			float early = walking * smooth;
-			b3Vec3 on = b3MulAdd( nbFrameAhead( aimVelocity, aimAcceleration, aimWish, until, NULL ), slope * speed * until, up );
-			b3Vec3 landing = b3InvRotateVector( f->frame.q, b3Sub( b3SubPos( foot->target, f->frame.p ), on ) );
-			landing = b3Add( landing, onHeel[k] );
-			b3Vec3 hip = hips[k];
-			float reach = reaches[k];
-			float x = landing.x - hip.x;
-			float z = landing.z - hip.z;
-			float apart = b3MinFloat( x * x + z * z, reach * reach );
-			float need = f->root.p.y - hip.y + landing.y + sqrtf( reach * reach - apart );
-			float vault = b3MaxFloat( f->root.p.y - levels[k], 0.0f );
-			float deep = b3MaxFloat( f->root.p.y - need, 0.0f );
-			float running = 0.0f;
-			if ( f->runTurn > 0.0f )
+			// With clips of its gait that move the root, it goes as they have it, and down as far as the legs need, see
+			// nbLowerSteered
+			if ( clipRoot == false )
 			{
-				// Running, see NB_RUN_DESCEND: as far as the leg needs in each update until the foot lands, as late in its swing
-				// as the foot is then, see NB_GAIT_DESCEND, below how low it runs all the time, as far as it runs, see
-				// NB_RUN_TURN_LAG. The foot goes on its way, see nbSwingPath, the frame along its velocity and slope, and the
-				// pelvis turns as nbGaitPose turns it, an update after the phase of the gait.
-				float rate = f->gaitRate / cycle;
-				float then = f->gaitPhase + until * rate;
-				float high = bob * b3ComputeCosSin( 4.0f * B3_PI * ( then - 0.5f * bobStance ) ).cosine;
-				deep = b3MaxFloat( f->root.p.y - need - high, 0.0f );
-				float want = 0.0f;
-				if ( until <= NB_RUN_DESCEND )
+				// Walking, the root goes down before the foot lands, as far as the leg needs to reach where it lands from
+				// where the hip is then: the frame goes on along its velocity and up or down its slope until then. As far
+				// as level ground needs, from NB_GAIT_DESCEND of the swing on, and what the foot lands lower, over the
+				// whole swing. As the figure starts or stops running, this goes or comes with the spring of
+				// NB_RUN_TURN_LAG, as the running descent comes or goes.
+				float late = b3ClampFloat( ( along - NB_GAIT_DESCEND ) / ( 1.0f - NB_GAIT_DESCEND ), 0.0f, 1.0f );
+				float walking = 1.0f - springRun;
+				float descend = walking * late * late * ( 3.0f - 2.0f * late );
+				float early = walking * smooth;
+				b3Vec3 on =
+					b3MulAdd( nbFrameAhead( aimVelocity, aimAcceleration, aimWish, until, NULL ), slope * speed * until, up );
+				b3Vec3 landing = b3InvRotateVector( f->frame.q, b3Sub( b3SubPos( foot->target, f->frame.p ), on ) );
+				landing = b3Add( landing, onHeel[k] );
+				b3Vec3 hip = hips[k];
+				float reach = reaches[k];
+				float x = landing.x - hip.x;
+				float z = landing.z - hip.z;
+				float apart = b3MinFloat( x * x + z * z, reach * reach );
+				float need = f->root.p.y - hip.y + landing.y + sqrtf( reach * reach - apart );
+				float vault = b3MaxFloat( f->root.p.y - levels[k], 0.0f );
+				float deep = b3MaxFloat( f->root.p.y - need, 0.0f );
+				float running = 0.0f;
+				if ( f->runTurn > 0.0f )
 				{
-					float turned = -f->gaitTurnSize * b3ComputeCosSin( 2.0f * B3_PI * ( then - timeStep * rate ) ).cosine;
-					float soon = 1.0f - until / NB_RUN_DESCEND;
-					float lack = nbRunNeed( f->root.p, hip, landing, turned, reach, high ) - steady;
-					want = b3MaxFloat( soon * soon * ( 3.0f - 2.0f * soon ) * lack, 0.0f );
-				}
-				if ( until > timeStep )
-				{
-					float pace = f->gaitRate * f->swingHurry[k] / footTime;
-					b3Vec3 left = b3SubPos( foot->target, f->swingBase[k] );
-					b3Vec3 velocity = f->swingVelocity[k];
-					b3Vec3 lag = b3MulSub( left, until, velocity );
-					b3Vec3 bend = b3MulSV( 1.0f / ( until * until ), b3MulAdd( b3MulSV( 3.0f, lag ), until, velocity ) );
-					b3Vec3 jerk = b3MulSV( -1.0f / ( until * until * until ), b3MulAdd( b3MulSV( 2.0f, lag ), until, velocity ) );
-					b3Vec3 start = b3InvRotateVector( f->frame.q, b3SubPos( f->swingBase[k], f->frame.p ) );
-					b3Vec3 drift = b3InvRotateVector( f->frame.q, b3Sub( velocity, b3MulAdd( aimVelocity, slope * speed, up ) ) );
-					bend = b3InvRotateVector( f->frame.q, bend );
-					jerk = b3InvRotateVector( f->frame.q, jerk );
-					b3Vec3 lifted = b3InvRotateVector( f->frame.q, up );
-					b3CosSin turnPhase = b3ComputeCosSin( 2.0f * B3_PI * ( f->gaitPhase - timeStep * rate ) );
-					b3CosSin bobPhase = b3ComputeCosSin( 4.0f * B3_PI * ( f->gaitPhase - 0.5f * bobStance ) );
-					b3CosSin turnStep = b3ComputeCosSin( 2.0f * B3_PI * timeStep * rate );
-					b3CosSin bobStep = b3ComputeCosSin( 4.0f * B3_PI * timeStep * rate );
-					for ( int m = 0;; ++m )
+					// Running, see NB_RUN_DESCEND: as far as the leg needs in each update until the foot lands, as late in its
+					// swing as the foot is then, see NB_GAIT_DESCEND, below how low it runs all the time, as far as it runs, see
+					// NB_RUN_TURN_LAG. The foot goes on its way, see nbSwingPath, the frame along its velocity and slope, and the
+					// pelvis turns as nbGaitPose turns it, an update after the phase of the gait.
+					float rate = f->gaitRate / cycle;
+					float then = f->gaitPhase + until * rate;
+					float high = bob * b3ComputeCosSin( 4.0f * B3_PI * ( then - 0.5f * bobStance ) ).cosine;
+					deep = b3MaxFloat( f->root.p.y - need - high, 0.0f );
+					float want = 0.0f;
+					if ( until <= NB_RUN_DESCEND )
 					{
-						float time = (float)m * timeStep;
-						if ( time >= until || time > NB_RUN_DESCEND )
-						{
-							break;
-						}
-						float alongThen =
-							b3ClampFloat( ( swing + time * pace - f->swingStart[k] ) / ( 1.0f - f->swingStart[k] ), 0.0f, 1.0f );
-						float later = b3ClampFloat( ( alongThen - NB_GAIT_DESCEND ) / ( 1.0f - NB_GAIT_DESCEND ), 0.0f, 1.0f );
-						if ( later > 0.0f )
-						{
-							b3Vec3 there = b3MulAdd( b3MulAdd( b3MulAdd( start, time, drift ), time * time, bend ),
-													 time * time * time, jerk );
-							float share = nbLiftShare( f->swingRun[k], springRun, alongThen );
-							there = b3MulAdd( there, nbSwingLift( alongThen, share, height, higher, calm ), lifted );
-							float turned = -f->gaitTurnSize * turnPhase.cosine;
-							float need = nbRunNeed( f->root.p, hip, there, turned, reach, bob * bobPhase.cosine ) - steady;
-							float soon = 1.0f - time / NB_RUN_DESCEND;
-							float weight = later * later * ( 3.0f - 2.0f * later ) * soon * soon * ( 3.0f - 2.0f * soon );
-							want = b3MaxFloat( want, weight * need );
-						}
-						turnPhase = (b3CosSin){ turnPhase.cosine * turnStep.cosine - turnPhase.sine * turnStep.sine,
-												turnPhase.sine * turnStep.cosine + turnPhase.cosine * turnStep.sine };
-						bobPhase = (b3CosSin){ bobPhase.cosine * bobStep.cosine - bobPhase.sine * bobStep.sine,
-											   bobPhase.sine * bobStep.cosine + bobPhase.cosine * bobStep.sine };
+						float turned = -f->gaitTurnSize * b3ComputeCosSin( 2.0f * B3_PI * ( then - timeStep * rate ) ).cosine;
+						float soon = 1.0f - until / NB_RUN_DESCEND;
+						float lack = nbRunNeed( f->root.p, hip, landing, turned, reach, high ) - steady;
+						want = b3MaxFloat( soon * soon * ( 3.0f - 2.0f * soon ) * lack, 0.0f );
 					}
+					if ( until > timeStep )
+					{
+						float pace = f->gaitRate * f->swingHurry[k] / footTime;
+						b3Vec3 left = b3SubPos( foot->target, f->swingBase[k] );
+						b3Vec3 velocity = f->swingVelocity[k];
+						b3Vec3 lag = b3MulSub( left, until, velocity );
+						b3Vec3 bend = b3MulSV( 1.0f / ( until * until ), b3MulAdd( b3MulSV( 3.0f, lag ), until, velocity ) );
+						b3Vec3 jerk =
+							b3MulSV( -1.0f / ( until * until * until ), b3MulAdd( b3MulSV( 2.0f, lag ), until, velocity ) );
+						b3Vec3 start = b3InvRotateVector( f->frame.q, b3SubPos( f->swingBase[k], f->frame.p ) );
+						b3Vec3 drift =
+							b3InvRotateVector( f->frame.q, b3Sub( velocity, b3MulAdd( aimVelocity, slope * speed, up ) ) );
+						bend = b3InvRotateVector( f->frame.q, bend );
+						jerk = b3InvRotateVector( f->frame.q, jerk );
+						b3Vec3 lifted = b3InvRotateVector( f->frame.q, up );
+						b3CosSin turnPhase = b3ComputeCosSin( 2.0f * B3_PI * ( f->gaitPhase - timeStep * rate ) );
+						b3CosSin bobPhase = b3ComputeCosSin( 4.0f * B3_PI * ( f->gaitPhase - 0.5f * bobStance ) );
+						b3CosSin turnStep = b3ComputeCosSin( 2.0f * B3_PI * timeStep * rate );
+						b3CosSin bobStep = b3ComputeCosSin( 4.0f * B3_PI * timeStep * rate );
+						for ( int m = 0;; ++m )
+						{
+							float time = (float)m * timeStep;
+							if ( time >= until || time > NB_RUN_DESCEND )
+							{
+								break;
+							}
+							float alongThen = b3ClampFloat(
+								( swing + time * pace - f->swingStart[k] ) / ( 1.0f - f->swingStart[k] ), 0.0f, 1.0f );
+							float later =
+								b3ClampFloat( ( alongThen - NB_GAIT_DESCEND ) / ( 1.0f - NB_GAIT_DESCEND ), 0.0f, 1.0f );
+							if ( later > 0.0f )
+							{
+								b3Vec3 there = b3MulAdd( b3MulAdd( b3MulAdd( start, time, drift ), time * time, bend ),
+														 time * time * time, jerk );
+								float share = nbLiftShare( f->swingRun[k], springRun, alongThen );
+								there = b3MulAdd( there, nbSwingLift( alongThen, share, height, higher, calm ), lifted );
+								float turned = -f->gaitTurnSize * turnPhase.cosine;
+								float need = nbRunNeed( f->root.p, hip, there, turned, reach, bob * bobPhase.cosine ) - steady;
+								float soon = 1.0f - time / NB_RUN_DESCEND;
+								float weight = later * later * ( 3.0f - 2.0f * later ) * soon * soon * ( 3.0f - 2.0f * soon );
+								want = b3MaxFloat( want, weight * need );
+							}
+							turnPhase = (b3CosSin){ turnPhase.cosine * turnStep.cosine - turnPhase.sine * turnStep.sine,
+													turnPhase.sine * turnStep.cosine + turnPhase.cosine * turnStep.sine };
+							bobPhase = (b3CosSin){ bobPhase.cosine * bobStep.cosine - bobPhase.sine * bobStep.sine,
+												   bobPhase.sine * bobStep.cosine + bobPhase.cosine * bobStep.sine };
+						}
+					}
+					running = f->runTurn * ( steady + want );
 				}
-				running = f->runTurn * ( steady + want );
+				crouch = b3MaxFloat( crouch,
+									 descend * b3MinFloat( vault, deep ) + early * b3MaxFloat( deep - vault, 0.0f ) + running );
 			}
-			crouch =
-				b3MaxFloat( crouch, descend * b3MinFloat( vault, deep ) + early * b3MaxFloat( deep - vault, 0.0f ) + running );
 		}
 
 		b3Vec3 gap = b3SubPos( nbClipAnkle( f, clips + k, foot ), foot->plant );
@@ -4684,8 +4937,9 @@ static void nbSteerFeet( const nbWorld* world, int index, nbFigure* f, const nbC
 	// The root goes down as far as the legs need to reach a foot where it lands: running all the time and before a foot
 	// lands as far as its leg needs until then, see NB_RUN_DESCEND, up and down with the steps, lowest in the middle of
 	// the stance, walking only before a foot lands. Walking, it vaults over the leg it
-	// stands on, as high as the clip has it and down as far as the legs need to reach both feet, see nbPlaceFeet.
-	f->root.p.y -= crouch + bob * b3ComputeCosSin( 4.0f * B3_PI * ( f->gaitPhase - 0.5f * bobStance ) ).cosine;
+	// stands on, as high as the clip has it and down as far as the legs need to reach both feet, see nbPlaceFeet. With
+	// clips of its gait that move the root, it goes up and down as they have it instead of the bob and the vault.
+	f->root.p.y -= f->gaitBlend * ( crouch + bob * b3ComputeCosSin( 4.0f * B3_PI * ( f->gaitPhase - 0.5f * bobStance ) ).cosine );
 	f->gaitCrouch = crouch;
 	f->gaitBob = bob;
 	f->gaitStance = bobStance;
@@ -5970,10 +6224,65 @@ static void nbTurnBones( nbFigure* f )
 	}
 }
 
+// A steered humanoid with clips of its gait, see nbGaitClipDef: its trunk, arms and head go as the clips have them at
+// the phase its gait has after this update, see nbSteerFeet, blended from the slower to the faster clip as far as it
+// runs, see NB_RUN_TURN_LAG, and in from the idle clip as it speeds up, see NB_GAIT_EASE. Its legs keep the idle clip,
+// its gait places them. Where all its clips move the root, how far they move it from where the idle clip has it, which
+// its gait applies after it planned the feet, see nbSteerFeet and nbPlaceFeet.
+static void nbGaitClipPose( const nbWorld* world, nbFigure* f, float timeStep )
+{
+	float run = 0.0f, stance = 0.0f, land = 0.0f;
+	float u = f->gaitSpeed > 0.0f ? nbGaitSpeed( world, f, &run, &stance, &land ) : 0.0f;
+	nbStepRunTurn( f, run, timeStep );
+	float ease = b3MinFloat( 1.0f, u / NB_GAIT_EASE );
+	float phase = f->gaitPhase;
+	if ( f->gaitOn )
+	{
+		phase += timeStep * f->gaitPhaseRate;
+		phase -= floorf( phase );
+	}
+
+	b3Quat pose[nb_humanoidBoneCount];
+	b3Transform root;
+	nbSampleGaitClip( f, f->gaitClips, phase, pose, &root );
+	float fast = f->gaitClipCount > 1 ? f->runTurn : 0.0f;
+	if ( fast > 0.0f )
+	{
+		b3Quat fastPose[nb_humanoidBoneCount];
+		b3Transform fastRoot;
+		nbSampleGaitClip( f, f->gaitClips + 1, phase, fastPose, &fastRoot );
+		for ( int i = nb_humanoidBelly; i < nb_humanoidThighLeft; ++i )
+		{
+			pose[i] = b3NLerp( pose[i], fastPose[i], fast );
+		}
+	}
+	for ( int i = nb_humanoidBelly; i < nb_humanoidThighLeft; ++i )
+	{
+		f->pose[i] = b3NLerp( f->pose[i], pose[i], ease );
+	}
+
+	// The root runs as low as the faster clip has it no longer than the gait runs, as the crouch of running goes with the
+	// speed, see nbSteerFeet
+	f->gaitClipEase = ease;
+	f->gaitClipFast = b3MinFloat( fast, run );
+	f->gaitRoot = b3Transform_identity;
+	if ( f->gaitClipRoot )
+	{
+		float level = f->gaitClips[0].level;
+		if ( f->gaitClipFast > 0.0f )
+		{
+			level += f->gaitClipFast * ( f->gaitClips[1].level - level );
+		}
+		f->gaitClipLevel = ease * ( level - f->root.p.y );
+		root = nbGaitClipRoot( f, phase );
+		f->gaitRoot.p = b3MulSV( ease, b3Sub( root.p, f->root.p ) );
+		f->gaitRoot.q = b3NLerp( b3Quat_identity, b3MulQuat( root.q, b3Conjugate( f->root.q ) ), ease );
+	}
+}
+
 // The pose of a standing figure from its clip, the flinch of its trunk and what it blends from
 static void nbAnimate( nbWorld* world, int index, nbFigure* f, float timeStep )
 {
-	NB_UNUSED( world );
 	NB_UNUSED( index );
 
 	// The clip
@@ -5984,6 +6293,12 @@ static void nbAnimate( nbWorld* world, int index, nbFigure* f, float timeStep )
 		f->clipTime = b3MinFloat( f->clipTime, nbClipDuration( clip ) );
 	}
 	nbSampleFigureClip( f, clip, f->clipTime, f->pose, &f->root );
+
+	// A steered humanoid with clips of its gait moves as they have it
+	if ( f->steered && nbGaitClipped( f ) )
+	{
+		nbGaitClipPose( world, f, timeStep );
+	}
 
 	// The fade from the pose before
 	if ( f->fadeTime < f->fadeDuration )
@@ -5996,6 +6311,11 @@ static void nbAnimate( nbWorld* world, int index, nbFigure* f, float timeStep )
 			f->pose[i] = b3NLerp( f->fadePose[i], f->pose[i], alpha );
 		}
 		f->root = nbBlendRoots( f->fadeRoot, f->root, alpha );
+		if ( f->fadeFromClips )
+		{
+			f->gaitBlend = alpha;
+			f->fadeFromClips = alpha < 1.0f;
+		}
 	}
 
 	// The flinch: a critically damped spring that straightens the trunk, stepped by its exact solution, so the swing of a
@@ -6830,6 +7150,8 @@ nbFigureId nbCreateFigure( nbWorldId worldId, const nbFigureDef* def )
 	{
 		f->def.clips[k] = NULL;
 	}
+	f->def.gaitClips = NULL;
+	f->def.gaitClipCount = 0;
 	f->bones = nbAlloc( sizeof( nbBone ) * (size_t)boneCount );
 	f->pose = nbAlloc( sizeof( b3Quat ) * (size_t)boneCount );
 	f->fadePose = nbAlloc( sizeof( b3Quat ) * (size_t)boneCount );
@@ -6860,6 +7182,9 @@ nbFigureId nbCreateFigure( nbWorldId worldId, const nbFigureDef* def )
 			f->clips[k] = library->clips + k;
 		}
 	}
+	nbCopyGaitClips( f, def->gaitClips, def->gaitClipCount );
+	f->gaitRoot = b3Transform_identity;
+	f->gaitBlend = 1.0f;
 
 	for ( int i = 0; i < boneCount; ++i )
 	{
@@ -7153,6 +7478,7 @@ static void nbDestroyFigureAt( nbWorld* world, int index )
 		nbFreeClip( f->ownClips + k );
 	}
 	nbFreeClip( &f->playClip );
+	nbFreeGaitClips( f );
 	size_t boneCount = (size_t)f->boneCount;
 	nbFree( f->bones, sizeof( nbBone ) * boneCount );
 	nbFree( f->pose, sizeof( b3Quat ) * boneCount );
@@ -7368,6 +7694,26 @@ void nbFigure_PlayClip( nbFigureId figureId, const nbClipDef* clip, float speed 
 	if ( f->state == nb_figureAnimated )
 	{
 		nbStartFade( f, NB_CLIP_FADE );
+	}
+}
+
+void nbFigure_SetGaitClips( nbFigureId figureId, const nbGaitClipDef* clips, int count )
+{
+	nbFigure* f = nbGetFigureFromId( figureId, NULL );
+	if ( f == NULL )
+	{
+		return;
+	}
+
+	bool had = f->gaitClipCount > 0;
+	nbCopyGaitClips( f, clips, count );
+	f->gaitRoot = b3Transform_identity;
+	if ( f->state == nb_figureAnimated )
+	{
+		// Taken away, its own gait comes in as the body blends from the clips, so its arms do not swing twice
+		nbStartFade( f, NB_CLIP_FADE );
+		f->fadeFromClips = had && f->gaitClipCount == 0;
+		f->gaitBlend = f->fadeFromClips ? 0.0f : 1.0f;
 	}
 }
 

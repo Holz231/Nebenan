@@ -38,6 +38,22 @@ typedef struct nbClip
 	bool moveRoot;
 } nbClip;
 
+// A clip of the gait of a steered humanoid as the figure keeps it, see nbGaitClipDef: the keyframes, looping, the speed
+// it was made at, the time of its first keyframe and how long its cycle is, when each foot touches down in it from its
+// first keyframe on, the share of its cycle a foot stands, how far its root goes over the ground in a second, which the
+// figure takes out, and how high its root is on average over the cycle
+typedef struct nbGaitClip
+{
+	nbClip clip;
+	float speed;
+	float start;
+	float cycle;
+	float down[2];
+	float stance;
+	b3Vec3 drift;
+	float level;
+} nbGaitClip;
+
 // A bone of a figure: its body, the joint to its parent and what the figure needs of its definition
 typedef struct nbBone
 {
@@ -289,6 +305,25 @@ typedef struct nbFigure
 	bool playing;
 	float clipTime;
 	float clipSpeed;
+
+	// The clips of the gait of a steered humanoid, see nbFigureDef::gaitClips, the slower first, whether all of them move
+	// the root, how far they move the root in this update from where the idle clip has it, which the gait applies, how far
+	// they come in over the idle clip and the faster over the slower in this update and how far they have the root up on
+	// average, see nbGaitClipPose, and how much lower they have the root than the gait of the library would, see
+	// nbSteerFeet
+	nbGaitClip gaitClips[NB_MAX_GAIT_CLIPS];
+	int gaitClipCount;
+	bool gaitClipRoot;
+	b3Transform gaitRoot;
+	float gaitClipEase;
+	float gaitClipFast;
+	float gaitClipLevel;
+	float gaitClipCrouch;
+
+	// How far the gait of the library moves the body, from 0 to 1: as the clips of the gait are taken away while the
+	// figure walks, its own motion comes in as the body blends from the clips, see nbFigure_SetGaitClips
+	float gaitBlend;
+	bool fadeFromClips;
 
 	// The pose the figure goes for: the rotation of every bone against its rest pose, and the root in the frame. While a
 	// new clip blends in, the pose it blends from.

@@ -5,6 +5,7 @@ set(NEBENAN_SOURCE_FILES
 	figure_balance.c
 	figure.h
 	figure_clips.c
+	figure_gait.c
 	figure_steer.c
 	fracture.c
 	fracture.h

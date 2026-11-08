@@ -1202,6 +1202,29 @@ typedef struct nbClipDef
 	bool moveRoot;
 } nbClipDef;
 
+/// The most clips of the gait of a figure, see nbFigureDef::gaitClips
+#define NB_MAX_GAIT_CLIPS 2
+
+/// A clip of the gait of a steered figure, see nbFigureDef::gaitClips: one cycle of two steps straight ahead at a
+/// steady speed on level ground, and when each foot touches down and lifts off in it, as the animation pipeline of a
+/// game marks them. The keyframes may start anywhere in the cycle and end on the pose they started with, the clip
+/// loops. The figure plays it in time with its own steps, both touchdowns of the clip on those of its feet, see
+/// nbMakeHumanoidGaitClip.
+typedef struct nbGaitClipDef
+{
+	/// The keyframes of the cycle, see nbClipDef. With nbClipDef::moveRoot the pelvis bobs, sways and turns as the
+	/// keyframes have it, its way over the ground in the cycle taken out. Without, the gait of the library moves it up and
+	/// down, and it faces ahead.
+	nbClipDef clip;
+
+	/// The speed over the ground the clip was made at, in meters per second
+	float speed;
+
+	/// When the left and the right foot touch down and lift off, in seconds from the first keyframe
+	float footDown[2];
+	float footUp[2];
+} nbGaitClipDef;
+
 /// The clips of a figure, see nbFigureDef::clips and nbMakeHumanoidClip
 typedef enum nbFigureClip
 {
@@ -1349,6 +1372,19 @@ typedef struct nbFigureDef
 	/// The clips, copied. Null takes the clip of the library for the humanoid of nbMakeHumanoidBones, see
 	/// nbMakeHumanoidClip. A rig of other bones without a clip holds its rest pose there.
 	const nbClipDef* clips[nb_figureClipCount];
+
+	/// Clips of the gait of a steered humanoid, copied, see nbGaitClipDef: up to NB_MAX_GAIT_CLIPS, the slower one to walk
+	/// and the faster one to run, or one that walks where its feet stand for half its cycle or more and runs otherwise.
+	/// Its trunk, arms, head and pelvis then move as the clips have them, in time with its steps, blended in from the idle
+	/// clip as it starts and from walking to running as its gait goes over. Its feet stand for as long a share of a cycle
+	/// as in the clips, and it steps as often as they do at their speed, as much more often as it goes faster, see
+	/// nbMakeHumanoidGaitClip. Its feet go where its gait puts them, on the ground it finds, and its legs reach them: the
+	/// pelvis goes only as much lower than the clips have it as the legs need, and on stairs it goes up and down with the
+	/// ground at the height the clips have it on average. Hits act on the body as the clips move it. While a clip of
+	/// nbFigure_PlayClip plays, the library moves the body over that clip as without these, the steps keep their timing.
+	/// Without, the library moves the body over the idle clip itself. See nbFigure_SetGaitClips.
+	const nbGaitClipDef* gaitClips;
+	int gaitClipCount;
 
 	/// The motors of the ragdoll
 	nbFigureMotors motors;
