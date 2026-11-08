@@ -539,22 +539,24 @@ typedef struct nbFigure
 
 	// Not facing where it moves, see nbSteer::faceVelocity and NB_LEG_TURN_WALK: how far its legs turn from its heading,
 	// where they face in the world and how fast they turn there, how far from its heading they turn to, which they keep as
-	// it stops, whether they walk backward, whether each foot lifted as they ran backward, see nbSwingLift, how long in a
-	// row they waited for the feet on the ground and whether each of those holds them back, see NB_LEG_KEEP
+	// it stops, whether they walk backward, whether each foot lifted as they ran backward, see nbSwingLift, and as they
+	// went backward, see NB_GAIT_HEEL, how long in a row they waited for the feet on the ground and whether each of those
+	// holds them back, see NB_LEG_KEEP
 	float legTurn;
 	float legHeading;
 	float legHeadingRate;
 	float legAim;
 	bool legBack;
 	bool swingBack[2];
+	bool stepBack[2];
 	float legHeld;
 	bool legBlocks[2];
 
 	// On stairs, see nbFindFoothold: how sure the figure is that it walks stairs, from 0 to 1, how deep a tread is along its
 	// way and how much higher the next one lies, how many treads a step goes, where each foot stands or lands and where a
 	// swinging foot lifted, the ground under the middle of its sole, whether a swinging foot chose where it lands and
-	// whether it found ground there, see NB_GAIT_LEVEL, and how much faster than its cadence the gait goes so that the foot
-	// lands there as far into the stance as on level ground
+	// whether it found ground there, see NB_GAIT_LEVEL, and how much faster than its cadence the gait goes, and each
+	// swinging foot, so that the foot lands there as far into the stance as on level ground, see NB_STAIR_RATE
 	float stairWeight;
 	float stairDepth;
 	float stairRise;
@@ -564,6 +566,7 @@ typedef struct nbFigure
 	bool footholdChosen[2];
 	bool targetGround[2];
 	float gaitRate;
+	float swingRate[2];
 
 	// How far the root goes on from where it was as the gait starts or ends on stairs, see nbCarryRoot, the ground the body
 	// followed in the last update, see nbStairGround, and the frame, the height of the root over it and whether the figure

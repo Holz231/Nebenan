@@ -1655,7 +1655,11 @@ tief. Hält sie an oder wechselt sie die Richtung, drehen die Beine nicht weiter
 auf ihrer Seite bleiben, und warten darauf höchstens 0,15 s, ein Fuß, der sie aufhält, tritt, und ein schwingender Fuß
 landet schon so gedreht, wie die Beine es bis dahin sind: Beim Anhalten aus dem Seitwärtsgehen und -rennen und beim
 Wechsel von links nach rechts gehend kreuzen sich die Füße nicht mehr, auf `active-ragdoll-100` bis 17, 19 und 14 cm.
-Ein schwingender Fuß plant seinen Weg in jedem Update neu, von dort, wo er ist, so
+Rückwärts landet ein Fuß auf den Zehen, wie Menschen rückwärts gehen, ein Fuß vor der Hüfte rollt über die Ferse ab, so
+weit sein Bein ihn braucht, und ein schwingender Fuß plant, wie weit er vor der Hüfte landet, mit dem Tempo, das die
+Figur bei seiner Landung hat: Rückwärts gehend geht das Becken so 1,2 cm tiefer als im Stand, auf `active-ragdoll-101`
+7,6 cm, und kehrt die Figur von rückwärts auf vorwärts rennend um, sackt es höchstens 9,6 statt 31 cm. Ein schwingender
+Fuß plant seinen Weg in jedem Update neu, von dort, wo er ist, so
 schnell, wie er sich bewegt, zu seinem Ziel: Ändert sich das Ziel in einer Wendung oder beim Bremsen, biegt sich sein
 Weg, statt dass er springt. Von zwei Füßen am Boden hebt der zuerst ab, den sein Bein zuerst verliert, ein schwingendes
 Bein streckt sich nie ganz, und hebt ein Fuß gehend vor seiner Zeit ab, holt der Takt des Gangs das nach. Bremst oder
@@ -1674,11 +1678,13 @@ Strahlen beginnen so viel höher, wie sie tiefer suchen dürfen, so findet ein F
 die Kapsel noch eben läuft, und ein Fuß geht bis zwei Stufen weiter zu der, die der Schritt will: Wo immer die Figur
 rennend an einer Treppe ankommt, steht jeder Fuß mit der ganzen Sohle auf seiner Stufe, auf `active-ragdoll-93` bei
 sechs von 16 Starts hinauf nicht, und hinunter mit 4,5 m/s nimmt jeder Schritt drei Stufen. Damit der Fuß dort landet,
-geht der Gang in einem Schwung bis 40 % schneller oder langsamer, und die Hüfte folgt dem Boden zwischen den Fußpunkten
-statt der Kapsel, die Stufe für Stufe steigt, und nicht viel schneller, als dieser Boden steigt oder fällt: Gehend die
-Treppe hinauf wippt sie gegen die Linie der Treppe um höchstens 1 cm, hinunter um 3,0 bis 6,2 cm, rennend hinauf und
-hinunter bei 20 Starts über eine ganze Stufe um höchstens 7,2 und 8,3 cm, auf `active-ragdoll-94` bei acht Starts
-hinunter bis 18,1 cm. Spät im Schwung hält ein Fuß
+geht jeder schwingende Fuß bis 40 % schneller oder langsamer, der Takt des Gangs mit dem, der zuerst landet, und die
+Hüfte folgt dem Boden zwischen den Fußpunkten statt der Kapsel, die Stufe für Stufe steigt, und nicht viel schneller,
+als dieser Boden steigt oder fällt: Gehend die Treppe hinauf wippt sie gegen die Linie der Treppe um höchstens 1 cm,
+hinunter um 3,0 bis 6,2 cm, rennend hinauf und hinunter bei 20 Starts über eine ganze Stufe um höchstens 7,2 und 8,3 cm,
+auf `active-ragdoll-94` bei acht Starts hinunter bis 18,1 cm. Ein Fuß behält seine Stufe, solange er sie so noch
+erreicht: Rennend hinunter wippt das Becken bei 96 Starts über 0,95 m mit 3,0 und 4,5 m/s um höchstens 5,6 und 6,2 cm,
+auf `active-ragdoll-101` bis 8,9 und 20,2 cm. Spät im Schwung hält ein Fuß
 seine Stufe, so landet er nicht zwischen zwei Stufen, wenn sich die Stufe, die der Schritt will, spät ändert. Abseits
 von Treppen landet ein Fuß möglichst höchstens 25 cm höher oder tiefer als der andere: Liegt der Boden an seinem Ziel
 außerhalb, nimmt er die nächste Stelle in diesem Band in Schritten von 8 cm entlang seiner Zehen oder zur Seite, nie

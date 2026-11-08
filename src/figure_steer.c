@@ -321,6 +321,7 @@ void nbResetSteering( nbFigure* f )
 		f->swingHeight[k] = 0.0f;
 		f->swingRun[k] = 0.0f;
 		f->swingBack[k] = false;
+		f->stepBack[k] = false;
 		f->legBlocks[k] = false;
 		f->swingShare[k] = 0.0f;
 		f->swingNarrow[k] = 1.0f;
@@ -335,6 +336,7 @@ void nbResetSteering( nbFigure* f )
 		f->footOut[k] = FLT_MAX;
 		f->outBehind[k] = false;
 		f->swingHurry[k] = 1.0f;
+		f->swingRate[k] = 1.0f;
 		f->swingCalm[k] = 1.0f;
 		f->swingBase[k] = b3Pos_zero;
 		f->swingVelocity[k] = b3Vec3_zero;
