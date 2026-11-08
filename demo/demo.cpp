@@ -541,6 +541,10 @@ struct App
 	// upper arms held forward, so a program sees the figure follow its clips. Recorded once, when first asked for.
 	bool playerGaitClips = false;
 	bool playerClipArms = false;
+
+	// Whether the figure of the player faces where the camera looks instead of where it goes, as with Ctrl held, see
+	// UpdatePlayer
+	bool playerFacesCamera = false;
 	bool gaitClipsMade = false;
 	nbKeyframe gaitKeyframes[2][2][128];
 	b3Quat gaitRotations[2][2][128 * nb_humanoidBoneCount];
@@ -2784,9 +2788,11 @@ static void ApplyPlayerGaitClips( App& app )
 	nbFigure_SetGaitClips( app.player, app.gaitClips[app.playerClipArms ? 1 : 0], 2 );
 }
 
-// The figure of the player: the keys give it the velocity it wants over the ground, relative to where the camera looks, and
-// the library moves it on its own feet, see nbFigure_Steer. The camera follows its pelvis from behind its right shoulder.
-// Called between the steps of the world.
+// The figure of the player: the keys give it the velocity it wants over the ground, relative to where the camera looks,
+// and the library moves it on its own feet, see nbFigure_Steer. It faces where it goes, or with Ctrl held or "Blick zur
+// Kamera" on where the camera looks, and goes to the side and backward with its legs turned there, see
+// nbSteer::faceVelocity. The camera follows its pelvis from behind its right shoulder. Called between the steps of the
+// world.
 static void UpdatePlayer( App& app, float dt )
 {
 	if ( nbFigure_IsValid( app.player ) == false )
@@ -2832,6 +2838,13 @@ static void UpdatePlayer( App& app, float dt )
 	if ( b3LengthSquared( move ) > 0.0f )
 	{
 		steer.velocity = b3MulSV( speed, b3Normalize( move ) );
+	}
+	bool ctrl = ImGui::GetIO().WantCaptureKeyboard == false && app.keys[SAPP_KEYCODE_LEFT_CONTROL];
+	if ( app.playerFacesCamera || ctrl )
+	{
+		b3Vec3 forward = app.camera.Forward();
+		steer.heading = b3Atan2( forward.x, forward.z );
+		steer.faceVelocity = false;
 	}
 	nbFigure_Steer( app.player, &steer );
 
@@ -3185,6 +3198,15 @@ static void DrawUi( App& app )
 			{
 				ImGui::SetTooltip( "Dieselben Clips mit den Oberarmen in jedem Schlüsselbild 60° nach vorn gedreht: Die\n"
 								   "Figur folgt ihren Clips, die Beine und Füße bleiben, wie die Bibliothek sie setzt." );
+			}
+			ImGui::Checkbox( "Blick zur Kamera", &app.playerFacesCamera );
+			if ( ImGui::IsItemHovered() )
+			{
+				ImGui::SetTooltip(
+					"Die Spielfigur schaut, wohin die Kamera schaut, und geht, wohin die Tasten sie schicken:\n"
+					"seitwärts, schräg und rückwärts. Becken und Beine drehen sich dabei gehend bis 70°, rennend\n"
+					"bis 90° in die Laufrichtung, Brust und Kopf bleiben bei der Kamera, und rückwärts rennt sie\n"
+					"mit Flugphase. Strg halten tut dasselbe, solange die Taste unten ist (nbSteer::faceVelocity)." );
 			}
 		}
 	}
@@ -3582,7 +3604,8 @@ static void DrawUi( App& app )
 	{
 		ImGui::TextWrapped( "Linke Maustaste: schießen (halten = Dauerfeuer)\n"
 							"Rechte Maustaste: Kamera mit der Maus drehen\n"
-							"WASD gehen, Shift laufen, Q/E Kamera drehen\n"
+							"WASD gehen, Shift laufen, Q/E Kamera drehen,\n"
+							"Strg halten: Blick bleibt bei der Kamera (seitwärts gehen)\n"
 							"1-3 Werkzeug, R neu laden, P Pause, C Trümmer weg,\n"
 							"V VSync, F1 Menü" );
 	}
@@ -5343,6 +5366,12 @@ int main( int argc, char** argv )
 			// The figure of the player walks its course by itself, seen without the menu; F1 shows it
 			app.automation.walk = true;
 			app.showUi = false;
+		}
+		else if ( strcmp( argv[i], "--faces-camera" ) == 0 )
+		{
+			// The figure of the player faces where the camera looks, as the menu does with "Blick zur Kamera": with
+			// --walk-side it walks its course to its right
+			app.playerFacesCamera = true;
 		}
 		else if ( strcmp( argv[i], "--gait-clips" ) == 0 || strcmp( argv[i], "--clip-arms" ) == 0 )
 		{

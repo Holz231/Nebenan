@@ -1586,7 +1586,12 @@ typedef struct nbSteer
 
 	/// Face where it moves instead, while it moves faster than 0.1 m/s, and keep that heading when it stops. It goes
 	/// across its heading no faster than 0.3 m/s or 0.17 of the speed it wants, whichever is more, and backward no faster
-	/// than 0.3 m/s, for the humanoid of 1.8 m: it turns to where it wants to go and gets there as it faces it.
+	/// than 0.3 m/s, for the humanoid of 1.8 m: it turns to where it wants to go and gets there as it faces it. Without
+	/// it, the figure faces heading and goes with velocity to the side, at a slant or backward. A steered humanoid then
+	/// turns its pelvis and legs toward where it goes, walking up to 70 and running up to 90 degrees from its heading,
+	/// while its chest and head stay with the heading, and going more than 110 degrees from it, it walks or runs backward.
+	/// Its legs turn no faster than its heading may, and it goes across where they walk and against them no faster than
+	/// they carry it.
 	bool faceVelocity;
 } nbSteer;
 

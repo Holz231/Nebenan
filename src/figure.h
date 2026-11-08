@@ -535,6 +535,16 @@ typedef struct nbFigure
 	float gaitStance;
 	float gaitPhaseRate;
 
+	// Not facing where it moves, see nbSteer::faceVelocity and NB_LEG_TURN_WALK: how far its legs turn from its heading,
+	// where they face in the world and how fast they turn there, how far from its heading they turn to, which they keep as
+	// it stops, whether they walk backward, and whether each foot lifted as they ran backward, see nbSwingLift
+	float legTurn;
+	float legHeading;
+	float legHeadingRate;
+	float legAim;
+	bool legBack;
+	bool swingBack[2];
+
 	// On stairs, see nbFindFoothold: how sure the figure is that it walks stairs, from 0 to 1, how deep a tread is along its
 	// way and how much higher the next one lies, how many treads a step goes, where each foot stands or lands and where a
 	// swinging foot lifted, the ground under the middle of its sole, whether a swinging foot chose where it lands and
@@ -603,6 +613,16 @@ void nbResetSteering( nbFigure* f );
 
 // An angle from minus pi to pi
 float nbWrapAngle( float angle );
+
+// An angle turned toward the one it wants at the turn rate of a steered figure, which it gets to and slows down from at
+// its turn acceleration: as fast as it can still stop there, slowing down by as much in every update, see
+// figure_steer.c. It writes how fast it turns to rate.
+float nbTurnToward( float angle, float want, float* rate, const nbFigureSteering* def, float timeStep );
+
+// How far a steered humanoid that does not face where it moves turns its legs from its heading to go with a velocity in
+// its frame, whether they walk backward then, and how far across where they walk it goes once they turned there, in
+// parts of its speed, see NB_LEG_TURN_WALK in figure.c
+float nbLegTurnFor( const nbFigure* f, b3Vec3 local, bool* back, float* across );
 
 // A blast at a point, before Box3D pushes the dynamic bodies around it, see nbWorld_ApplyImpact: a standing figure that it
 // hits hard enough falls first, so the blast throws its bones, a weaker blast makes it flinch

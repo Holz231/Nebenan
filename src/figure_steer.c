@@ -56,10 +56,11 @@
 #define NB_STEER_SLOPE_LENGTH 0.5f
 #define NB_STEER_SLOPE_MAX 1.0f
 
-// Facing where it moves, see nbSteer::faceVelocity, a figure goes across its heading no faster than NB_STEER_SIDE_SPEED in
-// meters per second for the humanoid of 1.8 m or NB_STEER_SIDE_SHARE of the speed it wants, whichever is more, and
-// backward no faster than NB_STEER_BACK_SPEED: it turns to where it wants to go and gets there as it faces it. Going off
-// to the side faster than its heading turned, the capsule left the feet behind it, across each other.
+// Facing where it moves, see nbSteer::faceVelocity, a figure goes across its heading no faster than NB_STEER_SIDE_SPEED
+// in meters per second for the humanoid of 1.8 m or NB_STEER_SIDE_SHARE of the speed it wants, whichever is more, and
+// backward no faster than NB_STEER_BACK_SPEED: it turns to where it wants to go and gets there as it faces it. Going
+// off to the side faster than its heading turned, the capsule left the feet behind it, across each other. Not facing
+// where it moves, it goes so across where its legs walk and against it, see nbLegTurnFor.
 #define NB_STEER_SIDE_SPEED 0.3f
 #define NB_STEER_SIDE_SHARE 0.17f
 #define NB_STEER_BACK_SPEED 0.3f
@@ -219,6 +220,29 @@ float nbWrapAngle( float angle )
 	return angle;
 }
 
+float nbTurnToward( float angle, float want, float* rate, const nbFigureSteering* def, float timeStep )
+{
+	float turn = nbWrapAngle( want - angle );
+	float turnRate = b3MaxFloat( def->turnRate, 0.0f );
+	if ( def->turnAcceleration > 0.0f && timeStep > 0.0f )
+	{
+		float change = def->turnAcceleration * timeStep;
+		float stop = sqrtf( 2.0f * def->turnAcceleration * fabsf( turn ) + 0.25f * change * change ) - 0.5f * change;
+		float aim = b3MinFloat( stop, turnRate );
+		aim = turn < 0.0f ? -aim : aim;
+		*rate += b3ClampFloat( aim - *rate, -change, change );
+		if ( fabsf( turn ) <= change * timeStep && fabsf( *rate ) <= change )
+		{
+			*rate = turn / timeStep;
+		}
+		return nbWrapAngle( angle + *rate * timeStep );
+	}
+	float mostTurn = turnRate * timeStep;
+	float step = b3ClampFloat( turn, -mostTurn, mostTurn );
+	*rate = timeStep > 0.0f ? step / timeStep : 0.0f;
+	return nbWrapAngle( angle + step );
+}
+
 // The points that bound a bone in its frame, and how far its shape reaches around them
 static int nbBoneBounds( const nbBone* bone, b3Vec3* points, float* round )
 {
@@ -247,6 +271,11 @@ void nbResetSteering( nbFigure* f )
 	f->airTime = 0.0f;
 	f->slope = 0.0f;
 	f->headingRate = 0.0f;
+	f->legTurn = 0.0f;
+	f->legHeading = f->heading;
+	f->legHeadingRate = 0.0f;
+	f->legAim = 0.0f;
+	f->legBack = false;
 	f->gaitOn = false;
 	f->gaitSpeed = 0.0f;
 	f->gaitVelocity = b3Vec3_zero;
@@ -290,6 +319,7 @@ void nbResetSteering( nbFigure* f )
 		f->swingStart[k] = 0.0f;
 		f->swingHeight[k] = 0.0f;
 		f->swingRun[k] = 0.0f;
+		f->swingBack[k] = false;
 		f->swingShare[k] = 0.0f;
 		f->swingNarrow[k] = 1.0f;
 		f->footHeading[k] = f->heading;
@@ -382,6 +412,34 @@ bool nbMoveSteered( nbWorld* world, int index, nbFigure* f, float timeStep, b3Ve
 			}
 			along = b3MaxFloat( along, -back );
 			wish = b3MulAdd( across, along, forward );
+		}
+	}
+	else if ( f->boneCount == nb_humanoidBoneCount )
+	{
+		// Not facing where it moves, a humanoid goes across where its legs walk and back against it no faster than a step
+		// to the side or back, but for as far across as they walk once turned there, see nbLegTurnFor: it keeps the
+		// direction it wants and gets as fast there as its legs carry it. Other figures have no gait that turns.
+		b3Vec3 local = b3InvRotateVector( f->frame.q, wish );
+		float speed = sqrtf( local.x * local.x + local.z * local.z );
+		if ( speed > 0.0f )
+		{
+			bool backward;
+			float turned;
+			nbLegTurnFor( f, local, &backward, &turned );
+			float legs = f->legTurn + ( f->legBack ? B3_PI : 0.0f );
+			b3CosSin off = b3ComputeCosSin( nbWrapAngle( b3Atan2( local.x, local.z ) - legs ) );
+			float side = b3MaxFloat( b3MaxFloat( NB_STEER_SIDE_SPEED * scale, NB_STEER_SIDE_SHARE * speed ), turned * speed );
+			float back = NB_STEER_BACK_SPEED * scale;
+			float most = speed;
+			if ( fabsf( off.sine ) * most > side )
+			{
+				most = side / fabsf( off.sine );
+			}
+			if ( off.cosine * most < -back )
+			{
+				most = back / -off.cosine;
+			}
+			wish = b3MulSV( most / speed, wish );
 		}
 	}
 	// The gait plans with the velocity the capsule goes for, see nbSteerFeet
@@ -539,8 +597,7 @@ bool nbMoveSteered( nbWorld* world, int index, nbFigure* f, float timeStep, b3Ve
 		f->slope += share * ( slope - f->slope );
 	}
 
-	// The heading it wants, or where it moves, at its turn rate, which it gets to and slows down from at its turn
-	// acceleration: as fast as it can still stop at the heading it wants, slowing down by as much in every update
+	// The heading it wants, or where it moves, see nbTurnToward
 	float heading = f->heading;
 	float want = f->steer.heading;
 	if ( f->steer.faceVelocity )
@@ -550,28 +607,7 @@ bool nbMoveSteered( nbWorld* world, int index, nbFigure* f, float timeStep, b3Ve
 		bool moving = local.x * local.x + local.z * local.z > NB_STEER_FACE_SPEED * NB_STEER_FACE_SPEED;
 		want = moving ? b3Atan2( local.x, local.z ) : heading;
 	}
-	float turn = nbWrapAngle( want - heading );
-	float turnRate = b3MaxFloat( def->turnRate, 0.0f );
-	if ( def->turnAcceleration > 0.0f && timeStep > 0.0f )
-	{
-		float change = def->turnAcceleration * timeStep;
-		float stop = sqrtf( 2.0f * def->turnAcceleration * fabsf( turn ) + 0.25f * change * change ) - 0.5f * change;
-		float aim = b3MinFloat( stop, turnRate );
-		aim = turn < 0.0f ? -aim : aim;
-		f->headingRate += b3ClampFloat( aim - f->headingRate, -change, change );
-		if ( fabsf( turn ) <= change * timeStep && fabsf( f->headingRate ) <= change )
-		{
-			f->headingRate = turn / timeStep;
-		}
-		heading = nbWrapAngle( heading + f->headingRate * timeStep );
-	}
-	else
-	{
-		float mostTurn = turnRate * timeStep;
-		float step = b3ClampFloat( turn, -mostTurn, mostTurn );
-		f->headingRate = timeStep > 0.0f ? step / timeStep : 0.0f;
-		heading = nbWrapAngle( heading + step );
-	}
+	heading = nbTurnToward( heading, want, &f->headingRate, def, timeStep );
 	f->heading = heading;
 	f->frame = nbMakeFrame( world, position, heading );
 

@@ -308,7 +308,9 @@ Bildzeit.
   Treppe aus zehn Stufen von 15 cm zu einer Plattform von 1,5 m, ein Hang von 60°, an dem sie stehen bleibt, ein Block
   von 30 cm, auf den sie steigt, einer von 60 cm, der sie aufhält, eine Ziegelwand und drei Figuren, in die man laufen
   kann. **W A S D** gehen relativ zum Blick, mit **Shift** rennt sie, **Q / E** und die Maus mit der rechten Taste
-  drehen die Kamera, die ihr von hinten folgt. Die Tasten geben nur die Geschwindigkeit, die sie will, gehen, rennen,
+  drehen die Kamera, die ihr von hinten folgt. Mit gehaltener **Strg**-Taste oder dem Haken **Blick zur Kamera** schaut
+  sie, wohin die Kamera schaut, und geht seitwärts, schräg und rückwärts, wohin die Tasten sie schicken. Die Tasten
+  geben nur die Geschwindigkeit, die sie will, gehen, rennen,
   steigen und fallen tut sie in der Bibliothek, siehe Gesteuerte Figur. Gewehr, Granate und Kanone treffen sie wie jede
   Figur. **Gang nach Clips** lässt sie nach Clips ihres Gangs gehen und rennen, dem Gang der Bibliothek, aufgezeichnet
   mit `nbMakeHumanoidGaitClip`, **Arme im Clip vorn** dreht in diesen Clips die Oberarme 60° nach vorn, so sieht man
@@ -325,7 +327,8 @@ Messungen reißen die Stadt selbst ab, Lauf für Lauf, auch mit `--demolition`, 
 vorgegebene Schussfolge ab, `--stick` dreht in der Szene mit Figuren ohne Menü den Blick nach einem Skript, und der
 Stock schwingt mit, langsam gegen einen Kopf und schnell über eine Brust, `--walk` lässt die Spielfigur ohne Menü den
 Parcours gehen, die Treppe hinauf, über die Plattform rennen und von ihrer Kante springen, `--walk-side` dasselbe von
-der Seite gesehen, `--gait-clips` und `--clip-arms` schalten „Gang nach Clips“ und „Arme im Clip vorn“ ein,
+der Seite gesehen, `--faces-camera` setzt den Haken „Blick zur Kamera“, mit `--walk-side` geht sie den Parcours dann
+seitwärts, `--gait-clips` und `--clip-arms` schalten „Gang nach Clips“ und „Arme im Clip vorn“ ein,
 `--frames N` beendet nach N Bildern und meldet Bildzeiten, CPU-Zeiten, Uploads und Dreiecke pro Bild
 und einen Hash der Lagen aller Bruchstücke und der Knochen der Figuren, `--screenshot datei.ppm` speichert das letzte
 Bild (nur OpenGL).
@@ -1639,7 +1642,16 @@ seiner Sohle mit, sobald der Blick mehr als 35° von ihm weg ist, ein schwingend
 mindestens 10 cm daneben, und ein Fuß, den sein Bein nicht mehr erreicht, hebt ab. So kreuzen sich in Drehungen um 45
 bis 180° die Knie nie, auf `active-ragdoll-95` bis 25 cm, das Becken geht gehend höchstens 10,9 und rennend 14,8 cm
 tiefer als im Stand, vorher bis 27,8 und 68,3 cm, und die Oberschenkel gehen gehend höchstens 66,5° und rennend 103,3°
-auseinander, vorher bis 100 und 177°. Ein schwingender Fuß plant seinen Weg in jedem Update neu, von dort, wo er ist, so
+auseinander, vorher bis 100 und 177°. Schaut sie nicht, wohin sie geht, `nbSteer::faceVelocity` false, behält sie ihren
+Blick, `nbSteer::heading`, und geht seitwärts, schräg und rückwärts, wohin das Spiel sie schickt: Becken und Beine
+drehen sich zur Laufrichtung, gehend bis 70° und rennend bis 90° vom Blick, die Brust dreht drei Viertel davon zurück
+und Hals und Kopf den Rest, so schaut der Kopf weiter in die Blickrichtung, wie bei Menschen, die in eine Richtung
+schauen und in eine andere gehen. Geht sie mehr als 110° vom Blick weg, gehen die Beine rückwärts, gehend mit 11 %
+höherer Kadenz und rennend mit Flugphase. Dreht sich nur der Blick, halten die Beine ihre Richtung und folgen so
+schnell, wie sich die Figur drehen darf, und quer zu den Beinen und gegen sie geht die Kapsel nicht schneller, als die
+Beine sie tragen. Seitwärts mit 1,6 m/s geht das Becken so 8,3 cm tiefer als im Stand, auf `active-ragdoll-99` 29 cm,
+mit 3,0 m/s stehen die Füße 15 cm auseinander statt 56 cm gekreuzt, und rückwärts rennend geht das Becken 10 statt 37 cm
+tief. Ein schwingender Fuß plant seinen Weg in jedem Update neu, von dort, wo er ist, so
 schnell, wie er sich bewegt, zu seinem Ziel: Ändert sich das Ziel in einer Wendung oder beim Bremsen, biegt sich sein
 Weg, statt dass er springt. Von zwei Füßen am Boden hebt der zuerst ab, den sein Bein zuerst verliert, ein schwingendes
 Bein streckt sich nie ganz, und hebt ein Fuß gehend vor seiner Zeit ab, holt der Takt des Gangs das nach. Bremst oder
@@ -2315,6 +2327,11 @@ nbFigureId player = nbCreateFigure( world, &figureDef );
 // W A S D relativ zum Blick, Shift rennt: 1,6 oder 4,8 m/s über den Boden, und sie schaut, wohin sie geht
 nbSteer steer = { b3MulSV( shift ? 4.8f : 1.6f, wish ), 0.0f, true };
 nbFigure_Steer( player, &steer );
+
+// Oder sie schaut, wohin die Kamera schaut, kameraBlick in Radiant um die Senkrechte, und geht seitwärts, schräg
+// oder rückwärts, wohin die Tasten sie schicken: Becken und Beine drehen dorthin, Brust und Kopf bleiben beim Blick
+nbSteer seitwaerts = { b3MulSV( shift ? 4.8f : 1.6f, wish ), kameraBlick, false };
+nbFigure_Steer( player, &seitwaerts );
 
 nbFigureInfo playerInfo = nbFigure_GetInfo( player );   // moveVelocity, onGround, und ob sie steht oder fällt
 ```
