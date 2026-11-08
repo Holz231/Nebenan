@@ -1645,14 +1645,17 @@ die Kapsel noch eben läuft, und ein Fuß geht bis zwei Stufen weiter zu der, di
 rennend an einer Treppe ankommt, steht jeder Fuß mit der ganzen Sohle auf seiner Stufe, auf `active-ragdoll-93` bei
 sechs von 16 Starts hinauf nicht, und hinunter mit 4,5 m/s nimmt jeder Schritt drei Stufen. Damit der Fuß dort landet,
 geht der Gang in einem Schwung bis 40 % schneller oder langsamer, und die Hüfte folgt dem Boden zwischen den Fußpunkten
-statt der Kapsel, die Stufe für Stufe steigt: Die Treppe hinauf wippt sie gegen die Linie der Treppe um höchstens 1 cm,
-hinunter um 3,0 bis 6,2 cm. Alle Abfragen einer Figur lassen ihre eigenen Knochen weg, bevor Box3D sie rechnet,
-`b3QueryFilter::excludeGroup`, siehe [`extern/README.md`](extern/README.md): Eine gesteuerte Figur kostet im Update der
-Figuren auf der VM 8 bis 10 µs, je nachdem, wie schnell die VM gerade rechnet, eine stehende 1,2 bis 1,5 µs. Treffer
-wirken wie auf jede stehende Figur, mit den Geschwindigkeiten, die ihre Knochen gerade haben: Nach einem Stoß von hinten
-mit 120 N s auf eine Figur, die mit 4,5 m/s rennt, fliegt ihr Becken mit 5,3 m/s nach vorn, und wenn sie aufgestanden
-ist, geht sie weiter, wohin das Spiel will. Ein leichter Stoß gibt der Kapsel Geschwindigkeit, statt die Figur schwanken
-zu lassen. Mit 1, 2 und 4 Threads bewegt sie sich bitgleich, Figuren ohne `steered` rechnen wie vorher.
+statt der Kapsel, die Stufe für Stufe steigt, und nicht viel schneller, als dieser Boden steigt oder fällt: Gehend die
+Treppe hinauf wippt sie gegen die Linie der Treppe um höchstens 1 cm, hinunter um 3,0 bis 6,2 cm, rennend hinauf und
+hinunter bei jedem Start um höchstens 7,1 cm, auf `active-ragdoll-94` hinunter bis 18,1 cm. Spät im Schwung hält ein Fuß
+seine Stufe, so landet er nicht zwischen zwei Stufen, wenn sich die Stufe, die der Schritt will, spät ändert. Alle
+Abfragen einer Figur lassen ihre eigenen Knochen weg, bevor Box3D sie rechnet, `b3QueryFilter::excludeGroup`, siehe
+[`extern/README.md`](extern/README.md): Eine gesteuerte Figur kostet im Update der Figuren auf der VM 8 bis 10 µs, je
+nachdem, wie schnell die VM gerade rechnet, eine stehende 1,2 bis 1,5 µs. Treffer wirken wie auf jede stehende Figur,
+mit den Geschwindigkeiten, die ihre Knochen gerade haben: Nach einem Stoß von hinten mit 120 N s auf eine Figur, die mit
+4,5 m/s rennt, fliegt ihr Becken mit 5,3 m/s nach vorn, und wenn sie aufgestanden ist, geht sie weiter, wohin das Spiel
+will. Ein leichter Stoß gibt der Kapsel Geschwindigkeit, statt die Figur schwanken zu lassen. Mit 1, 2 und 4 Threads
+bewegt sie sich bitgleich, Figuren ohne `steered` rechnen wie vorher.
 
 **Aktiver Ragdoll.** Eine Figur, die sich nicht fangen kann, eine Last von oben ab `crushForce` (600 N), Boden, der
 wegbricht oder sich schneller als 1,5 m/s bewegt, und `nbFigure_Knockdown` machen eine Figur zum aktiven Ragdoll, mit
@@ -3355,10 +3358,10 @@ glslang und SPIRV-Cross geprüft. Ein Lauf von sokol-shdc schreibt ihn neu.
   Bibliothek für eine Figur mit `steered`, siehe Gesteuerte Figur, Springen, Klettern, Ducken und Gehen im Kampf aber
   nicht, die spielt das Spiel selbst mit `nbFigure_Move` und eigenen Clips. Auf Stufen, die kürzer sind als die Sohle
   von 26 cm, ragt beim gesteuerten Menschen eine Ferse oder Fußspitze über eine Kante, treppab wippt die Hüfte bis 7 cm,
-  auf Treppen, die keine Messung sah, mit 2,5 m/s bis 10 cm, rennend mit 3,0 m/s je nach Start bis 18 cm, und hält er
-  auf einer Treppe an, landet ein Fuß beim Anhalten oder Weitergehen auch einmal teils über einer Kante. Ein Fuß steht
-  auf dem, was eine Kugel unter der Mitte seiner Sohle trifft: Ragt Schutt nur unter Ferse oder Zehen auf, taucht der
-  Fuß dort ein, wie jeder kinematische Körper.
+  auf Treppen, die keine Messung sah, mit 2,5 m/s bis 10 cm, und hält er auf einer Treppe an, landet ein Fuß beim
+  Anhalten oder Weitergehen auch einmal teils über einer Kante. Ein Fuß steht auf dem, was eine Kugel unter der Mitte
+  seiner Sohle trifft: Ragt Schutt nur unter Ferse oder Zehen auf, taucht der Fuß dort ein, wie jeder kinematische
+  Körper.
 - Eine Figur, die sich fängt, hält ihr Becken wie auf `ragdoll-11` mit einem begrenzten Drehmoment gegen die Welt
   aufrecht, nicht nur mit ihren Beinen. Ein Mensch, der stolpert, tut das mit seinem Gleichgewichtssinn, hier tut es ein
   Gelenk von Box3D. Ein Spiel, das es rein physikalisch will, setzt `uprightAgainstWorld` auf aus, dann hält das Gelenk

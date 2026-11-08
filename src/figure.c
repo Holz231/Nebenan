@@ -3798,8 +3798,9 @@ static b3Pos nbClipAnkle( const nbFigure* f, const nbClipFoot* clip, const nbFoo
 
 // The ground under the hip of a steered humanoid on stairs, over its frame along up: between the footholds behind and ahead
 // of the hip along its way, where the feet stand or land and where they last lifted. The body goes up and down stairs as
-// smoothly as on a ramp, where the frame of the capsule goes up or down tread by tread.
-static float nbStairGround( const nbFigure* f, b3Vec3 up, b3Vec3 way, b3Pos hip )
+// smoothly as on a ramp, where the frame of the capsule goes up or down tread by tread. With footholds on both sides,
+// slope is how steeply the ground between them goes up along the way, and otherwise it stays as it is.
+static float nbStairGround( const nbFigure* f, b3Vec3 up, b3Vec3 way, b3Pos hip, float* slope )
 {
 	float behind = 0.0f;
 	float ahead = 0.0f;
@@ -3828,6 +3829,7 @@ static float nbStairGround( const nbFigure* f, b3Vec3 up, b3Vec3 way, b3Pos hip 
 	}
 	if ( back && front )
 	{
+		*slope = ( high - low ) / ( ahead - behind );
 		return low + ( high - low ) * ( -behind / ( ahead - behind ) );
 	}
 	return back ? low : high;
@@ -4040,16 +4042,20 @@ static void nbSteerFeet( const nbWorld* world, int index, nbFigure* f, const nbC
 	b3Vec3 ahead = b3MulSV( lead, aimVelocity );
 
 	// On stairs the root goes up or down with the footholds under it, see nbStairGround, the ground under it no faster than
-	// NB_STAIR_FOLLOW off the slope of the stairs, so the body does not jump where the footholds change
+	// NB_STAIR_FOLLOW off the slope of the ground between the footholds around the hip, or of the stairs where it has
+	// not both, so the body does not jump where the footholds change, and it does not go down or up the stairs before
+	// the ground under it does, while the capsule still runs on level ground
 	float lifted = 0.0f;
 	if ( f->stairWeight > 0.0f )
 	{
 		b3Vec3 way = speed > 0.0f ? b3MulSV( 1.0f / speed, velocity ) : b3RotateVector( f->frame.q, b3Vec3_axisZ );
 		b3Pos hip = b3TransformWorldPoint( f->frame, f->root.p );
-		float keep = b3Dot( b3SubPos( f->stairBase, f->frame.p ), up ) +
-					 nbGaitSlope( f ) * b3Dot( b3SubPos( f->frame.p, f->carryFrame ), way );
+		float steep = nbGaitSlope( f );
+		float ground = nbStairGround( f, up, way, hip, &steep );
+		float keep =
+			b3Dot( b3SubPos( f->stairBase, f->frame.p ), up ) + steep * b3Dot( b3SubPos( f->frame.p, f->carryFrame ), way );
 		float most = NB_STAIR_FOLLOW * scale * timeStep;
-		lifted = b3ClampFloat( f->stairWeight * nbStairGround( f, up, way, hip ), keep - most, keep + most );
+		lifted = b3ClampFloat( f->stairWeight * ground, keep - most, keep + most );
 		f->root.p.y += lifted;
 	}
 	f->stairBase = b3OffsetPos( f->frame.p, b3MulSV( lifted, up ) );
@@ -4296,7 +4302,9 @@ static void nbSteerFeet( const nbWorld* world, int index, nbFigure* f, const nbC
 					// It keeps the tread while the gait puts the foot near it, but not once the figure slows down short of it
 					shift = b3Dot( b3SubPos( f->foothold[k], middle ), forward );
 					float keep = f->stairDepth > 0.0f ? 0.5f * f->stairDepth : NB_FOOTHOLD_REACH * scale;
-					f->footholdChosen[k] = fabsf( shift ) <= keep;
+					// and late in the swing, as it keeps more and more of where it aimed, it keeps the tread, so it
+					// does not land between two treads as the step the gait wants changes, see NB_GAIT_AIM_FADE
+					f->footholdChosen[k] = fabsf( shift ) <= keep || swing > NB_GAIT_AIM - NB_GAIT_AIM_FADE;
 				}
 				if ( f->footholdChosen[k] == false )
 				{

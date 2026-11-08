@@ -3914,11 +3914,13 @@ static int SteerStairsTest( void )
 }
 
 // A steered figure runs up and down the twenty stairs of 15 by 30 cm at 3.0 and 4.5 m/s, from starts 0, 0.2, 0.4 and
-// 0.6 m farther back: a foot that stands flat stands with heel and toes on one tread, no more than 1.5 cm off it, and
+// 0.6 m farther back: a foot that stands flat stands with heel and toes on one tread, no more than 1.5 cm off it,
 // running down at 4.5 m/s every step from the third landing on the stairs to the one before the last goes the same
-// number of treads. Until active-ragdoll-93, from some of these starts a foot that landed on the first treads up the
-// stairs stood across the edge of the next one with its toes in it, and down at 4.5 m/s the steps went three or five
-// treads by the start, see nbMeasureTread and nbFindFoothold
+// number of treads, and from one landing to the next the pelvis goes up and down no more than 10 cm against the line of
+// the stairs. Until active-ragdoll-93, from some of these starts a foot that landed on the first treads up the stairs
+// stood across the edge of the next one with its toes in it, and down at 4.5 m/s the steps went three or five treads
+// by the start, see nbMeasureTread and nbFindFoothold. Until active-ragdoll-94, running down the pelvis went up and
+// down by up to 17.5 cm, see nbStairGround
 static int SteerRunStairsTest( void )
 {
 	const int feet[2] = { nb_humanoidFootLeft, nb_humanoidFootRight };
@@ -3939,10 +3941,21 @@ static int SteerRunStairsTest( void )
 		int flat = 0;
 		float off = 0.0f;
 		bool swings[2] = { false, false };
+		// How far the pelvis goes up and down against the line of the stairs from one landing to the next, from 0.8 m
+		// onto the stairs to 0.8 m before their end
+		float lineLow = FLT_MAX, lineHigh = -FLT_MAX, bob = 0.0f;
 		for ( int i = 0; i < 300; ++i )
 		{
 			StepFigures( &scene, 1 );
 			const nbFigure* f = GetSteered( &scene, figure );
+			b3Vec3 frame = b3ToVec3( nbFigure_GetFrame( figure ).p );
+			b3Vec3 pelvis = b3ToVec3( b3Body_GetPosition( nbFigure_GetBody( figure, nb_humanoidPelvis ) ) );
+			if ( frame.z > 3.8f && frame.z < 8.2f )
+			{
+				float line = pelvis.y - 0.5f * ( pelvis.z - 3.0f );
+				lineLow = b3MinFloat( lineLow, line );
+				lineHigh = b3MaxFloat( lineHigh, line );
+			}
 			for ( int k = 0; k < 2; ++k )
 			{
 				b3Vec3 heel = SoleEdge( &scene, f, feet[k], -1.0f );
@@ -3963,6 +3976,12 @@ static int SteerRunStairsTest( void )
 					treads[landings] = middle;
 					landings += 1;
 				}
+				if ( swings[k] && f->footSwings[k] == false && lineHigh > lineLow )
+				{
+					bob = b3MaxFloat( bob, lineHigh - lineLow );
+					lineLow = FLT_MAX;
+					lineHigh = -FLT_MAX;
+				}
 				swings[k] = f->footSwings[k];
 			}
 		}
@@ -3973,12 +3992,14 @@ static int SteerRunStairsTest( void )
 			same = same && abs( treads[j] - treads[j - 1] ) == each;
 		}
 		printf( "  %s at %.1f m/s from %.1f m back: %d landings on the stairs, steps of %d treads from the third on%s, %d flat "
-				"stances, %d across an edge, a sole edge %.4f m off its tread at most\n",
-				down ? "down" : "up", speed, back, landings, each, same ? "" : " and others", flat, across, off );
+				"stances, %d across an edge, a sole edge %.4f m off its tread at most, the pelvis up and down %.3f m against the "
+				"line of the stairs\n",
+				down ? "down" : "up", speed, back, landings, each, same ? "" : " and others", flat, across, off, bob );
 		ENSURE( nbFigure_GetState( figure ) == nb_figureAnimated );
 		ENSURE( landings >= 4 );
 		ENSURE( flat > 0 && across == 0 );
 		ENSURE( off <= 0.015f );
+		ENSURE( bob <= 0.1f );
 		if ( down && speed > 4.0f )
 		{
 			ENSURE( each >= 1 && same );
@@ -5079,7 +5100,7 @@ static int ThinBoardTest( void )
 #define NB_EXPECTED_FOLLOW_HASH 0x6f1d5739u
 
 // See RunSteerScenario
-#define NB_EXPECTED_STEER_HASH 0x96d10dd7u
+#define NB_EXPECTED_STEER_HASH 0xdbb5dbb9u
 
 static int FigureFollowDeterminismTest( void )
 {
