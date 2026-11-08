@@ -281,6 +281,7 @@ void nbResetSteering( nbFigure* f )
 		f->swingStart[k] = 0.0f;
 		f->swingHeight[k] = 0.0f;
 		f->swingRun[k] = 0.0f;
+		f->swingShare[k] = 0.0f;
 		f->swingNarrow[k] = 1.0f;
 		f->footHeading[k] = f->heading;
 		f->liftHeading[k] = f->heading;

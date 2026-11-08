@@ -462,6 +462,7 @@ typedef struct nbFigure
 	float swingStart[2];
 	float swingHeight[2];
 	float swingRun[2];
+	float swingShare[2];
 	float swingNarrow[2];
 	float footHeading[2];
 	float liftHeading[2];

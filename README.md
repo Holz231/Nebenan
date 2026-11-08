@@ -1599,49 +1599,55 @@ der Beine: Je schneller, desto mehr Schritte pro Sekunde und desto kürzer steht
 beim Rennen 0,33, mit beiden Füßen in der Luft zwischen den Schritten. Ein Fuß landet, wo die Hüfte über ihn kommt, beim
 Gehen auf der Ferse, die Zehen 0,25 rad oben, und rollt in einem Zehntel seines Zyklus auf die Sohle ab. Ein stehender
 Fuß bleibt, wo er gelandet ist, bis zum Abheben: Ferse und Zehenkante bewegen sich um weniger als einen Millimeter. Ist
-die Hüfte über ihn hinweg, hebt er die Ferse und rollt über die Zehen, so weit sein Bein es braucht, bis 0,7 rad,
-rennend schon so weit, wie es gleich brauchen wird, so hebt sich die Ferse, bevor das Bein gestreckt ist, und gehend vor
-dem Abheben noch 0,35 rad weiter, das Knie gebeugt. Gehend sind die Knie fast gestreckt, die Füße setzen 14 cm
-auseinander auf, und der schwingende Fuß geht in der Mitte seines Schwungs 2 cm über den Boden. Das Becken dreht sich um
-4° zu jeder Seite und pendelt 3 cm über das Standbein, die Brust dreht sich gegenläufig, der Kopf schaut geradeaus, und
-die Ellbogen schwingen mit. Die Hüfte geht mit 1,6 m/s um 4 cm auf und ab, vor dem Aufsetzen tiefer, beim Rennen federt
-sie in der Standphase ein und steigt im Flug, mit 3,0 m/s um 6,5 cm, mit 4,8 m/s um 4 bis 5 cm. Vor jeder Landung geht
-sie gleichmäßig so tief, wie das Bein es bis dahin braucht, statt in zwei Updates zu fallen, und der Fuß setzt mit 70 %
-seines Tempos weich auf, so springt das Becken rennend in einem Update höchstens 3,5 mm, auf `active-ragdoll-90` bis 1,8
-cm. Die Arme schwingen gegen die Beine, der Rumpf neigt sich in die Geschwindigkeit und in das, was sie ändert, wie ein
-Körper, der in die Bewegung fällt: beim Losgehen vor, bevor das Tempo da ist, beim Bremsen zurück und in Wendungen nach
-innen, losrennend 15° weiter vor als im Lauf. Rennend dreht die Brust mit den Schultern 12° zu jeder Seite gegen das
-Becken, das 5° dreht. Beim Losrennen und Anhalten gehen die Beugung der Ellbogen, das Wippen, wie tief die Hüfte rennend
-steht, und die Höhe des Hubs über eine Feder von 0,2 s in die neue Gangart, und ein schwingender Fuß behält die Form
-seines Hubs bis in die zweite Hälfte des Schwungs: Die Hände springen dabei in einem Update höchstens 3,1 cm, auf
-`active-ragdoll-91` bis 14,1 cm. Die Figur sieht voraus, wie lange ihr Bein einen Fuß am Boden noch erreicht, wenn sie
-wendet, seitwärts geht, schneller wird oder anhält: Einen Fuß, den es bald nicht mehr erreicht, hebt sie vorher, oder
-der schwingende Fuß eilt, bis 2,5-mal so schnell, um vorher zu landen. Ihr Blick kommt mit
-`nbFigureSteering::turnAcceleration` auf seine Drehrate und bremst vor dem Ziel. Ein schwingender Fuß plant seinen Weg
-in jedem Update neu, von dort, wo er ist, so schnell, wie er sich bewegt, zu seinem Ziel: Ändert sich das Ziel in einer
-Wendung oder beim Bremsen, biegt sich sein Weg, statt dass er springt. Von zwei Füßen am Boden hebt der zuerst ab, den
-sein Bein zuerst verliert, ein schwingendes Bein streckt sich nie ganz, und hebt ein Fuß vor seiner Zeit ab, holt der
-Takt des Gangs das nach. Bremst oder wendet die Kapsel, beugt die Figur die Knie, wie Menschen beim scharfen Wenden, und
-das Ziel eines schwingenden Fußes kommt am Ende des Schwungs weich zur Ruhe. So springt ein Knie in einer Wendung, wo
-sie im Gang auch beginnt, in einem Update höchstens 4,3 cm, auf `active-ragdoll-88` bis 6,3 cm, das Becken sinkt
-höchstens 6,6 cm, auf `active-ragdoll-87` bis 12,8 cm, und nach jedem Übergang ist der Gang wieder im Takt. Am Hang und
-auf Treppen misst die Figur die Steigung ihres Wegs: Bergauf landet ein Fuß weiter vorn, bergab näher unter dem Körper,
-so reicht das vordere Bein so weit hinauf wie das hintere hinunter, und die Schritte werden kürzer, auf 20° um ein
-Fünftel. Die Feder unter der Kapsel folgt der Ebene, die der Fühler findet, statt am Hang hinterherzuhängen, und vor dem
-Aufsetzen geht die Hüfte so tief, wie das Bein den wirklichen Landepunkt braucht. Auf einer Rampe von 20° wippt die
-Hüfte so um 2 cm, und in einem Update bewegt sie sich gegen die Kapsel um höchstens 2 cm. Auf einer Treppe setzt die
-Figur ihre Füße Stufe für Stufe: Vor jedem Schwung sucht sie am Ziel mit Strahlen nach einer Kante, misst die Stufe aus
-und stellt die ganze Sohle darauf, und jeder Schritt nimmt gleich viele Stufen, so viele, wie ein Schritt auf einer
-Rampe gleicher Steigung lang wäre. Damit der Fuß dort landet, geht der Gang in einem Schwung bis 40 % schneller oder
-langsamer, und die Hüfte folgt dem Boden zwischen den Fußpunkten statt der Kapsel, die Stufe für Stufe steigt: Die
-Treppe hinauf wippt sie gegen die Linie der Treppe um höchstens 1 cm, hinunter um 3,0 bis 6,2 cm. Alle Abfragen einer
-Figur lassen ihre eigenen Knochen weg, bevor Box3D sie rechnet, `b3QueryFilter::excludeGroup`, siehe
-[`extern/README.md`](extern/README.md): Eine gesteuerte Figur kostet im Update der Figuren auf der VM 9,8 µs, eine
-stehende 1,5 µs. Treffer wirken wie auf jede stehende Figur, mit den Geschwindigkeiten, die ihre Knochen gerade haben:
-Nach einem Stoß von hinten mit 120 N s auf eine Figur, die mit 4,5 m/s rennt, fliegt ihr Becken mit 5,3 m/s nach vorn,
-und wenn sie aufgestanden ist, geht sie weiter, wohin das Spiel will. Ein leichter Stoß gibt der Kapsel Geschwindigkeit,
-statt die Figur schwanken zu lassen. Mit 1, 2 und 4 Threads bewegt sie sich bitgleich, Figuren ohne `steered` rechnen
-wie vorher.
+die Hüfte über ihn hinweg, hebt er die Ferse und rollt über die Zehen, so weit sein Bein es braucht, bis 1 rad, und hebt
+ab, sobald es ihn mit 0,7 rad nicht mehr erreichte. Rennend rollt er schon so weit, wie es gleich brauchen wird, so hebt
+sich die Ferse, bevor das Bein gestreckt ist, und gehend vor dem Abheben noch 0,35 rad weiter, das Knie gebeugt. Gehend
+sind die Knie fast gestreckt, die Füße setzen 14 cm auseinander auf, und der schwingende Fuß geht in der Mitte seines
+Schwungs 2 cm über den Boden. Das Becken dreht sich um 4° zu jeder Seite und pendelt 3 cm über das Standbein, die Brust
+dreht sich gegenläufig, der Kopf schaut geradeaus, und die Ellbogen schwingen mit. Die Hüfte geht mit 1,6 m/s um 4 cm
+auf und ab, vor dem Aufsetzen tiefer, beim Rennen federt sie in der Standphase ein und steigt im Flug, mit 3,0 m/s um
+6,5 cm, mit 4,8 m/s um 5 cm. Vor jeder Landung geht sie gleichmäßig so tief, wie das Bein es bis dahin braucht, statt in
+zwei Updates zu fallen, und der Fuß setzt mit 70 % seines Tempos weich auf, so springt das Becken rennend in einem
+Update höchstens 3,5 mm, auf `active-ragdoll-90` bis 1,8 cm. Die Arme schwingen gegen die Beine, der Rumpf neigt sich in
+die Geschwindigkeit und in das, was sie ändert, wie ein Körper, der in die Bewegung fällt: beim Losgehen vor, bevor das
+Tempo da ist, beim Bremsen zurück und in Wendungen nach innen, losrennend 15° weiter vor als im Lauf. Rennend dreht die
+Brust mit den Schultern 12° zu jeder Seite gegen das Becken, das 5° dreht. Beim Losrennen und Anhalten gehen die Beugung
+der Ellbogen, das Wippen, wie tief die Hüfte rennend steht, und die Höhe des Hubs über eine Feder von 0,2 s in die neue
+Gangart, und ein schwingender Fuß behält die Form seines Hubs bis in die zweite Hälfte des Schwungs: Die Hände springen
+dabei in einem Update höchstens 2,9 cm, auf `active-ragdoll-91` bis 14,1 cm. Losrennend plant ein schwingender Fuß mit
+der Beschleunigung der Kapsel, wo sie beim Landen sein wird, und landet nicht weiter voraus, als der Gang bei diesem
+Tempo landen würde, ein Schwung behält seinen Anteil am Zyklus, und der Abstoß des Gehens kommt nicht schneller als im
+Vorschwung: Beim ersten Schritt aus dem Stand springt ein Fuß in einem Update höchstens 4,0 cm, auf `active-ragdoll-92`
+6,4 cm. Rennend hält sich jeder Fuß an den Takt: Hebt er ab, bevor seine Phase es sagt, schwingt er so viel langsamer
+und landet, wenn seine Phase kommt. So wechseln links und rechts nach jedem Wechsel gleichmäßig, mit 4,8 m/s nach 19 und
+20 Updates, auf `active-ragdoll-92` bis 17 und 22, und das Wippen bleibt im Takt der Füße. Die Figur sieht voraus, wie
+lange ihr Bein einen Fuß am Boden noch erreicht, wenn sie wendet, seitwärts geht, schneller wird oder anhält: Einen Fuß,
+den es bald nicht mehr erreicht, hebt sie vorher, oder der schwingende Fuß eilt, bis 2,5-mal so schnell, um vorher zu
+landen. Ihr Blick kommt mit `nbFigureSteering::turnAcceleration` auf seine Drehrate und bremst vor dem Ziel. Ein
+schwingender Fuß plant seinen Weg in jedem Update neu, von dort, wo er ist, so schnell, wie er sich bewegt, zu seinem
+Ziel: Ändert sich das Ziel in einer Wendung oder beim Bremsen, biegt sich sein Weg, statt dass er springt. Von zwei
+Füßen am Boden hebt der zuerst ab, den sein Bein zuerst verliert, ein schwingendes Bein streckt sich nie ganz, und hebt
+ein Fuß gehend vor seiner Zeit ab, holt der Takt des Gangs das nach. Bremst oder wendet die Kapsel, beugt die Figur die
+Knie, wie Menschen beim scharfen Wenden, und das Ziel eines schwingenden Fußes kommt am Ende des Schwungs weich zur
+Ruhe. So springt ein Knie in einer Wendung, wo sie im Gang auch beginnt, in einem Update höchstens 4,3 cm, auf
+`active-ragdoll-88` bis 6,3 cm, das Becken sinkt höchstens 6,6 cm, auf `active-ragdoll-87` bis 12,8 cm, und nach jedem
+Übergang ist der Gang wieder im Takt. Am Hang und auf Treppen misst die Figur die Steigung ihres Wegs: Bergauf landet
+ein Fuß weiter vorn, bergab näher unter dem Körper, so reicht das vordere Bein so weit hinauf wie das hintere hinunter,
+und die Schritte werden kürzer, auf 20° um ein Fünftel. Die Feder unter der Kapsel folgt der Ebene, die der Fühler
+findet, statt am Hang hinterherzuhängen, und vor dem Aufsetzen geht die Hüfte so tief, wie das Bein den wirklichen
+Landepunkt braucht. Auf einer Rampe von 20° wippt die Hüfte so um 2 cm, und in einem Update bewegt sie sich gegen die
+Kapsel um höchstens 2 cm. Auf einer Treppe setzt die Figur ihre Füße Stufe für Stufe: Vor jedem Schwung sucht sie am
+Ziel mit Strahlen nach einer Kante, misst die Stufe aus und stellt die ganze Sohle darauf, und jeder Schritt nimmt
+gleich viele Stufen, so viele, wie ein Schritt auf einer Rampe gleicher Steigung lang wäre. Damit der Fuß dort landet,
+geht der Gang in einem Schwung bis 40 % schneller oder langsamer, und die Hüfte folgt dem Boden zwischen den Fußpunkten
+statt der Kapsel, die Stufe für Stufe steigt: Die Treppe hinauf wippt sie gegen die Linie der Treppe um höchstens 1 cm,
+hinunter um 3,0 bis 6,2 cm. Alle Abfragen einer Figur lassen ihre eigenen Knochen weg, bevor Box3D sie rechnet,
+`b3QueryFilter::excludeGroup`, siehe [`extern/README.md`](extern/README.md): Eine gesteuerte Figur kostet im Update der
+Figuren auf der VM 10,1 µs, eine stehende 1,5 µs. Treffer wirken wie auf jede stehende Figur, mit den Geschwindigkeiten,
+die ihre Knochen gerade haben: Nach einem Stoß von hinten mit 120 N s auf eine Figur, die mit 4,5 m/s rennt, fliegt ihr
+Becken mit 5,3 m/s nach vorn, und wenn sie aufgestanden ist, geht sie weiter, wohin das Spiel will. Ein leichter Stoß
+gibt der Kapsel Geschwindigkeit, statt die Figur schwanken zu lassen. Mit 1, 2 und 4 Threads bewegt sie sich bitgleich,
+Figuren ohne `steered` rechnen wie vorher.
 
 **Aktiver Ragdoll.** Eine Figur, die sich nicht fangen kann, eine Last von oben ab `crushForce` (600 N), Boden, der
 wegbricht oder sich schneller als 1,5 m/s bewegt, und `nbFigure_Knockdown` machen eine Figur zum aktiven Ragdoll, mit
