@@ -5649,11 +5649,12 @@ static int ThinBoardTest( void )
 #define NB_EXPECTED_FOLLOW_HASH 0x6f1d5739u
 
 // See RunSteerScenario. Since round 97 the figure that walks sideways sets its foot before the side of the stairs, 45 cm
-// high where it meets them, instead of on top of it.
-#define NB_EXPECTED_STEER_HASH 0xe0efacabu
+// high where it meets them, instead of on top of it. Since round 99 a swing that hurries keeps its aim before it lands,
+// see NB_GAIT_AIM_SETTLE, and a walking figure that wants to run lifts a foot its leg no longer reaches.
+#define NB_EXPECTED_STEER_HASH 0x37afba91u
 
-// See RunGaitClipScenario
-#define NB_EXPECTED_GAIT_CLIP_HASH 0xa0ab2da2u
+// See RunGaitClipScenario. Since round 99 as for RunSteerScenario.
+#define NB_EXPECTED_GAIT_CLIP_HASH 0x9ec19046u
 
 static int FigureFollowDeterminismTest( void )
 {

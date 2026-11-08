@@ -1622,12 +1622,16 @@ auf `active-ragdoll-91` bis 14,1 cm, das Becken beim Anhalten höchstens 1,15 cm
 Losrennend plant ein schwingender Fuß mit der Beschleunigung der Kapsel, wo sie beim Landen sein wird, und landet nicht
 weiter voraus, als der Gang bei diesem Tempo landen würde, ein Schwung behält seinen Anteil am Zyklus, und der Abstoß
 des Gehens kommt nicht schneller als im Vorschwung: Beim ersten Schritt aus dem Stand springt ein Fuß in einem Update
-höchstens 4,0 cm, auf `active-ragdoll-92` 6,4 cm. Rennend hält sich jeder Fuß an den Takt: Hebt er ab, bevor seine Phase
+höchstens 3,6 cm, auf `active-ragdoll-92` 6,4 cm. Rennend hält sich jeder Fuß an den Takt: Hebt er ab, bevor seine Phase
 es sagt, schwingt er so viel langsamer und landet, wenn seine Phase kommt. So wechseln links und rechts nach jedem
 Wechsel gleichmäßig, mit 4,8 m/s nach 19 und 20 Updates, auf `active-ragdoll-92` bis 17 und 22, und das Wippen bleibt im
 Takt der Füße. Die Figur sieht voraus, wie lange ihr Bein einen Fuß am Boden noch erreicht, wenn sie wendet, seitwärts
 geht, schneller wird oder anhält: Einen Fuß, den es bald nicht mehr erreicht, hebt sie vorher, oder der schwingende Fuß
-eilt, bis 2,5-mal so schnell, um vorher zu landen. Ihr Blick dreht sich mit 4 rad/s, kommt mit 25 rad/s² darauf,
+eilt, bis 2,5-mal so schnell, um vorher zu landen. Dann hält er sein Ziel über die letzten 0,08 s vor dem Landen mehr
+und mehr fest, statt ihm bis zuletzt nachzulaufen, und will die Figur rennen, hebt gehend auch ein Fuß hinter der Hüfte
+ab, den ihr Bein nicht mehr erreicht, während der andere noch schwingt: Rennend in der Kehrtwende springen Becken und
+Hände so in einem Update höchstens 2,6 und 2,8 cm, auf `active-ragdoll-98` 8,5 cm. Ihr Blick dreht sich mit 4 rad/s,
+kommt mit 25 rad/s² darauf,
 `nbFigureSteering::turnRate` und `turnAcceleration`, und bremst vor dem Ziel. Schaut sie, wohin sie geht,
 `nbSteer::faceVelocity`, geht sie quer zu ihrem Blick höchstens 0,3 m/s oder 0,17 ihres Wunschtempos und rückwärts
 höchstens 0,3 m/s: Sie dreht sich zum Ziel und kommt dorthin, während sie hinschaut. Ein stehender Fuß dreht sich auf
