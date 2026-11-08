@@ -3499,7 +3499,9 @@ static int SteerSpeedTest( void )
 	// The heading as the library keeps it: the frame turns by an approximate cosine and sine, see b3ComputeCosSin
 	float last = GetSteered( &scene, figure )->heading;
 	float fastest = 0.0f;
-	int steps = (int)ceilf( 60.0f * ( 0.5f * B3_PI / steering.turnRate + 0.1f ) );
+	// It gets to its turn rate and slows down from it at its turn acceleration, which takes the time of one ramp
+	float ramp = steering.turnAcceleration > 0.0f ? steering.turnRate / steering.turnAcceleration : 0.0f;
+	int steps = (int)ceilf( 60.0f * ( 0.5f * B3_PI / steering.turnRate + ramp + 0.1f ) );
 	for ( int i = 0; i < steps; ++i )
 	{
 		StepFigures( &scene, 1 );
@@ -4144,9 +4146,11 @@ static int SteerInStepTest( void )
 }
 
 // A steered figure that turns round from walking straight on, at eight points of its gait an eighth of a cycle apart,
-// bends its knees as the capsule turns and does not walking straight on, see NB_GAIT_BEND_SPEED. From the turn on its
-// knees change their velocity from one update to the next by more than 3 cm in at most 20 updates of all eight turns
-// (39 before the knees bent), and by 5 cm at most (6.6), and its pelvis by 2 cm at most.
+// bends its knees as the capsule turns and does not walking straight on, see NB_GAIT_BEND_SPEED: at least 0.7 of the
+// way, as it brakes no harder than it goes backward facing where it moves, see nbSteer::faceVelocity (0.89 while it
+// went backward at once). From the turn on its knees change their velocity from one update to the next by more than
+// 3 cm in at most 20 updates of all eight turns (39 before the knees bent), and by 5 cm at most (6.6), and its pelvis by
+// 2 cm at most.
 static int SteerKneeTest( void )
 {
 	const int bones[3] = { nb_humanoidPelvis, nb_humanoidShinLeft, nb_humanoidShinRight };
@@ -4201,7 +4205,7 @@ static int SteerKneeTest( void )
 			"%.1f cm at most, the pelvis %.1f cm\n",
 			turnBend, straightBend, jumps, 100.0f * knee, 100.0f * pelvis );
 	ENSURE( straightBend < 0.01f );
-	ENSURE( turnBend > 0.8f );
+	ENSURE( turnBend > 0.7f );
 	ENSURE( jumps <= 20 );
 	ENSURE( knee <= 0.05f );
 	ENSURE( pelvis <= 0.02f );
@@ -5100,7 +5104,7 @@ static int ThinBoardTest( void )
 #define NB_EXPECTED_FOLLOW_HASH 0x6f1d5739u
 
 // See RunSteerScenario
-#define NB_EXPECTED_STEER_HASH 0xdbb5dbb9u
+#define NB_EXPECTED_STEER_HASH 0xc7f73219u
 
 static int FigureFollowDeterminismTest( void )
 {

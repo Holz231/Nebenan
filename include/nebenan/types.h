@@ -1327,7 +1327,8 @@ typedef struct nbFigureSteering
 	float airControl;
 
 	/// How fast the figure turns to the heading it wants, in radians per second, and how fast it gets to that and slows
-	/// down from it, in radians per second squared. A turn acceleration of zero turns at the turn rate at once.
+	/// down from it, in radians per second squared. A turn acceleration of zero turns at the turn rate at once. The
+	/// defaults, 4 and 25, turn about as fast as the feet follow: a figure that turns faster crosses its legs.
 	float turnRate;
 	float turnAcceleration;
 } nbFigureSteering;
@@ -1547,7 +1548,9 @@ typedef struct nbSteer
 	/// The heading it wants to face, radians about up, zero facing +z, see nbFigureDef::heading
 	float heading;
 
-	/// Face where it moves instead, while it moves faster than 0.1 m/s, and keep that heading when it stops
+	/// Face where it moves instead, while it moves faster than 0.1 m/s, and keep that heading when it stops. It goes
+	/// across its heading no faster than 0.3 m/s or 0.17 of the speed it wants, whichever is more, and backward no faster
+	/// than 0.3 m/s, for the humanoid of 1.8 m: it turns to where it wants to go and gets there as it faces it.
 	bool faceVelocity;
 } nbSteer;
 

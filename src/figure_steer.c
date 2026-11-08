@@ -56,6 +56,14 @@
 #define NB_STEER_SLOPE_LENGTH 0.5f
 #define NB_STEER_SLOPE_MAX 1.0f
 
+// Facing where it moves, see nbSteer::faceVelocity, a figure goes across its heading no faster than NB_STEER_SIDE_SPEED in
+// meters per second for the humanoid of 1.8 m or NB_STEER_SIDE_SHARE of the speed it wants, whichever is more, and
+// backward no faster than NB_STEER_BACK_SPEED: it turns to where it wants to go and gets there as it faces it. Going off
+// to the side faster than its heading turned, the capsule left the feet behind it, across each other.
+#define NB_STEER_SIDE_SPEED 0.3f
+#define NB_STEER_SIDE_SHARE 0.17f
+#define NB_STEER_BACK_SPEED 0.3f
+
 // The planes the capsule touches, with what orders them
 typedef struct nbMoverPlane
 {
@@ -355,6 +363,29 @@ bool nbMoveSteered( nbWorld* world, int index, nbFigure* f, float timeStep, b3Ve
 	float climb = b3Dot( velocity, up );
 	b3Vec3 flat = b3MulSub( velocity, climb, up );
 	b3Vec3 wish = b3MulSub( f->steer.velocity, b3Dot( f->steer.velocity, up ), up );
+	if ( f->steer.faceVelocity )
+	{
+		// Facing where it moves, it goes across its heading and backward no faster than a step to the side or back, see
+		// NB_STEER_SIDE_SPEED, and gets to the rest of the velocity it wants as it turns there
+		b3Vec3 forward = b3RotateVector( f->frame.q, b3Vec3_axisZ );
+		forward = b3Normalize( b3MulSub( forward, b3Dot( forward, up ), up ) );
+		float along = b3Dot( wish, forward );
+		b3Vec3 across = b3MulSub( wish, along, forward );
+		float side = b3MaxFloat( NB_STEER_SIDE_SPEED * scale, NB_STEER_SIDE_SHARE * b3Length( wish ) );
+		float back = NB_STEER_BACK_SPEED * scale;
+		float sideLength = b3Length( across );
+		if ( sideLength > side || along < -back )
+		{
+			if ( sideLength > side )
+			{
+				across = b3MulSV( side / sideLength, across );
+			}
+			along = b3MaxFloat( along, -back );
+			wish = b3MulAdd( across, along, forward );
+		}
+	}
+	// The gait plans with the velocity the capsule goes for, see nbSteerFeet
+	f->wishVelocity = wish;
 	b3Vec3 change = b3Sub( wish, flat );
 	float rate = b3LengthSquared( wish ) > b3LengthSquared( flat ) ? def->acceleration : def->braking;
 	rate = b3MaxFloat( rate, 0.0f ) * ( f->onGround ? 1.0f : b3ClampFloat( def->airControl, 0.0f, 1.0f ) );

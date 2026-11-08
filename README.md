@@ -1624,8 +1624,15 @@ es sagt, schwingt er so viel langsamer und landet, wenn seine Phase kommt. So we
 Wechsel gleichmäßig, mit 4,8 m/s nach 19 und 20 Updates, auf `active-ragdoll-92` bis 17 und 22, und das Wippen bleibt im
 Takt der Füße. Die Figur sieht voraus, wie lange ihr Bein einen Fuß am Boden noch erreicht, wenn sie wendet, seitwärts
 geht, schneller wird oder anhält: Einen Fuß, den es bald nicht mehr erreicht, hebt sie vorher, oder der schwingende Fuß
-eilt, bis 2,5-mal so schnell, um vorher zu landen. Ihr Blick kommt mit `nbFigureSteering::turnAcceleration` auf seine
-Drehrate und bremst vor dem Ziel. Ein schwingender Fuß plant seinen Weg in jedem Update neu, von dort, wo er ist, so
+eilt, bis 2,5-mal so schnell, um vorher zu landen. Ihr Blick dreht sich mit 4 rad/s, kommt mit 25 rad/s² darauf,
+`nbFigureSteering::turnRate` und `turnAcceleration`, und bremst vor dem Ziel. Schaut sie, wohin sie geht,
+`nbSteer::faceVelocity`, geht sie quer zu ihrem Blick höchstens 0,3 m/s oder 0,17 ihres Wunschtempos und rückwärts
+höchstens 0,3 m/s: Sie dreht sich zum Ziel und kommt dorthin, während sie hinschaut. Ein stehender Fuß dreht sich auf
+seiner Sohle mit, sobald der Blick mehr als 35° von ihm weg ist, ein schwingender landet auf seiner Seite des anderen,
+mindestens 10 cm daneben, und ein Fuß, den sein Bein nicht mehr erreicht, hebt ab. So kreuzen sich in Drehungen um 45
+bis 180° die Knie nie, auf `active-ragdoll-95` bis 25 cm, das Becken geht gehend höchstens 10,9 und rennend 14,8 cm
+tiefer als im Stand, vorher bis 27,8 und 68,3 cm, und die Oberschenkel gehen gehend höchstens 66,5° und rennend 103,3°
+auseinander, vorher bis 100 und 177°. Ein schwingender Fuß plant seinen Weg in jedem Update neu, von dort, wo er ist, so
 schnell, wie er sich bewegt, zu seinem Ziel: Ändert sich das Ziel in einer Wendung oder beim Bremsen, biegt sich sein
 Weg, statt dass er springt. Von zwei Füßen am Boden hebt der zuerst ab, den sein Bein zuerst verliert, ein schwingendes
 Bein streckt sich nie ganz, und hebt ein Fuß gehend vor seiner Zeit ab, holt der Takt des Gangs das nach. Bremst oder
@@ -1647,7 +1654,8 @@ sechs von 16 Starts hinauf nicht, und hinunter mit 4,5 m/s nimmt jeder Schritt d
 geht der Gang in einem Schwung bis 40 % schneller oder langsamer, und die Hüfte folgt dem Boden zwischen den Fußpunkten
 statt der Kapsel, die Stufe für Stufe steigt, und nicht viel schneller, als dieser Boden steigt oder fällt: Gehend die
 Treppe hinauf wippt sie gegen die Linie der Treppe um höchstens 1 cm, hinunter um 3,0 bis 6,2 cm, rennend hinauf und
-hinunter bei jedem Start um höchstens 7,1 cm, auf `active-ragdoll-94` hinunter bis 18,1 cm. Spät im Schwung hält ein Fuß
+hinunter bei 20 Starts über eine ganze Stufe um höchstens 7,2 und 8,3 cm, auf `active-ragdoll-94` bei acht Starts
+hinunter bis 18,1 cm. Spät im Schwung hält ein Fuß
 seine Stufe, so landet er nicht zwischen zwei Stufen, wenn sich die Stufe, die der Schritt will, spät ändert. Alle
 Abfragen einer Figur lassen ihre eigenen Knochen weg, bevor Box3D sie rechnet, `b3QueryFilter::excludeGroup`, siehe
 [`extern/README.md`](extern/README.md): Eine gesteuerte Figur kostet im Update der Figuren auf der VM 8 bis 10 µs, je
