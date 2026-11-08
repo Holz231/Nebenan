@@ -3913,6 +3913,81 @@ static int SteerStairsTest( void )
 	return 0;
 }
 
+// A steered figure runs up and down the twenty stairs of 15 by 30 cm at 3.0 and 4.5 m/s, from starts 0, 0.2, 0.4 and
+// 0.6 m farther back: a foot that stands flat stands with heel and toes on one tread, no more than 1.5 cm off it, and
+// running down at 4.5 m/s every step from the third landing on the stairs to the one before the last goes the same
+// number of treads. Until active-ragdoll-93, from some of these starts a foot that landed on the first treads up the
+// stairs stood across the edge of the next one with its toes in it, and down at 4.5 m/s the steps went three or five
+// treads by the start, see nbMeasureTread and nbFindFoothold
+static int SteerRunStairsTest( void )
+{
+	const int feet[2] = { nb_humanoidFootLeft, nb_humanoidFootRight };
+	for ( int pass = 0; pass < 16; ++pass )
+	{
+		bool down = ( pass & 1 ) != 0;
+		float speed = ( pass & 2 ) != 0 ? 4.5f : 3.0f;
+		float back = 0.2f * (float)( pass >> 2 );
+		FigureScene scene;
+		CreateFigureScene( &scene, 1 );
+		float top = AddSteerCourse( &scene, 4 );
+		b3Vec3 start = down ? (b3Vec3){ 0.0f, top, 11.0f + back } : (b3Vec3){ 0.0f, 0.0f, -back };
+		nbFigureId figure = AddSteeredFigure( &scene, start, down ? B3_PI : 0.0f );
+		SteerVelocity( figure, (b3Vec3){ 0.0f, 0.0f, down ? -speed : speed } );
+		int treads[64];
+		int landings = 0;
+		int across = 0;
+		int flat = 0;
+		float off = 0.0f;
+		bool swings[2] = { false, false };
+		for ( int i = 0; i < 300; ++i )
+		{
+			StepFigures( &scene, 1 );
+			const nbFigure* f = GetSteered( &scene, figure );
+			for ( int k = 0; k < 2; ++k )
+			{
+				b3Vec3 heel = SoleEdge( &scene, f, feet[k], -1.0f );
+				b3Vec3 toe = SoleEdge( &scene, f, feet[k], 1.0f );
+				int heelTread = StairTread( heel.z );
+				int toeTread = StairTread( toe.z );
+				bool onStairs = heelTread >= 0 && toeTread >= 0 && heelTread < 19 && toeTread < 19;
+				if ( f->gaitOn && f->footSwings[k] == false && f->footRoll[k] == 0.0f && onStairs )
+				{
+					float height = 0.15f * (float)( heelTread + 1 );
+					across += heelTread != toeTread ? 1 : 0;
+					off = b3MaxFloat( off, b3MaxFloat( fabsf( heel.y - height ), fabsf( toe.y - height ) ) );
+					flat += 1;
+				}
+				int middle = StairTread( 0.5f * ( heel.z + toe.z ) );
+				if ( swings[k] && f->footSwings[k] == false && middle >= 0 && middle < 19 && landings < 64 )
+				{
+					treads[landings] = middle;
+					landings += 1;
+				}
+				swings[k] = f->footSwings[k];
+			}
+		}
+		int each = landings >= 3 ? abs( treads[2] - treads[1] ) : 0;
+		bool same = true;
+		for ( int j = 3; j + 1 < landings; ++j )
+		{
+			same = same && abs( treads[j] - treads[j - 1] ) == each;
+		}
+		printf( "  %s at %.1f m/s from %.1f m back: %d landings on the stairs, steps of %d treads from the third on%s, %d flat "
+				"stances, %d across an edge, a sole edge %.4f m off its tread at most\n",
+				down ? "down" : "up", speed, back, landings, each, same ? "" : " and others", flat, across, off );
+		ENSURE( nbFigure_GetState( figure ) == nb_figureAnimated );
+		ENSURE( landings >= 4 );
+		ENSURE( flat > 0 && across == 0 );
+		ENSURE( off <= 0.015f );
+		if ( down && speed > 4.0f )
+		{
+			ENSURE( each >= 1 && same );
+		}
+		DestroyFigureScene( &scene );
+	}
+	return 0;
+}
+
 // A steered figure walks at 1.6 m/s, turns back and then to the side, after the conditions of round 87 in
 // docs/Roadmap.md: walking straight its feet land 10 to 18 cm apart across its way, and from the turn on its pelvis
 // changes its velocity by no more than 2.5 cm in an update and goes no more than 8 cm lower than walking straight. Until
@@ -4385,12 +4460,13 @@ static uint32_t RunStartStop( int threadCount, float speed, float* handJump, flo
 
 // A steered figure starts to run from standing and stops again without its elbows bending at once, see NB_RUN_TURN_LAG,
 // and its first foot does not chase the capsule, see NB_GAIT_PLAN_FROM: its hands jump at most 3.7 cm per update
-// squared at 3.0 and 4.8 m/s (7.9 and 14.1 cm before round 92), its pelvis at most 1 and 2 cm (1.8 and 2.9 cm before
-// round 93), its feet at most 4.5 cm (6.4 cm before round 93), and with 1 and 4 threads it moves with the same bits
+// squared at 3.0 and 4.8 m/s (7.9 and 14.1 cm before round 92), its pelvis at most 1 and 1.2 cm (1.8 and 2.9 cm before
+// round 93, at 4.8 m/s 1.5 cm before round 94, see nbLiftShare), its feet at most 4.5 cm (6.4 cm before round 93), and
+// with 1 and 4 threads it moves with the same bits
 static int SteerStartStopTest( void )
 {
 	const float speeds[2] = { 3.0f, 4.8f };
-	const float pelvisMost[2] = { 0.01f, 0.02f };
+	const float pelvisMost[2] = { 0.01f, 0.012f };
 	for ( int s = 0; s < 2; ++s )
 	{
 		float handJump, pelvisJump, footJump;
@@ -5003,7 +5079,7 @@ static int ThinBoardTest( void )
 #define NB_EXPECTED_FOLLOW_HASH 0x6f1d5739u
 
 // See RunSteerScenario
-#define NB_EXPECTED_STEER_HASH 0xbe835427u
+#define NB_EXPECTED_STEER_HASH 0x96d10dd7u
 
 static int FigureFollowDeterminismTest( void )
 {
@@ -5095,6 +5171,7 @@ int FigureTest( void )
 	RUN_TEST( SteerFootTest );
 	RUN_TEST( SteerSlopeTest );
 	RUN_TEST( SteerStairsTest );
+	RUN_TEST( SteerRunStairsTest );
 	RUN_TEST( SteerTurnTest );
 	RUN_TEST( SteerInStepTest );
 	RUN_TEST( SteerKneeTest );

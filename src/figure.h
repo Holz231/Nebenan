@@ -456,6 +456,7 @@ typedef struct nbFigure
 	b3Vec3 leanAcceleration;
 	float runTurn;
 	float runTurnRate;
+	float gaitRun;
 	bool footSwings[2];
 	bool canLift[2];
 	float swingAlong[2];

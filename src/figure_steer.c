@@ -247,6 +247,7 @@ void nbResetSteering( nbFigure* f )
 	f->leanAcceleration = b3Vec3_zero;
 	f->runTurn = 0.0f;
 	f->runTurnRate = 0.0f;
+	f->gaitRun = 0.0f;
 	f->legReach = 0.98f;
 	f->gaitTurn = 0.0f;
 	f->gaitTurnSize = 0.0f;
