@@ -993,16 +993,18 @@ mit 20 bis 140 N s, bei 60, 40, 30, 25 und 20 Hz mit jeder Stütze, fallen 33 59
 und von den leichten Treffern bis 60 N s 184 statt 251. Die längere Ferse hält einen Stoß nach hinten länger: Von vorn
 rudern die Arme erst ab 66 statt 62 N s, und eine Figur, die beim Folgen angestoßen wird, fängt sich über ihre Fersen,
 statt zurückzutreten. Mit eigener Kraft bei 30 Hz fängt sie Treffer auf die obere Brust von der Seite bis 90 und 92
-statt 94 N s, von vorn dafür jeden bis 106 statt 100 N s. Damit der Gang zum Fuß passt, sieht ein Fuß vor seiner Sohle
-nach, ob dort eine Treppe beginnt, und rollt rückwärts auch gehend über die Ferse voraus, siehe Gesteuerte Figur. Siehe
-„Der Fuß nach den Maßen des Menschen mit seinem Gang“ in [Optimierungen.md](docs/Optimierungen.md). Gepaart gegen
-`active-ragdoll-103`, sechs Läufe im Wechsel mit vier Threads, rechnen alle Szenen ohne Figuren dasselbe, im Median mit
-dem 0,99- bis 1,02-fachen der Bildzeit, und jede Szene endet in jedem Lauf gleich. In der Stadt mit Figuren stürzen 4
-statt 6 Etagen ein, und ein Bild kostet dort das 0,92-fache. Mit 50 Figuren hinter brechender Deckung kostet das Update,
-während sie bricht, das 2,0-fache: Die Figuren treffen die Reste der Mauern 52-mal statt 2-mal und brechen 636 statt 14
-Verbindungen, und die Prüfung der Mauern danach kostet je Update 0,094 statt 0,008 ms. Am Ende steht dort eine Figur
-noch auf. Ein Spiel ruft dafür nichts auf, `nbMakeHumanoidBones` baut den Fuß so, ein eigenes Rig gibt seinem Fuß eigene
-Maße.
+statt 94 N s, von vorn dafür jeden bis 106 statt 100 N s. Das ist eine empfindliche Kante, an der Seite ist der neue Fuß
+nicht schwächer: Von 1 092 Treffern von der Seite auf Rippen, untere Brust und Brust mit 40 bis 140 N s fielen auf
+`active-ragdoll-105` bei 30 Hz mit ihm 304 und mit dem alten Fuß 305, siehe „Die Seite bei 30 Hz mit dem menschlichen
+Fuß“. Damit der Gang zum Fuß passt, sieht ein Fuß vor seiner Sohle nach, ob dort eine Treppe beginnt, und rollt
+rückwärts auch gehend über die Ferse voraus, siehe Gesteuerte Figur. Siehe „Der Fuß nach den Maßen des Menschen mit
+seinem Gang“ in [Optimierungen.md](docs/Optimierungen.md). Gepaart gegen `active-ragdoll-103`, sechs Läufe im Wechsel
+mit vier Threads, rechnen alle Szenen ohne Figuren dasselbe, im Median mit dem 0,99- bis 1,02-fachen der Bildzeit, und
+jede Szene endet in jedem Lauf gleich. In der Stadt mit Figuren stürzen 4 statt 6 Etagen ein, und ein Bild kostet dort
+das 0,92-fache. Mit 50 Figuren hinter brechender Deckung kostet das Update, während sie bricht, das 2,0-fache: Die
+Figuren treffen die Reste der Mauern 52-mal statt 2-mal und brechen 636 statt 14 Verbindungen, und die Prüfung der
+Mauern danach kostet je Update 0,094 statt 0,008 ms. Am Ende steht dort eine Figur noch auf. Ein Spiel ruft dafür nichts
+auf, `nbMakeHumanoidBones` baut den Fuß so, ein eigenes Rig gibt seinem Fuß eigene Maße.
 
 **Taumeln vor dem Sturz.** Seit `active-ragdoll-47` taumelt ein Mensch der Bibliothek nach einem starken Treffer einen
 Schritt oder zwei und fällt dann, statt sofort umzufallen, wie es die Roadmap des Spiels in 26.4 verlangt: Nach einem
@@ -1429,12 +1431,19 @@ mittleren Treffpunkt fallen bei 40 Hz 547 und 243 statt 645 und 289, bei 20 Hz 1
 den leichten Treffern bei 20 Hz 4 und keiner statt 15 und 1, bei 30 und 40 Hz wie vorher keiner. Ohne Stütze nahm sie
 die Ziele bis `active-ragdoll-70` nicht voraus: Dort ließ jeder Vorlauf allein bei 30 Hz 7 bis 14 statt 4 der 168
 leichten Treffer fallen. Seit `active-ragdoll-71` nimmt sie sie auch ohne Stütze voraus, mit einem Schwungfuß, der dem
-Standfuß fernbleibt, siehe „Schritte ohne Stütze bei langsamem Takt“. Ein Spiel ruft dafür nichts Neues auf. Siehe
-„Schrittziele bei langsamem Takt vorausnehmen“ und die Zeilen danach in [Optimierungen.md](docs/Optimierungen.md).
-Gepaart gegen `active-ragdoll-65`, drei Läufe im Wechsel mit vier Threads und zwei mit einem, rechnet der Benchmark mit
-seinen 60 Hz alle Szenen bitgleich wie vorher, mit denselben Hashes und Zählern, nur der höchste gezählte Speicher der
-gestreamten Stadt liegt bei 188 statt 189 MB. Ein Bild der Stadt mit Figuren kostet mit vier Threads das 1,01-, 1,02-
-und 1,02-fache, mit einem das 1,09- und 1,02-fache, bei gleicher Rechnung Rauschen der VM.
+Standfuß fernbleibt, siehe „Schritte ohne Stütze bei langsamem Takt“. Seit `active-ragdoll-106` prüft sie mit Stütze
+auch die Landung eines Schritts mit dem Vorlauf, mit dem sie seine Ziele nimmt: Bei 30 Hz landeten vorher die meisten
+Schritte ein ganzes Update nach ihrem Ende. An zwei Treffpunkten, die keine Runde benutzt hatte, fallen von 107 136
+Treffern bei 20, 25 und 30 Hz mit eigener Kraft und mit der Stütze gegen die Welt 13 218 statt 13 792, von den leichten
+und mittleren je Stütze und Takt höchstens so viele wie vorher. Ohne Stütze und ab 40 Hz rechnet sie bitgleich wie
+vorher. Ein Spiel ruft dafür nichts Neues auf. Siehe „Schrittziele bei langsamem Takt vorausnehmen“ und „Landung mit dem
+Vorlauf“ mit den Zeilen danach in [Optimierungen.md](docs/Optimierungen.md). Gepaart gegen `active-ragdoll-65`, drei
+Läufe im Wechsel mit vier Threads und zwei mit einem, rechnet der Benchmark mit seinen 60 Hz alle Szenen bitgleich wie
+vorher, mit denselben Hashes und Zählern, nur der höchste gezählte Speicher der gestreamten Stadt liegt bei 188 statt
+189 MB. Ein Bild der Stadt mit Figuren kostet mit vier Threads das 1,01-, 1,02- und 1,02-fache, mit einem das 1,09- und
+1,02-fache, bei gleicher Rechnung Rauschen der VM. Gepaart gegen `active-ragdoll-105`, sechs Läufe im Wechsel mit vier
+Threads, rechnet der Benchmark nach der Landung mit dem Vorlauf dasselbe wie vorher, mit denselben Hashes und Zählern,
+im Median mit dem 0,97- bis 1,02-fachen der Bildzeit.
 
 **Rumpf nach harten Treffern.** Seit `active-ragdoll-67` bleibt die Wirbelsäule eines Menschen der Bibliothek, der sich
 ohne die Stütze gegen die Welt fängt, mit eigener Kraft oder ohne Stütze, nach harten Treffern kürzer weich, eine Idee

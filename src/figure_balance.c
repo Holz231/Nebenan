@@ -228,10 +228,15 @@
 // world, at the middle position at 40 Hz 547 and 243 instead of 645 and 289, at 20 Hz 1 310 and 217 instead of 1 796
 // and 427, and no light hit more. Once and one and a half times as far ahead let 2 990 and 2 909 fall with the figure's
 // own strength at 30 Hz and 819 with the hold against the world, one and a half times 5 instead of 1 light hit with the
-// hold against the world at 20 Hz. Landing, or planning the foot, by the step ahead let more fall. Round 66. Without a
-// hold the targets are taken ahead since round 71, with the swinging foot kept out of the stance foot, see
-// NB_KEEP_TIME: taken ahead without that, 7 to 14 instead of 4 of the 168 light hits fell at 30 Hz. At 60 Hz and
-// faster no target is taken ahead.
+// hold against the world at 20 Hz. Landing, or planning the foot, by the step ahead let more fall in round 66. Without
+// a hold the targets are taken ahead since round 71, with the swinging foot kept out of the stance foot, see
+// NB_KEEP_TIME: taken ahead without that, 7 to 14 instead of 4 of the 168 light hits fell at 30 Hz. While a hold keeps
+// the pelvis upright a step lands by the step ahead since round 106, see nbUpdateBalance: at 30 Hz 1 530 of 2 529
+// steps after hits from the side landed a whole update after their end, and of 107 136 hits at 20, 25 and 30 Hz no
+// round had seen, with the figure's own strength and the hold against the world, 13 218 instead of 13 792 fall, with no
+// light or middle hit more. Without a hold 38 instead of 21 light hits fell at 25 Hz, and planning the foot by the step
+// ahead as well let 1 405 instead of 1 291 fall with the figure's own strength at 30 Hz. At 60 Hz and faster no target
+// is taken ahead.
 #define NB_STEP_LEAD 2.0f
 
 // Without a hold the swinging foot keeps out of the stance foot: while it runs toward it within NB_KEEP_LENGTH ahead or
@@ -2196,11 +2201,14 @@ nbBalanceResult nbUpdateBalance( nbWorld* world, int index, nbFigure* f, float t
 		}
 
 		// The foot lands when it touches the ground near its target in the second half of the step, or touches it
-		// after the step, or the step is long over
+		// after the step, or the step is long over. While a hold keeps the pelvis upright, the step counts as far along
+		// as its targets, which below 60 Hz are taken ahead, see NB_STEP_LEAD.
 		float distance = b3Length( nbFlat( b3Sub( nbAnkle( f, foot ), b->stepAnkle ), b->up ) );
 		float footSpeed = b3Length( nbFlat( b3Body_GetLinearVelocity( f->bones[nb_feet[foot]].bodyId ), b->up ) );
-		bool landed = b->footContact[foot] && phase > 0.5f && ( distance < NB_LAND_DISTANCE * b->scale || phase >= 1.0f ) &&
-					  footSpeed < NB_LAND_SPEED;
+		bool held = b3Joint_IsValid( b->upright ) || b3Joint_IsValid( b->uprightLegs[0] );
+		float landPhase = ( b->stateTime + ( held ? nbStepLead( timeStep ) : 0.0f ) ) / NB_STEP_DURATION;
+		bool landed = b->footContact[foot] && landPhase > 0.5f &&
+					  ( distance < NB_LAND_DISTANCE * b->scale || landPhase >= 1.0f ) && footSpeed < NB_LAND_SPEED;
 		if ( landed || phase >= 1.5f )
 		{
 			// Caught it stands, else the next step, up to the most steps in a row
