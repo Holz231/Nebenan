@@ -262,8 +262,13 @@
 #define NB_FOOT_ROLL_AHEAD 0.08f
 
 // A steered foot on the ground that rolled over its toes behind the hip and comes beside it again, as the figure turns
-// back over it, rolls back flat with a time of NB_FOOT_UNROLL seconds instead of at once, see nbLowerSteered
+// back over it, rolls back flat with a time of NB_FOOT_UNROLL seconds instead of at once, see nbLowerSteered. A foot
+// that trails going forward and pushes over its toes, see NB_GAIT_PUSH, as the legs change to walking backward loses
+// that push evenly with the same time, critically damped, until less than NB_FOOT_PUSH_GONE of it is left: without
+// its push at once, it rolled down 0.1 rad in the update after it had rolled up 0.07 rad, and its nearly straight
+// knee made the shin jump up to 72 mm where the figure changed from walking sideways to walking backward.
 #define NB_FOOT_UNROLL 0.06f
+#define NB_FOOT_PUSH_GONE 0.01f
 
 // Going backward, a steered foot on the ground ahead of the hip, which goes away from it, rolls over its heel as far as
 // its leg needs, up to NB_FOOT_HEEL_MOST in radians and no faster than NB_FOOT_HEEL_RATE in radians per second, and it
@@ -3191,6 +3196,7 @@ static float nbLowerSteered( nbFigure* f, b3Transform root, const int* thighs, b
 		if ( f->footSwings[k] )
 		{
 			roll = side * roll > 0.0f ? side * b3MaxFloat( side * roll, side * f->footRoll[k] ) : f->footRoll[k];
+			f->pushKept[k] = 0.0f;
 		}
 		else
 		{
@@ -3233,6 +3239,23 @@ static float nbLowerSteered( nbFigure* f, b3Transform root, const int* thighs, b
 			if ( behind[k] == false )
 			{
 				f->pushPast[k] = 0.0f;
+				if ( leads[k] && f->pushKept[k] > 0.0f && roll > 0.0f )
+				{
+					// It trailed going forward and pushed over its toes, and now the legs walk backward: it loses that push
+					// evenly, see NB_FOOT_PUSH_GONE
+					f->pushKeptTime[k] += timeStep;
+					float gone = f->pushKeptTime[k] / NB_FOOT_UNROLL;
+					float kept = ( 1.0f + gone ) * nbDecay( gone );
+					roll = b3MinFloat( roll + kept * f->pushKept[k], NB_FOOT_ROLL_MOST );
+					if ( kept < NB_FOOT_PUSH_GONE )
+					{
+						f->pushKept[k] = 0.0f;
+					}
+				}
+				else
+				{
+					f->pushKept[k] = 0.0f;
+				}
 			}
 			else
 			{
@@ -3243,9 +3266,13 @@ static float nbLowerSteered( nbFigure* f, b3Transform root, const int* thighs, b
 				float past = side * ( toes.x * ( hip.x - ankles[k].x ) + toes.z * ( hip.z - ankles[k].z ) );
 				past = b3MinFloat( past, f->pushPast[k] + NB_GAIT_PUSH_SPEED * nbFigureScale( f ) * timeStep );
 				f->pushPast[k] = past;
+				f->pushKept[k] = 0.0f;
 				if ( side > 0.0f )
 				{
-					roll += planted * f->footPush[k] * b3MinFloat( past / ( NB_GAIT_PUSH_IN * nbFigureScale( f ) ), 1.0f );
+					float push = planted * f->footPush[k] * b3MinFloat( past / ( NB_GAIT_PUSH_IN * nbFigureScale( f ) ), 1.0f );
+					roll += push;
+					f->pushKept[k] = push;
+					f->pushKeptTime[k] = 0.0f;
 				}
 			}
 			if ( roll < 0.0f || f->footRoll[k] < 0.0f )
@@ -3580,17 +3607,18 @@ static void nbPlaceFeet( nbFigure* f, const b3Transform* transforms, const nbCli
 // above it, and not on stairs. Walking they plan as before. Steered means as fast as the program asks, before the legs
 // of a figure that does not face where it moves cap the velocity it goes for, see nbMoveSteered: that cap lets go fast
 // at the end of a turn of the legs, the plan came in within one or two updates, a foot aimed 18 cm farther, and the
-// pelvis sank 5.5 cm in an update. Walking as running, off stairs, a foot leads by no more than the gait would at the
-// speed it aims with, see nbGaitLead. Until round 108 only running did: walking, a foot led with the time the slow gait
-// of a start leads, at the velocity the figure is steered to, and from standing at 1.6 m/s the first step landed 46.5
-// instead of 36 cm behind the hip going backward and 37 instead of 30 cm ahead of it going forward. Backward the root
-// went 7.7 cm low for it and came up again once the hip came over the foot, and the pelvis jumped 18.7 mm in an update.
-// Walking, a figure that starts backward plans its first swing with the acceleration of the capsule as well, off
-// stairs, until that swing lands. The swing is short and hurries as the foot the figure stands on gets lost, and aiming
-// with the velocity the capsule had, the foot chased a place that ran away from 13 to 62 cm behind where it stood in 9
-// updates as the capsule sped up, and landed at 3.2 m/s, foot and shin jumping 47.5 and 50.7 mm in an update. Going
-// forward the first swing is long enough to land where the later steps land without it, and with it the first step
-// landed 3 cm farther ahead, the root 1.8 instead of 0.4 cm deeper than at the third landing.
+// pelvis sank 5.5 cm in an update. How fast the cap lets go, the swings plan with too, see NB_PLAN_LOOK. Walking as
+// running, off stairs, a foot leads by no more than the gait would at the speed it aims with, see nbGaitLead. Until
+// round 108 only running did: walking, a foot led with the time the slow gait of a start leads, at the velocity the
+// figure is steered to, and from standing at 1.6 m/s the first step landed 46.5 instead of 36 cm behind the hip going
+// backward and 37 instead of 30 cm ahead of it going forward. Backward the root went 7.7 cm low for it and came up
+// again once the hip came over the foot, and the pelvis jumped 18.7 mm in an update. Walking, a figure that starts
+// backward plans its first swing with the acceleration of the capsule as well, off stairs, until that swing lands. The
+// swing is short and hurries as the foot the figure stands on gets lost, and aiming with the velocity the capsule had,
+// the foot chased a place that ran away from 13 to 62 cm behind where it stood in 9 updates as the capsule sped up, and
+// landed at 3.2 m/s, foot and shin jumping 47.5 and 50.7 mm in an update. Going forward the first swing is long enough
+// to land where the later steps land without it, and with it the first step landed 3 cm farther ahead, the root 1.8
+// instead of 0.4 cm deeper than at the third landing.
 #define NB_GAIT_PLAN_FROM 0.5f
 #define NB_GAIT_PLAN_SPAN 0.1f
 
@@ -4117,7 +4145,10 @@ static void nbTurnPoseBone( b3Quat* pose, int bone, b3Vec3 axis, float angle )
 // A foot on the ground that holds them back by more than NB_LEG_BLOCK in radians lifts and steps, whatever its phase,
 // and a swinging foot lands turned as far as the legs turn until it lands, at the turn rate of the steering. Without
 // this, the feet crossed by up to 19 cm as the figure stopped going to the side and by up to 20 cm as it changed from
-// going left to going right.
+// going left to going right. A foot that only just landed, in the first NB_GAIT_FRESH of the cycle, does not lift for
+// the legs: changing from walking sideways to walking backward, it lifted again in the update after it landed, the
+// other foot, far behind by then, got lost while it swung, the root went down 13 cm and came back as it landed, and the
+// pelvis jumped up to 35 mm in an update.
 #define NB_LEG_KEEP 0.06f
 #define NB_LEG_HOLD 0.15f
 #define NB_LEG_BLOCK ( 10.0f * ( B3_PI / 180.0f ) )
@@ -4126,12 +4157,20 @@ float nbLegTurnFor( const nbFigure* f, b3Vec3 local, bool* back, float* across )
 {
 	float speed = sqrtf( local.x * local.x + local.z * local.z );
 	float theta = b3Atan2( local.x, local.z );
-	*back = f->legBack ? fabsf( theta ) > NB_LEG_FORWARD : fabsf( theta ) > NB_LEG_BACK;
+	return nbLegTurnAt( f, theta, speed, f->legBack, back, across );
+}
+
+float nbLegTurnAt( const nbFigure* f, float theta, float speed, bool wasBack, bool* back, float* across )
+{
+	*back = wasBack ? fabsf( theta ) > NB_LEG_FORWARD : fabsf( theta ) > NB_LEG_BACK;
 	float rel = *back ? nbWrapAngle( theta + B3_PI ) : theta;
 	float most = NB_LEG_TURN_WALK + f->runTurn * ( NB_LEG_TURN_RUN - NB_LEG_TURN_WALK );
 	float ease = b3MinFloat( speed / ( NB_LEG_TURN_EASE * nbFigureScale( f ) ), 1.0f );
 	float turn = ease * b3ClampFloat( rel, -most, most );
-	*across = fabsf( b3ComputeCosSin( rel - turn ).sine );
+	if ( across != NULL )
+	{
+		*across = fabsf( b3ComputeCosSin( rel - turn ).sine );
+	}
 	return turn;
 }
 
@@ -4399,7 +4438,8 @@ static float nbStairGround( const nbFigure* f, b3Vec3 up, b3Vec3 way, b3Pos hip,
 // the left. The faster it goes, the more steps per second and the shorter it stands, see NB_GAIT_CADENCE_MAX and
 // NB_GAIT_STANCE_RUN. A foot that lifts swings from where it stood to where the hip will pass over it a share of its
 // next stance after it lands, see NB_GAIT_LAND_WALK: where the capsule will be when it lands, starting to run as it
-// speeds up, see NB_GAIT_PLAN_FROM, and on by that share of the stance at the velocity it has then, beside the body
+// speeds up, see NB_GAIT_PLAN_FROM, and not facing where it moves as its legs turn on and let it go faster, see
+// NB_PLAN_LOOK, and on by that share of the stance at the velocity it has then, beside the body
 // where the clip puts it, on the ground there. A swing keeps at least the share of the cycle it lifted with. It lifts
 // in a smooth arc over the higher end, turns to the heading the figure lands with and loses the roll over its toes it
 // lifted with, see nbLowerSteered, its way and its turn planned anew in every update from where it is and how fast it
@@ -4447,6 +4487,199 @@ static b3Vec3 nbFrameAhead( b3Vec3 velocity, b3Vec3 acceleration, b3Vec3 wish, f
 		*then = b3MulAdd( velocity, tau, acceleration );
 	}
 	return b3MulAdd( b3MulSV( time, velocity ), tau * time - 0.5f * tau * tau, acceleration );
+}
+
+// As the legs of a humanoid that does not face where it moves turn to where it goes, they let the capsule go faster,
+// see nbMoveSteered, most of it at the end of their turn: changing from walking sideways to walking backward at 1.6
+// m/s, the capsule went 0.3 to 0.8 m/s for 0.4 s and got to 1.6 m/s in the next 0.1 s. A swinging foot aimed with the
+// velocity the capsule had, where it lands ran away from it by up to 3.2 m/s while it was halfway there, the foot on
+// the ground got lost, the swing hurried and landed at 2.5 m/s, and foot and shin jumped 51 and 58 mm in an update. The
+// swings plan with it: the capsule and its legs are stepped ahead as nbMoveSteered and nbSteerFeet step them, for
+// NB_PLAN_LOOK seconds in at most NB_PLAN_STEPS updates, the capsule going for what its legs let it, the legs turning
+// to where it goes then as fast as they may, and beside it the capsule with its legs as they are now. Walking, a swing
+// adds how much farther the capsule gets as its legs turn on and how much faster it goes then, where it lands and in
+// how low the root goes for the landing. Running, where a swing plans with the acceleration of the capsule up to the
+// velocity its legs let it go for now, see NB_GAIT_PLAN_FROM, it takes the whole way and the velocity instead, and
+// comes back to its own plan over the last NB_PLAN_BLEND of the speed the legs hold back: adding there too, where the
+// foot lands moved 4 to 10 cm back and forth from update to update as the legs let go, and the pelvis jumped up to 31
+// mm. What it adds does not take a swing across the other foot, across the legs as they are now and still turned to
+// where the figure went, unless the swing lands there without it: changing from walking left to walking right the feet
+// came 0.8 cm across each other where they stayed 1.9 cm apart before, and from running forward to running sideways 25
+// instead of 13 cm. The feet on the ground hold the legs back for a moment, see NB_LEG_KEEP, and the heading may turn:
+// stepped ahead as well, the capsule came within 1 mm of where it was said to be instead of within 3 cm, and the feet
+// jumped as before. Not on stairs, and with clips of the gait that move the root, not for the first swing from
+// standing: the root stays where the clips have it then, for a place farther ahead the swinging leg stretched to 0.996
+// of its length, and starting diagonally forward a shin jumped 39 instead of 16 mm.
+#define NB_PLAN_LOOK 0.6f
+#define NB_PLAN_STEPS 64
+#define NB_PLAN_BLEND 0.25f
+
+// The way of the capsule ahead, see NB_PLAN_LOOK, in its frame: how many steps it may look ahead, none while its legs
+// do not hold it back, how many it stepped so far, how long a step is and how much of its own plan a running swing
+// gives up, the velocity it is asked for and the one its legs let it go for now, then where the stepping is: the
+// velocity of the capsule, the one it has with its legs as they are, and how far its legs turned, how fast they turn
+// and whether they walk backward, and after each step how far the capsule got and how fast it goes with its legs as
+// they are now, and how much farther and faster as they turn on. It steps only as far ahead as a swing asks.
+typedef struct nbCapsulePlan
+{
+	int count;
+	int done;
+	float step;
+	float weight;
+	b3Vec3 asked;
+	b3Vec3 wishNow;
+	float speed;
+	float theta;
+	float turned[2];
+	b3Vec3 going;
+	b3Vec3 held;
+	float legTurn;
+	float legRate;
+	bool legBack;
+	b3Vec3 way[NB_PLAN_STEPS + 1];
+	b3Vec3 velocity[NB_PLAN_STEPS + 1];
+	b3Vec3 more[NB_PLAN_STEPS + 1];
+	b3Vec3 faster[NB_PLAN_STEPS + 1];
+} nbCapsulePlan;
+
+// A velocity over the ground that goes for another one with the acceleration or the braking of the steering, see
+// nbMoveSteered
+static b3Vec3 nbVelocityToward( b3Vec3 velocity, b3Vec3 wish, const nbFigureSteering* def, float timeStep )
+{
+	b3Vec3 change = b3Sub( wish, velocity );
+	float rate = b3LengthSquared( wish ) > b3LengthSquared( velocity ) ? def->acceleration : def->braking;
+	float most = b3MaxFloat( rate, 0.0f ) * timeStep;
+	float length = b3Length( change );
+	return length <= most ? wish : b3MulAdd( velocity, most / length, change );
+}
+
+static void nbPlanCapsule( const nbFigure* f, b3Vec3 up, float timeStep, nbCapsulePlan* plan )
+{
+	plan->count = 0;
+	plan->done = 0;
+	if ( f->steer.faceVelocity || f->boneCount != nb_humanoidBoneCount || f->stairWeight > 0.0f || timeStep <= 0.0f )
+	{
+		return;
+	}
+	// With clips of its gait that move the root, not for the first swing from standing
+	if ( f->gaitStarting && nbGaitClipRooted( f ) )
+	{
+		return;
+	}
+	// What the legs let it go for as they are now, after they turned in this update
+	b3Vec3 asked = b3InvRotateVector( f->frame.q, b3MulSub( f->askedVelocity, b3Dot( f->askedVelocity, up ), up ) );
+	asked.y = 0.0f;
+	float speed = sqrtf( asked.x * asked.x + asked.z * asked.z );
+	if ( speed <= 0.0f )
+	{
+		return;
+	}
+	float theta = b3Atan2( asked.x, asked.z );
+	float mostNow = nbLegCap( f, theta, speed, f->legTurn, f->legBack );
+	if ( mostNow >= speed )
+	{
+		return;
+	}
+	int steps = (int)( NB_PLAN_LOOK / timeStep ) + 1;
+	plan->count = steps < NB_PLAN_STEPS ? steps : NB_PLAN_STEPS;
+	plan->step = timeStep;
+	plan->weight = b3ClampFloat( ( 1.0f - mostNow / speed ) / NB_PLAN_BLEND, 0.0f, 1.0f );
+	plan->asked = asked;
+	plan->wishNow = b3MulSV( mostNow / speed, asked );
+	plan->speed = speed;
+	plan->theta = theta;
+	bool backward;
+	nbLegTurnAt( f, theta, speed, false, &backward, plan->turned );
+	nbLegTurnAt( f, theta, speed, true, &backward, plan->turned + 1 );
+	plan->going = b3InvRotateVector( f->frame.q, f->moveVelocity );
+	plan->going.y = 0.0f;
+	plan->held = plan->going;
+	plan->legTurn = f->legTurn;
+	plan->legRate = f->legHeadingRate;
+	plan->legBack = f->legBack;
+	plan->way[0] = b3Vec3_zero;
+	plan->velocity[0] = plan->held;
+	plan->more[0] = b3Vec3_zero;
+	plan->faster[0] = b3Vec3_zero;
+}
+
+// The way of the capsule ahead stepped on until it has as many steps as asked, or as it may look ahead
+static void nbStepPlan( const nbFigure* f, nbCapsulePlan* plan, int steps )
+{
+	const nbFigureSteering* def = &f->def.steering;
+	float timeStep = plan->step;
+	float still = NB_LEG_TURN_STILL * nbFigureScale( f );
+	for ( int i = plan->done; i < steps && i < plan->count; ++i )
+	{
+		// The capsule goes for what its legs let it, and beside it for what they let it now
+		float turned = plan->turned[plan->legBack ? 1 : 0];
+		float most = nbLegCapAcross( f, plan->theta, plan->speed, plan->legTurn, plan->legBack, turned );
+		plan->going = nbVelocityToward( plan->going, b3MulSV( most / plan->speed, plan->asked ), def, timeStep );
+		plan->held = nbVelocityToward( plan->held, plan->wishNow, def, timeStep );
+		b3Vec3 faster = b3Sub( plan->going, plan->held );
+		plan->way[i + 1] = b3MulAdd( plan->way[i], timeStep, plan->held );
+		plan->velocity[i + 1] = plan->held;
+		plan->more[i + 1] = b3MulAdd( plan->more[i], timeStep, faster );
+		plan->faster[i + 1] = faster;
+
+		// The legs turn on toward where it goes, see nbSteerFeet
+		float going = plan->going.x * plan->going.x + plan->going.z * plan->going.z;
+		float legAim = 0.0f;
+		if ( going <= still * still )
+		{
+			plan->legBack = false;
+		}
+		else
+		{
+			legAim =
+				nbLegTurnAt( f, b3Atan2( plan->going.x, plan->going.z ), sqrtf( going ), plan->legBack, &plan->legBack, NULL );
+		}
+		float legTurn = nbTurnToward( plan->legTurn, legAim, &plan->legRate, def, timeStep );
+		plan->legTurn = b3ClampFloat( legTurn, -NB_LEG_TURN_MOST, NB_LEG_TURN_MOST );
+		plan->done = i + 1;
+	}
+}
+
+// How far the frame goes in a time as a swing plans it, and with then its velocity then, once the legs let the capsule
+// go faster as they turn on, see NB_PLAN_LOOK: from the way and the velocity the swing plans without that, walking
+// with what the turn adds, and as far as the gait runs, with the whole way of the capsule ahead
+static b3Vec3 nbPlanAhead( const nbFigure* f, nbCapsulePlan* plan, float time, float run, b3Vec3 way, b3Vec3* then )
+{
+	if ( plan->count == 0 )
+	{
+		return way;
+	}
+	float at = b3MaxFloat( time, 0.0f ) / plan->step;
+	int i = (int)at;
+	nbStepPlan( f, plan, i + 1 );
+	b3Vec3 more, faster, whole, velocity;
+	if ( i >= plan->count )
+	{
+		// Beyond where it may look, on with the velocities it has there
+		int last = plan->count;
+		float rest = time - (float)last * plan->step;
+		faster = plan->faster[last];
+		velocity = b3Add( plan->velocity[last], faster );
+		more = b3MulAdd( plan->more[last], rest, faster );
+		whole = b3MulAdd( b3Add( plan->way[last], plan->more[last] ), rest, velocity );
+	}
+	else
+	{
+		float part = at - (float)i;
+		faster = b3Lerp( plan->faster[i], plan->faster[i + 1], part );
+		velocity = b3Add( b3Lerp( plan->velocity[i], plan->velocity[i + 1], part ), faster );
+		more = b3Lerp( plan->more[i], plan->more[i + 1], part );
+		whole = b3Add( b3Lerp( plan->way[i], plan->way[i + 1], part ), more );
+	}
+	more = b3RotateVector( f->frame.q, more );
+	whole = b3RotateVector( f->frame.q, whole );
+	if ( then != NULL )
+	{
+		faster = b3RotateVector( f->frame.q, faster );
+		velocity = b3RotateVector( f->frame.q, velocity );
+		*then = b3Lerp( b3Add( *then, faster ), b3Lerp( *then, velocity, plan->weight ), run );
+	}
+	return b3Lerp( b3Add( way, more ), b3Lerp( way, whole, plan->weight ), run );
 }
 
 // How long a swing takes: as long as the gait swings now, and no shorter than the share of the cycle it lifted with, so
@@ -4736,6 +4969,9 @@ static void nbSteerFeet( const nbWorld* world, int index, nbFigure* f, const nbC
 	}
 	float legHeading = f->legHeading;
 	b3Quat legQ = f->legTurn != 0.0f ? b3NormalizeQuat( b3MulQuat( f->frame.q, nbHeadingQuat( f->legTurn ) ) ) : f->frame.q;
+	// As they turn on, they let the capsule go faster, and the swings plan with it, see NB_PLAN_LOOK
+	nbCapsulePlan capsulePlan;
+	nbPlanCapsule( f, up, timeStep, &capsulePlan );
 	// Starting backward, the first swing plans with the acceleration of the capsule until it lands, see NB_GAIT_PLAN_FROM
 	bool startsBack = f->gaitStarting && f->legBack;
 	b3Vec3 swingAcceleration = startsBack ? startAcceleration : aimAcceleration;
@@ -4907,7 +5143,11 @@ static void nbSteerFeet( const nbWorld* world, int index, nbFigure* f, const nbC
 		// nbLowerSteered
 		trails[k] = f->outBehind[k];
 		out[k] = f->footSwings[k] ? FLT_MAX : b3MaxFloat( f->footOut[k] - timeStep, 0.0f );
-		lostSoon[k] = ( trails[k] == false && out[k] < quickest ) || f->legBlocks[k];
+		// One that only just landed does not lift again for the legs, see NB_LEG_BLOCK
+		float phase = f->gaitPhase + ( k == 1 ? 0.5f : 0.0f );
+		phase -= floorf( phase );
+		bool blocks = f->legBlocks[k] && phase >= NB_GAIT_FRESH;
+		lostSoon[k] = ( trails[k] == false && out[k] < quickest ) || blocks;
 	}
 	for ( int k = 0; k < 2; ++k )
 	{
@@ -5104,12 +5344,22 @@ static void nbSteerFeet( const nbWorld* world, int index, nbFigure* f, const nbC
 				// the root went down 31 cm for the leg to reach it
 				b3Vec3 landVelocity;
 				b3Vec3 way = nbFrameAhead( aimVelocity, swingAcceleration, aimWish, left, &landVelocity );
+				b3Vec3 ownWay = way;
+				b3Vec3 ownVelocity = landVelocity;
+				way = nbPlanAhead( f, &capsulePlan, left, plan, way, &landVelocity );
 				float leadThen = lead;
 				if ( f->stairWeight <= 0.0f )
 				{
 					leadThen = b3MinFloat( leadThen, nbGaitLead( world, f, b3Length( landVelocity ) ) );
 				}
 				way = b3MulAdd( way, leadThen, landVelocity );
+				// How much farther it lands as the legs turn on and let the capsule go faster, see NB_PLAN_LOOK
+				b3Vec3 farther = b3Vec3_zero;
+				if ( capsulePlan.count > 0 )
+				{
+					float ownLead = b3MinFloat( lead, nbGaitLead( world, f, b3Length( ownVelocity ) ) );
+					farther = b3Sub( way, b3MulAdd( ownWay, ownLead, ownVelocity ) );
+				}
 				float guess = slope * b3Length( way );
 				float deeper = f->moverLow - f->moverRadius;
 				b3WorldTransform end = { b3OffsetPos( f->frame.p, b3MulAdd( way, guess, up ) ), legQ };
@@ -5151,6 +5401,21 @@ static void nbSteerFeet( const nbWorld* world, int index, nbFigure* f, const nbC
 						b3Vec3 move = b3MulSV( sign * lack, side );
 						end.p = b3OffsetPos( end.p, move );
 						middle = b3OffsetPos( middle, move );
+					}
+					if ( capsulePlan.count > 0 )
+					{
+						// What the legs letting the capsule go adds, see NB_PLAN_LOOK, does not take it across the other foot,
+						// across the legs as they are now, or no farther across than it lands without it
+						b3Vec3 sideNow = b3RotateVector( legQ, b3Vec3_axisX );
+						sideNow = b3Normalize( b3MulSub( sideNow, b3Dot( sideNow, up ), up ) );
+						float across = sign * b3Dot( b3SubPos( middle, other ), sideNow );
+						float least = b3MinFloat( across - sign * b3Dot( farther, sideNow ), 0.0f );
+						if ( across < least )
+						{
+							b3Vec3 move = b3MulSV( sign * ( least - across ), sideNow );
+							end.p = b3OffsetPos( end.p, move );
+							middle = b3OffsetPos( middle, move );
+						}
 					}
 				}
 				float shift = 0.0f;
@@ -5305,8 +5570,8 @@ static void nbSteerFeet( const nbWorld* world, int index, nbFigure* f, const nbC
 				float walking = 1.0f - springRun;
 				float descend = walking * late * late * ( 3.0f - 2.0f * late );
 				float early = walking * smooth;
-				b3Vec3 on =
-					b3MulAdd( nbFrameAhead( aimVelocity, swingAcceleration, aimWish, until, NULL ), slope * speed * until, up );
+				b3Vec3 on = nbFrameAhead( aimVelocity, swingAcceleration, aimWish, until, NULL );
+				on = b3MulAdd( nbPlanAhead( f, &capsulePlan, until, plan, on, NULL ), slope * speed * until, up );
 				b3Vec3 landing = b3InvRotateVector( f->frame.q, b3Sub( b3SubPos( foot->target, f->frame.p ), on ) );
 				if ( f->stepBack[k] == f->legBack )
 				{

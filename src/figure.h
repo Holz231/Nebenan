@@ -466,12 +466,13 @@ typedef struct nbFigure
 	// and how close under the body it lands, the heading each foot has, lifted with and lands with, how far each rolls
 	// over its toes, or with its toes up over its heel, and lifted rolled, how far it landed rolled over its heel and how
 	// long it stands since, how far it rolls over its toes at least before it lifts and how far of the way the hip went
-	// past it the push came in with, see NB_GAIT_PUSH_SPEED, how fast it rolled over its toes in the last update, how long from
-	// the last update on its leg reaches it as the capsule goes on and whether it was behind the hip, see nbLowerSteered, how
-	// many times as fast as its gait it swings, and where a swinging foot is on its way without its lift, how fast it
-	// moves there and how fast it turns, see nbSwingPath. Then how far the legs stretch in parts of their length, how far
-	// the pelvis turns and sways over the feet, how far the gait lowers the root, and how far the root went down in all in
-	// the last update, how fast that changed and how far of it the gait lowered it.
+	// past it the push came in with, see NB_GAIT_PUSH_SPEED, the push it rolled with when it last trailed going forward
+	// and how long it goes backward since, see NB_FOOT_PUSH_GONE, how fast it rolled over its toes in the last update, how
+	// long from the last update on its leg reaches it as the capsule goes on and whether it was behind the hip, see
+	// nbLowerSteered, how many times as fast as its gait it swings, and where a swinging foot is on its way without its
+	// lift, how fast it moves there and how fast it turns, see nbSwingPath. Then how far the legs stretch in parts of
+	// their length, how far the pelvis turns and sways over the feet, how far the gait lowers the root, and how far the
+	// root went down in all in the last update, how fast that changed and how far of it the gait lowered it.
 	bool steered;
 	nbSteer steer;
 	float moverRadius;
@@ -516,6 +517,8 @@ typedef struct nbFigure
 	float stanceTime[2];
 	float footPush[2];
 	float pushPast[2];
+	float pushKept[2];
+	float pushKeptTime[2];
 	float footRollRate[2];
 	float footOut[2];
 	bool outBehind[2];
@@ -633,6 +636,16 @@ float nbTurnToward( float angle, float want, float* rate, const nbFigureSteering
 // its frame, whether they walk backward then, and how far across where they walk it goes once they turned there, in
 // parts of its speed, see NB_LEG_TURN_WALK in figure.c
 float nbLegTurnFor( const nbFigure* f, b3Vec3 local, bool* back, float* across );
+
+// The same for a velocity at an angle from its heading and with a speed, its legs walking backward before or not.
+// across may be NULL.
+float nbLegTurnAt( const nbFigure* f, float theta, float speed, bool wasBack, bool* back, float* across );
+
+// How fast the legs of a steered humanoid that does not face where it moves let it go at an angle from its heading, of
+// the speed it wants there, turned by legTurn from its heading and walking backward or not, see nbMoveSteered in
+// figure_steer.c, and the same with how far across them it goes once they turned there, see nbLegTurnAt
+float nbLegCap( const nbFigure* f, float theta, float speed, float legTurn, bool legBack );
+float nbLegCapAcross( const nbFigure* f, float theta, float speed, float legTurn, bool legBack, float turned );
 
 // A blast at a point, before Box3D pushes the dynamic bodies around it, see nbWorld_ApplyImpact: a standing figure that it
 // hits hard enough falls first, so the blast throws its bones, a weaker blast makes it flinch

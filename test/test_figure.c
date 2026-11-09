@@ -4806,8 +4806,10 @@ static uint32_t RunStrafe( int threadCount, float* turns, bool* backward, float*
 // NB_FOOT_ROLL_AHEAD. Since round 107 walking plans how low the root goes for a landing with the hip as the pelvis turns
 // it, as running: to the side at 1.6 m/s the pelvis sinks 2.5 instead of 7.5 cm. Since round 108 a walking foot leads
 // by no more than the gait would at the speed it aims with, see NB_GAIT_PLAN_FROM: starting from standing, running
-// backward at 3.0 m/s the pelvis sinks 9.7 instead of 9.6 cm.
-#define NB_EXPECTED_STRAFE_HASH 0xff346ccdu
+// backward at 3.0 m/s the pelvis sinks 9.7 instead of 9.6 cm. Since round 110 the swings plan with how the legs let the
+// capsule go faster as they turn on, see NB_PLAN_LOOK: changing from running to the side to running backward the pelvis
+// sinks 9.9 instead of 9.7 cm.
+#define NB_EXPECTED_STRAFE_HASH 0x61d215fbu
 static int SteerStrafeTest( void )
 {
 	float turns[3], closest[3], deepest[3];
@@ -4862,9 +4864,12 @@ static float RunStrafeChange( float speed, float then, int later )
 	return closest;
 }
 
-// A steered figure that does not face where it moves stops going to the side, walking at 1.6 m/s and running at 3.0 m/s,
-// and walking changes from going left to going right, each from 6 places in its cycle, see NB_LEG_KEEP: its feet do not
-// cross. Before round 101 its legs turned over the foot on the ground, and the feet crossed by up to 17, 19 and 14 cm.
+// A steered figure that does not face where it moves stops going to the side, walking at 1.6 m/s and running at 3.0
+// m/s, and walking changes from going left to going right, each from 6 places in its cycle, see NB_LEG_KEEP: its feet
+// do not cross. Before round 101 its legs turned over the foot on the ground, and the feet crossed by up to 17, 19 and
+// 14 cm. Since round 110 the swings plan with how the legs let the capsule go faster as they turn on, and what that
+// adds does not take a swing across the other foot, see NB_PLAN_LOOK: without that limit the feet came 0.8 cm across
+// each other changing from left to right.
 static int SteerStrafeChangeTest( void )
 {
 	const float speeds[3] = { 1.6f, 3.0f, 1.6f };

@@ -338,6 +338,8 @@ void nbResetSteering( nbFigure* f )
 		f->swingRoll[k] = 0.0f;
 		f->landRoll[k] = 0.0f;
 		f->footPush[k] = 0.0f;
+		f->pushKept[k] = 0.0f;
+		f->pushKeptTime[k] = 0.0f;
 		f->footRollRate[k] = 0.0f;
 		f->footOut[k] = FLT_MAX;
 		f->outBehind[k] = false;
@@ -390,6 +392,33 @@ void nbInitSteering( nbFigure* f, const b3WorldTransform* transforms )
 	f->moverHigh = b3MaxFloat( f->moverLow, top - radius );
 }
 
+float nbLegCap( const nbFigure* f, float theta, float speed, float legTurn, bool legBack )
+{
+	bool backward;
+	float turned;
+	nbLegTurnAt( f, theta, speed, legBack, &backward, &turned );
+	return nbLegCapAcross( f, theta, speed, legTurn, legBack, turned );
+}
+
+float nbLegCapAcross( const nbFigure* f, float theta, float speed, float legTurn, bool legBack, float turned )
+{
+	float scale = f->def.standHeight / NB_HUMANOID_STAND;
+	float legs = legTurn + ( legBack ? B3_PI : 0.0f );
+	b3CosSin off = b3ComputeCosSin( nbWrapAngle( theta - legs ) );
+	float side = b3MaxFloat( b3MaxFloat( NB_STEER_SIDE_SPEED * scale, NB_STEER_SIDE_SHARE * speed ), turned * speed );
+	float back = NB_STEER_BACK_SPEED * scale;
+	float most = speed;
+	if ( fabsf( off.sine ) * most > side )
+	{
+		most = side / fabsf( off.sine );
+	}
+	if ( off.cosine * most < -back )
+	{
+		most = back / -off.cosine;
+	}
+	return most;
+}
+
 bool nbMoveSteered( nbWorld* world, int index, nbFigure* f, float timeStep, b3Vec3 up )
 {
 	const nbFigureSteering* def = &f->def.steering;
@@ -430,28 +459,13 @@ bool nbMoveSteered( nbWorld* world, int index, nbFigure* f, float timeStep, b3Ve
 	else if ( f->boneCount == nb_humanoidBoneCount )
 	{
 		// Not facing where it moves, a humanoid goes across where its legs walk and back against it no faster than a step
-		// to the side or back, but for as far across as they walk once turned there, see nbLegTurnFor: it keeps the
-		// direction it wants and gets as fast there as its legs carry it. Other figures have no gait that turns.
+		// to the side or back, but for as far across as they walk once turned there, see nbLegCap and nbLegTurnFor: it
+		// keeps the direction it wants and gets as fast there as its legs carry it. Other figures have no gait that turns.
 		b3Vec3 local = b3InvRotateVector( f->frame.q, wish );
 		float speed = sqrtf( local.x * local.x + local.z * local.z );
 		if ( speed > 0.0f )
 		{
-			bool backward;
-			float turned;
-			nbLegTurnFor( f, local, &backward, &turned );
-			float legs = f->legTurn + ( f->legBack ? B3_PI : 0.0f );
-			b3CosSin off = b3ComputeCosSin( nbWrapAngle( b3Atan2( local.x, local.z ) - legs ) );
-			float side = b3MaxFloat( b3MaxFloat( NB_STEER_SIDE_SPEED * scale, NB_STEER_SIDE_SHARE * speed ), turned * speed );
-			float back = NB_STEER_BACK_SPEED * scale;
-			float most = speed;
-			if ( fabsf( off.sine ) * most > side )
-			{
-				most = side / fabsf( off.sine );
-			}
-			if ( off.cosine * most < -back )
-			{
-				most = back / -off.cosine;
-			}
+			float most = nbLegCap( f, b3Atan2( local.x, local.z ), speed, f->legTurn, f->legBack );
 			wish = b3MulSV( most / speed, wish );
 		}
 	}
