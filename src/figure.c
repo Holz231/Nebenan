@@ -268,14 +268,17 @@
 // Going backward, a steered foot on the ground ahead of the hip, which goes away from it, rolls over its heel as far as
 // its leg needs, up to NB_FOOT_HEEL_MOST in radians and no faster than NB_FOOT_HEEL_RATE in radians per second, and it
 // lifts once its leg would not reach it rolled over its heel by NB_FOOT_HEEL_LIFT, running by less and less, see
-// nbLowerSteered. With the heel 4 cm behind the ankle of the humanoid until round 103, rolled over its heel a foot gave
-// its leg only a few centimeters, and small moves of the hip turned it far: as far as its leg needed, up to 0.7 rad at
-// any speed, its toes jumped more than 37 mm in an update at 230 instead of 180 of 504 points of the changes of the
-// gait. Walking as running, it rolls over its heel as far as its leg needs over the next NB_FOOT_ROLL_AHEAD seconds:
-// rolling only once its leg needed it, and no faster than NB_FOOT_HEEL_RATE, it lagged behind, and with the heel 6.5 cm
-// behind the ankle, which gives the leg 1.3 instead of 0.8 cm at NB_FOOT_HEEL_LIFT, the leg lost the foot in the update
-// before it lifted, the root went down and the pelvis stopped rising. A foot rolled over the other edge by more than
-// NB_FOOT_EDGE_FLAT in radians comes flat first.
+// nbLowerSteered. A foot on the ground comes back down from its toes no faster than NB_FOOT_HEEL_RATE either: with the
+// decay of NB_FOOT_UNROLL alone, a foot rolled over its toes by 0.88 rad came down in four updates where the legs
+// turned from going sideways to going backward, and the shin jumped up to 99 mm in an update. With the heel 4 cm behind
+// the ankle of the humanoid until round 103, rolled over its heel a foot gave its leg only a few centimeters, and small
+// moves of the hip turned it far: as far as its leg needed, up to 0.7 rad at any speed, its toes jumped more than 37 mm
+// in an update at 230 instead of 180 of 504 points of the changes of the gait. Walking as running, it rolls over its
+// heel as far as its leg needs over the next NB_FOOT_ROLL_AHEAD seconds: rolling only once its leg needed it, and no
+// faster than NB_FOOT_HEEL_RATE, it lagged behind, and with the heel 6.5 cm behind the ankle, which gives the leg 1.3
+// instead of 0.8 cm at NB_FOOT_HEEL_LIFT, the leg lost the foot in the update before it lifted, the root went down and
+// the pelvis stopped rising. A foot rolled over the other edge by more than NB_FOOT_EDGE_FLAT in radians comes flat
+// first.
 #define NB_FOOT_HEEL_MOST 0.35f
 #define NB_FOOT_HEEL_LIFT 0.2f
 #define NB_FOOT_HEEL_RATE 6.0f
@@ -3251,6 +3254,11 @@ static float nbLowerSteered( nbFigure* f, b3Transform root, const int* thighs, b
 				float step = NB_FOOT_HEEL_RATE * timeStep;
 				roll = b3ClampFloat( roll, f->footRoll[k] - step, f->footRoll[k] + step );
 			}
+			else if ( roll < f->footRoll[k] )
+			{
+				// and back down from its toes no faster either
+				roll = b3MaxFloat( roll, f->footRoll[k] - NB_FOOT_HEEL_RATE * timeStep );
+			}
 			f->footRollRate[k] = timeStep > 0.0f
 									 ? side * b3ClampFloat( side * ( roll - f->footRoll[k] ) / timeStep, 0.0f, NB_FOOT_ROLL_RATE )
 									 : 0.0f;
@@ -5238,11 +5246,15 @@ static void nbSteerFeet( const nbWorld* world, int index, nbFigure* f, const nbC
 			// nbLowerSteered
 			if ( clipRoot == false )
 			{
-				// Walking, the root goes down before the foot lands, as far as the leg needs to reach where it lands from
-				// where the hip is then: the frame goes on along its velocity and up or down its slope until then. As far
-				// as level ground needs, from NB_GAIT_DESCEND of the swing on, and what the foot lands lower, over the
-				// whole swing. As the figure starts or stops running, this goes or comes with the spring of
-				// NB_RUN_TURN_LAG, as the running descent comes or goes.
+				// Walking, the root goes down before the foot lands, as far as the leg needs to reach where it lands from where
+				// the hip is then: the frame goes on along its velocity and up or down its slope until then, and the pelvis turns
+				// the hip as nbGaitPose turns it, with the legs and the swing of the pelvis, as running, see nbRunNeed. As far as
+				// level ground needs, from NB_GAIT_DESCEND of the swing on, and what the foot lands lower, over the whole swing.
+				// As the figure starts or stops running, this goes or comes with the spring of NB_RUN_TURN_LAG, as the running
+				// descent comes or goes. Until round 107 walking took the hip as if the pelvis did not turn, while it turns with
+				// the legs up to 70 degrees going sideways: the root went lower than the legs needed, going sideways at 1.6 m/s
+				// 7.5 cm below standing, and came up from there once the foot landed, the pelvis over 10 mm in an update at 119
+				// of 504 points of the changes of the gait.
 				float late = b3ClampFloat( ( along - NB_GAIT_DESCEND ) / ( 1.0f - NB_GAIT_DESCEND ), 0.0f, 1.0f );
 				float walking = 1.0f - springRun;
 				float descend = walking * late * late * ( 3.0f - 2.0f * late );
@@ -5265,12 +5277,11 @@ static void nbSteerFeet( const nbWorld* world, int index, nbFigure* f, const nbC
 				}
 				b3Vec3 hip = hips[k];
 				float reach = reaches[k];
-				float x = landing.x - hip.x;
-				float z = landing.z - hip.z;
-				float apart = b3MinFloat( x * x + z * z, reach * reach );
-				float need = f->root.p.y - hip.y + landing.y + sqrtf( reach * reach - apart );
+				float rate = f->gaitRate / cycle;
+				float then = f->gaitPhase + until * rate;
+				float turned = f->legTurn - f->gaitTurnSize * b3ComputeCosSin( 2.0f * B3_PI * ( then - timeStep * rate ) ).cosine;
 				float vault = b3MaxFloat( f->root.p.y - levels[k], 0.0f );
-				float deep = b3MaxFloat( f->root.p.y - need, 0.0f );
+				float deep = b3MaxFloat( nbRunNeed( f->root.p, hip, landing, turned, reach, 0.0f ), 0.0f );
 				float running = 0.0f;
 				if ( f->runTurn > 0.0f )
 				{
@@ -5278,15 +5289,11 @@ static void nbSteerFeet( const nbWorld* world, int index, nbFigure* f, const nbC
 					// swing as the foot is then, see NB_GAIT_DESCEND, below how low it runs all the time, as far as it runs, see
 					// NB_RUN_TURN_LAG. The foot goes on its way, see nbSwingPath, the frame along its velocity and slope, and the
 					// pelvis turns as nbGaitPose turns it, an update after the phase of the gait.
-					float rate = f->gaitRate / cycle;
-					float then = f->gaitPhase + until * rate;
 					float high = bob * b3ComputeCosSin( 4.0f * B3_PI * ( then - 0.5f * bobStance ) ).cosine;
-					deep = b3MaxFloat( f->root.p.y - need - high, 0.0f );
+					deep = b3MaxFloat( nbRunNeed( f->root.p, hip, landing, turned, reach, high ), 0.0f );
 					float want = 0.0f;
 					if ( until <= NB_RUN_DESCEND )
 					{
-						float turned =
-							f->legTurn - f->gaitTurnSize * b3ComputeCosSin( 2.0f * B3_PI * ( then - timeStep * rate ) ).cosine;
 						float soon = 1.0f - until / NB_RUN_DESCEND;
 						float lack = nbRunNeed( f->root.p, hip, landing, turned, reach, high ) - steady;
 						want = b3MaxFloat( soon * soon * ( 3.0f - 2.0f * soon ) * lack, 0.0f );

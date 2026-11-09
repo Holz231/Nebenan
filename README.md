@@ -1677,67 +1677,72 @@ und Hals und Kopf den Rest, so schaut der Kopf weiter in die Blickrichtung, wie 
 schauen und in eine andere gehen. Geht sie mehr als 110° vom Blick weg, gehen die Beine rückwärts, gehend mit 11 %
 höherer Kadenz und rennend mit Flugphase. Dreht sich nur der Blick, halten die Beine ihre Richtung und folgen so
 schnell, wie sich die Figur drehen darf, und quer zu den Beinen und gegen sie geht die Kapsel nicht schneller, als die
-Beine sie tragen. Seitwärts mit 1,6 m/s geht das Becken so 8,3 cm tiefer als im Stand, auf `active-ragdoll-99` 29 cm,
-mit 3,0 m/s stehen die Füße 15 cm auseinander statt 56 cm gekreuzt, und rückwärts rennend geht das Becken 10 statt 37 cm
-tief. Hält sie an oder wechselt sie die Richtung, drehen die Beine nicht weiter, als ihre Füße am Boden quer zu ihnen
-auf ihrer Seite bleiben, und warten darauf höchstens 0,15 s, ein Fuß, der sie aufhält, tritt, und ein schwingender Fuß
-landet schon so gedreht, wie die Beine es bis dahin sind: Beim Anhalten aus dem Seitwärtsgehen und -rennen und beim
-Wechsel von links nach rechts gehend kreuzen sich die Füße nicht mehr, auf `active-ragdoll-100` bis 17, 19 und 14 cm.
-Rückwärts landet ein Fuß auf den Zehen, wie Menschen rückwärts gehen, ein Fuß vor der Hüfte rollt über die Ferse ab, so
-weit sein Bein ihn gleich braucht, und ein schwingender Fuß plant, wie weit er vor der Hüfte landet, mit dem Tempo, das
-die Figur bei seiner Landung hat: Rückwärts gehend geht das Becken so 1,3 cm tiefer als im Stand, auf
-`active-ragdoll-101` 7,6 cm, und die Schienbeine springen in einem Update höchstens 31 mm, auf `active-ragdoll-103` 36
-mm, und kehrt die Figur von rückwärts auf vorwärts rennend um, sackt es höchstens 9,6 statt 31 cm. Ein schwingender Fuß
-plant seinen Weg in jedem Update neu, von dort, wo er ist, so schnell, wie er sich bewegt, zu seinem Ziel: Ändert sich
-das Ziel in einer Wendung oder beim Bremsen, biegt sich sein Weg, statt dass er springt. Von zwei Füßen am Boden hebt
-der zuerst ab, den sein Bein zuerst verliert, ein schwingendes Bein streckt sich nie ganz, und hebt ein Fuß gehend vor
-seiner Zeit ab, holt der Takt des Gangs das nach. Bremst oder wendet die Kapsel, beugt die Figur die Knie, wie Menschen
-beim scharfen Wenden, und das Ziel eines schwingenden Fußes kommt am Ende des Schwungs weich zur Ruhe. So springt ein
-Knie in einer Wendung, wo sie im Gang auch beginnt, in einem Update höchstens 4,3 cm, auf `active-ragdoll-88` bis 6,3
-cm, das Becken sinkt höchstens 6,6 cm, auf `active-ragdoll-87` bis 12,8 cm, und nach jedem Übergang ist der Gang wieder
-im Takt. Am Hang und auf Treppen misst die Figur die Steigung ihres Wegs: Bergauf landet ein Fuß weiter vorn, bergab
-näher unter dem Körper, so reicht das vordere Bein so weit hinauf wie das hintere hinunter, und die Schritte werden
-kürzer, auf 20° um ein Fünftel. Die Feder unter der Kapsel folgt der Ebene, die der Fühler findet, statt am Hang
-hinterherzuhängen, und vor dem Aufsetzen geht die Hüfte so tief, wie das Bein den wirklichen Landepunkt braucht. Auf
-einer Rampe von 20° wippt die Hüfte so um 2 cm, und in einem Update bewegt sie sich gegen die Kapsel um höchstens 2 cm.
-Auf einer Treppe setzt die Figur ihre Füße Stufe für Stufe: Vor jedem Schwung sucht sie am Ziel mit Strahlen nach einer
-Kante, misst die Stufe aus und stellt die ganze Sohle darauf, und jeder Schritt nimmt gleich viele Stufen, so viele, wie
-ein Schritt auf einer Rampe gleicher Steigung lang wäre. Die Strahlen beginnen so viel höher, wie sie tiefer suchen
-dürfen, so findet ein Fuß die erste Stufe hinauf auch, solange die Kapsel noch eben läuft, und ein Fuß geht bis zwei
-Stufen weiter zu der, die der Schritt will: Wo immer die Figur rennend an einer Treppe ankommt, steht jeder Fuß mit der
-ganzen Sohle auf seiner Stufe, auf `active-ragdoll-93` bei sechs von 16 Starts hinauf nicht, und hinunter mit 4,5 m/s
-nimmt jeder Schritt drei Stufen. Damit der Fuß dort landet, geht jeder schwingende Fuß bis 40 % schneller oder
-langsamer, der Takt des Gangs mit dem, der zuerst landet, und die Hüfte folgt dem Boden zwischen den Fußpunkten statt
-der Kapsel, die Stufe für Stufe steigt, und nicht viel schneller, als dieser Boden steigt oder fällt: Gehend die Treppe
-hinauf wippt sie gegen die Linie der Treppe um höchstens 1 cm, hinunter um 3,0 bis 6,2 cm, rennend hinauf und hinunter
-bei 20 Starts über eine ganze Stufe um höchstens 7,2 und 8,3 cm, auf `active-ragdoll-94` bei acht Starts hinunter bis
-18,1 cm. Ein Fuß behält seine Stufe, solange er sie so noch erreicht: Rennend hinunter wippt das Becken bei 96 Starts
-über 0,95 m mit 3,0 und 4,5 m/s um höchstens 5,5 und 6,6 cm, auf `active-ragdoll-101` bis 8,9 und 20,2 cm. Landet ein
-Fuß neben keiner Kante oder mit der ganzen Sohle auf einem Podest, prüft ein Strahl vor seiner Sohle, ob der Boden dort
-ihre Ebene verlässt, und nur dann sieht die Figur nach, ob dort eine Treppe beginnt: Über 300 Starts bis 3 m weiter
-hinten wippt das Becken rennend hinauf und hinunter um höchstens 7,5 cm, auf `active-ragdoll-103` an 10 Starts um mehr
-als 10 cm, bis 17 cm, und hinauf steht kein Fuß über einer Kante, vorher an 8. Spät im Schwung hält ein Fuß seine Stufe,
-so landet er nicht zwischen zwei Stufen, wenn sich die Stufe, die der Schritt will, spät ändert. Abseits von Treppen
-landet ein Fuß möglichst höchstens 25 cm höher oder tiefer als der andere: Liegt der Boden an seinem Ziel außerhalb,
-nimmt er die nächste Stelle in diesem Band in Schritten von 8 cm entlang seiner Zehen oder zur Seite, nie eine höher als
-eine Stufe über dem Weg der Kapsel. Auf Spitzen von Brocken, kürzer als die Sohle, stellt er sich nicht, und findet er
-am Ziel keinen Boden, zielt er auf den Weg der Kapsel statt in die Luft. Als Treppe zählt nur, wo die nächste Stufe
-passt, und findet der Fühler unter der Kapsel nur Seiten, die zu steil zum Stehen sind, hält sie sich am stehenden Fuß.
-Findet er gar nichts, hält sie ein stehender Fuß, der mehr als einen halben Schritt unter ihr steht: Fährt die Kapsel
-die Flanke eines Brockens hinauf, auf dem kein Fuß steht, fällt sie hinter dem Grat nicht mehr, auf `active-ragdoll-104`
-bis 33 cm, und an einer Kante, wo der Fuß oben noch auf ihrer Höhe steht, fällt sie wie vorher. Verliert die Kapsel den
-Boden, endet der Gang sofort, und die Wurzel geht von ihrer Höhe weiter: Von einer Kante 45 cm hinunter rennend springt
-das Becken so 4,3 statt 17,7 cm. Über die Trümmer einer gesprengten Ziegelwand gehend und rennend ist die Kapsel in
-0,7 % der Updates ohne Boden, auf `active-ragdoll-104` in 1,6 %, und die Figur hat in 1,7 % eine schlechte Pose, ein
-Standknie über 100°, einen Oberschenkel über 90° oder ein Bein über 75° vom Lot oder beide Knie über 80°, auf
-`active-ragdoll-96` in 9,8 %, und hält den Schutt nie für eine Treppe, vorher in einem Drittel der Updates. Alle
-Abfragen einer Figur lassen ihre eigenen Knochen weg, bevor Box3D sie rechnet, `b3QueryFilter::excludeGroup`, siehe
-[`extern/README.md`](extern/README.md): Eine gesteuerte Figur kostet im Update der Figuren auf der VM 8 bis 10 µs, je
-nachdem, wie schnell die VM gerade rechnet, eine stehende 1,2 bis 1,5 µs. Treffer wirken wie auf jede stehende Figur,
-mit den Geschwindigkeiten, die ihre Knochen gerade haben: Nach einem Stoß von hinten mit 120 N s auf eine Figur, die mit
-4,5 m/s rennt, fliegt ihr Becken mit 5,3 m/s nach vorn, und wenn sie aufgestanden ist, geht sie weiter, wohin das Spiel
-will. Ein leichter Stoß gibt der Kapsel Geschwindigkeit, statt die Figur schwanken zu lassen. Mit 1, 2 und 4 Threads
-bewegt sie sich bitgleich, Figuren ohne `steered` rechnen wie vorher.
+Beine sie tragen. Seitwärts mit 1,6 m/s geht das Becken so 2,5 cm tiefer als im Stand, auf `active-ragdoll-99` 29 cm und
+auf `active-ragdoll-106` 7,5 cm, mit 3,0 m/s stehen die Füße 15 cm auseinander statt 56 cm gekreuzt, und rückwärts
+rennend geht das Becken 10 statt 37 cm tief. Hält sie an oder wechselt sie die Richtung, drehen die Beine nicht weiter,
+als ihre Füße am Boden quer zu ihnen auf ihrer Seite bleiben, und warten darauf höchstens 0,15 s, ein Fuß, der sie
+aufhält, tritt, und ein schwingender Fuß landet schon so gedreht, wie die Beine es bis dahin sind: Beim Anhalten aus dem
+Seitwärtsgehen und -rennen und beim Wechsel von links nach rechts gehend kreuzen sich die Füße nicht mehr, auf
+`active-ragdoll-100` bis 17, 19 und 14 cm. Rückwärts landet ein Fuß auf den Zehen, wie Menschen rückwärts gehen, ein Fuß
+vor der Hüfte rollt über die Ferse ab, so weit sein Bein ihn gleich braucht, und ein schwingender Fuß plant, wie weit er
+vor der Hüfte landet, mit dem Tempo, das die Figur bei seiner Landung hat: Rückwärts gehend geht das Becken so 1,3 cm
+tiefer als im Stand, auf `active-ragdoll-101` 7,6 cm, und die Schienbeine springen in einem Update höchstens 31 mm, auf
+`active-ragdoll-103` 36 mm, und kehrt die Figur von rückwärts auf vorwärts rennend um, sackt es höchstens 9,6 statt 31
+cm. Ein schwingender Fuß plant seinen Weg in jedem Update neu, von dort, wo er ist, so schnell, wie er sich bewegt, zu
+seinem Ziel: Ändert sich das Ziel in einer Wendung oder beim Bremsen, biegt sich sein Weg, statt dass er springt. Von
+zwei Füßen am Boden hebt der zuerst ab, den sein Bein zuerst verliert, ein schwingendes Bein streckt sich nie ganz, und
+hebt ein Fuß gehend vor seiner Zeit ab, holt der Takt des Gangs das nach. Bremst oder wendet die Kapsel, beugt die Figur
+die Knie, wie Menschen beim scharfen Wenden, und das Ziel eines schwingenden Fußes kommt am Ende des Schwungs weich zur
+Ruhe. So springt ein Knie in einer Wendung, wo sie im Gang auch beginnt, in einem Update höchstens 4,3 cm, auf
+`active-ragdoll-88` bis 6,3 cm, das Becken sinkt höchstens 6,6 cm, auf `active-ragdoll-87` bis 12,8 cm, und nach jedem
+Übergang ist der Gang wieder im Takt. Seit `active-ragdoll-107` plant der Gang auch gehend, wie tief die Wurzel vor
+einer Landung geht, mit der Hüfte, wie die Beine das Becken drehen, wie rennend schon vorher, und ein Fuß am Boden rollt
+nicht schneller von den Zehen zurück als über die Ferse: In den Übergängen springt das Becken an 76 statt 122 von 504
+neuen Stellen um mehr als 10 mm in einem Update, losgehend schräg an keiner mehr, und schräg geht es gehend 3,1 statt
+6,4 cm tiefer als im Stand, siehe „Absenken mit der gedrehten Hüfte“ in [Optimierungen.md](docs/Optimierungen.md). Am
+Hang und auf Treppen misst die Figur die Steigung ihres Wegs: Bergauf landet ein Fuß weiter vorn, bergab näher unter dem
+Körper, so reicht das vordere Bein so weit hinauf wie das hintere hinunter, und die Schritte werden kürzer, auf 20° um
+ein Fünftel. Die Feder unter der Kapsel folgt der Ebene, die der Fühler findet, statt am Hang hinterherzuhängen, und vor
+dem Aufsetzen geht die Hüfte so tief, wie das Bein den wirklichen Landepunkt braucht. Auf einer Rampe von 20° wippt die
+Hüfte so um 2 cm, und in einem Update bewegt sie sich gegen die Kapsel um höchstens 2 cm. Auf einer Treppe setzt die
+Figur ihre Füße Stufe für Stufe: Vor jedem Schwung sucht sie am Ziel mit Strahlen nach einer Kante, misst die Stufe aus
+und stellt die ganze Sohle darauf, und jeder Schritt nimmt gleich viele Stufen, so viele, wie ein Schritt auf einer
+Rampe gleicher Steigung lang wäre. Die Strahlen beginnen so viel höher, wie sie tiefer suchen dürfen, so findet ein Fuß
+die erste Stufe hinauf auch, solange die Kapsel noch eben läuft, und ein Fuß geht bis zwei Stufen weiter zu der, die der
+Schritt will: Wo immer die Figur rennend an einer Treppe ankommt, steht jeder Fuß mit der ganzen Sohle auf seiner Stufe,
+auf `active-ragdoll-93` bei sechs von 16 Starts hinauf nicht, und hinunter mit 4,5 m/s nimmt jeder Schritt drei Stufen.
+Damit der Fuß dort landet, geht jeder schwingende Fuß bis 40 % schneller oder langsamer, der Takt des Gangs mit dem, der
+zuerst landet, und die Hüfte folgt dem Boden zwischen den Fußpunkten statt der Kapsel, die Stufe für Stufe steigt, und
+nicht viel schneller, als dieser Boden steigt oder fällt: Gehend die Treppe hinauf wippt sie gegen die Linie der Treppe
+um höchstens 1 cm, hinunter um 3,0 bis 6,2 cm, rennend hinauf und hinunter bei 20 Starts über eine ganze Stufe um
+höchstens 7,2 und 8,3 cm, auf `active-ragdoll-94` bei acht Starts hinunter bis 18,1 cm. Ein Fuß behält seine Stufe,
+solange er sie so noch erreicht: Rennend hinunter wippt das Becken bei 96 Starts über 0,95 m mit 3,0 und 4,5 m/s um
+höchstens 5,5 und 6,6 cm, auf `active-ragdoll-101` bis 8,9 und 20,2 cm. Landet ein Fuß neben keiner Kante oder mit der
+ganzen Sohle auf einem Podest, prüft ein Strahl vor seiner Sohle, ob der Boden dort ihre Ebene verlässt, und nur dann
+sieht die Figur nach, ob dort eine Treppe beginnt: Über 300 Starts bis 3 m weiter hinten wippt das Becken rennend hinauf
+und hinunter um höchstens 7,5 cm, auf `active-ragdoll-103` an 10 Starts um mehr als 10 cm, bis 17 cm, und hinauf steht
+kein Fuß über einer Kante, vorher an 8. Spät im Schwung hält ein Fuß seine Stufe, so landet er nicht zwischen zwei
+Stufen, wenn sich die Stufe, die der Schritt will, spät ändert. Abseits von Treppen landet ein Fuß möglichst höchstens
+25 cm höher oder tiefer als der andere: Liegt der Boden an seinem Ziel außerhalb, nimmt er die nächste Stelle in diesem
+Band in Schritten von 8 cm entlang seiner Zehen oder zur Seite, nie eine höher als eine Stufe über dem Weg der Kapsel.
+Auf Spitzen von Brocken, kürzer als die Sohle, stellt er sich nicht, und findet er am Ziel keinen Boden, zielt er auf
+den Weg der Kapsel statt in die Luft. Als Treppe zählt nur, wo die nächste Stufe passt, und findet der Fühler unter der
+Kapsel nur Seiten, die zu steil zum Stehen sind, hält sie sich am stehenden Fuß. Findet er gar nichts, hält sie ein
+stehender Fuß, der mehr als einen halben Schritt unter ihr steht: Fährt die Kapsel die Flanke eines Brockens hinauf, auf
+dem kein Fuß steht, fällt sie hinter dem Grat nicht mehr, auf `active-ragdoll-104` bis 33 cm, und an einer Kante, wo der
+Fuß oben noch auf ihrer Höhe steht, fällt sie wie vorher. Verliert die Kapsel den Boden, endet der Gang sofort, und die
+Wurzel geht von ihrer Höhe weiter: Von einer Kante 45 cm hinunter rennend springt das Becken so 4,3 statt 17,7 cm. Über
+die Trümmer einer gesprengten Ziegelwand gehend und rennend ist die Kapsel in 0,7 % der Updates ohne Boden, auf
+`active-ragdoll-104` in 1,6 %, und die Figur hat in 1,7 % eine schlechte Pose, ein Standknie über 100°, einen
+Oberschenkel über 90° oder ein Bein über 75° vom Lot oder beide Knie über 80°, auf `active-ragdoll-96` in 9,8 %, und
+hält den Schutt nie für eine Treppe, vorher in einem Drittel der Updates. Alle Abfragen einer Figur lassen ihre eigenen
+Knochen weg, bevor Box3D sie rechnet, `b3QueryFilter::excludeGroup`, siehe [`extern/README.md`](extern/README.md): Eine
+gesteuerte Figur kostet im Update der Figuren auf der VM 8 bis 10 µs, je nachdem, wie schnell die VM gerade rechnet,
+eine stehende 1,2 bis 1,5 µs. Treffer wirken wie auf jede stehende Figur, mit den Geschwindigkeiten, die ihre Knochen
+gerade haben: Nach einem Stoß von hinten mit 120 N s auf eine Figur, die mit 4,5 m/s rennt, fliegt ihr Becken mit 5,3
+m/s nach vorn, und wenn sie aufgestanden ist, geht sie weiter, wohin das Spiel will. Ein leichter Stoß gibt der Kapsel
+Geschwindigkeit, statt die Figur schwanken zu lassen. Mit 1, 2 und 4 Threads bewegt sie sich bitgleich, Figuren ohne
+`steered` rechnen wie vorher.
 
 **Gehen und Rennen nach Clips.** Seit `active-ragdoll-98` folgt eine gesteuerte Figur auf Wunsch den Clips des Spiels,
 nach 27.3 der Roadmap des Spiels: Im Gehen und Rennen bestimmen Animation und IK die Pose, bei einem Treffer übernimmt

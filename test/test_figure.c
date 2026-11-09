@@ -4803,8 +4803,9 @@ static uint32_t RunStrafe( int threadCount, float* turns, bool* backward, float*
 // of the hip rolls over its heel and lifts as its leg needs, see NB_FOOT_HEEL_MOST, and changing speed the feet plan with
 // the speed they land with, see NB_GAIT_PLAN_FROM. Since round 104 the feet are those of a person, see
 // nbMakeHumanoidBones, and walking backward a foot rolls over its heel as far as its leg needs a little ahead, see
-// NB_FOOT_ROLL_AHEAD.
-#define NB_EXPECTED_STRAFE_HASH 0xae5391d0u
+// NB_FOOT_ROLL_AHEAD. Since round 107 walking plans how low the root goes for a landing with the hip as the pelvis turns
+// it, as running: to the side at 1.6 m/s the pelvis sinks 2.5 instead of 7.5 cm.
+#define NB_EXPECTED_STRAFE_HASH 0xbc290361u
 static int SteerStrafeTest( void )
 {
 	float turns[3], closest[3], deepest[3];
@@ -6052,14 +6053,16 @@ static int ThinBoardTest( void )
 // ground stay on their own sides, see NB_LEG_KEEP. Since round 102 each swinging foot on the stairs keeps its own pace
 // for its tread, and the cycle that of the swing that lands first, see NB_STAIR_RATE. Since round 104 the feet are
 // those of a person, see nbMakeHumanoidBones, a foot that lands on a level before stairs sees them, see nbLookPast, and
-// walking backward a foot rolls over its heel a little ahead, see NB_FOOT_ROLL_AHEAD.
-#define NB_EXPECTED_STEER_HASH 0xf4971ce1u
+// walking backward a foot rolls over its heel a little ahead, see NB_FOOT_ROLL_AHEAD. Since round 107 walking plans how
+// low the root goes for a landing with the hip as the pelvis turns it, see nbSteerFeet, and a foot on the ground comes
+// back down from its toes no faster than it rolls over its heel, see NB_FOOT_HEEL_RATE.
+#define NB_EXPECTED_STEER_HASH 0x8bd5ef8fu
 
 // See RunGaitClipScenario. Since round 99 as for RunSteerScenario. Since round 100 the figure that is told to turn on
 // the spot while it still walks, not facing where it moves, keeps its legs where they face as its heading turns, and
 // they follow at its turn rate, see NB_LEG_TURN_WALK. In RunSteerScenario it ends standing as before. Since round 101
-// as for RunSteerScenario. Since round 102 and since round 104 as for RunSteerScenario.
-#define NB_EXPECTED_GAIT_CLIP_HASH 0x7b0e10dcu
+// as for RunSteerScenario. Since round 102, since round 104 and since round 107 as for RunSteerScenario.
+#define NB_EXPECTED_GAIT_CLIP_HASH 0x9abe7047u
 
 static int FigureFollowDeterminismTest( void )
 {
