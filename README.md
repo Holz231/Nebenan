@@ -1699,11 +1699,15 @@ Ruhe. So springt ein Knie in einer Wendung, wo sie im Gang auch beginnt, in eine
 einer Landung geht, mit der Hüfte, wie die Beine das Becken drehen, wie rennend schon vorher, und ein Fuß am Boden rollt
 nicht schneller von den Zehen zurück als über die Ferse: In den Übergängen springt das Becken an 76 statt 122 von 504
 neuen Stellen um mehr als 10 mm in einem Update, losgehend schräg an keiner mehr, und schräg geht es gehend 3,1 statt
-6,4 cm tiefer als im Stand, siehe „Absenken mit der gedrehten Hüfte“ in [Optimierungen.md](docs/Optimierungen.md). Am
-Hang und auf Treppen misst die Figur die Steigung ihres Wegs: Bergauf landet ein Fuß weiter vorn, bergab näher unter dem
-Körper, so reicht das vordere Bein so weit hinauf wie das hintere hinunter, und die Schritte werden kürzer, auf 20° um
-ein Fünftel. Die Feder unter der Kapsel folgt der Ebene, die der Fühler findet, statt am Hang hinterherzuhängen, und vor
-dem Aufsetzen geht die Hüfte so tief, wie das Bein den wirklichen Landepunkt braucht. Auf einer Rampe von 20° wippt die
+6,4 cm tiefer als im Stand, siehe „Absenken mit der gedrehten Hüfte“ in [Optimierungen.md](docs/Optimierungen.md). Seit
+`active-ragdoll-108` führt ein Fuß auch gehend nicht weiter, als der Gang bei dem Tempo führt, mit dem er zielt: Aus dem
+Stand landet der erste Schritt kaum weiter von der Hüfte als die späteren, rückwärts mit 1,6 m/s 36,9 statt 46,5 cm, die
+Wurzel geht davor nicht mehr 7,7 cm tief, und das Becken springt in einem Update 8,9 statt 18,7 mm, siehe „Gehend nicht
+weiter führen als beim Tempo, mit dem der Fuß zielt“ in [Optimierungen.md](docs/Optimierungen.md). Am Hang und auf
+Treppen misst die Figur die Steigung ihres Wegs: Bergauf landet ein Fuß weiter vorn, bergab näher unter dem Körper, so
+reicht das vordere Bein so weit hinauf wie das hintere hinunter, und die Schritte werden kürzer, auf 20° um ein Fünftel.
+Die Feder unter der Kapsel folgt der Ebene, die der Fühler findet, statt am Hang hinterherzuhängen, und vor dem
+Aufsetzen geht die Hüfte so tief, wie das Bein den wirklichen Landepunkt braucht. Auf einer Rampe von 20° wippt die
 Hüfte so um 2 cm, und in einem Update bewegt sie sich gegen die Kapsel um höchstens 2 cm. Auf einer Treppe setzt die
 Figur ihre Füße Stufe für Stufe: Vor jedem Schwung sucht sie am Ziel mit Strahlen nach einer Kante, misst die Stufe aus
 und stellt die ganze Sohle darauf, und jeder Schritt nimmt gleich viele Stufen, so viele, wie ein Schritt auf einer

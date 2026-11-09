@@ -3570,13 +3570,16 @@ static void nbPlaceFeet( nbFigure* f, const b3Transform* transforms, const nbCli
 
 // As the figure starts to run, the capsule speeds up faster than that spring follows it, and the feet plan with the
 // acceleration of the capsule: a swinging foot aims for where the capsule will be when it lands, speeding up until it
-// has the velocity the figure is steered to, and leads by no more than the gait would at the speed it aims with, see
-// nbGaitLead. They plan so once the gait runs more than NB_GAIT_PLAN_FROM of the way, or the figure is steered faster
-// than people change from walking to running, see NB_GAIT_RUN_TO, fully NB_GAIT_PLAN_SPAN above it, and not on stairs.
-// Walking they plan as before. Steered means as fast as the program asks, before the legs of a figure that does not
-// face where it moves cap the velocity it goes for, see nbMoveSteered: that cap lets go fast at the end of a turn of
-// the legs, the plan came in within one or two updates, a foot aimed 18 cm farther, and the pelvis sank 5.5 cm in an
-// update.
+// has the velocity the figure is steered to. They plan so once the gait runs more than NB_GAIT_PLAN_FROM of the way, or
+// the figure is steered faster than people change from walking to running, see NB_GAIT_RUN_TO, fully NB_GAIT_PLAN_SPAN
+// above it, and not on stairs. Walking they plan as before. Steered means as fast as the program asks, before the legs
+// of a figure that does not face where it moves cap the velocity it goes for, see nbMoveSteered: that cap lets go fast
+// at the end of a turn of the legs, the plan came in within one or two updates, a foot aimed 18 cm farther, and the
+// pelvis sank 5.5 cm in an update. Walking as running, off stairs, a foot leads by no more than the gait would at the
+// speed it aims with, see nbGaitLead. Until round 108 only running did: walking, a foot led with the time the slow gait
+// of a start leads, at the velocity the figure is steered to, and from standing at 1.6 m/s the first step landed 46.5
+// instead of 36 cm behind the hip going backward and 37 instead of 30 cm ahead of it going forward. Backward the root
+// went 7.7 cm low for it and came up again once the hip came over the foot, and the pelvis jumped 18.7 mm in an update.
 #define NB_GAIT_PLAN_FROM 0.5f
 #define NB_GAIT_PLAN_SPAN 0.1f
 
@@ -4746,12 +4749,12 @@ static void nbSteerFeet( const nbWorld* world, int index, nbFigure* f, const nbC
 	f->gaitLag = lag;
 	f->gaitPhase += timeStep * f->gaitRate / cycle + catchUp;
 	f->gaitPhase -= floorf( f->gaitPhase );
-	// How far ahead of the hip a foot lands, in seconds at the velocity it aims with: starting to run, no farther than
-	// the gait would lead at that speed, see NB_GAIT_PLAN_FROM
+	// How far ahead of the hip a foot lands, in seconds at the velocity it aims with, no farther than the gait would lead
+	// at that speed, see NB_GAIT_PLAN_FROM
 	float lead = land * stance * cycle;
 	if ( f->stairWeight <= 0.0f )
 	{
-		lead -= plan * b3MaxFloat( lead - nbGaitLead( world, f, b3Length( aimVelocity ) ), 0.0f );
+		lead = b3MinFloat( lead, nbGaitLead( world, f, b3Length( aimVelocity ) ) );
 	}
 	b3Vec3 ahead = b3MulSV( lead, aimVelocity );
 
@@ -5066,7 +5069,7 @@ static void nbSteerFeet( const nbWorld* world, int index, nbFigure* f, const nbC
 				float leadThen = lead;
 				if ( f->stairWeight <= 0.0f )
 				{
-					leadThen -= plan * b3MaxFloat( leadThen - nbGaitLead( world, f, b3Length( landVelocity ) ), 0.0f );
+					leadThen = b3MinFloat( leadThen, nbGaitLead( world, f, b3Length( landVelocity ) ) );
 				}
 				way = b3MulAdd( way, leadThen, landVelocity );
 				float guess = slope * b3Length( way );
