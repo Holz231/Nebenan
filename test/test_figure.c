@@ -6058,8 +6058,9 @@ static int ThinBoardTest( void )
 // walking backward a foot rolls over its heel a little ahead, see NB_FOOT_ROLL_AHEAD. Since round 107 walking plans how
 // low the root goes for a landing with the hip as the pelvis turns it, see nbSteerFeet, and a foot on the ground comes
 // back down from its toes no faster than it rolls over its heel, see NB_FOOT_HEEL_RATE. Since round 108 a walking foot
-// leads by no more than the gait would at the speed it aims with, see NB_GAIT_PLAN_FROM.
-#define NB_EXPECTED_STEER_HASH 0xc093fd6au
+// leads by no more than the gait would at the speed it aims with, see NB_GAIT_PLAN_FROM. Since round 109 a foot that
+// lifts over its toes with its leg nearly stretched lifts gently at first, see NB_SWING_SOFT_FROM.
+#define NB_EXPECTED_STEER_HASH 0x5f5c84d6u
 
 // See RunGaitClipScenario. Since round 99 as for RunSteerScenario. Since round 100 the figure that is told to turn on
 // the spot while it still walks, not facing where it moves, keeps its legs where they face as its heading turns, and

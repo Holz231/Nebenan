@@ -283,6 +283,7 @@ void nbResetSteering( nbFigure* f )
 	f->legBack = false;
 	f->legHeld = 0.0f;
 	f->gaitOn = false;
+	f->gaitStarting = false;
 	f->gaitSpeed = 0.0f;
 	f->gaitVelocity = b3Vec3_zero;
 	f->gaitAcceleration = b3Vec3_zero;
@@ -345,6 +346,7 @@ void nbResetSteering( nbFigure* f )
 		f->swingCalm[k] = 1.0f;
 		f->swingBase[k] = b3Pos_zero;
 		f->swingVelocity[k] = b3Vec3_zero;
+		f->swingSoft[k] = 0.0f;
 		f->swingTurnRate[k] = 0.0f;
 		f->stanceTime[k] = 0.0f;
 	}
