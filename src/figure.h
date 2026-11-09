@@ -568,10 +568,10 @@ typedef struct nbFigure
 	float gaitRate;
 	float swingRate[2];
 
-	// How far the root goes on from where it was as the gait starts or ends on stairs, see nbCarryRoot, the ground the body
-	// followed in the last update, see nbStairGround, and the frame, the height of the root over it and whether the figure
-	// walked in the last update
-	float stairCarry;
+	// How far the root goes on from where it was as the gait starts or ends on stairs or ends in the air, see nbCarryRoot,
+	// the ground the body followed in the last update, see nbStairGround, and the frame, the height of the root over it
+	// and whether the figure walked in the last update
+	float rootCarry;
 	b3Pos stairBase;
 	b3Pos carryFrame;
 	float carryRoot;

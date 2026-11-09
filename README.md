@@ -1714,8 +1714,13 @@ nimmt er die nächste Stelle in diesem Band in Schritten von 8 cm entlang seiner
 eine Stufe über dem Weg der Kapsel. Auf Spitzen von Brocken, kürzer als die Sohle, stellt er sich nicht, und findet er
 am Ziel keinen Boden, zielt er auf den Weg der Kapsel statt in die Luft. Als Treppe zählt nur, wo die nächste Stufe
 passt, und findet der Fühler unter der Kapsel nur Seiten, die zu steil zum Stehen sind, hält sie sich am stehenden Fuß.
-Über die Trümmer einer gesprengten Ziegelwand gehend und rennend hat die Figur so in 2 % der Updates eine schlechte
-Pose, ein Standknie über 100°, einen Oberschenkel über 90° oder ein Bein über 75° vom Lot oder beide Knie über 80°, auf
+Findet er gar nichts, hält sie ein stehender Fuß, der mehr als einen halben Schritt unter ihr steht: Fährt die Kapsel
+die Flanke eines Brockens hinauf, auf dem kein Fuß steht, fällt sie hinter dem Grat nicht mehr, auf `active-ragdoll-104`
+bis 33 cm, und an einer Kante, wo der Fuß oben noch auf ihrer Höhe steht, fällt sie wie vorher. Verliert die Kapsel den
+Boden, endet der Gang sofort, und die Wurzel geht von ihrer Höhe weiter: Von einer Kante 45 cm hinunter rennend springt
+das Becken so 4,3 statt 17,7 cm. Über die Trümmer einer gesprengten Ziegelwand gehend und rennend ist die Kapsel in
+0,7 % der Updates ohne Boden, auf `active-ragdoll-104` in 1,6 %, und die Figur hat in 1,7 % eine schlechte Pose, ein
+Standknie über 100°, einen Oberschenkel über 90° oder ein Bein über 75° vom Lot oder beide Knie über 80°, auf
 `active-ragdoll-96` in 9,8 %, und hält den Schutt nie für eine Treppe, vorher in einem Drittel der Updates. Alle
 Abfragen einer Figur lassen ihre eigenen Knochen weg, bevor Box3D sie rechnet, `b3QueryFilter::excludeGroup`, siehe
 [`extern/README.md`](extern/README.md): Eine gesteuerte Figur kostet im Update der Figuren auf der VM 8 bis 10 µs, je

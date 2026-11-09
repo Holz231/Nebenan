@@ -229,10 +229,11 @@
 // swinging leg comes that far.
 #define NB_LEG_SWING_SLACK 0.002f
 
-// As the gait starts or ends on stairs, the root goes on from where it was, the difference fading with a time of
-// NB_STAIR_CARRY seconds and ending below NB_STAIR_CARRY_END meters for the humanoid of 1.8 m, see nbCarryRoot
-#define NB_STAIR_CARRY 0.15f
-#define NB_STAIR_CARRY_END 0.0005f
+// As the gait starts or ends on stairs, or ends as the capsule leaves the ground, the root goes on from where it was,
+// the difference fading with a time of NB_ROOT_CARRY seconds and ending below NB_ROOT_CARRY_END meters for the humanoid
+// of 1.8 m, see nbCarryRoot
+#define NB_ROOT_CARRY 0.15f
+#define NB_ROOT_CARRY_END 0.0005f
 
 // On stairs the ground under the body goes no faster than NB_STAIR_FOLLOW off the slope of the stairs, in meters per second
 // for the humanoid of 1.8 m, see nbStairGround
@@ -3271,23 +3272,26 @@ static float nbLowerSteered( nbFigure* f, b3Transform root, const int* thighs, b
 	return lowered;
 }
 
-// As the gait of a steered humanoid starts or ends on stairs, the root goes from following the footholds, see nbStairGround,
-// to standing over the lower foot, or back, which can lie apart there. The root goes on from where it was and comes to where
-// it belongs, the difference fading with a time of NB_STAIR_CARRY seconds.
+// As the gait of a steered humanoid starts or ends on stairs, the root goes from following the footholds, see
+// nbStairGround, to standing over the lower foot, or back, which can lie apart there. As the gait ends because the
+// capsule leaves the ground, see nbSteerFeet, the root goes from the height the gait gave it to standing over the lower
+// foot. The root goes on from where it was and comes to where it belongs, the difference fading with a time of
+// NB_ROOT_CARRY seconds. Until round 104 it went there at once in the air.
 static void nbCarryRoot( nbFigure* f, b3Transform* root, b3Vec3 up, float timeStep )
 {
-	if ( f->gaitOn != f->carryGait && ( f->stairWeight > 0.0f || f->stairCarry != 0.0f ) )
+	bool carried = f->stairWeight > 0.0f || f->rootCarry != 0.0f || f->onGround == false;
+	if ( f->gaitOn != f->carryGait && carried )
 	{
-		f->stairCarry += b3Dot( b3SubPos( f->carryFrame, f->frame.p ), up ) + f->carryRoot - root->p.y;
+		f->rootCarry += b3Dot( b3SubPos( f->carryFrame, f->frame.p ), up ) + f->carryRoot - root->p.y;
 	}
-	if ( f->stairCarry != 0.0f )
+	if ( f->rootCarry != 0.0f )
 	{
-		f->stairCarry *= nbDecay( timeStep / NB_STAIR_CARRY );
-		if ( fabsf( f->stairCarry ) < NB_STAIR_CARRY_END * nbFigureScale( f ) )
+		f->rootCarry *= nbDecay( timeStep / NB_ROOT_CARRY );
+		if ( fabsf( f->rootCarry ) < NB_ROOT_CARRY_END * nbFigureScale( f ) )
 		{
-			f->stairCarry = 0.0f;
+			f->rootCarry = 0.0f;
 		}
-		root->p.y += f->stairCarry;
+		root->p.y += f->rootCarry;
 	}
 	f->carryGait = f->gaitOn;
 	f->carryFrame = f->frame.p;
@@ -3311,8 +3315,9 @@ static void nbPlaceFeet( nbFigure* f, const b3Transform* transforms, const nbCli
 	float rise = FLT_MAX;
 	float planted = b3ClampFloat( f->footWeight, 0.0f, 1.0f );
 
-	// On ground as flat and high as the clip has it, the clip keeps the legs, but not on stairs, see nbCarryRoot
-	bool flat = planted == 0.0f && f->stairWeight == 0.0f && f->stairCarry == 0.0f;
+	// On ground as flat and high as the clip has it, the clip keeps the legs, but not on stairs or while the root goes on
+	// from where it was, see nbCarryRoot
+	bool flat = planted == 0.0f && f->stairWeight == 0.0f && f->rootCarry == 0.0f;
 	for ( int k = 0; k < 2 && flat; ++k )
 	{
 		const nbFoot* foot = f->feet + k;
@@ -4542,6 +4547,15 @@ static void nbSteerFeet( const nbWorld* world, int index, nbFigure* f, const nbC
 	f->gaitCrouch = 0.0f;
 	f->gaitBob = 0.0f;
 
+	// In the air the gait ends at once, before it crouches the root for this update, the clip takes the legs back, see
+	// NB_FOOT_FADE, and the root goes on from where it was, see nbCarryRoot. Until round 104 the gait ended after the
+	// crouch, and the root stood over the lower foot in the same update with the crouch still on it: the pelvis dropped up
+	// to 27 cm for that one update.
+	if ( f->onGround == false )
+	{
+		f->gaitOn = false;
+	}
+
 	// The feet aim with the velocity of the capsule as a critically damped spring follows it, see NB_GAIT_AIM_LAG
 	if ( f->gaitOn )
 	{
@@ -5375,9 +5389,8 @@ static void nbSteerFeet( const nbWorld* world, int index, nbFigure* f, const nbC
 	f->gaitStance = bobStance;
 	f->gaitPhaseRate = f->gaitRate / cycle;
 
-	// Still, with both feet where the clip puts them, it stands, and the clip takes the legs back, see NB_FOOT_FADE. In
-	// the air too.
-	if ( ( settled && speed <= NB_GAIT_START && f->gaitSpeed < NB_GAIT_STOP ) || f->onGround == false )
+	// Still, with both feet where the clip puts them, it stands, and the clip takes the legs back, see NB_FOOT_FADE
+	if ( settled && speed <= NB_GAIT_START && f->gaitSpeed < NB_GAIT_STOP )
 	{
 		f->gaitOn = false;
 	}

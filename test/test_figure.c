@@ -3663,6 +3663,101 @@ static int SteerGroundTest( void )
 	return 0;
 }
 
+// A wedge across the way along +z, from z0 on: a slope of the angle up to a ridge of the height and a sheer face behind
+// it, half wide to each side
+static void AddWedge( FigureScene* scene, float z0, float height, float angle, float half )
+{
+	b3CosSin slope = b3ComputeCosSin( angle );
+	float run = height * slope.cosine / slope.sine;
+	b3Vec3 points[6] = { { -half, 0.0f, 0.0f }, { half, 0.0f, 0.0f }, { -half, height, run },
+						 { half, height, run }, { -half, 0.0f, run }, { half, 0.0f, run } };
+	b3HullData* hull = b3CreateHull( points, 6, B3_MAX_HULL_VERTICES );
+	b3BodyDef bodyDef = b3DefaultBodyDef();
+	bodyDef.position = b3ToPos( (b3Vec3){ 0.0f, 0.0f, z0 } );
+	b3BodyId body = b3CreateBody( scene->physicsWorld, &bodyDef );
+	b3ShapeDef shapeDef = b3DefaultShapeDef();
+	b3CreateHullShape( body, &shapeDef, hull );
+	b3DestroyHull( hull );
+}
+
+// A steered figure walks at 1.6 m/s over a wedge across its way, up a slope of 0.6 rad to a ridge 42, 50 or 60 cm high
+// and down a sheer face behind it. On the slope its capsule rides up where no foot stands, as the feet land at most
+// NB_GAIT_FOOT_BAND above each other, and behind the ridge the planted foot below holds it, see nbMoveSteered: it has
+// ground in every update, stands all the way and comes over the wedge. Until round 104 the capsule found nothing behind
+// the ridge and fell for 17 to 21 updates, as it fell behind the ridges of rubble, see SteerRubbleTest.
+static int SteerRidgeTest( void )
+{
+	const float heights[3] = { 0.42f, 0.5f, 0.6f };
+	for ( int h = 0; h < 3; ++h )
+	{
+		FigureScene scene;
+		CreateFigureScene( &scene, 1 );
+		AddWedge( &scene, 1.0f, heights[h], 0.6f, 0.4f );
+		nbFigureId figure = AddSteeredFigure( &scene, (b3Vec3){ 0.0f, 0.0f, -2.0f }, 0.0f );
+		SteerVelocity( figure, (b3Vec3){ 0.0f, 0.0f, 1.6f } );
+		int lost = 0;
+		int falls = 0;
+		for ( int i = 0; i < 240; ++i )
+		{
+			StepFigures( &scene, 1 );
+			nbFigureInfo info = nbFigure_GetInfo( figure );
+			lost += info.onGround ? 0 : 1;
+			falls += info.state == nb_figureAnimated ? 0 : 1;
+		}
+		b3Vec3 position = b3ToVec3( nbFigure_GetFrame( figure ).p );
+		printf( "  a wedge of %.0f cm: %d updates without ground, %d not standing, ends %.3f m high at z %.2f\n",
+				100.0f * heights[h], lost, falls, position.y, position.z );
+		ENSURE( lost == 0 && falls == 0 );
+		ENSURE( fabsf( position.y ) < 0.01f && position.z > 3.5f );
+		DestroyFigureScene( &scene );
+	}
+	return 0;
+}
+
+// A steered figure runs at 3 m/s off a ledge 45 or 60 cm, 1 or 1.5 m high. Its capsule leaves the ground for at least
+// 15 updates, as the foot still planted on top is too high to hold it, see NB_STEER_FOOT_DEEP, the gait ends at once
+// and the root goes on from where it was, see nbSteerFeet and nbCarryRoot: the pelvis changes its pace by at most 8 cm
+// from one update to the next, the second difference of its height, and the figure lands standing. Until round 104 the
+// gait crouched the root once more as it ended, and in the same update the root stood over the lower foot: off 45 cm
+// the pelvis dropped and came back by 17.7 cm.
+static int SteerLedgeTest( void )
+{
+	const float heights[4] = { 0.45f, 0.6f, 1.0f, 1.5f };
+	for ( int h = 0; h < 4; ++h )
+	{
+		float height = heights[h];
+		FigureScene scene;
+		CreateFigureScene( &scene, 1 );
+		AddBlock( &scene, (b3Vec3){ 0.0f, 0.5f * height, -2.0f }, (b3Vec3){ 3.0f, 0.5f * height, 5.0f } );
+		nbFigureId figure = AddSteeredFigure( &scene, (b3Vec3){ 0.0f, height, -5.0f }, 0.0f );
+		SteerVelocity( figure, (b3Vec3){ 0.0f, 0.0f, 3.0f } );
+		int lost = 0;
+		int falls = 0;
+		float jump = 0.0f, before = 0.0f, last = 0.0f;
+		for ( int i = 0; i < 300; ++i )
+		{
+			StepFigures( &scene, 1 );
+			nbFigureInfo info = nbFigure_GetInfo( figure );
+			lost += info.onGround ? 0 : 1;
+			falls += info.state == nb_figureAnimated ? 0 : 1;
+			float pelvis = BonePosition( figure, nb_humanoidPelvis ).y;
+			if ( i >= 2 )
+			{
+				jump = b3MaxFloat( jump, fabsf( pelvis - 2.0f * last + before ) );
+			}
+			before = last;
+			last = pelvis;
+		}
+		b3Vec3 position = b3ToVec3( nbFigure_GetFrame( figure ).p );
+		printf( "  off a ledge of %.0f cm: %d updates without ground, the pelvis jumps %.3f m, %d not standing, ends at z %.2f\n",
+				100.0f * height, lost, jump, falls, position.z );
+		ENSURE( lost >= 15 && falls == 0 && jump < 0.08f );
+		ENSURE( fabsf( position.y ) < 0.01f && position.z > 6.0f );
+		DestroyFigureScene( &scene );
+	}
+	return 0;
+}
+
 // The edge of the toes or of the heel on the sole of a foot of the humanoid, where the figure puts the foot: the heel
 // stays where it is while the foot comes down from it, the toes while the foot stands flat and while it rolls over them
 static b3Vec3 SoleEdge( const FigureScene* scene, const nbFigure* f, int foot, float along )
@@ -5032,15 +5127,15 @@ static RubbleCount CrossRubble( int threadCount, b3Vec3 start, b3Vec3 velocity, 
 // Steered figures cross the rubble of a brick wall blown down by grenades, see CreateRubbleScene, walking at 1.6 m/s
 // along the rubble and across it in both directions and running at 4.8 m/s across it, see NB_GAIT_FOOT_BAND,
 // NB_STAIR_MATCH and the hold of the capsule in nbMoveSteered. The gait takes the rubble for stairs in at most 1 % of
-// the updates, the capsule has ground in at least 97.3 %, as round 97 set for its 222 runs over the rubble, the legs
-// are in a bad pose in at most 3 % (there is none on flat ground, see CrossRubble) and a stance knee bends over 120
-// degrees in at most 0.5 %. The running figure goes the same to the bit with 1, 2 and 4 threads. Before round 97 the
-// gait took the rubble for stairs in 1016 of 1546 updates, the capsule had no ground in 144, the legs were in a bad
-// pose in 188 and a stance knee bent over 120 degrees in 16. Until round 103 the capsule had no ground in 18, since
-// round 104, whose feet land elsewhere, in 32: walking back along the rubble the capsule rides over the ridge of a
-// piece 42 cm high, on which no foot stands, and falls 33 cm behind it. Round 103's foot held it there on a foothold
-// planned 11 cm above the piece, at the height of the capsule. Over 207 of the runs of round 97 it has no ground in
-// 1.57 instead of 1.52 % of the updates.
+// the updates, the capsule has ground in at least 99.5 %, the legs are in a bad pose in at most 2 % (there is none on
+// flat ground, see CrossRubble) and a stance knee bends over 120 degrees in at most 0.5 %. The running figure goes the
+// same to the bit with 1, 2 and 4 threads. Before round 97 the gait took the rubble for stairs in 1016 of 1546 updates,
+// the capsule had no ground in 144, the legs were in a bad pose in 188 and a stance knee bent over 120 degrees in 16.
+// Until round 103 the capsule had no ground in 18, in round 104, whose feet land elsewhere, in 32: walking back along
+// the rubble the capsule rode over the ridge of a piece 42 cm high, on which no foot stood, and fell 33 cm behind it.
+// Since round 105 the planted foot below holds it there, see SteerRidgeTest: the capsule has ground in every update,
+// the legs are in a bad pose in 23 instead of 32 and no stance knee bends over 120 degrees, before in 4. Over the 207
+// runs of round 97 it has no ground in 0.69 instead of 1.57 % of the updates.
 static int SteerRubbleTest( void )
 {
 	const float walk = 1.6f, run = 4.8f;
@@ -5071,8 +5166,8 @@ static int SteerRubbleTest( void )
 			total.deepKnee, running );
 	ENSURE( total.updates == standing );
 	ENSURE( total.stairs * 100 <= total.updates );
-	ENSURE( total.offGround * 1000 <= 27 * total.updates );
-	ENSURE( total.bad * 100 <= 3 * total.updates );
+	ENSURE( total.offGround * 200 <= total.updates );
+	ENSURE( total.bad * 50 <= total.updates );
 	ENSURE( total.deepKnee * 200 <= total.updates );
 	ENSURE( two.hash == running );
 	ENSURE( four.hash == running );
@@ -6067,6 +6162,8 @@ int FigureTest( void )
 	RUN_TEST( SteerSpeedTest );
 	RUN_TEST( SteerWallTest );
 	RUN_TEST( SteerGroundTest );
+	RUN_TEST( SteerRidgeTest );
+	RUN_TEST( SteerLedgeTest );
 	RUN_TEST( SteerFootTest );
 	RUN_TEST( SteerSlopeTest );
 	RUN_TEST( SteerStairsTest );

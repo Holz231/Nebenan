@@ -32,6 +32,11 @@
 #define NB_STEER_SNAP 1.0f
 #define NB_STEER_AIR_REACH 0.02f
 
+// With nothing under the capsule within the reach of the probe, a planted foot holds the frame only if it stands deeper
+// below it than this share of its step height, see nbMoveSteered: a foot higher up stands on the ground the capsule
+// leaves, as at a ledge
+#define NB_STEER_FOOT_DEEP 0.5f
+
 // The spring that holds the frame on the ground, in cycles per second, critically damped: up a step of 15 cm in about a
 // tenth of a second
 #define NB_STEER_HERTZ 5.0f
@@ -304,7 +309,7 @@ void nbResetSteering( nbFigure* f )
 	f->stairRise = 0.0f;
 	f->stairStep = 0;
 	f->gaitRate = 1.0f;
-	f->stairCarry = 0.0f;
+	f->rootCarry = 0.0f;
 	f->carryFrame = f->frame.p;
 	f->stairBase = f->frame.p;
 	f->carryRoot = 0.0f;
@@ -492,18 +497,23 @@ bool nbMoveSteered( nbWorld* world, int index, nbFigure* f, float timeStep, b3Ve
 		}
 	}
 	bool ground = probe.hit && b3Dot( probe.normal, up ) >= flatEnough && ( f->onGround || climb <= 0.0f );
-	if ( ground == false && probe.hit && f->onGround && f->gaitOn )
+	if ( ground == false && f->onGround && f->gaitOn )
 	{
-		// Under the capsule only sides too steep to stand on, as between pieces of rubble: the figure stands on the planted
-		// foot nearest to the frame, if that lies within its step of it. Over rubble it fell between the pieces in one of
-		// twenty updates, and the gait stopped and set it down into a crouch.
+		// Under the capsule only sides too steep to stand on, as between pieces of rubble, or nothing within the reach of
+		// the probe, as behind the ridge of a piece the capsule rode up while no foot stood on it: the figure stands on the
+		// planted foot nearest to the frame, if that lies below it or within its step above it. With nothing under the
+		// capsule only a foot deeper than NB_STEER_FOOT_DEEP of the step holds it, as one higher up stands on the ground
+		// the capsule leaves. Over rubble the frame fell between the pieces in one of twenty updates, and the gait stopped
+		// and set it down into a crouch. Until round 104 a foot held it only within its step, and only where the probe
+		// touched something, and behind a ridge the frame fell up to 33 cm.
 		float nearest = FLT_MAX;
 		for ( int k = 0; k < 2; ++k )
 		{
 			b3Vec3 offset = b3SubPos( f->foothold[k], f->frame.p );
 			float height = b3Dot( offset, up );
 			float across = b3Length( b3MulSub( offset, height, up ) );
-			if ( f->footSwings[k] == false && fabsf( height ) <= step && across < nearest )
+			bool holds = height <= step && ( probe.hit || height < -NB_STEER_FOOT_DEEP * step );
+			if ( f->footSwings[k] == false && holds && across < nearest )
 			{
 				nearest = across;
 				probe.point = f->foothold[k];
@@ -513,8 +523,9 @@ bool nbMoveSteered( nbWorld* world, int index, nbFigure* f, float timeStep, b3Ve
 		}
 	}
 
-	// Ground that moves fast does not carry it, as a standing figure falls from it
-	if ( ground )
+	// Ground that moves fast does not carry it, as a standing figure falls from it. Held by a foot with nothing under the
+	// capsule, the figure knows no shape under it to ask.
+	if ( ground && probe.hit )
 	{
 		b3BodyId body = b3Shape_GetBody( probe.shapeId );
 		if ( b3Body_GetType( body ) != b3_staticBody && b3Length( b3Body_GetLinearVelocity( body ) ) > NB_GROUND_SPEED )
