@@ -501,7 +501,9 @@ static b3Quat nbFlatHand( float side )
 
 // How far the feet stand behind the pelvis, in meters for the humanoid of 1.8 m, so the center of mass stands over the
 // middle of the soles and not over the heels. With the feet under the pelvis it stood 7 cm in front of the heels, at
-// 28 percent of the length of the soles, as if the figure was about to sit down.
+// 28 percent of the length of the soles, as if the figure was about to sit down. Since round 104 the heel lies 6.5
+// instead of 4 cm behind the ankle, and the center of mass stands 12.5 instead of 10.1 cm in front of the heels, at 46
+// instead of 39 percent of the soles.
 #define NB_STANCE_BACK 0.04f
 
 // The legs of the humanoid standing about its root: its feet flat on the ground under its hips and a little behind them,

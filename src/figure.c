@@ -267,10 +267,14 @@
 // Going backward, a steered foot on the ground ahead of the hip, which goes away from it, rolls over its heel as far as
 // its leg needs, up to NB_FOOT_HEEL_MOST in radians and no faster than NB_FOOT_HEEL_RATE in radians per second, and it
 // lifts once its leg would not reach it rolled over its heel by NB_FOOT_HEEL_LIFT, running by less and less, see
-// nbLowerSteered. The heel lies 4 cm behind the ankle of the humanoid and the toes 22 cm ahead of it: rolled over its
-// heel, a foot gives its leg only a few centimeters, and small moves of the hip turn it far. As far as its leg needed,
-// up to 0.7 rad at any speed, its toes jumped more than 37 mm in an update at 230 instead of 180 of 504 points of the
-// changes of the gait. A foot rolled over the other edge by more than NB_FOOT_EDGE_FLAT in radians comes flat first.
+// nbLowerSteered. With the heel 4 cm behind the ankle of the humanoid until round 103, rolled over its heel a foot gave
+// its leg only a few centimeters, and small moves of the hip turned it far: as far as its leg needed, up to 0.7 rad at
+// any speed, its toes jumped more than 37 mm in an update at 230 instead of 180 of 504 points of the changes of the
+// gait. Walking as running, it rolls over its heel as far as its leg needs over the next NB_FOOT_ROLL_AHEAD seconds:
+// rolling only once its leg needed it, and no faster than NB_FOOT_HEEL_RATE, it lagged behind, and with the heel 6.5 cm
+// behind the ankle, which gives the leg 1.3 instead of 0.8 cm at NB_FOOT_HEEL_LIFT, the leg lost the foot in the update
+// before it lifted, the root went down and the pelvis stopped rising. A foot rolled over the other edge by more than
+// NB_FOOT_EDGE_FLAT in radians comes flat first.
 #define NB_FOOT_HEEL_MOST 0.35f
 #define NB_FOOT_HEEL_LIFT 0.2f
 #define NB_FOOT_HEEL_RATE 6.0f
@@ -657,15 +661,19 @@ float nbMakeHumanoidBones( float height, float mass, nbBoneDef* bones, int capac
 		// The hip turns the leg 40 degrees in and 45 out, the knee bends 140 degrees and stretches 5 past straight
 		nbSetLimits( bones + thigh, -20.0f, 135.0f, -45.0f, 25.0f, -45.0f, 40.0f );
 
-		// A box with a flat sole, 6 cm under the ankle, reaching forward
+		// A box with a flat sole 6 cm under the ankle, 27 cm long and 10 cm wide like the foot of a person of 1.8 m, 15
+		// percent of the height: the heel lies 6.5 cm behind the ankle and the toes 20.5 cm ahead of it. Until round 103 it
+		// was 26 by 9 cm with the heel 4 cm behind the ankle. Of 214 272 hits no round had seen before, on 24 tables at 60,
+		// 40, 30, 25 and 20 Hz with every hold, 33 596 instead of 35 606 throw the figure down now, fewer at every rate, and
+		// of the light ones up to 60 N s 184 instead of 251. Over the heel a foot gives its leg more, see NB_FOOT_HEEL_MOST
 		nbBoneDef footDef = nbDefaultBoneDef();
 		footDef.name = side == 0 ? "foot left" : "foot right";
 		footDef.parent = shin;
 		footDef.restTransform.p = (b3Vec3){ 0.0f, 0.44f * s, 0.0f };
 		footDef.restTransform.q = footRest;
 		footDef.shape = nb_boxBone;
-		footDef.center = (b3Vec3){ 0.0f, 0.09f * s, -0.03f * s };
-		footDef.halfExtents = (b3Vec3){ 0.045f * s, 0.13f * s, 0.03f * s };
+		footDef.center = (b3Vec3){ 0.0f, 0.07f * s, -0.03f * s };
+		footDef.halfExtents = (b3Vec3){ 0.05f * s, 0.135f * s, 0.03f * s };
 		footDef.mass = 2.5f * m;
 		footDef.friction = NB_SOLE_FRICTION;
 		footDef.joint = nb_ballJoint;
@@ -3128,8 +3136,9 @@ static float nbLowerSteered( nbFigure* f, b3Transform root, const int* thighs, b
 		float most = ( f->footSwings[k] ? side : edges[k] ) < 0.0f ? -NB_FOOT_HEEL_MOST : NB_FOOT_ROLL_MOST;
 		float roll =
 			behind[k] || leads[k] ? planted * nbRollToReach( footBone, ankles[k], rotations[k], hip, reaches[k], most ) : 0.0f;
-		// Running, and as soon as the gait turns to running, before the spring of NB_RUN_TURN_LAG follows
-		float rollAhead = b3MaxFloat( f->runTurn, f->gaitRun );
+		// Running, and as soon as the gait turns to running, before the spring of NB_RUN_TURN_LAG follows, and going backward
+		// over the heel also walking, see NB_FOOT_HEEL_MOST
+		float rollAhead = side < 0.0f ? 1.0f : b3MaxFloat( f->runTurn, f->gaitRun );
 		if ( behind[k] && f->footSwings[k] == false && rollAhead > 0.0f )
 		{
 			// As far as its leg needs over the next NB_FOOT_ROLL_AHEAD seconds, coming there evenly: the hip goes on
@@ -3587,11 +3596,12 @@ static void nbPlaceFeet( nbFigure* f, const b3Transform* transforms, const nbCli
 #define NB_GAIT_FOOT_OUT 2
 #define NB_GAIT_FOOT_NEAR 0.025f
 
-// A steered foot lands with its whole sole on one tread of stairs, see nbFindFoothold. Rays down at the middle of the sole
-// and NB_FOOTHOLD_MARGIN beyond both of its ends find an edge under it: ground more than NB_FOOTHOLD_TOLERANCE off the
-// plane under the middle. On stairs, or once an edge lies under the sole, rays out to NB_FOOTHOLD_REACH find the edges of
-// the tread under the middle, each to a sixteenth of the way by halving it NB_FOOTHOLD_HALVINGS times. In meters for the
-// humanoid of 1.8 m.
+// A steered foot lands with its whole sole on one tread of stairs, see nbFindFoothold. Rays down at the middle of the
+// sole and NB_FOOTHOLD_MARGIN beyond both of its ends find an edge under it: ground more than NB_FOOTHOLD_TOLERANCE off
+// the plane under the middle. On stairs, or once an edge lies under the sole, rays out to NB_FOOTHOLD_REACH find the
+// edges of the tread under the middle, each to a sixteenth of the way by halving it NB_FOOTHOLD_HALVINGS times. Off
+// stairs a ray at NB_FOOTHOLD_REACH ahead of the middle of a sole without an edge under it looks for stairs ahead, see
+// nbLookPast. In meters for the humanoid of 1.8 m.
 #define NB_FOOTHOLD_MARGIN 0.01f
 #define NB_FOOTHOLD_TOLERANCE 0.02f
 #define NB_FOOTHOLD_REACH 0.45f
@@ -3623,7 +3633,8 @@ static void nbPlaceFeet( nbFigure* f, const b3Transform* transforms, const nbCli
 #define NB_STAIR_MATCH 3.0f
 
 // The tread under the middle of a sole, along its toes: how far it reaches back and forward from the middle, whether an
-// edge ends it there, how much higher the ground lies beyond the edge, and how deep it is between its edges, the best guess
+// edge ends it there, how much higher the ground lies beyond the edge, how deep it is between its edges, the best
+// guess, and how much it rises per meter along the toes
 typedef struct nbTread
 {
 	float back;
@@ -3633,6 +3644,7 @@ typedef struct nbTread
 	float backRise;
 	float frontRise;
 	float depth;
+	float grade;
 } nbTread;
 
 // How far the ground lies over a point on a plane, along up, from a ray down from above it: false where there is none,
@@ -3749,7 +3761,7 @@ static bool nbMeasureTread( const nbWorld* world, int index, b3Pos middle, b3Vec
 			}
 		}
 	}
-	*tread = (nbTread){ extents[0], extents[1], edges[0], edges[1], rises[0], rises[1], nearer[0] + nearer[1] };
+	*tread = (nbTread){ extents[0], extents[1], edges[0], edges[1], rises[0], rises[1], nearer[0] + nearer[1], grade };
 	return true;
 }
 
@@ -3763,6 +3775,65 @@ static int nbStairTreads( float ratio, float rise, float scale )
 		treads += 1;
 	}
 	return treads;
+}
+
+// Stairs go up at one edge of a tread and down at the other, and the first tread found has one beyond it as deep, whose
+// edge is as high: a whole tread found under a sole teaches the figure that it walks stairs and how deep their treads
+// are, see NB_STAIR_MATCH, and found right now, a step goes as many treads as one as long as behind would on a ramp as
+// steep as the stairs, see NB_STAIR_KEEP
+static void nbSeeStairs( const nbWorld* world, int index, nbFigure* f, const nbTread* tread, b3Pos ground, b3Vec3 forward,
+						 b3Vec3 up, float need, float behind, float scale )
+{
+	float depth = tread->depth;
+	bool whole = tread->backEdge && tread->frontEdge;
+	bool steps = whole && tread->backRise * tread->frontRise < 0.0f;
+	if ( steps && f->stairWeight == 0.0f )
+	{
+		nbTread next;
+		b3Pos nextGround;
+		b3Pos nextMiddle = b3OffsetPos(
+			ground, b3MulAdd( b3MulSV( 0.5f * ( tread->front - tread->back ) + depth, forward ), tread->frontRise, up ) );
+		steps = nbMeasureTread( world, index, nextMiddle, forward, up, need, true, 0.0f, 0.0f, scale, &next, &nextGround ) &&
+				next.backEdge && next.frontEdge && fabsf( next.depth - depth ) < depth / NB_STAIR_MATCH &&
+				fabsf( next.frontRise - tread->frontRise ) < fabsf( tread->frontRise ) / NB_STAIR_MATCH;
+	}
+	if ( steps && depth >= NB_STAIR_DEPTH_LOW * scale && depth <= NB_STAIR_DEPTH_HIGH * scale )
+	{
+		f->stairDepth = f->stairDepth > 0.0f ? 0.5f * ( f->stairDepth + depth ) : depth;
+		f->stairRise = fabsf( tread->frontRise ) <= fabsf( tread->backRise ) ? tread->frontRise : -tread->backRise;
+		f->stairWeight = 1.0f;
+
+		if ( f->stairStep == 0 && behind < 0.0f )
+		{
+			float ratio = -behind * ( 1.0f + NB_GAIT_STEEP * fabsf( f->slope ) ) /
+						  ( ( 1.0f + NB_GAIT_STEEP * fabsf( f->stairRise ) / f->stairDepth ) * f->stairDepth );
+			f->stairStep = nbStairTreads( ratio, fabsf( f->stairRise ), scale );
+		}
+	}
+}
+
+// The tread beyond the edge ahead of a sole on a level that ends there, with no edge behind it, may be the first of
+// stairs, see nbSeeStairs. The figure learned stairs only from a foot with an edge under its sole: a foot that landed
+// just short of the edge of a landing went back onto it, a foot whose sole fitted on one tread saw no edge, and the
+// next foot, lifting with the gait of level ground, aimed up to 1.7 m ahead and 0.9 m lower, deeper than the ground is
+// looked for, and landed up to four treads down and far ahead of the hip. Running down twenty stairs at 3.0 and 4.5 m/s
+// from 300 starts 1 cm apart, the pelvis went up and down against the line of the stairs by more than 10 cm from 9, by
+// up to 17 cm, and up at 3.0 m/s a foot stood across the edge of the first tread from 7.
+static void nbLookPast( const nbWorld* world, int index, nbFigure* f, const nbTread* level, b3Pos levelGround, b3Vec3 forward,
+						b3Vec3 up, float need, float behind, float scale )
+{
+	if ( f->stairWeight > 0.0f || level->frontEdge == false || level->backEdge )
+	{
+		return;
+	}
+	float beyond = level->front + 0.5f * NB_STAIR_DEPTH_LOW * scale;
+	b3Pos past = b3OffsetPos( levelGround, b3MulAdd( b3MulSV( beyond, forward ), level->frontRise, up ) );
+	nbTread first;
+	b3Pos firstGround;
+	if ( nbMeasureTread( world, index, past, forward, up, need, true, 0.0f, 0.0f, scale, &first, &firstGround ) )
+	{
+		nbSeeStairs( world, index, f, &first, firstGround, forward, up, need, behind, scale );
+	}
 }
 
 // How far along the toes the middle of a sole goes to stand on a tread, need from the middle to beyond each end: to the
@@ -3791,9 +3862,10 @@ static float nbFitSole( const nbTread* tread, float need )
 // along its toes from where the gait puts the middle of the sole. Where no edge lies under the sole it stays, and false
 // is returned. Over an edge it goes onto the tread under the middle, and on stairs onto the tread as many treads beyond
 // the other foot as a step goes, see NB_STAIR_KEEP, if that is no more than NB_STAIR_SHIFT treads away. A whole tread
-// teaches the figure that it walks stairs and how deep their treads are, see NB_STAIR_MATCH. A top shorter than the sole
-// with the ground lower beyond both of its ends, the peak of a piece of rubble, the foot does not stand on: it goes beyond
-// the nearer end, onto the lower ground.
+// teaches the figure that it walks stairs and how deep their treads are, see nbSeeStairs, and so does the first tread
+// of stairs ahead of a sole on a level, see nbLookPast. A top shorter than the sole with the ground lower beyond both
+// of its ends, the peak of a piece of rubble, the foot does not stand on: it goes beyond the nearer end, onto the lower
+// ground.
 static bool nbFindFoothold( const nbWorld* world, int index, nbFigure* f, int k, b3Pos middle, b3Vec3 forward, b3Vec3 up,
 							float guess, float deeper, float scale, float* shift )
 {
@@ -3810,6 +3882,21 @@ static bool nbFindFoothold( const nbWorld* world, int index, nbFigure* f, int k,
 	{
 		if ( tread.backEdge == false && tread.frontEdge == false )
 		{
+			// Where the ground leaves the plane of the sole ahead, the tread it lands on may be one of stairs, or the level
+			// end at the first of them, see nbLookPast
+			float over = 0.0f;
+			bool plane = nbGroundOver( world, index, nbAlongSole( ground, forward, up, tread.grade, NB_FOOTHOLD_REACH * scale ),
+									   up, scale, &over ) &&
+						 fabsf( over ) <= NB_FOOTHOLD_TOLERANCE * scale;
+			nbTread level;
+			b3Pos levelGround;
+			if ( plane == false &&
+				 nbMeasureTread( world, index, middle, forward, up, need, true, guess, deeper, scale, &level, &levelGround ) )
+			{
+				float behind = b3Dot( b3SubPos( f->foothold[1 - k], middle ), forward );
+				nbSeeStairs( world, index, f, &level, levelGround, forward, up, need, behind, scale );
+				nbLookPast( world, index, f, &level, levelGround, forward, up, need, behind, scale );
+			}
 			return false;
 		}
 		nbMeasureTread( world, index, middle, forward, up, need, true, guess, deeper, scale, &tread, &ground );
@@ -3819,7 +3906,6 @@ static bool nbFindFoothold( const nbWorld* world, int index, nbFigure* f, int k,
 		return false;
 	}
 
-	float depth = tread.depth;
 	bool whole = tread.backEdge && tread.frontEdge;
 	float behind = b3Dot( b3SubPos( f->foothold[1 - k], middle ), forward );
 	if ( whole && tread.backRise < 0.0f && tread.frontRise < 0.0f && tread.back + tread.front < 2.0f * need )
@@ -3828,33 +3914,8 @@ static bool nbFindFoothold( const nbWorld* world, int index, nbFigure* f, int k,
 		return true;
 	}
 
-	// Stairs go up at one edge of a tread and down at the other, and the first tread found has one beyond it as deep, whose
-	// edge is as high
-	bool steps = whole && tread.backRise * tread.frontRise < 0.0f;
-	if ( steps && f->stairWeight == 0.0f )
-	{
-		nbTread next;
-		b3Pos nextGround;
-		b3Pos nextMiddle = b3OffsetPos(
-			ground, b3MulAdd( b3MulSV( 0.5f * ( tread.front - tread.back ) + depth, forward ), tread.frontRise, up ) );
-		steps = nbMeasureTread( world, index, nextMiddle, forward, up, need, true, 0.0f, 0.0f, scale, &next, &nextGround ) &&
-				next.backEdge && next.frontEdge && fabsf( next.depth - depth ) < depth / NB_STAIR_MATCH &&
-				fabsf( next.frontRise - tread.frontRise ) < fabsf( tread.frontRise ) / NB_STAIR_MATCH;
-	}
-	if ( steps && depth >= NB_STAIR_DEPTH_LOW * scale && depth <= NB_STAIR_DEPTH_HIGH * scale )
-	{
-		f->stairDepth = f->stairDepth > 0.0f ? 0.5f * ( f->stairDepth + depth ) : depth;
-		f->stairRise = fabsf( tread.frontRise ) <= fabsf( tread.backRise ) ? tread.frontRise : -tread.backRise;
-		f->stairWeight = 1.0f;
-
-		// Found right now, a step goes as many treads as this one would on a ramp as steep as the stairs, see NB_STAIR_KEEP
-		if ( f->stairStep == 0 && behind < 0.0f )
-		{
-			float ratio = -behind * ( 1.0f + NB_GAIT_STEEP * fabsf( f->slope ) ) /
-						  ( ( 1.0f + NB_GAIT_STEEP * fabsf( f->stairRise ) / f->stairDepth ) * f->stairDepth );
-			f->stairStep = nbStairTreads( ratio, fabsf( f->stairRise ), scale );
-		}
-	}
+	nbSeeStairs( world, index, f, &tread, ground, forward, up, need, behind, scale );
+	nbLookPast( world, index, f, &tread, ground, forward, up, need, behind, scale );
 	*shift = nbFitSole( &tread, need );
 
 	// The tread a step of the stairs goes to from the other foot, up to NB_STAIR_SHIFT treads before or after
