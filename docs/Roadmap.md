@@ -5847,10 +5847,10 @@ springt ein Schienbein an allen 24 Stellen 38,5 statt 34,2 mm, im ersten Update 
 fast ganz gestreckt abhebt. Von seitwärts auf rückwärts mit 1,6 m/s springt das schlimmste Schienbein 72,2 statt 66,8
 mm, das Becken an 13 statt 11 Stellen über 10 mm, bis 35,1 statt 33,2 mm, und ein Fuß rutscht bis 17,8 statt 13,9 mm.
 Beim Wechsel ins Rennen seitwärts liegen 2 Schienbeine über der Grenze, vorher keins, und die Füße kreuzen sich an einer
-Stelle, und rückwärts gehend den Blick um 90° gedreht springt ein Schienbein an 3 statt 1 Stelle über 37 mm. Im Schutt
-sind die Beine in 1,70 statt 1,68 % der Updates in einer schlechten Pose, ein Fuß landet in 13,0 statt 12,6 % der
-Landungen auf einer Spitze, und die Kapsel hat in 0,80 statt 0,77 % der Updates keinen Boden, alles in den Grenzen der
-Regel.
+Stelle, und rückwärts gehend den Blick um 90° gedreht springt ein Schienbein an 3 statt 1 Stelle über 37 mm. Mit den
+Clips des Gangs liegen auf den 504 Stellen die Schienbeine an 230 statt 228 Stellen über der Grenze. Im Schutt sind die
+Beine in 1,70 statt 1,68 % der Updates in einer schlechten Pose, ein Fuß landet in 13,0 statt 12,6 % der Landungen auf
+einer Spitze, und die Kapsel hat in 0,80 statt 0,77 % der Updates keinen Boden, alles in den Grenzen der Regel.
 
 Verfehlt sind zwei Bedingungen, knapp: Der schlimmste Fuß auf den neuen Stellen springt 64,1 statt 63,1 mm, beide Male
 von seitwärts auf rückwärts gehend, aber an verschiedenen Stellen. Wo `active-ragdoll-107` 63,1 mm sprang, sind es jetzt
