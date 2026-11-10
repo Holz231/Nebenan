@@ -2778,9 +2778,29 @@ static bool nbStepFeet( const nbWorld* world, int index, nbFigure* f, const b3Tr
 	return true;
 }
 
-// A leg of the humanoid reaches for an ankle point in the frame, the knee ahead, the foot at a rotation in the frame: the
-// rotations of thigh, shin and foot against their rest, from the pelvis where it is
-static void nbReachAnkle( const nbFigure* f, int thigh, b3Transform pelvis, b3Vec3 ankle, b3Quat footRotation, b3Quat* pose )
+// A swinging foot of a steered humanoid in its gait follows its shin as far as the ankles of people bend. Its toes come
+// up against the shin freely to the angle whose sine is NB_SWING_ANKLE_SOFT, 15 degrees, and beyond that less and less,
+// never as far as the angle whose sine is NB_SWING_ANKLE_MOST, 25 degrees, the middle of the 20 to 30 degrees people
+// reach: the sine it would be beyond the first is over, and it gives over squared by over and the room between the two,
+// turned about its ankle, which stays where the leg reaches. A foot that lifts bent farther up keeps how far it is
+// beyond as it lifts and gives that up over the first NB_SWING_ANKLE_IN of its swing, and over the last
+// NB_SWING_ANKLE_OUT of it the foot comes back to how the gait lands it. Until round 112 the gait held the foot of a
+// runner level through its swing while its knee bent to 100 degrees and its shin lay back: the ankle was bent up 65
+// degrees at 3.0 m/s and 71 at 4.8 m/s, as no ankle bends, and walking 24 degrees. With a hard stop at 20 degrees that
+// let go over the second half of the swing, the toes jumped 36 and 53 mm in an update where it let go. And coming in
+// over the first tenth of every swing, instead of keeping what a foot lifts with, it turned a foot down at once that a
+// figure starting to run lifted bent up 40 degrees: its toes jumped 47 mm.
+#define NB_SWING_ANKLE_SOFT 0.2588f
+#define NB_SWING_ANKLE_MOST 0.4226f
+#define NB_SWING_ANKLE_IN 0.4f
+#define NB_SWING_ANKLE_OUT 0.2f
+
+// A leg of the humanoid reaches for an ankle point in the frame, the knee ahead, the foot at a rotation in the frame:
+// the rotations of thigh, shin and foot against their rest, from the pelvis where it is. A foot that swings, along from
+// 0 to 1 of its swing and negative for any other, bends its ankle up softly, see NB_SWING_ANKLE_SOFT, and held keeps
+// how far it was beyond as it lifted, negative until then.
+static void nbReachAnkle( const nbFigure* f, int thigh, b3Transform pelvis, b3Vec3 ankle, b3Quat footRotation, b3Quat* pose,
+						  float along, float* held )
 {
 	const nbBone* thighBone = f->bones + thigh;
 	const nbBone* shinBone = f->bones + thigh + 1;
@@ -2791,6 +2811,32 @@ static void nbReachAnkle( const nbFigure* f, int thigh, b3Transform pelvis, b3Ve
 								   &knee, &end );
 	b3Quat thighRotation = nbRotationFromAxes( axis, b3Sub( knee, hip ) );
 	b3Quat shinRotation = nbRotationFromAxes( axis, b3Sub( end, knee ) );
+	if ( along >= 0.0f )
+	{
+		b3Vec3 shin = b3Normalize( b3Sub( knee, end ) );
+		b3Vec3 toes = b3RotateVector( footRotation, b3Vec3_axisY );
+		float up = b3Dot( toes, shin );
+		float over = b3MaxFloat( up - NB_SWING_ANKLE_SOFT, 0.0f );
+		float beyond = over * over / ( NB_SWING_ANKLE_MOST - NB_SWING_ANKLE_SOFT + over );
+		if ( *held < 0.0f )
+		{
+			*held = beyond;
+		}
+		float in = b3MinFloat( along / NB_SWING_ANKLE_IN, 1.0f );
+		float out = b3ClampFloat( ( 1.0f - along ) / NB_SWING_ANKLE_OUT, 0.0f, 1.0f );
+		float kept = *held * ( 1.0f - in * in * ( 3.0f - 2.0f * in ) );
+		float down = b3MaxFloat( beyond - kept, 0.0f ) * out * out * ( 3.0f - 2.0f * out );
+		if ( down > 0.0f )
+		{
+			// The toes go down that far against the shin, across it as they point, or toward the sole where they point along it
+			float bent = up - down;
+			b3Vec3 across = b3Sub( toes, b3MulSV( up, shin ) );
+			float length = b3Length( across );
+			across = length > 1.0e-4f ? b3MulSV( 1.0f / length, across ) : b3Neg( b3RotateVector( footRotation, b3Vec3_axisZ ) );
+			b3Vec3 want = b3Normalize( b3Add( b3MulSV( bent, shin ), b3MulSV( sqrtf( 1.0f - bent * bent ), across ) ) );
+			footRotation = b3NormalizeQuat( b3MulQuat( b3ComputeQuatBetweenUnitVectors( toes, want ), footRotation ) );
+		}
+	}
 	pose[thigh] = b3NormalizeQuat( b3InvMulQuat( b3MulQuat( pelvis.q, thighBone->rest.q ), thighRotation ) );
 	pose[thigh + 1] = b3NormalizeQuat( b3InvMulQuat( b3MulQuat( thighRotation, shinBone->rest.q ), shinRotation ) );
 	pose[thigh + 2] = b3NormalizeQuat( b3InvMulQuat( b3MulQuat( shinRotation, footBone->rest.q ), footRotation ) );
@@ -3600,9 +3646,12 @@ static void nbPlaceFeet( nbFigure* f, const b3Transform* transforms, const nbCli
 	{
 		if ( placed[k] )
 		{
-			// A swinging foot goes where the leg reaches, see NB_LEG_SWING_SLACK
+			// A swinging foot goes where the leg reaches, see NB_LEG_SWING_SLACK, and its ankle bends as far as the ankles of
+			// people do, see NB_SWING_ANKLE_SOFT
+			float along = -1.0f;
 			if ( f->steered && f->gaitOn && f->footSwings[k] )
 			{
+				along = f->swingAlong[k];
 				float length = b3Length( f->bones[thighs[k] + 1].rest.p ) + b3Length( f->bones[thighs[k] + 2].rest.p );
 				float most = reaches[k] + NB_LEG_SWING_SLACK * length;
 				b3Vec3 hip = b3TransformPoint( root, f->bones[thighs[k]].rest.p );
@@ -3613,7 +3662,11 @@ static void nbPlaceFeet( nbFigure* f, const b3Transform* transforms, const nbCli
 					ankles[k] = b3MulAdd( hip, most / distance, offset );
 				}
 			}
-			nbReachAnkle( f, thighs[k], root, ankles[k], rotations[k], f->pose );
+			else
+			{
+				f->ankleHeld[k] = -1.0f;
+			}
+			nbReachAnkle( f, thighs[k], root, ankles[k], rotations[k], f->pose, along, f->ankleHeld + k );
 		}
 	}
 }
@@ -3629,6 +3682,19 @@ static void nbPlaceFeet( nbFigure* f, const b3Transform* transforms, const nbCli
 #define NB_GAIT_CADENCE_MAX 1.095f
 #define NB_GAIT_CADENCE_SPAN 0.719f
 #define NB_GAIT_CADENCE_SPEED 0.978f
+
+// Walking, people take fewer and longer steps than that, which fits how they run: the length of their step over their
+// steps per minute, the walk ratio, stays about the same from a stroll to a brisk walk, about 0.0067 m per step a
+// minute for a person of 1.8 m (Sekiya and Nagasaki 1998, Murakami and Otaka 2017). The cadence of walking is then
+// NB_GAIT_CADENCE_WALK times the square root of the speed, in the units above, 0.864 for that walk ratio and legs of
+// 0.96 m: 97, 112, 120 and 135 steps a minute at 1.0, 1.4, 1.6 and 2.0 m/s, steps of 0.62 to 0.89 m, where the model
+// alone took 112, 124, 130 and 140, steps of 0.54 to 0.86 m. It goes over to the model as far as the figure runs, see
+// NB_GAIT_RUN_FROM, or is steered to run: a figure that starts to run or turns round running steps as often as it runs
+// from its first step on, as people do, and one that slows down to a walk or stops takes the steps of walking as its
+// speed falls. Taking the steps of walking by its speed alone, a figure starting to run at 4.8 m/s came down from its
+// first flight later and faster, its pelvis jumped 10.3 instead of 8.4 mm in an update and its hands 17.6 instead of
+// 13.2 mm.
+#define NB_GAIT_CADENCE_WALK 0.864f
 
 // Walking, a foot that lifts more than an update before its phase says it is due, as its leg loses it, shows how far
 // the cycle of the gait is behind the feet, up to NB_GAIT_KEEP_MOST of a cycle, and the cycle catches up, critically
@@ -4207,26 +4273,36 @@ static float nbGaitStance( const nbFigure* f, float run )
 	return walking + ( running - walking ) * run;
 }
 
-// The steps per second of the gait at a speed in units of sqrt(g l), in units of sqrt(g / l), see NB_GAIT_CADENCE_MAX
-static float nbCadenceModel( float u )
+// The steps per second of the gait at a speed in units of sqrt(g l), in units of sqrt(g / l), see NB_GAIT_CADENCE_MAX:
+// those of walking, see NB_GAIT_CADENCE_WALK, going over to the model as far as the faster of that speed and the speed
+// the figure is steered at, wants, is one people run at
+static float nbCadenceModel( float u, float wants )
 {
-	return b3MaxFloat( NB_GAIT_CADENCE_MAX - NB_GAIT_CADENCE_SPAN * nbDecay( u / NB_GAIT_CADENCE_SPEED ), NB_GAIT_CADENCE_MIN );
+	float model =
+		b3MaxFloat( NB_GAIT_CADENCE_MAX - NB_GAIT_CADENCE_SPAN * nbDecay( u / NB_GAIT_CADENCE_SPEED ), NB_GAIT_CADENCE_MIN );
+	float x = b3ClampFloat( ( b3MaxFloat( u, wants ) - NB_GAIT_RUN_FROM ) / ( NB_GAIT_RUN_TO - NB_GAIT_RUN_FROM ), 0.0f, 1.0f );
+	float run = x * x * ( 3.0f - 2.0f * x );
+	float walk = b3MaxFloat( NB_GAIT_CADENCE_WALK * sqrtf( b3MaxFloat( u, 0.0f ) ), NB_GAIT_CADENCE_MIN );
+	return walk + ( model - walk ) * run;
 }
 
 // The steps per second of a steered humanoid at a speed in units of sqrt(g l), omega being sqrt(g / l), see
-// NB_GAIT_CADENCE_MAX. With clips of its gait, as many more or fewer as the clips take at the speed they were made at,
-// blended from the slower to the faster as far as it runs, so it steps as often as the clip at its speed.
+// NB_GAIT_CADENCE_MAX. With clips of its gait, as many more or fewer as the clips take at the speed they were made at
+// than the gait of the library going steadily at that speed, blended from the slower to the faster as far as it runs,
+// so it steps as often as the clip at its speed.
 static float nbGaitCadence( const nbFigure* f, float omega, float u, float run )
 {
-	float cadence = omega * nbCadenceModel( u );
+	float unit = omega * b3MaxFloat( f->def.standHeight, 0.1f );
+	float wants = f->steeredSpeed / unit;
+	float cadence = omega * nbCadenceModel( u, wants );
 	if ( f->gaitClipCount > 0 )
 	{
-		float unit = omega * b3MaxFloat( f->def.standHeight, 0.1f );
 		float scale[NB_MAX_GAIT_CLIPS];
 		for ( int k = 0; k < f->gaitClipCount; ++k )
 		{
 			const nbGaitClip* gait = f->gaitClips + k;
-			scale[k] = 2.0f / ( gait->cycle * omega * nbCadenceModel( gait->speed / unit ) );
+			float made = gait->speed / unit;
+			scale[k] = 2.0f / ( gait->cycle * omega * nbCadenceModel( made, made ) );
 		}
 		cadence *= f->gaitClipCount > 1 ? scale[0] + ( scale[1] - scale[0] ) * run : scale[0];
 	}

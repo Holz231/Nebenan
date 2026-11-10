@@ -481,6 +481,9 @@ typedef struct nbFigure
 	b3Vec3 moveVelocity;
 	b3Vec3 wishVelocity;
 	b3Vec3 askedVelocity;
+	// How fast the game steers it over the ground, see nbSteer::velocity: its gait takes the steps of walking only as far
+	// as it is steered to walk, see NB_GAIT_CADENCE_WALK
+	float steeredSpeed;
 	bool onGround;
 	float probeRate;
 	float airTime;
@@ -513,6 +516,9 @@ typedef struct nbFigure
 	float landHeading[2];
 	float footRoll[2];
 	float footRolled[2];
+	// How far the ankle of a swinging foot was bent up beyond what it bends softly as it lifted, as a sine, and negative
+	// for a foot that does not swing, see NB_SWING_ANKLE_SOFT
+	float ankleHeld[2];
 	float swingRoll[2];
 	float landRoll[2];
 	float stanceTime[2];

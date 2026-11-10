@@ -336,6 +336,7 @@ void nbResetSteering( nbFigure* f )
 		f->landHeading[k] = f->heading;
 		f->footRoll[k] = 0.0f;
 		f->footRolled[k] = 0.0f;
+		f->ankleHeld[k] = -1.0f;
 		f->swingRoll[k] = 0.0f;
 		f->landRoll[k] = 0.0f;
 		f->footPush[k] = 0.0f;
@@ -436,6 +437,7 @@ bool nbMoveSteered( nbWorld* world, int index, nbFigure* f, float timeStep, b3Ve
 	b3Vec3 flat = b3MulSub( velocity, climb, up );
 	b3Vec3 wish = b3MulSub( f->steer.velocity, b3Dot( f->steer.velocity, up ), up );
 	b3Vec3 asked = wish;
+	f->steeredSpeed = b3Length( wish );
 	if ( f->steer.faceVelocity )
 	{
 		// Facing where it moves, it goes across its heading and backward no faster than a step to the side or back, see
