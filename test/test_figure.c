@@ -6064,15 +6064,17 @@ static int ThinBoardTest( void )
 // low the root goes for a landing with the hip as the pelvis turns it, see nbSteerFeet, and a foot on the ground comes
 // back down from its toes no faster than it rolls over its heel, see NB_FOOT_HEEL_RATE. Since round 108 a walking foot
 // leads by no more than the gait would at the speed it aims with, see NB_GAIT_PLAN_FROM. Since round 109 a foot that
-// lifts over its toes with its leg nearly stretched lifts gently at first, see NB_SWING_SOFT_FROM.
-#define NB_EXPECTED_STEER_HASH 0x5f5c84d6u
+// lifts over its toes with its leg nearly stretched lifts gently at first, see NB_SWING_SOFT_FROM. Since round 111 a
+// walking foot that trails and that its leg loses in the next update lifts where the other foot lands within
+// NB_GAIT_FLOAT, and going backward a foot its leg only reaches rolled over its toes stays on them.
+#define NB_EXPECTED_STEER_HASH 0x6df01bd8u
 
 // See RunGaitClipScenario. Since round 99 as for RunSteerScenario. Since round 100 the figure that is told to turn on
 // the spot while it still walks, not facing where it moves, keeps its legs where they face as its heading turns, and
 // they follow at its turn rate, see NB_LEG_TURN_WALK. In RunSteerScenario it ends standing as before. Since round 101
 // as for RunSteerScenario. Since round 102, since round 104, since round 107 and since round 108 as for
-// RunSteerScenario.
-#define NB_EXPECTED_GAIT_CLIP_HASH 0x34c924dau
+// RunSteerScenario. Since round 111 as for RunSteerScenario.
+#define NB_EXPECTED_GAIT_CLIP_HASH 0x2830e164u
 
 static int FigureFollowDeterminismTest( void )
 {

@@ -335,6 +335,7 @@ void nbResetSteering( nbFigure* f )
 		f->liftHeading[k] = f->heading;
 		f->landHeading[k] = f->heading;
 		f->footRoll[k] = 0.0f;
+		f->footRolled[k] = 0.0f;
 		f->swingRoll[k] = 0.0f;
 		f->landRoll[k] = 0.0f;
 		f->footPush[k] = 0.0f;
@@ -343,6 +344,7 @@ void nbResetSteering( nbFigure* f )
 		f->footRollRate[k] = 0.0f;
 		f->footOut[k] = FLT_MAX;
 		f->outBehind[k] = false;
+		f->outToes[k] = false;
 		f->swingHurry[k] = 1.0f;
 		f->swingRate[k] = 1.0f;
 		f->swingCalm[k] = 1.0f;

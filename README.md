@@ -1713,7 +1713,13 @@ nicht dorthin blickt, wohin sie geht, damit, wie ihre Beine sie beim Weiterdrehe
 Geschwindigkeit, die sie gerade hat: Von seitwärts auf rückwärts springen die Füße an 3 statt 13 von 48 Stellen um mehr
 als 37 mm in einem Update, die Schienbeine an 12 statt 30 und das Becken an 12 statt 23 um mehr als 10 mm, über alle
 Übergänge die Füße an 8 statt 41 von 504 Stellen, und die Füße kreuzen an 19 statt 27 Stellen, siehe „Die Schwünge
-planen mit der Freigabe der Beine“ in [Optimierungen.md](docs/Optimierungen.md). Am Hang und auf Treppen misst die Figur
+planen mit der Freigabe der Beine“ in [Optimierungen.md](docs/Optimierungen.md). Seit `active-ragdoll-111` bleibt
+rückwärts ein Fuß am Boden, den sein Bein nur über die Zehen gerollt erreicht, auf den Zehen, statt das Rollen zu
+verlieren, wenn die Hüfte über ihn hinweggeht, und gehend hebt ein Fuß, den sein Bein verliert, ab, wenn der andere in
+höchstens 0,05 s landet: Von seitwärts auf rückwärts gehend springt das Becken, geprüft mit Geschwindigkeiten, die
+vorher nicht gelaufen waren, an 0 statt 11 von 48 Stellen um mehr als 10 mm in einem Update, im Schlimmsten 8,1 statt
+33,2 mm, und über alle Übergänge an 149 statt 190 von 1 008 Stellen, siehe „Rückwärts auf den Zehen bleiben, wenn das
+Bein den Fuß nur gerollt erreicht“ in [Optimierungen.md](docs/Optimierungen.md). Am Hang und auf Treppen misst die Figur
 die Steigung ihres Wegs: Bergauf landet ein Fuß weiter vorn, bergab näher unter dem Körper, so reicht das vordere Bein
 so weit hinauf wie das hintere hinunter, und die Schritte werden kürzer, auf 20° um ein Fünftel. Die Feder unter der
 Kapsel folgt der Ebene, die der Fühler findet, statt am Hang hinterherzuhängen, und vor dem Aufsetzen geht die Hüfte so

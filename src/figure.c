@@ -2864,6 +2864,63 @@ static float nbRollToReach( const nbBone* footBone, b3Vec3 ankle, b3Quat rotatio
 	return high;
 }
 
+// As nbRollToReach over the toes, wherever the hip lies along the foot: as far as the leg needs and no farther than
+// brings the ankle closest to the hip, which is where the ankle, turning about the edge of the toes on the sole, lies
+// toward the hip from that edge, and never farther than NB_FOOT_ROLL_MOST. Farther it would go away again, and just
+// short of it the roll gives the leg next to nothing: 1 cm over the last 0.3 rad. Also returns that closest roll. For a
+// foot that stays on its toes although the hip passed over it, see NB_GAIT_FLOAT.
+static float nbRollOnToes( const nbBone* footBone, b3Vec3 ankle, b3Quat rotation, b3Vec3 hip, float reach, float* closest )
+{
+	b3Vec3 h = footBone->halfExtents;
+	float along = footBone->center.y + h.y;
+	b3Vec3 edge = b3Add( ankle, b3RotateVector( rotation, (b3Vec3){ footBone->center.x, along, footBone->center.z - h.z } ) );
+	b3Vec3 axis = b3Normalize( b3Cross( b3RotateVector( rotation, b3Vec3_axisZ ), b3RotateVector( rotation, b3Vec3_axisY ) ) );
+	b3Vec3 toAnkle = b3Sub( ankle, edge );
+	b3Vec3 toHip = b3Sub( hip, edge );
+	toAnkle = b3MulSub( toAnkle, b3Dot( toAnkle, axis ), axis );
+	toHip = b3MulSub( toHip, b3Dot( toHip, axis ), axis );
+	float top =
+		b3ClampFloat( b3Atan2( b3Dot( axis, b3Cross( toAnkle, toHip ) ), b3Dot( toAnkle, toHip ) ), 0.0f, NB_FOOT_ROLL_MOST );
+	*closest = top;
+	float start = b3DistanceSquared( ankle, hip );
+	if ( start <= reach * reach || top <= 0.0f )
+	{
+		return 0.0f;
+	}
+	b3Vec3 rolled = ankle;
+	b3Quat turned = rotation;
+	nbRollFoot( footBone, top, 0.0f, &rolled, &turned );
+	float end = b3DistanceSquared( rolled, hip );
+	if ( end >= start )
+	{
+		return 0.0f;
+	}
+	if ( end > reach * reach )
+	{
+		return top;
+	}
+
+	// Up to the closest the ankle comes closer the farther the foot rolls
+	float low = 0.0f;
+	float high = top;
+	for ( int i = 0; i < 10; ++i )
+	{
+		float middle = 0.5f * ( low + high );
+		rolled = ankle;
+		turned = rotation;
+		nbRollFoot( footBone, middle, 0.0f, &rolled, &turned );
+		if ( b3DistanceSquared( rolled, hip ) > reach * reach )
+		{
+			low = middle;
+		}
+		else
+		{
+			high = middle;
+		}
+	}
+	return high;
+}
+
 // How far a leg needs the root to go down to reach an ankle from its hip, less than nothing where it reaches
 static float nbDropToReach( b3Vec3 ankle, b3Vec3 hip, float reach )
 {
@@ -2937,7 +2994,8 @@ static b3Vec3 nbAlongPath( const nbPath* path, b3Vec3 point, float time )
 // How long the leg of a foot on the ground reaches it as the hip goes along the way of the capsule, without the root going
 // lower than limit below where it is now while the hip goes away from the foot, FLT_MAX if longer than NB_GAIT_LOOK in
 // seconds or if the hip passes over the foot before, looked at every NB_GAIT_LOOK over NB_GAIT_LOOK_STEPS and found to that
-// over 2^NB_GAIT_LOOK_HALVINGS. Behind the hip the leg reaches the foot rolled over its toes, see nbLowerSteered.
+// over 2^NB_GAIT_LOOK_HALVINGS. Behind the hip the leg reaches the foot rolled over its toes, see nbLowerSteered. For a
+// foot that stays on its toes, see NB_GAIT_FLOAT, the look goes on past where the hip passes over it.
 // A foot on the ground beside or ahead of the hip that the hip leaves is lost once its leg would need the root lower than
 // NB_GAIT_LOSE below where the gait has it, in meters for the humanoid of 1.8 m, see nbSteerFeet. It lifts once the other
 // foot stands, and while the other foot swings, that one hurries to land before then, up to NB_GAIT_HURRY times as fast.
@@ -2960,6 +3018,25 @@ static b3Vec3 nbAlongPath( const nbPath* path, b3Vec3 point, float time )
 // past a foot while it comes down from its heel, and the push came in at once as the heel was down, with a jolt of the knee
 #define NB_GAIT_PUSH_SPEED 3.0f
 
+// Going backward, a foot on the ground that its leg only reaches rolled over its toes stays on its toes while the hip
+// leaves it, and on once the hip has passed over it lengthwise: it stands far to the side of the hip where the legs
+// changed from going sideways to going backward. It rolls as far as its leg needs and no farther than brings the ankle
+// closest, see nbRollOnToes, and it is lost once its leg would not reach it rolled as far short of the closest as a
+// trailing foot lifts short of NB_FOOT_ROLL_MOST, at most by NB_FOOT_ROLL. Until round 111 it had to come flat as the
+// hip passed, no faster than NB_FOOT_HEEL_RATE, and to roll over its heel, which gives the leg 1.3 cm: changing from
+// walking sideways to walking backward the root went down 2 to 4 cm in an update, the pelvis jumped up to 39 mm and a
+// shin up to 70 mm. And lost only once its leg needed the root NB_GAIT_LOSE lower at the roll it had, the swinging foot
+// hurried too late: the roll ran to NB_FOOT_ROLL_MOST and the root went down for the rest.
+//
+// Walking, a foot stands while the other swings. A trailing foot, or one that stays on its toes, that its leg loses in
+// the next update lifts all the same where the other foot lands within NB_GAIT_FLOAT seconds, and for that moment both
+// feet are off the ground: holding on, it pulled the root down after it for those updates, and the pelvis came back up
+// with a jolt as it lifted. A foot that stands flat beside or ahead of the hip does not: its leg is straight, and
+// lifting it made a shin jump 55 instead of 32 mm starting to run sideways at 3.6 m/s. Within 0.08 s instead, tried
+// without the foot that stays on its toes, the feet crossed at 26 instead of 14 of 504 points of the changes of the
+// gait with clips.
+#define NB_GAIT_FLOAT 0.05f
+
 // How many times as fast as its gait a swing goes at most, at least once
 static float nbMostHurry( const nbFoot* foot, b3Vec3 up, float swingStart, float swingTime, float gaitRate )
 {
@@ -2969,7 +3046,8 @@ static float nbMostHurry( const nbFoot* foot, b3Vec3 up, float swingStart, float
 	return across > 0.0f ? b3MaxFloat( time * sqrtf( NB_GAIT_SWING_ACCEL / ( 6.0f * across ) ), 1.0f ) : NB_GAIT_HURRY;
 }
 
-static float nbTimeToLose( const nbPath* path, b3Vec3 ankle, b3Vec3 rolled, b3Vec3 toes, b3Vec3 hip, float reach, float limit )
+static float nbTimeToLose( const nbPath* path, b3Vec3 ankle, b3Vec3 rolled, b3Vec3 toes, b3Vec3 hip, float reach, float limit,
+						   bool onToes )
 {
 	bool behind = toes.x * ( hip.x - ankle.x ) + toes.z * ( hip.z - ankle.z ) > 0.0f;
 	float step = NB_GAIT_LOOK / (float)NB_GAIT_LOOK_STEPS;
@@ -2980,7 +3058,16 @@ static float nbTimeToLose( const nbPath* path, b3Vec3 ankle, b3Vec3 rolled, b3Ve
 		b3Vec3 at = nbAlongPath( path, hip, time );
 		if ( ( toes.x * ( at.x - ankle.x ) + toes.z * ( at.z - ankle.z ) > 0.0f ) != behind )
 		{
-			return FLT_MAX;
+			// A foot that stays on its toes stays on them where the hip passes over it, as long as its leg does not
+			// reach it flat, see nbLowerSteered
+			if ( onToes && nbDropToReach( ankle, at, reach ) > 0.0f )
+			{
+				behind = behind == false;
+			}
+			else
+			{
+				return FLT_MAX;
+			}
 		}
 		float need = nbDropToReach( rolled, at, reach );
 		if ( need > limit && need > before )
@@ -3033,16 +3120,20 @@ static float nbLowerSteered( nbFigure* f, b3Transform root, const int* thighs, b
 	bool behind[2];
 	bool leads[2];
 	bool landed[2];
+	bool tips[2];
 	float edges[2];
 	float drop = 0.0f;
 	for ( int k = 0; k < 2; ++k )
 	{
+		const nbBone* footBone = f->bones + thighs[k] + 2;
 		b3Vec3 hip = b3TransformPoint( root, f->bones[thighs[k]].rest.p );
 		b3Vec3 toes = b3RotateVector( rotations[k], b3Vec3_axisY );
 		float along = toes.x * ( hip.x - ankles[k].x ) + toes.z * ( hip.z - ankles[k].z );
 		edges[k] = 0.0f;
 		leads[k] = false;
 		landed[k] = false;
+		tips[k] = false;
+		float closest = 0.0f;
 		if ( f->footSwings[k] )
 		{
 			behind[k] = side * along > 0.0f && side * f->footRoll[k] >= 0.0f;
@@ -3058,12 +3149,33 @@ static float nbLowerSteered( nbFigure* f, b3Transform root, const int* thighs, b
 			{
 				edge = 0.0f;
 			}
+			if ( side < 0.0f )
+			{
+				// Going backward, a foot rolled over its toes that the hip has passed stays on its toes while its leg needs
+				// that, with the roll its leg gave it also while it came down from a landing, and so does one the hip did
+				// not pass yet but leaves, as where the legs changed from going sideways, see NB_GAIT_FLOAT. It counts as
+				// one the hip did not pass yet.
+				bool passed = along <= 0.0f;
+				bool leaves = ( hip.x - ankles[k].x ) * level.velocity.x + ( hip.z - ankles[k].z ) * level.velocity.z > 0.0f;
+				bool may = passed ? f->footRolled[k] > NB_FOOT_EDGE_FLAT : edge > 0.0f && landed[k] == false && leaves;
+				if ( may && planted * nbRollOnToes( footBone, ankles[k], rotations[k], hip, reaches[k], &closest ) > 0.0f )
+				{
+					tips[k] = true;
+					if ( passed )
+					{
+						edge = 1.0f;
+						landed[k] = false;
+						f->footRoll[k] = f->footRolled[k];
+					}
+				}
+			}
 			edges[k] = edge;
-			behind[k] = edge != 0.0f && side * along > 0.0f;
-			leads[k] = edge != 0.0f && side * along < 0.0f;
+			behind[k] = edge != 0.0f && side * along > 0.0f && tips[k] == false;
+			leads[k] = ( edge != 0.0f && side * along < 0.0f ) || tips[k];
 		}
 		f->footOut[k] = FLT_MAX;
 		f->outBehind[k] = behind[k];
+		f->outToes[k] = tips[k];
 		if ( f->footSwings[k] && f->swingAlong[k] > NB_GAIT_DESCEND )
 		{
 			// Late in its swing, as far as its leg needs to reach the foot where it is now, more and more, rolled as it lands,
@@ -3074,7 +3186,7 @@ static float nbLowerSteered( nbFigure* f, b3Transform root, const int* thighs, b
 			if ( stepSide * f->footRoll[k] < 0.0f )
 			{
 				b3Quat turned = rotations[k];
-				nbRollFoot( f->bones + thighs[k] + 2, f->footRoll[k], NB_FOOT_ROCK, &heeled, &turned );
+				nbRollFoot( footBone, f->footRoll[k], NB_FOOT_ROCK, &heeled, &turned );
 			}
 			drop = b3MaxFloat( drop, late * late * ( 3.0f - 2.0f * late ) * nbDropToReach( heeled, hip, reaches[k] ) );
 		}
@@ -3085,24 +3197,24 @@ static float nbLowerSteered( nbFigure* f, b3Transform root, const int* thighs, b
 			b3Vec3 heeled = ankles[k];
 			if ( leads[k] )
 			{
-				float need = planted * nbRollToReach( f->bones + thighs[k] + 2, ankles[k], rotations[k], hip, reaches[k],
-													  NB_FOOT_ROLL_MOST );
-				float roll = b3MaxFloat( landed[k] ? f->footRoll[k] : unroll * f->footRoll[k], need );
+				float need = tips[k] ? nbRollOnToes( footBone, ankles[k], rotations[k], hip, reaches[k], &closest )
+									 : nbRollToReach( footBone, ankles[k], rotations[k], hip, reaches[k], NB_FOOT_ROLL_MOST );
+				float roll = b3MaxFloat( landed[k] ? f->footRoll[k] : unroll * f->footRoll[k], planted * need );
 				if ( roll != 0.0f )
 				{
 					b3Quat turned = rotations[k];
-					nbRollFoot( f->bones + thighs[k] + 2, roll, 0.0f, &heeled, &turned );
+					nbRollFoot( footBone, roll, 0.0f, &heeled, &turned );
 				}
 			}
 			else if ( landed[k] )
 			{
 				b3Quat turned = rotations[k];
-				nbRollFoot( f->bones + thighs[k] + 2, f->footRoll[k], 0.0f, &heeled, &turned );
+				nbRollFoot( footBone, f->footRoll[k], 0.0f, &heeled, &turned );
 			}
 			else if ( f->footRoll[k] != 0.0f )
 			{
 				b3Quat turned = rotations[k];
-				nbRollFoot( f->bones + thighs[k] + 2, unroll * f->footRoll[k], 0.0f, &heeled, &turned );
+				nbRollFoot( footBone, unroll * f->footRoll[k], 0.0f, &heeled, &turned );
 			}
 			drop = b3MaxFloat( drop, nbDropToReach( heeled, hip, reaches[k] ) );
 
@@ -3114,7 +3226,21 @@ static float nbLowerSteered( nbFigure* f, b3Transform root, const int* thighs, b
 				// With clips of the gait that move the root, as much less as they crouch, see nbSteerFeet
 				lose = NB_GAIT_LOSE * nbFigureScale( f ) - f->gaitClipCrouch;
 			}
-			f->footOut[k] = nbTimeToLose( &level, ankles[k], heeled, toes, hip, reaches[k], lose );
+			f->footOut[k] = nbTimeToLose( &level, ankles[k], heeled, toes, hip, reaches[k], lose, false );
+			if ( tips[k] )
+			{
+				// One that stays on its toes is lost once its leg would not reach it rolled as far short of the closest as
+				// a trailing foot lifts short of NB_FOOT_ROLL_MOST, see NB_GAIT_FLOAT
+				float lift = b3MinFloat( NB_FOOT_ROLL, closest - ( NB_FOOT_ROLL_MOST - NB_FOOT_ROLL ) );
+				b3Vec3 rolled = ankles[k];
+				if ( lift > 0.0f )
+				{
+					b3Quat turned = rotations[k];
+					nbRollFoot( footBone, lift, 0.0f, &rolled, &turned );
+				}
+				float out = nbTimeToLose( &level, ankles[k], rolled, toes, hip, reaches[k], 0.0f, true );
+				f->footOut[k] = b3MinFloat( f->footOut[k], out );
+			}
 		}
 	}
 	drop = b3ClampFloat( drop, 0.0f, limit );
@@ -3143,8 +3269,16 @@ static float nbLowerSteered( nbFigure* f, b3Transform root, const int* thighs, b
 		const nbBone* footBone = f->bones + thighs[k] + 2;
 		b3Vec3 hip = b3TransformPoint( low, f->bones[thighs[k]].rest.p );
 		float most = ( f->footSwings[k] ? side : edges[k] ) < 0.0f ? -NB_FOOT_HEEL_MOST : NB_FOOT_ROLL_MOST;
-		float roll =
-			behind[k] || leads[k] ? planted * nbRollToReach( footBone, ankles[k], rotations[k], hip, reaches[k], most ) : 0.0f;
+		float roll = 0.0f;
+		if ( tips[k] )
+		{
+			float closest;
+			roll = planted * nbRollOnToes( footBone, ankles[k], rotations[k], hip, reaches[k], &closest );
+		}
+		else if ( behind[k] || leads[k] )
+		{
+			roll = planted * nbRollToReach( footBone, ankles[k], rotations[k], hip, reaches[k], most );
+		}
 		// Running, and as soon as the gait turns to running, before the spring of NB_RUN_TURN_LAG follows, and going backward
 		// over the heel also walking, see NB_FOOT_HEEL_MOST
 		float rollAhead = side < 0.0f ? 1.0f : b3MaxFloat( f->runTurn, f->gaitRun );
@@ -3210,7 +3344,7 @@ static float nbLowerSteered( nbFigure* f, b3Transform root, const int* thighs, b
 				float heelLift = NB_FOOT_HEEL_LIFT * ( 1.0f - b3MaxFloat( f->runTurn, f->gaitRun ) );
 				nbRollFoot( footBone, side > 0.0f ? NB_FOOT_ROLL : -heelLift, 0.0f, &rolled, &turned );
 				b3Vec3 toes = b3RotateVector( rotations[k], b3Vec3_axisY );
-				f->footOut[k] = nbTimeToLose( &path, ankles[k], rolled, toes, hip, reaches[k], 0.0f );
+				f->footOut[k] = nbTimeToLose( &path, ankles[k], rolled, toes, hip, reaches[k], 0.0f, false );
 			}
 			float edge = edges[k];
 			if ( edge * roll <= 0.0f )
@@ -3286,10 +3420,13 @@ static float nbLowerSteered( nbFigure* f, b3Transform root, const int* thighs, b
 				// and back down from its toes no faster either
 				roll = b3MaxFloat( roll, f->footRoll[k] - NB_FOOT_HEEL_RATE * timeStep );
 			}
+			// A foot that stays on its toes goes on rolling over them as it lifts, although the legs go backward
+			float over = tips[k] ? 1.0f : side;
 			f->footRollRate[k] = timeStep > 0.0f
-									 ? side * b3ClampFloat( side * ( roll - f->footRoll[k] ) / timeStep, 0.0f, NB_FOOT_ROLL_RATE )
+									 ? over * b3ClampFloat( over * ( roll - f->footRoll[k] ) / timeStep, 0.0f, NB_FOOT_ROLL_RATE )
 									 : 0.0f;
 			f->footRoll[k] = roll;
+			f->footRolled[k] = roll;
 		}
 		if ( roll != 0.0f )
 		{
@@ -4899,9 +5036,11 @@ static void nbSteerFeet( const nbWorld* world, int index, nbFigure* f, const nbC
 			f->footSwings[k] = false;
 			f->canLift[k] = true;
 			f->footRoll[k] = 0.0f;
+			f->footRolled[k] = 0.0f;
 			f->landRoll[k] = 0.0f;
 			f->footOut[k] = FLT_MAX;
 			f->outBehind[k] = false;
+			f->outToes[k] = false;
 			f->swingHurry[k] = 1.0f;
 			f->footholdChosen[k] = false;
 			f->foothold[k] = b3OffsetPos( f->feet[k].plant, b3MulSV( clips[k].sole.y - clips[k].ankle.y, up ) );
@@ -5204,6 +5343,7 @@ static void nbSteerFeet( const nbWorld* world, int index, nbFigure* f, const nbC
 				f->canLift[k] = phase < stance;
 				float stepSide = f->stepBack[k] ? -1.0f : 1.0f;
 				f->footRoll[k] = -stepSide * heel;
+				f->footRolled[k] = -stepSide * heel;
 				f->landRoll[k] = -stepSide * heel;
 				f->stanceTime[k] = 0.0f;
 				foot->plant = foot->target;
@@ -5264,6 +5404,19 @@ static void nbSteerFeet( const nbWorld* world, int index, nbFigure* f, const nbC
 			bool hold =
 				f->footSwings[1 - k] && stance >= 0.5f && ( wantsRun == false || trails[k] == false || f->footOut[k] > 0.0f );
 			bool early = ( f->canLift[k] || f->footOut[k] <= 0.0f ) && trails[k] && f->footOut[k] <= timeStep;
+			// Walking too, a trailing foot or one that stays on its toes that its leg loses in the next update lifts where
+			// the other foot lands within NB_GAIT_FLOAT
+			bool floats = false;
+			if ( f->footSwings[1 - k] && f->footOut[k] <= timeStep )
+			{
+				float otherTime = nbSwingTime( f, 1 - k, swingTime, cycle );
+				float rest = ( 1.0f - f->swingAlong[1 - k] ) * otherTime / ( f->swingRate[1 - k] * f->swingHurry[1 - k] );
+				if ( rest <= NB_GAIT_FLOAT )
+				{
+					hold = hold && early == false;
+					floats = f->outToes[k];
+				}
+			}
 			bool blocked = f->footSwings[1 - k] == false && out[1 - k] < out[k] && out[1 - k] < quickest;
 			bool lost = lostSoon[k] && f->footSwings[1 - k] == false && blocked == false;
 			bool due = f->canLift[k] && phase >= stance && lostSoon[1 - k] == false && blocked == false;
@@ -5282,7 +5435,7 @@ static void nbSteerFeet( const nbWorld* world, int index, nbFigure* f, const nbC
 			{
 				first = true;
 			}
-			if ( ( ( due || early ) && hold == false ) || lost || first )
+			if ( ( ( due || early ) && hold == false ) || lost || first || floats )
 			{
 				// It lifts from where it stands, as far into its swing as its phase, and swings in the rest of it, from where it
 				// was an update ago, so it moves in this update already

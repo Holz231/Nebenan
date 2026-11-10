@@ -512,6 +512,7 @@ typedef struct nbFigure
 	float liftHeading[2];
 	float landHeading[2];
 	float footRoll[2];
+	float footRolled[2];
 	float swingRoll[2];
 	float landRoll[2];
 	float stanceTime[2];
@@ -522,6 +523,7 @@ typedef struct nbFigure
 	float footRollRate[2];
 	float footOut[2];
 	bool outBehind[2];
+	bool outToes[2];
 	float swingHurry[2];
 	float swingCalm[2];
 	b3Pos swingBase[2];
