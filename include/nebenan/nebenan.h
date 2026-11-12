@@ -404,8 +404,9 @@ NB_API nbRigDef nbDefaultRigDef( void );
 /// rounded blocks on ball joints that let the back round, arch, lean and turn, a neck and a head as a rounded box on
 /// ball joints, arms and legs as capsules that hang down with ball joints at the shoulders, hips, wrists and ankles and
 /// hinges at the elbows and knees, simple capsules as hands and boxes as feet. It stands with its y axis up and faces
-/// +z. Returns the height of the pelvis origin over the soles as it stands a little in the knees, the stand height of
-/// nbFigureDef. The names of the bones are static strings.
+/// +z. Returns the stand height of nbFigureDef: the height of the pelvis origin over the soles in the stance its gait
+/// walks from, a little in the knees. Standing still it stands upright, 1.8 cm higher at 1.8 m, see nb_clipIdle. The
+/// names of the bones are static strings.
 NB_API float nbMakeHumanoidBones( float height, float mass, nbBoneDef* bones, int capacity );
 
 /// The convex hull of a bone that is a box or a rounded box, in the frame of the bone, as the physics has it: to draw it.

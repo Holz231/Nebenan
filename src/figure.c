@@ -3681,6 +3681,41 @@ static void nbPlaceFeet( nbFigure* f, const b3Transform* transforms, const nbCli
 	}
 }
 
+// A steered humanoid comes down from where its clip stands to the stance of its gait, see NB_STAND_RISE: as its gait
+// goes on, or while it is in the air, its root goes down to the stand height, by NB_STAND_RISE at most, and its knees
+// bend as far, its feet where the clip has them, and it comes up again as it stands. Not under a clip the game plays.
+// So the idle clip stands upright as a person does, and the gait walks from the stance it had before round 114: with
+// the stand height itself 1.8 cm higher the legs stretched to 0.999 of their length wherever the gait put them, and the
+// shins jumped over 37 mm at 439 instead of 105 of 504 points of changes.
+static void nbComeDownForGait( nbFigure* f, float timeStep )
+{
+	float target = f->gaitOn || f->onGround == false ? 1.0f : 0.0f;
+	float omega = 2.0f / NB_STAND_RISE_TIME;
+	float decay = nbDecay( omega * timeStep );
+	float off = f->stanceDown - target;
+	float sum = f->stanceDownRate + omega * off;
+	f->stanceDown = b3ClampFloat( target + decay * ( off + timeStep * sum ), 0.0f, 1.0f );
+	f->stanceDownRate = decay * ( f->stanceDownRate - omega * timeStep * sum );
+	float above = b3ClampFloat( f->root.p.y - f->def.standHeight, 0.0f, NB_STAND_RISE * nbFigureScale( f ) );
+	float down = f->stanceDown * above;
+	if ( down <= 0.0f || f->playing )
+	{
+		return;
+	}
+
+	b3Transform transforms[nb_humanoidBoneCount];
+	nbFrameLegs( f, f->root, f->pose, transforms );
+	b3Transform root = f->root;
+	root.p.y -= down;
+	const int thighs[2] = { nb_humanoidThighLeft, nb_humanoidThighRight };
+	for ( int k = 0; k < 2; ++k )
+	{
+		float held = -1.0f;
+		nbReachAnkle( f, thighs[k], root, transforms[thighs[k] + 2].p, transforms[thighs[k] + 2].q, f->pose, -1.0f, &held );
+	}
+	f->root = root;
+}
+
 //----------------------------------------------------------------------------------------------------------------------
 // The gait of a steered humanoid, see figure_steer.c
 
@@ -7273,9 +7308,12 @@ static void nbGaitClipPose( const nbWorld* world, nbFigure* f, float timeStep )
 		{
 			level += f->gaitClipFast * ( f->gaitClips[1].level - level );
 		}
-		f->gaitClipLevel = ease * ( level - f->root.p.y );
+		// Against the stance of the gait, which lies below where the idle clip stands, see NB_STAND_RISE
+		b3Vec3 stance = f->root.p;
+		stance.y = b3MinFloat( stance.y, f->def.standHeight );
+		f->gaitClipLevel = ease * ( level - stance.y );
 		root = nbGaitClipRoot( f, phase );
-		f->gaitRoot.p = b3MulSV( ease, b3Sub( root.p, f->root.p ) );
+		f->gaitRoot.p = b3MulSV( ease, b3Sub( root.p, stance ) );
 		f->gaitRoot.q = b3NLerp( b3Quat_identity, b3MulQuat( root.q, b3Conjugate( f->root.q ) ), ease );
 	}
 }
@@ -7464,6 +7502,10 @@ static void nbUpdateAnimated( nbWorld* world, int index, nbFigure* f, float time
 	}
 
 	nbAnimate( world, index, f, timeStep );
+	if ( f->steered && f->boneCount == nb_humanoidBoneCount )
+	{
+		nbComeDownForGait( f, timeStep );
+	}
 	if ( f->steered && f->swinging == false )
 	{
 		nbGaitPose( world, f, up, timeStep );

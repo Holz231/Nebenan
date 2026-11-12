@@ -695,37 +695,37 @@ Drehung durch die Frequenz eines Pendels seiner Höhe weiter. Sie richtet sich n
 siehe Füße statt Becken: Im Stand halten die Beine ihre Füße, wo und wie sie stehen, schieben das Becken über die Mitte
 der Sohlen und drehen es über die Füße zurück, und die Beine am Boden tragen den Körper über ihnen, siehe Die Beine
 tragen den Körper. Das Becken dreht dabei zum vorderen Fuß, im Schritt mit dem Schwungbein, und die Wirbelsäule dreht
-den Oberkörper dagegen, siehe Drehung im Körper. Liegt der Capture Point
-zwei Updates lang mehr als 3 cm außerhalb, mit eigener Kraft ein Update lang mehr als 10 cm, tritt ein Fuß dorthin, wo
-der Capture Point bei seiner Landung sein wird, 5 cm darüber hinaus, gedreht wie der Standfuß, in Reichweite der Hüfte,
-auf Boden, der trägt und höchstens 25 cm höher oder tiefer liegt, mit Platz für den Fuß und freiem Weg dorthin, 0,3 s
-lang und 12 cm hoch, mit eigener Kraft mit dem Tempo, das der Fuß schon hat, und mit angezogenen Zehen, siehe Der Fuß
-schwingt mit seinem Tempo und Die Hüfte bremst das Kippen. Die ersten 60 % des Schritts folgt sein Ziel dem Capture
-Point. Kommt der Schritt zu kurz, schwingen die Arme aus, siehe unten. Fängt sie auch der fünfte Schritt in Folge nicht,
-mit eigener Kraft der zehnte, kann kein Fuß treten, ließe der beste Schritt den Capture Point bei der Landung mehr als
-1,5 m draußen, siehe Taumeln vor dem Sturz, neigt sie sich mehr als 0,6 rad, sinkt ihr Schwerpunkt unter drei Viertel
-seiner Höhe im Stand, berührt 0,3 s kein Fuß den Boden oder kommt sie 8 s lang nicht zur Ruhe, ohne dass etwas sie
-drückt, fällt sie als aktiver Ragdoll, ohne das Gelenk am Becken, siehe Nicht ewig fangen. Steht sie nach einem langen
-Ausfallschritt 0,3 s auf einem Fuß, während der andere in der Luft hängt, tritt sie mit ihm, sonst stünde sie nie ruhig.
-Eine Last von oben wirft sie ab einem Viertel von `crushForce` um, wie beim Aufstehen. Ruhig auf beiden Füßen, die
-Knochen im Mittel nach ihrer Masse langsamer als 0,15 m/s, den Capture Point zwischen den Füßen oder höchstens 3 cm
-daneben, wo sie noch nicht tritt, und das Becken aufrecht, steht sie nach einer halben Sekunde wieder animiert, wo sie
-steht, ihr Clip blendet in 0,25 s ein, und ihre Füße treten mit den Schritten des Ausgleichs unter ihren Körper zurück.
-Auf die obere Brust getroffen fängt sich der Mensch der Bibliothek so von vorn bis 118 N s, von hinten bis 130 N s und
-von beiden Seiten bis 85 N s und bei 91 N s, auf 3 N s genau abgetastet, und steht nach 1,3 bis 3,2 s wieder animiert,
-siehe In den Knien, Balance für den Körper der Vorlage und Die Beine tragen den Körper. Auf 10 N s genau abgetastet
-waren es zuletzt 110, 120 und 80 N s, auf `active-ragdoll-23` von hinten 140 N s, bis `active-ragdoll-22` 70, 100 und
-60 N s. Darüber fällt er nach höchstens zwei Schritten. Darunter endete bis `active-ragdoll-33` ab und zu ein Treffer in
-langem Stolpern: In der Szene der Tests fielen von 168 Treffern mit 40 bis 80 N s auf `active-ragdoll-28` fünf und auf
-`active-ragdoll-33` vier, alle von der Seite quer über die Vorderseite der Brust, wo sie den Rumpf am weitesten um seine
-Längsachse drehen, siehe Drehung um die Längsachse. Auf `active-ragdoll-27` fiel einer, auf `active-ragdoll-26` keiner
-und davor zwei. Seit `active-ragdoll-34` fällt keiner, siehe Füße statt Becken. Der längste Fang dauert 3,7 s, auf
-`active-ragdoll-35` 3,1 s, auf `active-ragdoll-34` 3,2 s, auf `active-ragdoll-33` 4,0 s, auf `active-ragdoll-26` fing
-die Figur 80 N s von vorn rechts erst nach 17 Schritten und 7,8 s. Eine Figur, die sich fängt, kostet im Update rund 4,4
-statt 2 µs, und Box3D rechnet ihre dynamischen Knochen mit einem Thread in rund 0,06 statt 0,006 ms pro Schritt.
-`nbFigureInfo::catchCount` und `nbFigureStats::catchCount` zählen, wie oft eine Figur sich fing,
-`nbFigureStats::balancingCount`, wie viele es gerade tun. Ein Spiel ruft dafür nichts auf. Andere Rigs als der Mensch
-der Bibliothek fallen gleich, bei ihnen kennt die Bibliothek die Beine nicht.
+den Oberkörper dagegen, siehe Drehung im Körper. Liegt der Capture Point zwei Updates lang mehr als 3 cm außerhalb, mit
+eigener Kraft ein Update lang mehr als 10 cm, tritt ein Fuß dorthin, wo der Capture Point bei seiner Landung sein wird,
+5 cm darüber hinaus, gedreht wie der Standfuß, in Reichweite der Hüfte, höchstens 60 cm weit, bis `active-ragdoll-113`
+55 cm, auf Boden, der trägt und höchstens 25 cm höher oder tiefer liegt, mit Platz für den Fuß und freiem Weg dorthin,
+0,3 s lang und 14 cm hoch, bis `active-ragdoll-113` 12 cm, mit eigener Kraft mit dem Tempo, das der Fuß schon hat, und
+mit angezogenen Zehen, siehe Der Fuß schwingt mit seinem Tempo und Die Hüfte bremst das Kippen. Die ersten 60 % des
+Schritts folgt sein Ziel dem Capture Point. Kommt der Schritt zu kurz, schwingen die Arme aus, siehe unten. Fängt sie
+auch der fünfte Schritt in Folge nicht, mit eigener Kraft der zehnte, kann kein Fuß treten, ließe der beste Schritt den
+Capture Point bei der Landung mehr als 1,5 m draußen, siehe Taumeln vor dem Sturz, neigt sie sich mehr als 0,6 rad,
+sinkt ihr Schwerpunkt unter drei Viertel seiner Höhe im Stand, berührt 0,3 s kein Fuß den Boden oder kommt sie 8 s lang
+nicht zur Ruhe, ohne dass etwas sie drückt, fällt sie als aktiver Ragdoll, ohne das Gelenk am Becken, siehe Nicht ewig
+fangen. Steht sie nach einem langen Ausfallschritt 0,3 s auf einem Fuß, während der andere in der Luft hängt, tritt sie
+mit ihm, sonst stünde sie nie ruhig. Eine Last von oben wirft sie ab einem Viertel von `crushForce` um, wie beim
+Aufstehen. Ruhig auf beiden Füßen, die Knochen im Mittel nach ihrer Masse langsamer als 0,15 m/s, den Capture Point
+zwischen den Füßen oder höchstens 3 cm daneben, wo sie noch nicht tritt, und das Becken aufrecht, steht sie nach einer
+halben Sekunde wieder animiert, wo sie steht, ihr Clip blendet in 0,25 s ein, und ihre Füße treten mit den Schritten des
+Ausgleichs unter ihren Körper zurück. Auf die obere Brust getroffen fängt sich der Mensch der Bibliothek so von vorn bis
+118 N s, von hinten bis 130 N s und von beiden Seiten bis 85 N s und bei 91 N s, auf 3 N s genau abgetastet, und steht
+nach 1,3 bis 3,2 s wieder animiert, siehe In den Knien, Balance für den Körper der Vorlage und Die Beine tragen den
+Körper. Auf 10 N s genau abgetastet waren es zuletzt 110, 120 und 80 N s, auf `active-ragdoll-23` von hinten 140 N s,
+bis `active-ragdoll-22` 70, 100 und 60 N s. Darüber fällt er nach höchstens zwei Schritten. Darunter endete bis
+`active-ragdoll-33` ab und zu ein Treffer in langem Stolpern: In der Szene der Tests fielen von 168 Treffern mit 40 bis
+80 N s auf `active-ragdoll-28` fünf und auf `active-ragdoll-33` vier, alle von der Seite quer über die Vorderseite der
+Brust, wo sie den Rumpf am weitesten um seine Längsachse drehen, siehe Drehung um die Längsachse. Auf
+`active-ragdoll-27` fiel einer, auf `active-ragdoll-26` keiner und davor zwei. Seit `active-ragdoll-34` fällt keiner,
+siehe Füße statt Becken. Der längste Fang dauert 3,7 s, auf `active-ragdoll-35` 3,1 s, auf `active-ragdoll-34` 3,2 s,
+auf `active-ragdoll-33` 4,0 s, auf `active-ragdoll-26` fing die Figur 80 N s von vorn rechts erst nach 17 Schritten und
+7,8 s. Eine Figur, die sich fängt, kostet im Update rund 4,4 statt 2 µs, und Box3D rechnet ihre dynamischen Knochen mit
+einem Thread in rund 0,06 statt 0,006 ms pro Schritt. `nbFigureInfo::catchCount` und `nbFigureStats::catchCount` zählen,
+wie oft eine Figur sich fing, `nbFigureStats::balancingCount`, wie viele es gerade tun. Ein Spiel ruft dafür nichts auf.
+Andere Rigs als der Mensch der Bibliothek fallen gleich, bei ihnen kennt die Bibliothek die Beine nicht.
 
 **Füße statt Becken.** Seit `active-ragdoll-28` dreht ein Treffer quer über die Vorderseite der Brust den Rumpf um seine
 Längsachse, und bis `active-ragdoll-33` drehte sich die ganze Figur auf ihren Füßen mit: Die Balance nahm ihre Richtung
@@ -766,20 +766,23 @@ mehr. Siehe „Schrittzeit nach dem Stoß“ in [Optimierungen.md](docs/Optimier
 **In den Knien.** Der Mensch der Bibliothek steht wie die Gliederpuppe der Vorlage, bereit: ein wenig in den Knien, das
 Becken 0,96 m über den Sohlen, die Füße flach unter den Hüften, 18 cm auseinander, bis `active-ragdoll-112` 26 cm, und 4
 cm hinter dem Becken, die Brust steht vor, der Oberarm hängt aus der Schulter 0,1 rad nach hinten und ein wenig ab, der
-Unterarm ist 0,5 rad nach vorn gebeugt, und mit dem Atem neigen sich Brust und Kopf ein wenig. So bauen ihn der Clip
-`nb_clipIdle` mit der IK der Beine und das Ende des Aufstehens. Auch der Körper folgt seit `active-ragdoll-36` der
-Vorlage, `nbMakeHumanoidBones`: Oberarm, Unterarm und Hand sind 37, 27 und 17 cm lang statt 28, 24 und 16, seit
+Unterarm ist 0,5 rad nach vorn gebeugt, und mit dem Atem neigen sich Brust und Kopf ein wenig. Seit `active-ragdoll-114`
+steht er aufrecht, das Becken auf 0,978 m und die Knie 6 statt 24° gebeugt, und in die Knie geht er erst mit dem
+Losgehen, siehe „Aufrechter Stand“ in [Optimierungen.md](docs/Optimierungen.md). So bauen ihn der Clip `nb_clipIdle` mit
+der IK der Beine und das Ende des Aufstehens. Auch der Körper folgt seit `active-ragdoll-36` der Vorlage,
+`nbMakeHumanoidBones`: Oberarm, Unterarm und Hand sind 37, 27 und 17 cm lang statt 28, 24 und 16, seit
 `active-ragdoll-44` etwas kürzer, 35, 26 und 17 cm, siehe Etwas kürzere Arme, die Schultern drehen 2,5 cm außerhalb der
 Brust auf 1,45 m, die Hüften liegen 26 statt 20 cm auseinander, das Becken ist 40 cm breit, und die Brust steht 4 cm vor
 Rippen und Bauch. Die Massen bleiben. Seit `active-ragdoll-113` hat er die Maße des Menschen, siehe „Körper nach den
 Maßen des Menschen“ in [Optimierungen.md](docs/Optimierungen.md): Oberarm, Unterarm und Hand sind 30, 27,5 und 19,5 cm
 lang, die Schultern drehen 2 cm neben der Brust auf 1,43 m, die Hüftgelenke liegen 18 cm auseinander, das Becken ist 33
 cm breit, und der Kopf ist eine abgerundete Kiste. `nbMakeHumanoidBones` gibt die Standhöhe von 0,96 m zurück, auf ihr
-stehen die Clips ohne Bewegung der Wurzel. Ein eigener Clip mit geraden Beinen steht trotzdem auf dem Boden, die Füße
-heben die Wurzel um die 2 cm, siehe Füße auf dem Boden. Der Schwerpunkt liegt so 6 cm vor den Knöcheln, 12,5 cm vor den
-Fersen und 14,5 cm hinter den Zehen, bei 46 % der Sohle, siehe Füße nach den Maßen des Menschen. Auf `active-ragdoll-35`
-standen die Füße je 2 cm außerhalb der Hüften, die Beine wie ein A, und die Arme hingen etwas vor dem Körper, siehe
-„Stand in den Knien“ in [Optimierungen.md](docs/Optimierungen.md).
+stehen die Clips ohne Bewegung der Wurzel, und aus ihr läuft der Gang. Der Clip `nb_clipIdle` bewegt seit
+`active-ragdoll-114` die Wurzel und steht 1,8 cm darüber. Ein eigener Clip mit geraden Beinen steht trotzdem auf dem
+Boden, die Füße heben die Wurzel um die 2 cm, siehe Füße auf dem Boden. Der Schwerpunkt liegt so 6 cm vor den Knöcheln,
+12,5 cm vor den Fersen und 14,5 cm hinter den Zehen, bei 46 % der Sohle, siehe Füße nach den Maßen des Menschen. Auf
+`active-ragdoll-35` standen die Füße je 2 cm außerhalb der Hüften, die Beine wie ein A, und die Arme hingen etwas vor
+dem Körper, siehe „Stand in den Knien“ in [Optimierungen.md](docs/Optimierungen.md).
 
 Der neue Körper fängt Treffer auf den Rumpf schlechter und Treffer auf die Glieder besser als der von
 `active-ragdoll-35`: An den 4 464 Treffern auf Brust und Bauch fallen von 50 bis 89 N s 15 statt 11, die Figur fängt
@@ -1751,6 +1754,16 @@ der Kopf eine abgerundete Kiste von 15,3 mal 20 mal 23 cm statt einer Kapsel von
 Gehend setzen die Füße damit 10 statt 14 cm auseinander auf wie bei Menschen, und geprüft mit Treffern, die vorher nicht
 gelaufen waren, werfen 5 345 statt 5 331 von 35 712 die Figur um. Dafür kreuzen die Füße, wenn sie rennend die Richtung
 wechselt, bis 19,3 statt 14,5 cm, siehe „Körper nach den Maßen des Menschen“ in
+[Optimierungen.md](docs/Optimierungen.md). Seit `active-ragdoll-114` steht der Mensch der Bibliothek aufrecht, wie
+Menschen stehen: das Becken auf 0,978 statt 0,96 m, die Knie 6 statt 24° gebeugt. Ein Spiel ruft dafür nichts Neues auf:
+Der Clip `nb_clipIdle` steht 1,8 cm über der Standhöhe und bewegt die Wurzel dorthin, und die Standhöhe von
+`nbMakeHumanoidBones` bleibt 0,96 m, die Haltung, aus der der Gang läuft. Eine gesteuerte Figur kommt mit dem Losgehen
+über 0,15 s auf sie herunter und geht und rennt wie vorher, und 0,4 s nach ihrem letzten Schritt, wenn die Füße wieder
+nebeneinander stehen, steht sie wieder aufrecht. Die Balance hält das Becken so hoch, wie es stand, als der Treffer kam,
+statt 5 cm unter gestreckten Beinen, und ihre Fangschritte sind 60 statt 55 cm lang und 14 statt 12 cm hoch. Geprüft mit
+Treffern und Geschwindigkeiten, die vorher nicht gelaufen waren, werfen 5 260 statt 5 208 von 35 712 Treffern die Figur
+um, 1,0 % mehr, und losgehend springt ein Schienbein bis 27 statt 20 mm, weil sie dabei in die Knie geht. Eine
+gesteuerte Figur kostet damit 0,4 bis 0,5 µs je Update mehr, eine stehende nichts, siehe „Aufrechter Stand“ in
 [Optimierungen.md](docs/Optimierungen.md). Am Hang und auf Treppen misst die Figur die Steigung ihres Wegs: Bergauf
 landet ein Fuß weiter vorn, bergab näher unter dem Körper, so reicht das vordere Bein so weit hinauf wie das hintere
 hinunter, und die Schritte werden kürzer, auf 20° um ein Fünftel. Die Feder unter der Kapsel folgt der Ebene, die der
@@ -2525,7 +2538,7 @@ beim Einbinden nicht gebaut.
 
 | Figur (`nbFigureDef`) | Standard | Wirkung |
 | --- | --- | --- |
-| `standHeight` | 0,96 m | Höhe der Wurzel über dem Boden im Stand, ein wenig in den Knien. `nbMakeHumanoidBones` gibt sie für ihren Menschen zurück, Clips ohne Bewegung der Wurzel stehen auf ihr |
+| `standHeight` | 0,96 m | Höhe der Wurzel über dem Boden in der Haltung, aus der die Figur geht, ein wenig in den Knien: Mit ihr skalieren Größe und Gang. `nbMakeHumanoidBones` gibt sie für ihren Menschen zurück, Clips ohne Bewegung der Wurzel stehen auf ihr. Der Ruhe-Clip der Bibliothek steht seit `active-ragdoll-114` 1,8 cm darüber, aufrecht, und eine gesteuerte Figur kommt mit dem Losgehen auf sie herunter |
 | `knockdownImpulse` | 50 N s | Ab diesem Treffer werden die Knochen einer stehenden Figur dynamisch, und sie fängt sich mit Schritten oder fällt, darunter zuckt sie zurück und tritt nach. Beim Aufstehen fällt sie schon ab einem Viertel |
 | `flinchScale`, `flinchLimit`, `flinchHertz` | 0,008 rad pro N s, 0,5 rad, 2 Hz | Wie weit der Rumpf bei einem schwachen Treffer zurückzuckt und wie schnell er sich wieder aufrichtet. Trifft der Stoß Knochen mit eigener Feder, nur mit dem, was ihr Gelenk weitergibt. Die Grenze gilt auch für jede Feder eines Knochens. Um die Achse die Wirbelsäule hinauf dreht sich der Oberkörper des Menschen der Bibliothek 2,5-mal so weit und so viel schneller zurück, bis zu der Drehung, die seine Wirbelsäule erlaubt, siehe Drehung um die Längsachse |
 | `crushForce` | 600 N | Eine Last von oben ab dieser Kraft wirft eine stehende Figur um, beim Aufstehen und Abfangen ab einem Viertel. Was ihre Knochen beiseiteschieben, zählt nicht |

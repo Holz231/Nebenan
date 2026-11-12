@@ -1197,8 +1197,9 @@ typedef struct nbClipDef
 	/// Start over at the end, else the clip ends on its last pose
 	bool loop;
 
-	/// The clip moves the root, as getting up does. Without, the root stands upright at the standing height of the
-	/// figure, see nbFigureDef::standHeight, and the root of the keyframes goes unused.
+	/// The clip moves the root, as getting up does and the idle clip of the library, which stands above the stand
+	/// height, see nb_clipIdle. Without, the root stands upright at the stand height of the figure, see
+	/// nbFigureDef::standHeight, and the root of the keyframes goes unused.
 	bool moveRoot;
 } nbClipDef;
 
@@ -1228,7 +1229,10 @@ typedef struct nbGaitClipDef
 /// The clips of a figure, see nbFigureDef::clips and nbMakeHumanoidClip
 typedef enum nbFigureClip
 {
-	/// While the figure stands, in a loop: it breathes and sways a little
+	/// While the figure stands, in a loop: it breathes and sways a little. It stands upright as a person stands at ease,
+	/// the knees bent 6 degrees and the pelvis 1.8 cm over the stand height at 1.8 m, and moves the root there, see
+	/// nbClipDef::moveRoot. A steered figure comes down from it onto the stance of its gait as it starts to move, the
+	/// stand height, and stands up again once it stands, and the clips that get up end as upright.
 	nb_clipIdle,
 
 	/// The pose an active ragdoll falls with, in a loop, like the flailing of Overgrowth: the arms up and out, the knees
@@ -1366,7 +1370,9 @@ typedef struct nbFigureDef
 	b3Pos position;
 	float heading;
 
-	/// The height of the root bone over the ground while the figure stands, see nbMakeHumanoidBones
+	/// The height of the root bone over the ground in the stance the figure walks from, see nbMakeHumanoidBones: its
+	/// size and its gait scale with it. An idle clip that moves the root may stand higher, see nb_clipIdle: a steered
+	/// figure comes down from up to 1.8 cm above, at 1.8 m, as it starts to move.
 	float standHeight;
 
 	/// The clips, copied. Null takes the clip of the library for the humanoid of nbMakeHumanoidBones, see

@@ -11,9 +11,20 @@ typedef struct nbWorld nbWorld;
 // The last hits a figure remembers, so a hit that several events report lands once, see nbHitDef::id
 #define NB_HIT_MEMORY 16
 
-// The height of the pelvis origin over the soles of the humanoid of 1.8 m as it stands, a little in the knees, see
-// nbMakeHumanoidBones. With straight legs it would stand 2 cm higher.
+// The height of the pelvis origin over the soles of the humanoid of 1.8 m in the stance of its gait, a little in the
+// knees, see nbMakeHumanoidBones: the stand height, which everything scales with and the gait walks from. With straight
+// legs it would stand 2 cm higher.
 #define NB_HUMANOID_STAND 0.96f
+
+// Standing still the humanoid stands this much higher, in meters for the humanoid of 1.8 m: upright as a person stands,
+// its knees bent 6 instead of 24 degrees. The idle clip of the library stands there and moves the root, see
+// nbClipDef::moveRoot, and the clips that get up end there. A steered figure comes down to the stance of its gait as
+// its gait goes on, its knees bent as far, and up again as it stands, each eased over this many seconds, see
+// nbComeDownForGait: the gait is the one it was. Over 0.25 s a shin jumped 37.8 instead of 28.3 mm starting to run at
+// 4.8 m/s, over 0.12 s 42.5 instead of 37.1 mm starting to run backward. Round 114, asked for by the user: the posture
+// of a person, and the balance adapted to it, see NB_KNEE_BEND in figure_balance.c.
+#define NB_STAND_RISE 0.018f
+#define NB_STAND_RISE_TIME 0.15f
 
 // A standing figure falls from ground that moves faster than this, in meters per second
 #define NB_GROUND_SPEED 1.5f
@@ -236,6 +247,9 @@ typedef struct nbBalancer
 	float oneFootTime;
 	float calmTime;
 	float restlessTime;
+
+	// How high over the ground the pelvis stood when the balance began, 0 until its first update, see NB_KNEE_BEND
+	float startHeight;
 
 	// How much of its turn after the feet the pelvis takes and the upper body against it, see nbPelvisTurn: all of it
 	// while a foot swings, falling off while the figure stands
@@ -543,6 +557,11 @@ typedef struct nbFigure
 	float gaitCrouch;
 	float gaitBend;
 	float gaitBendRate;
+
+	// How far a steered figure is down in the stance of its gait from where its clip stands, 0 to 1, and how fast that
+	// changes, see NB_STAND_RISE
+	float stanceDown;
+	float stanceDownRate;
 	float rootDrop;
 	float rootDropRate;
 	float rootCrouch;

@@ -136,13 +136,14 @@ static b3Vec3 FigureMomentum( nbFigureId figure )
 	return sum;
 }
 
-// A figure stands upright: the pelvis at its stand height and the head above it
+// A figure stands upright: the pelvis as high as the idle clip stands, NB_STAND_RISE over its stand height, and the head
+// above it
 static bool StandsUpright( const FigureScene* scene, nbFigureId figure )
 {
 	b3Vec3 pelvis = BonePosition( figure, nb_humanoidPelvis );
 	b3Vec3 head = BonePosition( figure, nb_humanoidHead );
-	return fabsf( pelvis.y - scene->standHeight ) < 0.03f && head.y > 1.55f && fabsf( head.x - pelvis.x ) < 0.1f &&
-		   fabsf( head.z - pelvis.z ) < 0.1f;
+	return fabsf( pelvis.y - scene->standHeight - NB_STAND_RISE ) < 0.03f && head.y > 1.55f &&
+		   fabsf( head.x - pelvis.x ) < 0.1f && fabsf( head.z - pelvis.z ) < 0.1f;
 }
 
 //----------------------------------------------------------------------------------------------------------------------
@@ -410,8 +411,17 @@ static int HumanoidClipTest( void )
 		ENSURE( nbMakeHumanoidClip( (nbFigureClip)which, 1.8f, keyframes, rotations, 1, &clip ) == ( count == 1 ? 1 : 0 ) );
 		nbMakeHumanoidClip( (nbFigureClip)which, 1.8f, keyframes, rotations, NB_HUMANOID_CLIP_KEYFRAMES, &clip );
 		bool getUp = which == nb_clipGetUpFront || which == nb_clipGetUpBack;
-		ENSURE( clip.moveRoot == getUp );
+
+		// The idle clip moves the root too, since round 114: it stands upright, NB_STAND_RISE over the stand height
+		ENSURE( clip.moveRoot == ( getUp || which == nb_clipIdle ) );
 		ENSURE( clip.loop == ( which == nb_clipIdle || which == nb_clipFall ) );
+		if ( which == nb_clipIdle )
+		{
+			for ( int k = 0; k < count; ++k )
+			{
+				ENSURE_SMALL( keyframes[k].root.p.y - ( stand + NB_STAND_RISE ), 1.0e-6f );
+			}
+		}
 		if ( getUp == false )
 		{
 			continue;
@@ -420,7 +430,8 @@ static int HumanoidClipTest( void )
 		const nbKeyframe* first = keyframes;
 		const nbKeyframe* last = keyframes + count - 1;
 		ENSURE( first->root.p.y < 0.25f );
-		ENSURE( fabsf( last->root.p.y - stand ) < 0.01f && fabsf( b3GetQuatAngle( last->root.q ) ) < 0.05f );
+		ENSURE( fabsf( last->root.p.y - ( stand + NB_STAND_RISE ) ) < 1.0e-4f &&
+				fabsf( b3GetQuatAngle( last->root.q ) ) < 0.05f );
 		for ( int k = 0; k < count; ++k )
 		{
 			ENSURE( k == 0 || keyframes[k].time - keyframes[k - 1].time < 1.0f / 15.0f + 1.0e-4f );
@@ -800,8 +811,10 @@ static int FigureCatchTest( void )
 // planted where it last carried, see NB_PLANT_LOAD, and the right arm rows up to 1.90 instead of 1.83 rad, as the arms
 // swung in round 41 at 100 N s from the front. Since round 104 the heels reach 6.5 instead of 4 cm behind the ankles,
 // see nbMakeHumanoidBones, and from the front the arms row 4 N s later: at 66 N s up to 0.79 and 0.85 rad, as round
-// 103's at 62 N s, where they now swing up to 0.37 and 0.44 rad. Standing animated again, the arms hang in the pose of
-// the clip.
+// 103's at 62 N s, where they now swing up to 0.37 and 0.44 rad. Since round 114 the figure stands upright and the
+// balance holds its pelvis there, 4.8 cm higher than before, see NB_STAND_RISE and nbHoldHeight, and its one step to the
+// side is 14 instead of 12 cm high: pushed to its left the arm that rows turns up to 16.3 instead of 13.2 rad/s. Standing
+// animated again, the arms hang in the pose of the clip.
 static int FigureRowTest( void )
 {
 	typedef struct RowCase
@@ -864,7 +877,7 @@ static int FigureRowTest( void )
 			ENSURE( cases[c].least[k] < swing[k] && swing[k] < cases[c].most[k] );
 			ENSURE( cases[c].least[k] == 0.0f || bend[k] > 0.6f );
 		}
-		ENSURE( fastest < 16.0f );
+		ENSURE( fastest < 17.0f );
 		ENSURE( hardest < 450.0f );
 
 		// Standing animated, the arms hang as in the clip, like those of the figure that stood all along
@@ -1203,7 +1216,7 @@ static uint32_t MuscleCatch( int threadCount, float impulse )
 }
 
 // The throw of 90 N s on a figure with muscles ends in the same bits with one thread and with four, on every platform
-#define NB_EXPECTED_MUSCLE_HASH 0x0208072du
+#define NB_EXPECTED_MUSCLE_HASH 0xc54dd53bu
 
 // The muscles, see nbFigureMotors::muscles and nbUpdateMuscles. A figure with muscles hit while it stands catches itself
 // with the strength the balance asks for at once: every joint of its trunk and its legs at the full torque of the motors,
@@ -2740,6 +2753,9 @@ static int FigureFeetTest( void )
 		b3Vec3 left = BonePosition( figure, nb_humanoidFootLeft );
 		b3Vec3 right = BonePosition( figure, nb_humanoidFootRight );
 		b3Vec3 pelvis = BonePosition( figure, nb_humanoidPelvis );
+
+		// The idle clip stands upright, over the stand height
+		const float upright = scene.standHeight + NB_STAND_RISE;
 		float lowLeft, highLeft, lowRight, highRight;
 		SoleGaps( figure, nb_humanoidFootLeft, ground, normal, &lowLeft, &highLeft );
 		SoleGaps( figure, nb_humanoidFootRight, ground, normal, &lowRight, &highRight );
@@ -2749,7 +2765,7 @@ static int FigureFeetTest( void )
 		if ( pass == 0 )
 		{
 			ENSURE_SMALL( left.y - right.y - 0.1f, 3.0e-3f );
-			ENSURE_SMALL( pelvis.y - scene.standHeight, 3.0e-3f );
+			ENSURE_SMALL( pelvis.y - upright, 3.0e-3f );
 			ENSURE( BonePosition( figure, nb_humanoidShinLeft ).z > BonePosition( figure, nb_humanoidShinRight ).z + 0.05f );
 		}
 		else if ( pass == 1 || pass == 2 )
@@ -2758,13 +2774,13 @@ static int FigureFeetTest( void )
 			// pelvis stands as high over the ankles as on flat ground, where they stand 6 cm high: the feet stand 4 cm
 			// behind it, see NB_STANCE_BACK, 8 mm lower than the slope under the pelvis.
 			ENSURE( lowLeft > -3.0e-3f && highLeft < 3.0e-3f && lowRight > -3.0e-3f && highRight < 3.0e-3f );
-			ENSURE( pass == 2 || pelvis.y < ground.y + scene.standHeight - 0.015f );
-			ENSURE( pass == 1 || fabsf( pelvis.y - 0.5f * ( left.y + right.y ) - ( scene.standHeight - 0.06f ) ) < 3.0e-3f );
+			ENSURE( pass == 2 || pelvis.y < ground.y + upright - 0.015f );
+			ENSURE( pass == 1 || fabsf( pelvis.y - 0.5f * ( left.y + right.y ) - ( upright - 0.06f ) ) < 3.0e-3f );
 		}
 		else if ( pass == 3 )
 		{
 			ENSURE( left.y > 0.2f );
-			ENSURE_SMALL( pelvis.y - scene.standHeight, 3.0e-3f );
+			ENSURE_SMALL( pelvis.y - upright, 3.0e-3f );
 			ENSURE( lowRight > -3.0e-3f && highRight < 3.0e-3f );
 		}
 		else
@@ -2973,7 +2989,7 @@ static int FigureGroundTest( void )
 	nbFigureId figure = AddFigure( &scene, (b3Vec3){ 0.0f, 1.0f, 0.0f }, 0.0f );
 	StepFigures( &scene, 60 );
 	ENSURE( nbFigure_GetState( figure ) == nb_figureAnimated );
-	ENSURE_SMALL( BonePosition( figure, nb_humanoidPelvis ).y - ( 1.0f + scene.standHeight ), 0.01f );
+	ENSURE_SMALL( BonePosition( figure, nb_humanoidPelvis ).y - ( 1.0f + scene.standHeight + NB_STAND_RISE ), 0.01f );
 
 	b3DestroyBody( stand );
 	StepFigures( &scene, 2 );
@@ -4820,14 +4836,16 @@ static int SteerEvenRunTest( void )
 // A steered figure that does not face where it moves, see nbSteer::faceVelocity: facing ahead, it walks to the side at
 // 1.6 m/s, runs to the side at 3.0 m/s and runs backward at 3.0 m/s, each for 4 s, measured over the last 2. The legs
 // turn their average and whether they walk backward, how close its feet come across the pelvis, negative where they
-// cross, and how far the pelvis sinks below standing at most. The hash of the bones at the end.
+// cross, and how far the pelvis sinks below the stance of its gait at most. The hash of the bones at the end.
 static uint32_t RunStrafe( int threadCount, float* turns, bool* backward, float* closest, float* deepest )
 {
 	FigureScene scene;
 	CreateFigureScene( &scene, threadCount );
 	nbFigureId figure = AddSteeredFigure( &scene, b3Vec3_zero, 0.0f );
 	StepFigures( &scene, 30 );
-	float stand = b3ToVec3( b3Body_GetPosition( nbFigure_GetBody( figure, nb_humanoidPelvis ) ) ).y;
+
+	// The stance of the gait: standing, the pelvis is NB_STAND_RISE higher
+	float stand = scene.standHeight;
 	const b3Vec3 wishes[3] = { { 1.6f, 0.0f, 0.0f }, { 3.0f, 0.0f, 0.0f }, { 0.0f, 0.0f, -3.0f } };
 	for ( int part = 0; part < 3; ++part )
 	{
@@ -4890,8 +4908,10 @@ static uint32_t RunStrafe( int threadCount, float* turns, bool* backward, float*
 // people, see NB_SWING_ANKLE_SOFT, and walking backward and diagonally it takes the steps of people, see
 // NB_GAIT_CADENCE_WALK. Since round 113 the hip joints are 18 instead of 26 cm apart, as those of people, see
 // nbMakeHumanoidBones: running to the side the feet come as close as 9.9 instead of 14.7 cm and running backward as 4.5
-// instead of 9.4 cm, and they stay at least 3 instead of 5 cm apart.
-#define NB_EXPECTED_STRAFE_HASH 0xa21a1104u
+// instead of 9.4 cm, and they stay at least 3 instead of 5 cm apart. Since round 114 it stands upright before it starts,
+// 1.8 cm higher, and comes down onto the stance of its gait, see NB_STAND_RISE: the feet come as close and the pelvis
+// sinks as far below that stance as before.
+#define NB_EXPECTED_STRAFE_HASH 0x5c556a1fu
 static int SteerStrafeTest( void )
 {
 	float turns[3], closest[3], deepest[3];
@@ -4981,7 +5001,9 @@ static float RunBack( bool turn, int later, int* landed, int* onToes )
 	CreateFigureScene( &scene, 1 );
 	nbFigureId figure = AddSteeredFigure( &scene, b3Vec3_zero, 0.0f );
 	StepFigures( &scene, 30 );
-	float stand = b3ToVec3( b3Body_GetPosition( nbFigure_GetBody( figure, nb_humanoidPelvis ) ) ).y;
+
+	// The stance of the gait: standing, the pelvis is NB_STAND_RISE higher
+	float stand = scene.standHeight;
 	nbSteer steer = { { 0.0f, 0.0f, turn ? -3.0f : -1.6f }, 0.0f, false };
 	nbFigure_Steer( figure, &steer );
 	StepFigures( &scene, turn ? 180 + later : 120 );
@@ -5015,8 +5037,8 @@ static float RunBack( bool turn, int later, int* landed, int* onToes )
 }
 
 // A steered figure that does not face where it moves walks backward at 1.6 m/s: its feet land on their toes, and the
-// pelvis goes no more than 3 cm below standing. Running backward at 3.0 m/s it turns to run forward, from 8 places in its
-// cycle: the pelvis goes no more than 12 cm below standing. Before round 102 a foot landed backward on its heel and
+// pelvis goes no more than 3 cm below the stance of its gait. Running backward at 3.0 m/s it turns to run forward, from 8
+// places in its cycle: the pelvis goes no more than 12 cm below that. Before round 102 a foot landed backward on its heel and
 // never rolled over it, and the pelvis went 7.6 cm low for the leg to reach it, and turning, the gait walked for a moment
 // as the speed went through zero, a foot aimed 0.7 m ahead of the hip, and the pelvis went 31 cm low, see NB_GAIT_HEEL,
 // NB_FOOT_HEEL_MOST and NB_GAIT_PLAN_FROM.
@@ -5036,6 +5058,104 @@ static int SteerBackTest( void )
 	printf( "  running backward at 3.0 m/s, turning to run forward from 8 places in its cycle: the pelvis %.1f cm low at most\n",
 			100.0f * turning );
 	ENSURE( turning <= 0.12f );
+	return 0;
+}
+
+// The bend of a knee in degrees: between the thigh from hip to knee and the shin from knee to ankle
+static float KneeBend( nbFigureId figure, int thigh )
+{
+	b3Vec3 hip = BonePosition( figure, thigh );
+	b3Vec3 knee = BonePosition( figure, thigh + 1 );
+	b3Vec3 ankle = BonePosition( figure, thigh + 2 );
+	float along = b3Dot( b3Normalize( b3Sub( knee, hip ) ), b3Normalize( b3Sub( ankle, knee ) ) );
+	return acosf( b3ClampFloat( along, -1.0f, 1.0f ) ) * 180.0f / B3_PI;
+}
+
+// A steered figure stands as a person stands at ease, see NB_STAND_RISE: the pelvis 1.8 cm over the stand height and the
+// knees bent 6 degrees, where it stood 24 degrees in the knees until round 113. Starting to walk it comes down onto the
+// stance of its gait, the stand height, and walks as before, and stopping it stands up again, its feet on the ground all
+// along and its pelvis without a jump of more than 10 mm per update squared. Hit on the chest so that it has to catch
+// itself, the balance holds the pelvis as high as it stood and not 5 cm lower, see nbHoldHeight, and it stands upright
+// again.
+static int SteerUprightTest( void )
+{
+	FigureScene scene;
+	CreateFigureScene( &scene, 1 );
+	nbFigureId figure = AddSteeredFigure( &scene, b3Vec3_zero, 0.0f );
+	StepFigures( &scene, 60 );
+	const float upright = scene.standHeight + NB_STAND_RISE;
+	const int thighs[2] = { nb_humanoidThighLeft, nb_humanoidThighRight };
+	float ankles[2];
+	for ( int k = 0; k < 2; ++k )
+	{
+		float bend = KneeBend( figure, thighs[k] );
+		ankles[k] = BonePosition( figure, thighs[k] + 2 ).y;
+		printf( "  standing: knee %d bent %.1f degrees, the ankle %.3f m high\n", k, bend, ankles[k] );
+		ENSURE( 3.0f < bend && bend < 8.0f );
+	}
+	ENSURE_SMALL( BonePosition( figure, nb_humanoidPelvis ).y - upright, 1.0e-3f );
+
+	// Walking for 3 s, then stopping: it brings its feet together in two steps and stands up, a good 2 s after it was told
+	// to
+	float jump = 0.0f;
+	float highest = 0.0f;
+	float mean = 0.0f;
+	b3Vec3 last = BonePosition( figure, nb_humanoidPelvis );
+	b3Vec3 before = last;
+	SteerVelocity( figure, (b3Vec3){ 0.0f, 0.0f, 1.4f } );
+	for ( int i = 0; i < 360; ++i )
+	{
+		if ( i == 180 )
+		{
+			SteerVelocity( figure, b3Vec3_zero );
+		}
+		StepFigures( &scene, 1 );
+		b3Vec3 pelvis = BonePosition( figure, nb_humanoidPelvis );
+		jump = b3MaxFloat( jump, b3Length( b3Add( b3Sub( pelvis, b3MulSV( 2.0f, last ) ), before ) ) );
+		before = last;
+		last = pelvis;
+		if ( 60 <= i && i < 180 )
+		{
+			highest = b3MaxFloat( highest, pelvis.y );
+			mean += pelvis.y / 120.0f;
+		}
+	}
+	printf( "  walking at 1.4 m/s the pelvis is %.3f m high in the mean and %.3f m at most, standing again %.3f m, and jumps "
+			"%.1f mm per update squared at most\n",
+			mean, highest, last.y, 1000.0f * jump );
+	ENSURE( mean < scene.standHeight && highest < upright - 0.005f );
+	ENSURE( jump <= 0.01f );
+	ENSURE_SMALL( last.y - upright, 1.0e-3f );
+	for ( int k = 0; k < 2; ++k )
+	{
+		float bend = KneeBend( figure, thighs[k] );
+		ENSURE( 3.0f < bend && bend < 8.0f );
+		ENSURE_SMALL( BonePosition( figure, thighs[k] + 2 ).y - ankles[k], 2.0e-3f );
+	}
+
+	// A hit from the front that it catches: until its first step the hold keeps the pelvis where it stood
+	ENSURE( HitChest( figure, 1, (b3Vec3){ 0.0f, 0.0f, -70.0f } ) );
+	float held = FLT_MAX;
+	int steps = 0;
+	while ( nbFigure_GetState( figure ) != nb_figureAnimated && steps < 600 )
+	{
+		StepFigures( &scene, 1 );
+		steps += 1;
+		if ( nbFigure_GetInfo( figure ).stepCount == 0 )
+		{
+			held = b3MinFloat( held, BonePosition( figure, nb_humanoidPelvis ).y );
+		}
+	}
+	nbFigureInfo info = nbFigure_GetInfo( figure );
+	printf( "  hit with 70 N s from the front it catches itself in %.2f s with %d steps, the pelvis %.3f m high at least "
+			"before the first\n",
+			(float)steps / 60.0f, info.stepCount, held );
+	ENSURE( info.state == nb_figureAnimated && info.knockdownCount == 0 && info.catchCount == 1 );
+	ENSURE( held > upright - 0.02f );
+	StepFigures( &scene, 180 );
+	printf( "  and stands %.3f m high again\n", BonePosition( figure, nb_humanoidPelvis ).y );
+	ENSURE_SMALL( BonePosition( figure, nb_humanoidPelvis ).y - upright, 2.0e-3f );
+	DestroyFigureScene( &scene );
 	return 0;
 }
 
@@ -6082,7 +6202,7 @@ static int FigureWallDebrisTest( void )
 
 // The throw through the wall of boards ends in the same bits with one thread and with four, on every platform, in the
 // second fracture pattern, which the figure breaks through
-#define NB_EXPECTED_WALL_HASH 0xaa714d16u
+#define NB_EXPECTED_WALL_HASH 0x897f79a5u
 
 static int FigureWallDeterminismTest( void )
 {
@@ -6142,10 +6262,10 @@ static int ThinBoardTest( void )
 }
 
 // The hash of the figure scenario on every platform, see RunFigureScenario
-#define NB_EXPECTED_FIGURE_HASH 0x1a47baa3u
+#define NB_EXPECTED_FIGURE_HASH 0x37d14474u
 
 // See RunFollowScenario
-#define NB_EXPECTED_FOLLOW_HASH 0x03061bf6u
+#define NB_EXPECTED_FOLLOW_HASH 0x7b2cdc4bu
 
 // See RunSteerScenario. Since round 97 the figure that walks sideways sets its foot before the side of the stairs, 45
 // cm high where it meets them, instead of on top of it. Since round 99 a swing that hurries keeps its aim before it
@@ -6163,7 +6283,7 @@ static int ThinBoardTest( void )
 // within NB_GAIT_FLOAT, and going backward a foot its leg only reaches rolled over its toes stays on them. Round 112:
 // walking takes the steps of people, see NB_GAIT_CADENCE_WALK, and the ankle of a swinging foot bends up as far as
 // theirs, see NB_SWING_ANKLE_SOFT. Round 113: the body has the dimensions of a person, see nbMakeHumanoidBones.
-#define NB_EXPECTED_STEER_HASH 0x932da7a8u
+#define NB_EXPECTED_STEER_HASH 0xd3a899bfu
 
 // See RunGaitClipScenario. Since round 99 as for RunSteerScenario. Since round 100 the figure that is told to turn on
 // the spot while it still walks, not facing where it moves, keeps its legs where they face as its heading turns, and
@@ -6172,7 +6292,7 @@ static int ThinBoardTest( void )
 // RunSteerScenario. Since round 111 as for RunSteerScenario. Round 112: the clips are recorded from a gait that takes
 // the steps of people, see NB_GAIT_CADENCE_WALK, and the ankle of a swinging foot bends up as far as theirs, see
 // NB_SWING_ANKLE_SOFT. Round 113 as for RunSteerScenario.
-#define NB_EXPECTED_GAIT_CLIP_HASH 0x32742daeu
+#define NB_EXPECTED_GAIT_CLIP_HASH 0xdb92ed92u
 
 static int FigureFollowDeterminismTest( void )
 {
@@ -6293,6 +6413,7 @@ int FigureTest( void )
 	RUN_TEST( SteerStrafeTest );
 	RUN_TEST( SteerStrafeChangeTest );
 	RUN_TEST( SteerBackTest );
+	RUN_TEST( SteerUprightTest );
 	RUN_TEST( SteerStartStopTest );
 	RUN_TEST( SteerHitTest );
 	RUN_TEST( SteerRubbleTest );

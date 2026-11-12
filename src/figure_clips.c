@@ -542,10 +542,11 @@ static void nbStandingUpperBody( nbPoseMaker* m, float breath )
 
 static void nbMakeIdle( nbPoseMaker* m, float standHeight )
 {
-	// Ready and at ease, like a person who stands: a little in the knees, as low as the stand height has it
+	// At ease, like a person who stands: upright, the knees nearly straight, above the stand height, see NB_STAND_RISE.
+	// Until round 113 a little in the knees, as low as the stand height has it.
 	for ( int k = 0; k < 3; ++k )
 	{
-		nbResetPose( m, standHeight );
+		nbResetPose( m, standHeight + NB_STAND_RISE * m->s );
 		nbStandingLegs( m );
 		nbStandingUpperBody( m, k == 1 ? 1.0f : 0.0f );
 		nbAddPose( m, 2.0f * (float)k );
@@ -813,7 +814,7 @@ static void nbMakeGetUpFront( nbPoseMaker* m, b3Vec3 offset, float start, float 
 	nbAddPose( m, start + 3.65f );
 
 	// Standing: the right foot beside the left, the root at the height of the idle clip and over the feet as it stands
-	nbResetPose( m, standHeight );
+	nbResetPose( m, standHeight + NB_STAND_RISE * s );
 	m->root.p.x = offset.x;
 	m->root.p.z = leftFoot.z + NB_STANCE_BACK * s;
 	nbStandingLegs( m );
@@ -881,8 +882,10 @@ int nbBuildHumanoidClip( nbFigureClip which, float height, nbKeyframe* keyframes
 	switch ( which )
 	{
 		case nb_clipIdle:
+			// It stands above the stand height, see NB_STAND_RISE, so it moves the root there
 			nbMakeIdle( m, standHeight );
 			loop = true;
+			moveRoot = true;
 			break;
 		case nb_clipFall:
 			nbMakeFall( m, standHeight );

@@ -55,10 +55,15 @@
 // does not catch more: the swinging foot follows its target about 0.1 s late, so a step of 0.2 s back from a push of
 // 64 N s took the foot 15 instead of 57 cm, see the roadmap, F60. The humanoid stands in its knees with its feet behind
 // the pelvis and sinks while it steps after a hard push, so a foot that lifted 8 cm touched the ground early and landed
-// short, after 120 N s from behind 37 cm before its target. Lifted 12 cm it lands farther.
-#define NB_MAX_STEP_LENGTH 0.55f
+// short, after 120 N s from behind 37 cm before its target. Lifted 12 cm it lands farther. Since round 114 the humanoid
+// stands upright, see NB_STAND_RISE, and its pelvis has farther to sink for a step: its steps are 60 instead of 55 cm
+// long and 14 instead of 12 cm high. Of the 8 928 hits of the balance table from the upright stand 1 292 threw it down
+// at 60 Hz and 1 474 at 30 Hz with the steps as they were, 1 156 and 1 657 with steps of 64 cm, 1 239 and 1 282 lifted
+// 15 cm, and 1 181 and 1 241 with steps of 60 cm lifted 14 cm, where the figure of round 113 fell 1 159 and 1 270 times.
+// With steps of 62 cm or more, or lifted 15 cm, a light hit of up to 60 N s threw it down here and there, with these none.
+#define NB_MAX_STEP_LENGTH 0.6f
 #define NB_STEP_DURATION 0.3f
-#define NB_STEP_HEIGHT 0.12f
+#define NB_STEP_HEIGHT 0.14f
 
 // Late in a step the swinging leg reaches below the ground, as a person reaches for the ground with the foot that ends
 // a step: from this part of the step on the target of its ankle sinks below the arc of the swing, at the planned end
@@ -191,7 +196,11 @@
 #define NB_HELD_ARMS 0.15f
 #define NB_REGAIN_TIME 0.6f
 
-// Standing, the pelvis stays this far below straight legs, a soft knee, in meters
+// Standing, the balance holds the pelvis as high over the ground as it stood when the balance began, no lower than
+// this far below straight legs, in meters, where it held every figure until round 113. A figure that stood upright, see
+// NB_STAND_RISE, sank 5 cm into its knees as a hit came, its feet nearly without load meanwhile: of the 8 928 hits of
+// the balance table 1 390 threw it down, held where it stood 1 292, and let sink faster 1 414. The figure of round 113
+// in its knees fell 1 159 times, held where it stood 1 033 times.
 #define NB_KNEE_BEND 0.05f
 
 // The legs hold the pelvis lower while it rises and higher while it sinks, by its speed along up times this, in seconds,
@@ -255,8 +264,9 @@
 #define NB_KEEP_LENGTH 0.26f
 
 // The pelvis stands no higher than the legs reach at this part of their length, so planted feet stay on the ground in a
-// wide stance, and no lower than this part of its height standing
-#define NB_LEG_REACH 0.97f
+// wide stance, and no lower than this part of its height standing. Until round 113 at 0.97 of their length, which holds
+// no figure as high as it stands upright.
+#define NB_LEG_REACH 0.995f
 #define NB_LOWEST_PELVIS 0.8f
 
 // From this part of a step on, while a hold keeps the pelvis upright, the stance leg lowers it, all the way at the planned
@@ -2249,7 +2259,11 @@ nbBalanceResult nbUpdateBalance( nbWorld* world, int index, nbFigure* f, float t
 	float turn;
 	b3WorldTransform pelvis = b3Body_GetTransform( f->bones[0].bodyId );
 	b3Vec3 pelvisPoint = b3ToVec3( pelvis.p );
-	float standing = b->groundHeight + b->standHeight - NB_KNEE_BEND * b->scale;
+	if ( b->startHeight == 0.0f )
+	{
+		b->startHeight = b3Dot( pelvisPoint, up ) - b->groundHeight;
+	}
+	float standing = b->groundHeight + b3ClampFloat( b->startHeight, b->standHeight - NB_KNEE_BEND * b->scale, b->standHeight );
 	if ( b->stepping == false )
 	{
 		// Planted feet stay where they stand, the pelvis moves over the middle of the support a little at a time

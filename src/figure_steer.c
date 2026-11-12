@@ -305,6 +305,8 @@ void nbResetSteering( nbFigure* f )
 	f->gaitPhaseRate = 0.0f;
 	f->gaitBend = 0.0f;
 	f->gaitBendRate = 0.0f;
+	f->stanceDown = 0.0f;
+	f->stanceDownRate = 0.0f;
 	f->stairWeight = 0.0f;
 	f->stairDepth = 0.0f;
 	f->stairRise = 0.0f;
