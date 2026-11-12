@@ -17,6 +17,7 @@
 
 #include <algorithm>
 #include <float.h>
+#include <initializer_list>
 #include <math.h>
 #include <stdarg.h>
 #include <stdio.h>
@@ -326,6 +327,9 @@ struct Automation
 	bool walk = false;
 	bool walkSide = false;
 	float walkTime = 0.0f;
+	bool look = false;
+	float lookYaw = 0.0f;
+	float lookDistance = 0.0f;
 
 	// Run the comparison, the one of the thread counts, the scaling or the one with and without the joints in the packs,
 	// print it and quit, or take the town down like the comparison does
@@ -553,6 +557,7 @@ struct App
 	// Every part of the body of a figure in its own color, or each figure in one. The menu asks for the figures to be
 	// drawn again, and the next frame does it before the steps start.
 	bool figurePartColors = true;
+	bool figureHuman = false;
 	bool rebuildFigures = false;
 
 	// The collisions of figures with walls the library reported, see nbEvents::collisions, and the last of them
@@ -1149,6 +1154,134 @@ static void AppendRoundedBox( App& app, b3Vec3 center, b3Vec3 halfExtents, float
 	}
 }
 
+// A cross section of a loft, see AppendLoft: where it lies along the y axis of its bone, its half width along x and its
+// half depth along z, and where its middle lies in x and z
+struct LoftRing
+{
+	float y;
+	float a;
+	float b;
+	float x;
+	float z;
+};
+
+// The y, a, b, x or z of a cross section by its place in that order
+static float LoftValue( const LoftRing& ring, int k )
+{
+	const float values[5] = { ring.y, ring.a, ring.b, ring.x, ring.z };
+	return values[k];
+}
+
+// A part of a body as a loft: cross sections along the y axis of its bone, each round like an ellipse or squarer, by the
+// exponent of a superellipse, 2 for an ellipse, joined by a skin that runs smoothly through them, a curve of the third
+// degree from each to the next, and closed at both ends by a dome as high as a share of the smaller half axis of the
+// section there. So a thigh is thick at the hip and narrow at the knee, a calf swells, and a chest slopes to the neck,
+// as tubes and boxes cannot. Sides around, rows between two sections, smooth normals from the skin itself.
+static void AppendLoft( App& app, const LoftRing* rings, int count, int material, int slot, float square = 2.0f,
+						float capLow = 0.5f, float capHigh = 0.5f, int sides = 20, int between = 3 )
+{
+	const int capRows = 3;
+	std::vector<LoftRing> rows;
+	rows.reserve( (size_t)( ( count - 1 ) * between + 1 + 2 * capRows ) );
+
+	// The dome at the low end, from its pole
+	const LoftRing& low = rings[0];
+	float lowHeight = capLow * b3MinFloat( low.a, low.b );
+	for ( int k = capRows; k >= 1; --k )
+	{
+		float angle = 0.5f * B3_PI * (float)k / (float)capRows;
+		float c = k == capRows ? 0.0f : cosf( angle );
+		rows.push_back( { low.y - lowHeight * sinf( angle ), c * low.a, c * low.b, low.x, low.z } );
+	}
+
+	// The sections and the skin between them: each value with the slope per meter that the sections on either side give
+	// it, one-sided at the ends
+	for ( int i = 0; i + 1 < count; ++i )
+	{
+		int before = i > 0 ? i - 1 : 0;
+		int after = i + 2 < count ? i + 2 : count - 1;
+		float dy = rings[i + 1].y - rings[i].y;
+		for ( int step = 0; step < between; ++step )
+		{
+			float t = (float)step / (float)between;
+			float t2 = t * t;
+			float t3 = t2 * t;
+			float v[5];
+			v[0] = rings[i].y + t * dy;
+			for ( int k = 1; k < 5; ++k )
+			{
+				float p1 = LoftValue( rings[i], k );
+				float p2 = LoftValue( rings[i + 1], k );
+				float m1 = ( p2 - LoftValue( rings[before], k ) ) / ( rings[i + 1].y - rings[before].y );
+				float m2 = ( LoftValue( rings[after], k ) - p1 ) / ( rings[after].y - rings[i].y );
+				v[k] = ( 2.0f * t3 - 3.0f * t2 + 1.0f ) * p1 + ( t3 - 2.0f * t2 + t ) * dy * m1 + ( 3.0f * t2 - 2.0f * t3 ) * p2 +
+					   ( t3 - t2 ) * dy * m2;
+			}
+			rows.push_back( { v[0], v[1], v[2], v[3], v[4] } );
+		}
+	}
+	rows.push_back( rings[count - 1] );
+
+	// The dome at the high end, to its pole
+	const LoftRing& high = rings[count - 1];
+	float highHeight = capHigh * b3MinFloat( high.a, high.b );
+	for ( int k = 1; k <= capRows; ++k )
+	{
+		float angle = 0.5f * B3_PI * (float)k / (float)capRows;
+		float c = k == capRows ? 0.0f : cosf( angle );
+		rows.push_back( { high.y + highHeight * sinf( angle ), c * high.a, c * high.b, high.x, high.z } );
+	}
+
+	// The points of the skin, row by row from the low pole to the high one
+	int rowCount = (int)rows.size();
+	int ringSize = sides + 1;
+	float exponent = 2.0f / square;
+	std::vector<b3Vec3> points( (size_t)( rowCount * ringSize ) );
+	for ( int row = 0; row < rowCount; ++row )
+	{
+		const LoftRing& ring = rows[row];
+		for ( int side = 0; side <= sides; ++side )
+		{
+			float phi = 2.0f * B3_PI * (float)( side % sides ) / (float)sides;
+			float cosine = cosf( phi );
+			float sine = sinf( phi );
+			float px = ( cosine < 0.0f ? -1.0f : 1.0f ) * powf( fabsf( cosine ), exponent );
+			float pz = ( sine < 0.0f ? -1.0f : 1.0f ) * powf( fabsf( sine ), exponent );
+			points[row * ringSize + side] = { ring.x + ring.a * px, ring.y, ring.z + ring.b * pz };
+		}
+	}
+
+	// The normal of a point from its neighbours along the loft and around it
+	uint16_t first = (uint16_t)app.vertexScratch.size();
+	for ( int row = 0; row < rowCount; ++row )
+	{
+		for ( int side = 0; side <= sides; ++side )
+		{
+			b3Vec3 normal = { 0.0f, row == 0 ? -1.0f : 1.0f, 0.0f };
+			if ( row > 0 && row + 1 < rowCount )
+			{
+				int next = ( side % sides + 1 ) % sides;
+				int last = ( side % sides + sides - 1 ) % sides;
+				b3Vec3 around = b3Sub( points[row * ringSize + next], points[row * ringSize + last] );
+				b3Vec3 along = b3Sub( points[( row + 1 ) * ringSize + side], points[( row - 1 ) * ringSize + side] );
+				b3Vec3 across = b3Cross( along, around );
+				normal = b3Length( across ) > 1.0e-9f ? b3Normalize( across ) : normal;
+			}
+			app.vertexScratch.push_back( Renderer::MakeVertex( points[row * ringSize + side], normal, material, slot ) );
+		}
+	}
+	for ( int row = 0; row + 1 < rowCount; ++row )
+	{
+		for ( int side = 0; side < sides; ++side )
+		{
+			uint16_t a = (uint16_t)( first + row * ringSize + side );
+			uint16_t b = (uint16_t)( a + ringSize );
+			uint16_t triangles[6] = { a, b, (uint16_t)( a + 1 ), (uint16_t)( a + 1 ), b, (uint16_t)( b + 1 ) };
+			app.indexScratch.insert( app.indexScratch.end(), triangles, triangles + 6 );
+		}
+	}
+}
+
 // The color of every bone of the humanoid of the library, each part of the body in its own, the two parts of the chest in
 // one, see scene.glsl
 static const int s_boneMaterials[nb_humanoidBoneCount] = {
@@ -1158,7 +1291,8 @@ static const int s_boneMaterials[nb_humanoidBoneCount] = {
 	MaterialFigureDark,	 MaterialFigureBlue,   MaterialFigureViolet, MaterialFigureDark,
 };
 
-// The colors of whole figures, one after the other, when a figure has one color like a mannequin of a game
+// The colors of whole figures, one after the other, when a figure has one color like a mannequin of a game, and of
+// their shirts when they are drawn as people
 static const int s_figureMaterials[] = { MaterialFigureRed,	 MaterialFigureTeal, MaterialFigureYellow, MaterialFigureLime,
 										 MaterialFigureBlue, MaterialFigurePink, MaterialFigureOrange, MaterialFigureViolet };
 
@@ -1197,8 +1331,10 @@ static void AppendLimbTube( App& app, const nbBoneDef& bone, float nearRadius, f
 // the waist, and the pelvis as the largest, as wide as the thighs reach, with their tops inside it. The arms hang from
 // balls around the shoulder joints at the upper corners of the chest, the hands are flat like mittens, the feet are
 // shoes wider than the shins, and the head is a large egg on a short, thick neck, with two small round eyes that show
-// where the figure looks.
-static void AppendFigurePart( App& app, int index, const nbBoneDef& bone, int material, int slot )
+// where the figure looks. This is the look of the figures until round 112 and the one the demo starts with, see
+// AppendBodyPart for the figure drawn as a person. The bones under it have the dimensions of a person since round 113,
+// see nbMakeHumanoidBones, so its hips are narrower and its arms shorter than they were.
+static void AppendMannequinPart( App& app, int index, const nbBoneDef& bone, int material, int slot )
 {
 	const float limb = 1.2f;
 	if ( bone.shape == nb_boxBone )
@@ -1256,6 +1392,38 @@ static void AppendFigurePart( App& app, int index, const nbBoneDef& bone, int ma
 				return;
 			}
 
+			case nb_humanoidHead:
+			{
+				// The egg of the mannequin, as large as it was on the capsule the head had until round 112, 1.2 times as
+				// wide as that capsule and 1.5 times as high: larger than the box the head has since round 113, which has
+				// the size of the head of a person. Taller than wide and deep, its sides and face flat, its crown round and
+				// its chin narrower, a little ahead of the neck so the neck shows under the back of the head.
+				float capsule = 1.24f * h.x;
+				b3Vec3 middle = { c.x, c.y + 0.25f * h.y, c.z + 0.11f * h.z };
+				b3Vec3 half = { 1.2f * capsule, 1.5f * capsule, 1.3f * capsule };
+				float round = 0.9f * half.x;
+				Taper egg = { 0.84f, 0.97f, 0.9f, 0.97f, 1.0f, 1.0f };
+				AppendRoundedBox( app, middle, half, round, material, slot, 4, egg );
+
+				// Two small round eyes standing out of the face, in its color
+				b3Vec3 core = { half.x - round, half.y - round, half.z - round };
+				for ( int side = -1; side <= 1; side += 2 )
+				{
+					float x = 0.3f * half.x * (float)side;
+					float y = 0.12f * half.y;
+					float dx = b3MaxFloat( fabsf( x ) - core.x, 0.0f );
+					float dy = b3MaxFloat( fabsf( y ) - core.y, 0.0f );
+					float z = core.z + sqrtf( b3MaxFloat( round * round - dx * dx - dy * dy, 0.0f ) ) - 0.03f * capsule;
+					float t = ( y + half.y ) / ( 2.0f * half.y );
+					float slope;
+					float sx = TaperScale( egg.lowX, egg.midX, egg.highX, t, &slope );
+					float sz = TaperScale( egg.lowZ, egg.midZ, egg.highZ, t, &slope );
+					b3Vec3 eye = { middle.x + sx * x, middle.y + y, middle.z + sz * z };
+					AppendCapsule( app, eye, eye, 0.14f * capsule, material, slot, 10, 3 );
+				}
+				return;
+			}
+
 			default:
 				AppendRoundedBox( app, c, h, bone.radius, material, slot );
 				return;
@@ -1265,37 +1433,6 @@ static void AppendFigurePart( App& app, int index, const nbBoneDef& bone, int ma
 	float r = limb * bone.radius;
 	switch ( index )
 	{
-		case nb_humanoidHead:
-		{
-			// Large, taller than wide and deep like an egg, its sides and face flat, its crown round and its chin
-			// narrower, about half as wide as the shoulders, a little ahead of the neck so the neck shows under the back
-			// of the head
-			float capsule = bone.radius;
-			b3Vec3 c = { bone.start.x, 0.5f * ( bone.start.y + bone.end.y ) + 0.15f * capsule, bone.start.z + 0.12f * capsule };
-			b3Vec3 h = { 1.2f * capsule, 1.5f * capsule, 1.3f * capsule };
-			float round = 0.9f * h.x;
-			Taper egg = { 0.84f, 0.97f, 0.9f, 0.97f, 1.0f, 1.0f };
-			AppendRoundedBox( app, c, h, round, material, slot, 4, egg );
-
-			// Two small round eyes standing out of the face, in its color
-			b3Vec3 core = { h.x - round, h.y - round, h.z - round };
-			for ( int side = -1; side <= 1; side += 2 )
-			{
-				float x = 0.3f * h.x * (float)side;
-				float y = 0.12f * h.y;
-				float dx = b3MaxFloat( fabsf( x ) - core.x, 0.0f );
-				float dy = b3MaxFloat( fabsf( y ) - core.y, 0.0f );
-				float z = core.z + sqrtf( b3MaxFloat( round * round - dx * dx - dy * dy, 0.0f ) ) - 0.03f * capsule;
-				float t = ( y + h.y ) / ( 2.0f * h.y );
-				float slope;
-				float sx = TaperScale( egg.lowX, egg.midX, egg.highX, t, &slope );
-				float sz = TaperScale( egg.lowZ, egg.midZ, egg.highZ, t, &slope );
-				b3Vec3 eye = { c.x + sx * x, c.y + y, c.z + sz * z };
-				AppendCapsule( app, eye, eye, 0.14f * capsule, material, slot, 10, 3 );
-			}
-			return;
-		}
-
 		case nb_humanoidNeck:
 			AppendLimb( app, bone, 1.1f * bone.radius, 0.4f, 0.2f, 1.0f, 0.6f, { 1.08f, 1.0f, 1.0f, 1.0f }, material, slot );
 			return;
@@ -1340,8 +1477,253 @@ static void AppendFigurePart( App& app, int index, const nbBoneDef& bone, int ma
 	}
 }
 
+// A cross section of a part of the body, see AppendBodyPart: for a limb, how far along it lies from the joint near
+// the body as a share of the length of the bone, and its half width, half depth and middle as shares of the radius of
+// the capsule. For a part of the trunk or the head, how far above the middle of its box as a share of the half height,
+// and its half width, half depth and middle as shares of the half width and the half depth of the box.
+struct BodySection
+{
+	float t;
+	float a;
+	float b;
+	float x;
+	float z;
+};
+
+// A bone of the humanoid of the library as a part of the body of a person, the second look of the figures, chosen with
+// "Als Mensch" in the menu or --human: drawn over the shape the physics has, as a game draws a
+// body over its ragdoll: each a loft shaped like that part of a person, see AppendLoft, mostly within a centimeter and
+// a half of the shape that collides for it and nowhere more than about two. The trunk runs smoothly from the hips to
+// a chest that stands out in front and slopes to the neck, each of its parts reaching into the next, so the back shows
+// no gap as it bends. A thigh is thick at the hip and narrow at the knee, a shin has its calf at the back, an upper
+// arm its shoulder on top, a forearm narrows to a flat wrist, a hand is flat with a thumb in front, a foot is a shoe,
+// and the head has a jaw narrower than its skull, eyes, a nose, ears and hair. The sizes come from the bones, which
+// since round 113 have the dimensions of a person, see nbMakeHumanoidBones. The hair is drawn in its own material,
+// negative for none.
+static void AppendBodyPart( App& app, int index, const nbBoneDef& bone, int material, int hair, int slot )
+{
+	// A limb hangs along its local y, +z ahead, and its local x points to the right of the figure: out for a right limb
+	bool left = index == nb_humanoidUpperArmLeft || index == nb_humanoidForearmLeft || index == nb_humanoidHandLeft ||
+				index == nb_humanoidThighLeft || index == nb_humanoidShinLeft || index == nb_humanoidFootLeft;
+	float out = left ? -1.0f : 1.0f;
+	float from = bone.start.y - bone.radius;
+	float length = bone.end.y + bone.radius - from;
+	float r = bone.radius;
+	b3Vec3 c = bone.center;
+	b3Vec3 h = bone.halfExtents;
+	LoftRing rings[8];
+	auto limb = [&]( std::initializer_list<BodySection> sections, float square, float capLow, float capHigh ) {
+		int count = 0;
+		for ( const BodySection& section : sections )
+		{
+			rings[count++] = { from + section.t * length, section.a * r, section.b * r, bone.start.x + section.x * r,
+							   bone.start.z + section.z * r };
+		}
+		AppendLoft( app, rings, count, material, slot, square, capLow, capHigh );
+	};
+	auto block = [&]( std::initializer_list<BodySection> sections, float square, float capLow, float capHigh, int color ) {
+		int count = 0;
+		for ( const BodySection& section : sections )
+		{
+			rings[count++] = { c.y + section.t * h.y, section.a * h.x, section.b * h.z, c.x + section.x * h.x,
+							   c.z + section.z * h.z };
+		}
+		AppendLoft( app, rings, count, color, slot, square, capLow, capHigh, 24 );
+	};
+
+	switch ( index )
+	{
+		case nb_humanoidPelvis:
+			// From between the thighs out to the hips, as wide as the thighs reach so their tops stay inside, the seat
+			// round at the back, and in to the waist
+			block( { { -0.7f, 0.6f, 0.76f, 0.0f, 0.0f },
+					 { -0.2f, 1.08f, 1.04f, 0.0f, -0.08f },
+					 { 0.35f, 1.06f, 1.0f, 0.0f, -0.05f },
+					 { 1.0f, 0.93f, 0.92f, 0.0f, 0.0f } },
+				   2.4f, 0.4f, 0.3f, material );
+			return;
+
+		case nb_humanoidBelly:
+			block(
+				{ { -1.4f, 1.03f, 1.0f, 0.0f, 0.0f }, { 0.0f, 1.0f, 1.02f, 0.0f, 0.03f }, { 1.4f, 0.99f, 1.03f, 0.0f, 0.03f } },
+				2.4f, 0.3f, 0.3f, material );
+			return;
+
+		case nb_humanoidRibs:
+			block(
+				{ { -1.4f, 1.01f, 0.98f, 0.0f, 0.02f }, { 0.0f, 1.01f, 1.0f, 0.0f, 0.03f }, { 1.4f, 1.03f, 1.05f, 0.0f, 0.06f } },
+				2.4f, 0.3f, 0.3f, material );
+			return;
+
+		case nb_humanoidLowerChest:
+			block( { { -1.3f, 1.06f, 0.93f, 0.0f, 0.0f }, { 0.0f, 1.08f, 1.0f, 0.0f, 0.0f }, { 1.3f, 1.12f, 1.03f, 0.0f, 0.0f } },
+				   2.5f, 0.3f, 0.3f, material );
+			return;
+
+		case nb_humanoidChest:
+			// The widest part of the trunk, between the shoulders, and from them sloping up to the neck
+			block( { { -1.2f, 0.86f, 0.96f, 0.0f, 0.0f },
+					 { -0.3f, 0.98f, 1.0f, 0.0f, 0.0f },
+					 { 0.15f, 0.86f, 0.95f, 0.0f, -0.03f },
+					 { 0.5f, 0.66f, 0.8f, 0.0f, -0.08f },
+					 { 0.85f, 0.44f, 0.62f, 0.0f, -0.12f } },
+				   2.5f, 0.3f, 0.3f, material );
+			return;
+
+		case nb_humanoidNeck:
+			// Wider where it comes out of the chest, up into the head
+			limb( { { 0.16f, 1.3f, 1.15f, 0.0f, 0.0f }, { 0.47f, 0.98f, 1.0f, 0.0f, 0.0f }, { 0.84f, 0.92f, 0.97f, 0.0f, 0.0f } },
+				  2.0f, 0.3f, 0.3f );
+			return;
+
+		case nb_humanoidHead:
+		{
+			// The chin ahead and narrow, the jaw, the cheeks, the skull at its widest over the ears, and the crown
+			block( { { -0.78f, 0.55f, 0.56f, 0.0f, 0.2f },
+					 { -0.5f, 0.8f, 0.8f, 0.0f, 0.12f },
+					 { -0.05f, 0.95f, 0.93f, 0.0f, 0.04f },
+					 { 0.45f, 1.0f, 1.0f, 0.0f, 0.0f },
+					 { 0.72f, 0.86f, 0.88f, 0.0f, -0.03f } },
+				   2.3f, 0.6f, 0.5f, material );
+
+			// Two eyes and a nose, which show where the figure looks, and ears
+			for ( int side = -1; side <= 1; side += 2 )
+			{
+				b3Vec3 eye = { c.x + 0.42f * h.x * (float)side, c.y + 0.05f * h.y, c.z + 0.89f * h.z };
+				AppendCapsule( app, eye, eye, 0.13f * h.x, MaterialFigureDark, slot, 10, 3 );
+				b3Vec3 lobe = { c.x + 0.96f * h.x * (float)side, c.y - 0.2f * h.y, c.z - 0.06f * h.z };
+				b3Vec3 tip = { c.x + 1.0f * h.x * (float)side, c.y + 0.1f * h.y, c.z - 0.14f * h.z };
+				AppendCapsule( app, lobe, tip, 0.15f * h.x, material, slot, 8, 2 );
+			}
+			AppendCapsule( app, { c.x, c.y + 0.08f * h.y, c.z + 0.93f * h.z }, { c.x, c.y - 0.2f * h.y, c.z + 1.04f * h.z },
+						   0.14f * h.x, material, slot, 8, 2 );
+
+			// The hair over the skull, behind the forehead and above the ears
+			if ( hair >= 0 )
+			{
+				block( { { -0.05f, 1.02f, 0.98f, 0.0f, -0.1f },
+						 { 0.45f, 1.06f, 1.03f, 0.0f, -0.06f },
+						 { 0.75f, 0.9f, 0.93f, 0.0f, -0.03f } },
+					   2.3f, 0.15f, 0.55f, hair );
+			}
+			return;
+		}
+
+		case nb_humanoidUpperArmLeft:
+		case nb_humanoidUpperArmRight:
+			// The shoulder round over the joint and a little out, then the arm down to the elbow
+			limb( { { -0.02f, 1.2f, 1.24f, 0.06f * out, 0.0f },
+					{ 0.3f, 1.06f, 1.12f, 0.0f, 0.0f },
+					{ 0.65f, 0.94f, 1.04f, 0.0f, 0.0f },
+					{ 1.0f, 0.84f, 0.88f, 0.0f, 0.0f } },
+				  2.0f, 0.9f, 0.6f );
+			return;
+
+		case nb_humanoidForearmLeft:
+		case nb_humanoidForearmRight:
+			// Thickest below the elbow, down to a wrist that is flat as the hand
+			limb( { { 0.0f, 1.02f, 1.08f, 0.0f, 0.0f },
+					{ 0.25f, 1.12f, 1.18f, 0.0f, 0.0f },
+					{ 0.7f, 0.8f, 0.86f, 0.0f, 0.0f },
+					{ 1.0f, 0.62f, 0.78f, 0.0f, 0.0f } },
+				  2.0f, 0.6f, 0.5f );
+			return;
+
+		case nb_humanoidHandLeft:
+		case nb_humanoidHandRight:
+			// Flat, its palm toward the thigh, widest at the knuckles, with the thumb in front
+			limb( { { -0.03f, 0.66f, 0.86f, 0.0f, 0.0f },
+					{ 0.25f, 0.55f, 1.22f, 0.0f, 0.0f },
+					{ 0.55f, 0.48f, 1.18f, 0.0f, 0.0f },
+					{ 0.9f, 0.36f, 0.92f, 0.0f, 0.0f } },
+				  2.6f, 0.5f, 1.0f );
+			AppendCapsule( app, { bone.start.x, from + 0.2f * length, bone.start.z + 0.8f * r },
+						   { bone.start.x, from + 0.5f * length, bone.start.z + 1.5f * r }, 0.32f * r, material, slot, 8, 2 );
+			return;
+
+		case nb_humanoidThighLeft:
+		case nb_humanoidThighRight:
+			// Thick below the hip, its top inside the pelvis, narrow at the knee
+			limb( { { -0.03f, 1.1f, 1.15f, 0.0f, 0.0f },
+					{ 0.22f, 1.2f, 1.26f, 0.0f, -0.06f },
+					{ 0.55f, 1.06f, 1.12f, 0.0f, 0.0f },
+					{ 0.85f, 0.88f, 0.93f, 0.0f, 0.03f },
+					{ 1.0f, 0.83f, 0.88f, 0.0f, 0.05f } },
+				  2.0f, 0.5f, 0.6f );
+			return;
+
+		case nb_humanoidShinLeft:
+		case nb_humanoidShinRight:
+			// The knee, the calf at the back, and down to the ankle
+			limb( { { 0.0f, 0.93f, 0.98f, 0.0f, 0.05f },
+					{ 0.27f, 0.95f, 1.07f, 0.0f, -0.13f },
+					{ 0.65f, 0.75f, 0.82f, 0.0f, -0.05f },
+					{ 0.95f, 0.7f, 0.78f, 0.0f, 0.0f } },
+				  2.0f, 0.6f, 0.5f );
+			return;
+
+		case nb_humanoidFootLeft:
+		case nb_humanoidFootRight:
+			// A shoe along the foot, its sole flat on the bottom of the box: a narrow heel, highest over the ankle, widest
+			// at the ball and low at the toes
+			block( { { -0.93f, 0.66f, 1.13f, 0.0f, 0.13f },
+					 { -0.52f, 0.92f, 1.4f, 0.0f, 0.4f },
+					 { 0.44f, 1.06f, 0.87f, 0.0f, -0.13f },
+					 { 0.85f, 0.9f, 0.67f, 0.0f, -0.33f } },
+				   3.5f, 0.6f, 0.7f, material );
+			return;
+
+		default:
+			break;
+	}
+
+	if ( bone.shape == nb_boxBone )
+	{
+		AppendRoundedBox( app, c, h, 0.5f * b3MinFloat( h.x, b3MinFloat( h.y, h.z ) ), material, slot );
+	}
+	else if ( bone.shape == nb_roundedBoxBone )
+	{
+		AppendRoundedBox( app, c, h, bone.radius, material, slot );
+	}
+	else
+	{
+		AppendCapsule( app, bone.start, bone.end, bone.radius, material, slot );
+	}
+}
+
+// What a bone of the humanoid wears when the figure is drawn as a person: skin on head, neck, forearms and hands, a
+// shirt in the color of the figure over the trunk and the upper arms, trousers and shoes
+static int ClothesMaterial( int bone, int shirt )
+{
+	switch ( bone )
+	{
+		case nb_humanoidNeck:
+		case nb_humanoidHead:
+		case nb_humanoidForearmLeft:
+		case nb_humanoidForearmRight:
+		case nb_humanoidHandLeft:
+		case nb_humanoidHandRight:
+			return MaterialFigureSkin;
+
+		case nb_humanoidPelvis:
+		case nb_humanoidThighLeft:
+		case nb_humanoidThighRight:
+		case nb_humanoidShinLeft:
+		case nb_humanoidShinRight:
+			return MaterialFigureDark;
+
+		case nb_humanoidFootLeft:
+		case nb_humanoidFootRight:
+			return MaterialSteel;
+
+		default:
+			return shirt;
+	}
+}
+
 // The meshes of the bones of a figure, each on a new slot on the body of its bone, so the poses of the frames move it.
-// Each part of the body in its own color, or the whole figure in one after its place in the list of figures.
+// As a mannequin each part of the body in its own color, or the whole figure in one after its place in the list of
+// figures. As a person the figure in clothes, its shirt in that color.
 static void BuildFigureMeshes( App& app, FigureVisual& visual, int figure )
 {
 	int count = (int)sizeof( s_figureMaterials ) / (int)sizeof( s_figureMaterials[0] );
@@ -1349,7 +1731,7 @@ static void BuildFigureMeshes( App& app, FigureVisual& visual, int figure )
 	{
 		int bone = (int)i;
 		int material = MaterialPlaster;
-		if ( app.figurePartColors == false )
+		if ( app.figureHuman || app.figurePartColors == false )
 		{
 			material = s_figureMaterials[figure % count];
 		}
@@ -1360,7 +1742,15 @@ static void BuildFigureMeshes( App& app, FigureVisual& visual, int figure )
 		int slot = app.renderer.AllocSlot();
 		app.vertexScratch.clear();
 		app.indexScratch.clear();
-		AppendFigurePart( app, bone, app.figureBones[bone], material, slot );
+		if ( app.figureHuman )
+		{
+			int clothes = bone < nb_humanoidBoneCount ? ClothesMaterial( bone, material ) : material;
+			AppendBodyPart( app, bone, app.figureBones[bone], clothes, MaterialFigureDark, slot );
+		}
+		else
+		{
+			AppendMannequinPart( app, bone, app.figureBones[bone], material, slot );
+		}
 		visual.slots[i] = slot;
 		visual.meshes[i] = app.renderer.AddMesh( app.vertexScratch.data(), (int)app.vertexScratch.size(), app.indexScratch.data(),
 												 (int)app.indexScratch.size(), slot );
@@ -2849,10 +3239,12 @@ static void UpdatePlayer( App& app, float dt )
 	nbFigure_Steer( app.player, &steer );
 
 	b3Vec3 pelvis = b3ToVec3( b3Body_GetPosition( nbFigure_GetBody( app.player, nb_humanoidPelvis ) ) );
-	b3Vec3 pivot = { pelvis.x, pelvis.y + PlayerCameraHeight, pelvis.z };
+	// With --look the camera looks straight at the pelvis from its distance, for pictures of the whole figure
+	bool look = app.automation.look;
+	b3Vec3 pivot = { pelvis.x, pelvis.y + ( look ? 0.0f : PlayerCameraHeight ), pelvis.z };
 	app.playerPivot = b3Lerp( app.playerPivot, pivot, b3MinFloat( 1.0f, PlayerCameraFollow * dt ) );
-	b3Vec3 eye = b3MulSub( app.playerPivot, PlayerCameraDistance, app.camera.Forward() );
-	app.camera.position = b3MulAdd( eye, PlayerCameraShoulder, app.camera.Right() );
+	b3Vec3 eye = b3MulSub( app.playerPivot, look ? app.automation.lookDistance : PlayerCameraDistance, app.camera.Forward() );
+	app.camera.position = b3MulAdd( eye, look ? 0.0f : PlayerCameraShoulder, app.camera.Right() );
 	app.camera.position.y = b3MaxFloat( app.camera.position.y, 0.3f );
 }
 
@@ -3171,7 +3563,18 @@ static void DrawUi( App& app )
 		{
 			ImGui::SetTooltip(
 				"An: jeder Körperteil einer Figur in seiner eigenen Farbe. Aus: jede Figur ganz in einer\nFarbe, wie die "
-				"Gliederpuppen eines Spiels." );
+				"Gliederpuppen eines Spiels. Gilt für die Gliederpuppe, nicht für „Als Mensch“." );
+		}
+		ImGui::SameLine();
+		if ( ImGui::Checkbox( "Als Mensch", &app.figureHuman ) )
+		{
+			app.rebuildFigures = true;
+		}
+		if ( ImGui::IsItemHovered() )
+		{
+			ImGui::SetTooltip(
+				"Aus: die Gliederpuppe wie bisher. An: jede Figur als Mensch gezeichnet, mit Kopf, Schultern,\nWaden und "
+				"Schuhen, in Hemd und Hose. Die Formen der Physik sind in beiden dieselben." );
 		}
 		if ( app.scene == ScenePlayer )
 		{
@@ -5033,6 +5436,11 @@ static void OnFrame()
 	}
 
 	// During the comparison the camera stays, it decides what is drawn. The figure of the player takes the keys.
+	if ( app.automation.look && app.scene == ScenePlayer )
+	{
+		app.camera.yaw = app.automation.lookYaw;
+		app.camera.pitch = 0.0f;
+	}
 	if ( app.automation.walk && app.scene == ScenePlayer )
 	{
 		app.automation.walkTime += dt;
@@ -5366,6 +5774,20 @@ int main( int argc, char** argv )
 			// The figure of the player walks its course by itself, seen without the menu; F1 shows it
 			app.automation.walk = true;
 			app.showUi = false;
+		}
+		else if ( strcmp( argv[i], "--look" ) == 0 && i + 2 < argc )
+		{
+			// The figure of the player seen from an angle around it in degrees, 0 from behind and 180 from the front, and
+			// from a distance in meters, without the menu: for pictures of the figure
+			app.automation.look = true;
+			app.automation.lookYaw = (float)atof( argv[++i] ) * B3_PI / 180.0f;
+			app.automation.lookDistance = (float)atof( argv[++i] );
+			app.showUi = false;
+		}
+		else if ( strcmp( argv[i], "--human" ) == 0 )
+		{
+			// The figures drawn as people, as the menu does with "Als Mensch"
+			app.figureHuman = true;
 		}
 		else if ( strcmp( argv[i], "--faces-camera" ) == 0 )
 		{

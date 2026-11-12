@@ -495,8 +495,9 @@ static b3Quat nbFlatHand( float side )
 
 // How much farther out than the hips the feet of the humanoid stand, in meters for the humanoid of 1.8 m. The wider the
 // stance, the less it catches hits on the trunk: with the feet under the hips, 0 of 1 920 hits on chest and belly of 50
-// to 89 N s threw it down, with 2 cm 11 and with 4 cm 24, see the roadmap. Since round 36 the hips lie 6 cm wider apart,
-// and the feet stand under them, 26 cm apart instead of 24.
+// to 89 N s threw it down, with 2 cm 11 and with 4 cm 24, see the roadmap. Since round 36 the hips lay 6 cm wider apart,
+// and the feet stood under them, 26 cm apart instead of 24. Since round 113 the hip joints lie 18 cm apart as on a
+// person, and the feet stand under them: people stand with their heels about 17 cm apart.
 #define NB_STANCE_SPREAD 0.0f
 
 // How far the feet stand behind the pelvis, in meters for the humanoid of 1.8 m, so the center of mass stands over the

@@ -510,10 +510,13 @@ float nbMakeHumanoidBones( float height, float mass, nbBoneDef* bones, int capac
 	float m = mass / NB_HUMANOID_MASS;
 
 	// Built after a mannequin, measured in its picture from behind: the pelvis origin stands 98 cm above the soles, the
-	// head reaches from 1.60 to 1.80 m on a short neck. The shoulders turn at 1.45 m, inside balls just below the top
-	// corners of the chest, and the arms hang from them to 64 cm, past the middle of the thighs, a little out from the
-	// hips, as on the mannequin of the reference picture of the game. A limb that hangs down has its local y along world
-	// -y. The foot points forward, along +z.
+	// head reaches from 1.57 to 1.80 m on a short neck. Since round 113 its widths, its head and its arms are those of men
+	// of its height and weight, the means of the 107 men of 178 to 182 cm and 70 to 78 kg in the survey of the US Army of
+	// 2012, ANSUR II: the mannequin was 7 cm wider at the hips, 8 cm at the chest and 4.5 cm over the arms, its hip joints
+	// lay 26 instead of 18 cm apart, its head was as wide as deep and 20 instead of 23 cm high, and its upper arms were 5
+	// cm too long. The shoulders turn at 1.43 m, inside balls just beside the top corners of the chest, and the arms hang
+	// from them to 66 cm, past the middle of the thighs, a little out from the hips. A limb that hangs down has its local
+	// y along world -y. The foot points forward, along +z.
 	//
 	// The joints move as far as a person's, after the normal ranges of the neutral zero method, the ankle as under the
 	// weight of the body. A hinge turns about the axis across the bone, local x. A ball joint has its z axis along the
@@ -529,17 +532,19 @@ float nbMakeHumanoidBones( float height, float mass, nbBoneDef* bones, int capac
 	b3Quat identity = b3Quat_identity;
 
 	// The trunk in five rounded blocks like the mannequin of the reference pictures, stacked like tires: a round pelvis
-	// from 83 cm to 1.05 m, a little wider than the chest, with the legs at its outer corners, belly and ribs as two
-	// flatter rolls above it, and a broad chest up to its top at 1.56 m that stands out in front of them by 4 cm, as on
-	// the mannequin seen from the side. The chest is two parts, as the mannequin has it, the lower one of 5 kg and the
-	// upper one of 7 that carries the arms and the neck, together as heavy as the chest of one part before round 37 with
-	// its center of mass where it was. Neighbours overlap, the next but one lies more than 10 cm away.
+	// from 83 cm to 1.05 m, 33 cm wide as the hips of the men measured, belly and ribs as two flatter rolls above it,
+	// 29.6 cm as their waist and 29 cm, the lower chest 28 cm as their chest at the height of the nipples, and the upper
+	// chest 36 cm, between the shoulders, up to its top at 1.56 m. The chest stands out in front of belly and ribs by 4
+	// cm, as on the mannequin seen from the side. It is two parts, the lower one of 5 kg and the upper one of 7 that
+	// carries the arms and the neck, together as heavy as the chest of one part before round 37 with its center of mass
+	// where it was. Neighbours overlap, the next but one lies more than 10 cm away. Until round 112 the blocks were 40,
+	// 32, 33, 36 and 38 cm wide.
 	nbBoneDef pelvis = nbDefaultBoneDef();
 	pelvis.name = "pelvis";
 	pelvis.parent = -1;
 	pelvis.shape = nb_roundedBoxBone;
 	pelvis.center = (b3Vec3){ 0.0f, -0.04f * s, 0.0f };
-	pelvis.halfExtents = (b3Vec3){ 0.2f * s, 0.11f * s, 0.11f * s };
+	pelvis.halfExtents = (b3Vec3){ 0.165f * s, 0.11f * s, 0.11f * s };
 	pelvis.radius = 0.08f * s;
 	pelvis.mass = 11.0f * m;
 	pelvis.joint = nb_fixedJoint;
@@ -547,16 +552,16 @@ float nbMakeHumanoidBones( float height, float mass, nbBoneDef* bones, int capac
 
 	bones[nb_humanoidBelly] =
 		nbSegment( "belly", nb_humanoidPelvis, (b3Vec3){ 0.0f, 0.07f * s, 0.0f }, (b3Vec3){ 0.0f, 0.06f * s, 0.0f },
-				   (b3Vec3){ 0.16f * s, 0.06f * s, 0.10f * s }, 0.055f * s, 5.0f * m );
+				   (b3Vec3){ 0.148f * s, 0.06f * s, 0.10f * s }, 0.055f * s, 5.0f * m );
 	bones[nb_humanoidRibs] =
 		nbSegment( "ribs", nb_humanoidBelly, (b3Vec3){ 0.0f, 0.12f * s, 0.0f }, (b3Vec3){ 0.0f, 0.06f * s, 0.0f },
-				   (b3Vec3){ 0.165f * s, 0.055f * s, 0.105f * s }, 0.05f * s, 5.0f * m );
+				   (b3Vec3){ 0.145f * s, 0.055f * s, 0.105f * s }, 0.05f * s, 5.0f * m );
 	bones[nb_humanoidLowerChest] = nbSegment( "lower chest", nb_humanoidRibs, (b3Vec3){ 0.0f, 0.11f * s, 0.0f },
 											  (b3Vec3){ 0.0f, 0.065f * s, 0.015f * s },
-											  (b3Vec3){ 0.18f * s, 0.06f * s, 0.12f * s }, 0.05f * s, 5.0f * m );
+											  (b3Vec3){ 0.14f * s, 0.06f * s, 0.12f * s }, 0.05f * s, 5.0f * m );
 	bones[nb_humanoidChest] = nbSegment( "chest", nb_humanoidLowerChest, (b3Vec3){ 0.0f, 0.12f * s, 0.0f },
 										 (b3Vec3){ 0.0f, 0.075f * s, 0.015f * s },
-										 (b3Vec3){ 0.19f * s, 0.08f * s, 0.125f * s }, 0.07f * s, 7.0f * m );
+										 (b3Vec3){ 0.18f * s, 0.08f * s, 0.125f * s }, 0.07f * s, 7.0f * m );
 
 	// The spine bends 75 degrees forward, 30 back and 34 to either side and turns 40 either way, as a person bends it
 	// most in the lumbar spine and turns it most in the thoracic: belly and ribs bend 50 of the 75 degrees forward and 22
@@ -566,16 +571,19 @@ float nbMakeHumanoidBones( float height, float mass, nbBoneDef* bones, int capac
 	nbSetLimits( bones + nb_humanoidLowerChest, -5.0f, 15.0f, -6.0f, 6.0f, -10.0f, 10.0f );
 	nbSetLimits( bones + nb_humanoidChest, -3.0f, 10.0f, -6.0f, 6.0f, -15.0f, 15.0f );
 
-	// The neck from the top of the chest, and the head on it like an egg. Together they bend 45 degrees forward, back and
+	// The neck from the top of the chest, 12 cm thick, and the head on it: a rounded box as wide, deep and high as the
+	// heads of the men measured, 15.3, 20 and 23 cm, from the chin at 1.57 m to the top at 1.80 m. A capsule is as wide
+	// as deep: until round 112 the head was one of 19 cm and 20 cm high. Together they bend 45 degrees forward, back and
 	// to either side and turn 70 either way, the head the most of the turn.
-	nbBoneDef neck = nbLimb( "neck", nb_humanoidChest, (b3Vec3){ 0.0f, 0.14f * s, 0.0f }, identity, 0.08f * s, 0.05f * s,
+	nbBoneDef neck = nbLimb( "neck", nb_humanoidChest, (b3Vec3){ 0.0f, 0.14f * s, 0.0f }, identity, 0.08f * s, 0.06f * s,
 							 1.0f * m, nb_ballJoint, zToY, 0.0f, 0.0f, 0.0f, 0.3f );
 	neck.start = (b3Vec3){ 0.0f, 0.0f, 0.0f };
 	neck.end = (b3Vec3){ 0.0f, 0.07f * s, 0.0f };
-	nbBoneDef head = nbLimb( "head", nb_humanoidNeck, (b3Vec3){ 0.0f, 0.08f * s, 0.0f }, identity, 0.2f * s, 0.095f * s, 5.0f * m,
+	nbBoneDef head = nbLimb( "head", nb_humanoidNeck, (b3Vec3){ 0.0f, 0.08f * s, 0.0f }, identity, 0.23f * s, 0.07f * s, 5.0f * m,
 							 nb_ballJoint, zToY, 0.0f, 0.0f, 0.0f, 0.3f );
-	head.start = (b3Vec3){ 0.0f, 0.075f * s, 0.0f };
-	head.end = (b3Vec3){ 0.0f, 0.085f * s, 0.0f };
+	head.shape = nb_roundedBoxBone;
+	head.center = (b3Vec3){ 0.0f, 0.065f * s, 0.0f };
+	head.halfExtents = (b3Vec3){ 0.0765f * s, 0.115f * s, 0.1f * s };
 	nbSetLimits( &neck, -25.0f, 25.0f, -25.0f, 25.0f, -30.0f, 30.0f );
 	nbSetLimits( &head, -20.0f, 20.0f, -20.0f, 20.0f, -40.0f, 40.0f );
 
@@ -618,18 +626,19 @@ float nbMakeHumanoidBones( float height, float mass, nbBoneDef* bones, int capac
 		int shin = side == 0 ? nb_humanoidShinLeft : nb_humanoidShinRight;
 		int foot = side == 0 ? nb_humanoidFootLeft : nb_humanoidFootRight;
 
-		// The shoulders turn 2.5 cm outside the chest, and the arms hang 3 degrees out from the body, past the trunk by
-		// 1.5 cm and more, the fingertips 26 cm from the middle. Upper arm, forearm and hand are 35, 26 and 17 cm long, a
-		// little shorter than in the reference picture as the user asked, 37, 27 and 17 cm until round 43, there longer than
-		// on a person by a tenth.
+		// The shoulder joints lie 40.5 cm apart, a centimeter inside the tips of the shoulders of the men measured, 41.5
+		// cm, and 2 cm beside the chest, and the arms hang 3 degrees out from the body, the fingertips 24 cm from the
+		// middle. Upper arm, forearm and hand are 30, 27.5 and 19.5 cm long, from joint to joint as on those men: their
+		// elbows lie at 1.13 m and their wrists at 86 cm. They were 35, 26 and 17 cm until round 112, with the shoulders
+		// 43 cm apart and 2 cm higher, and 37, 27 and 17 cm until round 43, as in the reference picture.
 		b3Quat armRest = b3MakeQuatFromAxisAngle( b3Vec3_axisZ, B3_PI + 0.05f * x );
 		bones[upperArm] = nbLimb( side == 0 ? "upper arm left" : "upper arm right", nb_humanoidChest,
-								  (b3Vec3){ 0.215f * s * x, 0.05f * s, 0.0f }, armRest, 0.35f * s, 0.05f * s, 2.0f * m,
+								  (b3Vec3){ 0.2025f * s * x, 0.03f * s, 0.0f }, armRest, 0.30f * s, 0.05f * s, 2.0f * m,
 								  nb_ballJoint, zToY, 0.0f, 0.0f, 0.0f, 0.6f );
-		bones[forearm] = nbLimb( side == 0 ? "forearm left" : "forearm right", upperArm, (b3Vec3){ 0.0f, 0.35f * s, 0.0f },
-								 identity, 0.26f * s, 0.045f * s, 1.2f * m, nb_hingeJoint, zToX, -0.087f, 2.53f, 0.0f, 0.4f );
-		bones[hand] = nbLimb( side == 0 ? "hand left" : "hand right", forearm, (b3Vec3){ 0.0f, 0.26f * s, 0.0f }, identity,
-							  0.17f * s, 0.035f * s, 0.8f * m, nb_ballJoint, zToY, 0.0f, 0.0f, 0.0f, 0.15f );
+		bones[forearm] = nbLimb( side == 0 ? "forearm left" : "forearm right", upperArm, (b3Vec3){ 0.0f, 0.30f * s, 0.0f },
+								 identity, 0.275f * s, 0.04f * s, 1.2f * m, nb_hingeJoint, zToX, -0.087f, 2.53f, 0.0f, 0.4f );
+		bones[hand] = nbLimb( side == 0 ? "hand left" : "hand right", forearm, (b3Vec3){ 0.0f, 0.275f * s, 0.0f }, identity,
+							  0.195f * s, 0.035f * s, 0.8f * m, nb_ballJoint, zToY, 0.0f, 0.0f, 0.0f, 0.15f );
 
 		// The shoulder lifts the arm 160 degrees forward and out, 40 back and in, and turns it 90 in and 60 out. The elbow
 		// bends 145 degrees and stretches 5 past straight. The hand, its palm toward the thigh, bends 60 toward it and
@@ -657,10 +666,11 @@ float nbMakeHumanoidBones( float height, float mass, nbBoneDef* bones, int capac
 		bones[upperArm].armature = 0.05f * m * s * s;
 
 		// The legs carry the body: their joints see far more than their two bones and take three times the damping. The
-		// hips lie 26 cm apart, so the thighs come out of the pelvis under its outer corners with a gap between them, as on
-		// the mannequin of the reference picture.
+		// hip joints lie 18 cm apart, as the centers of the heads of the thigh bones of men do, 9 cm from the middle, so
+		// the thighs leave 4 cm between them. Until round 112 they lay 26 cm apart, under the outer corners of the pelvis
+		// of the mannequin, and the feet walked 14 cm apart where people walk about 10: now they do.
 		bones[thigh] =
-			nbLimb( side == 0 ? "thigh left" : "thigh right", nb_humanoidPelvis, (b3Vec3){ 0.13f * s * x, -0.03f * s, 0.0f },
+			nbLimb( side == 0 ? "thigh left" : "thigh right", nb_humanoidPelvis, (b3Vec3){ 0.09f * s * x, -0.03f * s, 0.0f },
 					down, 0.45f * s, 0.07f * s, 7.5f * m, nb_ballJoint, zToY, 0.0f, 0.0f, 0.0f, 2.0f );
 		bones[thigh].damping = 3.0f;
 		bones[shin] = nbLimb( side == 0 ? "shin left" : "shin right", thigh, (b3Vec3){ 0.0f, 0.45f * s, 0.0f }, identity,

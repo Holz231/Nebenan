@@ -182,6 +182,19 @@ der Physik, die Formen der Physik bleiben, wie sie sind. Ohne **Teile farbig** i
 Farbe, wie die Gliederpuppen eines Spiels. Damit die runden Teile rund aussehen, verläuft die Farbe über jedes Dreieck,
 siehe Demo-Renderer. Wie lang die Glieder sind und wie die Figur steht, kommt aus der Bibliothek, siehe In den Knien.
 
+**Figuren als Menschen.** Seit `active-ragdoll-113` zeichnet die Demo die Figuren auf Wunsch als Menschen, mit **Als
+Mensch** im Menü oder `--human`. Die Gliederpuppe bleibt, wie sie war, und ist der Stand beim Start. Als Mensch ist
+jeder Körperteil eine glatte Form aus Querschnitten entlang seines Knochens, geformt wie der Teil eines Menschen: der
+Rumpf durchgehend von den Hüften über die Taille zur Brust, die zum Hals hin abfällt, ein Oberschenkel oben dick und am
+Knie schmal, ein Schienbein mit der Wade hinten, ein Oberarm mit der Schulter obenauf, ein Unterarm bis zum flachen
+Handgelenk, die Hand flach mit dem Daumen vorn, der Fuß ein Schuh, und der Kopf mit Kiefer, Augen, Nase, Ohren und
+Haaren. Die Figur trägt Kleidung: ein Hemd in ihrer Farbe über Rumpf und Oberarmen, Hose und Schuhe, Haut an Kopf, Hals,
+Unterarmen und Händen. Die Maße kommen aus den Knochen der Bibliothek, die seit `active-ragdoll-113` die eines Menschen
+sind, und das Netz liegt meist unter anderthalb und nirgends mehr als rund 2 cm neben der Form, die kollidiert. Die
+Gliederpuppe ist kräftiger gezeichnet als ihre Körper, mit den schmaleren Knochen von `active-ragdoll-113` am Rumpf bis
+rund 3 cm und am Kopf knapp 4 cm je Seite. Die Formen der Physik sind für beide dieselben, wie die Bibliothek sie baut,
+ein Spiel bringt sein eigenes Netz mit.
+
 **FPS.** Oben rechts steht immer die echte Bildrate, gemessen über die letzten zwei Sekunden: Bilder pro Sekunde,
 die mittlere Bildzeit und das 1 % Low, also die Rate der langsamsten 1 % der Bilder. Daran sieht man Ruckler. VSync
 ist aus, die Demo zeichnet so viele Bilder, wie der PC schafft. Mit **V** oder `--vsync` bindet sie sich an die
@@ -327,11 +340,12 @@ Messungen reißen die Stadt selbst ab, Lauf für Lauf, auch mit `--demolition`, 
 vorgegebene Schussfolge ab, `--stick` dreht in der Szene mit Figuren ohne Menü den Blick nach einem Skript, und der
 Stock schwingt mit, langsam gegen einen Kopf und schnell über eine Brust, `--walk` lässt die Spielfigur ohne Menü den
 Parcours gehen, die Treppe hinauf, über die Plattform rennen und von ihrer Kante springen, `--walk-side` dasselbe von
-der Seite gesehen, `--faces-camera` setzt den Haken „Blick zur Kamera“, mit `--walk-side` geht sie den Parcours dann
-seitwärts, `--gait-clips` und `--clip-arms` schalten „Gang nach Clips“ und „Arme im Clip vorn“ ein,
-`--frames N` beendet nach N Bildern und meldet Bildzeiten, CPU-Zeiten, Uploads und Dreiecke pro Bild
-und einen Hash der Lagen aller Bruchstücke und der Knochen der Figuren, `--screenshot datei.ppm` speichert das letzte
-Bild (nur OpenGL).
+der Seite gesehen, `--human` zeichnet die Figuren als Menschen, `--look 180 2.5` zeigt die Spielfigur stehend ohne Menü
+aus einem Winkel um sie und einer Entfernung in Metern, 0 von hinten und 180 von vorn, für Bilder, `--faces-camera`
+setzt den Haken „Blick zur Kamera“, mit `--walk-side` geht sie den Parcours dann seitwärts, `--gait-clips` und
+`--clip-arms` schalten „Gang nach Clips“ und „Arme im Clip vorn“ ein, `--frames N` beendet nach N Bildern und meldet
+Bildzeiten, CPU-Zeiten, Uploads und Dreiecke pro Bild und einen Hash der Lagen aller Bruchstücke und der Knochen der
+Figuren, `--screenshot datei.ppm` speichert das letzte Bild (nur OpenGL).
 
 Hinkt die Physik hinterher, lässt `nbWorld_Advance` die Zeit langsamer laufen, statt Schritte nachzuholen: Mehr als
 1/60 s Physik im selben Bild kommt nur, solange der letzte Schritt weniger als 4 ms pro 1/60 s kostete, bei 60 Hz
@@ -750,19 +764,22 @@ von 50 bis 89 N s 299 statt 14. Mit einer Landung, die auf den Fuß wartet, fiel
 mehr. Siehe „Schrittzeit nach dem Stoß“ in [Optimierungen.md](docs/Optimierungen.md).
 
 **In den Knien.** Der Mensch der Bibliothek steht wie die Gliederpuppe der Vorlage, bereit: ein wenig in den Knien, das
-Becken 0,96 m über den Sohlen, die Füße flach unter den Hüften, 26 cm auseinander und 4 cm hinter dem Becken, die Brust
-steht vor, der Oberarm hängt aus der Schulter 0,1 rad nach hinten und ein wenig ab, der Unterarm ist 0,5 rad nach vorn
-gebeugt, und mit dem Atem neigen sich Brust und Kopf ein wenig. So bauen ihn der Clip `nb_clipIdle` mit der IK der Beine
-und das Ende des Aufstehens. Auch der Körper folgt seit `active-ragdoll-36` der Vorlage, `nbMakeHumanoidBones`: Oberarm,
-Unterarm und Hand sind 37, 27 und 17 cm lang statt 28, 24 und 16, seit `active-ragdoll-44` etwas kürzer, 35, 26 und 17
-cm, siehe Etwas kürzere Arme, die Schultern drehen 2,5 cm außerhalb der Brust auf 1,45 m, die Hüften liegen 26 statt 20
-cm auseinander, das Becken ist 40 cm breit, und die Brust steht 4 cm vor Rippen und Bauch. Die Massen bleiben.
-`nbMakeHumanoidBones` gibt die Standhöhe von 0,96 m zurück, auf ihr stehen die Clips ohne Bewegung der Wurzel. Ein
-eigener Clip mit geraden Beinen steht trotzdem auf dem Boden, die Füße heben die Wurzel um die 2 cm, siehe Füße auf dem
-Boden. Der Schwerpunkt liegt so 6 cm vor den Knöcheln, 12,5 cm vor den Fersen und 14,5 cm hinter den Zehen, bei 46 % der
-Sohle, siehe Füße nach den Maßen des Menschen. Auf `active-ragdoll-35` standen die Füße je 2 cm außerhalb der Hüften,
-die Beine wie ein A, und die Arme hingen etwas vor dem Körper, siehe „Stand in den Knien“ in
-[Optimierungen.md](docs/Optimierungen.md).
+Becken 0,96 m über den Sohlen, die Füße flach unter den Hüften, 18 cm auseinander, bis `active-ragdoll-112` 26 cm, und 4
+cm hinter dem Becken, die Brust steht vor, der Oberarm hängt aus der Schulter 0,1 rad nach hinten und ein wenig ab, der
+Unterarm ist 0,5 rad nach vorn gebeugt, und mit dem Atem neigen sich Brust und Kopf ein wenig. So bauen ihn der Clip
+`nb_clipIdle` mit der IK der Beine und das Ende des Aufstehens. Auch der Körper folgt seit `active-ragdoll-36` der
+Vorlage, `nbMakeHumanoidBones`: Oberarm, Unterarm und Hand sind 37, 27 und 17 cm lang statt 28, 24 und 16, seit
+`active-ragdoll-44` etwas kürzer, 35, 26 und 17 cm, siehe Etwas kürzere Arme, die Schultern drehen 2,5 cm außerhalb der
+Brust auf 1,45 m, die Hüften liegen 26 statt 20 cm auseinander, das Becken ist 40 cm breit, und die Brust steht 4 cm vor
+Rippen und Bauch. Die Massen bleiben. Seit `active-ragdoll-113` hat er die Maße des Menschen, siehe „Körper nach den
+Maßen des Menschen“ in [Optimierungen.md](docs/Optimierungen.md): Oberarm, Unterarm und Hand sind 30, 27,5 und 19,5 cm
+lang, die Schultern drehen 2 cm neben der Brust auf 1,43 m, die Hüftgelenke liegen 18 cm auseinander, das Becken ist 33
+cm breit, und der Kopf ist eine abgerundete Kiste. `nbMakeHumanoidBones` gibt die Standhöhe von 0,96 m zurück, auf ihr
+stehen die Clips ohne Bewegung der Wurzel. Ein eigener Clip mit geraden Beinen steht trotzdem auf dem Boden, die Füße
+heben die Wurzel um die 2 cm, siehe Füße auf dem Boden. Der Schwerpunkt liegt so 6 cm vor den Knöcheln, 12,5 cm vor den
+Fersen und 14,5 cm hinter den Zehen, bei 46 % der Sohle, siehe Füße nach den Maßen des Menschen. Auf `active-ragdoll-35`
+standen die Füße je 2 cm außerhalb der Hüften, die Beine wie ein A, und die Arme hingen etwas vor dem Körper, siehe
+„Stand in den Knien“ in [Optimierungen.md](docs/Optimierungen.md).
 
 Der neue Körper fängt Treffer auf den Rumpf schlechter und Treffer auf die Glieder besser als der von
 `active-ragdoll-35`: An den 4 464 Treffern auf Brust und Bauch fallen von 50 bis 89 N s 15 statt 11, die Figur fängt
@@ -1726,6 +1743,14 @@ Rennens, und der Schwungfuß folgt dem Schienbein, so weit ein Sprunggelenk beug
 Geprüft mit Geschwindigkeiten, die vorher nicht gelaufen waren, liegt die Kadenz gehend 0,7 und 1,3 % neben der des
 Menschen statt 13,9 und 6,5 %, dafür springt in den Wechseln des Gehens das Becken an 80 statt 66 von 624 Stellen um
 mehr als 10 mm in einem Update, siehe „Gehen mit den Schritten des Menschen, Sprunggelenk im Schwung“ in
+[Optimierungen.md](docs/Optimierungen.md). Seit `active-ragdoll-113` hat der Mensch der Bibliothek die Maße von Männern
+seiner Größe und seines Gewichts nach der Vermessung ANSUR II: die Hüftgelenke 18 statt 26 cm auseinander, das Becken 33
+statt 40 cm breit, die Brust auf Höhe der Brustwarzen 28 statt 36 cm, die Schultergelenke 40,5 statt 43 cm auseinander,
+der Kopf eine abgerundete Kiste von 15,3 mal 20 mal 23 cm statt einer Kapsel von 19 cm, Oberarm, Unterarm und Hand 30,
+27,5 und 19,5 statt 35, 26 und 17 cm. Ein Spiel ruft dafür nichts Neues auf, `nbMakeHumanoidBones` baut den Körper.
+Gehend setzen die Füße damit 10 statt 14 cm auseinander auf wie bei Menschen, und geprüft mit Treffern, die vorher nicht
+gelaufen waren, werfen 5 345 statt 5 331 von 35 712 die Figur um. Dafür kreuzen die Füße, wenn sie rennend die Richtung
+wechselt, bis 19,3 statt 14,5 cm, siehe „Körper nach den Maßen des Menschen“ in
 [Optimierungen.md](docs/Optimierungen.md). Am Hang und auf Treppen misst die Figur die Steigung ihres Wegs: Bergauf
 landet ein Fuß weiter vorn, bergab näher unter dem Körper, so reicht das vordere Bein so weit hinauf wie das hintere
 hinunter, und die Schritte werden kürzer, auf 20° um ein Fünftel. Die Feder unter der Kapsel folgt der Ebene, die der
