@@ -574,6 +574,9 @@ typedef struct nbFigure
 	int legWaits;
 	int legLead;
 
+	// How long each swinging foot has until it lands, in seconds, see NB_SWING_DROP_SHARE
+	float swingRest[2];
+
 	// What it last came down from, to the bit: the root and the legs of the pose in the frame and how far down, and the
 	// legs solved for that, see nbComeDownForGait
 	float downFrom[32];

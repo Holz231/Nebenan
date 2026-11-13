@@ -217,11 +217,21 @@
 // it, and the root goes down at most this far for the legs to reach their feet. Walking, a steered leg stretches to
 // NB_LEG_REACH_WALK of its length, its knee nearly straight, and the root goes up as far, see nbSteerFeet, and as it
 // turns or slows down, to NB_LEG_REACH_BENT, see NB_GAIT_BEND_SPEED. From NB_GAIT_DESCEND of its swing on, the root goes
-// down before a swinging foot lands, see nbSteerFeet and nbLowerSteered.
+// down before a swinging foot lands, see nbSteerFeet and nbLowerSteered: as far as its leg needs when the foot lands,
+// from where it lands to the hip where that is then, and of what its leg needs beyond that to reach the foot where it
+// is now, NB_SWING_DROP_SHARE. Until round 116 it went down for all of that: running, a foot late in its swing is
+// farther ahead of the hip than when it lands, as the hip catches up 7 cm in an update, so the root dipped before every
+// landing farther than the landing needed and came up after it. At 2 520 points of changes of the gait with a fixed
+// heading the pelvis jumps more than 10 mm in an update at 175 instead of 263 now and the hands more than 15 mm at 234
+// instead of 285, and at 312 points facing where it moves the pelvis at 27 instead of 42, at speeds that had not run
+// before the pelvis at 74 instead of 87 of 1 008 points and at 24 instead of 30 of 312. With none of it the foot did
+// not reach the ground as it landed and snapped down, shins over 37 mm at 510 instead of 355 of 1 152 points, with only
+// what the landing needs at 431.
 #define NB_LEG_REACH 0.98f
 #define NB_LEG_REACH_WALK 0.995f
 #define NB_LEG_REACH_BENT 0.96f
 #define NB_GAIT_DESCEND 0.4f
+#define NB_SWING_DROP_SHARE 0.7f
 #define NB_MAX_DROP 0.3f
 
 // A swinging steered leg stretches this part of its length farther than its reach at most: its foot goes where the leg
@@ -3236,8 +3246,9 @@ static float nbLowerSteered( nbFigure* f, b3Transform root, const int* thighs, b
 		f->outToes[k] = tips[k];
 		if ( f->footSwings[k] && f->swingAlong[k] > NB_GAIT_DESCEND )
 		{
-			// Late in its swing, as far as its leg needs to reach the foot where it is now, more and more, rolled as it lands,
-			// on its heel and stepping backward on its toes
+			// Late in its swing, more and more, as far as its leg needs when the foot lands, from where it lands to the hip
+			// where that is then, and a share of what it needs beyond that to reach the foot where it is now, rolled as it
+			// lands, on its heel and stepping backward on its toes, see NB_SWING_DROP_SHARE
 			float late = b3MinFloat( ( f->swingAlong[k] - NB_GAIT_DESCEND ) / ( 1.0f - NB_GAIT_DESCEND ), 1.0f );
 			float stepSide = f->stepBack[k] ? -1.0f : 1.0f;
 			b3Vec3 heeled = ankles[k];
@@ -3246,7 +3257,19 @@ static float nbLowerSteered( nbFigure* f, b3Transform root, const int* thighs, b
 				b3Quat turned = rotations[k];
 				nbRollFoot( footBone, f->footRoll[k], NB_FOOT_ROCK, &heeled, &turned );
 			}
-			drop = b3MaxFloat( drop, late * late * ( 3.0f - 2.0f * late ) * nbDropToReach( heeled, hip, reaches[k] ) );
+			float needNow = nbDropToReach( heeled, hip, reaches[k] );
+			float needSwing = needNow;
+			if ( needNow > 0.0f )
+			{
+				b3Vec3 hipThen = nbAlongPath( &path, hip, f->swingRest[k] );
+				b3Vec3 targetThen = b3InvRotateVector( f->frame.q, b3SubPos( f->feet[k].target, f->frame.p ) );
+				float needThen = b3MaxFloat( nbDropToReach( targetThen, hipThen, reaches[k] ), 0.0f );
+				if ( needNow > needThen )
+				{
+					needSwing = needThen + NB_SWING_DROP_SHARE * ( needNow - needThen );
+				}
+			}
+			drop = b3MaxFloat( drop, late * late * ( 3.0f - 2.0f * late ) * needSwing );
 		}
 		if ( behind[k] == false && f->footSwings[k] == false )
 		{
@@ -5736,6 +5759,7 @@ static void nbSteerFeet( const nbWorld* world, int index, nbFigure* f, const nbC
 			float swing = f->swingAlong[k];
 			float natural = ( 1.0f - swing ) * footTime;
 			float left = natural / ( f->swingRate[k] * f->swingHurry[k] );
+			f->swingRest[k] = left;
 			if ( swing < NB_GAIT_AIM + NB_GAIT_AIM_FADE && left > NB_GAIT_AIM_SETTLED )
 			{
 				// Where the hip will pass over it as far into its stance as land, beside the body, on the ground there, no

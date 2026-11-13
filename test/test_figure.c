@@ -5123,6 +5123,73 @@ static int SteerLegLeadTest( void )
 	return 0;
 }
 
+// A steered figure stands for half a second, goes at first for 3 s and a part of its cycle more and then at then for
+// 3 s, facing where it moves or keeping its heading: the largest jump of its pelvis and of a shin in an update from when
+// it starts to go, as second differences of their places in meters
+static void RunJumps( b3Vec3 first, b3Vec3 then, int later, bool faces, float* pelvisJump, float* shinJump )
+{
+	FigureScene scene;
+	CreateFigureScene( &scene, 1 );
+	nbFigureId figure = AddSteeredFigure( &scene, b3Vec3_zero, 0.0f );
+	StepFigures( &scene, 30 );
+	nbSteer steer = { first, 0.0f, faces };
+	nbFigure_Steer( figure, &steer );
+	const int bones[3] = { nb_humanoidPelvis, nb_humanoidShinLeft, nb_humanoidShinRight };
+	b3Vec3 before[3];
+	b3Vec3 last[3];
+	for ( int k = 0; k < 3; ++k )
+	{
+		last[k] = b3ToVec3( b3Body_GetPosition( nbFigure_GetBody( figure, bones[k] ) ) );
+		before[k] = last[k];
+	}
+	float jumps[3] = { 0.0f, 0.0f, 0.0f };
+	for ( int i = 0; i < 360 + later; ++i )
+	{
+		if ( i == 180 + later )
+		{
+			steer.velocity = then;
+			nbFigure_Steer( figure, &steer );
+		}
+		StepFigures( &scene, 1 );
+		for ( int k = 0; k < 3; ++k )
+		{
+			b3Vec3 now = b3ToVec3( b3Body_GetPosition( nbFigure_GetBody( figure, bones[k] ) ) );
+			if ( i > 0 )
+			{
+				jumps[k] = b3MaxFloat( jumps[k], b3Length( b3Add( b3Sub( now, last[k] ), b3Sub( before[k], last[k] ) ) ) );
+			}
+			before[k] = last[k];
+			last[k] = now;
+		}
+	}
+	DestroyFigureScene( &scene );
+	*pelvisJump = jumps[0];
+	*shinJump = b3MaxFloat( jumps[1], jumps[2] );
+}
+
+// A steered figure starts to run and runs on for 6 s, backward at 4.3 m/s keeping its heading and forward at 4.8 m/s
+// facing where it moves. Before a foot lands the root goes down as far as its leg needs when it lands, and only a share
+// of what it needs beyond that to reach the foot where it still is, see NB_SWING_DROP_SHARE: the pelvis jumps 6.9 and
+// 6.7 mm in an update at most. Until round 116 the root went down for all of that, dipped before every landing and came
+// up after it, and the pelvis jumped 10.2 and 8.5 mm here.
+static int SteerRunDescentTest( void )
+{
+	const b3Vec3 runs[2] = { { 0.0f, 0.0f, -4.3f }, { 0.0f, 0.0f, 4.8f } };
+	const bool faces[2] = { false, true };
+	const float most[2] = { 0.0085f, 0.0076f };
+	const char* names[2] = { "running backward at 4.3 m/s with its heading kept", "running forward at 4.8 m/s" };
+	for ( int part = 0; part < 2; ++part )
+	{
+		float pelvis;
+		float shin;
+		RunJumps( runs[part], runs[part], 0, faces[part], &pelvis, &shin );
+		printf( "  %s: the pelvis jumps %.1f mm and a shin %.1f mm in an update at most\n", names[part], 1000.0f * pelvis,
+				1000.0f * shin );
+		ENSURE( pelvis < most[part] );
+	}
+	return 0;
+}
+
 // A steered figure that does not face where it moves walks backward at 1.6 m/s for 4 s, or runs backward at 3.0 m/s for
 // 3 s and a part of its cycle more and then forward at 3.0 m/s: how many of its feet landed going backward over the last
 // 2 s and how many of those on their toes, and how far the pelvis went below standing at most, over the last 2 s walking
@@ -6546,6 +6613,7 @@ int FigureTest( void )
 	RUN_TEST( SteerStrafeChangeTest );
 	RUN_TEST( SteerRunChangeTest );
 	RUN_TEST( SteerLegLeadTest );
+	RUN_TEST( SteerRunDescentTest );
 	RUN_TEST( SteerBackTest );
 	RUN_TEST( SteerUprightTest );
 	RUN_TEST( SteerStartStopTest );
