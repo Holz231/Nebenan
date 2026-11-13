@@ -1,0 +1,17 @@
+Nachtrag zur Regel für Runde 119, festgeschrieben vor dem ersten Lauf mit den Geschwindigkeiten der unabhängigen
+Prüfung. Die Bedingungen und Toleranzen von RULE119.txt bleiben, wie sie sind.
+
+Beim sauberen Einbau fiel ein Fehler im Prototyp auf: Der Schalter NB_X_LEFT_MAY=1.0f setzte die Eile eines Schwungs,
+dessen Weg mehr Zeit braucht, als er hat, auf das Größere aus der erlaubten Eile und 1, auch wenn der Schwung
+absichtlich langsamer als die Gangart schwang, weil sein Fuß vor seiner Phase abgehoben hatte. Er konnte einen
+langsamen Schwung also beschleunigen, statt nur eilende zu bremsen. Der korrigierte Prototyp, dazu der Schalter
+NB_X_LEFT_NORAISE, senkt die Eile nur und nie unter 1, und lässt langsame Schwünge, wie sie sind.
+
+Auf den Sätzen der Entwicklung, der korrigierte gegen den ersten Prototyp: mit Blick in Laufrichtung, 936 Stellen,
+Füße an 60 wie vorher über 37 mm, Schienbeine an 200 statt 201, Hände an 172 statt 174, Becken an 88 wie vorher; mit
+festem Blick, 2 520 Stellen, Füße, Schienbeine, Hände und Becken an 28, 487, 227 und 177 wie vorher, Zehen und Fersen
+an 108 wie vorher.
+
+Der saubere Bau muss mit dem korrigierten Prototyp bitgleich laufen, den Schaltern NB_X_LEFT_MAY=1.0f und
+NB_X_LEFT_NORAISE. Geprüft vor dem Festschreiben dieses Nachtrags: HF7 mit 312 Stellen, H2 mit 504 Stellen und seinen
+Zehen und Fersen und zwei Verläufe sind Wert für Wert gleich.
