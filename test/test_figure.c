@@ -4912,7 +4912,7 @@ static uint32_t RunStrafe( int threadCount, float* turns, bool* backward, float*
 // 1.8 cm higher, and comes down onto the stance of its gait, see NB_STAND_RISE: the feet come as close and the pelvis
 // sinks as far below that stance as before. Since round 115 the legs turn for running as soon as the figure is asked to
 // run, and no farther than its feet stay uncrossed across them, see NB_LEG_KEEP: the numbers of this test stay.
-#define NB_EXPECTED_STRAFE_HASH 0xa667c291u
+#define NB_EXPECTED_STRAFE_HASH 0x92ac8a67u
 static int SteerStrafeTest( void )
 {
 	float turns[3], closest[3], deepest[3];
@@ -5273,6 +5273,45 @@ static int SteerTurnLandTest( void )
 	}
 	printf( "  turning about at a run, a foot jumps %.1f mm in an update at most\n", 1000.0f * most );
 	ENSURE( most < 0.05f );
+	return 0;
+}
+
+// A steered figure facing where it moves runs forward at 3.3 m/s and turns about, at eight moments spread over a cycle
+// of its run. A foot that just landed and that the hip leaves takes the root down fast then, and once its leg reaches it
+// another way, the spring that brings the root up again keeps a share of the rate it went down with, see
+// NB_ROOT_SETTLE_KEEP: the pelvis jumps 17.8 mm in an update at most. Until round 119 that spring started from rest,
+// the root turned on the spot, and the pelvis jumped 24.8 mm.
+static int SteerTurnSettleTest( void )
+{
+	float most = 0.0f;
+	for ( int part = 0; part < 8; ++part )
+	{
+		FigureScene scene;
+		CreateFigureScene( &scene, 1 );
+		nbFigureId figure = AddSteeredFigure( &scene, b3Vec3_zero, 0.0f );
+		StepFigures( &scene, 30 );
+		nbSteer steer = { { 0.0f, 0.0f, 3.3f }, 0.0f, true };
+		nbFigure_Steer( figure, &steer );
+		StepFigures( &scene, 180 + 5 * part );
+		steer.velocity = (b3Vec3){ 0.0f, 0.0f, -3.3f };
+		nbFigure_Steer( figure, &steer );
+		b3Vec3 last = b3ToVec3( b3Body_GetPosition( nbFigure_GetBody( figure, nb_humanoidPelvis ) ) );
+		b3Vec3 before = last;
+		for ( int i = 0; i < 180; ++i )
+		{
+			StepFigures( &scene, 1 );
+			b3Vec3 now = b3ToVec3( b3Body_GetPosition( nbFigure_GetBody( figure, nb_humanoidPelvis ) ) );
+			if ( i > 0 )
+			{
+				most = b3MaxFloat( most, b3Length( b3Add( b3Sub( now, last ), b3Sub( before, last ) ) ) );
+			}
+			before = last;
+			last = now;
+		}
+		DestroyFigureScene( &scene );
+	}
+	printf( "  turning about at a run, the pelvis jumps %.1f mm in an update at most\n", 1000.0f * most );
+	ENSURE( most < 0.021f );
 	return 0;
 }
 
@@ -6568,7 +6607,7 @@ static int ThinBoardTest( void )
 // within NB_GAIT_FLOAT, and going backward a foot its leg only reaches rolled over its toes stays on them. Round 112:
 // walking takes the steps of people, see NB_GAIT_CADENCE_WALK, and the ankle of a swinging foot bends up as far as
 // theirs, see NB_SWING_ANKLE_SOFT. Round 113: the body has the dimensions of a person, see nbMakeHumanoidBones.
-#define NB_EXPECTED_STEER_HASH 0x83d37404u
+#define NB_EXPECTED_STEER_HASH 0xdbf5872cu
 
 // See RunGaitClipScenario. Since round 99 as for RunSteerScenario. Since round 100 the figure that is told to turn on
 // the spot while it still walks, not facing where it moves, keeps its legs where they face as its heading turns, and
@@ -6577,7 +6616,7 @@ static int ThinBoardTest( void )
 // RunSteerScenario. Since round 111 as for RunSteerScenario. Round 112: the clips are recorded from a gait that takes
 // the steps of people, see NB_GAIT_CADENCE_WALK, and the ankle of a swinging foot bends up as far as theirs, see
 // NB_SWING_ANKLE_SOFT. Round 113 as for RunSteerScenario.
-#define NB_EXPECTED_GAIT_CLIP_HASH 0xb2bdd32du
+#define NB_EXPECTED_GAIT_CLIP_HASH 0xe02863ddu
 
 static int FigureFollowDeterminismTest( void )
 {
@@ -6702,6 +6741,7 @@ int FigureTest( void )
 	RUN_TEST( SteerRunDescentTest );
 	RUN_TEST( SteerRunFlightTest );
 	RUN_TEST( SteerTurnLandTest );
+	RUN_TEST( SteerTurnSettleTest );
 	RUN_TEST( SteerBackTest );
 	RUN_TEST( SteerUprightTest );
 	RUN_TEST( SteerStartStopTest );

@@ -57,9 +57,11 @@ unabhängige Prüfung, siehe die Runden in [Roadmap](../../docs/Roadmap.md).
 | `start118.py`, `first118.py` | ein einzelner Lauf in Zahlen und Update für Update |
 | `check118.sh`, `eval118.py` | die unabhängige Prüfung von Runde 118 und ihre Bedingungen, die Regel liegt in [docs/Regeln](../../docs/Regeln/RULE118.txt) |
 | `tolerance119.py`, `check119.sh`, `eval119.py` | Runde 119: die Toleranzen aus drei Paaren ähnlicher Sätze, die unabhängige Prüfung und ihre Bedingungen, die Regel liegt in [docs/Regeln](../../docs/Regeln/RULE119.txt) |
+| `tolerance120.py`, `check120.sh`, `eval120.py` | Runde 120: die Toleranzen aus Paaren von Sätzen, deren Geschwindigkeiten höchstens 5 % auseinanderliegen, die unabhängige Prüfung und ihre Bedingungen, die Regel liegt in [docs/Regeln](../../docs/Regeln/RULE120.txt) |
 | `facing119.py`, `jumps119.py` | Vergleich zweier Stände mit Blick in Laufrichtung, und die härtesten Sprünge eines Laufs mit dem, was die Figur dort tut |
 | `table.sh`, `tests.sh`, `sanitize.sh` | Treffertabelle, Tests mit Hashes, Sanitizer |
 | `cost_pairs.sh`, `cost.py`, `bench_pairs.sh`, `bench.py` | Kosten und Benchmark gepaart, alt gegen neu |
+| `cost_count.sh` | Runde 120: die Befehle, die das Update der Figuren auf den beiden Ständen von `cost_pairs.sh` ausführt, gezählt mit callgrind, in jedem Lauf dieselbe Zahl |
 
 Die Zahlen in den Namen sind die Runden, in denen ein Werkzeug entstand. Eine neue Runde bekommt ihre eigene Prüfung und
 Auswertung daneben, mit frischen Geschwindigkeiten.

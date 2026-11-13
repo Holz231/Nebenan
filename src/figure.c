@@ -257,13 +257,19 @@
 // see nbLowerSteered, and until then it rolls as far as its leg needs, up to NB_FOOT_ROLL_MOST, see nbRollToReach: in
 // its last update on the ground its leg still reaches it, and the knee does not jump as it lifts. The root of a steered
 // figure comes up again after it went down for its legs as a knee gives way, critically damped at a rate of one over
-// NB_ROOT_SETTLE seconds. A foot that lifts goes on rolling as fast as it rolled on the ground, up to NB_FOOT_ROLL_RATE
-// in radians per second. Rolled less than NB_FOOT_ROCK in radians either way, a foot in the air rocks between heel and
-// toes, see nbRollFoot.
+// NB_ROOT_SETTLE seconds. Where its legs took it down within the update, it comes up from the share NB_ROOT_SETTLE_KEEP
+// of the rate it went down with: turning about at a run, a foot that just landed and that the hip leaves takes the root
+// down by up to 2.2 cm in an update, and once its leg reaches it another way, a root that came up from rest turned on
+// the spot, and the pelvis jumped 28.3 mm in an update, with half the rate 20.3 mm. With the whole rate it jumps
+// 17.6 mm, but the root goes on down for longer, 18.2 instead of 15.5 cm below standing in that turn, and breaking into
+// a run both feet are in the air for longer. A foot that lifts goes on rolling as fast as it rolled on the ground, up
+// to NB_FOOT_ROLL_RATE in radians per second. Rolled less than NB_FOOT_ROCK in radians either way, a foot in the air
+// rocks between heel and toes, see nbRollFoot.
 #define NB_FOOT_ROCK 0.15f
 #define NB_FOOT_ROLL 0.7f
 #define NB_FOOT_ROLL_MOST 1.0f
 #define NB_ROOT_SETTLE 0.05f
+#define NB_ROOT_SETTLE_KEEP 0.5f
 #define NB_FOOT_ROLL_RATE 12.0f
 
 // Running, and from the update the gait turns to running on, a steered foot behind the hip rolls over its toes as far
@@ -3337,8 +3343,10 @@ static float nbLowerSteered( nbFigure* f, b3Transform root, const int* thighs, b
 	float rate = decay * ( f->rootDropRate - omega * timeStep * sum );
 	if ( held <= 0.0f )
 	{
+		// It rests where its legs have it, and where they took it down, it keeps a share of the rate it went down with,
+		// see NB_ROOT_SETTLE_KEEP
 		held = 0.0f;
-		rate = 0.0f;
+		rate = above < 0.0f && timeStep > 0.0f ? NB_ROOT_SETTLE_KEEP * -above / timeStep : 0.0f;
 	}
 	float lowered = b3MinFloat( drop + held, limit );
 
