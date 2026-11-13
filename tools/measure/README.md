@@ -56,6 +56,8 @@ unabhängige Prüfung, siehe die Runden in [Roadmap](../../docs/Roadmap.md).
 | `cross118.py`, `full118.py`, `spread118.py` | Vergleich zweier Stände auf den Entwicklungssätzen, mit der Streuung zwischen ähnlichen Sätzen |
 | `start118.py`, `first118.py` | ein einzelner Lauf in Zahlen und Update für Update |
 | `check118.sh`, `eval118.py` | die unabhängige Prüfung von Runde 118 und ihre Bedingungen, die Regel liegt in [docs/Regeln](../../docs/Regeln/RULE118.txt) |
+| `tolerance119.py`, `check119.sh`, `eval119.py` | Runde 119: die Toleranzen aus drei Paaren ähnlicher Sätze, die unabhängige Prüfung und ihre Bedingungen, die Regel liegt in [docs/Regeln](../../docs/Regeln/RULE119.txt) |
+| `facing119.py`, `jumps119.py` | Vergleich zweier Stände mit Blick in Laufrichtung, und die härtesten Sprünge eines Laufs mit dem, was die Figur dort tut |
 | `table.sh`, `tests.sh`, `sanitize.sh` | Treffertabelle, Tests mit Hashes, Sanitizer |
 | `cost_pairs.sh`, `cost.py`, `bench_pairs.sh`, `bench.py` | Kosten und Benchmark gepaart, alt gegen neu |
 

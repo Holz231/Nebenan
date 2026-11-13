@@ -4912,7 +4912,7 @@ static uint32_t RunStrafe( int threadCount, float* turns, bool* backward, float*
 // 1.8 cm higher, and comes down onto the stance of its gait, see NB_STAND_RISE: the feet come as close and the pelvis
 // sinks as far below that stance as before. Since round 115 the legs turn for running as soon as the figure is asked to
 // run, and no farther than its feet stay uncrossed across them, see NB_LEG_KEEP: the numbers of this test stay.
-#define NB_EXPECTED_STRAFE_HASH 0x5e8c3166u
+#define NB_EXPECTED_STRAFE_HASH 0xa667c291u
 static int SteerStrafeTest( void )
 {
 	float turns[3], closest[3], deepest[3];
@@ -5226,6 +5226,53 @@ static int SteerRunFlightTest( void )
 	printf( "  breaking into a run: both feet in the air for %d updates over eight runs, %d at most\n", flights, longest );
 	ENSURE( flights <= 86 );
 	ENSURE( longest <= 14 );
+	return 0;
+}
+
+// A steered figure facing where it moves runs forward at 4.8 m/s and turns about, at eight moments spread over a cycle
+// of its run. Where a foot lands moves far while it swings then, and a swing hurries no more than its foot may for the
+// way it has left, see nbSteerFeet: a foot jumps 41.4 mm in an update at most. Until round 118 a hurrying foot caught up
+// with where it lands over its last updates and braked hard as it landed, 58.6 mm.
+static int SteerTurnLandTest( void )
+{
+	float most = 0.0f;
+	for ( int part = 0; part < 8; ++part )
+	{
+		FigureScene scene;
+		CreateFigureScene( &scene, 1 );
+		nbFigureId figure = AddSteeredFigure( &scene, b3Vec3_zero, 0.0f );
+		StepFigures( &scene, 30 );
+		nbSteer steer = { { 0.0f, 0.0f, 4.8f }, 0.0f, true };
+		nbFigure_Steer( figure, &steer );
+		StepFigures( &scene, 180 + 5 * part );
+		steer.velocity = (b3Vec3){ 0.0f, 0.0f, -4.8f };
+		nbFigure_Steer( figure, &steer );
+		const int feet[2] = { nb_humanoidFootLeft, nb_humanoidFootRight };
+		b3Vec3 before[2];
+		b3Vec3 last[2];
+		for ( int k = 0; k < 2; ++k )
+		{
+			last[k] = b3ToVec3( b3Body_GetPosition( nbFigure_GetBody( figure, feet[k] ) ) );
+			before[k] = last[k];
+		}
+		for ( int i = 0; i < 180; ++i )
+		{
+			StepFigures( &scene, 1 );
+			for ( int k = 0; k < 2; ++k )
+			{
+				b3Vec3 now = b3ToVec3( b3Body_GetPosition( nbFigure_GetBody( figure, feet[k] ) ) );
+				if ( i > 0 )
+				{
+					most = b3MaxFloat( most, b3Length( b3Add( b3Sub( now, last[k] ), b3Sub( before[k], last[k] ) ) ) );
+				}
+				before[k] = last[k];
+				last[k] = now;
+			}
+		}
+		DestroyFigureScene( &scene );
+	}
+	printf( "  turning about at a run, a foot jumps %.1f mm in an update at most\n", 1000.0f * most );
+	ENSURE( most < 0.05f );
 	return 0;
 }
 
@@ -6521,7 +6568,7 @@ static int ThinBoardTest( void )
 // within NB_GAIT_FLOAT, and going backward a foot its leg only reaches rolled over its toes stays on them. Round 112:
 // walking takes the steps of people, see NB_GAIT_CADENCE_WALK, and the ankle of a swinging foot bends up as far as
 // theirs, see NB_SWING_ANKLE_SOFT. Round 113: the body has the dimensions of a person, see nbMakeHumanoidBones.
-#define NB_EXPECTED_STEER_HASH 0xd3a899bfu
+#define NB_EXPECTED_STEER_HASH 0x83d37404u
 
 // See RunGaitClipScenario. Since round 99 as for RunSteerScenario. Since round 100 the figure that is told to turn on
 // the spot while it still walks, not facing where it moves, keeps its legs where they face as its heading turns, and
@@ -6530,7 +6577,7 @@ static int ThinBoardTest( void )
 // RunSteerScenario. Since round 111 as for RunSteerScenario. Round 112: the clips are recorded from a gait that takes
 // the steps of people, see NB_GAIT_CADENCE_WALK, and the ankle of a swinging foot bends up as far as theirs, see
 // NB_SWING_ANKLE_SOFT. Round 113 as for RunSteerScenario.
-#define NB_EXPECTED_GAIT_CLIP_HASH 0xdb92ed92u
+#define NB_EXPECTED_GAIT_CLIP_HASH 0xb2bdd32du
 
 static int FigureFollowDeterminismTest( void )
 {
@@ -6654,6 +6701,7 @@ int FigureTest( void )
 	RUN_TEST( SteerLegLeadTest );
 	RUN_TEST( SteerRunDescentTest );
 	RUN_TEST( SteerRunFlightTest );
+	RUN_TEST( SteerTurnLandTest );
 	RUN_TEST( SteerBackTest );
 	RUN_TEST( SteerUprightTest );
 	RUN_TEST( SteerStartStopTest );

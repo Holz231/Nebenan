@@ -5994,6 +5994,32 @@ static void nbSteerFeet( const nbWorld* world, int index, nbFigure* f, const nbC
 				( 1.0f + f->swingSoft[k] * ( nbSmoothRamp( b3MinFloat( along / NB_SWING_SOFT_RAMP, 1.0f ) ) - 1.0f ) );
 			// It goes to where it aims and turns to the heading it lands with on paths planned anew in every update, see
 			// nbSwingPath, over the time its swing has left
+			// A swing hurries no more than its foot may for the way it has left: where the cubic to where it aims, see
+			// nbSwingPath, would brake harder than NB_GAIT_SWING_ACCEL as the foot lands over the time the swing has left, it
+			// hurries less, no slower than its gait. Until round 118 that bound held as a swing lifted and where its hurry rose,
+			// for its whole step: turning about at a run, where a foot lands moves far while it swings, a hurrying foot caught
+			// up with it over its last updates and braked up to 96 mm in an update as it landed. At speeds that had not run
+			// before, feet jump more than 37 mm in an update at 16 instead of 40 of 312 points facing where it moves and at 14
+			// instead of 24 of 1 008 with a fixed heading, the hardest 53.8 instead of 77.5 mm. Let go slower than its gait as
+			// well, the pelvis jumped 33.7 instead of 16.1 mm in the hardest turn.
+			if ( swing > 0.0f && f->swingHurry[k] > 1.0f )
+			{
+				b3Vec3 toGo = b3SubPos( foot->target, f->swingBase[k] );
+				toGo = b3MulSub( toGo, b3Dot( toGo, up ), up );
+				float way = b3Length( toGo );
+				if ( way > 0.0f )
+				{
+					float speed = b3MaxFloat( b3Dot( f->swingVelocity[k], toGo ) / way, 0.0f );
+					float needs = ( sqrtf( speed * speed + 6.0f * NB_GAIT_SWING_ACCEL * way ) - speed ) / NB_GAIT_SWING_ACCEL;
+					float has = ( 1.0f - swing ) * footTime / ( f->swingRate[k] * f->swingHurry[k] ) + timeStep;
+					if ( has < needs )
+					{
+						float hurry =
+							( 1.0f - swing ) * footTime / ( f->swingRate[k] * b3MaxFloat( needs - timeStep, timeStep ) );
+						f->swingHurry[k] = b3MinFloat( f->swingHurry[k], b3MaxFloat( hurry, 1.0f ) );
+					}
+				}
+			}
 			float until = ( 1.0f - swing ) * footTime / ( f->swingRate[k] * f->swingHurry[k] );
 			b3Vec3 toward = b3SubPos( foot->target, f->swingBase[k] );
 			b3Vec3 move = nbSwingPath( toward, f->swingVelocity + k, until + timeStep, timeStep );
