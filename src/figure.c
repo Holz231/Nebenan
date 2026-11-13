@@ -3686,7 +3686,11 @@ static void nbPlaceFeet( nbFigure* f, const b3Transform* transforms, const nbCli
 // bend as far, its feet where the clip has them, and it comes up again as it stands. Not under a clip the game plays.
 // So the idle clip stands upright as a person does, and the gait walks from the stance it had before round 114: with
 // the stand height itself 1.8 cm higher the legs stretched to 0.999 of their length wherever the gait put them, and the
-// shins jumped over 37 mm at 439 instead of 105 of 504 points of changes.
+// shins jumped over 37 mm at 439 instead of 105 of 504 points of changes. The legs follow from the root and the legs of
+// the pose it comes down from and from how far, and from nothing else: where these are the same to the bit as when it
+// last solved them, it takes the legs it solved then. The idle clip holds its legs still, and a figure that walks on
+// solves them in half of its updates no more, the others differ in the last bit of a sample, see b3NLerp. Solving them
+// in every update cost a steered figure 0.4 to 0.5 microseconds an update in round 114.
 static void nbComeDownForGait( nbFigure* f, float timeStep )
 {
 	float target = f->gaitOn || f->onGround == false ? 1.0f : 0.0f;
@@ -3703,6 +3707,19 @@ static void nbComeDownForGait( nbFigure* f, float timeStep )
 		return;
 	}
 
+	_Static_assert( sizeof( b3Transform ) == 7 * sizeof( float ) && sizeof( b3Quat ) == 4 * sizeof( float ), "floats in a row" );
+	_Static_assert( nb_humanoidFootRight - nb_humanoidThighLeft == 5, "the six bones of the legs in a row" );
+	float from[32];
+	memcpy( from, &f->root, 7 * sizeof( float ) );
+	memcpy( from + 7, f->pose + nb_humanoidThighLeft, 24 * sizeof( float ) );
+	from[31] = down;
+	if ( memcmp( from, f->downFrom, sizeof( from ) ) == 0 )
+	{
+		memcpy( f->pose + nb_humanoidThighLeft, f->downLegs, sizeof( f->downLegs ) );
+		f->root.p.y -= down;
+		return;
+	}
+
 	b3Transform transforms[nb_humanoidBoneCount];
 	nbFrameLegs( f, f->root, f->pose, transforms );
 	b3Transform root = f->root;
@@ -3714,6 +3731,8 @@ static void nbComeDownForGait( nbFigure* f, float timeStep )
 		nbReachAnkle( f, thighs[k], root, transforms[thighs[k] + 2].p, transforms[thighs[k] + 2].q, f->pose, -1.0f, &held );
 	}
 	f->root = root;
+	memcpy( f->downFrom, from, sizeof( from ) );
+	memcpy( f->downLegs, f->pose + nb_humanoidThighLeft, sizeof( f->downLegs ) );
 }
 
 //----------------------------------------------------------------------------------------------------------------------

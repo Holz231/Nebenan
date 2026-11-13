@@ -562,6 +562,11 @@ typedef struct nbFigure
 	// changes, see NB_STAND_RISE
 	float stanceDown;
 	float stanceDownRate;
+
+	// What it last came down from, to the bit: the root and the legs of the pose in the frame and how far down, and the
+	// legs solved for that, see nbComeDownForGait
+	float downFrom[32];
+	b3Quat downLegs[6];
 	float rootDrop;
 	float rootDropRate;
 	float rootCrouch;
