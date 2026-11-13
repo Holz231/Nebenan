@@ -308,6 +308,8 @@ void nbResetSteering( nbFigure* f )
 	f->stanceDown = 0.0f;
 	f->stanceDownRate = 0.0f;
 	f->legRoom = FLT_MAX;
+	f->legWaits = -1;
+	f->legLead = 1;
 	f->askedSpeed = 0.0f;
 	f->stairWeight = 0.0f;
 	f->stairDepth = 0.0f;

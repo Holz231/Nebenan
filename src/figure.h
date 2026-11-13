@@ -569,6 +569,11 @@ typedef struct nbFigure
 	float askedSpeed;
 	float gaitUnit;
 
+	// The foot in the air the legs wait for, see NB_LEG_WAIT_HURRY, or -1, and the foot that steps out for the legs and
+	// lands turned ahead freely, see NB_LEG_LEAD_SPEED: 0 the left one, 1 the right one
+	int legWaits;
+	int legLead;
+
 	// What it last came down from, to the bit: the root and the legs of the pose in the frame and how far down, and the
 	// legs solved for that, see nbComeDownForGait
 	float downFrom[32];

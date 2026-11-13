@@ -3155,15 +3155,17 @@ static float nbTimeToLose( const nbPath* path, b3Vec3 ankle, b3Vec3 rolled, b3Ve
 
 // How far the root of a steered humanoid goes down for its legs, and how far its feet roll. The feet on the ground the
 // hip did not pass yet lower it as far as their legs need, and it comes up again critically damped, as a knee gives
-// way, see NB_ROOT_SETTLE. From there the feet the hip goes away from roll as far as their legs need, behind the hip over
-// their toes, running as far as they will need soon, see NB_FOOT_ROLL_AHEAD, and going backward ahead of it over their
-// heels, see NB_FOOT_HEEL_MOST, a swinging foot at least as far as it still has the roll it lifted with, see
-// nbSteerFeet, and only a foot on the ground lowers it farther. Going backward, a foot on the ground behind the hip, which
-// comes toward it, rolls over its toes as far as its leg needs too, at least as far as it still comes down from its toes
-// after it landed on them. A foot that comes down from the edge it landed on, see nbSteerFeet, counts as one the hip did
-// not pass yet and keeps the roll the gait gives it, before it lands and while it comes down, and a foot rolled over
-// one edge comes flat before it rolls over the other. A swinging foot goes where the leg reaches: the gait lowers the
-// root before it lands.
+// way, see NB_ROOT_SETTLE. From there the feet the hip goes away from roll as far as their legs need, behind the hip
+// over their toes, running as far as they will need soon, see NB_FOOT_ROLL_AHEAD, and going backward ahead of it over
+// their heels, see NB_FOOT_HEEL_MOST, a swinging foot at least as far as it still has the roll it lifted with, see
+// nbSteerFeet, and only over the edge it lifted rolled over: one that lifted on its toes rolled over its heel for its
+// stretched leg in the update its roll came flat, by up to 19 degrees at once, changing from walking sideways to
+// walking backward, and a toe jumped up to 97 mm. Only a foot on the ground lowers the root farther. Going backward, a
+// foot on the ground behind the hip, which comes toward it, rolls over its toes as far as its leg needs too, at least
+// as far as it still comes down from its toes after it landed on them. A foot that comes down from the edge it landed
+// on, see nbSteerFeet, counts as one the hip did not pass yet and keeps the roll the gait gives it, before it lands and
+// while it comes down, and a foot rolled over one edge comes flat before it rolls over the other. A swinging foot goes
+// where the leg reaches: the gait lowers the root before it lands.
 static float nbLowerSteered( nbFigure* f, b3Transform root, const int* thighs, b3Vec3* ankles, b3Quat* rotations,
 							 const float* reaches, float planted, float timeStep )
 {
@@ -3192,7 +3194,7 @@ static float nbLowerSteered( nbFigure* f, b3Transform root, const int* thighs, b
 		float closest = 0.0f;
 		if ( f->footSwings[k] )
 		{
-			behind[k] = side * along > 0.0f && side * f->footRoll[k] >= 0.0f;
+			behind[k] = side * along > 0.0f && side * f->footRoll[k] >= 0.0f && side * f->swingRoll[k] >= 0.0f;
 		}
 		else
 		{
@@ -4438,6 +4440,32 @@ static void nbTurnPoseBone( b3Quat* pose, int bone, b3Vec3 axis, float angle )
 #define NB_LEG_HOLD 1.0f
 #define NB_LEG_BLOCK ( 10.0f * ( B3_PI / 180.0f ) )
 
+// On top of the pair of feet, since round 116. The legs turn toward where the capsule goes NB_LEG_AIM_AHEAD seconds
+// later, as it brakes and speeds up now, and no farther than what it wants: turned toward where it goes now, they began
+// to turn about when the capsule had already turned about. A foot in the air that the legs wait for lands up to
+// NB_LEG_WAIT_HURRY times as fast where they turn by more than NB_LEG_WAIT_TURN in radians, 100 degrees, and the figure
+// does not go backward: its swing stretched to 0.8 s as the gait slowed, and turning about as it runs the capsule
+// answered after 1.38 s in the mean and 1.85 s at the latest, now after 1.21 and 1.50 s. Where the body goes across the
+// legs toward the side they turn away from, faster than NB_LEG_LEAD_SPEED in m/s for the humanoid of 1.8 m and more
+// across than along them, the feet swap their roles: the foot on that side leads the step to the side, so it steps out
+// for the legs and lands turned ahead freely, and the other one lands no farther turned than the feet let the legs turn
+// now. Changing from walking sideways to walking backward, the foot on the side of the turn stepped out against the way
+// of the body, and the pelvis went up to 25 cm across the standing foot. And a foot that lands with the legs turned
+// ahead keeps its ankle NB_LAND_LAG_KEEP in meters on its side of the other one also across legs NB_LAND_LAG in radians
+// less turned: the pelvis follows the legs about 11 degrees late as they turn, and running from sideways to backward
+// the feet of a long step crossed by up to 9 cm across it. At the 1 512 points of round 115 the feet cross at 2 instead
+// of 39 and nowhere deeper than 3 cm instead of at 9. Measured at 1 152 points and not built: landing 2.5 times as fast
+// for any turn put the feet over their limit at 89 instead of 44 points, the swap without the bound of more across than
+// along those of a figure that turns about as it walks at 16 instead of 4, the distance kept between the middles of the
+// soles instead of the ankles the hands at 176 instead of 159, and without the legs turned ahead the pelvis jumped up
+// to 40.8 mm.
+#define NB_LEG_AIM_AHEAD 0.15f
+#define NB_LEG_WAIT_HURRY 1.8f
+#define NB_LEG_WAIT_TURN 1.75f
+#define NB_LEG_LEAD_SPEED 0.1f
+#define NB_LAND_LAG 0.2f
+#define NB_LAND_LAG_KEEP 0.03f
+
 float nbLegTurnFor( const nbFigure* f, b3Vec3 local, bool* back, float* across )
 {
 	float speed = sqrtf( local.x * local.x + local.z * local.z );
@@ -5060,13 +5088,16 @@ static bool nbChooseFoothold( const nbWorld* world, int index, const nbFigure* f
 
 // Where the legs may turn to on their way from where they face to where they turn to, both in the world, see
 // NB_LEG_KEEP: no farther than the feet stay uncrossed across them, until they waited for the feet longer than
-// NB_LEG_HOLD. It marks the foot on the ground that steps out for them.
+// NB_LEG_HOLD. It marks the foot on the ground that steps out for them, see NB_LEG_LEAD_SPEED, and the foot in the air
+// they wait for, see NB_LEG_WAIT_HURRY.
 static float nbHoldLegs( nbFigure* f, float from, float to, float scale, float timeStep )
 {
 	f->legBlocks[0] = false;
 	f->legBlocks[1] = false;
 	f->legRoom = FLT_MAX;
+	f->legWaits = -1;
 	float turn = nbWrapAngle( to - from );
+	f->legLead = turn > 0.0f ? 0 : 1;
 	float room = FLT_MAX;
 	if ( turn != 0.0f && f->gaitOn )
 	{
@@ -5097,8 +5128,23 @@ static float nbHoldLegs( nbFigure* f, float from, float to, float scale, float t
 				space = ( turn > 0.0f ) == down ? FLT_MAX : 0.0f;
 			}
 			room = space;
-			int near = turn > 0.0f ? 0 : 1;
-			f->legBlocks[near] = f->footSwings[near] == false && space + NB_LEG_BLOCK < fabsf( turn );
+			// The foot that steps out for the legs: the one on the side they turn to, and where the body goes across them
+			// toward the other side, more across than along, the one on that side, which leads the step to the side
+			int lead = turn > 0.0f ? 0 : 1;
+			float sideways = f->gaitVelocity.x * legs.cosine - f->gaitVelocity.z * legs.sine;
+			float toFar = turn > 0.0f ? -sideways : sideways;
+			float alongLegs = f->gaitVelocity.x * legs.sine + f->gaitVelocity.z * legs.cosine;
+			if ( toFar > NB_LEG_LEAD_SPEED * scale && toFar > fabsf( alongLegs ) )
+			{
+				lead = 1 - lead;
+			}
+			f->legLead = lead;
+			bool holds = space + NB_LEG_BLOCK < fabsf( turn );
+			if ( f->footSwings[1 - lead] && holds && fabsf( turn ) > NB_LEG_WAIT_TURN && f->legBack == false )
+			{
+				f->legWaits = 1 - lead;
+			}
+			f->legBlocks[lead] = f->footSwings[lead] == false && holds;
 		}
 		f->legRoom = room;
 	}
@@ -5254,7 +5300,21 @@ static void nbSteerFeet( const nbWorld* world, int index, nbFigure* f, const nbC
 	// and back to it. The feet on the ground hold them back for a moment, see NB_LEG_KEEP.
 	if ( f->steer.faceVelocity == false )
 	{
-		b3Vec3 local = b3InvRotateVector( f->frame.q, aimVelocity );
+		// Toward where the capsule goes NB_LEG_AIM_AHEAD later, and no farther than what it wants: past that, toward what
+		// it wants
+		b3Vec3 legVelocity = aimVelocity;
+		if ( wishes )
+		{
+			b3Vec3 flat = b3MulSub( f->gaitVelocity, b3Dot( f->gaitVelocity, up ), up );
+			b3Vec3 then =
+				b3MulAdd( flat, NB_LEG_AIM_AHEAD, b3MulSub( f->gaitAcceleration, b3Dot( f->gaitAcceleration, up ), up ) );
+			if ( b3Dot( b3Sub( then, aimWish ), b3Sub( flat, aimWish ) ) <= 0.0f )
+			{
+				then = aimWish;
+			}
+			legVelocity = then;
+		}
+		b3Vec3 local = b3InvRotateVector( f->frame.q, legVelocity );
 		bool still = local.x * local.x + local.z * local.z <= NB_LEG_TURN_STILL * NB_LEG_TURN_STILL * scale * scale;
 		if ( still )
 		{
@@ -5281,6 +5341,8 @@ static void nbSteerFeet( const nbWorld* world, int index, nbFigure* f, const nbC
 		f->legBack = false;
 		f->legHeld = 0.0f;
 		f->legRoom = FLT_MAX;
+		f->legWaits = -1;
+		f->legLead = 1;
 		f->legBlocks[0] = false;
 		f->legBlocks[1] = false;
 	}
@@ -5480,6 +5542,14 @@ static void nbSteerFeet( const nbWorld* world, int index, nbFigure* f, const nbC
 				want = b3MinFloat( want, f->swingHurry[k] + NB_GAIT_HURRY_RATE * timeStep );
 				f->swingHurry[k] = b3MaxFloat( f->swingHurry[k], want );
 			}
+		}
+		// The foot the legs wait for lands sooner, see NB_LEG_WAIT_HURRY
+		if ( f->footSwings[k] && f->legWaits == k )
+		{
+			float want =
+				b3MinFloat( NB_LEG_WAIT_HURRY, nbMostHurry( f->feet + k, up, f->swingStart[k], footTime, f->swingRate[k] ) );
+			want = b3MinFloat( want, f->swingHurry[k] + NB_GAIT_HURRY_RATE * timeStep );
+			f->swingHurry[k] = b3MaxFloat( f->swingHurry[k], want );
 		}
 	}
 	// Which foot wants to lift now: one that gets lost soon or whose phase came round past its stance
@@ -5695,12 +5765,13 @@ static void nbSteerFeet( const nbWorld* world, int index, nbFigure* f, const nbC
 				float deeper = f->moverLow - f->moverRadius;
 				b3WorldTransform end = { b3OffsetPos( f->frame.p, b3MulAdd( way, guess, up ) ), legQ };
 				// Turned as far as the legs turn toward where they turn to until it lands, at the turn rate of the
-				// steering, and on the far side of the turn no farther than the feet let the legs turn now, see
-				// NB_LEG_KEEP: planned to land turned about, it stepped round the foot on the ground against the turn
+				// steering, and the foot that does not step out for the legs, see NB_LEG_LEAD_SPEED, no farther than the
+				// feet let the legs turn now, see NB_LEG_KEEP: planned to land turned about, it stepped round the foot on
+				// the ground against the turn
 				float landLegs = legHeading;
 				float wants = nbWrapAngle( f->legAim - f->legTurn );
 				float most = b3MaxFloat( f->def.steering.turnRate, 0.0f ) * left;
-				if ( k == ( wants > 0.0f ? 1 : 0 ) )
+				if ( k != f->legLead )
 				{
 					most = b3MinFloat( most, f->legRoom );
 				}
@@ -5738,6 +5809,23 @@ static void nbSteerFeet( const nbWorld* world, int index, nbFigure* f, const nbC
 						b3Vec3 move = b3MulSV( sign * lack, side );
 						end.p = b3OffsetPos( end.p, move );
 						middle = b3OffsetPos( middle, move );
+					}
+					if ( ahead != 0.0f )
+					{
+						// Landing turned ahead, its ankle keeps its side also across the legs less turned, as the pelvis follows
+						// them, see NB_LAND_LAG
+						float less = ahead - b3ClampFloat( ahead, -NB_LAND_LAG, NB_LAND_LAG );
+						b3Quat lagQ = b3NormalizeQuat( b3MulQuat( f->frame.q, nbHeadingQuat( f->legTurn + less ) ) );
+						b3Vec3 sideLag = b3RotateVector( lagQ, b3Vec3_axisX );
+						sideLag = b3Normalize( b3MulSub( sideLag, b3Dot( sideLag, up ), up ) );
+						b3Pos ankleThen = b3TransformWorldPoint( end, aim.ankle );
+						float lackLag = NB_LAND_LAG_KEEP * scale - sign * b3Dot( b3SubPos( ankleThen, otherAnkle ), sideLag );
+						if ( lackLag > 0.0f )
+						{
+							b3Vec3 move = b3MulSV( sign * lackLag, sideLag );
+							end.p = b3OffsetPos( end.p, move );
+							middle = b3OffsetPos( middle, move );
+						}
 					}
 					if ( capsulePlan.count > 0 )
 					{
