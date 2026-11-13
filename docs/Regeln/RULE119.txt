@@ -1,0 +1,131 @@
+Regel für Runde 119, vor dem sauberen Bau und vor jedem Lauf mit den Geschwindigkeiten der unabhängigen Prüfung
+festgeschrieben. Zweite Regel nach dem Muster von Runde 117, mit der Änderung, die Runde 118 nahegelegt hat: Die
+Toleranz jeder Größe kommt aus drei Paaren ähnlicher Sätze statt aus einem, und die größte Streuung gilt.
+
+Eingriff. Ein Schwung eilt nur so weit, wie sein Fuß für den Weg, den er noch hat, bremsen darf: Wo der Weg zum Ziel
+über die Zeit, die der Schwung noch hat, beim Landen härter bremsen würde als NB_GAIT_SWING_ACCEL, eilt er weniger,
+nie langsamer als die Gangart. Heute gilt diese Grenze nur beim Abheben und wo die Eile steigt, mit dem ganzen Schritt.
+In einer schnellen Wendung wandert das Ziel eines Fußes aber während des Schwungs weit, der eilende Fuß holt es in den
+letzten Updates ein und bremst beim Landen bis 96 mm in einem Update.
+
+Größe des Eingriffs: klein. Ein Block in nbSteerFeet, keine neue Konstante, kein neues Feld, für jede gesteuerte Figur.
+Für einen kleinen Eingriff verlangt die Regel, dass die Zielgröße auf frischen Geschwindigkeiten um mehr als die
+Streuung besser ist, und dass nichts um mehr als die Streuung schlechter ist.
+
+Messgrößen wie in Runde 118, mit tools/measure: je Stelle der größte Sprung von Füßen, Schienbeinen, Händen und Becken
+mit den Grenzen 37, 37, 15 und 10 mm, Mittel und oberes Zehntel der Sprünge, Zehen und Fersen 37 und 70 mm, das Becken
+unter dem Stand, gekreuzte Füße, die Antwort der Kapsel, der längste Flug.
+
+Toleranz, gemessen auf active-ragdoll-118 vor dem Festschreiben mit tools/measure/tolerance119.py, abgelegt in
+docs/Regeln/tol119.json, SHA-256 7d199625673121c66c510036789cbe7412ff65334b4edc31fabd0dbb4f245801. Mit festem Blick
+die langsamen Paare H6 und H1, H1 und H10, H10 und H12 und die schnellen Paare H11 und H9, H9 und H2, H2 und H5, je
+504 Stellen: für die Summe eines schnellen und eines langsamen Satzes die größte Streuung der langsamen Paare plus die
+größte der schnellen, für Mittel die Hälfte, für den härtesten Wert die größte aller sechs. Mit Blick in Laufrichtung
+die Paare HF7 und HF9, HF9 und HF11, HF7 und HF11, je 312 Stellen: die größte Streuung. Zählungen bekommen mindestens
+2 Stellen, härteste Sprünge mindestens 2 mm. In der Tabelle heißt over über der Grenze, worst der härteste Sprung in
+mm, mean und tenth Mittel und oberes Zehntel in mm, low Stellen mit dem Becken tiefer als 15 cm, lowest die tiefste in
+cm, flights Flüge über 0,2 s, flight der längste Flug im Mittel in ms, answer die Antwort in ms, toes und toes70 Zehen
+und Fersen über 37 und 70 mm.
+
+  with a fixed heading                h6      h1     h10     h12     h11      h9      h2      h5   slow    fast   tolerance
+  over feet                         8.00    9.00   12.00    9.00   12.00   15.00   16.00   16.00   3.00    3.00      6.00
+  worst feet                       51.28   50.86   48.46   49.06   60.29   61.29   59.79   59.69   2.39    1.50      2.39
+  mean feet                         7.30    7.20    8.04    8.01    6.90    7.10    6.96    7.45   0.84    0.49      0.67
+  tenth feet                       13.13   12.84   14.28   14.35   12.09   12.34   12.10   12.91   1.44    0.81      1.12
+  over shins                       80.00   76.00   97.00  102.00  104.00   99.00  113.00  110.00  21.00   14.00     35.00
+  worst shins                      57.15   53.61   60.71   58.87   64.78   70.38   68.81   77.02   7.10    8.22      8.22
+  mean shins                        7.59    7.54    8.34    8.31    7.31    7.50    7.39    7.83   0.80    0.44      0.62
+  tenth shins                      14.22   14.36   15.45   15.41   13.99   14.12   14.03   14.81   1.09    0.78      0.93
+  over hands                       55.00   51.00   29.00   52.00   60.00   57.00   25.00   87.00  23.00   62.00     85.00
+  worst hands                      27.47   24.21   37.25   28.96   24.10   22.11   22.96   24.28  13.03    1.99     13.03
+  mean hands                        2.96    2.96    3.37    3.38    3.23    3.33    3.31    3.54   0.40    0.23      0.31
+  tenth hands                       4.59    4.60    5.16    5.17    5.02    5.16    5.13    5.44   0.56    0.30      0.43
+  over pelvis                      20.00   29.00   37.00   24.00   34.00   35.00   34.00   64.00  13.00   30.00     43.00
+  worst pelvis                     18.13   16.67   37.35   22.62   17.22   14.57   22.77   19.57  20.68    8.20     20.68
+  mean pelvis                       1.18    1.15    1.32    1.30    1.07    1.10    1.08    1.14   0.16    0.06      0.11
+  tenth pelvis                      2.48    2.47    2.87    2.82    2.31    2.39    2.34    2.52   0.40    0.18      0.29
+  low                               0.00    0.00    0.00    0.00   29.00   34.00   35.00   41.00   0.00    6.00      6.00
+  lowest                           11.58   12.43   14.84   14.16   17.14   17.83   18.27   20.42   2.41    2.15      2.41
+  flights                          54.00   83.00   61.00   87.00   69.00   74.00   65.00   51.00  29.00   14.00     43.00
+  flight                           89.68   91.83   91.96   94.78   95.27   95.30   95.93   94.61   2.81    1.32      2.07
+  crossed                           1.00    1.00    0.00    0.00    0.00    0.00    0.00    0.00   1.00    0.00      2.00
+  answer                          417.76  419.91  431.16  435.11  452.04  456.31  455.25  467.28  11.25   12.03     11.64
+  toes                             27.00   21.00   34.00   29.00   35.00   44.00   43.00   50.00  13.00    9.00     22.00
+  toes70                            0.00    0.00    0.00    0.00    2.00    0.00    1.00    2.00   0.00    2.00      2.00
+  facing where it moves              hf7     hf9    hf11   tolerance
+  over feet                        50.00   50.00   47.00     3.00
+  worst feet                       73.99   64.14   65.83     9.85
+  mean feet                         7.63    7.30    7.22     0.41
+  tenth feet                       13.59   13.05   12.95     0.64
+  over shins                       76.00   65.00   70.00    11.00
+  worst shins                      66.99   63.75   66.23     3.23
+  mean shins                        7.18    6.93    6.86     0.32
+  tenth shins                      12.64   12.15   12.01     0.63
+  over hands                       64.00   47.00   64.00    17.00
+  worst hands                      31.47   33.84   32.98     2.36
+  mean hands                        3.67    3.51    3.46     0.21
+  tenth hands                       5.93    5.68    5.61     0.32
+  over pelvis                      30.00   26.00   31.00     5.00
+  worst pelvis                     30.13   32.62   31.34     2.49
+  mean pelvis                       1.21    1.16    1.16     0.05
+  tenth pelvis                      2.68    2.52    2.49     0.19
+  low                               0.00    0.00    1.00     2.00
+  lowest                           14.24   14.92   15.11     0.87
+  flights                          43.00   43.00   50.00     7.00
+  flight                          122.97  122.38  126.66     4.27
+
+Unabhängige Prüfung. Geschwindigkeiten, die vor dem Festschreiben auf keinem Stand gelaufen sind:
+  H13 (schnell): gehend 1,14, rennend 4,5 m/s, diagonal 0,81 m/s je Achse, Spreizung 1,190 und 0,663 s
+  H14 (langsam): gehend 1,52, rennend 3,25 m/s, diagonal 1,07 m/s je Achse, Spreizung 1,028 und 0,731 s
+  HF13 (Blick in Laufrichtung): 1,14, 3,25 und 4,5 m/s, Spreizung 1,190, 0,731 und 0,663 s
+Mit festem Blick die 21 Szenen auf H13 und H14, 1 008 Stellen, Zehen und Fersen auf beiden, mit Blick in Laufrichtung
+die 13 Szenen auf HF13, 312 Stellen, mit tools/measure/check119.sh, ausgewertet mit tools/measure/eval119.py.
+"Alt" heißt active-ragdoll-118, "neu" der saubere Bau, beide auf denselben Stellen.
+
+A. Gewinn, beide müssen gelten:
+ A1 Mit Blick in Laufrichtung springen Füße an mehr als 3 Stellen weniger über 37 mm als alt.
+ A2 Mit festem Blick springen Füße an mehr als 6 Stellen weniger über 37 mm als alt.
+
+B. Schutz mit festem Blick, jede Größe höchstens alt plus ihre Toleranz:
+ B1 Stellen über den Grenzen: Schienbeine, Hände, Becken.
+ B2 Größe der Sprünge: Mittel und oberes Zehntel von Becken, Schienbeinen, Füßen und Händen.
+ B3 Härtester Sprung von Fuß, Schienbein, Hand und Becken.
+ B4 Becken tiefer als 15 cm: Stellen und tiefste Stelle.
+ B5 Gekreuzte Füße: Stellen, und nirgends tiefer als 3 cm gekreuzt.
+ B6 Antwort der Kapsel im Mittel, und nirgends später als 1,7 s.
+ B7 Zehen und Fersen über 37 mm und über 70 mm.
+ B8 Flüge über 0,2 s und der längste Flug im Mittel, der Gewinn von Runde 118.
+
+C. Schutz mit Blick in Laufrichtung, jede Größe höchstens alt plus ihre Toleranz:
+ C1 Stellen über den Grenzen: Schienbeine, Hände, Becken.
+ C2 Größe der Sprünge: Mittel und oberes Zehntel von Becken, Schienbeinen, Füßen und Händen.
+ C3 Härtester Sprung von Fuß, Schienbein, Hand und Becken.
+ C4 Becken tiefer als 15 cm: Stellen und tiefste Stelle.
+ C5 Flüge über 0,2 s und der längste Flug im Mittel.
+
+D. Sonst, alle müssen gelten:
+ D1 Die Treffertabelle (8 928 Treffer, 60 Hz, eigene Stärke) ist Byte für Byte gleich.
+ D2 Stetig mit festem Blick 8 s lang, seitwärts mit 1,14, 1,52, 3,25 und 4,5 m/s und rückwärts mit 1,14 und 3,25 m/s:
+    Bei allen sechs Läufen liegt die Kadenz, gemessen aus den Zeiten zwischen den Landungen, höchstens 0,5 % neben
+    alt, und die Füße kommen sich quer zum Becken höchstens 1 cm näher.
+ D3 Alle Tests grün mit gcc und clang, mit 1, 2 und 4 Threads bitgleich, Sanitizer ohne Befund. Hashes von Tests, in
+    denen ein Schwung eilt, dürfen sich ändern und werden festgehalten.
+ D4 Kosten einer gesteuerten Figur, je 36 Paare im Wechsel, allein auf der Maschine, in jedem der drei Modi des
+    Kostentests: der Median der Unterschiede der Paare höchstens 0,2 µs je Update über alt, und der beste Lauf
+    höchstens 0,2 µs über dem besten Lauf von alt. Wiederholung: Verfehlt genau ein Modus den Median, während sein
+    bester Lauf hält, wird die ganze Messung einmal wiederholt, und es gilt allein die zweite. Sonst gilt die erste.
+ D5 Der Benchmark endet in den Szenen ohne Figuren mit denselben Hashes und Zählern, und keine Szene ist im Median von
+    zwölf Paaren mehr als 5 % langsamer. Szenen mit Figuren dürfen andere Hashes haben und werden festgehalten.
+ D6 Vorwärts rennend mit 3,0 und 4,8 m/s, mit Blick in Laufrichtung: Das Becken geht je Schritt im Mittel höchstens
+    0,2 cm weniger auf und ab als alt, und das Knie ist beim Aufsetzen im Mittel höchstens 1 Grad stärker gebeugt.
+
+Der saubere Bau muss mit dem Prototyp (Schalter NB_X_LEFT_MAY=1.0f im Versuchsbaum) bitgleich laufen. Verfehlt der
+saubere Bau eine Bedingung, wird nicht gebaut, oder es steht offen in der Roadmap, warum doch.
+
+Stand der Entwicklung beim Festschreiben, der Prototyp gegen active-ragdoll-118. Mit Blick in Laufrichtung auf dem
+Entwicklungssatz, HF7 und HF9, 936 Stellen: Füße an 60 statt 151 über 37 mm, der härteste 60,5 statt 96,2 mm,
+Schienbeine 201 statt 205, Hände 174 statt 164, Becken 88 statt 86, Flüge über 0,2 s 112 statt 120. Mit festem Blick
+auf dem Entwicklungssatz und H1, H2, H5 und H6, 2 520 Stellen: Füße 28 statt 56, Schienbeine 487 statt 482, Hände 227
+statt 250, Becken 177 statt 166, Becken tief 76 wie vorher, Zehen und Fersen 108 statt 141 von 2 016. Verworfen vor
+dem Festschreiben: den Schwung auch langsamer als die Gangart werden lassen, bis zum 0,6-Fachen, mit der ganzen oder
+mit 80 % der Grenze (in der härtesten Kehrtwende springt das Becken 33,7 und 24,9 statt 16,1 mm).
