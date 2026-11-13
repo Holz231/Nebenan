@@ -524,6 +524,8 @@ typedef struct nbFigure
 	float swingTop[2];
 	float swingRun[2];
 	float swingShare[2];
+	// How long the gait swung when each swinging foot lifted, in seconds, see nbSwingTime
+	float swingLift[2];
 	float swingNarrow[2];
 	float footHeading[2];
 	float liftHeading[2];

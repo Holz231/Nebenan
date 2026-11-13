@@ -4912,7 +4912,7 @@ static uint32_t RunStrafe( int threadCount, float* turns, bool* backward, float*
 // 1.8 cm higher, and comes down onto the stance of its gait, see NB_STAND_RISE: the feet come as close and the pelvis
 // sinks as far below that stance as before. Since round 115 the legs turn for running as soon as the figure is asked to
 // run, and no farther than its feet stay uncrossed across them, see NB_LEG_KEEP: the numbers of this test stay.
-#define NB_EXPECTED_STRAFE_HASH 0xccdb6785u
+#define NB_EXPECTED_STRAFE_HASH 0x5e8c3166u
 static int SteerStrafeTest( void )
 {
 	float turns[3], closest[3], deepest[3];
@@ -5187,6 +5187,45 @@ static int SteerRunDescentTest( void )
 				1000.0f * shin );
 		ENSURE( pelvis < most[part] );
 	}
+	return 0;
+}
+
+// A steered figure walks forward at 1.6 m/s, facing where it moves, and breaks into a run at 4.8 m/s, at eight moments
+// spread over a cycle of its walk. A foot in the air as the gait turns to running keeps the time its swing had when it
+// lifted, as far as its foot may, see nbSwingTime: the longest time both feet are in the air is 12 updates, and over the
+// eight runs the longest times come to 79. Until round 117 its swing stretched to that of a run while the foot on the
+// ground was lost as early as walking: 17 updates, and 97 over the eight runs.
+static int SteerRunFlightTest( void )
+{
+	int flights = 0;
+	int longest = 0;
+	for ( int part = 0; part < 8; ++part )
+	{
+		FigureScene scene;
+		CreateFigureScene( &scene, 1 );
+		nbFigureId figure = AddSteeredFigure( &scene, b3Vec3_zero, 0.0f );
+		StepFigures( &scene, 30 );
+		nbSteer steer = { { 0.0f, 0.0f, 1.6f }, 0.0f, true };
+		nbFigure_Steer( figure, &steer );
+		StepFigures( &scene, 180 + 8 * part );
+		steer.velocity = (b3Vec3){ 0.0f, 0.0f, 4.8f };
+		nbFigure_Steer( figure, &steer );
+		int flight = 0;
+		int most = 0;
+		for ( int i = 0; i < 180; ++i )
+		{
+			StepFigures( &scene, 1 );
+			const nbFigure* f = GetSteered( &scene, figure );
+			flight = f->footSwings[0] && f->footSwings[1] ? flight + 1 : 0;
+			most = flight > most ? flight : most;
+		}
+		DestroyFigureScene( &scene );
+		flights += most;
+		longest = most > longest ? most : longest;
+	}
+	printf( "  breaking into a run: both feet in the air for %d updates over eight runs, %d at most\n", flights, longest );
+	ENSURE( flights <= 86 );
+	ENSURE( longest <= 14 );
 	return 0;
 }
 
@@ -6614,6 +6653,7 @@ int FigureTest( void )
 	RUN_TEST( SteerRunChangeTest );
 	RUN_TEST( SteerLegLeadTest );
 	RUN_TEST( SteerRunDescentTest );
+	RUN_TEST( SteerRunFlightTest );
 	RUN_TEST( SteerBackTest );
 	RUN_TEST( SteerUprightTest );
 	RUN_TEST( SteerStartStopTest );

@@ -338,6 +338,7 @@ void nbResetSteering( nbFigure* f )
 		f->stepBack[k] = false;
 		f->legBlocks[k] = false;
 		f->swingShare[k] = 0.0f;
+		f->swingLift[k] = 0.0f;
 		f->swingNarrow[k] = 1.0f;
 		f->footHeading[k] = f->heading;
 		f->liftHeading[k] = f->heading;

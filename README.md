@@ -1794,10 +1794,18 @@ vorher nicht gelaufen waren, springt das Becken mit festem Blick an 74 statt 87 
 Update, die Hände an 87 statt 98 über 15 mm, mit Blick in Laufrichtung das Becken an 24 statt 30 von 312, am meisten bei
 hohem Tempo. Ein Spiel ruft dafür nichts Neues auf. Eine gesteuerte Figur kostet dabei im Median 0,27 µs je Update
 weniger bis 0,10 µs mehr als auf `active-ragdoll-116`, innerhalb der Streuung der Messung. Siehe „Ruhigeres Becken beim
-Rennen“ in [Optimierungen.md](docs/Optimierungen.md). Am Hang und auf Treppen misst die Figur die Steigung ihres Wegs:
-Bergauf landet ein Fuß weiter vorn, bergab näher unter dem Körper, so reicht das vordere Bein so weit hinauf wie das
-hintere hinunter, und die Schritte werden kürzer, auf 20° um ein Fünftel. Die Feder unter der Kapsel folgt der Ebene,
-die der Fühler findet, statt am Hang hinterherzuhängen, und vor dem Aufsetzen geht die Hüfte so tief, wie das Bein den
+Rennen“ in [Optimierungen.md](docs/Optimierungen.md). Seit `active-ragdoll-118` sind beim Losrennen und bei Wechseln im
+Rennen seltener beide Füße lange in der Luft: Ein Schwung, der abhob, als die Figur noch ging, behält seine Dauer, statt
+sich auf die des Rennens zu dehnen, soweit sein Fuß das darf. Geprüft mit Geschwindigkeiten, die vorher nicht gelaufen
+waren, dauert ein Flug mit festem Blick an 156 statt 269 von 1 008 Stellen länger als 0,2 s, mit Blick in Laufrichtung
+an 50 statt 118 von 312, aus dem Stand losrennend dort an keiner mehr. Dafür springen in der Kehrtwende im Rennen mit
+Blick in Laufrichtung Füße an 6 Stellen mehr über 37 mm. Ein Spiel ruft dafür nichts Neues auf. Eine gesteuerte Figur
+kostet dabei im Median 0,29 µs je Update weniger bis 0,03 µs mehr als auf `active-ragdoll-117`, innerhalb der Streuung
+der Messung. Siehe „Kürzere Flüge beim Losrennen und bei Wechseln im Rennen“ in
+[Optimierungen.md](docs/Optimierungen.md). Am Hang und auf Treppen misst die Figur die Steigung ihres Wegs: Bergauf
+landet ein Fuß weiter vorn, bergab näher unter dem Körper, so reicht das vordere Bein so weit hinauf wie das hintere
+hinunter, und die Schritte werden kürzer, auf 20° um ein Fünftel. Die Feder unter der Kapsel folgt der Ebene, die der
+Fühler findet, statt am Hang hinterherzuhängen, und vor dem Aufsetzen geht die Hüfte so tief, wie das Bein den
 wirklichen Landepunkt braucht. Auf einer Rampe von 20° wippt die Hüfte so um 2 cm, und in einem Update bewegt sie sich
 gegen die Kapsel um höchstens 2 cm. Auf einer Treppe setzt die Figur ihre Füße Stufe für Stufe: Vor jedem Schwung sucht
 sie am Ziel mit Strahlen nach einer Kante, misst die Stufe aus und stellt die ganze Sohle darauf, und jeder Schritt

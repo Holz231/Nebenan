@@ -5032,10 +5032,30 @@ static b3Vec3 nbPlanAhead( const nbFigure* f, nbCapsulePlan* plan, float time, f
 
 // How long a swing takes: as long as the gait swings now, and no shorter than the share of the cycle it lifted with, so
 // a swing that lifted running does not end early as the gait turns to walking or stops and a foot swings for less of
-// the cycle, see nbSteerFeet
-static float nbSwingTime( const nbFigure* f, int k, float swingTime, float cycle )
+// the cycle, see nbSteerFeet. A swing that lifted while the gait ran less than it does now takes no longer than the
+// gait swung when it lifted, or as long as its foot needs for its way at NB_GAIT_SWING_ACCEL. As a figure breaks into a
+// run, a foot swings for two thirds of the cycle instead of two fifths within a few updates, while the foot on the
+// ground is lost as early as walking: until round 117 a foot in the air stretched its swing from 0.32 to 0.53 s, and
+// starting to run and changing direction running both feet were in the air for up to 0.47 s, where a steady run flies
+// 0.13 to 0.17 s. At speeds that had not run before, both feet are in the air for more than 0.2 s at 156 instead of 269
+// of 1 008 points with a fixed heading and at 50 instead of 118 of 312 facing where it moves. Without the bound of the
+// foot a swing that kept its time braked harder as it landed, feet over 37 mm in an update at 83 instead of 54 of 2 520
+// points.
+static float nbSwingTime( const nbFigure* f, int k, float swingTime, float cycle, b3Vec3 up )
 {
-	return f->footSwings[k] ? b3MaxFloat( swingTime, f->swingShare[k] * cycle ) : swingTime;
+	if ( f->footSwings[k] == false )
+	{
+		return swingTime;
+	}
+	float time = b3MaxFloat( swingTime, f->swingShare[k] * cycle );
+	if ( f->gaitRun > f->swingRun[k] )
+	{
+		b3Vec3 step = b3SubPos( f->feet[k].target, f->feet[k].from );
+		float across = b3Length( b3MulSub( step, b3Dot( step, up ), up ) );
+		float may = f->swingRate[k] * f->swingHurry[k] * sqrtf( 6.0f * across / NB_GAIT_SWING_ACCEL );
+		time = b3MinFloat( time, b3MaxFloat( f->swingLift[k], may ) );
+	}
+	return time;
 }
 
 // As a steered figure turns, its feet keep its legs from crossing. A planted foot turns on the middle of its sole with the
@@ -5554,7 +5574,7 @@ static void nbSteerFeet( const nbWorld* world, int index, nbFigure* f, const nbC
 	for ( int k = 0; k < 2; ++k )
 	{
 		int j = 1 - k;
-		float footTime = nbSwingTime( f, k, swingTime, cycle );
+		float footTime = nbSwingTime( f, k, swingTime, cycle, up );
 		if ( f->footSwings[k] && out[j] < FLT_MAX && ( trails[j] == false || stance >= 0.5f ) )
 		{
 			float rest = ( 1.0f - f->swingAlong[k] ) * footTime / f->swingRate[k];
@@ -5587,7 +5607,7 @@ static void nbSteerFeet( const nbWorld* world, int index, nbFigure* f, const nbC
 	for ( int k = 0; k < 2; ++k )
 	{
 		nbFoot* foot = f->feet + k;
-		float footTime = nbSwingTime( f, k, swingTime, cycle );
+		float footTime = nbSwingTime( f, k, swingTime, cycle, up );
 		float phase = f->gaitPhase + ( k == 1 ? 0.5f : 0.0f );
 		phase -= floorf( phase );
 		if ( f->footSwings[k] )
@@ -5680,7 +5700,7 @@ static void nbSteerFeet( const nbWorld* world, int index, nbFigure* f, const nbC
 			bool floats = false;
 			if ( f->footSwings[1 - k] && f->footOut[k] <= timeStep )
 			{
-				float otherTime = nbSwingTime( f, 1 - k, swingTime, cycle );
+				float otherTime = nbSwingTime( f, 1 - k, swingTime, cycle, up );
 				float rest = ( 1.0f - f->swingAlong[1 - k] ) * otherTime / ( f->swingRate[1 - k] * f->swingHurry[1 - k] );
 				if ( rest <= NB_GAIT_FLOAT )
 				{
@@ -5732,6 +5752,7 @@ static void nbSteerFeet( const nbWorld* world, int index, nbFigure* f, const nbC
 				f->swingBack[k] = runsBack;
 				f->stepBack[k] = f->legBack;
 				f->swingShare[k] = 1.0f - stance;
+				f->swingLift[k] = swingTime;
 				f->swingNarrow[k] = 1.0f - NB_GAIT_NARROW * run - NB_GAIT_NARROW_WALK * ( 1.0f - run ) * ease;
 				foot->from = foot->plant;
 				foot->fromTilt = foot->tilt;
@@ -6135,7 +6156,7 @@ static void nbSteerFeet( const nbWorld* world, int index, nbFigure* f, const nbC
 		}
 		if ( f->footSwings[k] )
 		{
-			float footTime = nbSwingTime( f, k, swingTime, cycle );
+			float footTime = nbSwingTime( f, k, swingTime, cycle, up );
 			float until = ( 1.0f - f->swingAlong[k] ) * footTime / ( f->swingRate[k] * f->swingHurry[k] );
 			if ( until < soonest )
 			{
