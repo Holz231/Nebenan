@@ -563,6 +563,12 @@ typedef struct nbFigure
 	float stanceDown;
 	float stanceDownRate;
 
+	// How far the feet let the legs turn in this update, see nbHoldLegs, how fast the program asks the figure to go over
+	// the ground, and the unit of the speeds of the gait, sqrt(g l), see nbLegTurnAt
+	float legRoom;
+	float askedSpeed;
+	float gaitUnit;
+
 	// What it last came down from, to the bit: the root and the legs of the pose in the frame and how far down, and the
 	// legs solved for that, see nbComeDownForGait
 	float downFrom[32];

@@ -1700,70 +1700,83 @@ schnell, wie sich die Figur drehen darf, und quer zu den Beinen und gegen sie ge
 Beine sie tragen. Seitwärts mit 1,6 m/s geht das Becken so 2,5 cm tiefer als im Stand, auf `active-ragdoll-99` 29 cm und
 auf `active-ragdoll-106` 7,5 cm, mit 3,0 m/s stehen die Füße 15 cm auseinander statt 56 cm gekreuzt, und rückwärts
 rennend geht das Becken 10 statt 37 cm tief. Hält sie an oder wechselt sie die Richtung, drehen die Beine nicht weiter,
-als ihre Füße am Boden quer zu ihnen auf ihrer Seite bleiben, und warten darauf höchstens 0,15 s, ein Fuß, der sie
-aufhält, tritt, und ein schwingender Fuß landet schon so gedreht, wie die Beine es bis dahin sind: Beim Anhalten aus dem
-Seitwärtsgehen und -rennen und beim Wechsel von links nach rechts gehend kreuzen sich die Füße nicht mehr, auf
-`active-ragdoll-100` bis 17, 19 und 14 cm. Rückwärts landet ein Fuß auf den Zehen, wie Menschen rückwärts gehen, ein Fuß
-vor der Hüfte rollt über die Ferse ab, so weit sein Bein ihn gleich braucht, und ein schwingender Fuß plant, wie weit er
-vor der Hüfte landet, mit dem Tempo, das die Figur bei seiner Landung hat: Rückwärts gehend geht das Becken so 1,3 cm
-tiefer als im Stand, auf `active-ragdoll-101` 7,6 cm, und die Schienbeine springen in einem Update höchstens 31 mm, auf
-`active-ragdoll-103` 36 mm, und kehrt die Figur von rückwärts auf vorwärts rennend um, sackt es höchstens 9,6 statt 31
-cm. Ein schwingender Fuß plant seinen Weg in jedem Update neu, von dort, wo er ist, so schnell, wie er sich bewegt, zu
-seinem Ziel: Ändert sich das Ziel in einer Wendung oder beim Bremsen, biegt sich sein Weg, statt dass er springt. Von
-zwei Füßen am Boden hebt der zuerst ab, den sein Bein zuerst verliert, ein schwingendes Bein streckt sich nie ganz, und
-hebt ein Fuß gehend vor seiner Zeit ab, holt der Takt des Gangs das nach. Bremst oder wendet die Kapsel, beugt die Figur
-die Knie, wie Menschen beim scharfen Wenden, und das Ziel eines schwingenden Fußes kommt am Ende des Schwungs weich zur
-Ruhe. So springt ein Knie in einer Wendung, wo sie im Gang auch beginnt, in einem Update höchstens 4,3 cm, auf
-`active-ragdoll-88` bis 6,3 cm, das Becken sinkt höchstens 6,6 cm, auf `active-ragdoll-87` bis 12,8 cm, und nach jedem
-Übergang ist der Gang wieder im Takt. Seit `active-ragdoll-107` plant der Gang auch gehend, wie tief die Wurzel vor
-einer Landung geht, mit der Hüfte, wie die Beine das Becken drehen, wie rennend schon vorher, und ein Fuß am Boden rollt
-nicht schneller von den Zehen zurück als über die Ferse: In den Übergängen springt das Becken an 76 statt 122 von 504
-neuen Stellen um mehr als 10 mm in einem Update, losgehend schräg an keiner mehr, und schräg geht es gehend 3,1 statt
-6,4 cm tiefer als im Stand, siehe „Absenken mit der gedrehten Hüfte“ in [Optimierungen.md](docs/Optimierungen.md). Seit
-`active-ragdoll-108` führt ein Fuß auch gehend nicht weiter, als der Gang bei dem Tempo führt, mit dem er zielt: Aus dem
-Stand landet der erste Schritt kaum weiter von der Hüfte als die späteren, rückwärts mit 1,6 m/s 36,9 statt 46,5 cm, die
-Wurzel geht davor nicht mehr 7,7 cm tief, und das Becken springt in einem Update 8,9 statt 18,7 mm, siehe „Gehend nicht
-weiter führen als beim Tempo, mit dem der Fuß zielt“ in [Optimierungen.md](docs/Optimierungen.md). Seit
-`active-ragdoll-109` plant der erste Schwung einer Figur, die gehend rückwärts losgeht, mit der Beschleunigung der
-Kapsel, und ein fast gestrecktes Bein hebt seinen Fuß über die Zehen sanft ab: Aus dem Stand rückwärts setzt der Fuß mit
-2,4 statt 3,2 m/s auf, Fuß und Schienbein springen in einem Update 35,8 und 29,8 statt 47,5 und 50,7 mm, seitwärts das
-Schienbein 25,1 statt 38,5 mm, siehe „Rückwärts losgehend mit der Beschleunigung planen, ein gestrecktes Bein sanft
-heben“ in [Optimierungen.md](docs/Optimierungen.md). Seit `active-ragdoll-110` planen die Schwünge einer Figur, die
-nicht dorthin blickt, wohin sie geht, damit, wie ihre Beine sie beim Weiterdrehen schneller gehen lassen, statt mit der
-Geschwindigkeit, die sie gerade hat: Von seitwärts auf rückwärts springen die Füße an 3 statt 13 von 48 Stellen um mehr
-als 37 mm in einem Update, die Schienbeine an 12 statt 30 und das Becken an 12 statt 23 um mehr als 10 mm, über alle
-Übergänge die Füße an 8 statt 41 von 504 Stellen, und die Füße kreuzen an 19 statt 27 Stellen, siehe „Die Schwünge
-planen mit der Freigabe der Beine“ in [Optimierungen.md](docs/Optimierungen.md). Seit `active-ragdoll-111` bleibt
-rückwärts ein Fuß am Boden, den sein Bein nur über die Zehen gerollt erreicht, auf den Zehen, statt das Rollen zu
-verlieren, wenn die Hüfte über ihn hinweggeht, und gehend hebt ein Fuß, den sein Bein verliert, ab, wenn der andere in
-höchstens 0,05 s landet: Von seitwärts auf rückwärts gehend springt das Becken, geprüft mit Geschwindigkeiten, die
-vorher nicht gelaufen waren, an 0 statt 11 von 48 Stellen um mehr als 10 mm in einem Update, im Schlimmsten 8,1 statt
-33,2 mm, und über alle Übergänge an 149 statt 190 von 1 008 Stellen, siehe „Rückwärts auf den Zehen bleiben, wenn das
-Bein den Fuß nur gerollt erreicht“ in [Optimierungen.md](docs/Optimierungen.md). Seit `active-ragdoll-112` geht die
-Figur mit den Schritten eines Menschen, dessen Schrittlänge durch seine Schritte pro Minute gleich bleibt, mit 1,4 m/s
-112 statt 124 pro Minute und 0,75 statt 0,68 m lang, losrennend und rennend wendend bleibt es bei den Schritten des
-Rennens, und der Schwungfuß folgt dem Schienbein, so weit ein Sprunggelenk beugt, rennend höchstens 23 statt bis 71°.
-Geprüft mit Geschwindigkeiten, die vorher nicht gelaufen waren, liegt die Kadenz gehend 0,7 und 1,3 % neben der des
-Menschen statt 13,9 und 6,5 %, dafür springt in den Wechseln des Gehens das Becken an 80 statt 66 von 624 Stellen um
-mehr als 10 mm in einem Update, siehe „Gehen mit den Schritten des Menschen, Sprunggelenk im Schwung“ in
-[Optimierungen.md](docs/Optimierungen.md). Seit `active-ragdoll-113` hat der Mensch der Bibliothek die Maße von Männern
-seiner Größe und seines Gewichts nach der Vermessung ANSUR II: die Hüftgelenke 18 statt 26 cm auseinander, das Becken 33
-statt 40 cm breit, die Brust auf Höhe der Brustwarzen 28 statt 36 cm, die Schultergelenke 40,5 statt 43 cm auseinander,
-der Kopf eine abgerundete Kiste von 15,3 mal 20 mal 23 cm statt einer Kapsel von 19 cm, Oberarm, Unterarm und Hand 30,
-27,5 und 19,5 statt 35, 26 und 17 cm. Ein Spiel ruft dafür nichts Neues auf, `nbMakeHumanoidBones` baut den Körper.
-Gehend setzen die Füße damit 10 statt 14 cm auseinander auf wie bei Menschen, und geprüft mit Treffern, die vorher nicht
-gelaufen waren, werfen 5 345 statt 5 331 von 35 712 die Figur um. Dafür kreuzen die Füße, wenn sie rennend die Richtung
-wechselt, bis 19,3 statt 14,5 cm, siehe „Körper nach den Maßen des Menschen“ in
-[Optimierungen.md](docs/Optimierungen.md). Seit `active-ragdoll-114` steht der Mensch der Bibliothek aufrecht, wie
-Menschen stehen: das Becken auf 0,978 statt 0,96 m, die Knie 6 statt 24° gebeugt. Ein Spiel ruft dafür nichts Neues auf:
-Der Clip `nb_clipIdle` steht 1,8 cm über der Standhöhe und bewegt die Wurzel dorthin, und die Standhöhe von
-`nbMakeHumanoidBones` bleibt 0,96 m, die Haltung, aus der der Gang läuft. Eine gesteuerte Figur kommt mit dem Losgehen
-über 0,15 s auf sie herunter und geht und rennt wie vorher, und 0,4 s nach ihrem letzten Schritt, wenn die Füße wieder
-nebeneinander stehen, steht sie wieder aufrecht. Die Balance hält das Becken so hoch, wie es stand, als der Treffer kam,
-statt 5 cm unter gestreckten Beinen, und ihre Fangschritte sind 60 statt 55 cm lang und 14 statt 12 cm hoch. Geprüft mit
-Treffern und Geschwindigkeiten, die vorher nicht gelaufen waren, werfen 5 260 statt 5 208 von 35 712 Treffern die Figur
-um, 1,0 % mehr, und losgehend springt ein Schienbein bis 27 statt 20 mm, weil sie dabei in die Knie geht. Eine
-gesteuerte Figur kostet damit 0,4 bis 0,5 µs je Update mehr, eine stehende nichts, siehe „Aufrechter Stand“ in
+als ihre Füße quer zu ihnen ungekreuzt bleiben, der linke mindestens 6 cm links vom rechten, ob am Boden oder in der
+Luft, und warten darauf höchstens 1 s. Bis `active-ragdoll-114` blieb stattdessen jeder Fuß am Boden auf seiner Seite
+der Mitte, und sie warteten 0,15 s. Der Fuß auf der Seite, zu der sie drehen, tritt aus, und ein schwingender Fuß landet
+schon so gedreht, wie die Beine es bis dahin sind, auf der anderen Seite nur so weit, wie die Füße sie gerade drehen
+lassen. Fürs Rennen sind sie gedreht, sobald das Spiel Rennen wünscht, nicht erst, wenn der Gang rennt. Beim Anhalten
+aus dem Seitwärtsgehen und -rennen und beim Wechsel von links nach rechts gehend kreuzen sich die Füße nicht mehr, auf
+`active-ragdoll-100` bis 17, 19 und 14 cm, und seit `active-ragdoll-115` auch rennend beim Umkehren, Abbiegen und
+Losrennen zur Seite kaum noch, vorher bis 18 cm. Rückwärts landet ein Fuß auf den Zehen, wie Menschen rückwärts gehen,
+ein Fuß vor der Hüfte rollt über die Ferse ab, so weit sein Bein ihn gleich braucht, und ein schwingender Fuß plant, wie
+weit er vor der Hüfte landet, mit dem Tempo, das die Figur bei seiner Landung hat: Rückwärts gehend geht das Becken so
+1,3 cm tiefer als im Stand, auf `active-ragdoll-101` 7,6 cm, und die Schienbeine springen in einem Update höchstens 31
+mm, auf `active-ragdoll-103` 36 mm, und kehrt die Figur von rückwärts auf vorwärts rennend um, sackt es höchstens 9,6
+statt 31 cm. Ein schwingender Fuß plant seinen Weg in jedem Update neu, von dort, wo er ist, so schnell, wie er sich
+bewegt, zu seinem Ziel: Ändert sich das Ziel in einer Wendung oder beim Bremsen, biegt sich sein Weg, statt dass er
+springt. Von zwei Füßen am Boden hebt der zuerst ab, den sein Bein zuerst verliert, ein schwingendes Bein streckt sich
+nie ganz, und hebt ein Fuß gehend vor seiner Zeit ab, holt der Takt des Gangs das nach. Bremst oder wendet die Kapsel,
+beugt die Figur die Knie, wie Menschen beim scharfen Wenden, und das Ziel eines schwingenden Fußes kommt am Ende des
+Schwungs weich zur Ruhe. So springt ein Knie in einer Wendung, wo sie im Gang auch beginnt, in einem Update höchstens
+4,3 cm, auf `active-ragdoll-88` bis 6,3 cm, das Becken sinkt höchstens 6,6 cm, auf `active-ragdoll-87` bis 12,8 cm, und
+nach jedem Übergang ist der Gang wieder im Takt. Seit `active-ragdoll-107` plant der Gang auch gehend, wie tief die
+Wurzel vor einer Landung geht, mit der Hüfte, wie die Beine das Becken drehen, wie rennend schon vorher, und ein Fuß am
+Boden rollt nicht schneller von den Zehen zurück als über die Ferse: In den Übergängen springt das Becken an 76 statt
+122 von 504 neuen Stellen um mehr als 10 mm in einem Update, losgehend schräg an keiner mehr, und schräg geht es gehend
+3,1 statt 6,4 cm tiefer als im Stand, siehe „Absenken mit der gedrehten Hüfte“ in
+[Optimierungen.md](docs/Optimierungen.md). Seit `active-ragdoll-108` führt ein Fuß auch gehend nicht weiter, als der
+Gang bei dem Tempo führt, mit dem er zielt: Aus dem Stand landet der erste Schritt kaum weiter von der Hüfte als die
+späteren, rückwärts mit 1,6 m/s 36,9 statt 46,5 cm, die Wurzel geht davor nicht mehr 7,7 cm tief, und das Becken springt
+in einem Update 8,9 statt 18,7 mm, siehe „Gehend nicht weiter führen als beim Tempo, mit dem der Fuß zielt“ in
+[Optimierungen.md](docs/Optimierungen.md). Seit `active-ragdoll-109` plant der erste Schwung einer Figur, die gehend
+rückwärts losgeht, mit der Beschleunigung der Kapsel, und ein fast gestrecktes Bein hebt seinen Fuß über die Zehen sanft
+ab: Aus dem Stand rückwärts setzt der Fuß mit 2,4 statt 3,2 m/s auf, Fuß und Schienbein springen in einem Update 35,8
+und 29,8 statt 47,5 und 50,7 mm, seitwärts das Schienbein 25,1 statt 38,5 mm, siehe „Rückwärts losgehend mit der
+Beschleunigung planen, ein gestrecktes Bein sanft heben“ in [Optimierungen.md](docs/Optimierungen.md). Seit
+`active-ragdoll-110` planen die Schwünge einer Figur, die nicht dorthin blickt, wohin sie geht, damit, wie ihre Beine
+sie beim Weiterdrehen schneller gehen lassen, statt mit der Geschwindigkeit, die sie gerade hat: Von seitwärts auf
+rückwärts springen die Füße an 3 statt 13 von 48 Stellen um mehr als 37 mm in einem Update, die Schienbeine an 12 statt
+30 und das Becken an 12 statt 23 um mehr als 10 mm, über alle Übergänge die Füße an 8 statt 41 von 504 Stellen, und die
+Füße kreuzen an 19 statt 27 Stellen, siehe „Die Schwünge planen mit der Freigabe der Beine“ in
+[Optimierungen.md](docs/Optimierungen.md). Seit `active-ragdoll-111` bleibt rückwärts ein Fuß am Boden, den sein Bein
+nur über die Zehen gerollt erreicht, auf den Zehen, statt das Rollen zu verlieren, wenn die Hüfte über ihn hinweggeht,
+und gehend hebt ein Fuß, den sein Bein verliert, ab, wenn der andere in höchstens 0,05 s landet: Von seitwärts auf
+rückwärts gehend springt das Becken, geprüft mit Geschwindigkeiten, die vorher nicht gelaufen waren, an 0 statt 11 von
+48 Stellen um mehr als 10 mm in einem Update, im Schlimmsten 8,1 statt 33,2 mm, und über alle Übergänge an 149 statt 190
+von 1 008 Stellen, siehe „Rückwärts auf den Zehen bleiben, wenn das Bein den Fuß nur gerollt erreicht“ in
+[Optimierungen.md](docs/Optimierungen.md). Seit `active-ragdoll-112` geht die Figur mit den Schritten eines Menschen,
+dessen Schrittlänge durch seine Schritte pro Minute gleich bleibt, mit 1,4 m/s 112 statt 124 pro Minute und 0,75 statt
+0,68 m lang, losrennend und rennend wendend bleibt es bei den Schritten des Rennens, und der Schwungfuß folgt dem
+Schienbein, so weit ein Sprunggelenk beugt, rennend höchstens 23 statt bis 71°. Geprüft mit Geschwindigkeiten, die
+vorher nicht gelaufen waren, liegt die Kadenz gehend 0,7 und 1,3 % neben der des Menschen statt 13,9 und 6,5 %, dafür
+springt in den Wechseln des Gehens das Becken an 80 statt 66 von 624 Stellen um mehr als 10 mm in einem Update, siehe
+„Gehen mit den Schritten des Menschen, Sprunggelenk im Schwung“ in [Optimierungen.md](docs/Optimierungen.md). Seit
+`active-ragdoll-113` hat der Mensch der Bibliothek die Maße von Männern seiner Größe und seines Gewichts nach der
+Vermessung ANSUR II: die Hüftgelenke 18 statt 26 cm auseinander, das Becken 33 statt 40 cm breit, die Brust auf Höhe der
+Brustwarzen 28 statt 36 cm, die Schultergelenke 40,5 statt 43 cm auseinander, der Kopf eine abgerundete Kiste von 15,3
+mal 20 mal 23 cm statt einer Kapsel von 19 cm, Oberarm, Unterarm und Hand 30, 27,5 und 19,5 statt 35, 26 und 17 cm. Ein
+Spiel ruft dafür nichts Neues auf, `nbMakeHumanoidBones` baut den Körper. Gehend setzen die Füße damit 10 statt 14 cm
+auseinander auf wie bei Menschen, und geprüft mit Treffern, die vorher nicht gelaufen waren, werfen 5 345 statt 5 331
+von 35 712 die Figur um. Dafür kreuzen die Füße, wenn sie rennend die Richtung wechselt, bis 19,3 statt 14,5 cm, siehe
+„Körper nach den Maßen des Menschen“ in [Optimierungen.md](docs/Optimierungen.md). Seit `active-ragdoll-114` steht der
+Mensch der Bibliothek aufrecht, wie Menschen stehen: das Becken auf 0,978 statt 0,96 m, die Knie 6 statt 24° gebeugt.
+Ein Spiel ruft dafür nichts Neues auf: Der Clip `nb_clipIdle` steht 1,8 cm über der Standhöhe und bewegt die Wurzel
+dorthin, und die Standhöhe von `nbMakeHumanoidBones` bleibt 0,96 m, die Haltung, aus der der Gang läuft. Eine gesteuerte
+Figur kommt mit dem Losgehen über 0,15 s auf sie herunter und geht und rennt wie vorher, und 0,4 s nach ihrem letzten
+Schritt, wenn die Füße wieder nebeneinander stehen, steht sie wieder aufrecht. Die Balance hält das Becken so hoch, wie
+es stand, als der Treffer kam, statt 5 cm unter gestreckten Beinen, und ihre Fangschritte sind 60 statt 55 cm lang und
+14 statt 12 cm hoch. Geprüft mit Treffern und Geschwindigkeiten, die vorher nicht gelaufen waren, werfen 5 260 statt
+5 208 von 35 712 Treffern die Figur um, 1,0 % mehr, und losgehend springt ein Schienbein bis 27 statt 20 mm, weil sie
+dabei in die Knie geht. Eine gesteuerte Figur kostet damit 0,4 bis 0,5 µs je Update mehr, eine stehende nichts, siehe
+„Aufrechter Stand“ in [Optimierungen.md](docs/Optimierungen.md). Seit `active-ragdoll-115` kreuzt eine Figur, die nicht
+dorthin schaut, wohin sie rennt, beim Wechsel der Richtung die Füße kaum noch, siehe oben bei den Beinen, die auf die
+Füße warten: Geprüft mit Geschwindigkeiten, die vorher nicht gelaufen waren, kreuzen sie an 19 statt 111 von 1 008
+Stellen, tiefer als 3 cm an 7 statt 62, höchstens 9,6 statt 18,4 cm, und rennend beim Umkehren, Abbiegen und Losrennen
+zur Seite an keiner von 144 Stellen tiefer als 3 cm. Dafür kommt die Kapsel im Mittel 5 % später auf Tempo, rennend von
+links nach rechts nach 1,40 statt 1,19 s. Ein Spiel ruft dafür nichts Neues auf, und Figuren, die schauen, wohin sie
+gehen, rechnen bitgleich. Vorab merkt sich eine gehende Figur die Beine, auf denen sie zum Gang heruntergekommen ist,
+solange sich nichts ändert, und zusammen kostet eine gesteuerte Figur 0,02 bis 0,21 µs je Update weniger als auf
+`active-ragdoll-114`. Siehe „Füße ungekreuzt beim Richtungswechsel im Rennen“ in
 [Optimierungen.md](docs/Optimierungen.md). Am Hang und auf Treppen misst die Figur die Steigung ihres Wegs: Bergauf
 landet ein Fuß weiter vorn, bergab näher unter dem Körper, so reicht das vordere Bein so weit hinauf wie das hintere
 hinunter, und die Schritte werden kürzer, auf 20° um ein Fünftel. Die Feder unter der Kapsel folgt der Ebene, die der

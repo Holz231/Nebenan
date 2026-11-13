@@ -4416,18 +4416,26 @@ static void nbTurnPoseBone( b3Quat* pose, int bone, b3Vec3 axis, float angle )
 #define NB_LEG_TURN_MOST ( 100.0f * ( B3_PI / 180.0f ) )
 #define NB_GAIT_BACK_CADENCE 0.11f
 
-// As the legs turn, each foot on the ground stays at least NB_LEG_KEEP across them on its own side of the middle, in
-// meters for the humanoid of 1.8 m: the legs turn no farther than that, so a foot on the ground does not come to stand
-// on the far side of the other one, and wait for the feet no longer than NB_LEG_HOLD in seconds in a row, then turn on.
-// A foot on the ground that holds them back by more than NB_LEG_BLOCK in radians lifts and steps, whatever its phase,
-// and a swinging foot lands turned as far as the legs turn until it lands, at the turn rate of the steering. Without
-// this, the feet crossed by up to 19 cm as the figure stopped going to the side and by up to 20 cm as it changed from
-// going left to going right. A foot that only just landed, in the first NB_GAIT_FRESH of the cycle, does not lift for
-// the legs: changing from walking sideways to walking backward, it lifted again in the update after it landed, the
-// other foot, far behind by then, got lost while it swung, the root went down 13 cm and came back as it landed, and the
-// pelvis jumped up to 35 mm in an update.
+// As the legs turn, the feet stay uncrossed across them: the legs turn no farther than the left foot stays NB_LEG_KEEP
+// to the left of the right one, in meters for the humanoid of 1.8 m, where the feet are now, on the ground or in the
+// air, and wait for that no longer than NB_LEG_HOLD in seconds in a row, counted while the feet leave them less room
+// than they turn in an update, then turn on. The foot on the ground on the side they turn to steps out where the feet
+// hold them back by more than NB_LEG_BLOCK in radians, whatever its phase, and a swinging foot lands turned as far as
+// the legs turn until it lands, at the turn rate of the steering, and on the far side of the turn no farther than the
+// feet let the legs turn now. Without all this, the feet crossed by up to 19 cm as the figure stopped going to the side
+// and by up to 20 cm as it changed from going left to going right. Until round 114 each foot on the ground stayed
+// NB_LEG_KEEP on its own side of the middle instead, a swinging one did not count, and the legs waited 0.15 s, counted
+// from when their turn was longer than the room. Turning about as it runs takes the legs 0.7 s, so they did not wait:
+// the foot that swung stepped round the standing one against the turn, the foot on the inside of a turn by a quarter
+// came to stand on the far side of the other, and the feet crossed by up to 17.6 cm. At 1 512 points of changes of the
+// direction the feet cross at 39 instead of 92 now, deeper than 3 cm at 9 instead of 57, 8.7 cm at most. Waiting 0.15,
+// 0.3 and 0.5 s they crossed at 61, 48 and 39 of the 480 points of the scenes that cross, waiting 1 s at 29, and with
+// the pair on top of the feet on the ground instead of in their place at 39. A foot that only just landed, in the first
+// NB_GAIT_FRESH of the cycle, does not lift for the legs: changing from walking sideways to walking backward, it lifted
+// again in the update after it landed, the other foot, far behind by then, got lost while it swung, the root went down
+// 13 cm and came back as it landed, and the pelvis jumped up to 35 mm in an update.
 #define NB_LEG_KEEP 0.06f
-#define NB_LEG_HOLD 0.15f
+#define NB_LEG_HOLD 1.0f
 #define NB_LEG_BLOCK ( 10.0f * ( B3_PI / 180.0f ) )
 
 float nbLegTurnFor( const nbFigure* f, b3Vec3 local, bool* back, float* across )
@@ -4441,7 +4449,19 @@ float nbLegTurnAt( const nbFigure* f, float theta, float speed, bool wasBack, bo
 {
 	*back = wasBack ? fabsf( theta ) > NB_LEG_FORWARD : fabsf( theta ) > NB_LEG_BACK;
 	float rel = *back ? nbWrapAngle( theta + B3_PI ) : theta;
-	float most = NB_LEG_TURN_WALK + f->runTurn * ( NB_LEG_TURN_RUN - NB_LEG_TURN_WALK );
+	// They turn as far as a gait turns that runs as the program asks, where that is more than the run of the gait, which
+	// lags, see NB_RUN_TURN_LAG. Starting to run to the side, the capsule ran 4.3 m/s within 0.35 s with the legs turned
+	// 72 instead of 90 degrees, and the figure slid across its own feet at 1 m/s, they crossed by up to 10 cm. With the
+	// speed of the capsule instead of the one asked for, legs turned for walking capped a capsule asked to run to the
+	// side at 3.2 m/s at 1.6 m/s, and at that speed they stayed turned for walking.
+	float runs = f->runTurn;
+	if ( f->gaitUnit > 0.0f )
+	{
+		float fast = b3MaxFloat( speed, f->askedSpeed );
+		float x = b3ClampFloat( ( fast / f->gaitUnit - NB_GAIT_RUN_FROM ) / ( NB_GAIT_RUN_TO - NB_GAIT_RUN_FROM ), 0.0f, 1.0f );
+		runs = b3MaxFloat( runs, x * x * ( 3.0f - 2.0f * x ) );
+	}
+	float most = NB_LEG_TURN_WALK + runs * ( NB_LEG_TURN_RUN - NB_LEG_TURN_WALK );
 	float ease = b3MinFloat( speed / ( NB_LEG_TURN_EASE * nbFigureScale( f ) ), 1.0f );
 	float turn = ease * b3ClampFloat( rel, -most, most );
 	if ( across != NULL )
@@ -5039,44 +5059,59 @@ static bool nbChooseFoothold( const nbWorld* world, int index, const nbFigure* f
 }
 
 // Where the legs may turn to on their way from where they face to where they turn to, both in the world, see
-// NB_LEG_KEEP: no farther than each foot on the ground stays on its own side of the middle across them, until they
-// waited for the feet longer than NB_LEG_HOLD. It marks the feet on the ground that hold them back by more than
-// NB_LEG_BLOCK.
+// NB_LEG_KEEP: no farther than the feet stay uncrossed across them, until they waited for the feet longer than
+// NB_LEG_HOLD. It marks the foot on the ground that steps out for them.
 static float nbHoldLegs( nbFigure* f, float from, float to, float scale, float timeStep )
 {
 	f->legBlocks[0] = false;
 	f->legBlocks[1] = false;
+	f->legRoom = FLT_MAX;
 	float turn = nbWrapAngle( to - from );
 	float room = FLT_MAX;
 	if ( turn != 0.0f && f->gaitOn )
 	{
+		// Where the left foot is from the right one across and along the legs: its angle there, from ahead toward the
+		// left, stays between low and pi - low, so it stays keep to the left. Feet nearer each other than keep hold no
+		// legs.
 		b3CosSin legs = b3ComputeCosSin( from );
+		b3Vec3 offset = b3SubPos( f->feet[0].plant, f->feet[1].plant );
+		float across = offset.x * legs.cosine - offset.z * legs.sine;
+		float along = offset.x * legs.sine + offset.z * legs.cosine;
+		float apart = sqrtf( across * across + along * along );
 		float keep = NB_LEG_KEEP * scale;
-		for ( int k = 0; k < 2; ++k )
+		if ( apart > keep )
 		{
-			if ( f->footSwings[k] )
+			float ratio = keep / apart;
+			float low = b3Atan2( ratio, sqrtf( b3MaxFloat( 1.0f - ratio * ratio, 0.0f ) ) );
+			float angle = b3Atan2( across, along );
+			float space;
+			if ( low <= angle && angle <= B3_PI - low )
 			{
-				continue;
+				// Turning left takes the angle down toward low, turning right up toward pi - low
+				space = turn > 0.0f ? angle - low : B3_PI - low - angle;
 			}
-			// Where the foot is across and along the legs from the frame, and how far they may turn until it is no more
-			// than keep across them on its own side, the left foot to the left: within the half turn about its side that
-			// keeps it that far across
-			b3Vec3 offset = b3SubPos( f->feet[k].plant, f->frame.p );
-			float across = offset.x * legs.cosine - offset.z * legs.sine;
-			float along = offset.x * legs.sine + offset.z * legs.cosine;
-			float apart = sqrtf( across * across + along * along );
-			float ratio = apart > keep ? keep / apart : 1.0f;
-			float half = 0.5f * B3_PI - b3Atan2( ratio, sqrtf( b3MaxFloat( 1.0f - ratio * ratio, 0.0f ) ) );
-			float off = nbWrapAngle( b3Atan2( across, along ) - ( k == 0 ? 0.5f * B3_PI : -0.5f * B3_PI ) );
-			float space = turn > 0.0f ? half + off : half - off;
-			room = b3MinFloat( room, b3MaxFloat( space, 0.0f ) );
-			f->legBlocks[k] = space + NB_LEG_BLOCK < fabsf( turn );
+			else
+			{
+				// Crossed, or less than keep apart across the legs: they turn only the way that brings the feet apart
+				bool down = angle > B3_PI - low || angle < -0.5f * B3_PI;
+				space = ( turn > 0.0f ) == down ? FLT_MAX : 0.0f;
+			}
+			room = space;
+			int near = turn > 0.0f ? 0 : 1;
+			f->legBlocks[near] = f->footSwings[near] == false && space + NB_LEG_BLOCK < fabsf( turn );
 		}
+		f->legRoom = room;
 	}
 	if ( fabsf( turn ) <= room )
 	{
 		f->legHeld = 0.0f;
 		return to;
+	}
+	// Free to turn as far as they do in this update, they do not wait
+	if ( room >= b3MaxFloat( f->def.steering.turnRate, 0.0f ) * timeStep )
+	{
+		f->legHeld = 0.0f;
+		return nbWrapAngle( from + ( turn > 0.0f ? room : -room ) );
 	}
 	f->legHeld += timeStep;
 	if ( f->legHeld > NB_LEG_HOLD )
@@ -5196,10 +5231,12 @@ static void nbSteerFeet( const nbWorld* world, int index, nbFigure* f, const nbC
 	float u = nbGaitSpeed( world, f, &run, &stance, &land );
 	float springRun = f->runTurn;
 	f->gaitRun = run;
+	f->gaitUnit = sqrtf( gravity * b3MaxFloat( f->def.standHeight, 0.1f ) );
 
 	// Starting to run, the feet plan with the acceleration of the capsule, see NB_GAIT_PLAN_FROM, as fast as the program
 	// asks before the legs cap it
 	b3Vec3 asked = b3MulSub( f->askedVelocity, b3Dot( f->askedVelocity, up ), up );
+	f->askedSpeed = b3Length( asked );
 	float uAim =
 		b3MaxFloat( b3Length( aimVelocity ), b3Length( asked ) ) / sqrtf( gravity * b3MaxFloat( f->def.standHeight, 0.1f ) );
 	float runs = b3ClampFloat( ( b3MaxFloat( run, springRun ) - NB_GAIT_PLAN_FROM ) / ( 1.0f - NB_GAIT_PLAN_FROM ), 0.0f, 1.0f );
@@ -5243,6 +5280,7 @@ static void nbSteerFeet( const nbWorld* world, int index, nbFigure* f, const nbC
 		f->legAim = 0.0f;
 		f->legBack = false;
 		f->legHeld = 0.0f;
+		f->legRoom = FLT_MAX;
 		f->legBlocks[0] = false;
 		f->legBlocks[1] = false;
 	}
@@ -5657,10 +5695,16 @@ static void nbSteerFeet( const nbWorld* world, int index, nbFigure* f, const nbC
 				float deeper = f->moverLow - f->moverRadius;
 				b3WorldTransform end = { b3OffsetPos( f->frame.p, b3MulAdd( way, guess, up ) ), legQ };
 				// Turned as far as the legs turn toward where they turn to until it lands, at the turn rate of the
-				// steering, see NB_LEG_KEEP
+				// steering, and on the far side of the turn no farther than the feet let the legs turn now, see
+				// NB_LEG_KEEP: planned to land turned about, it stepped round the foot on the ground against the turn
 				float landLegs = legHeading;
+				float wants = nbWrapAngle( f->legAim - f->legTurn );
 				float most = b3MaxFloat( f->def.steering.turnRate, 0.0f ) * left;
-				float ahead = b3ClampFloat( nbWrapAngle( f->legAim - f->legTurn ), -most, most );
+				if ( k == ( wants > 0.0f ? 1 : 0 ) )
+				{
+					most = b3MinFloat( most, f->legRoom );
+				}
+				float ahead = b3ClampFloat( wants, -most, most );
 				if ( ahead != 0.0f )
 				{
 					end.q = b3NormalizeQuat( b3MulQuat( f->frame.q, nbHeadingQuat( f->legTurn + ahead ) ) );

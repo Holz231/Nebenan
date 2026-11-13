@@ -4910,8 +4910,9 @@ static uint32_t RunStrafe( int threadCount, float* turns, bool* backward, float*
 // nbMakeHumanoidBones: running to the side the feet come as close as 9.9 instead of 14.7 cm and running backward as 4.5
 // instead of 9.4 cm, and they stay at least 3 instead of 5 cm apart. Since round 114 it stands upright before it starts,
 // 1.8 cm higher, and comes down onto the stance of its gait, see NB_STAND_RISE: the feet come as close and the pelvis
-// sinks as far below that stance as before.
-#define NB_EXPECTED_STRAFE_HASH 0x5c556a1fu
+// sinks as far below that stance as before. Since round 115 the legs turn for running as soon as the figure is asked to
+// run, and no farther than its feet stay uncrossed across them, see NB_LEG_KEEP: the numbers of this test stay.
+#define NB_EXPECTED_STRAFE_HASH 0x4d1e1781u
 static int SteerStrafeTest( void )
 {
 	float turns[3], closest[3], deepest[3];
@@ -4984,6 +4985,59 @@ static int SteerStrafeChangeTest( void )
 		for ( int later = 0; later < 48; later += 8 )
 		{
 			closest = b3MinFloat( closest, RunStrafeChange( speeds[part], thens[part], later ) );
+		}
+		printf( "  %s: feet %.1f cm apart across the pelvis at least\n", names[part], 100.0f * closest );
+		ENSURE( closest > 0.0f );
+	}
+	return 0;
+}
+
+// A steered figure that does not face where it moves goes at first for 3 s and a part of its cycle more, then at then:
+// how close its feet come across the pelvis in the 3 s after, negative where they cross
+static float RunLegChange( b3Vec3 first, b3Vec3 then, int later )
+{
+	FigureScene scene;
+	CreateFigureScene( &scene, 1 );
+	nbFigureId figure = AddSteeredFigure( &scene, b3Vec3_zero, 0.0f );
+	StepFigures( &scene, 30 );
+	nbSteer steer = { first, 0.0f, false };
+	nbFigure_Steer( figure, &steer );
+	StepFigures( &scene, 180 + later );
+	steer.velocity = then;
+	nbFigure_Steer( figure, &steer );
+	float closest = FLT_MAX;
+	for ( int i = 0; i < 180; ++i )
+	{
+		StepFigures( &scene, 1 );
+		b3Vec3 left = b3RotateVector( b3Body_GetRotation( nbFigure_GetBody( figure, nb_humanoidPelvis ) ), b3Vec3_axisX );
+		left.y = 0.0f;
+		left = b3Normalize( left );
+		b3Vec3 footLeft = b3ToVec3( b3Body_GetPosition( nbFigure_GetBody( figure, nb_humanoidFootLeft ) ) );
+		b3Vec3 footRight = b3ToVec3( b3Body_GetPosition( nbFigure_GetBody( figure, nb_humanoidFootRight ) ) );
+		closest = b3MinFloat( closest, b3Dot( b3Sub( footLeft, footRight ), left ) );
+	}
+	DestroyFigureScene( &scene );
+	return closest;
+}
+
+// A steered figure that does not face where it moves changes its direction as it runs at 4.3 m/s, each from 8 places in
+// its cycle: from left to right, where its legs turn about, from forward to the left, where they turn by a quarter, and
+// from walking to the left at 1.05 m/s to running there. Its feet stay uncrossed across the pelvis, see NB_LEG_KEEP: the
+// legs turn only as far as the feet let them, the foot on the side of the turn steps out, and they are turned for
+// running as soon as the figure is asked to run. Until round 114 the feet crossed by 9.2, 11.3 and 8.2 cm here.
+static int SteerRunChangeTest( void )
+{
+	const b3Vec3 firsts[3] = { { 4.3f, 0.0f, 0.0f }, { 0.0f, 0.0f, 4.3f }, { 1.05f, 0.0f, 0.0f } };
+	const b3Vec3 thens[3] = { { -4.3f, 0.0f, 0.0f }, { 4.3f, 0.0f, 0.0f }, { 4.3f, 0.0f, 0.0f } };
+	const int cycles[3] = { 40, 40, 74 };
+	const char* names[3] = { "running from left to right", "running from forward to the left",
+							 "from walking to running to the left" };
+	for ( int part = 0; part < 3; ++part )
+	{
+		float closest = FLT_MAX;
+		for ( int place = 0; place < 8; ++place )
+		{
+			closest = b3MinFloat( closest, RunLegChange( firsts[part], thens[part], place * cycles[part] / 8 ) );
 		}
 		printf( "  %s: feet %.1f cm apart across the pelvis at least\n", names[part], 100.0f * closest );
 		ENSURE( closest > 0.0f );
@@ -6412,6 +6466,7 @@ int FigureTest( void )
 	RUN_TEST( SteerEvenRunTest );
 	RUN_TEST( SteerStrafeTest );
 	RUN_TEST( SteerStrafeChangeTest );
+	RUN_TEST( SteerRunChangeTest );
 	RUN_TEST( SteerBackTest );
 	RUN_TEST( SteerUprightTest );
 	RUN_TEST( SteerStartStopTest );
