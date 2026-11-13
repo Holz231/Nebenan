@@ -9,3 +9,4 @@ CMakeUserPresets.json
 imgui.ini
 *.user
 .fetchcontent-cache/
+__pycache__/

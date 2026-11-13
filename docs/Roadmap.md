@@ -7481,7 +7481,7 @@ Stellen, stammt aus einem einzigen Paar von Sätzen, das für die Füße 41 gege
 losrennend mit Blick in Laufrichtung dauert an keiner statt an allen 48 Stellen ein Flug länger als 0,2 s, vom Gehen ins
 Rennen an 2 statt 12 von 24, und in keiner dieser Szenen springt ein Fuß öfter. Gebaut ist deshalb, und die Entscheidung
 liegt offen beim Nutzer: Die Runde hat ihre eigene Branch, und Runde 119 kann von `active-ragdoll-117` ausgehen, wenn
-der Bau nicht bleiben soll.
+der Bau nicht bleiben soll. Der Nutzer hat am 13. November 2026 entschieden: Der Bau bleibt.
 
 Nach Szenen mit festem Blick, je 48 Stellen, Flüge über 0,2 s und der längste Flug: aus dem Stand zur Seite losrennend
 an 24 statt 48, 0,23 statt 0,25 s, rückwärts losrennend an allen 48 wie vorher, aber 0,22 statt 0,30 s, vom Gehen ins
@@ -7517,6 +7517,11 @@ kippen die 24 gleichen Stellen einer Szene aus dem Stand zusammen, und Stellen k
 Und eine Streuung aus einem einzigen Paar von Sätzen ist für eine Zählung zu zufällig, wie C1 zeigt. Vorschlag für Runde
 119, mit dem Nutzer zu klären: je Größe drei Paare messen und die größte Streuung nehmen, und mit so vielen Bedingungen
 zugleich vorher festlegen, wie eine einzelne knapp verfehlte Zählung zählt, wenn die Größe der Sprünge hält.
+
+Seit `active-ragdoll-118-messwerkzeuge` liegen die Messwerkzeuge der Runden im Repository, in `tools/measure`,
+beschrieben in [tools/measure/README.md](../tools/measure/README.md), und die Regel dieser Runde in
+[docs/Regeln](Regeln/RULE118.txt). Bis dahin lagen sie nur im Arbeitsordner der Sitzung. Von dort gebaut und gelaufen,
+liefern sie die unabhängige Prüfung dieser Runde Wert für Wert wieder. An der Bibliothek ändert die Branch nichts.
 
 Verworfen in dieser Runde, siehe „Kürzere Flüge beim Losrennen und bei Wechseln im Rennen“ und die Zeilen danach in
 [Optimierungen](Optimierungen.md): die Dauer des Abhebens ohne die Grenze des Fußes oder mit einer engeren, die Wurzel
