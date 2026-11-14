@@ -2,6 +2,7 @@
 // Nebenan demo: walls that break into polygon fragments on Box3D, built for speed. Flat shading, no shadows, no
 // particles: every millisecond goes to the destruction.
 
+#include "mannequin_parts.h"
 #include "renderer.h"
 #include "system_info.h"
 
@@ -558,6 +559,7 @@ struct App
 	// drawn again, and the next frame does it before the steps start.
 	bool figurePartColors = true;
 	bool figureHuman = false;
+	bool figureModel = true;
 	bool rebuildFigures = false;
 
 	// The collisions of figures with walls the library reported, see nbEvents::collisions, and the last of them
@@ -1721,9 +1723,51 @@ static int ClothesMaterial( int bone, int shirt )
 	}
 }
 
+// A part of the mannequin after the model, see mannequin_parts.h and tools/mannequin: the shells of the model of
+// Quaternius that hang on this bone, rigid on its body, the body in one material and the joints in another. The model
+// has no shell for the belly and the lower chest: its belly piece hangs on the ribs and its chest piece on the chest.
+static void AppendModelPart( App& app, int bone, int body, int joints, int slot )
+{
+	const MannequinPart& part = s_mannequinParts[bone];
+	for ( int i = 0; i < part.vertexCount; ++i )
+	{
+		const MannequinVertex& v = s_mannequinVertices[part.firstVertex + i];
+		b3Vec3 position = { v.position[0], v.position[1], v.position[2] };
+		b3Vec3 normal = { (float)v.normal[0] / 127.0f, (float)v.normal[1] / 127.0f, (float)v.normal[2] / 127.0f };
+		app.vertexScratch.push_back( Renderer::MakeVertex( position, normal, v.material == 0 ? body : joints, slot ) );
+	}
+	for ( int i = 0; i < part.indexCount; ++i )
+	{
+		app.indexScratch.push_back( s_mannequinIndices[part.firstIndex + i] );
+	}
+
+	// Inside the parts of the trunk and the neck a core in the color of the joints, smaller than the shape of the
+	// physics: the shells of the model are rigid here, and where two of them come apart as the spine bends, the core shows
+	// instead of the sky behind the figure. The belly and the lower chest, which the model has no shell for, are core
+	// only. The chest has none, its shell closes around the neck of the model. Forearms and shins have a ball at their
+	// joint, inside the elbow and the knee of the model, for the same reason.
+	const nbBoneDef& def = app.figureBones[bone];
+	if ( bone == nb_humanoidNeck )
+	{
+		AppendCapsule( app, b3Vec3_zero, def.end, 0.55f * def.radius, joints, slot, 8, 2 );
+	}
+	else if ( bone < nb_humanoidChest && def.shape == nb_roundedBoxBone )
+	{
+		float wide = bone == nb_humanoidPelvis ? 0.55f : 0.68f;
+		b3Vec3 h = { wide * def.halfExtents.x, 0.85f * def.halfExtents.y, 0.5f * def.halfExtents.z };
+		AppendRoundedBox( app, def.center, h, 0.95f * b3MinFloat( h.x, b3MinFloat( h.y, h.z ) ), joints, slot, 3 );
+	}
+	else if ( bone == nb_humanoidForearmLeft || bone == nb_humanoidForearmRight || bone == nb_humanoidShinLeft ||
+			  bone == nb_humanoidShinRight )
+	{
+		AppendCapsule( app, b3Vec3_zero, b3Vec3_zero, 0.8f * def.radius, joints, slot, 10, 3 );
+	}
+}
+
 // The meshes of the bones of a figure, each on a new slot on the body of its bone, so the poses of the frames move it.
-// As a mannequin each part of the body in its own color, or the whole figure in one after its place in the list of
-// figures. As a person the figure in clothes, its shirt in that color.
+// As the mannequin after the model its parts, see AppendModelPart. As the mannequin from the shapes of the physics each
+// part of the body in its own color, or the whole figure in one after its place in the list of figures. As a person the
+// figure in clothes, its shirt in that color.
 static void BuildFigureMeshes( App& app, FigureVisual& visual, int figure )
 {
 	int count = (int)sizeof( s_figureMaterials ) / (int)sizeof( s_figureMaterials[0] );
@@ -1746,6 +1790,14 @@ static void BuildFigureMeshes( App& app, FigureVisual& visual, int figure )
 		{
 			int clothes = bone < nb_humanoidBoneCount ? ClothesMaterial( bone, material ) : material;
 			AppendBodyPart( app, bone, app.figureBones[bone], clothes, MaterialFigureDark, slot );
+		}
+		else if ( app.figureModel && bone < nb_humanoidBoneCount )
+		{
+			// With its parts in colors the mannequin as its model has it, orange with violet joints, else in the color of
+			// the figure with dark joints
+			int body = app.figurePartColors ? MaterialFigureOrange : s_figureMaterials[figure % count];
+			int joints = app.figurePartColors ? MaterialFigureViolet : MaterialFigureDark;
+			AppendModelPart( app, bone, body, joints, slot );
 		}
 		else
 		{
@@ -3564,6 +3616,18 @@ static void DrawUi( App& app )
 			ImGui::SetTooltip(
 				"An: jeder Körperteil einer Figur in seiner eigenen Farbe. Aus: jede Figur ganz in einer\nFarbe, wie die "
 				"Gliederpuppen eines Spiels. Gilt für die Gliederpuppe, nicht für „Als Mensch“." );
+		}
+		ImGui::SameLine();
+		if ( ImGui::Checkbox( "Modell", &app.figureModel ) )
+		{
+			app.rebuildFigures = true;
+		}
+		if ( ImGui::IsItemHovered() )
+		{
+			ImGui::SetTooltip(
+				"An: die Gliederpuppe nach dem Modell von Quaternius (CC0), in starren Teilen je Knochen,\nmit „Teile farbig“ "
+				"orange mit violetten Gelenken, sonst in der Farbe der Figur. Aus: die\nGliederpuppe aus den Formen der Physik. "
+				"Gilt nicht für „Als Mensch“." );
 		}
 		ImGui::SameLine();
 		if ( ImGui::Checkbox( "Als Mensch", &app.figureHuman ) )
@@ -5783,6 +5847,11 @@ int main( int argc, char** argv )
 			app.automation.lookYaw = (float)atof( argv[++i] ) * B3_PI / 180.0f;
 			app.automation.lookDistance = (float)atof( argv[++i] );
 			app.showUi = false;
+		}
+		else if ( strcmp( argv[i], "--shapes" ) == 0 )
+		{
+			// The mannequin from the shapes of the physics instead of the model, as the menu does with "Modell" off
+			app.figureModel = false;
 		}
 		else if ( strcmp( argv[i], "--human" ) == 0 )
 		{

@@ -182,18 +182,29 @@ der Physik, die Formen der Physik bleiben, wie sie sind. Ohne **Teile farbig** i
 Farbe, wie die Gliederpuppen eines Spiels. Damit die runden Teile rund aussehen, verläuft die Farbe über jedes Dreieck,
 siehe Demo-Renderer. Wie lang die Glieder sind und wie die Figur steht, kommt aus der Bibliothek, siehe In den Knien.
 
+**Gliederpuppe nach Modell.** Seit `active-ragdoll-125` zeichnet die Demo ihre Figuren beim Start als Gliederpuppe nach
+einem Modell von Quaternius, exportiert aus ActionForge und gemeinfrei unter CC0 1.0: orange mit violetten Gelenken, mit
+Kopf, Brustkorb, Bauch, Becken, Armen mit Fäusten, Beinen mit Waden und Füßen. Das Modell ist geskinnt und hat 71
+Knochen, die Figur der Bibliothek hat 19: `tools/mannequin/make_parts.py` zerlegt es in starre Teile, eines je Knochen,
+passt Arme und Beine an die Gelenke der Figur an und legt die Sohle des Fußes auf die Sohle der Physik, 6 352 Dreiecke
+je Figur. Die Demo zeichnet jedes Teil auf dem Körper seines Knochens, wie sie die Formen der anderen Darstellungen
+zeichnet. **Modell** im Menü schaltet sie ab, `--shapes` beim Start: Dann zeichnet die Demo die Gliederpuppe aus den
+Formen der Physik wie oben beschrieben. Ohne **Teile farbig** hat jede Puppe die Farbe ihrer Figur und dunkle Gelenke.
+Die Bibliothek weiß von alledem nichts: Ein Spiel hängt sein eigenes Modell an die Körper der Knochen, deren Lage es je
+Bild aus der Bibliothek liest. Siehe [tools/mannequin](tools/mannequin/README.md).
+
 **Figuren als Menschen.** Seit `active-ragdoll-113` zeichnet die Demo die Figuren auf Wunsch als Menschen, mit **Als
-Mensch** im Menü oder `--human`. Die Gliederpuppe bleibt, wie sie war, und ist der Stand beim Start. Als Mensch ist
-jeder Körperteil eine glatte Form aus Querschnitten entlang seines Knochens, geformt wie der Teil eines Menschen: der
-Rumpf durchgehend von den Hüften über die Taille zur Brust, die zum Hals hin abfällt, ein Oberschenkel oben dick und am
-Knie schmal, ein Schienbein mit der Wade hinten, ein Oberarm mit der Schulter obenauf, ein Unterarm bis zum flachen
-Handgelenk, die Hand flach mit dem Daumen vorn, der Fuß ein Schuh, und der Kopf mit Kiefer, Augen, Nase, Ohren und
-Haaren. Die Figur trägt Kleidung: ein Hemd in ihrer Farbe über Rumpf und Oberarmen, Hose und Schuhe, Haut an Kopf, Hals,
-Unterarmen und Händen. Die Maße kommen aus den Knochen der Bibliothek, die seit `active-ragdoll-113` die eines Menschen
-sind, und das Netz liegt meist unter anderthalb und nirgends mehr als rund 2 cm neben der Form, die kollidiert. Die
-Gliederpuppe ist kräftiger gezeichnet als ihre Körper, mit den schmaleren Knochen von `active-ragdoll-113` am Rumpf bis
-rund 3 cm und am Kopf knapp 4 cm je Seite. Die Formen der Physik sind für beide dieselben, wie die Bibliothek sie baut,
-ein Spiel bringt sein eigenes Netz mit.
+Mensch** im Menü oder `--human`. Die Gliederpuppe aus den Formen der Physik bleibt, wie sie war. Beim Start steht seit
+`active-ragdoll-125` die Gliederpuppe nach Modell. Als Mensch ist jeder Körperteil eine glatte Form aus Querschnitten
+entlang seines Knochens, geformt wie der Teil eines Menschen: der Rumpf durchgehend von den Hüften über die Taille zur
+Brust, die zum Hals hin abfällt, ein Oberschenkel oben dick und am Knie schmal, ein Schienbein mit der Wade hinten, ein
+Oberarm mit der Schulter obenauf, ein Unterarm bis zum flachen Handgelenk, die Hand flach mit dem Daumen vorn, der Fuß
+ein Schuh, und der Kopf mit Kiefer, Augen, Nase, Ohren und Haaren. Die Figur trägt Kleidung: ein Hemd in ihrer Farbe
+über Rumpf und Oberarmen, Hose und Schuhe, Haut an Kopf, Hals, Unterarmen und Händen. Die Maße kommen aus den Knochen
+der Bibliothek, die seit `active-ragdoll-113` die eines Menschen sind, und das Netz liegt meist unter anderthalb und
+nirgends mehr als rund 2 cm neben der Form, die kollidiert. Die Gliederpuppe ist kräftiger gezeichnet als ihre Körper,
+mit den schmaleren Knochen von `active-ragdoll-113` am Rumpf bis rund 3 cm und am Kopf knapp 4 cm je Seite. Die Formen
+der Physik sind für beide dieselben, wie die Bibliothek sie baut, ein Spiel bringt sein eigenes Netz mit.
 
 **FPS.** Oben rechts steht immer die echte Bildrate, gemessen über die letzten zwei Sekunden: Bilder pro Sekunde,
 die mittlere Bildzeit und das 1 % Low, also die Rate der langsamsten 1 % der Bilder. Daran sieht man Ruckler. VSync

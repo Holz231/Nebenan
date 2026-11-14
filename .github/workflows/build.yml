@@ -159,6 +159,7 @@ jobs:
           cp extern/box3d/LICENSE package/lizenzen/box3d.txt
           cp extern/box3d/extern/sokol/LICENSE package/lizenzen/sokol.txt
           cp extern/imgui/LICENSE.txt package/lizenzen/imgui.txt
+          cp tools/mannequin/LICENSE.txt package/lizenzen/mannequin.txt
           if [ "${{ matrix.profile }}" = "true" ]; then
             # The build put the script next to the demo, as it does for build.bat tracy
             cp "$(dirname "${{ matrix.demo }}")/Tracy-Aufnahme.bat" package/

@@ -1,0 +1,10 @@
+actionforge_mannequin_rest_pose.glb
+
+Rig and model by Quaternius, https://quaternius.com, exported by ActionForge, https://actionforge.app.
+The file states its own terms in its asset block: dedicated to the public domain under CC0 1.0, no attribution
+required, license "CC0-1.0".
+
+CC0 1.0 Universal: https://creativecommons.org/publicdomain/zero/1.0/legalcode
+
+demo/mannequin_parts.h is made from this file by make_parts.py: the same shapes, cut into one rigid part per bone
+of the humanoid of Nebenan and fitted to its joints.
