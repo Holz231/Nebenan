@@ -63,8 +63,8 @@ Der Stand steht in `docs/Roadmap.md` (letzter Abschnitt, F84 mit dem 🔜-Rest) 
 - **Toleranz** ist die größte Streuung zwischen Sätzen, deren Geschwindigkeiten höchstens 5 % auseinanderliegen, auf
   dem alten Stand gemessen. Zählungen und Summen über zwei Sätze bekommen das Doppelte.
 - **Kosten** sind die Befehle, die `nbUpdateFigures` ausführt, höchstens 0,5 % mehr. Zeiten stehen daneben.
-- **Benchmark** ab Runde 125: Endzustände gleich und nicht mehr Befehle in Szenen, die der Eingriff nicht berührt. Zeiten
-  stehen daneben.
+- **Benchmark** ab Runde 125: Endzustände gleich und nicht mehr Befehle in Szenen, die der Eingriff nicht berührt.
+  Zeiten stehen daneben.
 - Was wiederholt werden darf, steht vorher in der Regel. Eine Messung, die nicht passt, wird nie wiederholt, bis sie
   passt. Verfehlt der saubere Bau eine Bedingung, wird nicht gebaut, oder es steht offen in der Roadmap, warum doch,
   und der Nutzer entscheidet.
