@@ -657,14 +657,18 @@ float nbMakeHumanoidBones( float height, float mass, nbBoneDef* bones, int capac
 		int shin = side == 0 ? nb_humanoidShinLeft : nb_humanoidShinRight;
 		int foot = side == 0 ? nb_humanoidFootLeft : nb_humanoidFootRight;
 
-		// The shoulder joints lie 40.5 cm apart, a centimeter inside the tips of the shoulders of the men measured, 41.5
-		// cm, and 2 cm beside the chest, and the arms hang 3 degrees out from the body, the fingertips 24 cm from the
-		// middle. Upper arm, forearm and hand are 30, 27.5 and 19.5 cm long, from joint to joint as on those men: their
-		// elbows lie at 1.13 m and their wrists at 86 cm. They were 35, 26 and 17 cm until round 112, with the shoulders
-		// 43 cm apart and 2 cm higher, and 37, 27 and 17 cm until round 43, as in the reference picture.
+		// The shoulder joints lie where the model has them that the demo draws its figures after, see tools/mannequin, on
+		// the user's choice in round 126: 37.4 cm apart, 4.6 cm above the origin of the chest and 3.4 cm behind it. From
+		// round 113 until then they lay as on the men measured, 40.5 cm apart, a centimeter inside the tips of their
+		// shoulders, 41.5 cm, 3 cm above the origin of the chest and over it, and the arms hung 1.6 cm beside the trunk:
+		// now 1.5 mm beside the lower chest and 2.6 mm beside the ribs, see FigureShoulderTest. The arms hang 3 degrees
+		// out from the body, the fingertips 22 cm from the middle. Upper arm, forearm and hand are 30, 27.5 and 19.5 cm
+		// long, from joint to joint as on those men: their elbows lie at 1.13 m and their wrists at 86 cm, those of the
+		// figure at 1.13 m and 85 cm. They were 35, 26 and 17 cm until round 112, with the shoulders 43 cm apart and 2 cm
+		// higher, and 37, 27 and 17 cm until round 43, as in the reference picture.
 		b3Quat armRest = b3MakeQuatFromAxisAngle( b3Vec3_axisZ, B3_PI + 0.05f * x );
 		bones[upperArm] = nbLimb( side == 0 ? "upper arm left" : "upper arm right", nb_humanoidChest,
-								  (b3Vec3){ 0.2025f * s * x, 0.03f * s, 0.0f }, armRest, 0.30f * s, 0.05f * s, 2.0f * m,
+								  (b3Vec3){ 0.187f * s * x, 0.046f * s, -0.034f * s }, armRest, 0.30f * s, 0.05f * s, 2.0f * m,
 								  nb_ballJoint, zToY, 0.0f, 0.0f, 0.0f, 0.6f );
 		bones[forearm] = nbLimb( side == 0 ? "forearm left" : "forearm right", upperArm, (b3Vec3){ 0.0f, 0.30f * s, 0.0f },
 								 identity, 0.275f * s, 0.04f * s, 1.2f * m, nb_hingeJoint, zToX, -0.087f, 2.53f, 0.0f, 0.4f );

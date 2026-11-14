@@ -406,7 +406,8 @@ NB_API nbRigDef nbDefaultRigDef( void );
 /// hinges at the elbows and knees, simple capsules as hands and boxes as feet. It stands with its y axis up and faces
 /// +z. Returns the stand height of nbFigureDef: the height of the pelvis origin over the soles in the stance its gait
 /// walks from, a little in the knees. Standing still it stands upright, 1.8 cm higher at 1.8 m, see nb_clipIdle. The
-/// names of the bones are static strings.
+/// shoulder joints lie where the mannequin of tools/mannequin has them, 37.4 cm apart at 1.8 m, 3.1 cm closer than on
+/// those men. The names of the bones are static strings.
 NB_API float nbMakeHumanoidBones( float height, float mass, nbBoneDef* bones, int capacity );
 
 /// The convex hull of a bone that is a box or a rounded box, in the frame of the bone, as the physics has it: to draw it.

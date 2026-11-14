@@ -1216,7 +1216,7 @@ static uint32_t MuscleCatch( int threadCount, float impulse )
 }
 
 // The throw of 90 N s on a figure with muscles ends in the same bits with one thread and with four, on every platform
-#define NB_EXPECTED_MUSCLE_HASH 0xc54dd53bu
+#define NB_EXPECTED_MUSCLE_HASH 0x9bf675e6u
 
 // The muscles, see nbFigureMotors::muscles and nbUpdateMuscles. A figure with muscles hit while it stands catches itself
 // with the strength the balance asks for at once: every joint of its trunk and its legs at the full torque of the motors,
@@ -1498,7 +1498,10 @@ static int FigureSpreadTest( void )
 // armature by 2.05 instead of 15.58 rad/s and in 38 instead of 56 %, still eight times the change and nine times the
 // reversals. Since round 113 the neck is 12 instead of 10 cm thick, as that of a person, see nbMakeHumanoidBones, and
 // its springs shake the thicker neck far less already: without the armature the turn changes by 0.33 rad/s and reverses
-// in 7 % of the steps, with it by 0.24 rad/s and in 3 %.
+// in 7 % of the steps, with it by 0.24 rad/s and in 3 %. Since round 126 the shoulder joints lie where the model of the
+// demo has them, 3.4 cm further back, and the arms pull at the chest from there: without the armature 0.37 rad/s and 7
+// %, with it 0.27 rad/s and 5 %, on the build of round 124 0.36 rad/s and 8 % against 0.26 rad/s and 4 %. The armature
+// still calms the head, by a third less often instead of by half.
 static int FigureNeckTest( void )
 {
 	float jitter[2] = { 0.0f, 0.0f };
@@ -1558,7 +1561,7 @@ static int FigureNeckTest( void )
 			"reverses in %.0f %% of the steps, standing after %d of 4, without the armature %.2f rad/s, %.0f %% and %d of 4\n",
 			jitter[0], 100.0f * flips[0], standing[0], jitter[1], 100.0f * flips[1], standing[1] );
 	ENSURE( jitter[0] < 2.0f && flips[0] < 0.25f && standing[0] == 4 );
-	ENSURE( jitter[1] > 1.2f * jitter[0] && flips[1] > 1.5f * flips[0] );
+	ENSURE( jitter[1] > 1.2f * jitter[0] && flips[1] > 1.25f * flips[0] );
 	return 0;
 }
 
@@ -1669,15 +1672,77 @@ static int FigureSlowRateTest( void )
 	return 0;
 }
 
+// The shoulder joints of the humanoid lie where the model has them that the demo draws its figures after, since round
+// 126: at 1.8 m 37.4 cm apart, 4.6 cm above the origin of the chest and 3.4 cm behind it, until then 40.5 cm apart, 3
+// cm above it and over it. The arms hang close to the trunk there and must not lie against it in the rest pose, or a
+// figure that catches itself starts with its arms pressed out: the upper arm keeps 1.5 mm from the lower chest and 2.6
+// mm from the ribs and the forearm 6.1 mm from the pelvis, with the shoulders of round 113 they kept 16.2, 17.3 and
+// 20.7 mm.
+static int FigureShoulderTest( void )
+{
+	nbBoneDef bones[nb_humanoidBoneCount];
+	nbMakeHumanoidBones( 1.8f, 75.0f, bones, nb_humanoidBoneCount );
+	b3Vec3 left = bones[nb_humanoidUpperArmLeft].restTransform.p;
+	b3Vec3 right = bones[nb_humanoidUpperArmRight].restTransform.p;
+	ENSURE( bones[nb_humanoidUpperArmLeft].parent == nb_humanoidChest );
+	ENSURE( bones[nb_humanoidUpperArmRight].parent == nb_humanoidChest );
+	ENSURE_SMALL( left.x - 0.187f, 1.0e-5f );
+	ENSURE_SMALL( left.y - 0.046f, 1.0e-5f );
+	ENSURE_SMALL( left.z + 0.034f, 1.0e-5f );
+	ENSURE_SMALL( left.x + right.x, 1.0e-6f );
+	ENSURE_SMALL( left.y - right.y, 1.0e-6f );
+	ENSURE_SMALL( left.z - right.z, 1.0e-6f );
+
+	// The rest pose of the bones in the frame of the root
+	b3Transform pose[nb_humanoidBoneCount];
+	for ( int i = 0; i < nb_humanoidBoneCount; ++i )
+	{
+		pose[i] = bones[i].parent < 0 ? bones[i].restTransform : b3MulTransforms( pose[bones[i].parent], bones[i].restTransform );
+	}
+
+	// The gap between the capsule of a bone of an arm and the rounded box of a bone of the trunk: each is a core with a
+	// ball around it, a segment and a box smaller by the radius of its edges
+	const int arms[6] = { nb_humanoidUpperArmLeft, nb_humanoidForearmLeft, nb_humanoidHandLeft,
+						  nb_humanoidUpperArmRight, nb_humanoidForearmRight, nb_humanoidHandRight };
+	const int trunk[4] = { nb_humanoidPelvis, nb_humanoidBelly, nb_humanoidRibs, nb_humanoidLowerChest };
+	float closest = FLT_MAX;
+	for ( int a = 0; a < 6; ++a )
+	{
+		const nbBoneDef* arm = bones + arms[a];
+		for ( int t = 0; t < 4; ++t )
+		{
+			const nbBoneDef* box = bones + trunk[t];
+			ENSURE( box->shape == nb_roundedBoxBone );
+			for ( int k = 0; k <= 200; ++k )
+			{
+				b3Vec3 point = b3Lerp( arm->start, arm->end, (float)k / 200.0f );
+				b3Vec3 world = b3Add( pose[arms[a]].p, b3RotateVector( pose[arms[a]].q, point ) );
+				b3Vec3 inBox = b3Sub( b3InvTransformPoint( pose[trunk[t]], world ), box->center );
+				b3Vec3 out = { b3MaxFloat( fabsf( inBox.x ) - ( box->halfExtents.x - box->radius ), 0.0f ),
+							   b3MaxFloat( fabsf( inBox.y ) - ( box->halfExtents.y - box->radius ), 0.0f ),
+							   b3MaxFloat( fabsf( inBox.z ) - ( box->halfExtents.z - box->radius ), 0.0f ) };
+				closest = b3MinFloat( closest, b3Length( out ) - box->radius - arm->radius );
+			}
+		}
+	}
+	printf( "  shoulder joints %.1f cm apart, the arms hang %.1f mm from the trunk at rest\n", 100.0f * ( left.x - right.x ),
+			1000.0f * closest );
+	ENSURE( closest > 0.001f && closest < 0.005f );
+	return 0;
+}
+
 // A figure that catches itself with its own strength at 30 Hz takes the targets of its steps ahead, see NB_STEP_LEAD:
 // hard hits on the chest it falls after without that, 102 N s diagonally from the front and 88 N s from the side.
 // Before round 66 it fell after 100 N s diagonally from the front and 92 N s from the side. Since round 104, whose
 // heels reach 6.5 instead of 4 cm behind the ankles, see nbMakeHumanoidBones, it catches 100 N s diagonally from the
-// front without the lead as well, and from the side up to 90 and 92 instead of 94 N s.
+// front without the lead as well, and from the side up to 90 and 92 instead of 94 N s. Since round 126, whose shoulder
+// joints lie where the model of the demo has them, 3.4 cm further back and 1.6 cm further in, it catches up to 100
+// instead of 102 N s diagonally from the front and up to 88 N s from the side, on the build of round 124 up to 94
+// without 86, and without the lead up to 94 and 86 N s: the test hits with 100 and 88 N s.
 static int FigureSlowStepTest( void )
 {
 	const int directions[2] = { 1, 2 };
-	const float impulses[2] = { 102.0f, 88.0f };
+	const float impulses[2] = { 100.0f, 88.0f };
 	for ( int c = 0; c < 2; ++c )
 	{
 		FigureScene scene;
@@ -4912,7 +4977,7 @@ static uint32_t RunStrafe( int threadCount, float* turns, bool* backward, float*
 // 1.8 cm higher, and comes down onto the stance of its gait, see NB_STAND_RISE: the feet come as close and the pelvis
 // sinks as far below that stance as before. Since round 115 the legs turn for running as soon as the figure is asked to
 // run, and no farther than its feet stay uncrossed across them, see NB_LEG_KEEP: the numbers of this test stay.
-#define NB_EXPECTED_STRAFE_HASH 0x92ac8a67u
+#define NB_EXPECTED_STRAFE_HASH 0xaf576bf2u
 static int SteerStrafeTest( void )
 {
 	float turns[3], closest[3], deepest[3];
@@ -6729,7 +6794,7 @@ static int FigureWallDebrisTest( void )
 
 // The throw through the wall of boards ends in the same bits with one thread and with four, on every platform, in the
 // second fracture pattern, which the figure breaks through
-#define NB_EXPECTED_WALL_HASH 0x897f79a5u
+#define NB_EXPECTED_WALL_HASH 0xd3e02575u
 
 static int FigureWallDeterminismTest( void )
 {
@@ -6789,10 +6854,10 @@ static int ThinBoardTest( void )
 }
 
 // The hash of the figure scenario on every platform, see RunFigureScenario
-#define NB_EXPECTED_FIGURE_HASH 0x37d14474u
+#define NB_EXPECTED_FIGURE_HASH 0xc9d1795fu
 
 // See RunFollowScenario
-#define NB_EXPECTED_FOLLOW_HASH 0x7b2cdc4bu
+#define NB_EXPECTED_FOLLOW_HASH 0x2a1eaefbu
 
 // See RunSteerScenario. Since round 97 the figure that walks sideways sets its foot before the side of the stairs, 45
 // cm high where it meets them, instead of on top of it. Since round 99 a swing that hurries keeps its aim before it
@@ -6810,7 +6875,7 @@ static int ThinBoardTest( void )
 // within NB_GAIT_FLOAT, and going backward a foot its leg only reaches rolled over its toes stays on them. Round 112:
 // walking takes the steps of people, see NB_GAIT_CADENCE_WALK, and the ankle of a swinging foot bends up as far as
 // theirs, see NB_SWING_ANKLE_SOFT. Round 113: the body has the dimensions of a person, see nbMakeHumanoidBones.
-#define NB_EXPECTED_STEER_HASH 0x4c69ec1au
+#define NB_EXPECTED_STEER_HASH 0x1310a68fu
 
 // See RunGaitClipScenario. Since round 99 as for RunSteerScenario. Since round 100 the figure that is told to turn on
 // the spot while it still walks, not facing where it moves, keeps its legs where they face as its heading turns, and
@@ -6819,7 +6884,7 @@ static int ThinBoardTest( void )
 // RunSteerScenario. Since round 111 as for RunSteerScenario. Round 112: the clips are recorded from a gait that takes
 // the steps of people, see NB_GAIT_CADENCE_WALK, and the ankle of a swinging foot bends up as far as theirs, see
 // NB_SWING_ANKLE_SOFT. Round 113 as for RunSteerScenario.
-#define NB_EXPECTED_GAIT_CLIP_HASH 0xe02863ddu
+#define NB_EXPECTED_GAIT_CLIP_HASH 0xa4bcab74u
 
 static int FigureFollowDeterminismTest( void )
 {
@@ -6897,6 +6962,7 @@ int FigureTest( void )
 	RUN_TEST( FigureCatchDampingTest );
 	RUN_TEST( FigureSlowRateTest );
 	RUN_TEST( FigureSlowStepTest );
+	RUN_TEST( FigureShoulderTest );
 	RUN_TEST( FigureSlowFreeStepTest );
 	RUN_TEST( FigureSoftSpineTest );
 	RUN_TEST( FigureSoftHoldTest );

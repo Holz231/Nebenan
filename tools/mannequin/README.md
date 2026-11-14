@@ -21,14 +21,16 @@ so hoch wie der Fuß der Physik, damit die Sohle stimmt. Die Finger sind zur Fau
 Finger, die Hälfte aller Dreiecke, sind weggelassen. Es bleiben 3 870 Punkte und 6 352 Dreiecke je Figur, mit den beiden
 Stücken auf den Schultern 4 038 und 6 592.
 
-Die Schultern der Figur liegen über denselben Hüften 6,4 cm weiter vorn, 1,6 cm weiter außen und 1,6 cm tiefer als die
-des Modells. Deshalb liegt die Brust 3 cm weiter vorn, mittig auf der Brust der Physik, der Hals führt von ihr zum Kopf,
-und das Schlüsselbein dreht und streckt sich um sein Gelenk, bis das Schultergelenk des Modells auf dem der Figur liegt.
-Was an diesen Knochen hängt, folgt ihnen mit seinem Gewicht: die Pfanne der Brust und der obere Rand des Oberarms. Der
-Rand des Oberarms liegt eine Vierteldrehung von dort, wo das Modell ihn hat: Für ihn mischt das Werkzeug Drehung und
-Dehnung getrennt, er dreht um das Schultergelenk mit und sinkt nicht in die Schulter ein. Zwischen Brust und Oberarm hat
-das Modell keine Schale. Ein rundes Stück in der Farbe der Gelenke auf jeder Schulter, an der Brust, schließt die Kerbe
-zwischen Nacken und Schulter, `SHOULDER_PAD`.
+Die Brust der Figur liegt über denselben Hüften 3 cm weiter vorn als die des Modells. Deshalb liegt die Brust der Puppe
+3 cm weiter vorn, mittig auf der Brust der Physik, und der Hals führt von ihr zum Kopf. Das Schlüsselbein dreht und
+streckt sich um sein Gelenk, bis das Schultergelenk des Modells auf dem der Figur liegt. Bis Runde 125 lagen die
+Schultergelenke der Figur damit noch 3,4 cm weiter vorn, 1,6 cm weiter außen und 1,6 cm tiefer als die des Modells, 41
+mm daneben. Seit Runde 126 liegen die Schultergelenke der Physik an der Stelle des Modells: Das Werkzeug meldet 0,6 mm,
+und das Schlüsselbein bleibt, wie das Modell es hat. Was an diesen Knochen hängt, folgt ihnen mit seinem Gewicht: die
+Pfanne der Brust und der obere Rand des Oberarms. Der Rand des Oberarms liegt eine Vierteldrehung von dort, wo das
+Modell ihn hat: Für ihn mischt das Werkzeug Drehung und Dehnung getrennt, er dreht um das Schultergelenk mit und sinkt
+nicht in die Schulter ein. Zwischen Brust und Oberarm hat das Modell keine Schale. Ein rundes Stück in der Farbe der
+Gelenke auf jeder Schulter, an der Brust, schließt die Kerbe zwischen Nacken und Schulter, `SHOULDER_PAD`.
 
 Das Ergebnis ist ein Mesh in der Ruhepose der Figur. Jeder Punkt hat eine Bindung aus seinen Gewichten im Modell: einen
 Knochen der Figur, oder eine Lage zwischen zwei Knochen, von denen einer über dem anderen liegt, in Vierteln, mit dem

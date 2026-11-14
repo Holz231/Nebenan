@@ -458,5 +458,11 @@ apart = sum(1 for ks in where.values() if len(ks) > 1)
 count = collections.Counter(BINDS)
 for k, (first, second, step, pivot) in enumerate(BINDINGS):
     print('%2d %-16s %s %5d vertices' % (k, B[first]['name'], ('%d/%d to %-16s' % (step, STEPS, B[second]['name'])) if step else ' ' * 23, count[k]))
+for s in 'lr':
+    # where the shoulder joint of the model lies under its fit, on the chest moved ahead, against that of the figure: far
+    # apart, the clavicle has to carry the shoulder there and the top of the shoulder is bent
+    there, _ = ahead(CHEST_AHEAD)(J['upperarm_' + s])
+    print('shoulder joint of the model %s: %.1f mm from the shoulder joint of the figure' % (
+        s, 1000.0 * np.linalg.norm(there - P[ARM[s][0]])))
 print('in all %d vertices, %d triangles, %d bindings; %d of %d places hold vertices of different bindings' % (
     len(VERTS), len(INDEX) // 3, len(BINDINGS), apart, len(where)))

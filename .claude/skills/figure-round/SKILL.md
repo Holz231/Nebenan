@@ -106,6 +106,15 @@ Zehen und Fersen 37 mm, Hände 15 mm, Becken 10 mm, Becken tief ab 15 cm unter d
 - **Vorwärts heißt zweierlei.** `stepBack` sagt, wohin ein Schwung ging, `legBack`, wohin die Beine jetzt gehen.
   Wechselt die Figur dazwischen die Richtung, gilt für denselben Fuß das Gegenteil: Ein Eingriff für vorwärts prüft
   beide.
+- **Eine Lage in ihre Richtungen zerlegen, bevor gewählt wird.** Die Schultern des Modells lagen innen, höher und
+  hinten: Nur hinten kostete Stürze, innen sparte welche (Runde 126). Jede Richtung einzeln auf der Tabelle der
+  Entwicklung messen, bevor Lagen zur Wahl stehen, nicht erst nach der verfehlten Prüfung.
+- **Am Körper zuerst die Treffertabelle, nach Richtungen.** Eine gesteuerte Figur ist kinematisch: Was an Armen und
+  Rumpf hängt, ändert ihren Gang nicht, wohl aber jede Figur, die sich fängt. `falls126.py` teilt die Stürze danach,
+  wohin der Treffer schiebt. Mehr Stürze in einer Richtung und weniger in der anderen: Der Schwerpunkt ist gewandert.
+- **Die Entwicklung unterschätzt die Prüfung.** 1,2 % mehr Stürze auf der Tabelle der Entwicklung wurden 2,13 % in der
+  Prüfung, am meisten bei 30 Hz (Runde 126). Liegt die Entwicklung über der halben Grenze, ist die Grenze nicht sicher,
+  und das steht vor der Wahl beim Nutzer.
 - **Größe der Figur.** Winkelbeschleunigungen wachsen bei kleineren Figuren mit 1 durch `nbFigureScale`, Längen
   und Geschwindigkeiten mit ihr.
 
