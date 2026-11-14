@@ -115,6 +115,15 @@ Zehen und Fersen 37 mm, Hände 15 mm, Becken 10 mm, Becken tief ab 15 cm unter d
 - **Die Entwicklung unterschätzt die Prüfung.** 1,2 % mehr Stürze auf der Tabelle der Entwicklung wurden 2,13 % in der
   Prüfung, am meisten bei 30 Hz (Runde 126). Liegt die Entwicklung über der halben Grenze, ist die Grenze nicht sicher,
   und das steht vor der Wahl beim Nutzer.
+- **Die Körper folgen der Pose des Updates davor.** Eine Zeile von `lab101` hält die Körper nach dem Schritt und die
+  Felder der Figur nach dem Update: Ein Sprung im Update des Abhebens gehört zur letzten Pose am Boden (Runde 128). An
+  zwei Größen prüfen, die zusammengehören, etwa Rollen und Höhe der Ferse, welche Zeile zu welcher Pose gehört.
+- **Erst zählen, welcher Moment das härteste macht.** In den Kehrtwenden steckten vier Ursachen in einer Zahl.
+  `turn128.py` teilt jede Stelle danach, was das Bein tut, wo sein Schienbein springt. Die Zielgröße einer Runde sind
+  die Stellen ihrer Ursache: Die Summe aller streute so viel, wie der Eingriff nahm (Runde 128).
+- **Eine Vermutung, die zum Lauf passt, ist noch nicht die Zeile.** Dass der Schwung aus dem Stand anläuft, passte zur
+  Spur und war falsch. Ein Ausdruck hinter einem Schalter im Versuchsbaum, der je Update zeigt, was eine Größe will und
+  bekommt, entscheidet es in einem Lauf (Runde 128).
 - **Größe der Figur.** Winkelbeschleunigungen wachsen bei kleineren Figuren mit 1 durch `nbFigureScale`, Längen
   und Geschwindigkeiten mit ihr.
 

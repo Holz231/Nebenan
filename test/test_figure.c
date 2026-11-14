@@ -5852,6 +5852,70 @@ static int SteerTurnHeelTest( void )
 	return 0;
 }
 
+// A steered figure facing where it moves runs forward and turns about, at twelve moments an update apart, at 4.36 and
+// at 3.44 m/s. As it runs off the other way at 4.36 m/s a foot behind the hip rolls up over its toes faster and faster
+// until what its leg needs runs into NB_FOOT_ROLL_MOST: its roll slows no more than NB_FOOT_ROLL_GAIN an update, the
+// ankle goes on following the hip, and over those twelve turns a shin jumps 37.7 mm in an update at most. Until round
+// 127 the roll halved in the last update on the ground and the leg stretched from 0.951 to 0.980 of its length in it:
+// 53.5 mm. At 3.44 m/s a foot that has just come flat from its heel starts to roll over its toes from rest, not at the
+// rate it came down with. Over all 24 turns a shin jumps more than 37 mm in 8 and 34.9 mm in their mean, until round
+// 127 in 12 and 37.3 mm.
+static int SteerTurnPushTest( void )
+{
+	float mostFast = 0.0f;
+	float sum = 0.0f;
+	int over = 0;
+	for ( int part = 0; part < 24; ++part )
+	{
+		FigureScene scene;
+		CreateFigureScene( &scene, 1 );
+		nbFigureId figure = AddSteeredFigure( &scene, b3Vec3_zero, 0.0f );
+		StepFigures( &scene, 60 );
+		float speed = part < 12 ? 4.36f : 3.44f;
+		nbSteer steer = { { 0.0f, 0.0f, speed }, 0.0f, true };
+		nbFigure_Steer( figure, &steer );
+		StepFigures( &scene, 180 + part % 12 );
+		steer.velocity = (b3Vec3){ 0.0f, 0.0f, -speed };
+		nbFigure_Steer( figure, &steer );
+		int bones[2] = { nb_humanoidShinLeft, nb_humanoidShinRight };
+		b3Vec3 last[2], before[2];
+		for ( int k = 0; k < 2; ++k )
+		{
+			last[k] = b3ToVec3( b3Body_GetPosition( nbFigure_GetBody( figure, bones[k] ) ) );
+			before[k] = last[k];
+		}
+		float hardest = 0.0f;
+		for ( int i = 0; i < 180; ++i )
+		{
+			StepFigures( &scene, 1 );
+			for ( int k = 0; k < 2; ++k )
+			{
+				b3Vec3 now = b3ToVec3( b3Body_GetPosition( nbFigure_GetBody( figure, bones[k] ) ) );
+				if ( i > 0 )
+				{
+					hardest = b3MaxFloat( hardest, b3Length( b3Add( b3Sub( now, last[k] ), b3Sub( before[k], last[k] ) ) ) );
+				}
+				before[k] = last[k];
+				last[k] = now;
+			}
+		}
+		if ( part < 12 )
+		{
+			mostFast = b3MaxFloat( mostFast, hardest );
+		}
+		sum += hardest;
+		over += hardest > 0.037f ? 1 : 0;
+		DestroyFigureScene( &scene );
+	}
+	printf( "  turning about at a run, a shin jumps %.1f mm at most over twelve turns at 4.36 m/s, and over 24 turns %.1f mm in "
+			"their mean, over 37 mm in %d\n",
+			1000.0f * mostFast, 1000.0f * sum / 24.0f, over );
+	ENSURE( mostFast < 0.045f );
+	ENSURE( sum / 24.0f < 0.036f );
+	ENSURE( over <= 9 );
+	return 0;
+}
+
 // A steered figure that does not face where it moves walks backward at 1.6 m/s for 4 s, or runs backward at 3.0 m/s for
 // 3 s and a part of its cycle more and then forward at 3.0 m/s: how many of its feet landed going backward over the last
 // 2 s and how many of those on their toes, and how far the pelvis went below standing at most, over the last 2 s walking
@@ -7286,6 +7350,7 @@ int FigureTest( void )
 	RUN_TEST( SteerTurnRollTest );
 	RUN_TEST( SteerTurnRhythmTest );
 	RUN_TEST( SteerTurnHeelTest );
+	RUN_TEST( SteerTurnPushTest );
 	RUN_TEST( SteerBackTest );
 	RUN_TEST( SteerUprightTest );
 	RUN_TEST( SteerStartStopTest );

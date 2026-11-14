@@ -317,6 +317,18 @@
 // Measured from the roll the gait gives a foot between the updates instead of the one it had, the roll stood still as
 // the legs changed from backward to forward, and the root went down for it. With 240 the bound changes steady running
 // from 4.5 m/s on.
+// Since round 128 the bound holds both ways and starts from rest: rolling up, the roll slows no more than this an
+// update either, past NB_FOOT_ROLL_MOST if it has to, and how fast a foot came flat from its heel does not count as
+// rolling up. Turning about at a run a foot behind the hip rolled 0.19 and 0.24 rad an update, what its leg needs
+// ran into NB_FOOT_ROLL_MOST and it rolled 0.12 rad in its last update on the ground: the ankle followed the hip 24
+// instead of 51 mm, the leg stretched from 0.951 to 0.980 of its length in that update and the shin jumped 53.5 mm,
+// now 36 mm. And a foot just flat from its heel, its leg stretched, rolled 0.144 rad in its first update over its
+// toes instead of the 0.083 rad from rest, and its shin jumped 42.4 mm, now 20 mm. Steady walking and running never
+// meet either bound. At 96 points of turn-abouts at a run facing where it moves, at speeds that had not run before,
+// the hardest jump of a shin over 37 mm is at a leg that stands or lifts at 6 instead of 14 points, and what shins
+// jump beyond 37 mm adds up to 87 instead of 204 mm; at all 624 points of changes of the gait shins jump over 37 mm
+// at 81 instead of 91, the hardest 50.7 instead of 60.1 mm. With half the bound for slowing, a foot rolled on to
+// 1.45 rad in its swing, with twice the bound nothing changed.
 #define NB_FOOT_ROLL_GAIN 300.0f
 #define NB_FOOT_EDGE_FLAT 0.01f
 
@@ -3529,11 +3541,23 @@ static float nbLowerSteered( nbFigure* f, b3Transform root, const int* thighs, b
 				roll = b3MaxFloat( roll, f->footRoll[k] - NB_FOOT_HEEL_RATE * timeStep );
 			}
 			// The legs going forward, it rolls up over its toes no more than NB_FOOT_ROLL_GAIN faster than in the last update,
-			// from the roll it was given then
+			// from the roll it was given then. How fast it came flat from its heel does not count: over its toes it starts
+			// from rest
 			if ( side > 0.0f && roll > 0.0f && roll > f->footRolled[k] )
 			{
-				float gain = b3MaxFloat( f->footRollGain[k], 0.0f ) + NB_FOOT_ROLL_GAIN / nbFigureScale( f ) * timeStep;
+				float before = f->footRolled[k] > 0.0f ? b3MaxFloat( f->footRollGain[k], 0.0f ) : 0.0f;
+				float gain = before + NB_FOOT_ROLL_GAIN / nbFigureScale( f ) * timeStep;
 				roll = b3MinFloat( roll, b3MaxFloat( f->footRolled[k], 0.0f ) + gain * timeStep );
+			}
+			// And rolling up, no more than that slower either, past NB_FOOT_ROLL_MOST if it has to: where what its leg needs
+			// ran into that bound, the ankle stopped following the hip in one update
+			if ( side > 0.0f && f->footRolled[k] > 0.0f && roll > f->footRolled[k] && f->footRollGain[k] > 0.0f )
+			{
+				float slow = f->footRollGain[k] - NB_FOOT_ROLL_GAIN / nbFigureScale( f ) * timeStep;
+				if ( slow > 0.0f )
+				{
+					roll = b3MaxFloat( roll, f->footRolled[k] + slow * timeStep );
+				}
 			}
 			f->footRollGain[k] = timeStep > 0.0f ? ( roll - f->footRolled[k] ) / timeStep : 0.0f;
 			// A foot that stays on its toes goes on rolling over them as it lifts, although the legs go backward
