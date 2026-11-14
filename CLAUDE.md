@@ -41,6 +41,12 @@ dort nachsehen, nach jeder Runde den Stand nachtragen.
 Die Roadmap des Spiels liegt als Referenz in `docs/Referenz/`, als PDF und als Text. Wie Häuser einstürzen sollen,
 steht dort in Kapitel 17.
 
+## Runden an der Figur
+
+Wie eine Runde an der gesteuerten Figur abläuft, von der Ursache über die festgeschriebene Regel bis zum Bericht, steht
+im Skill `figure-round` in `.claude/skills/figure-round/`, mit einer Karte des Codes der Figur und den Fehlern, die schon
+einmal gemacht wurden. Vor jeder Runde `active-ragdoll-N` und nach jedem Neustart des Kontexts dort nachsehen.
+
 ## Sprache
 
 Mit dem Nutzer Deutsch, per du. Code und Kommentare auf Englisch, README und `docs/` auf Deutsch.

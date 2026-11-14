@@ -64,6 +64,7 @@ unabhängige Prüfung, siehe die Runden in [Roadmap](../../docs/Roadmap.md).
 | `table.sh`, `tests.sh`, `sanitize.sh` | Treffertabelle, Tests mit Hashes, Sanitizer |
 | `cost_pairs.sh`, `cost.py`, `bench_pairs.sh`, `bench.py` | Kosten und Benchmark gepaart, alt gegen neu |
 | `cost_count.sh` | Runde 120: die Befehle, die das Update der Figuren auf den beiden Ständen von `cost_pairs.sh` ausführt, gezählt mit callgrind, in jedem Lauf dieselbe Zahl |
+| `speeds.py` | Welche Geschwindigkeiten schon gelaufen sind, und für neue die Dauer eines Zyklus aus der Formel der Kadenz, ohne einen Lauf: So wird ein frischer Satz für eine unabhängige Prüfung festgelegt |
 
 Die Zahlen in den Namen sind die Runden, in denen ein Werkzeug entstand. Eine neue Runde bekommt ihre eigene Prüfung und
 Auswertung daneben, mit frischen Geschwindigkeiten.
