@@ -60,6 +60,7 @@ unabhängige Prüfung, siehe die Runden in [Roadmap](../../docs/Roadmap.md).
 | `tolerance120.py`, `check120.sh`, `eval120.py` | Runde 120: die Toleranzen aus Paaren von Sätzen, deren Geschwindigkeiten höchstens 5 % auseinanderliegen, die unabhängige Prüfung und ihre Bedingungen, die Regel liegt in [docs/Regeln](../../docs/Regeln/RULE120.txt) |
 | `tolerance121.py`, `check121.sh`, `eval121.py` | Runde 121: die Toleranzen auf `active-ragdoll-120`, die unabhängige Prüfung und ihre Bedingungen, die Regel liegt in [docs/Regeln](../../docs/Regeln/RULE121.txt) |
 | `lift121.py`, `fixed121.py` | Jedes Abheben eines Fußes in einem Lauf mit der Streckung seines Beins und den Sprüngen danach, und der Vergleich zweier Stände auf Sätzen mit festem Blick |
+| `tolerance122.py`, `check122.sh`, `eval122.py` | Runde 122: die Toleranzen auf `active-ragdoll-121`, auch für die Summe dessen, was Schienbeine über 37 mm hinaus springen, die unabhängige Prüfung und ihre Bedingungen, die Regel liegt in [docs/Regeln](../../docs/Regeln/RULE122.txt) |
 | `facing119.py`, `jumps119.py` | Vergleich zweier Stände mit Blick in Laufrichtung, und die härtesten Sprünge eines Laufs mit dem, was die Figur dort tut |
 | `table.sh`, `tests.sh`, `sanitize.sh` | Treffertabelle, Tests mit Hashes, Sanitizer |
 | `cost_pairs.sh`, `cost.py`, `bench_pairs.sh`, `bench.py` | Kosten und Benchmark gepaart, alt gegen neu |

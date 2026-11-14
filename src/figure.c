@@ -303,6 +303,21 @@
 #define NB_FOOT_HEEL_MOST 0.35f
 #define NB_FOOT_HEEL_LIFT 0.2f
 #define NB_FOOT_HEEL_RATE 6.0f
+
+// The legs going forward, a foot on the ground rolls up over its toes no more than NB_FOOT_ROLL_GAIN faster than in the
+// last update, in radians per second squared for the humanoid of 1.8 m, from the roll it was given then, see
+// nbLowerSteered. Behind the hip a foot rolls as far as its leg needs, and turning about at a run a foot stands flat
+// with its leg stretched as the hip comes to lie ahead of its toes from one update to the next: it rolled 0.30 rad in
+// that update, its ankle rose 6 cm, the foot jumped 64.6 mm and its shin 76.6 mm. Now it rolls 0.08, 0.25 and 0.5 rad
+// over three updates, and they jump 19.7 and 14.5 mm at most there. Going steadily the roll speeds up by 266 at most,
+// running forward at 4.8 m/s, by 264 running sideways at 4.5 m/s and by 96 walking, and nothing changes there. At 624
+// points of changes of the gait facing where it moves, at speeds that had not run before, what shins jump beyond 37 mm
+// adds up to 443 instead of 634 mm, and the hardest jump of a shin is 56.7 instead of 67.2 mm. For legs going backward
+// too, a foot that lands on its toes could not roll at once, and from sideways to backward shins jumped up to 116.6 mm.
+// Measured from the roll the gait gives a foot between the updates instead of the one it had, the roll stood still as
+// the legs changed from backward to forward, and the root went down for it. With 240 the bound changes steady running
+// from 4.5 m/s on.
+#define NB_FOOT_ROLL_GAIN 300.0f
 #define NB_FOOT_EDGE_FLAT 0.01f
 
 // The body a push carries along: a capsule of this radius from this high over the ground to this high, which fixed
@@ -3509,6 +3524,14 @@ static float nbLowerSteered( nbFigure* f, b3Transform root, const int* thighs, b
 				// and back down from its toes no faster either
 				roll = b3MaxFloat( roll, f->footRoll[k] - NB_FOOT_HEEL_RATE * timeStep );
 			}
+			// The legs going forward, it rolls up over its toes no more than NB_FOOT_ROLL_GAIN faster than in the last update,
+			// from the roll it was given then
+			if ( side > 0.0f && roll > 0.0f && roll > f->footRolled[k] )
+			{
+				float gain = b3MaxFloat( f->footRollGain[k], 0.0f ) + NB_FOOT_ROLL_GAIN / nbFigureScale( f ) * timeStep;
+				roll = b3MinFloat( roll, b3MaxFloat( f->footRolled[k], 0.0f ) + gain * timeStep );
+			}
+			f->footRollGain[k] = timeStep > 0.0f ? ( roll - f->footRolled[k] ) / timeStep : 0.0f;
 			// A foot that stays on its toes goes on rolling over them as it lifts, although the legs go backward
 			float over = tips[k] ? 1.0f : side;
 			f->footRollRate[k] = timeStep > 0.0f
@@ -5322,6 +5345,7 @@ static void nbSteerFeet( const nbWorld* world, int index, nbFigure* f, const nbC
 			f->canLift[k] = true;
 			f->footRoll[k] = 0.0f;
 			f->footRolled[k] = 0.0f;
+			f->footRollGain[k] = 0.0f;
 			f->landRoll[k] = 0.0f;
 			f->footOut[k] = FLT_MAX;
 			f->outBehind[k] = false;
@@ -5656,6 +5680,7 @@ static void nbSteerFeet( const nbWorld* world, int index, nbFigure* f, const nbC
 				float stepSide = f->stepBack[k] ? -1.0f : 1.0f;
 				f->footRoll[k] = -stepSide * heel;
 				f->footRolled[k] = -stepSide * heel;
+				f->footRollGain[k] = 0.0f;
 				f->landRoll[k] = -stepSide * heel;
 				f->stanceTime[k] = 0.0f;
 				foot->plant = foot->target;
