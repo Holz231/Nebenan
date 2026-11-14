@@ -721,6 +721,9 @@ typedef struct nbWorld
 nbWorld* nbGetWorld( int index );
 nbWorld* nbGetWorldFromId( nbWorldId id );
 
+// Where to draw a body between the poses before and after the last step, see nbWorld_GetDrawPoses
+b3WorldTransform nbDrawTransformOf( const nbWorld* world, b3BodyId bodyId, float fraction );
+
 // The world at an index without waiting for the steps, see nbWorld_Step
 nbWorld* nbPeekWorld( int index );
 

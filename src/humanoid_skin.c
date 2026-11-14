@@ -1,61 +1,36 @@
 // SPDX-License-Identifier: MIT
 // Written by tools/mannequin/make_skin.py, do not edit. The mannequin of tools/mannequin/actionforge_mannequin_rest_pose.glb,
 // rig by Quaternius (quaternius.com), exported by ActionForge (actionforge.app), dedicated to the public domain under CC0 1.0,
-// fitted to the humanoid of nbMakeHumanoidBones at 1.8 m, as one skin in the rest pose of that figure, in metres, the
-// figure standing on the origin. Every vertex moves with the pose of its binding. Material 0 is the body, 1 the joints.
+// fitted to the humanoid of nbMakeHumanoidBones at 1.8 m, as one skin in the rest pose of that figure, in meters, the
+// figure standing on the origin with its root at its stand height: the nbSkin of nbGetHumanoidSkin. Material 0 is the
+// body, 1 the joints. The data stand in a file of their own, so a program that never asks for the skin does not link
+// them.
 
-#pragma once
+#include "nebenan/nebenan.h"
 
-struct MannequinVertex
-{
-	float position[3];
-	signed char normal[3];
-	unsigned char material;
-	unsigned char binding;
+static const b3Transform s_rest[] = {
+	{ { 0.000000f, 0.960000f, 0.000000f }, { { 0.0000000f, 0.0000000f, 0.0000000f }, 1.0000000f } }, // pelvis
+	{ { 0.000000f, 1.030000f, 0.000000f }, { { 0.0000000f, 0.0000000f, 0.0000000f }, 1.0000000f } }, // belly
+	{ { 0.000000f, 1.150000f, 0.000000f }, { { 0.0000000f, 0.0000000f, 0.0000000f }, 1.0000000f } }, // ribs
+	{ { 0.000000f, 1.260000f, 0.000000f }, { { 0.0000000f, 0.0000000f, 0.0000000f }, 1.0000000f } }, // lower chest
+	{ { 0.000000f, 1.380000f, 0.000000f }, { { 0.0000000f, 0.0000000f, 0.0000000f }, 1.0000000f } }, // chest
+	{ { 0.000000f, 1.520000f, 0.000000f }, { { 0.0000000f, 0.0000000f, 0.0000000f }, 1.0000000f } }, // neck
+	{ { 0.000000f, 1.600000f, 0.000000f }, { { 0.0000000f, 0.0000000f, 0.0000000f }, 1.0000000f } }, // head
+	{ { 0.187000f, 1.426000f, -0.034000f }, { { 0.0000000f, 0.0000000f, 0.9996768f }, -0.0254225f } }, // upper arm left
+	{ { 0.202249f, 1.126388f, -0.034000f }, { { 0.0000000f, 0.0000000f, 0.9996768f }, -0.0254225f } }, // forearm left
+	{ { 0.216226f, 0.851743f, -0.034000f }, { { 0.0000000f, 0.0000000f, 0.9996768f }, -0.0254225f } }, // hand left
+	{ { -0.187000f, 1.426000f, -0.034000f }, { { 0.0000000f, 0.0000000f, 0.9996768f }, 0.0254225f } }, // upper arm right
+	{ { -0.202249f, 1.126388f, -0.034000f }, { { 0.0000000f, 0.0000000f, 0.9996768f }, 0.0254225f } }, // forearm right
+	{ { -0.216226f, 0.851743f, -0.034000f }, { { 0.0000000f, 0.0000000f, 0.9996768f }, 0.0254225f } }, // hand right
+	{ { 0.090000f, 0.930000f, 0.000000f }, { { 0.0000000f, 0.0000000f, 1.0000000f }, 0.0000000f } }, // thigh left
+	{ { 0.090000f, 0.480000f, 0.000000f }, { { 0.0000000f, 0.0000000f, 1.0000000f }, 0.0000000f } }, // shin left
+	{ { 0.090000f, 0.040000f, 0.000000f }, { { 0.0000000f, 0.7071068f, 0.7071068f }, 0.0000000f } }, // foot left
+	{ { -0.090000f, 0.930000f, 0.000000f }, { { 0.0000000f, 0.0000000f, 1.0000000f }, 0.0000000f } }, // thigh right
+	{ { -0.090000f, 0.480000f, 0.000000f }, { { 0.0000000f, 0.0000000f, 1.0000000f }, 0.0000000f } }, // shin right
+	{ { -0.090000f, 0.040000f, 0.000000f }, { { 0.0000000f, 0.7071068f, 0.7071068f }, 0.0000000f } }, // foot right
 };
 
-// The rest pose of a bone of the figure, the pose the skin is written in
-struct MannequinRest
-{
-	float position[3];
-	float rotation[4];
-};
-
-// A pose a vertex moves with: that of the bone first, or with a share above zero a pose between the bones first and
-// second, first above second in the figure, turned by that share from one to the other about the pivot
-struct MannequinBinding
-{
-	int first;
-	int second;
-	float share;
-	float pivot[3];
-};
-
-static const float s_mannequinHeight = 1.8f;
-
-static const MannequinRest s_mannequinRest[] = {
-	{ { 0.000000f, 0.960000f, 0.000000f }, { 0.0000000f, 0.0000000f, 0.0000000f, 1.0000000f } }, // pelvis
-	{ { 0.000000f, 1.030000f, 0.000000f }, { 0.0000000f, 0.0000000f, 0.0000000f, 1.0000000f } }, // belly
-	{ { 0.000000f, 1.150000f, 0.000000f }, { 0.0000000f, 0.0000000f, 0.0000000f, 1.0000000f } }, // ribs
-	{ { 0.000000f, 1.260000f, 0.000000f }, { 0.0000000f, 0.0000000f, 0.0000000f, 1.0000000f } }, // lower chest
-	{ { 0.000000f, 1.380000f, 0.000000f }, { 0.0000000f, 0.0000000f, 0.0000000f, 1.0000000f } }, // chest
-	{ { 0.000000f, 1.520000f, 0.000000f }, { 0.0000000f, 0.0000000f, 0.0000000f, 1.0000000f } }, // neck
-	{ { 0.000000f, 1.600000f, 0.000000f }, { 0.0000000f, 0.0000000f, 0.0000000f, 1.0000000f } }, // head
-	{ { 0.187000f, 1.426000f, -0.034000f }, { 0.0000000f, 0.0000000f, 0.9996768f, -0.0254225f } }, // upper arm left
-	{ { 0.202249f, 1.126388f, -0.034000f }, { 0.0000000f, 0.0000000f, 0.9996768f, -0.0254225f } }, // forearm left
-	{ { 0.216226f, 0.851743f, -0.034000f }, { 0.0000000f, 0.0000000f, 0.9996768f, -0.0254225f } }, // hand left
-	{ { -0.187000f, 1.426000f, -0.034000f }, { 0.0000000f, 0.0000000f, 0.9996768f, 0.0254225f } }, // upper arm right
-	{ { -0.202249f, 1.126388f, -0.034000f }, { 0.0000000f, 0.0000000f, 0.9996768f, 0.0254225f } }, // forearm right
-	{ { -0.216226f, 0.851743f, -0.034000f }, { 0.0000000f, 0.0000000f, 0.9996768f, 0.0254225f } }, // hand right
-	{ { 0.090000f, 0.930000f, 0.000000f }, { 0.0000000f, 0.0000000f, 1.0000000f, 0.0000000f } }, // thigh left
-	{ { 0.090000f, 0.480000f, 0.000000f }, { 0.0000000f, 0.0000000f, 1.0000000f, 0.0000000f } }, // shin left
-	{ { 0.090000f, 0.040000f, 0.000000f }, { 0.0000000f, 0.7071068f, 0.7071068f, 0.0000000f } }, // foot left
-	{ { -0.090000f, 0.930000f, 0.000000f }, { 0.0000000f, 0.0000000f, 1.0000000f, 0.0000000f } }, // thigh right
-	{ { -0.090000f, 0.480000f, 0.000000f }, { 0.0000000f, 0.0000000f, 1.0000000f, 0.0000000f } }, // shin right
-	{ { -0.090000f, 0.040000f, 0.000000f }, { 0.0000000f, 0.7071068f, 0.7071068f, 0.0000000f } }, // foot right
-};
-
-static const MannequinBinding s_mannequinBindings[] = {
+static const nbSkinPose s_poses[] = {
 	{ 13, 13, 0.00f, { 0.090000f, 0.930000f, 0.000000f } }, // thigh left
 	{ 0, 13, 0.75f, { 0.090000f, 0.930000f, 0.000000f } }, // pelvis, 3 of 4 to thigh left
 	{ 13, 14, 0.25f, { 0.090000f, 0.480000f, 0.000000f } }, // thigh left, 1 of 4 to shin left
@@ -130,7 +105,7 @@ static const MannequinBinding s_mannequinBindings[] = {
 	{ 0, 16, 0.50f, { -0.090000f, 0.930000f, 0.000000f } }, // pelvis, 2 of 4 to thigh right
 };
 
-static const MannequinVertex s_mannequinVertices[] = {
+static const nbSkinVertex s_vertices[] = {
 	{ { 0.0546f, 0.8720f, 0.0680f }, { -87, 18, 91 }, 0, 0 },
 	{ { 0.0522f, 0.8227f, 0.0799f }, { -87, 10, 92 }, 0, 0 },
 	{ { 0.0939f, 0.8503f, 0.0950f }, { -10, 9, 126 }, 0, 0 },
@@ -4171,7 +4146,7 @@ static const MannequinVertex s_mannequinVertices[] = {
 	{ { -0.1620f, 1.3860f, -0.0490f }, { 0, -127, 0 }, 1, 11 },
 };
 
-static const unsigned short s_mannequinIndices[] = {
+static const uint16_t s_indices[] = {
 	0, 1, 2, 0, 2, 3, 3, 2, 4, 3, 4, 5, 5, 4, 6, 5, 6, 7, 7, 6, 8, 7, 8, 9,
 	9, 8, 10, 9, 10, 11, 11, 10, 12, 11, 12, 13, 13, 12, 14, 13, 14, 15, 15, 14, 16, 15, 16, 17,
 	17, 16, 18, 17, 18, 19, 19, 18, 20, 19, 20, 21, 21, 20, 22, 21, 22, 23, 23, 22, 1, 23, 1, 0,
@@ -4752,7 +4727,7 @@ static const unsigned short s_mannequinIndices[] = {
 	2556, 2547, 2542, 2546, 2545, 2540, 2546, 2540, 2547, 2552, 2690, 2691, 2552, 2691, 2553, 2690, 2692, 2693, 2690, 2693, 2691, 2692, 2694, 2695,
 	2692, 2695, 2693, 2694, 2696, 2697, 2694, 2697, 2695, 2696, 2698, 2699, 2696, 2699, 2697, 2698, 2700, 2701, 2698, 2701, 2699, 2700, 2702, 2703,
 	2700, 2703, 2701, 2551, 2550, 2704, 2551, 2704, 2705, 2674, 2671, 2670, 2674, 2670, 2706, 2706, 2670, 2669, 2706, 2669, 2707, 2705, 2704, 2708,
-	2705, 2708, 2709, 2709, 2708, 2710, 2709, 2710, 2711, 2591, 2593, 2712, 2591, 2712, 2713, 2577, 2580, 2714, 2577, 2714, 2715, 2609, 2611, 2716,
+	2705, 2708, 2709, 2709, 2708, 2710, 2709, 2710, 2711, 2591, 2593, 2712, 2591, 2712, 2713, 2577, 2580, 2714, 2577, 2715, 2714, 2609, 2611, 2716,
 	2602, 2609, 2716, 2602, 2716, 2717, 2598, 2600, 2718, 2598, 2718, 2719, 2580, 2591, 2713, 2580, 2713, 2714, 2595, 2598, 2719, 2595, 2719, 2720,
 	2593, 2595, 2720, 2593, 2720, 2712, 2600, 2602, 2717, 2600, 2717, 2718, 2721, 2722, 2723, 2723, 2722, 2724, 2723, 2724, 2725, 2722, 2721, 2726,
 	2722, 2726, 2727, 2726, 2462, 2461, 2726, 2461, 2727, 2461, 2464, 2728, 2461, 2728, 2727, 2727, 2728, 2724, 2727, 2724, 2722, 2723, 2725, 2729,
@@ -4997,3 +4972,12 @@ static const unsigned short s_mannequinIndices[] = {
 	4012, 4013, 4025, 4012, 4025, 4024, 4013, 4002, 4014, 4013, 4014, 4025, 4014, 4015, 4027, 4015, 4016, 4028, 4016, 4017, 4029, 4017, 4018, 4030,
 	4018, 4019, 4031, 4019, 4020, 4032, 4020, 4021, 4033, 4021, 4022, 4034, 4022, 4023, 4035, 4023, 4024, 4036, 4024, 4025, 4037, 4025, 4014, 4026,
 };
+
+static const nbSkin s_skin = {
+	s_vertices, 4038, s_indices, 19776, s_rest, 19, s_poses, 72, 2, 1.8f,
+};
+
+const nbSkin* nbGetHumanoidSkin( void )
+{
+	return &s_skin;
+}

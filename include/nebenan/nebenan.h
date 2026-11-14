@@ -521,6 +521,35 @@ NB_API void nbFigure_Knockdown( nbFigureId figureId );
 /// @return the number of transforms written
 NB_API int nbFigure_GetBoneTransforms( nbFigureId figureId, b3WorldTransform* transforms, int capacity );
 
+/// The skin of the humanoid of nbMakeHumanoidBones, to draw it without a mesh of one's own: a mannequin after a model
+/// by Quaternius, in the public domain under CC0 1.0, see tools/mannequin, fitted to the bones of the humanoid at 1.8
+/// m. Material 0 is the body, 1 the joints. A program that never calls this does not carry the data.
+NB_API const nbSkin* nbGetHumanoidSkin( void );
+
+/// How many times as large this figure is as the figure the skin is written for, from the bones of both at rest. Zero
+/// if the skin is not written for the bones of this figure.
+NB_API float nbFigure_GetSkinScale( nbFigureId figureId, const nbSkin* skin );
+
+/// Where to draw the bones of the figure: the world transform of every bone, up to capacity, each where
+/// nbWorld_GetDrawPoses puts its body for this fraction, between its poses before and after the last step of
+/// nbWorld_Step. So a figure moves as smoothly as the debris when frames come more often than steps. With fraction 1,
+/// and before the first call of nbWorld_GetDrawPoses, these are the transforms of nbFigure_GetBoneTransforms.
+/// @return the number of transforms written
+NB_API int nbFigure_GetDrawTransforms( nbFigureId figureId, float fraction, b3WorldTransform* transforms, int capacity );
+
+/// The poses of a skin over this figure, to draw it: up to capacity, nbSkin::poseCount of them, for the bones where
+/// nbFigure_GetDrawTransforms puts them for this fraction, the fraction of nbWorld_GetDrawPoses, or 1 for the figure as
+/// the physics has it. A vertex of the skin lies in the world at pose.p + pose.q * ( scale * position ), with the scale
+/// of nbFigure_GetSkinScale, and its normal points along pose.q * normal.
+/// @return the number of poses written, zero if the skin is not written for the bones of this figure
+NB_API int nbFigure_PoseSkin( nbFigureId figureId, const nbSkin* skin, float fraction, b3WorldTransform* poses, int capacity );
+
+/// The poses of a skin over bones at these world transforms, as nbFigure_PoseSkin writes them for the bones of a
+/// figure: for a game that places the bones itself.
+/// @return the number of poses written, zero if these are not as many bones as the skin has
+NB_API int nbPoseSkin( const nbSkin* skin, const b3WorldTransform* bones, int boneCount, float scale, b3WorldTransform* poses,
+					   int capacity );
+
 /// The pose the figure goes for: for a standing figure and one that gets up, where its bones move in the next step, for a
 /// ragdoll the pose its joints pull toward within their limits, placed on its root as the physics has it. Drawn over the
 /// bones it shows how far a ragdoll is from its pose.

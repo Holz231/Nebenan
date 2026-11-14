@@ -1,17 +1,17 @@
-# Gliederpuppe der Demo
+# Gliederpuppe der Bibliothek
 
 Die Demo zeichnet ihre Figuren seit `active-ragdoll-125` als Gliederpuppe nach einem Modell von Quaternius, exportiert
 aus ActionForge, gemeinfrei unter CC0 1.0, siehe [LICENSE.txt](LICENSE.txt). Dieses Verzeichnis macht aus dem Modell die
-Daten, die die Demo einbindet. Die Bibliothek braucht nichts davon: Ein Spiel hängt sein eigenes Modell an die Körper
-der Knochen, deren Lage es je Bild aus der Bibliothek liest.
+Haut, die seit `active-ragdoll-127` in der Bibliothek liegt, `src/humanoid_skin.c`: Ein Spiel zeichnet seine Figuren mit
+ihr, ohne eigenes Mesh, mit `nbGetHumanoidSkin` und `nbFigure_PoseSkin`, und die Demo tut dasselbe.
 
 | Datei | |
 | --- | --- |
 | `actionforge_mannequin_rest_pose.glb` | das Modell in seiner Ruhepose: zwei Meshes, Körper und Gelenke, 13 744 Dreiecke, 71 Knochen, 1,83 m hoch |
 | `glb.py` | liest die Datei, ohne etwas aus ihr auszuführen |
 | `dump_bones.c` | schreibt die Knochen des Menschen der Bibliothek bei 1,8 m als `bones.json`: Ruhepose und Formen |
-| `bones.json` | diese Knochen, Stand `active-ragdoll-125` |
-| `make_skin.py` | passt das Modell an die Figur an, bindet jeden Punkt an ihre Knochen und schreibt `demo/mannequin_skin.h` |
+| `bones.json` | diese Knochen, Stand `active-ragdoll-126` |
+| `make_skin.py` | passt das Modell an die Figur an, bindet jeden Punkt an ihre Knochen und schreibt `src/humanoid_skin.c`, die Haut von `nbGetHumanoidSkin` |
 
 Das Modell besteht aus getrennten Schalen: Oberarm, Unterarm, Hand, Fingerglieder, Oberschenkel, Wade, Fuß, Becken und
 Bauch sind je eine, Kopf und Brust hängen zusammen, dazwischen liegen die violetten Schalen der Gelenke. Jede Schale
@@ -34,10 +34,10 @@ Gelenke auf jeder Schulter, an der Brust, schließt die Kerbe zwischen Nacken un
 
 Das Ergebnis ist ein Mesh in der Ruhepose der Figur. Jeder Punkt hat eine Bindung aus seinen Gewichten im Modell: einen
 Knochen der Figur, oder eine Lage zwischen zwei Knochen, von denen einer über dem anderen liegt, in Vierteln, mit dem
-Gelenk dazwischen als Drehpunkt. Die Demo setzt je Bindung in jedem Bild eine Lage aus den Lagen der Körper, siehe
-`PoseFigureSkin` in `demo/demo.cpp`: So biegen sich die Schalen an den Gelenken wie die Haut des Modells, ohne einen
-Shader, der mischt. Punkte verschiedener Schalen, die aufeinanderliegen, haben dieselbe Bindung, das Werkzeug zählt die
-Ausnahmen und meldet null.
+Gelenk dazwischen als Drehpunkt. Die Bibliothek gibt je Bindung in jedem Bild eine Lage aus den Lagen der Knochen,
+`nbFigure_PoseSkin`, die Rechnung steht in `src/skin.c`: So biegen sich die Schalen an den Gelenken wie die Haut des
+Modells, ohne einen Shader, der mischt. Punkte verschiedener Schalen, die aufeinanderliegen, haben dieselbe Bindung, das
+Werkzeug zählt die Ausnahmen und meldet null.
 
 Neu erzeugen, aus dem Wurzelverzeichnis, mit einer gebauten Bibliothek:
 
@@ -48,4 +48,4 @@ python3 -I tools/mannequin/make_skin.py
 ```
 
 Ändern sich die Maße des Menschen der Bibliothek, sind beide Schritte nötig, sonst passt das Mesh nicht mehr zu den
-Gelenken.
+Gelenken. Der Test `FigureSkinTest` fällt, solange die Haut nicht zu den Knochen passt.

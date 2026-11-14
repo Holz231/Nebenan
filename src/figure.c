@@ -9149,6 +9149,69 @@ int nbFigure_GetBoneTransforms( nbFigureId figureId, b3WorldTransform* transform
 	return count;
 }
 
+// The most bones of a figure a skin is posed over
+#define NB_SKIN_BONES 64
+
+// How many times as large the figure is as the figure a skin is written for: how far the bones of the figure lie from
+// its root at rest, all together, against the same of the skin. A figure of nbMakeHumanoidBones has every length in
+// proportion to its height.
+float nbFigure_GetSkinScale( nbFigureId figureId, const nbSkin* skin )
+{
+	nbFigure* f = nbGetFigureFromId( figureId, NULL );
+	if ( f == NULL || skin == NULL || skin->boneCount != f->boneCount || f->boneCount > NB_SKIN_BONES )
+	{
+		return 0.0f;
+	}
+
+	float own = 0.0f;
+	float theirs = 0.0f;
+	for ( int i = 1; i < f->boneCount; ++i )
+	{
+		b3Vec3 p = b3Vec3_zero;
+		for ( int bone = i; f->bones[bone].parent >= 0; bone = f->bones[bone].parent )
+		{
+			p = b3TransformPoint( f->bones[bone].rest, p );
+		}
+
+		own += b3Length( p );
+		theirs += b3Length( b3InvTransformPoint( skin->rest[0], skin->rest[i].p ) );
+	}
+
+	return theirs > 0.0f ? own / theirs : 0.0f;
+}
+
+// Where to draw the bones: each where nbWorld_GetDrawPoses puts its body for this fraction
+int nbFigure_GetDrawTransforms( nbFigureId figureId, float fraction, b3WorldTransform* transforms, int capacity )
+{
+	nbWorld* world = NULL;
+	nbFigure* f = nbGetFigureFromId( figureId, &world );
+	if ( f == NULL || transforms == NULL )
+	{
+		return 0;
+	}
+
+	fraction = b3ClampFloat( fraction, 0.0f, 1.0f );
+	int count = b3MinInt( capacity, f->boneCount );
+	for ( int i = 0; i < count; ++i )
+	{
+		transforms[i] = nbDrawTransformOf( world, f->bones[i].bodyId, fraction );
+	}
+	return count;
+}
+
+int nbFigure_PoseSkin( nbFigureId figureId, const nbSkin* skin, float fraction, b3WorldTransform* poses, int capacity )
+{
+	float scale = nbFigure_GetSkinScale( figureId, skin );
+	if ( scale <= 0.0f || poses == NULL )
+	{
+		return 0;
+	}
+
+	b3WorldTransform bones[NB_SKIN_BONES];
+	int count = nbFigure_GetDrawTransforms( figureId, fraction, bones, NB_SKIN_BONES );
+	return nbPoseSkin( skin, bones, count, scale, poses, capacity );
+}
+
 int nbFigure_GetTargetTransforms( nbFigureId figureId, b3WorldTransform* transforms, int capacity )
 {
 	nbFigure* f = nbGetFigureFromId( figureId, NULL );

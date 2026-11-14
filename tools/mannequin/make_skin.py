@@ -1,11 +1,12 @@
-# make_skin.py [out.h]: fits the mannequin of actionforge_mannequin_rest_pose.glb (rig by Quaternius, exported by
+# make_skin.py [out.c]: fits the mannequin of actionforge_mannequin_rest_pose.glb (rig by Quaternius, exported by
 # ActionForge, CC0 1.0) to the humanoid of nbMakeHumanoidBones at 1.8 m (bones.json, written by dump_bones.c) and writes
-# it as one skin in the rest pose of that figure, demo/mannequin_skin.h. The model is a set of separate shells. Each is
+# it as one skin in the rest pose of that figure, src/humanoid_skin.c, the nbSkin of nbGetHumanoidSkin in the library:
+# a game draws its figures with it, and so does the demo. The model is a set of separate shells. Each is
 # fitted with the bone it hangs on most: limbs so that their two joints lie on the joints of the figure, trunk and head
 # keep their shape, the chest lies further ahead and the clavicles carry the shoulders onto the shoulders of the figure,
 # the fingers are curled and their small joints left out. Every vertex then gets a binding from its weights in the
-# model: one bone of the figure, or a pose between two of them, in quarters. The demo moves a vertex with the pose of
-# its binding, so the shells bend at the joints as the skin of the model does. A rounded piece in the color of the
+# model: one bone of the figure, or a pose between two of them, in quarters. nbPoseSkin gives the pose of every
+# binding, so the shells bend at the joints as the skin of the model does. A rounded piece in the color of the
 # joints on each shoulder closes the notch between the neck and the top of the arm, which the model leaves open. Reads
 # the files only, runs nothing from them.
 import collections, json, math, os, sys
@@ -14,7 +15,7 @@ M = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, M)
 from glb import Glb
 
-OUT = sys.argv[1] if len(sys.argv) > 1 else os.path.join(M, '..', '..', 'demo', 'mannequin_skin.h')
+OUT = sys.argv[1] if len(sys.argv) > 1 else os.path.join(M, '..', '..', 'src', 'humanoid_skin.c')
 TRUNK = 0.976          # the model is 1.83 m tall, the figure 1.8 m
 CURL = (1.25, 1.45, 1.1)   # how far the three joints of a finger are bent, radians
 FOOT_HIGH = 0.78       # the foot of the model is taller at the ankle than the foot of the figure
@@ -419,36 +420,41 @@ for s in 'lr':
             if i + 1 < rings:
                 INDEX.extend((a, b + around, a + around))
 
+# every triangle counter-clockwise seen from outside, as nbSkin promises: against the normals of its corners
+turned = 0
+for k in range(0, len(INDEX), 3):
+    a, b, c = (np.array(VERTS[i]) for i in INDEX[k:k + 3])
+    if np.dot(np.cross(b - a, c - a), sum(np.array(NORMS[i]) for i in INDEX[k:k + 3])) < 0.0:
+        INDEX[k + 1], INDEX[k + 2] = INDEX[k + 2], INDEX[k + 1]
+        turned += 1
+
 with open(OUT, 'w') as f:
     f.write('// SPDX-License-Identifier: MIT\n')
     f.write('// Written by tools/mannequin/make_skin.py, do not edit. The mannequin of tools/mannequin/actionforge_mannequin_rest_pose.glb,\n')
     f.write('// rig by Quaternius (quaternius.com), exported by ActionForge (actionforge.app), dedicated to the public domain under CC0 1.0,\n')
-    f.write('// fitted to the humanoid of nbMakeHumanoidBones at 1.8 m, as one skin in the rest pose of that figure, in metres, the\n')
-    f.write('// figure standing on the origin. Every vertex moves with the pose of its binding. Material 0 is the body, 1 the joints.\n\n')
-    f.write('#pragma once\n\n')
-    f.write('struct MannequinVertex\n{\n\tfloat position[3];\n\tsigned char normal[3];\n\tunsigned char material;\n'
-            '\tunsigned char binding;\n};\n\n')
-    f.write('// The rest pose of a bone of the figure, the pose the skin is written in\n')
-    f.write('struct MannequinRest\n{\n\tfloat position[3];\n\tfloat rotation[4];\n};\n\n')
-    f.write('// A pose a vertex moves with: that of the bone first, or with a share above zero a pose between the bones first and\n'
-            '// second, first above second in the figure, turned by that share from one to the other about the pivot\n')
-    f.write('struct MannequinBinding\n{\n\tint first;\n\tint second;\n\tfloat share;\n\tfloat pivot[3];\n};\n\n')
-    f.write('static const float s_mannequinHeight = 1.8f;\n\n')
-    f.write('static const MannequinRest s_mannequinRest[] = {\n')
+    f.write('// fitted to the humanoid of nbMakeHumanoidBones at 1.8 m, as one skin in the rest pose of that figure, in meters, the\n')
+    f.write('// figure standing on the origin with its root at its stand height: the nbSkin of nbGetHumanoidSkin. Material 0 is the\n')
+    f.write('// body, 1 the joints. The data stand in a file of their own, so a program that never asks for the skin does not link\n')
+    f.write('// them.\n\n')
+    f.write('#include "nebenan/nebenan.h"\n\n')
+    f.write('static const b3Transform s_rest[] = {\n')
     for b, p, q in zip(B, P, Q):
-        f.write('\t{ { %.6ff, %.6ff, %.6ff }, { %.7ff, %.7ff, %.7ff, %.7ff } }, // %s\n' % (p[0], p[1], p[2], q[0], q[1], q[2], q[3], b['name']))
-    f.write('};\n\nstatic const MannequinBinding s_mannequinBindings[] = {\n')
+        f.write('\t{ { %.6ff, %.6ff, %.6ff }, { { %.7ff, %.7ff, %.7ff }, %.7ff } }, // %s\n' % (p[0], p[1], p[2], q[0], q[1], q[2], q[3], b['name']))
+    f.write('};\n\nstatic const nbSkinPose s_poses[] = {\n')
     for first, second, step, pivot in BINDINGS:
         f.write('\t{ %d, %d, %.2ff, { %.6ff, %.6ff, %.6ff } }, // %s%s\n' % (first, second, step / STEPS, pivot[0], pivot[1], pivot[2], B[first]['name'],
                 ', %d of %d to %s' % (step, STEPS, B[second]['name']) if step else ''))
-    f.write('};\n\nstatic const MannequinVertex s_mannequinVertices[] = {\n')
+    f.write('};\n\nstatic const nbSkinVertex s_vertices[] = {\n')
     for p, n, m, k in zip(VERTS, NORMS, MATS, BINDS):
         c = [int(round(127 * x)) for x in n]
         f.write('\t{ { %.4ff, %.4ff, %.4ff }, { %d, %d, %d }, %d, %d },\n' % (p[0], p[1], p[2], c[0], c[1], c[2], m, k))
-    f.write('};\n\nstatic const unsigned short s_mannequinIndices[] = {\n')
+    f.write('};\n\nstatic const uint16_t s_indices[] = {\n')
     for k in range(0, len(INDEX), 24):
         f.write('\t' + ' '.join('%d,' % x for x in INDEX[k:k + 24]) + '\n')
-    f.write('};\n')
+    f.write('};\n\n')
+    f.write('static const nbSkin s_skin = {\n\ts_vertices, %d, s_indices, %d, s_rest, %d, s_poses, %d, %d, %.1ff,\n};\n\n' % (
+        len(VERTS), len(INDEX), len(B), len(BINDINGS), max(MATS) + 1, 1.8))
+    f.write('const nbSkin* nbGetHumanoidSkin( void )\n{\n\treturn &s_skin;\n}\n')
 
 # vertices of different shells that lie on each other should move together, or a seam opens as a joint bends
 where = collections.defaultdict(set)
@@ -464,5 +470,5 @@ for s in 'lr':
     there, _ = ahead(CHEST_AHEAD)(J['upperarm_' + s])
     print('shoulder joint of the model %s: %.1f mm from the shoulder joint of the figure' % (
         s, 1000.0 * np.linalg.norm(there - P[ARM[s][0]])))
-print('in all %d vertices, %d triangles, %d bindings; %d of %d places hold vertices of different bindings' % (
-    len(VERTS), len(INDEX) // 3, len(BINDINGS), apart, len(where)))
+print('in all %d vertices, %d triangles, %d of them turned to wind counter-clockwise, %d bindings; %d of %d places hold vertices of '
+      'different bindings' % (len(VERTS), len(INDEX) // 3, turned, len(BINDINGS), apart, len(where)))

@@ -1681,4 +1681,54 @@ typedef enum nbHumanoidBone
 /// The most keyframes of a clip of the library, see nbMakeHumanoidClip
 #define NB_HUMANOID_CLIP_KEYFRAMES 96
 
+/// A vertex of a skin, see nbSkin: where it lies in the rest pose of the figure the skin is written for, in meters, its
+/// normal times 127, its material and the pose it moves with, an index into the poses of the skin
+typedef struct nbSkinVertex
+{
+	float position[3];
+	int8_t normal[3];
+	uint8_t material;
+	uint16_t pose;
+} nbSkinVertex;
+
+/// A pose of a skin, what its vertices move with: the pose of the bone first against its rest pose, or with a share
+/// above zero a pose between those of the bones first and second, turned by that share from the first to the second
+/// about the pivot, the joint between them as a point in the rest pose of the figure. So a skin stays one piece where
+/// a joint bends.
+typedef struct nbSkinPose
+{
+	int first;
+	int second;
+	float share;
+	b3Vec3 pivot;
+} nbSkinPose;
+
+/// A skin over the bones of a figure, to draw the figure: a mesh in the rest pose of the figure it is written for, that
+/// figure standing on the origin with its root at its stand height, its y axis up and facing +z, the rest pose of every
+/// bone in that frame, the root first, and the poses the vertices move with. A game keeps the mesh, asks for the poses
+/// in every frame, see nbFigure_PoseSkin, and moves every vertex with its pose, on the graphics card or before. The
+/// data are constant and shared, nothing is to be freed.
+typedef struct nbSkin
+{
+	const nbSkinVertex* vertices;
+	int vertexCount;
+
+	/// Triangles, three indices each, counter-clockwise seen from outside
+	const uint16_t* indices;
+	int indexCount;
+
+	/// The rest pose of every bone of the figure
+	const b3Transform* rest;
+	int boneCount;
+
+	const nbSkinPose* poses;
+	int poseCount;
+
+	/// The materials the vertices name, from 0
+	int materialCount;
+
+	/// The height in meters of the figure the skin is written for
+	float height;
+} nbSkin;
+
 /** @} */

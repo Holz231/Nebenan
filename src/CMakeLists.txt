@@ -11,6 +11,7 @@ set(NEBENAN_SOURCE_FILES
 	fracture.h
 	hull_builder.c
 	hull_builder.h
+	humanoid_skin.c
 	impact.c
 	destructible.c
 	poly.c
@@ -19,6 +20,7 @@ set(NEBENAN_SOURCE_FILES
 	save.c
 	scheduler.c
 	scheduler.h
+	skin.c
 	stream.c
 	system.c
 	world.c

@@ -13,6 +13,9 @@ Spiel hätte sie nachbauen müssen. Das darf nicht wieder passieren.
   es in die Bibliothek, und die Demo ruft es auf.
 - In die Demo gehört nur, was ein Spiel selbst macht und eine Physik-Bibliothek nicht kann: Fenster, Zeichnen,
   Kamera, Eingabe, Menü, die Szenen und die Messwerkzeuge.
+- Zeichnen heißt Fenster, Shader und Grafikkarte. Was gezeichnet wird und wo, etwa das Mesh einer Figur und die Lagen
+  seiner Haut, braucht ein Spiel auch: Es gehört in die Bibliothek. In `active-ragdoll-125` stand die Haut der
+  Gliederpuppe nur in der Demo.
 - Steht dieselbe Logik in Demo und Benchmark, gehört sie in die Bibliothek.
 - Verdächtig ist alles in der Demo, das Threads startet, Zeit misst, um die Welt zu sparen, oder entscheidet, wann die
   Welt etwas tut. Das prüfen, bevor es gebaut wird.

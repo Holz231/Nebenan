@@ -190,10 +190,13 @@ an, legt die Schultern auf die Schultern der Figur, die seit `active-ragdoll-126
 die Sohle des Fußes auf die Sohle der Physik, schließt die Kerbe zwischen Nacken und Schulter mit einem violetten Stück
 und bindet jeden Punkt an einen Knochen der Figur oder an eine Lage zwischen zweien, 6 592 Dreiecke je Figur. Die Demo
 zeichnet die Puppe als ein Stück, das sich an Knie, Ellbogen, Schulter, Hüfte und Rumpf mitbiegt, und setzt dafür in
-jedem Bild 72 Lagen aus den Lagen der Körper. **Modell** im Menü schaltet sie ab, `--shapes` beim Start: Dann zeichnet
-die Demo die Gliederpuppe aus den Formen der Physik wie oben beschrieben. Ohne **Teile farbig** hat jede Puppe die Farbe
-ihrer Figur und dunkle Gelenke. Die Bibliothek weiß von alledem nichts: Ein Spiel hängt sein eigenes Modell an die
-Körper der Knochen, deren Lage es je Bild aus der Bibliothek liest. Siehe [tools/mannequin](tools/mannequin/README.md).
+jedem Bild 72 Lagen. **Modell** im Menü schaltet sie ab, `--shapes` beim Start: Dann zeichnet die Demo die Gliederpuppe
+aus den Formen der Physik wie oben beschrieben. Ohne **Teile farbig** hat jede Puppe die Farbe ihrer Figur und dunkle
+Gelenke. Seit `active-ragdoll-127` liegen das Mesh und die Rechnung der Lagen in der Bibliothek, und die Demo ruft sie
+nur auf: Ein Spiel zeichnet seine Figuren mit derselben Puppe, ohne eigenes Mesh, mit `nbGetHumanoidSkin` für das Mesh
+und `nbFigure_PoseSkin` für die 72 Lagen in jedem Bild, auch zwischen zwei Schritten der Physik, und mit dem Faktor von
+`nbFigure_GetSkinScale` für Figuren jeder Größe, siehe das Beispiel bei den Figuren unten. Wer ein eigenes Modell hat,
+hängt es wie bisher an die Körper der Knochen. Siehe [tools/mannequin](tools/mannequin/README.md).
 
 **Figuren als Menschen.** Seit `active-ragdoll-113` zeichnet die Demo die Figuren auf Wunsch als Menschen, mit **Als
 Mensch** im Menü oder `--human`. Die Gliederpuppe aus den Formen der Physik bleibt, wie sie war. Beim Start steht seit
@@ -2498,7 +2501,8 @@ nbFormatScalingReport( profiles, countCount, text, length + 1 );   // alles als 
 ```
 
 Figuren leben in derselben Box3D-Welt wie die Trümmer, das Update nach jedem Schritt bewegt sie, wirft sie um und
-stellt sie wieder auf. Ein Spiel legt sie an, zeichnet ihre Knochen und meldet Treffer:
+stellt sie wieder auf. Ein Spiel legt sie an, zeichnet ihre Knochen oder die Gliederpuppe der Bibliothek und meldet
+Treffer:
 
 ```c
 // Ein Mensch von 1,80 m und 74 kg, die Clips baut die Bibliothek
@@ -2516,6 +2520,14 @@ nbFigureId figure = nbCreateFigure( world, &figureDef );
 // Jeder Knochen ist ein Körper, gezeichnet mit den Lagen aus nbWorld_GetDrawPoses wie die Trümmer. Seine Form steht in
 // bones[i], die Hülle eines Quaders gibt nbCreateBoneHull.
 b3BodyId head = nbFigure_GetBody( figure, nb_humanoidHead );
+
+// Oder die Figur als Gliederpuppe, ohne eigenes Mesh: das Mesh der Haut einmal in die Engine laden, in jedem Bild die
+// Lagen. fraction ist der Anteil von nbWorld_GetDrawPoses, 1 für die Figur, wie die Physik sie hat
+const nbSkin* skin = nbGetHumanoidSkin();
+float scale = nbFigure_GetSkinScale( figure, skin );
+b3WorldTransform poses[128];
+int poseCount = nbFigure_PoseSkin( figure, skin, fraction, poses, 128 );
+// Der Punkt v der Haut liegt bei poses[v.pose].p + poses[v.pose].q * ( scale * v.position )
 
 // Ein Schuss trifft eine Figur: Die Bibliothek entscheidet, ob sie zuckt, nachtritt, sich fängt oder fällt, und
 // verteilt den Stoß
@@ -3566,7 +3578,7 @@ lange die Threads im Löser rechnen und worauf sie sonst warten.
 ## Tests und Benchmark
 
 ```sh
-build/bin/nebenan_test            # 176 Tests: Geometrie, Voronoi, Hüllen, Öffnungen, Stöße, Stützgraph, Etagen, Lastprüfung, Mauern, Schutt, Ruhe, Durchschlagen, Threads, Knoten, große Blöcke, Gelenke in Paketen und Gebieten, Suchbaum, Kontaktlisten, Streaming, Stream, Laden im Hintergrund, Speichern und Zurückholen, gemeinsamer Thread-Pool, Ruhe-Prüfung auf den Workern, Schritt auf eigenem Thread, Schritte pro Bild, Takt der Physik, Wahl der Threads, Profil und Skalierung, Figuren, Ausgleichsschritt, Abfangen, rudernde Arme, Muskeln, Treffer entlang des Skeletts, Kegel je Richtung, Gelenke wie beim Menschen, Drehung um die Längsachse, Armature, ruhiger Kopf, Drücken, Füße auf dem Boden, Platz zum Aufstehen, Ragdoll durch die Wand, dünne Bretter, Determinismus …
+build/bin/nebenan_test            # 178 Tests: Geometrie, Voronoi, Hüllen, Öffnungen, Stöße, Stützgraph, Etagen, Lastprüfung, Mauern, Schutt, Ruhe, Durchschlagen, Threads, Knoten, große Blöcke, Gelenke in Paketen und Gebieten, Suchbaum, Kontaktlisten, Streaming, Stream, Laden im Hintergrund, Speichern und Zurückholen, gemeinsamer Thread-Pool, Ruhe-Prüfung auf den Workern, Schritt auf eigenem Thread, Schritte pro Bild, Takt der Physik, Wahl der Threads, Profil und Skalierung, Figuren, Ausgleichsschritt, Abfangen, rudernde Arme, Muskeln, Treffer entlang des Skeletts, Kegel je Richtung, Gelenke wie beim Menschen, Drehung um die Längsachse, Armature, ruhiger Kopf, Drücken, Füße auf dem Boden, Platz zum Aufstehen, Ragdoll durch die Wand, dünne Bretter, Determinismus …
 build/bin/nebenan_benchmark 4     # Zahl = Threads für Bruch und Physik, 0 = so viele, wie ein Spiel nähme
 build/bin/nebenan_benchmark scaling   # die Städte unter Beschuss mit 1, 2, 4 … Threads und die Tabelle der Skalierung
 build/bin/nebenan_benchmark rates     # die Städte unter Beschuss mit 30, 60 und 120 Hz, was eine simulierte Sekunde kostet

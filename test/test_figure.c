@@ -1731,6 +1731,275 @@ static int FigureShoulderTest( void )
 	return 0;
 }
 
+// How far a pose of a skin lies from a transform: the larger of the distance in meters and the angle in radians
+static float SkinPoseOff( b3WorldTransform pose, b3Transform expected )
+{
+	float dot = fabsf( b3DotQuat( pose.q, expected.q ) );
+	float angle = 2.0f * acosf( b3MinFloat( dot, 1.0f ) );
+	return b3MaxFloat( b3Length( b3Sub( b3ToVec3( pose.p ), expected.p ) ), angle );
+}
+
+// The bones of a humanoid of this height at rest, the figure standing on the origin with its root at its stand height,
+// each moved by a transform
+static void SkinRestBones( float height, float mass, b3Transform move, b3WorldTransform* out )
+{
+	nbBoneDef bones[nb_humanoidBoneCount];
+	float standHeight = nbMakeHumanoidBones( height, mass, bones, nb_humanoidBoneCount );
+	b3Transform pose[nb_humanoidBoneCount];
+	for ( int i = 0; i < nb_humanoidBoneCount; ++i )
+	{
+		b3Transform root = { { 0.0f, standHeight, 0.0f }, bones[i].restTransform.q };
+		pose[i] = bones[i].parent < 0 ? root : b3MulTransforms( pose[bones[i].parent], bones[i].restTransform );
+		out[i] = b3MakeWorldTransform( b3MulTransforms( move, pose[i] ) );
+	}
+}
+
+// The skin of the humanoid, see nbGetHumanoidSkin: a game draws a figure with it and needs no mesh of its own. The
+// data hold together, the skin is written for the bones nbMakeHumanoidBones gives today, and its poses are what moves
+// its vertices: none of them in the rest pose, for a figure of every height, all alike when the whole figure moves, and
+// where a joint bends, the poses between its two bones turn step by step about the joint, which stays where it is, so
+// the skin stays one piece.
+static int FigureSkinTest( void )
+{
+	const nbSkin* skin = nbGetHumanoidSkin();
+	ENSURE( skin != NULL && skin->boneCount == nb_humanoidBoneCount && skin->materialCount == 2 );
+	int loose = skin->indexCount - 3 * ( skin->indexCount / 3 );
+	ENSURE( skin->vertexCount > 1000 && skin->vertexCount < 65536 && loose == 0 && skin->poseCount >= skin->boneCount );
+	ENSURE_SMALL( skin->height - 1.8f, 1.0e-6f );
+	int bound[256] = { 0 };
+	ENSURE( skin->poseCount <= 256 );
+	for ( int i = 0; i < skin->vertexCount; ++i )
+	{
+		const nbSkinVertex* v = skin->vertices + i;
+		ENSURE( v->pose < skin->poseCount && v->material < skin->materialCount );
+		b3Vec3 normal = { (float)v->normal[0], (float)v->normal[1], (float)v->normal[2] };
+		ENSURE( b3Length( normal ) > 120.0f && b3Length( normal ) < 130.0f );
+		// As large as the figure: its legs are straight in the rest pose and reach 2 cm below where it stands
+		ENSURE( fabsf( v->position[0] ) < 0.35f && fabsf( v->position[2] ) < 0.3f );
+		ENSURE( v->position[1] > -0.05f && v->position[1] < 1.85f );
+		bound[v->pose] += 1;
+	}
+
+	// Every triangle winds counter-clockwise seen from outside, where the normals of its corners point
+	for ( int i = 0; i < skin->indexCount; i += 3 )
+	{
+		b3Vec3 corner[3];
+		b3Vec3 normal = b3Vec3_zero;
+		for ( int k = 0; k < 3; ++k )
+		{
+			ENSURE( skin->indices[i + k] < skin->vertexCount );
+			const nbSkinVertex* v = skin->vertices + skin->indices[i + k];
+			corner[k] = (b3Vec3){ v->position[0], v->position[1], v->position[2] };
+			normal = b3Add( normal, (b3Vec3){ (float)v->normal[0], (float)v->normal[1], (float)v->normal[2] } );
+		}
+		ENSURE( b3Dot( b3Cross( b3Sub( corner[1], corner[0] ), b3Sub( corner[2], corner[0] ) ), normal ) >= 0.0f );
+	}
+
+	// Every pose moves vertices and names bones of the figure
+	for ( int i = 0; i < skin->poseCount; ++i )
+	{
+		const nbSkinPose* pose = skin->poses + i;
+		ENSURE( bound[i] > 0 && pose->first >= 0 && pose->first < skin->boneCount );
+		bool shared = pose->share > 0.0f && pose->share < 1.0f && pose->second >= 0 && pose->second < skin->boneCount;
+		ENSURE( pose->share == 0.0f || ( shared && pose->second != pose->first ) );
+	}
+
+	// The skin is written for the bones of the humanoid at its height: it has to be written again when they change
+	b3WorldTransform rest[nb_humanoidBoneCount];
+	SkinRestBones( 1.8f, 75.0f, b3Transform_identity, rest );
+	for ( int i = 0; i < nb_humanoidBoneCount; ++i )
+	{
+		ENSURE_SMALL( SkinPoseOff( rest[i], skin->rest[i] ), 1.0e-4f );
+	}
+
+	// In the rest pose no pose moves a vertex, for a figure of every height
+	b3WorldTransform poses[256];
+	ENSURE( nbPoseSkin( skin, rest, nb_humanoidBoneCount, 1.0f, poses, 256 ) == skin->poseCount );
+	float off = 0.0f;
+	for ( int i = 0; i < skin->poseCount; ++i )
+	{
+		off = b3MaxFloat( off, SkinPoseOff( poses[i], b3Transform_identity ) );
+	}
+	ENSURE_SMALL( off, 1.0e-4f );
+
+	b3WorldTransform small[nb_humanoidBoneCount];
+	SkinRestBones( 1.5f, 52.0f, b3Transform_identity, small );
+	ENSURE( nbPoseSkin( skin, small, nb_humanoidBoneCount, 1.5f / 1.8f, poses, 256 ) == skin->poseCount );
+	float offSmall = 0.0f;
+	for ( int i = 0; i < skin->poseCount; ++i )
+	{
+		offSmall = b3MaxFloat( offSmall, SkinPoseOff( poses[i], b3Transform_identity ) );
+	}
+	ENSURE_SMALL( offSmall, 1.0e-4f );
+
+	// Moved as a whole, every pose is that move
+	b3Transform move = { { 3.0f, 0.5f, -2.0f }, b3MakeQuatFromAxisAngle( b3Normalize( (b3Vec3){ 0.3f, 1.0f, -0.2f } ), 1.1f ) };
+	b3WorldTransform moved[nb_humanoidBoneCount];
+	SkinRestBones( 1.8f, 75.0f, move, moved );
+	ENSURE( nbPoseSkin( skin, moved, nb_humanoidBoneCount, 1.0f, poses, 256 ) == skin->poseCount );
+	for ( int i = 0; i < skin->poseCount; ++i )
+	{
+		ENSURE_SMALL( SkinPoseOff( poses[i], move ), 1.0e-4f );
+	}
+
+	// The left elbow bends by 1.2 rad: forearm and hand turn about the joint, the origin of the forearm
+	float bend = 1.2f;
+	b3Quat turn = b3MakeQuatFromAxisAngle( b3Vec3_axisX, -bend );
+	b3Vec3 elbow = b3ToVec3( rest[nb_humanoidForearmLeft].p );
+	b3WorldTransform bent[nb_humanoidBoneCount];
+	memcpy( bent, rest, sizeof( bent ) );
+	for ( int bone = nb_humanoidForearmLeft; bone <= nb_humanoidHandLeft; ++bone )
+	{
+		bent[bone].q = b3MulQuat( turn, rest[bone].q );
+		bent[bone].p = b3ToPos( b3Add( elbow, b3RotateVector( turn, b3Sub( b3ToVec3( rest[bone].p ), elbow ) ) ) );
+	}
+	ENSURE( nbPoseSkin( skin, bent, nb_humanoidBoneCount, 1.0f, poses, 256 ) == skin->poseCount );
+	int between = 0;
+	float last = 0.0f;
+	for ( int i = 0; i < skin->poseCount; ++i )
+	{
+		const nbSkinPose* pose = skin->poses + i;
+		bool forearm = pose->first == nb_humanoidForearmLeft || pose->first == nb_humanoidHandLeft;
+		if ( pose->share == 0.0f )
+		{
+			// A pose of one bone is that bone: turned with the forearm and the hand, at rest elsewhere
+			float angle = 2.0f * acosf( b3MinFloat( fabsf( poses[i].q.s ), 1.0f ) );
+			ENSURE_SMALL( angle - ( forearm ? bend : 0.0f ), 1.0e-3f );
+			continue;
+		}
+
+		if ( pose->first == nb_humanoidUpperArmLeft && pose->second == nb_humanoidForearmLeft )
+		{
+			// Between upper arm and forearm the poses turn further with their share, and the joint stays where it is
+			float angle = 2.0f * acosf( b3MinFloat( fabsf( poses[i].q.s ), 1.0f ) );
+			ENSURE( angle > last + 0.1f && angle < bend - 0.1f );
+			last = angle;
+			ENSURE_SMALL( b3Length( b3Sub( pose->pivot, elbow ) ), 1.0e-3f );
+			b3Vec3 joint = b3ToVec3( b3TransformWorldPoint( poses[i], pose->pivot ) );
+			ENSURE_SMALL( b3Length( b3Sub( joint, pose->pivot ) ), 1.0e-4f );
+			between += 1;
+		}
+	}
+	ENSURE( between >= 3 );
+
+	// Not the bones of the skin: nothing is written
+	ENSURE( nbPoseSkin( skin, rest, nb_humanoidBoneCount - 1, 1.0f, poses, 256 ) == 0 );
+	ENSURE( nbPoseSkin( NULL, rest, nb_humanoidBoneCount, 1.0f, poses, 256 ) == 0 );
+	ENSURE( nbPoseSkin( skin, rest, nb_humanoidBoneCount, 1.0f, poses, 5 ) == 5 );
+
+	printf( "  skin of the humanoid: %d vertices, %d triangles, %d poses over %d bones, %d of them between upper arm and "
+			"forearm; at rest a pose is off by at most %.1e, on a figure of 1.5 m by %.1e\n",
+			skin->vertexCount, skin->indexCount / 3, skin->poseCount, skin->boneCount, between, (double)off, (double)offSmall );
+	return 0;
+}
+
+// The skin over a figure in a world, see nbFigure_PoseSkin: the poses are those of nbPoseSkin for the transforms of its
+// bones, with the scale the figure has against the skin, standing, hit and as a ragdoll, and every pose of one bone
+// puts the origin of that bone where its body is. Between two steps the bones are drawn where nbWorld_GetDrawPoses
+// draws their bodies, see nbFigure_GetDrawTransforms, and the skin with them, so a figure moves as smoothly as the
+// debris.
+static int FigureSkinPoseTest( void )
+{
+	const nbSkin* skin = nbGetHumanoidSkin();
+	b3WorldTransform poses[256];
+	b3WorldTransform again[256];
+	b3WorldTransform bones[nb_humanoidBoneCount];
+	float scales[2] = { 0.0f, 0.0f };
+	float drawnBehind[2] = { 0.0f, 0.0f };
+	for ( int pass = 0; pass < 2; ++pass )
+	{
+		FigureScene scene;
+		CreateFigureScene( &scene, 1 );
+		if ( pass == 1 )
+		{
+			scene.standHeight = nbMakeHumanoidBones( 1.5f, 52.0f, scene.bones, nb_humanoidBoneCount );
+		}
+		nbFigureId figure = AddFigure( &scene, (b3Vec3){ 3.0f, 0.0f, -2.0f }, 0.7f );
+		float scale = nbFigure_GetSkinScale( figure, skin );
+		scales[pass] = scale;
+		ENSURE_SMALL( scale - ( pass == 0 ? 1.0f : 1.5f / 1.8f ), 1.0e-4f );
+
+		float worst = 0.0f;
+		for ( int phase = 0; phase < 3; ++phase )
+		{
+			if ( phase == 1 )
+			{
+				ENSURE( HitChest( figure, 1, (b3Vec3){ 0.0f, 0.0f, -40.0f } ) );
+			}
+			else if ( phase == 2 )
+			{
+				nbFigure_Knockdown( figure );
+			}
+			StepFigures( &scene, 40 );
+
+			ENSURE( nbFigure_PoseSkin( figure, skin, 1.0f, poses, 256 ) == skin->poseCount );
+			ENSURE( nbFigure_GetBoneTransforms( figure, bones, nb_humanoidBoneCount ) == nb_humanoidBoneCount );
+			ENSURE( nbPoseSkin( skin, bones, nb_humanoidBoneCount, scale, again, 256 ) == skin->poseCount );
+			ENSURE( memcmp( poses, again, (size_t)skin->poseCount * sizeof( b3WorldTransform ) ) == 0 );
+			for ( int i = 0; i < skin->poseCount; ++i )
+			{
+				const nbSkinPose* pose = skin->poses + i;
+				ENSURE( b3IsValidQuat( poses[i].q ) );
+				if ( pose->share == 0.0f )
+				{
+					b3Vec3 origin = b3ToVec3( b3TransformWorldPoint( poses[i], b3MulSV( scale, skin->rest[pose->first].p ) ) );
+					worst = b3MaxFloat( worst, b3Length( b3Sub( origin, b3ToVec3( bones[pose->first].p ) ) ) );
+				}
+			}
+		}
+		ENSURE_SMALL( worst, 1.0e-4f );
+		ENSURE( nbFigure_PoseSkin( figure, skin, 1.0f, poses, 7 ) == 7 );
+		ENSURE( nbFigure_PoseSkin( figure, NULL, 1.0f, poses, 256 ) == 0 );
+
+		// Before the world collects poses to draw, the bones are drawn where they are, whatever the fraction
+		b3WorldTransform drawn[nb_humanoidBoneCount];
+		ENSURE( nbFigure_GetDrawTransforms( figure, 0.25f, drawn, nb_humanoidBoneCount ) == nb_humanoidBoneCount );
+		ENSURE( memcmp( drawn, bones, sizeof( drawn ) ) == 0 );
+
+		// From the first call on it collects them. The ragdoll is knocked down again and falls: halfway between the last
+		// two steps every bone is drawn where the world draws its body, the pelvis between where it was and where it is,
+		// the skin goes with the bones, and at the end of the step the bones are where the physics has them
+		nbWorld_GetDrawPoses( scene.world, 1.0f );
+		StepFigures( &scene, 30 );
+		nbFigure_Knockdown( figure );
+		b3Body_ApplyLinearImpulseToCenter( nbFigure_GetBody( figure, nb_humanoidChest ), (b3Vec3){ 150.0f, 100.0f, 0.0f }, true );
+		StepFigures( &scene, 3 );
+		ENSURE( nbFigure_GetDrawTransforms( figure, 0.5f, drawn, nb_humanoidBoneCount ) == nb_humanoidBoneCount );
+		ENSURE( nbFigure_PoseSkin( figure, skin, 0.5f, poses, 256 ) == skin->poseCount );
+		ENSURE( nbPoseSkin( skin, drawn, nb_humanoidBoneCount, scale, again, 256 ) == skin->poseCount );
+		ENSURE( memcmp( poses, again, (size_t)skin->poseCount * sizeof( b3WorldTransform ) ) == 0 );
+		ENSURE( nbFigure_GetBoneTransforms( figure, bones, nb_humanoidBoneCount ) == nb_humanoidBoneCount );
+		float behind = b3Length( b3SubPos( bones[nb_humanoidPelvis].p, drawn[nb_humanoidPelvis].p ) );
+		ENSURE( behind > 1.0e-3f && behind < 0.1f );
+		nbDrawPoses draw = nbWorld_GetDrawPoses( scene.world, 0.5f );
+		int found = 0;
+		for ( int i = 0; i < draw.count; ++i )
+		{
+			for ( int bone = 0; bone < nb_humanoidBoneCount; ++bone )
+			{
+				if ( B3_ID_EQUALS( draw.poses[i].bodyId, nbFigure_GetBody( figure, bone ) ) )
+				{
+					ENSURE( memcmp( &draw.poses[i].transform, drawn + bone, sizeof( b3WorldTransform ) ) == 0 );
+					found += 1;
+				}
+			}
+		}
+		ENSURE( found == nb_humanoidBoneCount );
+		ENSURE( nbFigure_GetDrawTransforms( figure, 1.0f, drawn, nb_humanoidBoneCount ) == nb_humanoidBoneCount );
+		ENSURE( memcmp( drawn, bones, sizeof( drawn ) ) == 0 );
+		drawnBehind[pass] = behind;
+		DestroyFigureScene( &scene );
+	}
+
+	ENSURE( nbFigure_GetSkinScale( nb_nullFigureId, skin ) == 0.0f );
+	ENSURE( nbFigure_PoseSkin( nb_nullFigureId, skin, 1.0f, poses, 256 ) == 0 );
+	ENSURE( nbFigure_GetDrawTransforms( nb_nullFigureId, 1.0f, bones, nb_humanoidBoneCount ) == 0 );
+	printf( "  skin over a figure: a figure of 1.8 m is %.3f times as large as the skin, one of 1.5 m %.3f times; halfway "
+			"between two steps the pelvis of a falling figure is drawn %.1f and %.1f mm behind\n",
+			(double)scales[0], (double)scales[1], 1000.0 * (double)drawnBehind[0], 1000.0 * (double)drawnBehind[1] );
+	return 0;
+}
+
 // A figure that catches itself with its own strength at 30 Hz takes the targets of its steps ahead, see NB_STEP_LEAD:
 // hard hits on the chest it falls after without that, 102 N s diagonally from the front and 88 N s from the side.
 // Before round 66 it fell after 100 N s diagonally from the front and 92 N s from the side. Since round 104, whose
@@ -6963,6 +7232,8 @@ int FigureTest( void )
 	RUN_TEST( FigureSlowRateTest );
 	RUN_TEST( FigureSlowStepTest );
 	RUN_TEST( FigureShoulderTest );
+	RUN_TEST( FigureSkinTest );
+	RUN_TEST( FigureSkinPoseTest );
 	RUN_TEST( FigureSlowFreeStepTest );
 	RUN_TEST( FigureSoftSpineTest );
 	RUN_TEST( FigureSoftHoldTest );

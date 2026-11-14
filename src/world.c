@@ -8382,6 +8382,28 @@ static b3WorldTransform nbDrawBetween( const nbDrawBody* body, float fraction )
 	return pose;
 }
 
+// Where to draw one body, as nbWorld_GetDrawPoses gives it for this fraction: between its poses before and after the
+// last step if it moved in it, else where it is, also while no poses are collected. For the bones of a figure, see
+// nbFigure_GetDrawTransforms.
+b3WorldTransform nbDrawTransformOf( const nbWorld* world, b3BodyId bodyId, float fraction )
+{
+	int index = bodyId.index1 - 1;
+	if ( world->drawEnabled && index >= 0 && index < world->drawSlots.count )
+	{
+		int slot = world->drawSlots.data[index];
+		if ( slot >= 0 && slot < world->drawBodies.count )
+		{
+			const nbDrawBody* body = world->drawBodies.data + slot;
+			if ( body->bodyId.index1 == bodyId.index1 && body->bodyId.generation == bodyId.generation )
+			{
+				return body->step == world->drawStep ? nbDrawBetween( body, fraction ) : body->to;
+			}
+		}
+	}
+
+	return b3Body_GetTransform( bodyId );
+}
+
 nbDrawPoses nbWorld_GetDrawPoses( nbWorldId worldId, float fraction )
 {
 	nbDrawPoses poses = { 0 };

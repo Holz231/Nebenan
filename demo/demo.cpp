@@ -2,7 +2,6 @@
 // Nebenan demo: walls that break into polygon fragments on Box3D, built for speed. Flat shading, no shadows, no
 // particles: every millisecond goes to the destruction.
 
-#include "mannequin_skin.h"
 #include "renderer.h"
 #include "system_info.h"
 
@@ -143,11 +142,12 @@ struct FigureVisual
 	nbFigureInfo info = {};
 	std::vector<b3WorldTransform> targets;
 
-	// The mannequin after the model: one mesh over all bodies, a slot for each of its bindings, and the pose each body was
-	// last drawn at, see PoseFigureSkin
+	// The mannequin after the model, the skin of the library: one mesh over all bodies, a slot for each of its poses, and
+	// how many times as large the figure is as the skin, see PoseFigureSkin
 	int skinMesh = -1;
+	float skinScale = 1.0f;
 	std::vector<int> skinSlots;
-	std::vector<b3WorldTransform> drawn;
+	std::vector<b3WorldTransform> skinPoses;
 };
 
 // The slots of the chunks of a body, by the index of the body in Box3D, so the poses of a frame find them quickly, and
@@ -514,6 +514,9 @@ struct App
 	float physicsStepTime = 0.0f;
 	bool physicsPending = false;
 	nbDrawPoses poses = {};
+
+	// The fraction between the last two steps these poses are drawn at, for the skins of the figures, see PoseFigureSkin
+	float drawFraction = 1.0f;
 
 	// Draw the bodies between the poses before and after the last step, see nbWorld_GetDrawPoses, else at the poses after
 	// it. Slow motion gives the physics a quarter of the time, so the difference shows on any monitor.
@@ -1730,10 +1733,10 @@ static int ClothesMaterial( int bone, int shirt )
 	}
 }
 
-// The slots of the skin of a figure in the poses of its bodies. The skin is written in the rest pose of the figure, so
-// a bone moves its vertices by what it has turned and moved from there. A binding between two bones turns by its share
-// from the one to the other, about its pivot, the joint between them: the shells of the model bend at a joint the way
-// its skin does, in steps, without a shader that blends.
+// The slots of the skin of a figure in the poses the library gives, see nbFigure_PoseSkin: a pose for every slot, that
+// of a bone or one between two bones, so the shells of the model bend at a joint the way its skin does, in steps,
+// without a shader that blends. The bodies are drawn between two steps of the physics, and so is the skin, for the same
+// fraction. Called while no step runs, see FinishPhysics.
 static void PoseFigureSkin( App& app, FigureVisual& visual )
 {
 	if ( visual.skinMesh < 0 )
@@ -1741,80 +1744,40 @@ static void PoseFigureSkin( App& app, FigureVisual& visual )
 		return;
 	}
 
-	b3Quat turn[nb_humanoidBoneCount];
-	b3Vec3 move[nb_humanoidBoneCount];
-	for ( int i = 0; i < nb_humanoidBoneCount; ++i )
+	int count = nbFigure_PoseSkin( visual.id, nbGetHumanoidSkin(), app.drawFraction, visual.skinPoses.data(),
+								   (int)visual.skinPoses.size() );
+	for ( int i = 0; i < count; ++i )
 	{
-		const BodySlots* entry = FindBodySlots( app, visual.bodies[i] );
-		if ( entry != nullptr && entry->posed )
-		{
-			visual.drawn[i] = entry->pose;
-		}
-
-		const MannequinRest& rest = s_mannequinRest[i];
-		b3Quat restRotation = { { rest.rotation[0], rest.rotation[1], rest.rotation[2] }, rest.rotation[3] };
-		b3Vec3 restPosition = { rest.position[0], rest.position[1], rest.position[2] };
-		turn[i] = b3MulQuat( visual.drawn[i].q, b3Conjugate( restRotation ) );
-		move[i] = b3Sub( b3ToVec3( visual.drawn[i].p ), b3RotateVector( turn[i], restPosition ) );
-	}
-
-	int bindingCount = (int)( sizeof( s_mannequinBindings ) / sizeof( s_mannequinBindings[0] ) );
-	for ( int i = 0; i < bindingCount; ++i )
-	{
-		const MannequinBinding& binding = s_mannequinBindings[i];
-		b3Quat rotation = turn[binding.first];
-		b3Vec3 position = move[binding.first];
-		if ( binding.share > 0.0f )
-		{
-			b3Quat other = turn[binding.second];
-			if ( b3DotQuat( rotation, other ) < 0.0f )
-			{
-				other = { b3Neg( other.v ), -other.s };
-			}
-			b3Vec3 pivot = { binding.pivot[0], binding.pivot[1], binding.pivot[2] };
-			b3Vec3 from = b3Add( position, b3RotateVector( rotation, pivot ) );
-			b3Vec3 to = b3Add( move[binding.second], b3RotateVector( turn[binding.second], pivot ) );
-			rotation = b3NLerp( rotation, other, binding.share );
-			position = b3Sub( b3Lerp( from, to, binding.share ), b3RotateVector( rotation, pivot ) );
-		}
-		app.renderer.SetSlot( visual.skinSlots[i], position, rotation );
+		app.renderer.SetSlot( visual.skinSlots[i], b3ToVec3( visual.skinPoses[i].p ), visual.skinPoses[i].q );
 	}
 }
 
-// The mannequin after the model as one skin over the bodies of a figure, see mannequin_skin.h and tools/mannequin: the
-// shells of the model of Quaternius, the body in one material and the joints in another. Every vertex carries the slot
-// of its binding, the pose of one bone or a pose between two, so the shells stay one piece where a joint bends.
+// The mannequin after the model as one skin over the bodies of a figure, the skin of the library, see nbGetHumanoidSkin
+// and tools/mannequin: the shells of the model of Quaternius, the body in one material and the joints in another. Every
+// vertex carries the slot of its pose, the pose of one bone or a pose between two, so the shells stay one piece where a
+// joint bends.
 static void BuildFigureSkin( App& app, FigureVisual& visual, int body, int joints )
 {
-	int bindingCount = (int)( sizeof( s_mannequinBindings ) / sizeof( s_mannequinBindings[0] ) );
-	int vertexCount = (int)( sizeof( s_mannequinVertices ) / sizeof( s_mannequinVertices[0] ) );
-	int indexCount = (int)( sizeof( s_mannequinIndices ) / sizeof( s_mannequinIndices[0] ) );
-	visual.skinSlots.resize( (size_t)bindingCount );
-	for ( int i = 0; i < bindingCount; ++i )
+	const nbSkin* skin = nbGetHumanoidSkin();
+	visual.skinSlots.resize( (size_t)skin->poseCount );
+	visual.skinPoses.resize( (size_t)skin->poseCount );
+	for ( int i = 0; i < skin->poseCount; ++i )
 	{
 		visual.skinSlots[i] = app.renderer.AllocSlot();
 	}
 
 	app.vertexScratch.clear();
-	for ( int i = 0; i < vertexCount; ++i )
+	for ( int i = 0; i < skin->vertexCount; ++i )
 	{
-		const MannequinVertex& v = s_mannequinVertices[i];
-		b3Vec3 position = { v.position[0], v.position[1], v.position[2] };
+		const nbSkinVertex& v = skin->vertices[i];
+		b3Vec3 position = b3MulSV( visual.skinScale, { v.position[0], v.position[1], v.position[2] } );
 		b3Vec3 normal = { (float)v.normal[0] / 127.0f, (float)v.normal[1] / 127.0f, (float)v.normal[2] / 127.0f };
 		app.vertexScratch.push_back(
-			Renderer::MakeVertex( position, normal, v.material == 0 ? body : joints, visual.skinSlots[v.binding] ) );
+			Renderer::MakeVertex( position, normal, v.material == 0 ? body : joints, visual.skinSlots[v.pose] ) );
 	}
-	app.indexScratch.assign( s_mannequinIndices, s_mannequinIndices + indexCount );
-	visual.skinMesh = app.renderer.AddSkin( app.vertexScratch.data(), vertexCount, app.indexScratch.data(), indexCount,
-											visual.skinSlots.data(), bindingCount );
-
-	// Where the bodies are drawn now: the slots of the bones were attached before
-	visual.drawn.resize( visual.bodies.size() );
-	for ( size_t i = 0; i < visual.bodies.size(); ++i )
-	{
-		const BodySlots* entry = FindBodySlots( app, visual.bodies[i] );
-		visual.drawn[i] = entry != nullptr && entry->posed ? entry->pose : b3Body_GetTransform( visual.bodies[i] );
-	}
+	app.indexScratch.assign( skin->indices, skin->indices + skin->indexCount );
+	visual.skinMesh = app.renderer.AddSkin( app.vertexScratch.data(), skin->vertexCount, app.indexScratch.data(),
+											skin->indexCount, visual.skinSlots.data(), skin->poseCount );
 	PoseFigureSkin( app, visual );
 }
 
@@ -1841,7 +1804,9 @@ static void RemoveFigureSkin( App& app, FigureVisual& visual )
 static void BuildFigureMeshes( App& app, FigureVisual& visual, int figure )
 {
 	int count = (int)sizeof( s_figureMaterials ) / (int)sizeof( s_figureMaterials[0] );
-	bool skin = app.figureHuman == false && app.figureModel && (int)visual.bodies.size() == nb_humanoidBoneCount;
+	// The skin of the library, if it is written for the bones of this figure
+	visual.skinScale = nbFigure_GetSkinScale( visual.id, nbGetHumanoidSkin() );
+	bool skin = app.figureHuman == false && app.figureModel && visual.skinScale > 0.0f;
 	for ( size_t i = 0; i < visual.bodies.size(); ++i )
 	{
 		int bone = (int)i;
@@ -3121,6 +3086,7 @@ static void FinishPhysics( App& app )
 	uint64_t ticks = b3GetTicks();
 	float fraction = app.interpolate ? nbWorld_GetStepFraction( app.destruction ) : 1.0f;
 	app.poses = nbWorld_GetDrawPoses( app.destruction, fraction );
+	app.drawFraction = fraction;
 	app.waitTime += b3GetMilliseconds( ticks );
 }
 

@@ -20,6 +20,9 @@ Das darf nicht wieder passieren. Die Regeln stehen in `CLAUDE.md`, das hier ist 
   Messwerkzeuge.
 - Threads, Zeitmessung für Entscheidungen, Laden und Entladen, Budgets, die Wahl der Threads: Das gehört in die
   Bibliothek, auch wenn es zuerst nur in der Demo gebraucht wird.
+- Daten und Rechnungen, die sagen, was gezeichnet wird und wo: ein Mesh, das zur Figur der Bibliothek gehört, die Lagen
+  seiner Haut, die Lage eines Körpers zwischen zwei Schritten. Das gehört in die Bibliothek. Der Demo bleiben Shader,
+  Puffer und Grafikkarte (Runde 127).
 
 ## Vor dem Abschluss
 

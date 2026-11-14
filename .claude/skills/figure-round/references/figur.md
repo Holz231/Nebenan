@@ -69,5 +69,7 @@ was schon verworfen wurde.
 
 `test/test_figure.c`: `SteerRunFlightTest` (Runde 118), `SteerTurnLandTest` (119), `SteerTurnSettleTest` (120),
 `SteerTurnLiftTest` (121), `SteerTurnRollTest` (122), `SteerTurnRhythmTest` (123), `SteerTurnHeelTest` (124), und für
-den Körper `FigureShoulderTest` (126). Die Hashes `NB_EXPECTED_…_HASH` ändern sich nur, wenn sich ein Lauf ändert, der
-dort festgehalten ist: Das ist erlaubt, wird aber in der Roadmap genannt.
+den Körper `FigureShoulderTest` (126) und `FigureSkinTest` (127): Ändert eine Runde die Knochen, fällt er, bis
+`tools/mannequin/make_skin.py` die Haut neu geschrieben hat, erst `dump_bones`, dann das Werkzeug. Die Hashes
+`NB_EXPECTED_…_HASH` ändern sich nur, wenn sich ein Lauf ändert, der dort festgehalten ist: Das ist erlaubt, wird aber
+in der Roadmap genannt.
