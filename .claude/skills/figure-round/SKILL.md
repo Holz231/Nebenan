@@ -128,6 +128,9 @@ Zehen und Fersen 37 mm, Hände 15 mm, Becken 10 mm, Becken tief ab 15 cm unter d
 - Ausgaben kurz halten (`cut`, `grep`, `tail`), der Nutzer zahlt die Token. Zwischenstände mit „Kurz:“.
 - Commits: `user.name=Claude`, Trailer `Co-Authored-By: Claude <noreply@anthropic.com>` und `Claude-Session`, kein
   Modellname, nie Geschichte umschreiben. Kommentare englisch und auf 120 umbrochen, `(b3Vec3){` bleibt eng.
+- `clang-format` läuft dort nicht, Version 18 kennt einen Schlüssel der `.clang-format` nicht und meldet dann auch
+  keine Warnung: Längen neuer Zeilen mit Python prüfen, Kommentare 120 mit Tab als 1, Code 130 mit Tab als 4. Nie
+  ganze Dateien neu umbrechen, nur die eigenen Blöcke: Bestehende Zeilen sind zum Teil länger (Runde 127).
 
 ## Quellen
 

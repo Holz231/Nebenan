@@ -8753,7 +8753,7 @@ Wo es liegt. `src/skin.c` rechnet die Lagen, mit Grundrechenarten und einer Wurz
 `src/humanoid_skin.c` hält die Daten, geschrieben von `tools/mannequin/make_skin.py`, 123 KB im Programm, in einer
 eigenen Datei: Ein Programm, das die Haut nie abfragt, bindet sie nicht ein. `demo/mannequin_skin.h` entfällt. Die Demo
 holt Mesh und Lagen aus der Bibliothek und führt über die Lagen der Körper für die Haut nicht mehr Buch, und das Bild
-der Szene „Figuren“ nach 150 Bildern ist das von Runde 126, bis auf die Anzeige der Zeiten und vier einzelne Pixel von
+der Szene „Kampf“ nach 150 Bildern ist das von Runde 126, bis auf die Anzeige der Zeiten und vier einzelne Pixel von
 1,44 Millionen an Kanten der Puppen, wo die Rechnung anders rundet. Das Werkzeug dreht ein Dreieck von 6 592, das
 andersherum lief.
 
