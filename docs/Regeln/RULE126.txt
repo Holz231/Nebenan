@@ -1,0 +1,180 @@
+Regel für Runde 126, vor jedem Lauf mit den Geschwindigkeiten und den Trefferhöhen der unabhängigen Prüfung
+festgeschrieben. Achte Regel nach dem Muster von Runde 117. Geändert gegen Runde 124: Das Ziel ist keine Messgröße,
+sondern eine Lage, die der Nutzer gewählt hat (A). Dafür ist die Balance ein eigener Schutz (B), wie in den Runden 113
+und 114, und die Treffertabelle muss nicht mehr Byte für Byte gleich sein. Der Schutz mit festem Blick heißt jetzt C,
+der mit Blick in Laufrichtung D, das Übrige E.
+
+Eingriff. Die Schultergelenke des Menschen der Bibliothek liegen an der Stelle der Schultergelenke des Modells, nach dem
+die Demo ihre Figuren seit Runde 125 zeichnet: bei 1,80 m 18,7 statt 20,25 cm neben der Mitte, 4,6 statt 3 cm über dem
+Ursprung der Brust und 3,4 cm hinter ihm statt über ihm (nbMakeHumanoidBones). Das sind drei Zahlen. Die Schultergelenke
+liegen damit 37,4 statt 40,5 cm auseinander, 1,6 cm höher und 3,4 cm weiter hinten.
+
+Entscheidung des Nutzers am 14. November 2026, nach Bildern von vier Lagen nebeneinander und mit diesen Angaben: Breite
+und Höhe der Schultern sind seit Runde 113 Messwerte von Männern. Die Schulterspitzen der 107 Männer aus ANSUR II liegen
+41,5 cm auseinander, die Gelenke der Figur 1 cm innerhalb, und Röntgenmaße bestätigen das, die Schulterhöhe ragt im
+Mittel 29 mm über die Gelenkpfanne hinaus und der Oberarmkopf 46 mm (acromion index 0,64). Die Lage des Modells ist 3 cm
+schmaler als diese Männer und 1,6 cm höher, für die Lage nach vorn und hinten gibt es keinen Messwert. Im Prototyp
+kostet sie auf der Treffertabelle der Entwicklung 14 Stürze mehr, 1 192 statt 1 178, und am Gang nichts. Zur Wahl
+standen dazu: nur 3,4 cm nach hinten, nach hinten und höher bei gemessener Breite (13 Stürze mehr), und die Physik
+lassen, wie sie ist. Der Nutzer hat die Lage des Modells gewählt.
+
+Größe des Eingriffs: klein im Quelltext, aber er ändert den Körper jeder Figur. Eine gesteuerte Figur ist kinematisch,
+ihre Füße, Beine und ihr Becken gehen ihren Posen nach, und die Arme hängen an anderer Stelle: Erwartet ist, dass sich
+am Gang nur die Hände ändern. Eine Figur, die sich fängt, fällt oder liegt, ist dynamisch, und ihre Arme hängen und
+schwingen 3,4 cm weiter hinten und 1,6 cm weiter innen: Dort ändert sich jeder Verlauf. Für einen solchen Eingriff
+verlangt die Regel, dass die Lage erreicht ist und dass nichts um mehr als die Streuung schlechter ist.
+
+Messgrößen wie in den Runden 118 bis 124, mit tools/measure. Die Treffertabelle wie in den Runden 113 und 114: 8 928
+Treffer je Tabelle, ein Sturz ist ein Treffer mit dem Ausgang fell.
+
+Toleranz, gemessen auf active-ragdoll-124 (dem Stand der Bibliothek auch von Runde 125) vor dem Festschreiben mit
+tools/measure/tolerance126.py, abgelegt in docs/Regeln/tol126.json, SHA-256
+e652858e5b1fb8f2bada9c705400dfdb491077a0d8caeedfe93c6fbb875acf73. Paare und Rechnung wie in RULE120.txt bis RULE124.txt:
+Mit festem Blick die langsamen Paare H1 und H14, H1 und H15, H14 und H15, H6 und H15, H10 und H12 und die schnellen
+Paare H5 und H13, H9 und H11, H2 und H11, je 504 Stellen. Mit Blick in Laufrichtung die Paare HF9 und HF11, HF9 und
+HF15, HF11 und HF15, je 312 Stellen; die Prüfung hat zwei solche Sätze, Zählungen und Summen bekommen das Doppelte.
+Zählungen bekommen mindestens 2 Stellen, härteste Sprünge mindestens 2 mm. Die Namen der Tabelle wie in RULE123.txt.
+
+  with a fixed heading                h1     h14     h15      h6     h10     h12      h5     h13      h9     h11      h2   slow    fast   tolerance
+  over feet                         0.00    1.00    0.00    1.00    1.00    0.00    8.00    6.00    6.00    2.00    6.00   1.00    4.00      5.00
+  worst feet                       34.39   37.31   36.15   39.23   39.13   36.80   41.90   64.58   37.92   44.37   58.11   3.07   22.68     22.68
+  mean feet                         7.17    7.27    7.27    7.26    7.97    7.95    7.41    7.34    7.05    6.87    6.92   0.10    0.19      0.14
+  tenth feet                       12.85   12.95   12.99   13.06   14.23   14.12   12.81   12.77   12.24   12.01   12.01   0.14    0.23      0.18
+  over shins                       74.00   77.00   99.00   80.00   78.00  109.00  105.00  124.00   93.00   98.00  112.00  31.00   19.00     50.00
+  worst shins                      45.02   52.65   52.75   57.11   60.46   54.31   77.02   61.07   70.38   62.10   68.81   7.73   15.96     15.96
+  mean shins                        7.52    7.60    7.60    7.58    8.24    8.24    7.79    7.76    7.44    7.26    7.34   0.09    0.17      0.13
+  tenth shins                      14.08   14.20   14.26   14.03   15.22   15.28   14.67   14.57   14.00   13.82   13.88   0.23    0.18      0.21
+  over hands                       50.00   65.00   25.00   52.00   31.00   52.00   62.00   37.00   60.00   60.00   24.00  40.00   36.00     76.00
+  worst hands                      24.20   30.17   25.33   27.47   19.94   28.96   24.28   21.99   22.11   24.10   22.96   9.01    2.30      9.01
+  mean hands                        2.96    3.01    2.99    2.96    3.35    3.37    3.54    3.54    3.33    3.22    3.31   0.05    0.11      0.08
+  tenth hands                       4.57    4.65    4.63    4.56    5.12    5.12    5.43    5.45    5.12    5.00    5.11   0.08    0.12      0.10
+  over pelvis                      26.00   27.00   26.00   17.00   30.00   23.00   63.00   97.00   36.00   33.00   33.00   9.00   34.00     43.00
+  worst pelvis                     16.67   22.12   24.94   18.13   18.51   22.63   19.57   20.08   14.57   17.38   22.77   8.27    5.39      8.27
+  mean pelvis                       1.15    1.17    1.17    1.17    1.30    1.29    1.14    1.13    1.10    1.07    1.08   0.02    0.03      0.02
+  tenth pelvis                      2.46    2.50    2.50    2.47    2.81    2.80    2.51    2.48    2.35    2.30    2.32   0.04    0.06      0.05
+  hard shins                        0.00    2.00    3.00    2.00    4.00    6.00   11.00    4.00    7.00    8.00   10.00   3.00    7.00     10.00
+  excess shins                    175.28  224.73  232.01  239.85  240.66  306.24  621.00  543.38  477.79  446.85  555.01  65.58  108.17    173.75
+  excess pelvis                    41.33   76.64   56.74   46.33   54.33   51.11   82.88  105.16   60.62   69.96   78.83  35.31   22.28     57.59
+  low                               0.00    0.00    0.00    0.00    0.00    0.00   46.00   47.00   34.00   29.00   37.00   0.00    8.00      8.00
+  lowest                           12.46   11.82   12.18   11.66   14.87   14.17   20.59   19.86   18.00   17.15   18.33   0.70    1.19      1.19
+  flights                          83.00   84.00   53.00   53.00   58.00   88.00   47.00   53.00   76.00   69.00   65.00  31.00    7.00     38.00
+  flight                           92.10   92.76   89.58   89.48   92.26   94.97   94.54   96.30   96.76   96.46   95.73   3.17    1.75      2.46
+  crossed                           1.00    1.00    1.00    1.00    0.00    0.00    0.00    1.00    0.00    0.00    0.00   0.00    1.00      2.00
+  answer                          419.95  425.61  419.75  417.87  432.13  435.22  467.32  467.68  456.43  452.04  455.28   5.86    4.39      5.13
+  toes                              5.00    9.00    9.00   12.00   14.00   12.00   35.00   30.00   26.00   16.00   24.00   4.00   10.00     14.00
+  toes70                            0.00    0.00    0.00    1.00    0.00    0.00    2.00    3.00    0.00    2.00    1.00   1.00    2.00      3.00
+  facing where it moves              hf9    hf11    hf15   tolerance
+  over feet                        14.00   16.00   10.00     6.00
+  worst feet                       44.73   51.98   48.63     7.25
+  mean feet                         7.19    7.07    7.16     0.12
+  tenth feet                       12.76   12.60   12.72     0.16
+  over shins                       35.00   39.00   41.00     6.00
+  worst shins                      49.48   56.08   50.35     6.60
+  mean shins                        6.80    6.71    6.79     0.09
+  tenth shins                      11.86   11.67   11.78     0.19
+  over hands                       42.00   57.00   37.00    20.00
+  worst hands                      25.06   29.43   22.52     6.90
+  mean hands                        3.50    3.46    3.51     0.05
+  tenth hands                       5.67    5.60    5.70     0.10
+  over pelvis                      15.00   17.00   20.00     5.00
+  worst pelvis                     17.59   17.93   16.27     2.00
+  mean pelvis                       1.16    1.15    1.15     0.01
+  tenth pelvis                      2.50    2.48    2.50     0.02
+  hard shins                        0.00    5.00    1.00     5.00
+  excess shins                    126.49  186.78  172.09    60.29
+  excess pelvis                    30.58   28.82   37.86     9.04
+  low                               0.00    0.00    0.00     2.00
+  lowest                           12.16   12.26   12.39     0.23
+  flights                          28.00   31.00   28.00     3.00
+  flight                          116.19  119.50  118.22     3.31
+  uneven                            0.00    0.00    0.00     2.00
+
+Unabhängige Prüfung. Geschwindigkeiten und Trefferhöhen, die vor dem Festschreiben auf keinem Stand gelaufen sind: Die
+Geschwindigkeiten stehen in keinem Satz von tools/measure/common.sh, in keiner Regel und in keinem Abschnitt der
+Roadmap, geprüft mit tools/measure/speeds.py, die Spreizung ist aus der Formel der Kadenz gerechnet. Die Trefferhöhen
+3,7 cm höher und 5,3 cm tiefer stehen in keinem Abschnitt der Roadmap und der Optimierungen.
+
+  H27 (schnell): gehend 1,27, rennend 4,53 m/s, diagonal 0,90 m/s je Achse, Spreizung 1,126 und 0,668 s
+  H28 (langsam): gehend 1,41, rennend 3,57 m/s, diagonal 1,00 m/s je Achse, Spreizung 1,068 und 0,714 s
+  HF37 (Blick in Laufrichtung): 1,37, 3,44 und 4,36 m/s, Spreizung 1,084, 0,722 und 0,675 s
+  HF39 (Blick in Laufrichtung): 1,47, 3,82 und 4,64 m/s, Spreizung 1,046, 0,700 und 0,664 s
+  Vier Treffertabellen mit je 8 928 Treffern: 60 Hz mit eigener Kraft 3,7 cm höher, 60 Hz mit eigener Kraft 5,3 cm
+  tiefer, 30 Hz mit eigener Kraft 3,7 cm höher, 60 Hz ohne Halt 5,3 cm tiefer
+
+Mit festem Blick die 21 Szenen auf H27 und H28, 1 008 Stellen, Zehen und Fersen auf beiden, mit Blick in Laufrichtung
+die 13 Szenen auf HF37 und HF39, 624 Stellen, der Takt nach den sechs Szenen, die im Rennen enden, 288 Stellen, und die
+vier Tabellen, mit tools/measure/check126.sh, ausgewertet mit tools/measure/eval126.py. "Alt" heißt active-ragdoll-124,
+"neu" der saubere Bau, beide auf denselben Stellen und Treffern.
+
+A. Ziel, beide müssen gelten:
+ A1 Das Schultergelenk des Modells liegt nach der Anpassung der Gliederpuppe, mit der Brust 3 cm vorn wie seit Runde
+    125, höchstens 1 mm neben dem Schultergelenk der Figur, wie tools/mannequin/make_skin.py es meldet. Alt: 41 mm.
+ A2 In der Ruhepose liegt kein Arm am Rumpf an: Oberarm gegen untere Brust und Rippen, Unterarm gegen Bauch und Becken
+    und Hand gegen Becken und Oberschenkel haben quer zum Körper einen Abstand von mindestens 0, gerechnet aus den
+    Knochen von nbMakeHumanoidBones in einem neuen Test.
+
+B. Balance über die vier Tabellen, 35 712 Treffer, beide müssen gelten:
+ B1 Höchstens 2 % mehr Stürze als alt.
+ B2 Nach leichten Treffern bis 60 N s höchstens 3 Stürze mehr als alt.
+
+C. Schutz mit festem Blick, jede Größe höchstens alt plus ihre Toleranz:
+ C1 Stellen über den Grenzen: Füße, Schienbeine, Hände, Becken.
+ C2 Größe der Sprünge: Mittel und oberes Zehntel von Becken, Schienbeinen, Füßen und Händen.
+ C3 Härtester Sprung von Fuß, Schienbein, Hand und Becken.
+ C4 Becken tiefer als 15 cm: Stellen und tiefste Stelle.
+ C5 Gekreuzte Füße: Stellen, und nirgends tiefer als 3 cm gekreuzt.
+ C6 Antwort der Kapsel im Mittel, und nirgends später als 1,7 s.
+ C7 Zehen und Fersen über 37 mm und über 70 mm.
+ C8 Flüge über 0,2 s und der längste Flug im Mittel.
+ C9 Summe dessen, was Schienbeine über 37 mm und das Becken über 10 mm hinaus springen.
+
+D. Schutz mit Blick in Laufrichtung, jede Größe höchstens alt plus ihre Toleranz:
+ D1 Stellen über den Grenzen: Füße, Schienbeine, Hände, Becken.
+ D2 Größe der Sprünge: Mittel und oberes Zehntel von Becken, Schienbeinen, Füßen und Händen.
+ D3 Härtester Sprung von Fuß, Schienbein, Hand und Becken.
+ D4 Becken tiefer als 15 cm: Stellen und tiefste Stelle.
+ D5 Flüge über 0,2 s und der längste Flug im Mittel.
+ D6 Summe dessen, was Schienbeine über 37 mm und das Becken über 10 mm hinaus springen.
+ D7 Der Takt von Runde 123: Nach höchstens so vielen der 288 Wechsel, die im Rennen enden, heben die Füße zusammen ab
+    wie alt, gemessen mit tools/measure/rhythm123.py.
+
+E. Sonst, alle müssen gelten:
+ E1 Stetig mit festem Blick 8 s lang, seitwärts mit 1,27, 1,41, 3,57 und 4,53 m/s und rückwärts mit 1,27 und 3,57 m/s:
+    Bei allen sechs Läufen liegt die Kadenz, gemessen aus den Zeiten zwischen den Landungen, höchstens 0,5 % neben alt,
+    und die Füße kommen sich quer zum Becken höchstens 1 cm näher.
+ E2 Vorwärts rennend mit 3,0 und 4,8 m/s, mit Blick in Laufrichtung: Das Becken geht je Schritt im Mittel höchstens 0,2
+    cm weniger auf und ab als alt, und das Knie ist beim Aufsetzen im Mittel höchstens 1 Grad stärker gebeugt.
+ E3 Alle Tests grün mit gcc und clang, mit 1, 2 und 4 Threads bitgleich, Sanitizer ohne Befund. Die Hashes der Tests mit
+    Figuren ändern sich und werden festgehalten. Zwei Tests fallen mit dem Prototyp und sind vor dem Festschreiben
+    bekannt, beide prüfen eine Grenze, die frühere Runden mit dem Körper nachgezogen und im Kommentar festgehalten
+    haben: FigureNeckTest, die Trägheit am Hals lässt den Kopf 1,4- statt mindestens 1,5-mal seltener die Richtung
+    wechseln, in 5 statt 7 % der Schritte, alt in 4 statt 8 %, und FigureSlowStepTest, mit 30 Hz und eigener Kraft fängt
+    die Figur 102 N s schräg von vorn nicht mehr. Für beide gilt: Die Aussage des Tests bleibt, seine Schwelle oder die
+    Stärke seines Treffers darf sich ändern, und die Zahl des alten und des neuen Stands steht im Kommentar. Hält die
+    Aussage selbst nicht mehr, beruhigt die Trägheit den Kopf nicht oder hilft der Vorgriff der Schritte bei 30 Hz
+    nicht, ist E3 verfehlt. Jeder andere Test, der fällt, verfehlt E3.
+ E4 Kosten einer gesteuerten Figur: Das Update der Figuren führt mit 20 gesteuerten Figuren über 1 200 Updates in jedem
+    der drei Modi des Kostentests höchstens 0,5 % mehr Befehle aus als alt, gezählt mit tools/measure/cost_count.sh.
+    Zeiten werden nicht gemessen: Der Eingriff ändert keine Rechnung.
+ E5 Der Benchmark endet in den Szenen ohne Figuren mit denselben Hashes und Zählern. Szenen mit Figuren dürfen andere
+    Hashes haben und werden festgehalten. Die Bildzeiten, zwölf Paare, werden festgehalten und sind keine Bedingung,
+    siehe die Lehre aus Runde 124.
+
+Der saubere Bau muss mit dem Prototyp (Schalter NB_X_SHOULDER_X=0.187f, NB_X_SHOULDER_Y=0.046f und
+NB_X_SHOULDER_Z=-0.034f im Versuchsbaum) bitgleich laufen: dieselben Ergebnisse auf HF7 und H2 und dieselbe
+Treffertabelle der Entwicklung. Verfehlt der saubere Bau eine Bedingung, wird nicht gebaut, oder es steht offen in der
+Roadmap, warum doch, und der Nutzer entscheidet.
+
+Stand der Entwicklung beim Festschreiben, der Prototyp gegen active-ragdoll-124. Die Treffertabelle der Entwicklung, 60
+Hz mit eigener Kraft in der gewohnten Höhe, 8 928 Treffer: 1 192 statt 1 178 Stürze, 1,2 % mehr, keiner nach einem
+leichten Treffer bis 60 N s, wie vorher, und 144 Treffer gehen anders aus als vorher. Mit Blick in Laufrichtung auf HF7
+und HF21, 624 Stellen: Füße an 24, Schienbeine an 79 und das Becken an 37 Stellen über den Grenzen, jede mit demselben
+härtesten Sprung wie vorher, Hände an 118 wie vorher, im Mittel 3,64 statt 3,67 mm. Mit festem Blick auf H2 und H19, 1
+008 Stellen: Füße an 8, Schienbeine an 202 und das Becken an 61 Stellen wie vorher, Hände an 82 statt 83, im Mittel 3,38
+statt 3,41 mm. Von den 175 Tests bestehen 173, wenn die Hashes nicht geprüft werden, die beiden anderen stehen unter E3.
+
+Nicht gewählt. Die Lage mit gemessener Breite, 3,4 cm nach hinten und 1,6 cm höher, im Versuchsbaum gemessen: 1 191
+Stürze auf der Tabelle der Entwicklung, 13 mehr, am Gang wie die gewählte Lage, und von den Tests fällt statt des
+Schritts bei 30 Hz das Aufstehen zwischen Trümmern, das nicht in 1 200 Schritten endet. Nur 3,4 cm nach hinten: nur im
+Bild verglichen. Die Physik lassen: Das war die Empfehlung, weil die Unterschiede im Bild klein sind, seit die Schulter
+der Puppe rund ist und ein violettes Stück sie zum Nacken schließt.
