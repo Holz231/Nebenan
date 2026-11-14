@@ -5318,8 +5318,8 @@ static int SteerTurnSettleTest( void )
 // A steered figure facing where it moves runs forward at 4.4 m/s and turns about, at eight moments spread over a cycle
 // of its run. A foot that lifts flat with its leg stretched there and whose swing comes to hurry after it lifted lifts
 // its foot less far for that while the foot still rises, see NB_SWING_EARLY_TOP: over the eight turns a shin jumps
-// 38.7 mm in an update at most in the mean, and more than 37 mm in 4 of them. Until round 120 the swing kept the lift
-// it had as it lifted and went through it faster, and its knee snapped: 43.4 mm, in 6 of them.
+// 38.0 mm in an update at most in the mean, 38.7 mm until round 122, and more than 37 mm in 4 of them. Until round 120
+// the swing kept the lift it had as it lifted and went through it faster, and its knee snapped: 43.4 mm, in 6 of them.
 static int SteerTurnLiftTest( void )
 {
 	float sum = 0.0f;
@@ -5418,6 +5418,58 @@ static int SteerTurnRollTest( void )
 			1000.0f * most, 1000.0f * sum / 12.0f );
 	ENSURE( most < 0.065f );
 	ENSURE( sum / 12.0f < 0.046f );
+	return 0;
+}
+
+// A steered figure facing where it moves runs forward at 4.62 m/s and turns about, at twelve moments an update apart.
+// As it runs off the other way, both feet lift up to 0.4 of a cycle before their phase. A foot that lifts more than half
+// a cycle after its phase counts as early for its next swing and swings slower, and from two seconds after the turn on
+// the feet lift in turn after all twelve turns. Until round 122 it counted as late and hurried: after three of the
+// twelve turns both feet then lifted almost together, two lifts within a quarter of the time to the next, for seconds.
+static int SteerTurnRhythmTest( void )
+{
+	int uneven = 0;
+	for ( int part = 0; part < 12; ++part )
+	{
+		FigureScene scene;
+		CreateFigureScene( &scene, 1 );
+		nbFigureId figure = AddSteeredFigure( &scene, b3Vec3_zero, 0.0f );
+		StepFigures( &scene, 60 );
+		nbSteer steer = { { 0.0f, 0.0f, 4.62f }, 0.0f, true };
+		nbFigure_Steer( figure, &steer );
+		StepFigures( &scene, 208 + part );
+		steer.velocity = (b3Vec3){ 0.0f, 0.0f, -4.62f };
+		nbFigure_Steer( figure, &steer );
+		StepFigures( &scene, 120 );
+		int lifts[16];
+		int count = 0;
+		bool swings[2] = { GetSteered( &scene, figure )->footSwings[0], GetSteered( &scene, figure )->footSwings[1] };
+		for ( int i = 0; i < 60; ++i )
+		{
+			StepFigures( &scene, 1 );
+			const nbFigure* f = GetSteered( &scene, figure );
+			for ( int k = 0; k < 2; ++k )
+			{
+				if ( f->footSwings[k] && swings[k] == false && count < 16 )
+				{
+					lifts[count++] = i;
+				}
+				swings[k] = f->footSwings[k];
+			}
+		}
+		bool together = false;
+		for ( int n = 0; n + 2 < count; ++n )
+		{
+			int first = lifts[n + 1] - lifts[n];
+			int second = lifts[n + 2] - lifts[n + 1];
+			together = together || 4 * b3MinInt( first, second ) < b3MaxInt( first, second );
+		}
+		ENSURE( count >= 3 );
+		uneven += together ? 1 : 0;
+		DestroyFigureScene( &scene );
+	}
+	printf( "  turning about at a run, the feet lift together instead of in turn after %d of twelve turns\n", uneven );
+	ENSURE( uneven == 0 );
 	return 0;
 }
 
@@ -6850,6 +6902,7 @@ int FigureTest( void )
 	RUN_TEST( SteerTurnSettleTest );
 	RUN_TEST( SteerTurnLiftTest );
 	RUN_TEST( SteerTurnRollTest );
+	RUN_TEST( SteerTurnRhythmTest );
 	RUN_TEST( SteerBackTest );
 	RUN_TEST( SteerUprightTest );
 	RUN_TEST( SteerStartStopTest );

@@ -3821,7 +3821,8 @@ static void nbComeDownForGait( nbFigure* f, float timeStep )
 // damped at a rate of one over NB_GAIT_KEEP seconds, so that the next foot lifts when its phase says, after its push,
 // see nbSteerFeet. Running, the cycle keeps its own time, and the feet keep to it: a foot whose leg loses it before its
 // phase says swings as much slower and lands when its phase comes round, up to NB_GAIT_KEEP_MOST of a cycle later, so
-// the feet go on in step with each other and with the bob, see NB_GAIT_BOB_RUN.
+// the feet go on in step with each other and with the bob, see NB_GAIT_BOB_RUN. Before its phase means the nearer way
+// round: a foot that lifts more than half a cycle after its phase is early for its next swing, see nbSteerFeet.
 #define NB_GAIT_KEEP 0.25f
 #define NB_GAIT_KEEP_MOST 0.3f
 
@@ -5786,9 +5787,20 @@ static void nbSteerFeet( const nbWorld* world, int index, nbFigure* f, const nbC
 					f->gaitLag = ( 1.0f - run ) * b3MinFloat( -off, NB_GAIT_KEEP_MOST );
 				}
 				// A late swing hurries to land when its phase comes round. Running, an early one swings as much slower,
-				// up to NB_GAIT_KEEP_MOST of a cycle later, see NB_GAIT_KEEP.
+				// up to NB_GAIT_KEEP_MOST of a cycle later, see NB_GAIT_KEEP. A foot that lifts more than half a cycle
+				// after its phase says is nearer to its next swing than to this one: it is early for that one, not late.
+				// Taken as late, as until round 122, it hurried as much as it could and still landed half a cycle off its
+				// phase, beside the other foot, whose swing had waited for the cycle: from then on both feet lifted
+				// almost together and one of them hurried at every step, for seconds. Turning about at a run, where both
+				// feet lift up to 0.4 of a cycle before their phase as the figure runs off again, that happened after 13
+				// of 336 turns, and a shin jumped up to 60 mm in the runs that ended so, see SteerTurnRhythmTest.
+				float ahead = phase - stance;
+				if ( ahead > 0.5f )
+				{
+					ahead -= 1.0f;
+				}
 				float slowest = -run * NB_GAIT_KEEP_MOST / ( 1.0f - stance );
-				float late = b3ClampFloat( ( phase - stance ) / ( 1.0f - stance ), slowest, NB_GAIT_AIM );
+				float late = b3ClampFloat( ahead / ( 1.0f - stance ), slowest, NB_GAIT_AIM );
 				f->swingAlong[k] = 0.0f;
 				f->swingRate[k] = 1.0f;
 				f->swingHurry[k] = late * NB_GAIT_HURRY < NB_GAIT_HURRY - 1.0f ? 1.0f / ( 1.0f - late ) : NB_GAIT_HURRY;

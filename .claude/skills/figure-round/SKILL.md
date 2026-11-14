@@ -88,6 +88,12 @@ Zehen und Fersen 37 mm, Hände 15 mm, Becken 10 mm, Becken tief ab 15 cm unter d
 - **Eine Konstante ohne Ordnung ist keine.** Ändert ein Wert das Ergebnis mal so, mal so, kommt er nicht hinein.
 - **Was die Wurzel hergibt, muss das Bein holen und umgekehrt.** Rollen, Senken der Wurzel und Strecken des Beins
   decken dieselbe Not. Wer eines bremst, sieht nach, was die anderen dafür tun (Becken tief, Becken über 10 mm).
+- **Macht eine Korrektur etwas anderes häufiger, ist oft das andere der Fehler.** Die Fassungen für das Becken in
+  Runde 123 ließen den Lauf dreimal so oft in einen Galopp fallen. Der Galopp war ein eigener, alter Fehler im Takt.
+  Erst ihn verfolgen, dann die Runde neu schneiden: den kleinen sicheren Teil bauen, den Rest als Ursache festhalten.
+- **Ein Ziel kann eine Eigenschaft sein.** Tritt ein Fehler selten, aber in jedem Satz auf, heißt die Bedingung „keine
+  Stelle, und vorher mindestens eine“ statt „um mehr als die Toleranz besser“ (Runde 123). Vorher zählen, ob der alte
+  Stand ihn wirklich in jedem Satz hat.
 - **Größe der Figur.** Winkelbeschleunigungen wachsen bei kleineren Figuren mit 1 durch `nbFigureScale`, Längen
   und Geschwindigkeiten mit ihr.
 
@@ -95,6 +101,8 @@ Zehen und Fersen 37 mm, Hände 15 mm, Becken 10 mm, Becken tief ab 15 cm unter d
 
 - Lange Läufe als Hintergrundaufgabe, nicht mit `sleep` darauf warten. Während Zeiten gemessen werden, nichts Schweres
   daneben.
+- Einen Hintergrundjob, der auf einen anderen wartet, über seine Prozessnummer beenden und nachsehen, dass er weg ist:
+  Ein nur halb beendeter Job hat in Runde 123 später Ergebnisse überschrieben.
 - Die Maschine kann neu starten: vor langen Messungen `git diff` als Patch sichern, unterbrochene Messungen ganz neu.
 - Ausgaben kurz halten (`cut`, `grep`, `tail`), der Nutzer zahlt die Token. Zwischenstände mit „Kurz:“.
 - Commits: `user.name=Claude`, Trailer `Co-Authored-By: Claude <noreply@anthropic.com>` und `Claude-Session`, kein

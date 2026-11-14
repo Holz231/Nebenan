@@ -1,6 +1,6 @@
 # Karte der gesteuerten Figur
 
-Wo in `src/figure.c` was entschieden wird, so weit die Runden 118 bis 122 es verfolgt haben. Namen statt Zeilen, die
+Wo in `src/figure.c` was entschieden wird, so weit die Runden 118 bis 123 es verfolgt haben. Namen statt Zeilen, die
 Zeilen wandern. Vor einer Änderung die Kommentare an den Konstanten lesen: Dort steht mit Zahlen, warum sie so sind und
 was schon verworfen wurde.
 
@@ -11,6 +11,13 @@ was schon verworfen wurde.
 - **Abheben und Landen.** Ein Fuß hebt nach dem Takt ab, oder früher, wenn sein Bein ihn nicht mehr erreicht
   (`NB_GAIT_LOSE`, `nbTimeToLose`). Beim Abheben werden die Größen des Schwungs gesetzt: `swingHurry`, `swingCalm`,
   `swingHeight`, `swingRun`, `swingSoft`, `swingLift`.
+- **Takt.** Rennend hält der Gang seinen Takt (`gaitPhase`), und die Füße halten sich daran: Wer vor seiner Phase
+  abhebt, schwingt langsamer, bis `NB_GAIT_KEEP_MOST` eines Zyklus, wer danach abhebt, schneller (`late` beim Abheben).
+  Früh oder spät heißt der nähere Weg: Mehr als ein halber Zyklus nach der Phase ist früh für den nächsten Schwung
+  (Runde 123). Den Takt rennend den Füßen nachzuholen, ist zweimal verworfen.
+- **Fersenlandung.** Der Schwung rollt den Fuß ab `NB_GAIT_HEEL_FROM` auf die Ferse (`heel`), die Landung setzt
+  `landRoll`, und der Fuß kommt mit `stanceTime` über `NB_GAIT_HEEL_LOAD` eines Zyklus flach. So lange gilt er nicht als
+  hinter der Hüfte, auch wenn er hinter ihr gelandet ist, und die Wurzel sinkt für ihn (Runde 123, offen).
 - **Eile.** `swingHurry` bis `NB_GAIT_HURRY`: Der Schwung läuft schneller, wenn der andere Fuß verloren geht. Sie darf
   nur so groß sein, wie der Fuß für den Weg, den er noch hat, mit `NB_GAIT_SWING_ACCEL` bremsen kann (Runde 119).
 - **Hub.** `nbSwingLift`: gehend ein früher Buckel (`nbSwingEarly`, Scheitel bei einem Viertel des Schwungs) plus ein
@@ -59,5 +66,6 @@ was schon verworfen wurde.
 ## Tests
 
 `test/test_figure.c`: `SteerRunFlightTest` (Runde 118), `SteerTurnLandTest` (119), `SteerTurnSettleTest` (120),
-`SteerTurnLiftTest` (121), `SteerTurnRollTest` (122). Die Hashes `NB_EXPECTED_…_HASH` ändern sich nur, wenn sich ein
-Lauf ändert, der dort festgehalten ist: Das ist erlaubt, wird aber in der Roadmap genannt.
+`SteerTurnLiftTest` (121), `SteerTurnRollTest` (122), `SteerTurnRhythmTest` (123). Die Hashes `NB_EXPECTED_…_HASH`
+ändern sich nur, wenn sich ein Lauf ändert, der dort festgehalten ist: Das ist erlaubt, wird aber in der Roadmap
+genannt.
