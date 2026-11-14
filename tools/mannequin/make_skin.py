@@ -5,8 +5,9 @@
 # keep their shape, the chest lies further ahead and the clavicles carry the shoulders onto the shoulders of the figure,
 # the fingers are curled and their small joints left out. Every vertex then gets a binding from its weights in the
 # model: one bone of the figure, or a pose between two of them, in quarters. The demo moves a vertex with the pose of
-# its binding, so the shells bend at the joints as the skin of the model does. Reads the files only, runs nothing from
-# them.
+# its binding, so the shells bend at the joints as the skin of the model does. A rounded piece in the color of the
+# joints on each shoulder closes the notch between the neck and the top of the arm, which the model leaves open. Reads
+# the files only, runs nothing from them.
 import collections, json, math, os, sys
 import numpy as np
 M = os.path.dirname(os.path.abspath(__file__))
@@ -19,6 +20,9 @@ CURL = (1.25, 1.45, 1.1)   # how far the three joints of a finger are bent, radi
 FOOT_HIGH = 0.78       # the foot of the model is taller at the ankle than the foot of the figure
 CHEST_AHEAD = 0.03     # the chest of the model lies this far behind the chest of the figure over the same hips, metres
 STEPS = 4              # a pose between two bones in this many steps
+# the piece that closes the shoulder: its middle from the shoulder joint, inward, up and ahead, and its half axes,
+# metres
+SHOULDER_PAD = ((-0.025, 0.02, -0.015), (0.065, 0.06, 0.05))
 PELVIS, BELLY, RIBS, LOWER_CHEST, CHEST, NECK, HEAD = 0, 1, 2, 3, 4, 5, 6
 ARM = {'l': (7, 8, 9), 'r': (10, 11, 12)}
 LEG = {'l': (13, 14, 15), 'r': (16, 17, 18)}
@@ -49,6 +53,30 @@ def align(u, v):
     k = axis / s
     K = np.array([[0, -k[2], k[1]], [k[2], 0, -k[0]], [-k[1], k[0], 0]])
     return np.eye(3) + s * K + (1 - c) * (K @ K)
+
+
+def polar(L):
+    """a linear map as a turn and a stretch"""
+    U, _, Vt = np.linalg.svd(L)
+    if np.linalg.det(U @ Vt) < 0.0:
+        U[:, -1] = -U[:, -1]
+    R = U @ Vt
+    return R, R.T @ L
+
+
+def between(La, Lb, share):
+    """the linear map the share from La to Lb, the turn and the stretch each on its own: entry by entry, a map between
+    an arm that hangs and one that is stretched out would shrink what it moves"""
+    Ra, Sa = polar(La)
+    Rb, Sb = polar(Lb)
+    rel = Rb @ Ra.T
+    angle = math.acos(max(-1.0, min(1.0, 0.5 * (np.trace(rel) - 1.0))))
+    R = Ra
+    if angle > 1e-9:
+        k = np.array([rel[2, 1] - rel[1, 2], rel[0, 2] - rel[2, 0], rel[1, 0] - rel[0, 1]]) / (2.0 * math.sin(angle))
+        K = np.array([[0, -k[2], k[1]], [k[2], 0, -k[0]], [-k[1], k[0], 0]])
+        R = (np.eye(3) + math.sin(share * angle) * K + (1.0 - math.cos(share * angle)) * (K @ K)) @ Ra
+    return R @ ((1.0 - share) * Sa + share * Sb)
 
 
 def rot_z(a):
@@ -215,7 +243,10 @@ def target(name):
     if b == 'Head':
         return HEAD, trunk
     if b == 'upperarm':
-        return ARM[s][0], limb(J['upperarm_' + s], J['lowerarm_' + s], P[ARM[s][0]], P[ARM[s][1]])
+        # the top of the upper arm hangs partly on the clavicle, which meets the arm in the shoulder joint, see emit
+        fit = limb(J['upperarm_' + s], J['lowerarm_' + s], P[ARM[s][0]], P[ARM[s][1]])
+        fit.joint = J['upperarm_' + s]
+        return ARM[s][0], fit
     if b == 'lowerarm':
         return ARM[s][1], limb(J['lowerarm_' + s], J['hand_' + s], P[ARM[s][1]], P[ARM[s][2]])
     if b == 'thigh':
@@ -305,7 +336,18 @@ def emit(verts, norms, tris, material, fit, skin, pre=None):
                 w, L = fit(p)
                 L = L @ L0
                 shares = [(POSED[name], share) for name, share in skin[v] if name in POSED]
-                if shares:
+                joint = getattr(fit, 'joint', None)
+                if len(shares) == 1 and joint is not None:
+                    # the upper arm hangs down, a quarter turn from where the model has it, and its top hangs partly on
+                    # the clavicle: it turns down by the share it hangs on the arm, about the shoulder joint, and keeps
+                    # its distance from it, so the shoulder stays round and the line from the neck to the shoulder
+                    # closed
+                    pose, share = shares[0]
+                    here, _ = fit(joint)
+                    _, Lc = pose(verts[v])
+                    L = between(L, Lc, share)
+                    w = here + L @ (p - joint)
+                elif shares:
                     rest = 1.0 - sum(share for _, share in shares)
                     w, L = rest * w, rest * L
                     for pose, share in shares:
@@ -348,6 +390,34 @@ for mesh, material in ((0, 0), (1, 1)):
             if b.startswith(f):
                 pre = curl(side_of(name), f, int(b[len(f) + 2]) - 1)
         emit(pos, nor, tris, material, fit, skin, pre)
+
+# The model has no shell between the chest and the upper arm: the top of the arm lies on the shoulder, and between the
+# slope from the neck and the top of the arm a notch stays open, wider where the arm swings or lifts, and what is behind
+# the figure shows there. A rounded piece in the color of the joints on each shoulder, on the chest, closes it: it lies
+# around the shoulder joint and reaches up under the line from the neck to the top of the arm, as the top of the
+# shoulder does on a person, and is hidden under the arm where the arm lies on it.
+for s in 'lr':
+    side = 1.0 if s == 'l' else -1.0
+    centre = P[ARM[s][0]] + np.array([side * SHOULDER_PAD[0][0], SHOULDER_PAD[0][1], SHOULDER_PAD[0][2]])
+    radii = np.array(SHOULDER_PAD[1])
+    first, rings, around = len(VERTS), 6, 12
+    bound = binding([('clavicle_' + s, 1.0)])
+    for i in range(rings + 1):
+        a = math.pi * i / rings
+        for j in range(around):
+            b = 2.0 * math.pi * j / around
+            n = np.array([math.sin(a) * math.cos(b), math.cos(a), math.sin(a) * math.sin(b)])
+            VERTS.append(centre + radii * n)
+            NORMS.append((n / radii) / np.linalg.norm(n / radii))
+            MATS.append(1)
+            BINDS.append(bound)
+    for i in range(rings):
+        for j in range(around):
+            a, b = first + i * around + j, first + i * around + (j + 1) % around
+            if i > 0:
+                INDEX.extend((a, b, b + around))
+            if i + 1 < rings:
+                INDEX.extend((a, b + around, a + around))
 
 with open(OUT, 'w') as f:
     f.write('// SPDX-License-Identifier: MIT\n')

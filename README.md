@@ -186,13 +186,14 @@ siehe Demo-Renderer. Wie lang die Glieder sind und wie die Figur steht, kommt au
 einem Modell von Quaternius, exportiert aus ActionForge und gemeinfrei unter CC0 1.0: orange mit violetten Gelenken, mit
 Kopf, Brustkorb, Bauch, Becken, Armen mit Fäusten, Beinen mit Waden und Füßen. Das Modell ist geskinnt und hat 71
 Knochen, die Figur der Bibliothek hat 19: `tools/mannequin/make_skin.py` passt Arme und Beine an die Gelenke der Figur
-an, trägt die Schultern auf die Schultern der Figur, legt die Sohle des Fußes auf die Sohle der Physik und bindet jeden
-Punkt an einen Knochen der Figur oder an eine Lage zwischen zweien, 6 352 Dreiecke je Figur. Die Demo zeichnet die Puppe
-als ein Stück, das sich an Knie, Ellbogen, Schulter, Hüfte und Rumpf mitbiegt, und setzt dafür in jedem Bild 72 Lagen
-aus den Lagen der Körper. **Modell** im Menü schaltet sie ab, `--shapes` beim Start: Dann zeichnet die Demo die
-Gliederpuppe aus den Formen der Physik wie oben beschrieben. Ohne **Teile farbig** hat jede Puppe die Farbe ihrer Figur
-und dunkle Gelenke. Die Bibliothek weiß von alledem nichts: Ein Spiel hängt sein eigenes Modell an die Körper der
-Knochen, deren Lage es je Bild aus der Bibliothek liest. Siehe [tools/mannequin](tools/mannequin/README.md).
+an, trägt die Schultern auf die Schultern der Figur, legt die Sohle des Fußes auf die Sohle der Physik schließt die
+Kerbe zwischen Nacken und Schulter mit einem violetten Stück und bindet jeden Punkt an einen Knochen der Figur oder an
+eine Lage zwischen zweien, 6 592 Dreiecke je Figur. Die Demo zeichnet die Puppe als ein Stück, das sich an Knie,
+Ellbogen, Schulter, Hüfte und Rumpf mitbiegt, und setzt dafür in jedem Bild 72 Lagen aus den Lagen der Körper.
+**Modell** im Menü schaltet sie ab, `--shapes` beim Start: Dann zeichnet die Demo die Gliederpuppe aus den Formen der
+Physik wie oben beschrieben. Ohne **Teile farbig** hat jede Puppe die Farbe ihrer Figur und dunkle Gelenke. Die
+Bibliothek weiß von alledem nichts: Ein Spiel hängt sein eigenes Modell an die Körper der Knochen, deren Lage es je Bild
+aus der Bibliothek liest. Siehe [tools/mannequin](tools/mannequin/README.md).
 
 **Figuren als Menschen.** Seit `active-ragdoll-113` zeichnet die Demo die Figuren auf Wunsch als Menschen, mit **Als
 Mensch** im Menü oder `--human`. Die Gliederpuppe aus den Formen der Physik bleibt, wie sie war. Beim Start steht seit
@@ -352,12 +353,12 @@ Messungen reißen die Stadt selbst ab, Lauf für Lauf, auch mit `--demolition`, 
 vorgegebene Schussfolge ab, `--stick` dreht in der Szene mit Figuren ohne Menü den Blick nach einem Skript, und der
 Stock schwingt mit, langsam gegen einen Kopf und schnell über eine Brust, `--walk` lässt die Spielfigur ohne Menü den
 Parcours gehen, die Treppe hinauf, über die Plattform rennen und von ihrer Kante springen, `--walk-side` dasselbe von
-der Seite gesehen, `--human` zeichnet die Figuren als Menschen, `--look 180 2.5` zeigt die Spielfigur stehend ohne Menü
-aus einem Winkel um sie und einer Entfernung in Metern, 0 von hinten und 180 von vorn, für Bilder, `--faces-camera`
-setzt den Haken „Blick zur Kamera“, mit `--walk-side` geht sie den Parcours dann seitwärts, `--gait-clips` und
-`--clip-arms` schalten „Gang nach Clips“ und „Arme im Clip vorn“ ein, `--frames N` beendet nach N Bildern und meldet
-Bildzeiten, CPU-Zeiten, Uploads und Dreiecke pro Bild und einen Hash der Lagen aller Bruchstücke und der Knochen der
-Figuren, `--screenshot datei.ppm` speichert das letzte Bild (nur OpenGL).
+der Seite gesehen, `--human` zeichnet die Figuren als Menschen, `--look 180 2.5` zeigt die Spielfigur stehend ohne Menü,
+mit `--look-down 40` dazu aus 40 Grad von oben, aus einem Winkel um sie und einer Entfernung in Metern, 0 von hinten und
+180 von vorn, für Bilder, `--faces-camera` setzt den Haken „Blick zur Kamera“, mit `--walk-side` geht sie den Parcours
+dann seitwärts, `--gait-clips` und `--clip-arms` schalten „Gang nach Clips“ und „Arme im Clip vorn“ ein, `--frames N`
+beendet nach N Bildern und meldet Bildzeiten, CPU-Zeiten, Uploads und Dreiecke pro Bild und einen Hash der Lagen aller
+Bruchstücke und der Knochen der Figuren, `--screenshot datei.ppm` speichert das letzte Bild (nur OpenGL).
 
 Hinkt die Physik hinterher, lässt `nbWorld_Advance` die Zeit langsamer laufen, statt Schritte nachzuholen: Mehr als
 1/60 s Physik im selben Bild kommt nur, solange der letzte Schritt weniger als 4 ms pro 1/60 s kostete, bei 60 Hz

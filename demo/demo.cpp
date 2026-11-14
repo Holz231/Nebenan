@@ -337,6 +337,7 @@ struct Automation
 	bool look = false;
 	float lookYaw = 0.0f;
 	float lookDistance = 0.0f;
+	float lookPitch = 0.0f;
 
 	// Run the comparison, the one of the thread counts, the scaling or the one with and without the joints in the packs,
 	// print it and quit, or take the town down like the comparison does
@@ -5584,7 +5585,7 @@ static void OnFrame()
 	if ( app.automation.look && app.scene == ScenePlayer )
 	{
 		app.camera.yaw = app.automation.lookYaw;
-		app.camera.pitch = 0.0f;
+		app.camera.pitch = app.automation.lookPitch;
 	}
 	if ( app.automation.walk && app.scene == ScenePlayer )
 	{
@@ -5928,6 +5929,11 @@ int main( int argc, char** argv )
 			app.automation.lookYaw = (float)atof( argv[++i] ) * B3_PI / 180.0f;
 			app.automation.lookDistance = (float)atof( argv[++i] );
 			app.showUi = false;
+		}
+		else if ( strcmp( argv[i], "--look-down" ) == 0 && i + 1 < argc )
+		{
+			// With --look: the camera looks down on the figure by this many degrees, as the camera of the player does
+			app.automation.lookPitch = -(float)atof( argv[++i] ) * B3_PI / 180.0f;
 		}
 		else if ( strcmp( argv[i], "--shapes" ) == 0 )
 		{

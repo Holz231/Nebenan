@@ -18,12 +18,17 @@ Bauch sind je eine, Kopf und Brust hängen zusammen, dazwischen liegen die viole
 wird mit dem Knochen angepasst, an dem sie am meisten hängt: Arme und Beine so, dass ihre beiden Gelenke auf den
 Gelenken der Figur liegen, Rumpf und Kopf behalten ihre Form und werden auf 1,8 m verkleinert, der Fuß wird so lang und
 so hoch wie der Fuß der Physik, damit die Sohle stimmt. Die Finger sind zur Faust gekrümmt, die kleinen Gelenke der
-Finger, die Hälfte aller Dreiecke, sind weggelassen. Es bleiben 3 870 Punkte und 6 352 Dreiecke je Figur.
+Finger, die Hälfte aller Dreiecke, sind weggelassen. Es bleiben 3 870 Punkte und 6 352 Dreiecke je Figur, mit den beiden
+Stücken auf den Schultern 4 038 und 6 592.
 
 Die Schultern der Figur liegen über denselben Hüften 6,4 cm weiter vorn, 1,6 cm weiter außen und 1,6 cm tiefer als die
 des Modells. Deshalb liegt die Brust 3 cm weiter vorn, mittig auf der Brust der Physik, der Hals führt von ihr zum Kopf,
 und das Schlüsselbein dreht und streckt sich um sein Gelenk, bis das Schultergelenk des Modells auf dem der Figur liegt.
-Was an diesen Knochen hängt, folgt ihnen mit seinem Gewicht: die Pfanne der Brust und der obere Rand des Oberarms.
+Was an diesen Knochen hängt, folgt ihnen mit seinem Gewicht: die Pfanne der Brust und der obere Rand des Oberarms. Der
+Rand des Oberarms liegt eine Vierteldrehung von dort, wo das Modell ihn hat: Für ihn mischt das Werkzeug Drehung und
+Dehnung getrennt, er dreht um das Schultergelenk mit und sinkt nicht in die Schulter ein. Zwischen Brust und Oberarm hat
+das Modell keine Schale. Ein rundes Stück in der Farbe der Gelenke auf jeder Schulter, an der Brust, schließt die Kerbe
+zwischen Nacken und Schulter, `SHOULDER_PAD`.
 
 Das Ergebnis ist ein Mesh in der Ruhepose der Figur. Jeder Punkt hat eine Bindung aus seinen Gewichten im Modell: einen
 Knochen der Figur, oder eine Lage zwischen zwei Knochen, von denen einer über dem anderen liegt, in Vierteln, mit dem
