@@ -1,0 +1,200 @@
+Regel für Runde 128, vor jedem Lauf mit den Geschwindigkeiten der unabhängigen Prüfung festgeschrieben. Neunte Regel
+nach dem Muster von Runde 117. Geändert gegen Runde 124: Das Ziel ist eine Zählung der Stellen, an denen die verfolgte
+Ursache das härteste Schienbein macht, mit Toleranz, dazu die Summe an denselben Stellen ohne Toleranz. Der Benchmark
+wird an seinen Endzuständen geprüft, seine Zeiten stehen daneben, nach der Lehre aus Runde 124. Die Balance ist wieder
+die Treffertabelle Byte für Byte, anders als in Runde 126, die den Körper änderte.
+
+Eingriff. Zwei Grenzen für das Tempo, mit dem ein Fuß am Boden über die Zehen rollt, in nbLowerSteered, beide für Beine,
+die vorwärts gehen, beide mit NB_FOOT_ROLL_GAIN aus Runde 122, ohne neue Konstante und ohne neues Feld. Erstens: Rollt
+ein Fuß über die Zehen hinauf, wird sein Rollen je Update höchstens um NB_FOOT_ROLL_GAIN langsamer, so wie es seit Runde
+122 höchstens um so viel schneller wird, wenn es sein muss über NB_FOOT_ROLL_MOST hinaus. Zweitens: Das Tempo, mit dem
+ein Fuß von der Ferse flach kam, zählt nicht als Tempo über die Zehen, dort beginnt er aus der Ruhe.
+
+Die Ursachen, verfolgt auf active-ragdoll-127 in Kehrtwenden im Rennen mit Blick in Laufrichtung, Update für Update. Die
+Körper folgen der Pose des Updates davor. Erstens, mit 4,36 m/s, 1,5 s nach der Wende: Ein Fuß hinter der Hüfte rollt
+über die Zehen, so weit sein Bein in den nächsten 0,08 s braucht, 0,19 und 0,24 rad je Update, sein Bein auf 0,95 seiner
+Länge. Was sein Bein braucht, läuft in NB_FOOT_ROLL_MOST, im letzten Update am Boden rollt er noch 0,12 rad, sein
+Knöchel folgt der Hüfte 24 statt 51 mm, das Bein streckt sich in diesem Update von 0,951 auf 0,980, und das Schienbein
+springt 53,5 mm und im Update danach 45,9 mm zurück. Mit dem Eingriff rollt er dort 0,16 rad, bis 1,006 rad, und das
+Schienbein springt 36 und 18 mm. Im stetigen Rennen hebt ein Fuß ab, solange sein Rollen schneller wird, 0,20 bis 0,23
+rad im letzten Update bei 0,68 bis 0,85 rad: Dort greift die Grenze nie. Zweitens, mit 3,44 m/s, 1,1 s nach der Wende:
+Ein Fuß steht flach, von der Ferse gekommen mit 0,06 bis 0,08 rad je Update, sein Bein auf 0,98 gestreckt. Die Hüfte
+kommt vor seine Zehen, und er rollt im ersten Update 0,144 rad über die Zehen statt der 0,083 rad, die NB_FOOT_ROLL_GAIN
+aus der Ruhe gibt, weil das Tempo von der Ferse mitzählt: Der Knöchel steigt 28 mm, das Bein verkürzt sich in einem
+Update von 0,980 auf 0,959, und das Schienbein springt 42,4 mm. Mit dem Eingriff 0,083 rad, das Bein kommt über zwei
+Updates auf 0,959, und das Schienbein springt 20, 12 und 26 mm.
+
+Größe des Eingriffs: klein. Zwei Bedingungen in einem Block von nbLowerSteered, für jede gesteuerte Figur. Für einen
+kleinen Eingriff verlangt die Regel, dass die Zielgröße auf frischen Geschwindigkeiten um mehr als die Streuung besser
+ist, und dass nichts um mehr als die Streuung schlechter ist.
+
+Zielgröße. Die beiden Kehrtwenden im Rennen mit Blick in Laufrichtung, turnrun180 und turnrun180b, 48 Stellen je Satz,
+gemessen mit tools/measure/turn128.py: die Zahl der Stellen, an denen der härteste Sprung eines Schienbeins über 37 mm
+an einem Bein geschieht, das steht oder in diesem Update abhebt, "stand" und "lift 0". Das sind die beiden Momente, die
+der Eingriff betrifft. Auf active-ragdoll-127 sind es je Satz 3, 4 und 3 Stellen auf HF9, HF11 und HF15 und 7, 4, 7 und
+6 auf HF7, HF21, HF37 und HF39, die Streuung zwischen ähnlichen Sätzen ist 1, die Toleranz mindestens 2 Stellen. Mit dem
+Prototyp sind es 0 bis 1 je Satz. Dazu die Summe dessen, was Schienbeine an diesen 48 Stellen über 37 mm hinaus
+springen: alt 29 bis 76 mm je Satz, Streuung 36 mm, mit dem Prototyp in jedem der sieben Sätze kleiner, um 8 bis 44 mm.
+Die Summe streut zwischen Sätzen so viel, wie der Eingriff nimmt, weil andere Ursachen in ihr stecken, die diese Runde
+nicht angeht. Sie ist deshalb nicht das Ziel mit Toleranz: Sie muss auf denselben Stellen kleiner sein als alt.
+
+Messgrößen sonst wie in den Runden 118 bis 124, mit tools/measure.
+
+Toleranz, gemessen auf active-ragdoll-127 vor dem Festschreiben mit tools/measure/tolerance128.py, abgelegt in
+docs/Regeln/tol128.json, SHA-256 f0717c2cd5b9c19fb5ddd2f44a302e6c9d9c0cdd54fe313bd0f57b9e9bdec50a. Paare und Rechnung
+wie in RULE120.txt bis RULE126.txt: Mit festem Blick die langsamen Paare H1 und H14, H1 und H15, H14 und H15, H6 und
+H15, H10 und H12 und die schnellen Paare H5 und H13, H9 und H11, H2 und H11, je 504 Stellen. Mit Blick in Laufrichtung
+die Paare HF9 und HF11, HF9 und HF15, HF11 und HF15, je 312 Stellen; die Prüfung hat zwei solche Sätze, Zählungen und
+Summen bekommen das Doppelte. Zählungen bekommen mindestens 2 Stellen, härteste Sprünge mindestens 2 mm. Die Namen der
+Tabelle wie in RULE123.txt, dazu für die Kehrtwenden im Rennen held, die Stellen der Zielgröße, over, die Stellen über
+37 mm, und excess, die Summe darüber. Gegen tol126.json ändern sich nur die Hände, die seit Runde 126 an anderen
+Schultern hängen.
+
+  with a fixed heading                h1     h14     h15      h6     h10     h12      h5     h13      h9     h11      h2   slow    fast   tolerance
+  over feet                         0.00    1.00    0.00    1.00    1.00    0.00    8.00    6.00    6.00    2.00    6.00   1.00    4.00      5.00
+  worst feet                       34.39   37.31   36.15   39.23   39.13   36.80   41.90   64.58   37.92   44.37   58.11   3.07   22.68     22.68
+  mean feet                         7.17    7.27    7.27    7.26    7.97    7.95    7.41    7.34    7.05    6.87    6.92   0.10    0.19      0.14
+  tenth feet                       12.85   12.95   12.99   13.06   14.23   14.12   12.81   12.77   12.24   12.01   12.01   0.14    0.23      0.18
+  over shins                       74.00   77.00   99.00   80.00   78.00  109.00  105.00  124.00   93.00   98.00  112.00  31.00   19.00     50.00
+  worst shins                      45.02   52.65   52.75   57.11   60.46   54.31   77.02   61.07   70.38   62.10   68.81   7.73   15.96     15.96
+  mean shins                        7.52    7.60    7.60    7.58    8.24    8.24    7.79    7.76    7.44    7.26    7.34   0.09    0.17      0.13
+  tenth shins                      14.08   14.20   14.26   14.03   15.22   15.28   14.67   14.57   14.00   13.82   13.88   0.23    0.18      0.21
+  over hands                       50.00   65.00   24.00   52.00   31.00   52.00   62.00   35.00   60.00   60.00   24.00  41.00   36.00     77.00
+  worst hands                      24.21   30.21   25.36   27.47   19.98   29.00   24.16   21.93   21.80   24.00   23.01   9.01    2.23      9.01
+  mean hands                        2.94    2.99    2.97    2.93    3.33    3.35    3.51    3.52    3.31    3.20    3.29   0.05    0.11      0.08
+  tenth hands                       4.55    4.62    4.60    4.53    5.09    5.09    5.39    5.41    5.08    4.97    5.07   0.08    0.12      0.10
+  over pelvis                      26.00   27.00   26.00   17.00   30.00   23.00   63.00   97.00   36.00   33.00   33.00   9.00   34.00     43.00
+  worst pelvis                     16.67   22.12   24.94   18.13   18.51   22.63   19.57   20.08   14.57   17.38   22.77   8.27    5.39      8.27
+  mean pelvis                       1.15    1.17    1.17    1.17    1.30    1.29    1.14    1.13    1.10    1.07    1.08   0.02    0.03      0.02
+  tenth pelvis                      2.46    2.50    2.50    2.47    2.81    2.80    2.51    2.48    2.35    2.30    2.32   0.04    0.06      0.05
+  hard shins                        0.00    2.00    3.00    2.00    4.00    6.00   11.00    4.00    7.00    8.00   10.00   3.00    7.00     10.00
+  excess shins                    175.28  224.73  232.01  239.85  240.66  306.24  621.00  543.38  477.79  446.85  555.01  65.58  108.17    173.75
+  excess pelvis                    41.33   76.64   56.74   46.33   54.33   51.11   82.88  105.16   60.62   69.96   78.83  35.31   22.28     57.59
+  low                               0.00    0.00    0.00    0.00    0.00    0.00   46.00   47.00   34.00   29.00   37.00   0.00    8.00      8.00
+  lowest                           12.46   11.82   12.18   11.66   14.87   14.17   20.59   19.86   18.00   17.15   18.33   0.70    1.19      1.19
+  flights                          83.00   84.00   53.00   53.00   58.00   88.00   47.00   53.00   76.00   69.00   65.00  31.00    7.00     38.00
+  flight                           92.10   92.76   89.58   89.48   92.26   94.97   94.54   96.30   96.76   96.46   95.73   3.17    1.75      2.46
+  crossed                           1.00    1.00    1.00    1.00    0.00    0.00    0.00    1.00    0.00    0.00    0.00   0.00    1.00      2.00
+  answer                          419.95  425.61  419.75  417.87  432.13  435.22  467.32  467.68  456.43  452.04  455.28   5.86    4.39      5.13
+  toes                              5.00    9.00    9.00   12.00   14.00   12.00   35.00   30.00   26.00   16.00   24.00   4.00   10.00     14.00
+  toes70                            0.00    0.00    0.00    1.00    0.00    0.00    2.00    3.00    0.00    2.00    1.00   1.00    2.00      3.00
+  facing where it moves              hf9    hf11    hf15   tolerance
+  over feet                        14.00   16.00   10.00     6.00
+  worst feet                       44.73   51.98   48.63     7.25
+  mean feet                         7.19    7.07    7.16     0.12
+  tenth feet                       12.76   12.60   12.72     0.16
+  over shins                       35.00   39.00   41.00     6.00
+  worst shins                      49.48   56.08   50.35     6.60
+  mean shins                        6.80    6.71    6.79     0.09
+  tenth shins                      11.86   11.67   11.78     0.19
+  over hands                       42.00   57.00   36.00    21.00
+  worst hands                      25.00   29.36   22.47     6.89
+  mean hands                        3.47    3.43    3.48     0.05
+  tenth hands                       5.61    5.55    5.65     0.10
+  over pelvis                      15.00   17.00   20.00     5.00
+  worst pelvis                     17.59   17.93   16.27     2.00
+  mean pelvis                       1.16    1.15    1.15     0.01
+  tenth pelvis                      2.50    2.48    2.50     0.02
+  hard shins                        0.00    5.00    1.00     5.00
+  excess shins                    126.49  186.78  172.09    60.29
+  excess pelvis                    30.58   28.82   37.86     9.04
+  low                               0.00    0.00    0.00     2.00
+  lowest                           12.16   12.26   12.39     0.23
+  flights                          28.00   31.00   28.00     3.00
+  flight                          116.19  119.50  118.22     3.31
+  uneven                            0.00    0.00    0.00     2.00
+  turn-abouts at a run               hf9    hf11    hf15   tolerance
+  held                              3.00    4.00    3.00     2.00
+  over                              9.00   12.00   13.00     4.00
+  excess                           29.41   55.01   65.08    35.67
+
+Unabhängige Prüfung. Geschwindigkeiten, die vor dem Festschreiben auf keinem Stand gelaufen sind: Sie stehen in keinem
+Satz von tools/measure/common.sh, in keiner Regel und in keinem Abschnitt der Roadmap, geprüft mit
+tools/measure/speeds.py. Die Spreizung der 24 Stellen einer Szene über einen Zyklus ist aus der Formel der Kadenz in der
+Bibliothek gerechnet, nicht aus einem Lauf gemessen:
+
+  H29 (schnell): gehend 1,33, rennend 4,46 m/s, diagonal 0,94 m/s je Achse, Spreizung 1,100 und 0,671 s
+  H30 (langsam): gehend 1,43, rennend 3,66 m/s, diagonal 1,01 m/s je Achse, Spreizung 1,061 und 0,709 s
+  HF41 (Blick in Laufrichtung): 1,29, 3,37 und 4,56 m/s, Spreizung 1,117, 0,727 und 0,667 s
+  HF43 (Blick in Laufrichtung): 1,57, 3,96 und 4,74 m/s, Spreizung 1,012, 0,693 und 0,661 s
+
+Mit festem Blick die 21 Szenen auf H29 und H30, 1 008 Stellen, Zehen und Fersen auf beiden, mit Blick in Laufrichtung
+die 13 Szenen auf HF41 und HF43, 624 Stellen, der Takt nach den sechs Szenen, die im Rennen enden, 288 Stellen, und die
+Kehrtwenden im Rennen mit turn128.py, 96 Stellen, mit tools/measure/check128.sh, ausgewertet mit
+tools/measure/eval128.py. "Alt" heißt active-ragdoll-127, "neu" der saubere Bau, beide auf denselben Stellen.
+
+A. Gewinn, beide müssen gelten:
+ A1 In den Kehrtwenden im Rennen mit Blick in Laufrichtung, 96 Stellen: Der härteste Sprung eines Schienbeins über 37 mm
+    geschieht an mehr als 4 Stellen weniger als alt an einem Bein, das steht oder in diesem Update abhebt.
+ A2 An denselben 96 Stellen ist die Summe dessen, was Schienbeine über 37 mm hinaus springen, kleiner als alt, und sie
+    springen an höchstens so vielen Stellen über 37 mm wie alt.
+
+B. Schutz mit festem Blick, jede Größe höchstens alt plus ihre Toleranz:
+ B1 Stellen über den Grenzen: Füße, Schienbeine, Hände, Becken.
+ B2 Größe der Sprünge: Mittel und oberes Zehntel von Becken, Schienbeinen, Füßen und Händen.
+ B3 Härtester Sprung von Fuß, Schienbein, Hand und Becken.
+ B4 Becken tiefer als 15 cm: Stellen und tiefste Stelle.
+ B5 Gekreuzte Füße: Stellen, und nirgends tiefer als 3 cm gekreuzt.
+ B6 Antwort der Kapsel im Mittel, und nirgends später als 1,7 s.
+ B7 Zehen und Fersen über 37 mm und über 70 mm.
+ B8 Flüge über 0,2 s und der längste Flug im Mittel.
+ B9 Summe dessen, was Schienbeine über 37 mm und das Becken über 10 mm hinaus springen.
+
+C. Schutz mit Blick in Laufrichtung, jede Größe höchstens alt plus ihre Toleranz:
+ C1 Stellen über den Grenzen: Füße, Schienbeine, Hände, Becken.
+ C2 Größe der Sprünge: Mittel und oberes Zehntel von Becken, Schienbeinen, Füßen und Händen.
+ C3 Härtester Sprung von Fuß, Schienbein, Hand und Becken.
+ C4 Becken tiefer als 15 cm: Stellen und tiefste Stelle.
+ C5 Flüge über 0,2 s und der längste Flug im Mittel.
+ C6 Summe dessen, was Schienbeine über 37 mm und das Becken über 10 mm hinaus springen.
+ C7 Der Takt von Runde 123: Nach höchstens so vielen der 288 Wechsel, die im Rennen enden, heben die Füße zusammen ab
+    wie alt, gemessen mit tools/measure/rhythm123.py.
+
+D. Sonst, alle müssen gelten:
+ D1 Die Treffertabelle (8 928 Treffer, 60 Hz, eigene Stärke) ist Byte für Byte gleich.
+ D2 Stetig mit festem Blick 8 s lang, seitwärts mit 1,33, 1,43, 3,66 und 4,46 m/s und rückwärts mit 1,33 und 3,66 m/s:
+    Bei allen sechs Läufen liegt die Kadenz, gemessen aus den Zeiten zwischen den Landungen, höchstens 0,5 % neben alt,
+    und die Füße kommen sich quer zum Becken höchstens 1 cm näher.
+ D3 Alle Tests grün mit gcc und clang, mit 1, 2 und 4 Threads bitgleich, Sanitizer ohne Befund. Hashes von Tests, in
+    denen eine gesteuerte Figur geht, dürfen sich ändern und werden festgehalten.
+ D4 Kosten einer gesteuerten Figur: Das Update der Figuren führt mit 20 gesteuerten Figuren über 1 200 Updates in jedem
+    der drei Modi des Kostentests höchstens 0,5 % mehr Befehle aus als alt, gezählt mit tools/measure/cost_count.sh
+    (callgrind in nbUpdateFigures, die Bibliothek mit gcc im Release-Bau). Zeiten werden nicht gemessen: Der Eingriff
+    sind zwei Vergleiche je Fuß am Boden.
+ D5 Der Benchmark steuert keine Figur: Er endet in jeder Szene mit denselben Hashes und Zählern wie alt, auch in den
+    Szenen mit Figuren. Die Bildzeiten, zwölf Paare, werden festgehalten und sind keine Bedingung, siehe die Lehre aus
+    Runde 124.
+ D6 Vorwärts rennend mit 3,0 und 4,8 m/s, mit Blick in Laufrichtung: Das Becken geht je Schritt im Mittel höchstens 0,2
+    cm weniger auf und ab als alt, und das Knie ist beim Aufsetzen im Mittel höchstens 1 Grad stärker gebeugt.
+
+Der saubere Bau muss mit dem Prototyp (Schalter NB_X_ROLL_KEEP=1.0f und NB_X_GAIN_TOES im Versuchsbaum) bitgleich
+laufen: dieselben Ergebnisse auf HF7 und H2 und dieselbe Treffertabelle. Verfehlt der saubere Bau eine Bedingung, wird
+nicht gebaut, oder es steht offen in der Roadmap, warum doch, und der Nutzer entscheidet.
+
+Stand der Entwicklung beim Festschreiben, der Prototyp gegen active-ragdoll-127. Die Kehrtwenden im Rennen auf HF7,
+HF21, HF37 und HF39, 192 Stellen: Das härteste Schienbein über 37 mm an einem Bein, das steht oder abhebt, an 2 statt 24
+Stellen, je Satz an 1, 0, 0 und 1 statt 7, 4, 7 und 6; Schienbeine über 37 mm an 36 statt 58 Stellen, in Summe 138 statt
+278 mm darüber. Auf HF9, HF11 und HF15, den Sätzen der Toleranz: an 0 statt 3, 4 und 3 Stellen, über 37 mm an 6, 9 und
+10 statt 9, 12 und 13, in Summe 20, 43 und 57 statt 29, 55 und 65 mm. Alle 13 Szenen mit Blick in Laufrichtung auf HF7,
+HF21, HF37 und HF39, 1 248 Stellen: Schienbeine an 140 statt 171 Stellen über 37 mm, in Summe 545 statt 748 mm darüber,
+über 50 mm an 3 statt 8, das härteste 52,7 statt 53,9 mm, vom Gehen ins Rennen an 0 statt 9 von 96; Hände an 240 statt
+242, das Becken an 85 wie vorher, in Summe 184 statt 203 mm über 10 mm, Füße an 47, Flüge über 0,2 s an 118 und Becken
+tiefer als 15 cm an 0, wie vorher, und alle Mittel gleich. Mit festem Blick auf H2, H19, H27 und H28, 2 016 Stellen:
+Schienbeine an 385 statt 386, alles andere gleich, Füße an 13, Hände an 202, Becken an 153, Becken tief an 121, Flüge an
+278, Zehen und Fersen an 95, gekreuzt an 1. Stetig 8 s lang vorwärts mit 1,2 bis 4,8 m/s, seitwärts, rückwärts und
+diagonal, 17 Läufe: jeder Byte für Byte gleich. Die Treffertabelle: Byte für Byte gleich.
+
+Die Eingriffe einzeln, auf denselben 1 248 Stellen mit Blick in Laufrichtung: nur die erste Grenze Schienbeine an 164
+statt 171 Stellen, in Summe 665 mm, über 50 mm an 4; nur die zweite an 147, 629 mm, über 50 mm an 7. Die erste Grenze
+nimmt die härtesten Sprünge, die zweite die häufigeren.
+
+Nicht gewählt. Die erste Grenze halb so groß: An den 96 Stellen von HF37 und HF39 in Summe 82 statt 90 mm über 37 mm,
+aber der Fuß rollt danach im Schwung bis 1,45 rad statt 1,31 rad, die Sohle fast senkrecht. Doppelt so groß: ohne
+Wirkung, 136 mm wie alt. Die Wirkung ist geordnet, 136, 90 und 82 mm mit dem Doppelten, dem Einfachen und dem Halben,
+und das Einfache ist die Konstante, die schon da ist.
+
+Was die Runde nicht angeht, in denselben Kehrtwenden verfolgt: den Fuß, der in der Wendung flach und mit gestrecktem
+Bein abhebt und dessen Knie im dritten Update des Schwungs springt, bis 45 mm, aus Runde 121 bekannt, an 12 der 96
+Stellen von HF37 und HF39 das härteste, an 8 davon mit weniger als 1 mm über der Grenze; und die Landung beim Abbremsen
+vor der Wende, bei der der Knöchel mit 20 mm je Update auf den Boden kommt, während die Wurzel sinkt, bis 47 mm, an 4
+Stellen.
