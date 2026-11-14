@@ -16,7 +16,8 @@ die so enden, springt ein Schienbein bis 59,9 mm. Mit dem Eingriff schwingt auch
 bleiben im Wechsel.
 
 Größe des Eingriffs: klein. Vier Zeilen in nbSteerFeet, keine Konstante und kein Feld: Ein halber Zyklus ist die Mitte
-zwischen dieser und der nächsten Phase. Im stetigen Gang hebt kein Fuß so weit neben seiner Phase ab, er läuft bitgleich.
+zwischen dieser und der nächsten Phase. Im stetigen Gang hebt kein Fuß so weit neben seiner Phase ab, er läuft
+bitgleich.
 
 Ziel. Ein Lauf heißt nach einem Wechsel ungleich, wenn in der Sekunde von zwei bis drei Sekunden nach dem Wechsel zwei
 Abheben in weniger als einem Viertel der Zeit aufeinander folgen, die zum Abheben davor oder danach liegt: Beide Füße
@@ -155,13 +156,13 @@ Der saubere Bau muss mit dem Prototyp (Schalter NB_X_LATE_WRAP=0.5f im Versuchsb
 saubere Bau eine Bedingung, wird nicht gebaut, oder es steht offen in der Roadmap, warum doch.
 
 Stand der Entwicklung beim Festschreiben, der Prototyp gegen active-ragdoll-122. Der Takt auf HF17, HF19, HF7, HF21,
-HF23, HF25 und HF27, 1 008 Stellen: ungleich an 0 statt 13, davon 12 in der Kehrtwende mit der schnellen und 1 in der mit
-der langsameren Geschwindigkeit. Mit Blick in Laufrichtung auf denselben Sätzen, 2 184 Stellen: Schienbeine über 37 mm
-an 288 statt 298, das härteste 56,7 statt 70,6 mm, über 50 mm an 18 statt 25, die Summe über 37 mm hinaus 1 353 statt
+HF23, HF25 und HF27, 1 008 Stellen: ungleich an 0 statt 13, davon 12 in der Kehrtwende mit der schnellen und 1 in der
+mit der langsameren Geschwindigkeit. Mit Blick in Laufrichtung auf denselben Sätzen, 2 184 Stellen: Schienbeine über 37
+mm an 288 statt 298, das härteste 56,7 statt 70,6 mm, über 50 mm an 18 statt 25, die Summe über 37 mm hinaus 1 353 statt
 1 519 mm, in jedem der sieben Sätze kleiner, um 3 bis 35 mm. Füße an 104 statt 107. Hände 431, Becken 192, Becken tiefer
 als 15 cm 4 und Flüge 272 wie vorher. Mit festem Blick auf H17, H18, H2, H19, H20, H21 und H22, 3 528 Stellen:
-Schienbeine an 658 statt 660, Zehen und Fersen an 144 statt 148, alles andere wie vorher. Stetig gehend mit 1,5,
-rennend mit 3,0 und 4,8, seitwärts mit 1,6 und 4,5 und rückwärts mit 1,6 und 3,0 m/s läuft der Prototyp bitgleich mit
+Schienbeine an 658 statt 660, Zehen und Fersen an 144 statt 148, alles andere wie vorher. Stetig gehend mit 1,5, rennend
+mit 3,0 und 4,8, seitwärts mit 1,6 und 4,5 und rückwärts mit 1,6 und 3,0 m/s läuft der Prototyp bitgleich mit
 active-ragdoll-122. Der saubere Bau läuft auf HF7, HF21, H2 und H19 mit Zehen und Fersen bitgleich mit dem Prototyp.
 
 Verworfen vor dem Festschreiben. Die Schwelle bei 0,4 statt 0,5 eines Zyklus: kein Unterschied, ungleich an 0 Stellen,
