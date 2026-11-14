@@ -124,6 +124,18 @@ Zehen und Fersen 37 mm, Hände 15 mm, Becken 10 mm, Becken tief ab 15 cm unter d
 - **Eine Vermutung, die zum Lauf passt, ist noch nicht die Zeile.** Dass der Schwung aus dem Stand anläuft, passte zur
   Spur und war falsch. Ein Ausdruck hinter einem Schalter im Versuchsbaum, der je Update zeigt, was eine Größe will und
   bekommt, entscheidet es in einem Lauf (Runde 128).
+- **Die Tests des Repositorys laufen mit dem Prototyp, bevor die Regel festgeschrieben wird.** In Runde 129 fielen drei
+  Treppen-Tests erst nach der unabhängigen Prüfung auf: Die Messszenen sind eben, die Bremse hielt auf der Treppe den
+  Fuß zurück. `tests.sh` mit dem Versuchsbaum als `NB_SRC` gehört vor Schritt 8, und was ein Eingriff auf Treppen, am
+  Hang und unter Clips tut, steht dann in der Regel statt in einem Nachtrag.
+- **Der Gewinn der Entwicklung hängt an ihren Geschwindigkeiten.** Auf dem schnellen Satz der Entwicklung lagen 24
+  Stellen der Zielgröße von Runde 129 nur 0,6 mm über der Grenze, und die härtesten Landungen waren dort härter als auf
+  den frischen Sätzen: 376 mm Gewinn dort, 135 mm in der Prüfung, bei 133 mm Toleranz. Vor dem Festschreiben nachsehen,
+  wie viel der Zielgröße knapp über der Grenze liegt, und die Entwicklung auf mehr als zwei Sätzen messen.
+- **Stetig gleich heißt ab der fünften Sekunde gleich.** Ein stetiger Lauf beginnt mit Losgehen oder Losrennen, und das
+  ist ein Wechsel. Wo ein Eingriff für Wechsel den stetigen Gang nicht ändern soll, die Zeilen ab 5 s vergleichen, und
+  die Stärke des Eingriffs so wählen, dass er im stetigen Gang nie greift: Der stetige Gang gibt die Grenze vor (Runde
+  129).
 - **Größe der Figur.** Winkelbeschleunigungen wachsen bei kleineren Figuren mit 1 durch `nbFigureScale`, Längen
   und Geschwindigkeiten mit ihr.
 

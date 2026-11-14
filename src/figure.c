@@ -239,6 +239,26 @@
 // swinging leg comes that far.
 #define NB_LEG_SWING_SLACK 0.002f
 
+// A swinging leg comes to the length it lands with braking, NB_LEG_BRAKE m/s^2 at most for a figure of scale 1: in an
+// update it gets longer by no more than lets it stop at that length, its reach at most, and a foot that lands before
+// its leg has come that far comes down to where it stands over the next updates the same way, see nbBrakeStep. A knee
+// nearly stretched moves several times as far as its leg gets longer. Running from sideways to backward with a fixed
+// heading at 4.46 m/s, a swinging leg got 2.6 % of its length longer in an update, came to its reach and stopped, and
+// its shin jumped 53 mm in that update; hurrying to land as the figure braked to 0.8 m/s, a leg got 3.7 % longer an
+// update until its foot stood, and its shin jumped 78 mm. With the brake 37 and 42 mm. In the steady gait no leg brakes
+// harder than 40 m/s^2: from there on, 17 steady runs, forward at 1.2 to 4.8 m/s, sideways and backward at 1.3 to 4.5
+// m/s and diagonally, are the same to the bit from their fifth second on as without the brake, with 35 m/s^2 the runs
+// forward at 4.8 and backward at 4.5 m/s are not. Starting to walk or run is a change, and there a leg may brake.
+#define NB_LEG_BRAKE 45.0f
+
+// How far something that slows down by brake in every update may move in this update to stop within room: its moves
+// from here on, this one, one shorter by brake, and so on, add up to room. Within brake of where it stops, it gets
+// there, and without a brake at once.
+static inline float nbBrakeStep( float room, float brake )
+{
+	return brake > 0.0f ? 0.5f * brake * ( sqrtf( 1.0f + 8.0f * room / brake ) - 1.0f ) : room;
+}
+
 // As the gait starts or ends on stairs, or ends as the capsule leaves the ground, the root goes on from where it was,
 // the difference fading with a time of NB_ROOT_CARRY seconds and ending below NB_ROOT_CARRY_END meters for the humanoid
 // of 1.8 m, see nbCarryRoot
@@ -3743,22 +3763,69 @@ static void nbPlaceFeet( nbFigure* f, const b3Transform* transforms, const nbCli
 			// A swinging foot goes where the leg reaches, see NB_LEG_SWING_SLACK, and its ankle bends as far as the ankles of
 			// people do, see NB_SWING_ANKLE_SOFT
 			float along = -1.0f;
-			if ( f->steered && f->gaitOn && f->footSwings[k] )
+			bool swings = f->steered && f->gaitOn && f->footSwings[k];
+			bool landed = f->steered && f->gaitOn && f->footSwings[k] == false && ( f->legLong[k] > 0.0f || f->legGap[k] > 0.0f );
+			if ( swings || landed )
 			{
-				along = f->swingAlong[k];
-				float length = b3Length( f->bones[thighs[k] + 1].rest.p ) + b3Length( f->bones[thighs[k] + 2].rest.p );
-				float most = reaches[k] + NB_LEG_SWING_SLACK * length;
 				b3Vec3 hip = b3TransformPoint( root, f->bones[thighs[k]].rest.p );
 				b3Vec3 offset = b3Sub( ankles[k], hip );
 				float distance = b3Length( offset );
-				if ( distance > most )
+				float brake = NB_LEG_BRAKE * scale * timeStep * timeStep;
+				if ( swings )
 				{
-					ankles[k] = b3MulAdd( hip, most / distance, offset );
+					along = f->swingAlong[k];
+					float length = b3Length( f->bones[thighs[k] + 1].rest.p ) + b3Length( f->bones[thighs[k] + 2].rest.p );
+					float most = reaches[k] + NB_LEG_SWING_SLACK * length;
+					float limit = most;
+					// From its second update on, the leg comes to the length it has from the hip to where its foot lands, its
+					// reach at most, braking, see NB_LEG_BRAKE. Not on stairs: there a leg sets its foot on its tread from far
+					// bent, 5 to 6.5 cm longer in every update until it stands, and braked, 8 of 219 flat stances walking up
+					// were across an edge, the foot not yet on its tread.
+					bool level = f->stairWeight == 0.0f;
+					if ( level && f->legLong[k] > 0.0f )
+					{
+						b3Vec3 there = b3InvTransformWorldPoint( f->frame, f->feet[k].target );
+						float stop = b3MinFloat( most, b3Length( b3Sub( there, hip ) ) );
+						float room = b3MaxFloat( stop - f->legLong[k], 0.0f );
+						limit = b3MinFloat( limit, f->legLong[k] + nbBrakeStep( room, brake ) );
+					}
+					if ( distance > limit )
+					{
+						ankles[k] = b3MulAdd( hip, limit / distance, offset );
+						distance = limit;
+					}
+					f->legLong[k] = level ? distance : 0.0f;
+					f->legGap[k] = 0.0f;
+				}
+				else
+				{
+					// A foot that landed before its leg came to its length comes down to where it stands as its leg braked, from
+					// how far that leaves it in the update it lands, whatever the hip does then: within NB_LEG_BRAKE of an update
+					// it stands, and a gap three times as far is gone after two updates
+					f->ankleHeld[k] = -1.0f;
+					float gap;
+					if ( f->legLong[k] > 0.0f )
+					{
+						float room = b3MaxFloat( distance - f->legLong[k], 0.0f );
+						gap = distance - f->legLong[k] - nbBrakeStep( room, brake );
+					}
+					else
+					{
+						gap = f->legGap[k] - nbBrakeStep( f->legGap[k], brake );
+					}
+					f->legLong[k] = 0.0f;
+					f->legGap[k] = b3MaxFloat( gap, 0.0f );
+					if ( gap > 0.0f )
+					{
+						ankles[k] = b3MulAdd( hip, ( distance - gap ) / distance, offset );
+					}
 				}
 			}
 			else
 			{
 				f->ankleHeld[k] = -1.0f;
+				f->legLong[k] = 0.0f;
+				f->legGap[k] = 0.0f;
 			}
 			nbReachAnkle( f, thighs[k], root, ankles[k], rotations[k], f->pose, along, f->ankleHeld + k );
 		}
@@ -5708,8 +5775,10 @@ static void nbSteerFeet( const nbWorld* world, int index, nbFigure* f, const nbC
 			f->swingAlong[k] += timeStep * f->swingRate[k] * f->swingHurry[k] / footTime;
 			if ( f->swingAlong[k] >= 1.0f )
 			{
-				// It lands, walking on its heel, and stepping backward on its toes, see NB_GAIT_HEEL. A foot that found no edge
-				// to land beyond makes the stairs less sure.
+				// It lands, walking on its heel, and stepping backward on its toes, see NB_GAIT_HEEL, no further than its swing
+				// brought its toes up for it: as a figure brakes out of a run with a fixed heading, the gait comes to a walk
+				// within a few updates, and a foot whose swing had come to 0.027 rad landed at 0.121 rad, its toes 33 mm up in
+				// the update after it landed. A foot that found no edge to land beyond makes the stairs less sure.
 				if ( f->footholdChosen[k] == false && f->stairWeight > 0.0f )
 				{
 					f->stairWeight = f->stairWeight > 0.2f ? 0.5f * f->stairWeight : 0.0f;
@@ -5724,7 +5793,7 @@ static void nbSteerFeet( const nbWorld* world, int index, nbFigure* f, const nbC
 				f->gaitStarting = false;
 				f->canLift[k] = phase < stance;
 				float stepSide = f->stepBack[k] ? -1.0f : 1.0f;
-				float landed = -stepSide * f->heelPart[k] * heel;
+				float landed = -stepSide * f->heelPart[k] * b3MinFloat( heel, f->swingHeel[k] );
 				f->footRoll[k] = landed;
 				f->footRolled[k] = landed;
 				f->footRollGain[k] = 0.0f;
@@ -5824,6 +5893,7 @@ static void nbSteerFeet( const nbWorld* world, int index, nbFigure* f, const nbC
 				// It lifts from where it stands, as far into its swing as its phase, and swings in the rest of it, from where it
 				// was an update ago, so it moves in this update already
 				f->footSwings[k] = true;
+				f->swingHeel[k] = heel;
 				f->canLift[k] = false;
 				// Lifting more than an update before its phase says, it shows how far the cycle is behind, see NB_GAIT_KEEP
 				float off = phase - stance;
@@ -6179,6 +6249,7 @@ static void nbSteerFeet( const nbWorld* world, int index, nbFigure* f, const nbC
 				}
 			}
 			f->heelPart[k] = heelPart;
+			f->swingHeel[k] = heel;
 			f->footRoll[k] = f->swingRoll[k] * ( 1.0f - flat * flat * ( 3.0f - 2.0f * flat ) ) +
 							 f->footRollRate[k] * rest * goOn +
 							 stepSide * ( 1.0f - run ) * ease * NB_GAIT_SWING_PITCH * calm * bump -

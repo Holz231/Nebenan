@@ -538,6 +538,12 @@ typedef struct nbFigure
 	// How far the ankle of a swinging foot was bent up beyond what it bends softly as it lifted, as a sine, and negative
 	// for a foot that does not swing, see NB_SWING_ANKLE_SOFT
 	float ankleHeld[2];
+	// How long the leg of a swinging foot was in the last update, hip to ankle, and how far a foot that landed still is
+	// from where it stands, along its leg, see NB_LEG_BRAKE. Zero for a foot that stands.
+	float legLong[2];
+	float legGap[2];
+	// The heel roll of the gait in the last update of the swing, see nbSteerFeet
+	float swingHeel[2];
 	float swingRoll[2];
 	float landRoll[2];
 	float stanceTime[2];
