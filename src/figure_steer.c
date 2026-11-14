@@ -358,6 +358,8 @@ void nbResetSteering( nbFigure* f )
 		f->swingHurry[k] = 1.0f;
 		f->swingRate[k] = 1.0f;
 		f->swingCalm[k] = 1.0f;
+		f->swingBump[k] = 0.0f;
+		f->swingBumpWas[k] = 0.0f;
 		f->swingBase[k] = b3Pos_zero;
 		f->swingVelocity[k] = b3Vec3_zero;
 		f->swingSoft[k] = 0.0f;

@@ -548,6 +548,8 @@ typedef struct nbFigure
 	bool outToes[2];
 	float swingHurry[2];
 	float swingCalm[2];
+	float swingBump[2];
+	float swingBumpWas[2];
 	b3Pos swingBase[2];
 	b3Vec3 swingVelocity[2];
 	float swingSoft[2];

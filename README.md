@@ -1816,6 +1816,13 @@ der Bewegung wird nichts schlechter. Ein Spiel ruft dafür nichts Neues auf. Ein
 Befehle aus wie auf `active-ragdoll-119`, höchstens 0,006 % mehr. Die gemessene Zeit je Update liegt mit gcc im Median
 0,09 µs darunter bis 0,34 µs darüber, in einem von drei Modi über der Grenze der Regel, mit clang in demselben Modus
 0,49 µs darunter, siehe Runde 120 in der [Roadmap](docs/Roadmap.md). Siehe „Ruhigeres Becken in der Kehrtwende“ in
+[Optimierungen.md](docs/Optimierungen.md). Seit `active-ragdoll-121` springen in einer Kehrtwende im Rennen die
+Schienbeine weniger: Ein Schwung, der nach dem Abheben eiliger wird, hebt und kippt seinen Fuß dafür auch weniger weit,
+solange der Fuß noch steigt. Geprüft mit Geschwindigkeiten, die vorher nicht gelaufen waren, springen Schienbeine mit
+Blick in Laufrichtung an 98 statt 146 von 624 Stellen über 37 mm in einem Update, in den Kehrtwenden im Rennen an 25
+statt 65 von 96, und nichts wird schlechter. Ein Spiel ruft dafür nichts Neues auf. Eine gesteuerte Figur führt dabei
+höchstens 0,05 % mehr Befehle aus als auf `active-ragdoll-120`, und die gemessene Zeit je Update liegt im Median
+zwischen 0,08 µs darunter und 0,03 µs darüber. Siehe „Ruhigere Schienbeine in der Kehrtwende“ in
 [Optimierungen.md](docs/Optimierungen.md). Am Hang und auf Treppen misst die Figur die Steigung ihres Wegs: Bergauf
 landet ein Fuß weiter vorn, bergab näher unter dem Körper, so reicht das vordere Bein so weit hinauf wie das hintere
 hinunter, und die Schritte werden kürzer, auf 20° um ein Fünftel. Die Feder unter der Kapsel folgt der Ebene, die der
@@ -3510,7 +3517,7 @@ lange die Threads im Löser rechnen und worauf sie sonst warten.
 ## Tests und Benchmark
 
 ```sh
-build/bin/nebenan_test            # 171 Tests: Geometrie, Voronoi, Hüllen, Öffnungen, Stöße, Stützgraph, Etagen, Lastprüfung, Mauern, Schutt, Ruhe, Durchschlagen, Threads, Knoten, große Blöcke, Gelenke in Paketen und Gebieten, Suchbaum, Kontaktlisten, Streaming, Stream, Laden im Hintergrund, Speichern und Zurückholen, gemeinsamer Thread-Pool, Ruhe-Prüfung auf den Workern, Schritt auf eigenem Thread, Schritte pro Bild, Takt der Physik, Wahl der Threads, Profil und Skalierung, Figuren, Ausgleichsschritt, Abfangen, rudernde Arme, Muskeln, Treffer entlang des Skeletts, Kegel je Richtung, Gelenke wie beim Menschen, Drehung um die Längsachse, Armature, ruhiger Kopf, Drücken, Füße auf dem Boden, Platz zum Aufstehen, Ragdoll durch die Wand, dünne Bretter, Determinismus …
+build/bin/nebenan_test            # 172 Tests: Geometrie, Voronoi, Hüllen, Öffnungen, Stöße, Stützgraph, Etagen, Lastprüfung, Mauern, Schutt, Ruhe, Durchschlagen, Threads, Knoten, große Blöcke, Gelenke in Paketen und Gebieten, Suchbaum, Kontaktlisten, Streaming, Stream, Laden im Hintergrund, Speichern und Zurückholen, gemeinsamer Thread-Pool, Ruhe-Prüfung auf den Workern, Schritt auf eigenem Thread, Schritte pro Bild, Takt der Physik, Wahl der Threads, Profil und Skalierung, Figuren, Ausgleichsschritt, Abfangen, rudernde Arme, Muskeln, Treffer entlang des Skeletts, Kegel je Richtung, Gelenke wie beim Menschen, Drehung um die Längsachse, Armature, ruhiger Kopf, Drücken, Füße auf dem Boden, Platz zum Aufstehen, Ragdoll durch die Wand, dünne Bretter, Determinismus …
 build/bin/nebenan_benchmark 4     # Zahl = Threads für Bruch und Physik, 0 = so viele, wie ein Spiel nähme
 build/bin/nebenan_benchmark scaling   # die Städte unter Beschuss mit 1, 2, 4 … Threads und die Tabelle der Skalierung
 build/bin/nebenan_benchmark rates     # die Städte unter Beschuss mit 30, 60 und 120 Hz, was eine simulierte Sekunde kostet

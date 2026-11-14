@@ -4653,6 +4653,19 @@ static void nbGaitPose( const nbWorld* world, nbFigure* f, b3Vec3 up, float time
 #define NB_SWING_EARLY 0.75f
 #define NB_SWING_EVEN 0.3f
 
+// A swing sets how far it lifts and turns its foot early as it lifts, see NB_GAIT_HURRY, and one that comes to hurry
+// more after that lifts less far for it too while its early bump still rises, until NB_SWING_EARLY_TOP of the swing,
+// where nbSwingEarly is highest, see nbSteerFeet. The share of the bump it has goes on rising as fast as in the last
+// update at most, so the foot does not stop rising at once. Turning about at a run, a foot lifts flat with its leg
+// stretched and without hurry, and its swing comes to hurry 1.8 times as much within five updates: with the lift it had
+// as it lifted, its ankle rose 15 cm in those five updates, its leg went from 0.98 to 0.80 of its length, and the knee
+// of a leg near straight moves twice as far as the leg shortens: a shin jumped 49 mm in an update. At 624 points of
+// changes of the gait facing where it moves, at speeds that had not run before, shins jump more than 37 mm at 98
+// instead of 146 now, turning about at a run at 25 instead of 65 of 96. Following the hurry at once, the foot stopped
+// rising within an update: at 936 points shins jumped at 203 instead of 212 and feet at 64 instead of 54. Never letting
+// the share go down, shins at 197, and with the share rising as fast as in the last update, at 150.
+#define NB_SWING_EARLY_TOP 0.25f
+
 // A foot that lifts over its toes with its leg stretched to more than NB_SWING_SOFT_FROM of its length, fully from
 // NB_SWING_SOFT_TO, lifts gently over the first NB_SWING_SOFT_RAMP of its swing, starting with no speed, acceleration
 // or jerk. The walking lift starts with a curvature, and a knee nearly stretched turns several times as fast as the
@@ -5979,6 +5992,21 @@ static void nbSteerFeet( const nbWorld* world, int index, nbFigure* f, const nbC
 				f->swingCalm[k] = b3MinFloat( 1.0f / ( f->swingHurry[k] * f->swingHurry[k] ), 1.0f );
 			}
 			float along = b3ClampFloat( ( swing - f->swingStart[k] ) / ( 1.0f - f->swingStart[k] ), 0.0f, 1.0f );
+			// A swing that comes to hurry more than as it lifted lifts and turns its foot less far for that too while its
+			// early bump still rises, the share of the bump it has going on as fast as in the last update at most, see
+			// NB_SWING_EARLY_TOP
+			if ( swing > 0.0f && along < NB_SWING_EARLY_TOP )
+			{
+				float want = b3MinFloat( 1.0f / ( f->swingHurry[k] * f->swingHurry[k] ), 1.0f );
+				if ( want < f->swingCalm[k] )
+				{
+					float now = nbSwingEarly( along );
+					float keep = now > 0.0f ? ( 2.0f * f->swingBump[k] - f->swingBumpWas[k] ) / now : want;
+					f->swingCalm[k] = b3MaxFloat( want, b3MinFloat( f->swingCalm[k], keep ) );
+				}
+			}
+			f->swingBumpWas[k] = swing > 0.0f ? f->swingBump[k] : 0.0f;
+			f->swingBump[k] = f->swingCalm[k] * nbSwingEarly( along );
 			float smooth = along * along * ( 3.0f - 2.0f * along );
 			b3Vec3 step = b3SubPos( foot->target, foot->from );
 			float higher = b3MaxFloat( b3Dot( step, up ), 0.0f );
@@ -5993,7 +6021,8 @@ static void nbSteerFeet( const nbWorld* world, int index, nbFigure* f, const nbC
 			}
 			f->swingTop[k] = height;
 			// A swing that hurries lifts and turns its foot early as fast as the gait, less far, see NB_GAIT_HURRY, as far as it
-			// hurried as it lifted: hurrying more later, it does not lift the foot less at once
+			// hurried as it lifted and came to hurry while its bump rose, see NB_SWING_EARLY_TOP: hurrying more later, it does
+			// not lift the foot less at once
 			float calm = f->swingCalm[k];
 			float bump = nbSwingEarly( along );
 			// A leg that lifted stretched over its toes lifts its foot gently at first, see NB_SWING_SOFT_FROM
