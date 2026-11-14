@@ -1839,49 +1839,59 @@ zusammen ab, vorher nach 2, das härteste Schienbein mit Blick in Laufrichtung s
 wird schlechter. Das stetige Gehen und Rennen bleibt bitgleich. Ein Spiel ruft dafür nichts Neues auf. Eine gesteuerte
 Figur führt dabei höchstens 0,21 % mehr Befehle aus als auf `active-ragdoll-122`, und die gemessene Zeit je Update liegt
 im Median mit gcc darunter und mit clang zwischen 0,61 µs darunter und 0,24 µs darüber. Siehe „Der Lauf findet nach der
-Kehrtwende seinen Takt“ in [Optimierungen.md](docs/Optimierungen.md). Am Hang und auf Treppen misst die Figur die
-Steigung ihres Wegs: Bergauf landet ein Fuß weiter vorn, bergab näher unter dem Körper, so reicht das vordere Bein so
-weit hinauf wie das hintere hinunter, und die Schritte werden kürzer, auf 20° um ein Fünftel. Die Feder unter der Kapsel
-folgt der Ebene, die der Fühler findet, statt am Hang hinterherzuhängen, und vor dem Aufsetzen geht die Hüfte so tief,
-wie das Bein den wirklichen Landepunkt braucht. Auf einer Rampe von 20° wippt die Hüfte so um 2 cm, und in einem Update
-bewegt sie sich gegen die Kapsel um höchstens 2 cm. Auf einer Treppe setzt die Figur ihre Füße Stufe für Stufe: Vor
-jedem Schwung sucht sie am Ziel mit Strahlen nach einer Kante, misst die Stufe aus und stellt die ganze Sohle darauf,
-und jeder Schritt nimmt gleich viele Stufen, so viele, wie ein Schritt auf einer Rampe gleicher Steigung lang wäre. Die
-Strahlen beginnen so viel höher, wie sie tiefer suchen dürfen, so findet ein Fuß die erste Stufe hinauf auch, solange
-die Kapsel noch eben läuft, und ein Fuß geht bis zwei Stufen weiter zu der, die der Schritt will: Wo immer die Figur
-rennend an einer Treppe ankommt, steht jeder Fuß mit der ganzen Sohle auf seiner Stufe, auf `active-ragdoll-93` bei
-sechs von 16 Starts hinauf nicht, und hinunter mit 4,5 m/s nimmt jeder Schritt drei Stufen. Damit der Fuß dort landet,
-geht jeder schwingende Fuß bis 40 % schneller oder langsamer, der Takt des Gangs mit dem, der zuerst landet, und die
-Hüfte folgt dem Boden zwischen den Fußpunkten statt der Kapsel, die Stufe für Stufe steigt, und nicht viel schneller,
-als dieser Boden steigt oder fällt: Gehend die Treppe hinauf wippt sie gegen die Linie der Treppe um höchstens 1 cm,
-hinunter um 3,0 bis 6,2 cm, rennend hinauf und hinunter bei 20 Starts über eine ganze Stufe um höchstens 7,2 und 8,3 cm,
-auf `active-ragdoll-94` bei acht Starts hinunter bis 18,1 cm. Ein Fuß behält seine Stufe, solange er sie so noch
-erreicht: Rennend hinunter wippt das Becken bei 96 Starts über 0,95 m mit 3,0 und 4,5 m/s um höchstens 5,5 und 6,6 cm,
-auf `active-ragdoll-101` bis 8,9 und 20,2 cm. Landet ein Fuß neben keiner Kante oder mit der ganzen Sohle auf einem
-Podest, prüft ein Strahl vor seiner Sohle, ob der Boden dort ihre Ebene verlässt, und nur dann sieht die Figur nach, ob
-dort eine Treppe beginnt: Über 300 Starts bis 3 m weiter hinten wippt das Becken rennend hinauf und hinunter um
-höchstens 7,5 cm, auf `active-ragdoll-103` an 10 Starts um mehr als 10 cm, bis 17 cm, und hinauf steht kein Fuß über
-einer Kante, vorher an 8. Spät im Schwung hält ein Fuß seine Stufe, so landet er nicht zwischen zwei Stufen, wenn sich
-die Stufe, die der Schritt will, spät ändert. Abseits von Treppen landet ein Fuß möglichst höchstens 25 cm höher oder
-tiefer als der andere: Liegt der Boden an seinem Ziel außerhalb, nimmt er die nächste Stelle in diesem Band in Schritten
-von 8 cm entlang seiner Zehen oder zur Seite, nie eine höher als eine Stufe über dem Weg der Kapsel. Auf Spitzen von
-Brocken, kürzer als die Sohle, stellt er sich nicht, und findet er am Ziel keinen Boden, zielt er auf den Weg der Kapsel
-statt in die Luft. Als Treppe zählt nur, wo die nächste Stufe passt, und findet der Fühler unter der Kapsel nur Seiten,
-die zu steil zum Stehen sind, hält sie sich am stehenden Fuß. Findet er gar nichts, hält sie ein stehender Fuß, der mehr
-als einen halben Schritt unter ihr steht: Fährt die Kapsel die Flanke eines Brockens hinauf, auf dem kein Fuß steht,
-fällt sie hinter dem Grat nicht mehr, auf `active-ragdoll-104` bis 33 cm, und an einer Kante, wo der Fuß oben noch auf
-ihrer Höhe steht, fällt sie wie vorher. Verliert die Kapsel den Boden, endet der Gang sofort, und die Wurzel geht von
-ihrer Höhe weiter: Von einer Kante 45 cm hinunter rennend springt das Becken so 4,3 statt 17,7 cm. Über die Trümmer
-einer gesprengten Ziegelwand gehend und rennend ist die Kapsel in 0,7 % der Updates ohne Boden, auf `active-ragdoll-104`
-in 1,6 %, und die Figur hat in 1,7 % eine schlechte Pose, ein Standknie über 100°, einen Oberschenkel über 90° oder ein
-Bein über 75° vom Lot oder beide Knie über 80°, auf `active-ragdoll-96` in 9,8 %, und hält den Schutt nie für eine
-Treppe, vorher in einem Drittel der Updates. Alle Abfragen einer Figur lassen ihre eigenen Knochen weg, bevor Box3D sie
-rechnet, `b3QueryFilter::excludeGroup`, siehe [`extern/README.md`](extern/README.md): Eine gesteuerte Figur kostet im
-Update der Figuren auf der VM 8 bis 10 µs, je nachdem, wie schnell die VM gerade rechnet, eine stehende 1,2 bis 1,5 µs.
-Treffer wirken wie auf jede stehende Figur, mit den Geschwindigkeiten, die ihre Knochen gerade haben: Nach einem Stoß
-von hinten mit 120 N s auf eine Figur, die mit 4,5 m/s rennt, fliegt ihr Becken mit 5,3 m/s nach vorn, und wenn sie
-aufgestanden ist, geht sie weiter, wohin das Spiel will. Ein leichter Stoß gibt der Kapsel Geschwindigkeit, statt die
-Figur schwanken zu lassen. Mit 1, 2 und 4 Threads bewegt sie sich bitgleich, Figuren ohne `steered` rechnen wie vorher.
+Kehrtwende seinen Takt“ in [Optimierungen.md](docs/Optimierungen.md). Seit `active-ragdoll-124` landet ein Fuß nur noch
+auf der Ferse, wo er vor der Hüfte landet: Landet er unter oder hinter ihr, wie in einer Kehrtwende im Rennen, wenn die
+Figur schon in die andere Richtung läuft, landet er flach und rollt sofort über die Zehen, statt erst von der Ferse
+herunterzukommen, während die Wurzel für ihn sinkt. Geprüft mit Geschwindigkeiten, die vorher nicht gelaufen waren,
+springt das Becken mit Blick in Laufrichtung an 41 statt 56 von 624 Stellen über 10 mm, in Summe 79 statt 179 mm
+darüber, und Flüge über 0,2 s gibt es an 58 statt 78 Stellen. Schienbeine springen in den Kehrtwenden im Rennen dafür an
+31 statt 23 von 96 Stellen über 37 mm, innerhalb der Toleranz der Regel. Das stetige Gehen und Rennen bleibt bitgleich.
+Ein Spiel ruft dafür nichts Neues auf. Eine gesteuerte Figur führt dabei 0,1 bis 0,9 % mehr Befehle aus als auf
+`active-ragdoll-123`, am meisten, wo sie alle 2 s Richtung und Gangart wechselt, mehr als die 0,5 %, die die Regel der
+Runde erlaubt. Siehe „Hinter der Hüfte landet kein Fuß auf der Ferse“ in [Optimierungen.md](docs/Optimierungen.md). Am
+Hang und auf Treppen misst die Figur die Steigung ihres Wegs: Bergauf landet ein Fuß weiter vorn, bergab näher unter dem
+Körper, so reicht das vordere Bein so weit hinauf wie das hintere hinunter, und die Schritte werden kürzer, auf 20° um
+ein Fünftel. Die Feder unter der Kapsel folgt der Ebene, die der Fühler findet, statt am Hang hinterherzuhängen, und vor
+dem Aufsetzen geht die Hüfte so tief, wie das Bein den wirklichen Landepunkt braucht. Auf einer Rampe von 20° wippt die
+Hüfte so um 2 cm, und in einem Update bewegt sie sich gegen die Kapsel um höchstens 2 cm. Auf einer Treppe setzt die
+Figur ihre Füße Stufe für Stufe: Vor jedem Schwung sucht sie am Ziel mit Strahlen nach einer Kante, misst die Stufe aus
+und stellt die ganze Sohle darauf, und jeder Schritt nimmt gleich viele Stufen, so viele, wie ein Schritt auf einer
+Rampe gleicher Steigung lang wäre. Die Strahlen beginnen so viel höher, wie sie tiefer suchen dürfen, so findet ein Fuß
+die erste Stufe hinauf auch, solange die Kapsel noch eben läuft, und ein Fuß geht bis zwei Stufen weiter zu der, die der
+Schritt will: Wo immer die Figur rennend an einer Treppe ankommt, steht jeder Fuß mit der ganzen Sohle auf seiner Stufe,
+auf `active-ragdoll-93` bei sechs von 16 Starts hinauf nicht, und hinunter mit 4,5 m/s nimmt jeder Schritt drei Stufen.
+Damit der Fuß dort landet, geht jeder schwingende Fuß bis 40 % schneller oder langsamer, der Takt des Gangs mit dem, der
+zuerst landet, und die Hüfte folgt dem Boden zwischen den Fußpunkten statt der Kapsel, die Stufe für Stufe steigt, und
+nicht viel schneller, als dieser Boden steigt oder fällt: Gehend die Treppe hinauf wippt sie gegen die Linie der Treppe
+um höchstens 1 cm, hinunter um 3,0 bis 6,2 cm, rennend hinauf und hinunter bei 20 Starts über eine ganze Stufe um
+höchstens 7,2 und 8,3 cm, auf `active-ragdoll-94` bei acht Starts hinunter bis 18,1 cm. Ein Fuß behält seine Stufe,
+solange er sie so noch erreicht: Rennend hinunter wippt das Becken bei 96 Starts über 0,95 m mit 3,0 und 4,5 m/s um
+höchstens 5,5 und 6,6 cm, auf `active-ragdoll-101` bis 8,9 und 20,2 cm. Landet ein Fuß neben keiner Kante oder mit der
+ganzen Sohle auf einem Podest, prüft ein Strahl vor seiner Sohle, ob der Boden dort ihre Ebene verlässt, und nur dann
+sieht die Figur nach, ob dort eine Treppe beginnt: Über 300 Starts bis 3 m weiter hinten wippt das Becken rennend hinauf
+und hinunter um höchstens 7,5 cm, auf `active-ragdoll-103` an 10 Starts um mehr als 10 cm, bis 17 cm, und hinauf steht
+kein Fuß über einer Kante, vorher an 8. Spät im Schwung hält ein Fuß seine Stufe, so landet er nicht zwischen zwei
+Stufen, wenn sich die Stufe, die der Schritt will, spät ändert. Abseits von Treppen landet ein Fuß möglichst höchstens
+25 cm höher oder tiefer als der andere: Liegt der Boden an seinem Ziel außerhalb, nimmt er die nächste Stelle in diesem
+Band in Schritten von 8 cm entlang seiner Zehen oder zur Seite, nie eine höher als eine Stufe über dem Weg der Kapsel.
+Auf Spitzen von Brocken, kürzer als die Sohle, stellt er sich nicht, und findet er am Ziel keinen Boden, zielt er auf
+den Weg der Kapsel statt in die Luft. Als Treppe zählt nur, wo die nächste Stufe passt, und findet der Fühler unter der
+Kapsel nur Seiten, die zu steil zum Stehen sind, hält sie sich am stehenden Fuß. Findet er gar nichts, hält sie ein
+stehender Fuß, der mehr als einen halben Schritt unter ihr steht: Fährt die Kapsel die Flanke eines Brockens hinauf, auf
+dem kein Fuß steht, fällt sie hinter dem Grat nicht mehr, auf `active-ragdoll-104` bis 33 cm, und an einer Kante, wo der
+Fuß oben noch auf ihrer Höhe steht, fällt sie wie vorher. Verliert die Kapsel den Boden, endet der Gang sofort, und die
+Wurzel geht von ihrer Höhe weiter: Von einer Kante 45 cm hinunter rennend springt das Becken so 4,3 statt 17,7 cm. Über
+die Trümmer einer gesprengten Ziegelwand gehend und rennend ist die Kapsel in 0,7 % der Updates ohne Boden, auf
+`active-ragdoll-104` in 1,6 %, und die Figur hat in 1,7 % eine schlechte Pose, ein Standknie über 100°, einen
+Oberschenkel über 90° oder ein Bein über 75° vom Lot oder beide Knie über 80°, auf `active-ragdoll-96` in 9,8 %, und
+hält den Schutt nie für eine Treppe, vorher in einem Drittel der Updates. Alle Abfragen einer Figur lassen ihre eigenen
+Knochen weg, bevor Box3D sie rechnet, `b3QueryFilter::excludeGroup`, siehe [`extern/README.md`](extern/README.md): Eine
+gesteuerte Figur kostet im Update der Figuren auf der VM 8 bis 10 µs, je nachdem, wie schnell die VM gerade rechnet,
+eine stehende 1,2 bis 1,5 µs. Treffer wirken wie auf jede stehende Figur, mit den Geschwindigkeiten, die ihre Knochen
+gerade haben: Nach einem Stoß von hinten mit 120 N s auf eine Figur, die mit 4,5 m/s rennt, fliegt ihr Becken mit 5,3
+m/s nach vorn, und wenn sie aufgestanden ist, geht sie weiter, wohin das Spiel will. Ein leichter Stoß gibt der Kapsel
+Geschwindigkeit, statt die Figur schwanken zu lassen. Mit 1, 2 und 4 Threads bewegt sie sich bitgleich, Figuren ohne
+`steered` rechnen wie vorher.
 
 **Gehen und Rennen nach Clips.** Seit `active-ragdoll-98` folgt eine gesteuerte Figur auf Wunsch den Clips des Spiels,
 nach 27.3 der Roadmap des Spiels: Im Gehen und Rennen bestimmen Animation und IK die Pose, bei einem Treffer übernimmt
@@ -3533,7 +3543,7 @@ lange die Threads im Löser rechnen und worauf sie sonst warten.
 ## Tests und Benchmark
 
 ```sh
-build/bin/nebenan_test            # 174 Tests: Geometrie, Voronoi, Hüllen, Öffnungen, Stöße, Stützgraph, Etagen, Lastprüfung, Mauern, Schutt, Ruhe, Durchschlagen, Threads, Knoten, große Blöcke, Gelenke in Paketen und Gebieten, Suchbaum, Kontaktlisten, Streaming, Stream, Laden im Hintergrund, Speichern und Zurückholen, gemeinsamer Thread-Pool, Ruhe-Prüfung auf den Workern, Schritt auf eigenem Thread, Schritte pro Bild, Takt der Physik, Wahl der Threads, Profil und Skalierung, Figuren, Ausgleichsschritt, Abfangen, rudernde Arme, Muskeln, Treffer entlang des Skeletts, Kegel je Richtung, Gelenke wie beim Menschen, Drehung um die Längsachse, Armature, ruhiger Kopf, Drücken, Füße auf dem Boden, Platz zum Aufstehen, Ragdoll durch die Wand, dünne Bretter, Determinismus …
+build/bin/nebenan_test            # 175 Tests: Geometrie, Voronoi, Hüllen, Öffnungen, Stöße, Stützgraph, Etagen, Lastprüfung, Mauern, Schutt, Ruhe, Durchschlagen, Threads, Knoten, große Blöcke, Gelenke in Paketen und Gebieten, Suchbaum, Kontaktlisten, Streaming, Stream, Laden im Hintergrund, Speichern und Zurückholen, gemeinsamer Thread-Pool, Ruhe-Prüfung auf den Workern, Schritt auf eigenem Thread, Schritte pro Bild, Takt der Physik, Wahl der Threads, Profil und Skalierung, Figuren, Ausgleichsschritt, Abfangen, rudernde Arme, Muskeln, Treffer entlang des Skeletts, Kegel je Richtung, Gelenke wie beim Menschen, Drehung um die Längsachse, Armature, ruhiger Kopf, Drücken, Füße auf dem Boden, Platz zum Aufstehen, Ragdoll durch die Wand, dünne Bretter, Determinismus …
 build/bin/nebenan_benchmark 4     # Zahl = Threads für Bruch und Physik, 0 = so viele, wie ein Spiel nähme
 build/bin/nebenan_benchmark scaling   # die Städte unter Beschuss mit 1, 2, 4 … Threads und die Tabelle der Skalierung
 build/bin/nebenan_benchmark rates     # die Städte unter Beschuss mit 30, 60 und 120 Hz, was eine simulierte Sekunde kostet

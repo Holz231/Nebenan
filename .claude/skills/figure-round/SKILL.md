@@ -63,6 +63,8 @@ Der Stand steht in `docs/Roadmap.md` (letzter Abschnitt, F84 mit dem 🔜-Rest) 
 - **Toleranz** ist die größte Streuung zwischen Sätzen, deren Geschwindigkeiten höchstens 5 % auseinanderliegen, auf
   dem alten Stand gemessen. Zählungen und Summen über zwei Sätze bekommen das Doppelte.
 - **Kosten** sind die Befehle, die `nbUpdateFigures` ausführt, höchstens 0,5 % mehr. Zeiten stehen daneben.
+- **Benchmark** ab Runde 125: Endzustände gleich und nicht mehr Befehle in Szenen, die der Eingriff nicht berührt. Zeiten
+  stehen daneben.
 - Was wiederholt werden darf, steht vorher in der Regel. Eine Messung, die nicht passt, wird nie wiederholt, bis sie
   passt. Verfehlt der saubere Bau eine Bedingung, wird nicht gebaut, oder es steht offen in der Roadmap, warum doch,
   und der Nutzer entscheidet.
@@ -74,6 +76,10 @@ Zehen und Fersen 37 mm, Hände 15 mm, Becken 10 mm, Becken tief ab 15 cm unter d
 
 - **Zeit messen streut mehr als kleine Grenzen.** Zwei Binaries desselben Quelltexts liegen je nach Compiler und Modus
   bis 0,5 µs auseinander. Kosten deshalb an Befehlen messen (Runde 120).
+- **Auch der Benchmark streut mehr als seine Grenze.** Zwei Binaries liegen in den Bildzeiten im Median 6 bis 9 %
+  auseinander, auch in Szenen, an deren Code sich nichts ändert (Runde 124). Den Benchmark deshalb an Endzuständen und
+  Befehlen prüfen, die Zeiten daneben festhalten. Kosten, die daher kommen, dass die Figur anderes tut, nach Funktionen
+  aufteilen (`callgrind_annotate` auf `out/cost/cg`): Sie sind der Eingriff selbst, nicht sein Preis.
 - **Seltene harte Sprünge zeigen sich nicht in Zählungen.** Die Summe dessen, was über die Grenze hinaus springt,
   wiegt Größe mit und streut wenig (Runde 122).
 - **Blöcke von 24 gleichen Stellen.** In den Szenen aus dem Stand sind alle 24 Stellen gleich und kippen gemeinsam
@@ -94,6 +100,12 @@ Zehen und Fersen 37 mm, Hände 15 mm, Becken 10 mm, Becken tief ab 15 cm unter d
 - **Ein Ziel kann eine Eigenschaft sein.** Tritt ein Fehler selten, aber in jedem Satz auf, heißt die Bedingung „keine
   Stelle, und vorher mindestens eine“ statt „um mehr als die Toleranz besser“ (Runde 123). Vorher zählen, ob der alte
   Stand ihn wirklich in jedem Satz hat.
+- **Den Ort suchen, an dem die Entscheidung fällt.** Ein Fuß, der falsch landet, wird nicht am Boden repariert,
+  sondern im Schwung, der die Landung vorbereitet (Runde 124 nach vier verworfenen Fassungen in Runde 123). An jeder
+  Landung messen, was den guten vom schlechten Fall trennt (`land124.py`), bevor eine Schwelle gewählt wird.
+- **Vorwärts heißt zweierlei.** `stepBack` sagt, wohin ein Schwung ging, `legBack`, wohin die Beine jetzt gehen.
+  Wechselt die Figur dazwischen die Richtung, gilt für denselben Fuß das Gegenteil: Ein Eingriff für vorwärts prüft
+  beide.
 - **Größe der Figur.** Winkelbeschleunigungen wachsen bei kleineren Figuren mit 1 durch `nbFigureScale`, Längen
   und Geschwindigkeiten mit ihr.
 

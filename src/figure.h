@@ -533,6 +533,8 @@ typedef struct nbFigure
 	float footRoll[2];
 	float footRolled[2];
 	float footRollGain[2];
+	// The share of its heel roll a swinging foot lands with, see NB_GAIT_HEEL_AHEAD
+	float heelPart[2];
 	// How far the ankle of a swinging foot was bent up beyond what it bends softly as it lifted, as a sine, and negative
 	// for a foot that does not swing, see NB_SWING_ANKLE_SOFT
 	float ankleHeld[2];

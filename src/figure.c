@@ -3869,6 +3869,22 @@ static void nbComeDownForGait( nbFigure* f, float timeStep )
 #define NB_GAIT_HEEL 0.25f
 #define NB_GAIT_HEEL_FROM 0.5f
 #define NB_GAIT_HEEL_LOAD 0.1f
+
+// A foot lands on its heel as far as it lands ahead of the hip, along its toes: in full where it lands
+// NB_GAIT_HEEL_AHEAD times as far ahead as the gait leads or farther, less in proportion nearer to the hip, and flat
+// where it lands under the hip or behind it, while the legs go forward. In a steady gait a foot lands as far ahead as
+// the gait leads, 22 to 37 cm walking, running and going sideways, and the steady gaits run as before. Turning about at
+// a run, a foot swings and lands behind the hip as the figure runs off the other way, the hip 9 to 16 cm ahead of its
+// ankle all through its swing. Until round 123 it turned its toes up all the same, landed on its heel and came flat
+// over six updates, and until it was flat it could not count as behind the hip and roll over its toes, see
+// nbLowerSteered: the root went down for its leg, 9 cm in five updates, and came up again once the foot rolled, and the
+// pelvis jumped 23.6 mm. Landing flat, the foot is behind the hip at once and rolls as far as its leg needs: 8.3 mm.
+// To bring such a foot flat faster once it stands is the wrong place, see round 123: its toes slap down, or a foot that
+// stands for one update comes flat in that update. While the legs go backward a foot that lands flat with the hip
+// ahead of its toes is not behind the hip but ahead of it as the figure goes, and nbLowerSteered has it come down from
+// its toes while the root sinks for it, 30 cm in four updates from running sideways to running backward: there a foot
+// lands on its heel as before.
+#define NB_GAIT_HEEL_AHEAD 0.5f
 #define NB_GAIT_SWING_PITCH 0.35f
 
 // Walking, a foot rolls over its toes by NB_GAIT_PUSH in radians farther than its leg needs over the last
@@ -5347,6 +5363,7 @@ static void nbSteerFeet( const nbWorld* world, int index, nbFigure* f, const nbC
 			f->footRoll[k] = 0.0f;
 			f->footRolled[k] = 0.0f;
 			f->footRollGain[k] = 0.0f;
+			f->heelPart[k] = 1.0f;
 			f->landRoll[k] = 0.0f;
 			f->footOut[k] = FLT_MAX;
 			f->outBehind[k] = false;
@@ -5679,10 +5696,11 @@ static void nbSteerFeet( const nbWorld* world, int index, nbFigure* f, const nbC
 				f->gaitStarting = false;
 				f->canLift[k] = phase < stance;
 				float stepSide = f->stepBack[k] ? -1.0f : 1.0f;
-				f->footRoll[k] = -stepSide * heel;
-				f->footRolled[k] = -stepSide * heel;
+				float landed = -stepSide * f->heelPart[k] * heel;
+				f->footRoll[k] = landed;
+				f->footRolled[k] = landed;
 				f->footRollGain[k] = 0.0f;
-				f->landRoll[k] = -stepSide * heel;
+				f->landRoll[k] = landed;
 				f->stanceTime[k] = 0.0f;
 				foot->plant = foot->target;
 				foot->tilt = foot->targetTilt;
@@ -6109,15 +6127,34 @@ static void nbSteerFeet( const nbWorld* world, int index, nbFigure* f, const nbC
 			// swing, so the knee bends as the foot leaves the ground, as people's does. Stepping backward, mirrored: the toes
 			// first go on up and come down before the foot lands on them, and it rolls over its heel no farther than as it
 			// lifted, and NB_FOOT_HEEL_MOST: going on rolling as fast as on the ground, it turned its toes up by 74 degrees.
+			// Its toes come up only as far as it lands ahead of the hip, along its toes as it lands, see
+			// NB_GAIT_HEEL_AHEAD: the frame goes on along its velocity until then, level, see below.
 			float flat = b3MinFloat( 2.0f * along, 1.0f );
 			float toesUp = b3ClampFloat( ( along - NB_GAIT_HEEL_FROM ) / ( 1.0f - NB_GAIT_HEEL_FROM ), 0.0f, 1.0f );
 			float rest = ( 1.0f - f->swingStart[k] ) * footTime / ( f->swingRate[k] * f->swingHurry[k] );
 			float goOn = flat < 1.0f ? along * ( 1.0f - flat ) * ( 1.0f - flat ) : 0.0f;
 			float stepSide = f->stepBack[k] ? -1.0f : 1.0f;
+			b3Vec3 on = b3Vec3_zero;
+			float heelPart = 1.0f;
+			if ( clipRoot == false )
+			{
+				on = nbFrameAhead( aimVelocity, swingAcceleration, aimWish, until, NULL );
+				on = nbPlanAhead( f, &capsulePlan, until, plan, on, NULL );
+				if ( f->stepBack[k] == false && f->legBack == false )
+				{
+					b3Vec3 lands = b3InvRotateVector( f->frame.q, b3Sub( b3SubPos( foot->target, f->frame.p ), on ) );
+					b3Vec3 toes =
+						b3InvRotateVector( f->frame.q, b3RotateVector( nbHeadingQuat( f->landHeading[k] ), b3Vec3_axisZ ) );
+					float leads = toes.x * ( lands.x - hips[k].x ) + toes.z * ( lands.z - hips[k].z );
+					float full = NB_GAIT_HEEL_AHEAD * b3Length( ahead );
+					heelPart = full > 0.0f ? b3ClampFloat( leads / full, 0.0f, 1.0f ) : 1.0f;
+				}
+			}
+			f->heelPart[k] = heelPart;
 			f->footRoll[k] = f->swingRoll[k] * ( 1.0f - flat * flat * ( 3.0f - 2.0f * flat ) ) +
 							 f->footRollRate[k] * rest * goOn +
 							 stepSide * ( 1.0f - run ) * ease * NB_GAIT_SWING_PITCH * calm * bump -
-							 stepSide * heel * toesUp * toesUp * ( 3.0f - 2.0f * toesUp );
+							 stepSide * heelPart * heel * toesUp * toesUp * ( 3.0f - 2.0f * toesUp );
 			if ( f->stepBack[k] )
 			{
 				f->footRoll[k] = b3MaxFloat( f->footRoll[k], b3MinFloat( f->swingRoll[k], -NB_FOOT_HEEL_MOST ) );
@@ -6140,8 +6177,7 @@ static void nbSteerFeet( const nbWorld* world, int index, nbFigure* f, const nbC
 				float walking = 1.0f - springRun;
 				float descend = walking * late * late * ( 3.0f - 2.0f * late );
 				float early = walking * smooth;
-				b3Vec3 on = nbFrameAhead( aimVelocity, swingAcceleration, aimWish, until, NULL );
-				on = b3MulAdd( nbPlanAhead( f, &capsulePlan, until, plan, on, NULL ), slope * speed * until, up );
+				on = b3MulAdd( on, slope * speed * until, up );
 				b3Vec3 landing = b3InvRotateVector( f->frame.q, b3Sub( b3SubPos( foot->target, f->frame.p ), on ) );
 				if ( f->stepBack[k] == f->legBack )
 				{

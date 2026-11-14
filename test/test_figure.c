@@ -5473,6 +5473,51 @@ static int SteerTurnRhythmTest( void )
 	return 0;
 }
 
+// A steered figure facing where it moves runs forward at 4.2 m/s and turns about, at twelve moments an update apart. As
+// it runs off the other way a foot swings and lands behind the hip. It lands flat there instead of on its heel, see
+// NB_GAIT_HEEL_AHEAD, counts as behind the hip at once and rolls over its toes: over the twelve turns the pelvis jumps
+// 11.7 mm in an update at most and 9.3 mm in their mean. Until round 123 it landed on its heel, the root went down for
+// its leg until it was flat and came up again: 22.1 mm at most and 13.0 mm in the mean.
+static int SteerTurnHeelTest( void )
+{
+	float most = 0.0f;
+	float sum = 0.0f;
+	for ( int part = 0; part < 12; ++part )
+	{
+		FigureScene scene;
+		CreateFigureScene( &scene, 1 );
+		nbFigureId figure = AddSteeredFigure( &scene, b3Vec3_zero, 0.0f );
+		StepFigures( &scene, 60 );
+		nbSteer steer = { { 0.0f, 0.0f, 4.2f }, 0.0f, true };
+		nbFigure_Steer( figure, &steer );
+		StepFigures( &scene, 181 + part );
+		steer.velocity = (b3Vec3){ 0.0f, 0.0f, -4.2f };
+		nbFigure_Steer( figure, &steer );
+		b3Vec3 last = b3ToVec3( b3Body_GetPosition( nbFigure_GetBody( figure, nb_humanoidPelvis ) ) );
+		b3Vec3 before = last;
+		float hardest = 0.0f;
+		for ( int i = 0; i < 180; ++i )
+		{
+			StepFigures( &scene, 1 );
+			b3Vec3 now = b3ToVec3( b3Body_GetPosition( nbFigure_GetBody( figure, nb_humanoidPelvis ) ) );
+			if ( i > 0 )
+			{
+				hardest = b3MaxFloat( hardest, b3Length( b3Add( b3Sub( now, last ), b3Sub( before, last ) ) ) );
+			}
+			before = last;
+			last = now;
+		}
+		most = b3MaxFloat( most, hardest );
+		sum += hardest;
+		DestroyFigureScene( &scene );
+	}
+	printf( "  turning about at a run, the pelvis jumps %.1f mm at most over twelve turns, %.1f mm in their mean\n",
+			1000.0f * most, 1000.0f * sum / 12.0f );
+	ENSURE( most < 0.014f );
+	ENSURE( sum / 12.0f < 0.0105f );
+	return 0;
+}
+
 // A steered figure that does not face where it moves walks backward at 1.6 m/s for 4 s, or runs backward at 3.0 m/s for
 // 3 s and a part of its cycle more and then forward at 3.0 m/s: how many of its feet landed going backward over the last
 // 2 s and how many of those on their toes, and how far the pelvis went below standing at most, over the last 2 s walking
@@ -6765,7 +6810,7 @@ static int ThinBoardTest( void )
 // within NB_GAIT_FLOAT, and going backward a foot its leg only reaches rolled over its toes stays on them. Round 112:
 // walking takes the steps of people, see NB_GAIT_CADENCE_WALK, and the ankle of a swinging foot bends up as far as
 // theirs, see NB_SWING_ANKLE_SOFT. Round 113: the body has the dimensions of a person, see nbMakeHumanoidBones.
-#define NB_EXPECTED_STEER_HASH 0xdbf5872cu
+#define NB_EXPECTED_STEER_HASH 0x4c69ec1au
 
 // See RunGaitClipScenario. Since round 99 as for RunSteerScenario. Since round 100 the figure that is told to turn on
 // the spot while it still walks, not facing where it moves, keeps its legs where they face as its heading turns, and
@@ -6903,6 +6948,7 @@ int FigureTest( void )
 	RUN_TEST( SteerTurnLiftTest );
 	RUN_TEST( SteerTurnRollTest );
 	RUN_TEST( SteerTurnRhythmTest );
+	RUN_TEST( SteerTurnHeelTest );
 	RUN_TEST( SteerBackTest );
 	RUN_TEST( SteerUprightTest );
 	RUN_TEST( SteerStartStopTest );

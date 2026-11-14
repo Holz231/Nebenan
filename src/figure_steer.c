@@ -346,6 +346,7 @@ void nbResetSteering( nbFigure* f )
 		f->footRoll[k] = 0.0f;
 		f->footRolled[k] = 0.0f;
 		f->footRollGain[k] = 0.0f;
+		f->heelPart[k] = 1.0f;
 		f->ankleHeld[k] = -1.0f;
 		f->swingRoll[k] = 0.0f;
 		f->landRoll[k] = 0.0f;
