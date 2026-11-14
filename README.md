@@ -185,13 +185,14 @@ siehe Demo-Renderer. Wie lang die Glieder sind und wie die Figur steht, kommt au
 **Gliederpuppe nach Modell.** Seit `active-ragdoll-125` zeichnet die Demo ihre Figuren beim Start als Gliederpuppe nach
 einem Modell von Quaternius, exportiert aus ActionForge und gemeinfrei unter CC0 1.0: orange mit violetten Gelenken, mit
 Kopf, Brustkorb, Bauch, Becken, Armen mit Fäusten, Beinen mit Waden und Füßen. Das Modell ist geskinnt und hat 71
-Knochen, die Figur der Bibliothek hat 19: `tools/mannequin/make_parts.py` zerlegt es in starre Teile, eines je Knochen,
-passt Arme und Beine an die Gelenke der Figur an und legt die Sohle des Fußes auf die Sohle der Physik, 6 352 Dreiecke
-je Figur. Die Demo zeichnet jedes Teil auf dem Körper seines Knochens, wie sie die Formen der anderen Darstellungen
-zeichnet. **Modell** im Menü schaltet sie ab, `--shapes` beim Start: Dann zeichnet die Demo die Gliederpuppe aus den
-Formen der Physik wie oben beschrieben. Ohne **Teile farbig** hat jede Puppe die Farbe ihrer Figur und dunkle Gelenke.
-Die Bibliothek weiß von alledem nichts: Ein Spiel hängt sein eigenes Modell an die Körper der Knochen, deren Lage es je
-Bild aus der Bibliothek liest. Siehe [tools/mannequin](tools/mannequin/README.md).
+Knochen, die Figur der Bibliothek hat 19: `tools/mannequin/make_skin.py` passt Arme und Beine an die Gelenke der Figur
+an, trägt die Schultern auf die Schultern der Figur, legt die Sohle des Fußes auf die Sohle der Physik und bindet jeden
+Punkt an einen Knochen der Figur oder an eine Lage zwischen zweien, 6 352 Dreiecke je Figur. Die Demo zeichnet die Puppe
+als ein Stück, das sich an Knie, Ellbogen, Schulter, Hüfte und Rumpf mitbiegt, und setzt dafür in jedem Bild 72 Lagen
+aus den Lagen der Körper. **Modell** im Menü schaltet sie ab, `--shapes` beim Start: Dann zeichnet die Demo die
+Gliederpuppe aus den Formen der Physik wie oben beschrieben. Ohne **Teile farbig** hat jede Puppe die Farbe ihrer Figur
+und dunkle Gelenke. Die Bibliothek weiß von alledem nichts: Ein Spiel hängt sein eigenes Modell an die Körper der
+Knochen, deren Lage es je Bild aus der Bibliothek liest. Siehe [tools/mannequin](tools/mannequin/README.md).
 
 **Figuren als Menschen.** Seit `active-ragdoll-113` zeichnet die Demo die Figuren auf Wunsch als Menschen, mit **Als
 Mensch** im Menü oder `--human`. Die Gliederpuppe aus den Formen der Physik bleibt, wie sie war. Beim Start steht seit

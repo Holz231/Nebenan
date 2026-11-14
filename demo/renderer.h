@@ -92,6 +92,11 @@ public:
 	// Returns a mesh handle. The indices count from the first vertex and all vertices must carry the slot.
 	int AddMesh( const GpuVertex* vertices, int vertexCount, const uint16_t* indices, int indexCount, int slot );
 
+	// As AddMesh, for a skin: a mesh whose vertices carry different slots, each one of the slots named, at least one. All
+	// of them have to be freed with the mesh.
+	int AddSkin( const GpuVertex* vertices, int vertexCount, const uint16_t* indices, int indexCount, const int* slots,
+				 int slotCount );
+
 	// The slot of a removed mesh has to be freed as well, that hides the vertices until the page is compacted
 	void RemoveMesh( int mesh );
 
@@ -134,6 +139,9 @@ private:
 		int firstIndex = 0;
 		int indexCount = 0;
 		int slot = -1;
+
+		// The further slots of a skin
+		std::vector<int> moreSlots;
 
 		// Position in the mesh list of the page
 		int pageEntry = -1;

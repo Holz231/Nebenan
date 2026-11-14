@@ -2,7 +2,7 @@
 // Nebenan demo: walls that break into polygon fragments on Box3D, built for speed. Flat shading, no shadows, no
 // particles: every millisecond goes to the destruction.
 
-#include "mannequin_parts.h"
+#include "mannequin_skin.h"
 #include "renderer.h"
 #include "system_info.h"
 
@@ -142,6 +142,12 @@ struct FigureVisual
 	std::vector<int> meshes;
 	nbFigureInfo info = {};
 	std::vector<b3WorldTransform> targets;
+
+	// The mannequin after the model: one mesh over all bodies, a slot for each of its bindings, and the pose each body was
+	// last drawn at, see PoseFigureSkin
+	int skinMesh = -1;
+	std::vector<int> skinSlots;
+	std::vector<b3WorldTransform> drawn;
 };
 
 // The slots of the chunks of a body, by the index of the body in Box3D, so the poses of a frame find them quickly, and
@@ -1723,54 +1729,118 @@ static int ClothesMaterial( int bone, int shirt )
 	}
 }
 
-// A part of the mannequin after the model, see mannequin_parts.h and tools/mannequin: the shells of the model of
-// Quaternius that hang on this bone, rigid on its body, the body in one material and the joints in another. The model
-// has no shell for the belly and the lower chest: its belly piece hangs on the ribs and its chest piece on the chest.
-static void AppendModelPart( App& app, int bone, int body, int joints, int slot )
+// The slots of the skin of a figure in the poses of its bodies. The skin is written in the rest pose of the figure, so
+// a bone moves its vertices by what it has turned and moved from there. A binding between two bones turns by its share
+// from the one to the other, about its pivot, the joint between them: the shells of the model bend at a joint the way
+// its skin does, in steps, without a shader that blends.
+static void PoseFigureSkin( App& app, FigureVisual& visual )
 {
-	const MannequinPart& part = s_mannequinParts[bone];
-	for ( int i = 0; i < part.vertexCount; ++i )
+	if ( visual.skinMesh < 0 )
 	{
-		const MannequinVertex& v = s_mannequinVertices[part.firstVertex + i];
-		b3Vec3 position = { v.position[0], v.position[1], v.position[2] };
-		b3Vec3 normal = { (float)v.normal[0] / 127.0f, (float)v.normal[1] / 127.0f, (float)v.normal[2] / 127.0f };
-		app.vertexScratch.push_back( Renderer::MakeVertex( position, normal, v.material == 0 ? body : joints, slot ) );
-	}
-	for ( int i = 0; i < part.indexCount; ++i )
-	{
-		app.indexScratch.push_back( s_mannequinIndices[part.firstIndex + i] );
+		return;
 	}
 
-	// Inside the parts of the trunk and the neck a core in the color of the joints, smaller than the shape of the
-	// physics: the shells of the model are rigid here, and where two of them come apart as the spine bends, the core shows
-	// instead of the sky behind the figure. The belly and the lower chest, which the model has no shell for, are core
-	// only. The chest has none, its shell closes around the neck of the model. Forearms and shins have a ball at their
-	// joint, inside the elbow and the knee of the model, for the same reason.
-	const nbBoneDef& def = app.figureBones[bone];
-	if ( bone == nb_humanoidNeck )
+	b3Quat turn[nb_humanoidBoneCount];
+	b3Vec3 move[nb_humanoidBoneCount];
+	for ( int i = 0; i < nb_humanoidBoneCount; ++i )
 	{
-		AppendCapsule( app, b3Vec3_zero, def.end, 0.55f * def.radius, joints, slot, 8, 2 );
+		const BodySlots* entry = FindBodySlots( app, visual.bodies[i] );
+		if ( entry != nullptr && entry->posed )
+		{
+			visual.drawn[i] = entry->pose;
+		}
+
+		const MannequinRest& rest = s_mannequinRest[i];
+		b3Quat restRotation = { { rest.rotation[0], rest.rotation[1], rest.rotation[2] }, rest.rotation[3] };
+		b3Vec3 restPosition = { rest.position[0], rest.position[1], rest.position[2] };
+		turn[i] = b3MulQuat( visual.drawn[i].q, b3Conjugate( restRotation ) );
+		move[i] = b3Sub( b3ToVec3( visual.drawn[i].p ), b3RotateVector( turn[i], restPosition ) );
 	}
-	else if ( bone < nb_humanoidChest && def.shape == nb_roundedBoxBone )
+
+	int bindingCount = (int)( sizeof( s_mannequinBindings ) / sizeof( s_mannequinBindings[0] ) );
+	for ( int i = 0; i < bindingCount; ++i )
 	{
-		float wide = bone == nb_humanoidPelvis ? 0.55f : 0.68f;
-		b3Vec3 h = { wide * def.halfExtents.x, 0.85f * def.halfExtents.y, 0.5f * def.halfExtents.z };
-		AppendRoundedBox( app, def.center, h, 0.95f * b3MinFloat( h.x, b3MinFloat( h.y, h.z ) ), joints, slot, 3 );
-	}
-	else if ( bone == nb_humanoidForearmLeft || bone == nb_humanoidForearmRight || bone == nb_humanoidShinLeft ||
-			  bone == nb_humanoidShinRight )
-	{
-		AppendCapsule( app, b3Vec3_zero, b3Vec3_zero, 0.8f * def.radius, joints, slot, 10, 3 );
+		const MannequinBinding& binding = s_mannequinBindings[i];
+		b3Quat rotation = turn[binding.first];
+		b3Vec3 position = move[binding.first];
+		if ( binding.share > 0.0f )
+		{
+			b3Quat other = turn[binding.second];
+			if ( b3DotQuat( rotation, other ) < 0.0f )
+			{
+				other = { b3Neg( other.v ), -other.s };
+			}
+			b3Vec3 pivot = { binding.pivot[0], binding.pivot[1], binding.pivot[2] };
+			b3Vec3 from = b3Add( position, b3RotateVector( rotation, pivot ) );
+			b3Vec3 to = b3Add( move[binding.second], b3RotateVector( turn[binding.second], pivot ) );
+			rotation = b3NLerp( rotation, other, binding.share );
+			position = b3Sub( b3Lerp( from, to, binding.share ), b3RotateVector( rotation, pivot ) );
+		}
+		app.renderer.SetSlot( visual.skinSlots[i], position, rotation );
 	}
 }
 
+// The mannequin after the model as one skin over the bodies of a figure, see mannequin_skin.h and tools/mannequin: the
+// shells of the model of Quaternius, the body in one material and the joints in another. Every vertex carries the slot
+// of its binding, the pose of one bone or a pose between two, so the shells stay one piece where a joint bends.
+static void BuildFigureSkin( App& app, FigureVisual& visual, int body, int joints )
+{
+	int bindingCount = (int)( sizeof( s_mannequinBindings ) / sizeof( s_mannequinBindings[0] ) );
+	int vertexCount = (int)( sizeof( s_mannequinVertices ) / sizeof( s_mannequinVertices[0] ) );
+	int indexCount = (int)( sizeof( s_mannequinIndices ) / sizeof( s_mannequinIndices[0] ) );
+	visual.skinSlots.resize( (size_t)bindingCount );
+	for ( int i = 0; i < bindingCount; ++i )
+	{
+		visual.skinSlots[i] = app.renderer.AllocSlot();
+	}
+
+	app.vertexScratch.clear();
+	for ( int i = 0; i < vertexCount; ++i )
+	{
+		const MannequinVertex& v = s_mannequinVertices[i];
+		b3Vec3 position = { v.position[0], v.position[1], v.position[2] };
+		b3Vec3 normal = { (float)v.normal[0] / 127.0f, (float)v.normal[1] / 127.0f, (float)v.normal[2] / 127.0f };
+		app.vertexScratch.push_back(
+			Renderer::MakeVertex( position, normal, v.material == 0 ? body : joints, visual.skinSlots[v.binding] ) );
+	}
+	app.indexScratch.assign( s_mannequinIndices, s_mannequinIndices + indexCount );
+	visual.skinMesh = app.renderer.AddSkin( app.vertexScratch.data(), vertexCount, app.indexScratch.data(), indexCount,
+											visual.skinSlots.data(), bindingCount );
+
+	// Where the bodies are drawn now: the slots of the bones were attached before
+	visual.drawn.resize( visual.bodies.size() );
+	for ( size_t i = 0; i < visual.bodies.size(); ++i )
+	{
+		const BodySlots* entry = FindBodySlots( app, visual.bodies[i] );
+		visual.drawn[i] = entry != nullptr && entry->posed ? entry->pose : b3Body_GetTransform( visual.bodies[i] );
+	}
+	PoseFigureSkin( app, visual );
+}
+
+static void RemoveFigureSkin( App& app, FigureVisual& visual )
+{
+	if ( visual.skinMesh < 0 )
+	{
+		return;
+	}
+
+	app.renderer.RemoveMesh( visual.skinMesh );
+	for ( int slot : visual.skinSlots )
+	{
+		app.renderer.FreeSlot( slot );
+	}
+	visual.skinMesh = -1;
+	visual.skinSlots.clear();
+}
+
 // The meshes of the bones of a figure, each on a new slot on the body of its bone, so the poses of the frames move it.
-// As the mannequin after the model its parts, see AppendModelPart. As the mannequin from the shapes of the physics each
-// part of the body in its own color, or the whole figure in one after its place in the list of figures. As a person the
-// figure in clothes, its shirt in that color.
+// As the mannequin after the model one skin over all bones instead, see BuildFigureSkin. As the mannequin from the
+// shapes of the physics each part of the body in its own color, or the whole figure in one after its place in the list
+// of figures. As a person the figure in clothes, its shirt in that color.
 static void BuildFigureMeshes( App& app, FigureVisual& visual, int figure )
 {
 	int count = (int)sizeof( s_figureMaterials ) / (int)sizeof( s_figureMaterials[0] );
+	bool skin = app.figureHuman == false && app.figureModel && (int)visual.bodies.size() == nb_humanoidBoneCount;
 	for ( size_t i = 0; i < visual.bodies.size(); ++i )
 	{
 		int bone = (int)i;
@@ -1791,22 +1861,25 @@ static void BuildFigureMeshes( App& app, FigureVisual& visual, int figure )
 			int clothes = bone < nb_humanoidBoneCount ? ClothesMaterial( bone, material ) : material;
 			AppendBodyPart( app, bone, app.figureBones[bone], clothes, MaterialFigureDark, slot );
 		}
-		else if ( app.figureModel && bone < nb_humanoidBoneCount )
-		{
-			// With its parts in colors the mannequin as its model has it, orange with violet joints, else in the color of
-			// the figure with dark joints
-			int body = app.figurePartColors ? MaterialFigureOrange : s_figureMaterials[figure % count];
-			int joints = app.figurePartColors ? MaterialFigureViolet : MaterialFigureDark;
-			AppendModelPart( app, bone, body, joints, slot );
-		}
-		else
+		else if ( skin == false )
 		{
 			AppendMannequinPart( app, bone, app.figureBones[bone], material, slot );
 		}
+
+		// Under the skin a bone has a slot and no mesh
 		visual.slots[i] = slot;
 		visual.meshes[i] = app.renderer.AddMesh( app.vertexScratch.data(), (int)app.vertexScratch.size(), app.indexScratch.data(),
 												 (int)app.indexScratch.size(), slot );
 		AttachSlot( app, visual.bodies[i], slot );
+	}
+
+	if ( skin )
+	{
+		// With its parts in colors the mannequin as its model has it, orange with violet joints, else in the color of the
+		// figure with dark joints
+		int body = app.figurePartColors ? MaterialFigureOrange : s_figureMaterials[figure % count];
+		int joints = app.figurePartColors ? MaterialFigureViolet : MaterialFigureDark;
+		BuildFigureSkin( app, visual, body, joints );
 	}
 }
 
@@ -1838,6 +1911,7 @@ static void RebuildFigureVisuals( App& app )
 			app.renderer.RemoveMesh( visual.meshes[i] );
 			app.renderer.FreeSlot( visual.slots[i] );
 		}
+		RemoveFigureSkin( app, visual );
 		BuildFigureMeshes( app, visual, (int)f );
 	}
 }
@@ -2521,6 +2595,7 @@ static void DestroyScene( App& app )
 			app.renderer.RemoveMesh( visual.meshes[i] );
 			app.renderer.FreeSlot( visual.slots[i] );
 		}
+		RemoveFigureSkin( app, visual );
 	}
 	app.figures.clear();
 	app.bodySlots.clear();
@@ -3069,6 +3144,12 @@ static void ApplyPhysics( App& app )
 		}
 	}
 	app.poses = {};
+
+	// The skins of the figures follow the poses of their bodies
+	for ( FigureVisual& visual : app.figures )
+	{
+		PoseFigureSkin( app, visual );
+	}
 
 	// The CPU time of the steps with their updates, and of the streaming after them
 	if ( app.physicsPending == false )
@@ -3625,9 +3706,9 @@ static void DrawUi( App& app )
 		if ( ImGui::IsItemHovered() )
 		{
 			ImGui::SetTooltip(
-				"An: die Gliederpuppe nach dem Modell von Quaternius (CC0), in starren Teilen je Knochen,\nmit „Teile farbig“ "
-				"orange mit violetten Gelenken, sonst in der Farbe der Figur. Aus: die\nGliederpuppe aus den Formen der Physik. "
-				"Gilt nicht für „Als Mensch“." );
+				"An: die Gliederpuppe nach dem Modell von Quaternius (CC0), ein Stück, das sich an den Gelenken\nmitbiegt, mit "
+				"„Teile farbig“ orange mit violetten Gelenken, sonst in der Farbe der Figur. Aus: die\nGliederpuppe aus den "
+				"Formen der Physik. Gilt nicht für „Als Mensch“." );
 		}
 		ImGui::SameLine();
 		if ( ImGui::Checkbox( "Als Mensch", &app.figureHuman ) )

@@ -293,6 +293,30 @@ int Renderer::AddMesh( const GpuVertex* vertices, int vertexCount, const uint16_
 	return meshIndex;
 }
 
+int Renderer::AddSkin( const GpuVertex* vertices, int vertexCount, const uint16_t* indices, int indexCount, const int* slots,
+					   int slotCount )
+{
+	if ( slotCount <= 0 )
+	{
+		return -1;
+	}
+
+	int meshIndex = AddMesh( vertices, vertexCount, indices, indexCount, slots[0] );
+	if ( meshIndex < 0 )
+	{
+		return -1;
+	}
+
+	// Every slot the vertices carry counts the mesh, so none is handed out again while they are in a page
+	Mesh& mesh = m_meshes[meshIndex];
+	mesh.moreSlots.assign( slots + 1, slots + slotCount );
+	for ( int slot : mesh.moreSlots )
+	{
+		m_slotReferences[slot] += 1;
+	}
+	return meshIndex;
+}
+
 void Renderer::RemoveMesh( int meshIndex )
 {
 	if ( meshIndex < 0 || meshIndex >= (int)m_meshes.size() || m_meshes[meshIndex].alive == false )
@@ -308,6 +332,8 @@ void Renderer::RemoveMesh( int meshIndex )
 	m_meshes[last].pageEntry = mesh.pageEntry;
 	page.meshes.pop_back();
 	page.deadSlots.push_back( mesh.slot );
+	page.deadSlots.insert( page.deadSlots.end(), mesh.moreSlots.begin(), mesh.moreSlots.end() );
+	mesh.moreSlots.clear();
 	page.deadVertices += mesh.vertexCount;
 
 	mesh.alive = false;
