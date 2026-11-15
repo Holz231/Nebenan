@@ -159,6 +159,11 @@ Zehen und Fersen 37 mm, Hände 15 mm, Becken 10 mm, Becken tief ab 15 cm unter d
   umgeschrieben und einmal ganz durchlaufen lassen, bevor die Regel festgeschrieben wird: In Runde 131 hatte die
   Auswertung beim Umschreiben alle Schutzbedingungen verloren, und der Probelauf fand es. Frische Geschwindigkeiten des
   Gehens gibt es zwischen 1,05 und 1,68 m/s auf den Zentimeter nicht mehr, halbe Zentimeter nehmen.
+- **Eine alte Schutzregel erst mit einem Schalter auf der ganzen Tabelle lockern.** Vor Regel, Toleranzen und frischen
+  Geschwindigkeiten: die Stelle ausgeben lassen, die Variante bauen, die Szene der Runde und alle Szenen mit festem
+  Blick fahren, mit den gekreuzten Füßen. Runde 132 wollte die Lücke zwischen den Füßen lockern und war so in einer
+  Stunde entschieden: schlechter auf jeder Größe, nichts gebaut, keine frische Geschwindigkeit verbraucht. Eine Runde
+  darf mit „gemessen, nicht gebaut“ enden, die Zahlen kommen in die Liste.
 - **Größe der Figur.** Winkelbeschleunigungen wachsen bei kleineren Figuren mit 1 durch `nbFigureScale`, Längen
   und Geschwindigkeiten mit ihr.
 
