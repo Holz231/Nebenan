@@ -53,3 +53,10 @@ Die Reihenfolge aus Kapitel 15:
 | M6 | Elemente mit je einer Fähigkeit für Angriff und Verteidigung |
 | M7 | Giant und Worm in je einer Testarena |
 | M8 | Inhalte, Sandbox, Missionen, Render-Optimierung, Audio, Veröffentlichung |
+
+## Analyse von endorphin
+
+`endorphin-Analyse.md` ist eine Analyse des Nutzers von endorphin 2.7.1 (NaturalMotion), von ihm erarbeitet und am 15.
+November 2026 auf seine Entscheidung aufgenommen; nur der Benutzername in zwei Pfaden ist ersetzt. `endorphin-Ideen.md`
+fasst zusammen, was davon als Idee für Nebenan taugt. Für Nebenan gelten daraus nur Ideen, keine Zahlen, Formeln oder
+Formate, siehe F88 der [Roadmap](../Roadmap.md).

@@ -41,8 +41,9 @@ Spiel hätte sie nachbauen müssen. Das darf nicht wieder passieren.
 Die nächsten möglichen Schritte stehen mit Gewinn, Voraussetzung und Stand in `docs/Roadmap.md`. Vor jeder neuen Runde
 dort nachsehen, nach jeder Runde den Stand nachtragen.
 
-Die Roadmap des Spiels liegt als Referenz in `docs/Referenz/`, als PDF und als Text. Wie Häuser einstürzen sollen,
-steht dort in Kapitel 17.
+Die Roadmap des Spiels liegt als Referenz in `docs/Referenz/`, als PDF und als Text. Wie Häuser einstürzen sollen, steht
+dort in Kapitel 17. Dort liegt auch die Analyse des Nutzers von endorphin mit einer Zusammenfassung der Ideen: Für
+Nebenan gelten daraus nur Ideen, keine Zahlen, Formeln oder Formate.
 
 ## Runden an der Figur
 
