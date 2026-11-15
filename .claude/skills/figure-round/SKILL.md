@@ -136,6 +136,17 @@ Zehen und Fersen 37 mm, Hände 15 mm, Becken 10 mm, Becken tief ab 15 cm unter d
   ist ein Wechsel. Wo ein Eingriff für Wechsel den stetigen Gang nicht ändern soll, die Zeilen ab 5 s vergleichen, und
   die Stärke des Eingriffs so wählen, dass er im stetigen Gang nie greift: Der stetige Gang gibt die Grenze vor (Runde
   129).
+- **Die Grenze zum stetigen Gang wird gesucht, nicht geschätzt.** Soll ein Eingriff den stetigen Gang nicht anfassen,
+  seine Stärke mit `steady130.py` über das ganze Tempo suchen, 231 Läufe und mit `FINE=1` das schnelle Rennen in
+  Schritten von 0,01 m/s, und erst dann einen Schritt über die Grenze gehen. In Runde 130 stand die Stärke auf 17
+  Läufen, die unabhängige Prüfung fand einen stetigen Lauf, der sich änderte, und die Runde brauchte eine zweite Regel.
+  Die Geschwindigkeiten der Prüfung vorher festlegen und aus der Suche heraushalten.
+- **Eine alte Stärke nicht nebenbei nachziehen.** Die Suche von Runde 130 fand auch an der Bremse aus Runde 129 zwei
+  stetige Läufe, die sich ändern. Sie schwächer zu stellen hätte einen guten Teil ihres Gewinns gekostet: erst den Preis
+  messen, dann den Befund mit dem Preis dem Nutzer vorlegen, nicht in die laufende Runde mischen.
+- **Ein neues Skript einmal trocken laufen lassen.** `check130b.sh` war nicht ausführbar, die Prüfung startete nicht,
+  und der Abschlusslauf lief ohne sie los. Neue Skripte mit `chmod +x` anlegen und den Rückgabewert der Prüfung
+  abwarten, bevor Kosten und Benchmark starten.
 - **Größe der Figur.** Winkelbeschleunigungen wachsen bei kleineren Figuren mit 1 durch `nbFigureScale`, Längen
   und Geschwindigkeiten mit ihr.
 

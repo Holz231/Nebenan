@@ -251,6 +251,17 @@
 // forward at 4.8 and backward at 4.5 m/s are not. Starting to walk or run is a change, and there a leg may brake.
 #define NB_LEG_BRAKE 45.0f
 
+// A swinging leg that was held at a length in this swing, at its reach or braking, see NB_LEG_BRAKE, lets go of that
+// length gently: from then on it gets shorter in an update by no more than in the update before and NB_LEG_LET_GO m/s^2
+// more, for a figure of scale 1, its ankle farther out on the line from the hip to its path meanwhile, never lower than
+// where it lands. Switching sides at a run with a fixed heading at 4.33 m/s, a swinging leg hung at its reach behind
+// the hip while the hip ran on, and as the hip stopped, the foot came after it at 2 m/s: the leg, held until then, got
+// 3.5 cm shorter in one update, and its shin jumped 60 mm. Now 39 mm. The steady gait is not to change with this: from
+// 80 m/s^2 on, 327 steady runs, forward, sideways and backward at 1.00 to 4.80 m/s, are the same to the bit from their
+// fifth second on, with 75 m/s^2 the fast run backward is not, and with 60 m/s^2, where the shin jumped 29 mm, not from
+// 4.41 m/s on.
+#define NB_LEG_LET_GO 85.0f
+
 // How far something that slows down by brake in every update may move in this update to stop within room: its moves
 // from here on, this one, one shorter by brake, and so on, add up to room. Within brake of where it stops, it gets
 // there, and without a brake at once.
@@ -3782,18 +3793,40 @@ static void nbPlaceFeet( nbFigure* f, const b3Transform* transforms, const nbCli
 					// bent, 5 to 6.5 cm longer in every update until it stands, and braked, 8 of 219 flat stances walking up
 					// were across an edge, the foot not yet on its tread.
 					bool level = f->stairWeight == 0.0f;
+					b3Vec3 there = b3Vec3_zero;
 					if ( level && f->legLong[k] > 0.0f )
 					{
-						b3Vec3 there = b3InvTransformWorldPoint( f->frame, f->feet[k].target );
+						there = b3InvTransformWorldPoint( f->frame, f->feet[k].target );
 						float stop = b3MinFloat( most, b3Length( b3Sub( there, hip ) ) );
 						float room = b3MaxFloat( stop - f->legLong[k], 0.0f );
 						limit = b3MinFloat( limit, f->legLong[k] + nbBrakeStep( room, brake ) );
 					}
+					bool held = false;
 					if ( distance > limit )
 					{
 						ankles[k] = b3MulAdd( hip, limit / distance, offset );
 						distance = limit;
+						held = true;
 					}
+					else if ( level && f->legLong[k] > 0.0f && f->legKept[k] )
+					{
+						// A leg that was held in this swing lets go gently, see NB_LEG_LET_GO: it gets shorter by no more than in
+						// the last update and that more, its ankle no lower than where it lands
+						float least = f->legLong[k] + f->legRate[k] - NB_LEG_LET_GO * scale * timeStep * timeStep;
+						least = b3MinFloat( least, most );
+						if ( offset.y < 0.0f )
+						{
+							least = b3MinFloat( least, ( there.y - hip.y ) * distance / offset.y );
+						}
+						if ( distance < least )
+						{
+							ankles[k] = b3MulAdd( hip, least / distance, offset );
+							distance = least;
+							held = true;
+						}
+					}
+					f->legRate[k] = level && f->legLong[k] > 0.0f ? distance - f->legLong[k] : 0.0f;
+					f->legKept[k] = level && ( held || f->legKept[k] );
 					f->legLong[k] = level ? distance : 0.0f;
 					f->legGap[k] = 0.0f;
 				}
@@ -3815,6 +3848,8 @@ static void nbPlaceFeet( nbFigure* f, const b3Transform* transforms, const nbCli
 					}
 					f->legLong[k] = 0.0f;
 					f->legGap[k] = b3MaxFloat( gap, 0.0f );
+					f->legRate[k] = 0.0f;
+					f->legKept[k] = false;
 					if ( gap > 0.0f )
 					{
 						ankles[k] = b3MulAdd( hip, ( distance - gap ) / distance, offset );
@@ -3826,6 +3861,8 @@ static void nbPlaceFeet( nbFigure* f, const b3Transform* transforms, const nbCli
 				f->ankleHeld[k] = -1.0f;
 				f->legLong[k] = 0.0f;
 				f->legGap[k] = 0.0f;
+				f->legRate[k] = 0.0f;
+				f->legKept[k] = false;
 			}
 			nbReachAnkle( f, thighs[k], root, ankles[k], rotations[k], f->pose, along, f->ankleHeld + k );
 		}

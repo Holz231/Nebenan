@@ -542,6 +542,10 @@ typedef struct nbFigure
 	// from where it stands, along its leg, see NB_LEG_BRAKE. Zero for a foot that stands.
 	float legLong[2];
 	float legGap[2];
+	// How much longer the leg of a swinging foot got in the last update, and whether it was held at a length in this
+	// swing, see NB_LEG_LET_GO
+	float legRate[2];
+	bool legKept[2];
 	// The heel roll of the gait in the last update of the swing, see nbSteerFeet
 	float swingHeel[2];
 	float swingRoll[2];
