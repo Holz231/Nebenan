@@ -1905,27 +1905,37 @@ die vorher nicht gelaufen waren, springen Schienbeine im Seitenwechsel im Rennen
 mm, in Summe 29 statt 90 mm darüber, und nichts wird schlechter. Das stetige Gehen und Rennen bleibt bitgleich, gesucht
 an 327 stetigen Läufen von 1,0 bis 4,8 m/s, auf Treppen landet ein Fuß wie bisher. Ein Spiel ruft dafür nichts Neues
 auf. Eine gesteuerte Figur führt dabei höchstens 0,011 % mehr Befehle aus als auf `active-ragdoll-129`. Siehe „Ein
-gehaltenes Bein lässt seine Länge sanft los“ in [Optimierungen.md](docs/Optimierungen.md). Am Hang und auf Treppen misst
-die Figur die Steigung ihres Wegs: Bergauf landet ein Fuß weiter vorn, bergab näher unter dem Körper, so reicht das
-vordere Bein so weit hinauf wie das hintere hinunter, und die Schritte werden kürzer, auf 20° um ein Fünftel. Die Feder
-unter der Kapsel folgt der Ebene, die der Fühler findet, statt am Hang hinterherzuhängen, und vor dem Aufsetzen geht die
-Hüfte so tief, wie das Bein den wirklichen Landepunkt braucht. Auf einer Rampe von 20° wippt die Hüfte so um 2 cm, und
-in einem Update bewegt sie sich gegen die Kapsel um höchstens 2 cm. Auf einer Treppe setzt die Figur ihre Füße Stufe für
-Stufe: Vor jedem Schwung sucht sie am Ziel mit Strahlen nach einer Kante, misst die Stufe aus und stellt die ganze Sohle
-darauf, und jeder Schritt nimmt gleich viele Stufen, so viele, wie ein Schritt auf einer Rampe gleicher Steigung lang
-wäre. Die Strahlen beginnen so viel höher, wie sie tiefer suchen dürfen, so findet ein Fuß die erste Stufe hinauf auch,
-solange die Kapsel noch eben läuft, und ein Fuß geht bis zwei Stufen weiter zu der, die der Schritt will: Wo immer die
-Figur rennend an einer Treppe ankommt, steht jeder Fuß mit der ganzen Sohle auf seiner Stufe, auf `active-ragdoll-93`
-bei sechs von 16 Starts hinauf nicht, und hinunter mit 4,5 m/s nimmt jeder Schritt drei Stufen. Damit der Fuß dort
-landet, geht jeder schwingende Fuß bis 40 % schneller oder langsamer, der Takt des Gangs mit dem, der zuerst landet, und
-die Hüfte folgt dem Boden zwischen den Fußpunkten statt der Kapsel, die Stufe für Stufe steigt, und nicht viel
-schneller, als dieser Boden steigt oder fällt: Gehend die Treppe hinauf wippt sie gegen die Linie der Treppe um
-höchstens 1 cm, hinunter um 3,0 bis 6,2 cm, rennend hinauf und hinunter bei 20 Starts über eine ganze Stufe um höchstens
-7,2 und 8,3 cm, auf `active-ragdoll-94` bei acht Starts hinunter bis 18,1 cm. Ein Fuß behält seine Stufe, solange er sie
-so noch erreicht: Rennend hinunter wippt das Becken bei 96 Starts über 0,95 m mit 3,0 und 4,5 m/s um höchstens 5,5 und
-6,6 cm, auf `active-ragdoll-101` bis 8,9 und 20,2 cm. Landet ein Fuß neben keiner Kante oder mit der ganzen Sohle auf
-einem Podest, prüft ein Strahl vor seiner Sohle, ob der Boden dort ihre Ebene verlässt, und nur dann sieht die Figur
-nach, ob dort eine Treppe beginnt: Über 300 Starts bis 3 m weiter hinten wippt das Becken rennend hinauf und hinunter um
+gehaltenes Bein lässt seine Länge sanft los“ in [Optimierungen.md](docs/Optimierungen.md). Seit `active-ragdoll-131`
+bleibt ein Fuß, der eben gelandet ist, stehen, wenn sein Bein ihn noch lange genug hält und der andere Fuß abheben darf:
+Der andere hebt zuerst ab. Wechselte eine Figur, die ihren Gegner ansieht, im Rennen von seitwärts auf rückwärts,
+landete ein Fuß weit neben den drehenden Beinen, beide Füße gingen fast gleichzeitig verloren, und der eben gelandete
+hob im nächsten Update wieder ab: Ein Schienbein sprang bis 55 mm. Im Seitenwechsel im Rennen tippte ein Fuß an fast der
+Hälfte der Wechsel nur für ein oder zwei Updates auf. Geprüft mit Geschwindigkeiten, die vorher nicht gelaufen waren,
+hebt in den acht Wechseln im Rennen kein Fuß mehr sofort wieder ab, vorher 23 an 384 Stellen, und nichts wird über seine
+Toleranz schlechter. Das stetige Gehen und Rennen bleibt bitgleich, gesucht an 331 stetigen Läufen von 1,0 bis 4,8 m/s.
+Ein Spiel ruft dafür nichts Neues auf. Eine gesteuerte Figur führt dabei im Kostentest mit Wechseln der Richtung bis
+0,49 % mehr Befehle aus als auf `active-ragdoll-130`, stetig seitwärts gehend 0,08 %. Siehe „Ein eben gelandeter Fuß
+bleibt stehen“ in [Optimierungen.md](docs/Optimierungen.md). Am Hang und auf Treppen misst die Figur die Steigung ihres
+Wegs: Bergauf landet ein Fuß weiter vorn, bergab näher unter dem Körper, so reicht das vordere Bein so weit hinauf wie
+das hintere hinunter, und die Schritte werden kürzer, auf 20° um ein Fünftel. Die Feder unter der Kapsel folgt der
+Ebene, die der Fühler findet, statt am Hang hinterherzuhängen, und vor dem Aufsetzen geht die Hüfte so tief, wie das
+Bein den wirklichen Landepunkt braucht. Auf einer Rampe von 20° wippt die Hüfte so um 2 cm, und in einem Update bewegt
+sie sich gegen die Kapsel um höchstens 2 cm. Auf einer Treppe setzt die Figur ihre Füße Stufe für Stufe: Vor jedem
+Schwung sucht sie am Ziel mit Strahlen nach einer Kante, misst die Stufe aus und stellt die ganze Sohle darauf, und
+jeder Schritt nimmt gleich viele Stufen, so viele, wie ein Schritt auf einer Rampe gleicher Steigung lang wäre. Die
+Strahlen beginnen so viel höher, wie sie tiefer suchen dürfen, so findet ein Fuß die erste Stufe hinauf auch, solange
+die Kapsel noch eben läuft, und ein Fuß geht bis zwei Stufen weiter zu der, die der Schritt will: Wo immer die Figur
+rennend an einer Treppe ankommt, steht jeder Fuß mit der ganzen Sohle auf seiner Stufe, auf `active-ragdoll-93` bei
+sechs von 16 Starts hinauf nicht, und hinunter mit 4,5 m/s nimmt jeder Schritt drei Stufen. Damit der Fuß dort landet,
+geht jeder schwingende Fuß bis 40 % schneller oder langsamer, der Takt des Gangs mit dem, der zuerst landet, und die
+Hüfte folgt dem Boden zwischen den Fußpunkten statt der Kapsel, die Stufe für Stufe steigt, und nicht viel schneller,
+als dieser Boden steigt oder fällt: Gehend die Treppe hinauf wippt sie gegen die Linie der Treppe um höchstens 1 cm,
+hinunter um 3,0 bis 6,2 cm, rennend hinauf und hinunter bei 20 Starts über eine ganze Stufe um höchstens 7,2 und 8,3 cm,
+auf `active-ragdoll-94` bei acht Starts hinunter bis 18,1 cm. Ein Fuß behält seine Stufe, solange er sie so noch
+erreicht: Rennend hinunter wippt das Becken bei 96 Starts über 0,95 m mit 3,0 und 4,5 m/s um höchstens 5,5 und 6,6 cm,
+auf `active-ragdoll-101` bis 8,9 und 20,2 cm. Landet ein Fuß neben keiner Kante oder mit der ganzen Sohle auf einem
+Podest, prüft ein Strahl vor seiner Sohle, ob der Boden dort ihre Ebene verlässt, und nur dann sieht die Figur nach, ob
+dort eine Treppe beginnt: Über 300 Starts bis 3 m weiter hinten wippt das Becken rennend hinauf und hinunter um
 höchstens 7,5 cm, auf `active-ragdoll-103` an 10 Starts um mehr als 10 cm, bis 17 cm, und hinauf steht kein Fuß über
 einer Kante, vorher an 8. Spät im Schwung hält ein Fuß seine Stufe, so landet er nicht zwischen zwei Stufen, wenn sich
 die Stufe, die der Schritt will, spät ändert. Abseits von Treppen landet ein Fuß möglichst höchstens 25 cm höher oder
@@ -3608,7 +3618,7 @@ lange die Threads im Löser rechnen und worauf sie sonst warten.
 ## Tests und Benchmark
 
 ```sh
-build/bin/nebenan_test            # 181 Tests: Geometrie, Voronoi, Hüllen, Öffnungen, Stöße, Stützgraph, Etagen, Lastprüfung, Mauern, Schutt, Ruhe, Durchschlagen, Threads, Knoten, große Blöcke, Gelenke in Paketen und Gebieten, Suchbaum, Kontaktlisten, Streaming, Stream, Laden im Hintergrund, Speichern und Zurückholen, gemeinsamer Thread-Pool, Ruhe-Prüfung auf den Workern, Schritt auf eigenem Thread, Schritte pro Bild, Takt der Physik, Wahl der Threads, Profil und Skalierung, Figuren, Ausgleichsschritt, Abfangen, rudernde Arme, Muskeln, Treffer entlang des Skeletts, Kegel je Richtung, Gelenke wie beim Menschen, Drehung um die Längsachse, Armature, ruhiger Kopf, Drücken, Füße auf dem Boden, Platz zum Aufstehen, Ragdoll durch die Wand, dünne Bretter, Determinismus …
+build/bin/nebenan_test            # 182 Tests: Geometrie, Voronoi, Hüllen, Öffnungen, Stöße, Stützgraph, Etagen, Lastprüfung, Mauern, Schutt, Ruhe, Durchschlagen, Threads, Knoten, große Blöcke, Gelenke in Paketen und Gebieten, Suchbaum, Kontaktlisten, Streaming, Stream, Laden im Hintergrund, Speichern und Zurückholen, gemeinsamer Thread-Pool, Ruhe-Prüfung auf den Workern, Schritt auf eigenem Thread, Schritte pro Bild, Takt der Physik, Wahl der Threads, Profil und Skalierung, Figuren, Ausgleichsschritt, Abfangen, rudernde Arme, Muskeln, Treffer entlang des Skeletts, Kegel je Richtung, Gelenke wie beim Menschen, Drehung um die Längsachse, Armature, ruhiger Kopf, Drücken, Füße auf dem Boden, Platz zum Aufstehen, Ragdoll durch die Wand, dünne Bretter, Determinismus …
 build/bin/nebenan_benchmark 4     # Zahl = Threads für Bruch und Physik, 0 = so viele, wie ein Spiel nähme
 build/bin/nebenan_benchmark scaling   # die Städte unter Beschuss mit 1, 2, 4 … Threads und die Tabelle der Skalierung
 build/bin/nebenan_benchmark rates     # die Städte unter Beschuss mit 30, 60 und 120 Hz, was eine simulierte Sekunde kostet

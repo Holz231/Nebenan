@@ -10,7 +10,11 @@ was schon verworfen wurde.
   bis `NB_GAIT_RUN_FROM`, Rennen ab `NB_GAIT_RUN_TO`. `tools/measure/speeds.py` rechnet daraus die Dauer eines Zyklus.
 - **Abheben und Landen.** Ein Fuß hebt nach dem Takt ab, oder früher, wenn sein Bein ihn nicht mehr erreicht
   (`NB_GAIT_LOSE`, `nbTimeToLose`). Beim Abheben werden die Größen des Schwungs gesetzt: `swingHurry`, `swingCalm`,
-  `swingHeight`, `swingRun`, `swingSoft`, `swingLift`.
+  `swingHeight`, `swingRun`, `swingSoft`, `swingLift`. Von zwei Füßen am Boden hebt der zuerst ab, den sein Bein zuerst
+  verliert, aber nicht einer, der eben gelandet ist (`NB_GAIT_FRESH`, nach der Phase oder nach der Zeit seit der
+  Landung, `stanceTime`): Er bleibt stehen, wenn der andere hinter der Hüfte bald verloren geht, oder wenn der andere
+  abheben darf und sein eigenes Bein ihn noch `NB_GAIT_FRESH_KEEP` des schnellsten Schwungs hält (Runde 131). Hält es
+  ihn kürzer, hebt er sofort wieder ab: Stehen kostete dort das Becken.
 - **Takt.** Rennend hält der Gang seinen Takt (`gaitPhase`), und die Füße halten sich daran: Wer vor seiner Phase
   abhebt, schwingt langsamer, bis `NB_GAIT_KEEP_MOST` eines Zyklus, wer danach abhebt, schneller (`late` beim Abheben).
   Früh oder spät heißt der nähere Weg: Mehr als ein halber Zyklus nach der Phase ist früh für den nächsten Schwung
@@ -80,8 +84,8 @@ was schon verworfen wurde.
 
 `test/test_figure.c`: `SteerRunFlightTest` (Runde 118), `SteerTurnLandTest` (119), `SteerTurnSettleTest` (120),
 `SteerTurnLiftTest` (121), `SteerTurnRollTest` (122), `SteerTurnRhythmTest` (123), `SteerTurnHeelTest` (124),
-`SteerTurnPushTest` (128), `SteerSideToBackTest` (129), `SteerSwitchSidesTest` (130), und für den Körper
-`FigureShoulderTest` (126) und `FigureSkinTest` (127): Ändert eine Runde die Knochen, fällt er, bis
+`SteerTurnPushTest` (128), `SteerSideToBackTest` (129), `SteerSwitchSidesTest` (130), `SteerFreshFootTest` (131), und
+für den Körper `FigureShoulderTest` (126) und `FigureSkinTest` (127): Ändert eine Runde die Knochen, fällt er, bis
 `tools/mannequin/make_skin.py` die Haut neu geschrieben hat, erst `dump_bones`, dann das Werkzeug. Die Hashes
 `NB_EXPECTED_…_HASH` ändern sich nur, wenn sich ein Lauf ändert, der dort festgehalten ist: Das ist erlaubt, wird aber
 in der Roadmap genannt.

@@ -5257,9 +5257,19 @@ static float nbSwingTime( const nbFigure* f, int k, float swingTime, float cycle
 // apart across the heading, in meters for the humanoid of 1.8 m. A foot that lands and gets lost at once, in the first
 // NB_GAIT_FRESH of the cycle, stands while the other foot, behind the hip and soon out of reach as well, lifts first: the
 // foot on the outside of a turn lands wide, and lifting it again at once left the other foot standing far behind the hip.
+// A foot has only just landed by the time since it landed as well, NB_GAIT_FRESH of a cycle, where it hurried and
+// landed before its phase came round, and it stands too where the other foot did not only just land itself and is free
+// to lift, behind the hip or not, as long as its own leg keeps it for at least NB_GAIT_FRESH_KEEP of the quickest
+// swing. Until round 130, changing from running sideways to running backward with a fixed heading, a foot landed wide
+// of the turning legs, both feet got lost within 3 ms of each other, the one that had only just landed lifted again in
+// the next update, and its shin jumped up to 55 mm; switching sides at a run, a foot touched down for an update or two
+// at 204 of 456 changes. A foot its leg loses sooner than that still lifts again at once: standing on it turning about
+// at a run, the root went down 8 cm for it and the pelvis jumped 13 mm in an update. From 0.25 to 0.6 of the quickest
+// swing both hold, see SteerFreshFootTest.
 #define NB_FOOT_TWIST ( 35.0f * ( B3_PI / 180.0f ) )
 #define NB_GAIT_SIDE_GAP 0.1f
 #define NB_GAIT_FRESH 0.2f
+#define NB_GAIT_FRESH_KEEP 0.4f
 
 // Off stairs where a swinging foot lands, see NB_GAIT_FOOT_BAND: at the place end where the gait puts it, whose ground was
 // found as lift and tilt, or else at the nearest place along its toes or out to its side with ground within the band of
@@ -5753,6 +5763,7 @@ static void nbSteerFeet( const nbWorld* world, int index, nbFigure* f, const nbC
 	bool runsBack = f->legBack && stance < 0.5f;
 	bool trails[2];
 	bool lostSoon[2];
+	bool fresh[2];
 	float out[2];
 	for ( int k = 0; k < 2; ++k )
 	{
@@ -5765,6 +5776,9 @@ static void nbSteerFeet( const nbWorld* world, int index, nbFigure* f, const nbC
 		phase -= floorf( phase );
 		bool blocks = f->legBlocks[k] && phase >= NB_GAIT_FRESH;
 		lostSoon[k] = ( trails[k] == false && out[k] < quickest ) || blocks;
+		// On the ground only since its phase came round, or for as long since it landed, see NB_GAIT_FRESH_KEEP
+		fresh[k] = f->footSwings[k] == false &&
+				   ( phase < NB_GAIT_FRESH || f->stanceTime[k] * f->gaitRate < NB_GAIT_FRESH * cycle );
 	}
 	for ( int k = 0; k < 2; ++k )
 	{
@@ -5916,12 +5930,19 @@ static void nbSteerFeet( const nbWorld* world, int index, nbFigure* f, const nbC
 			otherPhase -= floorf( otherPhase );
 			bool otherFresh = f->footSwings[1 - k] == false && otherPhase < NB_GAIT_FRESH;
 			bool otherGoing = f->footSwings[1 - k] == false && trails[1 - k] && out[1 - k] < quickest;
-			if ( phase < NB_GAIT_FRESH && lostSoon[k] && otherGoing )
+			// One that only just landed stands too where the other foot is free to lift and its own leg keeps it for long
+			// enough, see NB_GAIT_FRESH_KEEP
+			bool otherFree = otherGoing || ( f->footSwings[1 - k] == false && f->canLift[1 - k] && fresh[1 - k] == false );
+			bool keeps = out[k] >= NB_GAIT_FRESH_KEEP * quickest;
+			if ( lostSoon[k] && ( ( phase < NB_GAIT_FRESH && otherGoing ) || ( fresh[k] && keeps && otherFree ) ) )
 			{
 				lost = false;
 				first = false;
 			}
-			if ( otherFresh && lostSoon[1 - k] && trails[k] && out[k] < quickest && f->canLift[k] )
+			bool going = trails[k] && out[k] < quickest;
+			bool otherKeeps = out[1 - k] >= NB_GAIT_FRESH_KEEP * quickest;
+			if ( f->canLift[k] && lostSoon[1 - k] &&
+				 ( ( otherFresh && going ) || ( fresh[1 - k] && otherKeeps && ( going || fresh[k] == false ) ) ) )
 			{
 				first = true;
 			}

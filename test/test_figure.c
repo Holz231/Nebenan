@@ -6032,6 +6032,59 @@ static int SteerSwitchSidesTest( void )
 	return 0;
 }
 
+// A steered figure with a fixed heading runs to one side at 4.46 m/s and then backward, and to one side at 4.33 m/s and
+// then to the other, each change at twenty moments two updates apart: how often in the 3 s after it a foot lifts again
+// within two updates after it landed while the other foot is on the ground. A foot that only just landed stands where
+// its leg keeps it for long enough and the other foot is free to lift, see NB_GAIT_FRESH_KEEP: never. Until round 130
+// the foot that had only just landed lifted first where both feet got lost at almost the same time: once changing
+// to backward and 8 times switching sides.
+static int SteerFreshFootTest( void )
+{
+	int hops[2] = { 0, 0 };
+	for ( int change = 0; change < 2; ++change )
+	{
+		float speed = change == 0 ? 4.46f : 4.33f;
+		for ( int part = 0; part < 20; ++part )
+		{
+			FigureScene scene;
+			CreateFigureScene( &scene, 1 );
+			nbFigureId figure = AddSteeredFigure( &scene, b3Vec3_zero, 0.0f );
+			StepFigures( &scene, 60 );
+			nbSteer steer = { { speed, 0.0f, 0.0f }, 0.0f, false };
+			nbFigure_Steer( figure, &steer );
+			StepFigures( &scene, 180 + 2 * part );
+			steer.velocity = change == 0 ? (b3Vec3){ 0.0f, 0.0f, -speed } : (b3Vec3){ -speed, 0.0f, 0.0f };
+			nbFigure_Steer( figure, &steer );
+			bool swung[2] = { true, true };
+			int stood[2] = { 3, 3 };
+			for ( int i = 0; i < 180; ++i )
+			{
+				StepFigures( &scene, 1 );
+				const nbFigure* f = GetSteered( &scene, figure );
+				for ( int k = 0; k < 2; ++k )
+				{
+					if ( f->footSwings[k] == false )
+					{
+						stood[k] = swung[k] && i > 0 ? 1 : stood[k] + 1;
+					}
+					else if ( swung[k] == false && stood[k] <= 2 && f->footSwings[1 - k] == false )
+					{
+						hops[change] += 1;
+					}
+					swung[k] = f->footSwings[k];
+				}
+			}
+			DestroyFigureScene( &scene );
+		}
+	}
+	printf( "  a foot lifts again at once after it landed %d times over twenty changes from sideways to backward at a run and "
+			"%d times over twenty switches of sides\n",
+			hops[0], hops[1] );
+	ENSURE( hops[0] == 0 );
+	ENSURE( hops[1] == 0 );
+	return 0;
+}
+
 // A steered figure that does not face where it moves walks backward at 1.6 m/s for 4 s, or runs backward at 3.0 m/s for
 // 3 s and a part of its cycle more and then forward at 3.0 m/s: how many of its feet landed going backward over the last
 // 2 s and how many of those on their toes, and how far the pelvis went below standing at most, over the last 2 s walking
@@ -7324,7 +7377,8 @@ static int ThinBoardTest( void )
 // within NB_GAIT_FLOAT, and going backward a foot its leg only reaches rolled over its toes stays on them. Round 112:
 // walking takes the steps of people, see NB_GAIT_CADENCE_WALK, and the ankle of a swinging foot bends up as far as
 // theirs, see NB_SWING_ANKLE_SOFT. Round 113: the body has the dimensions of a person, see nbMakeHumanoidBones.
-#define NB_EXPECTED_STEER_HASH 0x1310a68fu
+// Round 131: a foot that only just landed stands where the other foot is free to lift, see NB_GAIT_FRESH_KEEP.
+#define NB_EXPECTED_STEER_HASH 0x12de9019u
 
 // See RunGaitClipScenario. Since round 99 as for RunSteerScenario. Since round 100 the figure that is told to turn on
 // the spot while it still walks, not facing where it moves, keeps its legs where they face as its heading turns, and
@@ -7332,8 +7386,8 @@ static int ThinBoardTest( void )
 // as for RunSteerScenario. Since round 102, since round 104, since round 107 and since round 108 as for
 // RunSteerScenario. Since round 111 as for RunSteerScenario. Round 112: the clips are recorded from a gait that takes
 // the steps of people, see NB_GAIT_CADENCE_WALK, and the ankle of a swinging foot bends up as far as theirs, see
-// NB_SWING_ANKLE_SOFT. Round 113 as for RunSteerScenario.
-#define NB_EXPECTED_GAIT_CLIP_HASH 0xa4bcab74u
+// NB_SWING_ANKLE_SOFT. Round 113 and round 131 as for RunSteerScenario.
+#define NB_EXPECTED_GAIT_CLIP_HASH 0x4360bf18u
 
 static int FigureFollowDeterminismTest( void )
 {
@@ -7469,6 +7523,7 @@ int FigureTest( void )
 	RUN_TEST( SteerTurnPushTest );
 	RUN_TEST( SteerSideToBackTest );
 	RUN_TEST( SteerSwitchSidesTest );
+	RUN_TEST( SteerFreshFootTest );
 	RUN_TEST( SteerBackTest );
 	RUN_TEST( SteerUprightTest );
 	RUN_TEST( SteerStartStopTest );

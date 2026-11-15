@@ -147,6 +147,18 @@ Zehen und Fersen 37 mm, Hände 15 mm, Becken 10 mm, Becken tief ab 15 cm unter d
 - **Ein neues Skript einmal trocken laufen lassen.** `check130b.sh` war nicht ausführbar, die Prüfung startete nicht,
   und der Abschlusslauf lief ohne sie los. Neue Skripte mit `chmod +x` anlegen und den Rückgabewert der Prüfung
   abwarten, bevor Kosten und Benchmark starten.
+- **Die Zielgröße muss den Eingriff zeigen können.** Ändert ein Eingriff nur wenige Stellen, erst messen, wie stark die
+  geplante Zielgröße zwischen ähnlichen Sätzen streut, und das mit dem Gewinn der Entwicklung vergleichen, bevor die
+  Regel steht. In Runde 131 streute die Summe der Schienbeine um 51 mm bei 14 bis 34 mm Gewinn an 1 bis 2 von 24
+  Stellen. Gezählt wurde stattdessen das Ereignis selbst, `hops131.py`: Es streut um 3 und fiel von 23 auf 0.
+- **Dreht ein Eingriff eine Entscheidung um, früh die ganze Tabelle fahren.** Den eben gelandeten Fuß stehen zu lassen
+  nahm den Schienbeinen Sprünge und gab sie dem Becken, in Szenen, die nicht die der Runde waren. Die Tabelle mit Blick
+  in Laufrichtung zeigte es, eine verfolgte Stelle daraus gab die Schwelle. Greift ein Schalter gar nicht, die
+  Entscheidung an der Stelle mit allen ihren Größen ausgeben lassen, statt zu raten.
+- **Den Probelauf der Prüfung auf alten Sätzen fahren.** Eine Kopie von `check` und `eval` auf Sätze der Entwicklung
+  umgeschrieben und einmal ganz durchlaufen lassen, bevor die Regel festgeschrieben wird: In Runde 131 hatte die
+  Auswertung beim Umschreiben alle Schutzbedingungen verloren, und der Probelauf fand es. Frische Geschwindigkeiten des
+  Gehens gibt es zwischen 1,05 und 1,68 m/s auf den Zentimeter nicht mehr, halbe Zentimeter nehmen.
 - **Größe der Figur.** Winkelbeschleunigungen wachsen bei kleineren Figuren mit 1 durch `nbFigureScale`, Längen
   und Geschwindigkeiten mit ihr.
 
