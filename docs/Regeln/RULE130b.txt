@@ -1,0 +1,89 @@
+Zweite Regel für Runde 130, Nachtrag zu RULE130.txt, vor jedem Lauf mit den Geschwindigkeiten der zweiten unabhängigen
+Prüfung festgeschrieben.
+
+Warum ein Nachtrag. Der Bau nach RULE130.txt, NB_LEG_LET_GO 60 m/s², hielt auf H33, H34, HF49 und HF51 die Bedingungen
+A, B, C und D1: die Zielgröße 7 statt 68 mm, verlangt waren unter 57 mm. Er verfehlte D2: Von 23 stetigen Läufen war
+einer ab 5 s nicht Byte für Byte gleich, rückwärts rennend mit 4,41 m/s. Zwei von 241 Zeilen unterscheiden sich, ein
+Oberschenkel ist drei Updates lang um 0,001 in zwei Teilen seiner Drehung anders gedreht, kein Knochen liegt anders. Dem
+Nutzer vorgelegt: Er hält es für wichtig, dass das stetige Rennen bitgleich bleibt. So wird nicht gebaut.
+
+Was sich ändert. Nur die Stärke: NB_LEG_LET_GO ist 85 statt 60 m/s². Der Eingriff, die Ursache, die Zielgröße, die
+Toleranzen in docs/Regeln/tol130.json, SHA-256 cacc6fea845388c1db005a77e98ec8e646d6efb52f794a70f0d96e80475bae6f, und die
+Bedingungen A bis D gelten wie in RULE130.txt, auf neuen frischen Sätzen, D2 mit 25 statt 23 Läufen. Die Toleranzen sind
+auf active-ragdoll-129 gemessen und hängen nicht an der Stärke.
+
+Die Stärke. Gesucht mit tools/measure/steady130.py, stetigen Läufen von 9 s, je die Zeilen ab 5 s gegen
+active-ragdoll-129: 231 Läufe, vorwärts mit Blick in Laufrichtung und seitwärts und rückwärts mit festem Blick, je mit
+1,00 bis 4,80 m/s in Schritten von 0,05 m/s, und 96 Läufe seitwärts und rückwärts mit 4,30 bis 4,80 m/s in Schritten von
+0,01 m/s, ohne die Geschwindigkeiten der Prüfung. Mit 60 m/s² ändern sich 6 der 231 und 32 der 96 Läufe, mit 70 m/s² 4
+und 20, mit 75 m/s² 8 der 96, alle rückwärts rennend ab 4,41 m/s. Mit 80, 85 und 90 m/s² ändert sich keiner der 327.
+Gewählt ist ein Schritt über der Grenze, 85 m/s². In der Entwicklung von RULE130.txt stand die Grenze bei 55 m/s²,
+gesucht an 17 Läufen: Das war zu grob, und das schnelle Rennen rückwärts lag nur mit 4,5 m/s darin.
+
+Nebenbefund zur Bremse aus Runde 129, nicht Teil dieser Regel. Dieselbe Suche für NB_LEG_BRAKE, 45 m/s², gegen
+active-ragdoll-128: keiner der 231 Läufe ändert sich, von den 96 zwei, rückwärts rennend mit 4,77 und 4,78 m/s. Mit 50,
+55 und 60 m/s² ändert sich keiner der 327. Eine schwächere Bremse gibt aber einen Teil des Gewinns von Runde 129 zurück:
+Mit 55 m/s², dazu das Loslassen mit 85 m/s², springen Schienbeine auf H29 bis H34 mit festem Blick, 3 024 Stellen, an
+516 statt 503 Stellen über 37 mm, von seitwärts auf rückwärts rennend an 99 statt 83 von 288, in Summe 505 statt 413 mm
+darüber. Die Bremse bleibt in dieser Runde, wie sie ist. Der Befund steht in der Roadmap, und der Nutzer entscheidet, ob
+sie schwächer werden soll.
+
+Unabhängige Prüfung. Geschwindigkeiten, die vor dem Festschreiben auf keinem Stand gelaufen sind, auch nicht in der
+Suche: Sie stehen in keinem Satz von tools/measure/common.sh, in keiner Regel und in keinem Abschnitt der Roadmap,
+geprüft mit tools/measure/speeds.py, und sie liegen auf keinem Punkt der beiden Raster. Die Spreizung ist aus der Formel
+der Kadenz in der Bibliothek gerechnet:
+
+  H35 (schnell): gehend 1,17, rennend 4,44 m/s, diagonal 0,86 m/s je Achse, Spreizung 1,173 und 0,672 s
+  H36 (langsam): gehend 1,63, rennend 3,54 m/s, diagonal 0,99 m/s je Achse, Spreizung 0,994 und 0,716 s
+  HF53 (Blick in Laufrichtung): 1,66, 3,94 und 4,63 m/s, Spreizung 0,985, 0,694 und 0,665 s
+  HF55 (Blick in Laufrichtung): 1,11, 3,34 und 4,73 m/s, Spreizung 1,204, 0,729 und 0,661 s
+
+Mit festem Blick die 21 Szenen auf H35 und H36, 1 008 Stellen, Zehen und Fersen auf beiden, die acht Wechsel im Rennen
+mit where129.py auf beiden, von ihnen zählt der Seitenwechsel, 48 Stellen, mit Blick in Laufrichtung die 13 Szenen auf
+HF53 und HF55, 624 Stellen, und der Takt nach den sechs Szenen, die im Rennen enden, 288 Stellen, mit
+tools/measure/check130b.sh, ausgewertet mit tools/measure/eval130b.py. "Alt" heißt active-ragdoll-129, "neu" der saubere
+Bau, beide auf denselben Stellen.
+
+A. Gewinn, beide müssen gelten:
+ A1 Im Seitenwechsel im Rennen mit festem Blick, 48 Stellen: Die Summe dessen, was das härteste Schienbein über 37 mm
+    hinaus springt, wo es an einem Bein geschieht, das schwingt, ist um mehr als 10,9 mm kleiner als alt.
+ A2 An denselben 48 Stellen ist die Summe dessen, was Schienbeine über 37 mm hinaus springen, kleiner als alt, und sie
+    springen an höchstens so vielen Stellen über 37 mm wie alt.
+
+B. Schutz mit festem Blick, jede Größe höchstens alt plus ihre Toleranz: B1 bis B9 wie in RULE130.txt, auf H35 und H36.
+
+C. Schutz mit Blick in Laufrichtung, jede Größe höchstens alt plus ihre Toleranz: C1 bis C7 wie in RULE130.txt, auf HF53
+und HF55.
+
+D. Sonst, alle müssen gelten:
+ D1 Die Treffertabelle (8 928 Treffer, 60 Hz, eigene Stärke) ist Byte für Byte gleich.
+ D2 Stetig 9 s lang, vorwärts mit Blick in Laufrichtung mit 1,2, 1,6, 2,2, 3,0, 3,9, 4,5, 4,8, 4,63 und 4,73 m/s,
+    seitwärts und rückwärts mit festem Blick mit 1,17, 1,63, 1,6, 3,54, 4,44, 4,5 und 4,8 m/s und diagonal mit 2,0 und
+    4,0 m/s: Bei allen 25 Läufen sind die Zeilen des Protokolls ab 5 s Byte für Byte gleich wie alt.
+ D3 Alle Tests grün mit gcc und clang, mit 1, 2 und 4 Threads bitgleich, Sanitizer ohne Befund. Hashes von Tests, in
+    denen eine gesteuerte Figur geht, dürfen sich ändern und werden festgehalten.
+ D4 Das Update der Figuren führt mit 20 gesteuerten Figuren über 1 200 Updates in jedem der drei Modi des Kostentests
+    höchstens 0,5 % mehr Befehle aus als alt, gezählt mit tools/measure/cost_count.sh.
+ D5 Der Benchmark endet in jeder Szene mit denselben Hashes und Zählern wie alt, auch in den Szenen mit Figuren. Die
+    Bildzeiten, zwölf Paare, werden festgehalten und sind keine Bedingung.
+
+Der saubere Bau muss mit dem Prototyp (Schalter NB_X_LETGO=85.0f und NB_X_LETGO_STICKY=1 im Versuchsbaum) bitgleich
+laufen: dieselben Ergebnisse auf H29 und HF41 und dieselbe Treffertabelle. Verfehlt der saubere Bau eine Bedingung, wird
+nicht gebaut, oder es steht offen in der Roadmap, warum doch, und der Nutzer entscheidet.
+
+Stand der Entwicklung beim Festschreiben, der Prototyp mit 85 m/s² gegen active-ragdoll-129. Die Sätze der ersten
+Prüfung zählen jetzt zur Entwicklung. Der Seitenwechsel im Rennen mit festem Blick auf H29 bis H34, 144 Stellen: die
+Zielgröße 58 statt 231 mm, je Satz 8, 13, 14, 6, 17 und 0 statt 65, 26, 48, 24, 68 und 0 mm, an 13 statt 25 Stellen; je
+Paar aus einem schnellen und einem langsamen Satz 21 statt 91, 20 statt 72 und 17 statt 68 mm. Schienbeine über 37 mm
+dort an 36 statt 47 Stellen, in Summe 94 statt 266 mm darüber, das härteste 48,5 statt 59,8 mm. An der verfolgten Stelle
+springt das Schienbein 39 statt 60 mm, mit 60 m/s² waren es 29 mm. Alle 21 Szenen mit festem Blick auf denselben sechs
+Sätzen, 3 024 Stellen: Schienbeine an 492 statt 503 Stellen über 37 mm, in Summe 1 633 statt 1 836 mm darüber, das
+härteste 55,8 statt 59,8 mm; außer dem Seitenwechsel im Rennen von seitwärts auf rückwärts rennend 388 statt 413 mm an
+83 Stellen wie vorher, anhaltend aus rückwärts 156 statt 160 mm, alle anderen Szenen gleich bis auf 1 mm; Füße an 22
+statt 24, Zehen und Fersen an 123 statt 128, Hände an 373, Becken an 272, Becken tief an 123, Flüge an 462 und gekreuzt
+an 2 wie vorher, die Mittel gleich bis auf 0,01 mm. Mit Blick in Laufrichtung auf HF41 bis HF51, sechs Sätze, 1 872
+Stellen: Schienbeine an 232 statt 233, Füße an 88, Hände an 321, Becken an 130 und Flüge an 167 wie vorher, und nach
+keinem der 864 Wechsel, die im Rennen enden, heben die Füße zusammen ab, wie vorher. Die 327 stetigen Läufe der Suche:
+ab 5 s jeder Byte für Byte gleich. Die Treffertabelle: Byte für Byte gleich. Die Tests des Repositorys mit dem Prototyp:
+alle 180 grün, auch auf Treppen und am Hang, kein festgeschriebener Hash geändert; der Lauf über Schutt, den ein Test
+nur ausgibt, ändert sich, die Beine in schlechter Pose in 33 statt 35 von 1 546 Updates.
