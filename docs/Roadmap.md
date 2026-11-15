@@ -2068,6 +2068,24 @@ Treffer fängt, die Figur danach aber länger wankt: vorgemerkt für die nächst
 nicht als Verhalten. Dass es seinen Regler als System zweiter Ordnung mit Eigenfrequenz und Dämpfung beschreibt, statt
 ihn nur nach Gefühl einzustellen, ist der Gedanke von F37.
 
+Vierte Durchsicht fremder Projekte am 15. November 2026, auf Hinweis des Nutzers: [Delirium
+Physics](https://github.com/RyanCraighead/delirium-physics) (Rust, GPL-3.0-only) und
+[MuJoCo](https://github.com/google-deepmind/mujoco) (Apache-2.0). Übernommen werden wie immer nur Ideen, keine Zahlen.
+Neu in die Tabelle kommt nur der Nachtrag bei F88.
+
+- **Delirium Physics:** Ein zurückentwickelter Port von Euphoria, wie es in GTA IV läuft, der eine eigene Kopie des
+  Spiels braucht. Kein Code und keine Zahl daraus, und der Quelltext wird nicht gelesen; gelesen sind nur Lizenz,
+  README, Credits und die Beschreibung. Die drei Ideen für die Schnittstelle stehen als Nachtrag bei F88.
+- **MuJoCo:** Physik für Figuren und Roboter mit Gelenken. Den Löser von Box3D ersetzt es nicht: Nach der eigenen
+  Dokumentation ist exakte Reproduzierbarkeit nur innerhalb einer Version auf derselben Architektur zugesagt, zwischen
+  Betriebssystemen weichen die Ergebnisse ab, und Nebenan verlangt bitgleiche Ergebnisse auf jeder Plattform. Als
+  Ideengeber ist es schon genutzt: die Zusatzträgheit im Gelenk, F48, und die Körperform seines Menschen, F83, dort mit
+  den verworfenen schmalen Hüften und dem Fußgelenk weiter vorn. Zwei weitere Ideen, die es auch hat, stehen aus anderen
+  Quellen schon in der Tabelle: der Muskel, dessen Kraft dem Befehl verzögert folgt, F45 Stufe 1, und die Vorsteuerung
+  aus inverser Dynamik, F73. Zum Lernen von Reglern, F74, F87 und F88, ist es die übliche Umgebung, gelernt werden
+  müsste aber in Nebenan selbst, weil das Ergebnis mit den Kontakten von Box3D gelten muss. Gelesen sind diesmal nur die
+  Lizenz und der Abschnitt der Dokumentation zur Reproduzierbarkeit.
+
 Etwas kürzere Arme, Runde 44, auf Wunsch des Nutzers, der dabei auch daran erinnerte, dass die Balance noch nicht fertig
 ist. Oberarm und Unterarm des Menschen der Bibliothek sind 35 und 26 statt 37 und 27 cm lang, die Hand bleibt 17 cm,
 zusammen 78 statt 81 cm, die Massen bleiben. Mit der Stütze gegen die Welt, dem Standard, fängt die Figur fast genau wie
