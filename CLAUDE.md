@@ -42,8 +42,8 @@ Die nächsten möglichen Schritte stehen mit Gewinn, Voraussetzung und Stand in 
 dort nachsehen, nach jeder Runde den Stand nachtragen.
 
 Die Roadmap des Spiels liegt als Referenz in `docs/Referenz/`, als PDF und als Text. Wie Häuser einstürzen sollen, steht
-dort in Kapitel 17. Dort liegen auch die Analysen des Nutzers von endorphin und von Delirium Physics, je mit einer
-Zusammenfassung der Ideen: Für Nebenan gelten daraus nur Ideen, kein Code, keine Zahlen, Formeln oder Formate.
+dort in Kapitel 17. Dort liegen auch die Analysen des Nutzers von endorphin, von Delirium Physics und von MuJoCo, je mit
+einer Zusammenfassung der Ideen: Für Nebenan gelten daraus nur Ideen, kein Code, keine Zahlen, Formeln oder Formate.
 
 ## Runden an der Figur
 

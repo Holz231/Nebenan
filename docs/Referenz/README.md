@@ -68,3 +68,11 @@ Euphoria unter GPL-3.0-only, von ihm erarbeitet und am 15. November 2026 auf sei
 Benutzername in zwei Pfaden ist ersetzt. `delirium-physics-Ideen.md` fasst zusammen, was davon als Idee für Nebenan
 taugt. Für Nebenan gelten daraus nur Ideen, kein Code, keine Zahlen, Formeln oder Formate, siehe F88 und die vierte
 Durchsicht fremder Projekte in der [Roadmap](../Roadmap.md).
+
+## Analyse von MuJoCo
+
+`mujoco-Analyse.md` ist eine Analyse des Nutzers von MuJoCo (Apache 2.0), mit einem Vergleich zu endorphin und Delirium
+Physics, von ihm erarbeitet und am 15. November 2026 auf seine Entscheidung aufgenommen; nur der Benutzername in vier
+Pfaden ist ersetzt. `mujoco-Ideen.md` fasst zusammen, was davon als Idee für Nebenan taugt und was für Nebenan nicht
+gilt. Auch hier gelten für Nebenan nur Ideen, keine Zahlen, siehe die vierte Durchsicht fremder Projekte in der
+[Roadmap](../Roadmap.md).
