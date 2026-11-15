@@ -30,8 +30,13 @@ was schon verworfen wurde.
   gleichmäßiger Teil, rennend ein Bogen. `swingCalm` ist der Anteil, mit dem ein eiliger Schwung hebt und kippt, 1
   durch das Quadrat der Eile. Er folgt der Eile nach unten, solange der Buckel steigt, bis `NB_SWING_EARLY_TOP`, und
   der Buckel steigt dabei so schnell weiter wie im letzten Update (`swingBump`, `swingBumpWas`, Runde 121).
-- **Sanfter Anlauf.** `swingSoft`: Ein Bein, das zwischen `NB_SWING_SOFT_FROM` und `NB_SWING_SOFT_TO` gestreckt über
-  die Zehen abhebt, hebt mit einer Rampe. Rennend ist das Bein nie so gestreckt, dort greift er nicht.
+- **Sanfter Anlauf.** `swingSoft`: Ein Bein, das zwischen `NB_SWING_SOFT_FROM` und `NB_SWING_SOFT_TO` gestreckt über die
+  Zehen abhebt, hebt mit einer Rampe. Rennend ist das Bein nie so gestreckt, dort greift er nicht. Seit Runde 133 auch
+  beim Bremsen im Rennen: Das Tempo des Gangs (`gaitSpeed`) folgt dem der Kapsel mit `NB_GAIT_FOLLOW` und hinkt beim
+  Bremsen bis 1,7 m/s hinterher, der Gang rennt also noch, wenn die Figur fast steht. Ist sie um mehr als
+  `NB_SWING_SLOW_FROM` langsamer als ihr Gang, hebt ein Fuß über die Zehen mit `NB_SWING_SLOW` des sanften Anlaufs.
+  Nicht mehr: Mit der ganzen Stärke bleibt das Bein fast gestreckt. Nicht für Füße, die über die Ferse abheben: Die
+  brauchen das schnelle Heben.
 - **Weg.** `nbSwingPath`: eine Kubik von dort, wo der Fuß ist, zur Ruhe am Ziel, in jedem Update neu geplant.
   `nbSwingTime` begrenzt, wie lange ein Schwung dauern darf, wenn der Gang ins Rennen wechselt (Runde 118).
 
@@ -84,8 +89,8 @@ was schon verworfen wurde.
 
 `test/test_figure.c`: `SteerRunFlightTest` (Runde 118), `SteerTurnLandTest` (119), `SteerTurnSettleTest` (120),
 `SteerTurnLiftTest` (121), `SteerTurnRollTest` (122), `SteerTurnRhythmTest` (123), `SteerTurnHeelTest` (124),
-`SteerTurnPushTest` (128), `SteerSideToBackTest` (129), `SteerSwitchSidesTest` (130), `SteerFreshFootTest` (131), und
-für den Körper `FigureShoulderTest` (126) und `FigureSkinTest` (127): Ändert eine Runde die Knochen, fällt er, bis
-`tools/mannequin/make_skin.py` die Haut neu geschrieben hat, erst `dump_bones`, dann das Werkzeug. Die Hashes
-`NB_EXPECTED_…_HASH` ändern sich nur, wenn sich ein Lauf ändert, der dort festgehalten ist: Das ist erlaubt, wird aber
-in der Roadmap genannt.
+`SteerTurnPushTest` (128), `SteerSideToBackTest` (129), `SteerSwitchSidesTest` (130), `SteerFreshFootTest` (131),
+`SteerStopLiftTest` (133), und für den Körper `FigureShoulderTest` (126) und `FigureSkinTest` (127): Ändert eine Runde
+die Knochen, fällt er, bis `tools/mannequin/make_skin.py` die Haut neu geschrieben hat, erst `dump_bones`, dann das
+Werkzeug. Die Hashes `NB_EXPECTED_…_HASH` ändern sich nur, wenn sich ein Lauf ändert, der dort festgehalten ist: Das ist
+erlaubt, wird aber in der Roadmap genannt.

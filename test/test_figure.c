@@ -6085,6 +6085,63 @@ static int SteerFreshFootTest( void )
 	return 0;
 }
 
+// A steered figure with a fixed heading runs to one side at 4.46 m/s and stops, the stop at twenty moments two updates
+// apart, a cycle of its run: how far a shin jumps in an update at most in the 3 s after it, the hardest of the twenty,
+// their mean, and in how many it is more than 37 mm. Braking at a run, a foot that lifts over its toes lifts gently,
+// see NB_SWING_SLOW: 31.4 mm at most, 27.2 mm in their mean, and over 37 mm in none. Until round 132 it lifted with
+// the whole arc of running while the figure had all but stopped: 44.8 mm, 34.0 mm, and over 37 mm in six.
+static int SteerStopLiftTest( void )
+{
+	float most = 0.0f;
+	float sum = 0.0f;
+	int over = 0;
+	for ( int part = 0; part < 20; ++part )
+	{
+		FigureScene scene;
+		CreateFigureScene( &scene, 1 );
+		nbFigureId figure = AddSteeredFigure( &scene, b3Vec3_zero, 0.0f );
+		StepFigures( &scene, 60 );
+		nbSteer steer = { { 4.46f, 0.0f, 0.0f }, 0.0f, false };
+		nbFigure_Steer( figure, &steer );
+		StepFigures( &scene, 180 + 2 * part );
+		steer.velocity = b3Vec3_zero;
+		nbFigure_Steer( figure, &steer );
+		int bones[2] = { nb_humanoidShinLeft, nb_humanoidShinRight };
+		b3Vec3 last[2], before[2];
+		for ( int k = 0; k < 2; ++k )
+		{
+			last[k] = b3ToVec3( b3Body_GetPosition( nbFigure_GetBody( figure, bones[k] ) ) );
+			before[k] = last[k];
+		}
+		float hardest = 0.0f;
+		for ( int i = 0; i < 180; ++i )
+		{
+			StepFigures( &scene, 1 );
+			for ( int k = 0; k < 2; ++k )
+			{
+				b3Vec3 now = b3ToVec3( b3Body_GetPosition( nbFigure_GetBody( figure, bones[k] ) ) );
+				if ( i > 0 )
+				{
+					hardest = b3MaxFloat( hardest, b3Length( b3Add( b3Sub( now, last[k] ), b3Sub( before[k], last[k] ) ) ) );
+				}
+				before[k] = last[k];
+				last[k] = now;
+			}
+		}
+		most = b3MaxFloat( most, hardest );
+		sum += hardest;
+		over += hardest > 0.037f ? 1 : 0;
+		DestroyFigureScene( &scene );
+	}
+	printf( "  stopping from a run sideways with a fixed heading, a shin jumps %.1f mm at most over twenty stops, %.1f mm in "
+			"their mean, over 37 mm in %d\n",
+			1000.0f * most, 1000.0f * sum / 20.0f, over );
+	ENSURE( most < 0.036f );
+	ENSURE( sum / 20.0f < 0.030f );
+	ENSURE( over == 0 );
+	return 0;
+}
+
 // A steered figure that does not face where it moves walks backward at 1.6 m/s for 4 s, or runs backward at 3.0 m/s for
 // 3 s and a part of its cycle more and then forward at 3.0 m/s: how many of its feet landed going backward over the last
 // 2 s and how many of those on their toes, and how far the pelvis went below standing at most, over the last 2 s walking
@@ -7524,6 +7581,7 @@ int FigureTest( void )
 	RUN_TEST( SteerSideToBackTest );
 	RUN_TEST( SteerSwitchSidesTest );
 	RUN_TEST( SteerFreshFootTest );
+	RUN_TEST( SteerStopLiftTest );
 	RUN_TEST( SteerBackTest );
 	RUN_TEST( SteerUprightTest );
 	RUN_TEST( SteerStartStopTest );

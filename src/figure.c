@@ -4848,6 +4848,21 @@ static void nbGaitPose( const nbWorld* world, nbFigure* f, b3Vec3 up, float time
 #define NB_SWING_SOFT_TO 0.995f
 #define NB_SWING_SOFT_RAMP 0.25f
 
+// The speed of the gait follows the figure's at NB_GAIT_FOLLOW, and braking as hard as it steers, the gait still runs
+// when the figure has all but stopped. A foot lifted over its toes with the whole arc of running then: stopping from a
+// run sideways its ankle rose 43 mm in the first update of its swing after 17 mm in its last on the ground, and the
+// slower the figure the harder its shin jumped, 40 mm at 1.9 m/s and 47 mm at 0.8 m/s. Where the figure moves slower
+// than its gait runs, by more than NB_SWING_SLOW_FROM and fully from NB_SWING_SLOW_TO in units of sqrt(g l), a foot
+// that lifts over its toes lifts gently as a stretched leg does, by NB_SWING_SLOW of that and as far as the gait runs.
+// Over the eight changes at a run with a fixed heading on 19 speed sets the hardest shin jumps over 37 mm at 967
+// instead of 1 209 of 3 648 points. With all of it the leg stayed near straight for longer, and switching sides a shin
+// jumped 50 instead of 35 mm; from a quarter to a half the changes are calmest. A foot that lifts over its heel keeps
+// the fast lift here too: with the gentle one, turning from running backward to running forward shins jumped 262
+// instead of 106 mm beyond 37 mm in sum over 96 changes. See SteerStopLiftTest.
+#define NB_SWING_SLOW 0.4f
+#define NB_SWING_SLOW_FROM 0.065f
+#define NB_SWING_SLOW_TO 0.39f
+
 // A bump over a swing, from 0 to 1 of it, that starts and ends with no slope and is 1 a quarter into the swing
 static float nbSwingEarly( float u )
 {
@@ -5995,6 +6010,15 @@ static void nbSteerFeet( const nbWorld* world, int index, nbFigure* f, const nbC
 				float soft =
 					b3ClampFloat( ( stretch - NB_SWING_SOFT_FROM ) / ( NB_SWING_SOFT_TO - NB_SWING_SOFT_FROM ), 0.0f, 1.0f );
 				f->swingSoft[k] = f->footRoll[k] > 0.0f ? soft * soft * ( 3.0f - 2.0f * soft ) : 0.0f;
+				// Braking at a run it lifts gently too, see NB_SWING_SLOW
+				float behind = ( f->gaitSpeed - speed ) / f->gaitUnit;
+				float slow =
+					b3ClampFloat( ( behind - NB_SWING_SLOW_FROM ) / ( NB_SWING_SLOW_TO - NB_SWING_SLOW_FROM ), 0.0f, 1.0f );
+				slow = NB_SWING_SLOW * run * slow * slow * ( 3.0f - 2.0f * slow );
+				if ( f->footRoll[k] > 0.0f && slow > f->swingSoft[k] )
+				{
+					f->swingSoft[k] = slow;
+				}
 				f->swingTurnRate[k] = 0.0f;
 				f->liftHold[k] = f->foothold[k];
 				f->liftHeading[k] = f->footHeading[k];

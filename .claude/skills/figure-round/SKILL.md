@@ -164,6 +164,14 @@ Zehen und Fersen 37 mm, Hände 15 mm, Becken 10 mm, Becken tief ab 15 cm unter d
   Blick fahren, mit den gekreuzten Füßen. Runde 132 wollte die Lücke zwischen den Füßen lockern und war so in einer
   Stunde entschieden: schlechter auf jeder Größe, nichts gebaut, keine frische Geschwindigkeit verbraucht. Eine Runde
   darf mit „gemessen, nicht gebaut“ enden, die Zahlen kommen in die Liste.
+- **Vor der Wahl einer Runde die Klassen über alle Sätze zählen.** `where129.py` sagt je Stelle, was das Bein tut, wo
+  sein Schienbein am härtesten springt. Über 19 Sätze gezählt war ein abhebendes Bein an 418 von 1 209 Stellen das
+  härteste, mehr als die Hälfte der Summe. Runde 129 hatte dasselbe an einer Stelle gesehen und „niedrig“ genannt: Eine
+  verfolgte Stelle sagt, was geschieht, nicht, wie oft.
+- **Schadet die ganze Stärke an anderer Stelle, erst die Stärke abtasten.** Der sanfte Anlauf beim Bremsen nahm mit
+  ganzer Stärke 174 von 732 mm und machte den Seitenwechsel schlechter, mit 0,25 bis 0,5 davon 220 mm und keine Szene
+  schlechter. Das Plateau zeigt, wo die Zahl liegen darf; gewählt wird die Mitte zwischen den Werten, die nicht mehr
+  halten.
 - **Größe der Figur.** Winkelbeschleunigungen wachsen bei kleineren Figuren mit 1 durch `nbFigureScale`, Längen
   und Geschwindigkeiten mit ihr.
 
