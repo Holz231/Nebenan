@@ -172,6 +172,27 @@ Zehen und Fersen 37 mm, Hände 15 mm, Becken 10 mm, Becken tief ab 15 cm unter d
   ganzer Stärke 174 von 732 mm und machte den Seitenwechsel schlechter, mit 0,25 bis 0,5 davon 220 mm und keine Szene
   schlechter. Das Plateau zeigt, wo die Zahl liegen darf; gewählt wird die Mitte zwischen den Werten, die nicht mehr
   halten.
+- **Den guten Fall daneben messen.** Derselbe Fuß hebt im stetigen Rückwärtsrennen ohne Ruck ab. Eine Tabelle beider,
+  wie weit das Bein beim Abheben gestreckt ist und wie schnell es davor und danach länger wird, zeigte den Unterschied
+  in einem Lauf: 0,94 und weiter länger gegen 0,98 und kürzer (Runde 134). Wo ein Wechsel hart ist und der stetige Gang
+  nicht, zuerst dieser Vergleich.
+- **Alle Ereignisse vermessen, bevor eine Variante gebaut wird.** Ein Ausdruck im Versuchsbaum an der Stelle der
+  Entscheidung, hier welche Bedingung den Fuß hebt, und ein Skript, das ihn mit den Zeilen von `lab101` zusammenführt,
+  über alle Stellen von vier Szenen auf fünf Sätzen: 3 340 Abheber, zwei Klassen mit verschiedener Ursache. Eine
+  verfolgte Stelle hätte nur eine gezeigt. Aus dem Skript wurde `lifts134.py`.
+- **Varianten im Stapel.** Mehrere Schalter in einem Lauf bauen und vier Varianten zugleich messen: 23 Varianten in fünf
+  Stapeln, eine Wartezeit je Stapel. Den Versuchsbaum erst wieder ändern, wenn die Bauten eines Stapels fertig sind.
+- **Vor der Regel rechnen, wie oft sie den Gewinn zeigen würde.** Aus den Sätzen der Entwicklung alle Paare aus einem
+  schnellen und einem langsamen Satz bilden und je Paar den Gewinn des Prototyps gegen die Toleranz halten: Die Summe
+  über 37 mm hätten 72 von 90 Paaren gezeigt, die Zahl der Stellen 25. Was den Gewinn nicht in fast allen Paaren zeigt,
+  wird Schutz, und die Zielgröße läuft auf mehr Paaren mit entsprechend größerer Toleranz, die frischen Sätze im Mittel
+  so schnell wie die der Entwicklung.
+- **Die Toleranz aus dem Probelauf lesen, nicht aus der Datei.** `tol<N>.json` hält für Zählungen mit Blick in
+  Laufrichtung die Toleranz eines Satzes, `eval<N>.py` verdoppelt sie für zwei. In Runde 134 sah eine Bedingung des
+  Gewinns mit 5 Stellen sicher aus und war mit 10 zu knapp.
+- **Die Raster der Suche verbrauchen Geschwindigkeiten.** `steady130.py` läuft mit `FINE=1` jede Geschwindigkeit von
+  4,30 bis 4,80 m/s in Schritten von 0,01 außer denen in `FRESH`. Werden danach weitere frische Sätze gebraucht, liegen
+  sie auf halben Zentimetern oder unter 4,30 m/s.
 - **Größe der Figur.** Winkelbeschleunigungen wachsen bei kleineren Figuren mit 1 durch `nbFigureScale`, Längen
   und Geschwindigkeiten mit ihr.
 

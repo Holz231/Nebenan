@@ -4863,6 +4863,25 @@ static void nbGaitPose( const nbWorld* world, nbFigure* f, b3Vec3 up, float time
 #define NB_SWING_SLOW_FROM 0.065f
 #define NB_SWING_SLOW_TO 0.39f
 
+// Braking so, a foot that lifts flat or over its heel keeps the fast lift, and its leg is stretched as far as it
+// reaches: turning from running backward at 4.3 m/s to running forward, a foot ahead of the hip stood while the root
+// came up out of the low stance of the run, up to 16 mm in an update, and stretched its leg from 0.90 to 0.98 of its
+// length in five updates. It lifted as its phase said, the figure at 0.87 m/s and its gait still running, on the arc of
+// running forward, which starts at full speed: the leg, 0.021 longer in its last update on the ground, got 0.012
+// shorter in the next, and as the knee of a leg at 0.98 moves more than twice as far as the leg gets longer, the shin
+// jumped 66 mm. In the steady run backward before, a foot lifts at 0.93 to 0.96 because its leg loses it, the leg goes
+// on getting longer, and the shin jumps 15 to 18 mm. So where the figure moves slower than its gait runs, the legs
+// stretch NB_LEG_REACH_SLOW less far, by that lag as NB_SWING_SLOW has it and as far as the gait runs, and from
+// NB_SWING_SLOW_ARC of it on a foot that lifts flat or over its heel goes up over the first half of its arc as gently
+// as one lifted running backward, see nbSwingLift. Over the eight changes at a run with a fixed heading on 19 speed
+// sets the hardest shin jumps over 37 mm at 848 instead of 967 of 3 648 points, 1 753 instead of 2 378 mm beyond it in
+// sum, and of the feet that lift so with their legs already going forward 1 instead of 9 has its shin over 37 mm. The
+// legs 0.005 to 0.015 less far all hold, 0.02 and more less so; half the height of the lift left more shins over 37 mm,
+// and a root that comes up braking toward the reach of a standing leg took nothing. Nothing changes where the speed of
+// the gait follows the figure's: in a steady gait, speeding up and walking. See SteerBrakeBackTest.
+#define NB_SWING_SLOW_ARC 0.5f
+#define NB_LEG_REACH_SLOW 0.01f
+
 // A bump over a swing, from 0 to 1 of it, that starts and ends with no slope and is 1 a quarter into the swing
 static float nbSwingEarly( float u )
 {
@@ -5710,6 +5729,11 @@ static void nbSteerFeet( const nbWorld* world, int index, nbFigure* f, const nbC
 	f->gaitBendRate = bendDecay * ( f->gaitBendRate - bendOmega * timeStep * bendSum );
 	float stretch = NB_LEG_REACH_WALK - NB_LEG_REACH - f->gaitBend * ( NB_LEG_REACH_WALK - NB_LEG_REACH_BENT );
 	f->legReach = NB_LEG_REACH + ( 1.0f - run ) * ease * stretch;
+	// Braking at a run, the legs stretch less far, see NB_LEG_REACH_SLOW
+	float slower = b3ClampFloat(
+		( ( f->gaitSpeed - speed ) / f->gaitUnit - NB_SWING_SLOW_FROM ) / ( NB_SWING_SLOW_TO - NB_SWING_SLOW_FROM ), 0.0f, 1.0f );
+	float braking = run * slower * slower * ( 3.0f - 2.0f * slower );
+	f->legReach -= NB_LEG_REACH_SLOW * run * slower * slower * ( 3.0f - 2.0f * slower );
 	bool clipRoot = nbGaitClipRooted( f );
 	if ( clipRoot )
 	{
@@ -6018,6 +6042,11 @@ static void nbSteerFeet( const nbWorld* world, int index, nbFigure* f, const nbC
 				if ( f->footRoll[k] > 0.0f && slow > f->swingSoft[k] )
 				{
 					f->swingSoft[k] = slow;
+				}
+				// One that lifts flat or over its heel goes up as gently as one lifted running backward, see NB_SWING_SLOW_ARC
+				if ( f->footRoll[k] <= 0.0f && braking > NB_SWING_SLOW_ARC )
+				{
+					f->swingBack[k] = true;
 				}
 				f->swingTurnRate[k] = 0.0f;
 				f->liftHold[k] = f->foothold[k];

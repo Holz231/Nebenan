@@ -5242,11 +5242,13 @@ static uint32_t RunStrafe( int threadCount, float* turns, bool* backward, float*
 // people, see NB_SWING_ANKLE_SOFT, and walking backward and diagonally it takes the steps of people, see
 // NB_GAIT_CADENCE_WALK. Since round 113 the hip joints are 18 instead of 26 cm apart, as those of people, see
 // nbMakeHumanoidBones: running to the side the feet come as close as 9.9 instead of 14.7 cm and running backward as 4.5
-// instead of 9.4 cm, and they stay at least 3 instead of 5 cm apart. Since round 114 it stands upright before it starts,
-// 1.8 cm higher, and comes down onto the stance of its gait, see NB_STAND_RISE: the feet come as close and the pelvis
-// sinks as far below that stance as before. Since round 115 the legs turn for running as soon as the figure is asked to
-// run, and no farther than its feet stay uncrossed across them, see NB_LEG_KEEP: the numbers of this test stay.
-#define NB_EXPECTED_STRAFE_HASH 0xaf576bf2u
+// instead of 9.4 cm, and they stay at least 3 instead of 5 cm apart. Since round 114 it stands upright before it
+// starts, 1.8 cm higher, and comes down onto the stance of its gait, see NB_STAND_RISE: the feet come as close and the
+// pelvis sinks as far below that stance as before. Since round 115 the legs turn for running as soon as the figure is
+// asked to run, and no farther than its feet stay uncrossed across them, see NB_LEG_KEEP: the numbers of this test
+// stay. Since round 134 the legs stretch less far while the figure brakes at a run, see NB_LEG_REACH_SLOW: running
+// backward the feet come as close as 4.6 instead of 4.5 cm, the other numbers stay.
+#define NB_EXPECTED_STRAFE_HASH 0x0a92f893u
 static int SteerStrafeTest( void )
 {
 	float turns[3], closest[3], deepest[3];
@@ -6139,6 +6141,70 @@ static int SteerStopLiftTest( void )
 	ENSURE( most < 0.036f );
 	ENSURE( sum / 20.0f < 0.030f );
 	ENSURE( over == 0 );
+	return 0;
+}
+
+// A steered figure with a fixed heading runs backward at 4.46 m/s and stops, or turns to running forward as fast, the
+// change at twenty moments two updates apart, a cycle of its run: how far a shin jumps in an update at most in the 3 s
+// after it, the hardest of the twenty, their mean, and in how many it is more than 37 mm. Braking at a run, the legs
+// stretch less far and a foot that lifts flat or over its heel goes up more gently, see NB_LEG_REACH_SLOW and
+// NB_SWING_SLOW_ARC: stopping 35.5 mm at most, 30.8 mm in their mean and over 37 mm in none, turning 43.8 mm, 34.0 mm
+// and in two. Until round 133 the legs stretched as far as in a steady run while the figure had all but stopped: 43.5
+// mm, 33.4 mm and in four, and 54.0 mm, 37.3 mm and in ten.
+static int SteerBrakeBackTest( void )
+{
+	float most[2] = { 0.0f, 0.0f };
+	float sum[2] = { 0.0f, 0.0f };
+	int over[2] = { 0, 0 };
+	for ( int turn = 0; turn < 2; ++turn )
+	{
+		for ( int part = 0; part < 20; ++part )
+		{
+			FigureScene scene;
+			CreateFigureScene( &scene, 1 );
+			nbFigureId figure = AddSteeredFigure( &scene, b3Vec3_zero, 0.0f );
+			StepFigures( &scene, 60 );
+			nbSteer steer = { { 0.0f, 0.0f, -4.46f }, 0.0f, false };
+			nbFigure_Steer( figure, &steer );
+			StepFigures( &scene, 180 + 2 * part );
+			steer.velocity = turn == 1 ? (b3Vec3){ 0.0f, 0.0f, 4.46f } : b3Vec3_zero;
+			nbFigure_Steer( figure, &steer );
+			int bones[2] = { nb_humanoidShinLeft, nb_humanoidShinRight };
+			b3Vec3 last[2], before[2];
+			for ( int k = 0; k < 2; ++k )
+			{
+				last[k] = b3ToVec3( b3Body_GetPosition( nbFigure_GetBody( figure, bones[k] ) ) );
+				before[k] = last[k];
+			}
+			float hardest = 0.0f;
+			for ( int i = 0; i < 180; ++i )
+			{
+				StepFigures( &scene, 1 );
+				for ( int k = 0; k < 2; ++k )
+				{
+					b3Vec3 now = b3ToVec3( b3Body_GetPosition( nbFigure_GetBody( figure, bones[k] ) ) );
+					if ( i > 0 )
+					{
+						hardest = b3MaxFloat( hardest, b3Length( b3Add( b3Sub( now, last[k] ), b3Sub( before[k], last[k] ) ) ) );
+					}
+					before[k] = last[k];
+					last[k] = now;
+				}
+			}
+			most[turn] = b3MaxFloat( most[turn], hardest );
+			sum[turn] += hardest;
+			over[turn] += hardest > 0.037f ? 1 : 0;
+			DestroyFigureScene( &scene );
+		}
+	}
+	printf( "  from a run backward with a fixed heading, a shin jumps %.1f mm at most over twenty stops, %.1f mm in their mean, "
+			"over 37 mm in %d, and %.1f mm, %.1f mm and in %d over twenty turns to running forward\n",
+			1000.0f * most[0], 1000.0f * sum[0] / 20.0f, over[0], 1000.0f * most[1], 1000.0f * sum[1] / 20.0f, over[1] );
+	ENSURE( most[0] < 0.037f );
+	ENSURE( over[0] == 0 );
+	ENSURE( most[1] < 0.047f );
+	ENSURE( sum[1] / 20.0f < 0.0355f );
+	ENSURE( over[1] <= 4 );
 	return 0;
 }
 
@@ -7582,6 +7648,7 @@ int FigureTest( void )
 	RUN_TEST( SteerSwitchSidesTest );
 	RUN_TEST( SteerFreshFootTest );
 	RUN_TEST( SteerStopLiftTest );
+	RUN_TEST( SteerBrakeBackTest );
 	RUN_TEST( SteerBackTest );
 	RUN_TEST( SteerUprightTest );
 	RUN_TEST( SteerStartStopTest );

@@ -36,7 +36,10 @@ was schon verworfen wurde.
   Bremsen bis 1,7 m/s hinterher, der Gang rennt also noch, wenn die Figur fast steht. Ist sie um mehr als
   `NB_SWING_SLOW_FROM` langsamer als ihr Gang, hebt ein Fuß über die Zehen mit `NB_SWING_SLOW` des sanften Anlaufs.
   Nicht mehr: Mit der ganzen Stärke bleibt das Bein fast gestreckt. Nicht für Füße, die über die Ferse abheben: Die
-  brauchen das schnelle Heben.
+  brauchen das schnelle Heben. Seit Runde 134 geht ein Fuß, der beim Bremsen nicht über die Zehen abhebt, ab
+  `NB_SWING_SLOW_ARC` dieses Rückstands über die erste Hälfte seines Bogens so sanft hoch wie einer, der im
+  Rückwärtsrennen abhebt (`swingBack`, `nbSwingLift`): Ein Fuß vor der Hüfte hob sonst mit gestrecktem Bein auf dem
+  Bogen des Vorwärtsrennens ab. Mehr als dieser Bogen, der halbe Hub oder der sanfte Anlauf schaden dort.
 - **Weg.** `nbSwingPath`: eine Kubik von dort, wo der Fuß ist, zur Ruhe am Ziel, in jedem Update neu geplant.
   `nbSwingTime` begrenzt, wie lange ein Schwung dauern darf, wenn der Gang ins Rennen wechselt (Runde 118).
 
@@ -69,7 +72,9 @@ was schon verworfen wurde.
 ## Das Bein
 
 - Ein Bein streckt sich höchstens auf `NB_LEG_REACH` seiner Länge, gehend auf `NB_LEG_REACH_WALK`, gehend in einer
-  Wendung auf `NB_LEG_REACH_BENT`. `legReach` ist der Wert für jetzt.
+  Wendung auf `NB_LEG_REACH_BENT`. `legReach` ist der Wert für jetzt. Beim Bremsen im Rennen, wo die Figur langsamer
+  ist, als ihr Gang rennt, um `NB_LEG_REACH_SLOW` weniger (Runde 134): 0,005 bis 0,015 weniger halten, ab 0,02 wird es
+  von seitwärts auf rückwärts schlechter.
 - **Das Knie verstärkt.** An einem fast gestreckten Bein wandert das Knie mehrfach so weit, wie sich der Abstand von
   Hüfte zu Knöchel ändert, bei 0,98 gut doppelt so weit. Fast jeder harte Sprung eines Schienbeins ist ein Knöchel,
   der an einem gestreckten Bein schnell näher kommt: durch den Hub, das Rollen oder die sinkende Wurzel.
@@ -90,7 +95,7 @@ was schon verworfen wurde.
 `test/test_figure.c`: `SteerRunFlightTest` (Runde 118), `SteerTurnLandTest` (119), `SteerTurnSettleTest` (120),
 `SteerTurnLiftTest` (121), `SteerTurnRollTest` (122), `SteerTurnRhythmTest` (123), `SteerTurnHeelTest` (124),
 `SteerTurnPushTest` (128), `SteerSideToBackTest` (129), `SteerSwitchSidesTest` (130), `SteerFreshFootTest` (131),
-`SteerStopLiftTest` (133), und für den Körper `FigureShoulderTest` (126) und `FigureSkinTest` (127): Ändert eine Runde
-die Knochen, fällt er, bis `tools/mannequin/make_skin.py` die Haut neu geschrieben hat, erst `dump_bones`, dann das
-Werkzeug. Die Hashes `NB_EXPECTED_…_HASH` ändern sich nur, wenn sich ein Lauf ändert, der dort festgehalten ist: Das ist
-erlaubt, wird aber in der Roadmap genannt.
+`SteerStopLiftTest` (133), `SteerBrakeBackTest` (134), und für den Körper `FigureShoulderTest` (126) und
+`FigureSkinTest` (127): Ändert eine Runde die Knochen, fällt er, bis `tools/mannequin/make_skin.py` die Haut neu
+geschrieben hat, erst `dump_bones`, dann das Werkzeug. Die Hashes `NB_EXPECTED_…_HASH` ändern sich nur, wenn sich ein
+Lauf ändert, der dort festgehalten ist: Das ist erlaubt, wird aber in der Roadmap genannt.
