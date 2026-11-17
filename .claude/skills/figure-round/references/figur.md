@@ -28,7 +28,10 @@ was schon verworfen wurde.
   vorwärts über die Zehen, rückwärts über die Ferse. Seit Runde 136 folgt sie dem größeren von dem Rennanteil jetzt und
   dem beim Abheben (`swingRun`): Fällt der Gang beim Bremsen durch den Stand mitten im Schwung ins Gehen, wächst sie
   nicht mit, kommt er ins Rennen, schrumpft sie. `tools/measure/pitch136.py` zählt solche Schwünge und wie schnell ihr
-  Fuß zur Ferse dreht.
+  Fuß zur Ferse dreht. Seit Runde 137 folgt sie, solange die Figur langsamer ist als ihr Gang (`slower`), dem größeren
+  von diesem Anteil und dem der Feder, und die Höhe des Schwungs (`swingHeight`, sonst nach der Feder) dem kleineren von
+  Gang und Feder: Beim Bremsen durch den Stand geht der Gang schon, während die Feder noch rennt.
+  `tools/measure/lifts137.py` zählt diese Abheber.
 - **Eile.** `swingHurry` bis `NB_GAIT_HURRY`: Der Schwung läuft schneller, wenn der andere Fuß verloren geht. Sie darf
   nur so groß sein, wie der Fuß für den Weg, den er noch hat, mit `NB_GAIT_SWING_ACCEL` bremsen kann (Runde 119).
 - **Hub.** `nbSwingLift`: gehend ein früher Buckel (`nbSwingEarly`, Scheitel bei einem Viertel des Schwungs) plus ein
@@ -104,7 +107,7 @@ was schon verworfen wurde.
 `SteerTurnLiftTest` (121), `SteerTurnRollTest` (122), `SteerTurnRhythmTest` (123), `SteerTurnHeelTest` (124),
 `SteerTurnPushTest` (128), `SteerSideToBackTest` (129), `SteerSwitchSidesTest` (130), `SteerFreshFootTest` (131),
 `SteerStopLiftTest` (133), `SteerBrakeBackTest` (134), `SteerSideToBackRollTest` (135), `SteerSideToBackPitchTest`
-(136), und für den Körper `FigureShoulderTest` (126) und `FigureSkinTest` (127): Ändert eine Runde die Knochen, fällt
-er, bis `tools/mannequin/make_skin.py` die Haut neu geschrieben hat, erst `dump_bones`, dann das Werkzeug. Die Hashes
-`NB_EXPECTED_…_HASH` ändern sich nur, wenn sich ein Lauf ändert, der dort festgehalten ist: Das ist erlaubt, wird aber
-in der Roadmap genannt.
+(136), `SteerSideToBackLiftTest` (137), und für den Körper `FigureShoulderTest` (126) und `FigureSkinTest` (127): Ändert
+eine Runde die Knochen, fällt er, bis `tools/mannequin/make_skin.py` die Haut neu geschrieben hat, erst `dump_bones`,
+dann das Werkzeug. Die Hashes `NB_EXPECTED_…_HASH` ändern sich nur, wenn sich ein Lauf ändert, der dort festgehalten
+ist: Das ist erlaubt, wird aber in der Roadmap genannt.

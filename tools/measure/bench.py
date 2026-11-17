@@ -12,9 +12,11 @@ def towns(path):
     t = open(path).read()
     return [float(x) for x in re.findall(r'\n  frame\s+avg\s+([\d.]+) ms', t)]
 def ends(path):
+    # the hashes and counters a run ends with; the memory it reports is not a state of the world and can differ
+    # between two runs of one build (round 137)
     t = open(path).read()
     keep = re.findall(r'figures hash 0x[0-9a-f]+|\d+ grenades, .*|chunks\s+\d+ bodies\s+\d+ overloaded\s+\d+|at the end .*|\d+ figures: .*', t)
-    return keep
+    return [re.sub(r', memory [\d.]+ MB', '', k) for k in keep]
 def phases(path):
     t = open(path).read()
     out = {}

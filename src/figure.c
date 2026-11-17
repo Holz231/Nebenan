@@ -6031,7 +6031,15 @@ static void nbSteerFeet( const nbWorld* world, int index, nbFigure* f, const nbC
 				f->swingRate[k] = 1.0f;
 				f->swingHurry[k] = late * NB_GAIT_HURRY < NB_GAIT_HURRY - 1.0f ? 1.0f / ( 1.0f - late ) : NB_GAIT_HURRY;
 				f->swingStart[k] = -timeStep * f->swingRate[k] * f->swingHurry[k] / footTime;
-				f->swingHeight[k] = ( NB_GAIT_LIFT_WALK + ( NB_GAIT_LIFT_RUN - NB_GAIT_LIFT_WALK ) * springRun ) * scale;
+				// Braking from a run through standing, the gait falls to walking within a few updates of a lift and its spring
+				// follows slowly, see NB_RUN_TURN_LAG: a foot lifted then with the height of the spring and the early bump of
+				// a walking swing, see nbLiftShare, went up 22 cm in four updates, over 4 m/s, and its shin jumped 54 mm.
+				// While the figure is slower than its gait, as NB_SWING_SLOW_FROM measures it, a swing lifts no higher than the
+				// lower of the two runs asks and pitches no more than the higher, see round 137. Lowering it always, a foot
+				// that lifts as the figure speeds up again lifted too low for landing at a run.
+				float heightLow = b3MinFloat( run, springRun );
+				float heightRun = springRun + ( heightLow - springRun ) * slower * slower * ( 3.0f - 2.0f * slower );
+				f->swingHeight[k] = ( NB_GAIT_LIFT_WALK + ( NB_GAIT_LIFT_RUN - NB_GAIT_LIFT_WALK ) * heightRun ) * scale;
 				f->swingRun[k] = run;
 				f->swingBack[k] = runsBack;
 				f->stepBack[k] = f->legBack;
@@ -6380,6 +6388,9 @@ static void nbSteerFeet( const nbWorld* world, int index, nbFigure* f, const nbC
 			// going down and the shin jumped 56.6 mm, see round 136. Where the gait comes to run during a swing the pitch
 			// shrinks as before.
 			float pitchRun = b3MaxFloat( run, f->swingRun[k] );
+			// While the figure is slower than its gait it pitches no more than the spring of the gait runs either: lifted flat
+			// as the gait walked, a foot turned over its heel by 0.11 and 0.12 rad in the first two updates, see round 137
+			pitchRun += ( b3MaxFloat( pitchRun, springRun ) - pitchRun ) * slower * slower * ( 3.0f - 2.0f * slower );
 			f->footRoll[k] = f->swingRoll[k] * ( 1.0f - flat * flat * ( 3.0f - 2.0f * flat ) ) +
 							 f->footRollRate[k] * rest * goOn +
 							 stepSide * ( 1.0f - pitchRun ) * ease * NB_GAIT_SWING_PITCH * calm * bump -

@@ -219,6 +219,18 @@ Zehen und Fersen 37 mm, Hände 15 mm, Becken 10 mm, Becken tief ab 15 cm unter d
   mit Blick in Laufrichtung die Toleranz eines Satzes, 5 Stellen; `eval<N>.py` rechnet das Doppelte, 10, wie in Runde
   135. Die Prüfung erfüllte beide Lesarten, aber die Unstimmigkeit steht offen in der Roadmap. Vor dem Festschreiben
   jede Grenze des Texts mit der Ausgabe des Probelaufs vergleichen.
+- **Zwei Größen eines Schwungs, die aus verschiedenen Quellen kommen, gegeneinander halten.** In Runde 137 kam die Höhe
+  eines Schwungs von der Feder des Gangs, seine Form vom Rennanteil des Gangs beim Abheben. Solange beide gleich sind,
+  im stetigen Gang, passt das; fällt der Gang beim Bremsen schneller als die Feder, bekam ein gehender Schwung die Höhe
+  des Rennens. Wo eine Größe aus der Feder und eine andere aus dem Gang kommt, die Fälle suchen, in denen beide
+  auseinanderlaufen.
+- **Eine Korrektur für das Bremsen nur beim Bremsen.** Die Höhe immer nach dem kleineren Rennanteil nahm in Runde 137
+  die Abheber, aber wer beim Wiederbeschleunigen abhob, hob zu niedrig für die Landung im Rennen: 647 statt 229 mm an
+  diesen Landungen. Begrenzt auf den Rückstand der Figur hinter ihrem Gang (`slower`) blieb davon nichts. Das Maß
+  `braking` von Runde 134 taugte dafür nicht, es ist mit dem Rennanteil multipliziert und dort schon null.
+- **Neue Skripte sofort ausführbar machen.** `proto137.sh` entstand mit `sed` aus dem Skript der Runde davor und war
+  nicht ausführbar; der Hintergrundlauf scheiterte still, und eine Viertelstunde war verloren. Nach jedem `sed > datei`
+  folgt `chmod +x` und ein Blick auf `ls -l`.
 - **Größe der Figur.** Winkelbeschleunigungen wachsen bei kleineren Figuren mit 1 durch `nbFigureScale`, Längen
   und Geschwindigkeiten mit ihr.
 
