@@ -193,6 +193,21 @@ Zehen und Fersen 37 mm, Hände 15 mm, Becken 10 mm, Becken tief ab 15 cm unter d
 - **Die Raster der Suche verbrauchen Geschwindigkeiten.** `steady130.py` läuft mit `FINE=1` jede Geschwindigkeit von
   4,30 bis 4,80 m/s in Schritten von 0,01 außer denen in `FRESH`. Werden danach weitere frische Sätze gebraucht, liegen
   sie auf halben Zentimetern oder unter 4,30 m/s.
+- **Wo ein Merkmal umschlägt, beide Zweige für denselben Fuß vergleichen.** Der Sprung von Runde 135 kam in dem Update,
+  in dem die Beine von vorwärts auf rückwärts wechselten (`legBack`): Derselbe Fuß fiel von dem Zweig mit dem Blick
+  voraus in einen ohne, und sein Rollen ging zurück. Ein Ausdruck, der je Update zeigt, woraus das Rollen besteht, fand
+  es in einem Lauf, und `flips135.py` zählt jeden Fuß an einem solchen Umschlag.
+- **Den Test auf das Fenster der Ursache legen.** Die erste Fassung des Tests von Runde 135 nahm die erste halbe Sekunde
+  nach dem Wechsel, und das Härteste war alt und neu fast gleich, 54,6 und 53,3 mm: Spätere Abheber, die der Eingriff
+  nicht berührt, überdeckten es. Die Momente mit `lab101` abgesucht, lag das Ereignis bei 0,18 bis 0,2 s; mit der ersten
+  Viertelsekunde trennt der Test 31,9 von 54,6 mm.
+- **Vor einer Eigenschaft als Ziel alle Auswahlen zählen.** „Keiner neu, alt mindestens einer“ hält nur, wenn der alte
+  Stand auf den frischen Sätzen sicher einen hat. In Runde 135 hatte er ihn in jeder der 10 080 Auswahlen von drei
+  schnellen und drei langsamen Sätzen der Entwicklung, im Median 8, und der Prototyp auf keinem der 19 Sätze, das
+  härteste 32 mm.
+- **Die Toleranzen liegen vor dem Probelauf neben den Regeln.** `eval<N>.py` liest `docs/Regeln/tol<N>.json`, nicht
+  `out/tol<N>.json`. Der Probelauf von Runde 135 fand das; die Datei wird kopiert, sobald `tolerance<N>.py` gelaufen
+  ist.
 - **Größe der Figur.** Winkelbeschleunigungen wachsen bei kleineren Figuren mit 1 durch `nbFigureScale`, Längen
   und Geschwindigkeiten mit ihr.
 

@@ -3257,6 +3257,8 @@ static float nbLowerSteered( nbFigure* f, b3Transform root, const int* thighs, b
 	bool leads[2];
 	bool landed[2];
 	bool tips[2];
+	// Going backward, one that stays on its toes while the hip leaves it, as where the legs turned from going sideways
+	bool leaving[2] = { false, false };
 	float edges[2];
 	float drop = 0.0f;
 	for ( int k = 0; k < 2; ++k )
@@ -3297,6 +3299,7 @@ static float nbLowerSteered( nbFigure* f, b3Transform root, const int* thighs, b
 				if ( may && planted * nbRollOnToes( footBone, ankles[k], rotations[k], hip, reaches[k], &closest ) > 0.0f )
 				{
 					tips[k] = true;
+					leaving[k] = passed == false;
 					if ( passed )
 					{
 						edge = 1.0f;
@@ -3433,7 +3436,17 @@ static float nbLowerSteered( nbFigure* f, b3Transform root, const int* thighs, b
 		// Running, and as soon as the gait turns to running, before the spring of NB_RUN_TURN_LAG follows, and going backward
 		// over the heel also walking, see NB_FOOT_HEEL_MOST
 		float rollAhead = side < 0.0f ? 1.0f : b3MaxFloat( f->runTurn, f->gaitRun );
-		if ( behind[k] && f->footSwings[k] == false && rollAhead > 0.0f )
+		// A trailing foot rolls over its toes ahead of what its leg needs now, and so does one that stays on its toes
+		// while the hip leaves it, the legs going backward, see leaving. Where the legs turned from going sideways to
+		// going backward, a trailing foot rolled over its toes with this look ahead, and in the update the legs turned
+		// it counted as one that stays on its toes going backward, rolled only as far as its leg needed then, 0.164
+		// instead of 0.185 rad, and its leg got 3 % of its length longer, to 0.978: running from 4.3 m/s to the side,
+		// the shin jumped 39 and then 55 mm. Over 19 speed sets, of the feet on the ground as the legs turn none
+		// instead of 24 has its shin jump over 37 mm, and from sideways to backward at a run the hardest shin jumps 639
+		// instead of 806 mm beyond 37 mm in sum. Where it also did not roll back down while the hip leaves it, walking
+		// a foot turned by more than 15 degrees in an update, see SteerLegLeadTest. See SteerSideToBackRollTest.
+		float way = leaving[k] ? 1.0f : side;
+		if ( ( behind[k] || leaving[k] ) && f->footSwings[k] == false && rollAhead > 0.0f )
 		{
 			// As far as its leg needs over the next NB_FOOT_ROLL_AHEAD seconds, coming there evenly: the hip goes on
 			// along the way of the capsule, turned with the pelvis as nbGaitPose turns it, and up and down with the bob, see
@@ -3473,10 +3486,10 @@ static float nbLowerSteered( nbFigure* f, b3Transform root, const int* thighs, b
 				}
 				then = nbAlongPath( &path, then, time );
 				float soon = 1.0f - time / NB_FOOT_ROLL_AHEAD;
-				float need = side * nbRollToReach( footBone, ankles[k], rotations[k], then, reaches[k], most );
+				float need = way * nbRollToReach( footBone, ankles[k], rotations[k], then, reaches[k], most );
 				ahead = b3MaxFloat( ahead, soon * soon * ( 3.0f - 2.0f * soon ) * need );
 			}
-			roll = side * b3MaxFloat( side * roll, planted * rollAhead * ahead );
+			roll = way * b3MaxFloat( way * roll, planted * rollAhead * ahead );
 		}
 		if ( f->footSwings[k] )
 		{
