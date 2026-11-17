@@ -6267,6 +6267,61 @@ static int SteerSideToBackRollTest( void )
 	return 0;
 }
 
+// A steered figure with a fixed heading runs sideways at 4.3 m/s and then backward, the change at twenty moments two
+// updates apart, a cycle of its run: how far a swinging foot turns toward its heel in an update at most in the second
+// after it, the fastest of the twenty, their mean, and in how many it is more than 0.16 rad. Braking through standing,
+// the gait falls from running to walking within a few updates, and the pitch a swing has walking does not grow while
+// its foot is in the air, see nbSteerFeet: 0.146 rad at most, 0.123 in their mean, more than 0.16 rad in none. Until
+// round 135 it grew with the falling gait and turned a foot that lifted running from its toes over its heel within
+// three updates: 0.208 rad, 0.141, and more than 0.16 rad in four.
+static int SteerSideToBackPitchTest( void )
+{
+	float most = 0.0f;
+	float sum = 0.0f;
+	int over = 0;
+	for ( int part = 0; part < 20; ++part )
+	{
+		FigureScene scene;
+		CreateFigureScene( &scene, 1 );
+		nbFigureId figure = AddSteeredFigure( &scene, b3Vec3_zero, 0.0f );
+		StepFigures( &scene, 60 );
+		nbSteer steer = { { 4.3f, 0.0f, 0.0f }, 0.0f, false };
+		nbFigure_Steer( figure, &steer );
+		StepFigures( &scene, 180 + 2 * part );
+		steer.velocity = (b3Vec3){ 0.0f, 0.0f, -4.3f };
+		nbFigure_Steer( figure, &steer );
+		const nbFigure* f = GetSteered( &scene, figure );
+		float roll[2] = { f->footRoll[0], f->footRoll[1] };
+		bool swung[2] = { f->footSwings[0], f->footSwings[1] };
+		float fastest = 0.0f;
+		for ( int i = 0; i < 60; ++i )
+		{
+			StepFigures( &scene, 1 );
+			f = GetSteered( &scene, figure );
+			for ( int k = 0; k < 2; ++k )
+			{
+				if ( swung[k] && f->footSwings[k] )
+				{
+					fastest = b3MaxFloat( fastest, roll[k] - f->footRoll[k] );
+				}
+				roll[k] = f->footRoll[k];
+				swung[k] = f->footSwings[k];
+			}
+		}
+		most = b3MaxFloat( most, fastest );
+		sum += fastest;
+		over += fastest > 0.16f ? 1 : 0;
+		DestroyFigureScene( &scene );
+	}
+	printf( "  from a run sideways to a run backward with a fixed heading, in the second after it a swinging foot turns "
+			"toward its heel by %.3f rad in an update at most over twenty changes, %.3f rad in their mean, over 0.16 rad in "
+			"%d\n",
+			most, sum / 20.0f, over );
+	ENSURE( most < 0.16f );
+	ENSURE( over == 0 );
+	return 0;
+}
+
 // A steered figure that does not face where it moves walks backward at 1.6 m/s for 4 s, or runs backward at 3.0 m/s for
 // 3 s and a part of its cycle more and then forward at 3.0 m/s: how many of its feet landed going backward over the last
 // 2 s and how many of those on their toes, and how far the pelvis went below standing at most, over the last 2 s walking
@@ -7709,6 +7764,7 @@ int FigureTest( void )
 	RUN_TEST( SteerStopLiftTest );
 	RUN_TEST( SteerBrakeBackTest );
 	RUN_TEST( SteerSideToBackRollTest );
+	RUN_TEST( SteerSideToBackPitchTest );
 	RUN_TEST( SteerBackTest );
 	RUN_TEST( SteerUprightTest );
 	RUN_TEST( SteerStartStopTest );

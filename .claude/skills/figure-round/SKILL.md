@@ -208,6 +208,17 @@ Zehen und Fersen 37 mm, Hände 15 mm, Becken 10 mm, Becken tief ab 15 cm unter d
 - **Die Toleranzen liegen vor dem Probelauf neben den Regeln.** `eval<N>.py` liest `docs/Regeln/tol<N>.json`, nicht
   `out/tol<N>.json`. Der Probelauf von Runde 135 fand das; die Datei wird kopiert, sobald `tolerance<N>.py` gelaufen
   ist.
+- **Wo die Summe den Gewinn nicht zeigt, das Merkmal der Ursache suchen.** In Runde 136 nahm der Eingriff je Satzpaar im
+  Median 13 mm bei 12,6 mm Streuung zwischen ähnlichen Sätzen. Die Drehung des schwingenden Fußes zur Ferse je Update
+  trennte dagegen scharf: der Prototyp höchstens 0,157 rad, der alte Stand bis 0,215 rad. Sie wurde die Zielgröße, die
+  Summe der Schienbeine nur ihre Richtung.
+- **Das härteste Beispiel trägt das Merkmal nicht immer.** Der verfolgte Schwung von Runde 136 drehte seinen Fuß nur
+  0,124 rad je Update, dafür drei Updates nacheinander, und über mehrere Updates drehen gewöhnliche Schwünge genauso
+  weit. Darum steht neben einem Merkmal je Update eine Bedingung an den Schienbeinen derselben Schwünge.
+- **Jede Zahl im Regeltext gegen das „allowed“ des Probelaufs halten.** In Runde 136 nannte der Regeltext für zwei Sätze
+  mit Blick in Laufrichtung die Toleranz eines Satzes, 5 Stellen; `eval<N>.py` rechnet das Doppelte, 10, wie in Runde
+  135. Die Prüfung erfüllte beide Lesarten, aber die Unstimmigkeit steht offen in der Roadmap. Vor dem Festschreiben
+  jede Grenze des Texts mit der Ausgabe des Probelaufs vergleichen.
 - **Größe der Figur.** Winkelbeschleunigungen wachsen bei kleineren Figuren mit 1 durch `nbFigureScale`, Längen
   und Geschwindigkeiten mit ihr.
 

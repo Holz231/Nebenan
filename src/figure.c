@@ -6374,9 +6374,15 @@ static void nbSteerFeet( const nbWorld* world, int index, nbFigure* f, const nbC
 			}
 			f->heelPart[k] = heelPart;
 			f->swingHeel[k] = heel;
+			// The pitch a swing has walking does not grow while its foot is in the air. Braking through standing from a
+			// run, the gait falls to walking within a few updates of a lift, and a pitch that grew with it turned a foot
+			// stepping backward from its toes over its heel in three updates, up to 0.12 rad in one: the ankle stopped
+			// going down and the shin jumped 56.6 mm, see round 136. Where the gait comes to run during a swing the pitch
+			// shrinks as before.
+			float pitchRun = b3MaxFloat( run, f->swingRun[k] );
 			f->footRoll[k] = f->swingRoll[k] * ( 1.0f - flat * flat * ( 3.0f - 2.0f * flat ) ) +
 							 f->footRollRate[k] * rest * goOn +
-							 stepSide * ( 1.0f - run ) * ease * NB_GAIT_SWING_PITCH * calm * bump -
+							 stepSide * ( 1.0f - pitchRun ) * ease * NB_GAIT_SWING_PITCH * calm * bump -
 							 stepSide * heelPart * heel * toesUp * toesUp * ( 3.0f - 2.0f * toesUp );
 			if ( f->stepBack[k] )
 			{
