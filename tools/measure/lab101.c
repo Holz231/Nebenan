@@ -129,7 +129,7 @@ int main( int argc, char** argv )
 	{
 		fprintf( out, ",b%dx,b%dy,b%dz,b%dqx,b%dqy,b%dqz,b%dqw", i, i, i, i, i, i, i );
 	}
-	fprintf( out, ",toeLx,toeLy,toeLz,heelLx,heelLy,heelLz,toeRx,toeRy,toeRz,heelRx,heelRy,heelRz,rootY,crouch,rdrop,rrate,shortL,shortR,shortRateL,shortRateR,alongL,alongR,behindL,behindR,hurryL,hurryR,gaitSpeed,runTurn,bend,tLx,tLy,tLz,tRx,tRy,tRz,svL,svR,legTurn,legAim,legBack,legRate,wishX,wishZ,fhL,fhR,legHeading\n" );
+	fprintf( out, ",toeLx,toeLy,toeLz,heelLx,heelLy,heelLz,toeRx,toeRy,toeRz,heelRx,heelRy,heelRz,rootY,crouch,rdrop,rrate,shortL,shortR,shortRateL,shortRateR,alongL,alongR,behindL,behindR,hurryL,hurryR,gaitSpeed,runTurn,bend,tLx,tLy,tLz,tRx,tRy,tRz,svL,svR,legTurn,legAim,legBack,legRate,wishX,wishZ,fhL,fhR,legHeading,gaitRun\n" );
 	float dt = 1.0f / hz;
 	int steps = (int)( seconds * hz );
 	nbWorld* w = nbGetWorldFromId( world );
@@ -198,8 +198,8 @@ int main( int argc, char** argv )
 		fprintf( out, ",%d,%d,%.3f,%.3f,%.5f,%.5f,%.4f,%.5f,%.5f,%.5f,%.5f,%.5f,%.5f,%.4f,%.4f\n", f->outBehind[0] ? 1 : 0, f->outBehind[1] ? 1 : 0, f->swingHurry[0], f->swingHurry[1], f->gaitSpeed, f->runTurn, f->gaitBend,
 			tL.x, tL.y, tL.z, tR.x, tR.y, tR.z, b3Length( f->swingVelocity[0] ), b3Length( f->swingVelocity[1] ) ); }
 		fseek( out, -1, SEEK_CUR );
-		fprintf( out, ",%.5f,%.5f,%d,%.4f,%.4f,%.4f,%.5f,%.5f,%.5f\n", f->legTurn, f->legAim, f->legBack ? 1 : 0, f->legHeadingRate,
-				 f->wishVelocity.x, f->wishVelocity.z, f->footHeading[0], f->footHeading[1], f->legHeading );
+		fprintf( out, ",%.5f,%.5f,%d,%.4f,%.4f,%.4f,%.5f,%.5f,%.5f,%.4f\n", f->legTurn, f->legAim, f->legBack ? 1 : 0, f->legHeadingRate,
+				 f->wishVelocity.x, f->wishVelocity.z, f->footHeading[0], f->footHeading[1], f->legHeading, f->gaitRun );
 	}
 	fclose( out );
 	nbFigureInfo info = nbFigure_GetInfo( figure );
