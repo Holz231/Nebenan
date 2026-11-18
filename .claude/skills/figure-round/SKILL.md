@@ -231,6 +231,17 @@ Zehen und Fersen 37 mm, Hände 15 mm, Becken 10 mm, Becken tief ab 15 cm unter d
 - **Neue Skripte sofort ausführbar machen.** `proto137.sh` entstand mit `sed` aus dem Skript der Runde davor und war
   nicht ausführbar; der Hintergrundlauf scheiterte still, und eine Viertelstunde war verloren. Nach jedem `sed > datei`
   folgt `chmod +x` und ein Blick auf `ls -l`.
+- **Ein Eingriff kann den Ruck verlagern statt nehmen.** In Runde 138 nahm der ganze Zug den Sprung des Schienbeins fast
+  ganz, aber der Fuß sprang dafür selbst, wenn er mit dieser Geschwindigkeit abhob: mit festem Blick Füße an 12 statt 6
+  Stellen über 37 mm. Wer an den Schienbeinen misst, sieht dann nur den Gewinn. Bei jedem Eingriff, der eine
+  Geschwindigkeit setzt, die Tabelle mit festem Blick samt Füßen ansehen, bevor die Stärke steht.
+- **Jede Bedingung eines Eingriffs einzeln wegnehmen und messen.** Der Zug von Runde 138 hat vier: rückwärts gehende
+  Beine, gegen die Richtung gesteuert, die Linie zur Hüfte und die Grenze der Bremse. Jede einzeln weggenommen ergab
+  eine eigene Zahl (Seitenwechsel 1 201 statt 24 mm, Anhalten 90 statt 79 mm, 184 statt 128 mm), und eine fünfte, das
+  Bremsen, fiel weg, weil es ohne sie besser wurde. So steht jede Bedingung mit ihrem Grund in der Regel.
+- **Gleichnamige Größen im Versuchsbaum prüfen.** Eine Fassung von Runde 138 griff nie, weil sie `stretch` nahm, und das
+  war an dieser Stelle eine andere Größe als die Streckung des Beins, die erst weiter unten berechnet wird. Ein
+  Schalter, der Stelle für Stelle gleich misst wie alt, ist verdächtig: zuerst nachsehen, ob er überhaupt greift.
 - **Größe der Figur.** Winkelbeschleunigungen wachsen bei kleineren Figuren mit 1 durch `nbFigureScale`, Längen
   und Geschwindigkeiten mit ihr.
 

@@ -33,7 +33,11 @@ was schon verworfen wurde.
   Gang und Feder: Beim Bremsen durch den Stand geht der Gang schon, während die Feder noch rennt.
   `tools/measure/lifts137.py` zählt diese Abheber.
 - **Eile.** `swingHurry` bis `NB_GAIT_HURRY`: Der Schwung läuft schneller, wenn der andere Fuß verloren geht. Sie darf
-  nur so groß sein, wie der Fuß für den Weg, den er noch hat, mit `NB_GAIT_SWING_ACCEL` bremsen kann (Runde 119).
+  nur so groß sein, wie der Fuß für den Weg, den er noch hat, mit `NB_GAIT_SWING_ACCEL` bremsen kann (Runde 119). Ein
+  Schwung beginnt aus dem Stand (`swingVelocity` null), außer seit Runde 138 bei rückwärts gehenden Beinen, wenn die
+  Figur gegen ihre Richtung gesteuert wird: Dann nimmt der Fuß die Hälfte dessen mit, was die Hüfte sich schneller von
+  ihm entfernt, als sein Bein vor seiner Reichweite mit `NB_LEG_BRAKE` abbremsen kann (`NB_SWING_PULL`).
+  `tools/measure/lifts138.py` zählt diese Abheber.
 - **Hub.** `nbSwingLift`: gehend ein früher Buckel (`nbSwingEarly`, Scheitel bei einem Viertel des Schwungs) plus ein
   gleichmäßiger Teil, rennend ein Bogen. `swingCalm` ist der Anteil, mit dem ein eiliger Schwung hebt und kippt, 1
   durch das Quadrat der Eile. Er folgt der Eile nach unten, solange der Buckel steigt, bis `NB_SWING_EARLY_TOP`, und
@@ -107,7 +111,7 @@ was schon verworfen wurde.
 `SteerTurnLiftTest` (121), `SteerTurnRollTest` (122), `SteerTurnRhythmTest` (123), `SteerTurnHeelTest` (124),
 `SteerTurnPushTest` (128), `SteerSideToBackTest` (129), `SteerSwitchSidesTest` (130), `SteerFreshFootTest` (131),
 `SteerStopLiftTest` (133), `SteerBrakeBackTest` (134), `SteerSideToBackRollTest` (135), `SteerSideToBackPitchTest`
-(136), `SteerSideToBackLiftTest` (137), und für den Körper `FigureShoulderTest` (126) und `FigureSkinTest` (127): Ändert
-eine Runde die Knochen, fällt er, bis `tools/mannequin/make_skin.py` die Haut neu geschrieben hat, erst `dump_bones`,
-dann das Werkzeug. Die Hashes `NB_EXPECTED_…_HASH` ändern sich nur, wenn sich ein Lauf ändert, der dort festgehalten
-ist: Das ist erlaubt, wird aber in der Roadmap genannt.
+(136), `SteerSideToBackLiftTest` (137), `SteerBackToForwardLiftTest` (138), und für den Körper `FigureShoulderTest`
+(126) und `FigureSkinTest` (127): Ändert eine Runde die Knochen, fällt er, bis `tools/mannequin/make_skin.py` die Haut
+neu geschrieben hat, erst `dump_bones`, dann das Werkzeug. Die Hashes `NB_EXPECTED_…_HASH` ändern sich nur, wenn sich
+ein Lauf ändert, der dort festgehalten ist: Das ist erlaubt, wird aber in der Roadmap genannt.

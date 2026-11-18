@@ -4895,6 +4895,22 @@ static void nbGaitPose( const nbWorld* world, nbFigure* f, b3Vec3 up, float time
 #define NB_SWING_SLOW_ARC 0.5f
 #define NB_LEG_REACH_SLOW 0.01f
 
+// Steered against the way it moves, with its legs going backward, a foot that lifts takes this part of what its hip
+// goes away from it, on the line to it, faster than its leg can brake before its reach, see NB_LEG_BRAKE, scaled by how
+// far the figure is steered against its way. Turning from running backward at 4.33 m/s to running forward, a foot ahead
+// of the hip stood while the hip ran away from it at 2.8 m/s, its leg 2.5 cm longer in every update, and it lifted with
+// its leg at 0.953 of its length, 1.5 cm short of its reach: from 1.5 m/s the brake needs 2.5 cm. Its swing started
+// from rest and aimed it forward, where the figure was steered, the leg came to its reach in the next update and
+// stopped there, the foot was torn after the hip, and the shin jumped 49.9 mm. With all of the excess the shin jumped
+// 19.4 mm but the foot itself, lifting at that speed: with a fixed heading feet jumped over 37 mm at 12 instead of 6 of
+// 1 008 points. With half of it foot and shin share the jolt, 40.2 and 18.8 mm, and over the eight changes at a run
+// with a fixed heading on 19 speed sets the hardest shin jumps 1 134 instead of 1 246 mm beyond 37 mm in sum, from
+// running backward to running forward 128 instead of 239 mm. Not with the legs going sideways: switching sides, the
+// swing took a foot across the other one, 1 201 instead of 24 mm. Not where the figure is steered on its way: stopping
+// from a run backward or turning from sideways to backward, the swing takes the foot along anyway, and pulled too it
+// came out 90 instead of 79 mm and 456 instead of 432 mm. See SteerBackToForwardLiftTest.
+#define NB_SWING_PULL 0.5f
+
 // A bump over a swing, from 0 to 1 of it, that starts and ends with no slope and is 1 a quarter into the swing
 static float nbSwingEarly( float u )
 {
@@ -6050,6 +6066,27 @@ static void nbSteerFeet( const nbWorld* world, int index, nbFigure* f, const nbC
 				foot->fromTilt = foot->tilt;
 				f->swingBase[k] = foot->plant;
 				f->swingVelocity[k] = b3Vec3_zero;
+				// Steered against the way it moves, with its legs going backward, it leaves with part of what its hip goes away
+				// from it faster than its leg can brake before its reach, see NB_SWING_PULL
+				if ( f->legBack )
+				{
+					b3Vec3 pull = b3MulSub( velocity, b3Dot( velocity, up ), up );
+					b3Vec3 toHip = b3SubPos( b3TransformWorldPoint( f->frame, hips[k] ), foot->plant );
+					toHip = b3MulSub( toHip, b3Dot( toHip, up ), up );
+					float away = b3Length( toHip ) > 1.0e-4f ? b3Dot( pull, toHip ) / b3Length( toHip ) : 0.0f;
+					int pulled = k == 0 ? nb_humanoidThighLeft : nb_humanoidThighRight;
+					float legNow = b3Length( b3SubPos( f->targets[pulled].p, f->targets[pulled + 2].p ) ) / legLength;
+					float room = b3MaxFloat( ( f->legReach - legNow ) * legLength, 0.0f );
+					away -= sqrtf( 2.0f * NB_LEG_BRAKE * scale * room );
+					pull = away > 0.0f ? b3MulSV( away / b3Length( toHip ), toHip ) : b3Vec3_zero;
+					float wishLength = b3Length( aimWish );
+					float movesLength = b3Length( velocity );
+					float against = wishLength > 1.0e-3f && movesLength > 1.0e-3f
+										 ? -b3Dot( aimWish, velocity ) / ( wishLength * movesLength )
+										 : 0.0f;
+					pull = b3MulSV( b3ClampFloat( against, 0.0f, 1.0f ), pull );
+					f->swingVelocity[k] = b3MulSV( NB_SWING_PULL, pull );
+				}
 				int thigh = k == 0 ? nb_humanoidThighLeft : nb_humanoidThighRight;
 				float stretch = b3Length( b3SubPos( f->targets[thigh].p, f->targets[thigh + 2].p ) ) / legLength;
 				float soft =
