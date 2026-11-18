@@ -557,6 +557,7 @@ typedef struct nbFigure
 	float pushKeptTime[2];
 	float footRollRate[2];
 	float footOut[2];
+	bool footWaited[2];
 	bool outBehind[2];
 	bool outToes[2];
 	float swingHurry[2];

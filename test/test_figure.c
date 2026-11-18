@@ -6087,6 +6087,69 @@ static int SteerFreshFootTest( void )
 	return 0;
 }
 
+// A steered figure with a fixed heading runs to one side at 4.41 m/s and then backward, the change at twenty moments
+// one update apart: how often in the 3 s after it a foot lifts again within two updates after it landed while the other
+// foot is on the ground, and how far a shin jumps in an update at most from 0.3 to 0.55 s after it, where a foot lifted
+// again at once. A foot that only just landed stands where the other foot waited for it, lost, see NB_GAIT_FRESH_KEEP:
+// never, 39.0 mm at most. Until round 139 the foot that had only just landed lifted again at once: once, 53.0 mm.
+static int SteerWaitedFootTest( void )
+{
+	int hops = 0;
+	float most = 0.0f;
+	for ( int part = 0; part < 20; ++part )
+	{
+		FigureScene scene;
+		CreateFigureScene( &scene, 1 );
+		nbFigureId figure = AddSteeredFigure( &scene, b3Vec3_zero, 0.0f );
+		StepFigures( &scene, 60 );
+		nbSteer steer = { { 4.41f, 0.0f, 0.0f }, 0.0f, false };
+		nbFigure_Steer( figure, &steer );
+		StepFigures( &scene, 190 + part );
+		steer.velocity = (b3Vec3){ 0.0f, 0.0f, -4.41f };
+		nbFigure_Steer( figure, &steer );
+		int bones[2] = { nb_humanoidShinLeft, nb_humanoidShinRight };
+		b3Vec3 last[2], before[2];
+		for ( int k = 0; k < 2; ++k )
+		{
+			last[k] = b3ToVec3( b3Body_GetPosition( nbFigure_GetBody( figure, bones[k] ) ) );
+			before[k] = last[k];
+		}
+		bool swung[2] = { true, true };
+		int stood[2] = { 3, 3 };
+		for ( int i = 0; i < 180; ++i )
+		{
+			StepFigures( &scene, 1 );
+			const nbFigure* f = GetSteered( &scene, figure );
+			for ( int k = 0; k < 2; ++k )
+			{
+				b3Vec3 now = b3ToVec3( b3Body_GetPosition( nbFigure_GetBody( figure, bones[k] ) ) );
+				if ( i >= 18 && i <= 33 )
+				{
+					most = b3MaxFloat( most, b3Length( b3Add( b3Sub( now, last[k] ), b3Sub( before[k], last[k] ) ) ) );
+				}
+				before[k] = last[k];
+				last[k] = now;
+				if ( f->footSwings[k] == false )
+				{
+					stood[k] = swung[k] && i > 0 ? 1 : stood[k] + 1;
+				}
+				else if ( swung[k] == false && stood[k] <= 2 && f->footSwings[1 - k] == false )
+				{
+					hops += 1;
+				}
+				swung[k] = f->footSwings[k];
+			}
+		}
+		DestroyFigureScene( &scene );
+	}
+	printf( "  from a run sideways to a run backward at 4.41 m/s, a foot lifts again at once after it landed %d times over "
+			"twenty changes, a shin jumps %.1f mm at most from 0.3 to 0.55 s after it\n",
+			hops, 1000.0f * most );
+	ENSURE( hops == 0 );
+	ENSURE( most < 0.045f );
+	return 0;
+}
+
 // A steered figure with a fixed heading runs to one side at 4.46 m/s and stops, the stop at twenty moments two updates
 // apart, a cycle of its run: how far a shin jumps in an update at most in the 3 s after it, the hardest of the twenty,
 // their mean, and in how many it is more than 37 mm. Braking at a run, a foot that lifts over its toes lifts gently,
@@ -7876,6 +7939,7 @@ int FigureTest( void )
 	RUN_TEST( SteerSideToBackTest );
 	RUN_TEST( SteerSwitchSidesTest );
 	RUN_TEST( SteerFreshFootTest );
+	RUN_TEST( SteerWaitedFootTest );
 	RUN_TEST( SteerStopLiftTest );
 	RUN_TEST( SteerBrakeBackTest );
 	RUN_TEST( SteerSideToBackRollTest );

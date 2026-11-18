@@ -249,6 +249,17 @@ Zehen und Fersen 37 mm, Hände 15 mm, Becken 10 mm, Becken tief ab 15 cm unter d
 - **Eine Grenze, die sich aus dem Update davor fortschreibt, braucht ein Ende.** `NB_X_LG` in Runde 139 nahm die Rate,
   mit der das Bein im Update davor kürzer wurde, und zog jedes Update mehr ab: Das Bein wurde immer schneller kürzer,
   bis der Fuß landete, und Schienbeine sprangen über 1 m. Vor dem Messen prüfen, wo eine solche Grenze aufhört.
+- **Ein seltenes Ereignis braucht frische Sätze, auf denen es vorkommt.** Der Fuß, der in Runde 140 sofort wieder abhob,
+  kam nur in einem Band von 4,365 bis 4,415 m/s und an einer Stelle des Zyklus vor; auf sechs gewöhnlichen frischen
+  Sätzen hätte die alte Fassung ihn wahrscheinlich nicht gezeigt, und die Regel hätte keinen Gewinn sehen können. Vor
+  dem Festschreiben nachsehen, wo das Ereignis vorkommt, die frischen Sätze dorthin legen und dichter messen,
+  `hops140.py` mit 96 statt 24 Punkten, und in die Regel schreiben, dass alt mindestens ein Fall da sein muss.
+- **Ein Test misst nur das Fenster seines Ereignisses.** Der erste `SteerWaitedFootTest` maß das härteste Schienbein
+  über die ganzen 3 s nach dem Wechsel und fiel mit dem Prototyp an einer Landung aus Runde 139, 46,4 mm. Das Fenster
+  von 0,3 bis 0,55 s trennt das Wiederabheben, 53,0 statt 39,0 mm, von dem, was der Eingriff nicht anfasst.
+- **Lange Hintergrundläufe mit langem Zeitlimit starten.** Ein Hintergrundlauf ohne eigenes Zeitlimit endet nach 30
+  Minuten; in Runde 140 brach er so mitten im Messen der Toleranzen ab. Läufe, die länger dauern können, mit dem größten
+  Zeitlimit starten und ihr Ende prüfen, bevor ihre Ausgabe zählt.
 - **Größe der Figur.** Winkelbeschleunigungen wachsen bei kleineren Figuren mit 1 durch `nbFigureScale`, Längen
   und Geschwindigkeiten mit ihr.
 

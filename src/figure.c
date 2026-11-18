@@ -5328,7 +5328,11 @@ static float nbSwingTime( const nbFigure* f, int k, float swingTime, float cycle
 // the next update, and its shin jumped up to 55 mm; switching sides at a run, a foot touched down for an update or two
 // at 204 of 456 changes. A foot its leg loses sooner than that still lifts again at once: standing on it turning about
 // at a run, the root went down 8 cm for it and the pelvis jumped 13 mm in an update. From 0.25 to 0.6 of the quickest
-// swing both hold, see SteerFreshFootTest.
+// swing both hold, see SteerFreshFootTest. Where the other foot waited, lost, for this one to land, this one stands all
+// the same, and the other lifts: from running sideways to running backward with a fixed heading at 4.41 m/s, a foot
+// hurried to land 31 cm beside the hip as the other was lost, its leg would have lost it after 0.033 s, it lifted
+// again in the next update with 2.4 times the hurry, and its shin jumped 53 mm, while the other, lost for three
+// updates, stood on. Now the one that waited lifts, see SteerWaitedFootTest.
 #define NB_FOOT_TWIST ( 35.0f * ( B3_PI / 180.0f ) )
 #define NB_GAIT_SIDE_GAP 0.1f
 #define NB_GAIT_FRESH 0.2f
@@ -5880,6 +5884,18 @@ static void nbSteerFeet( const nbWorld* world, int index, nbFigure* f, const nbC
 		phase -= floorf( phase );
 		wants[k] = f->footSwings[k] == false && ( lostSoon[k] || ( f->canLift[k] && phase >= stance ) );
 	}
+	// A foot that stands, lost, while the other swings waits for it until it lifts, see NB_GAIT_FRESH_KEEP
+	for ( int k = 0; k < 2; ++k )
+	{
+		if ( f->footSwings[k] )
+		{
+			f->footWaited[k] = false;
+		}
+		else if ( f->footSwings[1 - k] && out[k] <= timeStep )
+		{
+			f->footWaited[k] = true;
+		}
+	}
 	bool settled = f->legTurn == 0.0f;
 	for ( int k = 0; k < 2; ++k )
 	{
@@ -5999,16 +6015,16 @@ static void nbSteerFeet( const nbWorld* world, int index, nbFigure* f, const nbC
 			bool otherFresh = f->footSwings[1 - k] == false && otherPhase < NB_GAIT_FRESH;
 			bool otherGoing = f->footSwings[1 - k] == false && trails[1 - k] && out[1 - k] < quickest;
 			// One that only just landed stands too where the other foot is free to lift and its own leg keeps it for long
-			// enough, see NB_GAIT_FRESH_KEEP
+			// enough, or the other foot waited for it, lost, see NB_GAIT_FRESH_KEEP
 			bool otherFree = otherGoing || ( f->footSwings[1 - k] == false && f->canLift[1 - k] && fresh[1 - k] == false );
-			bool keeps = out[k] >= NB_GAIT_FRESH_KEEP * quickest;
+			bool keeps = out[k] >= NB_GAIT_FRESH_KEEP * quickest || ( f->footWaited[1 - k] && lostSoon[1 - k] );
 			if ( lostSoon[k] && ( ( phase < NB_GAIT_FRESH && otherGoing ) || ( fresh[k] && keeps && otherFree ) ) )
 			{
 				lost = false;
 				first = false;
 			}
 			bool going = trails[k] && out[k] < quickest;
-			bool otherKeeps = out[1 - k] >= NB_GAIT_FRESH_KEEP * quickest;
+			bool otherKeeps = out[1 - k] >= NB_GAIT_FRESH_KEEP * quickest || ( f->footWaited[k] && lostSoon[k] );
 			if ( f->canLift[k] && lostSoon[1 - k] &&
 				 ( ( otherFresh && going ) || ( fresh[1 - k] && otherKeeps && ( going || fresh[k] == false ) ) ) )
 			{

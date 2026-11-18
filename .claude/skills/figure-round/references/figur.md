@@ -14,7 +14,10 @@ was schon verworfen wurde.
   verliert, aber nicht einer, der eben gelandet ist (`NB_GAIT_FRESH`, nach der Phase oder nach der Zeit seit der
   Landung, `stanceTime`): Er bleibt stehen, wenn der andere hinter der Hüfte bald verloren geht, oder wenn der andere
   abheben darf und sein eigenes Bein ihn noch `NB_GAIT_FRESH_KEEP` des schnellsten Schwungs hält (Runde 131). Hält es
-  ihn kürzer, hebt er sofort wieder ab: Stehen kostete dort das Becken.
+  ihn kürzer, hebt er sofort wieder ab: Stehen kostete dort das Becken. Seit Runde 140 merkt sich ein Fuß, der verloren
+  steht, während der andere schwingt, dass er wartet (`footWaited`); landet der andere dann eben und gehen beide bald
+  verloren, bleibt der eben gelandete stehen, auch wenn sein Bein ihn kürzer hält, und der wartende hebt zuerst ab.
+  `tools/measure/hops140.py` zählt die Füße, die sofort wieder abheben, an 96 Punkten je Satz.
 - **Takt.** Rennend hält der Gang seinen Takt (`gaitPhase`), und die Füße halten sich daran: Wer vor seiner Phase
   abhebt, schwingt langsamer, bis `NB_GAIT_KEEP_MOST` eines Zyklus, wer danach abhebt, schneller (`late` beim Abheben).
   Früh oder spät heißt der nähere Weg: Mehr als ein halber Zyklus nach der Phase ist früh für den nächsten Schwung
@@ -113,7 +116,8 @@ was schon verworfen wurde.
 `SteerTurnLiftTest` (121), `SteerTurnRollTest` (122), `SteerTurnRhythmTest` (123), `SteerTurnHeelTest` (124),
 `SteerTurnPushTest` (128), `SteerSideToBackTest` (129), `SteerSwitchSidesTest` (130), `SteerFreshFootTest` (131),
 `SteerStopLiftTest` (133), `SteerBrakeBackTest` (134), `SteerSideToBackRollTest` (135), `SteerSideToBackPitchTest`
-(136), `SteerSideToBackLiftTest` (137), `SteerBackToForwardLiftTest` (138), und für den Körper `FigureShoulderTest`
-(126) und `FigureSkinTest` (127): Ändert eine Runde die Knochen, fällt er, bis `tools/mannequin/make_skin.py` die Haut
-neu geschrieben hat, erst `dump_bones`, dann das Werkzeug. Die Hashes `NB_EXPECTED_…_HASH` ändern sich nur, wenn sich
-ein Lauf ändert, der dort festgehalten ist: Das ist erlaubt, wird aber in der Roadmap genannt.
+(136), `SteerSideToBackLiftTest` (137), `SteerBackToForwardLiftTest` (138), `SteerWaitedFootTest` (140), und für den
+Körper `FigureShoulderTest` (126) und `FigureSkinTest` (127): Ändert eine Runde die Knochen, fällt er, bis
+`tools/mannequin/make_skin.py` die Haut neu geschrieben hat, erst `dump_bones`, dann das Werkzeug. Die Hashes
+`NB_EXPECTED_…_HASH` ändern sich nur, wenn sich ein Lauf ändert, der dort festgehalten ist: Das ist erlaubt, wird aber
+in der Roadmap genannt.
