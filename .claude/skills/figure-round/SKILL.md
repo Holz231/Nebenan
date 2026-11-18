@@ -271,6 +271,15 @@ Zehen und Fersen 37 mm, Hände 15 mm, Becken 10 mm, Becken tief ab 15 cm unter d
   Bedingung A1 nannte ihre Werte `sa, sb`, und genau so hießen weiter unten die Werte der Schwünge für A9. Der Probelauf
   brach daran ab. Neue Größen bekommen Namen, die es in der Datei noch nicht gibt, und der Probelauf läuft immer ganz
   durch, bevor die Regel steht.
+- **Zehen und Fersen schon beim Vergleich der Varianten mitmessen.** In Runde 142 sahen die Werkzeuge der acht Wechsel
+  nur Schienbeine, und die Variante sah auf 19 Sätzen gut aus; erst der Probelauf mit allen Bedingungen zeigte Zehen und
+  Fersen bis 91 mm. Varianten vergleicht `sweeps.sh` ohne `ONLY`, mit Zehen und Fersen, bevor eine Variante zum Prototyp
+  wird.
+- **Erst prüfen, ob ein Schalter greift.** In Runde 142 stand ein Faktor auf der falschen Seite der Ungleichung, und
+  vier Varianten liefen Stelle für Stelle wie der alte Stand, bis ein Spurlauf zeigte, dass die Bedingung nie wahr
+  wurde. Dieselben Ergebnisse an allen Stellen heißen zuerst: Der Eingriff greift nicht.
+- **Ein Prototyp, der im Probelauf eine Bedingung verfehlt, wird nicht festgeschrieben.** Dann wird weiter verfolgt oder
+  nicht gebaut, wie in Runde 142; die Regel wird nicht an den Prototyp angepasst.
 - **Größe der Figur.** Winkelbeschleunigungen wachsen bei kleineren Figuren mit 1 durch `nbFigureScale`, Längen
   und Geschwindigkeiten mit ihr.
 
