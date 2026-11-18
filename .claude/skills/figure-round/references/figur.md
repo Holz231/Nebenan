@@ -53,7 +53,9 @@ was schon verworfen wurde.
   Rückwärtsrennen abhebt (`swingBack`, `nbSwingLift`): Ein Fuß vor der Hüfte hob sonst mit gestrecktem Bein auf dem
   Bogen des Vorwärtsrennens ab. Mehr als dieser Bogen, der halbe Hub oder der sanfte Anlauf schaden dort.
 - **Weg.** `nbSwingPath`: eine Kubik von dort, wo der Fuß ist, zur Ruhe am Ziel, in jedem Update neu geplant.
-  `nbSwingTime` begrenzt, wie lange ein Schwung dauern darf, wenn der Gang ins Rennen wechselt (Runde 118).
+  `nbSwingTime` begrenzt, wie lange ein Schwung dauern darf, wenn der Gang ins Rennen wechselt (Runde 118). Ein Schwung,
+  der gehend abhob, fliegt dabei an der Grenze von `NB_GAIT_SWING_ACCEL`, und seine Form folgt der Feder von
+  `NB_RUN_TURN_LAG`; landet er rennend, hängt sein Bein an seiner Reichweite (Runde 139, `tools/measure/land139.py`).
 
 ## Wurzel und Rollen: `nbLowerSteered`
 

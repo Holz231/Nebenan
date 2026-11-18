@@ -242,6 +242,13 @@ Zehen und Fersen 37 mm, Hände 15 mm, Becken 10 mm, Becken tief ab 15 cm unter d
 - **Gleichnamige Größen im Versuchsbaum prüfen.** Eine Fassung von Runde 138 griff nie, weil sie `stretch` nahm, und das
   war an dieser Stelle eine andere Größe als die Streckung des Beins, die erst weiter unten berechnet wird. Ein
   Schalter, der Stelle für Stelle gleich misst wie alt, ist verdächtig: zuerst nachsehen, ob er überhaupt greift.
+- **Einen verlagerten Ruck an der Stelle erkennen, nicht an der Klasse.** In Runde 139 wurden die späten Landungen mit
+  einem längeren Schwung scheinbar ruhig, 29 statt 113 mm, aber derselbe Ruck kam ein Update früher, als der Fuß noch
+  als schwingend galt, und `where129.py` zählte ihn als Schwung, 234 statt 2 mm. Wo eine Klasse fällt und eine
+  benachbarte steigt, die Stelle selbst Update für Update ansehen.
+- **Eine Grenze, die sich aus dem Update davor fortschreibt, braucht ein Ende.** `NB_X_LG` in Runde 139 nahm die Rate,
+  mit der das Bein im Update davor kürzer wurde, und zog jedes Update mehr ab: Das Bein wurde immer schneller kürzer,
+  bis der Fuß landete, und Schienbeine sprangen über 1 m. Vor dem Messen prüfen, wo eine solche Grenze aufhört.
 - **Größe der Figur.** Winkelbeschleunigungen wachsen bei kleineren Figuren mit 1 durch `nbFigureScale`, Längen
   und Geschwindigkeiten mit ihr.
 
