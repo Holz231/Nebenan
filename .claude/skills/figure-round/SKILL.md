@@ -260,6 +260,17 @@ Zehen und Fersen 37 mm, Hände 15 mm, Becken 10 mm, Becken tief ab 15 cm unter d
 - **Lange Hintergrundläufe mit langem Zeitlimit starten.** Ein Hintergrundlauf ohne eigenes Zeitlimit endet nach 30
   Minuten; in Runde 140 brach er so mitten im Messen der Toleranzen ab. Läufe, die länger dauern können, mit dem größten
   Zeitlimit starten und ihr Ende prüfen, bevor ihre Ausgabe zählt.
+- **Eine Bedingung am gewollten Ziel messen, nicht am schon begrenzten.** In Runde 141 sollten die Beine nur schneller
+  drehen, wo sie weit drehen müssen. Am Ziel gemessen, das `nbHoldLegs` schon für die Füße begrenzt hatte, griff die
+  Bedingung zu selten, 1,20 bis 1,25 statt 1,29 s; am gewollten Ziel, `legAim`, 1,17 s. Wer eine Schwelle an eine
+  Größe hängt, prüft vorher, ob eine andere Stelle diese Größe schon gestutzt hat.
+- **Bei schnellerem Drehen Rate und Beschleunigung getrennt messen.** Doppelte Drehrate und doppelte
+  Winkelbeschleunigung der Beine kreuzten in Runde 141 die Füße um 2,5 cm; die doppelte Rate allein nicht, und kein Hash
+  änderte sich. Bei 180° ist die Beschleunigung die eigentliche Grenze, die Rate fast nicht.
+- **In einer kopierten Auswertung neue Größen eigen benennen.** `eval141.py` entstand aus `eval140.py`; die neue
+  Bedingung A1 nannte ihre Werte `sa, sb`, und genau so hießen weiter unten die Werte der Schwünge für A9. Der Probelauf
+  brach daran ab. Neue Größen bekommen Namen, die es in der Datei noch nicht gibt, und der Probelauf läuft immer ganz
+  durch, bevor die Regel steht.
 - **Größe der Figur.** Winkelbeschleunigungen wachsen bei kleineren Figuren mit 1 durch `nbFigureScale`, Längen
   und Geschwindigkeiten mit ihr.
 

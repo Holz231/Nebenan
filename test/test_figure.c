@@ -5408,6 +5408,47 @@ static int SteerRunChangeTest( void )
 	return 0;
 }
 
+// A steered figure with a fixed heading runs to one side at 4.46 m/s and then to the other, the change at twenty
+// moments two updates apart, about a cycle of its run: how long after the change its capsule goes 90 percent of its
+// speed the other way, in their mean and at the latest. Where the legs turn about, they turn twice as fast as the
+// heading may, see NB_LEG_FAR: 1.183 s in their mean, 1.500 s at the latest. Until round 140 they turned at the turn
+// rate of the heading: 1.290 s and 1.500 s.
+static int SteerSwitchAnswerTest( void )
+{
+	float sum = 0.0f;
+	float most = 0.0f;
+	for ( int part = 0; part < 20; ++part )
+	{
+		FigureScene scene;
+		CreateFigureScene( &scene, 1 );
+		nbFigureId figure = AddSteeredFigure( &scene, b3Vec3_zero, 0.0f );
+		StepFigures( &scene, 60 );
+		nbSteer steer = { { 4.46f, 0.0f, 0.0f }, 0.0f, false };
+		nbFigure_Steer( figure, &steer );
+		StepFigures( &scene, 180 + 2 * part );
+		steer.velocity = (b3Vec3){ -4.46f, 0.0f, 0.0f };
+		nbFigure_Steer( figure, &steer );
+		float answer = 3.0f;
+		for ( int i = 0; i < 180; ++i )
+		{
+			StepFigures( &scene, 1 );
+			if ( GetSteered( &scene, figure )->moveVelocity.x <= -0.9f * 4.46f )
+			{
+				answer = ( i + 1 ) / 60.0f;
+				break;
+			}
+		}
+		sum += answer;
+		most = b3MaxFloat( most, answer );
+		DestroyFigureScene( &scene );
+	}
+	printf( "  running from one side to the other at 4.46 m/s, the capsule goes 90 percent of its speed the other way after "
+			"%.3f s in the mean of twenty changes, %.3f s at the latest\n",
+			sum / 20.0f, most );
+	ENSURE( sum / 20.0f < 1.23f );
+	return 0;
+}
+
 // A steered figure that does not face where it moves turns about as it runs at 4.3 m/s, from 8 places in its cycle, and
 // changes from going to the left to going backward, walking at 1.05 m/s from 19 places and running at 4.3 m/s from 8.
 // Turning about, its frame goes at nine tenths of its speed the other way after 1.26 s in the mean and 1.43 s at the
@@ -7926,6 +7967,7 @@ int FigureTest( void )
 	RUN_TEST( SteerStrafeTest );
 	RUN_TEST( SteerStrafeChangeTest );
 	RUN_TEST( SteerRunChangeTest );
+	RUN_TEST( SteerSwitchAnswerTest );
 	RUN_TEST( SteerLegLeadTest );
 	RUN_TEST( SteerRunDescentTest );
 	RUN_TEST( SteerRunFlightTest );

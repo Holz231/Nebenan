@@ -4634,6 +4634,16 @@ static void nbTurnPoseBone( b3Quat* pose, int bone, b3Vec3 axis, float angle )
 #define NB_LEG_TURN_MOST ( 100.0f * ( B3_PI / 180.0f ) )
 #define NB_GAIT_BACK_CADENCE 0.11f
 
+// Where the legs aim farther than NB_LEG_FAR in radians from where they face, as where a figure with a fixed heading
+// runs to one side and then to the other and its legs turn about, they turn up to NB_LEG_FAR_RATE times as fast as the
+// heading may, with the angular acceleration it has. Turning about at the turn rate of the heading, the capsule waited
+// for them: running from left to right at 4.46 m/s, it went 90 percent of its speed the other way after 1.29 s, where
+// its braking and acceleration allow 0.72 s; now after 1.17 s. With the angular acceleration doubled as well, the feet
+// crossed by 2.5 cm switching sides at 4.3 m/s, and turning that fast where they turn a quarter as well, starting to
+// run to the side, a shin jumped over 37 mm at all 24 points.
+#define NB_LEG_FAR 1.75f
+#define NB_LEG_FAR_RATE 2.0f
+
 // As the legs turn, the feet stay uncrossed across them: the legs turn no farther than the left foot stays NB_LEG_KEEP
 // to the left of the right one, in meters for the humanoid of 1.8 m, where the feet are now, on the ground or in the
 // air, and wait for that no longer than NB_LEG_HOLD in seconds in a row, counted while the feet leave them less room
@@ -5643,7 +5653,13 @@ static void nbSteerFeet( const nbWorld* world, int index, nbFigure* f, const nbC
 		}
 		float from = still ? nbWrapAngle( f->heading + f->legTurn ) : f->legHeading;
 		float to = nbHoldLegs( f, from, nbWrapAngle( f->heading + f->legAim ), scale, timeStep );
-		float legs = nbTurnToward( from, to, &f->legHeadingRate, &f->def.steering, timeStep );
+		// Turning far, faster than the heading may, see NB_LEG_FAR
+		nbFigureSteering legTurning = f->def.steering;
+		if ( fabsf( nbWrapAngle( f->heading + f->legAim - from ) ) > NB_LEG_FAR )
+		{
+			legTurning.turnRate *= NB_LEG_FAR_RATE;
+		}
+		float legs = nbTurnToward( from, to, &f->legHeadingRate, &legTurning, timeStep );
 		f->legTurn = b3ClampFloat( nbWrapAngle( legs - f->heading ), -NB_LEG_TURN_MOST, NB_LEG_TURN_MOST );
 		f->legHeading = nbWrapAngle( f->heading + f->legTurn );
 	}

@@ -59,6 +59,11 @@ was schon verworfen wurde.
   `nbSwingTime` begrenzt, wie lange ein Schwung dauern darf, wenn der Gang ins Rennen wechselt (Runde 118). Ein Schwung,
   der gehend abhob, fliegt dabei an der Grenze von `NB_GAIT_SWING_ACCEL`, und seine Form folgt der Feder von
   `NB_RUN_TURN_LAG`; landet er rennend, hängt sein Bein an seiner Reichweite (Runde 139, `tools/measure/land139.py`).
+- **Drehen der Beine.** Ohne Blick in Laufrichtung drehen die Beine zur Laufrichtung (`legTurn`, `legAim`,
+  `nbLegTurnFor`), höchstens so schnell, wie der Blick darf (`nbTurnToward` mit der Drehrate der Steuerung), und warten
+  auf die Füße (`nbHoldLegs`, `NB_LEG_KEEP`); `nbLegCap` lässt die Kapsel quer und rückwärts zu den Beinen nur langsam
+  gehen, bis sie gedreht sind. Seit Runde 141 drehen sie, wo sie mehr als `NB_LEG_FAR` von ihrem Ziel weg zeigen, mit
+  der doppelten Drehrate (`NB_LEG_FAR_RATE`) und derselben Winkelbeschleunigung.
 
 ## Wurzel und Rollen: `nbLowerSteered`
 
@@ -116,8 +121,8 @@ was schon verworfen wurde.
 `SteerTurnLiftTest` (121), `SteerTurnRollTest` (122), `SteerTurnRhythmTest` (123), `SteerTurnHeelTest` (124),
 `SteerTurnPushTest` (128), `SteerSideToBackTest` (129), `SteerSwitchSidesTest` (130), `SteerFreshFootTest` (131),
 `SteerStopLiftTest` (133), `SteerBrakeBackTest` (134), `SteerSideToBackRollTest` (135), `SteerSideToBackPitchTest`
-(136), `SteerSideToBackLiftTest` (137), `SteerBackToForwardLiftTest` (138), `SteerWaitedFootTest` (140), und für den
-Körper `FigureShoulderTest` (126) und `FigureSkinTest` (127): Ändert eine Runde die Knochen, fällt er, bis
-`tools/mannequin/make_skin.py` die Haut neu geschrieben hat, erst `dump_bones`, dann das Werkzeug. Die Hashes
-`NB_EXPECTED_…_HASH` ändern sich nur, wenn sich ein Lauf ändert, der dort festgehalten ist: Das ist erlaubt, wird aber
-in der Roadmap genannt.
+(136), `SteerSideToBackLiftTest` (137), `SteerBackToForwardLiftTest` (138), `SteerWaitedFootTest` (140),
+`SteerSwitchAnswerTest` (141), und für den Körper `FigureShoulderTest` (126) und `FigureSkinTest` (127): Ändert eine
+Runde die Knochen, fällt er, bis `tools/mannequin/make_skin.py` die Haut neu geschrieben hat, erst `dump_bones`, dann
+das Werkzeug. Die Hashes `NB_EXPECTED_…_HASH` ändern sich nur, wenn sich ein Lauf ändert, der dort festgehalten ist: Das
+ist erlaubt, wird aber in der Roadmap genannt.
