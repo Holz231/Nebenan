@@ -6183,7 +6183,12 @@ static void nbSteerFeet( const nbWorld* world, int index, nbFigure* f, const nbC
 				f->swingTurnRate[k] = 0.0f;
 				f->liftHold[k] = f->foothold[k];
 				f->liftHeading[k] = f->footHeading[k];
-				f->swingRoll[k] = f->footRoll[k];
+				// It lifts rolled as far as it stood in the last update, see nbLowerSteered, not as far as its landing on its heel
+				// or toes gives up its roll by now, see NB_GAIT_HEEL_LOAD: walking from sideways to backward, a foot stood rolled
+				// over its heel by 0.24 rad where its leg needed that, lifted rolled by 0.09 rad as its landing had it, and rolled
+				// back over its heel by 0.13 rad in the next update; its toes jumped 52 mm. Until round 143 rolling it in the air
+				// to reach softened that.
+				f->swingRoll[k] = f->footRolled[k];
 				f->footPush[k] = 0.0f;
 				f->pushPast[k] = 0.0f;
 				foot->target = foot->plant;

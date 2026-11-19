@@ -289,6 +289,13 @@ Zehen und Fersen 37 mm, Hände 15 mm, Becken 10 mm, Becken tief ab 15 cm unter d
   Summe der Szene war deshalb auf den Sätzen des Probelaufs schlechter, auf den 19 Sätzen besser. Vor dem Festschreiben
   die 19 Sätze nach schnell und langsam getrennt ansehen; was ein anderer Mechanismus später tut, gehört in den Schutz,
   nicht in den Gewinn.
+- **Wenn ein Eingriff einen anderen freilegt, zuerst nach dem Überdeckten suchen.** In Runde 144 kostete das Rollen in
+  der Luft, das Runde 143 begrenzte, nicht selbst; es hatte nur überdeckt, dass ein Fuß mit dem falschen Rollen abhob.
+  Die Ursache lag eine Stufe davor. Wer eine Nebenwirkung zurückholt, verfolgt zuerst, was die alte Stelle zufällig
+  ausglich.
+- **Wo der Gewinn je Satz streut, mehr frische Sätze prüfen.** In Runde 144 waren Zehen und Fersen auf 13 von 19 Sätzen
+  besser, auf 6 schlechter. Statt einer Bedingung auf zwei Sätzen prüfte die Regel zwölf frische Sätze mit einem
+  eigenen, schnellen Werkzeug (`walk144.py`); das kostet Minuten und macht die Prüfung belastbar.
 - **Größe der Figur.** Winkelbeschleunigungen wachsen bei kleineren Figuren mit 1 durch `nbFigureScale`, Längen
   und Geschwindigkeiten mit ihr.
 

@@ -6599,6 +6599,63 @@ static int SteerBackToForwardEarlyTest( void )
 	return 0;
 }
 
+// A steered figure with a fixed heading walks sideways at 1.33 m/s and then backward, the change at twenty moments
+// three updates apart, about a cycle of its walk: how far a shin jumps in an update at most in the first 0.6 s after
+// it, the hardest of the twenty, their mean, and in how many it is more than 37 mm. A foot lifts rolled as far as it
+// stood, see nbSteerFeet: 36.0 mm at most, 24.3 mm in their mean, over 37 mm in none. In round 143 it lifted with the
+// roll its landing on its heel had given up to, and rolled back and forth in the first two updates of its swing: 39.3
+// mm, 25.8 mm, over 37 mm in one.
+static int SteerSideToBackWalkTest( void )
+{
+	float most = 0.0f;
+	float sum = 0.0f;
+	int over = 0;
+	for ( int part = 0; part < 20; ++part )
+	{
+		FigureScene scene;
+		CreateFigureScene( &scene, 1 );
+		nbFigureId figure = AddSteeredFigure( &scene, b3Vec3_zero, 0.0f );
+		StepFigures( &scene, 60 );
+		nbSteer steer = { { 1.33f, 0.0f, 0.0f }, 0.0f, false };
+		nbFigure_Steer( figure, &steer );
+		StepFigures( &scene, 180 + 3 * part );
+		steer.velocity = (b3Vec3){ 0.0f, 0.0f, -1.33f };
+		nbFigure_Steer( figure, &steer );
+		int bones[2] = { nb_humanoidShinLeft, nb_humanoidShinRight };
+		b3Vec3 last[2], before[2];
+		for ( int k = 0; k < 2; ++k )
+		{
+			last[k] = b3ToVec3( b3Body_GetPosition( nbFigure_GetBody( figure, bones[k] ) ) );
+			before[k] = last[k];
+		}
+		float hardest = 0.0f;
+		for ( int i = 0; i < 36; ++i )
+		{
+			StepFigures( &scene, 1 );
+			for ( int k = 0; k < 2; ++k )
+			{
+				b3Vec3 now = b3ToVec3( b3Body_GetPosition( nbFigure_GetBody( figure, bones[k] ) ) );
+				if ( i > 0 )
+				{
+					hardest = b3MaxFloat( hardest, b3Length( b3Add( b3Sub( now, last[k] ), b3Sub( before[k], last[k] ) ) ) );
+				}
+				before[k] = last[k];
+				last[k] = now;
+			}
+		}
+		most = b3MaxFloat( most, hardest );
+		sum += hardest;
+		over += hardest > 0.037f ? 1 : 0;
+		DestroyFigureScene( &scene );
+	}
+	printf( "  walking from sideways to backward at 1.33 m/s with a fixed heading, in the first 0.6 s a shin jumps %.1f mm at "
+			"most over twenty changes, %.1f mm in their mean, over 37 mm in %d\n",
+			1000.0f * most, 1000.0f * sum / 20.0f, over );
+	ENSURE( most < 0.038f );
+	ENSURE( over == 0 );
+	return 0;
+}
+
 // A steered figure that does not face where it moves walks backward at 1.6 m/s for 4 s, or runs backward at 3.0 m/s for
 // 3 s and a part of its cycle more and then forward at 3.0 m/s: how many of its feet landed going backward over the last
 // 2 s and how many of those on their toes, and how far the pelvis went below standing at most, over the last 2 s walking
@@ -8047,6 +8104,7 @@ int FigureTest( void )
 	RUN_TEST( SteerSideToBackLiftTest );
 	RUN_TEST( SteerBackToForwardLiftTest );
 	RUN_TEST( SteerBackToForwardEarlyTest );
+	RUN_TEST( SteerSideToBackWalkTest );
 	RUN_TEST( SteerBackTest );
 	RUN_TEST( SteerUprightTest );
 	RUN_TEST( SteerStartStopTest );
