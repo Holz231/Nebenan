@@ -304,6 +304,14 @@ Zehen und Fersen 37 mm, Hände 15 mm, Becken 10 mm, Becken tief ab 15 cm unter d
   Fassung die doppelte Drehrate fest, sobald das Ziel einmal weit wegzeigte; zu Beginn eines Wechsels zeigt es das für
   ein oder zwei Updates, und eine ganze Vierteldrehung lief doppelt so schnell. Erst der Bezug auf den Anfang der
   Drehung (wohin die Beine zu Beginn zeigten) machte daraus eine Kehrtwende.
+- **Im Probelauf keine frische Geschwindigkeit, auch nicht für die stetigen Läufe.** In Runde 145 hat die Kopie der
+  Prüfung für den Probelauf die Sätze der Entwicklung bekommen, aber die stetigen Läufe von D2 liefen weiter mit den
+  frischen Geschwindigkeiten der Regel. Beim Ableiten der Kopie jede Geschwindigkeit ersetzen und mit `speeds.py`
+  prüfen, dass der Probelauf nur schon gelaufene nimmt.
+- **Eine schnellere Variante zuerst gegen die Tests prüfen, die bewachen, was sie aufweicht.** In Runde 146 war die
+  Variante, bei der die Beine mit dem Landeplatz des austretenden Fußes rechnen, die schnellste, und die Tabellen sahen
+  gut aus; erst die Tests zeigten, dass die Füße quer zum Becken kreuzen. Lockert eine Variante eine Grenze wie
+  `nbHoldLegs`, die Tests dieser Grenze vor der ganzen Tabelle laufen lassen.
 - **Größe der Figur.** Winkelbeschleunigungen wachsen bei kleineren Figuren mit 1 durch `nbFigureScale`, Längen
   und Geschwindigkeiten mit ihr.
 
