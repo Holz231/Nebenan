@@ -1,0 +1,64 @@
+Regel für Runde 145, vor jedem Lauf mit den Geschwindigkeiten der unabhängigen Prüfung festgeschrieben. Gemessen wird gegen active-ragdoll-144.
+
+Worum es geht. Rennend von einer Seite zur anderen mit festem Blick (switchLR30) geht die Kapsel seit Runde 141 im Mittel nach etwa 1,15 s mit 90 % ihres Tempos in die neue Richtung, im ungünstigsten Fall aber erst nach gut 1,5 s: auf H29 mit 4,46 m/s im Mittel nach 1,174 s, spätestens nach 1,41 s, auf H35 nach 1,177 und spätestens 1,53 s. Die Hälfte der 24 Stellen braucht 1,02 bis 1,05 s, die andere Hälfte 1,16 bis 1,53 s, je nachdem, wo im Schritt der Wechsel kommt.
+
+Ursache, Update für Update verfolgt. H29, 4,46 m/s, Wechsel bei 4,3355 s. Die Beine müssen von 90° auf der einen Seite des Blicks über die Mitte auf 90° auf der anderen drehen, gut 3 rad; hintenherum geht es nicht, weil die Beine nicht mehr als 100° vom Blick drehen (NB_LEG_TURN_MOST). Die Kapsel wartet auf sie (nbLegCap) und fährt so lange mit etwa 0,33 m/s. Zwei Dinge halten die Beine auf. Erstens die Füße: Der linke hebt beim Bremsen ab, und schon 0,1 s nach dem Wechsel würden die Füße kreuzen, drehten die Beine weiter (nbHoldLegs). Die Beine warten auf den linken Fuß (legWaits), und sein Schwung, im Rennen mit 0,53 s gestartet, dehnt sich, während der Gang zum Gehen kommt, auf 0,83 s (nbSwingTime, Anteil mal Zyklus); auch mit der Eile 1,8 dauert er 26 Updates. Zweitens die Drehrate: Die Beine drehen doppelt so schnell, solange ihr Ziel weiter als NB_LEG_FAR (1,75 rad) entfernt ist, danach mit der Rate des Blicks, 4 rad/s. Nach dem Warten haben sie noch gut 2 rad vor sich, die sie mit 4 rad/s drehen, gut 0,5 s. Im schnellen Fall stehen die Füße beim Wechsel so, dass die Beine 2,9 rad Platz haben, und drehen gleich mit bis zu 7,6 rad/s. Auf H35 an derselben Stelle, der spätesten mit 1,53 s, ist der rechte Fuß, der für die Beine austreten soll, gerade gelandet und darf noch nicht wieder abheben (NB_GAIT_FRESH); so schwingt zuerst der linke, landet nur so weit gedreht, wie die Beine gerade drehen dürfen, und bringt ihnen 0,22 rad.
+
+Der Eingriff. In der Bibliothek, src/figure.c und src/figure.h, zwei Teile, nur für Figuren, die nicht schauen, wohin sie gehen:
+ 1. Eine Kehrtwende behält die doppelte Rate: Ist das Ziel weiter als NB_LEG_FAR entfernt, merkt sich die Figur, wohin die Beine zu Beginn dieser Drehung zeigten (neue Felder legFar und legFarFrom). Solange das Ziel von dort aus weiter als NB_LEG_FAR liegt und die Beine noch mehr als NB_LEG_FAR_END (0,35 rad, neue Konstante) davon entfernt sind, drehen sie doppelt so schnell. Eine Vierteldrehung, deren Ziel nur für ein oder zwei Updates weit weg zeigt, wie zu Beginn eines Wechsels von seitwärts auf rückwärts, bekommt die Rate nur in diesen Updates, wie bisher.
+ 2. Der Fuß, auf den die Beine warten und der im Rennen abhob, während der Gang jetzt weniger rennt, schwingt nicht länger als beim Abheben oder als sein Weg braucht (die Schranke von nbSwingTime, die bisher nur galt, wo der Gang mehr rennt als beim Abheben).
+Auf H29 und H35 ändern sich nur die beiden Seitenwechsel, gehend und rennend; mit Blick in Laufrichtung, im stetigen Gang, in der Treffertabelle und in den Hashes der Tests ändert sich nichts.
+
+Was verworfen ist, auf switchLR30 von H29 und H35 und, wo es weiter kam, auf allen 21 Szenen mit Zehen und Fersen:
+ - Hintenherum drehen, wo die Füße dort mehr Platz lassen: Die Beine kommen an die Grenze von 100° zum Blick und bleiben stehen; an 7 von 24 Stellen kommt die Kapsel nie auf 90 %.
+ - Der Fuß, auf den die Beine warten, eilt 2,4-, 3- oder 4-mal statt 1,8-mal: im Mittel 1,149 statt 1,174 s, spätestens 1,38 bis 1,50 statt 1,41 und 1,53 s.
+ - Zuerst tritt der Fuß aus, der den Beinen Platz macht, der andere wartet: Er wartet, bis sein Takt es erlaubt, und schwingt langsam; spätestens 1,66 statt 1,53 s.
+ - Auch der austretende Fuß eilt: allein Schienbeine an 3 und 4 statt 1 Stelle über 37 mm; mit beiden Teilen im Mittel 1,08 s, aber Schienbeine an 7 und 6 statt 1 Stelle über 37 mm, bis 45,2 mm.
+ - Die doppelte Rate bleibt, wo immer das Ziel einmal weit weg war: Von seitwärts auf rückwärts drehen die Beine dann die ganze Vierteldrehung doppelt so schnell, gehend rollt ein stehender Fuß zum Erreichen über die Zehen bis 1,0 rad, und er springt 50,3 statt 37,2 mm.
+ - Jeder Fuß, auf den die Beine warten, schwingt nicht länger als beim Abheben, auch einer, der gehend abhob: Gehend von einer Seite zur anderen landet ein Fuß 48,1 statt 37,0 mm hart.
+
+Zielgröße. Rennend von einer Seite zur anderen auf den drei frischen Paaren, 144 Stellen: Die Kapsel geht im Mittel und spätestens früher mit 90 % ihres Tempos in die neue Richtung. Gehend von einer Seite zur anderen nicht später. Die Wechsel im Rennen, die Werkzeuge der Runden 131 bis 138, die Schienbeine mit Blick in Laufrichtung und alles mit festem Blick und mit Blick in Laufrichtung sind Schutz.
+
+Toleranzen. Vor dem Festschreiben auf active-ragdoll-144 gemessen mit tools/measure/tolerance145.py, wie in Runde 144 auf elf Sätzen mit festem Blick und drei mit Blick in Laufrichtung, dazu die Antwort im Seitenwechsel: docs/Regeln/tol145.json, SHA-256 55b2dc76dbacf40200037cb2f65f9965a9c1ebf05141b9b72eb5aa62694381c1. Für die drei Paare gilt die dreifache Toleranz je Satz, für zwei Sätze mit Blick in Laufrichtung die doppelte. Zwischen zwei Sätzen, deren Geschwindigkeiten sich um höchstens 5 % unterscheiden, streut die mittlere Antwort im Seitenwechsel im Rennen um 17,9 ms je Satz, die späteste um 51 ms, gehend die mittlere um 15,5 ms.
+
+Unabhängige Prüfung. Geschwindigkeiten, die vor dem Festschreiben auf keinem Stand gelaufen sind: Sie stehen in keinem Satz von tools/measure/common.sh, in keiner Regel und in keinem Abschnitt der Roadmap, auch nicht als Geschwindigkeit je Achse diagonal, geprüft mit tools/measure/speeds.py:
+
+  H102 (schnell): gehend 1,2825, rennend 4,3125 m/s, diagonal 0,9075 m/s je Achse, Spreizung 1,120 und 0,677 s
+  H103 (langsam): gehend 1,4375, rennend 3,4125 m/s, diagonal 1,0175 m/s je Achse, Spreizung 1,058 und 0,724 s
+  H104 (schnell): gehend 1,2575, rennend 4,3625 m/s, diagonal 0,8925 m/s je Achse, Spreizung 1,131 und 0,675 s
+  H105 (langsam): gehend 1,4425, rennend 3,5875 m/s, diagonal 1,0125 m/s je Achse, Spreizung 1,056 und 0,713 s
+  H106 (schnell): gehend 1,2675, rennend 4,4625 m/s, diagonal 0,8975 m/s je Achse, Spreizung 1,127 und 0,671 s
+  H107 (langsam): gehend 1,4475, rennend 3,6875 m/s, diagonal 1,0225 m/s je Achse, Spreizung 1,054 und 0,707 s
+  HF108 (Blick in Laufrichtung): 1,2525, 3,4975 und 4,6475 m/s, Spreizung 1,133, 0,718 und 0,664 s
+  HF109 (Blick in Laufrichtung): 1,4525, 3,6375 und 4,7125 m/s, Spreizung 1,053, 0,710 und 0,662 s
+
+Mit festem Blick die 21 Szenen auf H102 und H103, 1 008 Stellen, Zehen und Fersen auf beiden; der Seitenwechsel gehend und rennend auf den drei Paaren H102 bis H107, je 144 Stellen; die acht Wechsel im Rennen mit where129.py, hops131.py, flips135.py, lifts134.py, pitch136.py, lifts137.py und lifts138.py auf den drei Paaren, 1 152 Stellen; mit Blick in Laufrichtung HF108 und HF109, 624 Stellen, mit rhythm123.py. Ausgeführt mit tools/measure/check145.sh und ausgewertet mit tools/measure/eval145.py.
+
+A. Gewinn (A1 bis A3) und Schutz (A4 bis A12), alle müssen gelten:
+ A1 Rennend von einer Seite zur anderen auf den drei Paaren, 144 Stellen: Die Kapsel geht im Mittel früher als alt mit 90 % ihres Tempos in die neue Richtung.
+ A2 Dort ist die späteste dieser Antworten früher als alt.
+ A3 Gehend von einer Seite zur anderen auf den drei Paaren, 144 Stellen: Die Antwort ist im Mittel nicht später als alt.
+ A4 Bei den Abhebern von lifts138.py in den acht Wechseln im Rennen auf den drei Paaren springt das Schienbein höchstens 6-mal öfter über 37 mm als alt, und ihre Summe darüber ist nicht größer als alt.
+ A5 In den acht Wechseln im Rennen auf den drei Paaren, 1 152 Stellen: Die Summe dessen, was das härteste Schienbein über 37 mm hinaus springt, ist höchstens 108,5 mm größer als alt.
+ A6 Dort springt das härteste Schienbein an höchstens 33 Stellen mehr über 37 mm als alt.
+ A7 Mit Blick in Laufrichtung, 624 Stellen: Schienbeine springen an höchstens 8 Stellen mehr über 37 mm als alt.
+ A8 In den acht Wechseln im Rennen auf den drei Paaren heben höchstens 6 Füße mehr sofort wieder ab als alt, und höchstens 6 mehr von ihnen mit dem Schienbein über 37 mm.
+ A9 Dort springt bei Füßen am Boden, während die Beine wechseln, das Schienbein höchstens 6-mal öfter über 37 mm als alt, und ihre Summe darüber ist höchstens 17,4 mm größer.
+ A10 Dort springt bei den Abhebern von lifts134.py das Schienbein höchstens 6-mal öfter über 37 mm als alt, und ihre Summe darüber ist höchstens 15,8 mm größer.
+ A11 Dort springt bei den Schwüngen von pitch136.py das Schienbein höchstens 9-mal öfter über 37 mm als alt, und ihre Summe darüber ist höchstens 18,5 mm größer.
+ A12 Dort springt bei den Abhebern beim Bremsen von lifts137.py das Schienbein höchstens 6-mal öfter über 37 mm als alt, und ihre Summe darüber ist nicht größer als alt.
+
+B. Schutz mit festem Blick, jede Größe höchstens alt plus ihre Toleranz: B1 bis B9 wie in RULE130.txt, auf H102 und H103, mit den Toleranzen aus tol145.json.
+
+C. Schutz mit Blick in Laufrichtung, jede Größe höchstens alt plus ihre Toleranz: C1 bis C7 wie in RULE130.txt, auf HF108 und HF109, mit den Toleranzen aus tol145.json.
+
+D. Sonst, alle müssen gelten:
+ D1 Die Treffertabelle (8 928 Treffer, 60 Hz, eigene Stärke) ist Byte für Byte gleich.
+ D2 Stetig 9 s lang, vorwärts mit Blick in Laufrichtung mit 1,2, 1,6, 2,2, 3,0, 3,9, 4,5, 4,8, 4,6475 und 4,7125 m/s, seitwärts und rückwärts mit festem Blick mit 1,2825, 1,4375, 1,6, 3,4125, 4,3125, 4,5 und 4,8 m/s und diagonal mit 2,0 und 4,0 m/s: Bei allen 25 Läufen sind die Zeilen des Protokolls ab 5 s Byte für Byte gleich wie alt.
+ D3 Alle Tests grün mit gcc und clang, mit 1, 2 und 4 Threads bitgleich, Sanitizer ohne Befund. Hashes von Tests, in denen eine gesteuerte Figur geht, dürfen sich ändern und werden festgehalten; mit dem Prototyp ändert sich keiner.
+ D4 Das Update der Figuren führt mit 20 gesteuerten Figuren über 1 200 Updates in jedem der drei Modi des Kostentests höchstens 0,5 % mehr Befehle aus als alt, gezählt mit tools/measure/cost_count.sh.
+ D5 Der Benchmark endet in jeder Szene mit denselben Hashes und Zählern wie alt. Die Bildzeiten, zwölf Paare, werden festgehalten und sind keine Bedingung.
+
+Der saubere Bau muss mit dem Prototyp (Schalter NB_X_FARFROM=0.35f und NB_X_WAITRUN im Versuchsbaum) bitgleich laufen: dieselben Ergebnisse auf H29 und HF41 und dieselbe Treffertabelle. Verfehlt der saubere Bau eine Bedingung, wird nicht gebaut, oder es steht offen in der Roadmap, warum doch, und der Nutzer entscheidet. Eine Messung, die nicht passt, wird nicht wiederholt.
+
+Stand der Entwicklung beim Festschreiben, der Prototyp gegen active-ragdoll-144. Probelauf von check145.sh und eval145.py auf H29 bis H34 an Stelle der drei Paare, H29 und H30 an Stelle von H102 und H103 und HF41 und HF53 an Stelle der Sätze mit Blick in Laufrichtung: alle Bedingungen von A, B, C, D1 und D2 erfüllt. A1 im Mittel nach 1,072 statt 1,145 s; A2 spätestens nach 1,480 statt 1,547 s; A3 gehend im Mittel nach 0,774 statt 0,851 s, spätestens nach 1,137 statt 1,220 s; im Seitenwechsel im Rennen das härteste Schienbein an 5 statt 8 Stellen über 37 mm, 13,0 statt 16,6 mm darüber, das härteste 42,8 statt 41,1 mm; die acht Wechsel im Rennen 415 statt 419 mm über 37 mm an 252 statt 255 Stellen; die Werkzeuge der Runden 131 bis 138 zählen über 37 mm wie vorher; mit festem Blick Zehen und Fersen an 35 statt 31 Stellen über 37 mm (erlaubt 38), die härteste 51,3 mm wie vorher; die Antwort aller Wechsel im Mittel 439,0 statt 447,4 ms; mit Blick in Laufrichtung alles gleich. Stetig 9 s, 231 Läufe und 96 Läufe fein, Byte für Byte gleich ab 5 s; die Treffertabelle gleich; mit dem Prototyp 192 Tests grün, kein Hash geändert, im SteerSwitchAnswerTest im Mittel 1,109 statt 1,183 s, spätestens 1,450 statt 1,500 s.
