@@ -64,6 +64,11 @@ was schon verworfen wurde.
   auf die Füße (`nbHoldLegs`, `NB_LEG_KEEP`); `nbLegCap` lässt die Kapsel quer und rückwärts zu den Beinen nur langsam
   gehen, bis sie gedreht sind. Seit Runde 141 drehen sie, wo sie mehr als `NB_LEG_FAR` von ihrem Ziel weg zeigen, mit
   der doppelten Drehrate (`NB_LEG_FAR_RATE`) und derselben Winkelbeschleunigung.
+- **Abheben gegen die Bewegung.** Gegen die Richtung gesteuert, in die sie sich bewegt, mit den Beinen rückwärts, hebt
+  ein nachlaufender Fuß ab, sobald die Hüfte schneller von ihm weggeht, als sein Bein vor seiner Reichweite bremsen kann
+  (`nbHipAway`, wie `NB_SWING_PULL` es misst), seit Runde 143. Ein schwingender Fuß rollt mit den Beinen rückwärts in
+  `nbLowerSteered` nicht weiter über die Ferse, als er beim Abheben gerollt war; die Bremse des Beins hält ihn dort, wo
+  das Bein reicht.
 
 ## Wurzel und Rollen: `nbLowerSteered`
 
@@ -122,7 +127,7 @@ was schon verworfen wurde.
 `SteerTurnPushTest` (128), `SteerSideToBackTest` (129), `SteerSwitchSidesTest` (130), `SteerFreshFootTest` (131),
 `SteerStopLiftTest` (133), `SteerBrakeBackTest` (134), `SteerSideToBackRollTest` (135), `SteerSideToBackPitchTest`
 (136), `SteerSideToBackLiftTest` (137), `SteerBackToForwardLiftTest` (138), `SteerWaitedFootTest` (140),
-`SteerSwitchAnswerTest` (141), und für den Körper `FigureShoulderTest` (126) und `FigureSkinTest` (127): Ändert eine
-Runde die Knochen, fällt er, bis `tools/mannequin/make_skin.py` die Haut neu geschrieben hat, erst `dump_bones`, dann
-das Werkzeug. Die Hashes `NB_EXPECTED_…_HASH` ändern sich nur, wenn sich ein Lauf ändert, der dort festgehalten ist: Das
-ist erlaubt, wird aber in der Roadmap genannt.
+`SteerSwitchAnswerTest` (141), `SteerBackToForwardEarlyTest` (143), und für den Körper `FigureShoulderTest` (126) und
+`FigureSkinTest` (127): Ändert eine Runde die Knochen, fällt er, bis `tools/mannequin/make_skin.py` die Haut neu
+geschrieben hat, erst `dump_bones`, dann das Werkzeug. Die Hashes `NB_EXPECTED_…_HASH` ändern sich nur, wenn sich ein
+Lauf ändert, der dort festgehalten ist: Das ist erlaubt, wird aber in der Roadmap genannt.

@@ -3423,6 +3423,15 @@ static float nbLowerSteered( nbFigure* f, b3Transform root, const int* thighs, b
 		const nbBone* footBone = f->bones + thighs[k] + 2;
 		b3Vec3 hip = b3TransformPoint( low, f->bones[thighs[k]].rest.p );
 		float most = ( f->footSwings[k] ? side : edges[k] ) < 0.0f ? -NB_FOOT_HEEL_MOST : NB_FOOT_ROLL_MOST;
+		// A swinging foot rolls over its heel to reach no farther than it lifted rolled over it. Lifted flat while the legs
+		// still went backward, as a foot lifts early turning from running backward to running forward, see nbSteerFeet, it
+		// rolled over its heel by 0.32 rad in an update once its leg no longer reached it, and came back flat in one as the
+		// legs turned to going forward: its toes jumped 74 and 91 mm. The brake of the leg keeps it where the leg reaches,
+		// see NB_LEG_BRAKE.
+		if ( f->footSwings[k] && side < 0.0f )
+		{
+			most = b3MaxFloat( most, b3MinFloat( f->swingRoll[k], 0.0f ) );
+		}
 		float roll = 0.0f;
 		if ( tips[k] )
 		{
@@ -4921,6 +4930,25 @@ static void nbGaitPose( const nbWorld* world, nbFigure* f, b3Vec3 up, float time
 // came out 90 instead of 79 mm and 456 instead of 432 mm. See SteerBackToForwardLiftTest.
 #define NB_SWING_PULL 0.5f
 
+// How fast the hip of foot k on the ground goes away from it over the ground, on the line to it, which is toHip, how
+// far its leg has left to its reach, and how far the figure is steered against the way it moves, from -1 along it to 1
+// against it, see NB_SWING_PULL
+static float nbHipAway( const nbFigure* f, int k, b3Vec3 velocity, b3Vec3 wish, b3Vec3 up, b3Vec3 hip, float legLength,
+						b3Vec3* toHip, float* room, float* against )
+{
+	b3Vec3 flat = b3MulSub( velocity, b3Dot( velocity, up ), up );
+	b3Vec3 line = b3SubPos( b3TransformWorldPoint( f->frame, hip ), f->feet[k].plant );
+	line = b3MulSub( line, b3Dot( line, up ), up );
+	*toHip = line;
+	int thigh = k == 0 ? nb_humanoidThighLeft : nb_humanoidThighRight;
+	float legNow = b3Length( b3SubPos( f->targets[thigh].p, f->targets[thigh + 2].p ) ) / legLength;
+	*room = b3MaxFloat( ( f->legReach - legNow ) * legLength, 0.0f );
+	float wishLength = b3Length( wish );
+	float movesLength = b3Length( velocity );
+	*against = wishLength > 1.0e-3f && movesLength > 1.0e-3f ? -b3Dot( wish, velocity ) / ( wishLength * movesLength ) : 0.0f;
+	return b3Length( line ) > 1.0e-4f ? b3Dot( flat, line ) / b3Length( line ) : 0.0f;
+}
+
 // A bump over a swing, from 0 to 1 of it, that starts and ends with no slope and is 1 a quarter into the swing
 static float nbSwingEarly( float u )
 {
@@ -6008,6 +6036,29 @@ static void nbSteerFeet( const nbWorld* world, int index, nbFigure* f, const nbC
 			bool hold =
 				f->footSwings[1 - k] && stance >= 0.5f && ( wantsRun == false || trails[k] == false || f->footOut[k] > 0.0f );
 			bool early = ( f->canLift[k] || f->footOut[k] <= 0.0f ) && trails[k] && f->footOut[k] <= timeStep;
+			// Steered against the way it moves, with its legs going backward, a trailing foot lifts as soon as its hip goes away
+			// from it faster than its leg can brake before its reach, where NB_SWING_PULL would start to pull it along. Turning
+			// from running backward at 4.44 m/s to running forward, a foot ahead of the hip stood until its leg no longer
+			// reached it, eight updates after the change, 1.3 cm short of its reach with the hip going away at 2.6 m/s; its knee
+			// came to its stretch in the second update of the swing and the shin jumped 48.3 mm. Lifting two updates after the
+			// change, 14 cm short of its reach, no shin jumped over 25 mm in the next 0.4 s, and on 19 speed sets from running
+			// backward to running forward the hardest shin jumps 81 instead of 128 mm beyond 37 mm in sum, of the lifts of round
+			// 138 none instead of 24 with the shin over 37 mm. A standing shin jumps hardest over 37 mm more often then, at 10
+			// instead of 2 points 0.6 to 0.7 s after the change, as the figure speeds up forward. Lifting with more room to its
+			// reach, where the square of the speed is over half or three quarters of twice the brake over the room, 146 and 114
+			// mm; with less, at 1.25 to 3 times, 74 to 128 mm. Lifted flat, the foot rolls over its heel in the air no farther
+			// than it lifted rolled, see nbLowerSteered: rolled to reach, its toes jumped up to 91 mm. See
+			// SteerBackToForwardEarlyTest.
+			if ( f->legBack && trails[k] && f->footSwings[k] == false && f->canLift[k] )
+			{
+				b3Vec3 toHip;
+				float room, against;
+				float away = nbHipAway( f, k, velocity, aimWish, up, hips[k], legLength, &toHip, &room, &against );
+				if ( against > 0.0f && away > 0.0f && away * away > 2.0f * NB_LEG_BRAKE * scale * room )
+				{
+					early = true;
+				}
+			}
 			// Walking too, a trailing foot or one that stays on its toes that its leg loses in the next update lifts where
 			// the other foot lands within NB_GAIT_FLOAT
 			bool floats = false;
@@ -6102,20 +6153,11 @@ static void nbSteerFeet( const nbWorld* world, int index, nbFigure* f, const nbC
 				// from it faster than its leg can brake before its reach, see NB_SWING_PULL
 				if ( f->legBack )
 				{
-					b3Vec3 pull = b3MulSub( velocity, b3Dot( velocity, up ), up );
-					b3Vec3 toHip = b3SubPos( b3TransformWorldPoint( f->frame, hips[k] ), foot->plant );
-					toHip = b3MulSub( toHip, b3Dot( toHip, up ), up );
-					float away = b3Length( toHip ) > 1.0e-4f ? b3Dot( pull, toHip ) / b3Length( toHip ) : 0.0f;
-					int pulled = k == 0 ? nb_humanoidThighLeft : nb_humanoidThighRight;
-					float legNow = b3Length( b3SubPos( f->targets[pulled].p, f->targets[pulled + 2].p ) ) / legLength;
-					float room = b3MaxFloat( ( f->legReach - legNow ) * legLength, 0.0f );
+					b3Vec3 toHip;
+					float room, against;
+					float away = nbHipAway( f, k, velocity, aimWish, up, hips[k], legLength, &toHip, &room, &against );
 					away -= sqrtf( 2.0f * NB_LEG_BRAKE * scale * room );
-					pull = away > 0.0f ? b3MulSV( away / b3Length( toHip ), toHip ) : b3Vec3_zero;
-					float wishLength = b3Length( aimWish );
-					float movesLength = b3Length( velocity );
-					float against = wishLength > 1.0e-3f && movesLength > 1.0e-3f
-										 ? -b3Dot( aimWish, velocity ) / ( wishLength * movesLength )
-										 : 0.0f;
+					b3Vec3 pull = away > 0.0f ? b3MulSV( away / b3Length( toHip ), toHip ) : b3Vec3_zero;
 					pull = b3MulSV( b3ClampFloat( against, 0.0f, 1.0f ), pull );
 					f->swingVelocity[k] = b3MulSV( NB_SWING_PULL, pull );
 				}

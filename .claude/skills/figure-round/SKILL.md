@@ -280,6 +280,15 @@ Zehen und Fersen 37 mm, Hände 15 mm, Becken 10 mm, Becken tief ab 15 cm unter d
   wurde. Dieselben Ergebnisse an allen Stellen heißen zuerst: Der Eingriff greift nicht.
 - **Ein Prototyp, der im Probelauf eine Bedingung verfehlt, wird nicht festgeschrieben.** Dann wird weiter verfolgt oder
   nicht gebaut, wie in Runde 142; die Regel wird nicht an den Prototyp angepasst.
+- **Eine Drehung des Fußes Stufe für Stufe verfolgen.** In Runde 143 änderten sich weder das Rollen, das der Schwung dem
+  Fuß gibt, noch die Neigung seines Ziels, noch die Drehung aus `nbPlaceFeet`; erst `nbLowerSteered` rollte den
+  schwingenden Fuß. Wer eine Drehung sucht, gibt sie nach jeder Stufe aus, die sie ändern kann, bis zu `nbReachAnkle`,
+  und rät nicht an der ersten.
+- **Die gezielte Größe als Gewinn, die Szene als Schutz.** In Runde 143 nahm der Eingriff die Abheber von Runde 138 auf
+  allen Sätzen, aber auf einzelnen langsamen Sätzen sprang später beim Abdruck ein stehendes Schienbein härter. Die
+  Summe der Szene war deshalb auf den Sätzen des Probelaufs schlechter, auf den 19 Sätzen besser. Vor dem Festschreiben
+  die 19 Sätze nach schnell und langsam getrennt ansehen; was ein anderer Mechanismus später tut, gehört in den Schutz,
+  nicht in den Gewinn.
 - **Größe der Figur.** Winkelbeschleunigungen wachsen bei kleineren Figuren mit 1 durch `nbFigureScale`, Längen
   und Geschwindigkeiten mit ihr.
 
