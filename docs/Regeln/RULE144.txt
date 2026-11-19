@@ -1,0 +1,55 @@
+Regel für Runde 144, vor jedem Lauf mit den Geschwindigkeiten der unabhängigen Prüfung festgeschrieben. Gemessen wird gegen active-ragdoll-143.
+
+Worum es geht. Seit Runde 143 rollt ein schwingender Fuß mit den Beinen rückwärts nicht weiter über die Ferse, um sein Bein zu erreichen, als er beim Abheben gerollt war. Gehend von seitwärts auf rückwärts mit festem Blick (LToBack16) kostet das: Auf 19 Sätzen der Entwicklung, 456 Stellen, gemessen mit tools/measure/walk144.py, springen Zehen und Fersen an 33 statt 27 Stellen über 37 mm, 289,0 statt 227,4 mm darüber, und das härteste Schienbein an 27 statt 22 Stellen, 68,4 statt 59,0 mm darüber. In der unabhängigen Prüfung von Runde 143 auf H84 und H85 je ein Schienbein mehr über 37 mm und die Zehen bis 52 mm.
+
+Ursache, Update für Update verfolgt. H29, 1,33 m/s, Wechsel bei 4,3208 s. Der rechte Fuß ist auf der Ferse gelandet, und nbSteerFeet nimmt das Rollen der Landung zurück, wie NB_GAIT_HEEL_LOAD es vorgibt, im letzten Update vor dem Abheben bis auf 0,09 rad. nbLowerSteered rollt ihn aber weiter über die Ferse, so weit sein Bein es braucht: Er steht im letzten Update mit 0,24 rad. Beim Abheben übernimmt der Schwung das Rollen der Landung, 0,09 rad, nicht das, mit dem der Fuß stand. Im ersten Update des Schwungs rollt er so um 0,04 rad zurück und im zweiten um 0,13 rad wieder über die Ferse: Die Zehen springen 51,9 mm, das Schienbein 40,1 mm. Bis Runde 143 rollte ihn nbLowerSteered im ersten Update des Schwungs wieder auf 0,24 rad, um sein Bein zu erreichen, und überdeckte den Sprung: 37,0 und 30,4 mm.
+
+Der Eingriff. In der Bibliothek, src/figure.c, nbSteerFeet: Ein Fuß hebt so weit gerollt ab, wie er im letzten Update stand (footRolled, das Rollen, das nbLowerSteered ihm gab), nicht so weit, wie seine Landung das Rollen bis dahin zurückgenommen hat. Kein neues Feld, keine neue Konstante. Wo beides gleich ist, im stetigen Gang und überall, wo der Fuß nicht mehr aus einer Landung über Ferse oder Zehen kommt, ändert sich nichts. Auf den 19 Sätzen gehend von seitwärts auf rückwärts: Zehen und Fersen an 25 statt 33 Stellen über 37 mm, 220,3 statt 289,0 mm darüber; Schienbeine an 19 statt 27 Stellen, 56,1 statt 68,4 mm darüber, auch weniger als vor Runde 143. Je Satz sind die Schienbeine nirgends schlechter, Zehen und Fersen auf 6 der 19 Sätze. Auf H29 und H35 mit festem Blick Schienbeine an 106 statt 108 Stellen über 37 mm; die acht Wechsel im Rennen und alle Werkzeuge der Runden 131 bis 138 zählen auf den 19 Sätzen Stelle für Stelle wie vorher. Mit Blick in Laufrichtung auf HF41 und HF53 ändern sich 25 von 624 Stellen in den Kehrtwenden, gehend und rennend: Schienbeine an 28 statt 26 Stellen über 37 mm, an anderen Stellen ruhiger, 18,6 statt 35,6 mm und 39,4 statt 44,7 mm.
+
+Was verworfen ist. Kein anderer Eingriff ist versucht. Den zweiten Teil von Runde 143 zurückzunehmen kommt nicht in Frage: Ohne ihn springen die Zehen eines früh abgehobenen Fußes von rückwärts auf vorwärts bis 91 mm.
+
+Zielgröße. Gehend von seitwärts auf rückwärts auf zwölf frischen Sätzen, 288 Stellen, mit walk144.py: Die Summe dessen, was Zehen und Fersen über 37 mm hinaus springen, ist kleiner als alt, und die des härtesten Schienbeins ist nicht größer. Die Abheber von Runde 138, die acht Wechsel im Rennen, die Schienbeine mit Blick in Laufrichtung, die Füße, die sofort wieder abheben, die Füße beim Wechsel der Beine von Runde 135, die Abheber von Runde 134, die Schwünge von Runde 136, die Abheber beim Bremsen von Runde 137 und die Füße, Zehen und Fersen mit festem Blick sind Schutz.
+
+Toleranzen. Vor dem Festschreiben auf active-ragdoll-143 gemessen mit tools/measure/tolerance144.py, wie in Runde 141 auf elf Sätzen mit festem Blick und drei mit Blick in Laufrichtung: docs/Regeln/tol144.json, SHA-256 cc473ae6a5ff64f3a1b92ccff86068269cd1357c35350e773abf29e96ee2ea0e. Für die drei Paare gilt die dreifache Toleranz je Satz, für zwei Sätze mit Blick in Laufrichtung die doppelte.
+
+Unabhängige Prüfung. Geschwindigkeiten, die vor dem Festschreiben auf keinem Stand gelaufen sind: Sie stehen in keinem Satz von tools/measure/common.sh, in keiner Regel und in keinem Abschnitt der Roadmap, auch nicht als Geschwindigkeit je Achse diagonal, geprüft mit tools/measure/speeds.py:
+
+  H90 (schnell): gehend 1,3025, rennend 4,3175 m/s, diagonal 0,9225 m/s je Achse, Spreizung 1,112 und 0,677 s
+  H91 (langsam): gehend 1,4025, rennend 3,39 m/s, diagonal 1,0025 m/s je Achse, Spreizung 1,071 und 0,725 s
+  H92 (schnell): gehend 1,3225, rennend 4,3475 m/s, diagonal 0,9375 m/s je Achse, Spreizung 1,103 und 0,676 s
+  H93 (langsam): gehend 1,4175, rennend 3,555 m/s, diagonal 1,0075 m/s je Achse, Spreizung 1,065 und 0,715 s
+  H94 (schnell): gehend 1,3425, rennend 4,4875 m/s, diagonal 0,9625 m/s je Achse, Spreizung 1,095 und 0,670 s
+  H95 (langsam): gehend 1,3575, rennend 3,675 m/s, diagonal 0,9675 m/s je Achse, Spreizung 1,089 und 0,708 s
+  W96 bis W101 (nur gehend): 1,2925, 1,2975, 1,3175, 1,3375, 1,4225 und 1,4275 m/s, Spreizung 1,116, 1,114, 1,105, 1,097, 1,064 und 1,062 s
+  HF96 (Blick in Laufrichtung): 1,2875, 3,635 und 4,665 m/s, Spreizung 1,118, 0,710 und 0,663 s
+  HF97 (Blick in Laufrichtung): 1,4325, 3,475 und 4,725 m/s, Spreizung 1,060, 0,720 und 0,661 s
+
+Mit festem Blick die 21 Szenen auf H90 und H91, 1 008 Stellen, Zehen und Fersen auf beiden; die acht Wechsel im Rennen mit where129.py, hops131.py, flips135.py, lifts134.py, pitch136.py, lifts137.py und lifts138.py auf den drei Paaren H90 bis H95, 1 152 Stellen; gehend von seitwärts auf rückwärts mit walk144.py auf H90 bis H95 und W96 bis W101, 288 Stellen; mit Blick in Laufrichtung HF96 und HF97, 624 Stellen, mit rhythm123.py. Ausgeführt mit tools/measure/check144.sh und ausgewertet mit tools/measure/eval144.py.
+
+A. Gewinn (A1) und Schutz (A2 bis A11), alle müssen gelten:
+ A1 Gehend von seitwärts auf rückwärts auf den zwölf Sätzen, 288 Stellen: Die Summe dessen, was Zehen und Fersen über 37 mm hinaus springen, ist kleiner als alt.
+ A2 Dort ist die Summe dessen, was das härteste Schienbein über 37 mm hinaus springt, nicht größer als alt.
+ A3 Bei den Abhebern von lifts138.py in den acht Wechseln im Rennen auf den drei Paaren springt das Schienbein höchstens 6-mal öfter über 37 mm als alt, und ihre Summe darüber ist nicht größer als alt.
+ A4 In den acht Wechseln im Rennen auf den drei Paaren, 1 152 Stellen: Die Summe dessen, was das härteste Schienbein über 37 mm hinaus springt, ist höchstens 108,5 mm größer als alt.
+ A5 Dort springt das härteste Schienbein an höchstens 33 Stellen mehr über 37 mm als alt.
+ A6 Mit Blick in Laufrichtung, 624 Stellen: Schienbeine springen an höchstens 10 Stellen mehr über 37 mm als alt.
+ A7 In den acht Wechseln im Rennen auf den drei Paaren heben höchstens 6 Füße mehr sofort wieder ab als alt, und höchstens 6 mehr von ihnen mit dem Schienbein über 37 mm.
+ A8 Dort springt bei Füßen am Boden, während die Beine wechseln, das Schienbein höchstens 6-mal öfter über 37 mm als alt, und ihre Summe darüber ist höchstens 17,4 mm größer.
+ A9 Dort springt bei den Abhebern von lifts134.py das Schienbein höchstens 6-mal öfter über 37 mm als alt, und ihre Summe darüber ist höchstens 15,8 mm größer.
+ A10 Dort springt bei den Schwüngen von pitch136.py das Schienbein höchstens 9-mal öfter über 37 mm als alt, und ihre Summe darüber ist höchstens 18,5 mm größer.
+ A11 Dort springt bei den Abhebern beim Bremsen von lifts137.py das Schienbein höchstens 6-mal öfter über 37 mm als alt, und ihre Summe darüber ist nicht größer als alt.
+
+B. Schutz mit festem Blick, jede Größe höchstens alt plus ihre Toleranz: B1 bis B9 wie in RULE130.txt, auf H90 und H91, mit den Toleranzen aus tol144.json.
+
+C. Schutz mit Blick in Laufrichtung, jede Größe höchstens alt plus ihre Toleranz: C1 bis C7 wie in RULE130.txt, auf HF96 und HF97, mit den Toleranzen aus tol144.json.
+
+D. Sonst, alle müssen gelten:
+ D1 Die Treffertabelle (8 928 Treffer, 60 Hz, eigene Stärke) ist Byte für Byte gleich.
+ D2 Stetig 9 s lang, vorwärts mit Blick in Laufrichtung mit 1,2, 1,6, 2,2, 3,0, 3,9, 4,5, 4,8, 4,665 und 4,725 m/s, seitwärts und rückwärts mit festem Blick mit 1,3025, 1,4025, 1,6, 3,39, 4,3175, 4,5 und 4,8 m/s und diagonal mit 2,0 und 4,0 m/s: Bei allen 25 Läufen sind die Zeilen des Protokolls ab 5 s Byte für Byte gleich wie alt.
+ D3 Alle Tests grün mit gcc und clang, mit 1, 2 und 4 Threads bitgleich, Sanitizer ohne Befund. Hashes von Tests, in denen eine gesteuerte Figur geht, dürfen sich ändern und werden festgehalten; mit dem Prototyp ändert sich keiner.
+ D4 Das Update der Figuren führt mit 20 gesteuerten Figuren über 1 200 Updates in jedem der drei Modi des Kostentests höchstens 0,5 % mehr Befehle aus als alt, gezählt mit tools/measure/cost_count.sh.
+ D5 Der Benchmark endet in jeder Szene mit denselben Hashes und Zählern wie alt. Die Bildzeiten, zwölf Paare, werden festgehalten und sind keine Bedingung.
+
+Der saubere Bau muss mit dem Prototyp (Schalter NB_X_LIFTROLL im Versuchsbaum) bitgleich laufen: dieselben Ergebnisse auf H29 und HF41 und dieselbe Treffertabelle. Verfehlt der saubere Bau eine Bedingung, wird nicht gebaut, oder es steht offen in der Roadmap, warum doch, und der Nutzer entscheidet. Eine Messung, die nicht passt, wird nicht wiederholt.
+
+Stand der Entwicklung beim Festschreiben, der Prototyp gegen active-ragdoll-143. Probelauf von check144.sh und eval144.py auf H29 bis H34 an Stelle der drei Paare, H1, H2, H5, H6, H9 und H10 an Stelle von W96 bis W101 und HF41 und HF53 an Stelle der Sätze mit Blick in Laufrichtung: alle Bedingungen von A, B, C, D1 und D2 erfüllt. A1 Zehen und Fersen an 16 statt 21 Stellen über 37 mm, 138,1 statt 190,7 mm darüber; A2 Schienbeine an 13 statt 19 Stellen, 44,0 statt 52,7 mm; die acht Wechsel im Rennen und die Werkzeuge der Runden 131 bis 138 wie vorher; mit Blick in Laufrichtung Schienbeine an 28 statt 26 Stellen über 37 mm, 82 statt 88 mm darüber; mit festem Blick Schienbeine an 94 statt 96 Stellen, Zehen und Fersen an 31 statt 34, die härteste 51,3 statt 51,9 mm. Stetig 9 s, 231 Läufe und 96 Läufe fein, Byte für Byte gleich ab 5 s; die Treffertabelle gleich; mit dem Prototyp 191 Tests grün, kein Hash geändert. Der saubere Bau ergibt dieselbe Datei des Labors wie der Prototyp, Byte für Byte.
