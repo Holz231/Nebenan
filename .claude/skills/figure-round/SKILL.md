@@ -296,6 +296,14 @@ Zehen und Fersen 37 mm, Hände 15 mm, Becken 10 mm, Becken tief ab 15 cm unter d
 - **Wo der Gewinn je Satz streut, mehr frische Sätze prüfen.** In Runde 144 waren Zehen und Fersen auf 13 von 19 Sätzen
   besser, auf 6 schlechter. Statt einer Bedingung auf zwei Sätzen prüfte die Regel zwölf frische Sätze mit einem
   eigenen, schnellen Werkzeug (`walk144.py`); das kostet Minuten und macht die Prüfung belastbar.
+- **Felder des Prototyps ohne Schalter in den Header.** In Runde 145 stand ein neues Feld nur unter dem Versuchsschalter
+  in `figure.h`; die Tests lesen den Header ohne den Schalter, lasen die Figur mit verschobenen Feldern, und
+  `SteerBackTest` zählte keine einzige Landung. Ein Test, der mit dem Prototyp scheitert, zuerst daraufhin prüfen, ob er
+  dieselbe Struktur sieht wie die Bibliothek.
+- **Ein Zustand, der eine Regel festhält, braucht einen Anfang, der nicht flackert.** In Runde 145 hielt die erste
+  Fassung die doppelte Drehrate fest, sobald das Ziel einmal weit wegzeigte; zu Beginn eines Wechsels zeigt es das für
+  ein oder zwei Updates, und eine ganze Vierteldrehung lief doppelt so schnell. Erst der Bezug auf den Anfang der
+  Drehung (wohin die Beine zu Beginn zeigten) machte daraus eine Kehrtwende.
 - **Größe der Figur.** Winkelbeschleunigungen wachsen bei kleineren Figuren mit 1 durch `nbFigureScale`, Längen
   und Geschwindigkeiten mit ihr.
 

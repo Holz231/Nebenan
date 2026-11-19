@@ -607,13 +607,16 @@ typedef struct nbFigure
 	float gaitPhaseRate;
 
 	// Not facing where it moves, see nbSteer::faceVelocity and NB_LEG_TURN_WALK: how far its legs turn from its heading,
-	// where they face in the world and how fast they turn there, how far from its heading they turn to, which they keep as
-	// it stops, whether they walk backward, whether each foot lifted as they ran backward, see nbSwingLift, and as they
-	// went backward, see NB_GAIT_HEEL, how long in a row they waited for the feet on the ground and whether each of those
-	// holds them back, see NB_LEG_KEEP
+	// where they face in the world and how fast they turn there, whether they turn about and where they faced as that
+	// began, see NB_LEG_FAR, how far from its heading they turn to, which they keep as it stops, whether they walk
+	// backward, whether each foot lifted as they ran backward, see nbSwingLift, and as they went backward, see
+	// NB_GAIT_HEEL, how long in a row they waited for the feet on the ground and whether each of those holds them back,
+	// see NB_LEG_KEEP
 	float legTurn;
 	float legHeading;
 	float legHeadingRate;
+	bool legFar;
+	float legFarFrom;
 	float legAim;
 	bool legBack;
 	bool swingBack[2];

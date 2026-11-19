@@ -5411,8 +5411,10 @@ static int SteerRunChangeTest( void )
 // A steered figure with a fixed heading runs to one side at 4.46 m/s and then to the other, the change at twenty
 // moments two updates apart, about a cycle of its run: how long after the change its capsule goes 90 percent of its
 // speed the other way, in their mean and at the latest. Where the legs turn about, they turn twice as fast as the
-// heading may, see NB_LEG_FAR: 1.183 s in their mean, 1.500 s at the latest. Until round 140 they turned at the turn
-// rate of the heading: 1.290 s and 1.500 s.
+// heading may until they come near where they aim, and a foot that lifted running and that they wait for swings no
+// longer than it lifted to, see NB_LEG_FAR and nbSwingTime: 1.109 s in their mean, 1.450 s at the latest. Until round
+// 144 they turned that fast only while they aimed farther than NB_LEG_FAR: 1.183 s and 1.500 s; until round 140 at the
+// turn rate of the heading: 1.290 s and 1.500 s.
 static int SteerSwitchAnswerTest( void )
 {
 	float sum = 0.0f;
@@ -5445,7 +5447,8 @@ static int SteerSwitchAnswerTest( void )
 	printf( "  running from one side to the other at 4.46 m/s, the capsule goes 90 percent of its speed the other way after "
 			"%.3f s in the mean of twenty changes, %.3f s at the latest\n",
 			sum / 20.0f, most );
-	ENSURE( sum / 20.0f < 1.23f );
+	ENSURE( sum / 20.0f < 1.15f );
+	ENSURE( most < 1.48f );
 	return 0;
 }
 

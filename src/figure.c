@@ -4649,9 +4649,17 @@ static void nbTurnPoseBone( b3Quat* pose, int bone, b3Vec3 axis, float angle )
 // for them: running from left to right at 4.46 m/s, it went 90 percent of its speed the other way after 1.29 s, where
 // its braking and acceleration allow 0.72 s; now after 1.17 s. With the angular acceleration doubled as well, the feet
 // crossed by 2.5 cm switching sides at 4.3 m/s, and turning that fast where they turn a quarter as well, starting to
-// run to the side, a shin jumped over 37 mm at all 24 points.
+// run to the side, a shin jumped over 37 mm at all 24 points. A turn about, from where the legs faced as it began to
+// where they aim now farther than NB_LEG_FAR, keeps that rate until they come within NB_LEG_FAR_END in radians of the
+// aim. Until round 145 they fell back to the turn rate of the heading as soon as they had turned the aim nearer than
+// NB_LEG_FAR, halfway through: switching sides at 4.46 m/s, the legs turned the last 2 rad at 4 rad/s while the capsule
+// waited for them, and it went 90 percent of its speed the other way after 1.174 s in the mean of 24 points, now after
+// 1.130 s; walking after 0.769 instead of 0.844 s. Kept wherever the aim was far, also where it is only for an update
+// or two as a change begins, the legs turned the whole quarter turn from walking sideways to walking backward at twice
+// the rate, and a foot rolled over its toes to reach jumped 50.3 mm where it jumped 37.2 mm.
 #define NB_LEG_FAR 1.75f
 #define NB_LEG_FAR_RATE 2.0f
+#define NB_LEG_FAR_END 0.35f
 
 // As the legs turn, the feet stay uncrossed across them: the legs turn no farther than the left foot stays NB_LEG_KEEP
 // to the left of the right one, in meters for the humanoid of 1.8 m, where the feet are now, on the ground or in the
@@ -5335,6 +5343,12 @@ static b3Vec3 nbPlanAhead( const nbFigure* f, nbCapsulePlan* plan, float time, f
 // of 1 008 points with a fixed heading and at 50 instead of 118 of 312 facing where it moves. Without the bound of the
 // foot a swing that kept its time braked harder as it landed, feet over 37 mm in an update at 83 instead of 54 of 2 520
 // points.
+// A swing that lifted running while the gait runs less now, for which the legs wait as they turn, see
+// NB_LEG_WAIT_HURRY, takes no longer than the gait swung when it lifted, or as long as its foot needs for its way,
+// either: switching sides at 4.46 m/s, a foot lifted as the figure braked, with 0.53 s for its swing, and as the gait
+// came to walking its swing stretched to 0.83 s while the legs waited for it with the capsule; it went 90 percent of
+// its speed the other way after 1.130 s in the mean of 24 points with the rate of NB_LEG_FAR, now after 1.097 s. For
+// any swing that the legs wait for, also one that lifted walking, a foot landed 48.1 mm hard switching sides walking.
 static float nbSwingTime( const nbFigure* f, int k, float swingTime, float cycle, b3Vec3 up )
 {
 	if ( f->footSwings[k] == false )
@@ -5342,7 +5356,7 @@ static float nbSwingTime( const nbFigure* f, int k, float swingTime, float cycle
 		return swingTime;
 	}
 	float time = b3MaxFloat( swingTime, f->swingShare[k] * cycle );
-	if ( f->gaitRun > f->swingRun[k] )
+	if ( f->gaitRun > f->swingRun[k] || ( f->legWaits == k && f->swingRun[k] > f->gaitRun ) )
 	{
 		b3Vec3 step = b3SubPos( f->feet[k].target, f->feet[k].from );
 		float across = b3Length( b3MulSub( step, b3Dot( step, up ), up ) );
@@ -5683,7 +5697,16 @@ static void nbSteerFeet( const nbWorld* world, int index, nbFigure* f, const nbC
 		float to = nbHoldLegs( f, from, nbWrapAngle( f->heading + f->legAim ), scale, timeStep );
 		// Turning far, faster than the heading may, see NB_LEG_FAR
 		nbFigureSteering legTurning = f->def.steering;
-		if ( fabsf( nbWrapAngle( f->heading + f->legAim - from ) ) > NB_LEG_FAR )
+		float farAim = fabsf( nbWrapAngle( f->heading + f->legAim - from ) );
+		if ( farAim > NB_LEG_FAR && f->legFar == false )
+		{
+			f->legFar = true;
+			f->legFarFrom = from;
+		}
+		bool turnsFar = farAim > NB_LEG_FAR || ( f->legFar && still == false && farAim > NB_LEG_FAR_END &&
+												 fabsf( nbWrapAngle( f->heading + f->legAim - f->legFarFrom ) ) > NB_LEG_FAR );
+		f->legFar = f->legFar && turnsFar;
+		if ( turnsFar )
 		{
 			legTurning.turnRate *= NB_LEG_FAR_RATE;
 		}
@@ -5696,6 +5719,7 @@ static void nbSteerFeet( const nbWorld* world, int index, nbFigure* f, const nbC
 		f->legTurn = 0.0f;
 		f->legHeading = f->heading;
 		f->legHeadingRate = 0.0f;
+		f->legFar = false;
 		f->legAim = 0.0f;
 		f->legBack = false;
 		f->legHeld = 0.0f;

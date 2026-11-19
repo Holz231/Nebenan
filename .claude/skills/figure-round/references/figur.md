@@ -59,11 +59,16 @@ was schon verworfen wurde.
   `nbSwingTime` begrenzt, wie lange ein Schwung dauern darf, wenn der Gang ins Rennen wechselt (Runde 118). Ein Schwung,
   der gehend abhob, fliegt dabei an der Grenze von `NB_GAIT_SWING_ACCEL`, und seine Form folgt der Feder von
   `NB_RUN_TURN_LAG`; landet er rennend, hängt sein Bein an seiner Reichweite (Runde 139, `tools/measure/land139.py`).
+  Ein Schwung, der rennend abhob und auf den die Beine warten (`legWaits`), dehnt sich nicht mit dem langsamer werdenden
+  Gang, seit Runde 145.
 - **Drehen der Beine.** Ohne Blick in Laufrichtung drehen die Beine zur Laufrichtung (`legTurn`, `legAim`,
   `nbLegTurnFor`), höchstens so schnell, wie der Blick darf (`nbTurnToward` mit der Drehrate der Steuerung), und warten
   auf die Füße (`nbHoldLegs`, `NB_LEG_KEEP`); `nbLegCap` lässt die Kapsel quer und rückwärts zu den Beinen nur langsam
   gehen, bis sie gedreht sind. Seit Runde 141 drehen sie, wo sie mehr als `NB_LEG_FAR` von ihrem Ziel weg zeigen, mit
-  der doppelten Drehrate (`NB_LEG_FAR_RATE`) und derselben Winkelbeschleunigung.
+  der doppelten Drehrate (`NB_LEG_FAR_RATE`) und derselben Winkelbeschleunigung. Seit Runde 145 behält eine Kehrtwende
+  diese Rate, bis die Beine dem Ziel näher als `NB_LEG_FAR_END` kommen, gemessen von dort, wohin sie zu Beginn der
+  Drehung zeigten (`legFar`, `legFarFrom`); ein Ziel, das nur ein oder zwei Updates weit wegzeigt, macht aus einer
+  Vierteldrehung keine Kehrtwende.
 - **Abheben gegen die Bewegung.** Gegen die Richtung gesteuert, in die sie sich bewegt, mit den Beinen rückwärts, hebt
   ein nachlaufender Fuß ab, sobald die Hüfte schneller von ihm weggeht, als sein Bein vor seiner Reichweite bremsen kann
   (`nbHipAway`, wie `NB_SWING_PULL` es misst), seit Runde 143. Ein schwingender Fuß rollt mit den Beinen rückwärts in
