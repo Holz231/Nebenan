@@ -116,6 +116,9 @@ was schon verworfen wurde.
 - **Das Knie verstärkt.** An einem fast gestreckten Bein wandert das Knie mehrfach so weit, wie sich der Abstand von
   Hüfte zu Knöchel ändert, bei 0,98 gut doppelt so weit. Fast jeder harte Sprung eines Schienbeins ist ein Knöchel,
   der an einem gestreckten Bein schnell näher kommt: durch den Hub, das Rollen oder die sinkende Wurzel.
+- **Gehend steht die Wurzel höher.** `nbSteerFeet` hebt sie um (`legReach` − `NB_LEG_REACH`) mal die Länge des Beins,
+  ohne Feder: Wer `legReach` kürzt, senkt die gehende Wurzel im selben Update, auch bei den ersten Schritten aus dem
+  Stand (Runde 149).
 
 ## Messen an einer Stelle
 

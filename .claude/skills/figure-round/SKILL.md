@@ -327,6 +327,14 @@ Zehen und Fersen 37 mm, Hände 15 mm, Becken 10 mm, Becken tief ab 15 cm unter d
 - **Eine Größe vor dem Bericht auf ihre Rechnung prüfen.** In Runde 148 sah es aus, als rutschte der hintere Fuß im
   stetigen Rennen bis 14 mm je Update; `gait100.py` misst aber die Mitte zwischen Ferse und Zehen, und die wandert, wenn
   der Fuß über die Zehen rollt. Kein Rutschen, nur Rollen.
+- **Die verfolgte Stelle zeigt den Mechanismus, nicht, ob ein Hebel wirkt.** In Runde 149 war das Knie an der verfolgten
+  Stelle mit einer kürzeren Reichweite im entscheidenden Update weiter fast gestreckt, und die Variante sah verloren
+  aus; auf 25 Sätzen und der ganzen Tabelle nahm sie aber rund 500 mm. Eine Variante, die an der Stelle nicht hilft,
+  trotzdem auf der Szene messen, bevor sie verworfen wird.
+- **Starts aus dem Stand kippen als Block.** Verschiebt ein Eingriff die erste Landung aus dem Stand um ein Update,
+  kippen alle 24 Stellen aller Sätze zugleich, in Runde 149 von 272 auf 2 665 mm. Springt eine Szene aus dem Stand
+  zwischen benachbarten Stärken hin und her, trifft der Hebel den Start selbst: ihn dort herausnehmen, statt eine Stärke
+  zu wählen, die zufällig passt.
 - **Größe der Figur.** Winkelbeschleunigungen wachsen bei kleineren Figuren mit 1 durch `nbFigureScale`, Längen
   und Geschwindigkeiten mit ihr.
 
