@@ -4060,8 +4060,8 @@ static void nbComeDownForGait( nbFigure* f, float timeStep )
 
 // A swinging foot lifts this high over the higher end of its step, walking and running, in meters for the humanoid of
 // 1.8 m, a short step NB_GAIT_LIFT_LOW and half its length, and the foot goes for where it aims without following the
-// capsule in the last part of its swing, from NB_GAIT_AIM of it on. It stops following smoothly over NB_GAIT_AIM_FADE of
-// its swing before and after that, keeping more and more of where it aimed, so where it lands goes on as it went and
+// capsule in the last part of its swing, from NB_GAIT_AIM of it on. It stops following smoothly over NB_GAIT_AIM_FADE
+// of its swing before and after that, keeping more and more of where it aimed, so where it lands goes on as it went and
 // comes to rest instead of stopping at once. A swing that hurries passes that part in an update or two, so the foot
 // also keeps more and more of where it aimed over the last NB_GAIT_AIM_SETTLE in seconds before it lands, all of it
 // from NB_GAIT_AIM_SETTLED on, and comes to rest at where it lands instead of chasing it. The first swing of a figure
@@ -4069,8 +4069,18 @@ static void nbComeDownForGait( nbFigure* f, float timeStep )
 // NB_GAIT_PLAN_FROM: it hurries more as it goes, so early in it the time it has left is too long and where it aims
 // comes back a few centimeters late in it. Keeping it from 0.08 s on, the foot landed at 2.5 m/s and jumped 36.9 mm,
 // from 0.12 s on at 2.4 m/s and 35.8 mm. Running, the feet land closer under the body, the gap between them smaller by
-// NB_GAIT_NARROW, and walking by NB_GAIT_NARROW_WALK, as people walk. Height and gap stay as they were when the foot
-// lifted.
+// NB_GAIT_NARROW, and walking by NB_GAIT_NARROW_WALK, as people walk. Running straight they land closer still, the gap
+// smaller by NB_GAIT_NARROW_STRAIGHT, as people run with their feet 3 to 5 cm apart: how straight is one less the
+// change of velocity the gait still has to make over NB_GAIT_STRAIGHT in meters per second for the humanoid of 1.8 m,
+// times one less how far the legs are from where they aim and how far they face from the heading, over
+// NB_GAIT_STRAIGHT_LEGS in radians, times one less the turn rate of the heading over NB_GAIT_STRAIGHT_TURN in radians
+// per second, and none with the legs going backward. Running forward at 3 to 4.8 m/s the track is 4.5 instead of 10.8
+// cm, walking 10.0 cm and running backward and to the side 10.8 cm as before. Narrower wherever it runs, the feet
+// crossed across the pelvis running backward at every point and from running forward to the side by up to 10 cm; in
+// changes of velocity, starting to run to the side the pelvis jumped over 10 mm at every point; where the heading
+// turned, the feet crossed by 3 mm; and with the legs turned from the heading, from running sideways to running
+// backward the feet crossed in three tests and a foot lifted again at once. Height and gap stay as they were when the
+// foot lifted.
 #define NB_GAIT_LIFT_WALK 0.06f
 #define NB_GAIT_LIFT_RUN 0.22f
 #define NB_GAIT_LIFT_LOW 0.02f
@@ -4086,6 +4096,10 @@ static void nbComeDownForGait( nbFigure* f, float timeStep )
 #define NB_GAIT_AIM_SETTLE_START 0.12f
 #define NB_GAIT_NARROW 0.4f
 #define NB_GAIT_NARROW_WALK 0.45f
+#define NB_GAIT_NARROW_STRAIGHT 0.75f
+#define NB_GAIT_STRAIGHT 1.0f
+#define NB_GAIT_STRAIGHT_LEGS 0.35f
+#define NB_GAIT_STRAIGHT_TURN 1.0f
 
 // A swinging foot aims with the velocity of the capsule as a critically damped spring follows it, NB_GAIT_AIM_LAG in
 // seconds its time, and while the figure wants to move, as far ahead as the spring lags behind a velocity that changes
@@ -5366,15 +5380,16 @@ static float nbSwingTime( const nbFigure* f, int k, float swingTime, float cycle
 	return time;
 }
 
-// As a steered figure turns, its feet keep its legs from crossing. A planted foot turns on the middle of its sole with the
-// body once the heading is more than NB_FOOT_TWIST in radians from it, as people pivot on a foot, so the hip never twists
-// further. A swinging foot lands on its own side of the other foot, the middles of the soles at least NB_GAIT_SIDE_GAP
-// apart across the heading, in meters for the humanoid of 1.8 m. A foot that lands and gets lost at once, in the first
-// NB_GAIT_FRESH of the cycle, stands while the other foot, behind the hip and soon out of reach as well, lifts first: the
-// foot on the outside of a turn lands wide, and lifting it again at once left the other foot standing far behind the hip.
-// A foot has only just landed by the time since it landed as well, NB_GAIT_FRESH of a cycle, where it hurried and
-// landed before its phase came round, and it stands too where the other foot did not only just land itself and is free
-// to lift, behind the hip or not, as long as its own leg keeps it for at least NB_GAIT_FRESH_KEEP of the quickest
+// As a steered figure turns, its feet keep its legs from crossing. A planted foot turns on the middle of its sole with
+// the body once the heading is more than NB_FOOT_TWIST in radians from it, as people pivot on a foot, so the hip never
+// twists further. A swinging foot lands on its own side of the other foot, the middles of the soles at least
+// NB_GAIT_SIDE_GAP apart across the heading, in meters for the humanoid of 1.8 m, running straight
+// NB_GAIT_SIDE_GAP_STRAIGHT, see NB_GAIT_NARROW_STRAIGHT. A foot that lands and gets lost at once, in the first
+// NB_GAIT_FRESH of the cycle, stands while the other foot, behind the hip and soon out of reach as well, lifts first:
+// the foot on the outside of a turn lands wide, and lifting it again at once left the other foot standing far behind
+// the hip. A foot has only just landed by the time since it landed as well, NB_GAIT_FRESH of a cycle, where it hurried
+// and landed before its phase came round, and it stands too where the other foot did not only just land itself and is
+// free to lift, behind the hip or not, as long as its own leg keeps it for at least NB_GAIT_FRESH_KEEP of the quickest
 // swing. Until round 130, changing from running sideways to running backward with a fixed heading, a foot landed wide
 // of the turning legs, both feet got lost within 3 ms of each other, the one that had only just landed lifted again in
 // the next update, and its shin jumped up to 55 mm; switching sides at a run, a foot touched down for an update or two
@@ -5382,11 +5397,12 @@ static float nbSwingTime( const nbFigure* f, int k, float swingTime, float cycle
 // at a run, the root went down 8 cm for it and the pelvis jumped 13 mm in an update. From 0.25 to 0.6 of the quickest
 // swing both hold, see SteerFreshFootTest. Where the other foot waited, lost, for this one to land, this one stands all
 // the same, and the other lifts: from running sideways to running backward with a fixed heading at 4.41 m/s, a foot
-// hurried to land 31 cm beside the hip as the other was lost, its leg would have lost it after 0.033 s, it lifted
-// again in the next update with 2.4 times the hurry, and its shin jumped 53 mm, while the other, lost for three
-// updates, stood on. Now the one that waited lifts, see SteerWaitedFootTest.
+// hurried to land 31 cm beside the hip as the other was lost, its leg would have lost it after 0.033 s, it lifted again
+// in the next update with 2.4 times the hurry, and its shin jumped 53 mm, while the other, lost for three updates,
+// stood on. Now the one that waited lifts, see SteerWaitedFootTest.
 #define NB_FOOT_TWIST ( 35.0f * ( B3_PI / 180.0f ) )
 #define NB_GAIT_SIDE_GAP 0.1f
+#define NB_GAIT_SIDE_GAP_STRAIGHT 0.03f
 #define NB_GAIT_FRESH 0.2f
 #define NB_GAIT_FRESH_KEEP 0.4f
 
@@ -5821,6 +5837,16 @@ static void nbSteerFeet( const nbWorld* world, int index, nbFigure* f, const nbC
 		float onward = b3Dot( change, along );
 		turnOrBrake = b3Length( b3MulSub( change, onward, along ) ) + b3MaxFloat( -onward, 0.0f );
 	}
+	// How straight it runs, see NB_GAIT_NARROW_STRAIGHT
+	float straight = b3ClampFloat( 1.0f - b3Length( change ) / ( NB_GAIT_STRAIGHT * scale ), 0.0f, 1.0f );
+	straight *= b3ClampFloat( 1.0f - fabsf( nbWrapAngle( f->legAim - f->legTurn ) ) / NB_GAIT_STRAIGHT_LEGS, 0.0f, 1.0f );
+	straight *= b3ClampFloat( 1.0f - fabsf( f->headingRate ) / NB_GAIT_STRAIGHT_TURN, 0.0f, 1.0f );
+	straight *= b3ClampFloat( 1.0f - fabsf( f->legTurn ) / NB_GAIT_STRAIGHT_LEGS, 0.0f, 1.0f );
+	if ( f->legBack )
+	{
+		straight = 0.0f;
+	}
+	float narrowRun = NB_GAIT_NARROW + ( NB_GAIT_NARROW_STRAIGHT - NB_GAIT_NARROW ) * straight;
 	float bend = b3MinFloat( turnOrBrake / ( NB_GAIT_BEND_SPEED * scale ), 1.0f );
 	float bendOmega = bend > f->gaitBend ? 1.0f / NB_GAIT_BEND_IN : 1.0f / NB_GAIT_BEND_OUT;
 	float bendDecay = nbDecay( bendOmega * timeStep );
@@ -5875,7 +5901,7 @@ static void nbSteerFeet( const nbWorld* world, int index, nbFigure* f, const nbC
 		b3Quat heelRotation = clips[k].rotation;
 		nbRollFoot( thigh + 2, -landSide * heel, 0.0f, onHeel + k, &heelRotation );
 
-		float narrow = 1.0f - NB_GAIT_NARROW * run - NB_GAIT_NARROW_WALK * ( 1.0f - run ) * ease;
+		float narrow = 1.0f - narrowRun * run - NB_GAIT_NARROW_WALK * ( 1.0f - run ) * ease;
 		float x = clips[k].ankle.x * narrow + aheadInFrame.x + onHeel[k].x - hip.x;
 		float z = clips[k].ankle.z + aheadInFrame.z + onHeel[k].z - hip.z;
 		float across = b3MinFloat( x * x + z * z, reach * reach );
@@ -6168,7 +6194,7 @@ static void nbSteerFeet( const nbWorld* world, int index, nbFigure* f, const nbC
 				f->stepBack[k] = f->legBack;
 				f->swingShare[k] = 1.0f - stance;
 				f->swingLift[k] = swingTime;
-				f->swingNarrow[k] = 1.0f - NB_GAIT_NARROW * run - NB_GAIT_NARROW_WALK * ( 1.0f - run ) * ease;
+				f->swingNarrow[k] = 1.0f - narrowRun * run - NB_GAIT_NARROW_WALK * ( 1.0f - run ) * ease;
 				foot->from = foot->plant;
 				foot->fromTilt = foot->tilt;
 				f->swingBase[k] = foot->plant;
@@ -6294,7 +6320,8 @@ static void nbSteerFeet( const nbWorld* world, int index, nbFigure* f, const nbC
 					b3Vec3 side = b3RotateVector( end.q, b3Vec3_axisX );
 					side = b3Normalize( b3MulSub( side, b3Dot( side, up ), up ) );
 					float sign = k == 0 ? 1.0f : -1.0f;
-					float lack = NB_GAIT_SIDE_GAP * scale - sign * b3Dot( b3SubPos( middle, other ), side );
+					float gap = NB_GAIT_SIDE_GAP + ( NB_GAIT_SIDE_GAP_STRAIGHT - NB_GAIT_SIDE_GAP ) * run * straight;
+					float lack = gap * scale - sign * b3Dot( b3SubPos( middle, other ), side );
 					if ( lack > 0.0f )
 					{
 						b3Vec3 move = b3MulSV( sign * lack, side );

@@ -1997,11 +1997,15 @@ schwingt nicht länger als beim Abheben: Rennend von einer Seite zur anderen geh
 Geschwindigkeiten im Mittel nach 1,066 statt 1,140 s mit 90 % ihres Tempos in die neue Richtung, spätestens nach 1,479
 statt 1,529 s. Das Update der Figuren führt dabei 0,007 % und 0,002 % mehr Befehle aus als auf `active-ragdoll-144`, im
 Kostentest mit ständigem Seitenwechsel 0,610 % mehr, über der Grenze von 0,5 %, weil die Füße dort mehr Updates lang
-schwingen. Siehe „Die Kehrtwende der Beine behält ihre Rate“ in [Optimierungen.md](docs/Optimierungen.md). Am Hang und
-auf Treppen misst die Figur die Steigung ihres Wegs: Bergauf landet ein Fuß weiter vorn, bergab näher unter dem Körper,
-so reicht das vordere Bein so weit hinauf wie das hintere hinunter, und die Schritte werden kürzer, auf 20° um ein
-Fünftel. Die Feder unter der Kapsel folgt der Ebene, die der Fühler findet, statt am Hang hinterherzuhängen, und vor dem
-Aufsetzen geht die Hüfte so tief, wie das Bein den wirklichen Landepunkt braucht. Auf einer Rampe von 20° wippt die
+schwingen. Siehe „Die Kehrtwende der Beine behält ihre Rate“ in [Optimierungen.md](docs/Optimierungen.md). Seit
+`active-ragdoll-147` setzt eine gesteuerte Figur, die gerade rennt, die Füße 4,5 statt 10,8 cm auseinander, wie Menschen
+mit 3 bis 5 cm rennen; sobald sie beschleunigt, bremst, die Richtung wechselt oder den Blick dreht, und seitwärts und
+rückwärts setzt sie sie so breit wie vorher. Das Update der Figuren führt dabei höchstens 0,069 % mehr Befehle aus als
+auf `active-ragdoll-146`. Siehe „Schmalere Spur im geraden Lauf“ in [Optimierungen.md](docs/Optimierungen.md). Am Hang
+und auf Treppen misst die Figur die Steigung ihres Wegs: Bergauf landet ein Fuß weiter vorn, bergab näher unter dem
+Körper, so reicht das vordere Bein so weit hinauf wie das hintere hinunter, und die Schritte werden kürzer, auf 20° um
+ein Fünftel. Die Feder unter der Kapsel folgt der Ebene, die der Fühler findet, statt am Hang hinterherzuhängen, und vor
+dem Aufsetzen geht die Hüfte so tief, wie das Bein den wirklichen Landepunkt braucht. Auf einer Rampe von 20° wippt die
 Hüfte so um 2 cm, und in einem Update bewegt sie sich gegen die Kapsel um höchstens 2 cm. Auf einer Treppe setzt die
 Figur ihre Füße Stufe für Stufe: Vor jedem Schwung sucht sie am Ziel mit Strahlen nach einer Kante, misst die Stufe aus
 und stellt die ganze Sohle darauf, und jeder Schritt nimmt gleich viele Stufen, so viele, wie ein Schritt auf einer
@@ -3701,7 +3705,7 @@ lange die Threads im Löser rechnen und worauf sie sonst warten.
 ## Tests und Benchmark
 
 ```sh
-build/bin/nebenan_test            # 192 Tests: Geometrie, Voronoi, Hüllen, Öffnungen, Stöße, Stützgraph, Etagen, Lastprüfung, Mauern, Schutt, Ruhe, Durchschlagen, Threads, Knoten, große Blöcke, Gelenke in Paketen und Gebieten, Suchbaum, Kontaktlisten, Streaming, Stream, Laden im Hintergrund, Speichern und Zurückholen, gemeinsamer Thread-Pool, Ruhe-Prüfung auf den Workern, Schritt auf eigenem Thread, Schritte pro Bild, Takt der Physik, Wahl der Threads, Profil und Skalierung, Figuren, Ausgleichsschritt, Abfangen, rudernde Arme, Muskeln, Treffer entlang des Skeletts, Kegel je Richtung, Gelenke wie beim Menschen, Drehung um die Längsachse, Armature, ruhiger Kopf, Drücken, Füße auf dem Boden, Platz zum Aufstehen, Ragdoll durch die Wand, dünne Bretter, Determinismus …
+build/bin/nebenan_test            # 193 Tests: Geometrie, Voronoi, Hüllen, Öffnungen, Stöße, Stützgraph, Etagen, Lastprüfung, Mauern, Schutt, Ruhe, Durchschlagen, Threads, Knoten, große Blöcke, Gelenke in Paketen und Gebieten, Suchbaum, Kontaktlisten, Streaming, Stream, Laden im Hintergrund, Speichern und Zurückholen, gemeinsamer Thread-Pool, Ruhe-Prüfung auf den Workern, Schritt auf eigenem Thread, Schritte pro Bild, Takt der Physik, Wahl der Threads, Profil und Skalierung, Figuren, Ausgleichsschritt, Abfangen, rudernde Arme, Muskeln, Treffer entlang des Skeletts, Kegel je Richtung, Gelenke wie beim Menschen, Drehung um die Längsachse, Armature, ruhiger Kopf, Drücken, Füße auf dem Boden, Platz zum Aufstehen, Ragdoll durch die Wand, dünne Bretter, Determinismus …
 build/bin/nebenan_benchmark 4     # Zahl = Threads für Bruch und Physik, 0 = so viele, wie ein Spiel nähme
 build/bin/nebenan_benchmark scaling   # die Städte unter Beschuss mit 1, 2, 4 … Threads und die Tabelle der Skalierung
 build/bin/nebenan_benchmark rates     # die Städte unter Beschuss mit 30, 60 und 120 Hz, was eine simulierte Sekunde kostet

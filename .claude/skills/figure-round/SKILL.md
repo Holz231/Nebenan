@@ -312,6 +312,14 @@ Zehen und Fersen 37 mm, Hände 15 mm, Becken 10 mm, Becken tief ab 15 cm unter d
   Variante, bei der die Beine mit dem Landeplatz des austretenden Fußes rechnen, die schnellste, und die Tabellen sahen
   gut aus; erst die Tests zeigten, dass die Füße quer zum Becken kreuzen. Lockert eine Variante eine Grenze wie
   `nbHoldLegs`, die Tests dieser Grenze vor der ganzen Tabelle laufen lassen.
+- **Nach jedem neuen Feld im Versuchsbaum die Prototypen neu bauen, bevor die Tests laufen.** In Runde 147 kamen Felder
+  für eine verworfene Variante in `figure.h` dazu, nachdem der Prototyp gebaut war; die Tests lasen ihn mit dem neuen
+  Header, und zehn Tests scheiterten. Ein Test, der den Prototyp liest, braucht denselben Header, mit dem der Prototyp
+  gebaut wurde.
+- **Eine Größe, die sich gewollt ändert, braucht eine eigene Bedingung statt der Bitgleichheit.** In Runde 147 ändert
+  die schmale Spur den stetigen Lauf vorwärts. Die Regel prüft ihn deshalb mit einem eigenen Werkzeug (`track147.py`):
+  Spur im Bereich des Menschen, Füße nicht zu nah, keine härteren Sprünge; bitgleich bleiben nur die Läufe, die sich
+  nicht ändern sollen.
 - **Größe der Figur.** Winkelbeschleunigungen wachsen bei kleineren Figuren mit 1 durch `nbFigureScale`, Längen
   und Geschwindigkeiten mit ihr.
 

@@ -60,7 +60,9 @@ was schon verworfen wurde.
   der gehend abhob, fliegt dabei an der Grenze von `NB_GAIT_SWING_ACCEL`, und seine Form folgt der Feder von
   `NB_RUN_TURN_LAG`; landet er rennend, hängt sein Bein an seiner Reichweite (Runde 139, `tools/measure/land139.py`).
   Ein Schwung, der rennend abhob und auf den die Beine warten (`legWaits`), dehnt sich nicht mit dem langsamer werdenden
-  Gang, seit Runde 145.
+  Gang, seit Runde 145. Rennt die Figur gerade, landet ein Fuß um `NB_GAIT_NARROW_STRAIGHT` enger und mindestens
+  `NB_GAIT_SIDE_GAP_STRAIGHT` neben dem anderen, seit Runde 147; wie gerade sie rennt, rechnet `nbSteerFeet` aus der
+  Änderung der Geschwindigkeit, den Beinen und der Drehrate des Blicks, rückwärts nie.
 - **Drehen der Beine.** Ohne Blick in Laufrichtung drehen die Beine zur Laufrichtung (`legTurn`, `legAim`,
   `nbLegTurnFor`), höchstens so schnell, wie der Blick darf (`nbTurnToward` mit der Drehrate der Steuerung), und warten
   auf die Füße (`nbHoldLegs`, `NB_LEG_KEEP`); `nbLegCap` lässt die Kapsel quer und rückwärts zu den Beinen nur langsam
@@ -133,8 +135,8 @@ was schon verworfen wurde.
 `SteerTurnPushTest` (128), `SteerSideToBackTest` (129), `SteerSwitchSidesTest` (130), `SteerFreshFootTest` (131),
 `SteerStopLiftTest` (133), `SteerBrakeBackTest` (134), `SteerSideToBackRollTest` (135), `SteerSideToBackPitchTest`
 (136), `SteerSideToBackLiftTest` (137), `SteerBackToForwardLiftTest` (138), `SteerWaitedFootTest` (140),
-`SteerSwitchAnswerTest` (141), `SteerBackToForwardEarlyTest` (143), `SteerSideToBackWalkTest` (144), und für den Körper
-`FigureShoulderTest` (126) und `FigureSkinTest` (127): Ändert eine Runde die Knochen, fällt er, bis
-`tools/mannequin/make_skin.py` die Haut neu geschrieben hat, erst `dump_bones`, dann das Werkzeug. Die Hashes
+`SteerSwitchAnswerTest` (141), `SteerBackToForwardEarlyTest` (143), `SteerSideToBackWalkTest` (144), `SteerRunTrackTest`
+(147), und für den Körper `FigureShoulderTest` (126) und `FigureSkinTest` (127): Ändert eine Runde die Knochen, fällt
+er, bis `tools/mannequin/make_skin.py` die Haut neu geschrieben hat, erst `dump_bones`, dann das Werkzeug. Die Hashes
 `NB_EXPECTED_…_HASH` ändern sich nur, wenn sich ein Lauf ändert, der dort festgehalten ist: Das ist erlaubt, wird aber
 in der Roadmap genannt.

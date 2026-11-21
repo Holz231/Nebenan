@@ -5452,6 +5452,67 @@ static int SteerSwitchAnswerTest( void )
 	return 0;
 }
 
+// How far apart across the way a steered figure sets its feet in a steady gait: velocity in m/s, whether it faces where
+// it moves, and over 3 s after 5 s the mean of how far consecutive left and right landings lie apart across the way
+static float SteadyTrack( b3Vec3 velocity, bool face )
+{
+	FigureScene scene;
+	CreateFigureScene( &scene, 1 );
+	nbFigureId figure = AddSteeredFigure( &scene, b3Vec3_zero, 0.0f );
+	StepFigures( &scene, 60 );
+	nbSteer steer = { velocity, 0.0f, face };
+	nbFigure_Steer( figure, &steer );
+	StepFigures( &scene, 300 );
+	b3Vec3 way = b3Normalize( velocity );
+	b3Vec3 across = { way.z, 0.0f, -way.x };
+	bool swings[2] = { false, false };
+	int last = -1;
+	b3Pos lastAt = { 0 };
+	float sum = 0.0f;
+	int count = 0;
+	for ( int i = 0; i < 180; ++i )
+	{
+		StepFigures( &scene, 1 );
+		const nbFigure* f = GetSteered( &scene, figure );
+		for ( int k = 0; k < 2; ++k )
+		{
+			if ( swings[k] && f->footSwings[k] == false )
+			{
+				if ( last == 1 - k )
+				{
+					sum += fabsf( b3Dot( b3SubPos( f->feet[k].plant, lastAt ), across ) );
+					count += 1;
+				}
+				last = k;
+				lastAt = f->feet[k].plant;
+			}
+			swings[k] = f->footSwings[k];
+		}
+	}
+	DestroyFigureScene( &scene );
+	return count > 0 ? sum / (float)count : 0.0f;
+}
+
+// A steered figure that runs straight sets its feet 3 to 5 cm apart across the way, as people run, see
+// NB_GAIT_NARROW_STRAIGHT: 4.5 cm running forward at 3.9 m/s, facing where it moves or with a fixed heading, where it
+// set them 10.8 cm apart until round 147. Walking at 1.4 m/s about 10 cm as before, and running backward with a fixed
+// heading as wide as before.
+static int SteerRunTrackTest( void )
+{
+	float facing = SteadyTrack( (b3Vec3){ 0.0f, 0.0f, 3.9f }, true );
+	float fixed = SteadyTrack( (b3Vec3){ 0.0f, 0.0f, 3.9f }, false );
+	float walking = SteadyTrack( (b3Vec3){ 0.0f, 0.0f, 1.4f }, true );
+	float backward = SteadyTrack( (b3Vec3){ 0.0f, 0.0f, -3.9f }, false );
+	printf( "  feet apart across the way: running forward at 3.9 m/s %.1f cm facing where it moves and %.1f cm with a fixed "
+			"heading, walking at 1.4 m/s %.1f cm, running backward at 3.9 m/s %.1f cm\n",
+			100.0f * facing, 100.0f * fixed, 100.0f * walking, 100.0f * backward );
+	ENSURE( 0.03f < facing && facing < 0.05f );
+	ENSURE( 0.03f < fixed && fixed < 0.05f );
+	ENSURE( 0.08f < walking && walking < 0.12f );
+	ENSURE( backward > 0.08f );
+	return 0;
+}
+
 // A steered figure that does not face where it moves turns about as it runs at 4.3 m/s, from 8 places in its cycle, and
 // changes from going to the left to going backward, walking at 1.05 m/s from 19 places and running at 4.3 m/s from 8.
 // Turning about, its frame goes at nine tenths of its speed the other way after 1.26 s in the mean and 1.43 s at the
@@ -8086,6 +8147,7 @@ int FigureTest( void )
 	RUN_TEST( SteerStrafeChangeTest );
 	RUN_TEST( SteerRunChangeTest );
 	RUN_TEST( SteerSwitchAnswerTest );
+	RUN_TEST( SteerRunTrackTest );
 	RUN_TEST( SteerLegLeadTest );
 	RUN_TEST( SteerRunDescentTest );
 	RUN_TEST( SteerRunFlightTest );
