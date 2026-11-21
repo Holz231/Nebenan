@@ -99,7 +99,10 @@ was schon verworfen wurde.
   Über die Ferse und von den Zehen herunter höchstens `NB_FOOT_HEEL_RATE`. Über die Zehen hinauf wird das Rollen je
   Update höchstens um `NB_FOOT_ROLL_GAIN` schneller, nur für Beine, die vorwärts gehen (`footRollGain`, Runde 122). Seit
   Runde 128 wird es dabei auch höchstens um so viel langsamer, über `NB_FOOT_ROLL_MOST` hinaus, wenn es sein muss, und
-  das Tempo, mit dem ein Fuß von der Ferse flach kam, zählt nicht mit (`footRollGain`, `footRolled`).
+  das Tempo, mit dem ein Fuß von der Ferse flach kam, zählt nicht mit (`footRollGain`, `footRolled`). Gehend schaut das
+  Rollen eines vorwärts gehenden Fußes nicht voraus (`rollAhead`): Wird die Figur schneller, als ihr Gang folgt, wird
+  das stehende hintere Bein je Update 18 bis 20 mm länger und hält in einem Update an seiner Reichweite an (Runden 148
+  bis 150, offen, mit dem Vorausblick im Versuchsbaum gemessen).
 - **`footRoll` und `footRolled`.** `footRoll` setzt auch der Gang, etwa wenn ein Fuß von einer Landung herunterkommt.
   `footRolled` ist das Rollen, das der Fuß am Boden zuletzt bekam.
 - **Rückwärts** (`side < 0`) landen Füße auf den Zehen und bleiben darauf (`tips`, `leads`, `landed`). Einer, der auf
@@ -112,7 +115,10 @@ was schon verworfen wurde.
 - Ein Bein streckt sich höchstens auf `NB_LEG_REACH` seiner Länge, gehend auf `NB_LEG_REACH_WALK`, gehend in einer
   Wendung auf `NB_LEG_REACH_BENT`. `legReach` ist der Wert für jetzt. Beim Bremsen im Rennen, wo die Figur langsamer
   ist, als ihr Gang rennt, um `NB_LEG_REACH_SLOW` weniger (Runde 134): 0,005 bis 0,015 weniger halten, ab 0,02 wird es
-  von seitwärts auf rückwärts schlechter.
+  von seitwärts auf rückwärts schlechter. Solange die Figur schneller ist als ihr Gang, um bis `NB_LEG_REACH_FAST`
+  weniger, mit der Zeitkonstante `NB_LEG_REACH_FAST_LAG` und bei einem Start aus dem Stand erst nach der ersten Landung
+  (`legReachFast`, Runde 150): 0,02 mit 0,1 bis 0,2 s hält, 0,025 oder 0,05 s nicht, und ohne die Schranke kippen die
+  Starts.
 - **Das Knie verstärkt.** An einem fast gestreckten Bein wandert das Knie mehrfach so weit, wie sich der Abstand von
   Hüfte zu Knöchel ändert, bei 0,98 gut doppelt so weit. Fast jeder harte Sprung eines Schienbeins ist ein Knöchel,
   der an einem gestreckten Bein schnell näher kommt: durch den Hub, das Rollen oder die sinkende Wurzel.
@@ -139,7 +145,7 @@ was schon verworfen wurde.
 `SteerStopLiftTest` (133), `SteerBrakeBackTest` (134), `SteerSideToBackRollTest` (135), `SteerSideToBackPitchTest`
 (136), `SteerSideToBackLiftTest` (137), `SteerBackToForwardLiftTest` (138), `SteerWaitedFootTest` (140),
 `SteerSwitchAnswerTest` (141), `SteerBackToForwardEarlyTest` (143), `SteerSideToBackWalkTest` (144), `SteerRunTrackTest`
-(147), und für den Körper `FigureShoulderTest` (126) und `FigureSkinTest` (127): Ändert eine Runde die Knochen, fällt
-er, bis `tools/mannequin/make_skin.py` die Haut neu geschrieben hat, erst `dump_bones`, dann das Werkzeug. Die Hashes
-`NB_EXPECTED_…_HASH` ändern sich nur, wenn sich ein Lauf ändert, der dort festgehalten ist: Das ist erlaubt, wird aber
-in der Roadmap genannt.
+(147), `SteerSpeedUpTest` (150), und für den Körper `FigureShoulderTest` (126) und `FigureSkinTest` (127): Ändert eine
+Runde die Knochen, fällt er, bis `tools/mannequin/make_skin.py` die Haut neu geschrieben hat, erst `dump_bones`, dann
+das Werkzeug. Die Hashes `NB_EXPECTED_…_HASH` ändern sich nur, wenn sich ein Lauf ändert, der dort festgehalten ist: Das
+ist erlaubt, wird aber in der Roadmap genannt.

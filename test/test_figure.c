@@ -5248,7 +5248,7 @@ static uint32_t RunStrafe( int threadCount, float* turns, bool* backward, float*
 // asked to run, and no farther than its feet stay uncrossed across them, see NB_LEG_KEEP: the numbers of this test
 // stay. Since round 134 the legs stretch less far while the figure brakes at a run, see NB_LEG_REACH_SLOW: running
 // backward the feet come as close as 4.6 instead of 4.5 cm, the other numbers stay.
-#define NB_EXPECTED_STRAFE_HASH 0x0a92f893u
+#define NB_EXPECTED_STRAFE_HASH 0x2025d400u
 static int SteerStrafeTest( void )
 {
 	float turns[3], closest[3], deepest[3];
@@ -5510,6 +5510,66 @@ static int SteerRunTrackTest( void )
 	ENSURE( 0.03f < fixed && fixed < 0.05f );
 	ENSURE( 0.08f < walking && walking < 0.12f );
 	ENSURE( backward > 0.08f );
+	return 0;
+}
+
+// A steered figure with a fixed heading walks to one side at 1.33 m/s and breaks into a run at 4.46 m/s, the change at
+// twenty moments three updates apart, a cycle of its walk: how far a shin jumps in an update at most in the second
+// after it, the hardest of the twenty and their mean, and the hardest from half a second after it on. While the figure
+// is faster than its gait, the legs stretch less far and the hip goes lower, see NB_LEG_REACH_FAST: 37.3 mm at most,
+// 29.9 mm in their mean and 29.2 mm from half a second on. Until round 149 the legs stretched as far as in a steady
+// gait while the figure sped up, and a trailing leg came nearly straight before its foot rolled: 40.1 mm, 32.3 mm and
+// 36.6 mm.
+static int SteerSpeedUpTest( void )
+{
+	float most = 0.0f;
+	float sum = 0.0f;
+	float late = 0.0f;
+	for ( int part = 0; part < 20; ++part )
+	{
+		FigureScene scene;
+		CreateFigureScene( &scene, 1 );
+		nbFigureId figure = AddSteeredFigure( &scene, b3Vec3_zero, 0.0f );
+		StepFigures( &scene, 60 );
+		nbSteer steer = { { 1.33f, 0.0f, 0.0f }, 0.0f, false };
+		nbFigure_Steer( figure, &steer );
+		StepFigures( &scene, 180 + 3 * part );
+		steer.velocity = (b3Vec3){ 4.46f, 0.0f, 0.0f };
+		nbFigure_Steer( figure, &steer );
+		int bones[2] = { nb_humanoidShinLeft, nb_humanoidShinRight };
+		b3Vec3 last[2], before[2];
+		for ( int k = 0; k < 2; ++k )
+		{
+			last[k] = b3ToVec3( b3Body_GetPosition( nbFigure_GetBody( figure, bones[k] ) ) );
+			before[k] = last[k];
+		}
+		float hardest = 0.0f;
+		for ( int i = 0; i < 60; ++i )
+		{
+			StepFigures( &scene, 1 );
+			for ( int k = 0; k < 2; ++k )
+			{
+				b3Vec3 now = b3ToVec3( b3Body_GetPosition( nbFigure_GetBody( figure, bones[k] ) ) );
+				if ( i > 0 )
+				{
+					float jump = b3Length( b3Add( b3Sub( now, last[k] ), b3Sub( before[k], last[k] ) ) );
+					hardest = b3MaxFloat( hardest, jump );
+					late = i >= 30 ? b3MaxFloat( late, jump ) : late;
+				}
+				before[k] = last[k];
+				last[k] = now;
+			}
+		}
+		most = b3MaxFloat( most, hardest );
+		sum += hardest;
+		DestroyFigureScene( &scene );
+	}
+	printf( "  from walking to running to the side with a fixed heading, a shin jumps %.1f mm at most in the second after "
+			"twenty changes, %.1f mm in their mean, and %.1f mm from half a second after them on\n",
+			1000.0f * most, 1000.0f * sum / 20.0f, 1000.0f * late );
+	ENSURE( most < 0.039f );
+	ENSURE( sum / 20.0f < 0.031f );
+	ENSURE( late < 0.033f );
 	return 0;
 }
 
@@ -6318,7 +6378,9 @@ static int SteerStopLiftTest( void )
 // stretch less far and a foot that lifts flat or over its heel goes up more gently, see NB_LEG_REACH_SLOW and
 // NB_SWING_SLOW_ARC: stopping 35.5 mm at most, 30.8 mm in their mean and over 37 mm in none, turning 43.8 mm, 34.0 mm
 // and in two. Until round 133 the legs stretched as far as in a steady run while the figure had all but stopped: 43.5
-// mm, 33.4 mm and in four, and 54.0 mm, 37.3 mm and in ten.
+// mm, 33.4 mm and in four, and 54.0 mm, 37.3 mm and in ten. Since round 150 the legs stretch less far too while the
+// figure is faster than its gait, see NB_LEG_REACH_FAST: turning 36.4 mm, 29.9 mm and in none, before that 41.7 mm,
+// 31.3 mm and in two.
 static int SteerBrakeBackTest( void )
 {
 	float most[2] = { 0.0f, 0.0f };
@@ -8013,7 +8075,7 @@ static int ThinBoardTest( void )
 // walking takes the steps of people, see NB_GAIT_CADENCE_WALK, and the ankle of a swinging foot bends up as far as
 // theirs, see NB_SWING_ANKLE_SOFT. Round 113: the body has the dimensions of a person, see nbMakeHumanoidBones.
 // Round 131: a foot that only just landed stands where the other foot is free to lift, see NB_GAIT_FRESH_KEEP.
-#define NB_EXPECTED_STEER_HASH 0x12de9019u
+#define NB_EXPECTED_STEER_HASH 0x36ef900du
 
 // See RunGaitClipScenario. Since round 99 as for RunSteerScenario. Since round 100 the figure that is told to turn on
 // the spot while it still walks, not facing where it moves, keeps its legs where they face as its heading turns, and
@@ -8022,7 +8084,7 @@ static int ThinBoardTest( void )
 // RunSteerScenario. Since round 111 as for RunSteerScenario. Round 112: the clips are recorded from a gait that takes
 // the steps of people, see NB_GAIT_CADENCE_WALK, and the ankle of a swinging foot bends up as far as theirs, see
 // NB_SWING_ANKLE_SOFT. Round 113 and round 131 as for RunSteerScenario.
-#define NB_EXPECTED_GAIT_CLIP_HASH 0x4360bf18u
+#define NB_EXPECTED_GAIT_CLIP_HASH 0xf5573f9bu
 
 static int FigureFollowDeterminismTest( void )
 {
@@ -8148,6 +8210,7 @@ int FigureTest( void )
 	RUN_TEST( SteerRunChangeTest );
 	RUN_TEST( SteerSwitchAnswerTest );
 	RUN_TEST( SteerRunTrackTest );
+	RUN_TEST( SteerSpeedUpTest );
 	RUN_TEST( SteerLegLeadTest );
 	RUN_TEST( SteerRunDescentTest );
 	RUN_TEST( SteerRunFlightTest );

@@ -569,6 +569,8 @@ typedef struct nbFigure
 	float swingSoft[2];
 	float swingTurnRate[2];
 	float legReach;
+	// How much less far the legs stretch while the figure is faster than its gait, see NB_LEG_REACH_FAST
+	float legReachFast;
 	float gaitTurn;
 	float gaitTurnSize;
 	float gaitSway;

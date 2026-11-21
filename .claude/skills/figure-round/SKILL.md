@@ -335,6 +335,35 @@ Zehen und Fersen 37 mm, Hände 15 mm, Becken 10 mm, Becken tief ab 15 cm unter d
   kippen alle 24 Stellen aller Sätze zugleich, in Runde 149 von 272 auf 2 665 mm. Springt eine Szene aus dem Stand
   zwischen benachbarten Stärken hin und her, trifft der Hebel den Start selbst: ihn dort herausnehmen, statt eine Stärke
   zu wählen, die zufällig passt.
+- **Das Ziel der Runde bis zum Schluss mitmessen.** In Runde 149 nahm das Rollen, das beim Antritt auch gehend
+  vorausschaut, das Ziel fast ganz, das stehende Schienbein 2 statt 31 mm, und wurde an der Summe der ganzen Tabelle
+  verworfen; Runde 150 baute dann einen breiten Hebel, der das Ziel auf den frischen Sätzen gar nicht nahm. Jede
+  Variante an den Stellen der Ursache und an der Tabelle getrennt bewerten, und nach der Prüfung nach Szenen nachsehen,
+  ob die Szene der Runde besser wurde.
+- **Zwei Hebel zusammen messen, wenn einer den Preis des anderen decken kann.** Der Vorausblick des Rollens kostete
+  allein gehend ins Rennen 10 mm; zusammen mit der kürzeren Reichweite, die dort 47 mm nimmt, blieb davon nichts (Runde
+  150). Was einzeln knapp verworfen ist, vor dem Festschreiben einmal zusammen mit dem Prototyp bauen.
+- **Vor einer Variante an einem Vorausblick oder Gewicht nachsehen, ob es an der Stelle überhaupt wirkt.** Der längere
+  Vorausblick des Rollens in Runde 148 konnte am verfolgten Sprung nichts ändern: Der Gang ging dort noch, und gehend
+  ist das Gewicht des Vorausblicks null. Er änderte nur den stetigen Lauf, und die Runde schloss daraus, die Zahlen des
+  Rollens seien schon die besten.
+- **Bei einem Sprung am Schienbein die Länge des Beins je Update ausgeben.** Ein Bein, das je Update 18 bis 20 mm länger
+  wird und in einem Update an seiner Reichweite anhält, ist der Sprung, 2-mal verstärkt am fast gestreckten Knie (Runde
+  150). Winkel und Rollen allein zeigten in Runde 148 nur die Folge.
+- **Starts aus dem Stand einmal zählen.** Alle 24 Stellen eines Starts sind gleich: Losrennend rückwärts mit 37,6 mm
+  waren 456 der 910 Stellen der Tabelle über 37 mm und 272 der 1 532 mm. `starts150.py` fährt jeden Start je Satz
+  einmal; in Summen über die Tabelle die Starts getrennt ausweisen.
+- **Ein neuer Zustand der Figur wird beim Losgehen zurückgesetzt.** `nbSteerFeet` kehrt früh zurück, solange der Gang
+  aus ist: Was dort mit einer Zeitkonstante folgt, bleibt über den Stand oder einen Flug stehen. Kommt so eine Zeile
+  nach der Prüfung dazu, die Ausgaben der Prüfung Byte für Byte mit dem geprüften Bau vergleichen und es in der Roadmap
+  sagen.
+- **Hashes vergleichen, nicht ganze Zeilen.** Die Zeilen des Benchmarks der Figuren tragen auch den Speicher, der mit
+  der Zahl der Threads wächst: `grep -o "hash 0x[0-9a-f]*"`, sonst meldet der Vergleich einen Unterschied, der keiner
+  ist.
+- **Die Klassen vor jedem Vorschlag zählen, nicht nur vor der Wahl.** Die Lehre von Runde 132 gilt auch für den
+  Vorschlag am Ende einer Runde: Über die acht Wechsel im Rennen auf zwölf Sätzen war das stehende Schienbein mit 14 von
+  621 mm die kleinste Klasse, und die Runden 148 bis 150 galten ihr. Zum Vorschlag gehört die Zahl seiner Klasse neben
+  denen der anderen.
 - **Größe der Figur.** Winkelbeschleunigungen wachsen bei kleineren Figuren mit 1 durch `nbFigureScale`, Längen
   und Geschwindigkeiten mit ihr.
 

@@ -4936,6 +4936,29 @@ static void nbGaitPose( const nbWorld* world, nbFigure* f, b3Vec3 up, float time
 #define NB_SWING_SLOW_ARC 0.5f
 #define NB_LEG_REACH_SLOW 0.01f
 
+// Speeding up faster than its gait follows, as turning from running backward to running forward, the root came up 57 mm
+// in 0.15 s while the hip ran 20 cm away from the trailing foot in four updates: the trailing leg stretched from 0.83
+// to 0.978 of its length before its foot rolled, its knee from 68 to 24 degrees, and the nearly straight knee turned a
+// jerk of the ankle of 17.9 mm into 41.8 mm at the shin, see rounds 148 and 149. So while the figure is faster than its
+// gait, by the lag NB_SWING_SLOW_FROM to NB_SWING_SLOW_TO as braking has it the other way, the legs stretch up to
+// NB_LEG_REACH_FAST of their length less far and the hip goes lower. That comes and goes with a time constant of
+// NB_LEG_REACH_FAST_LAG, and not before the first foot of a start from standing has landed: at once it lowered the
+// walking root of a start in a few updates and moved its first landing by an update, and starting to run backward the
+// shins summed to 2 665 instead of 272 mm beyond 37 mm, see round 149; without the lag it set in at once after that
+// landing, and the pelvis jumped 18.4 mm. With a fixed heading on 19 speed sets, 9 576 points, the shins jump 1 297
+// instead of 1 532 mm beyond 37 mm in sum, the feet 81 instead of 98 mm and the pelvis 1 095 instead of 1 188 mm beyond
+// 10 mm. 0.1 to 0.2 s hold, with 0.05 s SteerBrakeBackTest fails, as with 0.025 and 0.03 of the length; 0.015 leaves
+// the pelvis at 1 221 mm. Only the lift of the walking root, only the height the root goes down from for a landing or
+// only the reach of the standing legs take little or nothing, 72 to 112 instead of 89 mm from backward to forward: it
+// takes all of them. A run goes on at another phase of its gait once its start went otherwise, so single later moments
+// come out harder: facing where it moves the shins sum to 184 instead of 177 mm on five sets. Checked at speeds that
+// had not run before: on twelve sets the shins sum to 776 instead of 886 mm beyond 37 mm, less in 9 of them. It does
+// not take the jump of that standing shin itself, 36 instead of 32 mm from backward to forward there: the trailing leg
+// still gets 18 to 20 mm longer in an update and stops at its reach in one, as walking its foot does not roll ahead,
+// see round 150 in docs/Roadmap.md. See SteerSpeedUpTest.
+#define NB_LEG_REACH_FAST 0.02f
+#define NB_LEG_REACH_FAST_LAG 0.15f
+
 // Steered against the way it moves, with its legs going backward, a foot that lifts takes this part of what its hip
 // goes away from it, on the line to it, faster than its leg can brake before its reach, see NB_LEG_BRAKE, scaled by how
 // far the figure is steered against its way. Turning from running backward at 4.33 m/s to running forward, a foot ahead
@@ -5633,6 +5656,8 @@ static void nbSteerFeet( const nbWorld* world, int index, nbFigure* f, const nbC
 		f->gaitLag = 0.0f;
 		f->gaitLagRate = 0.0f;
 		f->gaitStarting = true;
+		// A start begins with the legs stretching as far as ever, whatever the figure did before, see NB_LEG_REACH_FAST
+		f->legReachFast = 0.0f;
 		for ( int k = 0; k < 2; ++k )
 		{
 			f->footSwings[k] = false;
@@ -5861,6 +5886,12 @@ static void nbSteerFeet( const nbWorld* world, int index, nbFigure* f, const nbC
 		( ( f->gaitSpeed - speed ) / f->gaitUnit - NB_SWING_SLOW_FROM ) / ( NB_SWING_SLOW_TO - NB_SWING_SLOW_FROM ), 0.0f, 1.0f );
 	float braking = run * slower * slower * ( 3.0f - 2.0f * slower );
 	f->legReach -= NB_LEG_REACH_SLOW * run * slower * slower * ( 3.0f - 2.0f * slower );
+	// Faster than its gait, they stretch less far too, see NB_LEG_REACH_FAST
+	float faster = b3ClampFloat(
+		( ( speed - f->gaitSpeed ) / f->gaitUnit - NB_SWING_SLOW_FROM ) / ( NB_SWING_SLOW_TO - NB_SWING_SLOW_FROM ), 0.0f, 1.0f );
+	float reachFast = f->gaitStarting ? 0.0f : NB_LEG_REACH_FAST * faster * faster * ( 3.0f - 2.0f * faster );
+	f->legReachFast += b3MinFloat( 1.0f, timeStep / NB_LEG_REACH_FAST_LAG ) * ( reachFast - f->legReachFast );
+	f->legReach -= f->legReachFast;
 	bool clipRoot = nbGaitClipRooted( f );
 	if ( clipRoot )
 	{
