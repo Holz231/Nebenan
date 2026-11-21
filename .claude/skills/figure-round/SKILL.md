@@ -320,6 +320,13 @@ Zehen und Fersen 37 mm, Hände 15 mm, Becken 10 mm, Becken tief ab 15 cm unter d
   die schmale Spur den stetigen Lauf vorwärts. Die Regel prüft ihn deshalb mit einem eigenen Werkzeug (`track147.py`):
   Spur im Bereich des Menschen, Füße nicht zu nah, keine härteren Sprünge; bitgleich bleiben nur die Läufe, die sich
   nicht ändern sollen.
+- **Wenn eine Grenze in beide Richtungen schlechter wird, sitzt die Ursache woanders.** In Runde 148 machte
+  `NB_FOOT_ROLL_GAIN` kleiner wie größer das stehende Schienbein härter, ebenso ein längerer Vorausblick. Der Sprung lag
+  am fast gestreckten Knie, das jeden Ruck des Knöchels verstärkt; erst der Blick auf alle Körper des Beins
+  (Oberschenkel, Schienbein, Fuß) zeigte das.
+- **Eine Größe vor dem Bericht auf ihre Rechnung prüfen.** In Runde 148 sah es aus, als rutschte der hintere Fuß im
+  stetigen Rennen bis 14 mm je Update; `gait100.py` misst aber die Mitte zwischen Ferse und Zehen, und die wandert, wenn
+  der Fuß über die Zehen rollt. Kein Rutschen, nur Rollen.
 - **Größe der Figur.** Winkelbeschleunigungen wachsen bei kleineren Figuren mit 1 durch `nbFigureScale`, Längen
   und Geschwindigkeiten mit ihr.
 
