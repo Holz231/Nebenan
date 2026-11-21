@@ -1,0 +1,101 @@
+{
+ "facing": {
+  "excess pelvis": 22.235843012927873,
+  "excess shins": 6.069460521368562,
+  "flight": 1.5491452991452945,
+  "flights": 8,
+  "hard shins": 2,
+  "low": 2,
+  "lowest": 1.5280000000000058,
+  "mean feet": 0.09574174237477084,
+  "mean hands": 0.05205537790214221,
+  "mean pelvis": 0.0056270766861310495,
+  "mean shins": 0.06392182022247272,
+  "over feet": 4,
+  "over hands": 18,
+  "over pelvis": 6,
+  "over shins": 3,
+  "tenth feet": 0.14237856257409476,
+  "tenth hands": 0.09484608009146722,
+  "tenth pelvis": 0.03532567418178045,
+  "tenth shins": 0.21113548835860563,
+  "uneven": 2,
+  "worst feet": 5.934502651304584,
+  "worst hands": 4.219182391266504,
+  "worst pelvis": 2.0,
+  "worst shins": 4.963699396227248
+ },
+ "fixed": {
+  "answer": 4.201798143851477,
+  "crossed": 2,
+  "excess pelvis": 65.21209018758651,
+  "excess shins": 71.25524070872609,
+  "flight": 2.0833333333333215,
+  "flights": 37,
+  "hard shins": 2,
+  "low": 8,
+  "lowest": 1.2620000000000076,
+  "mean feet": 0.1396241814897814,
+  "mean hands": 0.07896788299165847,
+  "mean pelvis": 0.025052555647185004,
+  "mean shins": 0.13339886453133776,
+  "over feet": 2,
+  "over hands": 65,
+  "over pelvis": 11,
+  "over shins": 33,
+  "switch run answer": 10.96916666666607,
+  "switch run latest": 34.32999999999902,
+  "switch walk answer": 16.61333333333323,
+  "switch walk latest": 71.95499999999993,
+  "tenth feet": 0.20339611321753015,
+  "tenth hands": 0.11190271705635801,
+  "tenth pelvis": 0.05493117427838201,
+  "tenth shins": 0.19951359794620416,
+  "toes": 10,
+  "toes70": 2,
+  "worst feet": 14.30768474837977,
+  "worst hands": 6.8110924443268,
+  "worst pelvis": 5.3089288832750725,
+  "worst shins": 9.975514757309838
+ },
+ "flips": {
+  "flip excess": 0,
+  "hard flips": 2
+ },
+ "hops": {
+  "excess eight": 30.96901416472781,
+  "hard hops": 2,
+  "hop excess": 0,
+  "hops": 2,
+  "over eight": 10
+ },
+ "lifts": {
+  "hard lifts": 2,
+  "lift excess": 9.441986651534712
+ },
+ "lifts137": {
+  "braking lift excess": 9.7972872323258,
+  "gap lift excess": 7.368124121938116,
+  "hard braking lifts": 2,
+  "hard gap lifts": 4
+ },
+ "lifts138": {
+  "against lift excess": 0,
+  "hard against lifts": 2
+ },
+ "pitch": {
+  "hard swings": 3,
+  "swing excess": 6.489011589573359
+ },
+ "run": {
+  "excess": 21.005837049514867,
+  "lifted": 2,
+  "lifted excess": 6.124359616487261,
+  "over": 5
+ },
+ "starts": {
+  "feet": 2.0,
+  "pelvis": 2.0,
+  "shins": 5.054242165328148
+ }
+}

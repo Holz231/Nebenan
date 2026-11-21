@@ -1,0 +1,67 @@
+Regel für Runde 151, vor jedem Lauf mit den Geschwindigkeiten der unabhängigen Prüfung festgeschrieben. Gemessen wird gegen active-ragdoll-150.
+
+Worum es geht. Wird die Figur schneller, als ihr Gang folgt, etwa von rückwärts auf vorwärts im Rennen, geht ihr Gang noch, während sie schon mit dem Tempo des Rennens läuft, und gehend schaut das Rollen eines Fußes hinter der Hüfte nicht voraus. Das stehende hintere Bein wird dann je Update 18 bis 20 mm länger und hält in einem Update an seiner Reichweite an; am fast gestreckten Knie springt das Schienbein bis 41,8 mm (Runden 148 bis 150). Die tiefere Wurzel von Runde 150 nimmt das nicht.
+
+Wie groß das Thema ist, Frage 1 des Skills. Über die acht Wechsel im Rennen mit festem Blick auf zwölf Sätzen der Entwicklung, gezählt mit tools/measure/classes150.py nach Runde 150: der Start rückwärts 172 mm über 37 mm, Landungen 141 mm, Abheber 114 mm, Schwünge 61 mm, stehende Schienbeine 11 mm. Das Ziel der Runde ist die kleinste Klasse; der Nutzer hat sie gewählt, weil der Hebel gemessen war und das Thema der Runden 148 bis 150 abschließt. Der Hebel nimmt auch Abheber, siehe unten.
+
+Der Eingriff. In der Bibliothek, src/figure.c, nbLowerSteered: Das Gewicht des Vorausblicks des Rollens ist für vorwärts gehende Beine das Größte aus dem, wie weit der Gang rennt (runTurn, gaitRun), und dem Zweifachen dessen, wie viel schneller die Figur ist als ihr Gang, höchstens 1. Wie viel schneller, ist dieselbe Größe wie für NB_LEG_REACH_FAST, von 0 bei NB_SWING_SLOW_FROM bis 1 bei NB_SWING_SLOW_TO in Einheiten von sqrt(g l); solange die Figur steht, ist sie null.
+
+Die Zielgröße, mit dem neuen tools/measure/stand151.py: von rückwärts auf vorwärts im Rennen an den 24 Stellen je Satz der härteste Sprung eines Schienbeins, dessen Bein steht, ab dem Wechsel; darüber die Summe dessen, was über 30 mm hinausgeht. Auf den 25 Sätzen der Entwicklung 253 mm, an 9 von 600 Stellen über 37 mm.
+
+Die Varianten, je mit zwei Zahlen, Frage 2 des Skills: am Ziel (Summe über 30 mm auf 25 Sätzen, alt 253 mm) und auf der Tabelle der Entwicklung ohne die Starts mit tools/measure/table150.py (Schienbeine alt 1 019 mm, Zehen und Fersen alt 1 083 mm über 37 mm, mit Blick in Laufrichtung Schienbeine alt 184 mm):
+ - Das Zweifache, der Prototyp: 30 mm, an 1 Stelle über 37 mm; die Abheber derselben Szene mit dem Schienbein über 37 mm an 2 statt 12 Stellen, die ganze Szene 25 statt 57 mm. Tabelle: Schienbeine 987 mm, Zehen und Fersen 1 105 mm, mit Blick in Laufrichtung 174 mm.
+ - Das 1,5- und das 3-Fache: am Ziel und an den Abhebern dasselbe, 30 mm und 2 Stellen. Das 1,35-Fache: Abheber an 6 Stellen, das 1,2-Fache an 10, der Anteil selbst: 45 mm und Abheber an 12 Stellen, die Hälfte: 250 mm, greift kaum. Gewählt ist die Mitte des Plateaus von 1,5 bis 3.
+ - Über die Schwelle geglättet statt verdoppelt, wie in der Durchsicht von Runde 150 gemessen: 30 mm, aber die Abheber bleiben, 13 Stellen. Tabelle: Schienbeine 1 007 mm, Zehen und Fersen 1 090 mm, mit Blick in Laufrichtung 178 mm.
+ - Das Gewicht aus dem Tempo der Kapsel statt aus dem Vorsprung vor dem Gang (wie weit der Gang bei diesem Tempo rennen würde): 130 mm. Tabelle: Schienbeine 994 mm, Zehen und Fersen 1 135 mm, mit Blick in Laufrichtung 187 mm.
+ - Kein Vorausblick bis zur ersten Landung eines Starts: am Ziel, an der Szene und an den Starts kein Unterschied.
+
+Bekannte Kosten des Prototyps, auf den Sätzen der Entwicklung: Zehen und Fersen auf der Tabelle 1 105 statt 1 083 mm über 37 mm. Von 148 Starts aus dem Stand auf 37 Sätzen ändern sich 6, alle seitwärts losrennend mit 4,39 m/s und mehr: 0,4 s nach dem Start springt das Schienbein des eben gelandeten Fußes rund 31 mm, um 0,1 bis 4,7 mm härter als das Härteste des Starts vorher, keines über 37 mm; mit 4,39 bis 4,46 m/s, wo die frischen Sätze liegen, um 0,1 bis 1,4 mm.
+
+Der stetige Gang ändert sich nicht: Von 231 Läufen und 96 feinen aus tools/measure/steady130.py unterscheidet sich ab der fünften Sekunde keiner. Mit dem Prototyp sind alle 194 Tests grün, und kein festgeschriebener Hash ändert sich.
+
+Wie oft die Regel den Gewinn zeigen würde: Über 200 000 Auswahlen von sechs schnellen und sechs langsamen aus 37 schon gelaufenen Sätzen ist A1 in jeder erfüllt, das Verhältnis neu zu alt im Median 0,10 und höchstens 0,36, alt mindestens 44 mm, und A2 in jeder. Die Summe des härtesten Schienbeins der ganzen Szene über 37 mm wäre in 0,8 % der Auswahlen nicht kleiner als alt: Sie steht daneben und ist keine Bedingung.
+
+Toleranzen. Vor dem Festschreiben auf active-ragdoll-150 gemessen mit tools/measure/tolerance151.py, wie in Runde 150, dazu für einen Start aus dem Stand die größte Streuung zwischen ähnlichen Sätzen, mindestens 2 mm: Schienbein 5,05 mm, Fuß 2 mm, Becken 2 mm. docs/Regeln/tol151.json, SHA-256 8c13f039e1fab4310b934de4552406fc734b129594edbbe018c8b8bb2d25e301. Für Zählungen und Summen auf zwei Sätzen mit Blick in Laufrichtung gilt das Doppelte der Toleranz eines Satzes, für die drei Paare der acht Wechsel das Dreifache.
+
+Unabhängige Prüfung. Geschwindigkeiten, die vor dem Festschreiben auf keinem Stand gelaufen sind: Sie standen in keinem Satz von tools/measure/common.sh, in keiner Regel und in keinem Abschnitt der Roadmap, auch nicht als Geschwindigkeit je Achse, geprüft mit tools/measure/speeds.py.
+
+  H134 (schnell): gehend 1,2075, rennend 4,3275 m/s, diagonal 0,8475 m/s je Achse, Spreizung 1,154 und 0,676 s
+  H135 (langsam): gehend 1,5125, rennend 3,3975 m/s, diagonal 1,0825 m/s je Achse, Spreizung 1,031 und 0,725 s
+  H136 (schnell): gehend 1,2025, rennend 4,3525 m/s, diagonal 0,8425 m/s je Achse, Spreizung 1,157 und 0,675 s
+  H137 (langsam): gehend 1,5175, rennend 3,4475 m/s, diagonal 1,0875 m/s je Achse, Spreizung 1,030 und 0,722 s
+  H138 (schnell): gehend 1,1925, rennend 4,3725 m/s, diagonal 0,8375 m/s je Achse, Spreizung 1,162 und 0,675 s
+  H139 (langsam): gehend 1,5225, rennend 3,4775 m/s, diagonal 1,0925 m/s je Achse, Spreizung 1,028 und 0,720 s
+  H140 (schnell): gehend 1,1875, rennend 4,3975 m/s, diagonal 0,8325 m/s je Achse, Spreizung 1,164 und 0,674 s
+  H141 (langsam): gehend 1,5275, rennend 3,5225 m/s, diagonal 1,0975 m/s je Achse, Spreizung 1,026 und 0,717 s
+  H142 (schnell): gehend 1,1825, rennend 4,4225 m/s, diagonal 0,8275 m/s je Achse, Spreizung 1,167 und 0,673 s
+  H143 (langsam): gehend 1,5325, rennend 3,5725 m/s, diagonal 1,1025 m/s je Achse, Spreizung 1,025 und 0,714 s
+  H144 (schnell): gehend 1,1775, rennend 4,4475 m/s, diagonal 0,8225 m/s je Achse, Spreizung 1,169 und 0,672 s
+  H145 (langsam): gehend 1,5375, rennend 3,6225 m/s, diagonal 1,1075 m/s je Achse, Spreizung 1,023 und 0,711 s
+  HF146 (Blick in Laufrichtung): 1,1725, 3,4875 und 4,6725 m/s, Spreizung 1,172, 0,719 und 0,663 s
+  HF147 (Blick in Laufrichtung): 1,5425, 3,6775 und 4,6925 m/s, Spreizung 1,021, 0,708 und 0,662 s
+  Stetige Läufe: vorwärts mit Blick in Laufrichtung 1,1675, 3,7325 und 4,5125 m/s, vorwärts mit festem Blick 4,2625 m/s, seitwärts 2,4125 und 4,1875 m/s, rückwärts 3,8625 und 4,5875 m/s.
+
+Auf allen zwölf Sätzen von rückwärts auf vorwärts im Rennen mit stand151.py und where129.py, 288 Stellen, und die Starts aus dem Stand mit starts150.py, 48 Läufe; mit festem Blick die 21 Szenen auf H134 und H135, 1 008 Stellen, mit Zehen und Fersen; die acht Wechsel im Rennen mit where129.py, hops131.py, flips135.py, lifts134.py, pitch136.py, lifts137.py und lifts138.py auf den drei Paaren H134 bis H139; mit Blick in Laufrichtung HF146 und HF147 mit rhythm123.py; die stetigen Läufe mit track147.py. Alles mit tools/measure/check151.sh, ausgewertet mit tools/measure/eval151.py.
+
+A. Gewinn (A1, A2) und Schutz (A3 bis A12), alle müssen gelten:
+ A1 Von rückwärts auf vorwärts im Rennen auf den zwölf Sätzen, 288 Stellen: Die Summe dessen, was das Schienbein eines stehenden Beins über 30 mm hinaus springt, ist höchstens halb so groß wie alt, und alt ist sie mindestens 40 mm.
+ A2 Dort springt ein stehendes Schienbein an nicht mehr Stellen über 37 mm als alt, und das härteste nicht härter als alt.
+ A3 Die Starts aus dem Stand, seitwärts und rückwärts, gehend und rennend, auf den zwölf Sätzen, 48 Läufe: In keinem springt das Schienbein mehr als 5,05 mm, der Fuß oder das Becken mehr als 2 mm härter als alt, und in keinem springt ein Schienbein über 37 mm, das es alt nicht tat.
+ A4 bis A12 wie A4 bis A12 von RULE147.txt, auf den drei Paaren H134 bis H139 und HF146 und HF147, mit den Toleranzen aus tol151.json.
+
+B. Schutz mit festem Blick, jede Größe höchstens alt plus ihre Toleranz: B1 bis B9 wie in RULE130.txt, auf H134 und H135, mit den Toleranzen aus tol151.json, auch B5, die gekreuzten Füße, und B7, Zehen und Fersen.
+
+C. Schutz mit Blick in Laufrichtung, jede Größe höchstens alt plus ihre Toleranz: C1 bis C7 wie in RULE130.txt, auf HF146 und HF147, mit den Toleranzen aus tol151.json.
+
+D. Sonst, alle müssen gelten:
+ D1 Die Treffertabelle (8 928 Treffer, 60 Hz, eigene Stärke) ist Byte für Byte gleich.
+ D2 Die acht stetigen Läufe von track147.py: Die Zeilen des Protokolls ab 5 s sind Byte für Byte gleich wie alt.
+ D3 Alle Tests grün mit gcc und clang, mit 1, 2 und 4 Threads bitgleich, Sanitizer ohne Befund. Hashes von Tests, in denen eine gesteuerte Figur geht, dürfen sich ändern und werden festgehalten; mit dem Prototyp ändert sich keiner.
+ D4 Das Update der Figuren führt mit 20 gesteuerten Figuren über 1 200 Updates in jedem der drei Modi des Kostentests höchstens 0,5 % mehr Befehle aus als alt, gezählt mit tools/measure/cost_count.sh.
+ D5 Der Benchmark endet in jeder Szene mit denselben Hashes und Zählern wie alt. Die Bildzeiten, zwölf Paare, werden festgehalten und sind keine Bedingung.
+
+Der saubere Bau muss mit dem Prototyp (Schalter NB_X_RAL=2.0f im Versuchsbaum, mit der Größe null im Stand) bitgleich laufen: dieselben Ergebnisse auf mindestens zwei Sätzen der Entwicklung, bevor die Prüfung läuft. Nach der Prüfung ändert sich an der Bibliothek nichts mehr außer Kommentaren.
+
+Stand der Entwicklung beim Festschreiben, der Prototyp gegen active-ragdoll-150, Frage 3 des Skills: Der Prototyp nimmt das Ziel der Runde. Auf den 25 Sätzen der Entwicklung springt von rückwärts auf vorwärts ein stehendes Schienbein an 1 statt 9 von 600 Stellen über 37 mm, 2,3 statt 16,3 mm darüber und 30 statt 253 mm über 30 mm, auf zwölf weiteren schon gelaufenen Sätzen, H120 bis H131, an keiner statt 6 von 288 Stellen und 12,8 statt 134,6 mm über 30 mm; die eine Stelle, die bleibt, liegt auf H34 mit 39,3 mm. Probelauf von eval151.py auf H120 bis H131 an Stelle der zwölf Sätze, H29 und H1 an Stelle von H134 und H135, H1, H2, H5, H6, H9 und H10 an Stelle der drei Paare, HF41 und HF53 an Stelle der Sätze mit Blick in Laufrichtung und schon gelaufenen stetigen Läufen (1,20, 3,70 und 4,55 m/s vorwärts, 4,3375 m/s mit festem Blick, 2,45 und 4,15 m/s seitwärts, 3,85 und 4,60 m/s rückwärts): alle Bedingungen A1 bis D2 erfüllt, ohne Ausnahme. A1 134,6 -> 12,8 mm (erlaubt 67,3), A2 6 -> 0 Stellen, das Härteste 41,9 -> 35,7 mm, A3 Starts höchstens 0,8 mm härter, A5 254 -> 237 mm, A6 220 -> 210 Stellen, B7 Zehen und Fersen an 28 statt 26 Stellen über 37 mm (erlaubt 36), C6 Schienbeine mit Blick in Laufrichtung 103 statt 109 mm, D1 gleich, D2 8 von 8.
+
+Was wiederholt werden darf: nur ein Lauf, der abbricht, und dann ganz. Eine Messung, die nicht passt, wird nicht wiederholt. Verfehlt der saubere Bau eine Bedingung, wird nicht gebaut, oder es steht offen in der Roadmap, warum doch, und der Nutzer entscheidet.
