@@ -1,0 +1,56 @@
+Regel für Runde 147, vor jedem Lauf mit den Geschwindigkeiten der unabhängigen Prüfung festgeschrieben. Gemessen wird gegen active-ragdoll-146 (die Bibliothek von active-ragdoll-145).
+
+Worum es geht. Rennend setzen Menschen die Füße 3 bis 5 cm auseinander, gehend rund 10 cm (Runde 112). Die Figur setzt sie rennend 10,8 cm auseinander, bei jedem Tempo, gemessen mit tools/measure/track147.py im stetigen Lauf vorwärts mit 3,0 bis 4,8 m/s; gehend 10,0 cm.
+
+Ursache. Die Spur kommt aus der Spur des Clips, rennend um NB_GAIT_NARROW (0,4) enger, also 60 % von etwa 18 cm. Dazu hält NB_GAIT_SIDE_GAP die Mitten der Sohlen beim Landen mindestens 10 cm quer auseinander; im stetigen Rennen greift das nicht, aber es verhindert jede Spur unter 10 cm. Und nbHoldLegs behandelt Füße, die quer zu den Beinen weniger als 6 cm (NB_LEG_KEEP) auseinander sind, wie gekreuzte.
+
+Der Eingriff. In der Bibliothek, src/figure.c, nbSteerFeet: Rennt die Figur gerade, landen die Füße um NB_GAIT_NARROW_STRAIGHT (0,75) enger statt um NB_GAIT_NARROW, mit mindestens NB_GAIT_SIDE_GAP_STRAIGHT (3 cm) statt 10 cm zwischen den Sohlen. Wie gerade sie rennt, ist das Produkt aus: eins weniger der Änderung der Geschwindigkeit, die der Gang noch machen muss, über NB_GAIT_STRAIGHT (1 m/s); eins weniger, wie weit die Beine von ihrem Ziel und wie weit sie vom Blick weg zeigen, je über NB_GAIT_STRAIGHT_LEGS (0,35 rad); eins weniger der Drehrate des Blicks über NB_GAIT_STRAIGHT_TURN (1 rad/s); und null, wenn die Beine rückwärts gehen. Fünf neue Konstanten, kein neues Feld. Vorwärts rennend 4,5 statt 10,8 cm Spur; gehend, seitwärts mit gedrehten Beinen und rückwärts wie vorher.
+
+Was verworfen ist, auf H29 und H35 mit allen 21 Szenen und HF41 und HF53:
+ - Überall schmaler, auch rückwärts: Rückwärts rennend liegen die Füße quer zum Becken schon heute 7,5 cm enger als ihre Spur, und mit 4,5 cm kreuzen sie an allen 48 Stellen der Wechsel nach rückwärts, um 3,5 bis 5 cm.
+ - Schmaler auch in Wechseln: von vorwärts nach links kreuzen die Füße um bis zu 10 cm; beim Losrennen zur Seite springt das Becken an allen 48 Stellen über 10 mm, 11,1 mm.
+ - Schmaler, wo der Blick dreht: Die Füße kreuzen quer zum drehenden Becken an 20 von 48 Stellen um 3 mm.
+ - Schmaler auch mit vom Blick weg gedrehten Beinen, also seitwärts: von seitwärts auf rückwärts kreuzen die Füße in SteerLegLeadTest, ein Fuß hebt in SteerFreshFootTest sofort wieder ab, und SteerSideToBackRollTest verfehlt seine Grenze.
+ - Die Grenze der Beine (NB_LEG_KEEP) rennend auf 1 oder 2 cm: ändert an den Kreuzungen fast nichts.
+ - Für die Kehrtwenden mit Blick in Laufrichtung: die Lücke zwischen den Füßen beim Abheben festhalten (Schienbeine 101 statt 96 mm über 37 mm), „gerade“ mit begrenzter Rate folgen lassen (112 und 120 mm), andere Schwellen für Blick und Geschwindigkeit (unverändert 96 mm).
+ - 0,8 statt 0,75, nur ohne die Bedingung des geraden Laufs gemessen: 3,6 cm Spur. Gewählt ist 0,75, mit 4,5 cm im Bereich des Menschen und mit mehr Abstand gegen das Kreuzen.
+
+Zielgröße. Im stetigen Lauf vorwärts, mit Blick in Laufrichtung und mit festem Blick, auf zehn frischen Geschwindigkeiten von 3,38 bis 4,70 m/s: eine Spur von 3 bis 5 cm, ohne dass die Füße quer zum Becken näher als 2 cm kommen und ohne härtere Sprünge. Gehend, seitwärts und rückwärts bleibt der stetige Lauf Byte für Byte gleich. Alles andere ist Schutz.
+
+Der bekannte Preis, auf Entscheidung des Nutzers festgeschrieben. Im Probelauf verfehlte der Prototyp eine Bedingung: Mit Blick in Laufrichtung, auf HF41 und HF53, springen die Schienbeine in den Kehrtwenden im Rennen zusammen 96 statt 82 mm über 37 mm, wo die Toleranz 6 mm erlaubt; einzelne Stellen werden besser, andere schlechter, bis 47,6 mm. Die Ursache ist nicht gefunden. Der Nutzer hat entschieden, die Regel mit diesem Preis festzuschreiben: Für C6, die Summe der Schienbeine über 37 mm mit Blick in Laufrichtung, gilt alt plus Toleranz plus 14 mm, den im Probelauf gemessenen Preis. Alle anderen Bedingungen gelten wie gewohnt.
+
+Toleranzen. Vor dem Festschreiben auf active-ragdoll-146 gemessen mit tools/measure/tolerance147.py, wie in Runde 145: docs/Regeln/tol147.json, SHA-256 44548e4d94e2c4076904900244a3af3b42e86f9a3f3845d910d5c21c4acb5fb0. Für die drei Paare gilt die dreifache Toleranz je Satz, für zwei Sätze mit Blick in Laufrichtung die doppelte.
+
+Unabhängige Prüfung. Geschwindigkeiten, die vor dem Festschreiben auf keinem Stand gelaufen sind: Sie stehen in keinem Satz von tools/measure/common.sh, in keiner Regel und in keinem Abschnitt der Roadmap, auch nicht als Geschwindigkeit je Achse diagonal, geprüft mit tools/measure/speeds.py; der Probelauf hat nur Geschwindigkeiten genommen, die schon gelaufen waren:
+
+  H110 (schnell): gehend 1,2775, rennend 4,3375 m/s, diagonal 0,9025 m/s je Achse, Spreizung 1,122 und 0,676 s
+  H111 (langsam): gehend 1,4575, rennend 3,3825 m/s, diagonal 1,0275 m/s je Achse, Spreizung 1,051 und 0,726 s
+  H112 (schnell): gehend 1,2625, rennend 4,4125 m/s, diagonal 0,8875 m/s je Achse, Spreizung 1,129 und 0,673 s
+  H113 (langsam): gehend 1,4625, rennend 3,5125 m/s, diagonal 1,0325 m/s je Achse, Spreizung 1,049 und 0,718 s
+  H114 (schnell): gehend 1,2725, rennend 4,4375 m/s, diagonal 0,9125 m/s je Achse, Spreizung 1,125 und 0,672 s
+  H115 (langsam): gehend 1,4675, rennend 3,6125 m/s, diagonal 1,0375 m/s je Achse, Spreizung 1,047 und 0,712 s
+  HF116 (Blick in Laufrichtung): 1,2475, 3,5375 und 4,6525 m/s, Spreizung 1,136, 0,716 und 0,664 s
+  HF117 (Blick in Laufrichtung): 1,4725, 3,6625 und 4,6975 m/s, Spreizung 1,045, 0,709 und 0,662 s
+
+Mit festem Blick die 21 Szenen auf H110 und H111, 1 008 Stellen, Zehen und Fersen auf beiden; die acht Wechsel im Rennen mit where129.py, hops131.py, flips135.py, lifts134.py, pitch136.py, lifts137.py und lifts138.py auf den drei Paaren H110 bis H115, 1 152 Stellen; mit Blick in Laufrichtung HF116 und HF117, 624 Stellen, mit rhythm123.py; die stetigen Läufe von track147.py: vorwärts mit Blick in Laufrichtung mit 3,5375, 3,6625, 4,6525 und 4,6975 m/s, vorwärts mit festem Blick mit 3,3825, 3,5125, 3,6125, 4,3375, 4,4125 und 4,4375 m/s, gehend vorwärts mit 1,2475, 1,4725, 1,2775 und 1,4575 m/s, seitwärts und rückwärts mit 4,3375 und 3,3825 m/s. Ausgeführt mit tools/measure/check147.sh und ausgewertet mit tools/measure/eval147.py.
+
+A. Gewinn (A1 bis A3) und Schutz (A4 bis A12), alle müssen gelten:
+ A1 Im stetigen Lauf vorwärts, die zehn Läufe mit 3,38 bis 4,70 m/s: In jedem ist die Spur 3,0 bis 5,0 cm.
+ A2 Dort kommen die Füße quer zum Becken nie näher als 2,0 cm, und das Becken geht in keinem Lauf mehr als 0,5 cm tiefer als alt.
+ A3 Dort springen in jedem Lauf Füße, Schienbeine, Hände und Becken höchstens 1 mm härter als alt.
+ A4 bis A12 wie A4 bis A12 von RULE145.txt, auf den drei Paaren H110 bis H115 und HF116 und HF117, mit den Toleranzen aus tol147.json: die Abheber von lifts138.py, die acht Wechsel im Rennen (Summe und Stellen), die Schienbeine mit Blick in Laufrichtung, die Füße, die sofort wieder abheben, die Füße beim Wechsel der Beine, die Abheber von lifts134.py, die Schwünge von pitch136.py und die Abheber beim Bremsen von lifts137.py.
+
+B. Schutz mit festem Blick, jede Größe höchstens alt plus ihre Toleranz: B1 bis B9 wie in RULE130.txt, auf H110 und H111, mit den Toleranzen aus tol147.json, auch B5, die gekreuzten Füße.
+
+C. Schutz mit Blick in Laufrichtung, jede Größe höchstens alt plus ihre Toleranz: C1 bis C7 wie in RULE130.txt, auf HF116 und HF117, mit den Toleranzen aus tol147.json; für C6 die Summe der Schienbeine über 37 mm höchstens alt plus Toleranz plus 14 mm, siehe oben.
+
+D. Sonst, alle müssen gelten:
+ D1 Die Treffertabelle (8 928 Treffer, 60 Hz, eigene Stärke) ist Byte für Byte gleich.
+ D2 Die stetigen Läufe gehend vorwärts, seitwärts und rückwärts von track147.py, acht Läufe: Die Zeilen des Protokolls ab 5 s sind Byte für Byte gleich wie alt. Der stetige Lauf vorwärts rennend ändert sich gewollt, siehe A1 bis A3.
+ D3 Alle Tests grün mit gcc und clang, mit 1, 2 und 4 Threads bitgleich, Sanitizer ohne Befund. Hashes von Tests, in denen eine gesteuerte Figur geht, dürfen sich ändern und werden festgehalten; mit dem Prototyp ändert sich keiner.
+ D4 Das Update der Figuren führt mit 20 gesteuerten Figuren über 1 200 Updates in jedem der drei Modi des Kostentests höchstens 0,5 % mehr Befehle aus als alt, gezählt mit tools/measure/cost_count.sh.
+ D5 Der Benchmark endet in jeder Szene mit denselben Hashes und Zählern wie alt. Die Bildzeiten, zwölf Paare, werden festgehalten und sind keine Bedingung.
+
+Der saubere Bau muss mit dem Prototyp (Schalter NB_X_NARROW=0.75f, NB_X_GAPRUN=0.03f, NB_X_STRAIGHT=1.0f, NB_X_STRAIGHTLEGS=0.35f, NB_X_STRAIGHTALL, NB_X_STRAIGHTHEAD=1.0f und NB_X_STRAIGHTFACE=0.35f im Versuchsbaum) bitgleich laufen: dieselben Ergebnisse auf H29 und HF41 und dieselbe Treffertabelle. Verfehlt der saubere Bau eine Bedingung, wird nicht gebaut, oder es steht offen in der Roadmap, warum doch, und der Nutzer entscheidet. Eine Messung, die nicht passt, wird nicht wiederholt.
+
+Stand der Entwicklung beim Festschreiben, der Prototyp gegen active-ragdoll-146. Probelauf von check147.sh und eval147.py auf H29 bis H34 an Stelle der drei Paare, H29 und H30 an Stelle von H110 und H111, HF41 und HF53 an Stelle der Sätze mit Blick in Laufrichtung und schon gelaufenen Geschwindigkeiten für die stetigen Läufe: mit der Grenze für C6 von oben alle Bedingungen von A, B, C, D1 und D2 erfüllt. A1 Spur 4,5 statt 10,8 cm in allen zehn Läufen; A2 die Füße quer zum Becken mindestens 3,0 statt 9,3 cm auseinander, das Becken höchstens 10,5 statt 10,3 cm tief; A3 kein Sprung härter; die acht Wechsel im Rennen 408 statt 415 mm über 37 mm an 243 statt 252 Stellen; mit festem Blick keine gekreuzten Füße, Schienbeine an 89 statt 94 Stellen über 37 mm, Becken an 93 statt 100 über 10 mm, Zehen und Fersen an 36 statt 35; mit Blick in Laufrichtung Füße an 30 statt 27 Stellen über 37 mm, Schienbeine an 31 statt 28, 96 statt 82 mm darüber, Becken an 48 statt 53. Stetig 9 s, 231 Läufe: 58 ändern sich, genau die Läufe vorwärts von 1,95 bis 4,80 m/s, gewollt; seitwärts, rückwärts und gehend vorwärts Byte für Byte gleich, die 96 Läufe fein seitwärts und rückwärts ebenso. Auf 19 Sätzen der Entwicklung heben in den acht Wechseln im Rennen 10 statt 5 Füße sofort wieder ab, keiner mit dem Schienbein über 37 mm, und bei den Schwüngen von pitch136.py springt das Schienbein an 41 statt 51 Stellen über 37 mm. Die Treffertabelle gleich; mit dem Prototyp 192 Tests grün, kein Hash geändert.
