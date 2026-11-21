@@ -131,6 +131,9 @@ was schon verworfen wurde.
 - `lab101 "t:vx:vz[:grad],…" out.csv ende` fährt ein Skript von Geschwindigkeiten und schreibt jedes Update: Ursprung
   und Drehung jedes Knochens (`b<n>x…`), ob ein Fuß schwingt, `along`, `hurry`, `roll`, `behind`, Zehen und Fersen,
   `rootY`, `rdrop`. Mit drei Werten je Schlüssel schaut die Figur, wohin sie geht, mit vier hält sie den Blick.
+- `leg150.py lauf.csv von bis L|R` zeigt ein Bein eines solchen Laufs Update für Update: Beugung des Knies, Länge des
+  Beins von Hüfte zu Knöchel, wie viel länger als im Update davor, und die Sprünge von Knöchel, Knie und Hüfte. Die
+  Ursprünge von Oberschenkel, Schienbein und Fuß liegen an Hüfte, Knie und Knöchel.
 - Knochen: Becken 0, Hände 9 und 12, Oberschenkel 13 und 16, Schienbeine 14 und 17, Füße 15 und 18.
 - Die Stelle `i` einer Szene liegt bei `a = a0 + i · Spreizung / 24`, die Szenen stehen in `sweepf112.py` und
   `sweeph111.py`.

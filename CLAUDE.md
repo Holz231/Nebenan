@@ -51,6 +51,13 @@ Wie eine Runde an der gesteuerten Figur abläuft, von der Ursache über die fest
 im Skill `figure-round` in `.claude/skills/figure-round/`, mit einer Karte des Codes der Figur und den Fehlern, die schon
 einmal gemacht wurden. Vor jeder Runde `active-ragdoll-N` und nach jedem Neustart des Kontexts dort nachsehen.
 
+Vier Fragen daraus gelten bei jeder Runde, seit der Durchsicht von Runde 150, und jede bekommt im Bericht eine Antwort
+mit Zahl: vor jedem Vorschlag, wie groß das Thema neben den anderen ist; vor dem Verwerfen einer Variante, ob sie das
+Ziel der Runde nimmt und ob sie überhaupt greift; vor dem Festschreiben der Regel, ob der Prototyp das Ziel der Runde
+nimmt; nach der Prüfung, ob die Szene der Runde besser wurde. Starts aus dem Stand zählen in Summen einmal je Satz. Was
+eine Entscheidung getragen hat und nur im Arbeitsordner oder im Kontext liegt, kommt vor dem Ende der Runde ins
+Repository.
+
 ## Sprache
 
 Mit dem Nutzer Deutsch, per du. Code und Kommentare auf Englisch, README und `docs/` auf Deutsch.

@@ -13,21 +13,47 @@ Der Stand steht in `docs/Roadmap.md` (letzter Abschnitt, F84 mit dem 🔜-Rest) 
 🔜-Zeilen, verworfene ⛔-Zeilen). Dieser Skill hält die Methode fest, nicht die Zahlen. Die Werkzeuge beschreibt
 `tools/measure/README.md`, die Karte des Codes steht in [references/figur.md](references/figur.md).
 
+## Vier Fragen, an denen keine Runde vorbeikommt
+
+Die Runden 148 bis 150 galten der kleinsten Klasse von Sprüngen, und der Hebel, der ihr Ziel nahm, war in Runde 149
+schon gemessen und an der falschen Zahl verworfen. Jede Lehre dazu stand unten schon. Eine Liste von Lehren wird
+überlesen: Darum stehen die vier als Fragen an den Stellen des Ablaufs, an denen entschieden wird. Jede braucht eine
+Antwort mit Zahl, im Bericht an den Nutzer, bevor es weitergeht.
+
+1. **Vor jedem Vorschlag und jeder Wahl: Wie groß ist das Thema neben den anderen?** `classes150.py` zählt über die acht
+   Wechsel im Rennen, was das Bein tut, wo sein Schienbein am härtesten springt, die größte Klasse zuerst. Die Zahl des
+   vorgeschlagenen Themas steht im Vorschlag neben denen der anderen. Wer das kleinste vorschlägt, sagt es.
+2. **Vor dem Verwerfen einer Variante: Nimmt sie das Ziel der Runde, und greift sie überhaupt?** Jede Variante bekommt
+   zwei Zahlen, die an den Stellen der Ursache und die der Tabelle ohne die Starts (`table150.py`). Was das Ziel nimmt
+   und woanders kostet, wird einmal zusammen mit dem Hebel gebaut, der dort hilft. Was nichts ändert, greift vielleicht
+   nicht: das Gewicht oder die Bedingung an der Stelle ausgeben.
+3. **Vor dem Festschreiben der Regel: Nimmt der Prototyp das Ziel der Runde?** Nimmt er es nur halb oder gar nicht,
+   steht das mit Zahl beim Nutzer, bevor die Regel geschrieben wird, und die Runde heißt nach dem, was er wirklich
+   nimmt.
+4. **Nach der Prüfung: Ist die Szene der Runde besser geworden?** Die frischen Sätze je Szene ansehen (`table150.py` mit
+   `SETS` und `FACING`) und im Bericht sagen, was mit dem Ziel der Runde geschah, auch wenn alle Bedingungen erfüllt
+   sind.
+
+Zu allen vier gehört: Starts aus dem Stand zählen einmal je Satz. Ihre 24 Stellen sind gleich, und in Runde 149 waren
+die Hälfte des gemeldeten Gewinns und alles, was „kippte“, dieser Block.
+
 ## Ablauf
 
 1. **Lesen.** Roadmap und Optimierungen. Was dort mit ⛔ steht, ist schon versucht: nicht noch einmal, außer der Grund
-   ist weggefallen.
+   ist weggefallen. Dann die Rangliste, Frage 1.
 2. **Arbeitsplatz.** Ein Arbeitsbaum auf der neuen Branch vom letzten Stand, ein zweiter als Versuchsbaum (detached,
    bekommt die Schalter), ein dritter als sauberer alter Stand für Kosten und Benchmark. Die cmake-Bauten des alten
    Stands behalten, sie sind der Vergleich. Der Hauptcheckout bleibt unberührt.
-3. **Ursache verfolgen, bevor etwas gebaut wird.** Die härtesten Stellen aus den Ergebnissen der letzten Prüfung
-   holen, eine davon mit `lab101` nachfahren und Update für Update ansehen (`jumps119.py`, `lift121.py`, eine kleine
-   Tabelle in Python). Erst wenn im Lauf zu sehen ist, welche Größe springt und welche Zeile sie setzt, steht die
-   Ursache. Eine Vermutung ist keine: In Runde 121 und 122 waren je zwei naheliegende Vermutungen falsch.
+3. **Ursache verfolgen, bevor etwas gebaut wird.** Die härtesten Stellen aus den Ergebnissen der letzten Prüfung holen,
+   eine davon mit `lab101` nachfahren und Update für Update ansehen (`jumps119.py`, `lift121.py`, eine kleine Tabelle in
+   Python). Erst wenn im Lauf zu sehen ist, welche Größe springt und welche Zeile sie setzt, steht die Ursache. Eine
+   Vermutung ist keine: In Runde 121 und 122 waren je zwei naheliegende Vermutungen falsch. `leg150.py` zeigt ein Bein
+   Update für Update mit der Länge von Hüfte zu Knöchel.
 4. **Varianten mit Schaltern.** Im Versuchsbaum hinter `#ifdef NB_X_…`, eingebaut von einem kleinen Python-Skript im
    Scratchpad, gebaut mit `build.sh name "-DNB_X_…"`. Zuerst an der verfolgten Stelle, dann auf den Sätzen der
-   Entwicklung (`sweeps.sh`, `facing119.py`, `fixed121.py`). Jede verworfene Variante mit ihrer Zahl notieren, sie
-   kommt in die Optimierungen.
+   Entwicklung (`sweeps.sh`, `facing119.py`, `fixed121.py`). Jede verworfene Variante mit ihrer Zahl notieren, sie kommt
+   in die Optimierungen. Die ganze Tabelle fährt `devtable.sh`, `table150.py` vergleicht darauf zwei Stände je Szene und
+   ohne die Starts. Vor dem Verwerfen Frage 2.
 5. **Stetigen Gang prüfen.** Läufe stetig gehend, rennend (3,0, 4,5, 4,8 m/s), seitwärts und rückwärts mit `cmp` gegen
    den alten Stand. Ein Eingriff für Wechsel soll den stetigen Gang bitgleich lassen, sonst ist er größer als gedacht.
 6. **Toleranzen und Zielgröße.** `tolerance<N>.py` auf dem alten Stand. Die Zielgröße so wählen, dass der Gewinn auf
@@ -35,10 +61,11 @@ Der Stand steht in `docs/Roadmap.md` (letzter Abschnitt, F84 mit dem 🔜-Rest) 
 7. **Frische Geschwindigkeiten.** `tools/measure/speeds.py v …` sagt, ob ein Wert je gelaufen ist, und rechnet die
    Spreizung über einen Zyklus aus der Kadenzformel, ohne einen Lauf. Neue Sätze in `common.sh`.
 8. **Regel festschreiben.** `docs/Regeln/RULE<N>.txt`, `tol<N>.json`, `check<N>.sh`, `eval<N>.py`, als eigener Commit
-   ohne die Bibliothek, und pushen, bevor irgendein Lauf mit den frischen Geschwindigkeiten existiert. Der Push gibt
-   der Regel einen Zeitstempel außerhalb der Maschine.
+   ohne die Bibliothek, und pushen, bevor irgendein Lauf mit den frischen Geschwindigkeiten existiert. Der Push gibt der
+   Regel einen Zeitstempel außerhalb der Maschine. Davor Frage 3.
 9. **Sauberer Bau** in `src/`, mit Kommentar, bitgleich zum Prototyp: dieselben JSONs auf mindestens zwei Sätzen.
-10. **Unabhängige Prüfung.** `check<N>.sh alt neu`, dann `eval<N>.py alt neu`. Das Ergebnis gilt, wie es kommt.
+10. **Unabhängige Prüfung.** `check<N>.sh alt neu`, dann `eval<N>.py alt neu`. Das Ergebnis gilt, wie es kommt. Danach
+    Frage 4, mit Antwort im Bericht.
 11. **Tests.** `tests.sh` zeigt geänderte Hashes. Ein neuer Test bewacht die Ursache: Seine Zahl auf dem neuen und auf
     dem alten Stand messen und beide in den Kommentar schreiben. Zeigt er kaum einen Unterschied, kommt das Ereignis
     in seinen Momenten nicht vor: mit `lab101` die Momente absuchen. Dann cmake mit gcc und clang, alle Tests, und der
@@ -50,7 +77,8 @@ Der Stand steht in `docs/Roadmap.md` (letzter Abschnitt, F84 mit dem 🔜-Rest) 
     Zeilen in den Optimierungen (✅, je verworfener Variante ⛔, der Rest als 🔜, die alte offene Zeile abschließen),
     ein Satz im README mit der neuen Zahl der Tests, die Zeile in `tools/measure/README.md`. Nichts löschen.
 14. **Abschluss.** Skill `library-first`, `git diff --stat`, Commit, Push, CI abwarten, Zip der Windows-Demo laden und
-    seine Prüfsumme mit der von GitHub vergleichen, Bericht mit „Kurz:“ und einem Vorschlag für die nächste Runde.
+    seine Prüfsumme mit der von GitHub vergleichen, Bericht mit „Kurz:“ und einem Vorschlag für die nächste Runde. Der
+    Vorschlag nennt die Rangliste, Frage 1.
 
 ## Die Regel
 
@@ -352,7 +380,9 @@ Zehen und Fersen 37 mm, Hände 15 mm, Becken 10 mm, Becken tief ab 15 cm unter d
   150). Winkel und Rollen allein zeigten in Runde 148 nur die Folge.
 - **Starts aus dem Stand einmal zählen.** Alle 24 Stellen eines Starts sind gleich: Losrennend rückwärts mit 37,6 mm
   waren 456 der 910 Stellen der Tabelle über 37 mm und 272 der 1 532 mm. `starts150.py` fährt jeden Start je Satz
-  einmal; in Summen über die Tabelle die Starts getrennt ausweisen.
+  einmal; in Summen über die Tabelle die Starts getrennt ausweisen. Nachgerechnet mit `table150.py`: In Runde 149 waren
+  246 der gemeldeten 496 mm Gewinn dieser Block und alles, was mit Stärke und Form „kippte“, ebenfalls; ohne ihn nahm
+  jede Stärke von 0,015 bis 0,03 dasselbe. In Runde 150 war der ganze gemeldete Gewinn am Becken der Block.
 - **Ein neuer Zustand der Figur wird beim Losgehen zurückgesetzt.** `nbSteerFeet` kehrt früh zurück, solange der Gang
   aus ist: Was dort mit einer Zeitkonstante folgt, bleibt über den Stand oder einen Flug stehen. Kommt so eine Zeile
   nach der Prüfung dazu, die Ausgaben der Prüfung Byte für Byte mit dem geprüften Bau vergleichen und es in der Roadmap
@@ -380,6 +410,14 @@ Zehen und Fersen 37 mm, Hände 15 mm, Becken 10 mm, Becken tief ab 15 cm unter d
 - `clang-format` läuft dort nicht, Version 18 kennt einen Schlüssel der `.clang-format` nicht und meldet dann auch
   keine Warnung: Längen neuer Zeilen mit Python prüfen, Kommentare 120 mit Tab als 1, Code 130 mit Tab als 4. Nie
   ganze Dateien neu umbrechen, nur die eigenen Blöcke: Bestehende Zeilen sind zum Teil länger (Runde 127).
+- Was nur im Arbeitsordner der Sitzung liegt, ist nach ihr weg, und was nur im Kontext stand, nach der nächsten
+  Zusammenfassung. Vor dem Ende einer Runde kommen ins Repository: die Werkzeuge, die eine Entscheidung getragen haben,
+  das Rezept jedes gemessenen, nicht gebauten Prototyps (Funktion, Größe, Zahl) in Roadmap und Optimierungen, und jede
+  Berichtigung einer schon gemeldeten Zahl.
+- Auf die CI mit einer geplanten Erinnerung warten, nicht mit einer Warteschleife. Nach grüner CI das Zip laden, seine
+  Prüfsumme mit der von GitHub vergleichen und es dem Nutzer geben.
+- Das Repository ist öffentlich: keine Namen von Nutzerkonten aus Pfaden übernehmen, `<Nutzer>` schreiben, keine
+  E-Mail-Adressen.
 
 ## Quellen
 

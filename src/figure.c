@@ -4943,19 +4943,20 @@ static void nbGaitPose( const nbWorld* world, nbFigure* f, b3Vec3 up, float time
 // gait, by the lag NB_SWING_SLOW_FROM to NB_SWING_SLOW_TO as braking has it the other way, the legs stretch up to
 // NB_LEG_REACH_FAST of their length less far and the hip goes lower. That comes and goes with a time constant of
 // NB_LEG_REACH_FAST_LAG, and not before the first foot of a start from standing has landed: at once it lowered the
-// walking root of a start in a few updates and moved its first landing by an update, and starting to run backward the
-// shins summed to 2 665 instead of 272 mm beyond 37 mm, see round 149; without the lag it set in at once after that
-// landing, and the pelvis jumped 18.4 mm. With a fixed heading on 19 speed sets, 9 576 points, the shins jump 1 297
-// instead of 1 532 mm beyond 37 mm in sum, the feet 81 instead of 98 mm and the pelvis 1 095 instead of 1 188 mm beyond
-// 10 mm. 0.1 to 0.2 s hold, with 0.05 s SteerBrakeBackTest fails, as with 0.025 and 0.03 of the length; 0.015 leaves
-// the pelvis at 1 221 mm. Only the lift of the walking root, only the height the root goes down from for a landing or
-// only the reach of the standing legs take little or nothing, 72 to 112 instead of 89 mm from backward to forward: it
-// takes all of them. A run goes on at another phase of its gait once its start went otherwise, so single later moments
-// come out harder: facing where it moves the shins sum to 184 instead of 177 mm on five sets. Checked at speeds that
-// had not run before: on twelve sets the shins sum to 776 instead of 886 mm beyond 37 mm, less in 9 of them. It does
-// not take the jump of that standing shin itself, 36 instead of 32 mm from backward to forward there: the trailing leg
-// still gets 18 to 20 mm longer in an update and stops at its reach in one, as walking its foot does not roll ahead,
-// see round 150 in docs/Roadmap.md. See SteerSpeedUpTest.
+// walking root of a start in a few updates and moved its first landing by an update, and starting to run backward a
+// shin jumped 42.8 instead of 37.6 mm in every set, see round 149; without the lag it set in at once after that
+// landing, and the pelvis jumped 18.4 mm. With a fixed heading on 19 speed sets, without the starts from standing,
+// whose 24 points each are equal, the shins jump 1 019 instead of 1 254 mm beyond 37 mm in sum and the feet 81 instead
+// of 98 mm; the pelvis stays, 1 093 and 1 092 mm beyond 10 mm. 0.1 to 0.2 s hold, with 0.05 s SteerBrakeBackTest fails,
+// as with 0.025 and 0.03 of the length; 0.015 takes less, 1 049 mm. Only the lift of the walking root, only the height
+// the root goes down from for a landing or only the reach of the standing legs take little or nothing, 72 to 112
+// instead of 89 mm from backward to forward: it takes all of them. A run goes on at another phase of its gait once its
+// start went otherwise, so single later moments come out harder: facing where it moves the shins sum to 184 instead of
+// 177 mm on five sets. Checked at speeds that had not run before: on twelve sets the shins sum to 776 instead of 886 mm
+// beyond 37 mm, less in 9 of them, 604 instead of 714 mm without the starts. It does not take the jump of that standing
+// shin itself, 36 instead of 32 mm from backward to forward there: the trailing leg still gets 18 to 20 mm longer in an
+// update and stops at its reach in one, as walking its foot does not roll ahead, see round 150 in docs/Roadmap.md. See
+// SteerSpeedUpTest.
 #define NB_LEG_REACH_FAST 0.02f
 #define NB_LEG_REACH_FAST_LAG 0.15f
 

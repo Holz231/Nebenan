@@ -11437,6 +11437,29 @@ Klasse, 14 von 621 mm über 37 mm, hinter den Landungen mit 245 mm, dem Losrenne
 100 mm und den Schwüngen mit 90 mm; drei Runden galten ihr. Nach der Runde bleiben das Losrennen rückwärts mit 172 mm,
 Landungen 141 mm, Abheber 114 mm, Schwünge 61 mm und stehende Schienbeine 11 mm.
 
+Nachgerechnet ohne die Starts, nach dem Bericht, mit dem neuen `tools/measure/table150.py`, das sie getrennt ausweist.
+Auf der Tabelle der Entwicklung springen die Schienbeine ohne die Starts 1 019 statt 1 254 mm über 37 mm, 19 % weniger,
+auf den zwölf frischen Sätzen 604 statt 714 mm, 15 % weniger; die Starts selbst bleiben bei 277 und 172 mm. Das Becken
+ändert sich nicht, 1 093 statt 1 092 mm und 675 statt 680 mm: Was oben als Gewinn am Becken steht, 1 095 statt 1 188 mm
+und 677 statt 751 mm, ist der Block des Losrennens rückwärts, wo das Becken in einzelnen Sätzen knapp über 10 mm
+springt. Dasselbe gilt rückwirkend für Runde 149: Von den rund 500 mm, die die kürzere Reichweite dort an den
+Schienbeinen nahm, waren 246 mm dieser Block, 31 statt 277 mm; der echte Gewinn waren 250 mm, 1 004 statt 1 254 mm, und
+er war mit jeder Stärke von 0,015 bis 0,03 und in jeder Form gleich, 1 004 bis 1 022 mm. Was mit Stärke und Form kippte,
+waren allein die Starts, und die nimmt diese Runde mit der Schranke bis zur ersten Landung aus. Auch die Wahl von 0,02
+statt 0,015 stand auf dem Block: Das Becken ist ohne die Starts gleich, der Grund sind die Schienbeine, 1 019 statt
+1 049 mm.
+
+Festgehalten, damit es nicht wieder verloren geht. Der gemessene nächste Schritt, so, dass er sich nachbauen lässt: In
+`nbLowerSteered` entsteht das Gewicht des Vorausblicks des Rollens, `rollAhead`, für vorwärts gehende Beine aus
+`runTurn` und `gaitRun`; im Versuchsbaum kam als dritte Größe dazu, wie viel schneller die Figur ist als ihr Gang,
+dieselbe wie für `NB_LEG_REACH_FAST`, über ihre Schwelle geglättet, ohne Zeitkonstante und auch während eines Starts
+(`NB_X_RA`), und `rollAhead` ist das Größte der drei. Dafür braucht `nbLowerSteered` diese Größe als Feld der Figur.
+Ohne die Starts gibt das auf der Tabelle 1 007 statt 1 019 mm. Die Rangliste des fünften Befunds zählt jetzt
+`tools/measure/classes150.py`, die Tabelle der Entwicklung fährt `devtable.sh`, und `leg150.py` zeigt ein Bein Update
+für Update mit seiner Länge. Der Skill `figure-round` stellt seitdem vier Fragen an den Stellen, an denen entschieden
+wird, und `CLAUDE.md` nennt sie: wie groß das Thema neben den anderen ist, ob eine Variante das Ziel der Runde nimmt und
+überhaupt greift, ob der Prototyp das Ziel nimmt, und ob die Szene der Runde nach der Prüfung besser ist.
+
 Offen bleiben: das stehende Schienbein beim schnellen Abdruck, mit dem Rollen, das vorausschaut, sobald die Figur
 schneller ist als ihr Gang, im Versuchsbaum gemessen; der erste Schwung beim Losrennen rückwärts, in jedem Satz 37,6 mm,
 der in der Tabelle 24-mal zählt; die Spur seitwärts mit gedrehten Beinen und rückwärts; die Kehrtwenden mit Blick in
