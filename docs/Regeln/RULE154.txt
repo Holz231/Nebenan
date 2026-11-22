@@ -1,0 +1,41 @@
+Regel für Runde 154, vor jedem Lauf mit den Geschwindigkeiten der unabhängigen Prüfung festgeschrieben. Gemessen wird gegen active-ragdoll-153, dessen Bibliothek die von active-ragdoll-152 ist.
+
+Worum es geht. Zwei gesteuerte Figuren, die sich begegnen, fallen heute beide: Runde 153 hat gemessen, dass frontal in 5 von 6 Begegnungen beide als Ragdoll enden, und den Auslöser bewiesen. Die Bodensonde der einen findet den schwingenden Fuß der anderen, hält ihn für Boden, der sich schneller als 1,5 m/s bewegt, und nbMoveSteered meldet, dass die Figur fällt. Daneben geht die Kapsel der einen durch die Knochen der anderen oder bleibt an ihnen hängen.
+
+Wie groß das Thema ist, Frage 1 des Skills. Es geht um Stürze, nicht um Millimeter: Auf den zwei Sätzen der Entwicklung verlassen in 80 Begegnungen 42 Figuren den animierten Zustand (20 in 32 und 22 in 48), die Rahmen kommen sich bis 0,433 m nah (die zwei Kapseln zusammen sind 0,612 m breit), und eine stehende Figur wird bis 4,56 m weit weggetragen, weil sie als Ragdoll fällt. Kein anderer offener Punkt der Tabelle lässt eine Figur fallen.
+
+Der Eingriff. In der Bibliothek, src/figure_steer.c. Zwei gesteuerte Figuren, die animiert stehen, begegnen sich als ihre Kapseln: Die Knochen der anderen sind für Kapsel und Bodensonde nicht da, an ihre Stelle tritt eine Wand zwischen den beiden Achsen. Keine geht durch die andere, keine schiebt die andere. Näher als 0,5 m nähert sich die eine der anderen höchstens mit 6 m/s je Meter Abstand, zusätzlich zu dem Tempo, mit dem die andere sich entfernt: Sie bremst, bevor die Kapseln sich berühren, weicht aus, wo sie nicht genau frontal kommt, und geht hinter einer langsameren Figur mit deren Tempo weiter. Welche Figuren sich in einem Update begegnen können, sucht nbFindMeetings einmal je Update. Figuren, die nicht gesteuert sind, Ragdolls und Figuren, die sich fangen, bleiben Knochen wie bisher.
+
+Die Zielgröße: Begegnungen mit tools/measure/meet154.c, je Geschwindigkeit der ersten Figur 16: gegen eine stehende, eine entgegenkommende, eine langsamer vorausgehende und eine von links kreuzende Figur, je frontal und drei Schritte seitlich versetzt, 10 s lang, mit engageRadius 0, dem Standard. Dazu als Vergleich dieselbe Figur allein und gegen zwei Wände.
+
+Die Varianten, je mit zwei Zahlen, Frage 2 des Skills: an den 32 Begegnungen des ersten Satzes der Entwicklung (alt: 20 Figuren verlassen den animierten Zustand, härtester Sprung eines Knochens 270,9 mm) und an den 896 Treffern einzelner Figuren aus tools/measure/hit153.c.
+ - Nur die Regel für schnellen Boden nimmt Knochen anderer Figuren aus, der Versuch aus Runde 153: kein Sturz in dessen 12 Begegnungen, aber die Figuren gehen durcheinander und Knochen springen bis 779 mm. Treffer bytegleich.
+ - Kapsel gegen Kapsel als harte Wand: keine Figur verlässt den animierten Zustand, härtester Sprung 100,8 mm. Hinter einer langsameren Figur bleibt die schnellere 0,40 s gehend und 2,0 s rennend ganz stehen. Treffer bytegleich.
+ - Die Wand geht mit dem Tempo der anderen mit: frontal schieben die beiden sich umeinander, Sprünge bis 160 mm, und mit engageRadius 1,5 fallen 3 Figuren. Treffer bytegleich.
+ - Harte Wand, aber die Figur behält das Tempo, mit dem die andere sich entfernt: keine verlässt den animierten Zustand, hinter der langsameren geht sie mit deren Tempo, härtester Sprung gehend 47,8 und rennend 100,7 mm, gegen 26,2 und 91,3 mm an einer Wand. Treffer bytegleich.
+ - Dazu das weiche Annähern mit 6 m/s je Meter, der Prototyp: härtester Sprung gehend 29,0 und rennend 42,7 mm, Summe der härtesten Sprünge beider Figuren 1 176 mm. Mit 12 m/s je Meter: 26,1 und 47,8 mm, Summe 1 223 mm. Treffer bytegleich, mit engageRadius 1,5 fällt keine Figur mehr (alt 13).
+
+Bekannte Grenzen des Prototyps. Frontal bleiben beide Figuren voreinander stehen, bis das Spiel sie anders steuert. Seitlich versetzt gehen sie aneinander vorbei, die erste wird dabei langsamer, 0,3 m versetzt gehend von 1,40 auf 0,82 m/s. Arme und Beine reichen über die Kapsel hinaus und können sich weiter durchdringen: Die Kapseln halten die Rahmen 0,612 m auseinander, nicht die Hände. Eine gesteuerte Figur begegnet einer nicht gesteuerten weiter als deren Knochen.
+
+Einzelne Figuren, Frage nach dem Schutz. Ohne eine zweite gesteuerte Figur läuft derselbe Code wie bisher: Die 896 Treffer aus hit153.c sind bytegleich, alle 196 Tests bestehen mit dem Prototyp, und jeder der 30 gedruckten Hashes ist gleich.
+
+Die Kosten, vor dem Festschreiben gezählt. Das Update von 20 gesteuerten Figuren führt mit dem Prototyp 0,39 %, 0,37 % und 0,43 % mehr Befehle aus als alt (tools/measure/cost_count.sh). Die erste Form, die jede Figur in jedem Durchgang der Kapsel alle anderen fragen ließ, kostete 4,0 %; die Suche einmal je Update mit dicht gepackten Daten und einer billigen ersten Probe brachte es unter die Grenze.
+
+Nimmt der Prototyp das Ziel, Frage 3 des Skills. Probelauf dieser Regel auf den zwei Sätzen der Entwicklung, deren Geschwindigkeiten schon gelaufen waren: alle Bedingungen erfüllt. Figuren, die den animierten Zustand verlassen: 20 und 22 alt, 0 und 0 neu. Härtester Sprung gegen die Grenze aus A3: 29,0 von 41,3 mm und 23,2 von 29,9 mm. Die Variante ohne weiches Annähern verfehlt A3 mit 47,8 von 41,3 mm.
+
+Bedingungen, mit tools/measure/check154.sh und eval154.py, auf den frischen Begegnungen:
+ A1 In keiner Begegnung verlässt eine Figur den animierten Zustand. Gezeigt ist das nur, wenn es alt mindestens 4 Figuren tun.
+ A2 In jeder Begegnung bleiben die Rahmen mindestens 0,611 m auseinander: die zwei Kapseln, 0,612 m, weniger 1 mm.
+ A3 Kein Knochen springt in einer Begegnung härter als das 1,5-Fache des härteren Sprungs an den zwei Wänden, plus 2 mm. Für die erste Figur zählen die Wände bei ihrem Tempo, für die zweite die Wände beim kleinsten Tempo des Satzes, das mindestens ihres ist. Der Faktor: Auf den Sätzen der Entwicklung liegt der Prototyp beim 1,11- und 1,25-Fachen, die Variante ohne weiches Annähern beim 1,82-Fachen; 2 mm ist der Boden jeder Toleranz eines härtesten Sprungs.
+ A4 Hinter einer langsameren Figur, frontal, wo die erste mindestens 0,3 m/s schneller ist: Sie steht nie fast still und wird nie langsamer als 0,9 des Tempos der vorderen.
+ A5 Eine stehende Figur wird höchstens 0,01 m bewegt.
+Schutz:
+ D1 Die 896 Treffer einzelner Figuren aus hit153.c sind bytegleich.
+ D2 Allein und an den zwei Wänden sind die Zeilen aus meet154.c gleich.
+ D3 Alle Tests bestehen, und kein gedruckter Hash ändert sich, mit gcc und clang und mit 1, 2 und 4 Threads.
+ D4 Das Update der Figuren führt höchstens 0,5 % mehr Befehle aus.
+ D5 Mit engageRadius 1,5 fallen in den 12 Begegnungen aus hit153.c nicht mehr Figuren als alt.
+
+Unabhängige Prüfung. Geschwindigkeiten, die vor dem Festschreiben auf keinem Stand gelaufen sind, geprüft mit tools/measure/speeds.py: die erste Figur mit 0,97, 1,77, 2,65, 3,97 und 5,05 m/s, die entgegenkommende und die kreuzende mit 1,93 m/s, die vorausgehende mit 0,47 m/s, seitlich versetzt um 0,11, 0,22 und 0,33 m. Das sind 80 Begegnungen, der Satz fresh in check154.sh.
+
+Der saubere Bau ist derselbe Text wie der Prototyp und muss auf beiden Sätzen der Entwicklung und in den Tabellen aus hit153.c bytegleich zu ihm sein. Verfehlt er auf den frischen Begegnungen eine Bedingung, wird er nicht gebaut, oder die Roadmap sagt offen, warum doch, und der Nutzer entscheidet. Eine Messung, die nicht passt, wird nicht wiederholt.
