@@ -1,0 +1,429 @@
+diff --git a/include/nebenan/types.h b/include/nebenan/types.h
+index b7dbe22..0a3c498 100644
+--- a/include/nebenan/types.h
++++ b/include/nebenan/types.h
+@@ -1445,7 +1445,8 @@ typedef struct nbFigureDef
+ 	/// off it for half a second, as a fist caught under the arm of the other, or pressed level by other figures with more
+ 	/// than half its weight at two checks in a row, it lets go and catches itself, see nb_figureBalancing. A second after
+ 	/// the last figure left the distance and back on its clip, its bones are kinematic again. It stays nb_figureAnimated,
+-	/// see nbFigureInfo::following. Zero, the default, never follows, and two kinematic figures pass through each other.
++	/// see nbFigureInfo::following. Zero, the default, never follows, and the kinematic bones of two figures pass through
++	/// each other. Two steered figures meet as their capsules either way, see steered.
+ 	float engageRadius;
+ 
+ 	/// A ragdoll counts as lying still while its bones move slower than this on average, in meters per second
+@@ -1463,7 +1464,11 @@ typedef struct nbFigureDef
+ 	bool startAsRagdoll;
+ 
+ 	/// A program steers the figure, see nbFigure_Steer: it moves through the world on its own feet, as the program wants,
+-	/// see nbFigureSteering. nbFigure_Move places it.
++	/// see nbFigureSteering. nbFigure_Move places it. Two steered figures that stand animated meet as their capsules:
++	/// neither goes through the other or pushes it, and their bones are no walls and no ground for each other. Closer
++	/// than half a meter one slows down as it closes in on the other, turns aside where they are not head on, and walks
++	/// on behind a slower one at its speed. Head on they stand against each other until the program steers them apart.
++	/// Arms and legs reach beyond the capsules and can still pass through each other.
+ 	bool steered;
+ 	nbFigureSteering steering;
+ 
+diff --git a/src/figure.c b/src/figure.c
+index 4750c6e..30f6513 100644
+--- a/src/figure.c
++++ b/src/figure.c
+@@ -8894,6 +8894,7 @@ void nbUpdateFigures( nbWorld* world, float timeStep )
+ 	b3Vec3 up = nbUpOf( world );
+ 	nbCollectDebrisHits( world );
+ 	nbFindEngaged( world );
++	nbFindMeetings( world, timeStep, up );
+ 	for ( int index = 0; index < world->figures.count; ++index )
+ 	{
+ 		nbFigure* f = world->figures.data + index;
+@@ -9374,6 +9375,7 @@ void nbDestroyFigures( nbWorld* world )
+ 	nbArray_Free( world->freeFigures );
+ 	nbArray_Free( world->bodyToBone );
+ 	nbArray_Free( world->figurePelvises );
++	nbArray_Free( world->figureMeets );
+ 	if ( b3World_IsValid( world->physicsWorld ) && b3Body_IsValid( world->figureAnchor ) )
+ 	{
+ 		b3DestroyBody( world->figureAnchor );
+diff --git a/src/figure.h b/src/figure.h
+index 11ec05b..f8514f7 100644
+--- a/src/figure.h
++++ b/src/figure.h
+@@ -292,6 +292,11 @@ typedef enum nbBalanceResult
+ } nbBalanceResult;
+ 
+ // A figure, see nbCreateFigure
++// How many other steered figures a figure keeps to meet in an update, see nbFindMeetings, and the count that stands
++// for all of them where they are more
++#define NB_MEET_MOST 12
++#define NB_MEET_ALL -1
++
+ typedef struct nbFigure
+ {
+ 	nbBone* bones;
+@@ -492,6 +497,10 @@ typedef struct nbFigure
+ 	float moverRadius;
+ 	float moverLow;
+ 	float moverHigh;
++	// The other steered figures its capsule can meet in this update, in the order of the figures, or NB_MEET_ALL for a
++	// count where they are more than NB_MEET_MOST, see nbFindMeetings
++	int meetOthers[NB_MEET_MOST];
++	int meetCount;
+ 	b3Vec3 moveVelocity;
+ 	b3Vec3 wishVelocity;
+ 	b3Vec3 askedVelocity;
+@@ -693,6 +702,10 @@ b3WorldTransform nbMakeFrame( const nbWorld* world, b3Pos position, float headin
+ void nbInitSteering( nbFigure* f, const b3WorldTransform* transforms );
+ bool nbMoveSteered( nbWorld* world, int index, nbFigure* f, float timeStep, b3Vec3 up );
+ 
++// Which steered figures can meet in this update, from where they are at its start, see nbMoveSteered: each gets the
++// others its capsule can come near, in the order of the figures
++void nbFindMeetings( nbWorld* world, float timeStep, b3Vec3 up );
++
+ // A steered figure stands again or is placed: still, on the ground, its feet where they stand
+ void nbResetSteering( nbFigure* f );
+ 
+diff --git a/src/figure_steer.c b/src/figure_steer.c
+index 9006eb4..e1360b6 100644
+--- a/src/figure_steer.c
++++ b/src/figure_steer.c
+@@ -53,6 +53,14 @@
+ #define NB_STEER_PLANES 32
+ #define NB_STEER_SETTLED 1.0e-4f
+ 
++// Two steered figures meet as their capsules, see nbMoveSteered. Closer than NB_MEET_NEAR, in meters between the
++// capsules, one closes in on the other no faster than NB_MEET_SOFT times the gap between them, in meters per second for
++// a meter. NB_MEET_MARGIN is how far a capsule gets in an update beyond the way of the velocity it starts with, in
++// meters, see nbFindMeetings.
++#define NB_MEET_NEAR 0.5f
++#define NB_MEET_SOFT 6.0f
++#define NB_MEET_MARGIN 0.1f
++
+ // A plane whose normal points down more than this, its cosine to up, is a ceiling, not a wall
+ #define NB_STEER_CEILING 0.1f
+ 
+@@ -91,10 +99,20 @@ typedef struct nbMoverQuery
+ 	int count;
+ } nbMoverQuery;
+ 
+-// What the capsule of a figure leaves out: its own bones and sensors
++// A steered figure that stands animated meets the other steered figures as its capsule, not as its bones, see
++// nbMoveSteered
++static bool nbHasCapsule( const nbWorld* world, int index )
++{
++	const nbFigure* f = world->figures.data + index;
++	return f->isFree == false && f->steered && f->state == nb_figureAnimated;
++}
++
++// What the capsule of a figure leaves out: its own bones, sensors, and the bones of the figures it meets as capsules
+ static bool nbMoverSkips( const nbMoverQuery* query, b3ShapeId shapeId )
+ {
+-	return b3Shape_IsSensor( shapeId ) || nbFigureOfBody( query->world, b3Shape_GetBody( shapeId ), NULL ) == query->figure;
++	int other = nbFigureOfBody( query->world, b3Shape_GetBody( shapeId ), NULL );
++	return b3Shape_IsSensor( shapeId ) || other == query->figure ||
++		   ( other != NB_NULL_INDEX && nbHasCapsule( query->world, other ) );
+ }
+ 
+ static bool nbMoverPlaneFcn( b3ShapeId shapeId, const b3PlaneResult* planes, int planeCount, void* context )
+@@ -176,7 +194,11 @@ static float nbProbeFcn( b3ShapeId shapeId, b3Pos point, b3Vec3 normal, float fr
+ 	NB_UNUSED( triangleIndex );
+ 	NB_UNUSED( childIndex );
+ 	nbProbe* probe = context;
+-	if ( b3Shape_IsSensor( shapeId ) || nbFigureOfBody( probe->world, b3Shape_GetBody( shapeId ), NULL ) == probe->figure ||
++	// The bones of a figure it meets as a capsule are no ground: until round 154 the probe found the swinging foot of
++	// another steered figure, ground that moves too fast to stand on, and both fell
++	int other = nbFigureOfBody( probe->world, b3Shape_GetBody( shapeId ), NULL );
++	bool capsule = other != NB_NULL_INDEX && nbHasCapsule( probe->world, other );
++	if ( b3Shape_IsSensor( shapeId ) || other == probe->figure || capsule ||
+ 		 ( fraction == 0.0f && b3LengthSquared( normal ) < 0.25f ) )
+ 	{
+ 		return -1.0f;
+@@ -435,6 +457,95 @@ float nbLegCapAcross( const nbFigure* f, float theta, float speed, float legTurn
+ 	return most;
+ }
+ 
++// One steered figure keeps another to meet, see nbFindMeetings
++static void nbKeepMeeting( nbFigure* f, int other )
++{
++	if ( f->meetCount == NB_MEET_ALL || f->meetCount == NB_MEET_MOST )
++	{
++		f->meetCount = NB_MEET_ALL;
++		return;
++	}
++	f->meetOthers[f->meetCount++] = other;
++}
++
++void nbFindMeetings( nbWorld* world, float timeStep, b3Vec3 up )
++{
++	// How far each capsule reaches in this update: across its radius and half the distance at which two slow down for
++	// each other, and up its height, each with the way it goes at the velocity it has and a margin for what it gains
++	int count = world->figures.count;
++	nbArray_Reserve( world->figureMeets, count );
++	nbMeet* meets = world->figureMeets.data;
++	b3Pos origin = world->figures.data[0].frame.p;
++	b3Vec3 level = b3Normalize( b3Cross( up, b3AbsFloat( up.x ) < 0.5f ? b3Vec3_axisX : b3Vec3_axisZ ) );
++	int steered = 0;
++	for ( int i = 0; i < count; ++i )
++	{
++		nbFigure* f = world->figures.data + i;
++		f->meetCount = 0;
++		if ( f->isFree == false && f->steered )
++		{
++			origin = steered == 0 ? f->frame.p : origin;
++			float margin = NB_MEET_MARGIN + timeStep * b3Length( f->moveVelocity );
++			b3Vec3 offset = b3SubPos( f->frame.p, origin );
++			float reach = f->moverRadius + 0.5f * NB_MEET_NEAR + margin;
++			float tall = f->moverHigh + f->moverRadius + margin;
++			meets[steered++] = (nbMeet){ offset, b3Dot( offset, level ), b3Dot( offset, up ), reach, tall, i };
++		}
++	}
++	world->figureMeets.count = steered;
++
++	// Two whose frames are no farther apart than both reach across and up can meet. Each keeps the other, in the order
++	// of the figures, and one with more of them than it holds asks all, see nbMoveSteered. Most pairs are farther apart
++	// along the one level direction already.
++	for ( int i = 0; i < steered; ++i )
++	{
++		nbMeet a = meets[i];
++		for ( int j = i + 1; j < steered; ++j )
++		{
++			const nbMeet* b = meets + j;
++			float reach = a.reach + b->reach;
++			if ( b3AbsFloat( b->along - a.along ) > reach )
++			{
++				continue;
++			}
++			float above = b->height - a.height;
++			if ( b3AbsFloat( above ) <= a.tall + b->tall &&
++				 b3LengthSquared( b3Sub( b->offset, a.offset ) ) - above * above <= reach * reach )
++			{
++				nbKeepMeeting( world->figures.data + a.index, b->index );
++				nbKeepMeeting( world->figures.data + b->index, a.index );
++			}
++		}
++	}
++}
++
++// The capsule of another steered figure as a wall for the capsule of this one at position: it stands up between the two
++// axes, its normal toward this one, gap meters from it, less than zero where the two overlap. False where the other has
++// no capsule, see nbHasCapsule, where one is above the other, and farther than NB_MEET_NEAR.
++static bool nbMeetCapsule( const nbWorld* world, int index, const nbFigure* f, int other, b3Pos position, b3Vec3 up,
++						   b3Vec3* normal, float* gap )
++{
++	const nbFigure* o = world->figures.data + other;
++	if ( other == index || nbHasCapsule( world, other ) == false )
++	{
++		return false;
++	}
++	b3Vec3 apart = b3SubPos( position, o->frame.p );
++	float above = b3Dot( apart, up );
++	if ( above + f->moverLow - f->moverRadius > o->moverHigh + o->moverRadius ||
++		 above + f->moverHigh + f->moverRadius < o->moverLow - o->moverRadius )
++	{
++		return false;
++	}
++	b3Vec3 across = b3MulSub( apart, above, up );
++	float distance = b3Length( across );
++	*gap = distance - f->moverRadius - o->moverRadius;
++	// on the same axis the figure of the lower index gives way to the left of its frame
++	*normal = distance > 1.0e-4f ? b3MulSV( 1.0f / distance, across )
++								 : b3RotateVector( f->frame.q, index < other ? b3Vec3_axisX : b3Neg( b3Vec3_axisX ) );
++	return *gap <= NB_MEET_NEAR;
++}
++
+ bool nbMoveSteered( nbWorld* world, int index, nbFigure* f, float timeStep, b3Vec3 up )
+ {
+ 	const nbFigureSteering* def = &f->def.steering;
+@@ -497,6 +608,30 @@ bool nbMoveSteered( nbWorld* world, int index, nbFigure* f, float timeStep, b3Ve
+ 	float length = b3Length( change );
+ 	flat = length <= most ? wish : b3MulAdd( flat, most / length, change );
+ 
++	// Two steered figures that stand animated meet as their capsules: neither goes through the other, neither pushes the
++	// other, and their bones are no walls and no ground for each other. Near the capsule of another, this one closes in
++	// on it no faster than the gap between them allows, on top of how fast the other moves away: it slows down before
++	// the two touch, turns aside where they are not head on, and behind a slower figure it goes on as fast as that.
++	// The figures move in their order, so the other is where it went in this update, or where it still stands. Until
++	// round 154 the capsule met the bones of the other: walking into a figure that walked toward it, both fell.
++	int meetCount = f->meetCount == NB_MEET_ALL ? world->figures.count : f->meetCount;
++	for ( int m = 0; m < meetCount; ++m )
++	{
++		int other = f->meetCount == NB_MEET_ALL ? m : f->meetOthers[m];
++		b3Vec3 normal;
++		float gap;
++		if ( nbMeetCapsule( world, index, f, other, f->frame.p, up, &normal, &gap ) )
++		{
++			float into = -b3Dot( flat, normal );
++			float away = b3MaxFloat( -b3Dot( world->figures.data[other].moveVelocity, normal ), 0.0f );
++			float soft = away + NB_MEET_SOFT * b3MaxFloat( gap, 0.0f );
++			if ( into > soft )
++			{
++				flat = b3MulAdd( flat, into - soft, normal );
++			}
++		}
++	}
++
+ 	// The ground: the probe from the lower center of the capsule down to the step height below the frame where the figure
+ 	// stands, a little below it in the air
+ 	float probeRadius = NB_STEER_PROBE * radius;
+@@ -605,6 +740,7 @@ bool nbMoveSteered( nbWorld* world, int index, nbFigure* f, float timeStep, b3Ve
+ 	query.count = 0;
+ 	b3QueryFilter filter = nbFigureQueryFilter( world, index );
+ 	b3CollisionPlane planes[NB_STEER_PLANES];
++	int meets[NB_STEER_PLANES];
+ 	b3Capsule capsule = { b3MulSV( f->moverLow, up ), b3MulSV( f->moverHigh, up ), radius };
+ 	b3Pos position = f->frame.p;
+ 	b3Vec3 target = b3MulAdd( b3MulSV( timeStep, flat ), rise, up );
+@@ -619,6 +755,19 @@ bool nbMoveSteered( nbWorld* world, int index, nbFigure* f, float timeStep, b3Ve
+ 		for ( int i = 0; i < count; ++i )
+ 		{
+ 			planes[i] = query.planes[i].plane;
++			meets[i] = NB_NULL_INDEX;
++		}
++		// The capsules of the other figures it meets, each a wall where the two would touch, after what the world gave
++		for ( int m = 0; m < meetCount && count < NB_STEER_PLANES; ++m )
++		{
++			int other = f->meetCount == NB_MEET_ALL ? m : f->meetOthers[m];
++			b3Vec3 normal;
++			float gap;
++			if ( nbMeetCapsule( world, index, f, other, position, up, &normal, &gap ) )
++			{
++				meets[count] = other;
++				planes[count++] = (b3CollisionPlane){ { normal, -gap }, FLT_MAX, 0.0f, false };
++			}
+ 		}
+ 		b3PlaneSolverResult solved = b3SolvePlanes( b3Sub( target, moved ), planes, count );
+ 		float fraction =
+@@ -632,6 +781,20 @@ bool nbMoveSteered( nbWorld* world, int index, nbFigure* f, float timeStep, b3Ve
+ 		}
+ 	}
+ 	velocity = b3ClipVector( b3MulAdd( flat, climb, up ), planes, count );
++	// Against the capsule of another figure it keeps the velocity that moves away with, and is not pushed back by it
++	for ( int i = 0; i < count; ++i )
++	{
++		if ( meets[i] != NB_NULL_INDEX && planes[i].push > 0.0f )
++		{
++			b3Vec3 normal = planes[i].plane.normal;
++			float into = -b3Dot( velocity, normal );
++			float away = b3MaxFloat( -b3Dot( world->figures.data[meets[i]].moveVelocity, normal ), 0.0f );
++			if ( into > away )
++			{
++				velocity = b3MulAdd( velocity, into - away, normal );
++			}
++		}
++	}
+ 	f->moveVelocity = ground ? b3MulSub( velocity, b3Dot( velocity, up ), up ) : velocity;
+ 
+ 	// The slope of its way: how far the frame rose over how far it went across, over the last NB_STEER_SLOPE_LENGTH of
+diff --git a/src/world.h b/src/world.h
+index f5b3c78..bf333f4 100644
+--- a/src/world.h
++++ b/src/world.h
+@@ -416,6 +416,20 @@ NB_ARRAY_DECLARE( b3BodyMoveEvent, nbBodyMoveArray );
+ NB_ARRAY_DECLARE( b3Vec3, nbVec3Array );
+ NB_ARRAY_DECLARE( b3Pos, nbPosArray );
+ 
++// A steered figure at the start of an update, see nbFindMeetings: where its frame is from the first of them, how far
++// along one level direction and how high along up, how far its capsule reaches across and up in this update, and its
++// index
++typedef struct nbMeet
++{
++	b3Vec3 offset;
++	float along;
++	float height;
++	float reach;
++	float tall;
++	int index;
++} nbMeet;
++NB_ARRAY_DECLARE( nbMeet, nbMeetArray );
++
+ // A body that moved, with its poses and centers of mass before and after the latest step it moved in and the number of
+ // that step, see nbWorld::drawStep and nbWorld_GetDrawPoses. The step thread works out the centers once per step, so a
+ // frame in between only interpolates.
+@@ -567,6 +581,9 @@ typedef struct nbWorld
+ 	// others, see nbFigureDef::engageRadius
+ 	nbPosArray figurePelvises;
+ 
++	// The steered figures at the start of an update, see nbFindMeetings
++	nbMeetArray figureMeets;
++
+ 	// The clips of the library for the humanoids of the figures, one set per height
+ 	nbClipSetArray humanoidClips;
+ 
+diff --git a/test/test_figure.c b/test/test_figure.c
+index 8cf3f19..0e52ea2 100644
+--- a/test/test_figure.c
++++ b/test/test_figure.c
+@@ -5701,6 +5701,65 @@ static int SteerLandToesTest( void )
+ 	return 0;
+ }
+ 
++// Two steered figures meet as their capsules, see nbMoveSteered. Walking toward each other head on, they slow down and
++// stand against each other: neither falls, neither is pushed back, and their frames stay as far apart as their two
++// capsules are wide, 0.612 m. Running into the back of a figure that walks ahead at 1.0 m/s, the faster goes on at
++// that speed behind it. And past a figure that stands 0.3 m to the side of its way it walks on, and that is not moved.
++// Until round 154 the capsule of one met the bones of the other and its probe took a swinging foot of the other for
++// ground that moves too fast to stand on: head on both fell as ragdolls, and so did the two of the other scenes.
++static int SteerMeetTest( void )
++{
++	const float pi = 3.14159265f;
++	for ( int part = 0; part < 3; ++part )
++	{
++		FigureScene scene;
++		CreateFigureScene( &scene, 1 );
++		const b3Vec3 starts[3] = { { 0.0f, 0.0f, 4.0f }, { 0.0f, 0.0f, 9.0f }, { 0.3f, 0.0f, 4.0f } };
++		nbFigureId first = AddSteeredFigure( &scene, b3Vec3_zero, 0.0f );
++		nbFigureId second = AddSteeredFigure( &scene, starts[part], part == 0 ? pi : 0.0f );
++		StepFigures( &scene, 30 );
++		nbSteer steerFirst = { { 0.0f, 0.0f, part == 1 ? 4.3f : 1.4f }, 0.0f, true };
++		float speed = part == 0 ? -1.4f : ( part == 1 ? 1.0f : 0.0f );
++		nbSteer steerSecond = { { 0.0f, 0.0f, speed }, part == 0 ? pi : 0.0f, part < 2 };
++		float closest = FLT_MAX;
++		float slowest = FLT_MAX;
++		for ( int i = 0; i < 480; ++i )
++		{
++			nbFigure_Steer( first, &steerFirst );
++			nbFigure_Steer( second, &steerSecond );
++			StepFigures( &scene, 1 );
++			nbFigureInfo info = nbFigure_GetInfo( first );
++			ENSURE( info.state == nb_figureAnimated );
++			ENSURE( nbFigure_GetInfo( second ).state == nb_figureAnimated );
++			b3Vec3 apart = b3SubPos( nbFigure_GetFrame( second ).p, nbFigure_GetFrame( first ).p );
++			closest = b3MinFloat( closest, sqrtf( apart.x * apart.x + apart.z * apart.z ) );
++			slowest = i >= 300 ? b3MinFloat( slowest, info.moveVelocity.z ) : slowest;
++		}
++		b3Vec3 a = b3ToVec3( nbFigure_GetFrame( first ).p );
++		b3Vec3 c = b3ToVec3( nbFigure_GetFrame( second ).p );
++		ENSURE( closest > 0.611f );
++		if ( part == 0 )
++		{
++			// they stand against each other where they met, between where they started
++			ENSURE( closest < 0.63f && c.z - a.z < 0.63f );
++			ENSURE( a.z > 1.0f && c.z < 3.0f );
++		}
++		else if ( part == 1 )
++		{
++			// behind the slower figure at its speed
++			ENSURE( slowest > 0.9f && c.z - a.z < 0.75f );
++		}
++		else
++		{
++			// past the standing figure, which stays where it is
++			ENSURE( a.z > 8.0f );
++			ENSURE( b3Length( b3Sub( c, starts[2] ) ) < 0.01f );
++		}
++		DestroyFigureScene( &scene );
++	}
++	return 0;
++}
++
+ // A steered figure that does not face where it moves turns about as it runs at 4.3 m/s, from 8 places in its cycle, and
+ // changes from going to the left to going backward, walking at 1.05 m/s from 19 places and running at 4.3 m/s from 8.
+ // Turning about, its frame goes at nine tenths of its speed the other way after 1.26 s in the mean and 1.43 s at the
+@@ -8341,6 +8400,7 @@ int FigureTest( void )
+ 	RUN_TEST( SteerSpeedUpTest );
+ 	RUN_TEST( SteerFasterRollTest );
+ 	RUN_TEST( SteerLandToesTest );
++	RUN_TEST( SteerMeetTest );
+ 	RUN_TEST( SteerLegLeadTest );
+ 	RUN_TEST( SteerRunDescentTest );
+ 	RUN_TEST( SteerRunFlightTest );

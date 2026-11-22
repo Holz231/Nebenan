@@ -459,6 +459,20 @@ Zehen und Fersen 37 mm, Hände 15 mm, Becken 10 mm, Becken tief ab 15 cm unter d
 - **Regeln für die Welt gelten auch für andere Figuren, ob gewollt oder nicht.** „Boden, der sich schnell bewegt, trägt
   nicht“ ist für wegrutschende Platten gebaut und traf den schwingenden Fuß der anderen Figur. Wo eine Abfrage Körper
   der Welt trifft, prüfen, was sie mit den Knochen einer anderen Figur tut: `nbFigureOfBody`.
+- **Eine Schwelle im Messprogramm hängt an der Größe, um die es geht.** Runde 154 zählte als fast still, was unter einem
+  Zehntel des eigenen Tempos liegt. Hinter einer Figur mit 0,47 m/s ging die mit 5,05 m/s gesteuerte genau mit 0,47 m/s
+  mit, und das zählte als Stehen: eine Bedingung dem Buchstaben nach verfehlt, bei richtigem Verhalten. Der Probelauf
+  lief nur auf Sätzen, deren Tempi nah beieinanderlagen. Vor dem Festschreiben jede Schwelle an den Rändern des frischen
+  Satzes durchrechnen, hier schnellste erste gegen langsamste zweite Figur; das geht ohne einen Lauf.
+- **Die Kosten zählen, sobald der Prototyp eine Schleife über alle Figuren hat.** Die erste Form kostete 4,0 % bei 20
+  Figuren, die vierte 0,4 %. Gezählt vor dem Festschreiben, wie seit Runde 151 verlangt, hat das eine Runde gespart.
+  `callgrind_annotate` auf `out/cost/cg/new3.out` zeigt, welche Funktion die Befehle trägt.
+- **`tests.sh` gegen einen alten Stand braucht dessen Header.** Mit der Bibliothek des alten Stands und den Headern des
+  neuen liest der Test Felder an falscher Stelle und meldet Fehler, die es nicht gibt. Den neuen Test in einen Baum des
+  alten Stands kopieren und mit `NB_SRC` dort bauen.
+- **Antwortet der Nutzer auf eine Entscheidungsfrage mit einer anderen Richtung, wird nicht gebaut.** Der geprüfte Bau
+  wird als Patch neben der Regel abgelegt, die Runde als geprüft und nicht gebaut geschlossen, und die Frage nicht
+  wiederholt.
 - **Größe der Figur.** Winkelbeschleunigungen wachsen bei kleineren Figuren mit 1 durch `nbFigureScale`, Längen
   und Geschwindigkeiten mit ihr.
 
