@@ -1,0 +1,71 @@
+Regel für Runde 152, vor jedem Lauf mit den Geschwindigkeiten der unabhängigen Prüfung festgeschrieben. Gemessen wird gegen active-ragdoll-151.
+
+Worum es geht. Rennt die Figur mit festem Blick seitwärts und dann rückwärts, bremst sie, ihr Gang fällt ins Gehen, und sie beschleunigt rückwärts wieder. Ein Fuß, der dabei rückwärts schwingt, dreht für die Landung seine Zehen nach unten, gehend um bis 0,25 rad, rennend gar nicht: Wie weit, folgt dem Rennanteil des Gangs ohne Verzögerung (heel in nbSteerFeet). Der Gang wechselt dort in vier Updates vom Gehen ins Rennen, während der Fuß noch in der Luft ist, und der Fuß nimmt die Drehung in den letzten drei Updates vor der Landung zurück. Weil er um seine Zehen dreht, fällt sein Knöchel dabei zusätzlich: auf H33 in den letzten drei Updates 2,6, 18,6 und 31,9 mm je Update statt gleichmäßig rund 20 mm wie im stetigen Rückwärtsrennen. Die Wurzel steht noch hoch, 0,90 bis 0,93 m, das Bein wird beim Aufsetzen je Update 21 bis 27 mm länger und im Update danach kürzer, und das Schienbein springt 44 bis 54 mm.
+
+Wie groß das Thema ist, Frage 1 des Skills. Über die acht Wechsel im Rennen mit festem Blick auf zwölf Sätzen der Entwicklung, gezählt mit tools/measure/classes150.py nach Runde 151: der Start rückwärts 172 mm über 37 mm, je Satz ein Ereignis, Landungen 143 mm, Abheber 94 mm, Schwünge 60 mm, stehende Schienbeine 5 mm. Die größte Szene ist die von seitwärts auf rückwärts mit 160 mm, davon Landungen 79 mm: die größte Klasse der größten Szene. Auf den 19 Sätzen der Entwicklung springt dort das härteste Schienbein an 99 von 456 Stellen über 37 mm, 295 mm darüber, davon 179 mm an 43 Landungen.
+
+Der Eingriff. In der Bibliothek, src/figure.c, nbSteerFeet: Schwingt ein Fuß rückwärts, wird die Drehung der Zehen für seine Landung nicht kleiner, solange er in der Luft ist (swingHeel); er landet mit ihr und kommt nach der Landung von den Zehen herunter wie gehend. Vorwärts schwingende Füße bleiben, wie sie sind. Keine neue Konstante, kein neues Feld.
+
+Die Zielgröße: von seitwärts auf rückwärts im Rennen an den 24 Stellen je Satz, mit tools/measure/where129.py, die Stellen, an denen das Bein mit dem härtesten Schienbein landet (im Update der Landung oder den zwei danach), und darüber die Summe dessen, was über 37 mm hinausgeht. Daneben die ganze Szene und, mit tools/measure/land139.py, die Landungen 0,6 s oder später nach dem Wechsel.
+
+Die Varianten, je mit zwei Zahlen, Frage 2 des Skills: an der Szene auf den 19 Sätzen der Entwicklung (alt 295 mm, davon Landungen 179 mm) und auf der Tabelle der Entwicklung ohne die Starts mit tools/measure/table150.py (Schienbeine mit festem Blick alt 987 mm, mit Blick in Laufrichtung alt 174 mm über 37 mm):
+ - Nur rückwärts schwingende Füße, die Drehung wird in der Luft nicht kleiner, der Prototyp: Szene 169 mm, Landungen 61 mm, späte Landungen 1 statt 119 mm. Tabelle: Schienbeine 851 mm, mit Blick in Laufrichtung 174 mm, alles dort gleich; Zehen und Fersen 1 091 statt 1 105 mm. Außer der Szene selbst ändern sich nur von rückwärts auf vorwärts im Rennen, 19 statt 24 mm, das Bremsen aus dem Rückwärtsrennen, 91 statt 97 mm, und gehend von seitwärts auf rückwärts, 55 statt 54 mm.
+ - Dasselbe für alle Füße, auch vorwärts schwingende, die dann rennend auf der Ferse landen: Szene 165 mm, Tabelle Schienbeine 763 mm, aber mit Blick in Laufrichtung 417 statt 174 mm und die Füße 389 statt 307 mm, und SteerTurnPushTest verfehlt seine Grenze, 45,5 statt 37,3 mm.
+ - Für alle Füße mit einer Rate, mit der die Drehung höchstens kleiner wird: 0,25 rad/s Szene 172 mm, 0,5 rad/s 174 mm (Tabelle 775 mm, mit Blick in Laufrichtung 228 mm), 0,75 rad/s 205 mm, 1,0 rad/s 198 mm, 1,5 rad/s 347 mm, mehr als alt. Von gar nicht bis 0,5 rad/s ein Plateau; gebaut ist sein Rand ohne Konstante. Nur rückwärts mit 0,5 rad/s: 174 mm.
+ - Die Drehung ab der Hälfte des Schwungs in beide Richtungen festhalten: späte Landungen 2 statt 119 mm, aber die Szene 595 mm, Schwünge 352 und Abheber 185 mm. An der Zielgröße allein wäre das die beste Variante gewesen.
+ - Der Rennanteil der Feder statt des Gangs für die Drehung: Szene 1 572 mm.
+
+Bekannte Kosten des Prototyps, auf den Sätzen der Entwicklung. Von rückwärts auf vorwärts im Rennen, dem Ziel von Runde 151, ändert sich das Schienbein eines stehenden Beins an 215 von 456 Stellen, um bis 9,6 mm härter, im Mittel 18,0 statt 17,4 mm; keines kommt neu über 30 mm, die Summe über 30 mm bleibt 27,1 mm, über 37 mm bleibt eine Stelle. Ein Fuß, der auf den Zehen gelandet ist, kommt von ihnen herunter, während sein Bein schon nachläuft, und das Bein läuft schneller an seine Reichweite. SteerFasterRollTest misst deshalb 27,2 statt 20,6 mm, vor Runde 151 waren es 32,1 mm; seine Grenze geht von 26 auf 29 mm. Die Abheber der Szene selbst 83 statt 79 mm. Von 76 Starts aus dem Stand auf 19 Sätzen ändern sich 9, alle rückwärts losrennend: Füße 1,2 bis 2,7 mm und Becken 0,3 bis 2,1 mm weniger hart, Schienbeine gleich.
+
+Der stetige Gang. Von 231 Läufen aus tools/measure/steady130.py unterscheiden sich 15 ab der fünften Sekunde, alle rückwärts, mit 2,10 bis 2,85 und 4,15 bis 4,35 m/s, von den 96 feinen 6, rückwärts mit 4,30 bis 4,35 m/s; vorwärts und seitwärts keiner. Mit tools/measure/track147.py bei 2,20, 2,45, 2,80, 4,25 und 4,35 m/s rückwärts: Spur, Schritt, Abstand der Füße und Tiefe des Beckens gleich, die härtesten Sprünge um höchstens 1,2 mm anders. Das Losrennen verläuft anders, und der Lauf geht in einer anderen Phase weiter. D2 prüft rückwärts deshalb an diesen Maßen, wie in Runde 150, und vorwärts und seitwärts Byte für Byte.
+
+Die Kosten, vor dem Festschreiben gezählt, wie seit Runde 151 verlangt: Das Update der Figuren führt mit dem Prototyp 0,081 % mehr, 0,017 % weniger und 0,012 % weniger Befehle aus als alt, vorwärts gehend und rückwärts rennend, im Kostentest von Runde 107 und stetig seitwärts.
+
+Wie oft die Regel den Gewinn zeigen würde: Auf 49 schon gelaufenen Sätzen, 24 schnellen und 25 langsamen, an 30 davon wurde der Prototyp nicht entwickelt, fallen die Landungen der Szene von 512 auf 173 mm und die Szene von 806 auf 453 mm, an 161 statt 244 Stellen. Über 200 000 Auswahlen von sechs schnellen und sechs langsamen ist das Verhältnis neu zu alt bei den Landungen im Median 0,34, in 98,9 % höchstens 0,6 und höchstens 0,81, alt mindestens 57 mm; A2 und A13 gelten in jeder.
+
+Toleranzen. Vor dem Festschreiben auf active-ragdoll-151 gemessen mit tools/measure/tolerance152.py, wie in Runde 151, dazu für das stehende Schienbein von rückwärts auf vorwärts die größte Streuung zwischen ähnlichen Sätzen: 1 Stelle über 37 mm und 7,87 mm über 30 mm je Satz. docs/Regeln/tol152.json, SHA-256 4389c4907c96589355723e59765559dd3c84c4d071120dfa750f5aaf01c0deb5. Für Zählungen und Summen auf zwei Sätzen mit Blick in Laufrichtung gilt das Doppelte der Toleranz eines Satzes, für die drei Paare der acht Wechsel und für die zwölf Sätze von A13 das Dreifache.
+
+Unabhängige Prüfung. Geschwindigkeiten, die vor dem Festschreiben auf keinem Stand gelaufen sind: Sie standen in keinem Satz von tools/measure/common.sh, in keiner Regel, in keinem Prüfskript und in keinem Abschnitt der Roadmap, geprüft mit tools/measure/speeds.py. Das Werkzeug liest seit dieser Runde auch die Regeln und die stetigen Läufe der Prüfskripte: Die stetigen Läufe von Runde 151 kannte es vorher nicht.
+
+  H148 (schnell): gehend 1,1625, rennend 4,3325 m/s, diagonal 0,8175 m/s je Achse, Spreizung 1,177 und 0,676 s
+  H149 (langsam): gehend 1,5475, rennend 3,4025 m/s, diagonal 1,1175 m/s je Achse, Spreizung 1,020 und 0,724 s
+  H150 (schnell): gehend 1,1575, rennend 4,3575 m/s, Spreizung 1,179 und 0,675 s
+  H151 (langsam): gehend 1,5525, rennend 3,4525 m/s, Spreizung 1,018 und 0,721 s
+  H152 (schnell): gehend 1,1525, rennend 4,3775 m/s, Spreizung 1,182 und 0,674 s
+  H153 (langsam): gehend 1,5575, rennend 3,4825 m/s, Spreizung 1,016 und 0,719 s
+  H154 (schnell): gehend 1,1475, rennend 4,4025 m/s, Spreizung 1,184 und 0,673 s
+  H155 (langsam): gehend 1,5625, rennend 3,5275 m/s, Spreizung 1,015 und 0,717 s
+  H156 (schnell): gehend 1,1425, rennend 4,4275 m/s, Spreizung 1,187 und 0,672 s
+  H157 (langsam): gehend 1,5675, rennend 3,5775 m/s, Spreizung 1,013 und 0,714 s
+  H158 (schnell): gehend 1,1375, rennend 4,4525 m/s, Spreizung 1,189 und 0,671 s
+  H159 (langsam): gehend 1,5725, rennend 3,6275 m/s, Spreizung 1,012 und 0,711 s
+  HF160 (Blick in Laufrichtung): 1,1225, 3,5025 und 4,6775 m/s, Spreizung 1,197, 0,718 und 0,663 s
+  HF161 (Blick in Laufrichtung): 1,5775, 3,6825 und 4,6825 m/s, Spreizung 1,010, 0,708 und 0,663 s
+  Stetige Läufe: vorwärts mit Blick in Laufrichtung 1,6025, 3,7425 und 4,5225 m/s, vorwärts mit festem Blick 4,2725 m/s, seitwärts 2,4225 und 4,1775 m/s, rückwärts 3,8725 und 4,5775 m/s.
+  Diagonal gehen nur H148 und H149, die beiden Sätze mit allen 21 Szenen; die übrigen zehn tragen in common.sh eine Geschwindigkeit je Achse, die kein Lauf der Prüfung benutzt (0,8125, 1,1275, 0,8075, 1,1325, 0,8025, 1,5825, 0,7975, 1,5875, 0,7925 und 1,5925 m/s).
+
+Auf allen zwölf Sätzen von seitwärts auf rückwärts im Rennen mit where129.py und land139.py, 288 Stellen, von rückwärts auf vorwärts mit stand151.py und die Starts aus dem Stand mit starts150.py, 48 Läufe; mit festem Blick die 21 Szenen auf H148 und H149, 1 008 Stellen, mit Zehen und Fersen; die acht Wechsel im Rennen mit where129.py, hops131.py, flips135.py, lifts134.py, pitch136.py, lifts137.py und lifts138.py auf den drei Paaren H148 bis H153; mit Blick in Laufrichtung HF160 und HF161 mit rhythm123.py; die stetigen Läufe mit track147.py. Alles mit tools/measure/check152.sh, ausgewertet mit tools/measure/eval152.py.
+
+A. Gewinn (A1, A2) und Schutz (A3 bis A13), alle müssen gelten:
+ A1 Von seitwärts auf rückwärts im Rennen auf den zwölf Sätzen, 288 Stellen: Wo das Bein mit dem härtesten Schienbein landet, ist die Summe über 37 mm höchstens das 0,6-Fache von alt, und alt ist sie mindestens 40 mm.
+ A2 Die ganze Szene dort: Das härteste Schienbein springt in Summe nicht weiter über 37 mm als alt und an nicht mehr Stellen.
+ A3 Die Starts aus dem Stand, seitwärts und rückwärts, gehend und rennend, auf den zwölf Sätzen, 48 Läufe: In keinem springt das Schienbein mehr als 5,05 mm, der Fuß oder das Becken mehr als 2 mm härter als alt, und in keinem springt ein Schienbein über 37 mm, das es alt nicht tat.
+ A4 bis A12 wie A4 bis A12 von RULE147.txt, auf den drei Paaren H148 bis H153 und HF160 und HF161, mit den Toleranzen aus tol152.json.
+ A13 Der Gewinn von Runde 151, von rückwärts auf vorwärts im Rennen auf den zwölf Sätzen, 288 Stellen: Das Schienbein eines stehenden Beins springt an höchstens 3 Stellen mehr über 37 mm als alt und in Summe höchstens 23,6 mm weiter über 30 mm.
+
+B. Schutz mit festem Blick, jede Größe höchstens alt plus ihre Toleranz: B1 bis B9 wie in RULE130.txt, auf H148 und H149, mit den Toleranzen aus tol152.json, auch B5, die gekreuzten Füße, und B7, Zehen und Fersen.
+
+C. Schutz mit Blick in Laufrichtung, jede Größe höchstens alt plus ihre Toleranz: C1 bis C7 wie in RULE130.txt, auf HF160 und HF161, mit den Toleranzen aus tol152.json.
+
+D. Sonst, alle müssen gelten:
+ D1 Die Treffertabelle (8 928 Treffer, 60 Hz, eigene Stärke) ist Byte für Byte gleich.
+ D2 Die acht stetigen Läufe von track147.py: Vorwärts und seitwärts, sechs Läufe, sind die Zeilen des Protokolls ab 5 s Byte für Byte gleich wie alt. Rückwärts, zwei Läufe, sind Spur, Schritt, Abstand der Füße und Tiefe des Beckens wie alt, auf 0,1 cm, 1 cm, 0,1 cm und 0,1 cm, und kein härtester Sprung von Füßen, Schienbeinen, Händen oder Becken ist mehr als 2 mm härter.
+ D3 Alle Tests grün mit gcc und clang, mit 1, 2 und 4 Threads bitgleich, Sanitizer ohne Befund. Mit dem Prototyp ändert sich kein Hash, weder ein festgeschriebener noch ein nur ausgegebener, verglichen über das ganze Testprotokoll; ändert sich mit dem sauberen Bau einer, wird er festgehalten. Die Grenze von SteerFasterRollTest geht von 26 auf 29 mm, siehe die bekannten Kosten; sonst ändert sich keine Grenze eines Tests.
+ D4 Das Update der Figuren führt mit 20 gesteuerten Figuren über 1 200 Updates in jedem der drei Modi des Kostentests höchstens 0,5 % mehr Befehle aus als alt, gezählt mit tools/measure/cost_count.sh.
+ D5 Der Benchmark endet in jeder Szene mit denselben Hashes und Zählern wie alt. Die Bildzeiten, zwölf Paare, werden festgehalten und sind keine Bedingung.
+
+Der saubere Bau muss mit dem Prototyp (Schalter NB_X_HEEL=4 mit NB_X_HEEL_RATE=0.0f im Versuchsbaum) bitgleich laufen: dieselben Ergebnisse auf mindestens zwei Sätzen der Entwicklung, bevor die Prüfung läuft. Nach der Prüfung ändert sich an der Bibliothek nichts mehr außer Kommentaren.
+
+Stand der Entwicklung beim Festschreiben, der Prototyp gegen active-ragdoll-151, Frage 3 des Skills: Der Prototyp nimmt das Ziel der Runde. Auf den 19 Sätzen der Entwicklung die Landungen der Szene 61 statt 179 mm über 37 mm, die Szene 169 statt 295 mm an 60 statt 99 Stellen. Probelauf von eval152.py auf H120 bis H131 an Stelle der zwölf Sätze, H29 und H1 an Stelle von H148 und H149, H1, H2, H5, H6, H9 und H10 an Stelle der drei Paare, HF41 und HF53 an Stelle der Sätze mit Blick in Laufrichtung und schon gelaufenen stetigen Läufen (1,20, 3,70 und 4,55 m/s vorwärts, 4,3375 m/s mit festem Blick, 2,45 und 4,15 m/s seitwärts, 3,85 und 4,60 m/s rückwärts): alle Bedingungen A1 bis D2 erfüllt, ohne Ausnahme. A1 147,7 -> 43,4 mm (erlaubt 88,6) an 11 statt 27 Stellen, A2 216,4 -> 111,4 mm an 40 statt 56 Stellen, späte Landungen 0 statt 16 Stellen, die Abheber der Szene daneben 60,5 statt 57,3 mm, A13 keine Stelle über 37 mm und 12,8 -> 12,8 mm, A3 Starts gleich, A5 237 -> 204 mm, A6 210 -> 198 Stellen, B gleich oder ruhiger bis auf zwei Mittel, die um unter 0,01 mm höher liegen, C Stelle für Stelle gleich, D1 gleich, D2 6 von 6 und 2 von 2. Mit dem Prototyp sind 195 der 196 Tests grün, der neue Test für die Ursache eingerechnet; der eine ist SteerFasterRollTest mit 27,2 mm an der alten Grenze von 26 mm.
+
+Was wiederholt werden darf: nur ein Lauf, der abbricht, und dann ganz. Eine Messung, die nicht passt, wird nicht wiederholt. Verfehlt der saubere Bau eine Bedingung, wird nicht gebaut, oder es steht offen in der Roadmap, warum doch, und der Nutzer entscheidet.

@@ -1,5 +1,6 @@
-# speeds.py [v ...]: every speed that has run before, as far as the speed sets of common.sh and docs/Roadmap.md name
-# them, and for each speed given in m/s whether it is among them, the time of one cycle of the gait at it from the
+# speeds.py [v ...]: every speed that has run before, as far as the speed sets of common.sh, docs/Roadmap.md, the rules
+# in docs/Regeln and the steady runs of the check scripts (TRACK) name them, and for each speed given in m/s whether it
+# is among them, the time of one cycle of the gait at it from the
 # cadence formula of the library (nbCadenceModel in src/figure.c, read from the source, with the height of the stance
 # fitted to the sets of common.sh), and the speed per axis going diagonally. Nothing is run: a fresh speed set for an
 # independent check is defined with this before any build has run at it.
@@ -12,8 +13,18 @@ sets = [dict(p.split('=') for p in line.split('"')[1].split()) for line in open(
 used = {float(s[k]) for s in sets for k in ('WALK', 'RUN', 'FAST', 'DIAG') if k in s}
 known = {float(s[a]): float(s[b]) for s in sets for a, b in (('WALK', 'CW'), ('RUN', 'CR'), ('FAST', 'CF')) if a in s}
 road = open(os.path.join(T, 'docs', 'Roadmap.md'), encoding='utf-8').read()
+rules = os.path.join(T, 'docs', 'Regeln')
+for name in sorted(os.listdir(rules)):
+    if name.endswith('.txt'):
+        road += '\n' + open(os.path.join(rules, name), encoding='utf-8').read()
 for group in re.findall(r'((?:\d,\d+(?:, | und ))*\d,\d+) m/s', road):
     used.update(float(x.replace(',', '.')) for x in re.findall(r'\d,\d+', group))
+# the steady runs of the checks, as TRACK="f:1.1675 ..." in check<N>.sh
+for name in sorted(os.listdir(M)):
+    if name.startswith('check') and name.endswith('.sh'):
+        for line in open(os.path.join(M, name)):
+            if line.startswith('TRACK='):
+                used.update(float(x) for x in re.findall(r'[a-z]:(\d\.\d+)', line))
 
 
 def cycle(v, height, g=9.81):
