@@ -473,6 +473,14 @@ Zehen und Fersen 37 mm, Hände 15 mm, Becken 10 mm, Becken tief ab 15 cm unter d
 - **Antwortet der Nutzer auf eine Entscheidungsfrage mit einer anderen Richtung, wird nicht gebaut.** Der geprüfte Bau
   wird als Patch neben der Regel abgelegt, die Runde als geprüft und nicht gebaut geschlossen, und die Frage nicht
   wiederholt.
+- **Die Tabelle misst, was der Nutzer sieht.** Die Runden 128 bis 152 feilten an Wechseln im Rennen mit festem Blick.
+  Der Nutzer verlangte den Gang, wie ein Spieler ihn führt: losgehen, gehen, rennen, drehen. Runde 155 hat das zum
+  ersten Mal mit Blick in Laufrichtung gemessen und einen Fehler in Grad gefunden, den Standfuß, der sich bis 140 Grad
+  mitdreht, den die Sprünge in Millimetern nie gezeigt hätten. Vor einer Reihe von Runden am selben Maß fragen, ob das
+  Maß die Szenen des Nutzers abdeckt, und nicht nur Sprünge messen, sondern auch Drehen am Boden, Rutschen, Beckenhöhe
+  und Schrittdauer.
+- **Rutschen nur zählen, solange der Fuß flach steht.** Der Weg des Punkts zwischen Ferse und Zehen zeigte im stetigen
+  Gehen 40 mm, weil der Fuß abrollt. Gezählt, solange Ferse und Zehen auf gleicher Höhe sind, sind es 0,1 mm.
 - **Größe der Figur.** Winkelbeschleunigungen wachsen bei kleineren Figuren mit 1 durch `nbFigureScale`, Längen
   und Geschwindigkeiten mit ihr.
 
