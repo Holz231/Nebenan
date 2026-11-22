@@ -5704,9 +5704,11 @@ static int SteerLandToesTest( void )
 // A steered figure facing where it moves walks at 1.05 m/s and turns about, at twelve moments two updates apart. A foot
 // on the ground turns with the body no farther than NB_FOOT_PIVOT in a stance, 45 degrees: then the heading waits, the
 // foot steps round as soon as the other stands, and the other lands turned ahead, see nbMoveSteered and nbSteerFeet.
-// Over the twelve turns a planted foot turns 45.0 degrees at most, and the figure faces the other way 1.32 s after the
+// Over the twelve turns a planted foot turns 45.0 degrees at most, and the figure faces the other way 1.08 s after the
 // change at the latest. Until round 156 a planted foot turned without a limit, up to 140.4 degrees here, as the other
-// foot swung nearly all the time of the turn, and the figure faced the other way after 0.92 s.
+// foot swung nearly all the time of the turn, and the figure faced the other way after 0.92 s. In round 156 it took
+// 1.32 s: held back, the heading started again from standing, and the foot it waited for swung no faster for it, see
+// NB_FOOT_TURN_HURRY.
 static int SteerTurnStepTest( void )
 {
 	float most = 0.0f;
@@ -5757,7 +5759,7 @@ static int SteerTurnStepTest( void )
 			"faces the other way %.2f s after the change at the latest\n",
 			most * 180.0f / B3_PI, latest );
 	ENSURE( most < 0.803f );
-	ENSURE( latest < 1.45f );
+	ENSURE( latest < 1.2f );
 	return 0;
 }
 
@@ -8263,7 +8265,7 @@ static int ThinBoardTest( void )
 // walking takes the steps of people, see NB_GAIT_CADENCE_WALK, and the ankle of a swinging foot bends up as far as
 // theirs, see NB_SWING_ANKLE_SOFT. Round 113: the body has the dimensions of a person, see nbMakeHumanoidBones.
 // Round 131: a foot that only just landed stands where the other foot is free to lift, see NB_GAIT_FRESH_KEEP.
-#define NB_EXPECTED_STEER_HASH 0xd27f17dfu
+#define NB_EXPECTED_STEER_HASH 0x6c44347du
 
 // See RunGaitClipScenario. Since round 99 as for RunSteerScenario. Since round 100 the figure that is told to turn on
 // the spot while it still walks, not facing where it moves, keeps its legs where they face as its heading turns, and
@@ -8272,7 +8274,7 @@ static int ThinBoardTest( void )
 // RunSteerScenario. Since round 111 as for RunSteerScenario. Round 112: the clips are recorded from a gait that takes
 // the steps of people, see NB_GAIT_CADENCE_WALK, and the ankle of a swinging foot bends up as far as theirs, see
 // NB_SWING_ANKLE_SOFT. Round 113 and round 131 as for RunSteerScenario.
-#define NB_EXPECTED_GAIT_CLIP_HASH 0xd22ab3d5u
+#define NB_EXPECTED_GAIT_CLIP_HASH 0x64c406eeu
 
 static int FigureFollowDeterminismTest( void )
 {

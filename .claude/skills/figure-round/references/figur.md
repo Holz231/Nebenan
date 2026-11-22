@@ -80,7 +80,9 @@ was schon verworfen wurde.
   höchstens 45 Grad (`NB_FOOT_PIVOT`, `footPivot`); dann wartet die Blickrichtung (`footHolds`), der aufhaltende Fuß
   hebt ab, sobald der andere steht, und der schwingende landet vorgedreht (`headingWant`), aber an seinem Platz: Mit dem
   Landeplatz vorgedreht verliert das Standbein rennend den Boden. Gemessen wird das mit `gait155.py` (`twist`), nicht
-  mit den Sprüngen der Schienbeine.
+  mit den Sprüngen der Schienbeine. Seit Runde 157 behält die aufgehaltene Blickrichtung ihre Drehrate (`headingRate`
+  wird beim Warten nicht mehr gesetzt), und ein Fuß, der abhebt, während sie noch mehr als 35 Grad zu drehen hat,
+  schwingt von Anfang an 1,6-mal so schnell (`NB_FOOT_TURN_HURRY`); unterwegs eilen lassen macht die Füße ruppig.
 - **Abheben gegen die Bewegung.** Gegen die Richtung gesteuert, in die sie sich bewegt, mit den Beinen rückwärts, hebt
   ein nachlaufender Fuß ab, sobald die Hüfte schneller von ihm weggeht, als sein Bein vor seiner Reichweite bremsen kann
   (`nbHipAway`, wie `NB_SWING_PULL` es misst), seit Runde 143. Ein schwingender Fuß rollt mit den Beinen rückwärts in

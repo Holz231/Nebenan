@@ -2024,6 +2024,9 @@ sich ein Fuß, der steht, in einer Wende höchstens 45 Grad auf dem Boden mit: D
 umgesetzt haben. Vorher drehte er sich in einer Kehrtwende im Gehen bis 140 Grad auf der Stelle. Eine Kehrtwende dauert
 dafür gehend etwa 1,25 statt 0,97 s und rennend 1,37 statt 1,23 s. Ein Spiel muss dafür nichts aufrufen. Das Update der
 Figuren führt 0,11 % mehr Befehle aus. Siehe „Standfuß dreht sich in Wenden nicht unbegrenzt auf dem Boden mit“ in
+[Optimierungen.md](docs/Optimierungen.md). Seit `active-ragdoll-157` dreht die Blickrichtung nach dem Warten mit der
+Rate weiter, die sie hatte, und der Fuß, auf den sie wartet, schwingt schneller: Die Kehrtwende dauert gehend etwa 1,06
+und rennend 1,29 s. Siehe „Kehrtwende wieder schneller, ohne dass der Standfuß weiter dreht“ in
 [Optimierungen.md](docs/Optimierungen.md). Am Hang und auf Treppen misst die Figur die Steigung ihres Wegs: Bergauf
 landet ein Fuß weiter vorn, bergab näher unter dem Körper, so reicht das vordere Bein so weit hinauf wie das hintere
 hinunter, und die Schritte werden kürzer, auf 20° um ein Fünftel. Die Feder unter der Kapsel folgt der Ebene, die der

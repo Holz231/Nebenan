@@ -5449,6 +5449,12 @@ static float nbSwingTime( const nbFigure* f, int k, float swingTime, float cycle
 // NB_FOOT_STEP_STOOD and the other foot for NB_FOOT_STEP_OTHER, in seconds, whatever its phase.
 #define NB_FOOT_STEP_STOOD 0.1f
 #define NB_FOOT_STEP_OTHER 0.05f
+
+// A foot that lifts while the heading still has more than NB_FOOT_TWIST to turn swings this many times as fast from
+// the start, so the heading waits less for it to land, see nbMoveSteered: turning about at a walk the heading waited
+// 0.22 s for a swing of 0.42 s. Faster from its start, not hurried on its way: hurried while the heading waited, a foot
+// jumped over 37 mm at three times as many points. At twice as fast the figure takes short hurried steps.
+#define NB_FOOT_TURN_HURRY 1.6f
 #define NB_GAIT_SIDE_GAP 0.1f
 #define NB_GAIT_SIDE_GAP_STRAIGHT 0.03f
 #define NB_GAIT_FRESH 0.2f
@@ -6246,6 +6252,11 @@ static void nbSteerFeet( const nbWorld* world, int index, nbFigure* f, const nbC
 				f->swingAlong[k] = 0.0f;
 				f->swingRate[k] = 1.0f;
 				f->swingHurry[k] = late * NB_GAIT_HURRY < NB_GAIT_HURRY - 1.0f ? 1.0f / ( 1.0f - late ) : NB_GAIT_HURRY;
+				// Lifting while the figure still has far to turn, it swings faster from the start, see NB_FOOT_TURN_HURRY
+				if ( fabsf( nbWrapAngle( f->headingWant - f->heading ) ) > NB_FOOT_TWIST )
+				{
+					f->swingHurry[k] = b3MaxFloat( f->swingHurry[k], NB_FOOT_TURN_HURRY );
+				}
 				f->swingStart[k] = -timeStep * f->swingRate[k] * f->swingHurry[k] / footTime;
 				// Braking from a run through standing, the gait falls to walking within a few updates of a lift and its spring
 				// follows slowly, see NB_RUN_TURN_LAG: a foot lifted then with the height of the spring and the early bump of

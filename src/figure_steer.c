@@ -663,7 +663,9 @@ bool nbMoveSteered( nbWorld* world, int index, nbFigure* f, float timeStep, b3Ve
 
 	// The heading turns no farther than the feet on the ground let it: a planted foot turns on the ground with the body
 	// by NB_FOOT_PIVOT in a stance at most, and with that used up the heading waits for the feet to step round, see
-	// nbSteerFeet. It never turns back for a foot, and the legs turning under a fixed heading are not held.
+	// nbSteerFeet. It never turns back for a foot, and the legs turning under a fixed heading are not held. Held back,
+	// it keeps the rate it turned at and goes on with it: until round 157 it started again from standing, and turning
+	// about at a walk it turned 18 degrees in the first 0.15 s after waiting instead of 34.
 	f->headingWant = want;
 	f->footHolds[0] = false;
 	f->footHolds[1] = false;
@@ -695,7 +697,6 @@ bool nbMoveSteered( nbWorld* world, int index, nbFigure* f, float timeStep, b3Ve
 		if ( change != asked )
 		{
 			heading = nbWrapAngle( f->heading + change );
-			f->headingRate = change / timeStep;
 		}
 	}
 	f->heading = heading;

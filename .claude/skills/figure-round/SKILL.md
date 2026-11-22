@@ -489,6 +489,13 @@ Zehen und Fersen 37 mm, Hände 15 mm, Becken 10 mm, Becken tief ab 15 cm unter d
   nun vorgedreht. Jeden Teil hinter einen eigenen Schalter legen.
 - **Der ganze Testlauf früh, schon mit dem Prototyp.** Zwei Tests früherer Runden schlugen an und zeigten Kosten, die
   die neue Tabelle im Mittel nicht zeigte. `tests.sh` mit `NB_SRC` auf den Versuchsbaum kostet zwei Minuten.
+- **Die Toleranz einer Summe ist mindestens so groß wie der Ausschlag einer Stelle.** Runde 157 erlaubte der Summe der
+  Schienbeine über 37 mm 2 mm mehr. Auf der Entwicklung sank sie um 20 und 9 mm, auf den frischen Sätzen stieg sie um 10
+  mm, 9 davon an einer einzigen von 688 Stellen. Eine Summe über wenige harte Stellen schwankt um den Wert einer Stelle;
+  die Toleranz dafür aus dem größten einzelnen Überschuss der Entwicklung nehmen, nicht aus dem Boden von 2 mm.
+- **Abschlussläufe in Schritten mit eigenem Protokoll.** Beim Neustart des Arbeitsprozesses brachen die Läufe nach
+  Builds und Tests ab. Weil jeder Schritt sein Ende ins Protokoll schreibt, war klar, was fertig war; der Rest lief ganz
+  neu, wie es die Regel für abgebrochene Läufe verlangt.
 - **Größe der Figur.** Winkelbeschleunigungen wachsen bei kleineren Figuren mit 1 durch `nbFigureScale`, Längen
   und Geschwindigkeiten mit ihr.
 
