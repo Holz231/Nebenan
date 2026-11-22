@@ -481,6 +481,14 @@ Zehen und Fersen 37 mm, Hände 15 mm, Becken 10 mm, Becken tief ab 15 cm unter d
   und Schrittdauer.
 - **Rutschen nur zählen, solange der Fuß flach steht.** Der Weg des Punkts zwischen Ferse und Zehen zeigte im stetigen
   Gehen 40 mm, weil der Fuß abrollt. Gezählt, solange Ferse und Zehen auf gleicher Höhe sind, sind es 0,1 mm.
+- **Erst prüfen, ob der Fuß überhaupt abheben kann.** Runde 156 ließ zuerst den verdrehten Standfuß abheben und gewann
+  fast nichts: In der Wende schwingt der andere Fuß fast durchgehend. Die Spur Update für Update, wer wann steht und
+  schwingt, zeigte das in einer Minute. Vor einem Eingriff am Abheben die Stützphasen der Szene ausdrucken.
+- **Einen Eingriff aus mehreren Teilen teilweise bauen und einzeln messen.** Der Becken-Ruck in der Kehrtwende im Rennen
+  kam allein vom vorgedrehten Landeplatz; die Variante mit nur diesem Teil zeigte es sofort, und nur der Fuß selbst wird
+  nun vorgedreht. Jeden Teil hinter einen eigenen Schalter legen.
+- **Der ganze Testlauf früh, schon mit dem Prototyp.** Zwei Tests früherer Runden schlugen an und zeigten Kosten, die
+  die neue Tabelle im Mittel nicht zeigte. `tests.sh` mit `NB_SRC` auf den Versuchsbaum kostet zwei Minuten.
 - **Größe der Figur.** Winkelbeschleunigungen wachsen bei kleineren Figuren mit 1 durch `nbFigureScale`, Längen
   und Geschwindigkeiten mit ihr.
 

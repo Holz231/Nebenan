@@ -660,6 +660,44 @@ bool nbMoveSteered( nbWorld* world, int index, nbFigure* f, float timeStep, b3Ve
 		want = moving ? b3Atan2( local.x, local.z ) : heading;
 	}
 	heading = nbTurnToward( heading, want, &f->headingRate, def, timeStep );
+
+	// The heading turns no farther than the feet on the ground let it: a planted foot turns on the ground with the body
+	// by NB_FOOT_PIVOT in a stance at most, and with that used up the heading waits for the feet to step round, see
+	// nbSteerFeet. It never turns back for a foot, and the legs turning under a fixed heading are not held.
+	f->headingWant = want;
+	f->footHolds[0] = false;
+	f->footHolds[1] = false;
+	if ( f->gaitOn && f->boneCount == nb_humanoidBoneCount )
+	{
+		float change = nbWrapAngle( heading - f->heading );
+		float asked = change;
+		for ( int k = 0; k < 2; ++k )
+		{
+			if ( f->footSwings[k] )
+			{
+				continue;
+			}
+			// turning by change takes the twist of the foot against the legs to twist - change
+			float room = NB_FOOT_TWIST + b3MaxFloat( NB_FOOT_PIVOT - f->footPivot[k], 0.0f );
+			float twist = nbWrapAngle( f->footHeading[k] - f->legHeading );
+			float most = b3MaxFloat( room, fabsf( twist ) );
+			if ( change > 0.0f && twist - change < -most )
+			{
+				change = b3MaxFloat( twist + most, 0.0f );
+				f->footHolds[k] = true;
+			}
+			else if ( change < 0.0f && twist - change > most )
+			{
+				change = b3MinFloat( twist - most, 0.0f );
+				f->footHolds[k] = true;
+			}
+		}
+		if ( change != asked )
+		{
+			heading = nbWrapAngle( f->heading + change );
+			f->headingRate = change / timeStep;
+		}
+	}
 	f->heading = heading;
 	f->frame = nbMakeFrame( world, position, heading );
 

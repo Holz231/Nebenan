@@ -1355,7 +1355,9 @@ typedef struct nbFigureSteering
 
 	/// How fast the figure turns to the heading it wants, in radians per second, and how fast it gets to that and slows
 	/// down from it, in radians per second squared. A turn acceleration of zero turns at the turn rate at once. The
-	/// defaults, 4 and 25, turn about as fast as the feet follow: a figure that turns faster crosses its legs.
+	/// defaults, 4 and 25, turn about as fast as the feet follow: a figure that turns faster crosses its legs. A humanoid
+	/// turns no farther than its feet let it: a foot on the ground turns with it by 45 degrees at most, then the heading
+	/// waits until the feet have stepped round, so turning about takes about 1.3 s walking and 1.4 s running.
 	float turnRate;
 	float turnAcceleration;
 } nbFigureSteering;

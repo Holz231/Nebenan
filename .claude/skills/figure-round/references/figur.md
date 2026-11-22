@@ -75,7 +75,12 @@ was schon verworfen wurde.
   der doppelten Drehrate (`NB_LEG_FAR_RATE`) und derselben Winkelbeschleunigung. Seit Runde 145 behält eine Kehrtwende
   diese Rate, bis die Beine dem Ziel näher als `NB_LEG_FAR_END` kommen, gemessen von dort, wohin sie zu Beginn der
   Drehung zeigten (`legFar`, `legFarFrom`); ein Ziel, das nur ein oder zwei Updates weit wegzeigt, macht aus einer
-  Vierteldrehung keine Kehrtwende.
+  Vierteldrehung keine Kehrtwende. Mit Blick in Laufrichtung dreht die Blickrichtung selbst (`nbMoveSteered`). Ein
+  Standfuß dreht sich mit, sobald sie 35 Grad von ihm abweicht (`NB_FOOT_TWIST`), seit Runde 156 in einem Stand
+  höchstens 45 Grad (`NB_FOOT_PIVOT`, `footPivot`); dann wartet die Blickrichtung (`footHolds`), der aufhaltende Fuß
+  hebt ab, sobald der andere steht, und der schwingende landet vorgedreht (`headingWant`), aber an seinem Platz: Mit dem
+  Landeplatz vorgedreht verliert das Standbein rennend den Boden. Gemessen wird das mit `gait155.py` (`twist`), nicht
+  mit den Sprüngen der Schienbeine.
 - **Abheben gegen die Bewegung.** Gegen die Richtung gesteuert, in die sie sich bewegt, mit den Beinen rückwärts, hebt
   ein nachlaufender Fuß ab, sobald die Hüfte schneller von ihm weggeht, als sein Bein vor seiner Reichweite bremsen kann
   (`nbHipAway`, wie `NB_SWING_PULL` es misst), seit Runde 143. Ein schwingender Fuß rollt mit den Beinen rückwärts in
@@ -157,8 +162,8 @@ was schon verworfen wurde.
 `SteerStopLiftTest` (133), `SteerBrakeBackTest` (134), `SteerSideToBackRollTest` (135), `SteerSideToBackPitchTest`
 (136), `SteerSideToBackLiftTest` (137), `SteerBackToForwardLiftTest` (138), `SteerWaitedFootTest` (140),
 `SteerSwitchAnswerTest` (141), `SteerBackToForwardEarlyTest` (143), `SteerSideToBackWalkTest` (144), `SteerRunTrackTest`
-(147), `SteerSpeedUpTest` (150), `SteerFasterRollTest` (151), `SteerLandToesTest` (152), und für den Körper
-`FigureShoulderTest` (126) und `FigureSkinTest` (127): Ändert eine Runde die Knochen, fällt er, bis
+(147), `SteerSpeedUpTest` (150), `SteerFasterRollTest` (151), `SteerLandToesTest` (152), `SteerTurnStepTest` (156), und
+für den Körper `FigureShoulderTest` (126) und `FigureSkinTest` (127): Ändert eine Runde die Knochen, fällt er, bis
 `tools/mannequin/make_skin.py` die Haut neu geschrieben hat, erst `dump_bones`, dann das Werkzeug. Die Hashes
 `NB_EXPECTED_…_HASH` ändern sich nur, wenn sich ein Lauf ändert, der dort festgehalten ist: Das ist erlaubt, wird aber
 in der Roadmap genannt.

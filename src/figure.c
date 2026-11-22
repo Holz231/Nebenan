@@ -5445,7 +5445,10 @@ static float nbSwingTime( const nbFigure* f, int k, float swingTime, float cycle
 // hurried to land 31 cm beside the hip as the other was lost, its leg would have lost it after 0.033 s, it lifted again
 // in the next update with 2.4 times the hurry, and its shin jumped 53 mm, while the other, lost for three updates,
 // stood on. Now the one that waited lifts, see SteerWaitedFootTest.
-#define NB_FOOT_TWIST ( 35.0f * ( B3_PI / 180.0f ) )
+// A foot that holds the heading back, see NB_FOOT_PIVOT in figure.h, steps round as soon as it stood for
+// NB_FOOT_STEP_STOOD and the other foot for NB_FOOT_STEP_OTHER, in seconds, whatever its phase.
+#define NB_FOOT_STEP_STOOD 0.1f
+#define NB_FOOT_STEP_OTHER 0.05f
 #define NB_GAIT_SIDE_GAP 0.1f
 #define NB_GAIT_SIDE_GAP_STRAIGHT 0.03f
 #define NB_GAIT_FRESH 0.2f
@@ -5651,6 +5654,7 @@ static void nbSteerFeet( const nbWorld* world, int index, nbFigure* f, const nbC
 					f->feet[k].plant = nbClipAnkle( f, clips + k, f->feet + k );
 					f->feet[k].tilt = nbPartOf( f->feet[k].lean, clips[k].weight );
 					f->footHeading[k] = f->heading;
+					f->footPivot[k] = 0.0f;
 				}
 			}
 			f->gaitFaster = 0.0f;
@@ -6085,6 +6089,7 @@ static void nbSteerFeet( const nbWorld* world, int index, nbFigure* f, const nbC
 				f->footRollGain[k] = 0.0f;
 				f->landRoll[k] = landed;
 				f->stanceTime[k] = 0.0f;
+				f->footPivot[k] = 0.0f;
 				foot->plant = foot->target;
 				foot->tilt = foot->targetTilt;
 				f->footHeading[k] = f->landHeading[k];
@@ -6104,6 +6109,7 @@ static void nbSteerFeet( const nbWorld* world, int index, nbFigure* f, const nbC
 				b3Quat spin = b3MakeQuatFromAxisAngle( up, turn );
 				foot->plant = b3OffsetPos( middle, b3RotateVector( spin, b3Neg( toSole ) ) );
 				f->footHeading[k] = nbWrapAngle( f->footHeading[k] + turn );
+				f->footPivot[k] += fabsf( turn );
 			}
 
 			// A foot that landed on its heel, or on its toes, comes down from it, see NB_GAIT_HEEL_LOAD
@@ -6204,7 +6210,11 @@ static void nbSteerFeet( const nbWorld* world, int index, nbFigure* f, const nbC
 			{
 				first = true;
 			}
-			if ( ( ( due || early ) && hold == false ) || lost || first || floats )
+			// A foot that turned on the ground as far as it may and holds the heading back, see NB_FOOT_PIVOT, steps round
+			// once both feet have stood for a moment, see NB_FOOT_STEP_STOOD
+			bool steps = f->footHolds[k] && f->footSwings[1 - k] == false && f->stanceTime[k] >= NB_FOOT_STEP_STOOD &&
+						 f->stanceTime[1 - k] >= NB_FOOT_STEP_OTHER;
+			if ( ( ( due || early ) && hold == false ) || lost || first || floats || steps )
 			{
 				// It lifts from where it stands, as far into its swing as its phase, and swings in the rest of it, from where it
 				// was an update ago, so it moves in this update already
@@ -6355,6 +6365,12 @@ static void nbSteerFeet( const nbWorld* world, int index, nbFigure* f, const nbC
 					end.q = b3NormalizeQuat( b3MulQuat( f->frame.q, nbHeadingQuat( f->legTurn + ahead ) ) );
 					landLegs = nbWrapAngle( legHeading + ahead );
 				}
+				// The foot itself lands turned as far as the heading still turns to where it wants until then, no farther
+				// than a foot may stand turned, so the heading goes on at once as it lands. Where it lands stays: landing
+				// where the turned legs would put it, the foot on the ground got out of reach turning about at a run, and
+				// the pelvis jumped 22.7 instead of 11.3 mm.
+				float turns = b3MinFloat( b3MaxFloat( f->def.steering.turnRate, 0.0f ) * left, NB_FOOT_TWIST );
+				landLegs = nbWrapAngle( landLegs + b3ClampFloat( nbWrapAngle( f->headingWant - f->heading ), -turns, turns ) );
 				nbClipFoot aim = clips[k];
 				aim.ankle.x *= f->swingNarrow[k];
 				aim.sole.x *= f->swingNarrow[k];

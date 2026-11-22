@@ -5701,6 +5701,66 @@ static int SteerLandToesTest( void )
 	return 0;
 }
 
+// A steered figure facing where it moves walks at 1.05 m/s and turns about, at twelve moments two updates apart. A foot
+// on the ground turns with the body no farther than NB_FOOT_PIVOT in a stance, 45 degrees: then the heading waits, the
+// foot steps round as soon as the other stands, and the other lands turned ahead, see nbMoveSteered and nbSteerFeet.
+// Over the twelve turns a planted foot turns 45.0 degrees at most, and the figure faces the other way 1.32 s after the
+// change at the latest. Until round 156 a planted foot turned without a limit, up to 140.4 degrees here, as the other
+// foot swung nearly all the time of the turn, and the figure faced the other way after 0.92 s.
+static int SteerTurnStepTest( void )
+{
+	float most = 0.0f;
+	float latest = 0.0f;
+	for ( int part = 0; part < 12; ++part )
+	{
+		FigureScene scene;
+		CreateFigureScene( &scene, 1 );
+		nbFigureId figure = AddSteeredFigure( &scene, b3Vec3_zero, 0.0f );
+		StepFigures( &scene, 60 );
+		nbSteer steer = { { 0.0f, 0.0f, 1.05f }, 0.0f, true };
+		nbFigure_Steer( figure, &steer );
+		StepFigures( &scene, 180 + 2 * part );
+		steer.velocity = (b3Vec3){ 0.0f, 0.0f, -1.05f };
+		nbFigure_Steer( figure, &steer );
+		float turned[2] = { 0.0f, 0.0f };
+		float last[2] = { 0.0f, 0.0f };
+		bool stood[2] = { false, false };
+		float faced = -1.0f;
+		for ( int i = 0; i < 150; ++i )
+		{
+			StepFigures( &scene, 1 );
+			const nbFigure* f = GetSteered( &scene, figure );
+			ENSURE( f->state == nb_figureAnimated );
+			for ( int k = 0; k < 2; ++k )
+			{
+				// how far it turned on the ground since it landed
+				bool stands = f->gaitOn && f->footSwings[k] == false;
+				float change = f->footHeading[k] - last[k];
+				change -= 2.0f * B3_PI * floorf( change / ( 2.0f * B3_PI ) + 0.5f );
+				turned[k] = stands && stood[k] ? turned[k] + fabsf( change ) : 0.0f;
+				most = b3MaxFloat( most, turned[k] );
+				stood[k] = stands;
+				last[k] = f->footHeading[k];
+			}
+			float off = f->heading - B3_PI;
+			off -= 2.0f * B3_PI * floorf( off / ( 2.0f * B3_PI ) + 0.5f );
+			if ( faced < 0.0f && fabsf( off ) < 0.1745f )
+			{
+				faced = (float)( i + 1 ) / 60.0f;
+			}
+		}
+		ENSURE( faced > 0.0f );
+		latest = b3MaxFloat( latest, faced );
+		DestroyFigureScene( &scene );
+	}
+	printf( "  turning about at a walk, a planted foot turns %.1f degrees on the ground at most over twelve turns, and the figure "
+			"faces the other way %.2f s after the change at the latest\n",
+			most * 180.0f / B3_PI, latest );
+	ENSURE( most < 0.803f );
+	ENSURE( latest < 1.45f );
+	return 0;
+}
+
 // A steered figure that does not face where it moves turns about as it runs at 4.3 m/s, from 8 places in its cycle, and
 // changes from going to the left to going backward, walking at 1.05 m/s from 19 places and running at 4.3 m/s from 8.
 // Turning about, its frame goes at nine tenths of its speed the other way after 1.26 s in the mean and 1.43 s at the
@@ -8203,7 +8263,7 @@ static int ThinBoardTest( void )
 // walking takes the steps of people, see NB_GAIT_CADENCE_WALK, and the ankle of a swinging foot bends up as far as
 // theirs, see NB_SWING_ANKLE_SOFT. Round 113: the body has the dimensions of a person, see nbMakeHumanoidBones.
 // Round 131: a foot that only just landed stands where the other foot is free to lift, see NB_GAIT_FRESH_KEEP.
-#define NB_EXPECTED_STEER_HASH 0x36ef900du
+#define NB_EXPECTED_STEER_HASH 0xd27f17dfu
 
 // See RunGaitClipScenario. Since round 99 as for RunSteerScenario. Since round 100 the figure that is told to turn on
 // the spot while it still walks, not facing where it moves, keeps its legs where they face as its heading turns, and
@@ -8212,7 +8272,7 @@ static int ThinBoardTest( void )
 // RunSteerScenario. Since round 111 as for RunSteerScenario. Round 112: the clips are recorded from a gait that takes
 // the steps of people, see NB_GAIT_CADENCE_WALK, and the ankle of a swinging foot bends up as far as theirs, see
 // NB_SWING_ANKLE_SOFT. Round 113 and round 131 as for RunSteerScenario.
-#define NB_EXPECTED_GAIT_CLIP_HASH 0xf5573f9bu
+#define NB_EXPECTED_GAIT_CLIP_HASH 0xd22ab3d5u
 
 static int FigureFollowDeterminismTest( void )
 {
@@ -8341,6 +8401,7 @@ int FigureTest( void )
 	RUN_TEST( SteerSpeedUpTest );
 	RUN_TEST( SteerFasterRollTest );
 	RUN_TEST( SteerLandToesTest );
+	RUN_TEST( SteerTurnStepTest );
 	RUN_TEST( SteerLegLeadTest );
 	RUN_TEST( SteerRunDescentTest );
 	RUN_TEST( SteerRunFlightTest );

@@ -292,6 +292,14 @@ typedef enum nbBalanceResult
 } nbBalanceResult;
 
 // A figure, see nbCreateFigure
+// As a steered figure turns, a planted foot turns on the ground with the body once the heading is more than
+// NB_FOOT_TWIST in radians from it, see nbSteerFeet, and in one stance no farther than NB_FOOT_PIVOT, as people turn on
+// the ball of a foot: then the heading waits for the feet to step round, see nbMoveSteered. Until round 156 it turned
+// without a limit: turning about at a walk, a foot stood in one place for 0.8 s and turned 143 degrees, as the other
+// foot swung nearly all that time.
+#define NB_FOOT_TWIST ( 35.0f * ( B3_PI / 180.0f ) )
+#define NB_FOOT_PIVOT ( 45.0f * ( B3_PI / 180.0f ) )
+
 typedef struct nbFigure
 {
 	nbBone* bones;
@@ -551,6 +559,11 @@ typedef struct nbFigure
 	float swingRoll[2];
 	float landRoll[2];
 	float stanceTime[2];
+	// How far a planted foot turned on the ground with the body since it landed, in radians, see NB_FOOT_PIVOT, whether
+	// it holds the heading back by that in this update, see nbMoveSteered, and the heading the figure turns to
+	float footPivot[2];
+	bool footHolds[2];
+	float headingWant;
 	float footPush[2];
 	float pushPast[2];
 	float pushKept[2];
