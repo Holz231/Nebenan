@@ -447,6 +447,18 @@ Zehen und Fersen 37 mm, Hände 15 mm, Becken 10 mm, Becken tief ab 15 cm unter d
 - **`speeds.py` muss alles lesen, was je gelaufen ist.** Es kannte die stetigen Läufe der Regeln nicht und hätte die von
   Runde 151 als frisch gemeldet. Seit Runde 152 liest es auch `docs/Regeln` und die `TRACK`-Zeilen der Prüfskripte. Wer
   eine neue Art von Lauf in eine Prüfung nimmt, trägt sie dort nach.
+- **Vor einer neuen Architektur messen, was die Bibliothek heute tut.** Der Nutzer fragte nach einem Gang aus Muskeln
+  und Physik. Runde 153 hat zuerst gemessen, was bei Treffern und Berührungen im Gang passiert, und fand das Folgen mit
+  dynamischen Knochen schon gebaut (`engageRadius`) und zwei Fehler, die niemand gesucht hatte: Arme, die beim Zucken 18
+  bis 53 cm springen, und zwei Figuren, die bei der Berührung beide umfallen. Beides liegt vor jeder Entscheidung über
+  die Architektur.
+- **Ein Messwert, der unglaublich aussieht, wird Update für Update verfolgt, bevor er berichtet oder verworfen wird.**
+  Ein Sprung von 533 mm in einem Update sah nach einem Fehler im Werkzeug aus; eine Spur von Rahmen, Becken, Kopf und
+  Hand zeigte, dass die Hand wirklich springt (Runde 153). Und ein Sturz ohne Treffer und ohne Stoß hat einen Auslöser
+  im Code: Die Aufrufer von `nbFall` durchgehen und den Verdacht mit einem Schalter im Versuchsbaum beweisen.
+- **Regeln für die Welt gelten auch für andere Figuren, ob gewollt oder nicht.** „Boden, der sich schnell bewegt, trägt
+  nicht“ ist für wegrutschende Platten gebaut und traf den schwingenden Fuß der anderen Figur. Wo eine Abfrage Körper
+  der Welt trifft, prüfen, was sie mit den Knochen einer anderen Figur tut: `nbFigureOfBody`.
 - **Größe der Figur.** Winkelbeschleunigungen wachsen bei kleineren Figuren mit 1 durch `nbFigureScale`, Längen
   und Geschwindigkeiten mit ihr.
 
