@@ -1,11 +1,11 @@
-# stand151.py variant scene set [set...]: the shin of a standing leg after a change of the gait with a fixed heading, the
-# target of round 151. A scene of where129.py at its 24 points for every set (h2, h29, ...; speeds from common.sh): for
-# every point the hardest jump of a shin while its leg stands, on the ground for more than two updates as where129.py
-# has it, from the change on (second difference of the origin of the shin, mm), with the leg, how long after the change
-# and how fast the figure goes then. A leg that trails as the figure speeds up faster than its gait follows gets longer
-# update after update and stops at its reach in one: that is such a jump, see round 150 in docs/Roadmap.md. Prints for
-# every set and for all how many points lie over 37 mm, what they sum to beyond 37 and beyond 30 mm and the hardest,
-# and writes out/res/<variant>/stand_<scene>_<set>.json.
+# stand151.py variant scene set [set...]: the shin of a standing leg after a change of the gait with a fixed heading,
+# the target of round 151. A scene of where129.py at its 24 points for every set (h2, h29, ...; speeds from common.sh):
+# for every point the hardest jump of a shin while its leg stands, on the ground for more than two updates as
+# where129.py has it, from the change on (second difference of the origin of the shin, mm), with the leg, how long
+# after the change and how fast the figure goes then. A leg that trails as the figure speeds up faster than its gait
+# follows gets longer update after update and stops at its reach in one: that is such a jump, see round 150 in
+# docs/Roadmap.md. Prints for every set and for all how many points lie over 37 mm, what they sum to beyond 37 and
+# beyond 30 mm and the hardest, and writes out/res/<variant>/stand_<scene>_<set>.json.
 import csv, json, os, subprocess, sys
 from concurrent.futures import ThreadPoolExecutor
 import numpy as np

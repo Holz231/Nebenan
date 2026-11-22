@@ -308,6 +308,25 @@ static inline float nbBrakeStep( float room, float brake )
 // stretched, instead of at once as the knee stops or as the capsule speeds away from the foot, see nbLowerSteered
 #define NB_FOOT_ROLL_AHEAD 0.08f
 
+// Speeding up faster than its gait follows, the gait still walks while the figure goes as fast as a run, and walking a
+// foot behind the hip did not roll ahead: turning from running backward to running forward at 4.46 m/s, the trailing
+// leg got 18 to 20 mm longer in every update and stopped at its reach in one, and the nearly straight knee made 41.8 mm
+// of that at the shin, see round 150 in docs/Roadmap.md. So the roll looks ahead too as far as the figure is faster
+// than its gait, with NB_FOOT_ROLL_FAST times that share, see NB_LEG_REACH_FAST, at most fully. From running backward
+// to running forward on 25 speed sets the shin of a standing leg jumps over 37 mm at 1 instead of 9 of 600 points and
+// 30 instead of 253 mm beyond 30 mm in sum, and of the feet that lift there 2 instead of 12 have their shin over 37 mm.
+// 1.5 to 3 times that share give the same; with 1.35 times 6 lifts stay, with the share itself all 12, and smoothed
+// over its threshold it takes the standing shins but not the lifts. With the weight of how far the gait would run at
+// the speed of the capsule instead, toes and heels sum to 1 135 mm beyond 37 mm on the development table, here to 1
+// 105, before to 1 083 mm. Starting to run to the side at 4.39 m/s and faster, the shin of the foot that just landed
+// jumps about 31 mm 0.4 s after the start, 0.1 to 4.7 mm more than the hardest of that start before, at 6 of 148
+// starts. The steady gait stays the same to the bit. The look ahead costs what it costs at a run, up to 44 poses of the
+// foot for a foot in an update: counted with tools/measure/cost_count.sh, the update of 20 steered figures executes
+// 0.51 % more instructions walking forward and running backward, 0.76 % more changing direction and gait every 2 s and
+// 0.79 % more starting to walk steadily to the side, where all of it falls into the first 0.6 s. That is more than the
+// 0.5 % the rule of the round allowed, see round 151 in docs/Roadmap.md.
+#define NB_FOOT_ROLL_FAST 2.0f
+
 // A steered foot on the ground that rolled over its toes behind the hip and comes beside it again, as the figure turns
 // back over it, rolls back flat with a time of NB_FOOT_UNROLL seconds instead of at once, see nbLowerSteered. A foot
 // that trails going forward and pushes over its toes, see NB_GAIT_PUSH, as the legs change to walking backward loses
@@ -3445,6 +3464,8 @@ static float nbLowerSteered( nbFigure* f, b3Transform root, const int* thighs, b
 		// Running, and as soon as the gait turns to running, before the spring of NB_RUN_TURN_LAG follows, and going backward
 		// over the heel also walking, see NB_FOOT_HEEL_MOST
 		float rollAhead = side < 0.0f ? 1.0f : b3MaxFloat( f->runTurn, f->gaitRun );
+		// and as far as the figure is faster than its gait, see NB_FOOT_ROLL_FAST
+		rollAhead = b3MaxFloat( rollAhead, b3MinFloat( NB_FOOT_ROLL_FAST * f->gaitFaster, 1.0f ) );
 		// A trailing foot rolls over its toes ahead of what its leg needs now, and so does one that stays on its toes
 		// while the hip leaves it, the legs going backward, see leaving. Where the legs turned from going sideways to
 		// going backward, a trailing foot rolled over its toes with this look ahead, and in the update the legs turned
@@ -5632,6 +5653,7 @@ static void nbSteerFeet( const nbWorld* world, int index, nbFigure* f, const nbC
 					f->footHeading[k] = f->heading;
 				}
 			}
+			f->gaitFaster = 0.0f;
 			return;
 		}
 
@@ -5890,6 +5912,7 @@ static void nbSteerFeet( const nbWorld* world, int index, nbFigure* f, const nbC
 	// Faster than its gait, they stretch less far too, see NB_LEG_REACH_FAST
 	float faster = b3ClampFloat(
 		( ( speed - f->gaitSpeed ) / f->gaitUnit - NB_SWING_SLOW_FROM ) / ( NB_SWING_SLOW_TO - NB_SWING_SLOW_FROM ), 0.0f, 1.0f );
+	f->gaitFaster = faster;
 	float reachFast = f->gaitStarting ? 0.0f : NB_LEG_REACH_FAST * faster * faster * ( 3.0f - 2.0f * faster );
 	f->legReachFast += b3MinFloat( 1.0f, timeStep / NB_LEG_REACH_FAST_LAG ) * ( reachFast - f->legReachFast );
 	f->legReach -= f->legReachFast;

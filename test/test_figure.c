@@ -5573,6 +5573,64 @@ static int SteerSpeedUpTest( void )
 	return 0;
 }
 
+// A steered figure with a fixed heading runs backward at 4.46 m/s and turns to run forward as fast, the change at
+// twenty moments two updates apart, a cycle of its run: how far the shin of a leg that stands jumps in an update at
+// most in the second and a half after it. Speeding up, the figure is faster than its gait follows, the gait still
+// walks, and walking a foot behind the hip did not roll ahead: the trailing leg got longer update after update and
+// stopped at its reach in one. So the roll looks ahead too as far as the figure is faster than its gait, see
+// NB_FOOT_ROLL_FAST: 20.6 mm at most. Until round 150: 32.1 mm.
+static int SteerFasterRollTest( void )
+{
+	float most = 0.0f;
+	for ( int part = 0; part < 20; ++part )
+	{
+		FigureScene scene;
+		CreateFigureScene( &scene, 1 );
+		nbFigureId figure = AddSteeredFigure( &scene, b3Vec3_zero, 0.0f );
+		StepFigures( &scene, 60 );
+		nbSteer steer = { { 0.0f, 0.0f, -4.46f }, 0.0f, false };
+		nbFigure_Steer( figure, &steer );
+		StepFigures( &scene, 177 + 2 * part );
+		int bones[2] = { nb_humanoidShinLeft, nb_humanoidShinRight };
+		b3Vec3 last[2], before[2];
+		int stood[2] = { 0, 0 };
+		for ( int k = 0; k < 2; ++k )
+		{
+			last[k] = b3ToVec3( b3Body_GetPosition( nbFigure_GetBody( figure, bones[k] ) ) );
+			before[k] = last[k];
+		}
+		for ( int i = -3; i < 90; ++i )
+		{
+			if ( i == 0 )
+			{
+				steer.velocity = (b3Vec3){ 0.0f, 0.0f, 4.46f };
+				nbFigure_Steer( figure, &steer );
+			}
+			StepFigures( &scene, 1 );
+			const nbFigure* f = GetSteered( &scene, figure );
+			for ( int k = 0; k < 2; ++k )
+			{
+				b3Vec3 now = b3ToVec3( b3Body_GetPosition( nbFigure_GetBody( figure, bones[k] ) ) );
+				bool stands = f->gaitOn && f->footSwings[k] == false;
+				// on the ground for more than two updates
+				if ( i >= 0 && stands && stood[k] >= 3 )
+				{
+					most = b3MaxFloat( most, b3Length( b3Add( b3Sub( now, last[k] ), b3Sub( before[k], last[k] ) ) ) );
+				}
+				stood[k] = stands ? stood[k] + 1 : 0;
+				before[k] = last[k];
+				last[k] = now;
+			}
+		}
+		DestroyFigureScene( &scene );
+	}
+	printf( "  from running backward to running forward with a fixed heading, the shin of a standing leg jumps %.1f mm at "
+			"most in the second and a half after twenty changes\n",
+			1000.0f * most );
+	ENSURE( most < 0.026f );
+	return 0;
+}
+
 // A steered figure that does not face where it moves turns about as it runs at 4.3 m/s, from 8 places in its cycle, and
 // changes from going to the left to going backward, walking at 1.05 m/s from 19 places and running at 4.3 m/s from 8.
 // Turning about, its frame goes at nine tenths of its speed the other way after 1.26 s in the mean and 1.43 s at the
@@ -8211,6 +8269,7 @@ int FigureTest( void )
 	RUN_TEST( SteerSwitchAnswerTest );
 	RUN_TEST( SteerRunTrackTest );
 	RUN_TEST( SteerSpeedUpTest );
+	RUN_TEST( SteerFasterRollTest );
 	RUN_TEST( SteerLegLeadTest );
 	RUN_TEST( SteerRunDescentTest );
 	RUN_TEST( SteerRunFlightTest );

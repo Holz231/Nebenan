@@ -62,7 +62,9 @@ die Hälfte des gemeldeten Gewinns und alles, was „kippte“, dieser Block.
    Spreizung über einen Zyklus aus der Kadenzformel, ohne einen Lauf. Neue Sätze in `common.sh`.
 8. **Regel festschreiben.** `docs/Regeln/RULE<N>.txt`, `tol<N>.json`, `check<N>.sh`, `eval<N>.py`, als eigener Commit
    ohne die Bibliothek, und pushen, bevor irgendein Lauf mit den frischen Geschwindigkeiten existiert. Der Push gibt der
-   Regel einen Zeitstempel außerhalb der Maschine. Davor Frage 3.
+   Regel einen Zeitstempel außerhalb der Maschine. Davor Frage 3. Und davor die Befehle zählen: `cost_count.sh` mit dem
+   Prototyp als neuem Stand, damit ein Preis an den Kosten vor dem Festschreiben auf dem Tisch liegt und nicht nach der
+   Prüfung, siehe Runde 151.
 9. **Sauberer Bau** in `src/`, mit Kommentar, bitgleich zum Prototyp: dieselben JSONs auf mindestens zwei Sätzen.
 10. **Unabhängige Prüfung.** `check<N>.sh alt neu`, dann `eval<N>.py alt neu`. Das Ergebnis gilt, wie es kommt. Danach
     Frage 4, mit Antwort im Bericht.
@@ -394,6 +396,26 @@ Zehen und Fersen 37 mm, Hände 15 mm, Becken 10 mm, Becken tief ab 15 cm unter d
   Vorschlag am Ende einer Runde: Über die acht Wechsel im Rennen auf zwölf Sätzen war das stehende Schienbein mit 14 von
   621 mm die kleinste Klasse, und die Runden 148 bis 150 galten ihr. Zum Vorschlag gehört die Zahl seiner Klasse neben
   denen der anderen.
+- **Eine Stärke über ihre ganze Spanne fahren und neben dem Ziel die Szene zählen.** In Runde 151 nahm schon der Anteil
+  selbst das Ziel fast, das stehende Schienbein 45 statt 253 mm, und die geglättete Variante aus der Durchsicht ganz, 30
+  mm. Die 12 Abheber derselben Szene blieben bei beiden; erst ab dem 1,5-Fachen gehen sie auf 2, und bis zum 3-Fachen
+  ändert sich nichts mehr. Gebaut ist die Mitte des Plateaus. Die erste Variante, die das Ziel nimmt, ist nicht die
+  beste: `where129.py` nach dem, was das Bein tut, trennt sie.
+- **Ein Nebengewinn der Entwicklung ist kein Ziel.** Die Abheber, auf den Sätzen der Entwicklung 2 statt 12 Stellen,
+  zeigten sich auf den frischen Sätzen von Runde 151 nicht: Dort hob in der Szene vorher wie nachher ein Fuß hart ab.
+  Das Ziel selbst hielt, 11 statt 134 mm, weil die Regel vorher ausgewürfelt hatte, wie oft es sich auf anderen Sätzen
+  zeigt (in jeder von 200 000 Auswahlen). Bedingung wird nur, was so hält; der Rest steht daneben und wird im Bericht
+  als nicht bestätigt genannt.
+- **Alle Hashes des Testprotokolls vergleichen, bevor die Regel etwas über sie sagt.** Die Regel von Runde 151 schrieb,
+  mit dem Prototyp ändere sich kein Hash; geprüft waren die drei festgeschriebenen. Der laufende Hash, den
+  `SteerRubbleTest` nur ausgibt, änderte sich. `diff <(grep -o "hash 0x[0-9a-f]*" alt.log) <(grep -o "hash 0x[0-9a-f]*"
+  neu.log)` zeigt beides.
+- **Die Befehle des Prototyps zählen, bevor die Regel festgeschrieben wird.** In Runde 151 fiel erst nach der Prüfung
+  auf, dass der Bau die Kostengrenze verfehlt, 0,51 %, 0,76 % und 0,79 % statt höchstens 0,5 %: Der Vorausblick des
+  Rollens kostet, wo immer er läuft, bis zu 44 Lagen des Fußes je Fuß und Update, und die Runde hat ihn in mehr Updates
+  eingeschaltet. `cost_count.sh` mit dem Prototyp als neuem Stand dauert Minuten und hätte den Preis vor dem
+  Festschreiben gezeigt, wie die Preise von Runde 150 im Probelauf; so musste der Nutzer nach der Prüfung entscheiden.
+  Ein Hebel, der eine vorhandene Rechnung öfter laufen lässt, kostet, auch wenn er nur eine Zeile ist.
 - **Größe der Figur.** Winkelbeschleunigungen wachsen bei kleineren Figuren mit 1 durch `nbFigureScale`, Längen
   und Geschwindigkeiten mit ihr.
 

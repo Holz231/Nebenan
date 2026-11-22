@@ -102,7 +102,11 @@ was schon verworfen wurde.
   das Tempo, mit dem ein Fuß von der Ferse flach kam, zählt nicht mit (`footRollGain`, `footRolled`). Gehend schaut das
   Rollen eines vorwärts gehenden Fußes nicht voraus (`rollAhead`): Wird die Figur schneller, als ihr Gang folgt, wird
   das stehende hintere Bein je Update 18 bis 20 mm länger und hält in einem Update an seiner Reichweite an (Runden 148
-  bis 150, offen, mit dem Vorausblick im Versuchsbaum gemessen).
+  bis 150, offen, mit dem Vorausblick im Versuchsbaum gemessen). Seit Runde 151 schaut es auch gehend voraus, so weit
+  die Figur schneller ist als ihr Gang, mit dem Zweifachen des Vorsprungs als Gewicht (`gaitFaster`,
+  `NB_FOOT_ROLL_FAST`): Das 1,5- bis 3-Fache gibt dasselbe, darunter bleiben die Abheber der Szene. Der Vorausblick
+  kostet, wo er läuft, bis zu 44 Lagen des Fußes je Fuß und Update (`nbRollToReach` an vier Zeitpunkten, je eine Suche
+  in zehn Schritten); `nbRollFoot` ist 6 bis 8 % der Befehle im Update der Figuren.
 - **`footRoll` und `footRolled`.** `footRoll` setzt auch der Gang, etwa wenn ein Fuß von einer Landung herunterkommt.
   `footRolled` ist das Rollen, das der Fuß am Boden zuletzt bekam.
 - **Rückwärts** (`side < 0`) landen Füße auf den Zehen und bleiben darauf (`tips`, `leads`, `landed`). Einer, der auf
@@ -148,7 +152,7 @@ was schon verworfen wurde.
 `SteerStopLiftTest` (133), `SteerBrakeBackTest` (134), `SteerSideToBackRollTest` (135), `SteerSideToBackPitchTest`
 (136), `SteerSideToBackLiftTest` (137), `SteerBackToForwardLiftTest` (138), `SteerWaitedFootTest` (140),
 `SteerSwitchAnswerTest` (141), `SteerBackToForwardEarlyTest` (143), `SteerSideToBackWalkTest` (144), `SteerRunTrackTest`
-(147), `SteerSpeedUpTest` (150), und für den Körper `FigureShoulderTest` (126) und `FigureSkinTest` (127): Ändert eine
-Runde die Knochen, fällt er, bis `tools/mannequin/make_skin.py` die Haut neu geschrieben hat, erst `dump_bones`, dann
-das Werkzeug. Die Hashes `NB_EXPECTED_…_HASH` ändern sich nur, wenn sich ein Lauf ändert, der dort festgehalten ist: Das
-ist erlaubt, wird aber in der Roadmap genannt.
+(147), `SteerSpeedUpTest` (150), `SteerFasterRollTest` (151), und für den Körper `FigureShoulderTest` (126) und
+`FigureSkinTest` (127): Ändert eine Runde die Knochen, fällt er, bis `tools/mannequin/make_skin.py` die Haut neu
+geschrieben hat, erst `dump_bones`, dann das Werkzeug. Die Hashes `NB_EXPECTED_…_HASH` ändern sich nur, wenn sich ein
+Lauf ändert, der dort festgehalten ist: Das ist erlaubt, wird aber in der Roadmap genannt.

@@ -571,6 +571,9 @@ typedef struct nbFigure
 	float legReach;
 	// How much less far the legs stretch while the figure is faster than its gait, see NB_LEG_REACH_FAST
 	float legReachFast;
+	// How much faster the figure is than its gait, from 0 at NB_SWING_SLOW_FROM to 1 at NB_SWING_SLOW_TO, and 0 while it
+	// stands, see nbSteerFeet
+	float gaitFaster;
 	float gaitTurn;
 	float gaitTurnSize;
 	float gaitSway;
