@@ -56,8 +56,10 @@ die Hälfte des gemeldeten Gewinns und alles, was „kippte“, dieser Block.
    ohne die Starts. Vor dem Verwerfen Frage 2.
 5. **Stetigen Gang prüfen.** Läufe stetig gehend, rennend (3,0, 4,5, 4,8 m/s), seitwärts und rückwärts mit `cmp` gegen
    den alten Stand. Ein Eingriff für Wechsel soll den stetigen Gang bitgleich lassen, sonst ist er größer als gedacht.
-6. **Toleranzen und Zielgröße.** `tolerance<N>.py` auf dem alten Stand. Die Zielgröße so wählen, dass der Gewinn auf
-   den Entwicklungssätzen deutlich über der Streuung zwischen ähnlichen Sätzen liegt, siehe Lehren.
+6. **Toleranzen und Zielgröße.** `tolerance<N>.py` auf dem alten Stand. Die Zielgröße so wählen, dass der Gewinn auf den
+   Entwicklungssätzen deutlich über der Streuung zwischen ähnlichen Sätzen liegt, siehe Lehren. Jede Toleranz bekommt
+   eine Untergrenze, Zählungen 2 Stellen, härteste Sprünge und Summen 2 mm: Eine Toleranz von null macht aus der letzten
+   Stelle eine verfehlte Bedingung, siehe Runde 152.
 7. **Frische Geschwindigkeiten.** `tools/measure/speeds.py v …` sagt, ob ein Wert je gelaufen ist, und rechnet die
    Spreizung über einen Zyklus aus der Kadenzformel, ohne einen Lauf. Neue Sätze in `common.sh`.
 8. **Regel festschreiben.** `docs/Regeln/RULE<N>.txt`, `tol<N>.json`, `check<N>.sh`, `eval<N>.py`, als eigener Commit
@@ -416,6 +418,35 @@ Zehen und Fersen 37 mm, Hände 15 mm, Becken 10 mm, Becken tief ab 15 cm unter d
   eingeschaltet. `cost_count.sh` mit dem Prototyp als neuem Stand dauert Minuten und hätte den Preis vor dem
   Festschreiben gezeigt, wie die Preise von Runde 150 im Probelauf; so musste der Nutzer nach der Prüfung entscheiden.
   Ein Hebel, der eine vorhandene Rechnung öfter laufen lässt, kostet, auch wenn er nur eine Zeile ist.
+- **Jede Toleranz einer Summe in Millimetern bekommt eine Untergrenze von 2 mm.** In Runde 152 war eine Schutzbedingung
+  um 0,25 mm verfehlt: derselbe eine Fuß sprang 41,04 statt 40,79 mm, und die Toleranz seiner Summe über 37 mm war 0 mm,
+  weil auf den Sätzen, an denen sie gemessen wird, kein solcher Fuß vorkam. Zählungen und härteste Sprünge hatten eine
+  Untergrenze, Summen nicht. `tolerance<N>.py` setzt sie ab der nächsten Regel für jede Summe, vor dem Festschreiben;
+  eine festgeschriebene Regel wird nicht nachgebessert, der Nutzer entscheidet.
+- **Bei einem harten Aufsetzen die Höhe des Knöchels und die Rollung des Fußes je Update ausgeben.** Ein Fuß dreht um
+  seine Zehen: Dreht er in der Luft flach, fällt sein Knöchel zusätzlich, auf H33 um 31,9 statt rund 20 mm in einem
+  Update, und das Bein trifft den Boden noch länger werdend (Runde 152). Runde 139 hatte dieselben Landungen an der Zeit
+  und an der Form des Schwungs gesucht und nichts gefunden, das Sinn macht; die Spalten `rollL`, `rollR` und die Höhe
+  des Fußes standen im Protokoll. Der Vergleich mit einer Landung des stetigen Laufs zeigt, was anders ist.
+- **Was ohne Verzögerung an `gaitRun` hängt, ist verdächtig.** Der Gang wechselt in vier Updates vom Gehen ins Rennen.
+  Alles, was eine Größe direkt mit `1 - run` skaliert, springt dort mit: die Drehung der Zehen für die Landung (Runde
+  152), vorher die Neigung des Schwungs (Runde 136) und die Höhe (Runde 137). Vor dem Verfolgen einer Stelle, an der
+  `gaitRun` gerade wechselt, im Code nach solchen Größen suchen.
+- **Die Zielgröße allein hätte die falsche Variante gewählt, zum zweiten Mal.** Die Drehung ab der Hälfte des Schwungs
+  festzuhalten gab die wenigsten späten Landungen, 2 statt 119 mm, und die schlechteste Szene, 595 statt 295 mm (Runde
+  152). Jede Variante bekommt die Zählung der Szene nach dem, was das Bein tut, bevor ihre Tabelle läuft: Das kostet
+  zwei Minuten, die Tabelle eine halbe Stunde.
+- **Vorwärts und rückwärts einzeln messen.** Derselbe Eingriff für alle Füße nahm mit festem Blick mehr, 763 statt 851
+  mm, und kostete mit Blick in Laufrichtung 243 mm: Vorwärts landet der Fuß auf der Ferse, rückwärts auf den Zehen, und
+  nur die Zehen verkürzen das Bein beim Aufsetzen (Runde 152). Was im Code für beide Richtungen mit einem Vorzeichen
+  gerechnet wird, ist nicht dasselbe Verhalten.
+- **Fällt ein Test der Vorrunde mit dem Prototyp, gehört das vor dem Festschreiben in die Regel.** In Runde 152 maß
+  `SteerFasterRollTest` 27,2 statt 20,6 mm an einer Grenze von 26 mm. Die Regel nennt den Preis mit der neuen Grenze und
+  schützt das Ziel der Vorrunde mit einer eigenen Bedingung an seiner eigenen Messgröße (A13, `stand151.py` auf den
+  frischen Sätzen), statt nur am einen Test.
+- **`speeds.py` muss alles lesen, was je gelaufen ist.** Es kannte die stetigen Läufe der Regeln nicht und hätte die von
+  Runde 151 als frisch gemeldet. Seit Runde 152 liest es auch `docs/Regeln` und die `TRACK`-Zeilen der Prüfskripte. Wer
+  eine neue Art von Lauf in eine Prüfung nimmt, trägt sie dort nach.
 - **Größe der Figur.** Winkelbeschleunigungen wachsen bei kleineren Figuren mit 1 durch `nbFigureScale`, Längen
   und Geschwindigkeiten mit ihr.
 

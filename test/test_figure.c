@@ -5578,7 +5578,9 @@ static int SteerSpeedUpTest( void )
 // most in the second and a half after it. Speeding up, the figure is faster than its gait follows, the gait still
 // walks, and walking a foot behind the hip did not roll ahead: the trailing leg got longer update after update and
 // stopped at its reach in one. So the roll looks ahead too as far as the figure is faster than its gait, see
-// NB_FOOT_ROLL_FAST: 20.6 mm at most. Until round 150: 32.1 mm.
+// NB_FOOT_ROLL_FAST: 27.2 mm at most. Until round 150: 32.1 mm. With round 151 alone it was 20.6 mm: since round 152 a
+// foot swinging backward lands on its toes where the gait comes to run during its swing, see SteerLandToesTest, and as
+// it comes down from them its trailing leg gets longer faster.
 static int SteerFasterRollTest( void )
 {
 	float most = 0.0f;
@@ -5627,7 +5629,75 @@ static int SteerFasterRollTest( void )
 	printf( "  from running backward to running forward with a fixed heading, the shin of a standing leg jumps %.1f mm at "
 			"most in the second and a half after twenty changes\n",
 			1000.0f * most );
-	ENSURE( most < 0.026f );
+	ENSURE( most < 0.029f );
+	return 0;
+}
+
+// A steered figure with a fixed heading runs to the side at 4.41 m/s and turns to run backward as fast, the change at
+// twenty moments two updates apart, a cycle of its run: how far the shin of a leg jumps in the update its foot lands or
+// the two after, 0.6 s or later after the change, when the figure runs again. Braking, its gait fell to walking, and a
+// foot swinging backward turned its toes down to land on them; as the gait came back to running within four updates,
+// the foot turned flat again in the last updates before it landed, its ankle fell faster for it and its leg met the
+// ground still getting longer. Stepping backward, a swing does not take that turn back in the air, see nbSteerFeet:
+// 36.2 mm at most, and after none of the twenty changes over 37 mm. Until round 151: 47.1 mm, over 37 mm after one,
+// 10.1 mm beyond it.
+static int SteerLandToesTest( void )
+{
+	float most = 0.0f;
+	float beyond = 0.0f;
+	int over = 0;
+	for ( int part = 0; part < 20; ++part )
+	{
+		FigureScene scene;
+		CreateFigureScene( &scene, 1 );
+		nbFigureId figure = AddSteeredFigure( &scene, b3Vec3_zero, 0.0f );
+		StepFigures( &scene, 60 );
+		nbSteer steer = { { 4.41f, 0.0f, 0.0f }, 0.0f, false };
+		nbFigure_Steer( figure, &steer );
+		StepFigures( &scene, 177 + 2 * part );
+		int bones[2] = { nb_humanoidShinLeft, nb_humanoidShinRight };
+		b3Vec3 last[2], before[2];
+		int stood[2] = { 3, 3 };
+		for ( int k = 0; k < 2; ++k )
+		{
+			last[k] = b3ToVec3( b3Body_GetPosition( nbFigure_GetBody( figure, bones[k] ) ) );
+			before[k] = last[k];
+		}
+		float hardest = 0.0f;
+		for ( int i = -3; i < 72; ++i )
+		{
+			if ( i == 0 )
+			{
+				steer.velocity = (b3Vec3){ 0.0f, 0.0f, -4.41f };
+				nbFigure_Steer( figure, &steer );
+			}
+			StepFigures( &scene, 1 );
+			const nbFigure* f = GetSteered( &scene, figure );
+			for ( int k = 0; k < 2; ++k )
+			{
+				b3Vec3 now = b3ToVec3( b3Body_GetPosition( nbFigure_GetBody( figure, bones[k] ) ) );
+				bool stands = f->gaitOn && f->footSwings[k] == false;
+				// in the update its foot lands and the two after, 0.6 s or later after the change
+				if ( i >= 36 && stands && stood[k] < 3 )
+				{
+					hardest = b3MaxFloat( hardest, b3Length( b3Add( b3Sub( now, last[k] ), b3Sub( before[k], last[k] ) ) ) );
+				}
+				stood[k] = stands ? stood[k] + 1 : 0;
+				before[k] = last[k];
+				last[k] = now;
+			}
+		}
+		most = b3MaxFloat( most, hardest );
+		beyond += b3MaxFloat( hardest - 0.037f, 0.0f );
+		over += hardest > 0.037f ? 1 : 0;
+		DestroyFigureScene( &scene );
+	}
+	printf( "  from running to the side to running backward with a fixed heading, the shin of a leg that lands 0.6 s or later "
+			"after the change jumps %.1f mm at most after twenty changes, over 37 mm after %d of them, %.1f mm beyond it in "
+			"sum\n",
+			1000.0f * most, over, 1000.0f * beyond );
+	ENSURE( most < 0.041f );
+	ENSURE( over == 0 );
 	return 0;
 }
 
@@ -8270,6 +8340,7 @@ int FigureTest( void )
 	RUN_TEST( SteerRunTrackTest );
 	RUN_TEST( SteerSpeedUpTest );
 	RUN_TEST( SteerFasterRollTest );
+	RUN_TEST( SteerLandToesTest );
 	RUN_TEST( SteerLegLeadTest );
 	RUN_TEST( SteerRunDescentTest );
 	RUN_TEST( SteerRunFlightTest );

@@ -6059,8 +6059,9 @@ static void nbSteerFeet( const nbWorld* world, int index, nbFigure* f, const nbC
 			f->swingAlong[k] += timeStep * f->swingRate[k] * f->swingHurry[k] / footTime;
 			if ( f->swingAlong[k] >= 1.0f )
 			{
-				// It lands, walking on its heel, and stepping backward on its toes, see NB_GAIT_HEEL, no further than its swing
-				// brought its toes up for it: as a figure brakes out of a run with a fixed heading, the gait comes to a walk
+				// It lands, walking on its heel, and stepping backward on its toes, see NB_GAIT_HEEL, stepping backward as far
+				// as its swing turned them down, see below, and stepping forward no further than its swing brought its toes up
+				// for it: as a figure brakes out of a run with a fixed heading, the gait comes to a walk
 				// within a few updates, and a foot whose swing had come to 0.027 rad landed at 0.121 rad, its toes 33 mm up in
 				// the update after it landed. A foot that found no edge to land beyond makes the stairs less sure.
 				if ( f->footholdChosen[k] == false && f->stairWeight > 0.0f )
@@ -6077,7 +6078,8 @@ static void nbSteerFeet( const nbWorld* world, int index, nbFigure* f, const nbC
 				f->gaitStarting = false;
 				f->canLift[k] = phase < stance;
 				float stepSide = f->stepBack[k] ? -1.0f : 1.0f;
-				float landed = -stepSide * f->heelPart[k] * b3MinFloat( heel, f->swingHeel[k] );
+				float kept = f->stepBack[k] ? f->swingHeel[k] : b3MinFloat( heel, f->swingHeel[k] );
+				float landed = -stepSide * f->heelPart[k] * kept;
 				f->footRoll[k] = landed;
 				f->footRolled[k] = landed;
 				f->footRollGain[k] = 0.0f;
@@ -6603,7 +6605,20 @@ static void nbSteerFeet( const nbWorld* world, int index, nbFigure* f, const nbC
 				}
 			}
 			f->heelPart[k] = heelPart;
-			f->swingHeel[k] = heel;
+			// Stepping backward, the toes a swing turned down for its landing it does not take back while its foot is in the
+			// air. How far it turns them followed the run share of the gait at once, see NB_GAIT_HEEL: from running sideways to
+			// running backward with a fixed heading the figure brakes, its gait falls to walking and comes back to running
+			// within four updates as it speeds up backward, and a foot still in the air turned flat again in the last three
+			// updates before it landed. As it turns about its toes its ankle fell faster for that, by 2.6, 18.6 and 31.9 mm in
+			// those updates instead of evenly by about 20 as in a steady run backward, its leg got 21 to 27 mm longer in the
+			// update it landed and shorter in the next, and the shin jumped 44 to 54 mm, see round 152 in docs/Roadmap.md. It
+			// lands on its toes as far as it turned them and comes down from them as it does walking, see NB_GAIT_HEEL_LOAD.
+			// Over 19 speed sets, from running sideways to running backward the hardest shin jumps 169 instead of 295 mm beyond
+			// 37 mm in sum, 61 instead of 179 mm of that where a leg lands. A foot swinging forward follows the gait as before:
+			// kept there too, a foot landed on its heel at a run, and facing where it moves the shins jumped 417 instead of 174
+			// mm beyond 37 mm over five sets. Held from half of the swing on both ways, the swings and lifts of the same scene
+			// jumped 537 instead of 111 mm. See SteerLandToesTest.
+			f->swingHeel[k] = f->stepBack[k] ? b3MaxFloat( heel, f->swingHeel[k] ) : heel;
 			// The pitch a swing has walking does not grow while its foot is in the air. Braking through standing from a
 			// run, the gait falls to walking within a few updates of a lift, and a pitch that grew with it turned a foot
 			// stepping backward from its toes over its heel in three updates, up to 0.12 rad in one: the ankle stopped
@@ -6616,7 +6631,7 @@ static void nbSteerFeet( const nbWorld* world, int index, nbFigure* f, const nbC
 			f->footRoll[k] = f->swingRoll[k] * ( 1.0f - flat * flat * ( 3.0f - 2.0f * flat ) ) +
 							 f->footRollRate[k] * rest * goOn +
 							 stepSide * ( 1.0f - pitchRun ) * ease * NB_GAIT_SWING_PITCH * calm * bump -
-							 stepSide * heelPart * heel * toesUp * toesUp * ( 3.0f - 2.0f * toesUp );
+							 stepSide * heelPart * f->swingHeel[k] * toesUp * toesUp * ( 3.0f - 2.0f * toesUp );
 			if ( f->stepBack[k] )
 			{
 				f->footRoll[k] = b3MaxFloat( f->footRoll[k], b3MinFloat( f->swingRoll[k], -NB_FOOT_HEEL_MOST ) );
