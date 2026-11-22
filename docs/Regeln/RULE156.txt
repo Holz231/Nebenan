@@ -1,0 +1,45 @@
+Regel für Runde 156, vor jedem Lauf mit den Geschwindigkeiten der unabhängigen Prüfung festgeschrieben. Gemessen wird gegen active-ragdoll-155, dessen Bibliothek die von active-ragdoll-152 ist.
+
+Worum es geht. Runde 155 hat gemessen, dass sich ein stehender Fuß in Wenden unbegrenzt auf dem Boden mitdreht: Sobald die Blickrichtung mehr als 35 Grad von ihm abweicht (NB_FOOT_TWIST), dreht ihn nbSteerFeet auf der Mitte der Sohle nach. In der Kehrtwende im Gehen sind das im Median 106 und bis 140 Grad, rennend im Median 78 und bis 105 Grad. Verfolgt: Der Fuß steht 0,8 s an einer Stelle und dreht sich von 0 auf 143 Grad, weil der andere Fuß fast die ganze Zeit schwingt.
+
+Wie groß das Thema ist, Frage 1 des Skills. Auf zwei Sätzen der Entwicklung mit je sechs Geschwindigkeits-Sätzen dreht sich in Wenden ab 90 Grad an 309 und 312 von je 576 Stellen ein Standfuß mehr als 46 Grad. Die Sprünge der Schienbeine über 37 mm sind auf denselben Läufen 185 und 251 mm, kleiner als auf der Tabelle mit festem Blick. Das Drehen ist der größte Befund der Messung aus Runde 155.
+
+Der Eingriff, in der Bibliothek, drei Teile. Erstens, src/figure_steer.c, nbMoveSteered: Ein Standfuß dreht sich in einem Stand höchstens 45 Grad auf dem Boden mit. Ist das aufgebraucht, wartet die Blickrichtung, bis die Füße umgesetzt haben. Zweitens, src/figure.c, nbSteerFeet: Der Fuß, der die Blickrichtung aufhält, hebt ab, sobald der andere 0,05 s steht und er selbst 0,1 s. Drittens: Ein schwingender Fuß landet so weit vorgedreht, wie sich die Blickrichtung bis zur Landung noch drehen will, höchstens 35 Grad; sein Landeplatz bleibt. Mit festem Blick und ohne Drehen der Blickrichtung greift keiner der drei Teile.
+
+Die Varianten, je mit zwei Zahlen, Frage 2 des Skills: am Ziel, wie weit sich ein Standfuß in der Kehrtwende im Gehen dreht (Median und höchstens) und wie lange die Kehrtwende gehend und rennend dauert, bis die Figur in die neue Richtung blickt, und daneben die Summe der Schienbeine über 37 mm und die Stellen mit einem Fuß über 37 mm, alles auf dem ersten Satz der Entwicklung (alt: 106/140 Grad, 0,97 und 1,22 s, 185 mm, 34 Stellen). Die Zeilen ohne Drehen und die Tabelle mit festem Blick bleiben bei jeder Variante gleich.
+ - Der verdrehte Fuß hebt ab, sobald der andere steht, ohne Grenze für die Blickrichtung: 97/117 Grad, Zeiten unverändert. Der andere Fuß schwingt in der Wende fast durchgehend, der Standfuß kann nicht abheben.
+ - Die Blickrichtung wartet, der Fuß dreht höchstens 30 Grad mit: 30/30 Grad, aber 1,66 und 1,63 s. Ohne jedes Mitdrehen: 2,44 und 2,31 s.
+ - Dazu hebt der Fuß ab, der die Blickrichtung aufhält: 1,57 und 1,61 s.
+ - Dazu landet der schwingende Fuß vorgedreht, samt seinem Landeplatz: 1,35 und 1,43 s, 94 mm, 10 Stellen. Aber in der Kehrtwende im Rennen bei 4,2 m/s springt das Becken 22,7 statt 11,3 mm, weil der Landeplatz zur Seite wandert und das Standbein den Boden nicht mehr erreicht; der Test SteerTurnHeelTest schlägt fehl.
+ - Nur der Fuß vorgedreht, der Landeplatz bleibt, mit 30, 45 und 60 Grad Mitdrehen: 1,35 und 1,45 s; 1,25 und 1,38 s; 1,17 und 1,32 s. Schienbeine 103, 119 und 132 mm, Füße 51, 33 und 34 Stellen. Das Becken springt in der Kehrtwende im Rennen bei 3,3, 4,2 und 4,45 m/s höchstens 11,7 mm, alt 13,7 mm. Der Prototyp ist die mittlere Stufe, 45 Grad: ein Drehen auf dem Ballen, wie es Menschen in einer schnellen Wende tun, bei 0,28 und 0,16 s längerer Kehrtwende.
+ - Dazu eilt der Schwung, solange die Blickrichtung wartet: 0,04 bis 0,09 s schneller, aber 97 bis 126 Stellen mit einem Fuß über 37 mm. Verworfen.
+
+Bekannte Kosten des Prototyps. Die Kehrtwende dauert länger, gehend 1,25 statt 0,97 s und rennend 1,38 statt 1,22 s, und die Figur läuft entsprechend später wieder, 1,15 statt 0,88 s und 1,30 statt 1,15 s. Runde 141 hatte das Umkehren im Rennen schneller gemacht; ein Teil davon geht wieder verloren. Wenden um 90 Grad dauern gleich lang. Auf dem zweiten Satz der Entwicklung springt an 44 statt 39 Stellen ein Fuß über 37 mm. Die Trippelschritte aus Runde 155 bleiben: Stellen mit einem Schwung unter 0,25 s 93 statt 91 und 89 statt 87. Die Wende um 45 Grad ändert sich an fast allen Stellen leicht, weil der Fuß vorgedreht landet, die Summe ihrer Schienbeine bleibt gleich.
+
+Tests des Prototyps. Von 196 Tests schlagen nur die zwei an, die den Hash des gesteuerten Gangs festhalten; ihre Sollwerte ändern sich mit jedem Eingriff in den Gang. In den übrigen wird die Kehrtwende im Rennen ruhiger (Becken 10,4 statt 12,3 mm, Schienbein im Mittel 31,0 statt 35,0 mm), ein Knie springt in einem Update 3,2 statt 2,6 cm.
+
+Die Kosten, vor dem Festschreiben gezählt: Das Update von 20 gesteuerten Figuren führt 0,12 %, 0,12 % und 0,13 % mehr Befehle aus (tools/measure/cost_count.sh).
+
+Nimmt der Prototyp das Ziel, Frage 3 des Skills. Probelauf dieser Regel auf beiden Sätzen der Entwicklung, deren Geschwindigkeiten schon gelaufen waren: alle Bedingungen erfüllt, auf dem ersten auch D2.
+
+Bedingungen, mit tools/measure/check156.sh und eval156.py auf den Tabellen aus tools/measure/gait155.py, auf den frischen Sätzen:
+ A1 In Wenden um 90, 135 und 180 Grad, gehend und rennend, dreht sich an keiner Stelle ein Standfuß mehr als 46 Grad auf dem Boden: 45 Grad und 1 Grad für das Runden. Gezeigt ist das nur, wenn es alt an mindestens 20 % der Stellen mehr ist.
+ A2 Die Kehrtwende dauert im Mittel höchstens 0,35 s gehend und 0,22 s rennend länger, bis die Figur in die neue Richtung blickt und bis sie wieder mit neun Zehnteln des Tempos läuft. Die Grenzen: der Aufschlag auf der Entwicklung, 0,28 und 0,16 s, mit einem Viertel bis einem Drittel Spielraum.
+ A3 Die Summe der Schienbeine über 37 mm über alle Läufe wächst höchstens um 2 mm.
+ A4 Die Zahl der Stellen mit einem Fuß über 37 mm wächst höchstens um 8: auf der Entwicklung -1 und +5, dazu der Boden von 2 Stellen und 1 Spielraum.
+ A5 Der härteste Sprung des Beckens und sein tiefster Punkt wachsen je höchstens um 2 mm.
+ A6 Die Zahl der Stellen mit einem Schwung unter 0,25 s wächst höchstens um 6: auf der Entwicklung +2 und +2.
+Schutz:
+ D1 Losgehen, stetiger Gang, Anhalten und der Wechsel zwischen Gehen und Rennen sind an jeder Stelle gleich.
+ D2 Die Tabelle der Wechsel im Rennen mit festem Blick, where129.py auf ihren zwölf Sätzen, ist bytegleich.
+ D3 Alle Tests bestehen mit gcc und clang, mit den zwei neuen Sollwerten der Hashes; die Hashes sind mit 1, 2 und 4 Threads und beiden Compilern gleich.
+ D4 Das Update der Figuren führt höchstens 0,5 % mehr Befehle aus.
+
+Unabhängige Prüfung. Vier Sätze, deren Geschwindigkeiten vor dem Festschreiben auf keinem Stand gelaufen sind, geprüft mit tools/measure/speeds.py, in tools/measure/common.sh:
+  H162: gehend 1,0235, rennend 4,7635 m/s
+  H163: gehend 1,3335, rennend 3,0635 m/s
+  H164: gehend 1,4735, rennend 4,0635 m/s
+  H165: gehend 1,6235, rennend 3,5835 m/s
+Das sind 688 Läufe, der Satz fresh in check156.sh. Die Ränder vorab durchgerechnet, wie seit Runde 154 verlangt: Das schnellste Rennen, 4,7635 m/s, liegt über dem der Entwicklung, 4,5 m/s; A2 vergleicht je Satz mit dem alten Stand bei gleichem Tempo, keine Schwelle hängt am Tempo selbst.
+
+Der saubere Bau muss auf beiden Sätzen der Entwicklung bytegleich zum Prototyp sein. Verfehlt er auf den frischen Sätzen eine Bedingung, wird er nicht gebaut, oder die Roadmap sagt offen, warum doch, und der Nutzer entscheidet. Eine Messung, die nicht passt, wird nicht wiederholt.
