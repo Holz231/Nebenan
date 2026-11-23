@@ -1,0 +1,48 @@
+Regel für Runde 158, vor jedem Lauf mit den Geschwindigkeiten der unabhängigen Prüfung festgeschrieben. Gemessen wird gegen active-ragdoll-157.
+
+Worum es geht. Runde 155 hat gemessen, dass das Becken in Wenden im Gehen bis über 10 cm sackt und die Figur dabei trippelt. Diese Runde verfolgt die Ursache und nimmt, was sich ohne Nebenwirkung nehmen lässt.
+
+Wie groß das Thema ist, Frage 1 des Skills. Stetig schwankt das Becken beim Gehen 12 bis 29 mm unter seine mittlere Höhe. In Wenden im Gehen sackt es auf den zwei Sätzen der Entwicklung an 49 und 44 von je 360 Stellen mehr als 60 mm, in Summe 887 und 697 mm darüber, höchstens 112 mm; beim Anhalten aus dem Gehen an 16 und 15 von je 72 Stellen, höchstens 94 mm. Kurze Schwünge unter 0,25 s gibt es in Wenden im Gehen an 72 und 64 von je 360 Stellen.
+
+Die Ursache, Update für Update verfolgt (gehend 1,12 m/s, Wende um 90 Grad). Die Kapsel bremst mit 14 m/s² und beschleunigt mit 10 m/s² in die neue Richtung; ein Fuß, der beim Wechsel schon spät im Schwung ist, landet, wo er hinzielte, eine Schrittlänge voraus in der alten Richtung, sein Bein fast gestreckt. Dann geht die Hüfte quer zu ihm weg, schneller, als der andere Fuß schwingt: Das Standbein verliert seinen Fuß, bevor der andere landet, rollen hilft quer nicht, und nbLowerSteered senkt die Wurzel, hier 103 mm in 0,3 s. Beim Anhalten bleibt die Hüfte stehen, bevor sie über dem voraus gelandeten Fuß ist. Kapsel und Füße passen nicht zusammen: Die Kapsel ändert ihr Tempo schneller, als ein Schritt dauert.
+
+Der Eingriff, in der Bibliothek, src/figure_steer.c, nbMoveSteered, zwei Teile, beide nur für eine Figur, die mit Gehtempo gesteuert wird. Erstens, in Wenden auf ebenem Boden: Solange die Blickrichtung noch mehr als 10 Grad zu drehen hat und das Standbein seinen Fuß verliert, bevor der schwingende Fuß landet, wird die Kapsel nicht schneller. Zweitens, beim Anhalten: Ist die Figur seit mindestens 1 s gegangen und ein Fuß schon so spät im Schwung, dass er landet, wo er hinzielte, bremst die Kapsel mit höchstens 4 m/s², bis er steht.
+
+Die Varianten, je mit zwei Zahlen, Frage 2 des Skills: die Summe, um die das Becken in Wenden im Gehen tiefer als 60 mm sackt, und die Stellen, an denen es das beim Anhalten tut, daneben was es kostet, auf dem ersten Satz der Entwicklung (Runde 157: 887 mm, 16 Stellen).
+ - Die Kapsel geht höchstens so schnell, dass das Standbein seinen Fuß bis zur Landung des anderen behält: Wenden an 19 statt 35 Stellen über 60 mm, aber das Becken springt 21,6 statt 14,7 mm und die Schienbeine 147 statt 99 mm über 37 mm, auch im Rennen.
+ - Sanfter bremsen und wenden, solange ein Fuß spät im Schwung ist, überall: Anhalten 0 Stellen, Wenden aber 1 420 mm, schlechter.
+ - Nicht schneller werden, solange das Standbein seinen Fuß verliert, überall im Gehen: Wenden 272 mm. Aber die Kehrtwende im Gehen dauert im Test 1,27 statt 1,08 s, von seitwärts auf rückwärts mit festem Blick springt ein Schienbein 43,5 mm, und über Trümmer stehen die Beine in 75 statt 26 Updates schlecht.
+ - Beide zusammen, überall im Gehen: Wenden 199 mm, Anhalten 0, aber an einer Stelle sackt die Wurzel 133 mm und das Becken springt 30,2 mm.
+ - Nur beim Drehen der Blickrichtung, nur auf ebenem Boden, das sanfte Bremsen nur beim Anhalten nach mindestens 1 s Gehen: der Prototyp. Wenden 467 mm, Anhalten 0 Stellen, alle Tests wie zuvor bis auf die zwei Hashes.
+
+Bekannte Grenzen des Prototyps. In Wenden sackt das Becken weiter, etwa halb so viel, an 38 statt 49 und 30 statt 44 Stellen über 60 mm, höchstens 94 und 87 mm. Die Trippelschritte bleiben: 68 statt 72 und 62 statt 64 Stellen. Anhalten dauert 0,12 statt 0,10 s. Die Schienbeine springen auf dem ersten Satz 103 statt 99 mm über 37 mm, auf dem zweiten 183 statt 191 mm. Über Trümmer, auf Treppen, im Rennen und mit festem Blick greift nichts.
+
+Tests des Prototyps. Von 197 Tests schlagen nur die zwei an, die den Hash des gesteuerten Gangs festhalten.
+
+Die Kosten, vor dem Festschreiben gezählt: Das Update von 20 gesteuerten Figuren führt 0,032 %, 0,030 % und 0,032 % mehr Befehle aus.
+
+Nimmt der Prototyp das Ziel, Frage 3 des Skills. Probelauf dieser Regel auf beiden Sätzen der Entwicklung: alle Bedingungen erfüllt, auf dem ersten auch D2. Wenden 467 statt 887 und 348 statt 697 mm, Anhalten 58 und 57 statt 94 und 91 mm höchstens.
+
+Bedingungen, mit tools/measure/check158.sh und eval158.py auf den Tabellen aus tools/measure/gait155.py, auf den frischen Sätzen:
+ A1 In Wenden im Gehen um 45 bis 180 Grad ist die Summe, um die das Becken tiefer als 60 mm sackt, höchstens 70 % der Summe vorher; auf der Entwicklung 53 und 50 %. Gezeigt ist das nur, wenn sie vorher mindestens 200 mm ist.
+ A2 Beim Anhalten aus dem Gehen sackt das Becken an keiner Stelle tiefer als 62 mm: 60 mm und 2 mm Boden. Gezeigt nur, wenn es vorher an mindestens 4 Stellen tiefer als 60 mm sackt.
+ A3 Nach Wenden um 90, 135 und 180 Grad im Gehen läuft die Figur im Mittel höchstens 0,03 s später wieder, und das Anhalten dauert höchstens 0,05 s länger.
+ A4 Die Summe der Schienbeine über 37 mm über alle Läufe wächst höchstens um 10 mm: so viel macht eine einzelne harte Stelle, siehe Runde 157.
+ A5 Die Zahl der Stellen mit einem Fuß über 37 mm wächst höchstens um 2.
+ A6 Der härteste Sprung des Beckens wächst höchstens um 2 mm.
+ A7 In Wenden im Gehen wächst die Zahl der Stellen mit einem Schwung unter 0,25 s höchstens um 6.
+ A8 Kein Standfuß dreht sich mehr als 46 Grad auf dem Boden.
+Schutz:
+ D1 Alle Läufe im Rennen sind an jeder Stelle gleich, ebenso gehend das Losgehen, der stetige Gang und der Wechsel ins Rennen.
+ D2 Die Tabelle der Wechsel im Rennen mit festem Blick, where129.py auf ihren zwölf Sätzen, ist bytegleich.
+ D3 Alle Tests bestehen mit gcc und clang, mit den zwei neuen Sollwerten der Hashes; die Hashes sind mit 1, 2 und 4 Threads und beiden Compilern gleich.
+ D4 Das Update der Figuren führt höchstens 0,5 % mehr Befehle aus.
+
+Unabhängige Prüfung. Vier Sätze, deren Geschwindigkeiten vor dem Festschreiben auf keinem Stand gelaufen sind, geprüft mit tools/measure/speeds.py, in tools/measure/common.sh:
+  H170: gehend 1,0635, rennend 4,5835 m/s
+  H171: gehend 1,2635, rennend 3,1835 m/s
+  H172: gehend 1,4135, rennend 4,1135 m/s
+  H173: gehend 1,6035, rennend 3,7735 m/s
+Das sind 688 Läufe, der Satz fresh in check158.sh. Die Ränder vorab durchgerechnet: Der Eingriff gilt bis 2,0 m/s gesteuertem Tempo voll und ab 2,5 m/s nicht mehr; das Gehen der frischen Sätze liegt mit 1,06 bis 1,60 m/s darunter, das Rennen mit 3,18 bis 4,58 m/s darüber, wie auf der Entwicklung. Mit vier statt sechs Sätzen ist die Summe aus A1 vorher etwa 450 bis 600 mm, über der Schwelle von 200 mm.
+
+Der saubere Bau muss auf beiden Sätzen der Entwicklung bytegleich zum Prototyp sein. Verfehlt er auf den frischen Sätzen eine Bedingung, wird er nicht gebaut, oder die Roadmap sagt offen, warum doch, und der Nutzer entscheidet. Eine Messung, die nicht passt, wird nicht wiederholt.
