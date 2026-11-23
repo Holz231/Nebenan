@@ -512,6 +512,16 @@ Zehen und Fersen 37 mm, Hände 15 mm, Becken 10 mm, Becken tief ab 15 cm unter d
 - **Vor einem Vorschlag prüfen, ob der Befund ein Fehler ist.** Ein Lauf des stetigen Gangs beim Zieltempo neben dem
   auffälligen Lauf hätte genügt. Das gehört zu Frage 1 des Skills: Wie groß ist das Thema, gemessen an dem, was richtig
   wäre, nicht an dem, was vorher war.
+- **Erst fragen, warum die Figur langsam wird.** Die Runden 158 und 160 suchten die Ursache des Sackens in Wenden bei
+  Beschleunigung und Bremsen der Kapsel. Der Grund lag eine Zeile davor: Mit Blick in Laufrichtung begrenzt
+  `nbMoveSteered` die Bewegung quer zur Blickrichtung auf 0,3 m/s, die Figur bleibt in der Wende fast stehen. Den Weg
+  des Tempos durch die Funktion von oben lesen (gewünscht, begrenzt, beschleunigt, geklippt), bevor an einer Stelle
+  gedreht wird.
+- **Wo Blickrichtung und Bewegung einander folgen, dreht sich nichts.** Der erste Bogen-Versuch ließ die Figur in
+  Blickrichtung gehen, und die Blickrichtung folgte der Bewegung: Sie drehte nie. Ein Maß, das „nie“ meldet (`again` und
+  `faced` gleich -1), ist ein Fehler im Versuch, kein Ergebnis.
+- **Eine Entwurfsrunde misst den Preis in der Größe, die das Spiel spürt.** Für den Bogen sind das nicht Millimeter am
+  Becken, sondern Meter am Weg: wie weit die Figur noch in die alte Richtung geht und wie weit sie zur Seite ausweicht.
 - **Größe der Figur.** Winkelbeschleunigungen wachsen bei kleineren Figuren mit 1 durch `nbFigureScale`, Längen
   und Geschwindigkeiten mit ihr.
 
