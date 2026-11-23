@@ -83,6 +83,13 @@ was schon verworfen wurde.
   mit den Sprüngen der Schienbeine. Seit Runde 157 behält die aufgehaltene Blickrichtung ihre Drehrate (`headingRate`
   wird beim Warten nicht mehr gesetzt), und ein Fuß, der abhebt, während sie noch mehr als 35 Grad zu drehen hat,
   schwingt von Anfang an 1,6-mal so schnell (`NB_FOOT_TURN_HURRY`); unterwegs eilen lassen macht die Füße ruppig.
+- **Kapsel und Füße.** Die Kapsel führt, die Füße folgen (`nbMoveSteered`, dann `nbSteerFeet`), und die Kapsel ändert
+  ihr Tempo mit 10 und 14 m/s², schneller als ein Schritt dauert. Verliert ein Standbein seinen Fuß, bevor der andere
+  landet (`footOut` kleiner als `swingRest` des anderen), senkt `nbLowerSteered` die Wurzel, das Becken sackt. Seit
+  Runde 158 wartet die Kapsel bei Gehtempo an zwei Stellen: in Wenden auf ebenem Boden wird sie dann nicht schneller,
+  und beim Anhalten bremst sie sanft, bis ein spät schwingender Fuß steht (`NB_WALK_STEERED`, `NB_TURN_HOLD_FROM`,
+  `NB_STOP_GENTLE`, `walkTime`). Überall im Gehen schadet es über Trümmern und mit festem Blick. Gemessen mit
+  `gait155.py` (`low`).
 - **Abheben gegen die Bewegung.** Gegen die Richtung gesteuert, in die sie sich bewegt, mit den Beinen rückwärts, hebt
   ein nachlaufender Fuß ab, sobald die Hüfte schneller von ihm weggeht, als sein Bein vor seiner Reichweite bremsen kann
   (`nbHipAway`, wie `NB_SWING_PULL` es misst), seit Runde 143. Ein schwingender Fuß rollt mit den Beinen rückwärts in
@@ -164,8 +171,8 @@ was schon verworfen wurde.
 `SteerStopLiftTest` (133), `SteerBrakeBackTest` (134), `SteerSideToBackRollTest` (135), `SteerSideToBackPitchTest`
 (136), `SteerSideToBackLiftTest` (137), `SteerBackToForwardLiftTest` (138), `SteerWaitedFootTest` (140),
 `SteerSwitchAnswerTest` (141), `SteerBackToForwardEarlyTest` (143), `SteerSideToBackWalkTest` (144), `SteerRunTrackTest`
-(147), `SteerSpeedUpTest` (150), `SteerFasterRollTest` (151), `SteerLandToesTest` (152), `SteerTurnStepTest` (156), und
-für den Körper `FigureShoulderTest` (126) und `FigureSkinTest` (127): Ändert eine Runde die Knochen, fällt er, bis
-`tools/mannequin/make_skin.py` die Haut neu geschrieben hat, erst `dump_bones`, dann das Werkzeug. Die Hashes
-`NB_EXPECTED_…_HASH` ändern sich nur, wenn sich ein Lauf ändert, der dort festgehalten ist: Das ist erlaubt, wird aber
-in der Roadmap genannt.
+(147), `SteerSpeedUpTest` (150), `SteerFasterRollTest` (151), `SteerLandToesTest` (152), `SteerTurnStepTest` (156),
+`SteerWalkStopTest` (158), und für den Körper `FigureShoulderTest` (126) und `FigureSkinTest` (127): Ändert eine Runde
+die Knochen, fällt er, bis `tools/mannequin/make_skin.py` die Haut neu geschrieben hat, erst `dump_bones`, dann das
+Werkzeug. Die Hashes `NB_EXPECTED_…_HASH` ändern sich nur, wenn sich ein Lauf ändert, der dort festgehalten ist: Das ist
+erlaubt, wird aber in der Roadmap genannt.

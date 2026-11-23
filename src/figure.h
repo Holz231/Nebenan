@@ -562,6 +562,8 @@ typedef struct nbFigure
 	// How far a planted foot turned on the ground with the body since it landed, in radians, see NB_FOOT_PIVOT, whether
 	// it holds the heading back by that in this update, see nbMoveSteered, and the heading the figure turns to
 	float footPivot[2];
+	// For how long its gait has been a walk without a part of a run, in seconds, see NB_STOP_WALKED in figure_steer.c
+	float walkTime;
 	bool footHolds[2];
 	float headingWant;
 	float footPush[2];

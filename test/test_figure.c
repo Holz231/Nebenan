@@ -5763,6 +5763,45 @@ static int SteerTurnStepTest( void )
 	return 0;
 }
 
+// A steered figure facing where it moves walks at 1.72 m/s and is steered to stop, at twelve moments five updates
+// apart. A foot late in its swing lands where it aimed, a step ahead: the capsule brakes gently until that foot is
+// down, see NB_STOP_GENTLE in figure_steer.c, so the hip gets over it. Over the twelve stops the pelvis gets 60 mm
+// below its mean height walking at most. Until round 158 the capsule stopped at once, the leg did not reach the foot
+// ahead with the root where it was, and the pelvis sank 99 mm.
+static int SteerWalkStopTest( void )
+{
+	float most = 0.0f;
+	for ( int part = 0; part < 12; ++part )
+	{
+		FigureScene scene;
+		CreateFigureScene( &scene, 1 );
+		nbFigureId figure = AddSteeredFigure( &scene, b3Vec3_zero, 0.0f );
+		StepFigures( &scene, 60 );
+		nbSteer steer = { { 0.0f, 0.0f, 1.72f }, 0.0f, true };
+		nbFigure_Steer( figure, &steer );
+		StepFigures( &scene, 120 + 5 * part );
+		float height = 0.0f;
+		for ( int i = 0; i < 60; ++i )
+		{
+			StepFigures( &scene, 1 );
+			height += b3ToVec3( b3Body_GetPosition( nbFigure_GetBody( figure, nb_humanoidPelvis ) ) ).y / 60.0f;
+		}
+		steer.velocity = b3Vec3_zero;
+		nbFigure_Steer( figure, &steer );
+		for ( int i = 0; i < 120; ++i )
+		{
+			StepFigures( &scene, 1 );
+			ENSURE( nbFigure_GetInfo( figure ).state == nb_figureAnimated );
+			most = b3MaxFloat( most, height - b3ToVec3( b3Body_GetPosition( nbFigure_GetBody( figure, nb_humanoidPelvis ) ) ).y );
+		}
+		DestroyFigureScene( &scene );
+	}
+	printf( "  stopping from a walk at 1.72 m/s, the pelvis gets %.0f mm below its height walking at most over twelve stops\n",
+			1000.0f * most );
+	ENSURE( most < 0.068f );
+	return 0;
+}
+
 // A steered figure that does not face where it moves turns about as it runs at 4.3 m/s, from 8 places in its cycle, and
 // changes from going to the left to going backward, walking at 1.05 m/s from 19 places and running at 4.3 m/s from 8.
 // Turning about, its frame goes at nine tenths of its speed the other way after 1.26 s in the mean and 1.43 s at the
@@ -8265,7 +8304,7 @@ static int ThinBoardTest( void )
 // walking takes the steps of people, see NB_GAIT_CADENCE_WALK, and the ankle of a swinging foot bends up as far as
 // theirs, see NB_SWING_ANKLE_SOFT. Round 113: the body has the dimensions of a person, see nbMakeHumanoidBones.
 // Round 131: a foot that only just landed stands where the other foot is free to lift, see NB_GAIT_FRESH_KEEP.
-#define NB_EXPECTED_STEER_HASH 0x6c44347du
+#define NB_EXPECTED_STEER_HASH 0x40e66641u
 
 // See RunGaitClipScenario. Since round 99 as for RunSteerScenario. Since round 100 the figure that is told to turn on
 // the spot while it still walks, not facing where it moves, keeps its legs where they face as its heading turns, and
@@ -8274,7 +8313,7 @@ static int ThinBoardTest( void )
 // RunSteerScenario. Since round 111 as for RunSteerScenario. Round 112: the clips are recorded from a gait that takes
 // the steps of people, see NB_GAIT_CADENCE_WALK, and the ankle of a swinging foot bends up as far as theirs, see
 // NB_SWING_ANKLE_SOFT. Round 113 and round 131 as for RunSteerScenario.
-#define NB_EXPECTED_GAIT_CLIP_HASH 0x64c406eeu
+#define NB_EXPECTED_GAIT_CLIP_HASH 0xece5e378u
 
 static int FigureFollowDeterminismTest( void )
 {
@@ -8404,6 +8443,7 @@ int FigureTest( void )
 	RUN_TEST( SteerFasterRollTest );
 	RUN_TEST( SteerLandToesTest );
 	RUN_TEST( SteerTurnStepTest );
+	RUN_TEST( SteerWalkStopTest );
 	RUN_TEST( SteerLegLeadTest );
 	RUN_TEST( SteerRunDescentTest );
 	RUN_TEST( SteerRunFlightTest );

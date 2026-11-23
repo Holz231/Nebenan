@@ -496,6 +496,14 @@ Zehen und Fersen 37 mm, Hände 15 mm, Becken 10 mm, Becken tief ab 15 cm unter d
 - **Abschlussläufe in Schritten mit eigenem Protokoll.** Beim Neustart des Arbeitsprozesses brachen die Läufe nach
   Builds und Tests ab. Weil jeder Schritt sein Ende ins Protokoll schreibt, war klar, was fertig war; der Rest lief ganz
   neu, wie es die Regel für abgebrochene Läufe verlangt.
+- **Ein Hebel an der Kapsel wird in jeder Szene geprüft, in der die Kapsel fährt.** Runde 158 hielt die Kapsel im Gehen
+  zurück, solange ein Bein seinen Fuß verliert. Auf der Tabelle half es; der Testlauf zeigte drei Stellen, an denen es
+  schadete: Trümmer, festen Blick, die Kehrtwende. Erst die Beschränkung auf das, was gemeint war (Drehen der
+  Blickrichtung, ebener Boden, Gehtempo), ließ alles andere bytegleich. Vor dem Festschreiben den Probelauf mit den
+  Schutzbedingungen fahren: Er zeigte hier noch, dass auch das Anhalten aus dem Rennen berührt war.
+- **Sagen, was eine Runde nicht gelöst hat.** Die Trippelschritte blieben, und das Becken sackt in Wenden weiter, halb
+  so viel. Die Wurzel, eine Kapsel, die nicht auf die Füße wartet, steht als großer offener Punkt in der Tabelle, statt
+  mit weiteren Sonderfällen zugedeckt zu werden.
 - **Größe der Figur.** Winkelbeschleunigungen wachsen bei kleineren Figuren mit 1 durch `nbFigureScale`, Längen
   und Geschwindigkeiten mit ihr.
 

@@ -53,6 +53,25 @@
 #define NB_STEER_PLANES 32
 #define NB_STEER_SETTLED 1.0e-4f
 
+// The capsule changes its velocity faster than a step takes, and at a walk the feet do not keep up: a foot late in its
+// swing lands where it aimed, a step ahead the old way, the hip then leaves across it faster than the other foot
+// swings, the leg loses its foot, and the root goes down for it, see nbLowerSteered, 103 mm in 0.3 s turning by a
+// quarter at 1.12 m/s. Two things hold the capsule back for a humanoid steered at a walk, at NB_WALK_STEERED meters per
+// second or less in full and from NB_WALK_STEERED_FADE more not at all, for the humanoid of 1.8 m. Turning on level
+// ground, with more than NB_TURN_HOLD_FROM radians still to turn and a way that slopes less than NB_TURN_HOLD_LEVEL:
+// while the leg it stands on loses its foot before the swinging foot lands, it gets no faster. Everywhere at a walk
+// that made turning about slower and the legs worse over rubble, where a leg loses its foot for the ground. And
+// stopping after it walked for NB_STOP_WALKED seconds: with a foot later in its swing than NB_STOP_COMMIT, which lands
+// where it aimed, it brakes with NB_STOP_GENTLE meters per second squared at most until that foot is down, so the hip
+// gets over it. Braking so gently for every change of the velocity, the pelvis sank more in turns.
+#define NB_WALK_STEERED 2.0f
+#define NB_WALK_STEERED_FADE 0.5f
+#define NB_TURN_HOLD_FROM ( 10.0f * ( B3_PI / 180.0f ) )
+#define NB_TURN_HOLD_LEVEL 0.01f
+#define NB_STOP_WALKED 1.0f
+#define NB_STOP_COMMIT 0.7f
+#define NB_STOP_GENTLE 4.0f
+
 // A plane whose normal points down more than this, its cosine to up, is a ceiling, not a wall
 #define NB_STEER_CEILING 0.1f
 
@@ -493,6 +512,32 @@ bool nbMoveSteered( nbWorld* world, int index, nbFigure* f, float timeStep, b3Ve
 	b3Vec3 change = b3Sub( wish, flat );
 	float rate = b3LengthSquared( wish ) > b3LengthSquared( flat ) ? def->acceleration : def->braking;
 	rate = b3MaxFloat( rate, 0.0f ) * ( f->onGround ? 1.0f : b3ClampFloat( def->airControl, 0.0f, 1.0f ) );
+	// At a walk it waits for its feet, see NB_WALK_STEERED: turning, it gets no faster while the leg it stands on loses
+	// its foot before the other foot lands, and stopping, it brakes gently while a foot lands where it aimed
+	f->walkTime = f->gaitOn && f->gaitRun <= 0.0f ? f->walkTime + timeStep : 0.0f;
+	if ( f->gaitOn && f->boneCount == nb_humanoidBoneCount && f->onGround )
+	{
+		float walks = 1.0f - f->gaitRun;
+		walks *= 1.0f - b3ClampFloat( ( f->steeredSpeed / scale - NB_WALK_STEERED ) / NB_WALK_STEERED_FADE, 0.0f, 1.0f );
+		bool turning = fabsf( nbWrapAngle( f->headingWant - f->heading ) ) > NB_TURN_HOLD_FROM &&
+					   fabsf( f->slope ) < NB_TURN_HOLD_LEVEL && f->stairWeight <= 0.0f;
+		bool faster = b3LengthSquared( wish ) > b3LengthSquared( flat );
+		bool stopping = b3LengthSquared( wish ) < 0.01f * scale * scale && f->walkTime >= NB_STOP_WALKED;
+		for ( int k = 0; k < 2 && turning && faster; ++k )
+		{
+			if ( f->footSwings[k] == false && f->footSwings[1 - k] && f->footOut[k] < f->swingRest[1 - k] )
+			{
+				rate = b3MinFloat( rate, rate - walks * rate );
+			}
+		}
+		for ( int k = 0; k < 2 && stopping; ++k )
+		{
+			if ( f->footSwings[k] && f->swingAlong[k] > NB_STOP_COMMIT )
+			{
+				rate = b3MinFloat( rate, rate + walks * ( NB_STOP_GENTLE * scale - rate ) );
+			}
+		}
+	}
 	float most = rate * timeStep;
 	float length = b3Length( change );
 	flat = length <= most ? wish : b3MulAdd( flat, most / length, change );
