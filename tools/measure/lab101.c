@@ -29,12 +29,12 @@ int main( int argc, char** argv )
 		fprintf( stderr, "lab script out.csv [seconds] [hz]\n" );
 		return 1;
 	}
-	Key keys[64];
+	// up to a key per update of a course a player steers, see steer162.py
+	static Key keys[4096];
 	int keyCount = 0;
-	char buffer[1024];
-	strncpy( buffer, argv[1], sizeof( buffer ) - 1 );
-	buffer[sizeof( buffer ) - 1] = 0;
-	for ( char* tok = strtok( buffer, "," ); tok != NULL && keyCount < 64; tok = strtok( NULL, "," ) )
+	char* buffer = malloc( strlen( argv[1] ) + 1 );
+	strcpy( buffer, argv[1] );
+	for ( char* tok = strtok( buffer, "," ); tok != NULL && keyCount < 4096; tok = strtok( NULL, "," ) )
 	{
 		Key k = { 0 };
 		int n = sscanf( tok, "%f:%f:%f:%f", &k.t, &k.vx, &k.vz, &k.h );

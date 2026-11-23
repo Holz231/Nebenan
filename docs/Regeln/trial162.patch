@@ -1,0 +1,25 @@
+diff --git a/src/figure_steer.c b/src/figure_steer.c
+index 9221ebf..76996b2 100644
+--- a/src/figure_steer.c
++++ b/src/figure_steer.c
+@@ -520,8 +520,18 @@ bool nbMoveSteered( nbWorld* world, int index, nbFigure* f, float timeStep, b3Ve
+ 				float walks = 1.0f - f->gaitRun;
+ 				walks *= 1.0f - b3ClampFloat( ( wanted / scale - NB_WALK_STEERED ) / NB_WALK_STEERED_FADE, 0.0f, 1.0f );
+ 				float ahead = b3MinFloat( bend * wanted, onward );
+-				wish = b3Add( b3MulSV( 1.0f - walks, wish ), b3MulSV( walks * ahead, forward ) );
+-				bends = walks > 0.5f;
++				bool use = true;
++#ifdef NB_X_ANGLE
++				use = b3Dot( asked, forward ) >= NB_X_ANGLE * wanted;
++#endif
++				if ( use )
++				{
++#ifdef NB_X_ALONG
++					if ( ahead > along )
++#endif
++					wish = b3Add( b3MulSV( 1.0f - walks, wish ), b3MulSV( walks * ahead, forward ) );
++					bends = walks > 0.5f;
++				}
+ 			}
+ 		}
+ 		asked = wish;

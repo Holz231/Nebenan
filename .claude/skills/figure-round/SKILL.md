@@ -535,6 +535,12 @@ Zehen und Fersen 37 mm, Hände 15 mm, Becken 10 mm, Becken tief ab 15 cm unter d
 - **Ein Test für ein neues Feld läuft auf dem alten Stand ohne die eine Zeile.** Der Helfer, der das Feld setzt, ist die
   einzige Stelle; im Baum des alten Stands wird sie durch `(void)` ersetzt, dann zeigt der Test auf der alten
   Bibliothek, dass er fehlschlägt.
+- **Eine Regel für das Steuern misst auch, was ein Spieler tut, nicht nur einzelne Wechsel.** Runde 161 prüfte den Bogen
+  an einzelnen Wenden aus dem stetigen Gang, alles erfüllt. Runde 162 steuerte fortlaufend, Kreis, Zickzack, Hin und
+  Her, und fand, dass die Figur mit dem Bogen schnellem Hin und Her nicht mehr folgt. Seitdem gehört `steer162.py` als
+  Schutz in jede Regel, die an Kapsel oder Blickrichtung dreht, mit der Größe „folgt“.
+- **Ruhe des Körpers und Folgen des Sticks sind zwei Größen, und beide stehen in der Regel.** Eine Änderung, die nur an
+  der einen gemessen wird, kann die andere unbemerkt kosten.
 - **Größe der Figur.** Winkelbeschleunigungen wachsen bei kleineren Figuren mit 1 durch `nbFigureScale`, Längen
   und Geschwindigkeiten mit ihr.
 
