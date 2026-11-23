@@ -72,6 +72,12 @@
 #define NB_STOP_COMMIT 0.7f
 #define NB_STOP_GENTLE 4.0f
 
+// A figure steered at a walk bends through a turn, see nbFigureSteering::walkBend, where it walks the way it faces as
+// the turn begins with this share of the speed of the bend or more. Below it, from standing or a first step, it turns
+// on the spot: bending from standing, it was at its speed to the side after 0.58 s and backward after 1.10 s, not 0.40
+// and 0.83 s.
+#define NB_WALK_BEND_FROM 0.5f
+
 // A plane whose normal points down more than this, its cosine to up, is a ceiling, not a wall
 #define NB_STEER_CEILING 0.1f
 
@@ -470,6 +476,8 @@ bool nbMoveSteered( nbWorld* world, int index, nbFigure* f, float timeStep, b3Ve
 	b3Vec3 wish = b3MulSub( f->steer.velocity, b3Dot( f->steer.velocity, up ), up );
 	b3Vec3 asked = wish;
 	f->steeredSpeed = b3Length( wish );
+	bool capped = false;
+	bool bends = false;
 	if ( f->steer.faceVelocity )
 	{
 		// Facing where it moves, it goes across its heading and backward no faster than a step to the side or back, see
@@ -489,6 +497,32 @@ bool nbMoveSteered( nbWorld* world, int index, nbFigure* f, float timeStep, b3Ve
 			}
 			along = b3MaxFloat( along, -back );
 			wish = b3MulAdd( across, along, forward );
+
+			// Steered at a walk, see NB_WALK_STEERED, a humanoid does not wait for its heading with that little of the
+			// velocity it wants: it walks on the way it faces, with nbFigureSteering::walkBend of the speed it is steered
+			// at and no more than it has that way, while its heading turns to where it is steered, see below. Capped as
+			// above it nearly stopped in every turn and sped up again once it faced the new way: its legs lost their
+			// feet and hurried after them, a swing shorter than 0.25 s at 68 of 360 turns at a walk, and the pelvis got
+			// more than 30 mm below the steady walk at 62 of them.
+			// It bends where it walks the way it faces as the turn begins, with NB_WALK_BEND_FROM of the speed of the
+			// bend or more: from standing it turns as above.
+			float bend = b3ClampFloat( def->walkBend, 0.0f, 1.0f );
+			float wanted = b3Length( asked );
+			float onward = b3MaxFloat( b3Dot( flat, forward ), 0.0f );
+			bool can = bend > 0.0f && f->gaitOn && f->boneCount == nb_humanoidBoneCount && f->onGround;
+			if ( f->turnCapped == false )
+			{
+				f->turnBends = can && onward >= NB_WALK_BEND_FROM * bend * wanted;
+			}
+			capped = true;
+			if ( f->turnBends && can )
+			{
+				float walks = 1.0f - f->gaitRun;
+				walks *= 1.0f - b3ClampFloat( ( wanted / scale - NB_WALK_STEERED ) / NB_WALK_STEERED_FADE, 0.0f, 1.0f );
+				float ahead = b3MinFloat( bend * wanted, onward );
+				wish = b3Add( b3MulSV( 1.0f - walks, wish ), b3MulSV( walks * ahead, forward ) );
+				bends = walks > 0.5f;
+			}
 		}
 		asked = wish;
 	}
@@ -512,6 +546,10 @@ bool nbMoveSteered( nbWorld* world, int index, nbFigure* f, float timeStep, b3Ve
 	b3Vec3 change = b3Sub( wish, flat );
 	float rate = b3LengthSquared( wish ) > b3LengthSquared( flat ) ? def->acceleration : def->braking;
 	rate = b3MaxFloat( rate, 0.0f ) * ( f->onGround ? 1.0f : b3ClampFloat( def->airControl, 0.0f, 1.0f ) );
+	// A turn ends where the velocity it wants is no longer capped for its heading, see nbFigureSteering::walkBend
+	f->turnCapped = capped;
+	f->turnBends = f->turnBends && capped;
+
 	// At a walk it waits for its feet, see NB_WALK_STEERED: turning, it gets no faster while the leg it stands on loses
 	// its foot before the other foot lands, and stopping, it brakes gently while a foot lands where it aimed
 	f->walkTime = f->gaitOn && f->gaitRun <= 0.0f ? f->walkTime + timeStep : 0.0f;
@@ -703,6 +741,12 @@ bool nbMoveSteered( nbWorld* world, int index, nbFigure* f, float timeStep, b3Ve
 		b3Vec3 local = b3InvRotateVector( tilt, f->moveVelocity );
 		bool moving = local.x * local.x + local.z * local.z > NB_STEER_FACE_SPEED * NB_STEER_FACE_SPEED;
 		want = moving ? b3Atan2( local.x, local.z ) : heading;
+		if ( bends )
+		{
+			// Walking a bend, it turns to where it is steered, not to where it moves: it moves the way it faces
+			b3Vec3 steered = b3InvRotateVector( tilt, f->steer.velocity );
+			want = b3Atan2( steered.x, steered.z );
+		}
 	}
 	heading = nbTurnToward( heading, want, &f->headingRate, def, timeStep );
 

@@ -564,6 +564,10 @@ typedef struct nbFigure
 	float footPivot[2];
 	// For how long its gait has been a walk without a part of a run, in seconds, see NB_STOP_WALKED in figure_steer.c
 	float walkTime;
+	// Whether its velocity was capped for its heading in the last update, facing where it moves, and whether it walks
+	// a bend through this turn, decided as the turn began, see nbFigureSteering::walkBend
+	bool turnCapped;
+	bool turnBends;
 	bool footHolds[2];
 	float headingWant;
 	float footPush[2];

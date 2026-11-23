@@ -1360,6 +1360,15 @@ typedef struct nbFigureSteering
 	/// waits until the feet have stepped round, so turning about takes about 1.1 s walking and 1.3 s running.
 	float turnRate;
 	float turnAcceleration;
+
+	/// Steered at a walk and facing where it moves, a humanoid walks on the way it faces while it turns to where it is
+	/// steered: a bend. It keeps this share of the speed it is steered at, and no more speed than it has that way
+	/// already, and it bends only where it walks that way as the turn begins: from standing it turns on the spot.
+	/// Turning about at 1.4 m/s it goes 0.3 m on the old way and half a meter to the side, and its feet keep their
+	/// step. Zero turns on the spot as until round 160: across its heading the figure goes no faster than 0.3 m/s,
+	/// so it nearly stops until it faces where it goes, and its pelvis sinks for the legs that wait. A game that
+	/// needs the short way sets zero. The default is 0.7. Running, it brakes and turns either way.
+	float walkBend;
 } nbFigureSteering;
 
 /// A figure, see nbCreateFigure. Initialize with nbDefaultFigureDef.

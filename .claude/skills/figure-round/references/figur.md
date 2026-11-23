@@ -90,6 +90,12 @@ was schon verworfen wurde.
   und beim Anhalten bremst sie sanft, bis ein spät schwingender Fuß steht (`NB_WALK_STEERED`, `NB_TURN_HOLD_FROM`,
   `NB_STOP_GENTLE`, `walkTime`). Überall im Gehen schadet es über Trümmern und mit festem Blick. Gemessen mit
   `gait155.py` (`low`).
+- **Bogen im Gehen.** Mit Blick in Laufrichtung kappt `nbMoveSteered` den Wunsch quer zur Blickrichtung auf 0,3 m/s;
+  allein damit bleibt die Figur in jeder Wende fast stehen. Seit Runde 161 geht sie bei Gehtempo einen Bogen: in
+  Blickrichtung weiter mit `nbFigureSteering::walkBend` (0,7) des gesteuerten Tempos, die Blickrichtung dreht zur
+  gesteuerten Richtung. Entschieden wird einmal am Beginn der Wende (`turnCapped`, `turnBends`, `NB_WALK_BEND_FROM`):
+  aus dem Stand dreht sie auf der Stelle. Im Rennen bremst und dreht sie. `walkBend` 0 ist der Stand davor, bytegleich.
+  Gemessen mit `gait155.py` (`under`, `short`, `onward`, `sideways`).
 - **Abheben gegen die Bewegung.** Gegen die Richtung gesteuert, in die sie sich bewegt, mit den Beinen rückwärts, hebt
   ein nachlaufender Fuß ab, sobald die Hüfte schneller von ihm weggeht, als sein Bein vor seiner Reichweite bremsen kann
   (`nbHipAway`, wie `NB_SWING_PULL` es misst), seit Runde 143. Ein schwingender Fuß rollt mit den Beinen rückwärts in
@@ -172,7 +178,7 @@ was schon verworfen wurde.
 (136), `SteerSideToBackLiftTest` (137), `SteerBackToForwardLiftTest` (138), `SteerWaitedFootTest` (140),
 `SteerSwitchAnswerTest` (141), `SteerBackToForwardEarlyTest` (143), `SteerSideToBackWalkTest` (144), `SteerRunTrackTest`
 (147), `SteerSpeedUpTest` (150), `SteerFasterRollTest` (151), `SteerLandToesTest` (152), `SteerTurnStepTest` (156),
-`SteerWalkStopTest` (158), und für den Körper `FigureShoulderTest` (126) und `FigureSkinTest` (127): Ändert eine Runde
-die Knochen, fällt er, bis `tools/mannequin/make_skin.py` die Haut neu geschrieben hat, erst `dump_bones`, dann das
-Werkzeug. Die Hashes `NB_EXPECTED_…_HASH` ändern sich nur, wenn sich ein Lauf ändert, der dort festgehalten ist: Das ist
-erlaubt, wird aber in der Roadmap genannt.
+`SteerWalkStopTest` (158), `SteerWalkBendTest` (161), und für den Körper `FigureShoulderTest` (126) und `FigureSkinTest`
+(127): Ändert eine Runde die Knochen, fällt er, bis `tools/mannequin/make_skin.py` die Haut neu geschrieben hat, erst
+`dump_bones`, dann das Werkzeug. Die Hashes `NB_EXPECTED_…_HASH` ändern sich nur, wenn sich ein Lauf ändert, der dort
+festgehalten ist: Das ist erlaubt, wird aber in der Roadmap genannt.

@@ -3813,6 +3813,20 @@ static nbFigureId AddSteeredFigure( FigureScene* scene, b3Vec3 position, float h
 	return nbCreateFigure( scene->world, &def );
 }
 
+// A figure the program steers that keeps the given share of its speed through a turn at a walk, see
+// nbFigureSteering::walkBend: zero turns on the spot
+static nbFigureId AddSteeredFigureBend( FigureScene* scene, b3Vec3 position, float heading, float walkBend )
+{
+	nbFigureDef def = nbDefaultFigureDef();
+	def.rig = &scene->rig;
+	def.standHeight = scene->standHeight;
+	def.position = b3ToPos( position );
+	def.heading = heading;
+	def.steered = true;
+	def.steering.walkBend = walkBend;
+	return nbCreateFigure( scene->world, &def );
+}
+
 // The figure as the library keeps it, for its capsule and its feet
 static const nbFigure* GetSteered( const FigureScene* scene, nbFigureId figure )
 {
@@ -4699,7 +4713,8 @@ static int SteerInStepTest( void )
 // way, as it brakes no harder than it goes backward facing where it moves, see nbSteer::faceVelocity (0.89 while it
 // went backward at once). From the turn on its knees change their velocity from one update to the next by more than
 // 3 cm in at most 20 updates of all eight turns (39 before the knees bent), and by 5 cm at most (6.6), and its pelvis by
-// 2 cm at most.
+// 2 cm at most. The figure turns on the spot here, nbFigureSteering::walkBend at zero: walking a bend, as it does since
+// round 161, the capsule does not brake hard in the turn, and the knees bend 0.43 of the way.
 static int SteerKneeTest( void )
 {
 	const int bones[3] = { nb_humanoidPelvis, nb_humanoidShinLeft, nb_humanoidShinRight };
@@ -4712,7 +4727,7 @@ static int SteerKneeTest( void )
 	{
 		FigureScene scene;
 		CreateFigureScene( &scene, 1 );
-		nbFigureId figure = AddSteeredFigure( &scene, b3Vec3_zero, 0.0f );
+		nbFigureId figure = AddSteeredFigureBend( &scene, b3Vec3_zero, 0.0f, 0.0f );
 		int turn = 240 + ( k * 111 ) / 16;
 		b3Vec3 last[3] = { b3Vec3_zero, b3Vec3_zero, b3Vec3_zero };
 		b3Vec3 before[3] = { b3Vec3_zero, b3Vec3_zero, b3Vec3_zero };
@@ -5799,6 +5814,115 @@ static int SteerWalkStopTest( void )
 	printf( "  stopping from a walk at 1.72 m/s, the pelvis gets %.0f mm below its height walking at most over twelve stops\n",
 			1000.0f * most );
 	ENSURE( most < 0.068f );
+	return 0;
+}
+
+// One turn-about of a steered figure facing where it moves, walking at 1.4 m/s, from the given moment of its gait and
+// with the given nbFigureSteering::walkBend: the slowest its capsule gets in the 0.5 s after it is steered back, how far
+// it gets on the way it walked and to the side, how far its pelvis gets below its mean height walking, and after how
+// long it faces within 0.2 rad of the new way
+typedef struct BendTurn
+{
+	float slowest, onward, sideways, sunk, faced;
+} BendTurn;
+
+static int RunBendTurn( int part, float walkBend, BendTurn* out )
+{
+	FigureScene scene;
+	CreateFigureScene( &scene, 1 );
+	nbFigureId figure = AddSteeredFigureBend( &scene, b3Vec3_zero, 0.0f, walkBend );
+	StepFigures( &scene, 60 );
+	SteerVelocity( figure, (b3Vec3){ 0.0f, 0.0f, 1.4f } );
+	StepFigures( &scene, 120 + 5 * part );
+	float height = 0.0f;
+	for ( int i = 0; i < 60; ++i )
+	{
+		StepFigures( &scene, 1 );
+		height += BonePosition( figure, nb_humanoidPelvis ).y / 60.0f;
+	}
+	b3Vec3 from = b3ToVec3( nbFigure_GetFrame( figure ).p );
+	SteerVelocity( figure, (b3Vec3){ 0.0f, 0.0f, -1.4f } );
+	*out = (BendTurn){ FLT_MAX, 0.0f, 0.0f, 0.0f, -1.0f };
+	for ( int i = 0; i < 150; ++i )
+	{
+		StepFigures( &scene, 1 );
+		ENSURE( nbFigure_GetInfo( figure ).state == nb_figureAnimated );
+		b3WorldTransform frame = nbFigure_GetFrame( figure );
+		b3Vec3 at = b3Sub( b3ToVec3( frame.p ), from );
+		if ( i < 30 )
+		{
+			out->slowest = b3MinFloat( out->slowest, SteerSpeed( figure ) );
+		}
+		out->onward = b3MaxFloat( out->onward, at.z );
+		out->sideways = b3MaxFloat( out->sideways, fabsf( at.x ) );
+		out->sunk = b3MaxFloat( out->sunk, height - BonePosition( figure, nb_humanoidPelvis ).y );
+		if ( out->faced < 0.0f && b3RotateVector( frame.q, b3Vec3_axisZ ).z < -0.98f )
+		{
+			out->faced = ( i + 1 ) / 60.0f;
+		}
+	}
+	DestroyFigureScene( &scene );
+	return 0;
+}
+
+// A steered figure facing where it moves walks at 1.4 m/s and is steered back, at twelve moments five updates apart. It
+// walks a bend, see nbFigureSteering::walkBend: its capsule walks on the way it faces while it turns, so in the half
+// second after it stays at 0.8 m/s or more over all twelve turns (0.93), its pelvis gets no more than 58 mm below its
+// mean height walking (51), and it faces back within 1.05 s (0.98). The bend costs way, and no more than 0.40 m on the
+// way it walked (0.34) and 0.70 m to the side (0.61). Until round 161, and with walkBend at zero, it turns on the spot:
+// the capsule nearly stops, 0.07 m/s, the pelvis sinks 75 mm, it faces back after 1.10 s, and it gets 0.06 m onward and
+// 0.18 m to the side. From standing it turns on the spot either way.
+static int SteerWalkBendTest( void )
+{
+	BendTurn bend = { FLT_MAX, 0.0f, 0.0f, 0.0f, 0.0f };
+	BendTurn spot = { FLT_MAX, 0.0f, 0.0f, 0.0f, 0.0f };
+	for ( int part = 0; part < 12; ++part )
+	{
+		for ( int k = 0; k < 2; ++k )
+		{
+			BendTurn turn;
+			ENSURE( RunBendTurn( part, k == 0 ? 0.7f : 0.0f, &turn ) == 0 );
+			ENSURE( turn.faced > 0.0f );
+			BendTurn* all = k == 0 ? &bend : &spot;
+			all->slowest = b3MinFloat( all->slowest, turn.slowest );
+			all->onward = b3MaxFloat( all->onward, turn.onward );
+			all->sideways = b3MaxFloat( all->sideways, turn.sideways );
+			all->sunk = b3MaxFloat( all->sunk, turn.sunk );
+			all->faced = b3MaxFloat( all->faced, turn.faced );
+		}
+	}
+	printf( "  turning about at a walk in a bend: slowest %.2f m/s, %.2f m onward, %.2f m to the side, pelvis %.0f mm below "
+			"its height walking, faces back after %.2f s at the latest\n",
+			bend.slowest, bend.onward, bend.sideways, 1000.0f * bend.sunk, bend.faced );
+	printf( "  on the spot, walkBend at zero: slowest %.2f m/s, %.2f m onward, %.2f m to the side, pelvis %.0f mm, faces "
+			"back after %.2f s\n",
+			spot.slowest, spot.onward, spot.sideways, 1000.0f * spot.sunk, spot.faced );
+	ENSURE( bend.slowest >= 0.8f );
+	ENSURE( bend.sunk <= 0.058f );
+	ENSURE( bend.faced <= 1.05f );
+	ENSURE( bend.onward <= 0.40f );
+	ENSURE( bend.sideways <= 0.70f );
+	ENSURE( spot.slowest < 0.3f );
+	ENSURE( spot.onward < 0.15f );
+
+	// From standing it turns on the spot either way: steered back, it is at the same place to the bit in every update
+	b3Vec3 places[120];
+	for ( int k = 0; k < 2; ++k )
+	{
+		FigureScene scene;
+		CreateFigureScene( &scene, 1 );
+		nbFigureId figure = AddSteeredFigureBend( &scene, b3Vec3_zero, 0.0f, k == 0 ? 0.7f : 0.0f );
+		StepFigures( &scene, 60 );
+		SteerVelocity( figure, (b3Vec3){ 0.0f, 0.0f, -1.4f } );
+		for ( int i = 0; i < 120; ++i )
+		{
+			StepFigures( &scene, 1 );
+			b3Vec3 place = b3ToVec3( nbFigure_GetFrame( figure ).p );
+			ENSURE( k == 0 || ( place.x == places[i].x && place.y == places[i].y && place.z == places[i].z ) );
+			places[i] = place;
+		}
+		DestroyFigureScene( &scene );
+	}
 	return 0;
 }
 
@@ -8444,6 +8568,7 @@ int FigureTest( void )
 	RUN_TEST( SteerLandToesTest );
 	RUN_TEST( SteerTurnStepTest );
 	RUN_TEST( SteerWalkStopTest );
+	RUN_TEST( SteerWalkBendTest );
 	RUN_TEST( SteerLegLeadTest );
 	RUN_TEST( SteerRunDescentTest );
 	RUN_TEST( SteerRunFlightTest );

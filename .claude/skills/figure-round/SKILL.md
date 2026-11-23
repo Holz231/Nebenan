@@ -522,6 +522,19 @@ Zehen und Fersen 37 mm, Hände 15 mm, Becken 10 mm, Becken tief ab 15 cm unter d
   `faced` gleich -1), ist ein Fehler im Versuch, kein Ergebnis.
 - **Eine Entwurfsrunde misst den Preis in der Größe, die das Spiel spürt.** Für den Bogen sind das nicht Millimeter am
   Becken, sondern Meter am Weg: wie weit die Figur noch in die alte Richtung geht und wie weit sie zur Seite ausweicht.
+- **Zwei Fälle, die Verschiedenes brauchen, trennt ein Zeitpunkt, kein Einblenden.** Runde 161: Der Bogen half in Wenden
+  aus dem Gehen und schadete beim Losgehen aus dem Stand. Ihn mit dem Tempo einzublenden, das die Figur schon hat,
+  kostete den halben Gewinn, weil der Bogen sich das Tempo selbst nimmt. Einmal am Beginn der Wende zu entscheiden,
+  hielt beides.
+- **Ein Schalter auf null ist eine Schutzbedingung.** Bekommt ein Verhalten einen Schalter, verlangt die Regel, dass der
+  Bau mit abgestelltem Schalter die Tabelle des Stands davor bytegleich schreibt (Runde 161, D3). Das Messprogramm setzt
+  das Feld dafür aus der Umgebung, hinter einem Makro, damit es auch gegen ältere Stände baut.
+- **Ein Test, der die alte Mechanik prüft, bekommt den Schalter, keine weichere Schwelle.** `SteerKneeTest` verlangte
+  die Beugung der Knie beim harten Bremsen in der Kehrtwende. Mit dem Bogen bremst die Kapsel dort nicht mehr; der Test
+  läuft mit `walkBend` 0 mit unveränderten Schwellen weiter, und die Roadmap sagt es.
+- **Ein Test für ein neues Feld läuft auf dem alten Stand ohne die eine Zeile.** Der Helfer, der das Feld setzt, ist die
+  einzige Stelle; im Baum des alten Stands wird sie durch `(void)` ersetzt, dann zeigt der Test auf der alten
+  Bibliothek, dass er fehlschlägt.
 - **Größe der Figur.** Winkelbeschleunigungen wachsen bei kleineren Figuren mit 1 durch `nbFigureScale`, Längen
   und Geschwindigkeiten mit ihr.
 
