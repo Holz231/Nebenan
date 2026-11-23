@@ -14,8 +14,11 @@
 # difference looked like a pelvis that sinks; when the
 # figure moves at nine tenths of the new speed along the new direction (stopping: at a tenth of the old speed) and when
 # it faces within 10 degrees of it; the shortest swing of a foot (s) and how many feet land in the first 1.5 s against
-# the steady gait of the new speed. Writes out/res/<variant>/gait155.json and prints one line per scene. Needs lab101
-# of the variant: ./build.sh <variant> "" lab101.c
+# the steady gait of the new speed. Since round 161 also starting from standing to where the figure does not face, 90
+# and 180 degrees to its left (startTurn90, startTurn180), and the way of the frame: how far it goes on the way it
+# went before the change (onward, m) and how far to the side of it (sideways, m; turning about that is how wide its
+# bend is). Writes out/res/<variant>/gait155.json and prints one line per scene. Needs lab101 of the variant:
+# ./build.sh <variant> "" lab101.c
 import csv, json, math, os, subprocess, sys
 from concurrent.futures import ThreadPoolExecutor
 import numpy as np
@@ -29,7 +32,8 @@ GROUPS = {'shin': (14, 17), 'foot': (15, 18), 'pelvis': (0,), 'hand': (9, 12), '
 # scene: the gait before, the gait after (None: standing), the turn to the left in degrees, moments
 SCENES = {'start': (None, 'same', 0, 1), 'steady': ('same', 'same', 0, 1), 'stop': ('same', None, 0, 12),
           'turn45': ('same', 'same', 45, 12), 'turn90': ('same', 'same', 90, 12), 'turn135': ('same', 'same', 135, 12),
-          'turn180': ('same', 'same', 180, 12), 'turn90R': ('same', 'same', -90, 12), 'change': ('same', 'other', 0, 12)}
+          'turn180': ('same', 'same', 180, 12), 'turn90R': ('same', 'same', -90, 12), 'change': ('same', 'other', 0, 12),
+          'startTurn90': (None, 'same', 90, 1), 'startTurn180': (None, 'same', 180, 1)}
 
 
 def band(variant, name, v):
@@ -116,6 +120,9 @@ def one(job):
         first = (t >= a) & (t < a + 1.5)
         out['under'] = max(1000.0 * (lowest - float(np.min(d['b0y'][first]))), 0.0)
         out['beyond'] = max(1000.0 * (float(np.max(d['b0y'][first])) - highest), 0.0)
+    at = int(np.argmax(t >= a))
+    out['onward'] = float(np.max(d['fz'][at:] - d['fz'][at]))
+    out['sideways'] = float(np.max(np.abs(d['fx'][at:] - d['fx'][at])))
     vx, vz = np.gradient(d['fx'], t), np.gradient(d['fz'], t)
     if after is None:
         ok = np.hypot(vx, vz) <= 0.1 * v0
@@ -144,7 +151,7 @@ if __name__ == '__main__':
     print('%s on %s: %d runs. Jumps: median / hardest in mm; over: points with a shin over %.0f mm and their sum '
           'beyond it' % (variant, ' '.join(sets), len(rows), LIMIT))
     print('scene    gait   n | shin        over      | foot        | pelvis      | hand        | head        | '
-          'slide mm twist aside deg | low  high mm | under mm | again s     | faced s     | short s | lands')
+          'slide mm twist aside deg | low  high mm | under mm | again s     | faced s     | short s | lands | onward m')
     for scene in SCENES:
         for gait in ('WALK', 'RUN'):
             q = [r for r in rows if r['scene'] == scene and r['gait'] == gait]
@@ -156,8 +163,8 @@ if __name__ == '__main__':
             target = 'WALK' if (gait == 'WALK') == (scene != 'change') else 'RUN'
             ratio = np.mean([r['lands'] / max(steady[(r['set'], target)]['lands'], 1) for r in q]) if SCENES[scene][1] else 0.0
             print('%-8s %-4s %3d | %s %3d %5.0f | %s | %s | %s | %s | %7.1f  %5.1f %5.1f     | %4.0f %4.0f    | %8.1f | '
-                  '%s | %s | %7.3f | %.2f' % (
+                  '%s | %s | %7.3f | %.2f | %.2f' % (
                 scene, gait.lower(), len(q), mm('shin'), len(over), sum(over), mm('foot'), mm('pelvis'), mm('hand'), mm('head'),
                 max(r['slide'] for r in q), max(r['twist'] for r in q), max(r['aside'] for r in q), max(r['low'] for r in q),
                 max(r['high'] for r in q), max(r['under'] for r in q), tt('again'), tt('faced'),
-                min(r['short'] for r in q), ratio))
+                min(r['short'] for r in q), ratio, max(r['onward'] for r in q)))

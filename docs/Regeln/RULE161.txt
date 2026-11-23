@@ -1,0 +1,46 @@
+Regel für Runde 161, vor jedem Lauf mit den Geschwindigkeiten der unabhängigen Prüfung festgeschrieben. Gemessen wird gegen active-ragdoll-160, dessen Bibliothek die von Runde 158 ist.
+
+Worum es geht. Runde 160 hat gemessen, warum eine gesteuerte Figur mit Blick in Laufrichtung in einer Wende im Gehen fast stehen bleibt: Ihre Geschwindigkeit wird quer zur Blickrichtung gekappt, sie bremst mit 14 m/s², dreht auf der Stelle und läuft wieder an. Dabei sackt das Becken und die Schritte werden kurz. Der Nutzer hat entschieden: den Bogen bauen, als Standard, mit Schalter zum Abstellen.
+
+Wie groß das Thema ist, Frage 1 des Skills. Gemessen wird das Becken gegen seine Höhe im stetigen Gang beim neuen Tempo, wie seit Runde 159. Im stetigen Gehen schwankt es 12 bis 29 mm darunter, 30 mm ist also die Grenze, ab der es sackt. In Wenden im Gehen um 45 bis 180 Grad sackt es auf den zwei Sätzen der Entwicklung an 62 und 41 von je 360 Stellen tiefer, in Summe 886 und 644 mm darüber hinaus, und an 68 und 62 Stellen ist ein Schwung kürzer als 0,25 s. Richtig wäre: keine Stelle über 30 mm, kein Schwung unter 0,25 s.
+
+Die Ursache, in Runde 160 verfolgt. In nbMoveSteered, src/figure_steer.c, darf die Figur mit nbSteer::faceVelocity quer zur Blickrichtung höchstens 0,3 m/s oder 0,17 ihres Tempos gehen und rückwärts höchstens 0,3 m/s. Wird sie in eine neue Richtung gesteuert, bleibt von ihrem Wunsch fast nichts übrig, bis die Blickrichtung mit 4 rad/s nachgedreht hat. Die Kapsel steht also fast, während die Beine noch im Takt des Gehens sind.
+
+Der Eingriff, in der Bibliothek. Neues Feld nbFigureSteering::walkBend, Standard 0,7. Geht eine Figur mit Gehtempo gesteuert (bis 2,0 m/s voll, ab 2,5 m/s nicht mehr, wie NB_WALK_STEERED aus Runde 158) und beginnt eine Wende, in der ihre Geschwindigkeit für die Blickrichtung gekappt wird, dann geht die Kapsel in der Blickrichtung weiter, mit walkBend mal dem gesteuerten Tempo und nie schneller, als sie in dieser Richtung schon ist, und die Blickrichtung dreht zur gesteuerten Richtung statt zur Bewegungsrichtung. Das ist ein Bogen. Ob sie den Bogen geht, entscheidet sich einmal, wenn die Wende beginnt: nur wenn sie dann schon mindestens mit dem halben Tempo des Bogens in Blickrichtung geht. Aus dem Stand dreht sie also wie bisher. Mit walkBend 0 dreht sie überall wie bisher. Im Rennen bleibt es beim Bremsen und Drehen.
+
+Die Varianten, je mit zwei Zahlen, Frage 2 des Skills: die Summe, um die das Becken in Wenden im Gehen tiefer als 30 mm sackt, und die Stellen mit einem Schwung unter 0,25 s, auf dem ersten Satz der Entwicklung. Vorher: 886 mm und 68.
+ - Bogen überall, auch aus dem Stand: 103 mm und 0. Aber wer aus dem Stand zur Seite oder nach hinten losgeht, ist erst nach 0,58 und 1,10 s auf Tempo statt nach 0,40 und 0,83 s. Verworfen.
+ - Den gekappten Wunsch quer behalten und längs das Größere aus Wunsch und Bogen nehmen: 1 046 mm und 102, schlechter als vorher. Verworfen.
+ - Den Bogen mit dem Tempo einblenden, das die Figur in Blickrichtung schon hat: 515 mm und 32, Losgehen 0,47 und 0,92 s. Halber Gewinn, und das Losgehen leidet noch. Verworfen.
+ - Einmal am Beginn der Wende entscheiden, ab halbem Tempo des Bogens: 103 mm und 0, Losgehen aus dem Stand an jeder Stelle gleich. Der Prototyp.
+ - Stärke des Bogens 0,5 statt 0,7: 294 mm und 8. Stärke 0,85: 151 mm und 5, und der Weg wird länger (Kehrtwende 0,50 m weiter und 0,84 m zur Seite statt 0,42 und 0,72 m). 0,7 bleibt.
+
+Bekannte Grenzen des Prototyps. Der Preis ist der Weg: In der Kehrtwende im Gehen kommt die Figur bis 0,42 m weiter in die alte Richtung (vorher 0,09 m) und bis 0,72 m zur Seite (vorher 0,27 und 0,38 m), in der Wende um 90 Grad bis 0,40 m weiter (vorher 0,26 m). Nach 90 Grad ist sie 0,07 s später wieder auf Tempo, nach 135 Grad 0,13 s später, nach der Kehrtwende gleich schnell, und sie schaut dort 0,10 s früher in die neue Richtung. Das Becken sackt weiter an 18 und 17 Stellen über 30 mm. Ein Spiel, das den kurzen Weg braucht, stellt walkBend auf 0.
+
+Tests des Prototyps. Von 198 Tests schlägt einer an, SteerKneeTest: Er verlangt, dass die Knie in der Kehrtwende im Gehen zu mindestens 0,7 beugen, weil die Kapsel dort hart bremst. Mit dem Bogen bremst sie nicht mehr hart. Der Test bekommt im Bau walkBend 0 und prüft die Beugung weiter dort, wo gebremst und gedreht wird; das wird offen gesagt. Die Hashes des gesteuerten Gangs bleiben, wie sie sind.
+
+Die Kosten, vor dem Festschreiben gezählt: Das Update von 20 gesteuerten Figuren führt 0,007 %, 0,006 % und 0,007 % mehr Befehle aus.
+
+Nimmt der Prototyp das Ziel, Frage 3 des Skills. Probelauf dieser Regel auf beiden Sätzen der Entwicklung mit allen Schutzbedingungen: alle erfüllt, auf dem ersten auch D2. Becken 103 statt 886 und 60 statt 644 mm, kurze Schwünge 0 statt 68 und 0 statt 62. Das Ziel „keine Stelle über 30 mm“ nimmt er nicht ganz: 18 und 17 Stellen bleiben.
+
+Bedingungen, mit tools/measure/check161.sh und eval161.py auf den Tabellen aus tools/measure/gait155.py, auf den frischen Sätzen:
+ A1 In Wenden im Gehen um 45 bis 180 Grad ist die Summe, um die das Becken tiefer als 30 mm unter seine Höhe im stetigen Gang sackt, höchstens 40 % der Summe vorher; auf der Entwicklung 12 und 9 %. Gezeigt nur, wenn sie vorher mindestens 200 mm ist.
+ A2 In Wenden im Gehen ist die Zahl der Stellen mit einem Schwung unter 0,25 s höchstens 25 % der Zahl vorher und 2 Stellen Boden. Gezeigt nur, wenn es vorher mindestens 20 sind.
+ A3 In jeder Wende im Gehen läuft die Figur wieder und schaut in die neue Richtung. Sie ist im Mittel nach 90 Grad höchstens 0,10 s später wieder auf Tempo, nach 135 Grad höchstens 0,17 s, nach 180 Grad höchstens 0,04 s, und sie schaut nach der Kehrtwende höchstens 0,03 s später in die neue Richtung. Auf der Entwicklung 0,07, 0,13, 0,01 und −0,10 s.
+ A4 Der Weg bleibt begrenzt: In der Kehrtwende und in der Wende um 90 Grad im Gehen kommt die Figur höchstens 0,50 m weiter in die alte Richtung, in der Kehrtwende höchstens 0,85 m zur Seite. Der Weg wächst mit dem Tempo; das schnellste Gehen der frischen Sätze, 1,7085 m/s, liegt unter dem schnellsten der Entwicklung, 1,72 m/s.
+ A5 Die Summe der Schienbeine über 37 mm über alle Läufe wächst höchstens um 10 mm, so viel macht eine einzelne harte Stelle. Die Zahl der Stellen mit einem Fuß über 37 mm wächst höchstens um 2. Der härteste Sprung des Beckens wächst höchstens um 2 mm. Kein Standfuß dreht sich mehr als 46 Grad auf dem Boden.
+Schutz:
+ D1 Alle Läufe im Rennen sind an jeder Stelle gleich, ebenso gehend das Losgehen, auch zur Seite und nach hinten, der stetige Gang, das Anhalten und der Wechsel ins Rennen.
+ D2 Die Tabelle der Wechsel im Rennen mit festem Blick, where129.py auf ihren zwölf Sätzen, ist bytegleich.
+ D3 Mit walkBend 0 schreibt der Bau die Tabelle des Stands davor, bytegleich.
+ D4 Alle Tests bestehen mit gcc und clang, mit unveränderten Sollwerten der Hashes; die Hashes sind mit 1, 2 und 4 Threads und beiden Compilern gleich.
+ D5 Das Update der Figuren führt höchstens 0,5 % mehr Befehle aus.
+
+Unabhängige Prüfung. Vier Sätze, deren Geschwindigkeiten vor dem Festschreiben auf keinem Stand gelaufen sind, geprüft mit tools/measure/speeds.py, in tools/measure/common.sh:
+  H174: gehend 1,0385, rennend 4,4285 m/s
+  H175: gehend 1,2285, rennend 3,3485 m/s
+  H176: gehend 1,4885, rennend 3,6285 m/s
+  H177: gehend 1,7085, rennend 4,0485 m/s
+Das ist der Satz fresh in check161.sh. Die Ränder vorab durchgerechnet: Der Bogen gilt bis 2,0 m/s gesteuertem Tempo voll, das Gehen der frischen Sätze liegt mit 1,04 bis 1,71 m/s ganz darunter und zwischen dem langsamsten und schnellsten Gehen der Entwicklung (1,05 und 1,72 m/s, das langsamste frische liegt 0,01 m/s darunter). Die Wenden beginnen aus dem stetigen Gang, die Figur geht dort mit vollem Tempo in Blickrichtung, die Schwelle vom halben Tempo des Bogens (0,35 des gesteuerten Tempos) ist weit weg. Die Schwellen 30 mm und 0,25 s hängen an den gemessenen Größen selbst.
+
+Der saubere Bau muss auf beiden Sätzen der Entwicklung bytegleich zum Prototyp sein. Verfehlt er auf den frischen Sätzen eine Bedingung, wird er nicht gebaut, oder der Nutzer entscheidet; die Regel wird danach nicht geändert, und eine Messung, die nicht passt, wird nicht wiederholt.
