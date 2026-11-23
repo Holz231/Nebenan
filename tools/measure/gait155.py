@@ -7,7 +7,11 @@
 # there (see where129.py); how far a standing foot slides over the ground in one stance (the point between heel and
 # toes while both are within 5 mm of the same height, mm) and how far it turns on the ground (degrees), both from the
 # third update after it landed to the last before it lifts, and how far a foot points away from the heading of the
-# figure as it lands (degrees); how far the pelvis gets below and above its height before the change (mm); when the
+# figure as it lands (degrees); how far the pelvis gets below and above its height before the change (mm), and, since
+# round 159, how far it gets below and above the heights it has in the steady gait at the new speed in the first 1.5 s
+# (under and beyond, mm; -1 where the figure stops): walking and running have their own heights, the pelvis is 7 cm
+# lower running at 4.3 m/s than walking at 1.05 m/s, and against the height before a change of the gait that
+# difference looked like a pelvis that sinks; when the
 # figure moves at nine tenths of the new speed along the new direction (stopping: at a tenth of the old speed) and when
 # it faces within 10 degrees of it; the shortest swing of a foot (s) and how many feet land in the first 1.5 s against
 # the steady gait of the new speed. Writes out/res/<variant>/gait155.json and prints one line per scene. Needs lab101
@@ -20,11 +24,23 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from where129 import speeds, what, W
 
 LIMIT = 37.0
+BANDS = {}
 GROUPS = {'shin': (14, 17), 'foot': (15, 18), 'pelvis': (0,), 'hand': (9, 12), 'head': (6,)}
 # scene: the gait before, the gait after (None: standing), the turn to the left in degrees, moments
 SCENES = {'start': (None, 'same', 0, 1), 'steady': ('same', 'same', 0, 1), 'stop': ('same', None, 0, 12),
           'turn45': ('same', 'same', 45, 12), 'turn90': ('same', 'same', 90, 12), 'turn135': ('same', 'same', 135, 12),
           'turn180': ('same', 'same', 180, 12), 'turn90R': ('same', 'same', -90, 12), 'change': ('same', 'other', 0, 12)}
+
+
+def band(variant, name, v):
+    """the lowest and highest pelvis of the steady gait at a speed, from 4 s on"""
+    path = os.path.join(W, 'tmp', 'gait155_band_%s_%s_%.4f.csv' % (variant, name, v))
+    lab = os.path.join(W, 'res', variant, 'lab101')
+    subprocess.run([lab, '0:0:0,1:0:%.4f' % v, path, '8.0'], check=True, stdout=subprocess.DEVNULL)
+    rows = list(csv.DictReader(open(path)))
+    os.remove(path)
+    y = np.array([float(r['b0y']) for r in rows if float(r['t']) > 4.0])
+    return float(y.min()), float(y.max())
 
 
 def one(job):
@@ -94,6 +110,12 @@ def one(job):
     ref = float(np.mean(d['b0y'][(t >= a - 1.0) & (t < a - 0.1)]))
     out['low'] = 1000.0 * (ref - float(np.min(d['b0y'][win])))
     out['high'] = 1000.0 * (float(np.max(d['b0y'][win])) - ref)
+    out['under'], out['beyond'] = -1.0, -1.0
+    if after is not None:
+        lowest, highest = BANDS[(name, v1)]
+        first = (t >= a) & (t < a + 1.5)
+        out['under'] = max(1000.0 * (lowest - float(np.min(d['b0y'][first]))), 0.0)
+        out['beyond'] = max(1000.0 * (float(np.max(d['b0y'][first])) - highest), 0.0)
     vx, vz = np.gradient(d['fx'], t), np.gradient(d['fz'], t)
     if after is None:
         ok = np.hypot(vx, vz) <= 0.1 * v0
@@ -112,6 +134,9 @@ if __name__ == '__main__':
     os.makedirs(os.path.join(W, 'tmp'), exist_ok=True)
     jobs = [(variant, name, scene, gait, i) for name in sets for scene in SCENES for gait in ('WALK', 'RUN')
             for i in range(SCENES[scene][3])]
+    for name in sets:
+        for key in ('WALK', 'RUN'):
+            BANDS[(name, float(speeds(name)[key]))] = band(variant, name, float(speeds(name)[key]))
     with ThreadPoolExecutor(4) as pool:
         rows = list(pool.map(one, jobs))
     json.dump(rows, open(os.path.join(W, 'res', variant, 'gait155.json'), 'w'), indent=1)
@@ -119,7 +144,7 @@ if __name__ == '__main__':
     print('%s on %s: %d runs. Jumps: median / hardest in mm; over: points with a shin over %.0f mm and their sum '
           'beyond it' % (variant, ' '.join(sets), len(rows), LIMIT))
     print('scene    gait   n | shin        over      | foot        | pelvis      | hand        | head        | '
-          'slide mm twist aside deg | low  high mm | again s     | faced s     | short s | lands')
+          'slide mm twist aside deg | low  high mm | under mm | again s     | faced s     | short s | lands')
     for scene in SCENES:
         for gait in ('WALK', 'RUN'):
             q = [r for r in rows if r['scene'] == scene and r['gait'] == gait]
@@ -130,9 +155,9 @@ if __name__ == '__main__':
             over = [r['shin'] - LIMIT for r in q if r['shin'] > LIMIT]
             target = 'WALK' if (gait == 'WALK') == (scene != 'change') else 'RUN'
             ratio = np.mean([r['lands'] / max(steady[(r['set'], target)]['lands'], 1) for r in q]) if SCENES[scene][1] else 0.0
-            print('%-8s %-4s %3d | %s %3d %5.0f | %s | %s | %s | %s | %7.1f  %5.1f %5.1f     | %4.0f %4.0f    | %s | %s | '
-                  '%7.3f | %.2f' % (
+            print('%-8s %-4s %3d | %s %3d %5.0f | %s | %s | %s | %s | %7.1f  %5.1f %5.1f     | %4.0f %4.0f    | %8.1f | '
+                  '%s | %s | %7.3f | %.2f' % (
                 scene, gait.lower(), len(q), mm('shin'), len(over), sum(over), mm('foot'), mm('pelvis'), mm('hand'), mm('head'),
                 max(r['slide'] for r in q), max(r['twist'] for r in q), max(r['aside'] for r in q), max(r['low'] for r in q),
-                max(r['high'] for r in q), tt('again'), tt('faced'),
+                max(r['high'] for r in q), max(r['under'] for r in q), tt('again'), tt('faced'),
                 min(r['short'] for r in q), ratio))

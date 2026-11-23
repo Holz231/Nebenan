@@ -504,6 +504,14 @@ Zehen und Fersen 37 mm, Hände 15 mm, Becken 10 mm, Becken tief ab 15 cm unter d
 - **Sagen, was eine Runde nicht gelöst hat.** Die Trippelschritte blieben, und das Becken sackt in Wenden weiter, halb
   so viel. Die Wurzel, eine Kapsel, die nicht auf die Füße wartet, steht als großer offener Punkt in der Tabelle, statt
   mit weiteren Sonderfällen zugedeckt zu werden.
+- **Eine Höhe wird mit dem Gang verglichen, zu dem sie gehört.** Runde 155 maß das Becken nach jedem Wechsel gegen seine
+  Höhe davor und meldete beim Wechsel ins Rennen 78 mm Sacken; das Becken liegt im Rennen aber 7 cm tiefer als im Gehen.
+  Runde 159 wurde dafür vorgeschlagen und gewählt und fand in der ersten Stunde, dass es nichts zu beheben gibt. Wo eine
+  Szene Tempo oder Gangart ändert, ist der Bezug der stetige Gang beim neuen Tempo (`under` in `gait155.py`), nicht der
+  Zustand davor.
+- **Vor einem Vorschlag prüfen, ob der Befund ein Fehler ist.** Ein Lauf des stetigen Gangs beim Zieltempo neben dem
+  auffälligen Lauf hätte genügt. Das gehört zu Frage 1 des Skills: Wie groß ist das Thema, gemessen an dem, was richtig
+  wäre, nicht an dem, was vorher war.
 - **Größe der Figur.** Winkelbeschleunigungen wachsen bei kleineren Figuren mit 1 durch `nbFigureScale`, Längen
   und Geschwindigkeiten mit ihr.
 
