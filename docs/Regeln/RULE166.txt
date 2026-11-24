@@ -1,0 +1,39 @@
+Regel für Runde 166, vor jedem Lauf mit den Geschwindigkeiten der unabhängigen Prüfung festgeschrieben. Gemessen wird gegen active-ragdoll-165, dessen Bibliothek die von Runde 164 ist.
+
+Worum es geht. Zwei gesteuerte Figuren, die sich begegnen, fallen heute beide. Runde 153 hat das gemessen und den Auslöser bewiesen, Runde 154 hat den Bau geprüft und nicht gebaut: Eine Bedingung war dem Buchstaben nach verfehlt, und der Nutzer hat damals den Gang vorgezogen. Der Bau lag als docs/Regeln/build154.patch bereit. Der Nutzer hat nun freigestellt, was als Nächstes sinnvoll ist; für ein Spiel mit zwei Figuren ist es dieser Punkt. Die Bibliothek hat sich seit Runde 154 in zehn Runden geändert, deshalb wird der Bau auf den heutigen Stand gebracht und mit eigener Regel und neuen frischen Begegnungen geprüft.
+
+Wie groß das Thema ist, Frage 1 des Skills. Es geht um Stürze: Auf den drei Sätzen von Runde 154 verlassen heute in 32, 48 und 80 Begegnungen 25, 22 und 66 Figuren den animierten Zustand, die Rahmen kommen sich bis 0,435 m nah (die zwei Kapseln zusammen sind 0,612 m breit), Knochen springen bis 842 mm in einem Update, und eine stehende Figur wird bis 4,56 m weit weggetragen. Richtig wäre: keine Figur fällt, keine geht durch die andere.
+
+Die Ursache, in Runde 153 bewiesen. Die Bodensonde der einen Figur findet den schwingenden Fuß der anderen, hält ihn für Boden, der sich schneller als 1,5 m/s bewegt, und nbMoveSteered meldet, dass die Figur fällt. Daneben geht die Kapsel der einen durch die Knochen der anderen oder bleibt an ihnen hängen.
+
+Der Eingriff, in der Bibliothek, src/figure_steer.c, der Bau aus Runde 154 auf dem heutigen Stand. Zwei gesteuerte Figuren, die animiert stehen, begegnen sich als ihre Kapseln: Die Knochen der anderen sind für Kapsel und Bodensonde nicht da, an ihre Stelle tritt eine Wand zwischen den beiden Achsen. Keine geht durch die andere, keine schiebt die andere. Näher als 0,5 m nähert sich die eine der anderen höchstens mit 6 m/s je Meter Abstand, zusätzlich zu dem Tempo, mit dem die andere sich entfernt: Sie bremst, bevor die Kapseln sich berühren, weicht aus, wo sie nicht genau frontal kommt, und geht hinter einer langsameren Figur mit deren Tempo. Welche Figuren sich begegnen können, wird einmal je Update gesucht (nbFindMeetings).
+
+Die Varianten, Frage 2 des Skills, stehen mit je zwei Zahlen in docs/Regeln/RULE154.txt: nur die Regel für schnellen Boden ändern (kein Sturz, aber die Figuren gehen durcheinander, Knochen springen bis 779 mm), harte Wand (hinter einer langsameren bleibt die schnellere stehen), Wand, die mit dem Tempo der anderen mitgeht (frontal schieben sie sich umeinander), harte Wand mit behaltenem Tempo (Sprünge bis 100,7 mm) und dazu das weiche Annähern, der Prototyp. In dieser Runde kam keine neue Variante dazu; der Prototyp ist der Patch aus Runde 154, von Hand in die seither geänderten Dateien gesetzt.
+
+Was an der Regel von Runde 154 falsch war. A4 verlangte hinter einer langsameren Figur zweierlei: nie langsamer als 0,9 des Tempos der vorderen, und nie fast still, gemessen an einem Zehntel des eigenen gesteuerten Tempos. Eine Figur, die mit 5,05 m/s gesteuert einer mit 0,47 m/s folgte, ging 0,47 m/s, also genau so schnell wie die vordere, und zählte als fast still. Die Schwelle hing an der falschen Größe. Diese Regel verlangt nur noch das Erste: Das Tempo der vorderen ist die Größe, um die es geht.
+
+Bekannte Grenzen des Prototyps. Frontal bleiben beide Figuren voreinander stehen, bis das Spiel sie anders steuert. Seitlich versetzt gehen sie aneinander vorbei, die erste wird dabei langsamer. Arme und Beine reichen über die Kapsel hinaus und können sich weiter durchdringen: Die Kapseln halten die Rahmen 0,612 m auseinander, nicht die Hände. Eine gesteuerte Figur begegnet einer nicht gesteuerten weiter als deren Knochen.
+
+Tests des Prototyps. Alle 202 Tests bestehen, mit dem neuen SteerMeetTest aus Runde 154; die Sollwerte der Hashes bleiben. Beim ersten Lauf meldete das Testskript 19 Fehlschläge: Die Testdatei übersetzte nach dem Zusammenführen nicht, und das Skript linkte eine alte Objektdatei mit dem neuen Aufbau der Figur. Das Skript räumt alte Objektdateien jetzt vorher weg.
+
+Die Kosten, vor dem Festschreiben gezählt: Das Update von 20 gesteuerten Figuren führt 0,40 %, 0,37 % und 0,44 % mehr Befehle aus, wie in Runde 154.
+
+Nimmt der Prototyp das Ziel, Frage 3 des Skills. Ja: Im Probelauf dieser Regel auf den drei Sätzen von Runde 154 sind alle Bedingungen erfüllt; keine Figur verlässt den animierten Zustand, vorher 25, 22 und 66.
+
+Bedingungen, mit tools/measure/check166.sh und eval166.py auf den Tabellen aus meet154.c, auf den frischen Begegnungen:
+ A1 In keiner Begegnung verlässt eine Figur den animierten Zustand. Gezeigt ist das nur, wenn es vorher mindestens 4 Figuren tun.
+ A2 In jeder Begegnung bleiben die Rahmen mindestens 0,611 m auseinander: die zwei Kapseln, 0,612 m, weniger 1 mm.
+ A3 Kein Knochen springt in einer Begegnung härter als das 1,5-Fache des härteren Sprungs an den zwei Wänden, plus 2 mm. Für die erste Figur zählen die Wände bei ihrem Tempo, für die zweite die Wände beim kleinsten Tempo des Satzes, das mindestens ihres ist. Im Probelauf 25,8 von 41,3 mm, 31,6 von 53,0 mm und 60,5 von 81,9 mm.
+ A4 Hinter einer langsameren Figur, frontal, wo die erste mindestens 0,3 m/s schneller ist, wird sie nie langsamer als 0,9 des Tempos der vorderen. Im Probelauf überall 1,00.
+ A5 Eine stehende Figur wird höchstens 0,01 m bewegt.
+Schutz:
+ D1 Die 896 Treffer einzelner Figuren aus hit153.c sind bytegleich.
+ D2 Allein und an den zwei Wänden sind die Zeilen aus meet154.c gleich.
+ D3 Alle Tests bestehen, und kein gedruckter Hash ändert sich, mit gcc und clang und mit 1, 2 und 4 Threads.
+ D4 Das Update der Figuren führt höchstens 0,5 % mehr Befehle aus.
+ D5 Mit engageRadius 1,5 fallen in den 12 Begegnungen aus hit153.c nicht mehr Figuren als vorher; im Probelauf 0 statt 11.
+ D6 Eine einzelne Figur geht wie vorher: die Tabellen aus gait155.py und steer162.py auf dem ersten Satz der Entwicklung sind bytegleich.
+
+Unabhängige Prüfung. Geschwindigkeiten, die vor dem Festschreiben auf keinem Stand gelaufen sind, geprüft mit tools/measure/speeds.py: die erste Figur mit 1,1565, 1,83, 2,75, 3,91 und 4,93 m/s, die entgegenkommende und die kreuzende mit 1,69 m/s, die vorausgehende mit 0,71 m/s, seitlich versetzt um 0,14, 0,28 und 0,42 m. Das sind 80 Begegnungen, der Satz fresh in check166.sh. Die Ränder vorab durchgerechnet: Für A4 ist die langsamste erste Figur 0,45 m/s schneller als die vordere, über der Grenze von 0,3 m/s, alle fünf Tempi zählen. Die Tempi liegen zwischen 0,97 und 5,05 m/s der Sätze von Runde 154. Der größte seitliche Versatz, 0,42 m, liegt unter der Breite der zwei Kapseln, es bleibt eine Begegnung.
+
+Der saubere Bau ist derselbe Text wie der Prototyp und muss auf den drei Sätzen von Runde 154 dieselben Tabellen schreiben. Verfehlt er auf den frischen Begegnungen eine Bedingung, wird er nicht gebaut, oder der Nutzer entscheidet; die Regel wird danach nicht geändert, und eine Messung, die nicht passt, wird nicht wiederholt.

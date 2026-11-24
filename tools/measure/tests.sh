@@ -19,7 +19,8 @@ assert s.count(old) == 1
 s = s.replace(old, '\tprintf( "wall hash: 0x%08x\\n", one.hash );\n' + old)
 open(O + 'test_figure.c', 'w', encoding='utf-8').write(s)
 PY
-cd "$O" && for f in main test_figure test_poly test_world; do
+# an object left from an earlier run must not be linked where a file does not compile
+cd "$O" && rm -f main.o test_figure.o test_poly.o test_world.o && for f in main test_figure test_poly test_world; do
   gcc -I"$T/src" -I"$T/include" -isystem "$T/extern/box3d/include" -isystem "$B/extern/box3d/src" -O3 -DNDEBUG -std=gnu17 -ffp-contract=off -c $f.c -o $f.o 2> $f.err &
 done; wait
 grep -h "error" *.err | head -5
