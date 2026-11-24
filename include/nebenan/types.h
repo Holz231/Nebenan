@@ -1618,7 +1618,10 @@ typedef struct nbSteer
 	/// while its chest and head stay with the heading, and going more than 110 degrees from it, it walks or runs backward.
 	/// Its legs turn no faster than its heading may, and it goes across where they walk and against them no faster than
 	/// they carry it. They turn no farther than its feet on the ground stay on their own sides, waiting a moment for a
-	/// foot to step, so its feet do not cross as it stops or changes where it goes.
+	/// foot to step, so its feet do not cross as it stops or changes where it goes. With it, a steered humanoid turns no
+	/// farther than its feet stay uncrossed across where it faces, and waits for a foot to swing past the other for half
+	/// a second at most: it faces a new way up to 0.4 s later than its turn rate alone would let it, and its legs do not
+	/// go through each other as it turns.
 	bool faceVelocity;
 } nbSteer;
 

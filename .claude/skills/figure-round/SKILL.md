@@ -582,6 +582,18 @@ Zehen und Fersen 37 mm, Hände 15 mm, Becken 10 mm, Becken tief ab 15 cm unter d
   zählen nur noch als Entwicklung.
 - **Beim Zusammenführen von Hand wird jede Datei übersetzt, bevor gemessen wird.** „Beide Seiten behalten“ setzte einen
   Test mitten in eine andere Funktion.
+- **Kreuzen ist nicht Durchdringen.** Bis Runde 167 prüften die Regeln, ob Füße und Knie quer zum Becken kreuzen, und
+  der Gang galt als ruhig. Der Nutzer sah die Beine durcheinander gehen. `legs167.py` misst die Formen; was der Nutzer
+  sieht, wird an den Formen gemessen, nicht an Mittelpunkten.
+- **Ein Versatz, der vom Zustand abhängt, wird einmal festgelegt.** Das Ausweichen des schwingenden Fußes in jedem
+  Update neu zu rechnen hat viermal so viele Fuß-Sprünge gemacht. Beim Abheben festgelegt und weich ein- und
+  ausgeblendet macht es fast keine.
+- **Ein Test, der an der ersten Grenze abbricht, versteckt die zweite.** `SteerWalkBendTest` riss an der Zeit; dass die
+  Figur auch 0,3 m weiter geradeaus geht, stand in derselben Ausgabe und wurde erst nach dem Lockern geprüft. Schlägt
+  ein Test auf dem Prototyp an, alle seine gedruckten Werte gegen alle seine Grenzen halten, bevor die Regel den Preis
+  nennt.
+- **Eine Bedingung über das Tiefste hängt an einem Lauf.** Ziele über Formen als Zahl der Läufe über einer Schwelle
+  schreiben und das Tiefste daneben berichten.
 - **Größe der Figur.** Winkelbeschleunigungen wachsen bei kleineren Figuren mit 1 durch `nbFigureScale`, Längen
   und Geschwindigkeiten mit ihr.
 

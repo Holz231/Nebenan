@@ -5263,7 +5263,7 @@ static uint32_t RunStrafe( int threadCount, float* turns, bool* backward, float*
 // asked to run, and no farther than its feet stay uncrossed across them, see NB_LEG_KEEP: the numbers of this test
 // stay. Since round 134 the legs stretch less far while the figure brakes at a run, see NB_LEG_REACH_SLOW: running
 // backward the feet come as close as 4.6 instead of 4.5 cm, the other numbers stay.
-#define NB_EXPECTED_STRAFE_HASH 0x2025d400u
+#define NB_EXPECTED_STRAFE_HASH 0x01f8ffc8u
 static int SteerStrafeTest( void )
 {
 	float turns[3], closest[3], deepest[3];
@@ -5893,9 +5893,11 @@ static int RunBendTurns( float degrees, float walkBend, BendTurn* all )
 // A steered figure facing where it moves walks at 1.4 m/s and is steered 90 degrees to its left, at twelve moments
 // five updates apart. It walks a bend, see nbFigureSteering::walkBend: its capsule walks on the way it faces while it
 // turns, so in the half second after it stays at 0.8 m/s or more over all twelve turns (0.94), its pelvis gets no more
-// than 58 mm below its mean height walking (51), it faces the new way within 0.5 s (0.43), and it gets no more than
-// 0.40 m on the way it walked (0.33). Until round 161, and with walkBend at zero, it turns on the spot: the capsule
-// slows to 0.33 m/s and the pelvis sinks 67 mm. From standing it turns on the spot either way.
+// than 58 mm below its mean height walking (35), it faces the new way within 0.9 s (0.85), and it gets no more than
+// 0.70 m on the way it walked (0.63). Until round 161, and with walkBend at zero, it turns on the spot: the capsule
+// slows to 0.33 m/s and the pelvis sinks 67 mm. From standing it turns on the spot either way. Until round 167 it faced
+// the new way within 0.5 s (0.43) and got 0.33 m on: since then the heading waits for the feet where turning would cross
+// the legs, see NB_FACE_KEEP in figure_steer.c, and the capsule walks on the way it faces for as long.
 static int SteerWalkBendTest( void )
 {
 	BendTurn bend, spot;
@@ -5909,8 +5911,8 @@ static int SteerWalkBendTest( void )
 			spot.slowest, spot.onward, 1000.0f * spot.sunk, spot.faced );
 	ENSURE( bend.slowest >= 0.8f );
 	ENSURE( bend.sunk <= 0.058f );
-	ENSURE( bend.faced <= 0.5f );
-	ENSURE( bend.onward <= 0.40f );
+	ENSURE( bend.faced <= 0.9f );
+	ENSURE( bend.onward <= 0.70f );
 	ENSURE( spot.slowest < 0.5f );
 
 	// From standing it turns on the spot either way: steered back, it is at the same place to the bit in every update
@@ -5965,8 +5967,10 @@ static int RunShuttle( float walkBend, float* follows )
 // Steered more than 150 degrees off the way it faces it does not bend, it turns about, see NB_WALK_ABOUT in
 // figure_steer.c: it brakes gently while a foot lands where it aimed, waits for the foot it stands on and turns on the
 // spot. Over the twelve turns it gets no more than 0.25 m on the way it walked (0.17) and 0.25 m to the side (0.18),
-// its pelvis no more than 64 mm below its mean height walking (57), and it faces back within 1.3 s (1.17). Steered
-// back and forth every second for 4 s it goes 0.2 of the speed where it is steered or more (0.28). In round 161 it
+// its pelvis no more than 64 mm below its mean height walking (46), and it faces back within 1.5 s (1.48), within
+// 1.3 s (1.17) until round 167, when the heading began to wait for the feet, see NB_FACE_KEEP in figure_steer.c. Steered
+// back and forth every second for 4 s it goes 0.15 of the speed where it is steered or more (0.20, 0.28 until round
+// 167). In round 161 it
 // bent here: 0.34 m onward and 0.61 m to the side, and steered back and forth it went against the stick as much as
 // with it. With walkBend at zero it turns about as until round 160, the pelvis sinks 75 mm.
 static int SteerWalkAboutTest( void )
@@ -5987,8 +5991,112 @@ static int SteerWalkAboutTest( void )
 	ENSURE( about.onward <= 0.25f );
 	ENSURE( about.sideways <= 0.25f );
 	ENSURE( about.sunk <= 0.064f );
-	ENSURE( about.faced <= 1.3f );
-	ENSURE( follows >= 0.2f );
+	ENSURE( about.faced <= 1.5f );
+	ENSURE( follows >= 0.15f );
+	return 0;
+}
+
+// How far two segments are apart, p1 to q1 and p2 to q2
+static float SegmentsApart( b3Vec3 p1, b3Vec3 q1, b3Vec3 p2, b3Vec3 q2 )
+{
+	b3Vec3 d1 = b3Sub( q1, p1 ), d2 = b3Sub( q2, p2 ), r = b3Sub( p1, p2 );
+	float a = b3Dot( d1, d1 ), e = b3Dot( d2, d2 ), f = b3Dot( d2, r );
+	float b = b3Dot( d1, d2 ), c = b3Dot( d1, r );
+	float den = a * e - b * b;
+	float s = den > 1e-12f ? b3ClampFloat( ( b * f - c * e ) / den, 0.0f, 1.0f ) : 0.0f;
+	float t = ( b * s + f ) / e;
+	if ( t < 0.0f )
+	{
+		t = 0.0f;
+		s = b3ClampFloat( -c / a, 0.0f, 1.0f );
+	}
+	else if ( t > 1.0f )
+	{
+		t = 1.0f;
+		s = b3ClampFloat( ( b - c ) / a, 0.0f, 1.0f );
+	}
+	return b3Length( b3Sub( b3MulAdd( p1, s, d1 ), b3MulAdd( p2, t, d2 ) ) );
+}
+
+// How far the thighs or the shins of the two legs of the humanoid of 1.8 m are into each other, in meters, negative
+// where they are apart: a thigh is a capsule of 7 cm radius from 0.07 to 0.38 m along its bone, a shin one of 6 cm from
+// 0.06 to 0.38 m
+static float LegsOverlap( nbFigureId figure )
+{
+	static const int bones[2][2] = { { nb_humanoidThighLeft, nb_humanoidThighRight },
+									 { nb_humanoidShinLeft, nb_humanoidShinRight } };
+	static const float low[2] = { 0.07f, 0.06f };
+	static const float radius[2] = { 0.07f, 0.06f };
+	float deepest = -1.0f;
+	for ( int part = 0; part < 2; ++part )
+	{
+		b3Vec3 ends[2][2];
+		for ( int k = 0; k < 2; ++k )
+		{
+			b3BodyId body = nbFigure_GetBody( figure, bones[part][k] );
+			b3Vec3 at = b3ToVec3( b3Body_GetPosition( body ) );
+			b3Vec3 axis = b3RotateVector( b3Body_GetRotation( body ), b3Vec3_axisY );
+			ends[k][0] = b3MulAdd( at, low[part], axis );
+			ends[k][1] = b3MulAdd( at, 0.38f, axis );
+		}
+		float apart = SegmentsApart( ends[0][0], ends[0][1], ends[1][0], ends[1][1] );
+		deepest = b3MaxFloat( deepest, 2.0f * radius[part] - apart );
+	}
+	return deepest;
+}
+
+// The legs of a steered figure that faces where it moves do not go through each other. Running straight at 4.3 m/s,
+// its shins get no more than 30 mm into each other (20): a foot that lifts beside the other one swings out round it, see
+// NB_SWING_CLEAR in figure.c. Until round 167 the swinging foot passed the standing shin on a straight line, and with
+// the ankles 22 mm beside the middle the shins went 51 mm into each other. Steered 90 degrees to its left and to its
+// right at a walk of 1.4 m/s, at twelve moments five updates apart each, its thighs and shins get no more than 60 mm
+// into each other in the 1.5 s after (23): the heading turns no farther than the feet stay uncrossed across it, see
+// NB_FACE_KEEP in figure_steer.c. Until round 167 it turned wherever the feet stood, and with the foot ahead on the side
+// it turned to the foot behind swung through the standing leg: 138 mm, the thighs all the way into each other.
+static int SteerLegsApartTest( void )
+{
+	float running = -1.0f;
+	{
+		FigureScene scene;
+		CreateFigureScene( &scene, 1 );
+		nbFigureId figure = AddSteeredFigure( &scene, b3Vec3_zero, 0.0f );
+		StepFigures( &scene, 60 );
+		nbSteer steer = { { 0.0f, 0.0f, 4.3f }, 0.0f, true };
+		nbFigure_Steer( figure, &steer );
+		StepFigures( &scene, 120 );
+		for ( int i = 0; i < 180; ++i )
+		{
+			StepFigures( &scene, 1 );
+			running = b3MaxFloat( running, LegsOverlap( figure ) );
+		}
+		ENSURE( nbFigure_GetState( figure ) == nb_figureAnimated );
+		DestroyFigureScene( &scene );
+	}
+	float turning = -1.0f;
+	for ( int part = 0; part < 24; ++part )
+	{
+		FigureScene scene;
+		CreateFigureScene( &scene, 1 );
+		nbFigureId figure = AddSteeredFigure( &scene, b3Vec3_zero, 0.0f );
+		StepFigures( &scene, 60 );
+		nbSteer steer = { { 0.0f, 0.0f, 1.4f }, 0.0f, true };
+		nbFigure_Steer( figure, &steer );
+		StepFigures( &scene, 180 + 5 * ( part / 2 ) );
+		steer.velocity = (b3Vec3){ part % 2 == 0 ? 1.4f : -1.4f, 0.0f, 0.0f };
+		nbFigure_Steer( figure, &steer );
+		for ( int i = 0; i < 90; ++i )
+		{
+			StepFigures( &scene, 1 );
+			turning = b3MaxFloat( turning, LegsOverlap( figure ) );
+		}
+		ENSURE( nbFigure_GetState( figure ) == nb_figureAnimated );
+		DestroyFigureScene( &scene );
+	}
+	printf( "  the thighs and shins of the two legs get %.0f mm into each other at most running straight at 4.3 m/s and "
+			"%.0f mm in twenty-four turns by 90 degrees at a walk\n",
+			1000.0f * running, 1000.0f * turning );
+	ENSURE( running < 0.03f );
+	ENSURE( turning < 0.06f );
 	return 0;
 }
 
@@ -8591,7 +8699,7 @@ static int ThinBoardTest( void )
 // walking takes the steps of people, see NB_GAIT_CADENCE_WALK, and the ankle of a swinging foot bends up as far as
 // theirs, see NB_SWING_ANKLE_SOFT. Round 113: the body has the dimensions of a person, see nbMakeHumanoidBones.
 // Round 131: a foot that only just landed stands where the other foot is free to lift, see NB_GAIT_FRESH_KEEP.
-#define NB_EXPECTED_STEER_HASH 0x40e66641u
+#define NB_EXPECTED_STEER_HASH 0xfed06f33u
 
 // See RunGaitClipScenario. Since round 99 as for RunSteerScenario. Since round 100 the figure that is told to turn on
 // the spot while it still walks, not facing where it moves, keeps its legs where they face as its heading turns, and
@@ -8600,7 +8708,7 @@ static int ThinBoardTest( void )
 // RunSteerScenario. Since round 111 as for RunSteerScenario. Round 112: the clips are recorded from a gait that takes
 // the steps of people, see NB_GAIT_CADENCE_WALK, and the ankle of a swinging foot bends up as far as theirs, see
 // NB_SWING_ANKLE_SOFT. Round 113 and round 131 as for RunSteerScenario.
-#define NB_EXPECTED_GAIT_CLIP_HASH 0xece5e378u
+#define NB_EXPECTED_GAIT_CLIP_HASH 0x06fd2220u
 
 static int FigureFollowDeterminismTest( void )
 {
@@ -8735,6 +8843,7 @@ int FigureTest( void )
 	RUN_TEST( SteerWalkAboutTest );
 	RUN_TEST( SteerLetGoTest );
 	RUN_TEST( SteerMeetTest );
+	RUN_TEST( SteerLegsApartTest );
 	RUN_TEST( SteerLegLeadTest );
 	RUN_TEST( SteerRunDescentTest );
 	RUN_TEST( SteerRunFlightTest );

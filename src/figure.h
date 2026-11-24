@@ -612,6 +612,11 @@ typedef struct nbFigure
 	float gaitTurnSize;
 	float gaitSway;
 	float gaitCrouch;
+	// How far each foot swings out round the other one in this swing, fixed as it lifts, see NB_SWING_CLEAR in figure.c
+	b3Vec3 swingAside[2];
+	bool swingAsideSet[2];
+	// For how long the heading has waited for the feet in a row, in seconds, see NB_FACE_KEEP in figure_steer.c
+	float faceHeld;
 	// The velocity it was steered at in the last update, and for how long the root still goes down gently after that
 	// velocity jumped, in seconds, see NB_CROUCH_EASE in figure_steer.c
 	b3Vec3 steerBefore;

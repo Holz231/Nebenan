@@ -97,6 +97,23 @@
 // came back as the landing moved on with the capsule, and the pelvis jumped 29 mm down and 31 mm up.
 #define NB_STEER_JUMP 1.0f
 #define NB_CROUCH_EASE 0.1f
+
+// A figure that faces where it moves turns no farther than its feet stay uncrossed across where it faces: the heading
+// turns as far as the left foot stays NB_FACE_KEEP to the left of the right one, in meters for the humanoid of 1.8 m,
+// where the feet are now, on the ground or in the air, and waits for that no longer than NB_FACE_HOLD in seconds in a
+// row. So it waits until the foot behind swings past the standing one and turns over the standing foot, as people do.
+// Until round 167 the heading turned at the turn rate wherever the feet stood, and the legs with it: with the foot
+// ahead on the side it turned to, after a quarter turn both feet stood on the wrong side of the body and the foot
+// behind swung through the standing leg. Turning by 90 and 180 degrees and steered back and forth, thighs or shins
+// went deeper than 60 mm into each other in 80 of 144 runs, up to 139 mm; now in none of them, 54 mm at most, see
+// SteerLegsApartTest and tools/measure/legs167.py. The price: it faces the new way later, turning by 90 degrees at a
+// walk after 0.85 s at the latest instead of 0.5, 0.72 s in the mean of the turns at a walk instead of 0.59. Waiting
+// 0.3 s at most, the legs still went 120 mm into each other; 0.5, 0.7 and 1 s give the same. With the foot on the
+// outside of the turn stepping round at once it faced the new way after 0.72 s, and the pelvis jumped 126 mm at a run
+// instead of 27. Nearer feet, 0.03 or 0.01 m, were no better. The legs under a fixed heading have their own rule, see
+// NB_LEG_KEEP in figure.c.
+#define NB_FACE_KEEP 0.06f
+#define NB_FACE_HOLD 0.5f
 #define NB_WALK_TURN_NEW 0.866f
 #define NB_TURN_HOLD_AFTER 0.5f
 
@@ -996,6 +1013,52 @@ bool nbMoveSteered( nbWorld* world, int index, nbFigure* f, float timeStep, b3Ve
 		if ( change != asked )
 		{
 			heading = nbWrapAngle( f->heading + change );
+		}
+	}
+
+	// Facing where it moves, the heading turns no farther than the feet stay uncrossed across it, see NB_FACE_KEEP
+	if ( f->steer.faceVelocity && f->gaitOn && f->boneCount == nb_humanoidBoneCount )
+	{
+		float change = nbWrapAngle( heading - f->heading );
+		float room = FLT_MAX;
+		if ( change != 0.0f )
+		{
+			// Where the left foot is from the right one across and along the heading, as nbHoldLegs in figure.c has it
+			// for the legs: its angle there, from ahead toward the left, stays between low and pi - low
+			b3CosSin legs = b3ComputeCosSin( f->heading );
+			b3Vec3 offset = b3SubPos( f->feet[0].plant, f->feet[1].plant );
+			float across = offset.x * legs.cosine - offset.z * legs.sine;
+			float along = offset.x * legs.sine + offset.z * legs.cosine;
+			float apart = sqrtf( across * across + along * along );
+			float keep = NB_FACE_KEEP * scale;
+			if ( apart > keep )
+			{
+				float ratio = keep / apart;
+				float low = b3Atan2( ratio, sqrtf( b3MaxFloat( 1.0f - ratio * ratio, 0.0f ) ) );
+				float angle = b3Atan2( across, along );
+				if ( low <= angle && angle <= B3_PI - low )
+				{
+					room = change > 0.0f ? angle - low : B3_PI - low - angle;
+				}
+				else
+				{
+					// Crossed, or less than keep apart across it: it turns only the way that brings the feet apart
+					bool down = angle > B3_PI - low || angle < -0.5f * B3_PI;
+					room = ( change > 0.0f ) == down ? FLT_MAX : 0.0f;
+				}
+			}
+		}
+		if ( fabsf( change ) <= room )
+		{
+			f->faceHeld = 0.0f;
+		}
+		else
+		{
+			f->faceHeld += timeStep;
+			if ( f->faceHeld <= NB_FACE_HOLD )
+			{
+				heading = nbWrapAngle( f->heading + ( change > 0.0f ? room : -room ) );
+			}
 		}
 	}
 	f->heading = heading;

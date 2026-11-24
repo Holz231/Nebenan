@@ -4702,6 +4702,23 @@ static void nbTurnPoseBone( b3Quat* pose, int bone, b3Vec3 axis, float angle )
 #define NB_LEG_FAR_RATE 2.0f
 #define NB_LEG_FAR_END 0.35f
 
+// A foot that lifts beside the other one swings out round it: lifting nearer than NB_SWING_CLEAR beside the other foot,
+// in meters for the humanoid of 1.8 m, across the legs, it swings what is missing, NB_SWING_CLEAR_MOST at most, out to
+// its own side and comes back until it lands, eased over NB_SWING_CLEAR_EASE of the swing each. Where it lands stays.
+// How far is fixed once as it lifts: worked out again in every update, a foot jumped over 37 mm in 109 runs of 528
+// instead of 27, and taken from how near the feet are along the step in 638. To the side of the legs, not of the step:
+// across the step, stopping, the feet overlapped 71 mm instead of 60. Going across its legs the figure swings them out
+// less, and from NB_SWING_CLEAR_ASIDE of its speed across them on not at all: without that, from walking to running to
+// the side with a fixed heading a shin jumped 46.5 mm instead of under 39, see SteerSpeedUpTest. Until round 167 a
+// swinging foot passed the standing shin on a straight line. Running straight, the ankles are 22 mm beside the middle,
+// see NB_GAIT_NARROW_STRAIGHT, and a shin is 12 cm thick: the foot went through it, the shapes of the two legs up to
+// 60 mm into each other and over 20 mm in 16.5 % of the updates of a steady run. Now 23 mm and 0.5 %, see
+// SteerLegsApartTest and tools/measure/legs167.py. With 0.14 m instead of 0.12 a foot jumped over 37 mm in 48 runs.
+#define NB_SWING_CLEAR 0.12f
+#define NB_SWING_CLEAR_MOST 0.1f
+#define NB_SWING_CLEAR_EASE 0.4f
+#define NB_SWING_CLEAR_ASIDE 0.5f
+
 // As the legs turn, the feet stay uncrossed across them: the legs turn no farther than the left foot stays NB_LEG_KEEP
 // to the left of the right one, in meters for the humanoid of 1.8 m, where the feet are now, on the ground or in the
 // air, and wait for that no longer than NB_LEG_HOLD in seconds in a row, counted while the feet leave them less room
@@ -6329,6 +6346,8 @@ static void nbSteerFeet( const nbWorld* world, int index, nbFigure* f, const nbC
 				foot->target = foot->plant;
 				foot->targetTilt = foot->tilt;
 				f->targetGround[k] = true;
+				f->swingAside[k] = b3Vec3_zero;
+				f->swingAsideSet[k] = false;
 			}
 		}
 
@@ -6605,6 +6624,31 @@ static void nbSteerFeet( const nbWorld* world, int index, nbFigure* f, const nbC
 			b3Vec3 move = nbSwingPath( toward, f->swingVelocity + k, until + timeStep, timeStep );
 			f->swingBase[k] = b3OffsetPos( f->swingBase[k], move );
 			foot->plant = b3OffsetPos( f->swingBase[k], b3MulSV( lift, up ) );
+			// Out round the other foot, see NB_SWING_CLEAR: how far, fixed in the first update of the swing
+			if ( f->swingAsideSet[k] == false )
+			{
+				f->swingAsideSet[k] = true;
+				if ( along <= 0.1f )
+				{
+					b3Vec3 ownSide = b3RotateVector( f->frame.q, b3RotateVector( nbHeadingQuat( f->legTurn ), b3Vec3_axisX ) );
+					b3Vec3 goes = b3MulSub( f->gaitVelocity, b3Dot( f->gaitVelocity, up ), up );
+					float goesFast = b3Length( goes );
+					float share = 1.0f;
+					if ( goesFast > 0.05f * scale )
+					{
+						float across = fabsf( b3Dot( goes, ownSide ) ) / ( NB_SWING_CLEAR_ASIDE * goesFast );
+						share = b3ClampFloat( 1.0f - across, 0.0f, 1.0f );
+					}
+					ownSide = k == 0 ? ownSide : b3Neg( ownSide );
+					float beside = b3Dot( b3SubPos( foot->from, f->feet[1 - k].plant ), ownSide );
+					float need = share * b3ClampFloat( NB_SWING_CLEAR * scale - beside, 0.0f, NB_SWING_CLEAR_MOST * scale );
+					f->swingAside[k] = b3MulSV( need, ownSide );
+				}
+			}
+			float rise = b3ClampFloat( along / NB_SWING_CLEAR_EASE, 0.0f, 1.0f );
+			float fall = b3ClampFloat( ( 1.0f - along ) / NB_SWING_CLEAR_EASE, 0.0f, 1.0f );
+			float out = rise * rise * ( 3.0f - 2.0f * rise ) * fall * fall * ( 3.0f - 2.0f * fall );
+			foot->plant = b3OffsetPos( foot->plant, b3MulSV( out, f->swingAside[k] ) );
 			foot->tilt = b3NLerp( foot->fromTilt, foot->targetTilt, smooth );
 			float turn = nbWrapAngle( f->landHeading[k] - f->footHeading[k] );
 			turn = nbSwingTurn( turn, f->swingTurnRate + k, until + timeStep, timeStep );
