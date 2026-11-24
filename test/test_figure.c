@@ -136,8 +136,8 @@ static b3Vec3 FigureMomentum( nbFigureId figure )
 	return sum;
 }
 
-// A figure stands upright: the pelvis as high as the idle clip stands, NB_STAND_RISE over its stand height, and the head
-// above it
+// A figure stands upright: the pelvis as high as the idle clip stands, NB_STAND_RISE over its stand height, and the
+// head above it
 static bool StandsUpright( const FigureScene* scene, nbFigureId figure )
 {
 	b3Vec3 pelvis = BonePosition( figure, nb_humanoidPelvis );
@@ -148,8 +148,8 @@ static bool StandsUpright( const FigureScene* scene, nbFigureId figure )
 
 //----------------------------------------------------------------------------------------------------------------------
 
-// A spring with a torque limit holds what it can and gives way to more: a pendulum on a hinge driven to level, too heavy
-// for its limit, hangs below level and its spring works at the limit, with a higher limit it holds level
+// A spring with a torque limit holds what it can and gives way to more: a pendulum on a hinge driven to level, too
+// heavy for its limit, hangs below level and its spring works at the limit, with a higher limit it holds level
 static int SpringTorqueLimitTest( void )
 {
 #if defined( B3_HAS_SPRING_TORQUE_LIMITS )
@@ -394,8 +394,8 @@ static int ArmatureTest( void )
 	return 0;
 }
 
-// The clips of the library: the get-up clips lie with the head ahead at first and stand at the height of the idle clip at
-// the end, no keyframe sinks into the ground, and the baked keyframes lie at most a fifteenth of a second apart
+// The clips of the library: the get-up clips lie with the head ahead at first and stand at the height of the idle clip
+// at the end, no keyframe sinks into the ground, and the baked keyframes lie at most a fifteenth of a second apart
 static int HumanoidClipTest( void )
 {
 	nbBoneDef bones[nb_humanoidBoneCount];
@@ -581,8 +581,8 @@ static b3Vec3 FromPelvis( nbFigureId figure, int bone )
 // A light hit swings the head and the arms of the humanoid by where it lands, after the roadmap of the game, 26.4 and
 // 26.5, measured against a twin that plays the same clip unhit. On the face it throws the head back against the chest,
 // much farther than the trunk turns. On the right forearm from behind it swings that arm forward, not the other, and
-// turns the trunk less than a hit on the chest. From outside it does not swing the arm into the body, the body takes it.
-// On the chest it turns the trunk as before, the head stays behind and swings after it, and the arms hang on as
+// turns the trunk less than a hit on the chest. From outside it does not swing the arm into the body, the body takes
+// it. On the chest it turns the trunk as before, the head stays behind and swings after it, and the arms hang on as
 // pendulums, close to the trunk and never into it. All of it comes back to the clip, and the figure stands animated
 // throughout.
 static int FigureSwingTest( void )
@@ -670,38 +670,38 @@ static int FigureSwingTest( void )
 }
 
 // A hard hit that steps can catch, after the roadmap of the game, 26.14 and 28.3, and the balance of the branch
-// ragdoll-11: the bones of the figure become dynamic, its joints hold the pose of its clip with the full strength of its
-// motors, a hold keeps its pelvis upright, and it catches itself with steps, its arms rowing where a step comes short.
-// On its feet all the time, it stands animated again where it caught itself and steps its feet back under its body. On
-// the upper chest it catches 60, 70 and 100 N s from the front, 80 N s from behind and 60 and 80 N s from either side.
-// 150 N s from the front is too much, it gives up at once, see NB_GIVE_UP, and 110 N s from its right: it takes two
-// steps and falls within 0.4 s, its arm on the far side raised above its head. With the arms of 81 cm and the
+// ragdoll-11: the bones of the figure become dynamic, its joints hold the pose of its clip with the full strength of
+// its motors, a hold keeps its pelvis upright, and it catches itself with steps, its arms rowing where a step comes
+// short. On its feet all the time, it stands animated again where it caught itself and steps its feet back under its
+// body. On the upper chest it catches 60, 70 and 100 N s from the front, 80 N s from behind and 60 and 80 N s from
+// either side. 150 N s from the front is too much, it gives up at once, see NB_GIVE_UP, and 110 N s from its right: it
+// takes two steps and falls within 0.4 s, its arm on the far side raised above its head. With the arms of 81 cm and the
 // stance of the reference picture, round 36 fell at 100 N s from the front and caught 90 to 98, 102 and 104, round 37
-// fell at 98 and 100 and caught 94, 96 and 102 to 106: hard hits from the front lie where a little more or less tips the
-// balance. Round 38, which lifts its feet higher and sinks farther before it falls, catches 94 to 104 and falls at 106.
-// Round 39, whose capture point counts the turn of the body, see nbMeasure, catches 100 N s from the front with 2 steps
-// in 1.9 s where round 38 took 3 steps and 2.5 s, and still falls at 106. Round 40, whose legs carry the body, see
-// nbCarryBody, catches 106 N s too and 64 to 88 with one step each, but takes 3 or 4 steps at 58 to 62 N s where round 39
-// took one: at 60 round 39 caught itself after one step back with its center of mass 9 cm low, round 40 rises again and
-// steps on until it stands 4 cm low. Round 41, whose upper body bends on with the tilt of the pelvis, see nbBendTrunk,
-// catches 60 N s with one step again and 100 N s with three. From the front it catches up to 118 N s and gives up from
-// 120, from behind it catches all up to 130 with three steps. From its right it catches up to 108 N s, where round 40
-// fell at 100, the head sinking to 1.13 m in a deep lunge, falls at 110 after two steps and gives up from 112. From its
-// left it catches up to 102 and 106 to 110 and falls at 104. Round 45, whose soles grip like rubber, see
-// NB_SOLE_FRICTION, catches up to 120 N s from the front and gives up from 122, and from either side it catches every
-// hit up to 110 N s and gives up from 112, where round 44 fell at 110 from its right and at 102 and 110 from its left,
-// each time after two steps. The test gives 112 from its right. Round 47, which gives up only where the first step would
-// leave the capture point 1.5 m out, see NB_GIVE_UP, stumbles two steps after 112 N s from its right and falls after 23
-// updates, as the roadmap of the game wants after a strong hit, and still falls at once after 150 N s from the front,
-// an extreme hit. Round 53, whose pelvis turns with the leg that steps and whose upper body turns back against it, see
-// nbPelvisTurn, catches 130 and 134 N s from the front, where round 52 fell at 134, and gives up from 138 as before.
-// From either side it catches up to 104 N s and 110 and 112, falls at 106 after two steps, from its right at 108 too,
-// and stumbles from 114 into the fall, where round 52 caught every hit up to 110 and fell from 112. At 110 from its
-// right the head of round 52 sank to 1.12 m before it caught itself, that of round 53 to 1.21 m. Round 61, whose stance
-// foot stays planted where it last carried, see NB_PLANT_LOAD, catches every hit from its right up to 114 N s, where
-// round 60 fell at 108 and 114, falls at 116 after three steps, stumbles two steps from 118 to 122 and falls after 41 to
-// 47 updates, one step from 124 to 128 and falls after 20, and gives up from 130 as before. The test gives 124 from its
-// right.
+// fell at 98 and 100 and caught 94, 96 and 102 to 106: hard hits from the front lie where a little more or less tips
+// the balance. Round 38, which lifts its feet higher and sinks farther before it falls, catches 94 to 104 and falls at
+// 106. Round 39, whose capture point counts the turn of the body, see nbMeasure, catches 100 N s from the front with 2
+// steps in 1.9 s where round 38 took 3 steps and 2.5 s, and still falls at 106. Round 40, whose legs carry the body,
+// see nbCarryBody, catches 106 N s too and 64 to 88 with one step each, but takes 3 or 4 steps at 58 to 62 N s where
+// round 39 took one: at 60 round 39 caught itself after one step back with its center of mass 9 cm low, round 40 rises
+// again and steps on until it stands 4 cm low. Round 41, whose upper body bends on with the tilt of the pelvis, see
+// nbBendTrunk, catches 60 N s with one step again and 100 N s with three. From the front it catches up to 118 N s and
+// gives up from 120, from behind it catches all up to 130 with three steps. From its right it catches up to 108 N s,
+// where round 40 fell at 100, the head sinking to 1.13 m in a deep lunge, falls at 110 after two steps and gives up
+// from 112. From its left it catches up to 102 and 106 to 110 and falls at 104. Round 45, whose soles grip like rubber,
+// see NB_SOLE_FRICTION, catches up to 120 N s from the front and gives up from 122, and from either side it catches
+// every hit up to 110 N s and gives up from 112, where round 44 fell at 110 from its right and at 102 and 110 from its
+// left, each time after two steps. The test gives 112 from its right. Round 47, which gives up only where the first
+// step would leave the capture point 1.5 m out, see NB_GIVE_UP, stumbles two steps after 112 N s from its right and
+// falls after 23 updates, as the roadmap of the game wants after a strong hit, and still falls at once after 150 N s
+// from the front, an extreme hit. Round 53, whose pelvis turns with the leg that steps and whose upper body turns back
+// against it, see nbPelvisTurn, catches 130 and 134 N s from the front, where round 52 fell at 134, and gives up from
+// 138 as before. From either side it catches up to 104 N s and 110 and 112, falls at 106 after two steps, from its
+// right at 108 too, and stumbles from 114 into the fall, where round 52 caught every hit up to 110 and fell from 112.
+// At 110 from its right the head of round 52 sank to 1.12 m before it caught itself, that of round 53 to 1.21 m. Round
+// 61, whose stance foot stays planted where it last carried, see NB_PLANT_LOAD, catches every hit from its right up to
+// 114 N s, where round 60 fell at 108 and 114, falls at 116 after three steps, stumbles two steps from 118 to 122 and
+// falls after 41 to 47 updates, one step from 124 to 128 and falls after 20, and gives up from 130 as before. The test
+// gives 124 from its right.
 static int FigureCatchTest( void )
 {
 	typedef struct CatchCase
@@ -786,25 +786,24 @@ static int FigureCatchTest( void )
 // front by less than 1 rad, and the figure catches itself. Below about 58 N s from the front its steps catch it without
 // the arms, round 28 rowed at 60 N s but not at 56 or 64, round 35 at 72 and round 38 from 76 on. Since round 39 the
 // capture point counts the turn of the body, see nbMeasure: from 58 N s on one step catches the figure where round 38
-// took three up to 70 N s, and the arms row from 60 on, at 80 N s up to 1.57 rad where round 38 rowed up to 0.83.
-// Round 40, whose legs carry the body, see nbCarryBody, catches itself with one step from 64 N s on and rows at 80 N s up
-// to 1.49 rad. At 50 N s its second step back comes 32 cm short, where round 39's came 18 cm short, and one arm rows up
-// to 2.1 rad, as at 52 and 54. Round 41, whose upper body bends on with the tilt of the pelvis, see nbBendTrunk, takes
+// took three up to 70 N s, and the arms row from 60 on, at 80 N s up to 1.57 rad where round 38 rowed up to 0.83. Round
+// 40, whose legs carry the body, see nbCarryBody, catches itself with one step from 64 N s on and rows at 80 N s up to
+// 1.49 rad. At 50 N s its second step back comes 32 cm short, where round 39's came 18 cm short, and one arm rows up to
+// 2.1 rad, as at 52 and 54. Round 41, whose upper body bends on with the tilt of the pelvis, see nbBendTrunk, takes
 // three steps at 100 N s from the front where round 40 took two, its chest tilts back up to 0.49 rad where round 40's
 // tilted 0.34, and the arms swing up to 2.02 rad against the chest and 2.32 against the down of the world, where round
-// 40's swung up to 1.56 and 1.86.
-// Falling forward from 110 N s from behind they swing back to the 40 degrees a shoulder allows, from more than 0.5 rad
-// to 0.8, see nbMakeHumanoidBones: with a cone of 86 degrees all round they swung back 1.3 rad, and the figure caught
-// 120 N s. Round 35 caught 110 N s from behind. Rounds 36 and 37, which stand with the center of mass farther ahead
-// over the soles, see FigureStepTest, and kept the arms 0.3 rad short of the cone, fell from 104 and 110 N s on. Round
-// 38 swings them to the cone, lifts its feet higher and catches up to 120 N s.
-// Pushed to its left with 80 N s only the right arm rows, the left one would swing into the body, the right one up to
-// 1.62 rad with the chest of two parts of round 37. In round 41, whose chest bends on to the side up to 0.36 rad where
-// round 40's tilted 0.15, the right one rows up to 1.77 rad against the chest, and the left one goes along with the
-// chest, 0.44 rad against it and 0.35 against the down of the world, round 40's 0.33 and 0.25. A swinging arm bends its
-// elbow, and the arms turn against the chest at most 16 rad/s and brake at most 450 rad/s2: they swing, they do not
-// jolt. Pulled toward a target far ahead, as in round 23, they turned up to 21 rad/s and braked up to 684 rad/s2. The
-// arm of 81 cm of round 36 turned up to 15.03 rad/s pushed to its left without the armature of its shoulder, see
+// 40's swung up to 1.56 and 1.86. Falling forward from 110 N s from behind they swing back to the 40 degrees a shoulder
+// allows, from more than 0.5 rad to 0.8, see nbMakeHumanoidBones: with a cone of 86 degrees all round they swung back
+// 1.3 rad, and the figure caught 120 N s. Round 35 caught 110 N s from behind. Rounds 36 and 37, which stand with the
+// center of mass farther ahead over the soles, see FigureStepTest, and kept the arms 0.3 rad short of the cone, fell
+// from 104 and 110 N s on. Round 38 swings them to the cone, lifts its feet higher and catches up to 120 N s. Pushed to
+// its left with 80 N s only the right arm rows, the left one would swing into the body, the right one up to 1.62 rad
+// with the chest of two parts of round 37. In round 41, whose chest bends on to the side up to 0.36 rad where round
+// 40's tilted 0.15, the right one rows up to 1.77 rad against the chest, and the left one goes along with the chest,
+// 0.44 rad against it and 0.35 against the down of the world, round 40's 0.33 and 0.25. A swinging arm bends its elbow,
+// and the arms turn against the chest at most 16 rad/s and brake at most 450 rad/s2: they swing, they do not jolt.
+// Pulled toward a target far ahead, as in round 23, they turned up to 21 rad/s and braked up to 684 rad/s2. The arm of
+// 81 cm of round 36 turned up to 15.03 rad/s pushed to its left without the armature of its shoulder, see
 // nbMakeHumanoidBones, and 10.1 with it. Since round 58 the stance leg lowers the pelvis late in a step, see
 // NB_DROP_PHASE, in the step to the side the pelvis comes down to 0.785 instead of 0.793 m as the foot lands, and the
 // arm that rows swings on against the chest with up to 15.7 instead of 14.9 rad/s. Since round 61 the stance foot stays
@@ -812,9 +811,9 @@ static int FigureCatchTest( void )
 // swung in round 41 at 100 N s from the front. Since round 104 the heels reach 6.5 instead of 4 cm behind the ankles,
 // see nbMakeHumanoidBones, and from the front the arms row 4 N s later: at 66 N s up to 0.79 and 0.85 rad, as round
 // 103's at 62 N s, where they now swing up to 0.37 and 0.44 rad. Since round 114 the figure stands upright and the
-// balance holds its pelvis there, 4.8 cm higher than before, see NB_STAND_RISE and nbHoldHeight, and its one step to the
-// side is 14 instead of 12 cm high: pushed to its left the arm that rows turns up to 16.3 instead of 13.2 rad/s. Standing
-// animated again, the arms hang in the pose of the clip.
+// balance holds its pelvis there, 4.8 cm higher than before, see NB_STAND_RISE and nbHoldHeight, and its one step to
+// the side is 14 instead of 12 cm high: pushed to its left the arm that rows turns up to 16.3 instead of 13.2 rad/s.
+// Standing animated again, the arms hang in the pose of the clip.
 static int FigureRowTest( void )
 {
 	typedef struct RowCase
@@ -1027,16 +1026,16 @@ static int FigureLegHoldTest( void )
 
 // Hits on the upper chest from eight directions, 50 to 150 N s in steps of 10: every figure catches itself and stands
 // animated again or falls, none stays catching itself for good, also not on one foot after a long lunge, see
-// NB_ONE_FOOT_TIME. Of the 32 hits up to 80 N s at most one falls, and it catches at least 40 of all 88, round 35 47 and
-// round 36, with the arms of 81 cm and the stance of the reference picture, 43, round 40 49 and round 41, whose upper
-// body bends on with the tilt of the pelvis, see nbBendTrunk, 58. Now and then a
-// light hit ends in a long stumble and a fall: of 168 hits from 40 to 80 N s in steps of 2 in this scene, round 23 fell
-// at 64 and 66 N s from behind, round 24 at 66 N s from behind and at 80 N s from its front right, and round 27, with
-// joints that move as far as a person's, at 74 N s from its right. Round 28, where a hit across the front of the chest
-// turns the trunk about its long axis, see nbTwistTrunk, fell at 58, 62, 66 and 72 N s from its right and 66 from its
-// left, and with the armature of the neck it falls at 58, 64 and 76 N s from its right and 66 from its left. Round 34,
-// where a foot that hovers just above the ground still stands, see nbMeasure, catches all 168. Round 26 caught those
-// 80 N s from its front right after 17 steps and 7.8 s, round 33 took up to 4.0 s, round 35 3.1 s and round 36 3.7 s.
+// NB_ONE_FOOT_TIME. Of the 32 hits up to 80 N s at most one falls, and it catches at least 40 of all 88, round 35 47
+// and round 36, with the arms of 81 cm and the stance of the reference picture, 43, round 40 49 and round 41, whose
+// upper body bends on with the tilt of the pelvis, see nbBendTrunk, 58. Now and then a light hit ends in a long stumble
+// and a fall: of 168 hits from 40 to 80 N s in steps of 2 in this scene, round 23 fell at 64 and 66 N s from behind,
+// round 24 at 66 N s from behind and at 80 N s from its front right, and round 27, with joints that move as far as a
+// person's, at 74 N s from its right. Round 28, where a hit across the front of the chest turns the trunk about its
+// long axis, see nbTwistTrunk, fell at 58, 62, 66 and 72 N s from its right and 66 from its left, and with the armature
+// of the neck it falls at 58, 64 and 76 N s from its right and 66 from its left. Round 34, where a foot that hovers
+// just above the ground still stands, see nbMeasure, catches all 168. Round 26 caught those 80 N s from its front right
+// after 17 steps and 7.8 s, round 33 took up to 4.0 s, round 35 3.1 s and round 36 3.7 s.
 static int FigureCatchScanTest( void )
 {
 	int caught = 0;
@@ -1111,10 +1110,11 @@ static float FeetTurn( nbFigureId figure, const float* before )
 // hits on the upper chest from eight directions, 40 to 80 N s in steps of 8: none falls, and the feet of a figure that
 // stands again face on average less than 10 degrees and at most 40 degrees away from where they faced. Round 33, which
 // faced after its pelvis, turned them by 12.4 degrees on average and up to 67, and one of the 48 fell. Round 35 turned
-// them by 4.7 degrees on average and up to 32. Round 36, with the arms of 81 cm and the stance of the reference picture,
-// turned them by 6.2 on average and up to 43, both times by 80 N s from behind on a side, which it caught in two steps.
-// Round 38, which lifts its feet 12 cm, turns them by 5.2 degrees on average and up to 28, round 40 by 8.2 and up to 26,
-// and round 41, whose upper body bends on with the tilt of the pelvis, see nbBendTrunk, by 4.7 and up to 16.
+// them by 4.7 degrees on average and up to 32. Round 36, with the arms of 81 cm and the stance of the reference
+// picture, turned them by 6.2 on average and up to 43, both times by 80 N s from behind on a side, which it caught in
+// two steps. Round 38, which lifts its feet 12 cm, turns them by 5.2 degrees on average and up to 28, round 40 by 8.2
+// and up to 26, and round 41, whose upper body bends on with the tilt of the pelvis, see nbBendTrunk, by 4.7 and up to
+// 16.
 static int FigureFacingTest( void )
 {
 	float sum = 0.0f;
@@ -1162,7 +1162,8 @@ static int FigureFacingTest( void )
 	return 0;
 }
 
-// The torque limit of the spring of the joint of a bone, and whether the spring is on. False for a joint without a spring.
+// The torque limit of the spring of the joint of a bone, and whether the spring is on. False for a joint without a
+// spring.
 static bool MuscleTorque( nbFigureId figure, int bone, float* limit, bool* on )
 {
 	b3JointId joint = nbFigure_GetJoint( figure, bone );
@@ -1218,12 +1219,12 @@ static uint32_t MuscleCatch( int threadCount, float impulse )
 // The throw of 90 N s on a figure with muscles ends in the same bits with one thread and with four, on every platform
 #define NB_EXPECTED_MUSCLE_HASH 0x9bf675e6u
 
-// The muscles, see nbFigureMotors::muscles and nbUpdateMuscles. A figure with muscles hit while it stands catches itself
-// with the strength the balance asks for at once: every joint of its trunk and its legs at the full torque of the motors,
-// its arms loose with a part of it. While it catches itself the joints of its trunk pull less while they turn the way
-// they pull and more while they are turned against it, up to the braking strength, its legs keep the full torque, which
-// they have no top speed for. Knocked down it goes slack at once, and as a ragdoll its muscles follow the strength of its
-// flight as a lag, without overshooting it. It gives the same bits with any number of threads.
+// The muscles, see nbFigureMotors::muscles and nbUpdateMuscles. A figure with muscles hit while it stands catches
+// itself with the strength the balance asks for at once: every joint of its trunk and its legs at the full torque of
+// the motors, its arms loose with a part of it. While it catches itself the joints of its trunk pull less while they
+// turn the way they pull and more while they are turned against it, up to the braking strength, its legs keep the full
+// torque, which they have no top speed for. Knocked down it goes slack at once, and as a ragdoll its muscles follow the
+// strength of its flight as a lag, without overshooting it. It gives the same bits with any number of threads.
 static int FigureMuscleTest( void )
 {
 	const nbFigureMotors motors = nbDefaultFigureMotors();
@@ -1445,11 +1446,11 @@ static void SpreadParts( int bone, float* parts )
 }
 
 // A hit on the dynamic bones of a figure spreads along its skeleton, see nbSpreadHit. On the right forearm the forearm
-// takes half of it and the pelvis beside it little, measured straight the forearm took a fifth and the pelvis as much. On
-// the left shin the shin takes three quarters and the right leg 2 %, measured straight the right leg took a fifth. On the
-// middle of the upper part of the chest the two parts take 72 % together, shared by their masses as one rib cage, 42 on
-// the upper one and 30 on the lower one, as the chest of one part took three quarters before round 37. All the parts add
-// up to the hit.
+// takes half of it and the pelvis beside it little, measured straight the forearm took a fifth and the pelvis as much.
+// On the left shin the shin takes three quarters and the right leg 2 %, measured straight the right leg took a fifth.
+// On the middle of the upper part of the chest the two parts take 72 % together, shared by their masses as one rib
+// cage, 42 on the upper one and 30 on the lower one, as the chest of one part took three quarters before round 37. All
+// the parts add up to the hit.
 static int FigureSpreadTest( void )
 {
 	float forearm[nb_humanoidBoneCount];
@@ -2104,11 +2105,11 @@ static float SpringHertz( nbFigureId figure, int bone )
 	}
 }
 
-// The spine gives way to a hit, see nbBoneDef::hitStiffness: right after 60 N s on the upper chest from ahead or behind its
-// four joints pull with the share of their stiffness the humanoid gives them and the same torque limit, half a second
-// later with all of it again, and in the first second the chest bends farther against the pelvis than with joints that
-// keep their stiffness. From its right the spine keeps its stiffness and the figure moves as with stiff joints, from
-// ahead and its right at once the joints give way by half. The figure stands again after every catch.
+// The spine gives way to a hit, see nbBoneDef::hitStiffness: right after 60 N s on the upper chest from ahead or behind
+// its four joints pull with the share of their stiffness the humanoid gives them and the same torque limit, half a
+// second later with all of it again, and in the first second the chest bends farther against the pelvis than with
+// joints that keep their stiffness. From its right the spine keeps its stiffness and the figure moves as with stiff
+// joints, from ahead and its right at once the joints give way by half. The figure stands again after every catch.
 static int FigureSoftSpineTest( void )
 {
 	enum
@@ -2367,11 +2368,11 @@ static PushResult Push( float height, float force, float pushForce, bool stick, 
 }
 
 // A body that pushes a standing figure slowly, harder than nbFigureDef::pushForce, makes it catch itself instead of
-// meeting a wall: it leans against a moderate push, steps away from a hard one and a push on the forehead turns its head.
-// It stays dynamic while the push lasts and stands animated again after it. A push below the force, or with the force
-// zero, meets a wall as before. A stick pressed into the left elbow from the side pushes the round ends of upper arm and
-// forearm up and down, and the arm gives way to it all the same: a stick swept slowly across the figure in the demo
-// rested on its arm before. The same with one and four threads.
+// meeting a wall: it leans against a moderate push, steps away from a hard one and a push on the forehead turns its
+// head. It stays dynamic while the push lasts and stands animated again after it. A push below the force, or with the
+// force zero, meets a wall as before. A stick pressed into the left elbow from the side pushes the round ends of upper
+// arm and forearm up and down, and the arm gives way to it all the same: a stick swept slowly across the figure in the
+// demo rested on its arm before. The same with one and four threads.
 static int FigurePushTest( void )
 {
 	const char* names[7] = { "20 N on the chest",
@@ -2441,11 +2442,11 @@ static int FigurePushTest( void )
 
 // A stick of 150 N under the left forearm that sweeps up on an arc about the shoulder for 2.5 s, holds 2 s, sweeps down
 // and slides out to the side along its length, see NB_HELD_ARMS. The push wakes the figure, the arm goes slack and the
-// stick lifts it: the upper arm rises by more than a radian, the figure keeps its feet without a fall and stands animated
-// again within six seconds of the stick leaving it. Before round 36 the arm hung at the strength of its motors and the
-// stick swept past it, the upper arm rose by 13 degrees. Until round 40 the stick went away backwards. The slack forearm
-// lay over it and was dragged along, and it slipped off only because the figure swayed: a version of round 40 whose legs
-// stood stiller kept the arm on the stick for good. The same with one and four threads.
+// stick lifts it: the upper arm rises by more than a radian, the figure keeps its feet without a fall and stands
+// animated again within six seconds of the stick leaving it. Before round 36 the arm hung at the strength of its motors
+// and the stick swept past it, the upper arm rose by 13 degrees. Until round 40 the stick went away backwards. The
+// slack forearm lay over it and was dragged along, and it slipped off only because the figure swayed: a version of
+// round 40 whose legs stood stiller kept the arm on the stick for good. The same with one and four threads.
 typedef struct LiftResult
 {
 	float arm;
@@ -2582,13 +2583,13 @@ static float ShoulderHeading( nbFigureId figure )
 	return atan2f( line.x, line.z );
 }
 
-// A hit in front of the right shoulder turns the trunk about its long axis, one on the middle of the chest does not, see
-// nbComputeTwist and nbTwistTrunk. The upper body of the humanoid turns about the axis up its spine 2.5 times as far as
-// it tilts, the square root of the ratio of its rotational inertia about the two, and as much faster back: 30 N s at
-// the shoulder turn the line between the shoulders by 12 degrees, 5 before, and it straightens again within a second. A
-// hit of 60 N s there turns it by 43 degrees in a tenth of a second, 3 before, and the figure catches itself. Round 52
-// turned it there by 30 degrees, and round 53, whose upper body turns back against the pelvis while a foot swings, see
-// nbPelvisTurn, by 32.
+// A hit in front of the right shoulder turns the trunk about its long axis, one on the middle of the chest does not,
+// see nbComputeTwist and nbTwistTrunk. The upper body of the humanoid turns about the axis up its spine 2.5 times as
+// far as it tilts, the square root of the ratio of its rotational inertia about the two, and as much faster back: 30 N
+// s at the shoulder turn the line between the shoulders by 12 degrees, 5 before, and it straightens again within a
+// second. A hit of 60 N s there turns it by 43 degrees in a tenth of a second, 3 before, and the figure catches itself.
+// Round 52 turned it there by 30 degrees, and round 53, whose upper body turns back against the pelvis while a foot
+// swings, see nbPelvisTurn, by 32.
 static int FigureTwistTest( void )
 {
 	const float impulses[3] = { 30.0f, 30.0f, 60.0f };
@@ -2644,9 +2645,9 @@ static int FigureTwistTest( void )
 	return 0;
 }
 
-// A hard hit knocks the figure down: its bones become dynamic with the velocities they had and the hit acts once, so their
-// momentum is the impulse. It falls, lies still, gets up with the clip of the side it lies on and stands animated again,
-// without a jump of any bone. Hit from the front it lies on its back, from behind on its front.
+// A hard hit knocks the figure down: its bones become dynamic with the velocities they had and the hit acts once, so
+// their momentum is the impulse. It falls, lies still, gets up with the clip of the side it lies on and stands animated
+// again, without a jump of any bone. Hit from the front it lies on its back, from behind on its front.
 static int FigureKnockdownTest( void )
 {
 	for ( int pass = 0; pass < 2; ++pass )
@@ -2798,13 +2799,13 @@ static void AddBlock( FigureScene* scene, b3Vec3 center, b3Vec3 halfExtents )
 	b3CreateHullShape( body, &shapeDef, &box.base );
 }
 
-// A hit that a standing figure cannot catch over its feet makes it step, after the roadmap of the game, 26.14 and 28.3. Hit
-// on its right side it steps left with the left foot, the right one held where it stands, then the right one after it,
-// and stands where the push carried it. A kick from the front makes it step back, from less than a push to its side, and
-// from behind a push of 20 N s does not make it step at all. Standing a little in the knees, its pelvis 4 cm ahead of its
-// ankles as in the reference picture, its center of mass lies 5 cm ahead of the ankles, 10 cm ahead of the heels and 18
-// behind the toes, so from behind one of 23 N s makes it step, from the front one of 15 and from a side one of 26. Before
-// round 36 it lay 3 cm ahead of the ankles, and from behind one of 30 N s just made it step.
+// A hit that a standing figure cannot catch over its feet makes it step, after the roadmap of the game, 26.14 and 28.3.
+// Hit on its right side it steps left with the left foot, the right one held where it stands, then the right one after
+// it, and stands where the push carried it. A kick from the front makes it step back, from less than a push to its
+// side, and from behind a push of 20 N s does not make it step at all. Standing a little in the knees, its pelvis 4 cm
+// ahead of its ankles as in the reference picture, its center of mass lies 5 cm ahead of the ankles, 10 cm ahead of the
+// heels and 18 behind the toes, so from behind one of 23 N s makes it step, from the front one of 15 and from a side
+// one of 26. Before round 36 it lay 3 cm ahead of the ankles, and from behind one of 30 N s just made it step.
 static int FigureStepTest( void )
 {
 	// The impulse, the direction it pushes in, along x or z, and how far the body goes there
@@ -2884,9 +2885,9 @@ static int FigureStepTest( void )
 }
 
 // A step needs room and ground, see 26.14 and 28.5 (B): a figure kicked toward a wall close behind it falls against the
-// wall instead of stepping into it, and pushed away from the wall it steps. A figure on a ledge pushed over its edge falls, a
-// figure pushed again and again while it steps falls once the push would carry it beyond its reach, and a figure that
-// does not step only flinches.
+// wall instead of stepping into it, and pushed away from the wall it steps. A figure on a ledge pushed over its edge
+// falls, a figure pushed again and again while it steps falls once the push would carry it beyond its reach, and a
+// figure that does not step only flinches.
 static int FigureStepBlockedTest( void )
 {
 	for ( int pass = 0; pass < 5; ++pass )
@@ -3027,9 +3028,9 @@ static void SoleGaps( nbFigureId figure, int foot, b3Vec3 point, b3Vec3 normal, 
 }
 
 // The feet of a standing figure stand on the ground under them, after the roadmap of the game, 26.5 and 28.3: with its
-// left foot on a slab 10 cm high the left knee bends, on a slope across and along it both soles lie on the slope and the
-// root goes down with the lower foot, a foot that a clip lifts stays where the clip puts it, and a step to catch a hit
-// goes up onto a slab.
+// left foot on a slab 10 cm high the left knee bends, on a slope across and along it both soles lie on the slope and
+// the root goes down with the lower foot, a foot that a clip lifts stays where the clip puts it, and a step to catch a
+// hit goes up onto a slab.
 static int FigureFeetTest( void )
 {
 	for ( int pass = 0; pass < 5; ++pass )
@@ -3127,9 +3128,9 @@ static int FigureFeetTest( void )
 	return 0;
 }
 
-// Without room to get up where it lies, a figure moves aside or turns, after the roadmap of the game, 26.15: knocked down,
-// a table comes over its head, and it moves back along its spine and gets up. With a wall behind its feet it turns on
-// the ground, and with walls at its sides as well it waits.
+// Without room to get up where it lies, a figure moves aside or turns, after the roadmap of the game, 26.15: knocked
+// down, a table comes over its head, and it moves back along its spine and gets up. With a wall behind its feet it
+// turns on the ground, and with walls at its sides as well it waits.
 static int FigureRoomTest( void )
 {
 	for ( int pass = 0; pass < 3; ++pass )
@@ -3203,14 +3204,14 @@ static int FigureRoomTest( void )
 	return 0;
 }
 
-// A ragdoll that comes to rest standing on its feet wakes up standing, as WakeUp of Overgrowth tells standing from falling,
-// see the roadmap of the game 26.15. Its arms reach ahead into tight tunnels of four fixed blocks, as the arm of figure 8
-// of the benchmark caught in a crack of its wall: it hangs on the arms with its feet on the ground and its pelvis too high
-// over the ground to get up from it. It wakes up where its feet stand, straight to the stand clip without a get-up clip,
-// without a jump of a bone, and stands. Before round 36 the right arm alone held it with its pelvis 61 to 65 cm high. The
-// arm of 81 cm with the armature of the shoulder, see nbMakeHumanoidBones, lets it sink to 54 cm, below the wake height:
-// it gets up from there with its clip and stands after 5.8 s. On both arms it hangs 75 cm high. A figure that lies is no
-// figure that stands: knocked down it gets up with its clip, see FigureKnockdownTest.
+// A ragdoll that comes to rest standing on its feet wakes up standing, as WakeUp of Overgrowth tells standing from
+// falling, see the roadmap of the game 26.15. Its arms reach ahead into tight tunnels of four fixed blocks, as the arm
+// of figure 8 of the benchmark caught in a crack of its wall: it hangs on the arms with its feet on the ground and its
+// pelvis too high over the ground to get up from it. It wakes up where its feet stand, straight to the stand clip
+// without a get-up clip, without a jump of a bone, and stands. Before round 36 the right arm alone held it with its
+// pelvis 61 to 65 cm high. The arm of 81 cm with the armature of the shoulder, see nbMakeHumanoidBones, lets it sink to
+// 54 cm, below the wake height: it gets up from there with its clip and stands after 5.8 s. On both arms it hangs 75 cm
+// high. A figure that lies is no figure that stands: knocked down it gets up with its clip, see FigureKnockdownTest.
 static int FigureWakeStandingTest( void )
 {
 	FigureScene scene;
@@ -3334,8 +3335,8 @@ static int FigureGroundTest( void )
 	return 0;
 }
 
-// Debris that hits a standing figure hard knocks it down, a light piece makes it flinch, a heavy body that comes to rest
-// on it presses it down, and a blast throws it as it throws the debris
+// Debris that hits a standing figure hard knocks it down, a light piece makes it flinch, a heavy body that comes to
+// rest on it presses it down, and a blast throws it as it throws the debris
 static int FigureWorldTest( void )
 {
 	FigureScene scene;
@@ -3542,11 +3543,11 @@ static int FigureFollowTest( void )
 }
 
 // A punch passes through a kinematic figure and meets the body of a fighter. The fist follows the clip within a few
-// centimeters until it lands, with the force the clip takes behind it: it pushes the fighter that it meets back, and lands
-// as a hit on both with the impulse of its contact, so the one that it meets flinches and the one that punches feels it.
-// Neither falls. The impulse of this punch lies close to where a hit makes a figure step: with the arms of 81 cm until
-// round 43 the one it met stepped back twice, 8 cm, with the arms of 78 cm since round 44 it flinches and gives 1.3 cm,
-// as the arms of 81 cm did 1 cm farther away.
+// centimeters until it lands, with the force the clip takes behind it: it pushes the fighter that it meets back, and
+// lands as a hit on both with the impulse of its contact, so the one that it meets flinches and the one that punches
+// feels it. Neither falls. The impulse of this punch lies close to where a hit makes a figure step: with the arms of 81
+// cm until round 43 the one it met stepped back twice, 8 cm, with the arms of 78 cm since round 44 it flinches and
+// gives 1.3 cm, as the arms of 81 cm did 1 cm farther away.
 static int FigurePunchTest( void )
 {
 	static PunchClip punch;
@@ -3725,8 +3726,8 @@ static uint32_t RunFollowScenario( int threadCount )
 	return hash;
 }
 
-// Two figures knocked down and hit while they fly, one of them while it steps and later without room to get up beside the
-// other, a third that steps aside, debris on it and a blast: the same bits with 1 and 4 threads
+// Two figures knocked down and hit while they fly, one of them while it steps and later without room to get up beside
+// the other, a third that steps aside, debris on it and a blast: the same bits with 1 and 4 threads
 static uint32_t RunFigureScenario( int threadCount )
 {
 	FigureScene scene;
@@ -3846,8 +3847,8 @@ static float SteerSpeed( nbFigureId figure )
 	return sqrtf( velocity.x * velocity.x + velocity.z * velocity.z );
 }
 
-// A steered figure gets to the speed it wants, walking and running, within 10 % in the time its acceleration takes and a
-// tenth of a second, holds it, stops again as fast as it brakes, and turns on the spot to the heading it wants at its
+// A steered figure gets to the speed it wants, walking and running, within 10 % in the time its acceleration takes and
+// a tenth of a second, holds it, stops again as fast as it brakes, and turns on the spot to the heading it wants at its
 // turn rate
 static int SteerSpeedTest( void )
 {
@@ -3963,9 +3964,9 @@ static int SteerWallTest( void )
 	return 0;
 }
 
-// The courses of round 84 along +z: a ramp of 20 or of 60 degrees from z = 3 with a platform on top, stairs of ten steps
-// of 15 cm from z = 3, or a ledge of 1 m that ends at z = 3, and of round 85 stairs of twenty steps of 15 cm from z = 3.
-// The height on top.
+// The courses of round 84 along +z: a ramp of 20 or of 60 degrees from z = 3 with a platform on top, stairs of ten
+// steps of 15 cm from z = 3, or a ledge of 1 m that ends at z = 3, and of round 85 stairs of twenty steps of 15 cm from
+// z = 3. The height on top.
 static float AddSteerCourse( FigureScene* scene, int course )
 {
 	if ( course == 0 || course == 2 )
@@ -3995,9 +3996,9 @@ static float AddSteerCourse( FigureScene* scene, int course )
 	return 0.0f;
 }
 
-// A steered figure on its courses: up a ramp of 20 degrees and up stairs of 15 cm it keeps its ground in every update and
-// comes out on top, a ramp of 60 degrees stops it at its foot, and off a ledge of 1 m it falls, lands on its feet and
-// walks on, standing all the way
+// A steered figure on its courses: up a ramp of 20 degrees and up stairs of 15 cm it keeps its ground in every update
+// and comes out on top, a ramp of 60 degrees stops it at its foot, and off a ledge of 1 m it falls, lands on its feet
+// and walks on, standing all the way
 static int SteerGroundTest( void )
 {
 	const char* names[4] = { "ramp of 20 degrees", "stairs of 15 cm", "ramp of 60 degrees", "ledge of 1 m" };
@@ -4147,9 +4148,9 @@ static b3Vec3 SoleEdge( const FigureScene* scene, const nbFigure* f, int foot, f
 }
 
 // A planted foot of a steered figure moves less than 1 cm between landing and lifting, walking and running on flat
-// ground. Walking it lands on its heel, its toes up by 0.15 to 0.35 rad, and comes down from it, so its heel stays where
-// it landed; running it lands flat. Its heel rises as the hip passes over it, so from then on it is the edge of its toes
-// that stays.
+// ground. Walking it lands on its heel, its toes up by 0.15 to 0.35 rad, and comes down from it, so its heel stays
+// where it landed; running it lands flat. Its heel rises as the hip passes over it, so from then on it is the edge of
+// its toes that stays.
 static int SteerFootTest( void )
 {
 	const float speeds[2] = { 1.5f, 4.5f };
@@ -4228,10 +4229,10 @@ static int SteerFootTest( void )
 
 // A steered figure walks up and down its courses at 1.5 m/s, the conditions of rounds 85 and 86 in docs/Roadmap.md: on
 // the ramp of 20 degrees its pelvis moves against its frame by 3 cm per update at most and by 10 cm at most between two
-// landings, its steps are at most 0.85 as long as on flat ground and it lands on its heel, up and down. On twenty stairs
-// of 15 by 30 cm its pelvis goes along the line of the stairs, up and down by 6 cm at most between two landings and by
-// 3 cm at most in an update, where its frame goes up and down tread by tread. On flat ground its steps are 0.775 m at
-// that speed since round 112, with the cadence of people, see NB_GAIT_CADENCE_WALK, and 0.708 m before.
+// landings, its steps are at most 0.85 as long as on flat ground and it lands on its heel, up and down. On twenty
+// stairs of 15 by 30 cm its pelvis goes along the line of the stairs, up and down by 6 cm at most between two landings
+// and by 3 cm at most in an update, where its frame goes up and down tread by tread. On flat ground its steps are 0.775
+// m at that speed since round 112, with the cadence of people, see NB_GAIT_CADENCE_WALK, and 0.708 m before.
 static int SteerSlopeTest( void )
 {
 	const char* names[4] = { "up the ramp", "down the ramp", "up the stairs", "down the stairs" };
@@ -4330,9 +4331,9 @@ static int StairTread( float z )
 }
 
 // A steered figure walks up and down twenty stairs of 15 by 30 cm at 1.5 m/s, the conditions of round 86 in
-// docs/Roadmap.md: a foot that stands flat on the stairs stands with heel and toes on one tread, no more than 1.5 cm off
-// it, and from the third landing on the stairs to the one before the last every step goes the same number of treads, see
-// nbFindFoothold
+// docs/Roadmap.md: a foot that stands flat on the stairs stands with heel and toes on one tread, no more than 1.5 cm
+// off it, and from the third landing on the stairs to the one before the last every step goes the same number of
+// treads, see nbFindFoothold
 static int SteerStairsTest( void )
 {
 	const int feet[2] = { nb_humanoidFootLeft, nb_humanoidFootRight };
@@ -4401,8 +4402,8 @@ static int SteerStairsTest( void )
 // A steered figure runs up or down the twenty stairs of 15 by 30 cm at a speed from a start farther back, see
 // SteerRunStairsTest: the tread under each of its landings on the stairs, how often a foot stood flat on them and how
 // often of that across an edge, how far a sole edge stood off its tread at most, how far the pelvis went up and down
-// against the line of the stairs from one landing to the next, from 0.8 m onto the stairs to 0.8 m before their end, and
-// whether the figure still goes on its feet at the end
+// against the line of the stairs from one landing to the next, from 0.8 m onto the stairs to 0.8 m before their end,
+// and whether the figure still goes on its feet at the end
 typedef struct StairsRun
 {
 	int treads[64];
@@ -4657,8 +4658,8 @@ static int SteerTurnTest( void )
 }
 
 // A steered figure that turns round from walking straight on keeps time with its feet again, wherever in its gait the
-// turn begins, at eight points a cycle apart by eighths: in the last 1.5 s each foot lifts within a twentieth of a cycle
-// of where it lifted walking straight on, after its push and not as its leg loses it, see NB_GAIT_KEEP
+// turn begins, at eight points a cycle apart by eighths: in the last 1.5 s each foot lifts within a twentieth of a
+// cycle of where it lifted walking straight on, after its push and not as its leg loses it, see NB_GAIT_KEEP
 static int SteerInStepTest( void )
 {
 	float worst = 0.0f;
@@ -4711,8 +4712,8 @@ static int SteerInStepTest( void )
 // A steered figure that turns round from walking straight on, at eight points of its gait an eighth of a cycle apart,
 // bends its knees as the capsule turns and does not walking straight on, see NB_GAIT_BEND_SPEED: at least 0.7 of the
 // way, as it brakes no harder than it goes backward facing where it moves, see nbSteer::faceVelocity (0.89 while it
-// went backward at once). From the turn on its knees change their velocity from one update to the next by more than
-// 3 cm in at most 20 updates of all eight turns (39 before the knees bent), and by 5 cm at most (6.6), and its pelvis by
+// went backward at once). From the turn on its knees change their velocity from one update to the next by more than 3
+// cm in at most 20 updates of all eight turns (39 before the knees bent), and by 5 cm at most (6.6), and its pelvis by
 // 2 cm at most. The figure turns on the spot here, nbFigureSteering::walkBend at zero: walking a bend, as it does since
 // round 161, the capsule does not brake hard in the turn, and the knees bend 0.43 of the way.
 static int SteerKneeTest( void )
@@ -4776,8 +4777,8 @@ static int SteerKneeTest( void )
 	return 0;
 }
 
-// The lean of the trunk of a steered figure, the line from its pelvis to its neck, in degrees: forward along its heading
-// and to its left
+// The lean of the trunk of a steered figure, the line from its pelvis to its neck, in degrees: forward along its
+// heading and to its left
 static void TrunkLean( nbFigureId figure, float* forward, float* left )
 {
 	b3WorldTransform frame = nbFigure_GetFrame( figure );
@@ -4885,8 +4886,9 @@ static float BoneYaw( nbFigureId figure, int bone )
 }
 
 // Two steered figures run side by side at a speed for 6.5 s, and from 3 s on the largest jump per update squared of the
-// pelvis and of any other bone of the first, in meters, the turn of its pelvis to each side and how much the turns of its
-// pelvis and chest go together, their mean product, in square degrees. Returns a hash of the bones of both at the end.
+// pelvis and of any other bone of the first, in meters, the turn of its pelvis to each side and how much the turns of
+// its pelvis and chest go together, their mean product, in square degrees. Returns a hash of the bones of both at the
+// end.
 static uint32_t RunStride( int threadCount, float speed, float* pelvisJump, float* boneJump, float* pelvisTurn, float* together )
 {
 	FigureScene scene;
@@ -4955,9 +4957,9 @@ static uint32_t RunStride( int threadCount, float speed, float* pelvisJump, floa
 }
 
 // A steered figure runs without a jolt in the flight and turns its pelvis against its chest, see NB_RUN_DESCEND,
-// NB_FOOT_ROLL_AHEAD and NB_RUN_PELVIS_TURN. Running at 3.0 and 4.8 m/s its pelvis jumps at most a centimeter per update
-// squared (1.2 and 1.8 before), no other bone more than 4.4 cm (4.4 and 4.6 before), its pelvis turns at least 3 degrees
-// to each side about up (none before), against its chest, and with 1 and 4 threads it runs with the same bits.
+// NB_FOOT_ROLL_AHEAD and NB_RUN_PELVIS_TURN. Running at 3.0 and 4.8 m/s its pelvis jumps at most a centimeter per
+// update squared (1.2 and 1.8 before), no other bone more than 4.4 cm (4.4 and 4.6 before), its pelvis turns at least 3
+// degrees to each side about up (none before), against its chest, and with 1 and 4 threads it runs with the same bits.
 static int SteerRunTest( void )
 {
 	const float speeds[2] = { 3.0f, 4.8f };
@@ -5290,8 +5292,8 @@ static int SteerStrafeTest( void )
 	return 0;
 }
 
-// A steered figure that does not face where it moves goes to the side at speed for 3 s and a part of its cycle more, then
-// at then: how close its feet come across the pelvis in the 3 s after, negative where they cross
+// A steered figure that does not face where it moves goes to the side at speed for 3 s and a part of its cycle more,
+// then at then: how close its feet come across the pelvis in the 3 s after, negative where they cross
 static float RunStrafeChange( float speed, float then, int later )
 {
 	FigureScene scene;
@@ -5344,8 +5346,8 @@ static int SteerStrafeChangeTest( void )
 }
 
 // A steered figure that does not face where it moves goes at first for 3 s and a part of its cycle more, then at then:
-// how close its feet come across the pelvis in the 3 s after, negative where they cross, after how many seconds its frame
-// goes at nine tenths of then, 3 if it never does, and how far a foot turns in an update at most, in radians
+// how close its feet come across the pelvis in the 3 s after, negative where they cross, after how many seconds its
+// frame goes at nine tenths of then, 3 if it never does, and how far a foot turns in an update at most, in radians
 static float RunLegChange( b3Vec3 first, b3Vec3 then, int later, float* answer, float* footTurn )
 {
 	FigureScene scene;
@@ -5400,8 +5402,8 @@ static float RunLegChange( b3Vec3 first, b3Vec3 then, int later, float* answer, 
 
 // A steered figure that does not face where it moves changes its direction as it runs at 4.3 m/s, each from 8 places in
 // its cycle: from left to right, where its legs turn about, from forward to the left, where they turn by a quarter, and
-// from walking to the left at 1.05 m/s to running there. Its feet stay uncrossed across the pelvis, see NB_LEG_KEEP: the
-// legs turn only as far as the feet let them, the foot on the side of the turn steps out, and they are turned for
+// from walking to the left at 1.05 m/s to running there. Its feet stay uncrossed across the pelvis, see NB_LEG_KEEP:
+// the legs turn only as far as the feet let them, the foot on the side of the turn steps out, and they are turned for
 // running as soon as the figure is asked to run. Until round 114 the feet crossed by 9.2, 11.3 and 8.2 cm here.
 static int SteerRunChangeTest( void )
 {
@@ -5723,8 +5725,8 @@ static int SteerLandToesTest( void )
 // change at the latest. Until round 156 a planted foot turned without a limit, up to 140.4 degrees here, as the other
 // foot swung nearly all the time of the turn, and the figure faced the other way after 0.92 s. In round 156 it took
 // 1.32 s: held back, the heading started again from standing, and the foot it waited for swung no faster for it, see
-// NB_FOOT_TURN_HURRY. Since round 163 the figure turns about here, see NB_WALK_ABOUT in figure_steer.c: it waits for the
-// foot it stands on before it turns, and at this slow walk it faces the other way 1.62 s after the change at the
+// NB_FOOT_TURN_HURRY. Since round 163 the figure turns about here, see NB_WALK_ABOUT in figure_steer.c: it waits for
+// the foot it stands on before it turns, and at this slow walk it faces the other way 1.62 s after the change at the
 // latest, the price of a turn about that keeps the pelvis up; this test asked for 1.2 s until then and asks for 1.7 s.
 static int SteerTurnStepTest( void )
 {
@@ -5890,14 +5892,14 @@ static int RunBendTurns( float degrees, float walkBend, BendTurn* all )
 	return 0;
 }
 
-// A steered figure facing where it moves walks at 1.4 m/s and is steered 90 degrees to its left, at twelve moments
-// five updates apart. It walks a bend, see nbFigureSteering::walkBend: its capsule walks on the way it faces while it
-// turns, so in the half second after it stays at 0.8 m/s or more over all twelve turns (0.94), its pelvis gets no more
-// than 58 mm below its mean height walking (35), it faces the new way within 0.9 s (0.85), and it gets no more than
-// 0.70 m on the way it walked (0.63). Until round 161, and with walkBend at zero, it turns on the spot: the capsule
-// slows to 0.33 m/s and the pelvis sinks 67 mm. From standing it turns on the spot either way. Until round 167 it faced
-// the new way within 0.5 s (0.43) and got 0.33 m on: since then the heading waits for the feet where turning would cross
-// the legs, see NB_FACE_KEEP in figure_steer.c, and the capsule walks on the way it faces for as long.
+// A steered figure facing where it moves walks at 1.4 m/s and is steered 90 degrees to its left, at twelve moments five
+// updates apart. It walks a bend, see nbFigureSteering::walkBend: its capsule walks on the way it faces while it turns,
+// so in the half second after it stays at 0.8 m/s or more over all twelve turns (0.94), its pelvis gets no more than 58
+// mm below its mean height walking (35), it faces the new way within 0.9 s (0.85), and it gets no more than 0.70 m on
+// the way it walked (0.63). Until round 161, and with walkBend at zero, it turns on the spot: the capsule slows to 0.33
+// m/s and the pelvis sinks 67 mm. From standing it turns on the spot either way. Until round 167 it faced the new way
+// within 0.5 s (0.43) and got 0.33 m on: since then the heading waits for the feet where turning would cross the legs,
+// see NB_FACE_KEEP in figure_steer.c, and the capsule walks on the way it faces for as long.
 static int SteerWalkBendTest( void )
 {
 	BendTurn bend, spot;
@@ -5967,12 +5969,11 @@ static int RunShuttle( float walkBend, float* follows )
 // Steered more than 150 degrees off the way it faces it does not bend, it turns about, see NB_WALK_ABOUT in
 // figure_steer.c: it brakes gently while a foot lands where it aimed, waits for the foot it stands on and turns on the
 // spot. Over the twelve turns it gets no more than 0.25 m on the way it walked (0.17) and 0.25 m to the side (0.18),
-// its pelvis no more than 64 mm below its mean height walking (46), and it faces back within 1.5 s (1.48), within
-// 1.3 s (1.17) until round 167, when the heading began to wait for the feet, see NB_FACE_KEEP in figure_steer.c. Steered
-// back and forth every second for 4 s it goes 0.15 of the speed where it is steered or more (0.20, 0.28 until round
-// 167). In round 161 it
-// bent here: 0.34 m onward and 0.61 m to the side, and steered back and forth it went against the stick as much as
-// with it. With walkBend at zero it turns about as until round 160, the pelvis sinks 75 mm.
+// its pelvis no more than 64 mm below its mean height walking (46), and it faces back within 1.5 s (1.48), within 1.3 s
+// (1.17) until round 167, when the heading began to wait for the feet, see NB_FACE_KEEP in figure_steer.c. Steered back
+// and forth every second for 4 s it goes 0.15 of the speed where it is steered or more (0.20, 0.28 until round 167). In
+// round 161 it bent here: 0.34 m onward and 0.61 m to the side, and steered back and forth it went against the stick as
+// much as with it. With walkBend at zero it turns about as until round 160, the pelvis sinks 75 mm.
 static int SteerWalkAboutTest( void )
 {
 	BendTurn about, spot;
@@ -6045,14 +6046,14 @@ static float LegsOverlap( nbFigureId figure )
 	return deepest;
 }
 
-// The legs of a steered figure that faces where it moves do not go through each other. Running straight at 4.3 m/s,
-// its shins get no more than 30 mm into each other (20): a foot that lifts beside the other one swings out round it, see
+// The legs of a steered figure that faces where it moves do not go through each other. Running straight at 4.3 m/s, its
+// shins get no more than 30 mm into each other (20): a foot that lifts beside the other one swings out round it, see
 // NB_SWING_CLEAR in figure.c. Until round 167 the swinging foot passed the standing shin on a straight line, and with
 // the ankles 22 mm beside the middle the shins went 51 mm into each other. Steered 90 degrees to its left and to its
 // right at a walk of 1.4 m/s, at twelve moments five updates apart each, its thighs and shins get no more than 60 mm
 // into each other in the 1.5 s after (23): the heading turns no farther than the feet stay uncrossed across it, see
-// NB_FACE_KEEP in figure_steer.c. Until round 167 it turned wherever the feet stood, and with the foot ahead on the side
-// it turned to the foot behind swung through the standing leg: 138 mm, the thighs all the way into each other.
+// NB_FACE_KEEP in figure_steer.c. Until round 167 it turned wherever the feet stood, and with the foot ahead on the
+// side it turned to the foot behind swung through the standing leg: 138 mm, the thighs all the way into each other.
 static int SteerLegsApartTest( void )
 {
 	float running = -1.0f;
@@ -6204,8 +6205,8 @@ static int SteerMeetTest( void )
 // see NB_LEG_AIM_AHEAD. Until round 115 that took 1.42 and 1.83 s. From the left to backward its feet stay uncrossed
 // across the pelvis: the foot that leads the step to the side steps out for the legs, see NB_LEG_LEAD_SPEED, and a foot
 // that lands with the legs turned ahead keeps its side also across the pelvis that follows them, see NB_LAND_LAG. Until
-// round 115 they crossed by 7.8 cm walking and 7.9 cm running here. And walking, no foot turns by more than 15 degrees in
-// an update: a foot that lifted on its toes rolled over its heel at once in the same swing, see nbLowerSteered, 17.6
+// round 115 they crossed by 7.8 cm walking and 7.9 cm running here. And walking, no foot turns by more than 15 degrees
+// in an update: a foot that lifted on its toes rolled over its heel at once in the same swing, see nbLowerSteered, 17.6
 // degrees in an update here.
 static int SteerLegLeadTest( void )
 {
@@ -6248,8 +6249,8 @@ static int SteerLegLeadTest( void )
 	return 0;
 }
 
-// A steered figure stands for half a second, goes at first for 3 s and a part of its cycle more and then at then for
-// 3 s, facing where it moves or keeping its heading: the largest jump of its pelvis and of a shin in an update from when
+// A steered figure stands for half a second, goes at first for 3 s and a part of its cycle more and then at then for 3
+// s, facing where it moves or keeping its heading: the largest jump of its pelvis and of a shin in an update from when
 // it starts to go, as second differences of their places in meters
 static void RunJumps( b3Vec3 first, b3Vec3 then, int later, bool faces, float* pelvisJump, float* shinJump )
 {
@@ -6317,9 +6318,9 @@ static int SteerRunDescentTest( void )
 
 // A steered figure walks forward at 1.6 m/s, facing where it moves, and breaks into a run at 4.8 m/s, at eight moments
 // spread over a cycle of its walk. A foot in the air as the gait turns to running keeps the time its swing had when it
-// lifted, as far as its foot may, see nbSwingTime: the longest time both feet are in the air is 12 updates, and over the
-// eight runs the longest times come to 79. Until round 117 its swing stretched to that of a run while the foot on the
-// ground was lost as early as walking: 17 updates, and 97 over the eight runs.
+// lifted, as far as its foot may, see nbSwingTime: the longest time both feet are in the air is 12 updates, and over
+// the eight runs the longest times come to 79. Until round 117 its swing stretched to that of a run while the foot on
+// the ground was lost as early as walking: 17 updates, and 97 over the eight runs.
 static int SteerRunFlightTest( void )
 {
 	int flights = 0;
@@ -6356,8 +6357,8 @@ static int SteerRunFlightTest( void )
 
 // A steered figure facing where it moves runs forward at 4.8 m/s and turns about, at eight moments spread over a cycle
 // of its run. Where a foot lands moves far while it swings then, and a swing hurries no more than its foot may for the
-// way it has left, see nbSteerFeet: a foot jumps 41.4 mm in an update at most. Until round 118 a hurrying foot caught up
-// with where it lands over its last updates and braked hard as it landed, 58.6 mm.
+// way it has left, see nbSteerFeet: a foot jumps 41.4 mm in an update at most. Until round 118 a hurrying foot caught
+// up with where it lands over its last updates and braked hard as it landed, 58.6 mm.
 static int SteerTurnLandTest( void )
 {
 	float most = 0.0f;
@@ -6402,8 +6403,8 @@ static int SteerTurnLandTest( void )
 }
 
 // A steered figure facing where it moves runs forward at 3.3 m/s and turns about, at eight moments spread over a cycle
-// of its run. A foot that just landed and that the hip leaves takes the root down fast then, and once its leg reaches it
-// another way, the spring that brings the root up again keeps a share of the rate it went down with, see
+// of its run. A foot that just landed and that the hip leaves takes the root down fast then, and once its leg reaches
+// it another way, the spring that brings the root up again keeps a share of the rate it went down with, see
 // NB_ROOT_SETTLE_KEEP: the pelvis jumps 17.8 mm in an update at most. Until round 119 that spring started from rest,
 // the root turned on the spot, and the pelvis jumped 24.8 mm.
 static int SteerTurnSettleTest( void )
@@ -6547,10 +6548,11 @@ static int SteerTurnRollTest( void )
 }
 
 // A steered figure facing where it moves runs forward at 4.62 m/s and turns about, at twelve moments an update apart.
-// As it runs off the other way, both feet lift up to 0.4 of a cycle before their phase. A foot that lifts more than half
-// a cycle after its phase counts as early for its next swing and swings slower, and from two seconds after the turn on
-// the feet lift in turn after all twelve turns. Until round 122 it counted as late and hurried: after three of the
-// twelve turns both feet then lifted almost together, two lifts within a quarter of the time to the next, for seconds.
+// As it runs off the other way, both feet lift up to 0.4 of a cycle before their phase. A foot that lifts more than
+// half a cycle after its phase counts as early for its next swing and swings slower, and from two seconds after the
+// turn on the feet lift in turn after all twelve turns. Until round 122 it counted as late and hurried: after three of
+// the twelve turns both feet then lifted almost together, two lifts within a quarter of the time to the next, for
+// seconds.
 static int SteerTurnRhythmTest( void )
 {
 	int uneven = 0;
@@ -7407,9 +7409,9 @@ static int SteerSideToBackWalkTest( void )
 }
 
 // A steered figure that does not face where it moves walks backward at 1.6 m/s for 4 s, or runs backward at 3.0 m/s for
-// 3 s and a part of its cycle more and then forward at 3.0 m/s: how many of its feet landed going backward over the last
-// 2 s and how many of those on their toes, and how far the pelvis went below standing at most, over the last 2 s walking
-// and in the 3 s after the turn running
+// 3 s and a part of its cycle more and then forward at 3.0 m/s: how many of its feet landed going backward over the
+// last 2 s and how many of those on their toes, and how far the pelvis went below standing at most, over the last 2 s
+// walking and in the 3 s after the turn running
 static float RunBack( bool turn, int later, int* landed, int* onToes )
 {
 	FigureScene scene;
@@ -7452,11 +7454,11 @@ static float RunBack( bool turn, int later, int* landed, int* onToes )
 }
 
 // A steered figure that does not face where it moves walks backward at 1.6 m/s: its feet land on their toes, and the
-// pelvis goes no more than 3 cm below the stance of its gait. Running backward at 3.0 m/s it turns to run forward, from 8
-// places in its cycle: the pelvis goes no more than 12 cm below that. Before round 102 a foot landed backward on its heel and
-// never rolled over it, and the pelvis went 7.6 cm low for the leg to reach it, and turning, the gait walked for a moment
-// as the speed went through zero, a foot aimed 0.7 m ahead of the hip, and the pelvis went 31 cm low, see NB_GAIT_HEEL,
-// NB_FOOT_HEEL_MOST and NB_GAIT_PLAN_FROM.
+// pelvis goes no more than 3 cm below the stance of its gait. Running backward at 3.0 m/s it turns to run forward, from
+// 8 places in its cycle: the pelvis goes no more than 12 cm below that. Before round 102 a foot landed backward on its
+// heel and never rolled over it, and the pelvis went 7.6 cm low for the leg to reach it, and turning, the gait walked
+// for a moment as the speed went through zero, a foot aimed 0.7 m ahead of the hip, and the pelvis went 31 cm low, see
+// NB_GAIT_HEEL, NB_FOOT_HEEL_MOST and NB_GAIT_PLAN_FROM.
 static int SteerBackTest( void )
 {
 	int landed, onToes;
@@ -7486,12 +7488,12 @@ static float KneeBend( nbFigureId figure, int thigh )
 	return acosf( b3ClampFloat( along, -1.0f, 1.0f ) ) * 180.0f / B3_PI;
 }
 
-// A steered figure stands as a person stands at ease, see NB_STAND_RISE: the pelvis 1.8 cm over the stand height and the
-// knees bent 6 degrees, where it stood 24 degrees in the knees until round 113. Starting to walk it comes down onto the
-// stance of its gait, the stand height, and walks as before, and stopping it stands up again, its feet on the ground all
-// along and its pelvis without a jump of more than 10 mm per update squared. Hit on the chest so that it has to catch
-// itself, the balance holds the pelvis as high as it stood and not 5 cm lower, see nbHoldHeight, and it stands upright
-// again.
+// A steered figure stands as a person stands at ease, see NB_STAND_RISE: the pelvis 1.8 cm over the stand height and
+// the knees bent 6 degrees, where it stood 24 degrees in the knees until round 113. Starting to walk it comes down onto
+// the stance of its gait, the stand height, and walks as before, and stopping it stands up again, its feet on the
+// ground all along and its pelvis without a jump of more than 10 mm per update squared. Hit on the chest so that it has
+// to catch itself, the balance holds the pelvis as high as it stood and not 5 cm lower, see nbHoldHeight, and it stands
+// upright again.
 static int SteerUprightTest( void )
 {
 	FigureScene scene;
@@ -7615,9 +7617,9 @@ static int SteerHitTest( void )
 	return 0;
 }
 
-// The brick wall of the player scene of the demo, 8 m long, 2.2 m high and 0.3 m thick, with fragments twice as large as
-// its material says as the demo makes them, blown down by 24 grenades of the demo on one side in three rows of eight,
-// and 6 s for the rubble to settle. Most of it lies on the other side, up to 7 m from the wall.
+// The brick wall of the player scene of the demo, 8 m long, 2.2 m high and 0.3 m thick, with fragments twice as large
+// as its material says as the demo makes them, blown down by 24 grenades of the demo on one side in three rows of
+// eight, and 6 s for the rubble to settle. Most of it lies on the other side, up to 7 m from the wall.
 static void CreateRubbleScene( FigureScene* scene, int threadCount )
 {
 	memset( scene, 0, sizeof( FigureScene ) );
@@ -7694,11 +7696,12 @@ typedef struct RubbleCount
 	uint32_t hash;
 } RubbleCount;
 
-// A steered figure starts on a lane through the rubble of CreateRubbleScene and goes along it at a velocity from 0.5 s on.
-// From 0.7 s on every update counts while it stands: whether its gait takes the rubble for stairs, whether its capsule
-// has no ground and whether its legs are in a bad pose, a stance knee bent over 100 degrees, a thigh raised over 90
-// degrees from straight down, a leg from hip to ankle over 75 degrees from straight down or both knees bent over 80
-// degrees, measured between the centers of thigh, shin and foot, and whether a stance knee is bent over 120 degrees.
+// A steered figure starts on a lane through the rubble of CreateRubbleScene and goes along it at a velocity from 0.5 s
+// on. From 0.7 s on every update counts while it stands: whether its gait takes the rubble for stairs, whether its
+// capsule has no ground and whether its legs are in a bad pose, a stance knee bent over 100 degrees, a thigh raised
+// over 90 degrees from straight down, a leg from hip to ankle over 75 degrees from straight down or both knees bent
+// over 80 degrees, measured between the centers of thigh, shin and foot, and whether a stance knee is bent over 120
+// degrees.
 static RubbleCount CrossRubble( int threadCount, b3Vec3 start, b3Vec3 velocity, float heading, int steps )
 {
 	static const int legs[2][3] = { { nb_humanoidThighLeft, nb_humanoidShinLeft, nb_humanoidFootLeft },
@@ -7805,9 +7808,9 @@ static int SteerRubbleTest( void )
 	return 0;
 }
 
-// A course of steered figures for the same bits with any number of threads: one walks, runs at a wall at an angle, slides
-// along it, stops and turns on the spot, one walks up stairs and is hit from the side, and one walks past a figure that
-// only stands
+// A course of steered figures for the same bits with any number of threads: one walks, runs at a wall at an angle,
+// slides along it, stops and turns on the spot, one walks up stairs and is hit from the side, and one walks past a
+// figure that only stands
 static uint32_t RunSteerScenario( int threadCount )
 {
 	FigureScene scene;
@@ -8531,8 +8534,8 @@ static int FigureWallTest( void )
 // legs on the other, with no ground under its pelvis, and waits there for good, as on active-ragdoll-36 in 4 of 64 more
 // patterns, see F69 of the roadmap. Round 40 broke through 15 times and the block stayed on it 3 times. Round 41, whose
 // upper body bends on with the tilt of the pelvis in the update before it falls, see nbBendTrunk, breaks through 12
-// times, the block stays on it twice and pieces of the wall hold it down 3 more times. With the arms of 78 cm of round 44
-// it gets up behind the wall in 13 of the 32 and again after the block in 8, the eleventh no longer breaks through.
+// times, the block stays on it twice and pieces of the wall hold it down 3 more times. With the arms of 78 cm of round
+// 44 it gets up behind the wall in 13 of the 32 and again after the block in 8, the eleventh no longer breaks through.
 // Round 52 gets up behind the wall in 12 and again after the block in 7, and round 53, whose pelvis turns after the
 // feet, see nbPelvisTurn, in 10 and 8, once of them standing on a board of the wall, 5 cm over the ground, and the
 // second pattern no longer among them. Round 56 gets up behind the wall in 11 and again after the block in 9, and round
@@ -8630,9 +8633,9 @@ static int FigureWallDeterminismTest( void )
 	return 0;
 }
 
-// A board of 3 cm without pre-fracture cracks under a ball of 20 kg at 10 m/s, and at 20 m/s the ball knocks a piece out
-// and goes on through. The sites of the fracture kept a margin from its faces larger than half of it, it got none and
-// stayed one piece, and the samples of the damage sphere could all miss it.
+// A board of 3 cm without pre-fracture cracks under a ball of 20 kg at 10 m/s, and at 20 m/s the ball knocks a piece
+// out and goes on through. The sites of the fracture kept a margin from its faces larger than half of it, it got none
+// and stayed one piece, and the samples of the damage sphere could all miss it.
 static int ThinBoardTest( void )
 {
 	for ( int pass = 0; pass < 2; ++pass )
