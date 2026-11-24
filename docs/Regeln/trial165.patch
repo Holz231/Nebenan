@@ -1,0 +1,71 @@
+diff --git a/src/figure_steer.c b/src/figure_steer.c
+index 6cd2562..12fd55c 100644
+--- a/src/figure_steer.c
++++ b/src/figure_steer.c
+@@ -509,6 +509,12 @@ bool nbMoveSteered( nbWorld* world, int index, nbFigure* f, float timeStep, b3Ve
+ 	bool about = false;
+ 	bool aboutBrakes = false;
+ 	bool walked = false;
++	bool held = false;
++	bool feetKnow = false;
++	float feetWant = 0.0f;
++	(void)held;
++	(void)feetKnow;
++	(void)feetWant;
+ 	if ( f->steer.faceVelocity )
+ 	{
+ 		// Facing where it moves, it goes across its heading and backward no faster than a step to the side or back, see
+@@ -612,6 +618,7 @@ bool nbMoveSteered( nbWorld* world, int index, nbFigure* f, float timeStep, b3Ve
+ 		{
+ 			if ( f->footSwings[k] == false && f->footSwings[1 - k] && f->footOut[k] < f->swingRest[1 - k] )
+ 			{
++				held = true;
+ 				rate = b3MinFloat( rate, rate - walks * rate );
+ 			}
+ 		}
+@@ -788,6 +795,32 @@ bool nbMoveSteered( nbWorld* world, int index, nbFigure* f, float timeStep, b3Ve
+ 		b3Vec3 local = b3InvRotateVector( tilt, f->moveVelocity );
+ 		bool moving = local.x * local.x + local.z * local.z > NB_STEER_FACE_SPEED * NB_STEER_FACE_SPEED;
+ 		want = moving ? b3Atan2( local.x, local.z ) : heading;
++#ifdef NB_X_HOLDHEAD
++		if ( held && ( NB_X_HOLDHEAD == 2 || f->turnAbout ) )
++		{
++			want = heading;
++		}
++#endif
++#ifdef NB_X_LOSING
++		{
++			bool losing = false;
++			for ( int k = 0; k < 2; ++k )
++			{
++				losing = losing || ( f->footSwings[k] == false && f->footSwings[1 - k] && f->footOut[k] < NB_X_LOSING * f->swingRest[1 - k] );
++			}
++			bool walksNow = f->gaitOn && f->gaitRun <= 0.0f && f->boneCount == nb_humanoidBoneCount && f->onGround;
++			if ( losing && walksNow && ( f->turnAbout || ( NB_X_LOSING_ALL && capped && walked ) ) )
++			{
++				want = heading;
++			}
++		}
++#endif
++		if ( capped && f->turnAbout )
++		{
++			b3Vec3 steeredTo = b3InvRotateVector( tilt, f->steer.velocity );
++			feetWant = b3Atan2( steeredTo.x, steeredTo.z );
++			feetKnow = true;
++		}
+ 		if ( bends )
+ 		{
+ 			// Walking a bend, it turns to where it is steered, not to where it moves: it moves the way it faces
+@@ -803,6 +836,12 @@ bool nbMoveSteered( nbWorld* world, int index, nbFigure* f, float timeStep, b3Ve
+ 	// it keeps the rate it turned at and goes on with it: until round 157 it started again from standing, and turning
+ 	// about at a walk it turned 18 degrees in the first 0.15 s after waiting instead of 34.
+ 	f->headingWant = want;
++#ifdef NB_X_FEETKNOW
++	if ( feetKnow )
++	{
++		f->headingWant = feetWant;
++	}
++#endif
+ 	f->footHolds[0] = false;
+ 	f->footHolds[1] = false;
+ 	if ( f->gaitOn && f->boneCount == nb_humanoidBoneCount )

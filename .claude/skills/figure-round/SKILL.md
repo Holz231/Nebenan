@@ -563,6 +563,15 @@ Zehen und Fersen 37 mm, Hände 15 mm, Becken 10 mm, Becken tief ab 15 cm unter d
   aber Trümmer und den Abstieg im Rennen. Erst die Grenze nur in der Zehntelsekunde nach einem Sprung des Sticks ließ
   alles andere unberührt: 6 statt 51 geänderte Stellen, alle Tests bestehen. Was bleibt, hier der Fuß, der in der Luft
   umkehrt, steht als offene Zeile in der Tabelle.
+- **Alle gesackten Läufe ansehen, nicht nur den schlimmsten.** Runde 165: Die Spur eines Laufs zeigte eine Umkehr mitten
+  in der Umkehr. Erst `sink165.py`, das jeden der 67 Läufe im tiefsten Update ansieht, zeigte die Klasse dahinter: 38
+  drehen gerade auf der Stelle. Eine Abhilfe für den einen Lauf hätte die Klasse verfehlt.
+- **Eine verworfene Abhilfe sagt etwas über die Ursache.** Die Blickrichtung warten zu lassen, solange das Standbein
+  seinen Fuß verliert, half nicht: Dieses Maß trifft das Sacken beim Drehen auf der Stelle also nicht, und die Ursache
+  liegt im Ort des Fußes, nicht im Tempo der Drehung.
+- **Eine Variante bekommt einen Namen, den es noch nicht gab, und ihr Bau wird geprüft.** Ein Versuch dieser Runde baute
+  nicht, und das Messskript lief auf einem alten Programm gleichen Namens weiter und lieferte Zahlen, die nichts
+  bedeuteten.
 - **Größe der Figur.** Winkelbeschleunigungen wachsen bei kleineren Figuren mit 1 durch `nbFigureScale`, Längen
   und Geschwindigkeiten mit ihr.
 
