@@ -88,6 +88,15 @@
 // degrees, NB_WALK_TURN_NEW is the cosine. For NB_TURN_HOLD_AFTER seconds after a bend or a turn about it still waits
 // for the leg it stands on: setting off again at once, the pelvis jumped 22 mm in a run.
 #define NB_WALK_ABOUT -0.866f
+
+// Where the velocity a figure is steered at jumps by more than NB_STEER_JUMP from one update to the next, in meters per
+// second for the humanoid of 1.8 m, the root goes down for a landing gently for NB_CROUCH_EASE seconds, see
+// NB_CROUCH_EASE_RATE in figure.c. The gait plans with the new velocity at once, and where a foot in the air lands can
+// jump with it: let go at a run for 0.2 s and steered on, the landing of a foot late in its swing went from 0.25 m
+// ahead of the hip to 0.47 m behind it, the step of setting off, the root went 30 mm down for it in that update and
+// came back as the landing moved on with the capsule, and the pelvis jumped 29 mm down and 31 mm up.
+#define NB_STEER_JUMP 1.0f
+#define NB_CROUCH_EASE 0.1f
 #define NB_WALK_TURN_NEW 0.866f
 #define NB_TURN_HOLD_AFTER 0.5f
 
@@ -486,6 +495,12 @@ bool nbMoveSteered( nbWorld* world, int index, nbFigure* f, float timeStep, b3Ve
 	b3Vec3 velocity = f->moveVelocity;
 	float climb = b3Dot( velocity, up );
 	b3Vec3 flat = b3MulSub( velocity, climb, up );
+	f->crouchEase = b3MaxFloat( f->crouchEase - timeStep, 0.0f );
+	if ( b3LengthSquared( b3Sub( f->steer.velocity, f->steerBefore ) ) > NB_STEER_JUMP * NB_STEER_JUMP * scale * scale )
+	{
+		f->crouchEase = NB_CROUCH_EASE;
+	}
+	f->steerBefore = f->steer.velocity;
 	b3Vec3 wish = b3MulSub( f->steer.velocity, b3Dot( f->steer.velocity, up ), up );
 	b3Vec3 asked = wish;
 	f->steeredSpeed = b3Length( wish );

@@ -603,6 +603,10 @@ typedef struct nbFigure
 	float gaitTurnSize;
 	float gaitSway;
 	float gaitCrouch;
+	// The velocity it was steered at in the last update, and for how long the root still goes down gently after that
+	// velocity jumped, in seconds, see NB_CROUCH_EASE in figure_steer.c
+	b3Vec3 steerBefore;
+	float crouchEase;
 	float gaitBend;
 	float gaitBendRate;
 

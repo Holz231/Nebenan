@@ -102,6 +102,12 @@ was schon verworfen wurde.
   auf der Stelle. Über eine Wende wird neu entschieden, wenn der Stick um mehr als 30 Grad springt (`turnAsked`,
   `NB_WALK_TURN_NEW`). Ohne das Warten ging die Kapsel rückwärts von dem Fuß weg, der voraus gelandet war. Bis 135 Grad
   ist der Bogen besser. Gemessen mit `steer162.py` (`along`, `under`) und `gait155.py`.
+- **Wurzel und Landeziel.** Vor einer Landung geht die Wurzel so tief, wie das Bein braucht, um das Landeziel zu
+  erreichen (`gaitCrouch` in `nbSteerFeet`), ohne Dämpfung. Springt das Landeziel, weil der Stick springt und der Gang
+  mit dem neuen Tempo plant, sprang die Wurzel mit. Seit Runde 164 geht sie 0,1 s nach einem Sprung der gesteuerten
+  Geschwindigkeit um mehr als 1 m/s höchstens mit 0,6 m/s tiefer (`NB_STEER_JUMP`, `NB_CROUCH_EASE`,
+  `NB_CROUCH_EASE_RATE`, `crouchEase`). Immer begrenzt, bricht es Trümmer und den Abstieg im Rennen; das Landeziel
+  selbst zu bremsen, macht alles schlimmer.
 - **Abheben gegen die Bewegung.** Gegen die Richtung gesteuert, in die sie sich bewegt, mit den Beinen rückwärts, hebt
   ein nachlaufender Fuß ab, sobald die Hüfte schneller von ihm weggeht, als sein Bein vor seiner Reichweite bremsen kann
   (`nbHipAway`, wie `NB_SWING_PULL` es misst), seit Runde 143. Ein schwingender Fuß rollt mit den Beinen rückwärts in
@@ -184,8 +190,8 @@ was schon verworfen wurde.
 (136), `SteerSideToBackLiftTest` (137), `SteerBackToForwardLiftTest` (138), `SteerWaitedFootTest` (140),
 `SteerSwitchAnswerTest` (141), `SteerBackToForwardEarlyTest` (143), `SteerSideToBackWalkTest` (144), `SteerRunTrackTest`
 (147), `SteerSpeedUpTest` (150), `SteerFasterRollTest` (151), `SteerLandToesTest` (152), `SteerTurnStepTest` (156),
-`SteerWalkStopTest` (158), `SteerWalkBendTest` (161), `SteerWalkAboutTest` (163), und für den Körper
-`FigureShoulderTest` (126) und `FigureSkinTest` (127): Ändert eine Runde die Knochen, fällt er, bis
+`SteerWalkStopTest` (158), `SteerWalkBendTest` (161), `SteerWalkAboutTest` (163), `SteerLetGoTest` (164), und für den
+Körper `FigureShoulderTest` (126) und `FigureSkinTest` (127): Ändert eine Runde die Knochen, fällt er, bis
 `tools/mannequin/make_skin.py` die Haut neu geschrieben hat, erst `dump_bones`, dann das Werkzeug. Die Hashes
 `NB_EXPECTED_…_HASH` ändern sich nur, wenn sich ein Lauf ändert, der dort festgehalten ist: Das ist erlaubt, wird aber
 in der Roadmap genannt.

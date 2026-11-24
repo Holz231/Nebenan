@@ -4150,6 +4150,11 @@ static void nbComeDownForGait( nbFigure* f, float timeStep )
 // to land where the later steps land without it, and with it the first step landed 3 cm farther ahead, the root 1.8
 // instead of 0.4 cm deeper than at the third landing.
 #define NB_GAIT_PLAN_FROM 0.5f
+
+// For a moment after the velocity a figure is steered at jumped, see NB_CROUCH_EASE in figure_steer.c, the root goes
+// down for a landing no faster than this, in meters per second for the humanoid of 1.8 m, 10 mm in an update. All the
+// time, it came too late over rubble and running down a slope; at half the rate the pelvis jumped more elsewhere.
+#define NB_CROUCH_EASE_RATE 0.6f
 #define NB_GAIT_PLAN_SPAN 0.1f
 
 // As the capsule turns or slows down, a walking figure bends its knees more, as people do, its legs stretching to
@@ -5609,6 +5614,7 @@ static void nbSteerFeet( const nbWorld* world, int index, nbFigure* f, const nbC
 	b3Vec3 velocity = b3MulSub( f->moveVelocity, b3Dot( f->moveVelocity, up ), up );
 	float speed = b3Length( velocity );
 	f->gaitSpeed += b3MinFloat( 1.0f, NB_GAIT_FOLLOW * timeStep ) * ( speed - f->gaitSpeed );
+	float crouchBefore = f->gaitCrouch;
 	f->gaitCrouch = 0.0f;
 	f->gaitBob = 0.0f;
 
@@ -6812,6 +6818,11 @@ static void nbSteerFeet( const nbWorld* world, int index, nbFigure* f, const nbC
 	// the stance, walking only before a foot lands. Walking, it vaults over the leg it
 	// stands on, as high as the clip has it and down as far as the legs need to reach both feet, see nbPlaceFeet. With
 	// clips of its gait that move the root, it goes up and down as they have it instead of the bob and the vault.
+	if ( f->crouchEase > 0.0f )
+	{
+		// The stick just jumped, and where a foot lands may have jumped with it, see NB_CROUCH_EASE_RATE
+		crouch = b3MinFloat( crouch, crouchBefore + NB_CROUCH_EASE_RATE * scale * timeStep );
+	}
 	f->root.p.y -= f->gaitBlend * ( crouch + bob * b3ComputeCosSin( 4.0f * B3_PI * ( f->gaitPhase - 0.5f * bobStance ) ).cosine );
 	f->gaitCrouch = crouch;
 	f->gaitBob = bob;

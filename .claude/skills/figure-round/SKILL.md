@@ -555,6 +555,14 @@ Zehen und Fersen 37 mm, Hände 15 mm, Becken 10 mm, Becken tief ab 15 cm unter d
 - **Die Grenze eines älteren Tests lockert nur der Nutzer.** `SteerTurnStepTest` hielt das Ziel aus Runde 157 fest. Dass
   die ruhige Umkehr es verfehlt, stand vor dem Bau als Frage an den Nutzer, mit der schnelleren Variante als
   Alternative.
+- **Erst sehen, welche Größe springt.** Runde 164: Das Becken sprang, aber die Spur zeigte, dass schon die Wurzel
+  sprang, über ihr die Tiefe vor der Landung und über der das Landeziel des Fußes, 0,71 m in einem Update. Drei Spalten
+  mehr in der Spur fanden die Ursache in zwei Läufen.
+- **Ist die Ursache nicht zu nehmen, wird das Symptom so eng begrenzt wie sein Auslöser.** Das Landeziel langsamer
+  wandern zu lassen, machte alles schlimmer. Die Wurzel immer nur begrenzt schnell tiefer gehen zu lassen, half, brach
+  aber Trümmer und den Abstieg im Rennen. Erst die Grenze nur in der Zehntelsekunde nach einem Sprung des Sticks ließ
+  alles andere unberührt: 6 statt 51 geänderte Stellen, alle Tests bestehen. Was bleibt, hier der Fuß, der in der Luft
+  umkehrt, steht als offene Zeile in der Tabelle.
 - **Größe der Figur.** Winkelbeschleunigungen wachsen bei kleineren Figuren mit 1 durch `nbFigureScale`, Längen
   und Geschwindigkeiten mit ihr.
 

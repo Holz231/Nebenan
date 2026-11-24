@@ -5992,6 +5992,44 @@ static int SteerWalkAboutTest( void )
 	return 0;
 }
 
+// A steered figure facing where it moves runs at 3.2 m/s, and the stick is let go for 0.2 s every 0.7 s for 4 s, from
+// eight moments of its gait five updates apart. Its pelvis jumps no more than 16 mm in an update (12.5): for a moment
+// after the velocity it is steered at jumps, the root goes down for a landing gently, see NB_CROUCH_EASE in
+// figure_steer.c. Until round 164 it jumped 39.9 mm: steered on again, the landing of a foot late in its swing jumped
+// behind the hip, and the root went down for it in that one update.
+static int SteerLetGoTest( void )
+{
+	float most = 0.0f;
+	for ( int part = 0; part < 8; ++part )
+	{
+		FigureScene scene;
+		CreateFigureScene( &scene, 1 );
+		nbFigureId figure = AddSteeredFigure( &scene, b3Vec3_zero, 0.0f );
+		StepFigures( &scene, 60 );
+		SteerVelocity( figure, (b3Vec3){ 0.0f, 0.0f, 3.2f } );
+		StepFigures( &scene, 180 + 5 * part );
+		b3Vec3 last = BonePosition( figure, nb_humanoidPelvis );
+		b3Vec3 before = last;
+		for ( int i = 0; i < 240; ++i )
+		{
+			SteerVelocity( figure, (b3Vec3){ 0.0f, 0.0f, i % 42 < 12 ? 0.0f : 3.2f } );
+			StepFigures( &scene, 1 );
+			ENSURE( nbFigure_GetInfo( figure ).state == nb_figureAnimated );
+			b3Vec3 now = BonePosition( figure, nb_humanoidPelvis );
+			if ( i >= 2 )
+			{
+				most = b3MaxFloat( most, b3Length( b3Add( b3Sub( now, last ), b3Sub( before, last ) ) ) );
+			}
+			before = last;
+			last = now;
+		}
+		DestroyFigureScene( &scene );
+	}
+	printf( "  let go for 0.2 s every 0.7 s at a run, the pelvis jumps %.1f mm in an update at most\n", 1000.0f * most );
+	ENSURE( most <= 0.016f );
+	return 0;
+}
+
 // A steered figure that does not face where it moves turns about as it runs at 4.3 m/s, from 8 places in its cycle, and
 // changes from going to the left to going backward, walking at 1.05 m/s from 19 places and running at 4.3 m/s from 8.
 // Turning about, its frame goes at nine tenths of its speed the other way after 1.26 s in the mean and 1.43 s at the
@@ -8636,6 +8674,7 @@ int FigureTest( void )
 	RUN_TEST( SteerWalkStopTest );
 	RUN_TEST( SteerWalkBendTest );
 	RUN_TEST( SteerWalkAboutTest );
+	RUN_TEST( SteerLetGoTest );
 	RUN_TEST( SteerLegLeadTest );
 	RUN_TEST( SteerRunDescentTest );
 	RUN_TEST( SteerRunFlightTest );
