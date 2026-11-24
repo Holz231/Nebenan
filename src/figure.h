@@ -300,6 +300,11 @@ typedef enum nbBalanceResult
 #define NB_FOOT_TWIST ( 35.0f * ( B3_PI / 180.0f ) )
 #define NB_FOOT_PIVOT ( 45.0f * ( B3_PI / 180.0f ) )
 
+// How many other steered figures a figure keeps to meet in an update, see nbFindMeetings, and the count that stands
+// for all of them where they are more
+#define NB_MEET_MOST 12
+#define NB_MEET_ALL -1
+
 typedef struct nbFigure
 {
 	nbBone* bones;
@@ -500,6 +505,10 @@ typedef struct nbFigure
 	float moverRadius;
 	float moverLow;
 	float moverHigh;
+	// The other steered figures its capsule can meet in this update, in the order of the figures, or NB_MEET_ALL for a
+	// count where they are more than NB_MEET_MOST, see nbFindMeetings
+	int meetOthers[NB_MEET_MOST];
+	int meetCount;
 	b3Vec3 moveVelocity;
 	b3Vec3 wishVelocity;
 	b3Vec3 askedVelocity;
@@ -721,6 +730,10 @@ b3WorldTransform nbMakeFrame( const nbWorld* world, b3Pos position, float headin
 // update while it stands, false where it falls
 void nbInitSteering( nbFigure* f, const b3WorldTransform* transforms );
 bool nbMoveSteered( nbWorld* world, int index, nbFigure* f, float timeStep, b3Vec3 up );
+
+// Which steered figures can meet in this update, from where they are at its start, see nbMoveSteered: each gets the
+// others its capsule can come near, in the order of the figures
+void nbFindMeetings( nbWorld* world, float timeStep, b3Vec3 up );
 
 // A steered figure stands again or is placed: still, on the ground, its feet where they stand
 void nbResetSteering( nbFigure* f );

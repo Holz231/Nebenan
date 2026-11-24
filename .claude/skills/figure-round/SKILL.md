@@ -572,6 +572,16 @@ Zehen und Fersen 37 mm, Hände 15 mm, Becken 10 mm, Becken tief ab 15 cm unter d
 - **Eine Variante bekommt einen Namen, den es noch nicht gab, und ihr Bau wird geprüft.** Ein Versuch dieser Runde baute
   nicht, und das Messskript lief auf einem alten Programm gleichen Namens weiter und lieferte Zahlen, die nichts
   bedeuteten.
+- **Ein Prüfskript, das einen Fehler verschluckt, erfindet Befunde.** Runde 166: `tests.sh` meldete 19 Fehlschläge
+  einzelner Figuren, während die Messwerkzeuge dieselbe Bibliothek bytegleich fanden. Die Testdatei übersetzte nicht,
+  und das Skript linkte die Objektdatei eines früheren Laufs mit dem alten Aufbau der Figur. Widersprechen sich zwei
+  Prüfungen, wird erst das Prüfwerkzeug angesehen; die Zahl der Tests in der letzten Zeile hätte es sofort gezeigt, 201
+  statt 202.
+- **Ein abgelegter Bau wird neu geprüft, nicht nachgeholt.** Der Patch aus Runde 154 passte nach zehn Runden nicht mehr.
+  Er bekam eine eigene Regel, die den Fehler der alten berichtigt, und neue frische Begegnungen; die frischen von damals
+  zählen nur noch als Entwicklung.
+- **Beim Zusammenführen von Hand wird jede Datei übersetzt, bevor gemessen wird.** „Beide Seiten behalten“ setzte einen
+  Test mitten in eine andere Funktion.
 - **Größe der Figur.** Winkelbeschleunigungen wachsen bei kleineren Figuren mit 1 durch `nbFigureScale`, Längen
   und Geschwindigkeiten mit ihr.
 

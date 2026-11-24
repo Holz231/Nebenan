@@ -6030,6 +6030,65 @@ static int SteerLetGoTest( void )
 	return 0;
 }
 
+// Two steered figures meet as their capsules, see nbMoveSteered. Walking toward each other head on, they slow down and
+// stand against each other: neither falls, neither is pushed back, and their frames stay as far apart as their two
+// capsules are wide, 0.612 m. Running into the back of a figure that walks ahead at 1.0 m/s, the faster goes on at
+// that speed behind it. And past a figure that stands 0.3 m to the side of its way it walks on, and that is not moved.
+// Until round 154 the capsule of one met the bones of the other and its probe took a swinging foot of the other for
+// ground that moves too fast to stand on: head on both fell as ragdolls, and so did the two of the other scenes.
+static int SteerMeetTest( void )
+{
+	const float pi = 3.14159265f;
+	for ( int part = 0; part < 3; ++part )
+	{
+		FigureScene scene;
+		CreateFigureScene( &scene, 1 );
+		const b3Vec3 starts[3] = { { 0.0f, 0.0f, 4.0f }, { 0.0f, 0.0f, 9.0f }, { 0.3f, 0.0f, 4.0f } };
+		nbFigureId first = AddSteeredFigure( &scene, b3Vec3_zero, 0.0f );
+		nbFigureId second = AddSteeredFigure( &scene, starts[part], part == 0 ? pi : 0.0f );
+		StepFigures( &scene, 30 );
+		nbSteer steerFirst = { { 0.0f, 0.0f, part == 1 ? 4.3f : 1.4f }, 0.0f, true };
+		float speed = part == 0 ? -1.4f : ( part == 1 ? 1.0f : 0.0f );
+		nbSteer steerSecond = { { 0.0f, 0.0f, speed }, part == 0 ? pi : 0.0f, part < 2 };
+		float closest = FLT_MAX;
+		float slowest = FLT_MAX;
+		for ( int i = 0; i < 480; ++i )
+		{
+			nbFigure_Steer( first, &steerFirst );
+			nbFigure_Steer( second, &steerSecond );
+			StepFigures( &scene, 1 );
+			nbFigureInfo info = nbFigure_GetInfo( first );
+			ENSURE( info.state == nb_figureAnimated );
+			ENSURE( nbFigure_GetInfo( second ).state == nb_figureAnimated );
+			b3Vec3 apart = b3SubPos( nbFigure_GetFrame( second ).p, nbFigure_GetFrame( first ).p );
+			closest = b3MinFloat( closest, sqrtf( apart.x * apart.x + apart.z * apart.z ) );
+			slowest = i >= 300 ? b3MinFloat( slowest, info.moveVelocity.z ) : slowest;
+		}
+		b3Vec3 a = b3ToVec3( nbFigure_GetFrame( first ).p );
+		b3Vec3 c = b3ToVec3( nbFigure_GetFrame( second ).p );
+		ENSURE( closest > 0.611f );
+		if ( part == 0 )
+		{
+			// they stand against each other where they met, between where they started
+			ENSURE( closest < 0.63f && c.z - a.z < 0.63f );
+			ENSURE( a.z > 1.0f && c.z < 3.0f );
+		}
+		else if ( part == 1 )
+		{
+			// behind the slower figure at its speed
+			ENSURE( slowest > 0.9f && c.z - a.z < 0.75f );
+		}
+		else
+		{
+			// past the standing figure, which stays where it is
+			ENSURE( a.z > 8.0f );
+			ENSURE( b3Length( b3Sub( c, starts[2] ) ) < 0.01f );
+		}
+		DestroyFigureScene( &scene );
+	}
+	return 0;
+}
+
 // A steered figure that does not face where it moves turns about as it runs at 4.3 m/s, from 8 places in its cycle, and
 // changes from going to the left to going backward, walking at 1.05 m/s from 19 places and running at 4.3 m/s from 8.
 // Turning about, its frame goes at nine tenths of its speed the other way after 1.26 s in the mean and 1.43 s at the
@@ -8675,6 +8734,7 @@ int FigureTest( void )
 	RUN_TEST( SteerWalkBendTest );
 	RUN_TEST( SteerWalkAboutTest );
 	RUN_TEST( SteerLetGoTest );
+	RUN_TEST( SteerMeetTest );
 	RUN_TEST( SteerLegLeadTest );
 	RUN_TEST( SteerRunDescentTest );
 	RUN_TEST( SteerRunFlightTest );

@@ -108,6 +108,11 @@ was schon verworfen wurde.
   Geschwindigkeit um mehr als 1 m/s höchstens mit 0,6 m/s tiefer (`NB_STEER_JUMP`, `NB_CROUCH_EASE`,
   `NB_CROUCH_EASE_RATE`, `crouchEase`). Immer begrenzt, bricht es Trümmer und den Abstieg im Rennen; das Landeziel
   selbst zu bremsen, macht alles schlimmer.
+- **Zwei gesteuerte Figuren.** Seit Runde 166 begegnen sie sich als Kapseln (`nbFindMeetings` einmal je Update,
+  `nbMeetCapsule`, `nbHasCapsule`): Die Knochen der anderen sind für Kapsel und Bodensonde nicht da, eine Wand steht
+  zwischen den Achsen, und näher als `NB_MEET_NEAR` nähert sich die eine höchstens mit `NB_MEET_SOFT` je Meter Abstand.
+  Vorher hielt die Bodensonde den schwingenden Fuß der anderen für zu schnellen Boden, und beide fielen. Gemessen mit
+  `meet154.c` und `check166.sh`; eine einzelne Figur bleibt bytegleich.
 - **Abheben gegen die Bewegung.** Gegen die Richtung gesteuert, in die sie sich bewegt, mit den Beinen rückwärts, hebt
   ein nachlaufender Fuß ab, sobald die Hüfte schneller von ihm weggeht, als sein Bein vor seiner Reichweite bremsen kann
   (`nbHipAway`, wie `NB_SWING_PULL` es misst), seit Runde 143. Ein schwingender Fuß rollt mit den Beinen rückwärts in
@@ -190,8 +195,8 @@ was schon verworfen wurde.
 (136), `SteerSideToBackLiftTest` (137), `SteerBackToForwardLiftTest` (138), `SteerWaitedFootTest` (140),
 `SteerSwitchAnswerTest` (141), `SteerBackToForwardEarlyTest` (143), `SteerSideToBackWalkTest` (144), `SteerRunTrackTest`
 (147), `SteerSpeedUpTest` (150), `SteerFasterRollTest` (151), `SteerLandToesTest` (152), `SteerTurnStepTest` (156),
-`SteerWalkStopTest` (158), `SteerWalkBendTest` (161), `SteerWalkAboutTest` (163), `SteerLetGoTest` (164), und für den
-Körper `FigureShoulderTest` (126) und `FigureSkinTest` (127): Ändert eine Runde die Knochen, fällt er, bis
-`tools/mannequin/make_skin.py` die Haut neu geschrieben hat, erst `dump_bones`, dann das Werkzeug. Die Hashes
-`NB_EXPECTED_…_HASH` ändern sich nur, wenn sich ein Lauf ändert, der dort festgehalten ist: Das ist erlaubt, wird aber
-in der Roadmap genannt.
+`SteerWalkStopTest` (158), `SteerWalkBendTest` (161), `SteerWalkAboutTest` (163), `SteerLetGoTest` (164),
+`SteerMeetTest` (166), und für den Körper `FigureShoulderTest` (126) und `FigureSkinTest` (127): Ändert eine Runde die
+Knochen, fällt er, bis `tools/mannequin/make_skin.py` die Haut neu geschrieben hat, erst `dump_bones`, dann das
+Werkzeug. Die Hashes `NB_EXPECTED_…_HASH` ändern sich nur, wenn sich ein Lauf ändert, der dort festgehalten ist: Das ist
+erlaubt, wird aber in der Roadmap genannt.

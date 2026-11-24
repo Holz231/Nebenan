@@ -8933,6 +8933,7 @@ void nbUpdateFigures( nbWorld* world, float timeStep )
 	b3Vec3 up = nbUpOf( world );
 	nbCollectDebrisHits( world );
 	nbFindEngaged( world );
+	nbFindMeetings( world, timeStep, up );
 	for ( int index = 0; index < world->figures.count; ++index )
 	{
 		nbFigure* f = world->figures.data + index;
@@ -9414,6 +9415,7 @@ void nbDestroyFigures( nbWorld* world )
 	nbArray_Free( world->freeFigures );
 	nbArray_Free( world->bodyToBone );
 	nbArray_Free( world->figurePelvises );
+	nbArray_Free( world->figureMeets );
 	if ( b3World_IsValid( world->physicsWorld ) && b3Body_IsValid( world->figureAnchor ) )
 	{
 		b3DestroyBody( world->figureAnchor );

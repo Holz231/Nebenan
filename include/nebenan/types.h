@@ -1460,7 +1460,8 @@ typedef struct nbFigureDef
 	/// off it for half a second, as a fist caught under the arm of the other, or pressed level by other figures with more
 	/// than half its weight at two checks in a row, it lets go and catches itself, see nb_figureBalancing. A second after
 	/// the last figure left the distance and back on its clip, its bones are kinematic again. It stays nb_figureAnimated,
-	/// see nbFigureInfo::following. Zero, the default, never follows, and two kinematic figures pass through each other.
+	/// see nbFigureInfo::following. Zero, the default, never follows, and the kinematic bones of two figures pass through
+	/// each other. Two steered figures meet as their capsules either way, see steered.
 	float engageRadius;
 
 	/// A ragdoll counts as lying still while its bones move slower than this on average, in meters per second
@@ -1478,7 +1479,11 @@ typedef struct nbFigureDef
 	bool startAsRagdoll;
 
 	/// A program steers the figure, see nbFigure_Steer: it moves through the world on its own feet, as the program wants,
-	/// see nbFigureSteering. nbFigure_Move places it.
+	/// see nbFigureSteering. nbFigure_Move places it. Two steered figures that stand animated meet as their capsules:
+	/// neither goes through the other or pushes it, and their bones are no walls and no ground for each other. Closer
+	/// than half a meter one slows down as it closes in on the other, turns aside where they are not head on, and walks
+	/// on behind a slower one at its speed. Head on they stand against each other until the program steers them apart.
+	/// Arms and legs reach beyond the capsules and can still pass through each other.
 	bool steered;
 	nbFigureSteering steering;
 
