@@ -1,0 +1,51 @@
+Regel für Runde 163, vor jedem Lauf mit den Geschwindigkeiten der unabhängigen Prüfung festgeschrieben. Gemessen wird gegen active-ragdoll-162, dessen Bibliothek die von Runde 161 ist.
+
+Worum es geht. Runde 162 hat gemessen, dass eine Figur mit Blick in Laufrichtung, die im Gehen schnell hin und her gesteuert wird, mit dem Bogen aus Runde 161 dem Stick nicht mehr folgt. Der Nutzer hat gewählt: eine Umkehr im Gehen bauen, die sanft bremst und dann dreht; der Bogen bleibt für Wenden darunter. Nach den Versuchen dieser Runde hat er zwischen der ruhigen und der schnelleren Umkehr die ruhige gewählt, mit ihrem Preis: Die Kehrtwende dauert in manchen Schrittphasen länger.
+
+Wie groß das Thema ist, Frage 1 des Skills. Gemessen mit tools/measure/steer162.py, 192 Läufe schnelles Steuern im Gehen je Gruppe der Entwicklung (Stick im Kreis mit 180 und 360 Grad je Sekunde, Zickzack um 90 Grad, Hin und Her alle 0,3 bis 1,0 s): Mit dem Bogen geht die Figur im Mittel −0,02 des gesteuerten Tempos in die gesteuerte Richtung, ohne Bogen 0,36; dafür sackt das Becken mit Bogen in 20 und 7 Läufen mehr als 30 mm unter den stetigen Gang, ohne in 94 und 80. Richtig wäre beides: folgen wie ohne Bogen, ruhig wie mit.
+
+Die Ursache, Update für Update verfolgt (gehend 1,12 m/s, Kehrtwende ohne Bogen). Ein Fuß, der beim Umkehren spät im Schwung ist, landet eine Schrittlänge voraus. Die Kapsel bremst mit 14 m/s² und geht dann mit 0,2 bis 0,3 m/s rückwärts von diesem Fuß weg, während der andere Fuß noch schwingt: Das Standbein verliert seinen Fuß, die Wurzel sackt, 83 mm nach 0,42 s. Mit dem Bogen umgeht die Figur das, indem sie weitergeht; dann folgt sie dem Stick nicht.
+
+Der Eingriff, in der Bibliothek, src/figure_steer.c, nbMoveSteered, nur für eine Figur, die mit Gehtempo gesteuert wird und mindestens 1 s geht, und nur mit walkBend über null. Erstens: Zeigt der Stick mehr als 150 Grad von der Blickrichtung weg, geht die Figur keinen Bogen, sie kehrt um. Ein Bogen, der läuft, endet, sobald der Stick so weit weg zeigt, und über jede Wende wird neu entschieden, wenn der Stick um mehr als 30 Grad springt. Zweitens, in der Umkehr: Die Kapsel bremst sanft, mit 4 m/s² wie beim Anhalten seit Runde 158, solange ein Fuß landet, wo er hinzielte. Drittens: Sie wird in der Umkehr nicht schneller, solange das Standbein seinen Fuß verliert, bevor der andere landet; sie wartet also auf den Fuß, statt von ihm wegzugehen. Dasselbe Warten gilt noch 0,5 s nach einem Bogen oder einer Umkehr. Danach dreht sie wie vor Runde 161 auf der Stelle. Mit walkBend 0 bleibt alles wie vor Runde 161, aus dem Stand und im Rennen ändert sich nichts.
+
+Die Varianten, je mit zwei Zahlen, Frage 2 des Skills: wie die Figur bei schnellem Steuern im Gehen folgt und in wie vielen von 192 Läufen das Becken mehr als 30 mm sackt, erste Gruppe der Entwicklung. Ohne Bogen 0,36 und 94, mit Bogen −0,02 und 20.
+ - Umkehr ab 120 Grad, ohne Warten: 0,30 und 54; in einzelnen Wenden sackt das Becken 420 statt 103 mm.
+ - Dazu sanft bremsen: 0,29 und 51; einzelne Wenden 355 mm.
+ - Dazu auf den Fuß warten: 0,29 und 35; einzelne Wenden 197 mm, davon 112 mm in der Wende um 135 Grad, wo der Bogen 8 mm hat.
+ - Dazu sofort zur gesteuerten Richtung drehen: 0,29 und 55; die Kehrtwende dauert 0,84 statt 1,02 s, einzelne Wenden 290 mm.
+ - Umkehr ab 150 Grad, sanft bremsen und warten: 0,18 und 23; einzelne Wenden 93 mm. Aber in einem Lauf springt das Becken 22,2 mm, als die Figur nach dem Kurs antritt.
+ - Dazu 0,5 s nach der Wende weiter warten, und nur wer mindestens 1 s geht: 0,18 und 21; einzelne Wenden 63 mm, kein Sprung des Beckens über 12,5 mm, Starts aus dem Stand an jeder Stelle gleich. Der Prototyp.
+ - Dazu zur gesteuerten Richtung drehen, sobald die Kapsel nicht wartet (die schnellere Umkehr): 0,18 und 36; Kehrtwende im Mittel 0,86 s, einzelne Wenden 126 mm, ein Sprung des Beckens von 22,6 mm. Vom Nutzer nicht gewählt.
+ - Dazu nach der Wende nur mit 4 m/s² antreten: 0,18 und 19, aber im Kreis mit 360 Grad je Sekunde springt das Becken bis 40,2 mm, und nach 90 Grad ist die Figur 0,06 s später auf Tempo. Verworfen.
+
+Bekannte Grenzen des Prototyps. Die Figur folgt schnellem Steuern mit 0,18, halb so gut wie ohne Bogen. Die Kehrtwende dauert im Mittel 1,02 statt 0,98 s, die Figur schaut im Mittel nach 1,12 statt 0,95 s zurück und in der ungünstigsten Schrittphase erst nach 1,66 statt 1,03 s. In der Kehrtwende ist an 21 von 72 Stellen ein Schwung kürzer als 0,25 s, mit dem Bogen an keiner: Die Figur setzt die Füße auf der Stelle um. Im Kreis mit 180 Grad je Sekunde folgt sie weiter mit 0,52 statt 0,80. In einem von 816 Läufen der Entwicklung, Kreis mit 360 Grad je Sekunde, springt das Becken 24,2 mm, als die Figur nach dem Kurs aus beinahe dem Stand antritt; dieselbe Art Sprung gibt es ohne Bogen häufiger, bis 44,4 mm.
+
+Tests des Prototyps. Von 199 Tests schlagen zwei an, beide erwartet. SteerTurnStepTest verlangt seit Runde 157, dass die Figur bei 1,05 m/s spätestens 1,2 s nach der Kehrtwende zurückschaut; mit der Umkehr sind es 1,62 s. Das ist der Preis, den der Nutzer gewählt hat; die Grenze wird auf 1,7 s gelockert, und das wird offen gesagt. SteerWalkBendTest prüft den Bogen an der Kehrtwende, die jetzt eine Umkehr ist; er prüft den Bogen künftig an der Wende um 90 Grad und die Umkehr eigens. Die Hashes des gesteuerten Gangs bleiben.
+
+Die Kosten, vor dem Festschreiben gezählt: Das Update von 20 gesteuerten Figuren führt 0,021 %, 0,020 % und 0,026 % mehr Befehle aus.
+
+Nimmt der Prototyp das Ziel, Frage 3 des Skills. Zum Teil: Er bleibt ruhig wie der Bogen, 21 und 17 statt 20 und 7 von 192 Läufen, und folgt mit 0,18 statt −0,02, aber nicht mit 0,36. Im Probelauf dieser Regel auf beiden Gruppen der Entwicklung sind alle Bedingungen erfüllt.
+
+Bedingungen, mit tools/measure/check163.sh und eval163.py auf den Tabellen aus gait155.py und steer162.py, auf den frischen Sätzen:
+ A1 Bei schnellem Steuern im Gehen geht die Figur im Mittel mindestens 0,12 mehr des gesteuerten Tempos in die gesteuerte Richtung als vorher und mindestens 0,10; auf der Entwicklung 0,18 statt −0,02. Beim Umkehren jede Sekunde mindestens 0,15; auf der Entwicklung 0,26 und 0,27.
+ A2 Bei schnellem Steuern im Gehen sackt das Becken in höchstens 35 % der Läufe, in denen es ohne Bogen sackt, mehr als 30 mm unter den stetigen Gang, und in höchstens 7 % der Läufe mehr als vorher; auf der Entwicklung 22 und 21 %, 1 und 10 Läufe mehr. Gezeigt nur, wenn es ohne Bogen in mindestens 20 % der Läufe sackt.
+ A3 In einzelnen Wenden im Gehen um 45 bis 180 Grad wächst die Summe, um die das Becken tiefer als 30 mm sackt, höchstens um 10 mm; auf der Entwicklung 63 statt 103 und 52 statt 60 mm.
+ A4 In der Kehrtwende im Gehen kommt die Figur höchstens 0,30 m weiter in die alte Richtung und 0,40 m zur Seite; auf der Entwicklung 0,19 und 0,21 m, 0,27 und 0,25 m, vorher 0,42 und 0,72 m.
+ A5 Der Preis ist begrenzt: In jeder Wende läuft die Figur wieder und schaut in die neue Richtung. Nach 90 und 135 Grad ist sie im Mittel höchstens 0,03 s später auf Tempo, nach der Kehrtwende höchstens 0,10 s später; sie schaut nach der Kehrtwende im Mittel höchstens 0,25 s später zurück und spätestens nach 1,85 s. Auf der Entwicklung 0,01, 0,00, 0,04 und 0,17 s, spätestens 1,66 und 1,62 s.
+ A6 In der Kehrtwende im Gehen ist an höchstens 40 % der Stellen ein Schwung kürzer als 0,25 s, auf der Entwicklung 29 %; in den anderen Wenden an höchstens 2 Stellen mehr als vorher.
+ A7 Einzelne Wechsel: Die Summe der Schienbeine über 37 mm wächst höchstens um 10 mm, die Stellen mit einem Fuß über 37 mm um 2, der härteste Sprung des Beckens um 2 mm, kein Standfuß dreht mehr als 46 Grad auf dem Boden. Fortlaufendes Steuern im Gehen: In höchstens 2 Läufen springt das Becken mehr als 2 mm über den härtesten Sprung vorher, ein Schienbein springt in höchstens 8 Updates mehr über 37 mm, und keine Figur verlässt den animierten Zustand.
+Schutz:
+ D1 Einzelne Wechsel: Alle Läufe im Rennen sind an jeder Stelle gleich, ebenso gehend das Losgehen, auch zur Seite und nach hinten, der stetige Gang, das Anhalten und der Wechsel ins Rennen. Fortlaufendes Steuern: Alle Läufe im Rennen sind gleich.
+ D2 Die Tabelle der Wechsel im Rennen mit festem Blick, where129.py auf ihren zwölf Sätzen, ist bytegleich.
+ D3 Mit walkBend 0 schreibt der Bau beide Tabellen des Stands davor mit walkBend 0, bytegleich.
+ D4 Alle Tests bestehen mit gcc und clang, mit unveränderten Sollwerten der Hashes; die Hashes sind mit 1, 2 und 4 Threads und beiden Compilern gleich.
+ D5 Das Update der Figuren führt höchstens 0,5 % mehr Befehle aus.
+
+Unabhängige Prüfung. Vier Sätze, deren Geschwindigkeiten vor dem Festschreiben auf keinem Stand gelaufen sind, geprüft mit tools/measure/speeds.py, in tools/measure/common.sh:
+  H178: gehend 1,0265, rennend 4,5265 m/s
+  H179: gehend 1,2465, rennend 3,2265 m/s
+  H180: gehend 1,4665, rennend 4,2665 m/s
+  H181: gehend 1,6965, rennend 3,8465 m/s
+Das ist der Satz fresh in check163.sh: 704 Läufe einzelner Wechsel und 544 Läufe fortlaufenden Steuerns, dazu beide noch einmal mit walkBend 0. Die Ränder vorab durchgerechnet: Der Eingriff gilt bis 2,0 m/s gesteuertem Tempo voll, das Gehen der frischen Sätze liegt mit 1,03 bis 1,70 m/s darunter; das langsamste liegt 0,02 m/s unter dem langsamsten der Entwicklung, und langsames Gehen ist die ungünstige Seite für die Zeit der Kehrtwende, deshalb hat A5 für den spätesten Fall 0,19 s Luft über der Entwicklung. Die Grenze von 150 Grad liegt 15 Grad über der Wende um 135 Grad und 30 Grad unter der Kehrtwende der einzelnen Wenden; im fortlaufenden Steuern kommen alle Winkel vor. Die Schwellen 30 mm und 0,25 s hängen an den gemessenen Größen selbst.
+
+Der saubere Bau muss auf beiden Gruppen der Entwicklung bytegleich zum Prototyp sein. Verfehlt er auf den frischen Sätzen eine Bedingung, wird er nicht gebaut, oder der Nutzer entscheidet; die Regel wird danach nicht geändert, und eine Messung, die nicht passt, wird nicht wiederholt.
