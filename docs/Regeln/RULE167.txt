@@ -1,0 +1,61 @@
+Regel für Runde 167, vor jedem Lauf mit den Geschwindigkeiten der unabhängigen Prüfung festgeschrieben. Gemessen wird gegen active-ragdoll-166.
+
+Worum es geht. Der Nutzer hat nach Runde 166 gemeldet: Die Beine gehen immer noch durcheinander, und das Losgehen und Losrennen ist noch nicht gut. Diese Regel gilt dem Ersten. Das Zweite wird in dieser Runde gemessen, nicht gebaut, siehe unten.
+
+Wie groß das Thema ist, Frage 1 des Skills. Bisher haben die Regeln gefragt, ob Füße und Knie über die Mitte des Beckens kreuzen. tools/measure/legs167.py misst zum ersten Mal die Formen: je Update, wie weit die Kapseln der Oberschenkel (Radius 7 cm) und der Schienbeine (6 cm) und die Füße der zwei Beine sich überlappen. Auf dem ersten Entwicklungssatz, 216 Läufe mit Blick in Laufrichtung: Im stetigen Gehen bis 12 mm. Im stetigen Rennen bis 60 mm, in 16,5 % der Updates über 20 mm: Der schwingende Fuß geht durch das stehende Schienbein. Beim Losrennen und Anhalten bis 60 mm. In Wenden um 90 und 180 Grad und im Hin und Her bis 139 mm: Oberschenkel und Schienbeine stecken ganz ineinander, in 80 von 144 Läufen tiefer als 60 mm. Richtig wäre: Die Formen der Beine berühren sich nicht.
+
+Die Ursachen, Update für Update verfolgt.
+ 1. Stetiges Rennen. Die Spur ist seit Runde 147 beim Rennen geradeaus 4,5 cm breit, die Knöchel stehen 22 mm neben der Mitte, ein Schienbein ist 12 cm dick. Der schwingende Fuß geht auf gerader Bahn am stehenden Schienbein vorbei und damit durch es hindurch.
+ 2. Wenden. Mit Blick in Laufrichtung dreht der Blick mit 4 rad/s, wo auch immer die Füße stehen, und die Beine drehen mit ihm. Steht der vordere Fuß auf der Seite, zu der gedreht wird, stehen nach 90 Grad beide Füße auf der falschen Seite des Körpers, und der hintere schwingt durch das stehende Bein. Der Schutz aus Runde 114 (NB_LEG_KEEP) hält nur die Beine unter einem festen Blick zurück, nicht den Blick selbst.
+
+Der Eingriff, in der Bibliothek.
+ 1. src/figure.c, der Schwung: Ein Fuß, der abhebt, während er näher als 0,12 m neben dem anderen steht, schwingt um das Fehlende, höchstens 0,10 m, zu seiner eigenen Seite aus und kommt bis zur Landung zurück, weich über je 0,4 des Schwungs. Wie weit, wird einmal beim Abheben festgelegt. Geht die Figur quer zu ihren Beinen, weicht er weniger aus, ab 30 Grad neben den Beinen nicht mehr. Wo er landet, ändert sich nicht.
+ 2. src/figure_steer.c, der Blick: Mit Blick in Laufrichtung dreht der Blick nur so weit, dass der linke Fuß 0,06 m links vom rechten bleibt, quer zum Blick, wo die Füße jetzt sind, und wartet darauf höchstens 0,5 s. Er wartet, bis der hintere Fuß am stehenden vorbeischwingt, und dreht dann über dem Standfuß.
+Beides gilt für jede gesteuerte Figur mit zwei Beinen, ein Spiel muss nichts aufrufen.
+
+Die Varianten, Frage 2 des Skills, je mit zwei Zahlen auf dem ersten Entwicklungssatz, alt gegen neu.
+ - Ausweichen nach der Nähe entlang des Schritts: stetiges Rennen 30 statt 60 mm, aber Fuß-Sprünge über 37 mm in 638 statt 27 Läufen. Verworfen.
+ - Ausweichen in jedem Update neu berechnet: stetiges Rennen −14 mm, aber Fuß-Sprünge in 109 statt 27 Läufen. Verworfen.
+ - Ausweichen beim Abheben festgelegt, Seite aus dem Schritt: stetiges Rennen 23 mm, Sprünge 32 statt 27, aber Anhalten 71 statt 60 mm. Verworfen.
+ - Ausweichen beim Abheben festgelegt, Seite aus dem Körper: stetiges Rennen 23 statt 60 mm, Anhalten 21 statt 60 mm. Teil des Prototyps.
+ - Dasselbe mit 0,14 m: stetiges Rennen 27 mm, Fuß-Sprünge in 48 statt 27 Läufen. Verworfen.
+ - Ohne die Grenze quer zu den Beinen: SteerSpeedUpTest (46,5 statt unter 39 mm) und SteerSideToBackWalkTest (52,0 statt unter 38 mm) schlagen an. Verworfen.
+ - Beine folgen dem Blick über den Schutz aus Runde 114: Wenden im Gehen 90 statt 138 mm, aber das Becken springt bis 610 statt 14 mm. Verworfen, zwei Fassungen.
+ - Der Blick wartet auf die Füße, höchstens 0,3 s: Wenden im Gehen 120 statt 138 mm, im Rennen 81 statt 130 mm. Zu kurz.
+ - Der Blick wartet höchstens 0,5, 0,7 oder 1,0 s: alle drei gleich, Wenden im Gehen 79 statt 138 mm (Oberschenkel und Schienbeine 30 mm), im Rennen 81 statt 130 mm. 0,5 s ist Teil des Prototyps.
+ - Abstand der Füße 0,03 oder 0,01 statt 0,06 m: Wenden im Rennen 87 und 98 statt 81 mm. Verworfen.
+ - Der äußere Fuß setzt um, sobald der Blick wartet: fertig gedreht nach 0,72 statt 0,85 s, aber das Becken springt im Rennen bis 126 statt 27 mm. Verworfen.
+ - Der Blick wartet nicht, wenn die Figur schneller als 0,5 m/s quer zum Blick geht: Wenden im Rennen 98 statt 46 mm. Verworfen; mit 1,0 m/s kein Unterschied.
+ - Das Landeziel hält Abstand zu Zehen und Ferse des anderen Fußes: Wenden im Gehen 59 statt 79 mm, aber das Becken springt bis 78 statt 12 mm. Verworfen.
+
+Nimmt der Prototyp das Ziel, Frage 3 des Skills. Auf beiden Entwicklungssätzen hält er alle Bedingungen unten. Die ganze Testsuite auf dem Prototyp: 197 von 202 bestehen. Drei Hashes des gesteuerten Gangs ändern sich, wie es sein muss. Zwei Grenzen früherer Runden reißen und werden mit dieser Runde gelockert, das ist der Preis: SteerWalkBendTest, die Wende um 90 Grad im Gehen schaut spätestens nach 0,85 statt 0,5 s in die neue Richtung, neue Grenze 0,9 s; SteerWalkAboutTest, die Kehrtwende im Gehen spätestens nach 1,48 statt 1,3 s, neue Grenze 1,5 s. Die Befehle des Figuren-Updates: +0,06 bis +0,19 %.
+
+Was offen bleibt und nicht Teil der Bedingungen ist. Ein Fuß landet noch auf den Zehen des anderen, wenn der Standfuß verdreht steht, bis 79 mm. In einem von 48 Läufen des Hin und Her auf dem zweiten Entwicklungssatz gehen die Schienbeine noch 111 mm ineinander: Der Blick wartet, während beide Füße 0,25 s stehen und die Kapsel beschleunigt. Deshalb zählt Z3 Läufe und nimmt nicht den tiefsten.
+
+Bedingungen, alt ist active-ragdoll-166, neu der saubere Bau, je auf einer Gruppe von Sätzen, gerechnet von tools/measure/eval167.py aus legs167.py, gait155.py und steer162.py. Überlappung heißt: die tiefste irgendeines Paars von Teilen der zwei Beine.
+Ziel:
+ Z1 Stetiges Rennen: Anteil der Updates mit mehr als 20 mm Überlappung höchstens ein Viertel von alt.
+ Z2 Stetiges Rennen, Losgehen und Losrennen, Anhalten: tiefste Überlappung je mindestens 20 mm kleiner als alt.
+ Z3 Wenden im Gehen, Wenden im Rennen, Hin und Her: Zahl der Läufe, in denen Oberschenkel oder Schienbeine tiefer als 60 mm ineinander gehen, je höchstens ein Fünftel von alt, wobei 1 Lauf immer erlaubt ist.
+ Z4 Dieselben drei Gruppen: Anteil der Updates mit mehr als 20 mm Überlappung je höchstens drei Viertel von alt.
+Schutz:
+ S1 Stetiges Gehen: tiefste Überlappung höchstens alt + 2 mm.
+ S2 gait155: Summe der Schienbein-Sprünge über 37 mm höchstens alt + 10 mm.
+ S3 gait155: Summe des Fußes unter dem Boden über 30 mm in Wenden im Gehen höchstens alt + 10 mm.
+ S4, S5 steer162: größter Becken-Sprung im Gehen und im Rennen je höchstens alt + 2 mm.
+ S6, S7 steer162 im Gehen: Zahl der Schienbein-Sprünge und Zahl der Läufe mit dem Fuß über 30 mm unter dem Boden je höchstens alt + 2.
+ S8, S9 steer162: Anteil des Tempos in gesteuerter Richtung im Gehen und im Rennen je mindestens alt − 0,03.
+ S10 Alle Tests bestehen mit den zwei gelockerten Grenzen und den neuen Hashes, mit gcc und clang, und die Hashes des Benchmarks der Figuren sind mit 1, 2 und 4 Threads gleich.
+ S11 Das Update der Figuren führt höchstens 1 % mehr Befehle aus.
+Preis, vorab festgelegt aus dem ersten Entwicklungssatz, auf dem zweiten geprüft:
+ P1 gait155: Läufe mit einem Fuß-Sprung über 37 mm höchstens 1,4 mal alt + 2 (37 statt 27, 47 statt 35).
+ P2 gait155: größter Fuß-Sprung höchstens alt + 6 mm (50,0 statt 45,9).
+ P3 gait155: größter Becken-Sprung höchstens alt + 4 mm (16,4 statt 14,3).
+ P4 steer162 im Rennen: Zahl der Schienbein-Sprünge höchstens 1,15 mal alt + 2 (159 statt 147, 196 statt 175).
+ P5, P6 gait155, Wenden im Gehen: Zeit, bis die Figur in die neue Richtung schaut, im Mittel höchstens alt + 0,15 s (0,72 statt 0,59), die längste höchstens alt + 0,45 s.
+
+Unabhängige Prüfung. Vier Sätze, deren Geschwindigkeiten vor dem Festschreiben auf keinem Stand gelaufen sind, geprüft mit tools/measure/speeds.py: h186 mit 1,0817 und 4,3917 m/s, h187 mit 1,2717 und 3,1717 m/s, h188 mit 1,4717 und 4,0917 m/s, h189 mit 1,6317 und 3,6117 m/s, die Gruppe fresh in check167.sh, 144 Läufe für die Beine. Die Ränder vorab durchgerechnet: Die Tempi liegen innerhalb der Entwicklungssätze, Gehen 1,05 bis 1,72 m/s, Rennen 3,05 bis 4,45 m/s. Für Z3 hat jede Gruppe 32 Läufe; kreuzen alt so viele wie in der Entwicklung, etwa 13 bis 24, sind neu 2 bis 4 erlaubt. P1 erwartet alt etwa 20 Läufe und erlaubt dann 30.
+
+Der saubere Bau ist derselbe Text wie der Prototyp ohne Schalter und muss auf beiden Entwicklungssätzen dieselben Zahlen schreiben. Verfehlt er auf den frischen Sätzen eine Bedingung, wird er nicht gebaut, oder der Nutzer entscheidet; die Regel wird danach nicht geändert, und eine Messung, die nicht passt, wird nicht wiederholt.
+
+Das Losgehen und Losrennen, gemessen, nicht gebaut. legs167.py schreibt für jeden Start, wie lange die Kapsel bis 95 % des gesteuerten Tempos braucht und wie viele Füße bis dahin gelandet sind. Auf dem Satz h5: Im Gehen hat die Kapsel 1,18 m/s nach 0,13 s, bevor der erste Fuß gelandet ist; im Rennen 4,45 m/s nach 0,45 s, nach einem gelandeten Fuß. Die Kapsel beschleunigt mit nbFigureSteering::acceleration, 10 m/s², was auch immer die Füße tun. Die Zahlen über alle Sätze und ein Vorschlag stehen im Bericht der Runde.
