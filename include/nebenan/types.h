@@ -1368,6 +1368,10 @@ typedef struct nbFigureSteering
 	/// step. Zero turns on the spot as until round 160: across its heading the figure goes no faster than 0.3 m/s,
 	/// so it nearly stops until it faces where it goes, and its pelvis sinks for the legs that wait. A game that
 	/// needs the short way sets zero. The default is 0.7. Running, it brakes and turns either way.
+	/// Steered more than 150 degrees off the way it faces, it does not bend: it turns about. It brakes gently while a
+	/// foot lands where it aimed, waits for the foot it stands on and turns on the spot, 0.2 m on the old way and
+	/// 0.3 m to the side, so it follows a stick that goes back and forth. It faces back after 1.1 s in the mean and
+	/// 1.7 s at the latest. Zero turns about as until round 160 too.
 	float walkBend;
 } nbFigureSteering;
 

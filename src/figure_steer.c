@@ -78,6 +78,19 @@
 // and 0.83 s.
 #define NB_WALK_BEND_FROM 0.5f
 
+// Steered more than 150 degrees off the way it faces, this is the cosine, a figure at a walk does not bend, it turns
+// about: bending, it walked on and did not go where a stick pointed that went back and forth, -0.02 of the steered
+// speed in the mean of 192 runs steered fast, and 0.18 turning about. It brakes gently while a foot lands where it
+// aimed, as it does stopping, see NB_STOP_GENTLE, and gets no faster while the leg it stands on loses its foot before
+// the other foot lands, see NB_TURN_HOLD_FROM: braking hard and going backward at once, it left the foot that had
+// landed a step ahead, and the pelvis sank 83 mm. A bend that goes on ends where it is steered that far off. A new
+// turn begins, and it is decided again whether it bends, where the direction it is steered in jumps by more than 30
+// degrees, NB_WALK_TURN_NEW is the cosine. For NB_TURN_HOLD_AFTER seconds after a bend or a turn about it still waits
+// for the leg it stands on: setting off again at once, the pelvis jumped 22 mm in a run.
+#define NB_WALK_ABOUT -0.866f
+#define NB_WALK_TURN_NEW 0.866f
+#define NB_TURN_HOLD_AFTER 0.5f
+
 // A plane whose normal points down more than this, its cosine to up, is a ceiling, not a wall
 #define NB_STEER_CEILING 0.1f
 
@@ -478,6 +491,9 @@ bool nbMoveSteered( nbWorld* world, int index, nbFigure* f, float timeStep, b3Ve
 	f->steeredSpeed = b3Length( wish );
 	bool capped = false;
 	bool bends = false;
+	bool about = false;
+	bool aboutBrakes = false;
+	bool walked = false;
 	if ( f->steer.faceVelocity )
 	{
 		// Facing where it moves, it goes across its heading and backward no faster than a step to the side or back, see
@@ -510,10 +526,22 @@ bool nbMoveSteered( nbWorld* world, int index, nbFigure* f, float timeStep, b3Ve
 			float wanted = b3Length( asked );
 			float onward = b3MaxFloat( b3Dot( flat, forward ), 0.0f );
 			bool can = bend > 0.0f && f->gaitOn && f->boneCount == nb_humanoidBoneCount && f->onGround;
-			if ( f->turnCapped == false )
+			// Steered far off the way it faces it turns about instead, see NB_WALK_ABOUT, once it has walked for a while:
+			// from standing it turns as above
+			bool within = b3Dot( asked, forward ) >= NB_WALK_ABOUT * wanted;
+			bool fresh = f->turnCapped == false ||
+						 b3Dot( asked, f->turnAsked ) < NB_WALK_TURN_NEW * wanted * b3Length( f->turnAsked );
+			if ( fresh )
 			{
-				f->turnBends = can && onward >= NB_WALK_BEND_FROM * bend * wanted;
+				f->turnBends = can && within && onward >= NB_WALK_BEND_FROM * bend * wanted;
+				f->turnAbout = false;
 			}
+			f->turnBends = f->turnBends && within;
+			f->turnAsked = asked;
+			about = can && within == false && f->turnBends == false && f->walkTime >= NB_STOP_WALKED;
+			aboutBrakes = about && onward > 0.0f;
+			f->turnAbout = can && ( f->turnAbout || about );
+			walked = f->turnBends || f->turnAbout;
 			capped = true;
 			if ( f->turnBends && can )
 			{
@@ -549,18 +577,22 @@ bool nbMoveSteered( nbWorld* world, int index, nbFigure* f, float timeStep, b3Ve
 	// A turn ends where the velocity it wants is no longer capped for its heading, see nbFigureSteering::walkBend
 	f->turnCapped = capped;
 	f->turnBends = f->turnBends && capped;
+	f->turnAbout = f->turnAbout && capped;
+	f->turnSince = capped && walked ? 0.0f : b3MinFloat( f->turnSince + timeStep, 10.0f );
 
-	// At a walk it waits for its feet, see NB_WALK_STEERED: turning, it gets no faster while the leg it stands on loses
-	// its foot before the other foot lands, and stopping, it brakes gently while a foot lands where it aimed
+	// At a walk it waits for its feet, see NB_WALK_STEERED: turning, turning about and for a moment after a bend or a
+	// turn about, see NB_TURN_HOLD_AFTER, it gets no faster while the leg it stands on loses its foot before the other
+	// foot lands, and stopping or braking to turn about, it brakes gently while a foot lands where it aimed
 	f->walkTime = f->gaitOn && f->gaitRun <= 0.0f ? f->walkTime + timeStep : 0.0f;
 	if ( f->gaitOn && f->boneCount == nb_humanoidBoneCount && f->onGround )
 	{
 		float walks = 1.0f - f->gaitRun;
 		walks *= 1.0f - b3ClampFloat( ( f->steeredSpeed / scale - NB_WALK_STEERED ) / NB_WALK_STEERED_FADE, 0.0f, 1.0f );
-		bool turning = fabsf( nbWrapAngle( f->headingWant - f->heading ) ) > NB_TURN_HOLD_FROM &&
+		bool after = f->steer.faceVelocity && capped == false && f->turnSince < NB_TURN_HOLD_AFTER;
+		bool turning = ( fabsf( nbWrapAngle( f->headingWant - f->heading ) ) > NB_TURN_HOLD_FROM || about || after ) &&
 					   fabsf( f->slope ) < NB_TURN_HOLD_LEVEL && f->stairWeight <= 0.0f;
 		bool faster = b3LengthSquared( wish ) > b3LengthSquared( flat );
-		bool stopping = b3LengthSquared( wish ) < 0.01f * scale * scale && f->walkTime >= NB_STOP_WALKED;
+		bool stopping = ( b3LengthSquared( wish ) < 0.01f * scale * scale && f->walkTime >= NB_STOP_WALKED ) || aboutBrakes;
 		for ( int k = 0; k < 2 && turning && faster; ++k )
 		{
 			if ( f->footSwings[k] == false && f->footSwings[1 - k] && f->footOut[k] < f->swingRest[1 - k] )

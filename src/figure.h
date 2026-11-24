@@ -568,6 +568,12 @@ typedef struct nbFigure
 	// a bend through this turn, decided as the turn began, see nbFigureSteering::walkBend
 	bool turnCapped;
 	bool turnBends;
+	// The velocity it was steered at in the last update of this turn: a new turn begins where it jumps, see
+	// NB_WALK_TURN_NEW in figure_steer.c. Whether it turns about in this turn, see NB_WALK_ABOUT, and for how long no
+	// turn it bent through or turned about in has been going on, in seconds, see NB_TURN_HOLD_AFTER
+	b3Vec3 turnAsked;
+	bool turnAbout;
+	float turnSince;
 	bool footHolds[2];
 	float headingWant;
 	float footPush[2];

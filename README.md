@@ -2036,10 +2036,14 @@ Seit `active-ragdoll-161` geht eine Figur mit Blick in Laufrichtung, die im Gehe
 einen Bogen, statt fast stehen zu bleiben und auf der Stelle zu drehen: Die Schritte bleiben im Takt, und das Becken
 sackt in Wenden kaum noch. Dafür braucht die Kehrtwende im Gehen bis 0,42 m weiter und 0,73 m zur Seite. Ein Spiel, das
 den kurzen Weg braucht, setzt `nbFigureDef::steering.walkBend` auf 0; aus dem Stand und im Rennen dreht die Figur wie
-bisher. Siehe „Im Gehen einen Bogen durch die Wende gehen“ in [Optimierungen.md](docs/Optimierungen.md). Am Hang und auf
-Treppen misst die Figur die Steigung ihres Wegs: Bergauf landet ein Fuß weiter vorn, bergab näher unter dem Körper, so
-reicht das vordere Bein so weit hinauf wie das hintere hinunter, und die Schritte werden kürzer, auf 20° um ein Fünftel.
-Die Feder unter der Kapsel folgt der Ebene, die der Fühler findet, statt am Hang hinterherzuhängen, und vor dem
+bisher. Siehe „Im Gehen einen Bogen durch die Wende gehen“ in [Optimierungen.md](docs/Optimierungen.md). Seit
+`active-ragdoll-163` kehrt sie um, statt einen Bogen zu gehen, wenn der Stick mehr als 150 Grad von der Blickrichtung
+weg zeigt: Sie bremst sanft, wartet auf den Fuß, auf dem sie steht, und dreht auf der Stelle. So folgt sie einem Stick,
+der hin und her geht, und die Kehrtwende braucht nur noch 0,21 statt 0,41 m Weg; dafür schaut sie im Mittel erst nach
+1,12 statt 0,95 s zurück. Siehe „Umkehr im Gehen statt Bogen“ in [Optimierungen.md](docs/Optimierungen.md). Am Hang und
+auf Treppen misst die Figur die Steigung ihres Wegs: Bergauf landet ein Fuß weiter vorn, bergab näher unter dem Körper,
+so reicht das vordere Bein so weit hinauf wie das hintere hinunter, und die Schritte werden kürzer, auf 20° um ein
+Fünftel. Die Feder unter der Kapsel folgt der Ebene, die der Fühler findet, statt am Hang hinterherzuhängen, und vor dem
 Aufsetzen geht die Hüfte so tief, wie das Bein den wirklichen Landepunkt braucht. Auf einer Rampe von 20° wippt die
 Hüfte so um 2 cm, und in einem Update bewegt sie sich gegen die Kapsel um höchstens 2 cm. Auf einer Treppe setzt die
 Figur ihre Füße Stufe für Stufe: Vor jedem Schwung sucht sie am Ziel mit Strahlen nach einer Kante, misst die Stufe aus
@@ -3740,7 +3744,7 @@ lange die Threads im Löser rechnen und worauf sie sonst warten.
 ## Tests und Benchmark
 
 ```sh
-build/bin/nebenan_test            # 199 Tests: Geometrie, Voronoi, Hüllen, Öffnungen, Stöße, Stützgraph, Etagen, Lastprüfung, Mauern, Schutt, Ruhe, Durchschlagen, Threads, Knoten, große Blöcke, Gelenke in Paketen und Gebieten, Suchbaum, Kontaktlisten, Streaming, Stream, Laden im Hintergrund, Speichern und Zurückholen, gemeinsamer Thread-Pool, Ruhe-Prüfung auf den Workern, Schritt auf eigenem Thread, Schritte pro Bild, Takt der Physik, Wahl der Threads, Profil und Skalierung, Figuren, Ausgleichsschritt, Abfangen, rudernde Arme, Muskeln, Treffer entlang des Skeletts, Kegel je Richtung, Gelenke wie beim Menschen, Drehung um die Längsachse, Armature, ruhiger Kopf, Drücken, Füße auf dem Boden, Platz zum Aufstehen, Ragdoll durch die Wand, dünne Bretter, Determinismus …
+build/bin/nebenan_test            # 200 Tests: Geometrie, Voronoi, Hüllen, Öffnungen, Stöße, Stützgraph, Etagen, Lastprüfung, Mauern, Schutt, Ruhe, Durchschlagen, Threads, Knoten, große Blöcke, Gelenke in Paketen und Gebieten, Suchbaum, Kontaktlisten, Streaming, Stream, Laden im Hintergrund, Speichern und Zurückholen, gemeinsamer Thread-Pool, Ruhe-Prüfung auf den Workern, Schritt auf eigenem Thread, Schritte pro Bild, Takt der Physik, Wahl der Threads, Profil und Skalierung, Figuren, Ausgleichsschritt, Abfangen, rudernde Arme, Muskeln, Treffer entlang des Skeletts, Kegel je Richtung, Gelenke wie beim Menschen, Drehung um die Längsachse, Armature, ruhiger Kopf, Drücken, Füße auf dem Boden, Platz zum Aufstehen, Ragdoll durch die Wand, dünne Bretter, Determinismus …
 build/bin/nebenan_benchmark 4     # Zahl = Threads für Bruch und Physik, 0 = so viele, wie ein Spiel nähme
 build/bin/nebenan_benchmark scaling   # die Städte unter Beschuss mit 1, 2, 4 … Threads und die Tabelle der Skalierung
 build/bin/nebenan_benchmark rates     # die Städte unter Beschuss mit 30, 60 und 120 Hz, was eine simulierte Sekunde kostet

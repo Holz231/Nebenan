@@ -9023,6 +9023,7 @@ nbFigureId nbCreateFigure( nbWorldId worldId, const nbFigureDef* def )
 	memset( f, 0, sizeof( nbFigure ) );
 	f->generation = generation;
 	f->boneCount = boneCount;
+	f->turnSince = 10.0f;
 	f->def = *def;
 	f->def.rig = NULL;
 	for ( int k = 0; k < nb_figureClipCount; ++k )

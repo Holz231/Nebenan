@@ -96,6 +96,12 @@ was schon verworfen wurde.
   gesteuerten Richtung. Entschieden wird einmal am Beginn der Wende (`turnCapped`, `turnBends`, `NB_WALK_BEND_FROM`):
   aus dem Stand dreht sie auf der Stelle. Im Rennen bremst und dreht sie. `walkBend` 0 ist der Stand davor, bytegleich.
   Gemessen mit `gait155.py` (`under`, `short`, `onward`, `sideways`).
+- **Umkehr im Gehen.** Zeigt der Stick mehr als 150 Grad von der Blickrichtung weg (`NB_WALK_ABOUT`), geht die Figur
+  seit Runde 163 keinen Bogen: Sie bremst mit 4 m/s², solange ein Fuß landet, wo er hinzielte, wird nicht schneller,
+  solange das Standbein seinen Fuß verliert, auch 0,5 s nach der Wende (`NB_TURN_HOLD_AFTER`, `turnSince`), und dreht
+  auf der Stelle. Über eine Wende wird neu entschieden, wenn der Stick um mehr als 30 Grad springt (`turnAsked`,
+  `NB_WALK_TURN_NEW`). Ohne das Warten ging die Kapsel rückwärts von dem Fuß weg, der voraus gelandet war. Bis 135 Grad
+  ist der Bogen besser. Gemessen mit `steer162.py` (`along`, `under`) und `gait155.py`.
 - **Abheben gegen die Bewegung.** Gegen die Richtung gesteuert, in die sie sich bewegt, mit den Beinen rückwärts, hebt
   ein nachlaufender Fuß ab, sobald die Hüfte schneller von ihm weggeht, als sein Bein vor seiner Reichweite bremsen kann
   (`nbHipAway`, wie `NB_SWING_PULL` es misst), seit Runde 143. Ein schwingender Fuß rollt mit den Beinen rückwärts in
@@ -178,7 +184,8 @@ was schon verworfen wurde.
 (136), `SteerSideToBackLiftTest` (137), `SteerBackToForwardLiftTest` (138), `SteerWaitedFootTest` (140),
 `SteerSwitchAnswerTest` (141), `SteerBackToForwardEarlyTest` (143), `SteerSideToBackWalkTest` (144), `SteerRunTrackTest`
 (147), `SteerSpeedUpTest` (150), `SteerFasterRollTest` (151), `SteerLandToesTest` (152), `SteerTurnStepTest` (156),
-`SteerWalkStopTest` (158), `SteerWalkBendTest` (161), und für den Körper `FigureShoulderTest` (126) und `FigureSkinTest`
-(127): Ändert eine Runde die Knochen, fällt er, bis `tools/mannequin/make_skin.py` die Haut neu geschrieben hat, erst
-`dump_bones`, dann das Werkzeug. Die Hashes `NB_EXPECTED_…_HASH` ändern sich nur, wenn sich ein Lauf ändert, der dort
-festgehalten ist: Das ist erlaubt, wird aber in der Roadmap genannt.
+`SteerWalkStopTest` (158), `SteerWalkBendTest` (161), `SteerWalkAboutTest` (163), und für den Körper
+`FigureShoulderTest` (126) und `FigureSkinTest` (127): Ändert eine Runde die Knochen, fällt er, bis
+`tools/mannequin/make_skin.py` die Haut neu geschrieben hat, erst `dump_bones`, dann das Werkzeug. Die Hashes
+`NB_EXPECTED_…_HASH` ändern sich nur, wenn sich ein Lauf ändert, der dort festgehalten ist: Das ist erlaubt, wird aber
+in der Roadmap genannt.

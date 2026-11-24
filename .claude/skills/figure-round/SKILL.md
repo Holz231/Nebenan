@@ -541,6 +541,20 @@ Zehen und Fersen 37 mm, Hände 15 mm, Becken 10 mm, Becken tief ab 15 cm unter d
   Schutz in jede Regel, die an Kapsel oder Blickrichtung dreht, mit der Größe „folgt“.
 - **Ruhe des Körpers und Folgen des Sticks sind zwei Größen, und beide stehen in der Regel.** Eine Änderung, die nur an
   der einen gemessen wird, kann die andere unbemerkt kosten.
+- **Eine verfolgte Ursache schlägt drei Varianten.** Runde 163: Sanft bremsen allein half kaum. Erst die Spur Update für
+  Update zeigte, dass die Kapsel rückwärts von dem Fuß wegging, der eine Schrittlänge voraus gelandet war; darauf zu
+  warten, halbierte das Sacken.
+- **Alte Ausgaben einer Variante gleichen Namens sind eine falsche Abweichung.** Der Probelauf meldete die Tabelle mit
+  festem Blick als verschieden, weil im Ordner der Variante Dateien einer früheren Variante desselben Namens lagen.
+  Prüfskripte räumen ihre Ausgaben vor dem Lauf, und eine verfehlte Schutzbedingung wird erst auf ihre Ursache geprüft,
+  bevor sie als Fehler des Baus gilt.
+- **Eine Zählung über gemischte Tempi hängt am Mix.** A2 der Runde 163 zählte Läufe mit gesacktem Becken über alle
+  Gehtempi. Auf der Entwicklung 11 und 9 %, auf den frischen Sätzen 23 %, 22 von 29 Läufen bei den zwei langsamsten
+  Tempi. Eine solche Bedingung wird je Tempo angesehen, bevor ihre Grenze festgeschrieben wird, und das langsamste
+  frische Tempo liegt nicht unter dem langsamsten der Entwicklung, wenn langsam die ungünstige Seite ist.
+- **Die Grenze eines älteren Tests lockert nur der Nutzer.** `SteerTurnStepTest` hielt das Ziel aus Runde 157 fest. Dass
+  die ruhige Umkehr es verfehlt, stand vor dem Bau als Frage an den Nutzer, mit der schnelleren Variante als
+  Alternative.
 - **Größe der Figur.** Winkelbeschleunigungen wachsen bei kleineren Figuren mit 1 durch `nbFigureScale`, Längen
   und Geschwindigkeiten mit ihr.
 

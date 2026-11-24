@@ -1,0 +1,123 @@
+diff --git a/src/figure.c b/src/figure.c
+index f8199e2..c83cc0c 100644
+--- a/src/figure.c
++++ b/src/figure.c
+@@ -9023,6 +9023,7 @@ nbFigureId nbCreateFigure( nbWorldId worldId, const nbFigureDef* def )
+ 	memset( f, 0, sizeof( nbFigure ) );
+ 	f->generation = generation;
+ 	f->boneCount = boneCount;
++	f->turnSince = 10.0f;
+ 	f->def = *def;
+ 	f->def.rig = NULL;
+ 	for ( int k = 0; k < nb_figureClipCount; ++k )
+diff --git a/src/figure.h b/src/figure.h
+index 65e01c0..a9722e5 100644
+--- a/src/figure.h
++++ b/src/figure.h
+@@ -568,6 +568,9 @@ typedef struct nbFigure
+ 	// a bend through this turn, decided as the turn began, see nbFigureSteering::walkBend
+ 	bool turnCapped;
+ 	bool turnBends;
++	b3Vec3 turnAsked;
++	bool turnPivots;
++	float turnSince;
+ 	bool footHolds[2];
+ 	float headingWant;
+ 	float footPush[2];
+diff --git a/src/figure_steer.c b/src/figure_steer.c
+index 9221ebf..933bd3f 100644
+--- a/src/figure_steer.c
++++ b/src/figure_steer.c
+@@ -478,6 +478,10 @@ bool nbMoveSteered( nbWorld* world, int index, nbFigure* f, float timeStep, b3Ve
+ 	f->steeredSpeed = b3Length( wish );
+ 	bool capped = false;
+ 	bool bends = false;
++	bool reverses = false;
++	bool reversal = false;
++	bool walked = false;
++	bool held = false;
+ 	if ( f->steer.faceVelocity )
+ 	{
+ 		// Facing where it moves, it goes across its heading and backward no faster than a step to the side or back, see
+@@ -510,10 +514,26 @@ bool nbMoveSteered( nbWorld* world, int index, nbFigure* f, float timeStep, b3Ve
+ 			float wanted = b3Length( asked );
+ 			float onward = b3MaxFloat( b3Dot( flat, forward ), 0.0f );
+ 			bool can = bend > 0.0f && f->gaitOn && f->boneCount == nb_humanoidBoneCount && f->onGround;
++#ifdef NB_X_REV
++			bool within = b3Dot( asked, forward ) >= NB_X_REV * wanted;
++			bool fresh = f->turnCapped == false || b3Dot( asked, f->turnAsked ) < 0.866f * wanted * b3Length( f->turnAsked );
++			if ( fresh )
++			{
++				f->turnBends = can && within && onward >= NB_WALK_BEND_FROM * bend * wanted;
++				f->turnPivots = false;
++			}
++			f->turnBends = f->turnBends && within;
++			f->turnAsked = asked;
++			reversal = can && within == false && f->turnBends == false && f->walkTime >= NB_STOP_WALKED;
++			reverses = reversal && onward > 0.0f;
++			f->turnPivots = can && ( f->turnPivots || reversal );
++			walked = f->turnBends || f->turnPivots;
++#else
+ 			if ( f->turnCapped == false )
+ 			{
+ 				f->turnBends = can && onward >= NB_WALK_BEND_FROM * bend * wanted;
+ 			}
++#endif
+ 			capped = true;
+ 			if ( f->turnBends && can )
+ 			{
+@@ -549,6 +569,8 @@ bool nbMoveSteered( nbWorld* world, int index, nbFigure* f, float timeStep, b3Ve
+ 	// A turn ends where the velocity it wants is no longer capped for its heading, see nbFigureSteering::walkBend
+ 	f->turnCapped = capped;
+ 	f->turnBends = f->turnBends && capped;
++	f->turnPivots = f->turnPivots && capped;
++	f->turnSince = capped && walked ? 0.0f : b3MinFloat( f->turnSince + timeStep, 10.0f );
+ 
+ 	// At a walk it waits for its feet, see NB_WALK_STEERED: turning, it gets no faster while the leg it stands on loses
+ 	// its foot before the other foot lands, and stopping, it brakes gently while a foot lands where it aimed
+@@ -559,15 +581,32 @@ bool nbMoveSteered( nbWorld* world, int index, nbFigure* f, float timeStep, b3Ve
+ 		walks *= 1.0f - b3ClampFloat( ( f->steeredSpeed / scale - NB_WALK_STEERED ) / NB_WALK_STEERED_FADE, 0.0f, 1.0f );
+ 		bool turning = fabsf( nbWrapAngle( f->headingWant - f->heading ) ) > NB_TURN_HOLD_FROM &&
+ 					   fabsf( f->slope ) < NB_TURN_HOLD_LEVEL && f->stairWeight <= 0.0f;
++#ifdef NB_X_HOLD
++		turning = turning || reversal;
++#ifdef NB_X_AFTER
++		turning = turning || ( f->steer.faceVelocity && capped == false && f->turnSince < NB_X_AFTER );
++#endif
++		turning = turning && fabsf( f->slope ) < NB_TURN_HOLD_LEVEL && f->stairWeight <= 0.0f;
++#endif
+ 		bool faster = b3LengthSquared( wish ) > b3LengthSquared( flat );
+ 		bool stopping = b3LengthSquared( wish ) < 0.01f * scale * scale && f->walkTime >= NB_STOP_WALKED;
++#ifdef NB_X_GENTLE
++		stopping = stopping || ( reverses && f->walkTime >= NB_STOP_WALKED );
++#endif
+ 		for ( int k = 0; k < 2 && turning && faster; ++k )
+ 		{
+ 			if ( f->footSwings[k] == false && f->footSwings[1 - k] && f->footOut[k] < f->swingRest[1 - k] )
+ 			{
++				held = true;
+ 				rate = b3MinFloat( rate, rate - walks * rate );
+ 			}
+ 		}
++#ifdef NB_X_SOFT
++		if ( faster && f->steer.faceVelocity && capped == false && f->turnSince < NB_X_AFTER )
++		{
++			rate = b3MinFloat( rate, rate + walks * ( NB_X_SOFT * scale - rate ) );
++		}
++#endif
+ 		for ( int k = 0; k < 2 && stopping; ++k )
+ 		{
+ 			if ( f->footSwings[k] && f->swingAlong[k] > NB_STOP_COMMIT )
+@@ -741,6 +780,12 @@ bool nbMoveSteered( nbWorld* world, int index, nbFigure* f, float timeStep, b3Ve
+ 		b3Vec3 local = b3InvRotateVector( tilt, f->moveVelocity );
+ 		bool moving = local.x * local.x + local.z * local.z > NB_STEER_FACE_SPEED * NB_STEER_FACE_SPEED;
+ 		want = moving ? b3Atan2( local.x, local.z ) : heading;
++#ifdef NB_X_PIVOT
++		bends = bends || ( capped && f->turnPivots );
++#endif
++#ifdef NB_X_PIVOT2
++		bends = bends || ( capped && f->turnPivots && held == false );
++#endif
+ 		if ( bends )
+ 		{
+ 			// Walking a bend, it turns to where it is steered, not to where it moves: it moves the way it faces
