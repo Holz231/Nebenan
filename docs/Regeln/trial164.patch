@@ -1,0 +1,77 @@
+diff --git a/src/figure.c b/src/figure.c
+index c83cc0c..f9f65ea 100644
+--- a/src/figure.c
++++ b/src/figure.c
+@@ -5609,6 +5609,8 @@ static void nbSteerFeet( const nbWorld* world, int index, nbFigure* f, const nbC
+ 	b3Vec3 velocity = b3MulSub( f->moveVelocity, b3Dot( f->moveVelocity, up ), up );
+ 	float speed = b3Length( velocity );
+ 	f->gaitSpeed += b3MinFloat( 1.0f, NB_GAIT_FOLLOW * timeStep ) * ( speed - f->gaitSpeed );
++	float crouchBefore = f->gaitCrouch;
++	(void)crouchBefore;
+ 	f->gaitCrouch = 0.0f;
+ 	f->gaitBob = 0.0f;
+ 
+@@ -6515,7 +6517,18 @@ static void nbSteerFeet( const nbWorld* world, int index, nbFigure* f, const nbC
+ 						( startsBack ? ( 1.0f - plan ) * ( NB_GAIT_AIM_SETTLE_START - NB_GAIT_AIM_SETTLE ) : 0.0f );
+ 					float settle = b3ClampFloat( ( settleTime - left ) / ( settleTime - NB_GAIT_AIM_SETTLED ), 0.0f, 1.0f );
+ 					kept = b3MaxFloat( kept, settle * settle * ( 3.0f - 2.0f * settle ) );
++#ifdef NB_X_AIMRATE
++					b3Vec3 move = b3MulSV( 1.0f - kept, b3SubPos( target, foot->target ) );
++					float far = b3Length( move );
++					float most = NB_X_AIMRATE * scale * timeStep;
++					if ( swing >= NB_GAIT_DESCEND && far > most )
++					{
++						move = b3MulSV( most / far, move );
++					}
++					foot->target = b3OffsetPos( foot->target, move );
++#else
+ 					foot->target = b3OffsetPos( target, b3MulSV( kept, b3SubPos( foot->target, target ) ) );
++#endif
+ 					foot->targetTilt = b3NLerp( tilt, foot->targetTilt, kept );
+ 					f->landHeading[k] = nbWrapAngle( landLegs + kept * nbWrapAngle( f->landHeading[k] - landLegs ) );
+ 					f->foothold[k] = b3TransformWorldPoint( end, (b3Vec3){ aim.sole.x, aim.sole.y + lift, aim.sole.z } );
+@@ -6812,6 +6825,12 @@ static void nbSteerFeet( const nbWorld* world, int index, nbFigure* f, const nbC
+ 	// the stance, walking only before a foot lands. Walking, it vaults over the leg it
+ 	// stands on, as high as the clip has it and down as far as the legs need to reach both feet, see nbPlaceFeet. With
+ 	// clips of its gait that move the root, it goes up and down as they have it instead of the bob and the vault.
++#ifdef NB_X_CROUCH
++#ifdef NB_X_EASE
++	if ( f->crouchEase > 0.0f )
++#endif
++	crouch = b3MinFloat( crouch, crouchBefore + NB_X_CROUCH * scale * timeStep );
++#endif
+ 	f->root.p.y -= f->gaitBlend * ( crouch + bob * b3ComputeCosSin( 4.0f * B3_PI * ( f->gaitPhase - 0.5f * bobStance ) ).cosine );
+ 	f->gaitCrouch = crouch;
+ 	f->gaitBob = bob;
+diff --git a/src/figure.h b/src/figure.h
+index 3e962e8..c0234ac 100644
+--- a/src/figure.h
++++ b/src/figure.h
+@@ -603,6 +603,8 @@ typedef struct nbFigure
+ 	float gaitTurnSize;
+ 	float gaitSway;
+ 	float gaitCrouch;
++	b3Vec3 steerBefore;
++	float crouchEase;
+ 	float gaitBend;
+ 	float gaitBendRate;
+ 
+diff --git a/src/figure_steer.c b/src/figure_steer.c
+index b1d104c..96de502 100644
+--- a/src/figure_steer.c
++++ b/src/figure_steer.c
+@@ -486,6 +486,14 @@ bool nbMoveSteered( nbWorld* world, int index, nbFigure* f, float timeStep, b3Ve
+ 	b3Vec3 velocity = f->moveVelocity;
+ 	float climb = b3Dot( velocity, up );
+ 	b3Vec3 flat = b3MulSub( velocity, climb, up );
++#ifdef NB_X_EASE
++	f->crouchEase = b3MaxFloat( f->crouchEase - timeStep, 0.0f );
++	if ( b3LengthSquared( b3Sub( f->steer.velocity, f->steerBefore ) ) > scale * scale )
++	{
++		f->crouchEase = NB_X_EASE;
++	}
++	f->steerBefore = f->steer.velocity;
++#endif
+ 	b3Vec3 wish = b3MulSub( f->steer.velocity, b3Dot( f->steer.velocity, up ), up );
+ 	b3Vec3 asked = wish;
+ 	f->steeredSpeed = b3Length( wish );

@@ -1,0 +1,45 @@
+Regel für Runde 164, vor jedem Lauf mit den Geschwindigkeiten der unabhängigen Prüfung festgeschrieben. Gemessen wird gegen active-ragdoll-163.
+
+Worum es geht. Runde 162 hat gemessen: Wird der Stick im Rennen für 0,2 s losgelassen und wieder gedrückt, springt das Becken bis 42,7 mm in einem Update. Der Nutzer hat das als nächsten Schritt gewählt.
+
+Wie groß das Thema ist, Frage 1 des Skills. Gemessen mit tools/measure/steer162.py, 408 Läufe fortlaufenden Steuerns im Rennen je Gruppe der Entwicklung. Im stetigen Rennen springt das Becken 4 bis 6 mm je Update. Beim Loslassen und Wiederdrücken springt es im Median 15,8 und 14,6 mm und höchstens 42,7 und 37,5 mm; über alle Kurse im Rennen springt es in 17 und 15 Läufen mehr als 30 mm, bis 42,7 und 60,4 mm. Richtig wäre kein Lauf über 30 mm.
+
+Die Ursache, Update für Update verfolgt (rennend 3,2 m/s, Stick 0,2 s losgelassen). Die Figur hat fast angehalten, ein Fuß ist bei 0,72 seines Schwungs. In dem Update, in dem der Stick wieder gedrückt wird, plant der Gang mit dem neuen Tempo: Das Landeziel dieses Fußes springt 0,71 m nach hinten, von 0,25 m vor der Hüfte auf 0,47 m hinter sie, den Schritt des Antritts. Die Wurzel geht vor einer Landung so tief, wie das Bein braucht, um das Ziel zu erreichen (gaitCrouch in nbSteerFeet, src/figure.c), und folgt dem Sprung des Ziels sofort: 30 mm tiefer in einem Update. In den Updates danach wandert das Ziel mit der Kapsel wieder vor, und die Wurzel kommt zurück. Das Becken macht einen Knick von 29 mm nach unten und 31 mm nach oben.
+
+Der Eingriff, in der Bibliothek. Springt die gesteuerte Geschwindigkeit von einem Update zum nächsten um mehr als 1 m/s, geht die Wurzel in den 0,1 s danach für eine Landung höchstens mit 0,6 m/s tiefer, 10 mm je Update, statt sofort. Sonst ändert sich nichts: Ohne Sprung des Sticks geht sie so schnell tief, wie die Beine es brauchen.
+
+Die Varianten, je mit zwei Zahlen, Frage 2 des Skills: der härteste Sprung des Beckens beim Loslassen im Rennen und die Zahl der Stellen einzelner Wechsel (gait155.py, 1 056 Stellen), die sich ändern, erste Gruppe der Entwicklung. Vorher 42,7 mm.
+ - Das Landeziel eines Fußes ab 0,4 seines Schwungs höchstens mit 4 oder 8 m/s wandern lassen, die Ursache selbst: 197,3 und 89,2 mm, 590 und 230 Stellen ändern sich; der Fuß landet dann nicht, wo der Gang ihn braucht. Verworfen.
+ - Die Wurzel immer höchstens mit 0,3 m/s tiefer gehen lassen: 8,7 mm, 568 Stellen ändern sich, das Becken einzelner Wechsel springt 15,6 statt 14,3 mm. Verworfen.
+ - Immer höchstens mit 0,6 m/s: 12,5 mm, 51 Stellen ändern sich. Aber zwei Tests schlagen an: Über Trümmern sind die Füße öfter in der Luft, und der Abstieg im Rennen ist zu spät. Verworfen.
+ - Nur 0,1 s nach einem Sprung des Sticks höchstens mit 0,6 m/s: 12,5 mm, 6 Stellen ändern sich, alle im Wechsel vom Gehen ins Rennen. Der Prototyp.
+ - Nur nach einem Sprung des Sticks höchstens mit 0,3 m/s: 12,2 mm, 121 Stellen ändern sich, und über alle Kurse im Rennen springt das Becken 43,3 statt 27,2 mm. Verworfen.
+
+Bekannte Grenzen des Prototyps. Der Fuß kehrt in der Luft weiter um, wenn sein Landeziel nach hinten springt: Beim Loslassen im Rennen springt ein Schienbein weiter bis 47 statt 53 mm, in 38 statt 45 Updates über 37 mm. Über alle Kurse im Rennen bleiben Sprünge des Beckens bis 27,2 und 41,0 mm, im Kreis mit 360 Grad je Sekunde und im Hin und Her, in 0 und 1 Läufen über 30 mm.
+
+Tests des Prototyps. Alle 200 Tests bestehen, die Sollwerte der Hashes bleiben.
+
+Die Kosten, vor dem Festschreiben gezählt: Das Update von 20 gesteuerten Figuren führt 0,038 %, 0,037 % und 0,044 % mehr Befehle aus.
+
+Nimmt der Prototyp das Ziel, Frage 3 des Skills. Fast: Über 30 mm springt das Becken im Rennen in 0 und 1 statt 17 und 15 Läufen. Im Probelauf dieser Regel auf beiden Gruppen der Entwicklung sind alle Bedingungen erfüllt, auf der ersten auch D2.
+
+Bedingungen, mit tools/measure/check164.sh und eval164.py auf den Tabellen aus steer162.py und gait155.py, auf den frischen Sätzen:
+ A1 Beim Loslassen für 0,2 s im Rennen springt das Becken höchstens halb so weit wie vorher und höchstens 20 mm; auf der Entwicklung 12,5 statt 42,7 und 12,8 statt 37,5 mm. Gezeigt nur, wenn es vorher mindestens 30 mm sind.
+ A2 Über alle Kurse fortlaufenden Steuerns im Rennen springt das Becken in höchstens einem Drittel der Läufe von vorher und 2 Läufen Boden mehr als 30 mm; auf der Entwicklung 0 statt 17 und 1 statt 15. Gezeigt nur, wenn es vorher mindestens 6 Läufe sind.
+ A3 Fortlaufendes Steuern im Rennen wird sonst nicht schlechter: höchstens 8 Updates mehr mit einem Schienbein über 37 mm, höchstens 8 Schwünge mehr unter 0,25 s, höchstens 2 Läufe mehr mit dem Becken über 30 mm unter dem stetigen Gang, der härteste Sprung eines Schienbeins und eines Fußes wächst höchstens um 2 mm, keine Figur verlässt den animierten Zustand.
+ A4 Fortlaufendes Steuern im Gehen: höchstens 2 Updates mehr mit einem Schienbein über 37 mm, höchstens 6 Schwünge mehr unter 0,25 s, höchstens 2 Läufe mehr mit gesacktem Becken, die härtesten Sprünge von Schienbein, Fuß und Becken wachsen höchstens um 2 mm.
+ A5 Einzelne Wechsel: Die Summe der Schienbeine über 37 mm wächst höchstens um 10 mm, die Stellen mit einem Fuß über 37 mm um 2, der härteste Sprung des Beckens um 2 mm; nach dem Wechsel vom Gehen ins Rennen ist die Figur im Mittel höchstens 0,03 s später auf Tempo.
+Schutz:
+ D1 Fortlaufendes Steuern mit dem Stick im Kreis, wo die gesteuerte Geschwindigkeit nie springt: alle Läufe gleich, gehend und rennend. Einzelne Wechsel: alle Stellen gleich außer dem Wechsel vom Gehen ins Rennen.
+ D2 Die Tabelle der Wechsel im Rennen mit festem Blick, where129.py auf ihren zwölf Sätzen: höchstens 2 Stellen mehr mit einem Schienbein über 37 mm und höchstens 10 mm mehr in Summe; im Probelauf 385 Stellen und 409 mm vorher wie nachher, 8 von 96 Dateien unterscheiden sich.
+ D3 Alle Tests bestehen mit gcc und clang, mit unveränderten Sollwerten der Hashes; die Hashes sind mit 1, 2 und 4 Threads und beiden Compilern gleich.
+ D4 Das Update der Figuren führt höchstens 0,5 % mehr Befehle aus.
+
+Unabhängige Prüfung. Vier Sätze, deren Geschwindigkeiten vor dem Festschreiben auf keinem Stand gelaufen sind, geprüft mit tools/measure/speeds.py, in tools/measure/common.sh:
+  H182: gehend 1,0915, rennend 4,4715 m/s
+  H183: gehend 1,3115, rennend 3,1115 m/s
+  H184: gehend 1,5315, rennend 4,1915 m/s
+  H185: gehend 1,6615, rennend 3,5315 m/s
+Das ist der Satz fresh in check164.sh: 544 Läufe fortlaufenden Steuerns und 704 Läufe einzelner Wechsel. Die Ränder vorab durchgerechnet: Die Schwelle von 1 m/s für einen Sprung des Sticks liegt unter jedem Loslassen und Wiederdrücken im Rennen (3,1 bis 4,5 m/s) und unter jedem Wechsel zwischen Gehen und Rennen der frischen Sätze (mindestens 1,8 m/s Unterschied). Im Gehen liegt sie mitten in den Sätzen: Losgehen springt um 1,09 bis 1,66 m/s, eine Wende um 45 Grad um 0,84 bis 1,27 m/s. Dort hat der Eingriff auf der Entwicklung keine Stelle geändert, und D1 verlangt das auch auf den frischen Sätzen. Das Rennen der frischen Sätze liegt mit 3,11 bis 4,47 m/s innerhalb der Entwicklung (3,05 bis 4,5 m/s).
+
+Der saubere Bau muss auf beiden Gruppen der Entwicklung bytegleich zum Prototyp sein. Verfehlt er auf den frischen Sätzen eine Bedingung, wird er nicht gebaut, oder der Nutzer entscheidet; die Regel wird danach nicht geändert, und eine Messung, die nicht passt, wird nicht wiederholt.
