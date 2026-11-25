@@ -74,6 +74,7 @@ int main( int argc, char** argv )
 	fd.steered = true;
 	if ( getenv( "TURNRATE" ) ) fd.steering.turnRate = (float)atof( getenv( "TURNRATE" ) );
 	if ( getenv( "ACC" ) ) fd.steering.acceleration = (float)atof( getenv( "ACC" ) );
+	if ( getenv( "START" ) ) fd.steering.startAcceleration = (float)atof( getenv( "START" ) );
 #ifdef LAB_BEND
 	// BEND: nbFigureSteering::walkBend, in the library from round 161 on, so only where the build asks for it
 	if ( getenv( "BEND" ) ) fd.steering.walkBend = (float)atof( getenv( "BEND" ) );

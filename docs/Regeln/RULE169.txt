@@ -1,0 +1,33 @@
+Regel für Runde 169, vor jedem Lauf mit den Geschwindigkeiten der unabhängigen Prüfung festgeschrieben. Gemessen wird der Stand dieser Runde, wie er ist, gegen denselben Stand mit eingeschaltetem sanftem Anfahren.
+
+Worum es geht. Der Nutzer hat gemeldet, das Losgehen und Losrennen sei noch nicht gut, und nach Runde 167 „c und dann a“ gewählt; c ist Runde 168, a ist diese Runde.
+
+Wie groß das Thema ist, Frage 1 des Skills. Gemessen in Runde 167 mit tools/measure/legs167.py auf zwölf Sätzen: Die Kapsel beschleunigt mit nbFigureSteering::acceleration, 10 m/s², was auch immer die Füße tun. Im Gehen hat sie 95 % ihres Tempos nach 0,10 bis 0,17 s, bevor ein Fuß gelandet ist; im Rennen nach 0,28 bis 0,43 s, nach einer Landung. Der Körper gleitet los, und die Beine holen ihn ein. Richtig wäre: Der Körper nimmt sein Tempo über die ersten Schritte auf. Ob es das ist, was den Nutzer stört, ist nicht gemessen; deshalb wird es als Schalter gebaut, den er in der Demo sieht.
+
+Der Eingriff, in der Bibliothek. nbFigureSteering::startAcceleration, in m/s²: Aus dem Stand wird eine gesteuerte Figur höchstens so schnell schneller, bis sie so schnell geht, wie sie will. Aus dem Stand heißt: Ihr Gang läuft noch nicht, und sie ist langsamer als 0,3 m/s. Läuft sie einmal, entscheiden acceleration und braking allein, auch in Wenden und Seitenwechseln. Null, der Standard, lässt alles wie bisher. Dazu nbFigure_SetSteering, mit dem ein Spiel die Steuerung einer lebenden Figur ändert. Die Demo bekommt zwei Regler, die das aufrufen.
+
+Die Varianten, Frage 2 des Skills, je mit zwei Zahlen auf dem ersten Entwicklungssatz, alt gegen neu.
+ - Standard von acceleration 4 statt 10, überall: Ein Fuß springt über 37 mm in 1 statt 37 Läufen, aber 14 von 203 Tests schlagen an, die Figur folgt dem Stick mit 0,44 statt 0,49 bis 0,52 des Tempos und wechselt im Rennen die Seite in 1,53 statt unter 1,15 s. Verworfen: zu viel ändert sich für jedes Spiel.
+ - Dasselbe mit 3 und 6: Folgen 0,42 und 0,47; mit 6 mehr Schienbein-Sprünge im Rennen, 242 statt 159. Verworfen.
+ - Sanft nur aus dem Stand, ausgelöst unter 0,3 m/s auch bei laufendem Gang: Gehtempo nach 0,25 bis 0,42 statt 0,10 bis 0,17 s, aber der Seitenwechsel im Rennen dauert 1,32 statt unter 1,15 s, weil er durch den Stillstand geht. Verworfen.
+ - Sanft nur aus dem Stand bei ruhendem Gang, als Standard eingeschaltet: Start wie oben, aber 14 Tests schlagen an, weil fast jeder aus dem Stand startet und die Schrittphase sich verschiebt. Verworfen als Standard, gebaut als Schalter.
+ - Als Schalter, Standard aus: Die Tabellen aller drei Werkzeuge sind auf dem ersten Entwicklungssatz bytegleich zu Runde 167, alle Tests bestehen mit unveränderten Hashes. Der Prototyp.
+
+Die Summen über die Wenden hängen an der Schrittphase. Mit einem Anfahren von 9,5 statt 10 m/s² aus dem Stand, das am Start nichts Sichtbares ändert, wird die Summe der Schienbein-Sprünge 134 statt 93 mm, mit 8 springt das Becken im Gehen 28 statt 14 mm und die Zahl der Schienbein-Sprünge im Rennen ist 349 statt 159: Jede Szene startet aus dem Stand, und ein anderer Start verschiebt, in welcher Schrittphase die Wende kommt. Diese Summen können einen Stand, der anders startet, nicht mit einem anderen vergleichen. Die Regel prüft deshalb, was am Start selbst gemessen wird, und druckt die Summen ohne Bedingung.
+
+Nimmt der Prototyp das Ziel, Frage 3 des Skills. Auf beiden Entwicklungssätzen hält er alle Bedingungen unten, nachdem zwei Toleranzen am zweiten Satz gesetzt wurden: Der härteste Schienbein-Sprung der Starts ist mit dem Schalter 38,2 und 38,3 mm, ohne ihn 38,7 und 35,8; die Streuung des alten Stands zwischen den Sätzen, 3 mm, ist die Toleranz. Die Beine stecken bei den Starts mit dem Schalter 24 und 25 mm ineinander, ohne ihn 19 und 17; das ist ein Preis und steht als P1 unten.
+
+Bedingungen, je auf einer Gruppe von Sätzen, gerechnet von tools/measure/eval169.py: alt ist der Stand wie er ist, neu derselbe Stand mit startAcceleration 4.
+Ziel:
+ Z1 Gehen: Die Kapsel hat 95 % ihres Tempos in jedem Satz nach 0,2 bis 0,5 s.
+ Z2 Rennen: Bis die Kapsel 95 % ihres Tempos hat, sind in jedem Satz mindestens 2 Füße gelandet, und es dauert höchstens 1,2 s.
+Schutz:
+ S1 Die Szenen aus dem Stand in gait155.py: härtester Sprung von Schienbein, Fuß und Becken je höchstens alt + 3 mm.
+ S4 steer162.py: Die Figur folgt dem Stick im Gehen und im Rennen je mit mindestens alt − 0,01 des Tempos.
+ S5 Standard aus: Alle Tests bestehen mit unveränderten Hashes, mit gcc und clang, und die Hashes des Benchmarks der Figuren sind mit 1, 2 und 4 Threads gleich.
+Preis:
+ P1 Die Beine stecken bei den Starts höchstens alt + 10 mm und höchstens 30 mm ineinander.
+
+Unabhängige Prüfung. Vier Sätze, deren Geschwindigkeiten vor dem Festschreiben auf keinem Stand gelaufen sind, geprüft mit tools/measure/speeds.py: h190 mit 1,1033 und 4,3633 m/s, h191 mit 1,2933 und 3,2933 m/s, h192 mit 1,4433 und 4,1433 m/s, h193 mit 1,6833 und 3,4833 m/s, die Gruppe fresh in check169.sh. Die Ränder vorab durchgerechnet: Mit 4 m/s² braucht die Kapsel bis 95 % des langsamsten Gehtempos 0,26 s und des schnellsten 0,40 s, innerhalb von Z1; bis 95 % des schnellsten Renntempos 1,04 s, innerhalb von Z2.
+
+Der saubere Bau ist der Prototyp. Verfehlt er auf den frischen Sätzen eine Bedingung, bleibt der Schalter nicht in der Bibliothek, oder der Nutzer entscheidet; die Regel wird danach nicht geändert, und eine Messung, die nicht passt, wird nicht wiederholt. Ob der Schalter Standard wird, entscheidet der Nutzer, nachdem er ihn in der Demo gesehen hat.
