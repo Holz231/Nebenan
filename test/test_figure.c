@@ -5723,9 +5723,11 @@ static int SteerLandToesTest( void )
 // change at the latest. Until round 156 a planted foot turned without a limit, up to 140.4 degrees here, as the other
 // foot swung nearly all the time of the turn, and the figure faced the other way after 0.92 s. In round 156 it took
 // 1.32 s: held back, the heading started again from standing, and the foot it waited for swung no faster for it, see
-// NB_FOOT_TURN_HURRY. Since round 163 the figure turns about here, see NB_WALK_ABOUT in figure_steer.c: it waits for the
-// foot it stands on before it turns, and at this slow walk it faces the other way 1.62 s after the change at the
-// latest, the price of a turn about that keeps the pelvis up; this test asked for 1.2 s until then and asks for 1.7 s.
+// NB_FOOT_TURN_HURRY. Since round 163 the figure turns about here, see NB_WALK_ABOUT in figure_steer.c: it waits for
+// the foot it stands on before it turns, and at this slow walk it faces the other way 1.62 s after the change at the
+// latest, the price of a turn about that keeps the pelvis up; this test asked for 1.2 s until then and for 1.7 s until
+// round 175. Since then the heading turns to where it is steered at once in a turn about, see nbMoveSteered: 1.40 s at
+// the latest, and the test asks for 1.5 s.
 static int SteerTurnStepTest( void )
 {
 	float most = 0.0f;
@@ -5776,7 +5778,7 @@ static int SteerTurnStepTest( void )
 			"faces the other way %.2f s after the change at the latest\n",
 			most * 180.0f / B3_PI, latest );
 	ENSURE( most < 0.803f );
-	ENSURE( latest < 1.7f );
+	ENSURE( latest < 1.5f );
 	return 0;
 }
 
@@ -5967,11 +5969,12 @@ static int RunShuttle( float walkBend, float* follows )
 // Steered more than 150 degrees off the way it faces it does not bend, it turns about, see NB_WALK_ABOUT in
 // figure_steer.c: it brakes gently while a foot lands where it aimed, waits for the foot it stands on and turns on the
 // spot. Over the twelve turns it gets no more than 0.25 m on the way it walked (0.17) and 0.25 m to the side (0.18),
-// its pelvis no more than 64 mm below its mean height walking (46), and it faces back within 1.5 s (1.48), within 1.3 s
-// (1.17) until round 167, when the heading began to wait for the feet, see NB_FACE_KEEP in figure_steer.c. Steered back
-// and forth every second for 4 s it goes 0.15 of the speed where it is steered or more (0.20, 0.28 until round 167). In
-// round 161 it bent here: 0.34 m onward and 0.61 m to the side, and steered back and forth it went against the stick as
-// much as with it. With walkBend at zero it turns about as until round 160, the pelvis sinks 75 mm.
+// its pelvis no more than 64 mm below its mean height walking (46), and it faces back within 1.43 s (1.38): since round
+// 175 the heading turns to where it is steered at once, see nbMoveSteered. From round 167, when the heading began to
+// wait for the feet, see NB_FACE_KEEP in figure_steer.c, until then it took 1.48 s. Steered back and forth every second
+// for 4 s it goes 0.23 of the speed where it is steered or more (0.26, 0.20 from round 167 to 174). In round 161 it
+// bent here: 0.34 m onward and 0.61 m to the side, and steered back and forth it went against the stick as much as with
+// it. With walkBend at zero it turns about as until round 160, the pelvis sinks 75 mm.
 static int SteerWalkAboutTest( void )
 {
 	BendTurn about, spot;
@@ -5990,8 +5993,8 @@ static int SteerWalkAboutTest( void )
 	ENSURE( about.onward <= 0.25f );
 	ENSURE( about.sideways <= 0.25f );
 	ENSURE( about.sunk <= 0.064f );
-	ENSURE( about.faced <= 1.5f );
-	ENSURE( follows >= 0.15f );
+	ENSURE( about.faced <= 1.43f );
+	ENSURE( follows >= 0.23f );
 	return 0;
 }
 

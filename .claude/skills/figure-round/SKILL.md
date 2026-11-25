@@ -629,6 +629,17 @@ Zehen und Fersen 37 mm, Hände 15 mm, Becken 10 mm, Becken tief ab 15 cm unter d
   Ursache, eine Zeile. Runde 173: zwölf Läufe knapp über der Grenze, in zehn Kursen, keiner in jeder Probe, mehrere
   Ursachen; eine Abhilfe für eine davon lag im Rauschen. Vor dem Verfolgen die Verteilung ansehen: Wie weit liegt die
   Stelle über den 95 % der Läufe, und kommt sie in jeder Probe?
+- **Ein Preis, der knapp verfehlt ist, hat eine Ursache.** Runde 174 verfehlte den erlaubten Preis um einen halben Kurs,
+  der Nutzer ließ nicht bauen. Runde 175 fand die Ursache in einem verfolgten Lauf, die Kapsel kroch rückwärts gegen die
+  Beine, und einen Regler, der Sacken gegen enge Beine tauscht; ein Wert dazwischen hielt beides im Rauschen. Vor
+  „trotzdem bauen“ einen Lauf verfolgen, in dem der Preis neu auftritt.
+- **Ein Regler mit zwei Seiten wird über mehrere Werte gemessen.** Fünf Werte zeigten den stetigen Tausch und wo beide
+  Seiten im Rauschen liegen. Die Sätze, auf denen der Wert gewählt ist, zählen danach als Entwicklung, und die Prüfung
+  braucht neue frische Sätze.
+- **Beide Programme eines Benchmark-Paars werden am selben Rechner gebaut.** Runde 175: Gegen das Programm der Runde
+  davor, das vor einem Neustart der Umgebung gebaut war, erschienen alle fünf Szenen 8 bis 15 % langsamer, auch die ohne
+  Figuren, bei unveränderter Befehlszahl. Gegen den neu gebauten alten Stand: 0,99 bis 1,04. Nach jedem Neustart den
+  alten Stand neu bauen, bevor gepaart wird.
 - **Größe der Figur.** Winkelbeschleunigungen wachsen bei kleineren Figuren mit 1 durch `nbFigureScale`, Längen
   und Geschwindigkeiten mit ihr.
 

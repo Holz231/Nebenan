@@ -89,6 +89,16 @@
 // for the leg it stands on: setting off again at once, the pelvis jumped 22 mm in a run.
 #define NB_WALK_ABOUT -0.866f
 
+// Turning about at a walk the capsule goes across and against where it faces with NB_ABOUT_CREEP of what it may, see
+// NB_STEER_SIDE_SPEED. Creeping the new way while it still faces away, the figure goes backward against its legs: with
+// the heading turning at once, see nbMoveSteered, it did so on a foot that had only just landed far ahead, the feet got
+// 0.34 m apart, and the root went down 5 cm until the other foot had stepped round. The pelvis got more than 30 mm
+// below the steady gait on 19.5 instead of 13 of 272 courses at a walk, round 174. The slower it creeps, the less the
+// pelvis sinks and the nearer the legs stand as it turns: at 0.65 on 9.5 courses, with the legs more than 20 mm into
+// each other in 6.1 instead of 4.7 % of the updates going back and forth; at 0.85 on 16.5 courses and 4.8 %; at 0.8 on
+// 14 courses and 4.8 %, both within the noise of four nudges, see tools/measure/eval175.py.
+#define NB_ABOUT_CREEP 0.8f
+
 // Where the velocity a figure is steered at jumps by more than NB_STEER_JUMP from one update to the next, in meters per
 // second for the humanoid of 1.8 m, the root goes down for a landing gently for NB_CROUCH_EASE seconds, see
 // NB_CROUCH_EASE_RATE in figure.c. The gait plans with the new velocity at once, and where a foot in the air lands can
@@ -698,6 +708,12 @@ bool nbMoveSteered( nbWorld* world, int index, nbFigure* f, float timeStep, b3Ve
 				wish = b3Add( b3MulSV( 1.0f - walks, wish ), b3MulSV( walks * ahead, forward ) );
 				bends = walks > 0.5f;
 			}
+			else if ( f->turnAbout && can )
+			{
+				// Turning about, it creeps the new way slower while it still faces away from it, see NB_ABOUT_CREEP
+				float walks = 1.0f - f->gaitRun;
+				wish = b3MulSV( 1.0f - walks * ( 1.0f - NB_ABOUT_CREEP ), wish );
+			}
 		}
 		asked = wish;
 	}
@@ -988,7 +1004,18 @@ bool nbMoveSteered( nbWorld* world, int index, nbFigure* f, float timeStep, b3Ve
 		b3Vec3 local = b3InvRotateVector( tilt, f->moveVelocity );
 		bool moving = local.x * local.x + local.z * local.z > NB_STEER_FACE_SPEED * NB_STEER_FACE_SPEED;
 		want = moving ? b3Atan2( local.x, local.z ) : heading;
-		if ( bends )
+		// Turning about at a walk, see NB_WALK_ABOUT, it turns to where it is steered at once as well, not once it has
+		// braked and moves the new way, but not while a foot is farther into its swing than NB_STOP_COMMIT: that one lands
+		// where it aimed first. Until round 175 the heading followed the velocity here and stood for 0.2 s while the
+		// figure braked: it faced back after 1.18 s in the mean of the turns, now after 1.05 s, and steered back and forth
+		// every second it goes 0.26 instead of 0.20 of its speed where it is steered, see SteerWalkAboutTest. Turning at
+		// once whatever the feet do, 1.01 s, the feet got 35 instead of 16 mm under the ground in sum. See NB_ABOUT_CREEP.
+		bool aboutTurns = f->turnAbout && b3LengthSquared( f->steer.velocity ) > 0.0f;
+		for ( int k = 0; k < 2; ++k )
+		{
+			aboutTurns = aboutTurns && ( f->footSwings[k] == false || f->swingAlong[k] <= NB_STOP_COMMIT );
+		}
+		if ( bends || aboutTurns )
 		{
 			// Walking a bend, it turns to where it is steered, not to where it moves: it moves the way it faces
 			b3Vec3 steered = b3InvRotateVector( tilt, f->steer.velocity );
