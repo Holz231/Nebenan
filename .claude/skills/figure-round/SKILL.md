@@ -616,6 +616,11 @@ Zehen und Fersen 37 mm, Hände 15 mm, Becken 10 mm, Becken tief ab 15 cm unter d
 - **Eine Grenze mitten im stetigen Band zählt Zufall.** 37 mm liegt dort, wo ein Schienbein im stetigen Lauf je nach
   Lage des Schritts 30 bis 38 mm springt. Grenzen über dem stetigen Gang (Extra in `where129.py`) oder Spannen über
   Proben nehmen.
+- **Jede Regel prüft die Kurse mit.** Runde 171 hat die Runden 155 bis 167 nachgemessen. Die verdeckten Preise der
+  Runden 156, 157 und 161 lagen alle dort, wo ihre Regeln nicht hinsahen: auf den Kursen aus `steer162.py` oder im Hin
+  und Her. Eine Regel nimmt die Kurse und `legs167.py` als Schutz, auch wenn die Runde nur einzelne Wenden ändert.
+- **Ein Fehlschlag der Regel wird mit Proben geprüft, bevor er erklärt wird.** A2 von Runde 163 war echt, S2 und S5 von
+  Runde 167 waren Rauschen. Beides hätte sich mit vier Proben vor der Entscheidung gezeigt.
 - **Größe der Figur.** Winkelbeschleunigungen wachsen bei kleineren Figuren mit 1 durch `nbFigureScale`, Längen
   und Geschwindigkeiten mit ihr.
 
