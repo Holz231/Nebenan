@@ -508,6 +508,7 @@ nbFigureDef nbDefaultFigureDef( void )
 	def.steering.turnRate = 4.0f;
 	def.steering.turnAcceleration = 25.0f;
 	def.steering.walkBend = 0.7f;
+	def.steering.startAcceleration = 0.0f;
 	def.internalValue = NB_SECRET_COOKIE;
 	return def;
 }
@@ -9614,6 +9615,16 @@ void nbFigure_Steer( nbFigureId figureId, const nbSteer* steer )
 		return;
 	}
 	f->steer = *steer;
+}
+
+void nbFigure_SetSteering( nbFigureId figureId, const nbFigureSteering* steering )
+{
+	nbFigure* f = nbGetFigureFromId( figureId, NULL );
+	if ( f == NULL || f->steered == false || steering == NULL )
+	{
+		return;
+	}
+	f->def.steering = *steering;
 }
 
 void nbFigure_PlayClip( nbFigureId figureId, const nbClipDef* clip, float speed )

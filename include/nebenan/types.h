@@ -1373,6 +1373,14 @@ typedef struct nbFigureSteering
 	/// 0.3 m to the side, so it follows a stick that goes back and forth. It faces back after 1.1 s in the mean and
 	/// 1.7 s at the latest. Zero turns about as until round 160 too.
 	float walkBend;
+
+	/// How fast a steered humanoid gets to the velocity it wants from standing, in meters per second squared: starting
+	/// to walk or run, it gets faster no quicker than this until it goes as fast as it wants, so its body takes up its
+	/// speed over its first steps instead of gliding off ahead of its legs. With acceleration at 10 it has its walking
+	/// speed after 0.10 to 0.17 s, before a foot has landed; with 4 here after 0.25 to 0.42 s, about as its first foot
+	/// lands, and its running speed after 0.7 to 1.05 s and two landings instead of 0.3 to 0.4 s and one. Once it moves,
+	/// acceleration and braking decide alone. Zero, the default, leaves the start to acceleration as well.
+	float startAcceleration;
 } nbFigureSteering;
 
 /// A figure, see nbCreateFigure. Initialize with nbDefaultFigureDef.

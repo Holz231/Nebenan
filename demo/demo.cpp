@@ -560,6 +560,9 @@ struct App
 	// Whether the figure of the player faces where the camera looks instead of where it goes, as with Ctrl held, see
 	// UpdatePlayer
 	bool playerFacesCamera = false;
+	// How fast the player gets faster, and from standing, see nbFigureSteering: zero leaves the start to the first
+	float playerAcceleration = 10.0f;
+	float playerStartAcceleration = 0.0f;
 	bool gaitClipsMade = false;
 	nbKeyframe gaitKeyframes[2][2][128];
 	b3Quat gaitRotations[2][2][128 * nb_humanoidBoneCount];
@@ -2493,6 +2496,8 @@ static void BuildPlayerScene( App& app )
 	def.position = b3ToPos( { 0.0f, 0.0f, 5.0f } );
 	def.heading = B3_PI;
 	def.steered = true;
+	def.steering.acceleration = app.playerAcceleration;
+	def.steering.startAcceleration = app.playerStartAcceleration;
 	app.player = nbCreateFigure( app.destruction, &def );
 	if ( nbFigure_IsValid( app.player ) )
 	{
@@ -3722,6 +3727,28 @@ static void DrawUi( App& app )
 					"seitwärts, schräg und rückwärts. Becken und Beine drehen sich dabei gehend bis 70°, rennend\n"
 					"bis 90° in die Laufrichtung, Brust und Kopf bleiben bei der Kamera, und rückwärts rennt sie\n"
 					"mit Flugphase. Strg halten tut dasselbe, solange die Taste unten ist (nbSteer::faceVelocity)." );
+			}
+			bool steeringChanged =
+				ImGui::SliderFloat( "Anfahren aus dem Stand", &app.playerStartAcceleration, 0.0f, 10.0f, "%.1f m/s²" );
+			if ( ImGui::IsItemHovered() )
+			{
+				ImGui::SetTooltip( "Wie schnell die Spielfigur aus dem Stand Tempo aufnimmt\n"
+								   "(nbFigureSteering::startAcceleration). 0 heißt aus: Dann gilt auch aus dem Stand die\n"
+								   "Beschleunigung darunter. Mit 4 hat sie ihr Gehtempo etwa mit der ersten Landung und ihr\n"
+								   "Renntempo nach zwei weiteren Schritten." );
+			}
+			steeringChanged |= ImGui::SliderFloat( "Beschleunigung", &app.playerAcceleration, 2.0f, 20.0f, "%.1f m/s²" );
+			if ( ImGui::IsItemHovered() )
+			{
+				ImGui::SetTooltip( "Wie schnell die Spielfigur schneller wird, auch mitten im Lauf\n"
+								   "(nbFigureSteering::acceleration). Der Standard der Bibliothek ist 10." );
+			}
+			if ( steeringChanged && nbFigure_IsValid( app.player ) )
+			{
+				nbFigureSteering steering = nbDefaultFigureDef().steering;
+				steering.acceleration = app.playerAcceleration;
+				steering.startAcceleration = app.playerStartAcceleration;
+				nbFigure_SetSteering( app.player, &steering );
 			}
 		}
 	}

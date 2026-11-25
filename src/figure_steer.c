@@ -98,6 +98,10 @@
 #define NB_STEER_JUMP 1.0f
 #define NB_CROUCH_EASE 0.1f
 
+// A figure starts from standing where it goes slower than this, in meters per second for the humanoid of 1.8 m, and
+// its gait is not on, see nbFigureSteering::startAcceleration
+#define NB_START_FROM 0.3f
+
 // A figure that faces where it moves turns no farther than its feet stay uncrossed across where it faces: the heading
 // turns as far as the left foot stays NB_FACE_KEEP to the left of the right one, in meters for the humanoid of 1.8 m,
 // where the feet are now, on the ground or in the air, and waits for that no longer than NB_FACE_HOLD in seconds in a
@@ -717,6 +721,22 @@ bool nbMoveSteered( nbWorld* world, int index, nbFigure* f, float timeStep, b3Ve
 	b3Vec3 change = b3Sub( wish, flat );
 	float rate = b3LengthSquared( wish ) > b3LengthSquared( flat ) ? def->acceleration : def->braking;
 	rate = b3MaxFloat( rate, 0.0f ) * ( f->onGround ? 1.0f : b3ClampFloat( def->airControl, 0.0f, 1.0f ) );
+
+	// From standing a humanoid gets faster no quicker than nbFigureSteering::startAcceleration. It starts where it wants
+	// to go, its gait is not on yet and it goes slower than NB_START_FROM, and it has started once it goes as fast as it
+	// wants or wants to go no faster: turning about or switching sides it is not standing, and acceleration decides.
+	if ( b3LengthSquared( wish ) <= b3LengthSquared( flat ) )
+	{
+		f->starting = false;
+	}
+	else if ( f->gaitOn == false && b3LengthSquared( flat ) < NB_START_FROM * NB_START_FROM * scale * scale )
+	{
+		f->starting = true;
+	}
+	if ( f->starting && def->startAcceleration > 0.0f && f->onGround && f->boneCount == nb_humanoidBoneCount )
+	{
+		rate = b3MinFloat( rate, def->startAcceleration );
+	}
 	// A turn ends where the velocity it wants is no longer capped for its heading, see nbFigureSteering::walkBend
 	f->turnCapped = capped;
 	f->turnBends = f->turnBends && capped;

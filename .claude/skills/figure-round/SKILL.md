@@ -598,6 +598,15 @@ Zehen und Fersen 37 mm, Hände 15 mm, Becken 10 mm, Becken tief ab 15 cm unter d
   aus Runde 167 schneller zu machen. Jeder tauschte die Zeit gegen Rucke oder gekreuzte Beine. Vor einer Runde, die
   einen Preis zurückholen soll, fragen, ob er aus einer Schwelle kommt oder aus der Zeit, die ein Fuß für seinen Weg
   braucht.
+- **Die Summen über die Wenden hängen an der Schrittphase.** Runde 169: Ein Anfahren von 9,5 statt 10 m/s² aus dem Stand
+  macht aus 93 mm Schienbein-Summe 134, ohne dass am Gang etwas anders wäre. Wer den Start verändert, vergleicht die
+  Wenden nicht mehr über diese Summen, sondern misst am Start selbst und nennt das Rauschen mit einer Fassung, die fast
+  nichts ändert.
+- **Was der Nutzer sehen muss, wird ein Schalter.** Ob das Losgleiten das war, was ihn störte, ließ sich nicht messen.
+  Die Runde baute es als Parameter mit Standard aus, bytegleich, und als Regler in der Demo; den Standard entscheidet er
+  danach.
+- **Ein neuer Standard ist ein Umbau.** Den Standard von `acceleration` zu senken ließ 14 Tests anschlagen. Ein
+  Parameter, den ein Spiel setzt, ändert die Bibliothek für niemanden, der ihn nicht setzt.
 - **Größe der Figur.** Winkelbeschleunigungen wachsen bei kleineren Figuren mit 1 durch `nbFigureScale`, Längen
   und Geschwindigkeiten mit ihr.
 

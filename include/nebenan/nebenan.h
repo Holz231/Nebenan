@@ -491,6 +491,11 @@ NB_API void nbFigure_Move( nbFigureId figureId, b3Pos position, float heading );
 /// goes on once it stands. Nothing for a figure that is not steered.
 NB_API void nbFigure_Steer( nbFigureId figureId, const nbSteer* steer );
 
+/// Change how a figure made with nbFigureDef::steered moves, see nbFigureSteering, while it lives: a game that lets its
+/// character sprint, tire or carry a load sets other speeds and accelerations for it. It moves by them from its next
+/// update on. Nothing for a figure that is not steered.
+NB_API void nbFigure_SetSteering( nbFigureId figureId, const nbFigureSteering* steering );
+
 /// Play a clip while the figure stands, from its start, at this speed, 1 for real time, blended in over a fifth of a
 /// second. The clip is copied. Null goes back to the idle clip. A clip that does not loop holds its last pose.
 NB_API void nbFigure_PlayClip( nbFigureId figureId, const nbClipDef* clip, float speed );

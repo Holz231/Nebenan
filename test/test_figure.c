@@ -6099,6 +6099,69 @@ static int SteerLegsApartTest( void )
 	return 0;
 }
 
+// A steered figure starts gently from standing where a game asks for it, see nbFigureSteering::startAcceleration, set
+// here on the living figure with nbFigure_SetSteering. Steered to a walk at 1.4 m/s, after 0.15 s it goes 0.6 m/s with
+// a start acceleration of 4, no more than 0.7, and 1.4 m/s without one, and after 0.6 s it walks at 1.4 m/s either way.
+// Steered to a run at 4.3 m/s it goes no more than 2.2 m/s after 0.5 s (2.0) and runs at 4.3 m/s after 1.3 s. Once it
+// moves, its acceleration decides alone: from a walk it runs at 4.3 m/s within 0.4 s with the start acceleration set
+// as without it. Until round 169 a figure had the speed it walks at 0.10 to 0.17 s after it was steered, before its
+// first foot had landed: its body glided off ahead of its legs.
+static int SteerStartTest( void )
+{
+	float early[2], walked[2], runEarly = 0.0f, runLate = 0.0f, change[2];
+	for ( int pass = 0; pass < 2; ++pass )
+	{
+		FigureScene scene;
+		CreateFigureScene( &scene, 1 );
+		nbFigureId figure = AddSteeredFigure( &scene, b3Vec3_zero, 0.0f );
+		if ( pass == 1 )
+		{
+			nbFigureSteering steering = nbDefaultFigureDef().steering;
+			steering.startAcceleration = 4.0f;
+			nbFigure_SetSteering( figure, &steering );
+		}
+		StepFigures( &scene, 30 );
+		SteerVelocity( figure, (b3Vec3){ 0.0f, 0.0f, 1.4f } );
+		StepFigures( &scene, 9 );
+		early[pass] = SteerSpeed( figure );
+		StepFigures( &scene, 27 );
+		walked[pass] = SteerSpeed( figure );
+		StepFigures( &scene, 84 );
+		SteerVelocity( figure, (b3Vec3){ 0.0f, 0.0f, 4.3f } );
+		StepFigures( &scene, 24 );
+		change[pass] = SteerSpeed( figure );
+		ENSURE( nbFigure_GetState( figure ) == nb_figureAnimated );
+		DestroyFigureScene( &scene );
+	}
+	{
+		FigureScene scene;
+		CreateFigureScene( &scene, 1 );
+		nbFigureId figure = AddSteeredFigure( &scene, b3Vec3_zero, 0.0f );
+		nbFigureSteering steering = nbDefaultFigureDef().steering;
+		steering.startAcceleration = 4.0f;
+		nbFigure_SetSteering( figure, &steering );
+		StepFigures( &scene, 30 );
+		SteerVelocity( figure, (b3Vec3){ 0.0f, 0.0f, 4.3f } );
+		StepFigures( &scene, 30 );
+		runEarly = SteerSpeed( figure );
+		StepFigures( &scene, 48 );
+		runLate = SteerSpeed( figure );
+		ENSURE( nbFigure_GetState( figure ) == nb_figureAnimated );
+		DestroyFigureScene( &scene );
+	}
+	printf( "  0.15 s after it is steered to a walk at 1.4 m/s it goes %.2f m/s, with a start acceleration of 4 %.2f m/s, "
+			"after 0.6 s %.2f and %.2f m/s; steered to a run it goes %.2f m/s after 0.5 s and %.2f m/s after 1.3 s; from a "
+			"walk to a run %.2f and %.2f m/s after 0.4 s\n",
+			early[0], early[1], walked[0], walked[1], runEarly, runLate, change[0], change[1] );
+	ENSURE( early[0] > 1.3f );
+	ENSURE( early[1] < 0.7f );
+	ENSURE( fabsf( walked[0] - 1.4f ) < 0.07f && fabsf( walked[1] - 1.4f ) < 0.07f );
+	ENSURE( runEarly < 2.2f );
+	ENSURE( fabsf( runLate - 4.3f ) < 0.22f );
+	ENSURE( change[0] > 4.0f && change[1] > 4.0f );
+	return 0;
+}
+
 // A steered figure facing where it moves runs at 3.2 m/s, and the stick is let go for 0.2 s every 0.7 s for 4 s, from
 // eight moments of its gait five updates apart. Its pelvis jumps no more than 16 mm in an update (12.5): for a moment
 // after the velocity it is steered at jumps, the root goes down for a landing gently, see NB_CROUCH_EASE in
@@ -8843,6 +8906,7 @@ int FigureTest( void )
 	RUN_TEST( SteerLetGoTest );
 	RUN_TEST( SteerMeetTest );
 	RUN_TEST( SteerLegsApartTest );
+	RUN_TEST( SteerStartTest );
 	RUN_TEST( SteerLegLeadTest );
 	RUN_TEST( SteerRunDescentTest );
 	RUN_TEST( SteerRunFlightTest );
