@@ -509,6 +509,7 @@ nbFigureDef nbDefaultFigureDef( void )
 	def.steering.turnAcceleration = 25.0f;
 	def.steering.walkBend = 0.7f;
 	def.steering.startAcceleration = 0.0f;
+	def.steering.stopBraking = 4.0f;
 	def.internalValue = NB_SECRET_COOKIE;
 	return def;
 }
@@ -5432,6 +5433,27 @@ static b3Vec3 nbPlanAhead( const nbFigure* f, nbCapsulePlan* plan, float time, f
 // came to walking its swing stretched to 0.83 s while the legs waited for it with the capsule; it went 90 percent of
 // its speed the other way after 1.130 s in the mean of 24 points with the rate of NB_LEG_FAR, now after 1.097 s. For
 // any swing that the legs wait for, also one that lifted walking, a foot landed 48.1 mm hard switching sides walking.
+//
+// Stopping out of a walk, see nbFigureSteering::stopBraking, the feet come to rest with the body. The capsule brakes
+// for the foot ahead: for the foot that stands or lands farthest ahead of where it stands at rest, along the way of
+// the capsule, it brakes so that it stops over it, no harder than stopBraking and no more gently than NB_HALT_LOW in
+// meters per second squared for the humanoid of 1.8 m; stopping short of it, that foot stepped back to its place, 19
+// cm in the case traced. A swinging foot aims for where it stands at rest once the capsule has stopped braking with
+// stopBraking, as wide as it stands there, which it gets to at NB_HALT_WIDE per second: walking the feet land 10 cm
+// apart, standing 18, and a foot that landed as narrow as it walks had to step 4 cm aside afterward; at 2 per second
+// it still landed 1.1 cm short of its place, 1 mm more than the gait lets it stand. A foot that was on its way farther
+// comes back to there no faster than NB_HALT_BACK in meters per second, and the capsule brakes for where it lands now:
+// pulled back at once, 29 cm at 0.7 of its swing, it jumped 32.2 instead of 19.6 mm in an update; at 1 m/s the capsule
+// rolled on for 0.65 instead of 0.45 s. A swing that lifts while it stops, the foot that closes up or steps to its
+// place, takes no longer than its way needs, speeding up and slowing down with NB_HALT_SWING_ACCEL in meters per
+// second squared, and at least NB_HALT_SWING seconds: with the 0.5 s of a slow walking step a foot hung in the air for
+// half a second to step 4 cm aside; with 0.2 s at least it lifted so quickly that a shin jumped 38 instead of 25 mm.
+#define NB_HALT_LOW 1.5f
+#define NB_HALT_WIDE 8.0f
+#define NB_HALT_BACK 4.0f
+#define NB_HALT_SWING 0.3f
+#define NB_HALT_SWING_ACCEL 20.0f
+
 static float nbSwingTime( const nbFigure* f, int k, float swingTime, float cycle, b3Vec3 up )
 {
 	if ( f->footSwings[k] == false )
@@ -5445,6 +5467,14 @@ static float nbSwingTime( const nbFigure* f, int k, float swingTime, float cycle
 		float across = b3Length( b3MulSub( step, b3Dot( step, up ), up ) );
 		float may = f->swingRate[k] * f->swingHurry[k] * sqrtf( 6.0f * across / NB_GAIT_SWING_ACCEL );
 		time = b3MinFloat( time, b3MaxFloat( f->swingLift[k], may ) );
+	}
+	if ( f->halts && f->swingHalts[k] )
+	{
+		// A step of a figure that stops out of a walk takes no longer than its way needs, see NB_HALT_SWING
+		b3Vec3 step = b3SubPos( f->feet[k].target, f->feet[k].from );
+		float across = b3Length( b3MulSub( step, b3Dot( step, up ), up ) );
+		float may = sqrtf( 6.0f * across / ( NB_HALT_SWING_ACCEL * nbFigureScale( f ) ) );
+		time = b3MinFloat( time, b3MaxFloat( NB_HALT_SWING, may ) );
 	}
 	return time;
 }
@@ -5987,6 +6017,28 @@ static void nbSteerFeet( const nbWorld* world, int index, nbFigure* f, const nbC
 	float needs[2];
 	float levels[2];
 	b3Vec3 hips[2];
+	// Stopping out of a walk, the capsule brakes for the foot ahead, see NB_HALT_LOW
+	f->halts = f->stops && f->stairWeight <= 0.0f && run <= 0.0f;
+	f->haltRate = 0.0f;
+	if ( f->halts && speed > 0.01f * scale )
+	{
+		float ahead = 0.0f;
+		for ( int k = 0; k < 2; ++k )
+		{
+			if ( f->footSwings[k] && f->swingHalts[k] )
+			{
+				continue;
+			}
+			b3Pos at = f->footSwings[k] ? f->feet[k].target : f->feet[k].plant;
+			ahead = b3MaxFloat( ahead, b3Dot( b3SubPos( at, nbClipAnkle( f, clips + k, f->feet + k ) ), velocity ) / speed );
+		}
+		f->haltRate = f->def.steering.stopBraking;
+		if ( ahead > 0.0f )
+		{
+			f->haltRate = b3MinFloat( f->haltRate, speed * speed / ( 2.0f * ahead ) );
+		}
+		f->haltRate = b3MaxFloat( f->haltRate, NB_HALT_LOW * scale );
+	}
 	float reaches[2];
 	b3Vec3 onHeel[2];
 	float landSide = f->legBack ? -1.0f : 1.0f;
@@ -6313,6 +6365,7 @@ static void nbSteerFeet( const nbWorld* world, int index, nbFigure* f, const nbC
 				f->swingShare[k] = 1.0f - stance;
 				f->swingLift[k] = swingTime;
 				f->swingNarrow[k] = 1.0f - narrowRun * run - NB_GAIT_NARROW_WALK * ( 1.0f - run ) * ease;
+				f->swingHalts[k] = f->halts;
 				foot->from = foot->plant;
 				foot->fromTilt = foot->tilt;
 				f->swingBase[k] = foot->plant;
@@ -6397,6 +6450,20 @@ static void nbSteerFeet( const nbWorld* world, int index, nbFigure* f, const nbC
 				{
 					float ownLead = b3MinFloat( lead, nbGaitLead( world, f, b3Length( ownVelocity ) ) );
 					farther = b3Sub( way, b3MulAdd( ownWay, ownLead, ownVelocity ) );
+				}
+				if ( f->halts )
+				{
+					// Stopping out of a walk it lands where it stands at rest, see NB_HALT_BACK and NB_HALT_WIDE
+					float stop = speed * speed / ( 2.0f * f->def.steering.stopBraking );
+					if ( speed > 0.01f * scale && f->swingHalts[k] == false )
+					{
+						b3Vec3 now = b3SubPos( foot->target, nbClipAnkle( f, clips + k, foot ) );
+						stop = b3MaxFloat( stop, b3Dot( now, velocity ) / speed - NB_HALT_BACK * scale * timeStep );
+					}
+					way = speed > 0.01f * scale ? b3MulSV( stop / speed, velocity ) : b3Vec3_zero;
+					landVelocity = b3Vec3_zero;
+					farther = b3Vec3_zero;
+					f->swingNarrow[k] = b3MinFloat( 1.0f, f->swingNarrow[k] + NB_HALT_WIDE * timeStep );
 				}
 				float guess = slope * b3Length( way );
 				float deeper = f->moverLow - f->moverRadius;

@@ -1381,6 +1381,17 @@ typedef struct nbFigureSteering
 	/// lands, and its running speed after 0.7 to 1.05 s and two landings instead of 0.3 to 0.4 s and one. Once it moves,
 	/// acceleration and braking decide alone. Zero, the default, leaves the start to acceleration as well.
 	float startAcceleration;
+
+	/// How hard a steered humanoid brakes at most as it stops out of a walk, in meters per second squared: where the
+	/// velocity it wants is zero and it had walked for a second, its body rolls out over its last step instead of
+	/// freezing in the middle of it. It brakes no harder than this, and more gently where a foot stands or lands
+	/// farther ahead, so that it comes to rest over that foot; the foot in the air lands where it stands at rest, and
+	/// the other one closes up beside it. With braking alone, at 14, the capsule stood after 0.11 s and 0.08 m, and the
+	/// feet took 1.85 s and three or four landings to come to rest under it; with 4 here the capsule stands after 0.45 s
+	/// and 0.35 m, 0.67 s and 0.50 m at most, and the feet after 0.85 s, with two landings in three of four stops.
+	/// Running, turning about and with other bones than those of the humanoid, braking decides alone. Zero stops as
+	/// hard as it brakes, as until round 176. The default is 4.
+	float stopBraking;
 } nbFigureSteering;
 
 /// A figure, see nbCreateFigure. Initialize with nbDefaultFigureDef.

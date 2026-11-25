@@ -81,6 +81,10 @@ int main( int argc, char** argv )
 	fd.steered = true;
 	if ( getenv( "TURNRATE" ) ) fd.steering.turnRate = (float)atof( getenv( "TURNRATE" ) );
 	if ( getenv( "ACC" ) ) fd.steering.acceleration = (float)atof( getenv( "ACC" ) );
+#ifndef LAB_NO_STOP
+	// STOP: nbFigureSteering::stopBraking, in the library from round 177 on
+	if ( getenv( "STOP" ) ) fd.steering.stopBraking = (float)atof( getenv( "STOP" ) );
+#endif
 	// BRAKE: nbFigureSteering::braking, for round 176
 	if ( getenv( "BRAKE" ) ) fd.steering.braking = (float)atof( getenv( "BRAKE" ) );
 #ifndef LAB_NO_START

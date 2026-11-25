@@ -1,16 +1,18 @@
 # walk176.py variant nudges set [set...]: walking seen as body against legs, for round 176, see docs/Roadmap.md: how
 # long the capsule takes for a change and how long the legs take for it. A steered humanoid that faces where it moves,
-# at the walking speed of each set (common.sh): starting from standing, stopping, and turning by 45, 90 and 180 degrees
-# to its left, a change out of walking at 6 moments of the step (SYNC as in gait155.py) and at each nudge of the list
-# (for example 0,1,2,3, see NUDGE in lab101.c). Per run, in seconds after the change: when the capsule has nine tenths
-# of its new velocity (stopping: a tenth of the old speed left), when the first foot lifts and lands, when the last foot
-# lands in the 3 s after the change, and when it faces within 10 degrees of the new way; how many feet land after the
-# capsule has its new velocity and before 1.5 s, and how many in the 3 s (steps); the slowest the capsule gets as a share of its speed and for how long
-# it is slower than half of it; and against the 1.5 s of walking before the change (starting: against second 4 to 7 of
-# the same run): how far a foot is behind the pelvis as it lifts, how far the feet are apart across the heading and how
-# far along it as one lands, and how far the trunk leans (pelvis to chest against upright, degrees), each the most after
-# the change and the most before. And the hardest jump of a foot, a shin and the pelvis in an update in the 3 s after the
-# change (second difference of the origin, mm) and how far the capsule goes in them (way, m). Writes out/res/<variant>/walk176.json and prints the medians and ranges per scene.
+# at the walking speed of each set (common.sh): starting from standing, stopping, and turning by 45, 90 and 180
+# degrees to its left, a change out of walking at 6 moments of the step (SYNC as in gait155.py) and at each nudge of
+# the list (for example 0,1,2,3, see NUDGE in lab101.c). Per run, in seconds after the change: when the capsule has
+# nine tenths of its new velocity (stopping: a tenth of the old speed left), when the first foot lifts and lands, when
+# the last foot lands in the 3 s after the change, and when it faces within 10 degrees of the new way; how many feet
+# land after the capsule has its new velocity and before 1.5 s, and how many in the 3 s (steps); the slowest the
+# capsule gets as a share of its speed and for how long it is slower than half of it; and against the 1.5 s of walking
+# before the change (starting: against second 4 to 7 of the same run): how far a foot is behind the pelvis as it
+# lifts, how far the feet are apart across the heading and how far along it as one lands, and how far the trunk leans
+# (pelvis to chest against upright, degrees), each the most after the change and the most before. And the hardest jump
+# of a foot, a shin and the pelvis in an update in the 3 s after the change (second difference of the origin, mm) and
+# how far the capsule goes in them (way, m). Writes out/res/<variant>/walk176.json and prints the medians and ranges
+# per scene.
 import csv, json, math, os, subprocess, sys
 from concurrent.futures import ThreadPoolExecutor
 import numpy as np
@@ -106,8 +108,8 @@ def main():
     with ThreadPoolExecutor(os.cpu_count()) as pool:
         res = list(pool.map(one, jobs))
     json.dump(res, open(os.path.join(W, 'res', variant, 'walk176.json'), 'w'))
-    keys = ('body', 'lift', 'land', 'rest', 'faced', 'late', 'steps', 'foot', 'shin', 'pelvis', 'way', 'slowest', 'slow', 'behind', 'behindBase', 'across',
-            'acrossBase', 'along', 'alongBase', 'lean', 'leanBase')
+    keys = ('body', 'lift', 'land', 'rest', 'faced', 'late', 'steps', 'foot', 'shin', 'pelvis', 'way', 'slowest', 'slow',
+            'behind', 'behindBase', 'across', 'acrossBase', 'along', 'alongBase', 'lean', 'leanBase')
     print('scene     runs | ' + ' | '.join(keys) + '   (median low..high)')
     for sc in SCENES:
         q = [r for r in res if r['scene'] == sc]

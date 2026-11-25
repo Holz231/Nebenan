@@ -646,6 +646,15 @@ Zehen und Fersen 37 mm, Hände 15 mm, Becken 10 mm, Becken tief ab 15 cm unter d
 - **Körper gegen Beine messen.** `walk176.py` misst, wann die Kapsel ihr neues Tempo hat, wann der erste Fuß landet,
   wann die Füße stehen und wie viele noch landen, nachdem der Körper steht. Für das Gehen ist das die erste Größe einer
   Regel zu Losgehen, Anhalten und Wenden.
+- **Ein Regler der Steuerung ist eine Aussage an das Spiel.** Runde 177: `braking` hieß „so schnell steht sie“, und ein
+  Test prüfte genau das. Wer das Verhalten ändert, baut es als eigene Option mit Standard (`stopBraking`), lässt den
+  alten Weg mit null offen und prüft beide im Test.
+- **Was die Füße tun, hängt am Ort, an dem der Körper stehen wird.** Ein Fuß, der zielen kann, bekommt diesen Ort; für
+  einen, der es nicht mehr kann, richtet sich der Körper nach ihm. Beides zusammen nahm dem Anhalten das Zurücksetzen.
+  Ein Ziel, das springt, wird mit begrenztem Tempo nachgeführt, nicht sofort.
+- **Eine Bedingung gilt in dem Moment, in dem die Eingabe sich ändert.** „Ist eine Sekunde gegangen“ traf auch das Ende
+  eines Halts aus dem Rennen, weil der Gang dort ausläuft; gemerkt beim Loslassen des Sticks (`walkedTo`), trifft sie
+  nur das Gehen.
 - **Größe der Figur.** Winkelbeschleunigungen wachsen bei kleineren Figuren mit 1 durch `nbFigureScale`, Längen
   und Geschwindigkeiten mit ihr.
 

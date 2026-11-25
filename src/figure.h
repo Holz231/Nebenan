@@ -617,6 +617,14 @@ typedef struct nbFigure
 	// How far each foot swings out round the other one in this swing, fixed as it lifts, see NB_SWING_CLEAR in figure.c
 	b3Vec3 swingAside[2];
 	bool swingAsideSet[2];
+	// Stopping out of a walk, see nbFigureSteering::stopBraking: how long it had walked when it last wanted to move,
+	// whether the capsule stops that way and whether the gait does, how hard the capsule brakes for the foot ahead, in
+	// meters per second squared and zero while it does not, and the swings that lifted while it stopped
+	float walkedTo;
+	bool stops;
+	bool halts;
+	float haltRate;
+	bool swingHalts[2];
 	// For how long the heading has waited for the feet in a row, in seconds, see NB_FACE_KEEP in figure_steer.c
 	float faceHeld;
 	// The velocity it was steered at in the last update, and for how long the root still goes down gently after that

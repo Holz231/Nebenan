@@ -72,6 +72,15 @@
 #define NB_STOP_COMMIT 0.7f
 #define NB_STOP_GENTLE 4.0f
 
+// Stopping out of a walk, a humanoid rolls out over its last step, see nbFigureSteering::stopBraking: where the
+// velocity it wants is zero and it had walked for NB_STOP_WALKED seconds when it last wanted to move, the capsule
+// brakes no harder than that, and as gently as the foot ahead asks for, see nbSteerFeet and NB_HALT_LOW. Braking with
+// 14 m/s^2, the capsule stood 0.11 s after the stick let go, in the middle of a step, and the feet took 1.85 s and
+// three to four landings to come to rest under it: the hind foot came up, the front foot stepped back to its place,
+// and the first one stepped 4 cm aside. How long it had walked counts as the stick lets go, not later: at the end of a
+// stop out of a run the gait walks for a second as well, and its feet came to rest with the short steps of a stop out
+// of a walk, a shin 44.6 instead of 30.3 mm in an update stopping from a run sideways.
+
 // A figure steered at a walk bends through a turn, see nbFigureSteering::walkBend, where it walks the way it faces as
 // the turn begins with this share of the speed of the bend or more. Below it, from standing or a first step, it turns
 // on the spot: bending from standing, it was at its speed to the side after 0.58 s and backward after 1.10 s, not 0.40
@@ -763,6 +772,12 @@ bool nbMoveSteered( nbWorld* world, int index, nbFigure* f, float timeStep, b3Ve
 	// turn about, see NB_TURN_HOLD_AFTER, it gets no faster while the leg it stands on loses its foot before the other
 	// foot lands, and stopping or braking to turn about, it brakes gently while a foot lands where it aimed
 	f->walkTime = f->gaitOn && f->gaitRun <= 0.0f ? f->walkTime + timeStep : 0.0f;
+	bool still = b3LengthSquared( wish ) < 0.01f * scale * scale;
+	if ( still == false )
+	{
+		f->walkedTo = f->walkTime;
+	}
+	f->stops = still && f->walkedTo >= NB_STOP_WALKED && def->stopBraking > 0.0f;
 	if ( f->gaitOn && f->boneCount == nb_humanoidBoneCount && f->onGround )
 	{
 		float walks = 1.0f - f->gaitRun;
@@ -778,6 +793,12 @@ bool nbMoveSteered( nbWorld* world, int index, nbFigure* f, float timeStep, b3Ve
 			{
 				rate = b3MinFloat( rate, rate - walks * rate );
 			}
+		}
+		if ( f->stops )
+		{
+			// Stopping out of a walk it rolls out, see nbFigureSteering::stopBraking
+			float gentle = f->haltRate > 0.0f ? f->haltRate : def->stopBraking;
+			rate = b3MinFloat( rate, rate + walks * ( gentle - rate ) );
 		}
 		for ( int k = 0; k < 2 && stopping; ++k )
 		{

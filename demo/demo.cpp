@@ -563,6 +563,7 @@ struct App
 	// How fast the player gets faster, and from standing, see nbFigureSteering: zero leaves the start to the first
 	float playerAcceleration = 10.0f;
 	float playerStartAcceleration = 0.0f;
+	float playerStopBraking = 4.0f;
 	bool gaitClipsMade = false;
 	nbKeyframe gaitKeyframes[2][2][128];
 	b3Quat gaitRotations[2][2][128 * nb_humanoidBoneCount];
@@ -2498,6 +2499,7 @@ static void BuildPlayerScene( App& app )
 	def.steered = true;
 	def.steering.acceleration = app.playerAcceleration;
 	def.steering.startAcceleration = app.playerStartAcceleration;
+	def.steering.stopBraking = app.playerStopBraking;
 	app.player = nbCreateFigure( app.destruction, &def );
 	if ( nbFigure_IsValid( app.player ) )
 	{
@@ -3737,6 +3739,17 @@ static void DrawUi( App& app )
 								   "Beschleunigung darunter. Mit 4 hat sie ihr Gehtempo etwa mit der ersten Landung und ihr\n"
 								   "Renntempo nach zwei weiteren Schritten." );
 			}
+			steeringChanged |= ImGui::SliderFloat( "Anhalten aus dem Gehen", &app.playerStopBraking, 0.0f, 14.0f, "%.1f m/s²" );
+			if ( ImGui::IsItemHovered() )
+			{
+				ImGui::SetTooltip( "Wie hart die Spielfigur höchstens bremst, wenn sie aus dem Gehen anhält
+"
+								   "(nbFigureSteering::stopBraking). Mit 4 rollt der Körper über den letzten Schritt aus,
+"
+								   "und der hintere Fuß schließt auf. 0 heißt aus: Dann steht sie so hart, wie sie bremst,
+"
+								   "mitten im Schritt, und die Füße sortieren sich danach." );
+			}
 			steeringChanged |= ImGui::SliderFloat( "Beschleunigung", &app.playerAcceleration, 2.0f, 20.0f, "%.1f m/s²" );
 			if ( ImGui::IsItemHovered() )
 			{
@@ -3748,6 +3761,7 @@ static void DrawUi( App& app )
 				nbFigureSteering steering = nbDefaultFigureDef().steering;
 				steering.acceleration = app.playerAcceleration;
 				steering.startAcceleration = app.playerStartAcceleration;
+				steering.stopBraking = app.playerStopBraking;
 				nbFigure_SetSteering( app.player, &steering );
 			}
 		}

@@ -3848,16 +3848,23 @@ static float SteerSpeed( nbFigureId figure )
 
 // A steered figure gets to the speed it wants, walking and running, within 10 % in the time its acceleration takes and a
 // tenth of a second, holds it, stops again as fast as it brakes, and turns on the spot to the heading it wants at its
-// turn rate
+// turn rate. Out of a walk it stops that fast where a game sets nbFigureSteering::stopBraking to zero, the third pass;
+// as the library has it, it still rolls out then, see SteerHaltTest, and stands within 0.9 s.
 static int SteerSpeedTest( void )
 {
 	nbFigureSteering steering = nbDefaultFigureDef().steering;
-	const float speeds[2] = { 1.5f, 4.5f };
-	for ( int pass = 0; pass < 2; ++pass )
+	const float speeds[3] = { 1.5f, 4.5f, 1.5f };
+	for ( int pass = 0; pass < 3; ++pass )
 	{
 		FigureScene scene;
 		CreateFigureScene( &scene, 1 );
 		nbFigureId figure = AddSteeredFigure( &scene, b3Vec3_zero, 0.0f );
+		if ( pass == 2 )
+		{
+			nbFigureSteering hard = steering;
+			hard.stopBraking = 0.0f;
+			nbFigure_SetSteering( figure, &hard );
+		}
 		StepFigures( &scene, 10 );
 		float speed = speeds[pass];
 		SteerVelocity( figure, (b3Vec3){ 0.0f, 0.0f, speed } );
@@ -3871,6 +3878,13 @@ static int SteerSpeedTest( void )
 		printf( "  wished %.1f m/s: %.3f after accelerating, %.3f held, %.4f after braking\n", speed, reached, held, stopped );
 		ENSURE( fabsf( reached - speed ) <= 0.1f * speed );
 		ENSURE( fabsf( held - speed ) <= 0.1f * speed );
+		if ( pass == 0 )
+		{
+			ENSURE( stopped > 0.3f );
+			StepFigures( &scene, 54 - (int)ceilf( 60.0f * ( speed / steering.braking + 0.1f ) ) );
+			stopped = SteerSpeed( figure );
+			printf( "  %.4f 0.9 s after it stopped out of a walk\n", stopped );
+		}
 		ENSURE( stopped < 0.01f );
 		ENSURE( nbFigure_GetState( figure ) == nb_figureAnimated );
 		DestroyFigureScene( &scene );
@@ -6162,6 +6176,81 @@ static int SteerStartTest( void )
 	ENSURE( runEarly < 2.2f );
 	ENSURE( fabsf( runLate - 4.3f ) < 0.22f );
 	ENSURE( change[0] > 4.0f && change[1] > 4.0f );
+	return 0;
+}
+
+// A steered figure that stops out of a walk rolls out over its last step, see nbFigureSteering::stopBraking: walking
+// at 1.5 m/s, the stick lets go at twelve moments five updates apart, a cycle of its gait. Over the twelve: how long
+// the capsule takes to stand and how far it goes, how many feet land after the stick let go and when the last one
+// does, with the stop of the library and, the second pass, with stopBraking at zero, where it stops as hard as it
+// brakes. The capsule stands after 0.70 s and 0.48 m at most, the feet after 1.13 s at most and 0.88 s in their mean,
+// three feet land at most and no more than two in nine of the twelve: the foot in the air lands where it stands at
+// rest, the other one closes up beside it, and where the first could no longer aim, it steps a few centimeters aside.
+// Braking as hard as it brakes, as until round 176, the capsule stands after 0.22 s and 0.16 m, in the middle of a
+// step, the feet after 2.07 s at most and 1.80 s in their mean, and three or four feet land.
+static int SteerHaltTest( void )
+{
+	float stand[2] = { 0.0f, 0.0f }, way[2] = { 0.0f, 0.0f }, rest[2] = { 0.0f, 0.0f }, mean[2] = { 0.0f, 0.0f };
+	int most[2] = { 0, 0 }, two[2] = { 0, 0 };
+	for ( int pass = 0; pass < 2; ++pass )
+	{
+		for ( int part = 0; part < 12; ++part )
+		{
+			FigureScene scene;
+			CreateFigureScene( &scene, 1 );
+			nbFigureId figure = AddSteeredFigure( &scene, b3Vec3_zero, 0.0f );
+			if ( pass == 1 )
+			{
+				nbFigureSteering steering = nbDefaultFigureDef().steering;
+				steering.stopBraking = 0.0f;
+				nbFigure_SetSteering( figure, &steering );
+			}
+			StepFigures( &scene, 30 );
+			SteerVelocity( figure, (b3Vec3){ 0.0f, 0.0f, 1.5f } );
+			StepFigures( &scene, 150 + 5 * part );
+			SteerVelocity( figure, b3Vec3_zero );
+			const nbFigure* f = GetSteered( &scene, figure );
+			b3Pos from = f->frame.p;
+			bool swings[2] = { f->footSwings[0], f->footSwings[1] };
+			float stood = -1.0f, last = 0.0f;
+			int lands = 0;
+			for ( int i = 1; i <= 180; ++i )
+			{
+				StepFigures( &scene, 1 );
+				f = GetSteered( &scene, figure );
+				for ( int k = 0; k < 2; ++k )
+				{
+					if ( swings[k] && f->footSwings[k] == false )
+					{
+						lands += 1;
+						last = (float)i / 60.0f;
+					}
+					swings[k] = f->footSwings[k];
+				}
+				if ( stood < 0.0f && SteerSpeed( figure ) < 0.01f )
+				{
+					stood = (float)i / 60.0f;
+				}
+			}
+			ENSURE( stood >= 0.0f && f->gaitOn == false );
+			ENSURE( nbFigure_GetState( figure ) == nb_figureAnimated );
+			stand[pass] = b3MaxFloat( stand[pass], stood );
+			way[pass] = b3MaxFloat( way[pass], b3SubPos( f->frame.p, from ).z );
+			rest[pass] = b3MaxFloat( rest[pass], last );
+			mean[pass] += last / 12.0f;
+			most[pass] = lands > most[pass] ? lands : most[pass];
+			two[pass] += lands <= 2 ? 1 : 0;
+			DestroyFigureScene( &scene );
+		}
+	}
+	printf( "  stopping out of a walk at 1.5 m/s the capsule stands after %.2f s and %.2f m at most, the feet after %.2f s "
+			"at most and %.2f s in the mean of twelve, %d feet land at most and no more than two in %d of twelve; as hard "
+			"as it brakes after %.2f s and %.2f m, %.2f and %.2f s, %d and in %d\n",
+			stand[0], way[0], rest[0], mean[0], most[0], two[0], stand[1], way[1], rest[1], mean[1], most[1], two[1] );
+	ENSURE( stand[0] <= 0.8f && way[0] <= 0.55f );
+	ENSURE( rest[0] <= 1.3f && mean[0] <= 1.0f );
+	ENSURE( most[0] <= 3 && two[0] >= 7 );
+	ENSURE( stand[1] <= 0.25f && way[1] <= 0.2f );
 	return 0;
 }
 
@@ -8811,7 +8900,7 @@ static int ThinBoardTest( void )
 // walking takes the steps of people, see NB_GAIT_CADENCE_WALK, and the ankle of a swinging foot bends up as far as
 // theirs, see NB_SWING_ANKLE_SOFT. Round 113: the body has the dimensions of a person, see nbMakeHumanoidBones.
 // Round 131: a foot that only just landed stands where the other foot is free to lift, see NB_GAIT_FRESH_KEEP.
-#define NB_EXPECTED_STEER_HASH 0xa7b0396cu
+#define NB_EXPECTED_STEER_HASH 0xbd93969bu
 
 // See RunGaitClipScenario. Since round 99 as for RunSteerScenario. Since round 100 the figure that is told to turn on
 // the spot while it still walks, not facing where it moves, keeps its legs where they face as its heading turns, and
@@ -8820,7 +8909,7 @@ static int ThinBoardTest( void )
 // RunSteerScenario. Since round 111 as for RunSteerScenario. Round 112: the clips are recorded from a gait that takes
 // the steps of people, see NB_GAIT_CADENCE_WALK, and the ankle of a swinging foot bends up as far as theirs, see
 // NB_SWING_ANKLE_SOFT. Round 113 and round 131 as for RunSteerScenario.
-#define NB_EXPECTED_GAIT_CLIP_HASH 0x06fd2220u
+#define NB_EXPECTED_GAIT_CLIP_HASH 0x9a166150u
 
 static int FigureFollowDeterminismTest( void )
 {
@@ -8957,6 +9046,7 @@ int FigureTest( void )
 	RUN_TEST( SteerMeetTest );
 	RUN_TEST( SteerLegsApartTest );
 	RUN_TEST( SteerStartTest );
+	RUN_TEST( SteerHaltTest );
 	RUN_TEST( SteerLeadLiftTest );
 	RUN_TEST( SteerLegLeadTest );
 	RUN_TEST( SteerRunDescentTest );

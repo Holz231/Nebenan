@@ -121,6 +121,11 @@ was schon verworfen wurde.
   der Gang nicht läuft und die Kapsel langsamer als `NB_START_FROM` ist, bis sie ihr Tempo hat (`starting` in
   `nbMoveSteered`). `lab101` nimmt dafür `START`. Die Summen aus `gait155.py` und `steer162.py` hängen an der
   Schrittphase der Wende und vergleichen keine Stände, die verschieden starten.
+- **Anhalten.** Seit Runde 177 gibt es `nbFigureSteering::stopBraking` (Standard 4, null stellt es ab): Aus dem Gehen
+  rollt die Kapsel über den letzten Schritt aus und bremst für den Fuß voraus (`haltRate`), der schwingende Fuß landet
+  breit an seinem Standplatz, kurze Schritte im Anhalten sind schnell (`NB_HALT_SWING`). Es gilt nur, wenn die Figur
+  beim Loslassen 1 s gegangen war (`walkedTo`), nicht am Ende eines Halts aus dem Rennen. Gemessen mit `walk176.py`
+  (rest, steps, body, way) und angesehen mit `strip176.py`.
 - **Messen mit Rauschband.** Seit Runde 170 kommen Änderungen in den Werkzeugen an fester Schrittphase (`SYNC`), und
   Stände werden in vier Proben mit `NUDGE` gemessen (`check170.sh`) und mit `compare170.py` verglichen. Eine Regel setzt
   ihre Toleranzen aus den Spannen und nennt eine Bedingung verfehlt, wo die Spannen sich nicht überdecken.
@@ -207,8 +212,8 @@ was schon verworfen wurde.
 `SteerSwitchAnswerTest` (141), `SteerBackToForwardEarlyTest` (143), `SteerSideToBackWalkTest` (144), `SteerRunTrackTest`
 (147), `SteerSpeedUpTest` (150), `SteerFasterRollTest` (151), `SteerLandToesTest` (152), `SteerTurnStepTest` (156),
 `SteerWalkStopTest` (158), `SteerWalkBendTest` (161), `SteerWalkAboutTest` (163), `SteerLetGoTest` (164),
-`SteerMeetTest` (166), `SteerLegsApartTest` (167), `SteerStartTest` (169), `SteerLeadLiftTest` (172), und für den Körper
-`FigureShoulderTest` (126) und `FigureSkinTest` (127): Ändert eine Runde die Knochen, fällt er, bis
-`tools/mannequin/make_skin.py` die Haut neu geschrieben hat, erst `dump_bones`, dann das Werkzeug. Die Hashes
+`SteerMeetTest` (166), `SteerLegsApartTest` (167), `SteerStartTest` (169), `SteerLeadLiftTest` (172), `SteerHaltTest`
+(177), und für den Körper `FigureShoulderTest` (126) und `FigureSkinTest` (127): Ändert eine Runde die Knochen, fällt
+er, bis `tools/mannequin/make_skin.py` die Haut neu geschrieben hat, erst `dump_bones`, dann das Werkzeug. Die Hashes
 `NB_EXPECTED_…_HASH` ändern sich nur, wenn sich ein Lauf ändert, der dort festgehalten ist: Das ist erlaubt, wird aber
 in der Roadmap genannt.
