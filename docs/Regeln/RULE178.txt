@@ -1,0 +1,73 @@
+Regel für Runde 178, vor jedem Lauf mit den Geschwindigkeiten der unabhängigen Prüfung festgeschrieben. Gemessen wird
+gegen active-ragdoll-177.
+
+Worum es geht. Der Nutzer will zuerst das Gehen richtig haben und hat nach dem Anhalten (Runde 177) das Losgehen
+gewählt. Runde 176 hat gemessen: Die Kapsel hat ihr Gehtempo nach 0,12 s, der erste Fuß landet erst nach 0,33 s, und
+zwar einen vollen Schritt weit: Der Körper gleitet seinen Beinen voraus.
+
+Wie groß das Thema ist, Frage 1 des Skills. Auf zwölf Entwicklungssätzen, Gehen mit 1,05 bis 1,72 m/s: Die Kapsel hat
+neun Zehntel ihres Tempos nach 0,12 s (0,10 bis 0,15), der erste Fuß landet nach 0,33 s, die Füße stehen dann 0,69 m
+auseinander, 0,99 eines Schritts im stetigen Gang, und ein Schienbein springt beim Losgehen 23,7 mm in einem Update.
+Richtig wäre das Tempo am Ende des ersten Schritts, wie beim Menschen (Brenière und Do 1991, Journal of Motor Behavior),
+und ein erster Schritt, der kürzer ist als die folgenden.
+
+Die Ursache ist bekannt seit Runde 169: Aus dem Stand beschleunigt die Kapsel mit acceleration, 10 m/s². Seit Runde 169
+gibt es dafür nbFigureSteering::startAcceleration, aber mit Standard null, weil 14 Tests am alten Anfahren hingen.
+
+Der Eingriff, in der Bibliothek: Der Standard von startAcceleration wird 4 m/s². Sonst ändert sich nichts am Gang. Die
+Aufnahme der Gang-Clips (nbMakeHumanoidGaitClip) behält das alte Anfahren, damit die Clips dieselben bleiben. Er gilt,
+wie die Option seit Runde 169, für das Losgehen und das Losrennen.
+
+Die Varianten, Frage 2 des Skills, zwölf Entwicklungssätze, Losgehen, je: wann die Kapsel ihr Tempo hat, ihr Tempo bei
+der ersten Landung als Anteil, Länge des ersten Schritts, härtester Sprung eines Schienbeins:
+ - alt, 10 m/s²: 0,12 s; 1,00; 0,69 m; 23,7 mm.
+ - 3 m/s²: 0,42 s; 0,73; 0,36 m; 18,9 mm. Die Kapsel hat ihr Tempo erst nach der Landung.
+ - 4 m/s²: 0,32 s (0,23 bis 0,38); 0,96 (0,79 bis 1,00); 0,48 m; 19,1 mm. Das Tempo mit der ersten Landung. Der
+   Prototyp.
+ - 5 m/s²: 0,25 s; 1,00; 0,57 m; 20,4 mm. Das Tempo vor der Landung.
+Losrennen mit 4 m/s²: Die Kapsel hat ihr Tempo nach 0,86 s (0,68 bis 1,02) statt 0,34 s, der Rumpf neigt sich 12,3 statt
+14,4 Grad, der erste Schritt ist 0,47 statt 0,58 m lang; im Bild geht die Figur zwei Schritte und rennt dann, statt mit
+durchgebogenem Rücken in einen Riesenschritt zu schießen. Losgehen in eine andere Richtung ändert sich kaum, weil die
+Figur dort auf ihre Drehung wartet: um 90 Grad 0,42 statt 0,38 s, um 180 Grad 0,92 s wie alt.
+
+Nimmt der Prototyp das Ziel, Frage 3 des Skills. Auf beiden Entwicklungsgruppen hält er alle Bedingungen unten. Die
+Tests des Prototyps: 15 von 206 schlagen an. Zwei prüfen das Anfahren selbst und werden angepasst. Die übrigen 13
+treffen eine Kante, eine Treppe, eine Wende oder einen Wechsel an einem Moment des Schritts, den ihre Updates vom Start
+an zählen; mit 3, 4 und 5 m/s² schwanken sie in beide Richtungen (die Treppe hinab bewegt sich das Becken 48, 91 und 48
+mm zwischen zwei Landungen gegen 56; die Kehrtwende schaut nach 1,62, 1,45 und 1,33 s zurück gegen 1,35). Sie behalten
+deshalb das Anfahren, mit dem sie gesetzt sind, und der Start der Bibliothek wird in SteerStartTest geprüft.
+
+Bedingungen, alt ist active-ragdoll-177, neu der saubere Bau, mit tools/measure/check177.sh und check170.sh auf einer
+Gruppe von Sätzen, gerechnet von tools/measure/eval178.py. Ein Start aus dem Stand kommt an keinem Moment eines
+Schritts, die Proben geben ihm kein Rauschband: Seine Größen gelten ohne Anstoß über die Sätze.
+Ziel, Losgehen:
+ Z1 Die Kapsel hat neun Zehntel ihres Tempos im Median höchstens 0,08 s vor oder nach der Landung des ersten Fußes.
+ Z2 Bei dieser Landung geht sie im Median mindestens 0,90 ihres Tempos und in keinem Start weniger als 0,75.
+ Z3 Der erste Schritt ist im Median höchstens 0,80 eines Schritts im stetigen Gang lang.
+ Z4 Der härteste Sprung eines Schienbeins beim Losgehen ist nicht größer als alt.
+Schutz:
+ S1 Anhalten aus dem Gehen, vier Proben: Die Füße stehen im Median höchstens 0,05 s später als alt, und der Anteil der
+   Halte mit zwei Landungen sinkt um höchstens 5 Punkte.
+ S2 tools/measure/compare170.py nennt keine Größe schlechter außer „starts deep“, der einen Größe eines Starts ohne
+   Rauschband.
+ S3 Für sie: Wie tief die Schienbeine beim Losrennen ineinander geraten, über die Sätze: im Median höchstens 2 mm tiefer
+   als alt.
+ S4 Alle Tests bestehen, mit gcc und clang, und die Hashes des Benchmarks der Figuren sind mit 1, 2 und 4 Threads
+   gleich.
+Preis, erlaubt:
+ P1 Eine Sekunde nach dem Steuern ist die Figur im Gehen im Median höchstens 0,20 m weniger weit als alt.
+ P2 Im Rennen höchstens 1,20 m weniger weit, und sie hat ihr Renntempo im Median spätestens nach 1,00 s; alt 0,34 s.
+ P3 Die Schienbeine geraten beim Losrennen an der tiefsten Stelle über die Sätze höchstens 8 mm tiefer ineinander als
+   alt; auf den Entwicklungssätzen 24,5 statt 18,9 mm, für 0,03 bis 0,05 s, in drei von sechs Sätzen tiefer und in drei
+   flacher.
+
+Unabhängige Prüfung: die frischen Sätze h210 bis h213 aus tools/measure/common.sh, Gehen mit 1,0733, 1,2567, 1,4267 und
+1,6067 m/s, Rennen mit 4,3767, 3,8867, 3,4633 und 3,0767 m/s, mit speeds.py gegen alle Geschwindigkeiten geprüft, die je
+gelaufen sind; Gruppe fresh178. Kein Stand ist auf ihnen gelaufen, bevor diese Datei gepusht ist. Hält der saubere Bau
+dort eine Bedingung nicht, wird nicht gebaut, außer der Nutzer entscheidet es; die Regel wird danach nicht geändert, und
+eine Messung, die nicht passt, wird nicht wiederholt.
+
+Der saubere Bau muss auf dev1 ohne Anstoß dieselben drei Tabellen schreiben wie der Prototyp (legs167, gait155,
+steer162, mit cmp verglichen).
+
+Der Prototyp steht als docs/Regeln/trial178.patch, sein Schalter: -DNB_X_START=4.0f.

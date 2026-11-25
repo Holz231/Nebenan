@@ -11,8 +11,11 @@
 # lifts, how far the feet are apart across the heading and how far along it as one lands, and how far the trunk leans
 # (pelvis to chest against upright, degrees), each the most after the change and the most before. And the hardest jump
 # of a foot, a shin and the pelvis in an update in the 3 s after the change (second difference of the origin, mm) and
-# how far the capsule goes in them (way, m). Writes out/res/<variant>/walk176.json and prints the medians and ranges
-# per scene.
+# how far the capsule goes in them (way, m). Since round 178 also starting to where the figure does not face, 90 and
+# 180 degrees to its left, and starting to a run at the running speed of the set, and for every run how far the feet
+# are apart along the heading as the first one lands (first, m), how fast the capsule is then as a share of its speed
+# (landSpeed), and how far it has gone a second after the change (way1, m). Writes out/res/<variant>/walk176.json and
+# prints the medians and ranges per scene.
 import csv, json, math, os, subprocess, sys
 from concurrent.futures import ThreadPoolExecutor
 import numpy as np
@@ -21,7 +24,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from where129 import speeds, lab_env, shifted, W
 
 SCENES = {'start': (None, 0, 1), 'stop': (0.0, 0, 6), 'turn45': (1.0, 45, 6), 'turn90': (1.0, 90, 6),
-          'turn180': (1.0, 180, 6)}
+          'turn180': (1.0, 180, 6), 'start90': (None, 90, 1), 'start180': (None, 180, 1), 'startRun': (None, 0, 1)}
 FEET = {'L': 15, 'R': 18}
 
 
@@ -47,8 +50,8 @@ def shape(d, win):
 def one(job):
     variant, name, scene, i, nudge = job
     keep, turn, moments = SCENES[scene]
-    v = float(speeds(name)['WALK'])
-    cycle = float(speeds(name)['CW'])
+    v = float(speeds(name)['RUN' if scene == 'startRun' else 'WALK'])
+    cycle = float(speeds(name)['CR' if scene == 'startRun' else 'CW'])
     a = 1.0 if keep is None else 4.0 + i * cycle / moments
     rad = math.radians(turn)
     v1 = v if keep is None else keep * v
@@ -97,6 +100,15 @@ def one(job):
             j = 1000.0 * np.linalg.norm(p[2:] - 2.0 * p[1:-1] + p[:-2], axis=1)
             res[n] = max(res[n], float(j[after[2:]].max()))
     res['way'] = float(np.sum(speed[after]) * dt)
+    # starting: the first step against a step of the steady gait, how fast the capsule is as the first foot lands, and
+    # how far it has gone after a second
+    res['first'], res['landSpeed'] = -1.0, -1.0
+    if lands:
+        i = int(np.argmin(np.abs(t - (a + min(lands)))))
+        s, c = math.sin(d['heading'][i]), math.cos(d['heading'][i])
+        x, z = d['b15x'][i] - d['b18x'][i], d['b15z'][i] - d['b18z'][i]
+        res['first'], res['landSpeed'] = abs(x * s + z * c), float(speed[i] / v)
+    res['way1'] = float(np.sum(speed[(t > a) & (t <= a + 1.0)]) * dt)
     for n, x, y in zip(('behind', 'across', 'along', 'lean'), now, was):
         res[n], res[n + 'Base'] = float(x), float(y)
     return res
@@ -109,7 +121,8 @@ def main():
         res = list(pool.map(one, jobs))
     json.dump(res, open(os.path.join(W, 'res', variant, 'walk176.json'), 'w'))
     keys = ('body', 'lift', 'land', 'rest', 'faced', 'late', 'steps', 'foot', 'shin', 'pelvis', 'way', 'slowest', 'slow',
-            'behind', 'behindBase', 'across', 'acrossBase', 'along', 'alongBase', 'lean', 'leanBase')
+            'first', 'landSpeed', 'way1', 'behind', 'behindBase', 'across', 'acrossBase', 'along', 'alongBase', 'lean',
+            'leanBase')
     print('scene     runs | ' + ' | '.join(keys) + '   (median low..high)')
     for sc in SCENES:
         q = [r for r in res if r['scene'] == sc]

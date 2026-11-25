@@ -1,0 +1,16 @@
+diff --git a/src/figure.c b/src/figure.c
+index 1d697f1..2c17e68 100644
+--- a/src/figure.c
++++ b/src/figure.c
+@@ -508,7 +508,11 @@ nbFigureDef nbDefaultFigureDef( void )
+ 	def.steering.turnRate = 4.0f;
+ 	def.steering.turnAcceleration = 25.0f;
+ 	def.steering.walkBend = 0.7f;
++#ifdef NB_X_START
++	def.steering.startAcceleration = NB_X_START;
++#else
+ 	def.steering.startAcceleration = 0.0f;
++#endif
+ 	def.steering.stopBraking = 4.0f;
+ 	def.internalValue = NB_SECRET_COOKIE;
+ 	return def;
