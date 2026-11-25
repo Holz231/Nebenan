@@ -640,6 +640,12 @@ Zehen und Fersen 37 mm, Hände 15 mm, Becken 10 mm, Becken tief ab 15 cm unter d
   davor, das vor einem Neustart der Umgebung gebaut war, erschienen alle fünf Szenen 8 bis 15 % langsamer, auch die ohne
   Figuren, bei unveränderter Befehlszahl. Gegen den neu gebauten alten Stand: 0,99 bis 1,04. Nach jedem Neustart den
   alten Stand neu bauen, bevor gepaart wird.
+- **Ansehen, nicht nur zählen.** Runde 176: `strip176.py` zeichnet die Figur als Strichbilder. Zwanzig Runden Zahlen
+  über Sprünge von Knochen hatten nicht gezeigt, was im ersten Bild auffiel: Die Kapsel ändert ihr Tempo in 0,1 s, die
+  Beine brauchen 0,3 bis 1,9 s. Vor jeder Runde am Gang die Szene zeichnen und ansehen, vorher und mit dem Prototyp.
+- **Körper gegen Beine messen.** `walk176.py` misst, wann die Kapsel ihr neues Tempo hat, wann der erste Fuß landet,
+  wann die Füße stehen und wie viele noch landen, nachdem der Körper steht. Für das Gehen ist das die erste Größe einer
+  Regel zu Losgehen, Anhalten und Wenden.
 - **Größe der Figur.** Winkelbeschleunigungen wachsen bei kleineren Figuren mit 1 durch `nbFigureScale`, Längen
   und Geschwindigkeiten mit ihr.
 
