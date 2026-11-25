@@ -508,7 +508,7 @@ nbFigureDef nbDefaultFigureDef( void )
 	def.steering.turnRate = 4.0f;
 	def.steering.turnAcceleration = 25.0f;
 	def.steering.walkBend = 0.7f;
-	def.steering.startAcceleration = 0.0f;
+	def.steering.startAcceleration = 4.0f;
 	def.steering.stopBraking = 4.0f;
 	def.internalValue = NB_SECRET_COOKIE;
 	return def;

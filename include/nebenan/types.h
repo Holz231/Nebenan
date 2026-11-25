@@ -1379,7 +1379,9 @@ typedef struct nbFigureSteering
 	/// speed over its first steps instead of gliding off ahead of its legs. With acceleration at 10 it has its walking
 	/// speed after 0.10 to 0.17 s, before a foot has landed; with 4 here after 0.25 to 0.42 s, about as its first foot
 	/// lands, and its running speed after 0.7 to 1.05 s and two landings instead of 0.3 to 0.4 s and one. Once it moves,
-	/// acceleration and braking decide alone. Zero, the default, leaves the start to acceleration as well.
+	/// acceleration and braking decide alone. The default is 4 since round 178: the figure has its walking speed as its
+	/// first foot lands, as people have it at the end of their first step, and its first step is 0.48 m long instead
+	/// of the 0.70 m of its steady gait. Zero leaves the start to acceleration as well, as until round 177.
 	float startAcceleration;
 
 	/// How hard a steered humanoid brakes at most as it stops out of a walk, in meters per second squared: where the

@@ -562,7 +562,7 @@ struct App
 	bool playerFacesCamera = false;
 	// How fast the player gets faster, and from standing, see nbFigureSteering: zero leaves the start to the first
 	float playerAcceleration = 10.0f;
-	float playerStartAcceleration = 0.0f;
+	float playerStartAcceleration = 4.0f;
 	float playerStopBraking = 4.0f;
 	bool gaitClipsMade = false;
 	nbKeyframe gaitKeyframes[2][2][128];

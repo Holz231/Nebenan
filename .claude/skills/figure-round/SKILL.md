@@ -660,6 +660,16 @@ Zehen und Fersen 37 mm, Hände 15 mm, Becken 10 mm, Becken tief ab 15 cm unter d
   und `apt-get install -y libgl-dev libx11-dev libxi-dev libxcursor-dev` baut sie auch in der Umgebung: `cmake -S . -B
   <dir> -DNEBENAN_DEMO=ON` und das Ziel `nebenan_demo`. Text für C-Quellen nie mit `\n` aus einem Python-Text ohne `r`
   schreiben.
+- **Ein Start aus dem Stand hat kein Rauschband aus Proben.** Runde 178: `NUDGE` verschiebt den Moment des Schritts, an
+  dem eine Änderung kommt; ein Start kommt an keinem. Seine Größen werden über die Sätze verglichen (Median und Spanne),
+  und `compare170.py` nennt eine einzelne Startgröße schnell „schlechter“, die über die Sätze in beide Richtungen geht.
+- **Tests, die Updates vom Start an zählen, sind Stichproben eines Schrittmoments.** Ein anderes Anfahren ließ 13 Tests
+  anschlagen; mit drei Werten des Anfahrens schwankten sie in beide Richtungen. Solche Tests behalten das Anfahren, mit
+  dem sie gesetzt sind (`AddSteeredFigure`), und was dabei an schlechten Momenten auffällt, kommt als offener Punkt in
+  die Liste, nicht unter den Tisch.
+- **Eine Option, die Standard wird, ist ein kleiner Bau mit großer Wirkung auf alles, was danach kommt.** Auch die
+  Bibliothek selbst hängt an ihrem Standard: Die Aufnahme der Gang-Clips startete eine Figur mit `nbDefaultFigureDef`,
+  und die Clips begannen an anderer Stelle des Zyklus.
 - **Größe der Figur.** Winkelbeschleunigungen wachsen bei kleineren Figuren mit 1 durch `nbFigureScale`, Längen
   und Geschwindigkeiten mit ihr.
 

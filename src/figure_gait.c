@@ -69,6 +69,10 @@ int nbMakeHumanoidGaitClip( float speed, float height, nbKeyframe* keyframes, b3
 	figureDef.standHeight = stand;
 	figureDef.position = b3ToPos( (b3Vec3){ 0.0f, 0.0f, -NB_RECORD_START } );
 	figureDef.steered = true;
+	// It starts as fast as it accelerates: the clip is a cycle of the steady gait, and with the start of the library,
+	// see nbFigureSteering::startAcceleration, the recording met another moment of it and the clip began elsewhere in
+	// the cycle
+	figureDef.steering.startAcceleration = 0.0f;
 	nbFigureId figureId = nbCreateFigure( worldId, &figureDef );
 	nbSteer steer = { { 0.0f, 0.0f, speed }, 0.0f, true };
 	nbFigure_Steer( figureId, &steer );

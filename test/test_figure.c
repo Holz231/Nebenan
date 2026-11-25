@@ -3801,7 +3801,13 @@ static uint32_t RunFigureScenario( int threadCount )
 //----------------------------------------------------------------------------------------------------------------------
 // Figures a program steers, see figure_steer.c and the acceptance of round 84, F84 in docs/Roadmap.md
 
-// A figure the program steers by the velocity it wants
+// A figure the program steers by the velocity it wants. It starts as fast as it accelerates, with
+// nbFigureSteering::startAcceleration at zero, as the library had it until round 177: these tests meet a ledge, a
+// stair, a turn or a change at a moment of the step that their updates count from the start, and with another start
+// they meet another moment. With start accelerations of 3, 4 and 5 the same thirteen tests swung both ways: down the
+// stairs the pelvis moved 48, 91 and 48 mm between two landings against 56, a turn about at a walk faced back after
+// 1.62, 1.45 and 1.33 s against 1.35. The start of the library is tested where a test sets it, see SteerStartTest,
+// and measured with the tools, which wait for a moment of the step, see tools/measure/where129.py.
 static nbFigureId AddSteeredFigure( FigureScene* scene, b3Vec3 position, float heading )
 {
 	nbFigureDef def = nbDefaultFigureDef();
@@ -3810,6 +3816,7 @@ static nbFigureId AddSteeredFigure( FigureScene* scene, b3Vec3 position, float h
 	def.position = b3ToPos( position );
 	def.heading = heading;
 	def.steered = true;
+	def.steering.startAcceleration = 0.0f;
 	return nbCreateFigure( scene->world, &def );
 }
 
@@ -3824,6 +3831,7 @@ static nbFigureId AddSteeredFigureBend( FigureScene* scene, b3Vec3 position, flo
 	def.heading = heading;
 	def.steered = true;
 	def.steering.walkBend = walkBend;
+	def.steering.startAcceleration = 0.0f;
 	return nbCreateFigure( scene->world, &def );
 }
 
@@ -3853,6 +3861,7 @@ static float SteerSpeed( nbFigureId figure )
 static int SteerSpeedTest( void )
 {
 	nbFigureSteering steering = nbDefaultFigureDef().steering;
+	steering.startAcceleration = 0.0f;
 	const float speeds[3] = { 1.5f, 4.5f, 1.5f };
 	for ( int pass = 0; pass < 3; ++pass )
 	{
@@ -6116,16 +6125,21 @@ static int SteerLegsApartTest( void )
 	return 0;
 }
 
-// A steered figure starts gently from standing where a game asks for it, see nbFigureSteering::startAcceleration, set
-// here on the living figure with nbFigure_SetSteering. Steered to a walk at 1.4 m/s, after 0.15 s it goes 0.6 m/s with
-// a start acceleration of 4, no more than 0.7, and 1.4 m/s without one, and after 0.6 s it walks at 1.4 m/s either way.
+// A steered figure starts gently from standing, see nbFigureSteering::startAcceleration: the first pass with the start
+// these tests keep, as fast as it accelerates, see AddSteeredFigure, the second with the steering of the library, set
+// on the living figure with nbFigure_SetSteering. Steered to a walk at 1.4 m/s, after 0.15 s it goes 0.6 m/s with the
+// start of the library, no more than 0.7, and 1.4 m/s without it, and after 0.6 s it walks at 1.4 m/s either way. As
+// its first foot lands it goes 1.33 m/s, more than 1.2, with its feet 0.52 m apart, less than 0.6: it has its speed at
+// the end of a first step that is shorter than the 0.73 m of the start without it, which is a step of its steady gait.
 // Steered to a run at 4.3 m/s it goes no more than 2.2 m/s after 0.5 s (2.0) and runs at 4.3 m/s after 1.3 s. Once it
-// moves, its acceleration decides alone: from a walk it runs at 4.3 m/s within 0.4 s with the start acceleration set
-// as without it. Until round 169 a figure had the speed it walks at 0.10 to 0.17 s after it was steered, before its
-// first foot had landed: its body glided off ahead of its legs.
+// moves, its acceleration decides alone: from a walk it runs at 4.3 m/s within 0.4 s either way. Until round 169 a
+// figure had the speed it walks at 0.10 to 0.17 s after it was steered, before its first foot had landed: its body
+// glided off ahead of its legs; from round 169 a game could ask for the gentle start, and since round 178 the library
+// starts that way.
 static int SteerStartTest( void )
 {
 	float early[2], walked[2], runEarly = 0.0f, runLate = 0.0f, change[2];
+	float landed[2] = { -1.0f, -1.0f }, step[2] = { 0.0f, 0.0f };
 	for ( int pass = 0; pass < 2; ++pass )
 	{
 		FigureScene scene;
@@ -6134,14 +6148,26 @@ static int SteerStartTest( void )
 		if ( pass == 1 )
 		{
 			nbFigureSteering steering = nbDefaultFigureDef().steering;
-			steering.startAcceleration = 4.0f;
 			nbFigure_SetSteering( figure, &steering );
 		}
 		StepFigures( &scene, 30 );
 		SteerVelocity( figure, (b3Vec3){ 0.0f, 0.0f, 1.4f } );
-		StepFigures( &scene, 9 );
-		early[pass] = SteerSpeed( figure );
-		StepFigures( &scene, 27 );
+		for ( int i = 1; i <= 36; ++i )
+		{
+			const nbFigure* f = GetSteered( &scene, figure );
+			bool swung = f->footSwings[0] || f->footSwings[1];
+			StepFigures( &scene, 1 );
+			f = GetSteered( &scene, figure );
+			if ( landed[pass] < 0.0f && swung && f->footSwings[0] == false && f->footSwings[1] == false )
+			{
+				landed[pass] = SteerSpeed( figure );
+				step[pass] = fabsf( b3SubPos( f->feet[0].plant, f->feet[1].plant ).z );
+			}
+			if ( i == 9 )
+			{
+				early[pass] = SteerSpeed( figure );
+			}
+		}
 		walked[pass] = SteerSpeed( figure );
 		StepFigures( &scene, 84 );
 		SteerVelocity( figure, (b3Vec3){ 0.0f, 0.0f, 4.3f } );
@@ -6155,7 +6181,6 @@ static int SteerStartTest( void )
 		CreateFigureScene( &scene, 1 );
 		nbFigureId figure = AddSteeredFigure( &scene, b3Vec3_zero, 0.0f );
 		nbFigureSteering steering = nbDefaultFigureDef().steering;
-		steering.startAcceleration = 4.0f;
 		nbFigure_SetSteering( figure, &steering );
 		StepFigures( &scene, 30 );
 		SteerVelocity( figure, (b3Vec3){ 0.0f, 0.0f, 4.3f } );
@@ -6166,10 +6191,14 @@ static int SteerStartTest( void )
 		ENSURE( nbFigure_GetState( figure ) == nb_figureAnimated );
 		DestroyFigureScene( &scene );
 	}
-	printf( "  0.15 s after it is steered to a walk at 1.4 m/s it goes %.2f m/s, with a start acceleration of 4 %.2f m/s, "
+	printf( "  0.15 s after it is steered to a walk at 1.4 m/s it goes %.2f m/s, with the start of the library %.2f m/s, "
 			"after 0.6 s %.2f and %.2f m/s; steered to a run it goes %.2f m/s after 0.5 s and %.2f m/s after 1.3 s; from a "
 			"walk to a run %.2f and %.2f m/s after 0.4 s\n",
 			early[0], early[1], walked[0], walked[1], runEarly, runLate, change[0], change[1] );
+	printf( "  as its first foot lands it goes %.2f and %.2f m/s, and its feet are %.2f and %.2f m apart\n", landed[0], landed[1],
+			step[0], step[1] );
+	ENSURE( nbDefaultFigureDef().steering.startAcceleration == 4.0f );
+	ENSURE( landed[1] > 1.2f && step[1] < 0.6f && step[0] > 0.65f );
 	ENSURE( early[0] > 1.3f );
 	ENSURE( early[1] < 0.7f );
 	ENSURE( fabsf( walked[0] - 1.4f ) < 0.07f && fabsf( walked[1] - 1.4f ) < 0.07f );
@@ -6202,6 +6231,7 @@ static int SteerHaltTest( void )
 			if ( pass == 1 )
 			{
 				nbFigureSteering steering = nbDefaultFigureDef().steering;
+				steering.startAcceleration = 0.0f;
 				steering.stopBraking = 0.0f;
 				nbFigure_SetSteering( figure, &steering );
 			}
