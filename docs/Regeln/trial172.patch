@@ -1,0 +1,36 @@
+diff --git a/src/figure.c b/src/figure.c
+index 7e8cc81..e90e265 100644
+--- a/src/figure.c
++++ b/src/figure.c
+@@ -6245,6 +6245,12 @@ static void nbSteerFeet( const nbWorld* world, int index, nbFigure* f, const nbC
+ 			// once both feet have stood for a moment, see NB_FOOT_STEP_STOOD
+ 			bool steps = f->footHolds[k] && f->footSwings[1 - k] == false && f->stanceTime[k] >= NB_FOOT_STEP_STOOD &&
+ 						 f->stanceTime[1 - k] >= NB_FOOT_STEP_OTHER;
++#ifdef NB_X_LEAD
++			// both stand walking: the foot its leg loses first lifts while the other still holds for its swing
++			bool leadLift = stance >= 0.5f && f->canLift[k] && f->footSwings[1 - k] == false && trails[k] &&
++						  out[k] <= out[1 - k] && out[1 - k] < NB_X_LEAD * quickest && phase >= NB_GAIT_FRESH;
++			steps = steps || leadLift;
++#endif
+ 			if ( ( ( due || early ) && hold == false ) || lost || first || floats || steps )
+ 			{
+ 				// It lifts from where it stands, as far into its swing as its phase, and swings in the rest of it, from where it
+diff --git a/src/figure_steer.c b/src/figure_steer.c
+index 3ac507b..905c918 100644
+--- a/src/figure_steer.c
++++ b/src/figure_steer.c
+@@ -721,6 +721,14 @@ bool nbMoveSteered( nbWorld* world, int index, nbFigure* f, float timeStep, b3Ve
+ 	b3Vec3 change = b3Sub( wish, flat );
+ 	float rate = b3LengthSquared( wish ) > b3LengthSquared( flat ) ? def->acceleration : def->braking;
+ 	rate = b3MaxFloat( rate, 0.0f ) * ( f->onGround ? 1.0f : b3ClampFloat( def->airControl, 0.0f, 1.0f ) );
++#ifdef NB_X_ACC
++	// walking with both feet on the ground it gets faster no quicker than NB_X_ACC
++	if ( f->gaitOn && f->boneCount == nb_humanoidBoneCount && f->footSwings[0] == false && f->footSwings[1] == false &&
++		 f->gaitRun < 0.5f && b3LengthSquared( wish ) > b3LengthSquared( flat ) )
++	{
++		rate = b3MinFloat( rate, NB_X_ACC * scale );
++	}
++#endif
+ 
+ 	// From standing a humanoid gets faster no quicker than nbFigureSteering::startAcceleration. It starts where it wants
+ 	// to go, its gait is not on yet and it goes slower than NB_START_FROM, and it has started once it goes as fast as it

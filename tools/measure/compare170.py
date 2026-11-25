@@ -15,7 +15,8 @@ SHOWN = ('steady run share', 'steady run deep', 'starts deep', 'stops deep', 'tu
          'under sum', 'pelvis walk', 'pelvis run', 'shinOver walk', 'shinOver run', 'under walk', 'foot count',
          'foot max', 'pelvis gait', 'faced mean', 'faced max', 'along walk', 'along run',
          'fallen', 'twist walk', 'slide walk', 'twist run', 'slide run', 'faced 180 walk', 'faced 180 run', 'sink walk',
-         'sink run', 'letgo pelvis run', 'shin extra', 'foot extra', 'pelvis extra')
+         'sink run', 'letgo pelvis run', 'pelvis over 20 walk', 'pelvis over 20 run', 'shin extra', 'foot extra',
+         'pelvis extra')
 
 
 def more(v, group):
@@ -32,6 +33,8 @@ def more(v, group):
         about = [x['faced'] for x in q if x['scene'] == 'turn180' and x['faced'] is not None]
         n['faced 180 ' + name] = sum(about) / len(about)
     n['letgo pelvis run'] = max(x['pelvis'] for x in steer if x['gait'] == 'RUN' and x['course'] == 'stopgo')
+    n['pelvis over 20 walk'] = sum(x['pelvis'] > 20.0 for x in steer + gait if x['gait'] == 'WALK')
+    n['pelvis over 20 run'] = sum(x['pelvis'] > 20.0 for x in steer + gait if x['gait'] == 'RUN')
     for part in ('shin', 'foot', 'pelvis'):
         n[part + ' extra'] = sum(x.get(part + 'Extra', 0.0) for x in gait + steer)
     return n

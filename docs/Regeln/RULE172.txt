@@ -1,0 +1,29 @@
+Regel für Runde 172, vor jedem Lauf mit den Geschwindigkeiten der unabhängigen Prüfung festgeschrieben. Gemessen wird gegen active-ragdoll-171, dessen Bibliothek im Standard die von Runde 167 ist (Runde 169 hat nur einen Schalter dazugebracht, Standard aus, bytegleich).
+
+Worum es geht. Runde 170 hat eine harte Stelle gefunden, Runde 171 ihren Ursprung in Runde 156: Im schnellen Gehen, 1,58 bis 1,72 m/s, springt das Becken auf den Kursen in einzelnen Läufen über 20 mm, bis 39 mm mit dem heutigen Stand. Der Nutzer hat gewählt, sie zu beheben.
+
+Wie groß das Thema ist, Frage 1 des Skills. Selten und hart: mit dem heutigen Stand in einem von 408 Kursen im Gehen je Probe auf jedem der drei bekannten Sätze, Becken 24 mm auf den frischen Sätzen von Runde 167 in allen vier Proben, vor Runde 156 in keinem. Richtig wäre: kein Lauf über 20 mm.
+
+Die Ursache, Update für Update verfolgt am Kurs zigzag45_0.6 auf h189, Moment 2. Am Ende des Zickzacks dreht die Figur 0,3 s lang mit beiden Füßen am Boden, weil der Blick auf die Füße wartet, und beschleunigt dabei von 0,95 auf 1,63 m/s. Beide Füße geraten hinter die Hüfte, der linke 377 mm, der rechte 362 mm. Der linke hebt ab, als seine Phase kommt. Der rechte, der Standfuß, ist da schon fast außer Reichweite: Nach 0,15 s verliert ihn sein Bein, während der linke erst bei 0,86 seines Schwungs ist, beide Füße sind in der Luft, die Wurzel geht in fünf Updates 9 cm hinunter, und das Becken fängt sich mit 24 mm in einem Update. Die Regel, dass der Fuß zuerst abhebt, den sein Bein zuerst verliert, greift heute nur, wenn einer der beiden schon in weniger als einem schnellsten Schwung verloren ist.
+
+Der Eingriff, in der Bibliothek, src/figure.c, die Entscheidung, welcher Fuß abhebt. Stehen im Gehen beide Füße und trägt das Bein des anderen ihn kürzer als 2,5 schnellste Schwünge, hebt ein Fuß hinter der Hüfte ab, den sein Bein nicht später verliert als den anderen, sobald er abheben darf und nicht eben erst gelandet ist. So schwingt er, solange der andere noch trägt.
+
+Die Varianten, Frage 2 des Skills, je vier Proben, alt gegen neu.
+ - Der Fuß hebt früher ab, mit 2,5 schnellsten Schwüngen: verfolgter Kurs 9 statt 24 mm; frische Sätze von Runde 167 Becken auf den Kursen im Gehen 11,6 statt 23,9 mm im Median; erster Entwicklungssatz Becken im Rennen 24,6 statt 32,6 mm und Fuß unter dem Boden in 20 statt 25 Läufen; nichts schlechter. Der Prototyp.
+ - Dasselbe mit 1,5: verfolgter Kurs 9 mm, frische Sätze 11,6 statt 23,9 mm, auf dem ersten Entwicklungssatz aber nur die Summe der Schienbein-Sprünge besser. Verworfen zugunsten von 2,5.
+ - Im Gehen mit beiden Füßen am Boden höchstens 3 m/s² schneller werden: verfolgter Kurs 17 statt 24 mm; Läufe im Rennen mit dem Becken über 20 mm 1 statt 12,5, aber Schienbein-Sprünge im Gehen 14,5 statt 7 und die Figur folgt dem Stick mit 0,48 statt 0,49. Verworfen: Es dämpft die Folge, nicht die Ursache.
+
+Nimmt der Prototyp das Ziel, Frage 3 des Skills. Auf beiden Entwicklungssätzen und auf den frischen Sätzen von Runde 167, die für diese Runde Entwicklung sind, hält er alle Bedingungen unten: Läufe im Gehen mit dem Becken über 20 mm über vier Proben 0 statt 1, 0 statt 1 und 0 statt 4. Die ganze Testsuite auf dem Prototyp: 203 von 204 bestehen, der Hash des gesteuerten Gangs ändert sich, wie es sein muss.
+
+Bedingungen, alt ist active-ragdoll-171, neu der saubere Bau, je vier Proben mit tools/measure/check170.sh auf einer Gruppe von Sätzen, gerechnet von tools/measure/eval172.py.
+Ziel:
+ Z1 Die Läufe im Gehen, auf den Kursen und in den einzelnen Wechseln, in denen das Becken in einem Update mehr als 20 mm springt, über die vier Proben gezählt: höchstens halb so viele wie alt, und wo alt weniger als zwei hat, nicht mehr als alt.
+ Z2 Der härteste Becken-Sprung auf den Kursen im Gehen, im Median der Proben: 5 mm weniger, wo er alt über 20 mm liegt, sonst höchstens 2 mm mehr.
+Schutz:
+ S1 tools/measure/compare170.py nennt keine Größe schlechter: Bei keiner liegen die Spannen der vier Proben auseinander und die Mediane weiter auseinander als ihre Untergrenze.
+ S2 Alle Tests bestehen mit dem einen neuen Hash, mit gcc und clang, und die Hashes des Benchmarks der Figuren sind mit 1, 2 und 4 Threads gleich.
+ S3 Das Update der Figuren führt höchstens 1 % mehr Befehle aus.
+
+Unabhängige Prüfung. Vier Sätze mit schnellem Gehen, deren Geschwindigkeiten vor dem Festschreiben auf keinem Stand gelaufen sind, geprüft mit tools/measure/speeds.py: h194 mit 1,5733 und 3,3433 m/s, h195 mit 1,6133 und 3,9233 m/s, h196 mit 1,6633 und 4,2233 m/s, h197 mit 1,7133 und 3,0833 m/s, die Gruppe fresh172 in check170.sh. Die Ränder vorab bedacht: Die Stelle ist selten. Hat der alte Stand auf diesen Sätzen keinen Lauf über 20 mm, zeigen Z1 und Z2 dort keinen Gewinn und prüfen nur, dass nichts dazukommt; der Gewinn steht dann auf den drei Entwicklungsgruppen. Die Gehtempi liegen dort, wo die Stelle bisher auftrat, 1,58 bis 1,72 m/s.
+
+Der saubere Bau ist derselbe Text wie der Prototyp ohne Schalter und muss in der ersten Probe auf dem ersten Entwicklungssatz dieselben Tabellen schreiben. Verfehlt er auf den frischen Sätzen eine Bedingung, wird er nicht gebaut, oder der Nutzer entscheidet; die Regel wird danach nicht geändert, und eine Messung, die nicht passt, wird nicht wiederholt.
