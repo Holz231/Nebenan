@@ -5,11 +5,12 @@
 # (for example 0,1,2,3, see NUDGE in lab101.c). Per run, in seconds after the change: when the capsule has nine tenths
 # of its new velocity (stopping: a tenth of the old speed left), when the first foot lifts and lands, when the last foot
 # lands in the 3 s after the change, and when it faces within 10 degrees of the new way; how many feet land after the
-# capsule has its new velocity and before 1.5 s; the slowest the capsule gets as a share of its speed and for how long
+# capsule has its new velocity and before 1.5 s, and how many in the 3 s (steps); the slowest the capsule gets as a share of its speed and for how long
 # it is slower than half of it; and against the 1.5 s of walking before the change (starting: against second 4 to 7 of
 # the same run): how far a foot is behind the pelvis as it lifts, how far the feet are apart across the heading and how
 # far along it as one lands, and how far the trunk leans (pelvis to chest against upright, degrees), each the most after
-# the change and the most before. Writes out/res/<variant>/walk176.json and prints the medians and ranges per scene.
+# the change and the most before. And the hardest jump of a foot, a shin and the pelvis in an update in the 3 s after the
+# change (second difference of the origin, mm) and how far the capsule goes in them (way, m). Writes out/res/<variant>/walk176.json and prints the medians and ranges per scene.
 import csv, json, math, os, subprocess, sys
 from concurrent.futures import ThreadPoolExecutor
 import numpy as np
@@ -85,7 +86,15 @@ def one(job):
            'lift': min(lifts) if lifts else -1.0, 'land': min(lands) if lands else -1.0,
            'rest': max(lands) if lands else 0.0, 'faced': faced,
            'late': sum(1 for x in lands if body >= 0.0 and body < x <= 1.5),
+           'steps': len(lands),
            'slowest': float(speed[first].min() / v), 'slow': float(np.sum(first & (speed < 0.5 * v)) * dt)}
+    for n, bones in (('foot', (15, 18)), ('shin', (14, 17)), ('pelvis', (0,))):
+        res[n] = 0.0
+        for b in bones:
+            p = np.stack([d['b%dx' % b], d['b%dy' % b], d['b%dz' % b]], 1)
+            j = 1000.0 * np.linalg.norm(p[2:] - 2.0 * p[1:-1] + p[:-2], axis=1)
+            res[n] = max(res[n], float(j[after[2:]].max()))
+    res['way'] = float(np.sum(speed[after]) * dt)
     for n, x, y in zip(('behind', 'across', 'along', 'lean'), now, was):
         res[n], res[n + 'Base'] = float(x), float(y)
     return res
@@ -97,7 +106,7 @@ def main():
     with ThreadPoolExecutor(os.cpu_count()) as pool:
         res = list(pool.map(one, jobs))
     json.dump(res, open(os.path.join(W, 'res', variant, 'walk176.json'), 'w'))
-    keys = ('body', 'lift', 'land', 'rest', 'faced', 'late', 'slowest', 'slow', 'behind', 'behindBase', 'across',
+    keys = ('body', 'lift', 'land', 'rest', 'faced', 'late', 'steps', 'foot', 'shin', 'pelvis', 'way', 'slowest', 'slow', 'behind', 'behindBase', 'across',
             'acrossBase', 'along', 'alongBase', 'lean', 'leanBase')
     print('scene     runs | ' + ' | '.join(keys) + '   (median low..high)')
     for sc in SCENES:

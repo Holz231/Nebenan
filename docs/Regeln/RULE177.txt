@@ -1,0 +1,77 @@
+Regel für Runde 177, vor jedem Lauf mit den Geschwindigkeiten der unabhängigen Prüfung festgeschrieben. Gemessen wird
+gegen active-ragdoll-176, dessen Bibliothek die von Runde 175 ist.
+
+Worum es geht. Der Nutzer will zuerst das Gehen richtig haben: Losgehen, Gehen, Drehen im Gehen, Anhalten. Runde 176 hat
+das Anhalten als größten Punkt gemessen, der Nutzer hat die Reihenfolge bestätigt: Der Körper steht nach 0,11 s mitten
+im Schritt, die Füße sortieren sich danach 1,85 s lang mit drei bis vier Landungen.
+
+Wie groß das Thema ist, Frage 1 des Skills. Auf zwölf Entwicklungssätzen mit vier Proben, 288 Halte aus dem Gehen mit
+1,05 bis 1,72 m/s: Die Füße stehen nach 1,85 s (1,53 bis 2,16), es landen 3 oder 4 Füße, nie 2. Richtig wäre: Der Körper
+rollt über den letzten Schritt aus, etwa 0,3 bis 0,5 s, der Fuß in der Luft landet, der andere schließt auf, 2
+Landungen, und die Füße stehen nach etwa einer Schrittdauer mehr, 0,8 bis 1,0 s.
+
+Die Ursache, Update für Update verfolgt bei 1,5 m/s. Die Kapsel bremst mit 14 m/s² und steht nach 0,1 s, 17 cm hinter
+ihrem vorderen Fuß. Der Fuß in der Luft landet dann neben dem Körper, schmal wie im Gehen, 5 cm von der Mitte; der
+vordere Fuß setzt 17 cm zurück an seinen Platz; und der erste rückt 4 cm zur Seite, weil die Füße im Stehen 18 cm
+auseinander stehen und im Gehen 10. Jeder der drei Schritte dauert 0,5 s, die Schwungzeit eines langsamen Gehschritts.
+
+Der Eingriff, in der Bibliothek, src/figure_steer.c und src/figure.c, als Option nbFigureSteering::stopBraking mit
+Standard 4 m/s², null stellt es ab. Hält ein Humanoid aus dem Gehen an, der beim Loslassen des Sticks mindestens 1 s
+gegangen war: (1) Die Kapsel bremst höchstens mit stopBraking und so sanft, dass sie über dem Fuß zum Stehen kommt, der
+am weitesten vor seinem Standplatz steht oder landet, nicht sanfter als 1,5 m/s². (2) Ein schwingender Fuß zielt auf
+seinen Standplatz dort, wo die Kapsel stehen wird, so breit wie im Stehen; ein Fuß, der schon weiter unterwegs war,
+kommt mit höchstens 4 m/s dorthin zurück. (3) Ein Schritt, der erst im Anhalten abhebt, dauert nur so lange, wie sein
+Weg braucht, mindestens 0,3 s.
+
+Die Varianten, Frage 2 des Skills, 36 Halte auf dev1 ohne Anstoß, je: wann die Füße stehen (Median, Spanne), wie viele
+Füße landen, härtester Sprung eines Schienbeins:
+ - alt: 1,84 s (1,54 bis 2,13); 3 bis 4; 23,8 mm.
+ - nur sanft bremsen mit 4 m/s²: 1,98 s; 3 bis 4. Das Bremsen allein behebt nichts.
+ - dazu zielt der schwingende Fuß auf seinen Standplatz am Haltepunkt, breit: 1,24 s (0,98 bis 1,53); 2 bis 3. Wo der
+   Fuß nicht mehr zielen kann, bleibt die Kapsel 19 cm vor ihm stehen, und er setzt zurück.
+ - dazu bremst die Kapsel für den Fuß voraus: 1,24 s; kein Zurücksetzen mehr.
+ - dazu kurze Schritte schnell, mindestens 0,2 s: 0,94 s (0,68 bis 1,23); Schienbein 38,3 mm, schlechter: Der Fuß in der
+   Luft wird beim Loslassen 29 cm zurückgerissen und springt 32,2 statt 19,6 mm.
+ - der Fuß kommt mit höchstens 1 m/s zurück: Fuß 22,5 mm, aber die Kapsel rollt 0,65 statt 0,37 s, und die Füße stehen
+   nach 1,12 s (bis 1,73), bis 4 Landungen. Mit 2 und 3 m/s 0,95 s; mit 4 m/s und mindestens 0,3 s für einen kurzen
+   Schritt: 1,05 s; Fuß 18,2, Schienbein 25,3 mm.
+ - dazu wird der landende Fuß mit 4 statt 2 pro Sekunde breit: 0,89 s, 2 Landungen in 25 von 36; mit 8 pro Sekunde: 0,83
+   s (0,63 bis 1,67), 2 Landungen in 28 von 36. Der Prototyp.
+Verworfen ist damit: nur bremsen; den Fuß sofort zurückholen; kurze Schritte in 0,2 s.
+
+Nimmt der Prototyp das Ziel, Frage 3 des Skills. Auf beiden Entwicklungsgruppen mit vier Proben, 288 Halte: Die Füße
+stehen nach 0,85 statt 1,85 s; 2 Füße landen in 77 % statt 0 %, höchstens 4 wie alt; die Kapsel steht nach 0,45 s
+(höchstens 0,67) und 0,35 m (höchstens 0,50) statt 0,11 s und 0,08 m; die härtesten Sprünge im Halt: Fuß 18,6 statt 19,9
+mm, Schienbein 25,9 statt 25,2 mm, Becken 4,9 statt 8,6 mm; compare170.py nennt auf dev1 und dev2 keine Größe
+schlechter. Die Tests des Prototyps: 3 von 205 schlagen an, zwei Hashes und SteerSpeedTest, der das harte Bremsen aus
+dem Gehen prüft und angepasst wird.
+
+Bedingungen, alt ist active-ragdoll-176, neu der saubere Bau, je vier Proben mit tools/measure/check177.sh und
+check170.sh auf einer Gruppe von Sätzen, gerechnet von tools/measure/eval177.py über alle Halte aus dem Gehen der
+Gruppe:
+Ziel:
+ Z1 Die Füße stehen im Median höchstens nach dem 0,60-Fachen der alten Zeit.
+ Z2 In mindestens 60 % der Halte landen höchstens 2 Füße, und in keinem mehr als im schlechtesten alten.
+ Z3 Die Kapsel steht im Median nach 0,30 bis 0,60 s und spätestens nach 0,80 s.
+Schutz:
+ S1 Die härtesten Sprünge im Halt, je Probe das Maximum, davon der Median: Fuß und Schienbein höchstens 3 mm über alt,
+   Becken höchstens 2 mm.
+ S2 tools/measure/compare170.py nennt keine Größe schlechter, mit den Kursen aus steer162.py und den Beinen aus
+   legs167.py.
+ S3 Alle Tests bestehen, mit gcc und clang, und die Hashes des Benchmarks der Figuren sind mit 1, 2 und 4 Threads
+   gleich. SteerSpeedTest wird angepasst: Aus dem Gehen steht die Figur so schnell, wie sie bremst, nur noch mit
+   stopBraking null.
+Preis, erlaubt:
+ P Die Kapsel geht nach dem Loslassen im Median höchstens 0,45 m weiter und nie mehr als 0,60 m; alt 0,08 m.
+
+Unabhängige Prüfung: die frischen Sätze h206 bis h209 aus tools/measure/common.sh, Gehen mit 1,0867, 1,2967, 1,4467 und
+1,6567 m/s, Rennen mit 4,4033, 3,9433, 3,5467 und 3,1133 m/s, mit speeds.py gegen alle Geschwindigkeiten geprüft, die je
+gelaufen sind; Gruppe fresh177. Kein Stand ist auf ihnen gelaufen, bevor diese Datei gepusht ist. Hält der saubere Bau
+dort eine Bedingung nicht, wird nicht gebaut, außer der Nutzer entscheidet es; die Regel wird danach nicht geändert, und
+eine Messung, die nicht passt, wird nicht wiederholt.
+
+Der saubere Bau muss auf dev1 ohne Anstoß dieselben drei Tabellen schreiben wie der Prototyp (legs167, gait155,
+steer162, mit cmp verglichen).
+
+Der Prototyp steht als docs/Regeln/trial177.patch, seine Schalter: -DNB_X_STOPGENTLE=4.0f -DNB_X_STOPAIM=4.0f
+-DNB_X_STOPWIDE=8.0f -DNB_X_HALT=1.5f -DNB_X_HALT_ACCEL=20.0f -DNB_X_HALT_BACK=4.0f -DNB_X_HALT_SWING=0.3f.

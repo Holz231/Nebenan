@@ -1,0 +1,158 @@
+diff --git a/src/figure.c b/src/figure.c
+index 32699bf..fc5288c 100644
+--- a/src/figure.c
++++ b/src/figure.c
+@@ -5446,6 +5446,15 @@ static float nbSwingTime( const nbFigure* f, int k, float swingTime, float cycle
+ 		float may = f->swingRate[k] * f->swingHurry[k] * sqrtf( 6.0f * across / NB_GAIT_SWING_ACCEL );
+ 		time = b3MinFloat( time, b3MaxFloat( f->swingLift[k], may ) );
+ 	}
++#ifdef NB_X_HALT_SWING
++	if ( f->halts && f->swingHalts[k] )
++	{
++		b3Vec3 step = b3SubPos( f->feet[k].target, f->feet[k].from );
++		float across = b3Length( b3MulSub( step, b3Dot( step, up ), up ) );
++		float may = sqrtf( 6.0f * across / NB_X_HALT_ACCEL );
++		time = b3MinFloat( time, b3MaxFloat( NB_X_HALT_SWING, may ) );
++	}
++#endif
+ 	return time;
+ }
+ 
+@@ -5987,6 +5996,39 @@ static void nbSteerFeet( const nbWorld* world, int index, nbFigure* f, const nbC
+ 	float needs[2];
+ 	float levels[2];
+ 	b3Vec3 hips[2];
++#ifdef NB_X_HALT
++	// Stopping at a walk, it brakes no harder than NB_X_STOPAIM and so gently that it does not stop short of a foot
++	// that stands ahead of where it stands at rest, or lands there and can no longer aim
++	f->haltRate = 0.0f;
++	f->halts = f->stairWeight <= 0.0f && run <= 0.0f && b3LengthSquared( aimWish ) < 0.01f * scale * scale &&
++			   f->walkedTo >= 1.0f;
++	if ( f->halts && speed > 0.01f * scale )
++	{
++		float ahead = 0.0f;
++		for ( int k = 0; k < 2; ++k )
++		{
++#ifndef NB_X_HALT_BACK
++			if ( f->footSwings[k] && f->swingAlong[k] < NB_GAIT_AIM )
++			{
++				continue;
++			}
++#else
++			if ( f->footSwings[k] && f->swingHalts[k] )
++			{
++				continue;
++			}
++#endif
++			b3Pos at = f->footSwings[k] ? f->feet[k].target : f->feet[k].plant;
++			ahead = b3MaxFloat( ahead, b3Dot( b3SubPos( at, nbClipAnkle( f, clips + k, f->feet + k ) ), velocity ) / speed );
++		}
++		f->haltRate = NB_X_STOPAIM * scale;
++		if ( ahead > 0.0f )
++		{
++			f->haltRate = b3MinFloat( f->haltRate, speed * speed / ( 2.0f * ahead ) );
++		}
++		f->haltRate = b3MaxFloat( f->haltRate, NB_X_HALT * scale );
++	}
++#endif
+ 	float reaches[2];
+ 	b3Vec3 onHeel[2];
+ 	float landSide = f->legBack ? -1.0f : 1.0f;
+@@ -6313,6 +6355,9 @@ static void nbSteerFeet( const nbWorld* world, int index, nbFigure* f, const nbC
+ 				f->swingShare[k] = 1.0f - stance;
+ 				f->swingLift[k] = swingTime;
+ 				f->swingNarrow[k] = 1.0f - narrowRun * run - NB_GAIT_NARROW_WALK * ( 1.0f - run ) * ease;
++#ifdef NB_X_HALT_SWING
++				f->swingHalts[k] = f->halts;
++#endif
+ 				foot->from = foot->plant;
+ 				foot->fromTilt = foot->tilt;
+ 				f->swingBase[k] = foot->plant;
+@@ -6398,6 +6443,37 @@ static void nbSteerFeet( const nbWorld* world, int index, nbFigure* f, const nbC
+ 					float ownLead = b3MinFloat( lead, nbGaitLead( world, f, b3Length( ownVelocity ) ) );
+ 					farther = b3Sub( way, b3MulAdd( ownWay, ownLead, ownVelocity ) );
+ 				}
++#if defined( NB_X_STOPAIM ) || defined( NB_X_STOPWIDE )
++				bool halts = f->halts;
++#endif
++#ifdef NB_X_STOPAIM
++				if ( halts )
++				{
++#if defined( NB_X_HALT_BACK )
++					// Where it stops braking gently, and a foot that was on its way farther comes back to there no faster
++					// than NB_X_HALT_BACK; the capsule brakes for where it lands, see haltRate
++					float stop = speed * speed / ( 2.0f * NB_X_STOPAIM * scale );
++					if ( speed > 0.01f * scale && f->swingHalts[k] == false )
++					{
++						b3Vec3 now = b3SubPos( foot->target, nbClipAnkle( f, clips + k, foot ) );
++						stop = b3MaxFloat( stop, b3Dot( now, velocity ) / speed - NB_X_HALT_BACK * scale * timeStep );
++					}
++					way = speed > 0.01f * scale ? b3MulSV( stop / speed, velocity ) : b3Vec3_zero;
++#elif defined( NB_X_HALT )
++					way = b3MulSV( speed / ( 2.0f * b3MaxFloat( f->haltRate, NB_X_HALT * scale ) ), velocity );
++#else
++					way = b3MulSV( b3Length( velocity ) / ( 2.0f * NB_X_STOPAIM * scale ), velocity );
++#endif
++					landVelocity = b3Vec3_zero;
++					farther = b3Vec3_zero;
++				}
++#endif
++#ifdef NB_X_STOPWIDE
++				if ( halts )
++				{
++					f->swingNarrow[k] = b3MinFloat( 1.0f, f->swingNarrow[k] + NB_X_STOPWIDE * timeStep );
++				}
++#endif
+ 				float guess = slope * b3Length( way );
+ 				float deeper = f->moverLow - f->moverRadius;
+ 				b3WorldTransform end = { b3OffsetPos( f->frame.p, b3MulAdd( way, guess, up ) ), legQ };
+diff --git a/src/figure.h b/src/figure.h
+index a9fe5e0..865debd 100644
+--- a/src/figure.h
++++ b/src/figure.h
+@@ -617,6 +617,10 @@ typedef struct nbFigure
+ 	// How far each foot swings out round the other one in this swing, fixed as it lifts, see NB_SWING_CLEAR in figure.c
+ 	b3Vec3 swingAside[2];
+ 	bool swingAsideSet[2];
++	float haltRate;
++	bool halts;
++	float walkedTo;
++	bool swingHalts[2];
+ 	// For how long the heading has waited for the feet in a row, in seconds, see NB_FACE_KEEP in figure_steer.c
+ 	float faceHeld;
+ 	// The velocity it was steered at in the last update, and for how long the root still goes down gently after that
+diff --git a/src/figure_steer.c b/src/figure_steer.c
+index 55a0f74..3cf7d2c 100644
+--- a/src/figure_steer.c
++++ b/src/figure_steer.c
+@@ -763,6 +763,12 @@ bool nbMoveSteered( nbWorld* world, int index, nbFigure* f, float timeStep, b3Ve
+ 	// turn about, see NB_TURN_HOLD_AFTER, it gets no faster while the leg it stands on loses its foot before the other
+ 	// foot lands, and stopping or braking to turn about, it brakes gently while a foot lands where it aimed
+ 	f->walkTime = f->gaitOn && f->gaitRun <= 0.0f ? f->walkTime + timeStep : 0.0f;
++#ifdef NB_X_HALT
++	if ( b3LengthSquared( wish ) >= 0.01f * scale * scale )
++	{
++		f->walkedTo = f->walkTime;
++	}
++#endif
+ 	if ( f->gaitOn && f->boneCount == nb_humanoidBoneCount && f->onGround )
+ 	{
+ 		float walks = 1.0f - f->gaitRun;
+@@ -779,6 +785,17 @@ bool nbMoveSteered( nbWorld* world, int index, nbFigure* f, float timeStep, b3Ve
+ 				rate = b3MinFloat( rate, rate - walks * rate );
+ 			}
+ 		}
++#ifdef NB_X_STOPGENTLE
++		if ( b3LengthSquared( wish ) < 0.01f * scale * scale && f->walkedTo >= NB_STOP_WALKED )
++		{
++#ifdef NB_X_HALT
++			float gentle = f->haltRate > 0.0f ? f->haltRate : NB_X_STOPGENTLE * scale;
++			rate = b3MinFloat( rate, rate + walks * ( gentle - rate ) );
++#else
++			rate = b3MinFloat( rate, rate + walks * ( NB_X_STOPGENTLE * scale - rate ) );
++#endif
++		}
++#endif
+ 		for ( int k = 0; k < 2 && stopping; ++k )
+ 		{
+ 			if ( f->footSwings[k] && f->swingAlong[k] > NB_STOP_COMMIT )
