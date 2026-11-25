@@ -1,0 +1,31 @@
+Regel für Runde 174, vor jedem Lauf mit den Geschwindigkeiten der unabhängigen Prüfung festgeschrieben. Gemessen wird gegen active-ragdoll-173, dessen Bibliothek die von Runde 172 ist.
+
+Worum es geht. Runde 171 hat gezeigt, was seit Runde 156 langsamer geworden ist: Die Kehrtwende im Gehen dauert 1,18 statt 0,97 s, und einem schnellen Stick folgt die Figur im Gehen mit 0,49 statt 0,63 des Tempos. Der Nutzer hat gewählt, das zurückzuholen.
+
+Wie groß das Thema ist, Frage 1 des Skills. Wo die Zeit bleibt, an einzelnen Wenden im Gehen verfolgt: Bei 4 rad/s braucht eine halbe Drehung allein 0,79 s. Dazu kommen rund 0,2 s, in denen der Blick gar nicht dreht: In der Kehrtwende aus Runde 163 bremst die Figur zuerst, und der Blick folgt mit Blick in Laufrichtung der Bewegung, also erst, wenn die Kapsel sich schon in die neue Richtung bewegt. Dazu kommen kurze Pausen, in denen der Blick auf die Füße wartet. Vom Folgen des Sticks sind 0,10 der 0,14 der Bogen aus Runde 161, den der Nutzer gewählt hat, und 0,03 das Warten aus Runde 167, das Runde 168 nicht zurückholen konnte; daran ändert diese Runde nichts.
+
+Der Eingriff, in der Bibliothek, src/figure_steer.c. In der Kehrtwende im Gehen dreht der Blick sofort dorthin, wohin gesteuert wird, wie im Bogen, statt der Bewegung zu folgen. Nicht, solange ein Fuß weiter als 0,7 in seinem Schwung ist: Der landet erst, wo er hingezielt hat.
+
+Die Varianten, Frage 2 des Skills, je vier Proben auf dem ersten Entwicklungssatz, alt gegen neu.
+ - Drehrate 5 statt 4 rad/s: Kehrtwende im Gehen 1,11 statt 1,18 s, aber Schienbein-Sprünge im Gehen 13,5 statt 5. Verworfen.
+ - Drehrate 6: 1,08 statt 1,18 s, Schienbein-Sprünge 17 statt 5, und in einer Probe sackt das Becken im Rennen 341 statt 129 mm. Verworfen: Die Wende hängt am Warten, nicht an der Rate.
+ - Der Blick dreht in der Kehrtwende sofort: 1,01 statt 1,18 s, aber die Summe des Fußes unter dem Boden 34,7 statt 15,8 mm und Schienbein-Sprünge im Gehen 10 statt 5. Verworfen zugunsten der nächsten.
+ - Sofort, aber nicht solange ein Fuß kurz vor der Landung ist: 1,03 statt 1,18 s, spätestens 1,41 statt 1,65 s; es bleibt, dass das Becken auf 24 statt 20 Kursen im Gehen mehr als 30 mm sackt. Der Prototyp.
+ - Erst wenn die Kapsel nicht mehr in die alte Richtung geht: 1,15 statt 1,18 s, unter der Untergrenze. Verworfen.
+
+Nimmt der Prototyp das Ziel, Frage 3 des Skills. Auf beiden Entwicklungssätzen hält er alle Bedingungen unten: 1,03 und 1,04 statt 1,18 s. Die ganze Testsuite auf dem Prototyp besteht, kein Hash ändert sich; SteerWalkAboutTest druckt die Kehrtwende spätestens nach 1,33 statt 1,48 s und im Hin und Her jede Sekunde 0,30 statt 0,20 des Tempos in gesteuerter Richtung, SteerTurnStepTest 1,37 statt 1,63 s. Das Ziel von 0,97 s aus Runde 155 nimmt er nicht ganz.
+
+Bedingungen, alt ist active-ragdoll-173, neu der saubere Bau, je vier Proben mit tools/measure/check170.sh auf einer Gruppe von Sätzen, gerechnet von tools/measure/eval174.py, je am Median der Proben.
+Ziel:
+ Z1 Kehrtwende im Gehen: Die Figur schaut mindestens 0,10 s früher in die neue Richtung.
+ Z2 Wenden im Gehen um 45 bis 180 Grad: Die späteste schaut nicht später in die neue Richtung als alt.
+Preis:
+ P1 Kurse im Gehen, auf denen das Becken mehr als 30 mm unter den stetigen Gang sackt: höchstens 6 mehr als alt; auf der Entwicklung 24 statt 20 und 23 statt 19,5.
+Schutz:
+ S1 tools/measure/compare170.py nennt keine andere Größe schlechter.
+ S2 Alle Tests bestehen, mit gcc und clang, und die Hashes des Benchmarks der Figuren sind mit 1, 2 und 4 Threads gleich.
+ S3 Das Update der Figuren führt höchstens 1 % mehr Befehle aus.
+
+Unabhängige Prüfung. Vier Sätze, deren Geschwindigkeiten vor dem Festschreiben auf keinem Stand gelaufen sind, geprüft mit tools/measure/speeds.py: h198 mit 1,0933 und 4,4133 m/s, h199 mit 1,2333 und 3,2233 m/s, h200 mit 1,4233 und 4,0333 m/s, h201 mit 1,6533 und 3,5733 m/s, die Gruppe fresh174 in check170.sh. Die Ränder vorab bedacht: Die Gehtempi liegen innerhalb der Entwicklungssätze, 1,05 bis 1,72 m/s. Z1 verlangt 0,10 s bei 0,14 und 0,15 s auf der Entwicklung; die Spannen der Proben sind dort 0,01 s breit.
+
+Der saubere Bau ist derselbe Text wie der Prototyp ohne Schalter und muss in der ersten Probe auf dem ersten Entwicklungssatz dieselben Tabellen schreiben. Verfehlt er auf den frischen Sätzen eine Bedingung, wird er nicht gebaut, oder der Nutzer entscheidet; die Regel wird danach nicht geändert, und eine Messung, die nicht passt, wird nicht wiederholt.
