@@ -1,0 +1,140 @@
+diff --git a/src/figure.c b/src/figure.c
+index 53bdf13..71ff414 100644
+--- a/src/figure.c
++++ b/src/figure.c
+@@ -5763,7 +5763,11 @@ static void nbSteerFeet( const nbWorld* world, int index, nbFigure* f, const nbC
+ 	// Not facing where it moves, its legs turn toward where its gait goes, see NB_LEG_TURN_WALK. Going, they keep where
+ 	// they face in the world as the heading turns, and stopping, where they turned to; still, they turn with the heading
+ 	// and back to it. The feet on the ground hold them back for a moment, see NB_LEG_KEEP.
++#ifdef NB_X_LEGS
++	if ( f->steer.faceVelocity == false || NB_X_LEGS > 0 )
++#else
+ 	if ( f->steer.faceVelocity == false )
++#endif
+ 	{
+ 		// Toward where the capsule goes NB_LEG_AIM_AHEAD later, and no farther than what it wants: past that, toward what
+ 		// it wants
+@@ -5791,6 +5795,13 @@ static void nbSteerFeet( const nbWorld* world, int index, nbFigure* f, const nbC
+ 			float across;
+ 			f->legAim = nbLegTurnFor( f, local, &f->legBack, &across );
+ 		}
++#ifdef NB_X_LEGS
++		if ( f->steer.faceVelocity )
++		{
++			f->legAim = 0.0f;
++			f->legBack = false;
++		}
++#endif
+ 		float from = still ? nbWrapAngle( f->heading + f->legTurn ) : f->legHeading;
+ 		float to = nbHoldLegs( f, from, nbWrapAngle( f->heading + f->legAim ), scale, timeStep );
+ 		// Turning far, faster than the heading may, see NB_LEG_FAR
+diff --git a/src/figure.h b/src/figure.h
+index 0a7c90d..66e1b35 100644
+--- a/src/figure.h
++++ b/src/figure.h
+@@ -617,6 +617,7 @@ typedef struct nbFigure
+ 	bool swingAsideSet[2];
+ 	// For how long the heading has waited for the feet in a row, in seconds, see NB_FACE_KEEP in figure_steer.c
+ 	float faceHeld;
++	float faceLag;
+ 	// The velocity it was steered at in the last update, and for how long the root still goes down gently after that
+ 	// velocity jumped, in seconds, see NB_CROUCH_EASE in figure_steer.c
+ 	b3Vec3 steerBefore;
+diff --git a/src/figure_steer.c b/src/figure_steer.c
+index 9e46b13..fc34972 100644
+--- a/src/figure_steer.c
++++ b/src/figure_steer.c
+@@ -641,7 +641,12 @@ bool nbMoveSteered( nbWorld* world, int index, nbFigure* f, float timeStep, b3Ve
+ 	{
+ 		// Facing where it moves, it goes across its heading and backward no faster than a step to the side or back, see
+ 		// NB_STEER_SIDE_SPEED, and gets to the rest of the velocity it wants as it turns there
++#ifdef NB_X_LAG
++		b3CosSin lagTurn = b3ComputeCosSin( f->faceLag );
++		b3Vec3 forward = b3RotateVector( f->frame.q, (b3Vec3){ lagTurn.sine, 0.0f, lagTurn.cosine } );
++#else
+ 		b3Vec3 forward = b3RotateVector( f->frame.q, b3Vec3_axisZ );
++#endif
+ 		forward = b3Normalize( b3MulSub( forward, b3Dot( forward, up ), up ) );
+ 		float along = b3Dot( wish, forward );
+ 		b3Vec3 across = b3MulSub( wish, along, forward );
+@@ -967,7 +972,11 @@ bool nbMoveSteered( nbWorld* world, int index, nbFigure* f, float timeStep, b3Ve
+ 		b3Quat tilt = b3ComputeQuatBetweenUnitVectors( b3Vec3_axisY, up );
+ 		b3Vec3 local = b3InvRotateVector( tilt, f->moveVelocity );
+ 		bool moving = local.x * local.x + local.z * local.z > NB_STEER_FACE_SPEED * NB_STEER_FACE_SPEED;
++#ifdef NB_X_LAG
++		want = moving ? b3Atan2( local.x, local.z ) : nbWrapAngle( heading + f->faceLag );
++#else
+ 		want = moving ? b3Atan2( local.x, local.z ) : heading;
++#endif
+ 		if ( bends )
+ 		{
+ 			// Walking a bend, it turns to where it is steered, not to where it moves: it moves the way it faces
+@@ -975,7 +984,22 @@ bool nbMoveSteered( nbWorld* world, int index, nbFigure* f, float timeStep, b3Ve
+ 			want = b3Atan2( steered.x, steered.z );
+ 		}
+ 	}
++#ifdef NB_X_LAG
++	// the way it goes turns as the heading did; the heading follows it, catching up no faster than NB_X_LAG_RATE times
++	float pathNew = nbTurnToward( nbWrapAngle( heading + f->faceLag ), want, &f->headingRate, def, timeStep );
++	{
++		float follow = nbWrapAngle( pathNew - heading );
++		if ( f->faceLag != 0.0f )
++		{
++			float fastest = NB_X_LAG_RATE * b3MaxFloat( def->turnRate, 0.0f ) * timeStep;
++			follow = b3ClampFloat( follow, -fastest, fastest );
++		}
++		heading = nbWrapAngle( heading + follow );
++	}
++	float beforePivot = heading;
++#else
+ 	heading = nbTurnToward( heading, want, &f->headingRate, def, timeStep );
++#endif
+ 
+ 	// The heading turns no farther than the feet on the ground let it: a planted foot turns on the ground with the body
+ 	// by NB_FOOT_PIVOT in a stance at most, and with that used up the heading waits for the feet to step round, see
+@@ -1015,9 +1039,17 @@ bool nbMoveSteered( nbWorld* world, int index, nbFigure* f, float timeStep, b3Ve
+ 			heading = nbWrapAngle( f->heading + change );
+ 		}
+ 	}
++#ifdef NB_X_LAG
++	// what a planted foot holds back holds the way back too
++	pathNew = nbWrapAngle( pathNew - nbWrapAngle( beforePivot - heading ) );
++#endif
+ 
+ 	// Facing where it moves, the heading turns no farther than the feet stay uncrossed across it, see NB_FACE_KEEP
++#ifdef NB_X_LEGS
++	if ( false )
++#else
+ 	if ( f->steer.faceVelocity && f->gaitOn && f->boneCount == nb_humanoidBoneCount )
++#endif
+ 	{
+ 		float change = nbWrapAngle( heading - f->heading );
+ 		float room = FLT_MAX;
+@@ -1027,6 +1059,17 @@ bool nbMoveSteered( nbWorld* world, int index, nbFigure* f, float timeStep, b3Ve
+ 			// for the legs: its angle there, from ahead toward the left, stays between low and pi - low
+ 			b3CosSin legs = b3ComputeCosSin( f->heading );
+ 			b3Vec3 offset = b3SubPos( f->feet[0].plant, f->feet[1].plant );
++#ifdef NB_X_AHEAD
++			// a swinging foot counts part of the way to where it lands
++			for ( int k = 0; k < 2; ++k )
++			{
++				if ( f->footSwings[k] )
++				{
++					b3Vec3 onward = b3MulSV( NB_X_AHEAD, b3SubPos( f->feet[k].target, f->feet[k].plant ) );
++					offset = k == 0 ? b3Add( offset, onward ) : b3Sub( offset, onward );
++				}
++			}
++#endif
+ 			float across = offset.x * legs.cosine - offset.z * legs.sine;
+ 			float along = offset.x * legs.sine + offset.z * legs.cosine;
+ 			float apart = sqrtf( across * across + along * along );
+@@ -1061,6 +1104,9 @@ bool nbMoveSteered( nbWorld* world, int index, nbFigure* f, float timeStep, b3Ve
+ 			}
+ 		}
+ 	}
++#ifdef NB_X_LAG
++	f->faceLag = f->steer.faceVelocity ? b3ClampFloat( nbWrapAngle( pathNew - heading ), -NB_X_LAG, NB_X_LAG ) : 0.0f;
++#endif
+ 	f->heading = heading;
+ 	f->frame = nbMakeFrame( world, position, heading );
+ 

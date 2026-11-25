@@ -594,6 +594,10 @@ Zehen und Fersen 37 mm, Hände 15 mm, Becken 10 mm, Becken tief ab 15 cm unter d
   nennt.
 - **Eine Bedingung über das Tiefste hängt an einem Lauf.** Ziele über Formen als Zahl der Läufe über einer Schwelle
   schreiben und das Tiefste daneben berichten.
+- **Ein Preis, der ein Schritt ist, lässt sich nicht wegregeln.** Runde 168 hat vier Wege gemessen, die wartende Drehung
+  aus Runde 167 schneller zu machen. Jeder tauschte die Zeit gegen Rucke oder gekreuzte Beine. Vor einer Runde, die
+  einen Preis zurückholen soll, fragen, ob er aus einer Schwelle kommt oder aus der Zeit, die ein Fuß für seinen Weg
+  braucht.
 - **Größe der Figur.** Winkelbeschleunigungen wachsen bei kleineren Figuren mit 1 durch `nbFigureScale`, Längen
   und Geschwindigkeiten mit ihr.
 
