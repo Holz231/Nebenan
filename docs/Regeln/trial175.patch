@@ -1,0 +1,42 @@
+diff --git a/src/figure_steer.c b/src/figure_steer.c
+index 3ac507b..c37f7ab 100644
+--- a/src/figure_steer.c
++++ b/src/figure_steer.c
+@@ -698,6 +698,14 @@ bool nbMoveSteered( nbWorld* world, int index, nbFigure* f, float timeStep, b3Ve
+ 				wish = b3Add( b3MulSV( 1.0f - walks, wish ), b3MulSV( walks * ahead, forward ) );
+ 				bends = walks > 0.5f;
+ 			}
++#ifdef NB_X_CREEP
++			else if ( f->turnAbout && can )
++			{
++				// turning about it creeps the new way slower while it still faces away from it
++				float walks = 1.0f - f->gaitRun;
++				wish = b3MulSV( 1.0f - walks * ( 1.0f - NB_X_CREEP ), wish );
++			}
++#endif
+ 		}
+ 		asked = wish;
+ 	}
+@@ -988,7 +996,22 @@ bool nbMoveSteered( nbWorld* world, int index, nbFigure* f, float timeStep, b3Ve
+ 		b3Vec3 local = b3InvRotateVector( tilt, f->moveVelocity );
+ 		bool moving = local.x * local.x + local.z * local.z > NB_STEER_FACE_SPEED * NB_STEER_FACE_SPEED;
+ 		want = moving ? b3Atan2( local.x, local.z ) : heading;
++#ifdef NB_X_ABOUT
++		bool aboutTurns = f->turnAbout && b3LengthSquared( f->steer.velocity ) > 0.0f;
++#if NB_X_ABOUT == 2
++		// not while a foot is about to land where it aimed
++		for ( int k = 0; k < 2; ++k )
++		{
++			aboutTurns = aboutTurns && ( f->footSwings[k] == false || f->swingAlong[k] <= NB_STOP_COMMIT );
++		}
++#elif NB_X_ABOUT == 3
++		// not while it still goes on the old way
++		aboutTurns = aboutTurns && aboutBrakes == false;
++#endif
++		if ( bends || aboutTurns )
++#else
+ 		if ( bends )
++#endif
+ 		{
+ 			// Walking a bend, it turns to where it is steered, not to where it moves: it moves the way it faces
+ 			b3Vec3 steered = b3InvRotateVector( tilt, f->steer.velocity );

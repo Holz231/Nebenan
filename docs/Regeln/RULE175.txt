@@ -1,0 +1,35 @@
+Regel für Runde 175, vor jedem Lauf mit den Geschwindigkeiten der unabhängigen Prüfung festgeschrieben. Gemessen wird gegen active-ragdoll-174, dessen Bibliothek die von Runde 172 ist.
+
+Worum es geht. Runde 174 hat die Kehrtwende im Gehen 0,13 s früher fertig, aber das Becken sackte dabei auf 6,5 statt höchstens 6 Kursen mehr tief ab. Der Nutzer hat entschieden: nicht bauen, zuerst das Sacken verfolgen.
+
+Wie groß das Thema ist, Frage 1 des Skills. Mit dem Bau von Runde 174 sackt das Becken auf den frischen Sätzen jener Runde auf 19,5 statt 13 von 272 Kursen im Gehen mehr als 30 mm unter den stetigen Gang, vor allem im Zickzack um 90 Grad jede Sekunde, 13 statt 0 Läufe über vier Proben, und im Hin und Her jede Sekunde, 26 statt 18. Richtig wäre: nicht öfter als vorher.
+
+Die Ursache, Update für Update verfolgt am Kurs zigzag90_1.0 auf h199. In der Kehrtwende darf die Kapsel schon in die neue Richtung kriechen, 0,42 m/s, während die Figur noch wegschaut: Sie geht dann rückwärts gegen ihre Beine. Dreht der Blick früher, tut sie das mit einem Fuß, der eben erst weit vorn gelandet ist; die Hüfte entfernt sich von ihm, beide Füße stehen 0,15 s, die Füße geraten 0,34 m auseinander, und die Wurzel geht 5 cm hinunter, bis der andere Fuß umgesetzt hat. Mit Blick in Laufrichtung gilt für den Gang ein Fuß vor der Hüfte nie als der, von dem die Hüfte weggeht.
+
+Der Eingriff, in der Bibliothek, src/figure_steer.c, zwei Teile. Erstens der Bau aus Runde 174: In der Kehrtwende im Gehen dreht der Blick sofort dorthin, wohin gesteuert wird, nur nicht, solange ein Fuß weiter als 0,7 in seinem Schwung ist. Zweitens: Solange sie in der Kehrtwende ist, kriecht die Kapsel mit 0,8 dessen, was sie quer und rückwärts zum Blick darf.
+
+Die Varianten, Frage 2 des Skills, je vier Proben auf den frischen Sätzen von Runde 174, die für diese Runde Entwicklung sind, alt gegen neu: Kehrtwende im Gehen, Kurse mit dem Becken über 30 mm tiefer, Anteil der Updates im Hin und Her mit mehr als 20 mm Überlappung der Beine.
+ - Kriechen 1,0, der Bau von Runde 174: 1,04 statt 1,17 s; 19,5 statt 13 Kurse; 4,5 statt 4,7 %. Das Sacken.
+ - Kriechen 0,85: 1,05 s; 16,5 Kurse, noch außerhalb des Rauschens; 4,8 %.
+ - Kriechen 0,8: 1,05 s; 14 Kurse, im Rauschen; 4,8 %, im Rauschen. Der Prototyp.
+ - Kriechen 0,75: 1,06 s; 13,5 Kurse; 5,4 %, schlechter.
+ - Kriechen 0,65: 1,07 s; 9,5 Kurse, besser als alt; 6,1 %, schlechter.
+ - Kriechen 0,5: 1,08 s; 10,5 Kurse; 5,9 %, und in Wenden im Gehen 3,9 statt 2,1 %. Verworfen.
+ - Kriechen 0,2: kein Gewinn mehr bei der Kehrtwende; 7,9 %. Verworfen.
+Je langsamer die Figur beim Drehen kriecht, desto weniger sackt das Becken und desto enger stehen die Beine. Bei 0,8 liegt beides im Rauschen.
+
+Nimmt der Prototyp das Ziel, Frage 3 des Skills. Auf beiden Entwicklungssätzen und auf den frischen Sätzen von Runde 174 hält er alle Bedingungen unten: Kehrtwende 1,05 statt 1,18, 1,18 und 1,17 s, Kurse mit tiefem Becken 22 statt 20, 21 statt 19,5 und 14 statt 13. Die ganze Testsuite auf dem Prototyp besteht, kein Hash ändert sich; SteerWalkAboutTest druckt die Kehrtwende spätestens nach 1,38 statt 1,48 s und im Hin und Her 0,26 statt 0,20 des Tempos in gesteuerter Richtung, SteerTurnStepTest 1,40 statt 1,63 s. Der Wert 0,8 ist auf den Sätzen von Runde 174 gewählt; deshalb zählen sie hier als Entwicklung.
+
+Bedingungen, alt ist active-ragdoll-174, neu der saubere Bau, je vier Proben mit tools/measure/check170.sh auf einer Gruppe von Sätzen, gerechnet von tools/measure/eval175.py, je am Median der Proben.
+Ziel:
+ Z1 Kehrtwende im Gehen: Die Figur schaut mindestens 0,08 s früher in die neue Richtung.
+ Z2 Wenden im Gehen um 45 bis 180 Grad: Die späteste schaut nicht später in die neue Richtung als alt.
+Schutz:
+ S1 Kurse im Gehen, auf denen das Becken mehr als 30 mm unter den stetigen Gang sackt: höchstens 2 mehr als alt, die Untergrenze einer Zählung.
+ S2 tools/measure/compare170.py nennt keine Größe schlechter.
+ S3 Alle Tests bestehen, mit gcc und clang, und die Hashes des Benchmarks der Figuren sind mit 1, 2 und 4 Threads gleich.
+ S4 Das Update der Figuren führt höchstens 1 % mehr Befehle aus.
+
+Unabhängige Prüfung. Vier Sätze, deren Geschwindigkeiten vor dem Festschreiben auf keinem Stand gelaufen sind, geprüft mit tools/measure/speeds.py: h202 mit 1,1233 und 4,3333 m/s, h203 mit 1,3133 und 3,1333 m/s, h204 mit 1,5133 und 4,1733 m/s, h205 mit 1,6933 und 3,6733 m/s, die Gruppe fresh175 in check170.sh. Die Ränder vorab bedacht: S1 liegt auf dem ersten Entwicklungssatz genau an der Grenze, 2 Kurse mehr; die Spanne der vier Proben ist dort 3 bis 4 Kurse breit. Verfehlt der Bau S1 knapp, ist das kein Rauschen, sondern der Tausch, den die Varianten zeigen.
+
+Der saubere Bau ist derselbe Text wie der Prototyp ohne Schalter und muss in der ersten Probe auf dem ersten Entwicklungssatz dieselben Tabellen schreiben. Verfehlt er auf den frischen Sätzen eine Bedingung, wird er nicht gebaut, oder der Nutzer entscheidet; die Regel wird danach nicht geändert, und eine Messung, die nicht passt, wird nicht wiederholt.
