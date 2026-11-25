@@ -655,6 +655,11 @@ Zehen und Fersen 37 mm, Hände 15 mm, Becken 10 mm, Becken tief ab 15 cm unter d
 - **Eine Bedingung gilt in dem Moment, in dem die Eingabe sich ändert.** „Ist eine Sekunde gegangen“ traf auch das Ende
   eines Halts aus dem Rennen, weil der Gang dort ausläuft; gemerkt beim Loslassen des Sticks (`walkedTo`), trifft sie
   nur das Gehen.
+- **Die Demo wird vor dem Push gebaut, wenn sie sich ändert.** Runde 177: Ein Zeilenumbruch in einem Hinweistext der
+  Demo brach den Bau auf allen drei Plattformen, und die Abschlussläufe bauen die Demo nicht mit. Mit `apt-get update`
+  und `apt-get install -y libgl-dev libx11-dev libxi-dev libxcursor-dev` baut sie auch in der Umgebung: `cmake -S . -B
+  <dir> -DNEBENAN_DEMO=ON` und das Ziel `nebenan_demo`. Text für C-Quellen nie mit `\n` aus einem Python-Text ohne `r`
+  schreiben.
 - **Größe der Figur.** Winkelbeschleunigungen wachsen bei kleineren Figuren mit 1 durch `nbFigureScale`, Längen
   und Geschwindigkeiten mit ihr.
 

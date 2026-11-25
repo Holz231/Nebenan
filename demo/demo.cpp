@@ -3742,12 +3742,9 @@ static void DrawUi( App& app )
 			steeringChanged |= ImGui::SliderFloat( "Anhalten aus dem Gehen", &app.playerStopBraking, 0.0f, 14.0f, "%.1f m/s²" );
 			if ( ImGui::IsItemHovered() )
 			{
-				ImGui::SetTooltip( "Wie hart die Spielfigur höchstens bremst, wenn sie aus dem Gehen anhält
-"
-								   "(nbFigureSteering::stopBraking). Mit 4 rollt der Körper über den letzten Schritt aus,
-"
-								   "und der hintere Fuß schließt auf. 0 heißt aus: Dann steht sie so hart, wie sie bremst,
-"
+				ImGui::SetTooltip( "Wie hart die Spielfigur höchstens bremst, wenn sie aus dem Gehen anhält\n"
+								   "(nbFigureSteering::stopBraking). Mit 4 rollt der Körper über den letzten Schritt aus,\n"
+								   "und der hintere Fuß schließt auf. 0 heißt aus: Dann steht sie so hart, wie sie bremst,\n"
 								   "mitten im Schritt, und die Füße sortieren sich danach." );
 			}
 			steeringChanged |= ImGui::SliderFloat( "Beschleunigung", &app.playerAcceleration, 2.0f, 20.0f, "%.1f m/s²" );
