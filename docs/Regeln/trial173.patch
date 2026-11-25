@@ -1,0 +1,16 @@
+diff --git a/src/figure.c b/src/figure.c
+index 32699bf..c86d2a9 100644
+--- a/src/figure.c
++++ b/src/figure.c
+@@ -6878,7 +6878,11 @@ static void nbSteerFeet( const nbWorld* world, int index, nbFigure* f, const nbC
+ 	// the stance, walking only before a foot lands. Walking, it vaults over the leg it
+ 	// stands on, as high as the clip has it and down as far as the legs need to reach both feet, see nbPlaceFeet. With
+ 	// clips of its gait that move the root, it goes up and down as they have it instead of the bob and the vault.
++#ifdef NB_X_WALK_EASE
++	if ( f->crouchEase > 0.0f || run <= 0.0f )
++#else
+ 	if ( f->crouchEase > 0.0f )
++#endif
+ 	{
+ 		// The stick just jumped, and where a foot lands may have jumped with it, see NB_CROUCH_EASE_RATE
+ 		crouch = b3MinFloat( crouch, crouchBefore + NB_CROUCH_EASE_RATE * scale * timeStep );

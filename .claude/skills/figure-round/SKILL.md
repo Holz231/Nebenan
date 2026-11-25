@@ -625,6 +625,10 @@ Zehen und Fersen 37 mm, Hände 15 mm, Becken 10 mm, Becken tief ab 15 cm unter d
   für Update verfolgt, eine Zeile in der Entscheidung, welcher Fuß abhebt. Der Beweis war die Zahl der Läufe über 20 mm
   über vier Proben auf drei bekannten und vier frischen Sätzen, nicht ein Maximum. Der Test fährt genau den verfolgten
   Kurs; ein ähnlicher Kurs traf die Stelle nicht.
+- **Erst fragen, ob es eine Stelle ist oder ein Rand.** Runde 172: ein Lauf, in jeder Probe, 24 mm gegen sonst 11, eine
+  Ursache, eine Zeile. Runde 173: zwölf Läufe knapp über der Grenze, in zehn Kursen, keiner in jeder Probe, mehrere
+  Ursachen; eine Abhilfe für eine davon lag im Rauschen. Vor dem Verfolgen die Verteilung ansehen: Wie weit liegt die
+  Stelle über den 95 % der Läufe, und kommt sie in jeder Probe?
 - **Größe der Figur.** Winkelbeschleunigungen wachsen bei kleineren Figuren mit 1 durch `nbFigureScale`, Längen
   und Geschwindigkeiten mit ihr.
 
