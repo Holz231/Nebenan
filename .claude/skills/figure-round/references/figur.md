@@ -207,7 +207,8 @@ was schon verworfen wurde.
 `SteerSwitchAnswerTest` (141), `SteerBackToForwardEarlyTest` (143), `SteerSideToBackWalkTest` (144), `SteerRunTrackTest`
 (147), `SteerSpeedUpTest` (150), `SteerFasterRollTest` (151), `SteerLandToesTest` (152), `SteerTurnStepTest` (156),
 `SteerWalkStopTest` (158), `SteerWalkBendTest` (161), `SteerWalkAboutTest` (163), `SteerLetGoTest` (164),
-`SteerMeetTest` (166), `SteerLegsApartTest` (167), `SteerStartTest` (169), und für den Körper `FigureShoulderTest` (126)
-und `FigureSkinTest` (127): Ändert eine Runde die Knochen, fällt er, bis `tools/mannequin/make_skin.py` die Haut neu
-geschrieben hat, erst `dump_bones`, dann das Werkzeug. Die Hashes `NB_EXPECTED_…_HASH` ändern sich nur, wenn sich ein
-Lauf ändert, der dort festgehalten ist: Das ist erlaubt, wird aber in der Roadmap genannt.
+`SteerMeetTest` (166), `SteerLegsApartTest` (167), `SteerStartTest` (169), `SteerLeadLiftTest` (172), und für den Körper
+`FigureShoulderTest` (126) und `FigureSkinTest` (127): Ändert eine Runde die Knochen, fällt er, bis
+`tools/mannequin/make_skin.py` die Haut neu geschrieben hat, erst `dump_bones`, dann das Werkzeug. Die Hashes
+`NB_EXPECTED_…_HASH` ändern sich nur, wenn sich ein Lauf ändert, der dort festgehalten ist: Das ist erlaubt, wird aber
+in der Roadmap genannt.

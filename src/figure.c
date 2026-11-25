@@ -5474,6 +5474,18 @@ static float nbSwingTime( const nbFigure* f, int k, float swingTime, float cycle
 #define NB_FOOT_STEP_STOOD 0.1f
 #define NB_FOOT_STEP_OTHER 0.05f
 
+// Walking with both feet on the ground, a foot behind the hip that its leg loses no later than the other lifts as soon
+// as it may, where the leg of the other carries it for less than NB_GAIT_LEAD of the quickest swing: it swings while
+// the other still holds. Not one that only just landed, see NB_GAIT_FRESH. Until round 172 the foot its leg loses
+// first lifted first only where one of the two was lost within one quickest swing. Where the heading waited for the
+// feet at the end of a zigzag, see NB_FACE_KEEP in figure_steer.c, the figure turned for 0.3 s on both feet and sped up
+// from 0.95 to 1.63 m/s, both feet got 0.37 m behind the hip, the left lifted as its phase came, and the right was lost
+// 0.15 s later with the left at 0.86 of its swing: both feet in the air at a walk, the root went down 9 cm in five
+// updates, and the pelvis jumped 24 mm in an update. Since round 156 a run like that came in one of 408 courses at a
+// fast walk, 1.58 to 1.72 m/s, up to 55 mm; now in none, see SteerLeadLiftTest and tools/measure/eval172.py. With 1.5
+// instead of 2.5 the spot is gone as well, with less gain elsewhere.
+#define NB_GAIT_LEAD 2.5f
+
 // A foot that lifts while the heading still has more than NB_FOOT_TWIST to turn swings this many times as fast from
 // the start, so the heading waits less for it to land, see nbMoveSteered: turning about at a walk the heading waited
 // 0.22 s for a swing of 0.42 s. Faster from its start, not hurried on its way: hurried while the heading waited, a foot
@@ -6245,7 +6257,10 @@ static void nbSteerFeet( const nbWorld* world, int index, nbFigure* f, const nbC
 			// once both feet have stood for a moment, see NB_FOOT_STEP_STOOD
 			bool steps = f->footHolds[k] && f->footSwings[1 - k] == false && f->stanceTime[k] >= NB_FOOT_STEP_STOOD &&
 						 f->stanceTime[1 - k] >= NB_FOOT_STEP_OTHER;
-			if ( ( ( due || early ) && hold == false ) || lost || first || floats || steps )
+			// The one its leg loses first lifts while the other still holds for its swing, see NB_GAIT_LEAD
+			bool leads = stance >= 0.5f && f->canLift[k] && f->footSwings[1 - k] == false && trails[k] &&
+						 out[k] <= out[1 - k] && out[1 - k] < NB_GAIT_LEAD * quickest && phase >= NB_GAIT_FRESH;
+			if ( ( ( due || early ) && hold == false ) || lost || first || floats || steps || leads )
 			{
 				// It lifts from where it stands, as far into its swing as its phase, and swings in the rest of it, from where it
 				// was an update ago, so it moves in this update already

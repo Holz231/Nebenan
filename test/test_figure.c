@@ -6162,6 +6162,53 @@ static int SteerStartTest( void )
 	return 0;
 }
 
+// A steered figure that walks fast, at 1.63 m/s, and is steered 45 degrees to the left and to the right of its way in
+// turn every 0.6 s for 4 s and goes on the way it was steered last, from twelve moments of its step five updates apart,
+// the course zigzag45_0.6 of tools/measure/steer162.py: its pelvis jumps no more than 15 mm in an update. Where both
+// feet stand as it turns and speeds up, the one its leg loses first lifts while the other still holds, see NB_GAIT_LEAD
+// in figure.c. Until round 172 the foot whose phase came lifted, the other was lost while the first still swung, both
+// feet were in the air at a walk, the root went down 9 cm in five updates, and the pelvis jumped 24 mm.
+static int SteerLeadLiftTest( void )
+{
+	float most = 0.0f;
+	const float speed = 1.6317f;
+	for ( int part = 0; part < 12; ++part )
+	{
+		FigureScene scene;
+		CreateFigureScene( &scene, 1 );
+		nbFigureId figure = AddSteeredFigure( &scene, b3Vec3_zero, 0.0f );
+		StepFigures( &scene, 60 );
+		nbSteer steer = { { 0.0f, 0.0f, speed }, 0.0f, true };
+		nbFigure_Steer( figure, &steer );
+		StepFigures( &scene, 243 + 5 * part );
+		b3BodyId pelvis = nbFigure_GetBody( figure, nb_humanoidPelvis );
+		b3Vec3 last = b3ToVec3( b3Body_GetPosition( pelvis ) );
+		b3Vec3 before = last;
+		for ( int i = 0; i < 330; ++i )
+		{
+			int leg = ( i < 240 ? i : 239 ) / 36;
+			float side = leg % 2 == 0 ? 1.0f : -1.0f;
+			steer.velocity = (b3Vec3){ side * speed * 0.70710678f, 0.0f, speed * 0.70710678f };
+			nbFigure_Steer( figure, &steer );
+			StepFigures( &scene, 1 );
+			b3Vec3 now = b3ToVec3( b3Body_GetPosition( pelvis ) );
+			if ( i > 0 )
+			{
+				most = b3MaxFloat( most, b3Length( b3Add( b3Sub( now, last ), b3Sub( before, last ) ) ) );
+			}
+			before = last;
+			last = now;
+		}
+		ENSURE( nbFigure_GetState( figure ) == nb_figureAnimated );
+		DestroyFigureScene( &scene );
+	}
+	printf( "  walking a zigzag of 45 degrees every 0.6 s at 1.63 m/s, the pelvis jumps %.1f mm in an update at most over "
+			"twelve runs\n",
+			1000.0f * most );
+	ENSURE( most < 0.015f );
+	return 0;
+}
+
 // A steered figure facing where it moves runs at 3.2 m/s, and the stick is let go for 0.2 s every 0.7 s for 4 s, from
 // eight moments of its gait five updates apart. Its pelvis jumps no more than 16 mm in an update (12.5): for a moment
 // after the velocity it is steered at jumps, the root goes down for a landing gently, see NB_CROUCH_EASE in
@@ -8761,7 +8808,7 @@ static int ThinBoardTest( void )
 // walking takes the steps of people, see NB_GAIT_CADENCE_WALK, and the ankle of a swinging foot bends up as far as
 // theirs, see NB_SWING_ANKLE_SOFT. Round 113: the body has the dimensions of a person, see nbMakeHumanoidBones.
 // Round 131: a foot that only just landed stands where the other foot is free to lift, see NB_GAIT_FRESH_KEEP.
-#define NB_EXPECTED_STEER_HASH 0xfed06f33u
+#define NB_EXPECTED_STEER_HASH 0xa7b0396cu
 
 // See RunGaitClipScenario. Since round 99 as for RunSteerScenario. Since round 100 the figure that is told to turn on
 // the spot while it still walks, not facing where it moves, keeps its legs where they face as its heading turns, and
@@ -8907,6 +8954,7 @@ int FigureTest( void )
 	RUN_TEST( SteerMeetTest );
 	RUN_TEST( SteerLegsApartTest );
 	RUN_TEST( SteerStartTest );
+	RUN_TEST( SteerLeadLiftTest );
 	RUN_TEST( SteerLegLeadTest );
 	RUN_TEST( SteerRunDescentTest );
 	RUN_TEST( SteerRunFlightTest );

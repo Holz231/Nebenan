@@ -621,6 +621,10 @@ Zehen und Fersen 37 mm, Hände 15 mm, Becken 10 mm, Becken tief ab 15 cm unter d
   und Her. Eine Regel nimmt die Kurse und `legs167.py` als Schutz, auch wenn die Runde nur einzelne Wenden ändert.
 - **Ein Fehlschlag der Regel wird mit Proben geprüft, bevor er erklärt wird.** A2 von Runde 163 war echt, S2 und S5 von
   Runde 167 waren Rauschen. Beides hätte sich mit vier Proben vor der Entscheidung gezeigt.
+- **Eine seltene Stelle wird am verfolgten Lauf behoben und über Proben bewiesen.** Runde 172: ein Lauf von 408, Update
+  für Update verfolgt, eine Zeile in der Entscheidung, welcher Fuß abhebt. Der Beweis war die Zahl der Läufe über 20 mm
+  über vier Proben auf drei bekannten und vier frischen Sätzen, nicht ein Maximum. Der Test fährt genau den verfolgten
+  Kurs; ein ähnlicher Kurs traf die Stelle nicht.
 - **Größe der Figur.** Winkelbeschleunigungen wachsen bei kleineren Figuren mit 1 durch `nbFigureScale`, Längen
   und Geschwindigkeiten mit ihr.
 
