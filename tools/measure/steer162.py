@@ -1,25 +1,28 @@
-# steer162.py variant set [set...]: the gait of a steered humanoid that faces where it moves while a player steers it
-# on and on, measured for round 162, see docs/Roadmap.md. gait155.py measures one change out of the steady gait; here
-# the direction keeps changing: the stick goes round at 45, 90, 180 and 360 degrees per second (circle), swings between
-# 45 or 90 degrees to the left and to the right every 0.3, 0.6 or 1.0 s (zigzag), turns about every 0.3, 0.6 or 1.0 s
+# steer162.py variant set [set...]: the gait of a steered humanoid that faces where it moves while a player steers it on
+# and on, measured for round 162, see docs/Roadmap.md. gait155.py measures one change out of the steady gait; here the
+# direction keeps changing: the stick goes round at 45, 90, 180 and 360 degrees per second (circle), swings between 45
+# or 90 degrees to the left and to the right every 0.3, 0.6 or 1.0 s (zigzag), turns about every 0.3, 0.6 or 1.0 s
 # (shuttle), goes 90 degrees to the left for 0.1 or 0.2 s and back (tap), lets go for 0.2 s every 0.7 s (stopgo), and
 # changes between the walking and the running speed of the set every 0.5 s (gears). Each course lasts 4 s out of the
 # steady gait, from 4 moments spread over a cycle, walking and running at the speeds of the sets (common.sh), and the
 # figure goes on for 1.5 s the way it was steered last. Per run, from 0.1 s before the course to its end: the hardest
-# jump of a shin, a foot, the pelvis, a hand and the head in an update (second difference of the origin, mm) and in
-# how many updates a shin jumps more than 37 mm; how far the pelvis gets below the lowest it has in the steady gait at
-# that speed (under, mm; gears: at either speed) and for how long more than 30 mm (s); the swings of the feet, how many
-# are shorter than 0.25 s and the shortest (s); how far a standing foot turns on the ground (degrees) and slides (mm);
-# and how the figure follows: the share of the steered speed it has in the mean (kept), the share of it that goes the
-# way it is steered (along), how far its heading is off the steered direction in the mean (off, degrees), and whether
-# it is still animated at the end. Writes out/res/<variant>/steer162.json and prints one line per course and gait.
-# Needs lab101 of the variant: ./build.sh <variant> "-DLAB_BEND" lab101.c
+# jump of a shin, a foot, the pelvis, a hand and the head in an update (second difference of the origin, mm) and in how
+# many updates a shin jumps more than 37 mm; how far the pelvis gets below the lowest it has in the steady gait at that
+# speed (under, mm; gears: at either speed) and for how long more than 30 mm (s); the swings of the feet, how many are
+# shorter than 0.25 s and the shortest (s); how far a standing foot turns on the ground (degrees) and slides (mm); and
+# how the figure follows: the share of the steered speed it has in the mean (kept), the share of it that goes the way it
+# is steered (along), how far its heading is off the steered direction in the mean (off, degrees), and whether it is
+# still animated at the end. Writes out/res/<variant>/steer162.json and prints one line per course and gait. Needs
+# lab101 of the variant: ./build.sh <variant> "-DLAB_BEND" lab101.c From round 170 on the course waits until the left
+# foot lifts, see SYNC in lab101.c and where129.py, and the tool also writes Base, Extra and OverBase for the shins,
+# feet and pelvis, see beyond in where129.py. A single run is one moment of the step against the updates: compare states
+# with check170.sh and compare170.py.
 import csv, json, math, os, subprocess, sys
 from concurrent.futures import ThreadPoolExecutor
 import numpy as np
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from where129 import speeds, W
+from where129 import speeds, lab_env, shifted, beyond, W
 from gait155 import band, GROUPS, LIMIT
 
 LAST = 4.0
@@ -68,10 +71,12 @@ def one(job):
             last = now
     path = os.path.join(W, 'tmp', 'steer162_%s_%s_%s_%s_%d.csv' % (variant, name, label, gait, i))
     lab = os.path.join(W, 'res', variant, 'lab101')
-    done = subprocess.run([lab, ','.join(keys), path, '%.4f' % (a + LAST + 1.5)], check=True, stdout=subprocess.PIPE)
+    done = subprocess.run([lab, ','.join(keys), path, '%.4f' % (a + LAST + 1.5)], check=True, stdout=subprocess.PIPE,
+                          env=lab_env(True))
     rows = list(csv.DictReader(open(path)))
     os.remove(path)
     d = {k: np.array([float(r[k]) for r in rows]) for k in rows[0]}
+    a += shifted(d)
     t = d['t']
     dt = float(t[1] - t[0])
     win = (t >= a - 0.1) & (t < a + LAST + 1.0)
@@ -89,6 +94,8 @@ def one(job):
         out[group] = best
         if group == 'shin':
             out['shinOver'] = over
+    for group in ('shin', 'foot', 'pelvis'):
+        out[group + 'Base'], out[group + 'Extra'], out[group + 'OverBase'] = beyond(d, GROUPS[group], a, win)
     slide, twist, short, swings, shorts = 0.0, 0.0, 9.0, 0, 0
     for leg in 'LR':
         sw = d['swing' + leg] > 0.5

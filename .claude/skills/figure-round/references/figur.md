@@ -121,6 +121,9 @@ was schon verworfen wurde.
   der Gang nicht läuft und die Kapsel langsamer als `NB_START_FROM` ist, bis sie ihr Tempo hat (`starting` in
   `nbMoveSteered`). `lab101` nimmt dafür `START`. Die Summen aus `gait155.py` und `steer162.py` hängen an der
   Schrittphase der Wende und vergleichen keine Stände, die verschieden starten.
+- **Messen mit Rauschband.** Seit Runde 170 kommen Änderungen in den Werkzeugen an fester Schrittphase (`SYNC`), und
+  Stände werden in vier Proben mit `NUDGE` gemessen (`check170.sh`) und mit `compare170.py` verglichen. Eine Regel setzt
+  ihre Toleranzen aus den Spannen und nennt eine Bedingung verfehlt, wo die Spannen sich nicht überdecken.
 - **Abheben gegen die Bewegung.** Gegen die Richtung gesteuert, in die sie sich bewegt, mit den Beinen rückwärts, hebt
   ein nachlaufender Fuß ab, sobald die Hüfte schneller von ihm weggeht, als sein Bein vor seiner Reichweite bremsen kann
   (`nbHipAway`, wie `NB_SWING_PULL` es misst), seit Runde 143. Ein schwingender Fuß rollt mit den Beinen rückwärts in

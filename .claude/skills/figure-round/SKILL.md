@@ -607,6 +607,15 @@ Zehen und Fersen 37 mm, Hände 15 mm, Becken 10 mm, Becken tief ab 15 cm unter d
   danach.
 - **Ein neuer Standard ist ein Umbau.** Den Standard von `acceleration` zu senken ließ 14 Tests anschlagen. Ein
   Parameter, den ein Spiel setzt, ändert die Bibliothek für niemanden, der ihn nicht setzt.
+- **Ein einzelner Lauf ist eine Probe, kein Wert.** Runde 170: Ein Laufschritt dauert fast genau 44 Updates, und wo er
+  zwischen zwei Updates fällt, hängt am Anlauf. Derselbe Stand gab in vier leicht verschobenen Proben 147 bis 167
+  Schienbein-Sprünge, ein anderer Start in einem Lauf 316. Zwei Stände werden mit `check170.sh` und `compare170.py`
+  verglichen, und ein Unterschied zählt nur außerhalb der Spannen.
+- **Rauschen nicht mit einer Störung messen, die das System vergisst.** Länger stehen vor dem Start änderte nichts; erst
+  ein Prozent mehr Tempo vor der Änderung verschob den Schritt gegen die Updates.
+- **Eine Grenze mitten im stetigen Band zählt Zufall.** 37 mm liegt dort, wo ein Schienbein im stetigen Lauf je nach
+  Lage des Schritts 30 bis 38 mm springt. Grenzen über dem stetigen Gang (Extra in `where129.py`) oder Spannen über
+  Proben nehmen.
 - **Größe der Figur.** Winkelbeschleunigungen wachsen bei kleineren Figuren mit 1 durch `nbFigureScale`, Längen
   und Geschwindigkeiten mit ihr.
 

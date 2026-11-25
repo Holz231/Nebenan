@@ -46,6 +46,13 @@ int main( int argc, char** argv )
 	}
 	float seconds = argc > 3 ? (float)atof( argv[3] ) : 12.0f;
 	float hz = argc > 4 ? (float)atof( argv[4] ) : 60.0f;
+	// NUDGE=p: with SYNC, the figure goes p percent faster than its keys say until half a second before the change
+	// waits for its step. A step of a steady run takes nearly a whole number of updates, 0.733 s against 44 updates at
+	// 3.2 m/s, so where a step falls between two updates stays for many steps and depends on how the figure got going:
+	// a shin jumped 35.8 or 38.3 mm at most in a steady run after two starts. Standing longer changes nothing, the figure
+	// forgets as it stands; going a little faster for a while moves the step against the updates. The same state from
+	// other such moments, to tell what a change of the library does from what any other start does.
+	float nudge = getenv( "NUDGE" ) ? 1.0f + 0.01f * (float)atof( getenv( "NUDGE" ) ) : 1.0f;
 
 	b3WorldDef wd = b3DefaultWorldDef();
 	b3WorldId physics = b3CreateWorld( &wd );
@@ -74,7 +81,10 @@ int main( int argc, char** argv )
 	fd.steered = true;
 	if ( getenv( "TURNRATE" ) ) fd.steering.turnRate = (float)atof( getenv( "TURNRATE" ) );
 	if ( getenv( "ACC" ) ) fd.steering.acceleration = (float)atof( getenv( "ACC" ) );
+#ifndef LAB_NO_START
+	// START: nbFigureSteering::startAcceleration, in the library from round 169 on
 	if ( getenv( "START" ) ) fd.steering.startAcceleration = (float)atof( getenv( "START" ) );
+#endif
 #ifdef LAB_BEND
 	// BEND: nbFigureSteering::walkBend, in the library from round 161 on, so only where the build asks for it
 	if ( getenv( "BEND" ) ) fd.steering.walkBend = (float)atof( getenv( "BEND" ) );
@@ -129,7 +139,7 @@ int main( int argc, char** argv )
 	b3Vec3 heelLocal = { footDef->center.x, footDef->center.y - footDef->halfExtents.y, footDef->center.z - footDef->halfExtents.z };
 
 	FILE* out = fopen( argv[2], "w" );
-	fprintf( out, "t,gait,phase,swingL,swingR,rollL,rollR,fx,fy,fz,heading,stair" );
+	fprintf( out, "t,gait,phase,swingL,swingR,rollL,rollR,fx,fy,fz,heading,stair,shift" );
 	for ( int i = 0; i < nb_humanoidBoneCount; ++i )
 	{
 		fprintf( out, ",b%dx,b%dy,b%dz,b%dqx,b%dqy,b%dqz,b%dqw", i, i, i, i, i, i, i );
@@ -138,6 +148,13 @@ int main( int argc, char** argv )
 	float dt = 1.0f / hz;
 	int steps = (int)( seconds * hz );
 	nbWorld* w = nbGetWorldFromId( world );
+	// SYNC=t0: the keys after t0 wait until the left foot lifts next, 2 s at most, so a change out of the steady gait
+	// comes at the same moment of the step whatever the figure did before, and the run lasts as much longer. shift is
+	// how long they waited, written in every row from then on.
+	float sync = getenv( "SYNC" ) ? (float)atof( getenv( "SYNC" ) ) : -1.0f;
+	bool synced = sync < 0.0f;
+	bool swung = false;
+	float shift = 0.0f;
 	for ( int s = 0; s < steps; ++s )
 	{
 		float t = (float)s * dt;
@@ -146,24 +163,44 @@ int main( int argc, char** argv )
 		bool face = true;
 		for ( int k = 0; k < keyCount; ++k )
 		{
-			if ( t >= keys[k].t )
+			float at = keys[k].t;
+			if ( sync >= 0.0f && at > sync )
+			{
+				if ( synced == false )
+				{
+					continue;
+				}
+				at += shift;
+			}
+			if ( t >= at )
 			{
 				v = (b3Vec3){ keys[k].vx, 0.0f, keys[k].vz };
 				face = keys[k].face != 0;
 				wantHeading = face ? 0.0f : keys[k].h * B3_PI / 180.0f;
 			}
 		}
+		if ( sync >= 0.0f && t < sync - 0.5f )
+		{
+			v = b3MulSV( nudge, v );
+		}
 		nbSteer steer = { v, wantHeading, face };
 		nbFigure_Steer( figure, &steer );
 		nbWorld_Step( world, dt, 4 );
 		const nbFigure* f = w->figures.data + ( figure.index1 - 1 );
+		if ( synced == false && t + dt >= sync && ( ( f->footSwings[0] && swung == false ) || t + dt >= sync + 2.0f ) )
+		{
+			synced = true;
+			shift = t + dt - sync;
+			steps += (int)lroundf( shift * hz );
+		}
+		swung = f->footSwings[0];
 		b3WorldTransform frame = nbFigure_GetFrame( figure );
 		b3Vec3 p = b3ToVec3( frame.p );
 		b3Vec3 fwd = b3RotateVector( frame.q, b3Vec3_axisZ );
 		float heading = atan2f( fwd.x, fwd.z );
-		fprintf( out, "%.5f,%d,%.5f,%d,%d,%.5f,%.5f,%.5f,%.5f,%.5f,%.5f,%.4f", t + dt, f->gaitOn ? 1 : 0, f->gaitPhase,
+		fprintf( out, "%.5f,%d,%.5f,%d,%d,%.5f,%.5f,%.5f,%.5f,%.5f,%.5f,%.4f,%.5f", t + dt, f->gaitOn ? 1 : 0, f->gaitPhase,
 				 f->footSwings[0] ? 1 : 0, f->footSwings[1] ? 1 : 0, f->footRoll[0], f->footRoll[1], p.x, p.y, p.z, heading,
-				 f->stairWeight );
+				 f->stairWeight, shift );
 		for ( int i = 0; i < nb_humanoidBoneCount; ++i )
 		{
 			b3BodyId body = nbFigure_GetBody( figure, i );

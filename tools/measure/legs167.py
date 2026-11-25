@@ -8,13 +8,14 @@
 # of parts: the deepest overlap in mm (negative: the closest they come), the share of the updates with more than 5 and
 # more than 20 mm of overlap, and the longest time one overlap of more than 5 mm lasts. Writes
 # out/res/<variant>/legs167.json. For the starts also how long the capsule takes to 95 % of the steered speed and how
-# many feet landed by then. Needs lab101 of the variant: ./build.sh <variant> "-DLAB_BEND" lab101.c
+# many feet landed by then. Needs lab101 of the variant: ./build.sh <variant> "-DLAB_BEND" lab101.c From round 170 on a
+# change out of the steady gait waits until the left foot lifts, see SYNC in lab101.c.
 import csv, json, math, os, subprocess, sys
 from concurrent.futures import ThreadPoolExecutor
 import numpy as np
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from where129 import speeds, W
+from where129 import speeds, lab_env, shifted, W
 
 # bone: index left, index right, the ends of its capsule along the bone and its radius, m, for the humanoid of 1.8 m
 PARTS = {'thigh': (13, 16, 0.07, 0.38, 0.07), 'shin': (14, 17, 0.06, 0.38, 0.06), 'foot': (15, 18, -0.035, 0.175, 0.04)}
@@ -73,10 +74,12 @@ def one(job):
     last = 8.0 if scene == 'steady' else a + (4.5 if scene == 'shuttle' else 2.5)
     path = os.path.join(W, 'tmp', 'legs167_%s_%s_%s_%s_%d.csv' % (variant, name, scene, gait, i))
     lab = os.path.join(W, 'res', variant, 'lab101')
-    subprocess.run([lab, script, path, '%.4f' % last], check=True, stdout=subprocess.DEVNULL)
+    subprocess.run([lab, script, path, '%.4f' % last], check=True, stdout=subprocess.DEVNULL,
+                   env=lab_env(scene not in ('steady', 'start')))
     rows = list(csv.DictReader(open(path)))
     os.remove(path)
     d = {k: np.array([float(r[k]) for r in rows]) for k in rows[0]}
+    a += shifted(d)
     t = d['t']
     dt = float(t[1] - t[0])
     win = t >= (4.0 if scene == 'steady' else a - 0.1)

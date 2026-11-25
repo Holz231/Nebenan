@@ -19,6 +19,48 @@ SHIN = {'L': 14, 'R': 17}
 LIMIT = 37.0
 
 
+# From round 170 on a change out of the steady gait comes at a moment of the step, not at a time: lab101 holds the
+# keys after SYNC_AT back until the left foot lifts next, see SYNC in lab101.c, and the tools move their windows by how
+# long that took. Until then a change came a fixed time after the start, and a build that starts differently met its
+# turns in other moments of the step: starting at 9.5 instead of 10 m/s^2 moved the sum of the shin jumps from 93 to
+# 134 mm. NB_SYNC=0 gives the old timing, to run a check of an earlier round as it ran then.
+SYNC_AT = 3.5
+
+
+def lab_env(steady):
+    """the environment for lab101: with the keys of a change out of the steady gait waiting for the left foot, and
+    NUDGE passed on as it is set, see lab101.c"""
+    env = {k: v for k, v in os.environ.items() if k != 'SYNC'}
+    if steady and os.environ.get('NB_SYNC', '1') != '0':
+        env['SYNC'] = '%.1f' % SYNC_AT
+    return env
+
+
+def shifted(d):
+    """how long the keys waited, 0 for a lab101 from before round 170"""
+    return float(d['shift'][-1]) if 'shift' in d else 0.0
+
+
+def beyond(d, bones, a, win, margin=5.0):
+    """How hard bones jump beyond what they do in the steady gait before a change at a, from round 170 on: the hardest
+    jump of one of them in an update (second difference of its origin, mm) in the 1.5 s before the change, the base,
+    how far the hardest in win is beyond that, at least 0, and in how many updates of win one jumps more than the base
+    and margin. A fixed limit of 37 mm lies where a shin jumps in every stride of a steady run, 30 to 38 mm depending on
+    how the updates meet the step, so counts over it flip with nothing changed: 147 against 316 on one state."""
+    t = d['t']
+    before = (t >= a - 1.6) & (t < a - 0.1)
+    base, most, jumps = 0.0, 0.0, []
+    for b in bones:
+        p = np.stack([d['b%dx' % b], d['b%dy' % b], d['b%dz' % b]], 1)
+        j = np.zeros(len(t))
+        j[2:] = 1000.0 * np.linalg.norm(p[2:] - 2.0 * p[1:-1] + p[:-2], axis=1)
+        base = max(base, float(j[before].max()))
+        most = max(most, float(j[win].max()))
+        jumps.append(j)
+    over = sum(int(np.sum(j[win] > base + margin)) for j in jumps)
+    return base, max(most - base, 0.0), over
+
+
 def speeds(name):
     for line in open(os.path.join(M, 'common.sh')):
         m = re.match(r'SET_%s="([^"]*)"' % name, line)

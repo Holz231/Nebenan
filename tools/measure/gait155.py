@@ -4,27 +4,30 @@
 # running at the speeds of the sets (common.sh). A change comes at 12 moments spread over a cycle of the gait, starting
 # and the steady gait once. From 0.1 s before the change for 3 s, per point: the hardest jump of a shin, a foot, the
 # pelvis, a hand and the head in an update (second difference of the origin, mm) and what the leg of that shin does
-# there (see where129.py); how far a standing foot slides over the ground in one stance (the point between heel and
-# toes while both are within 5 mm of the same height, mm) and how far it turns on the ground (degrees), both from the
-# third update after it landed to the last before it lifts, and how far a foot points away from the heading of the
-# figure as it lands (degrees); how far the pelvis gets below and above its height before the change (mm), and, since
-# round 159, how far it gets below and above the heights it has in the steady gait at the new speed in the first 1.5 s
-# (under and beyond, mm; -1 where the figure stops): walking and running have their own heights, the pelvis is 7 cm
-# lower running at 4.3 m/s than walking at 1.05 m/s, and against the height before a change of the gait that
-# difference looked like a pelvis that sinks; when the
-# figure moves at nine tenths of the new speed along the new direction (stopping: at a tenth of the old speed) and when
-# it faces within 10 degrees of it; the shortest swing of a foot (s) and how many feet land in the first 1.5 s against
-# the steady gait of the new speed. Since round 161 also starting from standing to where the figure does not face, 90
-# and 180 degrees to its left (startTurn90, startTurn180), and the way of the frame: how far it goes on the way it
-# went before the change (onward, m) and how far to the side of it (sideways, m; turning about that is how wide its
-# bend is). Writes out/res/<variant>/gait155.json and prints one line per scene. Needs lab101 of the variant:
-# ./build.sh <variant> "" lab101.c
+# there (see where129.py); how far a standing foot slides over the ground in one stance (the point between heel and toes
+# while both are within 5 mm of the same height, mm) and how far it turns on the ground (degrees), both from the third
+# update after it landed to the last before it lifts, and how far a foot points away from the heading of the figure as
+# it lands (degrees); how far the pelvis gets below and above its height before the change (mm), and, since round 159,
+# how far it gets below and above the heights it has in the steady gait at the new speed in the first 1.5 s (under and
+# beyond, mm; -1 where the figure stops): walking and running have their own heights, the pelvis is 7 cm lower running
+# at 4.3 m/s than walking at 1.05 m/s, and against the height before a change of the gait that difference looked like a
+# pelvis that sinks; when the figure moves at nine tenths of the new speed along the new direction (stopping: at a tenth
+# of the old speed) and when it faces within 10 degrees of it; the shortest swing of a foot (s) and how many feet land
+# in the first 1.5 s against the steady gait of the new speed. Since round 161 also starting from standing to where the
+# figure does not face, 90 and 180 degrees to its left (startTurn90, startTurn180), and the way of the frame: how far it
+# goes on the way it went before the change (onward, m) and how far to the side of it (sideways, m; turning about that
+# is how wide its bend is). Writes out/res/<variant>/gait155.json and prints one line per scene. Needs lab101 of the
+# variant: ./build.sh <variant> "" lab101.c From round 170 on a change out of the steady gait waits until the left foot
+# lifts, see SYNC in lab101.c and where129.py, and for the shins, feet and pelvis the tool also writes the hardest jump
+# of the steady gait before the change (Base), how far the hardest after it goes beyond (Extra) and in how many updates
+# they jump more than 5 mm beyond (OverBase). A single run is one moment of the step against the updates: compare states
+# with check170.sh and compare170.py.
 import csv, json, math, os, subprocess, sys
 from concurrent.futures import ThreadPoolExecutor
 import numpy as np
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from where129 import speeds, what, W
+from where129 import speeds, what, lab_env, shifted, beyond, W
 
 LIMIT = 37.0
 BANDS = {}
@@ -62,10 +65,12 @@ def one(job):
     script += ',%.4f:%.5f:%.5f' % (a, v1 * math.sin(rad), v1 * math.cos(rad))
     path = os.path.join(W, 'tmp', 'gait155_%s_%s_%s_%s_%d.csv' % (variant, name, scene, gait, i))
     lab = os.path.join(W, 'res', variant, 'lab101')
-    subprocess.run([lab, script, path, '%.4f' % (a + 3.0)], check=True, stdout=subprocess.DEVNULL)
+    subprocess.run([lab, script, path, '%.4f' % (a + 3.0)], check=True, stdout=subprocess.DEVNULL,
+                   env=lab_env(before is not None))
     rows = list(csv.DictReader(open(path)))
     os.remove(path)
     d = {k: np.array([float(r[k]) for r in rows]) for k in rows[0]}
+    a += shifted(d)
     t = d['t']
     dt = float(t[1] - t[0])
     win = t >= a - 0.1
@@ -84,6 +89,9 @@ def one(job):
             does = what(d, 'L' if best[1] == 14 else 'R', best[2])
             out['does'] = does[0] + (' %d' % does[1] if does[0] in ('lift', 'land') else '')
             out['after'] = float(t[best[2]] - a)
+    if before is not None:
+        for group in ('shin', 'foot', 'pelvis'):
+            out[group + 'Base'], out[group + 'Extra'], out[group + 'OverBase'] = beyond(d, GROUPS[group], a, win)
     slide, twist, aside, short, lands = 0.0, 0.0, 0.0, 9.0, 0
     for leg in 'LR':
         sw = d['swing' + leg] > 0.5
