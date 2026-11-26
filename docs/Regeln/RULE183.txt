@@ -1,0 +1,103 @@
+Regel für Runde 183, vor jedem Lauf mit den Geschwindigkeiten der unabhängigen Prüfung festgeschrieben. Gemessen wird
+gegen active-ragdoll-182.
+
+Worum es geht. Der Nutzer will zuerst das Gehen richtig haben und hat nach Runde 182 Vorschlag b gewählt: den
+Zehen-Drehpunkt als größeren Bau. Runde 181 hatte gemessen, dass ein stehender Fuß, der mit dem Körper dreht, um die
+Mitte seiner Sohle dreht und seine Zehen dabei über den Boden gleiten, und dass ein Drehpunkt an der Zehenkante das
+behebt, auf den Kursen aber kostet, was Runde 179 gewonnen hat.
+
+Wie groß das Thema ist, Frage 1 des Skills. Auf zwölf Entwicklungssätzen mit vier Proben, gemessen mit walk176.py, das
+seit dieser Runde auch misst, wie weit ein Fuß in einer Standphase auf dem gleitet, worauf er steht (soleSlide: der Weg
+der Zehen, solange die Ferse mehr als 10 mm über ihnen ist, der Ferse, solange die Zehen so weit über ihr sind, und das
+Mittel beider, solange er flach steht): in der Wende um 90 Grad im Gehen 69,3 mm im Mittel der Läufe, in der Kehrtwende
+97,9 mm, beim Losgehen um 90 Grad zur Seite 68,0 mm, um 180 Grad 84,6 mm, in der Wende um 45 Grad 16,9 mm. Richtig wäre,
+dass ein Fuß nicht auf dem gleitet, worauf er steht. Und schon heute dreht ein Fuß oft mit gehobener Ferse, im Mittel
+13,8 Grad in der Wende um 90 Grad und 36 Grad beim Losgehen nach hinten, mit der Ferse 6 bis 8 cm hoch: Er steht dann
+nur auf den Zehen und dreht trotzdem um die Sohlenmitte.
+
+Die Ursache der Kosten aus Runde 181, Update für Update verfolgt (h2, zigzag90_0.6): Der Fuß steht 15 bis 20 cm vor der
+Hüfte, flach, sein Gewicht läge auf der Ferse; er dreht aber um die Zehen, der Knöchel schwenkt 20 cm unter den Körper
+auf die andere Seite der Hüfte, das gestreckte Bein reicht nicht mehr, und das Becken geht 4 cm tiefer. Ein Fuß dreht
+richtig auf dem, worüber die Hüfte steht: Dreht er um den Punkt unter der Hüfte, ändert das Drehen die Länge des Beins
+nicht.
+
+Der Eingriff, in der Bibliothek, src/figure.c, nur im Gehen mit Blick in Laufrichtung und nur, wenn der Gang seit 1 s
+keinen Anteil Rennen hat. Ein stehender Fuß, der mit dem Körper dreht, dreht um einen Punkt seiner Sohle zwischen ihrer
+Mitte und der Zehenkante: um die Mitte, solange die Hüfte über dem Knöchel oder dahinter steht, um die Zehenkante, wenn
+sie eine halbe Sohlenlänge vor dem Knöchel steht, dazwischen anteilig; und um die Zehenkante, soweit er schon über die
+Zehen abgerollt ist (voll ab 0,15 rad). Soweit er vor der Mitte dreht, hebt sich seine Ferse um bis zu 0,08 rad, mit
+höchstens 2 rad/s, und senkt sich so wieder.
+
+Die Varianten, Frage 2 des Skills, dev1 mit vier Proben, je: Gleiten (soleSlide) im Mittel in der Wende um 90 Grad, in
+der Kehrtwende, beim Losgehen um 90 Grad; und was compare170.py auf den Kursen sagt:
+ - alt: 68,7; 98,6; 67,7 mm.
+ - Zehenkante immer, Ferse 0,08 rad (Runde 181, auf dem neuen Stand): Zehen gleiten 9; 9; 8 mm. Beine ineinander in
+   Wenden im Gehen 2,48 statt 1,37 %, im Hin und Her 5,78 statt 3,92 %, Becken über 30 mm tief auf 21 statt 12,5
+   Kursen, Schienbein über 37 mm auf 12,5 statt 6: schlechter.
+ - Drehpunkt nur nach dem Abrollen (über die Zehen abgerollt: Zehenkante): Zehen gleiten 55; 91; 32 statt 73; 100; 67
+   mm; nichts schlechter.
+ - Drehpunkt unter der Hüfte von der Fersenkante bis zur Zehenkante, flach bei Hüfte über der Sohlenmitte: 48,3; 89,4;
+   61,4 mm; nichts schlechter, aber die Zehen eines flachen Fußes fegen in der Kehrtwende bis 220 mm weit.
+ - dasselbe, nur von der Sohlenmitte nach vorn, mit Abrollen: 42,6; 87,4; 33,9 mm; mit Ferse 0,08 rad: 39,2; 85,0;
+   33,9 mm; nichts schlechter.
+ - von Ferse bis Zehen, und auf der Ferse heben sich die Zehen um 0,08 rad: 26,8; 47,4; 36,3 mm, aber ein Schienbein
+   springt auf 53,5 statt 6 Kursen über 37 mm. Verfolgt: „Hüfte über dem Knöchel“ galt als „auf der Ferse“, die Zehen
+   hoben sich an einem Fuß, der gleich abhebt, und beim Abheben sprang das Abrollen um, 47 mm am Schienbein. Mit flach
+   bei Hüfte über dem Knöchel: 22,8; 51,2; 22,4 mm, Schienbein auf 22,5 Kursen: schlechter.
+ - von der Sohlenmitte nach vorn, flach bei Hüfte über dem Knöchel, Abrollen, Ferse 0,08 rad: 25,1; 72,9; 22,4 mm;
+   auf dev1 nichts schlechter. Auf dev2 springt ein Fuß in 47,5 statt 40,5 einzelnen Wechseln über 37 mm, alle in der
+   Wende um 135 Grad im Rennen: Dort bremst die Kapsel, der Gang gilt kurz als Gehen, und der Eingriff griff.
+ - dasselbe, der Drehpunkt eine Viertelsohle früher vorn: 13,7; 54,6; 7,9 mm; Beine ineinander 1,89 statt 1,37 %, im
+   Hin und Her 5,01 statt 3,92 %: schlechter.
+ - dasselbe ohne Fersenheben: 34,9; 83,3; 24,1 mm; die Ferse schleift.
+ - dasselbe, nur wenn der Gang seit 1 s keinen Anteil Rennen hat: der Prototyp.
+Verworfen ist damit: die Zehenkante immer; auf der Ferse drehen mit gehobenen Zehen; den Drehpunkt früher nach vorn
+legen; ohne Fersenheben; im Rennen.
+
+Nimmt der Prototyp das Ziel, Frage 3 des Skills. Auf beiden Entwicklungsgruppen mit vier Proben, 960 Läufe: Ein Fuß
+gleitet auf dem, worauf er steht, in der Wende um 90 Grad 25,6 statt 69,3 mm, in der Kehrtwende 72,3 statt 97,9 mm,
+beim Losgehen um 90 Grad 22,4 statt 68,0 mm, um 180 Grad 31,6 statt 84,6 mm, in der Wende um 45 Grad 8,1 statt 16,9
+mm; seine Zehen gehen 28,0 statt 73,5, 71,5 statt 99,6, 18,7 statt 67,7, 31,1 statt 84,8 und 13,4 statt 20,3 mm weit.
+Die Figur schaut so früh wie alt oder bis 0,03 s früher in die neue Richtung; die härtesten Sprünge: Fuß 27,9 wie alt,
+Schienbein 34,4 statt 33,7 mm, Becken 9,0 statt 8,9 mm. compare170.py nennt auf beiden Gruppen nichts schlechter außer
+der Sohlenmitte (unten); die Beine stecken in Wenden im Gehen in 1,53 und 1,71 statt 1,37 und 1,35 % der Updates
+ineinander, getrennt, aber unter der Schwelle der Regeln von einem halben Punkt. Alle 206 Tests des Prototyps
+bestehen; die Hashes des gesteuerten Gangs und der Aufnahme des Gangs ändern sich.
+
+Was in der Kehrtwende bleibt: Dort dreht der Fuß 29 Grad flach, während er noch vor der Hüfte steht. Das zu beheben
+hieße, auf der Ferse zu drehen (verworfen, oben) oder das Drehen des Körpers warten zu lassen (Runde 180: kostet Zeit).
+
+Die Sohlenmitte. gait155.py misst seit Runde 155, wie weit die Mitte zwischen Ferse und Zehen eines flachen Fußes in
+einer Standphase wandert (slide), und compare170.py führt das Maximum als „slide walk“. Ein Fuß, der vor seiner Mitte
+dreht, bewegt seine Mitte, solange die Ferse noch keine 5 mm gehoben ist: 13,3 statt 9,9 mm im schlechtesten Lauf. Diese
+Größe darf steigen, bis 15 mm; das Gleiten misst diese Runde mit soleSlide.
+
+Bedingungen, alt ist active-ragdoll-182, neu der saubere Bau, je vier Proben mit tools/measure/check177.sh und
+check170.sh auf einer Gruppe von Sätzen, gerechnet von tools/measure/eval183.py über alle Läufe der Szenen turn45,
+turn90, turn180, start90 und start180 der Gruppe, je Szene das Mittel der Läufe:
+Ziel:
+ Z1 Ein Fuß gleitet auf dem, worauf er steht (soleSlide), höchstens das 0,60-Fache von alt in turn90, start90 und
+   start180, höchstens das 0,85-Fache in turn180, und in turn45 nicht mehr als alt.
+ Z2 Seine Zehen gehen in keiner Szene weiter als alt (toeSlide).
+Schutz:
+ S1 Die Figur schaut in keiner Szene mehr als 0,02 s später in die neue Richtung (faced).
+ S2 Die härtesten Sprünge über diese Szenen, je Probe das Maximum, davon der Median: Fuß und Schienbein höchstens 3 mm
+   über alt, Becken höchstens 2 mm.
+ S3 tools/measure/compare170.py nennt keine Größe schlechter, mit den Kursen aus steer162.py und den Beinen aus
+   legs167.py, außer „slide walk“; dessen größter neuer Wert bleibt bei höchstens 15 mm.
+ S4 Alle Tests bestehen, mit gcc und clang, und die Hashes des Benchmarks der Figuren sind mit 1, 2 und 4 Threads
+   gleich. Ein neuer Test, SteerBallTurnTest, schlägt auf dem alten Stand fehl.
+
+Unabhängige Prüfung: die frischen Sätze h222 bis h225 aus tools/measure/common.sh, Gehen mit 1,0833, 1,2367, 1,4533 und
+1,6267 m/s, Rennen mit 4,3267, 3,8233, 3,5333 und 3,1767 m/s, mit speeds.py gegen alle Geschwindigkeiten geprüft, die je
+gelaufen sind; Gruppe fresh183. Kein Stand ist auf ihnen gelaufen, bevor diese Datei gepusht ist. Hält der saubere Bau
+dort eine Bedingung nicht, wird nicht gebaut, außer der Nutzer entscheidet es; die Regel wird danach nicht geändert, und
+eine Messung, die nicht passt, wird nicht wiederholt.
+
+Der saubere Bau muss auf dev1 ohne Anstoß dieselben drei Tabellen schreiben wie der Prototyp (legs167, gait155,
+steer162, mit cmp verglichen).
+
+Der Prototyp steht als docs/Regeln/trial183.patch, seine Schalter: -DNB_X_PIVOT_AT=1.0f -DNB_X_PIVOT_HIP
+-DNB_X_PIVOT_FRONT -DNB_X_PIVOT_ROLL=0.15f -DNB_X_PIVOT_HEEL=0.08f -DNB_X_PIVOT_RATE=2.0f -DNB_X_PIVOT_WALKED=1.0f. Die
+Schalter NB_X_PIVOT_TOE, NB_X_PIVOT_OVER, NB_X_PIVOT_SIDE und NB_X_PIVOT_GATE sind verworfene oder nicht gemessene
+Varianten.

@@ -1,0 +1,164 @@
+diff --git a/src/figure.c b/src/figure.c
+index 54109ba..ec8c21c 100644
+--- a/src/figure.c
++++ b/src/figure.c
+@@ -3606,6 +3606,16 @@ static float nbLowerSteered( nbFigure* f, b3Transform root, const int* thighs, b
+ 					f->pushKeptTime[k] = 0.0f;
+ 				}
+ 			}
++#ifdef NB_X_PIVOT_AT
++			if ( f->footSwings[k] == false && side > 0.0f && roll >= 0.0f && f->footRoll[k] >= 0.0f && f->pivotHeel[k] > 0.0f )
++			{
++				roll = b3MaxFloat( roll, planted * f->pivotHeel[k] );
++			}
++			if ( f->footSwings[k] == false && side > 0.0f && roll <= 0.0f && f->footRoll[k] <= 0.0f && f->pivotToe[k] > 0.0f )
++			{
++				roll = b3MinFloat( roll, -planted * f->pivotToe[k] );
++			}
++#endif
+ 			if ( roll < 0.0f || f->footRoll[k] < 0.0f )
+ 			{
+ 				// Over its heel no faster than NB_FOOT_HEEL_RATE
+@@ -5740,6 +5750,10 @@ static void nbSteerFeet( const nbWorld* world, int index, nbFigure* f, const nbC
+ 					f->feet[k].tilt = nbPartOf( f->feet[k].lean, clips[k].weight );
+ 					f->footHeading[k] = f->heading;
+ 					f->footPivot[k] = 0.0f;
++#ifdef NB_X_PIVOT_AT
++				f->pivotHeel[k] = 0.0f;
++				f->pivotToe[k] = 0.0f;
++#endif
+ 				}
+ 			}
+ 			f->gaitFaster = 0.0f;
+@@ -6197,6 +6211,10 @@ static void nbSteerFeet( const nbWorld* world, int index, nbFigure* f, const nbC
+ 				f->landRoll[k] = landed;
+ 				f->stanceTime[k] = 0.0f;
+ 				f->footPivot[k] = 0.0f;
++#ifdef NB_X_PIVOT_AT
++				f->pivotHeel[k] = 0.0f;
++				f->pivotToe[k] = 0.0f;
++#endif
+ 				foot->plant = foot->target;
+ 				foot->tilt = foot->targetTilt;
+ 				f->footHeading[k] = f->landHeading[k];
+@@ -6204,6 +6222,10 @@ static void nbSteerFeet( const nbWorld* world, int index, nbFigure* f, const nbC
+ 		}
+ 		else
+ 		{
++#ifdef NB_X_PIVOT_AT
++			bool pivots = false;
++			float pivotShare = 1.0f;
++#endif
+ 			// A planted foot turns on the middle of its sole with the body beyond NB_FOOT_TWIST from where the legs face
+ 			float twist = nbWrapAngle( f->footHeading[k] - legHeading );
+ 			if ( fabsf( twist ) > NB_FOOT_TWIST )
+@@ -6211,6 +6233,65 @@ static void nbSteerFeet( const nbWorld* world, int index, nbFigure* f, const nbC
+ 				float turn = ( twist > 0.0f ? NB_FOOT_TWIST : -NB_FOOT_TWIST ) - twist;
+ 				b3Vec3 sole = b3Sub( clips[k].sole, clips[k].ankle );
+ 				sole.y = 0.0f;
++#ifndef NB_X_PIVOT_SIDE
++#define NB_X_SIDE_WEIGHT 1.0f
++#else
++#define NB_X_SIDE_WEIGHT ( ( k == 0 ? turn : -turn ) * NB_X_PIVOT_SIDE > 0.0f ? 1.0f : 0.0f )
++#endif
++#ifdef NB_X_PIVOT_AT
++				// trial: it turns on a point toward its toes, and its heel lifts while it does
++				{
++					const nbBone* footBone = f->bones + ( k == 0 ? nb_humanoidFootLeft : nb_humanoidFootRight );
++					b3Vec3 toes = b3RotateVector( clips[k].rotation, b3Vec3_axisY );
++					toes.y = 0.0f;
++#ifdef NB_X_PIVOT_ROLL
++					float onToes = b3ClampFloat( f->footRoll[k] / NB_X_PIVOT_ROLL, 0.0f, 1.0f );
++#else
++					float onToes = 1.0f;
++					pivots = true;
++#endif
++#ifdef NB_X_PIVOT_GATE
++					float gate = 1.0f;
++#else
++#ifdef NB_X_PIVOT_WALKED
++					float gate = wantsRun || f->steer.faceVelocity == false || f->sinceRun < NB_X_PIVOT_WALKED ? 0.0f : 1.0f - run;
++#else
++					float gate = wantsRun || f->steer.faceVelocity == false ? 0.0f : 1.0f - run;
++#endif
++#endif
++#ifdef NB_X_PIVOT_HIP
++					// trial: on the point of its sole under the hip, and rolled over its toes or its heel on that edge
++					{
++						toes = b3Normalize( toes );
++						float half = footBone->halfExtents.y;
++						b3Vec3 toesNow = b3RotateVector( legQ, b3RotateVector( nbHeadingQuat( twist ), toes ) );
++						b3Vec3 toHip = b3SubPos( b3TransformWorldPoint( f->frame, hips[k] ), foot->plant );
++						float middle = b3Dot( sole, toes );
++#ifndef NB_X_PIVOT_OVER
++#define NB_X_PIVOT_OVER 0.0f
++#endif
++						// the hip over the ankle is the foot standing flat, on the middle of its sole
++						float over = b3Dot( toHip, toesNow ) / half - NB_X_PIVOT_OVER;
++#ifdef NB_X_PIVOT_FRONT
++						float at = middle + b3ClampFloat( over, 0.0f, 1.0f ) * half;
++#else
++						float at = middle + b3ClampFloat( over, -1.0f, 1.0f ) * half;
++#endif
++#ifdef NB_X_PIVOT_ROLL
++						at += onToes * ( middle + half - at );
++#ifndef NB_X_PIVOT_FRONT
++						at += b3ClampFloat( -f->footRoll[k] / NB_X_PIVOT_ROLL, 0.0f, 1.0f ) * ( middle - half - at );
++#endif
++#endif
++						pivotShare = gate * ( at - middle ) / half;
++						pivots = true;
++						sole = b3MulAdd( sole, gate * NB_X_SIDE_WEIGHT * ( at - middle ), toes );
++					}
++#else
++					sole = b3MulAdd( sole, gate * NB_X_PIVOT_AT * onToes * NB_X_SIDE_WEIGHT * footBone->halfExtents.y, b3Normalize( toes ) );
++#endif
++				}
++#endif
+ 				b3Vec3 toSole = b3RotateVector( legQ, b3RotateVector( nbHeadingQuat( twist ), sole ) );
+ 				b3Pos middle = b3OffsetPos( foot->plant, toSole );
+ 				b3Quat spin = b3MakeQuatFromAxisAngle( up, turn );
+@@ -6219,6 +6300,17 @@ static void nbSteerFeet( const nbWorld* world, int index, nbFigure* f, const nbC
+ 				f->footPivot[k] += fabsf( turn );
+ 			}
+ 
++#ifdef NB_X_PIVOT_AT
++			{
++				float want = pivots && wantsRun == false && f->steer.faceVelocity ? ( 1.0f - run ) * b3MaxFloat( pivotShare, 0.0f ) * NB_X_PIVOT_HEEL : 0.0f;
++				float most = NB_X_PIVOT_RATE * timeStep;
++				f->pivotHeel[k] += b3ClampFloat( want - f->pivotHeel[k], -most, most );
++#ifdef NB_X_PIVOT_TOE
++				want = pivots && wantsRun == false && f->steer.faceVelocity ? ( 1.0f - run ) * b3MaxFloat( -pivotShare, 0.0f ) * NB_X_PIVOT_TOE : 0.0f;
++				f->pivotToe[k] += b3ClampFloat( want - f->pivotToe[k], -most, most );
++#endif
++			}
++#endif
+ 			// A foot that landed on its heel, or on its toes, comes down from it, see NB_GAIT_HEEL_LOAD
+ 			f->stanceTime[k] += timeStep;
+ 			if ( f->landRoll[k] != 0.0f )
+diff --git a/src/figure.h b/src/figure.h
+index 9cd5528..e9c7f32 100644
+--- a/src/figure.h
++++ b/src/figure.h
+@@ -571,6 +571,9 @@ typedef struct nbFigure
+ 	// How far a planted foot turned on the ground with the body since it landed, in radians, see NB_FOOT_PIVOT, whether
+ 	// it holds the heading back by that in this update, see nbMoveSteered, and the heading the figure turns to
+ 	float footPivot[2];
++	float pivotHeel[2];
++	float pivotToe[2];
++	float sinceRun;
+ 	// For how long its gait has been a walk without a part of a run, in seconds, see NB_STOP_WALKED in figure_steer.c
+ 	float walkTime;
+ 	// From standing until it goes as fast as it wants, see nbFigureSteering::startAcceleration
+diff --git a/src/figure_steer.c b/src/figure_steer.c
+index 4acd28c..4aacf61 100644
+--- a/src/figure_steer.c
++++ b/src/figure_steer.c
+@@ -783,6 +783,7 @@ bool nbMoveSteered( nbWorld* world, int index, nbFigure* f, float timeStep, b3Ve
+ 	// turn about, see NB_TURN_HOLD_AFTER, it gets no faster while the leg it stands on loses its foot before the other
+ 	// foot lands, and stopping or braking to turn about, it brakes gently while a foot lands where it aimed
+ 	f->walkTime = f->gaitOn && f->gaitRun <= 0.0f ? f->walkTime + timeStep : 0.0f;
++	f->sinceRun = f->gaitRun <= 0.0f ? b3MinFloat( f->sinceRun + timeStep, 60.0f ) : 0.0f;
+ 	bool still = b3LengthSquared( wish ) < 0.01f * scale * scale;
+ 	if ( still == false )
+ 	{
