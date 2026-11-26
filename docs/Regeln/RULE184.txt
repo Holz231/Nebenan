@@ -1,0 +1,89 @@
+Regel für Runde 184, vor jedem Lauf mit den Geschwindigkeiten der unabhängigen Prüfung festgeschrieben. Gemessen wird
+gegen active-ragdoll-183.
+
+Worum es geht. Der Nutzer will zuerst das Gehen richtig haben und hat nach Runde 183 Vorschlag b gewählt: den Rest in
+der Kehrtwende. Seit Runde 183 dreht ein stehender Fuß auf dem Ballen, sobald die Hüfte über seinen Knöchel hinaus ist.
+Steht die Hüfte noch hinter dem Knöchel, dreht er weiter flach um die Mitte seiner Sohle. Auf der Ferse zu drehen, mit
+gehobenen Zehen, hatte Runde 183 verworfen: Die Schienbeine sprangen.
+
+Wie groß das Thema ist, Frage 1 des Skills. Auf zwölf Entwicklungssätzen mit vier Proben, 960 Läufe: Ein Fuß gleitet in
+der Kehrtwende im Gehen 72,3 mm auf dem, worauf er steht, und dreht dabei 29 Grad flach; beim Losgehen nach hinten
+gleitet er 31,6 mm. In den Wenden um 45 und 90 Grad und beim Losgehen zur Seite sind es 8,1, 25,6 und 22,4 mm.
+
+Die Ursache der Sprünge aus Runde 183, Update für Update verfolgt, drei Stellen. Dort waren die gehobenen Zehen ein
+Teil des Abrollens (footRoll unter null).
+ - h1, Wende um 90 Grad: Ein Fuß, der über die andere Kante gerollt ist, kommt erst flach, bevor er über die Zehen
+   abrollt (NB_FOOT_EDGE_FLAT), und zwar immer langsamer (NB_FOOT_UNROLL): von 0,08 rad braucht er sieben Updates. So
+   lange rollt er nicht ab, das Becken sinkt 14 mm tiefer als alt, und dann setzt das Abrollen mit einem Mal ein: 45 statt
+   21 mm am Schienbein.
+ - h6, Wende um 45 Grad: Aus demselben Grund verliert das Bein den Fuß, er hebt acht Updates früher ab, aus dem flachen
+   Stand statt abgerollt: 41 statt 27 mm.
+ - h5, Kreis mit 360 Grad je Sekunde: Ein Fuß hebt mit gehobenen Zehen ab, und sein Abrollen springt von unter null auf
+   das des Schwungs: 38 statt 19 mm.
+
+Der Eingriff, in der Bibliothek, src/figure.c, wo Runde 183 eingreift (Gehen mit Blick in Laufrichtung, seit 1 s kein
+Anteil Rennen). Erstens geht der Drehpunkt eines stehenden Fußes auch hinter die Mitte seiner Sohle: bis zur Fersenkante,
+wenn die Hüfte eine halbe Sohlenlänge hinter dem Knöchel steht, und zur Fersenkante, soweit er über die Ferse gerollt
+ist. Zweitens heben sich, soweit er hinter der Mitte dreht, seine Zehen um bis zu 0,08 rad, mit höchstens 2 rad/s. Diese
+Hebung ist kein Teil des Abrollens: Sie kommt obenauf, das Bein rechnet mit einem flachen Fuß, und das Abrollen über die
+Zehen beginnt wie bisher. Hebt der Fuß mit gehobenen Zehen ab, senken sie sich im Schwung mit 0,5 rad/s.
+
+Die Varianten, Frage 2 des Skills, dev1 mit vier Proben, je: Gleiten (soleSlide) im Mittel in der Kehrtwende und beim
+Losgehen nach hinten; und was compare170.py auf den Kursen sagt:
+ - alt: 72,9; 31,6 mm.
+ - Drehpunkt bis zur Fersenkante, die Zehen heben sich als Teil des Abrollens (wie Runde 183): 51,2; 31,6 mm; ein
+   Schienbein springt auf 23 statt 7,5 Kursen über 37 mm: schlechter. Die Ursache steht oben.
+ - dasselbe, die Zehen senken sich gleichmäßig mit 2 rad/s statt immer langsamer: 51,6; 31,6 mm; auf 12 statt 7,5
+   Kursen: schlechter, vor allem in den Kreisen (dritte Stelle oben).
+ - dasselbe, und nur ein Fuß, auf den die Hüfte zukommt, steht auf der Ferse: 72,8; 31,6 mm; nichts schlechter, aber
+   auch nichts gewonnen: In der Kehrtwende entfernt sich die Hüfte schon von dem Fuß, der flach dreht.
+ - die Zehen obenauf statt im Abrollen, im Schwung senken sie sich mit 2 rad/s: 55,5; 9,3 mm; auf den Kursen nichts
+   schlechter; beim Losgehen nach hinten springt ein Schienbein 33,4 statt 24,6 mm: Die Zehen senken sich, während der
+   Schwung den Fuß in dieselbe Richtung kippt.
+ - dasselbe mit 1 rad/s im Schwung: an dieser Stelle 22,4 mm (nur die eine Szene gemessen).
+ - dasselbe mit 0,5 rad/s im Schwung, und die Hebung wird bei der Landung nicht auf null gesetzt: der Prototyp.
+Verworfen ist damit: die gehobenen Zehen als Teil des Abrollens; die Bedingung, dass die Hüfte auf den Fuß zukommt; die
+Zehen im Schwung schnell zu senken.
+
+Nimmt der Prototyp das Ziel, Frage 3 des Skills. Auf beiden Entwicklungsgruppen mit vier Proben, 960 Läufe: Ein Fuß
+gleitet auf dem, worauf er steht, in der Kehrtwende 54,2 statt 72,3 mm, beim Losgehen nach hinten 9,2 statt 31,6 mm, in
+den Wenden um 45 und 90 Grad 7,5 statt 8,1 und 24,8 statt 25,6 mm, beim Losgehen zur Seite 22,4 wie alt. Seine Zehen
+gehen, solange sie am Boden sind (toeDrag, neu in walk176.py: der Weg der Zehen, solange sie nicht mehr als 10 mm über
+der Ferse sind), 50,9 statt 67,8 und 8,0 statt 31,1 mm weit, sonst wie alt bis 0,4 mm. Die härtesten Sprünge: Fuß 28,3
+statt 27,9 mm, Schienbein 34,6 statt 34,4 mm, Becken 9,1 statt 9,0 mm. compare170.py nennt auf beiden Gruppen keine
+Größe schlechter; die Beine stecken in Wenden im Gehen auf dev1 in 1,31 statt 1,53 % der Updates ineinander. Alle 207
+Tests des Prototyps bestehen; die Hashes des gesteuerten Gangs und des Gangs aus dem Clip ändern sich.
+
+Zwei Preise, offen gesagt. Beim Losgehen nach hinten schaut die Figur 0,03 s später in die neue Richtung, 1,01 statt
+0,98 s, und ihr Schienbein springt dort im Mittel 28,6 statt 24,7 mm: Der Fuß, der abhebt, tut es ein Update früher. Die
+erste Fassung der Bedingung S1 erlaubte 0,02 s wie in Runde 183; sie ist vor dem Festschreiben auf 0,05 s gesetzt, die
+Schwelle, die compare170.py und die Regeln seit Runde 170 für Zeiten nehmen.
+
+Bedingungen, alt ist active-ragdoll-183, neu der saubere Bau, je vier Proben mit tools/measure/check177.sh und
+check170.sh auf einer Gruppe von Sätzen, gerechnet von tools/measure/eval184.py über alle Läufe der Szenen turn45,
+turn90, turn180, start90 und start180 der Gruppe, je Szene das Mittel der Läufe:
+Ziel:
+ Z1 Ein Fuß gleitet auf dem, worauf er steht (soleSlide), höchstens das 0,85-Fache von alt in turn180, höchstens das
+   0,60-Fache in start180, und in turn45, turn90 und start90 höchstens 0,5 mm mehr als alt.
+ Z2 Seine Zehen gehen, solange sie am Boden sind (toeDrag), in keiner Szene mehr als 2 mm weiter als alt.
+Schutz:
+ S1 Die Figur schaut in keiner Szene mehr als 0,05 s später in die neue Richtung (faced).
+ S2 Die härtesten Sprünge über diese Szenen, je Probe das Maximum, davon der Median: Fuß und Schienbein höchstens 3 mm
+   über alt, Becken höchstens 2 mm. Und je Szene springt ein Schienbein im Mittel der Läufe höchstens 5 mm mehr als alt.
+ S3 tools/measure/compare170.py nennt keine Größe schlechter, mit den Kursen aus steer162.py und den Beinen aus
+   legs167.py.
+ S4 Alle Tests bestehen, mit gcc und clang, und die Hashes des Benchmarks der Figuren sind mit 1, 2 und 4 Threads
+   gleich. Ein neuer oder verschärfter Test schlägt auf dem alten Stand fehl.
+
+Unabhängige Prüfung: die frischen Sätze h226 bis h229 aus tools/measure/common.sh, Gehen mit 1,0667, 1,2533, 1,4367 und
+1,6467 m/s, Rennen mit 4,3867, 3,8933, 3,4033 und 3,1367 m/s, mit speeds.py gegen alle Geschwindigkeiten geprüft, die je
+gelaufen sind; Gruppe fresh184. Kein Stand ist auf ihnen gelaufen, bevor diese Datei gepusht ist. Hält der saubere Bau
+dort eine Bedingung nicht, wird nicht gebaut, außer der Nutzer entscheidet es; die Regel wird danach nicht geändert, und
+eine Messung, die nicht passt, wird nicht wiederholt.
+
+Der saubere Bau muss auf dev1 ohne Anstoß dieselben drei Tabellen schreiben wie der Prototyp (legs167, gait155,
+steer162, mit cmp verglichen).
+
+Der Prototyp steht als docs/Regeln/trial184.patch, seine Schalter: -DNB_X_HEEL=0.08f -DNB_X_HEEL_OVER=0.5f
+-DNB_X_HEEL_KEEP. Die Schalter NB_X_HEEL_DOWN und NB_X_HEEL_TOWARD und der Bau ohne NB_X_HEEL_OVER sind die verworfenen
+Varianten.

@@ -22,7 +22,9 @@
 # above the toes at most while the foot turns faster than 30 degrees per second (heelUp, mm). And how far the toes of
 # a standing foot move over the ground in one stance (toeSlide, mm). Since round 183 also how far the foot slides on
 # what it stands on in one stance (soleSlide, mm): the way of its toes while the heel is more than 10 mm above them,
-# of its heel while the toes are more than 10 mm above it, and the mean of the two while it stands flat.
+# of its heel while the toes are more than 10 mm above it, and the mean of the two while it stands flat. Since round
+# 184 also how far its toes move over the ground in one stance while they are on it, no more than 10 mm above the heel
+# (toeDrag, mm): toes that are up while the foot turns on its heel move through the air.
 import csv, json, math, os, subprocess, sys
 from concurrent.futures import ThreadPoolExecutor
 import numpy as np
@@ -118,7 +120,7 @@ def one(job):
     res['way1'] = float(np.sum(speed[(t > a) & (t <= a + 1.0)]) * dt)
     # how far a standing foot turns on the ground in one stance, flat and with its heel up, the most of the stances
     res['flatTurn'], res['heelTurn'], res['heelUp'], res['toeSlide'] = 0.0, 0.0, 0.0, 0.0
-    res['soleSlide'] = 0.0
+    res['soleSlide'], res['toeDrag'] = 0.0, 0.0
     for k in 'LR':
         sw = d['swing' + k]
         way = np.unwrap(np.arctan2(d['toe%sx' % k] - d['heel%sx' % k], d['toe%sz' % k] - d['heel%sz' % k]))
@@ -141,6 +143,7 @@ def one(job):
                 heel = np.hypot(np.diff(d['heel%sx' % k][i + 2:j]), np.diff(d['heel%sz' % k][i + 2:j]))
                 on = np.where(up[i + 3:j] > 0.010, slid, np.where(up[i + 3:j] < -0.010, heel, 0.5 * (slid + heel)))
                 res['soleSlide'] = max(res['soleSlide'], float(1000.0 * np.sum(on)))
+                res['toeDrag'] = max(res['toeDrag'], float(1000.0 * np.sum(slid[up[i + 3:j] > -0.010])))
                 turning = np.degrees(turn) * 60.0 > 30.0
                 if turning.any():
                     res['heelUp'] = max(res['heelUp'], float(1000.0 * up[i + 3:j][turning].max()))
@@ -160,7 +163,7 @@ def main():
         res = list(pool.map(one, jobs))
     json.dump(res, open(os.path.join(W, 'res', variant, 'walk176.json'), 'w'))
     keys = ('body', 'lift', 'land', 'rest', 'faced', 'late', 'steps', 'foot', 'shin', 'pelvis', 'way', 'slowest', 'slow',
-            'first', 'landSpeed', 'way1', 'halt', 'flatTurn', 'heelTurn', 'heelUp', 'toeSlide', 'soleSlide',
+            'first', 'landSpeed', 'way1', 'halt', 'flatTurn', 'heelTurn', 'heelUp', 'toeSlide', 'soleSlide', 'toeDrag',
             'behind', 'behindBase', 'across', 'acrossBase', 'along', 'alongBase', 'lean',
             'leanBase')
     print('scene     runs | ' + ' | '.join(keys) + '   (median low..high)')

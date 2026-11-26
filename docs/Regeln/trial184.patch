@@ -1,0 +1,125 @@
+diff --git a/src/figure.c b/src/figure.c
+index cf90f36..5376ce9 100644
+--- a/src/figure.c
++++ b/src/figure.c
+@@ -3556,6 +3556,13 @@ static float nbLowerSteered( nbFigure* f, b3Transform root, const int* thighs, b
+ 				{
+ 					roll = edge * b3MinFloat( edge * f->footRoll[k], 0.0f );
+ 				}
++#ifdef NB_X_HEEL_DOWN
++				else if ( side > 0.0f && f->footRoll[k] < 0.0f && f->ballToes[k] )
++				{
++					// trial: toes that were up to turn on the heel come down at a steady rate, not ever more slowly
++					roll = b3MinFloat( f->footRoll[k] + NB_X_HEEL_DOWN * timeStep, 0.0f );
++				}
++#endif
+ 				else
+ 				{
+ 					roll = unroll * f->footRoll[k];
+@@ -3611,6 +3618,17 @@ static float nbLowerSteered( nbFigure* f, b3Transform root, const int* thighs, b
+ 			{
+ 				roll = b3MaxFloat( roll, planted * f->ballHeel[k] );
+ 			}
++#if defined( NB_X_HEEL ) && !defined( NB_X_HEEL_OVER )
++			if ( side > 0.0f && roll <= 0.0f && f->footRoll[k] <= 0.0f && f->ballToe[k] > 0.0f )
++			{
++				roll = b3MinFloat( roll, -planted * f->ballToe[k] );
++				f->ballToes[k] = true;
++			}
++			else if ( roll >= 0.0f )
++			{
++				f->ballToes[k] = false;
++			}
++#endif
+ 			if ( roll < 0.0f || f->footRoll[k] < 0.0f )
+ 			{
+ 				// Over its heel no faster than NB_FOOT_HEEL_RATE
+@@ -3650,6 +3668,18 @@ static float nbLowerSteered( nbFigure* f, b3Transform root, const int* thighs, b
+ 			f->footRoll[k] = roll;
+ 			f->footRolled[k] = roll;
+ 		}
++#ifdef NB_X_HEEL_OVER
++		// trial: the toes that are up to turn on the heel are not part of the roll the leg gives the foot, they go on top
++		// of it, and come down as it swings
++		if ( f->ballToe[k] > 0.0f )
++		{
++			if ( f->footSwings[k] )
++			{
++				f->ballToe[k] = b3MaxFloat( f->ballToe[k] - NB_X_HEEL_OVER * timeStep, 0.0f );
++			}
++			roll = roll >= 0.0f ? roll - planted * f->ballToe[k] : b3MinFloat( roll, -planted * f->ballToe[k] );
++		}
++#endif
+ 		if ( roll != 0.0f )
+ 		{
+ 			nbRollFoot( footBone, roll, f->footSwings[k] ? NB_FOOT_ROCK : 0.0f, ankles + k, rotations + k );
+@@ -5766,6 +5796,8 @@ static void nbSteerFeet( const nbWorld* world, int index, nbFigure* f, const nbC
+ 					f->footHeading[k] = f->heading;
+ 					f->footPivot[k] = 0.0f;
+ 					f->ballHeel[k] = 0.0f;
++				f->ballToe[k] = 0.0f;
++				f->ballToes[k] = false;
+ 				}
+ 			}
+ 			f->gaitFaster = 0.0f;
+@@ -6224,6 +6256,10 @@ static void nbSteerFeet( const nbWorld* world, int index, nbFigure* f, const nbC
+ 				f->stanceTime[k] = 0.0f;
+ 				f->footPivot[k] = 0.0f;
+ 				f->ballHeel[k] = 0.0f;
++#ifndef NB_X_HEEL_KEEP
++				f->ballToe[k] = 0.0f;
++#endif
++				f->ballToes[k] = false;
+ 				foot->plant = foot->target;
+ 				foot->tilt = foot->targetTilt;
+ 				f->footHeading[k] = f->landHeading[k];
+@@ -6250,8 +6286,23 @@ static void nbSteerFeet( const nbWorld* world, int index, nbFigure* f, const nbC
+ 					b3Vec3 toesNow = b3RotateVector( legQ, b3RotateVector( nbHeadingQuat( twist ), toes ) );
+ 					b3Vec3 toHip = b3SubPos( b3TransformWorldPoint( f->frame, hips[k] ), foot->plant );
+ 					float middle = b3Dot( sole, toes );
++#ifdef NB_X_HEEL
++					// trial: behind the ankle the hip takes the point toward the edge of the heel, and the toes lift
++					float heelMost = -1.0f;
++#ifdef NB_X_HEEL_TOWARD
++					// trial: only a foot the hip comes toward stands on its heel, one it leaves is about to push off
++					if ( b3Dot( toHip, f->steer.velocity ) >= 0.0f )
++					{
++						heelMost = 0.0f;
++					}
++#endif
++					float at = middle + b3ClampFloat( b3Dot( toHip, toesNow ) / half, heelMost, 1.0f ) * half;
++					at += b3ClampFloat( f->footRoll[k] / NB_FOOT_BALL_ROLL, 0.0f, 1.0f ) * ( middle + half - at );
++					at += b3ClampFloat( -f->footRoll[k] / NB_FOOT_BALL_ROLL, 0.0f, 1.0f ) * ( middle - half - at );
++#else
+ 					float at = middle + b3ClampFloat( b3Dot( toHip, toesNow ) / half, 0.0f, 1.0f ) * half;
+ 					at += b3ClampFloat( f->footRoll[k] / NB_FOOT_BALL_ROLL, 0.0f, 1.0f ) * ( middle + half - at );
++#endif
+ 					float walks = 1.0f - run;
+ 					ball = walks * ( at - middle ) / half;
+ 					sole = b3MulAdd( sole, walks * ( at - middle ), toes );
+@@ -6268,6 +6319,12 @@ static void nbSteerFeet( const nbWorld* world, int index, nbFigure* f, const nbC
+ 			float heelMost = NB_FOOT_BALL_RATE * timeStep;
+ 			float heelUp = ( 1.0f - run ) * b3MaxFloat( ball, 0.0f ) * NB_FOOT_BALL_HEEL;
+ 			f->ballHeel[k] += b3ClampFloat( heelUp - f->ballHeel[k], -heelMost, heelMost );
++#ifdef NB_X_HEEL
++			{
++				float toesUp = ( 1.0f - run ) * b3MaxFloat( -ball, 0.0f ) * NB_X_HEEL;
++				f->ballToe[k] += b3ClampFloat( toesUp - f->ballToe[k], -heelMost, heelMost );
++			}
++#endif
+ 
+ 			// A foot that landed on its heel, or on its toes, comes down from it, see NB_GAIT_HEEL_LOAD
+ 			f->stanceTime[k] += timeStep;
+diff --git a/src/figure.h b/src/figure.h
+index 636bf55..3c95412 100644
+--- a/src/figure.h
++++ b/src/figure.h
+@@ -575,6 +575,8 @@ typedef struct nbFigure
+ 	// NB_FOOT_BALL_HEEL in figure.c, and for how long its gait has had no part of a run, in seconds, standing too,
+ 	// counted up to a minute
+ 	float ballHeel[2];
++	float ballToe[2];
++	bool ballToes[2];
+ 	float sinceRun;
+ 	// For how long its gait has been a walk without a part of a run, in seconds, see NB_STOP_WALKED in figure_steer.c
+ 	float walkTime;
