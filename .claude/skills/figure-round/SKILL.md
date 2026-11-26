@@ -677,6 +677,12 @@ Zehen und Fersen 37 mm, Hände 15 mm, Becken 10 mm, Becken tief ab 15 cm unter d
 - **Hartes Bremsen der Kapsel war eine Ursache für sackendes Becken und Beine ineinander.** Anhalten (177) und
   Kehrtwende (179) rollen aus, und auf den Kursen im Gehen sackt das Becken auf 7 statt 12,5 Kursen. Wo ein Körper
   schneller die Richtung wechselt, als Beine es können, zahlen die Beine.
+- **Nicht jede Auffälligkeit ist ein Fehler, und nicht jede lässt sich ohne Preis beheben.** Runde 180: Drei
+  Auffälligkeiten des Drehens waren gemessen; die Bilder zeigten eine Wende, die stimmt, die Tempo-Stufe war keine
+  Ursache, und das Drehen des Fußes ließ sich nur gegen Zeit und Sprünge tauschen. Dann wird nicht gebaut: Die Runde
+  legt die Zahlen vor, und der Nutzer sagt, was stört.
+- **Ein Schalter der Messprogramme reicht für die erste Frage.** `BRAKE` und `ACC` von `lab101.c` beantworteten in einer
+  Viertelstunde, ob ein sanfter Übergang hilft, bevor eine Zeile Bibliothek geschrieben war.
 - **Größe der Figur.** Winkelbeschleunigungen wachsen bei kleineren Figuren mit 1 durch `nbFigureScale`, Längen
   und Geschwindigkeiten mit ihr.
 

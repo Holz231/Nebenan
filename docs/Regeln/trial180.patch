@@ -1,0 +1,16 @@
+diff --git a/src/figure.h b/src/figure.h
+index 9cd5528..21221be 100644
+--- a/src/figure.h
++++ b/src/figure.h
+@@ -298,7 +298,11 @@ typedef enum nbBalanceResult
+ // without a limit: turning about at a walk, a foot stood in one place for 0.8 s and turned 143 degrees, as the other
+ // foot swung nearly all that time.
+ #define NB_FOOT_TWIST ( 35.0f * ( B3_PI / 180.0f ) )
++#ifdef NB_X_PIVOT
++#define NB_FOOT_PIVOT ( NB_X_PIVOT * ( B3_PI / 180.0f ) )
++#else
+ #define NB_FOOT_PIVOT ( 45.0f * ( B3_PI / 180.0f ) )
++#endif
+ 
+ // How many other steered figures a figure keeps to meet in an update, see nbFindMeetings, and the count that stands
+ // for all of them where they are more
