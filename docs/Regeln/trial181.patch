@@ -1,0 +1,95 @@
+diff --git a/src/figure.c b/src/figure.c
+index 8c70614..a2b5d2b 100644
+--- a/src/figure.c
++++ b/src/figure.c
+@@ -3606,6 +3606,12 @@ static float nbLowerSteered( nbFigure* f, b3Transform root, const int* thighs, b
+ 					f->pushKeptTime[k] = 0.0f;
+ 				}
+ 			}
++#ifdef NB_X_PIVOT_AT
++			if ( f->footSwings[k] == false && side > 0.0f && roll >= 0.0f && f->footRoll[k] >= 0.0f && f->pivotHeel[k] > 0.0f )
++			{
++				roll = b3MaxFloat( roll, planted * f->pivotHeel[k] );
++			}
++#endif
+ 			if ( roll < 0.0f || f->footRoll[k] < 0.0f )
+ 			{
+ 				// Over its heel no faster than NB_FOOT_HEEL_RATE
+@@ -5728,6 +5734,9 @@ static void nbSteerFeet( const nbWorld* world, int index, nbFigure* f, const nbC
+ 					f->feet[k].tilt = nbPartOf( f->feet[k].lean, clips[k].weight );
+ 					f->footHeading[k] = f->heading;
+ 					f->footPivot[k] = 0.0f;
++#ifdef NB_X_PIVOT_AT
++				f->pivotHeel[k] = 0.0f;
++#endif
+ 				}
+ 			}
+ 			f->gaitFaster = 0.0f;
+@@ -6185,6 +6194,9 @@ static void nbSteerFeet( const nbWorld* world, int index, nbFigure* f, const nbC
+ 				f->landRoll[k] = landed;
+ 				f->stanceTime[k] = 0.0f;
+ 				f->footPivot[k] = 0.0f;
++#ifdef NB_X_PIVOT_AT
++				f->pivotHeel[k] = 0.0f;
++#endif
+ 				foot->plant = foot->target;
+ 				foot->tilt = foot->targetTilt;
+ 				f->footHeading[k] = f->landHeading[k];
+@@ -6192,6 +6204,9 @@ static void nbSteerFeet( const nbWorld* world, int index, nbFigure* f, const nbC
+ 		}
+ 		else
+ 		{
++#ifdef NB_X_PIVOT_AT
++			bool pivots = false;
++#endif
+ 			// A planted foot turns on the middle of its sole with the body beyond NB_FOOT_TWIST from where the legs face
+ 			float twist = nbWrapAngle( f->footHeading[k] - legHeading );
+ 			if ( fabsf( twist ) > NB_FOOT_TWIST )
+@@ -6199,6 +6214,21 @@ static void nbSteerFeet( const nbWorld* world, int index, nbFigure* f, const nbC
+ 				float turn = ( twist > 0.0f ? NB_FOOT_TWIST : -NB_FOOT_TWIST ) - twist;
+ 				b3Vec3 sole = b3Sub( clips[k].sole, clips[k].ankle );
+ 				sole.y = 0.0f;
++#ifndef NB_X_PIVOT_SIDE
++#define NB_X_SIDE_WEIGHT 1.0f
++#else
++#define NB_X_SIDE_WEIGHT ( ( k == 0 ? turn : -turn ) * NB_X_PIVOT_SIDE > 0.0f ? 1.0f : 0.0f )
++#endif
++#ifdef NB_X_PIVOT_AT
++				// trial: it turns on a point toward its toes, and its heel lifts while it does
++				{
++					const nbBone* footBone = f->bones + ( k == 0 ? nb_humanoidFootLeft : nb_humanoidFootRight );
++					b3Vec3 toes = b3RotateVector( clips[k].rotation, b3Vec3_axisY );
++					toes.y = 0.0f;
++					sole = b3MulAdd( sole, ( wantsRun || f->steer.faceVelocity == false ? 0.0f : 1.0f - run ) * NB_X_PIVOT_AT * NB_X_SIDE_WEIGHT * footBone->halfExtents.y, b3Normalize( toes ) );
++					pivots = true;
++				}
++#endif
+ 				b3Vec3 toSole = b3RotateVector( legQ, b3RotateVector( nbHeadingQuat( twist ), sole ) );
+ 				b3Pos middle = b3OffsetPos( foot->plant, toSole );
+ 				b3Quat spin = b3MakeQuatFromAxisAngle( up, turn );
+@@ -6207,6 +6237,13 @@ static void nbSteerFeet( const nbWorld* world, int index, nbFigure* f, const nbC
+ 				f->footPivot[k] += fabsf( turn );
+ 			}
+ 
++#ifdef NB_X_PIVOT_AT
++			{
++				float want = pivots && wantsRun == false && f->steer.faceVelocity ? ( 1.0f - run ) * NB_X_PIVOT_HEEL : 0.0f;
++				float most = NB_X_PIVOT_RATE * timeStep;
++				f->pivotHeel[k] += b3ClampFloat( want - f->pivotHeel[k], -most, most );
++			}
++#endif
+ 			// A foot that landed on its heel, or on its toes, comes down from it, see NB_GAIT_HEEL_LOAD
+ 			f->stanceTime[k] += timeStep;
+ 			if ( f->landRoll[k] != 0.0f )
+diff --git a/src/figure.h b/src/figure.h
+index 9cd5528..92732f3 100644
+--- a/src/figure.h
++++ b/src/figure.h
+@@ -571,6 +571,7 @@ typedef struct nbFigure
+ 	// How far a planted foot turned on the ground with the body since it landed, in radians, see NB_FOOT_PIVOT, whether
+ 	// it holds the heading back by that in this update, see nbMoveSteered, and the heading the figure turns to
+ 	float footPivot[2];
++	float pivotHeel[2];
+ 	// For how long its gait has been a walk without a part of a run, in seconds, see NB_STOP_WALKED in figure_steer.c
+ 	float walkTime;
+ 	// From standing until it goes as fast as it wants, see nbFigureSteering::startAcceleration

@@ -683,6 +683,12 @@ Zehen und Fersen 37 mm, Hände 15 mm, Becken 10 mm, Becken tief ab 15 cm unter d
   legt die Zahlen vor, und der Nutzer sagt, was stört.
 - **Ein Schalter der Messprogramme reicht für die erste Frage.** `BRAKE` und `ACC` von `lab101.c` beantworteten in einer
   Viertelstunde, ob ein sanfter Übergang hilft, bevor eine Zeile Bibliothek geschrieben war.
+- **Die einzelne Szene reicht nicht, die Kurse entscheiden.** Runde 181: In den einzelnen Wenden war der Zehen-Drehpunkt
+  ohne jeden Preis, alle Bedingungen gehalten. Erst `compare170.py` mit den Kursen zeigte, dass er den Gewinn der Runde
+  179 kostet. Vor dem Festschreiben einer Regel läuft der Prototyp immer durch `check170.sh` mit vier Proben.
+- **Was ein Fuß am Boden tut, bewegt den Knöchel, und am Knöchel hängt das Bein.** Ein anderer Drehpunkt des Fußes ist
+  kein Detail der Sohle: 13 cm Hebel mal 45 Grad sind 10 cm am Knöchel. Wer den Standfuß bewegt, muss dem schwingenden
+  Fuß und der Wurzel sagen, wohin.
 - **Größe der Figur.** Winkelbeschleunigungen wachsen bei kleineren Figuren mit 1 durch `nbFigureScale`, Längen
   und Geschwindigkeiten mit ihr.
 
