@@ -128,7 +128,9 @@ was schon verworfen wurde.
   beim Loslassen 1 s gegangen war (`walkedTo`), nicht am Ende eines Halts aus dem Rennen. Gemessen mit `walk176.py`
   (rest, steps, body, way) und angesehen mit `strip176.py`. Seit Runde 179 rollt die Kapsel mit demselben Wert auch in
   die Kehrtwende im Gehen aus (`aboutRolls` in `nbMoveSteered`), solange die Wende dauert und sie gegen den Stick geht;
-  `walk176.py` misst es als halt.
+  `walk176.py` misst es als halt. Seit Runde 182 wird auch ein später Fuß noch breit (`NB_HALT_WIDE_LATE`, am behaltenen
+  Ziel seitlich nachgeführt), und ein Fuß, der unter der stehenden Kapsel an seinem Platz steht, hebt nicht mehr ab
+  (`rests` in `nbSteerFeet`).
 - **Messen mit Rauschband.** Seit Runde 170 kommen Änderungen in den Werkzeugen an fester Schrittphase (`SYNC`), und
   Stände werden in vier Proben mit `NUDGE` gemessen (`check170.sh`) und mit `compare170.py` verglichen. Eine Regel setzt
   ihre Toleranzen aus den Spannen und nennt eine Bedingung verfehlt, wo die Spannen sich nicht überdecken.

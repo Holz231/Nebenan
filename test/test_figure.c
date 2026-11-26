@@ -6266,11 +6266,13 @@ static int SteerStartTest( void )
 // at 1.5 m/s, the stick lets go at twelve moments five updates apart, a cycle of its gait. Over the twelve: how long
 // the capsule takes to stand and how far it goes, how many feet land after the stick let go and when the last one
 // does, with the stop of the library and, the second pass, with stopBraking at zero, where it stops as hard as it
-// brakes. The capsule stands after 0.70 s and 0.48 m at most, the feet after 1.13 s at most and 0.88 s in their mean,
-// three feet land at most and no more than two in nine of the twelve: the foot in the air lands where it stands at
-// rest, the other one closes up beside it, and where the first could no longer aim, it steps a few centimeters aside.
-// Braking as hard as it brakes, as until round 176, the capsule stands after 0.22 s and 0.16 m, in the middle of a
-// step, the feet after 2.07 s at most and 1.80 s in their mean, and three or four feet land.
+// brakes. The capsule stands after 0.70 s and 0.48 m at most, the feet after 1.03 s at most and 0.80 s in their mean,
+// three feet land at most and no more than two in eleven of the twelve, in ten at least: the foot in the air lands
+// where it stands at rest, as wide as it stands there also where it was late in its swing, see NB_HALT_WIDE_LATE, the
+// other one closes up beside it, and a foot that stands at its place does not lift again. Until round 181 two feet
+// landed in nine of the twelve, and the feet stood after 1.13 s at most and 0.88 s in their mean. Braking as hard as
+// it brakes, as until round 176, the capsule stands after 0.22 s and 0.16 m, in the middle of a step, the feet after
+// 2.07 s at most and 1.80 s in their mean, and three or four feet land.
 static int SteerHaltTest( void )
 {
 	float stand[2] = { 0.0f, 0.0f }, way[2] = { 0.0f, 0.0f }, rest[2] = { 0.0f, 0.0f }, mean[2] = { 0.0f, 0.0f };
@@ -6332,8 +6334,8 @@ static int SteerHaltTest( void )
 			"as it brakes after %.2f s and %.2f m, %.2f and %.2f s, %d and in %d\n",
 			stand[0], way[0], rest[0], mean[0], most[0], two[0], stand[1], way[1], rest[1], mean[1], most[1], two[1] );
 	ENSURE( stand[0] <= 0.8f && way[0] <= 0.55f );
-	ENSURE( rest[0] <= 1.3f && mean[0] <= 1.0f );
-	ENSURE( most[0] <= 3 && two[0] >= 7 );
+	ENSURE( rest[0] <= 1.2f && mean[0] <= 0.9f );
+	ENSURE( most[0] <= 3 && two[0] >= 10 );
 	ENSURE( stand[1] <= 0.25f && way[1] <= 0.2f );
 	return 0;
 }

@@ -689,6 +689,12 @@ Zehen und Fersen 37 mm, Hände 15 mm, Becken 10 mm, Becken tief ab 15 cm unter d
 - **Was ein Fuß am Boden tut, bewegt den Knöchel, und am Knöchel hängt das Bein.** Ein anderer Drehpunkt des Fußes ist
   kein Detail der Sohle: 13 cm Hebel mal 45 Grad sind 10 cm am Knöchel. Wer den Standfuß bewegt, muss dem schwingenden
   Fuß und der Wurzel sagen, wohin.
+- **Eine Zahl hat oft zwei Ursachen, und die zweite zeigt sich erst, wenn die erste behoben ist.** Runde 182: Der dritte
+  Fuß beim Anhalten galt als Nachrücken um 4 cm. Mit dem breit landenden Fuß blieb die Zahl gleich: Der Fuß hob trotzdem
+  ab, 1 mm neben seinem Platz, weil der Gang noch lief. Nach jedem Teil wieder verfolgen, nicht nur zählen.
+- **Ein Ziel, das ein Fuß behält, nicht aufheben, um etwas anderes daran zu ändern.** Das Breitwerden wurde am
+  behaltenen Ziel nachgeführt (seitlich, um den Anteil, den das Behalten zurückhält), statt das Behalten abzuschalten;
+  das hätte den Fuß zurückgerissen.
 - **Größe der Figur.** Winkelbeschleunigungen wachsen bei kleineren Figuren mit 1 durch `nbFigureScale`, Längen
   und Geschwindigkeiten mit ihr.
 
