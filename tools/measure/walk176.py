@@ -14,8 +14,9 @@
 # how far the capsule goes in them (way, m). Since round 178 also starting to where the figure does not face, 90 and
 # 180 degrees to its left, and starting to a run at the running speed of the set, and for every run how far the feet
 # are apart along the heading as the first one lands (first, m), how fast the capsule is then as a share of its speed
-# (landSpeed), and how far it has gone a second after the change (way1, m). Writes out/res/<variant>/walk176.json and
-# prints the medians and ranges per scene.
+# (landSpeed), and how far it has gone a second after the change (way1, m). Since round 179 also when the capsule goes
+# no faster than a tenth of its speed along the way it went before a turn or a stop (halt, s; the figure walks along
+# z). Writes out/res/<variant>/walk176.json and prints the medians and ranges per scene.
 import csv, json, math, os, subprocess, sys
 from concurrent.futures import ThreadPoolExecutor
 import numpy as np
@@ -109,6 +110,9 @@ def one(job):
         x, z = d['b15x'][i] - d['b18x'][i], d['b15z'][i] - d['b18z'][i]
         res['first'], res['landSpeed'] = abs(x * s + z * c), float(speed[i] / v)
     res['way1'] = float(np.sum(speed[(t > a) & (t <= a + 1.0)]) * dt)
+    # turning or stopping: when the capsule goes no faster than a tenth of its speed along the way it went
+    onward = after & (vz <= 0.1 * v) if keep is not None else after & False
+    res['halt'] = float(t[onward][0] - a) if onward.any() else -1.0
     for n, x, y in zip(('behind', 'across', 'along', 'lean'), now, was):
         res[n], res[n + 'Base'] = float(x), float(y)
     return res
@@ -121,7 +125,7 @@ def main():
         res = list(pool.map(one, jobs))
     json.dump(res, open(os.path.join(W, 'res', variant, 'walk176.json'), 'w'))
     keys = ('body', 'lift', 'land', 'rest', 'faced', 'late', 'steps', 'foot', 'shin', 'pelvis', 'way', 'slowest', 'slow',
-            'first', 'landSpeed', 'way1', 'behind', 'behindBase', 'across', 'acrossBase', 'along', 'alongBase', 'lean',
+            'first', 'landSpeed', 'way1', 'halt', 'behind', 'behindBase', 'across', 'acrossBase', 'along', 'alongBase', 'lean',
             'leanBase')
     print('scene     runs | ' + ' | '.join(keys) + '   (median low..high)')
     for sc in SCENES:

@@ -1,0 +1,88 @@
+diff --git a/src/figure.c b/src/figure.c
+index 8c70614..a2cb15c 100644
+--- a/src/figure.c
++++ b/src/figure.c
+@@ -6017,6 +6017,23 @@ static void nbSteerFeet( const nbWorld* world, int index, nbFigure* f, const nbC
+ 	float needs[2];
+ 	float levels[2];
+ 	b3Vec3 hips[2];
++#ifdef NB_X_ABOUT_FOOT
++	// trial: how far the foot farthest ahead stands or lands ahead of where it stands at rest, along the way of the capsule
++	f->footAhead = 0.0f;
++	if ( f->stairWeight <= 0.0f && run <= 0.0f && speed > 0.01f * scale )
++	{
++		for ( int k = 0; k < 2; ++k )
++		{
++			if ( f->footSwings[k] && f->swingAlong[k] < NB_GAIT_AIM )
++			{
++				continue;
++			}
++			b3Pos at = f->footSwings[k] ? f->feet[k].target : f->feet[k].plant;
++			f->footAhead =
++				b3MaxFloat( f->footAhead, b3Dot( b3SubPos( at, nbClipAnkle( f, clips + k, f->feet + k ) ), velocity ) / speed );
++		}
++	}
++#endif
+ 	// Stopping out of a walk, the capsule brakes for the foot ahead, see NB_HALT_LOW
+ 	f->halts = f->stops && f->stairWeight <= 0.0f && run <= 0.0f;
+ 	f->haltRate = 0.0f;
+diff --git a/src/figure.h b/src/figure.h
+index 9cd5528..875cc55 100644
+--- a/src/figure.h
++++ b/src/figure.h
+@@ -624,6 +624,7 @@ typedef struct nbFigure
+ 	bool stops;
+ 	bool halts;
+ 	float haltRate;
++	float footAhead;
+ 	bool swingHalts[2];
+ 	// For how long the heading has waited for the feet in a row, in seconds, see NB_FACE_KEEP in figure_steer.c
+ 	float faceHeld;
+diff --git a/src/figure_steer.c b/src/figure_steer.c
+index d6a7ae8..02e904e 100644
+--- a/src/figure_steer.c
++++ b/src/figure_steer.c
+@@ -778,6 +778,10 @@ bool nbMoveSteered( nbWorld* world, int index, nbFigure* f, float timeStep, b3Ve
+ 		f->walkedTo = f->walkTime;
+ 	}
+ 	f->stops = still && f->walkedTo >= NB_STOP_WALKED && def->stopBraking > 0.0f;
++#ifdef NB_X_ABOUT_HALT
++	// trial: braking into a turn about counts as stopping for the feet as well
++	f->stops = f->stops || ( aboutBrakes && def->stopBraking > 0.0f );
++#endif
+ 	if ( f->gaitOn && f->boneCount == nb_humanoidBoneCount && f->onGround )
+ 	{
+ 		float walks = 1.0f - f->gaitRun;
+@@ -794,10 +798,32 @@ bool nbMoveSteered( nbWorld* world, int index, nbFigure* f, float timeStep, b3Ve
+ 				rate = b3MinFloat( rate, rate - walks * rate );
+ 			}
+ 		}
++#ifdef NB_X_ABOUT_STICK
++		// trial: for as long as the turn about lasts and the capsule still goes against where it is steered
++		bool aboutRolls = f->turnAbout && b3Dot( flat, f->steer.velocity ) < 0.0f;
++		if ( f->stops || ( aboutRolls && def->stopBraking > 0.0f ) )
++#elif defined( NB_X_ABOUT_ROLL )
++		if ( f->stops || ( aboutBrakes && def->stopBraking > 0.0f ) )
++#else
+ 		if ( f->stops )
++#endif
+ 		{
+ 			// Stopping out of a walk it rolls out, see nbFigureSteering::stopBraking
+ 			float gentle = f->haltRate > 0.0f ? f->haltRate : def->stopBraking;
++#ifdef NB_X_ABOUT_RATE
++			if ( f->stops == false )
++			{
++				gentle = NB_X_ABOUT_RATE;
++			}
++#endif
++#ifdef NB_X_ABOUT_FOOT
++			if ( f->stops == false )
++			{
++				float speed = b3Length( flat );
++				gentle = f->footAhead > 0.0f ? speed * speed / ( 2.0f * f->footAhead ) : rate;
++				gentle = b3ClampFloat( gentle, NB_X_ABOUT_FOOT * scale, rate );
++			}
++#endif
+ 			rate = b3MinFloat( rate, rate + walks * ( gentle - rate ) );
+ 		}
+ 		for ( int k = 0; k < 2 && stopping; ++k )

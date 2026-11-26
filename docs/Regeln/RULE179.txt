@@ -1,0 +1,79 @@
+Regel für Runde 179, vor jedem Lauf mit den Geschwindigkeiten der unabhängigen Prüfung festgeschrieben. Gemessen wird
+gegen active-ragdoll-178.
+
+Worum es geht. Der Nutzer will zuerst das Gehen richtig haben und hat nach Anhalten (Runde 177) und Losgehen (Runde 178)
+die Kehrtwende gewählt. Runde 176 hat gemessen: In der Kehrtwende bremst die Kapsel wie früher beim Anhalten in 0,1 s
+und steht mitten im Schritt, dann dreht die Figur auf der Stelle.
+
+Wie groß das Thema ist, Frage 1 des Skills. Auf zwölf Entwicklungssätzen mit vier Proben, 288 Kehrtwenden im Gehen: Die
+Kapsel geht nach dem Umlegen des Sticks noch 0,12 s weiter, mit 14 m/s² gebremst. Richtig wäre ein Ausrollen über den
+letzten Schritt wie beim Anhalten, etwa 0,3 bis 0,4 s. Die Dauer der Wende selbst, 1,05 s, ist nicht zu lang, ein Mensch
+braucht etwa 2,2 s.
+
+Der Eingriff, in der Bibliothek, src/figure_steer.c: Bremst ein Humanoid im Gehen in eine Kehrtwende, bremst die Kapsel
+höchstens mit nbFigureSteering::stopBraking, 4 m/s², solange die Wende dauert und sie noch gegen die Richtung geht, in
+die gesteuert wird. Die Füße macht der Gang wie bisher. Null stellt es ab.
+
+Die Varianten, Frage 2 des Skills, dev1 mit vier Proben, je: Kurse im Gehen mit dem Becken mehr als 30 mm unter dem
+stetigen Gang (von 272), Beine ineinander in Wenden im Gehen, wann die Figur zurückschaut, und im Test, wie viel vom
+Tempo eines Sticks sie geht, der jede Sekunde umgelegt wird:
+ - alt, 14 m/s²: 21,5 Kurse; 2,42 %; 1,05 s; 0,26.
+ - 8 m/s², solange der Blick noch weit von der neuen Richtung ist: 21,5 Kurse, im Rauschen; 2,61 %; 1,08 s; 0,19.
+ - 6 m/s², ebenso: 15 Kurse; 2,23 %; 1,11 s; 0,09.
+ - 4 m/s², ebenso: 12,5 Kurse; 1,86 %; 1,12 s; 0,02. Diese Fassung bremst nur etwa 0,2 s sanft: Sobald der Blick 30 Grad
+   gedreht hat, gilt die Wende nicht mehr als Kehrtwende, und die Kapsel bremst den Rest, von 0,64 m/s, wieder mit 14
+   m/s².
+ - 4 m/s², solange die Wende dauert und die Kapsel gegen den Stick geht: 12,5 Kurse; 1,37 %; 1,16 s; 0,11. Die Kapsel
+   rollt bis zum Stillstand aus. Der Prototyp.
+ - bremsen für den Fuß voraus wie beim Anhalten: Die Kapsel rollt bis 0,35 m weiter, ein Schienbein springt 43 statt 34
+   mm. Verworfen.
+ - auch die Füße wie beim Anhalten: Die Wende dauert 1,13 s, die späteste 1,87 s, ein Schienbein springt 45,6 mm.
+   Verworfen.
+Je sanfter die Kapsel bremst, desto seltener sackt das Becken und desto später ist die Wende fertig.
+
+Die Entscheidung des Nutzers. Gefragt mit den Zahlen der Fassung, die nur 0,2 s sanft bremst (Wende nach 1,12 statt 1,05
+s, 0,02 statt 0,26 beim Stick-Wechsel jede Sekunde), hat der Nutzer 4 m/s² gewählt, „wie beim Anhalten, ein gemeinsamer
+Regler“, gegen 6 und 8 m/s² und gegen Nichtbauen. Danach fiel auf, dass jene Fassung den Rest hart bremst. Gebaut wird
+die Fassung, die wirklich ausrollt; sie ist 0,04 s später fertig als die, nach der gefragt war, und das steht im
+Bericht.
+
+Nimmt der Prototyp das Ziel, Frage 3 des Skills. Auf beiden Entwicklungsgruppen, 288 Kehrtwenden: Die Kapsel geht 0,33
+statt 0,12 s weiter; das Becken sackt auf 11,5 statt 19,5 Kursen im Gehen mehr als 30 mm; die Beine stecken in Wenden im
+Gehen in 1,36 statt 2,29 % der Updates ineinander; die härtesten Sprünge in der Kehrtwende: Fuß 26,7 statt 27,1 mm,
+Schienbein 33,7 statt 35,4 mm, Becken 8,9 statt 9,2 mm; Anhalten und Losgehen bleiben. compare170.py nennt drei Größen
+schlechter, die Preise unten. Die Tests des Prototyps: einer von 206 schlägt an, SteerWalkAboutTest, der die alte
+Kehrtwende prüft und angepasst wird.
+
+Bedingungen, alt ist active-ragdoll-178, neu der saubere Bau, je vier Proben mit tools/measure/check177.sh und
+check170.sh auf einer Gruppe von Sätzen, gerechnet von tools/measure/eval179.py:
+Ziel:
+ Z1 In der Kehrtwende im Gehen geht die Kapsel im Median 0,25 bis 0,50 s weiter, bis sie nur noch ein Zehntel ihres
+   Tempos in die alte Richtung hat.
+ Z2 Die Zahl der Kurse im Gehen, auf denen das Becken mehr als 30 mm unter den stetigen Gang sackt, sinkt um mindestens
+   3 (Median der Proben).
+ Z3 Die Beine stecken in Wenden im Gehen nicht in mehr Updates ineinander als alt.
+Schutz:
+ S1 Die härtesten Sprünge in der Kehrtwende, je Probe das Maximum, davon der Median: Fuß und Schienbein höchstens 3 mm
+   über alt, Becken höchstens 2 mm.
+ S2 tools/measure/compare170.py nennt keine Größe schlechter außer den drei Preisen.
+ S3 Anhalten: Die Füße stehen im Median höchstens 0,05 s später als alt. Losgehen: Die Kapsel hat ihr Tempo im Median
+   höchstens 0,02 s früher oder später.
+ S4 Alle Tests bestehen, mit gcc und clang, und die Hashes des Benchmarks der Figuren sind mit 1, 2 und 4 Threads
+   gleich. SteerWalkAboutTest wird angepasst und prüft die alte Kehrtwende mit stopBraking null weiter.
+Preis, erlaubt, vom Nutzer gewählt:
+ P1 Die Figur schaut in der Kehrtwende im Gehen im Median höchstens 0,15 s später zurück als alt.
+ P2 Die späteste aller Wenden im Gehen schaut höchstens 0,35 s später in die neue Richtung.
+ P3 Auf den Kursen folgt sie einem Stick mit höchstens 0,03 weniger seines Tempos.
+ Im Test, jede Sekunde umgelegt: 0,11 statt 0,26 des Tempos.
+
+Unabhängige Prüfung: die frischen Sätze h214 bis h217 aus tools/measure/common.sh, Gehen mit 1,0967, 1,2433, 1,4633 und
+1,6367 m/s, Rennen mit 4,4167, 3,9167, 3,5133 und 3,0367 m/s, mit speeds.py gegen alle Geschwindigkeiten geprüft, die je
+gelaufen sind; Gruppe fresh179. Kein Stand ist auf ihnen gelaufen, bevor diese Datei gepusht ist. Hält der saubere Bau
+dort eine Bedingung nicht, wird nicht gebaut, außer der Nutzer entscheidet es; die Regel wird danach nicht geändert, und
+eine Messung, die nicht passt, wird nicht wiederholt.
+
+Der saubere Bau muss auf dev1 ohne Anstoß dieselben drei Tabellen schreiben wie der Prototyp (legs167, gait155,
+steer162, mit cmp verglichen).
+
+Der Prototyp steht als docs/Regeln/trial179.patch, sein Schalter: -DNB_X_ABOUT_STICK. Die anderen Schalter des Patches
+sind die verworfenen Varianten.

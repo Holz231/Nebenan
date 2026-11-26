@@ -7,7 +7,8 @@ case $2 in
   dev2) SETS="h11 h12 h13 h14 h15 h29";;
   fresh177) SETS="h206 h207 h208 h209";;
   fresh178) SETS="h210 h211 h212 h213";;
-  *) echo "check177.sh state dev1|dev2|fresh177|fresh178"; exit 1;;
+  fresh179) SETS="h214 h215 h216 h217";;
+  *) echo "check177.sh state dev1|dev2|fresh177|fresh178|fresh179"; exit 1;;
 esac
 [ -f "$W/res/$1/walk176.$2.json" ] && exit 0
 python3 -I "$M/walk176.py" $1 0,1,2,3 $SETS > "$W/res/$1/walk176.$2.txt" 2>&1 || { echo "walk176 failed on $1"; exit 1; }
