@@ -3606,6 +3606,11 @@ static float nbLowerSteered( nbFigure* f, b3Transform root, const int* thighs, b
 					f->pushKeptTime[k] = 0.0f;
 				}
 			}
+			// Turning on the ball of the foot, its heel is up at least as far as that lifts it, see NB_FOOT_BALL_HEEL
+			if ( side > 0.0f && roll >= 0.0f && f->footRoll[k] >= 0.0f && f->ballHeel[k] > 0.0f )
+			{
+				roll = b3MaxFloat( roll, planted * f->ballHeel[k] );
+			}
 			if ( roll < 0.0f || f->footRoll[k] < 0.0f )
 			{
 				// Over its heel no faster than NB_FOOT_HEEL_RATE
@@ -5511,6 +5516,26 @@ static float nbSwingTime( const nbFigure* f, int k, float swingTime, float cycle
 // hurried to land 31 cm beside the hip as the other was lost, its leg would have lost it after 0.033 s, it lifted again
 // in the next update with 2.4 times the hurry, and its shin jumped 53 mm, while the other, lost for three updates,
 // stood on. Now the one that waited lifts, see SteerWaitedFootTest.
+// Walking and facing where it moves, a planted foot turns with the body on what it stands on, since round 183: on the
+// middle of its sole while the hip is over its ankle or behind it, on the edge of its toes with the hip half a sole
+// ahead of the ankle, in between by its share, and on the edge of its toes as far as it has rolled over them, all of
+// the way from NB_FOOT_BALL_ROLL in radians. Turning on the point under the hip leaves the leg as long as it was. As
+// far as it turns ahead of the middle, its heel lifts, by NB_FOOT_BALL_HEEL in radians at most and NB_FOOT_BALL_RATE in
+// radians per second, and comes down like that. Only once its gait has had no part of a run for NB_FOOT_BALL_WALKED
+// seconds: braking into a turn by 135 degrees at a run the gait is a walk for a moment, and with this a foot jumped
+// more than 37 mm in 198 instead of 151 of 576 such turns. Until then a foot turned on the middle of its sole, also
+// with its heel 6 to 8 cm up, where it stands on its toes alone: turning by 90 degrees at a walk it slid 69 mm on what
+// it stood on in one stance, now 26 mm, turning about 98 and 72 mm, starting to the side 68 and 22 mm. Always on the
+// edge of its toes, as round 181 tried it, a foot ahead of the hip swung its ankle 20 cm under the body, the stretched
+// leg did not reach, and the pelvis sank more than 30 mm on 21 instead of 12.5 of 408 courses. Turning on its heel with
+// the toes up where the hip is behind the ankle halved the slide turning about, and a shin jumped more than 37 mm on
+// 22.5 instead of 6 courses. With the point a quarter of a sole farther ahead the legs got into each other in 1.89
+// instead of 1.37 % of the updates of the turns, and without the heel lifting the heel dragged.
+#define NB_FOOT_BALL_ROLL 0.15f
+#define NB_FOOT_BALL_HEEL 0.08f
+#define NB_FOOT_BALL_RATE 2.0f
+#define NB_FOOT_BALL_WALKED 1.0f
+
 // A foot that holds the heading back, see NB_FOOT_PIVOT in figure.h, steps round as soon as it stood for
 // NB_FOOT_STEP_STOOD and the other foot for NB_FOOT_STEP_OTHER, in seconds, whatever its phase.
 #define NB_FOOT_STEP_STOOD 0.1f
@@ -5740,6 +5765,7 @@ static void nbSteerFeet( const nbWorld* world, int index, nbFigure* f, const nbC
 					f->feet[k].tilt = nbPartOf( f->feet[k].lean, clips[k].weight );
 					f->footHeading[k] = f->heading;
 					f->footPivot[k] = 0.0f;
+					f->ballHeel[k] = 0.0f;
 				}
 			}
 			f->gaitFaster = 0.0f;
@@ -6197,6 +6223,7 @@ static void nbSteerFeet( const nbWorld* world, int index, nbFigure* f, const nbC
 				f->landRoll[k] = landed;
 				f->stanceTime[k] = 0.0f;
 				f->footPivot[k] = 0.0f;
+				f->ballHeel[k] = 0.0f;
 				foot->plant = foot->target;
 				foot->tilt = foot->targetTilt;
 				f->footHeading[k] = f->landHeading[k];
@@ -6204,13 +6231,31 @@ static void nbSteerFeet( const nbWorld* world, int index, nbFigure* f, const nbC
 		}
 		else
 		{
-			// A planted foot turns on the middle of its sole with the body beyond NB_FOOT_TWIST from where the legs face
+			// A planted foot turns with the body beyond NB_FOOT_TWIST from where the legs face: on the middle of its sole,
+			// and walking on the ball of the foot as the hip passes over it, see NB_FOOT_BALL_ROLL
+			float ball = 0.0f;
 			float twist = nbWrapAngle( f->footHeading[k] - legHeading );
 			if ( fabsf( twist ) > NB_FOOT_TWIST )
 			{
 				float turn = ( twist > 0.0f ? NB_FOOT_TWIST : -NB_FOOT_TWIST ) - twist;
 				b3Vec3 sole = b3Sub( clips[k].sole, clips[k].ankle );
 				sole.y = 0.0f;
+				if ( wantsRun == false && f->steer.faceVelocity && f->sinceRun >= NB_FOOT_BALL_WALKED )
+				{
+					const nbBone* footBone = f->bones + ( k == 0 ? nb_humanoidFootLeft : nb_humanoidFootRight );
+					float half = footBone->halfExtents.y;
+					b3Vec3 toes = b3RotateVector( clips[k].rotation, b3Vec3_axisY );
+					toes.y = 0.0f;
+					toes = b3Normalize( toes );
+					b3Vec3 toesNow = b3RotateVector( legQ, b3RotateVector( nbHeadingQuat( twist ), toes ) );
+					b3Vec3 toHip = b3SubPos( b3TransformWorldPoint( f->frame, hips[k] ), foot->plant );
+					float middle = b3Dot( sole, toes );
+					float at = middle + b3ClampFloat( b3Dot( toHip, toesNow ) / half, 0.0f, 1.0f ) * half;
+					at += b3ClampFloat( f->footRoll[k] / NB_FOOT_BALL_ROLL, 0.0f, 1.0f ) * ( middle + half - at );
+					float walks = 1.0f - run;
+					ball = walks * ( at - middle ) / half;
+					sole = b3MulAdd( sole, walks * ( at - middle ), toes );
+				}
 				b3Vec3 toSole = b3RotateVector( legQ, b3RotateVector( nbHeadingQuat( twist ), sole ) );
 				b3Pos middle = b3OffsetPos( foot->plant, toSole );
 				b3Quat spin = b3MakeQuatFromAxisAngle( up, turn );
@@ -6218,6 +6263,11 @@ static void nbSteerFeet( const nbWorld* world, int index, nbFigure* f, const nbC
 				f->footHeading[k] = nbWrapAngle( f->footHeading[k] + turn );
 				f->footPivot[k] += fabsf( turn );
 			}
+
+			// Its heel lifts as far as it turns ahead of the middle of its sole, and comes down as it stops turning there
+			float heelMost = NB_FOOT_BALL_RATE * timeStep;
+			float heelUp = ( 1.0f - run ) * b3MaxFloat( ball, 0.0f ) * NB_FOOT_BALL_HEEL;
+			f->ballHeel[k] += b3ClampFloat( heelUp - f->ballHeel[k], -heelMost, heelMost );
 
 			// A foot that landed on its heel, or on its toes, comes down from it, see NB_GAIT_HEEL_LOAD
 			f->stanceTime[k] += timeStep;
@@ -9336,6 +9386,7 @@ nbFigureId nbCreateFigure( nbWorldId worldId, const nbFigureDef* def )
 	f->heading = def->heading;
 	f->frame = nbMakeFrame( world, def->position, def->heading );
 	f->clipSpeed = 1.0f;
+	f->sinceRun = NB_FOOT_BALL_WALKED;
 	f->state = nb_figureAnimated;
 	nbSampleFigureClip( f, f->clips[nb_clipIdle], 0.0f, f->pose, &f->root );
 	nbComputePose( f, b3MulWorldTransforms( f->frame, f->root ), f->pose, f->targets );

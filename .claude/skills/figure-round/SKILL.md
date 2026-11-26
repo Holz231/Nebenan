@@ -695,6 +695,19 @@ Zehen und Fersen 37 mm, Hände 15 mm, Becken 10 mm, Becken tief ab 15 cm unter d
 - **Ein Ziel, das ein Fuß behält, nicht aufheben, um etwas anderes daran zu ändern.** Das Breitwerden wurde am
   behaltenen Ziel nachgeführt (seitlich, um den Anteil, den das Behalten zurückhält), statt das Behalten abzuschalten;
   das hätte den Fuß zurückgerissen.
+- **Bevor der Rest des Gangs etwas Neues lernen soll, die Stelle verfolgen, an der es kostet.** Runde 181 schloss, der
+  schwingende Fuß und die Beckenhöhe müssten mit dem wandernden Knöchel rechnen, ein großer Bau. Die Spur einer einzigen
+  sackenden Stelle in Runde 183 zeigte: Der Fuß drehte um den falschen Punkt, wenn er vor der Hüfte stand. Der Bau wurde
+  klein.
+- **Eine Größe, die der Eingriff per Bau bewegt, vor dem Festschreiben benennen und begrenzen.** `slide` misst die
+  Sohlenmitte eines flachen Fußes; ein Fuß, der vor der Mitte dreht, bewegt sie. Die Regel 183 nennt das vorab und
+  erlaubt 15 mm, statt es nachher zu erklären. Und das Ziel bekam ein Maß, das den Drehpunkt nicht bevorzugt
+  (`soleSlide`: worauf der Fuß steht).
+- **Einen Schalter für „nur im Gehen“ an dem prüfen, was beim Bremsen aus dem Rennen gilt.** Der Gang ist dort für
+  Momente ein Gehen. Runde 177 und 183 nehmen beide „seit 1 s kein Anteil Rennen“; `compare170.py` auf der zweiten
+  Gruppe hat es gefunden, nicht die erste.
+- **Kein Messskript ändern, während eine Kette es ausführt.** bash liest ein Skript beim Laufen weiter; eine gekürzte
+  Zeile in `check170.sh` brach die laufende Messung mit einem Syntaxfehler ab.
 - **Größe der Figur.** Winkelbeschleunigungen wachsen bei kleineren Figuren mit 1 durch `nbFigureScale`, Längen
   und Geschwindigkeiten mit ihr.
 

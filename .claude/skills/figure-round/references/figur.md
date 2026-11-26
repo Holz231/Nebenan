@@ -169,7 +169,10 @@ was schon verworfen wurde.
   die Figur schneller ist als ihr Gang, mit dem Zweifachen des Vorsprungs als Gewicht (`gaitFaster`,
   `NB_FOOT_ROLL_FAST`): Das 1,5- bis 3-Fache gibt dasselbe, darunter bleiben die Abheber der Szene. Der Vorausblick
   kostet, wo er läuft, bis zu 44 Lagen des Fußes je Fuß und Update (`nbRollToReach` an vier Zeitpunkten, je eine Suche
-  in zehn Schritten); `nbRollFoot` ist 6 bis 8 % der Befehle im Update der Figuren.
+  in zehn Schritten); `nbRollFoot` ist 6 bis 8 % der Befehle im Update der Figuren. Seit Runde 183 dreht ein stehender
+  Fuß im Gehen um den Punkt unter der Hüfte zwischen Sohlenmitte und Zehenkante (`NB_FOOT_BALL_ROLL` in `nbSteerFeet`),
+  und `ballHeel` hebt dabei seine Ferse in `nbLowerSteered`; `foot->plant` ist der Knöchel des flachen Fußes, das Rollen
+  kommt erst danach dazu.
 - **`footRoll` und `footRolled`.** `footRoll` setzt auch der Gang, etwa wenn ein Fuß von einer Landung herunterkommt.
   `footRolled` ist das Rollen, das der Fuß am Boden zuletzt bekam.
 - **Rückwärts** (`side < 0`) landen Füße auf den Zehen und bleiben darauf (`tips`, `leads`, `landed`). Einer, der auf

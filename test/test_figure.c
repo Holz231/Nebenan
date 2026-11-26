@@ -6075,6 +6075,73 @@ static int SteerWalkAboutTest( void )
 	return 0;
 }
 
+// How far a planted foot of a figure slides on what it stands on in one stance, in meters, the most of its stances in
+// the 1.5 s after it is steered turn degrees to its left, walking at 1.4 m/s, or out of standing: the edge of its toes
+// while it stands flat or rolled over them, the edge of its heel while its toes are up
+static int RunSoleSlide( float turn, bool walks, int part, float* slides )
+{
+	const int feet[2] = { nb_humanoidFootLeft, nb_humanoidFootRight };
+	FigureScene scene;
+	CreateFigureScene( &scene, 1 );
+	nbFigureId figure = AddSteeredFigureBend( &scene, b3Vec3_zero, 0.0f, 0.7f );
+	StepFigures( &scene, 60 );
+	if ( walks )
+	{
+		SteerVelocity( figure, (b3Vec3){ 0.0f, 0.0f, 1.4f } );
+		StepFigures( &scene, 150 + 5 * part );
+	}
+	b3CosSin to = b3ComputeCosSin( turn * B3_PI / 180.0f );
+	SteerVelocity( figure, (b3Vec3){ 1.4f * to.sine, 0.0f, 1.4f * to.cosine } );
+	b3Vec3 edges[2] = { b3Vec3_zero, b3Vec3_zero };
+	float slid[2] = { 0.0f, 0.0f };
+	int stood[2] = { 0, 0 };
+	*slides = 0.0f;
+	for ( int i = 0; i < 90; ++i )
+	{
+		StepFigures( &scene, 1 );
+		const nbFigure* f = GetSteered( &scene, figure );
+		for ( int k = 0; k < 2; ++k )
+		{
+			int stands = f->gaitOn && f->footSwings[k] == false ? ( f->footRoll[k] < 0.0f ? -1 : 1 ) : 0;
+			b3Vec3 edge = SoleEdge( &scene, f, feet[k], stands < 0 ? -1.0f : 1.0f );
+			edge.y = 0.0f;
+			slid[k] = stands != 0 && stands == stood[k] ? slid[k] + b3Distance( edge, edges[k] ) : stands != 0 ? slid[k] : 0.0f;
+			*slides = b3MaxFloat( *slides, slid[k] );
+			edges[k] = edge;
+			stood[k] = stands;
+		}
+	}
+	ENSURE( nbFigure_GetInfo( figure ).state == nb_figureAnimated );
+	DestroyFigureScene( &scene );
+	return 0;
+}
+
+// A steered figure facing where it moves walks at 1.4 m/s and is steered 90 degrees to its left, at twelve moments five
+// updates apart, and starts out of standing 90 degrees to its left. Since round 183 a standing foot turns with the body
+// on the ball of the foot once the hip is past its ankle, and its heel lifts while it does, see NB_FOOT_BALL in
+// figure.c: until then it turned on the middle of its sole, also with its heel up, and its toes slid over the ground.
+// Over the twelve turns a planted foot slides 18.1 mm on what it stands on in one stance in their mean and 57.3 mm at
+// most, until round 183 74.8 and 104.6 mm, and starting to its left 19.2 mm, until then 95.8 mm.
+static int SteerBallTurnTest( void )
+{
+	float sum = 0.0f, most = 0.0f, start = 0.0f;
+	for ( int part = 0; part < 12; ++part )
+	{
+		float slides;
+		ENSURE( RunSoleSlide( 90.0f, true, part, &slides ) == 0 );
+		sum += slides;
+		most = b3MaxFloat( most, slides );
+	}
+	ENSURE( RunSoleSlide( 90.0f, false, 0, &start ) == 0 );
+	printf( "  turning by 90 degrees at a walk a planted foot slides %.1f mm on what it stands on in the mean of twelve turns, "
+			"%.1f mm at most; starting to its left %.1f mm\n",
+			1000.0f * sum / 12.0f, 1000.0f * most, 1000.0f * start );
+	ENSURE( sum / 12.0f <= 0.030f );
+	ENSURE( most <= 0.070f );
+	ENSURE( start <= 0.030f );
+	return 0;
+}
+
 // How far two segments are apart, p1 to q1 and p2 to q2
 static float SegmentsApart( b3Vec3 p1, b3Vec3 q1, b3Vec3 p2, b3Vec3 q2 )
 {
@@ -8986,7 +9053,7 @@ static int ThinBoardTest( void )
 // walking takes the steps of people, see NB_GAIT_CADENCE_WALK, and the ankle of a swinging foot bends up as far as
 // theirs, see NB_SWING_ANKLE_SOFT. Round 113: the body has the dimensions of a person, see nbMakeHumanoidBones.
 // Round 131: a foot that only just landed stands where the other foot is free to lift, see NB_GAIT_FRESH_KEEP.
-#define NB_EXPECTED_STEER_HASH 0xbd93969bu
+#define NB_EXPECTED_STEER_HASH 0x850f582eu
 
 // See RunGaitClipScenario. Since round 99 as for RunSteerScenario. Since round 100 the figure that is told to turn on
 // the spot while it still walks, not facing where it moves, keeps its legs where they face as its heading turns, and
@@ -8995,7 +9062,7 @@ static int ThinBoardTest( void )
 // RunSteerScenario. Since round 111 as for RunSteerScenario. Round 112: the clips are recorded from a gait that takes
 // the steps of people, see NB_GAIT_CADENCE_WALK, and the ankle of a swinging foot bends up as far as theirs, see
 // NB_SWING_ANKLE_SOFT. Round 113 and round 131 as for RunSteerScenario.
-#define NB_EXPECTED_GAIT_CLIP_HASH 0x9a166150u
+#define NB_EXPECTED_GAIT_CLIP_HASH 0x4f649e14u
 
 static int FigureFollowDeterminismTest( void )
 {
@@ -9128,6 +9195,7 @@ int FigureTest( void )
 	RUN_TEST( SteerWalkStopTest );
 	RUN_TEST( SteerWalkBendTest );
 	RUN_TEST( SteerWalkAboutTest );
+	RUN_TEST( SteerBallTurnTest );
 	RUN_TEST( SteerLetGoTest );
 	RUN_TEST( SteerMeetTest );
 	RUN_TEST( SteerLegsApartTest );

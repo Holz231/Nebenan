@@ -783,6 +783,7 @@ bool nbMoveSteered( nbWorld* world, int index, nbFigure* f, float timeStep, b3Ve
 	// turn about, see NB_TURN_HOLD_AFTER, it gets no faster while the leg it stands on loses its foot before the other
 	// foot lands, and stopping or braking to turn about, it brakes gently while a foot lands where it aimed
 	f->walkTime = f->gaitOn && f->gaitRun <= 0.0f ? f->walkTime + timeStep : 0.0f;
+	f->sinceRun = f->gaitRun <= 0.0f ? b3MinFloat( f->sinceRun + timeStep, 60.0f ) : 0.0f;
 	bool still = b3LengthSquared( wish ) < 0.01f * scale * scale;
 	if ( still == false )
 	{

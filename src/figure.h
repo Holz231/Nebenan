@@ -571,6 +571,11 @@ typedef struct nbFigure
 	// How far a planted foot turned on the ground with the body since it landed, in radians, see NB_FOOT_PIVOT, whether
 	// it holds the heading back by that in this update, see nbMoveSteered, and the heading the figure turns to
 	float footPivot[2];
+	// How far the heel of a planted foot is up because it turns on the ball of the foot, in radians, see
+	// NB_FOOT_BALL_HEEL in figure.c, and for how long its gait has had no part of a run, in seconds, standing too,
+	// counted up to a minute
+	float ballHeel[2];
+	float sinceRun;
 	// For how long its gait has been a walk without a part of a run, in seconds, see NB_STOP_WALKED in figure_steer.c
 	float walkTime;
 	// From standing until it goes as fast as it wants, see nbFigureSteering::startAcceleration
