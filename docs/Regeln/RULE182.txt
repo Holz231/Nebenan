@@ -1,0 +1,68 @@
+Regel für Runde 182, vor jedem Lauf mit den Geschwindigkeiten der unabhängigen Prüfung festgeschrieben. Gemessen wird
+gegen active-ragdoll-181, dessen Bibliothek die von Runde 179 ist.
+
+Worum es geht. Der Nutzer will zuerst das Gehen richtig haben. Nach Runde 181 hat er gebeten, das zu tun, was am meisten
+Sinn macht; das war der empfohlene Punkt: der dritte Fuß beim Anhalten. Seit Runde 177 landen beim Anhalten aus dem
+Gehen in drei von vier Halten zwei Füße; im vierten rückt ein Fuß danach noch einmal nach.
+
+Wie groß das Thema ist, Frage 1 des Skills. Auf zwölf Entwicklungssätzen mit vier Proben, 288 Halte: In 77 % landen zwei
+Füße, in 23 % drei oder vier, und die Füße stehen im Median nach 0,85 s. Richtig wären zwei Landungen in jedem Halt: der
+Fuß in der Luft und der, der aufschließt.
+
+Die Ursache, Update für Update verfolgt bei 1,5 m/s, zwei Teile. Erstens: Ist der Fuß in der Luft beim Loslassen schon
+spät in seinem Schwung, behält er, wohin er zielte, und landet schmal wie im Gehen, 5 cm von der Mitte statt 9 cm;
+nachdem der andere aufgeschlossen hat, rückt er 4 cm zur Seite. Zweitens: Auch ein Fuß, der an seinem Platz gelandet
+ist, hebt noch einmal ab und setzt an derselben Stelle wieder auf, 1 mm daneben: Der Gang läuft weiter, bis sein Tempo
+abgeklungen ist, und die Phase des Fußes sagt, er sei dran.
+
+Der Eingriff, in der Bibliothek, src/figure.c, nur wo eine Figur aus dem Gehen anhält (nbFigureSteering::stopBraking).
+Erstens wird ein Fuß auch spät in seinem Schwung so breit, wie er steht: ab 0,6 seines Schwungs mit 7 statt 8 pro
+Sekunde, auch während er behält, wohin er zielte, und danach bis zur Landung. Zweitens hebt ein Fuß nicht mehr ab, der
+unter einer stehenden Kapsel an seinem Standplatz steht.
+
+Die Varianten, Frage 2 des Skills, 36 Halte auf dev1 ohne Anstoß, je: Halte mit zwei Landungen, härtester Sprung eines
+Fußes, des Beckens:
+ - alt: 29 von 36; 18,0 mm; 4,0 mm.
+ - nur spät breit werden: 29; die Füße landen breit, heben aber noch einmal ab.
+ - spät breit, und der Gang endet sofort, wenn beide Füße stehen: 33; Becken 7,7 mm, schlechter.
+ - spät breit, und ein Fuß an seinem Platz hebt nicht mehr ab: 33; Fuß 23,3 mm, Becken 4,0 mm. Der Fuß wurde dabei zum
+   Haltepunkt zurückgezogen, weil er nicht mehr behielt, wohin er zielte.
+ - dasselbe, der Fuß behält, wohin er zielte, und wird nur breit, mit 8 pro Sekunde: 33; Fuß 21,9 mm.
+ - spät mit 4, 6 und 7 pro Sekunde: 29, 31 und 33 von 36; Fuß 18,0, 18,2 und 19,5 mm. 7 ist der Prototyp.
+ - nur der Fuß an seinem Platz hebt nicht mehr ab, ohne spät breit: 29.
+Verworfen ist damit: den Gang sofort beenden; den späten Fuß nicht mehr behalten lassen, wohin er zielte.
+
+Nimmt der Prototyp das Ziel, Frage 3 des Skills. Auf beiden Entwicklungsgruppen mit vier Proben, 288 Halte: Zwei Füße
+landen in 90 statt 77 % der Halte, höchstens 3 statt 4; die Füße stehen nach 0,80 statt 0,85 s; die härtesten Sprünge im
+Halt: Fuß 19,7 statt 18,0 mm, Schienbein 26,3 statt 26,1 mm, Becken 5,0 wie alt; die Kapsel steht wie alt nach 0,45 s
+und 0,35 m; compare170.py nennt keine Größe schlechter. Alle 206 Tests des Prototyps bestehen.
+
+Bedingungen, alt ist active-ragdoll-181, neu der saubere Bau, je vier Proben mit tools/measure/check177.sh und
+check170.sh auf einer Gruppe von Sätzen, gerechnet von tools/measure/eval182.py über alle Halte aus dem Gehen der
+Gruppe:
+Ziel:
+ Z1 Der Anteil der Halte, in denen höchstens zwei Füße landen, steigt um mindestens 5 Punkte, und in keinem landen mehr
+   als im schlechtesten alten.
+ Z2 Die Füße stehen im Median nicht später als alt, und im spätesten Halt höchstens 0,05 s später.
+Schutz:
+ S1 Die härtesten Sprünge im Halt, je Probe das Maximum, davon der Median: Fuß und Schienbein höchstens 3 mm über alt,
+   Becken höchstens 2 mm.
+ S2 Die Kapsel steht im Median höchstens 0,02 s früher oder später und geht höchstens 0,02 m weiter oder weniger weit
+   als alt.
+ S3 tools/measure/compare170.py nennt keine Größe schlechter, mit den Kursen aus steer162.py und den Beinen aus
+   legs167.py.
+ S4 Alle Tests bestehen, mit gcc und clang, und die Hashes des Benchmarks der Figuren sind mit 1, 2 und 4 Threads
+   gleich. SteerHaltTest wird verschärft.
+
+Unabhängige Prüfung: die frischen Sätze h218 bis h221 aus tools/measure/common.sh, Gehen mit 1,0567, 1,2733, 1,4833 und
+1,6733 m/s, Rennen mit 4,4433, 3,9633, 3,4467 und 3,0933 m/s, in Runde 181 mit speeds.py gegen alle Geschwindigkeiten
+geprüft, die je gelaufen sind, und dort nicht gelaufen, weil jene Runde nichts baute; Gruppe fresh182. Kein Stand ist
+auf ihnen gelaufen, bevor diese Datei gepusht ist. Hält der saubere Bau dort eine Bedingung nicht, wird nicht gebaut,
+außer der Nutzer entscheidet es; die Regel wird danach nicht geändert, und eine Messung, die nicht passt, wird nicht
+wiederholt.
+
+Der saubere Bau muss auf dev1 ohne Anstoß dieselben drei Tabellen schreiben wie der Prototyp (legs167, gait155,
+steer162, mit cmp verglichen).
+
+Der Prototyp steht als docs/Regeln/trial182.patch, seine Schalter: -DNB_X_HALT_LATE=7.0f -DNB_X_HALT_REST. Der Schalter
+NB_X_HALT_END ist die verworfene Variante.
