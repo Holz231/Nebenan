@@ -3820,6 +3820,10 @@ static nbFigureId AddSteeredFigure( FigureScene* scene, b3Vec3 position, float h
 	return nbCreateFigure( scene->world, &def );
 }
 
+// How hard the figures of AddSteeredFigureBend brake at most to stop or to turn about out of a walk, see
+// nbFigureSteering::stopBraking; negative leaves what the library has
+static float s_bendStopBraking = -1.0f;
+
 // A figure the program steers that keeps the given share of its speed through a turn at a walk, see
 // nbFigureSteering::walkBend: zero turns on the spot
 static nbFigureId AddSteeredFigureBend( FigureScene* scene, b3Vec3 position, float heading, float walkBend )
@@ -3832,6 +3836,10 @@ static nbFigureId AddSteeredFigureBend( FigureScene* scene, b3Vec3 position, flo
 	def.steered = true;
 	def.steering.walkBend = walkBend;
 	def.steering.startAcceleration = 0.0f;
+	if ( s_bendStopBraking >= 0.0f )
+	{
+		def.steering.stopBraking = s_bendStopBraking;
+	}
 	return nbCreateFigure( scene->world, &def );
 }
 
@@ -5988,24 +5996,63 @@ static int RunShuttle( float walkBend, float* follows )
 	return 0;
 }
 
+// How hard the capsule of a figure brakes at most in the half second after it is steered back out of walking at 1.4
+// m/s, in meters per second squared, the hardest of three moments ten updates apart
+static int RunAboutBraking( float* brakes )
+{
+	*brakes = 0.0f;
+	for ( int part = 0; part < 3; ++part )
+	{
+		FigureScene scene;
+		CreateFigureScene( &scene, 1 );
+		nbFigureId figure = AddSteeredFigureBend( &scene, b3Vec3_zero, 0.0f, 0.7f );
+		StepFigures( &scene, 60 );
+		SteerVelocity( figure, (b3Vec3){ 0.0f, 0.0f, 1.4f } );
+		StepFigures( &scene, 150 + 10 * part );
+		SteerVelocity( figure, (b3Vec3){ 0.0f, 0.0f, -1.4f } );
+		for ( int i = 0; i < 30; ++i )
+		{
+			float before = SteerSpeed( figure );
+			StepFigures( &scene, 1 );
+			*brakes = b3MaxFloat( *brakes, 60.0f * ( before - SteerSpeed( figure ) ) );
+		}
+		ENSURE( nbFigure_GetInfo( figure ).state == nb_figureAnimated );
+		DestroyFigureScene( &scene );
+	}
+	return 0;
+}
+
 // A steered figure facing where it moves walks at 1.4 m/s and is steered back, at twelve moments five updates apart.
 // Steered more than 150 degrees off the way it faces it does not bend, it turns about, see NB_WALK_ABOUT in
-// figure_steer.c: it brakes gently while a foot lands where it aimed, waits for the foot it stands on and turns on the
-// spot. Over the twelve turns it gets no more than 0.25 m on the way it walked (0.17) and 0.25 m to the side (0.18),
-// its pelvis no more than 64 mm below its mean height walking (46), and it faces back within 1.43 s (1.38): since round
-// 175 the heading turns to where it is steered at once, see nbMoveSteered. From round 167, when the heading began to
-// wait for the feet, see NB_FACE_KEEP in figure_steer.c, until then it took 1.48 s. Steered back and forth every second
-// for 4 s it goes 0.23 of the speed where it is steered or more (0.26, 0.20 from round 167 to 174). In round 161 it
-// bent here: 0.34 m onward and 0.61 m to the side, and steered back and forth it went against the stick as much as with
-// it. With walkBend at zero it turns about as until round 160, the pelvis sinks 75 mm.
+// figure_steer.c. Since round 179 its capsule rolls out into the turn as it does stopping, see
+// nbFigureSteering::stopBraking: it brakes with 4.0 m/s^2 at most, no more than 5, where it braked with 14 and stood
+// in the middle of a step. Over the twelve turns it gets no more than 0.30 m on the way it walked (0.23) and 0.28 m to
+// the side (0.22), its pelvis no more than 64 mm below its mean height walking (37), and it faces back within 1.8 s
+// (1.70). Steered back and forth every second for 4 s it still goes where it is steered, 0.11 of the speed: the price
+// of rolling out, chosen by the user. With stopBraking at zero it turns about as until round 178: it brakes with 14
+// m/s^2, gets 0.17 m on and 0.14 m to the side, its pelvis 42 mm low, faces back within 1.43 s (1.38), since round 175
+// with the heading turning to where it is steered at once, and goes 0.23 of the speed back and forth or more (0.26).
+// From round 167, when the heading began to wait for the feet, see NB_FACE_KEEP in figure_steer.c, until round 174 it
+// took 1.48 s. In round 161 it bent here: 0.34 m onward and 0.61 m to the side, and steered back and forth it went
+// against the stick as much as with it. With walkBend at zero it turns about as until round 160, the pelvis sinks 75
+// mm.
 static int SteerWalkAboutTest( void )
 {
-	BendTurn about, spot;
+	BendTurn about, spot, hard;
 	ENSURE( RunBendTurns( 180.0f, 0.7f, &about ) == 0 );
 	ENSURE( RunBendTurns( 180.0f, 0.0f, &spot ) == 0 );
-	float follows, followsSpot;
+	float follows, followsSpot, followsHard, brakes, brakesHard;
 	ENSURE( RunShuttle( 0.7f, &follows ) == 0 );
 	ENSURE( RunShuttle( 0.0f, &followsSpot ) == 0 );
+	ENSURE( RunAboutBraking( &brakes ) == 0 );
+	s_bendStopBraking = 0.0f;
+	ENSURE( RunBendTurns( 180.0f, 0.7f, &hard ) == 0 );
+	ENSURE( RunShuttle( 0.7f, &followsHard ) == 0 );
+	ENSURE( RunAboutBraking( &brakesHard ) == 0 );
+	s_bendStopBraking = -1.0f;
+	printf( "  braking to turn about the capsule brakes with %.1f m/s^2 at most; with stopBraking at zero with %.1f m/s^2, "
+			"%.2f m onward, %.2f m to the side, pelvis %.0f mm, faces back after %.2f s, goes %.2f of the speed\n",
+			brakes, brakesHard, hard.onward, hard.sideways, 1000.0f * hard.sunk, hard.faced, followsHard );
 	printf( "  turning about at a walk: %.2f m onward, %.2f m to the side, pelvis %.0f mm below its height walking, faces "
 			"back after %.2f s at the latest; steered back and forth every second it goes %.2f of the speed where it is "
 			"steered\n",
@@ -6013,11 +6060,18 @@ static int SteerWalkAboutTest( void )
 	printf( "  with walkBend at zero: %.2f m onward, %.2f m to the side, pelvis %.0f mm, faces back after %.2f s, goes "
 			"%.2f of the speed where it is steered\n",
 			spot.onward, spot.sideways, 1000.0f * spot.sunk, spot.faced, followsSpot );
-	ENSURE( about.onward <= 0.25f );
-	ENSURE( about.sideways <= 0.25f );
+	ENSURE( brakes <= 5.0f );
+	ENSURE( about.onward <= 0.30f );
+	ENSURE( about.sideways <= 0.28f );
 	ENSURE( about.sunk <= 0.064f );
-	ENSURE( about.faced <= 1.43f );
-	ENSURE( follows >= 0.23f );
+	ENSURE( about.faced <= 1.8f );
+	ENSURE( follows > 0.0f );
+	ENSURE( brakesHard >= 10.0f );
+	ENSURE( hard.onward <= 0.25f );
+	ENSURE( hard.sideways <= 0.25f );
+	ENSURE( hard.sunk <= 0.064f );
+	ENSURE( hard.faced <= 1.43f );
+	ENSURE( followsHard >= 0.23f );
 	return 0;
 }
 

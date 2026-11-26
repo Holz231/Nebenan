@@ -126,7 +126,9 @@ was schon verworfen wurde.
   rollt die Kapsel über den letzten Schritt aus und bremst für den Fuß voraus (`haltRate`), der schwingende Fuß landet
   breit an seinem Standplatz, kurze Schritte im Anhalten sind schnell (`NB_HALT_SWING`). Es gilt nur, wenn die Figur
   beim Loslassen 1 s gegangen war (`walkedTo`), nicht am Ende eines Halts aus dem Rennen. Gemessen mit `walk176.py`
-  (rest, steps, body, way) und angesehen mit `strip176.py`.
+  (rest, steps, body, way) und angesehen mit `strip176.py`. Seit Runde 179 rollt die Kapsel mit demselben Wert auch in
+  die Kehrtwende im Gehen aus (`aboutRolls` in `nbMoveSteered`), solange die Wende dauert und sie gegen den Stick geht;
+  `walk176.py` misst es als halt.
 - **Messen mit Rauschband.** Seit Runde 170 kommen Änderungen in den Werkzeugen an fester Schrittphase (`SYNC`), und
   Stände werden in vier Proben mit `NUDGE` gemessen (`check170.sh`) und mit `compare170.py` verglichen. Eine Regel setzt
   ihre Toleranzen aus den Spannen und nennt eine Bedingung verfehlt, wo die Spannen sich nicht überdecken.

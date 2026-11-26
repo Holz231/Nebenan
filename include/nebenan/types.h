@@ -1391,8 +1391,11 @@ typedef struct nbFigureSteering
 	/// the other one closes up beside it. With braking alone, at 14, the capsule stood after 0.11 s and 0.08 m, and the
 	/// feet took 1.85 s and three or four landings to come to rest under it; with 4 here the capsule stands after 0.45 s
 	/// and 0.35 m, 0.67 s and 0.50 m at most, and the feet after 0.85 s, with two landings in three of four stops.
-	/// Running, turning about and with other bones than those of the humanoid, braking decides alone. Zero stops as
-	/// hard as it brakes, as until round 176. The default is 4.
+	/// Braking to turn about at a walk, see walkBend, it rolls out the same way since round 179, no harder than this,
+	/// and turns from where it comes to rest: its pelvis sinks less often in turns, it faces back after 1.17 instead of
+	/// 1.06 s, and steered back and forth every second it goes 0.11 instead of 0.26 of the speed it is steered at.
+	/// Running and with other bones than those of the humanoid, braking decides alone. Zero stops as hard as it brakes,
+	/// as until round 176. The default is 4.
 	float stopBraking;
 } nbFigureSteering;
 

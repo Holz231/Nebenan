@@ -670,6 +670,13 @@ Zehen und Fersen 37 mm, Hände 15 mm, Becken 10 mm, Becken tief ab 15 cm unter d
 - **Eine Option, die Standard wird, ist ein kleiner Bau mit großer Wirkung auf alles, was danach kommt.** Auch die
   Bibliothek selbst hängt an ihrem Standard: Die Aufnahme der Gang-Clips startete eine Figur mit `nbDefaultFigureDef`,
   und die Clips begannen an anderer Stelle des Zyklus.
+- **Ein Prototyp wird Update für Update nachgesehen, bevor nach ihm entschieden wird.** Runde 179: Der Nutzer wählte
+  zwischen Zahlen einer Fassung, die nur 0,2 s sanft bremste und den Rest wieder hart, weil die Bedingung „Kehrtwende“
+  mit dem drehenden Blick endete. Erst die Zeile mit dem Tempo je Update zeigte den Knick. Die vollständige Fassung
+  hatte andere Zahlen, und das gehört offen in den Bericht.
+- **Hartes Bremsen der Kapsel war eine Ursache für sackendes Becken und Beine ineinander.** Anhalten (177) und
+  Kehrtwende (179) rollen aus, und auf den Kursen im Gehen sackt das Becken auf 7 statt 12,5 Kursen. Wo ein Körper
+  schneller die Richtung wechselt, als Beine es können, zahlen die Beine.
 - **Größe der Figur.** Winkelbeschleunigungen wachsen bei kleineren Figuren mit 1 durch `nbFigureScale`, Längen
   und Geschwindigkeiten mit ihr.
 

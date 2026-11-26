@@ -80,6 +80,17 @@
 // and the first one stepped 4 cm aside. How long it had walked counts as the stick lets go, not later: at the end of a
 // stop out of a run the gait walks for a second as well, and its feet came to rest with the short steps of a stop out
 // of a walk, a shin 44.6 instead of 30.3 mm in an update stopping from a run sideways.
+//
+// Braking to turn about at a walk, for as long as the turn lasts and it still goes against where it is steered, the
+// capsule rolls out the same way, no harder than stopBraking: braking with 14 m/s^2 it stood after 0.1 s in the middle
+// of a step, as it did stopping, and turned from there. Rolling out, it goes on for 0.33 instead of 0.11 s, its pelvis
+// gets more than 30 mm below its steady gait on 7 instead of 12.5 of 272 walking courses, and its legs are inside each
+// other in 1.5 instead of 2.0 percent of the updates of its turns. The price, chosen by the user in round 179: it
+// faces back after 1.17 instead of 1.06 s, and steered back and forth every second it goes 0.11 instead of 0.26 of the
+// speed it is steered at. With 6 and 8 m/s^2 the pelvis sank more often, on 15 and 21.5 instead of 12.5 of 408
+// courses. Gentle only while the turn still counts as one about, until the heading has turned 30 degrees, the capsule
+// braked the rest, from 0.64 m/s, with 14 m/s^2 again. Braking for the foot ahead as it does stopping, see
+// NB_HALT_LOW, it rolled on for up to 0.35 m and a shin jumped 43 instead of 34 mm.
 
 // A figure steered at a walk bends through a turn, see nbFigureSteering::walkBend, where it walks the way it faces as
 // the turn begins with this share of the speed of the bend or more. Below it, from standing or a first step, it turns
@@ -794,9 +805,11 @@ bool nbMoveSteered( nbWorld* world, int index, nbFigure* f, float timeStep, b3Ve
 				rate = b3MinFloat( rate, rate - walks * rate );
 			}
 		}
-		if ( f->stops )
+		// Stopping out of a walk it rolls out, see nbFigureSteering::stopBraking, and so it does braking to turn about, for
+		// as long as it still goes against where it is steered
+		bool aboutRolls = f->turnAbout && b3Dot( flat, f->steer.velocity ) < 0.0f;
+		if ( f->stops || ( aboutRolls && def->stopBraking > 0.0f ) )
 		{
-			// Stopping out of a walk it rolls out, see nbFigureSteering::stopBraking
 			float gentle = f->haltRate > 0.0f ? f->haltRate : def->stopBraking;
 			rate = b3MinFloat( rate, rate + walks * ( gentle - rate ) );
 		}
