@@ -14,19 +14,20 @@ Die Ursache der Sprünge aus Runde 183, Update für Update verfolgt, drei Stelle
 Teil des Abrollens (footRoll unter null).
  - h1, Wende um 90 Grad: Ein Fuß, der über die andere Kante gerollt ist, kommt erst flach, bevor er über die Zehen
    abrollt (NB_FOOT_EDGE_FLAT), und zwar immer langsamer (NB_FOOT_UNROLL): von 0,08 rad braucht er sieben Updates. So
-   lange rollt er nicht ab, das Becken sinkt 14 mm tiefer als alt, und dann setzt das Abrollen mit einem Mal ein: 45 statt
-   21 mm am Schienbein.
+   lange rollt er nicht ab, das Becken sinkt 14 mm tiefer als alt, und dann setzt das Abrollen mit einem Mal ein: 45
+   statt 21 mm am Schienbein.
  - h6, Wende um 45 Grad: Aus demselben Grund verliert das Bein den Fuß, er hebt acht Updates früher ab, aus dem flachen
    Stand statt abgerollt: 41 statt 27 mm.
  - h5, Kreis mit 360 Grad je Sekunde: Ein Fuß hebt mit gehobenen Zehen ab, und sein Abrollen springt von unter null auf
    das des Schwungs: 38 statt 19 mm.
 
 Der Eingriff, in der Bibliothek, src/figure.c, wo Runde 183 eingreift (Gehen mit Blick in Laufrichtung, seit 1 s kein
-Anteil Rennen). Erstens geht der Drehpunkt eines stehenden Fußes auch hinter die Mitte seiner Sohle: bis zur Fersenkante,
-wenn die Hüfte eine halbe Sohlenlänge hinter dem Knöchel steht, und zur Fersenkante, soweit er über die Ferse gerollt
-ist. Zweitens heben sich, soweit er hinter der Mitte dreht, seine Zehen um bis zu 0,08 rad, mit höchstens 2 rad/s. Diese
-Hebung ist kein Teil des Abrollens: Sie kommt obenauf, das Bein rechnet mit einem flachen Fuß, und das Abrollen über die
-Zehen beginnt wie bisher. Hebt der Fuß mit gehobenen Zehen ab, senken sie sich im Schwung mit 0,5 rad/s.
+Anteil Rennen). Erstens geht der Drehpunkt eines stehenden Fußes auch hinter die Mitte seiner Sohle: bis zur
+Fersenkante, wenn die Hüfte eine halbe Sohlenlänge hinter dem Knöchel steht, und zur Fersenkante, soweit er über die
+Ferse gerollt ist. Zweitens heben sich, soweit er hinter der Mitte dreht, seine Zehen um bis zu 0,08 rad, mit höchstens
+2 rad/s. Diese Hebung ist kein Teil des Abrollens: Sie kommt obenauf, das Bein rechnet mit einem flachen Fuß, und das
+Abrollen über die Zehen beginnt wie bisher. Hebt der Fuß mit gehobenen Zehen ab, senken sie sich im Schwung mit 0,5
+rad/s.
 
 Die Varianten, Frage 2 des Skills, dev1 mit vier Proben, je: Gleiten (soleSlide) im Mittel in der Kehrtwende und beim
 Losgehen nach hinten; und was compare170.py auf den Kursen sagt:
