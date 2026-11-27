@@ -708,6 +708,14 @@ Zehen und Fersen 37 mm, Hände 15 mm, Becken 10 mm, Becken tief ab 15 cm unter d
   Gruppe hat es gefunden, nicht die erste.
 - **Kein Messskript ändern, während eine Kette es ausführt.** bash liest ein Skript beim Laufen weiter; eine gekürzte
   Zeile in `check170.sh` brach die laufende Messung mit einem Syntaxfehler ab.
+- **Eine neue Haltung des Fußes nicht in einen Zustand schreiben, der schon eine Regel hat.** Runde 183 und 184: Die
+  gehobenen Zehen als `footRoll` unter null liefen in die Regel „erst flach, dann abrollen“ und hielten das Abrollen
+  sieben Updates auf. Obenauf gelegt, ohne den Zustand zu berühren, sprang nichts mehr. Vor einem Eingriff in `footRoll`
+  lesen, wer es liest (`edges`, `landed`, `behind`).
+- **Ein Maximum über alle Läufe kann auf frischen Sätzen kippen, auch wenn es auf den Entwicklungssätzen im Rauschen
+  lag.** Runde 184: „faced max“ lag auf dev1 und dev2 im Rauschen und war frisch 0,08 s schlechter. Wo der Prototyp im
+  Mittel etwas kostet (hier 0,01 bis 0,03 s später schauen), vor dem Festschreiben auch das Maximum der Größe ansehen
+  und die Stelle verfolgen.
 - **Größe der Figur.** Winkelbeschleunigungen wachsen bei kleineren Figuren mit 1 durch `nbFigureScale`, Längen
   und Geschwindigkeiten mit ihr.
 
