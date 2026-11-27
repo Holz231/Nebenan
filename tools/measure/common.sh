@@ -293,3 +293,9 @@ SET_h226="WALK=1.0667 RUN=4.3867 DIAG=0.75 CW=1.228 CR=0.674"
 SET_h227="WALK=1.2533 RUN=3.8933 DIAG=0.89 CW=1.133 CR=0.696"
 SET_h228="WALK=1.4367 RUN=3.4033 DIAG=1.02 CW=1.058 CR=0.724"
 SET_h229="WALK=1.6467 RUN=3.1367 DIAG=1.16 CW=0.989 CR=0.743"
+# Round 185, the independent check of the foot that turns on its heel together with the heading that stays free once
+# it has waited: chosen with speeds.py before any build ran at them, group fresh185 of check170.sh and check177.sh.
+SET_h230="WALK=1.0767 RUN=4.4067 DIAG=0.76 CW=1.223 CR=0.673"
+SET_h231="WALK=1.2267 RUN=3.9367 DIAG=0.87 CW=1.145 CR=0.694"
+SET_h232="WALK=1.4167 RUN=3.4733 DIAG=1.00 CW=1.066 CR=0.720"
+SET_h233="WALK=1.6167 RUN=3.1067 DIAG=1.14 CW=0.998 CR=0.745"

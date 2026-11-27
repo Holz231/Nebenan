@@ -11,7 +11,8 @@ case $2 in
   fresh182) SETS="h218 h219 h220 h221";;
   fresh183) SETS="h222 h223 h224 h225";;
   fresh184) SETS="h226 h227 h228 h229";;
-  *) echo "check177.sh state dev1|dev2|fresh177|fresh178|fresh179|fresh182|fresh183|fresh184"; exit 1;;
+  fresh185) SETS="h230 h231 h232 h233";;
+  *) echo "check177.sh state dev1|dev2|fresh177|fresh178|fresh179|fresh182|fresh183|fresh184|fresh185"; exit 1;;
 esac
 [ -f "$W/res/$1/walk176.$2.json" ] && exit 0
 python3 -I "$M/walk176.py" $1 0,1,2,3 $SETS > "$W/res/$1/walk176.$2.txt" 2>&1 || { echo "walk176 failed on $1"; exit 1; }

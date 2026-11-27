@@ -1,0 +1,84 @@
+Regel für Runde 185, vor jedem Lauf mit den Geschwindigkeiten der unabhängigen Prüfung festgeschrieben. Gemessen wird
+gegen active-ragdoll-184, dessen Bibliothek die von Runde 183 ist.
+
+Worum es geht. Runde 184 hat das Drehen auf der Ferse mit gehobenen Zehen gemessen und nicht gebaut: Auf den frischen
+Sätzen hielten 23 von 24 Bedingungen, verfehlt war die späteste Kehrtwende, 1,56 statt 1,48 s. Der Nutzer hat
+entschieden, nicht zu bauen und zuerst die Ursache zu suchen. Diese Runde sucht sie und prüft den Bau aus Runde 184
+zusammen mit ihrer Behebung, mit neuer Regel auf neuen frischen Sätzen.
+
+Wie groß das Thema ist, Frage 1 des Skills. Über die zwölf Entwicklungssätze und die vier frischen der Runde 184, je
+vier Proben: Von 768 Kehrtwenden im Gehen schauen mit dem Bau aus Runde 184 49 mehr als 0,05 s später zurück und 2
+früher, die späteste 0,27 s später (1,55 statt 1,28 s); die typische 0,01 s später. Richtig wäre, dass die Wahl des
+Drehpunkts eines Fußes nicht entscheidet, wie lange die Figur für die Kehrtwende braucht.
+
+Die Ursache, Update für Update verfolgt bei 1,58 m/s (h6, die späteste Stelle). Mit Blick in Laufrichtung dreht die
+Blickrichtung nicht weiter, als die Füße quer zu ihr ungekreuzt bleiben (NB_FACE_KEEP, Runde 167), und wartet dafür
+höchstens 0,5 s (NB_FACE_HOLD); danach dreht sie frei. Die Uhr dieses Wartens springt auf null, sobald die Füße in einem
+Update genug Raum lassen. In der Kehrtwende wartet die Blickrichtung ab 46 Grad; bei etwa 55 Grad sind die 0,5 s um. Alt
+bleibt der Raum danach durchgehend zu klein, die Uhr läuft weiter, und die Blickrichtung dreht frei mit 3,8 Grad je
+Update bis zum Ziel. Mit dem Fersen-Drehen stehen die Füße quer 2 cm weiter auseinander (8,7 statt 6,9 cm), der Raum
+reicht für einige Updates (5,7 Grad), die Uhr springt auf null, und bei 95 Grad, wo der Raum auf 1,0 Grad fällt, wartet
+die Blickrichtung von vorn: sieben Updates mit 1,0 bis 3,4 Grad, und bei 151 Grad noch einmal 0,2 s. Sie ist nach 1,58
+statt 1,31 s auf 5 Grad am Ziel. Die Ursache liegt also nicht im Drehpunkt, sondern in der Uhr: Ob eine Kehrtwende ein-
+oder zweimal wartet, hängt an 2 cm.
+
+Der Eingriff, in der Bibliothek. Erstens der Bau aus Runde 184, src/figure.c, unverändert (docs/Regeln/build184.patch,
+RULE184.txt). Zweitens in src/figure_steer.c: Hat die Blickrichtung so lange auf die Füße gewartet, wie sie wartet,
+bleibt sie frei, bis sie angekommen ist; die Uhr springt dann nicht mehr auf null, weil die Füße für ein Update Raum
+lassen. Wo sie kürzer gewartet hat, bleibt alles wie bisher.
+
+Die Varianten, Frage 2 des Skills. An der verfolgten Stelle, zwölf Momente bei 1,58 m/s, die späteste Kehrtwende (auf 5
+Grad am Ziel); und dev1 mit vier Proben, einzelne Wechsel aus gait155.py, die mehr als 0,05 s später und früher in die
+neue Richtung schauen als alt, und was compare170.py sagt:
+ - alt: 1,41 s.
+ - der Bau aus Runde 184 allein: 1,58 s; 13 später, 0 früher.
+ - dazu: die Uhr springt nie auf null, solange die Blickrichtung dreht: 1,41 s; 7 später, 55 früher; die späteste
+   Kehrtwende aller Wechsel 1,46 statt 1,53 s, besser; aber im Hin und Her kreuzen die Füße in 6,5 statt 1 Läufen:
+   schlechter. Die Figur wartet dann auch dort nicht mehr, wo sie nur kurz gewartet hatte.
+ - dazu: die Uhr läuft ab, so schnell sie auflief, solange die Füße Raum lassen: 1,36 s (nur diese Szene gemessen).
+ - dazu: nach abgelaufener Wartezeit frei bis zum Ziel: 1,41 s; 7 später, 30 früher; nichts schlechter: der Prototyp.
+Auf dem Stand von Runde 183 ohne den Bau aus Runde 184 ändern die drei Fassungen der Uhr an dieser Stelle fast nichts
+(1,41, 1,36 und 1,41 s).
+Verworfen ist damit: die Uhr nie zurückzusetzen, solange die Blickrichtung dreht.
+
+Nimmt der Prototyp das Ziel, Frage 3 des Skills. Auf beiden Entwicklungsgruppen mit vier Proben: Von 8 448 einzelnen
+Wechseln schauen 29 mehr als 0,05 s später in die neue Richtung und 68 früher. Die Größen der Runde 184 wie dort: Ein
+Fuß gleitet auf dem, worauf er steht, in der Kehrtwende 54,2 statt 72,3 mm, beim Losgehen nach hinten 9,2 statt 31,6 mm;
+kein Sprung ist härter (Fuß 28,3 statt 27,9 mm, Schienbein 34,6 statt 34,4 mm, Becken 9,1 statt 9,0 mm); beim Losgehen
+nach hinten schaut die Figur 0,03 s später zurück, und ihr Schienbein springt dort im Mittel 28,6 statt 24,7 mm.
+compare170.py nennt auf beiden Gruppen keine Größe schlechter und auf dev2 eine besser (ein Fuß springt in 36,5 statt
+40,5 einzelnen Wechseln über 37 mm). Alle 207 Tests des Prototyps bestehen, mit den Hashes des Baus aus Runde 184: Keine
+Szene der Tests wartet die volle Zeit und bekommt danach Raum.
+
+Bedingungen, alt ist active-ragdoll-184, neu der saubere Bau, je vier Proben mit tools/measure/check177.sh und
+check170.sh auf einer Gruppe von Sätzen, gerechnet von tools/measure/eval185.py über alle Läufe der Szenen turn45,
+turn90, turn180, start90 und start180 der Gruppe, je Szene das Mittel der Läufe:
+Ziel:
+ Z1 Ein Fuß gleitet auf dem, worauf er steht (soleSlide), höchstens das 0,85-Fache von alt in turn180, höchstens das
+   0,60-Fache in start180, und in turn45, turn90 und start90 höchstens 0,5 mm mehr als alt.
+ Z2 Seine Zehen gehen, solange sie am Boden sind (toeDrag), in keiner Szene mehr als 2 mm weiter als alt.
+Schutz:
+ S1 Die Figur schaut in keiner Szene mehr als 0,05 s später in die neue Richtung (faced).
+ S2 Die härtesten Sprünge über diese Szenen, je Probe das Maximum, davon der Median: Fuß und Schienbein höchstens 3 mm
+   über alt, Becken höchstens 2 mm. Und je Szene springt ein Schienbein im Mittel der Läufe höchstens 5 mm mehr als alt.
+ S3 tools/measure/compare170.py nennt keine Größe schlechter, mit den Kursen aus steer162.py und den Beinen aus
+   legs167.py.
+ S4 Von den einzelnen Wechseln aus gait155.py, alle Szenen im Gehen und im Rennen, je Probe gegen dieselbe Probe von
+   alt, schauen nicht mehr über 0,05 s später in die neue Richtung als über 0,05 s früher, und höchstens einer von
+   hundert später.
+ S5 Alle Tests bestehen, mit gcc und clang, und die Hashes des Benchmarks der Figuren sind mit 1, 2 und 4 Threads
+   gleich. Ein neuer oder verschärfter Test schlägt auf dem alten Stand fehl.
+
+Unabhängige Prüfung: die frischen Sätze h230 bis h233 aus tools/measure/common.sh, Gehen mit 1,0767, 1,2267, 1,4167 und
+1,6167 m/s, Rennen mit 4,4067, 3,9367, 3,4733 und 3,1067 m/s, mit speeds.py gegen alle Geschwindigkeiten geprüft, die je
+gelaufen sind; Gruppe fresh185. Kein Stand ist auf ihnen gelaufen, bevor diese Datei gepusht ist. Die Sätze der Runde
+184 (fresh184) sind in dieser Runde zum Verfolgen benutzt und zählen nicht mehr als frisch. Hält der saubere Bau dort
+eine Bedingung nicht, wird nicht gebaut, außer der Nutzer entscheidet es; die Regel wird danach nicht geändert, und eine
+Messung, die nicht passt, wird nicht wiederholt.
+
+Der saubere Bau muss auf dev1 ohne Anstoß dieselben drei Tabellen schreiben wie der Prototyp (legs167, gait155,
+steer162, mit cmp verglichen).
+
+Der Prototyp steht als docs/Regeln/trial185.patch (der Bau aus Runde 184 und die Schalter), sein Schalter:
+-DNB_X_HOLD=3. NB_X_HOLD=1 und 2 sind die verworfene und die nicht voll gemessene Variante, NB_X_DEBUG185 schreibt die
+Größen der Uhr je Update.
