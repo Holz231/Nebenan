@@ -1,0 +1,123 @@
+Regel für Runde 188, vor jedem Lauf mit den Geschwindigkeiten der unabhängigen Prüfung festgeschrieben. Gemessen wird
+gegen active-ragdoll-187, dessen Bibliothek die von Runde 186 ist.
+
+Worum es geht. Runde 187 hat gemessen und nicht gebaut: In der Kehrtwende im Gehen, mit Blick in Laufrichtung, kriecht
+die Kapsel schon in die neue Richtung, während die Figur noch in die alte schaut. Die Beine gehen dabei weiter vorwärts,
+der Fuß vor der Hüfte, von dem sie weggeht, rollt nicht ab, sein Bein reicht nicht, und das Becken sackt. Gehen die
+Beine dort rückwärts (legBack, wie unter festem Blick), ist das Sacken weg, aber beim Umschalten sprang ein Schienbein
+auf 62,5 statt 8 Kursen über 37 mm. Der Nutzer hat den ruhigen Übergang als Thema dieser Runde gewählt.
+
+Wie groß das Thema ist, Frage 1 des Skills. Auf den zwölf Entwicklungssätzen mit vier Proben, die Kurse aus steer162.py
+im Gehen, die kehrtmachen (Hin und Her alle 0,3, 0,6 und 1,0 s, Zickzack um 90 Grad alle 0,3, 0,6 und 1,0 s): Das
+Becken sackt in 74 von 1 152 Läufen mehr als 30 mm unter den stetigen Gang. Richtig wäre: in keinem. Und der Übergang
+selbst: Mit dem Versuch aus Runde 187 springt ein Schienbein auf dev1 ohne Anstoß in 48 von 408 Läufen im Gehen über 37
+mm, alt in 6. Richtig wäre: in nicht mehr als alt.
+
+Die Ursachen, Update für Update verfolgt an drei Stellen (h2, h6, h9; Hin und Her alle 0,3 und 0,6 s, Zickzack 0,6 s):
+ 1. Die Uhr des Gangs passt nach dem Umschalten nicht zu den Füßen. Der Fuß hinter der Hüfte ist nach der Uhr dran und
+    hebt ab, obwohl die Hüfte jetzt auf ihn zukommt; der vor der Hüfte, von dem sie weggeht, wartet.
+ 2. Rumpf und Arme hängen an derselben Uhr: Stellt man sie um einen halben Takt, springt eine Hand 299 mm.
+ 3. Das Abrollen eines Fußes ist im Vorwärtsgang gebremst (NB_FOOT_ROLL_GAIN), im Rückwärtsgang nicht: Beim Umschalten
+    springt es um 0,14 rad auf das, was das Bein braucht.
+ 4. Der Abdruck (footPush) eines Fußes, der beim Umschalten auf den Zehen steht: Er wurde im Rückwärtsgang zusätzlich
+    auf das Abrollen gelegt, das ihn schon enthielt (+0,09 rad in einem Update), fing beim Zurückschalten von vorn an
+    (-0,1 rad) und sammelte sich im Rückwärtsgang ungesehen an (+0,09 rad beim Zurückschalten).
+ 5. Dreht ein Fuß auf dem Ballen (Runde 183), hob sich die Ferse im Rückwärtsgang nicht: der flache Fuß glitt 56 statt
+    15 mm.
+ 6. Aus dem Stand nach hinten losgehend gingen die Beine auch rückwärts: ein Standfuß glitt 60 statt 4 mm.
+ 7. Die Blickrichtung wartet auf die Füße (NB_FACE_KEEP), und der Fuß, der umsetzen muss, wartet auf die Uhr: eine von
+    zwölf Kehrtwenden im Test dauerte 1,90 statt 1,38 s.
+ 8. Geht beim Umschalten immer der Fuß zuerst, von dem die Hüfte weggeht, setzt der äußere Fuß der Drehung dorthin, wo
+    der innere noch gedreht steht: Die Füße stecken in 1,96 statt 1,35 % der Updates einer Kehrtwende mehr als 20 mm
+    ineinander, bis 79 mm tief. Geht der innere zuerst, öffnet er den Stand.
+
+Der Eingriff, in der Bibliothek, nur mit Blick in Laufrichtung (faceVelocity), nur im Gehen:
+ a. Die Beine gehen rückwärts, solange die Kapsel mehr als 110 Grad gegen den Blick läuft, und wieder vorwärts, sobald
+    sie innerhalb von 70 Grad läuft; nur in einer Kehrtwende aus dem Gehen (turnAbout), nicht aus dem Stand.
+ b. Wo sie umschalten und beide Füße stehen, hebt als nächster der Fuß auf der Innenseite der Drehung ab: Hat die Uhr
+    den anderen als nächsten, geht sie einen halben Takt weiter. Rumpf und Arme behalten dabei ihre Phase und holen die
+    Uhr mit einem Takt je Sekunde wieder ein.
+ c. Das Abrollen läuft über den Wechsel: die Bremse des Abrollens gilt auch rückwärts; der Abdruck, den ein Fuß behält,
+    ist Teil dessen, wovon er herunterkommt, und kommt beim Zurückschalten wieder, wie er war; unter rückwärts gehenden
+    Beinen baut sich kein Abdruck auf; die Ferse hebt sich beim Drehen auf dem Ballen auch rückwärts.
+ d. Ein Schritt rückwärts gehender Beine landet doppelt so weit von der Mitte wie sonst.
+ e. Wartet in der Kehrtwende die Blickrichtung auf die Füße und stehen beide, setzt der Fuß sofort um, dessen Standzeit
+    nach der Uhr zuerst endet.
+
+Die Varianten, Frage 2 des Skills, dev1 ohne Anstoß, steer162.py, 408 Läufe im Gehen: Läufe mit einem Schienbein über
+37 mm / Läufe mit dem Becken mehr als 30 mm tief; dazu, was die Tests sagen:
+ - alt: 6 / 10. Späteste von zwölf Kehrtwenden im Test 1,38 s. Beine ineinander: 1,35 % (Kehrtwenden), 4,31 % (Hin und
+   Her).
+ - nur a ohne die Bedingung Kehrtwende (Runde 187): 48 / 0.
+ - dazu: der Fuß, auf den die Hüfte zukommt, lässt seinen Takt aus, die Uhr bleibt: 63 / 0. Verworfen.
+ - dazu: die Uhr geht einen halben Takt weiter, wo nach der Lage der Füße der falsche dran ist: 43 / 0. Verworfen.
+ - dazu: die Uhr geht bei jedem Umschalten einen halben Takt weiter: 23 / 0, eine Hand springt 299 mm.
+ - dazu: Rumpf und Arme behalten ihre Phase: 25 / 0, Hand 23 mm.
+ - dazu c: 8 / 0; aus dem Stand nach hinten gleitet ein Fuß 60,5 statt 4,0 mm.
+ - dazu die Bedingung Kehrtwende: 5 / 0; späteste Kehrtwende im Test 1,90 s.
+ - dazu e in vier Fassungen: der hintere Fuß, wann immer die Blickrichtung wartet: 19 / 0; nur, wenn sein Bein ihn bald
+   verliert: 8 / 0, aber 1,90 s; der Fuß mit der späteren Phase: 6 / 0, 1,52 s; der Fuß, dessen Standzeit zuerst
+   endet, überall: 20 / 0 und ein Test im Zickzack fällt; derselbe nur in der Kehrtwende: 5 / 0, 1,37 s; Beine
+   ineinander 1,96 und 4,68 %.
+ - dazu: wo ein Fuß beim Umschalten schwingt, tauschen die Füße beim Landen: 12 / 0, die zwölf Kehrtwenden im Mittel
+   1,27 statt 1,17 s. Verworfen.
+ - dazu d mit dem 1,5- und 2,0-Fachen: Beine ineinander 1,88 und 4,25 %, 1,81 und 3,89 %.
+ - statt des Tauschs bei jedem Umschalten: der innere Fuß zuerst (b): 5 / 0; Beine ineinander 1,37 und 4,16 %.
+ - dazu d mit dem 2,0-Fachen: 4 / 0; Beine ineinander 1,23 und 3,39 %; späteste Kehrtwende im Test 1,37 s, im Mittel
+   der zwölf 1,10 statt 1,12 s: der Prototyp.
+
+Nimmt der Prototyp das Ziel, Frage 3 des Skills. Auf beiden Entwicklungsgruppen mit vier Proben, eval188.py: Auf den
+Kursen im Gehen, die kehrtmachen, sackt das Becken in 0 statt 74 von 1 152 Läufen mehr als 30 mm; ein Schienbein
+springt in 21 statt 32 Läufen über 37 mm. compare170.py nennt besser: auf dev1 die Beine ineinander im Hin und Her (3,60
+statt 4,27 %), die Kurse mit dem Becken zu tief (0 statt 10,5), die späteste Kehrtwende der einzelnen Wechsel (1,45
+statt 1,52 s); auf dev2 die Kurse mit dem Becken zu tief (0,5 statt 8) und die späteste Kehrtwende (1,45 statt 1,56 s).
+Schlechter nennt es auf dev1 eine Größe: Die Sohlenmitte eines flachen Fußes gleitet in einem Stand höchstens 15,2 statt
+11,5 mm (dev2: 11,7 wie alt). Verfolgt (h5): Der Fuß dreht dort vorwärts gehend auf einem Punkt 2,5 cm hinter seiner
+Mitte, die Zehen weniger als 5 mm gehoben, was als flach zählt; der Mechanismus ist der aus Runde 185, die Füße stehen
+nur anders. Von 8 448 einzelnen Wechseln schauen 84 mehr als 0,05 s später in die neue Richtung und 171 früher. In der
+einzelnen Kehrtwende (walk176.py, turn180) gleitet ein Fuß auf dem, worauf er steht, 60,6 statt 55,5 mm (dev2: 59,0
+statt 52,9), und seine Zehen gehen am Boden 57,2 statt 52,5 mm weit (dev2: 57,6 statt 49,3): der Preis im Gehen. Von
+209 Tests des Prototyps bestehen 208, die Hashes bleiben; es fällt eine Bedingung aus SteerWalkAboutTest: Mit
+stopBraking null, hartem Bremsen wie bis Runde 178, geht die Figur im Hin und Her jede Sekunde 0,23 statt 0,26 des
+Tempos dorthin, wohin sie gesteuert wird, die Grenze war 0,23. Das ist der zweite Preis; mit dem Ausrollen, wie die
+Bibliothek es vorgibt, sind es 0,12 statt 0,11.
+
+Bedingungen, alt ist active-ragdoll-187, neu der saubere Bau, je vier Proben mit tools/measure/check170.sh,
+check177.sh und check186.sh auf einer Gruppe von Sätzen, gerechnet von tools/measure/eval188.py:
+Ziel:
+ Z1 Auf den Kursen aus steer162.py im Gehen, die kehrtmachen (shuttle und zigzag90, je 0,3, 0,6 und 1,0 s), über alle
+   Proben: Das Becken sackt in höchstens einem Viertel so vielen Läufen mehr als 30 mm unter den stetigen Gang wie alt,
+   ein Lauf ist immer erlaubt.
+ Z2 Auf denselben Kursen springt ein Schienbein in nicht mehr Läufen über 37 mm als alt, erlaubt ist einer von hundert
+   Läufen mehr; und die Hand springt dort höchstens 5 mm härter als alt.
+Schutz:
+ S1 tools/measure/compare170.py nennt keine Größe schlechter, außer „slide walk“: Die Sohlenmitte eines flachen Fußes
+   darf in einem Stand höchstens 5 mm weiter gleiten als alt (Median der Proben).
+ S2 Die Szenen turn45, turn90, turn180, start90 und start180 aus walk176.py, je Szene das Mittel der Läufe: Die Figur
+   schaut höchstens 0,05 s später in die neue Richtung; ein Fuß gleitet auf dem, worauf er steht, in turn180 höchstens 8
+   mm weiter als alt, sonst höchstens 0,5 mm; seine Zehen gehen am Boden in turn180 höchstens 10 mm weiter, sonst
+   höchstens 2 mm; ein Schienbein springt höchstens 5 mm mehr. Die härtesten Sprünge über diese Szenen, je Probe das
+   Maximum, davon der Median: Fuß und Schienbein höchstens 3 mm über alt, Becken höchstens 2 mm.
+ S3 Von den einzelnen Wechseln aus gait155.py, alle Szenen im Gehen und im Rennen, je Probe gegen dieselbe Probe von
+   alt, schauen nicht mehr über 0,05 s später in die neue Richtung als über 0,05 s früher, und höchstens zwei von
+   hundert später.
+ S4 Anhalten und Weitergehen wie bisher: Im Anhalten (walk176.py, stop) und im Weitergehen nach vorn und nach hinten
+   (rest186.py) springen Fuß und Schienbein höchstens 3 mm härter, das Becken höchstens 2 mm; die Figur kommt in der
+   ersten Sekunde auf 0,02 m genauso weit, und der erste Fuß hebt höchstens 0,05 s später.
+ S5 Alle Tests bestehen, mit gcc und clang, und die Hashes des Benchmarks der Figuren sind mit 1, 2 und 4 Threads
+   gleich. Geändert wird genau eine Grenze, die des zweiten Preises: followsHard in SteerWalkAboutTest von 0,23 auf
+   0,20. Ein neuer Test für das Becken im Hin und Her schlägt auf dem alten Stand fehl.
+
+Unabhängige Prüfung: die frischen Sätze h238 bis h241 aus tools/measure/common.sh, Gehen mit 1,0641, 1,2441, 1,4441 und
+1,6541 m/s, Rennen mit 4,4233, 3,9033, 3,5233 und 3,1533 m/s, mit speeds.py gegen alle Geschwindigkeiten geprüft, die je
+gelaufen sind; Gruppe fresh188. Kein Stand ist auf ihnen gelaufen, bevor diese Datei gepusht ist. Hält der saubere Bau
+dort eine Bedingung nicht, wird nicht gebaut, außer der Nutzer entscheidet es; die Regel wird danach nicht geändert, und
+eine Messung, die nicht passt, wird nicht wiederholt.
+
+Der saubere Bau muss auf dev1 ohne Anstoß dieselben drei Tabellen schreiben wie der Prototyp (legs167, gait155,
+steer162, mit cmp verglichen).
+
+Der Prototyp steht als docs/Regeln/trial188.patch, seine Schalter: -DNB_X_BACK=110 -DNB_X_ABOUT -DNB_X_SWAP=4
+-DNB_X_POSE=1.0f -DNB_X_GAIN -DNB_X_PUSH -DNB_X_NOPUSH -DNB_X_KEPT -DNB_X_BALL -DNB_X_STEP=5 -DNB_X_WIDE=2.0f. Die
+verworfenen Fassungen sind NB_X_HOLD, NB_X_SWAP=1, 2 und 3, NB_X_STEP=1 bis 4, NB_X_SETOFF und NB_X_BACK_DWELL (Runde
+187); NB_X_DEBUG187 schreibt je Update, warum ein Fuß abhebt und wie er rollt.

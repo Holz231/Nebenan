@@ -2,7 +2,7 @@
 # check170.sh state group [nudges]: legs167.py, gait155.py and steer162.py on one variant of build.sh (built with
 # lab101.c and "-DLAB_BEND") at each nudge, default 0 1 2 3 percent, into <state>_n<p>, for compare170.py. A run that is
 # there already is kept. The groups as in check167.sh, and fresh167, fresh169, fresh172, fresh174, fresh175,
-# fresh177, fresh178, fresh179, fresh182, fresh183, fresh184, fresh185 and fresh186 for the fresh sets of
+# fresh177, fresh178, fresh179, fresh182, fresh183, fresh184, fresh185, fresh186 and fresh188 for the fresh sets of
 # those rounds.
 . "$(dirname "$0")/common.sh"
 case $2 in
@@ -21,6 +21,7 @@ case $2 in
   fresh184) SETS="h226 h227 h228 h229";;
   fresh185) SETS="h230 h231 h232 h233";;
   fresh186) SETS="h234 h235 h236 h237";;
+  fresh188) SETS="h238 h239 h240 h241";;
   *) echo "check170.sh state group [nudges], group: dev1, dev2 or fresh<round>, see the case above"; exit 1;;
 esac
 for k in ${3:-0 1 2 3}; do
