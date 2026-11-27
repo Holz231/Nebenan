@@ -790,6 +790,18 @@ Zehen und Fersen 37 mm, Hände 15 mm, Becken 10 mm, Becken tief ab 15 cm unter d
 - **Den Versuchsbaum nicht ändern, während eine Kette daraus baut.** `build.sh` übersetzt die Dateien nacheinander; ein
   geänderter Kopf mitten im Bau gäbe zwei Fassungen einer Struktur in einem Programm. Erst sehen, ob der letzte Bau der
   Kette durch ist (Zeit der Bibliothek gegen die Zeit der Datei).
+- **Wo eine Richtung frei ist, wählt sie die Figur nach den Füßen.** Runde 190: Die späte Kehrtwende war keine Frage des
+  Wartens, sondern der Drehrichtung; bei genau entgegengesetztem Stick drehte die Figur immer linksherum, auch wenn
+  dabei die Beine kreuzen würden. Vor dem Feilen an Wartezeiten fragen, ob die Figur überhaupt den günstigen Weg nimmt.
+- **Welcher Fuß vorn stehen wird, sagt nicht die Lage, sondern der Schritt.** Der schwingende Fuß landet vorn; stehen
+  beide, hebt der hintere als nächster ab. Nach der Lage allein blieben genau die Wenden spät, bei denen beim Umsteuern
+  beide Füße standen.
+- **Ein Zustand, den der Versuch sich merkt, muss die Größe merken, die ihn später prüft.** Der erste Versuch merkte
+  sich die Richtung, in die die Figur sich bewegte, und verglich sie später mit der gesteuerten: Er wählte mitten in der
+  Wende neu. Solche Fehler zeigen sich daran, dass eine Zahl schlechter wird, die der Zusatz gar nicht berühren sollte.
+- **Ein Gewinn, der die Abläufe ändert, bringt die seltenen Sprünge anderer Regeln ans Licht.** Mit der neuen
+  Drehrichtung liefen die Kurse anders, und ein Abheber aus Runde 156 kam doppelt so oft vor. Das ist kein Grund gegen
+  die Änderung, aber einer, erst diese Sprünge zu beheben.
 - **Größe der Figur.** Winkelbeschleunigungen wachsen bei kleineren Figuren mit 1 durch `nbFigureScale`, Längen
   und Geschwindigkeiten mit ihr.
 
