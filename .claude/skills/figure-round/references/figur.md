@@ -133,7 +133,9 @@ was schon verworfen wurde.
   die Kehrtwende im Gehen aus (`aboutRolls` in `nbMoveSteered`), solange die Wende dauert und sie gegen den Stick geht;
   `walk176.py` misst es als halt. Seit Runde 182 wird auch ein später Fuß noch breit (`NB_HALT_WIDE_LATE`, am behaltenen
   Ziel seitlich nachgeführt), und ein Fuß, der unter der stehenden Kapsel an seinem Platz steht, hebt nicht mehr ab
-  (`rests` in `nbSteerFeet`).
+  (`rests` in `nbSteerFeet`). Seit Runde 186 bleibt ein Fuß stehen, der bis `NB_HALT_NEAR` neben seinem Platz steht:
+  `footRests` nimmt ihm den Abdruck, der Gang endet mit flachen Füßen, und `standsOff` hält `footWeight` bei 1, bis der
+  Gang wieder startet (der Start setzt das Abrollen zurück).
 - **Messen mit Rauschband.** Seit Runde 170 kommen Änderungen in den Werkzeugen an fester Schrittphase (`SYNC`), und
   Stände werden in vier Proben mit `NUDGE` gemessen (`check170.sh`) und mit `compare170.py` verglichen. Eine Regel setzt
   ihre Toleranzen aus den Spannen und nennt eine Bedingung verfehlt, wo die Spannen sich nicht überdecken.

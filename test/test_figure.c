@@ -6197,6 +6197,67 @@ static int SteerAboutWaitTest( void )
 	return 0;
 }
 
+// A steered figure walks at 1.7 m/s, stops at twenty moments three updates apart, a whole step, stands for 2.5 s and
+// walks on. Since round 186 a foot that stands within NB_HALT_NEAR of its place stays there and the gait rests, see
+// figure.c: until then a foot that had landed 2 cm narrow or 1 cm behind lifted once more, up to 1.8 s after the stick
+// let go. No more than two feet land in any of the twenty stops, until round 185 three in two of them; from 1.5 s after
+// the stick let go no foot moves; the feet stand 140 mm apart at the least, 180 mm where each stands at its place; and
+// the figure walks on.
+static int SteerRestTest( void )
+{
+	const int feet[2] = { nb_humanoidFootLeft, nb_humanoidFootRight };
+	int most = 0, two = 0;
+	float moved = 0.0f, narrow = FLT_MAX;
+	for ( int part = 0; part < 20; ++part )
+	{
+		FigureScene scene;
+		CreateFigureScene( &scene, 1 );
+		nbFigureId figure = AddSteeredFigureBend( &scene, b3Vec3_zero, 0.0f, 0.7f );
+		StepFigures( &scene, 30 );
+		SteerVelocity( figure, (b3Vec3){ 0.0f, 0.0f, 1.7f } );
+		StepFigures( &scene, 150 + 3 * part );
+		SteerVelocity( figure, b3Vec3_zero );
+		const nbFigure* f = GetSteered( &scene, figure );
+		bool swings[2] = { f->footSwings[0], f->footSwings[1] };
+		b3Vec3 stood[2] = { b3Vec3_zero, b3Vec3_zero };
+		int lands = 0;
+		for ( int i = 1; i <= 150; ++i )
+		{
+			StepFigures( &scene, 1 );
+			f = GetSteered( &scene, figure );
+			for ( int k = 0; k < 2; ++k )
+			{
+				lands += swings[k] && f->footSwings[k] == false ? 1 : 0;
+				swings[k] = f->footSwings[k];
+				b3Vec3 at = b3ToVec3( f->targets[feet[k]].p );
+				if ( i == 90 )
+				{
+					stood[k] = at;
+				}
+				else if ( i > 90 )
+				{
+					moved = b3MaxFloat( moved, b3Distance( at, stood[k] ) );
+				}
+			}
+		}
+		narrow = b3MinFloat( narrow, fabsf( f->targets[feet[0]].p.x - f->targets[feet[1]].p.x ) );
+		most = lands > most ? lands : most;
+		two += lands <= 2 ? 1 : 0;
+		SteerVelocity( figure, (b3Vec3){ 0.0f, 0.0f, 1.7f } );
+		StepFigures( &scene, 90 );
+		ENSURE( nbFigure_GetInfo( figure ).state == nb_figureAnimated );
+		ENSURE( b3ToVec3( nbFigure_GetFrame( figure ).p ).z > 5.0f );
+		DestroyFigureScene( &scene );
+	}
+	printf( "  stopping out of a walk at 1.7 m/s at twenty moments %d feet land at most and no more than two in %d; standing, "
+			"the feet are %.0f mm apart at the least and move %.1f mm from 1.5 s after the stick let go\n",
+			most, two, 1000.0f * narrow, 1000.0f * moved );
+	ENSURE( most <= 2 && two == 20 );
+	ENSURE( moved <= 0.001f );
+	ENSURE( narrow >= 0.135f );
+	return 0;
+}
+
 // How far two segments are apart, p1 to q1 and p2 to q2
 static float SegmentsApart( b3Vec3 p1, b3Vec3 q1, b3Vec3 p2, b3Vec3 q2 )
 {
@@ -6388,11 +6449,12 @@ static int SteerStartTest( void )
 // at 1.5 m/s, the stick lets go at twelve moments five updates apart, a cycle of its gait. Over the twelve: how long
 // the capsule takes to stand and how far it goes, how many feet land after the stick let go and when the last one
 // does, with the stop of the library and, the second pass, with stopBraking at zero, where it stops as hard as it
-// brakes. The capsule stands after 0.70 s and 0.48 m at most, the feet after 1.03 s at most and 0.80 s in their mean,
-// three feet land at most and no more than two in eleven of the twelve, in ten at least: the foot in the air lands
-// where it stands at rest, as wide as it stands there also where it was late in its swing, see NB_HALT_WIDE_LATE, the
-// other one closes up beside it, and a foot that stands at its place does not lift again. Until round 181 two feet
-// landed in nine of the twelve, and the feet stood after 1.13 s at most and 0.88 s in their mean. Braking as hard as
+// brakes. The capsule stands after 0.70 s and 0.48 m at most, the feet after 0.92 s at most and 0.73 s in their mean,
+// and no more than two feet land in any of the twelve: the foot in the air lands where it stands at rest, as wide as
+// it stands there also where it was late in its swing, see NB_HALT_WIDE_LATE, the other one closes up beside it, and
+// a foot that stands near its place does not lift again, see NB_HALT_NEAR. Until round 185 three feet landed in one
+// of the twelve and the feet stood after 1.03 s at most and 0.80 s in their mean, until round 181 two feet landed in
+// nine of the twelve, and the feet stood after 1.13 s at most and 0.88 s in their mean. Braking as hard as
 // it brakes, as until round 176, the capsule stands after 0.22 s and 0.16 m, in the middle of a step, the feet after
 // 2.07 s at most and 1.80 s in their mean, and three or four feet land.
 static int SteerHaltTest( void )
@@ -6456,8 +6518,8 @@ static int SteerHaltTest( void )
 			"as it brakes after %.2f s and %.2f m, %.2f and %.2f s, %d and in %d\n",
 			stand[0], way[0], rest[0], mean[0], most[0], two[0], stand[1], way[1], rest[1], mean[1], most[1], two[1] );
 	ENSURE( stand[0] <= 0.8f && way[0] <= 0.55f );
-	ENSURE( rest[0] <= 1.2f && mean[0] <= 0.9f );
-	ENSURE( most[0] <= 3 && two[0] >= 10 );
+	ENSURE( rest[0] <= 1.0f && mean[0] <= 0.8f );
+	ENSURE( most[0] <= 2 && two[0] == 12 );
 	ENSURE( stand[1] <= 0.25f && way[1] <= 0.2f );
 	return 0;
 }
@@ -9252,6 +9314,7 @@ int FigureTest( void )
 	RUN_TEST( SteerWalkAboutTest );
 	RUN_TEST( SteerBallTurnTest );
 	RUN_TEST( SteerAboutWaitTest );
+	RUN_TEST( SteerRestTest );
 	RUN_TEST( SteerLetGoTest );
 	RUN_TEST( SteerMeetTest );
 	RUN_TEST( SteerLegsApartTest );

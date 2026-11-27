@@ -725,6 +725,16 @@ Zehen und Fersen 37 mm, Hände 15 mm, Becken 10 mm, Becken tief ab 15 cm unter d
   den Posen allein war sie nicht zu lesen.
 - **Nach einer verfehlten Bedingung mit neuen frischen Sätzen prüfen und die alten als benutzt führen.** Die Sätze der
   Runde 184 dienten in Runde 185 zum Verfolgen; die Regel 185 nennt sie nicht mehr frisch.
+- **Einen Zustand, der „fast wie Stehen“ sein soll, an dem messen, was Stehen ausmacht.** Runde 186: Ein ruhender Gang
+  ließ die Füße stehen und sah in den Halten gut aus, aber die Figur stand 1,8 cm tiefer (der Gang hat seine eigene
+  Höhe), und die Steuerung hielt ihn für Gehen. Ein alter Test (`SteerUprightTest`) hat es gezeigt, als die Toleranz
+  wuchs. Lieber den Gang enden lassen und nur das eine ändern, das stören würde (hier: der Clip übernimmt die Füße
+  nicht).
+- **Was der Gang beim Enden hinterlässt, ist der Anfang des nächsten Gangs.** Füße, die mit dem Abdruck vor dem Abheben
+  stehen blieben, gaben beim Weitergehen 61 mm am Schienbein. Zu jeder Fassung, die das Ende eines Gangs ändert, auch
+  das Weitergehen messen (`rest186.py`: anhalten, stehen, weitergehen, nach vorn und zurück).
+- **Eine Toleranz an mehr Momenten prüfen, als die Messszenen haben.** Die sechs Momente je Satz in `walk176.py` zeigten
+  Korrekturen bis 2,9 cm; ein Test mit zwanzig Momenten bei 1,7 m/s fand eine von 4 cm.
 - **Größe der Figur.** Winkelbeschleunigungen wachsen bei kleineren Figuren mit 1 durch `nbFigureScale`, Längen
   und Geschwindigkeiten mit ihr.
 
