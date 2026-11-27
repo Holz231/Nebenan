@@ -749,6 +749,28 @@ Zehen und Fersen 37 mm, Hände 15 mm, Becken 10 mm, Becken tief ab 15 cm unter d
 - **Ein Versuch, der die Zielgröße auf null bringt, beweist die Ursache, auch wenn er nicht baubar ist.** Die rückwärts
   gehenden Beine nahmen das Sacken ganz weg (1 statt 43) und kosteten Sprünge beim Umschalten. Das trennt „was“ von
   „wie“: Die nächste Runde hat nur noch den Übergang zu lösen.
+- **Wer beim Umschalten zuerst geht, hat zwei Maßstäbe, und sie können sich widersprechen.** Runde 188: Der Fuß, von dem
+  die Hüfte weggeht, muss bald abheben; der innere Fuß der Drehung öffnet den Stand. Mit dem ersten Maßstab allein
+  standen die Füße ineinander (1,96 statt 1,35 %), mit dem zweiten nicht (1,23 %), und das Becken blieb trotzdem oben.
+  Wo eine Größe schlechter wird, die Stelle im alten und im neuen Stand nebeneinander verfolgen: Dort stand, dass alt
+  zufällig den inneren Fuß zuerst nahm.
+- **Erst trennen, was an derselben Uhr hängt, dann die Uhr stellen.** Die Phase des Gangs treibt die Füße, das Drehen
+  des Beckens und die Arme. Um einen halben Takt gestellt sprang eine Hand 299 mm; mit eigener Phase für Rumpf und Arme,
+  die die Uhr wieder einholt, 23 mm.
+- **Ein Preis aus den Entwicklungssätzen ist auf frischen Sätzen größer.** Runde 188: Das Gleiten in der Kehrtwende lag
+  auf dev 5,1 und 6,1 mm über alt, die Grenze stand bei 8, frisch waren es 10,8. Ein Preis, dessen Ursache nicht
+  verfolgt ist, gehört nicht mit knappem Abstand in die Regel: erst verfolgen und beheben, oder die Grenze aus der
+  Streuung der Gruppen setzen und das sagen.
+- **Ein Maximum über alle Läufe hängt an einem Lauf.** Der härteste Sprung der Hand war alt wie neu ein einzelner
+  seltener Lauf (das Becken sackt nach der Wende 11 und 17 cm). Vor dem Festschreiben auch im alten Stand nach seltenen
+  tiefen Läufen sehen (mehr als 60 mm) und solche Größen als Anzahl oder Median fassen.
+- **Einen Moment aus einem Test in `lab101` nachstellen:** Die Tests steuern ohne Warten auf den linken Fuß und mit
+  `startAcceleration` null: `START=0 NB_SYNC=0`, Wechsel bei 4 s plus fünf Updates je Moment. Ohne das trifft man einen
+  anderen Moment und sucht an der falschen Stelle.
+- **Suchen mit einem Werkzeug ohne Anstoß, festschreiben mit allen und vier Proben.** In Runde 188 liefen rund zwanzig
+  Fassungen je vier Minuten durch `steer162.py` auf dev1; erst der Stand, der dort und in den Tests passte, lief breit.
+  Die breite Messung fand dann noch die Füße ineinander, die `steer162.py` nicht misst: Was die Suche nicht misst, kann
+  sie nicht sehen.
 - **Größe der Figur.** Winkelbeschleunigungen wachsen bei kleineren Figuren mit 1 durch `nbFigureScale`, Längen
   und Geschwindigkeiten mit ihr.
 
