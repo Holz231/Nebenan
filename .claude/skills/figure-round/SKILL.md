@@ -9,6 +9,9 @@ Eine Runde macht die gesteuerte Figur an einer Stelle ruhiger oder richtiger und
 schlechter wird. Sie endet mit einer eigenen Branch `active-ragdoll-N`, grüner CI, einem Windows-Zip und einem Bericht.
 Die nächste Runde beginnt erst, wenn der Nutzer sie freigibt.
 
+Die Reihenfolge der Themen hat der Nutzer festgelegt: erst das Gehen ganz abschließen, dann das Rennen, erst danach
+Kante, Schutt und Treppe. Ein Vorschlag empfiehlt kein späteres Thema, solange im früheren Punkte offen sind.
+
 Der Stand steht in `docs/Roadmap.md` (letzter Abschnitt, F84 mit dem 🔜-Rest) und in `docs/Optimierungen.md` (offene
 🔜-Zeilen, verworfene ⛔-Zeilen). Dieser Skill hält die Methode fest, nicht die Zahlen. Die Werkzeuge beschreibt
 `tools/measure/README.md`, die Karte des Codes steht in [references/figur.md](references/figur.md).
@@ -735,6 +738,17 @@ Zehen und Fersen 37 mm, Hände 15 mm, Becken 10 mm, Becken tief ab 15 cm unter d
   das Weitergehen messen (`rest186.py`: anhalten, stehen, weitergehen, nach vorn und zurück).
 - **Eine Toleranz an mehr Momenten prüfen, als die Messszenen haben.** Die sechs Momente je Satz in `walk176.py` zeigten
   Korrekturen bis 2,9 cm; ein Test mit zwanzig Momenten bei 1,7 m/s fand eine von 4 cm.
+- **Die Reihenfolge der Themen legt der Nutzer fest, und sie gilt für jeden Vorschlag.** Seit Runde 187: erst das Gehen
+  ganz abschließen (Starten, Gehen, Drehen, Kehrtwende, Anhalten, mit allem, was dort in `docs/Optimierungen.md` offen
+  ist), dann das Rennen, erst danach Kante, Schutt und Treppe. Ein Vorschlag empfiehlt nie ein späteres Thema, solange
+  im früheren Punkte offen sind, und nennt die offenen Punkte des laufenden Themas vollständig.
+- **Eine Stelle verfolgt ist eine Stelle.** Runde 187: Die tiefste Stelle hatte eine Ursache (kein Fuß hebt nach der
+  Wende ab), der Versuch dazu behob sie, und über alle Kurse änderte sich nichts: Die meisten Stellen hatten eine andere
+  (der falsche Fuß hebt im Kriechen ab). Vor dem Bauen die Zählung über alle Kurse ansehen und zwei, drei Stellen aus
+  verschiedenen Sätzen verfolgen, eine schnelle und eine langsame.
+- **Ein Versuch, der die Zielgröße auf null bringt, beweist die Ursache, auch wenn er nicht baubar ist.** Die rückwärts
+  gehenden Beine nahmen das Sacken ganz weg (1 statt 43) und kosteten Sprünge beim Umschalten. Das trennt „was“ von
+  „wie“: Die nächste Runde hat nur noch den Übergang zu lösen.
 - **Größe der Figur.** Winkelbeschleunigungen wachsen bei kleineren Figuren mit 1 durch `nbFigureScale`, Längen
   und Geschwindigkeiten mit ihr.
 

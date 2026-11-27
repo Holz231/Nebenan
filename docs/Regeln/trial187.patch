@@ -1,0 +1,105 @@
+diff --git a/src/figure.c b/src/figure.c
+index f9695f6..01210ab 100644
+--- a/src/figure.c
++++ b/src/figure.c
+@@ -1,3 +1,4 @@
++#include <stdio.h>
+ // SPDX-License-Identifier: MIT
+ 
+ // Figures after the hybrid of Overgrowth, see the roadmap of the game, chapters 26 to 28 and 31 to 33, and
+@@ -5958,7 +5959,56 @@ static void nbSteerFeet( const nbWorld* world, int index, nbFigure* f, const nbC
+ 		f->legHeadingRate = 0.0f;
+ 		f->legFar = false;
+ 		f->legAim = 0.0f;
++#ifdef NB_X_BACK
++		// trial: facing where it moves, at a walk, the legs walk backward while the capsule goes against the way it
++		// faces, as where it creeps the new way turning about: from NB_X_BACK degrees off the heading, and forward
++		// again within 70
++		{
++			b3Vec3 local = b3InvRotateVector( f->frame.q, velocity );
++			float flatSpeed = sqrtf( local.x * local.x + local.z * local.z );
++			b3CosSin from = b3ComputeCosSin( NB_X_BACK * B3_PI / 180.0f );
++#ifdef NB_X_BACK_DWELL
++			// trial: only where it goes against its heading faster than NB_X_BACK_SPEED, and it stays one way for
++			// NB_X_BACK_DWELL seconds at least
++			bool was = f->legBack;
++			f->backFor += timeStep;
++			if ( run > 0.0f || f->sinceRun < NB_FOOT_BALL_WALKED )
++			{
++				f->legBack = false;
++			}
++			else if ( f->backFor >= NB_X_BACK_DWELL )
++			{
++				if ( was == false && local.z < from.cosine * flatSpeed && local.z < -NB_X_BACK_SPEED * scale )
++				{
++					f->legBack = true;
++				}
++				else if ( was && local.z > 0.0f )
++				{
++					f->legBack = false;
++				}
++			}
++			if ( f->legBack != was )
++			{
++				f->backFor = 0.0f;
++			}
++#else
++			if ( run > 0.0f || f->sinceRun < NB_FOOT_BALL_WALKED || flatSpeed <= NB_LEG_TURN_STILL * scale )
++			{
++				f->legBack = false;
++			}
++			else if ( local.z < from.cosine * flatSpeed )
++			{
++				f->legBack = true;
++			}
++			else if ( local.z > 0.342f * flatSpeed )
++			{
++				f->legBack = false;
++			}
++#endif
++		}
++#else
+ 		f->legBack = false;
++#endif
+ 		f->legHeld = 0.0f;
+ 		f->legRoom = FLT_MAX;
+ 		f->legWaits = -1;
+@@ -6455,7 +6505,25 @@ static void nbSteerFeet( const nbWorld* world, int index, nbFigure* f, const nbC
+ 						fabsf( nbWrapAngle( f->footHeading[k] - legHeading ) ) < NB_GAIT_TURN;
+ 			}
+ 			f->footRests[k] = rests;
+-			if ( ( ( ( ( due || early ) && hold == false ) || steps || leads ) && rests == false ) || lost || first || floats )
++#ifdef NB_X_DEBUG187
++			{
++				static int dbgUpdate = 0;
++				dbgUpdate += k == 0 || f->footSwings[0] ? 1 : 0;
++				fprintf( stderr, "DBG %d k%d due%d early%d hold%d steps%d leads%d lost%d first%d floats%d can%d trails%d out %.3f %.3f "
++						 "lostSoon%d%d blocked%d phase %.2f stance %.2f quick %.3f fresh%d%d speed %.2f gaitSpeed %.2f\n",
++						 dbgUpdate, k, due, early, hold, steps, leads, lost, first, floats, f->canLift[k], trails[k], out[k], out[1 - k],
++						 lostSoon[k], lostSoon[1 - k], blocked, phase, stance, quickest, fresh[k], fresh[1 - k], speed, f->gaitSpeed );
++			}
++#endif
++#ifdef NB_X_SETOFF
++			// trial: with both feet on the ground behind the hip that goes away from them, as where the capsule speeds up
++			// out of a turn-about, the one its leg loses first sets off as out of standing, whatever its phase says
++			bool setsOff = run <= 0.0f && f->sinceRun >= NB_FOOT_BALL_WALKED && f->footSwings[1 - k] == false && trails[0] && trails[1] && out[k] <= out[1 - k] &&
++						   out[k] < NB_X_SETOFF * quickest && ( k == 0 || out[0] != out[1] );
++#else
++			bool setsOff = false;
++#endif
++			if ( ( ( ( ( due || early ) && hold == false ) || steps || leads ) && rests == false ) || lost || first || floats || setsOff )
+ 			{
+ 				// It lifts from where it stands, as far into its swing as its phase, and swings in the rest of it, from where it
+ 				// was an update ago, so it moves in this update already
+diff --git a/src/figure.h b/src/figure.h
+index e088635..231c685 100644
+--- a/src/figure.h
++++ b/src/figure.h
+@@ -575,6 +575,7 @@ typedef struct nbFigure
+ 	// NB_FOOT_BALL_HEEL in figure.c, how far its toes are up because it turns on its heel, see NB_FOOT_BALL_TOES, and
+ 	// for how long its gait has had no part of a run, in seconds, standing too, counted up to a minute
+ 	float ballHeel[2];
++	float backFor;
+ 	// Whether a foot rested in the last update, near its place under a capsule that stopped out of a walk, and whether
+ 	// the figure stands on feet that stayed off their places, see NB_HALT_NEAR in figure.c
+ 	bool footRests[2];
