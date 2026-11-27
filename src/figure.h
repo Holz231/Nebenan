@@ -572,9 +572,10 @@ typedef struct nbFigure
 	// it holds the heading back by that in this update, see nbMoveSteered, and the heading the figure turns to
 	float footPivot[2];
 	// How far the heel of a planted foot is up because it turns on the ball of the foot, in radians, see
-	// NB_FOOT_BALL_HEEL in figure.c, and for how long its gait has had no part of a run, in seconds, standing too,
-	// counted up to a minute
+	// NB_FOOT_BALL_HEEL in figure.c, how far its toes are up because it turns on its heel, see NB_FOOT_BALL_TOES, and
+	// for how long its gait has had no part of a run, in seconds, standing too, counted up to a minute
 	float ballHeel[2];
+	float ballToe[2];
 	float sinceRun;
 	// For how long its gait has been a walk without a part of a run, in seconds, see NB_STOP_WALKED in figure_steer.c
 	float walkTime;

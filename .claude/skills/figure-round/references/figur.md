@@ -101,7 +101,10 @@ was schon verworfen wurde.
   solange das Standbein seinen Fuß verliert, auch 0,5 s nach der Wende (`NB_TURN_HOLD_AFTER`, `turnSince`), und dreht
   auf der Stelle. Über eine Wende wird neu entschieden, wenn der Stick um mehr als 30 Grad springt (`turnAsked`,
   `NB_WALK_TURN_NEW`). Ohne das Warten ging die Kapsel rückwärts von dem Fuß weg, der voraus gelandet war. Bis 135 Grad
-  ist der Bogen besser. Gemessen mit `steer162.py` (`along`, `under`) und `gait155.py`.
+  ist der Bogen besser. Gemessen mit `steer162.py` (`along`, `under`) und `gait155.py`. Seit Runde 185 dreht ein Fuß,
+  hinter dessen Knöchel die Hüfte steht, auf der Ferse und hebt die Zehen (`NB_FOOT_BALL_TOES`, `ballToe`: obenauf in
+  `nbLowerSteered`, kein Teil von `footRoll`), und die Blickrichtung bleibt nach abgelaufener Wartezeit frei, bis sie
+  angekommen ist (`faceHeld` in `nbMoveSteered`).
 - **Wurzel und Landeziel.** Vor einer Landung geht die Wurzel so tief, wie das Bein braucht, um das Landeziel zu
   erreichen (`gaitCrouch` in `nbSteerFeet`), ohne Dämpfung. Springt das Landeziel, weil der Stick springt und der Gang
   mit dem neuen Tempo plant, sprang die Wurzel mit. Seit Runde 164 geht sie 0,1 s nach einem Sprung der gesteuerten

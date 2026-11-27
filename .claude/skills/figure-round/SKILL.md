@@ -716,6 +716,15 @@ Zehen und Fersen 37 mm, Hände 15 mm, Becken 10 mm, Becken tief ab 15 cm unter d
   lag.** Runde 184: „faced max“ lag auf dev1 und dev2 im Rauschen und war frisch 0,08 s schlechter. Wo der Prototyp im
   Mittel etwas kostet (hier 0,01 bis 0,03 s später schauen), vor dem Festschreiben auch das Maximum der Größe ansehen
   und die Stelle verfolgen.
+- **Wird etwas an einer Stelle schlechter, die der Eingriff gar nicht berührt, die Regel suchen, die dort schaltet.**
+  Runde 185: Das Fersen-Drehen verschob einen Fuß um 2 cm, und eine Uhr aus Runde 167 (`faceHeld`) sprang deshalb auf
+  null. Behoben wurde die Uhr, nicht der Drehpunkt. Ein Schalter, der bei „für ein Update frei“ zurückspringt, macht aus
+  2 cm 0,27 s.
+- **Innere Größen je Update mitschreiben, wenn zwei Stände an einer Stelle auseinanderlaufen.** Ein `fprintf` hinter
+  einem Schalter (`NB_X_DEBUG185`: Raum, Uhr, Abstand der Füße) auf beiden Ständen zeigte die Ursache in einem Lauf; aus
+  den Posen allein war sie nicht zu lesen.
+- **Nach einer verfehlten Bedingung mit neuen frischen Sätzen prüfen und die alten als benutzt führen.** Die Sätze der
+  Runde 184 dienten in Runde 185 zum Verfolgen; die Regel 185 nennt sie nicht mehr frisch.
 - **Größe der Figur.** Winkelbeschleunigungen wachsen bei kleineren Figuren mit 1 durch `nbFigureScale`, Längen
   und Geschwindigkeiten mit ihr.
 

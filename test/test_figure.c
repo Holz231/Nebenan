@@ -6077,7 +6077,7 @@ static int SteerWalkAboutTest( void )
 
 // How far a planted foot of a figure slides on what it stands on in one stance, in meters, the most of its stances in
 // the 1.5 s after it is steered turn degrees to its left, walking at 1.4 m/s, or out of standing: the edge of its toes
-// while it stands flat or rolled over them, the edge of its heel while its toes are up
+// while it stands flat or rolled over them, the edge of its heel while its toes are more than 5 mm above it
 static int RunSoleSlide( float turn, bool walks, int part, float* slides )
 {
 	const int feet[2] = { nb_humanoidFootLeft, nb_humanoidFootRight };
@@ -6102,8 +6102,10 @@ static int RunSoleSlide( float turn, bool walks, int part, float* slides )
 		const nbFigure* f = GetSteered( &scene, figure );
 		for ( int k = 0; k < 2; ++k )
 		{
-			int stands = f->gaitOn && f->footSwings[k] == false ? ( f->footRoll[k] < 0.0f ? -1 : 1 ) : 0;
-			b3Vec3 edge = SoleEdge( &scene, f, feet[k], stands < 0 ? -1.0f : 1.0f );
+			b3Vec3 heel = SoleEdge( &scene, f, feet[k], -1.0f );
+			b3Vec3 toes = SoleEdge( &scene, f, feet[k], 1.0f );
+			int stands = f->gaitOn && f->footSwings[k] == false ? ( toes.y > heel.y + 0.005f ? -1 : 1 ) : 0;
+			b3Vec3 edge = stands < 0 ? heel : toes;
 			edge.y = 0.0f;
 			slid[k] = stands != 0 && stands == stood[k] ? slid[k] + b3Distance( edge, edges[k] ) : stands != 0 ? slid[k] : 0.0f;
 			*slides = b3MaxFloat( *slides, slid[k] );
@@ -6120,25 +6122,78 @@ static int RunSoleSlide( float turn, bool walks, int part, float* slides )
 // updates apart, and starts out of standing 90 degrees to its left. Since round 183 a standing foot turns with the body
 // on the ball of the foot once the hip is past its ankle, and its heel lifts while it does, see NB_FOOT_BALL in
 // figure.c: until then it turned on the middle of its sole, also with its heel up, and its toes slid over the ground.
-// Over the twelve turns a planted foot slides 18.1 mm on what it stands on in one stance in their mean and 57.3 mm at
-// most, until round 183 74.8 and 104.6 mm, and starting to its left 19.2 mm, until then 95.8 mm.
+// Over the twelve turns a planted foot slides 17.1 mm on what it stands on in one stance in their mean and 49.9 mm at
+// most, until round 183 74.8 and 104.6 mm, and starting to its left 19.2 mm, until then 95.8 mm. Since round 184 it
+// turns on its heel with its toes up while the hip is behind its ankle, see NB_FOOT_BALL_TOES: turned about at those
+// twelve moments it slides 52.1 mm in their mean, until then 72.0 mm, and starting to the back 4.0 mm, until then 55.0
+// mm.
 static int SteerBallTurnTest( void )
 {
-	float sum = 0.0f, most = 0.0f, start = 0.0f;
+	float sum = 0.0f, most = 0.0f, start = 0.0f, about = 0.0f, back = 0.0f;
 	for ( int part = 0; part < 12; ++part )
 	{
 		float slides;
 		ENSURE( RunSoleSlide( 90.0f, true, part, &slides ) == 0 );
 		sum += slides;
 		most = b3MaxFloat( most, slides );
+		ENSURE( RunSoleSlide( 180.0f, true, part, &slides ) == 0 );
+		about += slides;
 	}
 	ENSURE( RunSoleSlide( 90.0f, false, 0, &start ) == 0 );
+	ENSURE( RunSoleSlide( 180.0f, false, 0, &back ) == 0 );
+	printf( "  turning about at a walk a planted foot slides %.1f mm in the mean of twelve turns; starting to the back %.1f mm\n",
+			1000.0f * about / 12.0f, 1000.0f * back );
 	printf( "  turning by 90 degrees at a walk a planted foot slides %.1f mm on what it stands on in the mean of twelve turns, "
 			"%.1f mm at most; starting to its left %.1f mm\n",
 			1000.0f * sum / 12.0f, 1000.0f * most, 1000.0f * start );
 	ENSURE( sum / 12.0f <= 0.030f );
 	ENSURE( most <= 0.070f );
 	ENSURE( start <= 0.030f );
+	ENSURE( about / 12.0f <= 0.062f );
+	ENSURE( back <= 0.020f );
+	return 0;
+}
+
+// A steered figure facing where it moves walks at 1.58 m/s and is steered back, at sixty moments an update apart, a
+// whole step and more. Its heading waits for the feet no longer than NB_FACE_HOLD in figure_steer.c, and since round
+// 185 it stays free once it has waited that long, until it has arrived: before, the time started anew whenever the
+// feet left room for an update, and with a standing foot turning on its heel, see NB_FOOT_BALL_TOES in figure.c, some
+// of these turns waited twice. Here it faces back after 1.52 s at the latest and 1.15 s in the mean of the sixty; with
+// the foot turning on its heel and the time starting anew 1.53 and 1.17 s, until round 184 1.50 and 1.16 s. The turns
+// that waited twice are those of tools/measure/gait155.py, which start gently, see
+// nbFigureSteering::startAcceleration; this bounds how long a turn-about takes at every moment of the step.
+static int SteerAboutWaitTest( void )
+{
+	float latest = 0.0f, sum = 0.0f;
+	for ( int part = 0; part < 60; ++part )
+	{
+		FigureScene scene;
+		CreateFigureScene( &scene, 1 );
+		nbFigureId figure = AddSteeredFigureBend( &scene, b3Vec3_zero, 0.0f, 0.7f );
+		StepFigures( &scene, 60 );
+		SteerVelocity( figure, (b3Vec3){ 0.0f, 0.0f, 1.58f } );
+		StepFigures( &scene, 150 + part );
+		SteerVelocity( figure, (b3Vec3){ 0.0f, 0.0f, -1.58f } );
+		float faced = -1.0f;
+		for ( int i = 0; i < 180 && faced < 0.0f; ++i )
+		{
+			StepFigures( &scene, 1 );
+			b3WorldTransform frame = nbFigure_GetFrame( figure );
+			if ( b3RotateVector( frame.q, b3Vec3_axisZ ).z < -0.98f )
+			{
+				faced = ( i + 1 ) / 60.0f;
+			}
+		}
+		ENSURE( faced > 0.0f );
+		ENSURE( nbFigure_GetInfo( figure ).state == nb_figureAnimated );
+		latest = b3MaxFloat( latest, faced );
+		sum += faced;
+		DestroyFigureScene( &scene );
+	}
+	printf( "  turning about at 1.58 m/s at sixty moments it faces back after %.2f s at the latest, %.2f s in their mean\n",
+			latest, sum / 60.0f );
+	ENSURE( latest <= 1.6f );
+	ENSURE( sum / 60.0f <= 1.2f );
 	return 0;
 }
 
@@ -9053,7 +9108,7 @@ static int ThinBoardTest( void )
 // walking takes the steps of people, see NB_GAIT_CADENCE_WALK, and the ankle of a swinging foot bends up as far as
 // theirs, see NB_SWING_ANKLE_SOFT. Round 113: the body has the dimensions of a person, see nbMakeHumanoidBones.
 // Round 131: a foot that only just landed stands where the other foot is free to lift, see NB_GAIT_FRESH_KEEP.
-#define NB_EXPECTED_STEER_HASH 0x850f582eu
+#define NB_EXPECTED_STEER_HASH 0xa7dd4689u
 
 // See RunGaitClipScenario. Since round 99 as for RunSteerScenario. Since round 100 the figure that is told to turn on
 // the spot while it still walks, not facing where it moves, keeps its legs where they face as its heading turns, and
@@ -9062,7 +9117,7 @@ static int ThinBoardTest( void )
 // RunSteerScenario. Since round 111 as for RunSteerScenario. Round 112: the clips are recorded from a gait that takes
 // the steps of people, see NB_GAIT_CADENCE_WALK, and the ankle of a swinging foot bends up as far as theirs, see
 // NB_SWING_ANKLE_SOFT. Round 113 and round 131 as for RunSteerScenario.
-#define NB_EXPECTED_GAIT_CLIP_HASH 0x4f649e14u
+#define NB_EXPECTED_GAIT_CLIP_HASH 0x0eef957du
 
 static int FigureFollowDeterminismTest( void )
 {
@@ -9196,6 +9251,7 @@ int FigureTest( void )
 	RUN_TEST( SteerWalkBendTest );
 	RUN_TEST( SteerWalkAboutTest );
 	RUN_TEST( SteerBallTurnTest );
+	RUN_TEST( SteerAboutWaitTest );
 	RUN_TEST( SteerLetGoTest );
 	RUN_TEST( SteerMeetTest );
 	RUN_TEST( SteerLegsApartTest );

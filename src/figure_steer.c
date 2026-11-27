@@ -146,6 +146,13 @@
 // outside of the turn stepping round at once it faced the new way after 0.72 s, and the pelvis jumped 126 mm at a run
 // instead of 27. Nearer feet, 0.03 or 0.01 m, were no better. The legs under a fixed heading have their own rule, see
 // NB_LEG_KEEP in figure.c.
+// Since round 185 the heading that has waited for NB_FACE_HOLD stays free until it has arrived. Until then the time
+// it waited started anew whenever the feet left it room for an update, and whether a turn-about waited once or twice
+// hung on 2 cm: with a standing foot turning on its heel, see NB_FOOT_BALL_TOES in figure.c, the feet stood 8.7 instead
+// of 6.9 cm apart across the heading at 1.58 m/s, the heading got room for a few updates after its wait was over,
+// waited again at 95 and at 151 degrees, and faced back after 1.58 instead of 1.31 s. Never starting the time anew
+// while the heading turns, also where it had waited only briefly, the feet crossed steered back and forth in 6.5
+// instead of 1 of the runs.
 #define NB_FACE_KEEP 0.06f
 #define NB_FACE_HOLD 0.5f
 #define NB_WALK_TURN_NEW 0.866f
@@ -1132,7 +1139,12 @@ bool nbMoveSteered( nbWorld* world, int index, nbFigure* f, float timeStep, b3Ve
 		}
 		if ( fabsf( change ) <= room )
 		{
-			f->faceHeld = 0.0f;
+			// Once it has waited as long as it does, it stays free until it has arrived: the time does not start anew
+			// because the feet leave room for an update, see NB_FACE_HOLD
+			if ( f->faceHeld <= NB_FACE_HOLD || change == 0.0f )
+			{
+				f->faceHeld = 0.0f;
+			}
 		}
 		else
 		{
