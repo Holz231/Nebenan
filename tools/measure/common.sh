@@ -299,3 +299,9 @@ SET_h230="WALK=1.0767 RUN=4.4067 DIAG=0.76 CW=1.223 CR=0.673"
 SET_h231="WALK=1.2267 RUN=3.9367 DIAG=0.87 CW=1.145 CR=0.694"
 SET_h232="WALK=1.4167 RUN=3.4733 DIAG=1.00 CW=1.066 CR=0.720"
 SET_h233="WALK=1.6167 RUN=3.1067 DIAG=1.14 CW=0.998 CR=0.745"
+# Round 186, the independent check of the feet that stay where they stand after a stop: chosen with speeds.py before
+# any build ran at them, group fresh186 of check170.sh, check177.sh and check186.sh.
+SET_h234="WALK=1.0467 RUN=4.3567 DIAG=0.74 CW=1.240 CR=0.675"
+SET_h235="WALK=1.2067 RUN=3.9767 DIAG=0.85 CW=1.155 CR=0.692"
+SET_h236="WALK=1.4767 RUN=3.5567 DIAG=1.04 CW=1.044 CR=0.715"
+SET_h237="WALK=1.6867 RUN=3.0667 DIAG=1.19 CW=0.977 CR=0.748"

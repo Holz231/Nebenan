@@ -1,0 +1,127 @@
+diff --git a/src/figure.c b/src/figure.c
+index 560d311..fb1522a 100644
+--- a/src/figure.c
++++ b/src/figure.c
+@@ -5813,6 +5813,16 @@ static void nbSteerFeet( const nbWorld* world, int index, nbFigure* f, const nbC
+ 			}
+ 		}
+ 		f->gaitOn = true;
++#ifdef NB_X_NEAR
++		if ( f->standsOff )
++		{
++			f->footPush[0] = 0.0f;
++			f->footPush[1] = 0.0f;
++		}
++		f->standsOff = false;
++		f->footRests[0] = false;
++		f->footRests[1] = false;
++#endif
+ 		f->balancing = false;
+ 		float run, stance, land;
+ 		nbGaitSpeed( world, f, &run, &stance, &land );
+@@ -6212,6 +6222,10 @@ static void nbSteerFeet( const nbWorld* world, int index, nbFigure* f, const nbC
+ 		}
+ 	}
+ 	bool settled = f->legTurn == 0.0f;
++#ifdef NB_X_NEAR
++	bool standsOff = false;
++	bool standsFlat = true;
++#endif
+ 	for ( int k = 0; k < 2; ++k )
+ 	{
+ 		nbFoot* foot = f->feet + k;
+@@ -6327,6 +6341,14 @@ static void nbSteerFeet( const nbWorld* world, int index, nbFigure* f, const nbC
+ 			float pushMost = f->footPush[k] + NB_GAIT_PUSH * timeStep / ( NB_GAIT_PRESWING * cycle );
+ 			float pushWant = ( 1.0f - run ) * ease * NB_GAIT_PUSH * push;
+ 			f->footPush[k] = f->canLift[k] ? b3MaxFloat( f->footPush[k], b3MinFloat( pushWant, pushMost ) ) : 0.0f;
++#ifdef NB_X_NEAR
++			// trial: a foot that rests does not push off, its heel comes down as fast as it would come up
++			if ( f->footRests[k] )
++			{
++				float less = NB_GAIT_PUSH * timeStep / ( NB_GAIT_PRESWING * cycle );
++				f->footPush[k] = b3MaxFloat( b3MinFloat( f->footPush[k], pushMost - 2.0f * less ), 0.0f );
++			}
++#endif
+ 
+ 			// A foot behind the hip that its leg would not reach in the next update even rolled over its toes as far as it can
+ 			// lifts early, see nbLowerSteered, and one its leg no longer reaches at all lifts wherever its phase is. A foot
+@@ -6414,14 +6436,26 @@ static void nbSteerFeet( const nbWorld* world, int index, nbFigure* f, const nbC
+ 			{
+ 				b3Vec3 gap = b3SubPos( nbClipAnkle( f, clips + k, foot ), foot->plant );
+ 				gap = b3MulSub( gap, b3Dot( gap, up ), up );
++#ifdef NB_X_NEAR
++				// trial: also one that stands that near its place
++				rests = b3Length( gap ) < NB_X_NEAR * scale &&
++						fabsf( nbWrapAngle( f->footHeading[k] - legHeading ) ) < NB_GAIT_TURN;
++#else
+ 				rests = b3Length( gap ) < NB_GAIT_SLACK * scale &&
+ 						fabsf( nbWrapAngle( f->footHeading[k] - legHeading ) ) < NB_GAIT_TURN;
++#endif
+ 			}
++#ifdef NB_X_NEAR
++			f->footRests[k] = rests;
++#endif
+ 			if ( ( ( ( ( due || early ) && hold == false ) || steps || leads ) && rests == false ) || lost || first || floats )
+ 			{
+ 				// It lifts from where it stands, as far into its swing as its phase, and swings in the rest of it, from where it
+ 				// was an update ago, so it moves in this update already
+ 				f->footSwings[k] = true;
++#ifdef NB_X_NEAR
++				f->footRests[k] = false;
++#endif
+ 				f->swingHeel[k] = heel;
+ 				f->canLift[k] = false;
+ 				// Lifting more than an update before its phase says, it shows how far the cycle is behind, see NB_GAIT_KEEP
+@@ -7036,8 +7070,15 @@ static void nbSteerFeet( const nbWorld* world, int index, nbFigure* f, const nbC
+ 
+ 		b3Vec3 gap = b3SubPos( nbClipAnkle( f, clips + k, foot ), foot->plant );
+ 		gap = b3MulSub( gap, b3Dot( gap, up ), up );
++#ifdef NB_X_NEAR
++		settled = settled && f->footSwings[k] == false && b3Length( gap ) < ( f->halts ? NB_X_NEAR : NB_GAIT_SLACK ) * scale &&
++				  fabsf( nbWrapAngle( f->footHeading[k] - legHeading ) ) < NB_GAIT_TURN;
++		standsOff = standsOff || b3Length( gap ) >= NB_GAIT_SLACK * scale;
++		standsFlat = standsFlat && fabsf( f->footRoll[k] ) <= NB_FOOT_FLAT && f->ballHeel[k] <= 0.0f && f->ballToe[k] <= 0.0f;
++#else
+ 		settled = settled && f->footSwings[k] == false && b3Length( gap ) < NB_GAIT_SLACK * scale &&
+ 				  fabsf( nbWrapAngle( f->footHeading[k] - legHeading ) ) < NB_GAIT_TURN;
++#endif
+ 	}
+ 
+ 	// Without a foothold to time a swing to, the gait goes back to its cadence, and so does each swing, and the cycle keeps
+@@ -7082,8 +7123,14 @@ static void nbSteerFeet( const nbWorld* world, int index, nbFigure* f, const nbC
+ 	f->gaitPhaseRate = f->gaitRate / cycle;
+ 
+ 	// Still, with both feet where the clip puts them, it stands, and the clip takes the legs back, see NB_FOOT_FADE
++#ifdef NB_X_NEAR
++	settled = settled && ( standsOff == false || standsFlat );
++#endif
+ 	if ( settled && speed <= NB_GAIT_START && f->gaitSpeed < NB_GAIT_STOP )
+ 	{
++#ifdef NB_X_NEAR
++		f->standsOff = standsOff;
++#endif
+ 		f->gaitOn = false;
+ 	}
+ }
+@@ -8633,7 +8680,7 @@ static void nbUpdateAnimated( nbWorld* world, int index, nbFigure* f, float time
+ 			return;
+ 		}
+ 		nbPlaceFeet( f, transforms, clips, up, timeStep );
+-		if ( f->balancing == false && f->gaitOn == false )
++		if ( f->balancing == false && f->gaitOn == false && f->standsOff == false )
+ 		{
+ 			f->footWeight = b3MaxFloat( 0.0f, f->footWeight - timeStep / NB_FOOT_FADE );
+ 		}
+diff --git a/src/figure.h b/src/figure.h
+index 2152658..cbc36be 100644
+--- a/src/figure.h
++++ b/src/figure.h
+@@ -575,6 +575,8 @@ typedef struct nbFigure
+ 	// NB_FOOT_BALL_HEEL in figure.c, how far its toes are up because it turns on its heel, see NB_FOOT_BALL_TOES, and
+ 	// for how long its gait has had no part of a run, in seconds, standing too, counted up to a minute
+ 	float ballHeel[2];
++	bool footRests[2];
++	bool standsOff;
+ 	float ballToe[2];
+ 	float sinceRun;
+ 	// For how long its gait has been a walk without a part of a run, in seconds, see NB_STOP_WALKED in figure_steer.c

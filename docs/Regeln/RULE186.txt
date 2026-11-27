@@ -1,0 +1,91 @@
+Regel für Runde 186, vor jedem Lauf mit den Geschwindigkeiten der unabhängigen Prüfung festgeschrieben. Gemessen wird
+gegen active-ragdoll-185.
+
+Worum es geht. Der Nutzer will zuerst das Gehen richtig haben und hat nach Runde 185 Vorschlag b gewählt: den Rest beim
+Anhalten. Seit Runde 182 landen beim Anhalten aus dem Gehen in neun von zehn Halten zwei Füße; im zehnten hebt ein Fuß
+noch einmal ab.
+
+Wie groß das Thema ist, Frage 1 des Skills. Auf zwölf Entwicklungssätzen mit vier Proben, 288 Halte: in 28 landen drei
+Füße. Jeder dieser dritten Schritte ist eine winzige Korrektur: in 18 Halten bei 1,58 bis 1,72 m/s 18 bis 29 mm zur
+Seite, 1,06 s nach dem Loslassen; in 10 Halten bei 1,05 und 1,33 m/s 10 bis 12 mm nach vorn, 1,65 bis 1,77 s nach dem
+Loslassen. Richtig wäre, dass eine Figur, die steht, nicht für 1 oder 2 cm noch einmal einen Fuß hebt; Menschen bleiben
+stehen, wo ihre Füße gelandet sind.
+
+Die Ursache. Der Gang endet erst, wenn beide Füße auf 1 cm dort stehen, wohin der Clip des Stehens sie setzt
+(NB_GAIT_SLACK), damit der Clip sie ohne sichtbares Gleiten übernimmt; bis dahin läuft er weiter und setzt einen Fuß um.
+Zwei Wege führen knapp daneben. Ein Fuß, der beim Loslassen schon bei 0,83 bis 0,89 seines Schwungs ist, wird in den
+0,06 s bis zur Landung nur halb so breit, wie er stehen soll, 7,1 statt 9,0 cm von der Mitte (Runde 182). Und ein Fuß,
+der aufschließt, während die Kapsel noch mit 0,11 m/s ausrollt, steht danach 1,2 cm hinter seinem Platz.
+
+Der Eingriff, in der Bibliothek, src/figure.c, nur wo eine Figur aus dem Gehen anhält (nbFigureSteering::stopBraking).
+Ein Fuß, der unter der stehenden Kapsel höchstens 4,5 cm von seinem Standplatz steht und nicht weiter gedreht ist, als
+ein Fuß gedreht stehen darf, hebt nicht mehr ab, und er drückt sich nicht mehr ab: seine Ferse senkt sich. Stehen beide
+Füße so und flach, endet der Gang. Steht dabei einer weiter als 1 cm von seinem Platz, übernimmt der Clip die Füße
+nicht: Sie bleiben, wo sie stehen, bis die Figur wieder losgeht. Die Figur richtet sich auf wie immer.
+
+Die Varianten, Frage 2 des Skills, dev1 mit vier Proben, 144 Halte und je 144 Läufe „anhalten, 2,5 s stehen,
+weitergehen“ nach vorn und zurück (rest186.py, neu), gegen alt:
+ - alt: in 15 Halten drei Landungen; beim Weitergehen springt ein Schienbein bis 50,8 mm (nach vorn) und 49,9 mm
+   (zurück).
+ - der Gang endet mit Füßen bis 3 cm neben ihrem Platz, die Füße bleiben gepflanzt: keine dritte Landung, aber ein Fuß
+   bleibt mit 0,04 rad gehobener Ferse stehen (er hielt den Abdruck vor dem Abheben), und beim Weitergehen springt ein
+   Schienbein 61 mm, weil das Abrollen des Gangs von vorher weiterzählt.
+ - dasselbe, der Gang endet erst mit flachen Füßen: Der Fuß wird nie flach, der Gang endet nicht.
+ - der Gang endet nicht, er ruht mit den Füßen, wo sie stehen, und ein ruhender Fuß drückt sich nicht ab: keine dritte
+   Landung, die Füße flach; zurück geht die Figur 0,10 m weniger weit in der ersten Sekunde (der ruhende Gang galt als
+   Gehen, die Figur machte eine Kehrtwende statt loszugehen), und mit der Korrektur dafür hebt der erste Fuß bis 0,11 s
+   später, das Becken springt 7,8 statt 4,6 mm. Vor allem aber steht die Figur im ruhenden Gang 1,8 cm tiefer und
+   richtet sich nie auf (0,960 statt 0,978 m; SteerUprightTest schlägt an).
+ - der Gang endet, mit flachen Füßen, die nicht mehr abdrücken, und die Füße bleiben gepflanzt, Toleranz 3 cm: keine
+   dritte Landung; die Füße stehen nach 0,77 statt 0,80 s; in 10 Halten steht die Figur schmaler als 17 cm, mindestens
+   16,0 cm; beim Weitergehen nichts härter. Im neuen Test bei 1,7 m/s an zwanzig Momenten bleibt aber ein Halt mit drei
+   Landungen: Der späte Fuß kann bis 4 cm zu schmal landen.
+ - dasselbe mit 4,5 cm: der Prototyp.
+Verworfen ist damit: der ruhende Gang; die gepflanzten Füße ohne flache Sohle.
+
+Nimmt der Prototyp das Ziel, Frage 3 des Skills. Auf beiden Entwicklungsgruppen mit vier Proben, 288 Halte und 576
+Läufe, die weitergehen: In keinem Halt landen mehr als zwei Füße (alt in 28 drei), in 48 nur einer. Die Füße stehen im
+Median nach 0,70 statt 0,80 s, im spätesten Halt nach 0,92 statt 1,77 s. Im Stehen bewegt sich kein Fuß mehr (alt bis
+12,5 mm, der späte dritte Schritt). Die härtesten Sprünge im Halt wie alt (Fuß 19,7, Schienbein 26,3, Becken 5,0 mm);
+die Kapsel steht wie alt nach 0,45 s und 0,35 m. Beim Weitergehen: nach vorn Fuß 21,9 statt 21,8 mm, Schienbein 20,6
+statt 50,2 mm, Becken 5,0 wie alt; zurück Fuß 24,5 statt 24,2 mm, Schienbein 29,7 statt 49,3 mm, Becken 5,6 statt 5,2
+mm; sie kommt in der ersten Sekunde so weit wie alt (1,12 und 0,64 m), und der erste Fuß hebt so früh wie alt.
+compare170.py nennt auf beiden Gruppen keine Größe schlechter oder auch nur getrennt. Alle 209 Tests des Prototyps
+bestehen, kein Hash ändert sich.
+
+Der Preis, offen gesagt. In 66 von 288 Halten steht die Figur schmaler als 17 cm statt 18 cm, mindestens 14,0 cm, bis
+sie wieder losgeht; und ein Fuß kann bis 4,5 cm vor oder hinter seinem Platz stehen.
+
+Bedingungen, alt ist active-ragdoll-185, neu der saubere Bau, je vier Proben mit tools/measure/check177.sh, check186.sh
+und check170.sh auf einer Gruppe von Sätzen, gerechnet von tools/measure/eval186.py über alle Halte aus dem Gehen der
+Gruppe und alle Läufe, die weitergehen:
+Ziel:
+ Z1 Der Anteil der Halte, in denen höchstens zwei Füße landen, steigt um mindestens 5 Punkte, und in keinem landen mehr
+   als zwei.
+ Z2 Die Füße stehen im Median nicht später als alt, und im spätesten Halt nicht später als alt.
+ Z3 Im Stehen, in den letzten 1,2 s vor dem Weitergehen, bewegt sich kein Fuß mehr als 1 mm, und die Füße stehen quer
+   zur Blickrichtung nirgends weniger als 135 mm auseinander.
+Schutz:
+ S1 Die härtesten Sprünge im Halt, je Probe das Maximum, davon der Median: Fuß und Schienbein höchstens 3 mm über alt,
+   Becken höchstens 2 mm.
+ S2 Die Kapsel steht im Median höchstens 0,02 s früher oder später und geht höchstens 0,02 m weiter oder weniger weit
+   als alt.
+ S3 Beim Weitergehen, nach vorn und zurück je für sich: die härtesten Sprünge in den 1,2 s danach, je Probe das Maximum,
+   davon der Median, Fuß und Schienbein höchstens 3 mm über alt, Becken höchstens 2 mm; die Kapsel kommt in der ersten
+   Sekunde im Mittel höchstens 0,02 m weiter oder weniger weit; und der erste Fuß hebt im spätesten Lauf höchstens 0,05
+   s später.
+ S4 tools/measure/compare170.py nennt keine Größe schlechter, mit den Kursen aus steer162.py und den Beinen aus
+   legs167.py.
+ S5 Alle Tests bestehen, mit gcc und clang, und die Hashes des Benchmarks der Figuren sind mit 1, 2 und 4 Threads
+   gleich. Ein neuer Test, SteerRestTest, schlägt auf dem alten Stand fehl.
+
+Unabhängige Prüfung: die frischen Sätze h234 bis h237 aus tools/measure/common.sh, Gehen mit 1,0467, 1,2067, 1,4767 und
+1,6867 m/s, Rennen mit 4,3567, 3,9767, 3,5567 und 3,0667 m/s, mit speeds.py gegen alle Geschwindigkeiten geprüft, die je
+gelaufen sind; Gruppe fresh186. Kein Stand ist auf ihnen gelaufen, bevor diese Datei gepusht ist. Hält der saubere Bau
+dort eine Bedingung nicht, wird nicht gebaut, außer der Nutzer entscheidet es; die Regel wird danach nicht geändert, und
+eine Messung, die nicht passt, wird nicht wiederholt.
+
+Der saubere Bau muss auf dev1 ohne Anstoß dieselben drei Tabellen schreiben wie der Prototyp (legs167, gait155,
+steer162, mit cmp verglichen), und dieselbe Tabelle aus rest186.py.
+
+Der Prototyp steht als docs/Regeln/trial186.patch, sein Schalter: -DNB_X_NEAR=0.045f.
