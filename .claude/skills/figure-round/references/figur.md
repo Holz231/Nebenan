@@ -136,6 +136,13 @@ was schon verworfen wurde.
   (`rests` in `nbSteerFeet`). Seit Runde 186 bleibt ein Fuß stehen, der bis `NB_HALT_NEAR` neben seinem Platz steht:
   `footRests` nimmt ihm den Abdruck, der Gang endet mit flachen Füßen, und `standsOff` hält `footWeight` bei 1, bis der
   Gang wieder startet (der Start setzt das Abrollen zurück).
+- **Kehrtwende im Gehen.** Mit Blick in Laufrichtung setzt `nbSteerFeet` seit Runde 189 `legBack`, solange die Kapsel in
+  einer Kehrtwende (`turnAbout`) gegen den Blick läuft (`NB_FACE_BACK`); beim Umschalten mit beiden Füßen am Boden geht
+  `gaitPhase` einen halben Takt weiter, wenn sonst der äußere Fuß zuerst ginge, und `poseShift` hält Rumpf und Arme in
+  ihrer Phase (`nbPosePhase`). `figure_steer.c` setzt `faceWaits`, wenn die Blickrichtung auf die Füße wartet; dann
+  setzt der nächste Fuß um. `setsOff` (`NB_GAIT_SET_OFF`) lässt nach der Wende den Fuß abheben, der darf. Der Drehpunkt
+  eines mitdrehenden Fußes rückt mit `footPivot` ans Sohlenende (`NB_FOOT_BALL_EDGE`), `ballHeelRate` hebt die Ferse
+  weich.
 - **Messen mit Rauschband.** Seit Runde 170 kommen Änderungen in den Werkzeugen an fester Schrittphase (`SYNC`), und
   Stände werden in vier Proben mit `NUDGE` gemessen (`check170.sh`) und mit `compare170.py` verglichen. Eine Regel setzt
   ihre Toleranzen aus den Spannen und nennt eine Bedingung verfehlt, wo die Spannen sich nicht überdecken.

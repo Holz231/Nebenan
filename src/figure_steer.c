@@ -1072,6 +1072,7 @@ bool nbMoveSteered( nbWorld* world, int index, nbFigure* f, float timeStep, b3Ve
 	// it keeps the rate it turned at and goes on with it: until round 157 it started again from standing, and turning
 	// about at a walk it turned 18 degrees in the first 0.15 s after waiting instead of 34.
 	f->headingWant = want;
+	f->faceWaits = false;
 	f->footHolds[0] = false;
 	f->footHolds[1] = false;
 	if ( f->gaitOn && f->boneCount == nb_humanoidBoneCount )
@@ -1152,6 +1153,7 @@ bool nbMoveSteered( nbWorld* world, int index, nbFigure* f, float timeStep, b3Ve
 			if ( f->faceHeld <= NB_FACE_HOLD )
 			{
 				heading = nbWrapAngle( f->heading + ( change > 0.0f ? room : -room ) );
+				f->faceWaits = true;
 			}
 		}
 	}

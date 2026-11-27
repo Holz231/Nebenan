@@ -579,6 +579,13 @@ typedef struct nbFigure
 	// the figure stands on feet that stayed off their places, see NB_HALT_NEAR in figure.c
 	bool footRests[2];
 	bool standsOff;
+	// How far the phase the trunk and the arms go by is behind the phase of the gait, in cycles, where the feet changed
+	// their turns, see NB_POSE_CATCH in figure.c, and whether the heading waited for the feet to stay uncrossed in this
+	// update, see NB_FACE_KEEP in figure_steer.c
+	float poseShift;
+	bool faceWaits;
+	// How fast the heel of a foot that turns on its ball comes up, in rad/s, see NB_FOOT_BALL_GAIN in figure.c
+	float ballHeelRate[2];
 	float ballToe[2];
 	float sinceRun;
 	// For how long its gait has been a walk without a part of a run, in seconds, see NB_STOP_WALKED in figure_steer.c

@@ -771,6 +771,25 @@ Zehen und Fersen 37 mm, Hände 15 mm, Becken 10 mm, Becken tief ab 15 cm unter d
   Fassungen je vier Minuten durch `steer162.py` auf dev1; erst der Stand, der dort und in den Tests passte, lief breit.
   Die breite Messung fand dann noch die Füße ineinander, die `steer162.py` nicht misst: Was die Suche nicht misst, kann
   sie nicht sehen.
+- **Eine Regel, die einen Fuß früher abheben lässt, braucht zwei Grenzen.** Runde 189: „Der Fuß, der darf, hebt ab, wenn
+  der andere bald verloren ist“ half nach der Wende und schadete, wo der andere schon fast verloren war: Dann steht
+  dieser nicht rechtzeitig wieder. Die obere Grenze sagt, ab wann es nötig ist, die untere, bis wann es noch geht (die
+  Zeit eines Schwungs).
+- **Was den Knöchel hebt, braucht einen weichen Anfang und ein weiches Ende; was ihn nicht hebt, nicht.** Die Ferse
+  unter einem gestreckten Bein mit fester Rate zu heben ließ das Schienbein 38 mm springen (das Knie eines fast
+  gestreckten Beins bewegt sich doppelt so weit, wie das Bein kürzer wird). Mit begrenzter Beschleunigung und Bremsen
+  vor dem Ziel 22 statt 70 Läufe. Dieselbe Bremse an den Zehen kostete nur Gleiten.
+- **Die schnelle Suche fährt nur, was man ihr gibt.** Runde 189 suchte auf den Kursen im Gehen; die breite Messung fand
+  den Schaden auf den Kursen mit Renn-Tempo am Stick, die im Hin und Her auch gehen. Vor dem Festschreiben immer alle
+  Werkzeuge mit vier Proben, und was sie schlechter nennen, erst verfolgen.
+- **Verbrauchte frische Sätze werden zur dritten Entwicklungsgruppe.** Die Sätze, an denen Runde 188 scheiterte, trugen
+  in Runde 189 die Stellen zum Verfolgen und eine dritte Gruppe für Frage 3. Die neue Regel bekam neue frische Sätze.
+- **Bedingungen zählen Läufe über einer Schwelle, sie nehmen kein Maximum.** Der Median der härtesten Sprünge je Probe
+  schwankte in Runde 189 auf einer Gruppe um 3,4 mm, ohne dass ein Lauf über 37 mm lag. Die Regel zählt seither Läufe
+  über 37 mm (Fuß, Schienbein) und 20 mm (Becken).
+- **Den Versuchsbaum nicht ändern, während eine Kette daraus baut.** `build.sh` übersetzt die Dateien nacheinander; ein
+  geänderter Kopf mitten im Bau gäbe zwei Fassungen einer Struktur in einem Programm. Erst sehen, ob der letzte Bau der
+  Kette durch ist (Zeit der Bibliothek gegen die Zeit der Datei).
 - **Größe der Figur.** Winkelbeschleunigungen wachsen bei kleineren Figuren mit 1 durch `nbFigureScale`, Längen
   und Geschwindigkeiten mit ihr.
 
