@@ -313,3 +313,9 @@ SET_h242="WALK=1.0859 RUN=4.3941 DIAG=0.77 CW=1.217 CR=0.674"
 SET_h243="WALK=1.2259 RUN=3.9541 DIAG=0.87 CW=1.146 CR=0.693"
 SET_h244="WALK=1.4259 RUN=3.4841 DIAG=1.01 CW=1.062 CR=0.719"
 SET_h245="WALK=1.6359 RUN=3.1241 DIAG=1.16 CW=0.992 CR=0.744"
+# Round 191, the independent check of the turn-about at a walk that turns the way the feet allow: chosen with speeds.py
+# before any build ran at them, group fresh191 of check170.sh, check177.sh and check186.sh.
+SET_h246="WALK=1.0559 RUN=4.2741 DIAG=0.75 CW=1.234 CR=0.679"
+SET_h247="WALK=1.2659 RUN=3.8141 DIAG=0.90 CW=1.127 CR=0.700"
+SET_h248="WALK=1.4559 RUN=3.3441 DIAG=1.03 CW=1.051 CR=0.728"
+SET_h249="WALK=1.6659 RUN=3.0441 DIAG=1.18 CW=0.983 CR=0.750"

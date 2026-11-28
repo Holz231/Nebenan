@@ -1,0 +1,292 @@
+diff --git a/src/figure.c b/src/figure.c
+index e7edc3d..2f8a497 100644
+--- a/src/figure.c
++++ b/src/figure.c
+@@ -1,3 +1,4 @@
++#include <stdio.h>
+ // SPDX-License-Identifier: MIT
+ 
+ // Figures after the hybrid of Overgrowth, see the roadmap of the game, chapters 26 to 28 and 31 to 33, and
+@@ -5902,6 +5903,9 @@ static void nbSteerFeet( const nbWorld* world, int index, nbFigure* f, const nbC
+ 					f->feet[k].tilt = nbPartOf( f->feet[k].lean, clips[k].weight );
+ 					f->footHeading[k] = f->heading;
+ 					f->footPivot[k] = 0.0f;
++#ifdef NB_X_SIDE
++				f->ballSide[k] = 0.0f;
++#endif
+ 					f->ballHeel[k] = 0.0f;
+ 					f->ballToe[k] = 0.0f;
+ 				}
+@@ -6418,6 +6422,9 @@ static void nbSteerFeet( const nbWorld* world, int index, nbFigure* f, const nbC
+ 				f->landRoll[k] = landed;
+ 				f->stanceTime[k] = 0.0f;
+ 				f->footPivot[k] = 0.0f;
++#ifdef NB_X_SIDE
++				f->ballSide[k] = 0.0f;
++#endif
+ 				f->ballHeel[k] = 0.0f;
+ 				foot->plant = foot->target;
+ 				foot->tilt = foot->targetTilt;
+@@ -6429,6 +6436,9 @@ static void nbSteerFeet( const nbWorld* world, int index, nbFigure* f, const nbC
+ 			// A planted foot turns with the body beyond NB_FOOT_TWIST from where the legs face: on the middle of its sole,
+ 			// and walking on the ball of the foot as the hip passes over it, see NB_FOOT_BALL_ROLL
+ 			float ball = 0.0f;
++#ifdef NB_X_SLEW
++			bool ballNow = false;
++#endif
+ 			float twist = nbWrapAngle( f->footHeading[k] - legHeading );
+ 			if ( fabsf( twist ) > NB_FOOT_TWIST )
+ 			{
+@@ -6451,10 +6461,43 @@ static void nbSteerFeet( const nbWorld* world, int index, nbFigure* f, const nbC
+ 					// The farther it has turned on the ground in this stance, the nearer to the end of the sole on that side
+ 					// of its middle: only one end carries then, see NB_FOOT_BALL_EDGE
+ 					float turned = b3ClampFloat( f->footPivot[k] / NB_FOOT_BALL_EDGE, 0.0f, 1.0f );
++#ifdef NB_X_SIDE
++					// trial: the end it goes to is chosen as the foot begins to turn in this stance and kept, but where the
++					// foot is rolled over the other edge as far as NB_FOOT_BALL_ROLL: the point jumped from the heel to the toes
++					// in one update where it crossed the middle
++					if ( f->footRoll[k] >= NB_FOOT_BALL_ROLL )
++					{
++						f->ballSide[k] = 1.0f;
++					}
++					else if ( f->footRoll[k] <= -NB_FOOT_BALL_ROLL )
++					{
++						f->ballSide[k] = -1.0f;
++					}
++					else if ( f->ballSide[k] == 0.0f && at != middle )
++					{
++						f->ballSide[k] = at > middle ? 1.0f : -1.0f;
++					}
++					if ( f->ballSide[k] != 0.0f )
++					{
++						at += turned * ( ( f->ballSide[k] > 0.0f ? middle + half : middle - half ) - at );
++					}
++#else
+ 					if ( at != middle )
+ 					{
+ 						at += turned * ( ( at > middle ? middle + half : middle - half ) - at );
+ 					}
++#endif
++#ifdef NB_X_SLEW
++					// trial: while the foot turns, the point moves along the sole no faster than NB_X_SLEW half soles a
++					// second: where it crossed the middle it jumped from the heel to the toes in one update
++					if ( f->ballWas[k] )
++					{
++						float most = NB_X_SLEW * timeStep * half;
++						at = f->ballAt[k] + b3ClampFloat( at - middle - f->ballAt[k], -most, most ) + middle;
++					}
++					f->ballAt[k] = at - middle;
++					ballNow = true;
++#endif
+ 					float walks = 1.0f - run;
+ 					ball = walks * ( at - middle ) / half;
+ 					sole = b3MulAdd( sole, walks * ( at - middle ), toes );
+@@ -6467,6 +6510,9 @@ static void nbSteerFeet( const nbWorld* world, int index, nbFigure* f, const nbC
+ 				f->footPivot[k] += fabsf( turn );
+ 			}
+ 
++#ifdef NB_X_SLEW
++			f->ballWas[k] = ballNow;
++#endif
+ 			// Its heel lifts as far as it turns ahead of the middle of its sole, and comes down as it stops turning there
+ 			float heelMost = NB_FOOT_BALL_RATE * timeStep;
+ 			float heelUp = ( 1.0f - run ) * b3MaxFloat( ball, 0.0f ) * NB_FOOT_BALL_HEEL;
+@@ -6483,6 +6529,10 @@ static void nbSteerFeet( const nbWorld* world, int index, nbFigure* f, const nbC
+ 				f->ballHeelRate[k] = 0.0f;
+ 				f->ballHeel[k] += b3ClampFloat( heelUp - f->ballHeel[k], -heelMost, 0.0f );
+ 			}
++#ifdef NB_X_DEBUG190
++			fprintf( stderr, "BALL k%d ball %.2f heel %.3f toe %.3f roll %.3f pivot %.1f twist %.1f back%d\n", k, ball, f->ballHeel[k], f->ballToe[k], f->footRoll[k],
++					 57.2958f * f->footPivot[k], 57.2958f * twist, f->legBack );
++#endif
+ 			// and its toes as far as it turns behind the middle, see NB_FOOT_BALL_TOES
+ 			float toesUp = ( 1.0f - run ) * b3MaxFloat( -ball, 0.0f ) * NB_FOOT_BALL_TOES;
+ 			f->ballToe[k] += b3ClampFloat( toesUp - f->ballToe[k], -heelMost, heelMost );
+@@ -6628,6 +6678,10 @@ static void nbSteerFeet( const nbWorld* world, int index, nbFigure* f, const nbC
+ 			if ( ( ( ( ( due || early ) && hold == false ) || steps || leads ) && rests == false ) || lost || first || floats ||
+ 				 setsOff )
+ 			{
++#ifdef NB_X_DEBUG190
++				fprintf( stderr, "LIFT k%d due%d early%d hold%d steps%d leads%d lost%d first%d floats%d setsOff%d waitedFor%d holds%d phase %.2f out %.3f %.3f quick %.3f trails%d%d\n", k, due,
++						 early, hold, steps, leads, lost, first, floats, setsOff, waitedFor, f->footHolds[k], phase, out[k], out[1 - k], quickest, trails[k], trails[1 - k] );
++#endif
+ 				// It lifts from where it stands, as far into its swing as its phase, and swings in the rest of it, from where it
+ 				// was an update ago, so it moves in this update already
+ 				f->footSwings[k] = true;
+@@ -6708,6 +6762,14 @@ static void nbSteerFeet( const nbWorld* world, int index, nbFigure* f, const nbC
+ 				float soft =
+ 					b3ClampFloat( ( stretch - NB_SWING_SOFT_FROM ) / ( NB_SWING_SOFT_TO - NB_SWING_SOFT_FROM ), 0.0f, 1.0f );
+ 				f->swingSoft[k] = f->footRoll[k] > 0.0f ? soft * soft * ( 3.0f - 2.0f * soft ) : 0.0f;
++#ifdef NB_X_SOFT
++				// trial: a foot that steps round because it holds the heading lifts flat from under the hip: it lifts gently
++				// too, (1) as far as its leg is stretched, (2) always
++				if ( steps && f->footRoll[k] >= 0.0f )
++				{
++					f->swingSoft[k] = NB_X_SOFT == 2 ? 1.0f : soft * soft * ( 3.0f - 2.0f * soft );
++				}
++#endif
+ 				// Braking at a run it lifts gently too, see NB_SWING_SLOW
+ 				float behind = ( f->gaitSpeed - speed ) / f->gaitUnit;
+ 				float slow =
+@@ -6976,6 +7038,11 @@ static void nbSteerFeet( const nbWorld* world, int index, nbFigure* f, const nbC
+ 				f->swingHurry[k] = b3MinFloat( f->swingHurry[k], nbMostHurry( foot, up, 0.0f, footTime, f->swingRate[k] ) );
+ 				f->swingStart[k] = -timeStep * f->swingRate[k] * f->swingHurry[k] / footTime;
+ 				f->swingCalm[k] = b3MinFloat( 1.0f / ( f->swingHurry[k] * f->swingHurry[k] ), 1.0f );
++#ifdef NB_X_CALM
++				// trial: a foot that lifts with its toes up, as one that turned on its heel, lifts as much calmer: no early
++				// bump and no toes turned down as far as its toes are up
++				f->swingCalm[k] *= 1.0f - b3ClampFloat( NB_X_CALM * f->ballToe[k] / NB_FOOT_BALL_TOES, 0.0f, 1.0f );
++#endif
+ 			}
+ 			float along = b3ClampFloat( ( swing - f->swingStart[k] ) / ( 1.0f - f->swingStart[k] ), 0.0f, 1.0f );
+ 			// A swing that comes to hurry more than as it lifted lifts and turns its foot less far for that too while its
+diff --git a/src/figure.h b/src/figure.h
+index 6899a17..29f487b 100644
+--- a/src/figure.h
++++ b/src/figure.h
+@@ -583,6 +583,12 @@ typedef struct nbFigure
+ 	// their turns, see NB_POSE_CATCH in figure.c, and whether the heading waited for the feet to stay uncrossed in this
+ 	// update, see NB_FACE_KEEP in figure_steer.c
+ 	float poseShift;
++	float aboutWay;
++	float ballAt[2];
++	bool ballWas[2];
++	float ballSide[2];
++	float aboutFor;
++	bool aboutChosen;
+ 	bool faceWaits;
+ 	// How fast the heel of a foot that turns on its ball comes up, in rad/s, see NB_FOOT_BALL_GAIN in figure.c
+ 	float ballHeelRate[2];
+diff --git a/src/figure_steer.c b/src/figure_steer.c
+index 741ab85..612b6b9 100644
+--- a/src/figure_steer.c
++++ b/src/figure_steer.c
+@@ -1,3 +1,4 @@
++#include <stdio.h>
+ // SPDX-License-Identifier: MIT
+ 
+ // A figure that a program steers, see nbFigure_Steer, as a character controller after chapters 2 and 25.1 of the roadmap
+@@ -1053,16 +1054,92 @@ bool nbMoveSteered( nbWorld* world, int index, nbFigure* f, float timeStep, b3Ve
+ 		// every second it goes 0.26 instead of 0.20 of its speed where it is steered, see SteerWalkAboutTest. Turning at
+ 		// once whatever the feet do, 1.01 s, the feet got 35 instead of 16 mm under the ground in sum. See NB_ABOUT_CREEP.
+ 		bool aboutTurns = f->turnAbout && b3LengthSquared( f->steer.velocity ) > 0.0f;
++#ifdef NB_X_COMMIT
++		// trial: (1) it turns to where it is steered whatever the feet do; (2) while a foot is farther into its swing it
++		// keeps the heading it has instead of turning back to where it moves; a value between 0 and 1: the swing counts
++		// as committed from there
++		bool aboutAsked = aboutTurns;
++		float commit = NB_X_COMMIT < 1.0f ? NB_X_COMMIT : NB_STOP_COMMIT;
++		for ( int k = 0; k < 2 && NB_X_COMMIT != 1.0f; ++k )
++		{
++			aboutTurns = aboutTurns && ( f->footSwings[k] == false || f->swingAlong[k] <= commit );
++		}
++		if ( NB_X_COMMIT == 2.0f && aboutAsked && aboutTurns == false )
++		{
++			want = heading;
++		}
++#else
+ 		for ( int k = 0; k < 2; ++k )
+ 		{
+ 			aboutTurns = aboutTurns && ( f->footSwings[k] == false || f->swingAlong[k] <= NB_STOP_COMMIT );
+ 		}
++#endif
+ 		if ( bends || aboutTurns )
+ 		{
+ 			// Walking a bend, it turns to where it is steered, not to where it moves: it moves the way it faces
+ 			b3Vec3 steered = b3InvRotateVector( tilt, f->steer.velocity );
+ 			want = b3Atan2( steered.x, steered.z );
+ 		}
++#ifdef NB_X_WAY
++		// trial: turning about, it turns the way that keeps its legs uncrossed: to the right where its left foot stands
++		// ahead of the right one by more than NB_X_WAY meters as the turn begins, to the left where the right one
++		// does; a swinging foot counts where it lands. Chosen once for the turn, and kept until less than a quarter turn
++		// is left
++#ifdef NB_X_WAY_NEW
++		// trial: a turn-about steered more than a quarter turn off the one it chose for is a new one
++		b3Vec3 askedNow = b3InvRotateVector( tilt, f->steer.velocity );
++		float askedWay = b3Atan2( askedNow.x, askedNow.z );
++		if ( f->aboutChosen && fabsf( nbWrapAngle( askedWay - f->aboutFor ) ) > 0.5f * B3_PI )
++		{
++			f->aboutChosen = false;
++		}
++#endif
++		if ( f->turnAbout == false )
++		{
++			f->aboutWay = 0.0f;
++			f->aboutChosen = false;
++		}
++		else if ( f->aboutChosen == false )
++		{
++			f->aboutChosen = true;
++#ifdef NB_X_WAY_NEW
++			f->aboutFor = askedWay;
++#endif
++			b3CosSin legs = b3ComputeCosSin( f->heading );
++			b3Pos left = f->footSwings[0] ? f->feet[0].target : f->feet[0].plant;
++			b3Pos right = f->footSwings[1] ? f->feet[1].target : f->feet[1].plant;
++			b3Vec3 offset = b3SubPos( left, right );
++			float along = offset.x * legs.sine + offset.z * legs.cosine;
++			f->aboutWay = along > NB_X_WAY * scale ? -1.0f : ( along < -NB_X_WAY * scale ? 1.0f : 0.0f );
++#ifdef NB_X_WAY_SWING
++			// trial: a foot that swings as the turn begins will stand ahead of the other one
++			if ( f->footSwings[0] != f->footSwings[1] )
++			{
++				f->aboutWay = f->footSwings[0] ? -1.0f : 1.0f;
++			}
++#endif
++#ifdef NB_X_WAY_REAR
++			// trial: with both feet on the ground the one behind lifts next and will stand ahead; with NB_X_WAY_REAR
++			// above zero only where the clock has it lift within that share of a cycle
++			if ( f->footSwings[0] == false && f->footSwings[1] == false )
++			{
++				f->aboutWay = -f->aboutWay;
++			}
++#endif
++		}
++		if ( aboutTurns && f->aboutWay != 0.0f )
++		{
++			float left = nbWrapAngle( want - heading );
++			if ( left * f->aboutWay < 0.0f && fabsf( left ) > 0.5f * B3_PI )
++			{
++				want = nbWrapAngle( heading + f->aboutWay * 0.9f * B3_PI );
++			}
++			else if ( fabsf( left ) >= B3_PI - 0.001f )
++			{
++				want = nbWrapAngle( heading + f->aboutWay * 0.9f * B3_PI );
++			}
++		}
++#endif
+ 	}
+ 	heading = nbTurnToward( heading, want, &f->headingRate, def, timeStep );
+ 
+@@ -1086,7 +1163,13 @@ bool nbMoveSteered( nbWorld* world, int index, nbFigure* f, float timeStep, b3Ve
+ 				continue;
+ 			}
+ 			// turning by change takes the twist of the foot against the legs to twist - change
++#ifdef NB_X_PIVOT
++			// trial: turning about, a planted foot turns farther on the ground in one stance
++			float pivotMost = f->steer.faceVelocity && f->turnAbout ? NB_X_PIVOT * ( B3_PI / 180.0f ) : NB_FOOT_PIVOT;
++			float room = NB_FOOT_TWIST + b3MaxFloat( pivotMost - f->footPivot[k], 0.0f );
++#else
+ 			float room = NB_FOOT_TWIST + b3MaxFloat( NB_FOOT_PIVOT - f->footPivot[k], 0.0f );
++#endif
+ 			float twist = nbWrapAngle( f->footHeading[k] - f->legHeading );
+ 			float most = b3MaxFloat( room, fabsf( twist ) );
+ 			if ( change > 0.0f && twist - change < -most )
+@@ -1157,6 +1240,16 @@ bool nbMoveSteered( nbWorld* world, int index, nbFigure* f, float timeStep, b3Ve
+ 			}
+ 		}
+ 	}
++#ifdef NB_X_DEBUG190
++	{
++		static int dbg = 0;
++		++dbg;
++		fprintf( stderr, "HEAD %d want %.1f was %.1f now %.1f about%d holds%d%d waits%d held %.2f sw%d%d along %.2f %.2f pivot %.2f %.2f twist %.1f %.1f\n", dbg,
++				 57.2958f * f->headingWant, 57.2958f * f->heading, 57.2958f * heading, f->turnAbout, f->footHolds[0], f->footHolds[1], f->faceWaits, f->faceHeld,
++				 f->footSwings[0], f->footSwings[1], f->swingAlong[0], f->swingAlong[1], 57.2958f * f->footPivot[0], 57.2958f * f->footPivot[1],
++				 57.2958f * nbWrapAngle( f->footHeading[0] - f->legHeading ), 57.2958f * nbWrapAngle( f->footHeading[1] - f->legHeading ) );
++	}
++#endif
+ 	f->heading = heading;
+ 	f->frame = nbMakeFrame( world, position, heading );
+ 

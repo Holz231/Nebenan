@@ -1,0 +1,92 @@
+Regel für Runde 191, vor jedem Lauf mit den Geschwindigkeiten der unabhängigen Prüfung festgeschrieben. Gemessen wird
+gegen active-ragdoll-190, dessen Bibliothek die von Runde 189 ist.
+
+Worum es geht. Runde 190 hat gemessen, warum manche Kehrtwenden im Gehen spät sind: Gerade zurück gesteuert dreht die
+Figur immer linksherum, und steht dabei der linke Fuß vorn, wartet die Blickrichtung zweimal je etwa 0,23 s, bis die
+Füße ungekreuzt bleiben (NB_FACE_KEEP). Die Drehrichtung nach den Füßen zu wählen nahm die späten Kehrtwenden weg,
+mischte aber die Kurse neu, und ein Schienbein sprang in mehr Läufen über 37 mm (39 statt 22 von 1 088). Der Nutzer hat
+entschieden: die Schienbein-Sprünge beheben und die Drehrichtung bauen.
+
+Wie groß das Thema ist, Frage 1 des Skills. Über sechzehn Sätze (dev1, dev2, h238 bis h241 und h242 bis h245, die nicht
+mehr frisch sind), je vier Proben: Von 960 einzelnen Kehrtwenden im Gehen (gait155.py, turn180) schaut die Figur im
+Mittel nach 1,13 s zurück, im späten Zehntel nach 1,34 s, spätestens nach 1,47 s, in 176 später als 1,25 s. Richtig
+wäre: keine späte, alle nahe dem Mittel.
+
+Ursachen der Sprünge, Update für Update verfolgt. Erstens: Ein Fuß, der auf der Ferse dreht und die Zehen oben hat, hebt
+mit dem vollen Schwung ab; sein Schienbein springt. Zweitens: Der Punkt, um den eine stehende Sohle dreht, liegt seit
+Runde 189 am Ende der Sohle (NB_FOOT_BALL_EDGE) und sprang in einem Update vom Fersenende ans Zehenende, wo die Hüfte
+über die Mitte der Sohle ging: 58 mm Sprung eines Schienbeins.
+
+Der Eingriff, drei Teile. WAY: Kehrt die Figur im Gehen um, wählt sie einmal je Kehrtwende die Drehrichtung nach den
+Füßen (nach dem Fuß, der in Blickrichtung mehr als 0,05 m mal Körpermaß vor dem anderen steht oder landet, so dass die
+Beine ungekreuzt bleiben; schwingt genau ein Fuß, entscheidet er), und die Blickrichtung dreht dorthin, auch wenn es der
+längere Weg ist; steuert der Spieler mehr als 90 Grad anders, wird neu gewählt. CALM: Ein Fuß mit den Zehen oben hebt
+ruhig ab, so ruhig, wie die Zehen oben sind. SLEW: Der Drehpunkt wandert längs der Sohle höchstens 20 halbe Sohlen in
+der Sekunde.
+
+Varianten, Frage 2, ohne Anstoß auf sechzehn Sätzen (1 088 Läufe der Kurse im Gehen), alt zuerst: Ein Schienbein springt
+über 37 mm in 22 Läufen; nur WAY 39; WAY und CALM 28; dazu SLEW 20 (der Prototyp) 22; SLEW 30 23 mit dem härtesten
+Sprung 61,8 mm; SLEW 10 und 5 je 18, aber in der einzelnen Kehrtwende gleitet ein Fuß 32 und 51 statt 22 mm. Verworfen:
+den Drehpunkt für den ganzen Stand am gewählten Sohlenende zu halten (das Becken sackt in 86 statt 1 von 1 088 Läufen
+über 30 mm); den Fuß, der umsetzt, weicher zu heben, hilft bei 3 von 17 Sprüngen und bleibt offen; den stehenden Fuß bis
+90 Grad drehen zu lassen und den Schritt früher festzulegen, macht die Kehrtwende im Mittel 0,90 s kurz, aber die Beine
+stecken in 1,97 % der Updates ineinander.
+
+Der Prototyp, Frage 3, auf den sechzehn Sätzen mit je vier Proben, neu zuerst. Ziel: Von 960 einzelnen Kehrtwenden
+schaut die Figur in 0 statt 176 später als 1,25 s zurück, spätestens nach 1,22 statt 1,47 s, im späten Zehntel nach 1,16
+statt 1,34 s, im Mittel nach 1,09 statt 1,13 s. Schutz: Auf allen Kursen im Gehen springt ein Schienbein in 89 statt 103
+von 5 440 Läufen über 37 mm (dev1 27 statt 21, dev2 32 statt 51, h238 bis h241 16 statt 11, h242 bis h245 14 statt 20).
+compare170.py nennt auf keiner Gruppe etwas schlechter und die späteste Kehrtwende besser. Von 210 Tests des Prototyps
+bestehen 208; es fallen die zwei Hash-Tests, weil sich ihre Läufe ändern.
+
+Der Preis, offen gesagt. Erstens: In der einzelnen Kehrtwende gehen die Zehen eines Fußes 20,4 statt 13,3 mm am Boden
+und der Fuß gleitet 24,8 statt 22,6 mm; in der Drehung um 90 Grad 16,0 statt 9,2 und 22,0 statt 19,8 mm (vor Runde 189
+waren es in der Kehrtwende 50,8 und 53,8 mm). Zweitens: Das Becken sackt auf den Kursen im Gehen in 10 statt 5 von 5 440
+Läufen mehr als 30 mm unter den stetigen Gang, aber in 0 statt 3 mehr als 40 mm. Die neuen liegen bei 30 bis 34 mm, die
+meisten im schnellen Zickzack (alle 0,3 s um 180 Grad): Dort dreht die Figur jetzt andersherum, steht kurz in ihrer
+Fahrtrichtung, und der erste eilige Schritt mit vollem Tempo senkt die Wurzel 25 mm, damit das Bein den Landepunkt
+erreicht. Auf h238 bis h241 sind es 5 statt 0 von 1 088 Läufen. Die Schwelle 30 mm schneidet mitten durch diese
+Schritte; die Regel zählt deshalb über 30 mm mit Raum und über 35 mm ohne. Drittens: Mit stopBraking null geht die Figur
+im Hin und Her 0,28 statt 0,23 des Tempos dorthin, wohin sie gesteuert wird (besser), mit dem voreingestellten Bremsen
+0,09 statt 0,12 (schlechter, im Test gebunden bei größer null).
+
+Bedingungen, alt ist active-ragdoll-190, neu der saubere Bau, je vier Proben mit tools/measure/check170.sh, check177.sh
+und check186.sh auf einer Gruppe von Sätzen, gerechnet von tools/measure/eval191.py:
+Ziel:
+ Z1 Die einzelnen Kehrtwenden im Gehen aus gait155.py (turn180), über alle Proben: Die Figur schaut in höchstens einem
+   Viertel so vielen später als 1,25 s zurück wie alt, eine ist immer erlaubt; die späteste ist mindestens 0,15 s früher
+   als alt; ihr Mittel ist nicht später.
+Schutz:
+ S1 tools/measure/compare170.py nennt keine Größe schlechter.
+ S2 Auf allen Kursen aus steer162.py im Gehen, über alle Proben, gezählt: Ein Schienbein springt in nicht mehr Läufen
+   über 37 mm als alt, erlaubt ist einer von hundert Läufen mehr; das Becken sackt in höchstens einem von hundert Läufen
+   mehr über 30 mm unter den stetigen Gang und in höchstens einem Lauf mehr über 35 mm; eine Hand springt in höchstens
+   einem Lauf mehr über 30 mm.
+ S3 Die Szenen turn45, turn90, turn180, start90 und start180 aus walk176.py, je Szene das Mittel der Läufe: Ein Fuß
+   gleitet auf dem, worauf er steht, in turn90 und turn180 höchstens 5 mm mehr als alt, sonst höchstens 0,5 mm mehr;
+   seine Zehen gehen am Boden in turn90 und turn180 höchstens 10 mm weiter, sonst höchstens 2 mm; die Figur schaut
+   höchstens 0,05 s später in die neue Richtung; ein Schienbein springt im Mittel höchstens 5 mm mehr; über alle Läufe
+   springen ein Fuß und ein Schienbein über 37 mm und das Becken über 20 mm in höchstens einem Lauf mehr als alt.
+ S4 Von den einzelnen Wechseln aus gait155.py, alle Szenen im Gehen und im Rennen, je Probe gegen dieselbe Probe von
+   alt, schauen nicht mehr über 0,05 s später in die neue Richtung als über 0,05 s früher, und höchstens zwei von
+   hundert später.
+ S5 Anhalten und Weitergehen wie bisher: Im Anhalten (walk176.py, stop) und im Weitergehen nach vorn und nach hinten
+   (rest186.py) springen Fuß und Schienbein höchstens 3 mm härter, das Becken höchstens 2 mm; die Figur kommt in der
+   ersten Sekunde auf 0,02 m genauso weit, und der erste Fuß hebt höchstens 0,05 s später.
+ S6 Alle Tests bestehen, mit gcc und clang, und die Hashes des Benchmarks der Figuren sind mit 1, 2 und 4 Threads
+   gleich. Die Hashes NB_EXPECTED_STEER_HASH und NB_EXPECTED_GAIT_CLIP_HASH ändern sich. Gelockert wird keine Grenze.
+   Verschärft werden die späteste Kehrtwende in SteerWalkAboutTest (höchstens 1,3 statt 1,8 s; sie dauert 1,15 statt
+   1,37 s) und die späteste von sechzig in SteerAboutWaitTest (höchstens 1,35 statt 1,6 s; sie dauert 1,22 statt 1,43
+   s); beide schlagen auf dem alten Stand fehl.
+
+Unabhängige Prüfung: die frischen Sätze h246 bis h249 aus tools/measure/common.sh, Gehen mit 1,0559, 1,2659, 1,4559 und
+1,6659 m/s, Rennen mit 4,2741, 3,8141, 3,3441 und 3,0441 m/s, mit speeds.py gegen alle Geschwindigkeiten geprüft, die je
+gelaufen sind; Gruppe fresh191. Kein Stand ist auf ihnen gelaufen, bevor diese Datei gepusht ist. Hält der saubere Bau
+dort eine Bedingung nicht, wird nicht gebaut, außer der Nutzer entscheidet es; die Regel wird danach nicht geändert, und
+eine Messung, die nicht passt, wird nicht wiederholt.
+
+Der saubere Bau muss auf dev1 ohne Anstoß dieselben drei Tabellen schreiben wie der Prototyp (legs167, gait155,
+steer162, mit cmp verglichen).
+
+Der Prototyp steht als docs/Regeln/trial191.patch: die Bibliothek von Runde 189 und dazu die Schalter -DNB_X_WAY=0.05f
+-DNB_X_WAY_SWING -DNB_X_WAY_REAR -DNB_X_WAY_NEW -DNB_X_CALM=1.0f -DNB_X_SLEW=20.0f.
