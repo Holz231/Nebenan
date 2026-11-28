@@ -6211,8 +6211,9 @@ static int SteerAboutWaitTest( void )
 
 // How often, while a steered figure that faces where it moves is steered round a circle at turn radians a second for 4
 // s out of a walk, from a moment of its step, a foot lifts again 0.08 to 0.2 s after it landed while the other one
-// stands more than 0.3 m behind its hip along the heading
-static int RunCircleTwice( float speed, float turn, int part, int* twice )
+// stands more than 0.3 m behind its hip along the heading (twice), and how often a foot lifts again less than five
+// updates after it landed, wherever the other one is (brief)
+static int RunCircleTwice( float speed, float turn, int part, int* twice, int* brief )
 {
 	FigureScene scene;
 	CreateFigureScene( &scene, 1 );
@@ -6222,6 +6223,7 @@ static int RunCircleTwice( float speed, float turn, int part, int* twice )
 	nbFigure_Steer( figure, &steer );
 	StepFigures( &scene, 200 + 5 * part );
 	*twice = 0;
+	*brief = 0;
 	bool swung[2] = { false, false };
 	int stood[2] = { 1000, 1000 };
 	for ( int i = 0; i < 300; ++i )
@@ -6243,6 +6245,7 @@ static int RunCircleTwice( float speed, float turn, int part, int* twice )
 				float along = ( foot.x - hip.x ) * way.sine + ( foot.z - hip.z ) * way.cosine;
 				*twice += along < -0.3f ? 1 : 0;
 			}
+			*brief += swings && swung[k] == false && stood[k] < 5 ? 1 : 0;
 			stood[k] = swings ? 0 : stood[k] + 1;
 			swung[k] = swings;
 		}
@@ -6267,8 +6270,8 @@ static int SteerStepTwiceTest( void )
 		float speed = k == 0 ? 1.10f : ( k == 1 ? 1.20f : 1.45f );
 		for ( int part = 0; part < 12; ++part )
 		{
-			int twice;
-			ENSURE( RunCircleTwice( speed, 2.0f * B3_PI, part, &twice ) == 0 );
+			int twice, brief;
+			ENSURE( RunCircleTwice( speed, 2.0f * B3_PI, part, &twice, &brief ) == 0 );
 			sum += twice;
 		}
 	}
@@ -6276,6 +6279,35 @@ static int SteerStepTwiceTest( void )
 			"left behind %d times over 36 runs\n",
 			sum );
 	ENSURE( sum == 0 );
+	return 0;
+}
+
+// A steered figure facing where it moves walks at 1.40 m/s and is steered round a circle at 360 degrees a second, and
+// at 1.20 and 1.40 m/s round one at 180 degrees a second, from twelve moments five updates apart. A foot that lifts
+// late there, as one its leg loses, swings as long as any and lands when the clock of the gait has little of its stance
+// left: until round 193 it lifted again as its phase said, an update or two after it touched the ground, and swung
+// twice while the other foot stood behind the hip. Since then a foot that lands so late has had its swing, see
+// NB_GAIT_LAND_LATE in figure.c. Here no foot lifts again less than five updates after it landed, until round 193 36
+// times in the 36 runs; two are allowed, as a foot its leg loses lifts whenever that is. tools/measure/twice192.py
+// counts the same on the courses of steer162.py as brief.
+static int SteerLandLateTest( void )
+{
+	int sum = 0;
+	for ( int k = 0; k < 3; ++k )
+	{
+		float speed = k == 1 ? 1.20f : 1.40f;
+		float turn = k == 0 ? 2.0f * B3_PI : B3_PI;
+		for ( int part = 0; part < 12; ++part )
+		{
+			int twice, brief;
+			ENSURE( RunCircleTwice( speed, turn, part, &twice, &brief ) == 0 );
+			sum += brief;
+		}
+	}
+	printf( "  steered round circles at a walk, a foot lifts again less than five updates after it landed %d times over 36 "
+			"runs\n",
+			sum );
+	ENSURE( sum <= 2 );
 	return 0;
 }
 
@@ -9461,6 +9493,7 @@ int FigureTest( void )
 	RUN_TEST( SteerBallTurnTest );
 	RUN_TEST( SteerAboutWaitTest );
 	RUN_TEST( SteerStepTwiceTest );
+	RUN_TEST( SteerLandLateTest );
 	RUN_TEST( SteerRestTest );
 	RUN_TEST( SteerAboutBackTest );
 	RUN_TEST( SteerLetGoTest );

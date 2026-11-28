@@ -828,6 +828,16 @@ Zehen und Fersen 37 mm, Hände 15 mm, Becken 10 mm, Becken tief ab 15 cm unter d
 - **Ein Ziel, das der Prototyp nicht überall hält, wird vor dem Festschreiben ehrlich kleiner, mit Grund.** Runde 192:
   „ein Viertel“ hielt auf zwei von fünf Gruppen nicht (2 statt 7), weil die übrigen Fälle aus anderen Regeln kommen. Die
   Regel sagt „die Hälfte“ und nennt die übrigen Fälle; auf den frischen Sätzen war es dann 1 statt 7.
+- **Eine Bedingung an dem Moment festmachen, an dem die Ursache entsteht.** Runde 193: Der Versuch aus Runde 192 fragte
+  beim Abheben „ist dieser Fuß eben gelandet?“ und griff 34-mal auf 408 Läufen, auch wo nichts falsch war. Die Ursache
+  entsteht beim Landen: Die Uhr hat vom Stand fast nichts übrig. Dort gemerkt (`landedLate`), greift die Regel nur in
+  dem Fall und kostet keine Schienbein-Sprünge.
+- **Wer einen Fuß am Abheben hindert, muss den anderen nicht heben.** Runde 193: In zwei Runden war „dann hebt der
+  andere an seiner Stelle“ die schlechtere Variante (Schienbein 12 statt 6 von 408 Läufen). Die Regeln für verlorene und
+  führende Füße heben ihn, sobald es nötig ist.
+- **Ein Werkzeug darf eine Größe dazubekommen, wenn die alten Größen gleich bleiben.** Runde 193: `twice192.py` zählt
+  neu `brief`; `twice`, `touch`, `far` und `under` sind unverändert, ein Lauf mit altem und neuem Werkzeug gab dieselben
+  Zeilen. Der alte Stand läuft dann auf allen Gruppen neu, weil seine Dateien die Größe nicht haben.
 - **Größe der Figur.** Winkelbeschleunigungen wachsen bei kleineren Figuren mit 1 durch `nbFigureScale`, Längen
   und Geschwindigkeiten mit ihr.
 

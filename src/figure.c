@@ -5709,6 +5709,17 @@ static float nbSwingTime( const nbFigure* f, int k, float swingTime, float cycle
 #define NB_GAIT_SIDE_GAP_STRAIGHT 0.03f
 #define NB_GAIT_FRESH 0.2f
 #define NB_GAIT_FRESH_KEEP 0.4f
+// A foot that lifts late, as one its leg loses or one that sets off after a turn-about, swings as long as any and can
+// land when the clock of the gait has little of its stance left. It could lift again as its phase said, an update or
+// two after it touched the ground: it swung twice within 0.5 s while the other foot stood 0.3 to 0.48 m behind the hip,
+// rolled over its toes up to 0.74 rad. On 7616 runs of courses at a walk a foot lifted again less than 0.08 s after it
+// landed 686 times, see tools/measure/twice192.py. A foot that lands at a walk with less than NB_GAIT_LAND_LATE of a
+// cycle of its stance left has had its swing: it does not lift as its phase says until the phase has come round once,
+// see nbFigure::landedLate; where its leg loses it, it lifts as any other. 87 times since, and those the legs lose.
+// With 0.05 of a cycle 43 instead of 19 times on 1632 of the runs, with 0.2 of a cycle 27 times. Lifting the other foot
+// in its place at once, as the clock has the one that landed due, a shin jumped more than 37 mm on 12 instead of 6 of
+// 408 runs: the other foot lifts by the rules it has.
+#define NB_GAIT_LAND_LATE 0.1f
 
 // Off stairs where a swinging foot lands, see NB_GAIT_FOOT_BAND: at the place end where the gait puts it, whose ground was
 // found as lift and tilt, or else at the nearest place along its toes or out to its side with ground within the band of
@@ -5957,6 +5968,7 @@ static void nbSteerFeet( const nbWorld* world, int index, nbFigure* f, const nbC
 		{
 			f->footSwings[k] = false;
 			f->canLift[k] = true;
+			f->landedLate[k] = false;
 			f->footRoll[k] = 0.0f;
 			f->footRolled[k] = 0.0f;
 			f->footRollGain[k] = 0.0f;
@@ -6419,6 +6431,12 @@ static void nbSteerFeet( const nbWorld* world, int index, nbFigure* f, const nbC
 				f->footSwings[k] = false;
 				f->gaitStarting = false;
 				f->canLift[k] = phase < stance;
+				// One that lands late in its stance by the clock has had its swing, see NB_GAIT_LAND_LATE
+				f->landedLate[k] = run <= 0.0f && phase < stance && stance - phase < NB_GAIT_LAND_LATE;
+				if ( f->landedLate[k] )
+				{
+					f->canLift[k] = false;
+				}
 				float stepSide = f->stepBack[k] ? -1.0f : 1.0f;
 				float kept = f->stepBack[k] ? f->swingHeel[k] : b3MinFloat( heel, f->swingHeel[k] );
 				float landed = -stepSide * f->heelPart[k] * kept;
@@ -6524,7 +6542,11 @@ static void nbSteerFeet( const nbWorld* world, int index, nbFigure* f, const nbC
 				}
 			}
 
-			f->canLift[k] = f->canLift[k] || phase < stance;
+			if ( phase < 0.5f * ( stance - NB_GAIT_LAND_LATE ) || f->footSwings[k] )
+			{
+				f->landedLate[k] = false;
+			}
+			f->canLift[k] = f->canLift[k] || ( phase < stance && f->landedLate[k] == false );
 			float before = ( stance - phase ) / NB_GAIT_PRESWING;
 			float push = b3ClampFloat( 1.0f - before, 0.0f, 1.0f );
 			push = push * push * push * ( 10.0f + push * ( 6.0f * push - 15.0f ) );

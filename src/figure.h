@@ -586,6 +586,9 @@ typedef struct nbFigure
 	bool faceWaits;
 	// How fast the heel of a foot that turns on its ball comes up, in rad/s, see NB_FOOT_BALL_GAIN in figure.c
 	float ballHeelRate[2];
+	// Whether a foot landed with little of its stance left by the clock of the gait and waits for its phase to come round
+	// before it lifts as the phase says, see NB_GAIT_LAND_LATE in figure.c
+	bool landedLate[2];
 	// Which way it turns about, to its left 1 and to its right -1, 0 the shorter way, whether that is chosen for this
 	// turn-about and the way it was steered then, see NB_ABOUT_WAY in figure_steer.c; and where on its sole a planted
 	// foot turned in the last update, from the middle of the sole in meters, and whether it turned, see

@@ -151,6 +151,9 @@ was schon verworfen wurde.
   der Fuß um, dessen Stand nach der Uhr zuerst endet (`waitedFor`), seit Runde 192 nur, solange `out` des anderen Fußes
   nicht unter `quickest` liegt. `tools/measure/twice192.py` zählt Doppelschritte: `twice` nach kurzem Stand, `touch`
   nach einer bloßen Berührung (die Uhr des Gangs hat den Fuß beim Landen schon wieder dran, offen).
+- **Spät gelandeter Fuß.** Landet ein Fuß im Gehen, wenn nach der Uhr weniger als `NB_GAIT_LAND_LATE` Takt seines Stands
+  übrig ist, setzt `nbSteerFeet` `landedLate` und `canLift` bleibt aus, bis die Phase einmal herum ist; die Regeln für
+  verlorene Füße (`lost`, `first`) heben ihn trotzdem. `twice192.py` zählt kurze Berührungen als `brief`.
 - **Messen mit Rauschband.** Seit Runde 170 kommen Änderungen in den Werkzeugen an fester Schrittphase (`SYNC`), und
   Stände werden in vier Proben mit `NUDGE` gemessen (`check170.sh`) und mit `compare170.py` verglichen. Eine Regel setzt
   ihre Toleranzen aus den Spannen und nennt eine Bedingung verfehlt, wo die Spannen sich nicht überdecken.
