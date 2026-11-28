@@ -3,9 +3,10 @@
 # (common.sh), from its 4 moments of the cycle, at the nudges given (NUDGE in lab101.c, "0,1,2,3"). Per run: how often a
 # foot lifts less than SOON seconds after it landed while the other foot stands more than BEHIND meters behind its hip
 # along the heading: after it stood for TOUCH seconds or more (twice), as the step a waiting heading asks for, see
-# NB_FOOT_STEP_STOOD in figure.c, and after less (touch), as where the clock of the gait has it due as it lands; how
-# far a planted foot gets behind its hip (far, m) and how far the pelvis gets below its lowest of the steady walk
-# (under, mm). Writes out/res/<variant>/twice192.json and prints the counts. Needs lab101 of the variant.
+# NB_FOOT_STEP_STOOD in figure.c, and after less (touch), as where the clock of the gait has it due as it lands, and
+# since round 193 after less wherever the other foot is (brief); how far a planted foot gets behind its hip (far, m) and
+# how far the pelvis gets below its lowest of the steady walk (under, mm). Writes out/res/<variant>/twice192.json and
+# prints the counts. Needs lab101 of the variant.
 import csv, json, os, subprocess, sys
 from concurrent.futures import ThreadPoolExecutor
 import numpy as np
@@ -40,7 +41,7 @@ def one(job):
         along[leg] = (d['b%dx' % foot] - d['b%dx' % thigh]) * sn + (d['b%dz' % foot] - d['b%dz' % thigh]) * cs
         up[leg] = d['swing' + leg] > 0.5
     far = max(float(np.max(-along[leg][win & ~up[leg]])) for leg in 'LR')
-    twice, touch = 0, 0
+    twice, touch, brief = 0, 0, 0
     for leg, mate in (('L', 'R'), ('R', 'L')):
         landed = -1.0
         for k in range(1, len(t)):
@@ -48,11 +49,11 @@ def one(job):
             if up[leg][k] and not up[leg][k - 1] and win[k] and landed >= 0.0 and t[k] - landed < SOON:
                 left = int(not up[mate][k] and along[mate][k] < -BEHIND)
                 if t[k] - landed >= TOUCH: twice += left
-                else: touch += left
+                else: touch += left; brief += 1
     low = BANDS[(variant, name, v)]
     if course[0] == 'gears': low = min(low, BANDS[(variant, name, other)])
     under = 1000.0 * float(np.max(low - d['b0y'][win]))
-    return dict(set=name, course=label, moment=i, nudge=nudge, twice=twice, touch=touch, far=far, under=under)
+    return dict(set=name, course=label, moment=i, nudge=nudge, twice=twice, touch=touch, brief=brief, far=far, under=under)
 
 
 def main():
@@ -66,10 +67,12 @@ def main():
         res = list(pool.map(one, jobs))
     json.dump(res, open(os.path.join(W, 'res', variant, 'twice192.json'), 'w'))
     count = lambda k, most: sum(r[k] > most for r in res)
+    total = lambda k: sum(r[k] for r in res)
     print('%d runs: a foot lifts again as it has landed while the other is left behind %d times on %d runs, and after it '
-          'only touched the ground %d times; a planted foot gets more than 0.55 m behind its hip on %d runs, %.2f m at '
-          'most; the pelvis more than 30, 40 and 60 mm low on %d, %d and %d runs, %.0f mm at most' % (
-              len(res), sum(r['twice'] for r in res), count('twice', 0), sum(r['touch'] for r in res), count('far', 0.55),
+          'only touched the ground %d times, of %d times it only touched the ground; a planted foot gets more than 0.55 m '
+          'behind its hip on %d runs, %.2f m at most; the pelvis more than 30, 40 and 60 mm low on %d, %d and %d runs, '
+          '%.0f mm at most' % (
+              len(res), total('twice'), count('twice', 0), total('touch'), total('brief'), count('far', 0.55),
               max(r['far'] for r in res), count('under', 30.0), count('under', 40.0), count('under', 60.0),
               max(r['under'] for r in res)))
 

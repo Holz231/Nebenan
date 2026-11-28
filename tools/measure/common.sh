@@ -325,3 +325,9 @@ SET_h250="WALK=1.0759 RUN=4.3341 DIAG=0.76 CW=1.223 CR=0.676"
 SET_h251="WALK=1.2359 RUN=3.8741 DIAG=0.87 CW=1.141 CR=0.697"
 SET_h252="WALK=1.4659 RUN=3.4141 DIAG=1.04 CW=1.048 CR=0.724"
 SET_h253="WALK=1.6459 RUN=3.0841 DIAG=1.16 CW=0.989 CR=0.747"
+# Round 193, the independent check of a foot that lands late in its stance by the clock: chosen with speeds.py before
+# any build ran at them, group fresh193 of check170.sh, check177.sh, check186.sh and check192.sh.
+SET_h254="WALK=1.0959 RUN=4.4141 DIAG=0.77 CW=1.212 CR=0.673"
+SET_h255="WALK=1.2159 RUN=3.9341 DIAG=0.86 CW=1.150 CR=0.694"
+SET_h256="WALK=1.4359 RUN=3.5041 DIAG=1.02 CW=1.059 CR=0.718"
+SET_h257="WALK=1.6259 RUN=3.1441 DIAG=1.15 CW=0.995 CR=0.742"

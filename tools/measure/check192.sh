@@ -10,7 +10,8 @@ case $2 in
   fresh189) SETS="h242 h243 h244 h245";;
   fresh191) SETS="h246 h247 h248 h249";;
   fresh192) SETS="h250 h251 h252 h253";;
-  *) echo "check192.sh state dev1|dev2|fresh186|fresh188|fresh189|fresh191|fresh192"; exit 1;;
+  fresh193) SETS="h254 h255 h256 h257";;
+  *) echo "check192.sh state dev1|dev2|fresh186|fresh188|fresh189|fresh191|fresh192|fresh193"; exit 1;;
 esac
 [ -f "$W/res/$1/twice192.$2.json" ] && exit 0
 python3 -I "$M/twice192.py" $1 0,1,2,3 $SETS > "$W/res/$1/twice192.$2.txt" 2>&1 || { echo "twice192 failed on $1"; exit 1; }

@@ -1,0 +1,87 @@
+Regel für Runde 193, vor jedem Lauf mit den Geschwindigkeiten der unabhängigen Prüfung festgeschrieben. Gemessen wird
+gegen active-ragdoll-192.
+
+Worum es geht. Runde 192 hat neben der Schrittregel einen zweiten Grund gefunden, aus dem ein Fuß zwei Schritte
+hintereinander macht: Er landet, wo die Uhr des Gangs ihn schon wieder dran hat, berührt den Boden für ein paar Updates
+und hebt wieder ab; der andere bleibt hinter der Hüfte stehen. Der Nutzer hat entschieden, das als Nächstes zu beheben.
+
+Die Ursache, Update für Update verfolgt an drei Stellen (h10 Hin und Her alle 0,6 s, h29 Kreis mit 360 Grad je Sekunde,
+h241 Hin und Her jede Sekunde; die Hebegründe aus Debug-Zeilen). Ein Fuß, der spät abhebt, etwa weil sein Bein ihn
+verliert oder weil er nach einer Kehrtwende absetzt, schwingt so lange wie jeder andere und landet, wenn seine Phase
+kurz vor dem Ende seines Stands nach der Uhr steht. Beim Landen darf er wieder abheben, weil seine Phase noch im Stand
+liegt; ein oder zwei Updates später endet der Stand nach der Uhr, und er hebt ab. Er schwingt 0,5 s lang zweimal; der
+andere steht währenddessen 0,3 bis 0,48 m hinter der Hüfte, über die Zehen gerollt bis 0,74 rad.
+
+Wie groß das Thema ist, Frage 1 des Skills. Mit tools/measure/twice192.py, das seit dieser Runde auch jede kurze
+Berührung zählt (brief), auf sechs Gruppen (dev1, dev2, h238 bis h253) mit je vier Proben, 7 616 Läufe der Kurse im
+Gehen: Ein Fuß hebt 686-mal weniger als 0,08 s nach dem Landen wieder ab, also in etwa jedem elften Lauf; 22-mal davon
+steht der andere mehr als 0,3 m hinter seiner Hüfte. Mit Debug-Zeilen auf dev1 bei zwei Proben: von 66 solchen Abhebern
+hebt 59 die Uhr und 7 die Regel für verlorene Füße. Richtig wäre: keiner durch die Uhr.
+
+Der Eingriff. Ein Fuß, der im Gehen landet, wenn nach der Uhr weniger als ein Zehntel Takt seines Stands übrig ist, hat
+seinen Schwung gehabt: Er darf nicht abheben, wenn seine Phase es sagt, erst wieder, nachdem sie einmal herum ist.
+Verliert sein Bein ihn, hebt er wie jeder andere. Den anderen Fuß heben die Regeln, die es gibt.
+
+Varianten, Frage 2, auf dev1: kurze Berührungen über vier Proben, davon mit dem anderen Fuß zurück, und Läufe mit einem
+Schienbein über 37 mm bei den Proben 0 und 2 (je 408 Läufe). Alt: 134, 4, Schienbein 7 und 6. Grenze 0,05 Takt: 43, 0, 7
+und 7. Grenze 0,1 Takt (der Prototyp): 19, 1, 6 und 6. Grenze 0,2 Takt: 27, 1, 7 und 6. Dazu jeweils den anderen Fuß
+sofort an seiner Stelle heben, wenn die Uhr den gelandeten dran hat: mit 0,05 Takt 44 kurze Berührungen und 2 neue
+Doppelschritte nach kurzem Stand, mit 0,1 Takt 24, 3 Doppelschritte und Schienbein 12 und 12, mit 0,2 Takt 79 und
+Schienbein 13. Verworfen: Der andere Fuß hebt besser nach seinen eigenen Regeln. Der Versuch aus Runde 192 (NB_X_DUE)
+war dieselbe Idee mit breiterer Bedingung.
+
+Der Prototyp, Frage 3, auf den sechs Gruppen mit je vier Proben, neu zuerst. Ziel: Ein Fuß hebt 87-mal statt 686-mal
+nach kurzer Berührung wieder ab (je Gruppe 19, 19, 12, 16, 14 und 7 statt 134, 141, 103, 107, 98 und 103), 7-mal statt
+22-mal mit dem anderen Fuß zurück. Von den übrigen auf dev1 hebt alle die Regel für verlorene Füße. Schutz:
+compare170.py nennt auf keiner Gruppe etwas schlechter. Von 211 Tests des Prototyps bestehen alle 211, kein Hash ändert
+sich.
+
+Der Preis, offen gesagt. Erstens: Ein Schienbein springt in 106 statt 100 von 7 616 Läufen über 37 mm (je Gruppe 24, 29,
+11, 20, 9 und 13 statt 25, 30, 13, 14, 5 und 13). Zweitens: Von 19 712 einzelnen Wechseln schauen 4 mehr als 0,05 s
+später in die neue Richtung und keiner früher; es sind einzelne Kehrtwenden, die 1,18 statt 1,05 s dauern, keine über
+1,25 s. Drittens: Ein Fuß, der einen Moment gestanden hat, hebt 7-mal statt 6-mal wieder ab, während der andere
+zurückbleibt (das Ziel von Runde 192; je Gruppe höchstens einer mehr).
+
+Bedingungen, alt ist active-ragdoll-192, neu der saubere Bau, je vier Proben mit tools/measure/check170.sh, check177.sh,
+check186.sh und check192.sh auf einer Gruppe von Sätzen, gerechnet von tools/measure/eval193.py:
+Ziel:
+ Z1 Auf allen Kursen aus steer162.py im Gehen (twice192.py, brief), über alle Proben: Ein Fuß hebt höchstens ein Viertel
+   so oft wie alt weniger als 0,08 s nach dem Landen wieder ab.
+ Z2 Davon mit dem anderen Fuß mehr als 0,3 m hinter seiner Hüfte (touch): höchstens halb so oft wie alt und einmal.
+Schutz:
+ S1 tools/measure/compare170.py nennt keine Größe schlechter.
+ S2 Auf denselben Läufen, gezählt: Ein Fuß, der 0,08 bis 0,2 s gestanden hat, hebt höchstens zweimal öfter wieder ab als
+   alt, während der andere zurückbleibt; das Becken sackt in keinem Lauf mehr über 60 mm als alt, und kein stehender Fuß
+   kommt in mehr Läufen über 0,55 m hinter seine Hüfte. Auf allen Kursen aus steer162.py im Gehen springt ein Schienbein
+   in höchstens einem von hundert Läufen mehr über 37 mm als alt; das Becken sackt in höchstens einem von hundert Läufen
+   mehr über 30 mm, in höchstens einem Lauf mehr über 35 mm und in keinem Lauf mehr über 60 mm; eine Hand springt in
+   höchstens einem Lauf mehr über 30 mm.
+ S3 Die Szenen turn45, turn90, turn180, start90 und start180 aus walk176.py, je Szene das Mittel der Läufe: Ein Fuß
+   gleitet auf dem, worauf er steht, in turn180 höchstens 2 mm mehr als alt, sonst höchstens 0,5 mm mehr; seine Zehen
+   gehen am Boden höchstens 2 mm weiter; die Figur schaut höchstens 0,05 s später in die neue Richtung; ein Schienbein
+   springt im Mittel höchstens 5 mm mehr; über alle Läufe springen ein Fuß und ein Schienbein über 37 mm und das Becken
+   über 20 mm in höchstens einem Lauf mehr als alt. Die einzelnen Kehrtwenden aus gait155.py: höchstens eine mehr später
+   als 1,25 s, die späteste höchstens 0,05 s später, ihr Mittel höchstens 0,01 s später.
+ S4 Von den einzelnen Wechseln aus gait155.py, alle Szenen im Gehen und im Rennen, je Probe gegen dieselbe Probe von
+   alt, schauen höchstens bei einem von fünfhundert Wechseln mehr über 0,05 s später in die neue Richtung als über 0,05
+   s früher.
+ S5 Anhalten und Weitergehen wie bisher: Im Anhalten (walk176.py, stop) und im Weitergehen nach vorn und nach hinten
+   (rest186.py) springen Fuß und Schienbein höchstens 3 mm härter, das Becken höchstens 2 mm; die Figur kommt in der
+   ersten Sekunde auf 0,02 m genauso weit, und der erste Fuß hebt höchstens 0,05 s später.
+ S6 Alle Tests bestehen, mit gcc und clang, und die Hashes des Benchmarks der Figuren sind mit 1, 2 und 4 Threads
+   gleich. Kein Hash der Tests ändert sich. Gelockert wird keine Grenze. Dazu kommt ein Test, der auf dem alten Stand
+   fehlschlägt: Er zählt, wie oft ein Fuß nach kurzer Berührung wieder abhebt.
+
+Unabhängige Prüfung: die frischen Sätze h254 bis h257 aus tools/measure/common.sh, Gehen mit 1,0959, 1,2159, 1,4359 und
+1,6259 m/s, Rennen mit 4,4141, 3,9341, 3,5041 und 3,1441 m/s, mit speeds.py gegen alle Geschwindigkeiten geprüft, die je
+gelaufen sind; Gruppe fresh193. Kein Stand ist auf ihnen gelaufen, bevor diese Datei gepusht ist. Hält der saubere Bau
+dort eine Bedingung nicht, wird nicht gebaut, außer der Nutzer entscheidet es; die Regel wird danach nicht geändert, und
+eine Messung, die nicht passt, wird nicht wiederholt. Über die Bedingungen hinaus werden die tiefsten Läufe der frischen
+Sätze einzeln angesehen und im Bericht genannt.
+
+Der saubere Bau muss auf dev1 ohne Anstoß dieselben drei Tabellen schreiben wie der Prototyp (legs167, gait155,
+steer162, mit cmp verglichen).
+
+Der Prototyp steht als docs/Regeln/trial193.patch: die Bibliothek von Runde 192 und dazu der Schalter -DNB_X_LATE=0.1f.
+Der alte Stand hat auf dev1, dev2 und h238 bis h249 die Tabellen des Prototyps von Runde 192, der dieselben schreibt wie
+dessen sauberer Bau; twice192.py ist auf allen Gruppen mit dem alten Stand neu gelaufen.
