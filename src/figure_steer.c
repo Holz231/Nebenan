@@ -153,6 +153,18 @@
 // waited again at 95 and at 151 degrees, and faced back after 1.58 instead of 1.31 s. Never starting the time anew
 // while the heading turns, also where it had waited only briefly, the feet crossed steered back and forth in 6.5
 // instead of 1 of the runs.
+// Steered straight back at a walk, see NB_WALK_ABOUT, the heading turned to its left, the shorter way of two that are
+// as long. Where the left foot stood ahead of the right one then, it would have come to lie on the right of it, and the
+// heading waited twice for the feet to stay uncrossed, see NB_FACE_KEEP, about 0.23 s each time: over 768 turn-abouts
+// at twelve moments of the step the figure faced back after 1.12 s in the mean, after 1.34 s in the late tenth and
+// after 1.47 s at the latest. Since round 191 it turns the way that keeps its legs uncrossed, chosen once as the
+// turn-about begins and kept until less than a quarter turn is left: to its right where its left foot will stand ahead,
+// to its left where the right one will. Ahead will stand the foot that swings then; with both feet on the ground the
+// one behind, which lifts next, where the feet are more than NB_ABOUT_WAY meters apart along the heading for the
+// humanoid of 1.8 m: by where the feet stand alone, the turns stayed late in which both feet stood as it was steered
+// back. A turn-about steered more than a quarter turn off the one it chose for chooses anew.
+#define NB_ABOUT_WAY 0.05f
+
 #define NB_FACE_KEEP 0.06f
 #define NB_FACE_HOLD 0.5f
 #define NB_WALK_TURN_NEW 0.866f
@@ -1062,6 +1074,47 @@ bool nbMoveSteered( nbWorld* world, int index, nbFigure* f, float timeStep, b3Ve
 			// Walking a bend, it turns to where it is steered, not to where it moves: it moves the way it faces
 			b3Vec3 steered = b3InvRotateVector( tilt, f->steer.velocity );
 			want = b3Atan2( steered.x, steered.z );
+		}
+		// Turning about, it turns the way that keeps its legs uncrossed, see NB_ABOUT_WAY
+		b3Vec3 askedNow = b3InvRotateVector( tilt, f->steer.velocity );
+		float askedWay = b3Atan2( askedNow.x, askedNow.z );
+		if ( f->aboutChosen && fabsf( nbWrapAngle( askedWay - f->aboutFor ) ) > 0.5f * B3_PI )
+		{
+			f->aboutChosen = false;
+		}
+		if ( f->turnAbout == false )
+		{
+			f->aboutWay = 0.0f;
+			f->aboutChosen = false;
+		}
+		else if ( f->aboutChosen == false )
+		{
+			f->aboutChosen = true;
+			f->aboutFor = askedWay;
+			b3CosSin legs = b3ComputeCosSin( f->heading );
+			b3Pos left = f->footSwings[0] ? f->feet[0].target : f->feet[0].plant;
+			b3Pos right = f->footSwings[1] ? f->feet[1].target : f->feet[1].plant;
+			b3Vec3 offset = b3SubPos( left, right );
+			float along = offset.x * legs.sine + offset.z * legs.cosine;
+			f->aboutWay = along > NB_ABOUT_WAY * scale ? -1.0f : ( along < -NB_ABOUT_WAY * scale ? 1.0f : 0.0f );
+			if ( f->footSwings[0] != f->footSwings[1] )
+			{
+				// The foot that swings will stand ahead
+				f->aboutWay = f->footSwings[0] ? -1.0f : 1.0f;
+			}
+			if ( f->footSwings[0] == false && f->footSwings[1] == false )
+			{
+				// and with both on the ground the one behind, which lifts next
+				f->aboutWay = -f->aboutWay;
+			}
+		}
+		if ( aboutTurns && f->aboutWay != 0.0f )
+		{
+			float left = nbWrapAngle( want - heading );
+			if ( ( left * f->aboutWay < 0.0f && fabsf( left ) > 0.5f * B3_PI ) || fabsf( left ) >= B3_PI - 0.001f )
+			{
+				want = nbWrapAngle( heading + f->aboutWay * 0.9f * B3_PI );
+			}
 		}
 	}
 	heading = nbTurnToward( heading, want, &f->headingRate, def, timeStep );

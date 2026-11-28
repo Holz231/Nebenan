@@ -802,6 +802,18 @@ Zehen und Fersen 37 mm, Hände 15 mm, Becken 10 mm, Becken tief ab 15 cm unter d
 - **Ein Gewinn, der die Abläufe ändert, bringt die seltenen Sprünge anderer Regeln ans Licht.** Mit der neuen
   Drehrichtung liefen die Kurse anders, und ein Abheber aus Runde 156 kam doppelt so oft vor. Das ist kein Grund gegen
   die Änderung, aber einer, erst diese Sprünge zu beheben.
+- **Eine Zählung mit „einem Lauf mehr“ braucht daneben eine hohe Schwelle ohne Raum.** Runde 191: Die Regel erlaubte dem
+  Becken einen Lauf mehr über 35 mm und ließ die Bedingung „kein Lauf mehr über 60 mm“ aus Runde 189 weg. Auf den
+  frischen Sätzen sackte genau ein Lauf 97 mm, und die Regel hielt. Zählen statt Maximum ist richtig (Runde 188), aber
+  ein Ausreißer von der Art, die eine frühere Runde behoben hat, bekommt seine eigene Bedingung.
+- **Vor dem Festschreiben auch die Gruppen messen, die nicht mehr frisch sind.** Runde 191: dev1 und dev2 zeigten 3
+  Läufe mit dem Becken knapp über 30 mm, h238 bis h241 allein 4 von 384: Die Schwelle schnitt mitten durch einen Haufen
+  bei 30 bis 34 mm. Eine Bedingung, die so liegt, ist auf frischen Sätzen ein Münzwurf; die Schwelle gehört neben den
+  Haufen, mit dem Grund in der Regel.
+- **Wer die Kurse neu mischt, weckt alte Regeln an neuen Stellen.** Runde 191: Die Drehrichtung nach den Füßen hat
+  keinen neuen Fehler gebaut, aber die Schrittregel aus Runde 189 in eine Lage gebracht, in der sie den falschen Fuß
+  hebt. Nach einem Bau, der Abläufe umstellt, die tiefsten Läufe der frischen Sätze einzeln ansehen, auch wenn jede
+  Bedingung hält.
 - **Größe der Figur.** Winkelbeschleunigungen wachsen bei kleineren Figuren mit 1 durch `nbFigureScale`, Längen
   und Geschwindigkeiten mit ihr.
 

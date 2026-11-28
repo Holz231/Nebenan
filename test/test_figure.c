@@ -6039,6 +6039,9 @@ static int RunAboutBraking( float* brakes )
 // figure.c: it gets 0.22 m to the side, faces back within 1.37 s and steered back and forth goes 0.12 of the speed;
 // with stopBraking at zero it gets 0.16 m to the side, faces back within 1.30 s, and steered back and forth it goes
 // 0.23 instead of 0.26 of the speed where it is steered, the price there, the bound is 0.20 since.
+// Since round 191 it turns about the way that keeps its legs uncrossed, see NB_ABOUT_WAY in figure_steer.c: it faces
+// back within 1.15 s over the twelve turns, the bound is 1.3 s since, and gets 0.14 m to the side; steered back and
+// forth it goes 0.09 of the speed, with stopBraking at zero 0.28, and faces back within 1.25 s there.
 static int SteerWalkAboutTest( void )
 {
 	BendTurn about, spot, hard;
@@ -6067,7 +6070,7 @@ static int SteerWalkAboutTest( void )
 	ENSURE( about.onward <= 0.30f );
 	ENSURE( about.sideways <= 0.28f );
 	ENSURE( about.sunk <= 0.064f );
-	ENSURE( about.faced <= 1.8f );
+	ENSURE( about.faced <= 1.3f );
 	ENSURE( follows > 0.0f );
 	ENSURE( brakesHard >= 10.0f );
 	ENSURE( hard.onward <= 0.25f );
@@ -6168,6 +6171,9 @@ static int SteerBallTurnTest( void )
 // the foot turning on its heel and the time starting anew 1.53 and 1.17 s, until round 184 1.50 and 1.16 s. The turns
 // that waited twice are those of tools/measure/gait155.py, which start gently, see
 // nbFigureSteering::startAcceleration; this bounds how long a turn-about takes at every moment of the step.
+// Until round 191 the heading turned to its left steered straight back, and where the left foot stood ahead it waited
+// twice: 1.43 s at the latest and 1.16 s in the mean. Turning the way that keeps the legs uncrossed, see NB_ABOUT_WAY
+// in figure_steer.c, it faces back after 1.22 s at the latest and 1.10 s in the mean; the latest is bound at 1.35 s.
 static int SteerAboutWaitTest( void )
 {
 	float latest = 0.0f, sum = 0.0f;
@@ -6198,7 +6204,7 @@ static int SteerAboutWaitTest( void )
 	}
 	printf( "  turning about at 1.58 m/s at sixty moments it faces back after %.2f s at the latest, %.2f s in their mean\n",
 			latest, sum / 60.0f );
-	ENSURE( latest <= 1.6f );
+	ENSURE( latest <= 1.35f );
 	ENSURE( sum / 60.0f <= 1.2f );
 	return 0;
 }
@@ -9240,7 +9246,7 @@ static int ThinBoardTest( void )
 // walking takes the steps of people, see NB_GAIT_CADENCE_WALK, and the ankle of a swinging foot bends up as far as
 // theirs, see NB_SWING_ANKLE_SOFT. Round 113: the body has the dimensions of a person, see nbMakeHumanoidBones.
 // Round 131: a foot that only just landed stands where the other foot is free to lift, see NB_GAIT_FRESH_KEEP.
-#define NB_EXPECTED_STEER_HASH 0x5928cbdeu
+#define NB_EXPECTED_STEER_HASH 0x5731765bu
 
 // See RunGaitClipScenario. Since round 99 as for RunSteerScenario. Since round 100 the figure that is told to turn on
 // the spot while it still walks, not facing where it moves, keeps its legs where they face as its heading turns, and
@@ -9249,7 +9255,7 @@ static int ThinBoardTest( void )
 // RunSteerScenario. Since round 111 as for RunSteerScenario. Round 112: the clips are recorded from a gait that takes
 // the steps of people, see NB_GAIT_CADENCE_WALK, and the ankle of a swinging foot bends up as far as theirs, see
 // NB_SWING_ANKLE_SOFT. Round 113 and round 131 as for RunSteerScenario.
-#define NB_EXPECTED_GAIT_CLIP_HASH 0x2c71026fu
+#define NB_EXPECTED_GAIT_CLIP_HASH 0x09b86168u
 
 static int FigureFollowDeterminismTest( void )
 {

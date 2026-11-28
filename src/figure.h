@@ -586,6 +586,15 @@ typedef struct nbFigure
 	bool faceWaits;
 	// How fast the heel of a foot that turns on its ball comes up, in rad/s, see NB_FOOT_BALL_GAIN in figure.c
 	float ballHeelRate[2];
+	// Which way it turns about, to its left 1 and to its right -1, 0 the shorter way, whether that is chosen for this
+	// turn-about and the way it was steered then, see NB_ABOUT_WAY in figure_steer.c; and where on its sole a planted
+	// foot turned in the last update, from the middle of the sole in meters, and whether it turned, see
+	// NB_FOOT_BALL_SLEW in figure.c
+	float aboutWay;
+	float aboutFor;
+	bool aboutChosen;
+	float ballAt[2];
+	bool ballWas[2];
 	float ballToe[2];
 	float sinceRun;
 	// For how long its gait has been a walk without a part of a run, in seconds, see NB_STOP_WALKED in figure_steer.c

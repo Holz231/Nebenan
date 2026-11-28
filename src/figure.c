@@ -5595,6 +5595,16 @@ static b3Vec3 nbPlanAhead( const nbFigure* f, nbCapsulePlan* plan, float time, f
 #define NB_FOOT_BALL_EDGE 0.17f
 #define NB_FOOT_BALL_GAIN 30.0f
 
+// A foot that lifts with its toes up, as one that turned on its heel, see NB_FOOT_BALL_TOES, lifts calmer by the share
+// its toes are up: without the early bump of the walking lift and without the toes its swing turns down, see
+// nbSwingLift and NB_GAIT_SWING_PITCH. Lifted as any foot, its toes went from up to down as it left the ground, and a
+// shin jumped more than 37 mm on 39 instead of 28 of 1088 runs of courses at a walk. And while a foot turns on the
+// ground, the point of its sole it turns on moves along the sole no faster than NB_FOOT_BALL_SLEW half soles a second:
+// where it crossed the middle of the sole it went from the heel to the toes in one update, see NB_FOOT_BALL_EDGE, and a
+// shin jumped 58 mm. Kept on the end it chose for the whole stance, the pelvis sank more than 30 mm on 86 of the 1088
+// runs; at 10 and 5 half soles a second a foot slid 32 and 51 instead of 25 mm in a single turn-about.
+#define NB_FOOT_BALL_SLEW 20.0f
+
 static float nbSwingTime( const nbFigure* f, int k, float swingTime, float cycle, b3Vec3 up )
 {
 	if ( f->footSwings[k] == false )
@@ -6429,6 +6439,7 @@ static void nbSteerFeet( const nbWorld* world, int index, nbFigure* f, const nbC
 			// A planted foot turns with the body beyond NB_FOOT_TWIST from where the legs face: on the middle of its sole,
 			// and walking on the ball of the foot as the hip passes over it, see NB_FOOT_BALL_ROLL
 			float ball = 0.0f;
+			bool ballNow = false;
 			float twist = nbWrapAngle( f->footHeading[k] - legHeading );
 			if ( fabsf( twist ) > NB_FOOT_TWIST )
 			{
@@ -6455,6 +6466,14 @@ static void nbSteerFeet( const nbWorld* world, int index, nbFigure* f, const nbC
 					{
 						at += turned * ( ( at > middle ? middle + half : middle - half ) - at );
 					}
+					// The point moves along the sole no faster than NB_FOOT_BALL_SLEW while the foot turns
+					if ( f->ballWas[k] )
+					{
+						float most = NB_FOOT_BALL_SLEW * timeStep * half;
+						at = f->ballAt[k] + b3ClampFloat( at - middle - f->ballAt[k], -most, most ) + middle;
+					}
+					f->ballAt[k] = at - middle;
+					ballNow = true;
 					float walks = 1.0f - run;
 					ball = walks * ( at - middle ) / half;
 					sole = b3MulAdd( sole, walks * ( at - middle ), toes );
@@ -6466,6 +6485,8 @@ static void nbSteerFeet( const nbWorld* world, int index, nbFigure* f, const nbC
 				f->footHeading[k] = nbWrapAngle( f->footHeading[k] + turn );
 				f->footPivot[k] += fabsf( turn );
 			}
+
+			f->ballWas[k] = ballNow;
 
 			// Its heel lifts as far as it turns ahead of the middle of its sole, and comes down as it stops turning there
 			float heelMost = NB_FOOT_BALL_RATE * timeStep;
@@ -6976,6 +6997,8 @@ static void nbSteerFeet( const nbWorld* world, int index, nbFigure* f, const nbC
 				f->swingHurry[k] = b3MinFloat( f->swingHurry[k], nbMostHurry( foot, up, 0.0f, footTime, f->swingRate[k] ) );
 				f->swingStart[k] = -timeStep * f->swingRate[k] * f->swingHurry[k] / footTime;
 				f->swingCalm[k] = b3MinFloat( 1.0f / ( f->swingHurry[k] * f->swingHurry[k] ), 1.0f );
+				// One that lifts with its toes up, as it turned on its heel, lifts as much calmer, see NB_FOOT_BALL_SLEW
+				f->swingCalm[k] *= 1.0f - b3ClampFloat( f->ballToe[k] / NB_FOOT_BALL_TOES, 0.0f, 1.0f );
 			}
 			float along = b3ClampFloat( ( swing - f->swingStart[k] ) / ( 1.0f - f->swingStart[k] ), 0.0f, 1.0f );
 			// A swing that comes to hurry more than as it lifted lifts and turns its foot less far for that too while its

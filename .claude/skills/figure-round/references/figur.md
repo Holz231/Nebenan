@@ -143,6 +143,10 @@ was schon verworfen wurde.
   setzt der nächste Fuß um. `setsOff` (`NB_GAIT_SET_OFF`) lässt nach der Wende den Fuß abheben, der darf. Der Drehpunkt
   eines mitdrehenden Fußes rückt mit `footPivot` ans Sohlenende (`NB_FOOT_BALL_EDGE`), `ballHeelRate` hebt die Ferse
   weich.
+- **Drehrichtung der Kehrtwende.** Seit Runde 191 wählt `nbMoveSteered` einmal je Kehrtwende, wie herum die
+  Blickrichtung dreht (`aboutWay`, `aboutChosen`, `aboutFor`, `NB_ABOUT_WAY`): so, dass der Fuß vorn bleibt, der
+  schwingt, mit beiden am Boden der hintere. `nbSteerFeet` begrenzt, wie schnell der Drehpunkt längs der Sohle
+  wandert (`ballAt`, `ballWas`, `NB_FOOT_BALL_SLEW`), und `swingCalm` sinkt beim Abheben mit `ballToe`.
 - **Messen mit Rauschband.** Seit Runde 170 kommen Änderungen in den Werkzeugen an fester Schrittphase (`SYNC`), und
   Stände werden in vier Proben mit `NUDGE` gemessen (`check170.sh`) und mit `compare170.py` verglichen. Eine Regel setzt
   ihre Toleranzen aus den Spannen und nennt eine Bedingung verfehlt, wo die Spannen sich nicht überdecken.
