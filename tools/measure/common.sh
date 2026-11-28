@@ -319,3 +319,9 @@ SET_h246="WALK=1.0559 RUN=4.2741 DIAG=0.75 CW=1.234 CR=0.679"
 SET_h247="WALK=1.2659 RUN=3.8141 DIAG=0.90 CW=1.127 CR=0.700"
 SET_h248="WALK=1.4559 RUN=3.3441 DIAG=1.03 CW=1.051 CR=0.728"
 SET_h249="WALK=1.6659 RUN=3.0441 DIAG=1.18 CW=0.983 CR=0.750"
+# Round 192, the independent check of the step a waiting heading asks of a foot: chosen with speeds.py before any build
+# ran at them, group fresh192 of check170.sh, check177.sh, check186.sh and check192.sh.
+SET_h250="WALK=1.0759 RUN=4.3341 DIAG=0.76 CW=1.223 CR=0.676"
+SET_h251="WALK=1.2359 RUN=3.8741 DIAG=0.87 CW=1.141 CR=0.697"
+SET_h252="WALK=1.4659 RUN=3.4141 DIAG=1.04 CW=1.048 CR=0.724"
+SET_h253="WALK=1.6459 RUN=3.0841 DIAG=1.16 CW=0.989 CR=0.747"

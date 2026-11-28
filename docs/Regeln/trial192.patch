@@ -1,0 +1,106 @@
+diff --git a/src/figure.c b/src/figure.c
+index 2eb25f1..4c5031a 100644
+--- a/src/figure.c
++++ b/src/figure.c
+@@ -14,6 +14,9 @@
+ // animation. Everything runs in the update after a step, in the order of the figures, with operations that give the
+ // same bits everywhere.
+ 
++#ifdef NB_X_DEBUG192
++#include <stdio.h>
++#endif
+ #include "figure.h"
+ 
+ #include "world.h"
+@@ -5859,6 +5862,12 @@ static void nbSteerFeet( const nbWorld* world, int index, nbFigure* f, const nbC
+ 	float speed = b3Length( velocity );
+ 	f->gaitSpeed += b3MinFloat( 1.0f, NB_GAIT_FOLLOW * timeStep ) * ( speed - f->gaitSpeed );
+ 	float crouchBefore = f->gaitCrouch;
++#ifdef NB_X_DEBUG192
++	{
++		static int dbg = 0;
++		fprintf( stderr, "HEAD %d\n", ++dbg );
++	}
++#endif
+ 	f->gaitCrouch = 0.0f;
+ 	f->gaitBob = 0.0f;
+ 
+@@ -6592,6 +6601,35 @@ static void nbSteerFeet( const nbWorld* world, int index, nbFigure* f, const nbC
+ 			bool blocked = f->footSwings[1 - k] == false && out[1 - k] < out[k] && out[1 - k] < quickest;
+ 			bool lost = lostSoon[k] && f->footSwings[1 - k] == false && blocked == false;
+ 			bool due = f->canLift[k] && phase >= stance && lostSoon[1 - k] == false && blocked == false;
++			bool swapped = false;
++#ifdef NB_X_DUE
++			// A foot that only just landed is not due again while the other one stands behind the hip and may lift: that one
++			// lifts in its place
++			{
++				bool landed[2];
++				bool dueBy[2];
++				for ( int i = 0; i < 2; ++i )
++				{
++					float clock = f->gaitPhase + ( i == 1 ? 0.5f : 0.0f );
++					clock -= floorf( clock );
++					landed[i] = f->footSwings[i] == false && f->stanceTime[i] * f->gaitRate < NB_GAIT_FRESH * cycle;
++					dueBy[i] = f->canLift[i] && clock >= stance;
++				}
++				int j = 1 - k;
++				if ( run <= 0.0f && f->footSwings[j] == false && f->footSwings[k] == false )
++				{
++					if ( landed[k] && dueBy[k] && trails[j] && f->canLift[j] && landed[j] == false )
++					{
++						due = false;
++					}
++					else if ( landed[j] && dueBy[j] && trails[k] && f->canLift[k] && landed[k] == false )
++					{
++						due = lostSoon[j] == false && blocked == false;
++						swapped = due;
++					}
++				}
++			}
++#endif
+ 			bool first =
+ 				f->canLift[k] && f->footSwings[1 - k] == false && out[k] < quickest && out[k] < out[1 - k] && wants[1 - k];
+ 			float otherPhase = f->gaitPhase + ( k == 1 ? 0.0f : 0.5f );
+@@ -6623,6 +6661,27 @@ static void nbSteerFeet( const nbWorld* world, int index, nbFigure* f, const nbC
+ 			float otherUntil = stance - otherPhase;
+ 			otherUntil -= floorf( otherUntil );
+ 			bool waitedFor = f->faceWaits && f->turnAbout && run <= 0.0f && f->canLift[k] && until < otherUntil;
++#if defined( NB_X_WAITED ) && NB_X_WAITED == 1
++			// not while the leg of the other foot loses it within a swing
++			waitedFor = waitedFor && out[1 - k] >= quickest;
++#elif defined( NB_X_WAITED ) && NB_X_WAITED == 2
++			// the foot its leg loses within a swing steps for the heading, else the one the clock has
++			if ( f->faceWaits && f->turnAbout && run <= 0.0f && b3MinFloat( out[0], out[1] ) < quickest )
++			{
++				waitedFor = f->canLift[k] && out[k] < out[1 - k];
++			}
++#elif defined( NB_X_WAITED ) && NB_X_WAITED == 3
++			// the foot its leg loses first steps for the heading, the clock decides only where neither is lost
++			if ( f->faceWaits && f->turnAbout && run <= 0.0f && out[0] != out[1] )
++			{
++				waitedFor = f->canLift[k] && out[k] < out[1 - k];
++			}
++#elif defined( NB_X_WAITED ) && NB_X_WAITED == 4
++			// not a foot that only just landed
++			waitedFor = waitedFor && fresh[k] == false;
++#elif defined( NB_X_WAITED ) && NB_X_WAITED == 5
++			waitedFor = waitedFor && fresh[k] == false && out[1 - k] >= quickest;
++#endif
+ 			bool steps = ( f->footHolds[k] || waitedFor ) && f->footSwings[1 - k] == false &&
+ 						 f->stanceTime[k] >= NB_FOOT_STEP_STOOD && f->stanceTime[1 - k] >= NB_FOOT_STEP_OTHER;
+ 			// The one its leg loses first lifts while the other still holds for its swing, see NB_GAIT_LEAD
+@@ -6649,6 +6708,14 @@ static void nbSteerFeet( const nbWorld* world, int index, nbFigure* f, const nbC
+ 			if ( ( ( ( ( due || early ) && hold == false ) || steps || leads ) && rests == false ) || lost || first || floats ||
+ 				 setsOff )
+ 			{
++#ifdef NB_X_DEBUG192
++				fprintf( stderr,
++						 "LIFT k%d due%d early%d hold%d steps%d leads%d lost%d first%d floats%d setsOff%d waitedFor%d holds%d phase %.2f "
++						 "out %.3f %.3f quick %.3f trails%d%d fresh%d%d can%d%d ",
++						 k, due, early, hold, steps, leads, lost, first, floats, setsOff, waitedFor, f->footHolds[k], phase, out[k],
++						 out[1 - k], quickest, trails[k], trails[1 - k], fresh[k], fresh[1 - k], f->canLift[k], f->canLift[1 - k] );
++				fprintf( stderr, "SWAP %d hold%d stood %.3f %.3f\n", swapped, hold, f->stanceTime[k], f->stanceTime[1 - k] );
++#endif
+ 				// It lifts from where it stands, as far into its swing as its phase, and swings in the rest of it, from where it
+ 				// was an update ago, so it moves in this update already
+ 				f->footSwings[k] = true;

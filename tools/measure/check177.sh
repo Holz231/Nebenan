@@ -16,6 +16,7 @@ case $2 in
   fresh188) SETS="h238 h239 h240 h241";;
   fresh189) SETS="h242 h243 h244 h245";;
   fresh191) SETS="h246 h247 h248 h249";;
+  fresh192) SETS="h250 h251 h252 h253";;
   *) echo "check177.sh state group, group: dev1, dev2 or fresh<round>, see the case above"; exit 1;;
 esac
 [ -f "$W/res/$1/walk176.$2.json" ] && exit 0

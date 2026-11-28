@@ -1,0 +1,96 @@
+Regel für Runde 192, vor jedem Lauf mit den Geschwindigkeiten der unabhängigen Prüfung festgeschrieben. Gemessen wird
+gegen active-ragdoll-191.
+
+Worum es geht. In Runde 191 hielt die Regel auf den frischen Sätzen, aber in einem Lauf (h249, Hin und Her jede Sekunde)
+sackte das Becken 97 mm: Nach der Kehrtwende hob der gerade gelandete Fuß noch einmal ab, und der andere blieb 0,65 m
+hinter der Hüfte zurück. Der Nutzer hat entschieden: diesen Lauf beheben, und die Bedingung „kein Lauf mehr über 60 mm“
+kommt wieder dazu.
+
+Die Ursache, Update für Update verfolgt an drei Stellen (h249 Hin und Her jede Sekunde, h29 im Kreis mit 360 Grad je
+Sekunde, h10 Hin und Her alle 0,6 s; die dritte ist der zweite Fund unten). Wartet in der Kehrtwende die Blickrichtung
+darauf, dass die Füße ungekreuzt bleiben, lässt die Schrittregel aus Runde 189 den Fuß umsetzen, dessen Stand nach der
+Uhr des Gangs zuerst endet, sobald er 0,1 s steht. Nach der Uhr ist das auch ein Fuß, der eben gelandet ist, während das
+Bein des anderen seinen Fuß gerade verliert: Der andere steht bis an seine Grenze verdreht 0,4 m hinter der Hüfte, kann
+nicht abheben, solange der erste schwingt, und bleibt zurück, über die Zehen gerollt bis 1,35 rad. Bremst die Kapsel
+dabei, wie im Kreis, bleibt das Becken oben; läuft sie mit vollem Tempo weiter, geht die Wurzel dem Fuß nach.
+
+Wie groß das Thema ist, Frage 1 des Skills. Gezählt mit Debug-Zeilen auf 24 Sätzen bei zwei Proben, 3 264 Läufe der
+Kurse im Gehen: Die Schrittregel hebt 662-mal einen Fuß, 20-mal davon, während das andere Bein seinen Fuß innerhalb
+eines Schwungs verliert; 19 davon im Kreis, einer ist der Lauf mit 97 mm. Gezählt ohne Debug-Zeilen mit dem neuen
+Werkzeug tools/measure/twice192.py auf fünf Gruppen (dev1, dev2, h238 bis h249) mit je vier Proben, 6 528 Läufe: Ein
+Fuß, der einen Moment gestanden hat (0,08 bis 0,2 s), hebt 36-mal wieder ab, während der andere mehr als 0,3 m hinter
+seiner Hüfte steht; in einem Lauf sackt das Becken mehr als 60 mm, in einem bleibt ein Fuß mehr als 0,55 m zurück (0,62
+m). Richtig wäre: nie.
+
+Der Eingriff. Die Schrittregel lässt einen Fuß nicht für die Blickrichtung umsetzen, solange das Bein des anderen seinen
+Fuß innerhalb eines Schwungs verliert (out des anderen unter quickest). Dann hebt der andere, wie ihn die Regeln für
+verlorene Füße ohnehin heben.
+
+Varianten, Frage 2, mit Debug-Zeilen auf den 24 Sätzen, Proben 0 und 2, alt zuerst: Fälle mit dem anderen Fuß verloren 5
+und 15; tiefstes Becken 32 und 97 mm; Läufe mit einem Schienbein über 37 mm 25 und 21. Variante 1 (der Eingriff): 0 und
+0; 32 und 34 mm; 23 und 19. Variante 2 (der Fuß, den sein Bein verliert, setzt statt des anderen für die Blickrichtung
+um): wie 1. Variante 3 (immer der Fuß, den sein Bein zuerst verliert, die Uhr nur bei Gleichstand): 0 und 0; 32 und 34
+mm; aber Schienbein 28 und 23. Variante 4 (kein Fuß, der eben erst gelandet ist): ein Fall bleibt. Variante 5 (1 und 4
+zusammen): wie 1. Gewählt ist Variante 1, die einfachste.
+
+Ein zweiter Fund, nicht in dieser Runde gebaut. Ein Fuß hebt auch sofort wieder ab, wenn er landet, wo die Uhr des Gangs
+ihn schon wieder dran hat (er berührt den Boden meist für 0 bis 4 Updates): 17-mal auf den 6 528 Läufen mit dem anderen
+Fuß mehr als 0,3 m zurück; dass ein eben gelandeter Fuß nach der Uhr dran ist, während der andere hinter der Hüfte
+steht, kommt auf dev1 ohne Anstoß 34-mal auf 408 Läufen vor. Der Versuch NB_X_DUE (dann hebt der andere Fuß an seiner
+Stelle) nimmt diese Fälle weg, aber auf dev1 springt ein Schienbein in 43 statt 27 von 1 632 Läufen über 37 mm, vor
+allem im Kreis mit 180 Grad je Sekunde. Das ist ein eigenes Thema und bleibt offen.
+
+Der Prototyp, Frage 3, auf den fünf Gruppen mit je vier Proben, neu zuerst: Ein Fuß, der einen Moment gestanden hat,
+hebt 5-mal statt 36-mal wieder ab, während der andere zurückbleibt (je Gruppe 0, 0, 2, 1 und 2 statt 7, 9, 7, 6 und 7);
+von den 5 übrigen kommen 4 von rückwärts gehenden Beinen im schnellen Hin und Her und einer von einem verlorenen Fuß.
+Das Becken sackt in 0 statt 1 Lauf mehr als 60 mm, ein Fuß bleibt in 0 statt 1 mehr als 0,55 m zurück. Ein Fuß, der den
+Boden nur berührt hat, hebt 20-mal statt 17-mal wieder ab. Ein Schienbein springt in 87 statt 96 Läufen über 37 mm, das
+Becken sackt in 14 statt 12 mehr als 30 mm und in 0 statt 1 mehr als 35 mm. compare170.py nennt auf keiner Gruppe etwas
+schlechter. Die einzelnen Drehungen, Kehrtwenden, das Anhalten und Weitergehen sind auf allen Gruppen Zahl für Zahl
+gleich. Von 210 Tests des Prototyps bestehen alle 210, auch die Hash-Tests: Ihre Läufe treffen den Fall nicht.
+
+Bedingungen, alt ist active-ragdoll-191, neu der saubere Bau, je vier Proben mit tools/measure/check170.sh, check177.sh,
+check186.sh und check192.sh auf einer Gruppe von Sätzen, gerechnet von tools/measure/eval192.py:
+Ziel:
+ Z1 Auf allen Kursen aus steer162.py im Gehen (twice192.py), über alle Proben: Ein Fuß, der 0,08 bis 0,2 s gestanden
+   hat, hebt höchstens halb so oft wieder ab wie alt, während der andere mehr als 0,3 m hinter seiner Hüfte steht;
+   einmal ist immer erlaubt.
+ Z2 Auf denselben Läufen sackt das Becken in keinem Lauf mehr als 60 mm unter den stetigen Gang, und kein stehender Fuß
+   kommt mehr als 0,55 m hinter seine Hüfte.
+Schutz:
+ S1 tools/measure/compare170.py nennt keine Größe schlechter.
+ S2 Auf denselben Läufen, gezählt: Ein Fuß, der den Boden weniger als 0,08 s berührt hat, hebt höchstens bei einem von
+   zweihundert Läufen öfter wieder ab als alt, während der andere zurückbleibt. Auf allen Kursen aus steer162.py im
+   Gehen springt ein Schienbein in höchstens einem von hundert Läufen mehr über 37 mm als alt; das Becken sackt in
+   höchstens einem von hundert Läufen mehr über 30 mm, in höchstens einem Lauf mehr über 35 mm und in keinem Lauf mehr
+   über 60 mm; eine Hand springt in höchstens einem Lauf mehr über 30 mm.
+ S3 Die Szenen turn45, turn90, turn180, start90 und start180 aus walk176.py, je Szene das Mittel der Läufe: Ein Fuß
+   gleitet auf dem, worauf er steht, in turn180 höchstens 2 mm mehr als alt, sonst höchstens 0,5 mm mehr; seine Zehen
+   gehen am Boden höchstens 2 mm weiter; die Figur schaut höchstens 0,05 s später in die neue Richtung; ein Schienbein
+   springt im Mittel höchstens 5 mm mehr; über alle Läufe springen ein Fuß und ein Schienbein über 37 mm und das Becken
+   über 20 mm in höchstens einem Lauf mehr als alt. Die einzelnen Kehrtwenden aus gait155.py behalten, was Runde 191
+   gebaut hat: höchstens eine mehr später als 1,25 s, die späteste höchstens 0,05 s später, ihr Mittel höchstens 0,01 s
+   später.
+ S4 Von den einzelnen Wechseln aus gait155.py, alle Szenen im Gehen und im Rennen, je Probe gegen dieselbe Probe von
+   alt, schauen höchstens zwei mehr über 0,05 s später in die neue Richtung als über 0,05 s früher.
+ S5 Anhalten und Weitergehen wie bisher: Im Anhalten (walk176.py, stop) und im Weitergehen nach vorn und nach hinten
+   (rest186.py) springen Fuß und Schienbein höchstens 3 mm härter, das Becken höchstens 2 mm; die Figur kommt in der
+   ersten Sekunde auf 0,02 m genauso weit, und der erste Fuß hebt höchstens 0,05 s später.
+ S6 Alle Tests bestehen, mit gcc und clang, und die Hashes des Benchmarks der Figuren sind mit 1, 2 und 4 Threads
+   gleich. Kein Hash der Tests ändert sich. Gelockert wird keine Grenze. Dazu kommt ein Test, der auf dem alten Stand
+   fehlschlägt: Steuert er die Figur im Gehen hin und her, kommt kein stehender Fuß weiter hinter seine Hüfte und das
+   Becken nicht tiefer, als er bindet.
+
+Unabhängige Prüfung: die frischen Sätze h250 bis h253 aus tools/measure/common.sh, Gehen mit 1,0759, 1,2359, 1,4659 und
+1,6459 m/s, Rennen mit 4,3341, 3,8741, 3,4141 und 3,0841 m/s, mit speeds.py gegen alle Geschwindigkeiten geprüft, die je
+gelaufen sind; Gruppe fresh192. Kein Stand ist auf ihnen gelaufen, bevor diese Datei gepusht ist. Hält der saubere Bau
+dort eine Bedingung nicht, wird nicht gebaut, außer der Nutzer entscheidet es; die Regel wird danach nicht geändert, und
+eine Messung, die nicht passt, wird nicht wiederholt. Über die Bedingungen hinaus werden die tiefsten Läufe der frischen
+Sätze einzeln angesehen (Lehre aus Runde 191) und im Bericht genannt.
+
+Der saubere Bau muss auf dev1 ohne Anstoß dieselben drei Tabellen schreiben wie der Prototyp (legs167, gait155,
+steer162, mit cmp verglichen).
+
+Der Prototyp steht als docs/Regeln/trial192.patch: die Bibliothek von Runde 191 und dazu der Schalter -DNB_X_WAITED=1.
+Der alte Stand hat auf dev1, dev2, h238 bis h241 und h242 bis h245 die Tabellen des Prototyps von Runde 191, der
+dieselben schreibt wie dessen sauberer Bau.
