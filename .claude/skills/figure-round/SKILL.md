@@ -814,6 +814,20 @@ Zehen und Fersen 37 mm, Hände 15 mm, Becken 10 mm, Becken tief ab 15 cm unter d
   keinen neuen Fehler gebaut, aber die Schrittregel aus Runde 189 in eine Lage gebracht, in der sie den falschen Fuß
   hebt. Nach einem Bau, der Abläufe umstellt, die tiefsten Läufe der frischen Sätze einzeln ansehen, auch wenn jede
   Bedingung hält.
+- **Ein Zähler trennt zwei Ursachen, wenn er nach etwas Messbarem teilt.** Runde 192: „Ein Fuß hebt gleich wieder ab,
+  während der andere zurückbleibt“ kam aus zwei Regeln. Die Schrittregel verlangt 0,1 s Stand, die Uhr des Gangs hebt
+  nach 0 bis 4 Updates. `twice192.py` teilt bei 0,08 s Stand: `twice` ist das Ziel der Runde, `touch` bleibt als Schutz
+  und als nächstes Thema. Ohne die Teilung hätte der Bau sein Ziel verfehlt, obwohl er seine Ursache ganz behebt.
+- **Einen seltenen Lauf nicht nachstellen, sondern sein Ereignis zählen, wo es häufig ist.** Runde 192: Der Lauf mit 97
+  mm kam einmal auf 6 528 vor, und 1 980 Läufe im Hin und Her zeigten ihn nicht. Dasselbe Ereignis (der eben gelandete
+  Fuß hebt wieder ab) kam im Kreis mit 360 Grad je Sekunde in 10 von 180 Läufen vor: Daraus ist der Test, der auf dem
+  alten Stand fehlschlägt. Ein Test liest dafür `footSwings` über `GetSteered`.
+- **Eine zweite Änderung in derselben Runde erst zählen, wie oft ihre Bedingung greift.** Runde 192: `NB_X_DUE` sollte
+  vier Fälle auf dev1 beheben und griff 34-mal auf 408 Läufen, 16 neue Schienbein-Sprünge im Kreis. Eine Debug-Zeile am
+  Eingriff, über alle Kurse gezählt, zeigt das in fünf Minuten, bevor die breite Messung läuft.
+- **Ein Ziel, das der Prototyp nicht überall hält, wird vor dem Festschreiben ehrlich kleiner, mit Grund.** Runde 192:
+  „ein Viertel“ hielt auf zwei von fünf Gruppen nicht (2 statt 7), weil die übrigen Fälle aus anderen Regeln kommen. Die
+  Regel sagt „die Hälfte“ und nennt die übrigen Fälle; auf den frischen Sätzen war es dann 1 statt 7.
 - **Größe der Figur.** Winkelbeschleunigungen wachsen bei kleineren Figuren mit 1 durch `nbFigureScale`, Längen
   und Geschwindigkeiten mit ihr.
 

@@ -6617,12 +6617,18 @@ static void nbSteerFeet( const nbWorld* world, int index, nbFigure* f, const nbC
 			// A foot that turned on the ground as far as it may and holds the heading back, see NB_FOOT_PIVOT, steps round
 			// once both feet have stood for a moment, see NB_FOOT_STEP_STOOD. And so does, where the figure turns about and
 			// its heading waits for the feet to stay uncrossed, see nbFigure::faceWaits, the foot whose stance ends first by
-			// the clock: it would lift next anyway, and until it does the heading stands, see NB_FACE_BACK
+			// the clock: it would lift next anyway, and until it does the heading stands, see NB_FACE_BACK. It does not
+			// while the leg of the other foot loses that one within a swing: by the clock the next can be a foot that only
+			// just landed, and it lifted again while the other one, turned as far as it may 0.4 m behind the hip, could not
+			// lift and was left up to 0.65 m behind, the pelvis 97 mm low on one of 1088 runs of courses at a walk. Over
+			// 6528 such runs a foot that had stood for a moment lifted again with the other left behind 36 times, since
+			// round 192 5 times, see tools/measure/twice192.py.
 			float until = stance - phase;
 			until -= floorf( until );
 			float otherUntil = stance - otherPhase;
 			otherUntil -= floorf( otherUntil );
-			bool waitedFor = f->faceWaits && f->turnAbout && run <= 0.0f && f->canLift[k] && until < otherUntil;
+			bool waitedFor = f->faceWaits && f->turnAbout && run <= 0.0f && f->canLift[k] && until < otherUntil &&
+							 out[1 - k] >= quickest;
 			bool steps = ( f->footHolds[k] || waitedFor ) && f->footSwings[1 - k] == false &&
 						 f->stanceTime[k] >= NB_FOOT_STEP_STOOD && f->stanceTime[1 - k] >= NB_FOOT_STEP_OTHER;
 			// The one its leg loses first lifts while the other still holds for its swing, see NB_GAIT_LEAD

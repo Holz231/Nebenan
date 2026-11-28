@@ -6209,6 +6209,76 @@ static int SteerAboutWaitTest( void )
 	return 0;
 }
 
+// How often, while a steered figure that faces where it moves is steered round a circle at turn radians a second for 4
+// s out of a walk, from a moment of its step, a foot lifts again 0.08 to 0.2 s after it landed while the other one
+// stands more than 0.3 m behind its hip along the heading
+static int RunCircleTwice( float speed, float turn, int part, int* twice )
+{
+	FigureScene scene;
+	CreateFigureScene( &scene, 1 );
+	nbFigureId figure = AddSteeredFigure( &scene, b3Vec3_zero, 0.0f );
+	StepFigures( &scene, 60 );
+	nbSteer steer = { { 0.0f, 0.0f, speed }, 0.0f, true };
+	nbFigure_Steer( figure, &steer );
+	StepFigures( &scene, 200 + 5 * part );
+	*twice = 0;
+	bool swung[2] = { false, false };
+	int stood[2] = { 1000, 1000 };
+	for ( int i = 0; i < 300; ++i )
+	{
+		float angle = turn * (float)( i < 240 ? i + 1 : 240 ) / 60.0f;
+		steer.velocity = (b3Vec3){ speed * sinf( angle ), 0.0f, speed * cosf( angle ) };
+		nbFigure_Steer( figure, &steer );
+		StepFigures( &scene, 1 );
+		ENSURE( nbFigure_GetState( figure ) == nb_figureAnimated );
+		const nbFigure* f = GetSteered( &scene, figure );
+		b3CosSin way = b3ComputeCosSin( f->heading );
+		for ( int k = 0; k < 2; ++k )
+		{
+			bool swings = f->footSwings[k];
+			if ( swings && swung[k] == false && stood[k] >= 5 && stood[k] < 12 && f->footSwings[1 - k] == false )
+			{
+				b3Vec3 foot = BonePosition( figure, k == 0 ? nb_humanoidFootRight : nb_humanoidFootLeft );
+				b3Vec3 hip = BonePosition( figure, k == 0 ? nb_humanoidThighRight : nb_humanoidThighLeft );
+				float along = ( foot.x - hip.x ) * way.sine + ( foot.z - hip.z ) * way.cosine;
+				*twice += along < -0.3f ? 1 : 0;
+			}
+			stood[k] = swings ? 0 : stood[k] + 1;
+			swung[k] = swings;
+		}
+	}
+	DestroyFigureScene( &scene );
+	return 0;
+}
+
+// A steered figure facing where it moves walks at 1.10, 1.20 and 1.45 m/s and is steered round a circle at 360 degrees
+// a second, from twelve moments five updates apart: it turns about, and its heading waits for the feet to stay
+// uncrossed. The step that asks of a foot, see nbFigure::faceWaits, went to the foot whose stance ends first by the
+// clock of the gait, also where that one had only just landed and the leg of the other one was losing its foot: it
+// lifted again, the other could not and was left behind, rolled over its toes up to 1.35 rad, and where the capsule
+// went on at full speed the pelvis sank 97 mm. Since round 192 the step waits while the other leg loses its foot within
+// a swing, see nbSteerFeet. Here no foot lifts again as it has landed while the other is left behind, until round 192
+// in 5 of the 36 runs; tools/measure/twice192.py counts the same on the courses of steer162.py.
+static int SteerStepTwiceTest( void )
+{
+	int sum = 0;
+	for ( int k = 0; k < 3; ++k )
+	{
+		float speed = k == 0 ? 1.10f : ( k == 1 ? 1.20f : 1.45f );
+		for ( int part = 0; part < 12; ++part )
+		{
+			int twice;
+			ENSURE( RunCircleTwice( speed, 2.0f * B3_PI, part, &twice ) == 0 );
+			sum += twice;
+		}
+	}
+	printf( "  steered round a circle at 360 degrees a second at a walk, a foot lifts again as it has landed while the other is "
+			"left behind %d times over 36 runs\n",
+			sum );
+	ENSURE( sum == 0 );
+	return 0;
+}
+
 // A steered figure walks at 1.7 m/s, stops at twenty moments three updates apart, a whole step, stands for 2.5 s and
 // walks on. Since round 186 a foot that stands within NB_HALT_NEAR of its place stays there and the gait rests, see
 // figure.c: until then a foot that had landed 2 cm narrow or 1 cm behind lifted once more, up to 1.8 s after the stick
@@ -9390,6 +9460,7 @@ int FigureTest( void )
 	RUN_TEST( SteerWalkAboutTest );
 	RUN_TEST( SteerBallTurnTest );
 	RUN_TEST( SteerAboutWaitTest );
+	RUN_TEST( SteerStepTwiceTest );
 	RUN_TEST( SteerRestTest );
 	RUN_TEST( SteerAboutBackTest );
 	RUN_TEST( SteerLetGoTest );
